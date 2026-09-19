@@ -1,4 +1,5 @@
 <template>
+  <ExtensionSurface name="account-batch-test">
   <AccountOperationDialog :job="operationJob" :show="show" :title="t('admin.accounts.batchTest.title')" width="wide" @close="emit('close')">
     <form id="batch-test-accounts" @submit.prevent="submit">
       <p class="mb-4 text-sm text-gray-600 dark:text-gray-300">{{ t('admin.accounts.batchTest.description', { count: rows.length }) }}</p>
@@ -13,7 +14,7 @@
           <label :for="`batch-model-${row.account_id}`" class="sr-only">{{ t('admin.accounts.selectTestModel') }} {{ row.name }}</label>
           <AccountTestModelSelect :id="`batch-model-${row.account_id}`" v-model="row.model" :models="row.models" value-key="id" label-key="display_name"
             :disabled="busy || row.loading || !!row.error_code" :placeholder="row.loading ? t('common.loading') : t('admin.accounts.selectTestModel')" />
-          <AccountTestReasoningSelect v-model="row.reasoning_effort" :model="row.models.find(model => model.id === row.model)" :disabled="busy || row.loading" />
+          <AccountTestReasoningSelect v-model="row.reasoning_effort" :model="row.models.find(model => model.id === row.model)" :disabled="busy || row.loading" @validity="row.reasoning_valid = $event" />
           <div class="mt-2 flex flex-wrap items-center gap-2">
             <template v-if="!row.loading && (row.error_code || !row.models.length)">
               <span class="text-sm text-red-600" role="alert">{{ t(row.error_code ? 'admin.accounts.batchTest.loadFailed' : 'admin.accounts.batchTest.emptyModels') }}</span>
@@ -35,9 +36,11 @@
       <button type="submit" form="batch-test-accounts" class="btn btn-primary" :disabled="busy || !ready">{{ t(busy ? 'common.submitting' : 'admin.accounts.batchTest.start') }}</button>
     </template>
   </AccountOperationDialog>
+  </ExtensionSurface>
 </template>
 
 <script setup lang="ts">
+import ExtensionSurface from '@/components/plugins/ExtensionSurface.vue'
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import AccountOperationDialog from '@/components/admin/account-jobs/AccountOperationDialog.vue'
@@ -55,7 +58,7 @@ const { t } = useI18n()
 const operationJob = ref<AccountJob | null>(null)
 watch(() => props.show, show => { if (show) operationJob.value = null })
 const { prompt, valid: promptValid } = useAccountTestPrompt()
-type Row = BatchTestModelRow & { model: string; reasoning_effort: string; loading: boolean }
+type Row = BatchTestModelRow & { model: string; reasoning_effort: string; reasoning_valid: boolean; loading: boolean }
 const rows = ref<Row[]>([])
 const busy = ref(false)
 const page = ref(1)
@@ -65,7 +68,7 @@ let controller = new AbortController()
 const pages = computed(() => Math.max(1, Math.ceil(rows.value.length / 100)))
 const visibleRows = computed(() => rows.value.slice((page.value - 1) * 100, page.value * 100))
 const pending = computed(() => rows.value.some(row => row.loading))
-const ready = computed(() => promptValid.value && rows.value.length > 0 && rows.value.every(row => !row.loading && !row.error_code && row.models.some(model => model.id === row.model)))
+const ready = computed(() => promptValid.value && rows.value.length > 0 && rows.value.every(row => !row.loading && !row.error_code && (!row.reasoning_effort || row.reasoning_valid) && row.models.some(model => model.id === row.model)))
 
 async function load(ids: number[], version: number) {
   const idSet = new Set(ids)
@@ -96,7 +99,7 @@ watch(() => props.show, async show => {
   page.value = 1
   applicationResult.value = ''
   const ids = [...new Set(props.accountIds)]
-  rows.value = ids.map(account_id => ({ account_id, name: '', platform: '', type: '', is_cindy: false, models: [], model: '', reasoning_effort: '', loading: true }))
+  rows.value = ids.map(account_id => ({ account_id, name: '', platform: '', type: '', is_cindy: false, models: [], model: '', reasoning_effort: '', reasoning_valid: true, loading: true }))
   // One batch request at a time; the server bounds upstream discovery.
   for (let offset = 0; offset < ids.length && version === generation; offset += 100) await load(ids.slice(offset, offset + 100), version)
 }, { immediate: true })

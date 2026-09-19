@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
 
 import AccountBulkActionsBar from '../AccountBulkActionsBar.vue'
+vi.mock('@/components/plugins/ExtensionSurface.vue', () => ({ default: { template: '<div><slot /></div>' } }))
 
 vi.mock('@/components/plugins/ExtensionSlot.vue', () => ({
   default: {

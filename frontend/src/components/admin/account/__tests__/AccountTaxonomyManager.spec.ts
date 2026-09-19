@@ -43,3 +43,4 @@ describe('AccountTaxonomyManager', () => {
     expect(showError).toHaveBeenCalled()
   })
 })
+vi.mock('@/components/plugins/ExtensionSurface.vue', () => ({ default: { template: '<div><slot /></div>' } }))

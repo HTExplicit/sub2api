@@ -164,7 +164,7 @@ func (h *pluginExtensionHost) permitsAccount(platform, accountType string, crede
 		if !pluginScopeMatches(capability.Platform, platform) || !pluginScopeMatches(capability.AccountType, accountType) {
 			continue
 		}
-		if credentials && capability.ID != extensionv1.CapabilityProvider && capability.ID != extensionv1.CapabilityRequest {
+		if credentials && capability.ID != extensionv1.CapabilityCredentials {
 			continue
 		}
 		if !credentials && capability.ID == extensionv1.CapabilityUI {

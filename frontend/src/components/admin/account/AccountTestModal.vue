@@ -82,7 +82,7 @@
       </div>
 
       <AccountTestReasoningSelect v-if="supportsTextPrompt" v-model="reasoningEffort"
-        :model="modelOptionsForMode.find(model => model.id === selectedModelId)" :disabled="status === 'connecting'" />
+        :model="modelOptionsForMode.find(model => model.id === selectedModelId)" :disabled="status === 'connecting'" @validity="reasoningValid = $event" />
       <AccountTextTestPrompt v-if="supportsTextPrompt" v-model="textPrompt" :disabled="status === 'connecting'" />
       <div v-else-if="supportsPromptInput" class="space-y-1.5">
         <TextArea
@@ -429,6 +429,7 @@ const generatedVideos = ref<PreviewMedia[]>([])
 const previewImageUrl = ref('')
 const testMode = ref<'default' | 'compact'>('default')
 const reasoningEffort = ref('')
+const reasoningValid = ref(true)
 const grokTestMode = ref<'text' | 'image' | 'video' | 'search' | 'tts' | 'stt' | 'realtime'>('text')
 const uploadImageDataURL = ref('')
 const uploadImagePreview = ref('')
@@ -666,6 +667,7 @@ const testModeSummary = computed(() => {
 })
 
 const canStartTest = computed(() => {
+	if (reasoningEffort.value && !reasoningValid.value) return false
   if (supportsTextPrompt.value && !textPromptValid.value) return false
   if (status.value === 'connecting') return false
   if (isGrokAccount.value) {

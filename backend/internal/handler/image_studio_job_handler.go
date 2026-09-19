@@ -44,6 +44,10 @@ func (h *ImageStudioJobHandler) EligibleKeys(c *gin.Context) {
 	if !ok {
 		return
 	}
+	if err := service.EnsureImageStudioAvailable(c.Request.Context()); err != nil {
+		imageStudioJobError(c, err)
+		return
+	}
 	items, err := h.studio.EligibleKeys(c.Request.Context(), userID)
 	if err != nil {
 		imageStudioJobError(c, err)
@@ -55,6 +59,10 @@ func (h *ImageStudioJobHandler) EligibleKeys(c *gin.Context) {
 func (h *ImageStudioJobHandler) Create(c *gin.Context) {
 	userID, ok := h.authorize(c)
 	if !ok {
+		return
+	}
+	if err := service.EnsureImageStudioAvailable(c.Request.Context()); err != nil {
+		imageStudioJobError(c, err)
 		return
 	}
 	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, 2*service.ImageStudioMaxImageBytes+(1<<20))
@@ -168,6 +176,10 @@ func (h *ImageStudioJobHandler) Retry(c *gin.Context) {
 	if !ok {
 		return
 	}
+	if err := service.EnsureImageStudioAvailable(c.Request.Context()); err != nil {
+		imageStudioJobError(c, err)
+		return
+	}
 	job, err := h.studio.Retry(c.Request.Context(), userID, jobID)
 	if err != nil {
 		imageStudioJobError(c, err)
@@ -202,10 +214,6 @@ func (h *ImageStudioJobHandler) Artifact(c *gin.Context) {
 }
 
 func (h *ImageStudioJobHandler) authorize(c *gin.Context) (int64, bool) {
-	if !service.ImageStudioFeatureEnabled() {
-		response.NotFound(c, "Image Studio is not enabled")
-		return 0, false
-	}
 	subject, ok := middleware2.GetAuthSubjectFromContext(c)
 	if !ok || subject.UserID <= 0 {
 		response.Unauthorized(c, "User not authenticated")

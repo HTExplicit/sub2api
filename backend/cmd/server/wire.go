@@ -30,6 +30,7 @@ type Application struct {
 	PromptAudit   *securityaudit.PromptService
 	PluginManager *service.PluginManager
 	AccountJobs   *service.AccountJobRuntime
+	ImageStudio   *service.ImageStudioRuntime
 	Cleanup       func()
 }
 
@@ -61,7 +62,7 @@ func initializeApplication(buildInfo handler.BuildInfo) (*Application, error) {
 		provideCleanup,
 
 		// Application struct
-		wire.Struct(new(Application), "Server", "PromptAudit", "PluginManager", "AccountJobs", "Cleanup"),
+		wire.Struct(new(Application), "Server", "PromptAudit", "PluginManager", "AccountJobs", "ImageStudio", "Cleanup"),
 	)
 	return nil, nil
 }

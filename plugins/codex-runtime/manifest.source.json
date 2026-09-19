@@ -14,6 +14,8 @@
     "extension_api": 1
   },
   "capabilities": [
+    { "id": "extensions.credentials.v1", "platform": "openai", "account_type": "oauth" },
+    { "id": "extensions.credentials.v1", "platform": "openai", "account_type": "setup-token" },
     { "id": "extensions.admin.v1", "platform": "openai", "account_type": "oauth" },
     { "id": "extensions.admin.v1", "platform": "openai", "account_type": "setup-token" },
     { "id": "extensions.scheduling.v1", "platform": "openai", "account_type": "oauth" },

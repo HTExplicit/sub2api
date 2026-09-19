@@ -11,10 +11,12 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/textproto"
+	"strconv"
 	"strings"
 
 	middleware2 "github.com/Wei-Shaw/sub2api/internal/server/middleware"
 	"github.com/Wei-Shaw/sub2api/internal/service"
+	extensionv1 "github.com/Wei-Shaw/sub2api/pkg/extensionapi/v1"
 	"github.com/gin-gonic/gin"
 )
 
@@ -43,7 +45,11 @@ func (e *ImageStudioGatewayExecutor) Execute(ctx context.Context, request servic
 	if e == nil || e.images == nil || request.APIKey == nil || request.APIKey.User == nil {
 		return nil, errors.New("image gateway is unavailable")
 	}
-	body, contentType, path, err := buildImageStudioGatewayRequest(request)
+	plan, err := service.PlanImageStudioExecution(ctx, request)
+	if err != nil {
+		return nil, err
+	}
+	body, contentType, path, err := buildImageStudioGatewayRequest(request, plan)
 	if err != nil {
 		return nil, err
 	}
@@ -74,13 +80,13 @@ func (e *ImageStudioGatewayExecutor) Execute(ctx context.Context, request servic
 	return decodeImageStudioGatewayResponse(recorder.Body.Bytes())
 }
 
-func buildImageStudioGatewayRequest(request service.ImageStudioExecutionRequest) (*bytes.Reader, string, string, error) {
-	if request.Job.Mode == service.ImageStudioModeEdit {
+func buildImageStudioGatewayRequest(request service.ImageStudioExecutionRequest, plan extensionv1.ImageStudioPlan) (*bytes.Reader, string, string, error) {
+	if plan.Mode == string(service.ImageStudioModeEdit) {
 		var body bytes.Buffer
 		writer := multipart.NewWriter(&body)
 		fields := map[string]string{
-			"model": request.Job.Model, "prompt": request.Job.Prompt, "n": "1",
-			"response_format": "b64_json", "size": request.Job.Size, "quality": request.Job.Quality,
+			"model": plan.Model, "prompt": request.Job.Prompt, "n": strconv.Itoa(plan.OutputPerRequest),
+			"response_format": plan.ResponseFormat, "size": plan.Size, "quality": plan.Quality,
 		}
 		for name, value := range fields {
 			if value != "" {
@@ -100,17 +106,17 @@ func buildImageStudioGatewayRequest(request service.ImageStudioExecutionRequest)
 		if err := writer.Close(); err != nil {
 			return nil, "", "", errors.New("build image edit request")
 		}
-		return bytes.NewReader(body.Bytes()), writer.FormDataContentType(), "/v1/images/edits", nil
+		return bytes.NewReader(body.Bytes()), writer.FormDataContentType(), plan.Endpoint, nil
 	}
 	payload := map[string]any{
-		"model": request.Job.Model, "prompt": request.Job.Prompt, "n": 1,
-		"response_format": "b64_json", "size": request.Job.Size, "quality": request.Job.Quality,
+		"model": plan.Model, "prompt": request.Job.Prompt, "n": plan.OutputPerRequest,
+		"response_format": plan.ResponseFormat, "size": plan.Size, "quality": plan.Quality,
 	}
 	body, err := json.Marshal(payload)
 	if err != nil {
 		return nil, "", "", errors.New("build image generation request")
 	}
-	return bytes.NewReader(body), "application/json", "/v1/images/generations", nil
+	return bytes.NewReader(body), "application/json", plan.Endpoint, nil
 }
 
 func writeImageStudioMultipartFile(writer *multipart.Writer, field, baseName, contentType string, data []byte) error {

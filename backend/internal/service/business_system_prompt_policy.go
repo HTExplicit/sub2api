@@ -2,15 +2,15 @@ package service
 
 import (
 	"bytes"
-	"crypto/sha256"
+	"context"
 	_ "embed"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
 	"time"
-	"unicode/utf8"
+
+	extensionv1 "github.com/Wei-Shaw/sub2api/pkg/extensionapi/v1"
 
 	"github.com/tidwall/gjson"
 	"github.com/tidwall/sjson"
@@ -39,96 +39,22 @@ var embeddedBusinessSystemPrompt = strings.TrimSuffix(embeddedBusinessSystemProm
 //go:embed prompts/gpt_5_6_instruct_v45.md
 var embeddedGPT56InstructPrompt string
 
-type BusinessSystemPromptSnapshot struct {
-	Enabled                       bool      `json:"enabled"`
-	ExposeServerPrompt            bool      `json:"expose_server_prompt"`
-	CompactEnabled                bool      `json:"compact_enabled"`
-	TemplateID                    int64     `json:"template_id"`
-	VersionID                     int64     `json:"version_id"`
-	TemplateVersion               int64     `json:"template_version"`
-	Revision                      int64     `json:"revision"`
-	Body                          string    `json:"body,omitempty"`
-	SHA256                        string    `json:"sha256"`
-	ByteLength                    int       `json:"byte_length"`
-	CompositionMode               string    `json:"composition_mode"`
-	BundleID                      string    `json:"bundle_id,omitempty"`
-	BundleManifestSHA256          string    `json:"bundle_manifest_sha256,omitempty"`
-	RegistryRevision              int64     `json:"registry_revision,omitempty"`
-	RegistryRawTreeSHA256         string    `json:"registry_raw_tree_sha256,omitempty"`
-	RegistryEffectiveTreeSHA256   string    `json:"registry_effective_tree_sha256,omitempty"`
-	RegistryPromptRawSHA256       string    `json:"registry_prompt_raw_sha256,omitempty"`
-	RegistryPromptEffectiveSHA256 string    `json:"registry_prompt_effective_sha256,omitempty"`
-	RegistryUpstreamSourceID      string    `json:"registry_upstream_source_id,omitempty"`
-	RegistryUpstreamRoot          string    `json:"registry_upstream_root,omitempty"`
-	RegistryPublicRoot            string    `json:"registry_public_root,omitempty"`
-	BundleAvailable               bool      `json:"bundle_available"`
-	BundleDegraded                bool      `json:"bundle_degraded"`
-	DegradedReason                string    `json:"degraded_reason,omitempty"`
-	Degraded                      bool      `json:"degraded"`
-	UpdatedAt                     time.Time `json:"updated_at"`
+type BusinessSystemPromptSnapshot = extensionv1.BusinessSystemPromptSnapshot
 
-	// Effective fields are attached to an immutable request-scoped copy. They
-	// are never persisted or returned by the runtime API.
-	baseSHA256          string `json:"-"`
-	effectiveSHA256     string `json:"-"`
-	effectiveByteLength int    `json:"-"`
-}
+type BusinessSystemPromptTarget = extensionv1.BusinessSystemPromptTarget
 
-type BusinessSystemPromptTarget struct {
-	Platform string
-	Protocol string
-	Compact  bool
-}
-
-type BusinessSystemPromptApplication struct {
-	Applied                     bool   `json:"applied"`
-	Carrier                     string `json:"carrier"`
-	ClientInstructions          string `json:"client_instructions"`
-	ServerInstructions          string `json:"server_instructions"`
-	ExposeServerPrompt          bool   `json:"expose_server_prompt"`
-	CompactEnabled              bool   `json:"compact_enabled"`
-	TemplateID                  int64  `json:"template_id"`
-	VersionID                   int64  `json:"version_id"`
-	TemplateVersion             int64  `json:"template_version"`
-	Revision                    int64  `json:"revision"`
-	SHA256                      string `json:"sha256"`
-	BaseSHA256                  string `json:"base_sha256,omitempty"`
-	EffectiveSHA256             string `json:"effective_sha256,omitempty"`
-	EffectiveByteLength         int    `json:"effective_byte_length,omitempty"`
-	CompositionMode             string `json:"composition_mode,omitempty"`
-	BundleID                    string `json:"bundle_id,omitempty"`
-	BundleManifestSHA256        string `json:"bundle_manifest_sha256,omitempty"`
-	BundleRevision              int64  `json:"bundle_revision,omitempty"`
-	BundleRawTreeSHA256         string `json:"bundle_raw_tree_sha256,omitempty"`
-	BundleEffectiveTreeSHA256   string `json:"bundle_effective_tree_sha256,omitempty"`
-	BundlePromptRawSHA256       string `json:"bundle_prompt_raw_sha256,omitempty"`
-	BundlePromptEffectiveSHA256 string `json:"bundle_prompt_effective_sha256,omitempty"`
-	BundleUpstreamSourceID      string `json:"bundle_upstream_source_id,omitempty"`
-	BundleUpstreamRoot          string `json:"bundle_upstream_root,omitempty"`
-	BundlePublicRoot            string `json:"bundle_public_root,omitempty"`
-	Degraded                    bool   `json:"degraded,omitempty"`
-}
+type BusinessSystemPromptApplication = extensionv1.BusinessSystemPromptApplication
 
 func ValidateBusinessSystemPromptBody(body string) (string, int, error) {
 	return validateBusinessSystemPromptBodyWithLimit(body, BusinessSystemPromptMaxBytes)
 }
 
 func validateBusinessSystemPromptBodyWithLimit(body string, maxBytes int) (string, int, error) {
-	if !utf8.ValidString(body) {
-		return "", 0, fmt.Errorf("%w: body is not valid UTF-8", ErrBusinessSystemPromptInvalid)
+	hash, length, err := extensionv1.ValidateTextDocument(body, maxBytes)
+	if err != nil {
+		return "", 0, fmt.Errorf("%w: %v", ErrBusinessSystemPromptInvalid, err)
 	}
-	if strings.ContainsRune(body, '\x00') {
-		return "", 0, fmt.Errorf("%w: body contains NUL", ErrBusinessSystemPromptInvalid)
-	}
-	if strings.TrimSpace(body) == "" {
-		return "", 0, fmt.Errorf("%w: body is empty", ErrBusinessSystemPromptInvalid)
-	}
-	byteLength := len([]byte(body))
-	if byteLength > maxBytes {
-		return "", 0, fmt.Errorf("%w: body exceeds %d bytes", ErrBusinessSystemPromptInvalid, maxBytes)
-	}
-	digest := sha256.Sum256([]byte(body))
-	return hex.EncodeToString(digest[:]), byteLength, nil
+	return hash, length, nil
 }
 
 func MergeBusinessSystemPromptInstructions(client, server string) string {
@@ -144,89 +70,52 @@ func MergeBusinessSystemPromptInstructions(client, server string) string {
 	}
 }
 
-func ApplyBusinessSystemPromptToJSON(
-	body []byte,
-	snapshot BusinessSystemPromptSnapshot,
-	target BusinessSystemPromptTarget,
-) ([]byte, BusinessSystemPromptApplication, error) {
-	bundleManifestSHA256 := snapshot.BundleManifestSHA256
-	if snapshot.CompositionMode == BusinessSystemPromptCompositionCodexSkillHybrid {
-		bundleManifestSHA256 = snapshot.RegistryEffectiveTreeSHA256
+// ApplyBusinessSystemPromptToJSON applies the plugin's bounded policy result to
+// the original request locally. Large user histories never cross the RPC limit.
+func ApplyBusinessSystemPromptToJSON(body []byte, snapshot BusinessSystemPromptSnapshot, target BusinessSystemPromptTarget) ([]byte, BusinessSystemPromptApplication, error) {
+	return ApplyBusinessSystemPromptToJSONContext(context.Background(), body, snapshot, target)
+}
+
+func ApplyBusinessSystemPromptToJSONContext(ctx context.Context, body []byte, snapshot BusinessSystemPromptSnapshot, target BusinessSystemPromptTarget) ([]byte, BusinessSystemPromptApplication, error) {
+	return applyBusinessSystemPromptWithInvoker(ctx, body, snapshot, target, invokeProcessExtension)
+}
+
+func applyBusinessSystemPromptWithInvoker(parent context.Context, body []byte, snapshot BusinessSystemPromptSnapshot, target BusinessSystemPromptTarget, invoke func(context.Context, string, string, extensionv1.Invocation) (extensionv1.Result, error)) ([]byte, BusinessSystemPromptApplication, error) {
+	request := extensionv1.PromptPlanRequest{Snapshot: snapshot, Target: target, HasInstructions: gjson.GetBytes(body, "instructions").Exists(), BaseSHA256: snapshot.BaseSHA256, EffectiveSHA256: snapshot.EffectiveSHA256, EffectiveByteLength: snapshot.EffectiveByteLength}
+	raw, err := json.Marshal(request)
+	if err != nil {
+		return nil, BusinessSystemPromptApplication{}, err
 	}
-	application := BusinessSystemPromptApplication{
-		ExposeServerPrompt:          snapshot.ExposeServerPrompt,
-		CompactEnabled:              snapshot.CompactEnabled,
-		TemplateID:                  snapshot.TemplateID,
-		VersionID:                   snapshot.VersionID,
-		TemplateVersion:             snapshot.TemplateVersion,
-		Revision:                    snapshot.Revision,
-		SHA256:                      strings.ToLower(strings.TrimSpace(snapshot.SHA256)),
-		BaseSHA256:                  strings.ToLower(strings.TrimSpace(snapshot.baseSHA256)),
-		EffectiveSHA256:             strings.ToLower(strings.TrimSpace(snapshot.effectiveSHA256)),
-		EffectiveByteLength:         snapshot.effectiveByteLength,
-		CompositionMode:             snapshot.CompositionMode,
-		BundleID:                    snapshot.BundleID,
-		BundleManifestSHA256:        strings.ToLower(strings.TrimSpace(bundleManifestSHA256)),
-		BundleRevision:              snapshot.RegistryRevision,
-		BundleRawTreeSHA256:         strings.ToLower(strings.TrimSpace(snapshot.RegistryRawTreeSHA256)),
-		BundleEffectiveTreeSHA256:   strings.ToLower(strings.TrimSpace(snapshot.RegistryEffectiveTreeSHA256)),
-		BundlePromptRawSHA256:       strings.ToLower(strings.TrimSpace(snapshot.RegistryPromptRawSHA256)),
-		BundlePromptEffectiveSHA256: strings.ToLower(strings.TrimSpace(snapshot.RegistryPromptEffectiveSHA256)),
-		BundleUpstreamSourceID:      snapshot.RegistryUpstreamSourceID,
-		BundleUpstreamRoot:          snapshot.RegistryUpstreamRoot,
-		BundlePublicRoot:            snapshot.RegistryPublicRoot,
-		Degraded:                    snapshot.Degraded,
+	ctx, cancel := context.WithTimeout(parent, time.Second)
+	defer cancel()
+	accountType := target.AccountType
+	if accountType == "" {
+		accountType = "*"
 	}
-	if !snapshot.Enabled || target.Platform != PlatformOpenAI || (target.Compact && !snapshot.CompactEnabled) {
+	result, err := invoke(ctx, target.Platform, accountType, extensionv1.Invocation{Capability: extensionv1.CapabilityRequest, Operation: "prompt.plan", Payload: raw})
+	if errors.Is(err, ErrExtensionOperationDisabled) {
+		return body, BusinessSystemPromptApplication{}, nil
+	}
+	if err != nil || result.Code != "" {
+		return nil, BusinessSystemPromptApplication{}, ErrBusinessSystemPromptUnavailable
+	}
+	var application BusinessSystemPromptApplication
+	if json.Unmarshal(result.Payload, &application) != nil {
+		return nil, application, ErrBusinessSystemPromptUnavailable
+	}
+	if !application.Applied {
 		return body, application, nil
 	}
 	if !json.Valid(body) {
 		return nil, application, fmt.Errorf("apply business system prompt: invalid JSON")
 	}
-	maxBytes := BusinessSystemPromptMaxBytes
-	if snapshot.effectiveSHA256 != "" {
-		maxBytes = BusinessSystemPromptBundleMaxBytes
-	}
-	hash, byteLength, err := validateBusinessSystemPromptBodyWithLimit(snapshot.Body, maxBytes)
-	if err != nil {
-		return nil, application, fmt.Errorf("%w: %v", ErrBusinessSystemPromptUnavailable, err)
-	}
-	expectedHash := snapshot.SHA256
-	expectedLength := snapshot.ByteLength
-	if snapshot.effectiveSHA256 != "" {
-		expectedHash = snapshot.effectiveSHA256
-		expectedLength = snapshot.effectiveByteLength
-	}
-	if expectedHash != "" && !strings.EqualFold(expectedHash, hash) {
-		return nil, application, fmt.Errorf("%w: snapshot hash mismatch", ErrBusinessSystemPromptUnavailable)
-	}
-	if expectedLength > 0 && expectedLength != byteLength {
-		return nil, application, fmt.Errorf("%w: snapshot length mismatch", ErrBusinessSystemPromptUnavailable)
-	}
-
-	application.Applied = true
-	application.ServerInstructions = strings.TrimSpace(snapshot.Body)
-	application.SHA256 = hash
-	if application.BaseSHA256 == "" {
-		application.BaseSHA256 = hash
-	}
-	if application.EffectiveSHA256 == "" {
-		application.EffectiveSHA256 = hash
-	}
-	if application.EffectiveByteLength == 0 {
-		application.EffectiveByteLength = byteLength
-	}
-
-	switch target.Protocol {
-	case BusinessSystemPromptProtocolResponses:
-		return applyBusinessSystemPromptInstructions(body, snapshot.Body, application)
-	case BusinessSystemPromptProtocolChat:
-		if instructions := gjson.GetBytes(body, "instructions"); instructions.Exists() {
-			return applyBusinessSystemPromptInstructions(body, snapshot.Body, application)
-		}
-		return applyBusinessSystemPromptChatMessages(body, snapshot.Body, application)
+	switch application.Carrier {
+	case BusinessSystemPromptCarrierInstructions:
+		return applyBusinessSystemPromptInstructions(body, application.ServerInstructions, application)
+	case BusinessSystemPromptCarrierSystemMessage:
+		return applyBusinessSystemPromptChatMessages(body, application.ServerInstructions, application)
 	default:
-		return nil, BusinessSystemPromptApplication{}, fmt.Errorf("unsupported business system prompt protocol %q", target.Protocol)
+		return nil, application, ErrBusinessSystemPromptUnavailable
 	}
 }
 
@@ -301,7 +190,7 @@ func RewriteBusinessSystemPromptResponseJSON(
 	exposeServerPrompt bool,
 ) ([]byte, error) {
 	if exposeServerPrompt ||
-		application.CompositionMode == BusinessSystemPromptCompositionCodexSkillHybrid ||
+		application.PreserveInstructionsEcho ||
 		!application.Applied ||
 		application.Carrier != BusinessSystemPromptCarrierInstructions {
 		return body, nil
@@ -343,7 +232,7 @@ func RewriteBusinessSystemPromptSSE(
 	exposeServerPrompt bool,
 ) ([]byte, error) {
 	if exposeServerPrompt ||
-		application.CompositionMode == BusinessSystemPromptCompositionCodexSkillHybrid ||
+		application.PreserveInstructionsEcho ||
 		!application.Applied ||
 		application.Carrier != BusinessSystemPromptCarrierInstructions {
 		return body, nil

@@ -1,0 +1,20 @@
+{
+  "schema_version": 1,
+  "id": "codexrip.cindy-provider",
+  "name": "Cindy Provider",
+  "version": "0.2.7",
+  "description": "Cindy 模型目录、协议能力、价格参考及账号健康判定",
+  "author": "HTExplicit",
+  "requires": { "sub2api": ">=0.2.7-0 <0.2.8", "tested_sub2api_versions": [], "plugin_protocol": 1, "transport_api": 1, "ui_bridge": 1, "extension_api": 1 },
+  "capabilities": [
+    { "id": "extensions.provider.v1", "platform": "cindy", "account_type": "apikey" },
+    { "id": "extensions.admin.v1", "platform": "*", "account_type": "*" }
+  ],
+  "operations": { "extensions.provider.v1": ["cindy.catalog", "cindy.features", "cindy.pricing", "cindy.health"] },
+  "contributions": [
+    { "id": "cindy-provider-settings", "slot": "admin.settings", "action": "provider.describe", "entrypoint": "ui/index.html", "permission": "admin", "label": { "zh": "Cindy 目录与策略", "en": "Cindy catalog and policies" } }
+  ],
+  "runtimes": {},
+  "ui": { "entrypoint": "ui/index.html" },
+  "files": {}
+}

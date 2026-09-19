@@ -26,6 +26,7 @@
           class="h-fit min-w-0 space-y-5 rounded-none border border-gray-200 bg-white p-5 dark:border-dark-700 dark:bg-dark-900"
           @submit.prevent="submit"
         >
+          <ExtensionSurface name="image-studio">
           <div>
             <label for="image-studio-key" class="input-label">{{ t('imageStudio.apiKey') }}</label>
             <select
@@ -174,6 +175,7 @@
             <Icon :name="submitting ? 'refresh' : 'sparkles'" size="sm" :class="submitting ? 'animate-spin' : ''" />
             {{ submitting ? t('imageStudio.running') : t('imageStudio.run') }}
           </button>
+          </ExtensionSurface>
 
           <div v-if="activeJob" class="space-y-2 border-t border-gray-200 pt-4 dark:border-dark-700" data-testid="active-job-progress">
             <div class="flex items-center justify-between gap-3 text-sm">
@@ -243,6 +245,7 @@
                       type="button"
                       class="icon-button"
                       :title="t('imageStudio.retry')"
+                      :disabled="!studioAvailable"
                       @click="retryRecord(record)"
                     >
                       <Icon name="refresh" size="sm" />
@@ -319,6 +322,8 @@ import AppLayout from '@/components/layout/AppLayout.vue'
 import BaseDialog from '@/components/common/BaseDialog.vue'
 import Icon from '@/components/icons/Icon.vue'
 import { useAppStore } from '@/stores/app'
+import { usePluginExtensions } from '@/stores/pluginExtensions'
+import ExtensionSurface from '@/components/plugins/ExtensionSurface.vue'
 import { useAuthStore } from '@/stores/auth'
 import {
 	cancelImageStudioJob,
@@ -399,6 +404,8 @@ const ImageFileField = defineComponent({
 
 const { t } = useI18n()
 const appStore = useAppStore()
+const pluginExtensions = usePluginExtensions()
+const studioAvailable = computed(() => pluginExtensions.items.some(item => item.id === 'image-studio' && item.available))
 const authStore = useAuthStore()
 const eligibleKeys = ref<EligibleImageStudioKey[]>([])
 const history = ref<DisplayHistoryRecord[]>([])
@@ -464,6 +471,7 @@ const availableQualities = computed(() => {
 const outputCountEnabled = computed(() => (selectedControls.value?.max_output_count || 1) > 1)
 const maxOutputCount = computed(() => Math.min(Math.max(selectedControls.value?.max_output_count || 1, 1), 4))
 const canSubmit = computed(() => Boolean(
+  studioAvailable.value &&
   selectedApiKey.value &&
   selectedCapability.value &&
   form.prompt.trim() &&
@@ -667,6 +675,7 @@ async function finishJob(
 }
 
 async function submit(): Promise<void> {
+  if (!studioAvailable.value) return
   const key = selectedApiKey.value
   const capability = selectedCapability.value
   const ownerKey = historyOwnerKey.value
@@ -755,6 +764,7 @@ async function submit(): Promise<void> {
 }
 
 async function retryRecord(record: DisplayHistoryRecord): Promise<void> {
+  if (!studioAvailable.value) return
 	if (record.jobId && record.status === 'failed') {
 	  const ownerKey = historyOwnerKey.value
 	  if (!ownerKey) return

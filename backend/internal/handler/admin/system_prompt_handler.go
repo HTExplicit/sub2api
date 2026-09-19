@@ -799,7 +799,7 @@ func (h *SystemPromptHandler) PreviewMerge(c *gin.Context) {
 		writeBusinessSystemPromptError(c, err)
 		return
 	}
-	_, application, err := service.ApplyBusinessSystemPromptToJSON([]byte(`{"input":"preview"}`), prepared,
+	_, application, err := service.ApplyBusinessSystemPromptToJSONContext(c.Request.Context(), []byte(`{"input":"preview"}`), prepared,
 		service.BusinessSystemPromptTarget{Platform: service.PlatformOpenAI, Protocol: service.BusinessSystemPromptProtocolResponses})
 	if err != nil {
 		writeBusinessSystemPromptError(c, err)
@@ -877,7 +877,7 @@ func (h *SystemPromptHandler) PreviewUpstream(c *gin.Context) {
 		writeBusinessSystemPromptError(c, err)
 		return
 	}
-	updated, application, err := service.ApplyBusinessSystemPromptToJSON(req.Body, previewSnapshot,
+	updated, application, err := service.ApplyBusinessSystemPromptToJSONContext(c.Request.Context(), req.Body, previewSnapshot,
 		service.BusinessSystemPromptTarget{Platform: service.PlatformOpenAI, Protocol: protocol, Compact: req.Compact})
 	if err != nil {
 		writeBusinessSystemPromptError(c, err)

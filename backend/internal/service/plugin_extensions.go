@@ -102,12 +102,32 @@ type pluginExtensionRegistry struct {
 
 func validatePluginRegistry(installations []*PluginInstallation) error {
 	exclusive := make(map[string]int64)
+	type scopedOperation struct {
+		owner                                   int64
+		capability, name, platform, accountType string
+	}
+	var operationOwners []scopedOperation
 	byID := make(map[int64]*PluginInstallation)
 	for _, installation := range installations {
 		if !hasEnabledPluginBinding(installation.Bindings) {
 			continue
 		}
 		byID[installation.ID] = installation
+		for _, binding := range installation.Bindings {
+			if !binding.Enabled {
+				continue
+			}
+			for _, name := range installation.Manifest.Operations[binding.Capability] {
+				for _, owner := range operationOwners {
+					if owner.owner != installation.ID && owner.capability == binding.Capability && owner.name == name &&
+						(pluginScopeMatches(owner.platform, binding.Platform) || pluginScopeMatches(binding.Platform, owner.platform)) &&
+						(pluginScopeMatches(owner.accountType, binding.AccountType) || pluginScopeMatches(binding.AccountType, owner.accountType)) {
+						return fmt.Errorf("extension operation has overlapping enabled owners: %s", name)
+					}
+				}
+				operationOwners = append(operationOwners, scopedOperation{installation.ID, binding.Capability, name, binding.Platform, binding.AccountType})
+			}
+		}
 		for _, binding := range installation.Bindings {
 			if !binding.Enabled || (binding.Capability != PluginCapabilityOpenAIOAuthOutbound && binding.Capability != extensionv1.CapabilityProvider) {
 				continue
@@ -253,8 +273,13 @@ func (m *PluginManager) Contributions() []PluginContribution {
 		runtime := registry.runtimes[id]
 		available := registry.unavailable == "" && runtime != nil && !runtime.draining.Load() && !runtime.client.Exited() && pluginDependenciesHealthy(installation, registry, map[int64]bool{})
 		for _, contribution := range installation.Manifest.Contributions {
+			flag, known := m.contributionConfigured(installation, runtime, contribution.ConfigFlag)
+			if known && !flag {
+				continue
+			}
 			item := PluginContribution{Contribution: contribution, PluginID: id, Available: available}
-			if !available {
+			if !available || !known {
+				item.Available = false
 				item.Reason = "plugin_unavailable"
 			}
 			out = append(out, item)
@@ -269,6 +294,53 @@ func (m *PluginManager) Contributions() []PluginContribution {
 		}
 		return out[i].ID < out[j].ID
 	})
+	return out
+}
+
+func (m *PluginManager) contributionConfigured(installation *PluginInstallation, runtime *pluginRuntime, flag string) (bool, bool) {
+	if flag == "" {
+		return true, true
+	}
+	var raw json.RawMessage
+	if runtime != nil {
+		if snapshot := runtime.configSnapshot.Load(); snapshot != nil {
+			raw = *snapshot
+		}
+	}
+	if len(raw) == 0 && m.encryptor != nil {
+		var err error
+		raw, err = m.decryptConfig(installation)
+		if err != nil {
+			return false, false
+		}
+	}
+	var fields map[string]json.RawMessage
+	if json.Unmarshal(raw, &fields) != nil {
+		return false, false
+	}
+	var enabled bool
+	value, exists := fields[flag]
+	if !exists {
+		return false, true
+	}
+	if json.Unmarshal(value, &enabled) != nil {
+		return false, false
+	}
+	return enabled, true
+}
+
+// Public metadata never includes an admin operation, iframe entrypoint or
+// account filter. User surfaces execute through existing authenticated APIs.
+func (m *PluginManager) PublicContributions() []PluginContribution {
+	out := make([]PluginContribution, 0)
+	for _, item := range m.Contributions() {
+		if item.Permission != "user" || item.Slot != "surface" {
+			continue
+		}
+		item.Action, item.Entrypoint, item.ConfigFlag = "", "", ""
+		item.Fields, item.AccountFilter = nil, nil
+		out = append(out, item)
+	}
 	return out
 }
 
@@ -289,7 +361,9 @@ func (m *PluginManager) InvokeExtension(ctx context.Context, id int64, platform,
 		return extensionv1.Result{}, errors.New("enabled plugin is unavailable")
 	}
 	defer runtime.finishRequest()
-	return runtime.extension.Invoke(ctx, in)
+	result, err := runtime.extension.Invoke(ctx, in)
+	result.PluginID = id
+	return result, err
 }
 
 func (m *PluginManager) publishExtensionRegistryLocked(installations []*PluginInstallation, unavailable string) {

@@ -278,13 +278,9 @@ func TestRewriteBusinessSystemPromptResponseHonorsExposeSwitch(t *testing.T) {
 }
 
 func TestRewriteBusinessSystemPromptResponsePreservesPairedPublicationEcho(t *testing.T) {
-	application := BusinessSystemPromptApplication{
-		Applied:            true,
-		Carrier:            BusinessSystemPromptCarrierInstructions,
-		ClientInstructions: "client",
-		ServerInstructions: "server",
-		CompositionMode:    BusinessSystemPromptCompositionCodexSkillHybrid,
-	}
+	_, application, err := ApplyBusinessSystemPromptToJSON([]byte(`{"instructions":"client"}`), BusinessSystemPromptSnapshot{Enabled: true, Body: "server", CompositionMode: BusinessSystemPromptCompositionCodexSkillHybrid}, BusinessSystemPromptTarget{Platform: PlatformOpenAI, Protocol: BusinessSystemPromptProtocolResponses})
+	require.NoError(t, err)
+	require.True(t, application.PreserveInstructionsEcho)
 	jsonBody := []byte(`{"id":"resp_1","instructions":"client\n\nserver","output":[]}`)
 	rewrittenJSON, err := RewriteBusinessSystemPromptResponseJSON(jsonBody, application, false)
 	require.NoError(t, err)

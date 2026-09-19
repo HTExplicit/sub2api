@@ -77,6 +77,8 @@ export interface PluginInstallation {
 }
 
 export interface PluginContribution {
+  config_flag?: string
+  fields?: PluginFormField[]
   account_filter?: { platforms?: string[]; types?: string[]; statuses?: string[]; exclude_shadows?: boolean }
   id: string
   slot: string
@@ -90,8 +92,22 @@ export interface PluginContribution {
   reason?: string
 }
 
+export interface PluginFormField {
+  key: string
+  kind: 'select'
+  label: Record<string, string>
+  options_source: string
+  default_label: Record<string, string>
+  default_source?: string
+}
+
 export async function contributions(): Promise<PluginContribution[]> {
   const { data } = await apiClient.get<PluginContribution[]>('/admin/plugins/contributions')
+  return data || []
+}
+
+export async function publicContributions(): Promise<PluginContribution[]> {
+  const { data } = await apiClient.get<PluginContribution[]>('/settings/plugins')
   return data || []
 }
 

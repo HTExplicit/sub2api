@@ -42,7 +42,7 @@ function loaded() {
 }
 function failure(value: unknown): string { return value instanceof Error ? value.message : t('common.error') }
 
-watch(() => [props.pluginId, props.context.account_id, props.context.contribution_id, Array.isArray(props.context.account_ids) ? props.context.account_ids.join(',') : ''], async () => {
+watch(() => [auth.user?.id, props.pluginId, props.context.account_id, props.context.contribution_id, Array.isArray(props.context.account_ids) ? props.context.account_ids.join(',') : ''], async () => {
   const id = props.pluginId
   clearPending()
   const version = generation

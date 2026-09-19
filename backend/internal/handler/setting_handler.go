@@ -15,9 +15,19 @@ import (
 
 // SettingHandler 公开设置处理器（无需认证）
 type SettingHandler struct {
+	pluginManager            *service.PluginManager
 	settingService           *service.SettingService
 	notificationEmailService *service.NotificationEmailService
 	version                  string
+}
+
+func (h *SettingHandler) GetPublicPluginContributions(c *gin.Context) {
+	c.Header("Cache-Control", "no-store")
+	if h.pluginManager == nil {
+		response.Success(c, []service.PluginContribution{})
+		return
+	}
+	response.Success(c, h.pluginManager.PublicContributions())
 }
 
 // NewSettingHandler 创建公开设置处理器

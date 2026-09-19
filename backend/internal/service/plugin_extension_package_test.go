@@ -52,11 +52,25 @@ func TestFirstPartyBundleContainsMatchingSignedDomainPackages(t *testing.T) {
 	require.NoError(t, err)
 	var bundle PluginBundle
 	require.NoError(t, json.Unmarshal(raw, &bundle))
-	require.Len(t, bundle.Plugins, 2)
+	sourceRaw, err := os.ReadFile(filepath.Join("..", "..", "..", "plugins", "bundle.source.json"))
+	require.NoError(t, err)
+	var source struct {
+		Plugins []struct {
+			Directory string `json:"directory"`
+		} `json:"plugins"`
+	}
+	require.NoError(t, json.Unmarshal(sourceRaw, &source))
+	require.Len(t, bundle.Plugins, len(source.Plugins))
+	expectedFiles := map[string]bool{}
+	for _, entry := range source.Plugins {
+		expectedFiles[entry.Directory+".s2plugin"] = true
+	}
 	cfg := testPluginConfig(t.TempDir(), false)
 	cfg.Plugins.TrustedPublishers = map[string]string{bundle.PublisherKeyID: bundle.PublisherPublicKey}
 	installer := NewPluginPackageInstaller(cfg, PluginHostInfo{Version: bundle.HostVersion, BuildType: "release"})
 	for _, entry := range bundle.Plugins {
+		require.True(t, expectedFiles[entry.File], "bundle contains an undeclared or duplicate domain")
+		delete(expectedFiles, entry.File)
 		packagePath := filepath.Join(filepath.Dir(path), entry.File)
 		content, err := os.ReadFile(packagePath)
 		require.NoError(t, err)

@@ -3,6 +3,7 @@ import { createPinia, setActivePinia, type Pinia } from 'pinia'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import ImageStudioView from '../ImageStudioView.vue'
 import { useAuthStore } from '@/stores/auth'
+import { usePluginExtensions } from '@/stores/pluginExtensions'
 import type { User } from '@/types'
 
 const mocks = vi.hoisted(() => ({
@@ -104,6 +105,9 @@ describe('ImageStudioView job workflow', () => {
     pinia = createPinia()
     setActivePinia(pinia)
     useAuthStore().$patch({ user: { id: 42 } as User })
+    const registry = usePluginExtensions()
+    registry.loaded = true
+    registry.items = [{ id: 'image-studio', slot: 'surface', permission: 'user', plugin_id: 6, label: { en: 'Image Studio' }, available: true }]
     Object.defineProperty(URL, 'createObjectURL', { configurable: true, value: vi.fn(() => 'blob:preview') })
     Object.defineProperty(URL, 'revokeObjectURL', { configurable: true, value: vi.fn() })
     mocks.listEligibleKeys.mockResolvedValue({
@@ -275,6 +279,22 @@ describe('ImageStudioView job workflow', () => {
 
     expect(mocks.retryJob).toHaveBeenCalledWith(41, expect.any(AbortSignal))
     expect(mocks.createJob).not.toHaveBeenCalled()
+  })
+
+  it('retains input during plugin failure and removes generation controls after disable', async () => {
+    const wrapper = render()
+    await selectDefaultModel(wrapper)
+    await wrapper.get('[data-testid="prompt-input"]').setValue('keep this prompt')
+    const registry = usePluginExtensions()
+    registry.items = registry.items.map(item => ({ ...item, available: false }))
+    await flushPromises()
+    expect(wrapper.get('[data-testid="submit-image"]').attributes('disabled')).toBeDefined()
+    expect((wrapper.get('[data-testid="prompt-input"]').element as HTMLTextAreaElement).value).toBe('keep this prompt')
+    expect(wrapper.find('[role="status"]').text()).toContain('admin.plugins.extensionUnavailable')
+    registry.items = []
+    await flushPromises()
+    expect(wrapper.find('[data-testid="submit-image"]').exists()).toBe(false)
+    expect(wrapper.find('#image-studio-history-heading').exists()).toBe(true)
   })
 
   it('recovers after a create error and leaves the form retryable', async () => {

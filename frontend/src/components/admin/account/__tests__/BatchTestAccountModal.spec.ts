@@ -2,11 +2,12 @@ vi.mock('@/components/admin/account-jobs/AccountOperationDialog.vue', () => ({ d
 import { flushPromises, mount } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import BatchTestAccountModal from '../BatchTestAccountModal.vue'
+vi.mock('@/components/plugins/ExtensionSurface.vue', () => ({ default: { template: '<div><slot /></div>' } }))
 const { batchTestModels, batchTest } = vi.hoisted(() => ({ batchTestModels: vi.fn(), batchTest: vi.fn() }))
 vi.mock('@/api/admin/accountJobs', () => ({ default: { batchTestModels, batchTest } }))
 vi.mock('@/stores/app', () => ({ useAppStore: () => ({ showError: vi.fn() }) }))
 vi.mock('@/stores/auth', () => ({ useAuthStore: () => ({ user: { id: 1 } }) }))
-vi.mock('vue-i18n', () => ({ useI18n: () => ({ t: (key: string, args?: unknown) => key + (args ? JSON.stringify(args) : '') }) }))
+vi.mock('vue-i18n', async importOriginal => ({ ...await importOriginal<typeof import('vue-i18n')>(), useI18n: () => ({ t: (key: string, args?: unknown) => key + (args ? JSON.stringify(args) : '') }) }))
 function catalog(id: number, models = ['first', 'shared']) {
   return { account_id: id, name: `Account ${id}`, platform: 'openai', type: 'apikey', is_cindy: false, models: models.map(id => ({ id, display_name: `Display ${id}` })) }
 }

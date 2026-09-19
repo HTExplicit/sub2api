@@ -239,6 +239,7 @@ import Icon from '@/components/icons/Icon.vue'
 import { sanitizeSvg } from '@/utils/sanitize'
 import { sanitizeUrl } from '@/utils/url'
 import { FeatureFlags, makeSidebarFlag } from '@/utils/featureFlags'
+import { usePluginExtensions } from '@/stores/pluginExtensions'
 import { resolveSiteBillingMode } from '@/utils/siteBillingMode'
 import { useBatchImageAccess } from '@/composables/useBatchImageAccess'
 
@@ -284,6 +285,7 @@ const route = useRoute()
 const router = useRouter()
 const appStore = useAppStore()
 const authStore = useAuthStore()
+const pluginExtensions = usePluginExtensions()
 const onboardingStore = useOnboardingStore()
 const adminSettingsStore = useAdminSettingsStore()
 const { canUseBatchImage, refreshBatchImageAccess } = useBatchImageAccess()
@@ -749,7 +751,7 @@ const ChevronDownIcon = {
 const flagChannelMonitor = makeSidebarFlag(FeatureFlags.channelMonitor)
 const flagPayment = makeSidebarFlag(FeatureFlags.payment)
 const flagAvailableChannels = makeSidebarFlag(FeatureFlags.availableChannels)
-const flagImageStudio = makeSidebarFlag(FeatureFlags.imageStudio)
+const flagImageStudio = () => pluginExtensions.items.some(item => item.slot === 'surface' && item.id === 'image-studio')
 const flagSubscription = makeSidebarFlag(FeatureFlags.subscription)
 
 // 购买入口文案随站点计费模式切换：仅充值 → 「充值」，仅订阅 → 「订阅」，否则「充值/订阅」。
@@ -1025,6 +1027,7 @@ watch(
 )
 
 onMounted(() => {
+  void pluginExtensions.refresh()
   void refreshBatchImageAccess()
   if (isAdmin.value) {
     adminSettingsStore.fetch()

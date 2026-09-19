@@ -73,6 +73,7 @@
             </p>
           </section>
 
+          <ExtensionSurface name="account-taxonomy">
           <section class="border-b border-gray-100 px-4 py-4 dark:border-dark-700 sm:px-5">
             <div class="mb-3 flex items-center justify-between gap-3">
               <h3 class="text-xs font-semibold uppercase text-gray-500 dark:text-dark-300">{{ t('admin.accounts.classification') }}</h3>
@@ -111,6 +112,7 @@
               </div>
             </div>
           </section>
+          </ExtensionSurface>
 
           <section class="border-b border-gray-100 px-4 py-4 dark:border-dark-700 sm:px-5">
             <h3 class="mb-3 text-xs font-semibold uppercase text-gray-500 dark:text-dark-300">{{ t('admin.accounts.capacityAndUsage') }}</h3>
@@ -189,6 +191,7 @@
 </template>
 
 <script setup lang="ts">
+import ExtensionSurface from '@/components/plugins/ExtensionSurface.vue'
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { adminAPI } from '@/api/admin'

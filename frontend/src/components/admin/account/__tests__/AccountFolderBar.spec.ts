@@ -60,3 +60,4 @@ describe('AccountFolderBar', () => {
     expect(wrapper.text()).not.toContain('NaN')
   })
 })
+vi.mock('@/components/plugins/ExtensionSurface.vue', () => ({ default: { template: '<div><slot /></div>' } }))

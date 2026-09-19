@@ -97,3 +97,4 @@ describe('AccountDetailsDrawer', () => {
 	expect(wrapper.get('[data-test="cindy-device-id-source"]').text()).toBe('registration-record')
   })
 })
+vi.mock('@/components/plugins/ExtensionSurface.vue', () => ({ default: { template: '<div><slot /></div>' } }))

@@ -165,6 +165,7 @@ output/
 # First-party extension sources are versioned; installed packages and local
 # third-party projects remain outside the source tree.
 /plugins/*
+!/plugins/bundle.source.json
 !/plugins/codex-runtime/
 !/plugins/codex-runtime/scripts/
 !/plugins/codex-runtime/scripts/check-ui.py

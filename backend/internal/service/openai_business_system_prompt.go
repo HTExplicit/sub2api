@@ -67,9 +67,10 @@ func (s *OpenAIGatewayService) applyBusinessSystemPrompt(
 		}
 	}
 	return ApplyBusinessSystemPromptToJSON(body, snapshot, BusinessSystemPromptTarget{
-		Platform: account.EffectiveWirePlatform(),
-		Protocol: protocol,
-		Compact:  compact,
+		Platform:    account.EffectiveWirePlatform(),
+		AccountType: account.Type,
+		Protocol:    protocol,
+		Compact:     compact,
 	})
 }
 
@@ -133,29 +134,10 @@ func (s *OpenAIGatewayService) applyBusinessSystemPromptForRequest(
 				}
 				frozen := state.snapshot
 				if frozen.Revision < 1 {
-					// Compatibility for request contexts populated by older code.
-					frozen = BusinessSystemPromptSnapshot{
-						Enabled: true, ExposeServerPrompt: state.application.ExposeServerPrompt,
-						CompactEnabled: state.application.CompactEnabled,
-						TemplateID:     state.application.TemplateID, VersionID: state.application.VersionID,
-						TemplateVersion: state.application.TemplateVersion, Revision: state.application.Revision,
-						Body: state.application.ServerInstructions, SHA256: state.application.SHA256,
-						CompositionMode: state.application.CompositionMode,
-						BundleID:        state.application.BundleID, BundleManifestSHA256: state.application.BundleManifestSHA256,
-						RegistryRevision:              state.application.BundleRevision,
-						RegistryRawTreeSHA256:         state.application.BundleRawTreeSHA256,
-						RegistryEffectiveTreeSHA256:   state.application.BundleEffectiveTreeSHA256,
-						RegistryPromptRawSHA256:       state.application.BundlePromptRawSHA256,
-						RegistryPromptEffectiveSHA256: state.application.BundlePromptEffectiveSHA256,
-						RegistryUpstreamSourceID:      state.application.BundleUpstreamSourceID,
-						RegistryUpstreamRoot:          state.application.BundleUpstreamRoot,
-						RegistryPublicRoot:            state.application.BundlePublicRoot,
-						baseSHA256:                    state.application.BaseSHA256, effectiveSHA256: state.application.EffectiveSHA256,
-						effectiveByteLength: state.application.EffectiveByteLength,
-					}
+					return nil, BusinessSystemPromptApplication{}, ErrBusinessSystemPromptUnavailable
 				}
-				updated, application, err := ApplyBusinessSystemPromptToJSON(body, frozen, BusinessSystemPromptTarget{
-					Platform: PlatformOpenAI, Protocol: protocol, Compact: compact,
+				updated, application, err := ApplyBusinessSystemPromptToJSONContext(promptPolicyRequestContext(ctx), body, frozen, BusinessSystemPromptTarget{
+					Platform: PlatformOpenAI, AccountType: account.Type, Protocol: protocol, Compact: compact,
 				})
 				if err != nil {
 					return nil, BusinessSystemPromptApplication{}, err
@@ -165,10 +147,8 @@ func (s *OpenAIGatewayService) applyBusinessSystemPromptForRequest(
 					inputHash: sha256.Sum256(body), output: append([]byte(nil), updated...),
 				})
 				return updated, application, nil
-			} else if application, ok := value.(BusinessSystemPromptApplication); ok {
-				// Keep compatibility with contexts created by older callers while
-				// the request is being retried.
-				return body, application, nil
+			} else {
+				return nil, BusinessSystemPromptApplication{}, ErrBusinessSystemPromptUnavailable
 			}
 		}
 	}
@@ -187,7 +167,7 @@ func (s *OpenAIGatewayService) applyBusinessSystemPromptForRequest(
 				}
 			}
 		}
-		if snapshot.effectiveSHA256 == "" &&
+		if snapshot.EffectiveSHA256 == "" &&
 			snapshot.CompositionMode == BusinessSystemPromptCompositionCodexSkillHybrid {
 			compiled, compileErr := s.businessPromptService.compileBusinessSystemPromptSnapshot(snapshot)
 			if compileErr != nil {
@@ -199,10 +179,11 @@ func (s *OpenAIGatewayService) applyBusinessSystemPromptForRequest(
 			}
 		}
 	}
-	updated, application, err := ApplyBusinessSystemPromptToJSON(body, snapshot, BusinessSystemPromptTarget{
-		Platform: account.EffectiveWirePlatform(),
-		Protocol: protocol,
-		Compact:  compact,
+	updated, application, err := ApplyBusinessSystemPromptToJSONContext(promptPolicyRequestContext(ctx), body, snapshot, BusinessSystemPromptTarget{
+		Platform:    account.EffectiveWirePlatform(),
+		AccountType: account.Type,
+		Protocol:    protocol,
+		Compact:     compact,
 	})
 	if err != nil {
 		return nil, application, err
@@ -253,8 +234,7 @@ func businessSystemPromptApplicationFromRequest(ctx *gin.Context, protocol strin
 	if state, ok := value.(businessSystemPromptRequestState); ok {
 		return state.application, true
 	}
-	application, ok := value.(BusinessSystemPromptApplication)
-	return application, ok
+	return BusinessSystemPromptApplication{}, false
 }
 
 func (s *OpenAIGatewayService) rewriteBusinessSystemPromptJSONForRequest(c *gin.Context, body []byte, protocol string) []byte {

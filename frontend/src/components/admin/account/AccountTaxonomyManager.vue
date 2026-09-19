@@ -1,4 +1,5 @@
 <template>
+  <ExtensionSurface name="account-taxonomy">
   <BaseDialog
     :show="show"
     :title="t('admin.accounts.manageTaxonomy')"
@@ -90,9 +91,11 @@
     @confirm="confirmDelete"
     @cancel="pendingDelete = null"
   />
+  </ExtensionSurface>
 </template>
 
 <script setup lang="ts">
+import ExtensionSurface from '@/components/plugins/ExtensionSurface.vue'
 import { computed, ref, watch } from 'vue'
 import { VueDraggable } from 'vue-draggable-plus'
 import { useI18n } from 'vue-i18n'

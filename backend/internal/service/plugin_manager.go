@@ -121,6 +121,9 @@ func (m *PluginManager) Start(ctx context.Context) error {
 }
 
 func (m *PluginManager) Stop() {
+	if provider := processExtensionOperations.Load(); provider != nil && provider.invoker == m {
+		processExtensionOperations.CompareAndSwap(provider, nil)
+	}
 	if provider := processExtensionCatalog.Load(); provider != nil && provider.resolver == m {
 		processExtensionCatalog.CompareAndSwap(provider, nil)
 	}
@@ -336,7 +339,7 @@ func (m *PluginManager) reconcileOnce(ctx context.Context) error {
 	var stale []*pluginRuntime
 	for id, runtime := range m.runtimes {
 		if !desired[id] {
-			runtime.draining.Store(true)
+			runtime.beginDrain()
 			stale = append(stale, runtime)
 			delete(m.runtimes, id)
 		}
@@ -447,7 +450,7 @@ func (m *PluginManager) detachAllRuntimes() []*pluginRuntime {
 	defer m.mu.Unlock()
 	runtimes := make([]*pluginRuntime, 0, len(m.runtimes))
 	for id, runtime := range m.runtimes {
-		runtime.draining.Store(true)
+		runtime.beginDrain()
 		runtimes = append(runtimes, runtime)
 		delete(m.runtimes, id)
 	}
@@ -459,7 +462,7 @@ func (m *PluginManager) publishUnavailableRoute(pluginID int64, rollout int, mes
 	m.mu.Lock()
 	stale := make([]*pluginRuntime, 0, len(m.runtimes))
 	for id, runtime := range m.runtimes {
-		runtime.draining.Store(true)
+		runtime.beginDrain()
 		stale = append(stale, runtime)
 		delete(m.runtimes, id)
 	}

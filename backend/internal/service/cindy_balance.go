@@ -11,7 +11,6 @@ import (
 	"sync"
 
 	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
-	"github.com/tidwall/gjson"
 )
 
 var (
@@ -248,39 +247,10 @@ func (s *OpenAIGatewayService) handleCindyBalanceHTTPResponseTerminalEvent(
 // shapes. It deliberately rejects message text, numeric codes, generic 402s,
 // malformed JSON, and the same payload on a non-Cindy account.
 func ClassifyCindyBalanceInsufficient(account *Account, statusCode int, payload []byte) CindyBalanceSignal {
-	if !CindyBalanceDetectionFeatureEnabled() || account == nil || !IsCindyAPIKeyAccount(account.Platform, account.Type, account.Credentials) ||
-		!gjson.ValidBytes(payload) {
+	if account == nil || !IsCindyAPIKeyAccount(account.Platform, account.Type, account.Credentials) {
 		return CindyBalanceSignalNone
 	}
-
-	if statusCode == http.StatusTooManyRequests && cindyBudgetErrorAtPath(payload, "error") {
-		return CindyBalanceSignalHTTP429
-	}
-
-	eventType := gjson.GetBytes(payload, "type")
-	if eventType.Type == gjson.String &&
-		(eventType.Str == "response.failed" || eventType.Str == "error") &&
-		statusCode != http.StatusOK {
-		return CindyBalanceSignalNone
-	}
-
-	switch {
-	case eventType.Type == gjson.String && eventType.Str == "response.failed" &&
-		cindyBudgetErrorAtPath(payload, "response.error"):
-		return CindyBalanceSignalResponseFailed
-	case eventType.Type == gjson.String && eventType.Str == "error" &&
-		cindyBudgetErrorAtPath(payload, "error"):
-		return CindyBalanceSignalErrorEvent
-	default:
-		return CindyBalanceSignalNone
-	}
-}
-
-func cindyBudgetErrorAtPath(payload []byte, path string) bool {
-	errorType := gjson.GetBytes(payload, path+".type")
-	errorCode := gjson.GetBytes(payload, path+".code")
-	return errorType.Type == gjson.String && errorType.Str == "budget_exceeded" &&
-		errorCode.Type == gjson.String && errorCode.Str == strconv.Itoa(http.StatusTooManyRequests)
+	return CindyBalanceSignal(classifyCindyProviderResponse(statusCode, payload).Balance)
 }
 
 func cindyBalanceReplayBufferEnabled(account *Account) bool {

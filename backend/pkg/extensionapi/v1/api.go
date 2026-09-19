@@ -10,19 +10,21 @@ import (
 )
 
 const (
-	Version              = 1
-	CapabilityProvider   = "extensions.provider.v1"
-	CapabilityCatalog    = "extensions.catalog.v1"
-	CapabilityRequest    = "extensions.request.v1"
-	CapabilityScheduling = "extensions.scheduling.v1"
-	CapabilityJobs       = "extensions.jobs.v1"
-	CapabilityAdmin      = "extensions.admin.v1"
-	CapabilityUI         = "extensions.ui.v1"
+	Version               = 1
+	CapabilityProvider    = "extensions.provider.v1"
+	CapabilityCatalog     = "extensions.catalog.v1"
+	CapabilityRequest     = "extensions.request.v1"
+	CapabilityScheduling  = "extensions.scheduling.v1"
+	CapabilityJobs        = "extensions.jobs.v1"
+	CapabilityAdmin       = "extensions.admin.v1"
+	CapabilityUI          = "extensions.ui.v1"
+	CapabilityCredentials = "extensions.credentials.v1"
 )
 
 var capabilities = map[string]bool{
 	CapabilityProvider: true, CapabilityCatalog: true, CapabilityRequest: true,
 	CapabilityScheduling: true, CapabilityJobs: true, CapabilityAdmin: true, CapabilityUI: true,
+	CapabilityCredentials: true,
 }
 
 func IsCapability(id string) bool { return capabilities[id] }
@@ -34,6 +36,8 @@ type Dependency struct {
 }
 
 type Contribution struct {
+	ConfigFlag    string            `json:"config_flag,omitempty"`
+	Fields        []FormField       `json:"fields,omitempty"`
 	AccountFilter *AccountFilter    `json:"account_filter,omitempty"`
 	ID            string            `json:"id"`
 	Slot          string            `json:"slot"`
@@ -42,6 +46,15 @@ type Contribution struct {
 	Entrypoint    string            `json:"entrypoint,omitempty"`
 	Permission    string            `json:"permission"`
 	Order         int               `json:"order,omitempty"`
+}
+
+type FormField struct {
+	Key           string            `json:"key"`
+	Kind          string            `json:"kind"`
+	Label         map[string]string `json:"label"`
+	OptionsSource string            `json:"options_source"`
+	DefaultLabel  map[string]string `json:"default_label"`
+	DefaultSource string            `json:"default_source,omitempty"`
 }
 
 type AccountFilter struct {
@@ -74,6 +87,7 @@ var slots = map[string]bool{
 	"account.details": true, "account.columns": true, "account.test": true,
 	"group.actions": true, "group.details": true, "navigation": true,
 	"theme": true, "usage.details": true,
+	"surface": true,
 }
 
 func ValidSlot(slot string) bool { return slots[slot] }
@@ -162,9 +176,11 @@ type Invocation struct {
 }
 
 type Result struct {
-	Payload json.RawMessage `json:"payload,omitempty"`
-	Code    string          `json:"code,omitempty"`
-	Message string          `json:"message,omitempty"`
+	PluginID   int64           `json:"plugin_id,omitempty"`
+	HTTPStatus int             `json:"http_status,omitempty"`
+	Payload    json.RawMessage `json:"payload,omitempty"`
+	Code       string          `json:"code,omitempty"`
+	Message    string          `json:"message,omitempty"`
 }
 
 type JobTarget struct {
@@ -245,6 +261,14 @@ type LeaseResult struct {
 // Handler is implemented by a domain plugin, never by a host forwarding shim.
 type Handler interface {
 	Invoke(context.Context, Invocation) (Result, error)
+}
+
+type OperationInvoker interface {
+	InvokeOperation(context.Context, string, string, Invocation) (Result, error)
+}
+
+type CachedOperationInvoker interface {
+	InvokeCachedOperation(context.Context, string, string, Invocation) (Result, error)
 }
 
 type HostHandler interface {

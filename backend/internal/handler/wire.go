@@ -1,8 +1,6 @@
 package handler
 
 import (
-	"context"
-
 	"github.com/Wei-Shaw/sub2api/internal/config"
 	"github.com/Wei-Shaw/sub2api/internal/handler/admin"
 	"github.com/Wei-Shaw/sub2api/internal/securityaudit"
@@ -175,8 +173,9 @@ func ProvideSystemHandler(updateService *service.UpdateService, lockService *ser
 }
 
 // ProvideSettingHandler creates SettingHandler with version from BuildInfo
-func ProvideSettingHandler(settingService *service.SettingService, buildInfo BuildInfo, notificationEmailService *service.NotificationEmailService) *SettingHandler {
+func ProvideSettingHandler(settingService *service.SettingService, buildInfo BuildInfo, notificationEmailService *service.NotificationEmailService, pluginManager *service.PluginManager) *SettingHandler {
 	h := NewSettingHandler(settingService, buildInfo.Version)
+	h.pluginManager = pluginManager
 	h.SetNotificationEmailService(notificationEmailService)
 	return h
 }
@@ -339,11 +338,5 @@ func ProvideImageStudioRuntime(
 	executor *ImageStudioGatewayExecutor,
 ) (*service.ImageStudioRuntime, error) {
 	runtime := service.NewImageStudioRuntime(repo, studio, store, executor, service.ImageStudioRuntimeOptions{})
-	if !service.ImageStudioFeatureEnabled() {
-		return runtime, nil
-	}
-	if err := runtime.Start(context.Background()); err != nil {
-		return nil, err
-	}
 	return runtime, nil
 }

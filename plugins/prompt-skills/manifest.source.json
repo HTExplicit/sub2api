@@ -1,0 +1,20 @@
+{
+  "schema_version": 1,
+  "id": "codexrip.prompt-skills",
+  "name": "提示词与技能策略",
+  "version": "0.2.7",
+  "description": "提示词完整性、应用范围与协议载体策略",
+  "author": "HTExplicit",
+  "requires": { "sub2api": ">=0.2.7-0 <0.2.8", "tested_sub2api_versions": [], "plugin_protocol": 1, "transport_api": 1, "ui_bridge": 1, "extension_api": 1 },
+  "capabilities": [
+    { "id": "extensions.request.v1", "platform": "openai", "account_type": "*" },
+    { "id": "extensions.admin.v1", "platform": "*", "account_type": "*" }
+  ],
+  "operations": { "extensions.request.v1": ["prompt.plan"] },
+  "contributions": [
+    { "id": "prompt-policy", "slot": "admin.settings", "action": "prompt.describe", "entrypoint": "ui/index.html", "permission": "admin", "label": { "zh": "提示词应用策略", "en": "Prompt application policy" } }
+  ],
+  "runtimes": {},
+  "ui": { "entrypoint": "ui/index.html" },
+  "files": {}
+}

@@ -20,7 +20,8 @@ func hydrateManagedCindyCatalogChannel(channel *Channel) bool {
 	}
 
 	capabilities := CindyCapabilities()
-	mapping := make(map[string]string, len(capabilities)*2+len(cindyCompatibilityAliases))
+	aliases := CindyManagedCompatibilityAliases()
+	mapping := make(map[string]string, len(capabilities)*2+len(aliases))
 	for i := range capabilities {
 		capability := capabilities[i]
 		if !capability.PublicModel || len(capability.VerifiedEndpoints) == 0 {
@@ -29,8 +30,8 @@ func hydrateManagedCindyCatalogChannel(channel *Channel) bool {
 		mapping[capability.PublicID] = capability.LiveUpstreamID
 		mapping[capability.LiveUpstreamID] = capability.LiveUpstreamID
 	}
-	for alias, publicID := range cindyCompatibilityAliases {
-		if capability := cindyCapabilityByPublicID[publicID]; capability != nil && capability.PublicModel {
+	for alias, publicID := range aliases {
+		if capability, ok := resolveKnownCindyCapability(publicID); ok && capability.PublicModel {
 			mapping[alias] = capability.LiveUpstreamID
 		}
 	}
@@ -48,9 +49,9 @@ func isManagedCindyCatalogChannel(channel *Channel) bool {
 }
 
 func cindyInternalPublicModelIDs() []string {
-	models := make([]string, 0, len(cindyCapabilityCatalog))
-	for i := range cindyCapabilityCatalog {
-		capability := cindyCapabilityCatalog[i]
+	capabilities := CindyCapabilities()
+	models := make([]string, 0, len(capabilities))
+	for _, capability := range capabilities {
 		if capability.PublicModel && len(capability.VerifiedEndpoints) > 0 {
 			models = append(models, capability.PublicID)
 		}

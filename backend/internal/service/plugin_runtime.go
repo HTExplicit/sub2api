@@ -38,6 +38,10 @@ type pluginRuntime struct {
 	catalogCacheSize atomic.Int64
 	inFlight         atomic.Int64
 	draining         atomic.Bool
+	configuring      atomic.Bool
+	policyMu         sync.Mutex
+	policyLeaseID    uint64
+	policyLeases     map[uint64]context.CancelFunc
 	done             chan struct{}
 	doneOnce         sync.Once
 }
@@ -200,6 +204,9 @@ func (r *pluginRuntime) validateAndApplyNormalizedConfig(ctx context.Context, co
 	if err != nil {
 		return nil, fmt.Errorf("序列化插件规范化配置: %w", err)
 	}
+	r.configuring.Store(true)
+	defer r.configuring.Store(false)
+	r.cancelPolicyContexts()
 	applied, err := r.api.ApplyConfig(ctx, &pluginv1.ApplyConfigRequest{ConfigJson: configJSON})
 	if err != nil {
 		return nil, fmt.Errorf("应用插件配置失败: %w", err)
@@ -275,7 +282,7 @@ func (r *pluginRuntime) status(ctx context.Context) (*pluginv1.HealthResponse, e
 }
 
 func (r *pluginRuntime) beginRequest() bool {
-	if r == nil || r.draining.Load() {
+	if r == nil || r.draining.Load() || r.configuring.Load() {
 		return false
 	}
 	r.inFlight.Add(1)
@@ -296,7 +303,7 @@ func (r *pluginRuntime) drain(timeout time.Duration) {
 	if r == nil {
 		return
 	}
-	r.draining.Store(true)
+	r.beginDrain()
 	if r.inFlight.Load() == 0 {
 		r.doneOnce.Do(func() { close(r.done) })
 	}
@@ -310,6 +317,9 @@ func (r *pluginRuntime) drain(timeout time.Duration) {
 }
 
 func (r *pluginRuntime) kill() {
+	if r != nil {
+		r.beginDrain()
+	}
 	if r != nil && r.client != nil {
 		r.client.Kill()
 	}

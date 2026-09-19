@@ -74,19 +74,17 @@ WORKDIR /app/backend
 
 # Copy go mod files first (better caching)
 COPY backend/go.mod backend/go.sum ./
-COPY plugins/codex-runtime/go.mod plugins/codex-runtime/go.sum /app/plugins/codex-runtime/
-COPY plugins/model-policy/go.mod plugins/model-policy/go.sum /app/plugins/model-policy/
+COPY plugins/ /app/plugins/
 # Cache mount keeps the module cache across builds so a transient CDN blip on
 # retry resumes instead of re-fetching every zip from scratch.
 RUN --mount=type=cache,id=sub2api-gomod,target=/go/pkg/mod \
     go mod download && \
-    cd /app/plugins/codex-runtime && go mod download && \
-    cd /app/plugins/model-policy && go mod download
+    for module_dir in /app/plugins/*; do \
+      if [ -f "$module_dir/go.mod" ]; then (cd "$module_dir" && go mod download) || exit 1; fi; \
+    done
 
 # Copy backend source first
 COPY backend/ ./
-COPY plugins/codex-runtime/ /app/plugins/codex-runtime/
-COPY plugins/model-policy/ /app/plugins/model-policy/
 
 # Copy frontend dist from previous stage (must be after backend copy to avoid being overwritten)
 COPY --from=frontend-builder /app/backend/internal/web/dist ./internal/web/dist
@@ -107,34 +105,25 @@ RUN --mount=type=cache,id=sub2api-gomod,target=/go/pkg/mod \
     -trimpath \
     -o /app/sub2api \
     ./cmd/server && \
-    cd /app/plugins/codex-runtime && \
-    CGO_ENABLED=0 GOOS=${TARGET_OS} GOARCH=${TARGET_ARCH} go build -trimpath -o /tmp/codex-runtime-plugin ./cmd/plugin && \
-    cd /app/plugins/model-policy && \
-    CGO_ENABLED=0 GOOS=${TARGET_OS} GOARCH=${TARGET_ARCH} go build -trimpath -o /tmp/model-policy-plugin ./cmd/plugin && \
+    mkdir -p /tmp/plugin-binaries && \
+    for module_dir in /app/plugins/*; do \
+      if [ -f "$module_dir/go.mod" ]; then \
+        module_name="$(basename "$module_dir")" && \
+        (cd "$module_dir" && CGO_ENABLED=0 GOOS=${TARGET_OS} GOARCH=${TARGET_ARCH} \
+          go build -trimpath -o "/tmp/plugin-binaries/$module_name" ./cmd/plugin) || exit 1; \
+      fi; \
+    done && \
     cd /app/backend && \
-    go run ./cmd/package-plugin -generate-key /tmp/codex-runtime-publisher.key >/tmp/codex-runtime-publisher.json && \
-    mkdir -p /app/bundled-plugins && \
+    go run ./cmd/package-plugin -generate-key /tmp/plugin-publisher.key >/tmp/plugin-publisher.json && \
     go run ./cmd/package-plugin \
-      -source /app/plugins/codex-runtime \
-      -binary /tmp/codex-runtime-plugin \
+      -bundle-source /app/plugins/bundle.source.json \
+      -binary-dir /tmp/plugin-binaries \
       -platform "${TARGET_OS}-${TARGET_ARCH}" \
       -tested-host-version "${VERSION_VALUE}" \
-      -output /app/bundled-plugins/codex-runtime.s2plugin \
-      -bundle-lock /app/bundled-plugins/lock.json \
-      -migration codex-tickets-v1 \
-      -signing-key-file /tmp/codex-runtime-publisher.key \
+      -output /app/bundled-plugins \
+      -signing-key-file /tmp/plugin-publisher.key \
       -key-id codexrip-image-plugins-v1 && \
-    go run ./cmd/package-plugin \
-      -source /app/plugins/model-policy \
-      -binary /tmp/model-policy-plugin \
-      -platform "${TARGET_OS}-${TARGET_ARCH}" \
-      -tested-host-version "${VERSION_VALUE}" \
-      -output /app/bundled-plugins/model-policy.s2plugin \
-      -bundle-lock /app/bundled-plugins/lock.json \
-      -default-enabled \
-      -signing-key-file /tmp/codex-runtime-publisher.key \
-      -key-id codexrip-image-plugins-v1 && \
-    rm -f /tmp/codex-runtime-plugin /tmp/model-policy-plugin /tmp/codex-runtime-publisher.key /tmp/codex-runtime-publisher.json
+    rm -f /tmp/plugin-publisher.key /tmp/plugin-publisher.json
 
 # -----------------------------------------------------------------------------
 # Stage 3: PostgreSQL Client (version-matched with docker-compose)

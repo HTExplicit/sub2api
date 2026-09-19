@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"slices"
 	"sort"
 	"time"
 
@@ -21,7 +22,8 @@ func (m *PluginManager) ApplyRequestHeaders(ctx context.Context, account *Accoun
 	}
 	var ids []int64
 	for id, installation := range registry.installations {
-		if pluginHasCapability(installation, extensionv1.CapabilityRequest, account.Platform, account.Type) {
+		operations, explicit := installation.Manifest.Operations[extensionv1.CapabilityRequest]
+		if (!explicit || slices.Contains(operations, "inject")) && pluginHasCapability(installation, extensionv1.CapabilityRequest, account.Platform, account.Type) {
 			ids = append(ids, id)
 		}
 	}

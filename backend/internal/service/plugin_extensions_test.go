@@ -1,11 +1,44 @@
 package service
 
 import (
+	"encoding/json"
 	"testing"
 
 	extensionv1 "github.com/Wei-Shaw/sub2api/pkg/extensionapi/v1"
 	"github.com/stretchr/testify/require"
 )
+
+type pluginContributionCipher struct{}
+
+func (pluginContributionCipher) Encrypt(value string) (string, error) { return value, nil }
+func (pluginContributionCipher) Decrypt(value string) (string, error) { return value, nil }
+
+func TestPublicPluginSurfaceRetainsFailureAndHidesDisabledConfiguration(t *testing.T) {
+	m := NewPluginManager(nil, pluginContributionCipher{}, nil, PluginHostInfo{}, nil)
+	installation := &PluginInstallation{ID: 2, State: PluginStateError, ConfigEncrypted: `{"studio_enabled":true}`,
+		Manifest: PluginManifest{Contributions: []extensionv1.Contribution{
+			{ID: "image-studio", Slot: "surface", Permission: "user", ConfigFlag: "studio_enabled", Action: "private.action", Entrypoint: "ui/index.html"},
+			{ID: "settings", Slot: "admin.settings", Permission: "admin"},
+		}},
+		Bindings: []PluginBinding{{Capability: extensionv1.CapabilityRequest, Platform: "*", AccountType: "*", Enabled: true}},
+	}
+	m.publishExtensionRegistryLocked([]*PluginInstallation{installation}, "")
+	items := m.PublicContributions()
+	require.Len(t, items, 1)
+	require.False(t, items[0].Available)
+	raw, err := json.Marshal(items)
+	require.NoError(t, err)
+	require.NotContains(t, string(raw), "private.action")
+	require.NotContains(t, string(raw), "ui/index.html")
+	require.NotContains(t, string(raw), "studio_enabled")
+	installation.ConfigEncrypted = `{"studio_enabled":false}`
+	m.publishExtensionRegistryLocked([]*PluginInstallation{installation}, "")
+	require.Empty(t, m.PublicContributions())
+	installation.ConfigEncrypted = `{"studio_enabled":true}`
+	installation.Bindings[0].Enabled = false
+	m.publishExtensionRegistryLocked([]*PluginInstallation{installation}, "")
+	require.Empty(t, m.PublicContributions())
+}
 
 func TestPluginExtensionDesiredStateAndContributions(t *testing.T) {
 	m := NewPluginManager(nil, nil, nil, PluginHostInfo{}, nil)

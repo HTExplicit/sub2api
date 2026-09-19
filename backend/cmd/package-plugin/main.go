@@ -43,10 +43,14 @@ func main() {
 	flag.StringVar(&options.migration, "migration", "", "one-time migration profile recorded in the bundle lock")
 	flag.BoolVar(&options.defaultEnabled, "default-enabled", false, "initial activation when no saved plugin state exists")
 	generate := flag.String("generate-key", "", "create a new private key file; prints only its public key")
+	bundleSourcePath := flag.String("bundle-source", "", "first-party source inventory to package")
+	binaryDirectory := flag.String("binary-dir", "", "prebuilt module binaries for the bundle")
 	flag.Parse()
 	var err error
 	if *generate != "" {
 		err = generateKey(*generate)
+	} else if *bundleSourcePath != "" {
+		err = packageBundle(*bundleSourcePath, *binaryDirectory, options)
 	} else {
 		err = packagePlugin(options)
 	}

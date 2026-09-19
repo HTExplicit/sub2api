@@ -136,6 +136,7 @@ jobs:
             src/composables/__tests__/useAccountSelectionMetadata.spec.ts \
             src/api/__tests__/accountOperationIdempotency.spec.ts \
             src/components/plugins/__tests__/ExtensionSlot.spec.ts \
+            src/components/plugins/__tests__/ExtensionFields.spec.ts \
             src/components/admin/account/__tests__/BatchTestAccountModal.spec.ts \
             src/components/admin/account/__tests__/AccountBulkActionsBar.spec.ts \
             src/components/admin/account/__tests__/AccountActionMenu.spark_shadow.spec.ts \

@@ -291,7 +291,7 @@ func (r *pluginRepository) UpdateBindingsAndState(
 }
 
 func cancelPluginAccountJobs(ctx context.Context, tx *sql.Tx, pluginID int64) error {
-	rows, err := tx.QueryContext(ctx, `SELECT `+accountJobSelectColumns+` FROM admin_account_jobs WHERE kind=$1 AND metadata->>'plugin_id'=$2 AND status IN ('pending','running') ORDER BY id FOR UPDATE`, service.AccountJobKindExtensionOperation, fmt.Sprint(pluginID))
+	rows, err := tx.QueryContext(ctx, `SELECT `+accountJobSelectColumns+` FROM admin_account_jobs WHERE metadata->>'plugin_id'=$1 AND status IN ('pending','running') ORDER BY id FOR UPDATE`, fmt.Sprint(pluginID))
 	if err != nil {
 		return err
 	}

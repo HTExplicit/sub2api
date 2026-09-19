@@ -34,11 +34,15 @@
         "additionalProperties": false,
         "required": ["id", "platform", "account_type"],
         "properties": {
-          "id": { "enum": ["openai.oauth.outbound_transport.v1", "extensions.provider.v1", "extensions.catalog.v1", "extensions.request.v1", "extensions.scheduling.v1", "extensions.jobs.v1", "extensions.admin.v1", "extensions.ui.v1"] },
+          "id": { "enum": ["openai.oauth.outbound_transport.v1", "extensions.provider.v1", "extensions.catalog.v1", "extensions.request.v1", "extensions.scheduling.v1", "extensions.jobs.v1", "extensions.admin.v1", "extensions.ui.v1", "extensions.credentials.v1"] },
           "platform": { "type": "string", "minLength": 1 },
           "account_type": { "type": "string", "minLength": 1 }
         }
       }
+    },
+    "operations": {
+      "type": "object",
+      "additionalProperties": { "type": "array", "maxItems": 64, "uniqueItems": true, "items": { "type": "string", "minLength": 1, "maxLength": 80, "pattern": "^[a-z0-9]+([._-][a-z0-9]+)*$" } }
     },
     "dependencies": {
       "type": "array",
@@ -54,11 +58,26 @@
         "required": ["id", "slot", "label", "permission"],
         "properties": {
           "id": { "type": "string", "minLength": 1 },
-          "slot": { "enum": ["admin.page", "admin.settings", "account.actions", "account.details", "account.columns", "account.test", "group.actions", "group.details", "navigation", "theme", "usage.details"] },
+          "config_flag": { "type": "string", "pattern": "^[a-z][a-z0-9_]{0,63}$" },
+          "slot": { "enum": ["admin.page", "admin.settings", "account.actions", "account.details", "account.columns", "account.test", "group.actions", "group.details", "navigation", "theme", "usage.details", "surface"] },
           "label": { "type": "object", "minProperties": 1, "additionalProperties": { "type": "string" } },
           "permission": { "type": "string", "minLength": 1 },
           "action": { "type": "string" }, "entrypoint": { "type": "string", "pattern": "^ui/.+" },
           "order": { "type": "integer" },
+          "fields": {
+            "type": "array", "items": {
+              "type": "object", "additionalProperties": false,
+              "required": ["key", "kind", "label", "options_source", "default_label"],
+              "properties": {
+                "key": { "type": "string", "pattern": "^[a-z][a-z0-9_]{0,63}$" },
+                "kind": { "const": "select" },
+                "label": { "type": "object", "additionalProperties": { "type": "string" } },
+                "options_source": { "type": "string", "pattern": "^[a-z][a-z0-9_]{0,63}$" },
+                "default_label": { "type": "object", "additionalProperties": { "type": "string" } },
+                "default_source": { "type": "string", "pattern": "^[a-z][a-z0-9_]{0,63}$" }
+              }
+            }
+          },
           "account_filter": {
             "type": "object", "additionalProperties": false,
             "properties": {

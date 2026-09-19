@@ -362,11 +362,14 @@ func (s *AccountTestService) TestAccountConnection(c *gin.Context, accountID int
 	if err != nil {
 		return s.sendErrorAndEnd(c, "Account not found")
 	}
+	if err := EnsureCindyProviderAvailable(ctx, account); err != nil {
+		return s.sendErrorAndEnd(c, err.Error())
+	}
 	if testOpts.requireSupportedModel && strings.TrimSpace(modelID) != "" && !account.IsModelSupported(strings.TrimSpace(modelID)) {
 		s.sendEvent(c, TestEvent{Type: "error", Error: ErrAccountTestModelUnsupported.Error()})
 		return ErrAccountTestModelUnsupported
 	}
-	if err := ValidateAccountTestReasoning(account, modelID, mode, testOpts.ReasoningEffort); err != nil {
+	if err := ValidateAccountTestReasoningContext(ctx, account, modelID, mode, testOpts.ReasoningEffort); err != nil {
 		return s.sendErrorAndEnd(c, err.Error())
 	}
 	c.Set(accountTestReasoningContextKey, testOpts.ReasoningEffort)

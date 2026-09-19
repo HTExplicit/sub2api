@@ -1,4 +1,5 @@
 <template>
+  <ExtensionSurface name="account-taxonomy">
   <div class="min-w-0 border-b border-line bg-surface/70">
     <div class="relative border-b border-gray-200 p-3 dark:border-dark-700 lg:hidden" ref="mobileMenuRef">
       <button
@@ -95,9 +96,11 @@
       </button>
     </div>
   </div>
+  </ExtensionSurface>
 </template>
 
 <script setup lang="ts">
+import ExtensionSurface from '@/components/plugins/ExtensionSurface.vue'
 import { computed, nextTick, onMounted, onUnmounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import Icon from '@/components/icons/Icon.vue'

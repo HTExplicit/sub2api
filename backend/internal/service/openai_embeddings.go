@@ -24,6 +24,12 @@ func (s *OpenAIGatewayService) ForwardEmbeddings(
 	body []byte,
 	defaultMappedModel string,
 ) (*OpenAIForwardResult, error) {
+	pricingContext, pricingErr := CaptureCindyPricingContext(ctx, c, account)
+	if pricingErr != nil {
+		writeOpenAIEmbeddingsError(c, http.StatusServiceUnavailable, "api_error", "Provider is unavailable")
+		return nil, pricingErr
+	}
+	ctx = pricingContext
 	startTime := time.Now()
 
 	originalModel := strings.TrimSpace(gjson.GetBytes(body, "model").String())

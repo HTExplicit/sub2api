@@ -1,4 +1,5 @@
 <template>
+  <ExtensionSurface name="account-taxonomy">
   <AccountOperationDialog :job="operationJob"
     :show="show"
     :title="t('admin.accounts.bulkTaxonomy.title')"
@@ -51,9 +52,11 @@
       </button>
     </template>
   </AccountOperationDialog>
+  </ExtensionSurface>
 </template>
 
 <script setup lang="ts">
+import ExtensionSurface from '@/components/plugins/ExtensionSurface.vue'
 import { computed, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { adminAPI } from '@/api/admin'

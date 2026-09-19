@@ -1,4 +1,4 @@
-package service
+package catalog
 
 // cindyCapabilityCatalog is the complete Cindy inventory. Cindy accounts are
 // permanently free-only: the catalog itself contains exactly the authenticated

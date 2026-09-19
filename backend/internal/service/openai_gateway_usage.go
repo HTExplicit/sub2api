@@ -258,7 +258,7 @@ func (s *OpenAIGatewayService) RecordUsage(ctx context.Context, input *OpenAIRec
 		if !isUsagePricingUnavailableError(err) {
 			return err
 		}
-		if shouldFailClosedCindyTextPricing(account, billingModels) {
+		if shouldFailClosedCindyTextPricingContext(ctx, account, billingModels) {
 			return err
 		}
 		logger.L().With(
@@ -559,9 +559,11 @@ func (s *OpenAIGatewayService) hasIdentifiedOpenAIResponsePricing(ctx context.Co
 	if s.resolveOpenAIChannelPricing(ctx, model, apiKey) != nil {
 		return true, true
 	}
-	if CindyCapabilityCatalogFeatureEnabled() && account != nil && IsCindyAPIKeyAccount(account.Platform, account.Type, account.Credentials) {
-		_, hasCatalogPrice := CindyTextPricingForModel(model)
-		return hasCatalogPrice || CindyModelUsesExplicitZeroPrice(model), false
+	if cindyCatalogEnabledForBilling(ctx, account) && account != nil && IsCindyAPIKeyAccount(account.Platform, account.Type, account.Credentials) {
+		var pricing CindyTextPricing
+		var hasCatalogPrice bool
+		queryCindyPricingSnapshot(cindyPricingSnapshotFromContext(ctx, account), "CindyTextPricingForModel", model, []any{&pricing, &hasCatalogPrice})
+		return hasCatalogPrice || cindyZeroPriceForBilling(ctx, account, model), false
 	}
 	return s.billingService.HasIdentifiedTokenPricing(model), false
 }
@@ -601,9 +603,9 @@ func (s *OpenAIGatewayService) calculateOpenAIRecordUsageCost(
 		// 倍率与 image/video 按次口径一致：使用不含高峰因子的基础倍率
 		//（用户专属 > 分组 rate_multiplier > 系统默认），与分组表单的价格预览承诺一致。
 		pricePerCall := webSearchPricePerCallFromAPIKey(apiKey)
-		if pricePerCall == nil && CindyCapabilityCatalogFeatureEnabled() && account != nil &&
+		if pricePerCall == nil && cindyCatalogEnabledForBilling(ctx, account) && account != nil &&
 			IsCindyAPIKeyAccount(account.Platform, account.Type, account.Credentials) &&
-			(CindyModelUsesExplicitZeroPrice(billingModel) || strings.TrimSpace(billingModel) == CindyWebSearchModel) {
+			(cindyZeroPriceForBilling(ctx, account, billingModel) || strings.TrimSpace(billingModel) == CindyWebSearchModel) {
 			zeroPrice := 0.0
 			pricePerCall = &zeroPrice
 		}
@@ -761,9 +763,9 @@ func (s *OpenAIGatewayService) calculateOpenAIRecordUsageTokenCost(
 			LongContextBillingEnabled: longContextBillingGate,
 		})
 	}
-	if shouldUseCindyTextPricing(account, billingModel) {
+	if shouldUseCindyTextPricingContext(ctx, account, billingModel) {
 		longContextBillingEnabled := longContextBillingGate != nil && *longContextBillingGate
-		return calculateCindyCatalogTextCost(s.billingService, billingModel, tokens, multiplier, serviceTier, longContextBillingEnabled)
+		return calculateCindyCatalogTextCost(s.billingService, billingModel, tokens, multiplier, serviceTier, longContextBillingEnabled, cindyPricingSnapshotFromContext(ctx, account))
 	}
 	if s.resolver != nil && apiKey.Group != nil {
 		gid := apiKey.Group.ID
@@ -799,25 +801,39 @@ func hasCindyCompatibilityBillingModel(models []string) bool {
 }
 
 func shouldUseCindyTextPricing(account *Account, model string) bool {
-	if account == nil {
+	return shouldUseCindyTextPricingContext(context.Background(), account, model)
+}
+
+func shouldUseCindyTextPricingContext(ctx context.Context, account *Account, model string) bool {
+	if account == nil || !IsCindyRuntimeCompatibleAPIKeyAccount(account.Platform, account.Type, account.Credentials) {
 		return false
 	}
-	if IsCindyAPIKeyAccount(account.Platform, account.Type, account.Credentials) && CindyCapabilityCatalogFeatureEnabled() {
+	if IsCindyAPIKeyAccount(account.Platform, account.Type, account.Credentials) && cindyCatalogEnabledForBilling(ctx, account) {
 		return true
 	}
-	return IsCindyRuntimeCompatibleAPIKeyAccount(account.Platform, account.Type, account.Credentials) &&
-		isCindyCompatibilityBillingModel(model)
+	var pricing CindyTextPricing
+	var found bool
+	queryCindyPricingSnapshot(cindyPricingSnapshotFromContext(ctx, account), "CindyCompatibilityTextPricingForModel", model, []any{&pricing, &found})
+	return IsCindyRuntimeCompatibleAPIKeyAccount(account.Platform, account.Type, account.Credentials) && found
 }
 
 func shouldFailClosedCindyTextPricing(account *Account, models []string) bool {
+	return shouldFailClosedCindyTextPricingContext(context.Background(), account, models)
+}
+
+func shouldFailClosedCindyTextPricingContext(ctx context.Context, account *Account, models []string) bool {
 	if account == nil {
 		return false
 	}
-	if IsCindyAPIKeyAccount(account.Platform, account.Type, account.Credentials) && CindyCapabilityCatalogFeatureEnabled() {
+	if IsCindyAPIKeyAccount(account.Platform, account.Type, account.Credentials) && cindyCatalogEnabledForBilling(ctx, account) {
 		return true
 	}
-	return IsCindyRuntimeCompatibleAPIKeyAccount(account.Platform, account.Type, account.Credentials) &&
-		hasCindyCompatibilityBillingModel(models)
+	for _, model := range models {
+		if shouldUseCindyTextPricingContext(ctx, account, model) {
+			return true
+		}
+	}
+	return false
 }
 
 func (s *OpenAIGatewayService) calculateOpenAIImageCost(
@@ -874,11 +890,14 @@ func (s *OpenAIGatewayService) calculateOpenAIImageCost(
 		logger.LegacyPrintf("service.openai_gateway", "Calculate image channel cost failed: %v", err)
 	}
 
-	if CindyCapabilityCatalogFeatureEnabled() && account != nil && IsCindyAPIKeyAccount(account.Platform, account.Type, account.Credentials) {
-		if pricing, ok := CindyImagePricingForModel(billingModel); ok {
+	if cindyCatalogEnabledForBilling(ctx, account) && account != nil && IsCindyAPIKeyAccount(account.Platform, account.Type, account.Credentials) {
+		var pricing CindyImagePricing
+		var ok bool
+		queryCindyPricingSnapshot(cindyPricingSnapshotFromContext(ctx, account), "CindyImagePricingForModel", billingModel, []any{&pricing, &ok})
+		if ok {
 			return s.calculateCindyCatalogImageCost(billingModel, result, tokens, multiplier, pricing)
 		}
-		if CindyModelUsesExplicitZeroPrice(billingModel) {
+		if cindyZeroPriceForBilling(ctx, account, billingModel) {
 			return &CostBreakdown{BillingMode: string(BillingModeImage)}, nil
 		}
 		return nil, fmt.Errorf("%w for strict Cindy image model: %s", ErrModelPricingUnavailable, billingModel)

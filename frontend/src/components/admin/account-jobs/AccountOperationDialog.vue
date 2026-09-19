@@ -12,13 +12,17 @@
   </BaseDialog>
 </template>
 <script setup lang="ts">
-import { computed, defineAsyncComponent, onBeforeUnmount, shallowRef, watch } from 'vue'
+import { computed, defineAsyncComponent, onBeforeUnmount, shallowRef, watch, inject, provide } from 'vue'
+import { extensionAvailabilityKey } from '@/components/plugins/context'
 import { useI18n } from 'vue-i18n'
 import BaseDialog from '@/components/common/BaseDialog.vue'
 import type { useAccountJobsStore } from '@/stores/accountJobs'
 import type { AccountJob } from '@/api/admin/accountJobs'
 const props = withDefaults(defineProps<{ show: boolean; title: string; job?: AccountJob | null; showConfiguration?: boolean; width?: 'narrow' | 'normal' | 'wide' | 'extra-wide' | 'full' }>(), { job: null, width: 'wide', showConfiguration: true })
 const emit = defineEmits<{ close: [] }>()
+const featureAvailable = inject(extensionAvailabilityKey, computed(() => true))
+// Durable progress, history and cancellation remain owned by the host.
+provide(extensionAvailabilityKey, computed(() => !!props.job || featureAvailable.value))
 const { t } = useI18n()
 const AccountOperationProgress = defineAsyncComponent(() => import('./AccountOperationProgress.vue'))
 const operations = shallowRef<ReturnType<typeof useAccountJobsStore> | null>(null)

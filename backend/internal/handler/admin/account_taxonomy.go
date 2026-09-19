@@ -9,6 +9,7 @@ import (
 	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/response"
 	"github.com/Wei-Shaw/sub2api/internal/service"
+	extensionv1 "github.com/Wei-Shaw/sub2api/pkg/extensionapi/v1"
 	"github.com/gin-gonic/gin"
 )
 
@@ -356,11 +357,16 @@ func (h *AccountHandler) BulkUpdateAccountTaxonomy(c *gin.Context) {
 		return
 	}
 	req.AccountIDs = normalizeInt64IDList(req.AccountIDs)
+	owner, err := service.ValidateAccountTaxonomyPlan(c.Request.Context(), extensionv1.TaxonomyBulkPlan{AccountIDs: req.AccountIDs, HasFilters: req.Filters != nil, ExpectedMatchCount: req.ExpectedMatchCount, FolderAction: req.FolderAction, FolderID: req.FolderID, TagAddIDs: req.TagAddIDs, TagRemoveIDs: req.TagRemoveIDs})
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
 	seeds := accountJobSeeds(req.AccountIDs)
 	if len(seeds) == 0 {
 		seeds = ordinalAccountJobSeeds(1)
 	}
-	h.submitAccountJob(c, service.AccountJobKindBulkTaxonomy, req, seeds)
+	h.submitAccountJob(c, service.AccountJobKindBulkTaxonomy, req, seeds, owner)
 }
 
 func splitQueryValues(c *gin.Context, keys ...string) []string {

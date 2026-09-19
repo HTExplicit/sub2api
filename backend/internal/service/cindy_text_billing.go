@@ -2,6 +2,7 @@ package service
 
 import (
 	"fmt"
+	extensionv1 "github.com/Wei-Shaw/sub2api/pkg/extensionapi/v1"
 	"math"
 )
 
@@ -16,22 +17,31 @@ func calculateCindyCatalogTextCost(
 	rateMultiplier float64,
 	serviceTier string,
 	longContextBillingEnabled bool,
+	snapshots ...*extensionv1.CindyPricingSnapshot,
 ) (*CostBreakdown, error) {
 	if billingService == nil {
 		return nil, fmt.Errorf("%w for strict Cindy text model %q: billing service is unavailable", ErrModelPricingUnavailable, model)
 	}
 
-	pricing, ok := CindyTextPricingForModel(model)
+	var snapshot *extensionv1.CindyPricingSnapshot
+	if len(snapshots) > 0 {
+		snapshot = snapshots[0]
+	}
+	var pricing CindyTextPricing
+	var ok bool
+	queryCindyPricingSnapshot(snapshot, "CindyTextPricingForModel", model, []any{&pricing, &ok})
 	if !ok {
-		pricing, ok = CindyCompatibilityTextPricingForModel(model)
+		queryCindyPricingSnapshot(snapshot, "CindyCompatibilityTextPricingForModel", model, []any{&pricing, &ok})
 	}
 	if !ok {
-		if CindyModelUsesExplicitZeroPrice(model) {
+		var zero bool
+		queryCindyPricingSnapshot(snapshot, "CindyModelUsesExplicitZeroPrice", model, []any{&zero})
+		if zero {
 			return &CostBreakdown{BillingMode: string(BillingModeToken)}, nil
 		}
 		return nil, fmt.Errorf("%w for strict Cindy text model %q", ErrModelPricingUnavailable, model)
 	}
-	discount, err := cindyCatalogCostDiscount(model)
+	discount, err := cindyCatalogCostDiscount(model, snapshot)
 	if err != nil {
 		return nil, err
 	}
@@ -51,7 +61,7 @@ func calculateCindyCatalogTextCost(
 	// Other models with an absent cache-write price remain fail-closed.
 	if (tokens.CacheCreationTokens > 0 || tokens.CacheCreation5mTokens > 0 || tokens.CacheCreation1hTokens > 0) &&
 		!pricing.CacheCreationInputTokenCostPresent {
-		pricing = applyCindyGPT56CacheCreationFallback(model, pricing)
+		pricing = applyCindyGPT56CacheCreationFallback(model, pricing, snapshot)
 	}
 	if (tokens.CacheCreationTokens > 0 || tokens.CacheCreation5mTokens > 0 || tokens.CacheCreation1hTokens > 0) &&
 		!pricing.CacheCreationInputTokenCostPresent {
@@ -67,8 +77,14 @@ func calculateCindyCatalogTextCost(
 	return cost, nil
 }
 
-func applyCindyGPT56CacheCreationFallback(model string, pricing CindyTextPricing) CindyTextPricing {
-	capability, ok := resolveKnownCindyCapability(model)
+func applyCindyGPT56CacheCreationFallback(model string, pricing CindyTextPricing, snapshots ...*extensionv1.CindyPricingSnapshot) CindyTextPricing {
+	var snapshot *extensionv1.CindyPricingSnapshot
+	if len(snapshots) > 0 {
+		snapshot = snapshots[0]
+	}
+	var capability CindyCapability
+	var ok bool
+	queryCindyPricingSnapshot(snapshot, "resolveKnownCindyCapability", model, []any{&capability, &ok})
 	if !ok {
 		return pricing
 	}
@@ -88,8 +104,14 @@ func applyCindyGPT56CacheCreationFallback(model string, pricing CindyTextPricing
 	return pricing
 }
 
-func cindyCatalogCostDiscount(model string) (float64, error) {
-	capability, ok := resolveKnownCindyCapability(model)
+func cindyCatalogCostDiscount(model string, snapshots ...*extensionv1.CindyPricingSnapshot) (float64, error) {
+	var snapshot *extensionv1.CindyPricingSnapshot
+	if len(snapshots) > 0 {
+		snapshot = snapshots[0]
+	}
+	var capability CindyCapability
+	var ok bool
+	queryCindyPricingSnapshot(snapshot, "resolveKnownCindyCapability", model, []any{&capability, &ok})
 	if !ok {
 		return 0, nil
 	}

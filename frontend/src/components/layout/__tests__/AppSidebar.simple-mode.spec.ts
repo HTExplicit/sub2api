@@ -3,6 +3,9 @@ import { createMemoryHistory, createRouter } from 'vue-router'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import AppSidebar from '../AppSidebar.vue'
 
+const pluginRegistry = vi.hoisted(() => ({ items: [] as Array<{ id: string; slot: string }>, refresh: vi.fn(async () => {}) }))
+vi.mock('@/stores/pluginExtensions', () => ({ usePluginExtensions: () => pluginRegistry }))
+
 const mocks = vi.hoisted(() => ({
   appStore: {
     sidebarCollapsed: false,
@@ -67,6 +70,7 @@ async function renderSidebar(options: { admin?: boolean; imageStudio?: boolean }
   mocks.authStore.isAdmin = options.admin === true
   mocks.authStore.isSimpleMode = true
   mocks.appStore.cachedPublicSettings.image_studio_enabled = options.imageStudio !== false
+  pluginRegistry.items = options.imageStudio === false ? [] : [{ id: 'image-studio', slot: 'surface' }]
 
   const router = createRouter({
     history: createMemoryHistory(),

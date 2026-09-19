@@ -18,7 +18,7 @@
               {{ title }}
             </h3>
             <button
-              v-if="showCloseButton"
+              v-if="showCloseButton || !extensionAvailable"
               @click="emit('close')"
               class="-mr-2 rounded-none p-2 text-muted transition-colors hover:bg-gray-100 hover:text-gray-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/30 focus-visible:ring-offset-2 dark:hover:bg-dark-700 dark:hover:text-dark-200 dark:focus-visible:ring-offset-dark-900"
               aria-label="Close modal"
@@ -28,12 +28,13 @@
           </div>
 
           <!-- Body -->
-          <div ref="modalBodyRef" class="modal-body">
+          <p v-if="!extensionAvailable" role="status" class="px-5 pt-3 text-sm text-muted">{{ extensionUnavailableMessage }}</p>
+          <div ref="modalBodyRef" class="modal-body" :inert="!extensionAvailable">
             <slot></slot>
           </div>
 
           <!-- Footer -->
-          <div v-if="$slots.footer" class="modal-footer">
+          <div v-if="$slots.footer" class="modal-footer" :inert="!extensionAvailable">
             <slot name="footer"></slot>
           </div>
         </div>
@@ -43,7 +44,8 @@
 </template>
 
 <script setup lang="ts">
-import { computed, watch, onMounted, onUnmounted, ref, nextTick } from 'vue'
+import { computed, watch, onMounted, onUnmounted, ref, nextTick, inject } from 'vue'
+import { extensionAvailabilityKey, extensionUnavailableMessageKey } from '@/components/plugins/context'
 import Icon from '@/components/icons/Icon.vue'
 import {
   DEFAULT_DIALOG_Z_INDEX,
@@ -56,6 +58,8 @@ import {
 
 // 生成唯一ID以避免多个对话框时ID冲突(计数器位于 dialogStack 模块作用域,不会随实例重置)
 const dialogId = nextDialogId()
+const extensionAvailable = inject(extensionAvailabilityKey, computed(() => true))
+const extensionUnavailableMessage = inject(extensionUnavailableMessageKey, computed(() => ''))
 
 // 焦点管理
 const dialogRef = ref<HTMLElement | null>(null)

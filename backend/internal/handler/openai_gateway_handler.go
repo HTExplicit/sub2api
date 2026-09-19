@@ -324,7 +324,7 @@ func usageRecordContext(parent context.Context, base context.Context) context.Co
 	if requestID, _ := parent.Value(ctxkey.RequestID).(string); strings.TrimSpace(requestID) != "" {
 		base = context.WithValue(base, ctxkey.RequestID, strings.TrimSpace(requestID))
 	}
-	return service.CopyQuotaActivityContext(parent, base)
+	return service.CopyProviderPricingContext(parent, service.CopyQuotaActivityContext(parent, base))
 }
 
 func wrapUsageRecordTaskContext(parent context.Context, task service.UsageRecordTask) service.UsageRecordTask {
@@ -3444,6 +3444,14 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 			zap.String("schedule_layer", scheduleDecision.Layer),
 			zap.Int("candidate_count", scheduleDecision.CandidateCount),
 		)
+		pricingContext, pricingErr := service.CaptureCindyPricingContext(ctx, c, account)
+		if pricingErr != nil {
+			closeOpenAIClientWS(wsConn, coderws.StatusInternalError, "provider policy unavailable")
+			return
+		}
+		ctx = pricingContext
+		var turnProviderPricing atomic.Pointer[context.Context]
+		turnProviderPricing.Store(&pricingContext)
 		quotaUsageCtx := context.WithValue(ctx, ctxkey.AccountID, account.ID)
 		service.ObserveQuotaAccount(quotaUsageCtx, account.ID)
 
@@ -3538,6 +3546,11 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 				return mapping.MappedModel, nil
 			},
 			BeforeTurn: func(turn int) error {
+				currentPricing, err := service.RefreshCindyPricingContext(ctx, account)
+				if err != nil {
+					return newOpenAIWSLocalTurnCloseError(coderws.StatusTryAgainLater, "provider policy unavailable", err)
+				}
+				turnProviderPricing.Store(&currentPricing)
 				// turn==1 的会话屏蔽已由握手层检查覆盖；连接内 flag 只拦截后续 turn。
 				if cyberBlockedThisConn {
 					return newOpenAIWSLocalTurnCloseError(coderws.StatusPolicyViolation, cyberSessionBlockedClientMsg, nil)
@@ -3671,7 +3684,8 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 				turnUsageInput := turnUsageSnapshot.Input(result, h.apiKeyService, turnRecordPricingAt)
 				accountID := account.ID
 				requestID := result.RequestID
-				h.submitOpenAIUsageRecordTask(quotaUsageCtx, result, func(taskCtx context.Context) {
+				turnUsageCtx := service.CopyProviderPricingContext(*turnProviderPricing.Load(), quotaUsageCtx)
+				h.submitOpenAIUsageRecordTask(turnUsageCtx, result, func(taskCtx context.Context) {
 					if err := h.gatewayService.RecordUsage(taskCtx, turnUsageInput); err != nil {
 						reqLog.Error("openai.websocket_record_usage_failed",
 							zap.Int64("account_id", accountID),

@@ -8,6 +8,7 @@ import { useAuthStore } from '@/stores/auth'
 import { useAppStore } from '@/stores/app'
 import { useAdminSettingsStore } from '@/stores/adminSettings'
 import { useAdminComplianceStore } from '@/stores/adminCompliance'
+import { usePluginExtensions } from '@/stores/pluginExtensions'
 import { useNavigationLoadingState } from '@/composables/useNavigationLoading'
 import { useRoutePrefetch } from '@/composables/useRoutePrefetch'
 import { getSetupStatus } from '@/api/setup'
@@ -983,12 +984,13 @@ router.beforeEach(async (to, _from, next) => {
     return
   }
 
-  if (
-    to.meta.requiresImageStudio &&
-    (!appStore.publicSettingsLoaded || appStore.cachedPublicSettings?.image_studio_enabled !== true)
-  ) {
-    next(authStore.isAdmin ? '/admin/dashboard' : '/dashboard')
-    return
+  if (to.meta.requiresImageStudio) {
+    const extensions = usePluginExtensions()
+    await extensions.refresh()
+    if (!extensions.items.some(item => item.slot === 'surface' && item.id === 'image-studio')) {
+      next(authStore.isAdmin ? '/admin/dashboard' : '/dashboard')
+      return
+    }
   }
 
   // 订阅功能是 opt-out 开关：只有显式 false 才拦截「我的订阅」页直达。

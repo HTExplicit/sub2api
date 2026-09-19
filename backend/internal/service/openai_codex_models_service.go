@@ -2272,7 +2272,7 @@ func cindyCodexReasoningEffortDescription(effort string) string {
 // so live IDs, the management-only special IDs, and removed paid models cannot
 // leak.
 func BuildCindyCodexModelsManifest(ifNoneMatch string) (*OpenAIModelsResponse, error) {
-	models := make([]cindyCodexModel, 0, len(cindyCapabilityCatalog))
+	models := make([]cindyCodexModel, 0, len(CindyCapabilities()))
 	for priority, modelID := range CindyCodexPublicModelIDs() {
 		capability, ok := resolveKnownCindyCapability(modelID)
 		if !ok {

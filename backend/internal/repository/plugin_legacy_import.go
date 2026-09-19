@@ -27,7 +27,7 @@ func (r *pluginRepository) ImportLegacyPluginState(ctx context.Context, plugin *
 	if imported {
 		return nil
 	}
-	if profile == "" {
+	if profile == "" || profile == "cindy-provider-v1" || profile == "image-tools-v1" {
 		return nil
 	}
 	if profile != "codex-tickets-v1" {

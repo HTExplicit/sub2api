@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"sync"
 	"time"
+
+	extensionv1 "github.com/Wei-Shaw/sub2api/pkg/extensionapi/v1"
 )
 
 type ImageStudioRuntimeOptions struct {
@@ -47,9 +49,13 @@ func NewImageStudioRuntime(
 	executor ImageStudioExecutor,
 	options ImageStudioRuntimeOptions,
 ) *ImageStudioRuntime {
-	return &ImageStudioRuntime{
+	runtime := &ImageStudioRuntime{
 		repo: repo, studio: studio, store: store, executor: executor, options: options.normalized(),
 	}
+	if studio != nil {
+		studio.runtime = runtime
+	}
+	return runtime
 }
 
 func (r *ImageStudioRuntime) Start(parent context.Context) error {
@@ -149,6 +155,17 @@ func (r *ImageStudioRuntime) processClaim(ctx context.Context, claim *ImageStudi
 		return
 	}
 	job := claim.Job
+	policyCtx, release, err := bindProcessExtensionContext(ctx, "*", "*", extensionv1.Invocation{Capability: extensionv1.CapabilityRequest, Operation: "image.studio.plan"})
+	if err != nil {
+		r.failClaim(ctx, job.ID, claim.Item.ID, newImageStudioError(503, "studio_unavailable", "Image Studio is unavailable"))
+		return
+	}
+	defer release()
+	ctx = policyCtx
+	if err := EnsureImageStudioAvailable(ctx); err != nil {
+		r.failClaim(ctx, job.ID, claim.Item.ID, err)
+		return
+	}
 	key, err := r.studio.eligibleAPIKey(ctx, job.UserID, job.APIKeyID)
 	if err != nil {
 		r.failClaim(ctx, job.ID, claim.Item.ID, err)
@@ -227,6 +244,9 @@ func (r *ImageStudioRuntime) cleanupLoop(ctx context.Context) {
 }
 
 func (r *ImageStudioRuntime) cleanup(ctx context.Context) {
+	if !ImageStudioFeatureEnabled() {
+		return
+	}
 	now := time.Now()
 	_ = r.repo.ExpireRequests(ctx, now)
 	artifacts, err := r.repo.ListExpiredArtifacts(ctx, now, 100)

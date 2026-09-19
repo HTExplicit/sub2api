@@ -1,0 +1,27 @@
+{
+  "schema_version": 1,
+  "id": "codexrip.account-tools",
+  "name": "账号工具",
+  "version": "0.2.7",
+  "description": "账号分类操作策略与连接测试选项",
+  "author": "HTExplicit",
+  "requires": { "sub2api": ">=0.2.7-0 <0.2.8", "tested_sub2api_versions": [], "plugin_protocol": 1, "transport_api": 1, "ui_bridge": 1, "extension_api": 1 },
+  "capabilities": [
+    { "id": "extensions.admin.v1", "platform": "*", "account_type": "*" },
+    { "id": "extensions.ui.v1", "platform": "*", "account_type": "*" }
+  ],
+  "operations": { "extensions.admin.v1": ["taxonomy.name", "taxonomy.order", "taxonomy.bulk", "taxonomy.assignment", "taxonomy.delete", "test.reasoning", "test.batch"] },
+  "contributions": [
+    {
+      "id": "test-reasoning", "slot": "account.test", "permission": "admin",
+      "label": { "zh": "推理强度", "en": "Reasoning effort" },
+      "fields": [{ "key": "reasoning_effort", "kind": "select", "label": { "zh": "推理强度", "en": "Reasoning effort" }, "options_source": "reasoning_efforts", "default_label": { "zh": "默认", "en": "Default" }, "default_source": "default_reasoning_effort" }]
+    },
+    { "id": "account-taxonomy", "slot": "surface", "permission": "admin", "label": { "zh": "账号分类", "en": "Account classification" } },
+    { "id": "account-batch-test", "slot": "surface", "permission": "admin", "label": { "zh": "批量测试", "en": "Batch testing" } },
+    { "id": "account-tools-settings", "slot": "admin.settings", "action": "tools.describe", "entrypoint": "ui/index.html", "permission": "admin", "label": { "zh": "账号工具", "en": "Account tools" } }
+  ],
+  "runtimes": {},
+  "ui": { "entrypoint": "ui/index.html" },
+  "files": {}
+}

@@ -167,7 +167,7 @@ func (h *AccountHandler) SetAccountJobService(jobs *service.AccountJobService) {
 	h.accountJobs = jobs
 }
 
-func (h *AccountHandler) submitAccountJob(c *gin.Context, kind string, payload any, seeds []service.AccountJobItemSeed) {
+func (h *AccountHandler) submitAccountJob(c *gin.Context, kind string, payload any, seeds []service.AccountJobItemSeed, owner ...int64) {
 	if h == nil || h.accountJobs == nil {
 		response.ErrorFrom(c, infraerrors.New(503, "ACCOUNT_JOBS_UNAVAILABLE", "account jobs are unavailable"))
 		return
@@ -181,7 +181,11 @@ func (h *AccountHandler) submitAccountJob(c *gin.Context, kind string, payload a
 		response.ErrorFrom(c, infraerrors.BadRequest("ACCOUNT_JOB_PAYLOAD_INVALID", "invalid account job payload"))
 		return
 	}
-	metadata, _ := json.Marshal(map[string]any{"target_count": len(seeds)})
+	meta := map[string]any{"target_count": len(seeds)}
+	if len(owner) > 0 && owner[0] > 0 {
+		meta["plugin_id"] = owner[0]
+	}
+	metadata, _ := json.Marshal(meta)
 	job, replayed, err := h.accountJobs.Submit(c.Request.Context(), actorID, kind, c.GetHeader("Idempotency-Key"), raw, metadata, seeds)
 	if err != nil {
 		response.ErrorFrom(c, accountJobHTTPError(err))

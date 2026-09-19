@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "upstream_base": "aea725f2ea644d5592d0bbb1d63b607efa7e200a",
-  "scope": "Sub2API downstream diff including this working tree; paths are candidate owners, not completed review findings",
+  "scope": "Initial Sub2API downstream inventory; newer modules and adapters still need inventory refresh. Candidate owners are not completed review findings.",
   "total_paths": 2061,
   "generated_assets_and_locks": 533,
   "handwritten_and_test_paths": 1528,

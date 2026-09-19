@@ -108,11 +108,14 @@ func TestDisablingPluginCancelsOwnedJobsInSameTransaction(t *testing.T) {
 		_, _ = integrationDB.ExecContext(ctx, `DELETE FROM sub2api_plugin_installations WHERE id=$1`, plugin.ID)
 		_, _ = integrationDB.ExecContext(ctx, `DELETE FROM users WHERE id=$1`, user.ID)
 	})
-	for range 2 {
-		job, _, err := jobs.Create(ctx, service.CreateAccountJobParams{CreatedBy: user.ID, Kind: service.AccountJobKindExtensionOperation, IdempotencyKey: uuid.NewString(), RequestHash: strings.Repeat("a", 64), PayloadCipher: "test-payload", PayloadExpires: time.Now().Add(time.Hour), Metadata: json.RawMessage(fmt.Sprintf(`{"plugin_id":%d}`, plugin.ID)), Items: []service.AccountJobItemSeed{{Ordinal: 1, Metadata: json.RawMessage(`{}`)}}, Attempt: 1})
+	for _, kind := range []string{service.AccountJobKindExtensionOperation, service.AccountJobKindBatchTest} {
+		job, _, err := jobs.Create(ctx, service.CreateAccountJobParams{CreatedBy: user.ID, Kind: kind, IdempotencyKey: uuid.NewString(), RequestHash: strings.Repeat("a", 64), PayloadCipher: "test-payload", PayloadExpires: time.Now().Add(time.Hour), Metadata: json.RawMessage(fmt.Sprintf(`{"plugin_id":%d}`, plugin.ID)), Items: []service.AccountJobItemSeed{{Ordinal: 1, Metadata: json.RawMessage(`{}`)}}, Attempt: 1})
 		require.NoError(t, err)
 		ids = append(ids, job.ID)
 	}
+	unowned, _, err := jobs.Create(ctx, service.CreateAccountJobParams{CreatedBy: user.ID, Kind: service.AccountJobKindBatchTest, IdempotencyKey: uuid.NewString(), RequestHash: strings.Repeat("b", 64), PayloadCipher: "other-payload", PayloadExpires: time.Now().Add(time.Hour), Metadata: json.RawMessage(`{}`), Items: []service.AccountJobItemSeed{{Ordinal: 1, Metadata: json.RawMessage(`{}`)}}, Attempt: 1})
+	require.NoError(t, err)
+	ids = append(ids, unowned.ID)
 	_, err = integrationDB.ExecContext(ctx, `UPDATE admin_account_jobs SET status='running',started_at=NOW() WHERE id=$1`, ids[1])
 	require.NoError(t, err)
 	for i := range plugin.Bindings {
@@ -126,4 +129,7 @@ func TestDisablingPluginCancelsOwnedJobsInSameTransaction(t *testing.T) {
 	running, err := jobs.Get(ctx, ids[1])
 	require.NoError(t, err)
 	require.NotNil(t, running.CancelRequestedAt)
+	unowned, err = jobs.Get(ctx, unowned.ID)
+	require.NoError(t, err)
+	require.Equal(t, service.AccountJobStatusPending, unowned.Status)
 }

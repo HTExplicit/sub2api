@@ -140,6 +140,12 @@ func (m *PluginManager) bootstrapBundle(ctx context.Context) error {
 			seed.Enabled = true
 			seed.Config, _ = json.Marshal(map[string]any{"enabled": config.Enabled, "fail_closed": config.FailClosed, "proxy_url": config.HarvestProxyURL, "models": models})
 		}
+		if entry.Migration == "cindy-provider-v1" {
+			seed.Config, _ = json.Marshal(LegacyCindyProviderConfig())
+		}
+		if entry.Migration == "image-tools-v1" {
+			seed.Config, _ = json.Marshal(LegacyImageToolsConfig())
+		}
 		seed, err = store.LegacyBundleSeed(ctx, entry.ID, entry.Migration, seed)
 		if err != nil {
 			return fmt.Errorf("read plugin migration seed: %w", err)

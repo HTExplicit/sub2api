@@ -518,9 +518,9 @@ func (s *BusinessSystemPromptService) compileBusinessSystemPromptSnapshot(
 		snapshot.RegistryUpstreamSourceID = publication.Version.UpstreamSourceID
 		snapshot.RegistryUpstreamRoot = publication.Version.UpstreamRoot
 		snapshot.RegistryPublicRoot = publication.Version.PublicRoot
-		snapshot.baseSHA256 = publication.Prompt.RawSHA256
-		snapshot.effectiveSHA256 = publication.Prompt.EffectiveSHA256
-		snapshot.effectiveByteLength = len([]byte(publication.EffectivePromptBody))
+		snapshot.BaseSHA256 = publication.Prompt.RawSHA256
+		snapshot.EffectiveSHA256 = publication.Prompt.EffectiveSHA256
+		snapshot.EffectiveByteLength = len([]byte(publication.EffectivePromptBody))
 		return snapshot, nil
 	}
 	return BusinessSystemPromptSnapshot{}, fmt.Errorf("%w: unsupported composition", ErrBusinessSystemPromptUnavailable)

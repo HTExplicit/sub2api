@@ -45,7 +45,7 @@
     <div class="flex flex-wrap gap-2">
       <template v-if="selectedIds.length > 0">
         <button @click="$emit('delete')" class="btn btn-danger btn-sm">{{ t('admin.accounts.bulkActions.delete') }}</button>
-        <button data-test="batch-test" @click="$emit('test')" class="btn btn-secondary btn-sm">{{ t('admin.accounts.batchTest.title') }}</button>
+        <ExtensionSurface name="account-batch-test"><button data-test="batch-test" @click="$emit('test')" class="btn btn-secondary btn-sm">{{ t('admin.accounts.batchTest.title') }}</button></ExtensionSurface>
         <ExtensionSlot name="account.actions" :account-ids="selectedIds" :accounts="selectedAccounts" />
         <button @click="$emit('reset-status')" class="btn btn-secondary btn-sm">{{ t('admin.accounts.bulkActions.resetStatus') }}</button>
         <button @click="$emit('refresh-token')" class="btn btn-secondary btn-sm">{{ t('admin.accounts.bulkActions.refreshToken') }}</button>
@@ -63,19 +63,20 @@
         <button @click="$emit('toggle-schedulable', true)" class="btn btn-success btn-sm">{{ t('admin.accounts.bulkActions.enableScheduling') }}</button>
         <button @click="$emit('toggle-schedulable', false)" class="btn btn-warning btn-sm">{{ t('admin.accounts.bulkActions.disableScheduling') }}</button>
         <button @click="$emit('edit-selected')" class="btn btn-primary btn-sm">{{ t('admin.accounts.bulkActions.edit') }}</button>
-        <button @click="$emit('taxonomy-selected')" class="btn btn-secondary btn-sm">{{ t('admin.accounts.bulkTaxonomy.selectedAction') }}</button>
+        <ExtensionSurface name="account-taxonomy"><button @click="$emit('taxonomy-selected')" class="btn btn-secondary btn-sm">{{ t('admin.accounts.bulkTaxonomy.selectedAction') }}</button></ExtensionSurface>
       </template>
       <button @click="$emit('edit-filtered')" class="btn btn-primary btn-sm">
         {{ t('admin.accounts.bulkEdit.submit') }}
       </button>
-      <button @click="$emit('taxonomy-filtered')" class="btn btn-secondary btn-sm">
+      <ExtensionSurface name="account-taxonomy"><button @click="$emit('taxonomy-filtered')" class="btn btn-secondary btn-sm">
         {{ t('admin.accounts.bulkTaxonomy.filteredAction') }}
-      </button>
+      </button></ExtensionSurface>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
+import ExtensionSurface from '@/components/plugins/ExtensionSurface.vue'
 import { useI18n } from 'vue-i18n'
 import type { AccountSelectionIdentity } from '@/composables/useAccountSelectionMetadata'
 import ExtensionSlot from '@/components/plugins/ExtensionSlot.vue'

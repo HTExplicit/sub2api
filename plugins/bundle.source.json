@@ -1,0 +1,11 @@
+{
+  "schema_version": 1,
+  "plugins": [
+    { "directory": "codex-runtime", "default_enabled": true, "migration": "codex-tickets-v1" },
+    { "directory": "model-policy", "default_enabled": true },
+    { "directory": "prompt-skills", "default_enabled": true },
+    { "directory": "account-tools", "default_enabled": true },
+    { "directory": "cindy-provider", "default_enabled": true, "migration": "cindy-provider-v1" },
+    { "directory": "image-tools", "default_enabled": true, "migration": "image-tools-v1" }
+  ]
+}

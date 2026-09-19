@@ -45,6 +45,7 @@ type PluginManifest struct {
 	Files         map[string]string          `json:"files"`
 	Dependencies  []extensionv1.Dependency   `json:"dependencies,omitempty"`
 	Contributions []extensionv1.Contribution `json:"contributions,omitempty"`
+	Operations    map[string][]string        `json:"operations,omitempty"`
 }
 
 type PluginRequirements struct {
@@ -192,13 +193,43 @@ func (m PluginManifest) ValidateForRuntime(runtimeKey string) error {
 	if m.Requires.ExtensionAPI != 0 && m.Requires.ExtensionAPI != extensionv1.Version {
 		return errors.New("扩展 API 版本不兼容")
 	}
+	for capability, operations := range m.Operations {
+		declared := false
+		for _, entry := range m.Capabilities {
+			if entry.ID == capability {
+				declared = true
+				break
+			}
+		}
+		if !declared || !extensionv1.IsCapability(capability) || len(operations) > 64 {
+			return errors.New("扩展操作必须属于已声明的能力")
+		}
+		seenOperations := map[string]bool{}
+		for _, operation := range operations {
+			if len(operation) == 0 || len(operation) > 80 || !regexp.MustCompile(`^[a-z0-9]+(?:[._-][a-z0-9]+)*$`).MatchString(operation) || seenOperations[operation] {
+				return errors.New("扩展操作标识无效或重复")
+			}
+			seenOperations[operation] = true
+		}
+	}
 	seen := make(map[string]bool)
 	for _, contribution := range m.Contributions {
+		if contribution.ConfigFlag != "" && !regexp.MustCompile(`^[a-z][a-z0-9_]{0,63}$`).MatchString(contribution.ConfigFlag) {
+			return errors.New("插件界面条件必须引用布尔配置字段")
+		}
 		if contribution.ID == "" || seen[contribution.ID] || !extensionv1.ValidSlot(contribution.Slot) ||
 			contribution.Permission == "" || len(contribution.Label) == 0 {
 			return errors.New("插件界面贡献的标识、挂载点或权限无效")
 		}
 		seen[contribution.ID] = true
+		fieldKeys := map[string]bool{}
+		for _, field := range contribution.Fields {
+			validKey := regexp.MustCompile(`^[a-z][a-z0-9_]{0,63}$`)
+			if field.Kind != "select" || !validKey.MatchString(field.Key) || !validKey.MatchString(field.OptionsSource) || field.Key == "constructor" || field.Key == "prototype" || fieldKeys[field.Key] || len(field.Label) == 0 || len(field.DefaultLabel) == 0 || (field.DefaultSource != "" && !validKey.MatchString(field.DefaultSource)) {
+				return errors.New("插件表单字段声明无效")
+			}
+			fieldKeys[field.Key] = true
+		}
 		if contribution.Entrypoint != "" && (!safePluginRelativePath(contribution.Entrypoint) || !strings.HasPrefix(contribution.Entrypoint, "ui/")) {
 			return errors.New("插件界面贡献入口必须位于 ui/ 目录")
 		}

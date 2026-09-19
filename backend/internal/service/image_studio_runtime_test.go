@@ -9,6 +9,8 @@ import (
 	"testing"
 	"time"
 
+	extensionv1 "github.com/Wei-Shaw/sub2api/pkg/extensionapi/v1"
+
 	"github.com/stretchr/testify/require"
 )
 
@@ -18,6 +20,53 @@ type imageStudioRuntimeRepoFake struct {
 	recovered atomic.Int32
 	completed atomic.Int32
 	failed    atomic.Int32
+}
+
+type imageStudioBoundPolicy struct {
+	promptPolicyFixture
+	runtime *pluginRuntime
+}
+
+func (p imageStudioBoundPolicy) BindOperationContext(ctx context.Context, _, _ string, _ extensionv1.Invocation) (context.Context, context.CancelFunc, error) {
+	return p.runtime.bindPolicyContext(ctx)
+}
+
+func TestImageStudioDisableCancelsHostExecutionAndKeepsSavedInputs(t *testing.T) {
+	previousFlag := cindyRolloutFeatures.imageStudio
+	cindyRolloutFeatures.imageStudio = true
+	previousProvider := processExtensionOperations.Load()
+	t.Cleanup(func() {
+		cindyRolloutFeatures.imageStudio = previousFlag
+		processExtensionOperations.Store(previousProvider)
+	})
+	plugin := &pluginRuntime{}
+	processExtensionOperations.Store(&extensionOperationProvider{invoker: imageStudioBoundPolicy{runtime: plugin}})
+	group, key, account := canonicalImageStudioFixture()
+	repo := &imageStudioRuntimeRepoFake{}
+	store := &imageStudioStoreFake{}
+	executor := &blockingImageStudioExecutor{started: make(chan struct{}, 1), release: make(chan struct{})}
+	studio := NewImageStudioService(repo, &imageStudioAPIKeyRepoFake{keys: []APIKey{key}}, &imageStudioAccountReaderFake{accounts: map[int64][]Account{group.ID: {account}}}, store)
+	runtime := NewImageStudioRuntime(repo, studio, store, executor, ImageStudioRuntimeOptions{})
+	claim := &ImageStudioClaim{Job: ImageStudioJob{ID: 1, UserID: key.UserID, APIKeyID: key.ID, Model: ImageStudioModelGPTImage2, Mode: ImageStudioModeGenerate, Prompt: "draw", Count: 1}, Item: ImageStudioItem{ID: 1, JobID: 1}}
+	done := make(chan struct{})
+	go func() { defer close(done); runtime.processClaim(context.Background(), claim) }()
+	select {
+	case <-executor.started:
+	case <-time.After(time.Second):
+		t.Fatal("execution did not start")
+	}
+	plugin.beginDrain()
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("plugin disable did not cancel execution")
+	}
+	require.EqualValues(t, 1, repo.failed.Load())
+	require.Zero(t, repo.completed.Load())
+	require.Empty(t, store.removed)
+	runtime.processClaim(context.Background(), claim)
+	require.EqualValues(t, 2, repo.failed.Load(), "pending work fails without starting more upstream IO")
+	require.Zero(t, executor.active.Load())
 }
 
 func (f *imageStudioRuntimeRepoFake) RecoverInterrupted(context.Context) error {
@@ -88,6 +137,9 @@ func (e *blockingImageStudioExecutor) Execute(ctx context.Context, _ ImageStudio
 }
 
 func TestImageStudioRuntimeRecoversInterruptedAndCapsGlobalExecutionAtFour(t *testing.T) {
+	previous := cindyRolloutFeatures.imageStudio
+	cindyRolloutFeatures.imageStudio = true
+	t.Cleanup(func() { cindyRolloutFeatures.imageStudio = previous })
 	group, key, account := canonicalImageStudioFixture()
 	repo := &imageStudioRuntimeRepoFake{claims: make(chan *ImageStudioClaim, 8)}
 	for i := 1; i <= 8; i++ {

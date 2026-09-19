@@ -326,7 +326,7 @@ func initializeApplication(buildInfo handler.BuildInfo) (*Application, error) {
 	coordinator := securityaudit.NewCoordinator(legacyEngine, promptService)
 	gatewayHandler := handler.ProvideGatewayHandler(gatewayService, openAIGatewayService, geminiMessagesCompatService, antigravityGatewayService, userService, concurrencyService, billingCacheService, usageService, apiKeyService, usageRecordWorkerPool, errorPassthroughService, contentModerationService, userMessageQueueService, configConfig, settingService, coordinator)
 	openAIGatewayHandler := handler.ProvideOpenAIGatewayHandler(openAIGatewayService, gatewayService, pluginManager, concurrencyService, billingCacheService, apiKeyService, usageRecordWorkerPool, errorPassthroughService, contentModerationService, opsService, grokQuotaService, accountTrafficObserver, configConfig, coordinator)
-	handlerSettingHandler := handler.ProvideSettingHandler(settingService, buildInfo, notificationEmailService)
+	handlerSettingHandler := handler.ProvideSettingHandler(settingService, buildInfo, notificationEmailService, pluginManager)
 	totpHandler := handler.NewTotpHandler(totpService)
 	passkeyRepository := repository.NewPasskeyRepository(db)
 	passkeySessionStore := repository.NewPasskeySessionStore(redisClient)
@@ -367,6 +367,11 @@ func initializeApplication(buildInfo handler.BuildInfo) (*Application, error) {
 	stepUpAuthMiddleware := middleware.NewStepUpAuthMiddleware(totpService, userService, settingService)
 	engine := server.ProvideRouter(configConfig, handlers, jwtAuthMiddleware, optionalJWTAuthMiddleware, adminAuthMiddleware, apiKeyAuthMiddleware, auditLogMiddleware, stepUpAuthMiddleware, apiKeyService, subscriptionService, opsService, settingService, compositeRouteResolver, redisClient)
 	httpServer := server.ProvideHTTPServer(configConfig, engine)
+	imageStudioGatewayExecutor := handler.NewImageStudioGatewayExecutor(openAIGatewayHandler, subscriptionService)
+	imageStudioRuntime, err := handler.ProvideImageStudioRuntime(imageStudioRepository, imageStudioService, imageStudioArtifactStore, imageStudioGatewayExecutor)
+	if err != nil {
+		return nil, err
+	}
 	opsMetricsCollector := service.ProvideOpsMetricsCollector(opsRepository, settingRepository, accountRepository, concurrencyService, db, redisClient, configConfig)
 	opsAggregationService := service.ProvideOpsAggregationService(opsRepository, settingRepository, db, redisClient, configConfig)
 	opsAlertEvaluatorService := service.ProvideOpsAlertEvaluatorService(opsService, opsRepository, emailService, redisClient, configConfig, proxyRepository)
@@ -389,17 +394,13 @@ func initializeApplication(buildInfo handler.BuildInfo) (*Application, error) {
 	openAIQuotaAutoResetService := service.ProvideOpenAIQuotaAutoResetService(accountRepository, openAIQuotaService, rateLimitService, idempotencyCoordinator, auditLogService, settingService, leaderLockCache)
 	cindyHealthRepository := repository.NewCindyHealthRepository(db)
 	cindyHealthService := service.ProvideCindyHealthService(accountRepository, accountCredentialIdentityRepository, cindyHealthRepository, gatewayCache, openAIGatewayService, gatewayService)
-	imageStudioGatewayExecutor := handler.NewImageStudioGatewayExecutor(openAIGatewayHandler, subscriptionService)
-	imageStudioRuntime, err := handler.ProvideImageStudioRuntime(imageStudioRepository, imageStudioService, imageStudioArtifactStore, imageStudioGatewayExecutor)
-	if err != nil {
-		return nil, err
-	}
 	v := provideCleanup(client, redisClient, opsMetricsCollector, opsAggregationService, opsAlertEvaluatorService, opsCleanupService, opsScheduledReportService, opsSystemLogSink, opsService, opsIngressRejectAggregator, apiKeyService, authCacheInvalidationWorker, schedulerSnapshotService, tokenRefreshService, accountExpiryService, cnProviderBalanceCheckService, openAICodexVersionSyncService, codexClientIdentityBackfillService, proxyExpiryService, subscriptionExpiryService, usageCleanupService, idempotencyCleanupService, batchImageCleanupService, batchImageWorkerRuntime, pricingService, emailQueueService, billingCacheService, usageRecordWorkerPool, subscriptionService, oAuthService, openAIOAuthService, geminiOAuthService, antigravityOAuthService, grokOAuthService, openAIGatewayService, scheduledTestRunnerService, backupService, paymentOrderExpiryService, channelMonitorRunner, channelMonitorV2Aggregator, userPlatformQuotaUsageFlusher, upstreamBillingProbeService, ollamaCloudUsageService, auditLogService, openAIQuotaAutoResetService, promptService, businessSystemPromptService, remoteSkillRegistryService, accountJobRuntime, cindyHealthService, cindyBalanceProbeService, imageStudioRuntime, pluginManager)
 	application := &Application{
 		Server:        httpServer,
 		PromptAudit:   promptService,
 		PluginManager: pluginManager,
 		AccountJobs:   accountJobRuntime,
+		ImageStudio:   imageStudioRuntime,
 		Cleanup:       v,
 	}
 	return application, nil
@@ -412,6 +413,7 @@ type Application struct {
 	PromptAudit   *securityaudit.PromptService
 	PluginManager *service.PluginManager
 	AccountJobs   *service.AccountJobRuntime
+	ImageStudio   *service.ImageStudioRuntime
 	Cleanup       func()
 }
 

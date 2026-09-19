@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"log/slog"
-	"net/http"
 	"strings"
 	"sync"
 	"time"
@@ -53,19 +52,7 @@ func ClassifyCindyHealthSignal(account *Account, statusCode int, body []byte) Ci
 	if account == nil || !hasCanonicalCindyProviderIdentity(account) {
 		return CindyHealthSignalNone
 	}
-	if statusCode == http.StatusUnauthorized {
-		return CindyHealthSignalBanned
-	}
-	if !CindyBalanceDetectionFeatureEnabled() {
-		return CindyHealthSignalNone
-	}
-	if ClassifyCindyBalanceInsufficient(account, statusCode, body) != CindyBalanceSignalNone {
-		return CindyHealthSignalExactBudget
-	}
-	if statusCode == http.StatusForbidden {
-		return CindyHealthSignalForbidden
-	}
-	return CindyHealthSignalNone
+	return CindyHealthSignal(classifyCindyProviderResponse(statusCode, body).Health)
 }
 
 type CindyHealthEpisode struct {

@@ -1,26 +1,15 @@
 <template>
-  <label v-if="levels.length" class="mt-3 flex flex-col gap-1.5 text-sm font-medium">
-    {{ t('admin.accounts.testReasoning.label') }}
-    <Select :model-value="modelValue" :options="options" :disabled="disabled"
-      @update:model-value="value => emit('update:modelValue', typeof value === 'string' ? value : '')" />
-  </label>
+  <ExtensionFields v-if="model?.reasoning_efforts?.length" name="account.test"
+    :values="{ reasoning_effort: modelValue }" :context="{ reasoning_efforts: model.reasoning_efforts, default_reasoning_effort: model.default_reasoning_effort }" :disabled="disabled"
+    @update:values="value => emit('update:modelValue', value.reasoning_effort || '')" @validity="value => emit('validity', value)" />
 </template>
-
 <script setup lang="ts">
-import { computed, watch } from 'vue'
-import { useI18n } from 'vue-i18n'
-import Select from '@/components/common/Select.vue'
+import { watch } from 'vue'
 import type { AccountAvailableModel } from '@/types'
-
+import ExtensionFields from '@/components/plugins/ExtensionFields.vue'
 const props = defineProps<{ modelValue: string; model?: AccountAvailableModel; disabled?: boolean }>()
-const emit = defineEmits<{ 'update:modelValue': [value: string] }>()
-const { t } = useI18n()
-const levels = computed(() => [...new Set(props.model?.reasoning_efforts || [])])
-const options = computed(() => [
-  { value: '', label: t('admin.accounts.testReasoning.default') },
-  ...levels.value.map(value => ({ value, label: value }))
-])
-watch([() => props.model?.id, levels], () => {
-  if (props.modelValue && !levels.value.includes(props.modelValue)) emit('update:modelValue', '')
+const emit = defineEmits<{ 'update:modelValue': [value: string]; validity: [valid: boolean] }>()
+watch(() => props.model?.reasoning_efforts, levels => {
+  if (!levels?.length) { if (props.modelValue) emit('update:modelValue', ''); emit('validity', true) }
 }, { immediate: true })
 </script>
