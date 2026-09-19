@@ -913,6 +913,11 @@ func (c *schedulerCache) mgetChunked(ctx context.Context, keys []string) ([]any,
 	return out, nil
 }
 
+// buildSchedulerMetadataAccount builds the partial candidate projection used by
+// the scheduler snapshot. It intentionally omits credential-bound material
+// (including Codex turn-state tickets) and the full credential identity. Gates
+// that depend on those fields must run on the authoritative account returned by
+// GetAccount/recheckSelectedOpenAIAccountFromDB, never on this projection.
 func buildSchedulerMetadataAccount(account service.Account) service.Account {
 	return service.Account{
 		ID:                      account.ID,
@@ -1007,8 +1012,9 @@ func filterSchedulerCredentials(credentials map[string]any) map[string]any {
 	if len(credentials) == 0 {
 		return nil
 	}
-	// Candidate-list admission evaluates the account override before hydrating
-	// the full account. Preserve routing and capability fields used by provider gates.
+	// Candidate-list admission evaluates projection-safe routing and capability
+	// fields before hydrating the full account. Credential-bound identity and
+	// ticket fields are deliberately excluded; see buildSchedulerMetadataAccount.
 	keys := []string{"model_mapping", "compact_model_mapping", "api_key", "project_id", "oauth_type", "plan_type", "account_scheduling_threshold", "base_url", "openai_capabilities"}
 	filtered := make(map[string]any)
 	for _, key := range keys {

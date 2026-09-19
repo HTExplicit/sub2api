@@ -117,6 +117,11 @@ func (r *accountRepository) SeedCodexTicketRenewals(ctx context.Context, models 
 	if err != nil {
 		return err
 	}
+	// The scheduler metadata projection intentionally omits ticket material, so
+	// the authoritative full-account snapshot must be refreshed after a restart.
+	// Otherwise a valid durable ticket can exist while the cached account still
+	// appears ticketless to the full-account gate.
+	syncAccountIDs := make([]int64, 0, len(accounts))
 	for i := range accounts {
 		if !service.CodexTicketAccountEligible(&accounts[i]) {
 			continue
@@ -128,7 +133,11 @@ func (r *accountRepository) SeedCodexTicketRenewals(ctx context.Context, models 
 			if err := r.seedCodexTicket(ctx, accounts[i].ID, model, length, now); err != nil {
 				return err
 			}
+			syncAccountIDs = append(syncAccountIDs, accounts[i].ID)
 		}
+	}
+	if len(syncAccountIDs) > 0 {
+		r.syncSchedulerAccountSnapshots(ctx, syncAccountIDs)
 	}
 	return nil
 }

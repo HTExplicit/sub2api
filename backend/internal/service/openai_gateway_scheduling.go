@@ -1298,7 +1298,10 @@ func (s *OpenAIGatewayService) selectAccountWithLoadAwareness(ctx context.Contex
 			continue
 		}
 		accountRequestedModel := openAIRequestedModelForAccount(ctx, acc, requestedModel)
-		if s.isOpenAIAccountRequestRuntimeBlockedContext(ctx, acc, accountRequestedModel, requireCompact) {
+		// This candidate list is the partial scheduler projection. Credential-bound
+		// gates run after resolveFreshSchedulableOpenAIAccount/recheck reads the
+		// authoritative account; doing so here would misclassify valid tickets.
+		if s.isOpenAIAccountCandidateRuntimeBlockedContext(ctx, acc, accountRequestedModel, requireCompact) {
 			filterStats.exclude("runtime_blocked")
 			filterStats.observeRuntimeCooldown(s, acc.ID)
 			continue
