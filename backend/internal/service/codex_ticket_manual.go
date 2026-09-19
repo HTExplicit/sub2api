@@ -12,6 +12,19 @@ import (
 
 type codexTicketUpstreamError struct{ message string }
 
+// Ticket preparation can refresh credentials without enrolling the account in
+// business scheduling or replacing an administrator's status/error decision.
+type codexTicketCredentialContextKey struct{}
+
+func withCodexTicketCredentials(ctx context.Context) context.Context {
+	return context.WithValue(ctx, codexTicketCredentialContextKey{}, true)
+}
+
+func isCodexTicketCredentialContext(ctx context.Context) bool {
+	ticket, _ := ctx.Value(codexTicketCredentialContextKey{}).(bool)
+	return ticket
+}
+
 func (e *codexTicketUpstreamError) Error() string { return e.message }
 
 // Shared by manual jobs and automatic renewal, across administrators.
@@ -114,7 +127,7 @@ func (s *OpenAIGatewayService) runCodexTicketAttempt(parent context.Context, id 
 			}
 			defer prepared.transport.CloseIdleConnections()
 		}
-		token, _, err := s.GetAccessToken(ctx, account)
+		token, _, err := s.GetAccessToken(withCodexTicketCredentials(ctx), account)
 		if err != nil || strings.TrimSpace(token) == "" {
 			return CodexTicketFailure("ticket_token")
 		}

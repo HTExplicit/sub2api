@@ -227,3 +227,37 @@ func TestCodexTicketEligibilityIndependentOfAccountStatus(t *testing.T) {
 		require.False(t, CodexTicketAccountEligible(a))
 	}
 }
+
+type ticketTokenFailureRepo struct {
+	*codexTicketMemoryStore
+	statusWrites int
+}
+
+func (r *ticketTokenFailureRepo) SetError(context.Context, int64, string) error {
+	r.statusWrites++
+	return nil
+}
+
+func TestCodexTicketExpiredCredentialFailurePreservesAccountStatus(t *testing.T) {
+	a := ticketTestAccount(41)
+	a.Status, a.Schedulable, a.ErrorMessage = "disabled", false, "original diagnostic"
+	a.Credentials["expires_at"] = time.Now().Add(-time.Minute).Format(time.RFC3339)
+	delete(a.Credentials, "refresh_token")
+	r := &ticketTokenFailureRepo{codexTicketMemoryStore: newCodexTicketMemoryStore(a)}
+	provider := NewOpenAITokenProvider(r, nil, nil)
+	s := ticketTestService(t, config.OpenAICodexTicketConfig{Enabled: true, HarvestProxyURL: "http://proxy.example.com:8080"}, &codexTicketFuncUpstream{do: func(*http.Request) (*http.Response, error) {
+		t.Fatal("invalid credentials must not reach the upstream")
+		return nil, nil
+	}})
+	s.accountRepo, s.openAITokenProvider = r, provider
+	result := s.HarvestCodexTicket(context.Background(), a.ID, "gpt-6-astra", "manual", 0, false)
+	require.False(t, result.Success)
+	require.Equal(t, "ticket_token", result.Code)
+	require.Zero(t, r.statusWrites)
+	require.Equal(t, "disabled", r.account.Status)
+	require.False(t, r.account.Schedulable)
+	require.Equal(t, "original diagnostic", r.account.ErrorMessage)
+	_, err := provider.GetAccessToken(context.Background(), a)
+	require.Error(t, err)
+	require.Equal(t, 1, r.statusWrites, "ordinary inference still quarantines unusable credentials")
+}

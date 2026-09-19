@@ -162,7 +162,9 @@ func (p *OpenAITokenProvider) GetAccessToken(ctx context.Context, account *Accou
 			const reason = "openai access_token expired and refresh_token is missing"
 			// 永久故障：缺失 refresh_token 时账号无法自愈，必须立即从调度池剔除，
 			// 否则会被反复选中、每次都在 token 阶段直接返回错误，对用户呈现持续 502。
-			p.disableAccountMissingRefreshToken(account, reason)
+			if !isCodexTicketCredentialContext(ctx) {
+				p.disableAccountMissingRefreshToken(account, reason)
+			}
 			return "", errors.New(reason)
 		}
 		needsRefresh = false

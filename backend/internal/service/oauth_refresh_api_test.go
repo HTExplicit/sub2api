@@ -208,6 +208,37 @@ func TestRefreshIfNeeded_Success(t *testing.T) {
 	require.Equal(t, 1, executor.refreshCalls)
 }
 
+func TestRefreshIfNeeded_TicketPreparationAllowsInactiveOpenAIWithoutChangingStatus(t *testing.T) {
+	for _, status := range []string{"disabled", "error"} {
+		t.Run(status, func(t *testing.T) {
+			a := &Account{ID: 41, Platform: PlatformOpenAI, Type: AccountTypeOAuth, Status: status, Schedulable: false, ErrorMessage: "keep diagnostic", Credentials: map[string]any{"access_token": "old", "refresh_token": "refresh"}}
+			repo := &refreshAPIAccountRepo{account: a}
+			executor := &refreshAPIExecutorStub{needsRefresh: true, credentials: map[string]any{"access_token": "new", "refresh_token": "rotated"}}
+			api := NewOAuthRefreshAPI(repo, nil)
+			ordinary, err := api.RefreshIfNeeded(context.Background(), a, executor, time.Minute)
+			require.NoError(t, err)
+			require.False(t, ordinary.Refreshed)
+			require.Zero(t, executor.refreshCalls)
+			result, err := api.RefreshIfNeeded(withCodexTicketCredentials(context.Background()), a, executor, time.Minute)
+			require.NoError(t, err)
+			require.True(t, result.Refreshed)
+			require.Equal(t, 1, executor.refreshCalls)
+			require.Equal(t, 1, repo.updateCredentialsCalls)
+			require.Equal(t, status, repo.account.Status)
+			require.False(t, repo.account.Schedulable)
+			require.Equal(t, "keep diagnostic", repo.account.ErrorMessage)
+		})
+	}
+	// A ticket context is not a generic bypass for inactive providers.
+	a := &Account{ID: 42, Platform: PlatformAnthropic, Type: AccountTypeOAuth, Status: "disabled"}
+	executor := &refreshAPIExecutorStub{needsRefresh: true}
+	api := NewOAuthRefreshAPI(&refreshAPIAccountRepo{account: a}, nil)
+	result, err := api.RefreshIfNeeded(withCodexTicketCredentials(context.Background()), a, executor, time.Minute)
+	require.NoError(t, err)
+	require.False(t, result.Refreshed)
+	require.Zero(t, executor.refreshCalls)
+}
+
 func TestRefreshIfNeeded_UpdateCredentialsPreservesRateLimitState(t *testing.T) {
 	resetAt := time.Now().Add(45 * time.Minute)
 	account := &Account{
