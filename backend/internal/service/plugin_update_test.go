@@ -1,0 +1,66 @@
+package service
+
+import (
+	"bytes"
+	"context"
+	"crypto/ed25519"
+	"crypto/rand"
+	"encoding/base64"
+	"testing"
+
+	"github.com/stretchr/testify/require"
+)
+
+func TestPluginUpdateRejectsChangedVersionAndSignatureBeforeExecution(t *testing.T) {
+	public, private, err := ed25519.GenerateKey(rand.Reader)
+	require.NoError(t, err)
+	cfg := testPluginConfig(t.TempDir(), false)
+	cfg.Plugins.TrustedPublishers["update-test"] = base64.StdEncoding.EncodeToString(public)
+	archive := buildTestPluginArchive(t, private, "update-test")
+	installer := NewPluginPackageInstaller(cfg, PluginHostInfo{Version: "0.1.179"})
+	installed, err := installer.Install(context.Background(), bytes.NewReader(archive), nil)
+	require.NoError(t, err)
+	installed.ID, installed.Revision = 7, 4
+	repo := &pluginTokenRepository{installation: installed}
+	manager := NewPluginManager(repo, pluginTokenEncryptor{}, cfg, PluginHostInfo{Version: "0.1.179"}, nil)
+	// Repeating exactly the accepted package is a read, even with an old revision.
+	result, err := manager.Update(context.Background(), 7, 3, "previous-digest", bytes.NewReader(archive), nil)
+	require.NoError(t, err)
+	require.Equal(t, installed.PackageSHA256, result.PackageSHA256)
+	manifest := installed.Manifest
+	manifest.Description = "changed content without a version increment"
+	changed := buildPluginArchive(t, manifest, private, "update-test", nil)
+	_, err = manager.Update(context.Background(), 7, 4, installed.PackageSHA256, bytes.NewReader(changed), nil)
+	require.ErrorContains(t, err, "newer immutable version")
+	manifest.Version = "1.0.1"
+	changed = buildPluginArchive(t, manifest, private, "update-test", nil)
+	_, err = manager.Update(context.Background(), 7, 3, installed.PackageSHA256, bytes.NewReader(changed), nil)
+	require.ErrorIs(t, err, ErrPluginStateChanged)
+	_, otherKey, err := ed25519.GenerateKey(rand.Reader)
+	require.NoError(t, err)
+	invalid := buildPluginArchive(t, manifest, otherKey, "update-test", nil)
+	_, err = manager.Update(context.Background(), 7, 4, installed.PackageSHA256, bytes.NewReader(invalid), nil)
+	require.ErrorContains(t, err, "签名校验失败")
+	require.Equal(t, installed, repo.installation)
+}
+
+type conflictingPluginConfigRepository struct{ *pluginConfigRepository }
+
+func (*conflictingPluginConfigRepository) UpdateConfig(context.Context, int64, string, string) error {
+	return ErrPluginStateChanged
+}
+
+func TestPluginConfigurationConflictDoesNotApplyOrCancelWork(t *testing.T) {
+	installation := &PluginInstallation{ID: 9, Revision: 3}
+	repo := &conflictingPluginConfigRepository{&pluginConfigRepository{installation: installation}}
+	client := &normalizingPluginClient{normalized: []byte(`{"enabled":true}`)}
+	runtime := &pluginRuntime{installation: installation, api: client}
+	work, release, err := runtime.bindPolicyContext(context.Background())
+	require.NoError(t, err)
+	defer release()
+	manager := &PluginManager{repo: repo, encryptor: pluginTokenEncryptor{}, runtimes: map[int64]*pluginRuntime{9: runtime}}
+	_, err = manager.SaveConfig(context.Background(), 9, []byte(`{}`))
+	require.ErrorIs(t, err, ErrPluginStateChanged)
+	require.Empty(t, client.applied)
+	require.NoError(t, work.Err())
+}

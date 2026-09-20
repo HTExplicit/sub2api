@@ -1,5 +1,12 @@
 export default {
   plugins: {
+    updating: 'Updating',
+    updatePackage: 'Update package',
+    pinnedVersion: 'Version pinned across host upgrades',
+    followsBundle: 'Follows the host bundle',
+    followBundle: 'Follow bundled version',
+    updateAccepted: 'Update accepted; replacing this plugin while preserving its configuration',
+    followBundleAccepted: 'Selected the version bundled with this host',
     title: 'Plugin Management',
     description: 'Install, configure and enable independent feature plugins. Disabling a plugin removes its features while retaining existing data.',
     extensionUnavailable: 'Plugin unavailable; check its status in plugin management',

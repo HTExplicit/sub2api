@@ -12,7 +12,8 @@ import (
 
 func (r *pluginRepository) BundleApplied(ctx context.Context, key, bundle string) (bool, error) {
 	var applied bool
-	err := r.db.QueryRowContext(ctx, `SELECT user_removed OR (completed AND bundle_sha256=$2) FROM sub2api_plugin_bootstrap WHERE plugin_key=$1`, key, bundle).Scan(&applied)
+	err := r.db.QueryRowContext(ctx, `SELECT COALESCE((SELECT user_removed OR (completed AND bundle_sha256=$2) FROM sub2api_plugin_bootstrap WHERE plugin_key=$1),false)
+		OR EXISTS(SELECT 1 FROM sub2api_plugin_installations WHERE plugin_key=$1 AND (update_policy='pinned' OR state='updating'))`, key, bundle).Scan(&applied)
 	if errors.Is(err, sql.ErrNoRows) {
 		return false, nil
 	}
@@ -47,12 +48,16 @@ func (r *pluginRepository) PrepareBundledPlugin(ctx context.Context, plugin *ser
 	}
 	var oldID int64
 	var oldConfig string
+	var oldPolicy string
 	var oldBindings []service.PluginBinding
-	err = tx.QueryRowContext(ctx, `SELECT id,config_encrypted FROM sub2api_plugin_installations WHERE plugin_key=$1 FOR UPDATE`, plugin.PluginKey).Scan(&oldID, &oldConfig)
+	err = tx.QueryRowContext(ctx, `SELECT id,config_encrypted,update_policy FROM sub2api_plugin_installations WHERE plugin_key=$1 FOR UPDATE`, plugin.PluginKey).Scan(&oldID, &oldConfig, &oldPolicy)
 	if err != nil && !errors.Is(err, sql.ErrNoRows) {
 		return nil, err
 	}
 	if oldID > 0 {
+		if oldPolicy == service.PluginUpdatePinned {
+			return nil, nil
+		}
 		if oldConfig != "" {
 			config = oldConfig
 		}
@@ -92,11 +97,11 @@ func (r *pluginRepository) PrepareBundledPlugin(ctx context.Context, plugin *ser
 		return nil, err
 	}
 	var id int64
-	err = tx.QueryRowContext(ctx, `INSERT INTO sub2api_plugin_installations(plugin_key,name,version,description,author,manifest,artifact_data,artifact_path,install_path,binary_path,binary_sha256,signature_status,state,config_encrypted,last_error,installed_at,updated_at)
-		VALUES($1,$2,$3,$4,$5,$6::jsonb,$7,$8,$9,$10,$11,$12,'disabled',$13,'',NOW(),NOW())
+	err = tx.QueryRowContext(ctx, `INSERT INTO sub2api_plugin_installations(plugin_key,name,version,description,author,manifest,artifact_data,artifact_path,install_path,binary_path,binary_sha256,signature_status,state,config_encrypted,last_error,installed_at,updated_at,package_sha256,update_policy)
+		VALUES($1,$2,$3,$4,$5,$6::jsonb,$7,$8,$9,$10,$11,$12,'disabled',$13,'',NOW(),NOW(),encode(sha256($7),'hex'),'bundled')
 		ON CONFLICT(plugin_key) DO UPDATE SET name=EXCLUDED.name,version=EXCLUDED.version,description=EXCLUDED.description,author=EXCLUDED.author,manifest=EXCLUDED.manifest,
 		artifact_data=EXCLUDED.artifact_data,artifact_path=EXCLUDED.artifact_path,install_path=EXCLUDED.install_path,binary_path=EXCLUDED.binary_path,binary_sha256=EXCLUDED.binary_sha256,
-		signature_status=EXCLUDED.signature_status,state='disabled',config_encrypted=CASE WHEN sub2api_plugin_installations.config_encrypted='' THEN EXCLUDED.config_encrypted ELSE sub2api_plugin_installations.config_encrypted END,last_error='',updated_at=NOW()
+		signature_status=EXCLUDED.signature_status,state='disabled',package_sha256=EXCLUDED.package_sha256,update_policy='bundled',runtime_generation=sub2api_plugin_installations.runtime_generation+1,config_encrypted=CASE WHEN sub2api_plugin_installations.config_encrypted='' THEN EXCLUDED.config_encrypted ELSE sub2api_plugin_installations.config_encrypted END,last_error='',updated_at=NOW()
 		RETURNING id`, plugin.PluginKey, plugin.Name, plugin.Version, plugin.Description, plugin.Author, manifest, plugin.ArtifactData, plugin.ArtifactPath, plugin.InstallPath, plugin.BinaryPath, plugin.BinarySHA256, plugin.SignatureStatus, config).Scan(&id)
 	if err != nil {
 		return nil, err

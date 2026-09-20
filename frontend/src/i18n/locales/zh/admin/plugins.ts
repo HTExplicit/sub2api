@@ -1,5 +1,12 @@
 export default {
   plugins: {
+    updating: '正在更新',
+    updatePackage: '更新插件包',
+    pinnedVersion: '版本已固定，宿主升级时保留',
+    followsBundle: '跟随宿主内置版本',
+    followBundle: '跟随内置版',
+    updateAccepted: '更新已接收，正在保留配置并替换插件进程',
+    followBundleAccepted: '已选择跟随当前宿主内置版本',
     title: '插件管理',
     description: '安装、配置并启用独立功能插件。停用后会撤下对应入口，已有数据保留。',
     extensionUnavailable: '插件暂不可用，请在插件管理中查看原因',

@@ -166,6 +166,8 @@ func (i *PluginPackageInstaller) Install(ctx context.Context, reader io.Reader, 
 	}
 	runtimeEntry := manifest.Runtimes[manifest.RuntimeKey()]
 	return &PluginInstallation{
+		PackageSHA256:   artifactSHA,
+		UpdatePolicy:    PluginUpdatePinned,
 		PluginKey:       manifest.ID,
 		Name:            manifest.Name,
 		Version:         manifest.Version,

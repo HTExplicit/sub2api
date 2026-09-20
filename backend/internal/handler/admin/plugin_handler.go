@@ -319,14 +319,13 @@ func (h *PluginHandler) CreateUISession(c *gin.Context) {
 // ServeUIAsset 使用短时随机能力 URL 提供插件静态资源，不向 iframe 暴露管理员凭据。
 func (h *PluginHandler) ServeUIAsset(c *gin.Context) {
 	token := strings.TrimSpace(c.Param("token"))
-	pluginID, err := h.manager.ResolveUIAssetToken(token)
-	if err != nil {
-		c.Status(http.StatusGone)
-		return
-	}
 	relative := strings.TrimPrefix(c.Param("path"), "/")
-	data, logicalPath, err := h.manager.ReadUIAsset(c.Request.Context(), pluginID, relative)
+	data, logicalPath, err := h.manager.ReadUIAssetForToken(c.Request.Context(), token, relative)
 	if err != nil {
+		if errors.Is(err, service.ErrPluginUISessionChanged) {
+			c.Status(http.StatusGone)
+			return
+		}
 		if errors.Is(err, os.ErrNotExist) {
 			c.Status(http.StatusNotFound)
 			return

@@ -45,6 +45,8 @@ type pluginRuntime struct {
 	policyLeases     map[uint64]context.CancelFunc
 	done             chan struct{}
 	doneOnce         sync.Once
+	leaseRelease     func()
+	leaseOnce        sync.Once
 }
 
 func startPluginRuntime(ctx context.Context, installation *PluginInstallation, startTimeout time.Duration, socketDir string, hostServices pluginv1.HostServiceServer) (*pluginRuntime, error) {
@@ -178,6 +180,14 @@ func (r *pluginRuntime) validateAndApplyConfig(ctx context.Context, configJSON [
 }
 
 func (r *pluginRuntime) validateAndApplyNormalizedConfig(ctx context.Context, configJSON []byte) ([]byte, error) {
+	configJSON, err := r.validateNormalizedConfig(ctx, configJSON)
+	if err != nil {
+		return nil, err
+	}
+	return r.applyNormalizedConfig(ctx, configJSON)
+}
+
+func (r *pluginRuntime) validateNormalizedConfig(ctx context.Context, configJSON []byte) ([]byte, error) {
 	validation, err := r.api.ValidateConfig(ctx, &pluginv1.ValidateConfigRequest{ConfigJson: configJSON})
 	if err != nil {
 		return nil, fmt.Errorf("插件配置校验失败: %w", err)
@@ -205,6 +215,10 @@ func (r *pluginRuntime) validateAndApplyNormalizedConfig(ctx context.Context, co
 	if err != nil {
 		return nil, fmt.Errorf("序列化插件规范化配置: %w", err)
 	}
+	return configJSON, nil
+}
+
+func (r *pluginRuntime) applyNormalizedConfig(ctx context.Context, configJSON []byte) ([]byte, error) {
 	if previous := r.configSnapshot.Load(); previous != nil && bytes.Equal(*previous, configJSON) {
 		return configJSON, nil
 	}
@@ -326,6 +340,9 @@ func (r *pluginRuntime) kill() {
 	}
 	if r != nil && r.client != nil {
 		r.client.Kill()
+	}
+	if r != nil && r.leaseRelease != nil {
+		r.leaseOnce.Do(r.leaseRelease)
 	}
 }
 

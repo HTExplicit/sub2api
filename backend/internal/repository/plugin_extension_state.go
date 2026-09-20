@@ -27,6 +27,9 @@ func (r *pluginRepository) CompareSwapExtensionState(ctx context.Context, plugin
 		return out, err
 	}
 	defer tx.Rollback()
+	if err := lockPluginExecution(ctx, tx, plugin); err != nil {
+		return out, err
+	}
 	var projectionData map[string]any
 	if req.Projection != nil {
 		projectionData, err = lockPluginAccountProjection(ctx, tx, plugin, req.Projection)
@@ -128,7 +131,15 @@ func (r *pluginRepository) DueExtensionStates(ctx context.Context, plugin string
 
 func (r *pluginRepository) AcquireExtensionLease(ctx context.Context, plugin string, req extensionv1.LeaseRequest) (extensionv1.LeaseResult, error) {
 	var out extensionv1.LeaseResult
-	err := r.db.QueryRowContext(ctx, `INSERT INTO sub2api_plugin_leases(plugin_key,namespace,lease_key,owner,expires_at)
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return out, err
+	}
+	defer tx.Rollback()
+	if err = lockPluginExecution(ctx, tx, plugin); err != nil {
+		return out, err
+	}
+	err = tx.QueryRowContext(ctx, `INSERT INTO sub2api_plugin_leases(plugin_key,namespace,lease_key,owner,expires_at)
 		VALUES($1,$2,$3,$4,NOW()+$5*INTERVAL '1 second')
 		ON CONFLICT(plugin_key,namespace,lease_key) DO UPDATE
 		SET owner=EXCLUDED.owner,generation=sub2api_plugin_leases.generation+1,expires_at=EXCLUDED.expires_at
@@ -138,12 +149,26 @@ func (r *pluginRepository) AcquireExtensionLease(ctx context.Context, plugin str
 		return out, nil
 	}
 	out.Acquired = err == nil
-	return out, err
+	if err != nil {
+		return out, err
+	}
+	return out, tx.Commit()
 }
 
 func (r *pluginRepository) ReleaseExtensionLease(ctx context.Context, plugin string, req extensionv1.LeaseRequest) (extensionv1.LeaseResult, error) {
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return extensionv1.LeaseResult{}, err
+	}
+	defer tx.Rollback()
+	if err = lockPluginExecution(ctx, tx, plugin); err != nil {
+		return extensionv1.LeaseResult{}, err
+	}
 	// Keep the row and generation as a fencing token; deleting it would allow ABA.
-	_, err := r.db.ExecContext(ctx, `UPDATE sub2api_plugin_leases SET expires_at=NOW()
+	_, err = tx.ExecContext(ctx, `UPDATE sub2api_plugin_leases SET expires_at=NOW()
 		WHERE plugin_key=$1 AND namespace=$2 AND lease_key=$3 AND owner=$4 AND generation=$5`, plugin, req.Namespace, req.Key, req.Owner, req.Generation)
-	return extensionv1.LeaseResult{}, err
+	if err != nil {
+		return extensionv1.LeaseResult{}, err
+	}
+	return extensionv1.LeaseResult{}, tx.Commit()
 }

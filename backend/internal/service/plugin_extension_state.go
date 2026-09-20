@@ -37,6 +37,9 @@ type pluginExtensionHost struct {
 }
 
 func (h *pluginExtensionHost) Call(ctx context.Context, in extensionv1.HostInvocation) (extensionv1.Result, error) {
+	if h.installation != nil && h.installation.RuntimeGeneration > 0 {
+		ctx = WithPluginExecution(ctx, h.installation)
+	}
 	if (in.Operation == extensionv1.HostResolveIdentity || in.Operation == extensionv1.HostLeaseAcquire || in.Operation == extensionv1.HostStateDue || in.Operation == extensionv1.HostJobSubmit || in.Operation == extensionv1.HostMetricsQuery) && h.active != nil && !h.active() {
 		return extensionv1.Result{}, status.Error(codes.Unavailable, "plugin capability is no longer active")
 	}

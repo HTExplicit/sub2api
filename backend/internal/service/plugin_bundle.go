@@ -130,6 +130,29 @@ func (m *PluginManager) bootstrapBundle(ctx context.Context) error {
 		if installation.PluginKey != entry.ID || installation.Version != entry.Version {
 			return errors.New("bundled plugin identity mismatch")
 		}
+		if journal, ok := m.repo.(interface {
+			CompletedBundledPlugin(context.Context, string) (bool, error)
+		}); ok {
+			completed, err := journal.CompletedBundledPlugin(ctx, entry.ID)
+			if err != nil {
+				return err
+			}
+			if completed {
+				previous, err := m.repo.GetByKey(ctx, entry.ID)
+				if err != nil {
+					return err
+				}
+				if previous.PackageSHA256 != entry.SHA256 {
+					if err = m.stagePluginReplacement(ctx, previous, installation, PluginUpdateBundled); err != nil {
+						return err
+					}
+				}
+				if err = m.cleanupInstallationFiles(installation); err != nil {
+					return err
+				}
+				continue
+			}
+		}
 		seed := PluginBundleSeed{Enabled: entry.DefaultEnabled, Config: json.RawMessage(`{}`)}
 		if entry.Migration == "codex-tickets-v1" {
 			config := m.cfg.Gateway.OpenAICodexTicket

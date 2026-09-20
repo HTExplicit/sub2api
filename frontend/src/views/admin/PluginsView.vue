@@ -31,6 +31,7 @@
             accept=".s2plugin,application/zip"
             @change="handleFileSelected"
           />
+          <input ref="updateInput" type="file" class="hidden" accept=".s2plugin,application/zip" @change="handleUpdateSelected" />
           <button
             type="button"
             class="btn btn-primary"
@@ -113,6 +114,9 @@
               <p class="mt-1 text-xs text-gray-500">
                 {{ plugin.plugin_key
                 }}<span v-if="plugin.author"> · {{ plugin.author }}</span>
+              </p>
+              <p class="mt-2 text-xs text-gray-500">
+                {{ t(plugin.update_policy === 'pinned' ? 'admin.plugins.pinnedVersion' : 'admin.plugins.followsBundle') }}
               </p>
               <p
                 v-if="plugin.description"
@@ -238,10 +242,17 @@
           <div
             class="flex flex-wrap justify-end gap-2 border-t border-gray-100 px-5 py-4 dark:border-dark-700"
           >
+            <button type="button" class="btn btn-secondary btn-sm" :disabled="busyID === plugin.id || plugin.state === 'updating'" @click="selectUpdate(plugin)">
+              {{ t('admin.plugins.updatePackage') }}
+            </button>
+            <button v-if="plugin.update_policy === 'pinned' && plugin.plugin_key.startsWith('codexrip.')" type="button" class="btn btn-secondary btn-sm"
+              :disabled="busyID === plugin.id || plugin.state === 'updating'" @click="followBundle(plugin)">
+              {{ t('admin.plugins.followBundle') }}
+            </button>
             <button
               type="button"
               class="btn btn-secondary btn-sm"
-              :disabled="busyID === plugin.id"
+              :disabled="busyID === plugin.id || plugin.state === 'updating'"
               @click="testPlugin(plugin)"
             >
               <Icon name="beaker" size="sm" />
@@ -264,6 +275,7 @@
               :disabled="
                 busyID === plugin.id ||
                 plugin.state === 'starting' ||
+                plugin.state === 'updating' ||
                 !plugin.compatibility.compatible
               "
               @click="enablePlugin(plugin)"
@@ -274,7 +286,7 @@
             <button
               type="button"
               class="btn btn-danger btn-sm"
-              :disabled="busyID === plugin.id || hasEnabledBinding(plugin)"
+              :disabled="busyID === plugin.id || hasEnabledBinding(plugin) || plugin.state === 'updating'"
               @click="uninstallPlugin(plugin)"
             >
               <Icon name="trash" size="sm" />
@@ -302,7 +314,7 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, ref } from "vue";
+import { onMounted, onBeforeUnmount, ref } from "vue";
 import { useI18n } from "vue-i18n";
 import {
   adminAPI,
@@ -329,6 +341,10 @@ const loading = ref(false);
 const uploading = ref(false);
 const busyID = ref<number | null>(null);
 const fileInput = ref<HTMLInputElement | null>(null);
+const updateInput = ref<HTMLInputElement | null>(null);
+const updateTarget = ref<PluginInstallation | null>(null);
+let refreshTimer: ReturnType<typeof setTimeout> | undefined;
+let disposed = false;
 const rolloutValues = ref<Record<number, number>>({});
 const configPlugin = ref<PluginInstallation | null>(null);
 
@@ -355,6 +371,7 @@ function reportSensitiveActionError(error: unknown): void {
 }
 
 async function loadPlugins(): Promise<void> {
+  if (refreshTimer) { clearTimeout(refreshTimer); refreshTimer = undefined; }
   loading.value = true;
   try {
     plugins.value = await adminAPI.plugins.list();
@@ -365,7 +382,42 @@ async function loadPlugins(): Promise<void> {
     appStore.showError(errorMessage(error));
   } finally {
     loading.value = false;
+    if (!disposed && plugins.value.some(plugin => plugin.state === 'updating')) {
+      refreshTimer = setTimeout(() => { void loadPlugins(); }, 2000);
+    }
   }
+}
+
+function selectUpdate(plugin: PluginInstallation): void {
+  updateTarget.value = plugin;
+  updateInput.value?.click();
+}
+
+async function handleUpdateSelected(event: Event): Promise<void> {
+  const input = event.target as HTMLInputElement;
+  const file = input.files?.[0];
+  input.value = '';
+  const target = updateTarget.value;
+  updateTarget.value = null;
+  if (!file || !target) return;
+  if (!file.name.toLowerCase().endsWith('.s2plugin')) { appStore.showError(t('admin.plugins.fileRequired')); return; }
+  busyID.value = target.id;
+  try {
+    await pluginStepUp.run(() => adminAPI.plugins.update(target, file));
+    appStore.showSuccess(t('admin.plugins.updateAccepted'));
+    await loadPlugins();
+  } catch (error) { reportSensitiveActionError(error); }
+  finally { busyID.value = null; }
+}
+
+async function followBundle(plugin: PluginInstallation): Promise<void> {
+  busyID.value = plugin.id;
+  try {
+    await pluginStepUp.run(() => adminAPI.plugins.followBundled(plugin));
+    appStore.showSuccess(t('admin.plugins.followBundleAccepted'));
+    await loadPlugins();
+  } catch (error) { reportSensitiveActionError(error); }
+  finally { busyID.value = null; }
 }
 
 async function handleFileSelected(event: Event): Promise<void> {
@@ -486,7 +538,7 @@ function stateClass(state: PluginInstallation["state"]): string {
     return "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300";
   if (state === "error" || state === "incompatible")
     return "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300";
-  if (state === "starting")
+  if (state === "starting" || state === "updating")
     return "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300";
   return "bg-gray-100 text-gray-600 dark:bg-dark-700 dark:text-gray-300";
 }
@@ -504,4 +556,5 @@ function compatibilityClass(
 onMounted(() => {
   void loadPlugins();
 });
+onBeforeUnmount(() => { disposed = true; if (refreshTimer) clearTimeout(refreshTimer); });
 </script>

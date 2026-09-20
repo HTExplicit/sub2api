@@ -55,6 +55,9 @@ export interface PluginBinding {
 }
 
 export interface PluginInstallation {
+	 revision: number
+	 package_sha256: string
+	 update_policy: 'bundled' | 'pinned'
 	desired_enabled?: boolean
   id: number
   plugin_key: string
@@ -65,7 +68,7 @@ export interface PluginInstallation {
   manifest: PluginManifest
   binary_sha256: string
   signature_status: 'trusted' | 'unsigned'
-  state: 'disabled' | 'starting' | 'enabled' | 'error' | 'incompatible'
+  state: 'disabled' | 'starting' | 'enabled' | 'error' | 'incompatible' | 'updating'
   last_error: string
   installed_at: string
   enabled_at?: string
@@ -159,6 +162,26 @@ export async function upload(file: File): Promise<PluginInstallation> {
   return data
 }
 
+export async function update(plugin: PluginInstallation, file: File): Promise<PluginInstallation> {
+  const form = new FormData()
+  form.append('plugin', file)
+  form.append('expected_revision', String(plugin.revision))
+  form.append('expected_package_sha256', plugin.package_sha256)
+  const { data } = await apiClient.post<PluginInstallation>(`/admin/plugins/${plugin.id}/update`, form, {
+    headers: { 'Content-Type': 'multipart/form-data' }, timeout: 120000
+  })
+  changed()
+  return data
+}
+
+export async function followBundled(plugin: PluginInstallation): Promise<PluginInstallation> {
+  const { data } = await apiClient.post<PluginInstallation>(`/admin/plugins/${plugin.id}/follow-bundled`, {
+    expected_revision: plugin.revision, expected_package_sha256: plugin.package_sha256
+  }, { timeout: 120000 })
+  changed()
+  return data
+}
+
 export async function enable(
   id: number,
   rolloutPercent: number,
@@ -218,6 +241,8 @@ export default {
   submitJob,
   list,
   upload,
+  update,
+  followBundled,
   enable,
   disable,
   remove,

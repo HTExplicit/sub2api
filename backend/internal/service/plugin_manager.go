@@ -299,6 +299,15 @@ func (m *PluginManager) reconcileOnce(ctx context.Context) error {
 		m.mu.Unlock()
 		return fmt.Errorf("读取插件启用状态: %w", err)
 	}
+	for index, installation := range installations {
+		if installation.State == PluginStateUpdating {
+			if updated, updateErr := m.resumePluginUpdate(ctx, installation); updateErr != nil {
+				slog.Warn("plugin_update_pending", "plugin_id", installation.ID, "error", updateErr)
+			} else if updated != nil {
+				installations[index] = updated
+			}
+		}
+	}
 	m.cleanupStaleLocalInstallations(installations)
 	if err := validatePluginRegistry(installations); err != nil {
 		m.publishUnavailableRoute(0, 100, err.Error())
@@ -311,6 +320,12 @@ func (m *PluginManager) reconcileOnce(ctx context.Context) error {
 	var failures []error
 	var transport *PluginInstallation
 	for _, installation := range installations {
+		if installation.State == PluginStateUpdating {
+			if hasEnabledOpenAIBinding(installation.Bindings) {
+				transport = installation
+			}
+			continue
+		}
 		if !hasEnabledPluginBinding(installation.Bindings) {
 			if installation.State == PluginStateStarting && m.startingStateExpired(installation) {
 				if err := m.repo.UpdateState(ctx, installation.ID, PluginStateDisabled, "插件未启用", nil, installation.BinarySHA256, PluginStateStarting); err != nil && !errors.Is(err, ErrPluginStateChanged) {
@@ -363,11 +378,20 @@ func (m *PluginManager) reconcileOnce(ctx context.Context) error {
 }
 
 func (m *PluginManager) reconcilePlugin(ctx context.Context, enabled *PluginInstallation) error {
+	ctx = WithPluginExecution(ctx, enabled)
+	compatibility := EvaluatePluginCompatibility(enabled.Manifest, m.hostInfo)
+	if !compatibility.Compatible {
+		m.pausePluginForUpdate(enabled.ID)
+		if enabled.State != PluginStateIncompatible {
+			return m.repo.UpdateState(ctx, enabled.ID, PluginStateIncompatible, compatibility.Message, enabled.EnabledAt, enabled.BinarySHA256, enabled.State)
+		}
+		return nil
+	}
 	m.mu.Lock()
 	current := m.runtimes[enabled.ID]
 	m.mu.Unlock()
 	if current != nil && !current.client.Exited() &&
-		current.installation.BinarySHA256 == enabled.BinarySHA256 &&
+		samePluginRuntime(current.installation, enabled) &&
 		current.installation.ConfigEncrypted == enabled.ConfigEncrypted {
 		healthCtx, cancel := context.WithTimeout(ctx, pluginHealthTimeout)
 		healthErr := current.checkHealth(healthCtx)
@@ -404,7 +428,7 @@ func (m *PluginManager) reconcilePlugin(ctx context.Context, enabled *PluginInst
 		runtime.kill()
 		return err
 	}
-	if !hasEnabledPluginBinding(latest.Bindings) || latest.BinarySHA256 != enabled.BinarySHA256 ||
+	if !hasEnabledPluginBinding(latest.Bindings) || latest.State == PluginStateUpdating || !samePluginRuntime(latest, enabled) ||
 		latest.ConfigEncrypted != enabled.ConfigEncrypted {
 		runtime.kill()
 		return nil
@@ -481,7 +505,7 @@ func (m *PluginManager) ensureLocalInstallation(ctx context.Context, installatio
 	m.mu.Lock()
 	local := m.localInstallations[installation.ID]
 	m.mu.Unlock()
-	if local != nil && local.BinarySHA256 == installation.BinarySHA256 && local.Version == installation.Version {
+	if local != nil && samePluginPackage(local, installation) {
 		if err := verifyLocalPluginBinary(local, m.installer.RootDir()); err == nil {
 			return mergeLocalInstallation(local, installation), nil
 		}
@@ -529,7 +553,7 @@ func (m *PluginManager) cleanupStaleLocalInstallations(installations []*PluginIn
 	stale := make([]*PluginInstallation, 0)
 	for id, local := range m.localInstallations {
 		current := persisted[id]
-		if current == nil || current.BinarySHA256 != local.BinarySHA256 || current.Version != local.Version {
+		if current == nil || !samePluginPackage(local, current) {
 			stale = append(stale, local)
 			delete(m.localInstallations, id)
 		}
@@ -556,6 +580,9 @@ func samePluginPackage(local, persisted *PluginInstallation) bool {
 	if local == nil || persisted == nil || local.PluginKey != persisted.PluginKey ||
 		local.Version != persisted.Version || local.BinarySHA256 != persisted.BinarySHA256 {
 		return false
+	}
+	if persisted.PackageSHA256 != "" {
+		return local.PackageSHA256 == persisted.PackageSHA256
 	}
 	localManifest, localErr := json.Marshal(local.Manifest)
 	persistedManifest, persistedErr := json.Marshal(persisted.Manifest)
@@ -608,6 +635,9 @@ func (m *PluginManager) Enable(ctx context.Context, id int64, acceptUntested boo
 	if err != nil {
 		return nil, err
 	}
+	if installation.State == PluginStateUpdating || (PluginExpectedRevision(ctx) > 0 && PluginExpectedRevision(ctx) != installation.Revision) {
+		return nil, ErrPluginStateChanged
+	}
 	if installation.Manifest.Requires.ExtensionAPI > 0 && rolloutPercent != 100 {
 		return nil, errors.New("功能插件整体启用，不支持按流量比例启用")
 	}
@@ -654,8 +684,15 @@ func (m *PluginManager) Enable(ctx context.Context, id int64, acceptUntested boo
 	if err := validatePluginRegistry(all); err != nil {
 		return nil, err
 	}
-	if err := m.repo.UpdateBindingsAndState(ctx, id, installation.Bindings, PluginStateStarting, "", installation.EnabledAt, installation.State, installation.BinarySHA256); err != nil {
+	if err := m.repo.UpdateBindingsAndState(WithPluginExpectedRevision(ctx, installation.Revision), id, installation.Bindings, PluginStateStarting, "", installation.EnabledAt, installation.State, installation.BinarySHA256); err != nil {
 		return nil, err
+	}
+	starting, err := m.repo.GetByID(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	if starting.State != PluginStateStarting || !samePluginRuntime(starting, installation) || starting.ConfigEncrypted != installation.ConfigEncrypted {
+		return nil, ErrPluginStateChanged
 	}
 	runtime, err := m.prepareRuntime(ctx, installation, true)
 	if err != nil {
@@ -668,7 +705,7 @@ func (m *PluginManager) Enable(ctx context.Context, id int64, acceptUntested boo
 		return nil, errors.Join(err, stateErr)
 	}
 	now := time.Now()
-	if err := m.repo.UpdateBindingsAndState(ctx, id, installation.Bindings, PluginStateEnabled, "", &now, PluginStateStarting, installation.BinarySHA256); err != nil {
+	if err := m.repo.UpdateBindingsAndState(WithPluginExpectedRevision(ctx, starting.Revision), id, installation.Bindings, PluginStateEnabled, "", &now, PluginStateStarting, installation.BinarySHA256); err != nil {
 		runtime.kill()
 		if errors.Is(err, ErrPluginStateChanged) {
 			return nil, err
@@ -721,7 +758,11 @@ func (m *PluginManager) Disable(ctx context.Context, id int64) (*PluginInstallat
 	for index := range installation.Bindings {
 		installation.Bindings[index].Enabled = false
 	}
-	if err := m.repo.UpdateBindingsAndState(ctx, id, installation.Bindings, PluginStateDisabled, "", nil, "", installation.BinarySHA256); err != nil {
+	if expected := PluginExpectedRevision(ctx); expected > 0 && expected != installation.Revision {
+		m.mu.Unlock()
+		return nil, ErrPluginStateChanged
+	}
+	if err := m.repo.UpdateBindingsAndState(WithPluginExpectedRevision(ctx, installation.Revision), id, installation.Bindings, PluginStateDisabled, "", nil, "", installation.BinarySHA256); err != nil {
 		m.mu.Unlock()
 		return nil, err
 	}
@@ -786,6 +827,9 @@ func (m *PluginManager) SaveConfig(ctx context.Context, id int64, raw json.RawMe
 	if err != nil {
 		return nil, err
 	}
+	if installation.State == PluginStateUpdating || (PluginExpectedRevision(ctx) > 0 && PluginExpectedRevision(ctx) != installation.Revision) {
+		return nil, ErrPluginStateChanged
+	}
 	var normalized any
 	if err := json.Unmarshal(raw, &normalized); err != nil {
 		return nil, err
@@ -818,46 +862,35 @@ func (m *PluginManager) SaveConfig(ctx context.Context, id int64, raw json.RawMe
 	}
 	if runtime != nil {
 		applyCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
-		canonical, err = runtime.validateAndApplyNormalizedConfig(applyCtx, canonical)
+		canonical, err = runtime.validateNormalizedConfig(applyCtx, canonical)
 		cancel()
 		if err != nil {
 			return nil, err
 		}
 	}
+	if bytes.Equal(bytes.TrimSpace(previousConfig), canonical) {
+		return canonical, nil
+	}
 	encrypted, err := m.encryptor.Encrypt(string(canonical))
 	if err != nil {
-		if !temporary {
-			err = errors.Join(err, m.restoreRuntimeConfig(id, runtime, previousConfig))
-		}
 		return nil, fmt.Errorf("加密插件配置: %w", err)
 	}
-	if err := m.repo.UpdateConfig(ctx, id, encrypted, installation.BinarySHA256); err != nil {
-		if !temporary {
-			err = errors.Join(err, m.restoreRuntimeConfig(id, runtime, previousConfig))
-		}
+	runtime.configuring.Store(true)
+	defer runtime.configuring.Store(false)
+	if err := m.repo.UpdateConfig(WithPluginExpectedRevision(ctx, installation.Revision), id, encrypted, installation.BinarySHA256); err != nil {
 		return nil, err
 	}
 	if !temporary {
+		applyCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
+		_, err = runtime.applyNormalizedConfig(applyCtx, canonical)
+		cancel()
+		if err != nil {
+			m.pausePluginForUpdate(id)
+			return nil, err
+		}
 		runtime.installation.ConfigEncrypted = encrypted
 	}
 	return canonical, nil
-}
-
-func (m *PluginManager) restoreRuntimeConfig(id int64, runtime *pluginRuntime, previous json.RawMessage) error {
-	if runtime == nil {
-		return nil
-	}
-	rollbackCtx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
-	defer cancel()
-	if err := runtime.validateAndApplyConfig(rollbackCtx, previous); err != nil {
-		route := m.route.Load()
-		if route != nil && route.pluginID == id && route.runtime == runtime {
-			stateErr := m.markRuntimeUnavailable(route, "插件配置回滚失败: "+err.Error())
-			return errors.Join(err, stateErr)
-		}
-		return err
-	}
-	return nil
 }
 
 func (m *PluginManager) Test(ctx context.Context, id int64) (*pluginv1.TestConfigResponse, error) {
@@ -918,9 +951,10 @@ func (m *PluginManager) Status(ctx context.Context, id int64) (*pluginv1.HealthR
 }
 
 type pluginUIAssetClaims struct {
-	Version  int   `json:"version"`
-	PluginID int64 `json:"plugin_id"`
-	Expires  int64 `json:"expires"`
+	PackageSHA256 string `json:"package_sha256"`
+	Version       int    `json:"version"`
+	PluginID      int64  `json:"plugin_id"`
+	Expires       int64  `json:"expires"`
 }
 
 // CreateUIAssetToken 创建可跨实例校验的短时能力令牌，令牌不包含管理员凭据。
@@ -928,11 +962,12 @@ func (m *PluginManager) CreateUIAssetToken(ctx context.Context, id int64, ttl ti
 	if ttl <= 0 || ttl > time.Hour {
 		return "", time.Time{}, errors.New("插件 UI 会话有效期无效")
 	}
-	if _, err := m.repo.GetByID(ctx, id); err != nil {
+	installation, err := m.repo.GetByID(ctx, id)
+	if err != nil {
 		return "", time.Time{}, err
 	}
 	expires := time.Now().Add(ttl)
-	raw, err := json.Marshal(pluginUIAssetClaims{Version: 1, PluginID: id, Expires: expires.Unix()})
+	raw, err := json.Marshal(pluginUIAssetClaims{Version: 1, PluginID: id, Expires: expires.Unix(), PackageSHA256: installation.PackageSHA256})
 	if err != nil {
 		return "", time.Time{}, err
 	}
@@ -945,46 +980,77 @@ func (m *PluginManager) CreateUIAssetToken(ctx context.Context, id int64, ttl ti
 }
 
 func (m *PluginManager) ResolveUIAssetToken(token string) (int64, error) {
+	claims, err := m.parseUIAssetToken(token)
+	if err != nil {
+		return 0, err
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	installation, err := m.repo.GetByID(ctx, claims.PluginID)
+	if err != nil || installation.PackageSHA256 != claims.PackageSHA256 {
+		return 0, ErrPluginUISessionChanged
+	}
+	return claims.PluginID, nil
+}
+
+var ErrPluginUISessionChanged = errors.New("插件 UI 会话无效或版本已更新，请重新打开界面")
+
+func (m *PluginManager) parseUIAssetToken(token string) (*pluginUIAssetClaims, error) {
 	if len(token) == 0 || len(token) > 4096 {
-		return 0, errors.New("插件 UI 会话无效")
+		return nil, errors.New("插件 UI 会话无效")
 	}
 	encrypted, err := base64.RawURLEncoding.DecodeString(token)
 	if err != nil {
-		return 0, errors.New("插件 UI 会话无效")
+		return nil, errors.New("插件 UI 会话无效")
 	}
 	plaintext, err := m.encryptor.Decrypt(string(encrypted))
 	if err != nil {
-		return 0, errors.New("插件 UI 会话无效")
+		return nil, errors.New("插件 UI 会话无效")
 	}
 	plaintext, ok := strings.CutPrefix(plaintext, pluginUITokenPrefix)
 	if !ok {
-		return 0, errors.New("插件 UI 会话无效")
+		return nil, errors.New("插件 UI 会话无效")
 	}
 	var claims pluginUIAssetClaims
 	decoder := json.NewDecoder(strings.NewReader(plaintext))
 	decoder.DisallowUnknownFields()
 	if err := decoder.Decode(&claims); err != nil || claims.Version != 1 || claims.PluginID <= 0 {
-		return 0, errors.New("插件 UI 会话无效")
+		return nil, errors.New("插件 UI 会话无效")
 	}
 	if err := decoder.Decode(&struct{}{}); err != io.EOF {
-		return 0, errors.New("插件 UI 会话无效")
+		return nil, errors.New("插件 UI 会话无效")
 	}
 	now := time.Now().Unix()
 	if now >= claims.Expires {
-		return 0, errors.New("插件 UI 会话已过期")
+		return nil, errors.New("插件 UI 会话已过期")
 	}
 	if claims.Expires > now+int64(time.Hour/time.Second) {
-		return 0, errors.New("插件 UI 会话无效")
+		return nil, errors.New("插件 UI 会话无效")
 	}
-	return claims.PluginID, nil
+	return &claims, nil
 }
 
 func (m *PluginManager) ReadUIAsset(ctx context.Context, id int64, relative string) ([]byte, string, error) {
+	return m.readUIAsset(ctx, id, relative, nil)
+}
+
+func (m *PluginManager) ReadUIAssetForToken(ctx context.Context, token, relative string) ([]byte, string, error) {
+	claims, err := m.parseUIAssetToken(token)
+	if err != nil {
+		return nil, "", ErrPluginUISessionChanged
+	}
+	return m.readUIAsset(ctx, claims.PluginID, relative, &claims.PackageSHA256)
+}
+
+func (m *PluginManager) readUIAsset(ctx context.Context, id int64, relative string, expected *string) ([]byte, string, error) {
 	m.operationMu.Lock()
 	defer m.operationMu.Unlock()
 	installation, err := m.repo.GetByID(ctx, id)
 	if err != nil {
 		return nil, "", err
+	}
+	if expected != nil && installation.PackageSHA256 != *expected {
+		return nil, "", ErrPluginUISessionChanged
 	}
 	installation, err = m.ensureLocalInstallation(ctx, installation)
 	if err != nil {
@@ -1121,7 +1187,23 @@ func (m *PluginManager) newRuntime(ctx context.Context, installation *PluginInst
 		return nil, err
 	}
 	timeout := time.Duration(m.cfg.Plugins.StartTimeoutSeconds) * time.Second
-	return startPluginRuntime(ctx, installation, timeout, socketDir, m.buildHostServices(installation))
+	var release func()
+	if locker, ok := m.repo.(PluginRuntimeLocker); ok && installation.RuntimeGeneration > 0 {
+		var err error
+		release, err = locker.HoldPluginRuntime(ctx, installation)
+		if err != nil {
+			return nil, err
+		}
+	}
+	runtime, err := startPluginRuntime(ctx, installation, timeout, socketDir, m.buildHostServices(installation))
+	if err != nil {
+		if release != nil {
+			release()
+		}
+		return nil, err
+	}
+	runtime.leaseRelease = release
+	return runtime, nil
 }
 
 // SetAccountDirectory 注入账号目录实现（敏感能力）。仅在启动装配阶段调用一次，
@@ -1152,14 +1234,14 @@ func (m *PluginManager) buildHostServices(installation *PluginInstallation) plug
 		directory, _ := m.accountDirectory.(PluginExtensionAccountDirectory)
 		host.extension = &pluginExtensionHost{key: installation.PluginKey, state: state, directory: directory, installation: installation, activity: m.quotaActivity, traffic: m.traffic, allows: func(capability, platform, accountType string) bool {
 			registry := m.extensions.Load()
-			return registry != nil && registry.unavailable == "" && pluginHasCapability(registry.installations[installation.ID], capability, platform, accountType)
+			return registry != nil && registry.unavailable == "" && samePluginRuntime(registry.installations[installation.ID], installation) && pluginHasCapability(registry.installations[installation.ID], capability, platform, accountType)
 		}, active: func() bool {
 			registry := m.extensions.Load()
 			if registry == nil || registry.unavailable != "" {
 				return false
 			}
 			current := registry.installations[installation.ID]
-			return current != nil && hasEnabledPluginBinding(current.Bindings) && pluginDependenciesHealthy(current, registry, map[int64]bool{})
+			return current != nil && current.State != PluginStateUpdating && samePluginRuntime(current, installation) && hasEnabledPluginBinding(current.Bindings) && pluginDependenciesHealthy(current, registry, map[int64]bool{})
 		}}
 	}
 	return host

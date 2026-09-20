@@ -86,8 +86,8 @@ func (r *pluginRepository) Install(ctx context.Context, plugin *service.PluginIn
 			INSERT INTO sub2api_plugin_installations (
 				plugin_key, name, version, description, author, manifest, artifact_data,
 				artifact_path, install_path, binary_path, binary_sha256,
-				signature_status, state, last_error, installed_by, installed_at, updated_at
-			) VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7, $8, $9, $10, $11, $12, $13, '', $14, NOW(), NOW())
+				signature_status, state, last_error, installed_by, installed_at, updated_at,package_sha256,update_policy
+			) VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7, $8, $9, $10, $11, $12, $13, '', $14, NOW(), NOW(),encode(sha256($7),'hex'),'pinned')
 			ON CONFLICT (plugin_key) DO UPDATE SET
 			name = EXCLUDED.name,
 			version = EXCLUDED.version,
@@ -99,6 +99,9 @@ func (r *pluginRepository) Install(ctx context.Context, plugin *service.PluginIn
 			install_path = EXCLUDED.install_path,
 			binary_path = EXCLUDED.binary_path,
 			binary_sha256 = EXCLUDED.binary_sha256,
+			package_sha256 = EXCLUDED.package_sha256,
+			update_policy = 'pinned',
+			runtime_generation = sub2api_plugin_installations.runtime_generation + 1,
 			signature_status = EXCLUDED.signature_status,
 			state = EXCLUDED.state,
 			last_error = '',
@@ -149,7 +152,7 @@ func (r *pluginRepository) Delete(ctx context.Context, id int64, expectedBinaryS
 	var key string
 	err = tx.QueryRowContext(ctx, `
 		DELETE FROM sub2api_plugin_installations p
-		WHERE p.id = $1 AND p.binary_sha256 = $2 AND p.state NOT IN ('starting', 'enabled')
+		WHERE p.id = $1 AND p.binary_sha256 = $2 AND p.state NOT IN ('starting', 'enabled', 'updating')
 		  AND NOT EXISTS (SELECT 1 FROM sub2api_plugin_bindings b WHERE b.plugin_id = p.id AND b.enabled = TRUE)
 		RETURNING p.plugin_key
 	`, id, expectedBinarySHA256).Scan(&key)
@@ -185,12 +188,14 @@ func (r *pluginRepository) BeginEnable(ctx context.Context, id int64, binarySHA2
 }
 
 func (r *pluginRepository) MarkRuntimeHealthy(ctx context.Context, id int64, binarySHA256, configEncrypted string) error {
+	execution, _ := service.PluginExecutionFromContext(ctx)
 	result, err := r.db.ExecContext(ctx, `
 		UPDATE sub2api_plugin_installations p
 		SET state = 'enabled', last_error = '', enabled_at = COALESCE(enabled_at, NOW()), updated_at = NOW()
 		WHERE p.id = $1 AND p.binary_sha256 = $2 AND p.config_encrypted = $3
+		  AND p.state<>'updating' AND ($4=0 OR p.runtime_generation=$4)
 		  AND EXISTS (SELECT 1 FROM sub2api_plugin_bindings b WHERE b.plugin_id = p.id AND b.enabled = TRUE)
-	`, id, binarySHA256, configEncrypted)
+	`, id, binarySHA256, configEncrypted, execution.Generation)
 	if err != nil {
 		return err
 	}
@@ -205,11 +210,13 @@ func (r *pluginRepository) MarkRuntimeHealthy(ctx context.Context, id int64, bin
 }
 
 func (r *pluginRepository) UpdateState(ctx context.Context, id int64, state, lastError string, enabledAt *time.Time, expectedBinarySHA256, expectedState string) error {
+	execution, _ := service.PluginExecutionFromContext(ctx)
 	result, err := r.db.ExecContext(ctx, `
 		UPDATE sub2api_plugin_installations
 		SET state = $2, last_error = $3, enabled_at = $4, updated_at = NOW()
 		WHERE id = $1 AND binary_sha256 = $5 AND state = $6
-	`, id, state, lastError, enabledAt, expectedBinarySHA256, expectedState)
+		  AND state<>'updating' AND ($7=0 OR runtime_generation=$7)
+	`, id, state, lastError, enabledAt, expectedBinarySHA256, expectedState, execution.Generation)
 	if err != nil {
 		return err
 	}
@@ -228,7 +235,8 @@ func (r *pluginRepository) UpdateConfig(ctx context.Context, id int64, encrypted
 		UPDATE sub2api_plugin_installations
 		SET config_encrypted = $2, updated_at = NOW()
 		WHERE id = $1 AND binary_sha256 = $3
-	`, id, encrypted, expectedBinarySHA256)
+		  AND state <> 'updating' AND ($4 = 0 OR revision = $4)
+	`, id, encrypted, expectedBinarySHA256, service.PluginExpectedRevision(ctx))
 	if err != nil {
 		return err
 	}
@@ -259,10 +267,11 @@ func (r *pluginRepository) UpdateBindingsAndState(
 	defer func() { _ = tx.Rollback() }()
 	result, err := tx.ExecContext(ctx, `
 		UPDATE sub2api_plugin_installations
-		SET state = $2, last_error = $3, enabled_at = $4, updated_at = NOW()
+		SET state = CASE WHEN state='updating' THEN state ELSE $2 END, last_error = $3, enabled_at = $4, updated_at = NOW(), revision=revision+1
 		WHERE id = $1 AND ($5 = '' OR state = $5) AND binary_sha256 = $6
+		  AND (state <> 'updating' OR $2='disabled') AND ($7 = 0 OR revision = $7)
 		  AND ($2 = 'disabled' OR NOT EXISTS (SELECT 1 FROM sub2api_plugin_bootstrap b WHERE b.plugin_key=sub2api_plugin_installations.plugin_key AND NOT b.completed))
-	`, pluginID, state, lastError, enabledAt, expectedState, expectedBinarySHA256)
+	`, pluginID, state, lastError, enabledAt, expectedState, expectedBinarySHA256, service.PluginExpectedRevision(ctx))
 	if err != nil {
 		return err
 	}
@@ -349,7 +358,7 @@ const pluginSelectSQL = `
 	SELECT id, plugin_key, name, version, description, author, manifest,
 	       artifact_path, install_path, binary_path, binary_sha256,
 	       signature_status, state, config_encrypted, last_error,
-	       installed_by, installed_at, enabled_at, updated_at
+	       installed_by, installed_at, enabled_at, updated_at,revision,runtime_generation,package_sha256,update_policy
 	FROM sub2api_plugin_installations`
 
 type pluginScanner interface {
@@ -365,6 +374,7 @@ func scanPlugin(scanner pluginScanner) (*service.PluginInstallation, error) {
 		&plugin.BinaryPath, &plugin.BinarySHA256, &plugin.SignatureStatus, &plugin.State,
 		&plugin.ConfigEncrypted, &plugin.LastError, &plugin.InstalledBy, &plugin.InstalledAt,
 		&plugin.EnabledAt, &plugin.UpdatedAt,
+		&plugin.Revision, &plugin.RuntimeGeneration, &plugin.PackageSHA256, &plugin.UpdatePolicy,
 	); err != nil {
 		return nil, err
 	}
