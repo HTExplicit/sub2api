@@ -1,5 +1,76 @@
 import { resource } from '@sub2api/plugin-ui'
 
+export interface AdminGroup { id: number; name: string; platform: string; wire_platform?: string; provider_profile?: string }
+export interface Proxy { id: number; name: string }
+export interface AccountImportPreview {
+  create_count: number; update_count: number; reject_count: number
+  items: Array<{ index: number; name: string; action: string; account_id?: number; warnings?: string[]; code?: string; message?: string; error?: string }>
+}
+export interface AdminDataPayload {
+  type?: string
+  version?: number
+  exported_at: string
+  proxies: AdminDataProxy[]
+  accounts: AdminDataAccount[]
+  // 导出时被排除的 spark 影子账号数量(影子不持凭据、其调度配置不在备份范围)。
+  skipped_shadows?: number
+}
+
+export interface AdminDataProxy {
+  proxy_key: string
+  name: string
+  protocol: string
+  host: string
+  port: number
+  username?: string | null
+  password?: string | null
+  status: 'active' | 'inactive'
+}
+
+export interface AdminDataAccount {
+  name: string
+  notes?: string | null
+  platform: string
+  type: string
+  credentials: Record<string, unknown>
+  extra?: Record<string, unknown>
+  proxy_key?: string | null
+  concurrency: number
+  priority: number
+  rate_multiplier?: number | null
+  expires_at?: number | null
+  auto_pause_on_expired?: boolean
+  management_folder?: string | null
+  tags?: string[]
+  groups?: string[]
+  status?: 'active' | 'inactive' | 'disabled' | 'error'
+  schedulable?: boolean
+}
+
+export type AdminDataImportAction = 'skip' | 'update' | 'create'
+
+export interface AdminDataImportNotesSetting {
+  mode: 'append' | 'replace'
+  value: string
+}
+
+export interface AdminDataImportUniformSettings {
+  name_prefix?: string
+  name_suffix?: string
+  notes?: AdminDataImportNotesSetting
+  management_folder?: string
+  tags?: string[]
+  group_ids?: number[]
+  proxy_id?: number
+  concurrency?: number
+  priority?: number
+  rate_multiplier?: number
+  status?: 'active' | 'disabled' | 'error'
+  schedulable?: boolean
+}
+
+export interface AccountImportRequest { data: AdminDataPayload; skip_default_group_bind?: boolean; uniform_settings?: AdminDataImportUniformSettings; target_group_id?: number | null }
+
 export interface AccountManagementFolder { id: number; name: string; sort_order: number; account_count: number; created_at: string; updated_at: string }
 export type AccountManagementTag = AccountManagementFolder
 export interface AccountJob { id: number; metadata: Record<string, unknown> }
@@ -21,6 +92,8 @@ export interface TestSelection { account_id: number; model_id: string; reasoning
 
 const operationKey = (kind: string) => `${kind}-${crypto.randomUUID()}`
 export const accounts = {
+  previewImportData: (body: AccountImportRequest) => resource<AccountImportPreview>('import.preview', { body }),
+  importData: (body: AccountImportRequest) => resource<AccountJob>('import.submit', { body, operation_key: operationKey('account_import') }),
   listFolders: () => resource<AccountManagementFolder[]>('taxonomy.folders.list'),
   listTags: () => resource<AccountManagementTag[]>('taxonomy.tags.list'),
   createFolder: (name: string, sort_order = 0) => resource<AccountManagementFolder>('taxonomy.folders.create', { body: { name, sort_order } }),

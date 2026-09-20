@@ -182,6 +182,13 @@ func (h *AccountHandler) submitAccountJob(c *gin.Context, kind string, payload a
 		return
 	}
 	meta := map[string]any{"target_count": len(seeds)}
+	if execution, bound := service.PluginExecutionFromContext(c.Request.Context()); bound {
+		if len(owner) > 0 && owner[0] > 0 && owner[0] != execution.ID {
+			response.Forbidden(c, "Plugin job ownership changed")
+			return
+		}
+		meta["plugin_id"] = execution.ID
+	}
 	if len(owner) > 0 && owner[0] > 0 {
 		meta["plugin_id"] = owner[0]
 	}

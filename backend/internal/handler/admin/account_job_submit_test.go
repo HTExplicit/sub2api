@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"net/http/httptest"
 	"testing"
 
 	servermiddleware "github.com/Wei-Shaw/sub2api/internal/server/middleware"
@@ -13,6 +14,36 @@ import (
 )
 
 const accountJobTestActorID int64 = 77
+
+func TestAccountJobSubmissionRetainsResourceOwnerAndRejectsSubstitution(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	handler := &AccountHandler{}
+	repo := attachAccountJobSubmitter(router, handler)
+	router.Use(func(c *gin.Context) {
+		c.Request = c.Request.WithContext(service.WithPluginExecution(c.Request.Context(), &service.PluginInstallation{ID: 7, RuntimeGeneration: 2}))
+		c.Next()
+	})
+	router.POST("/jobs", func(c *gin.Context) {
+		handler.submitAccountJob(c, service.AccountJobKindImportData, map[string]any{"data": "synthetic"}, ordinalAccountJobSeeds(1))
+	})
+	router.POST("/wrong-owner", func(c *gin.Context) {
+		handler.submitAccountJob(c, service.AccountJobKindImportData, map[string]any{"data": "synthetic"}, ordinalAccountJobSeeds(1), 8)
+	})
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodPost, "/jobs", nil)
+	request.Header.Set("Idempotency-Key", "fixture-import")
+	router.ServeHTTP(recorder, request)
+	require.Equal(t, http.StatusAccepted, recorder.Code, recorder.Body.String())
+	require.Len(t, repo.created, 1)
+	var metadata map[string]any
+	require.NoError(t, json.Unmarshal(repo.created[0].Metadata, &metadata))
+	require.Equal(t, float64(7), metadata["plugin_id"])
+	recorder = httptest.NewRecorder()
+	router.ServeHTTP(recorder, httptest.NewRequest(http.MethodPost, "/wrong-owner", nil))
+	require.Equal(t, http.StatusForbidden, recorder.Code)
+	require.Len(t, repo.created, 1)
+}
 
 type accountJobSubmitRepository struct {
 	service.AccountJobRepository

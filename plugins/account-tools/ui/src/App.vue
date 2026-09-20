@@ -8,6 +8,8 @@
     @close="event('close')" @stale="event('stale')" @updated="(job: AccountJob) => openHostJob(job.id)" />
   <BatchTestAccountModal v-else-if="mode === 'account-batch-test'" show :account-ids="input.accountIds || []"
     @close="event('close')" @submitted="(job: AccountJob) => openHostJob(job.id)" />
+  <ImportDataModal v-else-if="mode === 'account-import'" show :folders="input.folders || []" :tags="input.tags || []" :groups="input.groups || []" :proxies="input.proxies || []"
+    @close="event('close')" @imported="(job: AccountJob) => openHostJob(job.id)" />
   <AccountTaxonomyEditor v-else-if="mode === 'account-taxonomy-edit' && input.accountId" :account-id="input.accountId"
     :folder-id="input.folderId" :tag-ids="input.tagIds || []" :folders="input.folders || []" :tags="input.tags || []" @changed="event('changed')" />
 </template>
@@ -18,14 +20,16 @@ import AccountFolderBar from './AccountFolderBar.vue'
 import AccountTaxonomyManager from './AccountTaxonomyManager.vue'
 import AccountBulkTaxonomyModal from './AccountBulkTaxonomyModal.vue'
 import BatchTestAccountModal from './BatchTestAccountModal.vue'
+import ImportDataModal from './ImportDataModal.vue'
 import AccountTaxonomyEditor from './AccountTaxonomyEditor.vue'
-import type { AccountJob, AccountManagementFolder, AccountManagementTag } from './api'
+import type { AccountJob, AccountManagementFolder, AccountManagementTag, AdminGroup, Proxy } from './api'
 import type { AccountBulkTaxonomyTarget } from './AccountBulkTaxonomyModal.vue'
 interface ViewProps {
   folders?: AccountManagementFolder[]; tags?: AccountManagementTag[]; activeFolder?: string
   total?: number; uncategorizedCount?: number; loading?: boolean; error?: boolean
   target?: AccountBulkTaxonomyTarget; accountIds?: number[]
   accountId?: number; folderId?: number | null; tagIds?: number[]
+  groups?: AdminGroup[]; proxies?: Proxy[]
 }
 const context = usePluginContext()
 const mode = computed(() => context.value.contribution_id)

@@ -360,7 +360,7 @@ func (h *PluginHandler) ServeUIAsset(c *gin.Context) {
 	// Sandboxed module scripts and fonts have an opaque Origin. The URL is a
 	// short-lived capability for immutable UI assets, not an ambient session.
 	c.Header("Access-Control-Allow-Origin", "*")
-	c.Header("Content-Security-Policy", "default-src 'none'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'self'; navigate-to 'none'")
+	c.Header("Content-Security-Policy", "default-src 'none'; script-src 'self' 'unsafe-inline'; worker-src blob:; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'self'; navigate-to 'none'")
 	c.Data(http.StatusOK, contentType, data)
 }
 

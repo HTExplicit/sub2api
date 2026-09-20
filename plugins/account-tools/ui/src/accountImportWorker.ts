@@ -1,6 +1,6 @@
-import ImportWorker from '@/workers/accountImport.worker?worker'
+import ImportWorker from './accountImport.worker?worker&inline'
 import { AccountImportParseError } from './accountImportParser'
-import type { AdminDataPayload } from '@/types'
+import type { AdminDataPayload } from './api'
 
 export function readAccountImportFiles(files: File[], signal: AbortSignal): Promise<AdminDataPayload> {
   return new Promise((resolve, reject) => {

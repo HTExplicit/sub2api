@@ -145,7 +145,8 @@ jobs:
             src/components/common/__tests__/VersionBadge.downstream.spec.ts \
             src/api/__tests__/downstreamStatus.spec.ts \
             src/i18n/__tests__/accountConsoleLocales.spec.ts \
-            src/__tests__/integration/data-import.spec.ts \
+            ../plugins/account-tools/ui/src/__tests__/data-import.spec.ts \
+            ../plugins/account-tools/ui/src/__tests__/ImportDataModal.spec.ts \
             src/components/admin/account-jobs/__tests__/AccountTaskDrawer.spec.ts \
             src/stores/__tests__/accountJobs.spec.ts \
             src/composables/__tests__/useAccountSelectionMetadata.spec.ts \

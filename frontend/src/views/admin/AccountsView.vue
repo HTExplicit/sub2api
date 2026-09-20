@@ -108,12 +108,14 @@
                         </span>
                         <span class="flex-1 text-left">{{ t('admin.accounts.syncFromCrs') }}</span>
                       </button>
+                      <ExtensionSurface name="account-import">
                       <button class="account-tools-menu-item" @click="openImportData">
                         <span class="account-tools-menu-icon border border-line bg-surface text-primary-600 dark:text-primary-300">
                           <Icon name="upload" size="sm" />
                         </span>
                         <span class="flex-1 text-left">{{ t('admin.accounts.dataImport') }}</span>
                       </button>
+                      </ExtensionSurface>
                       <button class="account-tools-menu-item" @click="openExportDataDialogFromMenu">
                         <span class="account-tools-menu-icon bg-violet-50 text-violet-600 dark:bg-violet-900/30 dark:text-violet-300">
                           <Icon name="download" size="sm" />
@@ -691,6 +693,7 @@ import { routeLocationKey, routerKey, type RouteLocationNormalizedLoaded, type R
 import { useAppStore } from '@/stores/app'
 import { useAuthStore } from '@/stores/auth'
 import { usePluginExtensions } from '@/stores/pluginExtensions'
+import ExtensionSurface from '@/components/plugins/ExtensionSurface.vue'
 import { isTerminalAccountJob, useAccountJobsStore } from '@/stores/accountJobs'
 import { adminAPI } from '@/api/admin'
 import type { AccountListFilters, CindyInsufficientDeletePreview } from '@/api/admin/accounts'

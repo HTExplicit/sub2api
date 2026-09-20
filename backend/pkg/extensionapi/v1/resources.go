@@ -15,6 +15,7 @@ type ResourceDescriptor struct {
 	AccountBodyField  string `json:"-"`
 	AccountItemsField string `json:"-"`
 	AccountScopeField string `json:"-"`
+	AllAccounts       bool   `json:"-"`
 	// Fixed filter scope is registered by the host only for handlers whose
 	// selection predicate always enforces this platform and account type.
 	FilterPlatform    string `json:"-"`

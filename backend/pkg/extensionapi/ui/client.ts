@@ -139,6 +139,15 @@ export async function mountPlugin(App: Component, messages: Record<string, Trans
       const box = menu.getBoundingClientRect()
       if (box.height) bottom = Math.max(bottom, box.bottom)
     }
+    // Teleported dialogs have no measurable height inside #app. Use their
+    // natural content height, including the currently clipped scroll body,
+    // so a small frame does not permanently keep its own dialog collapsed.
+    for (const panel of document.querySelectorAll<HTMLElement>('[role="dialog"] .modal-content')) {
+      const body = panel.querySelector<HTMLElement>('.modal-body')
+      const natural = panel.scrollHeight + (body ? Math.max(0, body.scrollHeight - body.clientHeight) : 0)
+      if (panel.getBoundingClientRect().height) bottom = Math.max(bottom, natural + 32)
+      observer.observe(panel)
+    }
     client.resize(Math.ceil(bottom) + (context.value.layout === 'inline' ? 0 : 24))
   }
   if (context.value.layout === 'inline') document.body.style.minHeight = '0'

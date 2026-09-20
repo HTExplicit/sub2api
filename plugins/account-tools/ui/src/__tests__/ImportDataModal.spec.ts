@@ -1,4 +1,3 @@
-vi.mock('@/components/admin/account-jobs/AccountOperationDialog.vue', () => ({ default: { props: ['job', 'show'], template: '<div><slot/><slot name="footer"/></div>' } }))
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 
@@ -8,10 +7,10 @@ const { importData, previewImportData, showError } = vi.hoisted(() => ({
   showError: vi.fn(),
 }))
 
-vi.mock('@/api/admin', () => ({ adminAPI: { accounts: { importData, previewImportData } } }))
-vi.mock('@/stores/app', () => ({ useAppStore: () => ({ showError, showWarning: vi.fn() }) }))
-vi.mock('@/utils/accountImportWorker', async () => {
-  const { parseAccountImportFiles } = await vi.importActual<typeof import('@/utils/accountImportParser')>('@/utils/accountImportParser')
+vi.mock('../api', () => ({ adminAPI: { accounts: { importData, previewImportData } } }))
+vi.mock('@sub2api/plugin-ui', async () => ({ ...await vi.importActual<typeof import('@sub2api/plugin-ui')>('@sub2api/plugin-ui'), useNotifications: () => ({ showError, showWarning: vi.fn() }) }))
+vi.mock('../accountImportWorker', async () => {
+  const { parseAccountImportFiles } = await vi.importActual<typeof import('../accountImportParser')>('../accountImportParser')
   return { readAccountImportFiles: (files: File[]) => parseAccountImportFiles(files) }
 })
 vi.mock('vue-i18n', () => ({ useI18n: () => ({ t: (key: string) => key }) }))

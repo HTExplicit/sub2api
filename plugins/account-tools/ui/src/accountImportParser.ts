@@ -1,4 +1,4 @@
-import type { AdminDataPayload } from '@/types'
+import type { AdminDataPayload } from './api'
 
 export class AccountImportParseError extends Error {
   constructor(public code: 'parse' | 'shape', public fileIndex: number) {

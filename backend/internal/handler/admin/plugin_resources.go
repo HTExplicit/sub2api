@@ -80,6 +80,9 @@ func (h *PluginHandler) RegisterResource(descriptor extensionv1.ResourceDescript
 }
 
 func resourceAccountTargets(c *gin.Context, descriptor extensionv1.ResourceDescriptor) ([]int64, bool, error) {
+	if descriptor.AllAccounts {
+		return nil, true, nil
+	}
 	var ids []int64
 	if descriptor.AccountParam != "" {
 		id, err := strconv.ParseInt(c.Param(descriptor.AccountParam), 10, 64)

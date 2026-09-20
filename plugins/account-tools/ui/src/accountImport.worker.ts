@@ -1,4 +1,4 @@
-import { AccountImportParseError, parseAccountImportFiles } from '@/utils/accountImportParser'
+import { AccountImportParseError, parseAccountImportFiles } from './accountImportParser'
 
 self.onmessage = async (event: MessageEvent<File[]>) => {
   try {

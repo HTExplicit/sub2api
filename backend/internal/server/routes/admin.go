@@ -516,8 +516,8 @@ func registerAccountRoutes(admin *gin.RouterGroup, h *handler.Handlers, stepUpAu
 		accounts.POST("/batch", h.Admin.Account.BatchCreate)
 		// 账号导出泄露上游凭证原文——要求 step-up 2FA
 		accounts.GET("/data", gin.HandlerFunc(stepUpAuth), h.Admin.Account.ExportData)
-		accounts.POST("/data/preview", h.Admin.Account.PreviewImportData)
-		accounts.POST("/data", h.Admin.Account.ImportData)
+		accounts.POST("/data/preview", h.Admin.Plugin.RegisterResource(extensionv1.ResourceDescriptor{ResourceGrant: extensionv1.ResourceGrant{Name: "import.preview", Capability: extensionv1.CapabilityAdmin, Permission: "admin"}, Method: "POST", Path: accounts.BasePath() + "/data/preview", AllAccounts: true}), h.Admin.Account.PreviewImportData)
+		accounts.POST("/data", h.Admin.Plugin.RegisterResource(extensionv1.ResourceDescriptor{ResourceGrant: extensionv1.ResourceGrant{Name: "import.submit", Capability: extensionv1.CapabilityAdmin, Permission: "admin"}, Method: "POST", Path: accounts.BasePath() + "/data", AllAccounts: true}), h.Admin.Account.ImportData)
 		accounts.POST("/batch-update-credentials", h.Admin.Account.BatchUpdateCredentials)
 		accounts.POST("/batch-refresh-tier", h.Admin.Account.BatchRefreshTier)
 		accounts.POST("/bulk-update", h.Admin.Account.BulkUpdate)
