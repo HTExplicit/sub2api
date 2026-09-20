@@ -243,6 +243,7 @@
 </template>
 
 <script setup lang="ts">
+import { usePresentationColors } from '@/composables/usePresentationColors'
 import { computed, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { Chart as ChartJS, ArcElement, Tooltip, Legend } from 'chart.js'
@@ -255,6 +256,7 @@ import { getUserBreakdown } from '@/api/admin/dashboard'
 ChartJS.register(ArcElement, Tooltip, Legend)
 
 const { t } = useI18n()
+const presentation = usePresentationColors()
 
 type DistributionMetric = 'tokens' | 'actual_cost'
 type ModelSource = 'requested' | 'upstream' | 'mapping'
@@ -391,7 +393,7 @@ const rankingChartData = computed(() => {
   if (otherRankingItem.value) {
     labels.push(t('admin.dashboard.spendingRankingOther'))
     data.push(otherRankingItem.value.actual_cost)
-    backgroundColor.push('#8a8b8d')
+    backgroundColor.push(presentation.value.gray)
   }
 
   return {

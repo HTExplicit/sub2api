@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { usePresentationColors } from '@/composables/usePresentationColors'
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import {
@@ -34,15 +35,15 @@ const emit = defineEmits<{
 }>()
 const { t } = useI18n()
 
-const isDarkMode = computed(() => document.documentElement.classList.contains('dark'))
+const presentation = usePresentationColors()
 const colors = computed(() => ({
   red: '#ef4444',
   redAlpha: '#ef444420',
   purple: '#8b5cf6',
   purpleAlpha: '#8b5cf620',
-  gray: '#8a8b8d',
-  grid: isDarkMode.value ? '#3a3b40' : '#f5f5f5',
-  text: isDarkMode.value ? '#8a8b8d' : '#6f6f6f'
+  gray: presentation.value.gray,
+  grid: presentation.value.axisGrid,
+  text: presentation.value.axis
 }))
 
 const totalRequestErrors = computed(() => sumNumbers(props.points.map((p) => p.error_count_sla ?? 0)))
@@ -119,9 +120,9 @@ const options = computed(() => {
         labels: { color: c.text, usePointStyle: true, boxWidth: 6, font: { size: 10 } }
       },
       tooltip: {
-        backgroundColor: isDarkMode.value ? '#26272b' : '#ffffff',
-        titleColor: isDarkMode.value ? '#f5f5f5' : '#111411',
-        bodyColor: isDarkMode.value ? '#bdbdbd' : '#56575a',
+        backgroundColor: presentation.value.tooltip,
+        titleColor: presentation.value.title,
+        bodyColor: presentation.value.body,
         borderColor: c.grid,
         borderWidth: 1,
         padding: 10,

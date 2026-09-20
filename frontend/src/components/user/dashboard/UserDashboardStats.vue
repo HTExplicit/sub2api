@@ -147,7 +147,7 @@
         data-testid="platform-card"
         :data-platform="item.platform"
         :class="[
-          'rounded-none border p-3',
+          'rounded-lg border p-3',
           item.isOther
             ? 'border-dashed border-gray-300 bg-gray-50 dark:border-dark-500 dark:bg-dark-700'
             : 'border-gray-200 dark:border-dark-600'

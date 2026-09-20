@@ -523,7 +523,7 @@ function formatBucketRange(value: string) {
 .health-healthy  { background: #22c55e; }
 .health-warning  { background: #f59e0b; }
 .health-critical { background: #ef4444; }
-.health-unknown  { background: #8a8b8d; }
+.health-unknown  { background: rgb(var(--theme-color-gray-400, 156 163 175)); }
 
 .score-legend {
   background: linear-gradient(

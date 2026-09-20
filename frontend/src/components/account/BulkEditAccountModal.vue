@@ -509,7 +509,7 @@
               :key="code.value"
               type="button"
               :class="[
-                'rounded-none px-3 py-1.5 text-sm font-medium transition-colors',
+                'rounded-lg px-3 py-1.5 text-sm font-medium transition-colors',
                 selectedErrorCodes.includes(code.value)
                   ? 'bg-red-100 text-red-700 ring-1 ring-red-500 dark:bg-red-900/30 dark:text-red-400'
                   : 'bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-dark-600 dark:text-dark-300 dark:hover:bg-gray-600'
@@ -1390,7 +1390,7 @@
             <button type="button" v-for="opt in umqModeOptions" :key="opt.value"
               @click="userMsgQueueMode = userMsgQueueMode === opt.value ? null : opt.value"
               :class="[
-                'px-3 py-1.5 text-sm rounded-none border transition-colors',
+                'px-3 py-1.5 text-sm rounded-md border transition-colors',
                 userMsgQueueMode === opt.value
                   ? 'bg-primary-600 text-white border-primary-600'
                   : 'bg-white dark:bg-dark-700 text-gray-700 dark:text-gray-300 border-gray-300 dark:border-dark-500 hover:bg-gray-50 dark:hover:bg-dark-600'

@@ -33,7 +33,7 @@
       </button>
       <button
         type="button"
-        class="rounded-none bg-gray-100 px-3 py-1 text-xs text-gray-600 transition-colors hover:bg-gray-200 dark:bg-dark-600 dark:text-dark-300 dark:hover:bg-gray-600"
+        class="rounded-lg bg-gray-100 px-3 py-1 text-xs text-gray-600 transition-colors hover:bg-gray-200 dark:bg-dark-600 dark:text-dark-300 dark:hover:bg-gray-600"
         @click="closeImportPanel"
       >
         {{ t('admin.accounts.headerOverride.importJsonCancel') }}

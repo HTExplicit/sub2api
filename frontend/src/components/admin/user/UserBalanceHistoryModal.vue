@@ -102,7 +102,7 @@
             <div class="flex items-start gap-3">
               <div
                 :class="[
-                  'flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-none',
+                  'flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-lg',
                   getIconBg(item)
                 ]"
               >

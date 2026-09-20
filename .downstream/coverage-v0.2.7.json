@@ -1,13 +1,13 @@
 {
   "schema_version": 3,
   "upstream_base": "aea725f2ea644d5592d0bbb1d63b607efa7e200a",
-  "basis_commit": "a24c245acdcc154b9f96c33bc716921bd9c39727",
+  "basis_commit": "2ee4c42e89a27156430e67f662c0f51b10b3ff29",
   "scope": "Current Sub2API downstream source and working tree. Candidate ownership does not establish completed review. Root maintenance, independent services and Worker require a separate audit.",
-  "source_digest": "901a6fc197ad2c988a9fc1c913c00e51f6d77453d37df86c98c3f4016a8f1bfb",
+  "source_digest": "33d1e1e5d1cc7c1157f90ad45efdc42824d6428ad2ce86431449de183d13c9ce",
   "digest_excludes": [
     "the inventory itself uses a derived structural fingerprint; deletions bind the upstream blob"
   ],
-  "total_paths": 2303,
+  "total_paths": 2293,
   "generated_assets_and_locks": 83,
   "review_complete": false,
   "pending_paths": [
@@ -1164,7 +1164,6 @@
     "frontend/src/components/account/AccountUsageCell.vue",
     "frontend/src/components/account/BulkEditAccountModal.vue",
     "frontend/src/components/account/CapacityBadge.vue",
-    "frontend/src/components/account/CnBaseUrlPresets.vue",
     "frontend/src/components/account/CreateAccountModal.vue",
     "frontend/src/components/account/EditAccountModal.vue",
     "frontend/src/components/account/HeaderOverrideJsonTools.vue",
@@ -1247,7 +1246,6 @@
     "frontend/src/components/admin/usage/UsageTable.vue",
     "frontend/src/components/admin/usage/UserTokenRanking.vue",
     "frontend/src/components/admin/user/UserAllowedGroupsModal.vue",
-    "frontend/src/components/admin/user/UserApiKeysModal.vue",
     "frontend/src/components/admin/user/UserBalanceHistoryModal.vue",
     "frontend/src/components/admin/user/UserPlatformQuotaModal.vue",
     "frontend/src/components/admin/user/__tests__/UserPlatformQuotaModal.spec.ts",
@@ -1362,6 +1360,7 @@
     "frontend/src/composables/useAccountTestPrompt.ts",
     "frontend/src/composables/useModelContextCapacities.ts",
     "frontend/src/composables/useModelWhitelist.ts",
+    "frontend/src/composables/usePresentationColors.ts",
     "frontend/src/constants/__tests__/platforms.spec.ts",
     "frontend/src/constants/platforms.ts",
     "frontend/src/features/account-jobs/__tests__/integrationSurface.spec.ts",
@@ -1379,20 +1378,9 @@
     "frontend/src/features/image-studio/history.spec.ts",
     "frontend/src/features/image-studio/history.ts",
     "frontend/src/features/prompt-audit/PromptAuditView.vue",
-    "frontend/src/features/prompt-audit/__tests__/PromptAuditView.spec.ts",
     "frontend/src/features/prompt-audit/__tests__/api.spec.ts",
-    "frontend/src/features/prompt-audit/__tests__/components.spec.ts",
     "frontend/src/features/prompt-audit/__tests__/integrationSurface.spec.ts",
-    "frontend/src/features/prompt-audit/__tests__/viewModel.spec.ts",
     "frontend/src/features/prompt-audit/api.ts",
-    "frontend/src/features/prompt-audit/components/EndpointPool.vue",
-    "frontend/src/features/prompt-audit/components/EventDetailDialog.vue",
-    "frontend/src/features/prompt-audit/components/EventWorkspace.vue",
-    "frontend/src/features/prompt-audit/components/FilterDeleteDialog.vue",
-    "frontend/src/features/prompt-audit/components/PolicyPanel.vue",
-    "frontend/src/features/prompt-audit/components/RuntimeOverview.vue",
-    "frontend/src/features/prompt-audit/types.ts",
-    "frontend/src/features/prompt-audit/viewModel.ts",
     "frontend/src/i18n/__tests__/accountConsoleLocales.spec.ts",
     "frontend/src/i18n/__tests__/cindyProbeLocales.spec.ts",
     "frontend/src/i18n/locales/en/admin/accountTasks.ts",
@@ -1585,6 +1573,7 @@
     "plugins/admin-observability/manifest.source.json",
     "plugins/admin-observability/policy/module.go",
     "plugins/admin-observability/policy/module_test.go",
+    "plugins/admin-observability/scripts/check-chart-colors.py",
     "plugins/admin-observability/scripts/check-theme.py",
     "plugins/admin-observability/scripts/check-ui.py",
     "plugins/admin-observability/ui/assets/app.js",
@@ -1621,6 +1610,7 @@
     "plugins/cindy-provider/catalog/module_test.go",
     "plugins/cindy-provider/catalog/probe.go",
     "plugins/cindy-provider/catalog/probe_test.go",
+    "plugins/cindy-provider/catalog/search.go",
     "plugins/cindy-provider/cmd/plugin/main.go",
     "plugins/cindy-provider/go.mod",
     "plugins/cindy-provider/manifest.source.json",
@@ -1726,22 +1716,22 @@
     "dependency-lock": 9,
     "documentation": 28,
     "generated": 68,
-    "source": 1035,
-    "test-or-fixture": 699
+    "source": 1028,
+    "test-or-fixture": 696
   },
   "owner_counts": {
     "operations": 42,
     "documentation-and-history": 26,
-    "mixed-requires-review": 1037,
+    "mixed-requires-review": 1030,
     "core-extension-and-job-host": 179,
     "core-data-and-migrations": 21,
-    "cindy-provider": 182,
+    "cindy-provider": 183,
     "image-tools": 45,
     "account-tools": 79,
     "codex-runtime": 44,
     "prompt-skills": 553,
     "core-quota-and-protocol": 22,
-    "admin-observability": 54,
+    "admin-observability": 50,
     "model-policy": 19
   },
   "entries": [
@@ -1787,7 +1777,7 @@
       "role": "documentation",
       "present": true,
       "content_sha256": null,
-      "review_fingerprint": "127ad8f6a09b312d8e0c0b6a25b0cbec8835ba6827757b48d850007023042b90",
+      "review_fingerprint": "d6e7c21645056fe2926698b6a1b3ef676aa6d81f809f287b645c5c0543d98cec",
       "review_status": "reviewed",
       "decision": "generated-source",
       "owner": "operations",
@@ -1816,8 +1806,8 @@
       "candidate_owner": "documentation-and-history",
       "role": "documentation",
       "present": true,
-      "content_sha256": "1a2940ccaa929c94bed8c5896a7877681f69e288d0594e7bdda3438b94d18a99",
-      "review_fingerprint": "1a2940ccaa929c94bed8c5896a7877681f69e288d0594e7bdda3438b94d18a99",
+      "content_sha256": "bc5997a46e6502b681e2996b9e9d8273026af7c48aad1d4263eab01b9487cbc5",
+      "review_fingerprint": "bc5997a46e6502b681e2996b9e9d8273026af7c48aad1d4263eab01b9487cbc5",
       "review_status": "pending"
     },
     {
@@ -4714,8 +4704,8 @@
       "candidate_owner": "mixed-requires-review",
       "role": "source",
       "present": true,
-      "content_sha256": "e4d3cbf21a8954a3f04ff413f41068b1395d3ab19d6d28fca7e7cc478fccea9d",
-      "review_fingerprint": "e4d3cbf21a8954a3f04ff413f41068b1395d3ab19d6d28fca7e7cc478fccea9d",
+      "content_sha256": "124d31c83f4a895ad105fe389677fb540ce41a3234e8ad281e7d2f97bc416521",
+      "review_fingerprint": "124d31c83f4a895ad105fe389677fb540ce41a3234e8ad281e7d2f97bc416521",
       "review_status": "pending"
     },
     {
@@ -12278,8 +12268,8 @@
       "candidate_owner": "prompt-skills",
       "role": "source",
       "present": true,
-      "content_sha256": "dc788bf8262d6b54acb55c0b6e4f626c2ab9ee03121304022e1d545522d1fd27",
-      "review_fingerprint": "dc788bf8262d6b54acb55c0b6e4f626c2ab9ee03121304022e1d545522d1fd27",
+      "content_sha256": "854a1a88920f66e35184a1a868292dfcab6e682f11f34f136d7402a6d1d75bd9",
+      "review_fingerprint": "854a1a88920f66e35184a1a868292dfcab6e682f11f34f136d7402a6d1d75bd9",
       "review_status": "pending"
     },
     {
@@ -12305,8 +12295,8 @@
       "candidate_owner": "prompt-skills",
       "role": "source",
       "present": true,
-      "content_sha256": "c1ee17947066bf1d54c8db6407f83f3fccac6738a8195cf6483a7adaa4500ca1",
-      "review_fingerprint": "c1ee17947066bf1d54c8db6407f83f3fccac6738a8195cf6483a7adaa4500ca1",
+      "content_sha256": "808c2018de8738da4aa7165e2943a4654878380c298828646f144d190009395b",
+      "review_fingerprint": "808c2018de8738da4aa7165e2943a4654878380c298828646f144d190009395b",
       "review_status": "pending"
     },
     {
@@ -14346,8 +14336,8 @@
       "candidate_owner": "mixed-requires-review",
       "role": "source",
       "present": true,
-      "content_sha256": "887128e0a9a74fa19c26575dc4ad681da8752b335a9294924147001f4da13fff",
-      "review_fingerprint": "887128e0a9a74fa19c26575dc4ad681da8752b335a9294924147001f4da13fff",
+      "content_sha256": "bb03dd4d6d5e41d5e88070b28b30c2b99ff9a3d811b2d76667563c0c6f84cea5",
+      "review_fingerprint": "bb03dd4d6d5e41d5e88070b28b30c2b99ff9a3d811b2d76667563c0c6f84cea5",
       "review_status": "pending"
     },
     {
@@ -14355,8 +14345,8 @@
       "candidate_owner": "mixed-requires-review",
       "role": "source",
       "present": true,
-      "content_sha256": "0852c24f7d6e83c7b500dd05509593b60a6d227e789bc7af9d670e1728eb9dd7",
-      "review_fingerprint": "0852c24f7d6e83c7b500dd05509593b60a6d227e789bc7af9d670e1728eb9dd7",
+      "content_sha256": "a77424b13cf5cae1da63e6146e04755725b2df4549820029f98dd9463b82d173",
+      "review_fingerprint": "a77424b13cf5cae1da63e6146e04755725b2df4549820029f98dd9463b82d173",
       "review_status": "pending"
     },
     {
@@ -14409,8 +14399,8 @@
       "candidate_owner": "mixed-requires-review",
       "role": "source",
       "present": true,
-      "content_sha256": "f3a919febf5e6ca45f094c93a5849a5c534568a9528d140bfc7b8f35c815749e",
-      "review_fingerprint": "f3a919febf5e6ca45f094c93a5849a5c534568a9528d140bfc7b8f35c815749e",
+      "content_sha256": "46db3bb5e95a94cd9652a47045893827323e0bfa2aa1ac6d60485a750e2f95f0",
+      "review_fingerprint": "46db3bb5e95a94cd9652a47045893827323e0bfa2aa1ac6d60485a750e2f95f0",
       "review_status": "pending"
     },
     {
@@ -14427,8 +14417,8 @@
       "candidate_owner": "account-tools",
       "role": "source",
       "present": true,
-      "content_sha256": "8d4f77f99159e64fb7ac31f915694ec294e58a1f0d2bab6abafc1fe6effc7f40",
-      "review_fingerprint": "8d4f77f99159e64fb7ac31f915694ec294e58a1f0d2bab6abafc1fe6effc7f40",
+      "content_sha256": "6c925d7d047819cd038b6384cb45e664fd5827441675b5f48d39fdcc59f6a088",
+      "review_fingerprint": "6c925d7d047819cd038b6384cb45e664fd5827441675b5f48d39fdcc59f6a088",
       "review_status": "pending"
     },
     {
@@ -14445,8 +14435,8 @@
       "candidate_owner": "mixed-requires-review",
       "role": "source",
       "present": true,
-      "content_sha256": "2f934563abd4722a965816111c695666be877363e70eab6e7d9c9f2e07a4cdce",
-      "review_fingerprint": "2f934563abd4722a965816111c695666be877363e70eab6e7d9c9f2e07a4cdce",
+      "content_sha256": "6acbfec079657dbf30790805a5efddf76edb642be41fa96a24f80d70e79ab584",
+      "review_fingerprint": "6acbfec079657dbf30790805a5efddf76edb642be41fa96a24f80d70e79ab584",
       "review_status": "pending"
     },
     {
@@ -14454,17 +14444,8 @@
       "candidate_owner": "mixed-requires-review",
       "role": "source",
       "present": true,
-      "content_sha256": "7a5ab9d3b60029ae78b4a3e0e4414adb5f166f7f120b4458f421674d1d2019cc",
-      "review_fingerprint": "7a5ab9d3b60029ae78b4a3e0e4414adb5f166f7f120b4458f421674d1d2019cc",
-      "review_status": "pending"
-    },
-    {
-      "path": "frontend/src/components/account/CnBaseUrlPresets.vue",
-      "candidate_owner": "mixed-requires-review",
-      "role": "source",
-      "present": true,
-      "content_sha256": "be3654c6471e8549f4341e8dd5b24ebac1aed0dcb5c05730cdba66c3063c8a02",
-      "review_fingerprint": "be3654c6471e8549f4341e8dd5b24ebac1aed0dcb5c05730cdba66c3063c8a02",
+      "content_sha256": "499c2808861c78eb2eb3a9fa531f6354339a3a83bf104723707d566e2569e058",
+      "review_fingerprint": "499c2808861c78eb2eb3a9fa531f6354339a3a83bf104723707d566e2569e058",
       "review_status": "pending"
     },
     {
@@ -14472,8 +14453,8 @@
       "candidate_owner": "mixed-requires-review",
       "role": "source",
       "present": true,
-      "content_sha256": "2056f0ea9752beeec1fea5ab48a8be34b8480d72fe62b917a69bee479b4884ad",
-      "review_fingerprint": "2056f0ea9752beeec1fea5ab48a8be34b8480d72fe62b917a69bee479b4884ad",
+      "content_sha256": "d749fe25d3e58ec7f6147d13cec5ee46c4aee3f2a71e933e76b11e9c2354d974",
+      "review_fingerprint": "d749fe25d3e58ec7f6147d13cec5ee46c4aee3f2a71e933e76b11e9c2354d974",
       "review_status": "pending"
     },
     {
@@ -14481,8 +14462,8 @@
       "candidate_owner": "mixed-requires-review",
       "role": "source",
       "present": true,
-      "content_sha256": "16ba3d9e042d89fafcb48bc3272360e0fc042f3522c1e5a160a8ba71adc46cdd",
-      "review_fingerprint": "16ba3d9e042d89fafcb48bc3272360e0fc042f3522c1e5a160a8ba71adc46cdd",
+      "content_sha256": "3b20d13e1a3e5fba6e32fbc5bd09cecdd0085ab99d2460e7ecb0091cd526acb4",
+      "review_fingerprint": "3b20d13e1a3e5fba6e32fbc5bd09cecdd0085ab99d2460e7ecb0091cd526acb4",
       "review_status": "pending"
     },
     {
@@ -14490,8 +14471,8 @@
       "candidate_owner": "mixed-requires-review",
       "role": "source",
       "present": true,
-      "content_sha256": "98e4ce4a875bb34077b2c267a1bec9c1fa452e3b53d000453b510cc0c4a44ffd",
-      "review_fingerprint": "98e4ce4a875bb34077b2c267a1bec9c1fa452e3b53d000453b510cc0c4a44ffd",
+      "content_sha256": "a5eef6203c4be8a1f1964c16bf7899752ea949c011c418d498fc6651a555ca6c",
+      "review_fingerprint": "a5eef6203c4be8a1f1964c16bf7899752ea949c011c418d498fc6651a555ca6c",
       "review_status": "pending"
     },
     {
@@ -14553,8 +14534,8 @@
       "candidate_owner": "mixed-requires-review",
       "role": "source",
       "present": true,
-      "content_sha256": "1b9c53aff9d1190f909ce1e69b36d82cc1b85a33ff008e08089a9e2a4650b992",
-      "review_fingerprint": "1b9c53aff9d1190f909ce1e69b36d82cc1b85a33ff008e08089a9e2a4650b992",
+      "content_sha256": "5d2eb3d1ac2c1f76fdfb2e064aa2d3e9f636670bde197bf9df5bb3a6b21afa66",
+      "review_fingerprint": "5d2eb3d1ac2c1f76fdfb2e064aa2d3e9f636670bde197bf9df5bb3a6b21afa66",
       "review_status": "pending"
     },
     {
@@ -14580,8 +14561,8 @@
       "candidate_owner": "mixed-requires-review",
       "role": "source",
       "present": true,
-      "content_sha256": "f3e8af97af3568a183aff910af91d832691322f7aa713019df64384cded1a6dd",
-      "review_fingerprint": "f3e8af97af3568a183aff910af91d832691322f7aa713019df64384cded1a6dd",
+      "content_sha256": "a0c8af0debbb07946f40d79a154e2619e6ba641bae974133c584e6a3f9acb6ab",
+      "review_fingerprint": "a0c8af0debbb07946f40d79a154e2619e6ba641bae974133c584e6a3f9acb6ab",
       "review_status": "pending"
     },
     {
@@ -14886,8 +14867,8 @@
       "candidate_owner": "mixed-requires-review",
       "role": "source",
       "present": true,
-      "content_sha256": "baaeb861d879b6ed378370a4e02e70ef6eb383a156f68e8c5f8b5de272b0b176",
-      "review_fingerprint": "baaeb861d879b6ed378370a4e02e70ef6eb383a156f68e8c5f8b5de272b0b176",
+      "content_sha256": "3a8b4cfd5629861af7b92f16d92fbbc9016654c509ca572a2e24bd71b07ac581",
+      "review_fingerprint": "3a8b4cfd5629861af7b92f16d92fbbc9016654c509ca572a2e24bd71b07ac581",
       "review_status": "pending"
     },
     {
@@ -14913,8 +14894,8 @@
       "candidate_owner": "account-tools",
       "role": "source",
       "present": true,
-      "content_sha256": "5ae2d68bad5ebec86c613d84747d6e01029f57c6ceb58c34e2bdd78b46e7ce80",
-      "review_fingerprint": "5ae2d68bad5ebec86c613d84747d6e01029f57c6ceb58c34e2bdd78b46e7ce80",
+      "content_sha256": "7588ff1ce17f18bca2209f6100182d6824fc5ddf303ac21e53b01248b6535950",
+      "review_fingerprint": "7588ff1ce17f18bca2209f6100182d6824fc5ddf303ac21e53b01248b6535950",
       "review_status": "pending"
     },
     {
@@ -14976,8 +14957,8 @@
       "candidate_owner": "mixed-requires-review",
       "role": "source",
       "present": true,
-      "content_sha256": "ddef25a7359ea9aaa09551d1f5d7a5d0cec89a8b2aa8f62b68852d624a1b65e4",
-      "review_fingerprint": "ddef25a7359ea9aaa09551d1f5d7a5d0cec89a8b2aa8f62b68852d624a1b65e4",
+      "content_sha256": "c02f8bc5f3dff9603aa556ff00fccb58717b2c2f6204eee64e438662e10fedeb",
+      "review_fingerprint": "c02f8bc5f3dff9603aa556ff00fccb58717b2c2f6204eee64e438662e10fedeb",
       "review_status": "pending"
     },
     {
@@ -15206,21 +15187,12 @@
       "review_status": "pending"
     },
     {
-      "path": "frontend/src/components/admin/user/UserApiKeysModal.vue",
-      "candidate_owner": "mixed-requires-review",
-      "role": "source",
-      "present": true,
-      "content_sha256": "62558e2d4f047d95228081b6bdb738903b8f3493bc2570a86f2d43d79bda97ab",
-      "review_fingerprint": "62558e2d4f047d95228081b6bdb738903b8f3493bc2570a86f2d43d79bda97ab",
-      "review_status": "pending"
-    },
-    {
       "path": "frontend/src/components/admin/user/UserBalanceHistoryModal.vue",
       "candidate_owner": "mixed-requires-review",
       "role": "source",
       "present": true,
-      "content_sha256": "28247a6df88aa5da1fc5865008b56b28c78c22304e773dafbe3f6b49b92e67d8",
-      "review_fingerprint": "28247a6df88aa5da1fc5865008b56b28c78c22304e773dafbe3f6b49b92e67d8",
+      "content_sha256": "d8c46296c025b113ca4d3bb24221faabe6e6f5066dda5be032474838ff79713c",
+      "review_fingerprint": "d8c46296c025b113ca4d3bb24221faabe6e6f5066dda5be032474838ff79713c",
       "review_status": "pending"
     },
     {
@@ -15264,8 +15236,8 @@
       "candidate_owner": "mixed-requires-review",
       "role": "source",
       "present": true,
-      "content_sha256": "cc8183b5beab550ddba34972b034a242595b8bf1dbc227c508cd8057759fe98a",
-      "review_fingerprint": "cc8183b5beab550ddba34972b034a242595b8bf1dbc227c508cd8057759fe98a",
+      "content_sha256": "adf858f3af2e91f00421f40eee1688ddcf5d049ff1f113e2bffcd78018b20f74",
+      "review_fingerprint": "adf858f3af2e91f00421f40eee1688ddcf5d049ff1f113e2bffcd78018b20f74",
       "review_status": "pending"
     },
     {
@@ -15291,8 +15263,8 @@
       "candidate_owner": "mixed-requires-review",
       "role": "source",
       "present": true,
-      "content_sha256": "4b3ff1c49a5d6189ba46c0b081ab5a5cf706a46bc23e09e4d8e95061f2293f48",
-      "review_fingerprint": "4b3ff1c49a5d6189ba46c0b081ab5a5cf706a46bc23e09e4d8e95061f2293f48",
+      "content_sha256": "1c5805bae3138735cb0372b7215aec654d04f0fe9cbb171c23793f27968309ff",
+      "review_fingerprint": "1c5805bae3138735cb0372b7215aec654d04f0fe9cbb171c23793f27968309ff",
       "review_status": "pending"
     },
     {
@@ -15300,8 +15272,8 @@
       "candidate_owner": "mixed-requires-review",
       "role": "source",
       "present": true,
-      "content_sha256": "6803e2b8016a4cef6ae43b84047a81cc3d8e26f91b2135b9b5d5f0840637a2e8",
-      "review_fingerprint": "6803e2b8016a4cef6ae43b84047a81cc3d8e26f91b2135b9b5d5f0840637a2e8",
+      "content_sha256": "781eb144c0a46543a46d97f48cc8f3bed2bf9840c006d012ec1751826c17c232",
+      "review_fingerprint": "781eb144c0a46543a46d97f48cc8f3bed2bf9840c006d012ec1751826c17c232",
       "review_status": "pending"
     },
     {
@@ -15318,8 +15290,8 @@
       "candidate_owner": "mixed-requires-review",
       "role": "source",
       "present": true,
-      "content_sha256": "6614c1fc989520fee7c822cec923086dcd3358485503bc657ac733ec25ef591f",
-      "review_fingerprint": "6614c1fc989520fee7c822cec923086dcd3358485503bc657ac733ec25ef591f",
+      "content_sha256": "e676c7b3b3341480b3ad360625bef030ba9cabbab44e54c89e70d2ce537b1cfa",
+      "review_fingerprint": "e676c7b3b3341480b3ad360625bef030ba9cabbab44e54c89e70d2ce537b1cfa",
       "review_status": "pending"
     },
     {
@@ -15327,8 +15299,8 @@
       "candidate_owner": "mixed-requires-review",
       "role": "source",
       "present": true,
-      "content_sha256": "eda8595a90d2987a2f51851de1f0035515bb83eaa604d9e69f5cdc07d90ded05",
-      "review_fingerprint": "eda8595a90d2987a2f51851de1f0035515bb83eaa604d9e69f5cdc07d90ded05",
+      "content_sha256": "3c93d519040db7833e95008c330cfe8d2c43c7deed4b3e695cc7a51444aa8f9e",
+      "review_fingerprint": "3c93d519040db7833e95008c330cfe8d2c43c7deed4b3e695cc7a51444aa8f9e",
       "review_status": "pending"
     },
     {
@@ -15462,8 +15434,8 @@
       "candidate_owner": "mixed-requires-review",
       "role": "source",
       "present": true,
-      "content_sha256": "ba5690381c524ef515baf43d85dab6c3eb48ed2f87a0841bbec2dbfa68071941",
-      "review_fingerprint": "ba5690381c524ef515baf43d85dab6c3eb48ed2f87a0841bbec2dbfa68071941",
+      "content_sha256": "36d648b6e1d2978280f24f87c5348bfd25f94c850c302e2f1f70c15b8d2be466",
+      "review_fingerprint": "36d648b6e1d2978280f24f87c5348bfd25f94c850c302e2f1f70c15b8d2be466",
       "review_status": "pending"
     },
     {
@@ -15732,8 +15704,8 @@
       "candidate_owner": "mixed-requires-review",
       "role": "source",
       "present": true,
-      "content_sha256": "7fb5643aedd064a3d94c75b1f9597a8b47a73533ecfa8c69d5453a21bb55282b",
-      "review_fingerprint": "7fb5643aedd064a3d94c75b1f9597a8b47a73533ecfa8c69d5453a21bb55282b",
+      "content_sha256": "5b0e92f80cb19e6dc766782b2358e14b20c0b97386ae85af7af1b8b93f123d61",
+      "review_fingerprint": "5b0e92f80cb19e6dc766782b2358e14b20c0b97386ae85af7af1b8b93f123d61",
       "review_status": "pending"
     },
     {
@@ -15750,8 +15722,8 @@
       "candidate_owner": "mixed-requires-review",
       "role": "source",
       "present": true,
-      "content_sha256": "f4d3318c17a813b0e174fc7e4058ee750627e41fc521c7af75e827f9719bf5d5",
-      "review_fingerprint": "f4d3318c17a813b0e174fc7e4058ee750627e41fc521c7af75e827f9719bf5d5",
+      "content_sha256": "e58842bf9727930b5d62a4e6d3b41e31d7a27caafa73f0a083d8890fbc0cadde",
+      "review_fingerprint": "e58842bf9727930b5d62a4e6d3b41e31d7a27caafa73f0a083d8890fbc0cadde",
       "review_status": "pending"
     },
     {
@@ -15759,8 +15731,8 @@
       "candidate_owner": "mixed-requires-review",
       "role": "source",
       "present": true,
-      "content_sha256": "403d384fbe0858d9e46d1a1c37a275c7f1f7dd28e424a531dba7d12eebbb7d70",
-      "review_fingerprint": "403d384fbe0858d9e46d1a1c37a275c7f1f7dd28e424a531dba7d12eebbb7d70",
+      "content_sha256": "ecb36d10e2609f56ba26a2c38b3d5ada739d0d0a2b893d9a1e4cbccd4f009d93",
+      "review_fingerprint": "ecb36d10e2609f56ba26a2c38b3d5ada739d0d0a2b893d9a1e4cbccd4f009d93",
       "review_status": "pending"
     },
     {
@@ -15804,8 +15776,8 @@
       "candidate_owner": "mixed-requires-review",
       "role": "source",
       "present": true,
-      "content_sha256": "24a62573f4616da4669a391e55359dbf93b2977ca20a91f1d60998d9e9cf21e4",
-      "review_fingerprint": "24a62573f4616da4669a391e55359dbf93b2977ca20a91f1d60998d9e9cf21e4",
+      "content_sha256": "ea28a1d905b3e6454eb0bb2caec730e61158bed11cf43664a8c5723df731f104",
+      "review_fingerprint": "ea28a1d905b3e6454eb0bb2caec730e61158bed11cf43664a8c5723df731f104",
       "review_status": "pending"
     },
     {
@@ -15822,8 +15794,8 @@
       "candidate_owner": "mixed-requires-review",
       "role": "source",
       "present": true,
-      "content_sha256": "7cd462fac45e818b628f5639654c29ce5bd47bc8d2dfa488ae441f91b78b05ee",
-      "review_fingerprint": "7cd462fac45e818b628f5639654c29ce5bd47bc8d2dfa488ae441f91b78b05ee",
+      "content_sha256": "4321f116485ed7131e8ca2b4c84d653e1e519f9fa60505fdd6f91d7a84b294ba",
+      "review_fingerprint": "4321f116485ed7131e8ca2b4c84d653e1e519f9fa60505fdd6f91d7a84b294ba",
       "review_status": "pending"
     },
     {
@@ -16054,8 +16026,8 @@
       "candidate_owner": "mixed-requires-review",
       "role": "source",
       "present": true,
-      "content_sha256": "3d855acb40c6c5057ce89615a4abbc9055bc547dbaab9fd67fcae95cab0967b1",
-      "review_fingerprint": "3d855acb40c6c5057ce89615a4abbc9055bc547dbaab9fd67fcae95cab0967b1",
+      "content_sha256": "f9bc53c7db0b978460ac168a7c632e407a5f54ac4665e0b7e3dd5a009cec8ddc",
+      "review_fingerprint": "f9bc53c7db0b978460ac168a7c632e407a5f54ac4665e0b7e3dd5a009cec8ddc",
       "review_status": "pending"
     },
     {
@@ -16108,8 +16080,8 @@
       "candidate_owner": "mixed-requires-review",
       "role": "source",
       "present": true,
-      "content_sha256": "f90a0611ddfe7d961a5e57cdb4de5847cbab41813b6cb8f6fdf51366d557aeac",
-      "review_fingerprint": "f90a0611ddfe7d961a5e57cdb4de5847cbab41813b6cb8f6fdf51366d557aeac",
+      "content_sha256": "caf354205ef89b317b322d4e41631fd8938885eecd7c9112b90295ddc9ce7f70",
+      "review_fingerprint": "caf354205ef89b317b322d4e41631fd8938885eecd7c9112b90295ddc9ce7f70",
       "review_status": "pending"
     },
     {
@@ -16257,6 +16229,15 @@
       "review_status": "pending"
     },
     {
+      "path": "frontend/src/composables/usePresentationColors.ts",
+      "candidate_owner": "mixed-requires-review",
+      "role": "source",
+      "present": true,
+      "content_sha256": "739760a1e7ce4307b63e588fcfd6dbab75e40765586dd0dfe1f8b1138e4665f8",
+      "review_fingerprint": "739760a1e7ce4307b63e588fcfd6dbab75e40765586dd0dfe1f8b1138e4665f8",
+      "review_status": "pending"
+    },
+    {
       "path": "frontend/src/constants/__tests__/platforms.spec.ts",
       "candidate_owner": "mixed-requires-review",
       "role": "test-or-fixture",
@@ -16315,8 +16296,8 @@
       "candidate_owner": "mixed-requires-review",
       "role": "source",
       "present": true,
-      "content_sha256": "a7a3114e2eb42f1d1e8ed50dd2214568171a2bdc02c67bb5d7a9e7d65b939202",
-      "review_fingerprint": "a7a3114e2eb42f1d1e8ed50dd2214568171a2bdc02c67bb5d7a9e7d65b939202",
+      "content_sha256": "2d1cc20d34c099a4d5194002480b402c314de20583a7d6cfa6491513c0861882",
+      "review_fingerprint": "2d1cc20d34c099a4d5194002480b402c314de20583a7d6cfa6491513c0861882",
       "review_status": "pending"
     },
     {
@@ -16324,8 +16305,8 @@
       "candidate_owner": "mixed-requires-review",
       "role": "source",
       "present": true,
-      "content_sha256": "571fda59c39876764e0f10f51274335d061ec2febbb26e44e2dd1c08713d8def",
-      "review_fingerprint": "571fda59c39876764e0f10f51274335d061ec2febbb26e44e2dd1c08713d8def",
+      "content_sha256": "8aa3b67ca8c6ffb7a74541eea7653ad81f6f853cddd67e78ec10ea8d2561dee6",
+      "review_fingerprint": "8aa3b67ca8c6ffb7a74541eea7653ad81f6f853cddd67e78ec10ea8d2561dee6",
       "review_status": "pending"
     },
     {
@@ -16410,16 +16391,6 @@
       "review_status": "pending"
     },
     {
-      "path": "frontend/src/features/prompt-audit/__tests__/PromptAuditView.spec.ts",
-      "candidate_owner": "mixed-requires-review",
-      "role": "test-or-fixture",
-      "present": false,
-      "content_sha256": null,
-      "deleted_upstream_blob": "c68fa06f4f6128a27a31d50803efd5ba811f930d",
-      "review_fingerprint": "6ec9b57a195c4a45f55294506d2e40922bf8c76b2e653d625aad0f97ac4a5c28",
-      "review_status": "pending"
-    },
-    {
       "path": "frontend/src/features/prompt-audit/__tests__/api.spec.ts",
       "candidate_owner": "mixed-requires-review",
       "role": "test-or-fixture",
@@ -16427,16 +16398,6 @@
       "content_sha256": null,
       "deleted_upstream_blob": "ead59e2f3c4b40d854a7251c05f6a264eb4282cc",
       "review_fingerprint": "b71387c0596ab97ce838838cf55bb8d6ec8f3f5f0d141d460830ce19c1bc6a4a",
-      "review_status": "pending"
-    },
-    {
-      "path": "frontend/src/features/prompt-audit/__tests__/components.spec.ts",
-      "candidate_owner": "mixed-requires-review",
-      "role": "test-or-fixture",
-      "present": false,
-      "content_sha256": null,
-      "deleted_upstream_blob": "aa3ead12d59bbf0c870e8808d14081f434043674",
-      "review_fingerprint": "83c053043b9512b5ba49f2384460a7838818a87d9dab09cad44b087203cfaa67",
       "review_status": "pending"
     },
     {
@@ -16449,16 +16410,6 @@
       "review_status": "pending"
     },
     {
-      "path": "frontend/src/features/prompt-audit/__tests__/viewModel.spec.ts",
-      "candidate_owner": "mixed-requires-review",
-      "role": "test-or-fixture",
-      "present": false,
-      "content_sha256": null,
-      "deleted_upstream_blob": "06cf6b4635892b24e0d6d07cb8c5b60743007d0b",
-      "review_fingerprint": "9cd1e436fc6bfa9636fb8ee9a5ad5af36473178120704675b650df89e1a41ee5",
-      "review_status": "pending"
-    },
-    {
       "path": "frontend/src/features/prompt-audit/api.ts",
       "candidate_owner": "mixed-requires-review",
       "role": "source",
@@ -16466,86 +16417,6 @@
       "content_sha256": null,
       "deleted_upstream_blob": "05fe2aa3898d4573a3c88014562dbca53996267d",
       "review_fingerprint": "6a40834a424c3dccb889bb4858214e478266cc66a2698d00a1dff74e25e04046",
-      "review_status": "pending"
-    },
-    {
-      "path": "frontend/src/features/prompt-audit/components/EndpointPool.vue",
-      "candidate_owner": "admin-observability",
-      "role": "source",
-      "present": false,
-      "content_sha256": null,
-      "deleted_upstream_blob": "c90293fdd720ed4f756c16d554e6d71814092c12",
-      "review_fingerprint": "a804da94e8f7a82ac3209cda9a69984b379fcea7959bf4f850ff8fc5cd3ddbcb",
-      "review_status": "pending"
-    },
-    {
-      "path": "frontend/src/features/prompt-audit/components/EventDetailDialog.vue",
-      "candidate_owner": "mixed-requires-review",
-      "role": "source",
-      "present": false,
-      "content_sha256": null,
-      "deleted_upstream_blob": "13da54ce6cd9c7cb979f7869799b4f082b1e0d2a",
-      "review_fingerprint": "23d1fade840c494d82c1eca4c72a638de164fdb3bcda9cfd2e35ce2339c3415e",
-      "review_status": "pending"
-    },
-    {
-      "path": "frontend/src/features/prompt-audit/components/EventWorkspace.vue",
-      "candidate_owner": "admin-observability",
-      "role": "source",
-      "present": false,
-      "content_sha256": null,
-      "deleted_upstream_blob": "551454dd362150133ebd3b8072a17c6c00956316",
-      "review_fingerprint": "13e10c1b62c889b5c759c5b167c4575475dbaa0a66d2550c27521d01c394805d",
-      "review_status": "pending"
-    },
-    {
-      "path": "frontend/src/features/prompt-audit/components/FilterDeleteDialog.vue",
-      "candidate_owner": "admin-observability",
-      "role": "source",
-      "present": false,
-      "content_sha256": null,
-      "deleted_upstream_blob": "bdf0647c8c730c48d6edf8d307b6c6f82c8fd175",
-      "review_fingerprint": "366efa92c16f26c81acaefdc355df77faf6afcb32af98f1d42e53fc86fed1ff2",
-      "review_status": "pending"
-    },
-    {
-      "path": "frontend/src/features/prompt-audit/components/PolicyPanel.vue",
-      "candidate_owner": "admin-observability",
-      "role": "source",
-      "present": false,
-      "content_sha256": null,
-      "deleted_upstream_blob": "24d36b758fd203bfdec8b258689dc6a5b370c8ff",
-      "review_fingerprint": "c0869fb5b3e03dff398ed4514225ce1f9f7a9a2b3e9e4715f9d65643cedcf8f2",
-      "review_status": "pending"
-    },
-    {
-      "path": "frontend/src/features/prompt-audit/components/RuntimeOverview.vue",
-      "candidate_owner": "admin-observability",
-      "role": "source",
-      "present": false,
-      "content_sha256": null,
-      "deleted_upstream_blob": "b44ddfe7a0de1a53ad1e021498068a6e25fb1156",
-      "review_fingerprint": "6fc9f2429a540d8e5ab46f61241a3690f1fab274d03f58aa4cb4ac2b746599b2",
-      "review_status": "pending"
-    },
-    {
-      "path": "frontend/src/features/prompt-audit/types.ts",
-      "candidate_owner": "mixed-requires-review",
-      "role": "source",
-      "present": false,
-      "content_sha256": null,
-      "deleted_upstream_blob": "aeeb16b96fb37a32aff6711cfaed69cf88367787",
-      "review_fingerprint": "f69d2696e67b0d56794587f860a3c840bd89662360964e4fa470798d6af149bb",
-      "review_status": "pending"
-    },
-    {
-      "path": "frontend/src/features/prompt-audit/viewModel.ts",
-      "candidate_owner": "mixed-requires-review",
-      "role": "source",
-      "present": false,
-      "content_sha256": null,
-      "deleted_upstream_blob": "2762a94b57662e59667a032702f27f063d359362",
-      "review_fingerprint": "8ed63d79fd2eec8528440e48c35c50f71d112d53c7bd8f63d792f3375903ce5f",
       "review_status": "pending"
     },
     {
@@ -17111,8 +16982,8 @@
       "candidate_owner": "mixed-requires-review",
       "role": "source",
       "present": true,
-      "content_sha256": "297e0f282915c255f1dc369c5f88052c98480b43e4aa32de3f9f93cb190c682b",
-      "review_fingerprint": "297e0f282915c255f1dc369c5f88052c98480b43e4aa32de3f9f93cb190c682b",
+      "content_sha256": "48deb39bb5f8846314b439558ed4929f8ad2409eca57f8ac39e338062b8181b7",
+      "review_fingerprint": "48deb39bb5f8846314b439558ed4929f8ad2409eca57f8ac39e338062b8181b7",
       "review_status": "pending"
     },
     {
@@ -17147,8 +17018,8 @@
       "candidate_owner": "mixed-requires-review",
       "role": "source",
       "present": true,
-      "content_sha256": "1f49e268d2080faebc0ffed5f04a5bb2a15bae2b9987f1c336addd5015d44e97",
-      "review_fingerprint": "1f49e268d2080faebc0ffed5f04a5bb2a15bae2b9987f1c336addd5015d44e97",
+      "content_sha256": "22f6e4aa27abe072064ea3758ee4b4f2b5cfb39d0d3ee73083541e7fe149d516",
+      "review_fingerprint": "22f6e4aa27abe072064ea3758ee4b4f2b5cfb39d0d3ee73083541e7fe149d516",
       "review_status": "pending"
     },
     {
@@ -17165,8 +17036,8 @@
       "candidate_owner": "mixed-requires-review",
       "role": "source",
       "present": true,
-      "content_sha256": "20f7fc4232c149b5ff806340ae49c722141a6a52d068ded9dc6a0429bb7bc600",
-      "review_fingerprint": "20f7fc4232c149b5ff806340ae49c722141a6a52d068ded9dc6a0429bb7bc600",
+      "content_sha256": "9474149df9291234e99fe1e70b2f9ff194ebe411a4365e83d26f4ffebed7cc3e",
+      "review_fingerprint": "9474149df9291234e99fe1e70b2f9ff194ebe411a4365e83d26f4ffebed7cc3e",
       "review_status": "pending"
     },
     {
@@ -17201,8 +17072,8 @@
       "candidate_owner": "mixed-requires-review",
       "role": "source",
       "present": true,
-      "content_sha256": "45038dde6beb2fe8250fe2211e3a36afafcb2da0ed597f71b81681b607374681",
-      "review_fingerprint": "45038dde6beb2fe8250fe2211e3a36afafcb2da0ed597f71b81681b607374681",
+      "content_sha256": "48b89a2ba655e4ba70fb629e2aec14aa1762ed8ef2ca2136519d92d814a2803f",
+      "review_fingerprint": "48b89a2ba655e4ba70fb629e2aec14aa1762ed8ef2ca2136519d92d814a2803f",
       "review_status": "pending"
     },
     {
@@ -17437,8 +17308,8 @@
       "candidate_owner": "mixed-requires-review",
       "role": "source",
       "present": true,
-      "content_sha256": "7d497fdeb4fc0b64c28e8bda1da8742ef1b72033f67ccd308b90b84f754ca787",
-      "review_fingerprint": "7d497fdeb4fc0b64c28e8bda1da8742ef1b72033f67ccd308b90b84f754ca787",
+      "content_sha256": "1fe1a6aca00f6955077b5f9ac47e91ffe2b12f324964f279ef6fc95e7c7027e6",
+      "review_fingerprint": "1fe1a6aca00f6955077b5f9ac47e91ffe2b12f324964f279ef6fc95e7c7027e6",
       "review_status": "pending"
     },
     {
@@ -17473,8 +17344,8 @@
       "candidate_owner": "mixed-requires-review",
       "role": "source",
       "present": true,
-      "content_sha256": "492e5c54b8c341aa1f2d0a840f73a27bac52aa41ece592f4f5feabb2f6168b66",
-      "review_fingerprint": "492e5c54b8c341aa1f2d0a840f73a27bac52aa41ece592f4f5feabb2f6168b66",
+      "content_sha256": "d7fd48af66627640d5dc49f5610408b8da4becf8099a290875c61bc01afbb925",
+      "review_fingerprint": "d7fd48af66627640d5dc49f5610408b8da4becf8099a290875c61bc01afbb925",
       "review_status": "pending"
     },
     {
@@ -17491,8 +17362,8 @@
       "candidate_owner": "mixed-requires-review",
       "role": "source",
       "present": true,
-      "content_sha256": "6ee1ed0b4bd4688cb62ed503703280f5a40345e29e00da4c821f7f99f16e7808",
-      "review_fingerprint": "6ee1ed0b4bd4688cb62ed503703280f5a40345e29e00da4c821f7f99f16e7808",
+      "content_sha256": "d75de6330e0dc42fb6394c759a19e7e72767e92d01cc5b60e6d09ed625fe5f3c",
+      "review_fingerprint": "d75de6330e0dc42fb6394c759a19e7e72767e92d01cc5b60e6d09ed625fe5f3c",
       "review_status": "pending"
     },
     {
@@ -17500,8 +17371,8 @@
       "candidate_owner": "mixed-requires-review",
       "role": "source",
       "present": true,
-      "content_sha256": "fc9c8e1ba9a50b919fc14286c93f2d9bd86e916d2404985acc9799f8982a83c6",
-      "review_fingerprint": "fc9c8e1ba9a50b919fc14286c93f2d9bd86e916d2404985acc9799f8982a83c6",
+      "content_sha256": "aed6c3ca6e9ace87cabd1e7a555b365aadb99f5fc8e97be32fa890dce77a5eb1",
+      "review_fingerprint": "aed6c3ca6e9ace87cabd1e7a555b365aadb99f5fc8e97be32fa890dce77a5eb1",
       "review_status": "pending"
     },
     {
@@ -17536,8 +17407,8 @@
       "candidate_owner": "mixed-requires-review",
       "role": "source",
       "present": true,
-      "content_sha256": "090656b42591f5843ecb9d63d296105e055e1e5a1723a9cf06fe6ff7489417b0",
-      "review_fingerprint": "090656b42591f5843ecb9d63d296105e055e1e5a1723a9cf06fe6ff7489417b0",
+      "content_sha256": "b8e22b0c6a84e9c3d604cad504c6ab09603de68f002ba4241f0ddf252765b7c8",
+      "review_fingerprint": "b8e22b0c6a84e9c3d604cad504c6ab09603de68f002ba4241f0ddf252765b7c8",
       "review_status": "pending"
     },
     {
@@ -17554,8 +17425,8 @@
       "candidate_owner": "mixed-requires-review",
       "role": "source",
       "present": true,
-      "content_sha256": "76558891a1ca7964d592e53c9de9883245d348c040dd33c5dd969b24857007f5",
-      "review_fingerprint": "76558891a1ca7964d592e53c9de9883245d348c040dd33c5dd969b24857007f5",
+      "content_sha256": "ee2e86b13ea5b36e97a4a2ca220ec67789422d1f30081b4ca334ff8995451f8c",
+      "review_fingerprint": "ee2e86b13ea5b36e97a4a2ca220ec67789422d1f30081b4ca334ff8995451f8c",
       "review_status": "pending"
     },
     {
@@ -17743,8 +17614,8 @@
       "candidate_owner": "mixed-requires-review",
       "role": "source",
       "present": true,
-      "content_sha256": "6c1a600b1330b49ed40b6781f359f891c771ad66e0a6c31f7097b154fb86fb8b",
-      "review_fingerprint": "6c1a600b1330b49ed40b6781f359f891c771ad66e0a6c31f7097b154fb86fb8b",
+      "content_sha256": "615e4e725568e30fc28e26f3ee977d6f35d5de6c49379461800d75d5619bdf96",
+      "review_fingerprint": "615e4e725568e30fc28e26f3ee977d6f35d5de6c49379461800d75d5619bdf96",
       "review_status": "pending"
     },
     {
@@ -17752,8 +17623,8 @@
       "candidate_owner": "mixed-requires-review",
       "role": "source",
       "present": true,
-      "content_sha256": "a9ae40a806ee951eeb33a642efbed49edf307dd691a14fb09adcd37051f9e202",
-      "review_fingerprint": "a9ae40a806ee951eeb33a642efbed49edf307dd691a14fb09adcd37051f9e202",
+      "content_sha256": "878b180fabdbc41f1ce6bc886ec816f42567ebd7108a2876793887aa311eb6c3",
+      "review_fingerprint": "878b180fabdbc41f1ce6bc886ec816f42567ebd7108a2876793887aa311eb6c3",
       "review_status": "pending"
     },
     {
@@ -17770,8 +17641,8 @@
       "candidate_owner": "mixed-requires-review",
       "role": "source",
       "present": true,
-      "content_sha256": "d63b33258862425b2d534617f8571b05ffe2719e086fdbe99701905cd4a3dac4",
-      "review_fingerprint": "d63b33258862425b2d534617f8571b05ffe2719e086fdbe99701905cd4a3dac4",
+      "content_sha256": "81e34e1227387fcb0b287dfe412c1ffb0b6a61efb64c5900322747b69377f2d6",
+      "review_fingerprint": "81e34e1227387fcb0b287dfe412c1ffb0b6a61efb64c5900322747b69377f2d6",
       "review_status": "pending"
     },
     {
@@ -17797,8 +17668,8 @@
       "candidate_owner": "mixed-requires-review",
       "role": "source",
       "present": true,
-      "content_sha256": "cc7b776248e664890d54bef23c601d357e97c4cb68429698a93dd373b2b45eef",
-      "review_fingerprint": "cc7b776248e664890d54bef23c601d357e97c4cb68429698a93dd373b2b45eef",
+      "content_sha256": "67678d06a1ec82240d57da5e865428002d83c9691a868c72751d76bb13e6ae0d",
+      "review_fingerprint": "67678d06a1ec82240d57da5e865428002d83c9691a868c72751d76bb13e6ae0d",
       "review_status": "pending"
     },
     {
@@ -18319,6 +18190,15 @@
       "review_status": "pending"
     },
     {
+      "path": "plugins/admin-observability/scripts/check-chart-colors.py",
+      "candidate_owner": "admin-observability",
+      "role": "source",
+      "present": true,
+      "content_sha256": "7aba425a9dfdd31dc198edeaa1b133f640c4af13cef9f42ceb579668a37978a5",
+      "review_fingerprint": "7aba425a9dfdd31dc198edeaa1b133f640c4af13cef9f42ceb579668a37978a5",
+      "review_status": "pending"
+    },
+    {
       "path": "plugins/admin-observability/scripts/check-theme.py",
       "candidate_owner": "admin-observability",
       "role": "source",
@@ -18477,8 +18357,8 @@
       "candidate_owner": "admin-observability",
       "role": "source",
       "present": true,
-      "content_sha256": "3c2b29da53eaeb8eba244d508c3c13bd159a6f639c00dab5f2c114a09fcec326",
-      "review_fingerprint": "3c2b29da53eaeb8eba244d508c3c13bd159a6f639c00dab5f2c114a09fcec326",
+      "content_sha256": "179bd8c1ccc5ade7bcbfb48059bbef486a010106519d71cc6395509e79ad970d",
+      "review_fingerprint": "179bd8c1ccc5ade7bcbfb48059bbef486a010106519d71cc6395509e79ad970d",
       "review_status": "pending"
     },
     {
@@ -18781,6 +18661,15 @@
       "present": true,
       "content_sha256": "0bac911763591cce0ed63dd5d187e082424211f707d8cb0c796d055a015495d1",
       "review_fingerprint": "0bac911763591cce0ed63dd5d187e082424211f707d8cb0c796d055a015495d1",
+      "review_status": "pending"
+    },
+    {
+      "path": "plugins/cindy-provider/catalog/search.go",
+      "candidate_owner": "cindy-provider",
+      "role": "source",
+      "present": true,
+      "content_sha256": "b7bf6b345713d01e593a504f684ae97eecaacf80229bdf0a6b7c1b28b99fad15",
+      "review_fingerprint": "b7bf6b345713d01e593a504f684ae97eecaacf80229bdf0a6b7c1b28b99fad15",
       "review_status": "pending"
     },
     {
@@ -19677,8 +19566,8 @@
       "candidate_owner": "prompt-skills",
       "role": "source",
       "present": true,
-      "content_sha256": "c8ab626fcccd76715aa7bfbdd103ba6b620dc99c352bbc05ef0aad308c90c5ad",
-      "review_fingerprint": "c8ab626fcccd76715aa7bfbdd103ba6b620dc99c352bbc05ef0aad308c90c5ad",
+      "content_sha256": "58548df9b13c62004f33db296586e4150e97d10f451a66572e3b147b05bc78a0",
+      "review_fingerprint": "58548df9b13c62004f33db296586e4150e97d10f451a66572e3b147b05bc78a0",
       "review_status": "pending"
     },
     {
@@ -19704,8 +19593,8 @@
       "candidate_owner": "prompt-skills",
       "role": "test-or-fixture",
       "present": true,
-      "content_sha256": "3253b88bc50f2b546661e5c69922e65024141a08bca92d582b1b867293d089c6",
-      "review_fingerprint": "3253b88bc50f2b546661e5c69922e65024141a08bca92d582b1b867293d089c6",
+      "content_sha256": "85b5cb4e2a99c5cd7feec2468f0d69e1fc6618f6b903d1d74a47776eebbf0ea4",
+      "review_fingerprint": "85b5cb4e2a99c5cd7feec2468f0d69e1fc6618f6b903d1d74a47776eebbf0ea4",
       "review_status": "pending"
     },
     {

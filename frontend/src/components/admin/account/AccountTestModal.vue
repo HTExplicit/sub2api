@@ -333,7 +333,7 @@
           @click="startTest"
           :disabled="!canStartTest"
           :class="[
-            'flex items-center gap-2 rounded-none px-4 py-2 text-sm font-medium transition-all',
+            'flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium transition-all',
             !canStartTest
               ? 'cursor-not-allowed bg-primary-400 text-white'
               : status === 'success'

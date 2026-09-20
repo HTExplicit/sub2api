@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { usePresentationColors } from '@/composables/usePresentationColors'
 import { computed, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { Chart as ChartJS, CategoryScale, Filler, Legend, LineElement, LinearScale, PointElement, Title, Tooltip } from 'chart.js'
@@ -43,14 +44,14 @@ watch(
   }
 )
 
-const isDarkMode = computed(() => document.documentElement.classList.contains('dark'))
+const presentation = usePresentationColors()
 const colors = computed(() => ({
   blue: '#3b82f6',
   blueAlpha: '#3b82f620',
   green: '#10b981',
   greenAlpha: '#10b98120',
-  grid: isDarkMode.value ? '#3a3b40' : '#f5f5f5',
-  text: isDarkMode.value ? '#8a8b8d' : '#6f6f6f'
+  grid: presentation.value.axisGrid,
+  text: presentation.value.axis
 }))
 
 const totalRequests = computed(() => sumNumbers(props.points.map((p) => p.request_count)))
@@ -104,9 +105,9 @@ const options = computed(() => {
         labels: { color: c.text, usePointStyle: true, boxWidth: 6, font: { size: 10 } }
       },
       tooltip: {
-        backgroundColor: isDarkMode.value ? '#26272b' : '#ffffff',
-        titleColor: isDarkMode.value ? '#f5f5f5' : '#111411',
-        bodyColor: isDarkMode.value ? '#bdbdbd' : '#56575a',
+        backgroundColor: presentation.value.tooltip,
+        titleColor: presentation.value.title,
+        bodyColor: presentation.value.body,
         borderColor: c.grid,
         borderWidth: 1,
         padding: 10,

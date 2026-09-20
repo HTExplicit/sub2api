@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { usePresentationColors } from '@/composables/usePresentationColors'
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { Chart as ChartJS, ArcElement, Legend, Tooltip } from 'chart.js'
@@ -21,13 +22,13 @@ const emit = defineEmits<{
 }>()
 const { t } = useI18n()
 
-const isDarkMode = computed(() => document.documentElement.classList.contains('dark'))
+const presentation = usePresentationColors()
 const colors = computed(() => ({
   blue: '#3b82f6',
   red: '#ef4444',
   orange: '#f59e0b',
-  gray: '#8a8b8d',
-  text: isDarkMode.value ? '#8a8b8d' : '#6f6f6f'
+  gray: presentation.value.gray,
+  text: presentation.value.axis
 }))
 
 const totalSlaErrors = computed(() =>
@@ -100,9 +101,9 @@ const options = computed(() => ({
   plugins: {
     legend: { display: false },
     tooltip: {
-      backgroundColor: isDarkMode.value ? '#26272b' : '#ffffff',
-      titleColor: isDarkMode.value ? '#f5f5f5' : '#111411',
-      bodyColor: isDarkMode.value ? '#bdbdbd' : '#56575a'
+      backgroundColor: presentation.value.tooltip,
+      titleColor: presentation.value.title,
+      bodyColor: presentation.value.body
     }
   }
 }))

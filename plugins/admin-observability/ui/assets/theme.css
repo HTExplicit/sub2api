@@ -43,6 +43,16 @@
   --ui-accent: #168a49;
   --ui-link: #137b40;
   --ui-font: 'MiSans', 'PingFang SC', 'Microsoft YaHei', system-ui, sans-serif;
+  --theme-chart-text: #3a3b40;
+  --theme-chart-grid: #dcdcdc;
+  --theme-chart-axis: #6f6f6f;
+  --theme-chart-axis-grid: #f5f5f5;
+  --theme-chart-tooltip: #ffffff;
+  --theme-chart-title: #111411;
+  --theme-chart-body: #56575a;
+  --theme-chart-gray: #8a8b8d;
+  --theme-scrollbar-thumb: #8a8b8d;
+  --theme-scrollbar-hover: #6f6f6f;
 }
 
 :root.dark {
@@ -54,6 +64,15 @@
   --ui-ink: 237 237 237;
   --ui-muted: 138 139 141;
   --ui-link: #5abd80;
+  --theme-chart-text: #dcdcdc;
+  --theme-chart-grid: #3a3b40;
+  --theme-chart-axis: #8a8b8d;
+  --theme-chart-axis-grid: #3a3b40;
+  --theme-chart-tooltip: #26272b;
+  --theme-chart-title: #f5f5f5;
+  --theme-chart-body: #bdbdbd;
+  --theme-scrollbar-thumb: #3a3b40;
+  --theme-scrollbar-hover: #56575a;
 }
 
 /* Decoration belongs only to first-party home/auth shells, not injected HTML. */

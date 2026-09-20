@@ -81,7 +81,7 @@
         <div class="flex items-center gap-3">
           <div
             :class="[
-              'flex h-8 w-8 shrink-0 items-center justify-center rounded-none',
+              'flex h-8 w-8 shrink-0 items-center justify-center rounded-lg',
               geminiOAuthType === 'google_one'
                 ? 'bg-purple-500 text-white'
                 : geminiOAuthType === 'code_assist'

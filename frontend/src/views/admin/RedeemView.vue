@@ -365,7 +365,7 @@
                   type="button"
                   @click="generateForm.expiry_option = option.value"
                   :class="[
-                    'rounded-none border px-3 py-2 text-sm transition-colors',
+                    'rounded-lg border px-3 py-2 text-sm transition-colors',
                     generateForm.expiry_option === option.value
                       ? 'border-primary-500 bg-primary-50 text-primary-700 dark:border-primary-400 dark:bg-primary-900/20 dark:text-primary-300'
                       : 'border-gray-200 text-gray-700 hover:bg-gray-50 dark:border-dark-600 dark:text-gray-300 dark:hover:bg-dark-700'

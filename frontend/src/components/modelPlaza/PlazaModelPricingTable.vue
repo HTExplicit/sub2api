@@ -80,7 +80,7 @@
               <span
                 v-if="platform && m.platform !== platform"
                 :class="[
-                  'inline-flex items-center rounded-none px-1.5 py-0.5 text-[10px] font-medium',
+                  'inline-flex items-center rounded-md px-1.5 py-0.5 text-[10px] font-medium',
                   platformBadgeLightClass(m.platform)
                 ]"
               >

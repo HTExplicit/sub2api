@@ -456,19 +456,19 @@ watch(
 }
 
 .overflow-y-auto::-webkit-scrollbar-thumb {
-  background: #8a8b8d;
-  border-radius: 0;
+  background: var(--theme-scrollbar-thumb, linear-gradient(to bottom, #cbd5e1, #94a3b8));
+  border-radius: var(--theme-radius-default, 4px);
 }
 
 .dark .overflow-y-auto::-webkit-scrollbar-thumb {
-  background: #3a3b40;
+  background: var(--theme-scrollbar-thumb, linear-gradient(to bottom, #4b5563, #374151));
 }
 
 .overflow-y-auto::-webkit-scrollbar-thumb:hover {
-  background: #6f6f6f;
+  background: var(--theme-scrollbar-hover, linear-gradient(to bottom, #94a3b8, #64748b));
 }
 
 .dark .overflow-y-auto::-webkit-scrollbar-thumb:hover {
-  background: #56575a;
+  background: var(--theme-scrollbar-hover, linear-gradient(to bottom, #6b7280, #4b5563));
 }
 </style>

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { usePresentationColors } from '@/composables/usePresentationColors'
 import { computed, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import Select from '@/components/common/Select.vue'
@@ -50,6 +51,7 @@ const props = defineProps<Props>()
 const emit = defineEmits<Emits>()
 
 const { t } = useI18n()
+const presentation = usePresentationColors()
 const adminSettingsStore = useAdminSettingsStore()
 
 const realtimeWindow = ref<RealtimeWindow>('1min')
@@ -437,9 +439,9 @@ const healthScoreValue = computed<number | null>(() => {
 })
 
 const healthScoreColor = computed(() => {
-  if (isSystemIdle.value) return '#8a8b8d' // gray-400
+  if (isSystemIdle.value) return presentation.value.gray
   const score = healthScoreValue.value
-  if (score == null) return '#8a8b8d'
+  if (score == null) return presentation.value.gray
   if (score >= 90) return '#10b981' // green
   if (score >= 60) return '#f59e0b' // yellow
   return '#ef4444' // red

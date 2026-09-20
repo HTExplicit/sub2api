@@ -341,6 +341,7 @@
 </template>
 
 <script setup lang="ts">
+import { usePresentationColors } from '@/composables/usePresentationColors'
 import { ref, computed, onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRouter } from 'vue-router'
@@ -437,14 +438,12 @@ const granularityOptions = computed(() => [
 ])
 
 // Dark mode detection
-const isDarkMode = computed(() => {
-  return document.documentElement.classList.contains('dark')
-})
+const presentation = usePresentationColors()
 
 // Chart colors
 const chartColors = computed(() => ({
-  text: isDarkMode.value ? '#dcdcdc' : '#3a3b40',
-  grid: isDarkMode.value ? '#3a3b40' : '#dcdcdc'
+  text: presentation.value.text,
+  grid: presentation.value.grid
 }))
 
 // Line chart options (for user trend chart)
