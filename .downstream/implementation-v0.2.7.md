@@ -122,7 +122,7 @@
 
 ## 未完成
 
-- DeepSeek官方现行单价/高峰窗口已只读核对，代码尚缺“中国法定节假日全天非高峰”的例外。缺少年度日历时的计费行为待用户明确；这一处不得在未决定前自行选择收费规则。来源：https://api-docs.deepseek.com/zh-cn/quick_start/pricing/ 。其他工作继续，未修改生产计费或发送模型请求。
+- DeepSeek计费按Sub2官方上游实现保持：北京时间工作日9:00-12:00、14:00-18:00为2x，其余时间为1x，代码不接入年度法定节假日日历。上游参考提交为 `4167b92de`，其 `deepseekPeakMultiplierAt`/`deepseekTimePricingSchedule` 与当前实现一致；官方DeepSeek文档还说明法定节假日全天非高峰，但本次遵循Sub2官方实现，不额外扩展节假日日历。来源：[DeepSeek官方计费说明](https://api-docs.deepseek.com/zh-cn/quick_start/pricing/)；未修改生产计费或发送模型请求。
 - 七域均已有实际独立实现，但混合职责尚须逐项审查：其他账号工具、模型策略的剩余调用链、Cindy其他账号及搜索策略、局部主题声明。不能以七个包可构建作为全部功能迁移完成。
 - 全下游差异清单已由 `.downstream/refresh-coverage.mjs` 刷新，包含逐文件角色和内容摘要；分类不会自动标记已审查，修改字节会使旧结论失效。根项目维护通道、清理与 Worker 的已修正边界和验证记录统一见项目根 `artifacts/evidence/v027-root-review.json`，完整逐文件审查仍未完成。
 - 普通/Spark额度、真实30天窗口、未知恢复时间、迟到账单和显式推理强度的最终调用链已静态复核，证据在根 `artifacts/evidence/v027-quota-agent-review.json`。首次已结算观测惰性建立费用/使用率基线，导入前消耗不进入增量估值；主体、倍率、窗口或活动代次变化隔离旧基线。既有通过用例直接复用，没有真实模型验收；本轮不新增30天提前暂停策略。
