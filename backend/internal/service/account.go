@@ -2,6 +2,7 @@
 package service
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"hash/fnv"
@@ -2210,16 +2211,8 @@ func (a *Account) IsOpenAIReasoningSignatureRecoveryEnabled() bool {
 }
 
 func (a *Account) isOpenAIReasoningPolicyEnabled(key string) bool {
-	if !a.supportsOpenAIReasoningPolicies() {
-		return false
-	}
-	raw, exists := a.Extra[key]
-	if !exists {
-		return true
-	}
-	// Legacy malformed values are not a request to enable a stateful feature.
-	enabled, valid := raw.(bool)
-	return valid && enabled
+	enabled, err := openAIReasoningPolicyEnabled(context.Background(), a, key)
+	return err == nil && enabled
 }
 
 func (a *Account) supportsOpenAIReasoningPolicies() bool {

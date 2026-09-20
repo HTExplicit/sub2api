@@ -8,6 +8,7 @@ import (
 
 	cindy "github.com/HTExplicit/sub2api-plugins/cindyprovider/catalog"
 	codexprofile "github.com/HTExplicit/sub2api-plugins/codexruntime/profile"
+	codexrecovery "github.com/HTExplicit/sub2api-plugins/codexruntime/recovery"
 
 	accounttools "github.com/HTExplicit/sub2api-plugins/accounttools/policy"
 	observability "github.com/HTExplicit/sub2api-plugins/adminobservability/policy"
@@ -37,6 +38,9 @@ func cindyProbeTestModels(t *testing.T) [2]string {
 }
 
 func (promptPolicyFixture) InvokeOperation(ctx context.Context, _ string, _ string, in extensionv1.Invocation) (extensionv1.Result, error) {
+	if in.Capability == extensionv1.CapabilityRecovery {
+		return codexrecovery.Invoke(ctx, in)
+	}
 	if in.Operation == "codex.transport.plan" {
 		var query extensionv1.CodexTransportQuery
 		if err := json.Unmarshal(in.Payload, &query); err != nil {

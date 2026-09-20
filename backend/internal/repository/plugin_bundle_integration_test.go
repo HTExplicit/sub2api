@@ -60,6 +60,69 @@ func TestPluginBundleResumesWithoutResettingActivationOrReinstallingRemovedPlugi
 	require.True(t, applied, "explicit removal must survive later bundle upgrades")
 }
 
+func TestPluginBundleUpgradePreservesPerCapabilityChoicesAndRollout(t *testing.T) {
+	ctx := context.Background()
+	repo := &pluginRepository{db: integrationDB}
+	artifact := bundleFixture(t, repo)
+	artifact.Manifest.Capabilities = append(artifact.Manifest.Capabilities, service.PluginCapability{ID: extensionv1.CapabilityRequest, Platform: service.PlatformOpenAI, AccountType: service.AccountTypeOAuth})
+	first, err := repo.PrepareBundledPlugin(ctx, artifact, "scope-one", "", true, "config")
+	require.NoError(t, err)
+	require.NoError(t, repo.CompleteBundledPlugin(ctx, first.ID, "scope-one"))
+	current, err := repo.GetByID(ctx, first.ID)
+	require.NoError(t, err)
+	for index := range current.Bindings {
+		if current.Bindings[index].Capability == extensionv1.CapabilityRequest {
+			current.Bindings[index].Enabled = false
+		} else {
+			current.Bindings[index].RolloutPercent = 37
+		}
+	}
+	require.NoError(t, repo.UpdateBindingsAndState(ctx, current.ID, current.Bindings, service.PluginStateEnabled, "", nil, service.PluginStateEnabled, current.BinarySHA256))
+	artifact.Version = "1.0.1"
+	artifact.BinarySHA256 = strings.Repeat("b", 64)
+	artifact.Manifest.Capabilities = append(artifact.Manifest.Capabilities, service.PluginCapability{ID: extensionv1.CapabilityRecovery, Platform: service.PlatformOpenAI, AccountType: "*"})
+	prepared, err := repo.PrepareBundledPlugin(ctx, artifact, "scope-two", "", true, "new-default")
+	require.NoError(t, err)
+	require.Equal(t, service.PluginStateDisabled, prepared.State)
+	for _, binding := range prepared.Bindings {
+		require.False(t, binding.Enabled, "no instance may execute a partially migrated package")
+	}
+	require.ErrorIs(t, repo.UpdateBindingsAndState(ctx, prepared.ID, prepared.Bindings, service.PluginStateStarting, "", nil, service.PluginStateDisabled, prepared.BinarySHA256), service.ErrPluginStateChanged)
+	_, err = repo.PrepareBundledPlugin(ctx, artifact, "scope-two", "", false, "other-default")
+	require.NoError(t, err)
+	// A newer package can replace an interrupted upgrade without learning the
+	// temporary all-disabled rows as the operator's activation choices.
+	_, err = repo.PrepareBundledPlugin(ctx, artifact, "scope-three", "", false, "other-default")
+	require.NoError(t, err)
+	require.NoError(t, repo.CompleteBundledPlugin(ctx, prepared.ID, "scope-three"))
+	current, err = repo.GetByID(ctx, prepared.ID)
+	require.NoError(t, err)
+	for _, binding := range current.Bindings {
+		if binding.Capability == extensionv1.CapabilityAdmin {
+			require.True(t, binding.Enabled)
+			require.Equal(t, 37, binding.RolloutPercent)
+		} else {
+			require.False(t, binding.Enabled, "disabled and newly introduced capabilities must not be enabled by upgrade")
+		}
+	}
+}
+
+func TestPluginBundlePendingMigrationRespectsAnExplicitDisable(t *testing.T) {
+	ctx := context.Background()
+	repo := &pluginRepository{db: integrationDB}
+	artifact := bundleFixture(t, repo)
+	prepared, err := repo.PrepareBundledPlugin(ctx, artifact, "pending-disable", "", true, "config")
+	require.NoError(t, err)
+	require.NoError(t, repo.UpdateBindingsAndState(ctx, prepared.ID, prepared.Bindings, service.PluginStateDisabled, "", nil, service.PluginStateDisabled, prepared.BinarySHA256))
+	require.NoError(t, repo.CompleteBundledPlugin(ctx, prepared.ID, "pending-disable"))
+	current, err := repo.GetByID(ctx, prepared.ID)
+	require.NoError(t, err)
+	require.Equal(t, service.PluginStateDisabled, current.State)
+	for _, binding := range current.Bindings {
+		require.False(t, binding.Enabled)
+	}
+}
+
 func TestPluginBundleDoesNotResurrectStoppedTicketWhenLegacyRowsChange(t *testing.T) {
 	ctx := context.Background()
 	repo := &pluginRepository{db: integrationDB}

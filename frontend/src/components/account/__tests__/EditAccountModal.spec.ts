@@ -2420,3 +2420,7 @@ describe('EditAccountModal OpenAI 自动使用重置卡', () => {
     wrapper.unmount()
   })
 })
+vi.mock('@/stores/pluginExtensions', () => ({ usePluginExtensions: () => ({
+  loaded: true, refresh: vi.fn(),
+  items: [{ id: 'codex-recovery-settings', slot: 'surface', available: true }]
+}) }))

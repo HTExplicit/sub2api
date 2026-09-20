@@ -261,6 +261,7 @@ func (r *pluginRepository) UpdateBindingsAndState(
 		UPDATE sub2api_plugin_installations
 		SET state = $2, last_error = $3, enabled_at = $4, updated_at = NOW()
 		WHERE id = $1 AND ($5 = '' OR state = $5) AND binary_sha256 = $6
+		  AND ($2 = 'disabled' OR NOT EXISTS (SELECT 1 FROM sub2api_plugin_bootstrap b WHERE b.plugin_key=sub2api_plugin_installations.plugin_key AND NOT b.completed))
 	`, pluginID, state, lastError, enabledAt, expectedState, expectedBinarySHA256)
 	if err != nil {
 		return err
@@ -279,7 +280,11 @@ func (r *pluginRepository) UpdateBindingsAndState(
 	for _, binding := range bindings {
 		desired = desired || binding.Enabled
 	}
-	if _, err := tx.ExecContext(ctx, `UPDATE sub2api_plugin_bootstrap SET desired_enabled=$2,updated_at=NOW() WHERE plugin_key=(SELECT plugin_key FROM sub2api_plugin_installations WHERE id=$1)`, pluginID, desired); err != nil {
+	desiredBindings, err := json.Marshal(bindings)
+	if err != nil {
+		return err
+	}
+	if _, err := tx.ExecContext(ctx, `UPDATE sub2api_plugin_bootstrap SET desired_enabled=$2,desired_bindings=$3::jsonb,updated_at=NOW() WHERE plugin_key=(SELECT plugin_key FROM sub2api_plugin_installations WHERE id=$1)`, pluginID, desired, desiredBindings); err != nil {
 		return err
 	}
 	if state == service.PluginStateDisabled {

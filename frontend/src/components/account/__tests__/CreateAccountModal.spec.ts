@@ -1131,3 +1131,7 @@ describe('CreateAccountModal OpenAI long-context billing', () => {
     expect(createOpenAICodexPATMock.mock.calls[0]?.[0]?.extra?.openai_long_context_billing_enabled).toBe(false)
   })
 })
+vi.mock('@/stores/pluginExtensions', () => ({ usePluginExtensions: () => ({
+  loaded: true, refresh: vi.fn(),
+  items: [{ id: 'codex-recovery-settings', slot: 'surface', available: true }]
+}) }))

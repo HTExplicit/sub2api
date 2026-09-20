@@ -12,7 +12,7 @@
   ],
   "operations": { "extensions.provider.v1": ["cindy.catalog", "cindy.features", "cindy.pricing", "cindy.health", "cindy.probe.plan", "cindy.probe.decide"] },
   "contributions": [
-    { "id": "cindy-balance-probe", "slot": "surface", "permission": "admin", "config_flag": "balance_detection", "label": { "zh": "Cindy 余额复查", "en": "Cindy balance probes" } },
+    { "id": "cindy-balance-probe", "slot": "surface", "capability": "extensions.provider.v1", "permission": "admin", "config_flag": "balance_detection", "label": { "zh": "Cindy 余额复查", "en": "Cindy balance probes" } },
     { "id": "cindy-provider-settings", "slot": "admin.settings", "action": "provider.describe", "entrypoint": "ui/index.html", "permission": "admin", "label": { "zh": "Cindy 目录与策略", "en": "Cindy catalog and policies" } }
   ],
   "runtimes": {},

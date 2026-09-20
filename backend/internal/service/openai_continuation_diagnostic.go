@@ -413,7 +413,7 @@ func sanitizeOpenAIContinuationDiagnostic(in *OpenAIContinuationDiagnostic) *Ope
 		switch recovery.NotAttemptedReason {
 		case "disabled", "semantic_output_committed", "request_cancelled", "protected_status", "not_signature_rejection",
 			"invalid_request_snapshot", "invalid_tool_history", "no_reasoning_ciphertext", "target_not_reasoning_ciphertext",
-			"unsupported_error_param", "server_held_context", "ambiguous_encrypted_carriers", "rewrite_failed", "recovery_not_dispatched", "source_changed", "endpoint_changed":
+			"unsupported_error_param", "server_held_context", "ambiguous_encrypted_carriers", "rewrite_failed", "recovery_not_dispatched", "source_changed", "endpoint_changed", "policy_unavailable":
 		default:
 			recovery.NotAttemptedReason = ""
 		}

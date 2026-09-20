@@ -77,6 +77,7 @@ export interface PluginInstallation {
 }
 
 export interface PluginContribution {
+  capability?: string
   stylesheet_url?: string
   config_flag?: string
   fields?: PluginFormField[]

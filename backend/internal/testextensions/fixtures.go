@@ -9,6 +9,8 @@ import (
 	"strings"
 
 	cindy "github.com/HTExplicit/sub2api-plugins/cindyprovider/catalog"
+	codexprofile "github.com/HTExplicit/sub2api-plugins/codexruntime/profile"
+	codexrecovery "github.com/HTExplicit/sub2api-plugins/codexruntime/recovery"
 
 	accounttools "github.com/HTExplicit/sub2api-plugins/accounttools/policy"
 	observability "github.com/HTExplicit/sub2api-plugins/adminobservability/policy"
@@ -24,6 +26,20 @@ type operations struct{ imageConfig *extensionv1.ImageToolsConfig }
 var promptFixtureModule = prompt.New()
 
 func (fixture operations) InvokeOperation(ctx context.Context, _, _ string, in extensionv1.Invocation) (extensionv1.Result, error) {
+	if in.Capability == extensionv1.CapabilityRecovery {
+		return codexrecovery.Invoke(ctx, in)
+	}
+	if strings.HasPrefix(in.Operation, "codex.identity.") {
+		return codexprofile.Invoke(ctx, in)
+	}
+	if in.Operation == "codex.transport.plan" {
+		var query extensionv1.CodexTransportQuery
+		if err := json.Unmarshal(in.Payload, &query); err != nil {
+			return extensionv1.Result{}, err
+		}
+		raw, err := json.Marshal(codexprofile.TransportPlan(query, false))
+		return extensionv1.Result{Payload: raw}, err
+	}
 	if strings.HasPrefix(in.Operation, "observability.") {
 		return observability.New().Invoke(ctx, in)
 	}

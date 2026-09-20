@@ -1040,3 +1040,7 @@ describe('BulkEditAccountModal', () => {
     })
   })
 })
+vi.mock('@/stores/pluginExtensions', () => ({ usePluginExtensions: () => ({
+  loaded: true, refresh: vi.fn(),
+  items: [{ id: 'codex-recovery-settings', slot: 'surface', available: true }]
+}) }))

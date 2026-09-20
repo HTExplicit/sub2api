@@ -14,6 +14,7 @@
     "extension_api": 1
   },
   "capabilities": [
+    { "id": "extensions.recovery.v1", "platform": "openai", "account_type": "*" },
     { "id": "extensions.credentials.v1", "platform": "openai", "account_type": "oauth" },
     { "id": "extensions.credentials.v1", "platform": "openai", "account_type": "setup-token" },
     { "id": "extensions.admin.v1", "platform": "openai", "account_type": "oauth" },
@@ -25,8 +26,12 @@
     { "id": "extensions.jobs.v1", "platform": "openai", "account_type": "oauth" },
     { "id": "extensions.jobs.v1", "platform": "openai", "account_type": "setup-token" }
   ],
-  "operations": { "extensions.request.v1": ["inject", "codex.identity.available", "codex.identity.plan", "codex.identity.derive", "codex.identity.validate", "codex.identity.agent", "codex.identity.sandbox", "codex.transport.plan"] },
+  "operations": {
+    "extensions.request.v1": ["inject", "codex.identity.available", "codex.identity.plan", "codex.identity.derive", "codex.identity.validate", "codex.identity.agent", "codex.identity.sandbox", "codex.transport.plan"],
+    "extensions.recovery.v1": ["codex.recovery.available", "codex.recovery.enabled", "codex.recovery.rejection", "codex.recovery.select"]
+  },
   "contributions": [
+    { "id": "codex-recovery-settings", "slot": "surface", "capability": "extensions.recovery.v1", "permission": "admin", "label": { "zh": "推理状态与恢复策略", "en": "Reasoning state and recovery" } },
     {
       "id": "proxy-settings", "slot": "admin.settings", "action": "proxy.test", "entrypoint": "ui/index.html", "permission": "admin",
       "label": { "zh": "Codex 票据设置", "en": "Codex ticket settings" }

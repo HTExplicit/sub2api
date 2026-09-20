@@ -1,7 +1,7 @@
 <template>
   <div v-if="contribution" class="contents">
     <div class="contents" :inert="!contribution.available" :aria-disabled="!contribution.available">
-      <slot />
+      <slot :available="contribution.available" />
     </div>
     <p v-if="!contribution.available" role="status" class="px-3 py-2 text-xs text-muted">{{ t('admin.plugins.extensionUnavailable') }}</p>
   </div>

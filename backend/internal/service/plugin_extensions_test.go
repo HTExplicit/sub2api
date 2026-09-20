@@ -57,6 +57,24 @@ func TestPluginExtensionDesiredStateAndContributions(t *testing.T) {
 	require.Empty(t, m.Contributions(), "disabling must remove contributions immediately")
 }
 
+func TestContributionFollowsItsOwnCapabilityWhileOtherCapabilitiesRemainEnabled(t *testing.T) {
+	m := NewPluginManager(nil, nil, nil, PluginHostInfo{}, nil)
+	installation := &PluginInstallation{ID: 1,
+		Manifest: PluginManifest{Contributions: []extensionv1.Contribution{{ID: "recovery", Slot: "surface", Capability: extensionv1.CapabilityRecovery, Permission: "admin"}}},
+		Bindings: []PluginBinding{
+			{Capability: extensionv1.CapabilityAdmin, Platform: "*", AccountType: "*", Enabled: true},
+			{Capability: extensionv1.CapabilityRecovery, Platform: "openai", AccountType: "*", Enabled: false},
+		},
+	}
+	m.publishExtensionRegistryLocked([]*PluginInstallation{installation}, "")
+	require.Empty(t, m.Contributions())
+	installation.Bindings[1].Enabled = true
+	m.publishExtensionRegistryLocked([]*PluginInstallation{installation}, "")
+	items := m.Contributions()
+	require.Len(t, items, 1)
+	require.False(t, items[0].Available, "an enabled failed capability stays visible with its reason")
+}
+
 func TestPluginExtensionDependenciesRespectEnabledBindings(t *testing.T) {
 	provider := &PluginInstallation{ID: 1, Bindings: []PluginBinding{{Capability: extensionv1.CapabilityProvider, Platform: "cindy", AccountType: "apikey", Enabled: true}}}
 	consumer := &PluginInstallation{ID: 2, Manifest: PluginManifest{Dependencies: []extensionv1.Dependency{{Capability: extensionv1.CapabilityProvider, Platform: "cindy", AccountType: "apikey"}}}}

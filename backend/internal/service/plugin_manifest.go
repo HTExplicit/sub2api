@@ -214,6 +214,18 @@ func (m PluginManifest) ValidateForRuntime(runtimeKey string) error {
 	}
 	seen := make(map[string]bool)
 	for _, contribution := range m.Contributions {
+		if contribution.Capability != "" {
+			declared := false
+			for _, capability := range m.Capabilities {
+				if capability.ID == contribution.Capability {
+					declared = true
+					break
+				}
+			}
+			if !declared {
+				return errors.New("插件界面贡献引用未声明的能力")
+			}
+		}
 		if contribution.Slot == "theme" {
 			if contribution.Permission != "public" || !strings.HasSuffix(contribution.Entrypoint, ".css") || len(contribution.Assets) > 32 {
 				return errors.New("主题贡献必须声明公开 CSS 和有界资源集合")

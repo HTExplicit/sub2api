@@ -20,6 +20,7 @@ const (
 	CapabilityUI            = "extensions.ui.v1"
 	CapabilityCredentials   = "extensions.credentials.v1"
 	CapabilityObservability = "extensions.observability.v1"
+	CapabilityRecovery      = "extensions.recovery.v1"
 )
 
 var capabilities = map[string]bool{
@@ -27,6 +28,7 @@ var capabilities = map[string]bool{
 	CapabilityScheduling: true, CapabilityJobs: true, CapabilityAdmin: true, CapabilityUI: true,
 	CapabilityCredentials:   true,
 	CapabilityObservability: true,
+	CapabilityRecovery:      true,
 }
 
 func IsCapability(id string) bool { return capabilities[id] }
@@ -38,6 +40,7 @@ type Dependency struct {
 }
 
 type Contribution struct {
+	Capability    string            `json:"capability,omitempty"`
 	Assets        []string          `json:"assets,omitempty"`
 	ConfigFlag    string            `json:"config_flag,omitempty"`
 	Fields        []FormField       `json:"fields,omitempty"`

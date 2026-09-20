@@ -34,7 +34,8 @@ func (r *pluginRepository) PrepareBundledPlugin(ctx context.Context, plugin *ser
 	var journalEnabled bool
 	var imported, complete, removed bool
 	var oldProfile string
-	err = tx.QueryRowContext(ctx, `SELECT bundle_sha256,desired_enabled,migration_profile,state_imported,completed,user_removed FROM sub2api_plugin_bootstrap WHERE plugin_key=$1 FOR UPDATE`, plugin.PluginKey).Scan(&journalBundle, &journalEnabled, &oldProfile, &imported, &complete, &removed)
+	var bindingSnapshot []byte
+	err = tx.QueryRowContext(ctx, `SELECT bundle_sha256,desired_enabled,migration_profile,state_imported,completed,user_removed,desired_bindings FROM sub2api_plugin_bootstrap WHERE plugin_key=$1 FOR UPDATE`, plugin.PluginKey).Scan(&journalBundle, &journalEnabled, &oldProfile, &imported, &complete, &removed, &bindingSnapshot)
 	if err != nil && !errors.Is(err, sql.ErrNoRows) {
 		return nil, err
 	}
@@ -44,21 +45,46 @@ func (r *pluginRepository) PrepareBundledPlugin(ctx context.Context, plugin *ser
 	if oldProfile != profile {
 		imported = false
 	}
-	if journalBundle == bundle {
-		enabled = journalEnabled
-	} else {
-		var oldID int64
-		var oldConfig string
-		err = tx.QueryRowContext(ctx, `SELECT id,config_encrypted FROM sub2api_plugin_installations WHERE plugin_key=$1 FOR UPDATE`, plugin.PluginKey).Scan(&oldID, &oldConfig)
-		if err == nil {
-			if oldConfig != "" {
-				config = oldConfig
-			}
-			if err = tx.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM sub2api_plugin_bindings WHERE plugin_id=$1 AND enabled)`, oldID).Scan(&enabled); err != nil {
+	var oldID int64
+	var oldConfig string
+	var oldBindings []service.PluginBinding
+	err = tx.QueryRowContext(ctx, `SELECT id,config_encrypted FROM sub2api_plugin_installations WHERE plugin_key=$1 FOR UPDATE`, plugin.PluginKey).Scan(&oldID, &oldConfig)
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return nil, err
+	}
+	if oldID > 0 {
+		if oldConfig != "" {
+			config = oldConfig
+		}
+		rows, queryErr := tx.QueryContext(ctx, `SELECT capability,platform,account_type,enabled,rollout_percent FROM sub2api_plugin_bindings WHERE plugin_id=$1 ORDER BY id`, oldID)
+		if queryErr != nil {
+			return nil, queryErr
+		}
+		for rows.Next() {
+			var binding service.PluginBinding
+			if err = rows.Scan(&binding.Capability, &binding.Platform, &binding.AccountType, &binding.Enabled, &binding.RolloutPercent); err != nil {
+				_ = rows.Close()
 				return nil, err
 			}
-		} else if !errors.Is(err, sql.ErrNoRows) {
+			oldBindings = append(oldBindings, binding)
+		}
+		err = rows.Err()
+		_ = rows.Close()
+		if err != nil {
 			return nil, err
+		}
+	}
+	if journalBundle != "" && !complete {
+		if len(bindingSnapshot) == 0 || json.Unmarshal(bindingSnapshot, &oldBindings) != nil {
+			return nil, errors.New("pending plugin migration has no valid binding intent")
+		}
+	}
+	if journalBundle == bundle {
+		enabled = journalEnabled
+	} else if oldID > 0 {
+		enabled = false
+		for _, binding := range oldBindings {
+			enabled = enabled || binding.Enabled
 		}
 	}
 	manifest, err := json.Marshal(plugin.Manifest)
@@ -77,13 +103,28 @@ func (r *pluginRepository) PrepareBundledPlugin(ctx context.Context, plugin *ser
 	}
 	bindings := make([]service.PluginBinding, 0, len(plugin.Manifest.Capabilities))
 	for _, capability := range plugin.Manifest.Capabilities {
-		bindings = append(bindings, service.PluginBinding{Capability: capability.ID, Platform: capability.Platform, AccountType: capability.AccountType, RolloutPercent: 100})
+		binding := service.PluginBinding{Capability: capability.ID, Platform: capability.Platform, AccountType: capability.AccountType, RolloutPercent: 100, Enabled: enabled && oldID == 0}
+		for _, previous := range oldBindings {
+			if previous.Capability == binding.Capability && previous.Platform == binding.Platform && previous.AccountType == binding.AccountType {
+				binding.Enabled, binding.RolloutPercent = previous.Enabled, previous.RolloutPercent
+				break
+			}
+		}
+		bindings = append(bindings, binding)
 	}
-	if err = replacePluginBindings(ctx, tx, id, bindings); err != nil {
+	bindingSnapshot, err = json.Marshal(bindings)
+	if err != nil {
 		return nil, err
 	}
-	_, err = tx.ExecContext(ctx, `INSERT INTO sub2api_plugin_bootstrap(plugin_key,bundle_sha256,migration_profile,desired_enabled,completed,state_imported) VALUES($1,$2,$3,$4,false,$5)
-		ON CONFLICT(plugin_key) DO UPDATE SET bundle_sha256=EXCLUDED.bundle_sha256,migration_profile=EXCLUDED.migration_profile,desired_enabled=EXCLUDED.desired_enabled,completed=false,state_imported=EXCLUDED.state_imported,updated_at=NOW()`, plugin.PluginKey, bundle, profile, enabled, imported)
+	stagedBindings := append([]service.PluginBinding(nil), bindings...)
+	for index := range stagedBindings {
+		stagedBindings[index].Enabled = false
+	}
+	if err = replacePluginBindings(ctx, tx, id, stagedBindings); err != nil {
+		return nil, err
+	}
+	_, err = tx.ExecContext(ctx, `INSERT INTO sub2api_plugin_bootstrap(plugin_key,bundle_sha256,migration_profile,desired_enabled,completed,state_imported,desired_bindings) VALUES($1,$2,$3,$4,false,$5,$6::jsonb)
+		ON CONFLICT(plugin_key) DO UPDATE SET bundle_sha256=EXCLUDED.bundle_sha256,migration_profile=EXCLUDED.migration_profile,desired_enabled=EXCLUDED.desired_enabled,completed=false,state_imported=EXCLUDED.state_imported,desired_bindings=EXCLUDED.desired_bindings,updated_at=NOW()`, plugin.PluginKey, bundle, profile, enabled, imported, bindingSnapshot)
 	if err != nil {
 		return nil, err
 	}
@@ -101,16 +142,25 @@ func (r *pluginRepository) CompleteBundledPlugin(ctx context.Context, id int64, 
 	defer func() { _ = tx.Rollback() }()
 	var key string
 	var enabled bool
-	err = tx.QueryRowContext(ctx, `SELECT p.plugin_key,b.desired_enabled FROM sub2api_plugin_installations p JOIN sub2api_plugin_bootstrap b ON b.plugin_key=p.plugin_key WHERE p.id=$1 AND b.bundle_sha256=$2 FOR UPDATE OF p,b`, id, bundle).Scan(&key, &enabled)
+	var bindingSnapshot []byte
+	err = tx.QueryRowContext(ctx, `SELECT p.plugin_key,b.desired_enabled,b.desired_bindings FROM sub2api_plugin_installations p JOIN sub2api_plugin_bootstrap b ON b.plugin_key=p.plugin_key WHERE p.id=$1 AND b.bundle_sha256=$2 FOR UPDATE OF p,b`, id, bundle).Scan(&key, &enabled, &bindingSnapshot)
 	if err != nil {
 		return err
+	}
+	var bindings []service.PluginBinding
+	if len(bindingSnapshot) == 0 || json.Unmarshal(bindingSnapshot, &bindings) != nil {
+		return errors.New("plugin binding intent is unavailable")
+	}
+	if err = replacePluginBindings(ctx, tx, id, bindings); err != nil {
+		return err
+	}
+	enabled = false
+	for _, binding := range bindings {
+		enabled = enabled || binding.Enabled
 	}
 	state := service.PluginStateDisabled
 	if enabled {
 		state = service.PluginStateEnabled
-	}
-	if _, err = tx.ExecContext(ctx, `UPDATE sub2api_plugin_bindings SET enabled=$2,updated_at=NOW() WHERE plugin_id=$1`, id, enabled); err != nil {
-		return err
 	}
 	if _, err = tx.ExecContext(ctx, `UPDATE sub2api_plugin_installations SET state=$2,updated_at=NOW() WHERE id=$1`, id, state); err != nil {
 		return err

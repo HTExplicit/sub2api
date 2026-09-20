@@ -274,6 +274,18 @@ func (m *PluginManager) Contributions() []PluginContribution {
 		runtime := registry.runtimes[id]
 		available := registry.unavailable == "" && runtime != nil && !runtime.draining.Load() && !runtime.client.Exited() && pluginDependenciesHealthy(installation, registry, map[int64]bool{})
 		for _, contribution := range installation.Manifest.Contributions {
+			if contribution.Capability != "" {
+				enabled := false
+				for _, binding := range installation.Bindings {
+					if binding.Enabled && binding.Capability == contribution.Capability {
+						enabled = true
+						break
+					}
+				}
+				if !enabled {
+					continue
+				}
+			}
 			if contribution.Slot == "theme" && !pluginHasCapability(installation, extensionv1.CapabilityUI, "*", "*") {
 				continue
 			}

@@ -10,7 +10,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -29,16 +28,17 @@ const openAIReasoningRecoveryHeader = "X-Sub2API-Reasoning-Recovery"
 // HTTP Responses request. It never re-enters a protocol converter or scheduler.
 // original is immutable; wire is the exact payload of the latest sent attempt.
 type openAIReasoningRecoveryState struct {
-	ctx      context.Context
-	c        *gin.Context
-	account  *Account
-	enabled  bool
-	token    string
-	original []byte
-	wire     []byte
-	scope    OpenAIReasoningCacheScope
-	store    OpenAIReasoningStateStore
-	budget   *OpenAIReasoningCacheBudget
+	ctx               context.Context
+	c                 *gin.Context
+	account           *Account
+	enabled           bool
+	policyUnavailable bool
+	token             string
+	original          []byte
+	wire              []byte
+	scope             OpenAIReasoningCacheScope
+	store             OpenAIReasoningStateStore
+	budget            *OpenAIReasoningCacheBudget
 
 	identity      string
 	attemptUsage  map[string]int64
@@ -66,10 +66,12 @@ func (s *OpenAIGatewayService) newOpenAIReasoningRecoveryState(ctx context.Conte
 	if ctx == nil {
 		ctx = context.Background()
 	}
+	enabled, policyErr := openAIReasoningPolicyEnabled(ctx, account, OpenAIReasoningSignatureRecoveryEnabledExtraKey)
 	r := &openAIReasoningRecoveryState{
 		ctx: ctx, c: c, account: account, token: token,
-		enabled: account.IsOpenAIReasoningSignatureRecoveryEnabled() && !isOpenAICompatMessagesBridgeContext(c),
-		store:   s.openAIReasoningStateStore(), budget: openAIReasoningCacheBudgetForRequest(c),
+		enabled:           enabled && policyErr == nil && !isOpenAICompatMessagesBridgeContext(c),
+		policyUnavailable: policyErr != nil,
+		store:             s.openAIReasoningStateStore(), budget: openAIReasoningCacheBudgetForRequest(c),
 	}
 	if c != nil {
 		c.Set(openAIReasoningRecoveryContextKey, r)
@@ -220,6 +222,16 @@ func openAIReasoningDigest(b []byte) string {
 // transformations and any positive replay. Recovery compares the entire final
 // body and source, so a later builder cannot silently remap or reinject state.
 func (r *openAIReasoningRecoveryState) PrepareRequest(req *http.Request, body []byte, proxyURL string) (*http.Request, []byte, error) {
+	if r != nil && r.enabled {
+		enabled, err := openAIReasoningPolicyEnabled(r.ctx, r.account, OpenAIReasoningSignatureRecoveryEnabledExtraKey)
+		if !enabled || err != nil {
+			r.enabled, r.policyUnavailable = false, err != nil
+			if r.retryUsed {
+				r.diagnosticStopReason = "policy_unavailable"
+				return nil, nil, r.StopError(errors.New("recovery policy unavailable"))
+			}
+		}
+	}
 	if r == nil || !r.enabled {
 		return req, body, nil
 	}
@@ -364,52 +376,9 @@ func openAIReasoningCipherItems(body []byte) []openAIReasoningCipherItem {
 type openAIReasoningRejection struct{ code, param string }
 
 func parseOpenAIReasoningRejection(payload []byte) (openAIReasoningRejection, bool) {
-	if _, err := canonicalReasoningCacheJSON(payload); err != nil {
-		return openAIReasoningRejection{}, false
-	}
-	root := gjson.ParseBytes(payload)
-	for _, path := range []string{"status_code", "error.status_code", "error.status", "response.error.status_code", "response.error.status"} {
-		if value := root.Get(path); value.Type == gjson.Number || value.Type == gjson.String {
-			if openAIReasoningRecoveryProtectedStatus(int(value.Int())) {
-				return openAIReasoningRejection{}, false
-			}
-		}
-	}
-	if kind := root.Get("type").String(); kind != "" && kind != "error" && kind != "response.failed" && kind != "response.done" {
-		return openAIReasoningRejection{}, false
-	}
-	if root.Get("type").String() == "response.done" && root.Get("response.status").String() != "failed" {
-		return openAIReasoningRejection{}, false
-	}
-	if status := root.Get("status").String(); status != "" && status != "failed" {
-		return openAIReasoningRejection{}, false
-	}
-	var source gjson.Result
-	switch {
-	case root.Get("response.error").IsObject():
-		if root.Get("type").String() != "response.failed" && root.Get("response.status").String() != "failed" {
-			return openAIReasoningRejection{}, false
-		}
-		source = root.Get("response.error")
-	case root.Get("error").IsObject():
-		source = root.Get("error")
-	case root.Get("type").String() == "error":
-		source = root
-	default:
-		return openAIReasoningRejection{}, false
-	}
-	code := source.Get("code")
-	if code.Type != gjson.String || (code.String() != "thinking_signature_invalid" && code.String() != "invalid_encrypted_content") {
-		return openAIReasoningRejection{}, false
-	}
-	param := source.Get("param")
-	if param.Exists() && param.Type != gjson.String && param.Type != gjson.Null {
-		return openAIReasoningRejection{}, false
-	}
-	return openAIReasoningRejection{code.String(), param.String()}, true
+	rejection, recognized, err := readOpenAIRecoveryRejection(context.Background(), payload)
+	return rejection, err == nil && recognized
 }
-
-var openAIReasoningErrorInputParam = regexp.MustCompile(`^input(?:\[(\d+)\]|\.(\d+))(?:\.encrypted_content)?$`)
 
 func openAIReasoningToolHistoryAllowsRecovery(body []byte) bool {
 	var input []any
@@ -422,58 +391,24 @@ func openAIReasoningToolHistoryAllowsRecovery(body []byte) bool {
 }
 
 func openAIReasoningRejectedIndices(body []byte, rejection openAIReasoningRejection) ([]int, []string) {
-	if _, err := canonicalReasoningCacheJSON(body); err != nil {
+	selection, err := selectOpenAIRecoveryIndices(context.Background(), body, rejection.param)
+	if err != nil || len(selection.Indices) == 0 {
 		return nil, nil
 	}
-	// Removing ciphertext cannot repair a locally provable orphan tool result.
-	if !openAIReasoningToolHistoryAllowsRecovery(body) {
-		return nil, nil
+	byIndex := map[int]string{}
+	for _, item := range openAIReasoningCipherItems(body) {
+		byIndex[item.index] = item.hash
 	}
-	items := openAIReasoningCipherItems(body)
-	if len(items) == 0 {
-		return nil, nil
-	}
-	if match := openAIReasoningErrorInputParam.FindStringSubmatch(rejection.param); match != nil {
-		indexText := match[1]
-		if indexText == "" {
-			indexText = match[2]
-		}
-		index, err := strconv.Atoi(indexText)
-		if err != nil {
-			return nil, nil
-		}
-		for _, item := range items {
-			if item.index == index {
-				return []int{index}, []string{item.hash}
-			}
-		}
-		return nil, nil
-	}
-	if rejection.param != "" && rejection.param != "input" && rejection.param != "reasoning.encrypted_content" {
-		return nil, nil
-	}
-	// Without an index, recovery concerns the rejected request's old reasoning
-	// candidate set, not a claim that each member is individually invalid. Other
-	// encrypted carriers or server-held references make that scope ambiguous.
-	if gjson.GetBytes(body, "previous_response_id").String() != "" ||
-		(gjson.GetBytes(body, "conversation").Exists() && gjson.GetBytes(body, "conversation").Type != gjson.Null) {
-		return nil, nil
-	}
-	var parsed any
-	if json.Unmarshal(body, &parsed) != nil || countOpenAIEncryptedFields(parsed) != len(items) {
-		return nil, nil
-	}
-	indices := make([]int, 0, len(items))
-	hashes := make([]string, 0, len(items))
-	seen := make(map[string]bool, len(items))
-	for _, item := range items {
-		indices = append(indices, item.index)
-		if !seen[item.hash] {
-			seen[item.hash] = true
-			hashes = append(hashes, item.hash)
+	hashes := make([]string, 0, len(selection.Indices))
+	seen := map[string]bool{}
+	for _, index := range selection.Indices {
+		hash := byIndex[index]
+		if !seen[hash] {
+			hashes = append(hashes, hash)
+			seen[hash] = true
 		}
 	}
-	return indices, hashes
+	return selection.Indices, hashes
 }
 
 // Evidence preserves numeric field presence, not default-zero struct members.
@@ -565,7 +500,11 @@ func openAIReasoningRecoverySignal(c *gin.Context, payload []byte, semanticCommi
 	if r == nil || !r.enabled || r.retryUsed || r.ctx.Err() != nil {
 		return nil
 	}
-	rejection, ok := parseOpenAIReasoningRejection(payload)
+	rejection, ok, policyErr := readOpenAIRecoveryRejection(r.ctx, payload)
+	if policyErr != nil {
+		r.policyUnavailable = true
+		return nil
+	}
 	if !ok {
 		return nil
 	}
@@ -600,7 +539,16 @@ func (r *openAIReasoningRecoveryState) TryRecover(status int, headers http.Heade
 	if r == nil || !r.enabled || r.retryUsed || semanticCommitted || r.ctx.Err() != nil || openAIReasoningRecoveryProtectedStatus(status) {
 		return nil, false
 	}
-	rejection, ok := parseOpenAIReasoningRejection(payload)
+	enabled, policyErr := openAIReasoningPolicyEnabled(r.ctx, r.account, OpenAIReasoningSignatureRecoveryEnabledExtraKey)
+	if !enabled || policyErr != nil {
+		r.enabled, r.policyUnavailable = false, policyErr != nil
+		return nil, false
+	}
+	rejection, ok, parseErr := readOpenAIRecoveryRejection(r.ctx, payload)
+	if parseErr != nil {
+		r.policyUnavailable = true
+		return nil, false
+	}
 	if !ok {
 		return nil, false
 	}
@@ -785,6 +733,8 @@ func (r *openAIReasoningRecoveryState) continuationDiagnosticRecovery(payload []
 
 func (r *openAIReasoningRecoveryState) recoveryNotAttemptedReason(payload []byte) string {
 	switch {
+	case r.policyUnavailable:
+		return "policy_unavailable"
 	case !r.enabled:
 		return "disabled"
 	case r.semanticCommitted:
@@ -794,38 +744,23 @@ func (r *openAIReasoningRecoveryState) recoveryNotAttemptedReason(payload []byte
 	case openAIReasoningRecoveryProtectedStatus(r.responseStatus):
 		return "protected_status"
 	}
-	rejection, ok := parseOpenAIReasoningRejection(payload)
+	rejection, ok, policyErr := readOpenAIRecoveryRejection(r.ctx, payload)
+	if policyErr != nil {
+		return "policy_unavailable"
+	}
 	if !ok {
 		return "not_signature_rejection"
 	}
-	if _, err := canonicalReasoningCacheJSON(r.wire); err != nil {
-		return "invalid_request_snapshot"
+	selection, err := selectOpenAIRecoveryIndices(r.ctx, r.wire, rejection.param)
+	if err != nil {
+		return "policy_unavailable"
 	}
-	if !openAIReasoningToolHistoryAllowsRecovery(r.wire) {
-		return "invalid_tool_history"
-	}
-	items := openAIReasoningCipherItems(r.wire)
-	if len(items) == 0 {
-		return "no_reasoning_ciphertext"
-	}
-	indices, _ := openAIReasoningRejectedIndices(r.wire, rejection)
-	if len(indices) > 0 {
-		if _, err := stripOpenAIReasoningCipherIndices(r.wire, indices); err != nil {
+	if len(selection.Indices) > 0 {
+		if _, err := stripOpenAIReasoningCipherIndices(r.wire, selection.Indices); err != nil {
 			return "rewrite_failed"
 		}
-		return "recovery_not_dispatched"
 	}
-	if openAIReasoningErrorInputParam.MatchString(rejection.param) {
-		return "target_not_reasoning_ciphertext"
-	}
-	if rejection.param != "" && rejection.param != "input" && rejection.param != "reasoning.encrypted_content" {
-		return "unsupported_error_param"
-	}
-	if gjson.GetBytes(r.wire, "previous_response_id").String() != "" ||
-		(gjson.GetBytes(r.wire, "conversation").Exists() && gjson.GetBytes(r.wire, "conversation").Type != gjson.Null) {
-		return "server_held_context"
-	}
-	return "ambiguous_encrypted_carriers"
+	return selection.Reason
 }
 
 func (r *openAIReasoningRecoveryState) diagnosticClassification(payload []byte) string {

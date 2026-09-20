@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/HTExplicit/sub2api-plugins/codexruntime/profile"
+	"github.com/HTExplicit/sub2api-plugins/codexruntime/recovery"
 	proxytransport "github.com/Wei-Shaw/sub2api/pkg/extensionapi/proxy"
 	extensionv1 "github.com/Wei-Shaw/sub2api/pkg/extensionapi/v1"
 )
@@ -190,6 +191,9 @@ type Outcome struct {
 }
 
 func (m *Module) Invoke(ctx context.Context, in extensionv1.Invocation) (extensionv1.Result, error) {
+	if in.Capability == extensionv1.CapabilityRecovery {
+		return recovery.Invoke(ctx, in)
+	}
 	if in.Capability == extensionv1.CapabilityRequest && strings.HasPrefix(in.Operation, "codex.identity.") {
 		return profile.Invoke(ctx, in)
 	}
