@@ -1,13 +1,13 @@
 {
   "schema_version": 2,
   "upstream_base": "aea725f2ea644d5592d0bbb1d63b607efa7e200a",
-  "basis_commit": "8232c3d9c8ce15552a862492d3974725d2ece0dd",
+  "basis_commit": "dce661215c63ea0e5603c735fd3a8740869a444a",
   "scope": "Current Sub2API downstream source and working tree. Candidate ownership does not establish completed review. Root maintenance, independent services and Worker require a separate audit.",
-  "source_digest": "8c5dcd8f5f0866415b2910913497623fc51d94374e3bfd954ed9a2656c05f60e",
+  "source_digest": "415d2d8d6c0aeeea3ad8562f3011aa64b2b89cb11cbc185e6d5c2932087db1de",
   "digest_excludes": [
     "inventory and implementation-state documents; missing paths have present=false"
   ],
-  "total_paths": 2110,
+  "total_paths": 2113,
   "generated_assets_and_locks": 83,
   "review_complete": false,
   "role_counts": {
@@ -16,20 +16,20 @@
     "dependency-lock": 9,
     "documentation": 27,
     "generated": 68,
-    "source": 890,
-    "test-or-fixture": 652
+    "source": 891,
+    "test-or-fixture": 654
   },
   "owner_counts": {
     "operations": 39,
     "documentation-and-history": 25,
     "mixed-requires-review": 1012,
-    "core-extension-and-job-host": 109,
+    "core-extension-and-job-host": 111,
     "core-data-and-migrations": 21,
     "cindy-provider": 165,
     "image-tools": 34,
     "account-tools": 50,
     "codex-runtime": 36,
-    "prompt-skills": 544,
+    "prompt-skills": 545,
     "core-quota-and-protocol": 22,
     "admin-observability": 34,
     "model-policy": 19
@@ -1720,7 +1720,7 @@
       "candidate_owner": "mixed-requires-review",
       "role": "test-or-fixture",
       "present": true,
-      "content_sha256": "801d17d713f96c778eb721da6b8aaff2694d378b0461623c368b3125c7e737a0",
+      "content_sha256": "94d12dce55084a228ba53b925e67f3235d71c2de3bddca3ed5903ed8d6a57974",
       "review_status": "pending"
     },
     {
@@ -3636,11 +3636,19 @@
       "review_status": "pending"
     },
     {
+      "path": "backend/internal/repository/remote_skill_job_expiry_test.go",
+      "candidate_owner": "prompt-skills",
+      "role": "test-or-fixture",
+      "present": true,
+      "content_sha256": "bdf8a630839c80d9b030f24be59a5d1c8f30b09007815d27028fc109b4c41d12",
+      "review_status": "pending"
+    },
+    {
       "path": "backend/internal/repository/remote_skill_registry_repository.go",
       "candidate_owner": "prompt-skills",
       "role": "source",
       "present": true,
-      "content_sha256": "64ae90a0d979baf1c4434238fc7060ea157f3639cd034e87f024e9495f077278",
+      "content_sha256": "8db421b14492cde0eaf2d42c6f2700bae20cccab4f8046133ef30446074b5b1c",
       "review_status": "pending"
     },
     {
@@ -4600,7 +4608,7 @@
       "candidate_owner": "prompt-skills",
       "role": "source",
       "present": true,
-      "content_sha256": "0bbb56045d318320e993ca7865ddaa769e73c01ac6ef3a1922dbe9c0c0991a3c",
+      "content_sha256": "654e3943e68484d1e1b10b8b0ac35eefdd6e4e95724d28fdebb13afde1350c3e",
       "review_status": "pending"
     },
     {
@@ -7436,6 +7444,22 @@
       "review_status": "pending"
     },
     {
+      "path": "backend/internal/service/plugin_domain_operation.go",
+      "candidate_owner": "core-extension-and-job-host",
+      "role": "source",
+      "present": true,
+      "content_sha256": "a35d299374bc214d019a00ec8accb118437afd52c937aef138ce1c6c292ba3d2",
+      "review_status": "pending"
+    },
+    {
+      "path": "backend/internal/service/plugin_domain_operation_test.go",
+      "candidate_owner": "core-extension-and-job-host",
+      "role": "test-or-fixture",
+      "present": true,
+      "content_sha256": "5c94faa0693229b9f533c7224319bffed4f13d96e1a0ec607fee57bc1244dcb6",
+      "review_status": "pending"
+    },
+    {
       "path": "backend/internal/service/plugin_extension_accounts.go",
       "candidate_owner": "core-extension-and-job-host",
       "role": "source",
@@ -7592,7 +7616,7 @@
       "candidate_owner": "core-extension-and-job-host",
       "role": "source",
       "present": true,
-      "content_sha256": "c7a7114ad32e8b8c4591cfa662d3fcb67cb6eee16eff7b4139bdb89a374bc538",
+      "content_sha256": "502f72213e1b6c5f2ce2a007b46e4433b753755447154f7bf0fd9eec06b6ec50",
       "review_status": "pending"
     },
     {
@@ -7696,7 +7720,7 @@
       "candidate_owner": "mixed-requires-review",
       "role": "source",
       "present": true,
-      "content_sha256": "846a882cdc525b29efc9b7df9cbca40f0c418ac73db9fd979094578c1e9c82ca",
+      "content_sha256": "a2860b460214180afd926e0503ebac00ec30d6dd25a8c71454a0b543dbf5b64e",
       "review_status": "pending"
     },
     {
@@ -7928,7 +7952,7 @@
       "candidate_owner": "prompt-skills",
       "role": "source",
       "present": true,
-      "content_sha256": "6d02f4f9007ed44dee5688eb28f222f23846f656ff9f9549c5127fd651db4178",
+      "content_sha256": "204a02fc9feb2148a5695b358c398a37db4fc0bd538f2d16da2e6d5960b1223f",
       "review_status": "pending"
     },
     {
@@ -7992,7 +8016,7 @@
       "candidate_owner": "prompt-skills",
       "role": "test-or-fixture",
       "present": true,
-      "content_sha256": "74dd95819bf44be82a8bd417ec08f4368a6bedbd2983ae35373442f3a4fbc31c",
+      "content_sha256": "5f2656c8b70e5289eb66bd3435ce1be637079795cc2709c5c227ee2cf82aa66d",
       "review_status": "pending"
     },
     {

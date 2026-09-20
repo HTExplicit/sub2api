@@ -25,11 +25,7 @@ func invokePromptManagementPolicy(ctx context.Context, operation string, input, 
 	if operation == "prompt.source.fetch" {
 		call = ctx
 	}
-	invoke := invokeProcessExtension
-	if cached {
-		invoke = invokeProcessExtensionCached
-	}
-	result, err := invoke(call, PlatformOpenAI, "*", extensionv1.Invocation{Capability: extensionv1.CapabilityRequest, Operation: operation, Payload: raw})
+	result, err := invokeProcessDomainExtension(call, extensionv1.Invocation{Capability: extensionv1.CapabilityRequest, Operation: operation, Payload: raw}, cached)
 	if err != nil {
 		if strings.HasPrefix(operation, "prompt.source.") {
 			return ErrBusinessSystemPromptSourceUnavailable

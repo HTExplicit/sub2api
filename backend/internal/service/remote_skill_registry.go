@@ -103,6 +103,10 @@ type RemoteSkillSyncJob struct {
 	CompletedAt              *time.Time `json:"completed_at,omitempty"`
 }
 
+// The HTTP source already has a five-minute bound. The complete job, including
+// verification and storage, has one deadline that cannot be extended by restart.
+const RemoteSkillSyncJobTimeout = 10 * time.Minute
+
 type RemoteSkillCandidate struct {
 	Version        RemoteSkillBundleVersion
 	Prompt         RemoteSkillPromptVersion
@@ -121,6 +125,7 @@ type RemoteSkillRegistryStore interface {
 	CompleteRemoteSkillSyncJob(context.Context, int64, RemoteSkillCandidate) (RemoteSkillSyncJob, error)
 	FailRemoteSkillSyncJob(context.Context, int64, string) error
 	GetRemoteSkillSyncJob(context.Context, int64) (RemoteSkillSyncJob, error)
+	ExpireRemoteSkillSyncJobs(context.Context) error
 	PublishRemoteSkillVersion(context.Context, int64, int64, int64) (RemoteSkillRegistrySnapshot, error)
 }
 
@@ -186,6 +191,12 @@ func (s *RemoteSkillRegistryService) Initialize(ctx context.Context) error {
 }
 
 func (s *RemoteSkillRegistryService) Start(ctx context.Context) error {
+	if s == nil || s.store == nil {
+		return errors.New("remote skill registry unavailable")
+	}
+	if err := s.store.ExpireRemoteSkillSyncJobs(ctx); err != nil {
+		return err
+	}
 	if err := s.Initialize(ctx); err != nil {
 		return err
 	}
@@ -308,7 +319,7 @@ func (s *RemoteSkillRegistryService) StartSync(ctx context.Context, promptCaptur
 	s.runMu.Lock()
 	if !s.started || s.runCtx == nil {
 		s.runMu.Unlock()
-		_ = s.store.FailRemoteSkillSyncJob(ctx, job.ID, "service_stopped")
+		s.failSyncJob(ctx, job.ID, "service_stopped")
 		return RemoteSkillSyncJob{}, errors.New("remote skill sync service is not running")
 	}
 	runCtx := s.runCtx
@@ -335,7 +346,13 @@ func (s *RemoteSkillRegistryService) resolvePromptCapture(raw []byte) (RemoteSki
 }
 
 func (s *RemoteSkillRegistryService) runSyncJob(ctx context.Context, job RemoteSkillSyncJob, prompt RemoteSkillPromptCapture) {
-	bound, release, err := bindProcessExtensionContext(ctx, PlatformOpenAI, "*", extensionv1.Invocation{Capability: extensionv1.CapabilityRequest, Operation: "skills.tree.check"})
+	ctx, deadlineCancel := context.WithDeadline(ctx, job.CreatedAt.Add(RemoteSkillSyncJobTimeout))
+	defer deadlineCancel()
+	if err := ctx.Err(); err != nil {
+		s.failSyncJob(ctx, job.ID, "sync_expired")
+		return
+	}
+	bound, release, err := bindProcessDomainExtensionContext(ctx, extensionv1.Invocation{Capability: extensionv1.CapabilityRequest, Operation: "skills.tree.check"})
 	if err != nil {
 		s.failSyncJob(ctx, job.ID, "service_stopped")
 		return

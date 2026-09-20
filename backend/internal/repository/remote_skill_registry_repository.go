@@ -166,7 +166,8 @@ func (r *remoteSkillRegistryRepository) UpdateRemoteSkillSyncJobStage(ctx contex
 	result, err := r.db.ExecContext(ctx, `
 		UPDATE system_prompt_skill_sync_jobs
 		SET status = 'running', progress_stage = $2, started_at = COALESCE(started_at, NOW())
-		WHERE id = $1 AND status IN ('queued', 'running')`, id, stage)
+		WHERE id = $1 AND status IN ('queued', 'running')
+		  AND created_at > clock_timestamp() - $3 * INTERVAL '1 second'`, id, stage, int64(service.RemoteSkillSyncJobTimeout/time.Second))
 	if err != nil {
 		return err
 	}
@@ -187,7 +188,9 @@ func (r *remoteSkillRegistryRepository) CompleteRemoteSkillSyncJob(ctx context.C
 	defer func() { _ = tx.Rollback() }()
 	var status string
 	var createdBy sql.NullInt64
-	if err := tx.QueryRowContext(ctx, `SELECT status, created_by FROM system_prompt_skill_sync_jobs WHERE id = $1 FOR UPDATE`, id).Scan(&status, &createdBy); err != nil {
+	if err := tx.QueryRowContext(ctx, `SELECT status, created_by FROM system_prompt_skill_sync_jobs
+		WHERE id = $1 AND created_at > clock_timestamp() - $2 * INTERVAL '1 second' FOR UPDATE`,
+		id, int64(service.RemoteSkillSyncJobTimeout/time.Second)).Scan(&status, &createdBy); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return service.RemoteSkillSyncJob{}, service.ErrRemoteSkillSyncNotFound
 		}
@@ -208,7 +211,8 @@ func (r *remoteSkillRegistryRepository) CompleteRemoteSkillSyncJob(ctx context.C
 		UPDATE system_prompt_skill_sync_jobs
 		SET status = 'succeeded', progress_stage = 'candidate_ready',
 		    candidate_bundle_version_id = $2, error_code = NULL, completed_at = NOW()
-		WHERE id = $1`, id, detail.ID)
+		WHERE id = $1 AND created_at > clock_timestamp() - $3 * INTERVAL '1 second'`,
+		id, detail.ID, int64(service.RemoteSkillSyncJobTimeout/time.Second))
 	if err != nil {
 		return service.RemoteSkillSyncJob{}, err
 	}
@@ -243,6 +247,9 @@ func (r *remoteSkillRegistryRepository) GetRemoteSkillSyncJob(ctx context.Contex
 	if err := r.requireDatabase(); err != nil {
 		return service.RemoteSkillSyncJob{}, err
 	}
+	if err := r.ExpireRemoteSkillSyncJobs(ctx); err != nil {
+		return service.RemoteSkillSyncJob{}, err
+	}
 	var job service.RemoteSkillSyncJob
 	var candidateID, createdBy sql.NullInt64
 	var errorCode sql.NullString
@@ -265,6 +272,21 @@ func (r *remoteSkillRegistryRepository) GetRemoteSkillSyncJob(ctx context.Contex
 	job.StartedAt = nullableTimePointer(startedAt)
 	job.CompletedAt = nullableTimePointer(completedAt)
 	return job, nil
+}
+
+// Expiry is measured by the database clock and touches only unfinished jobs.
+// Another instance's active job remains owned by that instance until its fixed
+// deadline. Abandoned jobs are failed, never replayed or published on startup.
+func (r *remoteSkillRegistryRepository) ExpireRemoteSkillSyncJobs(ctx context.Context) error {
+	if err := r.requireDatabase(); err != nil {
+		return err
+	}
+	_, err := r.db.ExecContext(ctx, `
+		UPDATE system_prompt_skill_sync_jobs
+		SET status = 'failed', progress_stage = 'failed', error_code = 'sync_expired', completed_at = NOW()
+		WHERE status IN ('queued', 'running')
+		  AND created_at <= clock_timestamp() - $1 * INTERVAL '1 second'`, int64(service.RemoteSkillSyncJobTimeout/time.Second))
+	return err
 }
 
 func (r *remoteSkillRegistryRepository) PublishRemoteSkillVersion(ctx context.Context, versionID, expectedRevision, actorID int64) (service.RemoteSkillRegistrySnapshot, error) {
@@ -311,7 +333,6 @@ func (r *remoteSkillRegistryRepository) PublishRemoteSkillVersion(ctx context.Co
 	}
 	return snapshot, nil
 }
-
 
 const remoteSkillVersionSelect = `
 	SELECT v.id, v.upstream_source_id, v.upstream_root, v.public_root,

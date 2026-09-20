@@ -29,7 +29,7 @@ func NewPromptDomainRuntime(registry *RemoteSkillRegistryService, prompts *Busin
 func promptPolicyAvailability(ctx context.Context) error {
 	call, cancel := context.WithTimeout(ctx, time.Second)
 	defer cancel()
-	result, err := invokeProcessExtensionCached(call, PlatformOpenAI, "*", extensionv1.Invocation{Capability: extensionv1.CapabilityRequest, Operation: "prompt.availability", Payload: []byte(`{}`)})
+	result, err := invokeProcessDomainExtension(call, extensionv1.Invocation{Capability: extensionv1.CapabilityRequest, Operation: "prompt.availability", Payload: []byte(`{}`)}, true)
 	if err != nil {
 		return err
 	}

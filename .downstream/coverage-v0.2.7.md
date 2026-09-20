@@ -26,9 +26,11 @@
 | `TestTrafficObservationFinishesWithCapturedPolicyAfterPluginDisable` | 停用不能把已开始观测的成功请求误记成失败 | 插件提供有界分类表，宿主冻结规则并完成一次收尾 |
 | `TestPublicThemeAssetsRequireCurrentActivationDeclarationAndDigest`、`check-theme.py` | 主题资源须可撤销，宿主仍有基本可用样式 | 按声明公开 CSS/字体，校验资源摘要，深浅色和窄屏启停的计算样式验证通过 |
 | `plugins/codex-runtime/scripts/check-ui.py` | 协议标签与控件不能一起居中对齐按钮 | 插件界面采用底部对齐与自然换行，桌面/窄屏及深浅色 DOM 检查通过 |
+| `TestPromptDomainUsesActiveScopeWithoutBroadeningRequestBindings` | 全局管理查询不能把请求作用范围中的通配符当作实际账号类型 | 唯一领域提供者管理共享材料，逐账号注入仍执行绑定范围 |
+| `TestRemoteSkillJobExpiryPreservesActiveOwnersAndRejectsLateCompletion` | 进程退出后不应永久显示运行中，也不能允许旧任务迟到提交 | 固定任务期限、数据库实时时钟校验；过期失败、不重放、不改活跃任务 |
 
 ## 继续审查
 
 尚未决定保留或迁移的路径保持待审查。七域已建立，接下来核查剩余混合职责及局部主题声明；范围与验证状态以实施状态为准。
 
-根项目运维、独立服务和 Worker 不属于此 Sub2API Git 清单，必须单独检查。当前已确认 `deploy-session-converter.ps1`、`deploy-2fauth.ps1` 使用固定入口；若干 s-ui、备份、清理和旧安装入口仍有私钥路径，尚未统一修正。历史 worktree、在线数据、凭据和账本均保留。
+根项目运维、独立服务和 Worker 不属于此 Sub2API Git 清单，修正、证据和未完成项统一记录在项目根 `artifacts/evidence/v027-root-review.json`。历史 worktree、在线数据、凭据和账本均保留。

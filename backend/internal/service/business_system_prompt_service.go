@@ -204,7 +204,7 @@ func (s *BusinessSystemPromptService) SyncManagedSource(
 	if !ok {
 		return BusinessSystemPromptSourceSyncResult{}, ErrBusinessSystemPromptSourceUnavailable
 	}
-	bound, release, err := bindProcessExtensionContext(ctx, PlatformOpenAI, "*", extensionv1.Invocation{Capability: extensionv1.CapabilityRequest, Operation: "prompt.source.fetch"})
+	bound, release, err := bindProcessDomainExtensionContext(ctx, extensionv1.Invocation{Capability: extensionv1.CapabilityRequest, Operation: "prompt.source.fetch"})
 	if err != nil {
 		return BusinessSystemPromptSourceSyncResult{}, ErrBusinessSystemPromptSourceUnavailable
 	}

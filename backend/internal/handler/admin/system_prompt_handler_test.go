@@ -22,7 +22,7 @@ func TestStartSkillSyncAcceptsMultipartPromptCaptureForFixedSource(t *testing.T)
 	files := service.NewRemoteSkillRegistryFilesystem(t.TempDir())
 	seed, err := files.LoadSeed(context.Background())
 	require.NoError(t, err)
-	store := &serviceTestRemoteSkillStore{job: service.RemoteSkillSyncJob{ID: 9, Status: service.RemoteSkillSyncStatusQueued}}
+	store := &serviceTestRemoteSkillStore{job: service.RemoteSkillSyncJob{ID: 9, Status: service.RemoteSkillSyncStatusQueued, CreatedAt: time.Now()}}
 	registry := service.NewRemoteSkillRegistryService(store, nil, files, &serviceTestRemoteSkillSource{})
 	require.NoError(t, registry.Start(context.Background()))
 	t.Cleanup(registry.Stop)
@@ -122,6 +122,7 @@ func (s *serviceTestRemoteSkillStore) CreateRemoteSkillSyncJob(_ context.Context
 func (s *serviceTestRemoteSkillStore) UpdateRemoteSkillSyncJobStage(context.Context, int64, string) error {
 	return nil
 }
+func (s *serviceTestRemoteSkillStore) ExpireRemoteSkillSyncJobs(context.Context) error { return nil }
 func (s *serviceTestRemoteSkillStore) CompleteRemoteSkillSyncJob(context.Context, int64, service.RemoteSkillCandidate) (service.RemoteSkillSyncJob, error) {
 	return s.job, nil
 }
