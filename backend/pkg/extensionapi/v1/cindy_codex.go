@@ -46,7 +46,7 @@ type CindyCodexModel struct {
 	SupportsImageDetailOriginal       bool                        `json:"supports_image_detail_original"`
 	ContextWindow                     *int                        `json:"context_window"`
 	MaxContextWindow                  *int                        `json:"max_context_window"`
-	AutoCompactTokenLimit             any                         `json:"auto_compact_token_limit"`
+	AutoCompactTokenLimit             *int64                      `json:"auto_compact_token_limit"`
 	CompHash                          any                         `json:"comp_hash"`
 	EffectiveContextWindowPercent     int                         `json:"effective_context_window_percent"`
 	ExperimentalSupportedTools        []string                    `json:"experimental_supported_tools"`

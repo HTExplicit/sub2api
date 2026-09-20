@@ -22,6 +22,7 @@ import (
 	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
+	extensionv1 "github.com/Wei-Shaw/sub2api/pkg/extensionapi/v1"
 	pluginv1 "github.com/Wei-Shaw/sub2api/pkg/pluginapi/v1"
 )
 
@@ -990,6 +991,7 @@ func (m *PluginManager) CreateUIAssetSession(ctx context.Context, id int64, cont
 		return session, errors.New("invalid UI permission")
 	}
 	entrypoint := installation.Manifest.UI.Entrypoint
+	var selected *extensionv1.Contribution
 	if contribution != "" {
 		found := false
 		for _, item := range installation.Manifest.Contributions {
@@ -997,6 +999,7 @@ func (m *PluginManager) CreateUIAssetSession(ctx context.Context, id int64, cont
 				continue
 			}
 			entrypoint, permission, found = item.Entrypoint, item.Permission, true
+			selected = &item
 			break
 		}
 		if !found {
@@ -1004,6 +1007,27 @@ func (m *PluginManager) CreateUIAssetSession(ctx context.Context, id int64, cont
 		}
 	} else if permission != "admin" {
 		return session, errors.New("a user page contribution is required")
+	}
+	if len(installation.Bindings) > 0 {
+		capability := ""
+		if selected != nil {
+			capability = selected.Capability
+		}
+		enabled := false
+		for _, binding := range installation.Bindings {
+			if binding.Enabled && (capability == "" || binding.Capability == capability) {
+				enabled = true
+				break
+			}
+		}
+		if !enabled {
+			return session, ErrExtensionOperationDisabled
+		}
+	}
+	if selected != nil && selected.ConfigFlag != "" {
+		if enabled, known := m.contributionConfigured(installation, nil, selected.ConfigFlag); known && !enabled {
+			return session, ErrExtensionOperationDisabled
+		}
 	}
 	expires := time.Now().Add(ttl)
 	raw, err := json.Marshal(pluginUIAssetClaims{Version: 1, PluginID: id, Expires: expires.Unix(), PackageSHA256: installation.PackageSHA256, Entrypoint: entrypoint, Permission: permission})

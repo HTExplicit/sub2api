@@ -1,6 +1,7 @@
 package catalog
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -122,6 +123,15 @@ func (m *Module) Invoke(ctx context.Context, in extensionv1.Invocation) (extensi
 		return extensionv1.Result{Payload: raw}, err
 	case "cindy.pricing":
 		raw, err := json.Marshal(registry.PricingSnapshot())
+		return extensionv1.Result{Payload: raw}, err
+	case "cindy.search.plan":
+		var request extensionv1.CindyAlphaSearchPlanRequest
+		decoder := json.NewDecoder(bytes.NewReader(in.Payload))
+		decoder.DisallowUnknownFields()
+		if err := decoder.Decode(&request); err != nil {
+			return extensionv1.Result{}, errors.New("invalid Cindy search plan request")
+		}
+		raw, err := json.Marshal(registry.AlphaSearchPlan(request.Model))
 		return extensionv1.Result{Payload: raw}, err
 	}
 	return extensionv1.Result{}, errors.New("unsupported Cindy provider operation")

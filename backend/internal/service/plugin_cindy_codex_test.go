@@ -11,7 +11,7 @@ import (
 
 func TestCindyCodexPresentationRejectsIdentityCapacityAndInstructionChanges(t *testing.T) {
 	registry := cindyregistry.Registry{}
-	for _, change := range []string{"missing", "identity", "capacity", "instructions", "reasoning"} {
+	for _, change := range []string{"missing", "identity", "capacity", "instructions", "reasoning", "compact"} {
 		t.Run(change, func(t *testing.T) {
 			var capability CindyCapability
 			for _, candidate := range registry.CindyCapabilities() {
@@ -35,6 +35,9 @@ func TestCindyCodexPresentationRejectsIdentityCapacityAndInstructionChanges(t *t
 			case "reasoning":
 				value := "unsupported"
 				capability.CodexPresentation.DefaultReasoningLevel = &value
+			case "compact":
+				value := int64(capability.EffectiveCodexContextWindow()) + 1
+				capability.CodexPresentation.AutoCompactTokenLimit = &value
 			}
 			_, err = newCindyCodexModel(capability, 1)
 			require.ErrorIs(t, err, ErrExtensionOperationUnavailable)

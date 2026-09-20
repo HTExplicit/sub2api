@@ -10,7 +10,7 @@ func TestCodexPresentationOwnsRulesAndClonesEachRead(t *testing.T) {
 			luna = capability
 		}
 	}
-	if luna.CodexPresentation == nil || luna.CodexPresentation.TruncationPolicy.Mode != "tokens" || luna.CodexPresentation.AutoCompactTokenLimit != 900000 {
+	if luna.CodexPresentation == nil || luna.CodexPresentation.TruncationPolicy.Mode != "tokens" || luna.CodexPresentation.AutoCompactTokenLimit == nil || *luna.CodexPresentation.AutoCompactTokenLimit != 900000 {
 		t.Fatalf("missing independent Codex presentation: %+v", luna.CodexPresentation)
 	}
 	if luna.CodexPresentation.BaseInstructions != "" {

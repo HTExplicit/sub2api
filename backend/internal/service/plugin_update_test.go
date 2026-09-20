@@ -8,6 +8,7 @@ import (
 	"encoding/base64"
 	"testing"
 
+	extensionv1 "github.com/Wei-Shaw/sub2api/pkg/extensionapi/v1"
 	"github.com/stretchr/testify/require"
 )
 
@@ -63,4 +64,49 @@ func TestPluginConfigurationConflictDoesNotApplyOrCancelWork(t *testing.T) {
 	require.ErrorIs(t, err, ErrPluginStateChanged)
 	require.Empty(t, client.applied)
 	require.NoError(t, work.Err())
+}
+
+type pendingResumePluginRepository struct {
+	*pluginTokenRepository
+	artifact []byte
+	commits  int
+}
+
+func (r *pendingResumePluginRepository) PendingPluginArtifact(context.Context, int64) ([]byte, error) {
+	return r.artifact, nil
+}
+
+func (r *pendingResumePluginRepository) CommitPluginUpdate(context.Context, *PluginInstallation, *PluginInstallation) error {
+	r.commits++
+	return nil
+}
+
+func TestResumePluginUpdateRevalidatesCandidateBeforeCommit(t *testing.T) {
+	cfg := testPluginConfig(t.TempDir(), true)
+	installer := NewPluginPackageInstaller(cfg, PluginHostInfo{Version: "0.1.179"})
+	oldArchive := buildTestPluginArchive(t, nil, "")
+	old, err := installer.Install(context.Background(), bytes.NewReader(oldArchive), nil)
+	require.NoError(t, err)
+	old.ID = 7
+	old.State = PluginStateUpdating
+	old.Revision = 4
+	old.RuntimeGeneration = 9
+	old.ConfigEncrypted = "ENC:{}"
+	old.Bindings = []PluginBinding{{Capability: extensionv1.CapabilityAdmin, Platform: "*", AccountType: "*", Enabled: true, RolloutPercent: 100}}
+
+	manifest := testPluginManifest(nil)
+	manifest.Version = "0.1.1"
+	pending := buildPluginArchive(t, manifest, nil, "", nil)
+	repo := &pendingResumePluginRepository{
+		pluginTokenRepository: &pluginTokenRepository{installation: old},
+		artifact:              pending,
+	}
+	manager := NewPluginManager(repo, pluginTokenEncryptor{}, cfg, PluginHostInfo{Version: "0.1.179"}, nil)
+
+	_, err = manager.resumePluginUpdate(context.Background(), old)
+	require.Error(t, err, "the fixture candidate cannot start and must fail candidate validation")
+	require.Zero(t, repo.commits)
+	require.Equal(t, old.PackageSHA256, repo.installation.PackageSHA256)
+	require.Equal(t, old.ConfigEncrypted, repo.installation.ConfigEncrypted)
+	require.Equal(t, old.Bindings, repo.installation.Bindings)
 }

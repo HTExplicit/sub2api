@@ -187,6 +187,9 @@ func (m *PluginManager) resumePluginUpdate(ctx context.Context, previous *Plugin
 	if !candidate.Compatibility.Compatible {
 		return nil, errors.New(candidate.Compatibility.Message)
 	}
+	if err = m.validatePluginCandidate(ctx, candidate); err != nil {
+		return nil, err
+	}
 	if err = store.CommitPluginUpdate(ctx, previous, candidate); err != nil {
 		if errors.Is(err, ErrPluginUpdateWaiting) || errors.Is(err, ErrPluginStateChanged) {
 			return nil, nil

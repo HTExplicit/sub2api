@@ -88,19 +88,22 @@ func TestForwardAlphaSearchCindyUsesPublicResponsesModelBeforeHiddenFallback(t *
 	require.JSONEq(t, `{"output":"native result"}`, recorder.Body.String())
 }
 
-func TestForwardAlphaSearchCindyFallsBackToHiddenMessagesOnlyForUnsupportedOrUnprovenResponses(t *testing.T) {
+func TestForwardAlphaSearchCindyFallsBackToHiddenMessagesForCapabilityMissOrBufferedMissingEvidence(t *testing.T) {
 	tests := []struct {
 		name          string
 		firstResponse func() *http.Response
+		wantFallback  bool
 	}{
 		{
-			name: "structured tool unsupported",
+			name:         "structured tool unsupported",
+			wantFallback: true,
 			firstResponse: func() *http.Response {
 				return alphaSearchHTTPResponse(http.StatusBadRequest, "application/json", `{"error":{"type":"invalid_request_error","code":"unsupported_tool","param":"tools[0]","message":"web_search tool is unsupported"}}`)
 			},
 		},
 		{
-			name: "successful response without search evidence",
+			name:         "successful response without search evidence",
+			wantFallback: true,
 			firstResponse: func() *http.Response {
 				return alphaSearchHTTPResponse(http.StatusOK, "text/event-stream", "event: response.output_text.delta\n"+
 					`data: {"type":"response.output_text.delta","delta":"plain answer"}`+"\n\n"+
@@ -118,17 +121,27 @@ func TestForwardAlphaSearchCindyFallsBackToHiddenMessagesOnlyForUnsupportedOrUnp
 
 			result, err := service.ForwardAlphaSearch(context.Background(), c, firstClassCindyAlphaSearchAccount(61002), body)
 
-			require.NoError(t, err)
-			require.NotNil(t, result)
-			require.Equal(t, "/v1/messages", result.UpstreamEndpoint)
-			require.Equal(t, "gpt-5.6-luna", result.Model)
-			require.Equal(t, "openai/gpt-5.6-luna", result.BillingModel)
-			require.Len(t, upstream.requests, 2)
+			if test.wantFallback {
+				require.NoError(t, err)
+				require.NotNil(t, result)
+				require.Equal(t, "/v1/messages", result.UpstreamEndpoint)
+				require.Equal(t, "gpt-5.6-luna", result.Model)
+				require.Equal(t, "openai/gpt-5.6-luna", result.BillingModel)
+				require.Len(t, upstream.requests, 2)
+				require.Equal(t, "/v1/responses", upstream.requests[0].URL.Path)
+				require.Equal(t, "/v1/messages", upstream.requests[1].URL.Path)
+				require.Equal(t, "cindy/web-search", gjson.GetBytes(upstream.bodies[1], "model").String())
+				require.Equal(t, http.StatusOK, recorder.Code)
+				require.Contains(t, recorder.Body.String(), "fallback result")
+				return
+			}
+
+			require.Nil(t, result)
+			var failoverErr *UpstreamFailoverError
+			require.ErrorAs(t, err, &failoverErr)
+			require.True(t, failoverErr.IsOpenAIAlphaSearchBridgeUnavailable())
+			require.Len(t, upstream.requests, 1)
 			require.Equal(t, "/v1/responses", upstream.requests[0].URL.Path)
-			require.Equal(t, "/v1/messages", upstream.requests[1].URL.Path)
-			require.Equal(t, "cindy/web-search", gjson.GetBytes(upstream.bodies[1], "model").String())
-			require.Equal(t, http.StatusOK, recorder.Code)
-			require.Contains(t, recorder.Body.String(), "fallback result")
 		})
 	}
 }
@@ -151,21 +164,19 @@ func TestForwardAlphaSearchCindyEndpointErrorsDoNotSwitchProtocol(t *testing.T) 
 	}
 }
 
-func TestForwardAlphaSearchCindyCompatibilityAliasUsesManagedLunaTarget(t *testing.T) {
-	upstream := &httpUpstreamRecorder{responses: []*http.Response{
-		alphaSearchHTTPResponse(http.StatusOK, "text/event-stream", "event: response.output_item.done\n"+
-			`data: {"type":"response.output_item.done","item":{"type":"web_search_call","id":"ws_alias","status":"completed"}}`+"\n\n"),
-	}}
+func TestForwardAlphaSearchCindyCompatibilityAliasIsNotAdmittedBySearchPlan(t *testing.T) {
+	upstream := &httpUpstreamRecorder{}
 	service, c, _ := newCindyAlphaSearchServiceContext(t, upstream)
 	body := []byte(`{"model":"gpt-5.4-mini","commands":{"search_query":[{"q":"news"}]}}`)
 
 	result, err := service.ForwardAlphaSearch(context.Background(), c, firstClassCindyAlphaSearchAccount(61009), body)
 
-	require.NoError(t, err)
-	require.NotNil(t, result)
-	require.Equal(t, "gpt-5.4-mini", result.Model)
-	require.Equal(t, "openai/gpt-5.6-luna", result.UpstreamModel)
-	require.Equal(t, "openai/gpt-5.6-luna", gjson.GetBytes(upstream.bodies[0], "model").String())
+	require.Nil(t, result)
+	var failoverErr *UpstreamFailoverError
+	require.ErrorAs(t, err, &failoverErr)
+	require.True(t, failoverErr.IsOpenAIAlphaSearchBridgeUnavailable())
+	require.Equal(t, http.StatusNotFound, failoverErr.StatusCode)
+	require.Empty(t, upstream.requests)
 }
 
 func TestForwardAlphaSearchCindyOperationalResponsesFailuresNeverSwitchProtocol(t *testing.T) {
@@ -252,8 +263,11 @@ func TestForwardAlphaSearchCindyInvalidMessagesFallbackUsesNormalFailurePath(t *
 	require.Nil(t, result)
 	var failoverErr *UpstreamFailoverError
 	require.ErrorAs(t, err, &failoverErr)
+	require.False(t, failoverErr.IsOpenAIAlphaSearchBridgeUnavailable())
 	require.False(t, failoverErr.SuppressAccountHealthPenalty)
 	require.Len(t, upstream.requests, 2)
+	require.Equal(t, "/v1/responses", upstream.requests[0].URL.Path)
+	require.Equal(t, "/v1/messages", upstream.requests[1].URL.Path)
 }
 
 func TestForwardAlphaSearchCindyMessagesFallbackHTTPFailureClassification(t *testing.T) {

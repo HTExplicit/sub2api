@@ -25,6 +25,9 @@ func newCindyCodexModel(capability CindyCapability, priority int) (cindyCodexMod
 	if plan.Description != nil && len(*plan.Description) > 4096 {
 		return invalid()
 	}
+	if limit := plan.AutoCompactTokenLimit; limit != nil && (*limit <= 0 || *limit > int64(capability.EffectiveCodexContextWindow())) {
+		return invalid()
+	}
 	for _, window := range []*int{plan.ContextWindow, plan.MaxContextWindow} {
 		if window == nil {
 			if capability.EffectiveCodexContextWindow() > 0 {

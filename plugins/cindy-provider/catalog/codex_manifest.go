@@ -78,10 +78,11 @@ func cindyCodexTruncationPolicyForModel(modelID string) cindyCodexTruncationPoli
 	}
 }
 
-func cindyCodexAutoCompactTokenLimitForModel(modelID string) any {
+func cindyCodexAutoCompactTokenLimitForModel(modelID string) *int64 {
 	switch modelID {
 	case "gpt-5.6-luna", "gpt-5.6-sol", "gpt-5.6-terra":
-		return 900000
+		limit := int64(900000)
+		return &limit
 	default:
 		return nil
 	}
