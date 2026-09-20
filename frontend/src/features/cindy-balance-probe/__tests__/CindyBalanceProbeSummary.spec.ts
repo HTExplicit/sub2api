@@ -1,5 +1,9 @@
 import { mount } from '@vue/test-utils'
-import { describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { createPinia, setActivePinia } from 'pinia'
+import { usePluginExtensions } from '@/stores/pluginExtensions'
+import type { PluginContribution } from '@/api/admin/plugins'
+import manifest from '../../../../../plugins/cindy-provider/manifest.source.json'
 import CindyBalanceProbeSummary from '../CindyBalanceProbeSummary.vue'
 import type { Account } from '@/types'
 
@@ -8,9 +12,8 @@ vi.mock('vue-i18n', async () => {
   return {
     ...actual,
     useI18n: () => ({
-      t: (key: string) => key === 'admin.accounts.cindyProbe.itemState.healthy'
-        ? 'Luna available this run'
-        : key,
+      locale: { value: 'en' },
+      t: (key: string) => key,
     }),
   }
 })
@@ -26,12 +29,18 @@ const account = {
 } as Account
 
 describe('CindyBalanceProbeSummary', () => {
+  beforeEach(() => {
+    setActivePinia(createPinia())
+    const registry = usePluginExtensions()
+    registry.loaded = true
+    registry.items = manifest.contributions.map(item => ({ ...item, plugin_id: 7, available: true })) as PluginContribution[]
+  })
   it('shows the job, translated outcome, and formatted check time', () => {
     const wrapper = mount(CindyBalanceProbeSummary, { props: { account, showLabel: true } })
 
-    expect(wrapper.get('[data-test="cindy-probe-summary-job"]').text()).toBe('#912')
-    expect(wrapper.get('[data-test="cindy-probe-summary-outcome"]').text()).toBe('Luna available this run')
-    expect(wrapper.get('[data-test="cindy-probe-summary-time"]').text()).toContain('2031')
+    expect(wrapper.get('[data-display-key="job"]').text()).toBe('#912')
+    expect(wrapper.get('[data-display-key="outcome"]').text()).toBe('Luna available this run')
+    expect(wrapper.get('[data-display-key="checked_at"]').text()).toContain('2031')
   })
 
   it('uses a compact double dash when no probe record exists', () => {
@@ -46,7 +55,18 @@ describe('CindyBalanceProbeSummary', () => {
       },
     })
 
-    expect(wrapper.get('[data-test="cindy-probe-summary-empty"]').text()).toBe('--')
-    expect(wrapper.find('[data-test="cindy-probe-summary-job"]').exists()).toBe(false)
+    expect(wrapper.get('[data-display-empty]').text()).toBe('--')
+    expect(wrapper.find('[data-display-key="job"]').exists()).toBe(false)
+  })
+
+  it('withdraws the column data when disabled and retains saved values on failure', async () => {
+    const registry = usePluginExtensions()
+    const wrapper = mount(CindyBalanceProbeSummary, { props: { account } })
+    registry.items = registry.items.map(item => ({ ...item, available: false }))
+    await wrapper.vm.$nextTick()
+    expect(wrapper.text()).toContain('#912')
+    registry.items = []
+    await wrapper.vm.$nextTick()
+    expect(wrapper.text()).toBe('')
   })
 })

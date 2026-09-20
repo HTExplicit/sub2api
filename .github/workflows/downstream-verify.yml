@@ -181,7 +181,10 @@ jobs:
             ../plugins/image-tools/ui/src/__tests__/api.spec.ts \
             src/api/__tests__/cindyBalanceProbe.spec.ts \
             src/api/__tests__/admin.groups.cindy-split.spec.ts \
-            src/features/cindy-group-split/__tests__/CindyGroupAuditDialog.spec.ts \
+            ../plugins/cindy-provider/ui/src/__tests__/CindyGroupAuditDialog.spec.ts \
+            ../plugins/cindy-provider/ui/src/__tests__/CindyBalanceProbePanel.spec.ts \
+            ../plugins/cindy-provider/ui/src/__tests__/CindyDuplicateInventoryPanel.spec.ts \
+            src/features/cindy-balance-probe/__tests__/CindyBalanceProbeSummary.spec.ts \
             src/i18n/__tests__/cindyProbeLocales.spec.ts \
             src/components/layout/__tests__/AppSidebar.spec.ts \
             src/components/layout/__tests__/AppSidebar.simple-mode.spec.ts \

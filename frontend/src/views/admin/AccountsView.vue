@@ -690,6 +690,7 @@ import { useI18n } from 'vue-i18n'
 import { routeLocationKey, routerKey, type RouteLocationNormalizedLoaded, type Router } from 'vue-router'
 import { useAppStore } from '@/stores/app'
 import { useAuthStore } from '@/stores/auth'
+import { usePluginExtensions } from '@/stores/pluginExtensions'
 import { isTerminalAccountJob, useAccountJobsStore } from '@/stores/accountJobs'
 import { adminAPI } from '@/api/admin'
 import type { AccountListFilters, CindyInsufficientDeletePreview } from '@/api/admin/accounts'
@@ -775,6 +776,7 @@ const props = withDefaults(defineProps<{
 const { t } = useI18n()
 const appStore = useAppStore()
 const authStore = useAuthStore()
+const pluginExtensions = usePluginExtensions()
 const accountJobsStore = useAccountJobsStore()
 const pendingOperation = ref<{ title: string; message: string; danger?: boolean; execute: () => Promise<AccountJob> } | null>(null)
 function confirmAccountOperation(kind: string, ids: number[], execute: () => Promise<AccountJob>, danger = false) {
@@ -2279,7 +2281,7 @@ const allColumns = computed(() => {
     { key: 'usage', label: t('admin.accounts.columns.usage'), sortable: false },
     { key: 'status', label: t('admin.accounts.columns.status'), sortable: true }
   ]
-  if (isCindyScope.value) {
+  if (isCindyScope.value && pluginExtensions.items.some(item => item.id === 'cindy-probe-summary')) {
     c.push({
       key: 'cindy_probe',
       label: t('admin.accounts.columns.recentCindyProbe'),

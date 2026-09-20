@@ -61,6 +61,7 @@
                 :class="loading ? 'animate-spin' : ''"
               />
             </button>
+            <ExtensionSurface name="cindy-group-audit">
             <button
               type="button"
               class="btn btn-secondary"
@@ -71,6 +72,7 @@
               <Icon name="shield" size="md" class="mr-2" />
               <span class="hidden sm:inline">{{ t("admin.groups.cindyAudit.open") }}</span>
             </button>
+            </ExtensionSurface>
             <div class="relative" ref="columnDropdownRef">
               <button
                 @click="showColumnDropdown = !showColumnDropdown"
@@ -4232,6 +4234,7 @@ import GroupRateMultipliersModal from "@/components/admin/group/GroupRateMultipl
 import GroupRPMOverridesModal from "@/components/admin/group/GroupRPMOverridesModal.vue";
 import GroupCapacityBadge from "@/components/common/GroupCapacityBadge.vue";
 import CindyGroupAuditDialog from "@/features/cindy-group-split/CindyGroupAuditDialog.vue";
+import ExtensionSurface from "@/components/plugins/ExtensionSurface.vue";
 import ReasoningEffortPolicyFields from "@/components/admin/group/ReasoningEffortPolicyFields.vue";
 import CodexManifestAccountsField from "@/components/admin/group/CodexManifestAccountsField.vue";
 import PricingEntryCard from "@/components/admin/channel/PricingEntryCard.vue";

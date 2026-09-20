@@ -2,7 +2,7 @@ import { enableAutoUnmount, flushPromises, mount } from '@vue/test-utils'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import CindyBalanceProbePanel from '../CindyBalanceProbePanel.vue'
 import { computed, ref } from 'vue'
-import { extensionAvailabilityKey } from '@/components/plugins/context'
+import { extensionAvailabilityKey } from '@sub2api/plugin-ui/context'
 
 enableAutoUnmount(afterEach)
 
@@ -20,8 +20,8 @@ const mocks = vi.hoisted(() => ({
   showSuccess: vi.fn(),
 }))
 
-vi.mock('@/api/admin/cindyBalanceProbe', async () => {
-  const actual = await vi.importActual<typeof import('@/api/admin/cindyBalanceProbe')>('@/api/admin/cindyBalanceProbe')
+vi.mock('../api', async () => {
+  const actual = await vi.importActual<typeof import('../api')>('../api')
   return {
     ...actual,
     cindyBalanceProbeAPI: {
@@ -38,9 +38,7 @@ vi.mock('@/api/admin/cindyBalanceProbe', async () => {
   }
 })
 
-vi.mock('@/stores/app', () => ({
-  useAppStore: () => ({ showError: mocks.showError, showSuccess: mocks.showSuccess }),
-}))
+vi.mock('@sub2api/plugin-ui', async () => ({ ...await vi.importActual<typeof import('@sub2api/plugin-ui')>('@sub2api/plugin-ui'), useNotifications: () => ({ showError: mocks.showError, showSuccess: mocks.showSuccess }) }))
 
 vi.mock('vue-i18n', async () => {
   const actual = await vi.importActual<typeof import('vue-i18n')>('vue-i18n')

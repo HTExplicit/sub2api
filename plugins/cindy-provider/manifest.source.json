@@ -11,8 +11,27 @@
     { "id": "extensions.admin.v1", "platform": "*", "account_type": "*" }
   ],
   "operations": { "extensions.provider.v1": ["cindy.catalog", "cindy.features", "cindy.pricing", "cindy.health", "cindy.probe.plan", "cindy.probe.decide"] },
+  "resources": [
+    { "name": "cindy.probe.list", "capability": "extensions.provider.v1", "permission": "admin" },
+    { "name": "cindy.probe.create", "capability": "extensions.provider.v1", "permission": "admin" },
+    { "name": "cindy.probe.preview", "capability": "extensions.provider.v1", "permission": "admin" },
+    { "name": "cindy.probe.get", "capability": "extensions.provider.v1", "permission": "admin" },
+    { "name": "cindy.probe.items", "capability": "extensions.provider.v1", "permission": "admin" },
+    { "name": "cindy.probe.rate", "capability": "extensions.provider.v1", "permission": "admin" },
+    { "name": "cindy.probe.pause", "capability": "extensions.provider.v1", "permission": "admin" },
+    { "name": "cindy.probe.resume", "capability": "extensions.provider.v1", "permission": "admin" },
+    { "name": "cindy.probe.cancel", "capability": "extensions.provider.v1", "permission": "admin" },
+    { "name": "cindy.duplicates", "capability": "extensions.provider.v1", "permission": "admin" },
+    { "name": "cindy.groups.audit", "capability": "extensions.provider.v1", "permission": "admin" },
+    { "name": "cindy.groups.keys", "capability": "extensions.provider.v1", "permission": "admin" },
+    { "name": "cindy.groups.preview", "capability": "extensions.provider.v1", "permission": "admin" },
+    { "name": "cindy.groups.split", "capability": "extensions.provider.v1", "permission": "admin" }
+  ],
   "contributions": [
-    { "id": "cindy-balance-probe", "slot": "surface", "capability": "extensions.provider.v1", "permission": "admin", "config_flag": "balance_detection", "label": { "zh": "Cindy 余额复查", "en": "Cindy balance probes" } },
+    {"id":"cindy-probe-summary","slot":"account.columns","capability":"extensions.provider.v1","permission":"admin","label":{"zh":"最近巡检","en":"Recent probe"},"display_fields":[{"key":"job","kind":"text","prefix":"#"},{"key":"outcome","kind":"badge","values":{"pending":{"label":{"zh":"待处理","en":"Pending"},"tone":"neutral"},"luna_running":{"label":{"zh":"Luna 检测中","en":"Luna running"},"tone":"info"},"luna_exact":{"label":{"zh":"Luna 确认耗尽","en":"Luna exhausted"},"tone":"danger"},"terra_running":{"label":{"zh":"Terra 检测中","en":"Terra running"},"tone":"info"},"healthy":{"label":{"zh":"本次 Luna 可用","en":"Luna available this run"},"tone":"success"},"recovered":{"label":{"zh":"已恢复","en":"Recovered"},"tone":"success"},"still_exhausted":{"label":{"zh":"仍然耗尽","en":"Still exhausted"},"tone":"danger"},"exhausted":{"label":{"zh":"额度耗尽","en":"Exhausted"},"tone":"danger"},"already_marked":{"label":{"zh":"已标记","en":"Already marked"},"tone":"neutral"},"inconclusive":{"label":{"zh":"无法确认","en":"Inconclusive"},"tone":"warning"},"confirmation_expired":{"label":{"zh":"确认已过期","en":"Confirmation expired"},"tone":"warning"},"skipped_stale":{"label":{"zh":"账号变化后跳过","en":"Skipped after account change"},"tone":"neutral"},"unknown_after_crash":{"label":{"zh":"中断后状态未知","en":"Unknown after interruption"},"tone":"warning"},"canceled":{"label":{"zh":"已取消","en":"Canceled"},"tone":"neutral"}}},{"key":"checked_at","kind":"datetime","new_line":true}]},
+    { "id": "cindy-balance-probe", "slot": "surface", "entrypoint": "ui/compiled/index.html", "retained_controls": true, "capability": "extensions.provider.v1", "permission": "admin", "config_flag": "balance_detection", "label": { "zh": "Cindy 余额复查", "en": "Cindy balance probes" } },
+    { "id": "cindy-duplicate-inventory", "slot": "surface", "entrypoint": "ui/compiled/index.html", "capability": "extensions.provider.v1", "permission": "admin", "label": { "zh": "重复身份清单", "en": "Duplicate identities" } },
+    { "id": "cindy-group-audit", "slot": "surface", "entrypoint": "ui/compiled/index.html", "capability": "extensions.provider.v1", "permission": "admin", "events": ["close", "split"], "label": { "zh": "Cindy 分组审查", "en": "Cindy group audit" } },
     { "id": "cindy-provider-settings", "slot": "admin.settings", "action": "provider.describe", "entrypoint": "ui/index.html", "permission": "admin", "label": { "zh": "Cindy 目录与策略", "en": "Cindy catalog and policies" } }
   ],
   "runtimes": {},

@@ -81,3 +81,14 @@ func TestRetainedPluginResourcesDoNotRequireRunningBusinessCapability(t *testing
 	_, _, err = manager.BindResourceContext(context.Background(), 7, "", extensionv1.ResourceGrant{Name: "image.create", Capability: grant.Capability, Permission: "user"}, true)
 	require.Error(t, err)
 }
+
+func TestPluginFilteredResourceUsesOnlyHostDeclaredFixedScope(t *testing.T) {
+	installation := &PluginInstallation{ID: 7, RuntimeGeneration: 2, State: PluginStateEnabled, Bindings: []PluginBinding{{Capability: extensionv1.CapabilityProvider, Platform: PlatformCindy, AccountType: AccountTypeAPIKey, Enabled: true, RolloutPercent: 100}}}
+	manager := NewPluginManager(&pluginTokenRepository{installation: installation}, pluginTokenEncryptor{}, nil, PluginHostInfo{}, nil)
+	ctx := WithPluginExecution(context.Background(), installation)
+	require.Error(t, manager.ValidateResourceAccounts(ctx, extensionv1.CapabilityProvider, nil, true))
+	require.NoError(t, manager.ValidateResourceAccounts(ctx, extensionv1.CapabilityProvider, nil, true, PlatformCindy, AccountTypeAPIKey))
+	require.Error(t, manager.ValidateResourceAccounts(ctx, extensionv1.CapabilityProvider, nil, true, PlatformOpenAI, AccountTypeAPIKey))
+	installation.Bindings[0].RolloutPercent = 50
+	require.Error(t, manager.ValidateResourceAccounts(ctx, extensionv1.CapabilityProvider, nil, true, PlatformCindy, AccountTypeAPIKey))
+}

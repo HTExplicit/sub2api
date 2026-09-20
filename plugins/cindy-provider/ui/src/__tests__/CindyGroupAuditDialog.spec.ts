@@ -13,7 +13,7 @@ const mocks = vi.hoisted(() => ({
   showSuccess: vi.fn(),
 }))
 
-vi.mock('@/api/admin', () => ({
+vi.mock('../api', () => ({
   adminAPI: {
     groups: {
       auditCindyGroups: mocks.auditCindyGroups,
@@ -24,9 +24,7 @@ vi.mock('@/api/admin', () => ({
   },
 }))
 
-vi.mock('@/stores/app', () => ({
-  useAppStore: () => ({ showError: mocks.showError, showSuccess: mocks.showSuccess }),
-}))
+vi.mock('@sub2api/plugin-ui', async () => ({ ...await vi.importActual<typeof import('@sub2api/plugin-ui')>('@sub2api/plugin-ui'), useNotifications: () => ({ showError: mocks.showError, showSuccess: mocks.showSuccess }) }))
 
 vi.mock('vue-i18n', async () => {
   const actual = await vi.importActual<typeof import('vue-i18n')>('vue-i18n')
@@ -129,14 +127,14 @@ describe('CindyGroupAuditDialog', () => {
     mocks.auditCindyGroups.mockResolvedValue(audit)
     mocks.getGroupApiKeys
       .mockResolvedValueOnce({
-        items: [{ ...keyBase, id: 19, name: 'First', key: 'sk-first-secret' }],
+        items: [{ ...keyBase, id: 19, name: 'First', display_key: 'sk-****cret' }],
         total: 2,
         page: 1,
         page_size: 100,
         pages: 2,
       })
       .mockResolvedValueOnce({
-        items: [{ ...keyBase, id: 20, name: 'Second', key: 'sk-second-secret' }],
+        items: [{ ...keyBase, id: 20, name: 'Second', display_key: 'sk-****cret' }],
         total: 2,
         page: 2,
         page_size: 100,

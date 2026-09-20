@@ -91,7 +91,7 @@ func pluginDeclaresResource(installation *PluginInstallation, resource extension
 	return false
 }
 
-func (m *PluginManager) ValidateResourceAccounts(ctx context.Context, capability string, ids []int64, filtered bool) error {
+func (m *PluginManager) ValidateResourceAccounts(ctx context.Context, capability string, ids []int64, filtered bool, fixedScope ...string) error {
 	execution, ok := PluginExecutionFromContext(ctx)
 	if !ok {
 		return ErrExtensionOperationUnavailable
@@ -106,8 +106,12 @@ func (m *PluginManager) ValidateResourceAccounts(ctx context.Context, capability
 		}
 	}
 	if filtered {
+		platform, kind := "*", "*"
+		if len(fixedScope) == 2 && fixedScope[0] != "" && fixedScope[1] != "" {
+			platform, kind = fixedScope[0], fixedScope[1]
+		}
 		for _, binding := range installation.Bindings {
-			if binding.Enabled && binding.Capability == capability && binding.Platform == "*" && binding.AccountType == "*" && binding.RolloutPercent == 100 {
+			if binding.Enabled && binding.Capability == capability && pluginScopeMatches(binding.Platform, platform) && pluginScopeMatches(binding.AccountType, kind) && binding.RolloutPercent == 100 {
 				return nil
 			}
 		}

@@ -153,16 +153,26 @@ func registerAccountJobRoutes(admin *gin.RouterGroup, h *handler.Handlers) {
 
 func registerCindyBalanceProbeRoutes(admin *gin.RouterGroup, h *handler.Handlers) {
 	jobs := admin.Group("/cindy/balance-probe-jobs")
-	{
-		jobs.GET("", h.Admin.CindyBalanceProbe.List)
-		jobs.POST("", h.Admin.CindyBalanceProbe.Create)
-		jobs.POST("/preview", h.Admin.CindyBalanceProbe.Preview)
-		jobs.GET("/:id", h.Admin.CindyBalanceProbe.Get)
-		jobs.GET("/:id/items", h.Admin.CindyBalanceProbe.ListItems)
-		jobs.PATCH("/:id/rate", h.Admin.CindyBalanceProbe.SetRate)
-		jobs.POST("/:id/pause", h.Admin.CindyBalanceProbe.Pause)
-		jobs.POST("/:id/resume", h.Admin.CindyBalanceProbe.Resume)
-		jobs.POST("/:id/cancel", h.Admin.CindyBalanceProbe.Cancel)
+	for _, route := range []struct {
+		name, method, path string
+		retained, scope    bool
+		handler            gin.HandlerFunc
+	}{
+		{"cindy.probe.list", "GET", "", true, false, h.Admin.CindyBalanceProbe.List},
+		{"cindy.probe.create", "POST", "", false, true, h.Admin.CindyBalanceProbe.Create},
+		{"cindy.probe.preview", "POST", "/preview", false, true, h.Admin.CindyBalanceProbe.Preview},
+		{"cindy.probe.get", "GET", "/:id", true, false, h.Admin.CindyBalanceProbe.Get},
+		{"cindy.probe.items", "GET", "/:id/items", true, false, h.Admin.CindyBalanceProbe.ListItems},
+		{"cindy.probe.rate", "PATCH", "/:id/rate", true, false, h.Admin.CindyBalanceProbe.SetRate},
+		{"cindy.probe.pause", "POST", "/:id/pause", true, false, h.Admin.CindyBalanceProbe.Pause},
+		{"cindy.probe.resume", "POST", "/:id/resume", false, false, h.Admin.CindyBalanceProbe.Resume},
+		{"cindy.probe.cancel", "POST", "/:id/cancel", true, false, h.Admin.CindyBalanceProbe.Cancel},
+	} {
+		descriptor := extensionv1.ResourceDescriptor{ResourceGrant: extensionv1.ResourceGrant{Name: route.name, Capability: extensionv1.CapabilityProvider, Permission: "admin"}, Method: route.method, Path: jobs.BasePath() + route.path, Retained: route.retained}
+		if route.scope {
+			descriptor.AccountScopeField, descriptor.FilterPlatform, descriptor.FilterAccountType = "scope", service.PlatformCindy, service.AccountTypeAPIKey
+		}
+		jobs.Handle(route.method, route.path, h.Admin.Plugin.RegisterResource(descriptor), route.handler)
 	}
 }
 
@@ -393,10 +403,17 @@ func registerUserManagementRoutes(admin *gin.RouterGroup, h *handler.Handlers) {
 
 func registerGroupRoutes(admin *gin.RouterGroup, h *handler.Handlers) {
 	cindyGroups := admin.Group("/cindy/groups")
-	{
-		cindyGroups.GET("/audit", h.Admin.Group.AuditCindyGroups)
-		cindyGroups.POST("/:id/split-preview", h.Admin.Group.PreviewCindyGroupSplit)
-		cindyGroups.POST("/:id/split", h.Admin.Group.SplitCindyGroup)
+	for _, route := range []struct {
+		name, method, path string
+		handler            gin.HandlerFunc
+	}{
+		{"cindy.groups.audit", "GET", "/audit", h.Admin.Group.AuditCindyGroups},
+		{"cindy.groups.keys", "GET", "/:id/keys", h.Admin.Group.CindyGroupKeyChoices},
+		{"cindy.groups.preview", "POST", "/:id/split-preview", h.Admin.Group.PreviewCindyGroupSplit},
+		{"cindy.groups.split", "POST", "/:id/split", h.Admin.Group.SplitCindyGroup},
+	} {
+		descriptor := extensionv1.ResourceDescriptor{ResourceGrant: extensionv1.ResourceGrant{Name: route.name, Capability: extensionv1.CapabilityProvider, Permission: "admin"}, Method: route.method, Path: cindyGroups.BasePath() + route.path}
+		cindyGroups.Handle(route.method, route.path, h.Admin.Plugin.RegisterResource(descriptor), route.handler)
 	}
 
 	groups := admin.Group("/groups")
@@ -444,7 +461,7 @@ func registerAccountRoutes(admin *gin.RouterGroup, h *handler.Handlers, stepUpAu
 		accounts.POST("/cindy/delete-insufficient", h.Admin.Account.DeleteCindyInsufficient)
 		accounts.GET("/cindy/banned-delete-preview", h.Admin.Account.PreviewCindyBannedDeletion)
 		accounts.POST("/cindy/delete-banned", h.Admin.Account.DeleteCindyBanned)
-		accounts.GET("/cindy/duplicate-identity-inventory", h.Admin.Account.GetCindyDuplicateIdentityInventory)
+		accounts.GET("/cindy/duplicate-identity-inventory", h.Admin.Plugin.RegisterResource(extensionv1.ResourceDescriptor{ResourceGrant: extensionv1.ResourceGrant{Name: "cindy.duplicates", Capability: extensionv1.CapabilityProvider, Permission: "admin"}, Method: "GET", Path: accounts.BasePath() + "/cindy/duplicate-identity-inventory"}), h.Admin.Account.GetCindyDuplicateIdentityInventory)
 		accounts.GET("/api-key-visibility", h.Admin.Account.GetAPIKeyVisibility)
 		accounts.PUT("/api-key-visibility", h.Admin.Account.SetAPIKeyVisibility)
 		accounts.GET("/:id", h.Admin.Account.GetByID)

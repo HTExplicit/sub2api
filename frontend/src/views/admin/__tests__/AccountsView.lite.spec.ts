@@ -1,3 +1,4 @@
+vi.mock('@/stores/pluginExtensions', () => ({ usePluginExtensions: () => ({ loaded: true, items: [], refresh: vi.fn() }) }))
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { DOMWrapper, flushPromises, mount } from '@vue/test-utils'
 import { defineComponent } from 'vue'

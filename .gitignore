@@ -168,6 +168,8 @@ output/
 !/plugins/codex-runtime/scripts/
 !/plugins/codex-runtime/scripts/check-ui.py
 !/plugins/cindy-provider/
+!/plugins/cindy-provider/scripts/
+!/plugins/cindy-provider/scripts/check-ui.py
 !/plugins/account-tools/
 !/plugins/account-tools/scripts/
 !/plugins/account-tools/scripts/check-ui.py

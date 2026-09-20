@@ -6,10 +6,10 @@ const { loadInventory, showError } = vi.hoisted(() => ({
   showError: vi.fn()
 }))
 
-vi.mock('@/api/admin', () => ({
+vi.mock('../api', () => ({
   adminAPI: { accounts: { getCindyDuplicateIdentityInventory: loadInventory } }
 }))
-vi.mock('@/stores/app', () => ({ useAppStore: () => ({ showError }) }))
+vi.mock('@sub2api/plugin-ui', async () => ({ ...await vi.importActual<typeof import('@sub2api/plugin-ui')>('@sub2api/plugin-ui'), useNotifications: () => ({ showError }) }))
 vi.mock('vue-i18n', () => ({ useI18n: () => ({ t: (key: string, args?: any) => `${key}${args ? JSON.stringify(args) : ''}` }) }))
 
 import CindyDuplicateInventoryPanel from '../CindyDuplicateInventoryPanel.vue'

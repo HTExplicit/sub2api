@@ -23,6 +23,11 @@ type cindyGroupAdminServiceStub struct {
 	splitErr      error
 	previewInput  service.CindyGroupSplitInput
 	splitInput    service.CindyGroupSplitInput
+	keys          []service.APIKey
+}
+
+func (s *cindyGroupAdminServiceStub) GetGroupAPIKeys(context.Context, int64, int, int) ([]service.APIKey, int64, error) {
+	return s.keys, int64(len(s.keys)), nil
 }
 
 func (s *cindyGroupAdminServiceStub) AuditCindyGroups(context.Context) (*service.CindyGroupAuditResult, error) {
@@ -44,9 +49,24 @@ func setupCindyGroupRouter(svc service.AdminService) *gin.Engine {
 	router := gin.New()
 	handler := NewGroupHandler(svc, nil, nil)
 	router.GET("/api/v1/admin/cindy/groups/audit", handler.AuditCindyGroups)
+	router.GET("/api/v1/admin/cindy/groups/:id/keys", handler.CindyGroupKeyChoices)
 	router.POST("/api/v1/admin/cindy/groups/:id/split-preview", handler.PreviewCindyGroupSplit)
 	router.POST("/api/v1/admin/cindy/groups/:id/split", handler.SplitCindyGroup)
 	return router
+}
+
+func TestCindyGroupKeyChoicesNeverReturnCredentials(t *testing.T) {
+	svc := &cindyGroupAdminServiceStub{keys: []service.APIKey{
+		{ID: 41, Name: "Selected key", Status: "active", Key: "sk-private-credential-abcd"},
+		{ID: 42, Name: "Short key", Status: "active", Key: "private"},
+	}}
+	recorder := httptest.NewRecorder()
+	setupCindyGroupRouter(svc).ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/api/v1/admin/cindy/groups/7/keys", nil))
+	require.Equal(t, http.StatusOK, recorder.Code)
+	require.Contains(t, recorder.Body.String(), `"display_key":"sk-****abcd"`)
+	require.NotContains(t, recorder.Body.String(), "private")
+	require.NotContains(t, recorder.Body.String(), `"key":`)
+	require.NotContains(t, recorder.Body.String(), `"user":`)
 }
 
 func TestCindyGroupHandlerAuditReturnsAnonymousCounts(t *testing.T) {

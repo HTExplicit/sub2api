@@ -89,6 +89,7 @@ export interface PluginContribution {
   stylesheet_url?: string
   config_flag?: string
   fields?: PluginFormField[]
+  display_fields?: PluginDisplayField[]
   account_filter?: { platforms?: string[]; types?: string[]; statuses?: string[]; exclude_shadows?: boolean }
   id: string
   slot: string
@@ -100,6 +101,14 @@ export interface PluginContribution {
   plugin_id: number
   available: boolean
   reason?: string
+}
+
+export interface PluginDisplayField {
+  key: string
+  kind: 'text' | 'badge' | 'datetime'
+  prefix?: string
+  new_line?: boolean
+  values?: Record<string, { label: Record<string, string>; tone?: 'neutral' | 'success' | 'warning' | 'danger' | 'info' }>
 }
 
 export interface PluginFormField {

@@ -69,7 +69,7 @@ func (h *PluginHandler) RegisterResource(descriptor extensionv1.ResourceDescript
 			return
 		}
 		if len(ids) > 0 || filtered {
-			if err = h.manager.ValidateResourceAccounts(ctx, descriptor.Capability, ids, filtered); err != nil {
+			if err = h.manager.ValidateResourceAccounts(ctx, descriptor.Capability, ids, filtered, descriptor.FilterPlatform, descriptor.FilterAccountType); err != nil {
 				response.Error(c, http.StatusForbidden, err.Error())
 				c.Abort()
 				return
@@ -88,7 +88,7 @@ func resourceAccountTargets(c *gin.Context, descriptor extensionv1.ResourceDescr
 		}
 		ids = append(ids, id)
 	}
-	if descriptor.AccountBodyField == "" && descriptor.AccountItemsField == "" && descriptor.FilterField == "" {
+	if descriptor.AccountBodyField == "" && descriptor.AccountItemsField == "" && descriptor.FilterField == "" && descriptor.AccountScopeField == "" {
 		return ids, false, nil
 	}
 	raw, err := io.ReadAll(io.LimitReader(c.Request.Body, 4*1024*1024+1))
@@ -99,6 +99,29 @@ func resourceAccountTargets(c *gin.Context, descriptor extensionv1.ResourceDescr
 	var body map[string]json.RawMessage
 	if json.Unmarshal(raw, &body) != nil {
 		return nil, false, errors.New("invalid resource selection")
+	}
+	if descriptor.AccountScopeField != "" {
+		var scope struct {
+			Mode       string  `json:"mode"`
+			AccountIDs []int64 `json:"account_ids"`
+			Filters    struct {
+				AccountIDs []int64 `json:"account_ids"`
+			} `json:"filters"`
+		}
+		if json.Unmarshal(body[descriptor.AccountScopeField], &scope) != nil {
+			return nil, false, errors.New("invalid resource account scope")
+		}
+		if scope.Mode != "selected" {
+			return ids, true, nil
+		}
+		selected := scope.AccountIDs
+		if len(selected) == 0 {
+			selected = scope.Filters.AccountIDs
+		}
+		if len(selected) == 0 || len(selected) > 3200 {
+			return nil, false, errors.New("invalid resource account list")
+		}
+		return append(ids, selected...), false, nil
 	}
 	if value := body[descriptor.AccountBodyField]; descriptor.AccountBodyField != "" && len(value) > 0 {
 		var direct []int64

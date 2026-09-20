@@ -46,6 +46,7 @@ type Contribution struct {
 	Assets           []string          `json:"assets,omitempty"`
 	ConfigFlag       string            `json:"config_flag,omitempty"`
 	Fields           []FormField       `json:"fields,omitempty"`
+	DisplayFields    []DisplayField    `json:"display_fields,omitempty"`
 	AccountFilter    *AccountFilter    `json:"account_filter,omitempty"`
 	ID               string            `json:"id"`
 	Slot             string            `json:"slot"`
@@ -54,6 +55,21 @@ type Contribution struct {
 	Entrypoint       string            `json:"entrypoint,omitempty"`
 	Permission       string            `json:"permission"`
 	Order            int               `json:"order,omitempty"`
+}
+
+type DisplayValue struct {
+	Label map[string]string `json:"label"`
+	Tone  string            `json:"tone,omitempty"`
+}
+
+// DisplayField only reads scalar values explicitly supplied by the host mount.
+// It cannot evaluate expressions or traverse arbitrary account properties.
+type DisplayField struct {
+	Key     string                  `json:"key"`
+	Kind    string                  `json:"kind"`
+	Prefix  string                  `json:"prefix,omitempty"`
+	NewLine bool                    `json:"new_line,omitempty"`
+	Values  map[string]DisplayValue `json:"values,omitempty"`
 }
 
 type FormField struct {

@@ -364,6 +364,7 @@ func (m *PluginManager) PublicContributions() []PluginContribution {
 		}
 		item.Action, item.Entrypoint, item.ConfigFlag = "", "", ""
 		item.Fields, item.AccountFilter, item.Assets = nil, nil, nil
+		item.DisplayFields = nil
 		out = append(out, item)
 	}
 	return out

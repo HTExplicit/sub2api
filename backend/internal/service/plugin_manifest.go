@@ -281,6 +281,23 @@ func (m PluginManifest) ValidateForRuntime(runtimeKey string) error {
 		}
 		seen[contribution.ID] = true
 		fieldKeys := map[string]bool{}
+		if len(contribution.DisplayFields) > 16 {
+			return errors.New("插件显示字段数量超限")
+		}
+		for _, field := range contribution.DisplayFields {
+			if !regexp.MustCompile(`^[a-z][a-z0-9_]{0,63}$`).MatchString(field.Key) || field.Key == "constructor" || field.Key == "prototype" || fieldKeys[field.Key] || len(field.Prefix) > 32 || len(field.Values) > 64 {
+				return errors.New("插件显示字段声明无效")
+			}
+			if field.Kind != "text" && field.Kind != "badge" && field.Kind != "datetime" {
+				return errors.New("插件显示字段类型无效")
+			}
+			for _, value := range field.Values {
+				if len(value.Label) == 0 || (value.Tone != "" && value.Tone != "neutral" && value.Tone != "success" && value.Tone != "warning" && value.Tone != "danger" && value.Tone != "info") {
+					return errors.New("插件显示值声明无效")
+				}
+			}
+			fieldKeys[field.Key] = true
+		}
 		for _, field := range contribution.Fields {
 			validKey := regexp.MustCompile(`^[a-z][a-z0-9_]{0,63}$`)
 			if !validKey.MatchString(field.Key) || field.Key == "constructor" || field.Key == "prototype" || fieldKeys[field.Key] || len(field.Label) == 0 || (field.DefaultSource != "" && !validKey.MatchString(field.DefaultSource)) {

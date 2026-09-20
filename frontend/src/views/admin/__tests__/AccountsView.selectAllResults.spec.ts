@@ -1,3 +1,4 @@
+vi.mock('@/stores/pluginExtensions', () => ({ usePluginExtensions: () => ({ loaded: true, items: [], refresh: vi.fn() }) }))
 vi.mock('@/components/admin/account-jobs/AccountOperationDialog.vue', () => ({ default: { name: 'AccountOperationDialog', props: ['job', 'show'], template: '<div v-if="show"><slot/><slot name="footer"/></div>' } }))
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'

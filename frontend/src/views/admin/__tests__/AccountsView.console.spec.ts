@@ -1,3 +1,5 @@
+import cindyManifest from '../../../../../plugins/cindy-provider/manifest.source.json'
+vi.mock('@/stores/pluginExtensions', () => ({ usePluginExtensions: () => ({ loaded: true, items: cindyManifest.contributions.map(item => ({ ...item, plugin_id: 7, available: true })), refresh: vi.fn() }) }))
 vi.mock('@/components/admin/account-jobs/AccountOperationDialog.vue', () => ({ default: { name: 'AccountOperationDialog', props: ['job', 'show'], template: '<div v-if="show"><slot/><slot name="footer"/></div>' } }))
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
@@ -106,6 +108,7 @@ vi.mock('vue-i18n', async () => {
   return {
     ...actual,
     useI18n: () => ({
+      locale: { value: 'en' },
       t: (key: string) => key === 'admin.accounts.cindyProbe.itemState.healthy'
         ? 'Luna available this run'
         : key
@@ -566,14 +569,14 @@ describe('admin AccountsView Cockpit console', () => {
     const ordinary = mountView()
     await flushPromises()
     expect(ordinary.get('[data-test="view-table"]').attributes('data-columns')).not.toContain('cindy_probe')
-    expect(ordinary.find('[data-test="cindy-probe-summary"]').exists()).toBe(false)
+    expect(ordinary.find('[data-extension-display="cindy-probe-summary"]').exists()).toBe(false)
     ordinary.unmount()
 
     const cindy = mountView([], { scope: 'cindy' })
     await flushPromises()
     expect(cindy.get('[data-test="view-table"]').attributes('data-columns')).toContain('cindy_probe')
-    expect(cindy.get('[data-test="cindy-probe-summary"]').text()).toContain('#321')
-    expect(cindy.get('[data-test="cindy-probe-summary"]').text()).toContain('Luna available this run')
+    expect(cindy.get('[data-extension-display="cindy-probe-summary"]').text()).toContain('#321')
+    expect(cindy.get('[data-extension-display="cindy-probe-summary"]').text()).toContain('Luna available this run')
 
     await cindy.get('[data-test="mode-compact"]').trigger('click')
     expect(cindy.get('[data-test="view-compact"]').attributes('data-show-cindy-probe')).toBe('true')
