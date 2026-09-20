@@ -28,6 +28,19 @@ describe('declared plugin fields and surfaces', () => {
     wrapper.unmount()
   })
 
+  it('renders plugin-owned text fields and keeps the draft when the capability is disabled', async () => {
+    const wrapper = mount(ExtensionFields, { props: { name: 'account.test.prompt', values: { prompt: '😀'.repeat(8192) }, context: {} } })
+    expect(wrapper.get('textarea').attributes('placeholder')).toBe('hi')
+    expect(wrapper.emitted('validity')?.at(-1)).toEqual([true])
+    await wrapper.setProps({ values: { prompt: '😀'.repeat(8193) } })
+    expect(wrapper.emitted('validity')?.at(-1)).toEqual([false])
+    usePluginExtensions().items = []
+    await nextTick()
+    expect(wrapper.find('textarea').exists()).toBe(false)
+    expect(wrapper.emitted('update:values')).toBeUndefined()
+    wrapper.unmount()
+  })
+
   it('preserves choices during failure and removes stale choices after disable', async () => {
     const wrapper = mount(ExtensionFields, { props: { name: 'account.test', values: { reasoning_effort: 'high' }, context: { reasoning_efforts: ['high'] } } })
     const registry = usePluginExtensions()

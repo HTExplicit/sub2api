@@ -365,6 +365,9 @@ func (s *AccountTestService) TestAccountConnection(c *gin.Context, accountID int
 	if err := EnsureCindyProviderAvailable(ctx, account); err != nil {
 		return s.sendErrorAndEnd(c, err.Error())
 	}
+	if err := validateAccountPromptExtension(ctx, account, prompt, modelID, mode); err != nil {
+		return s.sendErrorAndEnd(c, err.Error())
+	}
 	if testOpts.requireSupportedModel && strings.TrimSpace(modelID) != "" && !account.IsModelSupported(strings.TrimSpace(modelID)) {
 		s.sendEvent(c, TestEvent{Type: "error", Error: ErrAccountTestModelUnsupported.Error()})
 		return ErrAccountTestModelUnsupported

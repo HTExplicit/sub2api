@@ -240,6 +240,14 @@ func (m PluginManifest) ValidateForRuntime(runtimeKey string) error {
 		resourceNames[resource.Name] = true
 	}
 	for _, contribution := range m.Contributions {
+		if len(contribution.Events) > 16 {
+			return errors.New("插件界面事件数量超过限制")
+		}
+		for _, event := range contribution.Events {
+			if !regexp.MustCompile(`^[a-z][a-z0-9_-]{0,63}$`).MatchString(event) {
+				return errors.New("插件界面事件声明无效")
+			}
+		}
 		if contribution.Capability != "" {
 			declared := false
 			for _, capability := range m.Capabilities {
@@ -275,8 +283,20 @@ func (m PluginManifest) ValidateForRuntime(runtimeKey string) error {
 		fieldKeys := map[string]bool{}
 		for _, field := range contribution.Fields {
 			validKey := regexp.MustCompile(`^[a-z][a-z0-9_]{0,63}$`)
-			if field.Kind != "select" || !validKey.MatchString(field.Key) || !validKey.MatchString(field.OptionsSource) || field.Key == "constructor" || field.Key == "prototype" || fieldKeys[field.Key] || len(field.Label) == 0 || len(field.DefaultLabel) == 0 || (field.DefaultSource != "" && !validKey.MatchString(field.DefaultSource)) {
+			if !validKey.MatchString(field.Key) || field.Key == "constructor" || field.Key == "prototype" || fieldKeys[field.Key] || len(field.Label) == 0 || (field.DefaultSource != "" && !validKey.MatchString(field.DefaultSource)) {
 				return errors.New("插件表单字段声明无效")
+			}
+			switch field.Kind {
+			case "select":
+				if !validKey.MatchString(field.OptionsSource) || len(field.DefaultLabel) == 0 {
+					return errors.New("插件选择字段声明无效")
+				}
+			case "textarea":
+				if field.Rows < 1 || field.Rows > 12 || field.MaxLength < 1 || field.MaxLength > 65536 {
+					return errors.New("插件文本字段范围无效")
+				}
+			default:
+				return errors.New("插件表单字段类型无效")
 			}
 			fieldKeys[field.Key] = true
 		}

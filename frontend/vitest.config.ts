@@ -6,7 +6,7 @@ export default defineConfig({
   plugins: [vue()],
   server: { fs: { allow: [resolve(__dirname, '..')] } },
   resolve: {
-    dedupe: ['vue', 'vue-i18n', '@vue/test-utils', 'vitest'],
+    dedupe: ['vue', 'vue-i18n', '@vue/test-utils', 'vitest', 'vue-draggable-plus'],
     alias: {
       '@': resolve(__dirname, 'src'),
       '@sub2api/plugin-ui': resolve(__dirname, '../backend/pkg/extensionapi/ui'),

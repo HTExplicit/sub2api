@@ -1,6 +1,7 @@
 import { shallowMount } from '@vue/test-utils'
 import { describe, expect, it, vi } from 'vitest'
 import AccountDetailsDrawer from '../AccountDetailsDrawer.vue'
+vi.mock('@/components/plugins/ExtensionWidget.vue', () => ({ default: { template: '<div data-test="classification-plugin" />' } }))
 import type { Account } from '@/types'
 
 vi.mock('@/api/admin', () => ({

@@ -39,3 +39,32 @@ func TestPluginResourcesBindDeclaredScopeAndRejectPersistedDisable(t *testing.T)
 	_, _, err = manager.BindResourceContext(context.Background(), 7, "", grant)
 	require.ErrorIs(t, err, ErrExtensionOperationDisabled, "a stale process registry cannot authorize a database-disabled binding")
 }
+
+type resourceAccountDirectory struct {
+	PluginAccountDirectory
+	PluginExtensionAccountDirectory
+	accounts map[int64]extensionv1.Account
+}
+
+func (d *resourceAccountDirectory) ReadExtensionAccount(_ context.Context, id int64) (*extensionv1.Account, error) {
+	account := d.accounts[id]
+	return &account, nil
+}
+
+func TestPluginResourceAccountSelectionsRespectScopeAndRollout(t *testing.T) {
+	installation := &PluginInstallation{ID: 7, RuntimeGeneration: 2, State: PluginStateEnabled, Bindings: []PluginBinding{{Capability: extensionv1.CapabilityAdmin, Platform: PlatformOpenAI, AccountType: AccountTypeOAuth, Enabled: true, RolloutPercent: 100}}}
+	repo := &pluginTokenRepository{installation: installation}
+	manager := NewPluginManager(repo, pluginTokenEncryptor{}, nil, PluginHostInfo{}, nil)
+	manager.accountDirectory = &resourceAccountDirectory{accounts: map[int64]extensionv1.Account{
+		1: {ID: 1, Platform: PlatformOpenAI, Type: AccountTypeOAuth}, 2: {ID: 2, Platform: PlatformOpenAI, Type: AccountTypeAPIKey},
+	}}
+	ctx := WithPluginExecution(context.Background(), installation)
+	require.NoError(t, manager.ValidateResourceAccounts(ctx, extensionv1.CapabilityAdmin, []int64{1}, false))
+	require.Error(t, manager.ValidateResourceAccounts(ctx, extensionv1.CapabilityAdmin, []int64{1, 2}, false))
+	require.Error(t, manager.ValidateResourceAccounts(ctx, extensionv1.CapabilityAdmin, nil, true))
+	installation.Bindings[0].RolloutPercent = int(stablePluginBucket(1))
+	require.Error(t, manager.ValidateResourceAccounts(ctx, extensionv1.CapabilityAdmin, []int64{1}, false))
+	installation.Bindings[0].Platform, installation.Bindings[0].AccountType, installation.Bindings[0].RolloutPercent = "*", "*", 100
+	require.NoError(t, manager.ValidateResourceAccounts(ctx, extensionv1.CapabilityAdmin, nil, true))
+	require.Error(t, manager.ValidateResourceAccounts(ctx, extensionv1.CapabilityAdmin, []int64{-1}, true))
+}

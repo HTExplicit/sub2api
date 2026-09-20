@@ -970,6 +970,7 @@ func (m *PluginManager) CreateUIAssetToken(ctx context.Context, id int64, ttl ti
 }
 
 type PluginUIAssetSession struct {
+	PluginKey     string
 	Token         string
 	Expires       time.Time
 	PackageSHA256 string
@@ -1014,7 +1015,7 @@ func (m *PluginManager) CreateUIAssetSession(ctx context.Context, id int64, cont
 	if err != nil {
 		return session, fmt.Errorf("加密插件 UI 会话: %w", err)
 	}
-	return PluginUIAssetSession{Token: base64.RawURLEncoding.EncodeToString([]byte(encrypted)), Expires: expires, PackageSHA256: installation.PackageSHA256, Permission: permission}, nil
+	return PluginUIAssetSession{Token: base64.RawURLEncoding.EncodeToString([]byte(encrypted)), Expires: expires, PackageSHA256: installation.PackageSHA256, Permission: permission, PluginKey: installation.PluginKey}, nil
 }
 
 func (m *PluginManager) ResolveUIAssetToken(token string) (int64, error) {

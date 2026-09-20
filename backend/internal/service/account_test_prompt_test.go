@@ -100,6 +100,18 @@ func TestAccountTestPromptAdaptiveAndOpenCodeFinalRequests(t *testing.T) {
 	}
 }
 
+func TestDisabledTextPromptExtensionDoesNotDispatch(t *testing.T) {
+	previous := processExtensionOperations.Load()
+	processExtensionOperations.Store(nil)
+	t.Cleanup(func() { processExtensionOperations.Store(previous) })
+	account := adaptiveCNAccountTestAccount(993, PlatformDeepseek)
+	svc, upstream := adaptiveCNAccountTestService(account, adaptiveCNChatTestResponse())
+	c, _ := newTestContext()
+	err := svc.TestAccountConnection(c, account.ID, "deepseek-v4-pro", "custom text", "")
+	require.Error(t, err)
+	require.Empty(t, upstream.requests)
+}
+
 func TestAccountTestPromptOAuthFinalTicketUsesMappedModel(t *testing.T) {
 	cfg := &config.Config{Gateway: config.GatewayConfig{OpenAICodexTicket: config.OpenAICodexTicketConfig{Enabled: true, FailClosed: true}, OpenAICodexRequestZstd: true}}
 	a := ticketTestAccount(41)

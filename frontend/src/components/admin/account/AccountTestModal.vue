@@ -83,7 +83,7 @@
 
       <AccountTestReasoningSelect v-if="supportsTextPrompt" v-model="reasoningEffort"
         :model="modelOptionsForMode.find(model => model.id === selectedModelId)" :disabled="status === 'connecting'" @validity="reasoningValid = $event" />
-      <AccountTextTestPrompt v-if="supportsTextPrompt" v-model="textPrompt" :disabled="status === 'connecting'" />
+      <AccountTextTestPrompt v-if="supportsTextPrompt" v-model="textPrompt" :disabled="status === 'connecting'" @validity="textPromptPolicyValid = $event" />
       <div v-else-if="supportsPromptInput" class="space-y-1.5">
         <TextArea
           v-model="testPrompt"
@@ -371,6 +371,7 @@
 import AccountTestReasoningSelect from './AccountTestReasoningSelect.vue'
 import AccountTextTestPrompt from './AccountTextTestPrompt.vue'
 import { useAccountTestPrompt } from '@/composables/useAccountTestPrompt'
+import { usePluginExtensions } from '@/stores/pluginExtensions'
 import { computed, ref, watch, nextTick } from 'vue'
 import { useI18n } from 'vue-i18n'
 import BaseDialog from '@/components/common/BaseDialog.vue'
@@ -418,8 +419,11 @@ const errorMessage = ref('')
 const availableModels = ref<AccountAvailableModel[]>([])
 const selectedModelId = ref('')
 const { prompt: textPrompt, valid: textPromptValid } = useAccountTestPrompt()
+const promptExtensions = usePluginExtensions()
+const textPromptEnabled = computed(() => promptExtensions.items.some(item => item.slot === 'account.test.prompt' && item.permission === 'admin'))
+const textPromptPolicyValid = ref(true)
 const mediaTestPrompt = ref('')
-const testPrompt = computed({ get: () => supportsTextPrompt.value ? textPrompt.value : mediaTestPrompt.value,
+const testPrompt = computed({ get: () => supportsTextPrompt.value ? (textPromptEnabled.value ? textPrompt.value : '') : mediaTestPrompt.value,
   set: value => { if (supportsTextPrompt.value) textPrompt.value = value; else mediaTestPrompt.value = value } })
 const loadingModels = ref(false)
 let abortController: AbortController | null = null
@@ -668,7 +672,7 @@ const testModeSummary = computed(() => {
 
 const canStartTest = computed(() => {
 	if (reasoningEffort.value && !reasoningValid.value) return false
-  if (supportsTextPrompt.value && !textPromptValid.value) return false
+  if (supportsTextPrompt.value && textPromptEnabled.value && (!textPromptValid.value || !textPromptPolicyValid.value)) return false
   if (status.value === 'connecting') return false
   if (isGrokAccount.value) {
     if (

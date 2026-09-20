@@ -27,6 +27,12 @@ type ReasoningSelection struct {
 	Levels []string `json:"levels"`
 }
 
+// Only bounded facts about a user prompt cross into the policy process.
+type TextPromptSelection struct {
+	Characters int  `json:"characters"`
+	ValidUTF8  bool `json:"valid_utf8"`
+}
+
 type BatchTestSelection struct {
 	AccountID       int64  `json:"account_id"`
 	ModelID         string `json:"model_id"`

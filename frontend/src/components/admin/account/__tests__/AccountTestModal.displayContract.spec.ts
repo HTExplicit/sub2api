@@ -1,6 +1,10 @@
 import { flushPromises, mount, type VueWrapper } from '@vue/test-utils'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { nextTick } from 'vue'
+import { createPinia } from 'pinia'
+import { usePluginExtensions } from '@/stores/pluginExtensions'
+import manifest from '../../../../../../plugins/account-tools/manifest.source.json'
+import type { PluginContribution } from '@/api/admin/plugins'
 import AccountTestModal from '../AccountTestModal.vue'
 import Select from '@/components/common/Select.vue'
 import type { Account } from '@/types'
@@ -17,6 +21,10 @@ vi.mock('vue-i18n', async () => ({
 let wrapper: VueWrapper | undefined
 
 async function openModal() {
+  const pinia = createPinia()
+  const registry = usePluginExtensions(pinia)
+  registry.loaded = true
+  registry.items = manifest.contributions.map(item => ({ ...item, plugin_id: 7, available: true })) as PluginContribution[]
   wrapper = mount(AccountTestModal, {
     attachTo: document.body,
     props: {
@@ -24,6 +32,7 @@ async function openModal() {
       account: { id: 501, name: 'Catalog display contract', platform: 'openai', type: 'apikey', status: 'active', credentials: {} } as Account
     },
     global: {
+      plugins: [pinia],
       stubs: {
         BaseDialog: { template: '<div><slot /><slot name="footer" /></div>' },
         Icon: true

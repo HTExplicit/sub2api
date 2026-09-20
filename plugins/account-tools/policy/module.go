@@ -26,7 +26,7 @@ func (m *Module) ApplyConfig(ctx context.Context, raw json.RawMessage) error {
 	return err
 }
 func (m *Module) Status(context.Context) (json.RawMessage, error) {
-	return json.Marshal(map[string]any{"taxonomy": true, "reasoning_selection": true})
+	return json.Marshal(map[string]any{"taxonomy": true, "reasoning_selection": true, "text_prompt": true})
 }
 
 func failure(code, message string, status int) extensionv1.Result {
@@ -51,6 +51,14 @@ func (m *Module) Invoke(ctx context.Context, in extensionv1.Invocation) (extensi
 	}
 	var output any = map[string]bool{"valid": true}
 	switch in.Operation {
+	case "test.prompt":
+		var request extensionv1.TextPromptSelection
+		if json.Unmarshal(in.Payload, &request) != nil {
+			return extensionv1.Result{}, errors.New("invalid test prompt metadata")
+		}
+		if !request.ValidUTF8 || request.Characters < 0 || request.Characters > 8192 {
+			return failure("ACCOUNT_TEST_PROMPT_INVALID", "test prompt must be valid UTF-8 and at most 8192 characters", 400), nil
+		}
 	case "test.batch":
 		var request extensionv1.BatchTestPlanningRequest
 		if json.Unmarshal(in.Payload, &request) != nil {

@@ -1,4 +1,4 @@
-import { computed, createApp, ref, type Component } from 'vue'
+import { computed, createApp, ref, readonly, watch, onScopeDispose, type Component } from 'vue'
 import { createI18n } from 'vue-i18n'
 import { extensionAvailabilityKey, extensionUnavailableMessageKey } from './context'
 import './bridge.js'
@@ -14,6 +14,7 @@ export interface UIContext {
 }
 
 export interface ResourceInput {
+  operation_key?: string
   params?: Record<string, string | number>
   query?: Record<string, unknown>
   body?: unknown
@@ -25,8 +26,13 @@ export interface TranslationMessages {
 }
 
 interface Bridge {
+  event(name: string, payload?: unknown): Promise<unknown>
+  openJob(id: number): Promise<unknown>
+  preference(key: string): Promise<string | null>
+  savePreference(key: string, value: string): Promise<unknown>
+  onPreferenceChange(listener: (key: string, value: string) => void): () => void
   context(): Promise<UIContext>
-  resource(operation: string, input: ResourceInput): Promise<unknown>
+  resource(operation: string, input: ResourceInput, signal?: AbortSignal): Promise<unknown>
   notify(type: string, fields?: Record<string, unknown>): void
   resize(height: number): void
   onContextChange(listener: (context: UIContext) => void): () => void
@@ -34,6 +40,22 @@ interface Bridge {
 }
 
 let connection: Bridge | null = null
+const sharedContext = ref<UIContext>({})
+export const usePluginContext = () => readonly(sharedContext)
+const jsonValue = <T>(value: T): T => value === undefined ? value : JSON.parse(JSON.stringify(value)) as T
+export const emitHostEvent = (name: string, payload?: unknown) => bridge().event(name, jsonValue(payload))
+export const openHostJob = (id: number) => bridge().openJob(id)
+
+export function usePersistentDraft(key: string) {
+  const value = ref('')
+  let edited = false, receiving = false, disposed = false
+  const apply = (next: string) => { receiving = true; value.value = next; receiving = false }
+  void bridge().preference(key).then(saved => { if (!disposed && !edited && saved !== null) apply(saved) }).catch(() => {})
+  const stop = bridge().onPreferenceChange((changed, next) => { if (changed === key && typeof next === 'string') apply(next) })
+  watch(value, next => { if (!receiving) { edited = true; void bridge().savePreference(key, next).catch(() => {}) } }, { flush: 'sync' })
+  onScopeDispose(() => { disposed = true; stop() })
+  return value
+}
 function bridge(): Bridge {
   if (!connection) {
     const Constructor = (globalThis as unknown as { Sub2APIPluginBridge: new () => Bridge }).Sub2APIPluginBridge
@@ -42,8 +64,11 @@ function bridge(): Bridge {
   return connection
 }
 
-export async function resource<T>(operation: string, input: ResourceInput = {}): Promise<T> {
-  return await bridge().resource(operation, input) as T
+export async function resource<T>(operation: string, input: ResourceInput = {}, signal?: AbortSignal): Promise<T> {
+  // Vue proxies cannot be cloned by postMessage. JSON fields use the same
+  // representation as HTTP JSON; File/Blob entries remain native objects.
+  const payload = { ...jsonValue({ ...input, form: undefined }), ...(input.form ? { form: Array.from(input.form, ([key, value]) => [key, value] as [string, string | Blob]) } : {}) }
+  return await bridge().resource(operation, payload, signal) as T
 }
 
 export function useNotifications() {
@@ -78,7 +103,8 @@ function applyPresentation(context: UIContext) {
 // rendering, presentation context and named host operations.
 export async function mountPlugin(App: Component, messages: Record<string, TranslationMessages>) {
   const client = bridge()
-  const context = ref(await client.context())
+  const context = sharedContext
+  context.value = await client.context()
   applyPresentation(context.value)
   const i18n = createI18n({ legacy: false, locale: String(context.value.locale || 'zh').startsWith('zh') ? 'zh' : 'en', fallbackLocale: 'en', messages })
   const app = createApp(App)
@@ -89,7 +115,18 @@ export async function mountPlugin(App: Component, messages: Record<string, Trans
   const root = document.getElementById('app')!
   root.inert = context.value.available === false
   const stop = client.onContextChange(next => { context.value = next; root.inert = next.available === false; applyPresentation(next); i18n.global.locale.value = String(next.locale).startsWith('zh') ? 'zh' : 'en' })
-  const observer = new ResizeObserver(() => client.resize(Math.ceil(root.getBoundingClientRect().height) + 24))
+  const resize = () => {
+    let bottom = root.getBoundingClientRect().bottom
+    for (const menu of document.querySelectorAll<HTMLElement>('[role="listbox"], [role="menu"]')) {
+      const box = menu.getBoundingClientRect()
+      if (box.height) bottom = Math.max(bottom, box.bottom)
+    }
+    client.resize(Math.ceil(bottom) + (context.value.layout === 'inline' ? 0 : 24))
+  }
+  if (context.value.layout === 'inline') document.body.style.minHeight = '0'
+  const observer = new ResizeObserver(resize)
+  const mutations = new MutationObserver(resize)
   observer.observe(root)
-  window.addEventListener('pagehide', () => { stop(); observer.disconnect(); app.unmount(); client.dispose() }, { once: true })
+  mutations.observe(document.body, { childList: true, subtree: true })
+  window.addEventListener('pagehide', () => { stop(); observer.disconnect(); mutations.disconnect(); app.unmount(); client.dispose() }, { once: true })
 }

@@ -9,6 +9,10 @@ type ResourceGrant struct {
 }
 
 type ResourceDescriptor struct {
+	AccountParam      string `json:"-"`
+	AccountBodyField  string `json:"-"`
+	AccountItemsField string `json:"-"`
+	FilterField       string `json:"-"`
 	ResourceGrant
 	Method    string `json:"method"`
 	Path      string `json:"path"`

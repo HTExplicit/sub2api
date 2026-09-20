@@ -347,6 +347,10 @@ func (h *AccountHandler) SetAccountTaxonomy(c *gin.Context) {
 		response.ErrorFrom(c, err)
 		return
 	}
+	if c.GetHeader("X-Sub2API-Plugin") != "" {
+		response.Success(c, gin.H{"account_id": account.ID})
+		return
+	}
 	response.Success(c, h.accountResponseFromService(account))
 }
 

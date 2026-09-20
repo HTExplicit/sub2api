@@ -82,6 +82,7 @@ export interface PluginInstallation {
 }
 
 export interface PluginContribution {
+  events?: string[]
   package_sha256?: string
   capability?: string
   stylesheet_url?: string
@@ -102,11 +103,17 @@ export interface PluginContribution {
 
 export interface PluginFormField {
   key: string
-  kind: 'select'
+  kind: 'select' | 'textarea'
   label: Record<string, string>
-  options_source: string
-  default_label: Record<string, string>
+  options_source?: string
+  default_label?: Record<string, string>
   default_source?: string
+  placeholder?: string
+  rows?: number
+  max_length?: number
+  hint?: Record<string, string>
+  reset_label?: Record<string, string>
+  limit_message?: Record<string, string>
 }
 
 export async function contributions(): Promise<PluginContribution[]> {
@@ -144,6 +151,7 @@ export interface PluginStatusResult {
 }
 
 export interface PluginUISession {
+  plugin_key?: string
   package_sha256?: string
   permission?: 'admin' | 'user'
   url: string

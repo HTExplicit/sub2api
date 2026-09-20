@@ -26,7 +26,13 @@ for (const { directory } of inventory.plugins) {
     root: source, configFile: false, base: './',
     plugins: [vue(), {
       name: 'public-plugin-source-boundary',
-      resolveId(id) { if (id.startsWith('@/')) throw new Error('Plugins cannot import private host frontend modules') },
+      async resolveId(id, importer) {
+        if (id.startsWith('@/')) throw new Error('Plugins cannot import private host frontend modules')
+        if (importer && !id.startsWith('.') && !id.startsWith('/') && !id.startsWith('\0') && !path.isAbsolute(id) && !id.startsWith('@sub2api/')) {
+          const resolved = await this.resolve(id, path.join(root, 'frontend/src/main.ts'), { skipSelf: true })
+          return resolved || require.resolve(id)
+        }
+      },
       load(id) {
         const file = id.replaceAll('\\', '/')
         if (file.startsWith(root.replaceAll('\\', '/') + '/frontend/src/') || file.startsWith(root.replaceAll('\\', '/') + '/backend/internal/')) {

@@ -1,13 +1,13 @@
 {
   "schema_version": 3,
   "upstream_base": "aea725f2ea644d5592d0bbb1d63b607efa7e200a",
-  "basis_commit": "092093d165c5f539f103260b1251e641a60f1964",
+  "basis_commit": "387b0a71b97e333071fab2042dbdfc339cce38ea",
   "scope": "Current Sub2API downstream source and working tree. Candidate ownership does not establish completed review. Root maintenance, independent services and Worker require a separate audit.",
-  "source_digest": "4de155f609dd5765a1e3b7cecad955375af2afa4641c48adfa052f4fa96ad6ee",
+  "source_digest": "988aec3833d623a5c2b55a3baedc7cb01d72c58af7722ec1331f2b0e717dc371",
   "digest_excludes": [
     "the inventory itself uses a derived structural fingerprint; deletions bind the upstream blob"
   ],
-  "total_paths": 2189,
+  "total_paths": 2215,
   "generated_assets_and_locks": 83,
   "review_complete": false,
   "pending_paths": [
@@ -507,6 +507,7 @@
     "backend/internal/server/routes/gateway_model_allowlist_test.go",
     "backend/internal/server/routes/gateway_models_pinned_test.go",
     "backend/internal/server/routes/gateway_test.go",
+    "backend/internal/server/routes/plugin_account_tools.go",
     "backend/internal/server/routes/system_prompt_routes_test.go",
     "backend/internal/server/routes/user.go",
     "backend/internal/service/account.go",
@@ -1157,6 +1158,7 @@
     "backend/pkg/extensionapi/ui/components/BaseDialog.vue",
     "backend/pkg/extensionapi/ui/components/ConfirmDialog.vue",
     "backend/pkg/extensionapi/ui/components/Icon.vue",
+    "backend/pkg/extensionapi/ui/components/Select.vue",
     "backend/pkg/extensionapi/ui/components/Toggle.vue",
     "backend/pkg/extensionapi/ui/components/dialogStack.ts",
     "backend/pkg/extensionapi/ui/context.ts",
@@ -1318,15 +1320,11 @@
     "frontend/src/components/admin/account/__tests__/AccountActionMenu.position.spec.ts",
     "frontend/src/components/admin/account/__tests__/AccountActionMenu.spark_shadow.spec.ts",
     "frontend/src/components/admin/account/__tests__/AccountBulkActionsBar.spec.ts",
-    "frontend/src/components/admin/account/__tests__/AccountBulkTaxonomyModal.spec.ts",
     "frontend/src/components/admin/account/__tests__/AccountConsoleFilters.spec.ts",
     "frontend/src/components/admin/account/__tests__/AccountDetailsDrawer.spec.ts",
-    "frontend/src/components/admin/account/__tests__/AccountFolderBar.spec.ts",
-    "frontend/src/components/admin/account/__tests__/AccountTaxonomyManager.spec.ts",
     "frontend/src/components/admin/account/__tests__/AccountTestModal.displayContract.spec.ts",
     "frontend/src/components/admin/account/__tests__/AccountTestModal.spec.ts",
     "frontend/src/components/admin/account/__tests__/AccountUsageViews.spec.ts",
-    "frontend/src/components/admin/account/__tests__/BatchTestAccountModal.spec.ts",
     "frontend/src/components/admin/account/__tests__/ImportDataModal.spec.ts",
     "frontend/src/components/admin/announcements/AnnouncementTargetingEditor.vue",
     "frontend/src/components/admin/channel/PricingEntryCard.vue",
@@ -1416,15 +1414,19 @@
     "frontend/src/components/payment/ToggleSwitch.vue",
     "frontend/src/components/plugins/ExtensionDialog.vue",
     "frontend/src/components/plugins/ExtensionFields.vue",
+    "frontend/src/components/plugins/ExtensionModal.vue",
     "frontend/src/components/plugins/ExtensionPage.vue",
     "frontend/src/components/plugins/ExtensionSlot.vue",
     "frontend/src/components/plugins/ExtensionSurface.vue",
+    "frontend/src/components/plugins/ExtensionWidget.vue",
     "frontend/src/components/plugins/PluginFrame.vue",
     "frontend/src/components/plugins/__tests__/ExtensionFields.spec.ts",
     "frontend/src/components/plugins/__tests__/ExtensionSlot.spec.ts",
+    "frontend/src/components/plugins/__tests__/preferences.spec.ts",
     "frontend/src/components/plugins/__tests__/resourceClient.spec.ts",
     "frontend/src/components/plugins/__tests__/theme.spec.ts",
     "frontend/src/components/plugins/context.ts",
+    "frontend/src/components/plugins/preferences.ts",
     "frontend/src/components/plugins/resourceClient.ts",
     "frontend/src/components/plugins/theme.ts",
     "frontend/src/components/user/PlatformCostCell.vue",
@@ -1629,9 +1631,33 @@
     "plugins/account-tools/policy/batch.go",
     "plugins/account-tools/policy/module.go",
     "plugins/account-tools/policy/module_test.go",
+    "plugins/account-tools/scripts/check-ui.py",
     "plugins/account-tools/ui/assets/app.js",
     "plugins/account-tools/ui/assets/styles.css",
     "plugins/account-tools/ui/index.html",
+    "plugins/account-tools/ui/src/AccountBulkTaxonomyModal.vue",
+    "plugins/account-tools/ui/src/AccountFolderBar.vue",
+    "plugins/account-tools/ui/src/AccountTaxonomyEditor.vue",
+    "plugins/account-tools/ui/src/AccountTaxonomyManager.vue",
+    "plugins/account-tools/ui/src/AccountTestModelSelect.vue",
+    "plugins/account-tools/ui/src/AccountTestReasoningSelect.vue",
+    "plugins/account-tools/ui/src/AccountTextTestPrompt.vue",
+    "plugins/account-tools/ui/src/App.vue",
+    "plugins/account-tools/ui/src/BatchTestAccountModal.vue",
+    "plugins/account-tools/ui/src/__tests__/AccountBulkTaxonomyModal.spec.ts",
+    "plugins/account-tools/ui/src/__tests__/AccountFolderBar.spec.ts",
+    "plugins/account-tools/ui/src/__tests__/AccountTaxonomyManager.spec.ts",
+    "plugins/account-tools/ui/src/__tests__/BatchTestAccountModal.spec.ts",
+    "plugins/account-tools/ui/src/accountTestModels.ts",
+    "plugins/account-tools/ui/src/api.ts",
+    "plugins/account-tools/ui/src/cindyOpenAIDefaults.ts",
+    "plugins/account-tools/ui/src/index.html",
+    "plugins/account-tools/ui/src/locales/en-accounts.ts",
+    "plugins/account-tools/ui/src/locales/en-common.ts",
+    "plugins/account-tools/ui/src/locales/zh-accounts.ts",
+    "plugins/account-tools/ui/src/locales/zh-common.ts",
+    "plugins/account-tools/ui/src/main.ts",
+    "plugins/account-tools/ui/src/useAccountTestPrompt.ts",
     "plugins/admin-observability/cmd/plugin/main.go",
     "plugins/admin-observability/go.mod",
     "plugins/admin-observability/go.sum",
@@ -2206,18 +2232,18 @@
     "dependency-lock": 9,
     "documentation": 28,
     "generated": 68,
-    "source": 948,
-    "test-or-fixture": 672
+    "source": 973,
+    "test-or-fixture": 673
   },
   "owner_counts": {
     "operations": 42,
     "documentation-and-history": 25,
     "mixed-requires-review": 1024,
-    "core-extension-and-job-host": 155,
+    "core-extension-and-job-host": 161,
     "core-data-and-migrations": 21,
     "cindy-provider": 169,
     "image-tools": 34,
-    "account-tools": 50,
+    "account-tools": 70,
     "codex-runtime": 42,
     "prompt-skills": 552,
     "core-quota-and-protocol": 22,
@@ -2267,7 +2293,7 @@
       "role": "documentation",
       "present": true,
       "content_sha256": null,
-      "review_fingerprint": "f1626d52cc65460953231091f56e58e6127707aa834d3b8329a268d4fd266313",
+      "review_fingerprint": "4144d8975bdb2c1d0aae7ce05685cc0f0813fd090497cb489ed0f1942c5e309a",
       "review_status": "reviewed",
       "decision": "generated-source",
       "owner": "operations",
@@ -2290,8 +2316,8 @@
       "candidate_owner": "documentation-and-history",
       "role": "documentation",
       "present": true,
-      "content_sha256": "b3eb4bbb968c4aee0750e526f0786acdf9a3f096a53b13d815925780d4e5f1d6",
-      "review_fingerprint": "b3eb4bbb968c4aee0750e526f0786acdf9a3f096a53b13d815925780d4e5f1d6",
+      "content_sha256": "59dee0e60741e7f887cfff5830c533d60e853a79e7aafac3d46471977af1cb05",
+      "review_fingerprint": "59dee0e60741e7f887cfff5830c533d60e853a79e7aafac3d46471977af1cb05",
       "review_status": "pending"
     },
     {
@@ -2470,8 +2496,8 @@
       "candidate_owner": "operations",
       "role": "source",
       "present": true,
-      "content_sha256": "4b97bcf4e0766078ec49a235637203751d7c4433cbf14594fbf9cf53e11dbd3a",
-      "review_fingerprint": "4b97bcf4e0766078ec49a235637203751d7c4433cbf14594fbf9cf53e11dbd3a",
+      "content_sha256": "f8dc705de0ab17a18dd2f192153184052db9ea856070bcb7d645cb1f5502c768",
+      "review_fingerprint": "f8dc705de0ab17a18dd2f192153184052db9ea856070bcb7d645cb1f5502c768",
       "review_status": "pending"
     },
     {
@@ -2569,8 +2595,8 @@
       "candidate_owner": "operations",
       "role": "source",
       "present": true,
-      "content_sha256": "9e7bb0dc6c25955fb045b9871890989665a02c6a20c3cb4141ebfcc17357139a",
-      "review_fingerprint": "9e7bb0dc6c25955fb045b9871890989665a02c6a20c3cb4141ebfcc17357139a",
+      "content_sha256": "e716ade506d61f351ab4d219a243bb7db6564d380fa314a678d4093dd657a037",
+      "review_fingerprint": "e716ade506d61f351ab4d219a243bb7db6564d380fa314a678d4093dd657a037",
       "review_status": "pending"
     },
     {
@@ -3894,8 +3920,8 @@
       "candidate_owner": "account-tools",
       "role": "source",
       "present": true,
-      "content_sha256": "88daf918ac9c3a99ab4b03ebe2e766b521ae8be21ad75128d65dc2cdfc75bbf3",
-      "review_fingerprint": "88daf918ac9c3a99ab4b03ebe2e766b521ae8be21ad75128d65dc2cdfc75bbf3",
+      "content_sha256": "cbf26bb9fc14abb28d5660a76b10fea634366c40fb9e476ac859acee89a8bfd4",
+      "review_fingerprint": "cbf26bb9fc14abb28d5660a76b10fea634366c40fb9e476ac859acee89a8bfd4",
       "review_status": "pending"
     },
     {
@@ -3903,8 +3929,8 @@
       "candidate_owner": "account-tools",
       "role": "test-or-fixture",
       "present": true,
-      "content_sha256": "7edab6159c338ca888212ad70a1439fab7046f8b7305cdb03141825ca5302a36",
-      "review_fingerprint": "7edab6159c338ca888212ad70a1439fab7046f8b7305cdb03141825ca5302a36",
+      "content_sha256": "cb646d25b23cb8a70df66acd6d91d83947b027c1c129766c72512b36cc44a0f8",
+      "review_fingerprint": "cb646d25b23cb8a70df66acd6d91d83947b027c1c129766c72512b36cc44a0f8",
       "review_status": "pending"
     },
     {
@@ -4056,8 +4082,8 @@
       "candidate_owner": "core-extension-and-job-host",
       "role": "source",
       "present": true,
-      "content_sha256": "ab21a68c298b7548307a922ef934c39b2048fa412d5d817f6ff8cfd922c79005",
-      "review_fingerprint": "ab21a68c298b7548307a922ef934c39b2048fa412d5d817f6ff8cfd922c79005",
+      "content_sha256": "06fbba58ccce14cf9daa24e53bf970aa59cc57b399bc4e013e0d2aca36fafae8",
+      "review_fingerprint": "06fbba58ccce14cf9daa24e53bf970aa59cc57b399bc4e013e0d2aca36fafae8",
       "review_status": "pending"
     },
     {
@@ -4065,8 +4091,8 @@
       "candidate_owner": "core-extension-and-job-host",
       "role": "source",
       "present": true,
-      "content_sha256": "a220110033cd4b7921f3ac22b2edbc41a19717eea902972973af5ffd7619d937",
-      "review_fingerprint": "a220110033cd4b7921f3ac22b2edbc41a19717eea902972973af5ffd7619d937",
+      "content_sha256": "8382c447c1f170e285430cdf000717dec3fa874d9faf2df453ff9252a99294e9",
+      "review_fingerprint": "8382c447c1f170e285430cdf000717dec3fa874d9faf2df453ff9252a99294e9",
       "review_status": "pending"
     },
     {
@@ -6632,8 +6658,8 @@
       "candidate_owner": "mixed-requires-review",
       "role": "source",
       "present": true,
-      "content_sha256": "5bd41b78d7c07e83b25d8c07850ae75b272a09cc4ac60d96525f6e415c6a7360",
-      "review_fingerprint": "5bd41b78d7c07e83b25d8c07850ae75b272a09cc4ac60d96525f6e415c6a7360",
+      "content_sha256": "aaee659bebcb3efd91445d93333e239b8bd2b6288d238872733685a18fc7461b",
+      "review_fingerprint": "aaee659bebcb3efd91445d93333e239b8bd2b6288d238872733685a18fc7461b",
       "review_status": "pending"
     },
     {
@@ -6706,6 +6732,15 @@
       "present": true,
       "content_sha256": "0cd615d44effb2a79fac1c3fb7d746225ab0d4c39be306c90841618ac5648767",
       "review_fingerprint": "0cd615d44effb2a79fac1c3fb7d746225ab0d4c39be306c90841618ac5648767",
+      "review_status": "pending"
+    },
+    {
+      "path": "backend/internal/server/routes/plugin_account_tools.go",
+      "candidate_owner": "core-extension-and-job-host",
+      "role": "source",
+      "present": true,
+      "content_sha256": "da4efc866f618c321a052d46930e0ca165343175f06e92c9188f12ec8899be8c",
+      "review_fingerprint": "da4efc866f618c321a052d46930e0ca165343175f06e92c9188f12ec8899be8c",
       "review_status": "pending"
     },
     {
@@ -6902,8 +6937,8 @@
       "candidate_owner": "account-tools",
       "role": "source",
       "present": true,
-      "content_sha256": "87e665871f16b09a35670cf6ab7973bd65067e7fb33548f68eac11c5901e3526",
-      "review_fingerprint": "87e665871f16b09a35670cf6ab7973bd65067e7fb33548f68eac11c5901e3526",
+      "content_sha256": "b71afe63df82022003d4555c1bc7e1371126e2d6ceeb0317e6b199d1a4508094",
+      "review_fingerprint": "b71afe63df82022003d4555c1bc7e1371126e2d6ceeb0317e6b199d1a4508094",
       "review_status": "pending"
     },
     {
@@ -6911,8 +6946,8 @@
       "candidate_owner": "account-tools",
       "role": "test-or-fixture",
       "present": true,
-      "content_sha256": "4bc31e4a43ab28c147bf855cdc796fe6cdfcaec5f0f508d2fb0dd8192f6d000c",
-      "review_fingerprint": "4bc31e4a43ab28c147bf855cdc796fe6cdfcaec5f0f508d2fb0dd8192f6d000c",
+      "content_sha256": "2042fb7413243738c3229bd534525a87d431dfa093d1e54c256e5c45467d2c82",
+      "review_fingerprint": "2042fb7413243738c3229bd534525a87d431dfa093d1e54c256e5c45467d2c82",
       "review_status": "pending"
     },
     {
@@ -6947,8 +6982,8 @@
       "candidate_owner": "account-tools",
       "role": "source",
       "present": true,
-      "content_sha256": "b7921229b54b1081bfc894fdcf2895a356eda56e832c8939a6e5158ff6f52e9d",
-      "review_fingerprint": "b7921229b54b1081bfc894fdcf2895a356eda56e832c8939a6e5158ff6f52e9d",
+      "content_sha256": "8507565b5443d1c1d02bf84ea16af53d1839c8a3b26afda0645cdc1f837f8023",
+      "review_fingerprint": "8507565b5443d1c1d02bf84ea16af53d1839c8a3b26afda0645cdc1f837f8023",
       "review_status": "pending"
     },
     {
@@ -10602,8 +10637,8 @@
       "candidate_owner": "core-extension-and-job-host",
       "role": "source",
       "present": true,
-      "content_sha256": "06ee9cd101afb3623a77d50fa97cde8515beaa0350908268a97b4e89aa6a092e",
-      "review_fingerprint": "06ee9cd101afb3623a77d50fa97cde8515beaa0350908268a97b4e89aa6a092e",
+      "content_sha256": "4f03f9417cb210dba4f05d9553e673ed2f9e8d1f61dbc05f6b916baa5ebda1d0",
+      "review_fingerprint": "4f03f9417cb210dba4f05d9553e673ed2f9e8d1f61dbc05f6b916baa5ebda1d0",
       "review_status": "pending"
     },
     {
@@ -10719,8 +10754,8 @@
       "candidate_owner": "core-extension-and-job-host",
       "role": "source",
       "present": true,
-      "content_sha256": "a35d299374bc214d019a00ec8accb118437afd52c937aef138ce1c6c292ba3d2",
-      "review_fingerprint": "a35d299374bc214d019a00ec8accb118437afd52c937aef138ce1c6c292ba3d2",
+      "content_sha256": "00dc82a8f8c066000529eb5c7ed7afdb7c79a0f509da039d426863782183ea4b",
+      "review_fingerprint": "00dc82a8f8c066000529eb5c7ed7afdb7c79a0f509da039d426863782183ea4b",
       "review_status": "pending"
     },
     {
@@ -10728,8 +10763,8 @@
       "candidate_owner": "core-extension-and-job-host",
       "role": "test-or-fixture",
       "present": true,
-      "content_sha256": "5c94faa0693229b9f533c7224319bffed4f13d96e1a0ec607fee57bc1244dcb6",
-      "review_fingerprint": "5c94faa0693229b9f533c7224319bffed4f13d96e1a0ec607fee57bc1244dcb6",
+      "content_sha256": "79504c0100e98aae77d79230a48616505f9d79f11d4d80463bb8b20aea114be3",
+      "review_fingerprint": "79504c0100e98aae77d79230a48616505f9d79f11d4d80463bb8b20aea114be3",
       "review_status": "pending"
     },
     {
@@ -10827,8 +10862,8 @@
       "candidate_owner": "core-extension-and-job-host",
       "role": "source",
       "present": true,
-      "content_sha256": "a12ef6da5f3b20a9878b1ff12c1688aacd1ad615e7d0a2a743586b01b9960754",
-      "review_fingerprint": "a12ef6da5f3b20a9878b1ff12c1688aacd1ad615e7d0a2a743586b01b9960754",
+      "content_sha256": "7361d1131e629d896a1e06d21ae55aa0bf3bd6b88afe7a69f544ef3eb584cac3",
+      "review_fingerprint": "7361d1131e629d896a1e06d21ae55aa0bf3bd6b88afe7a69f544ef3eb584cac3",
       "review_status": "pending"
     },
     {
@@ -10836,8 +10871,8 @@
       "candidate_owner": "core-extension-and-job-host",
       "role": "source",
       "present": true,
-      "content_sha256": "99cd618290b42bb34c7e3571ac138eb09b02da90e9a4d3be32a3668f2d956c30",
-      "review_fingerprint": "99cd618290b42bb34c7e3571ac138eb09b02da90e9a4d3be32a3668f2d956c30",
+      "content_sha256": "7d8539f58097eab3020c25bd6b81565b71c5ab5b14f34aab7851ba1285e69007",
+      "review_fingerprint": "7d8539f58097eab3020c25bd6b81565b71c5ab5b14f34aab7851ba1285e69007",
       "review_status": "pending"
     },
     {
@@ -10971,8 +11006,8 @@
       "candidate_owner": "core-extension-and-job-host",
       "role": "source",
       "present": true,
-      "content_sha256": "24c202b4dc3e49eba06502d0dc09b05b0d50c52f7a0afc2023e5aff82030b443",
-      "review_fingerprint": "24c202b4dc3e49eba06502d0dc09b05b0d50c52f7a0afc2023e5aff82030b443",
+      "content_sha256": "40e5971722b86f9d3771deb66e4d182c6e35f973977106dcf70b29ae30f290fb",
+      "review_fingerprint": "40e5971722b86f9d3771deb66e4d182c6e35f973977106dcf70b29ae30f290fb",
       "review_status": "pending"
     },
     {
@@ -10980,8 +11015,8 @@
       "candidate_owner": "core-extension-and-job-host",
       "role": "test-or-fixture",
       "present": true,
-      "content_sha256": "76c7f664469dab94c5695069a473dcc28eda2a58b5b2b2a42c6028ccb6a41b3a",
-      "review_fingerprint": "76c7f664469dab94c5695069a473dcc28eda2a58b5b2b2a42c6028ccb6a41b3a",
+      "content_sha256": "28e1c3bd4cc40dfe9ff97f22a8e5b0fe9722fcfc6a8c138e7daac325d4603837",
+      "review_fingerprint": "28e1c3bd4cc40dfe9ff97f22a8e5b0fe9722fcfc6a8c138e7daac325d4603837",
       "review_status": "pending"
     },
     {
@@ -12512,8 +12547,8 @@
       "candidate_owner": "core-extension-and-job-host",
       "role": "source",
       "present": true,
-      "content_sha256": "1b4a23850b40be073cbff0fe7bf13a2f2a8d128e188ea1795e8aecd04d090a49",
-      "review_fingerprint": "1b4a23850b40be073cbff0fe7bf13a2f2a8d128e188ea1795e8aecd04d090a49",
+      "content_sha256": "482eab5eea09559cd93d1cc9e64b1118b312a6a194d663ed9e812d696f604f86",
+      "review_fingerprint": "482eab5eea09559cd93d1cc9e64b1118b312a6a194d663ed9e812d696f604f86",
       "review_status": "pending"
     },
     {
@@ -12521,8 +12556,8 @@
       "candidate_owner": "core-extension-and-job-host",
       "role": "source",
       "present": true,
-      "content_sha256": "06db4aa7ef0ed5e1f3fe6d2bf0eeeab28609c0f34b4507bff80f80e1f8677976",
-      "review_fingerprint": "06db4aa7ef0ed5e1f3fe6d2bf0eeeab28609c0f34b4507bff80f80e1f8677976",
+      "content_sha256": "461eb892d268d26829da1a4bd63e214eb0654535865fb8a4ce727e34fe0547ea",
+      "review_fingerprint": "461eb892d268d26829da1a4bd63e214eb0654535865fb8a4ce727e34fe0547ea",
       "review_status": "pending"
     },
     {
@@ -12530,8 +12565,8 @@
       "candidate_owner": "core-extension-and-job-host",
       "role": "source",
       "present": true,
-      "content_sha256": "63aca9e5ac5224e79302f407d285b80a07f68c8c07b32f59eb83697fdf9b2839",
-      "review_fingerprint": "63aca9e5ac5224e79302f407d285b80a07f68c8c07b32f59eb83697fdf9b2839",
+      "content_sha256": "4953efe1bbbb8fae700cc8c9cee6b1a47954c51e73070063c7bae3f472185be1",
+      "review_fingerprint": "4953efe1bbbb8fae700cc8c9cee6b1a47954c51e73070063c7bae3f472185be1",
       "review_status": "pending"
     },
     {
@@ -12559,6 +12594,15 @@
       "present": true,
       "content_sha256": "1879d82804766ca5c6e06b869b8dd8e6dcd73e701a5b5b2d0cba625b9e10adf7",
       "review_fingerprint": "1879d82804766ca5c6e06b869b8dd8e6dcd73e701a5b5b2d0cba625b9e10adf7",
+      "review_status": "pending"
+    },
+    {
+      "path": "backend/pkg/extensionapi/ui/components/Select.vue",
+      "candidate_owner": "core-extension-and-job-host",
+      "role": "source",
+      "present": true,
+      "content_sha256": "9a2b17a93ccf0179a95e5fcc7dcaf658709b6610cf35c02faf781f7a52a36cb5",
+      "review_fingerprint": "9a2b17a93ccf0179a95e5fcc7dcaf658709b6610cf35c02faf781f7a52a36cb5",
       "review_status": "pending"
     },
     {
@@ -12602,8 +12646,8 @@
       "candidate_owner": "core-extension-and-job-host",
       "role": "source",
       "present": true,
-      "content_sha256": "a4d3cfc7b50f3d93487857d3f5fde62acb0ac5c8ec6e4e0f0f64f4a25fceec45",
-      "review_fingerprint": "a4d3cfc7b50f3d93487857d3f5fde62acb0ac5c8ec6e4e0f0f64f4a25fceec45",
+      "content_sha256": "1e8c391b20358f867d3e04e893acf5480192f86d16acebe4e0c9d2cc79e49a95",
+      "review_fingerprint": "1e8c391b20358f867d3e04e893acf5480192f86d16acebe4e0c9d2cc79e49a95",
       "review_status": "pending"
     },
     {
@@ -12638,8 +12682,8 @@
       "candidate_owner": "core-extension-and-job-host",
       "role": "source",
       "present": true,
-      "content_sha256": "3c5f03c3173791c97c098fd95878ba512d4feceba730a51dc79c3c5fe709f969",
-      "review_fingerprint": "3c5f03c3173791c97c098fd95878ba512d4feceba730a51dc79c3c5fe709f969",
+      "content_sha256": "6b3510029a6ff72cb12df47326c169c7ba871972013e293711a3d8d0a399414e",
+      "review_fingerprint": "6b3510029a6ff72cb12df47326c169c7ba871972013e293711a3d8d0a399414e",
       "review_status": "pending"
     },
     {
@@ -12647,8 +12691,8 @@
       "candidate_owner": "core-extension-and-job-host",
       "role": "source",
       "present": true,
-      "content_sha256": "1156b7662105e80b3d7410e6fb7f7f2d1cad5da2697dda69067153f178877a05",
-      "review_fingerprint": "1156b7662105e80b3d7410e6fb7f7f2d1cad5da2697dda69067153f178877a05",
+      "content_sha256": "d7c8597075f9ba8fc1430cf00ec8416324022872bcc8ed1aa61e381ea6b803f9",
+      "review_fingerprint": "d7c8597075f9ba8fc1430cf00ec8416324022872bcc8ed1aa61e381ea6b803f9",
       "review_status": "pending"
     },
     {
@@ -12800,8 +12844,8 @@
       "candidate_owner": "core-extension-and-job-host",
       "role": "source",
       "present": true,
-      "content_sha256": "f003293702f19f59f82e94d3d105c5cf2ee412bce409ec3da84218ae60e88657",
-      "review_fingerprint": "f003293702f19f59f82e94d3d105c5cf2ee412bce409ec3da84218ae60e88657",
+      "content_sha256": "3e5b33fe8935f87bdd3a20f7be5527e3952621607a39464ed8fa2e058c36c931",
+      "review_fingerprint": "3e5b33fe8935f87bdd3a20f7be5527e3952621607a39464ed8fa2e058c36c931",
       "review_status": "pending"
     },
     {
@@ -12845,8 +12889,8 @@
       "candidate_owner": "core-extension-and-job-host",
       "role": "source",
       "present": true,
-      "content_sha256": "0a4a9d906786df9c3d06e51da04ef550279b7054152ca976c14f1c3a3eca7ba1",
-      "review_fingerprint": "0a4a9d906786df9c3d06e51da04ef550279b7054152ca976c14f1c3a3eca7ba1",
+      "content_sha256": "77816ced3ddc17ab6b534517fa7a8c67eb27f6cee206db9f87fa5709755017d0",
+      "review_fingerprint": "77816ced3ddc17ab6b534517fa7a8c67eb27f6cee206db9f87fa5709755017d0",
       "review_status": "pending"
     },
     {
@@ -13016,8 +13060,8 @@
       "candidate_owner": "documentation-and-history",
       "role": "documentation",
       "present": true,
-      "content_sha256": "8b6271495f8e4a3cd41702e6821c41c703911327a59699134abb62e45e7d0beb",
-      "review_fingerprint": "8b6271495f8e4a3cd41702e6821c41c703911327a59699134abb62e45e7d0beb",
+      "content_sha256": "7e97882e7bbbc7245e9467986d8af6809006507d52ab37c2642e59f50216c824",
+      "review_fingerprint": "7e97882e7bbbc7245e9467986d8af6809006507d52ab37c2642e59f50216c824",
       "review_status": "pending"
     },
     {
@@ -13259,8 +13303,8 @@
       "candidate_owner": "core-extension-and-job-host",
       "role": "source",
       "present": true,
-      "content_sha256": "a6e49763b62e86200c18d3714a163b7e27a9476d5a65335e10b7e704af45f770",
-      "review_fingerprint": "a6e49763b62e86200c18d3714a163b7e27a9476d5a65335e10b7e704af45f770",
+      "content_sha256": "8932db1d3db14ac54168c748b865a2730a41cd260a6e4f7189b87bd07fde1fe4",
+      "review_fingerprint": "8932db1d3db14ac54168c748b865a2730a41cd260a6e4f7189b87bd07fde1fe4",
       "review_status": "pending"
     },
     {
@@ -13817,8 +13861,8 @@
       "candidate_owner": "account-tools",
       "role": "source",
       "present": true,
-      "content_sha256": "c5f74748e6350166b89a7503f5e3228bf6c014accb394a222dfd69c838a77804",
-      "review_fingerprint": "c5f74748e6350166b89a7503f5e3228bf6c014accb394a222dfd69c838a77804",
+      "content_sha256": "7a4e71253a9d9652338ff72c84e32b706f8a6e804dcf777c58b658854779b8e6",
+      "review_fingerprint": "7a4e71253a9d9652338ff72c84e32b706f8a6e804dcf777c58b658854779b8e6",
       "review_status": "pending"
     },
     {
@@ -13853,8 +13897,8 @@
       "candidate_owner": "mixed-requires-review",
       "role": "source",
       "present": true,
-      "content_sha256": "d026f99fc9992b773c2f40b37b8d1213caa8d4a3aebbdfff122a1801267d1279",
-      "review_fingerprint": "d026f99fc9992b773c2f40b37b8d1213caa8d4a3aebbdfff122a1801267d1279",
+      "content_sha256": "d8c0e0a0ac6e0bae3c2360423720b76748b76b8f994cf0b60fed4bd8d5b64e8b",
+      "review_fingerprint": "d8c0e0a0ac6e0bae3c2360423720b76748b76b8f994cf0b60fed4bd8d5b64e8b",
       "review_status": "pending"
     },
     {
@@ -13862,8 +13906,8 @@
       "candidate_owner": "account-tools",
       "role": "source",
       "present": true,
-      "content_sha256": "178635adc9f4d89903d87e658b291fa1079090a1009f956dfc7f0179f110d9ae",
-      "review_fingerprint": "178635adc9f4d89903d87e658b291fa1079090a1009f956dfc7f0179f110d9ae",
+      "content_sha256": "317f69353511738a09ba82fb36001310ee41479ac6a5f7a573a01669fa093e23",
+      "review_fingerprint": "317f69353511738a09ba82fb36001310ee41479ac6a5f7a573a01669fa093e23",
       "review_status": "pending"
     },
     {
@@ -13898,8 +13942,8 @@
       "candidate_owner": "account-tools",
       "role": "source",
       "present": true,
-      "content_sha256": "b64e50cb7724c5b2f148c0637c2132222a8530635e77251f98cf4fa2a44893cd",
-      "review_fingerprint": "b64e50cb7724c5b2f148c0637c2132222a8530635e77251f98cf4fa2a44893cd",
+      "content_sha256": "050d2d1d448bd662e1489f93663d4dcef273c3bdfb7d35eb2ef75588e3db7e4c",
+      "review_fingerprint": "050d2d1d448bd662e1489f93663d4dcef273c3bdfb7d35eb2ef75588e3db7e4c",
       "review_status": "pending"
     },
     {
@@ -13907,8 +13951,8 @@
       "candidate_owner": "account-tools",
       "role": "source",
       "present": true,
-      "content_sha256": "d62f8d536c2c97134ed62b3ca063dc7b3a5a2c62bee1c58d73df446f47c9ec6e",
-      "review_fingerprint": "d62f8d536c2c97134ed62b3ca063dc7b3a5a2c62bee1c58d73df446f47c9ec6e",
+      "content_sha256": "5ae2d68bad5ebec86c613d84747d6e01029f57c6ceb58c34e2bdd78b46e7ce80",
+      "review_fingerprint": "5ae2d68bad5ebec86c613d84747d6e01029f57c6ceb58c34e2bdd78b46e7ce80",
       "review_status": "pending"
     },
     {
@@ -13934,8 +13978,8 @@
       "candidate_owner": "mixed-requires-review",
       "role": "source",
       "present": true,
-      "content_sha256": "616dd284e2a82e008291e4f76e1aa3e680424bb2fa4f7b5ba49bfcc5cd7f1aeb",
-      "review_fingerprint": "616dd284e2a82e008291e4f76e1aa3e680424bb2fa4f7b5ba49bfcc5cd7f1aeb",
+      "content_sha256": "a2438eb00c6d0bdcf02e09239f2e2baedb9a12181df20711d2ab98da5e10a2df",
+      "review_fingerprint": "a2438eb00c6d0bdcf02e09239f2e2baedb9a12181df20711d2ab98da5e10a2df",
       "review_status": "pending"
     },
     {
@@ -13952,8 +13996,8 @@
       "candidate_owner": "account-tools",
       "role": "source",
       "present": true,
-      "content_sha256": "a055f4c7c5e2716aeac6744ff3d91770e16e057b7740a8f090d1a86b3ad1b800",
-      "review_fingerprint": "a055f4c7c5e2716aeac6744ff3d91770e16e057b7740a8f090d1a86b3ad1b800",
+      "content_sha256": "e75e161c20313c0733cbdc271cabde5da808d14b6035d4cff249e2a679c21dfb",
+      "review_fingerprint": "e75e161c20313c0733cbdc271cabde5da808d14b6035d4cff249e2a679c21dfb",
       "review_status": "pending"
     },
     {
@@ -14011,15 +14055,6 @@
       "review_status": "pending"
     },
     {
-      "path": "frontend/src/components/admin/account/__tests__/AccountBulkTaxonomyModal.spec.ts",
-      "candidate_owner": "account-tools",
-      "role": "test-or-fixture",
-      "present": true,
-      "content_sha256": "8bcb6d0fc85138a2bfa97bd013a5a435c9e1a2710fd2fa2135f0c7185484e0ef",
-      "review_fingerprint": "8bcb6d0fc85138a2bfa97bd013a5a435c9e1a2710fd2fa2135f0c7185484e0ef",
-      "review_status": "pending"
-    },
-    {
       "path": "frontend/src/components/admin/account/__tests__/AccountConsoleFilters.spec.ts",
       "candidate_owner": "account-tools",
       "role": "test-or-fixture",
@@ -14033,26 +14068,8 @@
       "candidate_owner": "mixed-requires-review",
       "role": "test-or-fixture",
       "present": true,
-      "content_sha256": "c2f6643d4bba4335f37dd3bffe1deddeac77fd6c6691e44e19887d1057dba173",
-      "review_fingerprint": "c2f6643d4bba4335f37dd3bffe1deddeac77fd6c6691e44e19887d1057dba173",
-      "review_status": "pending"
-    },
-    {
-      "path": "frontend/src/components/admin/account/__tests__/AccountFolderBar.spec.ts",
-      "candidate_owner": "account-tools",
-      "role": "test-or-fixture",
-      "present": true,
-      "content_sha256": "5862215b014d99fc0977ba6d2d6f123230fd5c62ad11eacf050c5286a2feea0d",
-      "review_fingerprint": "5862215b014d99fc0977ba6d2d6f123230fd5c62ad11eacf050c5286a2feea0d",
-      "review_status": "pending"
-    },
-    {
-      "path": "frontend/src/components/admin/account/__tests__/AccountTaxonomyManager.spec.ts",
-      "candidate_owner": "account-tools",
-      "role": "test-or-fixture",
-      "present": true,
-      "content_sha256": "e036c3f6d029db2e98abe2ab504333ad4954cf08b336c9359577fff6b218129d",
-      "review_fingerprint": "e036c3f6d029db2e98abe2ab504333ad4954cf08b336c9359577fff6b218129d",
+      "content_sha256": "f6ffd530fa5ae54cbb37dcfa88c2bff675a213d7ee9699b3c882e6d01c0159f7",
+      "review_fingerprint": "f6ffd530fa5ae54cbb37dcfa88c2bff675a213d7ee9699b3c882e6d01c0159f7",
       "review_status": "pending"
     },
     {
@@ -14060,8 +14077,8 @@
       "candidate_owner": "account-tools",
       "role": "test-or-fixture",
       "present": true,
-      "content_sha256": "4d3daf62e81b0a20eb14d0750c62efc78dd1c1198cfb783c047594177f1bc7f6",
-      "review_fingerprint": "4d3daf62e81b0a20eb14d0750c62efc78dd1c1198cfb783c047594177f1bc7f6",
+      "content_sha256": "e48cf4938afe1f985b7ac0964314bbf77bded761bd47c984b4f195a92bc1a5cf",
+      "review_fingerprint": "e48cf4938afe1f985b7ac0964314bbf77bded761bd47c984b4f195a92bc1a5cf",
       "review_status": "pending"
     },
     {
@@ -14069,8 +14086,8 @@
       "candidate_owner": "account-tools",
       "role": "test-or-fixture",
       "present": true,
-      "content_sha256": "65e04f67abfb0a0fffb8dbeb3b2b8bc838e01ca57b7161bb8d2965c3da9977fa",
-      "review_fingerprint": "65e04f67abfb0a0fffb8dbeb3b2b8bc838e01ca57b7161bb8d2965c3da9977fa",
+      "content_sha256": "89248bd7d5036a1c96bf80d363ec8f63876cd3c66309c58bb978c56feaf45a18",
+      "review_fingerprint": "89248bd7d5036a1c96bf80d363ec8f63876cd3c66309c58bb978c56feaf45a18",
       "review_status": "pending"
     },
     {
@@ -14080,15 +14097,6 @@
       "present": true,
       "content_sha256": "8362a5a7195510e030da3ef017c7ca4fd2fc95a59c65cb6e1ffd1d203ff723d0",
       "review_fingerprint": "8362a5a7195510e030da3ef017c7ca4fd2fc95a59c65cb6e1ffd1d203ff723d0",
-      "review_status": "pending"
-    },
-    {
-      "path": "frontend/src/components/admin/account/__tests__/BatchTestAccountModal.spec.ts",
-      "candidate_owner": "account-tools",
-      "role": "test-or-fixture",
-      "present": true,
-      "content_sha256": "11c9aca5fd33fcd179686195c6c0866b12f433e665712dcc7b4690df19920ac9",
-      "review_fingerprint": "11c9aca5fd33fcd179686195c6c0866b12f433e665712dcc7b4690df19920ac9",
       "review_status": "pending"
     },
     {
@@ -14537,8 +14545,8 @@
       "candidate_owner": "mixed-requires-review",
       "role": "source",
       "present": true,
-      "content_sha256": "348e926352f3fad425bdb07880cc493193034cc37684062ea78205cd00070b4c",
-      "review_fingerprint": "348e926352f3fad425bdb07880cc493193034cc37684062ea78205cd00070b4c",
+      "content_sha256": "e4defe6dd0af152983c8b78b9bc6f1cebd267c97ecce755673ee292def6a936e",
+      "review_fingerprint": "e4defe6dd0af152983c8b78b9bc6f1cebd267c97ecce755673ee292def6a936e",
       "review_status": "pending"
     },
     {
@@ -14879,8 +14887,8 @@
       "candidate_owner": "core-extension-and-job-host",
       "role": "source",
       "present": true,
-      "content_sha256": "a4a48f542a2bf69e7c76fcf4323ed0d8179352e07db30bf0eddf3eaf61c351b5",
-      "review_fingerprint": "a4a48f542a2bf69e7c76fcf4323ed0d8179352e07db30bf0eddf3eaf61c351b5",
+      "content_sha256": "d55cabbe25cd102d96e77c9e042df8eee13d8a262b95d770387ade9046ef855c",
+      "review_fingerprint": "d55cabbe25cd102d96e77c9e042df8eee13d8a262b95d770387ade9046ef855c",
       "review_status": "pending"
     },
     {
@@ -14888,8 +14896,17 @@
       "candidate_owner": "core-extension-and-job-host",
       "role": "source",
       "present": true,
-      "content_sha256": "0a0baa2ba3315b51fd9c90257609c8975f360bd92506ab50c7ff310e9a8c5124",
-      "review_fingerprint": "0a0baa2ba3315b51fd9c90257609c8975f360bd92506ab50c7ff310e9a8c5124",
+      "content_sha256": "1eb2e0e3912853ce4ee17b51b899ea8e8fdfaa3c8bd3c483a4a4b871ac214e2d",
+      "review_fingerprint": "1eb2e0e3912853ce4ee17b51b899ea8e8fdfaa3c8bd3c483a4a4b871ac214e2d",
+      "review_status": "pending"
+    },
+    {
+      "path": "frontend/src/components/plugins/ExtensionModal.vue",
+      "candidate_owner": "core-extension-and-job-host",
+      "role": "source",
+      "present": true,
+      "content_sha256": "d74f0dd211185ee8413f6459a016fd9f1d6b88bb5463fe267d2e8224dbdf7081",
+      "review_fingerprint": "d74f0dd211185ee8413f6459a016fd9f1d6b88bb5463fe267d2e8224dbdf7081",
       "review_status": "pending"
     },
     {
@@ -14920,12 +14937,21 @@
       "review_status": "pending"
     },
     {
+      "path": "frontend/src/components/plugins/ExtensionWidget.vue",
+      "candidate_owner": "core-extension-and-job-host",
+      "role": "source",
+      "present": true,
+      "content_sha256": "1e67f239a6b0ec4502cbb4d95a6c7964d11ef843d4b678a494e52a753f4a1009",
+      "review_fingerprint": "1e67f239a6b0ec4502cbb4d95a6c7964d11ef843d4b678a494e52a753f4a1009",
+      "review_status": "pending"
+    },
+    {
       "path": "frontend/src/components/plugins/PluginFrame.vue",
       "candidate_owner": "core-extension-and-job-host",
       "role": "source",
       "present": true,
-      "content_sha256": "c841dc92bfceac0d36f957680c55a28d92345428eab8018430f6d688ca28c3c0",
-      "review_fingerprint": "c841dc92bfceac0d36f957680c55a28d92345428eab8018430f6d688ca28c3c0",
+      "content_sha256": "9937fa8cff431642be4aa5df9702f5ae1662c73705da2af813317bfb3914b2be",
+      "review_fingerprint": "9937fa8cff431642be4aa5df9702f5ae1662c73705da2af813317bfb3914b2be",
       "review_status": "pending"
     },
     {
@@ -14933,8 +14959,8 @@
       "candidate_owner": "core-extension-and-job-host",
       "role": "test-or-fixture",
       "present": true,
-      "content_sha256": "0abe84b347e7cd8334452d8163758b9472d6748a7f2b3a399a3503058e796125",
-      "review_fingerprint": "0abe84b347e7cd8334452d8163758b9472d6748a7f2b3a399a3503058e796125",
+      "content_sha256": "d1eee9fd359eb616845b5f765b8d2b4e52a9091c112fec217dddce084d77abe2",
+      "review_fingerprint": "d1eee9fd359eb616845b5f765b8d2b4e52a9091c112fec217dddce084d77abe2",
       "review_status": "pending"
     },
     {
@@ -14944,6 +14970,15 @@
       "present": true,
       "content_sha256": "27ef36b9fbd5959b13270e9b0117752282a161102004b1b7cc7a81733120af46",
       "review_fingerprint": "27ef36b9fbd5959b13270e9b0117752282a161102004b1b7cc7a81733120af46",
+      "review_status": "pending"
+    },
+    {
+      "path": "frontend/src/components/plugins/__tests__/preferences.spec.ts",
+      "candidate_owner": "core-extension-and-job-host",
+      "role": "test-or-fixture",
+      "present": true,
+      "content_sha256": "cb3bcb28ffad24e238364dc3444a6f68db6c5d86d966c6bf0a3beb701e5a6886",
+      "review_fingerprint": "cb3bcb28ffad24e238364dc3444a6f68db6c5d86d966c6bf0a3beb701e5a6886",
       "review_status": "pending"
     },
     {
@@ -14974,12 +15009,21 @@
       "review_status": "pending"
     },
     {
+      "path": "frontend/src/components/plugins/preferences.ts",
+      "candidate_owner": "core-extension-and-job-host",
+      "role": "source",
+      "present": true,
+      "content_sha256": "2e887450d0055a3ce7cd9b760f7549697589113ca8515de8a038d9c809f0cacf",
+      "review_fingerprint": "2e887450d0055a3ce7cd9b760f7549697589113ca8515de8a038d9c809f0cacf",
+      "review_status": "pending"
+    },
+    {
       "path": "frontend/src/components/plugins/resourceClient.ts",
       "candidate_owner": "core-extension-and-job-host",
       "role": "source",
       "present": true,
-      "content_sha256": "cef09a24ab5193d5489421f39b5d2a1d67c195cee05447bc736ed85aaa62abb0",
-      "review_fingerprint": "cef09a24ab5193d5489421f39b5d2a1d67c195cee05447bc736ed85aaa62abb0",
+      "content_sha256": "3ef8d978278fb0f59f52f975b8aff39db521129b9c8d74c7b1c54882633b1b5e",
+      "review_fingerprint": "3ef8d978278fb0f59f52f975b8aff39db521129b9c8d74c7b1c54882633b1b5e",
       "review_status": "pending"
     },
     {
@@ -15176,8 +15220,8 @@
       "candidate_owner": "account-tools",
       "role": "test-or-fixture",
       "present": true,
-      "content_sha256": "5b6c9a1112ae1a8e011fa70e35cc89e0561e2bd1801c5dc02f960f3662cab815",
-      "review_fingerprint": "5b6c9a1112ae1a8e011fa70e35cc89e0561e2bd1801c5dc02f960f3662cab815",
+      "content_sha256": "4e336b0f9429fdbf87fb7ebde84ca6debdf0c862e7e671a4dba6b5b9aa0c38b3",
+      "review_fingerprint": "4e336b0f9429fdbf87fb7ebde84ca6debdf0c862e7e671a4dba6b5b9aa0c38b3",
       "review_status": "pending"
     },
     {
@@ -15203,8 +15247,8 @@
       "candidate_owner": "account-tools",
       "role": "source",
       "present": true,
-      "content_sha256": "fb995ec6c660a7411181947eff5e7d91043956acc028ae2ee9f77104a3cbd1d3",
-      "review_fingerprint": "fb995ec6c660a7411181947eff5e7d91043956acc028ae2ee9f77104a3cbd1d3",
+      "content_sha256": "8bd81322c3f212c4603bbf7582e81ea82eea08841b931dafcc437c703da2d814",
+      "review_fingerprint": "8bd81322c3f212c4603bbf7582e81ea82eea08841b931dafcc437c703da2d814",
       "review_status": "pending"
     },
     {
@@ -16726,8 +16770,8 @@
       "candidate_owner": "mixed-requires-review",
       "role": "source",
       "present": true,
-      "content_sha256": "6959f285e403c104734f9a4b43b38a3d10bb8ad50440ef33962bd0abc14e3615",
-      "review_fingerprint": "6959f285e403c104734f9a4b43b38a3d10bb8ad50440ef33962bd0abc14e3615",
+      "content_sha256": "c9d226542518e45fd13904678ac22df5e73041862c023676ecea99794bbf7778",
+      "review_fingerprint": "c9d226542518e45fd13904678ac22df5e73041862c023676ecea99794bbf7778",
       "review_status": "pending"
     },
     {
@@ -16744,8 +16788,8 @@
       "candidate_owner": "mixed-requires-review",
       "role": "source",
       "present": true,
-      "content_sha256": "7ea4bd9edb4ddc13c8e78cf2d449af28dde260af040086e3960b0c9f288abbf1",
-      "review_fingerprint": "7ea4bd9edb4ddc13c8e78cf2d449af28dde260af040086e3960b0c9f288abbf1",
+      "content_sha256": "0c078eaf73b331bab29e0e73bf823f7735adee29bfc6595083490b01610884fb",
+      "review_fingerprint": "0c078eaf73b331bab29e0e73bf823f7735adee29bfc6595083490b01610884fb",
       "review_status": "pending"
     },
     {
@@ -16780,8 +16824,8 @@
       "candidate_owner": "account-tools",
       "role": "source",
       "present": true,
-      "content_sha256": "8ef1b5ed661e76167779bb03b28150d05cd2eba184a243fe8747145a91efa1b5",
-      "review_fingerprint": "8ef1b5ed661e76167779bb03b28150d05cd2eba184a243fe8747145a91efa1b5",
+      "content_sha256": "1ba3338b402ece6afa54060b11371c2b4295bf77e969bfcb6e93446761b4bb0a",
+      "review_fingerprint": "1ba3338b402ece6afa54060b11371c2b4295bf77e969bfcb6e93446761b4bb0a",
       "review_status": "pending"
     },
     {
@@ -16798,8 +16842,8 @@
       "candidate_owner": "account-tools",
       "role": "source",
       "present": true,
-      "content_sha256": "ee6fac2c56ba58b2491f098074585fb533fe5e8f88db4d5a01477098e724f3cd",
-      "review_fingerprint": "ee6fac2c56ba58b2491f098074585fb533fe5e8f88db4d5a01477098e724f3cd",
+      "content_sha256": "69771cbd2911e0986597633d2c7dc666d08195041590ebba1cc5ec58d53aedb3",
+      "review_fingerprint": "69771cbd2911e0986597633d2c7dc666d08195041590ebba1cc5ec58d53aedb3",
       "review_status": "pending"
     },
     {
@@ -16809,6 +16853,15 @@
       "present": true,
       "content_sha256": "da314fed67c98f5fcb9c1fe907bbd68097855ef504149f32af91ec5372cc8bef",
       "review_fingerprint": "da314fed67c98f5fcb9c1fe907bbd68097855ef504149f32af91ec5372cc8bef",
+      "review_status": "pending"
+    },
+    {
+      "path": "plugins/account-tools/scripts/check-ui.py",
+      "candidate_owner": "account-tools",
+      "role": "source",
+      "present": true,
+      "content_sha256": "d53b41c8fbb71c9fdfad060f645ad6111c75d1f302e4499d11bea13a9ad5da46",
+      "review_fingerprint": "d53b41c8fbb71c9fdfad060f645ad6111c75d1f302e4499d11bea13a9ad5da46",
       "review_status": "pending"
     },
     {
@@ -16836,6 +16889,213 @@
       "present": true,
       "content_sha256": "907595c1e48fd9559ebd06ae62c4f60d3cd160e0ff9978ac332abbb33633d06e",
       "review_fingerprint": "907595c1e48fd9559ebd06ae62c4f60d3cd160e0ff9978ac332abbb33633d06e",
+      "review_status": "pending"
+    },
+    {
+      "path": "plugins/account-tools/ui/src/AccountBulkTaxonomyModal.vue",
+      "candidate_owner": "account-tools",
+      "role": "source",
+      "present": true,
+      "content_sha256": "e824c1991459cfc71c2aabbc4df3a9cceeb1233744beac2620de9c3fc67c8fdb",
+      "review_fingerprint": "e824c1991459cfc71c2aabbc4df3a9cceeb1233744beac2620de9c3fc67c8fdb",
+      "review_status": "pending"
+    },
+    {
+      "path": "plugins/account-tools/ui/src/AccountFolderBar.vue",
+      "candidate_owner": "account-tools",
+      "role": "source",
+      "present": true,
+      "content_sha256": "b37bafe89ca713d2373ec0e8469dd6c9682381c5a1188544b63e2fbeea6e2efa",
+      "review_fingerprint": "b37bafe89ca713d2373ec0e8469dd6c9682381c5a1188544b63e2fbeea6e2efa",
+      "review_status": "pending"
+    },
+    {
+      "path": "plugins/account-tools/ui/src/AccountTaxonomyEditor.vue",
+      "candidate_owner": "account-tools",
+      "role": "source",
+      "present": true,
+      "content_sha256": "7a5a074f0357d7ca425da4cc285957e8604ef7a6012066de2ddd59138721e62c",
+      "review_fingerprint": "7a5a074f0357d7ca425da4cc285957e8604ef7a6012066de2ddd59138721e62c",
+      "review_status": "pending"
+    },
+    {
+      "path": "plugins/account-tools/ui/src/AccountTaxonomyManager.vue",
+      "candidate_owner": "account-tools",
+      "role": "source",
+      "present": true,
+      "content_sha256": "d7dff2ad7d3d947aee1b792bd2e195cb00a4cdc90bc326d8188db4d95e97e4ad",
+      "review_fingerprint": "d7dff2ad7d3d947aee1b792bd2e195cb00a4cdc90bc326d8188db4d95e97e4ad",
+      "review_status": "pending"
+    },
+    {
+      "path": "plugins/account-tools/ui/src/AccountTestModelSelect.vue",
+      "candidate_owner": "account-tools",
+      "role": "source",
+      "present": true,
+      "content_sha256": "11064780b23ae378b762a4b0f4249732141b2f7cebe6527ad1a99d45631a8c54",
+      "review_fingerprint": "11064780b23ae378b762a4b0f4249732141b2f7cebe6527ad1a99d45631a8c54",
+      "review_status": "pending"
+    },
+    {
+      "path": "plugins/account-tools/ui/src/AccountTestReasoningSelect.vue",
+      "candidate_owner": "account-tools",
+      "role": "source",
+      "present": true,
+      "content_sha256": "3ebbb8ddbb3a4a3a4e7fc828c7dc2e7c3e053abc2cf1b0d337f5195c75e3ee83",
+      "review_fingerprint": "3ebbb8ddbb3a4a3a4e7fc828c7dc2e7c3e053abc2cf1b0d337f5195c75e3ee83",
+      "review_status": "pending"
+    },
+    {
+      "path": "plugins/account-tools/ui/src/AccountTextTestPrompt.vue",
+      "candidate_owner": "account-tools",
+      "role": "source",
+      "present": true,
+      "content_sha256": "616dd284e2a82e008291e4f76e1aa3e680424bb2fa4f7b5ba49bfcc5cd7f1aeb",
+      "review_fingerprint": "616dd284e2a82e008291e4f76e1aa3e680424bb2fa4f7b5ba49bfcc5cd7f1aeb",
+      "review_status": "pending"
+    },
+    {
+      "path": "plugins/account-tools/ui/src/App.vue",
+      "candidate_owner": "account-tools",
+      "role": "source",
+      "present": true,
+      "content_sha256": "4775353db81255f56459a05c6a2556aea2a970e4c4c07a93caaac9c604f66240",
+      "review_fingerprint": "4775353db81255f56459a05c6a2556aea2a970e4c4c07a93caaac9c604f66240",
+      "review_status": "pending"
+    },
+    {
+      "path": "plugins/account-tools/ui/src/BatchTestAccountModal.vue",
+      "candidate_owner": "account-tools",
+      "role": "source",
+      "present": true,
+      "content_sha256": "6b21add18aef43a1af1e5ef4d2f3216e83045f2046a8fd0be998c75f51b1bcfe",
+      "review_fingerprint": "6b21add18aef43a1af1e5ef4d2f3216e83045f2046a8fd0be998c75f51b1bcfe",
+      "review_status": "pending"
+    },
+    {
+      "path": "plugins/account-tools/ui/src/__tests__/AccountBulkTaxonomyModal.spec.ts",
+      "candidate_owner": "account-tools",
+      "role": "test-or-fixture",
+      "present": true,
+      "content_sha256": "3b2e52f2f58ccbc08fcb4b0e4b5d89482ce74631086af72eec8295d8b19882cc",
+      "review_fingerprint": "3b2e52f2f58ccbc08fcb4b0e4b5d89482ce74631086af72eec8295d8b19882cc",
+      "review_status": "pending"
+    },
+    {
+      "path": "plugins/account-tools/ui/src/__tests__/AccountFolderBar.spec.ts",
+      "candidate_owner": "account-tools",
+      "role": "test-or-fixture",
+      "present": true,
+      "content_sha256": "1d14514ac07811ca135f07086bd2edcdb8110a77f05df229c24cdaee21bc23d4",
+      "review_fingerprint": "1d14514ac07811ca135f07086bd2edcdb8110a77f05df229c24cdaee21bc23d4",
+      "review_status": "pending"
+    },
+    {
+      "path": "plugins/account-tools/ui/src/__tests__/AccountTaxonomyManager.spec.ts",
+      "candidate_owner": "account-tools",
+      "role": "test-or-fixture",
+      "present": true,
+      "content_sha256": "824bcab912cd91ff40c8b371f6bc5714845e5e4fcf53eda188d4fac70803c614",
+      "review_fingerprint": "824bcab912cd91ff40c8b371f6bc5714845e5e4fcf53eda188d4fac70803c614",
+      "review_status": "pending"
+    },
+    {
+      "path": "plugins/account-tools/ui/src/__tests__/BatchTestAccountModal.spec.ts",
+      "candidate_owner": "account-tools",
+      "role": "test-or-fixture",
+      "present": true,
+      "content_sha256": "0bbdf4778350c06bb9dba419104e67853f12bd569650a91c03c2719bc7100df0",
+      "review_fingerprint": "0bbdf4778350c06bb9dba419104e67853f12bd569650a91c03c2719bc7100df0",
+      "review_status": "pending"
+    },
+    {
+      "path": "plugins/account-tools/ui/src/accountTestModels.ts",
+      "candidate_owner": "account-tools",
+      "role": "source",
+      "present": true,
+      "content_sha256": "ed90197837a9682cb7e2fe55fd03a8a1245189375dbfdd1635bbf02ce6cb32f3",
+      "review_fingerprint": "ed90197837a9682cb7e2fe55fd03a8a1245189375dbfdd1635bbf02ce6cb32f3",
+      "review_status": "pending"
+    },
+    {
+      "path": "plugins/account-tools/ui/src/api.ts",
+      "candidate_owner": "account-tools",
+      "role": "source",
+      "present": true,
+      "content_sha256": "3986194427a1dd416c238ebd9957f648c8dfec08e898903e4d26ae20f5f45259",
+      "review_fingerprint": "3986194427a1dd416c238ebd9957f648c8dfec08e898903e4d26ae20f5f45259",
+      "review_status": "pending"
+    },
+    {
+      "path": "plugins/account-tools/ui/src/cindyOpenAIDefaults.ts",
+      "candidate_owner": "account-tools",
+      "role": "source",
+      "present": true,
+      "content_sha256": "71042124d9608e5486f725b748f621032058ec053cb4106f772f5188575c0c3a",
+      "review_fingerprint": "71042124d9608e5486f725b748f621032058ec053cb4106f772f5188575c0c3a",
+      "review_status": "pending"
+    },
+    {
+      "path": "plugins/account-tools/ui/src/index.html",
+      "candidate_owner": "account-tools",
+      "role": "source",
+      "present": true,
+      "content_sha256": "945b5f944b8124447a4f2568881cb5ce6192b5a9e95979b928c1bb5b017a22ad",
+      "review_fingerprint": "945b5f944b8124447a4f2568881cb5ce6192b5a9e95979b928c1bb5b017a22ad",
+      "review_status": "pending"
+    },
+    {
+      "path": "plugins/account-tools/ui/src/locales/en-accounts.ts",
+      "candidate_owner": "account-tools",
+      "role": "source",
+      "present": true,
+      "content_sha256": "a0bd1fde45bb0add5d2b4c8d9e04b1312da2c046ee96c20caf37c7a3bfb696eb",
+      "review_fingerprint": "a0bd1fde45bb0add5d2b4c8d9e04b1312da2c046ee96c20caf37c7a3bfb696eb",
+      "review_status": "pending"
+    },
+    {
+      "path": "plugins/account-tools/ui/src/locales/en-common.ts",
+      "candidate_owner": "account-tools",
+      "role": "source",
+      "present": true,
+      "content_sha256": "e84d027dd9543089ec54c38ef087df072c05cf0bff1ec09e65a4bd5811546f29",
+      "review_fingerprint": "e84d027dd9543089ec54c38ef087df072c05cf0bff1ec09e65a4bd5811546f29",
+      "review_status": "pending"
+    },
+    {
+      "path": "plugins/account-tools/ui/src/locales/zh-accounts.ts",
+      "candidate_owner": "account-tools",
+      "role": "source",
+      "present": true,
+      "content_sha256": "4d44c9f0ce22b8ad38cdd6754f66348e908650f6bea9ea46be6b91c9fad9fd3e",
+      "review_fingerprint": "4d44c9f0ce22b8ad38cdd6754f66348e908650f6bea9ea46be6b91c9fad9fd3e",
+      "review_status": "pending"
+    },
+    {
+      "path": "plugins/account-tools/ui/src/locales/zh-common.ts",
+      "candidate_owner": "account-tools",
+      "role": "source",
+      "present": true,
+      "content_sha256": "1574b614239910049d4fc8bbde0a7924f38168797e7c93ad413b7946798415b9",
+      "review_fingerprint": "1574b614239910049d4fc8bbde0a7924f38168797e7c93ad413b7946798415b9",
+      "review_status": "pending"
+    },
+    {
+      "path": "plugins/account-tools/ui/src/main.ts",
+      "candidate_owner": "account-tools",
+      "role": "source",
+      "present": true,
+      "content_sha256": "0bf0cf27b194684ab5f1305a6030ffbbeb437fe8d242c16e96d6d0f6f11f2a9d",
+      "review_fingerprint": "0bf0cf27b194684ab5f1305a6030ffbbeb437fe8d242c16e96d6d0f6f11f2a9d",
+      "review_status": "pending"
+    },
+    {
+      "path": "plugins/account-tools/ui/src/useAccountTestPrompt.ts",
+      "candidate_owner": "account-tools",
+      "role": "source",
+      "present": true,
+      "content_sha256": "ad025bae9cd957e45ef91ac454fc599f9f97755efd2b1a393a4608b72ade6d23",
+      "review_fingerprint": "ad025bae9cd957e45ef91ac454fc599f9f97755efd2b1a393a4608b72ade6d23",
       "review_status": "pending"
     },
     {

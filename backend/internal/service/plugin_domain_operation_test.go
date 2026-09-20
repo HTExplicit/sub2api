@@ -81,3 +81,20 @@ func TestPromptDomainSourceContextStillCancelsWhenScopedPluginStops(t *testing.T
 	manager.extensions.Load().runtimes[1].beginDrain()
 	require.ErrorIs(t, ctx.Err(), context.Canceled)
 }
+
+func TestResourceContextSelectsItsDeclaredDomainOwner(t *testing.T) {
+	manager := scopedPromptManager(t)
+	registry := manager.extensions.Load()
+	first := registry.installations[1]
+	other := *first
+	other.ID = 2
+	other.Bindings = []PluginBinding{{Capability: extensionv1.CapabilityRequest, Platform: PlatformOpenAI, AccountType: AccountTypeAPIKey, Enabled: true}}
+	registry.installations[2] = &other
+	input := extensionv1.Invocation{Capability: extensionv1.CapabilityRequest, Operation: "prompt.template"}
+	_, _, err := manager.domainOperationScope(context.Background(), input)
+	require.ErrorIs(t, err, ErrExtensionOperationUnavailable)
+	platform, kind, err := manager.domainOperationScope(WithPluginExecution(context.Background(), first), input)
+	require.NoError(t, err)
+	require.Equal(t, PlatformOpenAI, platform)
+	require.Equal(t, AccountTypeOAuth, kind)
+}

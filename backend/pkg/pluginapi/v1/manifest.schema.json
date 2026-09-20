@@ -72,8 +72,9 @@
           "id": { "type": "string", "minLength": 1 },
           "capability": { "type": "string", "minLength": 1 },
           "config_flag": { "type": "string", "pattern": "^[a-z][a-z0-9_]{0,63}$" },
+          "events": { "type": "array", "maxItems": 16, "items": { "type": "string", "pattern": "^[a-z][a-z0-9_-]{0,63}$" } },
           "assets": { "type": "array", "maxItems": 32, "uniqueItems": true, "items": { "type": "string", "pattern": "^ui/.+\\.woff2$" } },
-          "slot": { "enum": ["admin.page", "admin.settings", "account.actions", "account.details", "account.columns", "account.test", "group.actions", "group.details", "navigation", "theme", "usage.details", "surface"] },
+          "slot": { "enum": ["admin.page", "admin.settings", "account.actions", "account.details", "account.columns", "account.test", "account.test.prompt", "group.actions", "group.details", "navigation", "theme", "usage.details", "surface"] },
           "label": { "type": "object", "minProperties": 1, "additionalProperties": { "type": "string" } },
           "permission": { "type": "string", "minLength": 1 },
           "action": { "type": "string" }, "entrypoint": { "type": "string", "pattern": "^ui/.+" },
@@ -81,15 +82,25 @@
           "fields": {
             "type": "array", "items": {
               "type": "object", "additionalProperties": false,
-              "required": ["key", "kind", "label", "options_source", "default_label"],
+              "required": ["key", "kind", "label"],
               "properties": {
                 "key": { "type": "string", "pattern": "^[a-z][a-z0-9_]{0,63}$" },
-                "kind": { "const": "select" },
+                "kind": { "enum": ["select", "textarea"] },
+                "rows": { "type": "integer", "minimum": 1, "maximum": 12 },
+                "max_length": { "type": "integer", "minimum": 1, "maximum": 65536 },
+                "placeholder": { "type": "string" },
+                "hint": { "type": "object", "additionalProperties": { "type": "string" } },
+                "reset_label": { "type": "object", "additionalProperties": { "type": "string" } },
+                "limit_message": { "type": "object", "additionalProperties": { "type": "string" } },
                 "label": { "type": "object", "additionalProperties": { "type": "string" } },
                 "options_source": { "type": "string", "pattern": "^[a-z][a-z0-9_]{0,63}$" },
                 "default_label": { "type": "object", "additionalProperties": { "type": "string" } },
                 "default_source": { "type": "string", "pattern": "^[a-z][a-z0-9_]{0,63}$" }
-              }
+              },
+              "allOf": [
+                { "if": { "properties": { "kind": { "const": "select" } } }, "then": { "required": ["options_source", "default_label"] } },
+                { "if": { "properties": { "kind": { "const": "textarea" } } }, "then": { "required": ["rows", "max_length"] } }
+              ]
             }
           },
           "account_filter": {

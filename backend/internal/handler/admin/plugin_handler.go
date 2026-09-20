@@ -324,6 +324,7 @@ func (h *PluginHandler) createUISession(c *gin.Context, permission string) {
 		"ui_bridge_version": 1,
 		"expires_at":        session.Expires,
 		"package_sha256":    session.PackageSHA256,
+		"plugin_key":        session.PluginKey,
 		"permission":        session.Permission,
 	})
 }

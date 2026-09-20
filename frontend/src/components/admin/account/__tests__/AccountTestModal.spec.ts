@@ -1,5 +1,9 @@
 import { flushPromises, mount } from '@vue/test-utils'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { createPinia } from 'pinia'
+import { usePluginExtensions } from '@/stores/pluginExtensions'
+import manifest from '../../../../../../plugins/account-tools/manifest.source.json'
+import type { PluginContribution } from '@/api/admin/plugins'
 import AccountTestModal from '../AccountTestModal.vue'
 
 const { getAvailableModels, copyToClipboard } = vi.hoisted(() => ({
@@ -69,12 +73,17 @@ function mountModal(account: Record<string, unknown> = {
   type: 'apikey',
   status: 'active'
 }) {
+  const pinia = createPinia()
+  const registry = usePluginExtensions(pinia)
+  registry.loaded = true
+  registry.items = manifest.contributions.map(item => ({ ...item, plugin_id: 7, available: true })) as PluginContribution[]
   return mount(AccountTestModal, {
     props: {
       show: false,
       account
     } as any,
     global: {
+      plugins: [pinia],
       stubs: {
         BaseDialog: { template: '<div><slot /><slot name="footer" /></div>' },
         Select: { template: '<div class="select-stub"></div>' },

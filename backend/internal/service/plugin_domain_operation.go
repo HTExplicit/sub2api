@@ -41,14 +41,26 @@ func bindProcessDomainExtensionContext(ctx context.Context, in extensionv1.Invoc
 	return bound, cancel, nil
 }
 
-func (m *PluginManager) domainOperationScope(in extensionv1.Invocation) (string, string, error) {
+func (m *PluginManager) domainOperationScope(ctx context.Context, in extensionv1.Invocation) (string, string, error) {
 	registry := m.extensions.Load()
 	if registry == nil || registry.unavailable != "" {
 		return "", "", ErrExtensionOperationUnavailable
 	}
 	var owner int64
+	var contextualOwner int64
+	if execution, ok := PluginExecutionFromContext(ctx); ok {
+		if candidate := registry.installations[execution.ID]; candidate != nil && slices.Contains(candidate.Manifest.Operations[in.Capability], in.Operation) {
+			if candidate.RuntimeGeneration != execution.Generation {
+				return "", "", ErrExtensionOperationUnavailable
+			}
+			contextualOwner = execution.ID
+		}
+	}
 	var platform, accountType string
 	for id, installation := range registry.installations {
+		if contextualOwner != 0 && contextualOwner != id {
+			continue
+		}
 		if !slices.Contains(installation.Manifest.Operations[in.Capability], in.Operation) {
 			continue
 		}
@@ -74,7 +86,7 @@ func (m *PluginManager) domainOperationScope(in extensionv1.Invocation) (string,
 }
 
 func (m *PluginManager) InvokeDomainOperation(ctx context.Context, in extensionv1.Invocation, cached bool) (extensionv1.Result, error) {
-	platform, accountType, err := m.domainOperationScope(in)
+	platform, accountType, err := m.domainOperationScope(ctx, in)
 	if err != nil {
 		return extensionv1.Result{}, err
 	}
@@ -85,7 +97,7 @@ func (m *PluginManager) InvokeDomainOperation(ctx context.Context, in extensionv
 }
 
 func (m *PluginManager) BindDomainOperationContext(ctx context.Context, in extensionv1.Invocation) (context.Context, context.CancelFunc, error) {
-	platform, accountType, err := m.domainOperationScope(in)
+	platform, accountType, err := m.domainOperationScope(ctx, in)
 	if err != nil {
 		return nil, nil, err
 	}

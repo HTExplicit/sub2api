@@ -40,6 +40,7 @@ type Dependency struct {
 }
 
 type Contribution struct {
+	Events        []string          `json:"events,omitempty"`
 	Capability    string            `json:"capability,omitempty"`
 	Assets        []string          `json:"assets,omitempty"`
 	ConfigFlag    string            `json:"config_flag,omitempty"`
@@ -58,9 +59,15 @@ type FormField struct {
 	Key           string            `json:"key"`
 	Kind          string            `json:"kind"`
 	Label         map[string]string `json:"label"`
-	OptionsSource string            `json:"options_source"`
-	DefaultLabel  map[string]string `json:"default_label"`
+	OptionsSource string            `json:"options_source,omitempty"`
+	DefaultLabel  map[string]string `json:"default_label,omitempty"`
 	DefaultSource string            `json:"default_source,omitempty"`
+	Placeholder   string            `json:"placeholder,omitempty"`
+	Rows          int               `json:"rows,omitempty"`
+	MaxLength     int               `json:"max_length,omitempty"`
+	Hint          map[string]string `json:"hint,omitempty"`
+	ResetLabel    map[string]string `json:"reset_label,omitempty"`
+	LimitMessage  map[string]string `json:"limit_message,omitempty"`
 }
 
 type AccountFilter struct {
@@ -90,7 +97,7 @@ func AccountMatchesFilter(account Account, filter *AccountFilter) bool {
 
 var slots = map[string]bool{
 	"admin.page": true, "admin.settings": true, "account.actions": true,
-	"account.details": true, "account.columns": true, "account.test": true,
+	"account.details": true, "account.columns": true, "account.test": true, "account.test.prompt": true,
 	"group.actions": true, "group.details": true, "navigation": true,
 	"theme": true, "usage.details": true,
 	"surface": true,

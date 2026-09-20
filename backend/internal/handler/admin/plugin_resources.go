@@ -1,7 +1,10 @@
 package admin
 
 import (
+	"bytes"
+	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
 	"sort"
 	"strconv"
@@ -55,8 +58,65 @@ func (h *PluginHandler) RegisterResource(descriptor extensionv1.ResourceDescript
 		}
 		defer release()
 		c.Request = c.Request.WithContext(ctx)
+		ids, filtered, err := resourceAccountTargets(c, descriptor)
+		if err != nil {
+			response.BadRequest(c, err.Error())
+			c.Abort()
+			return
+		}
+		if err = h.manager.ValidateResourceAccounts(ctx, descriptor.Capability, ids, filtered); err != nil {
+			response.Error(c, http.StatusForbidden, err.Error())
+			c.Abort()
+			return
+		}
 		c.Next()
 	}
+}
+
+func resourceAccountTargets(c *gin.Context, descriptor extensionv1.ResourceDescriptor) ([]int64, bool, error) {
+	var ids []int64
+	if descriptor.AccountParam != "" {
+		id, err := strconv.ParseInt(c.Param(descriptor.AccountParam), 10, 64)
+		if err != nil || id <= 0 {
+			return nil, false, errors.New("invalid resource account")
+		}
+		ids = append(ids, id)
+	}
+	if descriptor.AccountBodyField == "" && descriptor.AccountItemsField == "" && descriptor.FilterField == "" {
+		return ids, false, nil
+	}
+	raw, err := io.ReadAll(io.LimitReader(c.Request.Body, 4*1024*1024+1))
+	if err != nil || len(raw) > 4*1024*1024 {
+		return nil, false, errors.New("resource account selection exceeds limit")
+	}
+	c.Request.Body = io.NopCloser(bytes.NewReader(raw))
+	var body map[string]json.RawMessage
+	if json.Unmarshal(raw, &body) != nil {
+		return nil, false, errors.New("invalid resource selection")
+	}
+	if value := body[descriptor.AccountBodyField]; descriptor.AccountBodyField != "" && len(value) > 0 {
+		var direct []int64
+		if json.Unmarshal(value, &direct) != nil {
+			return nil, false, errors.New("invalid resource account list")
+		}
+		ids = append(ids, direct...)
+	}
+	if value := body[descriptor.AccountItemsField]; descriptor.AccountItemsField != "" && len(value) > 0 {
+		var items []struct {
+			AccountID int64 `json:"account_id"`
+		}
+		if json.Unmarshal(value, &items) != nil {
+			return nil, false, errors.New("invalid resource account items")
+		}
+		for _, item := range items {
+			ids = append(ids, item.AccountID)
+		}
+	}
+	if len(ids) > 3200 {
+		return nil, false, errors.New("too many resource accounts")
+	}
+	filter := body[descriptor.FilterField]
+	return ids, descriptor.FilterField != "" && len(filter) > 0 && string(filter) != "null", nil
 }
 
 func (h *PluginHandler) Resources(c *gin.Context)     { h.listResources(c, "admin") }

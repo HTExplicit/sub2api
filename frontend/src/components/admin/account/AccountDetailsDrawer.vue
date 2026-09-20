@@ -73,46 +73,9 @@
             </p>
           </section>
 
-          <ExtensionSurface name="account-taxonomy">
-          <section class="border-b border-gray-100 px-4 py-4 dark:border-dark-700 sm:px-5">
-            <div class="mb-3 flex items-center justify-between gap-3">
-              <h3 class="text-xs font-semibold uppercase text-gray-500 dark:text-dark-300">{{ t('admin.accounts.classification') }}</h3>
-              <button
-                type="button"
-                class="btn btn-primary px-2.5 py-1.5 text-xs"
-                :disabled="taxonomySaving || !taxonomyDirty"
-                @click="saveTaxonomy"
-              >
-                {{ taxonomySaving ? t('common.saving') : t('common.save') }}
-              </button>
-            </div>
-            <label class="block text-xs font-medium text-gray-500 dark:text-dark-300">
-              {{ t('admin.accounts.folder') }}
-              <select v-model="folderID" class="input mt-1 h-9 py-1.5 text-sm">
-                <option value="">{{ t('admin.accounts.folderUncategorized') }}</option>
-                <option v-for="folder in folders" :key="folder.id" :value="String(folder.id)">{{ folder.name }}</option>
-              </select>
-            </label>
-            <div class="mt-3">
-              <div class="text-xs font-medium text-gray-500 dark:text-dark-300">{{ t('admin.accounts.tags') }}</div>
-              <div class="mt-1.5 flex flex-wrap gap-1.5">
-                <label
-                  v-for="tag in tags"
-                  :key="tag.id"
-                  class="inline-flex cursor-pointer items-center gap-1.5 rounded-none border px-2 py-1 text-xs transition-colors"
-                  :class="tagIDs.includes(tag.id)
-                    ? 'border-primary-300 bg-primary-50 text-primary-700 dark:border-primary-700 dark:bg-primary-900/20 dark:text-primary-300'
-                    : 'border-gray-200 text-gray-600 hover:bg-gray-50 dark:border-dark-700 dark:text-gray-300 dark:hover:bg-dark-800'"
-                >
-                  <input v-model="tagIDs" type="checkbox" class="sr-only" :value="tag.id" />
-                  <Icon v-if="tagIDs.includes(tag.id)" name="check" size="xs" />
-                  <span>{{ tag.name }}</span>
-                </label>
-                <span v-if="tags.length === 0" class="text-xs text-gray-400">{{ t('admin.accounts.noTags') }}</span>
-              </div>
-            </div>
-          </section>
-          </ExtensionSurface>
+          <ExtensionWidget name="account-taxonomy-edit"
+            :context="{ account_id: account.id, view_props: { accountId: account.id, folderId: account.management_folder?.id, tagIds: (account.tags || []).map(tag => tag.id), folders, tags } }"
+            @event="name => { if (name === 'changed') refreshTaxonomyAccount() }" />
 
           <section class="border-b border-gray-100 px-4 py-4 dark:border-dark-700 sm:px-5">
             <h3 class="mb-3 text-xs font-semibold uppercase text-gray-500 dark:text-dark-300">{{ t('admin.accounts.capacityAndUsage') }}</h3>
@@ -191,8 +154,8 @@
 </template>
 
 <script setup lang="ts">
-import ExtensionSurface from '@/components/plugins/ExtensionSurface.vue'
-import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
+import ExtensionWidget from '@/components/plugins/ExtensionWidget.vue'
+import { computed, onMounted, onUnmounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { adminAPI } from '@/api/admin'
 import { useAppStore } from '@/stores/app'
@@ -228,24 +191,6 @@ const emit = defineEmits<{
 
 const { t } = useI18n()
 const appStore = useAppStore()
-const folderID = ref('')
-const tagIDs = ref<number[]>([])
-const taxonomySaving = ref(false)
-
-const resetTaxonomy = () => {
-  folderID.value = props.account?.management_folder ? String(props.account.management_folder.id) : ''
-  tagIDs.value = (props.account?.tags || []).map(tag => tag.id)
-}
-
-watch(() => props.account?.id, resetTaxonomy, { immediate: true })
-
-const taxonomyDirty = computed(() => {
-  const originalFolder = props.account?.management_folder ? String(props.account.management_folder.id) : ''
-  const originalTags = (props.account?.tags || []).map(tag => tag.id).sort((a, b) => a - b)
-  const nextTags = [...tagIDs.value].sort((a, b) => a - b)
-  return folderID.value !== originalFolder || JSON.stringify(originalTags) !== JSON.stringify(nextTags)
-})
-
 const displayEmail = computed(() => String(
   props.account?.extra?.email_address || props.account?.extra?.email || props.account?.credentials?.email || props.account?.parent_email || ''
 ))
@@ -273,22 +218,13 @@ const formatScore = (value: unknown) => {
   return Number.isFinite(parsed) ? parsed.toFixed(6).replace(/\.?0+$/, '') : '-'
 }
 
-const saveTaxonomy = async () => {
-  if (!props.account || taxonomySaving.value || !taxonomyDirty.value) return
-  taxonomySaving.value = true
+const refreshTaxonomyAccount = async () => {
+  if (!props.account) return
+  const id = props.account.id
   try {
-    const updated = await adminAPI.accounts.setTaxonomy(
-      props.account.id,
-      folderID.value ? Number(folderID.value) : null,
-      tagIDs.value
-    )
-    emit('updated', updated)
-    appStore.showSuccess(t('admin.accounts.taxonomySaved'))
-  } catch (error: any) {
-    appStore.showError(error?.message || t('common.unknownError'))
-  } finally {
-    taxonomySaving.value = false
-  }
+    const updated = await adminAPI.accounts.getById(id)
+    if (props.account?.id === id) emit('updated', updated)
+  } catch (error: any) { appStore.showError(error?.message || t('common.unknownError')) }
 }
 
 const handleEscape = (event: KeyboardEvent) => {

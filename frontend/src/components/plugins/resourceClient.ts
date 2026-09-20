@@ -36,10 +36,12 @@ export function resourceRequest(descriptor: PluginResourceDescriptor, input: Res
   return { url, method: descriptor.method, data, params: input.query }
 }
 
-export async function callPluginResource(pluginID: number, packageSHA: string, descriptor: PluginResourceDescriptor, input: ResourceInput) {
+export async function callPluginResource(pluginID: number, packageSHA: string, descriptor: PluginResourceDescriptor, input: ResourceInput, signal?: AbortSignal) {
   const request = resourceRequest(descriptor, input)
-  const { data } = await apiClient.request({ ...request, baseURL: '', headers: {
+  if (input.operation_key !== undefined && !/^[a-zA-Z0-9:_-]{1,160}$/.test(input.operation_key)) throw new Error('Invalid operation identity')
+  const { data } = await apiClient.request({ ...request, signal, baseURL: '', headers: {
     'X-Sub2API-Plugin': String(pluginID), 'X-Sub2API-Plugin-Package': packageSHA,
+    ...(input.operation_key ? { 'Idempotency-Key': input.operation_key } : {}),
     ...(request.data instanceof FormData ? { 'Content-Type': 'multipart/form-data' } : {})
   } })
   return data

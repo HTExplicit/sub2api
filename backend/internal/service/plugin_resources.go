@@ -81,6 +81,62 @@ func pluginDeclaresResource(installation *PluginInstallation, resource extension
 	return false
 }
 
+func (m *PluginManager) ValidateResourceAccounts(ctx context.Context, capability string, ids []int64, filtered bool) error {
+	execution, ok := PluginExecutionFromContext(ctx)
+	if !ok {
+		return ErrExtensionOperationUnavailable
+	}
+	installation, err := m.repo.GetByID(ctx, execution.ID)
+	if err != nil || installation.RuntimeGeneration != execution.Generation || installation.State == PluginStateUpdating {
+		return ErrExtensionOperationUnavailable
+	}
+	for _, id := range ids {
+		if id <= 0 {
+			return errors.New("invalid resource account identifier")
+		}
+	}
+	if filtered {
+		for _, binding := range installation.Bindings {
+			if binding.Enabled && binding.Capability == capability && binding.Platform == "*" && binding.AccountType == "*" && binding.RolloutPercent == 100 {
+				return nil
+			}
+		}
+		return errors.New("filtered account operations require a binding covering all accounts; select explicit accounts instead")
+	}
+	if len(ids) == 0 {
+		return nil
+	}
+	directory, ok := m.accountDirectory.(PluginExtensionAccountDirectory)
+	if !ok {
+		return ErrExtensionOperationUnavailable
+	}
+	seen := map[int64]bool{}
+	for _, id := range ids {
+		if id <= 0 {
+			return errors.New("invalid resource account identifier")
+		}
+		if seen[id] {
+			continue
+		}
+		seen[id] = true
+		account, err := directory.ReadExtensionAccount(ctx, id)
+		if err != nil || account == nil || account.ID != id {
+			return errors.New("resource account unavailable")
+		}
+		allowed := false
+		for _, binding := range installation.Bindings {
+			if binding.Enabled && binding.Capability == capability && pluginScopeMatches(binding.Platform, account.Platform) && pluginScopeMatches(binding.AccountType, account.Type) && int(stablePluginBucket(id)) < binding.RolloutPercent {
+				allowed = true
+				break
+			}
+		}
+		if !allowed {
+			return errors.New("account is outside the enabled plugin scope")
+		}
+	}
+	return nil
+}
+
 func (m *PluginManager) ResourceDescriptors(ctx context.Context, id int64, permission string, registered []extensionv1.ResourceDescriptor) ([]extensionv1.ResourceDescriptor, error) {
 	installation, err := m.repo.GetByID(ctx, id)
 	if err != nil {

@@ -16,7 +16,13 @@ func accountToolsOperation(ctx context.Context, platform, accountType, operation
 	}
 	call, cancel := context.WithTimeout(ctx, 2*time.Second)
 	defer cancel()
-	result, err := invokeProcessExtension(call, platform, accountType, extensionv1.Invocation{Capability: extensionv1.CapabilityAdmin, Operation: operation, Payload: raw})
+	invocation := extensionv1.Invocation{Capability: extensionv1.CapabilityAdmin, Operation: operation, Payload: raw}
+	var result extensionv1.Result
+	if platform == "*" && accountType == "*" {
+		result, err = invokeProcessDomainExtension(call, invocation, false)
+	} else {
+		result, err = invokeProcessExtension(call, platform, accountType, invocation)
+	}
 	if err != nil {
 		return infraerrors.New(503, "ACCOUNT_TOOLS_UNAVAILABLE", "account tools plugin is disabled or unavailable")
 	}

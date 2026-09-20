@@ -2,9 +2,16 @@
   <div v-for="entry in displayed" :key="entry.identity" class="mt-3">
     <label class="flex flex-col gap-1.5 text-sm font-medium">
       {{ label(entry.field.label) }}
-      <Select :model-value="values[entry.field.key] || ''" :options="options(entry.field)" :disabled="disabled || !entry.available"
+      <Select v-if="entry.field.kind === 'select'" :model-value="values[entry.field.key] || ''" :options="options(entry.field)" :disabled="disabled || !entry.available"
         @update:model-value="value => update(entry.field.key, typeof value === 'string' ? value : '')" />
+      <textarea v-else class="input w-full" :rows="entry.field.rows" :placeholder="entry.field.placeholder" :value="values[entry.field.key] || ''" :disabled="disabled || !entry.available"
+        @input="update(entry.field.key, ($event.target as HTMLTextAreaElement).value)" />
     </label>
+    <div v-if="entry.field.kind === 'textarea'" class="mt-1 flex justify-between gap-3 text-xs text-muted">
+      <span>{{ label(entry.field.hint || {}) }} {{ textLength(entry.field) }}/{{ entry.field.max_length }}</span>
+      <button v-if="entry.field.reset_label" type="button" :disabled="disabled || !entry.available" @click="update(entry.field.key, '')">{{ label(entry.field.reset_label) }}</button>
+    </div>
+    <p v-if="entry.field.kind === 'textarea' && textLength(entry.field) > (entry.field.max_length || 0)" role="alert" class="text-sm text-red-600">{{ label(entry.field.limit_message || {}) }}</p>
     <p v-if="!entry.available" role="status" class="mt-1 text-xs text-muted">{{ t('admin.plugins.extensionUnavailable') }}</p>
   </div>
 </template>
@@ -20,28 +27,29 @@ const props = withDefaults(defineProps<{ name: string; values: Record<string, st
 const emit = defineEmits<{ 'update:values': [values: Record<string, string>]; validity: [valid: boolean] }>()
 const { t, locale } = useI18n()
 const registry = usePluginExtensions()
-const managed = new Set<string>()
+const managed = new Map<string, PluginFormField['kind']>()
 const declared = computed(() => registry.items.filter(item => item.slot === props.name && item.permission === 'admin').flatMap(item => (item.fields || []).map(field => ({ field, available: item.available, identity: `${item.plugin_id}:${item.id}:${field.key}` }))))
 function label(labels: Record<string, string>) { return labels[locale?.value || 'zh'] || labels[(locale?.value || 'zh').split('-')[0]] || labels.zh || labels.en || '' }
-function levels(field: PluginFormField) { const value = Object.prototype.hasOwnProperty.call(props.context, field.options_source) ? props.context[field.options_source] : null; return Array.isArray(value) ? [...new Set(value.filter((item): item is string => typeof item === 'string'))] : [] }
+function levels(field: PluginFormField) { const source = field.options_source; const value = source && Object.prototype.hasOwnProperty.call(props.context, source) ? props.context[source] : null; return Array.isArray(value) ? [...new Set(value.filter((item): item is string => typeof item === 'string'))] : [] }
 function options(field: PluginFormField) {
   const defaultValue = field.default_source && Object.prototype.hasOwnProperty.call(props.context, field.default_source) ? props.context[field.default_source] : null
-  const defaultLabel = label(field.default_label) + (typeof defaultValue === 'string' && defaultValue ? ` (${defaultValue})` : '')
+  const defaultLabel = label(field.default_label || {}) + (typeof defaultValue === 'string' && defaultValue ? ` (${defaultValue})` : '')
   return [{ value: '', label: defaultLabel }, ...levels(field).map(value => ({ value, label: value }))]
 }
-const displayed = computed(() => declared.value.filter(entry => levels(entry.field).length > 0))
+function textLength(field: PluginFormField) { return Array.from(props.values[field.key] || '').length }
+const displayed = computed(() => declared.value.filter(entry => entry.field.kind === 'textarea' || levels(entry.field).length > 0))
 function update(key: string, value: string) { emit('update:values', { ...props.values, [key]: value }) }
 watch([declared, () => props.context, () => props.values], () => {
   const fields = new Map(declared.value.map(entry => [entry.field.key, entry]))
-  for (const key of fields.keys()) managed.add(key)
+  for (const [key, entry] of fields) managed.set(key, entry.field.kind)
   const values = { ...props.values }
   let changed = false
-  for (const key of managed) {
+  for (const [key, kind] of managed) {
     const entry = fields.get(key)
-    if (values[key] && (!entry || !levels(entry.field).includes(values[key]))) { values[key] = ''; changed = true }
+    if (kind === 'select' && values[key] && (!entry || !levels(entry.field).includes(values[key]))) { values[key] = ''; changed = true }
   }
   if (changed) emit('update:values', values)
-  emit('validity', declared.value.every(entry => !values[entry.field.key] || entry.available))
+  emit('validity', declared.value.every(entry => (!values[entry.field.key] || entry.available) && (entry.field.kind !== 'textarea' || textLength(entry.field) <= (entry.field.max_length || 0))))
 }, { immediate: true, deep: true })
 onMounted(() => { if (!registry.loaded) void registry.refresh() })
 </script>

@@ -150,7 +150,10 @@ jobs:
             src/components/plugins/__tests__/ExtensionSlot.spec.ts \
             src/components/plugins/__tests__/ExtensionFields.spec.ts \
             src/components/plugins/__tests__/resourceClient.spec.ts \
-            src/components/admin/account/__tests__/BatchTestAccountModal.spec.ts \
+            ../plugins/account-tools/ui/src/__tests__/BatchTestAccountModal.spec.ts \
+            ../plugins/account-tools/ui/src/__tests__/AccountFolderBar.spec.ts \
+            ../plugins/account-tools/ui/src/__tests__/AccountTaxonomyManager.spec.ts \
+            ../plugins/account-tools/ui/src/__tests__/AccountBulkTaxonomyModal.spec.ts \
             src/components/admin/account/__tests__/AccountBulkActionsBar.spec.ts \
             src/components/admin/account/__tests__/AccountActionMenu.spark_shadow.spec.ts \
             src/components/admin/account/__tests__/AccountConsoleFilters.spec.ts \

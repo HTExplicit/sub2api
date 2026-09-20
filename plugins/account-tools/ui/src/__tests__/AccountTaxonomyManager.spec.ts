@@ -3,14 +3,14 @@ import { flushPromises, mount } from '@vue/test-utils'
 import AccountTaxonomyManager from '../AccountTaxonomyManager.vue'
 
 const { reorderFolders, showError } = vi.hoisted(() => ({ reorderFolders: vi.fn(), showError: vi.fn() }))
-vi.mock('@/api/admin', () => ({
+vi.mock('../api', () => ({
   adminAPI: { accounts: {
     reorderFolders,
     reorderTags: vi.fn(),
     createFolder: vi.fn(), createTag: vi.fn(), updateFolder: vi.fn(), updateTag: vi.fn(), deleteFolder: vi.fn(), deleteTag: vi.fn()
   } }
 }))
-vi.mock('@/stores/app', () => ({ useAppStore: () => ({ showError }) }))
+vi.mock('@sub2api/plugin-ui', async () => ({ ...await vi.importActual<typeof import('@sub2api/plugin-ui')>('@sub2api/plugin-ui'), useNotifications: () => ({ showError }) }))
 vi.mock('vue-i18n', () => ({ useI18n: () => ({ t: (key: string) => key }) }))
 
 const BaseDialogStub = { props: ['show'], template: '<div v-if="show"><slot /><slot name="footer" /></div>' }
@@ -43,4 +43,3 @@ describe('AccountTaxonomyManager', () => {
     expect(showError).toHaveBeenCalled()
   })
 })
-vi.mock('@/components/plugins/ExtensionSurface.vue', () => ({ default: { template: '<div><slot /></div>' } }))
