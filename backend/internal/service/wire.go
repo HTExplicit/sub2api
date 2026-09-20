@@ -531,11 +531,10 @@ func ProvideOpenAICodexVersionSyncService(
 	return svc
 }
 
-// ProvideCodexClientIdentityBackfillService creates and starts the one-shot backfill that
+// ProvideCodexClientIdentityBackfillService creates the one-shot backfill that
 // persists a Codex client identity for every existing OpenAI OAuth-like account.
 func ProvideCodexClientIdentityBackfillService(accountRepo AccountRepository) *CodexClientIdentityBackfillService {
 	svc := NewCodexClientIdentityBackfillService(accountRepo)
-	svc.Start()
 	return svc
 }
 

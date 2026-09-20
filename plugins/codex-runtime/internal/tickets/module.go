@@ -17,6 +17,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/HTExplicit/sub2api-plugins/codexruntime/profile"
 	proxytransport "github.com/Wei-Shaw/sub2api/pkg/extensionapi/proxy"
 	extensionv1 "github.com/Wei-Shaw/sub2api/pkg/extensionapi/v1"
 )
@@ -188,6 +189,9 @@ type Outcome struct {
 }
 
 func (m *Module) Invoke(ctx context.Context, in extensionv1.Invocation) (extensionv1.Result, error) {
+	if in.Capability == extensionv1.CapabilityRequest && strings.HasPrefix(in.Operation, "codex.identity.") {
+		return profile.Invoke(ctx, in)
+	}
 	m.mu.RLock()
 	host, cfg, epoch := m.host, m.config, m.epoch
 	m.mu.RUnlock()

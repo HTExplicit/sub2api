@@ -70,7 +70,10 @@ func TestCodexIdentitySnapshotIsSecretFreeAndConsistent(t *testing.T) {
 	t.Cleanup(func() { SetCodexForceCLIEnabled(false) })
 	account.Credentials["user_agent"] = "codex_cli_rs/0.150.0 (Windows 10.0.19045; x86_64) unknown"
 	SetCodexForceCLIEnabled(true)
-	require.Equal(t, "canonical", resolveCodexIdentitySnapshot(account, account, codexAccountIdentityOverrideUA(account), true).IdentitySource)
+	forced := resolveCodexIdentitySnapshot(account, account, codexAccountIdentityOverrideUA(account), true)
+	require.Equal(t, "account", forced.IdentitySource)
+	require.Equal(t, deriveCodexClientIdentity(seed).UserAgent(forced.Version), forced.UserAgent,
+		"ForceCodexCLI drops the custom UA while retaining the account's derived TUI profile")
 }
 
 // 账号级身份：由种子确定性派生，UA 三处版本同源，形态与 codex-rs 的

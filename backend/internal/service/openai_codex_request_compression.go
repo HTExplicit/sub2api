@@ -96,6 +96,11 @@ func (s *OpenAIGatewayService) prepareOpenAICodexWireRequest(req *http.Request, 
 // prepareOpenAICodexWireRequestWithConfig 是不依赖网关服务接收者的同一实现：账号测试等持有
 // 配置但不持有网关服务的发送边界复用它，开关取自传入配置（nil 或关闭时原样返回）。
 func prepareOpenAICodexWireRequestWithConfig(cfg *config.Config, req *http.Request, account *Account) (*http.Request, error) {
+	if req != nil {
+		if err := requireCodexIdentityPolicy(req.Context(), account); err != nil {
+			return nil, err
+		}
+	}
 	if cfg == nil || !cfg.Gateway.OpenAICodexRequestZstd {
 		return req, nil
 	}
@@ -105,6 +110,11 @@ func prepareOpenAICodexWireRequestWithConfig(cfg *config.Config, req *http.Reque
 // prepareOpenAICodexWireRequestSnapshot 与上面语义相同，但开关取自进程级快照，供拿不到配置的
 // 发送边界（用量探针）使用。
 func prepareOpenAICodexWireRequestSnapshot(req *http.Request, account *Account) (*http.Request, error) {
+	if req != nil {
+		if err := requireCodexIdentityPolicy(req.Context(), account); err != nil {
+			return nil, err
+		}
+	}
 	if !codexRequestZstd.Load() {
 		return req, nil
 	}

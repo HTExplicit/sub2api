@@ -920,7 +920,9 @@ func (s *OpenAIGatewayService) buildUpstreamRequestOpenAIPassthrough(
 	// 终态收口：透传路径的 OAuth 与非透传完全一致，同样强制统一为该账号的 Codex TUI 身份
 	// （User-Agent / originator / version 同源自洽），客户端自报身份不会到达上游。
 	if account.UsesOpenAICodexProtocol() {
-		enforceCodexIdentityHeadersForAccount(req.Header, codexAccountIdentitySource(c, account), s.codexIdentityOverrideUA(account))
+		if err := enforceCodexIdentityHeadersForAccountContext(req.Context(), req.Header, codexAccountIdentitySource(c, account), s.codexIdentityOverrideUA(account)); err != nil {
+			return nil, err
+		}
 	}
 
 	if req.Header.Get("content-type") == "" {

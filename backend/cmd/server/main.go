@@ -225,6 +225,9 @@ func runMainServer() {
 	if app.PromptDomain != nil {
 		app.PromptDomain.Start(context.Background())
 	}
+	if app.CodexIdentity != nil {
+		app.CodexIdentity.Start()
+	}
 	if app.AccountJobs != nil {
 		if err := app.AccountJobs.Start(context.Background()); err != nil {
 			log.Printf("Account jobs could not start: %v", err)

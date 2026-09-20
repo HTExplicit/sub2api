@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"testing"
 
@@ -9,6 +10,25 @@ import (
 	extensionv1 "github.com/Wei-Shaw/sub2api/pkg/extensionapi/v1"
 	"github.com/stretchr/testify/require"
 )
+
+func TestRequestExtensionCannotReplaceHostCredentialsOrFraming(t *testing.T) {
+	for _, bad := range []map[string]string{
+		{"Authorization": "replacement"}, {"ChatGPT-Account-ID": "replacement"},
+		{"Content-Length": "0"}, {"OpenAI-Project": "replacement"},
+		{"X-Invalid": "value\r\ninjected: true"}, {"X-Fixture": "one", "x-fixture": "two"},
+	} {
+		t.Run(func() string { raw, _ := json.Marshal(bad); return string(raw) }(), func(t *testing.T) {
+			bad["X-Allowed"] = "must-not-partially-apply"
+			manager := ticketTestManager(t, config.OpenAICodexTicketConfig{}, func(extensionv1.Invocation) (extensionv1.Result, error) {
+				raw, _ := json.Marshal(map[string]any{"headers": bad})
+				return extensionv1.Result{Payload: raw}, nil
+			})
+			headers := http.Header{"Authorization": []string{"Bearer host-fixture"}}
+			require.Error(t, manager.ApplyRequestHeaders(context.Background(), ticketTestAccount(41), "gpt-6-astra", headers))
+			require.Equal(t, http.Header{"Authorization": []string{"Bearer host-fixture"}}, headers)
+		})
+	}
+}
 
 func TestNamedRequestOperationsDoNotReceiveAnotherDomainsHeaders(t *testing.T) {
 	firstCalls, secondCalls := 0, 0

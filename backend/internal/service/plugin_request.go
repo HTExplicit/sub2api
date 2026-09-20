@@ -7,9 +7,11 @@ import (
 	"net/http"
 	"slices"
 	"sort"
+	"strings"
 	"time"
 
 	extensionv1 "github.com/Wei-Shaw/sub2api/pkg/extensionapi/v1"
+	"golang.org/x/net/http/httpguts"
 )
 
 func (m *PluginManager) ApplyRequestHeaders(ctx context.Context, account *Account, model string, headers http.Header) error {
@@ -32,6 +34,7 @@ func (m *PluginManager) ApplyRequestHeaders(ctx context.Context, account *Accoun
 	if err != nil {
 		return err
 	}
+	projected := headers.Clone()
 	for _, id := range ids {
 		result, err := m.InvokeExtension(ctx, id, account.Platform, account.Type, extensionv1.Invocation{Capability: extensionv1.CapabilityRequest, Operation: "inject", Payload: raw})
 		if err != nil {
@@ -46,9 +49,26 @@ func (m *PluginManager) ApplyRequestHeaders(ctx context.Context, account *Accoun
 		if json.Unmarshal(result.Payload, &changes) != nil {
 			return errors.New("invalid plugin header result")
 		}
+		seen := map[string]bool{}
 		for name, value := range changes.Headers {
-			headers.Set(name, value)
+			lower := strings.ToLower(name)
+			// Credentials, account routing, tenant correlation and HTTP framing
+			// stay host-owned. Per-request ticket material is the explicit exception
+			// to the ordinary header-override policy.
+			blocked := isHeaderOverrideBlockedName(lower) && lower != "x-codex-turn-state"
+			switch lower {
+			case "openai-organization", "openai-project", "api-key", "set-cookie":
+				blocked = true
+			}
+			if blocked || seen[lower] || !httpguts.ValidHeaderFieldName(name) || !httpguts.ValidHeaderFieldValue(value) {
+				return errors.New("plugin returned a protected or invalid request header")
+			}
+			seen[lower] = true
+			projected.Set(name, value)
 		}
+	}
+	for name, values := range projected {
+		headers[name] = values
 	}
 	return nil
 }

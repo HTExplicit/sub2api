@@ -91,13 +91,12 @@ func resolveCodexIdentitySnapshot(routed, source *Account, overrideUA string, zs
 	snapshot.Originator = identity.originator
 	snapshot.Version = identity.version
 	snapshot.IdentitySource = "canonical"
-	if snapshot.ForceCodexCLI {
-		// ForceCodexCLI deliberately suppresses account-level UA selection. The
-		// effective identity is therefore reported as canonical even when the
-		// account has a persisted Codex profile.
-		snapshot.IdentitySource = "canonical"
-	} else if strings.TrimSpace(overrideUA) != "" && identity.userAgent == overrideUA {
-		snapshot.IdentitySource = "override_ua"
+	if strings.TrimSpace(overrideUA) != "" {
+		// The selector rebuilds the effective version. Comparing complete UA
+		// strings would mislabel a valid override carrying an older version.
+		if _, _, ok := openai.PairCodexClientIdentity(overrideUA); ok {
+			snapshot.IdentitySource = "override_ua"
+		}
 	} else if source != nil {
 		if accountIdentity, ok := source.CodexClientIdentity(); ok && accountIdentity.UserAgent(identity.version) == identity.userAgent {
 			snapshot.IdentitySource = "account"

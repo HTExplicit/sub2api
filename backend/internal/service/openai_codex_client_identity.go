@@ -2,14 +2,14 @@ package service
 
 import (
 	"context"
-	"crypto/sha256"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
-	"regexp"
-	"strings"
 	"sync"
 	"time"
+
+	extensionv1 "github.com/Wei-Shaw/sub2api/pkg/extensionapi/v1"
 )
 
 // CodexClientIdentityExtraKey 持久化在 accounts.extra 中的每账号 Codex 客户端身份。
@@ -20,166 +20,37 @@ const CodexClientIdentityExtraKey = "codex_client_identity"
 
 const codexClientIdentitySchemaVersion = 1
 
-// codexClientIdentity 描述一台"运行 Codex TUI 的机器"：操作系统、系统版本、架构、
-// 终端以及与该系统配套的 sandbox 标签。字符串形态严格对齐 codex-rs 的
-// os_info / terminal-detection / sandbox_tags 输出，保证 UA 与 turn metadata 自洽。
-type codexClientIdentity struct {
-	Version     int    `json:"v"`
-	OSType      string `json:"os_type"`
-	OSVersion   string `json:"os_version"`
-	Arch        string `json:"arch"`
-	Terminal    string `json:"terminal"`
-	Sandbox     string `json:"sandbox"`
-	GeneratedAt string `json:"generated_at,omitempty"`
-}
+type codexClientIdentity extensionv1.CodexClientProfile
 
+// Stable values used by the persisted protocol representation and diagnostics.
 const (
-	codexClientOSMac     = "Mac OS"
-	codexClientOSWindows = "Windows"
-	codexClientOSUbuntu  = "Ubuntu"
-
+	codexClientOSMac          = "Mac OS"
+	codexClientOSWindows      = "Windows"
+	codexClientOSUbuntu       = "Ubuntu"
 	codexClientSandboxMac     = "seatbelt"
 	codexClientSandboxWindows = "windows_sandbox"
 	codexClientSandboxLinux   = "seccomp"
+	codexTUIOriginator        = "codex-tui"
 )
 
-var (
-	codexClientMacVersions     = []string{"15.5.0", "15.6.1", "15.7.0", "26.0.1", "26.1.0"}
-	codexClientWindowsVersions = []string{"10.0.26100", "10.0.22631", "10.0.19045"}
-	codexClientUbuntuVersions  = []string{"22.4.0", "24.4.0"}
-	codexClientAppleTerminals  = []string{"453", "455", "456"}
-)
-
-var (
-	codexClientOSVersionPattern = regexp.MustCompile(`^[0-9]+\.[0-9]+\.[0-9]+$`)
-	codexClientTerminalPattern  = regexp.MustCompile(`^[A-Za-z0-9_./-]{1,64}$`)
-)
-
-// valid 做 schema 校验而不只是非空：系统/沙箱必须配对（seatbelt=Mac OS、
-// windows_sandbox=Windows、seccomp=Ubuntu），版本/架构/终端形态受限且不含空白或
-// CR/LF。持久化值或外部写入的坏值一律视为缺失并重新按种子派生，避免脏值进入 UA。
 func (id codexClientIdentity) valid() bool {
-	if id.Version != codexClientIdentitySchemaVersion {
-		return false
-	}
-	switch id.OSType {
-	case codexClientOSMac:
-		if id.Sandbox != codexClientSandboxMac || (id.Arch != "arm64" && id.Arch != "x86_64") {
-			return false
-		}
-	case codexClientOSWindows:
-		if id.Sandbox != codexClientSandboxWindows || id.Arch != "x86_64" {
-			return false
-		}
-	case codexClientOSUbuntu:
-		if id.Sandbox != codexClientSandboxLinux || id.Arch != "x86_64" {
-			return false
-		}
-	default:
-		return false
-	}
-	return codexClientOSVersionPattern.MatchString(id.OSVersion) &&
-		codexClientTerminalPattern.MatchString(id.Terminal)
+	result, err := invokeCodexIdentityPolicy(context.Background(), "codex.identity.validate", extensionv1.CodexIdentityQuery{Profile: extensionv1.CodexClientProfile(id)})
+	return err == nil && result.Valid
 }
 
-// codexSandboxForUserAgent 从有效出站 UA 的 `(<os> <ver>; <arch>)` 段推出与之配套的
-// sandbox 标签；无法解析时返回空串（调用方不改写 sandbox）。turn metadata 声明的沙箱
-// 必须跟随最终发出的 UA，而不是账号身份本身：管理员显式 UA 覆盖时二者可能不同。
-var codexUserAgentPlatformPattern = regexp.MustCompile(`\(([^();]+?) [^ ();]+; [^();]+\)`)
+func (id codexClientIdentity) UserAgent(version string) string {
+	result, _ := invokeCodexIdentityPolicy(context.Background(), "codex.identity.agent", extensionv1.CodexIdentityQuery{Profile: extensionv1.CodexClientProfile(id), Version: version})
+	return result.UserAgent
+}
 
 func codexSandboxForUserAgent(userAgent string) string {
-	m := codexUserAgentPlatformPattern.FindStringSubmatch(userAgent)
-	if m == nil {
-		return ""
-	}
-	osType := strings.ToLower(strings.TrimSpace(m[1]))
-	switch {
-	case osType == "":
-		return ""
-	case strings.HasPrefix(osType, "mac") || strings.HasPrefix(osType, "darwin"):
-		return codexClientSandboxMac
-	case strings.HasPrefix(osType, "windows"):
-		return codexClientSandboxWindows
-	default:
-		return codexClientSandboxLinux
-	}
+	result, _ := invokeCodexIdentityPolicy(context.Background(), "codex.identity.sandbox", extensionv1.CodexIdentityQuery{UserAgent: userAgent})
+	return result.Sandbox
 }
 
-// UserAgent 拼出真实 Codex TUI 的 User-Agent：
-// codex-tui/<ver> (<os> <osver>; <arch>) <terminal> (codex-tui; <ver>)。
-// 首段版本、尾部括号组版本与 version 头必须同源（codex-rs 三处都取同一个
-// CARGO_PKG_VERSION）。
-func (id codexClientIdentity) UserAgent(version string) string {
-	version = strings.TrimSpace(version)
-	return fmt.Sprintf("%s/%s (%s %s; %s) %s (%s; %s)",
-		codexTUIOriginator, version, id.OSType, id.OSVersion, id.Arch, id.Terminal, codexTUIOriginator, version)
-}
-
-// codexTUIOriginator 是交互式 Codex TUI 的 originator（app-server initialize 的
-// clientInfo.name，codex-rs tui/src/lib.rs）。
-const codexTUIOriginator = "codex-tui"
-
-// deriveCodexClientIdentity 从种子确定性派生一份自洽身份。分布按真实 TUI 用户
-// 的大致构成加权：macOS 60%（arm64 为主），Windows 25%，Ubuntu 15%；终端与
-// 系统匹配，sandbox 标签与系统匹配。
 func deriveCodexClientIdentity(seed string) codexClientIdentity {
-	h := sha256.Sum256([]byte("sub2api:codex-client-identity:v1:" + seed))
-	id := codexClientIdentity{Version: codexClientIdentitySchemaVersion}
-	switch osPick := h[0]; {
-	case osPick < 154: // 60%
-		id.OSType = codexClientOSMac
-		id.Sandbox = codexClientSandboxMac
-		if h[1] < 230 { // 90%
-			id.Arch = "arm64"
-		} else {
-			id.Arch = "x86_64"
-		}
-		id.OSVersion = codexClientMacVersions[int(h[2])%len(codexClientMacVersions)]
-		switch term := h[3]; {
-		case term < 102: // 40%
-			id.Terminal = fmt.Sprintf("iTerm.app/3.5.%d", 10+int(h[4])%6)
-		case term < 153: // 20%
-			id.Terminal = "Apple_Terminal/" + codexClientAppleTerminals[int(h[4])%len(codexClientAppleTerminals)]
-		case term < 191: // 15%
-			id.Terminal = fmt.Sprintf("ghostty/1.3.%d", int(h[4])%3)
-		case term < 230: // 15%
-			id.Terminal = codexClientVSCodeTerminal(h[4], h[5])
-		default: // 10%
-			id.Terminal = fmt.Sprintf("WarpTerminal/v0.2026.%02d.%02d.08.12.stable_%02d",
-				1+int(h[4])%9, 1+int(h[5])%28, 1+int(h[6])%3)
-		}
-	case osPick < 218: // 25%
-		id.OSType = codexClientOSWindows
-		id.Sandbox = codexClientSandboxWindows
-		id.Arch = "x86_64"
-		id.OSVersion = codexClientWindowsVersions[int(h[2])%len(codexClientWindowsVersions)]
-		switch term := h[3]; {
-		case term < 153: // 60%
-			id.Terminal = "WindowsTerminal"
-		case term < 217: // 25%
-			id.Terminal = codexClientVSCodeTerminal(h[4], h[5])
-		default: // 15%
-			id.Terminal = "unknown"
-		}
-	default: // 15%
-		id.OSType = codexClientOSUbuntu
-		id.Sandbox = codexClientSandboxLinux
-		id.Arch = "x86_64"
-		id.OSVersion = codexClientUbuntuVersions[int(h[2])%len(codexClientUbuntuVersions)]
-		switch int(h[3]) % 3 {
-		case 0:
-			id.Terminal = "gnome-terminal"
-		case 1:
-			id.Terminal = "xterm-256color"
-		default:
-			id.Terminal = codexClientVSCodeTerminal(h[4], h[5])
-		}
-	}
-	return id
-}
-
-func codexClientVSCodeTerminal(major, minor byte) string {
-	return fmt.Sprintf("vscode/1.%d.%d", 103+int(major)%3, int(minor)%3)
+	result, _ := invokeCodexIdentityPolicy(context.Background(), "codex.identity.derive", extensionv1.CodexIdentityQuery{Seed: seed})
+	return codexClientIdentity(result.Profile)
 }
 
 // codexClientIdentityFromExtra 读取持久化身份；缺失、非对象或字段不全时返回 false。
@@ -234,6 +105,9 @@ func (a *Account) CodexClientIdentity() (codexClientIdentity, bool) {
 	if a == nil || !a.IsOpenAIOAuthLike() {
 		return codexClientIdentity{}, false
 	}
+	if available, err := codexIdentityPolicyAvailable(context.Background(), a.Type); err != nil || !available {
+		return codexClientIdentity{}, false
+	}
 	if id, ok := codexClientIdentityFromExtra(a.Extra); ok {
 		return id, true
 	}
@@ -241,7 +115,8 @@ func (a *Account) CodexClientIdentity() (codexClientIdentity, bool) {
 	if seed == "" {
 		return codexClientIdentity{}, false
 	}
-	return deriveCodexClientIdentity(seed), true
+	identity := deriveCodexClientIdentity(seed)
+	return identity, identity.Version == codexClientIdentitySchemaVersion
 }
 
 // codexClientIdentityExtraValue 把身份编码为可直接写入 extra 的 map。
@@ -264,6 +139,9 @@ func ensureCodexClientIdentityExtra(platform, accountType string, extra map[stri
 	if platform != PlatformOpenAI || (accountType != AccountTypeOAuth && accountType != AccountTypeSetupToken) {
 		return extra
 	}
+	if available, err := codexIdentityPolicyAvailable(context.Background(), accountType); err != nil || !available {
+		return extra
+	}
 	if _, ok := codexClientIdentityFromExtra(extra); ok {
 		return extra
 	}
@@ -274,7 +152,11 @@ func ensureCodexClientIdentityExtra(platform, accountType string, extra map[stri
 	if extra == nil {
 		extra = make(map[string]any, 1)
 	}
-	extra[CodexClientIdentityExtraKey] = codexClientIdentityExtraValue(deriveCodexClientIdentity(seed), now)
+	identity := deriveCodexClientIdentity(seed)
+	if identity.Version != codexClientIdentitySchemaVersion {
+		return extra
+	}
+	extra[CodexClientIdentityExtraKey] = codexClientIdentityExtraValue(identity, now)
 	return extra
 }
 
@@ -286,6 +168,10 @@ type CodexClientIdentityBackfillService struct {
 	stopOnce    sync.Once
 	stopCh      chan struct{}
 	wg          sync.WaitGroup
+}
+
+type accountExtraRevisionWriter interface {
+	UpdateExtraIfRevision(context.Context, int64, time.Time, map[string]any) (bool, error)
 }
 
 func NewCodexClientIdentityBackfillService(accountRepo AccountRepository) *CodexClientIdentityBackfillService {
@@ -339,6 +225,21 @@ func (s *CodexClientIdentityBackfillService) RunOnce(ctx context.Context) (int, 
 	if s == nil || s.accountRepo == nil {
 		return 0, 0, nil
 	}
+	bound, release, err := bindProcessDomainExtensionContext(ctx, extensionv1.Invocation{
+		Capability: extensionv1.CapabilityRequest, Operation: "codex.identity.derive",
+	})
+	if err != nil {
+		if errors.Is(err, ErrExtensionOperationDisabled) {
+			return 0, 0, nil
+		}
+		return 0, 0, err
+	}
+	defer release()
+	ctx = bound
+	writer, ok := s.accountRepo.(accountExtraRevisionWriter)
+	if !ok {
+		return 0, 0, fmt.Errorf("atomic account metadata writer unavailable")
+	}
 	// 任务内取全部状态的 OpenAI 账号：ListByPlatform 只返回 active，而停用/异常账号恢复后
 	// 同样要以持久化身份出站；不改动全局共享的 active 过滤，也不触碰账号状态。
 	accounts, err := s.accountRepo.ListAllWithFilters(ctx, PlatformOpenAI, "", "", "", 0, "")
@@ -351,6 +252,11 @@ func (s *CodexClientIdentityBackfillService) RunOnce(ctx context.Context) (int, 
 		if !account.IsOpenAIOAuthLike() {
 			continue
 		}
+		if available, err := codexIdentityPolicyAvailable(ctx, account.Type); err != nil {
+			return updated, failed, err
+		} else if !available {
+			continue
+		}
 		if _, ok := codexClientIdentityFromExtra(account.Extra); ok {
 			continue
 		}
@@ -361,13 +267,20 @@ func (s *CodexClientIdentityBackfillService) RunOnce(ctx context.Context) (int, 
 		if err := ctx.Err(); err != nil {
 			return updated, failed, err
 		}
-		value := codexClientIdentityExtraValue(deriveCodexClientIdentity(seed), s.now())
-		if err := s.accountRepo.UpdateExtra(ctx, account.ID, map[string]any{CodexClientIdentityExtraKey: value}); err != nil {
+		result, err := invokeCodexIdentityPolicy(ctx, "codex.identity.derive", extensionv1.CodexIdentityQuery{Seed: seed})
+		if err != nil {
+			return updated, failed, err
+		}
+		value := codexClientIdentityExtraValue(codexClientIdentity(result.Profile), s.now())
+		applied, err := writer.UpdateExtraIfRevision(ctx, account.ID, account.UpdatedAt, map[string]any{CodexClientIdentityExtraKey: value})
+		if err != nil {
 			failed++
 			slog.Warn("codex_client_identity_backfill_account_failed", "account_id", account.ID, "error", err)
 			continue
 		}
-		updated++
+		if applied {
+			updated++
+		}
 	}
 	return updated, failed, nil
 }

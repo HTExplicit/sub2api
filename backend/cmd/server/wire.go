@@ -32,6 +32,7 @@ type Application struct {
 	AccountJobs   *service.AccountJobRuntime
 	ImageStudio   *service.ImageStudioRuntime
 	PromptDomain  *service.PromptDomainRuntime
+	CodexIdentity *service.CodexClientIdentityBackfillService
 	Cleanup       func()
 }
 
@@ -64,7 +65,7 @@ func initializeApplication(buildInfo handler.BuildInfo) (*Application, error) {
 		provideCleanup,
 
 		// Application struct
-		wire.Struct(new(Application), "Server", "PromptAudit", "PluginManager", "AccountJobs", "ImageStudio", "PromptDomain", "Cleanup"),
+		wire.Struct(new(Application), "Server", "PromptAudit", "PluginManager", "AccountJobs", "ImageStudio", "PromptDomain", "CodexIdentity", "Cleanup"),
 	)
 	return nil, nil
 }

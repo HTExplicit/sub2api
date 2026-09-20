@@ -373,6 +373,7 @@ func initializeApplication(buildInfo handler.BuildInfo) (*Application, error) {
 		return nil, err
 	}
 	promptDomainRuntime := service.NewPromptDomainRuntime(remoteSkillRegistryService, businessSystemPromptService)
+	codexClientIdentityBackfillService := service.ProvideCodexClientIdentityBackfillService(accountRepository)
 	opsMetricsCollector := service.ProvideOpsMetricsCollector(opsRepository, settingRepository, accountRepository, concurrencyService, db, redisClient, configConfig)
 	opsAggregationService := service.ProvideOpsAggregationService(opsRepository, settingRepository, db, redisClient, configConfig)
 	opsAlertEvaluatorService := service.ProvideOpsAlertEvaluatorService(opsService, opsRepository, emailService, redisClient, configConfig, proxyRepository)
@@ -382,7 +383,6 @@ func initializeApplication(buildInfo handler.BuildInfo) (*Application, error) {
 	accountExpiryService := service.ProvideAccountExpiryService(accountRepository)
 	cnProviderBalanceCheckService := service.ProvideCNProviderBalanceCheckService(accountRepository, cnProviderBalanceService, cnProviderQuotaService, configConfig)
 	openAICodexVersionSyncService := service.ProvideOpenAICodexVersionSyncService(settingRepository, settingService, gitHubReleaseClient)
-	codexClientIdentityBackfillService := service.ProvideCodexClientIdentityBackfillService(accountRepository)
 	proxyExpiryService := service.ProvideProxyExpiryService(proxyRepository)
 	subscriptionExpiryService := service.ProvideSubscriptionExpiryService(userSubscriptionRepository, settingRepository, notificationEmailService, leaderLockCache, db)
 	batchImageWorkerRuntime := service.ProvideBatchImageWorkerRuntime(batchImageRepository, accountRepository, batchImageQueue, usageBillingRepository, usageLogRepository, batchImageModelPricingResolver, apiKeyAuthCacheInvalidator, configConfig)
@@ -403,6 +403,7 @@ func initializeApplication(buildInfo handler.BuildInfo) (*Application, error) {
 		AccountJobs:   accountJobRuntime,
 		ImageStudio:   imageStudioRuntime,
 		PromptDomain:  promptDomainRuntime,
+		CodexIdentity: codexClientIdentityBackfillService,
 		Cleanup:       v,
 	}
 	return application, nil
@@ -417,6 +418,7 @@ type Application struct {
 	AccountJobs   *service.AccountJobRuntime
 	ImageStudio   *service.ImageStudioRuntime
 	PromptDomain  *service.PromptDomainRuntime
+	CodexIdentity *service.CodexClientIdentityBackfillService
 	Cleanup       func()
 }
 

@@ -1,0 +1,28 @@
+package extensionv1
+
+// Profile fields are persisted by the host. Their generation and interpretation
+// belong to the Codex domain process; no credential is part of this contract.
+type CodexClientProfile struct {
+	Version     int    `json:"v"`
+	OSType      string `json:"os_type"`
+	OSVersion   string `json:"os_version"`
+	Arch        string `json:"arch"`
+	Terminal    string `json:"terminal"`
+	Sandbox     string `json:"sandbox"`
+	GeneratedAt string `json:"generated_at,omitempty"`
+}
+
+type CodexIdentityQuery struct {
+	Seed      string             `json:"seed,omitempty"`
+	Profile   CodexClientProfile `json:"profile,omitempty"`
+	Version   string             `json:"version,omitempty"`
+	UserAgent string             `json:"user_agent,omitempty"`
+}
+
+type CodexIdentityResult struct {
+	DefaultFingerprintMode string             `json:"default_fingerprint_mode,omitempty"`
+	Profile                CodexClientProfile `json:"profile,omitempty"`
+	Valid                  bool               `json:"valid"`
+	UserAgent              string             `json:"user_agent,omitempty"`
+	Sandbox                string             `json:"sandbox,omitempty"`
+}

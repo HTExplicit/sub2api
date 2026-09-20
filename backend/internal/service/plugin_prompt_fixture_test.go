@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	cindy "github.com/HTExplicit/sub2api-plugins/cindyprovider/catalog"
+	codexprofile "github.com/HTExplicit/sub2api-plugins/codexruntime/profile"
 
 	accounttools "github.com/HTExplicit/sub2api-plugins/accounttools/policy"
 	observability "github.com/HTExplicit/sub2api-plugins/adminobservability/policy"
@@ -30,6 +31,9 @@ func cindyProbeTestModels(t *testing.T) [2]string {
 }
 
 func (promptPolicyFixture) InvokeOperation(ctx context.Context, _ string, _ string, in extensionv1.Invocation) (extensionv1.Result, error) {
+	if strings.HasPrefix(in.Operation, "codex.identity.") {
+		return codexprofile.Invoke(ctx, in)
+	}
 	if strings.HasPrefix(in.Operation, "observability.") {
 		return observability.New().Invoke(ctx, in)
 	}

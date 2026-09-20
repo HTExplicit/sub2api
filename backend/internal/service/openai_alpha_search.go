@@ -778,7 +778,9 @@ func (s *OpenAIGatewayService) buildOpenAIAlphaSearchResponsesWebSearchRequest(c
 		fillCodexSessionIdentityHeaders(req.Header, generateSessionUUID(sessionID))
 	}
 	applyCodexAccountIdentityHeaders(req.Header, codexAccountIdentitySource(c, account), apiKeyID)
-	enforceCodexIdentityHeadersForAccount(req.Header, codexAccountIdentitySource(c, account), s.codexIdentityOverrideUA(account))
+	if err := enforceCodexIdentityHeadersForAccountContext(req.Context(), req.Header, codexAccountIdentitySource(c, account), s.codexIdentityOverrideUA(account)); err != nil {
+		return nil, err
+	}
 	account.ApplyHeaderOverrides(req.Header)
 	return req, nil
 }
@@ -917,7 +919,9 @@ func (s *OpenAIGatewayService) buildOpenAIAlphaSearchRequest(ctx context.Context
 			req.Header.Set("User-Agent", canonical.userAgent)
 		}
 		applyCodexAccountIdentityHeaders(req.Header, codexAccountIdentitySource(c, account), getAPIKeyIDFromContext(c))
-		enforceCodexIdentityHeadersForAccount(req.Header, codexAccountIdentitySource(c, account), s.codexIdentityOverrideUA(account))
+		if err := enforceCodexIdentityHeadersForAccountContext(req.Context(), req.Header, codexAccountIdentitySource(c, account), s.codexIdentityOverrideUA(account)); err != nil {
+			return nil, err
+		}
 	}
 
 	account.ApplyHeaderOverrides(req.Header)

@@ -25,7 +25,11 @@ func (s *OpenAIGatewayService) ReadExtensionAccount(ctx context.Context, id int6
 }
 
 func (s *OpenAIGatewayService) ListExtensionAccounts(ctx context.Context, query extensionv1.AccountQuery) ([]extensionv1.Account, error) {
-	accounts, err := s.accountRepo.ListByPlatform(ctx, query.Platform)
+	statusFilter := StatusActive
+	if query.IncludeInactive {
+		statusFilter = ""
+	}
+	accounts, err := s.accountRepo.ListAllWithFilters(ctx, query.Platform, query.AccountType, statusFilter, "", 0, "")
 	if err != nil {
 		return nil, err
 	}

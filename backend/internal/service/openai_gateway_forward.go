@@ -1678,7 +1678,9 @@ func (s *OpenAIGatewayService) buildUpstreamRequest(ctx context.Context, c *gin.
 	// 终态收口：强制统一 OAuth 出站身份（User-Agent / originator / version 同源自洽），
 	// 身份取自该 OAuth 凭据的账号级 Codex TUI 身份；客户端自报身份不参与构造。
 	if account.UsesOpenAICodexProtocol() {
-		enforceCodexIdentityHeadersForAccount(req.Header, codexAccountIdentitySource(c, account), s.codexIdentityOverrideUA(account))
+		if err := enforceCodexIdentityHeadersForAccountContext(req.Context(), req.Header, codexAccountIdentitySource(c, account), s.codexIdentityOverrideUA(account)); err != nil {
+			return nil, err
+		}
 	}
 
 	// Ensure required headers exist
