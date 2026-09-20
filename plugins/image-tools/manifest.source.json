@@ -11,7 +11,7 @@
     { "id": "extensions.admin.v1", "platform": "*", "account_type": "*" }
   ],
   "dependencies": [{ "capability": "extensions.provider.v1", "platform": "cindy", "account_type": "apikey" }],
-  "operations": { "extensions.request.v1": ["image.features", "image.studio.plan", "image.studio.validate", "image.studio.models", "image.responses.plan"] },
+  "operations": { "extensions.request.v1": ["image.features", "image.studio.plan", "image.studio.validate", "image.studio.models", "image.responses.plan", "image.native.validate"] },
   "resources": [
     { "name": "image.keys", "capability": "extensions.request.v1", "permission": "user" },
     { "name": "image.create", "capability": "extensions.request.v1", "permission": "user" },

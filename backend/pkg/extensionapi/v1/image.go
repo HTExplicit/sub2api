@@ -39,6 +39,21 @@ type ImageStudioCatalogRequest struct {
 	Capabilities []CindyModelCapability `json:"capabilities"`
 }
 
+type ImageNativeRequest struct {
+	Model              string          `json:"model"`
+	Capability         CindyCapability `json:"capability"`
+	Verified           bool            `json:"verified"`
+	Editing            bool            `json:"editing"`
+	Stream             bool            `json:"stream"`
+	Count              int             `json:"count"`
+	Size               string          `json:"size"`
+	Quality            string          `json:"quality"`
+	ResponseFormat     string          `json:"response_format"`
+	UnverifiedControls bool            `json:"unverified_controls"`
+	HasReference       bool            `json:"has_reference"`
+	HasMask            bool            `json:"has_mask"`
+}
+
 // ImageBridgeValue exposes only bounded scalar control facts. Invalid values
 // never carry their original object, text, image, or prompt to the plugin.
 type ImageBridgeValue struct {

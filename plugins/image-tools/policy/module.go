@@ -66,6 +66,15 @@ func (m *Module) Invoke(ctx context.Context, in extensionv1.Invocation) (extensi
 	switch in.Operation {
 	case "image.features":
 		output = config
+	case "image.native.validate":
+		var request extensionv1.ImageNativeRequest
+		if json.Unmarshal(in.Payload, &request) != nil {
+			return extensionv1.Result{}, errors.New("invalid native image facts")
+		}
+		if err := validateNativeImage(request); err != nil {
+			return extensionv1.Result{Code: "invalid_image_request", Message: err.Error(), HTTPStatus: 400}, nil
+		}
+		output = true
 	case "image.responses.plan":
 		var request extensionv1.ImageBridgeRequest
 		if json.Unmarshal(in.Payload, &request) != nil {

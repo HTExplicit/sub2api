@@ -17,10 +17,26 @@ type capturedImageBridgeFixture struct {
 }
 
 func (f *capturedImageBridgeFixture) InvokeOperation(ctx context.Context, platform, kind string, in extensionv1.Invocation) (extensionv1.Result, error) {
-	if in.Operation == "image.responses.plan" {
+	if in.Operation == "image.responses.plan" || in.Operation == "image.native.validate" {
 		f.queries = append(f.queries, in)
 	}
 	return f.promptPolicyFixture.InvokeOperation(ctx, platform, kind, in)
+}
+
+func TestCindyNativeImagePolicyReceivesNoPromptOrImageContent(t *testing.T) {
+	previous := processExtensionOperations.Load()
+	t.Cleanup(func() { processExtensionOperations.Store(previous) })
+	fixture := &capturedImageBridgeFixture{}
+	processExtensionOperations.Store(&extensionOperationProvider{invoker: fixture})
+	request := &OpenAIImagesRequest{Endpoint: openAIImagesEditsEndpoint, Prompt: "private-image-prompt", InputImageURLs: []string{"https://private.invalid/reference"}, N: 1, Size: "1024x1024", Quality: "low", HasMask: true}
+	err := ValidateCindyImageRequestForAccount(context.Background(), &Account{ID: 37}, "gpt-image-2", request)
+	require.Error(t, err)
+	require.Len(t, fixture.queries, 1)
+	require.EqualValues(t, 37, fixture.queries[0].AccountID)
+	require.NotContains(t, string(fixture.queries[0].Payload), "private-image-prompt")
+	require.NotContains(t, string(fixture.queries[0].Payload), "private.invalid")
+	processExtensionOperations.Store(nil)
+	require.ErrorIs(t, ValidateCindyImageRequest("gpt-image-2", request), ErrExtensionOperationDisabled)
 }
 
 func TestImageBridgeUsesOnlyBoundedFactsAndAuthorizedAccount(t *testing.T) {

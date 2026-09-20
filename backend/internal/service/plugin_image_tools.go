@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"strings"
 	"time"
 
@@ -18,6 +19,50 @@ func currentImageToolsConfig() (extensionv1.ImageToolsConfig, bool) {
 		return config, false
 	}
 	return config, true
+}
+
+func ValidateCindyImageRequest(model string, request *OpenAIImagesRequest) error {
+	return ValidateCindyImageRequestForAccount(context.Background(), nil, model, request)
+}
+
+func ValidateCindyImageRequestForAccount(ctx context.Context, account *Account, model string, request *OpenAIImagesRequest) error {
+	if request == nil {
+		return errors.New("image request is required")
+	}
+	for _, value := range []string{model, request.Size, request.Quality, request.ResponseFormat} {
+		if len(value) > 256 {
+			return errors.New("image control exceeds maximum length")
+		}
+	}
+	capability, _ := ResolveCindyCapability(model)
+	endpoint := CindyEndpointImagesGenerate
+	if request.IsEdits() {
+		endpoint = CindyEndpointImagesEdit
+	}
+	facts := extensionv1.ImageNativeRequest{Model: strings.TrimSpace(model), Capability: capability, Verified: CindyModelSupportsEndpoint(model, endpoint), Editing: request.IsEdits(), Stream: request.Stream, Count: request.N, Size: strings.TrimSpace(request.Size), Quality: strings.TrimSpace(request.Quality), ResponseFormat: strings.TrimSpace(request.ResponseFormat), HasReference: request.InputImageCount() > 0, HasMask: request.HasMask,
+		UnverifiedControls: request.Background != "" || request.OutputFormat != "" || request.Moderation != "" || request.InputFidelity != "" || request.Style != "" || request.OutputCompression != nil || request.PartialImages != nil}
+	raw, err := json.Marshal(facts)
+	if err != nil {
+		return ErrExtensionOperationUnavailable
+	}
+	in := extensionv1.Invocation{Capability: extensionv1.CapabilityRequest, Operation: "image.native.validate", Payload: raw}
+	if account != nil {
+		in.AccountID = account.ID
+	}
+	call, cancel := context.WithTimeout(ctx, time.Second)
+	defer cancel()
+	result, err := invokeProcessExtension(call, PlatformCindy, AccountTypeAPIKey, in)
+	if err != nil {
+		return err
+	}
+	if result.Code != "" {
+		return errors.New(result.Message)
+	}
+	var valid bool
+	if json.Unmarshal(result.Payload, &valid) != nil || !valid {
+		return ErrExtensionOperationUnavailable
+	}
+	return nil
 }
 
 func EnsureImageStudioAvailable(ctx context.Context) error {

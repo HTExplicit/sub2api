@@ -13,6 +13,31 @@ type extensionOperationContextBinder interface {
 	BindOperationContext(context.Context, string, string, extensionv1.Invocation) (context.Context, context.CancelFunc, error)
 }
 
+type pluginPolicySignalsKey struct{}
+
+// Policy cancellation is independent from a client disconnect. Upstream IO
+// may detach from that disconnect, but must still stop on plugin replacement.
+func detachPluginPolicyContext(parent context.Context) (context.Context, context.CancelFunc) {
+	signals, _ := parent.Value(pluginPolicySignalsKey{}).([]context.Context)
+	if len(signals) == 0 {
+		return context.WithoutCancel(parent), func() {}
+	}
+	ctx, cancel := context.WithCancel(context.WithoutCancel(parent))
+	stops := make([]func() bool, 0, len(signals))
+	for _, signal := range signals {
+		if signal.Err() != nil {
+			cancel()
+		}
+		stops = append(stops, context.AfterFunc(signal, cancel))
+	}
+	return ctx, func() {
+		for _, stop := range stops {
+			stop()
+		}
+		cancel()
+	}
+}
+
 func bindProcessExtensionContext(ctx context.Context, platform, accountType string, in extensionv1.Invocation) (context.Context, context.CancelFunc, error) {
 	provider := processExtensionOperations.Load()
 	if provider == nil {
@@ -45,15 +70,21 @@ func (r *pluginRuntime) bindPolicyContext(parent context.Context) (context.Conte
 		return nil, nil, ErrExtensionOperationUnavailable
 	}
 	ctx, cancel := context.WithCancel(parent)
+	signal, stopPolicy := context.WithCancel(context.Background())
+	signals, _ := parent.Value(pluginPolicySignalsKey{}).([]context.Context)
+	ctx = context.WithValue(ctx, pluginPolicySignalsKey{}, append(append([]context.Context{}, signals...), signal))
+	stopPropagation := context.AfterFunc(signal, cancel)
 	if r.policyLeases == nil {
 		r.policyLeases = map[uint64]context.CancelFunc{}
 	}
 	r.policyLeaseID++
 	id := r.policyLeaseID
-	r.policyLeases[id] = cancel
+	r.policyLeases[id] = func() { stopPolicy(); cancel() }
 	var once sync.Once
 	return ctx, func() {
 		once.Do(func() {
+			stopPropagation()
+			stopPolicy()
 			cancel()
 			r.policyMu.Lock()
 			delete(r.policyLeases, id)
