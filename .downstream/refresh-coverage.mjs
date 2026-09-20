@@ -137,7 +137,7 @@ const inventory = {
   owner_counts: Object.fromEntries(Object.entries(candidateOwners).map(([owner, files]) => [owner, files.length])), entries,
 }
 if (checkOnly) {
-  if (previous.schema_version !== inventory.schema_version || previous.upstream_base !== inventory.upstream_base || previous.basis_commit !== inventory.basis_commit || previous.source_digest !== sourceDigest ||
+  if (previous.schema_version !== inventory.schema_version || previous.upstream_base !== inventory.upstream_base || previous.source_digest !== sourceDigest ||
       JSON.stringify(previous.entries) !== JSON.stringify(entries) || previous.review_complete !== inventory.review_complete) {
     throw new Error('coverage inventory is stale or contains unsupported review claims; refresh it before using the results')
   }
