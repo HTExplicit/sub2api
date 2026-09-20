@@ -1,13 +1,13 @@
 {
   "schema_version": 3,
   "upstream_base": "aea725f2ea644d5592d0bbb1d63b607efa7e200a",
-  "basis_commit": "1bca77368836c49d7077774ceb33f85fbf6c8bec",
+  "basis_commit": "61464b398a44481ae4bd7b3fe2a8cb09875108e0",
   "scope": "Current Sub2API downstream source and working tree. Candidate ownership does not establish completed review. Root maintenance, independent services and Worker require a separate audit.",
-  "source_digest": "f94192aa764f1be8e3e86f0e8076d563a0101b4393939c05724bab6da6fb8f40",
+  "source_digest": "f267d2df9e44b43491822e4668b40f7322e3d8d5f7f5fea2655c0b68d9e3c3e6",
   "digest_excludes": [
     "the inventory itself uses a derived structural fingerprint; deletions bind the upstream blob"
   ],
-  "total_paths": 2303,
+  "total_paths": 2304,
   "generated_assets_and_locks": 83,
   "review_complete": false,
   "pending_paths": [
@@ -16,6 +16,8 @@
     ".downstream/cindy-catalog-refresh-20260905.json",
     ".downstream/cindy-catalog-refresh-20260911.json",
     ".downstream/implementation-v0.2.7.md",
+    ".downstream/refresh-coverage-basis.test.mjs",
+    ".downstream/refresh-coverage.mjs",
     ".downstream/upstream-0.2.0-overlap-review.md",
     ".downstream/upstream-base",
     ".downstream/upstream-review-v0.2.1.md",
@@ -1691,12 +1693,12 @@
     "dependency-lock": 9,
     "documentation": 28,
     "generated": 68,
-    "source": 1033,
+    "source": 1034,
     "test-or-fixture": 701
   },
   "owner_counts": {
     "operations": 42,
-    "documentation-and-history": 26,
+    "documentation-and-history": 27,
     "mixed-requires-review": 1030,
     "core-extension-and-job-host": 184,
     "core-data-and-migrations": 21,
@@ -1752,7 +1754,7 @@
       "role": "documentation",
       "present": true,
       "content_sha256": null,
-      "review_fingerprint": "15d4c4e36db46adcf28d6af95e9a28137d588a595a85f0dccecae33447017e31",
+      "review_fingerprint": "14307e698d3c39bd96d44ed12ea2f02cfa4b90157cf4ccaafbfc4739e5737a7d",
       "review_status": "reviewed",
       "decision": "generated-source",
       "owner": "operations",
@@ -1786,19 +1788,22 @@
       "review_status": "pending"
     },
     {
+      "path": ".downstream/refresh-coverage-basis.test.mjs",
+      "candidate_owner": "documentation-and-history",
+      "role": "source",
+      "present": true,
+      "content_sha256": "d5af85d0f1cfa9e0bb6fb9b5fb1bde8e6131c057c6e0702fc6c1e6938d8b4f2c",
+      "review_fingerprint": "d5af85d0f1cfa9e0bb6fb9b5fb1bde8e6131c057c6e0702fc6c1e6938d8b4f2c",
+      "review_status": "pending"
+    },
+    {
       "path": ".downstream/refresh-coverage.mjs",
       "candidate_owner": "operations",
       "role": "source",
       "present": true,
-      "content_sha256": "5c5713b3b83b02827b927f4c8ee058974bca7b74b44b4110fab2d0f3502d2d00",
-      "review_fingerprint": "5c5713b3b83b02827b927f4c8ee058974bca7b74b44b4110fab2d0f3502d2d00",
-      "review_status": "reviewed",
-      "decision": "core-mechanism",
-      "owner": "operations",
-      "reason": "Inventory construction binds each live file to its bytes and each deletion to the exact upstream blob. Imported decisions must match current roles and fingerprints and have explicit evidence; all records are validated before the sole write. Only inventory metadata uses its derived structural verdict.",
-      "evidence": [
-        "node --test .downstream/refresh-coverage.test.mjs; valid provenance/quota imports were checked against the live tree"
-      ]
+      "content_sha256": "d6a31abe28658920b4e0365abf85edbe43ed274cd4cba3f1106ae18c71b94996",
+      "review_fingerprint": "d6a31abe28658920b4e0365abf85edbe43ed274cd4cba3f1106ae18c71b94996",
+      "review_status": "pending"
     },
     {
       "path": ".downstream/refresh-coverage.test.mjs",
