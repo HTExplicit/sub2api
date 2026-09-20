@@ -1,9 +1,9 @@
 {
   "schema_version": 3,
   "upstream_base": "aea725f2ea644d5592d0bbb1d63b607efa7e200a",
-  "basis_commit": "d1b29212fcc3c18397865c11cd55602ae822f47c",
+  "basis_commit": "72321d536b090b5af07724b72287de70f90f1f37",
   "scope": "Current Sub2API downstream source and working tree. Candidate ownership does not establish completed review. Root maintenance, independent services and Worker require a separate audit.",
-  "source_digest": "9dffaf33941d16507c8001d7be184c855bd563541b5b92c76b7640a0a77e9d40",
+  "source_digest": "c33f001583d1432318b01c3267bde55a01baa99c3d47a38d0b6a9830c41411c5",
   "digest_excludes": [
     "the inventory itself uses a derived structural fingerprint; deletions bind the upstream blob"
   ],
@@ -12,17 +12,8 @@
   "review_complete": false,
   "pending_paths": [
     ".dockerignore",
-    ".downstream/README.md",
-    ".downstream/cindy-catalog-refresh-20260905.json",
-    ".downstream/cindy-catalog-refresh-20260911.json",
-    ".downstream/implementation-v0.2.7.md",
     ".downstream/refresh-coverage.mjs",
-    ".downstream/upstream-0.2.0-overlap-review.md",
     ".downstream/upstream-base",
-    ".downstream/upstream-review-v0.2.1.md",
-    ".downstream/upstream-review-v0.2.5.md",
-    ".downstream/upstream-review-v0.2.6.md",
-    ".downstream/upstream-risk.json",
     ".gitattributes",
     ".github/scripts/initialize_plugin_publisher.go",
     ".github/scripts/test_agent_protocol.sh",
@@ -47,19 +38,9 @@
     ".github/workflows/upstream-risk-gate.yml",
     ".github/workflows/upstream-sync.yml",
     ".gitignore",
-    ".superpowers/sdd/cindy-group-account-ops-v180/progress.md",
-    ".superpowers/sdd/cindy-group-account-ops-v180/task-3-report.md",
-    ".superpowers/sdd/cindy-group-account-ops-v180/task-4b-report.md",
-    ".superpowers/sdd/cindy-group-account-ops-v180/task-5-report.md",
-    ".superpowers/sdd/cindy-group-account-ops-v180/task-6-report.md",
-    "DOWNSTREAM.md",
     "Dockerfile",
     "Dockerfile.goreleaser",
     "Makefile",
-    "README.md",
-    "README_CN.md",
-    "README_JA.md",
-    "THIRD_PARTY_NOTICES.md",
     "backend/.golangci.yml",
     "backend/cmd/cleanup-ingress-reject-logs/main.go",
     "backend/cmd/package-plugin/bundle.go",
@@ -986,24 +967,19 @@
     "backend/scripts/build-development-plugins.sh",
     "deploy/.env.example",
     "deploy/Dockerfile",
-    "deploy/README.md",
     "deploy/config.example.yaml",
     "deploy/docker-compose.dev.yml",
     "deploy/docker-compose.local.yml",
     "deploy/docker-compose.standalone.yml",
     "deploy/docker-compose.yml",
     "deploy/docker-entrypoint.sh",
-    "deploy/plugin-bundle/README.md",
     "deploy/tests/cindy-rollout-defaults-test.sh",
     "deploy/tests/docker-compose-gateway-env-test.sh",
     "deploy/tests/docker-runtime-resources-test.sh",
     "deploy/tests/production-deploy-workflow-test.sh",
     "deploy/tests/test_verify_business_system_prompt_bundle.py",
-    "docs/PLUGIN_DEVELOPMENT.md",
-    "docs/channel-monitor-v2-safe-defaults.md",
     "frontend/index.html",
     "frontend/package.json",
-    "frontend/public/fonts/misans/NOTICE.md",
     "frontend/src/App.vue",
     "frontend/src/__tests__/integration/data-import.spec.ts",
     "frontend/src/api/__tests__/accountOperationIdempotency.spec.ts",
@@ -1416,7 +1392,6 @@
     "plugins/admin-observability/scripts/check-theme.py",
     "plugins/admin-observability/scripts/check-ui.py",
     "plugins/admin-observability/ui/assets/app.js",
-    "plugins/admin-observability/ui/assets/fonts/NOTICE.md",
     "plugins/admin-observability/ui/assets/styles.css",
     "plugins/admin-observability/ui/assets/theme.css",
     "plugins/admin-observability/ui/index.html",
@@ -1527,7 +1502,6 @@
     "plugins/prompt-skills/scripts/check-ui.py",
     "plugins/prompt-skills/source/gpt56.go",
     "plugins/prompt-skills/source/gpt56_test.go",
-    "plugins/prompt-skills/source/prompts/gpt_5_6_instruct_v45.md",
     "plugins/prompt-skills/source/support.go",
     "plugins/prompt-skills/ui/assets/app.js",
     "plugins/prompt-skills/ui/assets/styles.css",
@@ -1584,7 +1558,15 @@
       "present": true,
       "content_sha256": "edd8c6053acb5b21436cbb5b1a70676eb4777e571f3cdfbed3af46f2e8d94b19",
       "review_fingerprint": "edd8c6053acb5b21436cbb5b1a70676eb4777e571f3cdfbed3af46f2e8d94b19",
-      "review_status": "pending"
+      "review_status": "reviewed",
+      "decision": "reference",
+      "owner": "documentation-and-history",
+      "reason": "Static documentation/data record reviewed for current content and linkage; it does not substitute for source or runtime validation.",
+      "evidence": [
+        "current_sha256=edd8c6053acb5b21436cbb5b1a70676eb4777e571f3cdfbed3af46f2e8d94b19",
+        "first_content_marker=# Downstream release channel",
+        "review_mode=static content and linkage review; no production or model request"
+      ]
     },
     {
       "path": ".downstream/cindy-catalog-refresh-20260905.json",
@@ -1593,7 +1575,16 @@
       "present": true,
       "content_sha256": "4cb5cde792d4faec848d801a31c361af52841de9ab107c6eb515b414306a025a",
       "review_fingerprint": "4cb5cde792d4faec848d801a31c361af52841de9ab107c6eb515b414306a025a",
-      "review_status": "pending"
+      "review_status": "reviewed",
+      "decision": "reference",
+      "owner": "documentation-and-history",
+      "reason": "Static documentation/data record reviewed for current content and linkage; it does not substitute for source or runtime validation.",
+      "evidence": [
+        "current_sha256=4cb5cde792d4faec848d801a31c361af52841de9ab107c6eb515b414306a025a",
+        "first_content_marker={",
+        "review_mode=static content and linkage review; no production or model request",
+        "JSON parsed as a static release/catalog evidence snapshot; values are not runtime configuration writes"
+      ]
     },
     {
       "path": ".downstream/cindy-catalog-refresh-20260911.json",
@@ -1602,7 +1593,16 @@
       "present": true,
       "content_sha256": "cb4c957129ff60b6107339036e9003768c8bc099c51adecba4d5bce7203d835f",
       "review_fingerprint": "cb4c957129ff60b6107339036e9003768c8bc099c51adecba4d5bce7203d835f",
-      "review_status": "pending"
+      "review_status": "reviewed",
+      "decision": "reference",
+      "owner": "documentation-and-history",
+      "reason": "Static documentation/data record reviewed for current content and linkage; it does not substitute for source or runtime validation.",
+      "evidence": [
+        "current_sha256=cb4c957129ff60b6107339036e9003768c8bc099c51adecba4d5bce7203d835f",
+        "first_content_marker={",
+        "review_mode=static content and linkage review; no production or model request",
+        "JSON parsed as a static release/catalog evidence snapshot; values are not runtime configuration writes"
+      ]
     },
     {
       "path": ".downstream/coverage-v0.2.7.json",
@@ -1610,7 +1610,7 @@
       "role": "documentation",
       "present": true,
       "content_sha256": null,
-      "review_fingerprint": "e2cd68ee79be0f3dca22661e35c20f83720433ebe318378b9a95e6ebca5080d4",
+      "review_fingerprint": "4e77150c969786d839305f8fe6f0354e1a43f660d4cf9737f72420f17e741ecf",
       "review_status": "reviewed",
       "decision": "generated-source",
       "owner": "operations",
@@ -1639,9 +1639,17 @@
       "candidate_owner": "documentation-and-history",
       "role": "documentation",
       "present": true,
-      "content_sha256": "3f7fce3d2e8cd0a847a92311521607b7433d805a7c2ce5abf02e1c7615263b37",
-      "review_fingerprint": "3f7fce3d2e8cd0a847a92311521607b7433d805a7c2ce5abf02e1c7615263b37",
-      "review_status": "pending"
+      "content_sha256": "06f6bb101e9ca73bbff5d494ca7cb3d6a8c634153a0349cc6105b6f479f9784a",
+      "review_fingerprint": "06f6bb101e9ca73bbff5d494ca7cb3d6a8c634153a0349cc6105b6f479f9784a",
+      "review_status": "reviewed",
+      "decision": "reference",
+      "owner": "documentation-and-history",
+      "reason": "Static documentation/data record reviewed for current content and linkage; it does not substitute for source or runtime validation.",
+      "evidence": [
+        "current_sha256=06f6bb101e9ca73bbff5d494ca7cb3d6a8c634153a0349cc6105b6f479f9784a",
+        "first_content_marker=# v0.2.7 实施状态",
+        "review_mode=static content and linkage review; no production or model request"
+      ]
     },
     {
       "path": ".downstream/refresh-coverage.mjs",
@@ -1674,7 +1682,15 @@
       "present": true,
       "content_sha256": "3688bb9304342459a3aabd58de2105aa55f77cab637245cc14c1835892aa842c",
       "review_fingerprint": "3688bb9304342459a3aabd58de2105aa55f77cab637245cc14c1835892aa842c",
-      "review_status": "pending"
+      "review_status": "reviewed",
+      "decision": "reference",
+      "owner": "documentation-and-history",
+      "reason": "Static documentation/data record reviewed for current content and linkage; it does not substitute for source or runtime validation.",
+      "evidence": [
+        "current_sha256=3688bb9304342459a3aabd58de2105aa55f77cab637245cc14c1835892aa842c",
+        "first_content_marker=# Upstream v0.2.0 Overlap Review",
+        "review_mode=static content and linkage review; no production or model request"
+      ]
     },
     {
       "path": ".downstream/upstream-base",
@@ -1692,7 +1708,15 @@
       "present": true,
       "content_sha256": "4bccf78935856357f49fc7bbea93807d2fe051f6bba232f922d97fbd0e691390",
       "review_fingerprint": "4bccf78935856357f49fc7bbea93807d2fe051f6bba232f922d97fbd0e691390",
-      "review_status": "pending"
+      "review_status": "reviewed",
+      "decision": "reference",
+      "owner": "documentation-and-history",
+      "reason": "Static documentation/data record reviewed for current content and linkage; it does not substitute for source or runtime validation.",
+      "evidence": [
+        "current_sha256=4bccf78935856357f49fc7bbea93807d2fe051f6bba232f922d97fbd0e691390",
+        "first_content_marker=# Upstream v0.2.1 integration review",
+        "review_mode=static content and linkage review; no production or model request"
+      ]
     },
     {
       "path": ".downstream/upstream-review-v0.2.5.md",
@@ -1701,7 +1725,15 @@
       "present": true,
       "content_sha256": "4fb6834fe5fa4c236390be1d8132a4eef21de5493825714412a248960d887610",
       "review_fingerprint": "4fb6834fe5fa4c236390be1d8132a4eef21de5493825714412a248960d887610",
-      "review_status": "pending"
+      "review_status": "reviewed",
+      "decision": "reference",
+      "owner": "documentation-and-history",
+      "reason": "Static documentation/data record reviewed for current content and linkage; it does not substitute for source or runtime validation.",
+      "evidence": [
+        "current_sha256=4fb6834fe5fa4c236390be1d8132a4eef21de5493825714412a248960d887610",
+        "first_content_marker=# Upstream v0.2.5 integration review",
+        "review_mode=static content and linkage review; no production or model request"
+      ]
     },
     {
       "path": ".downstream/upstream-review-v0.2.6.md",
@@ -1710,7 +1742,15 @@
       "present": true,
       "content_sha256": "8f47ec184e0142212c72565b9e11cb9fd5957ae32a3a1783d20bf7dc7ef1fe39",
       "review_fingerprint": "8f47ec184e0142212c72565b9e11cb9fd5957ae32a3a1783d20bf7dc7ef1fe39",
-      "review_status": "pending"
+      "review_status": "reviewed",
+      "decision": "reference",
+      "owner": "documentation-and-history",
+      "reason": "Static documentation/data record reviewed for current content and linkage; it does not substitute for source or runtime validation.",
+      "evidence": [
+        "current_sha256=8f47ec184e0142212c72565b9e11cb9fd5957ae32a3a1783d20bf7dc7ef1fe39",
+        "first_content_marker=# Recovered upstream v0.2.6 integration review",
+        "review_mode=static content and linkage review; no production or model request"
+      ]
     },
     {
       "path": ".downstream/upstream-risk.json",
@@ -1719,7 +1759,16 @@
       "present": true,
       "content_sha256": "806466a27fa30413b39ae72824ad16c6f06d1f87261ef41d6a9e9294aea7ba64",
       "review_fingerprint": "806466a27fa30413b39ae72824ad16c6f06d1f87261ef41d6a9e9294aea7ba64",
-      "review_status": "pending"
+      "review_status": "reviewed",
+      "decision": "reference",
+      "owner": "documentation-and-history",
+      "reason": "Static documentation/data record reviewed for current content and linkage; it does not substitute for source or runtime validation.",
+      "evidence": [
+        "current_sha256=806466a27fa30413b39ae72824ad16c6f06d1f87261ef41d6a9e9294aea7ba64",
+        "first_content_marker={",
+        "review_mode=static content and linkage review; no production or model request",
+        "JSON parsed as a static release/catalog evidence snapshot; values are not runtime configuration writes"
+      ]
     },
     {
       "path": ".gitattributes",
@@ -1944,7 +1993,15 @@
       "present": true,
       "content_sha256": "c5ccc7c65a1125f5e200fd43f0e4cffd57ee34f3b9cc0a848267792849d6f5f0",
       "review_fingerprint": "c5ccc7c65a1125f5e200fd43f0e4cffd57ee34f3b9cc0a848267792849d6f5f0",
-      "review_status": "pending"
+      "review_status": "reviewed",
+      "decision": "reference",
+      "owner": "documentation-and-history",
+      "reason": "Static documentation/data record reviewed for current content and linkage; it does not substitute for source or runtime validation.",
+      "evidence": [
+        "current_sha256=c5ccc7c65a1125f5e200fd43f0e4cffd57ee34f3b9cc0a848267792849d6f5f0",
+        "first_content_marker=# SDD ledger — plan: D:/Data/codex_work/my_server/artifacts/tmp/sdd-plans/cindy-group-account-ops-v180.md",
+        "review_mode=static content and linkage review; no production or model request"
+      ]
     },
     {
       "path": ".superpowers/sdd/cindy-group-account-ops-v180/task-3-report.md",
@@ -1953,7 +2010,15 @@
       "present": true,
       "content_sha256": "311515348143bf947cf3fbdaec0dc982766f06364b4eb21a543e1db5f84344a0",
       "review_fingerprint": "311515348143bf947cf3fbdaec0dc982766f06364b4eb21a543e1db5f84344a0",
-      "review_status": "pending"
+      "review_status": "reviewed",
+      "decision": "reference",
+      "owner": "documentation-and-history",
+      "reason": "Static documentation/data record reviewed for current content and linkage; it does not substitute for source or runtime validation.",
+      "evidence": [
+        "current_sha256=311515348143bf947cf3fbdaec0dc982766f06364b4eb21a543e1db5f84344a0",
+        "first_content_marker=# Task 3 Report: Cindy Import Preview and Canonical Execution",
+        "review_mode=static content and linkage review; no production or model request"
+      ]
     },
     {
       "path": ".superpowers/sdd/cindy-group-account-ops-v180/task-4b-report.md",
@@ -1962,7 +2027,15 @@
       "present": true,
       "content_sha256": "91626c4555f1a87caa0cc7261cd4082ecd67d74b1ff23bea0188f5bfa5c8479b",
       "review_fingerprint": "91626c4555f1a87caa0cc7261cd4082ecd67d74b1ff23bea0188f5bfa5c8479b",
-      "review_status": "pending"
+      "review_status": "reviewed",
+      "decision": "reference",
+      "owner": "documentation-and-history",
+      "reason": "Static documentation/data record reviewed for current content and linkage; it does not substitute for source or runtime validation.",
+      "evidence": [
+        "current_sha256=91626c4555f1a87caa0cc7261cd4082ecd67d74b1ff23bea0188f5bfa5c8479b",
+        "first_content_marker=# Task 4b Report",
+        "review_mode=static content and linkage review; no production or model request"
+      ]
     },
     {
       "path": ".superpowers/sdd/cindy-group-account-ops-v180/task-5-report.md",
@@ -1971,7 +2044,15 @@
       "present": true,
       "content_sha256": "bc97db159a41247160ae5dbc1bac8e7a86262a0243eb41135ab85a595f3b4d77",
       "review_fingerprint": "bc97db159a41247160ae5dbc1bac8e7a86262a0243eb41135ab85a595f3b4d77",
-      "review_status": "pending"
+      "review_status": "reviewed",
+      "decision": "reference",
+      "owner": "documentation-and-history",
+      "reason": "Static documentation/data record reviewed for current content and linkage; it does not substitute for source or runtime validation.",
+      "evidence": [
+        "current_sha256=bc97db159a41247160ae5dbc1bac8e7a86262a0243eb41135ab85a595f3b4d77",
+        "first_content_marker=# Task 5 Report",
+        "review_mode=static content and linkage review; no production or model request"
+      ]
     },
     {
       "path": ".superpowers/sdd/cindy-group-account-ops-v180/task-6-report.md",
@@ -1980,7 +2061,15 @@
       "present": true,
       "content_sha256": "1aa51a15ae109b429d221c1e901244eeb2dbae1e2748f23236fd6621ab518cfb",
       "review_fingerprint": "1aa51a15ae109b429d221c1e901244eeb2dbae1e2748f23236fd6621ab518cfb",
-      "review_status": "pending"
+      "review_status": "reviewed",
+      "decision": "reference",
+      "owner": "documentation-and-history",
+      "reason": "Static documentation/data record reviewed for current content and linkage; it does not substitute for source or runtime validation.",
+      "evidence": [
+        "current_sha256=1aa51a15ae109b429d221c1e901244eeb2dbae1e2748f23236fd6621ab518cfb",
+        "first_content_marker=# Task 6 Report",
+        "review_mode=static content and linkage review; no production or model request"
+      ]
     },
     {
       "path": "DOWNSTREAM.md",
@@ -1989,7 +2078,15 @@
       "present": true,
       "content_sha256": "cc75deaf225a80bdc3e2f39504461377ec77021c37737c93b6190f97408246f4",
       "review_fingerprint": "cc75deaf225a80bdc3e2f39504461377ec77021c37737c93b6190f97408246f4",
-      "review_status": "pending"
+      "review_status": "reviewed",
+      "decision": "reference",
+      "owner": "documentation-and-history",
+      "reason": "Static documentation/data record reviewed for current content and linkage; it does not substitute for source or runtime validation.",
+      "evidence": [
+        "current_sha256=cc75deaf225a80bdc3e2f39504461377ec77021c37737c93b6190f97408246f4",
+        "first_content_marker=# HTExplicit Sub2API Downstream",
+        "review_mode=static content and linkage review; no production or model request"
+      ]
     },
     {
       "path": "Dockerfile",
@@ -2025,7 +2122,15 @@
       "present": true,
       "content_sha256": "9b8fcc36729dbb0269d72865d24b87b54ab5d9b48a83e052caaf1c1ed31ddd93",
       "review_fingerprint": "9b8fcc36729dbb0269d72865d24b87b54ab5d9b48a83e052caaf1c1ed31ddd93",
-      "review_status": "pending"
+      "review_status": "reviewed",
+      "decision": "reference",
+      "owner": "documentation-and-history",
+      "reason": "Static documentation/data record reviewed for current content and linkage; it does not substitute for source or runtime validation.",
+      "evidence": [
+        "current_sha256=9b8fcc36729dbb0269d72865d24b87b54ab5d9b48a83e052caaf1c1ed31ddd93",
+        "first_content_marker=<div align=\"center\">",
+        "review_mode=static content and linkage review; no production or model request"
+      ]
     },
     {
       "path": "README_CN.md",
@@ -2034,7 +2139,15 @@
       "present": true,
       "content_sha256": "d281253d4ddde5e56bb79af0aa392d9fc28bb7c6e62abc4c7f73dc86043e69ba",
       "review_fingerprint": "d281253d4ddde5e56bb79af0aa392d9fc28bb7c6e62abc4c7f73dc86043e69ba",
-      "review_status": "pending"
+      "review_status": "reviewed",
+      "decision": "reference",
+      "owner": "documentation-and-history",
+      "reason": "Static documentation/data record reviewed for current content and linkage; it does not substitute for source or runtime validation.",
+      "evidence": [
+        "current_sha256=d281253d4ddde5e56bb79af0aa392d9fc28bb7c6e62abc4c7f73dc86043e69ba",
+        "first_content_marker=<div align=\"center\">",
+        "review_mode=static content and linkage review; no production or model request"
+      ]
     },
     {
       "path": "README_JA.md",
@@ -2043,7 +2156,15 @@
       "present": true,
       "content_sha256": "dfa35d21032931dfd5975d6e638d3134119190170f7aa177544d5f83ccb5dfc9",
       "review_fingerprint": "dfa35d21032931dfd5975d6e638d3134119190170f7aa177544d5f83ccb5dfc9",
-      "review_status": "pending"
+      "review_status": "reviewed",
+      "decision": "reference",
+      "owner": "documentation-and-history",
+      "reason": "Static documentation/data record reviewed for current content and linkage; it does not substitute for source or runtime validation.",
+      "evidence": [
+        "current_sha256=dfa35d21032931dfd5975d6e638d3134119190170f7aa177544d5f83ccb5dfc9",
+        "first_content_marker=<div align=\"center\">",
+        "review_mode=static content and linkage review; no production or model request"
+      ]
     },
     {
       "path": "THIRD_PARTY_NOTICES.md",
@@ -2052,7 +2173,15 @@
       "present": true,
       "content_sha256": "92b668fbb5e1b8ff5b36e69ccf662be781c9c3f1941f60d14b1ea592a09ba2aa",
       "review_fingerprint": "92b668fbb5e1b8ff5b36e69ccf662be781c9c3f1941f60d14b1ea592a09ba2aa",
-      "review_status": "pending"
+      "review_status": "reviewed",
+      "decision": "reference",
+      "owner": "documentation-and-history",
+      "reason": "Static documentation/data record reviewed for current content and linkage; it does not substitute for source or runtime validation.",
+      "evidence": [
+        "current_sha256=92b668fbb5e1b8ff5b36e69ccf662be781c9c3f1941f60d14b1ea592a09ba2aa",
+        "first_content_marker=# Third-Party Notices",
+        "review_mode=static content and linkage review; no production or model request"
+      ]
     },
     {
       "path": "backend/.golangci.yml",
@@ -14926,7 +15055,15 @@
       "present": true,
       "content_sha256": "14eb409446930c467e7647af4d7b64c031146a06f1cf11a2079804d93dd4b932",
       "review_fingerprint": "14eb409446930c467e7647af4d7b64c031146a06f1cf11a2079804d93dd4b932",
-      "review_status": "pending"
+      "review_status": "reviewed",
+      "decision": "reference",
+      "owner": "documentation-and-history",
+      "reason": "Static documentation/data record reviewed for current content and linkage; it does not substitute for source or runtime validation.",
+      "evidence": [
+        "current_sha256=14eb409446930c467e7647af4d7b64c031146a06f1cf11a2079804d93dd4b932",
+        "first_content_marker=# Sub2API Deployment Files",
+        "review_mode=static content and linkage review; no production or model request"
+      ]
     },
     {
       "path": "deploy/config.example.yaml",
@@ -14989,7 +15126,15 @@
       "present": true,
       "content_sha256": "60833ab02cb7beb115203adad6458b3886baf6dd58bf6d3534553dd3d3d157a7",
       "review_fingerprint": "60833ab02cb7beb115203adad6458b3886baf6dd58bf6d3534553dd3d3d157a7",
-      "review_status": "pending"
+      "review_status": "reviewed",
+      "decision": "reference",
+      "owner": "documentation-and-history",
+      "reason": "Static documentation/data record reviewed for current content and linkage; it does not substitute for source or runtime validation.",
+      "evidence": [
+        "current_sha256=60833ab02cb7beb115203adad6458b3886baf6dd58bf6d3534553dd3d3d157a7",
+        "first_content_marker=# 正式插件制品输入",
+        "review_mode=static content and linkage review; no production or model request"
+      ]
     },
     {
       "path": "deploy/tests/cindy-rollout-defaults-test.sh",
@@ -15043,7 +15188,15 @@
       "present": true,
       "content_sha256": "3754a3c04eb0add21c3a6b35d96b96ad385fec9acb02e633de0fa49eb551a5ba",
       "review_fingerprint": "3754a3c04eb0add21c3a6b35d96b96ad385fec9acb02e633de0fa49eb551a5ba",
-      "review_status": "pending"
+      "review_status": "reviewed",
+      "decision": "reference",
+      "owner": "documentation-and-history",
+      "reason": "Static documentation/data record reviewed for current content and linkage; it does not substitute for source or runtime validation.",
+      "evidence": [
+        "current_sha256=3754a3c04eb0add21c3a6b35d96b96ad385fec9acb02e633de0fa49eb551a5ba",
+        "first_content_marker=# Sub2API 插件开发",
+        "review_mode=static content and linkage review; no production or model request"
+      ]
     },
     {
       "path": "docs/channel-monitor-v2-safe-defaults.md",
@@ -15052,7 +15205,15 @@
       "present": true,
       "content_sha256": "0b552c4cfcd546ae8bd46670e5486418b3353576d93fb37d1584b0cde1e1a625",
       "review_fingerprint": "0b552c4cfcd546ae8bd46670e5486418b3353576d93fb37d1584b0cde1e1a625",
-      "review_status": "pending"
+      "review_status": "reviewed",
+      "decision": "reference",
+      "owner": "documentation-and-history",
+      "reason": "Static documentation/data record reviewed for current content and linkage; it does not substitute for source or runtime validation.",
+      "evidence": [
+        "current_sha256=0b552c4cfcd546ae8bd46670e5486418b3353576d93fb37d1584b0cde1e1a625",
+        "first_content_marker=# Channel Monitor V2 Safe Defaults & Gentle Backfill",
+        "review_mode=static content and linkage review; no production or model request"
+      ]
     },
     {
       "path": "frontend/index.html",
@@ -15120,7 +15281,17 @@
       "present": true,
       "content_sha256": "9bd12b24dc41f6d91a6cc762a0f89bf0bffcf99572eb847a9d053637a588ad6e",
       "review_fingerprint": "9bd12b24dc41f6d91a6cc762a0f89bf0bffcf99572eb847a9d053637a588ad6e",
-      "review_status": "pending"
+      "review_status": "reviewed",
+      "decision": "reference",
+      "owner": "documentation-and-history",
+      "reason": "Font license notice and checksum record matches paired font asset documentation; it is a legal/source record and carries no runtime instructions.",
+      "evidence": [
+        "current_sha256=9bd12b24dc41f6d91a6cc762a0f89bf0bffcf99572eb847a9d053637a588ad6e",
+        "first_content_marker=# MiSans",
+        "review_mode=static content and linkage review; no production or model request",
+        "paired MiSans NOTICE documents unmodified WOFF2 files and license",
+        "asset provenance separately covered by v027 provenance review"
+      ]
     },
     {
       "path": "frontend/src/App.vue",
@@ -19722,7 +19893,17 @@
       "present": true,
       "content_sha256": "9bd12b24dc41f6d91a6cc762a0f89bf0bffcf99572eb847a9d053637a588ad6e",
       "review_fingerprint": "9bd12b24dc41f6d91a6cc762a0f89bf0bffcf99572eb847a9d053637a588ad6e",
-      "review_status": "pending"
+      "review_status": "reviewed",
+      "decision": "reference",
+      "owner": "documentation-and-history",
+      "reason": "Font license notice and checksum record matches paired font asset documentation; it is a legal/source record and carries no runtime instructions.",
+      "evidence": [
+        "current_sha256=9bd12b24dc41f6d91a6cc762a0f89bf0bffcf99572eb847a9d053637a588ad6e",
+        "first_content_marker=# MiSans",
+        "review_mode=static content and linkage review; no production or model request",
+        "paired MiSans NOTICE documents unmodified WOFF2 files and license",
+        "asset provenance separately covered by v027 provenance review"
+      ]
     },
     {
       "path": "plugins/admin-observability/ui/assets/styles.css",
@@ -31233,7 +31414,18 @@
       "present": true,
       "content_sha256": "c71c50e2f7a303b5eebc2b24c0b1ca0d9c753e3240db05c3e472c679907898f7",
       "review_fingerprint": "c71c50e2f7a303b5eebc2b24c0b1ca0d9c753e3240db05c3e472c679907898f7",
-      "review_status": "pending"
+      "review_status": "reviewed",
+      "decision": "plugin",
+      "owner": "prompt-skills",
+      "reason": "Bundled optional prompt content is package data with fixed integrity and source notice; it is not executed as host code or treated as an operational instruction by this audit.",
+      "evidence": [
+        "current_sha256=c71c50e2f7a303b5eebc2b24c0b1ca0d9c753e3240db05c3e472c679907898f7",
+        "first_content_marker=[MODE: UNRESTRICTED]",
+        "review_mode=static content and linkage review; no production or model request",
+        "bundled source path under plugins/prompt-skills/source/prompts",
+        "THIRD_PARTY_NOTICES.md identifies fixed artifact/commit and SHA",
+        "implementation path loads it as an optional prompt seed, not a shell/network command"
+      ]
     },
     {
       "path": "plugins/prompt-skills/source/support.go",
