@@ -137,6 +137,7 @@ type CindyCapabilityControls struct {
 // neither provider-prefix stripping nor registry presence is treated as proof
 // that the live Cindy data plane accepts a model.
 type CindyCapability struct {
+	CodexPresentation          *CindyCodexModel
 	PublicID                   string
 	LiveUpstreamID             string
 	RegistryID                 string

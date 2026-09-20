@@ -21,6 +21,7 @@ import (
 	"github.com/Wei-Shaw/sub2api/internal/pkg/httpclient"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/openai"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/xai"
+	extensionv1 "github.com/Wei-Shaw/sub2api/pkg/extensionapi/v1"
 	"golang.org/x/net/http2"
 	"golang.org/x/sync/singleflight"
 )
@@ -2114,161 +2115,8 @@ func projectCindyCodexModelsManifest(body []byte) ([]byte, error) {
 	return rewriteCindyCodexModelsManifest(body)
 }
 
-type cindyCodexReasoningEffort struct {
-	Effort      string `json:"effort"`
-	Description string `json:"description"`
-}
-
-type cindyCodexTruncationPolicy struct {
-	Mode  string `json:"mode"`
-	Limit int64  `json:"limit"`
-}
-
-// cindyCodexModel mirrors every serialized field in the official
-// openai/codex rust-v0.147.0 ModelInfo. Fields represented by Rust Option are
-// deliberately emitted as null to keep the local manifest stable and explicit.
-type cindyCodexModel struct {
-	Slug                              string                      `json:"slug"`
-	DisplayName                       string                      `json:"display_name"`
-	Description                       *string                     `json:"description"`
-	DefaultReasoningLevel             *string                     `json:"default_reasoning_level"`
-	SupportedReasoningLevels          []cindyCodexReasoningEffort `json:"supported_reasoning_levels"`
-	ShellType                         string                      `json:"shell_type"`
-	Visibility                        string                      `json:"visibility"`
-	SupportedInAPI                    bool                        `json:"supported_in_api"`
-	Priority                          int                         `json:"priority"`
-	AdditionalSpeedTiers              []string                    `json:"additional_speed_tiers"`
-	ServiceTiers                      []any                       `json:"service_tiers"`
-	DefaultServiceTier                any                         `json:"default_service_tier"`
-	AvailabilityNUX                   any                         `json:"availability_nux"`
-	Upgrade                           any                         `json:"upgrade"`
-	BaseInstructions                  string                      `json:"base_instructions"`
-	ModelMessages                     any                         `json:"model_messages"`
-	IncludeSkillsUsageInstructions    bool                        `json:"include_skills_usage_instructions"`
-	IncludePluginUsageInstructions    bool                        `json:"include_plugin_usage_instructions"`
-	IncludeAppsUsageInstructions      bool                        `json:"include_apps_usage_instructions"`
-	SupportsReasoningSummaryParameter bool                        `json:"supports_reasoning_summary_parameter"`
-	DefaultReasoningSummary           string                      `json:"default_reasoning_summary"`
-	SupportVerbosity                  bool                        `json:"support_verbosity"`
-	DefaultVerbosity                  any                         `json:"default_verbosity"`
-	ApplyPatchToolType                any                         `json:"apply_patch_tool_type"`
-	WebSearchToolType                 string                      `json:"web_search_tool_type"`
-	TruncationPolicy                  cindyCodexTruncationPolicy  `json:"truncation_policy"`
-	SupportsParallelToolCalls         bool                        `json:"supports_parallel_tool_calls"`
-	SupportsImageDetailOriginal       bool                        `json:"supports_image_detail_original"`
-	ContextWindow                     *int                        `json:"context_window"`
-	MaxContextWindow                  *int                        `json:"max_context_window"`
-	AutoCompactTokenLimit             any                         `json:"auto_compact_token_limit"`
-	CompHash                          any                         `json:"comp_hash"`
-	EffectiveContextWindowPercent     int                         `json:"effective_context_window_percent"`
-	ExperimentalSupportedTools        []string                    `json:"experimental_supported_tools"`
-	InputModalities                   []string                    `json:"input_modalities"`
-	SupportsSearchTool                bool                        `json:"supports_search_tool"`
-	UseResponsesLite                  bool                        `json:"use_responses_lite"`
-	AutoReviewModelOverride           any                         `json:"auto_review_model_override"`
-	ModelSpecialty                    any                         `json:"model_specialty"`
-	ToolMode                          any                         `json:"tool_mode"`
-	MultiAgentVersion                 any                         `json:"multi_agent_version"`
-}
-
-func newCindyCodexModel(capability CindyCapability, priority int) cindyCodexModel {
-	displayName := strings.TrimSpace(capability.DisplayName)
-	if displayName == "" {
-		displayName = capability.PublicID
-	}
-	var description *string
-	if value := strings.TrimSpace(capability.Description); value != "" {
-		description = &value
-	}
-	var defaultReasoningLevel *string
-	if value := strings.TrimSpace(capability.DefaultReasoningEffort); value != "" {
-		defaultReasoningLevel = &value
-	}
-	reasoningLevels := make([]cindyCodexReasoningEffort, 0, len(capability.CodexReasoningEfforts()))
-	for _, effort := range capability.CodexReasoningEfforts() {
-		reasoningLevels = append(reasoningLevels, cindyCodexReasoningEffort{
-			Effort:      effort,
-			Description: cindyCodexReasoningEffortDescription(effort),
-		})
-	}
-	var contextWindow *int
-	if value := capability.EffectiveCodexContextWindow(); value > 0 {
-		contextWindow = &value
-	}
-	return cindyCodexModel{
-		Slug:                              capability.PublicID,
-		DisplayName:                       displayName,
-		Description:                       description,
-		DefaultReasoningLevel:             defaultReasoningLevel,
-		SupportedReasoningLevels:          reasoningLevels,
-		ShellType:                         "shell_command",
-		Visibility:                        "list",
-		SupportedInAPI:                    true,
-		Priority:                          priority,
-		AdditionalSpeedTiers:              []string{},
-		ServiceTiers:                      []any{},
-		BaseInstructions:                  openai.CodexBaseInstructionsForModel(capability.PublicID),
-		IncludeSkillsUsageInstructions:    false,
-		IncludePluginUsageInstructions:    false,
-		IncludeAppsUsageInstructions:      false,
-		SupportsReasoningSummaryParameter: true,
-		DefaultReasoningSummary:           "auto",
-		SupportVerbosity:                  false,
-		WebSearchToolType:                 "text",
-		TruncationPolicy:                  cindyCodexTruncationPolicyForModel(capability.PublicID),
-		SupportsParallelToolCalls:         false,
-		SupportsImageDetailOriginal:       false,
-		ContextWindow:                     contextWindow,
-		MaxContextWindow:                  contextWindow,
-		AutoCompactTokenLimit:             cindyCodexAutoCompactTokenLimitForModel(capability.PublicID),
-		EffectiveContextWindowPercent:     95,
-		ExperimentalSupportedTools:        []string{},
-		InputModalities:                   append([]string(nil), capability.InputModalities...),
-		SupportsSearchTool:                false,
-		UseResponsesLite:                  false,
-	}
-}
-
-func cindyCodexTruncationPolicyForModel(modelID string) cindyCodexTruncationPolicy {
-	switch modelID {
-	case "gpt-5.6-luna":
-		// Exact openai/codex rust-v0.147.0 models.json contract.
-		return cindyCodexTruncationPolicy{Mode: "tokens", Limit: 10000}
-	default:
-		// Official rust-v0.147.0 unknown-model fallback.
-		return cindyCodexTruncationPolicy{Mode: "bytes", Limit: 10000}
-	}
-}
-
-func cindyCodexAutoCompactTokenLimitForModel(modelID string) any {
-	switch modelID {
-	case "gpt-5.6-luna", "gpt-5.6-sol", "gpt-5.6-terra":
-		return 900000
-	default:
-		return nil
-	}
-}
-
-func cindyCodexReasoningEffortDescription(effort string) string {
-	switch effort {
-	case "minimal":
-		return "Minimal reasoning"
-	case "low":
-		return "Low reasoning"
-	case "medium":
-		return "Medium reasoning"
-	case "high":
-		return "High reasoning"
-	case "xhigh":
-		return "Extra high reasoning"
-	case "max":
-		return "Maximum reasoning"
-	case "ultra":
-		return "Ultra reasoning"
-	default:
-		return effort
-	}
-}
+type cindyCodexModel = extensionv1.CindyCodexModel
+type cindyCodexTruncationPolicy = extensionv1.CindyCodexTruncationPolicy
 
 // BuildCindyCodexModelsManifest builds the deterministic local manifest used
 // by strict Cindy groups. It never fetches Cindy's upstream /models response,
@@ -2281,7 +2129,11 @@ func BuildCindyCodexModelsManifest(ifNoneMatch string) (*OpenAIModelsResponse, e
 		if !ok {
 			return nil, fmt.Errorf("build local Cindy Codex models manifest: unknown catalog model %q", modelID)
 		}
-		models = append(models, newCindyCodexModel(capability, priority+1))
+		model, err := newCindyCodexModel(capability, priority+1)
+		if err != nil {
+			return nil, err
+		}
+		models = append(models, model)
 	}
 	body, err := json.Marshal(map[string]any{"models": models})
 	if err != nil {
@@ -2424,7 +2276,11 @@ func mergeCindyCodexModelsManifest(body []byte) ([]byte, error) {
 		if !ok {
 			return nil, fmt.Errorf("merge Cindy Codex models manifest: unknown catalog model %q", publicID)
 		}
-		encoded, err := json.Marshal(newCindyCodexModel(capability, len(merged)+1))
+		model, err := newCindyCodexModel(capability, len(merged)+1)
+		if err != nil {
+			return nil, err
+		}
+		encoded, err := json.Marshal(model)
 		if err != nil {
 			return nil, fmt.Errorf("encode catalog model %q: %w", publicID, err)
 		}

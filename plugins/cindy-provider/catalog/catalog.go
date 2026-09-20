@@ -84,6 +84,7 @@ func (r Registry) CindyCapabilities() []CindyCapability {
 
 func (r Registry) cloneCindyCapability(in CindyCapability) CindyCapability {
 	out := in
+	out.CodexPresentation = newCodexPresentation(in)
 	if in.InputModalities != nil {
 		out.InputModalities = append([]string{}, in.InputModalities...)
 	}
