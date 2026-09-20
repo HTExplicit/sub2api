@@ -21,6 +21,7 @@ import { usePluginExtensions } from '@/stores/pluginExtensions'
 import { callPluginResource, type PluginResourceDescriptor } from './resourceClient'
 import { extractApiErrorCode } from '@sub2api/plugin-ui/errors'
 import { pluginPreferenceEvent, pluginPreferenceKey, readPluginPreference, writeBrowserPreference } from './preferences'
+import { getConfiguredTablePageSizeOptions } from '@/utils/tablePreferences'
 
 const props = withDefaults(defineProps<{ pluginId: number; title: string; inline?: boolean; permission?: 'admin' | 'user'; context?: Record<string, unknown> }>(), { inline: false, permission: 'admin', context: () => ({}) })
 const emit = defineEmits<{ saved: []; job: [job: AccountJob]; event: [name: string, payload: unknown] }>()
@@ -68,7 +69,7 @@ function currentContext() {
   return JSON.parse(JSON.stringify({ ...props.context, actor_id: auth.user?.id, retained_controls: contribution?.retained_controls === true, layout: props.inline ? 'inline' : 'page', locale: locale?.value || 'zh', theme: document.documentElement.classList.contains('dark') ? 'dark' : 'light',
     available: !changed && (!props.context.contribution_id || !!contribution?.available),
     unavailable_message: changed ? t('admin.plugins.uiVersionChanged') : t('admin.plugins.extensionUnavailable'),
-    theme_tokens: tokens, theme_stylesheets: registry.items.filter(item => item.slot === 'theme' && item.available && item.stylesheet_url).map(item => item.stylesheet_url!) }))
+    table_page_size_options: getConfiguredTablePageSizeOptions(), theme_tokens: tokens, theme_stylesheets: registry.items.filter(item => item.slot === 'theme' && item.available && item.stylesheet_url).map(item => item.stylesheet_url!) }))
 }
 
 function sendContext() {

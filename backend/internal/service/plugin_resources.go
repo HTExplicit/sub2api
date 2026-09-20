@@ -168,9 +168,15 @@ func (m *PluginManager) ResourceDescriptors(ctx context.Context, id int64, permi
 		if descriptor.Retained {
 			cacheKey += "/retained"
 		}
+		if descriptor.AllAccounts {
+			cacheKey += "/all-accounts"
+		}
 		ready, known := availability[cacheKey]
 		if !known {
-			_, release, err := m.BindResourceContext(ctx, id, installation.PackageSHA256, descriptor.ResourceGrant, descriptor.Retained)
+			bound, release, err := m.BindResourceContext(ctx, id, installation.PackageSHA256, descriptor.ResourceGrant, descriptor.Retained)
+			if err == nil && descriptor.AllAccounts {
+				err = m.ValidateResourceAccounts(bound, descriptor.Capability, nil, true)
+			}
 			ready = err == nil
 			if release != nil {
 				release()

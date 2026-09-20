@@ -260,6 +260,9 @@ func (m PluginManifest) ValidateForRuntime(runtimeKey string) error {
 				return errors.New("插件界面贡献引用未声明的能力")
 			}
 		}
+		if contribution.AllAccounts && (contribution.Capability == "" || contribution.Permission != "admin") {
+			return errors.New("全账号界面必须声明管理员权限和依赖能力")
+		}
 		if contribution.Slot == "theme" {
 			if contribution.Permission != "public" || !strings.HasSuffix(contribution.Entrypoint, ".css") || len(contribution.Assets) > 32 {
 				return errors.New("主题贡献必须声明公开 CSS 和有界资源集合")

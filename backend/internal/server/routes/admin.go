@@ -212,17 +212,24 @@ func registerSystemPromptRoutes(admin *gin.RouterGroup, h *handler.Handlers) {
 
 func registerPromptAuditRoutes(admin *gin.RouterGroup, h *handler.Handlers) {
 	promptAudit := admin.Group("/prompt-audit")
-	{
-		promptAudit.GET("/config", h.Admin.PromptAudit.GetConfig)
-		promptAudit.PUT("/config", h.Admin.PromptAudit.UpdateConfig)
-		promptAudit.POST("/endpoints/probe", h.Admin.PromptAudit.ProbeEndpoint)
-		promptAudit.GET("/runtime", h.Admin.PromptAudit.GetRuntime)
-		promptAudit.GET("/events", h.Admin.PromptAudit.ListEvents)
-		promptAudit.GET("/events/:id", h.Admin.PromptAudit.GetEvent)
-		promptAudit.DELETE("/events/:id", h.Admin.PromptAudit.DeleteEvent)
-		promptAudit.POST("/events/batch-delete", h.Admin.PromptAudit.BatchDelete)
-		promptAudit.POST("/events/delete-preview", h.Admin.PromptAudit.DeletePreview)
-		promptAudit.POST("/events/delete-by-filter", h.Admin.PromptAudit.DeleteByFilter)
+	for _, route := range []struct {
+		method, path, name string
+		handler            gin.HandlerFunc
+	}{
+		{"GET", "/config", "config", h.Admin.PromptAudit.GetConfig},
+		{"PUT", "/config", "update", h.Admin.PromptAudit.UpdateConfig},
+		{"POST", "/endpoints/probe", "probe", h.Admin.PromptAudit.ProbeEndpoint},
+		{"GET", "/runtime", "runtime", h.Admin.PromptAudit.GetRuntime},
+		{"GET", "/events", "events", h.Admin.PromptAudit.ListEvents},
+		{"GET", "/events/:id", "event", h.Admin.PromptAudit.GetEvent},
+		{"DELETE", "/events/:id", "delete", h.Admin.PromptAudit.DeleteEvent},
+		{"POST", "/events/batch-delete", "batch-delete", h.Admin.PromptAudit.BatchDelete},
+		{"POST", "/events/delete-preview", "delete-preview", h.Admin.PromptAudit.DeletePreview},
+		{"POST", "/events/delete-by-filter", "delete-by-filter", h.Admin.PromptAudit.DeleteByFilter},
+		{"GET", "/groups", "groups", h.Admin.Group.PluginOptions},
+	} {
+		descriptor := extensionv1.ResourceDescriptor{ResourceGrant: extensionv1.ResourceGrant{Name: "prompt-audit." + route.name, Capability: extensionv1.CapabilityUI, Permission: "admin"}, Method: route.method, Path: promptAudit.BasePath() + route.path, AllAccounts: true}
+		promptAudit.Handle(route.method, route.path, h.Admin.Plugin.RegisterResource(descriptor), route.handler)
 	}
 }
 

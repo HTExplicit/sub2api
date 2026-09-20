@@ -46,6 +46,36 @@ type resourceAccountDirectory struct {
 	accounts map[int64]extensionv1.Account
 }
 
+func TestGlobalContributionAndResourceRequireFullBinding(t *testing.T) {
+	grant := extensionv1.ResourceGrant{Name: "prompt-audit.config", Capability: extensionv1.CapabilityUI, Permission: "admin"}
+	installation := &PluginInstallation{ID: 7, RuntimeGeneration: 1, State: PluginStateEnabled,
+		Manifest: PluginManifest{Resources: []extensionv1.ResourceGrant{grant}, Contributions: []extensionv1.Contribution{{ID: "prompt-audit", Slot: "surface", Permission: "admin", Capability: grant.Capability, AllAccounts: true}}},
+		Bindings: []PluginBinding{{Capability: grant.Capability, Platform: "*", AccountType: "*", Enabled: true, RolloutPercent: 100}}}
+	manager := NewPluginManager(&pluginTokenRepository{installation: installation}, pluginTokenEncryptor{}, nil, PluginHostInfo{}, nil)
+	runtime := &pluginRuntime{installation: installation, client: hcplugin.NewClient(&hcplugin.ClientConfig{}), done: make(chan struct{})}
+	manager.extensions.Store(&pluginExtensionRegistry{installations: map[int64]*PluginInstallation{7: installation}, runtimes: map[int64]*pluginRuntime{7: runtime}})
+	descriptors := []extensionv1.ResourceDescriptor{{ResourceGrant: grant, AllAccounts: true, Method: "GET", Path: "/fixture"}}
+	for _, scope := range []struct {
+		platform string
+		rollout  int
+		allowed  bool
+	}{{"*", 100, true}, {PlatformOpenAI, 100, false}, {"*", 99, false}} {
+		installation.Bindings[0].Platform, installation.Bindings[0].RolloutPercent = scope.platform, scope.rollout
+		items, err := manager.ResourceDescriptors(context.Background(), 7, "admin", descriptors)
+		require.NoError(t, err)
+		require.Len(t, items, 1)
+		require.Equal(t, scope.allowed, items[0].Available)
+		require.Equal(t, scope.allowed, len(manager.Contributions()) == 1)
+		bound, release, err := manager.BindResourceContext(context.Background(), 7, "", grant)
+		require.NoError(t, err)
+		require.Equal(t, scope.allowed, manager.ValidateResourceAccounts(bound, grant.Capability, nil, true) == nil)
+		release()
+	}
+	user, err := manager.ResourceDescriptors(context.Background(), 7, "user", descriptors)
+	require.NoError(t, err)
+	require.Empty(t, user)
+}
+
 func (d *resourceAccountDirectory) ReadExtensionAccount(_ context.Context, id int64) (*extensionv1.Account, error) {
 	account := d.accounts[id]
 	return &account, nil

@@ -278,7 +278,7 @@ func (m *PluginManager) Contributions() []PluginContribution {
 			if contribution.Capability != "" {
 				enabled := false
 				for _, binding := range installation.Bindings {
-					if binding.Enabled && binding.Capability == contribution.Capability {
+					if binding.Enabled && binding.Capability == contribution.Capability && (!contribution.AllAccounts || (binding.Platform == "*" && binding.AccountType == "*" && binding.RolloutPercent == 100)) {
 						enabled = true
 						break
 					}

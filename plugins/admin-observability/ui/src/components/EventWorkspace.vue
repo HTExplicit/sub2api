@@ -106,7 +106,7 @@
 <script setup lang="ts">
 import { computed, defineComponent, h, reactive, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import Pagination from '@/components/common/Pagination.vue'
+import Pagination from './Pagination.vue'
 import type { PromptAuditEvent, PromptEventFilters } from '../types'
 import { cloneData, emptyEventFilters, SCANNER_CATALOG } from '../viewModel'
 

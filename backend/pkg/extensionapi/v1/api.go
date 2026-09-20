@@ -40,6 +40,7 @@ type Dependency struct {
 }
 
 type Contribution struct {
+	AllAccounts      bool              `json:"all_accounts,omitempty"`
 	RetainedControls bool              `json:"retained_controls,omitempty"`
 	Events           []string          `json:"events,omitempty"`
 	Capability       string            `json:"capability,omitempty"`

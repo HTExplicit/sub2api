@@ -1,13 +1,13 @@
 {
   "schema_version": 3,
   "upstream_base": "aea725f2ea644d5592d0bbb1d63b607efa7e200a",
-  "basis_commit": "76b7f68765ee1428e6df67bc6df43d106b5dff29",
+  "basis_commit": "a24c245acdcc154b9f96c33bc716921bd9c39727",
   "scope": "Current Sub2API downstream source and working tree. Candidate ownership does not establish completed review. Root maintenance, independent services and Worker require a separate audit.",
-  "source_digest": "0bf8d727f3c8dc839622e255bd00f12839fab208835a60c72100d3bb7fce5c64",
+  "source_digest": "901a6fc197ad2c988a9fc1c913c00e51f6d77453d37df86c98c3f4016a8f1bfb",
   "digest_excludes": [
     "the inventory itself uses a derived structural fingerprint; deletions bind the upstream blob"
   ],
-  "total_paths": 2270,
+  "total_paths": 2303,
   "generated_assets_and_locks": 83,
   "review_complete": false,
   "pending_paths": [
@@ -138,6 +138,7 @@
     "backend/internal/handler/admin/group_handler.go",
     "backend/internal/handler/admin/group_handler_platform_test.go",
     "backend/internal/handler/admin/group_handler_simple_mode_test.go",
+    "backend/internal/handler/admin/group_plugin_options.go",
     "backend/internal/handler/admin/openai_oauth_handler.go",
     "backend/internal/handler/admin/payment_handler_test.go",
     "backend/internal/handler/admin/plugin_contract_fixture_test.go",
@@ -1066,6 +1067,7 @@
     "backend/pkg/extensionapi/ui/components/BaseDialog.vue",
     "backend/pkg/extensionapi/ui/components/ConfirmDialog.vue",
     "backend/pkg/extensionapi/ui/components/Icon.vue",
+    "backend/pkg/extensionapi/ui/components/Pagination.vue",
     "backend/pkg/extensionapi/ui/components/Select.vue",
     "backend/pkg/extensionapi/ui/components/Toggle.vue",
     "backend/pkg/extensionapi/ui/components/dialogStack.ts",
@@ -1377,11 +1379,20 @@
     "frontend/src/features/image-studio/history.spec.ts",
     "frontend/src/features/image-studio/history.ts",
     "frontend/src/features/prompt-audit/PromptAuditView.vue",
+    "frontend/src/features/prompt-audit/__tests__/PromptAuditView.spec.ts",
+    "frontend/src/features/prompt-audit/__tests__/api.spec.ts",
+    "frontend/src/features/prompt-audit/__tests__/components.spec.ts",
+    "frontend/src/features/prompt-audit/__tests__/integrationSurface.spec.ts",
+    "frontend/src/features/prompt-audit/__tests__/viewModel.spec.ts",
+    "frontend/src/features/prompt-audit/api.ts",
     "frontend/src/features/prompt-audit/components/EndpointPool.vue",
+    "frontend/src/features/prompt-audit/components/EventDetailDialog.vue",
     "frontend/src/features/prompt-audit/components/EventWorkspace.vue",
     "frontend/src/features/prompt-audit/components/FilterDeleteDialog.vue",
     "frontend/src/features/prompt-audit/components/PolicyPanel.vue",
     "frontend/src/features/prompt-audit/components/RuntimeOverview.vue",
+    "frontend/src/features/prompt-audit/types.ts",
+    "frontend/src/features/prompt-audit/viewModel.ts",
     "frontend/src/i18n/__tests__/accountConsoleLocales.spec.ts",
     "frontend/src/i18n/__tests__/cindyProbeLocales.spec.ts",
     "frontend/src/i18n/locales/en/admin/accountTasks.ts",
@@ -1389,6 +1400,7 @@
     "frontend/src/i18n/locales/en/admin/index.ts",
     "frontend/src/i18n/locales/en/admin/overview.ts",
     "frontend/src/i18n/locales/en/admin/plugins.ts",
+    "frontend/src/i18n/locales/en/admin/promptAudit.ts",
     "frontend/src/i18n/locales/en/admin/settings.ts",
     "frontend/src/i18n/locales/en/admin/systemPrompts.ts",
     "frontend/src/i18n/locales/en/common.ts",
@@ -1400,6 +1412,7 @@
     "frontend/src/i18n/locales/zh/admin/index.ts",
     "frontend/src/i18n/locales/zh/admin/overview.ts",
     "frontend/src/i18n/locales/zh/admin/plugins.ts",
+    "frontend/src/i18n/locales/zh/admin/promptAudit.ts",
     "frontend/src/i18n/locales/zh/admin/settings.ts",
     "frontend/src/i18n/locales/zh/admin/systemPrompts.ts",
     "frontend/src/i18n/locales/zh/common.ts",
@@ -1573,11 +1586,31 @@
     "plugins/admin-observability/policy/module.go",
     "plugins/admin-observability/policy/module_test.go",
     "plugins/admin-observability/scripts/check-theme.py",
+    "plugins/admin-observability/scripts/check-ui.py",
     "plugins/admin-observability/ui/assets/app.js",
     "plugins/admin-observability/ui/assets/fonts/NOTICE.md",
     "plugins/admin-observability/ui/assets/styles.css",
     "plugins/admin-observability/ui/assets/theme.css",
     "plugins/admin-observability/ui/index.html",
+    "plugins/admin-observability/ui/src/PromptAuditView.vue",
+    "plugins/admin-observability/ui/src/__tests__/PromptAuditView.spec.ts",
+    "plugins/admin-observability/ui/src/__tests__/api.spec.ts",
+    "plugins/admin-observability/ui/src/__tests__/components.spec.ts",
+    "plugins/admin-observability/ui/src/__tests__/viewModel.spec.ts",
+    "plugins/admin-observability/ui/src/api.ts",
+    "plugins/admin-observability/ui/src/components/EndpointPool.vue",
+    "plugins/admin-observability/ui/src/components/EventDetailDialog.vue",
+    "plugins/admin-observability/ui/src/components/EventWorkspace.vue",
+    "plugins/admin-observability/ui/src/components/FilterDeleteDialog.vue",
+    "plugins/admin-observability/ui/src/components/Pagination.vue",
+    "plugins/admin-observability/ui/src/components/PolicyPanel.vue",
+    "plugins/admin-observability/ui/src/components/RuntimeOverview.vue",
+    "plugins/admin-observability/ui/src/index.html",
+    "plugins/admin-observability/ui/src/locales/en.ts",
+    "plugins/admin-observability/ui/src/locales/zh.ts",
+    "plugins/admin-observability/ui/src/main.ts",
+    "plugins/admin-observability/ui/src/types.ts",
+    "plugins/admin-observability/ui/src/viewModel.ts",
     "plugins/bundle.source.json",
     "plugins/cindy-provider/catalog/catalog.go",
     "plugins/cindy-provider/catalog/catalog_data.go",
@@ -1693,14 +1726,14 @@
     "dependency-lock": 9,
     "documentation": 28,
     "generated": 68,
-    "source": 1011,
-    "test-or-fixture": 690
+    "source": 1035,
+    "test-or-fixture": 699
   },
   "owner_counts": {
     "operations": 42,
     "documentation-and-history": 26,
-    "mixed-requires-review": 1025,
-    "core-extension-and-job-host": 178,
+    "mixed-requires-review": 1037,
+    "core-extension-and-job-host": 179,
     "core-data-and-migrations": 21,
     "cindy-provider": 182,
     "image-tools": 45,
@@ -1708,7 +1741,7 @@
     "codex-runtime": 44,
     "prompt-skills": 553,
     "core-quota-and-protocol": 22,
-    "admin-observability": 34,
+    "admin-observability": 54,
     "model-policy": 19
   },
   "entries": [
@@ -1754,7 +1787,7 @@
       "role": "documentation",
       "present": true,
       "content_sha256": null,
-      "review_fingerprint": "6a7c06d5fa30c05fd4328342e7f8e1798caf39e8cf85a0a06f9efa08739d1fa4",
+      "review_fingerprint": "127ad8f6a09b312d8e0c0b6a25b0cbec8835ba6827757b48d850007023042b90",
       "review_status": "reviewed",
       "decision": "generated-source",
       "owner": "operations",
@@ -1783,8 +1816,8 @@
       "candidate_owner": "documentation-and-history",
       "role": "documentation",
       "present": true,
-      "content_sha256": "2d42b7c13cbd8597588d3f05bddc24834e89a07e2709faa849a61529b790b242",
-      "review_fingerprint": "2d42b7c13cbd8597588d3f05bddc24834e89a07e2709faa849a61529b790b242",
+      "content_sha256": "1a2940ccaa929c94bed8c5896a7877681f69e288d0594e7bdda3438b94d18a99",
+      "review_fingerprint": "1a2940ccaa929c94bed8c5896a7877681f69e288d0594e7bdda3438b94d18a99",
       "review_status": "pending"
     },
     {
@@ -4502,6 +4535,15 @@
       "review_status": "pending"
     },
     {
+      "path": "backend/internal/handler/admin/group_plugin_options.go",
+      "candidate_owner": "mixed-requires-review",
+      "role": "source",
+      "present": true,
+      "content_sha256": "b5aacd4249941ff4c4838cfcebaf221ab577e4a65a284027aaea77ba3b205c0c",
+      "review_fingerprint": "b5aacd4249941ff4c4838cfcebaf221ab577e4a65a284027aaea77ba3b205c0c",
+      "review_status": "pending"
+    },
+    {
       "path": "backend/internal/handler/admin/openai_oauth_handler.go",
       "candidate_owner": "mixed-requires-review",
       "role": "source",
@@ -7210,8 +7252,8 @@
       "candidate_owner": "mixed-requires-review",
       "role": "source",
       "present": true,
-      "content_sha256": "3d68492bcfdd2d6d2c47c57cc1981626965d8ade338035dd5be5675da4f509e3",
-      "review_fingerprint": "3d68492bcfdd2d6d2c47c57cc1981626965d8ade338035dd5be5675da4f509e3",
+      "content_sha256": "d5986108f011b24f1b588e81eba7360175d5214c8007c8431f3e447f33d08562",
+      "review_fingerprint": "d5986108f011b24f1b588e81eba7360175d5214c8007c8431f3e447f33d08562",
       "review_status": "pending"
     },
     {
@@ -8092,8 +8134,8 @@
       "candidate_owner": "prompt-skills",
       "role": "source",
       "present": true,
-      "content_sha256": "8f917939a57b67b1e056c29ea5c5c1852776e7966d5330583dbda77f5662dc7b",
-      "review_fingerprint": "8f917939a57b67b1e056c29ea5c5c1852776e7966d5330583dbda77f5662dc7b",
+      "content_sha256": "a12674b9d4cdb4e30b9afcd45f9b09dd3036bf9b7fd9ca4815b3d58b5516b016",
+      "review_fingerprint": "a12674b9d4cdb4e30b9afcd45f9b09dd3036bf9b7fd9ca4815b3d58b5516b016",
       "review_status": "pending"
     },
     {
@@ -8101,8 +8143,8 @@
       "candidate_owner": "prompt-skills",
       "role": "test-or-fixture",
       "present": true,
-      "content_sha256": "3987ee768ec174dfc615a3c35a09bfedebbc4ac120178b6cac139c76c7eed975",
-      "review_fingerprint": "3987ee768ec174dfc615a3c35a09bfedebbc4ac120178b6cac139c76c7eed975",
+      "content_sha256": "d3ac37dab84c5384b87f2b4e62369deb79f6bb34c2427780a36736423b2b4738",
+      "review_fingerprint": "d3ac37dab84c5384b87f2b4e62369deb79f6bb34c2427780a36736423b2b4738",
       "review_status": "pending"
     },
     {
@@ -11532,8 +11574,8 @@
       "candidate_owner": "core-extension-and-job-host",
       "role": "source",
       "present": true,
-      "content_sha256": "7af13ef11e162aef31dd98f292c94f194840301fb3d243f9f066e73198fdb67c",
-      "review_fingerprint": "7af13ef11e162aef31dd98f292c94f194840301fb3d243f9f066e73198fdb67c",
+      "content_sha256": "fc1b4da11bf80890c8004cb4d40de4bee6e2f892214eb1e45222db63bac79280",
+      "review_fingerprint": "fc1b4da11bf80890c8004cb4d40de4bee6e2f892214eb1e45222db63bac79280",
       "review_status": "pending"
     },
     {
@@ -11625,8 +11667,8 @@
       "candidate_owner": "core-extension-and-job-host",
       "role": "source",
       "present": true,
-      "content_sha256": "7fc6b6f76d33ffc663635955a687c2baf5eaf73bab0363ff9fdfc582bd9553f9",
-      "review_fingerprint": "7fc6b6f76d33ffc663635955a687c2baf5eaf73bab0363ff9fdfc582bd9553f9",
+      "content_sha256": "6cbe687cf7cc784ea6625574e5f8a83c8405b084829dd7b0374697c7bba3ab03",
+      "review_fingerprint": "6cbe687cf7cc784ea6625574e5f8a83c8405b084829dd7b0374697c7bba3ab03",
       "review_status": "pending"
     },
     {
@@ -11715,8 +11757,8 @@
       "candidate_owner": "core-extension-and-job-host",
       "role": "source",
       "present": true,
-      "content_sha256": "04caac266a0a574fc99eea9260a75541500e877fe0f278121450658eee5eff62",
-      "review_fingerprint": "04caac266a0a574fc99eea9260a75541500e877fe0f278121450658eee5eff62",
+      "content_sha256": "17655b0e51a1088b42809429040bef0dacda123f271b101d92cf760ae0058887",
+      "review_fingerprint": "17655b0e51a1088b42809429040bef0dacda123f271b101d92cf760ae0058887",
       "review_status": "pending"
     },
     {
@@ -11760,8 +11802,8 @@
       "candidate_owner": "core-extension-and-job-host",
       "role": "source",
       "present": true,
-      "content_sha256": "76ef06b8b0862c92a74f07dcc9c1ccffc37610fa214a5ae299c75375235c7273",
-      "review_fingerprint": "76ef06b8b0862c92a74f07dcc9c1ccffc37610fa214a5ae299c75375235c7273",
+      "content_sha256": "46c03d1f8bf48a02a44641217a226555f6fd6108165d0f396ddc25e611af3988",
+      "review_fingerprint": "46c03d1f8bf48a02a44641217a226555f6fd6108165d0f396ddc25e611af3988",
       "review_status": "pending"
     },
     {
@@ -11769,8 +11811,8 @@
       "candidate_owner": "core-extension-and-job-host",
       "role": "test-or-fixture",
       "present": true,
-      "content_sha256": "0ebe6e72cefbbbd1720c0e4d5235b73ddf4c7cbee785b88a85710089b5a4aefb",
-      "review_fingerprint": "0ebe6e72cefbbbd1720c0e4d5235b73ddf4c7cbee785b88a85710089b5a4aefb",
+      "content_sha256": "914a3f748e0446ae5a4c757127a53d30accb947215b085259c35e20be447aa63",
+      "review_fingerprint": "914a3f748e0446ae5a4c757127a53d30accb947215b085259c35e20be447aa63",
       "review_status": "pending"
     },
     {
@@ -12254,8 +12296,8 @@
       "candidate_owner": "prompt-skills",
       "role": "source",
       "present": true,
-      "content_sha256": "91d3c7086228e358de56613128d200c4e32b211f6b2bcc3192333f12a09154f1",
-      "review_fingerprint": "91d3c7086228e358de56613128d200c4e32b211f6b2bcc3192333f12a09154f1",
+      "content_sha256": "2db691fb39012e8b3ecdf5654b689582e7db038a31ffcc7e65656f346e18e25c",
+      "review_fingerprint": "2db691fb39012e8b3ecdf5654b689582e7db038a31ffcc7e65656f346e18e25c",
       "review_status": "pending"
     },
     {
@@ -12299,8 +12341,8 @@
       "candidate_owner": "prompt-skills",
       "role": "source",
       "present": true,
-      "content_sha256": "98e821f72f960736750cb3c72650724b4a9f70db5ef4f8b81d80ab373ec253e0",
-      "review_fingerprint": "98e821f72f960736750cb3c72650724b4a9f70db5ef4f8b81d80ab373ec253e0",
+      "content_sha256": "db08bfa3fd528d68f464ab330f6227e2d104bc780c3aa37e012dee85228938c8",
+      "review_fingerprint": "db08bfa3fd528d68f464ab330f6227e2d104bc780c3aa37e012dee85228938c8",
       "review_status": "pending"
     },
     {
@@ -12326,8 +12368,8 @@
       "candidate_owner": "prompt-skills",
       "role": "test-or-fixture",
       "present": true,
-      "content_sha256": "dc7609571254d3835e61c13d050e31a49144b433b0ba94b05d6b8227b669fc96",
-      "review_fingerprint": "dc7609571254d3835e61c13d050e31a49144b433b0ba94b05d6b8227b669fc96",
+      "content_sha256": "d79a7747bb594ba68d8f70ec4a1ba74631086eb3b1679ebd3c783ca71622571b",
+      "review_fingerprint": "d79a7747bb594ba68d8f70ec4a1ba74631086eb3b1679ebd3c783ca71622571b",
       "review_status": "pending"
     },
     {
@@ -13455,6 +13497,15 @@
       "review_status": "pending"
     },
     {
+      "path": "backend/pkg/extensionapi/ui/components/Pagination.vue",
+      "candidate_owner": "core-extension-and-job-host",
+      "role": "source",
+      "present": true,
+      "content_sha256": "bb6f8f4b64faae567ca8071772939575c4e022c93b9acecaf731cea6e95f72ed",
+      "review_fingerprint": "bb6f8f4b64faae567ca8071772939575c4e022c93b9acecaf731cea6e95f72ed",
+      "review_status": "pending"
+    },
+    {
       "path": "backend/pkg/extensionapi/ui/components/Select.vue",
       "candidate_owner": "core-extension-and-job-host",
       "role": "source",
@@ -13504,8 +13555,8 @@
       "candidate_owner": "core-extension-and-job-host",
       "role": "source",
       "present": true,
-      "content_sha256": "5262137e3b0343cdb9ac363b0589be526aa15b23561559a75266b7bd673a9542",
-      "review_fingerprint": "5262137e3b0343cdb9ac363b0589be526aa15b23561559a75266b7bd673a9542",
+      "content_sha256": "a49cc4d208a1681a365b472497f3b83d8fd1d78466f3b8bcdce8f35f90e2af77",
+      "review_fingerprint": "a49cc4d208a1681a365b472497f3b83d8fd1d78466f3b8bcdce8f35f90e2af77",
       "review_status": "pending"
     },
     {
@@ -13567,8 +13618,8 @@
       "candidate_owner": "core-extension-and-job-host",
       "role": "source",
       "present": true,
-      "content_sha256": "970ed8b276703b3f1bb1b5b4ea5904db2ac700cb0edd7d26b404a0702459d96b",
-      "review_fingerprint": "970ed8b276703b3f1bb1b5b4ea5904db2ac700cb0edd7d26b404a0702459d96b",
+      "content_sha256": "76d263690576cdbd679ae662f47349c7a17b62f7aa8c5c6b28e1e2a4c6eaafc4",
+      "review_fingerprint": "76d263690576cdbd679ae662f47349c7a17b62f7aa8c5c6b28e1e2a4c6eaafc4",
       "review_status": "pending"
     },
     {
@@ -13731,8 +13782,8 @@
       "candidate_owner": "core-extension-and-job-host",
       "role": "source",
       "present": true,
-      "content_sha256": "9c87beb1e6ebf344952d6f168b4183b9359373f0031406b9e69182360dcc275d",
-      "review_fingerprint": "9c87beb1e6ebf344952d6f168b4183b9359373f0031406b9e69182360dcc275d",
+      "content_sha256": "9e1f3a5a200918fa15a650e5cfa04623da943f802ec807be53983e53b59cabec",
+      "review_fingerprint": "9e1f3a5a200918fa15a650e5cfa04623da943f802ec807be53983e53b59cabec",
       "review_status": "pending"
     },
     {
@@ -14232,8 +14283,8 @@
       "candidate_owner": "core-extension-and-job-host",
       "role": "source",
       "present": true,
-      "content_sha256": "3e8a73ff5778b0ad42f27513419d1f1aaa2bedfee308af34edb13a7c473da9da",
-      "review_fingerprint": "3e8a73ff5778b0ad42f27513419d1f1aaa2bedfee308af34edb13a7c473da9da",
+      "content_sha256": "e9964dbdb1805713ca70f094447648886541d91fd93f5801f0cc92fa328f1c3c",
+      "review_fingerprint": "e9964dbdb1805713ca70f094447648886541d91fd93f5801f0cc92fa328f1c3c",
       "review_status": "pending"
     },
     {
@@ -15609,8 +15660,8 @@
       "candidate_owner": "mixed-requires-review",
       "role": "source",
       "present": true,
-      "content_sha256": "47a60902125cc1b8a81907861ec4e5c6dccd478e0ced43908519a6afd7dfa5ed",
-      "review_fingerprint": "47a60902125cc1b8a81907861ec4e5c6dccd478e0ced43908519a6afd7dfa5ed",
+      "content_sha256": "32a019c35f7a774c5e3aa6d6a2287a7f697b8f22ed770910d42e8a84c1bf082c",
+      "review_fingerprint": "32a019c35f7a774c5e3aa6d6a2287a7f697b8f22ed770910d42e8a84c1bf082c",
       "review_status": "pending"
     },
     {
@@ -15868,8 +15919,8 @@
       "candidate_owner": "core-extension-and-job-host",
       "role": "source",
       "present": true,
-      "content_sha256": "79aff1fd3d63370be10980ca3bc4e5c68132e8667a28d5d2b86daa0818350bb2",
-      "review_fingerprint": "79aff1fd3d63370be10980ca3bc4e5c68132e8667a28d5d2b86daa0818350bb2",
+      "content_sha256": "31d062b8b2d577a3da2ab861853d06d3dc06f3c4aa546f61d99e455491930e4d",
+      "review_fingerprint": "31d062b8b2d577a3da2ab861853d06d3dc06f3c4aa546f61d99e455491930e4d",
       "review_status": "pending"
     },
     {
@@ -15904,8 +15955,8 @@
       "candidate_owner": "core-extension-and-job-host",
       "role": "test-or-fixture",
       "present": true,
-      "content_sha256": "cb3bcb28ffad24e238364dc3444a6f68db6c5d86d966c6bf0a3beb701e5a6886",
-      "review_fingerprint": "cb3bcb28ffad24e238364dc3444a6f68db6c5d86d966c6bf0a3beb701e5a6886",
+      "content_sha256": "1fa1772f4d530358b5a4cabe9d44baf3ed649e4e192395fcaeb5d512d82c4bfa",
+      "review_fingerprint": "1fa1772f4d530358b5a4cabe9d44baf3ed649e4e192395fcaeb5d512d82c4bfa",
       "review_status": "pending"
     },
     {
@@ -15949,8 +16000,8 @@
       "candidate_owner": "core-extension-and-job-host",
       "role": "source",
       "present": true,
-      "content_sha256": "2e887450d0055a3ce7cd9b760f7549697589113ca8515de8a038d9c809f0cacf",
-      "review_fingerprint": "2e887450d0055a3ce7cd9b760f7549697589113ca8515de8a038d9c809f0cacf",
+      "content_sha256": "d43905067841a00aec2ab32abf1d455127f0f298f2f91c20ac6c98d4b5e8d95e",
+      "review_fingerprint": "d43905067841a00aec2ab32abf1d455127f0f298f2f91c20ac6c98d4b5e8d95e",
       "review_status": "pending"
     },
     {
@@ -16354,53 +16405,147 @@
       "candidate_owner": "admin-observability",
       "role": "source",
       "present": true,
-      "content_sha256": "154dfb5367b2947db4f01e0a13b02cc1f39de00486bdaf72f6d03cb381edd224",
-      "review_fingerprint": "154dfb5367b2947db4f01e0a13b02cc1f39de00486bdaf72f6d03cb381edd224",
+      "content_sha256": "7b31b03aa092845ceacd54341577223fec29a5d735aadd405ad974c49a07cb5e",
+      "review_fingerprint": "7b31b03aa092845ceacd54341577223fec29a5d735aadd405ad974c49a07cb5e",
+      "review_status": "pending"
+    },
+    {
+      "path": "frontend/src/features/prompt-audit/__tests__/PromptAuditView.spec.ts",
+      "candidate_owner": "mixed-requires-review",
+      "role": "test-or-fixture",
+      "present": false,
+      "content_sha256": null,
+      "deleted_upstream_blob": "c68fa06f4f6128a27a31d50803efd5ba811f930d",
+      "review_fingerprint": "6ec9b57a195c4a45f55294506d2e40922bf8c76b2e653d625aad0f97ac4a5c28",
+      "review_status": "pending"
+    },
+    {
+      "path": "frontend/src/features/prompt-audit/__tests__/api.spec.ts",
+      "candidate_owner": "mixed-requires-review",
+      "role": "test-or-fixture",
+      "present": false,
+      "content_sha256": null,
+      "deleted_upstream_blob": "ead59e2f3c4b40d854a7251c05f6a264eb4282cc",
+      "review_fingerprint": "b71387c0596ab97ce838838cf55bb8d6ec8f3f5f0d141d460830ce19c1bc6a4a",
+      "review_status": "pending"
+    },
+    {
+      "path": "frontend/src/features/prompt-audit/__tests__/components.spec.ts",
+      "candidate_owner": "mixed-requires-review",
+      "role": "test-or-fixture",
+      "present": false,
+      "content_sha256": null,
+      "deleted_upstream_blob": "aa3ead12d59bbf0c870e8808d14081f434043674",
+      "review_fingerprint": "83c053043b9512b5ba49f2384460a7838818a87d9dab09cad44b087203cfaa67",
+      "review_status": "pending"
+    },
+    {
+      "path": "frontend/src/features/prompt-audit/__tests__/integrationSurface.spec.ts",
+      "candidate_owner": "mixed-requires-review",
+      "role": "test-or-fixture",
+      "present": true,
+      "content_sha256": "b4ec36ddb5efa2c7d577997a63b24ef0c89014d59de3f8a892280f71a51d6418",
+      "review_fingerprint": "b4ec36ddb5efa2c7d577997a63b24ef0c89014d59de3f8a892280f71a51d6418",
+      "review_status": "pending"
+    },
+    {
+      "path": "frontend/src/features/prompt-audit/__tests__/viewModel.spec.ts",
+      "candidate_owner": "mixed-requires-review",
+      "role": "test-or-fixture",
+      "present": false,
+      "content_sha256": null,
+      "deleted_upstream_blob": "06cf6b4635892b24e0d6d07cb8c5b60743007d0b",
+      "review_fingerprint": "9cd1e436fc6bfa9636fb8ee9a5ad5af36473178120704675b650df89e1a41ee5",
+      "review_status": "pending"
+    },
+    {
+      "path": "frontend/src/features/prompt-audit/api.ts",
+      "candidate_owner": "mixed-requires-review",
+      "role": "source",
+      "present": false,
+      "content_sha256": null,
+      "deleted_upstream_blob": "05fe2aa3898d4573a3c88014562dbca53996267d",
+      "review_fingerprint": "6a40834a424c3dccb889bb4858214e478266cc66a2698d00a1dff74e25e04046",
       "review_status": "pending"
     },
     {
       "path": "frontend/src/features/prompt-audit/components/EndpointPool.vue",
       "candidate_owner": "admin-observability",
       "role": "source",
-      "present": true,
-      "content_sha256": "4e42f46c1e43d949ebf2e85f9ae9966d3e65d1da87dad0be8c6a6e151dad7ee3",
-      "review_fingerprint": "4e42f46c1e43d949ebf2e85f9ae9966d3e65d1da87dad0be8c6a6e151dad7ee3",
+      "present": false,
+      "content_sha256": null,
+      "deleted_upstream_blob": "c90293fdd720ed4f756c16d554e6d71814092c12",
+      "review_fingerprint": "a804da94e8f7a82ac3209cda9a69984b379fcea7959bf4f850ff8fc5cd3ddbcb",
+      "review_status": "pending"
+    },
+    {
+      "path": "frontend/src/features/prompt-audit/components/EventDetailDialog.vue",
+      "candidate_owner": "mixed-requires-review",
+      "role": "source",
+      "present": false,
+      "content_sha256": null,
+      "deleted_upstream_blob": "13da54ce6cd9c7cb979f7869799b4f082b1e0d2a",
+      "review_fingerprint": "23d1fade840c494d82c1eca4c72a638de164fdb3bcda9cfd2e35ce2339c3415e",
       "review_status": "pending"
     },
     {
       "path": "frontend/src/features/prompt-audit/components/EventWorkspace.vue",
       "candidate_owner": "admin-observability",
       "role": "source",
-      "present": true,
-      "content_sha256": "e6826a84720f8f6dd729c2f7870cf3429fe67585826f62d894204daeecc0665f",
-      "review_fingerprint": "e6826a84720f8f6dd729c2f7870cf3429fe67585826f62d894204daeecc0665f",
+      "present": false,
+      "content_sha256": null,
+      "deleted_upstream_blob": "551454dd362150133ebd3b8072a17c6c00956316",
+      "review_fingerprint": "13e10c1b62c889b5c759c5b167c4575475dbaa0a66d2550c27521d01c394805d",
       "review_status": "pending"
     },
     {
       "path": "frontend/src/features/prompt-audit/components/FilterDeleteDialog.vue",
       "candidate_owner": "admin-observability",
       "role": "source",
-      "present": true,
-      "content_sha256": "6c1c7db46a9e656782544ad044d295f835721b70c0b9987f9e81a771253cba96",
-      "review_fingerprint": "6c1c7db46a9e656782544ad044d295f835721b70c0b9987f9e81a771253cba96",
+      "present": false,
+      "content_sha256": null,
+      "deleted_upstream_blob": "bdf0647c8c730c48d6edf8d307b6c6f82c8fd175",
+      "review_fingerprint": "366efa92c16f26c81acaefdc355df77faf6afcb32af98f1d42e53fc86fed1ff2",
       "review_status": "pending"
     },
     {
       "path": "frontend/src/features/prompt-audit/components/PolicyPanel.vue",
       "candidate_owner": "admin-observability",
       "role": "source",
-      "present": true,
-      "content_sha256": "6f3e1dcd8a2c3bcb037c2d0c801b8d5bd3de6c28ff426ee36489af3cc83e8df3",
-      "review_fingerprint": "6f3e1dcd8a2c3bcb037c2d0c801b8d5bd3de6c28ff426ee36489af3cc83e8df3",
+      "present": false,
+      "content_sha256": null,
+      "deleted_upstream_blob": "24d36b758fd203bfdec8b258689dc6a5b370c8ff",
+      "review_fingerprint": "c0869fb5b3e03dff398ed4514225ce1f9f7a9a2b3e9e4715f9d65643cedcf8f2",
       "review_status": "pending"
     },
     {
       "path": "frontend/src/features/prompt-audit/components/RuntimeOverview.vue",
       "candidate_owner": "admin-observability",
       "role": "source",
-      "present": true,
-      "content_sha256": "44df1796d2b3468bc059f076df93077b621343c3b2c1a8d7b158269e0d855163",
-      "review_fingerprint": "44df1796d2b3468bc059f076df93077b621343c3b2c1a8d7b158269e0d855163",
+      "present": false,
+      "content_sha256": null,
+      "deleted_upstream_blob": "b44ddfe7a0de1a53ad1e021498068a6e25fb1156",
+      "review_fingerprint": "6fc9f2429a540d8e5ab46f61241a3690f1fab274d03f58aa4cb4ac2b746599b2",
+      "review_status": "pending"
+    },
+    {
+      "path": "frontend/src/features/prompt-audit/types.ts",
+      "candidate_owner": "mixed-requires-review",
+      "role": "source",
+      "present": false,
+      "content_sha256": null,
+      "deleted_upstream_blob": "aeeb16b96fb37a32aff6711cfaed69cf88367787",
+      "review_fingerprint": "f69d2696e67b0d56794587f860a3c840bd89662360964e4fa470798d6af149bb",
+      "review_status": "pending"
+    },
+    {
+      "path": "frontend/src/features/prompt-audit/viewModel.ts",
+      "candidate_owner": "mixed-requires-review",
+      "role": "source",
+      "present": false,
+      "content_sha256": null,
+      "deleted_upstream_blob": "2762a94b57662e59667a032702f27f063d359362",
+      "review_fingerprint": "8ed63d79fd2eec8528440e48c35c50f71d112d53c7bd8f63d792f3375903ce5f",
       "review_status": "pending"
     },
     {
@@ -16464,6 +16609,15 @@
       "present": true,
       "content_sha256": "fa51ea86739eea0352c1f635ac3f3f9848617610c9a8b7845b9bbbdd0ebb4dbc",
       "review_fingerprint": "fa51ea86739eea0352c1f635ac3f3f9848617610c9a8b7845b9bbbdd0ebb4dbc",
+      "review_status": "pending"
+    },
+    {
+      "path": "frontend/src/i18n/locales/en/admin/promptAudit.ts",
+      "candidate_owner": "mixed-requires-review",
+      "role": "source",
+      "present": true,
+      "content_sha256": "14c2cc7f17caf7f7c396d100c493e47f836727a7d5168023a8ed42c89ef0f725",
+      "review_fingerprint": "14c2cc7f17caf7f7c396d100c493e47f836727a7d5168023a8ed42c89ef0f725",
       "review_status": "pending"
     },
     {
@@ -16563,6 +16717,15 @@
       "present": true,
       "content_sha256": "ed0caa73ef182c3f2a8e46b124e5458cb497ceeab1d6e10947790f56c15300f3",
       "review_fingerprint": "ed0caa73ef182c3f2a8e46b124e5458cb497ceeab1d6e10947790f56c15300f3",
+      "review_status": "pending"
+    },
+    {
+      "path": "frontend/src/i18n/locales/zh/admin/promptAudit.ts",
+      "candidate_owner": "mixed-requires-review",
+      "role": "source",
+      "present": true,
+      "content_sha256": "7b252e88014c5e96b5fb31ef09611629fdf75315aabce8ce41b250757704ac26",
+      "review_fingerprint": "7b252e88014c5e96b5fb31ef09611629fdf75315aabce8ce41b250757704ac26",
       "review_status": "pending"
     },
     {
@@ -18133,8 +18296,8 @@
       "candidate_owner": "admin-observability",
       "role": "source",
       "present": true,
-      "content_sha256": "33b1cde65c26e7d26f37a32813b626093b51ca4871606287eeb259b6ffb6f486",
-      "review_fingerprint": "33b1cde65c26e7d26f37a32813b626093b51ca4871606287eeb259b6ffb6f486",
+      "content_sha256": "00b993288db8b84f1f42fcacef6baf5a9be20d0c1f97d5ec1bf74aed14b83773",
+      "review_fingerprint": "00b993288db8b84f1f42fcacef6baf5a9be20d0c1f97d5ec1bf74aed14b83773",
       "review_status": "pending"
     },
     {
@@ -18162,6 +18325,15 @@
       "present": true,
       "content_sha256": "7158f6ecb367d9eb7d51b168bf0c4688eb14b1fff13707697ba970104f16e8ea",
       "review_fingerprint": "7158f6ecb367d9eb7d51b168bf0c4688eb14b1fff13707697ba970104f16e8ea",
+      "review_status": "pending"
+    },
+    {
+      "path": "plugins/admin-observability/scripts/check-ui.py",
+      "candidate_owner": "admin-observability",
+      "role": "source",
+      "present": true,
+      "content_sha256": "8e180e614c285d3934955991bf79565b8e170d042e6e2f78cacfea2407d7b124",
+      "review_fingerprint": "8e180e614c285d3934955991bf79565b8e170d042e6e2f78cacfea2407d7b124",
       "review_status": "pending"
     },
     {
@@ -18316,6 +18488,177 @@
       "present": true,
       "content_sha256": "4652c305f8a8ad4018532612f9e69dea83d7d565fac839eafee7aafb9d6e850b",
       "review_fingerprint": "4652c305f8a8ad4018532612f9e69dea83d7d565fac839eafee7aafb9d6e850b",
+      "review_status": "pending"
+    },
+    {
+      "path": "plugins/admin-observability/ui/src/PromptAuditView.vue",
+      "candidate_owner": "admin-observability",
+      "role": "source",
+      "present": true,
+      "content_sha256": "ed3ff4b01451157319180504678beae0a5067a2986a21023f792a3fb45140108",
+      "review_fingerprint": "ed3ff4b01451157319180504678beae0a5067a2986a21023f792a3fb45140108",
+      "review_status": "pending"
+    },
+    {
+      "path": "plugins/admin-observability/ui/src/__tests__/PromptAuditView.spec.ts",
+      "candidate_owner": "admin-observability",
+      "role": "test-or-fixture",
+      "present": true,
+      "content_sha256": "099ae8a7f4edd7ae759a6ae1093238e24718df6a59e6153d8e82eca25568efbe",
+      "review_fingerprint": "099ae8a7f4edd7ae759a6ae1093238e24718df6a59e6153d8e82eca25568efbe",
+      "review_status": "pending"
+    },
+    {
+      "path": "plugins/admin-observability/ui/src/__tests__/api.spec.ts",
+      "candidate_owner": "admin-observability",
+      "role": "test-or-fixture",
+      "present": true,
+      "content_sha256": "aa11c407f2d5293cf53949ef49ef5b8d1f688aa7d84657edf2ea38aa45f989cc",
+      "review_fingerprint": "aa11c407f2d5293cf53949ef49ef5b8d1f688aa7d84657edf2ea38aa45f989cc",
+      "review_status": "pending"
+    },
+    {
+      "path": "plugins/admin-observability/ui/src/__tests__/components.spec.ts",
+      "candidate_owner": "admin-observability",
+      "role": "test-or-fixture",
+      "present": true,
+      "content_sha256": "cb70e6acb92a20200493ea1f20a4a4257838656021861be5181ede3be1969403",
+      "review_fingerprint": "cb70e6acb92a20200493ea1f20a4a4257838656021861be5181ede3be1969403",
+      "review_status": "pending"
+    },
+    {
+      "path": "plugins/admin-observability/ui/src/__tests__/viewModel.spec.ts",
+      "candidate_owner": "admin-observability",
+      "role": "test-or-fixture",
+      "present": true,
+      "content_sha256": "7a11a8bce6fb0a4ee53b5b2a8a59a53e4837f534ac64f51ddd02381a1829cc8d",
+      "review_fingerprint": "7a11a8bce6fb0a4ee53b5b2a8a59a53e4837f534ac64f51ddd02381a1829cc8d",
+      "review_status": "pending"
+    },
+    {
+      "path": "plugins/admin-observability/ui/src/api.ts",
+      "candidate_owner": "admin-observability",
+      "role": "source",
+      "present": true,
+      "content_sha256": "9b92b7078ac5d586b1124701199f5124ea6f5d26f352d272703ec7a9ef3c75f4",
+      "review_fingerprint": "9b92b7078ac5d586b1124701199f5124ea6f5d26f352d272703ec7a9ef3c75f4",
+      "review_status": "pending"
+    },
+    {
+      "path": "plugins/admin-observability/ui/src/components/EndpointPool.vue",
+      "candidate_owner": "admin-observability",
+      "role": "source",
+      "present": true,
+      "content_sha256": "802e5563caf797665fca517219def97e156451b9dcd0624315bb2d1d430ebfcd",
+      "review_fingerprint": "802e5563caf797665fca517219def97e156451b9dcd0624315bb2d1d430ebfcd",
+      "review_status": "pending"
+    },
+    {
+      "path": "plugins/admin-observability/ui/src/components/EventDetailDialog.vue",
+      "candidate_owner": "admin-observability",
+      "role": "source",
+      "present": true,
+      "content_sha256": "aabf45d7366e6f06c9383fe0ad793e55b5739492e1a48490cc65d23faacf2ca3",
+      "review_fingerprint": "aabf45d7366e6f06c9383fe0ad793e55b5739492e1a48490cc65d23faacf2ca3",
+      "review_status": "pending"
+    },
+    {
+      "path": "plugins/admin-observability/ui/src/components/EventWorkspace.vue",
+      "candidate_owner": "admin-observability",
+      "role": "source",
+      "present": true,
+      "content_sha256": "6751596c4d4ebbded67eab898f9a45566a493058cf9c9ba7597a0985022c43be",
+      "review_fingerprint": "6751596c4d4ebbded67eab898f9a45566a493058cf9c9ba7597a0985022c43be",
+      "review_status": "pending"
+    },
+    {
+      "path": "plugins/admin-observability/ui/src/components/FilterDeleteDialog.vue",
+      "candidate_owner": "admin-observability",
+      "role": "source",
+      "present": true,
+      "content_sha256": "04ca5359526122bd0b957083629c1acedbfdc11cfe1381b4782c30d73fa3b358",
+      "review_fingerprint": "04ca5359526122bd0b957083629c1acedbfdc11cfe1381b4782c30d73fa3b358",
+      "review_status": "pending"
+    },
+    {
+      "path": "plugins/admin-observability/ui/src/components/Pagination.vue",
+      "candidate_owner": "admin-observability",
+      "role": "source",
+      "present": true,
+      "content_sha256": "f0b27d58cc713f7413cb6724a397561eb408c793ce836a805c7c66a8512f2f49",
+      "review_fingerprint": "f0b27d58cc713f7413cb6724a397561eb408c793ce836a805c7c66a8512f2f49",
+      "review_status": "pending"
+    },
+    {
+      "path": "plugins/admin-observability/ui/src/components/PolicyPanel.vue",
+      "candidate_owner": "admin-observability",
+      "role": "source",
+      "present": true,
+      "content_sha256": "6f3e1dcd8a2c3bcb037c2d0c801b8d5bd3de6c28ff426ee36489af3cc83e8df3",
+      "review_fingerprint": "6f3e1dcd8a2c3bcb037c2d0c801b8d5bd3de6c28ff426ee36489af3cc83e8df3",
+      "review_status": "pending"
+    },
+    {
+      "path": "plugins/admin-observability/ui/src/components/RuntimeOverview.vue",
+      "candidate_owner": "admin-observability",
+      "role": "source",
+      "present": true,
+      "content_sha256": "44df1796d2b3468bc059f076df93077b621343c3b2c1a8d7b158269e0d855163",
+      "review_fingerprint": "44df1796d2b3468bc059f076df93077b621343c3b2c1a8d7b158269e0d855163",
+      "review_status": "pending"
+    },
+    {
+      "path": "plugins/admin-observability/ui/src/index.html",
+      "candidate_owner": "admin-observability",
+      "role": "source",
+      "present": true,
+      "content_sha256": "064f110e06a6984c007449578931e6f0dfc2fc4789f8b3d7274d4368d0c27e46",
+      "review_fingerprint": "064f110e06a6984c007449578931e6f0dfc2fc4789f8b3d7274d4368d0c27e46",
+      "review_status": "pending"
+    },
+    {
+      "path": "plugins/admin-observability/ui/src/locales/en.ts",
+      "candidate_owner": "admin-observability",
+      "role": "source",
+      "present": true,
+      "content_sha256": "adfde0e5aafc6dd4947e89616e0273bddaeef4b004517913abc3d87dc0c1e22d",
+      "review_fingerprint": "adfde0e5aafc6dd4947e89616e0273bddaeef4b004517913abc3d87dc0c1e22d",
+      "review_status": "pending"
+    },
+    {
+      "path": "plugins/admin-observability/ui/src/locales/zh.ts",
+      "candidate_owner": "admin-observability",
+      "role": "source",
+      "present": true,
+      "content_sha256": "90e1bada93a7596ca4d766e151f15004e40acd6d8597370e45b8ad930f50c40d",
+      "review_fingerprint": "90e1bada93a7596ca4d766e151f15004e40acd6d8597370e45b8ad930f50c40d",
+      "review_status": "pending"
+    },
+    {
+      "path": "plugins/admin-observability/ui/src/main.ts",
+      "candidate_owner": "admin-observability",
+      "role": "source",
+      "present": true,
+      "content_sha256": "1d209eb64adcb452d3463ea5d5af539720a8e805ad0d17dd36ec2f0d03ab0abf",
+      "review_fingerprint": "1d209eb64adcb452d3463ea5d5af539720a8e805ad0d17dd36ec2f0d03ab0abf",
+      "review_status": "pending"
+    },
+    {
+      "path": "plugins/admin-observability/ui/src/types.ts",
+      "candidate_owner": "admin-observability",
+      "role": "source",
+      "present": true,
+      "content_sha256": "64008fa5283b8de4a4872a1f7188553114bf46df6a3fa68d094a9892dbf4c988",
+      "review_fingerprint": "64008fa5283b8de4a4872a1f7188553114bf46df6a3fa68d094a9892dbf4c988",
+      "review_status": "pending"
+    },
+    {
+      "path": "plugins/admin-observability/ui/src/viewModel.ts",
+      "candidate_owner": "admin-observability",
+      "role": "source",
+      "present": true,
+      "content_sha256": "f05716427890eed53d464efcae8a2d908b039d924c477e62233a4ca8504082c4",
+      "review_fingerprint": "f05716427890eed53d464efcae8a2d908b039d924c477e62233a4ca8504082c4",
       "review_status": "pending"
     },
     {
@@ -19298,8 +19641,8 @@
       "candidate_owner": "prompt-skills",
       "role": "source",
       "present": true,
-      "content_sha256": "94ca3e0c90a8f34f0296d1ca08e1cb236f2dcfddb1c5748c42d8c567dc03744f",
-      "review_fingerprint": "94ca3e0c90a8f34f0296d1ca08e1cb236f2dcfddb1c5748c42d8c567dc03744f",
+      "content_sha256": "45bba3ab79ae027afad71bddea38744d0b7a7585c1a8e2da71c1af3f2a64816d",
+      "review_fingerprint": "45bba3ab79ae027afad71bddea38744d0b7a7585c1a8e2da71c1af3f2a64816d",
       "review_status": "pending"
     },
     {
@@ -19334,8 +19677,8 @@
       "candidate_owner": "prompt-skills",
       "role": "source",
       "present": true,
-      "content_sha256": "75f80f8c42dcae7299b9d534e4b8aeb917dd18f7b3d0527d7332657e07f6636e",
-      "review_fingerprint": "75f80f8c42dcae7299b9d534e4b8aeb917dd18f7b3d0527d7332657e07f6636e",
+      "content_sha256": "c8ab626fcccd76715aa7bfbdd103ba6b620dc99c352bbc05ef0aad308c90c5ad",
+      "review_fingerprint": "c8ab626fcccd76715aa7bfbdd103ba6b620dc99c352bbc05ef0aad308c90c5ad",
       "review_status": "pending"
     },
     {
