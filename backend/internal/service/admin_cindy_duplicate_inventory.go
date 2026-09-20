@@ -12,5 +12,5 @@ func (s *adminServiceImpl) BuildCindyDuplicateIdentityInventory(ctx context.Cont
 	if err != nil {
 		return nil, err
 	}
-	return BuildCindyDuplicateIdentityInventory(accounts), nil
+	return buildCindyDuplicateIdentityInventory(ctx, accounts)
 }

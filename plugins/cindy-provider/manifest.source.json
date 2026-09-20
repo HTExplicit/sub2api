@@ -10,7 +10,7 @@
     { "id": "extensions.provider.v1", "platform": "cindy", "account_type": "apikey" },
     { "id": "extensions.admin.v1", "platform": "*", "account_type": "*" }
   ],
-  "operations": { "extensions.provider.v1": ["cindy.catalog", "cindy.features", "cindy.pricing", "cindy.health", "cindy.probe.plan", "cindy.probe.decide"] },
+  "operations": { "extensions.provider.v1": ["cindy.catalog", "cindy.features", "cindy.pricing", "cindy.health", "cindy.probe.plan", "cindy.probe.decide", "cindy.duplicates.plan", "cindy.groups.input", "cindy.groups.partition"] },
   "resources": [
     { "name": "cindy.probe.list", "capability": "extensions.provider.v1", "permission": "admin" },
     { "name": "cindy.probe.create", "capability": "extensions.provider.v1", "permission": "admin" },

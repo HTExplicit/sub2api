@@ -61,6 +61,29 @@ func (m *Module) Invoke(ctx context.Context, in extensionv1.Invocation) (extensi
 		return extensionv1.Result{}, errors.New("unsupported Cindy provider capability")
 	}
 	switch in.Operation {
+	case "cindy.duplicates.plan":
+		var request []extensionv1.CindyDuplicateCandidate
+		if json.Unmarshal(in.Payload, &request) != nil {
+			return extensionv1.Result{}, errors.New("invalid duplicate facts")
+		}
+		raw, err := json.Marshal(duplicateInventory(request))
+		return extensionv1.Result{Payload: raw}, err
+	case "cindy.groups.input":
+		var request extensionv1.CindyGroupInputRequest
+		if json.Unmarshal(in.Payload, &request) != nil {
+			return extensionv1.Result{}, errors.New("invalid group input")
+		}
+		input, code := normalizeGroupInput(request)
+		raw, err := json.Marshal(input)
+		return extensionv1.Result{Payload: raw, Code: code}, err
+	case "cindy.groups.partition":
+		var request extensionv1.CindyGroupPartitionRequest
+		if json.Unmarshal(in.Payload, &request) != nil {
+			return extensionv1.Result{}, errors.New("invalid group membership facts")
+		}
+		plan, code := partitionGroup(request)
+		raw, err := json.Marshal(plan)
+		return extensionv1.Result{Payload: raw, Code: code}, err
 	case "cindy.probe.plan", "cindy.probe.decide":
 		if !registry.Config.BalanceDetection {
 			return extensionv1.Result{Code: "disabled"}, nil

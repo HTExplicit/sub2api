@@ -1,27 +1,22 @@
 package service
 
 import (
-	"sort"
-	"strings"
+	"context"
+
+	extensionv1 "github.com/Wei-Shaw/sub2api/pkg/extensionapi/v1"
 )
 
-// CindyDuplicateIdentityGroup is a redacted duplicate cluster. Identity is a
-// SHA-256 digest; raw credentials are never returned.
-type CindyDuplicateIdentityGroup struct {
-	IdentityHash    string  `json:"identity_hash"`
-	ProposedOwnerID int64   `json:"proposed_owner_id"`
-	OtherAccountIDs []int64 `json:"other_account_ids"`
+type CindyDuplicateIdentityGroup = extensionv1.CindyDuplicateIdentityGroup
+
+// The compatibility helper delegates to the same policy as the management API.
+func BuildCindyDuplicateIdentityInventory(accounts []Account) []CindyDuplicateIdentityGroup {
+	groups, _ := buildCindyDuplicateIdentityInventory(context.Background(), accounts)
+	return groups
 }
 
-// BuildCindyDuplicateIdentityInventory groups strict Laxa accounts by their
-// normalized credential identity. It is informational only: no account is
-// merged, deleted, or mutated.
-func BuildCindyDuplicateIdentityInventory(accounts []Account) []CindyDuplicateIdentityGroup {
-	type candidate struct {
-		account Account
-		hash    string
-	}
-	groups := make(map[string][]candidate)
+func buildCindyDuplicateIdentityInventory(ctx context.Context, accounts []Account) ([]CindyDuplicateIdentityGroup, error) {
+	facts := make([]extensionv1.CindyDuplicateCandidate, 0, len(accounts))
+	identities := map[string]map[int64]bool{}
 	for _, account := range accounts {
 		if !IsCindyAPIKeyAccount(account.Platform, account.Type, account.Credentials) {
 			continue
@@ -34,69 +29,44 @@ func BuildCindyDuplicateIdentityInventory(accounts []Account) []CindyDuplicateId
 		if err != nil {
 			continue
 		}
-		groups[hash] = append(groups[hash], candidate{account: account, hash: hash})
-	}
-
-	result := make([]CindyDuplicateIdentityGroup, 0, len(groups))
-	for hash, members := range groups {
-		if len(members) < 2 {
+		if identities[hash] == nil {
+			identities[hash] = map[int64]bool{}
+		}
+		if identities[hash][account.ID] {
 			continue
 		}
-		nonTerminal := make([]candidate, 0, len(members))
-		for _, member := range members {
-			if !cindyDuplicateTerminal(member.account) {
-				nonTerminal = append(nonTerminal, member)
-			}
-		}
-		sort.Slice(members, func(i, j int) bool {
-			left, right := members[i].account, members[j].account
-			leftTerminal, rightTerminal := cindyDuplicateTerminal(left), cindyDuplicateTerminal(right)
-			if leftTerminal != rightTerminal {
-				return !leftTerminal
-			}
-			if !leftTerminal && !rightTerminal && !left.CreatedAt.Equal(right.CreatedAt) {
-				return left.CreatedAt.Before(right.CreatedAt)
-			}
-			if !left.UpdatedAt.Equal(right.UpdatedAt) {
-				return left.UpdatedAt.Before(right.UpdatedAt)
-			}
-			return left.ID < right.ID
-		})
-		owner := int64(0)
-		if len(nonTerminal) > 0 {
-			sort.Slice(nonTerminal, func(i, j int) bool {
-				left, right := nonTerminal[i].account, nonTerminal[j].account
-				if !left.CreatedAt.Equal(right.CreatedAt) {
-					return left.CreatedAt.Before(right.CreatedAt)
-				}
-				if !left.UpdatedAt.Equal(right.UpdatedAt) {
-					return left.UpdatedAt.Before(right.UpdatedAt)
-				}
-				return left.ID < right.ID
-			})
-			owner = nonTerminal[0].account.ID
-		}
-		others := make([]int64, 0, len(members)-1)
-		for _, member := range members {
-			if owner == 0 || member.account.ID != owner {
-				others = append(others, member.account.ID)
-			}
-		}
-		sort.Slice(others, func(i, j int) bool { return others[i] < others[j] })
-		result = append(result, CindyDuplicateIdentityGroup{IdentityHash: hash, ProposedOwnerID: owner, OtherAccountIDs: others})
+		identities[hash][account.ID] = true
+		facts = append(facts, extensionv1.CindyDuplicateCandidate{ID: account.ID, IdentityHash: hash, Status: account.Status, Banned: account.CindyBannedAt != nil, Exhausted: account.CindyBalanceInsufficientAt != nil, CreatedAt: account.CreatedAt, UpdatedAt: account.UpdatedAt})
 	}
-	sort.Slice(result, func(i, j int) bool { return result[i].IdentityHash < result[j].IdentityHash })
-	return result
-}
-
-func cindyDuplicateTerminal(account Account) bool {
-	if account.CindyBannedAt != nil || account.CindyBalanceInsufficientAt != nil {
-		return true
+	var groups []CindyDuplicateIdentityGroup
+	if err := invokeCindyManagement(ctx, "cindy.duplicates.plan", facts, &groups); err != nil {
+		return nil, err
 	}
-	switch strings.ToLower(strings.TrimSpace(account.Status)) {
-	case StatusDisabled, CindyHealthStatusQuarantined:
-		return true
-	default:
-		return false
+	for _, group := range groups {
+		available, known := identities[group.IdentityHash]
+		ids := append([]int64{}, group.OtherAccountIDs...)
+		if group.ProposedOwnerID > 0 {
+			ids = append(ids, group.ProposedOwnerID)
+		}
+		if !known || len(ids) < 2 || len(ids) != len(available) {
+			return nil, ErrCindyGroupAdminUnavailable
+		}
+		seen := map[int64]bool{}
+		for _, id := range ids {
+			if !available[id] || seen[id] {
+				return nil, ErrCindyGroupAdminUnavailable
+			}
+			seen[id] = true
+		}
+		delete(identities, group.IdentityHash)
 	}
+	for _, members := range identities {
+		if len(members) > 1 {
+			return nil, ErrCindyGroupAdminUnavailable
+		}
+	}
+	if groups == nil {
+		groups = []CindyDuplicateIdentityGroup{}
+	}
+	return groups, nil
 }
