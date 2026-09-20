@@ -60,7 +60,29 @@ func (m *PluginManager) BindOperationContext(ctx context.Context, platform, acco
 	if runtime == nil || runtime.client.Exited() || !pluginDependenciesHealthy(registry.installations[id], registry, map[int64]bool{}) {
 		return nil, nil, ErrExtensionOperationUnavailable
 	}
-	return runtime.bindPolicyContext(ctx)
+	return m.bindHostPolicyContext(ctx, registry.installations[id], runtime)
+}
+
+func (m *PluginManager) bindHostPolicyContext(ctx context.Context, installation *PluginInstallation, runtime *pluginRuntime) (context.Context, context.CancelFunc, error) {
+	if !runtime.beginRequest() {
+		return nil, nil, ErrExtensionOperationUnavailable
+	}
+	bound, cancel, err := runtime.bindPolicyContext(ctx)
+	if err != nil {
+		runtime.finishRequest()
+		return nil, nil, err
+	}
+	releaseLease := func() {}
+	if locker, ok := m.repo.(PluginRuntimeLocker); ok {
+		releaseLease, err = locker.HoldPluginRuntime(bound, installation)
+		if err != nil {
+			cancel()
+			runtime.finishRequest()
+			return nil, nil, ErrExtensionOperationUnavailable
+		}
+	}
+	var once sync.Once
+	return bound, func() { once.Do(func() { cancel(); releaseLease(); runtime.finishRequest() }) }, nil
 }
 
 func (r *pluginRuntime) bindPolicyContext(parent context.Context) (context.Context, context.CancelFunc, error) {

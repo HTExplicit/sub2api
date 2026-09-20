@@ -124,6 +124,9 @@ func (r *accountJobRepository) Create(ctx context.Context, params service.Create
 		return nil, false, err
 	}
 	defer func() { _ = tx.Rollback() }()
+	if err := lockAccountJobPlugin(ctx, tx, params.Metadata); err != nil {
+		return nil, false, err
+	}
 
 	job, err := scanAccountJob(tx.QueryRowContext(ctx, `
 		INSERT INTO admin_account_jobs
@@ -143,7 +146,9 @@ func (r *accountJobRepository) Create(ctx context.Context, params service.Create
 		if err != nil {
 			return nil, false, err
 		}
-		if job.RequestHash != params.RequestHash {
+		oldOwner, _ := service.AccountJobPluginExecution(job.Metadata)
+		newOwner, _ := service.AccountJobPluginExecution(params.Metadata)
+		if job.RequestHash != params.RequestHash || oldOwner.ID != newOwner.ID {
 			return nil, false, service.ErrAccountJobIdempotencyConflict
 		}
 		if err = tx.Commit(); err != nil {
@@ -177,6 +182,29 @@ func (r *accountJobRepository) Create(ctx context.Context, params service.Create
 		return nil, false, err
 	}
 	return job, false, nil
+}
+
+func lockAccountJobPlugin(ctx context.Context, tx *sql.Tx, metadata json.RawMessage) error {
+	owner, err := service.AccountJobPluginExecution(metadata)
+	if err != nil {
+		return err
+	}
+	if owner.ID == 0 {
+		return nil
+	}
+	if owner.Generation <= 0 {
+		return service.ErrAccountJobPluginUnavailable
+	}
+	var generation int64
+	var state string
+	var enabled bool
+	err = tx.QueryRowContext(ctx, `SELECT p.runtime_generation,p.state,
+		EXISTS (SELECT 1 FROM sub2api_plugin_bindings b WHERE b.plugin_id=p.id AND b.capability='extensions.admin.v1' AND b.enabled)
+		FROM sub2api_plugin_installations p WHERE p.id=$1 FOR SHARE`, owner.ID).Scan(&generation, &state, &enabled)
+	if errors.Is(err, sql.ErrNoRows) || (err == nil && (generation != owner.Generation || state != service.PluginStateEnabled || !enabled)) {
+		return service.ErrAccountJobPluginUnavailable
+	}
+	return err
 }
 
 func normalizeRepositoryJobMetadata(raw json.RawMessage) json.RawMessage {

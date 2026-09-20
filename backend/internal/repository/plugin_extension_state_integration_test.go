@@ -97,7 +97,7 @@ func TestDisablingPluginCancelsOwnedJobsInSameTransaction(t *testing.T) {
 	client := testEntClient(t)
 	user := mustCreateUser(t, client, &service.User{Email: "plugin-job-" + uuid.NewString() + "@example.com", PasswordHash: "test-hash"})
 	plugins := &pluginRepository{db: integrationDB}
-	plugin, err := plugins.Install(ctx, &service.PluginInstallation{PluginKey: "local.test.cancel-" + uuid.NewString(), Name: "test", Version: "1.0.0", Manifest: service.PluginManifest{ID: "test.plugin"}, BinarySHA256: strings.Repeat("c", 64), SignatureStatus: service.PluginSignatureTrusted, State: service.PluginStateEnabled}, []service.PluginBinding{{Capability: extensionv1.CapabilityAdmin, Platform: service.PlatformOpenAI, AccountType: service.AccountTypeOAuth, Enabled: true, RolloutPercent: 100}})
+	plugin, err := plugins.Install(ctx, &service.PluginInstallation{PluginKey: "local.test.cancel-" + uuid.NewString(), Name: "test", Version: "1.0.0", Manifest: service.PluginManifest{ID: "test.plugin"}, BinarySHA256: strings.Repeat("c", 64), ArtifactData: []byte("synthetic plugin package"), SignatureStatus: service.PluginSignatureTrusted, State: service.PluginStateEnabled}, []service.PluginBinding{{Capability: extensionv1.CapabilityAdmin, Platform: service.PlatformOpenAI, AccountType: service.AccountTypeOAuth, Enabled: true, RolloutPercent: 100}})
 	require.NoError(t, err)
 	jobs := NewAccountJobRepository(integrationDB)
 	var ids []int64
@@ -109,7 +109,7 @@ func TestDisablingPluginCancelsOwnedJobsInSameTransaction(t *testing.T) {
 		_, _ = integrationDB.ExecContext(ctx, `DELETE FROM users WHERE id=$1`, user.ID)
 	})
 	for _, kind := range []string{service.AccountJobKindExtensionOperation, service.AccountJobKindBatchTest} {
-		job, _, err := jobs.Create(ctx, service.CreateAccountJobParams{CreatedBy: user.ID, Kind: kind, IdempotencyKey: uuid.NewString(), RequestHash: strings.Repeat("a", 64), PayloadCipher: "test-payload", PayloadExpires: time.Now().Add(time.Hour), Metadata: json.RawMessage(fmt.Sprintf(`{"plugin_id":%d}`, plugin.ID)), Items: []service.AccountJobItemSeed{{Ordinal: 1, Metadata: json.RawMessage(`{}`)}}, Attempt: 1})
+		job, _, err := jobs.Create(ctx, service.CreateAccountJobParams{CreatedBy: user.ID, Kind: kind, IdempotencyKey: uuid.NewString(), RequestHash: strings.Repeat("a", 64), PayloadCipher: "test-payload", PayloadExpires: time.Now().Add(time.Hour), Metadata: json.RawMessage(fmt.Sprintf(`{"plugin_id":%d,"plugin_generation":%d}`, plugin.ID, plugin.RuntimeGeneration)), Items: []service.AccountJobItemSeed{{Ordinal: 1, Metadata: json.RawMessage(`{}`)}}, Attempt: 1})
 		require.NoError(t, err)
 		ids = append(ids, job.ID)
 	}

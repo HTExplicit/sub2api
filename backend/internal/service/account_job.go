@@ -202,6 +202,11 @@ func (s *AccountJobService) Submit(ctx context.Context, createdBy int64, kind, i
 	if err := ValidateAccountJobMetadata(metadata); err != nil {
 		return nil, false, err
 	}
+	ctx, metadata, releasePolicy, policyErr := prepareAccountJobSubmission(ctx, metadata, kind)
+	if policyErr != nil {
+		return nil, false, policyErr
+	}
+	defer releasePolicy()
 	for index := range items {
 		if items[index].Ordinal <= 0 {
 			items[index].Ordinal = index + 1
@@ -215,7 +220,9 @@ func (s *AccountJobService) Submit(ctx context.Context, createdBy int64, kind, i
 	requestHash := hex.EncodeToString(hash[:])
 	existing, err := s.repo.FindIdempotent(ctx, createdBy, kind, idempotencyKey)
 	if err == nil {
-		if existing.RequestHash != requestHash {
+		oldOwner, _ := AccountJobPluginExecution(existing.Metadata)
+		newOwner, _ := AccountJobPluginExecution(metadata)
+		if existing.RequestHash != requestHash || oldOwner.ID != newOwner.ID {
 			return nil, false, ErrAccountJobIdempotencyConflict
 		}
 		return existing, true, nil
@@ -282,14 +289,34 @@ func (s *AccountJobService) RetryFailed(ctx context.Context, jobID, createdBy in
 	hash := sha256.Sum256(hashInput)
 	requestHash := hex.EncodeToString(hash[:])
 	if existing, findErr := s.repo.FindIdempotent(ctx, createdBy, old.Kind, idempotencyKey); findErr == nil {
-		if existing.RequestHash != requestHash {
+		oldOwner, _ := AccountJobPluginExecution(old.Metadata)
+		retryOwner, _ := AccountJobPluginExecution(existing.Metadata)
+		if existing.RequestHash != requestHash || oldOwner.ID != retryOwner.ID {
 			return nil, false, ErrAccountJobIdempotencyConflict
 		}
 		return existing, true, nil
 	} else if !errors.Is(findErr, ErrAccountJobNotFound) {
 		return nil, false, findErr
 	}
-	metadata, _ := json.Marshal(map[string]any{"retry_of_job_id": old.ID, "failed_item_count": len(seeds)})
+	fields := map[string]json.RawMessage{}
+	if len(old.Metadata) > 0 && json.Unmarshal(old.Metadata, &fields) != nil {
+		return nil, false, ErrAccountJobInvalidMetadata
+	}
+	if fields == nil {
+		fields = map[string]json.RawMessage{}
+	}
+	fields["retry_of_job_id"], _ = json.Marshal(old.ID)
+	fields["failed_item_count"], _ = json.Marshal(len(seeds))
+	fields["target_count"], _ = json.Marshal(len(seeds))
+	// An explicit retry admits the saved request to the currently enabled
+	// version. It must keep the same owner, while receiving a fresh fence.
+	delete(fields, "plugin_generation")
+	metadata, _ := json.Marshal(fields)
+	ctx, metadata, releasePolicy, policyErr := prepareAccountJobSubmission(ctx, metadata, old.Kind)
+	if policyErr != nil {
+		return nil, false, policyErr
+	}
+	defer releasePolicy()
 	return s.repo.Create(ctx, CreateAccountJobParams{
 		CreatedBy: createdBy, Kind: old.Kind, IdempotencyKey: idempotencyKey,
 		RequestHash: requestHash, PayloadCipher: cipher, PayloadExpires: expires,

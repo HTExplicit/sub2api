@@ -150,6 +150,8 @@ func accountJobHTTPError(err error) error {
 		return infraerrors.Conflict("ACCOUNT_JOB_NOT_RETRYABLE", "account job has no failed items to retry")
 	case errors.Is(err, service.ErrAccountJobInvalidMetadata):
 		return infraerrors.BadRequest("ACCOUNT_JOB_METADATA_REJECTED", "account job metadata must not contain credentials")
+	case errors.Is(err, service.ErrAccountJobPluginUnavailable):
+		return infraerrors.ServiceUnavailable("ACCOUNT_JOB_PLUGIN_UNAVAILABLE", "account job plugin is unavailable or has changed")
 	default:
 		return err
 	}

@@ -68,15 +68,14 @@ func (m *PluginManager) BindResourceContext(ctx context.Context, id int64, expec
 		return nil, nil, ErrExtensionOperationDisabled
 	}
 	runtime := registry.runtimes[selected.ID]
-	if runtime == nil || runtime.client == nil || runtime.client.Exited() || !pluginDependenciesHealthy(current, registry, map[int64]bool{}) || !runtime.beginRequest() {
+	if runtime == nil || runtime.client == nil || runtime.client.Exited() || !pluginDependenciesHealthy(current, registry, map[int64]bool{}) {
 		return nil, nil, ErrExtensionOperationUnavailable
 	}
-	bound, cancel, err := runtime.bindPolicyContext(ctx)
+	bound, release, err := m.bindHostPolicyContext(ctx, current, runtime)
 	if err != nil {
-		runtime.finishRequest()
 		return nil, nil, err
 	}
-	return WithPluginExecution(bound, current), func() { cancel(); runtime.finishRequest() }, nil
+	return WithPluginExecution(bound, current), release, nil
 }
 
 func pluginDeclaresResource(installation *PluginInstallation, resource extensionv1.ResourceGrant) bool {

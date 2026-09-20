@@ -72,7 +72,7 @@ jobs:
         run: go test -race ./internal/handler -run '^TestOpenAIBlockedUpstreamsDoNotSerializeManagementPlane$' -count=1
       - name: Plugin policy cancellation race tests
         working-directory: backend
-        run: go test -race ./internal/service -run '^(TestPluginPolicyCancellationSurvivesUpstreamDetachWithoutCancelingBilling|TestPluginPolicyContextsStopOnConfigurationChangeAndDisable|TestSavingIdenticalPluginConfigurationDoesNotCancelHostWork)$' -count=1
+        run: go test -race -tags unit ./internal/service -run '^(TestPluginPolicyCancellationSurvivesUpstreamDetachWithoutCancelingBilling|TestPluginPolicyContextsStopOnConfigurationChangeAndDisable|TestSavingIdenticalPluginConfigurationDoesNotCancelHostWork|TestPluginOwnedHostJobHoldsUpdateLeaseUntilCleanup|TestAccountJobRetryPreservesOwnerAndAdmitsCurrentGeneration)$' -count=1
       - name: Cindy manual balance, split, image, and turn-state tests
         working-directory: backend
         run: |

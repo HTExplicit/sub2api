@@ -54,7 +54,7 @@ func ticketTestManager(t *testing.T, cfg config.OpenAICodexTicketConfig, invoke 
 	installation := &PluginInstallation{ID: 1, PluginKey: codexRuntimePluginKey}
 	for _, capability := range []string{extensionv1.CapabilityScheduling, extensionv1.CapabilityRequest, extensionv1.CapabilityAdmin} {
 		for _, kind := range []string{AccountTypeOAuth, AccountTypeSetupToken} {
-			installation.Bindings = append(installation.Bindings, PluginBinding{Capability: capability, Platform: PlatformOpenAI, AccountType: kind, Enabled: true})
+			installation.Bindings = append(installation.Bindings, PluginBinding{Capability: capability, Platform: PlatformOpenAI, AccountType: kind, Enabled: true, RolloutPercent: 100})
 		}
 	}
 	if invoke == nil {
@@ -62,7 +62,7 @@ func ticketTestManager(t *testing.T, cfg config.OpenAICodexTicketConfig, invoke 
 			return extensionv1.Result{Code: "ticket_missing"}, nil
 		}
 	}
-	runtime := &pluginRuntime{client: &hcplugin.Client{}, extension: extensionv1.NewClient(&ticketExtensionTestConn{invoke: invoke})}
+	runtime := &pluginRuntime{client: &hcplugin.Client{}, extension: extensionv1.NewClient(&ticketExtensionTestConn{invoke: invoke}), done: make(chan struct{})}
 	raw, _ := json.Marshal(map[string]any{"enabled": cfg.Enabled, "fail_closed": cfg.FailClosed, "models": cfg.Models, "proxy_url": cfg.HarvestProxyURL})
 	snapshot := json.RawMessage(raw)
 	runtime.configSnapshot.Store(&snapshot)

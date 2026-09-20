@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+
+	extensionv1 "github.com/Wei-Shaw/sub2api/pkg/extensionapi/v1"
 )
 
 type PluginJobPayload struct {
@@ -25,21 +27,81 @@ func NewPluginJobExecutor(manager *PluginManager, core AccountJobExecutor) *Plug
 }
 
 func (e *PluginJobExecutor) PrepareAccountJob(ctx context.Context, job *AccountJob, payload json.RawMessage) (context.Context, func(), error) {
+	if job == nil {
+		return ctx, nil, ErrAccountJobPluginUnavailable
+	}
+	owner, err := AccountJobPluginExecution(job.Metadata)
+	if err != nil {
+		return ctx, nil, err
+	}
+	release := func() {}
+	if owner.ID > 0 {
+		if owner.Generation <= 0 {
+			return ctx, nil, ErrAccountJobPluginUnavailable
+		}
+		ctx, release, err = e.manager.BindAccountJobExecution(ctx, owner.ID, owner.Generation, job.Kind)
+		if err != nil {
+			return ctx, nil, err
+		}
+	} else if job.Kind == AccountJobKindExtensionOperation {
+		return ctx, nil, ErrAccountJobPluginUnavailable
+	}
 	if job.Kind != AccountJobKindExtensionOperation {
 		if preparer, ok := e.core.(AccountJobPreparingExecutor); ok {
-			return preparer.PrepareAccountJob(ctx, job, payload)
+			prepared, cleanup, err := preparer.PrepareAccountJob(ctx, job, payload)
+			if err != nil {
+				if cleanup != nil {
+					cleanup()
+				}
+				release()
+				return ctx, nil, err
+			}
+			if prepared == nil {
+				prepared = ctx
+			}
+			return prepared, func() {
+				if cleanup != nil {
+					cleanup()
+				}
+				release()
+			}, nil
 		}
 	}
-	return ctx, func() {}, nil
+	return ctx, release, nil
 }
 
 func (e *PluginJobExecutor) ExecuteAccountJob(ctx context.Context, job *AccountJob, payload json.RawMessage, items []AccountJobItem) ([]AccountJobExecutionResult, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	owner, ownerErr := AccountJobPluginExecution(job.Metadata)
+	if ownerErr != nil {
+		return nil, ownerErr
+	}
+	if owner.ID > 0 {
+		execution, ok := PluginExecutionFromContext(ctx)
+		if !ok || execution != owner {
+			return nil, ErrAccountJobPluginUnavailable
+		}
+		var ids []int64
+		for _, item := range items {
+			if item.TargetAccountID != nil {
+				ids = append(ids, *item.TargetAccountID)
+			}
+		}
+		if err := e.manager.ValidateResourceAccounts(ctx, extensionv1.CapabilityAdmin, ids, len(ids) != len(items)); err != nil {
+			return nil, ErrAccountJobPluginUnavailable
+		}
+	}
 	if job.Kind != AccountJobKindExtensionOperation {
 		return e.core.ExecuteAccountJob(ctx, job, payload, items)
 	}
 	var request PluginJobPayload
 	if json.Unmarshal(payload, &request) != nil || request.PluginID <= 0 || request.Operation == "" || len(items) != 1 {
 		return nil, errors.New("invalid plugin job")
+	}
+	if owner.ID != request.PluginID {
+		return nil, ErrAccountJobPluginUnavailable
 	}
 	item := items[0]
 	result := AccountJobExecutionResult{ItemID: item.ID, Status: AccountJobItemStatusFailed, ErrorCode: "execution_failed", ErrorMessage: "plugin operation failed"}

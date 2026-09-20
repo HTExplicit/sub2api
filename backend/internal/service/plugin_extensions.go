@@ -29,7 +29,7 @@ func (m *PluginManager) InvokeAdminExtension(ctx context.Context, id, accountID 
 	if err != nil {
 		return extensionv1.Result{}, err
 	}
-	return m.InvokeExtension(ctx, id, platform, accountType, extensionv1.Invocation{Capability: extensionv1.CapabilityAdmin, Operation: operation, Payload: raw})
+	return m.InvokeExtension(ctx, id, platform, accountType, extensionv1.Invocation{Capability: extensionv1.CapabilityAdmin, Operation: operation, AccountID: accountID, Payload: raw})
 }
 
 func (m *PluginManager) ValidateAdminExtension(ctx context.Context, id, accountID int64, operation string) error {
@@ -84,7 +84,7 @@ func (m *PluginManager) validateAdminExtension(ctx context.Context, id, accountI
 			return "", "", errors.New("plugin action is not available for this account")
 		}
 	}
-	if !pluginHasCapability(installation, extensionv1.CapabilityAdmin, platform, accountType) {
+	if !pluginHasInvocationCapability(installation, extensionv1.Invocation{Capability: extensionv1.CapabilityAdmin, AccountID: accountID}, platform, accountType) {
 		return "", "", errors.New("plugin admin capability outside scope")
 	}
 	runtime := registry.runtimes[id]
