@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"strings"
+	"testing"
 
 	cindy "github.com/HTExplicit/sub2api-plugins/cindyprovider/catalog"
 
@@ -18,6 +19,15 @@ import (
 type promptPolicyFixture struct{}
 
 var promptFixtureModule = policy.New()
+
+func cindyProbeTestModels(t *testing.T) [2]string {
+	t.Helper()
+	plan, err := cindyBalanceProbePlan(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	return plan.Models
+}
 
 func (promptPolicyFixture) InvokeOperation(ctx context.Context, _ string, _ string, in extensionv1.Invocation) (extensionv1.Result, error) {
 	if strings.HasPrefix(in.Operation, "observability.") {

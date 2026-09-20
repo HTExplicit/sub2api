@@ -89,7 +89,7 @@ func TestCindyFreeCatalogRoutingRetainsExistingProtocolsAndAliases(t *testing.T)
 	sort.Strings(wantPublic)
 	require.Equal(t, wantPublic, CindyPublicModelIDs())
 	require.Equal(t, wantPublic, CindyCodexPublicModelIDs())
-	require.Equal(t, [...]string{"tencent/hy3", "z-ai/glm-5.3-flash"}, cindyBalanceProbeModels)
+	require.Equal(t, [...]string{"tencent/hy3", "z-ai/glm-5.3-flash"}, cindyProbeTestModels(t))
 
 	for _, modelID := range wantOrdinary {
 		capability, known := resolveKnownCindyCapability(modelID)

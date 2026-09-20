@@ -1,13 +1,13 @@
 {
   "schema_version": 2,
   "upstream_base": "aea725f2ea644d5592d0bbb1d63b607efa7e200a",
-  "basis_commit": "dce661215c63ea0e5603c735fd3a8740869a444a",
+  "basis_commit": "49062e97286b3778ae3a61adf5bec1e20c30be2d",
   "scope": "Current Sub2API downstream source and working tree. Candidate ownership does not establish completed review. Root maintenance, independent services and Worker require a separate audit.",
-  "source_digest": "415d2d8d6c0aeeea3ad8562f3011aa64b2b89cb11cbc185e6d5c2932087db1de",
+  "source_digest": "211e043ed3c2108efe24633f17e13f39cdee71eb478c230b61578910b72d9420",
   "digest_excludes": [
     "inventory and implementation-state documents; missing paths have present=false"
   ],
-  "total_paths": 2113,
+  "total_paths": 2120,
   "generated_assets_and_locks": 83,
   "review_complete": false,
   "role_counts": {
@@ -16,16 +16,16 @@
     "dependency-lock": 9,
     "documentation": 27,
     "generated": 68,
-    "source": 891,
-    "test-or-fixture": 654
+    "source": 895,
+    "test-or-fixture": 657
   },
   "owner_counts": {
     "operations": 39,
     "documentation-and-history": 25,
     "mixed-requires-review": 1012,
-    "core-extension-and-job-host": 111,
+    "core-extension-and-job-host": 114,
     "core-data-and-migrations": 21,
-    "cindy-provider": 165,
+    "cindy-provider": 169,
     "image-tools": 34,
     "account-tools": 50,
     "codex-runtime": 36,
@@ -3224,7 +3224,7 @@
       "candidate_owner": "cindy-provider",
       "role": "test-or-fixture",
       "present": true,
-      "content_sha256": "ab43fa67752826568f060d32c143787bf14e7f37716b7b8b39eb2e02e10d51dc",
+      "content_sha256": "e677a5898a395aa21001ebbddb98239d6cc24d3e7761e0f86b472fd9bef0aee4",
       "review_status": "pending"
     },
     {
@@ -3232,7 +3232,7 @@
       "candidate_owner": "cindy-provider",
       "role": "source",
       "present": true,
-      "content_sha256": "9ae6b30bc4478d4f176d58f0901fc41dc111ebbc38c85c11363694fbdcfde56b",
+      "content_sha256": "a8790ef38479c8004c71162bc914f12e8157272e007ed7ada0036bb1d8fbd8de",
       "review_status": "pending"
     },
     {
@@ -4672,7 +4672,7 @@
       "candidate_owner": "cindy-provider",
       "role": "source",
       "present": true,
-      "content_sha256": "c5bc1a39642e3502bad6e83bab7a93571243cb602bd4ca4e412cc963a2f48cb1",
+      "content_sha256": "035c38813435647f96c85527c7bafec208b89b47faf5ab01fa766b0a5c888947",
       "review_status": "pending"
     },
     {
@@ -4680,7 +4680,7 @@
       "candidate_owner": "cindy-provider",
       "role": "test-or-fixture",
       "present": true,
-      "content_sha256": "5e4baf69a672ef83b208abaed66dd2f1c9e719dbcf7c3917e87a1bbfeb0fbc1b",
+      "content_sha256": "f2fad5d55953d7b72a58dfc904f57deb386b98d32036f7cbecde43855c9cefd2",
       "review_status": "pending"
     },
     {
@@ -4688,7 +4688,7 @@
       "candidate_owner": "cindy-provider",
       "role": "source",
       "present": true,
-      "content_sha256": "ff5e2c89a80a95000cbb634967f67cfdf981af5afb90b77d70543bc1eb833efe",
+      "content_sha256": "c7b42c646e5f7436885776ef531755525deba808781ebe1786416ab5e8636e4c",
       "review_status": "pending"
     },
     {
@@ -4696,7 +4696,7 @@
       "candidate_owner": "cindy-provider",
       "role": "source",
       "present": true,
-      "content_sha256": "3c458003003f717d2d50c37afbd92fd747a0a0b51b470e2ae3cdee1008a9adac",
+      "content_sha256": "586e05f6c3a2ca8ab43bc4674532a9eb41d28fb1dd8ad6fe6021d71656e29079",
       "review_status": "pending"
     },
     {
@@ -4704,7 +4704,7 @@
       "candidate_owner": "cindy-provider",
       "role": "test-or-fixture",
       "present": true,
-      "content_sha256": "337bf9765c19da8dcc579576afcc554bd7ebc3dca354ba218c353d5712016dcc",
+      "content_sha256": "1c07efd4cebf7b9071983665b0118d327b86255ee6833a9323bf17307ca12bcc",
       "review_status": "pending"
     },
     {
@@ -4736,7 +4736,7 @@
       "candidate_owner": "cindy-provider",
       "role": "source",
       "present": true,
-      "content_sha256": "ad7ca6bbffc83dbc8ab7313104081dbfead5d32b8266d01e103e624c06cb9835",
+      "content_sha256": "5be0150f37c41f809e5359287272db9fe32ffd1ba6986a03488473a46dad9f40",
       "review_status": "pending"
     },
     {
@@ -4936,7 +4936,7 @@
       "candidate_owner": "cindy-provider",
       "role": "test-or-fixture",
       "present": true,
-      "content_sha256": "cc3a0ffe8bfe955b7a87e9ebb841248149623243bea70717abe5dd35b0087615",
+      "content_sha256": "85ad6f8556d08f9e6e2af83fe6332208a233435b399ac9eb6e13f21b3c6b15bc",
       "review_status": "pending"
     },
     {
@@ -7428,6 +7428,22 @@
       "review_status": "pending"
     },
     {
+      "path": "backend/internal/service/plugin_cindy_probe.go",
+      "candidate_owner": "core-extension-and-job-host",
+      "role": "source",
+      "present": true,
+      "content_sha256": "6daa5e8f1e9642e6745f50d5f1bd793a78f4743d81ce757d618494aff53ce46a",
+      "review_status": "pending"
+    },
+    {
+      "path": "backend/internal/service/plugin_cindy_probe_test.go",
+      "candidate_owner": "core-extension-and-job-host",
+      "role": "test-or-fixture",
+      "present": true,
+      "content_sha256": "757cba5d36fa40a4787f28286f7fd5dcab84f1f0d0ee0fb0cc91c65147c3b0bf",
+      "review_status": "pending"
+    },
+    {
       "path": "backend/internal/service/plugin_compatibility.go",
       "candidate_owner": "core-extension-and-job-host",
       "role": "source",
@@ -7608,7 +7624,7 @@
       "candidate_owner": "core-extension-and-job-host",
       "role": "test-or-fixture",
       "present": true,
-      "content_sha256": "6047c820206ec2aef3769bb7f2bcad1a07c833ddfbb55ad8939b9623f6ae8fc9",
+      "content_sha256": "87806e257669baa329535663b6a07b2b699c121a18b75797a160ad4b267bd180",
       "review_status": "pending"
     },
     {
@@ -7728,7 +7744,7 @@
       "candidate_owner": "mixed-requires-review",
       "role": "test-or-fixture",
       "present": true,
-      "content_sha256": "dffe776eb3e0461198a8e2cb478b124a9ac8c7a770805e975383218b770bf79a",
+      "content_sha256": "47b55c0aa8ef336a83c736a85d6a039017e9aa19d2706d712246b5a2009aebd2",
       "review_status": "pending"
     },
     {
@@ -7960,7 +7976,7 @@
       "candidate_owner": "prompt-skills",
       "role": "source",
       "present": true,
-      "content_sha256": "17019f69e78e8a69e5f6d9e4c8f7b16db4e1dcc6e1fa4eb6f2a863a1fad4bbad",
+      "content_sha256": "c1ee17947066bf1d54c8db6407f83f3fccac6738a8195cf6483a7adaa4500ca1",
       "review_status": "pending"
     },
     {
@@ -7968,7 +7984,7 @@
       "candidate_owner": "prompt-skills",
       "role": "test-or-fixture",
       "present": true,
-      "content_sha256": "70b4268a581308ab11e0040bfc9e4d6fd66aa39c946737dd1ac761c11f24cd32",
+      "content_sha256": "3b5476419b7b16ea4005899d1573ffca24489dd3f0f3b1d0ca1518ef189c7a16",
       "review_status": "pending"
     },
     {
@@ -7992,7 +8008,7 @@
       "candidate_owner": "prompt-skills",
       "role": "source",
       "present": true,
-      "content_sha256": "5fb87faaab090783cc1daaf8bad696e03382db919fff636282c1380b4059b8b1",
+      "content_sha256": "98e821f72f960736750cb3c72650724b4a9f70db5ef4f8b81d80ab373ec253e0",
       "review_status": "pending"
     },
     {
@@ -8016,7 +8032,7 @@
       "candidate_owner": "prompt-skills",
       "role": "test-or-fixture",
       "present": true,
-      "content_sha256": "5f2656c8b70e5289eb66bd3435ce1be637079795cc2709c5c227ee2cf82aa66d",
+      "content_sha256": "4b2a2042ca6d8c792093376180cdde0f95b22fc7acadbbb750b26172b3087e83",
       "review_status": "pending"
     },
     {
@@ -8993,6 +9009,14 @@
       "role": "source",
       "present": true,
       "content_sha256": "1bb27645277ba3ec7829b349f3dc4975b468453e7564b4c241a9d3e7b197adda",
+      "review_status": "pending"
+    },
+    {
+      "path": "backend/pkg/extensionapi/v1/cindy_probe.go",
+      "candidate_owner": "core-extension-and-job-host",
+      "role": "source",
+      "present": true,
+      "content_sha256": "8e6aefa6e8fa7b5f58ac666c2e275b384aac4082820584744876dbce618e70b3",
       "review_status": "pending"
     },
     {
@@ -11216,7 +11240,7 @@
       "candidate_owner": "cindy-provider",
       "role": "source",
       "present": true,
-      "content_sha256": "03f05a791482a7fb3e01925e501d13b6d3d29489f56c3b2330b38630fa2e8633",
+      "content_sha256": "5a38b14c1d871b0a6fee198ec8fa960c9d742a78eb9dab55923b0323dd477243",
       "review_status": "pending"
     },
     {
@@ -11232,7 +11256,7 @@
       "candidate_owner": "cindy-provider",
       "role": "test-or-fixture",
       "present": true,
-      "content_sha256": "4abdc4e122c11510f115db1d5a2bfacc605261394185375a058f02f06aded993",
+      "content_sha256": "e06f2cde0acbe570ce6a16b5bac7eeffcc3d5b83ea7aaf2c980a3c9c22234db9",
       "review_status": "pending"
     },
     {
@@ -11824,7 +11848,7 @@
       "candidate_owner": "cindy-provider",
       "role": "source",
       "present": true,
-      "content_sha256": "d0c2b7a40bddf2a93a9bb778ad6b04049a103c6f64f8757eb4d5545c8d1ed24b",
+      "content_sha256": "a983555b517adfe402a7b700451204132ba6a2c2b3451464a53544407f178f7c",
       "review_status": "pending"
     },
     {
@@ -12716,6 +12740,22 @@
       "review_status": "pending"
     },
     {
+      "path": "plugins/cindy-provider/catalog/channel.go",
+      "candidate_owner": "cindy-provider",
+      "role": "source",
+      "present": true,
+      "content_sha256": "e58e17aee850d6f7e988e258c1314cc33a9a5249274756dbb0467ef9ca200b8b",
+      "review_status": "pending"
+    },
+    {
+      "path": "plugins/cindy-provider/catalog/channel_test.go",
+      "candidate_owner": "cindy-provider",
+      "role": "test-or-fixture",
+      "present": true,
+      "content_sha256": "33cfe1bf5707469e8db8a3ec85ef599620c26dc37be7c7ac5715a8308163e251",
+      "review_status": "pending"
+    },
+    {
       "path": "plugins/cindy-provider/catalog/health.go",
       "candidate_owner": "cindy-provider",
       "role": "source",
@@ -12728,7 +12768,7 @@
       "candidate_owner": "cindy-provider",
       "role": "source",
       "present": true,
-      "content_sha256": "f32beab57f39969f24bdc0cc8015160ef639fbee201555c34091b65fd068e3bf",
+      "content_sha256": "8e869d5838f09ae0aee30d51e5f4c351ff81d10229a97c66c300be647b853913",
       "review_status": "pending"
     },
     {
@@ -12737,6 +12777,22 @@
       "role": "test-or-fixture",
       "present": true,
       "content_sha256": "e94f5236412d312e5c901aa8ca8c8be9177b1ace5ff1941bdb51e5665c429f8c",
+      "review_status": "pending"
+    },
+    {
+      "path": "plugins/cindy-provider/catalog/probe.go",
+      "candidate_owner": "cindy-provider",
+      "role": "source",
+      "present": true,
+      "content_sha256": "cbe4ccb226ab7557e88b58edc9f5c19c753e19a898db23f20f54f2db5cac6768",
+      "review_status": "pending"
+    },
+    {
+      "path": "plugins/cindy-provider/catalog/probe_test.go",
+      "candidate_owner": "cindy-provider",
+      "role": "test-or-fixture",
+      "present": true,
+      "content_sha256": "0bac911763591cce0ed63dd5d187e082424211f707d8cb0c796d055a015495d1",
       "review_status": "pending"
     },
     {
@@ -12768,7 +12824,7 @@
       "candidate_owner": "cindy-provider",
       "role": "source",
       "present": true,
-      "content_sha256": "893d7446b76340fd13d7727caf6090f6cd3e9956f3f697eee1363c83cf3432f7",
+      "content_sha256": "536f222b4cb26cc28ae1c54960b8bb8cfa49db232b6606c1a2fcdcc14eec9318",
       "review_status": "pending"
     },
     {
@@ -12848,7 +12904,7 @@
       "candidate_owner": "codex-runtime",
       "role": "source",
       "present": true,
-      "content_sha256": "f620f1d7c98a3f5da55178bea275dcdd495e20bf56eaa09327b25b2aebc2b9f2",
+      "content_sha256": "ac93b74ec9cdb48f409be5e0f287e61609dae9ff2126d13a3131cfb771d97c64",
       "review_status": "pending"
     },
     {
@@ -12856,7 +12912,7 @@
       "candidate_owner": "codex-runtime",
       "role": "test-or-fixture",
       "present": true,
-      "content_sha256": "1e61b630e352b3f78f7fb7d59ab400fbd354ac33eb294e7a7f031bbb1368f217",
+      "content_sha256": "715622c91a0785139f5d582455d3befec8d67401e8321b786fb52ecf3238a7d3",
       "review_status": "pending"
     },
     {

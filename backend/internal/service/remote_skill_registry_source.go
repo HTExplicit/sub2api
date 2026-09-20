@@ -105,7 +105,7 @@ func (s *MoxinggangRemoteSkillCandidateSource) Build(
 	if s.now != nil {
 		fetchedAt = s.now().UTC()
 	}
-	return buildPairedRemoteSkillCandidate(rawFiles, effectiveFiles, prompt, active, fetchedAt)
+	return buildPairedRemoteSkillCandidate(ctx, rawFiles, effectiveFiles, prompt, active, fetchedAt)
 }
 
 func (s *MoxinggangRemoteSkillCandidateSource) downloadEntry(ctx context.Context, name string) ([]byte, error) {
@@ -181,18 +181,25 @@ func newRemoteSkillHTTPClient() *http.Client {
 }
 
 func buildPairedRemoteSkillCandidate(
+	ctx context.Context,
 	rawFiles map[string][]byte,
 	effectiveFiles map[string][]byte,
 	prompt RemoteSkillPromptCapture,
 	active *RemoteSkillCandidate,
 	fetchedAt time.Time,
 ) (RemoteSkillCandidate, error) {
+	if err := ctx.Err(); err != nil {
+		return RemoteSkillCandidate{}, err
+	}
 	fetchedAt = fetchedAt.UTC().Truncate(time.Microsecond)
 	if len(rawFiles) == 0 || len(rawFiles) != len(effectiveFiles) || len(rawFiles) > remoteSkillMaxFileCount {
 		return RemoteSkillCandidate{}, fmt.Errorf("%w: paired tree file count invalid", ErrBusinessSystemPromptBundleInvalid)
 	}
 	var rawTotal, effectiveTotal int64
 	for name, raw := range rawFiles {
+		if err := ctx.Err(); err != nil {
+			return RemoteSkillCandidate{}, err
+		}
 		normalized, err := normalizeBundleRelativePath(name)
 		if err != nil || normalized != name || len(raw) == 0 || len(raw) > businessSystemPromptBundleMaxFileBytes {
 			return RemoteSkillCandidate{}, fmt.Errorf("%w: raw tree path or size invalid", ErrBusinessSystemPromptBundleInvalid)
@@ -230,7 +237,7 @@ func buildPairedRemoteSkillCandidate(
 		RawFiles:       cloneRemoteSkillFiles(rawFiles),
 		EffectiveFiles: cloneRemoteSkillFiles(effectiveFiles),
 	}
-	changes, err := remoteSkillFileChangesChecked(context.Background(), active, candidate)
+	changes, err := remoteSkillFileChangesChecked(ctx, active, candidate)
 	if err != nil {
 		return RemoteSkillCandidate{}, err
 	}
@@ -273,6 +280,9 @@ func remoteSkillFileChangesChecked(ctx context.Context, active *RemoteSkillCandi
 	sort.Strings(ordered)
 	changes := make([]RemoteSkillFileChange, 0)
 	for _, name := range ordered {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
 		oldBody, hadOld := oldFiles[name]
 		newBody, hasNew := candidate.EffectiveFiles[name]
 		change := RemoteSkillFileChange{Path: name}

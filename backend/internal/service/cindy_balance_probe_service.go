@@ -8,6 +8,8 @@ import (
 	"sync"
 	"time"
 
+	extensionv1 "github.com/Wei-Shaw/sub2api/pkg/extensionapi/v1"
+
 	"github.com/google/uuid"
 )
 
@@ -69,6 +71,9 @@ func (s *CindyBalanceProbeService) Preview(
 	if s == nil || s.repo == nil {
 		return nil, ErrCindyBalanceProbeChanged
 	}
+	if err := requireCindyBalanceProbePolicy(ctx); err != nil {
+		return nil, err
+	}
 	return s.repo.Preview(ctx, CanonicalizeCindyBalanceProbeScope(scope), rateRPS)
 }
 
@@ -85,6 +90,9 @@ func (s *CindyBalanceProbeService) CreateJob(
 	}
 	if rateRPS == 0 {
 		rateRPS = CindyBalanceProbeDefaultRateRPS
+	}
+	if err := requireCindyBalanceProbePolicy(ctx); err != nil {
+		return nil, err
 	}
 	if err := validateCindyBalanceProbeRate(rateRPS); err != nil {
 		return nil, err
@@ -137,6 +145,9 @@ func (s *CindyBalanceProbeService) Pause(ctx context.Context, jobID int64) (*Cin
 }
 
 func (s *CindyBalanceProbeService) Resume(ctx context.Context, jobID int64) (*CindyBalanceProbeJob, error) {
+	if err := requireCindyBalanceProbePolicy(ctx); err != nil {
+		return nil, err
+	}
 	job, err := s.repo.Resume(ctx, jobID)
 	if err == nil {
 		s.notify()
@@ -161,17 +172,14 @@ func (s *CindyBalanceProbeService) notify() {
 
 func (s *CindyBalanceProbeService) run() {
 	defer s.wg.Done()
-	lastPrune := time.Time{}
 	for {
 		if s.ctx.Err() != nil {
 			return
 		}
 		now := s.now().UTC()
-		if lastPrune.IsZero() || now.Sub(lastPrune) >= 24*time.Hour {
-			if err := s.repo.PruneFinished(s.ctx, now.Add(-cindyBalanceProbeHistoryRetention)); err != nil {
-				slog.Error("cindy_balance_probe_prune_failed", "error", err)
-			}
-			lastPrune = now
+		if _, err := cindyBalanceProbePlan(s.ctx); err != nil {
+			s.wait(cindyBalanceProbePollInterval)
+			continue
 		}
 		// A lease token is a claim epoch, not a long-lived worker identity. Never
 		// let a reservation from an earlier claim regain authority after reclaim.
@@ -210,7 +218,11 @@ func (s *CindyBalanceProbeService) processJob(job *CindyBalanceProbeJob, leaseTo
 	if job == nil {
 		return
 	}
-	jobCtx, cancel := context.WithCancel(s.ctx)
+	jobCtx, cancel, err := bindProcessExtensionContext(s.ctx, PlatformCindy, AccountTypeAPIKey,
+		extensionv1.Invocation{Capability: extensionv1.CapabilityProvider, Operation: "cindy.probe.plan"})
+	if err != nil {
+		return
+	}
 	defer cancel()
 	lostLease := make(chan struct{})
 	var lostOnce sync.Once
@@ -230,7 +242,7 @@ func (s *CindyBalanceProbeService) processJob(job *CindyBalanceProbeJob, leaseTo
 					continue
 				}
 				if !ok {
-					lostOnce.Do(func() { close(lostLease) })
+					lostOnce.Do(func() { close(lostLease); cancel() })
 					return
 				}
 			}
@@ -319,9 +331,13 @@ func (s *CindyBalanceProbeService) executeReservation(ctx context.Context, reser
 		// epoch conservatively recovers the pre-send reservation as unknown.
 		return false
 	}
-	model := cindyBalanceProbeModels[0]
+	plan, err := cindyBalanceProbePlan(ctx)
+	if err != nil {
+		return false
+	}
+	model := plan.Models[0]
 	if reservation.Stage == "terra" {
-		model = cindyBalanceProbeModels[1]
+		model = plan.Models[1]
 	}
 	probeCtx, cancel := context.WithTimeout(ctx, cindyBalanceProbeTimeout)
 	outcome := s.gateway.probeCindyBalanceModel(probeCtx, account, model)
@@ -347,30 +363,19 @@ func (s *CindyBalanceProbeService) completeReservation(
 	leaseToken string,
 	outcome cindyBalanceProbeOutcome,
 ) bool {
-	switch outcome {
-	case cindyBalanceProbeSuccess:
-		if reservation.Stage == "luna" && reservation.WasMarked {
-			return s.finalizeRecovery(ctx, reservation, account, leaseToken)
-		}
-		state := "healthy"
-		if reservation.Stage == "terra" {
-			state = "inconclusive"
-		}
-		return s.completeStage(ctx, reservation, account, leaseToken, "success", state, false)
-	case cindyBalanceProbeExhausted:
-		if reservation.Stage == "luna" {
-			if reservation.WasMarked {
-				return s.completeStage(ctx, reservation, account, leaseToken, "exact", "still_exhausted", false)
-			}
-			return s.completeStage(ctx, reservation, account, leaseToken, "exact", "luna_exact", false)
-		}
+	decision, err := cindyBalanceProbeDecision(ctx, reservation.Stage, reservation.WasMarked, outcome)
+	if err != nil {
+		return false
+	}
+	switch decision.Action {
+	case "recover":
+		return s.finalizeRecovery(ctx, reservation, account, leaseToken)
+	case "exhausted":
 		return s.finalizeExhausted(ctx, reservation, account, leaseToken)
-	case cindyBalanceProbeNetworkFailure:
-		return s.completeStage(ctx, reservation, account, leaseToken, "network_error", "inconclusive", true)
-	case cindyBalanceProbeServerFailure:
-		return s.completeStage(ctx, reservation, account, leaseToken, "server_error", "inconclusive", true)
+	case "complete":
+		return s.completeStage(ctx, reservation, account, leaseToken, decision.Outcome, decision.State, decision.NetworkFailure)
 	default:
-		return s.completeStage(ctx, reservation, account, leaseToken, "other_error", "inconclusive", false)
+		return false
 	}
 }
 

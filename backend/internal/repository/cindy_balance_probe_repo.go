@@ -1129,14 +1129,6 @@ func (r *cindyBalanceProbeRepository) Cancel(ctx context.Context, jobID int64) (
 	return r.GetJob(ctx, jobID)
 }
 
-func (r *cindyBalanceProbeRepository) PruneFinished(ctx context.Context, before time.Time) error {
-	_, err := r.db.ExecContext(ctx, `
-		DELETE FROM cindy_balance_probe_jobs
-		WHERE finished_at < $1 AND status IN ('completed', 'completed_with_issues', 'canceled')
-	`, before)
-	return err
-}
-
 func (r *cindyBalanceProbeRepository) loadCounts(ctx context.Context, job *service.CindyBalanceProbeJob) error {
 	if job == nil {
 		return nil

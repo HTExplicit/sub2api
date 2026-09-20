@@ -1,6 +1,8 @@
 import { enableAutoUnmount, flushPromises, mount } from '@vue/test-utils'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import CindyBalanceProbePanel from '../CindyBalanceProbePanel.vue'
+import { computed, ref } from 'vue'
+import { extensionAvailabilityKey } from '@/components/plugins/context'
 
 enableAutoUnmount(afterEach)
 
@@ -86,7 +88,7 @@ const preview = {
   maximum_eta_seconds: 4,
 }
 
-function render() {
+function render(available = ref(true)) {
   return mount(CindyBalanceProbePanel, {
     props: {
       selectedIds: [9, 10],
@@ -102,6 +104,7 @@ function render() {
       },
     },
     global: {
+      provide: { [extensionAvailabilityKey as symbol]: computed(() => available.value) },
       stubs: {
         Icon: true,
         ConfirmDialog: {
@@ -115,6 +118,21 @@ function render() {
 }
 
 describe('CindyBalanceProbePanel', () => {
+  it('preserves the preview and blocks new work while the provider is unavailable', async () => {
+    const available = ref(true)
+    const wrapper = render(available)
+    await flushPromises()
+    await wrapper.get('[data-test="cindy-probe-preview"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.find('[data-test="cindy-probe-preview-result"]').exists()).toBe(true)
+    available.value = false
+    await flushPromises()
+    expect(wrapper.get('[data-test="cindy-probe-preview"]').attributes('disabled')).toBeDefined()
+    expect(wrapper.get('[data-test="cindy-probe-create"]').attributes('disabled')).toBeDefined()
+    expect(wrapper.find('[data-test="cindy-probe-preview-result"]').exists()).toBe(true)
+    await wrapper.get('[data-test="cindy-probe-create"]').trigger('click')
+    expect(mocks.create).not.toHaveBeenCalled()
+  })
   beforeEach(() => {
     vi.clearAllMocks()
     mocks.list.mockResolvedValue({ items: [], total: 0 })

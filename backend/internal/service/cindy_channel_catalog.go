@@ -1,7 +1,6 @@
 package service
 
 import (
-	"sort"
 	"strings"
 )
 
@@ -19,22 +18,7 @@ func hydrateManagedCindyCatalogChannel(channel *Channel) bool {
 		return false
 	}
 
-	capabilities := CindyCapabilities()
-	aliases := CindyManagedCompatibilityAliases()
-	mapping := make(map[string]string, len(capabilities)*2+len(aliases))
-	for i := range capabilities {
-		capability := capabilities[i]
-		if !capability.PublicModel || len(capability.VerifiedEndpoints) == 0 {
-			continue
-		}
-		mapping[capability.PublicID] = capability.LiveUpstreamID
-		mapping[capability.LiveUpstreamID] = capability.LiveUpstreamID
-	}
-	for alias, publicID := range aliases {
-		if capability, ok := resolveKnownCindyCapability(publicID); ok && capability.PublicModel {
-			mapping[alias] = capability.LiveUpstreamID
-		}
-	}
+	mapping, _ := cindyManagedChannelProjection()
 	channel.ModelMapping = map[string]map[string]string{PlatformCindy: mapping}
 	channel.ModelPricing = nil
 	return true
@@ -49,20 +33,21 @@ func isManagedCindyCatalogChannel(channel *Channel) bool {
 }
 
 func cindyInternalPublicModelIDs() []string {
-	capabilities := CindyCapabilities()
-	models := make([]string, 0, len(capabilities))
-	for _, capability := range capabilities {
-		if capability.PublicModel && len(capability.VerifiedEndpoints) > 0 {
-			models = append(models, capability.PublicID)
-		}
-	}
-	sort.Strings(models)
+	_, models := cindyManagedChannelProjection()
 	return models
 }
 
+func cindyManagedChannelProjection() (map[string]string, []string) {
+	mapping := map[string]string{}
+	var models []string
+	queryCindyCatalog("ManagedChannelProjection", nil, []any{&mapping, &models})
+	return mapping, models
+}
+
 func cindyManagedChannelModelAllowed(model string) bool {
-	capability, ok := resolveKnownCindyCapability(strings.TrimSpace(model))
-	return ok && capability.PublicModel && len(capability.VerifiedEndpoints) > 0
+	var allowed bool
+	queryCindyCatalog("ManagedChannelModelAllowed", []any{model}, []any{&allowed})
+	return allowed
 }
 
 func cindyManagedChannelNameReserved(name string) bool {

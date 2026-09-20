@@ -142,7 +142,7 @@ func testRemoteSkillCandidate(t *testing.T, id, promptID int64, tree string) Rem
 		"README_AI.md": []byte(tree),
 		"SKILL.md":     []byte(tree),
 	}
-	candidate, err := buildPairedRemoteSkillCandidate(raw, rewriteRemoteSkillPublishedFiles(raw), prompt, nil, time.Unix(0, 0).UTC())
+	candidate, err := buildPairedRemoteSkillCandidate(context.Background(), raw, rewriteRemoteSkillPublishedFiles(raw), prompt, nil, time.Unix(0, 0).UTC())
 	require.NoError(t, err)
 	candidate.Version.ID = id
 	candidate.Version.PromptVersionID = promptID

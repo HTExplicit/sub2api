@@ -91,7 +91,7 @@ func (f *RemoteSkillRegistryFilesystem) LoadSeed(ctx context.Context) (RemoteSki
 	if err != nil {
 		return RemoteSkillCandidate{}, err
 	}
-	return buildPairedRemoteSkillCandidate(rawFiles, effective, prompt, nil, fetchedAt)
+	return buildPairedRemoteSkillCandidate(ctx, rawFiles, effective, prompt, nil, fetchedAt)
 }
 
 func (f *RemoteSkillRegistryFilesystem) InstallCandidate(ctx context.Context, candidate RemoteSkillCandidate) error {

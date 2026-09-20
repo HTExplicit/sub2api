@@ -23,7 +23,6 @@ const (
 	cindyBalanceProbePollInterval       = time.Second
 	cindyBalanceProbeTimeout            = 20 * time.Second
 	cindyBalanceProbeConfirmationWindow = 5 * time.Minute
-	cindyBalanceProbeHistoryRetention   = 30 * 24 * time.Hour
 )
 
 var (
@@ -204,7 +203,6 @@ type CindyBalanceProbeRepository interface {
 	Pause(ctx context.Context, jobID int64) (*CindyBalanceProbeJob, error)
 	Resume(ctx context.Context, jobID int64) (*CindyBalanceProbeJob, error)
 	Cancel(ctx context.Context, jobID int64) (*CindyBalanceProbeJob, error)
-	PruneFinished(ctx context.Context, before time.Time) error
 }
 
 func BuildCindyBalanceProbePreview(scope CindyBalanceProbeScope, accounts []Account, rateRPS float64) (*CindyBalanceProbePreview, error) {

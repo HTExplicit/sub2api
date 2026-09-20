@@ -65,7 +65,7 @@
         <button
           type="button"
           class="btn btn-primary w-full"
-          :disabled="loading.preview || loading.create || (scopeMode === 'selected' && selectedIds.length === 0)"
+          :disabled="!extensionAvailable || loading.preview || loading.create || (scopeMode === 'selected' && selectedIds.length === 0)"
           data-test="cindy-probe-preview"
           @click="previewJob"
         >
@@ -93,7 +93,7 @@
           <button
             type="button"
             class="btn btn-primary mt-3 w-full"
-            :disabled="loading.create || preview.candidate_count === 0"
+            :disabled="!extensionAvailable || loading.create || preview.candidate_count === 0"
             data-test="cindy-probe-create"
             @click="createJob"
           >
@@ -225,12 +225,13 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
+import { computed, inject, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import Icon from '@/components/icons/Icon.vue'
 import ConfirmDialog from '@/components/common/ConfirmDialog.vue'
 import { useAppStore } from '@/stores/app'
 import { extractApiErrorMessage } from '@/utils/apiError'
+import { extensionAvailabilityKey } from '@/components/plugins/context'
 import {
   cindyBalanceProbeAPI,
   canonicalizeCindyBalanceProbeScope,
@@ -252,6 +253,7 @@ const props = withDefaults(defineProps<{
 
 const { t } = useI18n()
 const appStore = useAppStore()
+const extensionAvailable = inject(extensionAvailabilityKey, computed(() => true))
 const scopeMode = ref<CindyBalanceProbeScopeMode>('all')
 const expanded = ref(props.initiallyExpanded)
 const rateRPS = ref(0.5)
@@ -280,7 +282,7 @@ const normalizedRate = computed(() => Math.min(1, Math.max(0.1, Number(rateRPS.v
 const activeJob = computed(() => jobs.value.find((job) => job.id === selectedJobID.value) || null)
 const activeStatuses = new Set(['queued', 'running', 'paused', 'paused_upstream', 'cancel_requested'])
 const canPause = computed(() => ['queued', 'running'].includes(activeJob.value?.status || ''))
-const canResume = computed(() => ['paused', 'paused_upstream'].includes(activeJob.value?.status || ''))
+const canResume = computed(() => extensionAvailable.value && ['paused', 'paused_upstream'].includes(activeJob.value?.status || ''))
 const canCancel = computed(() => activeJob.value != null && activeStatuses.has(activeJob.value.status) && activeJob.value.status !== 'cancel_requested')
 const canChangeRate = computed(() => activeJob.value != null && activeStatuses.has(activeJob.value.status))
 const completedCount = computed(() => {
@@ -335,6 +337,7 @@ function buildPreviewRequest(): CindyBalanceProbePreviewRequest {
 }
 
 async function previewJob(): Promise<void> {
+  if (!extensionAvailable.value) return
   loading.preview = true
   preview.value = null
   try {
@@ -349,7 +352,7 @@ async function previewJob(): Promise<void> {
 }
 
 async function createJob(): Promise<void> {
-  if (!preview.value) return
+  if (!extensionAvailable.value || !preview.value) return
   loading.create = true
   try {
     const job = await cindyBalanceProbeAPI.create({
@@ -464,6 +467,7 @@ async function pauseJob(): Promise<void> {
 }
 
 async function resumeJob(): Promise<void> {
+  if (!extensionAvailable.value) return
   if (selectedJobID.value) await mutateJob(() => cindyBalanceProbeAPI.resume(selectedJobID.value), 'admin.accounts.cindyProbe.resumed')
 }
 

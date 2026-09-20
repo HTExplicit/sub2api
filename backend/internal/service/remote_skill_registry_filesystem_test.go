@@ -84,7 +84,7 @@ func historical73RemoteSkillCandidateForTest(t *testing.T, seed RemoteSkillCandi
 		RawBody: []byte(seed.Prompt.RawBody), EffectiveBody: []byte(seed.Prompt.EffectiveBody),
 		RawSHA256: seed.Prompt.RawSHA256, EffectiveSHA256: seed.Prompt.EffectiveSHA256, Diff: seed.Prompt.Diff,
 	}
-	historical, err := buildPairedRemoteSkillCandidate(rawFiles, rewriteRemoteSkillPublishedFiles(rawFiles), prompt, nil, seed.Version.FetchedAt)
+	historical, err := buildPairedRemoteSkillCandidate(context.Background(), rawFiles, rewriteRemoteSkillPublishedFiles(rawFiles), prompt, nil, seed.Version.FetchedAt)
 	require.NoError(t, err)
 	return historical
 }
@@ -118,6 +118,7 @@ func TestRemoteSkillFilesystemLoadsImmutableHistoricalPromptPair(t *testing.T) {
 
 	historicalPrompt := historicalRemoteSkillPromptCaptureForTest(t)
 	historical, err := buildPairedRemoteSkillCandidate(
+		context.Background(),
 		seed.RawFiles,
 		seed.EffectiveFiles,
 		historicalPrompt,

@@ -61,6 +61,24 @@ func (m *Module) Invoke(ctx context.Context, in extensionv1.Invocation) (extensi
 		return extensionv1.Result{}, errors.New("unsupported Cindy provider capability")
 	}
 	switch in.Operation {
+	case "cindy.probe.plan", "cindy.probe.decide":
+		if !registry.Config.BalanceDetection {
+			return extensionv1.Result{Code: "disabled"}, nil
+		}
+		if in.Operation == "cindy.probe.plan" {
+			raw, err := json.Marshal(balanceProbePlan())
+			return extensionv1.Result{Payload: raw}, err
+		}
+		var input extensionv1.CindyProbeResult
+		if err := json.Unmarshal(in.Payload, &input); err != nil {
+			return extensionv1.Result{}, errors.New("invalid Cindy probe result")
+		}
+		decision, err := decideBalanceProbe(input)
+		if err != nil {
+			return extensionv1.Result{}, err
+		}
+		raw, err := json.Marshal(decision)
+		return extensionv1.Result{Payload: raw}, err
 	case "cindy.health":
 		var observed extensionv1.CindyObservedResponse
 		if json.Unmarshal(in.Payload, &observed) != nil {
@@ -87,6 +105,18 @@ func (m *Module) Invoke(ctx context.Context, in extensionv1.Invocation) (extensi
 }
 func (r Registry) Query(query extensionv1.CindyCatalogQuery) (json.RawMessage, error) {
 	switch query.Method {
+	case "ManagedChannelProjection":
+		if len(query.Args) != 0 {
+			return nil, errors.New("invalid catalog arguments")
+		}
+		mapping, models := r.managedChannelProjection()
+		return json.Marshal([]any{mapping, models})
+	case "ManagedChannelModelAllowed":
+		var model string
+		if len(query.Args) != 1 || json.Unmarshal(query.Args[0], &model) != nil {
+			return nil, errors.New("invalid catalog arguments")
+		}
+		return json.Marshal([]any{r.managedChannelModelAllowed(model)})
 	case "cindyModelCapabilityFromCapability":
 		if len(query.Args) != 1 {
 			return nil, errors.New("invalid catalog arguments")

@@ -20,6 +20,14 @@ func newCindyBalanceProbeResponse(status int, contentType, body string) *http.Re
 	}
 }
 
+func TestCindyBalanceProbeRejectsTruncatedSuccessfulPrefix(t *testing.T) {
+	body := `{"id":"resp_fixture","object":"response","status":"completed","output":[{}],"usage":{"input_tokens":1,"output_tokens":1}}`
+	body += strings.Repeat(" ", cindyBalanceProbeMaxBodyBytes-len(body)) + "trailing-response-data"
+	gateway := &OpenAIGatewayService{httpUpstream: &httpUpstreamRecorder{resp: newCindyBalanceProbeResponse(http.StatusOK, "application/json", body)}}
+	outcome := gateway.probeCindyBalanceModel(context.Background(), newFirstClassCindyRateLimitAccount(8559, true), cindyProbeTestModels(t)[0])
+	require.Equal(t, cindyBalanceProbeOther, outcome)
+}
+
 func TestCindyBalanceProbeModelRecognizesExactExhaustion(t *testing.T) {
 	for _, tc := range []struct {
 		name        string
@@ -36,7 +44,7 @@ func TestCindyBalanceProbeModelRecognizesExactExhaustion(t *testing.T) {
 			gateway := &OpenAIGatewayService{httpUpstream: upstream}
 
 			require.Equal(t, cindyBalanceProbeExhausted, gateway.probeCindyBalanceModel(
-				context.Background(), newFirstClassCindyRateLimitAccount(8551, true), cindyBalanceProbeModels[0],
+				context.Background(), newFirstClassCindyRateLimitAccount(8551, true), cindyProbeTestModels(t)[0],
 			))
 			require.Len(t, upstream.bodies, 1)
 		})
@@ -72,7 +80,7 @@ func TestCindyBalanceProbeModelRejectsTerminalShapesOutsideHTTP200(t *testing.T)
 	)}}
 
 	require.Equal(t, cindyBalanceProbeOther, gateway.probeCindyBalanceModel(
-		context.Background(), newFirstClassCindyRateLimitAccount(8554, true), cindyBalanceProbeModels[0],
+		context.Background(), newFirstClassCindyRateLimitAccount(8554, true), cindyProbeTestModels(t)[0],
 	))
 }
 
@@ -96,7 +104,7 @@ func TestCindyBalanceProbeModelRequiresProtocolValidCompletedResponse(t *testing
 				http.StatusOK, tc.contentType, tc.body,
 			)}}
 			require.Equal(t, tc.want, gateway.probeCindyBalanceModel(
-				context.Background(), newFirstClassCindyRateLimitAccount(8552, true), cindyBalanceProbeModels[0],
+				context.Background(), newFirstClassCindyRateLimitAccount(8552, true), cindyProbeTestModels(t)[0],
 			))
 		})
 	}
@@ -116,7 +124,7 @@ func TestCindyBalanceProbeModelRejectsConflictingOrDuplicateSSETerminals(t *test
 			http.StatusOK, "text/event-stream", body.String(),
 		)}}
 		require.Equal(t, cindyBalanceProbeOther, gateway.probeCindyBalanceModel(
-			context.Background(), newFirstClassCindyRateLimitAccount(8557, true), cindyBalanceProbeModels[0],
+			context.Background(), newFirstClassCindyRateLimitAccount(8557, true), cindyProbeTestModels(t)[0],
 		))
 	}
 }

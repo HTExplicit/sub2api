@@ -27,6 +27,23 @@ type memoryHost struct {
 	due      []extensionv1.DueState
 }
 
+func TestInvalidConfigurationCannotStopCurrentTicketEpoch(t *testing.T) {
+	module := NewModule()
+	defer module.cancel()
+	if err := module.ApplyConfig(context.Background(), []byte(`{"enabled":true}`)); err != nil {
+		t.Fatal(err)
+	}
+	epoch := module.epoch
+	for _, raw := range []string{`null`, `{} {}`, `{"enabled":null}`, `{"fail_closed":null}`, `{"proxy_url":null}`, `{"models":null}`, `{"extra":true}`, `{"models":["one","one"]}`} {
+		if err := module.ApplyConfig(context.Background(), []byte(raw)); err == nil {
+			t.Fatalf("accepted invalid configuration: %s", raw)
+		}
+		if !module.config.Enabled || module.epoch != epoch || epoch.Err() != nil {
+			t.Fatalf("invalid configuration changed ticket execution: %s", raw)
+		}
+	}
+}
+
 func (h *memoryHost) Call(_ context.Context, in extensionv1.HostInvocation) (extensionv1.Result, error) {
 	h.mu.Lock()
 	defer h.mu.Unlock()

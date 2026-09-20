@@ -11,6 +11,16 @@ import (
 
 type failedPromptProcess struct{}
 
+func TestRemoteSkillPairAssemblyKeepsCancellationDuringFilePolicyChecks(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	_, err := buildPairedRemoteSkillCandidate(ctx, map[string][]byte{"SKILL.md": []byte("fixture")},
+		map[string][]byte{"SKILL.md": []byte("fixture")}, RemoteSkillPromptCapture{}, nil, time.Now())
+	require.ErrorIs(t, err, context.Canceled)
+	_, err = remoteSkillFileChangesChecked(ctx, nil, RemoteSkillCandidate{EffectiveFiles: map[string][]byte{"SKILL.md": []byte("fixture")}})
+	require.ErrorIs(t, err, context.Canceled)
+}
+
 func (failedPromptProcess) InvokeOperation(context.Context, string, string, extensionv1.Invocation) (extensionv1.Result, error) {
 	return extensionv1.Result{}, ErrExtensionOperationUnavailable
 }

@@ -49,18 +49,32 @@ func (m *Module) SetHost(host *extensionv1.Client) { m.mu.Lock(); defer m.mu.Unl
 
 func (m *Module) ValidateConfig(_ context.Context, raw json.RawMessage) (json.RawMessage, error) {
 	cfg := Config{FailClosed: true, Models: []string{"gpt-6-astra", "gpt-5.6-sol"}}
-	decoder := json.NewDecoder(bytes.NewReader(raw))
-	decoder.DisallowUnknownFields()
-	if err := decoder.Decode(&cfg); err != nil {
+	var fields map[string]json.RawMessage
+	if json.Unmarshal(raw, &fields) != nil || fields == nil || json.Unmarshal(raw, &cfg) != nil {
 		return nil, errors.New("invalid codex runtime configuration")
+	}
+	for key, value := range fields {
+		switch key {
+		case "enabled", "fail_closed", "proxy_url", "proxy_protocol", "models":
+			if bytes.Equal(bytes.TrimSpace(value), []byte("null")) {
+				return nil, errors.New("null codex runtime setting")
+			}
+		default:
+			return nil, errors.New("unknown codex runtime setting")
+		}
 	}
 	if len(cfg.Models) == 0 || len(cfg.Models) > 32 {
 		return nil, errors.New("ticket model list required")
 	}
+	seen := make(map[string]bool, len(cfg.Models))
 	for _, model := range cfg.Models {
 		if strings.TrimSpace(model) != model || model == "" || len(model) > 256 {
 			return nil, errors.New("invalid ticket model")
 		}
+		if seen[model] {
+			return nil, errors.New("duplicate ticket model")
+		}
+		seen[model] = true
 	}
 	if cfg.ProxyURL != "" {
 		normal, err := normalizeProxyForm(cfg.ProxyURL, cfg.ProxyProtocol)
