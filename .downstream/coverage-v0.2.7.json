@@ -1,9 +1,9 @@
 {
   "schema_version": 3,
   "upstream_base": "aea725f2ea644d5592d0bbb1d63b607efa7e200a",
-  "basis_commit": "7ad86e09b2dee9a3809faa597439f0dc1e13a361",
+  "basis_commit": "1bca77368836c49d7077774ceb33f85fbf6c8bec",
   "scope": "Current Sub2API downstream source and working tree. Candidate ownership does not establish completed review. Root maintenance, independent services and Worker require a separate audit.",
-  "source_digest": "a6b8c3cafd82320aff21acfdebb6c731b4e20a0ce2745d0749954cf1d0885be3",
+  "source_digest": "f94192aa764f1be8e3e86f0e8076d563a0101b4393939c05724bab6da6fb8f40",
   "digest_excludes": [
     "the inventory itself uses a derived structural fingerprint; deletions bind the upstream blob"
   ],
@@ -1752,7 +1752,7 @@
       "role": "documentation",
       "present": true,
       "content_sha256": null,
-      "review_fingerprint": "6b51408db3cb0dd743f3a7652adfb366adf3a7e7973ac8726581b643530a51a8",
+      "review_fingerprint": "15d4c4e36db46adcf28d6af95e9a28137d588a595a85f0dccecae33447017e31",
       "review_status": "reviewed",
       "decision": "generated-source",
       "owner": "operations",
@@ -1781,8 +1781,8 @@
       "candidate_owner": "documentation-and-history",
       "role": "documentation",
       "present": true,
-      "content_sha256": "d555ef8da7108f51641e8ae45c57cdec7fd8aa97ad16360f5c1dbb41c9a96964",
-      "review_fingerprint": "d555ef8da7108f51641e8ae45c57cdec7fd8aa97ad16360f5c1dbb41c9a96964",
+      "content_sha256": "3f7fce3d2e8cd0a847a92311521607b7433d805a7c2ce5abf02e1c7615263b37",
+      "review_fingerprint": "3f7fce3d2e8cd0a847a92311521607b7433d805a7c2ce5abf02e1c7615263b37",
       "review_status": "pending"
     },
     {
