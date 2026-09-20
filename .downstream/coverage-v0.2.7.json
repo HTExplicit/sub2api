@@ -1,7 +1,7 @@
 {
   "schema_version": 3,
   "upstream_base": "aea725f2ea644d5592d0bbb1d63b607efa7e200a",
-  "basis_commit": "9c366baafd7a57cfd1971684106a144b693984cf",
+  "basis_commit": "a784e4b37acb20b11ae26aed688be7939630b209",
   "scope": "Current Sub2API downstream source and working tree. Candidate ownership does not establish completed review. Root maintenance, independent services and Worker require a separate audit.",
   "source_digest": "9dffaf33941d16507c8001d7be184c855bd563541b5b92c76b7640a0a77e9d40",
   "digest_excludes": [
@@ -71,7 +71,6 @@
     "backend/cmd/server/main.go",
     "backend/cmd/server/main_test.go",
     "backend/cmd/server/wire.go",
-    "backend/cmd/server/wire_gen_test.go",
     "backend/ent/schema/account.go",
     "backend/ent/schema/account_folder.go",
     "backend/ent/schema/account_tag.go",
@@ -82,7 +81,6 @@
     "backend/ent/schema/system_prompt_template.go",
     "backend/ent/schema/system_prompt_template_version.go",
     "backend/ent/schema/user_platform_quota.go",
-    "backend/ent/schema/user_platform_quota_cindy_test.go",
     "backend/go.mod",
     "backend/internal/config/config.go",
     "backend/internal/config/config_test.go",
@@ -93,7 +91,6 @@
     "backend/internal/handler/admin/account_batch_test_test.go",
     "backend/internal/handler/admin/account_batch_testing.go",
     "backend/internal/handler/admin/account_cindy_balance.go",
-    "backend/internal/handler/admin/account_cindy_balance_test.go",
     "backend/internal/handler/admin/account_cindy_duplicates.go",
     "backend/internal/handler/admin/account_codex_import.go",
     "backend/internal/handler/admin/account_codex_import_test.go",
@@ -116,7 +113,6 @@
     "backend/internal/handler/admin/account_handler_list_test.go",
     "backend/internal/handler/admin/account_handler_long_context_billing_test.go",
     "backend/internal/handler/admin/account_handler_mixed_channel_test.go",
-    "backend/internal/handler/admin/account_handler_model_context_test.go",
     "backend/internal/handler/admin/account_handler_traffic_telemetry_test.go",
     "backend/internal/handler/admin/account_job_execution.go",
     "backend/internal/handler/admin/account_job_execution_test.go",
@@ -132,10 +128,8 @@
     "backend/internal/handler/admin/batch_update_credentials_test.go",
     "backend/internal/handler/admin/channel_handler_test.go",
     "backend/internal/handler/admin/cindy_balance_probe_handler.go",
-    "backend/internal/handler/admin/cindy_balance_probe_handler_test.go",
     "backend/internal/handler/admin/grok_import_probe.go",
     "backend/internal/handler/admin/group_cindy_split.go",
-    "backend/internal/handler/admin/group_cindy_split_test.go",
     "backend/internal/handler/admin/group_handler.go",
     "backend/internal/handler/admin/group_handler_platform_test.go",
     "backend/internal/handler/admin/group_handler_simple_mode_test.go",
@@ -158,13 +152,8 @@
     "backend/internal/handler/admin/system_prompt_handler.go",
     "backend/internal/handler/admin/system_prompt_handler_test.go",
     "backend/internal/handler/admin/user_platform_quota_admin_test.go",
-    "backend/internal/handler/cindy_balance_handler_failover_test.go",
-    "backend/internal/handler/cindy_balance_terminal_test.go",
-    "backend/internal/handler/cindy_catalog_rollback_test.go",
-    "backend/internal/handler/cindy_rollout_testmain_test.go",
     "backend/internal/handler/continuation_repair_live_support_test.go",
     "backend/internal/handler/continuation_repair_live_test.go",
-    "backend/internal/handler/dto/account_mapper_cindy_probe_test.go",
     "backend/internal/handler/dto/account_mapper_redact_test.go",
     "backend/internal/handler/dto/credentials_redact.go",
     "backend/internal/handler/dto/credentials_redact_test.go",
@@ -191,20 +180,15 @@
     "backend/internal/handler/no_account_error.go",
     "backend/internal/handler/no_account_error_test.go",
     "backend/internal/handler/openai_alpha_search.go",
-    "backend/internal/handler/openai_alpha_search_bridge_error_test.go",
-    "backend/internal/handler/openai_alpha_search_cindy_gate_test.go",
     "backend/internal/handler/openai_automation_bootstrap_test.go",
     "backend/internal/handler/openai_body_limit_failover_test.go",
     "backend/internal/handler/openai_chat_completions.go",
-    "backend/internal/handler/openai_cindy_http_wsv2_sticky_test.go",
     "backend/internal/handler/openai_codex_models_handler.go",
     "backend/internal/handler/openai_codex_models_handler_test.go",
     "backend/internal/handler/openai_count_tokens_model_not_supported_test.go",
     "backend/internal/handler/openai_embeddings.go",
     "backend/internal/handler/openai_failover_retry.go",
     "backend/internal/handler/openai_failover_retry_test.go",
-    "backend/internal/handler/openai_gateway_cindy_count_tokens_test.go",
-    "backend/internal/handler/openai_gateway_cindy_image_validation_test.go",
     "backend/internal/handler/openai_gateway_count_tokens.go",
     "backend/internal/handler/openai_gateway_credential_failover_loop_test.go",
     "backend/internal/handler/openai_gateway_first_output_timeout_test.go",
@@ -217,7 +201,6 @@
     "backend/internal/handler/openai_images.go",
     "backend/internal/handler/openai_images_failover_test.go",
     "backend/internal/handler/openai_legacy_cindy_continuation.go",
-    "backend/internal/handler/openai_legacy_cindy_continuation_test.go",
     "backend/internal/handler/openai_management_isolation_test.go",
     "backend/internal/handler/openai_models_handler.go",
     "backend/internal/handler/openai_models_handler_test.go",
@@ -266,7 +249,6 @@
     "backend/internal/pkg/apicompat/chatcompletions_responses_tool_output_media_test.go",
     "backend/internal/pkg/apicompat/chatcompletions_to_responses.go",
     "backend/internal/pkg/apicompat/responses_capabilities.go",
-    "backend/internal/pkg/apicompat/responses_created_at_wire_test.go",
     "backend/internal/pkg/apicompat/responses_reasoning.go",
     "backend/internal/pkg/apicompat/responses_reasoning_test.go",
     "backend/internal/pkg/apicompat/responses_to_anthropic.go",
@@ -292,24 +274,17 @@
     "backend/internal/repository/account_extra_revision.go",
     "backend/internal/repository/account_extra_revision_integration_test.go",
     "backend/internal/repository/account_job_cindy_mutation.go",
-    "backend/internal/repository/account_job_cindy_mutation_test.go",
     "backend/internal/repository/account_job_plugin_integration_test.go",
     "backend/internal/repository/account_job_repo.go",
     "backend/internal/repository/account_job_repo_test.go",
     "backend/internal/repository/account_plugin_projection.go",
     "backend/internal/repository/account_repo.go",
     "backend/internal/repository/account_repo_cindy_balance.go",
-    "backend/internal/repository/account_repo_cindy_balance_integration_test.go",
-    "backend/internal/repository/account_repo_cindy_balance_test.go",
-    "backend/internal/repository/account_repo_cindy_group_identity_integration_test.go",
-    "backend/internal/repository/account_repo_cindy_group_identity_test.go",
-    "backend/internal/repository/account_repo_cindy_identity_lifecycle_integration_test.go",
     "backend/internal/repository/account_repo_codex_fingerprint_seed_test.go",
     "backend/internal/repository/account_repo_codex_lifecycle.go",
     "backend/internal/repository/account_repo_codex_ticket_test.go",
     "backend/internal/repository/account_repo_integration_test.go",
     "backend/internal/repository/account_repo_model_availability_test.go",
-    "backend/internal/repository/account_repo_model_context_test.go",
     "backend/internal/repository/account_repo_ollama_cloud_usage.go",
     "backend/internal/repository/account_repo_ollama_cloud_usage_integration_test.go",
     "backend/internal/repository/account_repo_ollama_cloud_usage_test.go",
@@ -321,10 +296,8 @@
     "backend/internal/repository/account_traffic_observe_cache.go",
     "backend/internal/repository/affiliate_repo.go",
     "backend/internal/repository/api_key_repo.go",
-    "backend/internal/repository/api_key_repo_cindy_group_materialization_test.go",
     "backend/internal/repository/api_key_repo_integration_test.go",
     "backend/internal/repository/audit_log_repo.go",
-    "backend/internal/repository/auth_cache_invalidation_cindy_identity_integration_test.go",
     "backend/internal/repository/batch_image_repo_integration_test.go",
     "backend/internal/repository/business_system_prompt_repository.go",
     "backend/internal/repository/business_system_prompt_repository_test.go",
@@ -340,16 +313,9 @@
     "backend/internal/repository/channel_repo_pricing.go",
     "backend/internal/repository/channel_repo_pricing_time_test.go",
     "backend/internal/repository/channel_repo_test.go",
-    "backend/internal/repository/cindy_account_stats_reset_test.go",
-    "backend/internal/repository/cindy_balance_probe_complete_integration_test.go",
-    "backend/internal/repository/cindy_balance_probe_dispatch_integration_test.go",
-    "backend/internal/repository/cindy_balance_probe_finalize_integration_test.go",
-    "backend/internal/repository/cindy_balance_probe_lifecycle_integration_test.go",
     "backend/internal/repository/cindy_balance_probe_repo.go",
-    "backend/internal/repository/cindy_balance_probe_repo_test.go",
     "backend/internal/repository/cindy_group_identity.go",
     "backend/internal/repository/cindy_health_repo.go",
-    "backend/internal/repository/cindy_health_repo_test.go",
     "backend/internal/repository/codex_fingerprint_seed_migration_integration_test.go",
     "backend/internal/repository/concurrency_cache_live_test.go",
     "backend/internal/repository/dashboard_aggregation_repo.go",
@@ -359,16 +325,12 @@
     "backend/internal/repository/error_translate.go",
     "backend/internal/repository/fixtures_integration_test.go",
     "backend/internal/repository/gateway_cache.go",
-    "backend/internal/repository/gateway_cache_cindy_balance_test.go",
     "backend/internal/repository/gateway_cache_live_test.go",
     "backend/internal/repository/gateway_cache_reasoning_state.go",
     "backend/internal/repository/gateway_cache_reasoning_state_test.go",
     "backend/internal/repository/group_model_allowlist_repair_migration_integration_test.go",
     "backend/internal/repository/group_repo.go",
-    "backend/internal/repository/group_repo_cindy_health_test.go",
     "backend/internal/repository/group_repo_cindy_split.go",
-    "backend/internal/repository/group_repo_cindy_split_integration_test.go",
-    "backend/internal/repository/group_repo_cindy_split_test.go",
     "backend/internal/repository/group_usage_rollup_trigger_integration_test.go",
     "backend/internal/repository/http_upstream.go",
     "backend/internal/repository/http_upstream_compression_test.go",
@@ -376,7 +338,6 @@
     "backend/internal/repository/image_studio_job_repo.go",
     "backend/internal/repository/image_studio_job_repo_test.go",
     "backend/internal/repository/integration_harness_test.go",
-    "backend/internal/repository/minimax_cindy_quota_migration_integration_test.go",
     "backend/internal/repository/openai_oauth_service.go",
     "backend/internal/repository/ops_repo.go",
     "backend/internal/repository/ops_write_pressure_integration_test.go",
@@ -459,7 +420,6 @@
     "backend/internal/service/account_test_prompt_test.go",
     "backend/internal/service/account_test_reasoning.go",
     "backend/internal/service/account_test_reasoning_test.go",
-    "backend/internal/service/account_test_reasoning_wire_test.go",
     "backend/internal/service/account_test_service.go",
     "backend/internal/service/account_test_service_cn_adaptive.go",
     "backend/internal/service/account_test_service_openai_compact_test.go",
@@ -473,16 +433,12 @@
     "backend/internal/service/account_wildcard_test.go",
     "backend/internal/service/admin_account.go",
     "backend/internal/service/admin_account_cindy_probe.go",
-    "backend/internal/service/admin_account_cindy_probe_test.go",
     "backend/internal/service/admin_account_codex_ticket_test.go",
-    "backend/internal/service/admin_account_model_context_test.go",
     "backend/internal/service/admin_account_taxonomy.go",
     "backend/internal/service/admin_account_taxonomy_test.go",
     "backend/internal/service/admin_cindy_balance.go",
-    "backend/internal/service/admin_cindy_balance_test.go",
     "backend/internal/service/admin_cindy_duplicate_inventory.go",
     "backend/internal/service/admin_cindy_group_split.go",
-    "backend/internal/service/admin_cindy_group_split_test.go",
     "backend/internal/service/admin_group.go",
     "backend/internal/service/admin_group_duplicate.go",
     "backend/internal/service/admin_group_platform_cache_test.go",
@@ -520,47 +476,21 @@
     "backend/internal/service/business_system_prompt_service.go",
     "backend/internal/service/business_system_prompt_service_test.go",
     "backend/internal/service/business_system_prompt_test.go",
-    "backend/internal/service/channel_cindy_managed_crud_test.go",
     "backend/internal/service/channel_service.go",
     "backend/internal/service/cindy_alpha_search_plan.go",
-    "backend/internal/service/cindy_alpha_search_plan_test.go",
     "backend/internal/service/cindy_balance.go",
-    "backend/internal/service/cindy_balance_native_messages_test.go",
-    "backend/internal/service/cindy_balance_pending_test.go",
     "backend/internal/service/cindy_balance_probe_service.go",
-    "backend/internal/service/cindy_balance_probe_service_test.go",
     "backend/internal/service/cindy_balance_probe_types.go",
     "backend/internal/service/cindy_balance_recheck.go",
-    "backend/internal/service/cindy_balance_recheck_test.go",
-    "backend/internal/service/cindy_balance_response_test.go",
-    "backend/internal/service/cindy_balance_shared_test.go",
     "backend/internal/service/cindy_capability_catalog.go",
     "backend/internal/service/cindy_channel_catalog.go",
-    "backend/internal/service/cindy_channel_catalog_test.go",
     "backend/internal/service/cindy_codex_client_version.go",
-    "backend/internal/service/cindy_duplicate_inventory_test.go",
-    "backend/internal/service/cindy_endpoint_scheduling_test.go",
     "backend/internal/service/cindy_feature_flags.go",
-    "backend/internal/service/cindy_feature_flags_independence_test.go",
-    "backend/internal/service/cindy_feature_flags_test.go",
     "backend/internal/service/cindy_group.go",
-    "backend/internal/service/cindy_group_identity_test.go",
-    "backend/internal/service/cindy_group_materialized_test.go",
     "backend/internal/service/cindy_health.go",
-    "backend/internal/service/cindy_health_service_test.go",
     "backend/internal/service/cindy_identity.go",
-    "backend/internal/service/cindy_identity_test.go",
-    "backend/internal/service/cindy_image_pricing_test.go",
-    "backend/internal/service/cindy_native_count_tokens_test.go",
-    "backend/internal/service/cindy_native_messages_test.go",
     "backend/internal/service/cindy_pricing_snapshot.go",
-    "backend/internal/service/cindy_pricing_snapshot_test.go",
-    "backend/internal/service/cindy_rollout_testmain_test.go",
-    "backend/internal/service/cindy_terminal_scheduling_isolation_test.go",
     "backend/internal/service/cindy_text_billing.go",
-    "backend/internal/service/cindy_text_billing_test.go",
-    "backend/internal/service/cindy_v4_catalog_contract_test.go",
-    "backend/internal/service/cindy_v4_catalog_fixture_test.go",
     "backend/internal/service/cn_provider_balance_check_service.go",
     "backend/internal/service/cn_provider_balance_check_service_test.go",
     "backend/internal/service/codex_ticket_lifecycle.go",
@@ -615,15 +545,9 @@
     "backend/internal/service/kimi_anthropic_usage_test.go",
     "backend/internal/service/model_context_capacity.go",
     "backend/internal/service/model_context_capacity_catalog.go",
-    "backend/internal/service/model_context_capacity_catalog_test.go",
-    "backend/internal/service/model_context_capacity_catalog_test_fixture_test.go",
     "backend/internal/service/model_context_capacity_parser.go",
-    "backend/internal/service/model_context_capacity_reference_test.go",
-    "backend/internal/service/model_context_capacity_test.go",
     "backend/internal/service/model_context_identity.go",
-    "backend/internal/service/model_context_identity_test.go",
     "backend/internal/service/model_pricing_resolver.go",
-    "backend/internal/service/model_pricing_resolver_test.go",
     "backend/internal/service/namespace_roundtrip_control_test.go",
     "backend/internal/service/namespace_roundtrip_diagnostic_support_test.go",
     "backend/internal/service/namespace_roundtrip_diagnostic_test.go",
@@ -640,9 +564,6 @@
     "backend/internal/service/openai_account_scheduler_test.go",
     "backend/internal/service/openai_agent_identity_compat_test.go",
     "backend/internal/service/openai_alpha_search.go",
-    "backend/internal/service/openai_alpha_search_billing_test.go",
-    "backend/internal/service/openai_alpha_search_cindy_native_first_test.go",
-    "backend/internal/service/openai_alpha_search_test.go",
     "backend/internal/service/openai_apikey_compat.go",
     "backend/internal/service/openai_apikey_compat_test.go",
     "backend/internal/service/openai_apikey_responses_probe.go",
@@ -656,12 +577,8 @@
     "backend/internal/service/openai_chat_reasoning_replay.go",
     "backend/internal/service/openai_chat_reasoning_replay_test.go",
     "backend/internal/service/openai_cindy_continuation.go",
-    "backend/internal/service/openai_cindy_continuation_ingress_test.go",
-    "backend/internal/service/openai_cindy_continuation_test.go",
     "backend/internal/service/openai_cindy_http_wsv2.go",
-    "backend/internal/service/openai_cindy_http_wsv2_test.go",
     "backend/internal/service/openai_cindy_opaque_binding.go",
-    "backend/internal/service/openai_cindy_opaque_binding_test.go",
     "backend/internal/service/openai_codex_account_identity.go",
     "backend/internal/service/openai_codex_account_identity_test.go",
     "backend/internal/service/openai_codex_client_identity.go",
@@ -676,7 +593,6 @@
     "backend/internal/service/openai_codex_model_metadata_test.go",
     "backend/internal/service/openai_codex_models_pinned.go",
     "backend/internal/service/openai_codex_models_service.go",
-    "backend/internal/service/openai_codex_models_service_test.go",
     "backend/internal/service/openai_codex_request_compression.go",
     "backend/internal/service/openai_codex_request_compression_test.go",
     "backend/internal/service/openai_codex_ticket.go",
@@ -761,7 +677,6 @@
     "backend/internal/service/openai_lineage_regression_helpers_test.go",
     "backend/internal/service/openai_live.go",
     "backend/internal/service/openai_model_mapping.go",
-    "backend/internal/service/openai_model_mapping_test.go",
     "backend/internal/service/openai_model_not_supported.go",
     "backend/internal/service/openai_model_not_supported_test.go",
     "backend/internal/service/openai_model_reasoning_alias_test.go",
@@ -845,7 +760,6 @@
     "backend/internal/service/openai_ws_http_bridge_isolation_test.go",
     "backend/internal/service/openai_ws_http_bridge_resume_test.go",
     "backend/internal/service/openai_ws_http_bridge_test.go",
-    "backend/internal/service/openai_ws_protocol_forward_test.go",
     "backend/internal/service/openai_ws_reasoning_mode_model_test.go",
     "backend/internal/service/openai_ws_state_fidelity_test.go",
     "backend/internal/service/openai_ws_state_store.go",
@@ -872,7 +786,6 @@
     "backend/internal/service/plugin_catalog_test.go",
     "backend/internal/service/plugin_cindy.go",
     "backend/internal/service/plugin_cindy_codex.go",
-    "backend/internal/service/plugin_cindy_codex_test.go",
     "backend/internal/service/plugin_cindy_probe.go",
     "backend/internal/service/plugin_cindy_probe_test.go",
     "backend/internal/service/plugin_codex_identity.go",
@@ -928,7 +841,6 @@
     "backend/internal/service/provider_identity.go",
     "backend/internal/service/provider_identity_admin_test.go",
     "backend/internal/service/provider_identity_test.go",
-    "backend/internal/service/ratelimit_service_cindy_balance_test.go",
     "backend/internal/service/reasoning_fidelity_control_test.go",
     "backend/internal/service/reasoning_fidelity_live_test.go",
     "backend/internal/service/reasoning_fidelity_parse_test.go",
@@ -967,8 +879,6 @@
     "backend/internal/service/settings_view.go",
     "backend/internal/service/temp_unsched.go",
     "backend/internal/service/testdata/account_available_models_contract.json",
-    "backend/internal/service/testdata/cindy_free_catalog_2026-08-29.json",
-    "backend/internal/service/testdata/cindy_free_catalog_2026-09-11.json",
     "backend/internal/service/testdata/codexrip_reverse_skill_system_prompt_legacy_dual_marker.txt",
     "backend/internal/service/timing_wheel_service_test.go",
     "backend/internal/service/token_refresh_service.go",
@@ -981,7 +891,6 @@
     "backend/internal/service/upstream_models_test.go",
     "backend/internal/service/usage_billing.go",
     "backend/internal/service/wire.go",
-    "backend/internal/service/wire_test.go",
     "backend/internal/testextensions/fixtures.go",
     "backend/internal/testutil/stubs.go",
     "backend/internal/web/agent_route_ownership_test.go",
@@ -1040,30 +949,12 @@
     "backend/migrations/business_system_prompt_remote_skill_migration_test.go",
     "backend/migrations/business_system_prompt_skill_bundles_migration_test.go",
     "backend/migrations/business_system_prompts_migration_test.go",
-    "backend/migrations/cindy_account_stats_reset_migration_test.go",
-    "backend/migrations/cindy_alpha_search_bridge_migration_integration_test.go",
-    "backend/migrations/cindy_alpha_search_bridge_migration_test.go",
-    "backend/migrations/cindy_balance_confirmation_reset_migration_test.go",
-    "backend/migrations/cindy_balance_marker_reset_migration_integration_test.go",
-    "backend/migrations/cindy_balance_marker_reset_migration_test.go",
-    "backend/migrations/cindy_balance_marker_restore_migration_test.go",
-    "backend/migrations/cindy_balance_probe_jobs_migration_test.go",
-    "backend/migrations/cindy_channel_binding_migration_integration_test.go",
-    "backend/migrations/cindy_group_identity_auth_cache_invalidation_migration_test.go",
-    "backend/migrations/cindy_health_state_migration_test.go",
-    "backend/migrations/cindy_openai_defaults_migration_integration_test.go",
-    "backend/migrations/cindy_openai_defaults_migration_test.go",
-    "backend/migrations/cindy_platform_v1_migration_integration_test.go",
-    "backend/migrations/cindy_platform_v1_migration_test.go",
-    "backend/migrations/cindy_prompt_cache_hash_migration_integration_test.go",
-    "backend/migrations/cindy_prompt_cache_hash_migration_test.go",
     "backend/migrations/image_studio_jobs_migration_test.go",
     "backend/migrations/minimax_platform_migration_test.go",
     "backend/migrations/opencode_go_platform_migration_test.go",
     "backend/migrations/release_acceptance_api_key_lease_migration_test.go",
     "backend/migrations/remote_skill_registry_migration_test.go",
     "backend/migrations/remote_skill_sources_migration_integration_test.go",
-    "backend/migrations/user_platform_quota_cindy_migration_test.go",
     "backend/pkg/extensionapi/proxy/address.go",
     "backend/pkg/extensionapi/proxy/transport.go",
     "backend/pkg/extensionapi/ui/base.css",
@@ -1138,8 +1029,6 @@
     "frontend/src/api/__tests__/accountOperationIdempotency.spec.ts",
     "frontend/src/api/__tests__/admin.accounts.contextCapacity.spec.ts",
     "frontend/src/api/__tests__/admin.accounts.jobs.spec.ts",
-    "frontend/src/api/__tests__/admin.groups.cindy-split.spec.ts",
-    "frontend/src/api/__tests__/cindyBalanceProbe.spec.ts",
     "frontend/src/api/__tests__/client.spec.ts",
     "frontend/src/api/__tests__/downstreamStatus.spec.ts",
     "frontend/src/api/__tests__/settings.authSourceDefaults.spec.ts",
@@ -1355,7 +1244,6 @@
     "frontend/src/features/channel-monitor-v2/RelayPulseMatrix.vue",
     "frontend/src/features/cindy-balance-probe/CindyBalanceProbePanel.vue",
     "frontend/src/features/cindy-balance-probe/CindyBalanceProbeSummary.vue",
-    "frontend/src/features/cindy-balance-probe/__tests__/CindyBalanceProbeSummary.spec.ts",
     "frontend/src/features/cindy-duplicate-inventory/CindyDuplicateInventoryPanel.vue",
     "frontend/src/features/cindy-group-split/CindyGroupAuditDialog.vue",
     "frontend/src/features/image-studio/history.legacy.spec.ts",
@@ -1366,7 +1254,6 @@
     "frontend/src/features/prompt-audit/__tests__/integrationSurface.spec.ts",
     "frontend/src/features/prompt-audit/api.ts",
     "frontend/src/i18n/__tests__/accountConsoleLocales.spec.ts",
-    "frontend/src/i18n/__tests__/cindyProbeLocales.spec.ts",
     "frontend/src/i18n/locales/en/admin/accountTasks.ts",
     "frontend/src/i18n/locales/en/admin/accounts.ts",
     "frontend/src/i18n/locales/en/admin/index.ts",
@@ -1406,7 +1293,6 @@
     "frontend/src/styles/onboarding.css",
     "frontend/src/styles/theme.css",
     "frontend/src/types/index.ts",
-    "frontend/src/utils/__tests__/cindyOpenAIDefaults.spec.ts",
     "frontend/src/utils/__tests__/modelContextCapacity.spec.ts",
     "frontend/src/utils/__tests__/openaiReasoningPolicy.spec.ts",
     "frontend/src/utils/accountPresentation.ts",
@@ -1577,16 +1463,11 @@
     "plugins/cindy-provider/catalog/catalog.go",
     "plugins/cindy-provider/catalog/catalog_data.go",
     "plugins/cindy-provider/catalog/channel.go",
-    "plugins/cindy-provider/catalog/channel_test.go",
     "plugins/cindy-provider/catalog/codex_manifest.go",
-    "plugins/cindy-provider/catalog/codex_manifest_test.go",
     "plugins/cindy-provider/catalog/health.go",
     "plugins/cindy-provider/catalog/module.go",
-    "plugins/cindy-provider/catalog/module_test.go",
     "plugins/cindy-provider/catalog/probe.go",
-    "plugins/cindy-provider/catalog/probe_test.go",
     "plugins/cindy-provider/catalog/search.go",
-    "plugins/cindy-provider/catalog/search_test.go",
     "plugins/cindy-provider/cmd/plugin/main.go",
     "plugins/cindy-provider/go.mod",
     "plugins/cindy-provider/manifest.source.json",
@@ -1598,9 +1479,6 @@
     "plugins/cindy-provider/ui/src/CindyBalanceProbePanel.vue",
     "plugins/cindy-provider/ui/src/CindyDuplicateInventoryPanel.vue",
     "plugins/cindy-provider/ui/src/CindyGroupAuditDialog.vue",
-    "plugins/cindy-provider/ui/src/__tests__/CindyBalanceProbePanel.spec.ts",
-    "plugins/cindy-provider/ui/src/__tests__/CindyDuplicateInventoryPanel.spec.ts",
-    "plugins/cindy-provider/ui/src/__tests__/CindyGroupAuditDialog.spec.ts",
     "plugins/cindy-provider/ui/src/api.ts",
     "plugins/cindy-provider/ui/src/index.html",
     "plugins/cindy-provider/ui/src/locales/en.ts",
@@ -1646,7 +1524,6 @@
     "plugins/image-tools/ui/src/main.ts",
     "plugins/model-policy/catalog/catalog_data.go",
     "plugins/model-policy/catalog/module.go",
-    "plugins/model-policy/catalog/module_test.go",
     "plugins/model-policy/cmd/plugin/main.go",
     "plugins/model-policy/go.mod",
     "plugins/model-policy/manifest.source.json",
@@ -2328,7 +2205,16 @@
       "present": true,
       "content_sha256": "0d7bbdbd7422364302663551e607967ebdc8cdb8d83ed2f99de81cd1f1396d20",
       "review_fingerprint": "0d7bbdbd7422364302663551e607967ebdc8cdb8d83ed2f99de81cd1f1396d20",
-      "review_status": "pending"
+      "review_status": "reviewed",
+      "decision": "reference",
+      "owner": "mixed-requires-review",
+      "reason": "Wire/protobuf test fixture; source review records wire contract test symbols and does not claim generated-code or protocol execution.",
+      "evidence": [
+        "Go test symbols: TestProvideServiceBuildInfo, TestProvideCleanup_WithMinimalDependencies_NoPanic",
+        "JS/test declaration scan count: 17",
+        "execution_status=not_run",
+        "execution_limit=No Go, Vitest, database, migration, plugin process, network, production, or model test was executed for this entry."
+      ]
     },
     {
       "path": "backend/ent/account.go",
@@ -3462,7 +3348,16 @@
       "present": true,
       "content_sha256": "5e68a8c3155179bd31d7bdb71f9c1e689e0566a945fab166aa3bba86c96c4358",
       "review_fingerprint": "5e68a8c3155179bd31d7bdb71f9c1e689e0566a945fab166aa3bba86c96c4358",
-      "review_status": "pending"
+      "review_status": "reviewed",
+      "decision": "reference",
+      "owner": "cindy-provider",
+      "reason": "Ent schema/test fixture in backend/ent; source review records schema-specific test symbols and does not claim database execution.",
+      "evidence": [
+        "Go test symbols: TestUserPlatformQuotaValidatorAllowsCanonicalCindy, TestUserPlatformQuotaValidatorAllowsMiniMaxAndAllExistingPlatforms",
+        "JS/test declaration scan count: 10",
+        "execution_status=not_run",
+        "execution_limit=No Go, Vitest, database, migration, plugin process, network, production, or model test was executed for this entry."
+      ]
     },
     {
       "path": "backend/ent/systempromptruntime.go",
@@ -4087,7 +3982,16 @@
       "present": true,
       "content_sha256": "498ac727a90dfc820863d30dc7c83ee9fd1352475300349923204cefdac7d5f1",
       "review_fingerprint": "498ac727a90dfc820863d30dc7c83ee9fd1352475300349923204cefdac7d5f1",
-      "review_status": "pending"
+      "review_status": "reviewed",
+      "decision": "reference",
+      "owner": "cindy-provider",
+      "reason": "Cindy-provider test/fixture; source review records concrete Cindy test symbols or fixture consumer and keeps behavioral execution unverified.",
+      "evidence": [
+        "Go test symbols: TestCindyBannedCleanupUsesSeparateJobWithoutClientAccountIDs, TestCindyInsufficientDeletePreviewAndDeleteDoNotAcceptAccountIDs, TestCindyInsufficientDeleteJobFailsWhenCandidateSetChanged",
+        "JS/test declaration scan count: 33",
+        "execution_status=not_run",
+        "execution_limit=No Go, Vitest, database, migration, plugin process, network, production, or model test was executed for this entry."
+      ]
     },
     {
       "path": "backend/internal/handler/admin/account_cindy_duplicates.go",
@@ -4294,7 +4198,16 @@
       "present": true,
       "content_sha256": "32a3afd5a17ec8998cde9fe21a64cc5e3daeb9daa79b2a2eaf76b7585c470a84",
       "review_fingerprint": "32a3afd5a17ec8998cde9fe21a64cc5e3daeb9daa79b2a2eaf76b7585c470a84",
-      "review_status": "pending"
+      "review_status": "reviewed",
+      "decision": "reference",
+      "owner": "mixed-requires-review",
+      "reason": "Directly affected search/model/provenance test or fixture; source review records concrete declarations and preserves the no-runtime-execution limitation.",
+      "evidence": [
+        "Go test symbols: TestAccountHandlerModelContextCapacityGetUsesOnlyLocalState, TestAccountHandlerModelContextCapacityPreviewNeedsNoAPIKeyAndDoesNotPersist, TestAccountHandlerModelContextCapacityPreviewCannotReclassifyProtectedAccount, TestAccountHandlerModelContextCapacityPreviewNewEndpointDoesNotReuseOldObservation, TestAccountHandlerModelContextOverrideTypedRequestMapping, TestAccountHandlerModelContextOverridesRejectNonIntegerJSON",
+        "JS/test declaration scan count: 46",
+        "execution_status=not_run",
+        "execution_limit=No Go, Vitest, database, migration, plugin process, network, production, or model test was executed for this entry."
+      ]
     },
     {
       "path": "backend/internal/handler/admin/account_handler_traffic_telemetry_test.go",
@@ -4438,7 +4351,16 @@
       "present": true,
       "content_sha256": "934e74ca56ab3c39eebcc94153198be0a9d5009b0dd75fa48d00dd85f34dc774",
       "review_fingerprint": "934e74ca56ab3c39eebcc94153198be0a9d5009b0dd75fa48d00dd85f34dc774",
-      "review_status": "pending"
+      "review_status": "reviewed",
+      "decision": "reference",
+      "owner": "cindy-provider",
+      "reason": "Cindy-provider test/fixture; source review records concrete Cindy test symbols or fixture consumer and keeps behavioral execution unverified.",
+      "evidence": [
+        "Go test symbols: TestCindyBalanceProbeHandlerListUsesDefaultLimit, TestCindyBalanceProbeHandlerCreateReturnsConflictOnTransactionalCandidateDrift, TestCindyBalanceProbeHandlerSelectedPreviewCreateRoundTripCanonicalizesLegacyScope",
+        "JS/test declaration scan count: 38",
+        "execution_status=not_run",
+        "execution_limit=No Go, Vitest, database, migration, plugin process, network, production, or model test was executed for this entry."
+      ]
     },
     {
       "path": "backend/internal/handler/admin/grok_import_probe.go",
@@ -4465,7 +4387,16 @@
       "present": true,
       "content_sha256": "26ec56de824ff11bb9581e83c9be054bd73b7789ef74d7d8fe159c4bf401e4ea",
       "review_fingerprint": "26ec56de824ff11bb9581e83c9be054bd73b7789ef74d7d8fe159c4bf401e4ea",
-      "review_status": "pending"
+      "review_status": "reviewed",
+      "decision": "reference",
+      "owner": "cindy-provider",
+      "reason": "Cindy-provider test/fixture; source review records concrete Cindy test symbols or fixture consumer and keeps behavioral execution unverified.",
+      "evidence": [
+        "Go test symbols: TestCindyGroupKeyChoicesNeverReturnCredentials, TestCindyGroupHandlerAuditReturnsAnonymousCounts, TestCindyGroupHandlerPreviewDefaultsToNoAPIKeyRebind, TestCindyGroupHandlerSplitPropagatesFingerprintDriftAsConflict, TestCindyGroupHandlerRejectsInvalidGroupID",
+        "JS/test declaration scan count: 44",
+        "execution_status=not_run",
+        "execution_limit=No Go, Vitest, database, migration, plugin process, network, production, or model test was executed for this entry."
+      ]
     },
     {
       "path": "backend/internal/handler/admin/group_handler.go",
@@ -4703,7 +4634,16 @@
       "present": true,
       "content_sha256": "ea18b88d465698d02a2e5e94936a29a8c1d4fa4fbbe5a25fabc994a2b01c590c",
       "review_fingerprint": "ea18b88d465698d02a2e5e94936a29a8c1d4fa4fbbe5a25fabc994a2b01c590c",
-      "review_status": "pending"
+      "review_status": "reviewed",
+      "decision": "reference",
+      "owner": "cindy-provider",
+      "reason": "Cindy-provider test/fixture; source review records concrete Cindy test symbols or fixture consumer and keeps behavioral execution unverified.",
+      "evidence": [
+        "Go test symbols: TestStrictCindyResponsesHandlerFailsOverHTTP200BudgetSSEBeforeFirstByte, TestFirstClassCindyResponsesForwardsUnanchoredCodexHistoryToStickyAccount, TestFirstClassCindyResponsesReferenceHistoryRequiresSessionBinding, TestFirstClassCindyResponsesReferenceHistoryDistinguishesSessionStoreError, TestFirstClassCindyResponsesExistingAnchorUsesBoundAccount, TestFirstClassCindyResponsesFullReplayForcesStoreFalseAndPreservesIDs, TestFirstClassCindyOpaqueFullUsesStableOriginalAccountBinding, TestFirstClassCindyOpaqueFullBindingMissReplaysThroughOrdinaryFailover, TestFirstClassCindyOpaqueFullBindingMissUsesOrdinarySessionAffinity, TestFirstClassCindyOpaqueFullStoreErrorFailsClosed, TestStrictCindyNativeMessagesHandlerFailsOverHTTP200BudgetSSEBeforeFirstEvent, TestStrictCindyHTTP201TerminalShapesDoNotMarkBalance",
+        "JS/test declaration scan count: 74",
+        "execution_status=not_run",
+        "execution_limit=No Go, Vitest, database, migration, plugin process, network, production, or model test was executed for this entry."
+      ]
     },
     {
       "path": "backend/internal/handler/cindy_balance_terminal_test.go",
@@ -4712,7 +4652,16 @@
       "present": true,
       "content_sha256": "29ea3bb639fbce36d4fce19eadcc311b6f111a467443eff4ffc813b6fe63bc2a",
       "review_fingerprint": "29ea3bb639fbce36d4fce19eadcc311b6f111a467443eff4ffc813b6fe63bc2a",
-      "review_status": "pending"
+      "review_status": "reviewed",
+      "decision": "reference",
+      "owner": "cindy-provider",
+      "reason": "Cindy-provider test/fixture; source review records concrete Cindy test symbols or fixture consumer and keeps behavioral execution unverified.",
+      "evidence": [
+        "Go test symbols: TestCindyBalanceAfterStreamWriteUsesGenericTerminalErrors",
+        "JS/test declaration scan count: 23",
+        "execution_status=not_run",
+        "execution_limit=No Go, Vitest, database, migration, plugin process, network, production, or model test was executed for this entry."
+      ]
     },
     {
       "path": "backend/internal/handler/cindy_catalog_rollback_test.go",
@@ -4721,7 +4670,16 @@
       "present": true,
       "content_sha256": "fb0c63d193433f1b6a245cd9a3d0f00fafa2abe68c4a6e51853a875f77ea4e74",
       "review_fingerprint": "fb0c63d193433f1b6a245cd9a3d0f00fafa2abe68c4a6e51853a875f77ea4e74",
-      "review_status": "pending"
+      "review_status": "reviewed",
+      "decision": "reference",
+      "owner": "cindy-provider",
+      "reason": "Cindy-provider test/fixture; source review records concrete Cindy test symbols or fixture consumer and keeps behavioral execution unverified.",
+      "evidence": [
+        "Go test symbols: TestCindyCatalogRollbackRestoresLegacyHandlerRouting, TestCindyCatalogRollbackHandlerHelper",
+        "JS/test declaration scan count: 43",
+        "execution_status=not_run",
+        "execution_limit=No Go, Vitest, database, migration, plugin process, network, production, or model test was executed for this entry."
+      ]
     },
     {
       "path": "backend/internal/handler/cindy_rollout_testmain_test.go",
@@ -4730,7 +4688,16 @@
       "present": true,
       "content_sha256": "d6636daf57d7b067873f3f5b519f71c4bd260bdb3bb02f4579c012cbc85cfeb0",
       "review_fingerprint": "d6636daf57d7b067873f3f5b519f71c4bd260bdb3bb02f4579c012cbc85cfeb0",
-      "review_status": "pending"
+      "review_status": "reviewed",
+      "decision": "reference",
+      "owner": "cindy-provider",
+      "reason": "Cindy-provider test/fixture; source review records concrete Cindy test symbols or fixture consumer and keeps behavioral execution unverified.",
+      "evidence": [
+        "Go test symbols: TestMain",
+        "JS/test declaration scan count: 17",
+        "execution_status=not_run",
+        "execution_limit=No Go, Vitest, database, migration, plugin process, network, production, or model test was executed for this entry."
+      ]
     },
     {
       "path": "backend/internal/handler/continuation_repair_live_support_test.go",
@@ -4757,7 +4724,16 @@
       "present": true,
       "content_sha256": "a17ab47519f4eafd38a5980fcefd728cfe9eed60561632e89783522da6453ed3",
       "review_fingerprint": "a17ab47519f4eafd38a5980fcefd728cfe9eed60561632e89783522da6453ed3",
-      "review_status": "pending"
+      "review_status": "reviewed",
+      "decision": "reference",
+      "owner": "cindy-provider",
+      "reason": "Cindy-provider test/fixture; source review records concrete Cindy test symbols or fixture consumer and keeps behavioral execution unverified.",
+      "evidence": [
+        "Go test symbols: TestAccountFromServiceShallowMapsNullableCindyBalanceProbeFields, TestAccountFromServiceShallowKeepsMissingCindyBalanceProbeFieldsNull",
+        "JS/test declaration scan count: 5",
+        "execution_status=not_run",
+        "execution_limit=No Go, Vitest, database, migration, plugin process, network, production, or model test was executed for this entry."
+      ]
     },
     {
       "path": "backend/internal/handler/dto/account_mapper_redact_test.go",
@@ -5001,7 +4977,16 @@
       "present": true,
       "content_sha256": "70ee4c1cd866d933cba54717443b86d7e954d469309307609e9d1958548641af",
       "review_fingerprint": "70ee4c1cd866d933cba54717443b86d7e954d469309307609e9d1958548641af",
-      "review_status": "pending"
+      "review_status": "reviewed",
+      "decision": "reference",
+      "owner": "mixed-requires-review",
+      "reason": "Directly affected search/model/provenance test or fixture; source review records concrete declarations and preserves the no-runtime-execution limitation.",
+      "evidence": [
+        "Go test symbols: TestOpenAIAlphaSearchBridgeFailoverExhaustionReturnsSafeRetryableError, TestCindyBalanceFailoverBypassesErrorPassthrough, TestResolveOpenAIAlphaSearchUpstreamEndpointDistinguishesDirectAndBridge",
+        "JS/test declaration scan count: 23",
+        "execution_status=not_run",
+        "execution_limit=No Go, Vitest, database, migration, plugin process, network, production, or model test was executed for this entry."
+      ]
     },
     {
       "path": "backend/internal/handler/openai_alpha_search_cindy_gate_test.go",
@@ -5010,7 +4995,16 @@
       "present": true,
       "content_sha256": "a296018ec4bdc097b0414564f6245176f0667ac596473059e4b0a1cf27999481",
       "review_fingerprint": "a296018ec4bdc097b0414564f6245176f0667ac596473059e4b0a1cf27999481",
-      "review_status": "pending"
+      "review_status": "reviewed",
+      "decision": "reference",
+      "owner": "cindy-provider",
+      "reason": "Cindy-provider test/fixture; source review records concrete Cindy test symbols or fixture consumer and keeps behavioral execution unverified.",
+      "evidence": [
+        "Go test symbols: TestCindyAlphaSearchDisabledReturns404BeforeRequestDependencies, TestCindyAlphaSearchRejectsManagementOnlyAndRemovedModelsBeforeSelection",
+        "JS/test declaration scan count: 20",
+        "execution_status=not_run",
+        "execution_limit=No Go, Vitest, database, migration, plugin process, network, production, or model test was executed for this entry."
+      ]
     },
     {
       "path": "backend/internal/handler/openai_automation_bootstrap_test.go",
@@ -5046,7 +5040,16 @@
       "present": true,
       "content_sha256": "8f63a83e3627e48c679ec9aa21fadd0722f1b58114a5be668605bed2d26cd746",
       "review_fingerprint": "8f63a83e3627e48c679ec9aa21fadd0722f1b58114a5be668605bed2d26cd746",
-      "review_status": "pending"
+      "review_status": "reviewed",
+      "decision": "reference",
+      "owner": "cindy-provider",
+      "reason": "Cindy-provider test/fixture; source review records concrete Cindy test symbols or fixture consumer and keeps behavioral execution unverified.",
+      "evidence": [
+        "Go test symbols: TestCindyHTTPToWSV2Handshake502SwitchClearsStickyForReconnect, TestCindyHTTPToWSV2StickyClearPreservesConcurrentRebind, TestCindyHTTPToWSV2StickyClearRequiresFirstTurnWithoutSemanticOutput, TestCindyHTTPToWSV2RequestTerminalReleasesSelectionWithoutSchedulerPenalty",
+        "JS/test declaration scan count: 61",
+        "execution_status=not_run",
+        "execution_limit=No Go, Vitest, database, migration, plugin process, network, production, or model test was executed for this entry."
+      ]
     },
     {
       "path": "backend/internal/handler/openai_codex_models_handler.go",
@@ -5109,7 +5112,16 @@
       "present": true,
       "content_sha256": "8a92dc22dc37b091093a4d7ac8d4719edd28574b7d61d0014d3e931ba9b61ea0",
       "review_fingerprint": "8a92dc22dc37b091093a4d7ac8d4719edd28574b7d61d0014d3e931ba9b61ea0",
-      "review_status": "pending"
+      "review_status": "reviewed",
+      "decision": "reference",
+      "owner": "cindy-provider",
+      "reason": "Cindy-provider test/fixture; source review records concrete Cindy test symbols or fixture consumer and keeps behavioral execution unverified.",
+      "evidence": [
+        "Go test symbols: TestCountTokensFirstClassCindyReturnsFixedNotFoundBeforeRequestProcessing, TestCountTokensOrdinaryOpenAIStillUsesResponsesInputTokens, TestCindyCatalogRollbackKeepsFirstClassCountTokensNotFound, TestCindyCatalogRollbackCountTokensBridgeHelper",
+        "JS/test declaration scan count: 41",
+        "execution_status=not_run",
+        "execution_limit=No Go, Vitest, database, migration, plugin process, network, production, or model test was executed for this entry."
+      ]
     },
     {
       "path": "backend/internal/handler/openai_gateway_cindy_image_validation_test.go",
@@ -5118,7 +5130,16 @@
       "present": true,
       "content_sha256": "84541361fdd672eab51aae3fa17ea7d2e2e69fe81e492e9716771b66ff3d02c5",
       "review_fingerprint": "84541361fdd672eab51aae3fa17ea7d2e2e69fe81e492e9716771b66ff3d02c5",
-      "review_status": "pending"
+      "review_status": "reviewed",
+      "decision": "reference",
+      "owner": "cindy-provider",
+      "reason": "Cindy-provider test/fixture; source review records concrete Cindy test symbols or fixture consumer and keeps behavioral execution unverified.",
+      "evidence": [
+        "Go test symbols: TestStrictCindyResponsesRejectsModelsOutsideOrdinaryFreePool, TestStrictCindyResponsesTopLevelLiveIDRejectsUnverifiedControls, TestResponsesCindyGroupRejectsUnknownNestedImageModelBeforeConcurrencyAcquire, TestResponsesCindyGroupRejectsInvalidNestedControlsBeforeConcurrencyAcquire, TestResponsesSelectedNonCindyPreservesNestedImageBody, TestCindyImageDisableDoesNotRestoreLegacyResponsesImageExecution, TestCindyImageRollbackValidationHelper",
+        "JS/test declaration scan count: 62",
+        "execution_status=not_run",
+        "execution_limit=No Go, Vitest, database, migration, plugin process, network, production, or model test was executed for this entry."
+      ]
     },
     {
       "path": "backend/internal/handler/openai_gateway_count_tokens.go",
@@ -5235,7 +5256,16 @@
       "present": true,
       "content_sha256": "c49fa6604bda67e2b76e8df01ef607fe3227183d45c1601ac0eb49b472a028fa",
       "review_fingerprint": "c49fa6604bda67e2b76e8df01ef607fe3227183d45c1601ac0eb49b472a028fa",
-      "review_status": "pending"
+      "review_status": "reviewed",
+      "decision": "reference",
+      "owner": "cindy-provider",
+      "reason": "Cindy-provider test/fixture; source review records concrete Cindy test symbols or fixture consumer and keeps behavioral execution unverified.",
+      "evidence": [
+        "Go test symbols: TestLegacyLaxaContinuationPayloadCandidateRecognizesOpaqueAndReferenceItems",
+        "JS/test declaration scan count: 8",
+        "execution_status=not_run",
+        "execution_limit=No Go, Vitest, database, migration, plugin process, network, production, or model test was executed for this entry."
+      ]
     },
     {
       "path": "backend/internal/handler/openai_management_isolation_test.go",
@@ -5677,7 +5707,16 @@
       "present": true,
       "content_sha256": "0e0d4ce244d165fe2414984f05c8f0e74a6e06b9a5fb8fad5edc3e4db1fb67dd",
       "review_fingerprint": "0e0d4ce244d165fe2414984f05c8f0e74a6e06b9a5fb8fad5edc3e4db1fb67dd",
-      "review_status": "pending"
+      "review_status": "reviewed",
+      "decision": "reference",
+      "owner": "mixed-requires-review",
+      "reason": "Wire/protobuf test fixture; source review records wire contract test symbols and does not claim generated-code or protocol execution.",
+      "evidence": [
+        "Go test symbols: TestWire_CreatedAtPresentEvenAtZero, TestChatCompletionsResponseToResponses_CarriesCreatedAt, TestChatCompletionsToResponsesStream_CreatedAtStableAcrossEvents, TestAnthropicToResponsesResponse_StampsCreatedAt, TestAnthropicEventToResponsesStream_CreatedAtStableAcrossEvents, TestResponsesStreamEvent_CreatedAtSurvivesUnmarshalRemarshal",
+        "JS/test declaration scan count: 15",
+        "execution_status=not_run",
+        "execution_limit=No Go, Vitest, database, migration, plugin process, network, production, or model test was executed for this entry."
+      ]
     },
     {
       "path": "backend/internal/pkg/apicompat/responses_reasoning.go",
@@ -5911,7 +5950,16 @@
       "present": true,
       "content_sha256": "e936a48f4f1f350e80447b578ae9dd65ff7f339aebaf8815056a5badf29ce57a",
       "review_fingerprint": "e936a48f4f1f350e80447b578ae9dd65ff7f339aebaf8815056a5badf29ce57a",
-      "review_status": "pending"
+      "review_status": "reviewed",
+      "decision": "reference",
+      "owner": "cindy-provider",
+      "reason": "Cindy-provider test/fixture; source review records concrete Cindy test symbols or fixture consumer and keeps behavioral execution unverified.",
+      "evidence": [
+        "Go test symbols: TestAccountJobCindyMutationCommitsIdentityHealthAndSchedulerTogether, TestAccountJobCindyMutationKeepsHealthWhenCredentialIdentityIsUnchanged, TestAccountJobCindyMutationReturnsAndCachesCompleteCallbackAccountAfterCommit, TestAccountJobCindyMutationRollsBackAccountAndGroupsWhenIdentityBindFails, TestAccountJobCindyMutationSerializesSameDeviceAcrossCredentialKeys",
+        "JS/test declaration scan count: 101",
+        "execution_status=not_run",
+        "execution_limit=No Go, Vitest, database, migration, plugin process, network, production, or model test was executed for this entry."
+      ]
     },
     {
       "path": "backend/internal/repository/account_job_plugin_integration_test.go",
@@ -6029,7 +6077,16 @@
       "present": true,
       "content_sha256": "090c215fc44d2976b1fe331be6e5d2fe7382337d45ba9a9223c861b672d00732",
       "review_fingerprint": "090c215fc44d2976b1fe331be6e5d2fe7382337d45ba9a9223c861b672d00732",
-      "review_status": "pending"
+      "review_status": "reviewed",
+      "decision": "reference",
+      "owner": "cindy-provider",
+      "reason": "Cindy-provider test/fixture; source review records concrete Cindy test symbols or fixture consumer and keeps behavioral execution unverified.",
+      "evidence": [
+        "Go test symbols: TestCindyInsufficientDeleteIsProtectedAndRejectsStalePreview",
+        "JS/test declaration scan count: 18",
+        "execution_status=not_run",
+        "execution_limit=No Go, Vitest, database, migration, plugin process, network, production, or model test was executed for this entry."
+      ]
     },
     {
       "path": "backend/internal/repository/account_repo_cindy_balance_test.go",
@@ -6038,7 +6095,16 @@
       "present": true,
       "content_sha256": "3c394f3f5f6801096eddc5d9c1703340c8f3a3612fb5b20530871001dba2e872",
       "review_fingerprint": "3c394f3f5f6801096eddc5d9c1703340c8f3a3612fb5b20530871001dba2e872",
-      "review_status": "pending"
+      "review_status": "reviewed",
+      "decision": "reference",
+      "owner": "cindy-provider",
+      "reason": "Cindy-provider test/fixture; source review records concrete Cindy test symbols or fixture consumer and keeps behavioral execution unverified.",
+      "evidence": [
+        "Go test symbols: TestCindyInsufficientCandidateIDsProtectNonCindyAndManuallyStoppedAccounts, TestCindyTerminalCandidateIDsKeepBannedAndBalanceIndependent",
+        "JS/test declaration scan count: 6",
+        "execution_status=not_run",
+        "execution_limit=No Go, Vitest, database, migration, plugin process, network, production, or model test was executed for this entry."
+      ]
     },
     {
       "path": "backend/internal/repository/account_repo_cindy_group_identity_integration_test.go",
@@ -6047,7 +6113,16 @@
       "present": true,
       "content_sha256": "c08c25625119f5d02b5e3b1b6396514e2e7f513606c67703e405867672e315de",
       "review_fingerprint": "c08c25625119f5d02b5e3b1b6396514e2e7f513606c67703e405867672e315de",
-      "review_status": "pending"
+      "review_status": "reviewed",
+      "decision": "reference",
+      "owner": "cindy-provider",
+      "reason": "Cindy-provider test/fixture; source review records concrete Cindy test symbols or fixture consumer and keeps behavioral execution unverified.",
+      "evidence": [
+        "Go test symbols: TestClassifyStrictCindyGroupUsesAllNonDeletedMembersAndCindyGroup",
+        "JS/test declaration scan count: 27",
+        "execution_status=not_run",
+        "execution_limit=No Go, Vitest, database, migration, plugin process, network, production, or model test was executed for this entry."
+      ]
     },
     {
       "path": "backend/internal/repository/account_repo_cindy_group_identity_test.go",
@@ -6056,7 +6131,16 @@
       "present": true,
       "content_sha256": "2e2460a8dc942bf9bebb407178605c635226525988ddeed4a27270d8cc83583f",
       "review_fingerprint": "2e2460a8dc942bf9bebb407178605c635226525988ddeed4a27270d8cc83583f",
-      "review_status": "pending"
+      "review_status": "reviewed",
+      "decision": "reference",
+      "owner": "cindy-provider",
+      "reason": "Cindy-provider test/fixture; source review records concrete Cindy test symbols or fixture consumer and keeps behavioral execution unverified.",
+      "evidence": [
+        "Go test symbols: TestAccountRepositoryClassifyStrictCindyGroupUsesAggregateIdentityQuery",
+        "JS/test declaration scan count: 14",
+        "execution_status=not_run",
+        "execution_limit=No Go, Vitest, database, migration, plugin process, network, production, or model test was executed for this entry."
+      ]
     },
     {
       "path": "backend/internal/repository/account_repo_cindy_identity_lifecycle_integration_test.go",
@@ -6065,7 +6149,16 @@
       "present": true,
       "content_sha256": "a4b9be912962295f12ea26d3ce5dda634b6e96fd6c5423baade48074df833338",
       "review_fingerprint": "a4b9be912962295f12ea26d3ce5dda634b6e96fd6c5423baade48074df833338",
-      "review_status": "pending"
+      "review_status": "reviewed",
+      "decision": "reference",
+      "owner": "cindy-provider",
+      "reason": "Cindy-provider test/fixture; source review records concrete Cindy test symbols or fixture consumer and keeps behavioral execution unverified.",
+      "evidence": [
+        "Go test symbols: TestDeleteCanonicalCindyAccountRetiresIdentityAndDeletesHealth, TestDeleteInsideOuterTransactionDefersSchedulerSideEffectsToCommittedOutbox, TestDeleteThroughTransactionalRepositoryDefersSchedulerSideEffectsToCommittedOutbox, TestCredentialIdentityReimportKeepsRetiredOwnerHistory",
+        "JS/test declaration scan count: 54",
+        "execution_status=not_run",
+        "execution_limit=No Go, Vitest, database, migration, plugin process, network, production, or model test was executed for this entry."
+      ]
     },
     {
       "path": "backend/internal/repository/account_repo_codex_fingerprint_seed_test.go",
@@ -6119,7 +6212,16 @@
       "present": true,
       "content_sha256": "8bbe221b9d713611ae6a12e62f17972114508f719e1587aa2c26703ca5f6bbbc",
       "review_fingerprint": "8bbe221b9d713611ae6a12e62f17972114508f719e1587aa2c26703ca5f6bbbc",
-      "review_status": "pending"
+      "review_status": "reviewed",
+      "decision": "reference",
+      "owner": "mixed-requires-review",
+      "reason": "Directly affected search/model/provenance test or fixture; source review records concrete declarations and preserves the no-runtime-execution limitation.",
+      "evidence": [
+        "Go test symbols: TestMergeAccountModelContextExtraPreservesLatestManagedValues, TestMergeAccountModelContextExtraDoesNotResurrectRemovedValues, TestMergeAccountModelContextExtraPatchesLatestModelsIndependently, TestMergeAccountModelContextExtraRejectsInvalidPatch, TestMergeAccountModelContextExtraRevalidatesProtectedAccounts, TestMergeAccountModelContextExtraRejectsMalformedStoredJSON, TestLockAndMergeAccountProbeExtraUsesLockedModelContextValues, TestShouldEnqueueSchedulerOutboxForExtraUpdatesModelContextKeys, TestUpdateAccountModelContextPatchClearsOnlyAfterSuccessfulWrite, TestUpdateExtraModelContextSyncKeepsAtomicWriteAndOutbox",
+        "JS/test declaration scan count: 74",
+        "execution_status=not_run",
+        "execution_limit=No Go, Vitest, database, migration, plugin process, network, production, or model test was executed for this entry."
+      ]
     },
     {
       "path": "backend/internal/repository/account_repo_ollama_cloud_usage.go",
@@ -6227,7 +6329,16 @@
       "present": true,
       "content_sha256": "38f3ad05d9f0010d76295948bc6bddc0877180336b13b5cad77ff1fe65e3eb14",
       "review_fingerprint": "38f3ad05d9f0010d76295948bc6bddc0877180336b13b5cad77ff1fe65e3eb14",
-      "review_status": "pending"
+      "review_status": "reviewed",
+      "decision": "reference",
+      "owner": "cindy-provider",
+      "reason": "Cindy-provider test/fixture; source review records concrete Cindy test symbols or fixture consumer and keeps behavioral execution unverified.",
+      "evidence": [
+        "Go test symbols: TestAPIKeyRepositoryGetByKeyForAuthMaterializesCindyIdentity, TestAPIKeyRepositoryGetByKeyForAuthTreatsDisabledOrdinaryMemberAsMixed, TestAPIKeyRepositoryGetByKeyForAuthMaterializesEmptyGroupAsKnownOrdinary, TestAPIKeyRepositoryGetByKeyForAuthSkipsCindyAggregateForNonCindyGroup, TestAPIKeyRepositoryGetByKeyForAuthFailsClosedWhenIdentityClassificationFails",
+        "JS/test declaration scan count: 27",
+        "execution_status=not_run",
+        "execution_limit=No Go, Vitest, database, migration, plugin process, network, production, or model test was executed for this entry."
+      ]
     },
     {
       "path": "backend/internal/repository/api_key_repo_integration_test.go",
@@ -6254,7 +6365,16 @@
       "present": true,
       "content_sha256": "8301ab83eb033072b139ab20668d6af466aa9eb9dd3a7f9d576280c408323680",
       "review_fingerprint": "8301ab83eb033072b139ab20668d6af466aa9eb9dd3a7f9d576280c408323680",
-      "review_status": "pending"
+      "review_status": "reviewed",
+      "decision": "reference",
+      "owner": "cindy-provider",
+      "reason": "Cindy-provider test/fixture; source review records concrete Cindy test symbols or fixture consumer and keeps behavioral execution unverified.",
+      "evidence": [
+        "Go test symbols: TestAuthCacheInvalidationTriggersCoverCindyIdentityAndMembership",
+        "JS/test declaration scan count: 16",
+        "execution_status=not_run",
+        "execution_limit=No Go, Vitest, database, migration, plugin process, network, production, or model test was executed for this entry."
+      ]
     },
     {
       "path": "backend/internal/repository/batch_image_repo_integration_test.go",
@@ -6398,7 +6518,16 @@
       "present": true,
       "content_sha256": "bcb8556ee17c2813690140ce79f6656720b8125cc106aa22d17bb176f771be56",
       "review_fingerprint": "bcb8556ee17c2813690140ce79f6656720b8125cc106aa22d17bb176f771be56",
-      "review_status": "pending"
+      "review_status": "reviewed",
+      "decision": "reference",
+      "owner": "cindy-provider",
+      "reason": "Cindy-provider test/fixture; source review records concrete Cindy test symbols or fixture consumer and keeps behavioral execution unverified.",
+      "evidence": [
+        "Go test symbols: TestCindyAccountStatsResetWatermarkAppearsInSingleAndBatchSQL",
+        "JS/test declaration scan count: 6",
+        "execution_status=not_run",
+        "execution_limit=No Go, Vitest, database, migration, plugin process, network, production, or model test was executed for this entry."
+      ]
     },
     {
       "path": "backend/internal/repository/cindy_balance_probe_complete_integration_test.go",
@@ -6407,7 +6536,16 @@
       "present": true,
       "content_sha256": "f84e4b4ec49158b9eb0d05aa75f07aa0b07d36e4c845e706718a3f6e06e8fcd1",
       "review_fingerprint": "f84e4b4ec49158b9eb0d05aa75f07aa0b07d36e4c845e706718a3f6e06e8fcd1",
-      "review_status": "pending"
+      "review_status": "reviewed",
+      "decision": "reference",
+      "owner": "cindy-provider",
+      "reason": "Cindy-provider test/fixture; source review records concrete Cindy test symbols or fixture consumer and keeps behavioral execution unverified.",
+      "evidence": [
+        "Go test symbols: TestCindyBalanceProbeCompleteStageRevalidatesAccountSnapshot, TestCindyBalanceProbeLatestByAccountIDsReturnsConclusionStateAfterCompletion",
+        "JS/test declaration scan count: 35",
+        "execution_status=not_run",
+        "execution_limit=No Go, Vitest, database, migration, plugin process, network, production, or model test was executed for this entry."
+      ]
     },
     {
       "path": "backend/internal/repository/cindy_balance_probe_dispatch_integration_test.go",
@@ -6416,7 +6554,16 @@
       "present": true,
       "content_sha256": "0d4b624d552dc1326b0d1e895ed27fadecc9d8809627e10304972c5521ebd1d7",
       "review_fingerprint": "0d4b624d552dc1326b0d1e895ed27fadecc9d8809627e10304972c5521ebd1d7",
-      "review_status": "pending"
+      "review_status": "reviewed",
+      "decision": "reference",
+      "owner": "cindy-provider",
+      "reason": "Cindy-provider test/fixture; source review records concrete Cindy test symbols or fixture consumer and keeps behavioral execution unverified.",
+      "evidence": [
+        "Go test symbols: TestCindyBalanceProbeTerraDispatchUsesAuthoritativeEpoch",
+        "JS/test declaration scan count: 23",
+        "execution_status=not_run",
+        "execution_limit=No Go, Vitest, database, migration, plugin process, network, production, or model test was executed for this entry."
+      ]
     },
     {
       "path": "backend/internal/repository/cindy_balance_probe_finalize_integration_test.go",
@@ -6425,7 +6572,16 @@
       "present": true,
       "content_sha256": "27a3636aa52e30186cb8600326bc3ffbb39f8095a2a83a4a191845073fda6fe8",
       "review_fingerprint": "27a3636aa52e30186cb8600326bc3ffbb39f8095a2a83a4a191845073fda6fe8",
-      "review_status": "pending"
+      "review_status": "reviewed",
+      "decision": "reference",
+      "owner": "cindy-provider",
+      "reason": "Cindy-provider test/fixture; source review records concrete Cindy test symbols or fixture consumer and keeps behavioral execution unverified.",
+      "evidence": [
+        "Go test symbols: TestCindyBalanceProbeFinalizeExhaustedCommitsMarkerItemAndOutbox, TestCindyBalanceProbeFinalizeRecoveryCommitsMarkerItemAndOutbox, TestCindyBalanceProbeFinalizeRecoveryRejectsReplacedMarkerGeneration, TestCindyBalanceProbeFinalizeRecoveryStaleSuccessResetsFailureStreak, TestCindyBalanceProbeSuccessfulFinalizersResetFailureStreak, TestCindyBalanceProbeFinalizeRollsBackWhenOutboxInsertFails",
+        "JS/test declaration scan count: 59",
+        "execution_status=not_run",
+        "execution_limit=No Go, Vitest, database, migration, plugin process, network, production, or model test was executed for this entry."
+      ]
     },
     {
       "path": "backend/internal/repository/cindy_balance_probe_lifecycle_integration_test.go",
@@ -6434,7 +6590,16 @@
       "present": true,
       "content_sha256": "e677a5898a395aa21001ebbddb98239d6cc24d3e7761e0f86b472fd9bef0aee4",
       "review_fingerprint": "e677a5898a395aa21001ebbddb98239d6cc24d3e7761e0f86b472fd9bef0aee4",
-      "review_status": "pending"
+      "review_status": "reviewed",
+      "decision": "reference",
+      "owner": "cindy-provider",
+      "reason": "Cindy-provider test/fixture; source review records concrete Cindy test symbols or fixture consumer and keeps behavioral execution unverified.",
+      "evidence": [
+        "Go test symbols: TestCindyBalanceProbeActiveJobConstraintIsEnforcedByPostgres, TestCindyBalanceProbeLeaseTakeoverMarksCrashUnknownWithoutResend, TestCindyBalanceProbePauseResumeCancelLifecycle, TestCindyBalanceProbeThirdUpstreamFailurePausesAndResumeClearsStreak, TestCindyBalanceProbeKeepsOldDiagnosticRecordsReadable",
+        "JS/test declaration scan count: 44",
+        "execution_status=not_run",
+        "execution_limit=No Go, Vitest, database, migration, plugin process, network, production, or model test was executed for this entry."
+      ]
     },
     {
       "path": "backend/internal/repository/cindy_balance_probe_repo.go",
@@ -6452,7 +6617,16 @@
       "present": true,
       "content_sha256": "591dbe5ff6047b6dfb062a9fd10fc7d0458b0aab65ac20229b171c826d723b5a",
       "review_fingerprint": "591dbe5ff6047b6dfb062a9fd10fc7d0458b0aab65ac20229b171c826d723b5a",
-      "review_status": "pending"
+      "review_status": "reviewed",
+      "decision": "reference",
+      "owner": "cindy-provider",
+      "reason": "Cindy-provider test/fixture; source review records concrete Cindy test symbols or fixture consumer and keeps behavioral execution unverified.",
+      "evidence": [
+        "Go test symbols: TestCindyBalanceProbeRepositoryListJobsReturnsNewestWithCounts, TestCindyBalanceProbeRepositoryListJobsBoundsLimit, TestCindyBalanceProbeRepositoryLatestByAccountIDs, TestCindyBalanceProbeRepositoryLatestByAccountIDsEmpty, TestCindyBalanceProbeRepositoryCreateJobRejectsTransactionalCandidateDrift, TestCindyBalanceProbeRepositoryCreateJobMapsSnapshotSerializationFailureToCandidateDrift, TestCindyBalanceProbeRepositoryReserveNextCapturesDispatchEpoch, TestCindyBalanceProbeRepositoryValidateReservationUsesClaimAndItemEpoch, TestCindyBalanceProbeRepositoryValidateReservationRejectsOldClaimWithoutWrite, TestCindyBalanceProbeRepositoryCompleteStageDistinguishesPauseFromLostAuthority, TestCindyBalanceProbeRepositoryFinalizeExhaustedRejectsExpiredConfirmation, TestCindyBalanceProbeRepositoryFinalizeExhaustedEnqueuesTypedAccountChange",
+        "JS/test declaration scan count: 123",
+        "execution_status=not_run",
+        "execution_limit=No Go, Vitest, database, migration, plugin process, network, production, or model test was executed for this entry."
+      ]
     },
     {
       "path": "backend/internal/repository/cindy_group_identity.go",
@@ -6479,7 +6653,16 @@
       "present": true,
       "content_sha256": "1778dbbf50f0de4b134a5d1068364ebdd395fd99015cc437b4550a4f1e7306ec",
       "review_fingerprint": "1778dbbf50f0de4b134a5d1068364ebdd395fd99015cc437b4550a4f1e7306ec",
-      "review_status": "pending"
+      "review_status": "reviewed",
+      "decision": "reference",
+      "owner": "cindy-provider",
+      "reason": "Cindy-provider test/fixture; source review records concrete Cindy test symbols or fixture consumer and keeps behavioral execution unverified.",
+      "evidence": [
+        "Go test symbols: TestCindyHealthRepositoryBeginsEpisodeOnlyForActiveGeneration, TestCindyHealthRepositoryRejectsStaleGenerationBeforeStateWrite, TestCindyHealthRepositorySuccessDeletesTransientWithoutClearingConfirmedMarker, TestCindyHealthRepositoryPersistsBannedForMatchingGenerationAndInvalidatesCaches",
+        "JS/test declaration scan count: 28",
+        "execution_status=not_run",
+        "execution_limit=No Go, Vitest, database, migration, plugin process, network, production, or model test was executed for this entry."
+      ]
     },
     {
       "path": "backend/internal/repository/codex_fingerprint_seed_migration_integration_test.go",
@@ -6569,7 +6752,16 @@
       "present": true,
       "content_sha256": "7f587a63f6ec7a9efc7572b660518c73303463bb4357fc6b5951480970acf24d",
       "review_fingerprint": "7f587a63f6ec7a9efc7572b660518c73303463bb4357fc6b5951480970acf24d",
-      "review_status": "pending"
+      "review_status": "reviewed",
+      "decision": "reference",
+      "owner": "cindy-provider",
+      "reason": "Cindy-provider test/fixture; source review records concrete Cindy test symbols or fixture consumer and keeps behavioral execution unverified.",
+      "evidence": [
+        "Go test symbols: TestGatewayCacheCindyBalancePendingIsDurableUntilExplicitClear, TestGatewayCacheCindyBalancePendingIgnoresLegacyNamespace, TestGatewayCacheCindyBalancePendingCompareDeletePreservesNewerGeneration, TestGatewayCacheCindyHealthEpisodeCASSeparatesGenerationAndEpisode, TestGatewayCacheCindyHealthEpisodeCASDoesNotRoundBigintGenerations, TestGatewayCacheClearAllCindyHealthStateRemovesLegacyV2AndV3Keys, TestGatewayCacheCindyTerminalPendingSurvivesRestartAndListsGenerationExactly, TestGatewayCacheBalanceRecoveryClearsOnlyBalanceV3Pending",
+        "JS/test declaration scan count: 15",
+        "execution_status=not_run",
+        "execution_limit=No Go, Vitest, database, migration, plugin process, network, production, or model test was executed for this entry."
+      ]
     },
     {
       "path": "backend/internal/repository/gateway_cache_live_test.go",
@@ -6623,7 +6815,16 @@
       "present": true,
       "content_sha256": "8508b09d78bbc446da52c4a0b1b9ce674e06c054650c1b920841d0e986db5d11",
       "review_fingerprint": "8508b09d78bbc446da52c4a0b1b9ce674e06c054650c1b920841d0e986db5d11",
-      "review_status": "pending"
+      "review_status": "reviewed",
+      "decision": "reference",
+      "owner": "cindy-provider",
+      "reason": "Cindy-provider test/fixture; source review records concrete Cindy test symbols or fixture consumer and keeps behavioral execution unverified.",
+      "evidence": [
+        "Go test symbols: TestGroupAccountAvailableSQLExcludesBothCindyTerminalStates",
+        "JS/test declaration scan count: 5",
+        "execution_status=not_run",
+        "execution_limit=No Go, Vitest, database, migration, plugin process, network, production, or model test was executed for this entry."
+      ]
     },
     {
       "path": "backend/internal/repository/group_repo_cindy_split.go",
@@ -6657,7 +6858,16 @@
       "present": true,
       "content_sha256": "a5f6e5258dbd05632ff9e94b61b80373d09b0447e3bdfe8f6d9e62e9f6195cfc",
       "review_fingerprint": "a5f6e5258dbd05632ff9e94b61b80373d09b0447e3bdfe8f6d9e62e9f6195cfc",
-      "review_status": "pending"
+      "review_status": "reviewed",
+      "decision": "reference",
+      "owner": "cindy-provider",
+      "reason": "Cindy-provider test/fixture; source review records concrete Cindy test symbols or fixture consumer and keeps behavioral execution unverified.",
+      "evidence": [
+        "Go test symbols: TestCindyGroupSplitPreviewDriftAndAtomicCommit, TestCindyGroupSplitRollsBackAllWritesWhenOutboxInsertFails",
+        "JS/test declaration scan count: 79",
+        "execution_status=not_run",
+        "execution_limit=No Go, Vitest, database, migration, plugin process, network, production, or model test was executed for this entry."
+      ]
     },
     {
       "path": "backend/internal/repository/group_repo_cindy_split_test.go",
@@ -6666,7 +6876,16 @@
       "present": true,
       "content_sha256": "727098354b098b794402bc84c8b3643b68c163f5f6d79b820ccc0f82d2b00031",
       "review_fingerprint": "727098354b098b794402bc84c8b3643b68c163f5f6d79b820ccc0f82d2b00031",
-      "review_status": "pending"
+      "review_status": "reviewed",
+      "decision": "reference",
+      "owner": "cindy-provider",
+      "reason": "Cindy-provider test/fixture; source review records concrete Cindy test symbols or fixture consumer and keeps behavioral execution unverified.",
+      "evidence": [
+        "Go test symbols: TestGroupRepositoryAuditCindyGroupsUsesStrictIdentityAndAnonymousCounts, TestCindyGroupSplitFingerprintTracksSemanticDrift",
+        "JS/test declaration scan count: 28",
+        "execution_status=not_run",
+        "execution_limit=No Go, Vitest, database, migration, plugin process, network, production, or model test was executed for this entry."
+      ]
     },
     {
       "path": "backend/internal/repository/group_usage_rollup_trigger_integration_test.go",
@@ -6738,7 +6957,16 @@
       "present": true,
       "content_sha256": "fa219340ed4da8dd244027e1849f105bba73edc7c393f73c832dc372f0508c79",
       "review_fingerprint": "fa219340ed4da8dd244027e1849f105bba73edc7c393f73c832dc372f0508c79",
-      "review_status": "pending"
+      "review_status": "reviewed",
+      "decision": "reference",
+      "owner": "cindy-provider",
+      "reason": "Cindy-provider test/fixture; source review records concrete Cindy test symbols or fixture consumer and keeps behavioral execution unverified.",
+      "evidence": [
+        "Go test symbols: TestMiniMaxCindyQuotaMigrationsUpgradePreservesRowsAndLedger, TestMiniMaxCindyQuotaMigrationsFreshFilenameOrderAndRestart",
+        "JS/test declaration scan count: 46",
+        "execution_status=not_run",
+        "execution_limit=No Go, Vitest, database, migration, plugin process, network, production, or model test was executed for this entry."
+      ]
     },
     {
       "path": "backend/internal/repository/openai_oauth_service.go",
@@ -7574,7 +7802,16 @@
       "present": true,
       "content_sha256": "a0446c211151f766224d963407de3dcc7708e59d6cf3ac476b59a5d13ce27ace",
       "review_fingerprint": "a0446c211151f766224d963407de3dcc7708e59d6cf3ac476b59a5d13ce27ace",
-      "review_status": "pending"
+      "review_status": "reviewed",
+      "decision": "reference",
+      "owner": "account-tools",
+      "reason": "Wire/protobuf test fixture; source review records wire contract test symbols and does not claim generated-code or protocol execution.",
+      "evidence": [
+        "Go test symbols: TestAccountTestReasoningSurvivesMappingAndWireCompression, TestAccountTestReasoningOpenCodeGoSerializesNativeProtocol",
+        "JS/test declaration scan count: 27",
+        "execution_status=not_run",
+        "execution_limit=No Go, Vitest, database, migration, plugin process, network, production, or model test was executed for this entry."
+      ]
     },
     {
       "path": "backend/internal/service/account_test_service.go",
@@ -7700,7 +7937,16 @@
       "present": true,
       "content_sha256": "4162cf4b95fd19aea4c8518df7bbfd72bfe8ace5fce9639e0ca14c62150706c9",
       "review_fingerprint": "4162cf4b95fd19aea4c8518df7bbfd72bfe8ace5fce9639e0ca14c62150706c9",
-      "review_status": "pending"
+      "review_status": "reviewed",
+      "decision": "reference",
+      "owner": "cindy-provider",
+      "reason": "Cindy-provider test/fixture; source review records concrete Cindy test symbols or fixture consumer and keeps behavioral execution unverified.",
+      "evidence": [
+        "Go test symbols: TestAdminServiceHydrateCindyBalanceProbeLatest, TestAdminServiceHydrateCindyBalanceProbeLatestPropagatesRepositoryError",
+        "JS/test declaration scan count: 13",
+        "execution_status=not_run",
+        "execution_limit=No Go, Vitest, database, migration, plugin process, network, production, or model test was executed for this entry."
+      ]
     },
     {
       "path": "backend/internal/service/admin_account_codex_ticket_test.go",
@@ -7718,7 +7964,16 @@
       "present": true,
       "content_sha256": "70aae018428d2524adfb525b99c6132edf0dedd1dbd43ab9bcbe37a82289932f",
       "review_fingerprint": "70aae018428d2524adfb525b99c6132edf0dedd1dbd43ab9bcbe37a82289932f",
-      "review_status": "pending"
+      "review_status": "reviewed",
+      "decision": "reference",
+      "owner": "mixed-requires-review",
+      "reason": "Directly affected search/model/provenance test or fixture; source review records concrete declarations and preserves the no-runtime-execution limitation.",
+      "evidence": [
+        "Go test symbols: TestAdminCreateAccountModelContextOverridesAreTypedAndAtomic, TestAdminUpdateAccountModelContextPatchPreservesManagedState, TestAdminAccountModelContextValidationRejectsBeforePersistence, TestAdminAccountExtraAndBulkCannotInjectModelContextRuntime, TestAccountModelContextPatchIsNeverSerialized",
+        "JS/test declaration scan count: 21",
+        "execution_status=not_run",
+        "execution_limit=No Go, Vitest, database, migration, plugin process, network, production, or model test was executed for this entry."
+      ]
     },
     {
       "path": "backend/internal/service/admin_account_taxonomy.go",
@@ -7754,7 +8009,16 @@
       "present": true,
       "content_sha256": "c40215e5cdc4493f12aa4fcbf64f42c368e96d9548327f177c921f4c96907cf9",
       "review_fingerprint": "c40215e5cdc4493f12aa4fcbf64f42c368e96d9548327f177c921f4c96907cf9",
-      "review_status": "pending"
+      "review_status": "reviewed",
+      "decision": "reference",
+      "owner": "cindy-provider",
+      "reason": "Cindy-provider test/fixture; source review records concrete Cindy test symbols or fixture consumer and keeps behavioral execution unverified.",
+      "evidence": [
+        "Go test symbols: TestAdminServiceClearCindyBalanceInsufficientPreservesManualState, TestAdminBalanceRecoveryDoesNotDeleteConcurrentReplacementOrClearItsRuntimeBlock, TestAdminBalanceRecoveryDoesNotClearRuntimeReplacementAfterRedisCAS, TestAdminBalanceRecoveryWithNoCapturedEpisodeDoesNotClearConcurrentRuntimeEpisode, TestAdminServiceBannedCleanupClearsAllCindyRuntimeStateAfterCommit",
+        "JS/test declaration scan count: 15",
+        "execution_status=not_run",
+        "execution_limit=No Go, Vitest, database, migration, plugin process, network, production, or model test was executed for this entry."
+      ]
     },
     {
       "path": "backend/internal/service/admin_cindy_duplicate_inventory.go",
@@ -7781,7 +8045,16 @@
       "present": true,
       "content_sha256": "b9fb5763af2a0bc927d9debfdc38968897619c991eb5794f565d328edabda2dd",
       "review_fingerprint": "b9fb5763af2a0bc927d9debfdc38968897619c991eb5794f565d328edabda2dd",
-      "review_status": "pending"
+      "review_status": "reviewed",
+      "decision": "reference",
+      "owner": "cindy-provider",
+      "reason": "Cindy-provider test/fixture; source review records concrete Cindy test symbols or fixture consumer and keeps behavioral execution unverified.",
+      "evidence": [
+        "Go test symbols: TestAdminServiceAuditCindyGroupsSummarizesClassifications, TestAdminServicePreviewCindyGroupSplitNormalizesExplicitSelection, TestAdminServiceSplitCindyGroupCommitsWithoutSecondPreview, TestNormalizeCindyGroupSplitInputRejectsAmbiguousSelections, TestBuildCindySplitTargetGroupCopiesPricingAndResetsIdentity",
+        "JS/test declaration scan count: 54",
+        "execution_status=not_run",
+        "execution_limit=No Go, Vitest, database, migration, plugin process, network, production, or model test was executed for this entry."
+      ]
     },
     {
       "path": "backend/internal/service/admin_group.go",
@@ -8123,7 +8396,16 @@
       "present": true,
       "content_sha256": "61d965d125d928e4921091ce8e5cb30cf5656666e847a34537f46bd4d5475812",
       "review_fingerprint": "61d965d125d928e4921091ce8e5cb30cf5656666e847a34537f46bd4d5475812",
-      "review_status": "pending"
+      "review_status": "reviewed",
+      "decision": "reference",
+      "owner": "cindy-provider",
+      "reason": "Cindy-provider test/fixture; source review records concrete Cindy test symbols or fixture consumer and keeps behavioral execution unverified.",
+      "evidence": [
+        "Go test symbols: TestManagedCindyCatalogChannelAdmissionUsesExactCatalogAndAliases, TestChannelServiceRejectsManagedCindyChannelCreation, TestChannelServiceRejectsCindyGroupOnOrdinaryChannel, TestChannelServiceRejectsManagedCindyChannelUpdate",
+        "JS/test declaration scan count: 12",
+        "execution_status=not_run",
+        "execution_limit=No Go, Vitest, database, migration, plugin process, network, production, or model test was executed for this entry."
+      ]
     },
     {
       "path": "backend/internal/service/channel_service.go",
@@ -8150,7 +8432,16 @@
       "present": true,
       "content_sha256": "22b5299b4da6116e13a45998a0c20052f5c9c45bc9e976a1095d21161355d51e",
       "review_fingerprint": "22b5299b4da6116e13a45998a0c20052f5c9c45bc9e976a1095d21161355d51e",
-      "review_status": "pending"
+      "review_status": "reviewed",
+      "decision": "reference",
+      "owner": "cindy-provider",
+      "reason": "Cindy-provider test/fixture; source review records concrete Cindy test symbols or fixture consumer and keeps behavioral execution unverified.",
+      "evidence": [
+        "Go test symbols: TestResolveCindyAlphaSearchPlanSendsOnlyRequestedModel, TestValidateCindyAlphaSearchPlanRejectsUnboundedOrUnexpectedFallback, TestCindyAlphaSearchBodiesUseProviderPlanFields",
+        "JS/test declaration scan count: 9",
+        "execution_status=not_run",
+        "execution_limit=No Go, Vitest, database, migration, plugin process, network, production, or model test was executed for this entry."
+      ]
     },
     {
       "path": "backend/internal/service/cindy_balance.go",
@@ -8168,7 +8459,16 @@
       "present": true,
       "content_sha256": "fb275ccbd4e7b68063bdd108906e77b69203119c06f190dba903cc03a010c8e8",
       "review_fingerprint": "fb275ccbd4e7b68063bdd108906e77b69203119c06f190dba903cc03a010c8e8",
-      "review_status": "pending"
+      "review_status": "reviewed",
+      "decision": "reference",
+      "owner": "cindy-provider",
+      "reason": "Cindy-provider test/fixture; source review records concrete Cindy test symbols or fixture consumer and keeps behavioral execution unverified.",
+      "evidence": [
+        "Go test symbols: TestForwardCindyAnthropicMessagesHTTP200ErrorFailsOverBeforeWrite, TestForwardCindyAnthropicMessagesHTTP200ErrorAfterOutputDropsRawPayload, TestForwardCindyAnthropicMessagesExact429PrecedesPoolRetry, TestForwardCindyAnthropicMessages403UsesSharedTransientHealth, TestForwardCindyAnthropicMessagesHTTP200JSONErrorFailsOverBeforeWrite, TestCindyAnthropicPassthroughBuffersPreambleAndSuppressesIdlePingUntilClassification, TestCindyBalanceRollbackPreservesImmediateTransportPreambles, TestCindyBalanceTransportRollbackHelper",
+        "JS/test declaration scan count: 85",
+        "execution_status=not_run",
+        "execution_limit=No Go, Vitest, database, migration, plugin process, network, production, or model test was executed for this entry."
+      ]
     },
     {
       "path": "backend/internal/service/cindy_balance_pending_test.go",
@@ -8177,7 +8477,16 @@
       "present": true,
       "content_sha256": "9b3af6a24dcb7233b7dc55ced0350087af30c51701ead6a2e00988e8f00ed37d",
       "review_fingerprint": "9b3af6a24dcb7233b7dc55ced0350087af30c51701ead6a2e00988e8f00ed37d",
-      "review_status": "pending"
+      "review_status": "reviewed",
+      "decision": "reference",
+      "owner": "cindy-provider",
+      "reason": "Cindy-provider test/fixture; source review records concrete Cindy test symbols or fixture consumer and keeps behavioral execution unverified.",
+      "evidence": [
+        "Go test symbols: TestCindyBalancePendingWithoutDatabaseMarkerIsCleanupOnly, TestCindyBalancePendingReadErrorsUseDatabaseMarkerOnly, TestCindyBalancePendingFromRotatedCredentialDoesNotBlockCurrentKey, TestCindyBalancePendingSnapshotBatchesLegacyCleanupHints, TestAdminCindyBalanceRecoveryIgnoresLegacyPendingCleanupFailure",
+        "JS/test declaration scan count: 24",
+        "execution_status=not_run",
+        "execution_limit=No Go, Vitest, database, migration, plugin process, network, production, or model test was executed for this entry."
+      ]
     },
     {
       "path": "backend/internal/service/cindy_balance_probe_service.go",
@@ -8195,7 +8504,16 @@
       "present": true,
       "content_sha256": "f2fad5d55953d7b72a58dfc904f57deb386b98d32036f7cbecde43855c9cefd2",
       "review_fingerprint": "f2fad5d55953d7b72a58dfc904f57deb386b98d32036f7cbecde43855c9cefd2",
-      "review_status": "pending"
+      "review_status": "reviewed",
+      "decision": "reference",
+      "owner": "cindy-provider",
+      "reason": "Cindy-provider test/fixture; source review records concrete Cindy test symbols or fixture consumer and keeps behavioral execution unverified.",
+      "evidence": [
+        "Go test symbols: TestCindyBalanceProbeFinalizeExhaustedBlocksOnlyAfterDatabaseCommit, TestCindyBalanceProbeRecoveryClearFailureCannotReMarkFromOrdinaryRequest, TestCindyBalanceProbeRecoveryDoesNotClearRuntimeReplacementAfterRedisCAS, TestCindyBalanceProbeRecoveryWithNoCapturedEpisodeDoesNotClearConcurrentRuntimeEpisode, TestCindyBalanceProbeMarkedLunaSuccessFinalizesWithPreSendSnapshot, TestCindyBalanceProbeUsesFreshTokenForEveryClaim, TestCindyBalanceProbeReservationCASFailureStopsBeforeProbe, TestCindyBalanceProbeReservationMatchesExactAccountGeneration, TestCindyBalanceProbeAccountUpdateAfterLoadStopsBeforeProbe, TestCindyBalanceProbeServiceCreateJobPropagatesAtomicCandidateDrift, TestCindyBalanceProbeSelectedScopeCanonicalJSONAndFiltering",
+        "JS/test declaration scan count: 95",
+        "execution_status=not_run",
+        "execution_limit=No Go, Vitest, database, migration, plugin process, network, production, or model test was executed for this entry."
+      ]
     },
     {
       "path": "backend/internal/service/cindy_balance_probe_types.go",
@@ -8222,7 +8540,16 @@
       "present": true,
       "content_sha256": "1c07efd4cebf7b9071983665b0118d327b86255ee6833a9323bf17307ca12bcc",
       "review_fingerprint": "1c07efd4cebf7b9071983665b0118d327b86255ee6833a9323bf17307ca12bcc",
-      "review_status": "pending"
+      "review_status": "reviewed",
+      "decision": "reference",
+      "owner": "cindy-provider",
+      "reason": "Cindy-provider test/fixture; source review records concrete Cindy test symbols or fixture consumer and keeps behavioral execution unverified.",
+      "evidence": [
+        "Go test symbols: TestCindyBalanceProbeRejectsTruncatedSuccessfulPrefix, TestCindyBalanceProbeModelRecognizesExactExhaustion, TestExactCindyBudgetSignalDelegatesToHealthCoordinator, TestCindyBalanceProbeModelRejectsTerminalShapesOutsideHTTP200, TestCindyBalanceProbeModelRequiresProtocolValidCompletedResponse, TestCindyBalanceProbeModelRejectsConflictingOrDuplicateSSETerminals",
+        "JS/test declaration scan count: 25",
+        "execution_status=not_run",
+        "execution_limit=No Go, Vitest, database, migration, plugin process, network, production, or model test was executed for this entry."
+      ]
     },
     {
       "path": "backend/internal/service/cindy_balance_response_test.go",
@@ -8231,7 +8558,16 @@
       "present": true,
       "content_sha256": "cd042a3f26448fa8cfa0269178acfb421866d83e60d34fa12bff12b13f36571f",
       "review_fingerprint": "cd042a3f26448fa8cfa0269178acfb421866d83e60d34fa12bff12b13f36571f",
-      "review_status": "pending"
+      "review_status": "reviewed",
+      "decision": "reference",
+      "owner": "cindy-provider",
+      "reason": "Cindy-provider test/fixture; source review records concrete Cindy test symbols or fixture consumer and keeps behavioral execution unverified.",
+      "evidence": [
+        "Go test symbols: TestIsCindyBalanceInsufficientResponse, TestClassifyCindyBalanceInsufficientTerminalEvents, TestClassifyCindyBalanceInsufficientRejectsTerminalShapesOutsideHTTP200",
+        "JS/test declaration scan count: 21",
+        "execution_status=not_run",
+        "execution_limit=No Go, Vitest, database, migration, plugin process, network, production, or model test was executed for this entry."
+      ]
     },
     {
       "path": "backend/internal/service/cindy_balance_shared_test.go",
@@ -8240,7 +8576,15 @@
       "present": true,
       "content_sha256": "8406a2599f223650f6079b07cff97ee4b858e0320df6aaeadbdcf5466f87a054",
       "review_fingerprint": "8406a2599f223650f6079b07cff97ee4b858e0320df6aaeadbdcf5466f87a054",
-      "review_status": "pending"
+      "review_status": "reviewed",
+      "decision": "reference",
+      "owner": "cindy-provider",
+      "reason": "Cindy-provider test/fixture; source review records concrete Cindy test symbols or fixture consumer and keeps behavioral execution unverified.",
+      "evidence": [
+        "JS/test declaration scan count: 16",
+        "execution_status=not_run",
+        "execution_limit=No Go, Vitest, database, migration, plugin process, network, production, or model test was executed for this entry."
+      ]
     },
     {
       "path": "backend/internal/service/cindy_capability_catalog.go",
@@ -8267,7 +8611,16 @@
       "present": true,
       "content_sha256": "c1de02b24b5896c3f20558d8ed6320743c06e4a5e22ac8ccd3f99586aaef0a67",
       "review_fingerprint": "c1de02b24b5896c3f20558d8ed6320743c06e4a5e22ac8ccd3f99586aaef0a67",
-      "review_status": "pending"
+      "review_status": "reviewed",
+      "decision": "reference",
+      "owner": "cindy-provider",
+      "reason": "Cindy-provider test/fixture; source review records concrete Cindy test symbols or fixture consumer and keeps behavioral execution unverified.",
+      "evidence": [
+        "Go test symbols: TestHydrateManagedCindyCatalogChannelUsesCanonicalCatalog, TestHydrateManagedCindyCatalogChannelLeavesOrdinaryChannelUntouched",
+        "JS/test declaration scan count: 10",
+        "execution_status=not_run",
+        "execution_limit=No Go, Vitest, database, migration, plugin process, network, production, or model test was executed for this entry."
+      ]
     },
     {
       "path": "backend/internal/service/cindy_codex_client_version.go",
@@ -8301,7 +8654,16 @@
       "present": true,
       "content_sha256": "663f47e2198f976e0a87177dff28362f43fefea5128c3e3f5cf4187723106f42",
       "review_fingerprint": "663f47e2198f976e0a87177dff28362f43fefea5128c3e3f5cf4187723106f42",
-      "review_status": "pending"
+      "review_status": "reviewed",
+      "decision": "reference",
+      "owner": "cindy-provider",
+      "reason": "Cindy-provider test/fixture; source review records concrete Cindy test symbols or fixture consumer and keeps behavioral execution unverified.",
+      "evidence": [
+        "Go test symbols: TestBuildCindyDuplicateIdentityInventoryIsDeterministicAndRedacted, TestBuildCindyDuplicateIdentityInventoryDoesNotChooseTerminalOwner",
+        "JS/test declaration scan count: 8",
+        "execution_status=not_run",
+        "execution_limit=No Go, Vitest, database, migration, plugin process, network, production, or model test was executed for this entry."
+      ]
     },
     {
       "path": "backend/internal/service/cindy_endpoint_scheduling_test.go",
@@ -8310,7 +8672,16 @@
       "present": true,
       "content_sha256": "cff09ab20f6f3d0bee43e52e15c8f2503c427fccfb9d1265f7cf94e99fe75734",
       "review_fingerprint": "cff09ab20f6f3d0bee43e52e15c8f2503c427fccfb9d1265f7cf94e99fe75734",
-      "review_status": "pending"
+      "review_status": "reviewed",
+      "decision": "reference",
+      "owner": "cindy-provider",
+      "reason": "Cindy-provider test/fixture; source review records concrete Cindy test symbols or fixture consumer and keeps behavioral execution unverified.",
+      "evidence": [
+        "Go test symbols: TestAccountSupportsOpenAICapabilities_StrictCindyModelEndpointMatrix, TestAccountSupportsOpenAICapabilities_FirstClassCindySearchUsesPublicResponsesModels, TestOpenAIGatewayService_SelectAccountWithScheduler_FirstClassCindySearch, TestOpenAIGatewayServiceSelectAccountWithSchedulerRejectsCrossProfileCindyCandidate, TestOpenAIGatewayService_SelectAccountWithScheduler_MixedGroupGatesCindyByEndpoint, TestOpenAIGatewayService_SelectAccountWithScheduler_CindyMessagesUsesMessagesCapability, TestOpenAIGatewayService_SelectAccountWithScheduler_MixedMessagesUsesNativeCindyModel, TestOpenAIGatewayService_SelectAccountWithScheduler_MixedImagesGatesCindyByOperation",
+        "JS/test declaration scan count: 94",
+        "execution_status=not_run",
+        "execution_limit=No Go, Vitest, database, migration, plugin process, network, production, or model test was executed for this entry."
+      ]
     },
     {
       "path": "backend/internal/service/cindy_feature_flags.go",
@@ -8328,7 +8699,16 @@
       "present": true,
       "content_sha256": "4a1c7c4167715d758292cbc3956b71b11d8656016a235f16300133b1559a50da",
       "review_fingerprint": "4a1c7c4167715d758292cbc3956b71b11d8656016a235f16300133b1559a50da",
-      "review_status": "pending"
+      "review_status": "reviewed",
+      "decision": "reference",
+      "owner": "cindy-provider",
+      "reason": "Cindy-provider test/fixture; source review records concrete Cindy test symbols or fixture consumer and keeps behavioral execution unverified.",
+      "evidence": [
+        "Go test symbols: TestCindySurfaceFlagsAreIndependentAndDefaultOff, TestCindyIndependentFlagsHelper, TestCindySearchAvailabilityIsIndependentFromCatalogPublication, TestCindySearchAvailabilityHelper, TestCindyFreePoolAllowlistSurvivesCatalogPublicationRollback, TestCindyFreePoolAllowlistHelper",
+        "JS/test declaration scan count: 36",
+        "execution_status=not_run",
+        "execution_limit=No Go, Vitest, database, migration, plugin process, network, production, or model test was executed for this entry."
+      ]
     },
     {
       "path": "backend/internal/service/cindy_feature_flags_test.go",
@@ -8337,7 +8717,16 @@
       "present": true,
       "content_sha256": "73cb7838f3b8f9fb7d74bd82e278c074b9e87a83dbe6de4e174eff29ba85180e",
       "review_fingerprint": "73cb7838f3b8f9fb7d74bd82e278c074b9e87a83dbe6de4e174eff29ba85180e",
-      "review_status": "pending"
+      "review_status": "reviewed",
+      "decision": "reference",
+      "owner": "cindy-provider",
+      "reason": "Cindy-provider test/fixture; source review records concrete Cindy test symbols or fixture consumer and keeps behavioral execution unverified.",
+      "evidence": [
+        "Go test symbols: TestCindyRolloutFlagsAreIndependentlyDisableable, TestCindyRolloutFlagDefaultsAndParsing, TestCindyRolloutFlagParsingHelper, TestCindyRolloutFlagHelper",
+        "JS/test declaration scan count: 64",
+        "execution_status=not_run",
+        "execution_limit=No Go, Vitest, database, migration, plugin process, network, production, or model test was executed for this entry."
+      ]
     },
     {
       "path": "backend/internal/service/cindy_group.go",
@@ -8355,7 +8744,16 @@
       "present": true,
       "content_sha256": "b1d37c52975062b6afd577616cb19df566bc3e05325692c9153b421254d08fd7",
       "review_fingerprint": "b1d37c52975062b6afd577616cb19df566bc3e05325692c9153b421254d08fd7",
-      "review_status": "pending"
+      "review_status": "reviewed",
+      "decision": "reference",
+      "owner": "cindy-provider",
+      "reason": "Cindy-provider test/fixture; source review records concrete Cindy test symbols or fixture consumer and keeps behavioral execution unverified.",
+      "evidence": [
+        "Go test symbols: TestIsStrictCindyGroupRequiresEveryNonDeletedMember, TestStrictCindyGroupIdentityIsUncachedAndPropagatesErrors, TestCindyAnthropicAuthAlwaysUsesBearer",
+        "JS/test declaration scan count: 12",
+        "execution_status=not_run",
+        "execution_limit=No Go, Vitest, database, migration, plugin process, network, production, or model test was executed for this entry."
+      ]
     },
     {
       "path": "backend/internal/service/cindy_group_materialized_test.go",
@@ -8364,7 +8762,16 @@
       "present": true,
       "content_sha256": "64c0d7e92954258e4b725772f6dc63ccfe672114bec847414c0fbd6f684f8527",
       "review_fingerprint": "64c0d7e92954258e4b725772f6dc63ccfe672114bec847414c0fbd6f684f8527",
-      "review_status": "pending"
+      "review_status": "reviewed",
+      "decision": "reference",
+      "owner": "cindy-provider",
+      "reason": "Cindy-provider test/fixture; source review records concrete Cindy test symbols or fixture consumer and keeps behavioral execution unverified.",
+      "evidence": [
+        "Go test symbols: TestClassifyAuthenticatedStrictCindyGroupUsesMaterializedIdentity, TestAPIKeyAuthSnapshotRoundTripsMaterializedCindyIdentity, TestAPIKeyAuthSnapshotRejectsV20WithActiveOnlyCindyIdentity",
+        "JS/test declaration scan count: 14",
+        "execution_status=not_run",
+        "execution_limit=No Go, Vitest, database, migration, plugin process, network, production, or model test was executed for this entry."
+      ]
     },
     {
       "path": "backend/internal/service/cindy_health.go",
@@ -8382,7 +8789,16 @@
       "present": true,
       "content_sha256": "2ff539992f79d958c2d124b142729e1b4440d693d97885318806b95af14a1019",
       "review_fingerprint": "2ff539992f79d958c2d124b142729e1b4440d693d97885318806b95af14a1019",
-      "review_status": "pending"
+      "review_status": "reviewed",
+      "decision": "reference",
+      "owner": "cindy-provider",
+      "reason": "Cindy-provider test/fixture; source review records concrete Cindy test symbols or fixture consumer and keeps behavioral execution unverified.",
+      "evidence": [
+        "Go test symbols: TestClassifyCindyHealthSignalTreatsStrict401AsBannedAndKeeps403Transient, TestLegacyCindyCompatibilityDoesNotEnterCanonicalHealth, TestStrictCindy401ReachesSharedHealthCoordinatorAcrossHTTPMessagesAndAccountTest, TestProvideCindyHealthServiceWiresGatewayCoordinator, TestCindyHealthExactBudgetPersistsImmediatelyWithoutAutomaticProbes, TestCindyHealthBannedBlocksBeforeGenerationBoundPersistence, TestCindyHealthTerminalWriteCarriesCurrentGenerationWithoutProbe, TestCindyHealthRejectsABAStaleResponseBeforeRuntimeBlock, TestCindyHealthTerminalPersistenceFailureRetainsPendingAndRetries, TestCindyHealthRestartRecoversDurablePendingWithoutAutomaticProbe, TestCindyHealthAppliedFalseRetainsPendingUntilAuthoritativeRetry, TestCindyHealthClaimFalseRestoresExistingGenerationScopedBlock",
+        "JS/test declaration scan count: 116",
+        "execution_status=not_run",
+        "execution_limit=No Go, Vitest, database, migration, plugin process, network, production, or model test was executed for this entry."
+      ]
     },
     {
       "path": "backend/internal/service/cindy_identity.go",
@@ -8400,7 +8816,16 @@
       "present": true,
       "content_sha256": "15d2e76879a9ae613ff24ebd6db2d4eefa6f5510f8e08bfbe6d2a2c54600c812",
       "review_fingerprint": "15d2e76879a9ae613ff24ebd6db2d4eefa6f5510f8e08bfbe6d2a2c54600c812",
-      "review_status": "pending"
+      "review_status": "reviewed",
+      "decision": "reference",
+      "owner": "cindy-provider",
+      "reason": "Cindy-provider test/fixture; source review records concrete Cindy test symbols or fixture consumer and keeps behavioral execution unverified.",
+      "evidence": [
+        "Go test symbols: TestIsCindyAPIKeyAccount, TestIsCindyAPIKeyAccountRejectsForceQueryEndpoint, TestLegacyCindyAPIKeyAccountRequiresExactLegacyIdentity, TestCindyRuntimeCompatibleAPIKeyAccountUnionsCanonicalAndLegacyOnly, TestNormalizeCindyDeviceIdentityExtraPreservesInput, TestNormalizeCindyDeviceIdentityExtraPreservesLegacyCompatibilityModesForRollback, TestNormalizeCindyDeviceIdentityExtraCarriesExistingLegacyModesWithoutCreatingDefaults, TestNormalizeCindyDeviceIdentityExtraGeneratesUniqueStoreOnlyIdentity, TestNormalizeCindyDeviceIdentityExtraPreservesStoredIdentityAndAcceptsMask, TestNormalizeCindyDeviceIdentityExtraRejectsInvalidValues, TestNormalizeCindyDeviceIdentityExtraIgnoresNonCindyAccount, TestMaskCindyDeviceID",
+        "JS/test declaration scan count: 29",
+        "execution_status=not_run",
+        "execution_limit=No Go, Vitest, database, migration, plugin process, network, production, or model test was executed for this entry."
+      ]
     },
     {
       "path": "backend/internal/service/cindy_image_pricing_test.go",
@@ -8409,7 +8834,16 @@
       "present": true,
       "content_sha256": "88f2c8d02401f4305bd3ea200be1dcfd309140ffe28abf9486ee4698fc8850bd",
       "review_fingerprint": "88f2c8d02401f4305bd3ea200be1dcfd309140ffe28abf9486ee4698fc8850bd",
-      "review_status": "pending"
+      "review_status": "reviewed",
+      "decision": "reference",
+      "owner": "cindy-provider",
+      "reason": "Cindy-provider test/fixture; source review records concrete Cindy test symbols or fixture consumer and keeps behavioral execution unverified.",
+      "evidence": [
+        "Go test symbols: TestOpenAIImagesRequestInputImageCount_ExcludesGenerationAndMask, TestValidateCindyImageRequest_RejectsUnavailableFreePoolImageCandidates, TestCalculateOpenAIImageCost_StrictCindyRejectsUnavailableGPTImageCandidate, TestCalculateOpenAIImageCost_StrictCindyRejectsUnavailableGPTImagePublicID, TestCalculateOpenAIImageCost_StrictCindyRejectsUnavailableGeminiImageCandidate, TestCalculateOpenAIImageCost_StrictCindyGroupPriceWins, TestCalculateOpenAIImageCost_StrictCindyMissingOutputMeterFailsClosed, TestCalculateCindyCatalogImageCostMissingInputTokenMeterFailsClosed, TestCalculateOpenAIImageCost_NonCindyKeepsGenericFallback",
+        "JS/test declaration scan count: 16",
+        "execution_status=not_run",
+        "execution_limit=No Go, Vitest, database, migration, plugin process, network, production, or model test was executed for this entry."
+      ]
     },
     {
       "path": "backend/internal/service/cindy_native_count_tokens_test.go",
@@ -8418,7 +8852,16 @@
       "present": true,
       "content_sha256": "e6026bc62c82646f12a4acbc8875ef48a1052d27937709706a398438ab9147c1",
       "review_fingerprint": "e6026bc62c82646f12a4acbc8875ef48a1052d27937709706a398438ab9147c1",
-      "review_status": "pending"
+      "review_status": "reviewed",
+      "decision": "reference",
+      "owner": "cindy-provider",
+      "reason": "Cindy-provider test/fixture; source review records concrete Cindy test symbols or fixture consumer and keeps behavioral execution unverified.",
+      "evidence": [
+        "Go test symbols: TestValidAnthropicCountTokensResponse",
+        "JS/test declaration scan count: 7",
+        "execution_status=not_run",
+        "execution_limit=No Go, Vitest, database, migration, plugin process, network, production, or model test was executed for this entry."
+      ]
     },
     {
       "path": "backend/internal/service/cindy_native_messages_test.go",
@@ -8427,7 +8870,16 @@
       "present": true,
       "content_sha256": "0d4cdc6ae3c85783076e5b7971aa9c60553f888418ff32ed791908ffb27dffb6",
       "review_fingerprint": "0d4cdc6ae3c85783076e5b7971aa9c60553f888418ff32ed791908ffb27dffb6",
-      "review_status": "pending"
+      "review_status": "reviewed",
+      "decision": "reference",
+      "owner": "cindy-provider",
+      "reason": "Cindy-provider test/fixture; source review records concrete Cindy test symbols or fixture consumer and keeps behavioral execution unverified.",
+      "evidence": [
+        "Go test symbols: TestForwardCindyAnthropicMessagesJSONUsesNativeWireAndUsage, TestForwardCindyAnthropicMessagesSSEPreservesEventsAndUsage, TestForwardCindyAnthropicMessagesRejectsUnverifiedWire",
+        "JS/test declaration scan count: 23",
+        "execution_status=not_run",
+        "execution_limit=No Go, Vitest, database, migration, plugin process, network, production, or model test was executed for this entry."
+      ]
     },
     {
       "path": "backend/internal/service/cindy_pricing_snapshot.go",
@@ -8445,7 +8897,16 @@
       "present": true,
       "content_sha256": "408b28c60840416a25c8c460de16fa6b6b296d6ce1d4200ed5cb9cfa5a216c52",
       "review_fingerprint": "408b28c60840416a25c8c460de16fa6b6b296d6ce1d4200ed5cb9cfa5a216c52",
-      "review_status": "pending"
+      "review_status": "reviewed",
+      "decision": "reference",
+      "owner": "cindy-provider",
+      "reason": "Cindy-provider test/fixture; source review records concrete Cindy test symbols or fixture consumer and keeps behavioral execution unverified.",
+      "evidence": [
+        "Go test symbols: TestCindyBillingUsesCapturedReferenceAcrossAsyncBoundary, TestCindyUnavailableBlocksTokenCountingAndEmbeddingsBeforeIO, TestCindyNewTurnRefreshesPricingWithoutChangingPendingBill",
+        "JS/test declaration scan count: 21",
+        "execution_status=not_run",
+        "execution_limit=No Go, Vitest, database, migration, plugin process, network, production, or model test was executed for this entry."
+      ]
     },
     {
       "path": "backend/internal/service/cindy_rollout_testmain_test.go",
@@ -8454,7 +8915,16 @@
       "present": true,
       "content_sha256": "badbda2825d6be763a14a838f9b7f75a8b6e10c7331f570a86995e718d212553",
       "review_fingerprint": "badbda2825d6be763a14a838f9b7f75a8b6e10c7331f570a86995e718d212553",
-      "review_status": "pending"
+      "review_status": "reviewed",
+      "decision": "reference",
+      "owner": "cindy-provider",
+      "reason": "Cindy-provider test/fixture; source review records concrete Cindy test symbols or fixture consumer and keeps behavioral execution unverified.",
+      "evidence": [
+        "Go test symbols: TestMain",
+        "JS/test declaration scan count: 16",
+        "execution_status=not_run",
+        "execution_limit=No Go, Vitest, database, migration, plugin process, network, production, or model test was executed for this entry."
+      ]
     },
     {
       "path": "backend/internal/service/cindy_terminal_scheduling_isolation_test.go",
@@ -8463,7 +8933,16 @@
       "present": true,
       "content_sha256": "0f998af0ac3fa70495bbba8f707bad257e3da3d41405ea40d7ba3dae5940b707",
       "review_fingerprint": "0f998af0ac3fa70495bbba8f707bad257e3da3d41405ea40d7ba3dae5940b707",
-      "review_status": "pending"
+      "review_status": "reviewed",
+      "decision": "reference",
+      "owner": "cindy-provider",
+      "reason": "Cindy-provider test/fixture; source review records concrete Cindy test symbols or fixture consumer and keeps behavioral execution unverified.",
+      "evidence": [
+        "Go test symbols: TestCindyTerminalSchedulingIsolation",
+        "JS/test declaration scan count: 5",
+        "execution_status=not_run",
+        "execution_limit=No Go, Vitest, database, migration, plugin process, network, production, or model test was executed for this entry."
+      ]
     },
     {
       "path": "backend/internal/service/cindy_text_billing.go",
@@ -8481,7 +8960,16 @@
       "present": true,
       "content_sha256": "a65a8f4adba99c4869dc07cb8f8060e61a58dfa0b98e7cd84d0d95dcc973aef0",
       "review_fingerprint": "a65a8f4adba99c4869dc07cb8f8060e61a58dfa0b98e7cd84d0d95dcc973aef0",
-      "review_status": "pending"
+      "review_status": "reviewed",
+      "decision": "reference",
+      "owner": "cindy-provider",
+      "reason": "Cindy-provider test/fixture; source review records concrete Cindy test symbols or fixture consumer and keeps behavioral execution unverified.",
+      "evidence": [
+        "Go test symbols: TestCalculateCindyCatalogTextCostUsesTargetPricingAndCacheTiers, TestCalculateCindyCatalogTextCostRejectsRestrictedLongContextModel, TestCalculateCindyCatalogTextCostOpenAI272KBoundary, TestCindyTextPricingFailsClosedWhenLongCacheWritePriceIsMissing, TestCalculateCindyCatalogTextCostUsesV4PriceAndRejectsUnknownModel, TestCalculateCindyCatalogTextCostAppliesCatalogDiscount, TestOpenAIRecordUsageTokenCostPrefersExplicitGroupPricingForCindy, TestOpenAIRecordUsageTokenCostKeepsNonCindyPathUnchanged, TestLegacyCindyRuntimeCompatibilityUsesExactModelPricing, TestLegacyCindyRuntimeCompatibilityExplicitGroupPricingWins, TestLegacyCindyRuntimeCompatibilityRecordUsageKeepsAliasPricingAfterLiveMapping, TestOpenAIRecordUsageStrictCindyUnknownPriceFailsClosed",
+        "JS/test declaration scan count: 78",
+        "execution_status=not_run",
+        "execution_limit=No Go, Vitest, database, migration, plugin process, network, production, or model test was executed for this entry."
+      ]
     },
     {
       "path": "backend/internal/service/cindy_v4_catalog_contract_test.go",
@@ -8490,7 +8978,16 @@
       "present": true,
       "content_sha256": "85ad6f8556d08f9e6e2af83fe6332208a233435b399ac9eb6e13f21b3c6b15bc",
       "review_fingerprint": "85ad6f8556d08f9e6e2af83fe6332208a233435b399ac9eb6e13f21b3c6b15bc",
-      "review_status": "pending"
+      "review_status": "reviewed",
+      "decision": "reference",
+      "owner": "cindy-provider",
+      "reason": "Cindy-provider test/fixture; source review records concrete Cindy test symbols or fixture consumer and keeps behavioral execution unverified.",
+      "evidence": [
+        "Go test symbols: TestCindyFreeCatalogRetainsExistingModelsAndAddsVerifiedInventory, TestCindyFreeCatalogRoutingRetainsExistingProtocolsAndAliases, TestCindyFreeCatalogManagementProjectionIsExactlySeventeen, TestCindyFreeLunaPricingPreservesLongContextContract, TestCindyCatalogAdditionsKeepProtocolAndMetadataEvidenceSeparate",
+        "JS/test declaration scan count: 48",
+        "execution_status=not_run",
+        "execution_limit=No Go, Vitest, database, migration, plugin process, network, production, or model test was executed for this entry."
+      ]
     },
     {
       "path": "backend/internal/service/cindy_v4_catalog_fixture_test.go",
@@ -8499,7 +8996,16 @@
       "present": true,
       "content_sha256": "b50c8027e0704f189c05ea482b3b0896b61e4b4e839e912f6de47955493766dd",
       "review_fingerprint": "b50c8027e0704f189c05ea482b3b0896b61e4b4e839e912f6de47955493766dd",
-      "review_status": "pending"
+      "review_status": "reviewed",
+      "decision": "reference",
+      "owner": "cindy-provider",
+      "reason": "Cindy-provider test/fixture; source review records concrete Cindy test symbols or fixture consumer and keeps behavioral execution unverified.",
+      "evidence": [
+        "Go test symbols: TestCindyFreeCatalogFixtureMatchesExactSeventeenItemInventory",
+        "JS/test declaration scan count: 23",
+        "execution_status=not_run",
+        "execution_limit=No Go, Vitest, database, migration, plugin process, network, production, or model test was executed for this entry."
+      ]
     },
     {
       "path": "backend/internal/service/cn_provider_balance_check_service.go",
@@ -8995,7 +9501,16 @@
       "present": true,
       "content_sha256": "179befbfb5c1c083e2f26d8045a6f500ddc4bee2270d5974e72bd24c42636f28",
       "review_fingerprint": "179befbfb5c1c083e2f26d8045a6f500ddc4bee2270d5974e72bd24c42636f28",
-      "review_status": "pending"
+      "review_status": "reviewed",
+      "decision": "reference",
+      "owner": "model-policy",
+      "reason": "Model-policy test/fixture; source review records concrete catalog/capacity test symbols and does not claim model or network execution.",
+      "evidence": [
+        "Go test symbols: TestOfficialModelContextCapacityCatalogIntegrity, TestOfficialModelContextCapacityCatalogPreservesProviderSemantics, TestOfficialModelContextCapacityCatalogVerifiedRepresentativeValues",
+        "JS/test declaration scan count: 49",
+        "execution_status=not_run",
+        "execution_limit=No Go, Vitest, database, migration, plugin process, network, production, or model test was executed for this entry."
+      ]
     },
     {
       "path": "backend/internal/service/model_context_capacity_catalog_test_fixture_test.go",
@@ -9004,7 +9519,15 @@
       "present": true,
       "content_sha256": "b668e1aabc1280d768e32a5130278672d0f5f77d91276f1ab4c022553e296585",
       "review_fingerprint": "b668e1aabc1280d768e32a5130278672d0f5f77d91276f1ab4c022553e296585",
-      "review_status": "pending"
+      "review_status": "reviewed",
+      "decision": "reference",
+      "owner": "model-policy",
+      "reason": "Model-policy test/fixture; source review records concrete catalog/capacity test symbols and does not claim model or network execution.",
+      "evidence": [
+        "JS/test declaration scan count: 8",
+        "execution_status=not_run",
+        "execution_limit=No Go, Vitest, database, migration, plugin process, network, production, or model test was executed for this entry."
+      ]
     },
     {
       "path": "backend/internal/service/model_context_capacity_parser.go",
@@ -9022,7 +9545,16 @@
       "present": true,
       "content_sha256": "c4339f66b12541d16576dcbd9663aad0e63448f7ed6c2281ea194b70adb1f4f1",
       "review_fingerprint": "c4339f66b12541d16576dcbd9663aad0e63448f7ed6c2281ea194b70adb1f4f1",
-      "review_status": "pending"
+      "review_status": "reviewed",
+      "decision": "reference",
+      "owner": "model-policy",
+      "reason": "Model-policy test/fixture; source review records concrete catalog/capacity test symbols and does not claim model or network execution.",
+      "evidence": [
+        "Go test symbols: TestModelContextCapacitySelectedGPTReferenceAndExactVariants, TestModelContextCapacityReferenceMatchingKeepsRawKeys, TestModelContextCapacityReferenceCandidateMinimumAndWireIdentity",
+        "JS/test declaration scan count: 31",
+        "execution_status=not_run",
+        "execution_limit=No Go, Vitest, database, migration, plugin process, network, production, or model test was executed for this entry."
+      ]
     },
     {
       "path": "backend/internal/service/model_context_capacity_test.go",
@@ -9031,7 +9563,16 @@
       "present": true,
       "content_sha256": "5beb4a200d9f2e4d943e3bfd502156860bcef66be2be9dc887b0cb0b2bbc8856",
       "review_fingerprint": "5beb4a200d9f2e4d943e3bfd502156860bcef66be2be9dc887b0cb0b2bbc8856",
-      "review_status": "pending"
+      "review_status": "reviewed",
+      "decision": "reference",
+      "owner": "model-policy",
+      "reason": "Model-policy test/fixture; source review records concrete catalog/capacity test symbols and does not claim model or network execution.",
+      "evidence": [
+        "Go test symbols: TestModelContextCapacityPriorityAndDistinctLimits, TestModelContextCapacityParserSafeNumbersAndFieldTolerance, TestModelContextCapacityCatalogParserKeepsIndependentModels, TestModelContextCapacityOverridesPatchValidationAndIsolation, TestModelContextCapacityManagedProviderBoundary, TestModelContextCapacityRowsUseTrueTargetsAndPreserveSources, TestModelContextCapacityBatchLiveResolutionDoesNotMutateSnapshot, TestModelContextCapacityProtectedRowsDoNotUseOverridesOrDefault, TestModelContextCapacitySourceIdentityInvalidatesOnlyUpstreamIdentity, TestModelContextCapacitySourceIdentityBindsCNAnthropicEndpoint, TestModelContextCapacitySourceIdentityBindsRouteQuery, TestModelContextCapacityOfficialKimiCodingNeedsProductIdentity",
+        "JS/test declaration scan count: 116",
+        "execution_status=not_run",
+        "execution_limit=No Go, Vitest, database, migration, plugin process, network, production, or model test was executed for this entry."
+      ]
     },
     {
       "path": "backend/internal/service/model_context_identity.go",
@@ -9049,7 +9590,16 @@
       "present": true,
       "content_sha256": "7e69bcc4de246fb5723056bf2bca0eb3d6adab6cf2e7b3f29a5e7587331cdf39",
       "review_fingerprint": "7e69bcc4de246fb5723056bf2bca0eb3d6adab6cf2e7b3f29a5e7587331cdf39",
-      "review_status": "pending"
+      "review_status": "reviewed",
+      "decision": "reference",
+      "owner": "model-policy",
+      "reason": "Model-policy test/fixture; source review records concrete catalog/capacity test symbols and does not claim model or network execution.",
+      "evidence": [
+        "Go test symbols: TestCapacityIdentityUsesForwardTargetAndLegacyOverrides, TestCapacityIdentityConflictsAndExplicitEdit, TestCapacityIdentityDoesNotRemapRealTargetTwice, TestCapacityIdentitySnapshotUsesRecognizedSpellingOnly",
+        "JS/test declaration scan count: 21",
+        "execution_status=not_run",
+        "execution_limit=No Go, Vitest, database, migration, plugin process, network, production, or model test was executed for this entry."
+      ]
     },
     {
       "path": "backend/internal/service/model_pricing_resolver.go",
@@ -9067,7 +9617,16 @@
       "present": true,
       "content_sha256": "a3168d9fcc0eb08ea289816e6c08854ce443d11e7748066d3373ce3adc1ed406",
       "review_fingerprint": "a3168d9fcc0eb08ea289816e6c08854ce443d11e7748066d3373ce3adc1ed406",
-      "review_status": "pending"
+      "review_status": "reviewed",
+      "decision": "reference",
+      "owner": "mixed-requires-review",
+      "reason": "Directly affected search/model/provenance test or fixture; source review records concrete declarations and preserves the no-runtime-execution limitation.",
+      "evidence": [
+        "Go test symbols: TestResolve_NoGroupID, TestResolve_UnknownModel, TestResolve_StrictCindyNeverFallsThroughGenericPricing, TestGetIntervalPricing_NoIntervals, TestGetIntervalPricing_MatchesInterval, TestGetIntervalPricing_NoMatch_FallsBackToBase, TestGPT56ExplicitZeroCacheWritePriceIsPreserved, TestGetRequestTierPrice, TestGetRequestTierPriceByContext, TestGetRequestTierPrice_NilPerRequestPrice, TestResolve_WithChannelOverride_TokenFlat, TestResolve_WithChannelOverride_TokenPartialOverride",
+        "JS/test declaration scan count: 173",
+        "execution_status=not_run",
+        "execution_limit=No Go, Vitest, database, migration, plugin process, network, production, or model test was executed for this entry."
+      ]
     },
     {
       "path": "backend/internal/service/model_rate_limit.go",
@@ -9239,7 +9798,16 @@
       "present": true,
       "content_sha256": "092ff0f57cf23ae8f579f31d2338246e5ddd2ebe5b68d9cf4cfbfd3635286a95",
       "review_fingerprint": "092ff0f57cf23ae8f579f31d2338246e5ddd2ebe5b68d9cf4cfbfd3635286a95",
-      "review_status": "pending"
+      "review_status": "reviewed",
+      "decision": "reference",
+      "owner": "mixed-requires-review",
+      "reason": "Directly affected search/model/provenance test or fixture; source review records concrete declarations and preserves the no-runtime-execution limitation.",
+      "evidence": [
+        "Go test symbols: TestCalculateWebSearchCostDefaultAndOverride, TestCalculateOpenAIRecordUsageCostWebSearchPerCall, TestCalculateOpenAIRecordUsageCost_CindyWebSearchExplicitZeroUnlessGroupOverride, TestAPIKeyService_SnapshotRoundTrip_PreservesWebSearchPricePerCall",
+        "JS/test declaration scan count: 9",
+        "execution_status=not_run",
+        "execution_limit=No Go, Vitest, database, migration, plugin process, network, production, or model test was executed for this entry."
+      ]
     },
     {
       "path": "backend/internal/service/openai_alpha_search_cindy_native_first_test.go",
@@ -9248,7 +9816,16 @@
       "present": true,
       "content_sha256": "b5b1657a2de8448e31091b1db88d602e9f0bf7a65041671e9d9669286bf97329",
       "review_fingerprint": "b5b1657a2de8448e31091b1db88d602e9f0bf7a65041671e9d9669286bf97329",
-      "review_status": "pending"
+      "review_status": "reviewed",
+      "decision": "reference",
+      "owner": "cindy-provider",
+      "reason": "Cindy-provider test/fixture; source review records concrete Cindy test symbols or fixture consumer and keeps behavioral execution unverified.",
+      "evidence": [
+        "Go test symbols: TestForwardAlphaSearchCindyUsesPublicResponsesModelBeforeHiddenFallback, TestForwardAlphaSearchCindyFallsBackToHiddenMessagesForCapabilityMissOrBufferedMissingEvidence, TestForwardAlphaSearchCindyEndpointErrorsDoNotSwitchProtocol, TestForwardAlphaSearchCindyCompatibilityAliasIsNotAdmittedBySearchPlan, TestForwardAlphaSearchCindyOperationalResponsesFailuresNeverSwitchProtocol, TestForwardAlphaSearchCindyGenericBadRequestDoesNotSwitchProtocol, TestForwardAlphaSearchCindyInvalidMessagesFallbackUsesNormalFailurePath, TestForwardAlphaSearchCindyMessagesFallbackHTTPFailureClassification, TestOpenAIAlphaSearchResponsesEvidenceRejectsNonTerminalSearchStates, TestOpenAIAlphaSearchResponsesEvidenceRequiresCompletedCallOrValidCitation, TestOpenAIAlphaSearchLegacyResponsesEvidenceSemanticsRemainUnchanged",
+        "JS/test declaration scan count: 67",
+        "execution_status=not_run",
+        "execution_limit=No Go, Vitest, database, migration, plugin process, network, production, or model test was executed for this entry."
+      ]
     },
     {
       "path": "backend/internal/service/openai_alpha_search_test.go",
@@ -9257,7 +9834,16 @@
       "present": true,
       "content_sha256": "1c0dcde5534c62bf82ed78dbf3c5276948fd15f2d378874e05833faebaadfc66",
       "review_fingerprint": "1c0dcde5534c62bf82ed78dbf3c5276948fd15f2d378874e05833faebaadfc66",
-      "review_status": "pending"
+      "review_status": "reviewed",
+      "decision": "reference",
+      "owner": "mixed-requires-review",
+      "reason": "Directly affected search/model/provenance test or fixture; source review records concrete declarations and preserves the no-runtime-execution limitation.",
+      "evidence": [
+        "Go test symbols: TestForwardAlphaSearchOAuthPreservesWire, TestForwardAlphaSearchPATUsesResponsesWebSearchFallback, TestForwardAlphaSearchOrdinaryAPIKeyIgnoresLegacyBridgeSettings, TestForwardAlphaSearchOrdinaryAPIKeyToolErrorUsesOfficialFailurePath, TestForwardAlphaSearchOrdinaryAPIKeyGenericBadRequestDoesNotFanOut, TestForwardAlphaSearchOrdinaryAPIKeyTrustsOfficialAlphaSearchSuccess, TestOpenAIAlphaSearchResponseAcceptsWebSearchCallWithoutCitation, TestForwardAlphaSearchCindyNativeModeBypassesEnabledResponsesBridge, TestForwardAlphaSearchCindyNativeMessagesRejectsUnverifiedSuccessWithoutPenalty, TestForwardAlphaSearchCindyRejectsEmptyToolResultEvenWithUsage, TestForwardAlphaSearchCindyRejectsErrorToolResultEvenWithUsage, TestParseCindyAlphaSearchMessagesResponseAcceptsValidCitationWithoutToolResult",
+        "JS/test declaration scan count: 175",
+        "execution_status=not_run",
+        "execution_limit=No Go, Vitest, database, migration, plugin process, network, production, or model test was executed for this entry."
+      ]
     },
     {
       "path": "backend/internal/service/openai_apikey_compat.go",
@@ -9383,7 +9969,16 @@
       "present": true,
       "content_sha256": "5a66d3f947551a0b00a1dd8f789960fd37f25fd055f72eea50444b71a6e0a5fe",
       "review_fingerprint": "5a66d3f947551a0b00a1dd8f789960fd37f25fd055f72eea50444b71a6e0a5fe",
-      "review_status": "pending"
+      "review_status": "reviewed",
+      "decision": "reference",
+      "owner": "cindy-provider",
+      "reason": "Cindy-provider test/fixture; source review records concrete Cindy test symbols or fixture consumer and keeps behavioral execution unverified.",
+      "evidence": [
+        "Go test symbols: TestOpenAIGatewayService_ProxyResponsesWebSocketFromClient_CindyPreviousNotFoundReplaysVerifiedFullHistoryOnce, TestOpenAIGatewayService_ProxyResponsesWebSocketFromClient_NativePreviousNotFoundReplaysVerifiedFullHistoryOnce, TestLegacyCindyRuntimeCompatibilityWSIngressInitialAnchorNeverLeavesBusyBoundConn, TestOpenAIGatewayService_ProxyResponsesWebSocketFromClient_CindyModeRouterPassthroughLaterAnchorRejectsDifferentConn, TestOpenAIGatewayService_ProxyResponsesWebSocketFromClient_CindyModeRouterPassthroughRejectsInvalidAnchorOnLaterTurn, TestOpenAIGatewayService_ProxyResponsesWebSocketFromClient_CindyModeRouterPassthroughNullAndBlankLaterAnchorAreNoAnchor, TestOpenAIGatewayService_ProxyResponsesWebSocketFromClient_CindyModeRouterPassthroughBindsOpaqueOutputForReconnect, TestOpenAIGatewayService_ProxyResponsesWebSocketFromClient_CindyInitialAnchorAfterRestartOpensNewConnection",
+        "JS/test declaration scan count: 149",
+        "execution_status=not_run",
+        "execution_limit=No Go, Vitest, database, migration, plugin process, network, production, or model test was executed for this entry."
+      ]
     },
     {
       "path": "backend/internal/service/openai_cindy_continuation_test.go",
@@ -9392,7 +9987,16 @@
       "present": true,
       "content_sha256": "f2de6a12e859c61a0caae6d2157c34af45162273ab86de59911196b841c72714",
       "review_fingerprint": "f2de6a12e859c61a0caae6d2157c34af45162273ab86de59911196b841c72714",
-      "review_status": "pending"
+      "review_status": "reviewed",
+      "decision": "reference",
+      "owner": "cindy-provider",
+      "reason": "Cindy-provider test/fixture; source review records concrete Cindy test symbols or fixture consumer and keeps behavioral execution unverified.",
+      "evidence": [
+        "Go test symbols: TestClassifyCindyContinuation, TestCindyOpaqueBindingIDDependsOnlyOnProviderCarrier, TestCindyPortableOpaqueRecoveryRequiresSelfContainedHistory, TestClassifyCindyContinuationRejectsInvalidJSON, TestVerifiedCindyContinuationHistoryRequiresExactBaselineAnchor, TestCindyContinuationReplayPolicy, TestEnsureCindyResponsesStoreFalsePreservesContinuationFields, TestNormalizeLegacyLaxaFullReplayStoreFalse, TestCindyContinuationAccumulatorProof, TestCindyContinuationFullLookingAnchorWithoutAccumulatorStaysDelta, TestPrepareCindyContinuationReplayPayload",
+        "JS/test declaration scan count: 47",
+        "execution_status=not_run",
+        "execution_limit=No Go, Vitest, database, migration, plugin process, network, production, or model test was executed for this entry."
+      ]
     },
     {
       "path": "backend/internal/service/openai_cindy_http_wsv2.go",
@@ -9410,7 +10014,16 @@
       "present": true,
       "content_sha256": "e50c525d170d61f67a29e8e64338b6531948f5c861413878ed33d7dad581ed4d",
       "review_fingerprint": "e50c525d170d61f67a29e8e64338b6531948f5c861413878ed33d7dad581ed4d",
-      "review_status": "pending"
+      "review_status": "reviewed",
+      "decision": "reference",
+      "owner": "cindy-provider",
+      "reason": "Cindy-provider test/fixture; source review records concrete Cindy test symbols or fixture consumer and keeps behavioral execution unverified.",
+      "evidence": [
+        "Go test symbols: TestResolveCindyHTTPToWSV2DecisionEligible, TestLegacyCindyRuntimeCompatibilityUsesHTTPToWSV2, TestLegacyCindyRuntimeCompatibilityMapsResponsesAliasesOverHTTPAndWS, TestResolveCindyHTTPToWSV2DecisionHonorsAllGates, TestCindyHTTPToWSV2FailoverDoesNotDowngradeToNonCindyHTTP, TestCindyHTTPToWSV2ContinuationReusesOneConnectionAcrossIndependentHTTPRequests, TestCindyHTTPToWSV2ContinuationWithoutLocalConnectionReconnectsBoundAccount, TestCindyHTTPToWSV2Handshake403FallsBackToOriginalStatelessHTTPStream, TestCindyHTTPToWSV2InBand403UsesNormalFailoverWithoutPayloadRewrite, TestCindyHTTPToWSV2Handshake403HTTPFailurePreservesAccountFailover, TestCindyHTTPToWSV2HandshakeFallbackDoesNotRewriteInvalidEncryptedContent, TestCindyPassthroughInvalidEncryptedContentFailsWithoutPayloadCleanup",
+        "JS/test declaration scan count: 211",
+        "execution_status=not_run",
+        "execution_limit=No Go, Vitest, database, migration, plugin process, network, production, or model test was executed for this entry."
+      ]
     },
     {
       "path": "backend/internal/service/openai_cindy_opaque_binding.go",
@@ -9428,7 +10041,16 @@
       "present": true,
       "content_sha256": "58e220b945e3e847685ffdb8a3634225a02fb251d13238e06e000ba5b620556e",
       "review_fingerprint": "58e220b945e3e847685ffdb8a3634225a02fb251d13238e06e000ba5b620556e",
-      "review_status": "pending"
+      "review_status": "reviewed",
+      "decision": "reference",
+      "owner": "cindy-provider",
+      "reason": "Cindy-provider test/fixture; source review records concrete Cindy test symbols or fixture consumer and keeps behavioral execution unverified.",
+      "evidence": [
+        "Go test symbols: TestLookupCindyOpaqueContinuationBindingUsesAnyUnanimousSurvivingBinding, TestLookupCindyOpaqueContinuationBindingPreservesMissConflictAndStoreError",
+        "JS/test declaration scan count: 26",
+        "execution_status=not_run",
+        "execution_limit=No Go, Vitest, database, migration, plugin process, network, production, or model test was executed for this entry."
+      ]
     },
     {
       "path": "backend/internal/service/openai_codex_account_identity.go",
@@ -9563,7 +10185,16 @@
       "present": true,
       "content_sha256": "6bfe610c8a1fee39c9ac1f96d1e99e83130e61f2797c6cb89c62b5eda509a830",
       "review_fingerprint": "6bfe610c8a1fee39c9ac1f96d1e99e83130e61f2797c6cb89c62b5eda509a830",
-      "review_status": "pending"
+      "review_status": "reviewed",
+      "decision": "reference",
+      "owner": "mixed-requires-review",
+      "reason": "Directly affected search/model/provenance test or fixture; source review records concrete declarations and preserves the no-runtime-execution limitation.",
+      "evidence": [
+        "Go test symbols: TestNewConfiguredCodexModelDescriptorUsesProviderMetadataAndSafeFallback, TestBuildCodexModelsManifestUsesGPT6AstraInstructions, TestBuildCodexModelsManifestUsesSingleNoneReasoningChoiceForCustomModel, TestBuildCodexModelsManifestKeepsKnownReasoningChoices, TestBuildCodexModelsManifestAdvertisesPriorityServiceTierForFastGPTModels, TestBuildCodexModelsManifestAdvertisesUltrafastServiceTierForSol, TestBuildCodexModelsManifestLeavesServiceTiersEmptyForOtherModels, TestBuildCodexModelsManifestOmitsDedicatedImageModels, TestBuildCodexModelsManifestForGroupAdvertisesOfficialGrokResponsesImageInput, TestBuildCodexModelsManifestForGroupAdvertisesOfficialOpenAIResponsesImageInput, TestBuildCodexModelsManifestForGroupUsesProviderImageCapabilities, TestBuildCodexModelsManifestForGroupUsesDeepSeekVisionCapabilities",
+        "JS/test declaration scan count: 633",
+        "execution_status=not_run",
+        "execution_limit=No Go, Vitest, database, migration, plugin process, network, production, or model test was executed for this entry."
+      ]
     },
     {
       "path": "backend/internal/service/openai_codex_request_compression.go",
@@ -10328,7 +10959,16 @@
       "present": true,
       "content_sha256": "f932f1178f22b2244bf4b99f41fb3d214f245e3df0e3a229b11470678b947a6b",
       "review_fingerprint": "f932f1178f22b2244bf4b99f41fb3d214f245e3df0e3a229b11470678b947a6b",
-      "review_status": "pending"
+      "review_status": "reviewed",
+      "decision": "reference",
+      "owner": "mixed-requires-review",
+      "reason": "Directly affected search/model/provenance test or fixture; source review records concrete declarations and preserves the no-runtime-execution limitation.",
+      "evidence": [
+        "Go test symbols: TestResolveOpenAIForwardModel, TestLegacyCindyRuntimeCompatibilityMapsResponsesWSMessagesAndCountTokens, TestResolveOpenAICompactForwardModel, TestResolveOpenAICompactForwardModelWithCanonicalKeepsPublicIdentityMappingPriority, TestResolveOpenAIForwardMappedModels_CompactMappingPrecedence, TestCanonicalOpenAIAccountSchedulingModelMatchesForwardSemantics, TestLegacyLaxaRawChatFallbackUsesCanonicalLunaWireModel, TestResolveOpenAIErrorSchedulingModelPrefersActualUpstreamModel, TestNormalizeCodexModel, TestNormalizeOpenAIModelForUpstream, TestUsageBillingModelCandidatesPreserveCodexAutoReviewModel, TestUsageBillingModelCandidatesPreserveGPT55ProModel",
+        "JS/test declaration scan count: 34",
+        "execution_status=not_run",
+        "execution_limit=No Go, Vitest, database, migration, plugin process, network, production, or model test was executed for this entry."
+      ]
     },
     {
       "path": "backend/internal/service/openai_model_not_supported.go",
@@ -11084,7 +11724,16 @@
       "present": true,
       "content_sha256": "8c395ae190adc0aa10b51cee4a1c4e0bec632c73494791bcf6b8e8203f1f91aa",
       "review_fingerprint": "8c395ae190adc0aa10b51cee4a1c4e0bec632c73494791bcf6b8e8203f1f91aa",
-      "review_status": "pending"
+      "review_status": "reviewed",
+      "decision": "reference",
+      "owner": "mixed-requires-review",
+      "reason": "Wire/protobuf test fixture; source review records wire contract test symbols and does not claim generated-code or protocol execution.",
+      "evidence": [
+        "Go test symbols: TestOpenAIGatewayService_Forward_PreservePreviousResponseIDWhenWSEnabled, TestOpenAIGatewayService_Forward_HTTPIngressPreservesNativeContinuationWhenWSConfigured, TestOpenAIGatewayService_Forward_HTTPIngressInvalidEncryptedContentIsTerminalWhenRecoveryDisabled, TestOpenAIGatewayService_Forward_HTTPIngressWrappedInvalidEncryptedContentIsTerminal, TestOpenAIGatewayService_Forward_PreservePreviousResponseIDWhenWSDisabled, TestOpenAIGatewayService_Forward_WSv2Dial426FallbackHTTP, TestOpenAIGatewayService_Forward_WSv2FallbackCoolingSkipWS, TestOpenAIGatewayService_Forward_ReturnErrorWhenOnlyWSv1Enabled, TestNewOpenAIGatewayService_InitializesOpenAIWSResolver, TestOpenAIGatewayService_Forward_WSv2FallbackWhenResponseAlreadyWrittenReturnsWSError, TestOpenAIGatewayService_Forward_WSv2StreamEarlyCloseFallbackHTTP, TestOpenAIGatewayService_Forward_WSv2RetryFiveTimesThenFallbackHTTP",
+        "JS/test declaration scan count: 238",
+        "execution_status=not_run",
+        "execution_limit=No Go, Vitest, database, migration, plugin process, network, production, or model test was executed for this entry."
+      ]
     },
     {
       "path": "backend/internal/service/openai_ws_ratelimit_signal_test.go",
@@ -11345,7 +11994,16 @@
       "present": true,
       "content_sha256": "2fecae56a94918c8f66ede00db3087898f960e2aa8e7d3a7e5487ddf40068323",
       "review_fingerprint": "2fecae56a94918c8f66ede00db3087898f960e2aa8e7d3a7e5487ddf40068323",
-      "review_status": "pending"
+      "review_status": "reviewed",
+      "decision": "reference",
+      "owner": "core-extension-and-job-host",
+      "reason": "Directly affected search/model/provenance test or fixture; source review records concrete declarations and preserves the no-runtime-execution limitation.",
+      "evidence": [
+        "Go test symbols: TestCindyCodexPresentationRejectsIdentityCapacityAndInstructionChanges",
+        "JS/test declaration scan count: 23",
+        "execution_status=not_run",
+        "execution_limit=No Go, Vitest, database, migration, plugin process, network, production, or model test was executed for this entry."
+      ]
     },
     {
       "path": "backend/internal/service/plugin_cindy_management.go",
@@ -12134,7 +12792,16 @@
       "present": true,
       "content_sha256": "048a9d8b222dc6e1267ef00d02c62205cd4b7984044e430293b4332c94bcb3e3",
       "review_fingerprint": "048a9d8b222dc6e1267ef00d02c62205cd4b7984044e430293b4332c94bcb3e3",
-      "review_status": "pending"
+      "review_status": "reviewed",
+      "decision": "reference",
+      "owner": "cindy-provider",
+      "reason": "Cindy-provider test/fixture; source review records concrete Cindy test symbols or fixture consumer and keeps behavioral execution unverified.",
+      "evidence": [
+        "Go test symbols: TestRateLimitServiceCindy402NeverMarksBalanceInsufficient, TestHandleUpstreamErrorHTTP400EventShapeDoesNotMarkCindyBalance, TestRateLimitServiceCindyBudget429RequiresConfirmationBeforePoolModeSkip, TestRateLimitServiceCindyBalanceMarkerDoesNotMatchOtherErrors, TestRateLimitServiceConcurrentCindySignalsDoNotPersistBeforeConfirmation, TestOpenAIGatewayCindyBudget429FailsOverWithoutImmediatePermanentBlock, TestOpenAIGatewayCindyTerminalEventsFailOverWithoutImmediatePermanentBlock, TestOpenAIGatewayCindyWSTerminalEventsUseProvisionalCentralHandler, TestOpenAIGatewayCindyImagesTerminalFailureForcesAccountSwitch, TestOpenAIGatewayCindyIndefiniteBlockDominatesLaterCooldown, TestAccountTestServiceCindyBalanceDoesNotStartBackgroundProbe, TestAccountTestServiceAmbiguousCindyEventDoesNotStartBackgroundProbe",
+        "JS/test declaration scan count: 270",
+        "execution_status=not_run",
+        "execution_limit=No Go, Vitest, database, migration, plugin process, network, production, or model test was executed for this entry."
+      ]
     },
     {
       "path": "backend/internal/service/ratelimit_service_openai_image_test.go",
@@ -12537,7 +13204,15 @@
       "present": true,
       "content_sha256": "863a6d015590106bdd693e7327f5a105d3feac84d075af28c2736cd0db6f9ed8",
       "review_fingerprint": "863a6d015590106bdd693e7327f5a105d3feac84d075af28c2736cd0db6f9ed8",
-      "review_status": "pending"
+      "review_status": "reviewed",
+      "decision": "reference",
+      "owner": "cindy-provider",
+      "reason": "Cindy-provider test/fixture; source review records concrete Cindy test symbols or fixture consumer and keeps behavioral execution unverified.",
+      "evidence": [
+        "Fixture is statically consumed by backend/internal/service/cindy_v4_catalog_fixture_test.go",
+        "execution_status=not_run",
+        "execution_limit=No Go, Vitest, database, migration, plugin process, network, production, or model test was executed for this entry."
+      ]
     },
     {
       "path": "backend/internal/service/testdata/cindy_free_catalog_2026-09-11.json",
@@ -12546,7 +13221,15 @@
       "present": true,
       "content_sha256": "1915e2d934eb5284489562cda88628d72827b0a77a5e3dbdcb28a61dc69f48f0",
       "review_fingerprint": "1915e2d934eb5284489562cda88628d72827b0a77a5e3dbdcb28a61dc69f48f0",
-      "review_status": "pending"
+      "review_status": "reviewed",
+      "decision": "reference",
+      "owner": "cindy-provider",
+      "reason": "Cindy-provider test/fixture; source review records concrete Cindy test symbols or fixture consumer and keeps behavioral execution unverified.",
+      "evidence": [
+        "Fixture is statically consumed by backend/internal/service/cindy_v4_catalog_fixture_test.go",
+        "execution_status=not_run",
+        "execution_limit=No Go, Vitest, database, migration, plugin process, network, production, or model test was executed for this entry."
+      ]
     },
     {
       "path": "backend/internal/service/testdata/codexrip_reverse_skill_system_prompt_legacy_dual_marker.txt",
@@ -12663,7 +13346,16 @@
       "present": true,
       "content_sha256": "a535f7a13729b6dfc0ce043f670dceafeca189a0a84020392227eef445d17e03",
       "review_fingerprint": "a535f7a13729b6dfc0ce043f670dceafeca189a0a84020392227eef445d17e03",
-      "review_status": "pending"
+      "review_status": "reviewed",
+      "decision": "reference",
+      "owner": "mixed-requires-review",
+      "reason": "Wire/protobuf test fixture; source review records wire contract test symbols and does not claim generated-code or protocol execution.",
+      "evidence": [
+        "Go test symbols: TestProvideTimingWheelService_ReturnsError, TestProvideTimingWheelService_Success",
+        "JS/test declaration scan count: 4",
+        "execution_status=not_run",
+        "execution_limit=No Go, Vitest, database, migration, plugin process, network, production, or model test was executed for this entry."
+      ]
     },
     {
       "path": "backend/internal/testextensions/fixtures.go",
@@ -13211,7 +13903,16 @@
       "present": true,
       "content_sha256": "27e3f9dd05c977624bb1c411d7f483c247fec081da038b61b5aed7de77ee0a9e",
       "review_fingerprint": "27e3f9dd05c977624bb1c411d7f483c247fec081da038b61b5aed7de77ee0a9e",
-      "review_status": "pending"
+      "review_status": "reviewed",
+      "decision": "reference",
+      "owner": "cindy-provider",
+      "reason": "Cindy-provider test/fixture; source review records concrete Cindy test symbols or fixture consumer and keeps behavioral execution unverified.",
+      "evidence": [
+        "Go test symbols: TestMigration238AddsCindyAccountStatsResetWatermark",
+        "JS/test declaration scan count: 4",
+        "execution_status=not_run",
+        "execution_limit=No Go, Vitest, database, migration, plugin process, network, production, or model test was executed for this entry."
+      ]
     },
     {
       "path": "backend/migrations/cindy_alpha_search_bridge_migration_integration_test.go",
@@ -13220,7 +13921,16 @@
       "present": true,
       "content_sha256": "91f3b02d3f99afd1fb00bdeb83418d138642d33974c477e4d3f10facb26830a7",
       "review_fingerprint": "91f3b02d3f99afd1fb00bdeb83418d138642d33974c477e4d3f10facb26830a7",
-      "review_status": "pending"
+      "review_status": "reviewed",
+      "decision": "reference",
+      "owner": "cindy-provider",
+      "reason": "Cindy-provider test/fixture; source review records concrete Cindy test symbols or fixture consumer and keeps behavioral execution unverified.",
+      "evidence": [
+        "Go test symbols: TestCindyAlphaSearchBridgeMigrationIsStrictAndIdempotent",
+        "JS/test declaration scan count: 6",
+        "execution_status=not_run",
+        "execution_limit=No Go, Vitest, database, migration, plugin process, network, production, or model test was executed for this entry."
+      ]
     },
     {
       "path": "backend/migrations/cindy_alpha_search_bridge_migration_test.go",
@@ -13229,7 +13939,16 @@
       "present": true,
       "content_sha256": "6ce2489d65e112bf4fab7d17c8eaf51a274a956c31eab84a786af5e3265c5f68",
       "review_fingerprint": "6ce2489d65e112bf4fab7d17c8eaf51a274a956c31eab84a786af5e3265c5f68",
-      "review_status": "pending"
+      "review_status": "reviewed",
+      "decision": "reference",
+      "owner": "cindy-provider",
+      "reason": "Cindy-provider test/fixture; source review records concrete Cindy test symbols or fixture consumer and keeps behavioral execution unverified.",
+      "evidence": [
+        "Go test symbols: TestMigration209RestoresOnlyCindyAlphaSearchBridge",
+        "JS/test declaration scan count: 3",
+        "execution_status=not_run",
+        "execution_limit=No Go, Vitest, database, migration, plugin process, network, production, or model test was executed for this entry."
+      ]
     },
     {
       "path": "backend/migrations/cindy_balance_confirmation_reset_migration_test.go",
@@ -13238,7 +13957,16 @@
       "present": true,
       "content_sha256": "5475c1b4da2e18408663b87a401ba3f1930d914439b5a5e22d1051fe6c66b93a",
       "review_fingerprint": "5475c1b4da2e18408663b87a401ba3f1930d914439b5a5e22d1051fe6c66b93a",
-      "review_status": "pending"
+      "review_status": "reviewed",
+      "decision": "reference",
+      "owner": "cindy-provider",
+      "reason": "Cindy-provider test/fixture; source review records concrete Cindy test symbols or fixture consumer and keeps behavioral execution unverified.",
+      "evidence": [
+        "Go test symbols: TestMigration213ResetsOnlyStrictCindyBalanceMarkers",
+        "JS/test declaration scan count: 3",
+        "execution_status=not_run",
+        "execution_limit=No Go, Vitest, database, migration, plugin process, network, production, or model test was executed for this entry."
+      ]
     },
     {
       "path": "backend/migrations/cindy_balance_marker_reset_migration_integration_test.go",
@@ -13247,7 +13975,16 @@
       "present": true,
       "content_sha256": "13c8ceeb8f69ab1b15a0edefca6d87db5aac8f2b3d7ed8acbc66b261022321da",
       "review_fingerprint": "13c8ceeb8f69ab1b15a0edefca6d87db5aac8f2b3d7ed8acbc66b261022321da",
-      "review_status": "pending"
+      "review_status": "reviewed",
+      "decision": "reference",
+      "owner": "cindy-provider",
+      "reason": "Cindy-provider test/fixture; source review records concrete Cindy test symbols or fixture consumer and keeps behavioral execution unverified.",
+      "evidence": [
+        "Go test symbols: TestCindyBalanceMarkerResetMigrationIsStrictAndIdempotent, TestCindyBalanceMarkerRestoreMigrationIsStrictAndIdempotent, TestCindyBalanceConfirmationResetMigrationIsStrictAndIdempotent",
+        "JS/test declaration scan count: 11",
+        "execution_status=not_run",
+        "execution_limit=No Go, Vitest, database, migration, plugin process, network, production, or model test was executed for this entry."
+      ]
     },
     {
       "path": "backend/migrations/cindy_balance_marker_reset_migration_test.go",
@@ -13256,7 +13993,16 @@
       "present": true,
       "content_sha256": "70167600b9df4e4dcf76872bd7b8924e2bad4fddc2ed508e27f9bd21ed29a19a",
       "review_fingerprint": "70167600b9df4e4dcf76872bd7b8924e2bad4fddc2ed508e27f9bd21ed29a19a",
-      "review_status": "pending"
+      "review_status": "reviewed",
+      "decision": "reference",
+      "owner": "cindy-provider",
+      "reason": "Cindy-provider test/fixture; source review records concrete Cindy test symbols or fixture consumer and keeps behavioral execution unverified.",
+      "evidence": [
+        "Go test symbols: TestMigration210ResetsOnlyLegacyCindyBalanceMarkers",
+        "JS/test declaration scan count: 3",
+        "execution_status=not_run",
+        "execution_limit=No Go, Vitest, database, migration, plugin process, network, production, or model test was executed for this entry."
+      ]
     },
     {
       "path": "backend/migrations/cindy_balance_marker_restore_migration_test.go",
@@ -13265,7 +14011,16 @@
       "present": true,
       "content_sha256": "b70d248a4cf29e9d94a74b2b5196d00ae27a07b1fcf825a0651c973d53a6c227",
       "review_fingerprint": "b70d248a4cf29e9d94a74b2b5196d00ae27a07b1fcf825a0651c973d53a6c227",
-      "review_status": "pending"
+      "review_status": "reviewed",
+      "decision": "reference",
+      "owner": "cindy-provider",
+      "reason": "Cindy-provider test/fixture; source review records concrete Cindy test symbols or fixture consumer and keeps behavioral execution unverified.",
+      "evidence": [
+        "Go test symbols: TestMigration211RestoresOnlyExactUnresolvedCindyBudgetMarkers",
+        "JS/test declaration scan count: 5",
+        "execution_status=not_run",
+        "execution_limit=No Go, Vitest, database, migration, plugin process, network, production, or model test was executed for this entry."
+      ]
     },
     {
       "path": "backend/migrations/cindy_balance_probe_jobs_migration_test.go",
@@ -13274,7 +14029,16 @@
       "present": true,
       "content_sha256": "fff48f958ed70abce99daf7790dd8fcb9def4cf69157d4df0ea30ec554faae26",
       "review_fingerprint": "fff48f958ed70abce99daf7790dd8fcb9def4cf69157d4df0ea30ec554faae26",
-      "review_status": "pending"
+      "review_status": "reviewed",
+      "decision": "reference",
+      "owner": "cindy-provider",
+      "reason": "Cindy-provider test/fixture; source review records concrete Cindy test symbols or fixture consumer and keeps behavioral execution unverified.",
+      "evidence": [
+        "Go test symbols: TestMigration224UsesExactFilenameAndCreatesProbeTables, TestMigration224AllowsOnlyOneActiveProbeJob, TestMigration224ConstrainsRateAndRequestCounts, TestMigration224DoesNotPersistProbeSecretsOrRawPayloads",
+        "JS/test declaration scan count: 10",
+        "execution_status=not_run",
+        "execution_limit=No Go, Vitest, database, migration, plugin process, network, production, or model test was executed for this entry."
+      ]
     },
     {
       "path": "backend/migrations/cindy_channel_binding_migration_integration_test.go",
@@ -13283,7 +14047,16 @@
       "present": true,
       "content_sha256": "6fbedd6ecad8f907cc42f06cfff2a39357d2a08f8b50cc34600794e8c23be007",
       "review_fingerprint": "6fbedd6ecad8f907cc42f06cfff2a39357d2a08f8b50cc34600794e8c23be007",
-      "review_status": "pending"
+      "review_status": "reviewed",
+      "decision": "reference",
+      "owner": "cindy-provider",
+      "reason": "Cindy-provider test/fixture; source review records concrete Cindy test symbols or fixture consumer and keeps behavioral execution unverified.",
+      "evidence": [
+        "Go test symbols: TestMigration236BindsStrictCindyGroupsAndIsIdempotent, TestMigration236FailsClosedWhenStrictCindyGroupAlreadyHasAnotherChannel, TestMigration236MaintainsBindingAcrossMembershipAndIdentityMutations, TestMigration236RejectsMarkedChannelCustomData",
+        "JS/test declaration scan count: 16",
+        "execution_status=not_run",
+        "execution_limit=No Go, Vitest, database, migration, plugin process, network, production, or model test was executed for this entry."
+      ]
     },
     {
       "path": "backend/migrations/cindy_group_identity_auth_cache_invalidation_migration_test.go",
@@ -13292,7 +14065,16 @@
       "present": true,
       "content_sha256": "1c7b18eb79752d3f4b392cfe9f59999fe30be451fae199f4fec6ffb44ffd3c0b",
       "review_fingerprint": "1c7b18eb79752d3f4b392cfe9f59999fe30be451fae199f4fec6ffb44ffd3c0b",
-      "review_status": "pending"
+      "review_status": "reviewed",
+      "decision": "reference",
+      "owner": "cindy-provider",
+      "reason": "Cindy-provider test/fixture; source review records concrete Cindy test symbols or fixture consumer and keeps behavioral execution unverified.",
+      "evidence": [
+        "Go test symbols: TestMigration212DurablyInvalidatesMaterializedCindyGroupIdentity",
+        "JS/test declaration scan count: 4",
+        "execution_status=not_run",
+        "execution_limit=No Go, Vitest, database, migration, plugin process, network, production, or model test was executed for this entry."
+      ]
     },
     {
       "path": "backend/migrations/cindy_health_state_migration_test.go",
@@ -13301,7 +14083,16 @@
       "present": true,
       "content_sha256": "f91f3b8d2d03a17f5198300f0b79e825fa152ec799d7602c9285ca08b5699bc6",
       "review_fingerprint": "f91f3b8d2d03a17f5198300f0b79e825fa152ec799d7602c9285ca08b5699bc6",
-      "review_status": "pending"
+      "review_status": "reviewed",
+      "decision": "reference",
+      "owner": "cindy-provider",
+      "reason": "Cindy-provider test/fixture; source review records concrete Cindy test symbols or fixture consumer and keeps behavioral execution unverified.",
+      "evidence": [
+        "Go test symbols: TestMigration231CreatesGenerationBoundSlimHealthState, TestMigration237AddsGenerationBoundBannedTerminalState",
+        "JS/test declaration scan count: 6",
+        "execution_status=not_run",
+        "execution_limit=No Go, Vitest, database, migration, plugin process, network, production, or model test was executed for this entry."
+      ]
     },
     {
       "path": "backend/migrations/cindy_openai_defaults_migration_integration_test.go",
@@ -13310,7 +14101,16 @@
       "present": true,
       "content_sha256": "785498e88aa4fb508873c2462ce243bb0ca3e2877e7a7bc088dc48be5d779b0b",
       "review_fingerprint": "785498e88aa4fb508873c2462ce243bb0ca3e2877e7a7bc088dc48be5d779b0b",
-      "review_status": "pending"
+      "review_status": "reviewed",
+      "decision": "reference",
+      "owner": "cindy-provider",
+      "reason": "Cindy-provider test/fixture; source review records concrete Cindy test symbols or fixture consumer and keeps behavioral execution unverified.",
+      "evidence": [
+        "Go test symbols: TestCindyOpenAIDefaultsMigrationIsStrictAndIdempotent",
+        "JS/test declaration scan count: 7",
+        "execution_status=not_run",
+        "execution_limit=No Go, Vitest, database, migration, plugin process, network, production, or model test was executed for this entry."
+      ]
     },
     {
       "path": "backend/migrations/cindy_openai_defaults_migration_test.go",
@@ -13319,7 +14119,16 @@
       "present": true,
       "content_sha256": "abe229c93dc218ab747944c5037dbb4450566a2af54b64841f2798185a4e1387",
       "review_fingerprint": "abe229c93dc218ab747944c5037dbb4450566a2af54b64841f2798185a4e1387",
-      "review_status": "pending"
+      "review_status": "reviewed",
+      "decision": "reference",
+      "owner": "cindy-provider",
+      "reason": "Cindy-provider test/fixture; source review records concrete Cindy test symbols or fixture consumer and keeps behavioral execution unverified.",
+      "evidence": [
+        "Go test symbols: TestMigration207RestoresOnlyCindyNativeOpenAIModes",
+        "JS/test declaration scan count: 3",
+        "execution_status=not_run",
+        "execution_limit=No Go, Vitest, database, migration, plugin process, network, production, or model test was executed for this entry."
+      ]
     },
     {
       "path": "backend/migrations/cindy_platform_v1_migration_integration_test.go",
@@ -13328,7 +14137,16 @@
       "present": true,
       "content_sha256": "52efe08298aabffff40691b844026e5af5e11f4c9c269f8827aea6f40dee7654",
       "review_fingerprint": "52efe08298aabffff40691b844026e5af5e11f4c9c269f8827aea6f40dee7654",
-      "review_status": "pending"
+      "review_status": "reviewed",
+      "decision": "reference",
+      "owner": "cindy-provider",
+      "reason": "Cindy-provider test/fixture; source review records concrete Cindy test symbols or fixture consumer and keeps behavioral execution unverified.",
+      "evidence": [
+        "Go test symbols: TestCindyPlatformProjectionRoundTripMigrationIsStrictAndIdempotent, TestMigration235PreservesMixedOpenAIGroupsAfterCanonicalReplay, TestMigration235SkipsStaleSoftDeletedAccountLedgerEntries",
+        "JS/test declaration scan count: 83",
+        "execution_status=not_run",
+        "execution_limit=No Go, Vitest, database, migration, plugin process, network, production, or model test was executed for this entry."
+      ]
     },
     {
       "path": "backend/migrations/cindy_platform_v1_migration_test.go",
@@ -13337,7 +14155,16 @@
       "present": true,
       "content_sha256": "821e990b0d64c427ca187498ddcf54fa8db6af32b32687d703bdc930d3800224",
       "review_fingerprint": "821e990b0d64c427ca187498ddcf54fa8db6af32b32687d703bdc930d3800224",
-      "review_status": "pending"
+      "review_status": "reviewed",
+      "decision": "reference",
+      "owner": "cindy-provider",
+      "reason": "Cindy-provider test/fixture; source review records concrete Cindy test symbols or fixture consumer and keeps behavioral execution unverified.",
+      "evidence": [
+        "Go test symbols: TestMigration229ProjectsOnlyExactLegacyCindyAndHasReversibleFunctions, TestMigration229UsesReservedPostUpstreamNumber, TestMigration235ModelAllowlistPreservesLegacyJSONByRenamingOnly, TestMigration235RestrictsLedgerReplayToLifecycleExcludedRows, TestMigration236DefinesManagedCindyChannelAndDurableInvalidation, TestMigration236PreservesCompleteGroupAuthInvalidationCoverage, TestMigration236TrimsReservedManagedChannelNames, TestMigration236IntegrationFixtureIncludesGroupAuthTriggerColumns",
+        "JS/test declaration scan count: 28",
+        "execution_status=not_run",
+        "execution_limit=No Go, Vitest, database, migration, plugin process, network, production, or model test was executed for this entry."
+      ]
     },
     {
       "path": "backend/migrations/cindy_prompt_cache_hash_migration_integration_test.go",
@@ -13346,7 +14173,16 @@
       "present": true,
       "content_sha256": "15c2de669fbd370b70128bdf0f6fb35127f59fb157853181b13ac1968fcd9fec",
       "review_fingerprint": "15c2de669fbd370b70128bdf0f6fb35127f59fb157853181b13ac1968fcd9fec",
-      "review_status": "pending"
+      "review_status": "reviewed",
+      "decision": "reference",
+      "owner": "cindy-provider",
+      "reason": "Cindy-provider test/fixture; source review records concrete Cindy test symbols or fixture consumer and keeps behavioral execution unverified.",
+      "evidence": [
+        "Go test symbols: TestCindyPromptCacheHashMigrationIsStrictAndIdempotent",
+        "JS/test declaration scan count: 6",
+        "execution_status=not_run",
+        "execution_limit=No Go, Vitest, database, migration, plugin process, network, production, or model test was executed for this entry."
+      ]
     },
     {
       "path": "backend/migrations/cindy_prompt_cache_hash_migration_test.go",
@@ -13355,7 +14191,16 @@
       "present": true,
       "content_sha256": "9232f28dc09a9fa49ed00d2f712879bf3d08048fa703e52388936961126be92a",
       "review_fingerprint": "9232f28dc09a9fa49ed00d2f712879bf3d08048fa703e52388936961126be92a",
-      "review_status": "pending"
+      "review_status": "reviewed",
+      "decision": "reference",
+      "owner": "cindy-provider",
+      "reason": "Cindy-provider test/fixture; source review records concrete Cindy test symbols or fixture consumer and keeps behavioral execution unverified.",
+      "evidence": [
+        "Go test symbols: TestMigration208UsesCindyPromptCacheHashOnly",
+        "JS/test declaration scan count: 3",
+        "execution_status=not_run",
+        "execution_limit=No Go, Vitest, database, migration, plugin process, network, production, or model test was executed for this entry."
+      ]
     },
     {
       "path": "backend/migrations/image_studio_jobs_migration_test.go",
@@ -13418,7 +14263,16 @@
       "present": true,
       "content_sha256": "94322c5cba4ad229e30283aca4cf30c0c685326b36e1f6805cae72e0fd121b82",
       "review_fingerprint": "94322c5cba4ad229e30283aca4cf30c0c685326b36e1f6805cae72e0fd121b82",
-      "review_status": "pending"
+      "review_status": "reviewed",
+      "decision": "reference",
+      "owner": "cindy-provider",
+      "reason": "Cindy-provider test/fixture; source review records concrete Cindy test symbols or fixture consumer and keeps behavioral execution unverified.",
+      "evidence": [
+        "Go test symbols: TestUserPlatformQuotasCindyMigration",
+        "JS/test declaration scan count: 6",
+        "execution_status=not_run",
+        "execution_limit=No Go, Vitest, database, migration, plugin process, network, production, or model test was executed for this entry."
+      ]
     },
     {
       "path": "backend/pkg/extensionapi/proxy/address.go",
@@ -14182,7 +15036,15 @@
       "present": true,
       "content_sha256": "33c2f16fb5bf1c123c5ce4aadf627846add4088ef6091c784aec7dd6cb05e094",
       "review_fingerprint": "33c2f16fb5bf1c123c5ce4aadf627846add4088ef6091c784aec7dd6cb05e094",
-      "review_status": "pending"
+      "review_status": "reviewed",
+      "decision": "reference",
+      "owner": "cindy-provider",
+      "reason": "Cindy-provider test/fixture; source review records concrete Cindy test symbols or fixture consumer and keeps behavioral execution unverified.",
+      "evidence": [
+        "JS/test declaration scan count: 18",
+        "execution_status=not_run",
+        "execution_limit=No Go, Vitest, database, migration, plugin process, network, production, or model test was executed for this entry."
+      ]
     },
     {
       "path": "frontend/src/api/__tests__/cindyBalanceProbe.spec.ts",
@@ -14191,7 +15053,15 @@
       "present": true,
       "content_sha256": "9bb8cee74a0f870b4938452a7fae5cff0e5a16a66260db1e1c64e3a3153c7126",
       "review_fingerprint": "9bb8cee74a0f870b4938452a7fae5cff0e5a16a66260db1e1c64e3a3153c7126",
-      "review_status": "pending"
+      "review_status": "reviewed",
+      "decision": "reference",
+      "owner": "cindy-provider",
+      "reason": "Cindy-provider test/fixture; source review records concrete Cindy test symbols or fixture consumer and keeps behavioral execution unverified.",
+      "evidence": [
+        "JS/test declaration scan count: 25",
+        "execution_status=not_run",
+        "execution_limit=No Go, Vitest, database, migration, plugin process, network, production, or model test was executed for this entry."
+      ]
     },
     {
       "path": "frontend/src/api/__tests__/client.spec.ts",
@@ -16583,7 +17453,15 @@
       "present": true,
       "content_sha256": "d6752aa3b581f690bb5305e913894bda7d82c61f8278a61c8cdf9181516c4fb7",
       "review_fingerprint": "d6752aa3b581f690bb5305e913894bda7d82c61f8278a61c8cdf9181516c4fb7",
-      "review_status": "pending"
+      "review_status": "reviewed",
+      "decision": "reference",
+      "owner": "cindy-provider",
+      "reason": "Cindy-provider test/fixture; source review records concrete Cindy test symbols or fixture consumer and keeps behavioral execution unverified.",
+      "evidence": [
+        "JS/test declaration scan count: 12",
+        "execution_status=not_run",
+        "execution_limit=No Go, Vitest, database, migration, plugin process, network, production, or model test was executed for this entry."
+      ]
     },
     {
       "path": "frontend/src/features/cindy-duplicate-inventory/CindyDuplicateInventoryPanel.vue",
@@ -16684,7 +17562,15 @@
       "present": true,
       "content_sha256": "fae8829f84755002072aba6ffeeccf52d76c48c7356f26d31ab78f1b4e5ae0ed",
       "review_fingerprint": "fae8829f84755002072aba6ffeeccf52d76c48c7356f26d31ab78f1b4e5ae0ed",
-      "review_status": "pending"
+      "review_status": "reviewed",
+      "decision": "reference",
+      "owner": "cindy-provider",
+      "reason": "Cindy-provider test/fixture; source review records concrete Cindy test symbols or fixture consumer and keeps behavioral execution unverified.",
+      "evidence": [
+        "JS/test declaration scan count: 7",
+        "execution_status=not_run",
+        "execution_limit=No Go, Vitest, database, migration, plugin process, network, production, or model test was executed for this entry."
+      ]
     },
     {
       "path": "frontend/src/i18n/locales/en/admin/accountTasks.ts",
@@ -17044,7 +17930,15 @@
       "present": true,
       "content_sha256": "9bd82467cee30eeaf40be3fe1d22cfb7cc571ee5320681271e6d1c7556998586",
       "review_fingerprint": "9bd82467cee30eeaf40be3fe1d22cfb7cc571ee5320681271e6d1c7556998586",
-      "review_status": "pending"
+      "review_status": "reviewed",
+      "decision": "reference",
+      "owner": "cindy-provider",
+      "reason": "Cindy-provider test/fixture; source review records concrete Cindy test symbols or fixture consumer and keeps behavioral execution unverified.",
+      "evidence": [
+        "JS/test declaration scan count: 10",
+        "execution_status=not_run",
+        "execution_limit=No Go, Vitest, database, migration, plugin process, network, production, or model test was executed for this entry."
+      ]
     },
     {
       "path": "frontend/src/utils/__tests__/modelContextCapacity.spec.ts",
@@ -18932,7 +19826,16 @@
       "present": true,
       "content_sha256": "33cfe1bf5707469e8db8a3ec85ef599620c26dc37be7c7ac5715a8308163e251",
       "review_fingerprint": "33cfe1bf5707469e8db8a3ec85ef599620c26dc37be7c7ac5715a8308163e251",
-      "review_status": "pending"
+      "review_status": "reviewed",
+      "decision": "reference",
+      "owner": "cindy-provider",
+      "reason": "Cindy-provider test/fixture; source review records concrete Cindy test symbols or fixture consumer and keeps behavioral execution unverified.",
+      "evidence": [
+        "Go test symbols: TestManagedChannelProjectionPreservesAliasesAndRejectsUnverifiedModels",
+        "JS/test declaration scan count: 4",
+        "execution_status=not_run",
+        "execution_limit=No Go, Vitest, database, migration, plugin process, network, production, or model test was executed for this entry."
+      ]
     },
     {
       "path": "plugins/cindy-provider/catalog/codex_manifest.go",
@@ -18950,7 +19853,16 @@
       "present": true,
       "content_sha256": "fc11c570d2876630409474779a467b78e98a9c1f726d9bfaafdcf880f0eafaa3",
       "review_fingerprint": "fc11c570d2876630409474779a467b78e98a9c1f726d9bfaafdcf880f0eafaa3",
-      "review_status": "pending"
+      "review_status": "reviewed",
+      "decision": "reference",
+      "owner": "cindy-provider",
+      "reason": "Cindy-provider test/fixture; source review records concrete Cindy test symbols or fixture consumer and keeps behavioral execution unverified.",
+      "evidence": [
+        "Go test symbols: TestCodexPresentationOwnsRulesAndClonesEachRead",
+        "JS/test declaration scan count: 11",
+        "execution_status=not_run",
+        "execution_limit=No Go, Vitest, database, migration, plugin process, network, production, or model test was executed for this entry."
+      ]
     },
     {
       "path": "plugins/cindy-provider/catalog/health.go",
@@ -19009,7 +19921,16 @@
       "present": true,
       "content_sha256": "e94f5236412d312e5c901aa8ca8c8be9177b1ace5ff1941bdb51e5665c429f8c",
       "review_fingerprint": "e94f5236412d312e5c901aa8ca8c8be9177b1ace5ff1941bdb51e5665c429f8c",
-      "review_status": "pending"
+      "review_status": "reviewed",
+      "decision": "reference",
+      "owner": "cindy-provider",
+      "reason": "Cindy-provider test/fixture; source review records concrete Cindy test symbols or fixture consumer and keeps behavioral execution unverified.",
+      "evidence": [
+        "Go test symbols: TestInvalidProviderConfigurationCannotChangeActivation, TestHealthPolicyUsesOnlyExactStructuredBudgetSignals, TestProviderConfigurationControlsCatalogAndSearchIndependently",
+        "JS/test declaration scan count: 9",
+        "execution_status=not_run",
+        "execution_limit=No Go, Vitest, database, migration, plugin process, network, production, or model test was executed for this entry."
+      ]
     },
     {
       "path": "plugins/cindy-provider/catalog/probe.go",
@@ -19027,7 +19948,16 @@
       "present": true,
       "content_sha256": "0bac911763591cce0ed63dd5d187e082424211f707d8cb0c796d055a015495d1",
       "review_fingerprint": "0bac911763591cce0ed63dd5d187e082424211f707d8cb0c796d055a015495d1",
-      "review_status": "pending"
+      "review_status": "reviewed",
+      "decision": "reference",
+      "owner": "cindy-provider",
+      "reason": "Cindy-provider test/fixture; source review records concrete Cindy test symbols or fixture consumer and keeps behavioral execution unverified.",
+      "evidence": [
+        "Go test symbols: TestProbePolicyOwnsControlsAndHealthDecisions",
+        "JS/test declaration scan count: 8",
+        "execution_status=not_run",
+        "execution_limit=No Go, Vitest, database, migration, plugin process, network, production, or model test was executed for this entry."
+      ]
     },
     {
       "path": "plugins/cindy-provider/catalog/search.go",
@@ -19045,7 +19975,16 @@
       "present": true,
       "content_sha256": "a2b641690d62d26b7bac402fdf9996dadd5d42d9cbcd22dde31a3d81a27a1fe5",
       "review_fingerprint": "a2b641690d62d26b7bac402fdf9996dadd5d42d9cbcd22dde31a3d81a27a1fe5",
-      "review_status": "pending"
+      "review_status": "reviewed",
+      "decision": "reference",
+      "owner": "cindy-provider",
+      "reason": "Cindy-provider test/fixture; source review records concrete Cindy test symbols or fixture consumer and keeps behavioral execution unverified.",
+      "evidence": [
+        "Go test symbols: TestAlphaSearchPlanRequiresSearchEnabled, TestAlphaSearchPlanUsesExactPublicModelAndResponsesFirst, TestAlphaSearchPlanRejectsHiddenLiveAndCompatibilityAliasModels, TestAlphaSearchPlanUsesHelperQualificationInsteadOfPublicMessagesEndpoint, TestAlphaSearchPlanWithoutQualifiedHelperDoesNotFallback, TestAlphaSearchPlanProviderOperationCarriesOnlyModel",
+        "JS/test declaration scan count: 23",
+        "execution_status=not_run",
+        "execution_limit=No Go, Vitest, database, migration, plugin process, network, production, or model test was executed for this entry."
+      ]
     },
     {
       "path": "plugins/cindy-provider/cmd/plugin/main.go",
@@ -19173,7 +20112,15 @@
       "present": true,
       "content_sha256": "bc7c6f15f4a2171a387fbc191bb2222b499afc55b49c1963754ae568f83cc8e5",
       "review_fingerprint": "bc7c6f15f4a2171a387fbc191bb2222b499afc55b49c1963754ae568f83cc8e5",
-      "review_status": "pending"
+      "review_status": "reviewed",
+      "decision": "reference",
+      "owner": "cindy-provider",
+      "reason": "Cindy-provider test/fixture; source review records concrete Cindy test symbols or fixture consumer and keeps behavioral execution unverified.",
+      "evidence": [
+        "JS/test declaration scan count: 71",
+        "execution_status=not_run",
+        "execution_limit=No Go, Vitest, database, migration, plugin process, network, production, or model test was executed for this entry."
+      ]
     },
     {
       "path": "plugins/cindy-provider/ui/src/__tests__/CindyDuplicateInventoryPanel.spec.ts",
@@ -19182,7 +20129,15 @@
       "present": true,
       "content_sha256": "55617c6ae0256364f11127e93936c873145b0d44037bab6ef8e83a4c5a554d10",
       "review_fingerprint": "55617c6ae0256364f11127e93936c873145b0d44037bab6ef8e83a4c5a554d10",
-      "review_status": "pending"
+      "review_status": "reviewed",
+      "decision": "reference",
+      "owner": "cindy-provider",
+      "reason": "Cindy-provider test/fixture; source review records concrete Cindy test symbols or fixture consumer and keeps behavioral execution unverified.",
+      "evidence": [
+        "JS/test declaration scan count: 8",
+        "execution_status=not_run",
+        "execution_limit=No Go, Vitest, database, migration, plugin process, network, production, or model test was executed for this entry."
+      ]
     },
     {
       "path": "plugins/cindy-provider/ui/src/__tests__/CindyGroupAuditDialog.spec.ts",
@@ -19191,7 +20146,15 @@
       "present": true,
       "content_sha256": "00ec81fa5316118b9dc113183393a87bdb32eec6d9cddaf5cca98cee1efb76a5",
       "review_fingerprint": "00ec81fa5316118b9dc113183393a87bdb32eec6d9cddaf5cca98cee1efb76a5",
-      "review_status": "pending"
+      "review_status": "reviewed",
+      "decision": "reference",
+      "owner": "cindy-provider",
+      "reason": "Cindy-provider test/fixture; source review records concrete Cindy test symbols or fixture consumer and keeps behavioral execution unverified.",
+      "evidence": [
+        "JS/test declaration scan count: 69",
+        "execution_status=not_run",
+        "execution_limit=No Go, Vitest, database, migration, plugin process, network, production, or model test was executed for this entry."
+      ]
     },
     {
       "path": "plugins/cindy-provider/ui/src/api.ts",
@@ -19786,7 +20749,16 @@
       "present": true,
       "content_sha256": "9d5ba9ebb50a27b46ec10c44456431bd6bb7b58240b1115a595c5099dfbe3af3",
       "review_fingerprint": "9d5ba9ebb50a27b46ec10c44456431bd6bb7b58240b1115a595c5099dfbe3af3",
-      "review_status": "pending"
+      "review_status": "reviewed",
+      "decision": "reference",
+      "owner": "model-policy",
+      "reason": "Model-policy test/fixture; source review records concrete catalog/capacity test symbols and does not claim model or network execution.",
+      "evidence": [
+        "Go test symbols: TestCatalogProcessContractPreservesProductScope, TestCatalogSnapshotCannotMutateActiveReferences",
+        "JS/test declaration scan count: 8",
+        "execution_status=not_run",
+        "execution_limit=No Go, Vitest, database, migration, plugin process, network, production, or model test was executed for this entry."
+      ]
     },
     {
       "path": "plugins/model-policy/cmd/plugin/main.go",
