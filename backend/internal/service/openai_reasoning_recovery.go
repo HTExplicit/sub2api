@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/pkg/logger"
+	extensionv1 "github.com/Wei-Shaw/sub2api/pkg/extensionapi/v1"
 	"github.com/gin-gonic/gin"
 	"github.com/tidwall/gjson"
 	"github.com/tidwall/sjson"
@@ -66,6 +67,7 @@ func (s *OpenAIGatewayService) newOpenAIReasoningRecoveryState(ctx context.Conte
 	if ctx == nil {
 		ctx = context.Background()
 	}
+	ctx = withCodexRecoveryScope(ctx, account)
 	enabled, policyErr := openAIReasoningPolicyEnabled(ctx, account, OpenAIReasoningSignatureRecoveryEnabledExtraKey)
 	r := &openAIReasoningRecoveryState{
 		ctx: ctx, c: c, account: account, token: token,
@@ -376,8 +378,14 @@ func openAIReasoningCipherItems(body []byte) []openAIReasoningCipherItem {
 type openAIReasoningRejection struct{ code, param string }
 
 func parseOpenAIReasoningRejection(payload []byte) (openAIReasoningRejection, bool) {
-	rejection, recognized, err := readOpenAIRecoveryRejection(context.Background(), payload)
-	return rejection, err == nil && recognized
+	envelope := openAIRecoveryEnvelope(payload)
+	if !extensionv1.ValidReasoningRejectionEnvelope(envelope) {
+		return openAIReasoningRejection{}, false
+	}
+	if *envelope.Code != "thinking_signature_invalid" && *envelope.Code != "invalid_encrypted_content" {
+		return openAIReasoningRejection{}, false
+	}
+	return openAIReasoningRejection{code: *envelope.Code, param: envelope.Param}, true
 }
 
 func openAIReasoningToolHistoryAllowsRecovery(body []byte) bool {
@@ -391,7 +399,11 @@ func openAIReasoningToolHistoryAllowsRecovery(body []byte) bool {
 }
 
 func openAIReasoningRejectedIndices(body []byte, rejection openAIReasoningRejection) ([]int, []string) {
-	selection, err := selectOpenAIRecoveryIndices(context.Background(), body, rejection.param)
+	return openAIReasoningRejectedIndicesContext(context.Background(), body, rejection)
+}
+
+func openAIReasoningRejectedIndicesContext(ctx context.Context, body []byte, rejection openAIReasoningRejection) ([]int, []string) {
+	selection, err := selectOpenAIRecoveryIndices(ctx, body, rejection.param)
 	if err != nil || len(selection.Indices) == 0 {
 		return nil, nil
 	}
@@ -508,7 +520,7 @@ func openAIReasoningRecoverySignal(c *gin.Context, payload []byte, semanticCommi
 	if !ok {
 		return nil
 	}
-	indices, _ := openAIReasoningRejectedIndices(r.wire, rejection)
+	indices, _ := openAIReasoningRejectedIndicesContext(r.ctx, r.wire, rejection)
 	if len(indices) == 0 {
 		return nil
 	}
@@ -552,7 +564,7 @@ func (r *openAIReasoningRecoveryState) TryRecover(status int, headers http.Heade
 	if !ok {
 		return nil, false
 	}
-	indices, hashes := openAIReasoningRejectedIndices(r.wire, rejection)
+	indices, hashes := openAIReasoningRejectedIndicesContext(r.ctx, r.wire, rejection)
 	if len(indices) == 0 {
 		return nil, false
 	}

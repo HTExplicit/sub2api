@@ -318,6 +318,7 @@ func registerOpsRoutes(admin *gin.RouterGroup, h *handler.Handlers) {
 		// Error logs (legacy)
 		ops.GET("/errors", h.Admin.Ops.GetErrorLogs)
 		ops.GET("/errors/:id", h.Admin.Ops.GetErrorLogByID)
+		ops.GET("/errors/:id/diagnostics", h.Admin.Plugin.RegisterResource(extensionv1.ResourceDescriptor{ResourceGrant: extensionv1.ResourceGrant{Name: "ops.error.diagnostics", Capability: extensionv1.CapabilityRecovery, Permission: "admin"}, Method: "GET", Path: ops.BasePath() + "/errors/:id/diagnostics"}), h.Admin.Plugin.ErrorDiagnostics(h.Admin.Ops))
 		ops.PUT("/errors/:id/resolve", h.Admin.Ops.UpdateErrorResolution)
 
 		// Request errors (client-visible failures)

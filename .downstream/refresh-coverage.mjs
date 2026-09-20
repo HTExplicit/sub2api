@@ -16,6 +16,16 @@ const git = (...args) => execFileSync('git', args, { cwd: root, encoding: 'utf8'
 const sha256 = bytes => createHash('sha256').update(bytes).digest('hex')
 const checkOnly = process.argv.includes('--check')
 const requireComplete = process.argv.includes('--require-complete')
+const reviewFiles = []
+for (let index = 2; index < process.argv.length; index++) {
+  const argument = process.argv[index]
+  if (argument === '--import-review') {
+    const file = process.argv[++index]
+    if (!file || file.startsWith('--')) throw new Error('--import-review requires a review JSON file')
+    reviewFiles.push(file)
+  } else if (!['--check', '--require-complete'].includes(argument)) throw new Error(`unknown argument: ${argument}`)
+}
+if (checkOnly && reviewFiles.length) throw new Error('--check cannot import review decisions')
 const decisions = new Set(['plugin', 'core-correctness', 'core-mechanism', 'adapter', 'upstream-covered', 'generated-source', 'reference'])
 const validReview = entry => entry?.review_status === 'reviewed' && decisions.has(entry.decision) &&
   typeof entry.owner === 'string' && entry.owner.trim() && typeof entry.reason === 'string' && entry.reason.trim() &&
@@ -79,6 +89,31 @@ const entries = paths.map(file => {
     review_status: reusable ? 'reviewed' : 'pending',
     ...(reusable ? { decision: prior.decision, owner: prior.owner, reason: prior.reason, evidence: prior.evidence } : {}) }
 })
+// Import explicit human/agent review conclusions only after checking every
+// record against the current inventory. No file is written on a failed import.
+const imported = new Set()
+const byPath = new Map(entries.map(entry => [entry.path, entry]))
+for (const file of reviewFiles) {
+  const review = JSON.parse(fs.readFileSync(file, 'utf8'))
+  if (review.upstream_base !== upstream || !Array.isArray(review.entries) || !review.entries.length) {
+    throw new Error(`review does not identify this upstream baseline: ${file}`)
+  }
+  for (const record of review.entries) {
+    if (record.review_status === 'pending') continue
+    const entry = byPath.get(record.path)
+    if (!entry || imported.has(record.path) || record.path === '.downstream/coverage-v0.2.7.json' || !validReview(record)) {
+      throw new Error(`invalid, duplicate or unknown review record: ${record.path}`)
+    }
+    if (entry.role !== record.role || entry.review_fingerprint !== record.review_fingerprint ||
+        entry.content_sha256 !== record.content_sha256 ||
+        (!entry.present && entry.deleted_upstream_blob !== record.deleted_upstream_blob)) {
+      throw new Error(`review source changed: ${record.path}`)
+    }
+    Object.assign(entry, { review_status: 'reviewed', decision: record.decision, owner: record.owner,
+      reason: record.reason, evidence: record.evidence })
+    imported.add(record.path)
+  }
+}
 const sourceDigest = sha256(entries.filter(entry => entry.review_fingerprint != null).map(entry => `${entry.path}\0${entry.review_fingerprint}`).join('\n'))
 const metadata = entries.find(entry => entry.path === '.downstream/coverage-v0.2.7.json')
 if (metadata) Object.assign(metadata, {
@@ -108,6 +143,6 @@ if (checkOnly) {
   }
 } else fs.writeFileSync(destination, JSON.stringify(inventory, null, 2) + '\n')
 console.log(JSON.stringify({ total_paths: inventory.total_paths, generated_assets_and_locks: generated, source_digest: inventory.source_digest,
-  review_complete: inventory.review_complete, pending_paths: inventory.pending_paths.length,
+  review_complete: inventory.review_complete, pending_paths: inventory.pending_paths.length, imported_reviews: imported.size,
   candidate_owners: Object.fromEntries(Object.entries(candidateOwners).map(([owner, files]) => [owner, files.length])) }))
 if (requireComplete && !inventory.review_complete) throw new Error(`${inventory.pending_paths.length} paths still require review`)

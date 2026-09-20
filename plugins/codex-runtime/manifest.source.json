@@ -28,9 +28,10 @@
   ],
   "operations": {
     "extensions.request.v1": ["inject", "codex.identity.available", "codex.identity.plan", "codex.identity.derive", "codex.identity.validate", "codex.identity.agent", "codex.identity.sandbox", "codex.transport.plan"],
-    "extensions.recovery.v1": ["codex.recovery.available", "codex.recovery.enabled", "codex.recovery.rejection", "codex.recovery.select"]
+    "extensions.recovery.v1": ["codex.recovery.available", "codex.recovery.enabled", "codex.recovery.rejection", "codex.recovery.select", "codex.replay.rules"]
   },
   "contributions": [
+    { "id": "ops-error-diagnostics", "slot": "surface", "entrypoint": "ui/diagnostics.html", "capability": "extensions.recovery.v1", "permission": "admin", "label": { "zh": "Codex 续接诊断", "en": "Codex continuation diagnostics" } },
     { "id": "codex-recovery-settings", "slot": "surface", "capability": "extensions.recovery.v1", "permission": "admin", "label": { "zh": "推理状态与恢复策略", "en": "Reasoning state and recovery" } },
     {
       "id": "proxy-settings", "slot": "admin.settings", "action": "proxy.test", "entrypoint": "ui/index.html", "permission": "admin",
@@ -47,6 +48,7 @@
       "account_filter": { "platforms": ["openai"], "types": ["oauth", "setup-token"], "exclude_shadows": true }
     }
   ],
+  "resources": [{ "name": "ops.error.diagnostics", "capability": "extensions.recovery.v1", "permission": "admin" }],
   "runtimes": {},
   "ui": { "entrypoint": "ui/index.html" },
   "files": {}

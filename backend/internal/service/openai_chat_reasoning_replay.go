@@ -9,9 +9,11 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"slices"
 	"strings"
 
 	"github.com/Wei-Shaw/sub2api/internal/pkg/apicompat"
+	extensionv1 "github.com/Wei-Shaw/sub2api/pkg/extensionapi/v1"
 	"github.com/gin-gonic/gin"
 	"github.com/tidwall/gjson"
 	"github.com/tidwall/sjson"
@@ -27,6 +29,7 @@ type openAIChatReasoningReplay struct {
 	store           OpenAIReasoningStateStore
 	budget          *OpenAIReasoningCacheBudget
 	scope           OpenAIReasoningCacheScope
+	rules           extensionv1.ReplayRules
 	projectedPrefix string
 	actualPrefix    string
 	replayed        []openAIChatReasoningReplayHit
@@ -54,8 +57,8 @@ type openAIChatReasoningProjectionCall struct {
 // normalizeOpenAIChatReasoningProjection is deliberately narrower than the
 // general compatibility converter. If a client changes a semantic field that
 // Chat cannot round-trip, a cache miss is safer than replacing that field.
-func normalizeOpenAIChatReasoningProjection(message apicompat.ChatMessage) (json.RawMessage, bool) {
-	if message.Role != "assistant" || message.Name != "" || message.ToolCallID != "" || message.FunctionCall != nil || len(message.ToolCalls) == 0 || len(message.ToolCalls) > 32 {
+func normalizeOpenAIChatReasoningProjection(message apicompat.ChatMessage, rules extensionv1.ReplayRules) (json.RawMessage, bool) {
+	if !rules.Enabled || message.Role != "assistant" || message.Name != "" || message.ToolCallID != "" || message.FunctionCall != nil || len(message.ToolCalls) == 0 || len(message.ToolCalls) > rules.MaxToolCalls {
 		return nil, false
 	}
 	projection := openAIChatReasoningProjection{Reasoning: message.ReasoningContent}
@@ -95,19 +98,13 @@ func normalizeOpenAIChatReasoningProjection(message apicompat.ChatMessage) (json
 	return raw, err == nil
 }
 
-func openAIChatReasoningRawMessageSupported(raw json.RawMessage) bool {
+func openAIChatReasoningRawMessageSupported(raw json.RawMessage, rules extensionv1.ReplayRules) bool {
 	var fields map[string]json.RawMessage
 	if json.Unmarshal(raw, &fields) != nil {
 		return false
 	}
 	for name, value := range fields {
-		switch name {
-		case "role", "content", "reasoning_content", "reasoning", "tool_calls":
-		case "refusal":
-			if string(bytes.TrimSpace(value)) != "null" {
-				return false
-			}
-		default:
+		if !slices.Contains(rules.ChatFields, name) || (name == "refusal" && string(bytes.TrimSpace(value)) != "null") {
 			return false
 		}
 	}
@@ -174,7 +171,7 @@ func openAIChatReasoningPrefixHash(body []byte, input []json.RawMessage) (string
 	return openAIChatReasoningHash(canonical), nil
 }
 
-func openAIChatReasoningBatchKey(prefix string, projection json.RawMessage) string {
+func openAIChatReasoningBatchKey(prefix string, projection json.RawMessage, rules extensionv1.ReplayRules) string {
 	var visible openAIChatReasoningProjection
 	if json.Unmarshal(projection, &visible) != nil {
 		return ""
@@ -182,17 +179,20 @@ func openAIChatReasoningBatchKey(prefix string, projection json.RawMessage) stri
 	// reasoning_content is a nonstandard Chat extension. A normal SDK may
 	// omit it on replay; completing precisely that lost state is this cache's
 	// purpose. Visible assistant content and tool identity are always required.
-	visible.Reasoning = ""
+	if rules.AllowOmittedReasoning {
+		visible.Reasoning = ""
+	}
+	policy, _ := json.Marshal(rules)
 	canonical, _ := json.Marshal(visible)
-	return openAIChatReasoningHash(append([]byte("chat-replay-v1:"+prefix+":"), canonical...))
+	return openAIChatReasoningHash(append([]byte("chat-replay-v1:"+openAIChatReasoningHash(policy)+":"+prefix+":"), canonical...))
 }
 
-func openAIChatReasoningProjectionMatches(stored, incoming json.RawMessage) bool {
+func openAIChatReasoningProjectionMatches(stored, incoming json.RawMessage, rules extensionv1.ReplayRules) bool {
 	var original, client openAIChatReasoningProjection
 	if json.Unmarshal(stored, &original) != nil || json.Unmarshal(incoming, &client) != nil {
 		return false
 	}
-	if client.Reasoning != "" && client.Reasoning != original.Reasoning {
+	if (!rules.AllowOmittedReasoning || client.Reasoning != "") && client.Reasoning != original.Reasoning {
 		return false
 	}
 	original.Reasoning, client.Reasoning = "", ""
@@ -268,12 +268,17 @@ type openAIChatReasoningReplayCandidate struct {
 }
 
 func (s *OpenAIGatewayService) prepareOpenAIChatReasoningReplay(ctx context.Context, c *gin.Context, account *Account, request *http.Request, chatBody, wireBody []byte, enabled bool) (*openAIChatReasoningReplay, []byte) {
+	ctx = withCodexRecoveryScope(ctx, account)
 	if c != nil {
 		c.Set(openAIChatReasoningReplayContextKey, (*openAIChatReasoningReplay)(nil))
 		c.Set("openai_chat_reasoning_replay_hits", 0)
 		c.Set("openai_chat_reasoning_replay_stored", false)
 	}
 	if !enabled || account == nil || !account.IsOpenAIChatReasoningReplayEnabled() || ctx.Err() != nil {
+		return nil, wireBody
+	}
+	rules, policyErr := readOpenAIReplayRules(ctx)
+	if policyErr != nil || !rules.Enabled {
 		return nil, wireBody
 	}
 	store := s.openAIReasoningStateStore()
@@ -288,7 +293,7 @@ func (s *OpenAIGatewayService) prepareOpenAIChatReasoningReplay(ctx context.Cont
 	if !ok {
 		return nil, wireBody
 	}
-	replay := &openAIChatReasoningReplay{ctx: ctx, c: c, store: store, budget: openAIReasoningCacheBudgetForRequest(c), scope: scope}
+	replay := &openAIChatReasoningReplay{ctx: ctx, c: c, store: store, budget: openAIReasoningCacheBudgetForRequest(c), scope: scope, rules: rules}
 	var requestMessages struct {
 		Messages []json.RawMessage `json:"messages"`
 	}
@@ -302,8 +307,8 @@ func (s *OpenAIGatewayService) prepareOpenAIChatReasoningReplay(ctx context.Cont
 		if len(candidates) == OpenAIReasoningStateMaxLookupEntries {
 			break
 		}
-		projection, supported := normalizeOpenAIChatReasoningProjection(message)
-		if !supported || !openAIChatReasoningRawMessageSupported(requestMessages.Messages[index]) || !openAIChatReasoningToolResultsComplete(chatRequest.Messages, index) {
+		projection, supported := normalizeOpenAIChatReasoningProjection(message, rules)
+		if !supported || !openAIChatReasoningRawMessageSupported(requestMessages.Messages[index], rules) || !openAIChatReasoningToolResultsComplete(chatRequest.Messages, index) {
 			continue
 		}
 		items, err := apicompat.ChatMessageResponsesInput(message)
@@ -334,7 +339,7 @@ func (s *OpenAIGatewayService) prepareOpenAIChatReasoningReplay(ctx context.Cont
 		if hashErr != nil {
 			return nil, wireBody
 		}
-		candidate.key = openAIChatReasoningBatchKey(prefix, candidate.projection)
+		candidate.key = openAIChatReasoningBatchKey(prefix, candidate.projection, rules)
 		keys = append(keys, candidate.key)
 		projected = append(projected, candidate.canonical...)
 		previousEnd = candidate.start + candidate.length
@@ -357,12 +362,12 @@ func (s *OpenAIGatewayService) prepareOpenAIChatReasoningReplay(ctx context.Cont
 			offset := 0
 			for _, candidate := range candidates {
 				batch, found := batches[candidate.key]
-				if !found || !openAIChatReasoningProjectionMatches(batch.Projection, candidate.projection) {
+				if !found || !openAIChatReasoningProjectionMatches(batch.Projection, candidate.projection, rules) {
 					continue
 				}
 				actualStart := candidate.start + offset
 				prefix, hashErr := openAIChatReasoningPrefixHash(wireBody, input[:actualStart])
-				projection, valid := projectOpenAIChatReasoningRawBatch(batch.Output)
+				projection, valid := projectOpenAIChatReasoningRawBatch(batch.Output, rules)
 				if hashErr != nil || prefix != batch.InputPrefixHash || !valid || !bytes.Equal(projection, batch.Projection) {
 					continue
 				}
@@ -401,7 +406,7 @@ func (r *openAIChatReasoningReplay) SetSentBody(body []byte) {
 	if r == nil {
 		return
 	}
-	r.recorder = openAIChatReasoningReplayRecorder{}
+	r.recorder = openAIChatReasoningReplayRecorder{rules: r.rules}
 	r.actualPrefix = ""
 	if input, ok := openAIChatReasoningInput(body); ok {
 		r.actualPrefix, _ = openAIChatReasoningPrefixHash(body, input)
@@ -437,8 +442,11 @@ func (r *openAIChatReasoningReplay) Commit() {
 	if !ok {
 		return
 	}
+	if current, err := readOpenAIReplayRules(r.ctx); err != nil || !current.Enabled {
+		return
+	}
 	batch.InputPrefixHash = r.actualPrefix
-	key := openAIChatReasoningBatchKey(r.projectedPrefix, batch.Projection)
+	key := openAIChatReasoningBatchKey(r.projectedPrefix, batch.Projection, r.rules)
 	stored := false
 	err := r.budget.Do(r.ctx, func(ioCtx context.Context) error {
 		var writeErr error
@@ -489,7 +497,7 @@ func openAIChatReasoningCipherHashes(output []json.RawMessage) map[string]struct
 
 // Only known function batches are reversible. Unknown fields on known items
 // are retained verbatim, but unknown item/content kinds are never truncated.
-func projectOpenAIChatReasoningRawBatch(output []json.RawMessage) (json.RawMessage, bool) {
+func projectOpenAIChatReasoningRawBatch(output []json.RawMessage, rules extensionv1.ReplayRules) (json.RawMessage, bool) {
 	if len(output) == 0 || len(output) > 64 {
 		return nil, false
 	}
@@ -507,6 +515,9 @@ func projectOpenAIChatReasoningRawBatch(output []json.RawMessage) (json.RawMessa
 			return nil, false
 		}
 		if status := gjson.GetBytes(raw, "status"); status.Exists() && status.String() != "completed" {
+			return nil, false
+		}
+		if !slices.Contains(rules.OutputKinds, gjson.GetBytes(raw, "type").String()) {
 			return nil, false
 		}
 		switch gjson.GetBytes(raw, "type").String() {
@@ -554,10 +565,11 @@ func projectOpenAIChatReasoningRawBatch(output []json.RawMessage) (json.RawMessa
 	}
 	message.Content, _ = json.Marshal(text.String())
 	message.ReasoningContent = reasoning.String()
-	return normalizeOpenAIChatReasoningProjection(message)
+	return normalizeOpenAIChatReasoningProjection(message, rules)
 }
 
 type openAIChatReasoningReplayRecorder struct {
+	rules      extensionv1.ReplayRules
 	output     []json.RawMessage
 	projection openAIChatReasoningProjection
 	completed  bool
@@ -590,7 +602,7 @@ func (r *openAIChatReasoningReplayRecorder) ObservePayload(payload []byte) {
 		r.invalid = true
 		return
 	}
-	if _, valid := projectOpenAIChatReasoningRawBatch(r.output); !valid {
+	if _, valid := projectOpenAIChatReasoningRawBatch(r.output, r.rules); !valid {
 		r.invalid = true
 		return
 	}
@@ -601,7 +613,7 @@ func (r *openAIChatReasoningReplayRecorder) ObserveMessage(message apicompat.Cha
 	if r == nil || r.invalid {
 		return
 	}
-	projection, ok := normalizeOpenAIChatReasoningProjection(message)
+	projection, ok := normalizeOpenAIChatReasoningProjection(message, r.rules)
 	if !ok || json.Unmarshal(projection, &r.projection) != nil {
 		r.invalid = true
 		return
@@ -673,7 +685,7 @@ func (r *openAIChatReasoningReplayRecorder) Batch() (OpenAIReasoningBatch, bool)
 	if r == nil || r.invalid || !r.completed || !r.finished {
 		return OpenAIReasoningBatch{}, false
 	}
-	wanted, ok := projectOpenAIChatReasoningRawBatch(r.output)
+	wanted, ok := projectOpenAIChatReasoningRawBatch(r.output, r.rules)
 	actual, err := json.Marshal(r.projection)
 	if !ok || err != nil || !bytes.Equal(wanted, actual) {
 		return OpenAIReasoningBatch{}, false

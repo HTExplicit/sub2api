@@ -12,36 +12,13 @@ import (
 
 var inputParam = regexp.MustCompile(`^input(?:\[(\d+)\]|\.(\d+))(?:\.encrypted_content)?$`)
 
+func ReplayPolicy() extensionv1.ReplayRules {
+	return extensionv1.ReplayRules{Version: "chat-tools-v1", Enabled: true, MaxToolCalls: 32, AllowOmittedReasoning: true,
+		ChatFields: []string{"role", "content", "reasoning_content", "reasoning", "tool_calls", "refusal"}, OutputKinds: []string{"reasoning", "message", "function_call"}}
+}
+
 func Rejection(in extensionv1.RecoveryEnvelope) extensionv1.RecoveryRejection {
-	if !in.ValidJSON || !in.ParamValid || in.Code == nil {
-		return extensionv1.RecoveryRejection{}
-	}
-	for _, status := range in.Statuses {
-		switch status {
-		case 401, 402, 403, 407, 429:
-			return extensionv1.RecoveryRejection{}
-		}
-	}
-	if in.Event != "" && in.Event != "error" && in.Event != "response.failed" && in.Event != "response.done" {
-		return extensionv1.RecoveryRejection{}
-	}
-	if in.Event == "response.done" && in.ResponseStatus != "failed" {
-		return extensionv1.RecoveryRejection{}
-	}
-	if in.Status != "" && in.Status != "failed" {
-		return extensionv1.RecoveryRejection{}
-	}
-	switch in.ErrorLocation {
-	case "response":
-		if in.Event != "response.failed" && in.ResponseStatus != "failed" {
-			return extensionv1.RecoveryRejection{}
-		}
-	case "error":
-	case "root":
-		if in.Event != "error" {
-			return extensionv1.RecoveryRejection{}
-		}
-	default:
+	if !extensionv1.ValidReasoningRejectionEnvelope(in) {
 		return extensionv1.RecoveryRejection{}
 	}
 	if *in.Code != "thinking_signature_invalid" && *in.Code != "invalid_encrypted_content" {
@@ -96,6 +73,8 @@ func Invoke(ctx context.Context, in extensionv1.Invocation) (extensionv1.Result,
 	}
 	var value any
 	switch in.Operation {
+	case "codex.replay.rules":
+		value = ReplayPolicy()
 	case "codex.recovery.available":
 		value = true
 	case "codex.recovery.enabled":
