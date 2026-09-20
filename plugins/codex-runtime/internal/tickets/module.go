@@ -28,6 +28,7 @@ type Config struct {
 	ProxyURL      string   `json:"proxy_url"`
 	ProxyProtocol string   `json:"proxy_protocol,omitempty"`
 	Models        []string `json:"models"`
+	RequestZstd   bool     `json:"request_zstd"`
 }
 
 type Module struct {
@@ -43,20 +44,20 @@ type Module struct {
 
 func NewModule() *Module {
 	ctx, cancel := context.WithCancel(context.Background())
-	return &Module{config: Config{FailClosed: true, Models: []string{"gpt-6-astra", "gpt-5.6-sol"}}, epoch: ctx, cancel: cancel, slots: make(chan struct{}, 5), requestTicket: probe, prepareProxy: prepareProxy}
+	return &Module{config: Config{FailClosed: true, Models: []string{"gpt-6-astra", "gpt-5.6-sol"}, RequestZstd: true}, epoch: ctx, cancel: cancel, slots: make(chan struct{}, 5), requestTicket: probe, prepareProxy: prepareProxy}
 }
 
 func (m *Module) SetHost(host *extensionv1.Client) { m.mu.Lock(); defer m.mu.Unlock(); m.host = host }
 
 func (m *Module) ValidateConfig(_ context.Context, raw json.RawMessage) (json.RawMessage, error) {
-	cfg := Config{FailClosed: true, Models: []string{"gpt-6-astra", "gpt-5.6-sol"}}
+	cfg := Config{FailClosed: true, Models: []string{"gpt-6-astra", "gpt-5.6-sol"}, RequestZstd: true}
 	var fields map[string]json.RawMessage
 	if json.Unmarshal(raw, &fields) != nil || fields == nil || json.Unmarshal(raw, &cfg) != nil {
 		return nil, errors.New("invalid codex runtime configuration")
 	}
 	for key, value := range fields {
 		switch key {
-		case "enabled", "fail_closed", "proxy_url", "proxy_protocol", "models":
+		case "enabled", "fail_closed", "proxy_url", "proxy_protocol", "models", "request_zstd":
 			if bytes.Equal(bytes.TrimSpace(value), []byte("null")) {
 				return nil, errors.New("null codex runtime setting")
 			}
@@ -170,7 +171,7 @@ func (m *Module) renewOnce(ctx context.Context, host *extensionv1.Client, cfg Co
 func (m *Module) Status(context.Context) (json.RawMessage, error) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
-	return json.Marshal(map[string]any{"enabled": m.config.Enabled, "proxy_configured": m.config.ProxyURL != "", "models": m.config.Models})
+	return json.Marshal(map[string]any{"enabled": m.config.Enabled, "proxy_configured": m.config.ProxyURL != "", "models": m.config.Models, "request_zstd": m.config.RequestZstd})
 }
 
 type Operation struct {
@@ -195,6 +196,17 @@ func (m *Module) Invoke(ctx context.Context, in extensionv1.Invocation) (extensi
 	m.mu.RLock()
 	host, cfg, epoch := m.host, m.config, m.epoch
 	m.mu.RUnlock()
+	if in.Capability == extensionv1.CapabilityRequest && in.Operation == "codex.transport.plan" {
+		if err := ctx.Err(); err != nil {
+			return extensionv1.Result{}, err
+		}
+		var query extensionv1.CodexTransportQuery
+		if len(in.Payload) > 16384 || json.Unmarshal(in.Payload, &query) != nil {
+			return extensionv1.Result{}, errors.New("invalid transport metadata")
+		}
+		raw, err := json.Marshal(profile.TransportPlan(query, cfg.RequestZstd))
+		return extensionv1.Result{Payload: raw}, err
+	}
 	if host == nil {
 		return extensionv1.Result{}, errors.New("host services unavailable")
 	}

@@ -34,7 +34,7 @@ func TestCodexIdentityPlanFailureCannotSendCanonicalFallback(t *testing.T) {
 	require.Equal(t, "fixture-original", headers.Get("Originator"))
 	req, err := http.NewRequest(http.MethodPost, "https://chatgpt.com/backend-api/codex/responses", strings.NewReader(`{"input":"fixture"}`))
 	require.NoError(t, err)
-	_, err = prepareOpenAICodexWireRequestWithConfig(nil, req, account)
+	_, err = prepareCodexTransport(req, account)
 	require.ErrorIs(t, err, ErrExtensionOperationUnavailable)
 	client := &identityRefreshingOAuthClientStub{}
 	_, err = NewOpenAIOAuthService(nil, client).RefreshAccountToken(context.Background(), account)
@@ -63,11 +63,11 @@ func TestCodexIdentityDisabledKeepsDataAndFailureBlocksHTTPAndRefresh(t *testing
 	require.Equal(t, codexFingerprintSession, account.GetCodexFingerprintMode(), "upstream explicit policy survives domain disable")
 	req, err := http.NewRequest(http.MethodPost, "https://chatgpt.com/backend-api/codex/responses", strings.NewReader(`{"input":"fixture"}`))
 	require.NoError(t, err)
-	wire, err := prepareOpenAICodexWireRequestWithConfig(nil, req, account)
+	wire, err := prepareCodexTransport(req, account)
 	require.NoError(t, err)
 	require.Same(t, req, wire)
 	processExtensionOperations.Store(&extensionOperationProvider{invoker: failedPromptProcess{}})
-	_, err = prepareOpenAICodexWireRequestWithConfig(nil, req, account)
+	_, err = prepareCodexTransport(req, account)
 	require.ErrorIs(t, err, ErrExtensionOperationUnavailable, "policy failure cannot silently send canonical identity")
 	client := &identityRefreshingOAuthClientStub{}
 	_, err = NewOpenAIOAuthService(nil, client).RefreshAccountToken(context.Background(), account)
@@ -98,8 +98,8 @@ func TestCodexIdentitySnapshotReportsTheSelectedFingerprintSource(t *testing.T) 
 	t.Cleanup(func() { SetCodexForceCLIEnabled(false) })
 	account := &Account{ID: 7, Platform: PlatformOpenAI, Type: AccountTypeOAuth,
 		Extra: map[string]any{codexFingerprintSeedExtraKey: "1c0a3d9e-58b2-4f8c-a2d1-7f3b9e6c4a55"}}
-	snapshot := resolveCodexIdentitySnapshot(account, account, "", false)
+	snapshot := resolveCodexIdentitySnapshotContext(context.Background(), account, account, "")
 	require.Equal(t, "account", snapshot.IdentitySource)
-	snapshot = resolveCodexIdentitySnapshot(account, account, "codex_cli_rs/0.144.0 (Windows 10.0.19045; x86_64) unknown", false)
+	snapshot = resolveCodexIdentitySnapshotContext(context.Background(), account, account, "codex_cli_rs/0.144.0 (Windows 10.0.19045; x86_64) unknown")
 	require.Equal(t, "override_ua", snapshot.IdentitySource)
 }

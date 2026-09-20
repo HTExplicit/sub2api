@@ -1,6 +1,7 @@
 package service
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"strconv"
@@ -8,6 +9,7 @@ import (
 	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/pkg/openai"
+	extensionv1 "github.com/Wei-Shaw/sub2api/pkg/extensionapi/v1"
 )
 
 // codexIdentitySnapshot is the secret-free execution state reported by an
@@ -42,7 +44,7 @@ type codexIdentitySnapshot struct {
 // resolveCodexIdentitySnapshot computes the identity and fingerprint state
 // from the routed account and the credential source used for this attempt.
 // It intentionally contains no credential, seed, cookie, or proxy URL data.
-func resolveCodexIdentitySnapshot(routed, source *Account, overrideUA string, zstdEnabled bool) codexIdentitySnapshot {
+func resolveCodexIdentitySnapshotContext(ctx context.Context, routed, source *Account, overrideUA string) codexIdentitySnapshot {
 	if source == nil {
 		source = routed
 	}
@@ -51,7 +53,11 @@ func resolveCodexIdentitySnapshot(routed, source *Account, overrideUA string, zs
 		SchemaVersion:      1,
 		EnforcementEnabled: codexIdentityEnforcement.Load(),
 		ForceCodexCLI:      codexForceCLI.Load(),
-		ZstdEnabled:        zstdEnabled,
+	}
+	if source != nil && source.IsOpenAIOAuthLike() {
+		if plan, err := codexTransportPlan(ctx, source.Type, extensionv1.CodexTransportQuery{}); err == nil {
+			snapshot.ZstdEnabled = plan.Enabled
+		}
 	}
 	if routed != nil {
 		snapshot.AccountID = routed.ID

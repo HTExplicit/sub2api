@@ -25,7 +25,7 @@
     { "id": "extensions.jobs.v1", "platform": "openai", "account_type": "oauth" },
     { "id": "extensions.jobs.v1", "platform": "openai", "account_type": "setup-token" }
   ],
-  "operations": { "extensions.request.v1": ["inject", "codex.identity.available", "codex.identity.plan", "codex.identity.derive", "codex.identity.validate", "codex.identity.agent", "codex.identity.sandbox"] },
+  "operations": { "extensions.request.v1": ["inject", "codex.identity.available", "codex.identity.plan", "codex.identity.derive", "codex.identity.validate", "codex.identity.agent", "codex.identity.sandbox", "codex.transport.plan"] },
   "contributions": [
     {
       "id": "proxy-settings", "slot": "admin.settings", "action": "proxy.test", "entrypoint": "ui/index.html", "permission": "admin",

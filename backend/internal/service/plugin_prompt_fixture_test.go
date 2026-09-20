@@ -19,6 +19,12 @@ import (
 
 type promptPolicyFixture struct{}
 
+type codexTransportFixtureContextKey struct{}
+
+func withCodexTransportFixture(ctx context.Context, enabled bool) context.Context {
+	return context.WithValue(ctx, codexTransportFixtureContextKey{}, enabled)
+}
+
 var promptFixtureModule = policy.New()
 
 func cindyProbeTestModels(t *testing.T) [2]string {
@@ -31,6 +37,15 @@ func cindyProbeTestModels(t *testing.T) [2]string {
 }
 
 func (promptPolicyFixture) InvokeOperation(ctx context.Context, _ string, _ string, in extensionv1.Invocation) (extensionv1.Result, error) {
+	if in.Operation == "codex.transport.plan" {
+		var query extensionv1.CodexTransportQuery
+		if err := json.Unmarshal(in.Payload, &query); err != nil {
+			return extensionv1.Result{}, err
+		}
+		enabled, _ := ctx.Value(codexTransportFixtureContextKey{}).(bool)
+		raw, err := json.Marshal(codexprofile.TransportPlan(query, enabled))
+		return extensionv1.Result{Payload: raw}, err
+	}
 	if strings.HasPrefix(in.Operation, "codex.identity.") {
 		return codexprofile.Invoke(ctx, in)
 	}

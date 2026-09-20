@@ -138,7 +138,7 @@ func (m *PluginManager) bootstrapBundle(ctx context.Context) error {
 				models = []string{"gpt-6-astra", "gpt-5.6-sol"}
 			}
 			seed.Enabled = true
-			seed.Config, _ = json.Marshal(map[string]any{"enabled": config.Enabled, "fail_closed": config.FailClosed, "proxy_url": config.HarvestProxyURL, "models": models})
+			seed.Config, _ = json.Marshal(map[string]any{"enabled": config.Enabled, "fail_closed": config.FailClosed, "proxy_url": config.HarvestProxyURL, "models": models, "request_zstd": m.cfg.Gateway.OpenAICodexRequestZstd})
 		}
 		if entry.Migration == "cindy-provider-v1" {
 			seed.Config, _ = json.Marshal(LegacyCindyProviderConfig())

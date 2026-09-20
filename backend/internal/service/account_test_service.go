@@ -922,7 +922,7 @@ func (s *AccountTestService) testOpenAIAccountConnection(c *gin.Context, account
 	}
 	var codexWireObserved bool
 	if isOAuth {
-		base := resolveCodexIdentitySnapshot(account, credentialAccount, codexAccountIdentityOverrideUA(credentialAccount), s.cfg != nil && s.cfg.Gateway.OpenAICodexRequestZstd)
+		base := resolveCodexIdentitySnapshotContext(ctx, account, credentialAccount, codexAccountIdentityOverrideUA(credentialAccount))
 		req = req.WithContext(withCodexWireObserver(req.Context(), func(wire *http.Request) {
 			codexWireObserved = true
 			s.sendEvent(c, TestEvent{Type: "status", Text: "Final Codex ticket", Data: codexTicketWireSummary(wire.Header)})
@@ -937,7 +937,7 @@ func (s *AccountTestService) testOpenAIAccountConnection(c *gin.Context, account
 		if s.pluginManager != nil && s.pluginManager.ShouldRouteOpenAIOAuth(account) {
 			transport = "plugin"
 		}
-		base := resolveCodexIdentitySnapshot(account, credentialAccount, codexAccountIdentityOverrideUA(credentialAccount), s.cfg != nil && s.cfg.Gateway.OpenAICodexRequestZstd)
+		base := resolveCodexIdentitySnapshotContext(ctx, account, credentialAccount, codexAccountIdentityOverrideUA(credentialAccount))
 		snapshot := base.withWire(transport, req.Header)
 		s.sendEvent(c, TestEvent{Type: "status", Text: snapshot.summary(), Data: snapshot})
 	}
@@ -3234,7 +3234,7 @@ func (s *AccountTestService) testOpenAIImageOAuth(c *gin.Context, ctx context.Co
 		proxyURL = account.Proxy.URL()
 	}
 	// 复用压缩准备，但保留图像探针原来的直接 Do 路由；不顺带启用插件或 TLS 回退。
-	wire, err := prepareOpenAICodexWireRequestWithConfig(s.cfg, req, credentialAccount)
+	wire, err := prepareCodexTransport(req, credentialAccount)
 	if err != nil {
 		return s.sendErrorAndEnd(c, fmt.Sprintf("Responses API request failed: %s", err.Error()))
 	}

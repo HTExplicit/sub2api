@@ -151,7 +151,7 @@ func TestForwardAlphaSearchPATUsesResponsesWebSearchFallback(t *testing.T) {
 		},
 	}
 
-	result, err := service.ForwardAlphaSearch(context.Background(), c, account, body)
+	result, err := service.ForwardAlphaSearch(withCodexTransportFixture(context.Background(), true), c, account, body)
 
 	require.NoError(t, err)
 	require.NotNil(t, result)

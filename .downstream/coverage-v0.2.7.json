@@ -1,13 +1,13 @@
 {
   "schema_version": 2,
   "upstream_base": "aea725f2ea644d5592d0bbb1d63b607efa7e200a",
-  "basis_commit": "66f97dde6098e415ae5358ba918dd2df6352fc1f",
+  "basis_commit": "480ec3988dfd6196c8c1234bfbc54e7de5d1d5a1",
   "scope": "Current Sub2API downstream source and working tree. Candidate ownership does not establish completed review. Root maintenance, independent services and Worker require a separate audit.",
-  "source_digest": "aeb5f2c7fe84a61ca6235bc59863595ca27c985de71bc9179921308c19ce9add",
+  "source_digest": "3678384f875bb445cc7f456d54a3e2b8fd6e4a6976fd61a7af5996e70005ed91",
   "digest_excludes": [
     "inventory and implementation-state documents; missing paths have present=false"
   ],
-  "total_paths": 2128,
+  "total_paths": 2132,
   "generated_assets_and_locks": 83,
   "review_complete": false,
   "role_counts": {
@@ -16,19 +16,19 @@
     "dependency-lock": 9,
     "documentation": 27,
     "generated": 68,
-    "source": 899,
-    "test-or-fixture": 661
+    "source": 902,
+    "test-or-fixture": 662
   },
   "owner_counts": {
     "operations": 39,
     "documentation-and-history": 25,
     "mixed-requires-review": 1014,
-    "core-extension-and-job-host": 118,
+    "core-extension-and-job-host": 120,
     "core-data-and-migrations": 21,
     "cindy-provider": 169,
     "image-tools": 34,
     "account-tools": 50,
-    "codex-runtime": 38,
+    "codex-runtime": 40,
     "prompt-skills": 545,
     "core-quota-and-protocol": 22,
     "admin-observability": 34,
@@ -4136,7 +4136,7 @@
       "candidate_owner": "account-tools",
       "role": "test-or-fixture",
       "present": true,
-      "content_sha256": "e4cb552d123b8c7767d3362f41b039a61498f98e52f4ac4fb2453c179a02e46d",
+      "content_sha256": "4bc31e4a43ab28c147bf855cdc796fe6cdfcaec5f0f508d2fb0dd8192f6d000c",
       "review_status": "pending"
     },
     {
@@ -4160,7 +4160,7 @@
       "candidate_owner": "account-tools",
       "role": "test-or-fixture",
       "present": true,
-      "content_sha256": "ea0e8d5949df12771f9eed8275104366a203c487f069a9f29f34f3b66494383f",
+      "content_sha256": "a0446c211151f766224d963407de3dcc7708e59d6cf3ac476b59a5d13ce27ace",
       "review_status": "pending"
     },
     {
@@ -4168,7 +4168,7 @@
       "candidate_owner": "account-tools",
       "role": "source",
       "present": true,
-      "content_sha256": "97276e420a7ef1fc5f2851061cf8d579a00b7cfa283ce733e7908342a29ee9e3",
+      "content_sha256": "b7921229b54b1081bfc894fdcf2895a356eda56e832c8939a6e5158ff6f52e9d",
       "review_status": "pending"
     },
     {
@@ -4184,7 +4184,7 @@
       "candidate_owner": "account-tools",
       "role": "test-or-fixture",
       "present": true,
-      "content_sha256": "416c4743c97c99a30ab4b466daeab85a9c98468a4fba85fc1a41bb09a7e36279",
+      "content_sha256": "2bd424d6592b24e996d9e199a65b9e3c6b3d3066d5feb2aaffbf3f9bc4fb3b5b",
       "review_status": "pending"
     },
     {
@@ -4192,7 +4192,7 @@
       "candidate_owner": "account-tools",
       "role": "test-or-fixture",
       "present": true,
-      "content_sha256": "c38a53dfcf0a16877061c18b3f071fc33b4a6c3967848e2640452fc136de1056",
+      "content_sha256": "2227bc9f7b3dcb87611097e12d8da6a6107a508ed56f35215969937bec3cc182",
       "review_status": "pending"
     },
     {
@@ -4200,7 +4200,7 @@
       "candidate_owner": "account-tools",
       "role": "test-or-fixture",
       "present": true,
-      "content_sha256": "49edbd21dbca30351846582ad7a309ccf6a9554f21cd1f3b61abae1d5b441432",
+      "content_sha256": "9546adc119b3a9097187c45f90a2f0a57f57dfa4efef9c192e755152e8aa407b",
       "review_status": "pending"
     },
     {
@@ -4224,7 +4224,7 @@
       "candidate_owner": "mixed-requires-review",
       "role": "source",
       "present": true,
-      "content_sha256": "3bf0f7a98a0d7b5286d6c478807626b43188e3e1dc60aadaa291e225c4fc5fa5",
+      "content_sha256": "61df1183587a9ab33a37f5d31beaed52476c21430bb9bdf4a48d15f002157908",
       "review_status": "pending"
     },
     {
@@ -5624,7 +5624,7 @@
       "candidate_owner": "mixed-requires-review",
       "role": "test-or-fixture",
       "present": true,
-      "content_sha256": "1fdaa38a4ec6676d67082af922efe2c39d3c8bb921df0bab5dd1e65a83fe313c",
+      "content_sha256": "a0be4cb35afe247e6d5acc1625b70d7cffb077150273dcb4f711cc4912486b07",
       "review_status": "pending"
     },
     {
@@ -5808,7 +5808,7 @@
       "candidate_owner": "mixed-requires-review",
       "role": "test-or-fixture",
       "present": true,
-      "content_sha256": "1011a832b06a8fc36e5b24e52ed75ebe8b68c2c2e393b502908815168a7e60c8",
+      "content_sha256": "9b35426dac0586bf3b5cc82aeac64afc6216ca4101e189f77e1c8ee68247594a",
       "review_status": "pending"
     },
     {
@@ -5864,7 +5864,7 @@
       "candidate_owner": "mixed-requires-review",
       "role": "source",
       "present": true,
-      "content_sha256": "53bfa6cc06e4d583e7a0cbb92a24ce44c6109ef9a094d65413298214fc1833a3",
+      "content_sha256": "4a2d3cb90bdc6676a80f9f8985df6da44f1f92e28c755cd427d31aca9be281ed",
       "review_status": "pending"
     },
     {
@@ -5904,7 +5904,7 @@
       "candidate_owner": "mixed-requires-review",
       "role": "source",
       "present": true,
-      "content_sha256": "be55b9d7f695c8031b2f08b7c4cb74ba7ee91558abc611bc8ce11588d52b5596",
+      "content_sha256": "3d7c9620c5e57c00d46e027ac018070f3d99f69b58ac900f9119d433fdfe0d88",
       "review_status": "pending"
     },
     {
@@ -5912,7 +5912,7 @@
       "candidate_owner": "mixed-requires-review",
       "role": "test-or-fixture",
       "present": true,
-      "content_sha256": "3b996556c61c0fc4d053e5612d42f2421fc4a754766239ab55aa46d30f1d07d0",
+      "content_sha256": "3999cd49347f29a7fe08da261d883e48b4372036ebe55cc965ada30c27b0fb8f",
       "review_status": "pending"
     },
     {
@@ -6416,7 +6416,7 @@
       "candidate_owner": "mixed-requires-review",
       "role": "source",
       "present": true,
-      "content_sha256": "ba08fb5a888434daa88eda7ab63490d60d47ba0016cf475039a78d828a633df6",
+      "content_sha256": "60dff85f2074c9fd754f56597aa23f95703be5f8e66786fdcf07da64fe1debef",
       "review_status": "pending"
     },
     {
@@ -6712,7 +6712,7 @@
       "candidate_owner": "core-extension-and-job-host",
       "role": "source",
       "present": true,
-      "content_sha256": "9b32e39822671098eca6fb70fbf7a4fa76d08f80bafc3e64d888b7b629f0b40f",
+      "content_sha256": "660c449e1b80f96fb1bf300e969056fc8791c5713c8faa9dd3c5f3eb0b3a1c19",
       "review_status": "pending"
     },
     {
@@ -7424,7 +7424,7 @@
       "candidate_owner": "core-extension-and-job-host",
       "role": "source",
       "present": true,
-      "content_sha256": "33d07c913985be7e5fb7c9cc84c8cf6ae239540422b71889ffa0d9737ea1906b",
+      "content_sha256": "03d805a210a0d744c18ef0bdb8b03059c163e022053b51a89b75d8bedad943e5",
       "review_status": "pending"
     },
     {
@@ -7472,7 +7472,15 @@
       "candidate_owner": "core-extension-and-job-host",
       "role": "test-or-fixture",
       "present": true,
-      "content_sha256": "fbe0b0cb6eae34f7d80ef87ea23a2b6760d505951c50e72b10646142991987a7",
+      "content_sha256": "c79b1c66deda5207b4ddf003430617aeb299d9317e26ecf7f2089101047c5617",
+      "review_status": "pending"
+    },
+    {
+      "path": "backend/internal/service/plugin_codex_transport.go",
+      "candidate_owner": "core-extension-and-job-host",
+      "role": "source",
+      "present": true,
+      "content_sha256": "4c31135650becd5dbc56f5912cf27a8f1805223fbd82f88ea7bd034b5244863f",
       "review_status": "pending"
     },
     {
@@ -7664,7 +7672,7 @@
       "candidate_owner": "core-extension-and-job-host",
       "role": "test-or-fixture",
       "present": true,
-      "content_sha256": "2ad20f889e6756e9497422b5ca7c8ff10d359bb3c9dd8d6c5f4e5c3c66881767",
+      "content_sha256": "408a7c137bc4ae66a7c2f85a7ef6333506400b77c3370a841b7c3c147b29168b",
       "review_status": "pending"
     },
     {
@@ -9065,6 +9073,14 @@
       "role": "source",
       "present": true,
       "content_sha256": "b52f58bbba153d9765da7621addc98a9825007c77daa0570e2d28848c725eb13",
+      "review_status": "pending"
+    },
+    {
+      "path": "backend/pkg/extensionapi/v1/codex_transport.go",
+      "candidate_owner": "core-extension-and-job-host",
+      "role": "source",
+      "present": true,
+      "content_sha256": "f0a9135c56c44118f5355553e58b5dfafbfe700ea6b4153dd3ec20d45493705e",
       "review_status": "pending"
     },
     {
@@ -12952,7 +12968,7 @@
       "candidate_owner": "codex-runtime",
       "role": "source",
       "present": true,
-      "content_sha256": "9fe2b36384180d39a1a8756c54725df221c0ff40e19775062e4a0664651cfbc7",
+      "content_sha256": "91edd975c9ca298e836fdc92dfa9c5cc8e6fb806cdf888f206dcb81c498abdf8",
       "review_status": "pending"
     },
     {
@@ -12960,7 +12976,7 @@
       "candidate_owner": "codex-runtime",
       "role": "test-or-fixture",
       "present": true,
-      "content_sha256": "715622c91a0785139f5d582455d3befec8d67401e8321b786fb52ecf3238a7d3",
+      "content_sha256": "7aeffedd1943aadfad86d940bfd8147307d32e9f53daf3e8c5aacbb0c989c4a6",
       "review_status": "pending"
     },
     {
@@ -13008,7 +13024,7 @@
       "candidate_owner": "codex-runtime",
       "role": "source",
       "present": true,
-      "content_sha256": "68240290c8330f7c2e88f4e132d7ca19f36fb9887ac20f7a379a2b1a90fd873c",
+      "content_sha256": "ca30bb1270d27d130c0ecd7f03c69da13c736c2ead27bdc8f6049e04405df241",
       "review_status": "pending"
     },
     {
@@ -13028,11 +13044,27 @@
       "review_status": "pending"
     },
     {
+      "path": "plugins/codex-runtime/profile/transport.go",
+      "candidate_owner": "codex-runtime",
+      "role": "source",
+      "present": true,
+      "content_sha256": "93fcad96e49cff351e73bb09d427aff65bca9f3f28eda6bcba36f51fdad38a12",
+      "review_status": "pending"
+    },
+    {
+      "path": "plugins/codex-runtime/profile/transport_test.go",
+      "candidate_owner": "codex-runtime",
+      "role": "test-or-fixture",
+      "present": true,
+      "content_sha256": "6968269e54a955382c596abe05c8c7b3ba3a14e3e6bd68ba0d09350580b3dad4",
+      "review_status": "pending"
+    },
+    {
       "path": "plugins/codex-runtime/scripts/check-ui.py",
       "candidate_owner": "codex-runtime",
       "role": "source",
       "present": true,
-      "content_sha256": "57ac3a38ab8703c9e48c802f31ba544fe53062ff33e7dd5372361f67bdfba7e8",
+      "content_sha256": "88577c4ba6d3978fd8f2327ee414a3ada43a0ac075b3b2f4fb871d2158983481",
       "review_status": "pending"
     },
     {
@@ -13040,7 +13072,7 @@
       "candidate_owner": "codex-runtime",
       "role": "source",
       "present": true,
-      "content_sha256": "51186afced0a007b464391db9c97b27347c424bbd796872ce0720607906512fe",
+      "content_sha256": "b5f0443b52420488c6b4c8765b2393b91b48e18265701b06bf0d6647281e474a",
       "review_status": "pending"
     },
     {

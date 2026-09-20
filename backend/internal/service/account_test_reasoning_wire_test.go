@@ -27,6 +27,7 @@ func TestAccountTestReasoningSurvivesMappingAndWireCompression(t *testing.T) {
 	upstream := &queuedHTTPUpstream{responses: []*http.Response{newJSONResponse(200, "data: {\"type\":\"response.completed\"}\n\n")}}
 	svc := &AccountTestService{accountRepo: &reasoningTestRepo{account: a}, httpUpstream: upstream, cfg: &config.Config{Gateway: config.GatewayConfig{OpenAICodexRequestZstd: true}}}
 	c, rec := newTestContext()
+	c.Request = c.Request.WithContext(withCodexTransportFixture(c.Request.Context(), true))
 	require.NoError(t, svc.TestAccountConnection(c, a.ID, "friendly", "test", AccountTestModeDefault, AccountTestOptions{ReasoningEffort: "ultra"}))
 	require.Len(t, upstream.requests, 1)
 	raw, err := io.ReadAll(upstream.requests[0].Body)

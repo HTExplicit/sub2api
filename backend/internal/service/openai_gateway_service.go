@@ -593,9 +593,6 @@ func NewOpenAIGatewayService(
 	if cfg != nil {
 		SetCodexIdentityEnforcementEnabled(!cfg.Gateway.DisableCodexIdentityEnforcement)
 		SetCodexForceCLIEnabled(cfg.Gateway.ForceCodexCLI)
-		// 用量探针同样向 /backend-api/codex/responses 发 OAuth POST，却拿不到网关配置：
-		// 压缩开关也以进程级快照发布，与推理面同一策略。
-		SetCodexRequestZstdEnabled(cfg.Gateway.OpenAICodexRequestZstd)
 	}
 	svc := &OpenAIGatewayService{
 		accountRepo:         accountRepo,

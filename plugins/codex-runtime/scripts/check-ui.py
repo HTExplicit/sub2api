@@ -17,7 +17,7 @@ HARNESS = """<!doctype html><html><head><meta charset="utf-8"><style>
 body{margin:0}iframe{width:100%;height:900px;border:0;display:block}
 </style></head><body><iframe title="Plugin" sandbox="allow-scripts" src="/ui/index.html#bridge_token=fixture"></iframe><script>
 const options=new URLSearchParams(location.search), frame=document.querySelector('iframe');
-let config={enabled:true,fail_closed:true,proxy_url:'socks5h://fixture:synthetic@proxy.example.test:1080',models:['gpt-6-astra','gpt-5.6-sol']};
+let config={enabled:true,fail_closed:true,request_zstd:false,proxy_url:'socks5h://fixture:synthetic@proxy.example.test:1080',models:['gpt-6-astra','gpt-5.6-sol']};
 window.saved=[];window.submitted=[];
 addEventListener('message',event=>{
  const m=event.data;
@@ -68,6 +68,7 @@ class Handler(BaseHTTPRequestHandler):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--transport-only", action="store_true")
     args = parser.parse_args()
     args.output.mkdir(parents=True, exist_ok=True)
     server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
@@ -78,6 +79,33 @@ def main():
         with sync_playwright() as playwright:
             browser = playwright.chromium.launch()
             try:
+                if args.transport_only:
+                    page = browser.new_page(viewport={"width": 390, "height": 920})
+                    errors = []
+                    page.on("pageerror", lambda error: errors.append(str(error)))
+                    page.goto(f"http://127.0.0.1:{server.server_port}/?theme=dark")
+                    frame = page.frame_locator("iframe")
+                    control = frame.get_by_label("压缩 Codex Responses 请求体", exact=True)
+                    control.wait_for()
+                    assert not control.is_checked()
+                    control.check()
+                    frame.get_by_role("button", name="保存设置", exact=True).click()
+                    page.wait_for_function("saved.at(-1)?.request_zstd===true")
+                    frame.get_by_role("button", name="清除代理并停用票据", exact=True).click()
+                    page.wait_for_function("saved.at(-1)?.enabled===false && saved.at(-1)?.request_zstd===true")
+                    assert control.is_checked()
+                    control.uncheck()
+                    frame.get_by_role("button", name="保存设置", exact=True).click()
+                    page.wait_for_function("saved.at(-1)?.request_zstd===false")
+                    assert frame.locator("body").evaluate("node=>node.scrollWidth<=innerWidth")
+                    dropdown = frame.get_by_label("协议").bounding_box()
+                    button = frame.get_by_role("button", name="测试连接", exact=True).bounding_box()
+                    assert abs(dropdown["y"] + dropdown["height"] - button["y"] - button["height"]) <= 1
+                    assert not errors, errors
+                    page.screenshot(path=str(args.output / "transport-setting.png"), full_page=True)
+                    print(json.dumps({"offline_only": True, "transport_setting": "passed", "clear_preserves_transport": True, "page_errors": errors}))
+                    page.close()
+                    return
                 for width in (900, 390):
                     for theme in ("light", "dark"):
                         page = browser.new_page(viewport={"width": width, "height": 920})
@@ -88,7 +116,7 @@ def main():
                         frame.get_by_role("button", name="测试连接", exact=True).wait_for()
                         # Inspect the live accessibility names before interaction.
                         labels = frame.get_by_role("button").all_text_contents()
-                        assert labels == ["测试连接", "复制", "清除代理并关闭开关", "保存设置"], labels
+                        assert labels == ["测试连接", "复制", "清除代理并停用票据", "保存设置"], labels
                         dropdown = frame.get_by_label("协议").bounding_box()
                         test_button = frame.get_by_role("button", name="测试连接", exact=True).bounding_box()
                         assert abs(dropdown["y"] + dropdown["height"] - test_button["y"] - test_button["height"]) <= 1
@@ -97,7 +125,7 @@ def main():
                         frame.get_by_text("代理链路已连接，目标返回 HTTP 405；本次未发送账号凭据。", exact=True).wait_for()
                         assert frame.locator("body").evaluate("node=>node.scrollWidth<=innerWidth")
                         page.screenshot(path=str(args.output / f"proxy-{width}-{theme}.png"), full_page=True)
-                        frame.get_by_role("button", name="清除代理并关闭开关", exact=True).click()
+                        frame.get_by_role("button", name="清除代理并停用票据", exact=True).click()
                         frame.get_by_text("已清除并关闭", exact=True).wait_for()
                         assert page.evaluate("saved.at(-1).enabled===false && saved.at(-1).proxy_url===''")
                         assert not errors, errors

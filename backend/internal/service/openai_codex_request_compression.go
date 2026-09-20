@@ -9,9 +9,7 @@ import (
 	"net/http"
 	"strings"
 	"sync"
-	"sync/atomic"
 
-	"github.com/Wei-Shaw/sub2api/internal/config"
 	"github.com/klauspost/compress/zstd"
 )
 
@@ -58,26 +56,6 @@ func compressCodexRequestBodyZstd(src []byte) ([]byte, error) {
 	return buf.Bytes(), nil
 }
 
-// codexRequestZstd 是 gateway.openai_codex_request_zstd 的进程级快照：用量探针
-// （AccountUsageService）拿不到网关配置，却同样向 /backend-api/codex/responses 发 OAuth POST，
-// 必须与推理面用同一套压缩策略出站。与 codexForceCLI 同一模式，由持有配置的网关服务在构造时发布。
-var codexRequestZstd atomic.Bool
-
-// SetCodexRequestZstdEnabled 由持有配置的网关服务在构造时发布。
-func SetCodexRequestZstdEnabled(enabled bool) {
-	codexRequestZstd.Store(enabled)
-}
-
-// isCodexStreamingResponsesRequest 判断请求是否是官方客户端会压缩的那一类：
-// POST 到 ChatGPT 后端 /backend-api/codex/responses（不含 /compact）。
-func isCodexStreamingResponsesRequest(req *http.Request) bool {
-	if req == nil || req.URL == nil || req.Method != http.MethodPost {
-		return false
-	}
-	path := strings.TrimSuffix(req.URL.Path, "/")
-	return strings.HasSuffix(path, "/codex/responses")
-}
-
 // prepareOpenAICodexWireRequest 返回真正发往上游的请求。满足条件时返回一个请求体已
 // zstd 压缩、Content-Encoding/Content-Length 已改写的克隆；其余情况原样返回。
 //
@@ -86,54 +64,19 @@ func isCodexStreamingResponsesRequest(req *http.Request) bool {
 // 重新填充。读取失败时绝不把已读出的前缀当作完整请求发送：可重放请求退回原请求明文发送，
 // 不可重放请求显式返回错误（该请求本就无法完整发出）。编码失败一律退回明文。
 func (s *OpenAIGatewayService) prepareOpenAICodexWireRequest(req *http.Request, account *Account) (*http.Request, error) {
-	var cfg *config.Config
-	if s != nil {
-		cfg = s.cfg
-	}
-	return prepareOpenAICodexWireRequestWithConfig(cfg, req, account)
+	return prepareCodexTransport(req, account)
 }
 
-// prepareOpenAICodexWireRequestWithConfig 是不依赖网关服务接收者的同一实现：账号测试等持有
-// 配置但不持有网关服务的发送边界复用它，开关取自传入配置（nil 或关闭时原样返回）。
-func prepareOpenAICodexWireRequestWithConfig(cfg *config.Config, req *http.Request, account *Account) (*http.Request, error) {
-	if req != nil {
-		if err := requireCodexIdentityPolicy(req.Context(), account); err != nil {
-			return nil, err
-		}
-	}
-	if cfg == nil || !cfg.Gateway.OpenAICodexRequestZstd {
-		return req, nil
-	}
-	return prepareOpenAICodexWireRequestUngated(req, account)
-}
-
-// prepareOpenAICodexWireRequestSnapshot 与上面语义相同，但开关取自进程级快照，供拿不到配置的
-// 发送边界（用量探针）使用。
-func prepareOpenAICodexWireRequestSnapshot(req *http.Request, account *Account) (*http.Request, error) {
-	if req != nil {
-		if err := requireCodexIdentityPolicy(req.Context(), account); err != nil {
-			return nil, err
-		}
-	}
-	if !codexRequestZstd.Load() {
-		return req, nil
-	}
-	return prepareOpenAICodexWireRequestUngated(req, account)
-}
-
-// prepareOpenAICodexWireRequestUngated 是开关已判定为开启后的公共实现：只处理 OAuth-like 账号
-// 发往 /backend-api/codex/responses 的 JSON POST，其余请求原样返回。
+// prepareOpenAICodexWireRequestUngated executes an approved encoding plan. Body
+// ownership, complete reads, replayability and wire framing remain host IO.
 func prepareOpenAICodexWireRequestUngated(req *http.Request, account *Account) (*http.Request, error) {
 	if account == nil || !account.IsOpenAIOAuthLike() {
 		return req, nil
 	}
-	if !isCodexStreamingResponsesRequest(req) || req.Body == nil || req.Body == http.NoBody {
+	if req == nil || req.Body == nil || req.Body == http.NoBody {
 		return req, nil
 	}
 	if strings.TrimSpace(req.Header.Get("Content-Encoding")) != "" {
-		return req, nil
-	}
-	if contentType := strings.ToLower(req.Header.Get("Content-Type")); contentType != "" && !strings.Contains(contentType, "json") {
 		return req, nil
 	}
 	var raw []byte

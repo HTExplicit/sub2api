@@ -310,6 +310,7 @@ func TestAccountTestService_NonCindyEmptyModelKeepsOpenAIDefault(t *testing.T) {
 func TestAccountTestService_OpenAISuccessPersistsSnapshotFromHeaders(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	ctx, recorder := newTestContext()
+	ctx.Request = ctx.Request.WithContext(withCodexTransportFixture(ctx.Request.Context(), true))
 
 	resp := newJSONResponse(http.StatusOK, "")
 	resp.Body = io.NopCloser(strings.NewReader(`data: {"type":"response.completed"}

@@ -44,6 +44,23 @@ func TestInvalidConfigurationCannotStopCurrentTicketEpoch(t *testing.T) {
 	}
 }
 
+func TestTransportSettingDoesNotDependOnTicketAcquisitionSwitch(t *testing.T) {
+	module := NewModule()
+	defer module.cancel()
+	request := extensionv1.Invocation{Capability: extensionv1.CapabilityRequest, Operation: "codex.transport.plan",
+		Payload: []byte(`{"method":"POST","path":"/backend-api/codex/responses","body_present":true}`)}
+	for _, raw := range []string{`{"enabled":false,"request_zstd":true}`, `{"enabled":true,"request_zstd":false}`} {
+		if err := module.ApplyConfig(context.Background(), []byte(raw)); err != nil {
+			t.Fatal(err)
+		}
+		result, err := module.Invoke(context.Background(), request)
+		var plan extensionv1.CodexTransportPlan
+		if err != nil || json.Unmarshal(result.Payload, &plan) != nil || plan.Compress != module.config.RequestZstd {
+			t.Fatalf("transport plan unavailable: %v", err)
+		}
+	}
+}
+
 func (h *memoryHost) Call(_ context.Context, in extensionv1.HostInvocation) (extensionv1.Result, error) {
 	h.mu.Lock()
 	defer h.mu.Unlock()

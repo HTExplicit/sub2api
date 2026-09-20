@@ -56,7 +56,7 @@ func (s *AccountTestService) doOpenAIAccountTestUpstream(
 	}
 	// 插件 round-trip 有意拿到明文请求；zstd 压缩是网关传输层的事，只在真正经
 	// HTTPUpstream 发出的副本上做。
-	wire, err := prepareOpenAICodexWireRequestWithConfig(s.cfg, request, account)
+	wire, err := prepareCodexTransport(request, account)
 	if err != nil {
 		return nil, err
 	}

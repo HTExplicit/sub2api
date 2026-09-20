@@ -2,6 +2,7 @@ package service
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"io"
 	"net/http"
@@ -18,12 +19,13 @@ import (
 func TestPrepareOpenAICodexWireRequestCompressesOnlyCodexStreamingTurns(t *testing.T) {
 	svc := &OpenAIGatewayService{cfg: &config.Config{}}
 	svc.cfg.Gateway.OpenAICodexRequestZstd = true
+	enabled := true
 	body := []byte(`{"model":"gpt-5.5","input":"` + strings.Repeat("hello ", 200) + `","stream":true}`)
 	newReq := func(path string) *http.Request {
 		req, err := http.NewRequest(http.MethodPost, "https://chatgpt.com"+path, bytes.NewReader(body))
 		require.NoError(t, err)
 		req.Header.Set("Content-Type", "application/json")
-		return req
+		return req.WithContext(withCodexTransportFixture(req.Context(), enabled))
 	}
 	oauth := &Account{ID: 1, Platform: PlatformOpenAI, Type: AccountTypeOAuth}
 
@@ -64,24 +66,23 @@ func TestPrepareOpenAICodexWireRequestCompressesOnlyCodexStreamingTurns(t *testi
 	same, err = svc.prepareOpenAICodexWireRequest(req, apiKey)
 	require.NoError(t, err)
 	require.Same(t, req, same)
-	svc.cfg.Gateway.OpenAICodexRequestZstd = false
+	enabled = false
 	disabled := newReq("/backend-api/codex/responses")
 	same, err = svc.prepareOpenAICodexWireRequest(disabled, oauth)
 	require.NoError(t, err)
 	require.Same(t, disabled, same)
 
-	// 进程级快照门控（用量探针等拿不到配置的边界）走同一实现：开启时压缩，关闭时原样返回。
-	t.Cleanup(func() { SetCodexRequestZstdEnabled(false) })
-	SetCodexRequestZstdEnabled(true)
-	snapshotWire, err := prepareOpenAICodexWireRequestSnapshot(newReq("/backend-api/codex/responses"), oauth)
+	// Quota and gateway paths consult the same domain policy.
+	enabled = true
+	snapshotWire, err := prepareCodexTransport(newReq("/backend-api/codex/responses"), oauth)
 	require.NoError(t, err)
 	require.Equal(t, "zstd", snapshotWire.Header.Get("Content-Encoding"))
 	snapshotCompressed, err := io.ReadAll(snapshotWire.Body)
 	require.NoError(t, err)
 	require.Equal(t, body, zstdDecodeForTest(t, snapshotCompressed))
-	SetCodexRequestZstdEnabled(false)
+	enabled = false
 	snapshotOff := newReq("/backend-api/codex/responses")
-	same, err = prepareOpenAICodexWireRequestSnapshot(snapshotOff, oauth)
+	same, err = prepareCodexTransport(snapshotOff, oauth)
 	require.NoError(t, err)
 	require.Same(t, snapshotOff, same)
 }
@@ -121,6 +122,7 @@ func TestPrepareOpenAICodexWireRequestNeverSendsTruncatedBody(t *testing.T) {
 	broken, err := http.NewRequest(http.MethodPost, "https://chatgpt.com/backend-api/codex/responses", nil)
 	require.NoError(t, err)
 	broken.Header.Set("Content-Type", "application/json")
+	broken = broken.WithContext(withCodexTransportFixture(context.Background(), true))
 	broken.Body = io.NopCloser(&prefixThenErrorReader{prefix: []byte(`{"model":"gpt-5.5",`), err: readErr})
 	broken.GetBody = nil
 	_, err = svc.prepareOpenAICodexWireRequest(broken, oauth)
@@ -130,6 +132,7 @@ func TestPrepareOpenAICodexWireRequestNeverSendsTruncatedBody(t *testing.T) {
 	replayable, err := http.NewRequest(http.MethodPost, "https://chatgpt.com/backend-api/codex/responses", bytes.NewReader([]byte(`{"model":"gpt-5.5"}`)))
 	require.NoError(t, err)
 	replayable.Header.Set("Content-Type", "application/json")
+	replayable = replayable.WithContext(withCodexTransportFixture(context.Background(), true))
 	replayable.GetBody = func() (io.ReadCloser, error) {
 		return io.NopCloser(&prefixThenErrorReader{prefix: []byte(`{"mo`), err: readErr}), nil
 	}

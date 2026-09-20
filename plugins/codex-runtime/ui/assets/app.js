@@ -19,11 +19,13 @@
     return control
   }
   const configuration = context.mode === 'configuration' || context.mode === 'admin.settings'
-  app.append(el('h2', configuration ? text('Codex 票据设置', 'Codex ticket settings') : text('账号票据操作', 'Account ticket operation')))
+  app.append(el('h2', configuration ? text('Codex 运行设置', 'Codex runtime settings') : text('账号票据操作', 'Account ticket operation')))
   if (configuration) {
     let config = await bridge.config()
     const enabled = el('input'); enabled.type = 'checkbox'; enabled.checked = !!config.enabled
     const toggle = el('label', '', 'check'); toggle.append(enabled, document.createTextNode(text('启用票据采集与续期', 'Enable ticket acquisition and renewal'))); app.append(toggle)
+    const compression = el('input'); compression.type = 'checkbox'; compression.checked = config.request_zstd !== false
+    const compressionToggle = el('label', '', 'check'); compressionToggle.append(compression, document.createTextNode(text('压缩 Codex Responses 请求体', 'Compress Codex Responses requests'))); app.append(compressionToggle)
     const address = el('textarea'); address.rows = 4; address.autocomplete = 'off'; address.spellcheck = false; address.value = config.proxy_url || ''
     const addressLabel = el('label', text('采集代理', 'Acquisition proxy')); addressLabel.append(address); app.append(addressLabel)
     const controls = el('div', '', 'controls'), field = el('label', text('协议', 'Protocol'), 'field'), protocol = el('select')
@@ -43,13 +45,13 @@
       if (!document.execCommand('copy')) throw new Error(text('复制失败，请手动复制。', 'Copy failed; copy the selected text manually.'))
       show(text('已复制', 'Copied'))
     }))
-    controls.append(button(text('清除代理并关闭开关', 'Clear proxy and disable'), async () => {
+    controls.append(button(text('清除代理并停用票据', 'Clear proxy and stop tickets'), async () => {
       config = await bridge.save({ ...config, proxy_url: '', enabled: false }); address.value = ''; enabled.checked = false; show(text('已清除并关闭', 'Cleared and disabled'))
     }))
     app.append(controls, el('p', text('连接测试验证代理与证书；成功连接不代表已取得292票据。', 'Connection tests verify the proxy and certificate; they do not acquire a 292 ticket.'), 'muted'))
     const actions = el('div', '', 'actions')
     actions.append(button(text('保存设置', 'Save settings'), async () => {
-      config = await bridge.save({ ...config, enabled: enabled.checked, proxy_url: address.value, proxy_protocol: protocol.value })
+      config = await bridge.save({ ...config, enabled: enabled.checked, proxy_url: address.value, proxy_protocol: protocol.value, request_zstd: compression.checked })
       address.value = config.proxy_url || ''; show(text('设置已保存', 'Settings saved'))
     }, true)); app.append(actions, result)
     return
