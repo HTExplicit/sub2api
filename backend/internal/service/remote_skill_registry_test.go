@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	extensionv1 "github.com/Wei-Shaw/sub2api/pkg/extensionapi/v1"
 	"github.com/stretchr/testify/require"
 )
 
@@ -82,6 +83,9 @@ func (f *fakeRemoteSkillRegistryStore) GetRemoteSkillSyncJob(context.Context, in
 func (f *fakeRemoteSkillRegistryStore) ExpireRemoteSkillSyncJobs(context.Context) error { return nil }
 func (f *fakeRemoteSkillRegistryStore) PublishRemoteSkillVersion(context.Context, int64, int64, int64) (RemoteSkillRegistrySnapshot, error) {
 	f.publishCalls++
+	if f.publishErr == nil && f.published.Revision > 0 {
+		f.snapshot = f.published
+	}
 	return f.published, f.publishErr
 }
 func (f *fakeRemoteSkillRegistryStore) CleanupLegacyRemoteSkillData(context.Context) error {
@@ -310,6 +314,38 @@ func TestRemoteSkillRegistryPublishValidatesPairBeforeDatabaseCAS(t *testing.T) 
 	_, err := svc.PublishVersion(context.Background(), 2, 7, 42)
 	require.ErrorIs(t, err, ErrBusinessSystemPromptUnavailable)
 	require.Zero(t, store.publishCalls)
+	require.Equal(t, int64(1), svc.CurrentSnapshot().Active.ID)
+}
+
+func TestRemoteSkillRegistryPublicationActionRejectsCurrentRollbackButAllowsOtherVersion(t *testing.T) {
+	active := testRemoteSkillCandidate(t, 1, 1, "old")
+	svc, store, files := testRemoteSkillRegistry(t, active)
+	target := testRemoteSkillCandidate(t, 2, 2, "new")
+	store.detail = RemoteSkillBundleVersionDetail{RemoteSkillBundleVersion: active.Version, Prompt: active.Prompt, FileChanges: active.FileChanges}
+	files.candidates[1] = active
+	store.published = RemoteSkillRegistrySnapshot{Revision: 8, Active: &active.Version, ActivePrompt: &active.Prompt, UpdatedAt: time.Now().UTC()}
+	_, err := svc.PublishVersionAction(context.Background(), 1, 7, extensionv1.PublicationActionRollback, 42)
+	require.ErrorIs(t, err, ErrBusinessSystemPromptBundleInvalid)
+	require.Zero(t, store.publishCalls)
+
+	store.detail = RemoteSkillBundleVersionDetail{RemoteSkillBundleVersion: target.Version, Prompt: target.Prompt, FileChanges: target.FileChanges}
+	files.candidates[2] = target
+	store.published = RemoteSkillRegistrySnapshot{Revision: 8, Active: &target.Version, ActivePrompt: &target.Prompt, UpdatedAt: time.Now().UTC()}
+	got, err := svc.PublishVersionAction(context.Background(), 2, 7, extensionv1.PublicationActionRollback, 42)
+	require.NoError(t, err)
+	require.Equal(t, int64(2), got.Active.ID)
+}
+
+func TestRemoteSkillRegistryPublicationUsesPersistedCurrentVersion(t *testing.T) {
+	active := testRemoteSkillCandidate(t, 1, 1, "old")
+	target := testRemoteSkillCandidate(t, 2, 2, "new")
+	svc, store, files := testRemoteSkillRegistry(t, active)
+	store.snapshot = RemoteSkillRegistrySnapshot{Revision: 7, Active: &target.Version, ActivePrompt: &target.Prompt, UpdatedAt: time.Now().UTC()}
+	store.detail = RemoteSkillBundleVersionDetail{RemoteSkillBundleVersion: active.Version, Prompt: active.Prompt, FileChanges: active.FileChanges}
+	files.candidates[1] = active
+	store.published = RemoteSkillRegistrySnapshot{Revision: 8, Active: &active.Version, ActivePrompt: &active.Prompt, UpdatedAt: time.Now().UTC()}
+	_, err := svc.PublishVersionAction(context.Background(), 1, 7, extensionv1.PublicationActionRollback, 42)
+	require.NoError(t, err)
 	require.Equal(t, int64(1), svc.CurrentSnapshot().Active.ID)
 }
 

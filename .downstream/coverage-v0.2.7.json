@@ -1,13 +1,13 @@
 {
   "schema_version": 3,
   "upstream_base": "aea725f2ea644d5592d0bbb1d63b607efa7e200a",
-  "basis_commit": "2ee4c42e89a27156430e67f662c0f51b10b3ff29",
+  "basis_commit": "9f01614d7e32ff7b600ba418be32b75aa5125dae",
   "scope": "Current Sub2API downstream source and working tree. Candidate ownership does not establish completed review. Root maintenance, independent services and Worker require a separate audit.",
-  "source_digest": "33d1e1e5d1cc7c1157f90ad45efdc42824d6428ad2ce86431449de183d13c9ce",
+  "source_digest": "726bb4eb6fdeda17e3e8fb420d8944861daa27a8e5da05bd61a92535ff7ac11b",
   "digest_excludes": [
     "the inventory itself uses a derived structural fingerprint; deletions bind the upstream blob"
   ],
-  "total_paths": 2293,
+  "total_paths": 2302,
   "generated_assets_and_locks": 83,
   "review_complete": false,
   "pending_paths": [
@@ -521,6 +521,8 @@
     "backend/internal/service/business_system_prompt_test.go",
     "backend/internal/service/channel_cindy_managed_crud_test.go",
     "backend/internal/service/channel_service.go",
+    "backend/internal/service/cindy_alpha_search_plan.go",
+    "backend/internal/service/cindy_alpha_search_plan_test.go",
     "backend/internal/service/cindy_balance.go",
     "backend/internal/service/cindy_balance_native_messages_test.go",
     "backend/internal/service/cindy_balance_pending_test.go",
@@ -868,6 +870,8 @@
     "backend/internal/service/plugin_bundle.go",
     "backend/internal/service/plugin_catalog_test.go",
     "backend/internal/service/plugin_cindy.go",
+    "backend/internal/service/plugin_cindy_codex.go",
+    "backend/internal/service/plugin_cindy_codex_test.go",
     "backend/internal/service/plugin_cindy_probe.go",
     "backend/internal/service/plugin_cindy_probe_test.go",
     "backend/internal/service/plugin_codex_identity.go",
@@ -898,6 +902,7 @@
     "backend/internal/service/plugin_package_test.go",
     "backend/internal/service/plugin_prompt_fixture_test.go",
     "backend/internal/service/plugin_prompt_management.go",
+    "backend/internal/service/plugin_prompt_profile_test.go",
     "backend/internal/service/plugin_prompt_request_context.go",
     "backend/internal/service/plugin_prompt_test.go",
     "backend/internal/service/plugin_provider.go",
@@ -1084,6 +1089,7 @@
     "backend/pkg/extensionapi/v1/catalog.go",
     "backend/pkg/extensionapi/v1/cindy.go",
     "backend/pkg/extensionapi/v1/cindy_clone.go",
+    "backend/pkg/extensionapi/v1/cindy_codex.go",
     "backend/pkg/extensionapi/v1/cindy_health.go",
     "backend/pkg/extensionapi/v1/cindy_probe.go",
     "backend/pkg/extensionapi/v1/codex_identity.go",
@@ -1152,28 +1158,22 @@
     "frontend/src/api/client.ts",
     "frontend/src/api/downstreamStatus.ts",
     "frontend/src/components/AliyunCaptchaWidget.vue",
-    "frontend/src/components/TurnstileWidget.vue",
     "frontend/src/components/account/AccountCapacityCell.vue",
-    "frontend/src/components/account/AccountGroupsCell.vue",
     "frontend/src/components/account/AccountIdentityBadges.vue",
-    "frontend/src/components/account/AccountQuotaInfo.vue",
     "frontend/src/components/account/AccountSelectionCheckbox.vue",
     "frontend/src/components/account/AccountStatsModal.vue",
     "frontend/src/components/account/AccountStatusIndicator.vue",
     "frontend/src/components/account/AccountTestModal.vue",
     "frontend/src/components/account/AccountUsageCell.vue",
     "frontend/src/components/account/BulkEditAccountModal.vue",
-    "frontend/src/components/account/CapacityBadge.vue",
     "frontend/src/components/account/CreateAccountModal.vue",
     "frontend/src/components/account/EditAccountModal.vue",
-    "frontend/src/components/account/HeaderOverrideJsonTools.vue",
     "frontend/src/components/account/ModelContextCapacityField.vue",
     "frontend/src/components/account/ModelWhitelistSelector.vue",
     "frontend/src/components/account/OAuthAuthorizationFlow.vue",
     "frontend/src/components/account/OllamaCloudUsageCell.vue",
     "frontend/src/components/account/OpenAIReasoningPolicyFields.vue",
     "frontend/src/components/account/OpenCodeGoProtocolRulesEditor.vue",
-    "frontend/src/components/account/QuotaBadge.vue",
     "frontend/src/components/account/QuotaLimitCard.vue",
     "frontend/src/components/account/QuotaNotifyToggle.vue",
     "frontend/src/components/account/ReAuthAccountModal.vue",
@@ -1231,22 +1231,17 @@
     "frontend/src/components/admin/account/__tests__/AccountTestModal.spec.ts",
     "frontend/src/components/admin/account/__tests__/AccountUsageViews.spec.ts",
     "frontend/src/components/admin/announcements/AnnouncementTargetingEditor.vue",
-    "frontend/src/components/admin/channel/PricingEntryCard.vue",
-    "frontend/src/components/admin/channel/TimePricingSection.vue",
     "frontend/src/components/admin/group/CodexManifestAccountsField.vue",
     "frontend/src/components/admin/group/GroupRPMOverridesModal.vue",
     "frontend/src/components/admin/group/GroupRateMultipliersModal.vue",
     "frontend/src/components/admin/group/ReasoningEffortPolicyFields.vue",
     "frontend/src/components/admin/group/__tests__/CodexManifestAccountsField.spec.ts",
-    "frontend/src/components/admin/monitor/MonitorFiltersBar.vue",
     "frontend/src/components/admin/monitor/MonitorFormDialog.vue",
     "frontend/src/components/admin/monitor/MonitorTemplateApplyPickerDialog.vue",
     "frontend/src/components/admin/monitor/MonitorTemplateManagerDialog.vue",
     "frontend/src/components/admin/payment/TopUsersLeaderboard.vue",
     "frontend/src/components/admin/usage/UsageTable.vue",
-    "frontend/src/components/admin/usage/UserTokenRanking.vue",
     "frontend/src/components/admin/user/UserAllowedGroupsModal.vue",
-    "frontend/src/components/admin/user/UserBalanceHistoryModal.vue",
     "frontend/src/components/admin/user/UserPlatformQuotaModal.vue",
     "frontend/src/components/admin/user/__tests__/UserPlatformQuotaModal.spec.ts",
     "frontend/src/components/auth/LoginAgreementPrompt.vue",
@@ -1256,7 +1251,6 @@
     "frontend/src/components/charts/GroupDistributionChart.vue",
     "frontend/src/components/charts/ModelDistributionChart.vue",
     "frontend/src/components/charts/TokenUsageTrend.vue",
-    "frontend/src/components/charts/UserBreakdownSubTable.vue",
     "frontend/src/components/common/AnnouncementBell.vue",
     "frontend/src/components/common/AnnouncementPopup.vue",
     "frontend/src/components/common/BaseDialog.vue",
@@ -1267,13 +1261,9 @@
     "frontend/src/components/common/GroupCapacityBadge.vue",
     "frontend/src/components/common/GroupSelector.vue",
     "frontend/src/components/common/HelpTooltip.vue",
-    "frontend/src/components/common/ImageUpload.vue",
-    "frontend/src/components/common/Input.vue",
-    "frontend/src/components/common/IpGeoCell.vue",
     "frontend/src/components/common/LoadingSpinner.vue",
     "frontend/src/components/common/ModelIcon.vue",
     "frontend/src/components/common/NavigationProgress.vue",
-    "frontend/src/components/common/Pagination.vue",
     "frontend/src/components/common/PlatformIcon.vue",
     "frontend/src/components/common/PlatformTypeBadge.vue",
     "frontend/src/components/common/ProxySelector.vue",
@@ -1305,11 +1295,8 @@
     "frontend/src/components/modelPlaza/PlazaGroupSection.vue",
     "frontend/src/components/modelPlaza/PlazaModelPricingTable.vue",
     "frontend/src/components/modelPlaza/PlazaNavBar.vue",
-    "frontend/src/components/payment/AmountInput.vue",
     "frontend/src/components/payment/PaymentMethodSelector.vue",
     "frontend/src/components/payment/PaymentProviderDialog.vue",
-    "frontend/src/components/payment/PaymentProviderList.vue",
-    "frontend/src/components/payment/PaymentQRDialog.vue",
     "frontend/src/components/payment/PaymentStatusPanel.vue",
     "frontend/src/components/payment/ProviderCard.vue",
     "frontend/src/components/payment/StripePaymentInline.vue",
@@ -1334,11 +1321,8 @@
     "frontend/src/components/plugins/preferences.ts",
     "frontend/src/components/plugins/resourceClient.ts",
     "frontend/src/components/plugins/theme.ts",
-    "frontend/src/components/user/PlatformCostCell.vue",
-    "frontend/src/components/user/PlatformUsageBreakdown.vue",
     "frontend/src/components/user/UserAttributesConfigModal.vue",
     "frontend/src/components/user/UserConcurrencyCell.vue",
-    "frontend/src/components/user/UserErrorRequestsTable.vue",
     "frontend/src/components/user/UserPlatformQuotaCell.vue",
     "frontend/src/components/user/dashboard/UserDashboardCharts.vue",
     "frontend/src/components/user/dashboard/UserDashboardQuickActions.vue",
@@ -1348,9 +1332,7 @@
     "frontend/src/components/user/monitor/MonitorCardGrid.vue",
     "frontend/src/components/user/monitor/MonitorHero.vue",
     "frontend/src/components/user/monitor/MonitorMetricPair.vue",
-    "frontend/src/components/user/monitor/MonitorTimeline.vue",
     "frontend/src/components/user/profile/ProfileAvatarCard.vue",
-    "frontend/src/components/user/profile/ProfileBalanceNotifyCard.vue",
     "frontend/src/components/user/profile/ProfileIdentityBindingsSection.vue",
     "frontend/src/components/user/profile/ProfileInfoCard.vue",
     "frontend/src/composables/__tests__/useAccountSelectionMetadata.spec.ts",
@@ -1446,13 +1428,11 @@
     "frontend/src/views/admin/DashboardView.vue",
     "frontend/src/views/admin/GroupsView.vue",
     "frontend/src/views/admin/PluginsView.vue",
-    "frontend/src/views/admin/ProxiesView.vue",
     "frontend/src/views/admin/RedeemView.vue",
     "frontend/src/views/admin/RiskControlView.vue",
     "frontend/src/views/admin/SettingsView.vue",
     "frontend/src/views/admin/SubscriptionsView.vue",
     "frontend/src/views/admin/SystemPromptsView.vue",
-    "frontend/src/views/admin/UsageView.vue",
     "frontend/src/views/admin/UsersView.vue",
     "frontend/src/views/admin/__tests__/AccountTasksView.spec.ts",
     "frontend/src/views/admin/__tests__/AccountsView.bulkEdit.spec.ts",
@@ -1476,7 +1456,6 @@
     "frontend/src/views/admin/affiliates/AdminAffiliateRecordsTable.vue",
     "frontend/src/views/admin/groupModelAllowlist.ts",
     "frontend/src/views/admin/groupsProfitControl.ts",
-    "frontend/src/views/admin/ops/components/OpsAlertEventsCard.vue",
     "frontend/src/views/admin/ops/components/OpsAlertRulesCard.vue",
     "frontend/src/views/admin/ops/components/OpsConcurrencyCard.vue",
     "frontend/src/views/admin/ops/components/OpsDashboardHeader.vue",
@@ -1484,10 +1463,8 @@
     "frontend/src/views/admin/ops/components/OpsEmailNotificationCard.vue",
     "frontend/src/views/admin/ops/components/OpsErrorDetailModal.vue",
     "frontend/src/views/admin/ops/components/OpsErrorDistributionChart.vue",
-    "frontend/src/views/admin/ops/components/OpsErrorLogTable.vue",
     "frontend/src/views/admin/ops/components/OpsErrorTrendChart.vue",
     "frontend/src/views/admin/ops/components/OpsLatencyChart.vue",
-    "frontend/src/views/admin/ops/components/OpsRequestDetailsModal.vue",
     "frontend/src/views/admin/ops/components/OpsRuntimeSettingsCard.vue",
     "frontend/src/views/admin/ops/components/OpsSettingsDialog.vue",
     "frontend/src/views/admin/ops/components/OpsSwitchRateTrendChart.vue",
@@ -1499,19 +1476,13 @@
     "frontend/src/views/admin/orders/PlanEditDialog.vue",
     "frontend/src/views/admin/settings/EmailTemplateEditor.vue",
     "frontend/src/views/auth/DingTalkCallbackView.vue",
-    "frontend/src/views/auth/EmailVerifyView.vue",
-    "frontend/src/views/auth/ForgotPasswordView.vue",
     "frontend/src/views/auth/LinuxDoCallbackView.vue",
-    "frontend/src/views/auth/LoginView.vue",
     "frontend/src/views/auth/OidcCallbackView.vue",
     "frontend/src/views/auth/RegisterView.vue",
-    "frontend/src/views/auth/ResetPasswordView.vue",
     "frontend/src/views/auth/WechatCallbackView.vue",
     "frontend/src/views/auth/WechatPaymentCallbackView.vue",
     "frontend/src/views/public/LegalDocumentView.vue",
     "frontend/src/views/setup/SetupWizardView.vue",
-    "frontend/src/views/user/AffiliateView.vue",
-    "frontend/src/views/user/AvailableChannelsView.vue",
     "frontend/src/views/user/BatchImageGuideView.vue",
     "frontend/src/views/user/ChannelStatusV2View.vue",
     "frontend/src/views/user/CustomPageView.vue",
@@ -1605,12 +1576,15 @@
     "plugins/cindy-provider/catalog/catalog_data.go",
     "plugins/cindy-provider/catalog/channel.go",
     "plugins/cindy-provider/catalog/channel_test.go",
+    "plugins/cindy-provider/catalog/codex_manifest.go",
+    "plugins/cindy-provider/catalog/codex_manifest_test.go",
     "plugins/cindy-provider/catalog/health.go",
     "plugins/cindy-provider/catalog/module.go",
     "plugins/cindy-provider/catalog/module_test.go",
     "plugins/cindy-provider/catalog/probe.go",
     "plugins/cindy-provider/catalog/probe_test.go",
     "plugins/cindy-provider/catalog/search.go",
+    "plugins/cindy-provider/catalog/search_test.go",
     "plugins/cindy-provider/cmd/plugin/main.go",
     "plugins/cindy-provider/go.mod",
     "plugins/cindy-provider/manifest.source.json",
@@ -1716,16 +1690,16 @@
     "dependency-lock": 9,
     "documentation": 28,
     "generated": 68,
-    "source": 1028,
-    "test-or-fixture": 696
+    "source": 1032,
+    "test-or-fixture": 701
   },
   "owner_counts": {
     "operations": 42,
     "documentation-and-history": 26,
     "mixed-requires-review": 1030,
-    "core-extension-and-job-host": 179,
+    "core-extension-and-job-host": 183,
     "core-data-and-migrations": 21,
-    "cindy-provider": 183,
+    "cindy-provider": 188,
     "image-tools": 45,
     "account-tools": 79,
     "codex-runtime": 44,
@@ -1777,7 +1751,7 @@
       "role": "documentation",
       "present": true,
       "content_sha256": null,
-      "review_fingerprint": "d6e7c21645056fe2926698b6a1b3ef676aa6d81f809f287b645c5c0543d98cec",
+      "review_fingerprint": "0d6207f820e729de8815a4a762bdd7cf39670aae3a33c9e7e95422c62bcfa78c",
       "review_status": "reviewed",
       "decision": "generated-source",
       "owner": "operations",
@@ -1806,8 +1780,8 @@
       "candidate_owner": "documentation-and-history",
       "role": "documentation",
       "present": true,
-      "content_sha256": "bc5997a46e6502b681e2996b9e9d8273026af7c48aad1d4263eab01b9487cbc5",
-      "review_fingerprint": "bc5997a46e6502b681e2996b9e9d8273026af7c48aad1d4263eab01b9487cbc5",
+      "content_sha256": "73aee34218e1c4241684e8bf7288f9781690e5e3439bac3c91da78ddbd2d2a01",
+      "review_fingerprint": "73aee34218e1c4241684e8bf7288f9781690e5e3439bac3c91da78ddbd2d2a01",
       "review_status": "pending"
     },
     {
@@ -5020,8 +4994,8 @@
       "candidate_owner": "mixed-requires-review",
       "role": "source",
       "present": true,
-      "content_sha256": "85dff2005545ecab9965b924343c0dddeca442c0273e45bb22a00c857351a3a7",
-      "review_fingerprint": "85dff2005545ecab9965b924343c0dddeca442c0273e45bb22a00c857351a3a7",
+      "content_sha256": "65a6c76368f773d876c44866bbf45a19e96c7f613ac9eb2f25cc04c87627e435",
+      "review_fingerprint": "65a6c76368f773d876c44866bbf45a19e96c7f613ac9eb2f25cc04c87627e435",
       "review_status": "pending"
     },
     {
@@ -8165,6 +8139,24 @@
       "review_status": "pending"
     },
     {
+      "path": "backend/internal/service/cindy_alpha_search_plan.go",
+      "candidate_owner": "cindy-provider",
+      "role": "source",
+      "present": true,
+      "content_sha256": "ce1740a81bb300bf92b0dbc0083de134cfac6587c86cd1317b9c0458cb826d15",
+      "review_fingerprint": "ce1740a81bb300bf92b0dbc0083de134cfac6587c86cd1317b9c0458cb826d15",
+      "review_status": "pending"
+    },
+    {
+      "path": "backend/internal/service/cindy_alpha_search_plan_test.go",
+      "candidate_owner": "cindy-provider",
+      "role": "test-or-fixture",
+      "present": true,
+      "content_sha256": "55a1ff614a500b6981dc4ea4cf2c00ebd2e3a6ce3361b8186d6b06bda209bf51",
+      "review_fingerprint": "55a1ff614a500b6981dc4ea4cf2c00ebd2e3a6ce3361b8186d6b06bda209bf51",
+      "review_status": "pending"
+    },
+    {
       "path": "backend/internal/service/cindy_balance.go",
       "candidate_owner": "cindy-provider",
       "role": "source",
@@ -9240,8 +9232,8 @@
       "candidate_owner": "mixed-requires-review",
       "role": "source",
       "present": true,
-      "content_sha256": "b4829b51b0d5dc9f622d22055e8f52a80e24b451ea441a64ddd8f144c8751935",
-      "review_fingerprint": "b4829b51b0d5dc9f622d22055e8f52a80e24b451ea441a64ddd8f144c8751935",
+      "content_sha256": "b3cb0b2ed9e1e5b2e5a752945bf8d0a7026f0245a1c533810e81a67962202a4d",
+      "review_fingerprint": "b3cb0b2ed9e1e5b2e5a752945bf8d0a7026f0245a1c533810e81a67962202a4d",
       "review_status": "pending"
     },
     {
@@ -9258,8 +9250,8 @@
       "candidate_owner": "cindy-provider",
       "role": "test-or-fixture",
       "present": true,
-      "content_sha256": "7a25e44e131d6de62aa4bb6fb5e6ce64c3aad5040accd55be09c4f3eee9b0ed6",
-      "review_fingerprint": "7a25e44e131d6de62aa4bb6fb5e6ce64c3aad5040accd55be09c4f3eee9b0ed6",
+      "content_sha256": "e6833aa2d0ea291d013123a7129452a3354fbc4b4f9e74be8c7403482b25d0f9",
+      "review_fingerprint": "e6833aa2d0ea291d013123a7129452a3354fbc4b4f9e74be8c7403482b25d0f9",
       "review_status": "pending"
     },
     {
@@ -9564,8 +9556,8 @@
       "candidate_owner": "mixed-requires-review",
       "role": "source",
       "present": true,
-      "content_sha256": "40c8b08934b421917dd86aa07c8bfd6de7843a0b1e40b6303c23c1690e29b78a",
-      "review_fingerprint": "40c8b08934b421917dd86aa07c8bfd6de7843a0b1e40b6303c23c1690e29b78a",
+      "content_sha256": "8197d2ef360c304d6c2d7df6c98d0cb200d70c57a4d12ca18e5ca11dd1ea4439",
+      "review_fingerprint": "8197d2ef360c304d6c2d7df6c98d0cb200d70c57a4d12ca18e5ca11dd1ea4439",
       "review_status": "pending"
     },
     {
@@ -11342,6 +11334,24 @@
       "review_status": "pending"
     },
     {
+      "path": "backend/internal/service/plugin_cindy_codex.go",
+      "candidate_owner": "core-extension-and-job-host",
+      "role": "source",
+      "present": true,
+      "content_sha256": "109eb9d98e9aacbae407c40c26c1a497ead609463911160823b0d6921de4b0ac",
+      "review_fingerprint": "109eb9d98e9aacbae407c40c26c1a497ead609463911160823b0d6921de4b0ac",
+      "review_status": "pending"
+    },
+    {
+      "path": "backend/internal/service/plugin_cindy_codex_test.go",
+      "candidate_owner": "core-extension-and-job-host",
+      "role": "test-or-fixture",
+      "present": true,
+      "content_sha256": "6964d77f9d67a9a36803a4a2ef7ec10e4a3bf4fbfda5c19607b559eb380af3c5",
+      "review_fingerprint": "6964d77f9d67a9a36803a4a2ef7ec10e4a3bf4fbfda5c19607b559eb380af3c5",
+      "review_status": "pending"
+    },
+    {
       "path": "backend/internal/service/plugin_cindy_management.go",
       "candidate_owner": "core-extension-and-job-host",
       "role": "source",
@@ -11747,8 +11757,17 @@
       "candidate_owner": "core-extension-and-job-host",
       "role": "source",
       "present": true,
-      "content_sha256": "17655b0e51a1088b42809429040bef0dacda123f271b101d92cf760ae0058887",
-      "review_fingerprint": "17655b0e51a1088b42809429040bef0dacda123f271b101d92cf760ae0058887",
+      "content_sha256": "9ed1bf694b196f802757b564cf2feb103c07245d303bdea22cd6819692ced3de",
+      "review_fingerprint": "9ed1bf694b196f802757b564cf2feb103c07245d303bdea22cd6819692ced3de",
+      "review_status": "pending"
+    },
+    {
+      "path": "backend/internal/service/plugin_prompt_profile_test.go",
+      "candidate_owner": "core-extension-and-job-host",
+      "role": "test-or-fixture",
+      "present": true,
+      "content_sha256": "5671f44b3d8b07a508283dbaa6dcf12f5fe94cb99631c7ba4a8721fb3e19c0db",
+      "review_fingerprint": "5671f44b3d8b07a508283dbaa6dcf12f5fe94cb99631c7ba4a8721fb3e19c0db",
       "review_status": "pending"
     },
     {
@@ -12295,8 +12314,8 @@
       "candidate_owner": "prompt-skills",
       "role": "source",
       "present": true,
-      "content_sha256": "808c2018de8738da4aa7165e2943a4654878380c298828646f144d190009395b",
-      "review_fingerprint": "808c2018de8738da4aa7165e2943a4654878380c298828646f144d190009395b",
+      "content_sha256": "2f4ccf17f24210e26034f505567d06bf76eeb0993b06c91de452de717aff7f87",
+      "review_fingerprint": "2f4ccf17f24210e26034f505567d06bf76eeb0993b06c91de452de717aff7f87",
       "review_status": "pending"
     },
     {
@@ -12304,8 +12323,8 @@
       "candidate_owner": "prompt-skills",
       "role": "test-or-fixture",
       "present": true,
-      "content_sha256": "3b5476419b7b16ea4005899d1573ffca24489dd3f0f3b1d0ca1518ef189c7a16",
-      "review_fingerprint": "3b5476419b7b16ea4005899d1573ffca24489dd3f0f3b1d0ca1518ef189c7a16",
+      "content_sha256": "9b261c85ac666e3032ebd3c1e7d909fd7da4acd8e6f12582f8c1540c3bf881b1",
+      "review_fingerprint": "9b261c85ac666e3032ebd3c1e7d909fd7da4acd8e6f12582f8c1540c3bf881b1",
       "review_status": "pending"
     },
     {
@@ -12331,8 +12350,8 @@
       "candidate_owner": "prompt-skills",
       "role": "source",
       "present": true,
-      "content_sha256": "db08bfa3fd528d68f464ab330f6227e2d104bc780c3aa37e012dee85228938c8",
-      "review_fingerprint": "db08bfa3fd528d68f464ab330f6227e2d104bc780c3aa37e012dee85228938c8",
+      "content_sha256": "2ebe962c73618ae29487a7b597ad207b990482912c1b19ca73af5a3b63f26a3e",
+      "review_fingerprint": "2ebe962c73618ae29487a7b597ad207b990482912c1b19ca73af5a3b63f26a3e",
       "review_status": "pending"
     },
     {
@@ -13626,8 +13645,8 @@
       "candidate_owner": "core-extension-and-job-host",
       "role": "source",
       "present": true,
-      "content_sha256": "75f03c39336c928ba59d725e40e3ebd6a4f5299efd730f34e55e406e245f2134",
-      "review_fingerprint": "75f03c39336c928ba59d725e40e3ebd6a4f5299efd730f34e55e406e245f2134",
+      "content_sha256": "3beeb25b9433fca68526c28ccd65e24e9fb629fbcc375fb77230a2085522640a",
+      "review_fingerprint": "3beeb25b9433fca68526c28ccd65e24e9fb629fbcc375fb77230a2085522640a",
       "review_status": "pending"
     },
     {
@@ -13637,6 +13656,15 @@
       "present": true,
       "content_sha256": "f0067c1cf7a0aa513693dc98117d5f3f4fedca2dad43ee1224444c5f99fd443e",
       "review_fingerprint": "f0067c1cf7a0aa513693dc98117d5f3f4fedca2dad43ee1224444c5f99fd443e",
+      "review_status": "pending"
+    },
+    {
+      "path": "backend/pkg/extensionapi/v1/cindy_codex.go",
+      "candidate_owner": "core-extension-and-job-host",
+      "role": "source",
+      "present": true,
+      "content_sha256": "e3fba4aa9c48faa1636597391b17db30abb7d1683fd327e698970181cb79128f",
+      "review_fingerprint": "e3fba4aa9c48faa1636597391b17db30abb7d1683fd327e698970181cb79128f",
       "review_status": "pending"
     },
     {
@@ -14347,7 +14375,16 @@
       "present": true,
       "content_sha256": "a77424b13cf5cae1da63e6146e04755725b2df4549820029f98dd9463b82d173",
       "review_fingerprint": "a77424b13cf5cae1da63e6146e04755725b2df4549820029f98dd9463b82d173",
-      "review_status": "pending"
+      "review_status": "reviewed",
+      "decision": "adapter",
+      "owner": "core-ui-adapter",
+      "reason": "The complete file matches the exact official baseline outside static class attributes. Its only downstream differences select neutral palette/contrast utilities or the semantic muted color hook, all rendered by the shared optional-theme preset; scripts, event handlers, dynamic class conditions, markup content and scoped styles are unchanged.",
+      "evidence": [
+        "upstream_base=aea725f2ea644d5592d0bbb1d63b607efa7e200a",
+        "Vue SFC parse: whole-source equality after masking only static class attributes; dynamic bindings and every other byte remain in the comparison",
+        "Exact palette changes: [{\"removed\":[\"dark:text-gray-400\"],\"added\":[\"dark:text-dark-300\"]}]",
+        "Shared CSS variables: backend/pkg/extensionapi/ui/tailwind.preset.mjs and theme.css; no functional code differences; no business test rerun needed"
+      ]
     },
     {
       "path": "frontend/src/components/account/AccountCapacityCell.vue",
@@ -14365,7 +14402,16 @@
       "present": true,
       "content_sha256": "596c75b9c334d5f48f678f279ae5d65956b034ea8e9216dc0531887bc0e8a0b9",
       "review_fingerprint": "596c75b9c334d5f48f678f279ae5d65956b034ea8e9216dc0531887bc0e8a0b9",
-      "review_status": "pending"
+      "review_status": "reviewed",
+      "decision": "adapter",
+      "owner": "core-ui-adapter",
+      "reason": "The complete file matches the exact official baseline outside static class attributes. Its only downstream differences select neutral palette/contrast utilities or the semantic muted color hook, all rendered by the shared optional-theme preset; scripts, event handlers, dynamic class conditions, markup content and scoped styles are unchanged.",
+      "evidence": [
+        "upstream_base=aea725f2ea644d5592d0bbb1d63b607efa7e200a",
+        "Vue SFC parse: whole-source equality after masking only static class attributes; dynamic bindings and every other byte remain in the comparison",
+        "Exact palette changes: [{\"removed\":[\"text-gray-400\",\"dark:text-dark-500\"],\"added\":[\"text-muted\"]}]",
+        "Shared CSS variables: backend/pkg/extensionapi/ui/tailwind.preset.mjs and theme.css; no functional code differences; no business test rerun needed"
+      ]
     },
     {
       "path": "frontend/src/components/account/AccountIdentityBadges.vue",
@@ -14383,7 +14429,16 @@
       "present": true,
       "content_sha256": "9e1aa3559eb71a51dfe1e99ec1ce6e1b12e8ef8c82d5c1622a873b35706310b7",
       "review_fingerprint": "9e1aa3559eb71a51dfe1e99ec1ce6e1b12e8ef8c82d5c1622a873b35706310b7",
-      "review_status": "pending"
+      "review_status": "reviewed",
+      "decision": "adapter",
+      "owner": "core-ui-adapter",
+      "reason": "The complete file matches the exact official baseline outside static class attributes. Its only downstream differences select neutral palette/contrast utilities or the semantic muted color hook, all rendered by the shared optional-theme preset; scripts, event handlers, dynamic class conditions, markup content and scoped styles are unchanged.",
+      "evidence": [
+        "upstream_base=aea725f2ea644d5592d0bbb1d63b607efa7e200a",
+        "Vue SFC parse: whole-source equality after masking only static class attributes; dynamic bindings and every other byte remain in the comparison",
+        "Exact palette changes: [{\"removed\":[\"text-gray-400\",\"dark:text-gray-500\"],\"added\":[\"text-muted\"]}]",
+        "Shared CSS variables: backend/pkg/extensionapi/ui/tailwind.preset.mjs and theme.css; no functional code differences; no business test rerun needed"
+      ]
     },
     {
       "path": "frontend/src/components/account/AccountSelectionCheckbox.vue",
@@ -14446,7 +14501,16 @@
       "present": true,
       "content_sha256": "499c2808861c78eb2eb3a9fa531f6354339a3a83bf104723707d566e2569e058",
       "review_fingerprint": "499c2808861c78eb2eb3a9fa531f6354339a3a83bf104723707d566e2569e058",
-      "review_status": "pending"
+      "review_status": "reviewed",
+      "decision": "adapter",
+      "owner": "core-ui-adapter",
+      "reason": "The complete file matches the exact official baseline outside static class attributes. Its only downstream differences select neutral palette/contrast utilities or the semantic muted color hook, all rendered by the shared optional-theme preset; scripts, event handlers, dynamic class conditions, markup content and scoped styles are unchanged.",
+      "evidence": [
+        "upstream_base=aea725f2ea644d5592d0bbb1d63b607efa7e200a",
+        "Vue SFC parse: whole-source equality after masking only static class attributes; dynamic bindings and every other byte remain in the comparison",
+        "Exact palette changes: [{\"removed\":[\"text-gray-400\",\"dark:text-gray-500\"],\"added\":[\"text-muted\"]}]",
+        "Shared CSS variables: backend/pkg/extensionapi/ui/tailwind.preset.mjs and theme.css; no functional code differences; no business test rerun needed"
+      ]
     },
     {
       "path": "frontend/src/components/account/CreateAccountModal.vue",
@@ -14473,7 +14537,16 @@
       "present": true,
       "content_sha256": "a5eef6203c4be8a1f1964c16bf7899752ea949c011c418d498fc6651a555ca6c",
       "review_fingerprint": "a5eef6203c4be8a1f1964c16bf7899752ea949c011c418d498fc6651a555ca6c",
-      "review_status": "pending"
+      "review_status": "reviewed",
+      "decision": "adapter",
+      "owner": "core-ui-adapter",
+      "reason": "The complete file matches the exact official baseline outside static class attributes. Its only downstream differences select neutral palette/contrast utilities or the semantic muted color hook, all rendered by the shared optional-theme preset; scripts, event handlers, dynamic class conditions, markup content and scoped styles are unchanged.",
+      "evidence": [
+        "upstream_base=aea725f2ea644d5592d0bbb1d63b607efa7e200a",
+        "Vue SFC parse: whole-source equality after masking only static class attributes; dynamic bindings and every other byte remain in the comparison",
+        "Exact palette changes: [{\"removed\":[\"dark:text-gray-400\",\"dark:hover:bg-dark-500\"],\"added\":[\"dark:text-dark-300\",\"dark:hover:bg-gray-600\"]}]",
+        "Shared CSS variables: backend/pkg/extensionapi/ui/tailwind.preset.mjs and theme.css; no functional code differences; no business test rerun needed"
+      ]
     },
     {
       "path": "frontend/src/components/account/ModelContextCapacityField.vue",
@@ -14536,7 +14609,16 @@
       "present": true,
       "content_sha256": "5d2eb3d1ac2c1f76fdfb2e064aa2d3e9f636670bde197bf9df5bb3a6b21afa66",
       "review_fingerprint": "5d2eb3d1ac2c1f76fdfb2e064aa2d3e9f636670bde197bf9df5bb3a6b21afa66",
-      "review_status": "pending"
+      "review_status": "reviewed",
+      "decision": "adapter",
+      "owner": "core-ui-adapter",
+      "reason": "The complete file matches the exact official baseline outside static class attributes. Its only downstream differences select neutral palette/contrast utilities or the semantic muted color hook, all rendered by the shared optional-theme preset; scripts, event handlers, dynamic class conditions, markup content and scoped styles are unchanged.",
+      "evidence": [
+        "upstream_base=aea725f2ea644d5592d0bbb1d63b607efa7e200a",
+        "Vue SFC parse: whole-source equality after masking only static class attributes; dynamic bindings and every other byte remain in the comparison",
+        "Exact palette changes: [{\"removed\":[\"text-gray-400\",\"dark:text-gray-500\"],\"added\":[\"text-muted\"]}]",
+        "Shared CSS variables: backend/pkg/extensionapi/ui/tailwind.preset.mjs and theme.css; no functional code differences; no business test rerun needed"
+      ]
     },
     {
       "path": "frontend/src/components/account/QuotaLimitCard.vue",
@@ -15058,7 +15140,16 @@
       "present": true,
       "content_sha256": "4b3b5e1ef0f6abc67ed64c14f933df5c2678230c57f8df86b9ea960d6c8e8bcf",
       "review_fingerprint": "4b3b5e1ef0f6abc67ed64c14f933df5c2678230c57f8df86b9ea960d6c8e8bcf",
-      "review_status": "pending"
+      "review_status": "reviewed",
+      "decision": "adapter",
+      "owner": "core-ui-adapter",
+      "reason": "The complete file matches the exact official baseline outside static class attributes. Its only downstream differences select neutral palette/contrast utilities or the semantic muted color hook, all rendered by the shared optional-theme preset; scripts, event handlers, dynamic class conditions, markup content and scoped styles are unchanged.",
+      "evidence": [
+        "upstream_base=aea725f2ea644d5592d0bbb1d63b607efa7e200a",
+        "Vue SFC parse: whole-source equality after masking only static class attributes; dynamic bindings and every other byte remain in the comparison",
+        "Exact palette changes: [{\"removed\":[],\"added\":[\"dark:text-primary-400\",\"dark:hover:text-primary-300\"]},{\"removed\":[],\"added\":[\"dark:text-primary-400\",\"dark:hover:text-primary-300\"]},{\"removed\":[],\"added\":[\"dark:text-primary-400\",\"dark:hover:text-primary-300\"]}]",
+        "Shared CSS variables: backend/pkg/extensionapi/ui/tailwind.preset.mjs and theme.css; no functional code differences; no business test rerun needed"
+      ]
     },
     {
       "path": "frontend/src/components/admin/channel/TimePricingSection.vue",
@@ -15067,7 +15158,16 @@
       "present": true,
       "content_sha256": "9ab98a7d519133bb046693d0e3229207e1e1659be988ff5305e098e7b94ce354",
       "review_fingerprint": "9ab98a7d519133bb046693d0e3229207e1e1659be988ff5305e098e7b94ce354",
-      "review_status": "pending"
+      "review_status": "reviewed",
+      "decision": "adapter",
+      "owner": "core-ui-adapter",
+      "reason": "The complete file matches the exact official baseline outside static class attributes. Its only downstream differences select neutral palette/contrast utilities or the semantic muted color hook, all rendered by the shared optional-theme preset; scripts, event handlers, dynamic class conditions, markup content and scoped styles are unchanged.",
+      "evidence": [
+        "upstream_base=aea725f2ea644d5592d0bbb1d63b607efa7e200a",
+        "Vue SFC parse: whole-source equality after masking only static class attributes; dynamic bindings and every other byte remain in the comparison",
+        "Exact palette changes: [{\"removed\":[],\"added\":[\"dark:text-primary-400\",\"dark:hover:text-primary-300\"]}]",
+        "Shared CSS variables: backend/pkg/extensionapi/ui/tailwind.preset.mjs and theme.css; no functional code differences; no business test rerun needed"
+      ]
     },
     {
       "path": "frontend/src/components/admin/group/CodexManifestAccountsField.vue",
@@ -15121,7 +15221,16 @@
       "present": true,
       "content_sha256": "fa75bbfb291ab2eef7d927b83b6d4f91955060403b787ee00000902424a70d11",
       "review_fingerprint": "fa75bbfb291ab2eef7d927b83b6d4f91955060403b787ee00000902424a70d11",
-      "review_status": "pending"
+      "review_status": "reviewed",
+      "decision": "adapter",
+      "owner": "core-ui-adapter",
+      "reason": "The complete file matches the exact official baseline outside static class attributes. Its only downstream differences select neutral palette/contrast utilities or the semantic muted color hook, all rendered by the shared optional-theme preset; scripts, event handlers, dynamic class conditions, markup content and scoped styles are unchanged.",
+      "evidence": [
+        "upstream_base=aea725f2ea644d5592d0bbb1d63b607efa7e200a",
+        "Vue SFC parse: whole-source equality after masking only static class attributes; dynamic bindings and every other byte remain in the comparison",
+        "Exact palette changes: [{\"removed\":[\"text-gray-400\",\"dark:text-gray-500\"],\"added\":[\"text-muted\"]}]",
+        "Shared CSS variables: backend/pkg/extensionapi/ui/tailwind.preset.mjs and theme.css; no functional code differences; no business test rerun needed"
+      ]
     },
     {
       "path": "frontend/src/components/admin/monitor/MonitorFormDialog.vue",
@@ -15175,7 +15284,16 @@
       "present": true,
       "content_sha256": "5afd0bb95c1bee2ec24204f2a88b9ca0482f92d584e11e0db8a000aec1616549",
       "review_fingerprint": "5afd0bb95c1bee2ec24204f2a88b9ca0482f92d584e11e0db8a000aec1616549",
-      "review_status": "pending"
+      "review_status": "reviewed",
+      "decision": "adapter",
+      "owner": "core-ui-adapter",
+      "reason": "The complete file matches the exact official baseline outside static class attributes. Its only downstream differences select neutral palette/contrast utilities or the semantic muted color hook, all rendered by the shared optional-theme preset; scripts, event handlers, dynamic class conditions, markup content and scoped styles are unchanged.",
+      "evidence": [
+        "upstream_base=aea725f2ea644d5592d0bbb1d63b607efa7e200a",
+        "Vue SFC parse: whole-source equality after masking only static class attributes; dynamic bindings and every other byte remain in the comparison",
+        "Exact palette changes: [{\"removed\":[\"dark:border-dark-700/50\"],\"added\":[\"dark:border-dark-700\"]},{\"removed\":[\"text-gray-400\",\"dark:text-gray-500\"],\"added\":[\"text-muted\"]},{\"removed\":[\"text-gray-400\",\"dark:text-gray-500\"],\"added\":[\"text-muted\"]},{\"removed\":[\"dark:hover:bg-dark-700/40\"],\"added\":[\"dark:hover:bg-dark-700\"]},{\"removed\":[\"text-gray-400\",\"dark:text-gray-500\"],\"added\":[\"text-muted\"]}]",
+        "Shared CSS variables: backend/pkg/extensionapi/ui/tailwind.preset.mjs and theme.css; no functional code differences; no business test rerun needed"
+      ]
     },
     {
       "path": "frontend/src/components/admin/user/UserAllowedGroupsModal.vue",
@@ -15193,7 +15311,16 @@
       "present": true,
       "content_sha256": "d8c46296c025b113ca4d3bb24221faabe6e6f5066dda5be032474838ff79713c",
       "review_fingerprint": "d8c46296c025b113ca4d3bb24221faabe6e6f5066dda5be032474838ff79713c",
-      "review_status": "pending"
+      "review_status": "reviewed",
+      "decision": "adapter",
+      "owner": "core-ui-adapter",
+      "reason": "The complete file matches the exact official baseline outside static class attributes. Its only downstream differences select neutral palette/contrast utilities or the semantic muted color hook, all rendered by the shared optional-theme preset; scripts, event handlers, dynamic class conditions, markup content and scoped styles are unchanged.",
+      "evidence": [
+        "upstream_base=aea725f2ea644d5592d0bbb1d63b607efa7e200a",
+        "Vue SFC parse: whole-source equality after masking only static class attributes; dynamic bindings and every other byte remain in the comparison",
+        "Exact palette changes: [{\"removed\":[\"text-gray-400\",\"dark:text-dark-500\"],\"added\":[\"text-muted\"]},{\"removed\":[\"border-gray-200/60\",\"dark:border-dark-600/60\"],\"added\":[\"border-gray-200\",\"dark:border-dark-600\"]},{\"removed\":[\"text-gray-400\",\"dark:text-dark-500\"],\"added\":[\"text-muted\"]},{\"removed\":[\"text-gray-400\",\"dark:text-dark-500\"],\"added\":[\"text-muted\"]},{\"removed\":[\"text-gray-400\",\"dark:text-dark-500\"],\"added\":[\"text-muted\"]}]",
+        "Shared CSS variables: backend/pkg/extensionapi/ui/tailwind.preset.mjs and theme.css; no functional code differences; no business test rerun needed"
+      ]
     },
     {
       "path": "frontend/src/components/admin/user/UserPlatformQuotaModal.vue",
@@ -15283,7 +15410,16 @@
       "present": true,
       "content_sha256": "322262f8b8da3ecab8c4e2d5413b5b340b1d565f462da8ea816f67fb8983e521",
       "review_fingerprint": "322262f8b8da3ecab8c4e2d5413b5b340b1d565f462da8ea816f67fb8983e521",
-      "review_status": "pending"
+      "review_status": "reviewed",
+      "decision": "adapter",
+      "owner": "core-ui-adapter",
+      "reason": "The complete file matches the exact official baseline outside static class attributes. Its only downstream differences select neutral palette/contrast utilities or the semantic muted color hook, all rendered by the shared optional-theme preset; scripts, event handlers, dynamic class conditions, markup content and scoped styles are unchanged.",
+      "evidence": [
+        "upstream_base=aea725f2ea644d5592d0bbb1d63b607efa7e200a",
+        "Vue SFC parse: whole-source equality after masking only static class attributes; dynamic bindings and every other byte remain in the comparison",
+        "Exact palette changes: [{\"removed\":[\"dark:bg-dark-700/30\"],\"added\":[\"dark:bg-dark-700\"]},{\"removed\":[\"border-gray-100/50\",\"dark:border-dark-700/50\"],\"added\":[\"border-gray-100\",\"dark:border-dark-700\"]},{\"removed\":[\"text-gray-400\",\"dark:text-gray-500\"],\"added\":[\"text-muted\"]}]",
+        "Shared CSS variables: backend/pkg/extensionapi/ui/tailwind.preset.mjs and theme.css; no functional code differences; no business test rerun needed"
+      ]
     },
     {
       "path": "frontend/src/components/common/AnnouncementBell.vue",
@@ -15382,7 +15518,16 @@
       "present": true,
       "content_sha256": "e78a6047db33ba166b8985d9a6b4c49b71a9d519e7ddcd17c849c4d2da914f25",
       "review_fingerprint": "e78a6047db33ba166b8985d9a6b4c49b71a9d519e7ddcd17c849c4d2da914f25",
-      "review_status": "pending"
+      "review_status": "reviewed",
+      "decision": "adapter",
+      "owner": "core-ui-adapter",
+      "reason": "The complete file matches the exact official baseline outside static class attributes. Its only downstream differences select neutral palette/contrast utilities or the semantic muted color hook, all rendered by the shared optional-theme preset; scripts, event handlers, dynamic class conditions, markup content and scoped styles are unchanged.",
+      "evidence": [
+        "upstream_base=aea725f2ea644d5592d0bbb1d63b607efa7e200a",
+        "Vue SFC parse: whole-source equality after masking only static class attributes; dynamic bindings and every other byte remain in the comparison",
+        "Exact palette changes: [{\"removed\":[\"text-gray-400\",\"dark:text-dark-500\"],\"added\":[\"text-muted\"]}]",
+        "Shared CSS variables: backend/pkg/extensionapi/ui/tailwind.preset.mjs and theme.css; no functional code differences; no business test rerun needed"
+      ]
     },
     {
       "path": "frontend/src/components/common/Input.vue",
@@ -15391,7 +15536,16 @@
       "present": true,
       "content_sha256": "e152db3612912c3236cb41794fa99c9ae60b0d57ceb3cbd41440bab27bab279e",
       "review_fingerprint": "e152db3612912c3236cb41794fa99c9ae60b0d57ceb3cbd41440bab27bab279e",
-      "review_status": "pending"
+      "review_status": "reviewed",
+      "decision": "adapter",
+      "owner": "core-ui-adapter",
+      "reason": "The complete file matches the exact official baseline outside static class attributes. Its only downstream differences select neutral palette/contrast utilities or the semantic muted color hook, all rendered by the shared optional-theme preset; scripts, event handlers, dynamic class conditions, markup content and scoped styles are unchanged.",
+      "evidence": [
+        "upstream_base=aea725f2ea644d5592d0bbb1d63b607efa7e200a",
+        "Vue SFC parse: whole-source equality after masking only static class attributes; dynamic bindings and every other byte remain in the comparison",
+        "Exact palette changes: [{\"removed\":[\"text-gray-400\",\"dark:text-dark-400\"],\"added\":[\"text-muted\"]},{\"removed\":[\"text-gray-400\",\"dark:text-dark-400\"],\"added\":[\"text-muted\"]}]",
+        "Shared CSS variables: backend/pkg/extensionapi/ui/tailwind.preset.mjs and theme.css; no functional code differences; no business test rerun needed"
+      ]
     },
     {
       "path": "frontend/src/components/common/IpGeoCell.vue",
@@ -15400,7 +15554,16 @@
       "present": true,
       "content_sha256": "60d4a0d9ba67b0be3b944b7b9f20e95f4c8686b7333312d1f2f1aa3396fa18eb",
       "review_fingerprint": "60d4a0d9ba67b0be3b944b7b9f20e95f4c8686b7333312d1f2f1aa3396fa18eb",
-      "review_status": "pending"
+      "review_status": "reviewed",
+      "decision": "adapter",
+      "owner": "core-ui-adapter",
+      "reason": "The complete file matches the exact official baseline outside static class attributes. Its only downstream differences select neutral palette/contrast utilities or the semantic muted color hook, all rendered by the shared optional-theme preset; scripts, event handlers, dynamic class conditions, markup content and scoped styles are unchanged.",
+      "evidence": [
+        "upstream_base=aea725f2ea644d5592d0bbb1d63b607efa7e200a",
+        "Vue SFC parse: whole-source equality after masking only static class attributes; dynamic bindings and every other byte remain in the comparison",
+        "Exact palette changes: [{\"removed\":[\"text-gray-400\",\"dark:text-gray-500\"],\"added\":[\"text-muted\"]},{\"removed\":[\"text-gray-400\",\"dark:text-gray-500\"],\"added\":[\"text-muted\"]}]",
+        "Shared CSS variables: backend/pkg/extensionapi/ui/tailwind.preset.mjs and theme.css; no functional code differences; no business test rerun needed"
+      ]
     },
     {
       "path": "frontend/src/components/common/LoadingSpinner.vue",
@@ -15436,7 +15599,16 @@
       "present": true,
       "content_sha256": "36d648b6e1d2978280f24f87c5348bfd25f94c850c302e2f1f70c15b8d2be466",
       "review_fingerprint": "36d648b6e1d2978280f24f87c5348bfd25f94c850c302e2f1f70c15b8d2be466",
-      "review_status": "pending"
+      "review_status": "reviewed",
+      "decision": "adapter",
+      "owner": "core-ui-adapter",
+      "reason": "The complete file matches the exact official baseline outside static class attributes. Its only downstream differences select neutral palette/contrast utilities or the semantic muted color hook, all rendered by the shared optional-theme preset; scripts, event handlers, dynamic class conditions, markup content and scoped styles are unchanged.",
+      "evidence": [
+        "upstream_base=aea725f2ea644d5592d0bbb1d63b607efa7e200a",
+        "Vue SFC parse: whole-source equality after masking only static class attributes; dynamic bindings and every other byte remain in the comparison",
+        "Exact palette changes: [{\"removed\":[\"dark:text-gray-400\"],\"added\":[\"dark:text-dark-300\"]},{\"removed\":[\"dark:text-gray-400\"],\"added\":[\"dark:text-dark-300\"]}]",
+        "Shared CSS variables: backend/pkg/extensionapi/ui/tailwind.preset.mjs and theme.css; no functional code differences; no business test rerun needed"
+      ]
     },
     {
       "path": "frontend/src/components/common/PlatformIcon.vue",
@@ -15724,7 +15896,16 @@
       "present": true,
       "content_sha256": "e58842bf9727930b5d62a4e6d3b41e31d7a27caafa73f0a083d8890fbc0cadde",
       "review_fingerprint": "e58842bf9727930b5d62a4e6d3b41e31d7a27caafa73f0a083d8890fbc0cadde",
-      "review_status": "pending"
+      "review_status": "reviewed",
+      "decision": "adapter",
+      "owner": "core-ui-adapter",
+      "reason": "The complete file matches the exact official baseline outside static class attributes. Its only downstream differences select neutral palette/contrast utilities or the semantic muted color hook, all rendered by the shared optional-theme preset; scripts, event handlers, dynamic class conditions, markup content and scoped styles are unchanged.",
+      "evidence": [
+        "upstream_base=aea725f2ea644d5592d0bbb1d63b607efa7e200a",
+        "Vue SFC parse: whole-source equality after masking only static class attributes; dynamic bindings and every other byte remain in the comparison",
+        "Exact palette changes: [{\"removed\":[\"text-gray-400\",\"dark:text-dark-500\"],\"added\":[\"text-muted\"]}]",
+        "Shared CSS variables: backend/pkg/extensionapi/ui/tailwind.preset.mjs and theme.css; no functional code differences; no business test rerun needed"
+      ]
     },
     {
       "path": "frontend/src/components/payment/PaymentMethodSelector.vue",
@@ -15751,7 +15932,16 @@
       "present": true,
       "content_sha256": "899f940dbd1432a4dcce370b4fc19939e232a7160536a85bc65422499bdd65b1",
       "review_fingerprint": "899f940dbd1432a4dcce370b4fc19939e232a7160536a85bc65422499bdd65b1",
-      "review_status": "pending"
+      "review_status": "reviewed",
+      "decision": "adapter",
+      "owner": "core-ui-adapter",
+      "reason": "The complete file matches the exact official baseline outside static class attributes. Its only downstream differences select neutral palette/contrast utilities or the semantic muted color hook, all rendered by the shared optional-theme preset; scripts, event handlers, dynamic class conditions, markup content and scoped styles are unchanged.",
+      "evidence": [
+        "upstream_base=aea725f2ea644d5592d0bbb1d63b607efa7e200a",
+        "Vue SFC parse: whole-source equality after masking only static class attributes; dynamic bindings and every other byte remain in the comparison",
+        "Exact palette changes: [{\"removed\":[\"text-gray-300\",\"dark:text-dark-600\"],\"added\":[\"text-muted\"]}]",
+        "Shared CSS variables: backend/pkg/extensionapi/ui/tailwind.preset.mjs and theme.css; no functional code differences; no business test rerun needed"
+      ]
     },
     {
       "path": "frontend/src/components/payment/PaymentQRDialog.vue",
@@ -15760,7 +15950,16 @@
       "present": true,
       "content_sha256": "8e485a197e1993998349fc7e9c976fb33a5e7af7bc89c2d6b57fdf5a691381a9",
       "review_fingerprint": "8e485a197e1993998349fc7e9c976fb33a5e7af7bc89c2d6b57fdf5a691381a9",
-      "review_status": "pending"
+      "review_status": "reviewed",
+      "decision": "adapter",
+      "owner": "core-ui-adapter",
+      "reason": "The complete file matches the exact official baseline outside static class attributes. Its only downstream differences select neutral palette/contrast utilities or the semantic muted color hook, all rendered by the shared optional-theme preset; scripts, event handlers, dynamic class conditions, markup content and scoped styles are unchanged.",
+      "evidence": [
+        "upstream_base=aea725f2ea644d5592d0bbb1d63b607efa7e200a",
+        "Vue SFC parse: whole-source equality after masking only static class attributes; dynamic bindings and every other byte remain in the comparison",
+        "Exact palette changes: [{\"removed\":[\"text-gray-400\",\"dark:text-gray-500\"],\"added\":[\"text-muted\"]}]",
+        "Shared CSS variables: backend/pkg/extensionapi/ui/tailwind.preset.mjs and theme.css; no functional code differences; no business test rerun needed"
+      ]
     },
     {
       "path": "frontend/src/components/payment/PaymentStatusPanel.vue",
@@ -16001,7 +16200,16 @@
       "present": true,
       "content_sha256": "5c647b503244925feb9d5a4640e1435684eb1f19970615706a8aca610324c9ad",
       "review_fingerprint": "5c647b503244925feb9d5a4640e1435684eb1f19970615706a8aca610324c9ad",
-      "review_status": "pending"
+      "review_status": "reviewed",
+      "decision": "adapter",
+      "owner": "core-ui-adapter",
+      "reason": "The complete file matches the exact official baseline outside static class attributes. Its only downstream differences select neutral palette/contrast utilities or the semantic muted color hook, all rendered by the shared optional-theme preset; scripts, event handlers, dynamic class conditions, markup content and scoped styles are unchanged.",
+      "evidence": [
+        "upstream_base=aea725f2ea644d5592d0bbb1d63b607efa7e200a",
+        "Vue SFC parse: whole-source equality after masking only static class attributes; dynamic bindings and every other byte remain in the comparison",
+        "Exact palette changes: [{\"removed\":[\"text-gray-400\",\"dark:text-gray-500\"],\"added\":[\"text-muted\"]}]",
+        "Shared CSS variables: backend/pkg/extensionapi/ui/tailwind.preset.mjs and theme.css; no functional code differences; no business test rerun needed"
+      ]
     },
     {
       "path": "frontend/src/components/user/PlatformUsageBreakdown.vue",
@@ -16010,7 +16218,16 @@
       "present": true,
       "content_sha256": "ed75b9e44173aa71ee28b072ff1687b2cdb385653ac8126c6b7b380bb136f91f",
       "review_fingerprint": "ed75b9e44173aa71ee28b072ff1687b2cdb385653ac8126c6b7b380bb136f91f",
-      "review_status": "pending"
+      "review_status": "reviewed",
+      "decision": "adapter",
+      "owner": "core-ui-adapter",
+      "reason": "The complete file matches the exact official baseline outside static class attributes. Its only downstream differences select neutral palette/contrast utilities or the semantic muted color hook, all rendered by the shared optional-theme preset; scripts, event handlers, dynamic class conditions, markup content and scoped styles are unchanged.",
+      "evidence": [
+        "upstream_base=aea725f2ea644d5592d0bbb1d63b607efa7e200a",
+        "Vue SFC parse: whole-source equality after masking only static class attributes; dynamic bindings and every other byte remain in the comparison",
+        "Exact palette changes: [{\"removed\":[\"text-gray-400\",\"dark:text-gray-500\"],\"added\":[\"text-muted\"]}]",
+        "Shared CSS variables: backend/pkg/extensionapi/ui/tailwind.preset.mjs and theme.css; no functional code differences; no business test rerun needed"
+      ]
     },
     {
       "path": "frontend/src/components/user/UserAttributesConfigModal.vue",
@@ -16037,7 +16254,16 @@
       "present": true,
       "content_sha256": "15651802154325aa2d6118571256bef30b81ffa21ce236758c6de3bea0097152",
       "review_fingerprint": "15651802154325aa2d6118571256bef30b81ffa21ce236758c6de3bea0097152",
-      "review_status": "pending"
+      "review_status": "reviewed",
+      "decision": "adapter",
+      "owner": "core-ui-adapter",
+      "reason": "The complete file matches the exact official baseline outside static class attributes. Its only downstream differences select neutral palette/contrast utilities or the semantic muted color hook, all rendered by the shared optional-theme preset; scripts, event handlers, dynamic class conditions, markup content and scoped styles are unchanged.",
+      "evidence": [
+        "upstream_base=aea725f2ea644d5592d0bbb1d63b607efa7e200a",
+        "Vue SFC parse: whole-source equality after masking only static class attributes; dynamic bindings and every other byte remain in the comparison",
+        "Exact palette changes: [{\"removed\":[\"text-gray-400\",\"dark:text-gray-500\"],\"added\":[\"text-muted\"]},{\"removed\":[\"text-gray-400\",\"dark:text-gray-500\"],\"added\":[\"text-muted\"]},{\"removed\":[\"text-gray-400\",\"dark:text-gray-500\"],\"added\":[\"text-muted\"]},{\"removed\":[\"text-gray-400\",\"dark:text-gray-500\"],\"added\":[\"text-muted\"]},{\"removed\":[\"text-gray-400\",\"dark:text-gray-500\"],\"added\":[\"text-muted\"]},{\"removed\":[\"text-gray-400\",\"dark:text-gray-500\"],\"added\":[\"text-muted\"]}]",
+        "Shared CSS variables: backend/pkg/extensionapi/ui/tailwind.preset.mjs and theme.css; no functional code differences; no business test rerun needed"
+      ]
     },
     {
       "path": "frontend/src/components/user/UserPlatformQuotaCell.vue",
@@ -16127,7 +16353,16 @@
       "present": true,
       "content_sha256": "ac595b04fb95560536b72668874754d225829372f131c09daa4674310247f023",
       "review_fingerprint": "ac595b04fb95560536b72668874754d225829372f131c09daa4674310247f023",
-      "review_status": "pending"
+      "review_status": "reviewed",
+      "decision": "adapter",
+      "owner": "core-ui-adapter",
+      "reason": "The complete file matches the exact official baseline outside static class attributes. Its only downstream differences select neutral palette/contrast utilities or the semantic muted color hook, all rendered by the shared optional-theme preset; scripts, event handlers, dynamic class conditions, markup content and scoped styles are unchanged.",
+      "evidence": [
+        "upstream_base=aea725f2ea644d5592d0bbb1d63b607efa7e200a",
+        "Vue SFC parse: whole-source equality after masking only static class attributes; dynamic bindings and every other byte remain in the comparison",
+        "Exact palette changes: [{\"removed\":[\"dark:border-dark-700/60\"],\"added\":[\"dark:border-dark-700\"]}]",
+        "Shared CSS variables: backend/pkg/extensionapi/ui/tailwind.preset.mjs and theme.css; no functional code differences; no business test rerun needed"
+      ]
     },
     {
       "path": "frontend/src/components/user/profile/ProfileAvatarCard.vue",
@@ -16145,7 +16380,16 @@
       "present": true,
       "content_sha256": "67181c25f0ec4804199319dfd4b14a1c9e7226d74400c673d83175d096277b86",
       "review_fingerprint": "67181c25f0ec4804199319dfd4b14a1c9e7226d74400c673d83175d096277b86",
-      "review_status": "pending"
+      "review_status": "reviewed",
+      "decision": "adapter",
+      "owner": "core-ui-adapter",
+      "reason": "The complete file matches the exact official baseline outside static class attributes. Its only downstream differences select neutral palette/contrast utilities or the semantic muted color hook, all rendered by the shared optional-theme preset; scripts, event handlers, dynamic class conditions, markup content and scoped styles are unchanged.",
+      "evidence": [
+        "upstream_base=aea725f2ea644d5592d0bbb1d63b607efa7e200a",
+        "Vue SFC parse: whole-source equality after masking only static class attributes; dynamic bindings and every other byte remain in the comparison",
+        "Exact palette changes: [{\"removed\":[],\"added\":[\"dark:text-primary-400\",\"dark:hover:text-primary-300\"]},{\"removed\":[],\"added\":[\"dark:text-primary-400\",\"dark:hover:text-primary-300\"]},{\"removed\":[],\"added\":[\"dark:text-primary-400\",\"dark:hover:text-primary-300\"]},{\"removed\":[],\"added\":[\"dark:text-primary-400\",\"dark:hover:text-primary-300\"]}]",
+        "Shared CSS variables: backend/pkg/extensionapi/ui/tailwind.preset.mjs and theme.css; no functional code differences; no business test rerun needed"
+      ]
     },
     {
       "path": "frontend/src/components/user/profile/ProfileIdentityBindingsSection.vue",
@@ -17011,7 +17255,16 @@
       "present": true,
       "content_sha256": "f7dc7e718e33d24fe62c682cd3eeae63ca8430acb4acbb4a849a23da99a880ad",
       "review_fingerprint": "f7dc7e718e33d24fe62c682cd3eeae63ca8430acb4acbb4a849a23da99a880ad",
-      "review_status": "pending"
+      "review_status": "reviewed",
+      "decision": "adapter",
+      "owner": "core-ui-adapter",
+      "reason": "The complete file matches the exact official baseline outside static class attributes. Its only downstream differences select neutral palette/contrast utilities or the semantic muted color hook, all rendered by the shared optional-theme preset; scripts, event handlers, dynamic class conditions, markup content and scoped styles are unchanged.",
+      "evidence": [
+        "upstream_base=aea725f2ea644d5592d0bbb1d63b607efa7e200a",
+        "Vue SFC parse: whole-source equality after masking only static class attributes; dynamic bindings and every other byte remain in the comparison",
+        "Exact palette changes: [{\"removed\":[\"text-gray-400\",\"dark:text-gray-500\"],\"added\":[\"text-muted\"]}]",
+        "Shared CSS variables: backend/pkg/extensionapi/ui/tailwind.preset.mjs and theme.css; no functional code differences; no business test rerun needed"
+      ]
     },
     {
       "path": "frontend/src/views/admin/RedeemView.vue",
@@ -17065,7 +17318,16 @@
       "present": true,
       "content_sha256": "9b2b6138c0037adb0ae3fab7099ec341c56a81c67eb1d06b8d252f5a51bfd9dd",
       "review_fingerprint": "9b2b6138c0037adb0ae3fab7099ec341c56a81c67eb1d06b8d252f5a51bfd9dd",
-      "review_status": "pending"
+      "review_status": "reviewed",
+      "decision": "adapter",
+      "owner": "core-ui-adapter",
+      "reason": "The complete file matches the exact official baseline outside static class attributes. Its only downstream differences select neutral palette/contrast utilities or the semantic muted color hook, all rendered by the shared optional-theme preset; scripts, event handlers, dynamic class conditions, markup content and scoped styles are unchanged.",
+      "evidence": [
+        "upstream_base=aea725f2ea644d5592d0bbb1d63b607efa7e200a",
+        "Vue SFC parse: whole-source equality after masking only static class attributes; dynamic bindings and every other byte remain in the comparison",
+        "Exact palette changes: [{\"removed\":[\"dark:border-dark-700/50\"],\"added\":[\"dark:border-dark-700\"]}]",
+        "Shared CSS variables: backend/pkg/extensionapi/ui/tailwind.preset.mjs and theme.css; no functional code differences; no business test rerun needed"
+      ]
     },
     {
       "path": "frontend/src/views/admin/UsersView.vue",
@@ -17283,7 +17545,16 @@
       "present": true,
       "content_sha256": "058443b0f0c6f9e3a9e0ea528bcbd2bb29796756a85a6b0a962e24eb2cc9b387",
       "review_fingerprint": "058443b0f0c6f9e3a9e0ea528bcbd2bb29796756a85a6b0a962e24eb2cc9b387",
-      "review_status": "pending"
+      "review_status": "reviewed",
+      "decision": "adapter",
+      "owner": "core-ui-adapter",
+      "reason": "The complete file matches the exact official baseline outside static class attributes. Its only downstream differences select neutral palette/contrast utilities or the semantic muted color hook, all rendered by the shared optional-theme preset; scripts, event handlers, dynamic class conditions, markup content and scoped styles are unchanged.",
+      "evidence": [
+        "upstream_base=aea725f2ea644d5592d0bbb1d63b607efa7e200a",
+        "Vue SFC parse: whole-source equality after masking only static class attributes; dynamic bindings and every other byte remain in the comparison",
+        "Exact palette changes: [{\"removed\":[\"dark:hover:bg-dark-700/50\"],\"added\":[\"dark:hover:bg-dark-700\"]},{\"removed\":[\"text-gray-400\",\"dark:text-gray-500\"],\"added\":[\"text-muted\"]},{\"removed\":[\"text-gray-400\",\"dark:text-gray-500\"],\"added\":[\"text-muted\"]},{\"removed\":[\"dark:hover:bg-dark-700/50\"],\"added\":[\"dark:hover:bg-dark-700\"]},{\"removed\":[\"text-gray-400\",\"dark:text-gray-500\"],\"added\":[\"text-muted\"]},{\"removed\":[\"dark:hover:bg-dark-700/50\"],\"added\":[\"dark:hover:bg-dark-700\"]}]",
+        "Shared CSS variables: backend/pkg/extensionapi/ui/tailwind.preset.mjs and theme.css; no functional code differences; no business test rerun needed"
+      ]
     },
     {
       "path": "frontend/src/views/admin/ops/components/OpsAlertRulesCard.vue",
@@ -17355,7 +17626,16 @@
       "present": true,
       "content_sha256": "7b2f02dbd4d1f792ff9d2c2f36bda6a37e0aa360966e78d8b4777c09695ff64c",
       "review_fingerprint": "7b2f02dbd4d1f792ff9d2c2f36bda6a37e0aa360966e78d8b4777c09695ff64c",
-      "review_status": "pending"
+      "review_status": "reviewed",
+      "decision": "adapter",
+      "owner": "core-ui-adapter",
+      "reason": "The complete file matches the exact official baseline outside static class attributes. Its only downstream differences select neutral palette/contrast utilities or the semantic muted color hook, all rendered by the shared optional-theme preset; scripts, event handlers, dynamic class conditions, markup content and scoped styles are unchanged.",
+      "evidence": [
+        "upstream_base=aea725f2ea644d5592d0bbb1d63b607efa7e200a",
+        "Vue SFC parse: whole-source equality after masking only static class attributes; dynamic bindings and every other byte remain in the comparison",
+        "Exact palette changes: [{\"removed\":[\"text-gray-400\",\"dark:text-gray-500\"],\"added\":[\"text-muted\"]},{\"removed\":[\"text-gray-400\",\"dark:text-gray-500\"],\"added\":[\"text-muted\"]},{\"removed\":[\"text-gray-400\",\"dark:text-gray-500\"],\"added\":[\"text-muted\"]},{\"removed\":[\"text-gray-400\",\"dark:text-gray-500\"],\"added\":[\"text-muted\"]},{\"removed\":[\"text-gray-400\",\"dark:text-gray-500\"],\"added\":[\"text-muted\"]},{\"removed\":[\"text-gray-400\",\"dark:text-gray-500\"],\"added\":[\"text-muted\"]},{\"removed\":[\"text-gray-400\",\"dark:text-gray-500\"],\"added\":[\"text-muted\"]},{\"removed\":[\"text-gray-400\",\"dark:text-gray-500\"],\"added\":[\"text-muted\"]}]",
+        "Shared CSS variables: backend/pkg/extensionapi/ui/tailwind.preset.mjs and theme.css; no functional code differences; no business test rerun needed"
+      ]
     },
     {
       "path": "frontend/src/views/admin/ops/components/OpsErrorTrendChart.vue",
@@ -17382,7 +17662,16 @@
       "present": true,
       "content_sha256": "af2350de67583c8c39aaea55d79f3309d77f0c9c92f8f4980b85dcb54df6ec09",
       "review_fingerprint": "af2350de67583c8c39aaea55d79f3309d77f0c9c92f8f4980b85dcb54df6ec09",
-      "review_status": "pending"
+      "review_status": "reviewed",
+      "decision": "adapter",
+      "owner": "core-ui-adapter",
+      "reason": "The complete file matches the exact official baseline outside static class attributes. Its only downstream differences select neutral palette/contrast utilities or the semantic muted color hook, all rendered by the shared optional-theme preset; scripts, event handlers, dynamic class conditions, markup content and scoped styles are unchanged.",
+      "evidence": [
+        "upstream_base=aea725f2ea644d5592d0bbb1d63b607efa7e200a",
+        "Vue SFC parse: whole-source equality after masking only static class attributes; dynamic bindings and every other byte remain in the comparison",
+        "Exact palette changes: [{\"removed\":[\"dark:hover:bg-dark-700/50\"],\"added\":[\"dark:hover:bg-dark-700\"]}]",
+        "Shared CSS variables: backend/pkg/extensionapi/ui/tailwind.preset.mjs and theme.css; no functional code differences; no business test rerun needed"
+      ]
     },
     {
       "path": "frontend/src/views/admin/ops/components/OpsRuntimeSettingsCard.vue",
@@ -17490,7 +17779,16 @@
       "present": true,
       "content_sha256": "f7888907a2319dac245a3519e8b159813bf60b50abba8e8e54eed491f7d93f62",
       "review_fingerprint": "f7888907a2319dac245a3519e8b159813bf60b50abba8e8e54eed491f7d93f62",
-      "review_status": "pending"
+      "review_status": "reviewed",
+      "decision": "adapter",
+      "owner": "core-ui-adapter",
+      "reason": "The complete file matches the exact official baseline outside static class attributes. Its only downstream differences select neutral palette/contrast utilities or the semantic muted color hook, all rendered by the shared optional-theme preset; scripts, event handlers, dynamic class conditions, markup content and scoped styles are unchanged.",
+      "evidence": [
+        "upstream_base=aea725f2ea644d5592d0bbb1d63b607efa7e200a",
+        "Vue SFC parse: whole-source equality after masking only static class attributes; dynamic bindings and every other byte remain in the comparison",
+        "Exact palette changes: [{\"removed\":[\"text-gray-400\",\"dark:text-dark-500\"],\"added\":[\"text-muted\"]}]",
+        "Shared CSS variables: backend/pkg/extensionapi/ui/tailwind.preset.mjs and theme.css; no functional code differences; no business test rerun needed"
+      ]
     },
     {
       "path": "frontend/src/views/auth/ForgotPasswordView.vue",
@@ -17499,7 +17797,16 @@
       "present": true,
       "content_sha256": "ca6d27995ee683dfb6d7dba1a9ac358115d368f66eebe903aeb86cd3cbe22925",
       "review_fingerprint": "ca6d27995ee683dfb6d7dba1a9ac358115d368f66eebe903aeb86cd3cbe22925",
-      "review_status": "pending"
+      "review_status": "reviewed",
+      "decision": "adapter",
+      "owner": "core-ui-adapter",
+      "reason": "The complete file matches the exact official baseline outside static class attributes. Its only downstream differences select neutral palette/contrast utilities or the semantic muted color hook, all rendered by the shared optional-theme preset; scripts, event handlers, dynamic class conditions, markup content and scoped styles are unchanged.",
+      "evidence": [
+        "upstream_base=aea725f2ea644d5592d0bbb1d63b607efa7e200a",
+        "Vue SFC parse: whole-source equality after masking only static class attributes; dynamic bindings and every other byte remain in the comparison",
+        "Exact palette changes: [{\"removed\":[\"text-gray-400\",\"dark:text-dark-500\"],\"added\":[\"text-muted\"]}]",
+        "Shared CSS variables: backend/pkg/extensionapi/ui/tailwind.preset.mjs and theme.css; no functional code differences; no business test rerun needed"
+      ]
     },
     {
       "path": "frontend/src/views/auth/LinuxDoCallbackView.vue",
@@ -17517,7 +17824,16 @@
       "present": true,
       "content_sha256": "fc355be9a384e773c733dad52c5d070063b7a69d8c9341257a9fe31d6cf07265",
       "review_fingerprint": "fc355be9a384e773c733dad52c5d070063b7a69d8c9341257a9fe31d6cf07265",
-      "review_status": "pending"
+      "review_status": "reviewed",
+      "decision": "adapter",
+      "owner": "core-ui-adapter",
+      "reason": "The complete file matches the exact official baseline outside static class attributes. Its only downstream differences select neutral palette/contrast utilities or the semantic muted color hook, all rendered by the shared optional-theme preset; scripts, event handlers, dynamic class conditions, markup content and scoped styles are unchanged.",
+      "evidence": [
+        "upstream_base=aea725f2ea644d5592d0bbb1d63b607efa7e200a",
+        "Vue SFC parse: whole-source equality after masking only static class attributes; dynamic bindings and every other byte remain in the comparison",
+        "Exact palette changes: [{\"removed\":[\"text-gray-400\",\"dark:text-dark-500\"],\"added\":[\"text-muted\"]},{\"removed\":[\"text-gray-400\",\"dark:text-dark-500\"],\"added\":[\"text-muted\"]}]",
+        "Shared CSS variables: backend/pkg/extensionapi/ui/tailwind.preset.mjs and theme.css; no functional code differences; no business test rerun needed"
+      ]
     },
     {
       "path": "frontend/src/views/auth/OidcCallbackView.vue",
@@ -17544,7 +17860,16 @@
       "present": true,
       "content_sha256": "a45c97aab9df6ad5ffff6efc7ac58ff74f21bc140b079ec1f1376cc969d5e8a8",
       "review_fingerprint": "a45c97aab9df6ad5ffff6efc7ac58ff74f21bc140b079ec1f1376cc969d5e8a8",
-      "review_status": "pending"
+      "review_status": "reviewed",
+      "decision": "adapter",
+      "owner": "core-ui-adapter",
+      "reason": "The complete file matches the exact official baseline outside static class attributes. Its only downstream differences select neutral palette/contrast utilities or the semantic muted color hook, all rendered by the shared optional-theme preset; scripts, event handlers, dynamic class conditions, markup content and scoped styles are unchanged.",
+      "evidence": [
+        "upstream_base=aea725f2ea644d5592d0bbb1d63b607efa7e200a",
+        "Vue SFC parse: whole-source equality after masking only static class attributes; dynamic bindings and every other byte remain in the comparison",
+        "Exact palette changes: [{\"removed\":[\"text-gray-400\",\"dark:text-dark-500\"],\"added\":[\"text-muted\"]},{\"removed\":[\"text-gray-400\",\"dark:text-dark-500\"],\"added\":[\"text-muted\"]},{\"removed\":[\"text-gray-400\",\"dark:text-dark-500\"],\"added\":[\"text-muted\"]}]",
+        "Shared CSS variables: backend/pkg/extensionapi/ui/tailwind.preset.mjs and theme.css; no functional code differences; no business test rerun needed"
+      ]
     },
     {
       "path": "frontend/src/views/auth/WechatCallbackView.vue",
@@ -17589,7 +17914,16 @@
       "present": true,
       "content_sha256": "17b7431d598387eb99c6823e88a159cbb53d44378d4123b06d5e674977816dcc",
       "review_fingerprint": "17b7431d598387eb99c6823e88a159cbb53d44378d4123b06d5e674977816dcc",
-      "review_status": "pending"
+      "review_status": "reviewed",
+      "decision": "adapter",
+      "owner": "core-ui-adapter",
+      "reason": "The complete file matches the exact official baseline outside static class attributes. Its only downstream differences select neutral palette/contrast utilities or the semantic muted color hook, all rendered by the shared optional-theme preset; scripts, event handlers, dynamic class conditions, markup content and scoped styles are unchanged.",
+      "evidence": [
+        "upstream_base=aea725f2ea644d5592d0bbb1d63b607efa7e200a",
+        "Vue SFC parse: whole-source equality after masking only static class attributes; dynamic bindings and every other byte remain in the comparison",
+        "Exact palette changes: [{\"removed\":[\"text-gray-400\",\"dark:text-dark-500\"],\"added\":[\"text-muted\"]}]",
+        "Shared CSS variables: backend/pkg/extensionapi/ui/tailwind.preset.mjs and theme.css; no functional code differences; no business test rerun needed"
+      ]
     },
     {
       "path": "frontend/src/views/user/AvailableChannelsView.vue",
@@ -17598,7 +17932,16 @@
       "present": true,
       "content_sha256": "39c0bfc662eb0e03b5a96018a8bbec6e6edb878b0a5e5a3fff606d3a4c7c2a34",
       "review_fingerprint": "39c0bfc662eb0e03b5a96018a8bbec6e6edb878b0a5e5a3fff606d3a4c7c2a34",
-      "review_status": "pending"
+      "review_status": "reviewed",
+      "decision": "adapter",
+      "owner": "core-ui-adapter",
+      "reason": "The complete file matches the exact official baseline outside static class attributes. Its only downstream differences select neutral palette/contrast utilities or the semantic muted color hook, all rendered by the shared optional-theme preset; scripts, event handlers, dynamic class conditions, markup content and scoped styles are unchanged.",
+      "evidence": [
+        "upstream_base=aea725f2ea644d5592d0bbb1d63b607efa7e200a",
+        "Vue SFC parse: whole-source equality after masking only static class attributes; dynamic bindings and every other byte remain in the comparison",
+        "Exact palette changes: [{\"removed\":[\"text-gray-400\",\"dark:text-gray-500\"],\"added\":[\"text-muted\"]}]",
+        "Shared CSS variables: backend/pkg/extensionapi/ui/tailwind.preset.mjs and theme.css; no functional code differences; no business test rerun needed"
+      ]
     },
     {
       "path": "frontend/src/views/user/BatchImageGuideView.vue",
@@ -18555,8 +18898,8 @@
       "candidate_owner": "cindy-provider",
       "role": "source",
       "present": true,
-      "content_sha256": "71ce916e8a19967eec86e236219536188effe51b62ace403ebcbd10bb77f4b02",
-      "review_fingerprint": "71ce916e8a19967eec86e236219536188effe51b62ace403ebcbd10bb77f4b02",
+      "content_sha256": "6680e2799950a68773bd6ed84c42892edc42cbc2cedb86fb24a9d6cdc2e08760",
+      "review_fingerprint": "6680e2799950a68773bd6ed84c42892edc42cbc2cedb86fb24a9d6cdc2e08760",
       "review_status": "pending"
     },
     {
@@ -18584,6 +18927,24 @@
       "present": true,
       "content_sha256": "33cfe1bf5707469e8db8a3ec85ef599620c26dc37be7c7ac5715a8308163e251",
       "review_fingerprint": "33cfe1bf5707469e8db8a3ec85ef599620c26dc37be7c7ac5715a8308163e251",
+      "review_status": "pending"
+    },
+    {
+      "path": "plugins/cindy-provider/catalog/codex_manifest.go",
+      "candidate_owner": "cindy-provider",
+      "role": "source",
+      "present": true,
+      "content_sha256": "973f855ea32a606f58c9a2af47eaa5885f302ea4d6f1b0c033eb8c37d80ba2da",
+      "review_fingerprint": "973f855ea32a606f58c9a2af47eaa5885f302ea4d6f1b0c033eb8c37d80ba2da",
+      "review_status": "pending"
+    },
+    {
+      "path": "plugins/cindy-provider/catalog/codex_manifest_test.go",
+      "candidate_owner": "cindy-provider",
+      "role": "test-or-fixture",
+      "present": true,
+      "content_sha256": "173a5051e05fd0213254f26f1a08d8a2cf85455fb6229a156a79c67d69f70048",
+      "review_fingerprint": "173a5051e05fd0213254f26f1a08d8a2cf85455fb6229a156a79c67d69f70048",
       "review_status": "pending"
     },
     {
@@ -18632,8 +18993,8 @@
       "candidate_owner": "cindy-provider",
       "role": "source",
       "present": true,
-      "content_sha256": "1566d8f2a68e6dd2a57daf473326cef13aa223bea82d181bb43d3fc101589465",
-      "review_fingerprint": "1566d8f2a68e6dd2a57daf473326cef13aa223bea82d181bb43d3fc101589465",
+      "content_sha256": "d7c6805b5d18d8a2ab5855c1a2825bbcd5f1ac301378726d9f59f26bbbb3b4a2",
+      "review_fingerprint": "d7c6805b5d18d8a2ab5855c1a2825bbcd5f1ac301378726d9f59f26bbbb3b4a2",
       "review_status": "pending"
     },
     {
@@ -18668,8 +19029,17 @@
       "candidate_owner": "cindy-provider",
       "role": "source",
       "present": true,
-      "content_sha256": "b7bf6b345713d01e593a504f684ae97eecaacf80229bdf0a6b7c1b28b99fad15",
-      "review_fingerprint": "b7bf6b345713d01e593a504f684ae97eecaacf80229bdf0a6b7c1b28b99fad15",
+      "content_sha256": "d001e99d878f6fee254d6d7fba1352ae393c1e2a2113b1709eb9652fa7b3bd91",
+      "review_fingerprint": "d001e99d878f6fee254d6d7fba1352ae393c1e2a2113b1709eb9652fa7b3bd91",
+      "review_status": "pending"
+    },
+    {
+      "path": "plugins/cindy-provider/catalog/search_test.go",
+      "candidate_owner": "cindy-provider",
+      "role": "test-or-fixture",
+      "present": true,
+      "content_sha256": "0f18c7eae9c54a942d74c9a3ce14dda5f34ee738703eec89a2459e67f6e794bf",
+      "review_fingerprint": "0f18c7eae9c54a942d74c9a3ce14dda5f34ee738703eec89a2459e67f6e794bf",
       "review_status": "pending"
     },
     {
@@ -18715,8 +19085,8 @@
       "candidate_owner": "cindy-provider",
       "role": "source",
       "present": true,
-      "content_sha256": "e8fc413821a82aa99d2c1f2754c6b272d653528b525b8290ede102da21ab87fd",
-      "review_fingerprint": "e8fc413821a82aa99d2c1f2754c6b272d653528b525b8290ede102da21ab87fd",
+      "content_sha256": "a490280d169fada18d82afedf75b9cfb7d309a2cd6294078366f107b1d831a42",
+      "review_fingerprint": "a490280d169fada18d82afedf75b9cfb7d309a2cd6294078366f107b1d831a42",
       "review_status": "pending"
     },
     {

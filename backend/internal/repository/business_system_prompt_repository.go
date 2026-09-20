@@ -42,7 +42,7 @@ func (r *businessSystemPromptRepository) EnsureBusinessSystemPromptSeed(ctx cont
 	if seed.ManagedSource != "" || seed.SourceRepository != "" || seed.SourceCommit != "" ||
 		seed.SourceVersion != "" || seed.SourceArtifact != "" || seed.SourceArtifactSHA256 != "" ||
 		seed.SourceLicenseSHA256 != "" {
-		if err := service.ValidateBusinessSystemPromptSourceCandidate(service.BusinessSystemPromptSourceCandidate{
+		if err := service.ValidateBusinessSystemPromptSourceCandidateShape(service.BusinessSystemPromptSourceCandidate{
 			ManagedSource: seed.ManagedSource, SourceRepository: seed.SourceRepository,
 			SourceCommit: seed.SourceCommit, SourceVersion: seed.SourceVersion,
 			SourceArtifact: seed.SourceArtifact, SourceArtifactSHA256: seed.SourceArtifactSHA256,
@@ -52,7 +52,7 @@ func (r *businessSystemPromptRepository) EnsureBusinessSystemPromptSeed(ctx cont
 			return err
 		}
 	}
-	composition, err := service.NormalizeBusinessSystemPromptComposition(seed.CompositionMode, seed.BundleID, seed.BundleManifestSHA256)
+	composition, err := service.NormalizeBusinessSystemPromptCompositionStructure(seed.CompositionMode, seed.BundleID, seed.BundleManifestSHA256)
 	if err != nil {
 		return err
 	}
@@ -346,7 +346,7 @@ func (r *businessSystemPromptRepository) CreateBusinessSystemPromptTemplate(ctx 
 	if err != nil {
 		return service.BusinessSystemPromptTemplateDetail{}, err
 	}
-	composition, err := service.NormalizeBusinessSystemPromptComposition(req.CompositionMode, req.BundleID, req.BundleManifestSHA256)
+	composition, err := service.NormalizeBusinessSystemPromptCompositionStructure(req.CompositionMode, req.BundleID, req.BundleManifestSHA256)
 	if err != nil {
 		return service.BusinessSystemPromptTemplateDetail{}, err
 	}
@@ -426,7 +426,7 @@ func (r *businessSystemPromptRepository) CreateBusinessSystemPromptVersionWithCo
 	if err != nil {
 		return service.BusinessSystemPromptVersion{}, err
 	}
-	composition, err := service.NormalizeBusinessSystemPromptComposition(req.CompositionMode, req.BundleID, req.BundleManifestSHA256)
+	composition, err := service.NormalizeBusinessSystemPromptCompositionStructure(req.CompositionMode, req.BundleID, req.BundleManifestSHA256)
 	if err != nil {
 		return service.BusinessSystemPromptVersion{}, err
 	}
@@ -508,7 +508,7 @@ func (r *businessSystemPromptRepository) SyncBusinessSystemPromptSourceVersion(
 	candidate service.BusinessSystemPromptSourceCandidate,
 	actorID, expectedLatestVersion, expectedRevision int64,
 ) (service.BusinessSystemPromptSourceSyncResult, error) {
-	if err := service.ValidateBusinessSystemPromptSourceCandidate(candidate); err != nil {
+	if err := service.ValidateBusinessSystemPromptSourceCandidateShape(candidate); err != nil {
 		return service.BusinessSystemPromptSourceSyncResult{}, err
 	}
 	tx, err := r.db.BeginTx(ctx, nil)
@@ -815,7 +815,7 @@ func validateStoredBusinessSystemPromptVersion(body, expectedHash string, expect
 	if err := validateStoredBusinessSystemPrompt(body, expectedHash, expectedLength); err != nil {
 		return err
 	}
-	if _, err := service.NormalizeBusinessSystemPromptComposition(compositionMode, bundleID, bundleManifestSHA256); err != nil {
+	if _, err := service.NormalizeBusinessSystemPromptCompositionStructure(compositionMode, bundleID, bundleManifestSHA256); err != nil {
 		return fmt.Errorf("%w: %v", service.ErrBusinessSystemPromptUnavailable, err)
 	}
 	return nil

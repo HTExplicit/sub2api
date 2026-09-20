@@ -245,12 +245,17 @@ func (h *SystemPromptHandler) SkillRegistry(c *gin.Context) {
 		writeBusinessSystemPromptError(c, err)
 		return
 	}
+	profile, err := service.LoadRemoteSkillRegistryProfile(c.Request.Context())
+	if err != nil {
+		writeBusinessSystemPromptError(c, err)
+		return
+	}
 	response.Success(c, gin.H{
 		"runtime": h.skillRegistry.CurrentSnapshot(), "versions": versions,
 		"source": gin.H{
-			"upstream_source_id": service.RemoteSkillUpstreamSourceID,
-			"upstream_root":      service.RemoteSkillUpstreamRoot,
-			"public_root":        service.RemoteSkillPublicRoot,
+			"upstream_source_id": profile.SourceID,
+			"upstream_root":      profile.UpstreamRoot,
+			"public_root":        profile.PublicRoot,
 		},
 	})
 }
@@ -295,13 +300,18 @@ func (h *SystemPromptHandler) StartSkillSync(c *gin.Context) {
 		response.BadRequest(c, "Invalid request: "+err.Error())
 		return
 	}
+	profile, err := service.LoadRemoteSkillRegistryProfile(c.Request.Context())
+	if err != nil {
+		writeBusinessSystemPromptError(c, err)
+		return
+	}
 	job, err := h.skillRegistry.StartSync(c.Request.Context(), promptCapture, actorID, expectedRevision)
 	if err != nil {
 		writeBusinessSystemPromptError(c, err)
 		return
 	}
 	middleware.SetAuditExtra(c, map[string]any{
-		"upstream_source_id": service.RemoteSkillUpstreamSourceID,
+		"upstream_source_id": profile.SourceID,
 		"revision":           expectedRevision,
 		"prompt_uploaded":    job.PromptCaptureProvided,
 		"status":             job.Status,
@@ -372,14 +382,14 @@ func (h *SystemPromptHandler) SkillSync(c *gin.Context) {
 }
 
 func (h *SystemPromptHandler) PublishSkillVersion(c *gin.Context) {
-	h.publishSkillVersion(c, "published")
+	h.publishSkillVersion(c, "publish", "published")
 }
 
 func (h *SystemPromptHandler) RollbackSkillVersion(c *gin.Context) {
-	h.publishSkillVersion(c, "rolled_back")
+	h.publishSkillVersion(c, "rollback", "rolled_back")
 }
 
-func (h *SystemPromptHandler) publishSkillVersion(c *gin.Context, result string) {
+func (h *SystemPromptHandler) publishSkillVersion(c *gin.Context, action, result string) {
 	actorID, ok := h.actorID(c)
 	if !ok {
 		return
@@ -396,7 +406,7 @@ func (h *SystemPromptHandler) publishSkillVersion(c *gin.Context, result string)
 		return
 	}
 	old := h.skillRegistry.CurrentSnapshot()
-	snapshot, err := h.skillRegistry.PublishVersion(c.Request.Context(), versionID, req.ExpectedRevision, actorID)
+	snapshot, err := h.skillRegistry.PublishVersionAction(c.Request.Context(), versionID, req.ExpectedRevision, action, actorID)
 	if err != nil {
 		writeBusinessSystemPromptError(c, err)
 		return
@@ -619,14 +629,14 @@ func (h *SystemPromptHandler) SyncManagedSource(c *gin.Context) {
 }
 
 func (h *SystemPromptHandler) Publish(c *gin.Context) {
-	h.publish(c)
+	h.publish(c, "publish", "published")
 }
 
 func (h *SystemPromptHandler) Rollback(c *gin.Context) {
-	h.publish(c)
+	h.publish(c, "rollback", "rolled_back")
 }
 
-func (h *SystemPromptHandler) publish(c *gin.Context) {
+func (h *SystemPromptHandler) publish(c *gin.Context, action, result string) {
 	actorID, ok := h.actorID(c)
 	if !ok {
 		return
@@ -652,14 +662,10 @@ func (h *SystemPromptHandler) publish(c *gin.Context) {
 		req.ExpectedRevision, _ = strconv.ParseInt(strings.TrimSpace(c.Query("expected_revision")), 10, 64)
 	}
 	oldSnapshot, _ := h.service.CurrentSnapshot()
-	snapshot, err := h.service.PublishVersion(c.Request.Context(), templateID, versionID, req.ExpectedRevision, actorID)
+	snapshot, err := h.service.PublishVersionAction(c.Request.Context(), templateID, versionID, req.ExpectedRevision, action, actorID)
 	if err != nil {
 		writeBusinessSystemPromptError(c, err)
 		return
-	}
-	result := "published"
-	if strings.HasSuffix(c.FullPath(), "/rollback") {
-		result = "rolled_back"
 	}
 	middleware.SetAuditExtra(c, map[string]any{
 		"template_id": templateID, "template_version": snapshot.TemplateVersion,

@@ -11,6 +11,8 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	extensionv1 "github.com/Wei-Shaw/sub2api/pkg/extensionapi/v1"
 )
 
 const (
@@ -91,7 +93,21 @@ func (f *RemoteSkillRegistryFilesystem) LoadSeed(ctx context.Context) (RemoteSki
 	if err != nil {
 		return RemoteSkillCandidate{}, err
 	}
-	return buildPairedRemoteSkillCandidate(ctx, rawFiles, effective, prompt, nil, fetchedAt)
+	candidate, err := buildPairedRemoteSkillCandidate(ctx, rawFiles, effective, prompt, nil, fetchedAt)
+	if err != nil {
+		return RemoteSkillCandidate{}, err
+	}
+	profile, err := LoadRemoteSkillRegistryProfile(ctx)
+	if err != nil {
+		return RemoteSkillCandidate{}, err
+	}
+	candidate.Version.UpstreamSourceID = profile.SourceID
+	candidate.Version.UpstreamRoot = profile.UpstreamRoot
+	candidate.Version.PublicRoot = profile.PublicRoot
+	if candidate.Version.FileCount > profile.MaxFileCount || candidate.Version.RawTotalBytes > profile.MaxTotalBytes || candidate.Version.EffectiveTotalBytes > profile.MaxTotalBytes {
+		return RemoteSkillCandidate{}, ErrBusinessSystemPromptBundleInvalid
+	}
+	return candidate, nil
 }
 
 func (f *RemoteSkillRegistryFilesystem) InstallCandidate(ctx context.Context, candidate RemoteSkillCandidate) error {
@@ -102,9 +118,13 @@ func (f *RemoteSkillRegistryFilesystem) InstallCandidate(ctx context.Context, ca
 	if err := validatePairedRemoteSkillCandidate(candidate, requireIDs); err != nil {
 		return err
 	}
-	destination := f.candidateRoot(candidate.Version.EffectiveTreeSHA256, candidate.Prompt.EffectiveSHA256)
+	layout, err := planRemoteSkillStorage(ctx, candidate)
+	if err != nil {
+		return err
+	}
+	destination := f.candidateRootFromLayout(layout)
 	if _, err := os.Lstat(destination); err == nil {
-		_, loadErr := f.loadCandidateRoot(destination, candidate.Version, candidate.Prompt, candidate.FileChanges, requireIDs)
+		_, loadErr := f.loadCandidateRootWithLayout(destination, candidate.Version, candidate.Prompt, candidate.FileChanges, requireIDs, layout)
 		return loadErr
 	} else if !errors.Is(err, os.ErrNotExist) {
 		return err
@@ -126,30 +146,30 @@ func (f *RemoteSkillRegistryFilesystem) InstallCandidate(ctx context.Context, ca
 	if err != nil {
 		return err
 	}
-	if err := writeRemoteSkillRegularFile(filepath.Join(staging, remoteSkillCandidateMetadataFile), metadataRaw, 0o640); err != nil {
+	if err := writeRemoteSkillRegularFile(f.storagePath(staging, layout, "metadata"), metadataRaw, 0o640); err != nil {
 		return err
 	}
-	if err := writeRemoteSkillTree(filepath.Join(staging, remoteSkillRawTreeDirectory), candidate.RawFiles); err != nil {
+	if err := writeRemoteSkillTree(f.storagePath(staging, layout, "raw_tree"), candidate.RawFiles); err != nil {
 		return err
 	}
-	if err := writeRemoteSkillTree(filepath.Join(staging, remoteSkillEffectiveDirectory), candidate.EffectiveFiles); err != nil {
+	if err := writeRemoteSkillTree(f.storagePath(staging, layout, "effective_tree"), candidate.EffectiveFiles); err != nil {
 		return err
 	}
-	if err := writeRemoteSkillRegularFile(filepath.Join(staging, remoteSkillRawPromptFile), []byte(candidate.Prompt.RawBody), 0o640); err != nil {
+	if err := writeRemoteSkillRegularFile(f.storagePath(staging, layout, "raw_prompt"), []byte(candidate.Prompt.RawBody), 0o640); err != nil {
 		return err
 	}
-	if err := writeRemoteSkillRegularFile(filepath.Join(staging, remoteSkillEffectivePromptFile), []byte(candidate.Prompt.EffectiveBody), 0o640); err != nil {
+	if err := writeRemoteSkillRegularFile(f.storagePath(staging, layout, "effective_prompt"), []byte(candidate.Prompt.EffectiveBody), 0o640); err != nil {
 		return err
 	}
-	if err := writeRemoteSkillRegularFile(filepath.Join(staging, remoteSkillPromptDiffFile), []byte(candidate.Prompt.Diff), 0o640); err != nil {
+	if err := writeRemoteSkillRegularFile(f.storagePath(staging, layout, "prompt_diff"), []byte(candidate.Prompt.Diff), 0o640); err != nil {
 		return err
 	}
-	if _, err := f.loadCandidateRoot(staging, candidate.Version, candidate.Prompt, candidate.FileChanges, requireIDs); err != nil {
+	if _, err := f.loadCandidateRootWithLayout(staging, candidate.Version, candidate.Prompt, candidate.FileChanges, requireIDs, layout); err != nil {
 		return err
 	}
 	if err := os.Rename(staging, destination); err != nil {
 		if _, statErr := os.Lstat(destination); statErr == nil {
-			_, loadErr := f.loadCandidateRoot(destination, candidate.Version, candidate.Prompt, candidate.FileChanges, requireIDs)
+			_, loadErr := f.loadCandidateRootWithLayout(destination, candidate.Version, candidate.Prompt, candidate.FileChanges, requireIDs, layout)
 			return loadErr
 		}
 		return err
@@ -166,15 +186,20 @@ func (f *RemoteSkillRegistryFilesystem) LoadCandidate(
 	if err := ctx.Err(); err != nil {
 		return RemoteSkillCandidate{}, err
 	}
-	return f.loadCandidateRoot(f.candidateRoot(version.EffectiveTreeSHA256, prompt.EffectiveSHA256), version, prompt, changes, true)
+	layout, err := planRemoteSkillStorage(ctx, RemoteSkillCandidate{Version: version, Prompt: prompt})
+	if err != nil {
+		return RemoteSkillCandidate{}, err
+	}
+	return f.loadCandidateRootWithLayout(f.candidateRootFromLayout(layout), version, prompt, changes, true, layout)
 }
 
-func (f *RemoteSkillRegistryFilesystem) loadCandidateRoot(
+func (f *RemoteSkillRegistryFilesystem) loadCandidateRootWithLayout(
 	root string,
 	version RemoteSkillBundleVersion,
 	prompt RemoteSkillPromptVersion,
 	changes []RemoteSkillFileChange,
 	requireIDs bool,
+	layout extensionv1.SkillStorageLayoutPlan,
 ) (RemoteSkillCandidate, error) {
 	rootInfo, err := os.Lstat(root)
 	if err != nil {
@@ -183,7 +208,7 @@ func (f *RemoteSkillRegistryFilesystem) loadCandidateRoot(
 	if rootInfo.Mode()&os.ModeSymlink != 0 || !rootInfo.IsDir() {
 		return RemoteSkillCandidate{}, fmt.Errorf("%w: candidate root is not a regular directory", ErrBusinessSystemPromptBundleInvalid)
 	}
-	metadataRaw, err := readRemoteSkillRegularFile(filepath.Join(root, remoteSkillCandidateMetadataFile), businessSystemPromptBundleMaxFileBytes)
+	metadataRaw, err := readRemoteSkillRegularFile(f.storagePath(root, layout, "metadata"), businessSystemPromptBundleMaxFileBytes)
 	if err != nil {
 		return RemoteSkillCandidate{}, err
 	}
@@ -194,26 +219,26 @@ func (f *RemoteSkillRegistryFilesystem) loadCandidateRoot(
 	if metadata.Version != remoteSkillContentVersionMetadataFrom(version) || metadata.Prompt != remoteSkillContentPromptMetadataFrom(prompt) {
 		return RemoteSkillCandidate{}, fmt.Errorf("%w: candidate metadata mismatch", ErrBusinessSystemPromptBundleInvalid)
 	}
-	rawPrompt, err := readRemoteSkillRegularFile(filepath.Join(root, remoteSkillRawPromptFile), BusinessSystemPromptMaxBytes)
+	rawPrompt, err := readRemoteSkillRegularFile(f.storagePath(root, layout, "raw_prompt"), BusinessSystemPromptMaxBytes)
 	if err != nil {
 		return RemoteSkillCandidate{}, err
 	}
-	effectivePrompt, err := readRemoteSkillRegularFile(filepath.Join(root, remoteSkillEffectivePromptFile), BusinessSystemPromptMaxBytes)
+	effectivePrompt, err := readRemoteSkillRegularFile(f.storagePath(root, layout, "effective_prompt"), BusinessSystemPromptMaxBytes)
 	if err != nil {
 		return RemoteSkillCandidate{}, err
 	}
-	promptDiff, err := readRemoteSkillRegularFile(filepath.Join(root, remoteSkillPromptDiffFile), businessSystemPromptBundleMaxFileBytes)
+	promptDiff, err := readRemoteSkillRegularFile(f.storagePath(root, layout, "prompt_diff"), businessSystemPromptBundleMaxFileBytes)
 	if err != nil {
 		return RemoteSkillCandidate{}, err
 	}
 	if string(rawPrompt) != prompt.RawBody || string(effectivePrompt) != prompt.EffectiveBody || string(promptDiff) != prompt.Diff {
 		return RemoteSkillCandidate{}, fmt.Errorf("%w: stored prompt capture mismatch", ErrBusinessSystemPromptBundleInvalid)
 	}
-	rawFiles, err := readRemoteSkillDiskTree(filepath.Join(root, remoteSkillRawTreeDirectory))
+	rawFiles, err := readRemoteSkillDiskTree(f.storagePath(root, layout, "raw_tree"))
 	if err != nil {
 		return RemoteSkillCandidate{}, err
 	}
-	effectiveFiles, err := readRemoteSkillDiskTree(filepath.Join(root, remoteSkillEffectiveDirectory))
+	effectiveFiles, err := readRemoteSkillDiskTree(f.storagePath(root, layout, "effective_tree"))
 	if err != nil {
 		return RemoteSkillCandidate{}, err
 	}
@@ -235,7 +260,11 @@ func validateStoredPairedRemoteSkillCandidate(candidate RemoteSkillCandidate, re
 func validatePairedRemoteSkillCandidatePolicy(candidate RemoteSkillCandidate, requireIDs, requireCurrentTree, requireCurrentPromptRewrite bool) error {
 	version := candidate.Version
 	prompt := candidate.Prompt
-	if version.UpstreamSourceID != RemoteSkillUpstreamSourceID || version.UpstreamRoot != RemoteSkillUpstreamRoot || version.PublicRoot != RemoteSkillPublicRoot ||
+	profile, profileErr := LoadRemoteSkillRegistryProfile(context.Background())
+	if profileErr != nil {
+		return profileErr
+	}
+	if version.UpstreamSourceID != profile.SourceID || version.UpstreamRoot != profile.UpstreamRoot || version.PublicRoot != profile.PublicRoot ||
 		!validRemoteSkillSHA256(version.RawTreeSHA256) || !validRemoteSkillSHA256(version.EffectiveTreeSHA256) ||
 		!validRemoteSkillSHA256(prompt.RawSHA256) || !validRemoteSkillSHA256(prompt.EffectiveSHA256) || version.FetchedAt.IsZero() {
 		return fmt.Errorf("%w: paired candidate identity mismatch", ErrBusinessSystemPromptBundleInvalid)
@@ -269,9 +298,9 @@ func validatePairedRemoteSkillCandidatePolicy(candidate RemoteSkillCandidate, re
 		rawTotal += int64(len(rawBody))
 		effectiveTotal += int64(len(effectiveBody))
 	}
-	if version.FileCount != len(candidate.RawFiles) ||
+	if version.FileCount != len(candidate.RawFiles) || version.FileCount > profile.MaxFileCount ||
 		version.RawTotalBytes != rawTotal || version.EffectiveTotalBytes != effectiveTotal ||
-		rawTotal > remoteSkillMaxTotalBytes || effectiveTotal > remoteSkillMaxTotalBytes ||
+		rawTotal > profile.MaxTotalBytes || effectiveTotal > profile.MaxTotalBytes ||
 		version.RawTreeSHA256 != remoteSkillFileTreeSHA256(candidate.RawFiles) ||
 		version.EffectiveTreeSHA256 != remoteSkillFileTreeSHA256(candidate.EffectiveFiles) {
 		return fmt.Errorf("%w: paired candidate tree identity mismatch", ErrBusinessSystemPromptBundleInvalid)
@@ -456,6 +485,18 @@ func remoteSkillContentPromptMetadataFrom(prompt RemoteSkillPromptVersion) remot
 	return remoteSkillContentPromptMetadata{RawSHA256: prompt.RawSHA256, EffectiveSHA256: prompt.EffectiveSHA256}
 }
 
-func (f *RemoteSkillRegistryFilesystem) candidateRoot(treeSHA, promptSHA string) string {
-	return filepath.Join(f.root, "paired", treeSHA+"-"+promptSHA)
+func (f *RemoteSkillRegistryFilesystem) candidateRootFromLayout(layout extensionv1.SkillStorageLayoutPlan) string {
+	return filepath.Join(f.root, layout.Namespace, layout.CandidateKey)
+}
+
+func (f *RemoteSkillRegistryFilesystem) storagePath(root string, layout extensionv1.SkillStorageLayoutPlan, slot string) string {
+	name := map[string]string{
+		"metadata":         remoteSkillCandidateMetadataFile,
+		"raw_tree":         remoteSkillRawTreeDirectory,
+		"effective_tree":   remoteSkillEffectiveDirectory,
+		"raw_prompt":       remoteSkillRawPromptFile,
+		"effective_prompt": remoteSkillEffectivePromptFile,
+		"prompt_diff":      remoteSkillPromptDiffFile,
+	}[slot]
+	return filepath.Join(root, name)
 }

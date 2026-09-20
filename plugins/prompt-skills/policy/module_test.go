@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	extensionv1 "github.com/Wei-Shaw/sub2api/pkg/extensionapi/v1"
+	"github.com/stretchr/testify/require"
 )
 
 func TestPromptPlanProtocolVisibilityAndIntegrity(t *testing.T) {
@@ -36,4 +37,35 @@ func TestPromptPlanProtocolVisibilityAndIntegrity(t *testing.T) {
 	if _, err := Plan(BusinessSystemPromptSnapshot{Enabled: true, Body: "server", SHA256: "wrong"}, BusinessSystemPromptTarget{Platform: "openai", Protocol: "responses"}, true); err == nil {
 		t.Fatal("a changed prompt bypassed its stored digest")
 	}
+}
+
+func TestPromptPublicationPlanCarriesActionAndPreservesRollbackScope(t *testing.T) {
+	base := extensionv1.PromptPublicationPolicyRequest{
+		Action:           extensionv1.PublicationActionPublish,
+		CurrentVersionID: 4,
+		Target: extensionv1.PromptPublicationVersionSummary{
+			ID: 5, Version: 2, CompositionMode: "inline",
+		},
+	}
+	raw, err := json.Marshal(base)
+	require.NoError(t, err)
+	out, err := New().Invoke(context.Background(), extensionv1.Invocation{
+		Capability: extensionv1.CapabilityRequest, Operation: "prompt.publication.plan", Payload: raw,
+	})
+	require.NoError(t, err)
+	require.Empty(t, out.Code)
+	var plan extensionv1.PromptPublicationPolicyPlan
+	require.NoError(t, json.Unmarshal(out.Payload, &plan))
+	require.Equal(t, extensionv1.PublicationActionPublish, plan.Action)
+	require.True(t, plan.Allowed)
+
+	base.Action = extensionv1.PublicationActionRollback
+	base.Target.ID = base.CurrentVersionID
+	raw, err = json.Marshal(base)
+	require.NoError(t, err)
+	out, err = New().Invoke(context.Background(), extensionv1.Invocation{
+		Capability: extensionv1.CapabilityRequest, Operation: "prompt.publication.plan", Payload: raw,
+	})
+	require.NoError(t, err)
+	require.Equal(t, "prompt_invalid", out.Code)
 }

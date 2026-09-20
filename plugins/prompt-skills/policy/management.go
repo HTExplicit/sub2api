@@ -106,6 +106,31 @@ func planTemplate(input extensionv1.PromptTemplatePolicyRequest) (extensionv1.Pr
 	return out, nil
 }
 
+func planPromptPublication(input extensionv1.PromptPublicationPolicyRequest) (extensionv1.PromptPublicationPolicyPlan, error) {
+	action := strings.ToLower(strings.TrimSpace(input.Action))
+	if action != extensionv1.PublicationActionPublish && action != extensionv1.PublicationActionRollback {
+		return extensionv1.PromptPublicationPolicyPlan{}, errors.New("unsupported publication action")
+	}
+	if input.ManagedSource == remoteSkillManagedSource {
+		return extensionv1.PromptPublicationPolicyPlan{}, errors.New("source_managed")
+	}
+	if input.Target.ID > 0 && input.Target.Version <= 0 {
+		return extensionv1.PromptPublicationPolicyPlan{}, errors.New("target version is invalid")
+	}
+	if action == extensionv1.PublicationActionRollback && input.Target.ID > 0 && input.Target.ID == input.CurrentVersionID {
+		return extensionv1.PromptPublicationPolicyPlan{}, errors.New("current version cannot be rolled back")
+	}
+	composition, err := normalizeComposition(extensionv1.PromptComposition{
+		Mode:                 input.Target.CompositionMode,
+		BundleID:             input.Target.BundleID,
+		BundleManifestSHA256: input.Target.BundleManifestSHA256,
+	})
+	if err != nil {
+		return extensionv1.PromptPublicationPolicyPlan{}, err
+	}
+	return extensionv1.PromptPublicationPolicyPlan{Action: action, Allowed: true, Composition: composition}, nil
+}
+
 func invokeManagement(operation string, raw json.RawMessage) (extensionv1.Result, error) {
 	var output any
 	var err error
@@ -130,6 +155,12 @@ func invokeManagement(operation string, raw json.RawMessage) (extensionv1.Result
 			return extensionv1.Result{}, errors.New("invalid template policy request")
 		}
 		output, err = planTemplate(input)
+	case "prompt.publication.plan":
+		var input extensionv1.PromptPublicationPolicyRequest
+		if json.Unmarshal(raw, &input) != nil {
+			return extensionv1.Result{}, errors.New("invalid prompt publication request")
+		}
+		output, err = planPromptPublication(input)
 	default:
 		return extensionv1.Result{}, errors.New("unsupported prompt management operation")
 	}

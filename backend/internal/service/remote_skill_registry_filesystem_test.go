@@ -12,6 +12,11 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// Fixed layout fixture for the existing on-disk compatibility contract.
+func (f *RemoteSkillRegistryFilesystem) candidateRoot(treeSHA, promptSHA string) string {
+	return filepath.Join(f.root, "paired", treeSHA+"-"+promptSHA)
+}
+
 func TestRemoteSkillFilesystemSeedContainsExactCurrentModelGangTreeAndApprovedPrompt(t *testing.T) {
 	files := NewRemoteSkillRegistryFilesystem(t.TempDir())
 	seed, err := files.LoadSeed(context.Background())

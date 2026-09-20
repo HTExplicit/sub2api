@@ -48,7 +48,7 @@ func (c *Controller) Invoke(ctx context.Context, in extensionv1.Invocation) (ext
 	case "skills.prompt.seed":
 		output = DefaultPrompt()
 	case "skills.profile":
-		output = extensionv1.SkillRegistryProfile{SourceID: RemoteSkillUpstreamSourceID, UpstreamRoot: RemoteSkillUpstreamRoot, PublicRoot: RemoteSkillPublicRoot, RequiredPaths: remoteSkillRequiredPaths, RequiredModules: remoteSkillRequiredModules, ScriptExtensions: scriptExtensions, BinaryExtensions: binaryExtensions}
+		output = extensionv1.SkillRegistryPolicyProfile{SourceID: RemoteSkillUpstreamSourceID, UpstreamRoot: RemoteSkillUpstreamRoot, PublicRoot: RemoteSkillPublicRoot, RequiredPaths: remoteSkillRequiredPaths, RequiredModules: remoteSkillRequiredModules, ScriptExtensions: scriptExtensions, BinaryExtensions: binaryExtensions, MaxFileCount: remoteSkillMaxFileCount, MaxTotalBytes: remoteSkillMaxTotalBytes, StorageLayoutVersion: 1}
 	case "skills.seed.index":
 		output, _, err = seed()
 	case "skills.manifest.validate":
@@ -78,6 +78,16 @@ func (c *Controller) Invoke(ctx context.Context, in extensionv1.Invocation) (ext
 		var request extensionv1.SkillFileInspection
 		if err = json.Unmarshal(in.Payload, &request); err == nil {
 			output = planFile(request)
+		}
+	case "skills.publication.plan":
+		var request extensionv1.SkillPublicationPolicyRequest
+		if err = json.Unmarshal(in.Payload, &request); err == nil {
+			output, err = planPublication(request)
+		}
+	case "skills.storage.plan":
+		var request extensionv1.SkillStorageLayoutRequest
+		if err = json.Unmarshal(in.Payload, &request); err == nil {
+			output, err = planStorage(request)
 		}
 	default:
 		return extensionv1.Result{}, errors.New("unsupported skill registry operation")
@@ -126,6 +136,36 @@ func planFile(in extensionv1.SkillFileInspection) extensionv1.SkillFilePlan {
 		plan.ReplaceFrom, plan.ReplaceTo = RemoteSkillUpstreamRoot, RemoteSkillPublicRoot
 	}
 	return plan
+}
+
+func planPublication(in extensionv1.SkillPublicationPolicyRequest) (extensionv1.SkillPublicationPolicyPlan, error) {
+	action := strings.ToLower(strings.TrimSpace(in.Action))
+	if action != extensionv1.PublicationActionPublish && action != extensionv1.PublicationActionRollback {
+		return extensionv1.SkillPublicationPolicyPlan{}, errors.New("unsupported publication action")
+	}
+	if in.Target.BundleVersionID < 1 || in.Target.PromptVersionID < 1 ||
+		in.Target.UpstreamSourceID != RemoteSkillUpstreamSourceID {
+		return extensionv1.SkillPublicationPolicyPlan{}, errors.New("publication target identity is invalid")
+	}
+	if action == extensionv1.PublicationActionRollback && in.Target.BundleVersionID == in.CurrentBundleVersionID {
+		return extensionv1.SkillPublicationPolicyPlan{}, errors.New("current version cannot be rolled back")
+	}
+	return extensionv1.SkillPublicationPolicyPlan{Action: action, Allowed: true}, nil
+}
+
+var storageSlots = []string{"metadata", "raw_tree", "effective_tree", "raw_prompt", "effective_prompt", "prompt_diff"}
+
+func planStorage(in extensionv1.SkillStorageLayoutRequest) (extensionv1.SkillStorageLayoutPlan, error) {
+	if in.EffectiveTreeSHA256 == "" || in.EffectivePromptSHA256 == "" ||
+		!validRemoteSkillSHA256(in.EffectiveTreeSHA256) || !validRemoteSkillSHA256(in.EffectivePromptSHA256) {
+		return extensionv1.SkillStorageLayoutPlan{}, errors.New("storage identity is invalid")
+	}
+	return extensionv1.SkillStorageLayoutPlan{
+		LayoutVersion: 1,
+		Namespace:     "paired",
+		CandidateKey:  in.EffectiveTreeSHA256 + "-" + in.EffectivePromptSHA256,
+		Slots:         append([]string(nil), storageSlots...),
+	}, nil
 }
 
 func validateTreeEntries(entries []extensionv1.SkillTreeEntry, current *remoteSkillManifest) error {

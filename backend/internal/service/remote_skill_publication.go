@@ -127,9 +127,9 @@ func cloneRemoteSkillPublication(publication RemoteSkillPublication) RemoteSkill
 func remoteSkillPublicationFromCandidate(revision int64, candidate RemoteSkillCandidate) (RemoteSkillPublication, error) {
 	if revision < 1 || candidate.Version.ID < 1 || candidate.Prompt.ID < 1 ||
 		candidate.Version.PromptVersionID != candidate.Prompt.ID ||
-		candidate.Version.UpstreamSourceID != RemoteSkillUpstreamSourceID ||
-		candidate.Version.UpstreamRoot != RemoteSkillUpstreamRoot ||
-		candidate.Version.PublicRoot != RemoteSkillPublicRoot ||
+		strings.TrimSpace(candidate.Version.UpstreamSourceID) == "" ||
+		strings.TrimSpace(candidate.Version.UpstreamRoot) == "" ||
+		strings.TrimSpace(candidate.Version.PublicRoot) == "" ||
 		candidate.Prompt.RawSHA256 != hashBusinessSystemPromptBundleBytes([]byte(candidate.Prompt.RawBody)) ||
 		candidate.Prompt.EffectiveSHA256 != hashBusinessSystemPromptBundleBytes([]byte(candidate.Prompt.EffectiveBody)) {
 		return RemoteSkillPublication{}, fmt.Errorf("%w: paired publication metadata mismatch", ErrBusinessSystemPromptBundleInvalid)

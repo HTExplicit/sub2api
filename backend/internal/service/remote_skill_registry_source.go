@@ -16,6 +16,8 @@ import (
 	"time"
 
 	"golang.org/x/sync/errgroup"
+
+	extensionv1 "github.com/Wei-Shaw/sub2api/pkg/extensionapi/v1"
 )
 
 const (
@@ -52,9 +54,26 @@ func (s *MoxinggangRemoteSkillCandidateSource) Build(
 	if prompt.RawSHA256 == "" || prompt.EffectiveSHA256 == "" {
 		return RemoteSkillCandidate{}, fmt.Errorf("%w: prompt capture is required", ErrBusinessSystemPromptInvalid)
 	}
+	profile, err := LoadRemoteSkillRegistryProfile(ctx)
+	if err != nil {
+		return RemoteSkillCandidate{}, err
+	}
 	manifest, err := loadRemoteSkillManifestContext(ctx)
 	if err != nil {
 		return RemoteSkillCandidate{}, err
+	}
+	if len(manifest.Files) == 0 || len(manifest.Files) > profile.MaxFileCount {
+		return RemoteSkillCandidate{}, ErrBusinessSystemPromptBundleInvalid
+	}
+	var declaredBytes int64
+	for _, entry := range manifest.Files {
+		if entry.ByteLength < 1 || entry.ByteLength > businessSystemPromptBundleMaxFileBytes {
+			return RemoteSkillCandidate{}, ErrBusinessSystemPromptBundleInvalid
+		}
+		declaredBytes += int64(entry.ByteLength)
+		if declaredBytes > profile.MaxTotalBytes {
+			return RemoteSkillCandidate{}, ErrBusinessSystemPromptBundleInvalid
+		}
 	}
 	ctx, cancel := context.WithTimeout(ctx, remoteSkillSyncTimeout)
 	defer cancel()
@@ -78,7 +97,7 @@ func (s *MoxinggangRemoteSkillCandidateSource) Build(
 	for _, manifestEntry := range upstreamEntries {
 		entry := manifestEntry
 		group.Go(func() error {
-			body, err := s.downloadEntry(groupCtx, entry.Path)
+			body, err := s.downloadEntry(groupCtx, entry.Path, profile)
 			if err != nil {
 				return err
 			}
@@ -105,17 +124,27 @@ func (s *MoxinggangRemoteSkillCandidateSource) Build(
 	if s.now != nil {
 		fetchedAt = s.now().UTC()
 	}
-	return buildPairedRemoteSkillCandidate(ctx, rawFiles, effectiveFiles, prompt, active, fetchedAt)
+	candidate, err := buildPairedRemoteSkillCandidate(ctx, rawFiles, effectiveFiles, prompt, active, fetchedAt)
+	if err != nil {
+		return RemoteSkillCandidate{}, err
+	}
+	candidate.Version.UpstreamSourceID = profile.SourceID
+	candidate.Version.UpstreamRoot = profile.UpstreamRoot
+	candidate.Version.PublicRoot = profile.PublicRoot
+	if candidate.Version.EffectiveTotalBytes > profile.MaxTotalBytes {
+		return RemoteSkillCandidate{}, ErrBusinessSystemPromptBundleInvalid
+	}
+	return candidate, nil
 }
 
-func (s *MoxinggangRemoteSkillCandidateSource) downloadEntry(ctx context.Context, name string) ([]byte, error) {
+func (s *MoxinggangRemoteSkillCandidateSource) downloadEntry(ctx context.Context, name string, profile extensionv1.SkillRegistryPolicyProfile) ([]byte, error) {
 	normalized, err := normalizeBundleRelativePath(name)
 	if err != nil || normalized != name {
 		return nil, fmt.Errorf("%w: upstream path rejected", ErrBusinessSystemPromptBundleInvalid)
 	}
-	rawURL := remoteSkillUpstreamEntryURL(name)
+	rawURL := remoteSkillUpstreamEntryURLForProfile(profile, name)
 	parsed, err := url.Parse(rawURL)
-	if err != nil || !validMoxinggangRemoteSkillURL(parsed) {
+	if err != nil || !validRemoteSkillURL(profile, parsed) {
 		return nil, fmt.Errorf("%w: upstream URL rejected", ErrBusinessSystemPromptBundleInvalid)
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, rawURL, nil)
@@ -152,23 +181,34 @@ func (s *MoxinggangRemoteSkillCandidateSource) downloadEntry(ctx context.Context
 }
 
 func validMoxinggangRemoteSkillURL(parsed *url.URL) bool {
-	if parsed == nil || parsed.Scheme != "https" || parsed.Hostname() != "moxinggang.com" || parsed.Port() != "" || parsed.User != nil || parsed.RawQuery != "" || parsed.Fragment != "" {
+	profile := extensionv1.SkillRegistryPolicyProfile{UpstreamRoot: RemoteSkillUpstreamRoot}
+	return validRemoteSkillURL(profile, parsed)
+}
+
+func validRemoteSkillURL(profile extensionv1.SkillRegistryPolicyProfile, parsed *url.URL) bool {
+	base, err := url.Parse(profile.UpstreamRoot)
+	if err != nil || parsed == nil || parsed.Scheme != base.Scheme || parsed.Hostname() != base.Hostname() || parsed.Port() != base.Port() || parsed.User != nil || parsed.RawQuery != "" || parsed.Fragment != "" {
 		return false
 	}
-	if parsed.Path != path.Clean(parsed.Path) || !strings.HasPrefix(parsed.Path, RemoteSkillMoxinggangPath+"/") {
+	basePath := strings.TrimSuffix(base.Path, "/")
+	if parsed.Path != path.Clean(parsed.Path) || !strings.HasPrefix(parsed.Path, basePath+"/") {
 		return false
 	}
-	relative := strings.TrimPrefix(parsed.Path, RemoteSkillMoxinggangPath+"/")
+	relative := strings.TrimPrefix(parsed.Path, basePath+"/")
 	normalized, err := normalizeBundleRelativePath(relative)
 	return err == nil && normalized == relative
 }
 
 func remoteSkillUpstreamEntryURL(name string) string {
+	return remoteSkillUpstreamEntryURLForProfile(extensionv1.SkillRegistryPolicyProfile{UpstreamRoot: RemoteSkillUpstreamRoot}, name)
+}
+
+func remoteSkillUpstreamEntryURLForProfile(profile extensionv1.SkillRegistryPolicyProfile, name string) string {
 	parts := strings.Split(name, "/")
 	for index := range parts {
 		parts[index] = url.PathEscape(parts[index])
 	}
-	return RemoteSkillUpstreamRoot + "/" + strings.Join(parts, "/")
+	return strings.TrimRight(profile.UpstreamRoot, "/") + "/" + strings.Join(parts, "/")
 }
 
 func newRemoteSkillHTTPClient() *http.Client {

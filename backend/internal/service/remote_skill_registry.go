@@ -400,15 +400,46 @@ func (s *RemoteSkillRegistryService) failSyncJob(ctx context.Context, id int64, 
 }
 
 func (s *RemoteSkillRegistryService) PublishVersion(ctx context.Context, versionID, expectedRevision, actorID int64) (RemoteSkillRegistrySnapshot, error) {
+	return s.PublishVersionAction(ctx, versionID, expectedRevision, "publish", actorID)
+}
+
+func (s *RemoteSkillRegistryService) PublishVersionAction(ctx context.Context, versionID, expectedRevision int64, action string, actorID int64) (RemoteSkillRegistrySnapshot, error) {
 	s.applyMu.Lock()
 	defer s.applyMu.Unlock()
 	detail, err := s.store.GetRemoteSkillVersion(ctx, versionID)
 	if err != nil {
 		return RemoteSkillRegistrySnapshot{}, err
 	}
+	persisted, err := s.store.LoadRemoteSkillSnapshot(ctx)
+	if err != nil {
+		return RemoteSkillRegistrySnapshot{}, err
+	}
+	if expectedRevision < 1 || persisted.Revision != expectedRevision {
+		return RemoteSkillRegistrySnapshot{}, ErrBusinessSystemPromptRevisionConflict
+	}
 	candidate, err := s.files.LoadCandidate(ctx, detail.RemoteSkillBundleVersion, detail.Prompt, detail.FileChanges)
 	if err != nil {
 		return RemoteSkillRegistrySnapshot{}, fmt.Errorf("%w: paired candidate validation failed", ErrBusinessSystemPromptUnavailable)
+	}
+	currentID := int64(0)
+	if persisted.Active != nil {
+		currentID = persisted.Active.ID
+	}
+	if err := planSkillPublication(ctx, extensionv1.SkillPublicationPolicyRequest{
+		Action:                 action,
+		CurrentBundleVersionID: currentID,
+		Target: extensionv1.SkillPublicationBundleSummary{
+			BundleVersionID:       candidate.Version.ID,
+			PromptVersionID:       candidate.Prompt.ID,
+			UpstreamSourceID:      candidate.Version.UpstreamSourceID,
+			RawTreeSHA256:         candidate.Version.RawTreeSHA256,
+			EffectiveTreeSHA256:   candidate.Version.EffectiveTreeSHA256,
+			RawPromptSHA256:       candidate.Prompt.RawSHA256,
+			EffectivePromptSHA256: candidate.Prompt.EffectiveSHA256,
+			FileCount:             candidate.Version.FileCount,
+		},
+	}); err != nil {
+		return RemoteSkillRegistrySnapshot{}, err
 	}
 	// Validate and materialize the paired public snapshot before the database
 	// CAS.  A post-CAS conversion failure would otherwise leave the database

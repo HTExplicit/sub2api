@@ -10,7 +10,7 @@
     { "id": "extensions.request.v1", "platform": "openai", "account_type": "*" },
     { "id": "extensions.admin.v1", "platform": "*", "account_type": "*" }
   ],
-  "operations": { "extensions.request.v1": ["prompt.plan", "prompt.availability", "prompt.composition", "prompt.template", "prompt.seeds", "prompt.source.fetch", "prompt.source.validate", "skills.capture", "skills.prompt.seed", "skills.profile", "skills.seed.index", "skills.seed.chunk", "skills.manifest.validate", "skills.tree.check", "skills.file.plan"] },
+  "operations": { "extensions.request.v1": ["prompt.plan", "prompt.availability", "prompt.composition", "prompt.template", "prompt.publication.plan", "prompt.seeds", "prompt.source.fetch", "prompt.source.validate", "skills.capture", "skills.prompt.seed", "skills.profile", "skills.seed.index", "skills.seed.chunk", "skills.manifest.validate", "skills.tree.check", "skills.file.plan", "skills.publication.plan", "skills.storage.plan"] },
   "resources": [
     { "name": "prompts.list", "capability": "extensions.request.v1", "permission": "admin" },
     { "name": "prompts.create", "capability": "extensions.request.v1", "permission": "admin" },

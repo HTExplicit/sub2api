@@ -238,6 +238,26 @@ func (s *BusinessSystemPromptService) Initialize(ctx context.Context) error {
 		if err != nil {
 			return fmt.Errorf("validate embedded business system prompt %q: %w", seeds[i].Slug, err)
 		}
+		if seeds[i].ManagedSource != "" || seeds[i].SourceRepository != "" || seeds[i].SourceCommit != "" ||
+			seeds[i].SourceVersion != "" || seeds[i].SourceArtifact != "" || seeds[i].SourceArtifactSHA256 != "" ||
+			seeds[i].SourceLicenseSHA256 != "" {
+			if err := ValidateBusinessSystemPromptSourceCandidate(BusinessSystemPromptSourceCandidate{
+				ManagedSource: seeds[i].ManagedSource, SourceRepository: seeds[i].SourceRepository,
+				SourceCommit: seeds[i].SourceCommit, SourceVersion: seeds[i].SourceVersion,
+				SourceArtifact: seeds[i].SourceArtifact, SourceArtifactSHA256: seeds[i].SourceArtifactSHA256,
+				SourceLicenseSHA256: seeds[i].SourceLicenseSHA256, Body: seeds[i].Body,
+				SHA256: hash, ByteLength: byteLength,
+			}); err != nil {
+				return fmt.Errorf("validate embedded source %q: %w", seeds[i].Slug, err)
+			}
+		}
+		composition, err := NormalizeBusinessSystemPromptComposition(seeds[i].CompositionMode, seeds[i].BundleID, seeds[i].BundleManifestSHA256)
+		if err != nil {
+			return fmt.Errorf("validate embedded composition %q: %w", seeds[i].Slug, err)
+		}
+		seeds[i].CompositionMode = composition.Mode
+		seeds[i].BundleID = composition.BundleID
+		seeds[i].BundleManifestSHA256 = composition.BundleManifestSHA256
 		seeds[i].SHA256 = hash
 		seeds[i].ByteLength = byteLength
 		if err := s.store.EnsureBusinessSystemPromptSeed(ctx, seeds[i]); err != nil {
@@ -607,10 +627,14 @@ func (s *BusinessSystemPromptService) CreateVersionWithComposition(ctx context.C
 }
 
 func (s *BusinessSystemPromptService) PublishVersion(ctx context.Context, templateID, versionID, expectedRevision, actorID int64) (BusinessSystemPromptSnapshot, error) {
+	return s.PublishVersionAction(ctx, templateID, versionID, expectedRevision, "publish", actorID)
+}
+
+func (s *BusinessSystemPromptService) PublishVersionAction(ctx context.Context, templateID, versionID, expectedRevision int64, action string, actorID int64) (BusinessSystemPromptSnapshot, error) {
 	if s == nil || s.store == nil {
 		return BusinessSystemPromptSnapshot{}, errors.New("business system prompt store unavailable")
 	}
-	if err := s.validateBusinessSystemPromptPublishTarget(ctx, templateID, versionID); err != nil {
+	if err := s.validateBusinessSystemPromptPublishTarget(ctx, templateID, versionID, expectedRevision, action); err != nil {
 		return BusinessSystemPromptSnapshot{}, err
 	}
 	snapshot, err := s.store.PublishBusinessSystemPromptVersion(ctx, templateID, versionID, expectedRevision, actorID)
@@ -674,31 +698,55 @@ func (s *BusinessSystemPromptService) validateBusinessSystemPromptBundleReferenc
 	return nil
 }
 
-func (s *BusinessSystemPromptService) validateBusinessSystemPromptPublishTarget(ctx context.Context, templateID, versionID int64) error {
+func (s *BusinessSystemPromptService) validateBusinessSystemPromptPublishTarget(ctx context.Context, templateID, versionID, expectedRevision int64, action string) error {
 	detail, err := s.store.GetBusinessSystemPromptTemplate(ctx, templateID)
 	if err != nil {
 		return err
 	}
-	if detail.Template.ManagedSource == BusinessSystemPromptManagedSourceRemoteSkill {
-		return ErrBusinessSystemPromptSourceNotManaged
+	persisted, err := s.store.LoadBusinessSystemPrompt(ctx)
+	if err != nil {
+		return err
 	}
-	if len(detail.Versions) == 0 {
-		// Compatibility for lightweight legacy stores used by embedders. The
-		// durable publish operation remains authoritative for existence/CAS; the
-		// PostgreSQL repository always returns immutable versions here.
-		return nil
+	if expectedRevision < 1 || persisted.Revision != expectedRevision {
+		return ErrBusinessSystemPromptRevisionConflict
 	}
+	request := extensionv1.PromptPublicationPolicyRequest{
+		Action:           action,
+		ManagedSource:    detail.Template.ManagedSource,
+		CurrentVersionID: persisted.VersionID,
+	}
+	found := false
 	for _, version := range detail.Versions {
 		if version.ID != versionID {
 			continue
 		}
-		composition, err := NormalizeBusinessSystemPromptComposition(version.CompositionMode, version.BundleID, version.BundleManifestSHA256)
-		if err != nil {
-			return err
+		found = true
+		request.Target = extensionv1.PromptPublicationVersionSummary{
+			ID: version.ID, Version: version.Version, SHA256: version.SHA256, ByteLength: version.ByteLength,
+			CompositionMode: version.CompositionMode, BundleID: version.BundleID, BundleManifestSHA256: version.BundleManifestSHA256,
 		}
-		return s.validateBusinessSystemPromptBundleReference(composition)
+		break
 	}
-	return ErrBusinessSystemPromptVersionNotFound
+	plan, err := planPromptPublication(ctx, request)
+	if err != nil {
+		return err
+	}
+	if !found {
+		// Compatibility for lightweight legacy stores used by embedders. The
+		// durable publish operation remains authoritative for existence/CAS; the
+		// PostgreSQL repository always returns immutable versions here.
+		if len(detail.Versions) == 0 {
+			return nil
+		}
+		return ErrBusinessSystemPromptVersionNotFound
+	}
+	targetComposition, err := NormalizeBusinessSystemPromptCompositionStructure(
+		request.Target.CompositionMode, request.Target.BundleID, request.Target.BundleManifestSHA256,
+	)
+	if err != nil || plan.Composition != targetComposition {
+		return ErrBusinessSystemPromptInvalid
+	}
+	return s.validateBusinessSystemPromptBundleReference(targetComposition)
 }
 
 func (s *BusinessSystemPromptService) installBusinessSystemPromptSnapshot(snapshot BusinessSystemPromptSnapshot) {

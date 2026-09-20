@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net/url"
+	"path"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -65,6 +67,95 @@ func planPromptTemplate(ctx context.Context, request extensionv1.PromptTemplateP
 		err = ErrBusinessSystemPromptUnavailable
 	}
 	return plan, err
+}
+
+func planPromptPublication(ctx context.Context, request extensionv1.PromptPublicationPolicyRequest) (extensionv1.PromptPublicationPolicyPlan, error) {
+	var plan extensionv1.PromptPublicationPolicyPlan
+	err := invokePromptManagement(ctx, "prompt.publication.plan", request, &plan)
+	if err != nil {
+		return plan, err
+	}
+	if strings.ToLower(strings.TrimSpace(plan.Action)) != strings.ToLower(strings.TrimSpace(request.Action)) || !plan.Allowed {
+		return plan, ErrBusinessSystemPromptInvalid
+	}
+	return plan, nil
+}
+
+func planSkillPublication(ctx context.Context, request extensionv1.SkillPublicationPolicyRequest) error {
+	var plan extensionv1.SkillPublicationPolicyPlan
+	if err := invokePromptManagement(ctx, "skills.publication.plan", request, &plan); err != nil {
+		return err
+	}
+	if strings.ToLower(strings.TrimSpace(plan.Action)) != strings.ToLower(strings.TrimSpace(request.Action)) || !plan.Allowed {
+		return ErrBusinessSystemPromptBundleInvalid
+	}
+	return nil
+}
+
+func LoadRemoteSkillRegistryProfile(ctx context.Context) (extensionv1.SkillRegistryPolicyProfile, error) {
+	var profile extensionv1.SkillRegistryPolicyProfile
+	if err := invokePromptManagementPolicy(ctx, "skills.profile", struct{}{}, &profile, true); err != nil {
+		return profile, err
+	}
+	if err := validateRemoteSkillRegistryProfile(profile); err != nil {
+		return extensionv1.SkillRegistryPolicyProfile{}, err
+	}
+	return profile, nil
+}
+
+func validateRemoteSkillRegistryProfile(profile extensionv1.SkillRegistryPolicyProfile) error {
+	// This named source has an existing network grant and persistent identity.
+	// A policy profile may refine its contents/limits, not grant itself a new
+	// URL or rewrite public links to a different origin.
+	if profile.SourceID != RemoteSkillUpstreamSourceID || profile.UpstreamRoot != RemoteSkillUpstreamRoot || profile.PublicRoot != RemoteSkillPublicRoot {
+		return ErrBusinessSystemPromptBundleInvalid
+	}
+	if strings.TrimSpace(profile.SourceID) == "" || profile.MaxFileCount < 1 || profile.MaxFileCount > remoteSkillMaxFileCount ||
+		profile.MaxTotalBytes < 1 || profile.MaxTotalBytes > remoteSkillMaxTotalBytes || profile.StorageLayoutVersion != 1 {
+		return ErrBusinessSystemPromptBundleInvalid
+	}
+	for _, raw := range []string{profile.UpstreamRoot, profile.PublicRoot} {
+		parsed, err := url.Parse(raw)
+		if err != nil || parsed.Scheme != "https" || parsed.Hostname() == "" || parsed.Port() != "" || parsed.User != nil || parsed.RawQuery != "" || parsed.Fragment != "" || parsed.Path == "" || parsed.Path != path.Clean(parsed.Path) {
+			return ErrBusinessSystemPromptBundleInvalid
+		}
+	}
+	return nil
+}
+
+var remoteSkillStorageSlots = []string{"metadata", "raw_tree", "effective_tree", "raw_prompt", "effective_prompt", "prompt_diff"}
+
+func planRemoteSkillStorage(ctx context.Context, candidate RemoteSkillCandidate) (extensionv1.SkillStorageLayoutPlan, error) {
+	if !validRemoteSkillSHA256(candidate.Version.EffectiveTreeSHA256) || !validRemoteSkillSHA256(candidate.Prompt.EffectiveSHA256) {
+		return extensionv1.SkillStorageLayoutPlan{}, ErrBusinessSystemPromptBundleInvalid
+	}
+	var plan extensionv1.SkillStorageLayoutPlan
+	err := invokePromptManagementPolicy(ctx, "skills.storage.plan", extensionv1.SkillStorageLayoutRequest{
+		BundleVersionID: candidate.Version.ID, PromptVersionID: candidate.Prompt.ID,
+		EffectiveTreeSHA256: candidate.Version.EffectiveTreeSHA256, EffectivePromptSHA256: candidate.Prompt.EffectiveSHA256,
+	}, &plan, true)
+	if err != nil {
+		return plan, err
+	}
+	if plan.LayoutVersion != 1 || plan.Namespace != "paired" ||
+		plan.CandidateKey != candidate.Version.EffectiveTreeSHA256+"-"+candidate.Prompt.EffectiveSHA256 ||
+		len(plan.Slots) != len(remoteSkillStorageSlots) {
+		return extensionv1.SkillStorageLayoutPlan{}, ErrBusinessSystemPromptBundleInvalid
+	}
+	wanted := map[string]bool{}
+	for _, slot := range remoteSkillStorageSlots {
+		wanted[slot] = true
+	}
+	for _, slot := range plan.Slots {
+		if !wanted[slot] {
+			return extensionv1.SkillStorageLayoutPlan{}, ErrBusinessSystemPromptBundleInvalid
+		}
+		delete(wanted, slot)
+	}
+	if len(wanted) != 0 {
+		return extensionv1.SkillStorageLayoutPlan{}, ErrBusinessSystemPromptBundleInvalid
+	}
+	return plan, nil
 }
 
 func remoteSkillFilePlan(ctx context.Context, name string, data []byte) (extensionv1.SkillFilePlan, error) {

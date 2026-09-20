@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	extensionv1 "github.com/Wei-Shaw/sub2api/pkg/extensionapi/v1"
 	"github.com/stretchr/testify/require"
 )
 
@@ -19,6 +20,7 @@ type fakeBusinessSystemPromptStore struct {
 	loadCalls        int
 	loadErr          error
 	published        BusinessSystemPromptSnapshot
+	publishCalls     int
 	publishErr       error
 	createdVersion   BusinessSystemPromptVersion
 	createVersionErr error
@@ -91,6 +93,7 @@ func (f *fakeBusinessSystemPromptStore) SoftDeleteBusinessSystemPromptTemplate(c
 }
 
 func (f *fakeBusinessSystemPromptStore) PublishBusinessSystemPromptVersion(_ context.Context, _ int64, _ int64, _ int64, _ int64) (BusinessSystemPromptSnapshot, error) {
+	f.publishCalls++
 	return f.published, f.publishErr
 }
 
@@ -228,7 +231,7 @@ func TestBusinessSystemPromptServiceInitializeSeedsOnlyGenericManagedPromptAndLo
 }
 
 func TestBusinessSystemPromptServiceLocksRemoteSkillManagedTemplate(t *testing.T) {
-	store := &fakeBusinessSystemPromptStore{detail: BusinessSystemPromptTemplateDetail{
+	store := &fakeBusinessSystemPromptStore{loaded: BusinessSystemPromptSnapshot{Revision: 1}, detail: BusinessSystemPromptTemplateDetail{
 		Template: BusinessSystemPromptTemplate{ID: 3, ManagedSource: BusinessSystemPromptManagedSourceRemoteSkill},
 		Versions: []BusinessSystemPromptVersion{{ID: 4, CompositionMode: BusinessSystemPromptCompositionCodexSkillHybrid, BundleID: BusinessSystemPromptRemoteSkillBundleID}},
 	}}
@@ -343,6 +346,75 @@ func TestBusinessSystemPromptServicePublishInstallsSnapshotAndBroadcastsRevision
 	current, ok := svc.CurrentSnapshot()
 	require.True(t, ok)
 	require.Equal(t, int64(2), current.Revision)
+}
+
+func TestBusinessSystemPromptServicePublicationActionReachesPluginPolicy(t *testing.T) {
+	store := &fakeBusinessSystemPromptStore{
+		loaded:    BusinessSystemPromptSnapshot{Revision: 1, VersionID: 4, Body: "old"},
+		published: BusinessSystemPromptSnapshot{Revision: 2, VersionID: 5, Enabled: true, Body: "new"},
+		detail: BusinessSystemPromptTemplateDetail{
+			Template: BusinessSystemPromptTemplate{ID: 3},
+			Versions: []BusinessSystemPromptVersion{
+				{ID: 4, Version: 1, SHA256: strings.Repeat("a", 64), ByteLength: 3, CompositionMode: BusinessSystemPromptCompositionInline},
+				{ID: 5, Version: 2, SHA256: strings.Repeat("b", 64), ByteLength: 3, CompositionMode: BusinessSystemPromptCompositionInline},
+			},
+		},
+	}
+	svc := NewBusinessSystemPromptService(store, nil)
+	require.NoError(t, svc.Initialize(context.Background()))
+	_, err := svc.PublishVersionAction(context.Background(), 3, 4, 1, extensionv1.PublicationActionRollback, 9)
+	require.ErrorIs(t, err, ErrBusinessSystemPromptInvalid)
+	got, err := svc.PublishVersionAction(context.Background(), 3, 5, 1, extensionv1.PublicationActionRollback, 9)
+	require.NoError(t, err)
+	require.Equal(t, int64(5), got.VersionID)
+}
+
+func TestBusinessSystemPromptServicePublicationUsesPersistedCurrentVersion(t *testing.T) {
+	store := &fakeBusinessSystemPromptStore{
+		loaded:    BusinessSystemPromptSnapshot{Revision: 1, VersionID: 4, Body: "old"},
+		published: BusinessSystemPromptSnapshot{Revision: 2, VersionID: 5, Enabled: true, Body: "new"},
+		detail: BusinessSystemPromptTemplateDetail{
+			Template: BusinessSystemPromptTemplate{ID: 3},
+			Versions: []BusinessSystemPromptVersion{
+				{ID: 4, Version: 1, CompositionMode: BusinessSystemPromptCompositionInline},
+				{ID: 5, Version: 2, CompositionMode: BusinessSystemPromptCompositionInline},
+			},
+		},
+	}
+	svc := NewBusinessSystemPromptService(store, nil)
+	require.NoError(t, svc.Initialize(context.Background()))
+	svc.snapshot.Store(&BusinessSystemPromptSnapshot{Revision: 1, VersionID: 5, Body: "stale memory"})
+	_, err := svc.PublishVersionAction(context.Background(), 3, 5, 1, extensionv1.PublicationActionRollback, 9)
+	require.NoError(t, err)
+	require.Equal(t, 1, store.publishCalls)
+}
+
+type publicationCompositionSubstitutionFixture struct{}
+
+func (publicationCompositionSubstitutionFixture) InvokeOperation(ctx context.Context, platform, accountType string, in extensionv1.Invocation) (extensionv1.Result, error) {
+	if in.Operation == "prompt.publication.plan" {
+		return extensionv1.Result{Payload: []byte(`{"action":"rollback","allowed":true,"composition":{"composition_mode":"codex_skill_hybrid","bundle_id":"codexrip-reverse-skill"}}`)}, nil
+	}
+	return promptPolicyFixture{}.InvokeOperation(ctx, platform, accountType, in)
+}
+
+func TestBusinessSystemPromptServiceRejectsPublicationCompositionSubstitution(t *testing.T) {
+	previous := processExtensionOperations.Load()
+	t.Cleanup(func() { processExtensionOperations.Store(previous) })
+	store := &fakeBusinessSystemPromptStore{
+		loaded:    BusinessSystemPromptSnapshot{Revision: 1, VersionID: 4, Body: "old"},
+		published: BusinessSystemPromptSnapshot{Revision: 2, VersionID: 5, Enabled: true, Body: "new"},
+		detail: BusinessSystemPromptTemplateDetail{
+			Template: BusinessSystemPromptTemplate{ID: 3},
+			Versions: []BusinessSystemPromptVersion{{ID: 4, Version: 1, CompositionMode: BusinessSystemPromptCompositionInline}},
+		},
+	}
+	svc := NewBusinessSystemPromptService(store, nil)
+	require.NoError(t, svc.Initialize(context.Background()))
+	processExtensionOperations.Store(&extensionOperationProvider{invoker: publicationCompositionSubstitutionFixture{}})
+	_, err := svc.PublishVersionAction(context.Background(), 3, 4, 1, extensionv1.PublicationActionRollback, 9)
+	require.ErrorIs(t, err, ErrBusinessSystemPromptInvalid)
+	require.Zero(t, store.publishCalls)
 }
 
 func TestBusinessSystemPromptServiceReloadKeepsLastGoodAndMarksDegraded(t *testing.T) {
