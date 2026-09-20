@@ -32,21 +32,22 @@ var ErrPluginStateChanged = errors.New("插件状态已在其他实例中变化�
 
 // PluginManifest 是 .s2plugin 包中可在执行二进制前检查的声明。
 type PluginManifest struct {
-	SourceRevision string                     `json:"source_revision,omitempty"`
-	SchemaVersion  int                        `json:"schema_version"`
-	ID             string                     `json:"id"`
-	Name           string                     `json:"name"`
-	Version        string                     `json:"version"`
-	Description    string                     `json:"description,omitempty"`
-	Author         string                     `json:"author,omitempty"`
-	Requires       PluginRequirements         `json:"requires"`
-	Capabilities   []PluginCapability         `json:"capabilities"`
-	Runtimes       map[string]PluginRuntime   `json:"runtimes"`
-	UI             PluginUIManifest           `json:"ui"`
-	Files          map[string]string          `json:"files"`
-	Dependencies   []extensionv1.Dependency   `json:"dependencies,omitempty"`
-	Contributions  []extensionv1.Contribution `json:"contributions,omitempty"`
-	Operations     map[string][]string        `json:"operations,omitempty"`
+	SourceRevision string                      `json:"source_revision,omitempty"`
+	SchemaVersion  int                         `json:"schema_version"`
+	ID             string                      `json:"id"`
+	Name           string                      `json:"name"`
+	Version        string                      `json:"version"`
+	Description    string                      `json:"description,omitempty"`
+	Author         string                      `json:"author,omitempty"`
+	Requires       PluginRequirements          `json:"requires"`
+	Capabilities   []PluginCapability          `json:"capabilities"`
+	Runtimes       map[string]PluginRuntime    `json:"runtimes"`
+	UI             PluginUIManifest            `json:"ui"`
+	Files          map[string]string           `json:"files"`
+	Dependencies   []extensionv1.Dependency    `json:"dependencies,omitempty"`
+	Contributions  []extensionv1.Contribution  `json:"contributions,omitempty"`
+	Operations     map[string][]string         `json:"operations,omitempty"`
+	Resources      []extensionv1.ResourceGrant `json:"resources,omitempty"`
 }
 
 type PluginRequirements struct {
@@ -221,6 +222,23 @@ func (m PluginManifest) ValidateForRuntime(runtimeKey string) error {
 		}
 	}
 	seen := make(map[string]bool)
+	resourceNames := make(map[string]bool)
+	if len(m.Resources) > 256 {
+		return errors.New("插件资源操作数量超过限制")
+	}
+	for _, resource := range m.Resources {
+		if !regexp.MustCompile(`^[a-z][a-z0-9]*(\.[a-z][a-z0-9]*)+$`).MatchString(resource.Name) || len(resource.Name) > 100 || resourceNames[resource.Name] || (resource.Permission != "admin" && resource.Permission != "user") {
+			return errors.New("插件资源操作声明无效")
+		}
+		declared := false
+		for _, capability := range m.Capabilities {
+			declared = declared || capability.ID == resource.Capability
+		}
+		if !declared {
+			return errors.New("插件资源引用未声明的能力")
+		}
+		resourceNames[resource.Name] = true
+	}
 	for _, contribution := range m.Contributions {
 		if contribution.Capability != "" {
 			declared := false
@@ -264,6 +282,11 @@ func (m PluginManifest) ValidateForRuntime(runtimeKey string) error {
 		}
 		if contribution.Entrypoint != "" && (!safePluginRelativePath(contribution.Entrypoint) || !strings.HasPrefix(contribution.Entrypoint, "ui/")) {
 			return errors.New("插件界面贡献入口必须位于 ui/ 目录")
+		}
+		if contribution.Entrypoint != "" {
+			if _, declared := m.Files[contribution.Entrypoint]; !declared {
+				return errors.New("插件界面贡献入口未包含在签名资源中")
+			}
 		}
 	}
 	for _, dependency := range m.Dependencies {

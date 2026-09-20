@@ -1,5 +1,6 @@
 export default {
   plugins: {
+    uiVersionChanged: '插件已更新，请重新打开界面；当前输入仍保留',
     updating: '正在更新',
     updatePackage: '更新插件包',
     pinnedVersion: '版本已固定，宿主升级时保留',

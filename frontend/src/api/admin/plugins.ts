@@ -1,5 +1,6 @@
 import { apiClient } from '../client'
 import { accountJobIdempotencyHeaders, type AccountJob } from './accountJobs'
+import type { PluginResourceDescriptor } from '@/components/plugins/resourceClient'
 
 export interface PluginCapability {
   id: string
@@ -81,6 +82,7 @@ export interface PluginInstallation {
 }
 
 export interface PluginContribution {
+  package_sha256?: string
   capability?: string
   stylesheet_url?: string
   config_flag?: string
@@ -142,6 +144,8 @@ export interface PluginStatusResult {
 }
 
 export interface PluginUISession {
+  package_sha256?: string
+  permission?: 'admin' | 'user'
   url: string
   bridge_token: string
   ui_bridge_version: number
@@ -231,8 +235,19 @@ export async function status(id: number): Promise<PluginStatusResult> {
   return data
 }
 
-export async function createUISession(id: number): Promise<PluginUISession> {
-  const { data } = await apiClient.post<PluginUISession>(`/admin/plugins/${id}/ui-session`)
+export async function createUISession(id: number, contributionID?: string): Promise<PluginUISession> {
+  const { data } = await apiClient.post<PluginUISession>(`/admin/plugins/${id}/ui-session`, { contribution_id: contributionID })
+  return data
+}
+
+export async function createUserUISession(id: number, contributionID?: string): Promise<PluginUISession> {
+  const { data } = await apiClient.post<PluginUISession>(`/plugins/${id}/ui-session`, { contribution_id: contributionID })
+  return data
+}
+
+export async function resources(id: number, permission: 'admin' | 'user' = 'admin'): Promise<PluginResourceDescriptor[]> {
+  const prefix = permission === 'admin' ? '/admin' : ''
+  const { data } = await apiClient.get<PluginResourceDescriptor[]>(`${prefix}/plugins/${id}/resources`)
   return data
 }
 
@@ -251,7 +266,9 @@ export default {
   saveConfig,
   test,
   status,
-  createUISession
+  createUISession,
+  createUserUISession,
+  resources
 }
 
 function changed() { if (typeof window !== 'undefined') window.dispatchEvent(new Event('sub2api:plugins-changed')) }

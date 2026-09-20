@@ -6,6 +6,7 @@ import (
 	"github.com/Wei-Shaw/sub2api/internal/pkg/response"
 	"github.com/Wei-Shaw/sub2api/internal/server/middleware"
 	"github.com/Wei-Shaw/sub2api/internal/service"
+	extensionv1 "github.com/Wei-Shaw/sub2api/pkg/extensionapi/v1"
 
 	"github.com/gin-gonic/gin"
 )
@@ -167,29 +168,35 @@ func registerCindyBalanceProbeRoutes(admin *gin.RouterGroup, h *handler.Handlers
 
 func registerSystemPromptRoutes(admin *gin.RouterGroup, h *handler.Handlers) {
 	prompts := admin.Group("/system-prompts")
-	{
-		prompts.GET("", h.Admin.SystemPrompt.List)
-		prompts.POST("", h.Admin.SystemPrompt.Create)
-		prompts.GET("/runtime", h.Admin.SystemPrompt.Runtime)
-		prompts.PUT("/runtime", h.Admin.SystemPrompt.UpdateRuntime)
-		prompts.POST("/preview/merge", h.Admin.SystemPrompt.PreviewMerge)
-		prompts.POST("/preview/upstream", h.Admin.SystemPrompt.PreviewUpstream)
-		prompts.GET("/skill-registry", h.Admin.SystemPrompt.SkillRegistry)
-		prompts.GET("/skill-registry/versions", h.Admin.SystemPrompt.SkillVersions)
-		prompts.GET("/skill-registry/versions/:bundle_version_id", h.Admin.SystemPrompt.SkillVersion)
-		prompts.POST("/skill-registry/syncs", h.Admin.SystemPrompt.StartSkillSync)
-		prompts.GET("/skill-registry/syncs/:sync_id", h.Admin.SystemPrompt.SkillSync)
-		prompts.POST("/skill-registry/versions/:bundle_version_id/publish", h.Admin.SystemPrompt.PublishSkillVersion)
-		prompts.POST("/skill-registry/versions/:bundle_version_id/rollback", h.Admin.SystemPrompt.RollbackSkillVersion)
-		prompts.GET("/:id", h.Admin.SystemPrompt.Get)
-		prompts.GET("/:id/versions", h.Admin.SystemPrompt.Versions)
-		prompts.PATCH("/:id", h.Admin.SystemPrompt.Update)
-		prompts.DELETE("/:id", h.Admin.SystemPrompt.Delete)
-		prompts.POST("/:id/duplicate", h.Admin.SystemPrompt.Duplicate)
-		prompts.POST("/:id/versions", h.Admin.SystemPrompt.SaveVersion)
-		prompts.POST("/:id/upstream-sync", h.Admin.SystemPrompt.SyncManagedSource)
-		prompts.POST("/:id/versions/:version_id/publish", h.Admin.SystemPrompt.Publish)
-		prompts.POST("/:id/versions/:version_id/rollback", h.Admin.SystemPrompt.Rollback)
+	for _, route := range []struct {
+		name, method, path string
+		handler            gin.HandlerFunc
+	}{
+		{"prompts.list", "GET", "", h.Admin.SystemPrompt.List},
+		{"prompts.create", "POST", "", h.Admin.SystemPrompt.Create},
+		{"prompts.runtime.read", "GET", "/runtime", h.Admin.SystemPrompt.Runtime},
+		{"prompts.runtime.update", "PUT", "/runtime", h.Admin.SystemPrompt.UpdateRuntime},
+		{"prompts.preview.merge", "POST", "/preview/merge", h.Admin.SystemPrompt.PreviewMerge},
+		{"prompts.preview.upstream", "POST", "/preview/upstream", h.Admin.SystemPrompt.PreviewUpstream},
+		{"skills.registry", "GET", "/skill-registry", h.Admin.SystemPrompt.SkillRegistry},
+		{"skills.versions", "GET", "/skill-registry/versions", h.Admin.SystemPrompt.SkillVersions},
+		{"skills.version", "GET", "/skill-registry/versions/:bundle_version_id", h.Admin.SystemPrompt.SkillVersion},
+		{"skills.sync.start", "POST", "/skill-registry/syncs", h.Admin.SystemPrompt.StartSkillSync},
+		{"skills.sync.read", "GET", "/skill-registry/syncs/:sync_id", h.Admin.SystemPrompt.SkillSync},
+		{"skills.publish", "POST", "/skill-registry/versions/:bundle_version_id/publish", h.Admin.SystemPrompt.PublishSkillVersion},
+		{"skills.rollback", "POST", "/skill-registry/versions/:bundle_version_id/rollback", h.Admin.SystemPrompt.RollbackSkillVersion},
+		{"prompts.read", "GET", "/:id", h.Admin.SystemPrompt.Get},
+		{"prompts.versions", "GET", "/:id/versions", h.Admin.SystemPrompt.Versions},
+		{"prompts.update", "PATCH", "/:id", h.Admin.SystemPrompt.Update},
+		{"prompts.delete", "DELETE", "/:id", h.Admin.SystemPrompt.Delete},
+		{"prompts.duplicate", "POST", "/:id/duplicate", h.Admin.SystemPrompt.Duplicate},
+		{"prompts.draft", "POST", "/:id/versions", h.Admin.SystemPrompt.SaveVersion},
+		{"prompts.source.sync", "POST", "/:id/upstream-sync", h.Admin.SystemPrompt.SyncManagedSource},
+		{"prompts.publish", "POST", "/:id/versions/:version_id/publish", h.Admin.SystemPrompt.Publish},
+		{"prompts.rollback", "POST", "/:id/versions/:version_id/rollback", h.Admin.SystemPrompt.Rollback},
+	} {
+		descriptor := extensionv1.ResourceDescriptor{ResourceGrant: extensionv1.ResourceGrant{Name: route.name, Capability: extensionv1.CapabilityRequest, Permission: "admin"}, Method: route.method, Path: prompts.BasePath() + route.path}
+		prompts.Handle(route.method, route.path, h.Admin.Plugin.RegisterResource(descriptor), route.handler)
 	}
 }
 
@@ -864,6 +871,7 @@ func registerPluginRoutes(admin *gin.RouterGroup, h *handler.Handlers, stepUpAut
 		plugins.DELETE("/:id", gin.HandlerFunc(stepUpAuth), h.Admin.Plugin.Delete)
 		plugins.GET("/:id/config", h.Admin.Plugin.GetConfig)
 		plugins.GET("/:id/status", h.Admin.Plugin.Status)
+		plugins.GET("/:id/resources", h.Admin.Plugin.Resources)
 		plugins.PUT("/:id/config", gin.HandlerFunc(stepUpAuth), h.Admin.Plugin.SaveConfig)
 		plugins.POST("/:id/test", gin.HandlerFunc(stepUpAuth), h.Admin.Plugin.Test)
 		plugins.POST("/:id/ui-session", h.Admin.Plugin.CreateUISession)

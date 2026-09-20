@@ -5,15 +5,23 @@ class PluginBridge {
     this.token = new URLSearchParams(location.hash.slice(1)).get('bridge_token') || ''
     this.sequence = 0
     this.pending = new Map()
+    this.contextListeners = new Set()
     this.listener = event => {
       const message = event.data
       if (event.source !== parent || !message || message.source !== 'sub2api-plugin-host' || message.bridge_token !== this.token) return
+      if (message.type === 'extension.context.updated') { for (const listener of this.contextListeners) listener(message.context); return }
       const request = this.pending.get(message.request_id)
       if (!request) return
       this.pending.delete(message.request_id)
       clearTimeout(request.timer)
       if (message.ok) request.resolve(message)
-      else request.reject(new Error(message.error || 'Operation failed'))
+      else {
+        const error = new Error(message.error || 'Operation failed')
+        error.code = message.code
+        error.status = message.status
+        error.response = { status: message.status, data: { code: message.code, message: error.message } }
+        request.reject(error)
+      }
     }
     window.addEventListener('message', this.listener)
     this.notify('sub2api.plugin.ready')
@@ -39,11 +47,14 @@ class PluginBridge {
   async invoke(operation, payload = {}) { return (await this.request('extension.invoke', { operation, payload })).result }
   async submit(operation, items, operation_key) { return (await this.request('extension.job.submit', { operation, items, operation_key })).job }
   async job(job_id) { return (await this.request('extension.job.get', { job_id })).job }
+  async resource(operation, input = {}) { return (await this.request('extension.resource', { operation, input })).result }
+  onContextChange(listener) { this.contextListeners.add(listener); return () => this.contextListeners.delete(listener) }
   resize(height) { this.notify('ui.resize', { height }) }
   dispose() {
     window.removeEventListener('message', this.listener)
     for (const request of this.pending.values()) { clearTimeout(request.timer); request.reject(new Error('Plugin view closed')) }
     this.pending.clear()
+    this.contextListeners.clear()
   }
 }
 

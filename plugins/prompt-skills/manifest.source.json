@@ -11,8 +11,32 @@
     { "id": "extensions.admin.v1", "platform": "*", "account_type": "*" }
   ],
   "operations": { "extensions.request.v1": ["prompt.plan", "prompt.availability", "prompt.composition", "prompt.template", "prompt.seeds", "prompt.source.fetch", "prompt.source.validate", "skills.capture", "skills.prompt.seed", "skills.profile", "skills.seed.index", "skills.seed.chunk", "skills.manifest.validate", "skills.tree.check", "skills.file.plan"] },
+  "resources": [
+    { "name": "prompts.list", "capability": "extensions.request.v1", "permission": "admin" },
+    { "name": "prompts.create", "capability": "extensions.request.v1", "permission": "admin" },
+    { "name": "prompts.runtime.read", "capability": "extensions.request.v1", "permission": "admin" },
+    { "name": "prompts.runtime.update", "capability": "extensions.request.v1", "permission": "admin" },
+    { "name": "prompts.preview.merge", "capability": "extensions.request.v1", "permission": "admin" },
+    { "name": "prompts.preview.upstream", "capability": "extensions.request.v1", "permission": "admin" },
+    { "name": "skills.registry", "capability": "extensions.request.v1", "permission": "admin" },
+    { "name": "skills.versions", "capability": "extensions.request.v1", "permission": "admin" },
+    { "name": "skills.version", "capability": "extensions.request.v1", "permission": "admin" },
+    { "name": "skills.sync.start", "capability": "extensions.request.v1", "permission": "admin" },
+    { "name": "skills.sync.read", "capability": "extensions.request.v1", "permission": "admin" },
+    { "name": "skills.publish", "capability": "extensions.request.v1", "permission": "admin" },
+    { "name": "skills.rollback", "capability": "extensions.request.v1", "permission": "admin" },
+    { "name": "prompts.read", "capability": "extensions.request.v1", "permission": "admin" },
+    { "name": "prompts.versions", "capability": "extensions.request.v1", "permission": "admin" },
+    { "name": "prompts.update", "capability": "extensions.request.v1", "permission": "admin" },
+    { "name": "prompts.delete", "capability": "extensions.request.v1", "permission": "admin" },
+    { "name": "prompts.duplicate", "capability": "extensions.request.v1", "permission": "admin" },
+    { "name": "prompts.draft", "capability": "extensions.request.v1", "permission": "admin" },
+    { "name": "prompts.source.sync", "capability": "extensions.request.v1", "permission": "admin" },
+    { "name": "prompts.publish", "capability": "extensions.request.v1", "permission": "admin" },
+    { "name": "prompts.rollback", "capability": "extensions.request.v1", "permission": "admin" }
+  ],
   "contributions": [
-    { "id": "prompt-management", "slot": "surface", "permission": "admin", "label": { "zh": "提示词与技能管理", "en": "Prompt and skill management" } },
+    { "id": "prompt-management", "slot": "surface", "capability": "extensions.request.v1", "entrypoint": "ui/compiled/index.html", "permission": "admin", "label": { "zh": "提示词与技能管理", "en": "Prompt and skill management" } },
     { "id": "prompt-policy", "slot": "admin.settings", "action": "prompt.describe", "entrypoint": "ui/index.html", "permission": "admin", "label": { "zh": "提示词应用策略", "en": "Prompt application policy" } }
   ],
   "runtimes": {},

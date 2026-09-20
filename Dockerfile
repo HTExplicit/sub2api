@@ -42,9 +42,11 @@ RUN --mount=type=cache,id=sub2api-pnpm-store,target=/root/.local/share/pnpm/stor
 # Copy only that subtree to keep the build dependency minimal.
 COPY frontend/ ./
 COPY docs/legal/ /app/docs/legal/
+COPY backend/pkg/extensionapi/ui/ /app/backend/pkg/extensionapi/ui/
+COPY plugins/ /app/plugins/
 # Required PR checks own validation; the image stage only compiles the artifact.
 # Scope this flag to the build command, not the runtime image or daily builds.
-RUN SUB2API_ARTIFACT_BUILD=1 pnpm exec vite build
+RUN node /app/backend/pkg/extensionapi/ui/build.mjs && SUB2API_ARTIFACT_BUILD=1 pnpm exec vite build
 
 # -----------------------------------------------------------------------------
 # Stage 2: Backend Builder
@@ -86,6 +88,7 @@ RUN --mount=type=cache,id=sub2api-gomod,target=/go/pkg/mod \
 
 # Copy backend source first
 COPY backend/ ./
+COPY --from=frontend-builder /app/plugins/ /app/plugins/
 
 # Copy frontend dist from previous stage (must be after backend copy to avoid being overwritten)
 COPY --from=frontend-builder /app/backend/internal/web/dist ./internal/web/dist

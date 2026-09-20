@@ -45,6 +45,17 @@
       "type": "object",
       "additionalProperties": { "type": "array", "maxItems": 64, "uniqueItems": true, "items": { "type": "string", "minLength": 1, "maxLength": 80, "pattern": "^[a-z0-9]+([._-][a-z0-9]+)*$" } }
     },
+    "resources": {
+      "type": "array", "maxItems": 256,
+      "items": {
+        "type": "object", "additionalProperties": false, "required": ["name", "capability", "permission"],
+        "properties": {
+          "name": { "type": "string", "maxLength": 100, "pattern": "^[a-z][a-z0-9]*(\\.[a-z][a-z0-9]*)+$" },
+          "capability": { "type": "string", "minLength": 1 },
+          "permission": { "enum": ["admin", "user"] }
+        }
+      }
+    },
     "dependencies": {
       "type": "array",
       "items": {

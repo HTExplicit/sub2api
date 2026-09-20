@@ -1,0 +1,7 @@
+export { default as BaseDialog } from './components/BaseDialog.vue'
+export { default as ConfirmDialog } from './components/ConfirmDialog.vue'
+export { default as Toggle } from './components/Toggle.vue'
+export { default as Icon } from './components/Icon.vue'
+export { resource, useNotifications, mountPlugin } from './client'
+export type { ResourceInput, UIContext } from './client'
+export * from './errors'

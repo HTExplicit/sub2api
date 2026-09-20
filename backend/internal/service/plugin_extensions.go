@@ -208,6 +208,7 @@ func pluginDependenciesHealthy(installation *PluginInstallation, registry *plugi
 }
 
 type PluginContribution struct {
+	PackageSHA256 string `json:"package_sha256,omitempty"`
 	extensionv1.Contribution
 	StylesheetURL string `json:"stylesheet_url,omitempty"`
 	PluginID      int64  `json:"plugin_id"`
@@ -293,7 +294,7 @@ func (m *PluginManager) Contributions() []PluginContribution {
 			if known && !flag {
 				continue
 			}
-			item := PluginContribution{Contribution: contribution, PluginID: id, Available: available}
+			item := PluginContribution{Contribution: contribution, PluginID: id, Available: available, PackageSHA256: installation.PackageSHA256}
 			if !available || !known {
 				item.Available = false
 				item.Reason = "plugin_unavailable"

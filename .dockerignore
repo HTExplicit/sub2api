@@ -73,6 +73,7 @@ coverage/
 /plugins/model-policy/dist/
 /plugins/*/dist/
 /plugins/*/node_modules/
+/plugins/*/ui/compiled/
 /plugins/**/*.key
 /plugins/**/*.s2plugin
 /plugins/**/*.exe

@@ -191,8 +191,7 @@
 <script setup lang="ts">
 import { onMounted, onUnmounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
-import Icon from '@/components/icons/Icon.vue'
-import Toggle from '@/components/common/Toggle.vue'
+import { Icon, Toggle } from '@sub2api/plugin-ui'
 import type {
   ManagedSourceSyncStatus,
   ManagedSourceSyncVersion,
@@ -202,7 +201,7 @@ import type {
   SystemPromptRuntime,
   SystemPromptTemplate,
   SystemPromptVersion,
-} from '@/api/admin/systemPrompts'
+} from './api'
 
 const props = defineProps<{
   open: boolean

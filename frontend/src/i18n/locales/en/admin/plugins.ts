@@ -1,5 +1,6 @@
 export default {
   plugins: {
+    uiVersionChanged: 'The plugin was updated. Reopen this view; current input is retained.',
     updating: 'Updating',
     updatePackage: 'Update package',
     pinnedVersion: 'Version pinned across host upgrades',

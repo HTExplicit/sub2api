@@ -170,6 +170,8 @@ output/
 !/plugins/cindy-provider/
 !/plugins/account-tools/
 !/plugins/prompt-skills/
+!/plugins/prompt-skills/scripts/
+!/plugins/prompt-skills/scripts/check-ui.py
 !/plugins/prompt-skills/registry/seed/tree/scripts/
 !/plugins/prompt-skills/registry/seed/tree/scripts/**
 !/plugins/model-catalog/
@@ -180,6 +182,7 @@ output/
 !/plugins/admin-observability/scripts/check-theme.py
 /plugins/*/dist/
 /plugins/*/node_modules/
+/plugins/*/ui/compiled/
 /plugins/*/*.s2plugin
 /plugins/**/*.key
 /deploy/plugin-bundle/current/

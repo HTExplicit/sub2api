@@ -23,6 +23,17 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6
+        with:
+          version: 9.15.9
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: '20'
+          cache: pnpm
+          cache-dependency-path: frontend/pnpm-lock.yaml
+      - name: Install public UI build dependencies
+        working-directory: frontend
+        run: pnpm install --frozen-lockfile
       - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
         with:
           go-version-file: backend/go.mod
@@ -120,6 +131,7 @@ jobs:
         run: |
           pnpm run lint:check
           pnpm run typecheck
+          pnpm exec vue-tsc --noEmit -p ../backend/pkg/extensionapi/ui/tsconfig.json
       - name: Focused downstream tests
         working-directory: frontend
         run: |
@@ -137,6 +149,7 @@ jobs:
             src/api/__tests__/accountOperationIdempotency.spec.ts \
             src/components/plugins/__tests__/ExtensionSlot.spec.ts \
             src/components/plugins/__tests__/ExtensionFields.spec.ts \
+            src/components/plugins/__tests__/resourceClient.spec.ts \
             src/components/admin/account/__tests__/BatchTestAccountModal.spec.ts \
             src/components/admin/account/__tests__/AccountBulkActionsBar.spec.ts \
             src/components/admin/account/__tests__/AccountActionMenu.spark_shadow.spec.ts \
@@ -157,7 +170,7 @@ jobs:
             src/api/__tests__/admin.accounts.contextCapacity.spec.ts \
             src/composables/__tests__/useModelWhitelist.spec.ts \
             src/components/account/__tests__/BulkEditAccountModal.spec.ts \
-            src/views/admin/__tests__/SystemPromptsView.spec.ts \
+            ../plugins/prompt-skills/ui/src/__tests__/App.spec.ts \
             src/views/admin/__tests__/AccountsView.console.spec.ts \
             src/views/admin/__tests__/AccountsView.priorityColumn.spec.ts \
             src/api/__tests__/imageStudio.spec.ts \

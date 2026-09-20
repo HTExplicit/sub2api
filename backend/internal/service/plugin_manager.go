@@ -14,6 +14,7 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
+	"path"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -951,6 +952,8 @@ func (m *PluginManager) Status(ctx context.Context, id int64) (*pluginv1.HealthR
 }
 
 type pluginUIAssetClaims struct {
+	Entrypoint    string `json:"entrypoint"`
+	Permission    string `json:"permission"`
 	PackageSHA256 string `json:"package_sha256"`
 	Version       int    `json:"version"`
 	PluginID      int64  `json:"plugin_id"`
@@ -959,24 +962,59 @@ type pluginUIAssetClaims struct {
 
 // CreateUIAssetToken 创建可跨实例校验的短时能力令牌，令牌不包含管理员凭据。
 func (m *PluginManager) CreateUIAssetToken(ctx context.Context, id int64, ttl time.Duration) (string, time.Time, error) {
+	session, err := m.CreateUIAssetSession(ctx, id, "", "admin", ttl)
+	if err != nil {
+		return "", time.Time{}, err
+	}
+	return session.Token, session.Expires, nil
+}
+
+type PluginUIAssetSession struct {
+	Token         string
+	Expires       time.Time
+	PackageSHA256 string
+	Permission    string
+}
+
+func (m *PluginManager) CreateUIAssetSession(ctx context.Context, id int64, contribution, permission string, ttl time.Duration) (PluginUIAssetSession, error) {
+	var session PluginUIAssetSession
 	if ttl <= 0 || ttl > time.Hour {
-		return "", time.Time{}, errors.New("插件 UI 会话有效期无效")
+		return session, errors.New("插件 UI 会话有效期无效")
 	}
 	installation, err := m.repo.GetByID(ctx, id)
 	if err != nil {
-		return "", time.Time{}, err
+		return session, err
+	}
+	if permission != "admin" && permission != "user" {
+		return session, errors.New("invalid UI permission")
+	}
+	entrypoint := installation.Manifest.UI.Entrypoint
+	if contribution != "" {
+		found := false
+		for _, item := range installation.Manifest.Contributions {
+			if item.ID != contribution || item.Entrypoint == "" || (item.Permission != permission && !(permission == "admin" && item.Permission == "user")) {
+				continue
+			}
+			entrypoint, permission, found = item.Entrypoint, item.Permission, true
+			break
+		}
+		if !found {
+			return session, errors.New("plugin page is not declared for this role")
+		}
+	} else if permission != "admin" {
+		return session, errors.New("a user page contribution is required")
 	}
 	expires := time.Now().Add(ttl)
-	raw, err := json.Marshal(pluginUIAssetClaims{Version: 1, PluginID: id, Expires: expires.Unix(), PackageSHA256: installation.PackageSHA256})
+	raw, err := json.Marshal(pluginUIAssetClaims{Version: 1, PluginID: id, Expires: expires.Unix(), PackageSHA256: installation.PackageSHA256, Entrypoint: entrypoint, Permission: permission})
 	if err != nil {
-		return "", time.Time{}, err
+		return session, err
 	}
 	// 加用途前缀，避免复用同一 AES-GCM 密钥的其他密文被当作 UI 能力令牌。
 	encrypted, err := m.encryptor.Encrypt(pluginUITokenPrefix + string(raw))
 	if err != nil {
-		return "", time.Time{}, fmt.Errorf("加密插件 UI 会话: %w", err)
+		return session, fmt.Errorf("加密插件 UI 会话: %w", err)
 	}
-	return base64.RawURLEncoding.EncodeToString([]byte(encrypted)), expires, nil
+	return PluginUIAssetSession{Token: base64.RawURLEncoding.EncodeToString([]byte(encrypted)), Expires: expires, PackageSHA256: installation.PackageSHA256, Permission: permission}, nil
 }
 
 func (m *PluginManager) ResolveUIAssetToken(token string) (int64, error) {
@@ -1020,6 +1058,9 @@ func (m *PluginManager) parseUIAssetToken(token string) (*pluginUIAssetClaims, e
 	if err := decoder.Decode(&struct{}{}); err != io.EOF {
 		return nil, errors.New("插件 UI 会话无效")
 	}
+	if (claims.Permission != "admin" && claims.Permission != "user") || (claims.Entrypoint != "" && (!safePluginRelativePath(claims.Entrypoint) || !strings.HasPrefix(claims.Entrypoint, "ui/"))) {
+		return nil, ErrPluginUISessionChanged
+	}
 	now := time.Now().Unix()
 	if now >= claims.Expires {
 		return nil, errors.New("插件 UI 会话已过期")
@@ -1031,7 +1072,7 @@ func (m *PluginManager) parseUIAssetToken(token string) (*pluginUIAssetClaims, e
 }
 
 func (m *PluginManager) ReadUIAsset(ctx context.Context, id int64, relative string) ([]byte, string, error) {
-	return m.readUIAsset(ctx, id, relative, nil)
+	return m.readUIAsset(ctx, id, relative, nil, "")
 }
 
 func (m *PluginManager) ReadUIAssetForToken(ctx context.Context, token, relative string) ([]byte, string, error) {
@@ -1039,10 +1080,10 @@ func (m *PluginManager) ReadUIAssetForToken(ctx context.Context, token, relative
 	if err != nil {
 		return nil, "", ErrPluginUISessionChanged
 	}
-	return m.readUIAsset(ctx, claims.PluginID, relative, &claims.PackageSHA256)
+	return m.readUIAsset(ctx, claims.PluginID, relative, &claims.PackageSHA256, claims.Entrypoint)
 }
 
-func (m *PluginManager) readUIAsset(ctx context.Context, id int64, relative string, expected *string) ([]byte, string, error) {
+func (m *PluginManager) readUIAsset(ctx context.Context, id int64, relative string, expected *string, entrypoint string) ([]byte, string, error) {
 	m.operationMu.Lock()
 	defer m.operationMu.Unlock()
 	installation, err := m.repo.GetByID(ctx, id)
@@ -1056,16 +1097,22 @@ func (m *PluginManager) readUIAsset(ctx context.Context, id int64, relative stri
 	if err != nil {
 		return nil, "", err
 	}
-	path := strings.TrimPrefix(strings.ReplaceAll(relative, "\\", "/"), "/")
-	if path == "" || path == "index.html" {
-		path = installation.Manifest.UI.Entrypoint
-	} else {
-		path = "ui/" + path
+	if entrypoint == "" {
+		entrypoint = installation.Manifest.UI.Entrypoint
 	}
-	if _, declared := installation.Manifest.Files[path]; !declared || !strings.HasPrefix(path, "ui/") {
+	logical := strings.TrimPrefix(strings.ReplaceAll(relative, "\\", "/"), "/")
+	if logical == "" || logical == "index.html" {
+		logical = entrypoint
+	} else {
+		if !safePluginRelativePath(logical) {
+			return nil, "", os.ErrNotExist
+		}
+		logical = path.Join(path.Dir(entrypoint), logical)
+	}
+	if _, declared := installation.Manifest.Files[logical]; !declared || !strings.HasPrefix(logical, "ui/") {
 		return nil, "", os.ErrNotExist
 	}
-	fullPath, err := safePluginJoin(installation.InstallPath, path)
+	fullPath, err := safePluginJoin(installation.InstallPath, logical)
 	if err != nil {
 		return nil, "", err
 	}
@@ -1082,10 +1129,10 @@ func (m *PluginManager) readUIAsset(ctx context.Context, id int64, relative stri
 		return nil, "", errors.New("插件 UI 资源超过大小限制")
 	}
 	digest := sha256.Sum256(data)
-	if hex.EncodeToString(digest[:]) != installation.Manifest.Files[path] {
+	if hex.EncodeToString(digest[:]) != installation.Manifest.Files[logical] {
 		return nil, "", errors.New("插件 UI 资源哈希不匹配")
 	}
-	return data, path, nil
+	return data, logical, nil
 }
 
 func (m *PluginManager) RoundTripOpenAIOAuth(ctx context.Context, request *http.Request, proxyURL string, account *Account) (*http.Response, bool, error) {

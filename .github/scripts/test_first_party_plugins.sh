@@ -4,6 +4,7 @@ set -euo pipefail
 repo_root=$(git rev-parse --show-toplevel)
 cd "$repo_root"
 plugin_build_dir=$(mktemp -d)
+node backend/pkg/extensionapi/ui/build.mjs
 
 for module in plugins/*; do
   [[ -f "$module/go.mod" ]] || continue

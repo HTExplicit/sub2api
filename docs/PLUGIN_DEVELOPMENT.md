@@ -48,6 +48,8 @@ manifest 的身份、版本、协议版本和能力必须与程序 `GetInfo` 一
 
 配置页面位于 `ui/`，在受限 iframe 中运行。打包器自动加入 `backend/pkg/extensionapi/ui/bridge.js`，页面使用 `Sub2APIPluginBridge`。
 
+复杂页面位于插件自己的 `ui/src`，只导入 Vue 等公开依赖和 `@sub2api/plugin-ui`。公共 UI SDK 提供对话框、图标、错误处理、基础样式和渲染工具；宿主旧组件路径仅作转出适配，插件不引用宿主内部组件。`node backend/pkg/extensionapi/ui/build.mjs prompt-skills` 编译所选域，省略域名编译所有已声明源码入口。构建产物进入 `ui/compiled`，不提交；打包跳过源码和测试目录。贡献的入口必须实际包含在签名包里。
+
 | 方法 | 用途 |
 |---|---|
 | `context()` | 挂载模式、语言、主题与已验证账号上下文 |
@@ -55,9 +57,14 @@ manifest 的身份、版本、协议版本和能力必须与程序 `GetInfo` 一
 | `status()` | 被动状态，不执行模型测试 |
 | `invoke(action, payload)` | 贡献中声明的管理操作 |
 | `submit(action, items, key)` | 带稳定幂等键的宿主持久任务 |
+| `resource(name, input)` | 具名宿主数据操作；`params`、`query`、`body` 或 `form` 提供原接口的参数 |
 | `resize(height)` / `dispose()` | 尺寸和卸载清理 |
 
 账号操作、详情、测试字段、设置页和宿主表面通过 manifest 贡献接入。`config_flag` 引用一个布尔配置字段，关闭时撤下入口，读取失败时显示不可用。持续任务的进度、取消和历史由宿主管理。
+
+数据资源通过 manifest 的 `resources` 显式声明名称、所需能力和用户角色。HTTP 方法与路径由宿主注册，前端桥接只接受名称，不能传任意 URL 或请求头。实际操作仍经过原接口的认证、审计、合规与二次验证链；资源守卫再次检查持久启停状态、包摘要及运行周期。兼容 API 调用同样不能绕过停用状态。
+
+页面会话按贡献选择签名入口，并限定管理员或普通用户角色；普通用户不能选择管理页面。模块脚本使用隔离来源所需的 CORS 资源响应，iframe 保持 `sandbox="allow-scripts"`，不开放同源访问。主题、语言及可用状态通过桥接更新，故障时保留输入并禁用动作，升级后的旧页面需重新打开。
 
 普通用户通过 `/api/v1/settings/plugins` 获得公开表面元数据，不获得管理员动作、iframe 入口或配置字段。公开主题声明 `slot: "theme"`、`permission: "public"`、CSS `entrypoint` 和最多 32 个 WOFF2 `assets`。宿主仅公开这些已声明且哈希匹配的样式与字体，不公开脚本或其他包文件。资源 URL 绑定资源清单摘要；停用或故障后移除样式，宿主基本样式及可访问性规则继续工作。字体许可证随包分发。
 

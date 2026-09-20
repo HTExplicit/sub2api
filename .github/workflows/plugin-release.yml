@@ -55,7 +55,21 @@ jobs:
           echo "domain=$domain" >> "$GITHUB_OUTPUT"
           echo "source_sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
           echo "host_version=${HOST_TAG#v}" >> "$GITHUB_OUTPUT"
-      - uses: actions/setup-go@v6
+      - uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6
+        with:
+          version: 9.15.9
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: '20'
+          cache: pnpm
+          cache-dependency-path: frontend/pnpm-lock.yaml
+      - name: Build the selected independent interface
+        env:
+          PLUGIN_DOMAIN: ${{ steps.source.outputs.domain }}
+        run: |
+          pnpm --dir frontend install --frozen-lockfile
+          node backend/pkg/extensionapi/ui/build.mjs "$PLUGIN_DOMAIN"
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
         with:
           go-version-file: backend/go.mod
           cache-dependency-path: backend/go.sum

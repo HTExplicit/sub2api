@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { defineComponent } from 'vue'
 import { flushPromises, mount } from '@vue/test-utils'
-import SystemPromptsView from '../SystemPromptsView.vue'
+import SystemPromptsView from '../App.vue'
 
 const mocks = vi.hoisted(() => ({
   list: vi.fn(), get: vi.fn(), create: vi.fn(), updateMetadata: vi.fn(), saveDraft: vi.fn(),
@@ -10,13 +10,14 @@ const mocks = vi.hoisted(() => ({
   showSuccess: vi.fn(), showError: vi.fn(), showWarning: vi.fn(),
 }))
 
-vi.mock('@/api/admin/systemPrompts', () => ({ default: mocks }))
-vi.mock('@/stores', () => ({ useAppStore: () => ({
+vi.mock('../api', () => ({ default: mocks }))
+vi.mock('@sub2api/plugin-ui', async () => ({ ...await vi.importActual<typeof import('@sub2api/plugin-ui')>('@sub2api/plugin-ui'), useNotifications: () => ({
   showSuccess: mocks.showSuccess, showError: mocks.showError, showWarning: mocks.showWarning,
 }) }))
 vi.mock('vue-i18n', async () => {
   const actual = await vi.importActual<typeof import('vue-i18n')>('vue-i18n')
-  const { default: en } = await import('@/i18n/locales/en')
+  const { default: messages } = await import('../locales/en')
+  const en = { admin: messages, common: { confirm: 'Confirm', cancel: 'Cancel' } }
   const resolveMessage = (key: string) => key.split('.').reduce<unknown>((value, segment) => {
     if (!value || typeof value !== 'object') return undefined
     return (value as Record<string, unknown>)[segment]

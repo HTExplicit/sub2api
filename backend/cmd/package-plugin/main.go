@@ -121,6 +121,9 @@ func packagePlugin(options packageOptions) error {
 			return errors.New("plugin assets cannot be symbolic links")
 		}
 		if entry.IsDir() {
+			if entry.Name() == "src" || entry.Name() == "node_modules" || entry.Name() == "__tests__" {
+				return filepath.SkipDir
+			}
 			return nil
 		}
 		if !entry.Type().IsRegular() {

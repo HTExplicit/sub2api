@@ -17,22 +17,29 @@ import { useAppStore } from '@/stores'
 import { useAuthStore } from '@/stores/auth'
 import { isStepUpCancelled, useStepUp } from '@/composables/useStepUp'
 import TotpStepUpDialog from '@/components/auth/TotpStepUpDialog.vue'
+import { usePluginExtensions } from '@/stores/pluginExtensions'
+import { callPluginResource, type PluginResourceDescriptor } from './resourceClient'
+import { extractApiErrorCode } from '@sub2api/plugin-ui/errors'
 
-const props = withDefaults(defineProps<{ pluginId: number; title: string; context?: Record<string, unknown> }>(), { context: () => ({}) })
+const props = withDefaults(defineProps<{ pluginId: number; title: string; permission?: 'admin' | 'user'; context?: Record<string, unknown> }>(), { permission: 'admin', context: () => ({}) })
 const emit = defineEmits<{ saved: []; job: [job: AccountJob] }>()
 const { t, locale } = useI18n()
 const app = useAppStore()
 const auth = useAuthStore()
 const stepUp = useStepUp()
+const registry = usePluginExtensions()
 const frame = ref<HTMLIFrameElement | null>(null)
 const session = ref<PluginUISession | null>(null)
 const loading = ref(false), error = ref(''), height = ref(640)
 const pending = new Map<string, number>()
 let generation = 0, frameLoaded = false
+let resourceCatalog: Promise<PluginResourceDescriptor[]> | null = null
+let presentationObserver: MutationObserver | null = null
 
 function clearPending() {
   for (const timer of pending.values()) window.clearTimeout(timer)
   pending.clear()
+  resourceCatalog = null
   generation++
 }
 function loaded() {
@@ -42,12 +49,38 @@ function loaded() {
 }
 function failure(value: unknown): string { return value instanceof Error ? value.message : t('common.error') }
 
+function currentContext() {
+  const contribution = registry.items.find(item => item.plugin_id === props.pluginId && item.id === props.context.contribution_id)
+  const changed = !!(contribution?.package_sha256 && session.value?.package_sha256 && contribution.package_sha256 !== session.value.package_sha256)
+  const styles = getComputedStyle(document.documentElement)
+  const tokens: Record<string, string> = {}
+  for (let i = 0; i < styles.length; i++) {
+    const name = styles[i]!
+    const value = styles.getPropertyValue(name).trim()
+    if (/^--(?:ui|theme)-[a-z0-9-]+$/.test(name) && value.length <= 512 && !/url\s*\(/i.test(value)) tokens[name] = value
+  }
+  return { ...props.context, locale: locale?.value || 'zh', theme: document.documentElement.classList.contains('dark') ? 'dark' : 'light',
+    available: !changed && (!props.context.contribution_id || !!contribution?.available),
+    unavailable_message: changed ? t('admin.plugins.uiVersionChanged') : t('admin.plugins.extensionUnavailable'),
+    theme_tokens: tokens, theme_stylesheets: registry.items.filter(item => item.slot === 'theme' && item.available && item.stylesheet_url).map(item => item.stylesheet_url!) }
+}
+
+function sendContext() {
+  resourceCatalog = null
+  if (!session.value || !frame.value?.contentWindow) return
+  frame.value.contentWindow.postMessage({ source: 'sub2api-plugin-host', bridge_token: session.value.bridge_token, type: 'extension.context.updated', context: currentContext() }, '*')
+}
+
 watch(() => [auth.user?.id, props.pluginId, props.context.account_id, props.context.contribution_id, Array.isArray(props.context.account_ids) ? props.context.account_ids.join(',') : ''], async () => {
   const id = props.pluginId
   clearPending()
   const version = generation
   session.value = null; frameLoaded = false; error.value = ''; loading.value = true
-  try { const next = await adminAPI.plugins.createUISession(id); if (generation === version) session.value = next }
+  try {
+    const contributionID = typeof props.context.contribution_id === 'string' ? props.context.contribution_id : undefined
+    const next = await (props.permission === 'user' ? adminAPI.plugins.createUserUISession(id, contributionID) : adminAPI.plugins.createUISession(id, contributionID))
+    if (generation === version) session.value = next
+  }
   catch (value) { if (generation === version) { error.value = failure(value); loading.value = false } }
 }, { immediate: true })
 
@@ -60,10 +93,10 @@ async function receive(event: MessageEvent) {
   if (message.type === 'ui.resize') { const n = Number(message.height); if (Number.isFinite(n)) height.value = Math.max(120, Math.min(1200, Math.round(n))); return }
   if (message.type === 'ui.notify') {
     const text = typeof message.message === 'string' ? message.message.slice(0, 500) : ''
-    if (text) { if (message.level === 'error') app.showError(text); else if (message.level === 'success') app.showSuccess(text); else app.showInfo(text) }
+    if (text) { if (message.level === 'error') app.showError(text); else if (message.level === 'success') app.showSuccess(text); else if (message.level === 'warning') app.showWarning(text); else app.showInfo(text) }
     return
   }
-  if (!['config.load', 'config.save', 'config.test', 'plugin.status', 'extension.context', 'extension.invoke', 'extension.job.submit', 'extension.job.get'].includes(message.type)) return
+  if (!['config.load', 'config.save', 'config.test', 'plugin.status', 'extension.context', 'extension.invoke', 'extension.job.submit', 'extension.job.get', 'extension.resource'].includes(message.type)) return
   const requestID = typeof message.request_id === 'string' ? message.request_id.trim() : ''
   if (!requestID || requestID.length > 128 || pending.has(requestID) || pending.size >= 32) return
   pending.set(requestID, window.setTimeout(() => pending.delete(requestID), 30000))
@@ -77,8 +110,18 @@ async function receive(event: MessageEvent) {
     frame.value.contentWindow.postMessage({ source: 'sub2api-plugin-host', bridge_token: current.bridge_token, type: `${message.type}.result`, request_id: requestID, ...payload }, '*')
   }
   try {
+    if (current.permission === 'user' && !['extension.context', 'extension.resource'].includes(message.type)) throw new Error(t('admin.plugins.bridgeRejected'))
     switch (message.type) {
-      case 'extension.context': reply({ ok: true, context: { ...props.context, locale: locale?.value || 'zh', theme: document.documentElement.classList.contains('dark') ? 'dark' : 'light' } }); break
+      case 'extension.context': reply({ ok: true, context: currentContext() }); break
+      case 'extension.resource': {
+        if (typeof message.operation !== 'string' || !message.input || typeof message.input !== 'object' || Array.isArray(message.input)) throw new Error(t('admin.plugins.bridgeRejected'))
+        resourceCatalog ||= adminAPI.plugins.resources(id, current.permission || 'admin')
+        const descriptor = (await resourceCatalog).find(item => item.name === message.operation)
+        if (!descriptor) throw new Error(t('admin.plugins.bridgeRejected'))
+        const execute = () => callPluginResource(id, current.package_sha256 || '', descriptor, message.input)
+        const result = current.permission === 'user' ? await execute() : await stepUp.run(execute)
+        reply({ ok: true, result }); break
+      }
       case 'config.load': reply({ ok: true, config: await adminAPI.plugins.getConfig(id) }); break
       case 'config.save': {
         if (!message.config || typeof message.config !== 'object' || Array.isArray(message.config)) throw new Error(t('admin.plugins.bridgeRejected'))
@@ -108,9 +151,18 @@ async function receive(event: MessageEvent) {
         reply({ ok: true, job }); break
       }
     }
-  } catch (value) { reply({ ok: false, error: isStepUpCancelled(value) ? t('common.cancel') : failure(value) }) }
+  } catch (value) {
+    const status = typeof value === 'object' && value !== null && 'status' in value ? value.status : undefined
+    reply({ ok: false, error: isStepUpCancelled(value) ? t('common.cancel') : failure(value), code: extractApiErrorCode(value), status })
+  }
 }
 
-onMounted(() => window.addEventListener('message', receive))
-onBeforeUnmount(() => { clearPending(); window.removeEventListener('message', receive) })
+watch(() => [locale?.value, registry.items.map(item => `${item.plugin_id}:${item.id}:${item.available}:${item.package_sha256}:${item.stylesheet_url}`).join('|')], sendContext)
+onMounted(() => {
+  window.addEventListener('message', receive)
+  if (!registry.loaded) void registry.refresh()
+  presentationObserver = new MutationObserver(sendContext)
+  presentationObserver.observe(document.documentElement, { attributes: true, attributeFilter: ['class', 'style'] })
+})
+onBeforeUnmount(() => { clearPending(); presentationObserver?.disconnect(); window.removeEventListener('message', receive) })
 </script>

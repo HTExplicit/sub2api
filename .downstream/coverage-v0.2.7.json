@@ -1,13 +1,13 @@
 {
   "schema_version": 3,
   "upstream_base": "aea725f2ea644d5592d0bbb1d63b607efa7e200a",
-  "basis_commit": "20299858c4651dc92b9569e7849f7a6e4e82ba0c",
+  "basis_commit": "092093d165c5f539f103260b1251e641a60f1964",
   "scope": "Current Sub2API downstream source and working tree. Candidate ownership does not establish completed review. Root maintenance, independent services and Worker require a separate audit.",
-  "source_digest": "3e111bbcdb82d198bdd891220c54fd62fd8774b335120ac4e59fe1998b2198e8",
+  "source_digest": "4de155f609dd5765a1e3b7cecad955375af2afa4641c48adfa052f4fa96ad6ee",
   "digest_excludes": [
     "the inventory itself uses a derived structural fingerprint; deletions bind the upstream blob"
   ],
-  "total_paths": 2155,
+  "total_paths": 2189,
   "generated_assets_and_locks": 83,
   "review_complete": false,
   "pending_paths": [
@@ -213,6 +213,7 @@
     "backend/internal/handler/admin/payment_handler_test.go",
     "backend/internal/handler/admin/plugin_contract_fixture_test.go",
     "backend/internal/handler/admin/plugin_handler.go",
+    "backend/internal/handler/admin/plugin_resources.go",
     "backend/internal/handler/admin/plugin_update.go",
     "backend/internal/handler/admin/provider_identity_validation_test.go",
     "backend/internal/handler/admin/setting_codex_ticket_proxy.go",
@@ -979,11 +980,14 @@
     "backend/internal/service/plugin_prompt_test.go",
     "backend/internal/service/plugin_provider.go",
     "backend/internal/service/plugin_request.go",
+    "backend/internal/service/plugin_resources.go",
+    "backend/internal/service/plugin_resources_test.go",
     "backend/internal/service/plugin_runtime.go",
     "backend/internal/service/plugin_scheduling.go",
     "backend/internal/service/plugin_security_regression_test.go",
     "backend/internal/service/plugin_theme.go",
     "backend/internal/service/plugin_theme_test.go",
+    "backend/internal/service/plugin_ui_session_test.go",
     "backend/internal/service/plugin_update.go",
     "backend/internal/service/plugin_update_contract.go",
     "backend/internal/service/plugin_update_test.go",
@@ -1146,7 +1150,21 @@
     "backend/migrations/user_platform_quota_cindy_migration_test.go",
     "backend/pkg/extensionapi/proxy/address.go",
     "backend/pkg/extensionapi/proxy/transport.go",
+    "backend/pkg/extensionapi/ui/base.css",
     "backend/pkg/extensionapi/ui/bridge.js",
+    "backend/pkg/extensionapi/ui/build.mjs",
+    "backend/pkg/extensionapi/ui/client.ts",
+    "backend/pkg/extensionapi/ui/components/BaseDialog.vue",
+    "backend/pkg/extensionapi/ui/components/ConfirmDialog.vue",
+    "backend/pkg/extensionapi/ui/components/Icon.vue",
+    "backend/pkg/extensionapi/ui/components/Toggle.vue",
+    "backend/pkg/extensionapi/ui/components/dialogStack.ts",
+    "backend/pkg/extensionapi/ui/context.ts",
+    "backend/pkg/extensionapi/ui/errors.ts",
+    "backend/pkg/extensionapi/ui/index.ts",
+    "backend/pkg/extensionapi/ui/tailwind.preset.mjs",
+    "backend/pkg/extensionapi/ui/theme.css",
+    "backend/pkg/extensionapi/ui/tsconfig.json",
     "backend/pkg/extensionapi/v1/account_tools.go",
     "backend/pkg/extensionapi/v1/api.go",
     "backend/pkg/extensionapi/v1/catalog.go",
@@ -1165,6 +1183,7 @@
     "backend/pkg/extensionapi/v1/prompt.go",
     "backend/pkg/extensionapi/v1/publisher.go",
     "backend/pkg/extensionapi/v1/publisher.json",
+    "backend/pkg/extensionapi/v1/resources.go",
     "backend/pkg/extensionapi/v1/rpc.go",
     "backend/pkg/extensionapi/v1/rpc_test.go",
     "backend/pkg/extensionapi/v1/runtime.go",
@@ -1322,7 +1341,6 @@
     "frontend/src/components/admin/monitor/MonitorTemplateApplyPickerDialog.vue",
     "frontend/src/components/admin/monitor/MonitorTemplateManagerDialog.vue",
     "frontend/src/components/admin/payment/TopUsersLeaderboard.vue",
-    "frontend/src/components/admin/systemPrompt/SystemPromptAdvancedDrawer.vue",
     "frontend/src/components/admin/usage/UsageTable.vue",
     "frontend/src/components/admin/usage/UserTokenRanking.vue",
     "frontend/src/components/admin/user/UserAllowedGroupsModal.vue",
@@ -1362,6 +1380,7 @@
     "frontend/src/components/common/Skeleton.vue",
     "frontend/src/components/common/SubscriptionProgressMini.vue",
     "frontend/src/components/common/Toast.vue",
+    "frontend/src/components/common/Toggle.vue",
     "frontend/src/components/common/VersionBadge.vue",
     "frontend/src/components/common/__tests__/BaseDialog.spec.ts",
     "frontend/src/components/common/__tests__/DataTable.spec.ts",
@@ -1369,6 +1388,7 @@
     "frontend/src/components/common/__tests__/PlatformTypeBadge.grok.spec.ts",
     "frontend/src/components/common/__tests__/VersionBadge.downstream.spec.ts",
     "frontend/src/components/common/dialogStack.ts",
+    "frontend/src/components/icons/Icon.vue",
     "frontend/src/components/keys/EndpointPopover.vue",
     "frontend/src/components/keys/UseKeyModal.vue",
     "frontend/src/components/keys/__tests__/UseKeyModal.spec.ts",
@@ -1396,13 +1416,16 @@
     "frontend/src/components/payment/ToggleSwitch.vue",
     "frontend/src/components/plugins/ExtensionDialog.vue",
     "frontend/src/components/plugins/ExtensionFields.vue",
+    "frontend/src/components/plugins/ExtensionPage.vue",
     "frontend/src/components/plugins/ExtensionSlot.vue",
     "frontend/src/components/plugins/ExtensionSurface.vue",
     "frontend/src/components/plugins/PluginFrame.vue",
     "frontend/src/components/plugins/__tests__/ExtensionFields.spec.ts",
     "frontend/src/components/plugins/__tests__/ExtensionSlot.spec.ts",
+    "frontend/src/components/plugins/__tests__/resourceClient.spec.ts",
     "frontend/src/components/plugins/__tests__/theme.spec.ts",
     "frontend/src/components/plugins/context.ts",
+    "frontend/src/components/plugins/resourceClient.ts",
     "frontend/src/components/plugins/theme.ts",
     "frontend/src/components/user/PlatformCostCell.vue",
     "frontend/src/components/user/PlatformUsageBreakdown.vue",
@@ -1501,6 +1524,7 @@
     "frontend/src/utils/accountPresentation.ts",
     "frontend/src/utils/accountQuotaWindows.ts",
     "frontend/src/utils/accountTestModels.ts",
+    "frontend/src/utils/apiError.ts",
     "frontend/src/utils/cindyOpenAIDefaults.ts",
     "frontend/src/utils/featureFlags.ts",
     "frontend/src/utils/keyGroupProviders.ts",
@@ -1541,7 +1565,6 @@
     "frontend/src/views/admin/__tests__/GroupsView.duplicate.spec.ts",
     "frontend/src/views/admin/__tests__/PluginsView.spec.ts",
     "frontend/src/views/admin/__tests__/SettingsView.spec.ts",
-    "frontend/src/views/admin/__tests__/SystemPromptsView.spec.ts",
     "frontend/src/views/admin/__tests__/channelPlatformOptions.spec.ts",
     "frontend/src/views/admin/__tests__/groupModelAllowlist.spec.ts",
     "frontend/src/views/admin/__tests__/groupsProfitControl.spec.ts",
@@ -1596,7 +1619,9 @@
     "frontend/src/views/user/__tests__/ImageStudioView.spec.ts",
     "frontend/src/workers/accountImport.worker.ts",
     "frontend/tailwind.config.js",
+    "frontend/tsconfig.json",
     "frontend/vite.config.ts",
+    "frontend/vitest.config.ts",
     "plugins/account-tools/cmd/plugin/main.go",
     "plugins/account-tools/go.mod",
     "plugins/account-tools/go.sum",
@@ -2156,6 +2181,7 @@
     "plugins/prompt-skills/registry/seed/tree/skills/sec-web-api/references/api-deep/rest-graphql-testing.md",
     "plugins/prompt-skills/registry/support.go",
     "plugins/prompt-skills/registry/validation.go",
+    "plugins/prompt-skills/scripts/check-ui.py",
     "plugins/prompt-skills/source/gpt56.go",
     "plugins/prompt-skills/source/gpt56_test.go",
     "plugins/prompt-skills/source/prompts/gpt_5_6_instruct_v45.md",
@@ -2163,6 +2189,14 @@
     "plugins/prompt-skills/ui/assets/app.js",
     "plugins/prompt-skills/ui/assets/styles.css",
     "plugins/prompt-skills/ui/index.html",
+    "plugins/prompt-skills/ui/src/App.vue",
+    "plugins/prompt-skills/ui/src/SystemPromptAdvancedDrawer.vue",
+    "plugins/prompt-skills/ui/src/__tests__/App.spec.ts",
+    "plugins/prompt-skills/ui/src/api.ts",
+    "plugins/prompt-skills/ui/src/index.html",
+    "plugins/prompt-skills/ui/src/locales/en.ts",
+    "plugins/prompt-skills/ui/src/locales/zh.ts",
+    "plugins/prompt-skills/ui/src/main.ts",
     "tools/sync_modelgang_remote_skill_seed.ps1",
     "tools/verify_business_system_prompt_bundle.py"
   ],
@@ -2172,20 +2206,20 @@
     "dependency-lock": 9,
     "documentation": 28,
     "generated": 68,
-    "source": 917,
-    "test-or-fixture": 669
+    "source": 948,
+    "test-or-fixture": 672
   },
   "owner_counts": {
     "operations": 42,
     "documentation-and-history": 25,
-    "mixed-requires-review": 1019,
-    "core-extension-and-job-host": 133,
+    "mixed-requires-review": 1024,
+    "core-extension-and-job-host": 155,
     "core-data-and-migrations": 21,
     "cindy-provider": 169,
     "image-tools": 34,
     "account-tools": 50,
     "codex-runtime": 42,
-    "prompt-skills": 545,
+    "prompt-skills": 552,
     "core-quota-and-protocol": 22,
     "admin-observability": 34,
     "model-policy": 19
@@ -2196,8 +2230,8 @@
       "candidate_owner": "operations",
       "role": "source",
       "present": true,
-      "content_sha256": "eb6603092fe8d393d19d0c0a82b5e4a90febc7492d82eb2719a0508e9f41de8b",
-      "review_fingerprint": "eb6603092fe8d393d19d0c0a82b5e4a90febc7492d82eb2719a0508e9f41de8b",
+      "content_sha256": "08292d37184c724ed98b0e71dfe47ebd6c1c4ea57f587552c7bd8aa0e06fb4f5",
+      "review_fingerprint": "08292d37184c724ed98b0e71dfe47ebd6c1c4ea57f587552c7bd8aa0e06fb4f5",
       "review_status": "pending"
     },
     {
@@ -2233,7 +2267,7 @@
       "role": "documentation",
       "present": true,
       "content_sha256": null,
-      "review_fingerprint": "1478171090414b3fcf6e8f599163d3d06cb5c08ee2142461d8e30de5739f8025",
+      "review_fingerprint": "f1626d52cc65460953231091f56e58e6127707aa834d3b8329a268d4fd266313",
       "review_status": "reviewed",
       "decision": "generated-source",
       "owner": "operations",
@@ -2256,8 +2290,8 @@
       "candidate_owner": "documentation-and-history",
       "role": "documentation",
       "present": true,
-      "content_sha256": "5d678cc9d983a235391cd727cf0a3a2276e7f1219ec6b22e5477a790973b51ae",
-      "review_fingerprint": "5d678cc9d983a235391cd727cf0a3a2276e7f1219ec6b22e5477a790973b51ae",
+      "content_sha256": "b3eb4bbb968c4aee0750e526f0786acdf9a3f096a53b13d815925780d4e5f1d6",
+      "review_fingerprint": "b3eb4bbb968c4aee0750e526f0786acdf9a3f096a53b13d815925780d4e5f1d6",
       "review_status": "pending"
     },
     {
@@ -2355,8 +2389,8 @@
       "candidate_owner": "operations",
       "role": "source",
       "present": true,
-      "content_sha256": "03a290ec621170a38982bea4063047b6a4d122a02c9442930a2d410de18dd723",
-      "review_fingerprint": "03a290ec621170a38982bea4063047b6a4d122a02c9442930a2d410de18dd723",
+      "content_sha256": "a032b8dba712b37f9a7ed7e84c1e4289bfcc4908ba2307ac61eff85d7e50e8e3",
+      "review_fingerprint": "a032b8dba712b37f9a7ed7e84c1e4289bfcc4908ba2307ac61eff85d7e50e8e3",
       "review_status": "pending"
     },
     {
@@ -2427,8 +2461,8 @@
       "candidate_owner": "operations",
       "role": "source",
       "present": true,
-      "content_sha256": "eb48d6f59329cccfb970bc24022445081db32f18c17694304b4915532300c618",
-      "review_fingerprint": "eb48d6f59329cccfb970bc24022445081db32f18c17694304b4915532300c618",
+      "content_sha256": "3e1ad1cb221c0aa872bad7915480f7b9c0fc29c44e5ea34b609209071b5e602f",
+      "review_fingerprint": "3e1ad1cb221c0aa872bad7915480f7b9c0fc29c44e5ea34b609209071b5e602f",
       "review_status": "pending"
     },
     {
@@ -2436,8 +2470,8 @@
       "candidate_owner": "operations",
       "role": "source",
       "present": true,
-      "content_sha256": "4654488eac53eb954db390a35220e877d64fcd628a4e2974d8cab5d79af01a67",
-      "review_fingerprint": "4654488eac53eb954db390a35220e877d64fcd628a4e2974d8cab5d79af01a67",
+      "content_sha256": "4b97bcf4e0766078ec49a235637203751d7c4433cbf14594fbf9cf53e11dbd3a",
+      "review_fingerprint": "4b97bcf4e0766078ec49a235637203751d7c4433cbf14594fbf9cf53e11dbd3a",
       "review_status": "pending"
     },
     {
@@ -2454,8 +2488,8 @@
       "candidate_owner": "operations",
       "role": "source",
       "present": true,
-      "content_sha256": "b7d7da17f9d816d0f2350f5003cc89bdf14d2c904a9fee9ead206d8e7dd23b5d",
-      "review_fingerprint": "b7d7da17f9d816d0f2350f5003cc89bdf14d2c904a9fee9ead206d8e7dd23b5d",
+      "content_sha256": "e9e463df3b49db48a1bfe2d66e4b31f0e9e1a04db007eb85aded023769f9e025",
+      "review_fingerprint": "e9e463df3b49db48a1bfe2d66e4b31f0e9e1a04db007eb85aded023769f9e025",
       "review_status": "pending"
     },
     {
@@ -2535,8 +2569,8 @@
       "candidate_owner": "operations",
       "role": "source",
       "present": true,
-      "content_sha256": "409aaac21ca3230d69060a6c6e51368a7b065961fda389307b24f23c3ba6e13c",
-      "review_fingerprint": "409aaac21ca3230d69060a6c6e51368a7b065961fda389307b24f23c3ba6e13c",
+      "content_sha256": "9e7bb0dc6c25955fb045b9871890989665a02c6a20c3cb4141ebfcc17357139a",
+      "review_fingerprint": "9e7bb0dc6c25955fb045b9871890989665a02c6a20c3cb4141ebfcc17357139a",
       "review_status": "pending"
     },
     {
@@ -2598,8 +2632,8 @@
       "candidate_owner": "operations",
       "role": "source",
       "present": true,
-      "content_sha256": "233b78e2611454b00389c77d766bdba58fecdbfebf01ad630c3cc8f867e5c6cf",
-      "review_fingerprint": "233b78e2611454b00389c77d766bdba58fecdbfebf01ad630c3cc8f867e5c6cf",
+      "content_sha256": "9a5523deb5c9095c966e05fd56d3fce930ffab83f01dcdb1f5dbbc456ae4395d",
+      "review_fingerprint": "9a5523deb5c9095c966e05fd56d3fce930ffab83f01dcdb1f5dbbc456ae4395d",
       "review_status": "pending"
     },
     {
@@ -2688,8 +2722,8 @@
       "candidate_owner": "core-extension-and-job-host",
       "role": "source",
       "present": true,
-      "content_sha256": "da42ce670250a1bf53854cbe78f5713869282d575b57dda065fb5bad3670e9fc",
-      "review_fingerprint": "da42ce670250a1bf53854cbe78f5713869282d575b57dda065fb5bad3670e9fc",
+      "content_sha256": "68a5823e640c71d43cf609578a5f05bcef51c8ca565175206cc7a50a2c828c34",
+      "review_fingerprint": "68a5823e640c71d43cf609578a5f05bcef51c8ca565175206cc7a50a2c828c34",
       "review_status": "pending"
     },
     {
@@ -4022,8 +4056,17 @@
       "candidate_owner": "core-extension-and-job-host",
       "role": "source",
       "present": true,
-      "content_sha256": "098712c07fbb550d425a39d988066f77962ffa4e7f978c5b6beb99b23c27fd0a",
-      "review_fingerprint": "098712c07fbb550d425a39d988066f77962ffa4e7f978c5b6beb99b23c27fd0a",
+      "content_sha256": "ab21a68c298b7548307a922ef934c39b2048fa412d5d817f6ff8cfd922c79005",
+      "review_fingerprint": "ab21a68c298b7548307a922ef934c39b2048fa412d5d817f6ff8cfd922c79005",
+      "review_status": "pending"
+    },
+    {
+      "path": "backend/internal/handler/admin/plugin_resources.go",
+      "candidate_owner": "core-extension-and-job-host",
+      "role": "source",
+      "present": true,
+      "content_sha256": "a220110033cd4b7921f3ac22b2edbc41a19717eea902972973af5ffd7619d937",
+      "review_fingerprint": "a220110033cd4b7921f3ac22b2edbc41a19717eea902972973af5ffd7619d937",
       "review_status": "pending"
     },
     {
@@ -6589,8 +6632,8 @@
       "candidate_owner": "mixed-requires-review",
       "role": "source",
       "present": true,
-      "content_sha256": "84b1ed2177e4074287d12ffecc8095f9be23c8e7d7138f32fc1b60a625d4f2be",
-      "review_fingerprint": "84b1ed2177e4074287d12ffecc8095f9be23c8e7d7138f32fc1b60a625d4f2be",
+      "content_sha256": "5bd41b78d7c07e83b25d8c07850ae75b272a09cc4ac60d96525f6e415c6a7360",
+      "review_fingerprint": "5bd41b78d7c07e83b25d8c07850ae75b272a09cc4ac60d96525f6e415c6a7360",
       "review_status": "pending"
     },
     {
@@ -10739,8 +10782,8 @@
       "candidate_owner": "core-extension-and-job-host",
       "role": "source",
       "present": true,
-      "content_sha256": "a0676eb4070099a9bf491d555f228c2623f7d47bc0965a426cc9db22ebf91d3b",
-      "review_fingerprint": "a0676eb4070099a9bf491d555f228c2623f7d47bc0965a426cc9db22ebf91d3b",
+      "content_sha256": "4dae98dc6414b5216d625c9526993d6b0e772cac29f7c5515c2a4225b36b9a3a",
+      "review_fingerprint": "4dae98dc6414b5216d625c9526993d6b0e772cac29f7c5515c2a4225b36b9a3a",
       "review_status": "pending"
     },
     {
@@ -10784,8 +10827,8 @@
       "candidate_owner": "core-extension-and-job-host",
       "role": "source",
       "present": true,
-      "content_sha256": "8cdcc1da95d1a12ca81973388d9cf242d47bd1731eeae5eb5e56fec88471ac1d",
-      "review_fingerprint": "8cdcc1da95d1a12ca81973388d9cf242d47bd1731eeae5eb5e56fec88471ac1d",
+      "content_sha256": "a12ef6da5f3b20a9878b1ff12c1688aacd1ad615e7d0a2a743586b01b9960754",
+      "review_fingerprint": "a12ef6da5f3b20a9878b1ff12c1688aacd1ad615e7d0a2a743586b01b9960754",
       "review_status": "pending"
     },
     {
@@ -10793,8 +10836,8 @@
       "candidate_owner": "core-extension-and-job-host",
       "role": "source",
       "present": true,
-      "content_sha256": "bc67f63c62e9acb618ebb4291af56aeb62e34b3b0c4977db96f80011b1bc6ae6",
-      "review_fingerprint": "bc67f63c62e9acb618ebb4291af56aeb62e34b3b0c4977db96f80011b1bc6ae6",
+      "content_sha256": "99cd618290b42bb34c7e3571ac138eb09b02da90e9a4d3be32a3668f2d956c30",
+      "review_fingerprint": "99cd618290b42bb34c7e3571ac138eb09b02da90e9a4d3be32a3668f2d956c30",
       "review_status": "pending"
     },
     {
@@ -10924,6 +10967,24 @@
       "review_status": "pending"
     },
     {
+      "path": "backend/internal/service/plugin_resources.go",
+      "candidate_owner": "core-extension-and-job-host",
+      "role": "source",
+      "present": true,
+      "content_sha256": "24c202b4dc3e49eba06502d0dc09b05b0d50c52f7a0afc2023e5aff82030b443",
+      "review_fingerprint": "24c202b4dc3e49eba06502d0dc09b05b0d50c52f7a0afc2023e5aff82030b443",
+      "review_status": "pending"
+    },
+    {
+      "path": "backend/internal/service/plugin_resources_test.go",
+      "candidate_owner": "core-extension-and-job-host",
+      "role": "test-or-fixture",
+      "present": true,
+      "content_sha256": "76c7f664469dab94c5695069a473dcc28eda2a58b5b2b2a42c6028ccb6a41b3a",
+      "review_fingerprint": "76c7f664469dab94c5695069a473dcc28eda2a58b5b2b2a42c6028ccb6a41b3a",
+      "review_status": "pending"
+    },
+    {
       "path": "backend/internal/service/plugin_runtime.go",
       "candidate_owner": "core-extension-and-job-host",
       "role": "source",
@@ -10966,6 +11027,15 @@
       "present": true,
       "content_sha256": "79236f7672619b4107de0e91ebdd6088f76ea533a07177396dc3cd030678c271",
       "review_fingerprint": "79236f7672619b4107de0e91ebdd6088f76ea533a07177396dc3cd030678c271",
+      "review_status": "pending"
+    },
+    {
+      "path": "backend/internal/service/plugin_ui_session_test.go",
+      "candidate_owner": "core-extension-and-job-host",
+      "role": "test-or-fixture",
+      "present": true,
+      "content_sha256": "f422a92528a2e9fa3bd5bb0b402184ec4c2c7a053f9bd7f7d6455b62e1315ba9",
+      "review_fingerprint": "f422a92528a2e9fa3bd5bb0b402184ec4c2c7a053f9bd7f7d6455b62e1315ba9",
       "review_status": "pending"
     },
     {
@@ -12429,12 +12499,138 @@
       "review_status": "pending"
     },
     {
+      "path": "backend/pkg/extensionapi/ui/base.css",
+      "candidate_owner": "core-extension-and-job-host",
+      "role": "source",
+      "present": true,
+      "content_sha256": "56e8f3eefce7a74d79382955b05d019e9242ccce6269ba96dc670ca012d36ccc",
+      "review_fingerprint": "56e8f3eefce7a74d79382955b05d019e9242ccce6269ba96dc670ca012d36ccc",
+      "review_status": "pending"
+    },
+    {
       "path": "backend/pkg/extensionapi/ui/bridge.js",
       "candidate_owner": "core-extension-and-job-host",
       "role": "source",
       "present": true,
-      "content_sha256": "20f1ca87f447d4fb89e45ac1efd957e52dc2ccf54d3b9aafe13468d1b19704a5",
-      "review_fingerprint": "20f1ca87f447d4fb89e45ac1efd957e52dc2ccf54d3b9aafe13468d1b19704a5",
+      "content_sha256": "1b4a23850b40be073cbff0fe7bf13a2f2a8d128e188ea1795e8aecd04d090a49",
+      "review_fingerprint": "1b4a23850b40be073cbff0fe7bf13a2f2a8d128e188ea1795e8aecd04d090a49",
+      "review_status": "pending"
+    },
+    {
+      "path": "backend/pkg/extensionapi/ui/build.mjs",
+      "candidate_owner": "core-extension-and-job-host",
+      "role": "source",
+      "present": true,
+      "content_sha256": "06db4aa7ef0ed5e1f3fe6d2bf0eeeab28609c0f34b4507bff80f80e1f8677976",
+      "review_fingerprint": "06db4aa7ef0ed5e1f3fe6d2bf0eeeab28609c0f34b4507bff80f80e1f8677976",
+      "review_status": "pending"
+    },
+    {
+      "path": "backend/pkg/extensionapi/ui/client.ts",
+      "candidate_owner": "core-extension-and-job-host",
+      "role": "source",
+      "present": true,
+      "content_sha256": "63aca9e5ac5224e79302f407d285b80a07f68c8c07b32f59eb83697fdf9b2839",
+      "review_fingerprint": "63aca9e5ac5224e79302f407d285b80a07f68c8c07b32f59eb83697fdf9b2839",
+      "review_status": "pending"
+    },
+    {
+      "path": "backend/pkg/extensionapi/ui/components/BaseDialog.vue",
+      "candidate_owner": "core-extension-and-job-host",
+      "role": "source",
+      "present": true,
+      "content_sha256": "49b51c8b1888c3ea15b44a8990c86bb2bfaeed85a6efd859b0910491a568dc52",
+      "review_fingerprint": "49b51c8b1888c3ea15b44a8990c86bb2bfaeed85a6efd859b0910491a568dc52",
+      "review_status": "pending"
+    },
+    {
+      "path": "backend/pkg/extensionapi/ui/components/ConfirmDialog.vue",
+      "candidate_owner": "core-extension-and-job-host",
+      "role": "source",
+      "present": true,
+      "content_sha256": "df495617216c500f5a88dd1929a3ed5f32b06f7ed5054fe20ae32de88925c57e",
+      "review_fingerprint": "df495617216c500f5a88dd1929a3ed5f32b06f7ed5054fe20ae32de88925c57e",
+      "review_status": "pending"
+    },
+    {
+      "path": "backend/pkg/extensionapi/ui/components/Icon.vue",
+      "candidate_owner": "core-extension-and-job-host",
+      "role": "source",
+      "present": true,
+      "content_sha256": "1879d82804766ca5c6e06b869b8dd8e6dcd73e701a5b5b2d0cba625b9e10adf7",
+      "review_fingerprint": "1879d82804766ca5c6e06b869b8dd8e6dcd73e701a5b5b2d0cba625b9e10adf7",
+      "review_status": "pending"
+    },
+    {
+      "path": "backend/pkg/extensionapi/ui/components/Toggle.vue",
+      "candidate_owner": "core-extension-and-job-host",
+      "role": "source",
+      "present": true,
+      "content_sha256": "be2597b673b44d42370e8883e56e9ae4cae5ed1fd28147dcc8ea1c1c0ab4f2e9",
+      "review_fingerprint": "be2597b673b44d42370e8883e56e9ae4cae5ed1fd28147dcc8ea1c1c0ab4f2e9",
+      "review_status": "pending"
+    },
+    {
+      "path": "backend/pkg/extensionapi/ui/components/dialogStack.ts",
+      "candidate_owner": "core-extension-and-job-host",
+      "role": "source",
+      "present": true,
+      "content_sha256": "9143ab0e87f9ee969415e91783b144cdac131a68dfa87e5af3054be054ee3b99",
+      "review_fingerprint": "9143ab0e87f9ee969415e91783b144cdac131a68dfa87e5af3054be054ee3b99",
+      "review_status": "pending"
+    },
+    {
+      "path": "backend/pkg/extensionapi/ui/context.ts",
+      "candidate_owner": "core-extension-and-job-host",
+      "role": "source",
+      "present": true,
+      "content_sha256": "6bddea28274cab23e4c561f9621c792a2a7161a57776e9d5dac9b64f32f480f5",
+      "review_fingerprint": "6bddea28274cab23e4c561f9621c792a2a7161a57776e9d5dac9b64f32f480f5",
+      "review_status": "pending"
+    },
+    {
+      "path": "backend/pkg/extensionapi/ui/errors.ts",
+      "candidate_owner": "core-extension-and-job-host",
+      "role": "source",
+      "present": true,
+      "content_sha256": "5acf8b65031dbb27bf320cc5cba918416c3b5ce2a40c46dd137963afaf46d651",
+      "review_fingerprint": "5acf8b65031dbb27bf320cc5cba918416c3b5ce2a40c46dd137963afaf46d651",
+      "review_status": "pending"
+    },
+    {
+      "path": "backend/pkg/extensionapi/ui/index.ts",
+      "candidate_owner": "core-extension-and-job-host",
+      "role": "source",
+      "present": true,
+      "content_sha256": "a4d3cfc7b50f3d93487857d3f5fde62acb0ac5c8ec6e4e0f0f64f4a25fceec45",
+      "review_fingerprint": "a4d3cfc7b50f3d93487857d3f5fde62acb0ac5c8ec6e4e0f0f64f4a25fceec45",
+      "review_status": "pending"
+    },
+    {
+      "path": "backend/pkg/extensionapi/ui/tailwind.preset.mjs",
+      "candidate_owner": "core-extension-and-job-host",
+      "role": "source",
+      "present": true,
+      "content_sha256": "ea9749df5775e86d7edfd2d564a6b184a99a6e347a0382994932dfc157e90273",
+      "review_fingerprint": "ea9749df5775e86d7edfd2d564a6b184a99a6e347a0382994932dfc157e90273",
+      "review_status": "pending"
+    },
+    {
+      "path": "backend/pkg/extensionapi/ui/theme.css",
+      "candidate_owner": "core-extension-and-job-host",
+      "role": "source",
+      "present": true,
+      "content_sha256": "0fb960d4a77e9823ea8f1f94785294ccd4e138cb730f5550c68c5c481c99abc8",
+      "review_fingerprint": "0fb960d4a77e9823ea8f1f94785294ccd4e138cb730f5550c68c5c481c99abc8",
+      "review_status": "pending"
+    },
+    {
+      "path": "backend/pkg/extensionapi/ui/tsconfig.json",
+      "candidate_owner": "core-extension-and-job-host",
+      "role": "source",
+      "present": true,
+      "content_sha256": "c2f772e24cba6336f91a92889679ea08582878addd709baa10d080cb86c0b3f4",
+      "review_fingerprint": "c2f772e24cba6336f91a92889679ea08582878addd709baa10d080cb86c0b3f4",
       "review_status": "pending"
     },
     {
@@ -12600,6 +12796,15 @@
       "review_status": "pending"
     },
     {
+      "path": "backend/pkg/extensionapi/v1/resources.go",
+      "candidate_owner": "core-extension-and-job-host",
+      "role": "source",
+      "present": true,
+      "content_sha256": "f003293702f19f59f82e94d3d105c5cf2ee412bce409ec3da84218ae60e88657",
+      "review_fingerprint": "f003293702f19f59f82e94d3d105c5cf2ee412bce409ec3da84218ae60e88657",
+      "review_status": "pending"
+    },
+    {
       "path": "backend/pkg/extensionapi/v1/rpc.go",
       "candidate_owner": "core-extension-and-job-host",
       "role": "source",
@@ -12640,8 +12845,8 @@
       "candidate_owner": "core-extension-and-job-host",
       "role": "source",
       "present": true,
-      "content_sha256": "ccd17655b3354889e78d508dc7c31f831b3a9c32ed19fcbc5368a1eaa6fe79a0",
-      "review_fingerprint": "ccd17655b3354889e78d508dc7c31f831b3a9c32ed19fcbc5368a1eaa6fe79a0",
+      "content_sha256": "0a4a9d906786df9c3d06e51da04ef550279b7054152ca976c14f1c3a3eca7ba1",
+      "review_fingerprint": "0a4a9d906786df9c3d06e51da04ef550279b7054152ca976c14f1c3a3eca7ba1",
       "review_status": "pending"
     },
     {
@@ -12811,8 +13016,8 @@
       "candidate_owner": "documentation-and-history",
       "role": "documentation",
       "present": true,
-      "content_sha256": "5502b82409ddbac70310d2745493e4691ace5ef99965e1f949bdd4f36b87bade",
-      "review_fingerprint": "5502b82409ddbac70310d2745493e4691ace5ef99965e1f949bdd4f36b87bade",
+      "content_sha256": "8b6271495f8e4a3cd41702e6821c41c703911327a59699134abb62e45e7d0beb",
+      "review_fingerprint": "8b6271495f8e4a3cd41702e6821c41c703911327a59699134abb62e45e7d0beb",
       "review_status": "pending"
     },
     {
@@ -13054,8 +13259,8 @@
       "candidate_owner": "core-extension-and-job-host",
       "role": "source",
       "present": true,
-      "content_sha256": "8bf50709658706ef088bffd7e8bac7145f63d2da37e4ec39f75458a2b3916d89",
-      "review_fingerprint": "8bf50709658706ef088bffd7e8bac7145f63d2da37e4ec39f75458a2b3916d89",
+      "content_sha256": "a6e49763b62e86200c18d3714a163b7e27a9476d5a65335e10b7e704af45f770",
+      "review_fingerprint": "a6e49763b62e86200c18d3714a163b7e27a9476d5a65335e10b7e704af45f770",
       "review_status": "pending"
     },
     {
@@ -14013,15 +14218,6 @@
       "review_status": "pending"
     },
     {
-      "path": "frontend/src/components/admin/systemPrompt/SystemPromptAdvancedDrawer.vue",
-      "candidate_owner": "prompt-skills",
-      "role": "source",
-      "present": true,
-      "content_sha256": "7e0c0dc59f0c2820251aa2e8529faf334587cb04465defecb5e629ac51eebecb",
-      "review_fingerprint": "7e0c0dc59f0c2820251aa2e8529faf334587cb04465defecb5e629ac51eebecb",
-      "review_status": "pending"
-    },
-    {
       "path": "frontend/src/components/admin/usage/UsageTable.vue",
       "candidate_owner": "mixed-requires-review",
       "role": "source",
@@ -14179,8 +14375,8 @@
       "candidate_owner": "mixed-requires-review",
       "role": "source",
       "present": true,
-      "content_sha256": "f772980b64989ed205a767ac1ec07220911037bcc9ea693b32bf2148a527a1f9",
-      "review_fingerprint": "f772980b64989ed205a767ac1ec07220911037bcc9ea693b32bf2148a527a1f9",
+      "content_sha256": "afdf1b6bef732450da156d811c6d6e80e618c9d6e8ca6a8eec2214141ed6d56c",
+      "review_fingerprint": "afdf1b6bef732450da156d811c6d6e80e618c9d6e8ca6a8eec2214141ed6d56c",
       "review_status": "pending"
     },
     {
@@ -14188,8 +14384,8 @@
       "candidate_owner": "mixed-requires-review",
       "role": "source",
       "present": true,
-      "content_sha256": "df495617216c500f5a88dd1929a3ed5f32b06f7ed5054fe20ae32de88925c57e",
-      "review_fingerprint": "df495617216c500f5a88dd1929a3ed5f32b06f7ed5054fe20ae32de88925c57e",
+      "content_sha256": "2876697ba265a75db569daf0116899d5f76734d5c4074e6321457866ba70b52c",
+      "review_fingerprint": "2876697ba265a75db569daf0116899d5f76734d5c4074e6321457866ba70b52c",
       "review_status": "pending"
     },
     {
@@ -14373,6 +14569,15 @@
       "review_status": "pending"
     },
     {
+      "path": "frontend/src/components/common/Toggle.vue",
+      "candidate_owner": "mixed-requires-review",
+      "role": "source",
+      "present": true,
+      "content_sha256": "b442f3c0a0f20c82add7c1529bb04f915b7c4b6a510e119d27d69c7b43803a12",
+      "review_fingerprint": "b442f3c0a0f20c82add7c1529bb04f915b7c4b6a510e119d27d69c7b43803a12",
+      "review_status": "pending"
+    },
+    {
       "path": "frontend/src/components/common/VersionBadge.vue",
       "candidate_owner": "mixed-requires-review",
       "role": "source",
@@ -14431,8 +14636,17 @@
       "candidate_owner": "mixed-requires-review",
       "role": "source",
       "present": true,
-      "content_sha256": "9143ab0e87f9ee969415e91783b144cdac131a68dfa87e5af3054be054ee3b99",
-      "review_fingerprint": "9143ab0e87f9ee969415e91783b144cdac131a68dfa87e5af3054be054ee3b99",
+      "content_sha256": "b63b45f8745b55f6a1e758a49c74ddb06eb7ead423ea133db03708de83f0dd18",
+      "review_fingerprint": "b63b45f8745b55f6a1e758a49c74ddb06eb7ead423ea133db03708de83f0dd18",
+      "review_status": "pending"
+    },
+    {
+      "path": "frontend/src/components/icons/Icon.vue",
+      "candidate_owner": "mixed-requires-review",
+      "role": "source",
+      "present": true,
+      "content_sha256": "b5c8534fd7a6730f65714a2f6e4c6df9e09c6410616de0dd9496bd3895cd3b22",
+      "review_fingerprint": "b5c8534fd7a6730f65714a2f6e4c6df9e09c6410616de0dd9496bd3895cd3b22",
       "review_status": "pending"
     },
     {
@@ -14679,6 +14893,15 @@
       "review_status": "pending"
     },
     {
+      "path": "frontend/src/components/plugins/ExtensionPage.vue",
+      "candidate_owner": "core-extension-and-job-host",
+      "role": "source",
+      "present": true,
+      "content_sha256": "06739e22ffb587bf57ecae2c1b9e55211e5a4e9942047e1b94000599cbd581e9",
+      "review_fingerprint": "06739e22ffb587bf57ecae2c1b9e55211e5a4e9942047e1b94000599cbd581e9",
+      "review_status": "pending"
+    },
+    {
       "path": "frontend/src/components/plugins/ExtensionSlot.vue",
       "candidate_owner": "core-extension-and-job-host",
       "role": "source",
@@ -14701,8 +14924,8 @@
       "candidate_owner": "core-extension-and-job-host",
       "role": "source",
       "present": true,
-      "content_sha256": "d3893c53887f309d4f6218c10bef9fc675468d1bd2911c6d4f132b31237cf1e7",
-      "review_fingerprint": "d3893c53887f309d4f6218c10bef9fc675468d1bd2911c6d4f132b31237cf1e7",
+      "content_sha256": "c841dc92bfceac0d36f957680c55a28d92345428eab8018430f6d688ca28c3c0",
+      "review_fingerprint": "c841dc92bfceac0d36f957680c55a28d92345428eab8018430f6d688ca28c3c0",
       "review_status": "pending"
     },
     {
@@ -14724,6 +14947,15 @@
       "review_status": "pending"
     },
     {
+      "path": "frontend/src/components/plugins/__tests__/resourceClient.spec.ts",
+      "candidate_owner": "core-extension-and-job-host",
+      "role": "test-or-fixture",
+      "present": true,
+      "content_sha256": "fe263d45f3159c9461c091071971851d333e10b52f0981f106bc13d4aae5f2c8",
+      "review_fingerprint": "fe263d45f3159c9461c091071971851d333e10b52f0981f106bc13d4aae5f2c8",
+      "review_status": "pending"
+    },
+    {
       "path": "frontend/src/components/plugins/__tests__/theme.spec.ts",
       "candidate_owner": "core-extension-and-job-host",
       "role": "test-or-fixture",
@@ -14737,8 +14969,17 @@
       "candidate_owner": "core-extension-and-job-host",
       "role": "source",
       "present": true,
-      "content_sha256": "6bddea28274cab23e4c561f9621c792a2a7161a57776e9d5dac9b64f32f480f5",
-      "review_fingerprint": "6bddea28274cab23e4c561f9621c792a2a7161a57776e9d5dac9b64f32f480f5",
+      "content_sha256": "5c499fdd92b41b1a9682d2f4aba4f5c1c3c67b103bacc8191cbb34ead9a3ee92",
+      "review_fingerprint": "5c499fdd92b41b1a9682d2f4aba4f5c1c3c67b103bacc8191cbb34ead9a3ee92",
+      "review_status": "pending"
+    },
+    {
+      "path": "frontend/src/components/plugins/resourceClient.ts",
+      "candidate_owner": "core-extension-and-job-host",
+      "role": "source",
+      "present": true,
+      "content_sha256": "cef09a24ab5193d5489421f39b5d2a1d67c195cee05447bc736ed85aaa62abb0",
+      "review_fingerprint": "cef09a24ab5193d5489421f39b5d2a1d67c195cee05447bc736ed85aaa62abb0",
       "review_status": "pending"
     },
     {
@@ -15259,8 +15500,8 @@
       "candidate_owner": "core-extension-and-job-host",
       "role": "source",
       "present": true,
-      "content_sha256": "8eafe2257be848a181176268b3657a39717dc01219aac0a3c43caaacac78d0bd",
-      "review_fingerprint": "8eafe2257be848a181176268b3657a39717dc01219aac0a3c43caaacac78d0bd",
+      "content_sha256": "fa51ea86739eea0352c1f635ac3f3f9848617610c9a8b7845b9bbbdd0ebb4dbc",
+      "review_fingerprint": "fa51ea86739eea0352c1f635ac3f3f9848617610c9a8b7845b9bbbdd0ebb4dbc",
       "review_status": "pending"
     },
     {
@@ -15358,8 +15599,8 @@
       "candidate_owner": "core-extension-and-job-host",
       "role": "source",
       "present": true,
-      "content_sha256": "27ddef95ec937a21e9314ee1e948a902a3a64a402d739a9e32cf095d98bdcf7c",
-      "review_fingerprint": "27ddef95ec937a21e9314ee1e948a902a3a64a402d739a9e32cf095d98bdcf7c",
+      "content_sha256": "ed0caa73ef182c3f2a8e46b124e5458cb497ceeab1d6e10947790f56c15300f3",
+      "review_fingerprint": "ed0caa73ef182c3f2a8e46b124e5458cb497ceeab1d6e10947790f56c15300f3",
       "review_status": "pending"
     },
     {
@@ -15511,8 +15752,8 @@
       "candidate_owner": "admin-observability",
       "role": "source",
       "present": true,
-      "content_sha256": "46c4fc8a507a10272863644c4689f089205afd127bb55b06ab0720f87794ffaf",
-      "review_fingerprint": "46c4fc8a507a10272863644c4689f089205afd127bb55b06ab0720f87794ffaf",
+      "content_sha256": "3f1caabd8848f5c0acdcd2cf3750afa5feb22666e84dc780b6adbe780a35562f",
+      "review_fingerprint": "3f1caabd8848f5c0acdcd2cf3750afa5feb22666e84dc780b6adbe780a35562f",
       "review_status": "pending"
     },
     {
@@ -15538,8 +15779,8 @@
       "candidate_owner": "admin-observability",
       "role": "source",
       "present": true,
-      "content_sha256": "d151c13d15738c162769de7502382f62cdd285116803aa2f24582410dac96587",
-      "review_fingerprint": "d151c13d15738c162769de7502382f62cdd285116803aa2f24582410dac96587",
+      "content_sha256": "8cbcbac032d3c2c14372e2e5af54589fe0a5e8c3d2de3c268515b9b18621a3a7",
+      "review_fingerprint": "8cbcbac032d3c2c14372e2e5af54589fe0a5e8c3d2de3c268515b9b18621a3a7",
       "review_status": "pending"
     },
     {
@@ -15621,6 +15862,15 @@
       "present": true,
       "content_sha256": "ed5b475fa78d260ced4eacd162cf05ca4b0a4d3db0abbffc78560fb7c7bdcb18",
       "review_fingerprint": "ed5b475fa78d260ced4eacd162cf05ca4b0a4d3db0abbffc78560fb7c7bdcb18",
+      "review_status": "pending"
+    },
+    {
+      "path": "frontend/src/utils/apiError.ts",
+      "candidate_owner": "mixed-requires-review",
+      "role": "source",
+      "present": true,
+      "content_sha256": "aa01f955a65b2d0f3e84b5cbd9acbb3dfe043070b37dc1705b9a3a098e775008",
+      "review_fingerprint": "aa01f955a65b2d0f3e84b5cbd9acbb3dfe043070b37dc1705b9a3a098e775008",
       "review_status": "pending"
     },
     {
@@ -15826,8 +16076,8 @@
       "candidate_owner": "prompt-skills",
       "role": "source",
       "present": true,
-      "content_sha256": "3cc424c84eb7ccca0e2b538ed21299f581f5595657f4ec81975d97acd4df42a0",
-      "review_fingerprint": "3cc424c84eb7ccca0e2b538ed21299f581f5595657f4ec81975d97acd4df42a0",
+      "content_sha256": "727770e10a9e84dcec1dd733d3320292702604d09e295ac7d688efe87b4d51bc",
+      "review_fingerprint": "727770e10a9e84dcec1dd733d3320292702604d09e295ac7d688efe87b4d51bc",
       "review_status": "pending"
     },
     {
@@ -15984,15 +16234,6 @@
       "review_status": "pending"
     },
     {
-      "path": "frontend/src/views/admin/__tests__/SystemPromptsView.spec.ts",
-      "candidate_owner": "prompt-skills",
-      "role": "test-or-fixture",
-      "present": true,
-      "content_sha256": "66c6051ab168b2d1a1fa486b3721faed6b51cb0f2c2c41e8c1c1df19d63c6436",
-      "review_fingerprint": "66c6051ab168b2d1a1fa486b3721faed6b51cb0f2c2c41e8c1c1df19d63c6436",
-      "review_status": "pending"
-    },
-    {
       "path": "frontend/src/views/admin/__tests__/channelPlatformOptions.spec.ts",
       "candidate_owner": "mixed-requires-review",
       "role": "test-or-fixture",
@@ -16025,8 +16266,8 @@
       "candidate_owner": "prompt-skills",
       "role": "test-or-fixture",
       "present": true,
-      "content_sha256": "8d5499b59a2d64e7dac98819ca686b290c699e3ebf99b261cdc37bab369e23ec",
-      "review_fingerprint": "8d5499b59a2d64e7dac98819ca686b290c699e3ebf99b261cdc37bab369e23ec",
+      "content_sha256": "9722d32e2f014a818ce1358d3a47f6fcb2b1856eea7e25d70696606a008fa495",
+      "review_fingerprint": "9722d32e2f014a818ce1358d3a47f6fcb2b1856eea7e25d70696606a008fa495",
       "review_status": "pending"
     },
     {
@@ -16476,8 +16717,17 @@
       "candidate_owner": "admin-observability",
       "role": "source",
       "present": true,
-      "content_sha256": "0282d91b73012178e86d13bf295ccd21efb3346ddafeaecf1855155085d579fb",
-      "review_fingerprint": "0282d91b73012178e86d13bf295ccd21efb3346ddafeaecf1855155085d579fb",
+      "content_sha256": "e18a464d3123cb28662be86400fca238fff85e57365faebebafcc2d166ba3fff",
+      "review_fingerprint": "e18a464d3123cb28662be86400fca238fff85e57365faebebafcc2d166ba3fff",
+      "review_status": "pending"
+    },
+    {
+      "path": "frontend/tsconfig.json",
+      "candidate_owner": "mixed-requires-review",
+      "role": "source",
+      "present": true,
+      "content_sha256": "6959f285e403c104734f9a4b43b38a3d10bb8ad50440ef33962bd0abc14e3615",
+      "review_fingerprint": "6959f285e403c104734f9a4b43b38a3d10bb8ad50440ef33962bd0abc14e3615",
       "review_status": "pending"
     },
     {
@@ -16485,8 +16735,17 @@
       "candidate_owner": "mixed-requires-review",
       "role": "source",
       "present": true,
-      "content_sha256": "acc1a6c9e4154ab7a6089c7ef0000a75627d016e0979d59354900a9e72d50b16",
-      "review_fingerprint": "acc1a6c9e4154ab7a6089c7ef0000a75627d016e0979d59354900a9e72d50b16",
+      "content_sha256": "c3fff23d3970bcd470ae68998d5a04e1502a48600ad3438dafdf60900b56b30a",
+      "review_fingerprint": "c3fff23d3970bcd470ae68998d5a04e1502a48600ad3438dafdf60900b56b30a",
+      "review_status": "pending"
+    },
+    {
+      "path": "frontend/vitest.config.ts",
+      "candidate_owner": "mixed-requires-review",
+      "role": "source",
+      "present": true,
+      "content_sha256": "7ea4bd9edb4ddc13c8e78cf2d449af28dde260af040086e3960b0c9f288abbf1",
+      "review_fingerprint": "7ea4bd9edb4ddc13c8e78cf2d449af28dde260af040086e3960b0c9f288abbf1",
       "review_status": "pending"
     },
     {
@@ -17304,8 +17563,8 @@
       "candidate_owner": "prompt-skills",
       "role": "source",
       "present": true,
-      "content_sha256": "805fde8bc3a31c8ff9c792456ce055f2a3f25e2a228d61728e841681970e3d1a",
-      "review_fingerprint": "805fde8bc3a31c8ff9c792456ce055f2a3f25e2a228d61728e841681970e3d1a",
+      "content_sha256": "96d7248fe6bca489637b22ccc9fd68b1754cffda733f82d6d532b4c1094b2062",
+      "review_fingerprint": "96d7248fe6bca489637b22ccc9fd68b1754cffda733f82d6d532b4c1094b2062",
       "review_status": "pending"
     },
     {
@@ -21521,6 +21780,15 @@
       "review_status": "pending"
     },
     {
+      "path": "plugins/prompt-skills/scripts/check-ui.py",
+      "candidate_owner": "prompt-skills",
+      "role": "source",
+      "present": true,
+      "content_sha256": "20e2efda06ad1aad6f16b4b3fe311dca9fe91efae6aa147a7d66350eba6b9449",
+      "review_fingerprint": "20e2efda06ad1aad6f16b4b3fe311dca9fe91efae6aa147a7d66350eba6b9449",
+      "review_status": "pending"
+    },
+    {
       "path": "plugins/prompt-skills/source/gpt56.go",
       "candidate_owner": "prompt-skills",
       "role": "source",
@@ -21581,6 +21849,78 @@
       "present": true,
       "content_sha256": "ce4619f762f5a7f6b51f0c6e8e99541ff440cf3a229cee90dc50146bfb4740e8",
       "review_fingerprint": "ce4619f762f5a7f6b51f0c6e8e99541ff440cf3a229cee90dc50146bfb4740e8",
+      "review_status": "pending"
+    },
+    {
+      "path": "plugins/prompt-skills/ui/src/App.vue",
+      "candidate_owner": "prompt-skills",
+      "role": "source",
+      "present": true,
+      "content_sha256": "279230be39f82dc55d4df2c6107bdd80d4fb773f64c7786544cdb44096d17048",
+      "review_fingerprint": "279230be39f82dc55d4df2c6107bdd80d4fb773f64c7786544cdb44096d17048",
+      "review_status": "pending"
+    },
+    {
+      "path": "plugins/prompt-skills/ui/src/SystemPromptAdvancedDrawer.vue",
+      "candidate_owner": "prompt-skills",
+      "role": "source",
+      "present": true,
+      "content_sha256": "ccc2d25d77dde008650e2ea463317213836ab17a2f97dbca7c6226362b918c29",
+      "review_fingerprint": "ccc2d25d77dde008650e2ea463317213836ab17a2f97dbca7c6226362b918c29",
+      "review_status": "pending"
+    },
+    {
+      "path": "plugins/prompt-skills/ui/src/__tests__/App.spec.ts",
+      "candidate_owner": "prompt-skills",
+      "role": "test-or-fixture",
+      "present": true,
+      "content_sha256": "500650eb23e7e31d576c28a6d0202905cbb93fad18ddf8d07b8247b425bc4e9e",
+      "review_fingerprint": "500650eb23e7e31d576c28a6d0202905cbb93fad18ddf8d07b8247b425bc4e9e",
+      "review_status": "pending"
+    },
+    {
+      "path": "plugins/prompt-skills/ui/src/api.ts",
+      "candidate_owner": "prompt-skills",
+      "role": "source",
+      "present": true,
+      "content_sha256": "9060a90b492c25f1176c63bb14d7a9ca5afb411a0a12c94f545f4989e9ce99ba",
+      "review_fingerprint": "9060a90b492c25f1176c63bb14d7a9ca5afb411a0a12c94f545f4989e9ce99ba",
+      "review_status": "pending"
+    },
+    {
+      "path": "plugins/prompt-skills/ui/src/index.html",
+      "candidate_owner": "prompt-skills",
+      "role": "source",
+      "present": true,
+      "content_sha256": "4a3040c75844670b79b9c8df4b945a65397236da27cf614a0098db6802b78ff6",
+      "review_fingerprint": "4a3040c75844670b79b9c8df4b945a65397236da27cf614a0098db6802b78ff6",
+      "review_status": "pending"
+    },
+    {
+      "path": "plugins/prompt-skills/ui/src/locales/en.ts",
+      "candidate_owner": "prompt-skills",
+      "role": "source",
+      "present": true,
+      "content_sha256": "0a0f48e1b10ef3ccb89cd770646ead4ff7a1107897a5c67028601ff091fc1214",
+      "review_fingerprint": "0a0f48e1b10ef3ccb89cd770646ead4ff7a1107897a5c67028601ff091fc1214",
+      "review_status": "pending"
+    },
+    {
+      "path": "plugins/prompt-skills/ui/src/locales/zh.ts",
+      "candidate_owner": "prompt-skills",
+      "role": "source",
+      "present": true,
+      "content_sha256": "43a26d86ee10275ace982b86b603872a805fbc5f8b8eb0acc7c00a2ac87189b9",
+      "review_fingerprint": "43a26d86ee10275ace982b86b603872a805fbc5f8b8eb0acc7c00a2ac87189b9",
+      "review_status": "pending"
+    },
+    {
+      "path": "plugins/prompt-skills/ui/src/main.ts",
+      "candidate_owner": "prompt-skills",
+      "role": "source",
+      "present": true,
+      "content_sha256": "b4fd92826aee89ab0013fd36d0f964601c450030c05de37a8704dbf0e21d2f4d",
+      "review_fingerprint": "b4fd92826aee89ab0013fd36d0f964601c450030c05de37a8704dbf0e21d2f4d",
       "review_status": "pending"
     },
     {

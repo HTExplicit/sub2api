@@ -27,8 +27,9 @@ const pluginUISessionTTL = 30 * time.Minute
 
 // PluginHandler 提供插件安装、生命周期、配置和隔离 UI 资源接口。
 type PluginHandler struct {
-	manager *service.PluginManager
-	jobs    *service.AccountJobService
+	resources map[string]extensionv1.ResourceDescriptor
+	manager   *service.PluginManager
+	jobs      *service.AccountJobService
 }
 
 func (h *PluginHandler) SetAccountJobs(jobs *service.AccountJobService) { h.jobs = jobs }
@@ -293,12 +294,21 @@ func (h *PluginHandler) Status(c *gin.Context) {
 	response.Success(c, result)
 }
 
-func (h *PluginHandler) CreateUISession(c *gin.Context) {
+func (h *PluginHandler) CreateUISession(c *gin.Context)     { h.createUISession(c, "admin") }
+func (h *PluginHandler) CreateUserUISession(c *gin.Context) { h.createUISession(c, "user") }
+func (h *PluginHandler) createUISession(c *gin.Context, permission string) {
 	id, ok := pluginIDParam(c)
 	if !ok {
 		return
 	}
-	assetToken, expires, err := h.manager.CreateUIAssetToken(c.Request.Context(), id, pluginUISessionTTL)
+	var input struct {
+		Contribution string `json:"contribution_id"`
+	}
+	if c.Request.ContentLength > 0 && c.ShouldBindJSON(&input) != nil {
+		response.BadRequest(c, "Invalid plugin UI context")
+		return
+	}
+	session, err := h.manager.CreateUIAssetSession(c.Request.Context(), id, input.Contribution, permission, pluginUISessionTTL)
 	if err != nil {
 		response.ErrorFrom(c, err)
 		return
@@ -309,10 +319,12 @@ func (h *PluginHandler) CreateUISession(c *gin.Context) {
 		return
 	}
 	response.Success(c, gin.H{
-		"url":               fmt.Sprintf("/api/v1/plugin-ui/%s/index.html#bridge_token=%s", assetToken, bridgeToken),
+		"url":               fmt.Sprintf("/api/v1/plugin-ui/%s/index.html#bridge_token=%s", session.Token, bridgeToken),
 		"bridge_token":      bridgeToken,
 		"ui_bridge_version": 1,
-		"expires_at":        expires,
+		"expires_at":        session.Expires,
+		"package_sha256":    session.PackageSHA256,
+		"permission":        session.Permission,
 	})
 }
 
@@ -344,6 +356,9 @@ func (h *PluginHandler) ServeUIAsset(c *gin.Context) {
 	// sandbox iframe 没有 allow-same-origin，会以不透明来源加载自己的 CSS/JS。
 	// 资源 URL 由短时随机能力 Token 保护，Bridge Token 只存在于 fragment 中。
 	c.Header("Cross-Origin-Resource-Policy", "cross-origin")
+	// Sandboxed module scripts and fonts have an opaque Origin. The URL is a
+	// short-lived capability for immutable UI assets, not an ambient session.
+	c.Header("Access-Control-Allow-Origin", "*")
 	c.Header("Content-Security-Policy", "default-src 'none'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'self'; navigate-to 'none'")
 	c.Data(http.StatusOK, contentType, data)
 }

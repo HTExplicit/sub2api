@@ -4,9 +4,13 @@ import vue from '@vitejs/plugin-vue'
 
 export default defineConfig({
   plugins: [vue()],
+  server: { fs: { allow: [resolve(__dirname, '..')] } },
   resolve: {
+    dedupe: ['vue', 'vue-i18n', '@vue/test-utils', 'vitest'],
     alias: {
       '@': resolve(__dirname, 'src'),
+      '@sub2api/plugin-ui': resolve(__dirname, '../backend/pkg/extensionapi/ui'),
+      'vue': resolve(__dirname, 'node_modules/vue/dist/vue.runtime.esm-bundler.js'),
       'vue-i18n': 'vue-i18n/dist/vue-i18n.runtime.esm-bundler.js'
     }
   },
@@ -14,7 +18,7 @@ export default defineConfig({
     globals: true,
     environment: 'jsdom',
     setupFiles: ['./src/__tests__/setup.ts'],
-    include: ['src/**/*.{test,spec}.{js,ts,jsx,tsx}'],
+    include: ['src/**/*.{test,spec}.{js,ts,jsx,tsx}', '../plugins/*/ui/src/**/*.{test,spec}.{js,ts,jsx,tsx}'],
     exclude: ['node_modules', 'dist'],
     coverage: {
       provider: 'v8',
