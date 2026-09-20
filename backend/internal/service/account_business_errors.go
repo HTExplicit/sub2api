@@ -1,6 +1,9 @@
 package service
 
-import "strings"
+import (
+	extensionv1 "github.com/Wei-Shaw/sub2api/pkg/extensionapi/v1"
+	"strings"
+)
 
 const (
 	AccountJobCodePayloadExpired         = "payload_expired"
@@ -12,17 +15,17 @@ const (
 	AccountJobCodeExecutionFailed        = "execution_failed"
 	AccountJobCodeCindyTargetChanged     = "cindy_cleanup_target_changed"
 	AccountJobCodeCindyCleanupFailed     = "cindy_cleanup_failed"
-	AccountImportCodeCreate              = "account_import_create"
-	AccountImportCodeUpdate              = "account_import_update"
-	AccountImportCodePayloadInvalid      = "account_import_payload_invalid"
-	AccountImportCodeIdentityConflict    = "account_import_identity_conflict"
-	AccountImportCodeCindyTargetRequired = "cindy_import_target_group_required"
-	AccountImportCodeCindyTargetInvalid  = "cindy_import_target_group_invalid"
-	AccountImportCodeCindyAPIKeyInvalid  = "cindy_import_api_key_invalid"
-	AccountImportCodeCredentialConflict  = "cindy_import_credential_conflict"
-	AccountImportCodeDeviceConflict      = "cindy_import_device_conflict"
-	AccountImportCodeDeviceInvalid       = "cindy_import_device_invalid"
-	AccountImportCodeExecutionFailed     = "account_import_execution_failed"
+	AccountImportCodeCreate              = extensionv1.AccountImportCodeCreate
+	AccountImportCodeUpdate              = extensionv1.AccountImportCodeUpdate
+	AccountImportCodePayloadInvalid      = extensionv1.AccountImportCodePayloadInvalid
+	AccountImportCodeIdentityConflict    = extensionv1.AccountImportCodeIdentityConflict
+	AccountImportCodeCindyTargetRequired = extensionv1.AccountImportCodeCindyTargetRequired
+	AccountImportCodeCindyTargetInvalid  = extensionv1.AccountImportCodeCindyTargetInvalid
+	AccountImportCodeCindyAPIKeyInvalid  = extensionv1.AccountImportCodeCindyAPIKeyInvalid
+	AccountImportCodeCredentialConflict  = extensionv1.AccountImportCodeCredentialConflict
+	AccountImportCodeDeviceConflict      = extensionv1.AccountImportCodeDeviceConflict
+	AccountImportCodeDeviceInvalid       = extensionv1.AccountImportCodeDeviceInvalid
+	AccountImportCodeExecutionFailed     = extensionv1.AccountImportCodeExecutionFailed
 )
 
 type accountBusinessMessage struct {

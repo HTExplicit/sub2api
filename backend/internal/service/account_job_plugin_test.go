@@ -8,6 +8,7 @@ import (
 	"strings"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	extensionv1 "github.com/Wei-Shaw/sub2api/pkg/extensionapi/v1"
 	hcplugin "github.com/hashicorp/go-plugin"
@@ -105,4 +106,84 @@ func TestPluginAdminSubmissionUsesTheActualAccountScopeAndRollout(t *testing.T) 
 	require.Error(t, manager.ValidateAdminExtension(context.Background(), 7, 38, "fixture.run"))
 	plugins.installation.Bindings[0].RolloutPercent = int(stablePluginBucket(37))
 	require.Error(t, manager.ValidateAdminExtension(context.Background(), 7, 37, "fixture.run"))
+}
+
+func TestLegacyImportJobUsesCurrentPluginLifetimeWithoutRewritingHistory(t *testing.T) {
+	manager, runtime, plugins := accountJobPolicyManager()
+	plugins.installation.Manifest.Operations = map[string][]string{extensionv1.CapabilityAdmin: {"import.plan"}}
+	executor := NewPluginJobExecutor(manager, &accountJobHostFixture{})
+	job := &AccountJob{Kind: AccountJobKindImportData, Metadata: []byte(`{}`)}
+	ctx, release, err := executor.PrepareAccountJob(context.Background(), job, []byte(`{}`))
+	require.NoError(t, err)
+	owner, bound := PluginExecutionFromContext(ctx)
+	require.True(t, bound)
+	require.Equal(t, PluginExecution{ID: 7, Generation: 3}, owner)
+	require.JSONEq(t, `{}`, string(job.Metadata))
+	runtime.beginDrain()
+	require.ErrorIs(t, ctx.Err(), context.Canceled)
+	release()
+	require.Zero(t, plugins.held.Load())
+}
+
+type pluginJobCancellationRepo struct {
+	*accountJobTestRepo
+	cancels    atomic.Int32
+	badContext atomic.Bool
+}
+
+func (r *pluginJobCancellationRepo) Cancel(ctx context.Context, _ int64, actor int64) (*AccountJob, error) {
+	if ctx.Err() != nil || actor <= 0 {
+		r.badContext.Store(true)
+	}
+	r.cancels.Add(1)
+	return nil, nil
+}
+
+type pluginJobCancellationExecutor struct {
+	wait    bool
+	started chan struct{}
+}
+
+func (e *pluginJobCancellationExecutor) ExecuteAccountJob(ctx context.Context, _ *AccountJob, _ json.RawMessage, items []AccountJobItem) ([]AccountJobExecutionResult, error) {
+	close(e.started)
+	if e.wait {
+		<-ctx.Done()
+		return nil, ctx.Err()
+	}
+	return []AccountJobExecutionResult{{ItemID: items[0].ID, Status: AccountJobItemStatusSucceeded, Metadata: []byte(`{}`)}}, nil
+}
+
+func TestPluginJobCompletionDoesNotCancelButPolicyStopPersistsCancellation(t *testing.T) {
+	for _, stop := range []bool{false, true} {
+		manager, plugin, plugins := accountJobPolicyManager()
+		plugins.installation.Manifest.Operations = map[string][]string{extensionv1.CapabilityAdmin: {"import.plan"}}
+		repo := &pluginJobCancellationRepo{accountJobTestRepo: newAccountJobTestRepo()}
+		jobs := NewAccountJobService(repo, accountJobTestCipher{})
+		job, _, err := jobs.Submit(context.Background(), 9, AccountJobKindImportData, "fixture", []byte(`{}`), nil, []AccountJobItemSeed{{Ordinal: 1}})
+		require.NoError(t, err)
+		core := &pluginJobCancellationExecutor{wait: stop, started: make(chan struct{})}
+		runner := &AccountJobRuntime{jobs: jobs, executor: NewPluginJobExecutor(manager, core), ctx: context.Background()}
+		done := make(chan struct{})
+		go func() { defer close(done); runner.execute(job) }()
+		select {
+		case <-core.started:
+		case <-time.After(time.Second):
+			t.Fatal("host job did not start")
+		}
+		if stop {
+			plugin.beginDrain()
+		}
+		select {
+		case <-done:
+		case <-time.After(time.Second):
+			t.Fatal("host job did not finish")
+		}
+		if stop {
+			require.EqualValues(t, 1, repo.cancels.Load())
+		} else {
+			require.Zero(t, repo.cancels.Load())
+		}
+		require.False(t, repo.badContext.Load())
+		require.Zero(t, plugins.held.Load())
+	}
 }

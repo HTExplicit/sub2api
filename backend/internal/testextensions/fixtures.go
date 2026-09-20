@@ -63,7 +63,7 @@ func (fixture operations) InvokeOperation(ctx context.Context, _, _ string, in e
 		}
 		return module.Invoke(ctx, in)
 	}
-	if strings.HasPrefix(in.Operation, "taxonomy.") || strings.HasPrefix(in.Operation, "test.") || in.Operation == "tools.describe" {
+	if strings.HasPrefix(in.Operation, "taxonomy.") || strings.HasPrefix(in.Operation, "test.") || strings.HasPrefix(in.Operation, "import.") || in.Operation == "tools.describe" {
 		return accounttools.New().Invoke(ctx, in)
 	}
 	if strings.HasPrefix(in.Operation, "prompt.") || strings.HasPrefix(in.Operation, "skills.") {

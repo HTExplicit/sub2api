@@ -427,10 +427,23 @@ func (r *AccountJobRuntime) execute(job *AccountJob) (string, string) {
 		}
 	}
 	defer cleanup()
+	if _, pluginBound := PluginExecutionFromContext(executionCtx); pluginBound {
+		// Run before cleanup cancels a normally completed policy context.
+		defer func() {
+			if executionCtx.Err() != nil {
+				cancelCtx, cancel := context.WithTimeout(context.WithoutCancel(r.ctx), 10*time.Second)
+				defer cancel()
+				_, _ = r.jobs.repo.Cancel(cancelCtx, job.ID, job.CreatedBy)
+			}
+		}()
+	}
 	if job.Kind == AccountJobKindBatchTest || job.Kind == AccountJobKindCodexTicketHarvest || job.Kind == AccountJobKindExtensionOperation {
 		return r.executeBatchTests(executionCtx, job, payload)
 	}
 	for {
+		if executionCtx.Err() != nil {
+			return "", ""
+		}
 		canceled, cancelErr := r.jobs.repo.CancelRequested(r.ctx, job.ID)
 		if cancelErr != nil {
 			return normalizeAccountJobFailure("cancel_check_failed")
@@ -446,6 +459,9 @@ func (r *AccountJobRuntime) execute(job *AccountJob) (string, string) {
 			return "", ""
 		}
 		for index, item := range items {
+			if executionCtx.Err() != nil {
+				return "", ""
+			}
 			canceled, cancelErr = r.jobs.repo.CancelRequested(r.ctx, job.ID)
 			if cancelErr != nil {
 				return normalizeAccountJobFailure("cancel_check_failed")

@@ -1,13 +1,13 @@
 {
   "schema_version": 3,
   "upstream_base": "aea725f2ea644d5592d0bbb1d63b607efa7e200a",
-  "basis_commit": "8a4d280b6d912b6011018db126d9df3a59461e60",
+  "basis_commit": "915f66eec689423df4cc1ab1f2ffa18cd86f62f8",
   "scope": "Current Sub2API downstream source and working tree. Candidate ownership does not establish completed review. Root maintenance, independent services and Worker require a separate audit.",
-  "source_digest": "ea4fb7b5d235728dc147f89ff09c52000794e694d1d90772514f1271ec9d73d7",
+  "source_digest": "8512bf692c66349e4ee878376b83839ba90bd489738201a9dede0edbf42f1e94",
   "digest_excludes": [
     "the inventory itself uses a derived structural fingerprint; deletions bind the upstream blob"
   ],
-  "total_paths": 2255,
+  "total_paths": 2260,
   "generated_assets_and_locks": 83,
   "review_complete": false,
   "pending_paths": [
@@ -942,6 +942,8 @@
     "backend/internal/service/ops_upstream_context.go",
     "backend/internal/service/ops_user_error_test.go",
     "backend/internal/service/payment_order_result_test.go",
+    "backend/internal/service/plugin_account_import.go",
+    "backend/internal/service/plugin_account_import_test.go",
     "backend/internal/service/plugin_account_tools.go",
     "backend/internal/service/plugin_bundle.go",
     "backend/internal/service/plugin_catalog_test.go",
@@ -1169,6 +1171,7 @@
     "backend/pkg/extensionapi/ui/tailwind.preset.mjs",
     "backend/pkg/extensionapi/ui/theme.css",
     "backend/pkg/extensionapi/ui/tsconfig.json",
+    "backend/pkg/extensionapi/v1/account_import.go",
     "backend/pkg/extensionapi/v1/account_tools.go",
     "backend/pkg/extensionapi/v1/api.go",
     "backend/pkg/extensionapi/v1/catalog.go",
@@ -1622,6 +1625,8 @@
     "plugins/account-tools/go.sum",
     "plugins/account-tools/manifest.source.json",
     "plugins/account-tools/policy/batch.go",
+    "plugins/account-tools/policy/import.go",
+    "plugins/account-tools/policy/import_test.go",
     "plugins/account-tools/policy/module.go",
     "plugins/account-tools/policy/module_test.go",
     "plugins/account-tools/scripts/check-ui.py",
@@ -2253,18 +2258,18 @@
     "dependency-lock": 9,
     "documentation": 28,
     "generated": 68,
-    "source": 1001,
-    "test-or-fixture": 685
+    "source": 1004,
+    "test-or-fixture": 687
   },
   "owner_counts": {
     "operations": 42,
     "documentation-and-history": 25,
     "mixed-requires-review": 1023,
-    "core-extension-and-job-host": 171,
+    "core-extension-and-job-host": 174,
     "core-data-and-migrations": 21,
     "cindy-provider": 182,
     "image-tools": 45,
-    "account-tools": 77,
+    "account-tools": 79,
     "codex-runtime": 42,
     "prompt-skills": 552,
     "core-quota-and-protocol": 22,
@@ -2314,7 +2319,7 @@
       "role": "documentation",
       "present": true,
       "content_sha256": null,
-      "review_fingerprint": "48fb5b14abf004408dd573f1270df3086ab6ea2609d4b239975cc1aebf135122",
+      "review_fingerprint": "608ca278f02d036e740e437d4185e0a0a499104e2d9b86ec77ea003caa4e637d",
       "review_status": "reviewed",
       "decision": "generated-source",
       "owner": "operations",
@@ -2337,8 +2342,8 @@
       "candidate_owner": "documentation-and-history",
       "role": "documentation",
       "present": true,
-      "content_sha256": "c734e2d4df3428cb29bb809e24ce6de8b45aa0b5cf856437f92213354a98cf5c",
-      "review_fingerprint": "c734e2d4df3428cb29bb809e24ce6de8b45aa0b5cf856437f92213354a98cf5c",
+      "content_sha256": "5ae6e8ba9be8ae16af91f07937656a7aff0abfc4f9cdd83ef42bcbcac9676dd9",
+      "review_fingerprint": "5ae6e8ba9be8ae16af91f07937656a7aff0abfc4f9cdd83ef42bcbcac9676dd9",
       "review_status": "pending"
     },
     {
@@ -2517,8 +2522,8 @@
       "candidate_owner": "operations",
       "role": "source",
       "present": true,
-      "content_sha256": "a5bd29352a52946de79dfbeb45d7e64b857b7a17d9c812c89f737d14166cd5eb",
-      "review_fingerprint": "a5bd29352a52946de79dfbeb45d7e64b857b7a17d9c812c89f737d14166cd5eb",
+      "content_sha256": "07e47c9a125a6c16b313f70c27373015f44437c96c4de96a9b4a192e3305aa74",
+      "review_fingerprint": "07e47c9a125a6c16b313f70c27373015f44437c96c4de96a9b4a192e3305aa74",
       "review_status": "pending"
     },
     {
@@ -3743,8 +3748,8 @@
       "candidate_owner": "mixed-requires-review",
       "role": "source",
       "present": true,
-      "content_sha256": "6d919751ef26b048012194842feba3037b10d1303ad848541cf52a7c57f856bc",
-      "review_fingerprint": "6d919751ef26b048012194842feba3037b10d1303ad848541cf52a7c57f856bc",
+      "content_sha256": "5a37e8ec6ef944fdb9879a69632cc51e6cca9bae1bfef86ec2fa7f6d189fdfce",
+      "review_fingerprint": "5a37e8ec6ef944fdb9879a69632cc51e6cca9bae1bfef86ec2fa7f6d189fdfce",
       "review_status": "pending"
     },
     {
@@ -6864,8 +6869,8 @@
       "candidate_owner": "mixed-requires-review",
       "role": "source",
       "present": true,
-      "content_sha256": "af3c5a5bb8e94c6053f9a94c04cd37b7c5d9f6938e3a7a9b8a92b29832eb5d9e",
-      "review_fingerprint": "af3c5a5bb8e94c6053f9a94c04cd37b7c5d9f6938e3a7a9b8a92b29832eb5d9e",
+      "content_sha256": "2f036f1a0a9c5337f0c3f0a06f501f5e0dbd98d342d6ffb4dd89b27e13d4054b",
+      "review_fingerprint": "2f036f1a0a9c5337f0c3f0a06f501f5e0dbd98d342d6ffb4dd89b27e13d4054b",
       "review_status": "pending"
     },
     {
@@ -6900,8 +6905,8 @@
       "candidate_owner": "core-extension-and-job-host",
       "role": "source",
       "present": true,
-      "content_sha256": "e7f5de3d374523f99ee7cfcf3a9ff189535ff54c4964fcc9a58d6f29a77218cf",
-      "review_fingerprint": "e7f5de3d374523f99ee7cfcf3a9ff189535ff54c4964fcc9a58d6f29a77218cf",
+      "content_sha256": "a96586db38f69cac76a16b8dd8b86ca902f87318745311735d0d933bf872c2a7",
+      "review_fingerprint": "a96586db38f69cac76a16b8dd8b86ca902f87318745311735d0d933bf872c2a7",
       "review_status": "pending"
     },
     {
@@ -6927,8 +6932,8 @@
       "candidate_owner": "mixed-requires-review",
       "role": "test-or-fixture",
       "present": true,
-      "content_sha256": "d0d3205baafae71c555f20f2a8a0fe94784d3b02273078b408769fb50add481b",
-      "review_fingerprint": "d0d3205baafae71c555f20f2a8a0fe94784d3b02273078b408769fb50add481b",
+      "content_sha256": "3752f58dd7cd4caa87b381fb41ea96a03d0c4d81cf165a30b707b7a0e9d936ac",
+      "review_fingerprint": "3752f58dd7cd4caa87b381fb41ea96a03d0c4d81cf165a30b707b7a0e9d936ac",
       "review_status": "pending"
     },
     {
@@ -7584,8 +7589,8 @@
       "candidate_owner": "prompt-skills",
       "role": "test-or-fixture",
       "present": true,
-      "content_sha256": "cf6fdbc5f808eb5400bcda669a1edece5891b1453e6b2f311df09eae27f28969",
-      "review_fingerprint": "cf6fdbc5f808eb5400bcda669a1edece5891b1453e6b2f311df09eae27f28969",
+      "content_sha256": "5a85911b98a8179523957e9e9e69f5a77ef1374eab922b2f2f16b9c21ece31ba",
+      "review_fingerprint": "5a85911b98a8179523957e9e9e69f5a77ef1374eab922b2f2f16b9c21ece31ba",
       "review_status": "pending"
     },
     {
@@ -10720,6 +10725,24 @@
       "review_status": "pending"
     },
     {
+      "path": "backend/internal/service/plugin_account_import.go",
+      "candidate_owner": "core-extension-and-job-host",
+      "role": "source",
+      "present": true,
+      "content_sha256": "1dfb560398cc654f5c4865519cc69691bb0784251ea70541ea32f89c8b795246",
+      "review_fingerprint": "1dfb560398cc654f5c4865519cc69691bb0784251ea70541ea32f89c8b795246",
+      "review_status": "pending"
+    },
+    {
+      "path": "backend/internal/service/plugin_account_import_test.go",
+      "candidate_owner": "core-extension-and-job-host",
+      "role": "test-or-fixture",
+      "present": true,
+      "content_sha256": "c423937317852f69066a1ceb0694ca8a76193349fb6ee20920aab837133a4d44",
+      "review_fingerprint": "c423937317852f69066a1ceb0694ca8a76193349fb6ee20920aab837133a4d44",
+      "review_status": "pending"
+    },
+    {
       "path": "backend/internal/service/plugin_account_tools.go",
       "candidate_owner": "core-extension-and-job-host",
       "role": "source",
@@ -11011,8 +11034,8 @@
       "candidate_owner": "core-extension-and-job-host",
       "role": "source",
       "present": true,
-      "content_sha256": "4fc283f57f0e439433d3267231def1a6bccdcd2ef7dbbd2088afddf1b20d3cdb",
-      "review_fingerprint": "4fc283f57f0e439433d3267231def1a6bccdcd2ef7dbbd2088afddf1b20d3cdb",
+      "content_sha256": "67fe4d9b5cfcac40576b5d07841ed49049657506e4656e6ca1715f6dc872480a",
+      "review_fingerprint": "67fe4d9b5cfcac40576b5d07841ed49049657506e4656e6ca1715f6dc872480a",
       "review_status": "pending"
     },
     {
@@ -11065,8 +11088,8 @@
       "candidate_owner": "core-extension-and-job-host",
       "role": "source",
       "present": true,
-      "content_sha256": "d53af8b04385f3b48d14b43bc02e8eb6470884606d1d8339400b4a0359ba248e",
-      "review_fingerprint": "d53af8b04385f3b48d14b43bc02e8eb6470884606d1d8339400b4a0359ba248e",
+      "content_sha256": "2ff4fe556c1c8af2d8594f6babc34e2cce5cfc0f5a8212546f7e4540bbbb3a43",
+      "review_fingerprint": "2ff4fe556c1c8af2d8594f6babc34e2cce5cfc0f5a8212546f7e4540bbbb3a43",
       "review_status": "pending"
     },
     {
@@ -11110,8 +11133,8 @@
       "candidate_owner": "core-extension-and-job-host",
       "role": "test-or-fixture",
       "present": true,
-      "content_sha256": "da0717d31c443fae52d5b7d383c0fbe195fa1ca7b2725556e72262012deb5a85",
-      "review_fingerprint": "da0717d31c443fae52d5b7d383c0fbe195fa1ca7b2725556e72262012deb5a85",
+      "content_sha256": "89aa5fc58d3967c258aae1f239603ed6c67d90f5b48d2b933e73448c3066804a",
+      "review_fingerprint": "89aa5fc58d3967c258aae1f239603ed6c67d90f5b48d2b933e73448c3066804a",
       "review_status": "pending"
     },
     {
@@ -11301,8 +11324,8 @@
       "candidate_owner": "mixed-requires-review",
       "role": "source",
       "present": true,
-      "content_sha256": "a2860b460214180afd926e0503ebac00ec30d6dd25a8c71454a0b543dbf5b64e",
-      "review_fingerprint": "a2860b460214180afd926e0503ebac00ec30d6dd25a8c71454a0b543dbf5b64e",
+      "content_sha256": "ebe334c1efac3ef6e6de10cf90cc81189c1df90fc61403913189006434efa536",
+      "review_fingerprint": "ebe334c1efac3ef6e6de10cf90cc81189c1df90fc61403913189006434efa536",
       "review_status": "pending"
     },
     {
@@ -11310,8 +11333,8 @@
       "candidate_owner": "mixed-requires-review",
       "role": "test-or-fixture",
       "present": true,
-      "content_sha256": "47b55c0aa8ef336a83c736a85d6a039017e9aa19d2706d712246b5a2009aebd2",
-      "review_fingerprint": "47b55c0aa8ef336a83c736a85d6a039017e9aa19d2706d712246b5a2009aebd2",
+      "content_sha256": "afb76305aa3a8f7cb7b861ce96ca1037a240332057fac7cbaab30ade34781fcb",
+      "review_fingerprint": "afb76305aa3a8f7cb7b861ce96ca1037a240332057fac7cbaab30ade34781fcb",
       "review_status": "pending"
     },
     {
@@ -11562,8 +11585,8 @@
       "candidate_owner": "prompt-skills",
       "role": "source",
       "present": true,
-      "content_sha256": "204a02fc9feb2148a5695b358c398a37db4fc0bd538f2d16da2e6d5960b1223f",
-      "review_fingerprint": "204a02fc9feb2148a5695b358c398a37db4fc0bd538f2d16da2e6d5960b1223f",
+      "content_sha256": "9bd45f229c78796362fb7b123e090e69b63944f89df0b9c9126de07a6b948be8",
+      "review_fingerprint": "9bd45f229c78796362fb7b123e090e69b63944f89df0b9c9126de07a6b948be8",
       "review_status": "pending"
     },
     {
@@ -11634,8 +11657,8 @@
       "candidate_owner": "prompt-skills",
       "role": "test-or-fixture",
       "present": true,
-      "content_sha256": "4b2a2042ca6d8c792093376180cdde0f95b22fc7acadbbb750b26172b3087e83",
-      "review_fingerprint": "4b2a2042ca6d8c792093376180cdde0f95b22fc7acadbbb750b26172b3087e83",
+      "content_sha256": "936a793eceada059c5a791bd7e310ea69885e48ace8970a7282696c56d66f72d",
+      "review_fingerprint": "936a793eceada059c5a791bd7e310ea69885e48ace8970a7282696c56d66f72d",
       "review_status": "pending"
     },
     {
@@ -11931,8 +11954,8 @@
       "candidate_owner": "core-extension-and-job-host",
       "role": "source",
       "present": true,
-      "content_sha256": "47b59a5196f68689189f394b562f2459d3a29c8a4193b7b25ff86f0cb7a5c551",
-      "review_fingerprint": "47b59a5196f68689189f394b562f2459d3a29c8a4193b7b25ff86f0cb7a5c551",
+      "content_sha256": "d05027e7e33ca849c73c637e5ea432e9ec33d3e76f43578bfbbf815e0a5d4fc7",
+      "review_fingerprint": "d05027e7e33ca849c73c637e5ea432e9ec33d3e76f43578bfbbf815e0a5d4fc7",
       "review_status": "pending"
     },
     {
@@ -12845,6 +12868,15 @@
       "review_status": "pending"
     },
     {
+      "path": "backend/pkg/extensionapi/v1/account_import.go",
+      "candidate_owner": "core-extension-and-job-host",
+      "role": "source",
+      "present": true,
+      "content_sha256": "d0481fe1f2073c19c8076961de9422885195775de4ee4df08cc220940d8414dd",
+      "review_fingerprint": "d0481fe1f2073c19c8076961de9422885195775de4ee4df08cc220940d8414dd",
+      "review_status": "pending"
+    },
+    {
       "path": "backend/pkg/extensionapi/v1/account_tools.go",
       "candidate_owner": "core-extension-and-job-host",
       "role": "source",
@@ -13250,8 +13282,8 @@
       "candidate_owner": "documentation-and-history",
       "role": "documentation",
       "present": true,
-      "content_sha256": "44ec82e76a33234f2280222a04f93fba831a0f31db459a7373bd85e3a37338d1",
-      "review_fingerprint": "44ec82e76a33234f2280222a04f93fba831a0f31db459a7373bd85e3a37338d1",
+      "content_sha256": "02602c6abdede602485b75959e3a4d8e7cbb525f82ddbb3fb8240e5e5766561f",
+      "review_fingerprint": "02602c6abdede602485b75959e3a4d8e7cbb525f82ddbb3fb8240e5e5766561f",
       "review_status": "pending"
     },
     {
@@ -16959,8 +16991,8 @@
       "candidate_owner": "account-tools",
       "role": "source",
       "present": true,
-      "content_sha256": "7dd1a1e40672ed704a877bdf90bc6170b56d750f6eb45fd68269f8f16be23634",
-      "review_fingerprint": "7dd1a1e40672ed704a877bdf90bc6170b56d750f6eb45fd68269f8f16be23634",
+      "content_sha256": "47d2d4cbd642b0b45e4ebfd483b15771d6fa848355c6375004feadf701ab3d55",
+      "review_fingerprint": "47d2d4cbd642b0b45e4ebfd483b15771d6fa848355c6375004feadf701ab3d55",
       "review_status": "pending"
     },
     {
@@ -16973,12 +17005,30 @@
       "review_status": "pending"
     },
     {
+      "path": "plugins/account-tools/policy/import.go",
+      "candidate_owner": "account-tools",
+      "role": "source",
+      "present": true,
+      "content_sha256": "e85b395dc1ec870286e8185c0fc934a9405d36fbeb4a84a9392aa28616067719",
+      "review_fingerprint": "e85b395dc1ec870286e8185c0fc934a9405d36fbeb4a84a9392aa28616067719",
+      "review_status": "pending"
+    },
+    {
+      "path": "plugins/account-tools/policy/import_test.go",
+      "candidate_owner": "account-tools",
+      "role": "test-or-fixture",
+      "present": true,
+      "content_sha256": "09def5be9b6484f2b02745b08df542fcff62e2433f9a41a33c60c5f5a7b09ae4",
+      "review_fingerprint": "09def5be9b6484f2b02745b08df542fcff62e2433f9a41a33c60c5f5a7b09ae4",
+      "review_status": "pending"
+    },
+    {
       "path": "plugins/account-tools/policy/module.go",
       "candidate_owner": "account-tools",
       "role": "source",
       "present": true,
-      "content_sha256": "69771cbd2911e0986597633d2c7dc666d08195041590ebba1cc5ec58d53aedb3",
-      "review_fingerprint": "69771cbd2911e0986597633d2c7dc666d08195041590ebba1cc5ec58d53aedb3",
+      "content_sha256": "df387df9eb2b2dbe5f8fe643eb54beecc53e0e91501bd3920d37642387c0e32a",
+      "review_fingerprint": "df387df9eb2b2dbe5f8fe643eb54beecc53e0e91501bd3920d37642387c0e32a",
       "review_status": "pending"
     },
     {

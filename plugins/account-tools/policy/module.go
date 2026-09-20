@@ -51,6 +51,15 @@ func (m *Module) Invoke(ctx context.Context, in extensionv1.Invocation) (extensi
 	}
 	var output any = map[string]bool{"valid": true}
 	switch in.Operation {
+	case "import.plan":
+		var request extensionv1.AccountImportPlanningRequest
+		if json.Unmarshal(in.Payload, &request) != nil {
+			return extensionv1.Result{}, errors.New("invalid import facts")
+		}
+		if (request.Phase != "" && request.Phase != "prepare" && request.Phase != "finalize") || (request.Phase == "finalize" && len(request.Prepared) != len(request.Items)) {
+			return extensionv1.Result{}, errors.New("invalid import phase")
+		}
+		output = planImport(request)
 	case "test.prompt":
 		var request extensionv1.TextPromptSelection
 		if json.Unmarshal(in.Payload, &request) != nil {

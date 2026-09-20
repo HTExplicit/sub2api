@@ -57,7 +57,7 @@ func (m *PluginManager) BindOperationContext(ctx context.Context, platform, acco
 		return nil, nil, err
 	}
 	runtime := registry.runtimes[id]
-	if runtime == nil || runtime.client.Exited() || !pluginDependenciesHealthy(registry.installations[id], registry, map[int64]bool{}) {
+	if runtime == nil || runtime.client == nil || runtime.client.Exited() || !pluginDependenciesHealthy(registry.installations[id], registry, map[int64]bool{}) {
 		return nil, nil, ErrExtensionOperationUnavailable
 	}
 	return m.bindHostPolicyContext(ctx, registry.installations[id], runtime)

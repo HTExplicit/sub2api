@@ -10,7 +10,7 @@
     { "id": "extensions.admin.v1", "platform": "*", "account_type": "*" },
     { "id": "extensions.ui.v1", "platform": "*", "account_type": "*" }
   ],
-  "operations": { "extensions.admin.v1": ["taxonomy.name", "taxonomy.order", "taxonomy.bulk", "taxonomy.assignment", "taxonomy.delete", "test.reasoning", "test.prompt", "test.batch"] },
+  "operations": { "extensions.admin.v1": ["taxonomy.name", "taxonomy.order", "taxonomy.bulk", "taxonomy.assignment", "taxonomy.delete", "test.reasoning", "test.prompt", "test.batch", "import.plan"] },
   "resources": [
     { "name": "import.preview", "capability": "extensions.admin.v1", "permission": "admin" },
     { "name": "import.submit", "capability": "extensions.admin.v1", "permission": "admin" },
