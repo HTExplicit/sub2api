@@ -51,7 +51,7 @@ func (m *PluginManager) InvokeCachedOperation(ctx context.Context, platform, acc
 	if runtime == nil || runtime.draining.Load() || runtime.configuring.Load() || runtime.client.Exited() || !pluginDependenciesHealthy(registry.installations[id], registry, map[int64]bool{}) {
 		return extensionv1.Result{}, ErrExtensionOperationUnavailable
 	}
-	key := in.Capability + "\x00" + in.Operation + "\x00" + strconv.FormatUint(runtime.configRevision.Load(), 10) + "\x00" + string(in.Payload)
+	key := in.Capability + "\x00" + in.Operation + "\x00" + strconv.FormatInt(in.AccountID, 10) + "\x00" + strconv.FormatUint(runtime.configRevision.Load(), 10) + "\x00" + string(in.Payload)
 	if cached, ok := runtime.catalogCache.Load(key); ok {
 		var result extensionv1.Result
 		if json.Unmarshal(cached.(json.RawMessage), &result) == nil {
@@ -93,7 +93,7 @@ func (m *PluginManager) operationOwner(platform, accountType string, in extensio
 	}
 	var selected int64
 	for id, installation := range registry.installations {
-		if !pluginHasCapability(installation, in.Capability, platform, accountType) || !slices.Contains(installation.Manifest.Operations[in.Capability], in.Operation) {
+		if !pluginHasInvocationCapability(installation, in, platform, accountType) || !slices.Contains(installation.Manifest.Operations[in.Capability], in.Operation) {
 			continue
 		}
 		if selected != 0 {
@@ -105,4 +105,19 @@ func (m *PluginManager) operationOwner(platform, accountType string, in extensio
 		return 0, nil, ErrExtensionOperationDisabled
 	}
 	return selected, registry, nil
+}
+
+func pluginHasInvocationCapability(installation *PluginInstallation, in extensionv1.Invocation, platform, accountType string) bool {
+	if !pluginHasCapability(installation, in.Capability, platform, accountType) {
+		return false
+	}
+	if in.AccountID <= 0 {
+		return true
+	}
+	for _, binding := range installation.Bindings {
+		if binding.Enabled && binding.Capability == in.Capability && pluginScopeMatches(binding.Platform, platform) && pluginScopeMatches(binding.AccountType, accountType) && int(stablePluginBucket(in.AccountID)) < binding.RolloutPercent {
+			return true
+		}
+	}
+	return false
 }

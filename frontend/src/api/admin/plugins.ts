@@ -82,6 +82,7 @@ export interface PluginInstallation {
 }
 
 export interface PluginContribution {
+  retained_controls?: boolean
   events?: string[]
   package_sha256?: string
   capability?: string

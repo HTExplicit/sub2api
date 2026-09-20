@@ -179,6 +179,8 @@ output/
 !/plugins/model-catalog/
 !/plugins/model-policy/
 !/plugins/image-tools/
+!/plugins/image-tools/scripts/
+!/plugins/image-tools/scripts/check-ui.py
 !/plugins/admin-observability/
 !/plugins/admin-observability/scripts/
 !/plugins/admin-observability/scripts/check-theme.py

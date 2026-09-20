@@ -65,7 +65,7 @@ function currentContext() {
     const value = styles.getPropertyValue(name).trim()
     if (/^--(?:ui|theme)-[a-z0-9-]+$/.test(name) && value.length <= 512 && !/url\s*\(/i.test(value)) tokens[name] = value
   }
-  return JSON.parse(JSON.stringify({ ...props.context, layout: props.inline ? 'inline' : 'page', locale: locale?.value || 'zh', theme: document.documentElement.classList.contains('dark') ? 'dark' : 'light',
+  return JSON.parse(JSON.stringify({ ...props.context, actor_id: auth.user?.id, retained_controls: contribution?.retained_controls === true, layout: props.inline ? 'inline' : 'page', locale: locale?.value || 'zh', theme: document.documentElement.classList.contains('dark') ? 'dark' : 'light',
     available: !changed && (!props.context.contribution_id || !!contribution?.available),
     unavailable_message: changed ? t('admin.plugins.uiVersionChanged') : t('admin.plugins.extensionUnavailable'),
     theme_tokens: tokens, theme_stylesheets: registry.items.filter(item => item.slot === 'theme' && item.available && item.stylesheet_url).map(item => item.stylesheet_url!) }))
@@ -103,7 +103,7 @@ async function receive(event: MessageEvent) {
     if (text) { if (message.level === 'error') app.showError(text); else if (message.level === 'success') app.showSuccess(text); else if (message.level === 'warning') app.showWarning(text); else app.showInfo(text) }
     return
   }
-  if (!['config.load', 'config.save', 'config.test', 'plugin.status', 'extension.context', 'extension.invoke', 'extension.job.submit', 'extension.job.get', 'extension.job.open', 'extension.resource', 'extension.event', 'preference.read', 'preference.write'].includes(message.type)) return
+  if (!['config.load', 'config.save', 'config.test', 'plugin.status', 'extension.context', 'extension.invoke', 'extension.job.submit', 'extension.job.get', 'extension.job.open', 'extension.resource', 'extension.event', 'preference.read', 'preference.write', 'ui.confirm', 'ui.download'].includes(message.type)) return
   const requestID = typeof message.request_id === 'string' ? message.request_id.trim() : ''
   if (!requestID || requestID.length > 128 || pending.has(requestID) || pending.size >= 32) return
   pending.set(requestID, window.setTimeout(() => { controllers.get(requestID)?.abort(); controllers.delete(requestID); pending.delete(requestID) }, 30000))
@@ -118,9 +118,21 @@ async function receive(event: MessageEvent) {
     frame.value.contentWindow.postMessage({ source: 'sub2api-plugin-host', bridge_token: current.bridge_token, type: `${message.type}.result`, request_id: requestID, ...payload }, '*')
   }
   try {
-    if (current.permission === 'user' && !['extension.context', 'extension.resource', 'extension.event', 'preference.read', 'preference.write'].includes(message.type)) throw new Error(t('admin.plugins.bridgeRejected'))
+    if (current.permission === 'user' && !['extension.context', 'extension.resource', 'extension.event', 'preference.read', 'preference.write', 'ui.confirm', 'ui.download'].includes(message.type)) throw new Error(t('admin.plugins.bridgeRejected'))
     switch (message.type) {
       case 'extension.context': reply({ ok: true, context: currentContext() }); break
+      case 'ui.confirm': {
+        if (typeof message.message !== 'string' || message.message.length > 4000) throw new Error(t('admin.plugins.bridgeRejected'))
+        reply({ ok: true, confirmed: window.confirm(message.message) }); break
+      }
+      case 'ui.download': {
+        if (!(message.blob instanceof Blob) || message.blob.size > 20 * 1024 * 1024 || !['image/png', 'image/jpeg', 'image/webp'].includes(message.blob.type) || typeof message.filename !== 'string') throw new Error(t('admin.plugins.bridgeRejected'))
+        const url = URL.createObjectURL(message.blob), link = document.createElement('a')
+        link.href = url; link.download = Array.from(message.filename as string, character => character.charCodeAt(0) < 32 ? '_' : character).join('').replace(/[\\/:*?"<>|]/g, '_').slice(0, 180)
+        document.body.append(link); link.click(); link.remove()
+        window.setTimeout(() => URL.revokeObjectURL(url), 1000)
+        reply({ ok: true }); break
+      }
       case 'extension.event': {
         const contribution = registry.items.find(item => item.plugin_id === id && item.id === props.context.contribution_id)
         if (typeof message.name !== 'string' || !contribution?.events?.includes(message.name)) throw new Error(t('admin.plugins.bridgeRejected'))
@@ -149,7 +161,7 @@ async function receive(event: MessageEvent) {
         if (generation !== version || session.value !== current) throw new Error('Plugin view closed')
         const controller = new AbortController()
         controllers.set(requestID, controller)
-        const execute = () => callPluginResource(id, current.package_sha256 || '', descriptor, message.input, controller.signal)
+        const execute = () => callPluginResource(id, current.package_sha256 || '', descriptor, message.input, controller.signal, actorID)
         const result = current.permission === 'user' ? await execute() : await stepUp.run(execute)
         reply({ ok: true, result }); break
       }

@@ -72,6 +72,7 @@
           "id": { "type": "string", "minLength": 1 },
           "capability": { "type": "string", "minLength": 1 },
           "config_flag": { "type": "string", "pattern": "^[a-z][a-z0-9_]{0,63}$" },
+          "retained_controls": { "type": "boolean" },
           "events": { "type": "array", "maxItems": 16, "items": { "type": "string", "pattern": "^[a-z][a-z0-9_-]{0,63}$" } },
           "assets": { "type": "array", "maxItems": 32, "uniqueItems": true, "items": { "type": "string", "pattern": "^ui/.+\\.woff2$" } },
           "slot": { "enum": ["admin.page", "admin.settings", "account.actions", "account.details", "account.columns", "account.test", "account.test.prompt", "group.actions", "group.details", "navigation", "theme", "usage.details", "surface"] },

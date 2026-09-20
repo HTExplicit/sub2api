@@ -273,15 +273,6 @@ func (r Registry) Query(query extensionv1.CindyCatalogQuery) (json.RawMessage, e
 			return nil, errors.New("invalid catalog argument")
 		}
 		return json.Marshal([]any{r.CindyModelHasVerifiedEndpoint(model)})
-	case "CindyModelSupportsResponsesImageBridge":
-		if len(query.Args) != 1 {
-			return nil, errors.New("invalid catalog arguments")
-		}
-		var model string
-		if json.Unmarshal(query.Args[0], &model) != nil {
-			return nil, errors.New("invalid catalog argument")
-		}
-		return json.Marshal([]any{r.CindyModelSupportsResponsesImageBridge(model)})
 	case "CindyModelUsesExplicitZeroPrice":
 		if len(query.Args) != 1 {
 			return nil, errors.New("invalid catalog arguments")

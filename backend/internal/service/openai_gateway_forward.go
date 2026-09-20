@@ -13,12 +13,34 @@ import (
 	"github.com/Wei-Shaw/sub2api/internal/pkg/logger"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/openai"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/openai_compat"
+	extensionv1 "github.com/Wei-Shaw/sub2api/pkg/extensionapi/v1"
 	"github.com/gin-gonic/gin"
 	"github.com/tidwall/gjson"
 )
 
 // Forward forwards request to OpenAI API
 func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, account *Account, body []byte) (_ *OpenAIForwardResult, forwardErr error) {
+	if account != nil && IsCindyAPIKeyAccount(account.Platform, account.Type, account.Credentials) && IsImageGenerationIntent(openAIResponsesEndpoint, gjson.GetBytes(body, "model").String(), body) {
+		bound, release, err := bindProcessExtensionContext(ctx, PlatformCindy, AccountTypeAPIKey, extensionv1.Invocation{Capability: extensionv1.CapabilityRequest, Operation: "image.responses.plan", AccountID: account.ID})
+		if err != nil {
+			c.JSON(http.StatusServiceUnavailable, gin.H{"error": gin.H{"type": "service_unavailable", "message": "Image bridge is unavailable"}})
+			return nil, err
+		}
+		defer release()
+		ctx = bound
+		resolved, err := ResolveCindyResponsesImageToolsForAccount(ctx, account, body)
+		if err != nil {
+			status, code, message := http.StatusBadRequest, "invalid_request_error", "Invalid image bridge request"
+			if errors.Is(err, ErrCindyResponsesImageToolModelNotFound) {
+				status, code, message = http.StatusNotFound, "model_not_found", "Image tool model is not supported on the Responses endpoint"
+			} else if errors.Is(err, ErrExtensionOperationDisabled) || errors.Is(err, ErrExtensionOperationUnavailable) {
+				status, code, message = http.StatusServiceUnavailable, "service_unavailable", "Image bridge is unavailable"
+			}
+			c.JSON(status, gin.H{"error": gin.H{"type": code, "message": message}})
+			return nil, err
+		}
+		body = resolved
+	}
 	pricingContext, pricingErr := CaptureCindyPricingContext(ctx, c, account)
 	if pricingErr != nil {
 		return nil, pricingErr
@@ -532,7 +554,12 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 			markDecodedModified()
 			logger.LegacyPrintf("service.openai_gateway", "[OpenAI] Normalized /responses image-only model request inbound_model=%s image_model=%s upstream_model=%s", requestView.Model, billingModel, upstreamModel)
 		}
-		if mapCindyOpenAIResponsesImageModels(decoded, account) {
+		mapped, mapErr := mapCindyOpenAIResponsesImageModels(ctx, decoded, account)
+		if mapErr != nil {
+			c.JSON(http.StatusServiceUnavailable, gin.H{"error": gin.H{"type": "service_unavailable", "message": "Image bridge is unavailable"}})
+			return nil, mapErr
+		}
+		if mapped {
 			markDecodedModified()
 			logger.LegacyPrintf("service.openai_gateway", "[OpenAI] Applied Cindy /responses image model mapping")
 		}

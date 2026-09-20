@@ -11,9 +11,23 @@
     { "id": "extensions.admin.v1", "platform": "*", "account_type": "*" }
   ],
   "dependencies": [{ "capability": "extensions.provider.v1", "platform": "cindy", "account_type": "apikey" }],
-  "operations": { "extensions.request.v1": ["image.features", "image.studio.plan", "image.studio.validate", "image.studio.models"] },
+  "operations": { "extensions.request.v1": ["image.features", "image.studio.plan", "image.studio.validate", "image.studio.models", "image.responses.plan"] },
+  "resources": [
+    { "name": "image.keys", "capability": "extensions.request.v1", "permission": "user" },
+    { "name": "image.create", "capability": "extensions.request.v1", "permission": "user" },
+    { "name": "image.jobs", "capability": "extensions.request.v1", "permission": "user" },
+    { "name": "image.job", "capability": "extensions.request.v1", "permission": "user" },
+    { "name": "image.items", "capability": "extensions.request.v1", "permission": "user" },
+    { "name": "image.cancel", "capability": "extensions.request.v1", "permission": "user" },
+    { "name": "image.retry", "capability": "extensions.request.v1", "permission": "user" },
+    { "name": "image.artifact", "capability": "extensions.request.v1", "permission": "user" },
+    { "name": "image.history.list", "capability": "extensions.request.v1", "permission": "user" },
+    { "name": "image.history.save", "capability": "extensions.request.v1", "permission": "user" },
+    { "name": "image.history.delete", "capability": "extensions.request.v1", "permission": "user" },
+    { "name": "image.history.clear", "capability": "extensions.request.v1", "permission": "user" }
+  ],
   "contributions": [
-    { "id": "image-studio", "slot": "surface", "config_flag": "studio_enabled", "permission": "user", "label": { "zh": "Image Studio", "en": "Image Studio" } },
+    { "id": "image-studio", "slot": "surface", "capability": "extensions.request.v1", "entrypoint": "ui/compiled/index.html", "retained_controls": true, "config_flag": "studio_enabled", "permission": "user", "label": { "zh": "Image Studio", "en": "Image Studio" } },
     { "id": "image-tools-settings", "slot": "admin.settings", "action": "image.describe", "entrypoint": "ui/index.html", "permission": "admin", "label": { "zh": "图像工具", "en": "Image tools" } }
   ],
   "runtimes": {},

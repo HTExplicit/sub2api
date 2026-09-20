@@ -201,16 +201,16 @@ func TestResolveStrictCindyResponsesImageTools_PreservesNonCindyAndGatesStrict(t
 	t.Parallel()
 	unknown := []byte(`{"model":"gpt-5.6-luna","tools":[{"type":"image_generation","model":"unknown-image"}]}`)
 
-	ordinary, err := resolveStrictCindyResponsesImageTools(false, unknown)
+	ordinary, err := resolveStrictCindyResponsesImageTools(context.Background(), false, unknown)
 	require.NoError(t, err)
 	require.Equal(t, unknown, ordinary)
 
-	_, err = resolveStrictCindyResponsesImageTools(true, []byte(
+	_, err = resolveStrictCindyResponsesImageTools(context.Background(), true, []byte(
 		`{"model":"gpt-5.6-luna","tools":[{"type":"image_generation","model":"gpt-image-2","n":1}]}`,
 	))
 	require.ErrorIs(t, err, service.ErrCindyResponsesImageToolModelNotFound)
 
-	_, err = resolveStrictCindyResponsesImageTools(true, unknown)
+	_, err = resolveStrictCindyResponsesImageTools(context.Background(), true, unknown)
 	require.ErrorIs(t, err, service.ErrCindyResponsesImageToolModelNotFound)
 }
 

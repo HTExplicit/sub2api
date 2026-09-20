@@ -175,11 +175,6 @@ func CindyModelHasVerifiedEndpoint(model string) bool {
 	queryCindyCatalog("CindyModelHasVerifiedEndpoint", []any{model}, []any{&out0})
 	return out0
 }
-func CindyModelSupportsResponsesImageBridge(model string) bool {
-	var out0 bool
-	queryCindyCatalog("CindyModelSupportsResponsesImageBridge", []any{model}, []any{&out0})
-	return out0
-}
 func CindyModelUsesExplicitZeroPrice(model string) bool {
 	var out0 bool
 	queryCindyCatalog("CindyModelUsesExplicitZeroPrice", []any{model}, []any{&out0})

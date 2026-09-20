@@ -43,7 +43,11 @@ func (h *PluginHandler) RegisterResource(descriptor extensionv1.ResourceDescript
 			}
 			id = parsed
 		}
-		ctx, release, err := h.manager.BindResourceContext(c.Request.Context(), id, c.GetHeader("X-Sub2API-Plugin-Package"), descriptor.ResourceGrant)
+		if descriptor.Retained && id == 0 {
+			c.Next()
+			return
+		}
+		ctx, release, err := h.manager.BindResourceContext(c.Request.Context(), id, c.GetHeader("X-Sub2API-Plugin-Package"), descriptor.ResourceGrant, descriptor.Retained)
 		if err != nil {
 			status := http.StatusServiceUnavailable
 			if errors.Is(err, service.ErrExtensionOperationDisabled) {
@@ -64,10 +68,12 @@ func (h *PluginHandler) RegisterResource(descriptor extensionv1.ResourceDescript
 			c.Abort()
 			return
 		}
-		if err = h.manager.ValidateResourceAccounts(ctx, descriptor.Capability, ids, filtered); err != nil {
-			response.Error(c, http.StatusForbidden, err.Error())
-			c.Abort()
-			return
+		if len(ids) > 0 || filtered {
+			if err = h.manager.ValidateResourceAccounts(ctx, descriptor.Capability, ids, filtered); err != nil {
+				response.Error(c, http.StatusForbidden, err.Error())
+				c.Abort()
+				return
+			}
 		}
 		c.Next()
 	}

@@ -1,12 +1,10 @@
 import { flushPromises, mount } from '@vue/test-utils'
-import { createPinia, setActivePinia, type Pinia } from 'pinia'
+import { ref } from 'vue'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import ImageStudioView from '../ImageStudioView.vue'
-import { useAuthStore } from '@/stores/auth'
-import { usePluginExtensions } from '@/stores/pluginExtensions'
-import type { User } from '@/types'
+import ImageStudioView from '../App.vue'
 
 const mocks = vi.hoisted(() => ({
+  context: null as any,
   listEligibleKeys: vi.fn(),
   createJob: vi.fn(),
   listJobs: vi.fn(),
@@ -23,7 +21,7 @@ const mocks = vi.hoisted(() => ({
   showSuccess: vi.fn(),
 }))
 
-vi.mock('@/api/imageStudio', () => ({
+vi.mock('../api', () => ({
   MAX_IMAGE_BYTES: 20 * 1024 * 1024,
   listEligibleImageStudioKeys: mocks.listEligibleKeys,
   createImageStudioJob: mocks.createJob,
@@ -35,14 +33,18 @@ vi.mock('@/api/imageStudio', () => ({
   validateImageBlob: mocks.validateImage,
   isImageStudioJobTerminal: (status: string) => ['succeeded', 'partially_succeeded', 'failed', 'canceled', 'canceled_with_results'].includes(status),
 }))
-vi.mock('@/features/image-studio/history', () => ({
+vi.mock('../history', () => ({
   listImageStudioHistory: mocks.listHistory,
   saveImageStudioHistory: mocks.saveHistory,
   deleteImageStudioHistory: mocks.deleteHistory,
   clearImageStudioHistory: mocks.clearHistory,
 }))
-vi.mock('@/stores/app', () => ({
-  useAppStore: () => ({ showError: mocks.showError, showSuccess: mocks.showSuccess }),
+vi.mock('@sub2api/plugin-ui', async () => ({
+  ...await vi.importActual<typeof import('@sub2api/plugin-ui')>('@sub2api/plugin-ui'),
+  useNotifications: () => ({ showError: mocks.showError, showSuccess: mocks.showSuccess }),
+  usePluginContext: () => mocks.context,
+  confirmAction: async (message: string) => window.confirm(message),
+  downloadBlob: vi.fn(),
 }))
 vi.mock('vue-i18n', async () => {
   const actual = await vi.importActual<typeof import('vue-i18n')>('vue-i18n')
@@ -98,16 +100,10 @@ function terminalDetail(input: Record<string, unknown> = {}) {
 }
 
 describe('ImageStudioView job workflow', () => {
-  let pinia: Pinia
 
   beforeEach(() => {
     vi.clearAllMocks()
-    pinia = createPinia()
-    setActivePinia(pinia)
-    useAuthStore().$patch({ user: { id: 42 } as User })
-    const registry = usePluginExtensions()
-    registry.loaded = true
-    registry.items = [{ id: 'image-studio', slot: 'surface', permission: 'user', plugin_id: 6, label: { en: 'Image Studio' }, available: true }]
+    mocks.context = ref({ actor_id: 42, available: true, retained_controls: true })
     Object.defineProperty(URL, 'createObjectURL', { configurable: true, value: vi.fn(() => 'blob:preview') })
     Object.defineProperty(URL, 'revokeObjectURL', { configurable: true, value: vi.fn() })
     mocks.listEligibleKeys.mockResolvedValue({
@@ -134,7 +130,6 @@ describe('ImageStudioView job workflow', () => {
   function render() {
     return mount(ImageStudioView, {
       global: {
-        plugins: [pinia],
         stubs: {
           AppLayout: { template: '<main><slot /></main>' },
           BaseDialog: { template: '<div v-if="show"><slot /></div>', props: ['show'] },
@@ -257,7 +252,7 @@ describe('ImageStudioView job workflow', () => {
     await wrapper.get('[data-testid="submit-image"]').trigger('submit')
     await flushPromises()
 
-    useAuthStore().$patch({ user: { id: 84 } as User })
+    mocks.context.value.actor_id = 84
     await flushPromises()
 
     expect(pollSignal?.aborted).toBe(true)
@@ -281,20 +276,16 @@ describe('ImageStudioView job workflow', () => {
     expect(mocks.createJob).not.toHaveBeenCalled()
   })
 
-  it('retains input during plugin failure and removes generation controls after disable', async () => {
+  it('retains input and readable history while disabling generation during failure', async () => {
     const wrapper = render()
     await selectDefaultModel(wrapper)
     await wrapper.get('[data-testid="prompt-input"]').setValue('keep this prompt')
-    const registry = usePluginExtensions()
-    registry.items = registry.items.map(item => ({ ...item, available: false }))
+    mocks.context.value.available = false
     await flushPromises()
     expect(wrapper.get('[data-testid="submit-image"]').attributes('disabled')).toBeDefined()
     expect((wrapper.get('[data-testid="prompt-input"]').element as HTMLTextAreaElement).value).toBe('keep this prompt')
-    expect(wrapper.find('[role="status"]').text()).toContain('admin.plugins.extensionUnavailable')
-    registry.items = []
-    await flushPromises()
-    expect(wrapper.find('[data-testid="submit-image"]').exists()).toBe(false)
     expect(wrapper.find('#image-studio-history-heading').exists()).toBe(true)
+    expect(wrapper.get('fieldset').attributes('disabled')).toBeDefined()
   })
 
   it('recovers after a create error and leaves the form retryable', async () => {

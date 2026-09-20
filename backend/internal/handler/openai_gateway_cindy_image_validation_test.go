@@ -245,7 +245,7 @@ func TestResponsesSelectedNonCindyPreservesNestedImageBody(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	account := cindyResponsesImageValidationAccount(false)
 	body := []byte(`{"model":"gpt-5.6-luna","input":"draw","tools":[{"type":"image_generation","model":"unknown-image","quality":"high"}],"tool_choice":{"type":"image_generation"}}`)
-	direct, err := resolveSelectedCindyResponsesImageTools(&account, body)
+	direct, err := resolveSelectedCindyResponsesImageTools(context.Background(), &account, body)
 	require.NoError(t, err)
 	require.Equal(t, body, direct)
 
@@ -267,7 +267,7 @@ func TestResponsesSelectedNonCindyPreservesNestedImageBody(t *testing.T) {
 	require.Equal(t, int32(1), atomic.LoadInt32(&concurrencyCache.releaseAccountCalled))
 }
 
-func TestCindyImageRollbackPreservesLegacyResponsesImageToolRequest(t *testing.T) {
+func TestCindyImageDisableDoesNotRestoreLegacyResponsesImageExecution(t *testing.T) {
 	tests := []struct {
 		name           string
 		catalogEnabled string
@@ -303,20 +303,14 @@ func TestCindyImageRollbackValidationHelper(t *testing.T) {
 
 	h.Responses(c)
 
-	if service.CindyResponsesImageBridgeFeatureEnabled() {
-		require.Equal(t, http.StatusNotFound, recorder.Code, recorder.Body.String())
-		require.Equal(t, "model_not_found", gjson.GetBytes(recorder.Body.Bytes(), "error.type").String())
-		require.Empty(t, upstream.snapshot())
+	require.Equal(t, http.StatusNotFound, recorder.Code, recorder.Body.String())
+	require.Equal(t, "model_not_found", gjson.GetBytes(recorder.Body.Bytes(), "error.type").String())
+	require.Empty(t, upstream.snapshot())
+	if service.CindyCapabilityCatalogFeatureEnabled() {
+		require.Zero(t, atomic.LoadInt32(&concurrencyCache.releaseAccountCalled), "strict groups reject before acquiring account capacity")
+	} else {
 		require.Equal(t, int32(1), atomic.LoadInt32(&concurrencyCache.releaseAccountCalled))
-		return
 	}
-
-	require.Equal(t, http.StatusOK, recorder.Code, recorder.Body.String())
-	calls := upstream.snapshot()
-	require.Len(t, calls, 1)
-	require.Equal(t, "unknown-image", gjson.GetBytes(calls[0], "tools.0.model").String())
-	require.Equal(t, "high", gjson.GetBytes(calls[0], "tools.0.quality").String())
-	require.Equal(t, int32(1), atomic.LoadInt32(&concurrencyCache.releaseAccountCalled))
 }
 
 func withoutCindyImageValidationEnv(environment []string) []string {

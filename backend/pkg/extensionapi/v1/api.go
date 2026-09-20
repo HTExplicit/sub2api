@@ -40,19 +40,20 @@ type Dependency struct {
 }
 
 type Contribution struct {
-	Events        []string          `json:"events,omitempty"`
-	Capability    string            `json:"capability,omitempty"`
-	Assets        []string          `json:"assets,omitempty"`
-	ConfigFlag    string            `json:"config_flag,omitempty"`
-	Fields        []FormField       `json:"fields,omitempty"`
-	AccountFilter *AccountFilter    `json:"account_filter,omitempty"`
-	ID            string            `json:"id"`
-	Slot          string            `json:"slot"`
-	Label         map[string]string `json:"label"`
-	Action        string            `json:"action,omitempty"`
-	Entrypoint    string            `json:"entrypoint,omitempty"`
-	Permission    string            `json:"permission"`
-	Order         int               `json:"order,omitempty"`
+	RetainedControls bool              `json:"retained_controls,omitempty"`
+	Events           []string          `json:"events,omitempty"`
+	Capability       string            `json:"capability,omitempty"`
+	Assets           []string          `json:"assets,omitempty"`
+	ConfigFlag       string            `json:"config_flag,omitempty"`
+	Fields           []FormField       `json:"fields,omitempty"`
+	AccountFilter    *AccountFilter    `json:"account_filter,omitempty"`
+	ID               string            `json:"id"`
+	Slot             string            `json:"slot"`
+	Label            map[string]string `json:"label"`
+	Action           string            `json:"action,omitempty"`
+	Entrypoint       string            `json:"entrypoint,omitempty"`
+	Permission       string            `json:"permission"`
+	Order            int               `json:"order,omitempty"`
 }
 
 type FormField struct {
@@ -186,6 +187,9 @@ type Invocation struct {
 	Capability string          `json:"capability"`
 	Operation  string          `json:"operation"`
 	Payload    json.RawMessage `json:"payload"`
+	// AccountID is set from the host's authorized execution target, never from
+	// a plugin UI payload. It also partitions cached policy results.
+	AccountID int64 `json:"account_id,omitempty"`
 }
 
 type Result struct {

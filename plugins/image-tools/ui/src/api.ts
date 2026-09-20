@@ -1,4 +1,4 @@
-import { apiClient } from './client'
+import { resource } from '@sub2api/plugin-ui'
 
 export type ImageStudioEndpoint = 'images.generations' | 'images.edits' | string
 export type ImageStudioMode = 'generate' | 'edit'
@@ -168,8 +168,7 @@ function parseEligibleImageStudioKey(value: unknown): EligibleImageStudioKey | n
 }
 
 export async function listEligibleImageStudioKeys(signal?: AbortSignal): Promise<EligibleImageStudioKeysResponse> {
-  const response = await apiClient.get<unknown>('/image-studio/eligible-keys', { signal })
-  const body = unwrapData(response.data)
+  const body = unwrapData(await resource<unknown>('image.keys', {}, signal))
   const items = isRecord(body) && Array.isArray(body.items)
     ? body.items.map(parseEligibleImageStudioKey).filter((item): item is EligibleImageStudioKey => item !== null)
     : []
@@ -187,37 +186,28 @@ export async function createImageStudioJob(input: CreateImageStudioJobInput): Pr
   if (input.quality) body.set('quality', input.quality)
   if (input.reference) body.set('reference', input.reference, input.referenceName || 'reference.png')
   if (input.mask) body.set('mask', input.mask, input.maskName || 'mask.png')
-  const response = await apiClient.post<ImageStudioJob>('/image-studio/jobs', body, { signal: input.signal })
-  return unwrapData(response.data) as ImageStudioJob
+  return resource<ImageStudioJob>('image.create', { form: Array.from(body.entries()) }, input.signal)
 }
 
 export async function listImageStudioJobs(signal?: AbortSignal): Promise<ImageStudioJob[]> {
-  const response = await apiClient.get<unknown>('/image-studio/jobs', { signal })
-  const body = unwrapData(response.data)
+  const body = unwrapData(await resource<unknown>('image.jobs', {}, signal))
   return isRecord(body) && Array.isArray(body.items) ? body.items as ImageStudioJob[] : []
 }
 
 export async function getImageStudioJob(jobID: number, signal?: AbortSignal): Promise<ImageStudioJobDetail> {
-  const response = await apiClient.get<ImageStudioJobDetail>(`/image-studio/jobs/${jobID}`, { signal })
-  return unwrapData(response.data) as ImageStudioJobDetail
+  return resource<ImageStudioJobDetail>('image.job', { params: { id: jobID } }, signal)
 }
 
 export async function cancelImageStudioJob(jobID: number, signal?: AbortSignal): Promise<ImageStudioJob> {
-  const response = await apiClient.post<ImageStudioJob>(`/image-studio/jobs/${jobID}/cancel`, undefined, { signal })
-  return unwrapData(response.data) as ImageStudioJob
+  return resource<ImageStudioJob>('image.cancel', { params: { id: jobID } }, signal)
 }
 
 export async function retryImageStudioJob(jobID: number, signal?: AbortSignal): Promise<ImageStudioJob> {
-  const response = await apiClient.post<ImageStudioJob>(`/image-studio/jobs/${jobID}/retry`, undefined, { signal })
-  return unwrapData(response.data) as ImageStudioJob
+  return resource<ImageStudioJob>('image.retry', { params: { id: jobID } }, signal)
 }
 
 export async function downloadImageStudioArtifact(artifact: ImageStudioArtifact, signal?: AbortSignal): Promise<Blob> {
-  const response = await apiClient.get<Blob>(`/image-studio/jobs/${artifact.job_id}/artifacts/${artifact.id}`, {
-    responseType: 'blob',
-    signal,
-  })
-  return response.data
+  return resource<Blob>('image.artifact', { params: { id: artifact.job_id, artifact_id: artifact.id } }, signal)
 }
 
 export function isImageStudioJobTerminal(status: ImageStudioJobStatus): boolean {

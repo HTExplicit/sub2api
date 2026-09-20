@@ -68,3 +68,16 @@ func TestPluginResourceAccountSelectionsRespectScopeAndRollout(t *testing.T) {
 	require.NoError(t, manager.ValidateResourceAccounts(ctx, extensionv1.CapabilityAdmin, nil, true))
 	require.Error(t, manager.ValidateResourceAccounts(ctx, extensionv1.CapabilityAdmin, []int64{-1}, true))
 }
+
+func TestRetainedPluginResourcesDoNotRequireRunningBusinessCapability(t *testing.T) {
+	grant := extensionv1.ResourceGrant{Name: "image.job", Capability: extensionv1.CapabilityRequest, Permission: "user"}
+	installation := &PluginInstallation{ID: 7, PluginKey: "codexrip.image-tools", State: PluginStateDisabled, Manifest: PluginManifest{Resources: []extensionv1.ResourceGrant{grant}}}
+	manager := NewPluginManager(&pluginTokenRepository{installation: installation}, pluginTokenEncryptor{}, nil, PluginHostInfo{}, nil)
+	_, release, err := manager.BindResourceContext(context.Background(), 7, "", grant, true)
+	require.NoError(t, err)
+	release()
+	_, _, err = manager.BindResourceContext(context.Background(), 7, "", grant)
+	require.Error(t, err)
+	_, _, err = manager.BindResourceContext(context.Background(), 7, "", extensionv1.ResourceGrant{Name: "image.create", Capability: grant.Capability, Permission: "user"}, true)
+	require.Error(t, err)
+}

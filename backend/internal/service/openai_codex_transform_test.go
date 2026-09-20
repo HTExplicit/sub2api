@@ -1,6 +1,7 @@
 package service
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"strings"
@@ -1434,7 +1435,9 @@ func TestNormalizeOpenAIResponsesImageOnlyModel_UsesOfficialControllerAndExactCi
 			"base_url": "https://api.openai.com",
 		},
 	}
-	require.False(t, mapCindyOpenAIResponsesImageModels(ordinaryBody, ordinary))
+	changed, err := mapCindyOpenAIResponsesImageModels(context.Background(), ordinaryBody, ordinary)
+	require.NoError(t, err)
+	require.False(t, changed)
 	require.Equal(t, "gpt-5.6-luna", ordinaryBody["model"])
 
 	cindyBody := map[string]any{"model": "gpt-image-2", "input": "draw"}
@@ -1449,7 +1452,9 @@ func TestNormalizeOpenAIResponsesImageOnlyModel_UsesOfficialControllerAndExactCi
 			"base_url": "https://api.laxarouter.ai",
 		},
 	}
-	require.True(t, mapCindyOpenAIResponsesImageModels(cindyBody, cindy))
+	changed, err = mapCindyOpenAIResponsesImageModels(context.Background(), cindyBody, cindy)
+	require.NoError(t, err)
+	require.True(t, changed)
 	require.Equal(t, "openai/gpt-5.6-luna", cindyBody["model"])
 }
 
@@ -1471,7 +1476,9 @@ func TestMapCindyOpenAIResponsesImageModels_MapsControllerAndNestedTool(t *testi
 		},
 	}
 
-	require.True(t, mapCindyOpenAIResponsesImageModels(reqBody, cindy))
+	changed, err := mapCindyOpenAIResponsesImageModels(context.Background(), reqBody, cindy)
+	require.NoError(t, err)
+	require.True(t, changed)
 	require.Equal(t, "openai/gpt-5.6-luna", reqBody["model"])
 	tools, ok := reqBody["tools"].([]any)
 	require.True(t, ok)
@@ -1483,7 +1490,9 @@ func TestMapCindyOpenAIResponsesImageModels_MapsControllerAndNestedTool(t *testi
 	require.Equal(t, "keep-me", functionTool["name"])
 
 	ordinary := &Account{Platform: PlatformOpenAI, Type: AccountTypeAPIKey, Credentials: map[string]any{"base_url": "https://api.openai.com"}}
-	require.False(t, mapCindyOpenAIResponsesImageModels(reqBody, ordinary))
+	changed, err = mapCindyOpenAIResponsesImageModels(context.Background(), reqBody, ordinary)
+	require.NoError(t, err)
+	require.False(t, changed)
 }
 
 func TestResolveCindyResponsesImageTools_ValidatesAndMapsBeforeSelection(t *testing.T) {

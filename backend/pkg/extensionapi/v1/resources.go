@@ -9,6 +9,8 @@ type ResourceGrant struct {
 }
 
 type ResourceDescriptor struct {
+	Retained          bool   `json:"-"`
+	ResponseKind      string `json:"response_kind,omitempty"`
 	AccountParam      string `json:"-"`
 	AccountBodyField  string `json:"-"`
 	AccountItemsField string `json:"-"`

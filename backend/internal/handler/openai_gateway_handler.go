@@ -419,19 +419,19 @@ func strictCindyResponsesImageBridgeAllowed(model string, body []byte) bool {
 	return service.CindyModelSupportsResponsesImageBridge(model)
 }
 
-func resolveStrictCindyResponsesImageTools(strict bool, body []byte) ([]byte, error) {
-	if !strict || !service.CindyResponsesImageBridgeFeatureEnabled() {
+func resolveStrictCindyResponsesImageTools(ctx context.Context, strict bool, body []byte) ([]byte, error) {
+	if !strict {
 		return body, nil
 	}
-	return service.ResolveCindyResponsesImageTools(body)
+	return service.ResolveCindyResponsesImageToolsForAccount(ctx, nil, body)
 }
 
-func resolveSelectedCindyResponsesImageTools(account *service.Account, body []byte) ([]byte, error) {
-	if !service.CindyResponsesImageBridgeFeatureEnabled() || account == nil ||
+func resolveSelectedCindyResponsesImageTools(ctx context.Context, account *service.Account, body []byte) ([]byte, error) {
+	if account == nil ||
 		!service.IsCindyAPIKeyAccount(account.Platform, account.Type, account.Credentials) {
 		return body, nil
 	}
-	return service.ResolveCindyResponsesImageTools(body)
+	return service.ResolveCindyResponsesImageToolsForAccount(ctx, account, body)
 }
 
 // isResponsesWebSocketCompositePlatform 限定 composite 分组在 Responses WebSocket
@@ -703,10 +703,12 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 		h.errorResponse(c, http.StatusNotFound, "model_not_found", "Model is not supported on the Responses endpoint")
 		return
 	}
-	body, err = resolveStrictCindyResponsesImageTools(strictCindy, body)
+	body, err = resolveStrictCindyResponsesImageTools(c.Request.Context(), strictCindy, body)
 	if err != nil {
 		if errors.Is(err, service.ErrCindyResponsesImageToolModelNotFound) {
 			h.errorResponse(c, http.StatusNotFound, "model_not_found", "Image tool model is not supported on the Responses endpoint")
+		} else if errors.Is(err, service.ErrExtensionOperationDisabled) || errors.Is(err, service.ErrExtensionOperationUnavailable) {
+			h.errorResponse(c, http.StatusServiceUnavailable, "service_unavailable", "Image bridge is unavailable")
 		} else {
 			h.errorResponse(c, http.StatusBadRequest, "invalid_request_error", err.Error())
 		}
@@ -1041,7 +1043,7 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 		// 从不可变的 canonical forwardBody 派生本次尝试 body 并整块剔除上游私有的加密
 		// reasoning item（含耦合的 id/summary），避免非透传上游 400 拒绝 Kiro reasoning 形态。
 		attemptBody := h.deriveOpenAIForwardAttemptBody(reqLog, forwardBody, account, &passthroughFailoverState)
-		attemptBody, err = resolveSelectedCindyResponsesImageTools(account, attemptBody)
+		attemptBody, err = resolveSelectedCindyResponsesImageTools(c.Request.Context(), account, attemptBody)
 		if err != nil {
 			if accountReleaseFunc != nil {
 				accountReleaseFunc()
@@ -1053,6 +1055,8 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 			h.gatewayService.ReleaseOpenAIRuntimeBreakerProbeForSelection(selection)
 			if errors.Is(err, service.ErrCindyResponsesImageToolModelNotFound) {
 				h.handleStreamingAwareError(c, http.StatusNotFound, "model_not_found", "Image tool model is not supported on the Responses endpoint", streamStarted)
+			} else if errors.Is(err, service.ErrExtensionOperationDisabled) || errors.Is(err, service.ErrExtensionOperationUnavailable) {
+				h.handleStreamingAwareError(c, http.StatusServiceUnavailable, "service_unavailable", "Image bridge is unavailable", streamStarted)
 			} else {
 				h.handleStreamingAwareError(c, http.StatusBadRequest, "invalid_request_error", err.Error(), streamStarted)
 			}

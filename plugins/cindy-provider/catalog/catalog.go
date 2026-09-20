@@ -399,19 +399,6 @@ func (r Registry) CindyModelHasVerifiedEndpoint(model string) bool {
 	return ok && len(capability.VerifiedEndpoints) > 0
 }
 
-// CindyModelSupportsResponsesImageBridge identifies the one image-only model
-// whose public Responses surface is implemented by the deterministic local
-// controller/tool rewrite. Both its public ID and exact live ID resolve here;
-// no other image model inherits this bridge.
-func (r Registry) CindyModelSupportsResponsesImageBridge(model string) bool {
-	capability, ok := r.resolveKnownCindyCapability(model)
-	return r.Images.ResponsesImageEnabled && ok &&
-		capability.PublicModel &&
-		capability.PublicID == "gpt-image-2" &&
-		capability.Kind == CindyModelKindImage &&
-		r.cindyCapabilityHasEndpoint(capability, CindyEndpointImagesGenerate)
-}
-
 // CindyModelUsesExplicitZeroPrice reports the only allowed fallback for a
 // verified Cindy capability without an authoritative public price. Callers
 // must never substitute a generic model or image price for strict Cindy traffic.

@@ -1,13 +1,13 @@
 {
   "schema_version": 3,
   "upstream_base": "aea725f2ea644d5592d0bbb1d63b607efa7e200a",
-  "basis_commit": "387b0a71b97e333071fab2042dbdfc339cce38ea",
+  "basis_commit": "6104c4aa72fe0cfd8adb72b066238fc7f2aa0711",
   "scope": "Current Sub2API downstream source and working tree. Candidate ownership does not establish completed review. Root maintenance, independent services and Worker require a separate audit.",
-  "source_digest": "988aec3833d623a5c2b55a3baedc7cb01d72c58af7722ec1331f2b0e717dc371",
+  "source_digest": "2eb21adef59979054acbd300c900e6103f7fe47d8eef79eb8a45abe8b01a0bc7",
   "digest_excludes": [
     "the inventory itself uses a derived structural fingerprint; deletions bind the upstream blob"
   ],
-  "total_paths": 2215,
+  "total_paths": 2230,
   "generated_assets_and_locks": 83,
   "review_complete": false,
   "pending_paths": [
@@ -963,6 +963,8 @@
     "backend/internal/service/plugin_extensions.go",
     "backend/internal/service/plugin_extensions_test.go",
     "backend/internal/service/plugin_host_services.go",
+    "backend/internal/service/plugin_image_bridge.go",
+    "backend/internal/service/plugin_image_bridge_test.go",
     "backend/internal/service/plugin_image_tools.go",
     "backend/internal/service/plugin_jobs.go",
     "backend/internal/service/plugin_manager.go",
@@ -1164,6 +1166,7 @@
     "backend/pkg/extensionapi/ui/context.ts",
     "backend/pkg/extensionapi/ui/errors.ts",
     "backend/pkg/extensionapi/ui/index.ts",
+    "backend/pkg/extensionapi/ui/media.ts",
     "backend/pkg/extensionapi/ui/tailwind.preset.mjs",
     "backend/pkg/extensionapi/ui/theme.css",
     "backend/pkg/extensionapi/ui/tsconfig.json",
@@ -1225,7 +1228,6 @@
     "frontend/src/api/__tests__/cindyBalanceProbe.spec.ts",
     "frontend/src/api/__tests__/client.spec.ts",
     "frontend/src/api/__tests__/downstreamStatus.spec.ts",
-    "frontend/src/api/__tests__/imageStudio.spec.ts",
     "frontend/src/api/__tests__/settings.authSourceDefaults.spec.ts",
     "frontend/src/api/accountOperationIdempotency.ts",
     "frontend/src/api/admin/__tests__/accountJobs.spec.ts",
@@ -1243,7 +1245,6 @@
     "frontend/src/api/admin/users.ts",
     "frontend/src/api/client.ts",
     "frontend/src/api/downstreamStatus.ts",
-    "frontend/src/api/imageStudio.ts",
     "frontend/src/components/AliyunCaptchaWidget.vue",
     "frontend/src/components/TurnstileWidget.vue",
     "frontend/src/components/account/AccountCapacityCell.vue",
@@ -1422,10 +1423,12 @@
     "frontend/src/components/plugins/PluginFrame.vue",
     "frontend/src/components/plugins/__tests__/ExtensionFields.spec.ts",
     "frontend/src/components/plugins/__tests__/ExtensionSlot.spec.ts",
+    "frontend/src/components/plugins/__tests__/localResources.spec.ts",
     "frontend/src/components/plugins/__tests__/preferences.spec.ts",
     "frontend/src/components/plugins/__tests__/resourceClient.spec.ts",
     "frontend/src/components/plugins/__tests__/theme.spec.ts",
     "frontend/src/components/plugins/context.ts",
+    "frontend/src/components/plugins/localResources.ts",
     "frontend/src/components/plugins/preferences.ts",
     "frontend/src/components/plugins/resourceClient.ts",
     "frontend/src/components/plugins/theme.ts",
@@ -1471,6 +1474,7 @@
     "frontend/src/features/cindy-duplicate-inventory/__tests__/CindyDuplicateInventoryPanel.spec.ts",
     "frontend/src/features/cindy-group-split/CindyGroupAuditDialog.vue",
     "frontend/src/features/cindy-group-split/__tests__/CindyGroupAuditDialog.spec.ts",
+    "frontend/src/features/image-studio/history.legacy.spec.ts",
     "frontend/src/features/image-studio/history.spec.ts",
     "frontend/src/features/image-studio/history.ts",
     "frontend/src/features/prompt-audit/PromptAuditView.vue",
@@ -1618,7 +1622,6 @@
     "frontend/src/views/user/RedeemView.vue",
     "frontend/src/views/user/StripePaymentView.vue",
     "frontend/src/views/user/SubscriptionsView.vue",
-    "frontend/src/views/user/__tests__/ImageStudioView.spec.ts",
     "frontend/src/workers/accountImport.worker.ts",
     "frontend/tailwind.config.js",
     "frontend/tsconfig.json",
@@ -1720,11 +1723,23 @@
     "plugins/image-tools/go.mod",
     "plugins/image-tools/go.sum",
     "plugins/image-tools/manifest.source.json",
+    "plugins/image-tools/policy/bridge.go",
+    "plugins/image-tools/policy/bridge_test.go",
     "plugins/image-tools/policy/module.go",
     "plugins/image-tools/policy/module_test.go",
+    "plugins/image-tools/scripts/check-ui.py",
     "plugins/image-tools/ui/assets/app.js",
     "plugins/image-tools/ui/assets/styles.css",
     "plugins/image-tools/ui/index.html",
+    "plugins/image-tools/ui/src/App.vue",
+    "plugins/image-tools/ui/src/__tests__/App.spec.ts",
+    "plugins/image-tools/ui/src/__tests__/api.spec.ts",
+    "plugins/image-tools/ui/src/api.ts",
+    "plugins/image-tools/ui/src/history.ts",
+    "plugins/image-tools/ui/src/index.html",
+    "plugins/image-tools/ui/src/locales/en.ts",
+    "plugins/image-tools/ui/src/locales/zh.ts",
+    "plugins/image-tools/ui/src/main.ts",
     "plugins/model-policy/catalog/catalog_data.go",
     "plugins/model-policy/catalog/module.go",
     "plugins/model-policy/catalog/module_test.go",
@@ -2232,17 +2247,17 @@
     "dependency-lock": 9,
     "documentation": 28,
     "generated": 68,
-    "source": 973,
-    "test-or-fixture": 673
+    "source": 984,
+    "test-or-fixture": 677
   },
   "owner_counts": {
     "operations": 42,
     "documentation-and-history": 25,
-    "mixed-requires-review": 1024,
-    "core-extension-and-job-host": 161,
+    "mixed-requires-review": 1025,
+    "core-extension-and-job-host": 166,
     "core-data-and-migrations": 21,
     "cindy-provider": 169,
-    "image-tools": 34,
+    "image-tools": 43,
     "account-tools": 70,
     "codex-runtime": 42,
     "prompt-skills": 552,
@@ -2293,7 +2308,7 @@
       "role": "documentation",
       "present": true,
       "content_sha256": null,
-      "review_fingerprint": "4144d8975bdb2c1d0aae7ce05685cc0f0813fd090497cb489ed0f1942c5e309a",
+      "review_fingerprint": "1c795b687af552a27b3edf9d38b848243b7883f3ee8b3ce7dde413b8a98106f7",
       "review_status": "reviewed",
       "decision": "generated-source",
       "owner": "operations",
@@ -2316,8 +2331,8 @@
       "candidate_owner": "documentation-and-history",
       "role": "documentation",
       "present": true,
-      "content_sha256": "59dee0e60741e7f887cfff5830c533d60e853a79e7aafac3d46471977af1cb05",
-      "review_fingerprint": "59dee0e60741e7f887cfff5830c533d60e853a79e7aafac3d46471977af1cb05",
+      "content_sha256": "de4b42797a31d2ee017132eab86926c69ee4c6f82ebbe715bd08b69cc33c1eca",
+      "review_fingerprint": "de4b42797a31d2ee017132eab86926c69ee4c6f82ebbe715bd08b69cc33c1eca",
       "review_status": "pending"
     },
     {
@@ -2496,8 +2511,8 @@
       "candidate_owner": "operations",
       "role": "source",
       "present": true,
-      "content_sha256": "f8dc705de0ab17a18dd2f192153184052db9ea856070bcb7d645cb1f5502c768",
-      "review_fingerprint": "f8dc705de0ab17a18dd2f192153184052db9ea856070bcb7d645cb1f5502c768",
+      "content_sha256": "4274a3610650e9daf74bf1f3b6449efa3e0245cddc9995dcaac1142b33d75cac",
+      "review_fingerprint": "4274a3610650e9daf74bf1f3b6449efa3e0245cddc9995dcaac1142b33d75cac",
       "review_status": "pending"
     },
     {
@@ -2595,8 +2610,8 @@
       "candidate_owner": "operations",
       "role": "source",
       "present": true,
-      "content_sha256": "e716ade506d61f351ab4d219a243bb7db6564d380fa314a678d4093dd657a037",
-      "review_fingerprint": "e716ade506d61f351ab4d219a243bb7db6564d380fa314a678d4093dd657a037",
+      "content_sha256": "c2e96c3cc54df86a4f42451ebc2da8717607664f1e74d947bbf5e6033fa2b652",
+      "review_fingerprint": "c2e96c3cc54df86a4f42451ebc2da8717607664f1e74d947bbf5e6033fa2b652",
       "review_status": "pending"
     },
     {
@@ -4091,8 +4106,8 @@
       "candidate_owner": "core-extension-and-job-host",
       "role": "source",
       "present": true,
-      "content_sha256": "8382c447c1f170e285430cdf000717dec3fa874d9faf2df453ff9252a99294e9",
-      "review_fingerprint": "8382c447c1f170e285430cdf000717dec3fa874d9faf2df453ff9252a99294e9",
+      "content_sha256": "7b64592a50b2ee6bcb1a760780b466b3e297d5d2103712adb957f382d962e5ac",
+      "review_fingerprint": "7b64592a50b2ee6bcb1a760780b466b3e297d5d2103712adb957f382d962e5ac",
       "review_status": "pending"
     },
     {
@@ -4632,8 +4647,8 @@
       "candidate_owner": "cindy-provider",
       "role": "test-or-fixture",
       "present": true,
-      "content_sha256": "9970c62a43dc166e3ad4966a9650bd4058b58faac5a69beadb05e9fdf5b9eb28",
-      "review_fingerprint": "9970c62a43dc166e3ad4966a9650bd4058b58faac5a69beadb05e9fdf5b9eb28",
+      "content_sha256": "84541361fdd672eab51aae3fa17ea7d2e2e69fe81e492e9716771b66ff3d02c5",
+      "review_fingerprint": "84541361fdd672eab51aae3fa17ea7d2e2e69fe81e492e9716771b66ff3d02c5",
       "review_status": "pending"
     },
     {
@@ -4668,8 +4683,8 @@
       "candidate_owner": "mixed-requires-review",
       "role": "source",
       "present": true,
-      "content_sha256": "e12a706a86075102d53c8747e49a3e50a2db6a7268b4476f2bf96480aa456751",
-      "review_fingerprint": "e12a706a86075102d53c8747e49a3e50a2db6a7268b4476f2bf96480aa456751",
+      "content_sha256": "c74e7c48cf15a5f5840cfba1bf658a185570749783392f9afbaaa7812463341d",
+      "review_fingerprint": "c74e7c48cf15a5f5840cfba1bf658a185570749783392f9afbaaa7812463341d",
       "review_status": "pending"
     },
     {
@@ -4677,8 +4692,8 @@
       "candidate_owner": "mixed-requires-review",
       "role": "test-or-fixture",
       "present": true,
-      "content_sha256": "0e9451171c4f74bc3dd6effdf13c0619e2d0f2ed3b02784bbae570559b93c318",
-      "review_fingerprint": "0e9451171c4f74bc3dd6effdf13c0619e2d0f2ed3b02784bbae570559b93c318",
+      "content_sha256": "7aaba47a1b0deb3af37b7398cb537ce76d10bbfbcc00e3470b21cbe6ee3d4adb",
+      "review_fingerprint": "7aaba47a1b0deb3af37b7398cb537ce76d10bbfbcc00e3470b21cbe6ee3d4adb",
       "review_status": "pending"
     },
     {
@@ -6757,8 +6772,8 @@
       "candidate_owner": "mixed-requires-review",
       "role": "source",
       "present": true,
-      "content_sha256": "fe59813a01ae718702f0546d904f1827d9e4e3dfd42c0405a61ad39d9a957360",
-      "review_fingerprint": "fe59813a01ae718702f0546d904f1827d9e4e3dfd42c0405a61ad39d9a957360",
+      "content_sha256": "5a6351ea8c236f2b55a2519948eb5d2d1bac3fa7a146c4127bca44da3d2fd7f0",
+      "review_fingerprint": "5a6351ea8c236f2b55a2519948eb5d2d1bac3fa7a146c4127bca44da3d2fd7f0",
       "review_status": "pending"
     },
     {
@@ -7630,8 +7645,8 @@
       "candidate_owner": "cindy-provider",
       "role": "source",
       "present": true,
-      "content_sha256": "be86aa67bd114cf2d122a1f8724af76aee608592fce0dfbae35594aff5553dd0",
-      "review_fingerprint": "be86aa67bd114cf2d122a1f8724af76aee608592fce0dfbae35594aff5553dd0",
+      "content_sha256": "b1501f87a64a62254e0d9c8b8c853690589f2d0a541430b7e6ae5db1be354a9d",
+      "review_fingerprint": "b1501f87a64a62254e0d9c8b8c853690589f2d0a541430b7e6ae5db1be354a9d",
       "review_status": "pending"
     },
     {
@@ -8981,8 +8996,8 @@
       "candidate_owner": "mixed-requires-review",
       "role": "source",
       "present": true,
-      "content_sha256": "08a32648df4e9cfa0ef6f5c40f03fc2a075900f2d15616c13ba7401b2ac571be",
-      "review_fingerprint": "08a32648df4e9cfa0ef6f5c40f03fc2a075900f2d15616c13ba7401b2ac571be",
+      "content_sha256": "c2181ffc7a36166108c4d25c7c27d87081c19dc07543a4ae84c6f3dfd46f7fb9",
+      "review_fingerprint": "c2181ffc7a36166108c4d25c7c27d87081c19dc07543a4ae84c6f3dfd46f7fb9",
       "review_status": "pending"
     },
     {
@@ -8999,8 +9014,8 @@
       "candidate_owner": "mixed-requires-review",
       "role": "test-or-fixture",
       "present": true,
-      "content_sha256": "0c7fe9379d48ca8f3e29aa47fefcda880f257b6b2ab2a8b54d8c6db9e7a2b9da",
-      "review_fingerprint": "0c7fe9379d48ca8f3e29aa47fefcda880f257b6b2ab2a8b54d8c6db9e7a2b9da",
+      "content_sha256": "5b236fe6c9710dee154c593237ccbf722c5f129658f25964a159d0cf633db1f4",
+      "review_fingerprint": "5b236fe6c9710dee154c593237ccbf722c5f129658f25964a159d0cf633db1f4",
       "review_status": "pending"
     },
     {
@@ -9287,8 +9302,8 @@
       "candidate_owner": "mixed-requires-review",
       "role": "source",
       "present": true,
-      "content_sha256": "6f95b4abca58f0fd55a67a68dee25fb711a518feef4bc6d5fd593cfebe13c4a5",
-      "review_fingerprint": "6f95b4abca58f0fd55a67a68dee25fb711a518feef4bc6d5fd593cfebe13c4a5",
+      "content_sha256": "4cea0c08c0a07908e4843c3314c656c0476780024ee9e4f5c024c417235550d9",
+      "review_fingerprint": "4cea0c08c0a07908e4843c3314c656c0476780024ee9e4f5c024c417235550d9",
       "review_status": "pending"
     },
     {
@@ -9899,8 +9914,8 @@
       "candidate_owner": "mixed-requires-review",
       "role": "test-or-fixture",
       "present": true,
-      "content_sha256": "63eaf3157537ccc344705dd970cf063a73fbedc8f65a601d0c4caa8280b06b8f",
-      "review_fingerprint": "63eaf3157537ccc344705dd970cf063a73fbedc8f65a601d0c4caa8280b06b8f",
+      "content_sha256": "a70d3501780c3ab418cc9b25792e28a8da371649535796ca57bf6eeb8862e390",
+      "review_fingerprint": "a70d3501780c3ab418cc9b25792e28a8da371649535796ca57bf6eeb8862e390",
       "review_status": "pending"
     },
     {
@@ -10799,8 +10814,8 @@
       "candidate_owner": "core-extension-and-job-host",
       "role": "test-or-fixture",
       "present": true,
-      "content_sha256": "336a751ef87b260a635b9cebb6fcdf9d274fedac7d55f563dbfbcb973447f229",
-      "review_fingerprint": "336a751ef87b260a635b9cebb6fcdf9d274fedac7d55f563dbfbcb973447f229",
+      "content_sha256": "d91492f3dafcfef3632e45a1a690f65a89ec56ed4cf08b97733f9c7a5370e1cd",
+      "review_fingerprint": "d91492f3dafcfef3632e45a1a690f65a89ec56ed4cf08b97733f9c7a5370e1cd",
       "review_status": "pending"
     },
     {
@@ -10817,8 +10832,8 @@
       "candidate_owner": "core-extension-and-job-host",
       "role": "source",
       "present": true,
-      "content_sha256": "4dae98dc6414b5216d625c9526993d6b0e772cac29f7c5515c2a4225b36b9a3a",
-      "review_fingerprint": "4dae98dc6414b5216d625c9526993d6b0e772cac29f7c5515c2a4225b36b9a3a",
+      "content_sha256": "a1340f204388d27f700a8fd882628f8cbe7139ac76cc97c2c6a545e12cd8fc3f",
+      "review_fingerprint": "a1340f204388d27f700a8fd882628f8cbe7139ac76cc97c2c6a545e12cd8fc3f",
       "review_status": "pending"
     },
     {
@@ -10837,6 +10852,24 @@
       "present": true,
       "content_sha256": "c9a5e1f06b770054194998ce333452200d234b5770db865359dc95f668f29c3d",
       "review_fingerprint": "c9a5e1f06b770054194998ce333452200d234b5770db865359dc95f668f29c3d",
+      "review_status": "pending"
+    },
+    {
+      "path": "backend/internal/service/plugin_image_bridge.go",
+      "candidate_owner": "core-extension-and-job-host",
+      "role": "source",
+      "present": true,
+      "content_sha256": "40d1fc0217d61b74ebff5d03610632636be8ac0280c8e4085ce70ae3043a004c",
+      "review_fingerprint": "40d1fc0217d61b74ebff5d03610632636be8ac0280c8e4085ce70ae3043a004c",
+      "review_status": "pending"
+    },
+    {
+      "path": "backend/internal/service/plugin_image_bridge_test.go",
+      "candidate_owner": "core-extension-and-job-host",
+      "role": "test-or-fixture",
+      "present": true,
+      "content_sha256": "87ac250609e488e02b9613ee890da7602b8e08acb16e399727bfad3d505c117d",
+      "review_fingerprint": "87ac250609e488e02b9613ee890da7602b8e08acb16e399727bfad3d505c117d",
       "review_status": "pending"
     },
     {
@@ -10898,8 +10931,8 @@
       "candidate_owner": "core-extension-and-job-host",
       "role": "source",
       "present": true,
-      "content_sha256": "6f40a90a340a08160d3a72d18d8b3529a131766cf9b1ffb9ca1d7a11d8cd9091",
-      "review_fingerprint": "6f40a90a340a08160d3a72d18d8b3529a131766cf9b1ffb9ca1d7a11d8cd9091",
+      "content_sha256": "02c2a6473c983fd76c45149daa47bc200f8a25c0a1e82fa5e4db0b91aff0b3f1",
+      "review_fingerprint": "02c2a6473c983fd76c45149daa47bc200f8a25c0a1e82fa5e4db0b91aff0b3f1",
       "review_status": "pending"
     },
     {
@@ -11006,8 +11039,8 @@
       "candidate_owner": "core-extension-and-job-host",
       "role": "source",
       "present": true,
-      "content_sha256": "40e5971722b86f9d3771deb66e4d182c6e35f973977106dcf70b29ae30f290fb",
-      "review_fingerprint": "40e5971722b86f9d3771deb66e4d182c6e35f973977106dcf70b29ae30f290fb",
+      "content_sha256": "1aeebcaa890477f0b40d21f05806985e9015f91e945d4e0ea9e14ccab52397fd",
+      "review_fingerprint": "1aeebcaa890477f0b40d21f05806985e9015f91e945d4e0ea9e14ccab52397fd",
       "review_status": "pending"
     },
     {
@@ -11015,8 +11048,8 @@
       "candidate_owner": "core-extension-and-job-host",
       "role": "test-or-fixture",
       "present": true,
-      "content_sha256": "28e1c3bd4cc40dfe9ff97f22a8e5b0fe9722fcfc6a8c138e7daac325d4603837",
-      "review_fingerprint": "28e1c3bd4cc40dfe9ff97f22a8e5b0fe9722fcfc6a8c138e7daac325d4603837",
+      "content_sha256": "e177c6dcb891a99e916b46b2f07149661c42a139842d0659ec7d13b0e0e3a6f8",
+      "review_fingerprint": "e177c6dcb891a99e916b46b2f07149661c42a139842d0659ec7d13b0e0e3a6f8",
       "review_status": "pending"
     },
     {
@@ -12565,8 +12598,8 @@
       "candidate_owner": "core-extension-and-job-host",
       "role": "source",
       "present": true,
-      "content_sha256": "4953efe1bbbb8fae700cc8c9cee6b1a47954c51e73070063c7bae3f472185be1",
-      "review_fingerprint": "4953efe1bbbb8fae700cc8c9cee6b1a47954c51e73070063c7bae3f472185be1",
+      "content_sha256": "a16a5b2f53f21d54617e1fea48da6aaa47437ae01e83ca9b1c4fc5667507c09d",
+      "review_fingerprint": "a16a5b2f53f21d54617e1fea48da6aaa47437ae01e83ca9b1c4fc5667507c09d",
       "review_status": "pending"
     },
     {
@@ -12646,8 +12679,17 @@
       "candidate_owner": "core-extension-and-job-host",
       "role": "source",
       "present": true,
-      "content_sha256": "1e8c391b20358f867d3e04e893acf5480192f86d16acebe4e0c9d2cc79e49a95",
-      "review_fingerprint": "1e8c391b20358f867d3e04e893acf5480192f86d16acebe4e0c9d2cc79e49a95",
+      "content_sha256": "5262137e3b0343cdb9ac363b0589be526aa15b23561559a75266b7bd673a9542",
+      "review_fingerprint": "5262137e3b0343cdb9ac363b0589be526aa15b23561559a75266b7bd673a9542",
+      "review_status": "pending"
+    },
+    {
+      "path": "backend/pkg/extensionapi/ui/media.ts",
+      "candidate_owner": "core-extension-and-job-host",
+      "role": "source",
+      "present": true,
+      "content_sha256": "d20fac8a1ea48a898ead6f18a71ad534bd2f6880efd1865bcd708755b6e90b18",
+      "review_fingerprint": "d20fac8a1ea48a898ead6f18a71ad534bd2f6880efd1865bcd708755b6e90b18",
       "review_status": "pending"
     },
     {
@@ -12691,8 +12733,8 @@
       "candidate_owner": "core-extension-and-job-host",
       "role": "source",
       "present": true,
-      "content_sha256": "d7c8597075f9ba8fc1430cf00ec8416324022872bcc8ed1aa61e381ea6b803f9",
-      "review_fingerprint": "d7c8597075f9ba8fc1430cf00ec8416324022872bcc8ed1aa61e381ea6b803f9",
+      "content_sha256": "ebc5713cf6d179998c352b20b95cc5ab1c08c9a1287bbcf6d3336ccd55f383f5",
+      "review_fingerprint": "ebc5713cf6d179998c352b20b95cc5ab1c08c9a1287bbcf6d3336ccd55f383f5",
       "review_status": "pending"
     },
     {
@@ -12799,8 +12841,8 @@
       "candidate_owner": "core-extension-and-job-host",
       "role": "source",
       "present": true,
-      "content_sha256": "6bb39fa27a58fa65305a5366c7495842d473ab50e8a36578ade9670b454171c1",
-      "review_fingerprint": "6bb39fa27a58fa65305a5366c7495842d473ab50e8a36578ade9670b454171c1",
+      "content_sha256": "8ef6af8ccf8bfb5da241c1023f2b0845b56bafe465db8abecd86697f21ee4e67",
+      "review_fingerprint": "8ef6af8ccf8bfb5da241c1023f2b0845b56bafe465db8abecd86697f21ee4e67",
       "review_status": "pending"
     },
     {
@@ -12844,8 +12886,8 @@
       "candidate_owner": "core-extension-and-job-host",
       "role": "source",
       "present": true,
-      "content_sha256": "3e5b33fe8935f87bdd3a20f7be5527e3952621607a39464ed8fa2e058c36c931",
-      "review_fingerprint": "3e5b33fe8935f87bdd3a20f7be5527e3952621607a39464ed8fa2e058c36c931",
+      "content_sha256": "b6de3d7f454cbd6fef195617b7fbc5c2ff0ccbf926a39e99e40a20a3e81e06fc",
+      "review_fingerprint": "b6de3d7f454cbd6fef195617b7fbc5c2ff0ccbf926a39e99e40a20a3e81e06fc",
       "review_status": "pending"
     },
     {
@@ -12889,8 +12931,8 @@
       "candidate_owner": "core-extension-and-job-host",
       "role": "source",
       "present": true,
-      "content_sha256": "77816ced3ddc17ab6b534517fa7a8c67eb27f6cee206db9f87fa5709755017d0",
-      "review_fingerprint": "77816ced3ddc17ab6b534517fa7a8c67eb27f6cee206db9f87fa5709755017d0",
+      "content_sha256": "4836df959a7b380c1f235731adda0eb755cd4ea2012c04dbf724bf6590b8512d",
+      "review_fingerprint": "4836df959a7b380c1f235731adda0eb755cd4ea2012c04dbf724bf6590b8512d",
       "review_status": "pending"
     },
     {
@@ -13200,15 +13242,6 @@
       "review_status": "pending"
     },
     {
-      "path": "frontend/src/api/__tests__/imageStudio.spec.ts",
-      "candidate_owner": "image-tools",
-      "role": "test-or-fixture",
-      "present": true,
-      "content_sha256": "52ff6e606c721985b0e58c849831bed8f68103bc9a57f70bc5676942f61b52d1",
-      "review_fingerprint": "52ff6e606c721985b0e58c849831bed8f68103bc9a57f70bc5676942f61b52d1",
-      "review_status": "pending"
-    },
-    {
       "path": "frontend/src/api/__tests__/settings.authSourceDefaults.spec.ts",
       "candidate_owner": "mixed-requires-review",
       "role": "test-or-fixture",
@@ -13303,8 +13336,8 @@
       "candidate_owner": "core-extension-and-job-host",
       "role": "source",
       "present": true,
-      "content_sha256": "8932db1d3db14ac54168c748b865a2730a41cd260a6e4f7189b87bd07fde1fe4",
-      "review_fingerprint": "8932db1d3db14ac54168c748b865a2730a41cd260a6e4f7189b87bd07fde1fe4",
+      "content_sha256": "df824a65d767aa0b9a19501e4262b0e5f5e23d4c31fb293288dc95b292b761ba",
+      "review_fingerprint": "df824a65d767aa0b9a19501e4262b0e5f5e23d4c31fb293288dc95b292b761ba",
       "review_status": "pending"
     },
     {
@@ -13359,15 +13392,6 @@
       "present": true,
       "content_sha256": "b1e4ff669458332648386da4d4d71df25c9ed516a6d8225d2b763b1916c5d8ed",
       "review_fingerprint": "b1e4ff669458332648386da4d4d71df25c9ed516a6d8225d2b763b1916c5d8ed",
-      "review_status": "pending"
-    },
-    {
-      "path": "frontend/src/api/imageStudio.ts",
-      "candidate_owner": "image-tools",
-      "role": "source",
-      "present": true,
-      "content_sha256": "67c318da8c5c0269de214432c8fb866f5d5f203f7ce8223829b92901e012db2f",
-      "review_fingerprint": "67c318da8c5c0269de214432c8fb866f5d5f203f7ce8223829b92901e012db2f",
       "review_status": "pending"
     },
     {
@@ -14932,8 +14956,8 @@
       "candidate_owner": "core-extension-and-job-host",
       "role": "source",
       "present": true,
-      "content_sha256": "8089c535207c498da3a3b51e9c885deb548be94ad723a5f0a0832b4fe9ac2971",
-      "review_fingerprint": "8089c535207c498da3a3b51e9c885deb548be94ad723a5f0a0832b4fe9ac2971",
+      "content_sha256": "adbb8a5b42a85e8d22d417475d6b605a4e7542193f32c598fc35506d099b48bc",
+      "review_fingerprint": "adbb8a5b42a85e8d22d417475d6b605a4e7542193f32c598fc35506d099b48bc",
       "review_status": "pending"
     },
     {
@@ -14950,8 +14974,8 @@
       "candidate_owner": "core-extension-and-job-host",
       "role": "source",
       "present": true,
-      "content_sha256": "9937fa8cff431642be4aa5df9702f5ae1662c73705da2af813317bfb3914b2be",
-      "review_fingerprint": "9937fa8cff431642be4aa5df9702f5ae1662c73705da2af813317bfb3914b2be",
+      "content_sha256": "79aff1fd3d63370be10980ca3bc4e5c68132e8667a28d5d2b86daa0818350bb2",
+      "review_fingerprint": "79aff1fd3d63370be10980ca3bc4e5c68132e8667a28d5d2b86daa0818350bb2",
       "review_status": "pending"
     },
     {
@@ -14959,8 +14983,8 @@
       "candidate_owner": "core-extension-and-job-host",
       "role": "test-or-fixture",
       "present": true,
-      "content_sha256": "d1eee9fd359eb616845b5f765b8d2b4e52a9091c112fec217dddce084d77abe2",
-      "review_fingerprint": "d1eee9fd359eb616845b5f765b8d2b4e52a9091c112fec217dddce084d77abe2",
+      "content_sha256": "c8d6bf998479434ba433312fa26ae8a78e607d49f087fe3cb12a7a7c9ae35435",
+      "review_fingerprint": "c8d6bf998479434ba433312fa26ae8a78e607d49f087fe3cb12a7a7c9ae35435",
       "review_status": "pending"
     },
     {
@@ -14970,6 +14994,15 @@
       "present": true,
       "content_sha256": "27ef36b9fbd5959b13270e9b0117752282a161102004b1b7cc7a81733120af46",
       "review_fingerprint": "27ef36b9fbd5959b13270e9b0117752282a161102004b1b7cc7a81733120af46",
+      "review_status": "pending"
+    },
+    {
+      "path": "frontend/src/components/plugins/__tests__/localResources.spec.ts",
+      "candidate_owner": "core-extension-and-job-host",
+      "role": "test-or-fixture",
+      "present": true,
+      "content_sha256": "bb8aa9770d4e00abd4e6ce8b0ef8b0b86badca867f424063e4980c73beb414cb",
+      "review_fingerprint": "bb8aa9770d4e00abd4e6ce8b0ef8b0b86badca867f424063e4980c73beb414cb",
       "review_status": "pending"
     },
     {
@@ -15009,6 +15042,15 @@
       "review_status": "pending"
     },
     {
+      "path": "frontend/src/components/plugins/localResources.ts",
+      "candidate_owner": "core-extension-and-job-host",
+      "role": "source",
+      "present": true,
+      "content_sha256": "356811a5bbf70148ca1346bfcb579b3fc0e86639fdbc03bf52b9068e56af9a5d",
+      "review_fingerprint": "356811a5bbf70148ca1346bfcb579b3fc0e86639fdbc03bf52b9068e56af9a5d",
+      "review_status": "pending"
+    },
+    {
       "path": "frontend/src/components/plugins/preferences.ts",
       "candidate_owner": "core-extension-and-job-host",
       "role": "source",
@@ -15022,8 +15064,8 @@
       "candidate_owner": "core-extension-and-job-host",
       "role": "source",
       "present": true,
-      "content_sha256": "3ef8d978278fb0f59f52f975b8aff39db521129b9c8d74c7b1c54882633b1b5e",
-      "review_fingerprint": "3ef8d978278fb0f59f52f975b8aff39db521129b9c8d74c7b1c54882633b1b5e",
+      "content_sha256": "a71fd6ab541c6cfb6ab7623683c03d596c6f069ceea33727e999e9023cb18f4f",
+      "review_fingerprint": "a71fd6ab541c6cfb6ab7623683c03d596c6f069ceea33727e999e9023cb18f4f",
       "review_status": "pending"
     },
     {
@@ -15414,6 +15456,15 @@
       "review_status": "pending"
     },
     {
+      "path": "frontend/src/features/image-studio/history.legacy.spec.ts",
+      "candidate_owner": "mixed-requires-review",
+      "role": "test-or-fixture",
+      "present": true,
+      "content_sha256": "f51f7c42b240a081c70ee365e8359393fa599cf1704747bed4925d8a3b10c132",
+      "review_fingerprint": "f51f7c42b240a081c70ee365e8359393fa599cf1704747bed4925d8a3b10c132",
+      "review_status": "pending"
+    },
+    {
       "path": "frontend/src/features/image-studio/history.spec.ts",
       "candidate_owner": "image-tools",
       "role": "test-or-fixture",
@@ -15427,8 +15478,8 @@
       "candidate_owner": "image-tools",
       "role": "source",
       "present": true,
-      "content_sha256": "7ccda05bde3f8133100df9be96cd150a25dab5e4ab0a3ab038f7d1e0601e50fa",
-      "review_fingerprint": "7ccda05bde3f8133100df9be96cd150a25dab5e4ab0a3ab038f7d1e0601e50fa",
+      "content_sha256": "51834707f79eeece32e1baac511ef55055b8b31b34f633af46be17cbe3858f40",
+      "review_fingerprint": "51834707f79eeece32e1baac511ef55055b8b31b34f633af46be17cbe3858f40",
       "review_status": "pending"
     },
     {
@@ -16680,8 +16731,8 @@
       "candidate_owner": "image-tools",
       "role": "source",
       "present": true,
-      "content_sha256": "6c4d25e6a743d853a563018fcd65ea2eaba679f4678a2e93fa4bc5467cddc5ee",
-      "review_fingerprint": "6c4d25e6a743d853a563018fcd65ea2eaba679f4678a2e93fa4bc5467cddc5ee",
+      "content_sha256": "e04da650c38e292e37fedad4c4e33c665f0cdd4bf172ae8999b14089cf05610d",
+      "review_fingerprint": "e04da650c38e292e37fedad4c4e33c665f0cdd4bf172ae8999b14089cf05610d",
       "review_status": "pending"
     },
     {
@@ -16736,15 +16787,6 @@
       "present": true,
       "content_sha256": "bc572ca9ad8a386889e1d8b7fabc433522cece6e7a8852ca96a935f129607712",
       "review_fingerprint": "bc572ca9ad8a386889e1d8b7fabc433522cece6e7a8852ca96a935f129607712",
-      "review_status": "pending"
-    },
-    {
-      "path": "frontend/src/views/user/__tests__/ImageStudioView.spec.ts",
-      "candidate_owner": "image-tools",
-      "role": "test-or-fixture",
-      "present": true,
-      "content_sha256": "ef46cd86061bac12280cea473aba66763d22f2431339d441b9767c5da37ad263",
-      "review_fingerprint": "ef46cd86061bac12280cea473aba66763d22f2431339d441b9767c5da37ad263",
       "review_status": "pending"
     },
     {
@@ -17265,8 +17307,8 @@
       "candidate_owner": "cindy-provider",
       "role": "source",
       "present": true,
-      "content_sha256": "3adadae69d5e6043ac93c84d9f5d1093b831e8f9ae3f086ac03bafba10d82749",
-      "review_fingerprint": "3adadae69d5e6043ac93c84d9f5d1093b831e8f9ae3f086ac03bafba10d82749",
+      "content_sha256": "71ce916e8a19967eec86e236219536188effe51b62ace403ebcbd10bb77f4b02",
+      "review_fingerprint": "71ce916e8a19967eec86e236219536188effe51b62ace403ebcbd10bb77f4b02",
       "review_status": "pending"
     },
     {
@@ -17310,8 +17352,8 @@
       "candidate_owner": "cindy-provider",
       "role": "source",
       "present": true,
-      "content_sha256": "8e869d5838f09ae0aee30d51e5f4c351ff81d10229a97c66c300be647b853913",
-      "review_fingerprint": "8e869d5838f09ae0aee30d51e5f4c351ff81d10229a97c66c300be647b853913",
+      "content_sha256": "acdf4cfa4ebb7f2deebe8a129e72642f9281921917b64c1e01ab566e6a7849b6",
+      "review_fingerprint": "acdf4cfa4ebb7f2deebe8a129e72642f9281921917b64c1e01ab566e6a7849b6",
       "review_status": "pending"
     },
     {
@@ -17652,8 +17694,26 @@
       "candidate_owner": "image-tools",
       "role": "source",
       "present": true,
-      "content_sha256": "9c7e694e00d4ee025fa86ed5d8757f2e61818d864ae326a1cc4a2c9a63f2f222",
-      "review_fingerprint": "9c7e694e00d4ee025fa86ed5d8757f2e61818d864ae326a1cc4a2c9a63f2f222",
+      "content_sha256": "f9d05048fb35749bdc15ff3f863dde4271146d30f1cc3c562605b7ff6f4ba1cd",
+      "review_fingerprint": "f9d05048fb35749bdc15ff3f863dde4271146d30f1cc3c562605b7ff6f4ba1cd",
+      "review_status": "pending"
+    },
+    {
+      "path": "plugins/image-tools/policy/bridge.go",
+      "candidate_owner": "image-tools",
+      "role": "source",
+      "present": true,
+      "content_sha256": "ce381fd01edfee2dda5a70e4e946e31b7a9d178a65fae259108c6f82eb974269",
+      "review_fingerprint": "ce381fd01edfee2dda5a70e4e946e31b7a9d178a65fae259108c6f82eb974269",
+      "review_status": "pending"
+    },
+    {
+      "path": "plugins/image-tools/policy/bridge_test.go",
+      "candidate_owner": "image-tools",
+      "role": "test-or-fixture",
+      "present": true,
+      "content_sha256": "14359322eaf906bd60ebc304e3401768ea364fb85894ed7b8b2632b968cb1f90",
+      "review_fingerprint": "14359322eaf906bd60ebc304e3401768ea364fb85894ed7b8b2632b968cb1f90",
       "review_status": "pending"
     },
     {
@@ -17661,8 +17721,8 @@
       "candidate_owner": "image-tools",
       "role": "source",
       "present": true,
-      "content_sha256": "5e4b046ed0e4d20a45e43f0f5fcbbb339d8b39b480c92570771e5ec0d512dec1",
-      "review_fingerprint": "5e4b046ed0e4d20a45e43f0f5fcbbb339d8b39b480c92570771e5ec0d512dec1",
+      "content_sha256": "dc0f62d461cc34a967c385f4adc8126fd4a60109be9a55d3a966e7ced327b49b",
+      "review_fingerprint": "dc0f62d461cc34a967c385f4adc8126fd4a60109be9a55d3a966e7ced327b49b",
       "review_status": "pending"
     },
     {
@@ -17672,6 +17732,15 @@
       "present": true,
       "content_sha256": "decebbb708a8e09de102b1624fea6688c495b00d1577b286aeda99d6c75f64f5",
       "review_fingerprint": "decebbb708a8e09de102b1624fea6688c495b00d1577b286aeda99d6c75f64f5",
+      "review_status": "pending"
+    },
+    {
+      "path": "plugins/image-tools/scripts/check-ui.py",
+      "candidate_owner": "image-tools",
+      "role": "source",
+      "present": true,
+      "content_sha256": "c4abf7632012d63be72bdeeea9dbdb4f19fffc445e4c7521b79fd429242ddf74",
+      "review_fingerprint": "c4abf7632012d63be72bdeeea9dbdb4f19fffc445e4c7521b79fd429242ddf74",
       "review_status": "pending"
     },
     {
@@ -17699,6 +17768,87 @@
       "present": true,
       "content_sha256": "5e13ae5390b04174e069f39b7f9a183f70b75e5ebeb97f5995686c3588b1de59",
       "review_fingerprint": "5e13ae5390b04174e069f39b7f9a183f70b75e5ebeb97f5995686c3588b1de59",
+      "review_status": "pending"
+    },
+    {
+      "path": "plugins/image-tools/ui/src/App.vue",
+      "candidate_owner": "image-tools",
+      "role": "source",
+      "present": true,
+      "content_sha256": "a2449e52da42d3e445fa9da46d8bb3fcafd8e32cd2ea6666fc27d352aac2758f",
+      "review_fingerprint": "a2449e52da42d3e445fa9da46d8bb3fcafd8e32cd2ea6666fc27d352aac2758f",
+      "review_status": "pending"
+    },
+    {
+      "path": "plugins/image-tools/ui/src/__tests__/App.spec.ts",
+      "candidate_owner": "image-tools",
+      "role": "test-or-fixture",
+      "present": true,
+      "content_sha256": "148cff185809949a545c135d74e0cc40bf7da788eac4c4f5161987b6aeac82ee",
+      "review_fingerprint": "148cff185809949a545c135d74e0cc40bf7da788eac4c4f5161987b6aeac82ee",
+      "review_status": "pending"
+    },
+    {
+      "path": "plugins/image-tools/ui/src/__tests__/api.spec.ts",
+      "candidate_owner": "image-tools",
+      "role": "test-or-fixture",
+      "present": true,
+      "content_sha256": "7aa349d04daf197eedd95fc01fc2b3801cb86d0df31186213b1aebaf2ac6af70",
+      "review_fingerprint": "7aa349d04daf197eedd95fc01fc2b3801cb86d0df31186213b1aebaf2ac6af70",
+      "review_status": "pending"
+    },
+    {
+      "path": "plugins/image-tools/ui/src/api.ts",
+      "candidate_owner": "image-tools",
+      "role": "source",
+      "present": true,
+      "content_sha256": "f6f8bb91d84582ee62f686a86c460d60de406e9373aed061223d7dcc21e4c979",
+      "review_fingerprint": "f6f8bb91d84582ee62f686a86c460d60de406e9373aed061223d7dcc21e4c979",
+      "review_status": "pending"
+    },
+    {
+      "path": "plugins/image-tools/ui/src/history.ts",
+      "candidate_owner": "image-tools",
+      "role": "source",
+      "present": true,
+      "content_sha256": "8c0337c86791dec07a5bdbeb2a18846c6ee5cbfebba85b373a0a9ff04151c1f8",
+      "review_fingerprint": "8c0337c86791dec07a5bdbeb2a18846c6ee5cbfebba85b373a0a9ff04151c1f8",
+      "review_status": "pending"
+    },
+    {
+      "path": "plugins/image-tools/ui/src/index.html",
+      "candidate_owner": "image-tools",
+      "role": "source",
+      "present": true,
+      "content_sha256": "fa31727418c2922b887d097950107b53c7c73ee850bd614de35657ef385cccac",
+      "review_fingerprint": "fa31727418c2922b887d097950107b53c7c73ee850bd614de35657ef385cccac",
+      "review_status": "pending"
+    },
+    {
+      "path": "plugins/image-tools/ui/src/locales/en.ts",
+      "candidate_owner": "image-tools",
+      "role": "source",
+      "present": true,
+      "content_sha256": "db8223e32b5c2b7e9bafcdbe5a01bbfde7a74c0c0c1772a7b7f2a09b40e8335d",
+      "review_fingerprint": "db8223e32b5c2b7e9bafcdbe5a01bbfde7a74c0c0c1772a7b7f2a09b40e8335d",
+      "review_status": "pending"
+    },
+    {
+      "path": "plugins/image-tools/ui/src/locales/zh.ts",
+      "candidate_owner": "image-tools",
+      "role": "source",
+      "present": true,
+      "content_sha256": "f200fd7c8e40d4604b7dc45bb73e45cf45a30162a61a80fe9c9067ae198893d8",
+      "review_fingerprint": "f200fd7c8e40d4604b7dc45bb73e45cf45a30162a61a80fe9c9067ae198893d8",
+      "review_status": "pending"
+    },
+    {
+      "path": "plugins/image-tools/ui/src/main.ts",
+      "candidate_owner": "image-tools",
+      "role": "source",
+      "present": true,
+      "content_sha256": "e5d0bf4cf52fd89b6ee51d1a9dd0e6f72ef9703587976e094fa1a5470043e7a6",
+      "review_fingerprint": "e5d0bf4cf52fd89b6ee51d1a9dd0e6f72ef9703587976e094fa1a5470043e7a6",
       "review_status": "pending"
     },
     {

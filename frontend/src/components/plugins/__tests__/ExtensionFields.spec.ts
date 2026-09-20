@@ -70,4 +70,16 @@ describe('declared plugin fields and surfaces', () => {
     expect(document.querySelector('[role="dialog"]')).toBeNull()
     wrapper.unmount()
   })
+
+  it('keeps declared retained controls usable during failure and removes a disabled surface', async () => {
+    const registry = usePluginExtensions()
+    registry.items = [{ id: 'image-studio', slot: 'surface', plugin_id: 9, permission: 'user', label: { en: 'Images' }, available: false, retained_controls: true }]
+    const wrapper = mount(ExtensionSurface, { props: { name: 'image-studio' }, slots: { default: '<button>history</button>' } })
+    expect(wrapper.find('[inert]').exists()).toBe(false)
+    expect(wrapper.find('button').exists()).toBe(true)
+    registry.items = []
+    await nextTick()
+    expect(wrapper.find('button').exists()).toBe(false)
+    wrapper.unmount()
+  })
 })

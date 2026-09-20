@@ -66,6 +66,16 @@ func (m *Module) Invoke(ctx context.Context, in extensionv1.Invocation) (extensi
 	switch in.Operation {
 	case "image.features":
 		output = config
+	case "image.responses.plan":
+		var request extensionv1.ImageBridgeRequest
+		if json.Unmarshal(in.Payload, &request) != nil {
+			return extensionv1.Result{}, errors.New("invalid image bridge request")
+		}
+		plan, code, message := planResponsesBridge(request, config)
+		if code != "" {
+			return extensionv1.Result{Code: code, Message: message, HTTPStatus: 400}, nil
+		}
+		output = plan
 	case "image.studio.plan", "image.studio.validate":
 		var request extensionv1.ImageStudioPlanRequest
 		if json.Unmarshal(in.Payload, &request) != nil {

@@ -1,5 +1,6 @@
 import { apiClient } from '@/api/client'
 import type { ResourceInput } from '@sub2api/plugin-ui/client'
+import { callLocalResource } from './localResources'
 
 export interface PluginResourceDescriptor {
   name: string
@@ -8,6 +9,7 @@ export interface PluginResourceDescriptor {
   method: string
   path: string
   available: boolean
+  response_kind?: 'blob'
 }
 
 export function resourceRequest(descriptor: PluginResourceDescriptor, input: ResourceInput) {
@@ -36,10 +38,15 @@ export function resourceRequest(descriptor: PluginResourceDescriptor, input: Res
   return { url, method: descriptor.method, data, params: input.query }
 }
 
-export async function callPluginResource(pluginID: number, packageSHA: string, descriptor: PluginResourceDescriptor, input: ResourceInput, signal?: AbortSignal) {
+export async function callPluginResource(pluginID: number, packageSHA: string, descriptor: PluginResourceDescriptor, input: ResourceInput, signal?: AbortSignal, actorID?: number) {
+  if (descriptor.method === 'LOCAL') {
+    if (!descriptor.available || descriptor.permission !== 'user' || !actorID || input.body !== undefined || input.form !== undefined) throw new Error('Local resource unavailable')
+    return callLocalResource(descriptor.name, actorID, input.local_data)
+  }
+  if (input.local_data !== undefined) throw new Error('Browser-local data cannot be sent to an HTTP resource')
   const request = resourceRequest(descriptor, input)
   if (input.operation_key !== undefined && !/^[a-zA-Z0-9:_-]{1,160}$/.test(input.operation_key)) throw new Error('Invalid operation identity')
-  const { data } = await apiClient.request({ ...request, signal, baseURL: '', headers: {
+  const { data } = await apiClient.request({ ...request, signal, baseURL: '', responseType: descriptor.response_kind === 'blob' ? 'blob' : 'json', headers: {
     'X-Sub2API-Plugin': String(pluginID), 'X-Sub2API-Plugin-Package': packageSHA,
     ...(input.operation_key ? { 'Idempotency-Key': input.operation_key } : {}),
     ...(request.data instanceof FormData ? { 'Content-Type': 'multipart/form-data' } : {})

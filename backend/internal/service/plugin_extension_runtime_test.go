@@ -206,6 +206,12 @@ func TestImageToolsExtensionRuntimeUsesIndependentProcess(t *testing.T) {
 	require.NoError(t, json.Unmarshal(out.Payload, &plan))
 	require.Equal(t, 1, plan.OutputPerRequest)
 	require.Equal(t, "/v1/images/generations", plan.Endpoint)
+	// Exercise the new operation through the actual process transport. Only
+	// synthetic provider metadata crosses the RPC, without any upstream client.
+	raw, _ = json.Marshal(extensionv1.ImageBridgeRequest{Stage: "validate", Model: "controller", Tools: []extensionv1.ImageBridgeTool{{Index: 0}}})
+	out, err = runtime.extension.Invoke(context.Background(), extensionv1.Invocation{Capability: extensionv1.CapabilityRequest, Operation: "image.responses.plan", AccountID: 9, Payload: raw})
+	require.NoError(t, err)
+	require.Equal(t, "image_model_not_found", out.Code)
 }
 
 func TestCindyProviderExtensionRuntimeUsesIndependentProcess(t *testing.T) {

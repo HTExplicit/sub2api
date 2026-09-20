@@ -38,3 +38,51 @@ type ImageStudioPlan struct {
 type ImageStudioCatalogRequest struct {
 	Capabilities []CindyModelCapability `json:"capabilities"`
 }
+
+// ImageBridgeValue exposes only bounded scalar control facts. Invalid values
+// never carry their original object, text, image, or prompt to the plugin.
+type ImageBridgeValue struct {
+	Present bool    `json:"present"`
+	Valid   bool    `json:"valid"`
+	Text    string  `json:"text,omitempty"`
+	Number  float64 `json:"number,omitempty"`
+}
+
+type ImageBridgeControls struct {
+	Size    ImageBridgeValue `json:"size"`
+	Quality ImageBridgeValue `json:"quality"`
+	Count   ImageBridgeValue `json:"count"`
+	Present []string         `json:"present,omitempty"`
+}
+
+type ImageBridgeTool struct {
+	Index        int                 `json:"index"`
+	Model        string              `json:"model"`
+	InvalidModel bool                `json:"invalid_model,omitempty"`
+	Controls     ImageBridgeControls `json:"controls"`
+}
+
+type ImageBridgeRequest struct {
+	Stage          string              `json:"stage"`
+	Model          string              `json:"model"`
+	Controls       ImageBridgeControls `json:"controls"`
+	Tools          []ImageBridgeTool   `json:"tools,omitempty"`
+	Capabilities   []CindyCapability   `json:"capabilities"`
+	Aliases        map[string]string   `json:"aliases,omitempty"`
+	CatalogEnabled bool                `json:"catalog_enabled"`
+}
+
+// Plans can only change model identifiers and remove the Images-only count.
+// The host validates indices and model identities before applying any change.
+type ImageBridgeModelPlan struct {
+	Index      int    `json:"index"`
+	Model      string `json:"model"`
+	StripCount bool   `json:"strip_count,omitempty"`
+}
+
+type ImageBridgePlan struct {
+	Supported  bool                   `json:"supported"`
+	Model      string                 `json:"model,omitempty"`
+	StripCount bool                   `json:"strip_count,omitempty"`
+	Tools      []ImageBridgeModelPlan `json:"tools,omitempty"`
+}

@@ -375,7 +375,7 @@ func (m *PluginManager) InvokeExtension(ctx context.Context, id int64, platform,
 		return extensionv1.Result{}, errors.New("plugin registry unavailable")
 	}
 	installation := registry.installations[id]
-	if !pluginHasCapability(installation, in.Capability, platform, accountType) {
+	if !pluginHasInvocationCapability(installation, in, platform, accountType) {
 		return extensionv1.Result{}, errors.New("plugin capability is disabled or outside its scope")
 	}
 	if !pluginDependenciesHealthy(installation, registry, map[int64]bool{}) {

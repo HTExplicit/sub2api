@@ -10,7 +10,17 @@ import (
 // Resource calls retain the original authenticated HTTP handler and middleware.
 // This gate additionally binds the call to a declared capability, package and
 // execution lifetime; compatibility routes cannot bypass a disabled plugin.
-func (m *PluginManager) BindResourceContext(ctx context.Context, id int64, expectedPackage string, resource extensionv1.ResourceGrant) (context.Context, func(), error) {
+func (m *PluginManager) BindResourceContext(ctx context.Context, id int64, expectedPackage string, resource extensionv1.ResourceGrant, retained ...bool) (context.Context, func(), error) {
+	if len(retained) > 0 && retained[0] && id > 0 {
+		installation, err := m.repo.GetByID(ctx, id)
+		if err != nil || !pluginDeclaresResource(installation, resource) {
+			return nil, nil, ErrExtensionOperationDisabled
+		}
+		if expectedPackage != "" && installation.PackageSHA256 != expectedPackage {
+			return nil, nil, ErrPluginUISessionChanged
+		}
+		return WithPluginExecution(ctx, installation), func() {}, nil
+	}
 	registry := m.extensions.Load()
 	if registry == nil || registry.unavailable != "" {
 		return nil, nil, ErrExtensionOperationUnavailable
@@ -151,14 +161,18 @@ func (m *PluginManager) ResourceDescriptors(ctx context.Context, id int64, permi
 		if descriptor.Permission != permission || !pluginDeclaresResource(installation, descriptor.ResourceGrant) {
 			continue
 		}
-		ready, known := availability[descriptor.Capability]
+		cacheKey := descriptor.Capability
+		if descriptor.Retained {
+			cacheKey += "/retained"
+		}
+		ready, known := availability[cacheKey]
 		if !known {
-			_, release, err := m.BindResourceContext(ctx, id, installation.PackageSHA256, descriptor.ResourceGrant)
+			_, release, err := m.BindResourceContext(ctx, id, installation.PackageSHA256, descriptor.ResourceGrant, descriptor.Retained)
 			ready = err == nil
 			if release != nil {
 				release()
 			}
-			availability[descriptor.Capability] = ready
+			availability[cacheKey] = ready
 		}
 		descriptor.Available = ready
 		out = append(out, descriptor)
