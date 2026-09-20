@@ -1,7 +1,7 @@
 {
   "schema_version": 3,
   "upstream_base": "aea725f2ea644d5592d0bbb1d63b607efa7e200a",
-  "basis_commit": "a784e4b37acb20b11ae26aed688be7939630b209",
+  "basis_commit": "d1b29212fcc3c18397865c11cd55602ae822f47c",
   "scope": "Current Sub2API downstream source and working tree. Candidate ownership does not establish completed review. Root maintenance, independent services and Worker require a separate audit.",
   "source_digest": "9dffaf33941d16507c8001d7be184c855bd563541b5b92c76b7640a0a77e9d40",
   "digest_excludes": [
@@ -137,9 +137,7 @@
     "backend/internal/handler/admin/openai_oauth_handler.go",
     "backend/internal/handler/admin/payment_handler_test.go",
     "backend/internal/handler/admin/plugin_contract_fixture_test.go",
-    "backend/internal/handler/admin/plugin_handler.go",
     "backend/internal/handler/admin/plugin_resources.go",
-    "backend/internal/handler/admin/plugin_update.go",
     "backend/internal/handler/admin/provider_identity_validation_test.go",
     "backend/internal/handler/admin/setting_codex_ticket_proxy.go",
     "backend/internal/handler/admin/setting_handler.go",
@@ -343,14 +341,11 @@
     "backend/internal/repository/ops_write_pressure_integration_test.go",
     "backend/internal/repository/passkey_repo.go",
     "backend/internal/repository/pgx_sqlmock_test.go",
-    "backend/internal/repository/plugin_bundle.go",
     "backend/internal/repository/plugin_bundle_integration_test.go",
     "backend/internal/repository/plugin_contract_fixture_test.go",
     "backend/internal/repository/plugin_extension_state.go",
     "backend/internal/repository/plugin_extension_state_integration_test.go",
     "backend/internal/repository/plugin_legacy_import.go",
-    "backend/internal/repository/plugin_repo.go",
-    "backend/internal/repository/plugin_update.go",
     "backend/internal/repository/plugin_update_integration_test.go",
     "backend/internal/repository/postgres_batch_insert.go",
     "backend/internal/repository/postgres_batch_insert_test.go",
@@ -386,7 +381,6 @@
     "backend/internal/server/middleware/openai_fast_policy_forwarding_test.go",
     "backend/internal/server/router.go",
     "backend/internal/server/routes/account_job_routes_test.go",
-    "backend/internal/server/routes/admin.go",
     "backend/internal/server/routes/auth.go",
     "backend/internal/server/routes/composite_platform_test.go",
     "backend/internal/server/routes/gateway.go",
@@ -782,7 +776,6 @@
     "backend/internal/service/plugin_account_import.go",
     "backend/internal/service/plugin_account_import_test.go",
     "backend/internal/service/plugin_account_tools.go",
-    "backend/internal/service/plugin_bundle.go",
     "backend/internal/service/plugin_catalog_test.go",
     "backend/internal/service/plugin_cindy.go",
     "backend/internal/service/plugin_cindy_codex.go",
@@ -800,19 +793,14 @@
     "backend/internal/service/plugin_extension_package_test.go",
     "backend/internal/service/plugin_extension_runtime_test.go",
     "backend/internal/service/plugin_extension_state.go",
-    "backend/internal/service/plugin_extensions.go",
     "backend/internal/service/plugin_extensions_test.go",
     "backend/internal/service/plugin_host_services.go",
     "backend/internal/service/plugin_jobs.go",
-    "backend/internal/service/plugin_manager.go",
-    "backend/internal/service/plugin_manifest.go",
     "backend/internal/service/plugin_observability.go",
     "backend/internal/service/plugin_observability_test.go",
     "backend/internal/service/plugin_operation.go",
-    "backend/internal/service/plugin_operation_context.go",
     "backend/internal/service/plugin_operation_context_test.go",
     "backend/internal/service/plugin_operation_test.go",
-    "backend/internal/service/plugin_package.go",
     "backend/internal/service/plugin_package_test.go",
     "backend/internal/service/plugin_prompt_fixture_test.go",
     "backend/internal/service/plugin_prompt_management.go",
@@ -821,16 +809,12 @@
     "backend/internal/service/plugin_prompt_test.go",
     "backend/internal/service/plugin_provider.go",
     "backend/internal/service/plugin_request.go",
-    "backend/internal/service/plugin_resources.go",
     "backend/internal/service/plugin_resources_test.go",
-    "backend/internal/service/plugin_runtime.go",
     "backend/internal/service/plugin_scheduling.go",
     "backend/internal/service/plugin_security_regression_test.go",
     "backend/internal/service/plugin_theme.go",
     "backend/internal/service/plugin_theme_test.go",
     "backend/internal/service/plugin_ui_session_test.go",
-    "backend/internal/service/plugin_update.go",
-    "backend/internal/service/plugin_update_contract.go",
     "backend/internal/service/plugin_update_test.go",
     "backend/internal/service/pricing_named_family_test.go",
     "backend/internal/service/pricing_service.go",
@@ -938,10 +922,6 @@
     "backend/migrations/243_codex_fingerprint_device_default.sql",
     "backend/migrations/244_codex_ticket_lifecycle.sql",
     "backend/migrations/245_codex_ticket_account_status_independent.sql",
-    "backend/migrations/246_plugin_extension_state.sql",
-    "backend/migrations/248_plugin_bundle_bootstrap.sql",
-    "backend/migrations/249_plugin_bundle_binding_intent.sql",
-    "backend/migrations/250_plugin_independent_updates.sql",
     "backend/migrations/account_credential_identity_migration_test.go",
     "backend/migrations/account_jobs_slim_migration_test.go",
     "backend/migrations/business_system_prompt_codex_skill_hybrid_migration_test.go",
@@ -4483,7 +4463,17 @@
       "present": true,
       "content_sha256": "41fdc0e342fb8804218ec70f45f20be337c597761faf1fc1492a93238c2562d0",
       "review_fingerprint": "41fdc0e342fb8804218ec70f45f20be337c597761faf1fc1492a93238c2562d0",
-      "review_status": "pending"
+      "review_status": "reviewed",
+      "decision": "core-correctness",
+      "owner": "core-extension-and-job-host",
+      "reason": "UI session creation is an ungated direct admin/user route and CreateUIAssetSession checks contribution role but not enabled binding, updating/error state or runtime generation. Existing UI token reads bind only package_sha256, so disable/error/update-in-progress can leave old tokens usable and permit new tokens while capability is stopped. Require a live enabled contribution/capability and non-updating runtime when creating UI sessions; include runtime_generation/revision in claims; reject disabled/error/updating or generation-mismatched tokens during resolve/read while retaining manifest file digest checks and role/session authorization.",
+      "evidence": [
+        "plugin_handler.go:297-329 CreateUISession/CreateUserUISession call CreateUIAssetSession directly",
+        "plugin_manager.go:980-1018 CreateUIAssetSession binds only manifest contribution/permission and package digest claims",
+        "plugin_manager.go:1021-1032 ResolveUIAssetToken checks only token expiry and package_sha256",
+        "plugin_manager.go:1079-1095 ReadUIAssetForToken/readUIAsset rechecks package digest but not state, binding or runtime generation",
+        "routes/admin.go:889 and routes/user.go UI session routes are not wrapped by RegisterResource"
+      ]
     },
     {
       "path": "backend/internal/handler/admin/plugin_resource_scope_test.go",
@@ -4517,7 +4507,14 @@
       "present": true,
       "content_sha256": "9b96521c0ed56f6c5d8a0414484e7c9a9691608c56adcc5e02446da53c84e3c2",
       "review_fingerprint": "9b96521c0ed56f6c5d8a0414484e7c9a9691608c56adcc5e02446da53c84e3c2",
-      "review_status": "pending"
+      "review_status": "reviewed",
+      "decision": "core-mechanism",
+      "owner": "core-extension-and-job-host",
+      "reason": "Admin update/follow-bundled endpoints require positive expected revision and package digest; the manager remains the authority for validation and CAS.",
+      "evidence": [
+        "plugin_update.go:12-42 bounds .s2plugin upload and passes expected revision/package digest to manager",
+        "plugin_update.go:45-63 validates follow-bundled request identity before manager call"
+      ]
     },
     {
       "path": "backend/internal/handler/admin/provider_identity_validation_test.go",
@@ -7020,7 +7017,15 @@
       "present": true,
       "content_sha256": "47d0dd64c5231aecea0806ea13a5b013b5f12c78c565e06d20f1ae8fc1d04671",
       "review_fingerprint": "47d0dd64c5231aecea0806ea13a5b013b5f12c78c565e06d20f1ae8fc1d04671",
-      "review_status": "pending"
+      "review_status": "reviewed",
+      "decision": "core-mechanism",
+      "owner": "core-extension-and-job-host",
+      "reason": "Bundle preparation serializes migration, preserves old config/bindings, disables staged bindings, records desired intent and completes atomically; pinned/user-removed decisions prevent silent reinstallation.",
+      "evidence": [
+        "plugin_bundle.go:25-94 PrepareBundledPlugin locks per plugin and preserves old policy/config/bindings or explicit user removal",
+        "plugin_bundle.go:100-139 stages disabled replacement and durable desired_bindings",
+        "plugin_bundle.go:142-176 CompleteBundledPlugin restores intent and marks bootstrap complete"
+      ]
     },
     {
       "path": "backend/internal/repository/plugin_bundle_integration_test.go",
@@ -7074,7 +7079,16 @@
       "present": true,
       "content_sha256": "7d1d54f34fcc3afad097a7bde6360a60d500d34bb37021dd59d1064fce30ee44",
       "review_fingerprint": "7d1d54f34fcc3afad097a7bde6360a60d500d34bb37021dd59d1064fce30ee44",
-      "review_status": "pending"
+      "review_status": "reviewed",
+      "decision": "core-mechanism",
+      "owner": "core-extension-and-job-host",
+      "reason": "Delete, enable, health, state, config and binding mutations all use binary/state/revision/generation predicates; disabled deletion is blocked while updating/enabled or bindings remain enabled.",
+      "evidence": [
+        "plugin_repo.go:146-169 Delete excludes starting/enabled/updating and enabled bindings",
+        "plugin_repo.go:190-230 MarkRuntimeHealthy/UpdateState fence state and runtime generation",
+        "plugin_repo.go:233-250 UpdateConfig uses revision/package/state CAS",
+        "plugin_repo.go:253-304 UpdateBindingsAndState updates revision, intent and cancellation transactionally"
+      ]
     },
     {
       "path": "backend/internal/repository/plugin_update.go",
@@ -7083,7 +7097,15 @@
       "present": true,
       "content_sha256": "1a028b6c2cea54105eb1609ddd6826a53e715c2fd76ebf673292ea37ecfcf6de",
       "review_fingerprint": "1a028b6c2cea54105eb1609ddd6826a53e715c2fd76ebf673292ea37ecfcf6de",
-      "review_status": "pending"
+      "review_status": "reviewed",
+      "decision": "core-mechanism",
+      "owner": "core-extension-and-job-host",
+      "reason": "Commit uses an exclusive advisory transaction lock, source revision/runtime generation/package digest predicates, preserves binding intent and increments runtime_generation atomically.",
+      "evidence": [
+        "plugin_update.go:117-175 CommitPluginUpdate locks the runtime, verifies updating/source generation/package and replaces package/bindings in one transaction",
+        "plugin_update.go:162-174 deletes pending artifact only after successful replacement",
+        "plugin_update.go:177-190 policy change is revision/digest CAS guarded"
+      ]
     },
     {
       "path": "backend/internal/repository/plugin_update_integration_test.go",
@@ -7442,7 +7464,15 @@
       "present": true,
       "content_sha256": "d5986108f011b24f1b588e81eba7360175d5214c8007c8431f3e447f33d08562",
       "review_fingerprint": "d5986108f011b24f1b588e81eba7360175d5214c8007c8431f3e447f33d08562",
-      "review_status": "pending"
+      "review_status": "reviewed",
+      "decision": "core-mechanism",
+      "owner": "mixed-requires-review",
+      "reason": "Update/enable/disable/delete/config/test actions are step-up gated, but plugin UI session creation bypasses the resource gate and relies on manager/session checks that currently omit binding/state.",
+      "evidence": [
+        "routes/admin.go:878-889 update/follow/enable/disable/delete/config/test use admin routes and step-up where mutating",
+        "routes/admin.go:889 registers plugins/:id/ui-session directly",
+        "routes/admin.go:25 exposes token asset serving independently from plugin resource capability"
+      ]
     },
     {
       "path": "backend/internal/server/routes/auth.go",
@@ -11958,7 +11988,16 @@
       "present": true,
       "content_sha256": "2f4b824c046fb7f827ba632c7ac88cdaf56a463615cc74c0934ba2c16638c14e",
       "review_fingerprint": "2f4b824c046fb7f827ba632c7ac88cdaf56a463615cc74c0934ba2c16638c14e",
-      "review_status": "pending"
+      "review_status": "reviewed",
+      "decision": "core-mechanism",
+      "owner": "core-extension-and-job-host",
+      "reason": "Bundled plugin bootstrap is image-local, fixed publisher/host-version/digest checked, idempotent by bundle digest, and respects user_removed/pinned state.",
+      "evidence": [
+        "plugin_bundle.go:47-88 rejects missing/mismatched host version or publisher",
+        "plugin_bundle.go:99-138 validates bundle entry paths, regular files and digests",
+        "plugin_bundle.go:140-160 handles completed bundle replacement through staged update",
+        "plugin_bundle.go:163-212 preserves migration seed, intent and completion journal"
+      ]
     },
     {
       "path": "backend/internal/service/plugin_catalog_test.go",
@@ -12230,7 +12269,15 @@
       "present": true,
       "content_sha256": "fc1b4da11bf80890c8004cb4d40de4bee6e2f892214eb1e45222db63bac79280",
       "review_fingerprint": "fc1b4da11bf80890c8004cb4d40de4bee6e2f892214eb1e45222db63bac79280",
-      "review_status": "pending"
+      "review_status": "reviewed",
+      "decision": "core-mechanism",
+      "owner": "core-extension-and-job-host",
+      "reason": "Operation owner selection fails closed on overlap and dependency failure; public contributions hide unavailable/disabled entries while preserving the intended capability scope.",
+      "evidence": [
+        "plugin_extensions.go:operation registry rejects overlapping enabled operation owners and capability conflicts",
+        "plugin_extensions.go:pluginDependenciesHealthy checks runtime/dependency health before invocation",
+        "plugin_extensions.go:Contributions/PublicContributions calculate availability and do not expose admin operations publicly"
+      ]
     },
     {
       "path": "backend/internal/service/plugin_extensions_test.go",
@@ -12314,7 +12361,18 @@
       "present": true,
       "content_sha256": "45e092304a9940230a678370321663aff1255bcd4c9027c67eb585bf99647d27",
       "review_fingerprint": "45e092304a9940230a678370321663aff1255bcd4c9027c67eb585bf99647d27",
-      "review_status": "pending"
+      "review_status": "reviewed",
+      "decision": "core-mechanism",
+      "owner": "core-extension-and-job-host",
+      "reason": "The manager serializes update operations, pauses only the target runtime, resumes updating rows on reconciliation, and rejects stale runtime/config state. The pending-resume validation gap is recorded against plugin_update.go rather than duplicated here.",
+      "evidence": [
+        "plugin_manager.go:286-318 reconcileOnce resumes updating rows before publishing the extension registry",
+        "plugin_manager.go:381-456 reconcilePlugin rechecks runtime identity/config and marks health only after a fresh process",
+        "plugin_manager.go:474-500 detach/publish unavailable routes drain all relevant runtimes",
+        "plugin_manager.go:544-590 cleans local files whose persisted package identity is gone or replaced",
+        "plugin_manager.go:629-731 Enable uses revision/binding checks and a fresh runtime before publication",
+        "plugin_manager.go:733-806 Disable/Delete enforce capability state and drain/remove only the target plugin"
+      ]
     },
     {
       "path": "backend/internal/service/plugin_manifest.go",
@@ -12323,7 +12381,15 @@
       "present": true,
       "content_sha256": "6cbe687cf7cc784ea6625574e5f8a83c8405b084829dd7b0374697c7bba3ab03",
       "review_fingerprint": "6cbe687cf7cc784ea6625574e5f8a83c8405b084829dd7b0374697c7bba3ab03",
-      "review_status": "pending"
+      "review_status": "reviewed",
+      "decision": "core-mechanism",
+      "owner": "core-extension-and-job-host",
+      "reason": "Manifest validation constrains versions, capabilities, operations, resources, contributions, paths and account scopes before a process can be trusted.",
+      "evidence": [
+        "plugin_manifest.go:ValidateForRuntime validates protocol/transport/UI/extension versions",
+        "plugin_manifest.go:operations/resources/contribution checks prevent undeclared or unsafe capability claims",
+        "plugin_manifest.go:package files and runtime paths are constrained to declared safe entries"
+      ]
     },
     {
       "path": "backend/internal/service/plugin_observability.go",
@@ -12359,7 +12425,14 @@
       "present": true,
       "content_sha256": "2ff4fe556c1c8af2d8594f6babc34e2cce5cfc0f5a8212546f7e4540bbbb3a43",
       "review_fingerprint": "2ff4fe556c1c8af2d8594f6babc34e2cce5cfc0f5a8212546f7e4540bbbb3a43",
-      "review_status": "pending"
+      "review_status": "reviewed",
+      "decision": "core-mechanism",
+      "owner": "core-extension-and-job-host",
+      "reason": "Host operation contexts bind the active plugin runtime, generation and shared lease; plugin replacement cancels policy contexts while cleanup retains the host lease until release.",
+      "evidence": [
+        "plugin_operation_context.go:54-85 BindOperationContext/bindHostPolicyContext starts in-flight tracking and PluginRuntimeLocker lease",
+        "plugin_operation_context.go:88-130 bindPolicyContext and beginDrain propagate replacement cancellation"
+      ]
     },
     {
       "path": "backend/internal/service/plugin_operation_context_test.go",
@@ -12386,7 +12459,15 @@
       "present": true,
       "content_sha256": "25675b00dffa0e735a304f25b6503f8480f95536fc24484299609fce2bf34b30",
       "review_fingerprint": "25675b00dffa0e735a304f25b6503f8480f95536fc24484299609fce2bf34b30",
-      "review_status": "pending"
+      "review_status": "reviewed",
+      "decision": "core-mechanism",
+      "owner": "core-extension-and-job-host",
+      "reason": "Upload/extraction uses bounded archive/file counts, safe paths, no symlinks, signed manifest and content hashes, and creates immutable installation/artifact paths before repository registration.",
+      "evidence": [
+        "plugin_package.go:62-187 bounds upload, extracts to staging, atomically renames install/artifact paths and returns package/binary digests",
+        "plugin_package.go:194-260 validates ZIP entries, manifest declarations, runtime files and signatures",
+        "plugin_package.go:292+ verifies publisher signature and trusted publisher identity"
+      ]
     },
     {
       "path": "backend/internal/service/plugin_package_test.go",
@@ -12467,7 +12548,15 @@
       "present": true,
       "content_sha256": "46c03d1f8bf48a02a44641217a226555f6fd6108165d0f396ddc25e611af3988",
       "review_fingerprint": "46c03d1f8bf48a02a44641217a226555f6fd6108165d0f396ddc25e611af3988",
-      "review_status": "pending"
+      "review_status": "reviewed",
+      "decision": "core-mechanism",
+      "owner": "core-extension-and-job-host",
+      "reason": "Resource calls check declared capability, package session, updating state, runtime identity, dependency health, account scope and shared host lease before reaching the original handler.",
+      "evidence": [
+        "plugin_resources.go:13-79 BindResourceContext rejects disabled/updating/stale package/runtime and binds host policy context",
+        "plugin_resources.go:93-150 ValidateResourceAccounts enforces explicit or all-account scope and rollout",
+        "plugin_resources.go:153-190 ResourceDescriptors includes all-accounts in availability caching and validates the bound resource"
+      ]
     },
     {
       "path": "backend/internal/service/plugin_resources_test.go",
@@ -12485,7 +12574,16 @@
       "present": true,
       "content_sha256": "501d626084246a480354d96b8240678c2e3a9c978757d3ed9a78b6a4dcde2fb5",
       "review_fingerprint": "501d626084246a480354d96b8240678c2e3a9c978757d3ed9a78b6a4dcde2fb5",
-      "review_status": "pending"
+      "review_status": "reviewed",
+      "decision": "core-mechanism",
+      "owner": "core-extension-and-job-host",
+      "reason": "Runtime requests are counted, draining cancels policy contexts, configuration apply cancels old policy contexts, and host process checksums are enforced before startup.",
+      "evidence": [
+        "plugin_runtime.go:beginRequest/finishRequest/drain/kill fence in-flight work during replacement",
+        "plugin_runtime.go:validateAndApplyConfig normalizes bounded config and clears catalog cache on revision change",
+        "plugin_runtime.go:bindPolicyContext creates cancellation signals consumed by host IO",
+        "plugin_runtime.go:startPluginRuntime uses package checksum and brokered host services"
+      ]
     },
     {
       "path": "backend/internal/service/plugin_scheduling.go",
@@ -12539,7 +12637,15 @@
       "present": true,
       "content_sha256": "28a69a3cb3e405c4f37fa65ed3d7296e75e82a6ca6120e4f955d763cd2cfd5f9",
       "review_fingerprint": "28a69a3cb3e405c4f37fa65ed3d7296e75e82a6ca6120e4f955d763cd2cfd5f9",
-      "review_status": "pending"
+      "review_status": "reviewed",
+      "decision": "core-correctness",
+      "owner": "core-extension-and-job-host",
+      "reason": "Initial staging calls validatePluginCandidate, but restart/resume installs the pending artifact and commits it after only identity/compatibility checks. Run the same candidate validation after pending artifact installation and identity/config assignment, before CommitPluginUpdate. Keep the staged host with no credentials/outbound host capability, and retain advisory-lease drain/CAS behavior. A failed validation must not commit the pending generation.",
+      "evidence": [
+        "plugin_update.go:32-61 validates candidate process/config/health with stagedPluginHost",
+        "plugin_update.go:109-137 stagePluginReplacement calls validatePluginCandidate before StagePluginUpdate",
+        "plugin_update.go:163-204 resumePluginUpdate calls installer.Install, checks PluginKey/Compatibility, then CommitPluginUpdate without validatePluginCandidate"
+      ]
     },
     {
       "path": "backend/internal/service/plugin_update_contract.go",
@@ -12548,7 +12654,15 @@
       "present": true,
       "content_sha256": "cbcfc7c22ef68070e4bc285a934c6d1ca07654b7398e83ac2218fceecaaa355b",
       "review_fingerprint": "cbcfc7c22ef68070e4bc285a934c6d1ca07654b7398e83ac2218fceecaaa355b",
-      "review_status": "pending"
+      "review_status": "reviewed",
+      "decision": "core-mechanism",
+      "owner": "core-extension-and-job-host",
+      "reason": "The independent update port exposes explicit updating state, a pending artifact, generation-bound plugin execution context, revision context and a shared runtime locker.",
+      "evidence": [
+        "plugin_update_contract.go:8-27 defines updating state, policies, pending/commit/CAS ports and PluginRuntimeLocker",
+        "plugin_update_contract.go:32-49 execution and expected-revision values are host-authenticated context, not plugin payload fields",
+        "plugin_update_contract.go:52-65 replacement bindings preserve existing capability intent and disable newly declared capabilities"
+      ]
     },
     {
       "path": "backend/internal/service/plugin_update_test.go",
@@ -13787,7 +13901,13 @@
       "present": true,
       "content_sha256": "30186f02799048b584259095d470e55df7bb5aa8d7ff7063e7a9e9d07642772d",
       "review_fingerprint": "30186f02799048b584259095d470e55df7bb5aa8d7ff7063e7a9e9d07642772d",
-      "review_status": "pending"
+      "review_status": "reviewed",
+      "decision": "core-mechanism",
+      "owner": "core-extension-and-job-host",
+      "reason": "State and lease tables are namespaced and revisioned, with expiry and generation fields suitable for durable plugin state/lease fences.",
+      "evidence": [
+        "246_plugin_extension_state.sql:8-28 state primary key/revision and lease primary key/generation/expiry"
+      ]
     },
     {
       "path": "backend/migrations/247_account_quota_estimates.sql",
@@ -13813,7 +13933,13 @@
       "present": true,
       "content_sha256": "2581aa2f9829c844ed75dba4d10de0dec4b9f4b12e72ae1d2143f3806ef8217b",
       "review_fingerprint": "2581aa2f9829c844ed75dba4d10de0dec4b9f4b12e72ae1d2143f3806ef8217b",
-      "review_status": "pending"
+      "review_status": "reviewed",
+      "decision": "core-mechanism",
+      "owner": "core-extension-and-job-host",
+      "reason": "Bootstrap journal records bundle digest, migration profile, desired enable state, completion, state import and user removal across restarts.",
+      "evidence": [
+        "248_plugin_bundle_bootstrap.sql:1-9 persistent bootstrap intent/completion/user_removed fields"
+      ]
     },
     {
       "path": "backend/migrations/249_plugin_bundle_binding_intent.sql",
@@ -13822,7 +13948,13 @@
       "present": true,
       "content_sha256": "0ab3745dca07ecacd72a8b70597e5c2e8cb2918c7854d4a9c19371bb8a49c602",
       "review_fingerprint": "0ab3745dca07ecacd72a8b70597e5c2e8cb2918c7854d4a9c19371bb8a49c602",
-      "review_status": "pending"
+      "review_status": "reviewed",
+      "decision": "core-mechanism",
+      "owner": "mixed-requires-review",
+      "reason": "Per-capability desired_bindings is constrained to a JSON array and supports restoring explicit activation intent during a bundle replacement.",
+      "evidence": [
+        "249_plugin_bundle_binding_intent.sql:1-6 desired_bindings schema constraint"
+      ]
     },
     {
       "path": "backend/migrations/250_plugin_independent_updates.sql",
@@ -13831,7 +13963,14 @@
       "present": true,
       "content_sha256": "0bc14303185d14a8ef3d06103a6a432f52eca22bf6fa41edf1526c817a35703a",
       "review_fingerprint": "0bc14303185d14a8ef3d06103a6a432f52eca22bf6fa41edf1526c817a35703a",
-      "review_status": "pending"
+      "review_status": "reviewed",
+      "decision": "core-mechanism",
+      "owner": "mixed-requires-review",
+      "reason": "The schema supplies updating state, revision, runtime_generation, package digest, update policy and one pending artifact row; the source resume path must still re-run candidate process validation before committing that row.",
+      "evidence": [
+        "250_plugin_independent_updates.sql:1-29 updating state, package/revision/generation and pending artifact",
+        "250_plugin_independent_updates.sql:31-44 revision trigger increments on desired state/runtime generation changes"
+      ]
     },
     {
       "path": "backend/migrations/account_credential_identity_migration_test.go",
