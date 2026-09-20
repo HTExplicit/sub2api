@@ -81,9 +81,13 @@ go -C backend run ./cmd/package-plugin `
   -key-id local-model-policy-test
 ```
 
-安装时在 `plugins.trusted_publishers` 中配置对应的 `key_id` 和生成命令输出的公钥。镜像内置包的公钥随固定镜像发布；bootstrap 账本保证已完成迁移不因重启再次应用。
+第三方开发包在 `plugins.trusted_publishers` 中配置自己的 `key_id` 和公钥。正式 Codexrip 公钥唯一保存在 `backend/pkg/extensionapi/v1/publisher.json`，宿主内置该信任身份，配置不能覆盖；私钥位于 GitHub Secret `SUB2API_PLUGIN_SIGNING_KEY`。`go run .github/scripts/initialize_plugin_publisher.go` 只检查当前配置，显式 `-initialize` 也拒绝替换已经存在的密钥。
 
-集合打包使用 `-bundle-source`、`-binary-dir` 和新的空输出目录。Docker 与 `.github/scripts/test_first_party_plugins.sh` 使用相同集合。正式发布从最终源码重建全部程序和资源，开发目录中的旧二进制不能作为正式发布物。
+集合打包使用 `-bundle-source`、`-binary-dir` 和新的空输出目录；`-plugin-domain` 只选择清单中的一个域。`-build-binaries` 从各 manifest 读取独立版本，并注入程序版本；`-verify-bundle` 复用生产签名、文件和目标平台校验，不执行程序。`-source-revision` 把完整源码提交写入签名清单。构建程序时不传签名密钥，签名步骤只运行已构建的打包器。
+
+Downstream Release 先生成 `deploy/plugin-bundle/current`，正式 Docker 阶段校验后原样复制这些包；同一份包与锁清单作为 Release 附件发布。默认候选镜像使用合成开发签名，正式 Codexrip 宿主拒绝开发发布者。开发目录中的旧二进制不用于发布。
+
+Independent Plugin Release 接受不可变 `plugins/<域名>/v<版本>` 标签和已发布宿主标签，只构建所选域。它要求已通过主分支检查的宿主实现与所选宿主 Release 相同（测试源码除外），才能复用其验证结果；需要新宿主接口时先发布宿主。发布不覆盖同名 Release，安装也拒绝同版本不同包。
 
 ## 更新单个插件
 

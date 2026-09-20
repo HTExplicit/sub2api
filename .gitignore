@@ -182,3 +182,4 @@ output/
 /plugins/*/node_modules/
 /plugins/*/*.s2plugin
 /plugins/**/*.key
+/deploy/plugin-bundle/current/

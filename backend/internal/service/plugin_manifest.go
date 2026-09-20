@@ -32,20 +32,21 @@ var ErrPluginStateChanged = errors.New("插件状态已在其他实例中变化�
 
 // PluginManifest 是 .s2plugin 包中可在执行二进制前检查的声明。
 type PluginManifest struct {
-	SchemaVersion int                        `json:"schema_version"`
-	ID            string                     `json:"id"`
-	Name          string                     `json:"name"`
-	Version       string                     `json:"version"`
-	Description   string                     `json:"description,omitempty"`
-	Author        string                     `json:"author,omitempty"`
-	Requires      PluginRequirements         `json:"requires"`
-	Capabilities  []PluginCapability         `json:"capabilities"`
-	Runtimes      map[string]PluginRuntime   `json:"runtimes"`
-	UI            PluginUIManifest           `json:"ui"`
-	Files         map[string]string          `json:"files"`
-	Dependencies  []extensionv1.Dependency   `json:"dependencies,omitempty"`
-	Contributions []extensionv1.Contribution `json:"contributions,omitempty"`
-	Operations    map[string][]string        `json:"operations,omitempty"`
+	SourceRevision string                     `json:"source_revision,omitempty"`
+	SchemaVersion  int                        `json:"schema_version"`
+	ID             string                     `json:"id"`
+	Name           string                     `json:"name"`
+	Version        string                     `json:"version"`
+	Description    string                     `json:"description,omitempty"`
+	Author         string                     `json:"author,omitempty"`
+	Requires       PluginRequirements         `json:"requires"`
+	Capabilities   []PluginCapability         `json:"capabilities"`
+	Runtimes       map[string]PluginRuntime   `json:"runtimes"`
+	UI             PluginUIManifest           `json:"ui"`
+	Files          map[string]string          `json:"files"`
+	Dependencies   []extensionv1.Dependency   `json:"dependencies,omitempty"`
+	Contributions  []extensionv1.Contribution `json:"contributions,omitempty"`
+	Operations     map[string][]string        `json:"operations,omitempty"`
 }
 
 type PluginRequirements struct {
@@ -159,6 +160,9 @@ func (m PluginManifest) Validate() error {
 }
 
 func (m PluginManifest) ValidateForRuntime(runtimeKey string) error {
+	if m.SourceRevision != "" && !regexp.MustCompile(`^[a-f0-9]{40}$`).MatchString(m.SourceRevision) {
+		return errors.New("插件源码版本必须是完整提交摘要")
+	}
 	if m.SchemaVersion != 1 {
 		return fmt.Errorf("不支持的插件清单版本: %d", m.SchemaVersion)
 	}

@@ -33,3 +33,23 @@ tools/sync_modelgang_remote_skill_seed.ps1 text eol=lf
 
 # Dockerfile
 Dockerfile text eol=lf
+
+# Signed resources and review fingerprints must identify the same source bytes
+# on developer Windows checkouts and Linux release builders.
+*.json text eol=lf
+*.css text eol=lf
+*.html text eol=lf
+*.svg text eol=lf
+*.md text eol=lf
+*.mjs text eol=lf
+*.cjs text eol=lf
+*.py text eol=lf
+*.ps1 text eol=lf
+go.mod text eol=lf
+go.sum text eol=lf
+.gitattributes text eol=lf
+.gitignore text eol=lf
+.dockerignore text eol=lf
+.env.example text eol=lf
+Dockerfile* text eol=lf
+Makefile text eol=lf

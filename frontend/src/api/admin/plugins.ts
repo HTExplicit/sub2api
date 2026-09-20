@@ -18,6 +18,7 @@ export interface PluginRequirements {
 }
 
 export interface PluginManifest {
+  source_revision?: string
 	dependencies?: Array<{ capability: string; platform?: string; account_type?: string }>
 	contributions?: Array<Omit<PluginContribution, 'plugin_id' | 'available' | 'reason'>>
   schema_version: number

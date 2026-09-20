@@ -24,6 +24,7 @@ import (
 )
 
 type packageOptions struct {
+	domain, sourceRevision                                               string
 	defaultEnabled                                                       bool
 	source, binary, platform, hostVersion, output, keyFile, keyID, sdkUI string
 	bundleLock, migration                                                string
@@ -32,6 +33,8 @@ type packageOptions struct {
 func main() {
 	var options packageOptions
 	flag.StringVar(&options.source, "source", "", "plugin module directory")
+	flag.StringVar(&options.domain, "plugin-domain", "", "select one domain from the bundle source")
+	flag.StringVar(&options.sourceRevision, "source-revision", "", "immutable source commit included in the signed manifest")
 	flag.StringVar(&options.binary, "binary", "", "compiled plugin program")
 	flag.StringVar(&options.platform, "platform", "linux-amd64", "runtime platform")
 	flag.StringVar(&options.hostVersion, "tested-host-version", "", "exact host version whose contract tests passed")
@@ -45,9 +48,16 @@ func main() {
 	generate := flag.String("generate-key", "", "create a new private key file; prints only its public key")
 	bundleSourcePath := flag.String("bundle-source", "", "first-party source inventory to package")
 	binaryDirectory := flag.String("binary-dir", "", "prebuilt module binaries for the bundle")
+	buildBinaries := flag.Bool("build-binaries", false, "build selected binaries without loading any signing key")
+	verifyBundle := flag.String("verify-bundle", "", "verify packages against the fixed publisher without executing them")
+	development := flag.Bool("development", false, "allow a synthetic publisher only for development bundle verification")
 	flag.Parse()
 	var err error
-	if *generate != "" {
+	if *buildBinaries {
+		err = buildBundleBinaries(*bundleSourcePath, *binaryDirectory, options)
+	} else if *verifyBundle != "" {
+		err = verifyPluginBundle(*verifyBundle, options.hostVersion, options.platform, *development)
+	} else if *generate != "" {
 		err = generateKey(*generate)
 	} else if *bundleSourcePath != "" {
 		err = packageBundle(*bundleSourcePath, *binaryDirectory, options)
@@ -94,6 +104,13 @@ func packagePlugin(options packageOptions) error {
 	var manifest service.PluginManifest
 	if err := json.Unmarshal(raw, &manifest); err != nil {
 		return err
+	}
+	if options.sourceRevision != "" {
+		decoded, err := hex.DecodeString(options.sourceRevision)
+		if err != nil || len(decoded) != 20 {
+			return errors.New("source-revision must be a complete commit SHA")
+		}
+		manifest.SourceRevision = options.sourceRevision
 	}
 	assets := make(map[string][]byte)
 	if err := filepath.WalkDir(filepath.Join(options.source, "ui"), func(path string, entry fs.DirEntry, walkErr error) error {

@@ -10,6 +10,7 @@
 # Documentation
 *.md
 !deploy/DOCKER.md
+!deploy/plugin-bundle/README.md
 !THIRD_PARTY_NOTICES.md
 docs/
 # admin-compliance gate (LegalDocumentView.vue) build-time imports
@@ -73,6 +74,8 @@ coverage/
 /plugins/*/dist/
 /plugins/*/node_modules/
 /plugins/**/*.key
+/plugins/**/*.s2plugin
+/plugins/**/*.exe
 
 # Local config
 config.yaml

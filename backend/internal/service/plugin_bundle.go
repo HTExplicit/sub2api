@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	extensionv1 "github.com/Wei-Shaw/sub2api/pkg/extensionapi/v1"
 	"os"
 	"path/filepath"
 	"strings"
@@ -78,6 +79,12 @@ func (m *PluginManager) bootstrapBundle(ctx context.Context) error {
 	}
 	if normalizeSemver(bundle.HostVersion) != normalizeSemver(m.hostInfo.Version) {
 		return errors.New("plugin bundle does not match host version")
+	}
+	if publisher := extensionv1.FirstPartyPublisher(); bundle.PublisherKeyID == publisher.KeyID && bundle.PublisherPublicKey != publisher.PublicKey {
+		return errors.New("bundled publisher differs from trusted release identity")
+	}
+	if strings.Contains(m.hostInfo.Version, "-codexrip.") && bundle.PublisherKeyID != extensionv1.FirstPartyPublisher().KeyID {
+		return errors.New("release hosts require the fixed plugin publisher")
 	}
 	store, ok := m.repo.(PluginBundleRepository)
 	if !ok {

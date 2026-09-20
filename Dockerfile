@@ -14,6 +14,7 @@ ARG POSTGRES_IMAGE=postgres:18-alpine
 ARG GOPROXY=https://goproxy.cn,direct
 ARG GOSUMDB=sum.golang.google.cn
 ARG NPM_CONFIG_REGISTRY=
+ARG PLUGIN_BUNDLE_STAGE=plugin-bundle-development
 
 # -----------------------------------------------------------------------------
 # Stage 1: Frontend Builder
@@ -68,7 +69,7 @@ ENV GOPROXY=${GOPROXY}
 ENV GOSUMDB=${GOSUMDB}
 
 # Install build dependencies
-RUN apk add --no-cache git ca-certificates tzdata
+RUN apk add --no-cache git ca-certificates tzdata bash
 
 WORKDIR /app/backend
 
@@ -89,9 +90,8 @@ COPY backend/ ./
 # Copy frontend dist from previous stage (must be after backend copy to avoid being overwritten)
 COPY --from=frontend-builder /app/backend/internal/web/dist ./internal/web/dist
 
-# Build the host and its independent first-party plugin. The signing key exists
-# only inside this build step and is removed before the immutable bundle is
-# copied into the final image; OCI provenance remains the publisher trust root.
+# Build the host. Production plugin packages are independently built and signed
+# before the image build, then copied and verified without being regenerated.
 # Version precedence: build arg VERSION > exact git tag > cmd/server/VERSION
 RUN --mount=type=cache,id=sub2api-gomod,target=/go/pkg/mod \
     --mount=type=cache,id=sub2api-gobuild,target=/root/.cache/go-build \
@@ -104,26 +104,22 @@ RUN --mount=type=cache,id=sub2api-gomod,target=/go/pkg/mod \
     -ldflags="-s -w -X main.Version=${VERSION_VALUE} -X main.Commit=${COMMIT} -X main.Date=${DATE_VALUE} -X main.BuildType=release" \
     -trimpath \
     -o /app/sub2api \
-    ./cmd/server && \
-    mkdir -p /tmp/plugin-binaries && \
-    for module_dir in /app/plugins/*; do \
-      if [ -f "$module_dir/go.mod" ]; then \
-        module_name="$(basename "$module_dir")" && \
-        (cd "$module_dir" && CGO_ENABLED=0 GOOS=${TARGET_OS} GOARCH=${TARGET_ARCH} \
-          go build -trimpath -o "/tmp/plugin-binaries/$module_name" ./cmd/plugin) || exit 1; \
-      fi; \
-    done && \
-    cd /app/backend && \
-    go run ./cmd/package-plugin -generate-key /tmp/plugin-publisher.key >/tmp/plugin-publisher.json && \
-    go run ./cmd/package-plugin \
-      -bundle-source /app/plugins/bundle.source.json \
-      -binary-dir /tmp/plugin-binaries \
-      -platform "${TARGET_OS}-${TARGET_ARCH}" \
-      -tested-host-version "${VERSION_VALUE}" \
-      -output /app/bundled-plugins \
-      -signing-key-file /tmp/plugin-publisher.key \
-      -key-id codexrip-image-plugins-v1 && \
-    rm -f /tmp/plugin-publisher.key /tmp/plugin-publisher.json
+    ./cmd/server
+
+FROM backend-builder AS plugin-bundle-development
+RUN --mount=type=cache,id=sub2api-gomod,target=/go/pkg/mod \
+    --mount=type=cache,id=sub2api-gobuild,target=/root/.cache/go-build \
+    VERSION_VALUE="${VERSION}" && \
+    if [ -z "${VERSION_VALUE}" ]; then VERSION_VALUE="$(./scripts/resolve-version.sh)"; fi && \
+    bash ./scripts/build-development-plugins.sh /bundle/current "${VERSION_VALUE}" "${TARGETOS:-linux}-${TARGETARCH:-amd64}" "${COMMIT}"
+
+FROM backend-builder AS plugin-bundle-release
+COPY deploy/plugin-bundle/ /bundle/
+RUN --mount=type=cache,id=sub2api-gomod,target=/go/pkg/mod \
+    --mount=type=cache,id=sub2api-gobuild,target=/root/.cache/go-build \
+    go run ./cmd/package-plugin -verify-bundle /bundle/current/lock.json -tested-host-version "${VERSION}" -platform "${TARGETOS:-linux}-${TARGETARCH:-amd64}"
+
+FROM ${PLUGIN_BUNDLE_STAGE} AS plugin-bundle
 
 # -----------------------------------------------------------------------------
 # Stage 3: PostgreSQL Client (version-matched with docker-compose)
@@ -172,7 +168,7 @@ WORKDIR /app
 
 # Copy binary/resources with ownership to avoid extra full-layer chown copy
 COPY --from=backend-builder --chown=sub2api:sub2api /app/sub2api /app/sub2api
-COPY --from=backend-builder --chown=sub2api:sub2api /app/bundled-plugins /app/bundled-plugins
+COPY --from=plugin-bundle --chown=sub2api:sub2api /bundle/current /app/bundled-plugins
 COPY --from=backend-builder --chown=sub2api:sub2api /app/backend/resources /app/resources
 COPY --chown=sub2api:sub2api THIRD_PARTY_NOTICES.md /app/THIRD_PARTY_NOTICES.md
 

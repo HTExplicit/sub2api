@@ -193,6 +193,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - name: Resolve candidate compatibility version
+        id: version
+        shell: bash
+        run: printf 'value=%s-candidate\n' "$(tr -d '\r\n' < backend/cmd/server/VERSION)" >> "$GITHUB_OUTPUT"
       - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
       - name: Build candidate
         uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
@@ -203,7 +207,7 @@ jobs:
           push: false
           outputs: type=oci,dest=/tmp/sub2api-candidate.tar
           build-args: |
-            VERSION=0.0.0-candidate
+            VERSION=${{ steps.version.outputs.value }}
             COMMIT=${{ github.sha }}
             GOPROXY=https://proxy.golang.org,direct
             GOSUMDB=sum.golang.org

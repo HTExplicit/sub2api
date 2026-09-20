@@ -23,6 +23,16 @@ func (*extensionReadOnlyFixture) DueExtensionStates(context.Context, string, ext
 	return nil, nil
 }
 
+func firstPartyTestVersion(t *testing.T, domain string) string {
+	t.Helper()
+	raw, err := os.ReadFile(filepath.Join("..", "..", "..", "plugins", domain, "manifest.source.json"))
+	require.NoError(t, err)
+	var manifest PluginManifest
+	require.NoError(t, json.Unmarshal(raw, &manifest))
+	require.NotEmpty(t, manifest.Version)
+	return manifest.Version
+}
+
 func TestExtensionRuntimeUsesOfficialProcessAndHostBroker(t *testing.T) {
 	binary := os.Getenv("SUB2API_EXTENSION_TEST_BINARY")
 	if binary == "" {
@@ -31,7 +41,7 @@ func TestExtensionRuntimeUsesOfficialProcessAndHostBroker(t *testing.T) {
 	data, err := os.ReadFile(binary)
 	require.NoError(t, err)
 	digest := sha256.Sum256(data)
-	installation := &PluginInstallation{ID: 7, PluginKey: "codexrip.codex-runtime", Version: "0.2.7", BinaryPath: binary, BinarySHA256: hex.EncodeToString(digest[:]), Manifest: PluginManifest{Requires: PluginRequirements{ExtensionAPI: 1}}}
+	installation := &PluginInstallation{ID: 7, PluginKey: "codexrip.codex-runtime", Version: firstPartyTestVersion(t, "codex-runtime"), BinaryPath: binary, BinarySHA256: hex.EncodeToString(digest[:]), Manifest: PluginManifest{Requires: PluginRequirements{ExtensionAPI: 1}}}
 	installation.Manifest.Capabilities = []PluginCapability{{ID: extensionv1.CapabilityScheduling, Platform: PlatformOpenAI, AccountType: AccountTypeOAuth}}
 	host := newPluginHostServiceServer(installation.PluginKey, nil, nil)
 	host.extension = &pluginExtensionHost{key: installation.PluginKey, state: &extensionReadOnlyFixture{}}
@@ -66,7 +76,7 @@ func TestCatalogExtensionRuntimeUsesIndependentProcess(t *testing.T) {
 	data, err := os.ReadFile(binary)
 	require.NoError(t, err)
 	digest := sha256.Sum256(data)
-	installation := &PluginInstallation{ID: 8, PluginKey: "codexrip.model-policy", Version: "0.2.7", BinaryPath: binary, BinarySHA256: hex.EncodeToString(digest[:]), Manifest: PluginManifest{Requires: PluginRequirements{ExtensionAPI: 1}, Capabilities: []PluginCapability{{ID: extensionv1.CapabilityCatalog, Platform: "*", AccountType: "*"}}}}
+	installation := &PluginInstallation{ID: 8, PluginKey: "codexrip.model-policy", Version: firstPartyTestVersion(t, "model-policy"), BinaryPath: binary, BinarySHA256: hex.EncodeToString(digest[:]), Manifest: PluginManifest{Requires: PluginRequirements{ExtensionAPI: 1}, Capabilities: []PluginCapability{{ID: extensionv1.CapabilityCatalog, Platform: "*", AccountType: "*"}}}}
 	host := newPluginHostServiceServer(installation.PluginKey, nil, nil)
 	host.extension = &pluginExtensionHost{key: installation.PluginKey, state: &extensionReadOnlyFixture{}}
 	socketDir := filepath.Join(t.TempDir(), "runtime")
@@ -93,7 +103,7 @@ func TestPromptExtensionRuntimeUsesIndependentProcess(t *testing.T) {
 	data, err := os.ReadFile(binary)
 	require.NoError(t, err)
 	digest := sha256.Sum256(data)
-	installation := &PluginInstallation{ID: 9, PluginKey: "codexrip.prompt-skills", Version: "0.2.7", BinaryPath: binary, BinarySHA256: hex.EncodeToString(digest[:]), Manifest: PluginManifest{Requires: PluginRequirements{ExtensionAPI: 1}, Capabilities: []PluginCapability{{ID: extensionv1.CapabilityRequest, Platform: PlatformOpenAI, AccountType: "*"}}}}
+	installation := &PluginInstallation{ID: 9, PluginKey: "codexrip.prompt-skills", Version: firstPartyTestVersion(t, "prompt-skills"), BinaryPath: binary, BinarySHA256: hex.EncodeToString(digest[:]), Manifest: PluginManifest{Requires: PluginRequirements{ExtensionAPI: 1}, Capabilities: []PluginCapability{{ID: extensionv1.CapabilityRequest, Platform: PlatformOpenAI, AccountType: "*"}}}}
 	host := newPluginHostServiceServer(installation.PluginKey, nil, nil)
 	host.extension = &pluginExtensionHost{key: installation.PluginKey, state: &extensionReadOnlyFixture{}}
 	socketDir := filepath.Join(t.TempDir(), "runtime")
@@ -144,7 +154,7 @@ func TestObservabilityExtensionRuntimeUsesScopedMetricsBroker(t *testing.T) {
 	data, err := os.ReadFile(binary)
 	require.NoError(t, err)
 	digest := sha256.Sum256(data)
-	installation := &PluginInstallation{ID: 13, PluginKey: "codexrip.admin-observability", Version: "0.2.7", BinaryPath: binary, BinarySHA256: hex.EncodeToString(digest[:]), Manifest: PluginManifest{Requires: PluginRequirements{ExtensionAPI: 1}, Capabilities: []PluginCapability{{ID: extensionv1.CapabilityObservability, Platform: "*", AccountType: "*"}, {ID: extensionv1.CapabilityAdmin, Platform: "*", AccountType: "*"}, {ID: extensionv1.CapabilityUI, Platform: "*", AccountType: "*"}}}}
+	installation := &PluginInstallation{ID: 13, PluginKey: "codexrip.admin-observability", Version: firstPartyTestVersion(t, "admin-observability"), BinaryPath: binary, BinarySHA256: hex.EncodeToString(digest[:]), Manifest: PluginManifest{Requires: PluginRequirements{ExtensionAPI: 1}, Capabilities: []PluginCapability{{ID: extensionv1.CapabilityObservability, Platform: "*", AccountType: "*"}, {ID: extensionv1.CapabilityAdmin, Platform: "*", AccountType: "*"}, {ID: extensionv1.CapabilityUI, Platform: "*", AccountType: "*"}}}}
 	directory := &credentialScopeDirectory{}
 	host := newPluginHostServiceServer(installation.PluginKey, nil, nil)
 	host.extension = &pluginExtensionHost{key: installation.PluginKey, installation: installation, directory: directory, traffic: &trafficPolicyCache{}}
@@ -174,7 +184,7 @@ func TestImageToolsExtensionRuntimeUsesIndependentProcess(t *testing.T) {
 	data, err := os.ReadFile(binary)
 	require.NoError(t, err)
 	digest := sha256.Sum256(data)
-	installation := &PluginInstallation{ID: 12, PluginKey: "codexrip.image-tools", Version: "0.2.7", BinaryPath: binary, BinarySHA256: hex.EncodeToString(digest[:]), Manifest: PluginManifest{Requires: PluginRequirements{ExtensionAPI: 1}, Capabilities: []PluginCapability{{ID: extensionv1.CapabilityRequest, Platform: "*", AccountType: "*"}}}}
+	installation := &PluginInstallation{ID: 12, PluginKey: "codexrip.image-tools", Version: firstPartyTestVersion(t, "image-tools"), BinaryPath: binary, BinarySHA256: hex.EncodeToString(digest[:]), Manifest: PluginManifest{Requires: PluginRequirements{ExtensionAPI: 1}, Capabilities: []PluginCapability{{ID: extensionv1.CapabilityRequest, Platform: "*", AccountType: "*"}}}}
 	host := newPluginHostServiceServer(installation.PluginKey, nil, nil)
 	host.extension = &pluginExtensionHost{key: installation.PluginKey, state: &extensionReadOnlyFixture{}}
 	socketDir := filepath.Join(t.TempDir(), "runtime")
@@ -206,7 +216,7 @@ func TestCindyProviderExtensionRuntimeUsesIndependentProcess(t *testing.T) {
 	data, err := os.ReadFile(binary)
 	require.NoError(t, err)
 	digest := sha256.Sum256(data)
-	installation := &PluginInstallation{ID: 11, PluginKey: "codexrip.cindy-provider", Version: "0.2.7", BinaryPath: binary, BinarySHA256: hex.EncodeToString(digest[:]), Manifest: PluginManifest{Requires: PluginRequirements{ExtensionAPI: 1}, Capabilities: []PluginCapability{{ID: extensionv1.CapabilityProvider, Platform: PlatformCindy, AccountType: AccountTypeAPIKey}}}}
+	installation := &PluginInstallation{ID: 11, PluginKey: "codexrip.cindy-provider", Version: firstPartyTestVersion(t, "cindy-provider"), BinaryPath: binary, BinarySHA256: hex.EncodeToString(digest[:]), Manifest: PluginManifest{Requires: PluginRequirements{ExtensionAPI: 1}, Capabilities: []PluginCapability{{ID: extensionv1.CapabilityProvider, Platform: PlatformCindy, AccountType: AccountTypeAPIKey}}}}
 	host := newPluginHostServiceServer(installation.PluginKey, nil, nil)
 	host.extension = &pluginExtensionHost{key: installation.PluginKey, state: &extensionReadOnlyFixture{}}
 	socketDir := filepath.Join(t.TempDir(), "runtime")
@@ -236,7 +246,7 @@ func TestAccountToolsExtensionRuntimeUsesIndependentProcess(t *testing.T) {
 	data, err := os.ReadFile(binary)
 	require.NoError(t, err)
 	digest := sha256.Sum256(data)
-	installation := &PluginInstallation{ID: 10, PluginKey: "codexrip.account-tools", Version: "0.2.7", BinaryPath: binary, BinarySHA256: hex.EncodeToString(digest[:]), Manifest: PluginManifest{Requires: PluginRequirements{ExtensionAPI: 1}, Capabilities: []PluginCapability{{ID: extensionv1.CapabilityAdmin, Platform: "*", AccountType: "*"}}}}
+	installation := &PluginInstallation{ID: 10, PluginKey: "codexrip.account-tools", Version: firstPartyTestVersion(t, "account-tools"), BinaryPath: binary, BinarySHA256: hex.EncodeToString(digest[:]), Manifest: PluginManifest{Requires: PluginRequirements{ExtensionAPI: 1}, Capabilities: []PluginCapability{{ID: extensionv1.CapabilityAdmin, Platform: "*", AccountType: "*"}}}}
 	host := newPluginHostServiceServer(installation.PluginKey, nil, nil)
 	host.extension = &pluginExtensionHost{key: installation.PluginKey, state: &extensionReadOnlyFixture{}}
 	socketDir := filepath.Join(t.TempDir(), "runtime")

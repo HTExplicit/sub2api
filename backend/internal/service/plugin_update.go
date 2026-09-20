@@ -107,6 +107,9 @@ func (m *PluginManager) Update(ctx context.Context, id, revision int64, digest s
 }
 
 func (m *PluginManager) stagePluginReplacement(ctx context.Context, previous, candidate *PluginInstallation, policy string) error {
+	if candidate.Version == previous.Version && candidate.PackageSHA256 != previous.PackageSHA256 {
+		return errors.New("an immutable plugin version cannot contain different packages")
+	}
 	store, ok := m.repo.(PluginUpdateRepository)
 	if !ok {
 		return errors.New("independent plugin updates are unavailable")

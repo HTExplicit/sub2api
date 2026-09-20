@@ -7,6 +7,7 @@
   "required": ["schema_version", "id", "name", "version", "requires", "capabilities", "runtimes", "ui", "files"],
   "properties": {
     "schema_version": { "const": 1 },
+    "source_revision": { "type": "string", "pattern": "^[a-f0-9]{40}$" },
     "id": { "type": "string", "maxLength": 160, "pattern": "^[a-z0-9]+([._-][a-z0-9]+)+$" },
     "name": { "type": "string", "minLength": 1, "maxLength": 160 },
     "version": { "type": "string", "pattern": "^v?(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(-[0-9A-Za-z-]+(\\.[0-9A-Za-z-]+)*)?(\\+[0-9A-Za-z-]+(\\.[0-9A-Za-z-]+)*)?$" },
@@ -34,7 +35,7 @@
         "additionalProperties": false,
         "required": ["id", "platform", "account_type"],
         "properties": {
-          "id": { "enum": ["openai.oauth.outbound_transport.v1", "extensions.provider.v1", "extensions.catalog.v1", "extensions.request.v1", "extensions.scheduling.v1", "extensions.jobs.v1", "extensions.admin.v1", "extensions.ui.v1", "extensions.credentials.v1", "extensions.observability.v1"] },
+          "id": { "enum": ["openai.oauth.outbound_transport.v1", "extensions.provider.v1", "extensions.catalog.v1", "extensions.request.v1", "extensions.scheduling.v1", "extensions.jobs.v1", "extensions.admin.v1", "extensions.ui.v1", "extensions.credentials.v1", "extensions.observability.v1", "extensions.recovery.v1"] },
           "platform": { "type": "string", "minLength": 1 },
           "account_type": { "type": "string", "minLength": 1 }
         }
@@ -58,6 +59,7 @@
         "required": ["id", "slot", "label", "permission"],
         "properties": {
           "id": { "type": "string", "minLength": 1 },
+          "capability": { "type": "string", "minLength": 1 },
           "config_flag": { "type": "string", "pattern": "^[a-z][a-z0-9_]{0,63}$" },
           "assets": { "type": "array", "maxItems": 32, "uniqueItems": true, "items": { "type": "string", "pattern": "^ui/.+\\.woff2$" } },
           "slot": { "enum": ["admin.page", "admin.settings", "account.actions", "account.details", "account.columns", "account.test", "group.actions", "group.details", "navigation", "theme", "usage.details", "surface"] },
