@@ -29,6 +29,7 @@ var (
 	ErrRemoteSkillSeedUnavailable = errors.New("remote skill seed unavailable")
 	ErrRemoteSkillVersionNotFound = errors.New("remote skill candidate not found")
 	ErrRemoteSkillSyncNotFound    = errors.New("remote skill sync job not found")
+	ErrRemoteSkillSyncStopped     = errors.New("remote skill sync service is not running")
 )
 
 type RemoteSkillFileChange struct {
@@ -312,15 +313,17 @@ func (s *RemoteSkillRegistryService) StartSync(ctx context.Context, promptCaptur
 	if err != nil {
 		return RemoteSkillSyncJob{}, err
 	}
-	job, err := s.store.CreateRemoteSkillSyncJob(ctx, actorID, expectedRevision, provided)
-	if err != nil {
-		return RemoteSkillSyncJob{}, err
-	}
 	s.runMu.Lock()
 	if !s.started || s.runCtx == nil {
 		s.runMu.Unlock()
-		s.failSyncJob(ctx, job.ID, "service_stopped")
-		return RemoteSkillSyncJob{}, errors.New("remote skill sync service is not running")
+		return RemoteSkillSyncJob{}, ErrRemoteSkillSyncStopped
+	}
+	// Serialize job creation with Stop so a stopped domain cannot claim a new
+	// job and only fail it after the plugin gate rejects the worker.
+	job, err := s.store.CreateRemoteSkillSyncJob(ctx, actorID, expectedRevision, provided)
+	if err != nil {
+		s.runMu.Unlock()
+		return RemoteSkillSyncJob{}, err
 	}
 	runCtx := s.runCtx
 	s.wg.Add(1)

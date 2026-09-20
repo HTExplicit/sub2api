@@ -254,6 +254,14 @@ func TestRemoteSkillRegistryPromptUploadIsValidatedBeforeSyncJobCreation(t *test
 	require.Equal(t, int64(0), store.createdBy)
 }
 
+func TestRemoteSkillRegistryStoppedSyncDoesNotCreateJob(t *testing.T) {
+	active := testRemoteSkillCandidate(t, 1, 1, "old")
+	svc, store, _ := testRemoteSkillRegistry(t, active)
+	_, err := svc.StartSync(context.Background(), []byte(modelGangPromptCaptureFixture), 42, 7)
+	require.ErrorIs(t, err, ErrRemoteSkillSyncStopped)
+	require.Equal(t, int64(0), store.createdBy)
+}
+
 func TestRemoteSkillRegistrySyncFailureDoesNotSwitchActivePair(t *testing.T) {
 	active := testRemoteSkillCandidate(t, 1, 1, "active")
 	svc, store, _ := testRemoteSkillRegistry(t, active)

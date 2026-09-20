@@ -16,6 +16,7 @@ type fakeBusinessSystemPromptStore struct {
 	seeds            []BusinessSystemPromptSeed
 	rejectRemoteSeed bool
 	loaded           BusinessSystemPromptSnapshot
+	loadCalls        int
 	loadErr          error
 	published        BusinessSystemPromptSnapshot
 	publishErr       error
@@ -44,6 +45,7 @@ func (f *fakeBusinessSystemPromptStore) EnsureBusinessSystemPromptSeed(_ context
 }
 
 func (f *fakeBusinessSystemPromptStore) LoadBusinessSystemPrompt(_ context.Context) (BusinessSystemPromptSnapshot, error) {
+	f.loadCalls++
 	if f.loadErr != nil {
 		return BusinessSystemPromptSnapshot{}, f.loadErr
 	}
