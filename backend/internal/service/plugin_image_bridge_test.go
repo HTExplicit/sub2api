@@ -29,7 +29,9 @@ func TestCindyNativeImagePolicyReceivesNoPromptOrImageContent(t *testing.T) {
 	fixture := &capturedImageBridgeFixture{}
 	processExtensionOperations.Store(&extensionOperationProvider{invoker: fixture})
 	request := &OpenAIImagesRequest{Endpoint: openAIImagesEditsEndpoint, Prompt: "private-image-prompt", InputImageURLs: []string{"https://private.invalid/reference"}, N: 1, Size: "1024x1024", Quality: "low", HasMask: true}
-	err := ValidateCindyImageRequestForAccount(context.Background(), &Account{ID: 37}, "gpt-image-2", request)
+	account := cindyHTTPToWSV2TestAccount()
+	account.ID = 37
+	err := ValidateCindyImageRequestForAccount(context.Background(), account, "gpt-image-2", request)
 	require.Error(t, err)
 	require.Len(t, fixture.queries, 1)
 	require.EqualValues(t, 37, fixture.queries[0].AccountID)

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"slices"
 	"strings"
 	"time"
 
@@ -34,12 +35,17 @@ func ValidateCindyImageRequestForAccount(ctx context.Context, account *Account, 
 			return errors.New("image control exceeds maximum length")
 		}
 	}
-	capability, _ := ResolveCindyCapability(model)
+	snapshot, err := LoadCindyCatalogSnapshot(ctx, account)
+	if err != nil {
+		return err
+	}
+	capability, found := snapshot.Capability(model)
 	endpoint := CindyEndpointImagesGenerate
 	if request.IsEdits() {
 		endpoint = CindyEndpointImagesEdit
 	}
-	facts := extensionv1.ImageNativeRequest{Model: strings.TrimSpace(model), Capability: capability, Verified: CindyModelSupportsEndpoint(model, endpoint), Editing: request.IsEdits(), Stream: request.Stream, Count: request.N, Size: strings.TrimSpace(request.Size), Quality: strings.TrimSpace(request.Quality), ResponseFormat: strings.TrimSpace(request.ResponseFormat), HasReference: request.InputImageCount() > 0, HasMask: request.HasMask,
+	verified := found && capability.PublicModel && snapshot.Config.CatalogEnabled && snapshot.Images.StudioEnabled && slices.Contains(capability.VerifiedEndpoints, endpoint)
+	facts := extensionv1.ImageNativeRequest{Model: strings.TrimSpace(model), Capability: capability, Verified: verified, Editing: request.IsEdits(), Stream: request.Stream, Count: request.N, Size: strings.TrimSpace(request.Size), Quality: strings.TrimSpace(request.Quality), ResponseFormat: strings.TrimSpace(request.ResponseFormat), HasReference: request.InputImageCount() > 0, HasMask: request.HasMask,
 		UnverifiedControls: request.Background != "" || request.OutputFormat != "" || request.Moderation != "" || request.InputFidelity != "" || request.Style != "" || request.OutputCompression != nil || request.PartialImages != nil}
 	raw, err := json.Marshal(facts)
 	if err != nil {

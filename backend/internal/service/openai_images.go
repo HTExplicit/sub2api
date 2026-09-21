@@ -511,7 +511,32 @@ func validateOpenAIImagesModel(model string) error {
 	return fmt.Errorf("images endpoint requires an image model, got %q", model)
 }
 
+// Preselection has no account context; final Cindy forwarding must read the
+// selected account's captured catalog instead of consulting current shared data.
+func validateOpenAIImagesModelContext(ctx context.Context, account *Account, model string) error {
+	model = strings.TrimSpace(model)
+	if account == nil || !IsCindyRuntimeCompatibleAPIKeyAccount(account.Platform, account.Type, account.Credentials) || isOpenAIImageGenerationModel(model) {
+		return validateOpenAIImagesModel(model)
+	}
+	snapshot, err := LoadCindyCatalogSnapshot(ctx, account)
+	if err != nil {
+		return err
+	}
+	capability, found := snapshot.Capability(model)
+	if found && capability.PublicModel && capability.Kind == CindyModelKindImage && snapshot.AvailableMappings[capability.PublicID] == capability.LiveUpstreamID {
+		return nil
+	}
+	if model == "" {
+		return fmt.Errorf("images endpoint requires an image model")
+	}
+	return fmt.Errorf("images endpoint requires an image model, got %q", model)
+}
+
 func validateOpenAIImagesUpstreamModel(account *Account, requestModel, upstreamModel string) error {
+	return validateOpenAIImagesUpstreamModelContext(context.Background(), account, requestModel, upstreamModel)
+}
+
+func validateOpenAIImagesUpstreamModelContext(ctx context.Context, account *Account, requestModel, upstreamModel string) error {
 	if isOpenAIImageGenerationModel(upstreamModel) {
 		return nil
 	}
@@ -519,8 +544,12 @@ func validateOpenAIImagesUpstreamModel(account *Account, requestModel, upstreamM
 		return fmt.Errorf("images endpoint requires an image model, got %q", strings.TrimSpace(upstreamModel))
 	}
 
-	capability, ok := ResolveCindyCapability(requestModel)
-	if !ok || capability.Kind != CindyModelKindImage || capability.LiveUpstreamID != strings.TrimSpace(upstreamModel) {
+	snapshot, err := LoadCindyCatalogSnapshot(ctx, account)
+	if err != nil {
+		return err
+	}
+	capability, ok := snapshot.Capability(requestModel)
+	if !ok || !capability.PublicModel || capability.Kind != CindyModelKindImage || capability.LiveUpstreamID != strings.TrimSpace(upstreamModel) || snapshot.AvailableMappings[capability.PublicID] != capability.LiveUpstreamID {
 		return fmt.Errorf("images endpoint requires an image model, got %q", strings.TrimSpace(upstreamModel))
 	}
 	return nil
@@ -607,13 +636,6 @@ func (s *OpenAIGatewayService) ForwardImages(
 		}
 		defer release()
 		ctx = bound
-		model := parsed.Model
-		if strings.TrimSpace(channelMappedModel) != "" {
-			model = channelMappedModel
-		}
-		if err := ValidateCindyImageRequestForAccount(ctx, account, model, parsed); err != nil {
-			return nil, err
-		}
 	}
 	pricingContext, pricingErr := CaptureCindyPricingContext(ctx, c, account)
 	if pricingErr != nil {
@@ -622,6 +644,15 @@ func (s *OpenAIGatewayService) ForwardImages(
 	ctx = pricingContext
 	if parsed == nil {
 		return nil, fmt.Errorf("parsed images request is required")
+	}
+	if account != nil && IsCindyAPIKeyAccount(account.Platform, account.Type, account.Credentials) {
+		model := parsed.Model
+		if strings.TrimSpace(channelMappedModel) != "" {
+			model = channelMappedModel
+		}
+		if err := ValidateCindyImageRequestForAccount(ctx, account, model, parsed); err != nil {
+			return nil, err
+		}
 	}
 	switch account.Type {
 	case AccountTypeAPIKey:
@@ -646,11 +677,14 @@ func (s *OpenAIGatewayService) forwardOpenAIImagesAPIKey(
 	if mapped := strings.TrimSpace(channelMappedModel); mapped != "" {
 		requestModel = mapped
 	}
-	if err := validateOpenAIImagesModel(requestModel); err != nil {
+	if err := validateOpenAIImagesModelContext(ctx, account, requestModel); err != nil {
 		return nil, err
 	}
-	upstreamModel := account.GetMappedModel(requestModel)
-	if err := validateOpenAIImagesUpstreamModel(account, requestModel, upstreamModel); err != nil {
+	upstreamModel, err := resolveOpenAIForwardModelContext(ctx, account, requestModel, "")
+	if err != nil {
+		return nil, err
+	}
+	if err := validateOpenAIImagesUpstreamModelContext(ctx, account, requestModel, upstreamModel); err != nil {
 		return nil, err
 	}
 	logger.LegacyPrintf(
