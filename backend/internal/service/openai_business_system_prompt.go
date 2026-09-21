@@ -73,7 +73,7 @@ func businessSystemPromptTargetForAccount(account *Account, protocol string, com
 
 func rememberBusinessSystemPromptTarget(ctx *gin.Context, target BusinessSystemPromptTarget) {
 	if ctx != nil {
-		ctx.Set(businessSystemPromptContextKey(ctx, businessSystemPromptRequestTargetKey, ""), target)
+		businessSystemPromptRequestSet(ctx, businessSystemPromptContextKey(ctx, businessSystemPromptRequestTargetKey, ""), target)
 	}
 }
 
@@ -268,7 +268,7 @@ func restoreBusinessSystemPromptBeforeConversion(ctx *gin.Context, body []byte, 
 	if ctx == nil {
 		return body, nil
 	}
-	value, exists := ctx.Get(businessSystemPromptContextKey(ctx, businessSystemPromptRequestApplicationKey, protocol))
+	value, exists := businessSystemPromptRequestGet(ctx, businessSystemPromptContextKey(ctx, businessSystemPromptRequestApplicationKey, protocol))
 	if !exists {
 		return body, nil
 	}
@@ -330,7 +330,7 @@ func restoreBusinessSystemPromptForExcludedTarget(ctx *gin.Context, body []byte,
 	if ctx == nil {
 		return body, nil
 	}
-	value, exists := ctx.Get(businessSystemPromptContextKey(ctx, businessSystemPromptRequestApplicationKey, protocol))
+	value, exists := businessSystemPromptRequestGet(ctx, businessSystemPromptContextKey(ctx, businessSystemPromptRequestApplicationKey, protocol))
 	if !exists {
 		return body, nil
 	}
@@ -390,7 +390,7 @@ func (s *OpenAIGatewayService) businessSystemPromptSnapshotForRequest(
 		return BusinessSystemPromptSnapshot{}, false, nil
 	}
 	if ctx != nil {
-		if value, exists := ctx.Get(businessSystemPromptContextKey(ctx, businessSystemPromptRequestSnapshotKey, "")); exists {
+		if value, exists := businessSystemPromptRequestGet(ctx, businessSystemPromptContextKey(ctx, businessSystemPromptRequestSnapshotKey, "")); exists {
 			if snapshot, ok := value.(BusinessSystemPromptSnapshot); ok {
 				return snapshot, true, nil
 			}
@@ -406,7 +406,7 @@ func (s *OpenAIGatewayService) businessSystemPromptSnapshotForRequest(
 		}
 	}
 	if ctx != nil {
-		ctx.Set(businessSystemPromptContextKey(ctx, businessSystemPromptRequestSnapshotKey, ""), snapshot)
+		businessSystemPromptRequestSet(ctx, businessSystemPromptContextKey(ctx, businessSystemPromptRequestSnapshotKey, ""), snapshot)
 	}
 	return snapshot, true, nil
 }
@@ -435,7 +435,7 @@ func (s *OpenAIGatewayService) applyBusinessSystemPromptForRequest(
 	}
 	if ctx != nil {
 		applicationKey := businessSystemPromptContextKey(ctx, businessSystemPromptRequestApplicationKey, protocol)
-		if value, exists := ctx.Get(applicationKey); exists {
+		if value, exists := businessSystemPromptRequestGet(ctx, applicationKey); exists {
 			if state, ok := value.(businessSystemPromptRequestState); ok {
 				frozen := state.snapshot
 				if frozen.Revision < 1 && state.application.Applied {
@@ -472,7 +472,7 @@ func (s *OpenAIGatewayService) applyBusinessSystemPromptForRequest(
 				}
 				next := cacheBusinessSystemPromptState(clean, updated, frozen, target, application)
 				next = inheritBusinessSystemPromptProvenance(next, state)
-				ctx.Set(applicationKey, next)
+				businessSystemPromptRequestSet(ctx, applicationKey, next)
 				rememberBusinessSystemPromptTarget(ctx, target)
 				return updated, application, nil
 			} else {
@@ -489,7 +489,7 @@ func (s *OpenAIGatewayService) applyBusinessSystemPromptForRequest(
 	}
 	if snapshot.Enabled && (!compact || snapshot.CompactEnabled) {
 		if ctx != nil {
-			if value, exists := ctx.Get(businessSystemPromptContextKey(ctx, businessSystemPromptRequestCompiledKey, "")); exists {
+			if value, exists := businessSystemPromptRequestGet(ctx, businessSystemPromptContextKey(ctx, businessSystemPromptRequestCompiledKey, "")); exists {
 				if compiled, ok := value.(BusinessSystemPromptSnapshot); ok && compiled.Revision == snapshot.Revision {
 					snapshot = compiled
 				}
@@ -503,7 +503,7 @@ func (s *OpenAIGatewayService) applyBusinessSystemPromptForRequest(
 			}
 			snapshot = compiled
 			if ctx != nil {
-				ctx.Set(businessSystemPromptContextKey(ctx, businessSystemPromptRequestCompiledKey, ""), snapshot)
+				businessSystemPromptRequestSet(ctx, businessSystemPromptContextKey(ctx, businessSystemPromptRequestCompiledKey, ""), snapshot)
 			}
 		}
 	}
@@ -512,7 +512,7 @@ func (s *OpenAIGatewayService) applyBusinessSystemPromptForRequest(
 		return nil, application, err
 	}
 	if ctx != nil {
-		ctx.Set(businessSystemPromptContextKey(ctx, businessSystemPromptRequestApplicationKey, protocol), cacheBusinessSystemPromptState(body, updated, snapshot, target, application))
+		businessSystemPromptRequestSet(ctx, businessSystemPromptContextKey(ctx, businessSystemPromptRequestApplicationKey, protocol), cacheBusinessSystemPromptState(body, updated, snapshot, target, application))
 	}
 	rememberBusinessSystemPromptTarget(ctx, target)
 	return updated, application, nil
@@ -546,12 +546,12 @@ func businessSystemPromptApplicationFromRequest(ctx *gin.Context, protocol strin
 	if ctx == nil {
 		return BusinessSystemPromptApplication{}, false
 	}
-	value, exists := ctx.Get(businessSystemPromptContextKey(ctx, businessSystemPromptRequestApplicationKey, protocol))
+	value, exists := businessSystemPromptRequestGet(ctx, businessSystemPromptContextKey(ctx, businessSystemPromptRequestApplicationKey, protocol))
 	if !exists {
 		return BusinessSystemPromptApplication{}, false
 	}
 	if state, ok := value.(businessSystemPromptRequestState); ok {
-		if current, exists := ctx.Get(businessSystemPromptContextKey(ctx, businessSystemPromptRequestTargetKey, "")); exists {
+		if current, exists := businessSystemPromptRequestGet(ctx, businessSystemPromptContextKey(ctx, businessSystemPromptRequestTargetKey, "")); exists {
 			if target, ok := current.(BusinessSystemPromptTarget); ok &&
 				(target.AccountID != state.target.AccountID || target.Platform != state.target.Platform || target.AccountType != state.target.AccountType || target.Compact != state.target.Compact) {
 				return BusinessSystemPromptApplication{}, false
@@ -616,6 +616,7 @@ func beginBusinessSystemPromptRequestTurn(ctx *gin.Context) {
 		turn, _ = value.(int64)
 	}
 	ctx.Set(businessSystemPromptRequestTurnKey, turn+1)
+	ctx.Set(businessSystemPromptTurnCacheKey, &businessSystemPromptTurnCache{})
 	ctx.Set(businessSystemPromptCacheIdentityKey, &businessSystemPromptCacheIdentities{})
 }
 
