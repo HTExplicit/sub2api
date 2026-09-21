@@ -65,10 +65,17 @@ func (r *pluginRepository) HoldPluginRuntime(ctx context.Context, installation *
 			_ = conn.Close(unlockCtx)
 		})
 	}
-	var generation int64
-	var state, digest string
-	err = conn.QueryRow(ctx, `SELECT runtime_generation,state,package_sha256 FROM sub2api_plugin_installations WHERE id=$1`, installation.ID).Scan(&generation, &state, &digest)
-	if err != nil || generation != installation.RuntimeGeneration || digest != installation.PackageSHA256 || state == service.PluginStateUpdating {
+	var generation, revision int64
+	var state, digest, configEncrypted string
+	err = conn.QueryRow(ctx, `SELECT runtime_generation,state,package_sha256,revision,config_encrypted FROM sub2api_plugin_installations WHERE id=$1`, installation.ID).Scan(&generation, &state, &digest, &revision, &configEncrypted)
+	stale := err != nil || generation != installation.RuntimeGeneration || digest != installation.PackageSHA256 || state == service.PluginStateUpdating
+	if !stale && service.PluginBusinessIOLeaseRequired(ctx) {
+		// Business IO must be admitted against the exact current policy intent.
+		// Process-lifetime leases deliberately retain the older startup and
+		// disabled-plugin diagnostics contract above.
+		stale = state != service.PluginStateEnabled || revision != installation.Revision || configEncrypted != installation.ConfigEncrypted
+	}
+	if stale {
 		release()
 		if err == nil {
 			err = service.ErrPluginStateChanged

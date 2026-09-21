@@ -62,7 +62,7 @@ func ticketTestManager(t *testing.T, cfg config.OpenAICodexTicketConfig, invoke 
 			return extensionv1.Result{Code: "ticket_missing"}, nil
 		}
 	}
-	runtime := &pluginRuntime{client: &hcplugin.Client{}, extension: extensionv1.NewClient(&ticketExtensionTestConn{invoke: invoke}), done: make(chan struct{})}
+	runtime := &pluginRuntime{installation: installation, client: &hcplugin.Client{}, extension: extensionv1.NewClient(&ticketExtensionTestConn{invoke: invoke}), done: make(chan struct{})}
 	raw, _ := json.Marshal(map[string]any{"enabled": cfg.Enabled, "fail_closed": cfg.FailClosed, "models": cfg.Models, "proxy_url": cfg.HarvestProxyURL})
 	snapshot := json.RawMessage(raw)
 	runtime.configSnapshot.Store(&snapshot)

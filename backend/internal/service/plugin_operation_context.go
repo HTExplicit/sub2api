@@ -64,7 +64,14 @@ func (m *PluginManager) BindOperationContext(ctx context.Context, platform, acco
 }
 
 func (m *PluginManager) bindHostPolicyContext(ctx context.Context, installation *PluginInstallation, runtime *pluginRuntime) (context.Context, context.CancelFunc, error) {
-	if !runtime.beginRequest() {
+	// A freshly read installation must not certify a process that still runs an
+	// older package, generation or applied configuration. Config publication
+	// updates runtime.installation under this same short-lived manager lock.
+	m.mu.Lock()
+	applied := runtime != nil && samePluginRuntime(installation, runtime.installation) &&
+		installation.ConfigEncrypted == runtime.installation.ConfigEncrypted
+	m.mu.Unlock()
+	if !applied || !runtime.beginRequest() {
 		return nil, nil, ErrExtensionOperationUnavailable
 	}
 	bound, cancel, err := runtime.bindPolicyContext(ctx)
@@ -74,7 +81,9 @@ func (m *PluginManager) bindHostPolicyContext(ctx context.Context, installation 
 	}
 	releaseLease := func() {}
 	if locker, ok := m.repo.(PluginRuntimeLocker); ok {
-		releaseLease, err = locker.HoldPluginRuntime(bound, installation)
+		// Mark only this admission call. The returned context must not turn a
+		// later disabled-plugin Validate/Test process lease into a business lease.
+		releaseLease, err = locker.HoldPluginRuntime(WithPluginBusinessIOLease(bound), installation)
 		if err != nil {
 			cancel()
 			runtime.finishRequest()

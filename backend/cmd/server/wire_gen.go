@@ -527,6 +527,12 @@ func provideCleanup(
 				}
 				return nil
 			}},
+			{"OpenAIQuotaAutoResetService", func() error {
+				if openAIAutoReset != nil {
+					openAIAutoReset.Stop()
+				}
+				return nil
+			}},
 			{"CindyHealthService", func() error {
 				if cindyHealth != nil {
 					cindyHealth.Stop()

@@ -26,6 +26,20 @@ type PluginRuntimeLocker interface {
 	HoldPluginRuntime(context.Context, *PluginInstallation) (func(), error)
 }
 
+type pluginBusinessIOLeaseKey struct{}
+
+// WithPluginBusinessIOLease marks a host policy admission, not the lifecycle
+// lease of a process used for startup or disabled-plugin config diagnostics.
+// This private context key is never decoded from a plugin or HTTP payload.
+func WithPluginBusinessIOLease(ctx context.Context) context.Context {
+	return context.WithValue(ctx, pluginBusinessIOLeaseKey{}, true)
+}
+
+func PluginBusinessIOLeaseRequired(ctx context.Context) bool {
+	required, _ := ctx.Value(pluginBusinessIOLeaseKey{}).(bool)
+	return required
+}
+
 type pluginExecutionKey struct{}
 type PluginExecution struct{ ID, Generation int64 }
 
