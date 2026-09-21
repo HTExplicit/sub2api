@@ -52,7 +52,7 @@ func ClassifyCindyHealthSignal(account *Account, statusCode int, body []byte) Ci
 	if account == nil || !hasCanonicalCindyProviderIdentity(account) {
 		return CindyHealthSignalNone
 	}
-	return CindyHealthSignal(classifyCindyProviderResponse(statusCode, body).Health)
+	return CindyHealthSignal(classifyCindyProviderResponse(account, statusCode, body).Health)
 }
 
 type CindyHealthEpisode struct {

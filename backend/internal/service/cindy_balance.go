@@ -250,7 +250,7 @@ func ClassifyCindyBalanceInsufficient(account *Account, statusCode int, payload 
 	if account == nil || !IsCindyAPIKeyAccount(account.Platform, account.Type, account.Credentials) {
 		return CindyBalanceSignalNone
 	}
-	return CindyBalanceSignal(classifyCindyProviderResponse(statusCode, payload).Balance)
+	return CindyBalanceSignal(classifyCindyProviderResponse(account, statusCode, payload).Balance)
 }
 
 func cindyBalanceReplayBufferEnabled(account *Account) bool {

@@ -16,7 +16,7 @@ func currentImageToolsConfig() (extensionv1.ImageToolsConfig, bool) {
 	result, err := invokeProcessExtensionCached(ctx, "*", "*", extensionv1.Invocation{Capability: extensionv1.CapabilityRequest, Operation: "image.features", Payload: json.RawMessage(`{}`)})
 	var config extensionv1.ImageToolsConfig
 	if err != nil || result.Code != "" || json.Unmarshal(result.Payload, &config) != nil {
-		return config, false
+		return extensionv1.ImageToolsConfig{}, false
 	}
 	return config, true
 }

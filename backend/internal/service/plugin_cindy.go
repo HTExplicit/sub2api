@@ -15,12 +15,15 @@ func currentCindyProviderConfig() (extensionv1.CindyProviderConfig, bool) {
 	out, err := invokeProcessExtensionCached(ctx, PlatformCindy, AccountTypeAPIKey, extensionv1.Invocation{Capability: extensionv1.CapabilityProvider, Operation: "cindy.features", Payload: json.RawMessage(`{}`)})
 	var config extensionv1.CindyProviderConfig
 	if err != nil || out.Code != "" || json.Unmarshal(out.Payload, &config) != nil {
-		return config, false
+		return extensionv1.CindyProviderConfig{}, false
 	}
 	return config, true
 }
 
-func classifyCindyProviderResponse(status int, body []byte) extensionv1.CindyResponseDecision {
+func classifyCindyProviderResponse(account *Account, status int, body []byte) extensionv1.CindyResponseDecision {
+	if account == nil {
+		return extensionv1.CindyResponseDecision{}
+	}
 	text := func(path string) *string {
 		value := gjson.GetBytes(body, path)
 		if value.Type != gjson.String {
@@ -33,10 +36,10 @@ func classifyCindyProviderResponse(status int, body []byte) extensionv1.CindyRes
 	raw, _ := json.Marshal(observed)
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
-	result, err := invokeProcessExtensionCached(ctx, PlatformCindy, AccountTypeAPIKey, extensionv1.Invocation{Capability: extensionv1.CapabilityProvider, Operation: "cindy.health", Payload: raw})
+	result, err := invokeProcessExtensionCached(ctx, PlatformCindy, AccountTypeAPIKey, extensionv1.Invocation{Capability: extensionv1.CapabilityProvider, Operation: "cindy.health", AccountID: account.ID, Payload: raw})
 	var decision extensionv1.CindyResponseDecision
-	if err == nil && result.Code == "" {
-		_ = json.Unmarshal(result.Payload, &decision)
+	if err != nil || result.Code != "" || json.Unmarshal(result.Payload, &decision) != nil {
+		return extensionv1.CindyResponseDecision{}
 	}
 	return decision
 }
