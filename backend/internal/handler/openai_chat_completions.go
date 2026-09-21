@@ -294,7 +294,7 @@ func (h *OpenAIGatewayHandler) ChatCompletions(c *gin.Context) {
 
 		forwardBody := openAIModelMappedBody(body, forwardMapped, forwardMappedModel, h.gatewayService.ReplaceModelInBody)
 		writerSizeBeforeForward := c.Writer.Size()
-		trafficTurn := h.trafficObserver.Begin(c.Request.Context(), account.ID, service.AccountTrafficProtocolHTTP)
+		trafficTurn := h.trafficObserver.Begin(c.Request.Context(), account, service.AccountTrafficProtocolHTTP)
 		result, err := func() (res *service.OpenAIForwardResult, ferr error) {
 			defer func() {
 				if accountReleaseFunc != nil {

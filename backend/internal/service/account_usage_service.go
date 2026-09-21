@@ -126,8 +126,9 @@ type UsageCache struct {
 	grokProbeCache    sync.Map           // accountID -> last billing probe attempt
 }
 
-// UsageCommitObserver runs only after the billing CAS confirms this process
-// owns the committed usage row.
+// UsageCommitObserver runs only after this process owns the billing CAS and
+// the usage log is confirmed persisted. Failed or uncertain log writes do not
+// notify log-backed statistics consumers.
 type UsageCommitObserver func(accountID int64)
 
 // NewUsageCache 创建 UsageCache 实例

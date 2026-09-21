@@ -127,7 +127,8 @@ func NewAccountTrafficObserver(cache AccountTrafficObserveCache, _ *config.Confi
 	}
 }
 
-// Enabled reports whether Begin will record anything.
+// Enabled reports unscoped plugin availability for management displays. It is
+// not account admission: Begin and Snapshot resolve the actual account scope.
 func (o *AccountTrafficObserver) Enabled() bool {
 	if o == nil || o.cache == nil {
 		return false
@@ -136,20 +137,21 @@ func (o *AccountTrafficObserver) Enabled() bool {
 	return ok && policy.Enabled
 }
 
-// Begin records one started turn for accountID/protocol and samples in-flight
+// Begin records one started turn for account/protocol and samples in-flight
 // slots. It never returns an error: on failure it debug-logs and returns nil,
 // whose Finish is a no-op, so started and outcomes stay reconciled.
-func (o *AccountTrafficObserver) Begin(ctx context.Context, accountID int64, protocol AccountTrafficProtocol) *AccountTrafficTurn {
+func (o *AccountTrafficObserver) Begin(ctx context.Context, account *Account, protocol AccountTrafficProtocol) *AccountTrafficTurn {
 	if o == nil || o.cache == nil || !protocol.Valid() {
 		return nil
 	}
 	if ctx == nil {
 		ctx = context.Background()
 	}
-	policy, available := currentTrafficObservationPolicy(ctx)
+	policy, available := currentAccountTrafficObservationPolicy(ctx, account)
 	if !available || !policy.Enabled {
 		return nil
 	}
+	accountID := account.ID
 	beginCtx, cancel := context.WithTimeout(ctx, accountTrafficObserveRedisTimeout)
 	defer cancel()
 	if err := o.cache.Begin(beginCtx, accountID, protocol); err != nil {
@@ -164,16 +166,20 @@ func (o *AccountTrafficObserver) Begin(ctx context.Context, accountID int64, pro
 }
 
 // Snapshot returns the per-protocol counters of one account.
-func (o *AccountTrafficObserver) Snapshot(ctx context.Context, accountID int64) (map[AccountTrafficProtocol]AccountTrafficObserveState, error) {
-	if !o.Enabled() {
+func (o *AccountTrafficObserver) Snapshot(ctx context.Context, account *Account) (map[AccountTrafficProtocol]AccountTrafficObserveState, error) {
+	if o == nil || o.cache == nil {
 		return nil, ErrAccountTrafficTelemetryUnavailable
 	}
 	if ctx == nil {
 		ctx = context.Background()
 	}
+	policy, available := currentAccountTrafficObservationPolicy(ctx, account)
+	if !available || !policy.Enabled {
+		return nil, ErrAccountTrafficTelemetryUnavailable
+	}
 	snapshotCtx, cancel := context.WithTimeout(ctx, accountTrafficObserveRedisTimeout)
 	defer cancel()
-	return o.cache.Snapshot(snapshotCtx, accountID)
+	return o.cache.Snapshot(snapshotCtx, account.ID)
 }
 
 // AccountTrafficTurn is one started turn awaiting its single Finish.

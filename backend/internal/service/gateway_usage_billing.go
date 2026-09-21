@@ -564,9 +564,12 @@ func (s *GatewayService) billingDeps() *billingDeps {
 	}
 }
 
-func writeUsageLogBestEffort(ctx context.Context, repo UsageLogRepository, usageLog *UsageLog, logKey string) {
+// writeUsageLogBestEffort reports confirmed log persistence, including a
+// successful synchronous fallback. An enqueue, timeout, or failed write alone
+// must not publish a log-backed statistics change.
+func writeUsageLogBestEffort(ctx context.Context, repo UsageLogRepository, usageLog *UsageLog, logKey string) bool {
 	if repo == nil || usageLog == nil {
-		return
+		return false
 	}
 	usageCtx, cancel := detachedBillingContext(ctx)
 	defer cancel()
@@ -587,21 +590,24 @@ func writeUsageLogBestEffort(ctx context.Context, repo UsageLogRepository, usage
 			if _, syncErr := repo.Create(fallbackCtx, usageLog); syncErr != nil {
 				logger.LegacyPrintf(logKey, "Create usage log sync fallback failed: %v", syncErr)
 				MarkQuotaLogFailed(ctx, usageLog.AccountID)
+				return false
 			} else {
 				MarkQuotaLogPersisted(ctx, usageLog.AccountID)
 			}
 		} else {
 			MarkQuotaLogPersisted(ctx, usageLog.AccountID)
 		}
-		return
+		return true
 	}
 
 	if _, err := repo.Create(usageCtx, usageLog); err != nil {
 		logger.LegacyPrintf(logKey, "Create usage log failed: %v", err)
 		MarkQuotaLogFailed(ctx, usageLog.AccountID)
+		return false
 	} else {
 		MarkQuotaLogPersisted(ctx, usageLog.AccountID)
 	}
+	return true
 }
 
 // RecordUsage 记录使用量并扣费（或更新订阅用量）
@@ -883,11 +889,11 @@ func (s *GatewayService) recordUsageCore(ctx context.Context, input *recordUsage
 		if s.usageCache != nil && account != nil {
 			s.usageCache.InvalidateAccount(account.ID)
 		}
-		if s.usageCommitObserver != nil && account != nil {
-			s.usageCommitObserver(account.ID)
-		}
 	}
-	writeUsageLogBestEffort(ctx, s.usageLogRepo, usageLog, "service.gateway")
+	logPersisted := writeUsageLogBestEffort(ctx, s.usageLogRepo, usageLog, "service.gateway")
+	if applied && logPersisted && s.usageCommitObserver != nil && account != nil {
+		s.usageCommitObserver(account.ID)
+	}
 
 	return nil
 }

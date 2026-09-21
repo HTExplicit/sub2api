@@ -536,11 +536,11 @@ func (s *OpenAIGatewayService) RecordUsage(ctx context.Context, input *OpenAIRec
 		if s.usageCache != nil && account != nil {
 			s.usageCache.InvalidateAccount(account.ID)
 		}
-		if s.usageCommitObserver != nil && account != nil {
-			s.usageCommitObserver(account.ID)
-		}
 	}
-	writeUsageLogBestEffort(ctx, s.usageLogRepo, usageLog, "service.openai_gateway")
+	logPersisted := writeUsageLogBestEffort(ctx, s.usageLogRepo, usageLog, "service.openai_gateway")
+	if applied && logPersisted && s.usageCommitObserver != nil && account != nil {
+		s.usageCommitObserver(account.ID)
+	}
 
 	return nil
 }

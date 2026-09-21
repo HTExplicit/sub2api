@@ -2440,13 +2440,15 @@ func (h *AccountHandler) GetTrafficTelemetry(c *gin.Context) {
 		"configured_concurrency": account.Concurrency,
 		"state_available":        false,
 	}
-	if h.trafficObserver == nil || !h.trafficObserver.Enabled() {
+	if h.trafficObserver == nil {
 		response.Success(c, payload)
 		return
 	}
-	snapshot, err := h.trafficObserver.Snapshot(c.Request.Context(), account.ID)
+	snapshot, err := h.trafficObserver.Snapshot(c.Request.Context(), account)
 	if err != nil {
-		payload["error"] = "telemetry_unavailable"
+		if !errors.Is(err, service.ErrAccountTrafficTelemetryUnavailable) {
+			payload["error"] = "telemetry_unavailable"
+		}
 		response.Success(c, payload)
 		return
 	}
@@ -2501,6 +2503,7 @@ func (h *AccountHandler) GetBatchTodayStats(c *gin.Context) {
 		return
 	}
 
+	generation := accountTodayStatsBatchCache.Generation()
 	stats, err := h.accountUsageService.GetTodayStatsBatch(c.Request.Context(), accountIDs)
 	if err != nil {
 		response.ErrorFrom(c, err)
@@ -2508,7 +2511,7 @@ func (h *AccountHandler) GetBatchTodayStats(c *gin.Context) {
 	}
 
 	payload := gin.H{"stats": stats}
-	cached := accountTodayStatsBatchCache.Set(cacheKey, payload)
+	cached, _ := accountTodayStatsBatchCache.SetIfGeneration(cacheKey, payload, generation)
 	if cached.ETag != "" {
 		c.Header("ETag", cached.ETag)
 		c.Header("Vary", "If-None-Match")

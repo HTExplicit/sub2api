@@ -1062,7 +1062,7 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 			}
 			return
 		}
-		trafficTurn := h.trafficObserver.Begin(c.Request.Context(), account.ID, service.AccountTrafficProtocolHTTP)
+		trafficTurn := h.trafficObserver.Begin(c.Request.Context(), account, service.AccountTrafficProtocolHTTP)
 		result, err := func() (res *service.OpenAIForwardResult, ferr error) {
 			defer func() {
 				if accountReleaseFunc != nil {
@@ -1739,7 +1739,7 @@ func (h *OpenAIGatewayHandler) Messages(c *gin.Context) {
 			forwardBody = service.ReplaceModelInBody(body, nativeMessagesModel)
 		}
 		writerSizeBeforeForward := c.Writer.Size()
-		trafficTurn := h.trafficObserver.Begin(c.Request.Context(), account.ID, service.AccountTrafficProtocolHTTP)
+		trafficTurn := h.trafficObserver.Begin(c.Request.Context(), account, service.AccountTrafficProtocolHTTP)
 		result, err := func() (res *service.OpenAIForwardResult, ferr error) {
 			defer func() {
 				if accountReleaseFunc != nil {
@@ -3071,11 +3071,11 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 			turn.Finish(result, turnErr, clientLifecycleCtx.Err() != nil)
 		}
 	}
-	beginWSTrafficTurn := func(accountID int64) {
+	beginWSTrafficTurn := func(account *service.Account) {
 		// A turn still open here never reported; reconcile it first so that
 		// started == sum(outcomes) always holds.
 		finishOpenWSTrafficTurn(nil, nil)
-		wsTrafficTurn.Store(h.trafficObserver.Begin(ctx, accountID, service.AccountTrafficProtocolWS))
+		wsTrafficTurn.Store(h.trafficObserver.Begin(ctx, account, service.AccountTrafficProtocolWS))
 	}
 	releaseAccountSlot := func() {
 		finishOpenWSTrafficTurn(nil, nil)
@@ -3599,7 +3599,7 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 				}
 				currentUserRelease = wrapReleaseOnDone(ctx, userReleaseFunc)
 				currentAccountRelease = wrapReleaseOnDone(ctx, accountReleaseFunc)
-				beginWSTrafficTurn(account.ID)
+				beginWSTrafficTurn(account)
 				return nil
 			},
 			AfterTurn: func(turn int, result *service.OpenAIForwardResult, turnErr error) {
@@ -3715,7 +3715,7 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 		// WebSocket 首包可能很大，hash 必须在 hooks 外算成字符串，避免 AfterTurn 闭包保活请求体。
 		requestPayloadHash = service.HashUsageRequestPayload(wsFirstMessage)
 
-		beginWSTrafficTurn(account.ID)
+		beginWSTrafficTurn(account)
 		if err := h.gatewayService.ProxyResponsesWebSocketFromClient(ctx, c, wsConn, account, token, wsFirstMessage, hooks); err != nil {
 			if closeErr, postOutputCyber := openAIWSPostOutputCyberClose(err); postOutputCyber {
 				reqLog.Info("openai.websocket_post_output_cyber_closed",

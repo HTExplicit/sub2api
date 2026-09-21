@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -18,10 +19,11 @@ type snapshotCacheEntry struct {
 }
 
 type snapshotCache struct {
-	mu    sync.RWMutex
-	ttl   time.Duration
-	items map[string]snapshotCacheEntry
-	sf    singleflight.Group
+	mu         sync.RWMutex
+	ttl        time.Duration
+	items      map[string]snapshotCacheEntry
+	generation uint64
+	sf         singleflight.Group
 }
 
 type snapshotCacheLoadResult struct {
@@ -83,8 +85,39 @@ func (c *snapshotCache) Clear() {
 		return
 	}
 	c.mu.Lock()
+	c.generation++
 	c.items = make(map[string]snapshotCacheEntry)
 	c.mu.Unlock()
+}
+
+// Generation is sampled before a backing read. Invalidation advances the
+// generation so that a read which started before Clear cannot refill its map.
+func (c *snapshotCache) Generation() uint64 {
+	if c == nil {
+		return 0
+	}
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.generation
+}
+
+// SetIfGeneration returns a response entry even when invalidated, but only
+// publishes it to the cache if the caller's pre-read generation is current.
+func (c *snapshotCache) SetIfGeneration(key string, payload any, generation uint64) (snapshotCacheEntry, bool) {
+	if c == nil {
+		return snapshotCacheEntry{}, false
+	}
+	entry := snapshotCacheEntry{ETag: buildETagFromAny(payload), Payload: payload, ExpiresAt: time.Now().Add(c.ttl)}
+	if key == "" {
+		return entry, false
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.generation != generation {
+		return entry, false
+	}
+	c.items[key] = entry
+	return entry, true
 }
 
 func (c *snapshotCache) GetOrLoad(key string, load func() (any, error)) (snapshotCacheEntry, bool, error) {
@@ -102,7 +135,9 @@ func (c *snapshotCache) GetOrLoad(key string, load func() (any, error)) (snapsho
 		return c.Set(key, payload), false, nil
 	}
 
-	value, err, _ := c.sf.Do(key, func() (any, error) {
+	generation := c.Generation()
+	flightKey := strconv.FormatUint(generation, 10) + ":" + key
+	value, err, _ := c.sf.Do(flightKey, func() (any, error) {
 		if entry, ok := c.Get(key); ok {
 			return snapshotCacheLoadResult{Entry: entry, Hit: true}, nil
 		}
@@ -110,7 +145,8 @@ func (c *snapshotCache) GetOrLoad(key string, load func() (any, error)) (snapsho
 		if err != nil {
 			return nil, err
 		}
-		return snapshotCacheLoadResult{Entry: c.Set(key, payload), Hit: false}, nil
+		entry, _ := c.SetIfGeneration(key, payload, generation)
+		return snapshotCacheLoadResult{Entry: entry, Hit: false}, nil
 	})
 	if err != nil {
 		return snapshotCacheEntry{}, false, err
