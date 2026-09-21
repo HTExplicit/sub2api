@@ -583,6 +583,8 @@ func (s *OpenAIGatewayService) ForwardAsAnthropic(
 		if snapshot := ParseCodexRateLimitHeaders(resp.Header); snapshot != nil {
 			s.updateCodexUsageSnapshot(ctx, account.ID, snapshot)
 		}
+	} else if handleErr == nil && account.IsShadow() && account.ParentAccountID != nil {
+		notifyOpenAIAutoReset(*account.ParentAccountID)
 	}
 
 	stampOpenAIResponsesUpstreamEndpoint(c, result)
@@ -725,6 +727,9 @@ func (s *OpenAIGatewayService) handleAnthropicBufferedStreamingResponse(
 				result.SearchCount = n
 			}
 		}
+	}
+	if strings.TrimSpace(finalResponse.Status) == "completed" {
+		logOpenAISuccessMissingUsage(c.Request.Context(), c, account, resp, &usage, "response.completed", false)
 	}
 	return result, nil
 }
@@ -995,6 +1000,7 @@ func (s *OpenAIGatewayService) handleAnthropicStreamingResponse(
 	state.Model = originalModel
 	var usage OpenAIUsage
 	responseID := ""
+	terminalEventType := ""
 	var firstTokenMs *int
 	firstChunk := true
 	clientDisconnected := false
@@ -1088,6 +1094,7 @@ func (s *OpenAIGatewayService) handleAnthropicStreamingResponse(
 		isBareErrorEvent := eventType == "error"
 		isTerminalEvent := isOpenAICompatResponsesTerminalEvent(eventType) || isBareErrorEvent
 		if isTerminalEvent {
+			terminalEventType = eventType
 			if event.Response != nil {
 				if id := strings.TrimSpace(event.Response.ID); id != "" {
 					responseID = id
@@ -1223,6 +1230,7 @@ func (s *OpenAIGatewayService) handleAnthropicStreamingResponse(
 				c.Writer.Flush()
 			}
 		}
+		logOpenAISuccessMissingUsage(c.Request.Context(), c, account, resp, &usage, terminalEventType, clientDisconnected)
 		return resultWithUsage(), nil
 	}
 

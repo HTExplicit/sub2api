@@ -375,6 +375,8 @@ func (s *OpenAIGatewayService) forwardAsChatCompletions(
 			return nil, fmt.Errorf("remarshal after codex transform: %w", err)
 		}
 	}
+	// Codex normalization can change the mapped slug before dispatch.
+	SetOpsUpstreamModel(c, upstreamModel)
 
 	if account.Type == AccountTypeAPIKey {
 		if trimmedKey := strings.TrimSpace(promptCacheKey); trimmedKey != "" {
@@ -606,6 +608,8 @@ func (s *OpenAIGatewayService) forwardAsChatCompletions(
 		if snapshot := ParseCodexRateLimitHeaders(resp.Header); snapshot != nil {
 			s.updateCodexUsageSnapshot(ctx, account.ID, snapshot)
 		}
+	} else if handleErr == nil && account.IsShadow() && account.ParentAccountID != nil {
+		notifyOpenAIAutoReset(*account.ParentAccountID)
 	}
 
 	return result, handleErr
@@ -793,6 +797,9 @@ func (s *OpenAIGatewayService) handleChatBufferedStreamingResponse(
 			}
 		}
 	}
+	if strings.TrimSpace(finalResponse.Status) == "completed" {
+		logOpenAISuccessMissingUsage(c.Request.Context(), c, account, resp, &usage, "response.completed", false)
+	}
 	return result, nil
 }
 
@@ -863,6 +870,7 @@ func (s *OpenAIGatewayService) handleChatStreamingResponse(
 
 	var usage OpenAIUsage
 	var firstTokenMs *int
+	terminalEventType := ""
 	firstChunk := true
 	clientDisconnected := false
 	clientOutputStarted := false
@@ -979,6 +987,7 @@ func (s *OpenAIGatewayService) handleChatStreamingResponse(
 		isBareErrorEvent := eventType == "error"
 		isTerminalEvent := isOpenAICompatResponsesTerminalEvent(eventType) || isBareErrorEvent
 		if isTerminalEvent {
+			terminalEventType = eventType
 			if event.Usage != nil {
 				usage = copyOpenAIUsageFromResponsesUsage(event.Usage)
 			}
@@ -1231,6 +1240,7 @@ func (s *OpenAIGatewayService) handleChatStreamingResponse(
 		if !clientDisconnected {
 			c.Writer.Flush()
 		}
+		logOpenAISuccessMissingUsage(c.Request.Context(), c, account, resp, &usage, terminalEventType, clientDisconnected)
 		return resultWithUsage(), nil
 	}
 
