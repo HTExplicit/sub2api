@@ -4634,9 +4634,10 @@ const openaiOAuthResponsesWebSocketV2Mode = ref<OpenAIWSMode>(OPENAI_WS_MODE_OFF
 const openaiAPIKeyResponsesWebSocketV2Mode = ref<OpenAIWSMode>(OPENAI_WS_MODE_OFF)
 const codexCLIOnlyEnabled = ref(false)
 const codexCLIOnlyAppServerEnabled = ref(false)
-type CodexFingerprintMode = 'off' | 'device' | 'session' | 'full'
-const codexFingerprintMode = ref<CodexFingerprintMode>('device')
+type CodexFingerprintMode = 'default' | 'off' | 'device' | 'session' | 'full'
+const codexFingerprintMode = ref<CodexFingerprintMode>('default')
 const codexFingerprintModeOptions = computed(() => [
+  { value: 'default' as CodexFingerprintMode, label: t('admin.accounts.openai.codexFingerprintDefault') },
   { value: 'off' as CodexFingerprintMode, label: t('admin.accounts.openai.codexFingerprintOff') },
   { value: 'device' as CodexFingerprintMode, label: t('admin.accounts.openai.codexFingerprintDevice') },
   { value: 'session' as CodexFingerprintMode, label: t('admin.accounts.openai.codexFingerprintSession') },
@@ -5660,7 +5661,7 @@ const resetForm = () => {
   openaiAPIKeyResponsesWebSocketV2Mode.value = OPENAI_WS_MODE_OFF
   codexCLIOnlyEnabled.value = false
   codexCLIOnlyAppServerEnabled.value = false
-  codexFingerprintMode.value = 'device'
+  codexFingerprintMode.value = 'default'
   anthropicPassthroughEnabled.value = false
   anthropicAPIKeyAuthScheme.value = 'x_api_key'
   webSearchEmulationMode.value = 'default'
@@ -5761,8 +5762,12 @@ const buildOpenAIExtra = (base?: Record<string, unknown>): Record<string, unknow
   } else {
     delete extra.codex_cli_only_allow_app_server
   }
-  // 后端对缺失键默认按 device 处理；显式 off 必须落键，否则会被当成默认 device。
-  extra.codex_fingerprint_mode = codexFingerprintMode.value
+  // 缺省值由后端策略决定；所有显式选项（包括 off）都必须保留。
+  if (codexFingerprintMode.value === 'default') {
+    delete extra.codex_fingerprint_mode
+  } else {
+    extra.codex_fingerprint_mode = codexFingerprintMode.value
+  }
   if (openAICompactMode.value !== 'auto') {
     extra.openai_compact_mode = openAICompactMode.value
   } else {
