@@ -4,15 +4,17 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net"
 	"testing"
 	"time"
 
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/lib/pq"
 	"github.com/stretchr/testify/require"
 )
 
 func transientDatabaseError(code string) error {
-	return &pq.Error{Code: pq.ErrorCode(code), Message: "database is temporarily unavailable"}
+	return &pgconn.PgError{Code: code, Message: "database is temporarily unavailable"}
 }
 
 func TestIsTransientDatabaseInitializationError(t *testing.T) {
@@ -24,7 +26,18 @@ func TestIsTransientDatabaseInitializationError(t *testing.T) {
 		{name: "postgres is starting", err: transientDatabaseError("57P03"), want: true},
 		{name: "connection failure", err: fmt.Errorf("wrapped: %w", transientDatabaseError("08006")), want: true},
 		{name: "authentication failure", err: transientDatabaseError("28P01"), want: false},
+		{name: "constraint failure", err: fmt.Errorf("migration: %w", transientDatabaseError("23514")), want: false},
+		{name: "other operator intervention", err: transientDatabaseError("57P01"), want: false},
 		{name: "migration error", err: errors.New("migration checksum mismatch"), want: false},
+		{name: "legacy postgres is starting", err: &pq.Error{Code: "57P03"}, want: true},
+		{name: "wrapped legacy connection failure", err: fmt.Errorf("wrapped: %w", &pq.Error{Code: "08006"}), want: true},
+		{name: "nil", err: nil, want: false},
+		{name: "typed nil pgx", err: (*pgconn.PgError)(nil), want: false},
+		{name: "typed nil pq", err: (*pq.Error)(nil), want: false},
+		{name: "canceled", err: context.Canceled, want: false},
+		{name: "wrapped deadline", err: fmt.Errorf("wrapped: %w", context.DeadlineExceeded), want: false},
+		{name: "sqlstate only in message", err: errors.New("database starting: SQLSTATE 57P03"), want: false},
+		{name: "network error is not added to policy", err: &net.OpError{Op: "dial", Net: "tcp", Err: errors.New("connection refused")}, want: false},
 	}
 
 	for _, tt := range tests {
@@ -54,20 +67,32 @@ func TestInitializeDatabaseWithRetryEventuallySucceeds(t *testing.T) {
 }
 
 func TestInitializeDatabaseWithRetryFailsFastForPermanentError(t *testing.T) {
-	attempts := 0
-	waitCalled := false
-	permanentErr := transientDatabaseError("28P01")
-	err := initializeDatabaseWithRetryWithWait(context.Background(), func(context.Context) error {
-		attempts++
-		return permanentErr
-	}, func(_ context.Context, _ time.Duration) error {
-		waitCalled = true
-		return nil
-	})
+	for _, test := range []struct {
+		name string
+		err  error
+	}{
+		{name: "authentication", err: transientDatabaseError("28P01")},
+		{name: "wrapped constraint", err: fmt.Errorf("migration: %w", transientDatabaseError("23514"))},
+		{name: "migration data", err: errors.New("migration checksum mismatch")},
+		{name: "direct cancellation", err: context.Canceled},
+		{name: "direct deadline", err: context.DeadlineExceeded},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			attempts := 0
+			waitCalled := false
+			err := initializeDatabaseWithRetryWithWait(context.Background(), func(context.Context) error {
+				attempts++
+				return test.err
+			}, func(_ context.Context, _ time.Duration) error {
+				waitCalled = true
+				return nil
+			})
 
-	require.ErrorIs(t, err, permanentErr)
-	require.Equal(t, 1, attempts)
-	require.False(t, waitCalled)
+			require.ErrorIs(t, err, test.err)
+			require.Equal(t, 1, attempts)
+			require.False(t, waitCalled)
+		})
+	}
 }
 
 func TestInitializeDatabaseWithRetryStopsWhenContextIsCanceled(t *testing.T) {
@@ -88,7 +113,7 @@ func TestInitializeDatabaseWithRetryStopsWhenContextIsCanceled(t *testing.T) {
 
 func TestInitializeDatabaseWithRetryReturnsLastErrorAfterLimit(t *testing.T) {
 	attempts := 0
-	lastErr := transientDatabaseError("08006")
+	lastErr := fmt.Errorf("wrapped connection: %w", transientDatabaseError("08006"))
 	var delays []time.Duration
 	err := initializeDatabaseWithRetryWithWait(context.Background(), func(context.Context) error {
 		attempts++
@@ -99,9 +124,12 @@ func TestInitializeDatabaseWithRetryReturnsLastErrorAfterLimit(t *testing.T) {
 	})
 
 	require.ErrorIs(t, err, lastErr)
-	require.Equal(t, maxDatabaseInitializationRetries+1, attempts)
-	require.Len(t, delays, maxDatabaseInitializationRetries)
-	require.Equal(t, databaseInitializationRetryMax, delays[len(delays)-1])
+	require.Equal(t, 8, maxDatabaseInitializationRetries)
+	require.Equal(t, 9, attempts, "one initial attempt plus eight retries")
+	require.Equal(t, []time.Duration{
+		time.Second, 2 * time.Second, 4 * time.Second, 8 * time.Second,
+		16 * time.Second, 30 * time.Second, 30 * time.Second, 30 * time.Second,
+	}, delays)
 }
 
 func TestInitializeDatabaseWithRetryAllowsIdempotentMigrationRetry(t *testing.T) {

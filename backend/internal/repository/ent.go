@@ -18,6 +18,7 @@ import (
 
 	"entgo.io/ent/dialect"
 	entsql "entgo.io/ent/dialect/sql"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/lib/pq"
 )
 
@@ -76,11 +77,19 @@ func waitForDatabaseInitializationRetry(ctx context.Context, delay time.Duration
 }
 
 func isTransientDatabaseInitializationError(err error) bool {
+	// The active pgx connector and legacy pq callers expose different typed
+	// server errors. Keep the same SQLSTATE policy for both, including wrappers.
+	var pgErr *pgconn.PgError
 	var pqErr *pq.Error
-	if !errors.As(err, &pqErr) {
+	var code string
+	switch {
+	case errors.As(err, &pgErr) && pgErr != nil:
+		code = pgErr.Code
+	case errors.As(err, &pqErr) && pqErr != nil:
+		code = string(pqErr.Code)
+	default:
 		return false
 	}
-	code := string(pqErr.Code)
 	return code == "57P03" || strings.HasPrefix(code, "08")
 }
 
