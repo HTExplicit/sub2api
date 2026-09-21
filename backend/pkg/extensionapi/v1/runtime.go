@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"sync"
+	"time"
 
 	pluginv1 "github.com/Wei-Shaw/sub2api/pkg/pluginapi/v1"
 	hcplugin "github.com/hashicorp/go-plugin"
@@ -83,6 +84,38 @@ func (r *Runtime) ApplyConfig(ctx context.Context, in *pluginv1.ApplyConfigReque
 		return &pluginv1.ApplyConfigResponse{Applied: false, Message: err.Error()}, nil
 	}
 	return &pluginv1.ApplyConfigResponse{Applied: true}, nil
+}
+
+// Policy modules use the official TestConfig method for local diagnostics.
+// This default checks configuration and passive status only; domain-specific
+// upstream probes remain explicit named admin operations, never hidden here.
+func (r *Runtime) TestConfig(ctx context.Context, in *pluginv1.TestConfigRequest) (*pluginv1.TestConfigResponse, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, status.FromContextError(err).Err()
+	}
+	if in == nil || len(in.ConfigJson) > MaxPayloadBytes {
+		return nil, status.Error(codes.InvalidArgument, "invalid configuration")
+	}
+	started := time.Now()
+	raw, err := r.module.ValidateConfig(ctx, in.ConfigJson)
+	if err := ctx.Err(); err != nil {
+		return nil, status.FromContextError(err).Err()
+	}
+	var normalized map[string]json.RawMessage
+	if err != nil || len(raw) > MaxPayloadBytes || json.Unmarshal(raw, &normalized) != nil || normalized == nil {
+		return &pluginv1.TestConfigResponse{Message: "Extension configuration is invalid."}, nil
+	}
+	localStatus, err := r.module.Status(ctx)
+	if err := ctx.Err(); err != nil {
+		return nil, status.FromContextError(err).Err()
+	}
+	if err != nil || len(localStatus) > MaxPayloadBytes || !json.Valid(localStatus) {
+		return &pluginv1.TestConfigResponse{Message: "Extension status is unavailable."}, nil
+	}
+	return &pluginv1.TestConfigResponse{
+		Success: true, Message: "Configuration and local status are valid; no upstream connection was tested.",
+		LatencyMs: time.Since(started).Milliseconds(), StatusJson: string(localStatus),
+	}, nil
 }
 
 func (r *Runtime) InitHostServices(_ context.Context, in *pluginv1.InitHostServicesRequest) (*pluginv1.InitHostServicesResponse, error) {
