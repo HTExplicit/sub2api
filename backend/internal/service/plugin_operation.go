@@ -47,18 +47,24 @@ func (m *PluginManager) InvokeCachedOperation(ctx context.Context, platform, acc
 	if err != nil {
 		return extensionv1.Result{}, err
 	}
-	runtime := registry.runtimes[id]
-	if runtime == nil || runtime.draining.Load() || runtime.configuring.Load() || runtime.client.Exited() || !pluginDependenciesHealthy(registry.installations[id], registry, map[int64]bool{}) {
-		return extensionv1.Result{}, ErrExtensionOperationUnavailable
+	admission, err := m.admitPluginInvocation(ctx, registry, id, platform, accountType, in)
+	if err != nil {
+		return extensionv1.Result{}, err
 	}
-	key := in.Capability + "\x00" + in.Operation + "\x00" + strconv.FormatInt(in.AccountID, 10) + "\x00" + strconv.FormatUint(runtime.configRevision.Load(), 10) + "\x00" + string(in.Payload)
+	defer admission.release()
+	runtime := admission.runtime
+	key := in.Capability + "\x00" + in.Operation + "\x00" + strconv.FormatInt(in.AccountID, 10) + "\x00" + strconv.FormatUint(admission.revision, 10) + "\x00" + string(in.Payload)
 	if cached, ok := runtime.catalogCache.Load(key); ok {
 		var result extensionv1.Result
 		if json.Unmarshal(cached.(json.RawMessage), &result) == nil {
+			if err := admission.validate(); err != nil {
+				return extensionv1.Result{}, err
+			}
+			result.PluginID = id
 			return result, nil
 		}
 	}
-	result, err := m.InvokeExtension(ctx, id, platform, accountType, in)
+	result, err := admission.invoke(in)
 	if err != nil {
 		return result, err
 	}

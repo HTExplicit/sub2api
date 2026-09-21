@@ -403,25 +403,12 @@ func (m *PluginManager) PublicContributions() []PluginContribution {
 }
 
 func (m *PluginManager) InvokeExtension(ctx context.Context, id int64, platform, accountType string, in extensionv1.Invocation) (extensionv1.Result, error) {
-	registry := m.extensions.Load()
-	if registry == nil || registry.unavailable != "" {
-		return extensionv1.Result{}, errors.New("plugin registry unavailable")
+	admission, err := m.admitPluginInvocation(ctx, m.extensions.Load(), id, platform, accountType, in)
+	if err != nil {
+		return extensionv1.Result{}, err
 	}
-	installation := registry.installations[id]
-	if !pluginHasInvocationCapability(installation, in, platform, accountType) {
-		return extensionv1.Result{}, errors.New("plugin capability is disabled or outside its scope")
-	}
-	if !pluginDependenciesHealthy(installation, registry, map[int64]bool{}) {
-		return extensionv1.Result{}, errors.New("plugin dependency unavailable")
-	}
-	runtime := registry.runtimes[id]
-	if runtime == nil || runtime.extension == nil || runtime.client.Exited() || !runtime.beginRequest() {
-		return extensionv1.Result{}, errors.New("enabled plugin is unavailable")
-	}
-	defer runtime.finishRequest()
-	result, err := runtime.extension.Invoke(ctx, in)
-	result.PluginID = id
-	return result, err
+	defer admission.release()
+	return admission.invoke(in)
 }
 
 func (m *PluginManager) publishExtensionRegistryLocked(installations []*PluginInstallation, unavailable string) {

@@ -94,7 +94,11 @@ func (m *PluginManager) ResolveCatalog(ctx context.Context, query extensionv1.Ca
 		if cached, ok := runtime.catalogCache.Load(cacheKey); ok {
 			payload = cached.(json.RawMessage)
 		} else {
-			out, callErr := m.InvokeExtension(bound, id, query.Platform, query.AccountType, invocation)
+			// This resolver already read the selected installation and holds its
+			// exact business lease. Invoke that same runtime without a second
+			// database read or a nested lifetime admission.
+			admission := &pluginInvocationAdmission{ctx: bound, runtime: runtime, revision: revision, owner: id}
+			out, callErr := admission.invoke(invocation)
 			if callErr != nil || out.Code != "" {
 				return extensionv1.CatalogMatch{}, errors.New("enabled model catalog unavailable")
 			}
