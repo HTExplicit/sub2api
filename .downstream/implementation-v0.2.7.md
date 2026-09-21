@@ -121,20 +121,23 @@
 - Cindy 搜索计划与目录使用同一真实账号作用范围、同一插件及相同上游模型；额外 JSON 与过长身份拒绝。定价缓存复用前同样核验账号灰度，已捕获的异步账单引用保留。对应五个定向用例通过，完整四文件审查见根 `artifacts/evidence/v027-cindy-policy-scope-review.json`。
 - 导入跨块身份计数由宿主不可变事实计算，prepare/finalize 跟踪标志必须一致；重复身份和错误设备归属不能被插件变成可执行计划，业务错误码优先级仍由插件决定。旧批量 ID 中任意非正值整体拒绝，合法去重/排序保留。八个精确定向用例实际运行通过，证据见根 `artifacts/evidence/v027-astra-import-integrity-review.json`。
 - 管理员无贡献 ID 的配置页在停用/故障时仍能打开，不授予业务执行；业务页按能力绑定准入，AllAccounts 要求通配平台/类型及100%灰度。静态令牌不因配置修订或执行代次变化失效，操作仍走实时门禁。原选择器漏掉新测试名已纠正，四个新增顶层测试及子例实际 RUN/PASS，见根 `artifacts/evidence/v027-ui-session-admission-agent-review.json`；这不代表完整管理器已审完。
-- 更新暂存与续作在候选验证前及提交前重新读取持久注册表，检查目标修订/配置/包代次、依赖及操作冲突，保留最新停用意图和新能力默认关闭。十个准入叶子用例通过；另修正旧续作夹具缺更新接口导致的假阳性，现确实进入候选启动并在失败时阻止提交。见根 `artifacts/evidence/v027-astra-update-admission-review.json`。注册表读取不是跨插件事务快照，运行租约与仓库层完整审查仍继续；未声称跨插件原子性或成功健康验证。
+- 更新暂存与续作在候选验证前及提交前重新读取持久注册表，检查目标修订/配置/包代次、依赖及操作冲突，保留最新停用意图和新能力默认关闭。十个准入叶子用例通过；另修正旧续作夹具缺更新接口导致的假阳性，现确实进入候选启动并在失败时阻止提交。见根 `artifacts/evidence/v027-astra-update-admission-review.json`。该预检不代替下述仓库事务的最终图校验，也不是成功健康验证；完整混合调用链仍须继续审查。
 - 旧上传接口现只用于首次安装，已有身份返回 `409 / PLUGIN_ALREADY_INSTALLED` 并要求专用更新；仓库并发冲突也不覆盖旧包。成功晋升后重新读取全部注册表，再检查并发布，不沿用其他插件的排空前快照。真实 PostgreSQL 的旧租约覆盖反例修复后通过，正常首次安装、冲突时旧包/配置/灰度/pending 保留、明确卸载后新 ID 安装和诊断账本保留均已定向验证；见根 `artifacts/evidence/v027-astra-update-persistence-review.json`。
-- 未完成内置初始化不能再被独立更新插入并覆盖：Prepare/Complete 保留 `updating` 与固定版所有权，Stage 不把迁移期临时关闭绑定当成管理员意图。迟到 Complete 仅在持久化确认已被其他操作接手时跳过；普通失败仍报错。两条 PostgreSQL 反例及11个直接叶子用例已通过，见根 `artifacts/evidence/v027-astra-bootstrap-update-review.json`。最终读取后的跨插件写入、运行租约会话丢失及已完成 bundle 的晚到固定版竞争仍待专项关闭。
+- 未完成内置初始化不能再被独立更新插入并覆盖：Prepare/Complete 保留 `updating` 与固定版所有权，Stage 不把迁移期临时关闭绑定当成管理员意图。迟到 Complete 仅在持久化确认已被其他操作接手时跳过；普通失败仍报错。两条 PostgreSQL 反例及11个直接叶子用例已通过，见根 `artifacts/evidence/v027-astra-bootstrap-update-review.json`。最终读取后的并发写入、运行会话丢失和已完成bundle固定版竞争分别由下述独立证据限定，不以本组初始化结果代替。
 - 分类赋值回传必须保留原文件夹和完整标签集合。全局文件夹/标签删除要求通配账号类型、平台和100%灰度，SDK新增只读具名资源可用性查询；独立页面显示、点击前复核及后端执行共用同一判断，其余分类操作不扩大为全局权限。8个新增定向用例及两份类型检查通过；根 `artifacts/evidence/v027-astra-account-taxonomy-review.json` 区分完整与局部审查。
 - 账号型宿主 broker 每次调用读取一个当前安装快照，检查已启用状态、包/执行代次/已应用配置及真实账号灰度；列表逐账号过滤，凭据、指标和调度投影不能绕过范围。已发出的归属观测在停用后仍可按原账本收尾。请求头注入与本地调度也改为同一真实账号灰度。合成反例先失败后通过，认证/租户/HTTP帧头保护及具名操作隔离回归通过；见根 `artifacts/evidence/v027-broker-and-request-scope-review.json`。这不代表全部调用方或跨实例生命周期已审完。
 - 模型目录查询保留真实 AccountID，0/50/100%灰度与账号缓存隔离已验证；读取缓存前只点查选中插件，并核对已应用配置、策略取消与配置修订。候选上限对齐宿主已有512字节，长命名空间后续短叶子正常匹配，513仍拒绝；固定93条目录与迁移前宿主表一致，价格未变。六个精确定向用例通过，见根 `artifacts/evidence/v027-astra-model-policy-final-review.json`。
 - Codex真实账号的身份、压缩、指纹默认值、sandbox与诊断均保留ID及OAuth/Setup Token类型；后台回填逐适用账号获取租约并条件写入，不先要求全局插件可用。创建前和共享策略保留无账号语义，显式用户指纹配置和原字段不改。六个新增目标方法及两个直接旧契约通过，见根 `artifacts/evidence/v027-astra-codex-scope-review.json`；完整指纹/gateway/OAuth大文件的未审部分仍保留待审查。
 - 宿主业务IO租约现在与普通进程生命周期租约区分：业务准入核对当前enabled、revision/config/包/执行代次，并先核对运行时已应用配置；停用插件的临时配置诊断仍允许普通process lease。两项真实PG、两项完整接口内存反例及直接影响的后台回填用例通过，见根 `artifacts/evidence/v027-astra-host-io-admission-review.json`。这不等于异常丢失数据库会话后在途IO已经被撤销。
 - 官方自动用卡服务仍由原provider启动，插件迁移曾漏掉它的关闭调用；已仅补回Stop并重新生成Wire，实际worker在合成仓库阻塞的反例先失败后通过。Make关键测试列表的旧Cindy路径也已改为插件内的同一测试，22个静态目标均存在；不因路径修正重跑业务测试。见根 `artifacts/evidence/v027-lifecycle-wiring-review.json`。
-- 提示词实际请求带AccountID，命中请求缓存也重新检查当前账号准入；内容/编译快照仍按同一请求或WS回合冻结。跨账号、撤销、协议转换时只按确切载体来源恢复本次注入，不搜索删除客户同文system；固定两种载体证明、最多64KiB原始instructions且只有一份完整缓存输出，来源不确定拒绝。官方同内容切换载体及规范化空白的后验反例也已修复，精确新旧用例通过，见根 `artifacts/evidence/v027-astra-prompt-request-scope-review.json`。WS跨回合旧key累积单独待查，不能将每回合有界当连接总量已证实有界。
+- 提示词实际请求带AccountID，命中请求缓存也重新检查当前账号准入；内容/编译快照仍按同一请求或WS回合冻结。跨账号、撤销、协议转换时只按确切载体来源恢复本次注入，不搜索删除客户同文system；固定两种载体证明、最多64KiB原始instructions且只有一份完整缓存输出，来源不确定拒绝。来源策略证据见根 `artifacts/evidence/v027-astra-prompt-request-scope-review.json`。WS已改为只保留当前回合提示词缓存，四个直接回归通过；响应转发和AfterTurn结束后才替换缓存，不动独立的重放历史或异步账单，见根 `artifacts/evidence/v027-prompt-turn-cache-review.json`；这不等于连接总内存已有上界证明。
 - 自动内置更新在启动后读到晚到pinned/updating意图即停止stage，状态冲突或目标移除须重读持久意图确认。completed分支只清理本次唯一候选，不清旧包或Prepare已接管路径；真实bootstrap/installer离线反例及原completion直接回归通过。见根 `artifacts/evidence/v027-astra-bundle-pin-race-review.json`，先前completed分支的固定版竞争已关闭。
 - 发布源码固定为main准入的完整SHA，发布前检查Release/draft/版本镜像是否已存在或不确定；构建/load与push分离，显式draft附齐包和lock的摘要后再公开，失败保留现场不覆盖。签名身份初始化完整分页检查Secret名称；checkout不保留token，构建不继承显式发布token，私钥仍仅签名步骤注入。14个Python和3个Go定向方法、YAML/run块语法通过，见根 `artifacts/evidence/v027-astra-release-supply-chain-review.json`；未真正签名、发布或核对远端不可变规则。
 - 七包29项贡献已逐项声明能力；有管理动作的贡献同时要求Admin与声明的业务能力，宿主投影平台/类型/灰度交集，前端按同一uint64账号分桶检查完整选择集。字段保留草稿而有效执行值独立计算；普通连接测试在插件选项不可用时仍可用原生默认，显式非空越范围API选项拒绝。全局主题要求通配UI绑定和100%。配置尚未应用时不借旧true flag准入管理动作；原任务历史仍可查看。定向Go/UI及类型验证通过，详见根 `artifacts/evidence/v027-astra-contribution-admission-review.json`。
 - 运行租约新增可观察会话接口：一秒间隔、最多一秒Ping探测，同一goroutine串行Ping/Close，无自动重连；检测失联后运行时排空并终止，宿主策略取消可传播到已脱离客户端的上游IO，计费收尾仍独立。21个定向叶子执行通过。真实本地PG明确复现“新代次提交早于失联通知”，因此保证仅为检测后本地撤权，不声称撤销已到上游的请求或全系统exactly-once；持久任务租约、IO前spent CAS及旧代次写入拒绝继续防重复。见根 `artifacts/evidence/v027-astra-runtime-lease-loss-review.json`。
+- 注册表六类图写入已在SERIALIZABLE事务内读取并校验最终依赖/操作所有者，冲突回滚同事务修改；不把旧版本或直接SQL写入器视为受保护。管理界面保存读时revision/package，配置回执来自本次条件写入；旧草稿不自动变基，相同配置CAS不取消工作。证据集中在根 `artifacts/evidence/v027-registry-precondition-integration-review.json`，公开接口与限制见插件开发手册。
+- 遥测Begin/Snapshot按实际账号范围选择策略；今日统计只在确认日志持久化后失效，generation阻止旧在途读回填。密钥显示相关响应禁止缓存，既有管理员与专用密码规则不变，见根 `artifacts/evidence/v027-astra-admin-adapter-review.json`。Cindy余额探测和原生Messages也已补实际账号门禁，共享目录查询保持原语义，见根 `artifacts/evidence/v027-astra-cindy-catalog-completion-review.json`。
+- 历史利润配置不能重启已退役的运行时门，旧列、倍率和定价上下文保留；插件弹窗恢复移除inert而不换输入节点；导入取消/非JSON选择保留草稿，accepted新JSON失败不回退旧数据。对应证据为根 `artifacts/evidence/v027-dormant-retirement-import-review.json`、`v027-ui-host-mechanism-review.json`、`v027-import-draft-coverage-review.json`。SDK请求超时还会释放取消监听器，详见 `v027-public-sdk-contract-review.json`。
 
 ## 未完成
 
@@ -142,7 +145,7 @@
 - 七域均已有实际独立实现，但混合职责尚须逐项审查：其他账号工具、模型策略的剩余调用链、Cindy其他账号及搜索策略、局部主题声明。不能以七个包可构建作为全部功能迁移完成。
 - 全下游差异清单已由 `.downstream/refresh-coverage.mjs` 刷新，包含逐文件角色和内容摘要；分类不会自动标记已审查，修改字节会使旧结论失效。根项目维护通道、清理与 Worker 的已修正边界和验证记录统一见项目根 `artifacts/evidence/v027-root-review.json`，完整逐文件审查仍未完成。
 - 普通/Spark额度、真实30天窗口、未知恢复时间、迟到账单和显式推理强度的最终调用链已静态复核，证据在根 `artifacts/evidence/v027-quota-agent-review.json`。首次已结算观测惰性建立费用/使用率基线，导入前消耗不进入增量估值；主体、倍率、窗口或活动代次变化隔离旧基线。既有通过用例直接复用，没有真实模型验收；本轮不新增30天提前暂停策略。
-- 通用插件任务、配置、能力范围及多域依赖仍须结合完整调用链继续审查，尤其跨插件最后读取后的并发变更、运行租约会话失联后的在途取消、WS提示词跨回合缓存回收。正式构建与交付尚未进行。
+- 通用插件任务、配置、能力范围及多域依赖仍须按覆盖清单关闭其余完整调用链；上面已限定解决的事务准入、失联检测与WS提示词缓存问题不代表大文件其余区域已审完。根维护脚本的失败路径及Linux验证正在收尾，正式构建与交付尚未进行。
 - 当前仍是本地开发阶段，未创建 PR、未构建发布最终镜像、未部署。生产手册仍指向旧版本，必须等实际统一交付后更新。
 - 提示词/技能完整管理页面及高级设置已迁入插件；模板编辑、发布/回滚、同步和冲突处理仍沿用原有体验，英文环境下使用中文的既定规则保留。宿主页面仅挂载 `ExtensionPage`。账号分类导航、管理、批量分类、批量测试、详情分类编辑、导入界面和导入策略已迁入账号工具包，宿主保留轻量挂载适配和通用任务进度。其他账号增强及完整更新调用链仍需随其余域逐项核查。
 - 单账号文本测试字段改为插件声明，由通用文本区域渲染；停用保留草稿并停止发送自定义文本，后端也校验对应能力。单个和独立批量界面继续共享同一用户的浏览器草稿，桥接只传同一用户/插件命名空间中的偏好。JSON 参数去除 Vue 代理，上传文件保留原生对象；表单事件通过 sandbox allow-forms，CSP 继续拒绝直接网络表单提交。
