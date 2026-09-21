@@ -22,12 +22,12 @@ func (r *pluginRepository) BundleApplied(ctx context.Context, key, bundle string
 
 // Package replacement is staged with the previous activation intent recorded
 // durably. A restart during migration cannot silently reset an enabled plugin.
-func (r *pluginRepository) PrepareBundledPlugin(ctx context.Context, plugin *service.PluginInstallation, bundle, profile string, enabled bool, config string) (*service.PluginInstallation, error) {
-	tx, err := r.db.BeginTx(ctx, nil)
+func (r *pluginRepository) PrepareBundledPlugin(ctx context.Context, plugin *service.PluginInstallation, bundle, profile string, enabled bool, config string) (_ *service.PluginInstallation, resultErr error) {
+	tx, err := r.beginPluginRegistryTx(ctx)
 	if err != nil {
 		return nil, err
 	}
-	defer func() { _ = tx.Rollback() }()
+	defer rollbackPluginRegistryTx(tx, &resultErr)
 	if _, err = tx.ExecContext(ctx, `SELECT pg_advisory_xact_lock(hashtext($1))`, "plugin-bundle:"+plugin.PluginKey); err != nil {
 		return nil, err
 	}
@@ -134,18 +134,18 @@ func (r *pluginRepository) PrepareBundledPlugin(ctx context.Context, plugin *ser
 	if err != nil {
 		return nil, err
 	}
-	if err = tx.Commit(); err != nil {
+	if err = commitPluginRegistryTx(ctx, tx); err != nil {
 		return nil, err
 	}
 	return r.GetByID(ctx, id)
 }
 
-func (r *pluginRepository) CompleteBundledPlugin(ctx context.Context, id int64, bundle string) error {
-	tx, err := r.db.BeginTx(ctx, nil)
+func (r *pluginRepository) CompleteBundledPlugin(ctx context.Context, id int64, bundle string) (resultErr error) {
+	tx, err := r.beginPluginRegistryTx(ctx)
 	if err != nil {
 		return err
 	}
-	defer func() { _ = tx.Rollback() }()
+	defer rollbackPluginRegistryTx(tx, &resultErr)
 	var key string
 	var enabled bool
 	var completed, removed bool
@@ -193,7 +193,7 @@ func (r *pluginRepository) CompleteBundledPlugin(ctx context.Context, id int64, 
 	if _, err = tx.ExecContext(ctx, `UPDATE sub2api_plugin_bootstrap SET completed=true,state_imported=true,updated_at=NOW() WHERE plugin_key=$1 AND bundle_sha256=$2`, key, bundle); err != nil {
 		return err
 	}
-	return tx.Commit()
+	return commitPluginRegistryTx(ctx, tx)
 }
 
 func (r *pluginRepository) LegacyBundleSeed(ctx context.Context, key, profile string, fallback service.PluginBundleSeed) (service.PluginBundleSeed, error) {

@@ -464,11 +464,13 @@ async function enablePlugin(plugin: PluginInstallation): Promise<void> {
     if (!acceptUntested) return;
   }
   busyID.value = plugin.id;
+  const expected = { ...plugin };
+  const rollout = rolloutValues.value[plugin.id] || 100;
   try {
     await pluginStepUp.run(() =>
       adminAPI.plugins.enable(
-        plugin.id,
-        rolloutValues.value[plugin.id] || 100,
+        expected,
+        rollout,
         acceptUntested,
       ),
     );
@@ -484,8 +486,9 @@ async function enablePlugin(plugin: PluginInstallation): Promise<void> {
 async function disablePlugin(plugin: PluginInstallation): Promise<void> {
   if (!window.confirm(t("admin.plugins.confirmDisable"))) return;
   busyID.value = plugin.id;
+  const expected = { ...plugin };
   try {
-    await pluginStepUp.run(() => adminAPI.plugins.disable(plugin.id));
+    await pluginStepUp.run(() => adminAPI.plugins.disable(expected));
     appStore.showSuccess(t("admin.plugins.disableSuccess"));
     await loadPlugins();
   } catch (error: unknown) {
@@ -498,8 +501,9 @@ async function disablePlugin(plugin: PluginInstallation): Promise<void> {
 async function uninstallPlugin(plugin: PluginInstallation): Promise<void> {
   if (!window.confirm(t("admin.plugins.confirmUninstall"))) return;
   busyID.value = plugin.id;
+  const expected = { ...plugin };
   try {
-    await pluginStepUp.run(() => adminAPI.plugins.remove(plugin.id));
+    await pluginStepUp.run(() => adminAPI.plugins.remove(expected));
     appStore.showSuccess(t("admin.plugins.uninstallSuccess"));
     await loadPlugins();
   } catch (error: unknown) {
@@ -511,9 +515,10 @@ async function uninstallPlugin(plugin: PluginInstallation): Promise<void> {
 
 async function testPlugin(plugin: PluginInstallation): Promise<void> {
   busyID.value = plugin.id;
+  const expected = { ...plugin };
   try {
     const result = await pluginStepUp.run(() =>
-      adminAPI.plugins.test(plugin.id),
+      adminAPI.plugins.test(expected),
     );
     if (result.success)
       appStore.showSuccess(result.message || t("admin.plugins.testSuccess"));

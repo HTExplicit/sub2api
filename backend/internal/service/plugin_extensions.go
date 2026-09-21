@@ -12,6 +12,16 @@ import (
 )
 
 func (m *PluginManager) InvokeAdminExtension(ctx context.Context, id, accountID int64, operation string, payload json.RawMessage) (extensionv1.Result, error) {
+	// Browser actions retain a target-generation lease across validation and
+	// invocation. A package swap cannot certify an old iframe's same-name action.
+	if PluginExpectedPackage(ctx) != "" {
+		bound, release, err := m.BindAccountJobExecution(ctx, id, 0)
+		if err != nil {
+			return extensionv1.Result{}, err
+		}
+		defer release()
+		ctx = bound
+	}
 	platform, accountType, err := m.validateAdminExtension(ctx, id, accountID, operation)
 	if err != nil {
 		return extensionv1.Result{}, err
@@ -50,6 +60,9 @@ func (m *PluginManager) validateAdminExtension(ctx context.Context, id, accountI
 		return "", "", errors.New("plugin storage unavailable")
 	}
 	current, readErr := m.repo.GetByID(ctx, id)
+	if readErr == nil && current != nil && PluginExpectedPackage(ctx) != "" && current.PackageSHA256 != PluginExpectedPackage(ctx) {
+		return "", "", ErrPluginStateChanged
+	}
 	if readErr != nil || !samePluginRuntime(current, installation) || current.State != PluginStateEnabled {
 		return "", "", errors.New("plugin state changed")
 	}
@@ -117,6 +130,13 @@ type pluginExtensionRegistry struct {
 	installations map[int64]*PluginInstallation
 	runtimes      map[int64]*pluginRuntime
 	unavailable   string
+}
+
+// ValidatePluginRegistry is a pure internal-service invariant shared by
+// preflight checks and the repository's transaction-local final admission.
+// It neither reads runtime health nor calls a plugin or external service.
+func ValidatePluginRegistry(installations []*PluginInstallation) error {
+	return validatePluginRegistry(installations)
 }
 
 func validatePluginRegistry(installations []*PluginInstallation) error {

@@ -2,6 +2,33 @@ import { apiClient } from '../client'
 import { accountJobIdempotencyHeaders, type AccountJob } from './accountJobs'
 import type { PluginResourceDescriptor } from '@/components/plugins/resourceClient'
 
+declare module 'axios' {
+  interface AxiosRequestConfig { rawPluginConfig?: boolean }
+}
+
+export interface PluginVersionSnapshot { revision: number; package_sha256: string }
+export interface PluginConfigSnapshot extends PluginVersionSnapshot { config: Record<string, unknown> }
+const revisionHeader = 'X-Sub2API-Plugin-Revision'
+const packageHeader = 'X-Sub2API-Plugin-Package'
+
+function packageHeaders(digest: string) {
+  if (!/^[a-f0-9]{64}$/.test(digest)) throw new Error('Reload the plugin view before submitting this operation')
+  return { [packageHeader]: digest }
+}
+
+function versionHeaders(snapshot: PluginVersionSnapshot) {
+  if (!Number.isSafeInteger(snapshot.revision) || snapshot.revision <= 0) throw new Error('Reload the plugin configuration before submitting this operation')
+  return { ...packageHeaders(snapshot.package_sha256), [revisionHeader]: String(snapshot.revision) }
+}
+
+function configSnapshot(data: Record<string, unknown>, headers: Record<string, unknown>): PluginConfigSnapshot {
+  const revision = Number(headers[revisionHeader.toLowerCase()])
+  const digest = String(headers[packageHeader.toLowerCase()] || '')
+  versionHeaders({ revision, package_sha256: digest })
+  if (!data || typeof data !== 'object' || Array.isArray(data)) throw new Error('Invalid plugin configuration response')
+  return { config: data, revision, package_sha256: digest }
+}
+
 export interface PluginCapability {
   id: string
   platform: string
@@ -138,14 +165,14 @@ export async function publicContributions(): Promise<PluginContribution[]> {
   return data || []
 }
 
-export async function invokeAdmin(id: number, operation: string, accountID: number | undefined, payload: Record<string, unknown>): Promise<{ payload?: unknown; code?: string; message?: string }> {
-  const { data } = await apiClient.post(`/admin/plugins/${id}/actions`, { operation, account_id: accountID, payload }, { timeout: 30000 })
+export async function invokeAdmin(id: number, operation: string, accountID: number | undefined, payload: Record<string, unknown>, expectedPackage: string): Promise<{ payload?: unknown; code?: string; message?: string }> {
+  const { data } = await apiClient.post(`/admin/plugins/${id}/actions`, { operation, account_id: accountID, payload }, { timeout: 30000, headers: packageHeaders(expectedPackage) })
   return data
 }
 
-export async function submitJob(id: number, operation: string, items: Array<{ account_id: number; payload: Record<string, unknown>; label?: string }>, key?: string): Promise<AccountJob> {
+export async function submitJob(id: number, operation: string, items: Array<{ account_id: number; payload: Record<string, unknown>; label?: string }>, expectedPackage: string, key?: string): Promise<AccountJob> {
   const config = key ? { headers: { 'Idempotency-Key': key } } : accountJobIdempotencyHeaders('plugin_operation')
-  const { data } = await apiClient.post<AccountJob>(`/admin/plugins/${id}/jobs`, { operation, items }, config)
+  const { data } = await apiClient.post<AccountJob>(`/admin/plugins/${id}/jobs`, { operation, items }, { ...config, headers: { ...config.headers, ...packageHeaders(expectedPackage) } })
   return data
 }
 
@@ -208,45 +235,50 @@ export async function followBundled(plugin: PluginInstallation): Promise<PluginI
 }
 
 export async function enable(
-  id: number,
+  plugin: PluginVersionSnapshot & { id: number },
   rolloutPercent: number,
   acceptUntested: boolean
 ): Promise<PluginInstallation> {
-  const { data } = await apiClient.post<PluginInstallation>(`/admin/plugins/${id}/enable`, {
+  const { data } = await apiClient.post<PluginInstallation>(`/admin/plugins/${plugin.id}/enable`, {
     rollout_percent: rolloutPercent,
     accept_untested: acceptUntested
-  })
+  }, { headers: versionHeaders(plugin) })
   changed()
   return data
 }
 
-export async function disable(id: number): Promise<PluginInstallation> {
-  const { data } = await apiClient.post<PluginInstallation>(`/admin/plugins/${id}/disable`)
+export async function disable(plugin: PluginVersionSnapshot & { id: number }): Promise<PluginInstallation> {
+  const { data } = await apiClient.post<PluginInstallation>(`/admin/plugins/${plugin.id}/disable`, undefined, { headers: versionHeaders(plugin) })
   changed()
   return data
 }
 
-export async function remove(id: number): Promise<void> {
-  await apiClient.delete(`/admin/plugins/${id}`)
+export async function remove(plugin: PluginVersionSnapshot & { id: number }): Promise<void> {
+  await apiClient.delete(`/admin/plugins/${plugin.id}`, { headers: versionHeaders(plugin) })
   changed()
 }
 
-export async function getConfig(id: number): Promise<Record<string, unknown>> {
-  const { data } = await apiClient.get<Record<string, unknown>>(`/admin/plugins/${id}/config`)
-  return data
+export async function getConfig(id: number, expectedPackage: string): Promise<PluginConfigSnapshot> {
+  const { data, headers } = await apiClient.get<Record<string, unknown>>(`/admin/plugins/${id}/config`, { rawPluginConfig: true, headers: packageHeaders(expectedPackage) })
+  const snapshot = configSnapshot(data, headers)
+  if (snapshot.package_sha256 !== expectedPackage) throw new Error('Plugin package changed; reload the view')
+  return snapshot
 }
 
 export async function saveConfig(
   id: number,
-  config: Record<string, unknown>
-): Promise<Record<string, unknown>> {
-  const { data } = await apiClient.put<Record<string, unknown>>(`/admin/plugins/${id}/config`, config)
+  config: Record<string, unknown>,
+  expected: PluginVersionSnapshot
+): Promise<PluginConfigSnapshot> {
+  const { data, headers } = await apiClient.put<Record<string, unknown>>(`/admin/plugins/${id}/config`, config, { rawPluginConfig: true, headers: versionHeaders(expected) })
+  const snapshot = configSnapshot(data, headers)
+  if (snapshot.package_sha256 !== expected.package_sha256 || snapshot.revision < expected.revision || snapshot.revision > expected.revision + 1) throw new Error('Plugin save receipt does not match the submitted version')
   changed()
-  return data
+  return snapshot
 }
 
-export async function test(id: number): Promise<PluginTestResult> {
-  const { data } = await apiClient.post<PluginTestResult>(`/admin/plugins/${id}/test`)
+export async function test(plugin: PluginVersionSnapshot & { id: number }): Promise<PluginTestResult> {
+  const { data } = await apiClient.post<PluginTestResult>(`/admin/plugins/${plugin.id}/test`, undefined, { headers: versionHeaders(plugin) })
   return data
 }
 

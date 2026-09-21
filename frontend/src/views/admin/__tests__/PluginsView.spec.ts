@@ -159,7 +159,7 @@ describe('管理员插件页二次验证', () => {
     await flushPromises()
 
     expect(stepUpRun).toHaveBeenCalledTimes(1)
-    expect(enablePlugin).toHaveBeenCalledWith(7, 100, false)
+    expect(enablePlugin).toHaveBeenCalledWith(plugin, 100, false)
   })
 
   it('上传插件通过 step-up 控制器执行', async () => {
@@ -176,6 +176,26 @@ describe('管理员插件页二次验证', () => {
 
     expect(stepUpRun).toHaveBeenCalledTimes(1)
     expect(uploadPlugin).toHaveBeenCalledTimes(1)
+  })
+
+  it('step-up期间不把已读取的操作快照换成新revision', async () => {
+    const displayed = { ...plugin }
+    listPlugins.mockResolvedValue([displayed])
+    let delayed: (() => Promise<unknown>) | undefined
+    let finish: (() => void) | undefined
+    stepUpRun.mockImplementation((action: () => Promise<unknown>) => {
+      delayed = action
+      return new Promise<void>(resolve => { finish = resolve })
+    })
+    const wrapper = mountView()
+    await flushPromises()
+    await wrapper.findAll('button').find(item => item.text().includes('admin.plugins.enable'))!.trigger('click')
+    displayed.revision = 99
+    await delayed!()
+    expect(enablePlugin).toHaveBeenCalledWith(expect.objectContaining({ revision: 4, package_sha256: plugin.package_sha256 }), 100, false)
+    finish!()
+    await flushPromises()
+    wrapper.unmount()
   })
 
   it('更新携带当前版本快照且不先停用插件', async () => {

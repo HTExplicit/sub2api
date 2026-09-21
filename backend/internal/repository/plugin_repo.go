@@ -72,16 +72,16 @@ func (r *pluginRepository) GetByKey(ctx context.Context, key string) (*service.P
 	return plugin, err
 }
 
-func (r *pluginRepository) Install(ctx context.Context, plugin *service.PluginInstallation, bindings []service.PluginBinding) (*service.PluginInstallation, error) {
+func (r *pluginRepository) Install(ctx context.Context, plugin *service.PluginInstallation, bindings []service.PluginBinding) (_ *service.PluginInstallation, resultErr error) {
 	manifestJSON, err := json.Marshal(plugin.Manifest)
 	if err != nil {
 		return nil, fmt.Errorf("序列化插件清单: %w", err)
 	}
-	tx, err := r.db.BeginTx(ctx, nil)
+	tx, err := r.beginPluginRegistryTx(ctx)
 	if err != nil {
 		return nil, err
 	}
-	defer func() { _ = tx.Rollback() }()
+	defer rollbackPluginRegistryTx(tx, &resultErr)
 	row := tx.QueryRowContext(ctx, `
 			INSERT INTO sub2api_plugin_installations (
 				plugin_key, name, version, description, author, manifest, artifact_data,
@@ -106,7 +106,7 @@ func (r *pluginRepository) Install(ctx context.Context, plugin *service.PluginIn
 	if _, err := tx.ExecContext(ctx, `UPDATE sub2api_plugin_bootstrap SET user_removed=false,desired_enabled=false,updated_at=NOW() WHERE plugin_key=$1`, plugin.PluginKey); err != nil {
 		return nil, err
 	}
-	if err := tx.Commit(); err != nil {
+	if err := commitPluginRegistryTx(ctx, tx); err != nil {
 		return nil, err
 	}
 	return r.GetByID(ctx, id)
@@ -118,19 +118,20 @@ func (r *pluginRepository) GetArtifact(ctx context.Context, id int64) ([]byte, e
 	return artifact, err
 }
 
-func (r *pluginRepository) Delete(ctx context.Context, id int64, expectedBinarySHA256 string) error {
-	tx, err := r.db.BeginTx(ctx, nil)
+func (r *pluginRepository) Delete(ctx context.Context, id int64, expectedBinarySHA256 string) (resultErr error) {
+	tx, err := r.beginPluginRegistryTx(ctx)
 	if err != nil {
 		return err
 	}
-	defer func() { _ = tx.Rollback() }()
+	defer rollbackPluginRegistryTx(tx, &resultErr)
 	var key string
 	err = tx.QueryRowContext(ctx, `
 		DELETE FROM sub2api_plugin_installations p
 		WHERE p.id = $1 AND p.binary_sha256 = $2 AND p.state NOT IN ('starting', 'enabled', 'updating')
+		  AND ($3 = 0 OR p.revision = $3) AND ($4 = '' OR p.package_sha256 = $4)
 		  AND NOT EXISTS (SELECT 1 FROM sub2api_plugin_bindings b WHERE b.plugin_id = p.id AND b.enabled = TRUE)
 		RETURNING p.plugin_key
-	`, id, expectedBinarySHA256).Scan(&key)
+	`, id, expectedBinarySHA256, service.PluginExpectedRevision(ctx), service.PluginExpectedPackage(ctx)).Scan(&key)
 	if err == sql.ErrNoRows {
 		return service.ErrPluginStateChanged
 	}
@@ -140,7 +141,7 @@ func (r *pluginRepository) Delete(ctx context.Context, id int64, expectedBinaryS
 	if _, err = tx.ExecContext(ctx, `UPDATE sub2api_plugin_bootstrap SET user_removed=true,desired_enabled=false,updated_at=NOW() WHERE plugin_key=$1`, key); err != nil {
 		return err
 	}
-	return tx.Commit()
+	return commitPluginRegistryTx(ctx, tx)
 }
 
 func (r *pluginRepository) BeginEnable(ctx context.Context, id int64, binarySHA256, expectedState string) error {
@@ -206,23 +207,24 @@ func (r *pluginRepository) UpdateState(ctx context.Context, id int64, state, las
 }
 
 func (r *pluginRepository) UpdateConfig(ctx context.Context, id int64, encrypted, expectedBinarySHA256 string) error {
-	result, err := r.db.ExecContext(ctx, `
+	_, err := r.UpdateConfigReturningRevision(ctx, id, encrypted, expectedBinarySHA256)
+	return err
+}
+
+func (r *pluginRepository) UpdateConfigReturningRevision(ctx context.Context, id int64, encrypted, expectedBinarySHA256 string) (int64, error) {
+	var revision int64
+	err := r.db.QueryRowContext(ctx, `
 		UPDATE sub2api_plugin_installations
 		SET config_encrypted = $2, updated_at = NOW()
 		WHERE id = $1 AND binary_sha256 = $3
 		  AND state <> 'updating' AND ($4 = 0 OR revision = $4)
-	`, id, encrypted, expectedBinarySHA256, service.PluginExpectedRevision(ctx))
-	if err != nil {
-		return err
+		  AND ($5 = '' OR package_sha256 = $5)
+		RETURNING revision
+	`, id, encrypted, expectedBinarySHA256, service.PluginExpectedRevision(ctx), service.PluginExpectedPackage(ctx)).Scan(&revision)
+	if err == sql.ErrNoRows {
+		return 0, service.ErrPluginStateChanged
 	}
-	rows, err := result.RowsAffected()
-	if err != nil {
-		return err
-	}
-	if rows != 1 {
-		return service.ErrPluginStateChanged
-	}
-	return nil
+	return revision, err
 }
 
 func (r *pluginRepository) UpdateBindingsAndState(
@@ -234,12 +236,12 @@ func (r *pluginRepository) UpdateBindingsAndState(
 	enabledAt *time.Time,
 	expectedState string,
 	expectedBinarySHA256 string,
-) error {
-	tx, err := r.db.BeginTx(ctx, nil)
+) (resultErr error) {
+	tx, err := r.beginPluginRegistryTx(ctx)
 	if err != nil {
 		return err
 	}
-	defer func() { _ = tx.Rollback() }()
+	defer rollbackPluginRegistryTx(tx, &resultErr)
 	result, err := tx.ExecContext(ctx, `
 		UPDATE sub2api_plugin_installations
 		SET state = CASE WHEN state='updating' THEN state ELSE $2 END, last_error = $3, enabled_at = $4, updated_at = NOW(), revision=revision+1
@@ -276,7 +278,7 @@ func (r *pluginRepository) UpdateBindingsAndState(
 			return err
 		}
 	}
-	return tx.Commit()
+	return commitPluginRegistryTx(ctx, tx)
 }
 
 func cancelPluginAccountJobs(ctx context.Context, tx *sql.Tx, pluginID int64) error {

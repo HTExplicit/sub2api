@@ -70,6 +70,9 @@ func (m *PluginManager) BindAccountJobExecution(ctx context.Context, id, expecte
 		return nil, nil, ErrAccountJobPluginUnavailable
 	}
 	current, err := m.repo.GetByID(ctx, id)
+	if err == nil && current != nil && PluginExpectedPackage(ctx) != "" && PluginExpectedPackage(ctx) != current.PackageSHA256 {
+		return nil, nil, ErrPluginStateChanged
+	}
 	if err != nil || current == nil || current.State != PluginStateEnabled || (expectedGeneration > 0 && current.RuntimeGeneration != expectedGeneration) {
 		return nil, nil, ErrAccountJobPluginUnavailable
 	}

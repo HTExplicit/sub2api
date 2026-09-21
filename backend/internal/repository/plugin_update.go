@@ -208,12 +208,12 @@ func (r *pluginRepository) PendingPluginArtifact(ctx context.Context, id int64) 
 	return artifact, err
 }
 
-func (r *pluginRepository) CommitPluginUpdate(ctx context.Context, previous, candidate *service.PluginInstallation) error {
-	tx, err := r.db.BeginTx(ctx, nil)
+func (r *pluginRepository) CommitPluginUpdate(ctx context.Context, previous, candidate *service.PluginInstallation) (resultErr error) {
+	tx, err := r.beginPluginRegistryTx(ctx)
 	if err != nil {
 		return err
 	}
-	defer tx.Rollback()
+	defer rollbackPluginRegistryTx(tx, &resultErr)
 	var locked bool
 	if err = tx.QueryRowContext(ctx, `SELECT pg_try_advisory_xact_lock(hashtextextended($1,0))`, pluginRuntimeLockName(previous.ID)).Scan(&locked); err != nil {
 		return err
@@ -265,7 +265,7 @@ func (r *pluginRepository) CommitPluginUpdate(ctx context.Context, previous, can
 	if _, err = tx.ExecContext(ctx, `DELETE FROM sub2api_plugin_updates WHERE plugin_id=$1`, previous.ID); err != nil {
 		return err
 	}
-	return tx.Commit()
+	return commitPluginRegistryTx(ctx, tx)
 }
 
 func (r *pluginRepository) SetPluginUpdatePolicy(ctx context.Context, id, revision int64, policy string) error {

@@ -39,6 +39,9 @@ func (h *PluginHandler) SubmitJob(c *gin.Context) {
 	if !ok {
 		return
 	}
+	if !bindPluginHTTPPrecondition(c, false, true) {
+		return
+	}
 	actor, ok := accountJobActorID(c)
 	if !ok {
 		return
@@ -63,6 +66,9 @@ func (h *PluginHandler) SubmitJob(c *gin.Context) {
 		}
 		if !accounts[accountID] {
 			if err := h.manager.ValidateAdminExtension(c.Request.Context(), id, accountID, req.Operation); err != nil {
+				if pluginPreconditionError(c, err) {
+					return
+				}
 				response.Error(c, http.StatusConflict, "Plugin operation is unavailable")
 				return
 			}
@@ -86,6 +92,9 @@ func (h *PluginHandler) SubmitJob(c *gin.Context) {
 	metadata, _ := json.Marshal(map[string]any{"plugin_id": id, "operation": req.Operation, "target_count": len(seeds), "account_count": len(accounts)})
 	job, replayed, err := h.jobs.Submit(c.Request.Context(), actor, service.AccountJobKindExtensionOperation, c.GetHeader("Idempotency-Key"), raw, metadata, seeds)
 	if err != nil {
+		if pluginPreconditionError(c, err) {
+			return
+		}
 		response.ErrorFrom(c, accountJobHTTPError(err))
 		return
 	}
@@ -119,6 +128,9 @@ func (h *PluginHandler) InvokeAdmin(c *gin.Context) {
 	if !ok {
 		return
 	}
+	if !bindPluginHTTPPrecondition(c, false, true) {
+		return
+	}
 	var req struct {
 		Operation string          `json:"operation"`
 		AccountID int64           `json:"account_id"`
@@ -130,6 +142,9 @@ func (h *PluginHandler) InvokeAdmin(c *gin.Context) {
 	}
 	result, err := h.manager.InvokeAdminExtension(c.Request.Context(), id, req.AccountID, req.Operation, req.Payload)
 	if err != nil {
+		if pluginPreconditionError(c, err) {
+			return
+		}
 		response.Error(c, http.StatusConflict, "Plugin operation is unavailable")
 		return
 	}
@@ -189,6 +204,9 @@ func (h *PluginHandler) Enable(c *gin.Context) {
 	if !ok {
 		return
 	}
+	if !bindPluginHTTPPrecondition(c, true, true) {
+		return
+	}
 	request := pluginEnableRequest{RolloutPercent: 100}
 	if err := c.ShouldBindJSON(&request); err != nil {
 		response.BadRequest(c, "启用参数无效")
@@ -196,6 +214,9 @@ func (h *PluginHandler) Enable(c *gin.Context) {
 	}
 	plugin, err := h.manager.Enable(c.Request.Context(), id, request.AcceptUntested, request.RolloutPercent)
 	if err != nil {
+		if pluginPreconditionError(c, err) {
+			return
+		}
 		response.BadRequest(c, err.Error())
 		return
 	}
@@ -207,8 +228,14 @@ func (h *PluginHandler) Disable(c *gin.Context) {
 	if !ok {
 		return
 	}
+	if !bindPluginHTTPPrecondition(c, true, true) {
+		return
+	}
 	plugin, err := h.manager.Disable(c.Request.Context(), id)
 	if err != nil {
+		if pluginPreconditionError(c, err) {
+			return
+		}
 		response.ErrorFrom(c, err)
 		return
 	}
@@ -220,7 +247,13 @@ func (h *PluginHandler) Delete(c *gin.Context) {
 	if !ok {
 		return
 	}
+	if !bindPluginHTTPPrecondition(c, true, true) {
+		return
+	}
 	if err := h.manager.Delete(c.Request.Context(), id); err != nil {
+		if pluginPreconditionError(c, err) {
+			return
+		}
 		response.ErrorFrom(c, err)
 		return
 	}
@@ -228,21 +261,32 @@ func (h *PluginHandler) Delete(c *gin.Context) {
 }
 
 func (h *PluginHandler) GetConfig(c *gin.Context) {
+	c.Header("Cache-Control", "private, no-store")
 	id, ok := pluginIDParam(c)
 	if !ok {
 		return
 	}
-	configJSON, err := h.manager.GetConfig(c.Request.Context(), id)
+	if !bindPluginHTTPPrecondition(c, false, false) {
+		return
+	}
+	snapshot, err := h.manager.GetConfigSnapshot(c.Request.Context(), id)
 	if err != nil {
+		if pluginPreconditionError(c, err) {
+			return
+		}
 		response.ErrorFrom(c, err)
 		return
 	}
-	c.Data(http.StatusOK, "application/json; charset=utf-8", configJSON)
+	writePluginConfigSnapshot(c, snapshot)
 }
 
 func (h *PluginHandler) SaveConfig(c *gin.Context) {
+	c.Header("Cache-Control", "private, no-store")
 	id, ok := pluginIDParam(c)
 	if !ok {
+		return
+	}
+	if !bindPluginHTTPPrecondition(c, true, true) {
 		return
 	}
 	decoder := json.NewDecoder(http.MaxBytesReader(c.Writer, c.Request.Body, 4*1024*1024))
@@ -261,12 +305,19 @@ func (h *PluginHandler) SaveConfig(c *gin.Context) {
 		response.BadRequest(c, "插件配置无法序列化")
 		return
 	}
-	saved, err := h.manager.SaveConfig(c.Request.Context(), id, raw)
+	saved, err := h.manager.SaveConfigSnapshot(c.Request.Context(), id, raw)
 	if err != nil {
+		if pluginPreconditionError(c, err) {
+			return
+		}
+		if errors.Is(err, service.ErrPluginConfigReceiptUnavailable) {
+			response.ErrorFrom(c, err)
+			return
+		}
 		response.BadRequest(c, err.Error())
 		return
 	}
-	c.Data(http.StatusOK, "application/json; charset=utf-8", saved)
+	writePluginConfigSnapshot(c, saved)
 }
 
 func (h *PluginHandler) Test(c *gin.Context) {
@@ -274,8 +325,14 @@ func (h *PluginHandler) Test(c *gin.Context) {
 	if !ok {
 		return
 	}
+	if !bindPluginHTTPPrecondition(c, true, true) {
+		return
+	}
 	result, err := h.manager.Test(c.Request.Context(), id)
 	if err != nil {
+		if pluginPreconditionError(c, err) {
+			return
+		}
 		response.BadRequest(c, err.Error())
 		return
 	}

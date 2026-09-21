@@ -12,6 +12,7 @@
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { adminAPI, type PluginUISession } from '@/api/admin'
+import type { PluginVersionSnapshot } from '@/api/admin/plugins'
 import accountJobsAPI, { type AccountJob } from '@/api/admin/accountJobs'
 import { useAppStore } from '@/stores'
 import { useAuthStore } from '@/stores/auth'
@@ -52,6 +53,8 @@ const preferenceKeys = new Set<string>()
 let generation = 0, frameLoaded = false
 let resourceCatalog: Promise<PluginResourceDescriptor[]> | null = null
 let presentationObserver: MutationObserver | null = null
+let configVersion: PluginVersionSnapshot | null = null
+let configPending = false
 
 function clearPending() {
   for (const timer of pending.values()) window.clearTimeout(timer)
@@ -60,6 +63,8 @@ function clearPending() {
   controllers.clear()
   preferenceKeys.clear()
   resourceCatalog = null
+  configVersion = null
+  configPending = false
   generation++
 }
 function loaded() {
@@ -67,7 +72,19 @@ function loaded() {
   frameLoaded = true
   loading.value = false
 }
-function failure(value: unknown): string { return value instanceof Error ? value.message : t('common.error') }
+function failure(value: unknown): string {
+  return value && typeof value === 'object' && 'message' in value && typeof value.message === 'string' ? value.message : t('common.error')
+}
+
+function packageChanged(): boolean {
+  const contribution = registry.items.find(item => item.plugin_id === props.pluginId && item.id === props.context.contribution_id)
+  return !!(contribution?.package_sha256 && session.value?.package_sha256 && contribution.package_sha256 !== session.value.package_sha256)
+}
+
+function loadedConfigVersion(): PluginVersionSnapshot {
+  if (!configVersion || configVersion.package_sha256 !== session.value?.package_sha256) throw new Error('Reload the plugin configuration before submitting this operation')
+  return { ...configVersion }
+}
 
 function currentContext() {
   const contribution = registry.items.find(item => item.plugin_id === props.pluginId && item.id === props.context.contribution_id)
@@ -193,26 +210,55 @@ async function receive(event: MessageEvent) {
         const result = current.permission === 'user' ? await execute() : await stepUp.run(execute)
         reply({ ok: true, result }); break
       }
-      case 'config.load': reply({ ok: true, config: await adminAPI.plugins.getConfig(id) }); break
+      case 'config.load': {
+        if (configPending) throw new Error('Plugin configuration operation is already pending')
+        configPending = true
+        try {
+          const snapshot = await adminAPI.plugins.getConfig(id, current.package_sha256 || '')
+          if (generation !== version || session.value !== current) break
+          configVersion = { revision: snapshot.revision, package_sha256: snapshot.package_sha256 }
+          reply({ ok: true, config: snapshot.config })
+        } finally { if (generation === version) configPending = false }
+        break
+      }
       case 'config.save': {
         if (!message.config || typeof message.config !== 'object' || Array.isArray(message.config)) throw new Error(t('admin.plugins.bridgeRejected'))
-        const config = await stepUp.run(() => adminAPI.plugins.saveConfig(id, message.config))
-        reply({ ok: true, config }); if (generation === version) emit('saved'); break
+        if (configPending) throw new Error('Plugin configuration operation is already pending')
+        const expected = loadedConfigVersion()
+        const draft = JSON.parse(JSON.stringify(message.config))
+        configPending = true
+        try {
+          const snapshot = await stepUp.run(() => adminAPI.plugins.saveConfig(id, draft, expected))
+          if (generation !== version || session.value !== current) break
+          configVersion = { revision: snapshot.revision, package_sha256: snapshot.package_sha256 }
+          reply({ ok: true, config: snapshot.config }); emit('saved')
+        } finally { if (generation === version) configPending = false }
+        break
       }
-      case 'config.test': { const result = await stepUp.run(() => adminAPI.plugins.test(id)); reply({ ok: result.success, result }); break }
+      case 'config.test': {
+        if (configPending) throw new Error('Plugin configuration operation is already pending')
+        const expected = { id, ...loadedConfigVersion() }
+        configPending = true
+        try {
+          const result = await stepUp.run(() => adminAPI.plugins.test(expected)); reply({ ok: result.success, result })
+        } finally { if (generation === version) configPending = false }
+        break
+      }
       case 'plugin.status': reply({ ok: true, result: await adminAPI.plugins.status(id) }); break
       case 'extension.invoke': {
+        if (packageChanged()) throw new Error(t('admin.plugins.uiVersionChanged'))
         if (!admission.value.allowed) throw new Error(t('admin.plugins.extensionUnavailable'))
         if (typeof message.operation !== 'string' || !message.payload || typeof message.payload !== 'object' || Array.isArray(message.payload)) throw new Error(t('admin.plugins.bridgeRejected'))
-        const result = await adminAPI.plugins.invokeAdmin(id, message.operation, accountID, message.payload)
+        const result = await adminAPI.plugins.invokeAdmin(id, message.operation, accountID, message.payload, current.package_sha256 || '')
         reply({ ok: !result.code, result: result.payload, error: result.message || result.code }); break
       }
       case 'extension.job.submit': {
+        if (packageChanged()) throw new Error(t('admin.plugins.uiVersionChanged'))
         if (!admission.value.allowed) throw new Error(t('admin.plugins.extensionUnavailable'))
         if (typeof message.operation !== 'string' || !Array.isArray(message.items) || !message.items.length || message.items.length > 3200) throw new Error(t('admin.plugins.bridgeRejected'))
         const selected = accountID !== undefined ? [accountID] : Array.isArray(props.context.account_ids) ? props.context.account_ids : null
         if (selected && message.items.some((item: { account_id?: unknown }) => !selected.includes(item.account_id))) throw new Error(t('admin.plugins.bridgeRejected'))
-        const job = await adminAPI.plugins.submitJob(id, message.operation, message.items, typeof message.operation_key === 'string' ? message.operation_key : undefined)
+        const job = await adminAPI.plugins.submitJob(id, message.operation, message.items, current.package_sha256 || '', typeof message.operation_key === 'string' ? message.operation_key : undefined)
         const { useAccountJobsStore } = await import('@/stores/accountJobs')
         if (auth.user?.id === actorID) useAccountJobsStore().track(job, { open: false })
         reply({ ok: true, job }); if (generation === version && auth.user?.id === actorID) emit('job', job); break

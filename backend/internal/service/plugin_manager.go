@@ -648,7 +648,7 @@ func (m *PluginManager) Enable(ctx context.Context, id int64, acceptUntested boo
 	if err != nil {
 		return nil, err
 	}
-	if installation.State == PluginStateUpdating || (PluginExpectedRevision(ctx) > 0 && PluginExpectedRevision(ctx) != installation.Revision) {
+	if installation.State == PluginStateUpdating || validatePluginPrecondition(ctx, installation) != nil {
 		return nil, ErrPluginStateChanged
 	}
 	if installation.Manifest.Requires.ExtensionAPI > 0 && rolloutPercent != 100 {
@@ -771,7 +771,7 @@ func (m *PluginManager) Disable(ctx context.Context, id int64) (*PluginInstallat
 	for index := range installation.Bindings {
 		installation.Bindings[index].Enabled = false
 	}
-	if expected := PluginExpectedRevision(ctx); expected > 0 && expected != installation.Revision {
+	if validatePluginPrecondition(ctx, installation) != nil {
 		m.mu.Unlock()
 		return nil, ErrPluginStateChanged
 	}
@@ -796,11 +796,15 @@ func (m *PluginManager) Delete(ctx context.Context, id int64) error {
 		m.mu.Unlock()
 		return err
 	}
+	if err := validatePluginPrecondition(ctx, installation); err != nil {
+		m.mu.Unlock()
+		return err
+	}
 	if installation.State == PluginStateEnabled || hasEnabledPluginBinding(installation.Bindings) {
 		m.mu.Unlock()
 		return errors.New("请先停用插件，再执行卸载")
 	}
-	if err := m.repo.Delete(ctx, id, installation.BinarySHA256); err != nil {
+	if err := m.repo.Delete(WithPluginExpectedRevision(ctx, installation.Revision), id, installation.BinarySHA256); err != nil {
 		m.mu.Unlock()
 		return err
 	}
@@ -819,14 +823,44 @@ func (m *PluginManager) Delete(ctx context.Context, id int64) error {
 }
 
 func (m *PluginManager) GetConfig(ctx context.Context, id int64) (json.RawMessage, error) {
+	snapshot, err := m.GetConfigSnapshot(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	return snapshot.Config, nil
+}
+
+func (m *PluginManager) GetConfigSnapshot(ctx context.Context, id int64) (*PluginConfigSnapshot, error) {
 	installation, err := m.repo.GetByID(ctx, id)
 	if err != nil {
 		return nil, err
 	}
-	return m.decryptConfig(installation)
+	if err := validatePluginPrecondition(ctx, installation); err != nil {
+		return nil, err
+	}
+	config, err := m.decryptConfig(installation)
+	if err != nil {
+		return nil, err
+	}
+	return &PluginConfigSnapshot{Config: config, Revision: installation.Revision, PackageSHA256: installation.PackageSHA256}, nil
 }
 
 func (m *PluginManager) SaveConfig(ctx context.Context, id int64, raw json.RawMessage) (json.RawMessage, error) {
+	snapshot, err := m.saveConfigSnapshot(ctx, id, raw)
+	if err != nil {
+		return nil, err
+	}
+	return snapshot.Config, nil
+}
+
+func (m *PluginManager) SaveConfigSnapshot(ctx context.Context, id int64, raw json.RawMessage) (*PluginConfigSnapshot, error) {
+	if _, ok := m.repo.(PluginConfigRevisionRepository); !ok {
+		return nil, ErrPluginConfigReceiptUnavailable
+	}
+	return m.saveConfigSnapshot(ctx, id, raw)
+}
+
+func (m *PluginManager) saveConfigSnapshot(ctx context.Context, id int64, raw json.RawMessage) (*PluginConfigSnapshot, error) {
 	m.operationMu.Lock()
 	defer m.operationMu.Unlock()
 	if len(raw) == 0 || len(raw) > pluginConfigMaxBytes || !json.Valid(raw) {
@@ -840,7 +874,7 @@ func (m *PluginManager) SaveConfig(ctx context.Context, id int64, raw json.RawMe
 	if err != nil {
 		return nil, err
 	}
-	if installation.State == PluginStateUpdating || (PluginExpectedRevision(ctx) > 0 && PluginExpectedRevision(ctx) != installation.Revision) {
+	if installation.State == PluginStateUpdating || validatePluginPrecondition(ctx, installation) != nil {
 		return nil, ErrPluginStateChanged
 	}
 	var normalized any
@@ -861,6 +895,9 @@ func (m *PluginManager) SaveConfig(ctx context.Context, id int64, raw json.RawMe
 	runtime := m.runtimes[id]
 	m.mu.Unlock()
 	temporary := false
+	if runtime != nil && (!samePluginRuntime(runtime.installation, installation) || runtime.installation.ConfigEncrypted != installation.ConfigEncrypted) {
+		return nil, ErrPluginStateChanged
+	}
 	if runtime == nil {
 		installation, err = m.ensureLocalInstallation(ctx, installation)
 		if err != nil {
@@ -881,19 +918,44 @@ func (m *PluginManager) SaveConfig(ctx context.Context, id int64, raw json.RawMe
 			return nil, err
 		}
 	}
-	if bytes.Equal(bytes.TrimSpace(previousConfig), canonical) {
-		return canonical, nil
+	unchanged := bytes.Equal(bytes.TrimSpace(previousConfig), canonical)
+	encrypted := installation.ConfigEncrypted
+	if !unchanged {
+		encrypted, err = m.encryptor.Encrypt(string(canonical))
+		if err != nil {
+			return nil, fmt.Errorf("加密插件配置: %w", err)
+		}
+		runtime.configuring.Store(true)
+		defer runtime.configuring.Store(false)
 	}
-	encrypted, err := m.encryptor.Encrypt(string(canonical))
-	if err != nil {
-		return nil, fmt.Errorf("加密插件配置: %w", err)
+	receipt := &PluginConfigSnapshot{Config: canonical, PackageSHA256: installation.PackageSHA256}
+	writeCtx := WithPluginExpectedRevision(ctx, installation.Revision)
+	if store, ok := m.repo.(PluginConfigRevisionRepository); ok {
+		receipt.Revision, err = store.UpdateConfigReturningRevision(writeCtx, id, encrypted, installation.BinarySHA256)
+		if err != nil {
+			return nil, err
+		}
+		if receipt.Revision <= 0 {
+			return nil, ErrPluginConfigReceiptUnavailable
+		}
+	} else if !unchanged {
+		if err = m.repo.UpdateConfig(writeCtx, id, encrypted, installation.BinarySHA256); err != nil {
+			return nil, err
+		}
 	}
-	runtime.configuring.Store(true)
-	defer runtime.configuring.Store(false)
-	if err := m.repo.UpdateConfig(WithPluginExpectedRevision(ctx, installation.Revision), id, encrypted, installation.BinarySHA256); err != nil {
-		return nil, err
+	if unchanged {
+		return receipt, nil
 	}
 	if !temporary {
+		if receipt.Revision > 0 {
+			current, readErr := m.repo.GetByID(ctx, id)
+			if readErr != nil {
+				return nil, readErr
+			}
+			if current.Revision != receipt.Revision || current.PackageSHA256 != receipt.PackageSHA256 || current.ConfigEncrypted != encrypted || current.State == PluginStateUpdating {
+				return nil, ErrPluginStateChanged
+			}
+		}
 		applyCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
 		_, err = runtime.applyNormalizedConfig(applyCtx, canonical)
 		cancel()
@@ -905,7 +967,7 @@ func (m *PluginManager) SaveConfig(ctx context.Context, id int64, raw json.RawMe
 		runtime.installation.ConfigEncrypted = encrypted
 		m.mu.Unlock()
 	}
-	return canonical, nil
+	return receipt, nil
 }
 
 func (m *PluginManager) Test(ctx context.Context, id int64) (*pluginv1.TestConfigResponse, error) {
@@ -915,6 +977,9 @@ func (m *PluginManager) Test(ctx context.Context, id int64) (*pluginv1.TestConfi
 	if err != nil {
 		return nil, err
 	}
+	if installation.State == PluginStateUpdating || validatePluginPrecondition(ctx, installation) != nil {
+		return nil, ErrPluginStateChanged
+	}
 	configJSON, err := m.decryptConfig(installation)
 	if err != nil {
 		return nil, err
@@ -923,6 +988,9 @@ func (m *PluginManager) Test(ctx context.Context, id int64) (*pluginv1.TestConfi
 	runtime := m.runtimes[id]
 	m.mu.Unlock()
 	temporary := false
+	if runtime != nil && (!samePluginRuntime(runtime.installation, installation) || runtime.installation.ConfigEncrypted != installation.ConfigEncrypted) {
+		return nil, ErrPluginStateChanged
+	}
 	if runtime == nil {
 		installation, err = m.ensureLocalInstallation(ctx, installation)
 		if err != nil {

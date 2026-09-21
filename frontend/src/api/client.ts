@@ -83,6 +83,9 @@ apiClient.interceptors.request.use(
 apiClient.interceptors.response.use(
   (response: AxiosResponse) => {
     settleAccountOperation(response.config)
+    // Plugin configuration is a raw user-defined JSON object, not our API
+    // envelope; a legitimate setting named "code" must stay configuration.
+    if (response.config.rawPluginConfig) return response
     // Unwrap standard API response format { code, message, data }
     const apiResponse = response.data as ApiResponse<unknown>
     if (apiResponse && typeof apiResponse === 'object' && 'code' in apiResponse) {
