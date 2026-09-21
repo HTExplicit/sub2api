@@ -37,7 +37,7 @@ func profitControlTestAccountWithRate(account *Account, rate float64) *Account {
 	return account
 }
 
-func TestResolveOpenAIProfitControlGate(t *testing.T) {
+func TestResolveOpenAIProfitControlGateRemainsDormant(t *testing.T) {
 	svc := &OpenAIGatewayService{}
 	groupID := int64(7)
 
@@ -61,14 +61,14 @@ func TestResolveOpenAIProfitControlGate(t *testing.T) {
 		require.Nil(t, svc.resolveOpenAIProfitControlGate(profitControlTestCtx(group), &groupID))
 	})
 
-	t.Run("grok group routed through openai handler installs gate", func(t *testing.T) {
+	t.Run("grok legacy fields cannot enable a gate", func(t *testing.T) {
 		group := profitControlTestGroup(groupID, 0.3, 0.05)
 		group.Platform = PlatformGrok
 		group.RateMultiplier = 0.5
 		gate := svc.resolveOpenAIProfitControlGate(profitControlTestCtx(group), &groupID)
-		require.NotNil(t, gate)
-		require.Equal(t, PlatformGrok, gate.platform)
-		require.InDelta(t, 0.5*(1-0.35), gate.threshold, 1e-12)
+		require.Nil(t, gate)
+		require.True(t, group.ProfitControlEnabled)
+		require.Equal(t, 0.5, group.RateMultiplier)
 	})
 
 	t.Run("ctx group id mismatch without snapshot yields no gate", func(t *testing.T) {
@@ -76,29 +76,33 @@ func TestResolveOpenAIProfitControlGate(t *testing.T) {
 		require.Nil(t, svc.resolveOpenAIProfitControlGate(profitControlTestCtx(group), &groupID))
 	})
 
-	t.Run("threshold composes margin and buffer from downstream rate", func(t *testing.T) {
+	t.Run("legacy margin and buffer do not change ordinary billing rate", func(t *testing.T) {
 		group := profitControlTestGroup(groupID, 0.3, 0.05)
 		group.RateMultiplier = 2.0
 		gate := svc.resolveOpenAIProfitControlGate(profitControlTestCtx(group), &groupID)
-		require.NotNil(t, gate)
-		require.InDelta(t, 2.0*(1-0.35), gate.threshold, 1e-12)
-		require.Equal(t, PlatformOpenAI, gate.platform)
-		require.False(t, gate.pricingAt.IsZero())
-		require.Equal(t, groupID, gate.groupID)
+		require.Nil(t, gate)
+		ctx, pricingAt := svc.WithOpenAIRequestPricingContext(profitControlTestCtx(group), &groupID)
+		require.False(t, pricingAt.IsZero())
+		require.Equal(t, pricingAt, OpenAIPricingAtFromContext(ctx))
+		require.Equal(t, 2.0, group.RateMultiplier)
+		require.Equal(t, 0.3, group.ProfitMinMargin)
+		require.Equal(t, 0.05, group.ProfitSafetyBuffer)
 	})
 
-	t.Run("threshold applies peak factor exactly like billing", func(t *testing.T) {
+	t.Run("retirement preserves peak factor without installing admission", func(t *testing.T) {
 		group := profitControlTestGroup(groupID, 0.5, 0)
 		group.SubscriptionType = SubscriptionTypeSubscription
 		group.PeakRateEnabled = true
 		group.PeakStart = "00:00"
 		group.PeakEnd = "23:59"
 		group.PeakRateMultiplier = 3.0
+		fixed := time.Date(2026, 1, 15, 12, 0, 0, 0, timezone.Location())
+		expected := group.PeakMultiplierAt(fixed)
+		require.Equal(t, 3.0, expected)
 		gate := svc.resolveOpenAIProfitControlGate(profitControlTestCtx(group), &groupID)
-		require.NotNil(t, gate)
-		expected := group.RateMultiplier * group.PeakMultiplierAt(timezone.Now()) * 0.5
-		require.InDelta(t, expected, gate.threshold, 1e-9)
-		require.Equal(t, PlatformOpenAI, gate.platform)
+		require.Nil(t, gate)
+		require.Equal(t, expected, group.PeakMultiplierAt(fixed))
+		require.Equal(t, 1.0, group.RateMultiplier)
 	})
 }
 
@@ -180,7 +184,7 @@ func TestOpenAIProfitControlVetoReason(t *testing.T) {
 	})
 }
 
-func TestProfitControlSchedulerFiltersCandidates(t *testing.T) {
+func TestProfitControlSchedulerDormantKeepsEligibleCandidates(t *testing.T) {
 	resetOpenAIAdvancedSchedulerSettingCacheForTest()
 	defer resetOpenAIAdvancedSchedulerSettingCacheForTest()
 
@@ -209,37 +213,40 @@ func TestProfitControlSchedulerFiltersCandidates(t *testing.T) {
 	}
 	groupID := int64(7)
 
-	t.Run("unprofitable and invalid-rate accounts never win", func(t *testing.T) {
-		// margin 0.5 → 阈值 0.5：expensive(0.8) 超阈值、oauth 倍率缺失，仅 cheap 可选。
-		ctx := profitControlTestCtx(profitControlTestGroup(groupID, 0.5, 0))
-		for i := 0; i < 5; i++ {
-			selection, _, err := svc.SelectAccountWithScheduler(ctx, &groupID, "", "", "gpt-test", nil, OpenAIUpstreamTransportAny, false)
+	t.Run("legacy profit fields cannot exclude an otherwise eligible account", func(t *testing.T) {
+		ctx, pricingAt := svc.WithOpenAIRequestPricingContext(profitControlTestCtx(profitControlTestGroup(groupID, 0.5, 0)), &groupID)
+		for _, expected := range []int64{cheap.ID, expensive.ID, oauth.ID} {
+			excluded := map[int64]struct{}{cheap.ID: {}, expensive.ID: {}, oauth.ID: {}}
+			delete(excluded, expected)
+			selection, _, err := svc.SelectAccountWithScheduler(ctx, &groupID, "", "", "gpt-test", excluded, OpenAIUpstreamTransportAny, false)
 			require.NoError(t, err)
 			require.NotNil(t, selection)
-			require.Equal(t, cheap.ID, selection.Account.ID)
+			require.Equal(t, expected, selection.Account.ID)
+			require.False(t, selection.ProfitGateActive())
+			require.Equal(t, pricingAt, OpenAIPricingAtFromContext(ctx))
 			if selection.ReleaseFunc != nil {
 				selection.ReleaseFunc()
 			}
 		}
 	})
 
-	t.Run("all excluded surfaces standard no-available error with profit reasons", func(t *testing.T) {
-		// margin+buffer 0.8 → 阈值 0.2：cheap/expensive 超阈值，oauth 倍率非法。
+	t.Run("explicit exclusions still exhaust the pool without profit reasons", func(t *testing.T) {
 		ctx := profitControlTestCtx(profitControlTestGroup(groupID, 0.7, 0.1))
-		selection, _, err := svc.SelectAccountWithScheduler(ctx, &groupID, "", "", "gpt-test", nil, OpenAIUpstreamTransportAny, false)
+		excluded := map[int64]struct{}{cheap.ID: {}, expensive.ID: {}, oauth.ID: {}}
+		selection, _, err := svc.SelectAccountWithScheduler(ctx, &groupID, "", "", "gpt-test", excluded, OpenAIUpstreamTransportAny, false)
 		require.Nil(t, selection)
 		require.Error(t, err)
 		require.True(t, errors.Is(err, ErrNoAvailableAccounts))
-		require.Contains(t, err.Error(), openAIProfitFilterReasonThreshold+"=2")
-		require.Contains(t, err.Error(), openAIProfitFilterReasonInvalidAccountRate+"=1")
+		require.NotContains(t, err.Error(), openAIProfitFilterReasonThreshold)
+		require.NotContains(t, err.Error(), openAIProfitFilterReasonInvalidAccountRate)
 	})
 
 	t.Run("manually rated oauth account is admitted", func(t *testing.T) {
-		// 阈值 0.2 排除两个 API Key；OAuth 手工倍率 0.1 可参与调度。
+		// Explicit request exclusions, not retired profitability, select OAuth.
 		profitControlTestAccountWithRate(oauth, 0.1)
 		svc.accountRepo = schedulerTestOpenAIAccountRepo{accounts: []Account{*cheap, *expensive, *oauth}}
 		ctx := profitControlTestCtx(profitControlTestGroup(groupID, 0.7, 0.1))
-		selection, _, err := svc.SelectAccountWithScheduler(ctx, &groupID, "", "", "gpt-test", nil, OpenAIUpstreamTransportAny, false)
+		selection, _, err := svc.SelectAccountWithScheduler(ctx, &groupID, "", "", "gpt-test", map[int64]struct{}{cheap.ID: {}, expensive.ID: {}}, OpenAIUpstreamTransportAny, false)
 		require.NoError(t, err)
 		require.NotNil(t, selection)
 		require.Equal(t, oauth.ID, selection.Account.ID)

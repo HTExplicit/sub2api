@@ -29,12 +29,12 @@
 
           <!-- Body -->
           <p v-if="!extensionAvailable" role="status" class="px-5 pt-3 text-sm text-muted">{{ extensionUnavailableMessage }}</p>
-          <div ref="modalBodyRef" class="modal-body" :inert="!extensionAvailable">
+          <div ref="modalBodyRef" class="modal-body" :inert="!extensionAvailable ? true : undefined">
             <slot></slot>
           </div>
 
           <!-- Footer -->
-          <div v-if="$slots.footer" class="modal-footer" :inert="!extensionAvailable">
+          <div v-if="$slots.footer" class="modal-footer" :inert="!extensionAvailable ? true : undefined">
             <slot name="footer"></slot>
           </div>
         </div>

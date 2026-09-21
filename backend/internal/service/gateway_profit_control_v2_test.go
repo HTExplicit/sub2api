@@ -49,7 +49,7 @@ func gatewayProfitTestAccount(id int64, platform string, rate float64, groupID i
 	}
 }
 
-func TestGatewayProfitControlInstallsForFivePlatformsOnlyOnTokenRequests(t *testing.T) {
+func TestGatewayDormantProfitControlKeepsFivePlatformPricing(t *testing.T) {
 	for _, platform := range []string{
 		PlatformOpenAI,
 		PlatformAnthropic,
@@ -62,11 +62,20 @@ func TestGatewayProfitControlInstallsForFivePlatformsOnlyOnTokenRequests(t *test
 			groupID := group.ID
 			svc := &GatewayService{}
 
-			tokenCtx := svc.withGatewayProfitControlGate(gatewayProfitTestContext(group), &groupID)
+			base := gatewayProfitTestContext(group)
+			pricingAt, ok := gatewayTokenRequestPricingAtFromContext(base)
+			require.True(t, ok)
+			tokenCtx := svc.withGatewayProfitControlGate(base, &groupID)
 			gate, _ := tokenCtx.Value(openAIProfitControlGateCtxKey{}).(*openAIProfitControlGate)
-			require.NotNil(t, gate)
-			require.Equal(t, platform, gate.platform)
-			require.InDelta(t, 0.5, gate.threshold, 1e-12)
+			require.Nil(t, gate)
+			actual, ok := gatewayTokenRequestPricingAtFromContext(tokenCtx)
+			require.True(t, ok)
+			require.Equal(t, pricingAt, actual)
+			require.False(t, pricingAt.IsZero())
+			require.True(t, group.ProfitControlEnabled)
+			require.Equal(t, 0.5, group.RateMultiplier)
+			expensive := gatewayProfitTestAccount(102, platform, 5, groupID)
+			require.True(t, svc.isGatewayAccountProfitEligible(tokenCtx, &expensive))
 
 			metadataCtx := context.WithValue(context.Background(), ctxkey.Group, group)
 			metadataCtx = svc.withGatewayProfitControlGate(metadataCtx, &groupID)
@@ -76,7 +85,7 @@ func TestGatewayProfitControlInstallsForFivePlatformsOnlyOnTokenRequests(t *test
 	}
 }
 
-func TestGatewayProfitControlCompositeBillingUsesScheduledMemberConfig(t *testing.T) {
+func TestGatewayDormantProfitControlPreservesCompositeBilling(t *testing.T) {
 	billingGroup := &Group{
 		ID:               201,
 		Platform:         PlatformComposite,
@@ -102,11 +111,13 @@ func TestGatewayProfitControlCompositeBillingUsesScheduledMemberConfig(t *testin
 	}
 	ctx = svc.withGatewayProfitControlGate(ctx, &memberGroup.ID)
 	gate, _ := ctx.Value(openAIProfitControlGateCtxKey{}).(*openAIProfitControlGate)
-	require.NotNil(t, gate)
-	require.Equal(t, memberGroup.ID, gate.groupID)
-	require.Equal(t, PlatformAnthropic, gate.platform)
-	require.Equal(t, pricingAt, gate.pricingAt)
-	require.InDelta(t, 0.4*(1-0.25), gate.threshold, 1e-12, "D 必须取 composite 计费父分组，margin 取被调度成员分组")
+	require.Nil(t, gate)
+	actual, ok := gatewayTokenRequestPricingAtFromContext(ctx)
+	require.True(t, ok)
+	require.Equal(t, pricingAt, actual)
+	require.Equal(t, 0.4, billingGroup.RateMultiplier)
+	require.Equal(t, 99.0, memberGroup.RateMultiplier)
+	require.Equal(t, 0.25, memberGroup.ProfitMinMargin)
 }
 
 func TestGatewayProfitControlGroupLoadFailureClearsForeignGate(t *testing.T) {
@@ -157,7 +168,7 @@ func (profitControlFailingGroupRepo) GetByID(context.Context, int64) (*Group, er
 	panic("profit control gate must read groups via GetByIDLite (no account-count aggregation)")
 }
 
-func TestGatewayProfitControlLegacyMixedAndRoutedSelection(t *testing.T) {
+func TestGatewayDormantProfitControlKeepsLegacyMixedAndRoutedSelection(t *testing.T) {
 	t.Run("legacy single-platform selection", func(t *testing.T) {
 		group := gatewayProfitTestGroup(111, PlatformGrok)
 		cheap := gatewayProfitTestAccount(1, PlatformGrok, 0.2, group.ID)
@@ -176,16 +187,16 @@ func TestGatewayProfitControlLegacyMixedAndRoutedSelection(t *testing.T) {
 			gatewayProfitTestContext(group), &group.ID, "", "", nil,
 		)
 		require.NoError(t, err)
-		require.Equal(t, cheap.ID, selected.ID)
+		require.Contains(t, []int64{cheap.ID, expensive.ID}, selected.ID)
 
-		_, err = svc.SelectAccountForModelWithExclusions(
+		selected, err = svc.SelectAccountForModelWithExclusions(
 			gatewayProfitTestContext(group), &group.ID, "", "", map[int64]struct{}{cheap.ID: {}},
 		)
-		require.Error(t, err)
-		require.ErrorIs(t, err, ErrNoAvailableAccounts)
+		require.NoError(t, err)
+		require.Equal(t, expensive.ID, selected.ID, "explicitly excluded cheap account must not return")
 	})
 
-	t.Run("mixed routing filters the routed account", func(t *testing.T) {
+	t.Run("mixed routing retains its model-routed account", func(t *testing.T) {
 		group := gatewayProfitTestGroup(112, PlatformAnthropic)
 		group.ModelRoutingEnabled = true
 		group.ModelRouting = map[string][]int64{"claude-test": {2, 1}}
@@ -207,11 +218,16 @@ func TestGatewayProfitControlLegacyMixedAndRoutedSelection(t *testing.T) {
 			gatewayProfitTestContext(group), &group.ID, "", "claude-test", nil,
 		)
 		require.NoError(t, err)
-		require.Equal(t, cheap.ID, selected.ID)
+		require.Contains(t, []int64{cheap.ID, expensive.ID}, selected.ID)
+		selected, err = svc.SelectAccountForModelWithExclusions(
+			gatewayProfitTestContext(group), &group.ID, "", "claude-test", map[int64]struct{}{cheap.ID: {}},
+		)
+		require.NoError(t, err)
+		require.Equal(t, expensive.ID, selected.ID)
 	})
 }
 
-func TestGatewayProfitControlLoadAwareSelectionAndFailover(t *testing.T) {
+func TestGatewayDormantProfitControlKeepsLoadAwareSelectionAndFailover(t *testing.T) {
 	group := gatewayProfitTestGroup(121, PlatformGrok)
 	cheap := gatewayProfitTestAccount(1, PlatformGrok, 0.2, group.ID)
 	expensive := gatewayProfitTestAccount(2, PlatformGrok, 0.8, group.ID)
@@ -233,7 +249,8 @@ func TestGatewayProfitControlLoadAwareSelectionAndFailover(t *testing.T) {
 	)
 	require.NoError(t, err)
 	require.NotNil(t, result)
-	require.Equal(t, cheap.ID, result.Account.ID)
+	require.Contains(t, []int64{cheap.ID, expensive.ID}, result.Account.ID)
+	require.False(t, result.ProfitGateActive())
 	if result.ReleaseFunc != nil {
 		result.ReleaseFunc()
 	}
@@ -247,12 +264,16 @@ func TestGatewayProfitControlLoadAwareSelectionAndFailover(t *testing.T) {
 		"",
 		0,
 	)
-	require.Nil(t, result)
-	require.Error(t, err)
-	require.ErrorIs(t, err, ErrNoAvailableAccounts)
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.Equal(t, expensive.ID, result.Account.ID)
+	require.False(t, result.ProfitGateActive())
+	if result.ReleaseFunc != nil {
+		result.ReleaseFunc()
+	}
 }
 
-func TestGatewayProfitControlStickyVetoKeepsBindingUntilRateRecovers(t *testing.T) {
+func TestGatewayDormantProfitControlKeepsStickyBindingAcrossRateChanges(t *testing.T) {
 	group := gatewayProfitTestGroup(131, PlatformAnthropic)
 	expensive := gatewayProfitTestAccount(1, PlatformAnthropic, 0.8, group.ID)
 	cheap := gatewayProfitTestAccount(2, PlatformAnthropic, 0.2, group.ID)
@@ -272,14 +293,14 @@ func TestGatewayProfitControlStickyVetoKeepsBindingUntilRateRecovers(t *testing.
 
 	selected, err := svc.SelectAccountForModelWithExclusions(ctx, &group.ID, "sticky-profit", "", nil)
 	require.NoError(t, err)
-	require.Equal(t, cheap.ID, selected.ID)
+	require.Equal(t, expensive.ID, selected.ID)
 	require.Equal(t, expensive.ID, cache.sessionBindings["sticky-profit"], "候选过滤不得覆盖旧粘性绑定")
 
 	require.NoError(t, svc.BindStickySessionAfterProfitAdmission(
 		svc.withGatewayProfitControlGate(ctx, &group.ID),
 		&group.ID,
 		"sticky-profit",
-		cheap.ID,
+		selected.ID,
 	))
 	require.Equal(t, expensive.ID, cache.sessionBindings["sticky-profit"], "终检通过的 fallback 账号也不得覆盖旧绑定")
 	require.Zero(t, cache.deletedSessions["sticky-profit"])
@@ -388,9 +409,9 @@ func TestGatewayProfitControlTerminalRefreshFailureFallsBackToSelectedObject(t *
 	require.Empty(t, reason)
 }
 
-// 选号结果携带门：门安装在调度栈局部 ctx 上，handler 必须经
-// ContextWithSelectionProfitGate 重放后终检与准入后绑定才可见（评审修复回归）。
-func TestGatewayProfitControlSelectionCarriesGateToHandlerContext(t *testing.T) {
+// Runtime selection carries no retired gate to the handler, while its pricing
+// context and selected account remain unchanged.
+func TestGatewayDormantProfitControlSelectionKeepsUngatedHandlerContext(t *testing.T) {
 	group := gatewayProfitTestGroup(1, PlatformAnthropic)
 	svc := &GatewayService{}
 	expensive := gatewayProfitTestAccount(161, PlatformAnthropic, 0.9, group.ID)
@@ -398,17 +419,22 @@ func TestGatewayProfitControlSelectionCarriesGateToHandlerContext(t *testing.T) 
 	gateCtx := svc.withGatewayProfitControlGate(gatewayProfitTestContext(group), &group.ID)
 	selection, err := svc.newSelectionResult(gateCtx, &expensive, true, nil, nil)
 	require.NoError(t, err)
-	require.True(t, selection.ProfitGateActive(), "选号结果必须携带调度栈内生效的门")
+	require.False(t, selection.ProfitGateActive())
+	pricingAt, ok := gatewayTokenRequestPricingAtFromContext(gateCtx)
+	require.True(t, ok)
 
 	// 修复前的缺陷形态：handler 原始 ctx 不含门，终检退化为空操作。
 	_, vetoed, _ := svc.GatewayProfitControlVetoLatest(context.Background(), &expensive)
 	require.False(t, vetoed, "对照组：不重放门时终检确实看不到门")
 
-	handlerCtx := ContextWithSelectionProfitGate(context.Background(), selection)
+	handlerCtx := ContextWithSelectionProfitGate(gateCtx, selection)
 	latest, vetoed, reason := svc.GatewayProfitControlVetoLatest(handlerCtx, &expensive)
-	require.True(t, vetoed, "重放门后终检必须真实生效")
-	require.Equal(t, openAIProfitFilterReasonThreshold, reason)
-	require.NotNil(t, latest)
+	require.False(t, vetoed)
+	require.Empty(t, reason)
+	require.Same(t, &expensive, latest)
+	actual, ok := gatewayTokenRequestPricingAtFromContext(handlerCtx)
+	require.True(t, ok)
+	require.Equal(t, pricingAt, actual)
 
 	// 无门选号不携带门，重放为无操作。
 	plain, err := svc.newSelectionResult(context.Background(), &expensive, true, nil, nil)
@@ -417,18 +443,23 @@ func TestGatewayProfitControlSelectionCarriesGateToHandlerContext(t *testing.T) 
 	require.Equal(t, context.Background(), ContextWithSelectionProfitGate(context.Background(), plain))
 }
 
-// 生图意图不关门（H1/H2 回归锚点）：/v1/responses 混合请求即使带生图声明，
-// token 定价上下文照常装配，共享门照常安装并否决越线账号。
-func TestGatewayProfitControlImageIntentDoesNotDisableGate(t *testing.T) {
+// Image intent is independent of retired profit admission and must not erase
+// the existing token-pricing context.
+func TestGatewayDormantProfitControlImageIntentKeepsTokenPricing(t *testing.T) {
 	group := gatewayProfitTestGroup(2, PlatformAnthropic)
 	svc := &GatewayService{}
 	expensive := gatewayProfitTestAccount(162, PlatformAnthropic, 0.9, group.ID)
 
 	ctx := gatewayProfitTestContext(group)
+	pricingAt, ok := gatewayTokenRequestPricingAtFromContext(ctx)
+	require.True(t, ok)
 	ctx = WithOpenAIImageGenerationIntent(ctx)
 	gateCtx := svc.withGatewayProfitControlGate(ctx, &group.ID)
-	require.False(t, svc.isGatewayAccountProfitEligible(gateCtx, &expensive),
-		"请求体里的生图声明（含被动 image_gen namespace）不得关闭利润门")
+	require.True(t, svc.isGatewayAccountProfitEligible(gateCtx, &expensive))
+	require.False(t, gatewayProfitControlGateActive(gateCtx))
+	actual, ok := gatewayTokenRequestPricingAtFromContext(gateCtx)
+	require.True(t, ok)
+	require.Equal(t, pricingAt, actual)
 }
 
 // 无门时准入后绑定回退官方 eager 语义；门下读失败保守不写（评审 M-Bind 回归）。

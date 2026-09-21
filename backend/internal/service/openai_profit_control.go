@@ -72,6 +72,10 @@ import (
 )
 
 const (
+	// Downstream retired profit admission. Retain historical schema and pure
+	// numerical helpers, but no configuration or stored row may enable a gate.
+	profitControlRuntimeEnabled = false
+
 	// profitControlRateEpsilon 吸收 decimal(10,4) 落库与浮点乘法的边界误差：
 	// U 与阈值的相对差在该量级内视为相等（即 U == 阈值 判定为合格）。
 	profitControlRateEpsilon = 1e-9
@@ -86,6 +90,13 @@ const (
 )
 
 type openAIProfitControlGateCtxKey struct{}
+
+func withoutRuntimeProfitControlGate(ctx context.Context) context.Context {
+	if gate, _ := ctx.Value(openAIProfitControlGateCtxKey{}).(*openAIProfitControlGate); gate != nil {
+		return context.WithValue(ctx, openAIProfitControlGateCtxKey{}, (*openAIProfitControlGate)(nil))
+	}
+	return ctx
+}
 
 // openAIProfitControlSuppressCtxKey 标记本请求显式跳过利润门（独立图片/视频
 // 端点、Grok 媒体、count_tokens、live 等利润门范围外流量）。所有装门点看到该
@@ -152,6 +163,9 @@ func WithOpenAIProfitControlSuppressed(ctx context.Context) context.Context {
 func (s *OpenAIGatewayService) WithOpenAITurnPricingContext(ctx context.Context, groupID *int64) (context.Context, time.Time) {
 	pricingAt := timezone.Now()
 	ctx = context.WithValue(ctx, openAIPricingAtCtxKey{}, pricingAt)
+	if !profitControlRuntimeEnabled {
+		return withoutRuntimeProfitControlGate(ctx), pricingAt
+	}
 	if _, suppressed := ctx.Value(openAIProfitControlSuppressCtxKey{}).(struct{}); suppressed {
 		return ctx, pricingAt
 	}
@@ -192,6 +206,9 @@ func OpenAIPricingAtFromContext(ctx context.Context) time.Time {
 // （门不存在，全部否决点自动放行，既有行为零变化）。ctx 已有同分组门时直接
 // 复用：同一请求的全部 failover 重入共享同一阈值。
 func (s *OpenAIGatewayService) withOpenAIProfitControlGate(ctx context.Context, groupID *int64) context.Context {
+	if !profitControlRuntimeEnabled {
+		return withoutRuntimeProfitControlGate(ctx)
+	}
 	if _, suppressed := ctx.Value(openAIProfitControlSuppressCtxKey{}).(struct{}); suppressed {
 		return ctx
 	}
@@ -215,6 +232,9 @@ func (s *OpenAIGatewayService) withOpenAIProfitControlGate(ctx context.Context, 
 }
 
 func (s *OpenAIGatewayService) resolveOpenAIProfitControlGate(ctx context.Context, groupID *int64) *openAIProfitControlGate {
+	if !profitControlRuntimeEnabled {
+		return nil
+	}
 	if s == nil || groupID == nil || *groupID <= 0 {
 		return nil
 	}
