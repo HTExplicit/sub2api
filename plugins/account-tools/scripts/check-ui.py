@@ -18,7 +18,7 @@ const context={locale:'zh',theme:q.get('theme')||'dark',available:true,contribut
  folders:[{id:3,name:'生产账号',sort_order:0,account_count:1,created_at:'',updated_at:''}],tags:[{id:5,name:'已付费',sort_order:0,account_count:1,created_at:'',updated_at:''}],
  activeFolder:'',total:2,uncategorizedCount:1,target:{mode:'selected',accountIds:[1,2],count:2},accountIds:[1,2],accountId:1,folderId:null,tagIds:[]
 }};
-window.events=[];window.jobs=[];window.writes=[];window.preference='';window.notifications=[];
+window.events=[];window.jobs=[];window.writes=[];window.preference='';window.notifications=[];window.modelReads=[];
 addEventListener('message',event=>{
  const m=event.data;if(event.source!==frame.contentWindow||event.origin!=='null'||m?.bridge_token!=='fixture')return;
  if(m.type==='ui.resize'){frame.style.height=Math.min(1200,Math.max(0,m.height))+'px';return;}
@@ -31,7 +31,15 @@ addEventListener('message',event=>{
  else if(m.type==='extension.job.open')window.jobs.push(m.job_id);
  else if(m.type==='extension.resource'){
   const body=m.input.body||{};
-  if(m.operation==='tests.models')reply.result={items:body.account_ids.map(id=>({account_id:id,name:'账号 '+id,platform:'openai',type:'oauth',is_cindy:false,models:[{id:'model-a',type:'model',display_name:'Model A',reasoning_efforts:['low','high'],default_reasoning_effort:'low'}]}))};
+  if(m.operation==='tests.models'){
+   window.modelReads.push(m.input);
+   reply.result={items:body.account_ids.map(id=>({account_id:id,name:'账号 '+id,platform:'openai',type:'oauth',is_cindy:false,
+    models:[{id:'legacy-not-in-plan',type:'model',display_name:'Legacy list is not a test plan'}],
+    test_plan:{schema_version:1,account_id:id,wire_platform:'openai',default_mode:'provided',
+     models:[{id:'model-a',type:'model',display_name:'Model A',reasoning_efforts:['low','high'],default_reasoning_effort:'low'}],
+     mode_views:{provided:{model_ids:['model-a'],default_model_id:'model-a'}}}
+   }))};
+  }
   else if(m.operation==='tests.submit'||m.operation==='taxonomy.bulk.update'){window.writes.push(m);reply.result={id:77,metadata:{plugin_id:1},status:'pending'};}
   else if(m.operation==='taxonomy.folders.create'){window.writes.push(m);reply.result={id:4,name:body.name,sort_order:0,account_count:0};}
   else if(m.operation==='taxonomy.account.update'){window.writes.push(m);reply.result={account_id:1};}
@@ -145,10 +153,13 @@ def main():
                             assert page.evaluate('Boolean(writes[0].input.operation_key)')
                         elif mode == 'account-batch-test':
                             expect(frame.locator('[data-account-id]')).to_have_count(2)
+                            expect(frame.locator('[data-account-id="1"]')).to_contain_text('Model A')
+                            assert page.evaluate("modelReads.length===1 && modelReads[0].query.view==='account-test-plan-v1' && JSON.stringify(modelReads[0].body.account_ids)==='[1,2]'")
                             frame.locator('textarea').fill('离线测试提示词')
                             frame.locator('[data-account-id="1"] select').select_option('high')
                             frame.locator('button[form="batch-test-accounts"]').click()
                             page.wait_for_function('jobs.includes(77)')
+                            assert page.evaluate("JSON.stringify(writes[0].input.body.items.map(item=>[item.account_id,item.model_id]))==='[[1,\"model-a\"],[2,\"model-a\"]]'")
                             assert page.evaluate('writes[0].input.body.items[0].reasoning_effort') == 'high'
                             assert page.evaluate('preference') == '离线测试提示词'
                         else:
