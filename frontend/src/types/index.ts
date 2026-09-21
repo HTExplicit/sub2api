@@ -1272,6 +1272,16 @@ export interface Account {
   schedulable: boolean
   is_cindy?: boolean
   cindy_balance_insufficient?: boolean
+  // Native host projection, not an SDK Account or a client authorization grant.
+  account_view_facts?: {
+    version: 1
+    status: string
+    plan: string
+    privacy_mode: string
+    canonical_cindy: boolean
+    cindy_balance_insufficient: boolean
+    cindy_banned: boolean
+  }
   cindy_balance_probe_job_id?: number | null
   cindy_balance_probe_outcome?: string | null
   cindy_balance_probe_checked_at?: string | null
@@ -1375,6 +1385,7 @@ export interface AccountFacetOption {
 }
 
 export interface AccountConsoleFacets {
+  view_preset_counts?: Record<string, number>
   total: number
   uncategorized_count: number
   platforms: AccountFacetOption[]

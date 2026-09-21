@@ -168,11 +168,11 @@ describe('account console usage views', () => {
 
   it('shows the recent Cindy probe in compact and card layouts only when requested', () => {
     const compact = mount(AccountCompactList, {
-      props: { ...sharedProps, showCindyProbe: true },
+   props: { ...sharedProps, extensionColumns: usePluginExtensions(pinia).items },
       global: { plugins: [pinia], stubs: globalStubs }
     })
     const cards = mount(AccountCardGrid, {
-      props: { ...sharedProps, showCindyProbe: true },
+   props: { ...sharedProps, extensionColumns: usePluginExtensions(pinia).items },
       global: { plugins: [pinia], stubs: globalStubs }
     })
     mounted.push(compact, cards)

@@ -60,6 +60,8 @@
 </template>
 
 <script setup lang="ts">
+import { readWithAccountView, useAccountViewContext } from '@/composables/useAccountViewContext'
+
 import { computed, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { adminAPI } from '@/api/admin'
@@ -67,6 +69,8 @@ import type { CNProviderQuotaProbeResult } from '@/api/admin/cnProviders'
 import type { Account } from '@/types'
 import { cnQuotaCellVisible } from './credentialsBuilder'
 import UsageProgressBar from './UsageProgressBar.vue'
+const accountViewController = useAccountViewContext()
+
 
 const props = defineProps<{
   account: Account
@@ -176,7 +180,7 @@ const handleProbe = async () => {
   loading.value = true
   error.value = null
   try {
-    const result = await adminAPI.cnProviders.queryQuota(props.account.id)
+    const result = await readWithAccountView(accountViewController, view => view ? adminAPI.cnProviders.queryQuota(props.account.id, view) : adminAPI.cnProviders.queryQuota(props.account.id))
     // 失败时保留已渲染的快照条形图（仅显示错误行），成功才覆盖。
     if (result.success) {
       data.value = result

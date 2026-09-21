@@ -448,6 +448,9 @@
 </template>
 
 <script setup lang="ts">
+import { isCancel } from 'axios'
+import { useAccountViewOperation } from '@/composables/useAccountViewContext'
+import { accountAPIForView } from '@/api/admin/accounts'
 import { usePresentationColors } from '@/composables/usePresentationColors'
 import { ref, watch, computed } from 'vue'
 import { useI18n } from 'vue-i18n'
@@ -488,6 +491,8 @@ const props = defineProps<{
   show: boolean
   account: Account | null
 }>()
+const accountViewOperation = useAccountViewOperation(() => props.show, () => props.account?.id)
+
 
 const emit = defineEmits<{
   (e: 'close'): void
@@ -643,8 +648,8 @@ const lineChartOptions = computed(() => ({
 
 // Load stats when modal opens
 watch(
-  () => props.show,
-  async (newVal) => {
+  () => [props.show, props.account?.id],
+  async ([newVal]) => {
     if (newVal && props.account) {
       await loadStats()
     } else {
@@ -655,15 +660,16 @@ watch(
 
 const loadStats = async () => {
   if (!props.account) return
-
+  const accountID = props.account.id, revision = accountViewOperation.revision()
   loading.value = true
   try {
-    stats.value = await adminAPI.accounts.getStats(props.account.id, 30)
+    stats.value = await accountViewOperation.read(view => accountAPIForView(view, adminAPI.accounts).getStats(accountID, 30))
   } catch (error) {
+    if (isCancel(error)) return
     console.error('Failed to load account stats:', error)
     stats.value = null
   } finally {
-    loading.value = false
+    if (revision === accountViewOperation.revision()) loading.value = false
   }
 }
 

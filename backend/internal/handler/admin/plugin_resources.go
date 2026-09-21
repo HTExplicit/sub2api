@@ -47,6 +47,14 @@ func (h *PluginHandler) RegisterResource(descriptor extensionv1.ResourceDescript
 			c.Next()
 			return
 		}
+		if id == 0 && descriptor.OwnerPluginKey != "" {
+			var err error
+			id, err = h.manager.PinnedPluginOwner(c.Request.Context(), descriptor.OwnerPluginKey)
+			if err != nil {
+				accountViewRequestError(c, service.ErrAccountViewUnavailable)
+				return
+			}
+		}
 		ctx, release, err := h.manager.BindResourceContext(c.Request.Context(), id, c.GetHeader("X-Sub2API-Plugin-Package"), descriptor.ResourceGrant, descriptor.Retained)
 		if err != nil {
 			status := http.StatusServiceUnavailable
@@ -61,6 +69,7 @@ func (h *PluginHandler) RegisterResource(descriptor extensionv1.ResourceDescript
 			return
 		}
 		defer release()
+		ctx = h.manager.WithResourcePolicy(ctx, descriptor)
 		c.Request = c.Request.WithContext(ctx)
 		ids, filtered, err := resourceAccountTargets(c, descriptor)
 		if err != nil {
@@ -68,10 +77,28 @@ func (h *PluginHandler) RegisterResource(descriptor extensionv1.ResourceDescript
 			c.Abort()
 			return
 		}
-		if len(ids) > 0 || filtered {
-			if err = h.manager.ValidateResourceAccounts(ctx, descriptor.Capability, ids, filtered, descriptor.FilterPlatform, descriptor.FilterAccountType); err != nil {
+		if !descriptor.Retained {
+			// A view's filtered bulk taxonomy request is resolved and frozen by
+			// the handler before mutation; validate its actual IDs there. Other
+			// filtered resources keep their existing full-domain requirement.
+			checkFiltered := filtered
+			if _, viewBound := service.AccountViewFromContext(ctx); viewBound && filtered && !descriptor.AllAccounts && descriptor.Name == "taxonomy.bulk.update" {
+				checkFiltered = false
+			}
+			if err = h.manager.ValidateResourcePolicy(ctx, descriptor, ids, checkFiltered); err != nil {
 				response.Error(c, http.StatusForbidden, err.Error())
 				c.Abort()
+				return
+			}
+		} else if len(ids) > 0 || filtered {
+			if err = h.manager.ValidateResourceAccounts(ctx, descriptor.Capability, ids, filtered, descriptor.FilterPlatform, descriptor.FilterAccountType); err != nil {
+				accountViewRequestError(c, err)
+				return
+			}
+		}
+		if !descriptor.WholeAccountViewDomain && len(ids) > 0 {
+			if err = service.ValidateAccountViewTargets(ctx, ids); err != nil {
+				accountViewRequestError(c, err)
 				return
 			}
 		}

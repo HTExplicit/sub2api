@@ -1,5 +1,5 @@
 <template>
-  <ExtensionModal :show="show" name="account-taxonomy-manager" :context="{ view_props: { folders, tags } }"
+  <ExtensionModal :show="show" name="account-taxonomy-manager" plugin-key="codexrip.account-tools" :context="{ view_props: { folders, tags } }"
     @close="emit('close')" @event="name => { if (name === 'changed') emit('changed') }" />
 </template>
 <script setup lang="ts">

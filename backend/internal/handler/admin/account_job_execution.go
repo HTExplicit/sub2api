@@ -400,8 +400,31 @@ func (h *AccountHandler) resolveAccountJobTargetIDs(
 	requested []int64,
 	requestFilters *BulkUpdateAccountFilters,
 ) ([]int64, error) {
+	if _, bound := service.AccountViewFromContext(ctx); bound && len(requested) > 0 {
+		if err := service.ValidateAccountViewSelection(ctx, requested); err != nil {
+			return nil, err
+		}
+	}
 	if ids := normalizeInt64IDList(requested); len(ids) > 0 {
 		return ids, nil
+	}
+	if view, bound := service.AccountViewFromContext(ctx); bound {
+		console, err := h.accountConsoleService()
+		if err != nil {
+			return nil, err
+		}
+		accounts, err := h.listAccountsConsoleFiltered(ctx, console, service.AccountViewQueryFilters(view.Request.Query))
+		if err != nil {
+			return nil, err
+		}
+		ids := make([]int64, 0, len(accounts))
+		for _, account := range accounts {
+			ids = append(ids, account.ID)
+		}
+		if err := service.ValidateAccountViewSelection(ctx, ids); err != nil {
+			return nil, err
+		}
+		return normalizeInt64IDList(ids), nil
 	}
 	filters, err := toServiceBulkUpdateAccountFilters(requestFilters)
 	if err != nil {
@@ -446,9 +469,19 @@ func (h *AccountHandler) executeBulkTaxonomyJob(ctx context.Context, raw json.Ra
 	if json.Unmarshal(raw, &req) != nil {
 		return accountJobFailed(item.ID, "payload_invalid")
 	}
-	ids, err := h.resolveAccountJobTargetIDs(ctx, req.AccountIDs, req.Filters)
-	if err != nil {
-		return accountJobFailed(item.ID, "filters_invalid")
+	var ids []int64
+	if _, bound := service.AccountViewFromContext(ctx); bound {
+		id, exists := accountJobTarget(item)
+		if !exists {
+			return accountJobFailed(item.ID, "target_missing")
+		}
+		ids = []int64{id}
+	} else {
+		var err error
+		ids, err = h.resolveAccountJobTargetIDs(ctx, req.AccountIDs, req.Filters)
+		if err != nil {
+			return accountJobFailed(item.ID, "filters_invalid")
+		}
 	}
 	if id, ok := accountJobTarget(item); ok {
 		ids = []int64{id}

@@ -40,11 +40,15 @@
 </template>
 
 <script setup lang="ts">
+import { readWithAccountView, useAccountViewContext } from '@/composables/useAccountViewContext'
+
 import { computed, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { adminAPI } from '@/api/admin'
 import type { GrokQuotaProbeResult } from '@/api/admin/grok'
 import type { Account } from '@/types'
+const accountViewController = useAccountViewContext()
+
 
 const props = withDefaults(
   defineProps<{
@@ -101,7 +105,7 @@ const handleProbe = async () => {
   loading.value = true
   error.value = null
   try {
-    data.value = await adminAPI.grok.queryQuota(props.account.id)
+    data.value = await readWithAccountView(accountViewController, view => view ? adminAPI.grok.queryQuota(props.account.id, view) : adminAPI.grok.queryQuota(props.account.id))
     error.value = data.value.probe_error || null
     emit('probed', data.value)
   } catch (e) {

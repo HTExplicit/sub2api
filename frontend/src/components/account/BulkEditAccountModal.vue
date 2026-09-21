@@ -1481,6 +1481,8 @@
 </template>
 
 <script setup lang="ts">
+import { useAccountViewOperation } from '@/composables/useAccountViewContext'
+import { accountAPIForView } from '@/api/admin/accounts'
 import { ref, watch, computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useAppStore } from '@/stores/app'
@@ -1549,6 +1551,9 @@ interface Props {
 }
 
 const props = defineProps<Props>()
+const accountViewOperation = useAccountViewOperation(() => props.show, () => undefined)
+function scopedAccounts() { return accountAPIForView(accountViewOperation.capture(), adminAPI.accounts) }
+
 const emit = defineEmits<{
   close: []
   updated: [job: AccountJob]
@@ -2134,7 +2139,7 @@ const buildUpdatePayload = (): Record<string, unknown> | null => {
     // Create/Edit 那两个表单可以删键，是因为它们提交完整 extra 对象、后端整体
     // SetExtra 覆盖；批量接口只合并增量键，两种持久化语义不能共用同一套写法。
     //
-    // 读取侧对缺失键默认 device，因此显式 off 必须落键才能真正关闭收敛；
+    // 读取侧的缺失键由后端/插件决定默认值，因此显式 off 必须落键才能真正关闭收敛；
     // ShouldEnsureCodexFingerprintSeedForExtraUpdates 只在显式 device/session/full
     // 时要种子，off 不会触发。
     //
@@ -2211,7 +2216,7 @@ const preCheckMixedChannelRisk = async (built: Record<string, unknown>): Promise
   if (mixedChannelConfirmed.value) return true
 
   try {
-    const result = await adminAPI.accounts.checkMixedChannelRisk({
+    const result = await scopedAccounts().checkMixedChannelRisk({
       platform: targetSelectedPlatforms.value[0],
       group_ids: groupIds.value
     })
@@ -2315,11 +2320,11 @@ const submitBulkUpdate = async (baseUpdates: Record<string, unknown>) => {
 
   try {
     const job = targetMode.value === 'filtered' && props.target?.filters
-      ? await adminAPI.accounts.bulkUpdate({
+      ? await scopedAccounts().bulkUpdate({
         filters: props.target.filters,
         ...updates
       })
-      : await adminAPI.accounts.bulkUpdate(props.accountIds, updates)
+      : await scopedAccounts().bulkUpdate(props.accountIds, updates)
     pendingUpdatesForConfirm.value = null
     operationJob.value = job
     emit('updated', job)

@@ -240,6 +240,7 @@ import { sanitizeSvg } from '@/utils/sanitize'
 import { sanitizeUrl } from '@/utils/url'
 import { FeatureFlags, makeSidebarFlag } from '@/utils/featureFlags'
 import { usePluginExtensions } from '@/stores/pluginExtensions'
+import { accountViewPath, isAccountView, localizedPluginLabel, resolveAccountView } from '@/components/plugins/accountView'
 import { resolveSiteBillingMode } from '@/utils/siteBillingMode'
 import { useBatchImageAccess } from '@/composables/useBatchImageAccess'
 
@@ -279,7 +280,7 @@ function applyFeatureFlags(items: NavItem[]): NavItem[] {
   return out
 }
 
-const { t } = useI18n()
+const { t, locale } = useI18n()
 
 const route = useRoute()
 const router = useRouter()
@@ -821,7 +822,11 @@ const personalNavItems = computed((): NavItem[] => finalizeNav(buildSelfNavItems
 function buildExtensionNavItems(includeAdmin: boolean): NavItem[] {
   const items: NavItem[] = []
   if (includeAdmin) {
-    items.push({ path: '/admin/cindy-accounts', label: t('nav.cindyAccounts'), icon: GlobeIcon })
+    const views = pluginExtensions.items.filter(isAccountView).filter(item =>
+      item.account_view.navigation?.section === 'admin.extensions' &&
+      resolveAccountView(pluginExtensions.items, item.plugin_key, item.id) === item)
+    views.sort((a, b) => (a.account_view.navigation?.order || 0) - (b.account_view.navigation?.order || 0))
+    for (const view of views) items.push({ path: accountViewPath(view), label: localizedPluginLabel(view.label, locale.value), icon: GlobeIcon })
   }
   items.push({ path: '/image-studio', label: t('nav.imageStudio'), icon: BatchImageIcon, featureFlag: flagImageStudio })
   return items

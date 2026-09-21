@@ -244,6 +244,7 @@ func AccountFromServiceShallow(a *service.Account) *Account {
 		ollamaCloudUsage = state
 	}
 	out := &Account{
+		AccountViewFacts:           service.AccountViewFactsFromAccount(a, time.Now()),
 		ID:                         a.ID,
 		Name:                       a.Name,
 		Notes:                      a.Notes,
@@ -497,6 +498,7 @@ func AccountListItemFromAccount(a *Account) *AccountListItem {
 		return nil
 	}
 	return &AccountListItem{
+		AccountViewFacts:           a.AccountViewFacts,
 		WirePlatform:               a.WirePlatform,
 		ProviderProfile:            a.ProviderProfile,
 		ManagementFolder:           a.ManagementFolder,

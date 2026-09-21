@@ -9,13 +9,17 @@ type ResourceGrant struct {
 }
 
 type ResourceDescriptor struct {
-	Retained          bool   `json:"-"`
-	ResponseKind      string `json:"response_kind,omitempty"`
-	AccountParam      string `json:"-"`
-	AccountBodyField  string `json:"-"`
-	AccountItemsField string `json:"-"`
-	AccountScopeField string `json:"-"`
-	AllAccounts       bool   `json:"-"`
+	// These additional requirements are host policy, never manifest input.
+	RequiredCapabilities   []string `json:"-"`
+	OwnerPluginKey         string   `json:"-"`
+	WholeAccountViewDomain bool     `json:"-"`
+	Retained               bool     `json:"retained,omitempty"`
+	ResponseKind           string   `json:"response_kind,omitempty"`
+	AccountParam           string   `json:"-"`
+	AccountBodyField       string   `json:"-"`
+	AccountItemsField      string   `json:"-"`
+	AccountScopeField      string   `json:"-"`
+	AllAccounts            bool     `json:"-"`
 	// Fixed filter scope is registered by the host only for handlers whose
 	// selection predicate always enforces this platform and account type.
 	FilterPlatform    string `json:"-"`

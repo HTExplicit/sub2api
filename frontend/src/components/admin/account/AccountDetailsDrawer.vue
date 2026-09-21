@@ -73,7 +73,7 @@
             </p>
           </section>
 
-          <ExtensionWidget name="account-taxonomy-edit"
+          <ExtensionWidget name="account-taxonomy-edit" plugin-key="codexrip.account-tools"
             :context="{ account_id: account.id, view_props: { accountId: account.id, folderId: account.management_folder?.id, tagIds: (account.tags || []).map(tag => tag.id), folders, tags } }"
             @event="name => { if (name === 'changed') refreshTaxonomyAccount() }" />
 
@@ -154,6 +154,8 @@
 </template>
 
 <script setup lang="ts">
+import { provideAccountViewContext, useAccountViewOperation } from '@/composables/useAccountViewContext'
+import { accountAPIForView } from '@/api/admin/accounts'
 import ExtensionWidget from '@/components/plugins/ExtensionWidget.vue'
 import { computed, onMounted, onUnmounted } from 'vue'
 import { useI18n } from 'vue-i18n'
@@ -181,6 +183,10 @@ const props = defineProps<{
   todayStatsLoading: boolean
   manualRefreshToken: number
 }>()
+const accountViewOperation = useAccountViewOperation(() => !!props.account, () => props.account?.id)
+function scopedAccounts() { return accountAPIForView(accountViewOperation.capture(), adminAPI.accounts) }
+provideAccountViewContext({ capture: accountViewOperation.capture, available: () => accountViewOperation.available.value, revision: accountViewOperation.revision })
+
 
 const emit = defineEmits<{
   close: []
@@ -222,7 +228,7 @@ const refreshTaxonomyAccount = async () => {
   if (!props.account) return
   const id = props.account.id
   try {
-    const updated = await adminAPI.accounts.getById(id)
+    const updated = await scopedAccounts().getById(id)
     if (props.account?.id === id) emit('updated', updated)
   } catch (error: any) { appStore.showError(error?.message || t('common.unknownError')) }
 }

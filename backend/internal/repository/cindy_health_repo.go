@@ -109,8 +109,22 @@ func (r *cindyHealthRepository) PersistCindyTerminalState(
 		return false, err
 	}
 	defer func() { _ = tx.Rollback() }()
+	applied, err := persistCindyTerminalStateTx(ctx, tx, episode, finalization)
+	if err != nil || !applied {
+		return applied, err
+	}
+	if err := tx.Commit(); err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
+// The probe uses this same terminal write inside its already fenced item/marker
+// transaction. The ordinary gateway path above keeps its existing transaction,
+// retry and episode semantics.
+func persistCindyTerminalStateTx(ctx context.Context, tx *sql.Tx, episode service.CindyHealthEpisode, finalization service.CindyHealthFinalization) (bool, error) {
 	var identityID int64
-	err = tx.QueryRowContext(
+	err := tx.QueryRowContext(
 		ctx, activeCindyCredentialIdentityForUpdate,
 		episode.AccountID, episode.Generation, service.ProviderProfileCindyLaxaV1,
 		service.AccountTypeAPIKey, "https://api.laxarouter.ai",
@@ -175,9 +189,6 @@ func (r *cindyHealthRepository) PersistCindyTerminalState(
 	if _, err = tx.ExecContext(ctx, `
 		SELECT enqueue_group_api_key_auth_cache_invalidations(ag.group_id)
 		FROM account_groups ag WHERE ag.account_id = $1`, episode.AccountID); err != nil {
-		return false, err
-	}
-	if err = tx.Commit(); err != nil {
 		return false, err
 	}
 	return true, nil

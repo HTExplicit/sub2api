@@ -140,6 +140,9 @@ func ValidatePluginRegistry(installations []*PluginInstallation) error {
 }
 
 func validatePluginRegistry(installations []*PluginInstallation) error {
+	if err := validateAccountViewRegistry(installations); err != nil {
+		return err
+	}
 	exclusive := make(map[string]int64)
 	type scopedOperation struct {
 		owner                                   int64
@@ -247,7 +250,9 @@ func pluginDependenciesHealthy(installation *PluginInstallation, registry *plugi
 }
 
 type PluginContribution struct {
-	PackageSHA256 string `json:"package_sha256,omitempty"`
+	PackageSHA256        string `json:"package_sha256,omitempty"`
+	PluginKey            string `json:"plugin_key,omitempty"`
+	ViewDefinitionDigest string `json:"view_definition_digest,omitempty"`
 	extensionv1.Contribution
 	AccountScope  *PluginContributionAccountScope `json:"account_scope,omitempty"`
 	StylesheetURL string                          `json:"stylesheet_url,omitempty"`
@@ -315,6 +320,9 @@ func (m *PluginManager) Contributions() []PluginContribution {
 		runtime := registry.runtimes[id]
 		available := registry.unavailable == "" && runtime != nil && !runtime.draining.Load() && !runtime.client.Exited() && pluginDependenciesHealthy(installation, registry, map[int64]bool{})
 		for _, contribution := range installation.Manifest.Contributions {
+			if contribution.Slot == extensionv1.AccountViewSlot && installation.State == PluginStateDisabled {
+				continue
+			}
 			if !pluginContributionBindingsEnabled(installation, &contribution) {
 				continue
 			}
@@ -322,7 +330,7 @@ func (m *PluginManager) Contributions() []PluginContribution {
 			if known && !flag {
 				continue
 			}
-			item := PluginContribution{Contribution: contribution, PluginID: id, Available: available, PackageSHA256: installation.PackageSHA256}
+			item := PluginContribution{Contribution: contribution, PluginID: id, PluginKey: installation.PluginKey, Available: available, PackageSHA256: installation.PackageSHA256, ViewDefinitionDigest: AccountViewDefinitionDigest(&contribution)}
 			if contribution.Capability != "" {
 				item.AccountScope = &PluginContributionAccountScope{Version: 1, Bindings: contributionEffectiveBindings(installation, &contribution)}
 			}

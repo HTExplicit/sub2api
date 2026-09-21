@@ -40,22 +40,25 @@ type Dependency struct {
 }
 
 type Contribution struct {
-	AllAccounts      bool              `json:"all_accounts,omitempty"`
-	RetainedControls bool              `json:"retained_controls,omitempty"`
-	Events           []string          `json:"events,omitempty"`
-	Capability       string            `json:"capability,omitempty"`
-	Assets           []string          `json:"assets,omitempty"`
-	ConfigFlag       string            `json:"config_flag,omitempty"`
-	Fields           []FormField       `json:"fields,omitempty"`
-	DisplayFields    []DisplayField    `json:"display_fields,omitempty"`
-	AccountFilter    *AccountFilter    `json:"account_filter,omitempty"`
-	ID               string            `json:"id"`
-	Slot             string            `json:"slot"`
-	Label            map[string]string `json:"label"`
-	Action           string            `json:"action,omitempty"`
-	Entrypoint       string            `json:"entrypoint,omitempty"`
-	Permission       string            `json:"permission"`
-	Order            int               `json:"order,omitempty"`
+	AccountView      *AccountViewDefinitionV1 `json:"account_view,omitempty"`
+	ValueBindings    map[string]string        `json:"value_bindings,omitempty"`
+	ResourceAction   *AccountResourceActionV1 `json:"resource_action,omitempty"`
+	AllAccounts      bool                     `json:"all_accounts,omitempty"`
+	RetainedControls bool                     `json:"retained_controls,omitempty"`
+	Events           []string                 `json:"events,omitempty"`
+	Capability       string                   `json:"capability,omitempty"`
+	Assets           []string                 `json:"assets,omitempty"`
+	ConfigFlag       string                   `json:"config_flag,omitempty"`
+	Fields           []FormField              `json:"fields,omitempty"`
+	DisplayFields    []DisplayField           `json:"display_fields,omitempty"`
+	AccountFilter    *AccountFilter           `json:"account_filter,omitempty"`
+	ID               string                   `json:"id"`
+	Slot             string                   `json:"slot"`
+	Label            map[string]string        `json:"label"`
+	Action           string                   `json:"action,omitempty"`
+	Entrypoint       string                   `json:"entrypoint,omitempty"`
+	Permission       string                   `json:"permission"`
+	Order            int                      `json:"order,omitempty"`
 }
 
 type DisplayValue struct {
@@ -114,7 +117,8 @@ func AccountMatchesFilter(account Account, filter *AccountFilter) bool {
 }
 
 var slots = map[string]bool{
-	"admin.page": true, "admin.settings": true, "account.actions": true,
+	AccountViewSlot: true,
+	"admin.page":    true, "admin.settings": true, "account.actions": true,
 	"account.details": true, "account.columns": true, "account.test": true, "account.test.prompt": true,
 	"group.actions": true, "group.details": true, "navigation": true,
 	"theme": true, "usage.details": true,

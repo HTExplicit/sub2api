@@ -382,6 +382,9 @@ func (h *AccountHandler) listAccountsFiltered(ctx context.Context, platform, acc
 
 func (h *AccountHandler) resolveExportAccounts(ctx context.Context, ids []int64, c *gin.Context) ([]service.Account, error) {
 	if len(ids) > 0 {
+		if err := service.ValidateAccountViewSelection(ctx, ids); err != nil {
+			return nil, err
+		}
 		accounts, err := h.adminService.GetAccountsByIDs(ctx, ids)
 		if err != nil {
 			return nil, err
@@ -419,7 +422,8 @@ func (h *AccountHandler) resolveExportAccounts(ctx context.Context, ids []int64,
 			groupID = parsedGroupID
 		}
 	}
-	if hasAccountConsoleFilters(c) {
+	_, accountViewBound := service.AccountViewFromContext(ctx)
+	if hasAccountConsoleFilters(c) || accountViewBound {
 		filters, filterErr := parseAccountConsoleFilters(c, groupID)
 		if filterErr != nil {
 			return nil, filterErr

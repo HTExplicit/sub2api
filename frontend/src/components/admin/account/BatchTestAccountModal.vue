@@ -1,5 +1,5 @@
 <template>
-  <ExtensionModal :show="show" name="account-batch-test" :account-ids="accountIds" :context="{ view_props: { accountIds } }"
+  <ExtensionModal :show="show" name="account-batch-test" plugin-key="codexrip.account-tools" :account-ids="accountIds" :context="{ view_props: { accountIds } }"
     @close="emit('close')" @job="job => emit('submitted', job)" />
 </template>
 <script setup lang="ts">

@@ -52,11 +52,44 @@ func (r *cindyBalanceProbeRepository) CreateJob(
 	expectedCount int,
 	expectedFingerprint string,
 ) (*service.CindyBalanceProbeJob, error) {
+	if err := service.ValidateCindyBalanceProbeOriginContext(ctx, scope.Origin); err != nil {
+		return nil, err
+	}
 	tx, err := r.db.BeginTx(ctx, &sql.TxOptions{Isolation: sql.LevelSerializable})
 	if err != nil {
 		return nil, err
 	}
 	defer func() { _ = tx.Rollback() }()
+	if origin := scope.Origin; origin != nil {
+		if origin.OperationKey != "" {
+			if requestedBy == nil || *requestedBy <= 0 {
+				return nil, service.ErrAccountViewInvalid
+			}
+			key := fmt.Sprintf("cindy-probe-view:%d:%s", *requestedBy, origin.OperationKey)
+			if _, err := tx.ExecContext(ctx, `SELECT pg_advisory_xact_lock(hashtextextended($1,0))`, key); err != nil {
+				return nil, err
+			}
+			var existingID int64
+			var existingScope []byte
+			err := tx.QueryRowContext(ctx, `SELECT id,scope FROM cindy_balance_probe_jobs WHERE requested_by=$1 AND scope->'origin'->>'operation_key'=$2 ORDER BY id LIMIT 1`, *requestedBy, origin.OperationKey).Scan(&existingID, &existingScope)
+			if err == nil {
+				stored := service.DecodeCindyBalanceProbeScope(existingScope)
+				if stored.Origin == nil || stored.Origin.RequestDigest != origin.RequestDigest {
+					return nil, service.ErrAccountJobIdempotencyConflict
+				}
+				if err := tx.Commit(); err != nil {
+					return nil, err
+				}
+				return r.GetJob(ctx, existingID)
+			}
+			if !errors.Is(err, sql.ErrNoRows) {
+				return nil, err
+			}
+		}
+		if err := lockPluginExecution(ctx, tx, origin.PluginKey); err != nil {
+			return nil, err
+		}
+	}
 	preview, err := loadCindyBalanceProbePreview(ctx, tx, scope, rateRPS)
 	if err != nil {
 		return nil, wrapCindyBalanceProbeCreateTransactionError(err)
@@ -67,6 +100,14 @@ func (r *cindyBalanceProbeRepository) CreateJob(
 	}
 	if preview.CandidateCount == 0 {
 		return nil, service.ErrCindyBalanceProbeNoCandidates
+	}
+	if preview.Scope.Origin != nil {
+		origin := *preview.Scope.Origin
+		origin.FrozenAccountIDs = make([]int64, 0, len(preview.Candidates))
+		for _, candidate := range preview.Candidates {
+			origin.FrozenAccountIDs = append(origin.FrozenAccountIDs, candidate.AccountID)
+		}
+		preview.Scope.Origin = &origin
 	}
 	var jobID int64
 	err = tx.QueryRowContext(ctx, `
@@ -108,7 +149,35 @@ func loadCindyBalanceProbePreview(
 	if err != nil {
 		return nil, err
 	}
-	return service.BuildCindyBalanceProbePreviewFromSnapshot(scope, accounts, rateRPS, time.Now().UTC())
+	if _, bound := service.AccountViewFromContext(ctx); bound {
+		rows, err := tx.QueryContext(ctx, `SELECT id,wire_platform,provider_profile,cindy_banned_at FROM accounts WHERE deleted_at IS NULL ORDER BY id`)
+		if err != nil {
+			return nil, err
+		}
+		byID := make(map[int64]*service.Account, len(accounts))
+		for index := range accounts {
+			byID[accounts[index].ID] = &accounts[index]
+		}
+		for rows.Next() {
+			var id int64
+			var wire, profile string
+			var bannedAt sql.NullTime
+			if err := rows.Scan(&id, &wire, &profile, &bannedAt); err != nil {
+				_ = rows.Close()
+				return nil, err
+			}
+			if account := byID[id]; account != nil {
+				account.WirePlatform, account.ProviderProfile = wire, profile
+				account.CindyBannedAt = cindyBalanceProbeNullableTimePointer(bannedAt)
+			}
+		}
+		err = rows.Err()
+		_ = rows.Close()
+		if err != nil {
+			return nil, err
+		}
+	}
+	return service.BuildCindyBalanceProbePreviewFromSnapshotContext(ctx, scope, accounts, rateRPS, time.Now().UTC())
 }
 
 func loadCindyBalanceProbeAccountSnapshot(ctx context.Context, tx *sql.Tx) ([]service.Account, error) {
@@ -798,6 +867,18 @@ func (r *cindyBalanceProbeRepository) FinalizeExhausted(
 	return r.finalizeAccountMarker(ctx, reservation, nil, leaseToken, observedAt, confirmationWindow, true)
 }
 
+func (r *cindyBalanceProbeRepository) FinalizeScopedExhausted(ctx context.Context, reservation *service.CindyBalanceProbeReservation, leaseToken string, observedAt time.Time, confirmationWindow time.Duration) (string, *service.CindyHealthEpisode, error) {
+	if _, scoped := service.CindyBalanceProbeOriginOwner(ctx); !scoped {
+		return "", nil, service.ErrAccountViewUnavailable
+	}
+	var committed service.CindyHealthEpisode
+	state, err := r.finalizeAccountMarker(ctx, reservation, nil, leaseToken, observedAt, confirmationWindow, true, &committed)
+	if err != nil || committed.AccountID == 0 {
+		return state, nil, err
+	}
+	return state, &committed, nil
+}
+
 func (r *cindyBalanceProbeRepository) FinalizeRecovery(
 	ctx context.Context,
 	reservation *service.CindyBalanceProbeReservation,
@@ -817,6 +898,7 @@ func (r *cindyBalanceProbeRepository) finalizeAccountMarker(
 	observedAt time.Time,
 	confirmationWindow time.Duration,
 	mark bool,
+	committedResult ...*service.CindyHealthEpisode,
 ) (string, error) {
 	if reservation == nil {
 		return "", nil
@@ -826,10 +908,22 @@ func (r *cindyBalanceProbeRepository) finalizeAccountMarker(
 		return "", err
 	}
 	defer func() { _ = tx.Rollback() }()
+	owner, scoped := service.CindyBalanceProbeOriginOwner(ctx)
+	if scoped {
+		if err := lockPluginExecution(ctx, tx, owner); err != nil {
+			return "", err
+		}
+	}
+	return r.finalizeAccountMarkerTx(ctx, tx, reservation, accountSnapshot, leaseToken, observedAt, confirmationWindow, mark, scoped, committedResult...)
+}
+
+// Transaction body shared by legacy and scoped entrypoints. The outer method
+// owns rollback and the origin fence; this body commits all business facts once.
+func (r *cindyBalanceProbeRepository) finalizeAccountMarkerTx(ctx context.Context, tx *sql.Tx, reservation *service.CindyBalanceProbeReservation, accountSnapshot *service.Account, leaseToken string, observedAt time.Time, confirmationWindow time.Duration, mark, scoped bool, committedResult ...*service.CindyHealthEpisode) (string, error) {
 	var jobStatus, itemState string
 	var cancelAt, lunaAt sql.NullTime
 	var databaseNow time.Time
-	err = tx.QueryRowContext(ctx, `
+	err := tx.QueryRowContext(ctx, `
 		SELECT j.status, j.cancel_requested_at, i.state, i.luna_at, clock_timestamp()
 		FROM cindy_balance_probe_jobs AS j
 		JOIN cindy_balance_probe_items AS i ON i.job_id = j.id
@@ -907,12 +1001,43 @@ func (r *cindyBalanceProbeRepository) finalizeAccountMarker(
 	if !eligible {
 		return r.finishStaleTx(ctx, tx, reservation, mark)
 	}
+	var committedEpisode *service.CindyHealthEpisode
+	if mark && scoped {
+		var generation int64
+		var identityFingerprint string
+		err = tx.QueryRowContext(ctx, `SELECT i.generation,i.fingerprint FROM account_credential_identities i
+		JOIN accounts a ON a.id=i.account_id AND a.cindy_credential_generation=i.generation
+		WHERE i.account_id=$1 AND i.active AND i.provider_profile=$2 AND i.auth_type=$3 AND i.normalized_base_url=$4
+		FOR UPDATE OF a,i`, reservation.AccountID, service.ProviderProfileCindyLaxaV1, service.AccountTypeAPIKey, "https://api.laxarouter.ai").Scan(&generation, &identityFingerprint)
+		if err != nil {
+			return "", err
+		}
+		apiKey, _ := credentials["api_key"].(string)
+		expectedIdentity, err := service.AccountCredentialFingerprint(service.ProviderProfileCindyLaxaV1, service.AccountTypeAPIKey, "https://api.laxarouter.ai", apiKey)
+		if err != nil || generation <= 0 || expectedIdentity != identityFingerprint {
+			return "", service.ErrCindyBalanceProbeChanged
+		}
+		episode := service.CindyHealthEpisode{AccountID: reservation.AccountID, Generation: generation, EpisodeID: fmt.Sprintf("probe-%d-%d", reservation.JobID, reservation.ItemID), Fingerprint: identityFingerprint, Status: service.CindyHealthStatusBalanceInsufficient, Evidence: service.CindyHealthEvidenceExactBudget, ObservedAt: observedAt.UTC()}
+		applied, err := persistCindyTerminalStateTx(ctx, tx, episode, service.CindyHealthFinalization{Status: episode.Status, Evidence: episode.Evidence, ObservedAt: episode.ObservedAt})
+		if err != nil {
+			return "", err
+		}
+		if !applied {
+			return "", service.ErrCindyBalanceProbeChanged
+		}
+		// The shared writer preserves an existing banned terminal state. Publish
+		// that committed fact, not the weaker requested exhausted status.
+		if err := tx.QueryRowContext(ctx, `SELECT status,evidence FROM cindy_health_states WHERE account_id=$1`, reservation.AccountID).Scan(&episode.Status, &episode.Evidence); err != nil {
+			return "", err
+		}
+		committedEpisode = &episode
+	}
 	finalState := "exhausted"
 	if mark && markedAt.Valid {
 		finalState = "already_marked"
 	} else if !mark && !markedAt.Valid {
 		return r.finishStaleTx(ctx, tx, reservation, mark)
-	} else {
+	} else if committedEpisode == nil {
 		if mark {
 			_, err = tx.ExecContext(ctx, `UPDATE accounts SET cindy_balance_insufficient_at = $2, updated_at = NOW() WHERE id = $1`, reservation.AccountID, observedAt)
 		} else {
@@ -952,6 +1077,9 @@ func (r *cindyBalanceProbeRepository) finalizeAccountMarker(
 	}
 	if err = tx.Commit(); err != nil {
 		return "", err
+	}
+	if committedEpisode != nil && len(committedResult) > 0 && committedResult[0] != nil {
+		*committedResult[0] = *committedEpisode
 	}
 	return finalState, nil
 }
@@ -1010,7 +1138,11 @@ func (r *cindyBalanceProbeRepository) FinishIfDone(ctx context.Context, jobID in
 	}
 	defer func() { _ = tx.Rollback() }()
 	var status string
-	err = tx.QueryRowContext(ctx, `SELECT status FROM cindy_balance_probe_jobs WHERE id = $1 AND lease_token = $2 FOR UPDATE`, jobID, leaseToken).Scan(&status)
+	if leaseToken == "" {
+		err = tx.QueryRowContext(ctx, `SELECT status FROM cindy_balance_probe_jobs WHERE id=$1 AND lease_token IS NULL AND status='cancel_requested' AND scope->'origin' IS NOT NULL AND scope->'origin'<>'null'::jsonb FOR UPDATE`, jobID).Scan(&status)
+	} else {
+		err = tx.QueryRowContext(ctx, `SELECT status FROM cindy_balance_probe_jobs WHERE id = $1 AND lease_token = $2 FOR UPDATE`, jobID, leaseToken).Scan(&status)
+	}
 	if errors.Is(err, sql.ErrNoRows) {
 		return true, nil
 	}
@@ -1018,6 +1150,11 @@ func (r *cindyBalanceProbeRepository) FinishIfDone(ctx context.Context, jobID in
 		return false, err
 	}
 	if status == "cancel_requested" {
+		if leaseToken == "" {
+			if _, err := tx.ExecContext(ctx, `UPDATE cindy_balance_probe_items SET state='canceled',final_outcome='canceled',finished_at=NOW(),updated_at=NOW() WHERE job_id=$1 AND state IN ('luna_running','terra_running')`, jobID); err != nil {
+				return false, err
+			}
+		}
 		if _, err = tx.ExecContext(ctx, `
 			UPDATE cindy_balance_probe_items SET state = 'canceled', final_outcome = 'canceled',
 			finished_at = NOW(), updated_at = NOW()
@@ -1112,6 +1249,67 @@ func (r *cindyBalanceProbeRepository) Resume(ctx context.Context, jobID int64) (
 		return nil, service.ErrCindyBalanceProbeNotFound
 	}
 	return r.GetJob(ctx, jobID)
+}
+
+func (r *cindyBalanceProbeRepository) ResumeScoped(ctx context.Context, jobID int64, expected, next *service.CindyBalanceProbeOrigin) (*service.CindyBalanceProbeJob, error) {
+	if expected == nil || next == nil {
+		return nil, service.ErrAccountViewInvalid
+	}
+	semantic := *next
+	semantic.RuntimeGeneration, semantic.View.RuntimeGeneration, semantic.View.PolicyRevision = expected.RuntimeGeneration, expected.View.RuntimeGeneration, expected.View.PolicyRevision
+	before, _ := json.Marshal(expected)
+	after, _ := json.Marshal(semantic)
+	if !bytes.Equal(before, after) {
+		return nil, service.ErrAccountViewUnavailable
+	}
+	if err := service.ValidateCindyBalanceProbeOriginContext(ctx, next); err != nil {
+		return nil, err
+	}
+	tx, err := r.db.BeginTx(ctx, &sql.TxOptions{Isolation: sql.LevelSerializable})
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = tx.Rollback() }()
+	if err := lockPluginExecution(ctx, tx, next.PluginKey); err != nil {
+		return nil, err
+	}
+	if err := resumeScopedProbeTx(ctx, tx, jobID, before, next); err != nil {
+		return nil, err
+	}
+	return r.GetJob(ctx, jobID)
+}
+
+func resumeScopedProbeTx(ctx context.Context, tx *sql.Tx, jobID int64, expectedJSON []byte, next *service.CindyBalanceProbeOrigin) error {
+	var originalJSON []byte
+	err := tx.QueryRowContext(ctx, `SELECT scope FROM cindy_balance_probe_jobs WHERE id=$1 AND status IN ('paused','paused_upstream') AND cancel_requested_at IS NULL FOR UPDATE`, jobID).Scan(&originalJSON)
+	if errors.Is(err, sql.ErrNoRows) {
+		return service.ErrCindyBalanceProbeNotFound
+	}
+	if err != nil {
+		return err
+	}
+	scope := service.DecodeCindyBalanceProbeScope(originalJSON)
+	stored, _ := json.Marshal(scope.Origin)
+	if !bytes.Equal(stored, expectedJSON) {
+		return service.ErrCindyBalanceProbeChanged
+	}
+	snapshot := *next
+	scope.Origin = &snapshot
+	result, err := tx.ExecContext(ctx, `UPDATE cindy_balance_probe_jobs SET scope=$2::jsonb,status='queued',consecutive_upstream_failures=0,lease_token=NULL,lease_until=NULL,failure_reason=NULL,updated_at=NOW() WHERE id=$1 AND scope=$3::jsonb AND status IN ('paused','paused_upstream') AND cancel_requested_at IS NULL`, jobID, service.EncodeCindyBalanceProbeScope(scope), originalJSON)
+	if err != nil {
+		return err
+	}
+	count, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if count != 1 {
+		return service.ErrCindyBalanceProbeChanged
+	}
+	if err := tx.Commit(); err != nil {
+		return err
+	}
+	return nil
 }
 
 func (r *cindyBalanceProbeRepository) Cancel(ctx context.Context, jobID int64) (*service.CindyBalanceProbeJob, error) {

@@ -3,7 +3,8 @@
  * Handles scheduled test plan management for account connectivity monitoring
  */
 
-import { apiClient } from '../client'
+import { accountViewClient } from './accountViewClient'
+import type { CapturedAccountView } from '@/composables/useAccountViewContext'
 import type {
   ScheduledTestPlan,
   ScheduledTestResult,
@@ -16,8 +17,8 @@ import type {
  * @param accountId - Account ID
  * @returns List of scheduled test plans
  */
-export async function listByAccount(accountId: number): Promise<ScheduledTestPlan[]> {
-  const { data } = await apiClient.get<ScheduledTestPlan[]>(
+export async function listByAccount(accountId: number, view?: CapturedAccountView): Promise<ScheduledTestPlan[]> {
+  const { data } = await accountViewClient(view).get<ScheduledTestPlan[]>(
     `/admin/accounts/${accountId}/scheduled-test-plans`
   )
   return data ?? []
@@ -28,8 +29,8 @@ export async function listByAccount(accountId: number): Promise<ScheduledTestPla
  * @param req - Plan creation request
  * @returns Created plan
  */
-export async function create(req: CreateScheduledTestPlanRequest): Promise<ScheduledTestPlan> {
-  const { data } = await apiClient.post<ScheduledTestPlan>(
+export async function create(req: CreateScheduledTestPlanRequest, view?: CapturedAccountView): Promise<ScheduledTestPlan> {
+  const { data } = await accountViewClient(view).post<ScheduledTestPlan>(
     '/admin/scheduled-test-plans',
     req
   )
@@ -42,8 +43,8 @@ export async function create(req: CreateScheduledTestPlanRequest): Promise<Sched
  * @param req - Fields to update
  * @returns Updated plan
  */
-export async function update(id: number, req: UpdateScheduledTestPlanRequest): Promise<ScheduledTestPlan> {
-  const { data } = await apiClient.put<ScheduledTestPlan>(
+export async function update(id: number, req: UpdateScheduledTestPlanRequest, view?: CapturedAccountView): Promise<ScheduledTestPlan> {
+  const { data } = await accountViewClient(view).put<ScheduledTestPlan>(
     `/admin/scheduled-test-plans/${id}`,
     req
   )
@@ -54,8 +55,8 @@ export async function update(id: number, req: UpdateScheduledTestPlanRequest): P
  * Delete a scheduled test plan
  * @param id - Plan ID
  */
-export async function deletePlan(id: number): Promise<void> {
-  await apiClient.delete(`/admin/scheduled-test-plans/${id}`)
+export async function deletePlan(id: number, view?: CapturedAccountView): Promise<void> {
+  await accountViewClient(view).delete(`/admin/scheduled-test-plans/${id}`)
 }
 
 /**
@@ -64,8 +65,8 @@ export async function deletePlan(id: number): Promise<void> {
  * @param limit - Optional max number of results to return
  * @returns List of test results
  */
-export async function listResults(planId: number, limit?: number): Promise<ScheduledTestResult[]> {
-  const { data } = await apiClient.get<ScheduledTestResult[]>(
+export async function listResults(planId: number, limit?: number, view?: CapturedAccountView): Promise<ScheduledTestResult[]> {
+  const { data } = await accountViewClient(view).get<ScheduledTestResult[]>(
     `/admin/scheduled-test-plans/${planId}/results`,
     {
       params: limit ? { limit } : undefined
@@ -83,3 +84,14 @@ export const scheduledTestsAPI = {
 }
 
 export default scheduledTestsAPI
+
+export function scheduledTestsForView(view?: CapturedAccountView, core = scheduledTestsAPI): typeof scheduledTestsAPI {
+  if (!view) return core
+  return {
+    listByAccount: id => core.listByAccount(id, view),
+    create: request => core.create(request, view),
+    update: (id, request) => core.update(id, request, view),
+    delete: id => core.delete(id, view),
+    listResults: (id, limit) => core.listResults(id, limit, view)
+  }
+}

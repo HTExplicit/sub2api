@@ -368,6 +368,10 @@
 </template>
 
 <script setup lang="ts">
+import { isCancel } from 'axios'
+import { useAccountViewOperation } from '@/composables/useAccountViewContext'
+import { accountAPIForView } from '@/api/admin/accounts'
+import { accountViewRequestConfig } from '@/api/admin/accountViewClient'
 import AccountTestReasoningSelect from './AccountTestReasoningSelect.vue'
 import AccountTextTestPrompt from './AccountTextTestPrompt.vue'
 import { useAccountTestPrompt } from '@/composables/useAccountTestPrompt'
@@ -404,6 +408,9 @@ const props = defineProps<{
   show: boolean
   account: Account | null
 }>()
+const accountViewOperation = useAccountViewOperation(() => props.show, () => props.account?.id)
+function scopedAccounts() { return accountAPIForView(accountViewOperation.capture(), adminAPI.accounts) }
+
 
 const emit = defineEmits<{
   (e: 'close'): void
@@ -678,6 +685,7 @@ const testModeSummary = computed(() => {
 })
 
 const canStartTest = computed(() => {
+	if (!accountViewOperation.available.value) return false
 	if (!props.show || !currentModelPlan.value || loadingModels.value) return false
 	if (effectiveReasoningEffort.value && !reasoningValid.value) return false
   if (supportsTextPrompt.value && textPromptEnabled.value && (!textPromptValid.value || !textPromptPolicyValid.value)) return false
@@ -762,7 +770,7 @@ const loadAvailableModels = async (): Promise<boolean> => {
   availableModels.value = []
   selectedModelId.value = '' // Reset selection before loading
   try {
-    const result = await adminAPI.accounts.getAccountTestPlan(accountID, modelLoadController.signal)
+    const result = await scopedAccounts().getAccountTestPlan(accountID, modelLoadController.signal)
     if (revision !== modelLoadRevision || !props.show || props.account?.id !== accountID) return false
     modelPlan.value = validateAccountTestPlan(result, accountID)
     availableModels.value = modelPlan.value.models
@@ -818,6 +826,13 @@ const abortStream = () => {
     abortController = null
   }
 }
+watch(accountViewOperation.available, available => {
+  if (available) return
+  abortStream()
+  invalidateModelLoad()
+  if (status.value === 'connecting') status.value = 'idle'
+})
+onBeforeUnmount(abortStream)
 
 const addLine = (text: string, className: string = 'text-gray-300') => {
   outputLines.value.push({ text, class: className })
@@ -848,6 +863,11 @@ const startTest = async () => {
   abortStream()
 
   abortController = new AbortController()
+  const requestController = abortController
+  const accountID = props.account.id
+  let reader: ReadableStreamDefaultReader<Uint8Array> | undefined
+  const isCurrentStream = () => abortController === requestController && !requestController.signal.aborted &&
+    props.show && props.account?.id === accountID && accountViewOperation.available.value
 
   try {
     const requestBody: {
@@ -889,22 +909,27 @@ const startTest = async () => {
     const url = buildApiUrl(`/admin/accounts/${props.account.id}/test`)
 
     // Use fetch with streaming for SSE since EventSource doesn't support POST
+    const view = accountViewOperation.capture()
+    const bound = view ? accountViewRequestConfig(view, { method: 'POST', data: requestBody }) : undefined
     const response = await fetch(url, {
       method: 'POST',
       headers: {
         Authorization: `Bearer ${localStorage.getItem('auth_token')}`,
         'Content-Type': 'application/json',
-        [ADMIN_UI_REQUEST_HEADER]: '1'
+        [ADMIN_UI_REQUEST_HEADER]: '1',
+        ...(bound?.headers as Record<string, string> | undefined)
       },
-      body: JSON.stringify(requestBody),
-      signal: abortController.signal
+      body: JSON.stringify(bound?.data || requestBody),
+      signal: requestController.signal
     })
+    reader = response.body?.getReader()
+    view?.assertCurrent()
+    if (!isCurrentStream()) return
 
     if (!response.ok) {
       throw new Error(`HTTP error! status: ${response.status}`)
     }
 
-    const reader = response.body?.getReader()
     if (!reader) {
       throw new Error(t('admin.accounts.grok.noResponseBody'))
     }
@@ -914,6 +939,8 @@ const startTest = async () => {
 
     while (true) {
       const { done, value } = await reader.read()
+      view?.assertCurrent()
+      if (!isCurrentStream()) { await reader.cancel(); return }
       if (done) break
 
       buffer += decoder.decode(value, { stream: true })
@@ -935,7 +962,8 @@ const startTest = async () => {
       }
     }
   } catch (error: unknown) {
-    if (error instanceof DOMException && error.name === 'AbortError') {
+    if (!isCurrentStream()) return
+    if (isCancel(error) || (error instanceof DOMException && error.name === 'AbortError')) {
       status.value = 'idle'
       return
     }
@@ -943,6 +971,12 @@ const startTest = async () => {
     const msg = error instanceof Error ? error.message : t('common.unknownError')
     errorMessage.value = msg
     addLine(t('admin.accounts.errorPrefix', { message: msg }), 'text-red-400')
+  } finally {
+    if (reader) {
+      try { await reader.cancel() } catch { /* A completed/aborted stream is already closed. */ }
+      reader.releaseLock?.()
+    }
+    if (abortController === requestController) abortController = null
   }
 }
 

@@ -124,7 +124,7 @@ func (r *accountJobRepository) Create(ctx context.Context, params service.Create
 		return nil, false, err
 	}
 	defer func() { _ = tx.Rollback() }()
-	if err := lockAccountJobPlugin(ctx, tx, params.Metadata); err != nil {
+	if err := lockAccountJobPlugin(ctx, tx, params.Metadata, params.Kind); err != nil {
 		return nil, false, err
 	}
 
@@ -148,7 +148,7 @@ func (r *accountJobRepository) Create(ctx context.Context, params service.Create
 		}
 		oldOwner, _ := service.AccountJobPluginExecution(job.Metadata)
 		newOwner, _ := service.AccountJobPluginExecution(params.Metadata)
-		if job.RequestHash != params.RequestHash || oldOwner.ID != newOwner.ID {
+		if job.RequestHash != params.RequestHash || oldOwner.ID != newOwner.ID || !service.AccountJobViewIdentityEqual(job.Metadata, params.Metadata) {
 			return nil, false, service.ErrAccountJobIdempotencyConflict
 		}
 		if err = tx.Commit(); err != nil {
@@ -184,25 +184,54 @@ func (r *accountJobRepository) Create(ctx context.Context, params service.Create
 	return job, false, nil
 }
 
-func lockAccountJobPlugin(ctx context.Context, tx *sql.Tx, metadata json.RawMessage) error {
-	owner, err := service.AccountJobPluginExecution(metadata)
+func lockAccountJobPlugin(ctx context.Context, tx *sql.Tx, metadata json.RawMessage, kinds ...string) error {
+	fences, err := service.AccountJobExecutionFences(metadata)
 	if err != nil {
 		return err
 	}
-	if owner.ID == 0 {
-		return nil
-	}
-	if owner.Generation <= 0 {
-		return service.ErrAccountJobPluginUnavailable
-	}
-	var generation int64
-	var state string
-	var enabled bool
-	err = tx.QueryRowContext(ctx, `SELECT p.runtime_generation,p.state,
+	for _, fence := range fences {
+		if fence.Primary {
+			var generation int64
+			var state string
+			var enabled bool
+			err = tx.QueryRowContext(ctx, `SELECT p.runtime_generation,p.state,
 		EXISTS (SELECT 1 FROM sub2api_plugin_bindings b WHERE b.plugin_id=p.id AND b.capability='extensions.admin.v1' AND b.enabled)
-		FROM sub2api_plugin_installations p WHERE p.id=$1 FOR SHARE`, owner.ID).Scan(&generation, &state, &enabled)
-	if errors.Is(err, sql.ErrNoRows) || (err == nil && (generation != owner.Generation || state != service.PluginStateEnabled || !enabled)) {
-		return service.ErrAccountJobPluginUnavailable
+		FROM sub2api_plugin_installations p WHERE p.id=$1 FOR SHARE`, fence.ID).Scan(&generation, &state, &enabled)
+			if errors.Is(err, sql.ErrNoRows) || (err == nil && (generation != fence.Generation || state != service.PluginStateEnabled || !enabled)) {
+				return service.ErrAccountJobPluginUnavailable
+			}
+			if err != nil {
+				return err
+			}
+			if len(kinds) > 0 && (kinds[0] == service.AccountJobKindCindyConfirmedCleanup || kinds[0] == service.AccountJobKindCindyBannedCleanup) {
+				var allowed bool
+				err = tx.QueryRowContext(ctx, `SELECT p.plugin_key='codexrip.cindy-provider' AND
+				EXISTS (SELECT 1 FROM sub2api_plugin_bindings b WHERE b.plugin_id=p.id AND b.capability='extensions.provider.v1' AND b.enabled AND b.rollout_percent=100 AND b.platform IN ('*','cindy') AND b.account_type IN ('*','apikey')) AND
+				EXISTS (SELECT 1 FROM sub2api_plugin_bindings b WHERE b.plugin_id=p.id AND b.capability='extensions.admin.v1' AND b.enabled AND b.rollout_percent=100 AND b.platform IN ('*','cindy') AND b.account_type IN ('*','apikey'))
+				FROM sub2api_plugin_installations p WHERE p.id=$1`, fence.ID).Scan(&allowed)
+				if err != nil {
+					return err
+				}
+				if !allowed {
+					return service.ErrAccountJobPluginUnavailable
+				}
+			}
+		}
+		if fence.OriginView {
+			if err := lockOriginAccountView(ctx, tx, fence); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+func lockOriginAccountView(ctx context.Context, tx *sql.Tx, fence service.PluginExecutionFence) error {
+	var generation, revision int64
+	var state, digest string
+	err := tx.QueryRowContext(ctx, `SELECT runtime_generation,state,package_sha256,revision FROM sub2api_plugin_installations WHERE id=$1 AND plugin_key=$2 FOR SHARE`, fence.ID, fence.PluginKey).Scan(&generation, &state, &digest, &revision)
+	if errors.Is(err, sql.ErrNoRows) || (err == nil && (generation != fence.Generation || state != service.PluginStateEnabled || digest != fence.PackageSHA256 || revision != fence.PolicyRevision)) {
+		return service.ErrAccountViewUnavailable
 	}
 	return err
 }

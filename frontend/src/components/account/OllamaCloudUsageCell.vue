@@ -52,11 +52,15 @@
 </template>
 
 <script setup lang="ts">
+import { readWithAccountView, useAccountViewContext } from '@/composables/useAccountViewContext'
+
 import { computed, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { adminAPI } from '@/api/admin'
 import type { Account, OllamaCloudUsageState } from '@/types'
 import UsageProgressBar from './UsageProgressBar.vue'
+const accountViewController = useAccountViewContext()
+
 
 const props = withDefaults(defineProps<{
   account: Account
@@ -78,7 +82,7 @@ const refreshUsage = async () => {
   if (refreshing.value) return
   refreshing.value = true
   try {
-    const next = await adminAPI.accounts.refreshOllamaCloudUsage(props.account.id)
+    const next = await readWithAccountView(accountViewController, view => view ? adminAPI.accounts.refreshOllamaCloudUsage(props.account.id, view) : adminAPI.accounts.refreshOllamaCloudUsage(props.account.id))
     state.value = next
     emit('updated', next)
   } catch (error) {

@@ -1,5 +1,5 @@
 <template>
-  <ExtensionModal :show="show" name="account-taxonomy-bulk" :context="{ view_props: { target, folders, tags } }"
+  <ExtensionModal :show="show" name="account-taxonomy-bulk" plugin-key="codexrip.account-tools" :context="{ view_props: { target, folders, tags } }"
     :account-ids="target?.mode === 'selected' ? target.accountIds : []"
     @close="emit('close')" @job="job => emit('updated', job)" @event="name => { if (name === 'stale') emit('stale') }" />
 </template>

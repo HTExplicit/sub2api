@@ -66,7 +66,12 @@ describe('AppSidebar header styles', () => {
 describe('AppSidebar extensions section', () => {
   it('keeps downstream tools in a dedicated section', () => {
     expect(componentSource).toContain("{{ t('nav.extensions') }}")
-    expect(componentSource).toContain("path: '/admin/cindy-accounts'")
+    expect(componentSource).toContain('pluginExtensions.items.filter(isAccountView)')
+    expect(componentSource).toContain('accountViewPath(view)')
+    expect(componentSource).not.toContain("items.push({ path: '/admin/cindy-accounts'")
+    const adapter = readFileSync(resolve(dirname(componentPath), '../plugins/accountView.ts'), 'utf8')
+    expect(adapter).toContain("path: '/admin/cindy-accounts'")
+    expect(adapter).toContain("plugin_key: 'codexrip.cindy-provider'")
     expect(componentSource).toContain("path: '/image-studio'")
   })
 

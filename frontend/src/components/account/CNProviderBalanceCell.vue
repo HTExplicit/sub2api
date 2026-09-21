@@ -57,6 +57,8 @@
 </template>
 
 <script setup lang="ts">
+import { readWithAccountView, useAccountViewContext } from '@/composables/useAccountViewContext'
+
 import { computed, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { adminAPI } from '@/api/admin'
@@ -64,6 +66,8 @@ import type { CNProviderBalanceEntry, CNProviderBalanceResult } from '@/api/admi
 import type { Account } from '@/types'
 import { platformTextClass } from '@/utils/platformColors'
 import { cnBalanceCellVisible } from './credentialsBuilder'
+const accountViewController = useAccountViewContext()
+
 
 const props = defineProps<{
   account: Account
@@ -159,7 +163,7 @@ const handleProbe = async () => {
   loading.value = true
   error.value = null
   try {
-    const result = await adminAPI.cnProviders.queryBalance(props.account.id)
+    const result = await readWithAccountView(accountViewController, view => view ? adminAPI.cnProviders.queryBalance(props.account.id, view) : adminAPI.cnProviders.queryBalance(props.account.id))
     // 失败时保留快照展示（仅显示错误行），成功才覆盖。
     if (result.success) {
       data.value = result

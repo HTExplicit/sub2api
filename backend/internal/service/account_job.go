@@ -207,6 +207,14 @@ func (s *AccountJobService) Submit(ctx context.Context, createdBy int64, kind, i
 		return nil, false, policyErr
 	}
 	defer releasePolicy()
+	metadata, err := stampAccountJobView(ctx, metadata)
+	if err != nil {
+		return nil, false, err
+	}
+	payload, err = accountJobPayloadWithView(ctx, payload)
+	if err != nil {
+		return nil, false, err
+	}
 	for index := range items {
 		if items[index].Ordinal <= 0 {
 			items[index].Ordinal = index + 1
@@ -224,6 +232,15 @@ func (s *AccountJobService) Submit(ctx context.Context, createdBy int64, kind, i
 	}
 	if !errors.Is(err, ErrAccountJobNotFound) {
 		return nil, false, err
+	}
+	if _, bound := AccountViewFromContext(ctx); bound && !isCindyCleanupAccountJob(kind) {
+		ids, err := accountViewJobSeedTargets(kind, payload, items)
+		if err != nil {
+			return nil, false, err
+		}
+		if err := ValidateAccountViewSelection(ctx, ids); err != nil {
+			return nil, false, err
+		}
 	}
 	ciphertext, err := s.encryptor.Encrypt(string(payload))
 	if err != nil {
@@ -243,6 +260,9 @@ func (s *AccountJobService) Submit(ctx context.Context, createdBy int64, kind, i
 func (s *AccountJobService) ReplaySubmission(ctx context.Context, createdBy int64, kind, idempotencyKey string, payload json.RawMessage) (*AccountJob, bool, error) {
 	idempotencyKey = strings.TrimSpace(idempotencyKey)
 	kind = strings.TrimSpace(kind)
+	if err := validateAccountViewJobKind(ctx, kind, nil); err != nil {
+		return nil, false, err
+	}
 	if idempotencyKey == "" || len(idempotencyKey) > 255 {
 		return nil, false, ErrAccountJobIdempotencyRequired
 	}
@@ -256,6 +276,14 @@ func (s *AccountJobService) ReplaySubmission(ctx context.Context, createdBy int6
 		if err != nil {
 			return nil, false, err
 		}
+	}
+	metadata, err := stampAccountJobView(ctx, metadata)
+	if err != nil {
+		return nil, false, err
+	}
+	payload, err = accountJobPayloadWithView(ctx, payload)
+	if err != nil {
+		return nil, false, err
 	}
 	hash := sha256.Sum256(payload)
 	existing, err := s.findMatchingSubmission(ctx, createdBy, kind, idempotencyKey, hex.EncodeToString(hash[:]), metadata)
@@ -272,7 +300,7 @@ func (s *AccountJobService) findMatchingSubmission(ctx context.Context, createdB
 	}
 	oldOwner, _ := AccountJobPluginExecution(existing.Metadata)
 	newOwner, _ := AccountJobPluginExecution(metadata)
-	if existing.RequestHash != requestHash || oldOwner.ID != newOwner.ID {
+	if existing.RequestHash != requestHash || oldOwner.ID != newOwner.ID || !AccountJobViewIdentityEqual(existing.Metadata, metadata) {
 		return nil, ErrAccountJobIdempotencyConflict
 	}
 	return existing, nil
@@ -313,12 +341,21 @@ func (s *AccountJobService) RetryFailed(ctx context.Context, jobID, createdBy in
 	if old == nil || len(seeds) == 0 {
 		return nil, false, ErrAccountJobNotRetryable
 	}
+	if err := validateAccountViewJobKind(ctx, old.Kind, old.Metadata); err != nil {
+		return nil, false, err
+	}
 	if cipher == "" || time.Now().UTC().After(expires) {
 		return nil, false, ErrAccountJobPayloadExpired
 	}
-	if _, err = s.encryptor.Decrypt(cipher); err != nil {
+	plaintext, err := s.encryptor.Decrypt(cipher)
+	if err != nil {
 		return nil, false, ErrAccountJobPayloadExpired
 	}
+	ctx, releaseView, err := bindRecordedAccountJobView(ctx, old.Metadata, json.RawMessage(plaintext), true)
+	if err != nil {
+		return nil, false, err
+	}
+	defer releaseView()
 	hashInput, _ := json.Marshal(struct {
 		RetryOfJobID int64 `json:"retry_of_job_id"`
 	}{RetryOfJobID: old.ID})
@@ -327,7 +364,7 @@ func (s *AccountJobService) RetryFailed(ctx context.Context, jobID, createdBy in
 	if existing, findErr := s.repo.FindIdempotent(ctx, createdBy, old.Kind, idempotencyKey); findErr == nil {
 		oldOwner, _ := AccountJobPluginExecution(old.Metadata)
 		retryOwner, _ := AccountJobPluginExecution(existing.Metadata)
-		if existing.RequestHash != requestHash || oldOwner.ID != retryOwner.ID {
+		if existing.RequestHash != requestHash || oldOwner.ID != retryOwner.ID || !AccountJobViewIdentityEqual(old.Metadata, existing.Metadata) {
 			return nil, false, ErrAccountJobIdempotencyConflict
 		}
 		return existing, true, nil
@@ -353,6 +390,19 @@ func (s *AccountJobService) RetryFailed(ctx context.Context, jobID, createdBy in
 		return nil, false, policyErr
 	}
 	defer releasePolicy()
+	metadata, err = stampAccountJobView(ctx, metadata)
+	if err != nil {
+		return nil, false, err
+	}
+	if _, bound := AccountViewFromContext(ctx); bound && !isCindyCleanupAccountJob(old.Kind) {
+		ids, err := accountViewJobSeedTargets(old.Kind, json.RawMessage(plaintext), seeds)
+		if err != nil {
+			return nil, false, err
+		}
+		if err := ValidateAccountViewTargets(ctx, ids); err != nil {
+			return nil, false, err
+		}
+	}
 	return s.repo.Create(ctx, CreateAccountJobParams{
 		CreatedBy: createdBy, Kind: old.Kind, IdempotencyKey: idempotencyKey,
 		RequestHash: requestHash, PayloadCipher: cipher, PayloadExpires: expires,
@@ -463,7 +513,9 @@ func (r *AccountJobRuntime) execute(job *AccountJob) (string, string) {
 		}
 	}
 	defer cleanup()
-	if _, pluginBound := PluginExecutionFromContext(executionCtx); pluginBound {
+	_, pluginBound := PluginExecutionFromContext(executionCtx)
+	_, viewBound := AccountViewFromContext(executionCtx)
+	if pluginBound || viewBound {
 		// Run before cleanup cancels a normally completed policy context.
 		defer func() {
 			if executionCtx.Err() != nil {

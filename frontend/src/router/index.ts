@@ -570,10 +570,17 @@ const routes: RouteRecordRaw[] = [
     meta: {
       requiresAuth: true,
       requiresAdmin: true,
-      title: 'Cindy Accounts',
-      titleKey: 'admin.accounts.cindyPageTitle',
-      descriptionKey: 'admin.accounts.cindyPageDescription'
+      title: 'Account View',
+      titleKey: 'nav.accounts',
+      accountView: true
     }
+  },
+  {
+    path: '/admin/account-views/:pluginKey/:viewId',
+    name: 'AdminAccountView',
+    component: () => import('@/components/plugins/AccountViewPage.vue'),
+    props: true,
+    meta: { requiresAuth: true, requiresAdmin: true, titleKey: 'nav.accounts', accountView: true }
   },
   {
     path: '/admin/announcements',
@@ -991,6 +998,13 @@ router.beforeEach(async (to, _from, next) => {
       next(authStore.isAdmin ? '/admin/dashboard' : '/dashboard')
       return
     }
+  }
+
+  if (to.meta.accountView) {
+    // Keep the destination for a precise unavailable tombstone. The page
+    // resolves its owner and signed declaration before mounting any workbench.
+    const extensions = usePluginExtensions()
+    if (!extensions.loaded) await extensions.refresh()
   }
 
   // 订阅功能是 opt-out 开关：只有显式 false 才拦截「我的订阅」页直达。

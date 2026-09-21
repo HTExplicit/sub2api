@@ -31,6 +31,7 @@ func RegisterAdminRoutes(
 	// 审计中间件挂在认证之后：所有管理面变更类操作 + 敏感读取入审计日志
 	admin.Use(gin.HandlerFunc(auditLog))
 	admin.Use(middleware.AdminComplianceGuard(settingService))
+	admin.Use(h.Admin.Plugin.AccountViewRequest())
 	{
 		// 部署与运营合规确认
 		registerAdminComplianceRoutes(admin, h)
@@ -465,10 +466,19 @@ func registerAccountRoutes(admin *gin.RouterGroup, h *handler.Handlers, stepUpAu
 		accounts.PUT("/ollama-cloud-usage/settings", h.Admin.Account.UpdateOllamaCloudUsageSettings)
 		accounts.GET("/facets", h.Admin.Account.GetAccountFacets)
 		registerAccountToolResources(accounts, h)
-		accounts.GET("/cindy/insufficient-delete-preview", h.Admin.Account.PreviewCindyInsufficientDeletion)
-		accounts.POST("/cindy/delete-insufficient", h.Admin.Account.DeleteCindyInsufficient)
-		accounts.GET("/cindy/banned-delete-preview", h.Admin.Account.PreviewCindyBannedDeletion)
-		accounts.POST("/cindy/delete-banned", h.Admin.Account.DeleteCindyBanned)
+		for _, route := range []struct {
+			name, method, path string
+			handler            gin.HandlerFunc
+		}{
+			{"cindy.cleanup.insufficient.preview", "GET", "/cindy/insufficient-delete-preview", h.Admin.Account.PreviewCindyInsufficientDeletion},
+			{"cindy.cleanup.insufficient.submit", "POST", "/cindy/delete-insufficient", h.Admin.Account.DeleteCindyInsufficient},
+			{"cindy.cleanup.banned.preview", "GET", "/cindy/banned-delete-preview", h.Admin.Account.PreviewCindyBannedDeletion},
+			{"cindy.cleanup.banned.submit", "POST", "/cindy/delete-banned", h.Admin.Account.DeleteCindyBanned},
+		} {
+			descriptor := service.CindyCleanupResourcePolicy()
+			descriptor.Name, descriptor.Method, descriptor.Path = route.name, route.method, accounts.BasePath()+route.path
+			accounts.Handle(route.method, route.path, h.Admin.Plugin.RegisterResource(descriptor), route.handler)
+		}
 		accounts.GET("/cindy/duplicate-identity-inventory", h.Admin.Plugin.RegisterResource(extensionv1.ResourceDescriptor{ResourceGrant: extensionv1.ResourceGrant{Name: "cindy.duplicates", Capability: extensionv1.CapabilityProvider, Permission: "admin"}, Method: "GET", Path: accounts.BasePath() + "/cindy/duplicate-identity-inventory"}), h.Admin.Account.GetCindyDuplicateIdentityInventory)
 		accounts.GET("/api-key-visibility", h.Admin.Account.GetAPIKeyVisibility)
 		accounts.PUT("/api-key-visibility", h.Admin.Account.SetAPIKeyVisibility)
@@ -498,7 +508,7 @@ func registerAccountRoutes(admin *gin.RouterGroup, h *handler.Handlers, stepUpAu
 		accounts.POST("/codex-tickets/batch-harvest", h.Admin.Account.BatchHarvestCodexTickets)
 		accounts.POST("/:id/codex-tickets/stop", h.Admin.Account.StopCodexTicketRenewal)
 		accounts.POST("/:id/recover-state", h.Admin.Account.RecoverState)
-		accounts.POST("/:id/cindy-balance/recover", h.Admin.Account.ClearCindyBalanceInsufficient)
+		accounts.POST("/:id/cindy-balance/recover", h.Admin.Plugin.RegisterResource(extensionv1.ResourceDescriptor{ResourceGrant: extensionv1.ResourceGrant{Name: "cindy.balance.recover", Capability: extensionv1.CapabilityProvider, Permission: "admin"}, RequiredCapabilities: []string{extensionv1.CapabilityAdmin}, OwnerPluginKey: service.CindyAccountViewPluginKey, AccountParam: "id", Method: "POST", Path: accounts.BasePath() + "/:id/cindy-balance/recover"}), h.Admin.Account.ClearCindyBalanceInsufficient)
 		accounts.POST("/:id/refresh", h.Admin.Account.Refresh)
 		accounts.POST("/:id/apply-oauth-credentials", h.Admin.Account.ApplyOAuthCredentials)
 		accounts.POST("/:id/set-privacy", h.Admin.Account.SetPrivacy)

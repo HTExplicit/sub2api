@@ -1,6 +1,11 @@
 import { apiClient } from '../client'
 import { accountJobIdempotencyHeaders, type AccountJob } from './accountJobs'
 import type { PluginResourceDescriptor } from '@/components/plugins/resourceClient'
+import type { AccountResourceActionV1, AccountViewDefinitionV1, AccountViewIdentityV1 } from '@sub2api/plugin-ui/account-view'
+import type { CapturedAccountView } from '@/composables/useAccountViewContext'
+import { accountViewClient } from './accountViewClient'
+import { pluginDispatchClient, pluginDispatchHeaders, type PluginDispatchContext } from './pluginDispatch'
+export { pluginDispatchClient, pluginDispatchHeaders, type PluginDispatchContext } from './pluginDispatch'
 
 declare module 'axios' {
   interface AxiosRequestConfig { rawPluginConfig?: boolean }
@@ -109,6 +114,11 @@ export interface PluginInstallation {
 }
 
 export interface PluginContribution {
+  plugin_key?: string
+  view_definition_digest?: string
+  account_view?: AccountViewDefinitionV1
+  value_bindings?: Record<string, string>
+  resource_action?: AccountResourceActionV1
   all_accounts?: boolean
   retained_controls?: boolean
   events?: string[]
@@ -165,14 +175,14 @@ export async function publicContributions(): Promise<PluginContribution[]> {
   return data || []
 }
 
-export async function invokeAdmin(id: number, operation: string, accountID: number | undefined, payload: Record<string, unknown>, expectedPackage: string): Promise<{ payload?: unknown; code?: string; message?: string }> {
-  const { data } = await apiClient.post(`/admin/plugins/${id}/actions`, { operation, account_id: accountID, payload }, { timeout: 30000, headers: packageHeaders(expectedPackage) })
+export async function invokeAdmin(id: number, operation: string, accountID: number | undefined, payload: Record<string, unknown>, expectedPackage: string, dispatch?: PluginDispatchContext): Promise<{ payload?: unknown; code?: string; message?: string }> {
+  const { data } = await pluginDispatchClient(dispatch).post<{ payload?: unknown; code?: string; message?: string }>(`/admin/plugins/${id}/actions`, { operation, account_id: accountID, payload }, { timeout: 30000, headers: { ...packageHeaders(expectedPackage), ...pluginDispatchHeaders(dispatch) } })
   return data
 }
 
-export async function submitJob(id: number, operation: string, items: Array<{ account_id: number; payload: Record<string, unknown>; label?: string }>, expectedPackage: string, key?: string): Promise<AccountJob> {
+export async function submitJob(id: number, operation: string, items: Array<{ account_id: number; payload: Record<string, unknown>; label?: string }>, expectedPackage: string, key?: string, dispatch?: PluginDispatchContext): Promise<AccountJob> {
   const config = key ? { headers: { 'Idempotency-Key': key } } : accountJobIdempotencyHeaders('plugin_operation')
-  const { data } = await apiClient.post<AccountJob>(`/admin/plugins/${id}/jobs`, { operation, items }, { ...config, headers: { ...config.headers, ...packageHeaders(expectedPackage) } })
+  const { data } = await pluginDispatchClient(dispatch).post<AccountJob>(`/admin/plugins/${id}/jobs`, { operation, items }, { ...config, headers: { ...config.headers, ...packageHeaders(expectedPackage), ...pluginDispatchHeaders(dispatch) } })
   return data
 }
 
@@ -190,6 +200,8 @@ export interface PluginStatusResult {
 }
 
 export interface PluginUISession {
+  view_context?: AccountViewIdentityV1
+  request_binding?: string
   plugin_key?: string
   package_sha256?: string
   permission?: 'admin' | 'user'
@@ -287,8 +299,8 @@ export async function status(id: number): Promise<PluginStatusResult> {
   return data
 }
 
-export async function createUISession(id: number, contributionID?: string): Promise<PluginUISession> {
-  const { data } = await apiClient.post<PluginUISession>(`/admin/plugins/${id}/ui-session`, { contribution_id: contributionID })
+export async function createUISession(id: number, contributionID?: string, view?: CapturedAccountView): Promise<PluginUISession> {
+  const { data } = await accountViewClient(view).post<PluginUISession>(`/admin/plugins/${id}/ui-session`, { contribution_id: contributionID })
   return data
 }
 
@@ -297,9 +309,9 @@ export async function createUserUISession(id: number, contributionID?: string): 
   return data
 }
 
-export async function resources(id: number, permission: 'admin' | 'user' = 'admin'): Promise<PluginResourceDescriptor[]> {
+export async function resources(id: number, permission: 'admin' | 'user' = 'admin', dispatch?: PluginDispatchContext): Promise<PluginResourceDescriptor[]> {
   const prefix = permission === 'admin' ? '/admin' : ''
-  const { data } = await apiClient.get<PluginResourceDescriptor[]>(`${prefix}/plugins/${id}/resources`)
+  const { data } = await pluginDispatchClient(dispatch).get<PluginResourceDescriptor[]>(`${prefix}/plugins/${id}/resources`, { headers: pluginDispatchHeaders(dispatch) })
   return data
 }
 

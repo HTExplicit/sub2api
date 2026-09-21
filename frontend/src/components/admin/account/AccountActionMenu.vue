@@ -12,7 +12,7 @@
         <p v-if="busy" role="status" class="border-b border-line px-4 py-2 text-xs text-muted">{{ t('common.processing') }}</p>
         <fieldset :disabled="busy" class="py-1 disabled:opacity-60">
           <template v-if="account">
-            <ExtensionSlot name="account.actions" :account="account" external variant="menu" @open="openExtension" />
+            <ExtensionSlot name="account.actions" :account="account" external variant="menu" @open="openExtension" @resource-complete="emit('resource-complete'); emit('close')" />
             <button @click="$emit('test', account); $emit('close')" class="flex w-full items-center gap-2 px-4 py-2 text-sm hover:bg-gray-100 dark:hover:bg-dark-700">
               <Icon name="play" size="sm" class="text-green-500" :stroke-width="2" />
               {{ t('admin.accounts.testConnection') }}
@@ -53,10 +53,6 @@
               <Icon name="sync" size="sm" />
               {{ t('admin.accounts.recoverState') }}
             </button>
-            <button v-if="account.cindy_balance_insufficient" @click="$emit('recover-cindy-balance', account); $emit('close')" class="flex w-full items-center gap-2 px-4 py-2 text-sm text-emerald-600 hover:bg-gray-100 dark:hover:bg-dark-700">
-              <Icon name="sync" size="sm" />
-              {{ t('admin.accounts.cindy.recover') }}
-            </button>
             <button v-if="hasQuotaLimit" @click="$emit('reset-quota', account); $emit('close')" class="flex w-full items-center gap-2 px-4 py-2 text-sm text-teal-600 hover:bg-gray-100 dark:hover:bg-dark-700">
               <Icon name="refresh" size="sm" />
               {{ t('admin.accounts.resetQuota') }}
@@ -69,13 +65,15 @@
   <ExtensionDialog
     :contribution="selectedExtension"
     :account-id="extensionAccountID"
+    :launch-key="extensionLaunch"
+    :origin-view="extensionOrigin"
     mode="account.actions"
     @close="selectedExtension = null"
   />
 </template>
 
 <script setup lang="ts">
-import { computed, ref, watch, onUnmounted } from 'vue'
+import { computed, ref, shallowRef, watch, onUnmounted } from 'vue'
 import { useResizeObserver, useWindowSize } from '@vueuse/core'
 import { useI18n } from 'vue-i18n'
 import { Icon } from '@/components/icons'
@@ -83,14 +81,20 @@ import type { Account } from '@/types'
 import type { PluginContribution } from '@/api/admin/plugins'
 import ExtensionDialog from '@/components/plugins/ExtensionDialog.vue'
 import ExtensionSlot from '@/components/plugins/ExtensionSlot.vue'
+import { useAccountViewContext, type CapturedAccountView } from '@/composables/useAccountViewContext'
 
 const props = defineProps<{ show: boolean; account: Account | null; anchorRect: DOMRect | null; busy?: boolean }>()
-const emit = defineEmits(['close', 'test', 'stats', 'schedule', 'duplicate', 'reauth', 'refresh-token', 'recover-state', 'recover-cindy-balance', 'reset-quota', 'set-privacy', 'create-spark-shadow'])
+const emit = defineEmits(['close', 'test', 'stats', 'schedule', 'duplicate', 'reauth', 'refresh-token', 'recover-state', 'resource-complete', 'reset-quota', 'set-privacy', 'create-spark-shadow'])
 const { t } = useI18n()
 const menuRef = ref<HTMLElement | null>(null)
 const selectedExtension = ref<PluginContribution | null>(null)
 const extensionAccountID = ref<number | undefined>()
+const extensionLaunch = ref(0)
+const extensionOrigin = shallowRef<CapturedAccountView>()
+const origin = useAccountViewContext()
 function openExtension(contribution: PluginContribution) {
+  extensionOrigin.value = origin?.capture()
+  extensionLaunch.value++
   selectedExtension.value = contribution
   extensionAccountID.value = props.account?.id
   emit('close')

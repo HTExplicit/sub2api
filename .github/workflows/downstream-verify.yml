@@ -92,6 +92,9 @@ jobs:
           go test -p=1 ./internal/handler/admin -run 'TestUpdateSettings(PartialPayload|RejectsTwoCaptchaProviders|RequiresFourTencentCaptchaCredentials|RetainsStoredTencentCaptchaCredentials|ValidatesTencentCaptchaAppID|ValidatesTurnstileSiteKey)' -count=1
           go test -p=1 ./internal/handler/admin ./internal/service -run 'Test(ExportData|PreviewDataImport|ImportData|DataAccountIdentityKeys|DataIdentityIndex|AccountJobDataImport|OpsMetricsCollectorRecordsDatabasePoolWaitDelta|BulkUpdateAccepts|AccountHandler)' -count=1
           go test -p=1 ./internal/repository -run '^$'
+      - name: Account view scope and execution contracts
+        working-directory: backend
+        run: go test -p=1 -tags unit ./internal/service ./internal/handler/admin ./internal/handler/dto ./internal/repository -run '^(TestAccountView.*|TestCindyRecoveryResourceProjection)$' -count=1
       - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
         with:
           python-version: '3.12'
@@ -158,6 +161,14 @@ jobs:
             src/api/__tests__/accountOperationIdempotency.spec.ts \
             src/components/plugins/__tests__/ExtensionSlot.spec.ts \
             src/components/plugins/__tests__/ExtensionFields.spec.ts \
+            src/components/plugins/__tests__/AccountViewPage.spec.ts \
+            src/components/plugins/__tests__/CindyAccountControls.spec.ts \
+            src/components/plugins/__tests__/accountView.spec.ts \
+            src/components/plugins/__tests__/accountViewNative.spec.ts \
+            src/components/plugins/__tests__/accountViewStepUp.spec.ts \
+            src/components/plugins/__tests__/pluginViewDispatch.spec.ts \
+            src/components/plugins/__tests__/resourceAvailability.spec.ts \
+            src/components/plugins/__tests__/PluginFrame.precondition.spec.ts \
             src/components/plugins/__tests__/resourceClient.spec.ts \
             src/components/plugins/__tests__/localResources.spec.ts \
             src/features/image-studio/history.legacy.spec.ts \

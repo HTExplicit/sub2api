@@ -361,12 +361,30 @@ func (h *AccountHandler) BulkUpdateAccountTaxonomy(c *gin.Context) {
 		return
 	}
 	req.AccountIDs = normalizeInt64IDList(req.AccountIDs)
-	owner, err := service.ValidateAccountTaxonomyPlan(c.Request.Context(), extensionv1.TaxonomyBulkPlan{AccountIDs: req.AccountIDs, HasFilters: req.Filters != nil, ExpectedMatchCount: req.ExpectedMatchCount, FolderAction: req.FolderAction, FolderID: req.FolderID, TagAddIDs: req.TagAddIDs, TagRemoveIDs: req.TagRemoveIDs})
+	targetIDs := req.AccountIDs
+	hasFilters := req.Filters != nil
+	if _, bound := service.AccountViewFromContext(c.Request.Context()); bound {
+		if h.replayScopedAccountJob(c, service.AccountJobKindBulkTaxonomy, req) {
+			return
+		}
+		var err error
+		targetIDs, err = h.resolveAccountJobTargetIDs(c.Request.Context(), req.AccountIDs, req.Filters)
+		if err != nil {
+			accountViewRequestError(c, err)
+			return
+		}
+		if len(targetIDs) == 0 || (req.ExpectedMatchCount != nil && *req.ExpectedMatchCount != len(targetIDs)) {
+			accountViewRequestError(c, service.ErrAccountViewScope)
+			return
+		}
+		hasFilters = false // Only seeds change; keep the original request/hash.
+	}
+	owner, err := service.ValidateAccountTaxonomyPlan(c.Request.Context(), extensionv1.TaxonomyBulkPlan{AccountIDs: targetIDs, HasFilters: hasFilters, ExpectedMatchCount: req.ExpectedMatchCount, FolderAction: req.FolderAction, FolderID: req.FolderID, TagAddIDs: req.TagAddIDs, TagRemoveIDs: req.TagRemoveIDs})
 	if err != nil {
 		response.ErrorFrom(c, err)
 		return
 	}
-	seeds := accountJobSeeds(req.AccountIDs)
+	seeds := accountJobSeeds(targetIDs)
 	if len(seeds) == 0 {
 		seeds = ordinalAccountJobSeeds(1)
 	}
@@ -483,6 +501,13 @@ func (h *AccountHandler) GetAccountFacets(c *gin.Context) {
 	facets, err := console.GetAccountConsoleFacets(c.Request.Context(), filters)
 	if err != nil {
 		response.ErrorFrom(c, err)
+		return
+	}
+	if _, bound := service.AccountViewFromContext(c.Request.Context()); bound {
+		response.Success(c, struct {
+			dto.AccountConsoleFacets
+			ViewPresetCounts map[string]int `json:"view_preset_counts"`
+		}{accountFacetsDTO(facets), facets.ViewPresetCounts})
 		return
 	}
 	response.Success(c, accountFacetsDTO(facets))

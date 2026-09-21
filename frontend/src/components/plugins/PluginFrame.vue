@@ -12,7 +12,10 @@
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { adminAPI, type PluginUISession } from '@/api/admin'
-import type { PluginVersionSnapshot } from '@/api/admin/plugins'
+import type { PluginVersionSnapshot, PluginDispatchContext } from '@/api/admin/plugins'
+import { useAccountViewContext, narrowAccountViewSelection, type CapturedAccountView } from '@/composables/useAccountViewContext'
+import { publicPluginContext, resolveContribution } from './accountView'
+import { createPluginViewDispatch } from './pluginViewDispatch'
 import accountJobsAPI, { type AccountJob } from '@/api/admin/accountJobs'
 import { useAppStore } from '@/stores'
 import { useAuthStore } from '@/stores/auth'
@@ -21,27 +24,52 @@ import TotpStepUpDialog from '@/components/auth/TotpStepUpDialog.vue'
 import { usePluginExtensions } from '@/stores/pluginExtensions'
 import { callPluginResource, type PluginResourceDescriptor } from './resourceClient'
 import { extractApiErrorCode } from '@sub2api/plugin-ui/errors'
-import { pluginPreferenceEvent, pluginPreferenceKey, readPluginPreference, writeBrowserPreference } from './preferences'
+import { pluginPreferenceEvent, pluginPreferenceKey, writeBrowserPreference } from './preferences'
 import { getConfiguredTablePageSizeOptions } from '@/utils/tablePreferences'
 import { useAccountSelectionMetadata } from '@/composables/useAccountSelectionMetadata'
 import { contributionAdmission, type ContributionAdmission } from './contributionAdmission'
 
-const props = withDefaults(defineProps<{ pluginId: number; title: string; inline?: boolean; permission?: 'admin' | 'user'; context?: Record<string, unknown>; admission?: ContributionAdmission }>(), { inline: false, permission: 'admin', context: () => ({}) })
+const props = withDefaults(defineProps<{ pluginId: number; title: string; inline?: boolean; permission?: 'admin' | 'user'; context?: Record<string, unknown>; admission?: ContributionAdmission; expectedPackage?: string; originView?: CapturedAccountView | null }>(), { inline: false, permission: 'admin', context: () => ({}) })
 const emit = defineEmits<{ saved: []; job: [job: AccountJob]; event: [name: string, payload: unknown] }>()
 const { t, locale } = useI18n()
 const app = useAppStore()
 const auth = useAuthStore()
 const stepUp = useStepUp()
 const registry = usePluginExtensions()
+const originController = useAccountViewContext()
+let lastOrigin: CapturedAccountView | undefined
+let sessionOrigin: CapturedAccountView | undefined
+let sessionRetainedControls = false
+let lastSafeContext: Record<string, unknown> = {}
+function projectedContext() {
+  try { lastSafeContext = publicPluginContext(props.context); return { value: lastSafeContext, valid: true } }
+  catch { return { value: lastSafeContext, valid: false } }
+}
+function captureOrigin() {
+  if (props.originView === null) return undefined
+  let origin: CapturedAccountView | undefined
+  try { origin = props.originView || originController?.capture() }
+  catch (error) { if (!lastOrigin) throw error; origin = lastOrigin }
+  const ids = typeof props.context.account_id === 'number' ? [props.context.account_id]
+    : Array.isArray(props.context.account_ids) ? props.context.account_ids as number[] : []
+  lastOrigin = narrowAccountViewSelection(origin, ids)
+  return lastOrigin
+}
+function originAvailable() {
+  if (!projectedContext().valid) return false
+  if (props.originView === null) return true
+  if ((props.context.account_view_state as { available?: boolean } | undefined)?.available === false) return false
+  try { captureOrigin()?.assertCurrent(); return props.originView ? true : originController?.available() !== false } catch { return false }
+}
 const targetIds = computed(() => {
   if (props.admission) return []
   if (props.context.account_id !== undefined && props.context.account_id !== null) return [props.context.account_id as number]
   return Array.isArray(props.context.account_ids) ? props.context.account_ids as number[] : []
 })
-const selection = useAccountSelectionMetadata(targetIds, ref([]))
+const selection = useAccountSelectionMetadata(targetIds, ref([]), captureOrigin)
 const admission = computed<ContributionAdmission>(() => {
   if (props.admission) return props.admission
-  const item = registry.items.find(item => item.plugin_id === props.pluginId && item.id === props.context.contribution_id)
+  const item = typeof props.context.contribution_id === 'string' ? resolveContribution(registry.items, { pluginId: props.pluginId, id: props.context.contribution_id, packageSHA: props.expectedPackage }) : undefined
   return item ? contributionAdmission(item, { accountIds: targetIds.value, accounts: selection.selectedAccounts.value }) : { allowed: !props.context.contribution_id }
 })
 const frame = ref<HTMLIFrameElement | null>(null)
@@ -55,6 +83,47 @@ let resourceCatalog: Promise<PluginResourceDescriptor[]> | null = null
 let presentationObserver: MutationObserver | null = null
 let configVersion: PluginVersionSnapshot | null = null
 let configPending = false
+let dispatcher: ReturnType<typeof createPluginViewDispatch> | undefined
+const knownJobDispatches = new Map<number, PluginDispatchContext>()
+function rememberJobDispatch(value: unknown, dispatch: PluginDispatchContext) {
+  if (!value || typeof value !== 'object') return
+  const job = value as Partial<AccountJob>
+  if (!Number.isSafeInteger(job.id) || !job.id || typeof job.kind !== 'string' || job.metadata?.plugin_id !== props.pluginId) return
+  if (knownJobDispatches.size >= 64) knownJobDispatches.delete(knownJobDispatches.keys().next().value!)
+  knownJobDispatches.set(job.id, { ...dispatch, retained: true, pluginID: props.pluginId, packageSHA: session.value?.package_sha256 })
+}
+
+function requestRevision() {
+  const context = projectedContext().value
+  const state = context.account_view_state as { identity?: unknown; query?: unknown; selected_ids?: unknown } | undefined
+  const inputs = context.view_props as Record<string, unknown> | undefined
+  return JSON.stringify([auth.user?.id, props.pluginId, session.value?.package_sha256,
+    props.inline && props.originView !== null ? originController?.revision() : undefined,
+    context.account_id, context.account_ids, state?.identity, state?.query, state?.selected_ids,
+    inputs?.target, inputs?.accountIds, inputs?.accountId, inputs?.filters])
+}
+function requestBroker() {
+  if (dispatcher) return dispatcher
+  const actor = auth.user?.id, owner = props.pluginId, role = auth.isAdmin, version = generation
+  const broker = createPluginViewDispatch({
+    origin: captureOrigin,
+    revision: requestRevision,
+    assertFrame(retained) {
+      if (auth.user?.id !== actor || auth.isAdmin !== role || auth.isAuthenticated === false || props.pluginId !== owner || generation !== version || !session.value) throw new Error('Plugin view closed')
+      if (packageChanged()) throw new Error(t('admin.plugins.uiVersionChanged'))
+      if (!retained && (!admission.value.allowed || !originAvailable())) throw new Error(t('admin.plugins.extensionUnavailable'))
+    },
+    async createSession(view) {
+      const contributionID = typeof props.context.contribution_id === 'string' ? props.context.contribution_id : undefined
+      const next = await (props.permission === 'user' ? adminAPI.plugins.createUserUISession(owner, contributionID) : adminAPI.plugins.createUISession(owner, contributionID, view))
+      if (auth.user?.id !== actor || auth.isAdmin !== role || generation !== version || next.package_sha256 !== session.value?.package_sha256) throw new Error(t('admin.plugins.uiVersionChanged'))
+      return next
+    }
+  })
+  if (session.value) broker.prime(session.value, sessionOrigin)
+  dispatcher = broker
+  return broker
+}
 
 function clearPending() {
   for (const timer of pending.values()) window.clearTimeout(timer)
@@ -65,6 +134,8 @@ function clearPending() {
   resourceCatalog = null
   configVersion = null
   configPending = false
+  dispatcher?.clear(); dispatcher = undefined
+  knownJobDispatches.clear()
   generation++
 }
 function loaded() {
@@ -77,8 +148,10 @@ function failure(value: unknown): string {
 }
 
 function packageChanged(): boolean {
-  const contribution = registry.items.find(item => item.plugin_id === props.pluginId && item.id === props.context.contribution_id)
-  return !!(contribution?.package_sha256 && session.value?.package_sha256 && contribution.package_sha256 !== session.value.package_sha256)
+  const contribution = typeof props.context.contribution_id === 'string'
+    ? resolveContribution(registry.items, { pluginId: props.pluginId, id: props.context.contribution_id }) : undefined
+  return !!((props.expectedPackage && session.value?.package_sha256 && props.expectedPackage !== session.value.package_sha256) ||
+    (contribution?.package_sha256 && session.value?.package_sha256 && contribution.package_sha256 !== session.value.package_sha256))
 }
 
 function loadedConfigVersion(): PluginVersionSnapshot {
@@ -87,8 +160,9 @@ function loadedConfigVersion(): PluginVersionSnapshot {
 }
 
 function currentContext() {
-  const contribution = registry.items.find(item => item.plugin_id === props.pluginId && item.id === props.context.contribution_id)
-  const changed = !!(contribution?.package_sha256 && session.value?.package_sha256 && contribution.package_sha256 !== session.value.package_sha256)
+  const contribution = typeof props.context.contribution_id === 'string'
+    ? resolveContribution(registry.items, { pluginId: props.pluginId, id: props.context.contribution_id }) : undefined
+  const changed = packageChanged()
   const styles = getComputedStyle(document.documentElement)
   const tokens: Record<string, string> = {}
   for (let i = 0; i < styles.length; i++) {
@@ -96,8 +170,8 @@ function currentContext() {
     const value = styles.getPropertyValue(name).trim()
     if (/^--(?:ui|theme)-[a-z0-9-]+$/.test(name) && value.length <= 512 && !/url\s*\(/i.test(value)) tokens[name] = value
   }
-  return JSON.parse(JSON.stringify({ ...props.context, actor_id: auth.user?.id, retained_controls: contribution?.retained_controls === true, layout: props.inline ? 'inline' : 'page', locale: locale?.value || 'zh', theme: document.documentElement.classList.contains('dark') ? 'dark' : 'light',
-    available: !changed && admission.value.allowed,
+  return JSON.parse(JSON.stringify({ ...projectedContext().value, actor_id: auth.user?.id, retained_controls: !changed && (contribution?.retained_controls === true || (!contribution && sessionRetainedControls)), layout: props.inline ? 'inline' : 'page', locale: locale?.value || 'zh', theme: document.documentElement.classList.contains('dark') ? 'dark' : 'light',
+    available: !changed && admission.value.allowed && originAvailable(),
     unavailable_message: changed ? t('admin.plugins.uiVersionChanged') : t('admin.plugins.extensionUnavailable'),
     table_page_size_options: getConfiguredTablePageSizeOptions(), theme_tokens: tokens, theme_stylesheets: registry.items.filter(item => item.slot === 'theme' && item.available && item.stylesheet_url).map(item => item.stylesheet_url!) }))
 }
@@ -108,18 +182,31 @@ function sendContext() {
   frame.value.contentWindow.postMessage({ source: 'sub2api-plugin-host', bridge_token: session.value.bridge_token, type: 'extension.context.updated', context: currentContext() }, '*')
 }
 
-watch(() => [auth.user?.id, props.pluginId, props.context.account_id, props.context.contribution_id, Array.isArray(props.context.account_ids) ? props.context.account_ids.join(',') : ''], async () => {
+async function loadSession() {
   const id = props.pluginId
   clearPending()
   const version = generation
-  session.value = null; frameLoaded = false; error.value = ''; loading.value = true
+  session.value = null; sessionOrigin = undefined; sessionRetainedControls = false; lastOrigin = undefined; lastSafeContext = {}; frameLoaded = false; error.value = ''; loading.value = true
+  if (auth.isAuthenticated === false) { loading.value = false; return }
   try {
     const contributionID = typeof props.context.contribution_id === 'string' ? props.context.contribution_id : undefined
-    const next = await (props.permission === 'user' ? adminAPI.plugins.createUserUISession(id, contributionID) : adminAPI.plugins.createUISession(id, contributionID))
-    if (generation === version) session.value = next
+    const contribution = contributionID ? resolveContribution(registry.items, { pluginId: id, id: contributionID, packageSHA: props.expectedPackage }) : undefined
+    const origin = captureOrigin()
+    const next = await (props.permission === 'user' ? adminAPI.plugins.createUserUISession(id, contributionID) : adminAPI.plugins.createUISession(id, contributionID, origin))
+    if (props.expectedPackage && next.package_sha256 !== props.expectedPackage) throw new Error(t('admin.plugins.uiVersionChanged'))
+    if (generation === version) {
+      sessionOrigin = origin
+      sessionRetainedControls = contribution?.retained_controls === true && contribution.package_sha256 === next.package_sha256
+      session.value = next
+      requestBroker()
+    }
   }
   catch (value) { if (generation === version) { error.value = failure(value); loading.value = false } }
-}, { immediate: true })
+}
+watch(() => [auth.user?.id, auth.isAdmin, auth.isAuthenticated, props.pluginId, props.context.account_id, props.context.contribution_id], loadSession, { immediate: true, flush: 'sync' })
+watch(() => [admission.value.allowed, originAvailable()], ([allowed, origin]) => {
+  if (allowed && origin && !session.value && !loading.value) void loadSession()
+})
 
 async function receive(event: MessageEvent) {
   const current = session.value
@@ -141,11 +228,14 @@ async function receive(event: MessageEvent) {
   const version = generation, id = props.pluginId
   const actorID = auth.user?.id
   const accountID = typeof props.context.account_id === 'number' ? props.context.account_id : undefined
+  let canPublish = () => true
+  let releaseDispatch: (() => void) | undefined
   const reply = (payload: Record<string, unknown>) => {
     const timer = pending.get(requestID)
     if (generation !== version || timer === undefined || session.value !== current || !frame.value?.contentWindow) return
     window.clearTimeout(timer); pending.delete(requestID)
     controllers.delete(requestID)
+    if (!canPublish()) payload = { ok: false, code: 'ACCOUNT_VIEW_CONTEXT_CHANGED', error: t('admin.plugins.extensionUnavailable') }
     frame.value.contentWindow.postMessage({ source: 'sub2api-plugin-host', bridge_token: current.bridge_token, type: `${message.type}.result`, request_id: requestID, ...payload }, '*')
   }
   try {
@@ -165,13 +255,14 @@ async function receive(event: MessageEvent) {
         reply({ ok: true }); break
       }
       case 'extension.event': {
-        const contribution = registry.items.find(item => item.plugin_id === id && item.id === props.context.contribution_id)
+        const contribution = typeof props.context.contribution_id === 'string'
+          ? resolveContribution(registry.items, { pluginId: id, id: props.context.contribution_id, packageSHA: current.package_sha256 }) : undefined
         if (typeof message.name !== 'string' || !contribution?.events?.includes(message.name)) throw new Error(t('admin.plugins.bridgeRejected'))
         reply({ ok: true }); emit('event', message.name, message.payload); break
       }
       case 'preference.read':
       case 'preference.write': {
-        const key = pluginPreferenceKey(location.origin, actorID || 0, current.plugin_key || '', message.key)
+        const key = scopedPreferenceKey(message.key)
         preferenceKeys.add(message.key)
         if (message.type === 'preference.write') {
           if (typeof message.value !== 'string' || message.value.length > 65536) throw new Error(t('admin.plugins.bridgeRejected'))
@@ -179,7 +270,7 @@ async function receive(event: MessageEvent) {
           reply({ ok: true })
         } else {
           let value = null
-          try { value = readPluginPreference(location.origin, actorID!, current.plugin_key!, message.key) } catch { /* Use an empty draft. */ }
+          try { value = localStorage.getItem(scopedPreferenceKey(message.key)) } catch { /* Use an empty draft. */ }
           reply({ ok: true, value })
         }
         break
@@ -187,7 +278,9 @@ async function receive(event: MessageEvent) {
       case 'extension.resources': {
         // Read-only availability uses the same role-filtered catalog as actual
         // submission. Refresh it on demand; paths and host scope stay private.
-        const catalog = adminAPI.plugins.resources(id, current.permission || 'admin')
+        const captured = await requestBroker().acquire(undefined, true)
+        releaseDispatch = captured.release; canPublish = captured.canPublish
+        const catalog = adminAPI.plugins.resources(id, current.permission || 'admin', captured.dispatch)
         resourceCatalog = catalog
         try {
           const descriptors = await catalog
@@ -200,14 +293,29 @@ async function receive(event: MessageEvent) {
       }
       case 'extension.resource': {
         if (typeof message.operation !== 'string' || !message.input || typeof message.input !== 'object' || Array.isArray(message.input)) throw new Error(t('admin.plugins.bridgeRejected'))
-        resourceCatalog ||= adminAPI.plugins.resources(id, current.permission || 'admin')
-        const descriptor = (await resourceCatalog).find(item => item.name === message.operation)
+        const catalogPin = await requestBroker().acquire(undefined, true)
+        let descriptors: PluginResourceDescriptor[]
+        try {
+          // A catalog is an availability hint, not an authority cache. Read it
+          // against the current persisted owner/view before every new dispatch.
+          resourceCatalog = adminAPI.plugins.resources(id, current.permission || 'admin', catalogPin.dispatch)
+          descriptors = await resourceCatalog
+        } finally { catalogPin.release() }
+        const matches = descriptors.filter(item => item.name === message.operation)
+        const descriptor = matches.length === 1 ? matches[0] : undefined
         if (!descriptor) throw new Error(t('admin.plugins.bridgeRejected'))
         if (generation !== version || session.value !== current) throw new Error('Plugin view closed')
         const controller = new AbortController()
         controllers.set(requestID, controller)
-        const execute = () => callPluginResource(id, current.package_sha256 || '', descriptor, message.input, controller.signal, actorID)
+        if (!descriptor.available) throw new Error(t('admin.plugins.extensionUnavailable'))
+        const captured = await requestBroker().acquire(message.input.operation_key, descriptor.retained === true)
+        releaseDispatch = captured.release; canPublish = captured.canPublish
+        const input = { ...message.input }
+        // Only the host can bind or narrow the origin view. The input's own
+        // view_context is overwritten by the scoped resource client.
+        const execute = () => { captured.assertCurrent(); return callPluginResource(id, current.package_sha256 || '', descriptor, input, controller.signal, actorID, captured.dispatch) }
         const result = current.permission === 'user' ? await execute() : await stepUp.run(execute)
+        if (canPublish()) rememberJobDispatch(result, captured.dispatch)
         reply({ ok: true, result }); break
       }
       case 'config.load': {
@@ -249,7 +357,9 @@ async function receive(event: MessageEvent) {
         if (packageChanged()) throw new Error(t('admin.plugins.uiVersionChanged'))
         if (!admission.value.allowed) throw new Error(t('admin.plugins.extensionUnavailable'))
         if (typeof message.operation !== 'string' || !message.payload || typeof message.payload !== 'object' || Array.isArray(message.payload)) throw new Error(t('admin.plugins.bridgeRejected'))
-        const result = await adminAPI.plugins.invokeAdmin(id, message.operation, accountID, message.payload, current.package_sha256 || '')
+        const captured = await requestBroker().acquire(typeof message.operation_key === 'string' ? message.operation_key : undefined)
+        releaseDispatch = captured.release; canPublish = captured.canPublish
+        const result = await adminAPI.plugins.invokeAdmin(id, message.operation, accountID, message.payload, current.package_sha256 || '', captured.dispatch)
         reply({ ok: !result.code, result: result.payload, error: result.message || result.code }); break
       }
       case 'extension.job.submit': {
@@ -258,41 +368,79 @@ async function receive(event: MessageEvent) {
         if (typeof message.operation !== 'string' || !Array.isArray(message.items) || !message.items.length || message.items.length > 3200) throw new Error(t('admin.plugins.bridgeRejected'))
         const selected = accountID !== undefined ? [accountID] : Array.isArray(props.context.account_ids) ? props.context.account_ids : null
         if (selected && message.items.some((item: { account_id?: unknown }) => !selected.includes(item.account_id))) throw new Error(t('admin.plugins.bridgeRejected'))
-        const job = await adminAPI.plugins.submitJob(id, message.operation, message.items, current.package_sha256 || '', typeof message.operation_key === 'string' ? message.operation_key : undefined)
+        const captured = await requestBroker().acquire(typeof message.operation_key === 'string' ? message.operation_key : undefined)
+        releaseDispatch = captured.release; canPublish = captured.canPublish
+        const job = await adminAPI.plugins.submitJob(id, message.operation, message.items, current.package_sha256 || '', typeof message.operation_key === 'string' ? message.operation_key : undefined, captured.dispatch)
+        if (canPublish()) rememberJobDispatch(job, captured.dispatch)
         const { useAccountJobsStore } = await import('@/stores/accountJobs')
-        if (auth.user?.id === actorID) useAccountJobsStore().track(job, { open: false })
-        reply({ ok: true, job }); if (generation === version && auth.user?.id === actorID) emit('job', job); break
+        if (auth.user?.id === actorID && canPublish()) useAccountJobsStore().track(job, { open: false })
+        reply({ ok: true, job }); if (generation === version && auth.user?.id === actorID && canPublish()) emit('job', job); break
       }
       case 'extension.job.get': {
         if (!Number.isSafeInteger(message.job_id) || message.job_id <= 0) throw new Error(t('admin.plugins.bridgeRejected'))
-        const job = await accountJobsAPI.get(message.job_id)
+        const known = knownJobDispatches.get(message.job_id)
+        // Unbound native history keeps its existing host authorization. View
+        // history must retain the original package/view request binding.
+        if (!known?.view && !lastOrigin && !sessionOrigin && !props.originView) {
+          const job = await accountJobsAPI.get(message.job_id)
+          if (job.metadata.plugin_id !== id) throw new Error(t('admin.plugins.bridgeRejected'))
+          reply({ ok: true, job }); break
+        }
+        if (packageChanged()) throw new Error(t('admin.plugins.uiVersionChanged'))
+        const captured = known ? undefined : await requestBroker().acquire(undefined, true)
+        if (captured) { releaseDispatch = captured.release; canPublish = captured.canPublish }
+        else canPublish = () => {
+          try { (known?.view?.assertRetained || known?.view?.assertCurrent)?.(); return auth.user?.id === actorID && !packageChanged() } catch { return false }
+        }
+        const dispatch = known || { ...captured!.dispatch, pluginID: id, packageSHA: current.package_sha256 }
+        const job = await accountJobsAPI.get(message.job_id, undefined, dispatch)
         if (job.metadata.plugin_id !== id) throw new Error(t('admin.plugins.bridgeRejected'))
         reply({ ok: true, job }); break
       }
       case 'extension.job.open': {
         if (!Number.isSafeInteger(message.job_id) || message.job_id <= 0) throw new Error(t('admin.plugins.bridgeRejected'))
-        const job = await accountJobsAPI.get(message.job_id)
+        const known = knownJobDispatches.get(message.job_id)
+        if (!known?.view && !lastOrigin && !sessionOrigin && !props.originView) {
+          const job = await accountJobsAPI.get(message.job_id)
+          if (job.metadata.plugin_id !== id || auth.user?.id !== actorID) throw new Error(t('admin.plugins.bridgeRejected'))
+          reply({ ok: true }); if (generation === version && session.value === current) emit('job', job); break
+        }
+        if (packageChanged()) throw new Error(t('admin.plugins.uiVersionChanged'))
+        const captured = known ? undefined : await requestBroker().acquire(undefined, true)
+        if (captured) { releaseDispatch = captured.release; canPublish = captured.canPublish }
+        else canPublish = () => {
+          try { (known?.view?.assertRetained || known?.view?.assertCurrent)?.(); return auth.user?.id === actorID && !packageChanged() } catch { return false }
+        }
+        const dispatch = known || { ...captured!.dispatch, pluginID: id, packageSHA: current.package_sha256 }
+        const job = await accountJobsAPI.get(message.job_id, undefined, dispatch)
         if (job.metadata.plugin_id !== id || auth.user?.id !== actorID) throw new Error(t('admin.plugins.bridgeRejected'))
-        reply({ ok: true }); emit('job', job); break
+        reply({ ok: true }); if (canPublish()) emit('job', job); break
       }
     }
   } catch (value) {
     const status = typeof value === 'object' && value !== null && 'status' in value ? value.status : undefined
     reply({ ok: false, error: isStepUpCancelled(value) ? t('common.cancel') : failure(value), code: extractApiErrorCode(value), status })
-  }
+  } finally { releaseDispatch?.() }
 }
 
 // Bindings can change without changing a contribution's boolean availability.
 // A refreshed registry must invalidate resource availability in that case too.
 watch(() => [locale?.value, registry.items], sendContext, { deep: true })
-watch(() => props.context, sendContext, { deep: true })
+watch(() => [props.context, props.originView], sendContext, { deep: true })
 watch(admission, sendContext, { deep: true })
+function scopedPreferenceKey(key: string) {
+  const current = session.value
+  const base = pluginPreferenceKey(location.origin, auth.user?.id || 0, current?.plugin_key || '', key)
+  if (key === 'table-page-size' || (current?.plugin_key === 'codexrip.account-tools' && key === 'test-prompt')) return base
+  const origin = props.originView || lastOrigin || sessionOrigin
+  return origin ? `${base}:view:${origin.context.plugin_key}:${origin.context.view_id}:${origin.context.package_sha256}` : base
+}
 function preferenceChanged(event: Event) {
   const current = session.value, userID = auth.user?.id
   if (!current?.plugin_key || !userID || !frame.value?.contentWindow) return
   const change = (event as CustomEvent<{ key: string; value: string }>).detail
   if (!change) return
-  for (const key of preferenceKeys) if (pluginPreferenceKey(location.origin, userID, current.plugin_key, key) === change.key) {
+  for (const key of preferenceKeys) if (scopedPreferenceKey(key) === change.key) {
     frame.value.contentWindow.postMessage({ source: 'sub2api-plugin-host', bridge_token: current.bridge_token, type: 'preference.updated', key, value: change.value }, '*')
   }
 }

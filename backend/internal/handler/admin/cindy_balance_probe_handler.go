@@ -97,6 +97,7 @@ func (h *CindyBalanceProbeHandler) Create(c *gin.Context) {
 		return
 	}
 	requestedBy := subject.UserID
+	c.Request = c.Request.WithContext(service.WithCindyProbeOperationKey(c.Request.Context(), c.GetHeader("Idempotency-Key")))
 	job, err := h.probeService.CreateJob(
 		c.Request.Context(), &requestedBy, scope, req.RateRPS, req.ExpectedCount, req.CandidateFingerprint,
 	)

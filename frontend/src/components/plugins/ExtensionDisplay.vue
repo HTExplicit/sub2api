@@ -16,10 +16,11 @@ import { useI18n } from 'vue-i18n'
 import type { PluginDisplayField } from '@/api/admin/plugins'
 import { usePluginExtensions } from '@/stores/pluginExtensions'
 import { formatDateTime } from '@/utils/format'
-const props = defineProps<{ name: string; values: Record<string, unknown>; showLabel?: boolean }>()
+import { useRetainedContribution } from './useRetainedContribution'
+const props = defineProps<{ name: string; values: Record<string, unknown>; showLabel?: boolean; pluginKey?: string; pluginId?: number; packageSha?: string }>()
 const registry = usePluginExtensions()
 const { t, locale } = useI18n()
-const contribution = computed(() => registry.items.find(item => item.id === props.name && item.permission === 'admin' && item.slot === 'account.columns'))
+const { contribution } = useRetainedContribution(() => ({ id: props.name, slot: 'account.columns', pluginKey: props.pluginKey, pluginId: props.pluginId, packageSHA: props.packageSha }))
 function value(field: PluginDisplayField) {
   if (!Object.prototype.hasOwnProperty.call(props.values, field.key)) return ''
   const value = props.values[field.key]

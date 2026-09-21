@@ -1034,12 +1034,14 @@ func (m *PluginManager) Status(ctx context.Context, id int64) (*pluginv1.HealthR
 }
 
 type pluginUIAssetClaims struct {
-	Entrypoint    string `json:"entrypoint"`
-	Permission    string `json:"permission"`
-	PackageSHA256 string `json:"package_sha256"`
-	Version       int    `json:"version"`
-	PluginID      int64  `json:"plugin_id"`
-	Expires       int64  `json:"expires"`
+	ActorID       int64                              `json:"actor_id,omitempty"`
+	ViewContext   *extensionv1.AccountViewIdentityV1 `json:"view_context,omitempty"`
+	Entrypoint    string                             `json:"entrypoint"`
+	Permission    string                             `json:"permission"`
+	PackageSHA256 string                             `json:"package_sha256"`
+	Version       int                                `json:"version"`
+	PluginID      int64                              `json:"plugin_id"`
+	Expires       int64                              `json:"expires"`
 }
 
 // CreateUIAssetToken 创建可跨实例校验的短时能力令牌，令牌不包含管理员凭据。
@@ -1052,6 +1054,7 @@ func (m *PluginManager) CreateUIAssetToken(ctx context.Context, id int64, ttl ti
 }
 
 type PluginUIAssetSession struct {
+	ViewContext   *extensionv1.AccountViewIdentityV1
 	PluginKey     string
 	Token         string
 	Expires       time.Time
@@ -1108,7 +1111,16 @@ func (m *PluginManager) CreateUIAssetSession(ctx context.Context, id int64, cont
 		}
 	}
 	expires := time.Now().Add(ttl)
-	raw, err := json.Marshal(pluginUIAssetClaims{Version: 1, PluginID: id, Expires: expires.Unix(), PackageSHA256: installation.PackageSHA256, Entrypoint: entrypoint, Permission: permission})
+	actorID, _ := ctx.Value(pluginUIActorKey{}).(int64)
+	var viewIdentity *extensionv1.AccountViewIdentityV1
+	if view, bound := AccountViewFromContext(ctx); bound {
+		if actorID <= 0 {
+			return session, ErrAccountViewInvalid
+		}
+		identity := view.Request.AccountViewIdentityV1
+		viewIdentity = &identity
+	}
+	raw, err := json.Marshal(pluginUIAssetClaims{Version: 1, PluginID: id, Expires: expires.Unix(), PackageSHA256: installation.PackageSHA256, Entrypoint: entrypoint, Permission: permission, ActorID: actorID, ViewContext: viewIdentity})
 	if err != nil {
 		return session, err
 	}
@@ -1117,7 +1129,7 @@ func (m *PluginManager) CreateUIAssetSession(ctx context.Context, id int64, cont
 	if err != nil {
 		return session, fmt.Errorf("加密插件 UI 会话: %w", err)
 	}
-	return PluginUIAssetSession{Token: base64.RawURLEncoding.EncodeToString([]byte(encrypted)), Expires: expires, PackageSHA256: installation.PackageSHA256, Permission: permission, PluginKey: installation.PluginKey}, nil
+	return PluginUIAssetSession{Token: base64.RawURLEncoding.EncodeToString([]byte(encrypted)), Expires: expires, PackageSHA256: installation.PackageSHA256, Permission: permission, PluginKey: installation.PluginKey, ViewContext: viewIdentity}, nil
 }
 
 // pluginUIContributionBindingEnabled mirrors the contribution admission rules

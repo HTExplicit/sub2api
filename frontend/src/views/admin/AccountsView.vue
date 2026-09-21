@@ -1,14 +1,14 @@
 <template>
   <AppLayout>
     <div v-if="immediateAccountActions.size" role="status" class="mb-3 flex items-center gap-2 text-xs text-muted"><Icon name="refresh" size="sm" class="animate-spin" />{{ t('common.processing') }}</div>
-    <slot
-      name="scope-tools"
-      :selected-ids="selIds"
-      :filters="cindyProbeFilters"
-    />
+    <p v-if="viewUnavailable" role="status" class="mb-3 rounded border border-line bg-raised p-3 text-sm text-muted" data-test="account-view-unavailable">{{ t('admin.plugins.extensionUnavailable') }}</p>
+    <ExtensionWidget v-for="surface in beforeTableSurfaces" :key="`${surface.plugin_id}:${surface.id}`"
+      :name="surface.id" :plugin-key="surface.plugin_key" :plugin-id="surface.plugin_id" :package-sha="surface.package_sha256"
+      :context="{ account_view_state: surfaceState }" :origin-view="surfaceOrigin"
+      @event="handleViewEvent" @job="handleViewJob" />
     <TablePageLayout :content-framed="viewMode !== 'cards'">
       <template #filters>
-        <div class="flex flex-wrap-reverse items-start justify-between gap-3">
+        <div class="flex flex-wrap-reverse items-start justify-between gap-3" :inert="viewUnavailable ? true : undefined">
           <AccountConsoleFilters
             v-model="consoleFilters"
             :facets="facets"
@@ -29,7 +29,7 @@
                   @update:model-value="handleAPIKeyRevealToggle"
                 />
               </label>
-              <AccountViewModeSwitcher v-model="viewMode" />
+              <AccountViewModeSwitcher v-model="viewMode" :allowed-modes="viewAllowedModes" />
 
               <!-- Auto Refresh Dropdown -->
               <div class="relative" ref="autoRefreshDropdownRef">
@@ -191,37 +191,23 @@
             {{ t('admin.accounts.listPendingSyncAction') }}
           </button>
         </div>
-        <div class="mt-3 flex flex-wrap items-center justify-between gap-3 border-t border-gray-200 pt-3 dark:border-dark-700">
-          <div class="inline-flex rounded-none border border-line bg-raised p-1" data-test="cindy-account-view">
-            <button
-              v-for="option in cindyViewOptions"
-              :key="option.value"
-              type="button"
+        <div v-if="viewPresetOptions.length > 1 || viewRequired" class="mt-3 flex flex-wrap items-center gap-3 border-t border-gray-200 pt-3 dark:border-dark-700">
+          <div class="inline-flex rounded-none border border-line bg-raised p-1" data-test="account-view-presets" :inert="viewUnavailable ? true : undefined">
+            <button v-for="option in viewPresetOptions" :key="option.value" type="button"
               class="rounded-none px-3 py-1.5 text-sm font-medium transition-colors"
-              :class="cindyView === option.value
-                ? 'border-b-2 border-primary-500 text-primary-700 dark:text-primary-300'
-                : 'text-gray-500 hover:text-gray-900 dark:text-gray-400 dark:hover:text-white'"
-              @click="handleCindyViewChange(option.value)"
-            >
-              {{ option.label }}
-              <span class="ml-1 text-xs text-gray-400">{{ option.count }}</span>
+              :class="selectedPresetValue === option.value ? 'border-b-2 border-primary-500 text-primary-700 dark:text-primary-300' : 'text-gray-500 hover:text-gray-900 dark:text-gray-400 dark:hover:text-white'"
+              :disabled="option.owner?.available === false" @click="handleViewPresetChange(option.value)">
+              {{ option.label }}<span class="ml-1 text-xs text-gray-400">{{ option.count }}</span>
             </button>
           </div>
-          <button
-            v-if="cindyView === 'insufficient' || cindyView === 'banned'"
-            type="button"
-            class="btn btn-danger"
-            :data-test="cindyView === 'banned' ? 'delete-cindy-banned' : 'delete-cindy-insufficient'"
-            :disabled="cindyDeleteCandidateCount === null || cindyDeleteCandidateCount === 0 || cindyDeleteLoading"
-            @click="openCindyTerminalDelete"
-          >
-            <Icon name="trash" size="sm" />
-            {{ cindyView === 'banned' ? t('admin.accounts.cindy.deleteBanned') : t('admin.accounts.cindy.deleteInsufficient') }}
-          </button>
+          <ExtensionWidget v-for="surface in coreFilterSurfaces" :key="`${surface.plugin_id}:${surface.id}`"
+            :name="surface.id" :plugin-key="surface.plugin_key" :plugin-id="surface.plugin_id" :package-sha="surface.package_sha256"
+            :context="{ account_view_state: surfaceState }" :origin-view="surfaceOrigin"
+            @event="handleViewEvent" @job="handleViewJob" />
         </div>
       </template>
       <template #table>
-        <div class="flex h-full min-h-0 min-w-0 flex-1 flex-col">
+        <div class="flex h-full min-h-0 min-w-0 flex-1 flex-col" :inert="viewUnavailable ? true : undefined">
         <AccountFolderBar
           :folders="facetFolders"
           :active-folder="activeFolder"
@@ -342,8 +328,8 @@
               </button>
             </div>
           </template>
-          <template #cell-cindy_probe="{ row }">
-            <CindyBalanceProbeSummary :account="row" />
+          <template v-for="column in viewColumns" :key="accountColumnKey(column)" #[`cell-${accountColumnKey(column)}`]="{ row }">
+            <AccountColumnDisplay :contribution="column" :account="row" />
           </template>
           <template #cell-schedulable="{ row }">
             <button @click.stop="handleToggleSchedulable(row)" :disabled="togglingSchedulable === row.id" class="relative inline-flex h-5 w-9 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 dark:focus:ring-offset-dark-800" :class="[row.schedulable ? 'bg-primary-500 hover:bg-primary-600' : 'bg-gray-200 hover:bg-gray-300 dark:bg-dark-600 dark:hover:bg-dark-500']" :title="row.schedulable ? t('admin.accounts.schedulableEnabled') : t('admin.accounts.schedulableDisabled')">
@@ -541,7 +527,7 @@
           :today-stats-updated-at="todayStatsUpdatedAt"
           :manual-refresh-token="usageManualRefreshToken"
           :status-now="usageStatusNow"
-          :show-cindy-probe="isCindyScope"
+          :extension-columns="viewColumns"
           @row-click="openDetails"
           @toggle="toggleSel"
           @edit="handleEdit"
@@ -559,7 +545,7 @@
           :today-stats-updated-at="todayStatsUpdatedAt"
           :manual-refresh-token="usageManualRefreshToken"
           :status-now="usageStatusNow"
-          :show-cindy-probe="isCindyScope"
+          :extension-columns="viewColumns"
           @row-click="openDetails"
           @toggle="toggleSel"
           @edit="handleEdit"
@@ -572,6 +558,10 @@
       </template>
       <template #pagination><Pagination v-if="pagination.total > 0" :page="pagination.page" :total="pagination.total" :page-size="pagination.page_size" @update:page="handlePageChange" @update:pageSize="handlePageSizeChange" /></template>
     </TablePageLayout>
+    <ExtensionWidget v-for="surface in afterTableSurfaces" :key="`${surface.plugin_id}:${surface.id}`"
+      :name="surface.id" :plugin-key="surface.plugin_key" :plugin-id="surface.plugin_id" :package-sha="surface.package_sha256"
+      :context="{ account_view_state: surfaceState }" :origin-view="surfaceOrigin"
+      @event="handleViewEvent" @job="handleViewJob" />
     <CreateAccountModal :show="showCreate" :proxies="proxies" :groups="groups" @close="showCreate = false" @created="handleAccountCreated" />
     <EditAccountModal :show="showEdit" :account="edAcc" :proxies="proxies" :groups="groups" @close="showEdit = false" @updated="handleAccountUpdated" />
     <ReAuthAccountModal :show="showReAuth" :account="reAuthAcc" @close="closeReAuthModal" @reauthorized="handleAccountUpdated" />
@@ -580,7 +570,7 @@
     <AccountOperationConfirmDialog v-if="pendingOperation" :show="true" :title="pendingOperation.title" :message="pendingOperation.message" :danger="pendingOperation.danger" :execute="pendingOperation.execute" @close="pendingOperation = null" @submitted="clearSelection()" />
     <AccountStatsModal :show="showStats" :account="statsAcc" @close="closeStatsModal" />
     <ScheduledTestsPanel :show="showSchedulePanel" :account-id="scheduleAcc?.id ?? null" :model-options="scheduleModelOptions" @close="closeSchedulePanel" />
-    <AccountActionMenu :busy="!!menu.acc && immediateAccountActions.has(menu.acc.id)" :show="menu.show" :account="menu.acc" :anchor-rect="menu.anchorRect" @close="menu.show = false" @test="handleTest" @stats="handleViewStats" @schedule="handleSchedule" @duplicate="handleDuplicateAccount" @reauth="handleReAuth" @refresh-token="handleRefresh" @recover-state="handleRecoverState" @recover-cindy-balance="handleRecoverCindyBalance" @reset-quota="handleResetQuota" @set-privacy="handleSetPrivacy" @create-spark-shadow="handleCreateSparkShadow" />
+    <AccountActionMenu :busy="!!menu.acc && immediateAccountActions.has(menu.acc.id)" :show="menu.show" :account="menu.acc" :anchor-rect="menu.anchorRect" @close="menu.show = false" @test="handleTest" @stats="handleViewStats" @schedule="handleSchedule" @duplicate="handleDuplicateAccount" @reauth="handleReAuth" @refresh-token="handleRefresh" @recover-state="handleRecoverState" @resource-complete="handleViewRefresh" @reset-quota="handleResetQuota" @set-privacy="handleSetPrivacy" @create-spark-shadow="handleCreateSparkShadow" />
     <SyncFromCrsModal :show="showSync" @close="showSync = false" @synced="reload" />
     <ImportDataModal
       :show="showImportData"
@@ -604,16 +594,6 @@
     />
     <TempUnschedStatusModal :show="showTempUnsched" :account="tempUnschedAcc" @close="showTempUnsched = false" @reset="handleTempUnschedReset" />
     <ConfirmDialog :show="showDeleteDialog" :title="t('admin.accounts.deleteAccount')" :message="t('admin.accounts.deleteConfirm', { name: deletingAcc?.name })" :confirm-text="t('common.delete')" :cancel-text="t('common.cancel')" :danger="true" @confirm="confirmDelete" @cancel="showDeleteDialog = false" />
-    <AccountOperationConfirmDialog
-      :show="showCindyDeleteDialog"
-      :title="cindyView === 'banned' ? t('admin.accounts.cindy.deleteBanned') : t('admin.accounts.cindy.deleteInsufficient')"
-      :message="t(cindyView === 'banned' ? 'admin.accounts.cindy.deleteBannedConfirm' : 'admin.accounts.cindy.deleteConfirm', { count: cindyDeletePreview?.count ?? 0 })"
-      :confirm-text="t('common.delete')"
-      :danger="true"
-      :execute="confirmCindyTerminalDelete"
-      @submitted="clearSelection()"
-      @close="closeCindyDeleteDialog"
-    />
     <ConfirmDialog :show="showCreateShadowDialog" :title="t('admin.accounts.createSparkShadow')" :message="t('admin.accounts.createSparkShadowConfirm', { name: creatingShadowAcc?.name })" @confirm="confirmCreateSparkShadow" @cancel="showCreateShadowDialog = false" />
     <ConfirmDialog :show="showExportDataDialog" :title="t('admin.accounts.dataExport')" :message="t('admin.accounts.dataExportConfirmMessage')" :confirm-text="t('admin.accounts.dataExportConfirm')" :cancel-text="t('common.cancel')" @confirm="handleExportData" @cancel="showExportDataDialog = false">
       <label class="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
@@ -686,7 +666,8 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, computed, inject, onMounted, onUnmounted, toRaw, watch } from 'vue'
+import { ref, reactive, shallowRef, computed, inject, provide, onMounted, onUnmounted, toRaw, watch } from 'vue'
+import { CanceledError } from 'axios'
 import { useIntervalFn } from '@vueuse/core'
 import { useI18n } from 'vue-i18n'
 import { routeLocationKey, routerKey, type RouteLocationNormalizedLoaded, type Router } from 'vue-router'
@@ -696,7 +677,17 @@ import { usePluginExtensions } from '@/stores/pluginExtensions'
 import ExtensionSurface from '@/components/plugins/ExtensionSurface.vue'
 import { isTerminalAccountJob, useAccountJobsStore } from '@/stores/accountJobs'
 import { adminAPI } from '@/api/admin'
-import type { AccountListFilters, CindyInsufficientDeletePreview } from '@/api/admin/accounts'
+import { accountAPIForView, type AccountListFilters } from '@/api/admin/accounts'
+import type { PluginContribution } from '@/api/admin/plugins'
+import type { AccountViewStateV1 } from '@sub2api/plugin-ui/account-view'
+import { ACCOUNT_VIEW_REFRESH_EVENT } from '@sub2api/plugin-ui/account-view'
+import { captureAccountView, provideAccountViewContext, accountViewTitleKey, type CapturedAccountView } from '@/composables/useAccountViewContext'
+import { accountColumnKey, accountDisplayValues, accountMatchesPredicate, accountViewPresetCount, accountViewQuery,
+  CINDY_ACCOUNT_VIEW_ALIAS, hasLegacyAccountViewQuery, isAccountView, legacyAccountViewPreset,
+  localizedPluginLabel, ownedViewReference, presetRouteQuery, resolveAccountView, viewIdentity } from '@/components/plugins/accountView'
+import { useRetainedContribution } from '@/components/plugins/useRetainedContribution'
+import ExtensionWidget from '@/components/plugins/ExtensionWidget.vue'
+import { resolveDocumentTitle } from '@/router/title'
 import accountJobsAPI, { type AccountJob } from '@/api/admin/accountJobs'
 import { useTableLoader } from '@/composables/useTableLoader'
 import { useSwipeSelect, type SwipeSelectVirtualContext } from '@/composables/useSwipeSelect'
@@ -717,7 +708,7 @@ import AccountBulkActionsBar from '@/components/admin/account/AccountBulkActions
 import AccountActionMenu from '@/components/admin/account/AccountActionMenu.vue'
 import AccountCardGrid from '@/components/admin/account/AccountCardGrid.vue'
 import AccountCompactList from '@/components/admin/account/AccountCompactList.vue'
-import CindyBalanceProbeSummary from '@/features/cindy-balance-probe/CindyBalanceProbeSummary.vue'
+import AccountColumnDisplay from '@/components/plugins/AccountColumnDisplay.vue'
 import AccountConsoleFilters from '@/components/admin/account/AccountConsoleFilters.vue'
 import AccountDetailsDrawer from '@/components/admin/account/AccountDetailsDrawer.vue'
 import AccountFolderBar from '@/components/admin/account/AccountFolderBar.vue'
@@ -770,20 +761,17 @@ import type {
   UpstreamBillingProbeSnapshot
 } from '@/types'
 
-const props = withDefaults(defineProps<{
-  scope?: 'all' | 'cindy'
-}>(), {
-  scope: 'all'
-})
+const props = defineProps<{ viewContribution?: PluginContribution }>()
 
-const { t } = useI18n()
+const { t, locale } = useI18n()
 const appStore = useAppStore()
 const authStore = useAuthStore()
 const pluginExtensions = usePluginExtensions()
 const accountJobsStore = useAccountJobsStore()
 const pendingOperation = ref<{ title: string; message: string; danger?: boolean; execute: () => Promise<AccountJob> } | null>(null)
-function confirmAccountOperation(kind: string, ids: number[], execute: () => Promise<AccountJob>, danger = false) {
-  pendingOperation.value = { title: t(`admin.accountTasks.kinds.${kind}`), message: t('admin.accountTasks.confirmAction', { count: ids.length }), execute, danger }
+function confirmAccountOperation(kind: string, ids: number[], execute: (api: typeof adminAPI.accounts, view?: CapturedAccountView) => Promise<AccountJob>, danger = false) {
+  const view = captureCurrentView(), api = accountAPIForView(view, adminAPI.accounts)
+  pendingOperation.value = { title: t(`admin.accountTasks.kinds.${kind}`), message: t('admin.accountTasks.confirmAction', { count: ids.length }), execute: () => { view?.assertCurrent(); return execute(api, view) }, danger }
 }
 const pendingDataImportJobIDs = new Map<number, number>()
 const completedImportJobIDs = ref<number[]>([])
@@ -799,7 +787,6 @@ let importSelectionRevision = 0
 let applyingImportSelection = false
 let importCompletionRefreshRunning = false
 let importCompletionRefreshQueued = false
-const isCindyScope = computed(() => props.scope === 'cindy')
 const fallbackRoute = reactive({ query: {}, fullPath: '' }) as unknown as RouteLocationNormalizedLoaded
 const fallbackRouter = {
   push: async () => undefined,
@@ -808,7 +795,43 @@ const fallbackRouter = {
 const route = inject(routeLocationKey, fallbackRoute)
 const router = inject(routerKey, fallbackRouter)
 
-const ACCOUNT_CONSOLE_SESSION_KEY = 'account-console-sensitive-filters-v1'
+const coreViewSelection = ref<{ pluginKey: string; viewID: string } | null>(null)
+const selectedPresetID = ref('')
+const { contribution: retainedCoreView } = useRetainedContribution(() => ({
+  pluginKey: coreViewSelection.value?.pluginKey, id: coreViewSelection.value?.viewID || '', slot: 'account.view.v1'
+}))
+const activeView = computed(() => props.viewContribution || retainedCoreView.value)
+const viewRequired = computed(() => !!props.viewContribution || coreViewSelection.value !== null)
+const viewUnavailable = computed(() => viewRequired.value && (!isAccountView(activeView.value) || !activeView.value.available || !activeView.value.account_view.presets.some(preset => preset.id === selectedPresetID.value)))
+const pageViewTitle = computed(() => props.viewContribution ? localizedPluginLabel(props.viewContribution.label, locale.value) : undefined)
+provide(accountViewTitleKey, pageViewTitle)
+watch([pageViewTitle, () => appStore.siteName], ([title]) => {
+  if (title) document.title = resolveDocumentTitle(title, appStore.siteName)
+}, { immediate: true, flush: 'post' })
+function restoreViewRouteSelection() {
+  if (props.viewContribution) {
+    const definition = props.viewContribution.account_view
+    selectedPresetID.value = definition
+      ? legacyAccountViewPreset(definition, route.query) || (typeof route.query.view_preset === 'string' ? route.query.view_preset : definition.default_preset)
+      : ''
+    return
+  }
+  if (hasLegacyAccountViewQuery(route.query)) {
+    coreViewSelection.value = { pluginKey: CINDY_ACCOUNT_VIEW_ALIAS.plugin_key, viewID: CINDY_ACCOUNT_VIEW_ALIAS.view_id }
+    const view = resolveAccountView(pluginExtensions.items, CINDY_ACCOUNT_VIEW_ALIAS.plugin_key, CINDY_ACCOUNT_VIEW_ALIAS.view_id)
+    selectedPresetID.value = view ? legacyAccountViewPreset(view.account_view, route.query) || '' : ''
+  } else if (typeof route.query.view_owner === 'string' && typeof route.query.view_id === 'string') {
+    coreViewSelection.value = { pluginKey: route.query.view_owner, viewID: route.query.view_id }
+    selectedPresetID.value = typeof route.query.view_preset === 'string' ? route.query.view_preset : ''
+  } else { coreViewSelection.value = null; selectedPresetID.value = '' }
+}
+restoreViewRouteSelection()
+const scopedStorageKey = (key: string) => !viewRequired.value ? key : [
+  key, location.origin, authStore.user?.id || 0,
+  props.viewContribution?.plugin_key || coreViewSelection.value?.pluginKey,
+  props.viewContribution?.id || coreViewSelection.value?.viewID
+].join(':')
+const sensitiveSessionKey = () => scopedStorageKey('account-console-sensitive-filters-v1')
 const queryString = (key: string) => {
   const value = route.query[key]
   return typeof value === 'string' ? value : ''
@@ -820,7 +843,7 @@ const queryPositiveInt = (key: string, fallback: number) => {
 }
 const loadSensitiveConsoleState = (): Pick<AccountConsoleFilterState, 'search' | 'account_ids'> => {
   try {
-    const parsed = JSON.parse(sessionStorage.getItem(ACCOUNT_CONSOLE_SESSION_KEY) || '{}') as { search?: unknown; account_ids?: unknown }
+    const parsed = JSON.parse(sessionStorage.getItem(sensitiveSessionKey()) || '{}') as { search?: unknown; account_ids?: unknown }
     return {
       search: typeof parsed.search === 'string' ? parsed.search : '',
       account_ids: Array.isArray(parsed.account_ids)
@@ -838,25 +861,17 @@ const groups = ref<AdminGroup[]>([])
 const ACCOUNT_VIEW_MODE_STORAGE_KEY = 'account-console-view-mode'
 const loadAccountViewMode = (): AccountViewMode => {
   if (typeof window === 'undefined') return 'table'
-  const saved = localStorage.getItem(ACCOUNT_VIEW_MODE_STORAGE_KEY)
+  const saved = localStorage.getItem(scopedStorageKey(ACCOUNT_VIEW_MODE_STORAGE_KEY))
   return saved === 'compact' || saved === 'cards' || saved === 'table' ? saved : 'table'
 }
 const viewMode = ref<AccountViewMode>(loadAccountViewMode())
+const viewAllowedModes = computed<AccountViewMode[]>(() => props.viewContribution?.account_view?.table.layouts || ['table', 'compact', 'cards'])
 const facets = ref<AccountConsoleFacets | null>(null)
 const facetsLoading = ref(false)
 const facetsError = ref<unknown>(null)
 let facetsRequestSequence = 0
 let taxonomyRequestSequence = 0
 const activeFolder = ref(queryString('folder'))
-type CindyAccountView = 'all' | 'cindy' | 'insufficient' | 'banned'
-const initialCindyView = (): CindyAccountView => {
-  if (queryString('cindy_health_status') === 'banned') return 'banned'
-  if (queryString('cindy_balance_status') === 'insufficient') return 'insufficient'
-  if (isCindyScope.value) return 'cindy'
-  if (queryString('cindy_only') === 'true') return 'cindy'
-  return 'all'
-}
-const cindyView = ref<CindyAccountView>(initialCindyView())
 const showTaxonomyManager = ref(false)
 const detailsAccount = ref<Account | null>(null)
 const consoleFilters = ref<AccountConsoleFilterState>({
@@ -878,21 +893,87 @@ const finiteFacetCount = (value: unknown): number | undefined => {
   const count = Number(value)
   return Number.isFinite(count) && count >= 0 ? count : undefined
 }
-const cindyTotal = computed(() => finiteFacetCount(facets.value?.cindy_total) ?? 0)
-const cindyInsufficientCount = computed(() => finiteFacetCount(facets.value?.cindy_insufficient_count) ?? 0)
-const cindyBannedCount = computed(() => finiteFacetCount(facets.value?.cindy_banned_count) ?? 0)
-const cindyViewOptions = computed<Array<{ value: CindyAccountView; label: string; count: number | string }>>(() => {
-  const scopedOptions: Array<{ value: CindyAccountView; label: string; count: number | string }> = [
-    { value: 'cindy', label: t('admin.accounts.cindy.accounts'), count: cindyTotal.value },
-    { value: 'insufficient', label: t('admin.accounts.cindy.insufficient'), count: cindyInsufficientCount.value },
-    { value: 'banned', label: t('admin.accounts.cindy.banned'), count: cindyBannedCount.value }
-  ]
-  if (isCindyScope.value) return scopedOptions
-  return [
-    { value: 'all', label: t('admin.accounts.cindy.allAccounts'), count: finiteFacetCount(facets.value?.total) ?? '-' },
-    ...scopedOptions
-  ]
+type ViewPresetOption = { value: string; label: string; count: number | string; owner?: PluginContribution; presetID?: string }
+const presetValue = (owner: PluginContribution, preset: string) => JSON.stringify([owner.plugin_key, owner.id, preset])
+const selectedPresetValue = computed(() => viewRequired.value && activeView.value ? presetValue(activeView.value, selectedPresetID.value) : 'all')
+const viewPresetOptions = computed<ViewPresetOption[]>(() => {
+  const owners = props.viewContribution ? [props.viewContribution] : pluginExtensions.items.filter(item => isAccountView(item) && item.account_view.extends_core_filters)
+  const options: ViewPresetOption[] = props.viewContribution ? [] : [{ value: 'all', label: t('common.all'), count: viewRequired.value ? '-' : finiteFacetCount(facets.value?.total) ?? '-' }]
+  for (const owner of owners) {
+    if (!isAccountView(owner) || resolveAccountView(pluginExtensions.items, owner.plugin_key, owner.id)?.package_sha256 !== owner.package_sha256) continue
+    for (const preset of owner.account_view.presets) options.push({
+      value: presetValue(owner, preset.id), label: localizedPluginLabel(preset.label, locale.value),
+      count: activeView.value?.plugin_id === owner.plugin_id ? accountViewPresetCount(facets.value, preset) ?? '-' : '-',
+      owner, presetID: preset.id
+    })
+  }
+  return options
 })
+const retainedViewColumns = shallowRef<PluginContribution[]>([])
+const retainedViewSurfaces = shallowRef<PluginContribution[]>([])
+let relatedViewOwner = ''
+watch(() => [activeView.value, pluginExtensions.items], () => {
+  const owner = activeView.value
+  const key = owner ? `${owner.plugin_id}:${owner.package_sha256}:${owner.id}` : ''
+  if (key !== relatedViewOwner) { retainedViewColumns.value = []; retainedViewSurfaces.value = []; relatedViewOwner = key }
+  if (!isAccountView(owner)) return
+  const keep = (ids: string[], slot: string, previous: PluginContribution[]) => ids.flatMap(id => {
+    const current = ownedViewReference(pluginExtensions.items, owner, id, slot)
+    const old = previous.find(item => item.id === id)
+    return current ? [current] : old ? [{ ...old, available: false }] : []
+  })
+  retainedViewColumns.value = keep(props.viewContribution ? owner.account_view.table.column_refs : [], 'account.columns', retainedViewColumns.value)
+  retainedViewSurfaces.value = keep(props.viewContribution
+    ? owner.account_view.layout.flatMap(node => node.kind === 'surface' ? [node.surface_ref] : [])
+    : owner.account_view.core_filter_surface_refs || [], 'surface', retainedViewSurfaces.value)
+}, { immediate: true, deep: true })
+const viewColumns = computed(() => retainedViewColumns.value)
+const tablePosition = computed(() => activeView.value?.account_view?.layout.findIndex(node => node.kind === 'account_table') ?? 0)
+function surfacesAt(before: boolean) {
+  const layout = props.viewContribution?.account_view?.layout || []
+  const ids = layout.filter((_node, index) => before ? index < tablePosition.value : index > tablePosition.value).flatMap(node => node.kind === 'surface' ? [node.surface_ref] : [])
+  return ids.flatMap(id => retainedViewSurfaces.value.filter(item => item.id === id))
+}
+const beforeTableSurfaces = computed(() => surfacesAt(true))
+const afterTableSurfaces = computed(() => surfacesAt(false))
+const coreFilterSurfaces = computed(() => !props.viewContribution && viewRequired.value ? retainedViewSurfaces.value : [])
+const surfaceOrigin = shallowRef<CapturedAccountView>()
+let pageAlive = true
+const viewReadGeneration = ref(0)
+function captureCurrentView(): CapturedAccountView | undefined {
+  if (!viewRequired.value) return undefined
+  if (viewUnavailable.value || !activeView.value) throw new CanceledError('Account view unavailable')
+  return captureAccountView({ contribution: activeView.value, presetID: selectedPresetID.value,
+    query: accountViewQuery(buildConsoleAPIParams()), actorID: authStore.user?.id || 0,
+    currentActor: () => authStore.user?.id, currentItems: () => pluginExtensions.items, active: () => pageAlive && authStore.isAuthenticated !== false && authStore.isAdmin !== false })
+}
+function accountViewReadKey() {
+  return JSON.stringify([authStore.user?.id, activeView.value?.plugin_id, activeView.value?.package_sha256,
+    activeView.value?.available, activeView.value?.account_scope, selectedPresetID.value, buildConsoleAPIParams(), pagination.page, pagination.page_size])
+}
+function currentAccountAPI() { return accountAPIForView(captureCurrentView(), adminAPI.accounts) }
+async function readAccounts<T>(read: (api: typeof adminAPI.accounts) => Promise<T>): Promise<T> {
+  const key = accountViewReadKey()
+  const generation = viewReadGeneration.value
+  const result = await read(currentAccountAPI())
+  if (!pageAlive || generation !== viewReadGeneration.value || key !== accountViewReadKey()) throw new CanceledError('Account view query changed')
+  return result
+}
+provideAccountViewContext({ capture: captureCurrentView, available: () => !viewUnavailable.value, revision: () => `${viewReadGeneration.value}:${accountViewReadKey()}` })
+const surfaceState = computed<AccountViewStateV1 | undefined>(() => {
+  const owner = activeView.value
+  const preset = owner?.account_view?.presets.find(item => item.id === selectedPresetID.value)
+  if (!isAccountView(owner) || !preset) return undefined
+  return { identity: viewIdentity(owner, selectedPresetID.value), base_query: owner.account_view.base_query, preset,
+    query: accountViewQuery(buildConsoleAPIParams()), selected_ids: [...selIds.value],
+    preset_counts: { ...(facets.value?.view_preset_counts || {}) }, available: !viewUnavailable.value }
+})
+function handleViewEvent(name: string) { if (name === ACCOUNT_VIEW_REFRESH_EVENT) handleViewRefresh() }
+function handleViewJob(job: AccountJob) { accountJobsStore.track(job, { open: true }); handleViewRefresh() }
+function handleViewRefresh() {
+  if (viewUnavailable.value) return
+  void Promise.all([load(), loadFacets()]).catch(() => {})
+}
 const folderNavigationTotal = computed(() => finiteFacetCount(facets.value?.total))
 const folderNavigationUncategorized = computed(() => finiteFacetCount(facets.value?.uncategorized_count))
 const groupsByID = computed(() => new Map(groups.value.map(group => [group.id, group])))
@@ -949,10 +1030,9 @@ const showBulkTaxonomy = ref(false)
 const bulkTaxonomyTarget = ref<AccountBulkTaxonomyTarget | null>(null)
 const showTempUnsched = ref(false)
 const showDeleteDialog = ref(false)
-const showCindyDeleteDialog = ref(false)
-const cindyDeletePreview = ref<CindyInsufficientDeletePreview | null>(null)
-const cindyDeleteCandidateCount = ref<number | null>(null)
-const cindyDeleteLoading = ref(false)
+const deletingView = shallowRef<CapturedAccountView>()
+const shadowView = shallowRef<CapturedAccountView>()
+const exportTarget = shallowRef<{ ids: number[]; filters: AccountListFilters; view?: CapturedAccountView; actor?: number }>()
 const showCreateShadowDialog = ref(false)
 const showReAuth = ref(false)
 const showTest = ref(false)
@@ -1145,6 +1225,7 @@ const flushQueuedUsageBatch = async () => {
   queuedUsageBatchForce = false
 
   if (accountIDs.length === 0) return
+  const requestRevision = accountViewReadKey()
 
   const requestTokensByAccount = accountIDs.reduce<Record<string, number>>((acc, accountID) => {
     acc[String(accountID)] = usageBatchRequestTokenByAccountId.value[String(accountID)] ?? 0
@@ -1152,7 +1233,7 @@ const flushQueuedUsageBatch = async () => {
   }, {})
 
   try {
-    const result = await adminAPI.accounts.getBatchUsage(accountIDs, force)
+    const result = await readAccounts(api => api.getBatchUsage(accountIDs, force))
 
     const usageMap = result.usage ?? {}
     const errorMap = result.errors ?? {}
@@ -1181,6 +1262,7 @@ const flushQueuedUsageBatch = async () => {
     usageBatchErrorByAccountId.value = nextErrors
     usageBatchLoadingByAccountId.value = nextLoading
   } catch (error) {
+    if (requestRevision !== accountViewReadKey() || !pageAlive) return
     const nextErrors = { ...usageBatchErrorByAccountId.value }
     const nextLoading = { ...usageBatchLoadingByAccountId.value }
     for (const accountID of accountIDs) {
@@ -1198,7 +1280,7 @@ const flushQueuedUsageBatch = async () => {
 }
 
 const queueBatchedUsage = (account: Account, options?: { force?: boolean }) => {
-  if (!isDesktopViewport.value) return
+  if (!isDesktopViewport.value || viewUnavailable.value) return
   if (!accountSupportsBatchUsage(account)) return
 
   const force = options?.force === true
@@ -1263,7 +1345,7 @@ const refreshTodayStatsBatch = async () => {
   todayStatsError.value = null
 
   try {
-    const result = await adminAPI.accounts.getBatchTodayStats(accountIDs)
+    const result = await readAccounts(api => api.getBatchTodayStats(accountIDs))
     if (reqSeq !== todayStatsReqSeq.value) return
     const serverStats = result.stats ?? {}
     const nextStats: Record<string, WindowStats> = {}
@@ -1403,13 +1485,14 @@ if (typeof window !== 'undefined') {
   loadSavedAutoRefresh()
 }
 
-watch(viewMode, value => {
+watch([viewMode, viewAllowedModes], ([value, modes]) => {
+  if (!modes.includes(value)) { viewMode.value = modes[0] || 'table'; return }
   try {
-    localStorage.setItem(ACCOUNT_VIEW_MODE_STORAGE_KEY, value)
+    localStorage.setItem(scopedStorageKey(ACCOUNT_VIEW_MODE_STORAGE_KEY), value)
   } catch (error) {
     console.error('Failed to save account view mode:', error)
   }
-})
+}, { immediate: true })
 
 const setAutoRefreshEnabled = (enabled: boolean) => {
   autoRefreshEnabled.value = enabled
@@ -1473,7 +1556,7 @@ const {
   handlePageChange: baseHandlePageChange,
   handlePageSizeChange: baseHandlePageSizeChange
 } = useTableLoader<AccountListItem, any>({
-  fetchFn: adminAPI.accounts.list,
+  fetchFn: (page, pageSize, filters, options) => readAccounts(api => api.list(page, pageSize, filters, options)),
   initialParams: {
     platform: '',
     type: '',
@@ -1506,7 +1589,7 @@ const accountsWithGroups = computed<Account[]>(() => accounts.value.map(account 
 })))
 
 const saveSensitiveConsoleState = () => {
-  sessionStorage.setItem(ACCOUNT_CONSOLE_SESSION_KEY, JSON.stringify({
+  sessionStorage.setItem(sensitiveSessionKey(), JSON.stringify({
     search: consoleFilters.value.search,
     account_ids: consoleFilters.value.account_ids
   }))
@@ -1527,9 +1610,13 @@ const buildConsoleRouteQuery = (): Record<string, string> => {
   if (activeFolder.value) query.folder = activeFolder.value
   if (state.group_id) query.group_id = state.group_id
   if (state.privacy_mode) query.privacy_mode = state.privacy_mode
-  if (isCindyScope.value || cindyView.value !== 'all') query.cindy_only = 'true'
-  if (cindyView.value === 'insufficient') query.cindy_balance_status = 'insufficient'
-  if (cindyView.value === 'banned') query.cindy_health_status = 'banned'
+  if (viewRequired.value && isAccountView(activeView.value)) {
+    Object.assign(query, presetRouteQuery(activeView.value.account_view, selectedPresetID.value))
+    if (!props.viewContribution && !activeView.value.account_view.legacy_query_aliases?.some(alias => alias.preset === selectedPresetID.value)) {
+      query.view_owner = activeView.value.plugin_key
+      query.view_id = activeView.value.id
+    }
+  }
   if (sortState.sort_by !== 'name' || sortState.sort_order !== 'asc') query.sort_by = sortState.sort_by
   if (sortState.sort_order !== 'asc') query.sort_order = sortState.sort_order
   if (pagination.page > 1) query.page = String(pagination.page)
@@ -1551,7 +1638,7 @@ const syncConsoleRoute = (mode: 'push' | 'replace' = 'push') => {
 
 const applyConsoleRouteState = () => {
   activeFolder.value = queryString('folder')
-  cindyView.value = initialCindyView()
+  restoreViewRouteSelection()
   consoleFilters.value = {
     ...consoleFilters.value,
     platforms: queryList('platforms'),
@@ -1583,52 +1670,17 @@ const buildConsoleAPIParams = (includeFolder = true) => {
     account_ids: state.account_ids.length ? state.account_ids.join(',') : undefined,
     group_id: state.group_id || undefined,
     privacy_mode: state.privacy_mode || undefined,
-    cindy_only: isCindyScope.value || cindyView.value !== 'all' ? 'true' : undefined,
-    cindy_balance_status: cindyView.value === 'insufficient' ? 'insufficient' as const : undefined,
-    cindy_health_status: cindyView.value === 'banned' ? 'banned' as const : undefined,
     search: state.search.trim() || undefined,
     sort_by: sortState.sort_by,
     sort_order: sortState.sort_order
   }
 }
 
-const cindyProbeFilters = computed(() => {
-  const state = consoleFilters.value
-  const proxyIDs = state.proxies
-    .filter((value) => value !== 'direct')
-    .map(Number)
-    .filter((value) => Number.isSafeInteger(value) && value > 0)
-  const folderID = Number(activeFolder.value)
-  const numericGroupID = Number(state.group_id)
-  return {
-    platforms: [...state.platforms],
-    types: [...state.types],
-    statuses: [...state.statuses],
-    plans: [...state.plans],
-    proxy_ids: proxyIDs,
-    include_direct: state.proxies.includes('direct'),
-    folder_ids: Number.isSafeInteger(folderID) && folderID > 0 ? [folderID] : [],
-    include_uncategorized: activeFolder.value === 'uncategorized',
-    tag_ids: [...state.tags],
-    account_ids: [...state.account_ids],
-    search: state.search.trim(),
-    group_id: state.group_id === ACCOUNT_UNGROUPED_GROUP_QUERY_VALUE
-      ? -1
-      : (Number.isSafeInteger(numericGroupID) && numericGroupID > 0 ? numericGroupID : undefined),
-    privacy_mode: state.privacy_mode || undefined,
-    cindy_balance_status: cindyView.value === 'insufficient' ? 'insufficient' : undefined,
-    cindy_health_status: cindyView.value === 'banned' ? 'banned' : undefined,
-    sort_by: sortState.sort_by,
-    sort_order: sortState.sort_order
-  }
-})
-
 const syncConsoleParams = () => {
   const requestParams = params as Record<string, unknown>
   for (const key of [
     'platform', 'type', 'status', 'platforms', 'types', 'statuses', 'plans', 'proxies',
-    'folder', 'folders', 'tags', 'account_ids', 'group_id', 'privacy_mode', 'search',
-    'cindy_only', 'cindy_balance_status', 'cindy_health_status'
+    'folder', 'folders', 'tags', 'account_ids', 'group_id', 'privacy_mode', 'search'
   ]) {
     delete requestParams[key]
   }
@@ -1636,17 +1688,17 @@ const syncConsoleParams = () => {
 }
 
 const loadFacets = async () => {
+  if (viewUnavailable.value) return
   const requestSequence = ++facetsRequestSequence
   facetsLoading.value = true
   facetsError.value = null
   try {
-    const nextFacets = await adminAPI.accounts.getFacets(buildConsoleAPIParams(false))
+    const nextFacets = await readAccounts(api => api.getFacets(buildConsoleAPIParams(false)))
     if (requestSequence === facetsRequestSequence) {
       facets.value = nextFacets
     }
   } catch (error) {
     if (requestSequence === facetsRequestSequence) {
-      facets.value = null
       facetsError.value = error
       console.error('Failed to load account facets:', error)
     }
@@ -1655,34 +1707,13 @@ const loadFacets = async () => {
   }
 }
 
-let cindyDeleteCandidateRequestSequence = 0
-const loadCindyDeleteCandidateCount = async () => {
-  const requestSequence = ++cindyDeleteCandidateRequestSequence
-  if (cindyView.value !== 'insufficient' && cindyView.value !== 'banned') {
-    cindyDeleteCandidateCount.value = null
-    return
-  }
-  cindyDeleteCandidateCount.value = null
-  try {
-    const preview = cindyView.value === 'banned'
-      ? await adminAPI.accounts.previewCindyBannedDeletion()
-      : await adminAPI.accounts.previewCindyInsufficientDeletion()
-    if (requestSequence === cindyDeleteCandidateRequestSequence) {
-      cindyDeleteCandidateCount.value = preview.count
-    }
-  } catch (error) {
-    if (requestSequence === cindyDeleteCandidateRequestSequence) {
-      console.error('Failed to load Cindy deletion candidate count:', error)
-    }
-  }
-}
-
 const loadTaxonomy = async () => {
+  if (viewUnavailable.value) return
   const requestSequence = ++taxonomyRequestSequence
   try {
     const [nextFolders, nextTags] = await Promise.all([
-      adminAPI.accounts.listFolders(),
-      adminAPI.accounts.listTags()
+      readAccounts(api => api.listFolders()),
+      readAccounts(api => api.listTags())
     ])
     if (requestSequence !== taxonomyRequestSequence) return
     folders.value = nextFolders
@@ -1715,15 +1746,21 @@ const handleConsoleFiltersChanged = () => {
   void loadFacets()
 }
 
-const handleCindyViewChange = (view: CindyAccountView) => {
-  if (isCindyScope.value && view === 'all') return
-  if (cindyView.value === view) return
-  cindyView.value = view
+const handleViewPresetChange = (value: string) => {
+  const option = viewPresetOptions.value.find(item => item.value === value)
+  if (!option || option.owner?.available === false || selectedPresetValue.value === value) return
+  if (option.owner) {
+    coreViewSelection.value = { pluginKey: option.owner.plugin_key!, viewID: option.owner.id }
+    selectedPresetID.value = option.presetID!
+  } else if (!props.viewContribution) {
+    coreViewSelection.value = null
+    selectedPresetID.value = ''
+  }
   pagination.page = 1
   clearSelection()
   syncConsoleRoute()
   syncConsoleParams()
-  void Promise.all([load(), loadFacets(), loadCindyDeleteCandidateCount()])
+  void Promise.all([load(), loadFacets()]).catch(() => {})
 }
 
 const handleFolderSelect = (folder: string) => {
@@ -1809,6 +1846,7 @@ type AccountLoadOptions = {
 }
 
 const load = async (options: AccountLoadOptions = {}) => {
+  if (viewUnavailable.value) return
   const requestParams = params as any
   syncAccountListDerivedParams()
   hasPendingListSync.value = false
@@ -1820,6 +1858,7 @@ const load = async (options: AccountLoadOptions = {}) => {
 }
 
 const reload = async () => {
+  if (viewUnavailable.value) return
   syncAccountListDerivedParams()
   hasPendingListSync.value = false
   resetAutoRefreshCache()
@@ -1915,12 +1954,7 @@ const refreshUpstreamBillingRates = async (force = false) => {
   try {
     syncAccountListDerivedParams()
     const requestContextKey = upstreamBillingRateContextKey()
-    const result = await adminAPI.accounts.getUpstreamBillingRatesWithEtag(
-      pagination.page,
-      pagination.page_size,
-      buildUpstreamBillingRateFilters(),
-      { etag: force ? null : upstreamBillingRateETag.value, signal: controller.signal }
-    )
+    const result = await readAccounts(api => api.getUpstreamBillingRatesWithEtag(pagination.page, pagination.page_size, buildUpstreamBillingRateFilters(), { etag: force ? null : upstreamBillingRateETag.value, signal: controller.signal }))
     if (loading.value || requestContextKey !== upstreamBillingRateContextKey()) return
     if (result.etag) upstreamBillingRateETag.value = result.etag
     if (!result.notModified && result.data) await applyUpstreamBillingRateSnapshots(result.data)
@@ -2020,7 +2054,7 @@ watch(() => route.fullPath, async () => {
   }
   applyConsoleRouteState()
   syncConsoleParams()
-  if (isCindyScope.value) syncConsoleRoute('replace')
+  if (props.viewContribution) syncConsoleRoute('replace')
   await Promise.all([load(), loadFacets()])
 })
 
@@ -2034,7 +2068,6 @@ const isAnyModalOpen = computed(() => {
     showBulkEdit.value ||
     showTempUnsched.value ||
     showDeleteDialog.value ||
-    showCindyDeleteDialog.value ||
     showReAuth.value ||
     showTest.value ||
     showBatchTest.value ||
@@ -2067,7 +2100,7 @@ const shouldReplaceAutoRefreshRow = (current: Account, next: Account) => {
     current.rate_limit_reset_at !== next.rate_limit_reset_at ||
     current.overload_until !== next.overload_until ||
     current.temp_unschedulable_until !== next.temp_unschedulable_until ||
-    current.cindy_balance_insufficient !== next.cindy_balance_insufficient ||
+    viewColumns.value.some(column => JSON.stringify(accountDisplayValues(column, current)) !== JSON.stringify(accountDisplayValues(column, next))) ||
     buildOpenAIUsageRefreshKey(current) !== buildOpenAIUsageRefreshKey(next) ||
     buildGrokUsageRefreshKey(current) !== buildGrokUsageRefreshKey(next)
   )
@@ -2117,10 +2150,7 @@ const refreshAccountsIncrementally = async () => {
   syncAccountListDerivedParams()
   autoRefreshFetching.value = true
   try {
-    const result = await adminAPI.accounts.listWithEtag(
-      pagination.page,
-      pagination.page_size,
-      toRaw(params) as {
+    const result = await readAccounts(api => api.listWithEtag(pagination.page, pagination.page_size, toRaw(params) as {
         platform?: string
         type?: string
         status?: string
@@ -2130,9 +2160,7 @@ const refreshAccountsIncrementally = async () => {
         sort_by?: string
         sort_order?: AccountSortOrder
 
-      },
-      { etag: autoRefreshETag.value }
-    )
+      }, { etag: autoRefreshETag.value }))
 
     if (result.etag) {
       autoRefreshETag.value = result.etag
@@ -2161,7 +2189,7 @@ const handleManualRefresh = async () => {
 
 const loadUpstreamBillingProbeGlobalState = async () => {
   try {
-    const settings = await adminAPI.accounts.getUpstreamBillingProbeSettings()
+    const settings = await readAccounts(api => api.getUpstreamBillingProbeSettings())
     upstreamBillingProbeGloballyEnabled.value = settings.enabled
   } catch (error) {
     console.error('Failed to load upstream billing probe settings:', error)
@@ -2284,14 +2312,10 @@ const allColumns = computed(() => {
     { key: 'usage', label: t('admin.accounts.columns.usage'), sortable: false },
     { key: 'status', label: t('admin.accounts.columns.status'), sortable: true }
   ]
-  if (isCindyScope.value && pluginExtensions.items.some(item => item.id === 'cindy-probe-summary')) {
-    c.push({
-      key: 'cindy_probe',
-      label: t('admin.accounts.columns.recentCindyProbe'),
-      sortable: false,
-      class: 'w-40 min-w-40 max-w-48'
-    })
-  }
+  for (const column of viewColumns.value) c.push({
+    key: accountColumnKey(column), label: localizedPluginLabel(column.label, locale.value),
+    sortable: false, class: 'w-40 min-w-40 max-w-48'
+  })
   c.push(
     { key: 'taxonomy_route', label: t('admin.accounts.columns.classificationRoute'), sortable: false },
     { key: 'capacity', label: t('admin.accounts.columns.capacity'), sortable: false },
@@ -2333,7 +2357,7 @@ const loadAccountDetails = async (account: Pick<AccountListItem, 'id'>): Promise
   if (accountDetailLoading.has(account.id)) return null
   accountDetailLoading.add(account.id)
   try {
-    return await adminAPI.accounts.getById(account.id)
+    return await readAccounts(api => api.getById(account.id))
   } catch (error) {
     console.error('Failed to load account details:', error)
     appStore.showError(extractApiErrorMessage(error, t('common.error')))
@@ -2364,7 +2388,7 @@ const closeAPIKeyRevealPassword = () => {
 
 const loadAPIKeyVisibility = async () => {
   try {
-    const state = await adminAPI.accounts.getAPIKeyVisibility()
+    const state = await readAccounts(api => api.getAPIKeyVisibility())
     apiKeyRevealEnabled.value = Boolean(state?.enabled)
   } catch {
     apiKeyRevealEnabled.value = false
@@ -2380,7 +2404,7 @@ const handleAPIKeyRevealToggle = async (enabled: boolean) => {
   if (apiKeyRevealSaving.value) return
   apiKeyRevealSaving.value = true
   try {
-    await adminAPI.accounts.setAPIKeyVisibility({ enabled: false })
+    await currentAccountAPI().setAPIKeyVisibility({ enabled: false })
     apiKeyRevealEnabled.value = false
     await refreshOpenEditAccount()
   } catch (error) {
@@ -2399,7 +2423,7 @@ const confirmAPIKeyRevealPassword = async () => {
   if (apiKeyRevealSaving.value) return
   apiKeyRevealSaving.value = true
   try {
-    const state = await adminAPI.accounts.setAPIKeyVisibility({ enabled: true, password })
+    const state = await currentAccountAPI().setAPIKeyVisibility({ enabled: true, password })
     apiKeyRevealEnabled.value = Boolean(state?.enabled)
     showAPIKeyRevealPassword.value = false
     apiKeyRevealPassword.value = ''
@@ -2418,24 +2442,24 @@ const openMenu = (a: Account, e: MouseEvent) => {
 }
 const handleBulkDelete = async () => {
   const accountIds = [...selIds.value]
-  confirmAccountOperation('account_batch_delete', accountIds, () => adminAPI.accounts.batchDelete(accountIds), true)
+  confirmAccountOperation('account_batch_delete', accountIds, api => api.batchDelete(accountIds), true)
 }
 const handleBulkResetStatus = async () => {
   const ids = [...selIds.value]
-  confirmAccountOperation('account_batch_clear_error', ids, () => adminAPI.accounts.batchClearError(ids))
+  confirmAccountOperation('account_batch_clear_error', ids, api => api.batchClearError(ids))
 }
 const handleBulkRefreshToken = async () => {
   const accountIds = [...selIds.value]
-  confirmAccountOperation('account_batch_refresh', accountIds, () => adminAPI.accounts.batchRefresh(accountIds))
+  confirmAccountOperation('account_batch_refresh', accountIds, api => api.batchRefresh(accountIds))
 }
 const handleBulkRefreshTier = async () => {
   const ids = [...selIds.value]
-  confirmAccountOperation('account_batch_refresh_tier', ids, () => adminAPI.accounts.batchRefreshTier(ids))
+  confirmAccountOperation('account_batch_refresh_tier', ids, api => api.batchRefreshTier(ids))
 }
 const handleDuplicateReview = async () => {
   const accountIDs = [...selIds.value]
   if (accountIDs.length < 2 || accountIDs.length > 100) return
-  confirmAccountOperation('account_duplicate_review', accountIDs, () => accountJobsAPI.reviewDuplicates(accountIDs))
+  confirmAccountOperation('account_duplicate_review', accountIDs, (_api, view) => view ? accountJobsAPI.reviewDuplicates(accountIDs, view) : accountJobsAPI.reviewDuplicates(accountIDs))
 }
 const handleBulkProbeUpstreamBilling = async () => {
   const accountIDs = [...selIds.value]
@@ -2449,7 +2473,7 @@ const handleBulkProbeUpstreamBilling = async () => {
   }
   accountIDs.forEach(id => probingUpstreamBilling.add(id))
   try {
-    const results = await adminAPI.accounts.probeUpstreamBillingBatch(accountIDs)
+    const results = await currentAccountAPI().probeUpstreamBillingBatch(accountIDs)
     let patched = false
     results.forEach(result => {
       if (result.snapshot) {
@@ -2473,7 +2497,7 @@ const handleBulkProbeUpstreamBilling = async () => {
 }
 const handleBulkToggleSchedulable = async (schedulable: boolean) => {
   const accountIds = [...selIds.value]
-  confirmAccountOperation('account_bulk_update', accountIds, () => adminAPI.accounts.bulkUpdate(accountIds, { schedulable }))
+  confirmAccountOperation('account_bulk_update', accountIds, api => api.bulkUpdate(accountIds, { schedulable }))
 }
 const buildBulkEditFilterSnapshot = () => {
   return buildAccountQueryFilters()
@@ -2488,7 +2512,8 @@ const handleSelectAllResults = async () => {
   try {
     const ids = await fetchAllAccountIds(
       async (page, pageSize, requestFilters) => {
-        const result = await adminAPI.accounts.list(page, pageSize, requestFilters)
+        if (requestVersion !== selectionRequestVersion.value) throw new CanceledError('Account view selection changed')
+        const result = await readAccounts(api => api.list(page, pageSize, requestFilters))
         rememberAccountIdentities(result.items)
         return result
       },
@@ -2527,7 +2552,7 @@ const openBulkEditSelected = () => {
 
 const openBulkEditFiltered = async () => {
   const filters = buildBulkEditFilterSnapshot()
-  const preview = await adminAPI.accounts.list(1, 100, filters)
+  const preview = await readAccounts(api => api.list(1, 100, filters))
   const { selectedPlatforms, selectedTypes } = collectSelectionMetadata(preview.items)
   bulkEditTarget.value = {
     mode: 'filtered',
@@ -2552,7 +2577,7 @@ const openBulkTaxonomySelected = () => {
 const openBulkTaxonomyFiltered = async () => {
   try {
     const filters = buildBulkEditFilterSnapshot()
-    const preview = await adminAPI.accounts.list(1, 1, filters)
+    const preview = await readAccounts(api => api.list(1, 1, filters))
     bulkTaxonomyTarget.value = { mode: 'filtered', filters, count: preview.total }
     showBulkTaxonomy.value = true
   } catch (error: any) {
@@ -2639,7 +2664,7 @@ watch(
         refreshedOperations.add(job.id)
         if (!pendingDataImportJobIDs.has(job.id) && job.kind !== 'account_batch_test' && job.kind !== 'account_duplicate_review') {
           void load()
-          if (['account_bulk_taxonomy', 'account_bulk_update', 'account_batch_delete', 'account_duplicate_merge', 'cindy_confirmed_cleanup', 'cindy_banned_cleanup'].includes(job.kind)) void loadFacets()
+          if (viewRequired.value || ['account_bulk_taxonomy', 'account_bulk_update', 'account_batch_delete', 'account_duplicate_merge'].includes(job.kind)) void loadFacets()
         }
       }
       const revision = pendingDataImportJobIDs.get(job.id)
@@ -2677,10 +2702,15 @@ const accountConsoleStatus = (account: Account) => {
 }
 const accountMatchesCurrentFilters = (account: Account) => {
   const state = consoleFilters.value
+  if (isAccountView(activeView.value)) {
+    const preset = activeView.value.account_view.presets.find(item => item.id === selectedPresetID.value)
+    if (!preset || !accountMatchesPredicate(account, activeView.value.account_view.base_query) || !accountMatchesPredicate(account, preset.query)) return false
+    if (!accountMatchesPredicate(account, { statuses: state.statuses, plans: state.plans, privacy_mode: state.privacy_mode })) return false
+  }
   if (state.platforms.length && !state.platforms.includes(account.platform)) return false
   if (state.types.length && !state.types.includes(account.type)) return false
-  if (state.statuses.length && !state.statuses.includes(accountConsoleStatus(account))) return false
-  if (state.plans.length) {
+  if (!isAccountView(activeView.value) && state.statuses.length && !state.statuses.includes(accountConsoleStatus(account))) return false
+  if (!isAccountView(activeView.value) && state.plans.length) {
     const plan = String(getAccountPlanType(account) || '').toLowerCase()
     if (!state.plans.some(value => value.toLowerCase() === plan)) return false
   }
@@ -2701,7 +2731,7 @@ const accountMatchesCurrentFilters = (account: Account) => {
     }
   }
   const privacyMode = typeof account.extra?.privacy_mode === 'string' ? account.extra.privacy_mode : ''
-  if (state.privacy_mode) {
+  if (!isAccountView(activeView.value) && state.privacy_mode) {
     if (state.privacy_mode === ACCOUNT_PRIVACY_MODE_UNSET_QUERY_VALUE) {
       if (privacyMode.trim() !== '') return false
     } else if (privacyMode !== state.privacy_mode) {
@@ -2771,7 +2801,7 @@ const handleProbeUpstreamBilling = async (account: Account) => {
   if (probingUpstreamBilling.has(account.id)) return
   probingUpstreamBilling.add(account.id)
   try {
-    const result = await adminAPI.accounts.probeUpstreamBilling(account.id)
+    const result = await currentAccountAPI().probeUpstreamBilling(account.id)
     if (result.snapshot) {
       patchUpstreamBillingSnapshot(account.id, result.snapshot)
       await refreshAccountsAfterUpstreamBillingProbe()
@@ -2787,73 +2817,6 @@ const handleAccountUpdated = (updatedAccount: Account) => {
   patchAccountInList(updatedAccount)
   enterAutoRefreshSilentWindow()
 }
-const closeCindyDeleteDialog = () => {
-  if (cindyDeleteLoading.value) return
-  showCindyDeleteDialog.value = false
-  cindyDeletePreview.value = null
-}
-const openCindyTerminalDelete = async () => {
-  if (cindyDeleteLoading.value) return
-  cindyDeleteLoading.value = true
-  try {
-    const preview = cindyView.value === 'banned'
-      ? await adminAPI.accounts.previewCindyBannedDeletion()
-      : await adminAPI.accounts.previewCindyInsufficientDeletion()
-    cindyDeleteCandidateCount.value = preview.count
-    if (preview.count === 0) {
-      appStore.showInfo(cindyView.value === 'banned' ? t('admin.accounts.cindy.noBanned') : t('admin.accounts.cindy.noInsufficient'))
-      await loadFacets()
-      return
-    }
-    cindyDeletePreview.value = preview
-    showCindyDeleteDialog.value = true
-  } catch (error) {
-    console.error('Failed to preview Cindy insufficient account deletion:', error)
-    appStore.showError(extractApiErrorMessage(error, t('admin.accounts.cindy.previewFailed')))
-  } finally {
-    cindyDeleteLoading.value = false
-  }
-}
-const confirmCindyTerminalDelete = async (): Promise<AccountJob> => {
-  const preview = cindyDeletePreview.value
-  if (!preview || cindyDeleteLoading.value) throw new Error('No pending cleanup')
-  cindyDeleteLoading.value = true
-  try {
-    const job = cindyView.value === 'banned'
-      ? await adminAPI.accounts.deleteCindyBanned(preview)
-      : await adminAPI.accounts.deleteCindyInsufficient(preview)
-    return job
-  } catch (error: any) {
-    showCindyDeleteDialog.value = false
-    cindyDeletePreview.value = null
-    if (error?.response?.status === 409) {
-      pagination.page = 1
-      syncConsoleRoute('replace')
-      syncConsoleParams()
-      await Promise.all([reload(), loadFacets(), loadCindyDeleteCandidateCount()])
-      appStore.showWarning(t('admin.accounts.cindy.candidatesChanged'))
-    } else {
-      console.error('Failed to delete Cindy insufficient accounts:', error)
-      appStore.showError(extractApiErrorMessage(error, t(cindyView.value === 'banned' ? 'admin.accounts.cindy.deleteBannedFailed' : 'admin.accounts.cindy.deleteFailed')))
-    }
-    throw error
-  } finally {
-    cindyDeleteLoading.value = false
-  }
-}
-const handleRecoverCindyBalance = async (account: Account) => {
-  if (immediateAccountActions.has(account.id)) return
-  immediateAccountActions.add(account.id)
-  try {
-    const updated = await adminAPI.accounts.clearCindyBalanceInsufficient(account.id)
-    handleAccountUpdated(updated)
-    await Promise.all([reload(), loadFacets(), loadCindyDeleteCandidateCount()])
-    appStore.showSuccess(t('admin.accounts.cindy.recoverSuccess'))
-  } catch (error) {
-    console.error('Failed to clear Cindy insufficient balance marker:', error)
-    appStore.showError(extractApiErrorMessage(error, t('admin.accounts.cindy.recoverFailed')))
-  } finally { immediateAccountActions.delete(account.id) }
-}
 const handleTaxonomyAccountUpdated = async (updatedAccount: Account) => {
   handleAccountUpdated(updatedAccount)
   await Promise.all([loadFacets(), loadTaxonomy()])
@@ -2864,6 +2827,7 @@ const formatExportTimestamp = () => {
   return `${now.getFullYear()}${pad2(now.getMonth() + 1)}${pad2(now.getDate())}${pad2(now.getHours())}${pad2(now.getMinutes())}${pad2(now.getSeconds())}`
 }
 const openExportDataDialog = () => {
+  exportTarget.value = { ids: [...selIds.value], filters: { ...buildAccountQueryFilters() }, view: captureCurrentView(), actor: authStore.user?.id }
   includeProxyOnExport.value = true
   showExportDataDialog.value = true
 }
@@ -2871,14 +2835,18 @@ const handleExportData = async () => {
   if (exportingData.value) return
   exportingData.value = true
   try {
-    const dataPayload = await accountExportStepUp.run(() => adminAPI.accounts.exportData(
-      selIds.value.length > 0
-        ? { ids: selIds.value, includeProxies: includeProxyOnExport.value }
+    const target = exportTarget.value
+    if (!target) throw new Error('Account export context missing')
+    const api = accountAPIForView(target.view, adminAPI.accounts)
+    const dataPayload = await accountExportStepUp.run(() => api.exportData(
+      target.ids.length > 0
+        ? { ids: target.ids, includeProxies: includeProxyOnExport.value }
         : {
             includeProxies: includeProxyOnExport.value,
-            filters: buildAccountQueryFilters()
+            filters: target.filters
           }
     ))
+    if (authStore.user?.id !== target.actor) throw new CanceledError('Account actor changed')
     const timestamp = formatExportTimestamp()
     const filename = `sub2api-account-${timestamp}.json`
     const blob = new Blob([JSON.stringify(dataPayload, null, 2)], { type: 'application/json' })
@@ -2937,7 +2905,7 @@ const handleSchedule = async (a: Account) => {
   scheduleModelOptions.value = []
   showSchedulePanel.value = true
   try {
-    const models = await adminAPI.accounts.getAvailableModels(a.id)
+    const models = await readAccounts(api => api.getAvailableModels(a.id))
     scheduleModelOptions.value = models.map((m) => ({ value: m.id, label: m.display_name }))
   } catch {
     scheduleModelOptions.value = []
@@ -2951,7 +2919,7 @@ const handleDuplicateAccount = async (a: Account) => {
   if (duplicatingAccountIDs.has(a.id)) return
   duplicatingAccountIDs.add(a.id)
   try {
-    const duplicate = await adminAPI.accounts.duplicate(a.id)
+    const duplicate = await currentAccountAPI().duplicate(a.id)
     appStore.showSuccess(t('admin.accounts.duplicateSuccess', { name: duplicate.name }))
     reload()
   } catch (error: any) {
@@ -2965,7 +2933,7 @@ const handleRefresh = async (a: Account) => {
   if (immediateAccountActions.has(a.id)) return
   immediateAccountActions.add(a.id)
   try {
-    const result = await adminAPI.accounts.refreshCredentials(a.id)
+    const result = await currentAccountAPI().refreshCredentials(a.id)
     patchAccountInList(result.account)
     enterAutoRefreshSilentWindow()
     if (result.warning) appStore.showWarning(result.message)
@@ -2979,7 +2947,7 @@ const handleRecoverState = async (a: Account) => {
   if (immediateAccountActions.has(a.id)) return
   immediateAccountActions.add(a.id)
   try {
-    const updated = await adminAPI.accounts.recoverState(a.id)
+    const updated = await currentAccountAPI().recoverState(a.id)
     patchAccountInList(updated)
     enterAutoRefreshSilentWindow()
     appStore.showSuccess(t('admin.accounts.recoverStateSuccess'))
@@ -2992,7 +2960,7 @@ const handleResetQuota = async (a: Account) => {
   if (immediateAccountActions.has(a.id)) return
   immediateAccountActions.add(a.id)
   try {
-    const updated = await adminAPI.accounts.resetAccountQuota(a.id)
+    const updated = await currentAccountAPI().resetAccountQuota(a.id)
     patchAccountInList(updated)
     enterAutoRefreshSilentWindow()
     appStore.showSuccess(t('common.success'))
@@ -3027,7 +2995,7 @@ const handleSetPrivacy = async (a: Account) => {
   if (immediateAccountActions.has(a.id)) return
   immediateAccountActions.add(a.id)
   try {
-    const updated = await adminAPI.accounts.setPrivacy(a.id)
+    const updated = await currentAccountAPI().setPrivacy(a.id)
     patchAccountInList(updated)
     enterAutoRefreshSilentWindow()
     const result = privacyResultMessageKey(updated)
@@ -3045,7 +3013,7 @@ const onRevertFallback = async (a: Account) => {
   if (immediateAccountActions.has(a.id)) return
   immediateAccountActions.add(a.id)
   try {
-    await adminAPI.accounts.revertProxyFallback(a.id)
+    await currentAccountAPI().revertProxyFallback(a.id)
     appStore.showSuccess(t('admin.accounts.revertProxySuccess'))
     reload()
   } catch (error: any) {
@@ -3054,6 +3022,7 @@ const onRevertFallback = async (a: Account) => {
   } finally { immediateAccountActions.delete(a.id) }
 }
 const handleCreateSparkShadow = (a: Account) => {
+  shadowView.value = captureCurrentView()
   creatingShadowAcc.value = a
   showCreateShadowDialog.value = true
 }
@@ -3062,7 +3031,7 @@ const confirmCreateSparkShadow = async () => {
   if (!a || immediateAccountActions.has(a.id)) return
   immediateAccountActions.add(a.id)
   try {
-    await adminAPI.accounts.createSparkShadow(a.id, { name: `${a.name} (Spark)` })
+    await accountAPIForView(shadowView.value, adminAPI.accounts).createSparkShadow(a.id, { name: `${a.name} (Spark)` })
     showCreateShadowDialog.value = false
     creatingShadowAcc.value = null
     appStore.showSuccess(t('admin.accounts.createSparkShadowSuccess'))
@@ -3072,13 +3041,13 @@ const confirmCreateSparkShadow = async () => {
     appStore.showError(error?.response?.data?.message || t('admin.accounts.createSparkShadowFailed'))
   } finally { immediateAccountActions.delete(a.id) }
 }
-const handleDelete = (a: Account) => { deletingAcc.value = a; showDeleteDialog.value = true }
+const handleDelete = (a: Account) => { deletingView.value = captureCurrentView(); deletingAcc.value = a; showDeleteDialog.value = true }
 const confirmDelete = async () => {
   const account = deletingAcc.value
   if (!account || immediateAccountActions.has(account.id)) return
   immediateAccountActions.add(account.id)
   try {
-    await adminAPI.accounts.delete(account.id)
+    await accountAPIForView(deletingView.value, adminAPI.accounts).delete(account.id)
     showDeleteDialog.value = false; deletingAcc.value = null
     await load()
   } catch {
@@ -3095,7 +3064,7 @@ const handleToggleSchedulable = async (a: Account) => {
   const nextSchedulable = !a.schedulable
   togglingSchedulable.value = a.id
   try {
-    const updated = await adminAPI.accounts.setSchedulable(a.id, nextSchedulable)
+    const updated = await currentAccountAPI().setSchedulable(a.id, nextSchedulable)
     updateSchedulableInList([a.id], updated?.schedulable ?? nextSchedulable)
     enterAutoRefreshSilentWindow()
   } catch (error) {
@@ -3160,6 +3129,64 @@ const handleClickOutside = (event: MouseEvent) => {
   }
 }
 
+let pageMounted = false
+let choicesLoading = false
+async function loadPageChoices() {
+  if (choicesLoading || viewUnavailable.value || !pageAlive) return
+  const authority = JSON.stringify([authStore.user?.id, activeView.value?.plugin_id, activeView.value?.package_sha256, activeView.value?.available])
+  choicesLoading = true
+  try {
+    captureCurrentView()?.assertCurrent()
+    const [proxyResult, groupResult] = await Promise.allSettled([adminAPI.proxies.getAll(), adminAPI.groups.getAll()])
+    if (!pageAlive || viewUnavailable.value || authority !== JSON.stringify([authStore.user?.id, activeView.value?.plugin_id, activeView.value?.package_sha256, activeView.value?.available])) return
+    if (proxyResult.status === 'fulfilled') proxies.value = proxyResult.value
+    if (groupResult.status === 'fulfilled') groups.value = groupResult.value
+  } finally { choicesLoading = false }
+}
+watch(accountViewReadKey, () => {
+  viewReadGeneration.value++
+  facetsRequestSequence++
+  taxonomyRequestSequence++
+  selectionRequestVersion.value++
+  todayStatsReqSeq.value++
+  todayStatsLoading.value = false
+  if (usageBatchFlushTimer !== null) { clearTimeout(usageBatchFlushTimer); usageBatchFlushTimer = null }
+  pendingUsageBatchIds.clear()
+  queuedUsageBatchForce = false
+  usageBatchRequestTokenByAccountId.value = {}
+  usageBatchLoadingByAccountId.value = {}
+  if (!viewUnavailable.value) {
+    usageBatchCache.clear()
+    usageBatchByAccountId.value = {}
+    usageBatchErrorByAccountId.value = {}
+    todayStatsByAccountId.value = {}
+    todayStatsError.value = null
+    todayStatsUpdatedAt.value = null
+  }
+  selectingAllResults.value = false
+  menu.show = false
+  try { surfaceOrigin.value = captureCurrentView() } catch { /* Keep the mounted frame's captured origin, not an unbound replacement. */ }
+}, { immediate: true, flush: 'sync' })
+watch(() => pluginExtensions.loaded, loaded => {
+  if (loaded && viewRequired.value && !selectedPresetID.value) restoreViewRouteSelection()
+})
+watch(viewUnavailable, (unavailable, previouslyUnavailable) => {
+  if (unavailable) { pauseAutoRefresh(); return }
+  if (pageMounted && previouslyUnavailable) {
+    void Promise.all([load(), loadFacets(), loadTaxonomy(), loadAPIKeyVisibility(), loadPageChoices()]).catch(() => {})
+    if (autoRefreshEnabled.value) resumeAutoRefresh()
+  }
+})
+watch(() => authStore.user?.id, () => {
+  accounts.value = []; facets.value = null; groups.value = []; proxies.value = []
+  clearSelection(); surfaceOrigin.value = undefined
+  detailsAccount.value = null; menu.show = false
+  showEdit.value = false; showReAuth.value = false; showTest.value = false
+  showStats.value = false; showBulkEdit.value = false; showBulkTaxonomy.value = false
+  showDeleteDialog.value = false; showTempUnsched.value = false; showExportDataDialog.value = false
+  consoleFilters.value = { ...consoleFilters.value, search: '', account_ids: [] }
+}, { flush: 'sync' })
+
 onMounted(async () => {
   if (route.query.operations === 'history') void accountJobsStore.openDrawer()
   if (typeof window !== 'undefined') {
@@ -3175,28 +3202,18 @@ onMounted(async () => {
     }
   }
 
-  if (isCindyScope.value) syncConsoleRoute('replace')
-  await Promise.all([load(), loadFacets(), loadTaxonomy(), loadCindyDeleteCandidateCount(), loadAPIKeyVisibility()])
-  loadUpstreamBillingProbeGlobalState()
-  const [proxiesResult, groupsResult] = await Promise.allSettled([
-    adminAPI.proxies.getAll(),
-    adminAPI.groups.getAll()
-  ])
-  if (proxiesResult.status === 'fulfilled') {
-    proxies.value = proxiesResult.value
-  } else {
-    console.error('Failed to load proxies:', proxiesResult.reason)
+  if (viewRequired.value && !pluginExtensions.loaded) { await pluginExtensions.refresh(); restoreViewRouteSelection() }
+  if (props.viewContribution && !viewUnavailable.value) syncConsoleRoute('replace')
+  if (!viewUnavailable.value) {
+    await Promise.all([load(), loadFacets(), loadTaxonomy(), loadAPIKeyVisibility(), loadPageChoices()]).catch(() => {})
+    loadUpstreamBillingProbeGlobalState()
   }
-  if (groupsResult.status === 'fulfilled') {
-    groups.value = groupsResult.value
-  } else {
-    console.error('Failed to load groups:', groupsResult.reason)
-  }
+  pageMounted = true
   window.addEventListener('scroll', handleScroll, true)
   window.addEventListener('resize', handleViewportResize)
   document.addEventListener('click', handleClickOutside)
 
-  if (autoRefreshEnabled.value) {
+  if (autoRefreshEnabled.value && !viewUnavailable.value) {
     autoRefreshCountdown.value = autoRefreshIntervalSeconds.value
     resumeAutoRefresh()
   } else {
@@ -3205,6 +3222,7 @@ onMounted(async () => {
 })
 
 onUnmounted(() => {
+  pageAlive = false
   upstreamBillingRateAbortController?.abort()
   if (usageBatchFlushTimer !== null) {
     clearTimeout(usageBatchFlushTimer)

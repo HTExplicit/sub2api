@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"sync"
 
 	extensionv1 "github.com/Wei-Shaw/sub2api/pkg/extensionapi/v1"
 )
@@ -30,17 +31,33 @@ func (e *PluginJobExecutor) PrepareAccountJob(ctx context.Context, job *AccountJ
 	if job == nil {
 		return ctx, nil, ErrAccountJobPluginUnavailable
 	}
+	if err := validateAccountViewJobKind(ctx, job.Kind, job.Metadata); err != nil {
+		return ctx, nil, err
+	}
 	owner, err := AccountJobPluginExecution(job.Metadata)
 	if err != nil {
 		return ctx, nil, err
 	}
-	release := func() {}
+	ctx, releaseView, err := e.manager.BindAccountJobView(ctx, job.Metadata, payload, false)
+	if err != nil {
+		return ctx, nil, err
+	}
+	releasePrimary := func() {}
+	var releaseOnce sync.Once
+	release := func() { releaseOnce.Do(func() { releasePrimary(); releaseView() }) }
+	preparedOK := false
+	defer func() {
+		if !preparedOK {
+			release()
+		}
+	}()
 	if owner.ID > 0 {
 		if owner.Generation <= 0 {
 			return ctx, nil, ErrAccountJobPluginUnavailable
 		}
-		ctx, release, err = e.manager.BindAccountJobExecution(ctx, owner.ID, owner.Generation, job.Kind)
+		ctx, releasePrimary, err = e.manager.BindAccountJobExecution(ctx, owner.ID, owner.Generation, job.Kind)
 		if err != nil {
+			releasePrimary = func() {}
 			return ctx, nil, err
 		}
 	} else {
@@ -55,7 +72,20 @@ func (e *PluginJobExecutor) PrepareAccountJob(ctx context.Context, job *AccountJ
 		case AccountJobKindBulkTaxonomy:
 			operation = "taxonomy.bulk"
 		}
-		if operation != "" {
+		if isCindyCleanupAccountJob(job.Kind) {
+			if e.manager == nil {
+				return ctx, nil, ErrAccountJobPluginUnavailable
+			}
+			id, lookupErr := e.manager.PinnedPluginOwner(ctx, CindyAccountViewPluginKey)
+			if lookupErr != nil {
+				return ctx, nil, ErrAccountJobPluginUnavailable
+			}
+			ctx, releasePrimary, err = e.manager.BindAccountJobExecution(ctx, id, 0, job.Kind)
+			if err != nil {
+				releasePrimary = func() {}
+				return ctx, nil, err
+			}
+		} else if operation != "" {
 			if e.manager == nil {
 				return ctx, nil, ErrAccountJobPluginUnavailable
 			}
@@ -63,8 +93,9 @@ func (e *PluginJobExecutor) PrepareAccountJob(ctx context.Context, job *AccountJ
 			if lookupErr != nil {
 				return ctx, nil, ErrAccountJobPluginUnavailable
 			}
-			ctx, release, err = e.manager.BindAccountJobExecution(ctx, id, 0, job.Kind)
+			ctx, releasePrimary, err = e.manager.BindAccountJobExecution(ctx, id, 0, job.Kind)
 			if err != nil {
+				releasePrimary = func() {}
 				return ctx, nil, err
 			}
 		} else if job.Kind == AccountJobKindExtensionOperation {
@@ -84,6 +115,7 @@ func (e *PluginJobExecutor) PrepareAccountJob(ctx context.Context, job *AccountJ
 			if prepared == nil {
 				prepared = ctx
 			}
+			preparedOK = true
 			return prepared, func() {
 				if cleanup != nil {
 					cleanup()
@@ -92,11 +124,18 @@ func (e *PluginJobExecutor) PrepareAccountJob(ctx context.Context, job *AccountJ
 			}, nil
 		}
 	}
+	preparedOK = true
 	return ctx, release, nil
 }
 
 func (e *PluginJobExecutor) ExecuteAccountJob(ctx context.Context, job *AccountJob, payload json.RawMessage, items []AccountJobItem) ([]AccountJobExecutionResult, error) {
 	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	if job == nil {
+		return nil, ErrAccountJobPluginUnavailable
+	}
+	if err := validateAccountJobViewExecution(ctx, job, payload, items); err != nil {
 		return nil, err
 	}
 	owner, ownerErr := AccountJobPluginExecution(job.Metadata)
@@ -118,7 +157,23 @@ func (e *PluginJobExecutor) ExecuteAccountJob(ctx context.Context, job *AccountJ
 				ids = append(ids, *item.TargetAccountID)
 			}
 		}
-		if err := e.manager.ValidateResourceAccounts(ctx, extensionv1.CapabilityAdmin, ids, len(ids) != len(items)); err != nil {
+		if isCindyCleanupAccountJob(job.Kind) {
+			if err := e.manager.ValidateResourcePolicy(ctx, CindyCleanupResourcePolicy(), nil, true); err != nil {
+				return nil, ErrAccountJobPluginUnavailable
+			}
+		} else if _, viewBound := AccountViewFromContext(ctx); viewBound {
+			targets := make([]*int64, 0, len(items))
+			for _, item := range items {
+				targets = append(targets, item.TargetAccountID)
+			}
+			viewIDs, err := accountViewJobTargets(job.Kind, payload, targets)
+			if err != nil {
+				return nil, err
+			}
+			if err := e.manager.ValidateResourcePolicy(ctx, extensionv1.ResourceDescriptor{ResourceGrant: extensionv1.ResourceGrant{Capability: extensionv1.CapabilityAdmin}}, viewIDs, false); err != nil {
+				return nil, ErrAccountJobPluginUnavailable
+			}
+		} else if err := e.manager.ValidateResourceAccounts(ctx, extensionv1.CapabilityAdmin, ids, len(ids) != len(items)); err != nil {
 			return nil, ErrAccountJobPluginUnavailable
 		}
 	}

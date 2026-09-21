@@ -3,7 +3,8 @@
  * Coding-plan rolling-window quota probe + payg balance probe.
  */
 
-import { apiClient } from '../client'
+import { accountViewClient } from './accountViewClient'
+import type { CapturedAccountView } from '@/composables/useAccountViewContext'
 
 /** 滚动用量窗口档（5 小时 / 每周），对齐后端 service.CNQuotaTier。 */
 export interface CNQuotaTier {
@@ -49,16 +50,16 @@ export interface CNProviderBalanceResult {
 }
 
 /** 查询 Coding Plan 滚动窗口用量（5h + weekly）。 */
-export async function queryQuota(id: number): Promise<CNProviderQuotaProbeResult> {
-  const { data } = await apiClient.get<CNProviderQuotaProbeResult>(
+export async function queryQuota(id: number, view?: CapturedAccountView): Promise<CNProviderQuotaProbeResult> {
+  const { data } = await accountViewClient(view).get<CNProviderQuotaProbeResult>(
     `/admin/cn-providers/accounts/${id}/quota`
   )
   return data
 }
 
 /** 查询 payg 账号余额。 */
-export async function queryBalance(id: number): Promise<CNProviderBalanceResult> {
-  const { data } = await apiClient.get<CNProviderBalanceResult>(
+export async function queryBalance(id: number, view?: CapturedAccountView): Promise<CNProviderBalanceResult> {
+  const { data } = await accountViewClient(view).get<CNProviderBalanceResult>(
     `/admin/cn-providers/accounts/${id}/balance`
   )
   return data

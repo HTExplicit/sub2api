@@ -2,7 +2,9 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"slices"
 
 	extensionv1 "github.com/Wei-Shaw/sub2api/pkg/extensionapi/v1"
 )
@@ -158,24 +160,31 @@ func (m *PluginManager) ResourceDescriptors(ctx context.Context, id int64, permi
 	if permission != "admin" && permission != "user" {
 		return nil, errors.New("invalid resource permission")
 	}
+	originAvailable := true
+	if identity, retained := RetainedAccountViewIdentity(ctx); retained {
+		_, release, err := m.BindAccountViewRequest(ctx, extensionv1.AccountViewContextV1{AccountViewIdentityV1: *identity})
+		originAvailable = err == nil
+		if release != nil {
+			release()
+		}
+	}
 	out := make([]extensionv1.ResourceDescriptor, 0)
 	availability := map[string]bool{}
 	for _, descriptor := range registered {
 		if descriptor.Permission != permission || !pluginDeclaresResource(installation, descriptor.ResourceGrant) {
 			continue
 		}
-		cacheKey := descriptor.Capability
-		if descriptor.Retained {
-			cacheKey += "/retained"
-		}
-		if descriptor.AllAccounts {
-			cacheKey += "/all-accounts"
-		}
+		policy, _ := json.Marshal(struct {
+			Capabilities                 []string
+			Retained, AllAccounts        bool
+			Platform, AccountType, Owner string
+		}{resourceRequiredCapabilities(descriptor), descriptor.Retained, descriptor.AllAccounts, descriptor.FilterPlatform, descriptor.FilterAccountType, descriptor.OwnerPluginKey})
+		cacheKey := string(policy)
 		ready, known := availability[cacheKey]
 		if !known {
 			bound, release, err := m.BindResourceContext(ctx, id, installation.PackageSHA256, descriptor.ResourceGrant, descriptor.Retained)
-			if err == nil && descriptor.AllAccounts {
-				err = m.ValidateResourceAccounts(bound, descriptor.Capability, nil, true)
+			if err == nil && !descriptor.Retained {
+				err = m.ValidateResourcePolicy(bound, descriptor, nil, descriptor.AllAccounts)
 			}
 			ready = err == nil
 			if release != nil {
@@ -183,8 +192,112 @@ func (m *PluginManager) ResourceDescriptors(ctx context.Context, id int64, permi
 			}
 			availability[cacheKey] = ready
 		}
-		descriptor.Available = ready
+		descriptor.Available = ready && (descriptor.Retained || originAvailable)
 		out = append(out, descriptor)
 	}
 	return out, nil
+}
+
+func resourceRequiredCapabilities(descriptor extensionv1.ResourceDescriptor) []string {
+	capabilities := append([]string{descriptor.Capability}, descriptor.RequiredCapabilities...)
+	slices.Sort(capabilities)
+	return slices.Compact(capabilities)
+}
+
+func (m *PluginManager) ValidateResourcePolicy(ctx context.Context, descriptor extensionv1.ResourceDescriptor, ids []int64, filtered bool) error {
+	execution, bound := PluginExecutionFromContext(ctx)
+	if !bound {
+		return ErrExtensionOperationUnavailable
+	}
+	installation, err := m.repo.GetByID(ctx, execution.ID)
+	if err != nil || installation == nil || installation.RuntimeGeneration != execution.Generation || installation.State != PluginStateEnabled || (descriptor.OwnerPluginKey != "" && installation.PluginKey != descriptor.OwnerPluginKey) {
+		return ErrExtensionOperationUnavailable
+	}
+	registry := m.extensions.Load()
+	if registry == nil || registry.unavailable != "" || !samePluginRuntime(installation, registry.installations[execution.ID]) {
+		return ErrExtensionOperationUnavailable
+	}
+	if _, applied := m.contributionAppliedRevision(installation, registry.runtimes[execution.ID]); !applied {
+		return ErrExtensionOperationUnavailable
+	}
+	for _, capability := range resourceRequiredCapabilities(descriptor) {
+		enabled := false
+		for _, binding := range installation.Bindings {
+			enabled = enabled || (binding.Enabled && binding.Capability == capability)
+		}
+		if !enabled {
+			return ErrExtensionOperationDisabled
+		}
+		if err := m.ValidateResourceAccounts(ctx, capability, ids, filtered, descriptor.FilterPlatform, descriptor.FilterAccountType); err != nil {
+			return err
+		}
+	}
+	for _, contribution := range installation.Manifest.Contributions {
+		if contribution.ResourceAction == nil || contribution.ResourceAction.Resource != descriptor.Name {
+			continue
+		}
+		directory, ok := m.accountDirectory.(accountViewAccountDirectory)
+		if !ok && len(ids) > 0 {
+			return ErrExtensionOperationUnavailable
+		}
+		for _, id := range ids {
+			account, err := directory.ReadAccountViewAccount(ctx, id)
+			if err != nil || account == nil || account.ID != id || !contributionAccountAllowed(installation, &contribution, *extensionAccount(account)) || (contribution.ResourceAction.RowPredicate != nil && !accountMatchesViewPredicate(account, *contribution.ResourceAction.RowPredicate)) {
+				return ErrAccountViewScope
+			}
+		}
+	}
+	return nil
+}
+
+type boundResourcePolicyKey struct{}
+type boundResourcePolicy struct {
+	manager    *PluginManager
+	descriptor extensionv1.ResourceDescriptor
+}
+
+func PluginResourceBound(ctx context.Context) bool {
+	_, bound := ctx.Value(boundResourcePolicyKey{}).(boundResourcePolicy)
+	return bound
+}
+
+func (m *PluginManager) WithResourcePolicy(ctx context.Context, descriptor extensionv1.ResourceDescriptor) context.Context {
+	return context.WithValue(ctx, boundResourcePolicyKey{}, boundResourcePolicy{m, descriptor})
+}
+
+func ValidateBoundResourceTargets(ctx context.Context, ids []int64) error {
+	policy, bound := ctx.Value(boundResourcePolicyKey{}).(boundResourcePolicy)
+	if !bound {
+		return nil
+	}
+	return policy.manager.ValidateResourcePolicy(ctx, policy.descriptor, ids, policy.descriptor.AllAccounts)
+}
+
+func (m *PluginManager) PinnedPluginOwner(ctx context.Context, key string) (int64, error) {
+	registry := m.extensions.Load()
+	if registry == nil || registry.unavailable != "" {
+		return 0, ErrExtensionOperationUnavailable
+	}
+	var owner int64
+	for id, installation := range registry.installations {
+		if installation.PluginKey != key {
+			continue
+		}
+		if owner != 0 {
+			return 0, ErrExtensionOperationUnavailable
+		}
+		owner = id
+	}
+	if owner == 0 {
+		return 0, ErrExtensionOperationDisabled
+	}
+	current, err := m.repo.GetByID(ctx, owner)
+	if err != nil || current == nil || current.PluginKey != key || current.State != PluginStateEnabled || !samePluginRuntime(current, registry.installations[owner]) {
+		return 0, ErrExtensionOperationUnavailable
+	}
+	return owner, nil
+}
+
+func CindyCleanupResourcePolicy() extensionv1.ResourceDescriptor {
+	return extensionv1.ResourceDescriptor{ResourceGrant: extensionv1.ResourceGrant{Capability: extensionv1.CapabilityProvider, Permission: "admin"}, RequiredCapabilities: []string{extensionv1.CapabilityAdmin}, OwnerPluginKey: CindyAccountViewPluginKey, AllAccounts: true, FilterPlatform: PlatformCindy, FilterAccountType: AccountTypeAPIKey, WholeAccountViewDomain: true}
 }

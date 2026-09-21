@@ -190,21 +190,24 @@ type BulkUpdateAccountsRequest struct {
 }
 
 type BulkUpdateAccountFilters struct {
-	Platform    string `json:"platform"`
-	Type        string `json:"type"`
-	Status      string `json:"status"`
-	Platforms   string `json:"platforms"`
-	Types       string `json:"types"`
-	Statuses    string `json:"statuses"`
-	Plans       string `json:"plans"`
-	Proxies     string `json:"proxies"`
-	Folder      string `json:"folder"`
-	Folders     string `json:"folders"`
-	Tags        string `json:"tags"`
-	AccountIDs  string `json:"account_ids"`
-	Group       string `json:"group"`
-	Search      string `json:"search"`
-	PrivacyMode string `json:"privacy_mode"`
+	CindyOnly          bool   `json:"cindy_only,omitempty"`
+	CindyBalanceStatus string `json:"cindy_balance_status,omitempty"`
+	CindyHealthStatus  string `json:"cindy_health_status,omitempty"`
+	Platform           string `json:"platform"`
+	Type               string `json:"type"`
+	Status             string `json:"status"`
+	Platforms          string `json:"platforms"`
+	Types              string `json:"types"`
+	Statuses           string `json:"statuses"`
+	Plans              string `json:"plans"`
+	Proxies            string `json:"proxies"`
+	Folder             string `json:"folder"`
+	Folders            string `json:"folders"`
+	Tags               string `json:"tags"`
+	AccountIDs         string `json:"account_ids"`
+	Group              string `json:"group"`
+	Search             string `json:"search"`
+	PrivacyMode        string `json:"privacy_mode"`
 }
 
 // CheckMixedChannelRequest represents check mixed channel risk request
@@ -723,7 +726,8 @@ func (h *AccountHandler) List(c *gin.Context) {
 		consoleService accountConsoleAdminService
 		err            error
 	)
-	if hasAccountConsoleFilters(c) {
+	_, accountViewBound := service.AccountViewFromContext(c.Request.Context())
+	if hasAccountConsoleFilters(c) || accountViewBound {
 		filters, filterErr := parseAccountConsoleFilters(c, groupID)
 		if filterErr != nil {
 			response.ErrorFrom(c, filterErr)
@@ -2022,6 +2026,11 @@ func (h *AccountHandler) BulkUpdate(c *gin.Context) {
 
 	ids := normalizeInt64IDList(req.AccountIDs)
 	req.AccountIDs = ids
+	submission := req
+	_, viewScopedSubmission := service.AccountViewFromContext(c.Request.Context())
+	if h.replayScopedAccountJob(c, service.AccountJobKindBulkUpdate, submission) {
+		return
+	}
 	if service.HasOpenAIReasoningPolicyUpdates(req.Extra) {
 		// A bulk worker processes individual items. Validate the complete set
 		// before submitting any item, not only the UI's current metadata page.
@@ -2084,6 +2093,9 @@ func (h *AccountHandler) BulkUpdate(c *gin.Context) {
 			return
 		}
 	}
+	if viewScopedSubmission {
+		req = submission
+	}
 	h.submitAccountJob(c, service.AccountJobKindBulkUpdate, req, accountJobSeeds(ids))
 }
 
@@ -2112,6 +2124,7 @@ func toServiceBulkUpdateAccountFilters(filters *BulkUpdateAccountFilters) (*serv
 		PrivacyMode: filters.PrivacyMode,
 	}
 	usesConsoleFilters := strings.TrimSpace(filters.Platforms) != "" ||
+		filters.CindyOnly || filters.CindyBalanceStatus != "" || filters.CindyHealthStatus != "" ||
 		strings.TrimSpace(filters.Types) != "" || strings.TrimSpace(filters.Statuses) != "" ||
 		strings.TrimSpace(filters.Plans) != "" || strings.TrimSpace(filters.Proxies) != "" ||
 		strings.TrimSpace(filters.Folder) != "" || strings.TrimSpace(filters.Folders) != "" ||
@@ -2132,9 +2145,13 @@ func toServiceBulkUpdateAccountFilters(filters *BulkUpdateAccountFilters) (*serv
 		statuses = []string{strings.TrimSpace(filters.Status)}
 	}
 	console := &service.AccountConsoleFilters{
+		CindyOnly: filters.CindyOnly, CindyBalanceStatus: filters.CindyBalanceStatus, CindyHealthStatus: filters.CindyHealthStatus,
 		Platforms: platforms, Types: types, Statuses: statuses,
 		Plans: splitBulkAccountFilterValues(filters.Plans), Search: strings.TrimSpace(filters.Search),
 		GroupID: 0, PrivacyMode: strings.TrimSpace(filters.PrivacyMode), SortBy: "id", SortOrder: "asc",
+	}
+	if (filters.CindyBalanceStatus != "" && filters.CindyBalanceStatus != "insufficient") || (filters.CindyHealthStatus != "" && filters.CindyHealthStatus != "banned") {
+		return nil, service.ErrAccountViewInvalid
 	}
 	switch strings.TrimSpace(filters.Group) {
 	case "":

@@ -363,13 +363,24 @@ func (h *PluginHandler) createUISession(c *gin.Context, permission string) {
 		return
 	}
 	var input struct {
-		Contribution string `json:"contribution_id"`
+		Contribution string                            `json:"contribution_id"`
+		ViewContext  *extensionv1.AccountViewContextV1 `json:"view_context,omitempty"`
 	}
 	if c.Request.ContentLength > 0 && c.ShouldBindJSON(&input) != nil {
 		response.BadRequest(c, "Invalid plugin UI context")
 		return
 	}
-	session, err := h.manager.CreateUIAssetSession(c.Request.Context(), id, input.Contribution, permission, pluginUISessionTTL)
+	ctx := c.Request.Context()
+	if actor, ok := middleware.GetAuthSubjectFromContext(c); ok {
+		ctx = service.WithPluginUIActor(ctx, actor.UserID)
+	}
+	if input.ViewContext != nil {
+		if view, bound := service.AccountViewFromContext(ctx); !bound || view.Request.AccountViewIdentityV1 != input.ViewContext.AccountViewIdentityV1 {
+			accountViewRequestError(c, service.ErrAccountViewInvalid)
+			return
+		}
+	}
+	session, err := h.manager.CreateUIAssetSession(ctx, id, input.Contribution, permission, pluginUISessionTTL)
 	if err != nil {
 		response.ErrorFrom(c, err)
 		return
@@ -387,6 +398,8 @@ func (h *PluginHandler) createUISession(c *gin.Context, permission string) {
 		"package_sha256":    session.PackageSHA256,
 		"plugin_key":        session.PluginKey,
 		"permission":        session.Permission,
+		"view_context":      session.ViewContext,
+		"request_binding":   session.Token,
 	})
 }
 

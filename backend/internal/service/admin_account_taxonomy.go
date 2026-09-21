@@ -81,6 +81,7 @@ type AccountFacetOption struct {
 }
 
 type AccountConsoleFacets struct {
+	ViewPresetCounts   map[string]int            `json:"view_preset_counts,omitempty"`
 	Total              int                       `json:"total"`
 	UncategorizedCount int                       `json:"uncategorized_count"`
 	Platforms          []AccountFacetOption      `json:"platforms"`
@@ -769,6 +770,7 @@ func (s *adminServiceImpl) accountConsoleQuery(filters AccountConsoleFilters) *d
 	field := map[string]string{
 		"id": dbaccount.FieldID, "name": dbaccount.FieldName, "platform": dbaccount.FieldPlatform,
 		"type": dbaccount.FieldType, "status": dbaccount.FieldStatus, "priority": dbaccount.FieldPriority,
+		"schedulable": dbaccount.FieldSchedulable,
 		"concurrency": dbaccount.FieldConcurrency, "rate_multiplier": dbaccount.FieldRateMultiplier,
 		"last_used_at": dbaccount.FieldLastUsedAt, "created_at": dbaccount.FieldCreatedAt,
 		"updated_at": dbaccount.FieldUpdatedAt, "expires_at": dbaccount.FieldExpiresAt,
@@ -904,10 +906,68 @@ func (s *adminServiceImpl) listAccountConsoleAll(ctx context.Context, filters Ac
 	if err != nil {
 		return nil, err
 	}
+	// GetByIDs is not required to preserve caller order. Keep the SQL source's
+	// bounded, allowlisted sort order before scope filtering and pagination.
+	byID := make(map[int64]*Account, len(accounts))
+	for _, account := range accounts {
+		if account != nil {
+			byID[account.ID] = account
+		}
+	}
+	accounts = make([]*Account, 0, len(ids))
+	for _, id := range ids {
+		if account := byID[id]; account != nil {
+			accounts = append(accounts, account)
+		}
+	}
 	if err := s.hydrateAccountTaxonomy(ctx, accounts); err != nil {
 		return nil, err
 	}
-	return filterConsoleAccounts(accounts, filters), nil
+	accounts, err = filterAccountViewAccounts(ctx, accounts)
+	if err != nil {
+		return nil, err
+	}
+	accounts = filterConsoleAccounts(accounts, filters)
+	if filters.SortBy == "upstream_billing_rate" {
+		now := time.Now()
+		type rateValue struct {
+			rate  float64
+			known bool
+		}
+		values := make(map[int64]rateValue, len(accounts))
+		for _, account := range accounts {
+			snapshot := decodeUpstreamBillingProbeSnapshot(account.Extra)
+			if snapshot == nil || (snapshot.Status != UpstreamBillingProbeStatusOK && snapshot.Status != UpstreamBillingProbeStatusFailed) {
+				continue
+			}
+			rate, known := upstreamBillingRateAt(snapshot.Data, now)
+			if _, resolved := snapshot.Data["resolved_rate_multiplier"]; !resolved {
+				if _, peak := snapshot.Data["peak_rate_enabled"]; !peak {
+					rate, known = resolveAccountExtraNumber(snapshot.Data, "effective_rate_multiplier")
+					known = known && rate >= 0
+				}
+			}
+			values[account.ID] = rateValue{rate, known}
+		}
+		descending := strings.EqualFold(filters.SortOrder, "desc")
+		sort.SliceStable(accounts, func(i, j int) bool {
+			left, right := values[accounts[i].ID], values[accounts[j].ID]
+			if left.known != right.known {
+				return left.known
+			}
+			if left.known && left.rate != right.rate {
+				if descending {
+					return left.rate > right.rate
+				}
+				return left.rate < right.rate
+			}
+			if descending {
+				return accounts[i].ID > accounts[j].ID
+			}
+			return accounts[i].ID < accounts[j].ID
+		})
+	}
+	return accounts, nil
 }
 
 func (s *adminServiceImpl) ListAccountsConsole(ctx context.Context, page, pageSize int, filters AccountConsoleFilters) ([]Account, int64, error) {
@@ -1107,6 +1167,19 @@ func filterAccountsForFacet(accounts []*Account, matcher accountFacetMatcher, ig
 }
 
 func (s *adminServiceImpl) GetAccountConsoleFacets(ctx context.Context, filters AccountConsoleFilters) (*AccountConsoleFacets, error) {
+	var viewPresetCounts map[string]int
+	if view, bound := AccountViewFromContext(ctx); bound {
+		viewPresetCounts = make(map[string]int, len(view.contribution.AccountView.Presets))
+		common := filters
+		common.CindyOnly, common.CindyBalanceStatus, common.CindyHealthStatus = false, "", ""
+		for _, preset := range view.contribution.AccountView.Presets {
+			candidates, err := s.listAccountConsoleAll(accountViewPresetContext(ctx, preset), common)
+			if err != nil {
+				return nil, err
+			}
+			viewPresetCounts[preset.ID] = accountViewCounter(preset.Counter, candidates)
+		}
+	}
 	baseFilters := filters
 	baseFilters.Platforms = nil
 	baseFilters.Types = nil
@@ -1223,6 +1296,7 @@ func (s *adminServiceImpl) GetAccountConsoleFacets(ctx context.Context, filters 
 		return strings.ToLower(proxyOptions[i].Label) < strings.ToLower(proxyOptions[j].Label)
 	})
 	return &AccountConsoleFacets{
+		ViewPresetCounts: viewPresetCounts,
 		// Folder navigation always represents the complete result set after all
 		// non-folder filters, so total must use the same population as its counts.
 		Total: len(folderAccounts), UncategorizedCount: uncategorizedCount,

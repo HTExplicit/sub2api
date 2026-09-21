@@ -1,5 +1,5 @@
 <template>
-  <ExtensionModal :show="show" name="account-import" :context="{ view_props: choices }" @close="emit('close')" @job="job => emit('imported', job)" />
+  <ExtensionModal :show="show" name="account-import" plugin-key="codexrip.account-tools" independent-core :context="{ view_props: choices }" @close="emit('close')" @job="job => emit('imported', job)" />
 </template>
 <script setup lang="ts">
 import { computed } from 'vue'

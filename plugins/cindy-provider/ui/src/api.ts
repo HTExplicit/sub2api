@@ -17,6 +17,7 @@ export interface CindyBalanceProbeFilters {
   group_id?: number
   privacy_mode?: string
   cindy_balance_status?: string
+  cindy_health_status?: string
   sort_by?: string
   sort_order?: string
 }
@@ -187,6 +188,17 @@ export interface CindyGroupSplitResult extends CindyGroupSplitPreview {
 
 
 export interface ApiKey { id: number; name: string; display_key: string; status: string }
+export type CindyCleanupKind = 'insufficient' | 'banned'
+export interface CindyCleanupPreview { count: number; fingerprint: string }
+export interface CindyCleanupJob { id: number }
+export const cindyCleanupAPI = {
+  preview: (kind: CindyCleanupKind, operationKey: string, signal?: AbortSignal) =>
+    resource<CindyCleanupPreview>(`cindy.cleanup.${kind}.preview`, { operation_key: operationKey }, signal),
+  submit: (kind: CindyCleanupKind, preview: CindyCleanupPreview, operationKey: string) =>
+    resource<CindyCleanupJob>(`cindy.cleanup.${kind}.submit`, {
+      operation_key: operationKey, body: { expected_count: preview.count, fingerprint: preview.fingerprint }
+    })
+}
 export interface CindyDuplicateIdentityGroup { identity_hash: string; proposed_owner_id: number; other_account_ids: number[] }
 export const cindyBalanceProbeAPI = {
   preview: (body: CindyBalanceProbePreviewRequest) => resource<CindyBalanceProbePreview>('cindy.probe.preview', { body }),

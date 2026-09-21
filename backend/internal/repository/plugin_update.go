@@ -287,18 +287,27 @@ func (r *pluginRepository) SetPluginUpdatePolicy(ctx context.Context, id, revisi
 // State publication shares the installation lock with package/config changes.
 // A stale process cannot race a generation check and then commit its projection.
 func lockPluginExecution(ctx context.Context, tx *sql.Tx, plugin string) error {
-	execution, ok := service.PluginExecutionFromContext(ctx)
-	if !ok {
-		return nil
-	}
-	var generation int64
-	var state string
-	err := tx.QueryRowContext(ctx, `SELECT runtime_generation,state FROM sub2api_plugin_installations WHERE id=$1 AND plugin_key=$2 FOR SHARE`, execution.ID, plugin).Scan(&generation, &state)
+	fences, err := service.PluginExecutionFences(ctx, plugin)
 	if err != nil {
 		return err
 	}
-	if generation != execution.Generation || state == service.PluginStateUpdating {
-		return service.ErrPluginStateChanged
+	for _, fence := range fences {
+		if fence.Primary {
+			var generation int64
+			var state string
+			err := tx.QueryRowContext(ctx, `SELECT runtime_generation,state FROM sub2api_plugin_installations WHERE id=$1 AND plugin_key=$2 FOR SHARE`, fence.ID, plugin).Scan(&generation, &state)
+			if err != nil {
+				return err
+			}
+			if generation != fence.Generation || state == service.PluginStateUpdating {
+				return service.ErrPluginStateChanged
+			}
+		}
+		if fence.OriginView {
+			if err := lockOriginAccountView(ctx, tx, fence); err != nil {
+				return err
+			}
+		}
 	}
 	return nil
 }

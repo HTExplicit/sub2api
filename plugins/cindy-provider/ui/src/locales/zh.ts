@@ -1,4 +1,12 @@
-export default { common: {
+export default { accountView: {
+    insufficientTitle: '清理额度耗尽的 Cindy 账号', bannedTitle: '清理已封禁的 Cindy 账号',
+    fullScopeRequired: '全域清理需要 Provider 和 Admin 均完整覆盖 Cindy API Key 账号（100%）。',
+    wholeDomain: '此操作覆盖全部符合条件的 Cindy API Key 账号，不受当前搜索或勾选范围限制。',
+    insufficientConfirm: '确认删除全部 {count} 个已确认额度耗尽的 Cindy 账号？此操作不可撤销。',
+    bannedConfirm: '确认删除全部 {count} 个已封禁的 Cindy 账号？此操作不可撤销。',
+    changed: '候选账号已变化。原预览和已有结果已保留，请重新预览并确认后再提交。',
+    refreshPreview: '重新预览', invalidPreview: '清理预览无效。', result: '查看操作结果'
+  }, common: {
     loading: '加载中...',
     submitting: '提交中...',
     justNow: '刚刚',

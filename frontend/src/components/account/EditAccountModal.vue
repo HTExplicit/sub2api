@@ -3190,6 +3190,8 @@
 </template>
 
 <script setup lang="ts">
+import { useAccountViewOperation } from '@/composables/useAccountViewContext'
+import { accountAPIForView } from '@/api/admin/accounts'
 import { ref, reactive, computed, watch, nextTick } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useAppStore } from '@/stores/app'
@@ -3305,6 +3307,9 @@ interface Props {
 }
 
 const props = defineProps<Props>()
+const accountViewOperation = useAccountViewOperation(() => props.show, () => props.account?.id)
+function scopedAccounts() { return accountAPIForView(accountViewOperation.capture(), adminAPI.accounts) }
+
 const emit = defineEmits<{
   close: []
   updated: [account: Account]
@@ -3625,7 +3630,7 @@ const loadGrokMediaEligibility = async (accountID: number): Promise<GrokMediaEli
   grokMediaEligibilityLoading.value = true
   grokMediaEligibilityError.value = ''
   try {
-    const state = await adminAPI.accounts.getGrokMediaEligibility(accountID)
+    const state = await scopedAccounts().getGrokMediaEligibility(accountID)
     if (requestVersion !== grokMediaEligibilityRequestVersion) return null
     grokMediaEligibilityState.value = state
     grokMediaEligibilityMode.value = state.mode
@@ -4637,7 +4642,7 @@ const loadCindyManagedModels = async (account: Account) => {
 
   cindyCatalogLoading.value = true
   try {
-    const models = await adminAPI.accounts.getAvailableModels(account.id)
+    const models = await scopedAccounts().getAvailableModels(account.id)
     if (requestSequence !== cindyCatalogRequestSequence) return
 
     cindyManagedCatalog.value = models.filter(model => model.managed === true && !model.alias_target)
@@ -4769,7 +4774,7 @@ const syncAntigravityUpstreamModels = async () => {
   isSyncingAntigravityUpstream.value = true
   try {
     const accountID = props.account.id
-    const result = await synchronizeCapacity(() => adminAPI.accounts.syncUpstreamModels(accountID))
+    const result = await synchronizeCapacity(() => scopedAccounts().syncUpstreamModels(accountID))
     if (!result) return
     const upstreamModels = result.models.map((model) => model.trim()).filter(Boolean)
     if (upstreamModels.length === 0) {
@@ -5190,7 +5195,7 @@ const ensureAntigravityMixedChannelConfirmed = async (onConfirm: () => Promise<v
   }
 
   try {
-    const result = await adminAPI.accounts.checkMixedChannelRisk({
+    const result = await scopedAccounts().checkMixedChannelRisk({
       platform: props.account.platform,
       group_ids: form.group_ids,
       account_id: props.account.id
@@ -5233,7 +5238,7 @@ const persistGrokMediaEligibility = async (accountID: number, updatedAccount: Ac
   }
 
   try {
-    const state = await adminAPI.accounts.updateGrokMediaEligibility(accountID, grokMediaEligibilityMode.value)
+    const state = await scopedAccounts().updateGrokMediaEligibility(accountID, grokMediaEligibilityMode.value)
     grokMediaEligibilityState.value = state
     grokMediaEligibilityInitialMode.value = state.mode
     const nextExtra = { ...((updatedAccount.extra as Record<string, unknown> | undefined) || {}) }
@@ -5263,7 +5268,7 @@ const persistGrokMediaEligibility = async (accountID: number, updatedAccount: Ac
 const submitUpdateAccount = async (accountID: number, updatePayload: Record<string, unknown>) => {
   submitting.value = true
   try {
-    let updatedAccount = await adminAPI.accounts.update(accountID, withAntigravityConfirmFlag(updatePayload))
+    let updatedAccount = await scopedAccounts().update(accountID, withAntigravityConfirmFlag(updatePayload))
     updatedAccount = await persistGrokMediaEligibility(accountID, updatedAccount)
     appStore.showSuccess(t('admin.accounts.accountUpdated'))
     emit('updated', updatedAccount)

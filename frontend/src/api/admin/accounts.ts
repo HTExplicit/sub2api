@@ -4,6 +4,8 @@
  */
 
 import { apiClient } from '../client'
+import { accountViewClient } from './accountViewClient'
+import type { CapturedAccountView } from '@/composables/useAccountViewContext'
 import {
   accountJobIdempotencyHeaders,
   type AccountJob
@@ -76,9 +78,9 @@ export async function list(
   filters?: AccountListFilters,
   options?: {
     signal?: AbortSignal
-  }
+  }, view?: CapturedAccountView
 ): Promise<PaginatedResponse<AccountListItem>> {
-  const { data } = await apiClient.get<PaginatedResponse<AccountListItem>>('/admin/accounts', {
+  const { data } = await accountViewClient(view).get<PaginatedResponse<AccountListItem>>('/admin/accounts', {
     params: {
       page,
       page_size: pageSize,
@@ -117,12 +119,12 @@ export async function getUpstreamBillingRatesWithEtag(
   options?: {
     signal?: AbortSignal
     etag?: string | null
-  }
+  }, view?: CapturedAccountView
 ): Promise<AccountUpstreamBillingRatesWithEtagResult> {
   const headers: Record<string, string> = {}
   if (options?.etag) headers['If-None-Match'] = options.etag
 
-  const response = await apiClient.get<UpstreamBillingRatesResponse>('/admin/accounts/upstream-billing-rates', {
+  const response = await accountViewClient(view).get<UpstreamBillingRatesResponse>('/admin/accounts/upstream-billing-rates', {
     params: { page, page_size: pageSize, ...filters },
     headers,
     signal: options?.signal,
@@ -141,14 +143,14 @@ export async function listWithEtag(
   options?: {
     signal?: AbortSignal
     etag?: string | null
-  }
+  }, view?: CapturedAccountView
 ): Promise<AccountListWithEtagResult> {
   const headers: Record<string, string> = {}
   if (options?.etag) {
     headers['If-None-Match'] = options.etag
   }
 
-  const response = await apiClient.get<PaginatedResponse<AccountListItem>>('/admin/accounts', {
+  const response = await accountViewClient(view).get<PaginatedResponse<AccountListItem>>('/admin/accounts', {
     params: {
       page,
       page_size: pageSize,
@@ -180,8 +182,8 @@ export async function listWithEtag(
  * @param id - Account ID
  * @returns Account details
  */
-export async function getById(id: number): Promise<Account> {
-  const { data } = await apiClient.get<Account>(`/admin/accounts/${id}`)
+export async function getById(id: number, view?: CapturedAccountView): Promise<Account> {
+  const { data } = await accountViewClient(view).get<Account>(`/admin/accounts/${id}`)
   return data
 }
 
@@ -189,16 +191,16 @@ export interface AccountAPIKeyVisibility {
   enabled: boolean
 }
 
-export async function getAPIKeyVisibility(): Promise<AccountAPIKeyVisibility> {
-  const { data } = await apiClient.get<AccountAPIKeyVisibility>('/admin/accounts/api-key-visibility')
+export async function getAPIKeyVisibility(view?: CapturedAccountView): Promise<AccountAPIKeyVisibility> {
+  const { data } = await accountViewClient(view).get<AccountAPIKeyVisibility>('/admin/accounts/api-key-visibility')
   return data
 }
 
 export async function setAPIKeyVisibility(payload: {
   enabled: boolean
   password?: string
-}): Promise<AccountAPIKeyVisibility> {
-  const { data } = await apiClient.put<AccountAPIKeyVisibility>('/admin/accounts/api-key-visibility', payload)
+}, view?: CapturedAccountView): Promise<AccountAPIKeyVisibility> {
+  const { data } = await accountViewClient(view).put<AccountAPIKeyVisibility>('/admin/accounts/api-key-visibility', payload)
   return data
 }
 
@@ -240,7 +242,7 @@ function storeDuplicateOperationKey(id: number, key: string | null): void {
   }
 }
 
-export async function duplicate(id: number): Promise<Account> {
+export async function duplicate(id: number, view?: CapturedAccountView): Promise<Account> {
   let idempotencyKey = duplicateOperationKeys.get(id) ?? getStoredDuplicateOperationKey(id)
   if (!idempotencyKey) {
     const requestID = globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(36).slice(2)}`
@@ -248,7 +250,7 @@ export async function duplicate(id: number): Promise<Account> {
   }
   duplicateOperationKeys.set(id, idempotencyKey)
   storeDuplicateOperationKey(id, idempotencyKey)
-  const { data } = await apiClient.post<Account>(`/admin/accounts/${id}/duplicate`, undefined, {
+  const { data } = await accountViewClient(view).post<Account>(`/admin/accounts/${id}/duplicate`, undefined, {
     headers: { 'Idempotency-Key': idempotencyKey }
   })
   duplicateOperationKeys.delete(id)
@@ -262,13 +264,13 @@ export async function duplicate(id: number): Promise<Account> {
  * @param updates - Fields to update
  * @returns Updated account
  */
-export async function update(id: number, updates: UpdateAccountRequest): Promise<Account> {
-  const { data } = await apiClient.put<Account>(`/admin/accounts/${id}`, updates)
+export async function update(id: number, updates: UpdateAccountRequest, view?: CapturedAccountView): Promise<Account> {
+  const { data } = await accountViewClient(view).put<Account>(`/admin/accounts/${id}`, updates)
   return data
 }
 
-export async function getGrokMediaEligibility(id: number): Promise<GrokMediaEligibilityState> {
-  const { data } = await apiClient.get<GrokMediaEligibilityState>(
+export async function getGrokMediaEligibility(id: number, view?: CapturedAccountView): Promise<GrokMediaEligibilityState> {
+  const { data } = await accountViewClient(view).get<GrokMediaEligibilityState>(
     `/admin/accounts/${id}/grok-media-eligibility`
   )
   return data
@@ -276,9 +278,9 @@ export async function getGrokMediaEligibility(id: number): Promise<GrokMediaElig
 
 export async function updateGrokMediaEligibility(
   id: number,
-  mode: GrokMediaEligibilityMode
+  mode: GrokMediaEligibilityMode, view?: CapturedAccountView
 ): Promise<GrokMediaEligibilityState> {
-  const { data } = await apiClient.put<GrokMediaEligibilityState>(
+  const { data } = await accountViewClient(view).put<GrokMediaEligibilityState>(
     `/admin/accounts/${id}/grok-media-eligibility`,
     { mode }
   )
@@ -289,9 +291,9 @@ export async function updateGrokMediaEligibility(
  * Check mixed-channel risk for account-group binding.
  */
 export async function checkMixedChannelRisk(
-  payload: CheckMixedChannelRequest
+  payload: CheckMixedChannelRequest, view?: CapturedAccountView
 ): Promise<CheckMixedChannelResponse> {
-  const { data } = await apiClient.post<CheckMixedChannelResponse>('/admin/accounts/check-mixed-channel', payload)
+  const { data } = await accountViewClient(view).post<CheckMixedChannelResponse>('/admin/accounts/check-mixed-channel', payload)
   return data
 }
 
@@ -300,8 +302,8 @@ export async function checkMixedChannelRisk(
  * @param id - Account ID
  * @returns Success confirmation
  */
-export async function deleteAccount(id: number): Promise<{ message: string }> {
-  const { data } = await apiClient.delete<{ message: string }>(`/admin/accounts/${id}`)
+export async function deleteAccount(id: number, view?: CapturedAccountView): Promise<{ message: string }> {
+  const { data } = await accountViewClient(view).delete<{ message: string }>(`/admin/accounts/${id}`)
   return data
 }
 
@@ -311,8 +313,8 @@ export async function deleteAccount(id: number): Promise<{ message: string }> {
  * @param status - New status
  * @returns Updated account
  */
-export async function toggleStatus(id: number, status: 'active' | 'inactive'): Promise<Account> {
-  return update(id, { status })
+export async function toggleStatus(id: number, status: 'active' | 'inactive', view?: CapturedAccountView): Promise<Account> {
+  return update(id, { status }, view)
 }
 
 /**
@@ -320,12 +322,12 @@ export async function toggleStatus(id: number, status: 'active' | 'inactive'): P
  * @param id - Account ID
  * @returns Test result
  */
-export async function testAccount(id: number): Promise<{
+export async function testAccount(id: number, view?: CapturedAccountView): Promise<{
   success: boolean
   message: string
   latency_ms?: number
 }> {
-  const { data } = await apiClient.post<{
+  const { data } = await accountViewClient(view).post<{
     success: boolean
     message: string
     latency_ms?: number
@@ -342,8 +344,8 @@ export type RefreshCredentialsResult =
   | { account: Account; message: string; warning: 'missing_project_id_temporary' }
   | { account: Account; message?: never; warning?: never }
 
-export async function refreshCredentials(id: number): Promise<RefreshCredentialsResult> {
-  const { data } = await apiClient.post<Account | RefreshCredentialsResult>(`/admin/accounts/${id}/refresh`)
+export async function refreshCredentials(id: number, view?: CapturedAccountView): Promise<RefreshCredentialsResult> {
+  const { data } = await accountViewClient(view).post<Account | RefreshCredentialsResult>(`/admin/accounts/${id}/refresh`)
   return 'account' in data ? data : { account: data }
 }
 
@@ -362,9 +364,9 @@ export async function applyOAuthCredentials(
     type: 'oauth' | 'setup-token'
     credentials: Record<string, unknown>
     extra?: Record<string, unknown>
-  }
+  }, view?: CapturedAccountView
 ): Promise<Account> {
-  const { data } = await apiClient.post<Account>(
+  const { data } = await accountViewClient(view).post<Account>(
     `/admin/accounts/${id}/apply-oauth-credentials`,
     payload
   )
@@ -377,8 +379,8 @@ export async function applyOAuthCredentials(
  * @param days - Number of days (default: 30)
  * @returns Account usage statistics with history, summary, and models
  */
-export async function getStats(id: number, days: number = 30): Promise<AccountUsageStatsResponse> {
-  const { data } = await apiClient.get<AccountUsageStatsResponse>(`/admin/accounts/${id}/stats`, {
+export async function getStats(id: number, days: number = 30, view?: CapturedAccountView): Promise<AccountUsageStatsResponse> {
+  const { data } = await accountViewClient(view).get<AccountUsageStatsResponse>(`/admin/accounts/${id}/stats`, {
     params: { days }
   })
   return data
@@ -389,8 +391,8 @@ export async function getStats(id: number, days: number = 30): Promise<AccountUs
  * @param id - Account ID
  * @returns Updated account
  */
-export async function clearError(id: number): Promise<Account> {
-  const { data } = await apiClient.post<Account>(`/admin/accounts/${id}/clear-error`)
+export async function clearError(id: number, view?: CapturedAccountView): Promise<Account> {
+  const { data } = await accountViewClient(view).post<Account>(`/admin/accounts/${id}/clear-error`)
   return data
 }
 
@@ -399,11 +401,11 @@ export async function clearError(id: number): Promise<Account> {
  * @param id - Account ID
  * @returns Account usage info
  */
-export async function getUsage(id: number, source?: 'passive' | 'active', force?: boolean): Promise<AccountUsageInfo> {
+export async function getUsage(id: number, source?: 'passive' | 'active', force?: boolean, view?: CapturedAccountView): Promise<AccountUsageInfo> {
   const params: Record<string, string> = {}
   if (source) params.source = source
   if (force) params.force = 'true'
-  const { data } = await apiClient.get<AccountUsageInfo>(`/admin/accounts/${id}/usage`, {
+  const { data } = await accountViewClient(view).get<AccountUsageInfo>(`/admin/accounts/${id}/usage`, {
     params: Object.keys(params).length > 0 ? params : undefined
   })
   return data
@@ -414,8 +416,8 @@ export interface BatchAccountUsageResponse {
   errors: Record<string, string>
 }
 
-export async function getBatchUsage(accountIds: number[], force?: boolean): Promise<BatchAccountUsageResponse> {
-  const { data } = await apiClient.post<BatchAccountUsageResponse>('/admin/accounts/usage/batch', {
+export async function getBatchUsage(accountIds: number[], force?: boolean, view?: CapturedAccountView): Promise<BatchAccountUsageResponse> {
+  const { data } = await accountViewClient(view).post<BatchAccountUsageResponse>('/admin/accounts/usage/batch', {
     account_ids: accountIds,
     force: force === true
   })
@@ -427,8 +429,8 @@ export async function getBatchUsage(accountIds: number[], force?: boolean): Prom
  * @param id - Account ID
  * @returns Updated account
  */
-export async function clearRateLimit(id: number): Promise<Account> {
-  const { data } = await apiClient.post<Account>(
+export async function clearRateLimit(id: number, view?: CapturedAccountView): Promise<Account> {
+  const { data } = await accountViewClient(view).post<Account>(
     `/admin/accounts/${id}/clear-rate-limit`
   )
   return data
@@ -439,8 +441,8 @@ export async function clearRateLimit(id: number): Promise<Account> {
  * @param id - Account ID
  * @returns Updated account
  */
-export async function recoverState(id: number): Promise<Account> {
-  const { data } = await apiClient.post<Account>(`/admin/accounts/${id}/recover-state`)
+export async function recoverState(id: number, view?: CapturedAccountView): Promise<Account> {
+  const { data } = await accountViewClient(view).post<Account>(`/admin/accounts/${id}/recover-state`)
   return data
 }
 
@@ -449,8 +451,8 @@ export async function recoverState(id: number): Promise<Account> {
  * @param id - Account ID
  * @returns Updated account
  */
-export async function resetAccountQuota(id: number): Promise<Account> {
-  const { data } = await apiClient.post<Account>(
+export async function resetAccountQuota(id: number, view?: CapturedAccountView): Promise<Account> {
+  const { data } = await accountViewClient(view).post<Account>(
     `/admin/accounts/${id}/reset-quota`
   )
   return data
@@ -461,8 +463,8 @@ export async function resetAccountQuota(id: number): Promise<Account> {
  * @param id - Account ID
  * @returns Status with detail state if active
  */
-export async function getTempUnschedulableStatus(id: number): Promise<TempUnschedulableStatus> {
-  const { data } = await apiClient.get<TempUnschedulableStatus>(
+export async function getTempUnschedulableStatus(id: number, view?: CapturedAccountView): Promise<TempUnschedulableStatus> {
+  const { data } = await accountViewClient(view).get<TempUnschedulableStatus>(
     `/admin/accounts/${id}/temp-unschedulable`
   )
   return data
@@ -473,8 +475,8 @@ export async function getTempUnschedulableStatus(id: number): Promise<TempUnsche
  * @param id - Account ID
  * @returns Success confirmation
  */
-export async function resetTempUnschedulable(id: number): Promise<{ message: string }> {
-  const { data } = await apiClient.delete<{ message: string }>(
+export async function resetTempUnschedulable(id: number, view?: CapturedAccountView): Promise<{ message: string }> {
+  const { data } = await accountViewClient(view).delete<{ message: string }>(
     `/admin/accounts/${id}/temp-unschedulable`
   )
   return data
@@ -531,8 +533,8 @@ export async function batchUpdateCredentials(request: {
   account_ids: number[]
   field: string
   value: any
-}): Promise<AccountJob> {
-  const { data } = await apiClient.post<AccountJob>(
+}, view?: CapturedAccountView): Promise<AccountJob> {
+  const { data } = await accountViewClient(view).post<AccountJob>(
     '/admin/accounts/batch-update-credentials',
     request,
     accountJobIdempotencyHeaders('account_batch_update_credentials')
@@ -548,7 +550,7 @@ export async function batchUpdateCredentials(request: {
  */
 export async function bulkUpdate(
   accountIdsOrPayload: number[] | Record<string, unknown>,
-  updates?: Record<string, unknown>
+  updates?: Record<string, unknown>, view?: CapturedAccountView
 ): Promise<AccountJob> {
   const payload = Array.isArray(accountIdsOrPayload)
     ? {
@@ -556,7 +558,7 @@ export async function bulkUpdate(
         ...(updates ?? {})
       }
     : accountIdsOrPayload
-  const { data } = await apiClient.post<AccountJob>(
+  const { data } = await accountViewClient(view).post<AccountJob>(
     '/admin/accounts/bulk-update',
     payload,
     accountJobIdempotencyHeaders('account_bulk_update')
@@ -569,8 +571,8 @@ export async function bulkUpdate(
  * @param id - Account ID
  * @returns Today's stats (requests, tokens, cost)
  */
-export async function getTodayStats(id: number): Promise<WindowStats> {
-  const { data } = await apiClient.get<WindowStats>(`/admin/accounts/${id}/today-stats`)
+export async function getTodayStats(id: number, view?: CapturedAccountView): Promise<WindowStats> {
+  const { data } = await accountViewClient(view).get<WindowStats>(`/admin/accounts/${id}/today-stats`)
   return data
 }
 
@@ -583,8 +585,8 @@ export interface BatchTodayStatsResponse {
  * @param accountIds - 账号 ID 列表
  * @returns 以账号 ID（字符串）为键的统计映射
  */
-export async function getBatchTodayStats(accountIds: number[]): Promise<BatchTodayStatsResponse> {
-  const { data } = await apiClient.post<BatchTodayStatsResponse>('/admin/accounts/today-stats/batch', {
+export async function getBatchTodayStats(accountIds: number[], view?: CapturedAccountView): Promise<BatchTodayStatsResponse> {
+  const { data } = await accountViewClient(view).post<BatchTodayStatsResponse>('/admin/accounts/today-stats/batch', {
     account_ids: accountIds
   })
   return data
@@ -596,8 +598,8 @@ export async function getBatchTodayStats(accountIds: number[]): Promise<BatchTod
  * @param schedulable - Whether the account should participate in scheduling
  * @returns Updated account
  */
-export async function setSchedulable(id: number, schedulable: boolean): Promise<Account> {
-  const { data } = await apiClient.post<Account>(`/admin/accounts/${id}/schedulable`, {
+export async function setSchedulable(id: number, schedulable: boolean, view?: CapturedAccountView): Promise<Account> {
+  const { data } = await accountViewClient(view).post<Account>(`/admin/accounts/${id}/schedulable`, {
     schedulable
   })
   return data
@@ -608,13 +610,13 @@ export async function setSchedulable(id: number, schedulable: boolean): Promise<
  * @param id - Account ID
  * @returns List of available models for this account
  */
-export async function getAvailableModels(id: number): Promise<AccountAvailableModel[]> {
-  const { data } = await apiClient.get<AccountAvailableModel[]>(`/admin/accounts/${id}/models`)
+export async function getAvailableModels(id: number, view?: CapturedAccountView): Promise<AccountAvailableModel[]> {
+  const { data } = await accountViewClient(view).get<AccountAvailableModel[]>(`/admin/accounts/${id}/models`)
   return data
 }
 
-export async function getAccountTestPlan(id: number, signal?: AbortSignal): Promise<import('@/types').AccountTestPlanView> {
-  const { data } = await apiClient.get<import('@/types').AccountTestPlanView>(`/admin/accounts/${id}/models`, {
+export async function getAccountTestPlan(id: number, signal?: AbortSignal, view?: CapturedAccountView): Promise<import('@/types').AccountTestPlanView> {
+  const { data } = await accountViewClient(view).get<import('@/types').AccountTestPlanView>(`/admin/accounts/${id}/models`, {
     params: { view: 'account-test-plan-v1' }, signal,
   })
   return data
@@ -680,8 +682,8 @@ export interface ModelContextCapacitiesResult {
 }
 
 /** Read persisted observations and the local official catalog without contacting upstream. */
-export async function getModelContextCapacities(id: number, signal?: AbortSignal): Promise<ModelContextCapacitiesResult> {
-  const { data } = await apiClient.get<ModelContextCapacitiesResult>(`/admin/accounts/${id}/models/context-capacities`, { signal })
+export async function getModelContextCapacities(id: number, signal?: AbortSignal, view?: CapturedAccountView): Promise<ModelContextCapacitiesResult> {
+  const { data } = await accountViewClient(view).get<ModelContextCapacitiesResult>(`/admin/accounts/${id}/models/context-capacities`, { signal })
   return data
 }
 
@@ -729,8 +731,8 @@ export interface UpstreamModelMetadata {
  * @param id - Account ID
  * @returns List of model IDs returned by the upstream
  */
-export async function syncUpstreamModels(id: number): Promise<SyncUpstreamModelsResult> {
-  const { data } = await apiClient.post<SyncUpstreamModelsResult>(`/admin/accounts/${id}/models/sync-upstream`)
+export async function syncUpstreamModels(id: number, view?: CapturedAccountView): Promise<SyncUpstreamModelsResult> {
+  const { data } = await accountViewClient(view).post<SyncUpstreamModelsResult>(`/admin/accounts/${id}/models/sync-upstream`)
   return data
 }
 
@@ -818,7 +820,7 @@ export async function exportData(options?: {
   ids?: number[]
   filters?: AccountListFilters
   includeProxies?: boolean
-}): Promise<AdminDataPayload> {
+}, view?: CapturedAccountView): Promise<AdminDataPayload> {
   const params: Record<string, string> = {}
   if (options?.ids && options.ids.length > 0) {
     params.ids = options.ids.join(',')
@@ -836,7 +838,7 @@ export async function exportData(options?: {
   if (options?.includeProxies === false) {
     params.include_proxies = 'false'
   }
-  const { data } = await apiClient.get<AdminDataPayload>('/admin/accounts/data', { params })
+  const { data } = await accountViewClient(view).get<AdminDataPayload>('/admin/accounts/data', { params })
   return data
 }
 
@@ -876,8 +878,8 @@ export async function previewImportData(payload: {
   return data
 }
 
-export async function listFolders(): Promise<AccountManagementFolder[]> {
-  const { data } = await apiClient.get<AccountManagementFolder[]>('/admin/accounts/folders')
+export async function listFolders(view?: CapturedAccountView): Promise<AccountManagementFolder[]> {
+  const { data } = await accountViewClient(view).get<AccountManagementFolder[]>('/admin/accounts/folders')
   return data
 }
 
@@ -908,8 +910,8 @@ export async function reorderFolders(orderedIds: number[]): Promise<AccountManag
   return data
 }
 
-export async function listTags(): Promise<AccountManagementTag[]> {
-  const { data } = await apiClient.get<AccountManagementTag[]>('/admin/accounts/tags')
+export async function listTags(view?: CapturedAccountView): Promise<AccountManagementTag[]> {
+  const { data } = await accountViewClient(view).get<AccountManagementTag[]>('/admin/accounts/tags')
   return data
 }
 
@@ -940,21 +942,21 @@ export async function reorderTags(orderedIds: number[]): Promise<AccountManageme
   return data
 }
 
-export async function setTaxonomy(id: number, folderId: number | null, tagIds: number[]): Promise<Account> {
-  const { data } = await apiClient.put<Account>(`/admin/accounts/${id}/taxonomy`, {
+export async function setTaxonomy(id: number, folderId: number | null, tagIds: number[], view?: CapturedAccountView): Promise<Account> {
+  const { data } = await accountViewClient(view).put<Account>(`/admin/accounts/${id}/taxonomy`, {
     folder_id: folderId,
     tag_ids: tagIds
   })
   return data
 }
 
-export async function getFacets(filters?: AccountListFilters): Promise<AccountConsoleFacets> {
-  const { data } = await apiClient.get<AccountConsoleFacets>('/admin/accounts/facets', { params: filters })
+export async function getFacets(filters?: AccountListFilters, view?: CapturedAccountView): Promise<AccountConsoleFacets> {
+  const { data } = await accountViewClient(view).get<AccountConsoleFacets>('/admin/accounts/facets', { params: filters })
   return data
 }
 
-export async function bulkUpdateTaxonomy(payload: AccountBulkTaxonomyRequest): Promise<AccountJob> {
-  const { data } = await apiClient.post<AccountJob>(
+export async function bulkUpdateTaxonomy(payload: AccountBulkTaxonomyRequest, view?: CapturedAccountView): Promise<AccountJob> {
+  const { data } = await accountViewClient(view).post<AccountJob>(
     '/admin/accounts/bulk-taxonomy',
     payload,
     accountJobIdempotencyHeaders('account_bulk_taxonomy')
@@ -1017,16 +1019,16 @@ export async function refreshOpenAIToken(
  * @param id - Account ID
  * @returns Success confirmation
  */
-export async function revertProxyFallback(id: number): Promise<{ message: string }> {
-  const { data } = await apiClient.post<{ message: string }>(`/admin/accounts/${id}/revert-proxy-fallback`)
+export async function revertProxyFallback(id: number, view?: CapturedAccountView): Promise<{ message: string }> {
+  const { data } = await accountViewClient(view).post<{ message: string }>(`/admin/accounts/${id}/revert-proxy-fallback`)
   return data
 }
 
 /**
  * Delete multiple accounts with bounded server-side concurrency.
  */
-export async function batchDelete(accountIds: number[]): Promise<AccountJob> {
-  const { data } = await apiClient.post<AccountJob>(
+export async function batchDelete(accountIds: number[], view?: CapturedAccountView): Promise<AccountJob> {
+  const { data } = await accountViewClient(view).post<AccountJob>(
     '/admin/accounts/batch-delete',
     { account_ids: accountIds },
     accountJobIdempotencyHeaders('account_batch_delete')
@@ -1092,8 +1094,8 @@ export async function clearCindyBalanceInsufficient(accountId: number): Promise<
  * @param accountIds - Array of account IDs
  * @returns Batch operation result
  */
-export async function batchClearError(accountIds: number[]): Promise<AccountJob> {
-  const { data } = await apiClient.post<AccountJob>(
+export async function batchClearError(accountIds: number[], view?: CapturedAccountView): Promise<AccountJob> {
+  const { data } = await accountViewClient(view).post<AccountJob>(
     '/admin/accounts/batch-clear-error',
     { account_ids: accountIds },
     accountJobIdempotencyHeaders('account_batch_clear_error')
@@ -1106,8 +1108,8 @@ export async function batchClearError(accountIds: number[]): Promise<AccountJob>
  * @param accountIds - Array of account IDs
  * @returns Batch operation result
  */
-export async function batchRefresh(accountIds: number[]): Promise<AccountJob> {
-  const { data } = await apiClient.post<AccountJob>(
+export async function batchRefresh(accountIds: number[], view?: CapturedAccountView): Promise<AccountJob> {
+  const { data } = await accountViewClient(view).post<AccountJob>(
     '/admin/accounts/batch-refresh',
     { account_ids: accountIds },
     accountJobIdempotencyHeaders('account_batch_refresh')
@@ -1115,8 +1117,8 @@ export async function batchRefresh(accountIds: number[]): Promise<AccountJob> {
   return data
 }
 
-export async function batchRefreshTier(accountIds: number[]): Promise<AccountJob> {
-  const { data } = await apiClient.post<AccountJob>(
+export async function batchRefreshTier(accountIds: number[], view?: CapturedAccountView): Promise<AccountJob> {
+  const { data } = await accountViewClient(view).post<AccountJob>(
     '/admin/accounts/batch-refresh-tier',
     { account_ids: accountIds },
     accountJobIdempotencyHeaders('account_batch_refresh_tier')
@@ -1129,8 +1131,8 @@ export async function batchRefreshTier(accountIds: number[]): Promise<AccountJob
  * @param id - Account ID
  * @returns Updated account
  */
-export async function setPrivacy(id: number): Promise<Account> {
-  const { data } = await apiClient.post<Account>(`/admin/accounts/${id}/set-privacy`)
+export async function setPrivacy(id: number, view?: CapturedAccountView): Promise<Account> {
+  const { data } = await accountViewClient(view).post<Account>(`/admin/accounts/${id}/set-privacy`)
   return data
 }
 
@@ -1215,8 +1217,8 @@ export interface OpenAIQuotaRefreshResult extends OpenAIQuotaUsage {
  * API consumers; the panel always wants the snapshot persisted, so it has no
  * client binding here.
  */
-export async function refreshOpenAIQuota(id: number): Promise<OpenAIQuotaRefreshResult> {
-  const { data } = await apiClient.post<OpenAIQuotaRefreshResult>(
+export async function refreshOpenAIQuota(id: number, view?: CapturedAccountView): Promise<OpenAIQuotaRefreshResult> {
+  const { data } = await accountViewClient(view).post<OpenAIQuotaRefreshResult>(
     `/admin/openai/accounts/${id}/quota/refresh`
   )
   return data
@@ -1230,8 +1232,8 @@ export async function refreshOpenAIQuota(id: number): Promise<OpenAIQuotaRefresh
  * timeout: aborting locally would report a successful consumption as a failure
  * and invite a retry that spends a second credit.
  */
-export async function resetOpenAIQuota(id: number): Promise<OpenAIQuotaResetResult> {
-  const { data } = await apiClient.post<OpenAIQuotaResetResult>(
+export async function resetOpenAIQuota(id: number, view?: CapturedAccountView): Promise<OpenAIQuotaResetResult> {
+  const { data } = await accountViewClient(view).post<OpenAIQuotaResetResult>(
     `/admin/openai/accounts/${id}/reset-quota`,
     undefined,
     { timeout: 90_000 }
@@ -1246,13 +1248,13 @@ export interface SparkShadowCreatePayload {
   group_ids?: number[]
 }
 
-export async function createSparkShadow(parentId: number, payload: SparkShadowCreatePayload): Promise<Account> {
-  const { data } = await apiClient.post<Account>(`/admin/accounts/${parentId}/shadow`, payload)
+export async function createSparkShadow(parentId: number, payload: SparkShadowCreatePayload, view?: CapturedAccountView): Promise<Account> {
+  const { data } = await accountViewClient(view).post<Account>(`/admin/accounts/${parentId}/shadow`, payload)
   return data
 }
 
-export async function getUpstreamBillingProbeSettings(): Promise<UpstreamBillingProbeSettings> {
-  const { data } = await apiClient.get<UpstreamBillingProbeSettings>('/admin/accounts/upstream-billing-probe/settings')
+export async function getUpstreamBillingProbeSettings(view?: CapturedAccountView): Promise<UpstreamBillingProbeSettings> {
+  const { data } = await accountViewClient(view).get<UpstreamBillingProbeSettings>('/admin/accounts/upstream-billing-probe/settings')
   return data
 }
 
@@ -1266,25 +1268,25 @@ export async function updateUpstreamBillingProbeSettings(
   return data
 }
 
-export async function setUpstreamBillingProbeEnabled(id: number, enabled: boolean): Promise<void> {
-  await apiClient.put(`/admin/accounts/${id}/upstream-billing-probe`, { enabled })
+export async function setUpstreamBillingProbeEnabled(id: number, enabled: boolean, view?: CapturedAccountView): Promise<void> {
+  await accountViewClient(view).put(`/admin/accounts/${id}/upstream-billing-probe`, { enabled })
 }
 
-export async function probeUpstreamBilling(id: number): Promise<UpstreamBillingProbeResult> {
-  const { data } = await apiClient.post<UpstreamBillingProbeResult>(`/admin/accounts/${id}/upstream-billing-probe`)
+export async function probeUpstreamBilling(id: number, view?: CapturedAccountView): Promise<UpstreamBillingProbeResult> {
+  const { data } = await accountViewClient(view).post<UpstreamBillingProbeResult>(`/admin/accounts/${id}/upstream-billing-probe`)
   return data
 }
 
-export async function probeUpstreamBillingBatch(accountIds: number[]): Promise<UpstreamBillingProbeResult[]> {
-  const { data } = await apiClient.post<{ results: UpstreamBillingProbeResult[] }>(
+export async function probeUpstreamBillingBatch(accountIds: number[], view?: CapturedAccountView): Promise<UpstreamBillingProbeResult[]> {
+  const { data } = await accountViewClient(view).post<{ results: UpstreamBillingProbeResult[] }>(
     '/admin/accounts/upstream-billing-probe/batch',
     { account_ids: accountIds }
   )
   return data.results
 }
 
-export async function getOllamaCloudUsageSettings(): Promise<OllamaCloudUsageSettings> {
-  const { data } = await apiClient.get<OllamaCloudUsageSettings>('/admin/accounts/ollama-cloud-usage/settings')
+export async function getOllamaCloudUsageSettings(view?: CapturedAccountView): Promise<OllamaCloudUsageSettings> {
+  const { data } = await accountViewClient(view).get<OllamaCloudUsageSettings>('/admin/accounts/ollama-cloud-usage/settings')
   return data
 }
 
@@ -1298,32 +1300,32 @@ export async function updateOllamaCloudUsageSettings(
   return data
 }
 
-export async function getOllamaCloudUsage(id: number): Promise<OllamaCloudUsageState> {
-  const { data } = await apiClient.get<OllamaCloudUsageState>(`/admin/accounts/${id}/ollama-cloud-usage`)
+export async function getOllamaCloudUsage(id: number, view?: CapturedAccountView): Promise<OllamaCloudUsageState> {
+  const { data } = await accountViewClient(view).get<OllamaCloudUsageState>(`/admin/accounts/${id}/ollama-cloud-usage`)
   return data
 }
 
-export async function saveOllamaCloudUsageSession(id: number, session: string): Promise<OllamaCloudUsageState> {
-  const { data } = await apiClient.put<OllamaCloudUsageState>(`/admin/accounts/${id}/ollama-cloud-usage/session`, {
+export async function saveOllamaCloudUsageSession(id: number, session: string, view?: CapturedAccountView): Promise<OllamaCloudUsageState> {
+  const { data } = await accountViewClient(view).put<OllamaCloudUsageState>(`/admin/accounts/${id}/ollama-cloud-usage/session`, {
     session
   })
   return data
 }
 
-export async function deleteOllamaCloudUsageSession(id: number): Promise<OllamaCloudUsageState> {
-  const { data } = await apiClient.delete<OllamaCloudUsageState>(`/admin/accounts/${id}/ollama-cloud-usage/session`)
+export async function deleteOllamaCloudUsageSession(id: number, view?: CapturedAccountView): Promise<OllamaCloudUsageState> {
+  const { data } = await accountViewClient(view).delete<OllamaCloudUsageState>(`/admin/accounts/${id}/ollama-cloud-usage/session`)
   return data
 }
 
-export async function setOllamaCloudUsageAutoRefresh(id: number, enabled: boolean): Promise<OllamaCloudUsageState> {
-  const { data } = await apiClient.put<OllamaCloudUsageState>(`/admin/accounts/${id}/ollama-cloud-usage/auto-refresh`, {
+export async function setOllamaCloudUsageAutoRefresh(id: number, enabled: boolean, view?: CapturedAccountView): Promise<OllamaCloudUsageState> {
+  const { data } = await accountViewClient(view).put<OllamaCloudUsageState>(`/admin/accounts/${id}/ollama-cloud-usage/auto-refresh`, {
     enabled
   })
   return data
 }
 
-export async function refreshOllamaCloudUsage(id: number): Promise<OllamaCloudUsageState> {
-  const { data } = await apiClient.post<OllamaCloudUsageState>(`/admin/accounts/${id}/ollama-cloud-usage/refresh`)
+export async function refreshOllamaCloudUsage(id: number, view?: CapturedAccountView): Promise<OllamaCloudUsageState> {
+  const { data } = await accountViewClient(view).post<OllamaCloudUsageState>(`/admin/accounts/${id}/ollama-cloud-usage/refresh`)
   return data
 }
 
@@ -1417,6 +1419,97 @@ export const accountsAPI = {
   deleteOllamaCloudUsageSession,
   setOllamaCloudUsageAutoRefresh,
   refreshOllamaCloudUsage
+}
+
+
+/** Only fixed native account operations accept an origin-view context. */
+const viewArgumentCounts: Partial<Record<keyof typeof accountsAPI, number>> = {
+  list: 4,
+  getUpstreamBillingRatesWithEtag: 4,
+  listWithEtag: 4,
+  getById: 1,
+  getAPIKeyVisibility: 0,
+  setAPIKeyVisibility: 1,
+  duplicate: 1,
+  update: 2,
+  getGrokMediaEligibility: 1,
+  updateGrokMediaEligibility: 2,
+  checkMixedChannelRisk: 1,
+  delete: 1,
+  toggleStatus: 2,
+  testAccount: 1,
+  refreshCredentials: 1,
+  applyOAuthCredentials: 2,
+  getStats: 2,
+  clearError: 1,
+  getUsage: 3,
+  getBatchUsage: 2,
+  clearRateLimit: 1,
+  recoverState: 1,
+  resetAccountQuota: 1,
+  getTempUnschedulableStatus: 1,
+  resetTempUnschedulable: 1,
+  batchUpdateCredentials: 1,
+  bulkUpdate: 2,
+  getTodayStats: 1,
+  getBatchTodayStats: 1,
+  setSchedulable: 2,
+  getAvailableModels: 1,
+  getAccountTestPlan: 2,
+  getModelContextCapacities: 2,
+  syncUpstreamModels: 1,
+  exportData: 1,
+  listFolders: 0,
+  listTags: 0,
+  setTaxonomy: 3,
+  getFacets: 1,
+  bulkUpdateTaxonomy: 1,
+  revertProxyFallback: 1,
+  batchDelete: 1,
+  batchClearError: 1,
+  batchRefresh: 1,
+  batchRefreshTier: 1,
+  setPrivacy: 1,
+  refreshOpenAIQuota: 1,
+  resetOpenAIQuota: 1,
+  createSparkShadow: 2,
+  getUpstreamBillingProbeSettings: 0,
+  setUpstreamBillingProbeEnabled: 2,
+  probeUpstreamBilling: 1,
+  probeUpstreamBillingBatch: 1,
+  getOllamaCloudUsageSettings: 0,
+  getOllamaCloudUsage: 1,
+  saveOllamaCloudUsageSession: 2,
+  deleteOllamaCloudUsageSession: 1,
+  setOllamaCloudUsageAutoRefresh: 2,
+  refreshOllamaCloudUsage: 1,
+}
+const independentCredentialHelpers = new Set<keyof typeof accountsAPI>([
+  'generateAuthUrl', 'exchangeCode', 'refreshOpenAIToken', 'getAntigravityDefaultModelMapping',
+  'previewModelContextCapacities', 'syncUpstreamModelsPreview'
+])
+
+/** A captured per-operation facade; never reads mutable route state. */
+export function accountAPIForView(view?: CapturedAccountView, core = accountsAPI): typeof accountsAPI {
+  if (!view) return core
+  return Object.fromEntries(Object.entries(core).map(([rawName, action]) => {
+    const name = rawName as keyof typeof accountsAPI
+    return [name, async (...args: unknown[]) => {
+      view.assertCurrent()
+      const count = viewArgumentCounts[name]
+      if (count !== undefined) {
+        const input = args.slice(0, count)
+        while (input.length < count) input.push(undefined)
+        return (action as (...input: unknown[]) => Promise<unknown>)(...input, view)
+      }
+      // These private credential-form helpers have no existing account target.
+      // Their final account mutation still uses the captured scoped client.
+      if (!independentCredentialHelpers.has(name)) throw new Error('Operation unavailable in an account view')
+      const result = await (action as (...input: unknown[]) => Promise<unknown>)(...args)
+      view.assertCurrent()
+      return result
+    }]
+  })) as typeof accountsAPI
 }
 
 export default accountsAPI

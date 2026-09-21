@@ -169,6 +169,36 @@ func (h *AccountHandler) SetAccountJobService(jobs *service.AccountJobService) {
 	h.accountJobs = jobs
 }
 
+func (h *AccountHandler) replayScopedAccountJob(c *gin.Context, kind string, payload any) bool {
+	if _, bound := service.AccountViewFromContext(c.Request.Context()); !bound {
+		return false
+	}
+	if h.accountJobs == nil {
+		accountViewRequestError(c, infraerrors.New(503, "ACCOUNT_JOBS_UNAVAILABLE", "account jobs are unavailable"))
+		return true
+	}
+	actorID, ok := accountJobActorID(c)
+	if !ok {
+		return true
+	}
+	raw, err := json.Marshal(payload)
+	if err != nil {
+		accountViewRequestError(c, service.ErrAccountViewInvalid)
+		return true
+	}
+	job, replayed, err := h.accountJobs.ReplaySubmission(c.Request.Context(), actorID, kind, c.GetHeader("Idempotency-Key"), raw)
+	if err != nil {
+		response.ErrorFrom(c, accountJobHTTPError(err))
+		return true
+	}
+	if !replayed {
+		return false
+	}
+	c.Header("Idempotency-Replayed", "true")
+	response.Accepted(c, job)
+	return true
+}
+
 func (h *AccountHandler) submitAccountJob(c *gin.Context, kind string, payload any, seeds []service.AccountJobItemSeed, owner ...int64) {
 	if h == nil || h.accountJobs == nil {
 		response.ErrorFrom(c, infraerrors.New(503, "ACCOUNT_JOBS_UNAVAILABLE", "account jobs are unavailable"))

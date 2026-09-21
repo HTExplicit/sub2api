@@ -1,5 +1,5 @@
 <template>
-  <ExtensionWidget name="account-taxonomy-navigation" :context="{ view_props: props }" @event="receive" />
+  <ExtensionWidget name="account-taxonomy-navigation" plugin-key="codexrip.account-tools" :context="{ view_props: props }" @event="receive" />
 </template>
 <script setup lang="ts">
 import ExtensionWidget from '@/components/plugins/ExtensionWidget.vue'

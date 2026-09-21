@@ -110,6 +110,10 @@ type CindyHealthCoordinator interface {
 	ObserveCindyHealthSuccess(ctx context.Context, account *Account)
 }
 
+type CindyCommittedProbeHealthProjector interface {
+	ApplyCommittedProbeTerminal(context.Context, *Account, CindyHealthEpisode)
+}
+
 type CindyHealthEpisodeAuthority interface {
 	ResolveCindyHealthEpisode(ctx context.Context, episode CindyHealthEpisode) (*Account, bool, error)
 }
@@ -279,6 +283,30 @@ func (s *CindyHealthService) ObserveCindyHealthSignal(ctx context.Context, accou
 		s.runtime.BlockAccountScheduling(account, until, "cindy_health_quarantine")
 		_, _ = s.healthRepo.BeginCindyHealthEpisode(stateCtx, episode, signal.evidence(), now, until)
 		return
+	}
+}
+
+// Scoped probes already committed marker, item and terminal health atomically.
+// This method only projects that committed fact into host runtime diagnostics;
+// it does not write health state, claim a pending episode or schedule a retry.
+func (s *CindyHealthService) ApplyCommittedProbeTerminal(ctx context.Context, account *Account, episode CindyHealthEpisode) {
+	if s == nil || s.runtime == nil || account == nil || !episode.terminalValid() || episode.AccountID != account.ID {
+		return
+	}
+	stateCtx, cancel := s.stateContext(ctx)
+	defer cancel()
+	identity, current := s.currentIdentity(stateCtx, account)
+	if !current || identity.Generation != episode.Generation || identity.Fingerprint != episode.Fingerprint {
+		return
+	}
+	reason := "cindy_balance_insufficient"
+	if episode.Status == CindyHealthStatusBanned {
+		reason = "cindy_banned"
+	}
+	if runtime, ok := s.runtime.(CindyHealthEpisodeRuntimeBlocker); ok {
+		runtime.BlockCindyHealthEpisode(account, episode, reason)
+	} else {
+		s.runtime.BlockAccountScheduling(account, time.Time{}, reason)
 	}
 }
 

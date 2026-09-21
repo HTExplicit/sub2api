@@ -1,4 +1,12 @@
-export default { common: {
+export default { accountView: {
+    insufficientTitle: 'Delete exhausted Cindy accounts', bannedTitle: 'Delete banned Cindy accounts',
+    fullScopeRequired: 'Whole-domain cleanup needs 100% Cindy API-key coverage for both Provider and Admin.',
+    wholeDomain: 'This operation covers all matching Cindy API-key accounts, not only the current search or selection.',
+    insufficientConfirm: 'Delete all {count} confirmed exhausted Cindy accounts? This cannot be undone.',
+    bannedConfirm: 'Delete all {count} banned Cindy accounts? This cannot be undone.',
+    changed: 'The candidate set changed. Your previous preview and result are retained; review a fresh preview before submitting again.',
+    refreshPreview: 'Refresh preview', invalidPreview: 'The cleanup preview is invalid.', result: 'View operation result'
+  }, common: {
     loading: 'Loading...',
     submitting: 'Submitting...',
     justNow: 'just now',

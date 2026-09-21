@@ -49,7 +49,7 @@ func contributionRequiredCapabilities(contribution *extensionv1.Contribution) []
 		required = append(required, capability)
 	}
 	add(contribution.Capability)
-	if contribution.Action != "" && contribution.Permission == "admin" {
+	if (contribution.Action != "" || contribution.ResourceAction != nil || contribution.Slot == extensionv1.AccountViewSlot) && contribution.Permission == "admin" {
 		add(extensionv1.CapabilityAdmin)
 	}
 	if contribution.Slot == "theme" {

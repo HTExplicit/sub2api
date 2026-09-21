@@ -29,7 +29,7 @@ async function setup(context: Record<string, unknown> = {}) {
 beforeEach(() => {
   vi.clearAllMocks()
   registry.items = []
-  calls.session.mockResolvedValue({ url: 'about:blank', bridge_token: 'fixture', permission: 'admin', package_sha256: digest })
+  calls.session.mockResolvedValue({ url: 'about:blank', bridge_token: 'fixture', permission: 'admin', package_sha256: digest, expires_at: new Date(Date.now() + 600000).toISOString() })
   calls.load.mockResolvedValue({ config: { value: 'initial' }, revision: 4, package_sha256: digest })
   calls.job.mockResolvedValue({ id: 9, metadata: { plugin_id: 7 } })
 })
@@ -85,6 +85,6 @@ describe('plugin host-owned read-time preconditions', () => {
     calls.invoke.mockResolvedValue({ payload: { success: true } })
     const { send } = await setup({ account_id: 3 })
     await send('extension.invoke', 'action', { operation: 'harvest', payload: { input: true }, package_sha256: 'b'.repeat(64) })
-    expect(calls.invoke).toHaveBeenCalledWith(7, 'harvest', 3, { input: true }, digest)
+    expect(calls.invoke).toHaveBeenCalledWith(7, 'harvest', 3, { input: true }, digest, expect.objectContaining({ retained: false }))
   })
 })
