@@ -242,7 +242,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref, watch, nextTick } from 'vue'
+import { computed, ref, watch, nextTick, onBeforeUnmount, onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import BaseDialog from '@/components/common/BaseDialog.vue'
 import Select from '@/components/common/Select.vue'
@@ -251,12 +251,8 @@ import { Icon } from '@/components/icons'
 import { useClipboard } from '@/composables/useClipboard'
 import { buildApiUrl } from '@/api/client'
 import { adminAPI } from '@/api/admin'
-import {
-  filterCindyAccountTestModels,
-  pickCindyAccountTestDefault,
-  isCindyOpenAIAPIKeyAccount
-} from '@/utils/cindyOpenAIDefaults'
-import type { Account, AccountAvailableModel } from '@/types'
+import { validateAccountTestPlan, accountTestModelsForMode, defaultAccountTestModel } from '@/utils/accountTestModels'
+import type { Account, AccountAvailableModel, AccountTestPlanView } from '@/types'
 
 const { t } = useI18n()
 const { copyToClipboard } = useClipboard()
@@ -286,6 +282,10 @@ const outputLines = ref<OutputLine[]>([])
 const streamingContent = ref('')
 const errorMessage = ref('')
 const availableModels = ref<AccountAvailableModel[]>([])
+const modelPlan = ref<AccountTestPlanView | null>(null)
+const currentModelPlan = computed(() => modelPlan.value?.account_id === props.account?.id ? modelPlan.value : null)
+let modelLoadRevision = 0
+let modelLoadController: AbortController | null = null
 const selectedModelId = ref('')
 const testPrompt = ref('')
 const loadingModels = ref(false)
@@ -293,14 +293,13 @@ let abortController: AbortController | null = null
 const generatedImages = ref<PreviewImage[]>([])
 const testMode = ref<'default' | 'compact'>('default')
 const isOpenAIAccount = computed(() =>
-  props.account?.platform === 'openai' || isCindyOpenAIAPIKeyAccount(props.account)
+  (currentModelPlan.value?.wire_platform || props.account?.platform) === 'openai'
 )
 const openAITestModeOptions = computed(() => [
   { value: 'default', label: t('admin.accounts.openai.testModeDefault') },
   { value: 'compact', label: t('admin.accounts.openai.testModeCompact') }
 ])
 const previewImageUrl = ref('')
-const prioritizedGeminiModels = ['gemini-3.1-flash-image', 'gemini-2.5-flash-image', 'gemini-3.5-flash', 'gemini-2.5-flash', 'gemini-2.5-pro', 'gemini-3-flash-preview', 'gemini-3-pro-preview', 'gemini-2.0-flash']
 const supportsGeminiImageTest = computed(() => {
   const modelID = selectedModelId.value.toLowerCase()
   if (!modelID.startsWith('gemini-') || !modelID.includes('-image')) return false
@@ -311,33 +310,24 @@ const supportsGeminiImageTest = computed(() => {
 const supportsOpenAIImageTest = computed(() => {
   const modelID = selectedModelId.value.toLowerCase()
   if (!modelID.startsWith('gpt-image-')) return false
-  return props.account?.platform === 'openai' || isCindyOpenAIAPIKeyAccount(props.account)
+  return isOpenAIAccount.value
 })
 
 const supportsImageTest = computed(() => supportsGeminiImageTest.value || supportsOpenAIImageTest.value)
 
-const sortTestModels = (models: AccountAvailableModel[]) => {
-  const priorityMap = new Map(prioritizedGeminiModels.map((id, index) => [id, index]))
-
-  return [...models].sort((a, b) => {
-    const aPriority = priorityMap.get(a.id) ?? Number.MAX_SAFE_INTEGER
-    const bPriority = priorityMap.get(b.id) ?? Number.MAX_SAFE_INTEGER
-    if (aPriority !== bPriority) return aPriority - bPriority
-    return 0
-  })
-}
-
 // Load available models when modal opens
 watch(
-  () => props.show,
-  async (newVal) => {
+  [() => props.show, () => props.account?.id],
+  async ([newVal]) => {
     if (newVal && props.account) {
+      abortStream()
       testPrompt.value = ''
       testMode.value = 'default'
       resetState()
       await loadAvailableModels()
     } else {
       abortStream()
+      invalidateModelLoad()
     }
   }
 )
@@ -350,39 +340,40 @@ watch(selectedModelId, () => {
 
 const loadAvailableModels = async () => {
   if (!props.account) return
-
+  const accountID = props.account.id
+  const revision = ++modelLoadRevision
+  modelLoadController?.abort()
+  modelLoadController = new AbortController()
   loadingModels.value = true
+  modelPlan.value = null
+  availableModels.value = []
   selectedModelId.value = '' // Reset selection before loading
   try {
-    const models = filterCindyAccountTestModels(
-      props.account,
-      await adminAPI.accounts.getAvailableModels(props.account.id)
-    )
-    availableModels.value = props.account.platform === 'gemini' || props.account.platform === 'antigravity'
-      ? sortTestModels(models)
-      : models
-    // Default selection by platform
-    if (availableModels.value.length > 0) {
-      const cindyDefault = pickCindyAccountTestDefault(props.account, availableModels.value)
-      if (cindyDefault) {
-        selectedModelId.value = cindyDefault.id
-      } else if (props.account.platform === 'gemini') {
-        selectedModelId.value = availableModels.value[0].id
-      } else {
-        // Try to select Sonnet as default, otherwise use first model
-        const sonnetModel = availableModels.value.find((m) => m.id.includes('sonnet'))
-        selectedModelId.value = sonnetModel?.id || availableModels.value[0].id
-      }
-    }
-  } catch (error) {
-    console.error('Failed to load available models:', error)
+    const result = await adminAPI.accounts.getAccountTestPlan(accountID, modelLoadController.signal)
+    if (revision !== modelLoadRevision || !props.show || props.account?.id !== accountID) return
+    modelPlan.value = validateAccountTestPlan(result, accountID)
+    availableModels.value = accountTestModelsForMode(modelPlan.value)
+    selectedModelId.value = defaultAccountTestModel(modelPlan.value)
+  } catch {
+    if (revision !== modelLoadRevision || !props.show || props.account?.id !== accountID) return
+    console.error('Failed to load account test plan')
     // Fallback to empty list
+    modelPlan.value = null
     availableModels.value = []
     selectedModelId.value = ''
   } finally {
-    loadingModels.value = false
+    if (revision === modelLoadRevision) loadingModels.value = false
   }
 }
+
+function invalidateModelLoad() {
+  modelLoadRevision += 1
+  modelLoadController?.abort()
+  modelLoadController = null
+  loadingModels.value = false
+}
+onBeforeUnmount(invalidateModelLoad)
+onMounted(() => { if (props.show && props.account) void loadAvailableModels() })
 
 const resetState = () => {
   status.value = 'idle'
@@ -395,6 +386,7 @@ const resetState = () => {
 
 const handleClose = () => {
   abortStream()
+  invalidateModelLoad()
   emit('close')
 }
 
@@ -418,7 +410,7 @@ const scrollToBottom = async () => {
 }
 
 const startTest = async () => {
-  if (!props.account || !selectedModelId.value) return
+  if (!props.account || currentModelPlan.value?.account_id !== props.account.id || !availableModels.value.some(model => model.id === selectedModelId.value)) return
 
   resetState()
   status.value = 'connecting'

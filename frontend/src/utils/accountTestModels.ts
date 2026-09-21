@@ -1,31 +1,37 @@
-import type { AccountAvailableModel } from '@/types'
-import { filterCindyAccountTestModels, pickCindyAccountTestDefault, type CindyAccountLike } from './cindyOpenAIDefaults'
+import type { AccountAvailableModel, AccountTestPlanView } from '@/types'
 
-const geminiPriority = new Map(['gemini-3.1-flash-image', 'gemini-2.5-flash-image', 'gemini-3.5-flash', 'gemini-2.5-flash', 'gemini-2.5-pro', 'gemini-3-flash-preview', 'gemini-3-pro-preview', 'gemini-2.0-flash'].map((id, index) => [id, index]))
-
-export function prepareAccountTestModels(account: CindyAccountLike, models: AccountAvailableModel[]): AccountAvailableModel[] {
-  const filtered = filterCindyAccountTestModels(account, models)
-  return account.platform === 'gemini' || account.platform === 'antigravity'
-    ? [...filtered].sort((a, b) => (geminiPriority.get(a.id) ?? Number.MAX_SAFE_INTEGER) - (geminiPriority.get(b.id) ?? Number.MAX_SAFE_INTEGER))
-    : filtered
-}
-
-export function accountTestModelsForMode(account: CindyAccountLike | null, models: AccountAvailableModel[], mode = 'text') {
-  if (account?.platform !== 'grok') return models
-  const image = (id: string) => id === 'grok-imagine' || id === 'grok-imagine-edit' || id.startsWith('grok-imagine-image')
-  const video = (id: string) => id.startsWith('grok-imagine-video') || id.startsWith('grok-video')
-  return models.filter(model => {
-    const id = model.id.toLowerCase()
-    return mode === 'image' ? image(id) : mode === 'video' ? video(id) : mode === 'text' && !image(id) && !video(id)
-  })
-}
-
-export function defaultAccountTestModel(account: CindyAccountLike | null, models: AccountAvailableModel[], mode = 'text'): string {
-  if (!models.length) return ''
-  if (account?.platform === 'grok') {
-    return (mode === 'text' ? models.find(m => m.id.includes('grok-4.5')) || models.find(m => m.id === 'grok') : undefined)?.id || models[0].id
+// Presentation validates a data contract; provider/model selection rules are
+// evaluated once by the server and never reconstructed in this bundle.
+export function validateAccountTestPlan(value: unknown, accountID: number): AccountTestPlanView {
+  const plan = value as AccountTestPlanView | null
+  if (!plan || plan.schema_version !== 1 || plan.account_id !== accountID || !Number.isSafeInteger(accountID) || accountID <= 0 ||
+      typeof plan.wire_platform !== 'string' || !plan.wire_platform || typeof plan.default_mode !== 'string' ||
+      !Array.isArray(plan.models) || !plan.mode_views || typeof plan.mode_views !== 'object' || Array.isArray(plan.mode_views) ||
+      !Object.prototype.hasOwnProperty.call(plan.mode_views, plan.default_mode)) throw new Error('Invalid account test plan')
+  const ids = new Set<string>()
+  for (const model of plan.models) {
+    if (!model || typeof model.id !== 'string' || !model.id || ids.has(model.id) ||
+        typeof model.display_name !== 'string' || !model.display_name) throw new Error('Invalid account test model')
+    ids.add(model.id)
   }
-  return pickCindyAccountTestDefault(account, models)?.id
-    || (account?.platform === 'gemini' ? models[0].id : models.find(m => m.id.includes('sonnet'))?.id)
-    || models[0].id
+  for (const view of Object.values(plan.mode_views)) {
+    if (!view || !Array.isArray(view.model_ids) || new Set(view.model_ids).size !== view.model_ids.length ||
+        view.model_ids.some(id => typeof id !== 'string' || !ids.has(id)) || typeof view.default_model_id !== 'string' ||
+        (view.default_model_id !== '' && !view.model_ids.includes(view.default_model_id))) throw new Error('Invalid account test mode view')
+  }
+  return plan
+}
+
+export function accountTestModelsForMode(plan: AccountTestPlanView | null, mode?: string): AccountAvailableModel[] {
+  if (!plan) return []
+  const key = mode || plan.default_mode
+  if (!Object.prototype.hasOwnProperty.call(plan.mode_views, key)) return []
+  const byID = new Map(plan.models.map(model => [model.id, model]))
+  return plan.mode_views[key]!.model_ids.map(id => byID.get(id)!).filter(Boolean)
+}
+
+export function defaultAccountTestModel(plan: AccountTestPlanView | null, mode?: string): string {
+  if (!plan) return ''
+  const key = mode || plan.default_mode
+  return Object.prototype.hasOwnProperty.call(plan.mode_views, key) ? plan.mode_views[key]!.default_model_id : ''
 }

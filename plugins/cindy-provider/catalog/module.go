@@ -145,6 +145,11 @@ func (m *Module) Invoke(ctx context.Context, in extensionv1.Invocation) (extensi
 }
 func (r Registry) Query(query extensionv1.CindyCatalogQuery) (json.RawMessage, error) {
 	switch query.Method {
+	case extensionv1.CindyAccountTestPlanMethodV1:
+		if len(query.Args) != 0 {
+			return nil, errors.New("invalid account test plan arguments")
+		}
+		return json.Marshal([]any{r.AccountTestPlanV1()})
 	case extensionv1.CindyCatalogSnapshotMethodV1:
 		if len(query.Args) != 0 {
 			return nil, errors.New("invalid catalog arguments")

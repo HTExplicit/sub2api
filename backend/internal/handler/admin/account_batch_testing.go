@@ -97,13 +97,14 @@ func (h *AccountHandler) BatchTest(c *gin.Context) {
 var batchTestCatalogSlots = make(chan struct{}, 5)
 
 type batchTestModelRow struct {
-	AccountID int64  `json:"account_id"`
-	Name      string `json:"name"`
-	Platform  string `json:"platform"`
-	Type      string `json:"type"`
-	IsCindy   bool   `json:"is_cindy"`
-	Models    any    `json:"models"`
-	ErrorCode string `json:"error_code,omitempty"`
+	AccountID int64                `json:"account_id"`
+	Name      string               `json:"name"`
+	Platform  string               `json:"platform"`
+	Type      string               `json:"type"`
+	IsCindy   bool                 `json:"is_cindy"`
+	Models    any                  `json:"models"`
+	ErrorCode string               `json:"error_code,omitempty"`
+	TestPlan  *accountTestPlanView `json:"test_plan,omitempty"`
 }
 
 func (h *AccountHandler) BatchTestModels(c *gin.Context) {
@@ -119,6 +120,11 @@ func (h *AccountHandler) BatchTestModels(c *gin.Context) {
 		}
 	}
 	ids := normalizeInt64IDList(req.AccountIDs)
+	withPlan, err := accountTestPlanRequested(c.Query("view"))
+	if err != nil {
+		response.BadRequest(c, err.Error())
+		return
+	}
 	if _, _, err := service.PlanBatchAccountTests(c.Request.Context(), extensionv1.BatchTestPlanningRequest{HasLegacy: true, AccountIDs: ids}); err != nil {
 		response.ErrorFrom(c, err)
 		return
@@ -156,6 +162,15 @@ func (h *AccountHandler) BatchTestModels(c *gin.Context) {
 			}
 			rows[i].Name, rows[i].Platform, rows[i].Type = account.Name, account.Platform, account.Type
 			rows[i].IsCindy = service.IsCindyAPIKeyAccount(account.Platform, account.Type, account.Credentials)
+			if withPlan {
+				plan, err := h.accountTestPlan(ctx, account)
+				if err != nil || ctx.Err() != nil {
+					rows[i].ErrorCode = "catalog_failed"
+					return
+				}
+				rows[i].Models, rows[i].TestPlan = plan.Models, plan
+				return
+			}
 			models, err := h.accountTestModels(ctx, account)
 			if err != nil || ctx.Err() != nil {
 				rows[i].ErrorCode = "catalog_failed"

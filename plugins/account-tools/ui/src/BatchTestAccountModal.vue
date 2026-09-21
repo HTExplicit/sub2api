@@ -43,7 +43,7 @@ import { useI18n } from 'vue-i18n'
 import AccountTestModelSelect from './AccountTestModelSelect.vue'
 import AccountTestReasoningSelect from './AccountTestReasoningSelect.vue'
 import { accountJobsAPI, type AccountAvailableModel, type AccountJob, type BatchTestModelRow } from './api'
-import { prepareAccountTestModels, accountTestModelsForMode, defaultAccountTestModel, isAccountTestReasoningValid } from './accountTestModels'
+import { validateAccountTestPlan, accountTestModelsForMode, defaultAccountTestModel, isAccountTestReasoningValid } from './accountTestModels'
 import { useNotifications as useAppStore } from '@sub2api/plugin-ui'
 import AccountTextTestPrompt from './AccountTextTestPrompt.vue'
 import { useAccountTestPrompt } from './useAccountTestPrompt'
@@ -79,9 +79,13 @@ async function load(ids: number[], version: number) {
       if (!idSet.has(row.account_id)) continue
       const loaded = byID.get(row.account_id)
       if (!loaded) { row.error_code = 'catalog_missing'; row.loading = false; continue }
-      const models = accountTestModelsForMode(loaded, prepareAccountTestModels(loaded, loaded.models || []))
-      const model = models.some(m => m.id === row.model) ? row.model : defaultAccountTestModel(loaded, models)
-      Object.assign(row, loaded, { models, model, loading: false, error_code: loaded.error_code })
+      if (loaded.error_code) { row.error_code = loaded.error_code; row.loading = false; continue }
+      try {
+        const plan = validateAccountTestPlan(loaded.test_plan, row.account_id)
+        const models = accountTestModelsForMode(plan)
+        const model = models.some(m => m.id === row.model) ? row.model : defaultAccountTestModel(plan)
+        Object.assign(row, loaded, { models, model, loading: false, error_code: undefined })
+      } catch { row.error_code = 'catalog_invalid'; row.loading = false }
     }
   } catch {
     if (version !== generation) return

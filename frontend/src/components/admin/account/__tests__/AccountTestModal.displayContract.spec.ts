@@ -10,8 +10,8 @@ import Select from '@/components/common/Select.vue'
 import type { Account } from '@/types'
 import contract from '../../../../../../backend/internal/service/testdata/account_available_models_contract.json'
 
-const { getAvailableModels } = vi.hoisted(() => ({ getAvailableModels: vi.fn() }))
-vi.mock('@/api/admin', () => ({ adminAPI: { accounts: { getAvailableModels } } }))
+const { getAccountTestPlan } = vi.hoisted(() => ({ getAccountTestPlan: vi.fn() }))
+vi.mock('@/api/admin', () => ({ adminAPI: { accounts: { getAccountTestPlan } } }))
 vi.mock('@/composables/useClipboard', () => ({ useClipboard: () => ({ copyToClipboard: vi.fn() }) }))
 vi.mock('vue-i18n', async () => ({
   ...await vi.importActual<typeof import('vue-i18n')>('vue-i18n'),
@@ -19,6 +19,11 @@ vi.mock('vue-i18n', async () => ({
 }))
 
 let wrapper: VueWrapper | undefined
+
+function testPlan(models = structuredClone(contract.expected)) {
+  return { schema_version: 1, account_id: 501, wire_platform: 'openai', default_mode: 'default', models,
+    mode_views: { default: { model_ids: models.map(model => model.id), default_model_id: models[0]?.id || '' } } }
+}
 
 async function openModal() {
   const pinia = createPinia()
@@ -45,10 +50,10 @@ async function openModal() {
 }
 
 beforeEach(() => {
-  getAvailableModels.mockReset()
+  getAccountTestPlan.mockReset()
   // The same expected response is asserted against the real backend HTTP path.
   // No frontend display-name repair or Select stub is used in this test.
-  getAvailableModels.mockResolvedValue(structuredClone(contract.expected))
+  getAccountTestPlan.mockResolvedValue(testPlan())
   localStorage.setItem('auth_token', 'test-token')
   vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
     ok: true,
@@ -68,7 +73,7 @@ afterEach(() => {
 describe('AccountTestModal account-model display contract', () => {
   it('renders actual selected/dropdown text for the ID-only discovery contract', async () => {
     const modal = await openModal()
-    expect(getAvailableModels).toHaveBeenCalledWith(501)
+    expect(getAccountTestPlan).toHaveBeenCalledWith(501, expect.any(AbortSignal))
     expect(modal.findAllComponents(Select)).toHaveLength(2)
     const trigger = modal.findAll('.select-trigger')[0]
     expect(trigger.text()).toContain('Case/Only-ID')
@@ -105,7 +110,7 @@ describe('AccountTestModal account-model display contract', () => {
   })
 
   it('keeps a genuinely empty catalog empty and does not invent a test model', async () => {
-    getAvailableModels.mockResolvedValue([])
+    getAccountTestPlan.mockResolvedValue(testPlan([]))
     const modal = await openModal()
     expect(modal.findAll('.select-trigger')[0].text()).toContain('admin.accounts.selectTestModel')
     const start = modal.findAll('button').find(button => button.text().includes('admin.accounts.startTest'))!

@@ -373,7 +373,7 @@ import AccountTextTestPrompt from './AccountTextTestPrompt.vue'
 import { useAccountTestPrompt } from '@/composables/useAccountTestPrompt'
 import { usePluginExtensions } from '@/stores/pluginExtensions'
 import { contributionAdmission } from '@/components/plugins/contributionAdmission'
-import { computed, ref, watch, nextTick } from 'vue'
+import { computed, ref, watch, nextTick, onBeforeUnmount, onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import BaseDialog from '@/components/common/BaseDialog.vue'
 import Select from '@/components/common/Select.vue'
@@ -384,11 +384,8 @@ import { useClipboard } from '@/composables/useClipboard'
 import { buildApiUrl } from '@/api/client'
 import { ADMIN_UI_REQUEST_HEADER } from '@/api/adminUIRequest'
 import { adminAPI } from '@/api/admin'
-import {
-  isCindyOpenAIAPIKeyAccount
-} from '@/utils/cindyOpenAIDefaults'
-import { prepareAccountTestModels, accountTestModelsForMode, defaultAccountTestModel } from '@/utils/accountTestModels'
-import type { Account, AccountAvailableModel } from '@/types'
+import { validateAccountTestPlan, accountTestModelsForMode, defaultAccountTestModel } from '@/utils/accountTestModels'
+import type { Account, AccountAvailableModel, AccountTestPlanView } from '@/types'
 
 const { t } = useI18n()
 const { copyToClipboard } = useClipboard()
@@ -418,6 +415,10 @@ const outputLines = ref<OutputLine[]>([])
 const streamingContent = ref('')
 const errorMessage = ref('')
 const availableModels = ref<AccountAvailableModel[]>([])
+const modelPlan = ref<AccountTestPlanView | null>(null)
+const currentModelPlan = computed(() => modelPlan.value?.account_id === props.account?.id ? modelPlan.value : null)
+let modelLoadRevision = 0
+let modelLoadController: AbortController | null = null
 const selectedModelId = ref('')
 const { prompt: textPrompt, valid: textPromptValid } = useAccountTestPrompt()
 const promptExtensions = usePluginExtensions()
@@ -449,7 +450,7 @@ const uploadAudioName = ref('')
 const imageFileInput = ref<HTMLInputElement | null>(null)
 const audioFileInput = ref<HTMLInputElement | null>(null)
 const isOpenAIAccount = computed(() =>
-  props.account?.platform === 'openai' || isCindyOpenAIAPIKeyAccount(props.account)
+  (currentModelPlan.value?.wire_platform || props.account?.platform) === 'openai'
 )
 const isGrokAccount = computed(() => props.account?.platform === 'grok')
 const openAITestModeOptions = computed(() => [
@@ -475,7 +476,7 @@ const supportsGeminiImageTest = computed(() => {
 const supportsOpenAIImageTest = computed(() => {
   const modelID = selectedModelId.value.toLowerCase()
   if (!modelID.startsWith('gpt-image-')) return false
-  return props.account?.platform === 'openai' || isCindyOpenAIAPIKeyAccount(props.account)
+  return isOpenAIAccount.value
 })
 
 const supportsGrokImageTest = computed(
@@ -495,7 +496,7 @@ const showModelSelect = computed(() => {
   return grokTestMode.value === 'text' || grokTestMode.value === 'image' || grokTestMode.value === 'video'
 })
 
-const modelOptionsForMode = computed(() => accountTestModelsForMode(props.account, availableModels.value, grokTestMode.value))
+const modelOptionsForMode = computed(() => accountTestModelsForMode(currentModelPlan.value, isGrokAccount.value ? grokTestMode.value : undefined))
 
 const supportsTextPrompt = computed(() => testMode.value !== 'compact' && !supportsImageTest.value && (!isGrokAccount.value || grokTestMode.value === 'text'))
 const supportsPromptInput = computed(() => {
@@ -677,6 +678,7 @@ const testModeSummary = computed(() => {
 })
 
 const canStartTest = computed(() => {
+	if (!props.show || !currentModelPlan.value || loadingModels.value) return false
 	if (effectiveReasoningEffort.value && !reasoningValid.value) return false
   if (supportsTextPrompt.value && textPromptEnabled.value && (!textPromptValid.value || !textPromptPolicyValid.value)) return false
   if (status.value === 'connecting') return false
@@ -687,11 +689,11 @@ const canStartTest = computed(() => {
       grokTestMode.value === 'stt' ||
       grokTestMode.value === 'realtime'
     ) {
-      return true // standalone modes (prompt/model optional)
+      return Object.prototype.hasOwnProperty.call(currentModelPlan.value.mode_views, grokTestMode.value) // standalone modes (prompt/model optional)
     }
-    return Boolean(selectedModelId.value)
+    return modelOptionsForMode.value.some(model => model.id === selectedModelId.value)
   }
-  return Boolean(selectedModelId.value)
+  return modelOptionsForMode.value.some(model => model.id === selectedModelId.value)
 })
 
 // Load available models when modal opens
@@ -716,25 +718,27 @@ const pickDefaultModelForMode = () => {
     return
   }
   if (opts.some((m) => m.id === selectedModelId.value)) return
-  selectedModelId.value = defaultAccountTestModel(props.account, opts, grokTestMode.value)
+  selectedModelId.value = defaultAccountTestModel(currentModelPlan.value, grokTestMode.value)
 }
 
 watch(
-  () => props.show,
-  async (newVal) => {
+  [() => props.show, () => props.account?.id],
+  async ([newVal]) => {
     if (newVal && props.account) {
+      abortStream()
       mediaTestPrompt.value = ''
       testMode.value = 'default'
       reasoningEffort.value = ''
       grokTestMode.value = 'text'
       resetState()
-      await loadAvailableModels()
-      if (isGrokAccount.value) {
+      const loaded = await loadAvailableModels()
+      if (loaded && isGrokAccount.value) {
         pickDefaultModelForMode()
         applyDefaultPromptForMode()
       }
     } else {
       abortStream()
+      invalidateModelLoad()
     }
   }
 )
@@ -747,23 +751,49 @@ watch(grokTestMode, () => {
   applyDefaultPromptForMode()
 })
 
-const loadAvailableModels = async () => {
-  if (!props.account) return
-
+const loadAvailableModels = async (): Promise<boolean> => {
+  if (!props.account) return false
+  const accountID = props.account.id
+  const revision = ++modelLoadRevision
+  modelLoadController?.abort()
+  modelLoadController = new AbortController()
   loadingModels.value = true
+  modelPlan.value = null
+  availableModels.value = []
   selectedModelId.value = '' // Reset selection before loading
   try {
-    availableModels.value = prepareAccountTestModels(props.account, await adminAPI.accounts.getAvailableModels(props.account.id))
-    selectedModelId.value = defaultAccountTestModel(props.account, modelOptionsForMode.value, grokTestMode.value)
-  } catch (error) {
-    console.error('Failed to load available models:', error)
+    const result = await adminAPI.accounts.getAccountTestPlan(accountID, modelLoadController.signal)
+    if (revision !== modelLoadRevision || !props.show || props.account?.id !== accountID) return false
+    modelPlan.value = validateAccountTestPlan(result, accountID)
+    availableModels.value = modelPlan.value.models
+    selectedModelId.value = defaultAccountTestModel(modelPlan.value, isGrokAccount.value ? grokTestMode.value : undefined)
+    return true
+  } catch {
+    if (revision !== modelLoadRevision || !props.show || props.account?.id !== accountID) return false
+    console.error('Failed to load account test plan')
     // Fallback to empty list
+    modelPlan.value = null
     availableModels.value = []
     selectedModelId.value = ''
+    return false
   } finally {
-    loadingModels.value = false
+    if (revision === modelLoadRevision) loadingModels.value = false
   }
 }
+
+function invalidateModelLoad() {
+  modelLoadRevision += 1
+  modelLoadController?.abort()
+  modelLoadController = null
+  loadingModels.value = false
+}
+onBeforeUnmount(invalidateModelLoad)
+onMounted(async () => {
+  if (props.show && props.account && await loadAvailableModels() && isGrokAccount.value) {
+    pickDefaultModelForMode()
+    applyDefaultPromptForMode()
+  }
+})
 
 const resetState = () => {
   status.value = 'idle'
@@ -778,6 +808,7 @@ const resetState = () => {
 
 const handleClose = () => {
   abortStream()
+  invalidateModelLoad()
   emit('close')
 }
 

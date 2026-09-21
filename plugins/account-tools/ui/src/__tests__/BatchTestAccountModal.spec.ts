@@ -6,8 +6,11 @@ const { batchTestModels, batchTest } = vi.hoisted(() => ({ batchTestModels: vi.f
 vi.mock('../api', () => ({ accountJobsAPI: { batchTestModels, batchTest } }))
 vi.mock('@sub2api/plugin-ui', async () => { const actual = await vi.importActual<typeof import('@sub2api/plugin-ui')>('@sub2api/plugin-ui'); const { ref } = await import('vue'); return { ...actual, useNotifications: () => ({ showError: vi.fn() }), usePersistentDraft: () => ref('') } })
 vi.mock('vue-i18n', async importOriginal => ({ ...await importOriginal<typeof import('vue-i18n')>(), useI18n: () => ({ t: (key: string, args?: unknown) => key + (args ? JSON.stringify(args) : '') }) }))
-function catalog(id: number, models = ['first', 'shared']) {
-  return { account_id: id, name: `Account ${id}`, platform: 'openai', type: 'apikey', is_cindy: false, models: models.map(id => ({ id, display_name: `Display ${id}` })) }
+function catalog(id: number, choices: Array<string | { id: string; display_name: string; reasoning_efforts?: string[] }> = ['first', 'shared']) {
+  const models = choices.map(choice => typeof choice === 'string' ? { id: choice, display_name: `Display ${choice}` } : choice)
+  const test_plan = { schema_version: 1, account_id: id, wire_platform: 'openai', default_mode: 'default', models,
+    mode_views: { default: { model_ids: models.map(model => model.id), default_model_id: models[0]?.id || '' } } }
+  return { account_id: id, name: `Account ${id}`, platform: 'openai', type: 'apikey', is_cindy: false, models, test_plan }
 }
 function mountModal(ids = [1, 2, 3]) {
  return mount(BatchTestAccountModal, { props: { show: true, accountIds: ids }, global: { stubs: {
@@ -64,13 +67,10 @@ describe('BatchTestAccountModal per-account selections', () => {
   wrapper.unmount()
  })
  it('blocks an off-page reasoning choice after applying another model without clearing the choice', async () => {
-  batchTestModels.mockImplementation(async (ids: number[]) => ids.map(id => ({
-   ...catalog(id),
-   models: [
+  batchTestModels.mockImplementation(async (ids: number[]) => ids.map(id => catalog(id, [
     { id: 'first', display_name: 'First', reasoning_efforts: ['high'] },
     { id: 'shared', display_name: 'Shared', reasoning_efforts: ['low'] },
-   ],
-  })))
+  ])))
   const wrapper = mountModal(Array.from({ length: 101 }, (_, index) => index + 1)); await flushPromises()
   await button(wrapper, 'batchTest.next').trigger('click')
   await wrapper.get('[data-account-id="101"] label.mt-3 select').setValue('high')
@@ -90,10 +90,10 @@ describe('BatchTestAccountModal per-account selections', () => {
   wrapper.unmount()
  })
  it('keeps a nonempty reasoning choice when the model has no levels until an explicit default choice', async () => {
-  batchTestModels.mockResolvedValue([{ ...catalog(1), models: [
+  batchTestModels.mockResolvedValue([catalog(1, [
    { id: 'first', display_name: 'First', reasoning_efforts: ['high'] },
    { id: 'plain', display_name: 'Plain' },
-  ] }])
+  ])])
   const wrapper = mountModal([1]); await flushPromises()
   await wrapper.get('[data-account-id="1"] label.mt-3 select').setValue('high')
   await wrapper.get('#batch-model-1').setValue('plain')

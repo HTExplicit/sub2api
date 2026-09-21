@@ -3,14 +3,14 @@ import { flushPromises, mount } from '@vue/test-utils'
 import { defineComponent } from 'vue'
 import AccountTestModal from '../AccountTestModal.vue'
 
-const { getAvailableModelsMock } = vi.hoisted(() => ({
-  getAvailableModelsMock: vi.fn()
+const { getAccountTestPlanMock } = vi.hoisted(() => ({
+  getAccountTestPlanMock: vi.fn()
 }))
 
 vi.mock('@/api/admin', () => ({
   adminAPI: {
     accounts: {
-      getAvailableModels: getAvailableModelsMock
+      getAccountTestPlan: getAccountTestPlanMock
     }
   }
 }))
@@ -94,14 +94,17 @@ function buildAccount() {
   } as any
 }
 
+function testPlan(models = [{ id: 'gpt-5.4', display_name: 'GPT-5.4' }], defaultID = models[0]?.id || '') {
+  return { schema_version: 1, account_id: 1, wire_platform: 'openai', default_mode: 'default', models,
+    mode_views: { default: { model_ids: models.map(model => model.id), default_model_id: defaultID } } }
+}
+
 describe('AccountTestModal', () => {
   const originalFetch = global.fetch
 
   beforeEach(() => {
-    getAvailableModelsMock.mockReset()
-    getAvailableModelsMock.mockResolvedValue([
-      { id: 'gpt-5.4', display_name: 'GPT-5.4' }
-    ])
+    getAccountTestPlanMock.mockReset()
+    getAccountTestPlanMock.mockResolvedValue(testPlan())
     global.fetch = vi.fn().mockResolvedValue({
       ok: true,
       body: {
@@ -190,16 +193,14 @@ describe('AccountTestModal', () => {
     expect(wrapper.text()).toContain('已通过 /v1/chat/completions 验证')
   })
 
-  it('filters the Cindy management catalog to testable endpoints and defaults to Luna', async () => {
-    getAvailableModelsMock.mockResolvedValue([
-      { id: 'cindy/auto-review', managed: true, verified: true, endpoints: ['cindy.reviews'] },
-      { id: 'candidate-unverified', managed: true, verified: false, endpoints: ['responses'] },
-      { id: 'claude-sonnet-5', managed: true, verified: true, endpoints: ['messages'] },
-      { id: 'gpt-5.6-sol', managed: true, verified: true, endpoints: ['responses'] },
-      { id: 'gpt-5.6-luna', managed: true, verified: true, endpoints: ['responses'] }
-    ])
+  it('uses the canonical Cindy provider plan without its own default policy', async () => {
+    getAccountTestPlanMock.mockResolvedValue(testPlan([
+      { id: 'provider-choice-a', display_name: 'Choice A' },
+      { id: 'provider-choice-b', display_name: 'Choice B' }
+    ], 'provider-choice-b'))
     const cindy = {
       ...buildAccount(),
+      platform: 'cindy',
       type: 'apikey',
       credentials: { base_url: 'https://api.laxarouter.ai' }
     }
@@ -222,9 +223,11 @@ describe('AccountTestModal', () => {
     await flushPromises()
 
     expect((wrapper.vm as any).availableModels.map((item: { id: string }) => item.id)).toEqual([
-      'gpt-5.6-sol',
-      'gpt-5.6-luna'
+      'provider-choice-a',
+      'provider-choice-b'
     ])
-    expect((wrapper.vm as any).selectedModelId).toBe('gpt-5.6-luna')
+    expect((wrapper.vm as any).selectedModelId).toBe('provider-choice-b')
+    expect((wrapper.vm as any).isOpenAIAccount).toBe(true)
+    wrapper.unmount()
   })
 })

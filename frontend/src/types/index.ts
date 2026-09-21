@@ -952,6 +952,21 @@ export interface AccountAvailableModel {
   public_model?: boolean
 }
 
+export interface AccountTestModeView {
+  model_ids: string[]
+  default_model_id: string
+}
+
+export interface AccountTestPlanView {
+  schema_version: 1
+  account_id: number
+  wire_platform: string
+  default_mode: string
+  models: AccountAvailableModel[]
+  mode_views: Record<string, AccountTestModeView>
+  policy_stamp?: string
+}
+
 export interface Proxy {
   id: number
   name: string

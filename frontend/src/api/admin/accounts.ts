@@ -613,6 +613,13 @@ export async function getAvailableModels(id: number): Promise<AccountAvailableMo
   return data
 }
 
+export async function getAccountTestPlan(id: number, signal?: AbortSignal): Promise<import('@/types').AccountTestPlanView> {
+  const { data } = await apiClient.get<import('@/types').AccountTestPlanView>(`/admin/accounts/${id}/models`, {
+    params: { view: 'account-test-plan-v1' }, signal,
+  })
+  return data
+}
+
 export interface SyncUpstreamModelsResult {
   models: string[]
   metadata?: Record<string, UpstreamModelMetadata>
@@ -1351,6 +1358,7 @@ export const accountsAPI = {
   resetTempUnschedulable,
   setSchedulable,
   getAvailableModels,
+  getAccountTestPlan,
   getModelContextCapacities,
   previewModelContextCapacities,
   syncUpstreamModels,

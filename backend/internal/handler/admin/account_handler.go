@@ -2600,6 +2600,21 @@ func (h *AccountHandler) GetAvailableModels(c *gin.Context) {
 		return
 	}
 
+	withPlan, err := accountTestPlanRequested(c.Query("view"))
+	if err != nil {
+		response.BadRequest(c, err.Error())
+		return
+	}
+	if withPlan {
+		plan, err := h.accountTestPlan(c.Request.Context(), account)
+		if err != nil {
+			response.Error(c, http.StatusBadGateway, "Unable to load account test plan")
+			return
+		}
+		response.Success(c, plan)
+		return
+	}
+
 	models, err := h.accountTestModels(c.Request.Context(), account)
 	if err != nil {
 		response.Error(c, http.StatusBadGateway, "Unable to load account test models")

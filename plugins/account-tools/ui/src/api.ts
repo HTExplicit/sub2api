@@ -84,9 +84,18 @@ export interface AccountAvailableModel {
   endpoints?: string[]; managed?: boolean; public_model?: boolean; verified?: boolean
   [key: string]: unknown
 }
+export interface AccountTestPlanView {
+  schema_version: 1
+  account_id: number
+  wire_platform: string
+  default_mode: string
+  models: AccountAvailableModel[]
+  mode_views: Record<string, { model_ids: string[]; default_model_id: string }>
+  policy_stamp?: string
+}
 export interface BatchTestModelRow {
   account_id: number; name: string; platform: string; type: string; is_cindy: boolean
-  models: AccountAvailableModel[]; error_code?: string
+  models: AccountAvailableModel[]; error_code?: string; test_plan?: AccountTestPlanView
 }
 export interface TestSelection { account_id: number; model_id: string; reasoning_effort?: string }
 
@@ -111,7 +120,7 @@ export const accounts = {
 export const accountJobsAPI = {
   batchTest: (items: TestSelection[], prompt = '') => resource<AccountJob>('tests.submit', { body: { items, prompt }, operation_key: operationKey('account_batch_test') }),
   async batchTestModels(account_ids: number[], signal?: AbortSignal) {
-    return (await resource<{ items: BatchTestModelRow[] }>('tests.models', { body: { account_ids } }, signal)).items
+    return (await resource<{ items: BatchTestModelRow[] }>('tests.models', { body: { account_ids }, query: { view: 'account-test-plan-v1' } }, signal)).items
   }
 }
 export const adminAPI = { accounts }
