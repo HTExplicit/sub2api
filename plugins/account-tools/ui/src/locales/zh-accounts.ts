@@ -268,6 +268,7 @@ export default {accounts: {
       accountCount: '{count} 个账号',
       deleteFolderMoveConfirm: '删除文件夹“{name}”后，其中 {count} 个账号将移到“未分类”。确认删除？',
       deleteTaxonomyConfirm: '确认删除“{name}”？账号与调度设置不会被删除。',
+      taxonomyDeleteUnavailable: '删除会影响所有关联账号；仅在插件可用、且绑定覆盖全部平台和账号类型并开启 100% 灰度时可用。',
       taxonomySaved: '账号分类已保存',
       noTags: '暂无标签',
       filterPlatform: '平台',

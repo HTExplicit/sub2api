@@ -23,9 +23,10 @@ func (m *PluginManager) ApplyRequestHeaders(ctx context.Context, account *Accoun
 		return errors.New("plugin registry unavailable")
 	}
 	var ids []int64
+	invocation := extensionv1.Invocation{Capability: extensionv1.CapabilityRequest, Operation: "inject", AccountID: account.ID}
 	for id, installation := range registry.installations {
 		operations, explicit := installation.Manifest.Operations[extensionv1.CapabilityRequest]
-		if (!explicit || slices.Contains(operations, "inject")) && pluginHasCapability(installation, extensionv1.CapabilityRequest, account.Platform, account.Type) {
+		if (!explicit || slices.Contains(operations, "inject")) && pluginHasInvocationCapability(installation, invocation, account.Platform, account.Type) {
 			ids = append(ids, id)
 		}
 	}
@@ -34,9 +35,10 @@ func (m *PluginManager) ApplyRequestHeaders(ctx context.Context, account *Accoun
 	if err != nil {
 		return err
 	}
+	invocation.Payload = raw
 	projected := headers.Clone()
 	for _, id := range ids {
-		result, err := m.InvokeExtension(ctx, id, account.Platform, account.Type, extensionv1.Invocation{Capability: extensionv1.CapabilityRequest, Operation: "inject", Payload: raw})
+		result, err := m.InvokeExtension(ctx, id, account.Platform, account.Type, invocation)
 		if err != nil {
 			return err
 		}

@@ -27,8 +27,9 @@ func (m *PluginManager) SchedulingDecision(account *Account, model string, now t
 	if registry == nil || registry.unavailable != "" {
 		return extensionv1.SchedulingDecision{Reason: "plugin_registry_unavailable", Scope: model}
 	}
+	invocation := extensionv1.Invocation{Capability: extensionv1.CapabilityScheduling, AccountID: account.ID}
 	for id, installation := range registry.installations {
-		if !pluginHasCapability(installation, extensionv1.CapabilityScheduling, account.Platform, account.Type) {
+		if !pluginHasInvocationCapability(installation, invocation, account.Platform, account.Type) {
 			continue
 		}
 		runtime := registry.runtimes[id]

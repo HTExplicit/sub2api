@@ -122,6 +122,10 @@
 - 导入跨块身份计数由宿主不可变事实计算，prepare/finalize 跟踪标志必须一致；重复身份和错误设备归属不能被插件变成可执行计划，业务错误码优先级仍由插件决定。旧批量 ID 中任意非正值整体拒绝，合法去重/排序保留。八个精确定向用例实际运行通过，证据见根 `artifacts/evidence/v027-astra-import-integrity-review.json`。
 - 管理员无贡献 ID 的配置页在停用/故障时仍能打开，不授予业务执行；业务页按能力绑定准入，AllAccounts 要求通配平台/类型及100%灰度。静态令牌不因配置修订或执行代次变化失效，操作仍走实时门禁。原选择器漏掉新测试名已纠正，四个新增顶层测试及子例实际 RUN/PASS，见根 `artifacts/evidence/v027-ui-session-admission-agent-review.json`；这不代表完整管理器已审完。
 - 更新暂存与续作在候选验证前及提交前重新读取持久注册表，检查目标修订/配置/包代次、依赖及操作冲突，保留最新停用意图和新能力默认关闭。十个准入叶子用例通过；另修正旧续作夹具缺更新接口导致的假阳性，现确实进入候选启动并在失败时阻止提交。见根 `artifacts/evidence/v027-astra-update-admission-review.json`。注册表读取不是跨插件事务快照，运行租约与仓库层完整审查仍继续；未声称跨插件原子性或成功健康验证。
+- 旧上传接口现只用于首次安装，已有身份返回 `409 / PLUGIN_ALREADY_INSTALLED` 并要求专用更新；仓库并发冲突也不覆盖旧包。成功晋升后重新读取全部注册表，再检查并发布，不沿用其他插件的排空前快照。真实 PostgreSQL 的旧租约覆盖反例修复后通过，正常首次安装、冲突时旧包/配置/灰度/pending 保留、明确卸载后新 ID 安装和诊断账本保留均已定向验证；见根 `artifacts/evidence/v027-astra-update-persistence-review.json`。
+- 未完成内置初始化不能再被独立更新插入并覆盖：Prepare/Complete 保留 `updating` 与固定版所有权，Stage 不把迁移期临时关闭绑定当成管理员意图。迟到 Complete 仅在持久化确认已被其他操作接手时跳过；普通失败仍报错。两条 PostgreSQL 反例及11个直接叶子用例已通过，见根 `artifacts/evidence/v027-astra-bootstrap-update-review.json`。最终读取后的跨插件写入、运行租约会话丢失及已完成 bundle 的晚到固定版竞争仍待专项关闭。
+- 分类赋值回传必须保留原文件夹和完整标签集合。全局文件夹/标签删除要求通配账号类型、平台和100%灰度，SDK新增只读具名资源可用性查询；独立页面显示、点击前复核及后端执行共用同一判断，其余分类操作不扩大为全局权限。8个新增定向用例及两份类型检查通过；根 `artifacts/evidence/v027-astra-account-taxonomy-review.json` 区分完整与局部审查。
+- 账号型宿主 broker 每次调用读取一个当前安装快照，检查已启用状态、包/执行代次/已应用配置及真实账号灰度；列表逐账号过滤，凭据、指标和调度投影不能绕过范围。已发出的归属观测在停用后仍可按原账本收尾。请求头注入与本地调度也改为同一真实账号灰度。合成反例先失败后通过，认证/租户/HTTP帧头保护及具名操作隔离回归通过；见根 `artifacts/evidence/v027-broker-and-request-scope-review.json`。这不代表全部调用方或跨实例生命周期已审完。
 
 ## 未完成
 
@@ -142,7 +146,7 @@
 ## 续做入口与边界
 
 - 本地 PostgreSQL 使用原目录 `artifacts/tmp/sub2api-v027-postgres`，监听 127.0.0.1:55437；专用测试 DSN 为 `postgresql://codex_test@127.0.0.1:55437/sub2api_test_v027?sslmode=disable&TimeZone=UTC`，仅定向测试设置 `SUB2API_TEST_POSTGRES_ONLY_DSN`，不连接生产。
-- 临时实例退出时使用上述原数据目录恢复，不重置数据；当前后台保活会话为 50429（PostgreSQL PID 49532），不要把它当成卡住的测试终止。分类 CRUD/批量排序和插件停用取消事务的前序结果保留。
+- 临时实例退出时使用上述原数据目录恢复，不重置数据；前保活实例已退出，当前测试实例于2026-09-21经原目录恢复为 PostgreSQL PID 38748、端口55437，后续使用前核对运行事实。Astra定向测试各自创建的独立数据库已在确认零连接后删除，原 `sub2api_test_v027` 与数据目录保留；不要把测试服务当成卡住的命令终止。分类 CRUD/批量排序和插件停用取消事务的前序结果保留。
 - PowerShell 的原生 rg 配置会影响结果，使用 `rg --no-config`；通配路径改为目录加 `-g`，不要向 Windows 传字面星号路径。
 - 根项目不是 Git 仓库；源码 Git 在当前 worktree，主 checkout 和历史 worktree 不清理。
 - `/admin/accounts/:id/usage` 可能触发模型探针；不要为了验收直接访问线上该接口。

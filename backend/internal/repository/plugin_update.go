@@ -88,8 +88,13 @@ func (r *pluginRepository) StagePluginUpdate(ctx context.Context, previous, cand
 	}
 	defer tx.Rollback()
 	var generation int64
-	err = tx.QueryRowContext(ctx, `UPDATE sub2api_plugin_installations SET state='updating',last_error='',updated_at=NOW()
+	// The disabled rows of an unfinished bundle are temporary, not activation
+	// intent. Explicit pinned installs no longer belong to that old journal.
+	err = tx.QueryRowContext(ctx, `UPDATE sub2api_plugin_installations p SET state='updating',last_error='',updated_at=NOW()
 		WHERE id=$1 AND revision=$2 AND package_sha256=$3 AND state<>'updating'
+		AND (update_policy='pinned' OR NOT EXISTS (
+			SELECT 1 FROM sub2api_plugin_bootstrap b WHERE b.plugin_key=p.plugin_key AND (NOT b.completed OR NOT b.state_imported)
+		))
 		RETURNING runtime_generation`, previous.ID, previous.Revision, previous.PackageSHA256).Scan(&generation)
 	if errors.Is(err, sql.ErrNoRows) {
 		return service.ErrPluginStateChanged

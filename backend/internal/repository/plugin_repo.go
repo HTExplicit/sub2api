@@ -88,32 +88,7 @@ func (r *pluginRepository) Install(ctx context.Context, plugin *service.PluginIn
 				artifact_path, install_path, binary_path, binary_sha256,
 				signature_status, state, last_error, installed_by, installed_at, updated_at,package_sha256,update_policy
 			) VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7, $8, $9, $10, $11, $12, $13, '', $14, NOW(), NOW(),encode(sha256($7),'hex'),'pinned')
-			ON CONFLICT (plugin_key) DO UPDATE SET
-			name = EXCLUDED.name,
-			version = EXCLUDED.version,
-			description = EXCLUDED.description,
-				author = EXCLUDED.author,
-				manifest = EXCLUDED.manifest,
-				artifact_data = EXCLUDED.artifact_data,
-			artifact_path = EXCLUDED.artifact_path,
-			install_path = EXCLUDED.install_path,
-			binary_path = EXCLUDED.binary_path,
-			binary_sha256 = EXCLUDED.binary_sha256,
-			package_sha256 = EXCLUDED.package_sha256,
-			update_policy = 'pinned',
-			runtime_generation = sub2api_plugin_installations.runtime_generation + 1,
-			signature_status = EXCLUDED.signature_status,
-			state = EXCLUDED.state,
-			last_error = '',
-			installed_by = EXCLUDED.installed_by,
-			installed_at = NOW(),
-			enabled_at = NULL,
-			updated_at = NOW()
-		WHERE sub2api_plugin_installations.state IN ('disabled', 'error', 'incompatible')
-		  AND NOT EXISTS (
-			SELECT 1 FROM sub2api_plugin_bindings b
-			WHERE b.plugin_id = sub2api_plugin_installations.id AND b.enabled = TRUE
-		  )
+			ON CONFLICT (plugin_key) DO NOTHING
 		RETURNING id
 	`, plugin.PluginKey, plugin.Name, plugin.Version, plugin.Description, plugin.Author, manifestJSON, plugin.ArtifactData,
 		plugin.ArtifactPath, plugin.InstallPath, plugin.BinaryPath, plugin.BinarySHA256,
@@ -121,7 +96,7 @@ func (r *pluginRepository) Install(ctx context.Context, plugin *service.PluginIn
 	var id int64
 	if err := row.Scan(&id); err != nil {
 		if err == sql.ErrNoRows {
-			return nil, service.ErrPluginStateChanged
+			return nil, service.ErrPluginAlreadyInstalled
 		}
 		return nil, err
 	}

@@ -27,7 +27,14 @@ func registerAccountToolResources(accounts *gin.RouterGroup, h *handler.Handlers
 		{"tests.submit", "POST", "/batch-test", "", "account_ids", "items", "", h.Admin.Account.BatchTest},
 	} {
 		descriptor := extensionv1.ResourceDescriptor{ResourceGrant: extensionv1.ResourceGrant{Name: route.name, Capability: extensionv1.CapabilityAdmin, Permission: "admin"}, Method: route.method, Path: accounts.BasePath() + route.path,
-			AccountParam: route.accountParam, AccountBodyField: route.accountBody, AccountItemsField: route.accountItems, FilterField: route.filter}
+			AccountParam: route.accountParam, AccountBodyField: route.accountBody, AccountItemsField: route.accountItems, FilterField: route.filter,
+			AllAccounts: accountToolResourceRequiresAllAccounts(route.name)}
 		accounts.Handle(route.method, route.path, h.Admin.Plugin.RegisterResource(descriptor), route.handler)
 	}
+}
+
+func accountToolResourceRequiresAllAccounts(name string) bool {
+	// Deleting a global classification changes every referring account, including
+	// those outside a scoped binding or rollout. Do not silently filter a delete.
+	return name == "taxonomy.folders.delete" || name == "taxonomy.tags.delete"
 }

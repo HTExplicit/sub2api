@@ -57,7 +57,8 @@
             <button type="button" class="icon-button" :title="t('common.edit')" @click="startEdit(item)">
               <Icon name="edit" size="sm" />
             </button>
-            <button type="button" class="icon-button text-red-500 hover:text-red-600" :title="t('common.delete')" @click="requestDelete(item)">
+            <button type="button" data-test="taxonomy-delete" class="icon-button text-red-500 hover:text-red-600 disabled:opacity-50" :disabled="saving || !canDelete"
+              :title="canDelete ? t('common.delete') : t('admin.accounts.taxonomyDeleteUnavailable')" @click="requestDelete(item)">
               <Icon name="trash" size="sm" />
             </button>
           </template>
@@ -67,6 +68,7 @@
           {{ t('common.noData') }}
         </div>
       </div>
+      <p v-if="!canDelete" data-test="taxonomy-delete-unavailable" role="status" class="text-sm text-gray-500 dark:text-dark-300">{{ t('admin.accounts.taxonomyDeleteUnavailable') }}</p>
     </div>
 
     <footer class="flex justify-end gap-3 border-t border-line pt-4">
@@ -75,7 +77,7 @@
   </section>
 
   <ConfirmDialog
-    :show="Boolean(pendingDelete)"
+    :show="Boolean(pendingDelete) && (canDelete || saving)"
     :title="t('common.delete')"
     :message="deleteMessage"
     :confirm-text="t('common.delete')"
@@ -87,11 +89,11 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { VueDraggable } from 'vue-draggable-plus'
 import { useI18n } from 'vue-i18n'
 import { adminAPI } from './api'
-import { useNotifications as useAppStore } from '@sub2api/plugin-ui'
+import { resourceAvailability, usePluginContext, useNotifications as useAppStore } from '@sub2api/plugin-ui'
 import { ConfirmDialog } from '@sub2api/plugin-ui'
 import { Icon } from '@sub2api/plugin-ui'
 import type { AccountManagementFolder, AccountManagementTag } from './api'
@@ -120,6 +122,23 @@ const pendingDelete = ref<TaxonomyItem | null>(null)
 const orderedFolders = ref<AccountManagementFolder[]>([])
 const orderedTags = ref<AccountManagementTag[]>([])
 const previousOrder = ref<TaxonomyItem[]>([])
+const context = usePluginContext()
+const deleteAvailability = ref<Record<string, boolean>>({})
+const canDelete = computed(() => context.value.available !== false && deleteAvailability.value[`taxonomy.${tab.value}.delete`] === true)
+let availabilityRequest = 0
+
+async function refreshDeleteAvailability() {
+  const request = ++availabilityRequest
+  deleteAvailability.value = {}
+  if (!props.show || context.value.available === false) return
+  try {
+    const resources = await resourceAvailability()
+    if (request === availabilityRequest) deleteAvailability.value = Object.fromEntries(resources.map(item => [item.name, item.available]))
+  } catch { /* A failed availability lookup must never enable deletion. */ }
+}
+
+watch(() => [props.show, context.value], () => { void refreshDeleteAvailability() }, { immediate: true })
+onBeforeUnmount(() => { availabilityRequest++ })
 
 const tabs = computed(() => [
   { value: 'folders' as const, label: t('admin.accounts.folders') },
@@ -219,6 +238,7 @@ const saveEdit = async (item: TaxonomyItem) => {
 }
 
 const requestDelete = (item: TaxonomyItem) => {
+  if (!canDelete.value || saving.value) return
   pendingDelete.value = item
 }
 
@@ -227,11 +247,18 @@ const confirmDelete = async () => {
   if (!item || saving.value) return
   saving.value = true
   try {
+    await refreshDeleteAvailability()
+    if (!canDelete.value) {
+      pendingDelete.value = null
+      appStore.showError(t('admin.accounts.taxonomyDeleteUnavailable'))
+      return
+    }
     if (tab.value === 'folders') await adminAPI.accounts.deleteFolder(item.id, item.account_count > 0)
     else await adminAPI.accounts.deleteTag(item.id)
     pendingDelete.value = null
     emit('changed')
   } catch (error: any) {
+    void refreshDeleteAvailability()
     appStore.showError(error?.message || t('common.operationFailed'))
   } finally {
     saving.value = false

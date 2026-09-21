@@ -169,6 +169,10 @@ func (h *PluginHandler) Upload(c *gin.Context) {
 	}
 	plugin, err := h.manager.Install(c.Request.Context(), file, installedBy)
 	if err != nil {
+		if errors.Is(err, service.ErrPluginAlreadyInstalled) {
+			response.ErrorFrom(c, err)
+			return
+		}
 		response.BadRequest(c, err.Error())
 		return
 	}

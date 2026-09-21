@@ -613,6 +613,9 @@ func (s *adminServiceImpl) SetAccountTaxonomy(ctx context.Context, accountID int
 	if err := accountToolsOperation(ctx, "*", "*", "taxonomy.assignment", extensionv1.TaxonomyAssignmentPlan{FolderID: assignment.FolderID, TagIDs: assignment.TagIDs}, &plan); err != nil {
 		return nil, err
 	}
+	if err := validateTaxonomyAssignmentIntent(assignment, plan); err != nil {
+		return nil, err
+	}
 	assignment.FolderID, assignment.TagIDs = plan.FolderID, plan.TagIDs
 	contextTx := dbent.TxFromContext(ctx)
 	var txClient *dbent.Client
@@ -670,6 +673,30 @@ func (s *adminServiceImpl) SetAccountTaxonomy(ctx context.Context, accountID int
 		}
 	}
 	return s.GetAccount(ctx, accountID)
+}
+
+// A policy may normalize repeated tag IDs, but it cannot change the requested
+// folder or tag membership. Validation and normalization remain in the plugin;
+// this check protects the immutable mutation targets before opening a transaction.
+func validateTaxonomyAssignmentIntent(input AccountTaxonomyAssignment, plan extensionv1.TaxonomyAssignmentPlan) error {
+	if (input.FolderID == nil) != (plan.FolderID == nil) ||
+		(input.FolderID != nil && *input.FolderID != *plan.FolderID) {
+		return ErrExtensionOperationUnavailable
+	}
+	requested := make(map[int64]struct{}, len(input.TagIDs))
+	for _, id := range input.TagIDs {
+		requested[id] = struct{}{}
+	}
+	if len(requested) != len(plan.TagIDs) {
+		return ErrExtensionOperationUnavailable
+	}
+	for _, id := range plan.TagIDs {
+		if _, ok := requested[id]; !ok || id <= 0 {
+			return ErrExtensionOperationUnavailable
+		}
+		delete(requested, id)
+	}
+	return nil
 }
 
 func (s *adminServiceImpl) accountConsoleQuery(filters AccountConsoleFilters) *dbent.AccountQuery {

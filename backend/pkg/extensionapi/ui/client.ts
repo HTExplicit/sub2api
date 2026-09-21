@@ -22,6 +22,11 @@ export interface ResourceInput {
   form?: Array<[string, string | Blob]>
 }
 
+export interface ResourceAvailability {
+  name: string
+  available: boolean
+}
+
 export interface TranslationMessages {
   [key: string]: string | TranslationMessages
 }
@@ -87,6 +92,14 @@ export async function resource<T>(operation: string, input: ResourceInput = {}, 
     ...(input.local_data === undefined ? {} : { local_data: localValue(input.local_data) }),
     ...(input.form ? { form: Array.from(input.form, ([key, value]) => [key, value] as [string, string | Blob]) } : {}) }
   return await bridge().resource(operation, payload, signal) as T
+}
+
+export async function resourceAvailability(): Promise<ResourceAvailability[]> {
+  const { resources } = await bridge().request('extension.resources')
+  if (!Array.isArray(resources) || resources.some(item => !item || typeof item.name !== 'string' || typeof item.available !== 'boolean')) {
+    throw new Error('Invalid resource availability')
+  }
+  return resources.map(({ name, available }) => ({ name, available }))
 }
 
 export function useNotifications() {

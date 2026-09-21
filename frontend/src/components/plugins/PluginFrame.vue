@@ -104,7 +104,7 @@ async function receive(event: MessageEvent) {
     if (text) { if (message.level === 'error') app.showError(text); else if (message.level === 'success') app.showSuccess(text); else if (message.level === 'warning') app.showWarning(text); else app.showInfo(text) }
     return
   }
-  if (!['config.load', 'config.save', 'config.test', 'plugin.status', 'extension.context', 'extension.invoke', 'extension.job.submit', 'extension.job.get', 'extension.job.open', 'extension.resource', 'extension.event', 'preference.read', 'preference.write', 'ui.confirm', 'ui.download'].includes(message.type)) return
+  if (!['config.load', 'config.save', 'config.test', 'plugin.status', 'extension.context', 'extension.invoke', 'extension.job.submit', 'extension.job.get', 'extension.job.open', 'extension.resources', 'extension.resource', 'extension.event', 'preference.read', 'preference.write', 'ui.confirm', 'ui.download'].includes(message.type)) return
   const requestID = typeof message.request_id === 'string' ? message.request_id.trim() : ''
   if (!requestID || requestID.length > 128 || pending.has(requestID) || pending.size >= 32) return
   pending.set(requestID, window.setTimeout(() => { controllers.get(requestID)?.abort(); controllers.delete(requestID); pending.delete(requestID) }, 30000))
@@ -119,7 +119,7 @@ async function receive(event: MessageEvent) {
     frame.value.contentWindow.postMessage({ source: 'sub2api-plugin-host', bridge_token: current.bridge_token, type: `${message.type}.result`, request_id: requestID, ...payload }, '*')
   }
   try {
-    if (current.permission === 'user' && !['extension.context', 'extension.resource', 'extension.event', 'preference.read', 'preference.write', 'ui.confirm', 'ui.download'].includes(message.type)) throw new Error(t('admin.plugins.bridgeRejected'))
+    if (current.permission === 'user' && !['extension.context', 'extension.resources', 'extension.resource', 'extension.event', 'preference.read', 'preference.write', 'ui.confirm', 'ui.download'].includes(message.type)) throw new Error(t('admin.plugins.bridgeRejected'))
     switch (message.type) {
       case 'extension.context': reply({ ok: true, context: currentContext() }); break
       case 'ui.confirm': {
@@ -151,6 +151,20 @@ async function receive(event: MessageEvent) {
           let value = null
           try { value = readPluginPreference(location.origin, actorID!, current.plugin_key!, message.key) } catch { /* Use an empty draft. */ }
           reply({ ok: true, value })
+        }
+        break
+      }
+      case 'extension.resources': {
+        // Read-only availability uses the same role-filtered catalog as actual
+        // submission. Refresh it on demand; paths and host scope stay private.
+        const catalog = adminAPI.plugins.resources(id, current.permission || 'admin')
+        resourceCatalog = catalog
+        try {
+          const descriptors = await catalog
+          reply({ ok: true, resources: descriptors.map(({ name, available }) => ({ name, available })) })
+        } catch (value) {
+          if (resourceCatalog === catalog) resourceCatalog = null
+          throw value
         }
         break
       }
@@ -207,7 +221,9 @@ async function receive(event: MessageEvent) {
   }
 }
 
-watch(() => [locale?.value, registry.items.map(item => `${item.plugin_id}:${item.id}:${item.available}:${item.package_sha256}:${item.stylesheet_url}`).join('|')], sendContext)
+// Bindings can change without changing a contribution's boolean availability.
+// A refreshed registry must invalidate resource availability in that case too.
+watch(() => [locale?.value, registry.items], sendContext, { deep: true })
 watch(() => props.context, sendContext, { deep: true })
 function preferenceChanged(event: Event) {
   const current = session.value, userID = auth.user?.id

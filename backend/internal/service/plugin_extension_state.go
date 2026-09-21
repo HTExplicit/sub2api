@@ -27,7 +27,8 @@ type PluginExtensionAccountDirectory interface {
 // field can select another plugin namespace or a database table/SQL statement.
 type pluginExtensionHost struct {
 	active       func() bool
-	allows       func(string, string, string) bool
+	allows       func(string, string, string, int64) bool
+	accountScope func(context.Context) (*PluginInstallation, error)
 	traffic      AccountTrafficObserveCache
 	activity     *QuotaActivityService
 	key          string
@@ -46,6 +47,24 @@ func (h *pluginExtensionHost) Call(ctx context.Context, in extensionv1.HostInvoc
 	if h.state == nil && in.Operation != extensionv1.HostMetricsQuery {
 		return extensionv1.Result{}, status.Error(codes.Unavailable, "extension state unavailable")
 	}
+	// One persisted snapshot per account-bearing call keeps list filtering
+	// bounded and applies the same live bindings/rollout to every returned row.
+	// State/lease cleanup and finishing a previously issued observation retain
+	// their existing ownership/generation checks rather than creating new work.
+	if h.accountScope != nil && pluginHostOperationUsesAccountScope(in.Operation) {
+		current, scopeErr := h.accountScope(ctx)
+		if scopeErr != nil || current == nil {
+			return extensionv1.Result{}, status.Error(codes.PermissionDenied, "plugin account scope is no longer active")
+		}
+		scoped := *h
+		scoped.installation = current
+		previousAllows := h.allows
+		scoped.allows = func(capability, platform, accountType string, accountID int64) bool {
+			return (previousAllows == nil || previousAllows(capability, platform, accountType, accountID)) &&
+				pluginHasInvocationCapability(current, extensionv1.Invocation{Capability: capability, AccountID: accountID}, platform, accountType)
+		}
+		h = &scoped
+	}
 	var value any
 	var err error
 	switch in.Operation {
@@ -58,10 +77,10 @@ func (h *pluginExtensionHost) Call(ctx context.Context, in extensionv1.HostInvoc
 			return extensionv1.Result{}, status.Error(codes.Unavailable, "account metrics unavailable")
 		}
 		account, queryErr := h.directory.ReadExtensionAccount(ctx, request.AccountID)
-		if queryErr != nil || account == nil {
+		if queryErr != nil || account == nil || account.ID != request.AccountID {
 			return extensionv1.Result{}, status.Error(codes.NotFound, "account unavailable")
 		}
-		if !h.permitsCapability(extensionv1.CapabilityObservability, account.Platform, account.Type) {
+		if !h.permitsCapability(extensionv1.CapabilityObservability, account.Platform, account.Type, account.ID) {
 			return extensionv1.Result{}, status.Error(codes.PermissionDenied, "metrics are outside plugin capability")
 		}
 		counters, queryErr := h.traffic.Snapshot(ctx, request.AccountID)
@@ -99,17 +118,20 @@ func (h *pluginExtensionHost) Call(ctx context.Context, in extensionv1.HostInvoc
 			}
 			allowed := make([]extensionv1.Account, 0, len(accounts))
 			for _, account := range accounts {
-				if h.permitsAccount(account.Platform, account.Type, false) {
+				if h.permitsAccount(account.Platform, account.Type, account.ID, false) {
 					allowed = append(allowed, account)
 				}
 			}
 			value = allowed
 		} else {
+			if req.AccountID <= 0 {
+				return extensionv1.Result{}, status.Error(codes.InvalidArgument, "positive account identifier required")
+			}
 			account, queryErr := h.directory.ReadExtensionAccount(ctx, req.AccountID)
-			if queryErr != nil || account == nil {
+			if queryErr != nil || account == nil || account.ID != req.AccountID {
 				return extensionv1.Result{}, status.Error(codes.NotFound, "account unavailable")
 			}
-			if !h.permitsAccount(account.Platform, account.Type, in.Operation == extensionv1.HostResolveIdentity) {
+			if !h.permitsAccount(account.Platform, account.Type, account.ID, in.Operation == extensionv1.HostResolveIdentity) {
 				return extensionv1.Result{}, status.Error(codes.PermissionDenied, "account is outside plugin capability")
 			}
 			if in.Operation == extensionv1.HostAccountRead {
@@ -142,7 +164,7 @@ func (h *pluginExtensionHost) Call(ctx context.Context, in extensionv1.HostInvoc
 					return extensionv1.Result{}, status.Error(codes.InvalidArgument, "invalid account projection")
 				}
 				account, lookupErr := h.directory.ReadExtensionAccount(ctx, projection.AccountID)
-				if lookupErr != nil || account == nil || account.Identity != projection.Identity || !h.permitsAccount(account.Platform, account.Type, false) {
+				if lookupErr != nil || account == nil || account.ID != projection.AccountID || account.Identity != projection.Identity || !h.permitsAccount(account.Platform, account.Type, account.ID, false) {
 					return extensionv1.Result{}, status.Error(codes.PermissionDenied, "account projection outside credential scope")
 				}
 				for _, constraint := range projection.Scheduling {
@@ -187,8 +209,18 @@ func (h *pluginExtensionHost) Call(ctx context.Context, in extensionv1.HostInvoc
 	return extensionv1.Result{Payload: raw}, err
 }
 
-func (h *pluginExtensionHost) permitsAccount(platform, accountType string, credentials bool) bool {
-	if h.installation == nil {
+func pluginHostOperationUsesAccountScope(operation extensionv1.HostOperation) bool {
+	switch operation {
+	case extensionv1.HostAccountRead, extensionv1.HostAccountList, extensionv1.HostResolveIdentity,
+		extensionv1.HostMetricsQuery, extensionv1.HostStateCompareSwap:
+		return true
+	default:
+		return false
+	}
+}
+
+func (h *pluginExtensionHost) permitsAccount(platform, accountType string, accountID int64, credentials bool) bool {
+	if h.installation == nil || accountID <= 0 {
 		return false
 	}
 	for _, capability := range h.installation.Manifest.Capabilities {
@@ -201,7 +233,7 @@ func (h *pluginExtensionHost) permitsAccount(platform, accountType string, crede
 		if !credentials && capability.ID == extensionv1.CapabilityUI {
 			continue
 		}
-		if h.allows != nil && !h.allows(capability.ID, platform, accountType) {
+		if h.allows != nil && !h.allows(capability.ID, platform, accountType, accountID) {
 			continue
 		}
 		return true
@@ -209,12 +241,12 @@ func (h *pluginExtensionHost) permitsAccount(platform, accountType string, crede
 	return false
 }
 
-func (h *pluginExtensionHost) permitsCapability(id, platform, accountType string) bool {
-	if h.installation == nil {
+func (h *pluginExtensionHost) permitsCapability(id, platform, accountType string, accountID int64) bool {
+	if h.installation == nil || accountID <= 0 {
 		return false
 	}
 	for _, capability := range h.installation.Manifest.Capabilities {
-		if capability.ID == id && pluginScopeMatches(capability.Platform, platform) && pluginScopeMatches(capability.AccountType, accountType) && (h.allows == nil || h.allows(id, platform, accountType)) {
+		if capability.ID == id && pluginScopeMatches(capability.Platform, platform) && pluginScopeMatches(capability.AccountType, accountType) && (h.allows == nil || h.allows(id, platform, accountType, accountID)) {
 			return true
 		}
 	}

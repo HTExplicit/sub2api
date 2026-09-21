@@ -268,6 +268,7 @@ export default {accounts: {
       accountCount: '{count} account(s)',
       deleteFolderMoveConfirm: 'Delete folder "{name}"? Its {count} account(s) will move to Uncategorized.',
       deleteTaxonomyConfirm: 'Delete "{name}"? Accounts and scheduling settings will remain.',
+      taxonomyDeleteUnavailable: 'Deletion affects all linked accounts and requires an available plugin with all platforms and account types enabled at 100% rollout.',
       taxonomySaved: 'Account classification saved',
       noTags: 'No tags',
       filterPlatform: 'Platform',

@@ -206,6 +206,17 @@ func (m *PluginManager) bootstrapBundle(ctx context.Context) error {
 			return err
 		}
 		if err := store.CompleteBundledPlugin(ctx, installation.ID, bundleID); err != nil {
+			if errors.Is(err, ErrPluginStateChanged) {
+				// A concurrent update, pin or removal may have taken ownership
+				// after Prepare. Skip only if persisted intent confirms that.
+				applied, checkErr := store.BundleApplied(ctx, entry.ID, bundleID)
+				if checkErr != nil {
+					return checkErr
+				}
+				if applied {
+					continue
+				}
+			}
 			return err
 		}
 	}

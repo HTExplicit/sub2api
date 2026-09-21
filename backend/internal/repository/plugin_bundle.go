@@ -49,13 +49,14 @@ func (r *pluginRepository) PrepareBundledPlugin(ctx context.Context, plugin *ser
 	var oldID int64
 	var oldConfig string
 	var oldPolicy string
+	var oldState string
 	var oldBindings []service.PluginBinding
-	err = tx.QueryRowContext(ctx, `SELECT id,config_encrypted,update_policy FROM sub2api_plugin_installations WHERE plugin_key=$1 FOR UPDATE`, plugin.PluginKey).Scan(&oldID, &oldConfig, &oldPolicy)
+	err = tx.QueryRowContext(ctx, `SELECT id,config_encrypted,update_policy,state FROM sub2api_plugin_installations WHERE plugin_key=$1 FOR UPDATE`, plugin.PluginKey).Scan(&oldID, &oldConfig, &oldPolicy, &oldState)
 	if err != nil && !errors.Is(err, sql.ErrNoRows) {
 		return nil, err
 	}
 	if oldID > 0 {
-		if oldPolicy == service.PluginUpdatePinned {
+		if oldPolicy == service.PluginUpdatePinned || oldState == service.PluginStateUpdating {
 			return nil, nil
 		}
 		if oldConfig != "" {
@@ -147,10 +148,29 @@ func (r *pluginRepository) CompleteBundledPlugin(ctx context.Context, id int64, 
 	defer func() { _ = tx.Rollback() }()
 	var key string
 	var enabled bool
+	var completed, removed bool
+	var currentState, policy string
 	var bindingSnapshot []byte
-	err = tx.QueryRowContext(ctx, `SELECT p.plugin_key,b.desired_enabled,b.desired_bindings FROM sub2api_plugin_installations p JOIN sub2api_plugin_bootstrap b ON b.plugin_key=p.plugin_key WHERE p.id=$1 AND b.bundle_sha256=$2 FOR UPDATE OF p,b`, id, bundle).Scan(&key, &enabled, &bindingSnapshot)
+	err = tx.QueryRowContext(ctx, `SELECT p.plugin_key,b.desired_enabled,b.desired_bindings,b.completed,b.user_removed,p.state,p.update_policy
+		FROM sub2api_plugin_installations p JOIN sub2api_plugin_bootstrap b ON b.plugin_key=p.plugin_key
+		WHERE p.id=$1 AND b.bundle_sha256=$2 FOR UPDATE OF p,b`, id, bundle).Scan(&key, &enabled, &bindingSnapshot, &completed, &removed, &currentState, &policy)
+	if errors.Is(err, sql.ErrNoRows) {
+		return service.ErrPluginStateChanged
+	}
 	if err != nil {
 		return err
+	}
+	if removed || policy != service.PluginUpdateBundled || currentState == service.PluginStateUpdating {
+		return service.ErrPluginStateChanged
+	}
+	// A delayed completion must not replay old binding intent after an operator
+	// has disabled a completed bundle. Only an unfinished disabled generation is
+	// still owned by bootstrap; dedicated updates own every updating generation.
+	if completed {
+		return nil
+	}
+	if currentState != service.PluginStateDisabled {
+		return service.ErrPluginStateChanged
 	}
 	var bindings []service.PluginBinding
 	if len(bindingSnapshot) == 0 || json.Unmarshal(bindingSnapshot, &bindings) != nil {

@@ -22,6 +22,7 @@ import (
 	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
+	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
 	extensionv1 "github.com/Wei-Shaw/sub2api/pkg/extensionapi/v1"
 	pluginv1 "github.com/Wei-Shaw/sub2api/pkg/pluginapi/v1"
 )
@@ -33,6 +34,8 @@ const (
 	pluginHealthTimeout   = 5 * time.Second
 	pluginUITokenPrefix   = "sub2api:plugin-ui:v1:"
 )
+
+var ErrPluginAlreadyInstalled = infraerrors.Conflict("PLUGIN_ALREADY_INSTALLED", "插件已安装，请使用独立更新接口；重新安装前请先卸载")
 
 type pluginRoute struct {
 	pluginID       int64
@@ -208,13 +211,9 @@ func (m *PluginManager) Install(ctx context.Context, reader io.Reader, installed
 	if err != nil {
 		return nil, err
 	}
-	var previous *PluginInstallation
-	if existing, getErr := m.repo.GetByKey(ctx, packageInfo.PluginKey); getErr == nil {
-		if existing.State == PluginStateEnabled || hasEnabledPluginBinding(existing.Bindings) {
-			cleanupErr := m.cleanupInstallationFiles(packageInfo)
-			return nil, errors.Join(errors.New("请先停用当前插件，再上传同 ID 的新版本"), cleanupErr)
-		}
-		previous = existing
+	if _, getErr := m.repo.GetByKey(ctx, packageInfo.PluginKey); getErr == nil {
+		cleanupErr := m.cleanupInstallationFiles(packageInfo)
+		return nil, errors.Join(ErrPluginAlreadyInstalled, cleanupErr)
 	} else if !errors.Is(getErr, sql.ErrNoRows) {
 		cleanupErr := m.cleanupInstallationFiles(packageInfo)
 		return nil, errors.Join(getErr, cleanupErr)
@@ -239,19 +238,8 @@ func (m *PluginManager) Install(ctx context.Context, reader io.Reader, installed
 	local.ConfigEncrypted = installed.ConfigEncrypted
 	local.Bindings = append([]PluginBinding(nil), installed.Bindings...)
 	m.mu.Lock()
-	localPrevious := m.localInstallations[installed.ID]
 	m.localInstallations[installed.ID] = &local
 	m.mu.Unlock()
-	if previous != nil {
-		if cleanupErr := m.cleanupInstallationFiles(previous); cleanupErr != nil {
-			slog.Warn("plugin_previous_install_cleanup_failed", "plugin_id", previous.ID, "error", cleanupErr)
-		}
-		if localPrevious != nil && (localPrevious.InstallPath != previous.InstallPath || localPrevious.ArtifactPath != previous.ArtifactPath) {
-			if cleanupErr := m.cleanupInstallationFiles(localPrevious); cleanupErr != nil {
-				slog.Warn("plugin_previous_local_install_cleanup_failed", "plugin_id", previous.ID, "error", cleanupErr)
-			}
-		}
-	}
 	return m.Get(ctx, installed.ID)
 }
 
@@ -284,10 +272,7 @@ func (m *PluginManager) reconcileLoop(ctx context.Context, done chan struct{}) {
 	}
 }
 
-// reconcileOnce 以数据库中的绑定为权威状态，让每个实例独立恢复并启动同一插件。
-func (m *PluginManager) reconcileOnce(ctx context.Context) error {
-	m.operationMu.Lock()
-	defer m.operationMu.Unlock()
+func (m *PluginManager) readPluginRegistryForReconcile(ctx context.Context) ([]*PluginInstallation, error) {
 	installations, err := m.repo.List(ctx)
 	if err != nil {
 		m.publishUnavailableRoute(0, 100, "插件启用状态暂时无法读取")
@@ -299,16 +284,42 @@ func (m *PluginManager) reconcileOnce(ctx context.Context) error {
 			m.extensions.Store(&copy)
 		}
 		m.mu.Unlock()
-		return fmt.Errorf("读取插件启用状态: %w", err)
+		return nil, fmt.Errorf("读取插件启用状态: %w", err)
 	}
+	return installations, nil
+}
+
+func (m *PluginManager) pluginRegistryAfterUpdates(ctx context.Context, installations []*PluginInstallation, promoted bool) ([]*PluginInstallation, error) {
+	if !promoted {
+		return installations, nil
+	}
+	// Updating the promoted entry alone retains the peers' pre-drain snapshot.
+	// Read their current intent before validating or publishing the new runtime.
+	return m.readPluginRegistryForReconcile(ctx)
+}
+
+// reconcileOnce 以数据库中的绑定为权威状态，让每个实例独立恢复并启动同一插件。
+func (m *PluginManager) reconcileOnce(ctx context.Context) error {
+	m.operationMu.Lock()
+	defer m.operationMu.Unlock()
+	installations, err := m.readPluginRegistryForReconcile(ctx)
+	if err != nil {
+		return err
+	}
+	promoted := false
 	for index, installation := range installations {
 		if installation.State == PluginStateUpdating {
 			if updated, updateErr := m.resumePluginUpdate(ctx, installation); updateErr != nil {
 				slog.Warn("plugin_update_pending", "plugin_id", installation.ID, "error", updateErr)
 			} else if updated != nil {
 				installations[index] = updated
+				promoted = true
 			}
 		}
+	}
+	installations, err = m.pluginRegistryAfterUpdates(ctx, installations, promoted)
+	if err != nil {
+		return err
 	}
 	m.cleanupStaleLocalInstallations(installations)
 	if err := validatePluginRegistry(installations); err != nil {
@@ -890,7 +901,9 @@ func (m *PluginManager) SaveConfig(ctx context.Context, id int64, raw json.RawMe
 			m.pausePluginForUpdate(id)
 			return nil, err
 		}
+		m.mu.Lock()
 		runtime.installation.ConfigEncrypted = encrypted
+		m.mu.Unlock()
 	}
 	return canonical, nil
 }
@@ -1329,9 +1342,22 @@ func (m *PluginManager) buildHostServices(installation *PluginInstallation) plug
 	if installation.Manifest.Requires.ExtensionAPI > 0 {
 		state, _ := m.repo.(PluginExtensionStateStore)
 		directory, _ := m.accountDirectory.(PluginExtensionAccountDirectory)
-		host.extension = &pluginExtensionHost{key: installation.PluginKey, state: state, directory: directory, installation: installation, activity: m.quotaActivity, traffic: m.traffic, allows: func(capability, platform, accountType string) bool {
+		host.extension = &pluginExtensionHost{key: installation.PluginKey, state: state, directory: directory, installation: installation, activity: m.quotaActivity, traffic: m.traffic, accountScope: func(ctx context.Context) (*PluginInstallation, error) {
 			registry := m.extensions.Load()
-			return registry != nil && registry.unavailable == "" && samePluginRuntime(registry.installations[installation.ID], installation) && pluginHasCapability(registry.installations[installation.ID], capability, platform, accountType)
+			if registry == nil || registry.unavailable != "" || !samePluginRuntime(registry.installations[installation.ID], installation) {
+				return nil, ErrExtensionOperationUnavailable
+			}
+			current, err := m.repo.GetByID(ctx, installation.ID)
+			if err != nil {
+				return nil, ErrExtensionOperationUnavailable
+			}
+			m.mu.Lock()
+			matches := samePluginRuntime(current, installation) && current.ConfigEncrypted == installation.ConfigEncrypted
+			m.mu.Unlock()
+			if !matches || current.State != PluginStateEnabled {
+				return nil, ErrExtensionOperationUnavailable
+			}
+			return current, nil
 		}, active: func() bool {
 			registry := m.extensions.Load()
 			if registry == nil || registry.unavailable != "" {

@@ -47,7 +47,7 @@ func TestMetricsBrokerRequiresCurrentObservabilityCapabilityAndExposesOnlyCounte
 	directory := &credentialScopeDirectory{}
 	installation := &PluginInstallation{Manifest: PluginManifest{Capabilities: []PluginCapability{{ID: extensionv1.CapabilityAdmin, Platform: "*", AccountType: "*"}}}}
 	allowed := true
-	host := &pluginExtensionHost{directory: directory, installation: installation, traffic: &trafficPolicyCache{}, allows: func(string, string, string) bool { return allowed }}
+	host := &pluginExtensionHost{directory: directory, installation: installation, traffic: &trafficPolicyCache{}, allows: func(string, string, string, int64) bool { return allowed }}
 	raw, _ := json.Marshal(extensionv1.AccountQuery{AccountID: 7})
 	invocation := extensionv1.HostInvocation{Operation: extensionv1.HostMetricsQuery, Payload: raw}
 	_, err := host.Call(context.Background(), invocation)
