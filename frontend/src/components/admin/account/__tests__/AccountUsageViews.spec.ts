@@ -1,5 +1,9 @@
-import { describe, expect, it, vi } from 'vitest'
-import { mount } from '@vue/test-utils'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { mount, type VueWrapper } from '@vue/test-utils'
+import { createPinia, disposePinia, type Pinia } from 'pinia'
+import { usePluginExtensions } from '@/stores/pluginExtensions'
+import type { PluginContribution } from '@/api/admin/plugins'
+import manifest from '../../../../../../plugins/cindy-provider/manifest.source.json'
 import AccountCardGrid from '../AccountCardGrid.vue'
 import AccountCompactList from '../AccountCompactList.vue'
 import type { Account, WindowStats } from '@/types'
@@ -9,9 +13,8 @@ vi.mock('vue-i18n', async () => {
   return {
     ...actual,
     useI18n: () => ({
-      t: (key: string) => key === 'admin.accounts.cindyProbe.itemState.healthy'
-        ? 'Luna available this run'
-        : key
+      t: (key: string) => key,
+      locale: { value: 'en' }
     })
   }
 })
@@ -107,12 +110,29 @@ const sharedProps = {
   statusNow: 456
 }
 
+const probe = manifest.contributions.find(item => item.id === 'cindy-probe-summary')!
+const probeLabel = (probe as unknown as PluginContribution).display_fields!
+  .find(field => field.key === 'outcome')!.values!.healthy.label.en
+let pinia: Pinia
+const mounted: VueWrapper[] = []
+beforeEach(() => {
+  pinia = createPinia()
+  const registry = usePluginExtensions(pinia)
+  registry.loaded = true
+  registry.items = [{ ...probe, plugin_id: 7, available: true }] as PluginContribution[]
+})
+afterEach(() => {
+  mounted.splice(0).forEach(wrapper => wrapper.unmount())
+  disposePinia(pinia)
+})
+
 describe('account console usage views', () => {
   it('passes compact usage inputs and keeps usage below account information on mobile', () => {
     const wrapper = mount(AccountCompactList, {
       props: sharedProps,
-      global: { stubs: globalStubs }
+      global: { plugins: [pinia], stubs: globalStubs }
     })
+    mounted.push(wrapper)
 
     const usage = wrapper.get('[data-test="account-compact-usage"]')
     const cell = usage.get('[data-test="usage-cell"]')
@@ -123,14 +143,15 @@ describe('account console usage views', () => {
     expect(cell.attributes('data-refresh-token')).toBe('4')
     expect(usage.classes()).toContain('row-start-2')
     expect(usage.get('[data-test="capacity-cell"]').attributes('data-compact')).toBe('true')
-    expect(wrapper.find('[data-test="cindy-probe-summary"]').exists()).toBe(false)
+    expect(wrapper.find('[data-extension-display="cindy-probe-summary"]').exists()).toBe(false)
   })
 
   it('places full list usage before taxonomy in cards and forwards refresh state', () => {
     const wrapper = mount(AccountCardGrid, {
       props: sharedProps,
-      global: { stubs: globalStubs }
+      global: { plugins: [pinia], stubs: globalStubs }
     })
+    mounted.push(wrapper)
 
     const usage = wrapper.get('[data-test="account-card-usage"]')
     const taxonomy = wrapper.get('[data-test="account-card-taxonomy"]')
@@ -142,23 +163,24 @@ describe('account console usage views', () => {
     expect(
       usage.element.compareDocumentPosition(taxonomy.element) & Node.DOCUMENT_POSITION_FOLLOWING
     ).toBeTruthy()
-    expect(wrapper.find('[data-test="cindy-probe-summary"]').exists()).toBe(false)
+    expect(wrapper.find('[data-extension-display="cindy-probe-summary"]').exists()).toBe(false)
   })
 
   it('shows the recent Cindy probe in compact and card layouts only when requested', () => {
     const compact = mount(AccountCompactList, {
       props: { ...sharedProps, showCindyProbe: true },
-      global: { stubs: globalStubs }
+      global: { plugins: [pinia], stubs: globalStubs }
     })
     const cards = mount(AccountCardGrid, {
       props: { ...sharedProps, showCindyProbe: true },
-      global: { stubs: globalStubs }
+      global: { plugins: [pinia], stubs: globalStubs }
     })
+    mounted.push(compact, cards)
 
-    expect(compact.findAll('[data-test="cindy-probe-summary"]')).toHaveLength(2)
+    expect(compact.findAll('[data-extension-display="cindy-probe-summary"]')).toHaveLength(2)
     expect(compact.text()).toContain('#912')
-    expect(compact.text()).toContain('Luna available this run')
-    expect(cards.get('[data-test="cindy-probe-summary"]').text()).toContain('#912')
-    expect(cards.get('[data-test="cindy-probe-summary"]').text()).toContain('Luna available this run')
+    expect(compact.text()).toContain(probeLabel)
+    expect(cards.get('[data-extension-display="cindy-probe-summary"]').text()).toContain('#912')
+    expect(cards.get('[data-extension-display="cindy-probe-summary"]').text()).toContain(probeLabel)
   })
 })

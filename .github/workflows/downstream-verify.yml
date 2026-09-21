@@ -170,6 +170,7 @@ jobs:
             src/components/admin/account/__tests__/AccountActionMenu.spark_shadow.spec.ts \
             src/components/admin/account/__tests__/AccountConsoleFilters.spec.ts \
             src/components/admin/account/__tests__/AccountUsageViews.spec.ts \
+            src/components/admin/usage/__tests__/UsageTable.latency.spec.ts \
             src/components/account/__tests__/AccountUsageCell.spec.ts \
             src/components/account/__tests__/AccountUsageCell.list.spec.ts \
             src/components/account/__tests__/UsageProgressBar.spec.ts \
