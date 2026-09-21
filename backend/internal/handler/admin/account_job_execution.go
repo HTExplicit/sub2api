@@ -337,16 +337,17 @@ func (h *AccountHandler) executeBulkUpdateJob(ctx context.Context, raw json.RawM
 	if json.Unmarshal(raw, &req) != nil {
 		return accountJobFailed(item.ID, "payload_invalid")
 	}
-	ids, err := h.resolveAccountJobTargetIDs(ctx, req.AccountIDs, req.Filters)
-	if err != nil {
-		return accountJobFailed(item.ID, "filters_invalid")
+	id, ok := accountJobTarget(item)
+	if !ok {
+		// Legacy filter-only items never persisted an authorized account set.
+		// Requiring a new submission is safer than resolving a new set now.
+		return accountJobFailed(item.ID, "target_missing")
 	}
-	if id, ok := accountJobTarget(item); ok {
-		ids = []int64{id}
-	}
+	req.AccountIDs = []int64{id}
+	req.Filters = nil
 	succeeded := 0
 	failed := 0
-	for _, id := range ids {
+	for _, id := range req.AccountIDs {
 		account, getErr := h.adminService.GetAccount(ctx, id)
 		if getErr != nil {
 			failed++

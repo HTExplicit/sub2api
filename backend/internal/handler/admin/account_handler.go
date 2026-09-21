@@ -2021,6 +2021,7 @@ func (h *AccountHandler) BulkUpdate(c *gin.Context) {
 	}
 
 	ids := normalizeInt64IDList(req.AccountIDs)
+	req.AccountIDs = ids
 	if service.HasOpenAIReasoningPolicyUpdates(req.Extra) {
 		// A bulk worker processes individual items. Validate the complete set
 		// before submitting any item, not only the UI's current metadata page.
@@ -2046,13 +2047,44 @@ func (h *AccountHandler) BulkUpdate(c *gin.Context) {
 		// include newly matching accounts after the complete-set preflight.
 		ids = resolvedIDs
 		req.Filters = nil
+		req.AccountIDs = ids
+	} else if len(ids) == 0 {
+		if h.accountJobs == nil {
+			response.ErrorFrom(c, infraerrors.New(503, "ACCOUNT_JOBS_UNAVAILABLE", "account jobs are unavailable"))
+			return
+		}
+		actorID, ok := accountJobActorID(c)
+		if !ok {
+			return
+		}
+		raw, err := json.Marshal(req)
+		if err != nil {
+			response.ErrorFrom(c, infraerrors.BadRequest("ACCOUNT_JOB_PAYLOAD_INVALID", "invalid account job payload"))
+			return
+		}
+		// Replay before querying mutable filters, including a now-empty result.
+		// Keep this original request as the hash input; only seeds freeze IDs.
+		job, replayed, err := h.accountJobs.ReplaySubmission(c.Request.Context(), actorID, service.AccountJobKindBulkUpdate, c.GetHeader("Idempotency-Key"), raw)
+		if err != nil {
+			response.ErrorFrom(c, accountJobHTTPError(err))
+			return
+		}
+		if replayed {
+			c.Header("Idempotency-Replayed", "true")
+			response.Accepted(c, job)
+			return
+		}
+		ids, err = h.resolveAccountJobTargetIDs(c.Request.Context(), nil, req.Filters)
+		if err != nil {
+			response.ErrorFrom(c, err)
+			return
+		}
+		if len(ids) == 0 {
+			response.BadRequest(c, "No matching accounts for bulk update")
+			return
+		}
 	}
-	seeds := accountJobSeeds(ids)
-	if len(seeds) == 0 {
-		seeds = ordinalAccountJobSeeds(1)
-	}
-	req.AccountIDs = ids
-	h.submitAccountJob(c, service.AccountJobKindBulkUpdate, req, seeds)
+	h.submitAccountJob(c, service.AccountJobKindBulkUpdate, req, accountJobSeeds(ids))
 }
 
 func splitBulkAccountFilterValues(values ...string) []string {

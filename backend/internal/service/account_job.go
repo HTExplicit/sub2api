@@ -218,13 +218,8 @@ func (s *AccountJobService) Submit(ctx context.Context, createdBy int64, kind, i
 	}
 	hash := sha256.Sum256(payload)
 	requestHash := hex.EncodeToString(hash[:])
-	existing, err := s.repo.FindIdempotent(ctx, createdBy, kind, idempotencyKey)
+	existing, err := s.findMatchingSubmission(ctx, createdBy, kind, idempotencyKey, requestHash, metadata)
 	if err == nil {
-		oldOwner, _ := AccountJobPluginExecution(existing.Metadata)
-		newOwner, _ := AccountJobPluginExecution(metadata)
-		if existing.RequestHash != requestHash || oldOwner.ID != newOwner.ID {
-			return nil, false, ErrAccountJobIdempotencyConflict
-		}
 		return existing, true, nil
 	}
 	if !errors.Is(err, ErrAccountJobNotFound) {
@@ -240,6 +235,47 @@ func (s *AccountJobService) Submit(ctx context.Context, createdBy int64, kind, i
 		PayloadExpires: time.Now().UTC().Add(AccountJobPayloadTTL),
 		Metadata:       normalizeAccountJobMetadata(metadata), Items: items, Attempt: 1,
 	})
+}
+
+// ReplaySubmission checks a previously submitted request before a caller resolves
+// mutable targets. It never creates a job, touches its payload lifetime, or binds
+// a plugin: a plugin owner must already be authorized in the caller's context.
+func (s *AccountJobService) ReplaySubmission(ctx context.Context, createdBy int64, kind, idempotencyKey string, payload json.RawMessage) (*AccountJob, bool, error) {
+	idempotencyKey = strings.TrimSpace(idempotencyKey)
+	kind = strings.TrimSpace(kind)
+	if idempotencyKey == "" || len(idempotencyKey) > 255 {
+		return nil, false, ErrAccountJobIdempotencyRequired
+	}
+	if createdBy <= 0 || !validAccountJobKind(kind) || !json.Valid(payload) {
+		return nil, false, errors.New("invalid account job submission")
+	}
+	var metadata json.RawMessage
+	if execution, bound := PluginExecutionFromContext(ctx); bound {
+		var err error
+		metadata, err = stampAccountJobPlugin(nil, execution)
+		if err != nil {
+			return nil, false, err
+		}
+	}
+	hash := sha256.Sum256(payload)
+	existing, err := s.findMatchingSubmission(ctx, createdBy, kind, idempotencyKey, hex.EncodeToString(hash[:]), metadata)
+	if errors.Is(err, ErrAccountJobNotFound) {
+		return nil, false, nil
+	}
+	return existing, err == nil, err
+}
+
+func (s *AccountJobService) findMatchingSubmission(ctx context.Context, createdBy int64, kind, idempotencyKey, requestHash string, metadata json.RawMessage) (*AccountJob, error) {
+	existing, err := s.repo.FindIdempotent(ctx, createdBy, kind, idempotencyKey)
+	if err != nil {
+		return nil, err
+	}
+	oldOwner, _ := AccountJobPluginExecution(existing.Metadata)
+	newOwner, _ := AccountJobPluginExecution(metadata)
+	if existing.RequestHash != requestHash || oldOwner.ID != newOwner.ID {
+		return nil, ErrAccountJobIdempotencyConflict
+	}
+	return existing, nil
 }
 
 func (s *AccountJobService) Get(ctx context.Context, jobID int64) (*AccountJob, error) {
