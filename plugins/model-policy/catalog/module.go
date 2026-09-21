@@ -72,7 +72,9 @@ func (m *Module) ResolveCatalog(_ context.Context, query extensionv1.CatalogQuer
 		return extensionv1.CatalogMatch{}, errors.New("invalid model candidates")
 	}
 	for _, candidate := range query.Candidates {
-		if len(candidate) > 256 || strings.TrimSpace(candidate) == "" {
+		// Keep the host's 512-byte model ID bound: an original namespace may
+		// precede a short catalog leaf without invalidating the whole query.
+		if len(candidate) > 512 || strings.TrimSpace(candidate) == "" {
 			return extensionv1.CatalogMatch{}, errors.New("invalid model candidate")
 		}
 		var found *OfficialModelContextCapacity

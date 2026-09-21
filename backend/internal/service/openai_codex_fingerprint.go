@@ -115,10 +115,14 @@ func stripCodexFingerprintSeed(extra map[string]any) map[string]any {
 // codexFingerprintModeFromExtra 读取账号完整 extra 上的收敛模式。
 // 显式配置保持上游语义；下游默认值由 Codex 插件提供，停用时使用上游 off 默认。
 func codexFingerprintModeFromExtra(extra map[string]any) codexFingerprintMode {
+	return codexFingerprintModeFromExtraContext(context.Background(), nil, extra)
+}
+
+func codexFingerprintModeFromExtraContext(ctx context.Context, account *Account, extra map[string]any) codexFingerprintMode {
 	if mode, ok := codexFingerprintModeExplicit(extra); ok {
 		return mode
 	}
-	policy, err := invokeCodexIdentityPolicy(context.Background(), "codex.identity.plan", extensionv1.CodexIdentityQuery{})
+	policy, err := invokeCodexIdentityPolicyForAccount(ctx, account, "codex.identity.plan", extensionv1.CodexIdentityQuery{})
 	if err != nil {
 		return codexFingerprintOff
 	}
@@ -200,7 +204,7 @@ func prepareCodexFingerprintExtraForUpdate(account *Account, extra map[string]an
 		// An available policy can validate and replace an invalid value below.
 		prepared[CodexClientIdentityExtraKey] = stored
 	}
-	return ensureCodexClientIdentityExtra(account.Platform, account.Type, prepared, time.Now())
+	return ensureCodexClientIdentityExtraForAccount(account, prepared, time.Now())
 }
 
 func sanitizedCodexFingerprintExtraUpdates(updates map[string]any) map[string]any {
@@ -238,10 +242,10 @@ func (a *Account) GetCodexFingerprintMode() codexFingerprintMode {
 	if mode, explicit := codexFingerprintModeExplicit(a.Extra); explicit {
 		return mode
 	}
-	if available, err := codexIdentityPolicyAvailable(context.Background(), a.Type); err != nil || !available {
+	if available, err := codexIdentityPolicyAvailable(context.Background(), a.Type, a.ID); err != nil || !available {
 		return codexFingerprintOff
 	}
-	return codexFingerprintModeFromExtra(a.Extra)
+	return codexFingerprintModeFromExtraContext(context.Background(), a, a.Extra)
 }
 
 // deriveStableUUIDv4 从种子确定性派生一个 UUIDv4 格式的字符串。
@@ -298,6 +302,7 @@ func resolveConvergedThreadID(seed, clientSessionID string) string {
 // client_metadata.session_id，用于识别 root prompt_cache_key 的默认值。
 type codexFingerprintIDs struct {
 	accountID                     int64
+	accountType                   string
 	mode                          codexFingerprintMode
 	installationID                string
 	sessionID                     string
@@ -326,6 +331,7 @@ func resolveCodexFingerprintIDs(account *Account, clientSessionID string, mode c
 
 	ids := &codexFingerprintIDs{
 		accountID:           account.ID,
+		accountType:         account.Type,
 		mode:                mode,
 		turnStartedAtUnixMs: time.Now().UnixMilli(),
 	}
@@ -435,7 +441,11 @@ func (ids *codexFingerprintIDs) alignSandboxWithUserAgent(userAgent string) {
 	if ids == nil {
 		return
 	}
-	ids.sandbox = codexSandboxForUserAgent(userAgent)
+	var account *Account
+	if ids.accountType != "" {
+		account = &Account{ID: ids.accountID, Platform: PlatformOpenAI, Type: ids.accountType}
+	}
+	ids.sandbox = codexSandboxForUserAgentForAccountContext(context.Background(), account, userAgent)
 }
 
 // turnMetadataFields 在身份字段之外补上与出站 UA 配套的 sandbox 标签，使 turn

@@ -126,6 +126,8 @@
 - 未完成内置初始化不能再被独立更新插入并覆盖：Prepare/Complete 保留 `updating` 与固定版所有权，Stage 不把迁移期临时关闭绑定当成管理员意图。迟到 Complete 仅在持久化确认已被其他操作接手时跳过；普通失败仍报错。两条 PostgreSQL 反例及11个直接叶子用例已通过，见根 `artifacts/evidence/v027-astra-bootstrap-update-review.json`。最终读取后的跨插件写入、运行租约会话丢失及已完成 bundle 的晚到固定版竞争仍待专项关闭。
 - 分类赋值回传必须保留原文件夹和完整标签集合。全局文件夹/标签删除要求通配账号类型、平台和100%灰度，SDK新增只读具名资源可用性查询；独立页面显示、点击前复核及后端执行共用同一判断，其余分类操作不扩大为全局权限。8个新增定向用例及两份类型检查通过；根 `artifacts/evidence/v027-astra-account-taxonomy-review.json` 区分完整与局部审查。
 - 账号型宿主 broker 每次调用读取一个当前安装快照，检查已启用状态、包/执行代次/已应用配置及真实账号灰度；列表逐账号过滤，凭据、指标和调度投影不能绕过范围。已发出的归属观测在停用后仍可按原账本收尾。请求头注入与本地调度也改为同一真实账号灰度。合成反例先失败后通过，认证/租户/HTTP帧头保护及具名操作隔离回归通过；见根 `artifacts/evidence/v027-broker-and-request-scope-review.json`。这不代表全部调用方或跨实例生命周期已审完。
+- 模型目录查询保留真实 AccountID，0/50/100%灰度与账号缓存隔离已验证；读取缓存前只点查选中插件，并核对已应用配置、策略取消与配置修订。候选上限对齐宿主已有512字节，长命名空间后续短叶子正常匹配，513仍拒绝；固定93条目录与迁移前宿主表一致，价格未变。六个精确定向用例通过，见根 `artifacts/evidence/v027-astra-model-policy-final-review.json`。
+- Codex真实账号的身份、压缩、指纹默认值、sandbox与诊断均保留ID及OAuth/Setup Token类型；后台回填逐适用账号获取租约并条件写入，不先要求全局插件可用。创建前和共享策略保留无账号语义，显式用户指纹配置和原字段不改。六个新增目标方法及两个直接旧契约通过，见根 `artifacts/evidence/v027-astra-codex-scope-review.json`；完整指纹/gateway/OAuth大文件的未审部分仍保留待审查。
 
 ## 未完成
 

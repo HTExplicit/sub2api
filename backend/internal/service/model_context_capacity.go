@@ -485,7 +485,7 @@ func LookupOfficialModelContextCapacity(account *Account, upstreamModelID string
 	if account == nil || !validModelContextID(upstreamModelID) {
 		return nil
 	}
-	query := extensionv1.CatalogQuery{Candidates: modelContextReferenceCandidates(upstreamModelID), Platform: account.Platform, AccountType: account.Type, AccountMode: account.GetAccountMode()}
+	query := extensionv1.CatalogQuery{AccountID: account.ID, Candidates: modelContextReferenceCandidates(upstreamModelID), Platform: account.Platform, AccountType: account.Type, AccountMode: account.GetAccountMode()}
 	if parsed, err := url.Parse(upstreamModelRegistryBaseURL(account)); err == nil {
 		query.Scheme, query.Host, query.Port, query.Path = parsed.Scheme, parsed.Hostname(), parsed.Port(), parsed.Path
 		query.HasURLCredentials = parsed.User != nil

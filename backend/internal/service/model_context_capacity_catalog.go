@@ -29,13 +29,20 @@ func lookupExtensionCatalog(query extensionv1.CatalogQuery) *OfficialModelContex
 	return result.Entry
 }
 func (m *PluginManager) ResolveCatalog(ctx context.Context, query extensionv1.CatalogQuery) (extensionv1.CatalogMatch, error) {
+	if err := ctx.Err(); err != nil {
+		return extensionv1.CatalogMatch{}, err
+	}
+	if query.AccountID < 0 {
+		return extensionv1.CatalogMatch{}, errors.New("invalid model catalog account")
+	}
 	registry := m.extensions.Load()
 	if registry == nil || registry.unavailable != "" {
 		return extensionv1.CatalogMatch{}, errors.New("model catalog unavailable")
 	}
+	invocation := extensionv1.Invocation{Capability: extensionv1.CapabilityCatalog, Operation: "resolve", AccountID: query.AccountID}
 	var ids []int64
 	for id, installation := range registry.installations {
-		if pluginHasCapability(installation, extensionv1.CapabilityCatalog, query.Platform, query.AccountType) {
+		if pluginHasInvocationCapability(installation, invocation, query.Platform, query.AccountType) {
 			ids = append(ids, id)
 		}
 	}
@@ -44,22 +51,60 @@ func (m *PluginManager) ResolveCatalog(ctx context.Context, query extensionv1.Ca
 	if err != nil {
 		return extensionv1.CatalogMatch{}, err
 	}
+	invocation.Payload = raw
 	var resolved extensionv1.CatalogMatch
+	type catalogLease struct {
+		ctx      context.Context
+		runtime  *pluginRuntime
+		revision uint64
+	}
+	var leases []catalogLease
 	for _, id := range ids {
 		runtime := registry.runtimes[id]
-		if runtime == nil || runtime.draining.Load() || runtime.client.Exited() || !pluginDependenciesHealthy(registry.installations[id], registry, map[int64]bool{}) {
+		if runtime == nil || runtime.client == nil || runtime.extension == nil || runtime.draining.Load() || runtime.configuring.Load() || runtime.client.Exited() || m.repo == nil {
 			return extensionv1.CatalogMatch{}, errors.New("enabled model catalog unavailable")
 		}
-		cacheKey := strconv.FormatUint(runtime.configRevision.Load(), 10) + ":" + string(raw)
+		// Recheck just this selected installation before consulting cached policy.
+		// A stale local registry cannot authorize persisted disable/scope changes.
+		current, err := m.repo.GetByID(ctx, id)
+		if err != nil || !samePluginRuntime(current, registry.installations[id]) {
+			return extensionv1.CatalogMatch{}, errors.New("enabled model catalog unavailable")
+		}
+		if current.State == PluginStateDisabled || !pluginHasInvocationCapability(current, invocation, query.Platform, query.AccountType) {
+			continue
+		}
+		if current.State != PluginStateEnabled || !pluginDependenciesHealthy(current, registry, map[int64]bool{}) {
+			return extensionv1.CatalogMatch{}, errors.New("enabled model catalog unavailable")
+		}
+		m.mu.Lock()
+		configCurrent := samePluginRuntime(current, runtime.installation) && current.ConfigEncrypted == runtime.installation.ConfigEncrypted
+		m.mu.Unlock()
+		if !configCurrent {
+			return extensionv1.CatalogMatch{}, errors.New("enabled model catalog unavailable")
+		}
+		bound, release, err := m.bindHostPolicyContext(ctx, current, runtime)
+		if err != nil {
+			return extensionv1.CatalogMatch{}, err
+		}
+		defer release()
+		revision := runtime.configRevision.Load()
+		leases = append(leases, catalogLease{bound, runtime, revision})
+		cacheKey := strconv.FormatUint(revision, 10) + ":" + string(raw)
 		var payload json.RawMessage
 		if cached, ok := runtime.catalogCache.Load(cacheKey); ok {
 			payload = cached.(json.RawMessage)
 		} else {
-			out, callErr := m.InvokeExtension(ctx, id, query.Platform, query.AccountType, extensionv1.Invocation{Capability: extensionv1.CapabilityCatalog, Operation: "resolve", Payload: raw})
+			out, callErr := m.InvokeExtension(bound, id, query.Platform, query.AccountType, invocation)
 			if callErr != nil || out.Code != "" {
 				return extensionv1.CatalogMatch{}, errors.New("enabled model catalog unavailable")
 			}
 			payload = out.Payload
+		}
+		if err := bound.Err(); err != nil {
+			return extensionv1.CatalogMatch{}, err
+		}
+		if runtime.configuring.Load() || runtime.configRevision.Load() != revision {
+			return extensionv1.CatalogMatch{}, errors.New("model catalog configuration changed")
 		}
 		var match extensionv1.CatalogMatch
 		if json.Unmarshal(payload, &match) != nil {
@@ -80,6 +125,14 @@ func (m *PluginManager) ResolveCatalog(ctx context.Context, query extensionv1.Ca
 			return extensionv1.CatalogMatch{Matched: true}, nil
 		}
 		resolved = match
+	}
+	for _, lease := range leases {
+		if err := lease.ctx.Err(); err != nil {
+			return extensionv1.CatalogMatch{}, err
+		}
+		if lease.runtime.configuring.Load() || lease.runtime.configRevision.Load() != lease.revision {
+			return extensionv1.CatalogMatch{}, errors.New("model catalog configuration changed")
+		}
 	}
 	return resolved, nil
 }

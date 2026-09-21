@@ -55,7 +55,7 @@ func resolveCodexIdentitySnapshotContext(ctx context.Context, routed, source *Ac
 		ForceCodexCLI:      codexForceCLI.Load(),
 	}
 	if source != nil && source.IsOpenAIOAuthLike() {
-		if plan, err := codexTransportPlan(ctx, source.Type, extensionv1.CodexTransportQuery{}); err == nil {
+		if plan, err := codexTransportPlan(ctx, source.Type, source.ID, extensionv1.CodexTransportQuery{}); err == nil {
 			snapshot.ZstdEnabled = plan.Enabled
 		}
 	}
@@ -87,12 +87,12 @@ func resolveCodexIdentitySnapshotContext(ctx context.Context, routed, source *Ac
 		snapshot.IdentityAccountID = source.ID
 		snapshot.AccountRevision = source.UpdatedAt
 		snapshot.IdentityPersisted = func() bool {
-			_, ok := codexClientIdentityFromExtra(source.Extra)
+			_, ok := codexClientIdentityFromExtraContext(ctx, source, source.Extra)
 			return ok
 		}()
 	}
 
-	identity := resolveCodexOutboundIdentityForAccount(source, overrideUA)
+	identity, _ := resolveCodexOutboundIdentityForAccountContext(ctx, source, overrideUA)
 	snapshot.UserAgent = identity.userAgent
 	snapshot.Originator = identity.originator
 	snapshot.Version = identity.version
@@ -104,7 +104,7 @@ func resolveCodexIdentitySnapshotContext(ctx context.Context, routed, source *Ac
 			snapshot.IdentitySource = "override_ua"
 		}
 	} else if source != nil {
-		if accountIdentity, ok := source.CodexClientIdentity(); ok && accountIdentity.UserAgent(identity.version) == identity.userAgent {
+		if accountIdentity, ok := source.codexClientIdentityContext(ctx); ok && accountIdentity.userAgentForAccountContext(ctx, source, identity.version) == identity.userAgent {
 			snapshot.IdentitySource = "account"
 		}
 	}

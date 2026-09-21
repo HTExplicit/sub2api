@@ -46,6 +46,9 @@ type OfficialModelContextCapacity struct {
 }
 
 type CatalogQuery struct {
+	// AccountID comes from the host account being resolved. Zero preserves
+	// non-account shared-reference queries; account lookups must carry their ID.
+	AccountID         int64    `json:"account_id,omitempty"`
 	Candidates        []string `json:"candidates"`
 	Platform          string   `json:"platform"`
 	AccountType       string   `json:"account_type"`
