@@ -192,6 +192,8 @@ jobs:
             ../plugins/cindy-provider/ui/src/__tests__/CindyGroupAuditDialog.spec.ts \
             ../plugins/cindy-provider/ui/src/__tests__/CindyBalanceProbePanel.spec.ts \
             ../plugins/cindy-provider/ui/src/__tests__/CindyDuplicateInventoryPanel.spec.ts \
+            ../plugins/cindy-provider/ui/src/__tests__/CindyUISecondReview.spec.ts \
+            ../plugins/cindy-provider/ui/src/__tests__/ProviderSettings.spec.ts \
             src/features/cindy-balance-probe/__tests__/CindyBalanceProbeSummary.spec.ts \
             src/i18n/__tests__/cindyProbeLocales.spec.ts \
             src/components/layout/__tests__/AppSidebar.spec.ts \

@@ -3068,7 +3068,7 @@ const confirmCreateSparkShadow = async () => {
     appStore.showSuccess(t('admin.accounts.createSparkShadowSuccess'))
     reload()
   } catch (error: any) {
-    console.error('Failed to create spark shadow-outline:', error)
+    console.error('Failed to create spark shadow:', error)
     appStore.showError(error?.response?.data?.message || t('admin.accounts.createSparkShadowFailed'))
   } finally { immediateAccountActions.delete(a.id) }
 }
