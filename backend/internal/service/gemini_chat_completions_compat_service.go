@@ -544,6 +544,7 @@ func (s *GeminiMessagesCompatService) handleChatCompletionsStreamingResponseFrom
 	var usage ClaudeUsage
 	var firstTokenMs *int
 	firstChunk := true
+	var protocolErr error
 
 	writeChatChunk := func(chunk apicompat.ChatCompletionsChunk) bool {
 		sse, err := apicompat.ChatChunkToSSE(chunk)
@@ -556,14 +557,34 @@ func (s *GeminiMessagesCompatService) handleChatCompletionsStreamingResponseFrom
 		return false
 	}
 
+	writeResponseEvent := func(event *apicompat.ResponsesStreamEvent) bool {
+		if protocolErr != nil {
+			return false
+		}
+		chunks := apicompat.ResponsesEventToChatChunks(event, ccState)
+		if ccState.ProtocolError != "" {
+			protocolErr = errors.New(ccState.ProtocolError)
+			MarkResponseCommitted(c)
+			_, _ = io.WriteString(c.Writer, buildChatStreamErrorSSE("upstream_protocol_error", ccState.ProtocolError)+"data: [DONE]\n\n")
+			flusher.Flush()
+			return false
+		}
+		for _, chunk := range chunks {
+			if writeChatChunk(chunk) {
+				return true
+			}
+		}
+		return false
+	}
+
 	emitAnthropicEvent := func(evt *apicompat.AnthropicStreamEvent) bool {
+		if protocolErr != nil {
+			return false // Drain usage, but do not convert or emit after the error.
+		}
 		responsesEvents := apicompat.AnthropicEventToResponsesEvents(evt, anthState)
 		for _, resEvt := range responsesEvents {
-			chunks := apicompat.ResponsesEventToChatChunks(&resEvt, ccState)
-			for _, chunk := range chunks {
-				if disconnected := writeChatChunk(chunk); disconnected {
-					return true
-				}
+			if writeResponseEvent(&resEvt) {
+				return true
 			}
 		}
 		flusher.Flush()
@@ -757,6 +778,9 @@ func (s *GeminiMessagesCompatService) handleChatCompletionsStreamingResponseFrom
 			break
 		}
 		if err != nil {
+			if protocolErr != nil {
+				return &geminiStreamResult{usage: &usage, firstTokenMs: firstTokenMs}, protocolErr
+			}
 			return nil, fmt.Errorf("stream read error: %w", err)
 		}
 	}
@@ -793,12 +817,12 @@ func (s *GeminiMessagesCompatService) handleChatCompletionsStreamingResponseFrom
 	}
 
 	for _, resEvt := range apicompat.FinalizeAnthropicResponsesStream(anthState) {
-		chunks := apicompat.ResponsesEventToChatChunks(&resEvt, ccState)
-		for _, chunk := range chunks {
-			if disconnected := writeChatChunk(chunk); disconnected {
-				return &geminiStreamResult{usage: &usage, firstTokenMs: firstTokenMs}, nil
-			}
+		if writeResponseEvent(&resEvt) {
+			return &geminiStreamResult{usage: &usage, firstTokenMs: firstTokenMs}, protocolErr
 		}
+	}
+	if protocolErr != nil {
+		return &geminiStreamResult{usage: &usage, firstTokenMs: firstTokenMs}, protocolErr
 	}
 	for _, chunk := range apicompat.FinalizeResponsesChatStream(ccState) {
 		if disconnected := writeChatChunk(chunk); disconnected {

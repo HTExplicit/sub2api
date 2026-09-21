@@ -55,11 +55,47 @@ func ResponsesInputRequiresNative(input json.RawMessage) bool {
 		}
 		switch rawString(item["type"]) {
 		case "", "message", "additional_tools", "function_call", "function_call_output", "custom_tool_call", "custom_tool_call_output", "tool_search_call", "tool_search_output", "input_text", "text", "input_image":
+		case "agent_message":
+			if agentMessageContentRequiresNative(item["content"]) {
+				return true
+			}
 		case "reasoning":
 			if rawString(item["encrypted_content"]) != "" && extractResponsesReasoningText(item) == "" {
 				return true
 			}
 		default:
+			return true
+		}
+	}
+	return false
+}
+
+// Only agentMessageText's explicit plaintext forms are portable. Copying an
+// encrypted_content string does not establish a lossless Chat representation;
+// encrypted, media and future parts remain native even alongside plain text.
+func agentMessageContentRequiresNative(raw json.RawMessage) bool {
+	raw = bytesTrimSpace(raw)
+	if len(raw) == 0 || string(raw) == "null" {
+		return false
+	}
+	var text string
+	if json.Unmarshal(raw, &text) == nil {
+		return false
+	}
+	var parts []map[string]json.RawMessage
+	if json.Unmarshal(raw, &parts) != nil {
+		return true
+	}
+	for _, part := range parts {
+		var value json.RawMessage
+		switch rawString(part["type"]) {
+		case "input_text", "text":
+			value = part["text"]
+		default:
+			return true
+		}
+		value = bytesTrimSpace(value)
+		if len(value) == 0 || value[0] != '"' || json.Unmarshal(value, &text) != nil {
 			return true
 		}
 	}
