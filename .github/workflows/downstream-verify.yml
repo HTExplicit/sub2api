@@ -145,6 +145,7 @@ jobs:
           pnpm exec vitest run \
             src/components/admin/account/__tests__/AccountTestModal.spec.ts \
             src/components/admin/account/__tests__/AccountTestModal.displayContract.spec.ts \
+            src/components/admin/account/__tests__/AccountTestModal.policyPlan.spec.ts \
             src/views/admin/__tests__/SettingsView.spec.ts \
             src/components/common/__tests__/VersionBadge.downstream.spec.ts \
             src/api/__tests__/downstreamStatus.spec.ts \
@@ -161,6 +162,7 @@ jobs:
             src/components/plugins/__tests__/localResources.spec.ts \
             src/features/image-studio/history.legacy.spec.ts \
             ../plugins/account-tools/ui/src/__tests__/BatchTestAccountModal.spec.ts \
+            ../plugins/account-tools/ui/src/__tests__/BatchTestAccountModal.plan.spec.ts \
             ../plugins/account-tools/ui/src/__tests__/AccountFolderBar.spec.ts \
             ../plugins/account-tools/ui/src/__tests__/AccountTaxonomyManager.spec.ts \
             ../plugins/account-tools/ui/src/__tests__/AccountBulkTaxonomyModal.spec.ts \
