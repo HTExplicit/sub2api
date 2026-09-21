@@ -311,8 +311,11 @@ func (s *CindyBalanceProbeService) waitJob(ctx context.Context, lostLease <-chan
 }
 
 func (s *CindyBalanceProbeService) executeReservation(ctx context.Context, reservation *CindyBalanceProbeReservation, leaseToken string) bool {
+	if ctx.Err() != nil {
+		return false
+	}
 	account, eligible := s.loadReservationAccount(ctx, reservation)
-	if !eligible {
+	if !eligible || account.ID <= 0 {
 		keepRunning, applied, err := s.repo.CompleteStage(ctx, reservation, account, leaseToken, "stale", "skipped_stale", false)
 		if err != nil {
 			slog.Error("cindy_balance_probe_stale_finalize_failed", "job_id", reservation.JobID, "error", err)
@@ -331,7 +334,24 @@ func (s *CindyBalanceProbeService) executeReservation(ctx context.Context, reser
 		// epoch conservatively recovers the pre-send reservation as unknown.
 		return false
 	}
-	plan, err := cindyBalanceProbePlan(ctx)
+	// Creating a job only admitted its then-current selection. Bind the actual
+	// reserved account again before any IO, retaining one policy lifetime for
+	// its plan, HTTP request and completion decision.
+	bound, release, err := bindProcessExtensionContext(ctx, PlatformCindy, AccountTypeAPIKey,
+		extensionv1.Invocation{Capability: extensionv1.CapabilityProvider, Operation: "cindy.probe.plan", AccountID: account.ID})
+	if err != nil {
+		if ctx.Err() == nil && errors.Is(err, ErrExtensionOperationDisabled) {
+			// A known admission rejection invalidates the original selection,
+			// not the account's health. Finish via the existing claim CAS so this
+			// reservation is never retried or reported as an upstream failure.
+			slog.Info("cindy_balance_probe_scope_skipped", "job_id", reservation.JobID, "account_id", account.ID, "stage", reservation.Stage)
+			return s.completeStage(ctx, reservation, account, leaseToken, "stale", "skipped_stale", false)
+		}
+		return false
+	}
+	defer release()
+	ctx = bound
+	plan, err := cindyBalanceProbePlanForAccount(ctx, account.ID)
 	if err != nil {
 		return false
 	}
@@ -342,6 +362,9 @@ func (s *CindyBalanceProbeService) executeReservation(ctx context.Context, reser
 	probeCtx, cancel := context.WithTimeout(ctx, cindyBalanceProbeTimeout)
 	outcome := s.gateway.probeCindyBalanceModel(probeCtx, account, model)
 	cancel()
+	if ctx.Err() != nil {
+		return false
+	}
 	return s.completeReservation(ctx, reservation, account, leaseToken, outcome)
 }
 
@@ -363,7 +386,7 @@ func (s *CindyBalanceProbeService) completeReservation(
 	leaseToken string,
 	outcome cindyBalanceProbeOutcome,
 ) bool {
-	decision, err := cindyBalanceProbeDecision(ctx, reservation.Stage, reservation.WasMarked, outcome)
+	decision, err := cindyBalanceProbeDecision(ctx, reservation.AccountID, reservation.Stage, reservation.WasMarked, outcome)
 	if err != nil {
 		return false
 	}

@@ -22,7 +22,7 @@ func requireCindyBalanceProbePolicy(ctx context.Context) error {
 	return nil
 }
 
-func invokeCindyProbePolicy(ctx context.Context, operation string, input, output any) error {
+func invokeCindyProbePolicy(ctx context.Context, accountID int64, operation string, input, output any) error {
 	raw, err := json.Marshal(input)
 	if err != nil {
 		return err
@@ -30,7 +30,7 @@ func invokeCindyProbePolicy(ctx context.Context, operation string, input, output
 	call, cancel := context.WithTimeout(ctx, time.Second)
 	defer cancel()
 	result, err := invokeProcessExtensionCached(call, PlatformCindy, AccountTypeAPIKey,
-		extensionv1.Invocation{Capability: extensionv1.CapabilityProvider, Operation: operation, Payload: raw})
+		extensionv1.Invocation{Capability: extensionv1.CapabilityProvider, Operation: operation, AccountID: accountID, Payload: raw})
 	if err != nil {
 		return err
 	}
@@ -44,8 +44,12 @@ func invokeCindyProbePolicy(ctx context.Context, operation string, input, output
 }
 
 func cindyBalanceProbePlan(ctx context.Context) (extensionv1.CindyProbePlan, error) {
+	return cindyBalanceProbePlanForAccount(ctx, 0)
+}
+
+func cindyBalanceProbePlanForAccount(ctx context.Context, accountID int64) (extensionv1.CindyProbePlan, error) {
 	var plan extensionv1.CindyProbePlan
-	if err := invokeCindyProbePolicy(ctx, "cindy.probe.plan", struct{}{}, &plan); err != nil {
+	if err := invokeCindyProbePolicy(ctx, accountID, "cindy.probe.plan", struct{}{}, &plan); err != nil {
 		return plan, err
 	}
 	if strings.TrimSpace(plan.Models[0]) == "" || strings.TrimSpace(plan.Models[1]) == "" ||
@@ -56,9 +60,9 @@ func cindyBalanceProbePlan(ctx context.Context) (extensionv1.CindyProbePlan, err
 	return plan, nil
 }
 
-func cindyBalanceProbeDecision(ctx context.Context, stage string, wasMarked bool, outcome cindyBalanceProbeOutcome) (extensionv1.CindyProbeDecision, error) {
+func cindyBalanceProbeDecision(ctx context.Context, accountID int64, stage string, wasMarked bool, outcome cindyBalanceProbeOutcome) (extensionv1.CindyProbeDecision, error) {
 	var decision extensionv1.CindyProbeDecision
-	err := invokeCindyProbePolicy(ctx, "cindy.probe.decide", extensionv1.CindyProbeResult{
+	err := invokeCindyProbePolicy(ctx, accountID, "cindy.probe.decide", extensionv1.CindyProbeResult{
 		Stage: stage, WasMarked: wasMarked, Outcome: outcome,
 	}, &decision)
 	return decision, err

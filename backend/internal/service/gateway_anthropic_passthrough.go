@@ -61,6 +61,11 @@ func (s *GatewayService) ForwardCindyAnthropicMessages(
 	if s == nil || account == nil || !IsCindyAPIKeyAccount(account.Platform, account.Type, account.Credentials) {
 		return nil, errors.New("strict Cindy account is required for native Messages passthrough")
 	}
+	pricingContext, pricingErr := CaptureCindyPricingContext(ctx, c, account)
+	if pricingErr != nil {
+		return nil, pricingErr
+	}
+	ctx = pricingContext
 	requestedModel = strings.TrimSpace(requestedModel)
 	if !CindyFreePoolModelSupportsEndpoint(requestedModel, CindyEndpointMessages) {
 		return nil, fmt.Errorf("cindy model %q is not verified for native Messages", requestedModel)

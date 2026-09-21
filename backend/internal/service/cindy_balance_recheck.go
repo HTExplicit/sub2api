@@ -26,10 +26,10 @@ const (
 )
 
 func (s *OpenAIGatewayService) probeCindyBalanceModel(ctx context.Context, account *Account, model string) cindyBalanceProbeOutcome {
-	if !CindyBalanceDetectionFeatureEnabled() || s == nil || account == nil || s.httpUpstream == nil {
+	if s == nil || account == nil || account.ID <= 0 || s.httpUpstream == nil {
 		return cindyBalanceProbeOther
 	}
-	plan, err := cindyBalanceProbePlan(ctx)
+	plan, err := cindyBalanceProbePlanForAccount(ctx, account.ID)
 	if err != nil || (model != plan.Models[0] && model != plan.Models[1]) {
 		return cindyBalanceProbeOther
 	}
