@@ -1640,6 +1640,9 @@ func (s *OpenAIGatewayService) recheckSelectedOpenAIAccountFromDBBeforeProfit(ct
 	}
 	platform = NormalizeOpenAICompatiblePlatform(platform)
 	if s.schedulerSnapshot == nil || s.accountRepo == nil {
+		if s.openAIGroupRequiresPrivacySet(ctx, groupID) && !account.IsPrivacySet() {
+			return nil
+		}
 		if !isOpenAICompatibleAccountEligibleForRequestBeforeProfit(ctx, account, platform, requestedModel, requireCompact, requiredCapability) {
 			return nil
 		}
@@ -1660,6 +1663,11 @@ func (s *OpenAIGatewayService) recheckSelectedOpenAIAccountFromDBBeforeProfit(ct
 		return nil
 	}
 	if !s.openAIAccountMatchesSchedulingGroup(latest, groupID) {
+		return nil
+	}
+	// The sticky path may bypass the filtered pool, and a pool snapshot may
+	// predate a privacy change. Every fresh selection must satisfy this group.
+	if s.openAIGroupRequiresPrivacySet(ctx, groupID) && !latest.IsPrivacySet() {
 		return nil
 	}
 	if !isOpenAICompatibleAccountEligibleForRequestBeforeProfit(ctx, latest, platform, requestedModel, requireCompact, requiredCapability) {
