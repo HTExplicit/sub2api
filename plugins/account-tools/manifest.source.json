@@ -52,7 +52,7 @@
     { "id": "account-taxonomy-bulk", "slot": "surface", "capability": "extensions.admin.v1", "entrypoint": "ui/compiled/index.html", "events": ["close", "stale"], "permission": "admin", "label": { "zh": "批量分类", "en": "Bulk classification" } },
     { "id": "account-taxonomy-edit", "slot": "surface", "capability": "extensions.admin.v1", "entrypoint": "ui/compiled/index.html", "events": ["changed"], "permission": "admin", "label": { "zh": "账号分类", "en": "Account classification" } },
     { "id": "account-batch-test", "slot": "surface", "capability": "extensions.admin.v1", "entrypoint": "ui/compiled/index.html", "events": ["close"], "permission": "admin", "label": { "zh": "批量测试", "en": "Batch testing" } },
-    { "id": "account-tools-settings", "slot": "admin.settings", "action": "tools.describe", "entrypoint": "ui/index.html", "permission": "admin", "label": { "zh": "账号工具", "en": "Account tools" } }
+    { "id": "account-tools-settings", "slot": "admin.settings", "capability": "extensions.admin.v1", "action": "tools.describe", "entrypoint": "ui/index.html", "permission": "admin", "label": { "zh": "账号工具", "en": "Account tools" } }
   ],
   "runtimes": {},
   "ui": { "entrypoint": "ui/index.html" },

@@ -45,8 +45,9 @@ type pluginRuntime struct {
 	policyLeases     map[uint64]context.CancelFunc
 	done             chan struct{}
 	doneOnce         sync.Once
-	leaseRelease     func()
-	leaseOnce        sync.Once
+	lease            PluginRuntimeLease
+	leaseWatchDone   <-chan struct{}
+	killOnce         sync.Once
 }
 
 func startPluginRuntime(ctx context.Context, installation *PluginInstallation, startTimeout time.Duration, socketDir string, hostServices pluginv1.HostServiceServer) (*pluginRuntime, error) {
@@ -335,15 +336,37 @@ func (r *pluginRuntime) drain(timeout time.Duration) {
 }
 
 func (r *pluginRuntime) kill() {
-	if r != nil {
-		r.beginDrain()
+	if r == nil {
+		return
 	}
-	if r != nil && r.client != nil {
-		r.client.Kill()
+	r.beginDrain()
+	r.killOnce.Do(func() {
+		if r.client != nil {
+			r.client.Kill()
+		}
+		if r.lease != nil {
+			r.lease.Release()
+		}
+	})
+}
+
+func (r *pluginRuntime) observeLease(lease PluginRuntimeLease) error {
+	r.lease = lease
+	if lease == nil || lease.Done() == nil {
+		return nil
 	}
-	if r != nil && r.leaseRelease != nil {
-		r.leaseOnce.Do(r.leaseRelease)
+	select {
+	case <-lease.Done():
+		err := lease.Err()
+		r.kill()
+		if err == nil {
+			err = ErrPluginRuntimeLeaseLost
+		}
+		return err
+	default:
 	}
+	r.leaseWatchDone = watchPluginRuntimeLease(lease, r.kill)
+	return nil
 }
 
 func (r *pluginRuntime) roundTrip(ctx context.Context, request *http.Request, proxyURL string, account *Account) (*http.Response, error) {

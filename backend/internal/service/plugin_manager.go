@@ -1059,25 +1059,7 @@ func (m *PluginManager) CreateUIAssetSession(ctx context.Context, id int64, cont
 // global contribution is stronger: only a wildcard binding at 100% can expose
 // it because the page has no account-specific scope to apply.
 func pluginUIContributionBindingEnabled(installation *PluginInstallation, contribution *extensionv1.Contribution) bool {
-	if installation == nil || contribution == nil {
-		return false
-	}
-	if contribution.AllAccounts && contribution.Capability == "" {
-		return false
-	}
-	for _, binding := range installation.Bindings {
-		if !binding.Enabled {
-			continue
-		}
-		if contribution.Capability != "" && binding.Capability != contribution.Capability {
-			continue
-		}
-		if contribution.AllAccounts && (binding.Platform != "*" || binding.AccountType != "*" || binding.RolloutPercent != 100) {
-			continue
-		}
-		return true
-	}
-	return false
+	return pluginContributionBindingsEnabled(installation, contribution)
 }
 
 func (m *PluginManager) ResolveUIAssetToken(token string) (int64, error) {
@@ -1297,22 +1279,24 @@ func (m *PluginManager) newRuntime(ctx context.Context, installation *PluginInst
 		return nil, err
 	}
 	timeout := time.Duration(m.cfg.Plugins.StartTimeoutSeconds) * time.Second
-	var release func()
-	if locker, ok := m.repo.(PluginRuntimeLocker); ok && installation.RuntimeGeneration > 0 {
+	var lease PluginRuntimeLease
+	if installation.RuntimeGeneration > 0 {
 		var err error
-		release, err = locker.HoldPluginRuntime(ctx, installation)
+		lease, err = acquirePluginRuntimeLease(ctx, m.repo, installation)
 		if err != nil {
 			return nil, err
 		}
 	}
 	runtime, err := startPluginRuntime(ctx, installation, timeout, socketDir, m.buildHostServices(installation))
 	if err != nil {
-		if release != nil {
-			release()
+		if lease != nil {
+			lease.Release()
 		}
 		return nil, err
 	}
-	runtime.leaseRelease = release
+	if err := runtime.observeLease(lease); err != nil {
+		return nil, err
+	}
 	return runtime, nil
 }
 

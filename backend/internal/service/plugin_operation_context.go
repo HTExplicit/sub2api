@@ -79,19 +79,27 @@ func (m *PluginManager) bindHostPolicyContext(ctx context.Context, installation 
 		runtime.finishRequest()
 		return nil, nil, err
 	}
-	releaseLease := func() {}
-	if locker, ok := m.repo.(PluginRuntimeLocker); ok {
-		// Mark only this admission call. The returned context must not turn a
-		// later disabled-plugin Validate/Test process lease into a business lease.
-		releaseLease, err = locker.HoldPluginRuntime(WithPluginBusinessIOLease(bound), installation)
-		if err != nil {
-			cancel()
-			runtime.finishRequest()
-			return nil, nil, ErrExtensionOperationUnavailable
-		}
+	// Mark only this admission call. The returned context must not turn a
+	// later disabled-plugin Validate/Test process lease into a business lease.
+	lease, err := acquirePluginRuntimeLease(WithPluginBusinessIOLease(bound), m.repo, installation)
+	if err != nil {
+		cancel()
+		runtime.finishRequest()
+		return nil, nil, ErrExtensionOperationUnavailable
 	}
+	// cancel also revokes the independent policy signal retained by detached
+	// upstream contexts. Keep the lease and in-flight slot until actual cleanup.
+	watchPluginRuntimeLease(lease, cancel)
 	var once sync.Once
-	return bound, func() { once.Do(func() { cancel(); releaseLease(); runtime.finishRequest() }) }, nil
+	return bound, func() {
+		once.Do(func() {
+			cancel()
+			if lease != nil {
+				lease.Release()
+			}
+			runtime.finishRequest()
+		})
+	}, nil
 }
 
 func (r *pluginRuntime) bindPolicyContext(parent context.Context) (context.Context, context.CancelFunc, error) {

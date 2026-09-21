@@ -128,6 +128,31 @@ describe('AccountTestModal', () => {
     vi.restoreAllMocks()
   })
 
+  it('retains out-of-scope drafts but sends native defaults for a basic connection test', async () => {
+    getAvailableModels.mockResolvedValue([{ id: 'gpt-5.4', display_name: 'GPT-5.4', reasoning_efforts: ['high'] }])
+    global.fetch = vi.fn().mockResolvedValue(createStreamResponse(['data: {"type":"test_complete","success":true}\n'])) as any
+    const wrapper = mountModal({ id: 2, name: 'scope fixture', platform: 'openai', type: 'apikey', status: 'active', parent_account_id: null })
+    await wrapper.setProps({ show: true })
+    await flushPromises()
+    ;(wrapper.vm as any).textPrompt = 'retained custom prompt'
+    ;(wrapper.vm as any).reasoningEffort = 'high'
+    const registry = usePluginExtensions()
+    registry.items = registry.items.map(item => ({ ...item, account_scope: { version: 1, bindings: [{ platform: 'openai', account_type: 'apikey', rollout_percent: 0 }] } }))
+    await flushPromises()
+    expect((wrapper.vm as any).textPrompt).toBe('retained custom prompt')
+    expect((wrapper.vm as any).reasoningEffort).toBe('high')
+    expect((wrapper.vm as any).canStartTest).toBe(true)
+    await (wrapper.vm as any).startTest()
+    await flushPromises()
+    expect(global.fetch).toHaveBeenCalledTimes(1)
+    const request = JSON.parse((global.fetch as any).mock.calls[0][1].body)
+    expect(request.prompt).toBe('')
+    expect(request).not.toHaveProperty('reasoning_effort')
+    expect((wrapper.vm as any).textPrompt).toBe('retained custom prompt')
+    expect((wrapper.vm as any).reasoningEffort).toBe('high')
+    wrapper.unmount()
+  })
+
   it('gemini 图片模型测试会携带提示词并渲染图片预览', async () => {
     const wrapper = mountModal()
     await wrapper.setProps({ show: true })

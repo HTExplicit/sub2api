@@ -10,13 +10,24 @@ import (
 )
 
 func accountToolsOperation(ctx context.Context, platform, accountType, operation string, input, output any, owner ...*int64) error {
+	return accountToolsOperationScoped(ctx, platform, accountType, 0, operation, input, output, owner...)
+}
+
+func accountToolsOperationForAccount(ctx context.Context, account *Account, operation string, input, output any) error {
+	if account == nil {
+		return ErrExtensionOperationUnavailable
+	}
+	return accountToolsOperationScoped(ctx, account.Platform, account.Type, account.ID, operation, input, output)
+}
+
+func accountToolsOperationScoped(ctx context.Context, platform, accountType string, accountID int64, operation string, input, output any, owner ...*int64) error {
 	raw, err := json.Marshal(input)
 	if err != nil {
 		return err
 	}
 	call, cancel := context.WithTimeout(ctx, 2*time.Second)
 	defer cancel()
-	invocation := extensionv1.Invocation{Capability: extensionv1.CapabilityAdmin, Operation: operation, Payload: raw}
+	invocation := extensionv1.Invocation{Capability: extensionv1.CapabilityAdmin, Operation: operation, AccountID: accountID, Payload: raw}
 	var result extensionv1.Result
 	if platform == "*" && accountType == "*" {
 		result, err = invokeProcessDomainExtension(call, invocation, false)

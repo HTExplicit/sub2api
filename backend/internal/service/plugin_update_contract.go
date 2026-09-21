@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"errors"
+	"sync"
 )
 
 const (
@@ -12,6 +13,7 @@ const (
 )
 
 var ErrPluginUpdateWaiting = errors.New("previous plugin processes are still draining")
+var ErrPluginRuntimeLeaseLost = errors.New("plugin runtime lease session lost")
 
 // Separate from the original repository port so upstream implementations and
 // contract fixtures do not accidentally claim support for independent updates.
@@ -24,6 +26,88 @@ type PluginUpdateRepository interface {
 
 type PluginRuntimeLocker interface {
 	HoldPluginRuntime(context.Context, *PluginInstallation) (func(), error)
+}
+
+// Done closes on either deliberate release (Err is nil) or observed session
+// loss. Release is idempotent and waits only for the connection owner's cleanup,
+// never for callers that may themselves react to Done by calling Release.
+type PluginRuntimeLease interface {
+	Done() <-chan struct{}
+	Err() error
+	Release()
+}
+
+// Keep the legacy port for existing repositories/fixtures. Production provides
+// this stronger optional port; its failure must never select the weaker port.
+type ObservedPluginRuntimeLocker interface {
+	HoldObservedPluginRuntime(context.Context, *PluginInstallation) (PluginRuntimeLease, error)
+}
+
+type pluginReleaseOnlyLease struct {
+	release func()
+	once    sync.Once
+}
+
+func (*pluginReleaseOnlyLease) Done() <-chan struct{} { return nil }
+func (*pluginReleaseOnlyLease) Err() error            { return nil }
+func (l *pluginReleaseOnlyLease) Release()            { l.once.Do(l.release) }
+
+func acquirePluginRuntimeLease(ctx context.Context, repo PluginRepository, installation *PluginInstallation) (PluginRuntimeLease, error) {
+	if observer, ok := repo.(ObservedPluginRuntimeLocker); ok {
+		lease, err := observer.HoldObservedPluginRuntime(ctx, installation)
+		if err != nil {
+			if lease != nil {
+				lease.Release()
+			}
+			return nil, err
+		}
+		if lease == nil || lease.Done() == nil {
+			if lease != nil {
+				lease.Release()
+			}
+			return nil, ErrPluginRuntimeLeaseLost
+		}
+		select {
+		case <-lease.Done():
+			err = lease.Err()
+			lease.Release()
+			if err == nil {
+				err = ErrPluginRuntimeLeaseLost
+			}
+			return nil, err
+		default:
+			return lease, nil
+		}
+	}
+	if locker, ok := repo.(PluginRuntimeLocker); ok {
+		release, err := locker.HoldPluginRuntime(ctx, installation)
+		if err != nil {
+			return nil, err
+		}
+		if release == nil {
+			return nil, ErrPluginRuntimeLeaseLost
+		}
+		return &pluginReleaseOnlyLease{release: release}, nil
+	}
+	return nil, nil
+}
+
+// The listener does not own or release the lease. In particular, onLoss may
+// call runtime.kill/Release without a listener/connection-owner wait cycle.
+func watchPluginRuntimeLease(lease PluginRuntimeLease, onLoss func()) <-chan struct{} {
+	finished := make(chan struct{})
+	if lease == nil || lease.Done() == nil {
+		close(finished)
+		return finished
+	}
+	go func() {
+		defer close(finished)
+		<-lease.Done()
+		if lease.Err() != nil {
+			onLoss()
+		}
+	}()
+	return finished
 }
 
 type pluginBusinessIOLeaseKey struct{}

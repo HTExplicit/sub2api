@@ -19,7 +19,7 @@
   ],
   "contributions": [
     {
-      "id": "capacity-catalog", "slot": "admin.settings", "action": "catalog.list",
+      "id": "capacity-catalog", "slot": "admin.settings", "capability": "extensions.admin.v1", "action": "catalog.list",
       "entrypoint": "ui/index.html", "permission": "admin",
       "label": { "zh": "模型目录与容量参考", "en": "Model catalog and capacity references" }
     }

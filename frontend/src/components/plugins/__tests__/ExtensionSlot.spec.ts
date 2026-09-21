@@ -43,6 +43,19 @@ describe('ExtensionSlot', () => {
     registry.loaded = true
   })
 
+  it('disables an out-of-rollout account without hiding the contribution or shrinking a batch', async () => {
+    const registry = usePluginExtensions()
+    registry.items = [{ ...contribution(), account_scope: { version: 1, bindings: [{ platform: 'openai', account_type: 'oauth', rollout_percent: 50 }] } }]
+    const wrapper = mount(ExtensionSlot, { props: { name: 'account.actions', accountIds: [2, 3], accounts: [account(2), account(3)], external: true } })
+    expect(wrapper.findAll('button')).toHaveLength(1)
+    expect(wrapper.get('button').attributes('disabled')).toBeDefined()
+    await wrapper.get('button').trigger('click')
+    expect(wrapper.emitted('open')).toBeUndefined()
+    await wrapper.setProps({ accountIds: [2], accounts: [account(2)] })
+    expect(wrapper.get('button').attributes('disabled')).toBeUndefined()
+    wrapper.unmount()
+  })
+
   it('requires every selected account identity to satisfy the declared filter', () => {
     const eligible = mount(ExtensionSlot, { props: { name: 'account.actions', accountIds: [1, 2], accounts: [account(1), account(2, 'setup-token')] } })
     expect(eligible.findAll('button')).toHaveLength(1)

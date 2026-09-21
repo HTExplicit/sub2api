@@ -82,8 +82,8 @@
       </div>
 
       <AccountTestReasoningSelect v-if="supportsTextPrompt" v-model="reasoningEffort"
-        :model="modelOptionsForMode.find(model => model.id === selectedModelId)" :disabled="status === 'connecting'" @validity="reasoningValid = $event" />
-      <AccountTextTestPrompt v-if="supportsTextPrompt" v-model="textPrompt" :disabled="status === 'connecting'" @validity="textPromptPolicyValid = $event" />
+        :model="modelOptionsForMode.find(model => model.id === selectedModelId)" :account="account" :disabled="status === 'connecting'" @validity="reasoningValid = $event" />
+      <AccountTextTestPrompt v-if="supportsTextPrompt" v-model="textPrompt" :account="account" :disabled="status === 'connecting'" @validity="textPromptPolicyValid = $event" />
       <div v-else-if="supportsPromptInput" class="space-y-1.5">
         <TextArea
           v-model="testPrompt"
@@ -372,6 +372,7 @@ import AccountTestReasoningSelect from './AccountTestReasoningSelect.vue'
 import AccountTextTestPrompt from './AccountTextTestPrompt.vue'
 import { useAccountTestPrompt } from '@/composables/useAccountTestPrompt'
 import { usePluginExtensions } from '@/stores/pluginExtensions'
+import { contributionAdmission } from '@/components/plugins/contributionAdmission'
 import { computed, ref, watch, nextTick } from 'vue'
 import { useI18n } from 'vue-i18n'
 import BaseDialog from '@/components/common/BaseDialog.vue'
@@ -420,7 +421,7 @@ const availableModels = ref<AccountAvailableModel[]>([])
 const selectedModelId = ref('')
 const { prompt: textPrompt, valid: textPromptValid } = useAccountTestPrompt()
 const promptExtensions = usePluginExtensions()
-const textPromptEnabled = computed(() => promptExtensions.items.some(item => item.slot === 'account.test.prompt' && item.permission === 'admin'))
+const textPromptEnabled = computed(() => promptExtensions.items.some(item => item.slot === 'account.test.prompt' && item.permission === 'admin' && contributionAdmission(item, { account: props.account }).allowed))
 const textPromptPolicyValid = ref(true)
 const mediaTestPrompt = ref('')
 const testPrompt = computed({ get: () => supportsTextPrompt.value ? (textPromptEnabled.value ? textPrompt.value : '') : mediaTestPrompt.value,
@@ -434,6 +435,11 @@ const previewImageUrl = ref('')
 const testMode = ref<'default' | 'compact'>('default')
 const reasoningEffort = ref('')
 const reasoningValid = ref(true)
+const effectiveReasoningEffort = computed(() => {
+  const enabled = promptExtensions.items.some(item => item.slot === 'account.test' && item.permission === 'admin' && contributionAdmission(item, { account: props.account }).allowed)
+  const levels = modelOptionsForMode.value.find(model => model.id === selectedModelId.value)?.reasoning_efforts || []
+  return enabled && levels.includes(reasoningEffort.value) ? reasoningEffort.value : ''
+})
 const grokTestMode = ref<'text' | 'image' | 'video' | 'search' | 'tts' | 'stt' | 'realtime'>('text')
 const uploadImageDataURL = ref('')
 const uploadImagePreview = ref('')
@@ -671,7 +677,7 @@ const testModeSummary = computed(() => {
 })
 
 const canStartTest = computed(() => {
-	if (reasoningEffort.value && !reasoningValid.value) return false
+	if (effectiveReasoningEffort.value && !reasoningValid.value) return false
   if (supportsTextPrompt.value && textPromptEnabled.value && (!textPromptValid.value || !textPromptPolicyValid.value)) return false
   if (status.value === 'connecting') return false
   if (isGrokAccount.value) {
@@ -824,7 +830,7 @@ const startTest = async () => {
       model_id: showModelSelect.value ? selectedModelId.value : '',
       prompt: supportsPromptInput.value ? testPrompt.value : ''
     }
-    if (supportsTextPrompt.value && reasoningEffort.value) requestBody.reasoning_effort = reasoningEffort.value
+    if (supportsTextPrompt.value && effectiveReasoningEffort.value) requestBody.reasoning_effort = effectiveReasoningEffort.value
     if (isOpenAIAccount.value) {
       requestBody.mode = testMode.value
     }

@@ -9,7 +9,7 @@
 </template>
 
 <script setup lang="ts">
-import { onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { adminAPI, type PluginUISession } from '@/api/admin'
 import accountJobsAPI, { type AccountJob } from '@/api/admin/accountJobs'
@@ -22,14 +22,27 @@ import { callPluginResource, type PluginResourceDescriptor } from './resourceCli
 import { extractApiErrorCode } from '@sub2api/plugin-ui/errors'
 import { pluginPreferenceEvent, pluginPreferenceKey, readPluginPreference, writeBrowserPreference } from './preferences'
 import { getConfiguredTablePageSizeOptions } from '@/utils/tablePreferences'
+import { useAccountSelectionMetadata } from '@/composables/useAccountSelectionMetadata'
+import { contributionAdmission, type ContributionAdmission } from './contributionAdmission'
 
-const props = withDefaults(defineProps<{ pluginId: number; title: string; inline?: boolean; permission?: 'admin' | 'user'; context?: Record<string, unknown> }>(), { inline: false, permission: 'admin', context: () => ({}) })
+const props = withDefaults(defineProps<{ pluginId: number; title: string; inline?: boolean; permission?: 'admin' | 'user'; context?: Record<string, unknown>; admission?: ContributionAdmission }>(), { inline: false, permission: 'admin', context: () => ({}) })
 const emit = defineEmits<{ saved: []; job: [job: AccountJob]; event: [name: string, payload: unknown] }>()
 const { t, locale } = useI18n()
 const app = useAppStore()
 const auth = useAuthStore()
 const stepUp = useStepUp()
 const registry = usePluginExtensions()
+const targetIds = computed(() => {
+  if (props.admission) return []
+  if (props.context.account_id !== undefined && props.context.account_id !== null) return [props.context.account_id as number]
+  return Array.isArray(props.context.account_ids) ? props.context.account_ids as number[] : []
+})
+const selection = useAccountSelectionMetadata(targetIds, ref([]))
+const admission = computed<ContributionAdmission>(() => {
+  if (props.admission) return props.admission
+  const item = registry.items.find(item => item.plugin_id === props.pluginId && item.id === props.context.contribution_id)
+  return item ? contributionAdmission(item, { accountIds: targetIds.value, accounts: selection.selectedAccounts.value }) : { allowed: !props.context.contribution_id }
+})
 const frame = ref<HTMLIFrameElement | null>(null)
 const session = ref<PluginUISession | null>(null)
 const loading = ref(false), error = ref(''), height = ref(props.inline ? 64 : 640)
@@ -67,7 +80,7 @@ function currentContext() {
     if (/^--(?:ui|theme)-[a-z0-9-]+$/.test(name) && value.length <= 512 && !/url\s*\(/i.test(value)) tokens[name] = value
   }
   return JSON.parse(JSON.stringify({ ...props.context, actor_id: auth.user?.id, retained_controls: contribution?.retained_controls === true, layout: props.inline ? 'inline' : 'page', locale: locale?.value || 'zh', theme: document.documentElement.classList.contains('dark') ? 'dark' : 'light',
-    available: !changed && (!props.context.contribution_id || !!contribution?.available),
+    available: !changed && admission.value.allowed,
     unavailable_message: changed ? t('admin.plugins.uiVersionChanged') : t('admin.plugins.extensionUnavailable'),
     table_page_size_options: getConfiguredTablePageSizeOptions(), theme_tokens: tokens, theme_stylesheets: registry.items.filter(item => item.slot === 'theme' && item.available && item.stylesheet_url).map(item => item.stylesheet_url!) }))
 }
@@ -189,11 +202,13 @@ async function receive(event: MessageEvent) {
       case 'config.test': { const result = await stepUp.run(() => adminAPI.plugins.test(id)); reply({ ok: result.success, result }); break }
       case 'plugin.status': reply({ ok: true, result: await adminAPI.plugins.status(id) }); break
       case 'extension.invoke': {
+        if (!admission.value.allowed) throw new Error(t('admin.plugins.extensionUnavailable'))
         if (typeof message.operation !== 'string' || !message.payload || typeof message.payload !== 'object' || Array.isArray(message.payload)) throw new Error(t('admin.plugins.bridgeRejected'))
         const result = await adminAPI.plugins.invokeAdmin(id, message.operation, accountID, message.payload)
         reply({ ok: !result.code, result: result.payload, error: result.message || result.code }); break
       }
       case 'extension.job.submit': {
+        if (!admission.value.allowed) throw new Error(t('admin.plugins.extensionUnavailable'))
         if (typeof message.operation !== 'string' || !Array.isArray(message.items) || !message.items.length || message.items.length > 3200) throw new Error(t('admin.plugins.bridgeRejected'))
         const selected = accountID !== undefined ? [accountID] : Array.isArray(props.context.account_ids) ? props.context.account_ids : null
         if (selected && message.items.some((item: { account_id?: unknown }) => !selected.includes(item.account_id))) throw new Error(t('admin.plugins.bridgeRejected'))
@@ -225,6 +240,7 @@ async function receive(event: MessageEvent) {
 // A refreshed registry must invalidate resource availability in that case too.
 watch(() => [locale?.value, registry.items], sendContext, { deep: true })
 watch(() => props.context, sendContext, { deep: true })
+watch(admission, sendContext, { deep: true })
 function preferenceChanged(event: Event) {
   const current = session.value, userID = auth.user?.id
   if (!current?.plugin_key || !userID || !frame.value?.contentWindow) return

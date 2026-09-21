@@ -39,6 +39,7 @@
     {
       "id": "flat-theme",
       "slot": "theme",
+      "capability": "extensions.ui.v1",
       "config_flag": "theme_enabled",
       "entrypoint": "ui/assets/theme.css",
       "assets": [
@@ -56,6 +57,7 @@
     {
       "id": "account-traffic",
       "slot": "account.details",
+      "capability": "extensions.observability.v1",
       "config_flag": "telemetry_enabled",
       "action": "telemetry.read",
       "entrypoint": "ui/index.html",
@@ -68,6 +70,7 @@
     {
       "id": "observability-settings",
       "slot": "admin.settings",
+      "capability": "extensions.admin.v1",
       "action": "observability.describe",
       "entrypoint": "ui/index.html",
       "permission": "admin",

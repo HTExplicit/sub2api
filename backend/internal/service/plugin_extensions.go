@@ -46,20 +46,39 @@ func (m *PluginManager) validateAdminExtension(ctx context.Context, id, accountI
 	if installation == nil || !hasEnabledPluginBinding(installation.Bindings) {
 		return "", "", errors.New("plugin disabled")
 	}
+	if m.repo == nil {
+		return "", "", errors.New("plugin storage unavailable")
+	}
+	current, readErr := m.repo.GetByID(ctx, id)
+	if readErr != nil || !samePluginRuntime(current, installation) || current.State != PluginStateEnabled {
+		return "", "", errors.New("plugin state changed")
+	}
+	runtime := registry.runtimes[id]
+	configRevision, applied := m.contributionAppliedRevision(current, runtime)
+	if !applied || runtime.client == nil || runtime.draining.Load() || runtime.client.Exited() {
+		return "", "", ErrExtensionOperationUnavailable
+	}
+	installation = current
 	declared := false
-	var accountFilter *extensionv1.AccountFilter
+	var selected *extensionv1.Contribution
 	for _, contribution := range installation.Manifest.Contributions {
 		if contribution.Action == operation && contribution.Permission == "admin" {
 			if strings.HasPrefix(contribution.Slot, "account.") && accountID <= 0 {
 				return "", "", errors.New("account context required")
 			}
 			declared = true
-			accountFilter = contribution.AccountFilter
+			selected = &contribution
 			break
 		}
 	}
 	if !declared {
 		return "", "", errors.New("undeclared plugin admin operation")
+	}
+	if !pluginContributionBindingsEnabled(installation, selected) {
+		return "", "", errors.New("plugin contribution capability is disabled")
+	}
+	if enabled, known := m.contributionConfigured(installation, runtime, selected.ConfigFlag); !known || !enabled {
+		return "", "", errors.New("plugin contribution is unavailable")
 	}
 	platform, accountType := "*", "*"
 	if accountID == 0 {
@@ -76,20 +95,20 @@ func (m *PluginManager) validateAdminExtension(ctx context.Context, id, accountI
 			return "", "", errors.New("account directory unavailable")
 		}
 		account, err := directory.ReadExtensionAccount(ctx, accountID)
-		if err != nil || account == nil {
+		if err != nil || account == nil || account.ID != accountID {
 			return "", "", errors.New("account unavailable")
 		}
 		platform, accountType = account.Platform, account.Type
-		if !extensionv1.AccountMatchesFilter(*account, accountFilter) {
+		if !contributionAccountAllowed(installation, selected, *account) {
 			return "", "", errors.New("plugin action is not available for this account")
 		}
 	}
 	if !pluginHasInvocationCapability(installation, extensionv1.Invocation{Capability: extensionv1.CapabilityAdmin, AccountID: accountID}, platform, accountType) {
 		return "", "", errors.New("plugin admin capability outside scope")
 	}
-	runtime := registry.runtimes[id]
-	if runtime == nil || runtime.draining.Load() || runtime.client.Exited() {
-		return "", "", errors.New("plugin runtime unavailable")
+	latestRevision, stillApplied := m.contributionAppliedRevision(installation, runtime)
+	if !stillApplied || latestRevision != configRevision || runtime.draining.Load() || runtime.client.Exited() {
+		return "", "", ErrExtensionOperationUnavailable
 	}
 	return platform, accountType, nil
 }
@@ -210,10 +229,11 @@ func pluginDependenciesHealthy(installation *PluginInstallation, registry *plugi
 type PluginContribution struct {
 	PackageSHA256 string `json:"package_sha256,omitempty"`
 	extensionv1.Contribution
-	StylesheetURL string `json:"stylesheet_url,omitempty"`
-	PluginID      int64  `json:"plugin_id"`
-	Available     bool   `json:"available"`
-	Reason        string `json:"reason,omitempty"`
+	AccountScope  *PluginContributionAccountScope `json:"account_scope,omitempty"`
+	StylesheetURL string                          `json:"stylesheet_url,omitempty"`
+	PluginID      int64                           `json:"plugin_id"`
+	Available     bool                            `json:"available"`
+	Reason        string                          `json:"reason,omitempty"`
 }
 
 func hasEnabledPluginBinding(bindings []PluginBinding) bool {
@@ -275,19 +295,7 @@ func (m *PluginManager) Contributions() []PluginContribution {
 		runtime := registry.runtimes[id]
 		available := registry.unavailable == "" && runtime != nil && !runtime.draining.Load() && !runtime.client.Exited() && pluginDependenciesHealthy(installation, registry, map[int64]bool{})
 		for _, contribution := range installation.Manifest.Contributions {
-			if contribution.Capability != "" {
-				enabled := false
-				for _, binding := range installation.Bindings {
-					if binding.Enabled && binding.Capability == contribution.Capability && (!contribution.AllAccounts || (binding.Platform == "*" && binding.AccountType == "*" && binding.RolloutPercent == 100)) {
-						enabled = true
-						break
-					}
-				}
-				if !enabled {
-					continue
-				}
-			}
-			if contribution.Slot == "theme" && !pluginHasCapability(installation, extensionv1.CapabilityUI, "*", "*") {
+			if !pluginContributionBindingsEnabled(installation, &contribution) {
 				continue
 			}
 			flag, known := m.contributionConfigured(installation, runtime, contribution.ConfigFlag)
@@ -295,6 +303,9 @@ func (m *PluginManager) Contributions() []PluginContribution {
 				continue
 			}
 			item := PluginContribution{Contribution: contribution, PluginID: id, Available: available, PackageSHA256: installation.PackageSHA256}
+			if contribution.Capability != "" {
+				item.AccountScope = &PluginContributionAccountScope{Version: 1, Bindings: contributionEffectiveBindings(installation, &contribution)}
+			}
 			if !available || !known {
 				item.Available = false
 				item.Reason = "plugin_unavailable"
@@ -365,6 +376,7 @@ func (m *PluginManager) PublicContributions() []PluginContribution {
 		item.Action, item.Entrypoint, item.ConfigFlag = "", "", ""
 		item.Fields, item.AccountFilter, item.Assets = nil, nil, nil
 		item.DisplayFields = nil
+		item.AccountScope = nil
 		out = append(out, item)
 	}
 	return out

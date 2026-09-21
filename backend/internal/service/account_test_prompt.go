@@ -53,7 +53,7 @@ func validateAccountPromptExtension(ctx context.Context, account *Account, promp
 	if strings.TrimSpace(prompt) == "" || !accountTestUsesTextPrompt(model, mode) || mode == "search" {
 		return nil
 	}
-	return accountToolsOperation(ctx, account.Platform, account.Type, "test.prompt", extensionv1.TextPromptSelection{Characters: utf8.RuneCountInString(prompt), ValidUTF8: utf8.ValidString(prompt)}, nil)
+	return accountToolsOperationForAccount(ctx, account, "test.prompt", extensionv1.TextPromptSelection{Characters: utf8.RuneCountInString(prompt), ValidUTF8: utf8.ValidString(prompt)}, nil)
 }
 
 func ValidateAccountTestPrompt(prompt string) error {

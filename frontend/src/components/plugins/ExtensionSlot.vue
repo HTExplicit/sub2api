@@ -6,7 +6,7 @@
       {{ label(item) }}
     </button>
   </div>
-  <ExtensionDialog v-if="!external" :contribution="selected" :account-id="account?.id" :account-ids="accountIds" :mode="name" @close="selected = null" @job="acceptJob" />
+  <ExtensionDialog v-if="!external" :contribution="selected" :account-id="account?.id" :account-ids="accountIds" :accounts="account ? [account] : accounts" :mode="name" @close="selected = null" @job="acceptJob" />
 </template>
 
 <script setup lang="ts">
@@ -17,6 +17,7 @@ import type { AccountJob } from '@/api/admin/accountJobs'
 import type { PluginContribution } from '@/api/admin/plugins'
 import { usePluginExtensions } from '@/stores/pluginExtensions'
 import ExtensionDialog from './ExtensionDialog.vue'
+import { contributionAdmission } from './contributionAdmission'
 
 const props = withDefaults(defineProps<{ name: string; account?: AccountSelectionIdentity; accountIds?: number[]; accounts?: AccountSelectionIdentity[]; external?: boolean; variant?: 'buttons' | 'menu' }>(), { accountIds: () => [], accounts: () => [], external: false, variant: 'buttons' })
 const emit = defineEmits<{ job: [job: AccountJob]; open: [contribution: PluginContribution] }>()
@@ -25,10 +26,10 @@ const registry = usePluginExtensions()
 const selected = ref<PluginContribution | null>(null)
 const activeJob = ref<AccountJob | null>(null)
 function acceptJob(job: AccountJob) { activeJob.value = job; emit('job', job) }
-function open(item: PluginContribution) { if (props.external) emit('open', item); else selected.value = item }
+function open(item: PluginContribution) { if (!available(item)) return; if (props.external) emit('open', item); else selected.value = item }
 watch(() => selected.value?.id, () => { activeJob.value = null })
 function label(item: PluginContribution) { return item.label[locale?.value || 'zh'] || item.label.zh || item.label.en || Object.values(item.label)[0] || t('admin.plugins.configure') }
-function available(item: PluginContribution) { return item.available && props.accountIds.length <= 100 }
+function available(item: PluginContribution) { return props.accountIds.length <= 100 && contributionAdmission(item, { account: props.account, accountIds: props.accountIds, accounts: props.accounts }).allowed }
 function unavailableReason() { return props.accountIds.length > 100 ? t('admin.plugins.accountLimit') : t('admin.plugins.extensionUnavailable') }
 function matches(item: PluginContribution, account: AccountSelectionIdentity) {
   const filter = item.account_filter

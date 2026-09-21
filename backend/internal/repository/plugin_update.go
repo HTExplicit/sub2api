@@ -16,10 +16,99 @@ import (
 
 func pluginRuntimeLockName(id int64) string { return fmt.Sprintf("sub2api-plugin-runtime:%d", id) }
 
-// Each live process holds a shared advisory lock on a dedicated connection.
-// Replacement requires the exclusive lock, so another host cannot promote a
-// new generation while an old process still owns credentials or executions.
+// A detector, not a fencing grace period: PostgreSQL can release a dead
+// session's advisory lock before this interval/timeout observes the loss.
+const (
+	pluginRuntimeLeaseProbeInterval = time.Second
+	pluginRuntimeLeaseProbeTimeout  = time.Second
+)
+
+type pluginRuntimeLeaseSession interface {
+	Ping(context.Context) error
+	Close(context.Context) error
+}
+
+type pluginRuntimeSessionLease struct {
+	conn        pluginRuntimeLeaseSession
+	done        chan struct{}
+	stopped     chan struct{}
+	cancel      context.CancelFunc
+	releaseOnce sync.Once
+	mu          sync.RWMutex
+	releasing   bool
+	err         error
+}
+
+func newPluginRuntimeSessionLease(conn pluginRuntimeLeaseSession, interval, timeout time.Duration) *pluginRuntimeSessionLease {
+	ctx, cancel := context.WithCancel(context.Background())
+	lease := &pluginRuntimeSessionLease{conn: conn, done: make(chan struct{}), stopped: make(chan struct{}), cancel: cancel}
+	go lease.monitor(ctx, interval, timeout)
+	return lease
+}
+
+func (l *pluginRuntimeSessionLease) Done() <-chan struct{} { return l.done }
+func (l *pluginRuntimeSessionLease) Err() error {
+	l.mu.RLock()
+	defer l.mu.RUnlock()
+	return l.err
+}
+func (l *pluginRuntimeSessionLease) Release() {
+	l.releaseOnce.Do(func() {
+		l.mu.Lock()
+		l.releasing = true
+		l.mu.Unlock()
+		l.cancel()
+	})
+	<-l.stopped
+}
+
+func (l *pluginRuntimeSessionLease) monitor(ctx context.Context, interval, timeout time.Duration) {
+	var lost bool
+	defer func() {
+		l.cancel()
+		l.mu.Lock()
+		if lost && !l.releasing {
+			l.err = service.ErrPluginRuntimeLeaseLost
+		}
+		close(l.done)
+		l.mu.Unlock()
+		// This goroutine alone owns Ping/Close. Done is published before the
+		// bounded close so callers can revoke work without waiting for IO.
+		closeCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		_ = l.conn.Close(closeCtx)
+		close(l.stopped)
+	}()
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+		}
+		probeCtx, cancel := context.WithTimeout(ctx, timeout)
+		err := l.conn.Ping(probeCtx)
+		cancel()
+		if err != nil {
+			lost = true
+			return
+		}
+	}
+}
+
+// While its session is healthy, each live owner holds a shared advisory lock.
+// Replacement requires the exclusive lock; the observed port additionally
+// notifies owners when the session is lost rather than deliberately released.
 func (r *pluginRepository) HoldPluginRuntime(ctx context.Context, installation *service.PluginInstallation) (func(), error) {
+	lease, err := r.HoldObservedPluginRuntime(ctx, installation)
+	if err != nil {
+		return nil, err
+	}
+	return lease.Release, nil
+}
+
+func (r *pluginRepository) HoldObservedPluginRuntime(ctx context.Context, installation *service.PluginInstallation) (service.PluginRuntimeLease, error) {
 	pooled, err := r.db.Conn(ctx)
 	if err != nil {
 		return nil, err
@@ -56,15 +145,6 @@ func (r *pluginRepository) HoldPluginRuntime(ctx context.Context, installation *
 		}
 		return nil, err
 	}
-	var once sync.Once
-	release := func() {
-		once.Do(func() {
-			unlockCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-			defer cancel()
-			// Closing the dedicated session releases all its advisory locks.
-			_ = conn.Close(unlockCtx)
-		})
-	}
 	var generation, revision int64
 	var state, digest, configEncrypted string
 	err = conn.QueryRow(ctx, `SELECT runtime_generation,state,package_sha256,revision,config_encrypted FROM sub2api_plugin_installations WHERE id=$1`, installation.ID).Scan(&generation, &state, &digest, &revision, &configEncrypted)
@@ -76,13 +156,15 @@ func (r *pluginRepository) HoldPluginRuntime(ctx context.Context, installation *
 		stale = state != service.PluginStateEnabled || revision != installation.Revision || configEncrypted != installation.ConfigEncrypted
 	}
 	if stale {
-		release()
+		closeCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		_ = conn.Close(closeCtx)
 		if err == nil {
 			err = service.ErrPluginStateChanged
 		}
 		return nil, err
 	}
-	return release, nil
+	return newPluginRuntimeSessionLease(conn, pluginRuntimeLeaseProbeInterval, pluginRuntimeLeaseProbeTimeout), nil
 }
 
 func (r *pluginRepository) StagePluginUpdate(ctx context.Context, previous, candidate *service.PluginInstallation, policy string) error {
@@ -223,6 +305,7 @@ func lockPluginExecution(ctx context.Context, tx *sql.Tx, plugin string) error {
 
 var _ service.PluginUpdateRepository = (*pluginRepository)(nil)
 var _ service.PluginRuntimeLocker = (*pluginRepository)(nil)
+var _ service.ObservedPluginRuntimeLocker = (*pluginRepository)(nil)
 
 func (r *pluginRepository) CompletedBundledPlugin(ctx context.Context, key string) (bool, error) {
 	var completed bool

@@ -32,7 +32,7 @@
     { "id": "cindy-balance-probe", "slot": "surface", "entrypoint": "ui/compiled/index.html", "retained_controls": true, "capability": "extensions.provider.v1", "permission": "admin", "config_flag": "balance_detection", "label": { "zh": "Cindy 余额复查", "en": "Cindy balance probes" } },
     { "id": "cindy-duplicate-inventory", "slot": "surface", "entrypoint": "ui/compiled/index.html", "capability": "extensions.provider.v1", "permission": "admin", "label": { "zh": "重复身份清单", "en": "Duplicate identities" } },
     { "id": "cindy-group-audit", "slot": "surface", "entrypoint": "ui/compiled/index.html", "capability": "extensions.provider.v1", "permission": "admin", "events": ["close", "split"], "label": { "zh": "Cindy 分组审查", "en": "Cindy group audit" } },
-    { "id": "cindy-provider-settings", "slot": "admin.settings", "action": "provider.describe", "entrypoint": "ui/index.html", "permission": "admin", "label": { "zh": "Cindy 目录与策略", "en": "Cindy catalog and policies" } }
+    { "id": "cindy-provider-settings", "slot": "admin.settings", "capability": "extensions.admin.v1", "action": "provider.describe", "entrypoint": "ui/index.html", "permission": "admin", "label": { "zh": "Cindy 目录与策略", "en": "Cindy catalog and policies" } }
   ],
   "runtimes": {},
   "ui": { "entrypoint": "ui/index.html" },

@@ -41,7 +41,7 @@ describe('declared plugin fields and surfaces', () => {
     wrapper.unmount()
   })
 
-  it('preserves choices during failure and removes stale choices after disable', async () => {
+  it('preserves choices during failure and keeps drafts after disable', async () => {
     const wrapper = mount(ExtensionFields, { props: { name: 'account.test', values: { reasoning_effort: 'high' }, context: { reasoning_efforts: ['high'] } } })
     const registry = usePluginExtensions()
     registry.items = registry.items.map(item => ({ ...item, available: false }))
@@ -52,7 +52,20 @@ describe('declared plugin fields and surfaces', () => {
     registry.items = []
     await nextTick()
     expect(wrapper.find('select').exists()).toBe(false)
-    expect(wrapper.emitted('update:values')?.at(-1)).toEqual([{ reasoning_effort: '' }])
+    expect(wrapper.emitted('update:values')).toBeUndefined()
+    wrapper.unmount()
+  })
+
+  it('keeps an out-of-scope draft and permits explicit reset without enabling field execution', async () => {
+    const registry = usePluginExtensions()
+    registry.items = registry.items.map(item => ({ ...item, account_scope: { version: 1, bindings: [{ platform: 'openai', account_type: 'oauth', rollout_percent: 50 }] } }))
+    const wrapper = mount(ExtensionFields, { props: { name: 'account.test.prompt', values: { prompt: 'retained draft' }, context: {}, account: { id: 3, platform: 'openai', type: 'oauth', parent_account_id: null } } })
+    expect(wrapper.get('textarea').attributes('disabled')).toBeDefined()
+    expect((wrapper.get('textarea').element as HTMLTextAreaElement).value).toBe('retained draft')
+    expect(wrapper.emitted('update:values')).toBeUndefined()
+    expect(wrapper.get('button').attributes('disabled')).toBeUndefined()
+    await wrapper.get('button').trigger('click')
+    expect(wrapper.emitted('update:values')?.at(-1)).toEqual([{ prompt: '' }])
     wrapper.unmount()
   })
 

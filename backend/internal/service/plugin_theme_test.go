@@ -25,7 +25,7 @@ func TestPublicThemeAssetsRequireCurrentActivationDeclarationAndDigest(t *testin
 	installation, err := installer.Install(context.Background(), bytes.NewReader(buildPluginArchive(t, manifest, nil, "", nil)), nil)
 	require.NoError(t, err)
 	installation.ID, installation.State = 4, PluginStateEnabled
-	installation.Bindings = []PluginBinding{{Capability: extensionv1.CapabilityUI, Platform: "*", AccountType: "*", Enabled: true}}
+	installation.Bindings = []PluginBinding{{Capability: extensionv1.CapabilityUI, Platform: "*", AccountType: "*", Enabled: true, RolloutPercent: 100}}
 	repo := &pluginTokenRepository{installation: installation}
 	manager := NewPluginManager(repo, pluginTokenEncryptor{}, cfg, info, nil)
 	runtime := &pluginRuntime{client: &hcplugin.Client{}}
@@ -34,6 +34,15 @@ func TestPublicThemeAssetsRequireCurrentActivationDeclarationAndDigest(t *testin
 	manager.runtimes[4] = runtime
 	manager.publishExtensionRegistryLocked([]*PluginInstallation{installation}, "")
 	revision := pluginResourceRevision(installation)
+	for _, percent := range []int{0, 50} {
+		installation.Bindings[0].RolloutPercent = percent
+		manager.publishExtensionRegistryLocked([]*PluginInstallation{installation}, "")
+		require.Empty(t, manager.PublicContributions(), "a partial theme cannot be published globally")
+		_, _, err := manager.ReadPublicThemeAsset(context.Background(), 4, revision, "assets/theme.css")
+		require.Error(t, err)
+	}
+	installation.Bindings[0].RolloutPercent = 100
+	manager.publishExtensionRegistryLocked([]*PluginInstallation{installation}, "")
 	public := manager.PublicContributions()
 	require.Len(t, public, 1)
 	require.Contains(t, public[0].StylesheetURL, revision)

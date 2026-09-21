@@ -77,7 +77,7 @@ func ValidateAccountTestReasoningContext(ctx context.Context, account *Account, 
 		return errors.New("account is unavailable")
 	}
 	levels, _ := AccountTestReasoningOptions(account, model)
-	return accountToolsOperation(ctx, account.Platform, account.Type, "test.reasoning", extensionv1.ReasoningSelection{Mode: mode, Effort: effort, Levels: levels}, nil)
+	return accountToolsOperationForAccount(ctx, account, "test.reasoning", extensionv1.ReasoningSelection{Mode: mode, Effort: effort, Levels: levels}, nil)
 }
 
 func applyAccountTestReasoning(c *gin.Context, payload map[string]any, chat bool) {

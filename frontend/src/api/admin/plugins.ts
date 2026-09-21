@@ -92,6 +92,7 @@ export interface PluginContribution {
   fields?: PluginFormField[]
   display_fields?: PluginDisplayField[]
   account_filter?: { platforms?: string[]; types?: string[]; statuses?: string[]; exclude_shadows?: boolean }
+  account_scope?: { version: 1; bindings: Array<{ platform: string; account_type: string; rollout_percent: number }> }
   id: string
   slot: string
   label: Record<string, string>

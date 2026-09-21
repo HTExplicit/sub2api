@@ -9,7 +9,7 @@
     </label>
     <div v-if="entry.field.kind === 'textarea'" class="mt-1 flex justify-between gap-3 text-xs text-muted">
       <span>{{ label(entry.field.hint || {}) }} {{ textLength(entry.field) }}/{{ entry.field.max_length }}</span>
-      <button v-if="entry.field.reset_label" type="button" :disabled="disabled || !entry.available" @click="update(entry.field.key, '')">{{ label(entry.field.reset_label) }}</button>
+      <button v-if="entry.field.reset_label" type="button" :disabled="disabled" @click="update(entry.field.key, '')">{{ label(entry.field.reset_label) }}</button>
     </div>
     <p v-if="entry.field.kind === 'textarea' && textLength(entry.field) > (entry.field.max_length || 0)" role="alert" class="text-sm text-red-600">{{ label(entry.field.limit_message || {}) }}</p>
     <p v-if="!entry.available" role="status" class="mt-1 text-xs text-muted">{{ t('admin.plugins.extensionUnavailable') }}</p>
@@ -21,14 +21,15 @@ import { computed, onMounted, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import Select from '@/components/common/Select.vue'
 import type { PluginFormField } from '@/api/admin/plugins'
+import type { AccountSelectionIdentity } from '@/composables/useAccountSelectionMetadata'
 import { usePluginExtensions } from '@/stores/pluginExtensions'
+import { contributionAdmission } from './contributionAdmission'
 
-const props = withDefaults(defineProps<{ name: string; values: Record<string, string>; context: Record<string, unknown>; disabled?: boolean }>(), { disabled: false })
+const props = withDefaults(defineProps<{ name: string; values: Record<string, string>; context: Record<string, unknown>; account?: AccountSelectionIdentity | null; disabled?: boolean }>(), { disabled: false })
 const emit = defineEmits<{ 'update:values': [values: Record<string, string>]; validity: [valid: boolean] }>()
 const { t, locale } = useI18n()
 const registry = usePluginExtensions()
-const managed = new Map<string, PluginFormField['kind']>()
-const declared = computed(() => registry.items.filter(item => item.slot === props.name && item.permission === 'admin').flatMap(item => (item.fields || []).map(field => ({ field, available: item.available, identity: `${item.plugin_id}:${item.id}:${field.key}` }))))
+const declared = computed(() => registry.items.filter(item => item.slot === props.name && item.permission === 'admin').flatMap(item => (item.fields || []).map(field => ({ field, available: contributionAdmission(item, { account: props.account }).allowed, identity: `${item.plugin_id}:${item.id}:${field.key}` }))))
 function label(labels: Record<string, string>) { return labels[locale?.value || 'zh'] || labels[(locale?.value || 'zh').split('-')[0]] || labels.zh || labels.en || '' }
 function levels(field: PluginFormField) { const source = field.options_source; const value = source && Object.prototype.hasOwnProperty.call(props.context, source) ? props.context[source] : null; return Array.isArray(value) ? [...new Set(value.filter((item): item is string => typeof item === 'string'))] : [] }
 function options(field: PluginFormField) {
@@ -40,16 +41,10 @@ function textLength(field: PluginFormField) { return Array.from(props.values[fie
 const displayed = computed(() => declared.value.filter(entry => entry.field.kind === 'textarea' || levels(entry.field).length > 0))
 function update(key: string, value: string) { emit('update:values', { ...props.values, [key]: value }) }
 watch([declared, () => props.context, () => props.values], () => {
-  const fields = new Map(declared.value.map(entry => [entry.field.key, entry]))
-  for (const [key, entry] of fields) managed.set(key, entry.field.kind)
-  const values = { ...props.values }
-  let changed = false
-  for (const [key, kind] of managed) {
-    const entry = fields.get(key)
-    if (kind === 'select' && values[key] && (!entry || !levels(entry.field).includes(values[key]))) { values[key] = ''; changed = true }
-  }
-  if (changed) emit('update:values', values)
-  emit('validity', declared.value.every(entry => (!values[entry.field.key] || entry.available) && (entry.field.kind !== 'textarea' || textLength(entry.field) <= (entry.field.max_length || 0))))
+  // Eligibility is not ownership of the user's draft. Scope changes, missing
+  // declarations and model switches must not silently clear stored input.
+  emit('validity', declared.value.every(entry => (!props.values[entry.field.key] || entry.available) &&
+    (entry.field.kind !== 'textarea' || textLength(entry.field) <= (entry.field.max_length || 0))))
 }, { immediate: true, deep: true })
 onMounted(() => { if (!registry.loaded) void registry.refresh() })
 </script>

@@ -133,6 +133,8 @@
 - 提示词实际请求带AccountID，命中请求缓存也重新检查当前账号准入；内容/编译快照仍按同一请求或WS回合冻结。跨账号、撤销、协议转换时只按确切载体来源恢复本次注入，不搜索删除客户同文system；固定两种载体证明、最多64KiB原始instructions且只有一份完整缓存输出，来源不确定拒绝。官方同内容切换载体及规范化空白的后验反例也已修复，精确新旧用例通过，见根 `artifacts/evidence/v027-astra-prompt-request-scope-review.json`。WS跨回合旧key累积单独待查，不能将每回合有界当连接总量已证实有界。
 - 自动内置更新在启动后读到晚到pinned/updating意图即停止stage，状态冲突或目标移除须重读持久意图确认。completed分支只清理本次唯一候选，不清旧包或Prepare已接管路径；真实bootstrap/installer离线反例及原completion直接回归通过。见根 `artifacts/evidence/v027-astra-bundle-pin-race-review.json`，先前completed分支的固定版竞争已关闭。
 - 发布源码固定为main准入的完整SHA，发布前检查Release/draft/版本镜像是否已存在或不确定；构建/load与push分离，显式draft附齐包和lock的摘要后再公开，失败保留现场不覆盖。签名身份初始化完整分页检查Secret名称；checkout不保留token，构建不继承显式发布token，私钥仍仅签名步骤注入。14个Python和3个Go定向方法、YAML/run块语法通过，见根 `artifacts/evidence/v027-astra-release-supply-chain-review.json`；未真正签名、发布或核对远端不可变规则。
+- 七包29项贡献已逐项声明能力；有管理动作的贡献同时要求Admin与声明的业务能力，宿主投影平台/类型/灰度交集，前端按同一uint64账号分桶检查完整选择集。字段保留草稿而有效执行值独立计算；普通连接测试在插件选项不可用时仍可用原生默认，显式非空越范围API选项拒绝。全局主题要求通配UI绑定和100%。配置尚未应用时不借旧true flag准入管理动作；原任务历史仍可查看。定向Go/UI及类型验证通过，详见根 `artifacts/evidence/v027-astra-contribution-admission-review.json`。
+- 运行租约新增可观察会话接口：一秒间隔、最多一秒Ping探测，同一goroutine串行Ping/Close，无自动重连；检测失联后运行时排空并终止，宿主策略取消可传播到已脱离客户端的上游IO，计费收尾仍独立。21个定向叶子执行通过。真实本地PG明确复现“新代次提交早于失联通知”，因此保证仅为检测后本地撤权，不声称撤销已到上游的请求或全系统exactly-once；持久任务租约、IO前spent CAS及旧代次写入拒绝继续防重复。见根 `artifacts/evidence/v027-astra-runtime-lease-loss-review.json`。
 
 ## 未完成
 
