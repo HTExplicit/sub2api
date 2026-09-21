@@ -586,6 +586,29 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 		h.errorResponse(c, http.StatusBadRequest, "invalid_request_error", service.OpenAIContinuationAnchorValidationMessage)
 		return
 	}
+	if previousResponseID != "" {
+		groupID := int64(0)
+		if apiKey.GroupID != nil {
+			groupID = *apiKey.GroupID
+		}
+		// Response affinity identifies an upstream account, not a downstream
+		// tenant. Authorize the anchor before any policy lookup or scheduling.
+		owned, ownershipErr := h.gatewayService.ValidateOpenAIHTTPResponseOwner(
+			c.Request.Context(), groupID, previousResponseID, subject.UserID, apiKey.ID,
+		)
+		if ownershipErr != nil {
+			reqLog.Warn("openai.previous_response_owner_lookup_failed")
+		}
+		if ownershipErr != nil || !owned {
+			reqLog.Warn("openai.request_validation_failed", zap.String("reason", "previous_response_owner_mismatch"))
+			h.errorResponse(c, http.StatusBadRequest, "invalid_request_error", "previous_response_id is not available for this user")
+			return
+		}
+	}
+	// Only authenticated middleware identity may own the response registered
+	// by the existing HTTP response handler; body/plugin fields are not authority.
+	service.SetOpenAIHTTPResponseOwner(c, subject.UserID, apiKey.ID)
+
 	ensureCompositeTargetPlatform(c, apiKey, reqModel)
 	if !openAICompatibleTextTargetAllowed(c, apiKey, reqModel) {
 		h.errorResponse(c, http.StatusBadRequest, "invalid_request_error", "Model is not supported by this OpenAI-compatible endpoint for composite groups")

@@ -1125,6 +1125,11 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 					ctx, c, account, cindyOpaqueBindingIDsFromRawItems(wsResult.wsReplayInput),
 				)
 			}
+			if cindyHTTPToWSV2 {
+				// This remains an HTTP response even though its upstream used WS.
+				// Native WS keeps its existing ownership/session behavior.
+				s.bindHTTPResponseAccount(ctx, c, account, wsResult.ResponseID)
+			}
 			return wsResult, nil
 		}
 		if strictCindyContinuation {

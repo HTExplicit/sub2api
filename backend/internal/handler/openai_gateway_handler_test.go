@@ -1364,6 +1364,7 @@ func TestOpenAIResponses_AllowsResponseIDPastHTTPPrevalidation(t *testing.T) {
 	})
 
 	h := newOpenAIHandlerForPreviousResponseIDValidation(t, nil)
+	require.NoError(t, h.gatewayService.BindOpenAIHTTPResponseOwner(context.Background(), groupID, "resp_123456", 1, 101))
 	h.Responses(c)
 
 	require.Equal(t, http.StatusBadGateway, w.Code)
