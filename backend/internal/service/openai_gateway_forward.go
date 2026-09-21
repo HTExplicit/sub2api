@@ -58,7 +58,11 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 	var integrityEffortPolicy func([]byte) ([]byte, error)
 	if account != nil && account.IsOpenAI() {
 		requestedModel := gjson.GetBytes(body, "model").String()
-		candidates := []string{account.GetMappedModel(requestedModel)}
+		mappedCandidate, mapErr := resolveOpenAIForwardModelContext(ctx, account, requestedModel, "")
+		if mapErr != nil {
+			return nil, mapErr
+		}
+		candidates := []string{mappedCandidate}
 		if isOpenAIResponsesCompactPath(c) {
 			if compactModel, matched := account.ResolveCompactMappedModel(requestedModel); matched {
 				candidates = append([]string{compactModel}, candidates...)
@@ -483,11 +487,18 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 
 	isCompactRequest := compactPath
 	requestedModel := reqModel
-	billingModel, upstreamModel := resolveOpenAIForwardMappedModels(account, requestedModel, isCompactRequest)
+	billingModel, upstreamModel, modelPolicyErr := resolveOpenAIForwardMappedModelsContext(ctx, account, requestedModel, isCompactRequest)
+	if modelPolicyErr != nil {
+		return nil, modelPolicyErr
+	}
 	if cindyRuntimeAccount {
-		if mappedModel, mapped := CindyCompatibilityMappedUpstreamModel(requestedModel); mapped {
+		snapshot, err := LoadCindyCatalogSnapshot(ctx, account)
+		if err != nil {
+			return nil, err
+		}
+		if mappedModel, mapped := snapshot.CompatibilityMappings[requestedModel]; mapped {
 			upstreamModel = mappedModel
-		} else if mappedModel, mapped := CindyMappedUpstreamModel(requestedModel); mapped {
+		} else if mappedModel, mapped := snapshot.AvailableMappings[requestedModel]; mapped {
 			upstreamModel = mappedModel
 		}
 	}

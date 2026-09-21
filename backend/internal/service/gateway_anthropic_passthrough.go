@@ -67,10 +67,19 @@ func (s *GatewayService) ForwardCindyAnthropicMessages(
 	}
 	ctx = pricingContext
 	requestedModel = strings.TrimSpace(requestedModel)
-	if !CindyFreePoolModelSupportsEndpoint(requestedModel, CindyEndpointMessages) {
+	snapshot, err := LoadCindyCatalogSnapshot(ctx, account)
+	if err != nil {
+		return nil, err
+	}
+	capability, known := snapshot.Capability(requestedModel)
+	verifiedMessages := false
+	for _, endpoint := range capability.VerifiedEndpoints {
+		verifiedMessages = verifiedMessages || endpoint == CindyEndpointMessages
+	}
+	if !known || !capability.PublicModel || capability.Kind != CindyModelKindText || !verifiedMessages {
 		return nil, fmt.Errorf("cindy model %q is not verified for native Messages", requestedModel)
 	}
-	upstreamModel, ok := CindyMappedUpstreamModel(requestedModel)
+	upstreamModel, ok := snapshot.AvailableMappings[requestedModel]
 	if !ok {
 		return nil, fmt.Errorf("cindy model %q is not in the fixed catalogue", requestedModel)
 	}

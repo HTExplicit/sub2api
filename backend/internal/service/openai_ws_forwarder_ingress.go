@@ -312,6 +312,10 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 				)
 			}
 		}
+		policyCtx, policyErr := copyOpenAIWSProviderPricingContext(ctx, hooks, turn)
+		if policyErr != nil {
+			return openAIWSClientPayload{}, policyErr
+		}
 		requestModel := originalModel
 		if hooks != nil && hooks.MapRequestModel != nil {
 			mappedModel, mapErr := hooks.MapRequestModel(turn, originalModel)
@@ -324,7 +328,11 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 		}
 		legacyModel, legacyModelKnown := requestModel, false
 		if legacyLaxaAccount {
-			legacyModel, legacyModelKnown = cindyLegacyLaxaLiveUpstreamModel(requestModel)
+			var policyErr error
+			legacyModel, legacyModelKnown, policyErr = cindyLegacyLaxaLiveUpstreamModel(policyCtx, account, requestModel)
+			if policyErr != nil {
+				return openAIWSClientPayload{}, policyErr
+			}
 		}
 		if !legacyModelKnown {
 			legacyModel = requestModel
@@ -336,14 +344,21 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 		}
 		mappedRequestModel := requestModel
 		if !legacyModelKnown {
-			mappedRequestModel = account.GetMappedModel(requestModel)
+			mapped, err := resolveOpenAIForwardModelContext(policyCtx, account, requestModel, "")
+			if err != nil {
+				return openAIWSClientPayload{}, err
+			}
+			mappedRequestModel = mapped
 		}
 		upstreamModel := normalizeOpenAIModelForUpstream(account, mappedRequestModel)
 		// Legacy Laxa API-key rows are still represented as PlatformOpenAI during
 		// the projection window. Their account mapping therefore does not enter
 		// the first-class Cindy resolver; apply the same provider-qualified live
 		// ID used by HTTP passthrough before writing every WS request frame.
-		upstreamModel = resolveLegacyCindyOpenAIModel(account, upstreamModel)
+		upstreamModel, modelPolicyErr := resolveLegacyCindyOpenAIModelContext(policyCtx, account, upstreamModel)
+		if modelPolicyErr != nil {
+			return openAIWSClientPayload{}, modelPolicyErr
+		}
 		requestedReasoningEffort := CanonicalRequestedReasoningEffort(normalized, strings.TrimSpace(values[1].String()))
 		if next, policyErr := applyOpenAIWSReasoningEffortPolicy(normalized, hooks); policyErr != nil {
 			return openAIWSClientPayload{}, NewOpenAIWSClientCloseError(coderws.StatusPolicyViolation, policyErr.Error(), policyErr)
@@ -820,8 +835,12 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 					return fmt.Errorf("resolve Grok websocket cache identity: %w", err)
 				}
 			}
+			policyCtx, policyErr := copyOpenAIWSProviderPricingContext(ctx, hooks, turn)
+			if policyErr != nil {
+				return policyErr
+			}
 			result, bridgeErr := s.proxyOpenAIWSHTTPBridgeTurn(
-				ctx,
+				policyCtx,
 				c,
 				account,
 				token,
@@ -1142,6 +1161,18 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 
 	var rejectedFieldRetryState *openAIResponsesRejectedFieldRetryState
 	sendAndRelay := func(turn int, lease *openAIWSConnLease, payload []byte, payloadBytes int, originalModel string, imageBillingModel string, imageSizeTier string, imageInputSize string, requestedReasoningEffort *string) (*OpenAIForwardResult, error) {
+		policyCtx, policyErr := copyOpenAIWSProviderPricingContext(ctx, hooks, turn)
+		if policyErr != nil {
+			return nil, policyErr
+		}
+		mappedModel := strings.TrimSpace(gjson.GetBytes(payload, "model").String())
+		if originalModel != "" && mappedModel == "" {
+			mapped, err := resolveOpenAIForwardModelContext(policyCtx, account, originalModel, "")
+			if err != nil {
+				return nil, err
+			}
+			mappedModel = normalizeOpenAIModelForUpstream(account, mapped)
+		}
 		responseModelObserver := &upstreamResponseModelObserver{}
 		if lease == nil {
 			return nil, errors.New("upstream websocket lease is nil")
@@ -1219,13 +1250,8 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 		lastEventType := ""
 		needModelReplace := false
 		clientDisconnected := false
-		mappedModel := ""
 		var mappedModelBytes []byte
 		if originalModel != "" {
-			mappedModel = strings.TrimSpace(gjson.GetBytes(payload, "model").String())
-			if mappedModel == "" {
-				mappedModel = normalizeOpenAIModelForUpstream(account, account.GetMappedModel(originalModel))
-			}
 			needModelReplace = mappedModel != "" && mappedModel != originalModel
 			if needModelReplace {
 				mappedModelBytes = []byte(mappedModel)

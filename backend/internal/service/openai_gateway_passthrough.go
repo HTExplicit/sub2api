@@ -154,17 +154,12 @@ func (s *OpenAIGatewayService) forwardOpenAIPassthrough(
 		// passthrough branch does not pass through the first-class Cindy model
 		// resolver. Prefer the live catalog ID when it is enabled; retain the
 		// narrow alias fallback for a catalog rollback.
-		if mappedModel, mapped := cindyLegacyLaxaLiveUpstreamModel(reqModel); mapped {
+		if mappedModel, mapped, policyErr := cindyLegacyLaxaLiveUpstreamModel(ctx, account, reqModel); policyErr != nil {
+			return nil, policyErr
+		} else if mapped {
 			nextBody, setErr := sjson.SetBytes(body, "model", mappedModel)
 			if setErr != nil {
 				return nil, fmt.Errorf("set legacy Cindy catalog model: %w", setErr)
-			}
-			body = nextBody
-			upstreamPassthroughModel = mappedModel
-		} else if mappedModel, mapped := CindyCompatibilityMappedUpstreamModel(reqModel); mapped {
-			nextBody, setErr := sjson.SetBytes(body, "model", mappedModel)
-			if setErr != nil {
-				return nil, fmt.Errorf("set legacy Cindy compatibility model: %w", setErr)
 			}
 			body = nextBody
 			upstreamPassthroughModel = mappedModel
@@ -173,7 +168,11 @@ func (s *OpenAIGatewayService) forwardOpenAIPassthrough(
 	if isOpenAIResponsesCompactPath(c) {
 		canonicalModel := upstreamPassthroughModel
 		if canonicalModel == "" {
-			canonicalModel, _ = cindyLegacyLaxaLiveUpstreamModel(reqModel)
+			var policyErr error
+			canonicalModel, _, policyErr = cindyLegacyLaxaLiveUpstreamModel(ctx, account, reqModel)
+			if policyErr != nil {
+				return nil, policyErr
+			}
 		}
 		compactMappedModel := resolveOpenAICompactForwardModelWithCanonical(account, reqModel, canonicalModel)
 		if compactMappedModel != "" && compactMappedModel != reqModel {
@@ -721,22 +720,10 @@ retryUpstream:
 	return forwardResult, nil
 }
 
-// cindyLegacyLaxaLiveUpstreamModel is deliberately independent of the public
-// catalog publication flag for the direct Luna ID.  The legacy Laxa passthrough
-// must never send the bare public spelling upstream; catalog-off keeps only the
-// narrow compatibility alias behavior, not a regression to the old wire name.
-func cindyLegacyLaxaLiveUpstreamModel(model string) (string, bool) {
-	model = strings.TrimSpace(model)
-	if model == CindyDefaultTestModel {
-		return "openai/gpt-5.6-luna", true
-	}
-	if mapped, ok := CindyMappedUpstreamModel(model); ok {
-		return mapped, true
-	}
-	if mapped, ok := CindyCompatibilityMappedUpstreamModel(model); ok {
-		return mapped, true
-	}
-	return "", false
+// The provider owns the catalog-off narrow wire map independently of its test
+// default. Actual wire callers carry the selected account and caller context.
+func cindyLegacyLaxaLiveUpstreamModel(ctx context.Context, account *Account, model string) (string, bool, error) {
+	return cindyLegacyLiveModel(ctx, account, model)
 }
 
 func logOpenAIPassthroughInstructionsRejected(

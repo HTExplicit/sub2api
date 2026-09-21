@@ -110,23 +110,37 @@ func openAIWSPassthroughPolicyModelForFrame(account *Account, payload []byte) st
 // passthrough accounts and any administrator/channel mapping which has
 // already changed the model retain their existing behavior.
 func resolveLegacyCindyOpenAIModel(account *Account, model string) string {
+	mapped, _ := resolveLegacyCindyOpenAIModelContext(context.Background(), account, model)
+	return mapped
+}
+
+func resolveLegacyCindyOpenAIModelContext(ctx context.Context, account *Account, model string) (string, error) {
 	model = strings.TrimSpace(model)
 	if account == nil || model == "" ||
 		!IsLegacyCindyAPIKeyAccount(account.Platform, account.Type, account.Credentials) {
-		return model
+		return model, nil
 	}
-	if mapped, ok := cindyLegacyLaxaLiveUpstreamModel(model); ok {
-		return mapped
+	if mapped, ok, err := cindyLegacyLaxaLiveUpstreamModel(ctx, account, model); err != nil {
+		return "", err
+	} else if ok {
+		return mapped, nil
 	}
-	return model
+	return model, nil
 }
 
 func replaceLegacyCindyWSPassthroughSessionModel(account *Account, payload []byte) ([]byte, error) {
+	return replaceLegacyCindyWSPassthroughSessionModelContext(context.Background(), account, payload)
+}
+
+func replaceLegacyCindyWSPassthroughSessionModelContext(ctx context.Context, account *Account, payload []byte) ([]byte, error) {
 	if account == nil || len(payload) == 0 || strings.TrimSpace(gjson.GetBytes(payload, "type").String()) != "session.update" {
 		return payload, nil
 	}
 	current := strings.TrimSpace(gjson.GetBytes(payload, "session.model").String())
-	mapped := resolveLegacyCindyOpenAIModel(account, current)
+	mapped, err := resolveLegacyCindyOpenAIModelContext(ctx, account, current)
+	if err != nil {
+		return nil, err
+	}
 	if mapped == "" || mapped == current {
 		return payload, nil
 	}
@@ -810,22 +824,36 @@ func (s *OpenAIGatewayService) proxyResponsesWebSocketV2PassthroughAttempt(
 	if initialRequestModel == "" {
 		initialRequestModel = openAIWSPassthroughRequestModelForFrame(firstClientMessage)
 	}
+	policyCtx, policyErr := copyOpenAIWSProviderPricingContext(ctx, hooks, 1)
+	if policyErr != nil {
+		return policyErr
+	}
 	if hooks != nil && hooks.MapRequestModel != nil {
 		mappedModel, mapErr := hooks.MapRequestModel(1, initialRequestModel)
 		if mapErr != nil {
 			return mapErr
 		}
 		if mappedModel = strings.TrimSpace(mappedModel); mappedModel != "" {
-			if legacyMapped := resolveLegacyCindyOpenAIModel(account, mappedModel); legacyMapped != mappedModel {
+			if legacyMapped, policyErr := resolveLegacyCindyOpenAIModelContext(policyCtx, account, mappedModel); policyErr != nil {
+				return policyErr
+			} else if legacyMapped != mappedModel {
 				mappedModel = legacyMapped
-			} else if accountMapped := normalizeOpenAIModelForUpstream(account, account.GetMappedModel(mappedModel)); accountMapped != "" {
-				mappedModel = accountMapped
+			} else {
+				accountMapped, err := resolveOpenAIForwardModelContext(policyCtx, account, mappedModel, "")
+				if err != nil {
+					return err
+				}
+				if accountMapped = normalizeOpenAIModelForUpstream(account, accountMapped); accountMapped != "" {
+					mappedModel = accountMapped
+				}
 			}
 			firstClientMessage = s.ReplaceModelInBody(firstClientMessage, mappedModel)
 		}
 	}
 	if currentModel := strings.TrimSpace(gjson.GetBytes(firstClientMessage, "model").String()); currentModel != "" {
-		if upstreamModel := resolveLegacyCindyOpenAIModel(account, currentModel); upstreamModel != currentModel {
+		if upstreamModel, policyErr := resolveLegacyCindyOpenAIModelContext(policyCtx, account, currentModel); policyErr != nil {
+			return policyErr
+		} else if upstreamModel != currentModel {
 			firstClientMessage = s.ReplaceModelInBody(firstClientMessage, upstreamModel)
 		}
 	}
@@ -1175,29 +1203,46 @@ func (s *OpenAIGatewayService) proxyResponsesWebSocketV2PassthroughAttempt(
 						return payload, nil, err
 					}
 				}
+				policyCtx, policyErr := copyOpenAIWSProviderPricingContext(ctx, hooks, turnNo)
+				if policyErr != nil {
+					return payload, nil, policyErr
+				}
 				if hooks != nil && hooks.MapRequestModel != nil {
 					upstreamModel, err := hooks.MapRequestModel(turnNo, requestModelForThisFrame)
 					if err != nil {
 						return payload, nil, err
 					}
 					if upstreamModel = strings.TrimSpace(upstreamModel); upstreamModel != "" {
-						if legacyMapped := resolveLegacyCindyOpenAIModel(account, upstreamModel); legacyMapped != upstreamModel {
+						if legacyMapped, policyErr := resolveLegacyCindyOpenAIModelContext(policyCtx, account, upstreamModel); policyErr != nil {
+							return payload, nil, policyErr
+						} else if legacyMapped != upstreamModel {
 							upstreamModel = legacyMapped
-						} else if accountMapped := normalizeOpenAIModelForUpstream(account, account.GetMappedModel(upstreamModel)); accountMapped != "" {
-							upstreamModel = accountMapped
+						} else {
+							accountMapped, err := resolveOpenAIForwardModelContext(policyCtx, account, upstreamModel, "")
+							if err != nil {
+								return payload, nil, err
+							}
+							if accountMapped = normalizeOpenAIModelForUpstream(account, accountMapped); accountMapped != "" {
+								upstreamModel = accountMapped
+							}
 						}
 						payload = s.ReplaceModelInBody(payload, upstreamModel)
 					}
 				}
 				if currentModel := strings.TrimSpace(gjson.GetBytes(payload, "model").String()); currentModel != "" {
-					if upstreamModel := resolveLegacyCindyOpenAIModel(account, currentModel); upstreamModel != currentModel {
+					if upstreamModel, policyErr := resolveLegacyCindyOpenAIModelContext(policyCtx, account, currentModel); policyErr != nil {
+						return payload, nil, policyErr
+					} else if upstreamModel != currentModel {
 						payload = s.ReplaceModelInBody(payload, upstreamModel)
 					}
 				}
 			}
 			if eventType == "session.update" {
 				var sessionModelErr error
-				payload, sessionModelErr = replaceLegacyCindyWSPassthroughSessionModel(account, payload)
+				// A control frame is not a billed turn. Do not inherit an old
+				// connection's price/catalog capture into the next session model.
+				controlCtx := context.WithValue(ctx, cindyPricingContextKey{}, (*capturedCindyPricing)(nil))
+				payload, sessionModelErr = replaceLegacyCindyWSPassthroughSessionModelContext(controlCtx, account, payload)
 				if sessionModelErr != nil {
 					return payload, nil, NewOpenAIWSClientCloseError(
 						coderws.StatusPolicyViolation,

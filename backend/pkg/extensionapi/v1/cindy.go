@@ -4,25 +4,31 @@ import "encoding/json"
 
 // CindyCapabilityCatalogVersion is bumped whenever the fixed Cindy data-plane
 // catalogue or one of its verified endpoint decisions changes.
+// Deprecated: Runtime metadata is supplied by CindyCatalogSnapshotV1.
 const CindyCapabilityCatalogVersion = "2026-09-11.1"
 
 // CindyModelMetadataSourceRevision pins the shipped Cindy registry used for
 // display, context-window, output-limit, and reasoning metadata.
+// Deprecated: Runtime metadata is supplied by CindyCatalogSnapshotV1.
 const CindyModelMetadataSourceRevision = "makecindy/cindy@2128cd45e08e3419a36ad474d8c01e42a34ea328"
 
 // CindyFreeModelCatalogSourceRevision and SHA256 pin the authenticated model
 // inventory returned by the newest eligible production free-trial key.
 const (
+	// Deprecated: Runtime inventory identity is supplied by CindyCatalogSnapshotV1.
 	CindyFreeModelCatalogSourceRevision = "laxarouter-free-key@2026-09-11"
-	CindyFreeModelCatalogSHA256         = "38045af0a5a90c360ba44013d90a1ccbff65c903db7f9b99701c30ce15ca8821"
+	// Deprecated: Runtime inventory identity is supplied by CindyCatalogSnapshotV1.
+	CindyFreeModelCatalogSHA256 = "38045af0a5a90c360ba44013d90a1ccbff65c903db7f9b99701c30ce15ca8821"
 )
 
 // CindyCompatibilityAliasSourceRevision identifies downstream aliases managed
 // by Sub2API. These aliases are not part of Cindy's upstream model registry.
+// Deprecated: Runtime metadata is supplied by CindyCatalogSnapshotV1.
 const CindyCompatibilityAliasSourceRevision = "sub2api-cindy-compat@2026-08-17.1"
 
 // CindyDefaultTestModel is the stable public model used by Cindy connectivity
 // and capability probes when the caller did not choose a model explicitly.
+// Deprecated: Use the provider-owned default in CindyCatalogSnapshotV1.
 const CindyDefaultTestModel = "gpt-5.6-luna"
 
 // CindyWebSearchModel is the exact native Messages model verified with the
@@ -31,6 +37,7 @@ const CindyWebSearchModel = "cindy/web-search"
 
 // CindyAutoReviewModel remains visible only in the management inventory. It
 // has no public schema or handler and must fail closed on every routing path.
+// Deprecated: Management inventory model identities are provider-owned data.
 const CindyAutoReviewModel = "cindy/auto-review"
 
 type CindyModelKind string
@@ -238,6 +245,13 @@ type CindyCatalogQuery struct {
 	Args   []json.RawMessage `json:"args"`
 }
 type CindyPricingSnapshot struct {
-	Config  CindyProviderConfig        `json:"config"`
-	Results map[string]json.RawMessage `json:"results"`
+	Config          CindyProviderConfig        `json:"config"`
+	Results         map[string]json.RawMessage `json:"results"`
+	CatalogSnapshot *CindyCatalogSnapshotV1    `json:"catalog_snapshot,omitempty"`
+}
+
+// CindyPricingQuery adds host-observed image facts to an atomic policy capture.
+// Empty legacy requests remain valid; no credentials or account data is included.
+type CindyPricingQuery struct {
+	Images *ImageToolsConfig `json:"images,omitempty"`
 }

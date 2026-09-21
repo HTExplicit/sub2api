@@ -46,7 +46,7 @@ func (h *OpenAIGatewayHandler) CodexModels(c *gin.Context) {
 		}
 	}
 	if cindyScope.CatalogOnly {
-		manifest, buildErr := service.BuildCindyCodexModelsManifest(c.GetHeader("If-None-Match"))
+		manifest, buildErr := service.BuildCindyCodexModelsManifestSnapshot(cindyScope.CatalogSnapshot, c.GetHeader("If-None-Match"))
 		if buildErr != nil {
 			h.errorResponse(c, http.StatusInternalServerError, "upstream_error", "Failed to build Codex models manifest")
 			return
@@ -270,7 +270,7 @@ func (h *OpenAIGatewayHandler) CodexModels(c *gin.Context) {
 			return
 		}
 		if cindyScope.MergeCatalog {
-			manifest, err = service.MergeCindyCodexModelsManifest(manifest, "")
+			manifest, err = service.MergeCindyCodexModelsManifestSnapshot(manifest, "", cindyScope.CatalogSnapshot)
 			if err != nil {
 				h.gatewayService.ReleaseOpenAIRuntimeBreakerProbeForSelection(selection)
 				h.errorResponse(c, http.StatusBadGateway, "upstream_error", "Failed to merge Codex models manifest")

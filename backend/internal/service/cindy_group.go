@@ -53,6 +53,7 @@ type CindyCodexModelsScope struct {
 	MergeCatalog       bool
 	OrdinaryAccountIDs []int64
 	ExcludedAccountIDs []int64
+	CatalogSnapshot    *CindyCatalogSnapshot
 }
 
 // classifyStrictCindyGroup is the explicit legacy/non-auth fallback. Normal
@@ -163,19 +164,33 @@ func classifyAuthenticatedCindyIdentityGroup(ctx context.Context, repo any, grou
 }
 
 func classifyAuthenticatedStrictCindyGroup(ctx context.Context, repo any, group *Group) (bool, error) {
+	identity, err := classifyAuthenticatedCindyIdentityGroup(ctx, repo, group)
+	if err != nil || !identity {
+		return false, err
+	}
 	// Disabling the capability catalogue is the routing rollback switch. Keep
 	// the materialized identity in the auth snapshot, but bypass all strict
 	// catalogue/protocol gates so the request follows the legacy generic path.
-	if !CindyCapabilityCatalogFeatureEnabled() {
-		return false, nil
+	snapshot, err := LoadCindyCatalogSnapshot(ctx, nil)
+	if err != nil {
+		return false, err
 	}
-	return classifyAuthenticatedCindyIdentityGroup(ctx, repo, group)
+	return snapshot.Config.CatalogEnabled, nil
 }
 
 func hasSchedulableCindyAccount(ctx context.Context, repo any, group *Group) (bool, error) {
-	if !CindyCapabilityCatalogFeatureEnabled() {
-		return false, nil
+	found, err := hasSchedulableCindyIdentityAccount(ctx, repo, group)
+	if err != nil || !found {
+		return false, err
 	}
+	snapshot, err := LoadCindyCatalogSnapshot(ctx, nil)
+	if err != nil {
+		return false, err
+	}
+	return snapshot.Config.CatalogEnabled, nil
+}
+
+func hasSchedulableCindyIdentityAccount(ctx context.Context, repo any, group *Group) (bool, error) {
 	if group == nil || group.ID <= 0 || (group.Platform != PlatformOpenAI && group.Platform != PlatformCindy) {
 		return false, nil
 	}
@@ -202,6 +217,20 @@ func (s *GatewayService) ClassifyStrictCindyGroup(ctx context.Context, group *Gr
 		return false, errCindyGroupIdentityUnavailable
 	}
 	return classifyAuthenticatedStrictCindyGroup(ctx, s.accountRepo, group)
+}
+
+func (s *GatewayService) ClassifyCindyIdentityGroup(ctx context.Context, group *Group) (bool, error) {
+	if s == nil {
+		return false, errCindyGroupIdentityUnavailable
+	}
+	return classifyAuthenticatedCindyIdentityGroup(ctx, s.accountRepo, group)
+}
+
+func (s *GatewayService) HasSchedulableCindyIdentityAccount(ctx context.Context, group *Group) (bool, error) {
+	if s == nil {
+		return false, errCindyGroupIdentityUnavailable
+	}
+	return hasSchedulableCindyIdentityAccount(ctx, s.accountRepo, group)
 }
 
 // HasSchedulableCindyAccount reports whether a mixed group currently has an
@@ -238,30 +267,46 @@ func (s *OpenAIGatewayService) ClassifyCindyIdentityGroup(ctx context.Context, g
 // closed so a random Cindy upstream manifest cannot leak live or unverified IDs.
 func (s *OpenAIGatewayService) ResolveCindyCodexModelsScope(ctx context.Context, group *Group) (CindyCodexModelsScope, error) {
 	var scope CindyCodexModelsScope
-	if !CindyCapabilityCatalogFeatureEnabled() || group == nil || group.ID <= 0 {
+	if group == nil || group.ID <= 0 {
+		return scope, nil
+	}
+	if group.Platform == PlatformOpenAI && group.CodexModelsManifestConfig.Enabled {
 		return scope, nil
 	}
 	if s == nil {
 		return scope, errCindyGroupIdentityUnavailable
+	}
+	loadCatalog := func() error {
+		var err error
+		scope.CatalogSnapshot, err = LoadCindyCatalogSnapshot(ctx, nil)
+		return err
 	}
 	if group.Platform == PlatformCindy {
 		cindyIdentity, err := classifyAuthenticatedCindyIdentityGroup(ctx, s.accountRepo, group)
 		if err != nil {
 			return scope, err
 		}
-		scope.CatalogOnly = cindyIdentity
+		if cindyIdentity {
+			if err := loadCatalog(); err != nil {
+				return scope, err
+			}
+			scope.CatalogOnly = scope.CatalogSnapshot.Config.CatalogEnabled
+		}
 		return scope, nil
 	}
 	if group.Platform != PlatformOpenAI {
 		return scope, nil
 	}
 
-	strict, err := classifyAuthenticatedStrictCindyGroup(ctx, s.accountRepo, group)
+	strict, err := classifyAuthenticatedCindyIdentityGroup(ctx, s.accountRepo, group)
 	if err != nil {
 		return scope, err
 	}
 	if strict {
-		scope.CatalogOnly = true
+		if err := loadCatalog(); err != nil {
+			return scope, err
+		}
+		scope.CatalogOnly = scope.CatalogSnapshot.Config.CatalogEnabled
 		return scope, nil
 	}
 
@@ -293,6 +338,12 @@ func (s *OpenAIGatewayService) ResolveCindyCodexModelsScope(ctx context.Context,
 		ordinaryAccounts = append(ordinaryAccounts, *account)
 	}
 	if len(cindyAccountIDs) == 0 {
+		return scope, nil
+	}
+	if err := loadCatalog(); err != nil {
+		return scope, err
+	}
+	if !scope.CatalogSnapshot.Config.CatalogEnabled {
 		return scope, nil
 	}
 	if len(ordinaryAccounts) == 0 {

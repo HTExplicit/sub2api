@@ -98,7 +98,10 @@ func (s *OpenAIGatewayService) forwardAsChatCompletions(
 	beginUpstreamResponseModelObservation(c)
 	if account != nil && account.IsOpenAI() {
 		requestedModel := gjson.GetBytes(body, "model").String()
-		mappedModel := resolveOpenAIForwardModel(account, requestedModel, defaultMappedModel)
+		mappedModel, modelPolicyErr := resolveOpenAIForwardModelContext(ctx, account, requestedModel, defaultMappedModel)
+		if modelPolicyErr != nil {
+			return nil, modelPolicyErr
+		}
 		withEffort, _, err := materializeOpenAIForwardReasoningEffort(ctx, body, mappedModel)
 		if err != nil {
 			return nil, err
@@ -241,10 +244,15 @@ func (s *OpenAIGatewayService) forwardAsChatCompletions(
 
 	// 2. Resolve model mapping early so compat prompt_cache_key injection can
 	// derive a stable seed from the final upstream model family.
-	billingModel := resolveOpenAIForwardModel(account, originalModel, defaultMappedModel)
+	billingModel, modelPolicyErr := resolveOpenAIForwardModelContext(ctx, account, originalModel, defaultMappedModel)
+	if modelPolicyErr != nil {
+		return nil, modelPolicyErr
+	}
 	upstreamModel := normalizeOpenAIModelForUpstream(account, billingModel)
 	if account != nil && IsLegacyCindyAPIKeyAccount(account.Platform, account.Type, account.Credentials) {
-		if legacyModel, mapped := cindyLegacyLaxaLiveUpstreamModel(originalModel); mapped {
+		if legacyModel, mapped, policyErr := cindyLegacyLaxaLiveUpstreamModel(ctx, account, originalModel); policyErr != nil {
+			return nil, policyErr
+		} else if mapped {
 			upstreamModel = legacyModel
 		}
 	}

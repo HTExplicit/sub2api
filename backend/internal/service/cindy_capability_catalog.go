@@ -20,34 +20,41 @@ type CindyCatalogModel = extensionv1.CindyCatalogModel
 type CindyModelCapability = extensionv1.CindyModelCapability
 
 const (
-	CindyCapabilityCatalogVersion         = extensionv1.CindyCapabilityCatalogVersion
-	CindyModelMetadataSourceRevision      = extensionv1.CindyModelMetadataSourceRevision
+	// Deprecated: Source compatibility only; runtime consumers use LoadCindyCatalogSnapshot.
+	CindyCapabilityCatalogVersion = extensionv1.CindyCapabilityCatalogVersion
+	// Deprecated: Source compatibility only; runtime consumers use LoadCindyCatalogSnapshot.
+	CindyModelMetadataSourceRevision = extensionv1.CindyModelMetadataSourceRevision
+	// Deprecated: Source compatibility only; runtime consumers use LoadCindyCatalogSnapshot.
 	CindyCompatibilityAliasSourceRevision = extensionv1.CindyCompatibilityAliasSourceRevision
-	CindyDefaultTestModel                 = extensionv1.CindyDefaultTestModel
-	CindyWebSearchModel                   = extensionv1.CindyWebSearchModel
-	CindyAutoReviewModel                  = extensionv1.CindyAutoReviewModel
-	CindyFreeModelCatalogSourceRevision   = extensionv1.CindyFreeModelCatalogSourceRevision
-	CindyFreeModelCatalogSHA256           = extensionv1.CindyFreeModelCatalogSHA256
-	CindyModelKindText                    = extensionv1.CindyModelKindText
-	CindyModelKindImage                   = extensionv1.CindyModelKindImage
-	CindyModelKindSpecial                 = extensionv1.CindyModelKindSpecial
-	CindyCapacityPinnedRegistry           = extensionv1.CindyCapacityPinnedRegistry
-	CindyCapacityApprovedManual           = extensionv1.CindyCapacityApprovedManual
-	CindyCapacityUnknown                  = extensionv1.CindyCapacityUnknown
-	CindyEndpointResponses                = extensionv1.CindyEndpointResponses
-	CindyEndpointChatCompletions          = extensionv1.CindyEndpointChatCompletions
-	CindyEndpointMessages                 = extensionv1.CindyEndpointMessages
-	CindyEndpointCountTokens              = extensionv1.CindyEndpointCountTokens
-	CindyEndpointImagesGenerate           = extensionv1.CindyEndpointImagesGenerate
-	CindyEndpointImagesEdit               = extensionv1.CindyEndpointImagesEdit
-	CindyEndpointAlphaSearch              = extensionv1.CindyEndpointAlphaSearch
-	CindyEndpointReview                   = extensionv1.CindyEndpointReview
-	CindyClientSurfaceCodex               = extensionv1.CindyClientSurfaceCodex
-	CindyClientSurfacePi                  = extensionv1.CindyClientSurfacePi
-	CindyClientSurfaceOpenAI              = extensionv1.CindyClientSurfaceOpenAI
-	CindyClientSurfaceClaude              = extensionv1.CindyClientSurfaceClaude
-	CindyClientSurfaceAnthropic           = extensionv1.CindyClientSurfaceAnthropic
-	CindyClientSurfaceImage               = extensionv1.CindyClientSurfaceImage
+	// Deprecated: Source compatibility only; runtime defaults are provider-owned.
+	CindyDefaultTestModel = extensionv1.CindyDefaultTestModel
+	CindyWebSearchModel   = extensionv1.CindyWebSearchModel
+	// Deprecated: Source compatibility only; management inventory is provider-owned.
+	CindyAutoReviewModel = extensionv1.CindyAutoReviewModel
+	// Deprecated: Source compatibility only; runtime consumers use LoadCindyCatalogSnapshot.
+	CindyFreeModelCatalogSourceRevision = extensionv1.CindyFreeModelCatalogSourceRevision
+	// Deprecated: Source compatibility only; runtime consumers use LoadCindyCatalogSnapshot.
+	CindyFreeModelCatalogSHA256  = extensionv1.CindyFreeModelCatalogSHA256
+	CindyModelKindText           = extensionv1.CindyModelKindText
+	CindyModelKindImage          = extensionv1.CindyModelKindImage
+	CindyModelKindSpecial        = extensionv1.CindyModelKindSpecial
+	CindyCapacityPinnedRegistry  = extensionv1.CindyCapacityPinnedRegistry
+	CindyCapacityApprovedManual  = extensionv1.CindyCapacityApprovedManual
+	CindyCapacityUnknown         = extensionv1.CindyCapacityUnknown
+	CindyEndpointResponses       = extensionv1.CindyEndpointResponses
+	CindyEndpointChatCompletions = extensionv1.CindyEndpointChatCompletions
+	CindyEndpointMessages        = extensionv1.CindyEndpointMessages
+	CindyEndpointCountTokens     = extensionv1.CindyEndpointCountTokens
+	CindyEndpointImagesGenerate  = extensionv1.CindyEndpointImagesGenerate
+	CindyEndpointImagesEdit      = extensionv1.CindyEndpointImagesEdit
+	CindyEndpointAlphaSearch     = extensionv1.CindyEndpointAlphaSearch
+	CindyEndpointReview          = extensionv1.CindyEndpointReview
+	CindyClientSurfaceCodex      = extensionv1.CindyClientSurfaceCodex
+	CindyClientSurfacePi         = extensionv1.CindyClientSurfacePi
+	CindyClientSurfaceOpenAI     = extensionv1.CindyClientSurfaceOpenAI
+	CindyClientSurfaceClaude     = extensionv1.CindyClientSurfaceClaude
+	CindyClientSurfaceAnthropic  = extensionv1.CindyClientSurfaceAnthropic
+	CindyClientSurfaceImage      = extensionv1.CindyClientSurfaceImage
 )
 
 func queryCindyCatalog(method string, args, outputs []any) bool {

@@ -753,13 +753,20 @@ func (s *AccountTestService) testOpenAIAccountConnection(c *gin.Context, account
 	ctx := c.Request.Context()
 	mode = normalizeAccountTestMode(mode)
 
-	// Cindy has no gpt-5.4 data-plane model. Select its public Luna ID before
-	// normal model resolution so the wire request uses openai/gpt-5.6-luna.
-	// All other OpenAI accounts retain the package default.
+	// Only Cindy identity acquires a provider dependency. One snapshot owns
+	// both the default and its mapping; ordinary OpenAI retains its own default.
+	var cindySnapshot *CindyCatalogSnapshot
+	if IsCindyAPIKeyAccount(account.Platform, account.Type, account.Credentials) {
+		var err error
+		cindySnapshot, err = LoadCindyCatalogSnapshot(ctx, account)
+		if err != nil {
+			return s.sendErrorAndEnd(c, "Cindy catalog snapshot is unavailable")
+		}
+	}
 	testModelID := modelID
 	if testModelID == "" {
-		if CindyCapabilityCatalogFeatureEnabled() && IsCindyAPIKeyAccount(account.Platform, account.Type, account.Credentials) {
-			testModelID = CindyDefaultTestModel
+		if cindySnapshot != nil && cindySnapshot.Config.CatalogEnabled {
+			testModelID = cindySnapshot.DefaultTestModel.PublicID
 		} else {
 			testModelID = openai.DefaultTestModel
 		}
@@ -769,13 +776,15 @@ func (s *AccountTestService) testOpenAIAccountConnection(c *gin.Context, account
 	// account model mapping. Native remote compaction v2 rides the ordinary
 	// /responses wire and does NOT apply the legacy compact-only mapping
 	// (post-#5641 semantics: compact_model_mapping is /responses/compact-only).
-	testModelID = account.GetMappedModel(testModelID)
-	if IsCindyAPIKeyAccount(account.Platform, account.Type, account.Credentials) {
-		if mappedModel, mapped := CindyCompatibilityMappedUpstreamModel(testModelID); mapped {
+	if cindySnapshot != nil {
+		testModelID = cindyAccountMappedModel(cindySnapshot, account, testModelID)
+		if mappedModel, mapped := cindySnapshot.CompatibilityMappings[testModelID]; mapped {
 			testModelID = mappedModel
-		} else if mappedModel, mapped := CindyMappedUpstreamModel(testModelID); mapped {
+		} else if mappedModel, mapped := cindySnapshot.AvailableMappings[testModelID]; mapped {
 			testModelID = mappedModel
 		}
+	} else {
+		testModelID = account.GetMappedModel(testModelID)
 	}
 	if mode == AccountTestModeCompact {
 		return s.testOpenAICompactConnection(c, account, testModelID)

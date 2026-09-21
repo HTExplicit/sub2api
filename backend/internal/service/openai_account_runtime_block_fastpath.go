@@ -1412,18 +1412,10 @@ func canonicalOpenAIAccountSchedulingModel(account *Account, requestedModel stri
 		return model
 	}
 	if IsCindyRuntimeCompatibleAPIKeyAccount(account.Platform, account.Type, account.Credentials) {
-		if mapped, ok := CindyCompatibilityMappedUpstreamModel(model); ok {
+		if mapped, ok, err := cindyLegacyLiveModel(context.Background(), account, model); err != nil {
+			return ""
+		} else if ok {
 			return mapped
-		}
-		if mapped, ok := CindyMappedUpstreamModel(model); ok {
-			return mapped
-		}
-		// The catalog toggle only controls publication/strict routing. Legacy
-		// Laxa passthrough must still use the verified live Luna wire ID when
-		// the user requests it directly, otherwise the model cooldown key would
-		// regress to the unsupported bare spelling during a catalog rollback.
-		if model == CindyDefaultTestModel {
-			return "openai/gpt-5.6-luna"
 		}
 	}
 	if account.IsOpenAI() {

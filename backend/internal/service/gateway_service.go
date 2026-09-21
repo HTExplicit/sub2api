@@ -552,16 +552,15 @@ func resolveModelsListCacheTTL(cfg *config.Config) time.Duration {
 
 func modelsListCacheKey(groupID *int64, platform string) string {
 	platform = strings.TrimSpace(platform)
-	key := fmt.Sprintf("%d|%s", derefGroupID(groupID), platform)
-	if platform == PlatformOpenAI {
-		key = fmt.Sprintf("%s|cindy-catalog:%t:%s|image-studio:%t",
-			key,
-			CindyCapabilityCatalogFeatureEnabled(),
-			CindyCapabilityCatalogVersion,
-			CindyImageStudioFeatureEnabled(),
-		)
-	}
-	return key
+	return fmt.Sprintf("%d|%s", derefGroupID(groupID), platform)
+}
+
+// A shared list can depend on Cindy even when its platform filter is empty.
+// Ordinary-only lists must not acquire a plugin RPC dependency on cache hits.
+type modelsListCacheValue struct {
+	models         []string
+	cindyDependent bool
+	namespace      string
 }
 
 func compositeModelOwnershipCacheKey(groupID int64, model string) string {
@@ -1446,8 +1445,27 @@ func (s *GatewayService) DoGrokNativeResponsesJSON(ctx context.Context, account 
 
 func (s *GatewayService) GetAvailableModels(ctx context.Context, groupID *int64, platform string) []string {
 	cacheKey := modelsListCacheKey(groupID, platform)
+	var cindySnapshot *CindyCatalogSnapshot
+	cindySnapshotRead := false
+	readCindySnapshot := func() string {
+		if !cindySnapshotRead {
+			cindySnapshotRead = true
+			cindySnapshot, _ = LoadCindyCatalogSnapshot(ctx, nil)
+		}
+		if cindySnapshot == nil {
+			return "unavailable"
+		}
+		return cindySnapshot.Namespace
+	}
 	if s.modelsListCache != nil {
 		if cached, found := s.modelsListCache.Get(cacheKey); found {
+			if entry, ok := cached.(modelsListCacheValue); ok {
+				if !entry.cindyDependent || entry.namespace == readCindySnapshot() {
+					modelsListCacheHitTotal.Add(1)
+					return cloneStringSlice(entry.models)
+				}
+			}
+			// Read-only compatibility for preexisting in-process test fixtures.
 			if models, ok := cached.([]string); ok {
 				modelsListCacheHitTotal.Add(1)
 				return cloneStringSlice(models)
@@ -1485,13 +1503,32 @@ func (s *GatewayService) GetAvailableModels(ctx context.Context, groupID *int64,
 	// compatibility aliases, or candidates that are intentionally not public.
 	modelSet := make(map[string]struct{})
 	hasAnyDeclaredModel := false
-	cindyCatalogEnabled := CindyCapabilityCatalogFeatureEnabled()
+	cindyDependent := false
+	for i := range accounts {
+		if IsCindyAPIKeyAccount(accounts[i].Platform, accounts[i].Type, accounts[i].Credentials) {
+			cindyDependent = true
+			break
+		}
+	}
+	namespace := ""
+	if cindyDependent {
+		namespace = readCindySnapshot()
+	}
+	cindyCatalogEnabled := cindySnapshot != nil && cindySnapshot.Config.CatalogEnabled
 	var cindyPublicModels []string
 	if cindyCatalogEnabled {
-		cindyPublicModels = CindyPublicModelIDs()
+		cindyPublicModels = cindySnapshot.PublicModelIDs
+	}
+	cacheValue := func(models []string) modelsListCacheValue {
+		return modelsListCacheValue{models: cloneStringSlice(models), cindyDependent: cindyDependent, namespace: namespace}
 	}
 
 	for _, acc := range accounts {
+		if cindySnapshot == nil && IsCindyAPIKeyAccount(acc.Platform, acc.Type, acc.Credentials) {
+			// An unavailable new contract cannot resurrect Cindy account mappings;
+			// unrelated ordinary accounts below remain usable.
+			continue
+		}
 		if cindyCatalogEnabled &&
 			IsCindyAPIKeyAccount(acc.Platform, acc.Type, acc.Credentials) {
 			for _, model := range cindyPublicModels {
@@ -1505,7 +1542,7 @@ func (s *GatewayService) GetAvailableModels(ctx context.Context, groupID *int64,
 		// public whitelist; return nil so the handler uses its default model set.
 		if platform == PlatformOpenAI && acc.IsOpenAIPassthroughEnabled() {
 			if s.modelsListCache != nil {
-				s.modelsListCache.Set(cacheKey, []string(nil), s.modelsListCacheTTL)
+				s.modelsListCache.Set(cacheKey, cacheValue(nil), s.modelsListCacheTTL)
 				modelsListCacheStoreTotal.Add(1)
 			}
 			return nil
@@ -1523,7 +1560,7 @@ func (s *GatewayService) GetAvailableModels(ctx context.Context, groupID *int64,
 	// If no account declares any model, return nil (use the platform default).
 	if !hasAnyDeclaredModel {
 		if s.modelsListCache != nil {
-			s.modelsListCache.Set(cacheKey, []string(nil), s.modelsListCacheTTL)
+			s.modelsListCache.Set(cacheKey, cacheValue(nil), s.modelsListCacheTTL)
 			modelsListCacheStoreTotal.Add(1)
 		}
 		return nil
@@ -1541,7 +1578,7 @@ func (s *GatewayService) GetAvailableModels(ctx context.Context, groupID *int64,
 	}
 
 	if s.modelsListCache != nil {
-		s.modelsListCache.Set(cacheKey, cloneStringSlice(models), s.modelsListCacheTTL)
+		s.modelsListCache.Set(cacheKey, cacheValue(models), s.modelsListCacheTTL)
 		modelsListCacheStoreTotal.Add(1)
 	}
 	return cloneStringSlice(models)
@@ -1635,12 +1672,8 @@ func (s *GatewayService) InvalidateAvailableModelsCache(groupID *int64, platform
 	s.invalidateCompositeModelOwnershipCache(groupID)
 
 	normalizedPlatform := strings.TrimSpace(platform)
-	// 完整匹配时精准失效；否则按维度批量失效。
-	if groupID != nil && normalizedPlatform != "" {
-		s.modelsListCache.Delete(modelsListCacheKey(groupID, normalizedPlatform))
-		return
-	}
-
+	// Match the stable dimensions, not a freshly queried provider namespace.
+	// This also removes any older namespaced entry without consulting a plugin.
 	targetGroup := derefGroupID(groupID)
 	for key := range s.modelsListCache.Items() {
 		parts := strings.SplitN(key, "|", 3)

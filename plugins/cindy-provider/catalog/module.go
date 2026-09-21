@@ -122,6 +122,13 @@ func (m *Module) Invoke(ctx context.Context, in extensionv1.Invocation) (extensi
 		raw, err := registry.Query(query)
 		return extensionv1.Result{Payload: raw}, err
 	case "cindy.pricing":
+		var query extensionv1.CindyPricingQuery
+		if len(in.Payload) > 0 && json.Unmarshal(in.Payload, &query) != nil {
+			return extensionv1.Result{}, errors.New("invalid Cindy pricing query")
+		}
+		if query.Images != nil {
+			registry.Images = *query.Images
+		}
 		raw, err := json.Marshal(registry.PricingSnapshot())
 		return extensionv1.Result{Payload: raw}, err
 	case "cindy.search.plan":
@@ -138,6 +145,11 @@ func (m *Module) Invoke(ctx context.Context, in extensionv1.Invocation) (extensi
 }
 func (r Registry) Query(query extensionv1.CindyCatalogQuery) (json.RawMessage, error) {
 	switch query.Method {
+	case extensionv1.CindyCatalogSnapshotMethodV1:
+		if len(query.Args) != 0 {
+			return nil, errors.New("invalid catalog arguments")
+		}
+		return json.Marshal([]any{r.CatalogSnapshotV1()})
 	case "ManagedChannelProjection":
 		if len(query.Args) != 0 {
 			return nil, errors.New("invalid catalog arguments")
@@ -378,7 +390,8 @@ func PricingKey(method, model string) string {
 	return string(raw)
 }
 func (r Registry) PricingSnapshot() extensionv1.CindyPricingSnapshot {
-	out := extensionv1.CindyPricingSnapshot{Config: r.Config, Results: make(map[string]json.RawMessage)}
+	catalog := r.CatalogSnapshotV1()
+	out := extensionv1.CindyPricingSnapshot{Config: r.Config, Results: make(map[string]json.RawMessage), CatalogSnapshot: &catalog}
 	ids := map[string]bool{}
 	for _, entry := range cindyCapabilityCatalog {
 		ids[entry.PublicID] = true

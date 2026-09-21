@@ -1,6 +1,9 @@
 package service
 
-import "strings"
+import (
+	"context"
+	"strings"
+)
 
 // resolveOpenAIForwardModel 解析 OpenAI 兼容转发使用的模型。
 // messagesDispatchMappedModel 是调用方已为 /v1/messages 解析的显式调度结果；
@@ -19,6 +22,76 @@ func resolveOpenAIForwardModel(account *Account, requestedModel, messagesDispatc
 		return messagesDispatchMappedModel
 	}
 	return mappedModel
+}
+
+// Request paths use their captured provider policy. Shared preselection keeps
+// the existing context-free resolver and never stores request state on Account.
+func resolveOpenAIForwardModelContext(ctx context.Context, account *Account, requestedModel, messagesDispatchMappedModel string) (string, error) {
+	if account == nil || !IsCindyRuntimeCompatibleAPIKeyAccount(account.Platform, account.Type, account.Credentials) {
+		return resolveOpenAIForwardModel(account, requestedModel, messagesDispatchMappedModel), nil
+	}
+	snapshot, err := LoadCindyCatalogSnapshot(ctx, account)
+	if err != nil {
+		return "", err
+	}
+	mapped, matched := resolveCindyMappedModelSnapshot(snapshot, account, requestedModel)
+	if !matched && strings.TrimSpace(messagesDispatchMappedModel) != "" {
+		return strings.TrimSpace(messagesDispatchMappedModel), nil
+	}
+	return mapped, nil
+}
+
+func resolveCindyMappedModelSnapshot(snapshot *CindyCatalogSnapshot, account *Account, requestedModel string) (string, bool) {
+	if IsLegacyCindyAPIKeyAccount(account.Platform, account.Type, account.Credentials) {
+		if mapped, ok := snapshot.CompatibilityMappings[requestedModel]; ok {
+			return mapped, true
+		}
+	}
+	for _, target := range snapshot.CompatibilityMappings {
+		if requestedModel == target {
+			return requestedModel, true
+		}
+	}
+	if IsCindyAPIKeyAccount(account.Platform, account.Type, account.Credentials) {
+		if mapped, ok := snapshot.AvailableMappings[requestedModel]; ok {
+			return mapped, true
+		}
+	}
+	mapping := account.GetModelMapping()
+	if mapped, ok := resolveRequestedModelInMapping(mapping, requestedModel); ok {
+		return mapped, true
+	}
+	normalized := normalizeRequestedModelForLookup(account.Platform, requestedModel)
+	if normalized != requestedModel {
+		if mapped, ok := resolveRequestedModelInMapping(mapping, normalized); ok {
+			return mapped, true
+		}
+	}
+	return requestedModel, false
+}
+
+func resolveOpenAIForwardMappedModelsContext(ctx context.Context, account *Account, requestedModel string, requireCompact bool) (billingModel, upstreamModel string, err error) {
+	requestedModel = strings.TrimSpace(requestedModel)
+	if account != nil && account.IsOpenAIPassthroughEnabled() {
+		billingModel = requestedModel
+	} else if account != nil {
+		billingModel, err = resolveOpenAIForwardModelContext(ctx, account, requestedModel, "")
+		if err != nil {
+			return "", "", err
+		}
+		billingModel = strings.TrimSpace(billingModel)
+	}
+	if billingModel == "" {
+		billingModel = requestedModel
+	}
+	upstreamModel, err = resolveOpenAIAccountUpstreamModelForRequestContext(ctx, account, requestedModel, requireCompact)
+	if err != nil {
+		return "", "", err
+	}
+	if strings.TrimSpace(upstreamModel) == "" {
+		upstreamModel = billingModel
+	}
+	return billingModel, upstreamModel, nil
 }
 
 // openAIOAuthForeignModelPrefixes 列出明确属于其他厂商家族的模型名前缀。

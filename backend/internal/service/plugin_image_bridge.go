@@ -69,9 +69,17 @@ func imageBridgeFacts(body map[string]any, stage string) (extensionv1.ImageBridg
 }
 
 func queryImageBridge(ctx context.Context, account *Account, request extensionv1.ImageBridgeRequest) (extensionv1.ImageBridgePlan, error) {
-	request.Capabilities = CindyCapabilities()
-	request.Aliases = CindyManagedCompatibilityAliases()
-	request.CatalogEnabled = CindyCapabilityCatalogFeatureEnabled()
+	snapshot, err := LoadCindyCatalogSnapshot(ctx, account)
+	if err != nil {
+		return extensionv1.ImageBridgePlan{}, err
+	}
+	return queryImageBridgeWithSnapshot(ctx, account, request, snapshot)
+}
+
+func queryImageBridgeWithSnapshot(ctx context.Context, account *Account, request extensionv1.ImageBridgeRequest, snapshot *CindyCatalogSnapshot) (extensionv1.ImageBridgePlan, error) {
+	request.Capabilities = snapshot.Capabilities
+	request.Aliases = snapshot.CompatibilityAliases
+	request.CatalogEnabled = snapshot.Config.CatalogEnabled
 	raw, err := json.Marshal(request)
 	var plan extensionv1.ImageBridgePlan
 	if err != nil {
@@ -159,6 +167,24 @@ func CindyModelSupportsResponsesImageBridge(model string) bool {
 	}
 	plan, err := queryImageBridge(context.Background(), nil, extensionv1.ImageBridgeRequest{Stage: "supports", Model: strings.TrimSpace(model)})
 	return err == nil && plan.Supported
+}
+
+// This is a read-only preselection decision. Support and its distinct text
+// controller come from the same Cindy snapshot; a test-default update does
+// not enable or retarget the image bridge by itself.
+func CindyResponsesImageRoutingModel(ctx context.Context, model string) (string, bool) {
+	if len(model) > 256 {
+		return "", false
+	}
+	snapshot, err := LoadCindyCatalogSnapshot(ctx, nil)
+	if err != nil || !snapshot.Images.ResponsesImageEnabled {
+		return "", false
+	}
+	plan, err := queryImageBridgeWithSnapshot(ctx, nil, extensionv1.ImageBridgeRequest{Stage: "supports", Model: strings.TrimSpace(model)}, snapshot)
+	if err != nil || !plan.Supported {
+		return "", false
+	}
+	return snapshot.ResponsesImageController.PublicID, true
 }
 
 func mapCindyOpenAIResponsesImageModels(ctx context.Context, body map[string]any, account *Account) (bool, error) {

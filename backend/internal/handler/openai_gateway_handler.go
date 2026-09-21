@@ -794,11 +794,12 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 	routingModel := openAIChannelForwardModel(channelMapping, reqModel)
 	forwardMapped := channelMapping.Mapped
 	forwardMappedModel := channelMapping.MappedModel
-	if strictCindyResponsesImageBridgeAllowed(reqModel, body) {
-		// The body must retain the image-only model so the forwarder can build the
-		// verified image tool request. Scheduling, however, targets its Luna text
-		// controller because Cindy does not serve gpt-image-2 as a text endpoint.
-		routingModel = service.CindyDefaultTestModel
+	if cindyIdentityGroup {
+		// The controller is a provider-owned image purpose, not its test default.
+		// The original image body is retained for the separately gated bridge.
+		if controller, supported := service.CindyResponsesImageRoutingModel(c.Request.Context(), reqModel); supported {
+			routingModel = controller
+		}
 	}
 	if compatibilityAlias {
 		routingModel = compatibilityRoutingModel
@@ -3454,8 +3455,7 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 			return
 		}
 		ctx = pricingContext
-		var turnProviderPricing atomic.Pointer[context.Context]
-		turnProviderPricing.Store(&pricingContext)
+		turnProviderPricing := service.NewProviderPricingTurnContexts(pricingContext, account)
 		quotaUsageCtx := context.WithValue(ctx, ctxkey.AccountID, account.ID)
 		service.ObserveQuotaAccount(quotaUsageCtx, account.ID)
 
@@ -3493,6 +3493,7 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 			MaxReasoningEffortOverLimit: maxReasoningEffortOverLimit,
 			ReasoningEffortMappings:     reasoningEffortMappings,
 			TurnStarted:                 recordTurnStart,
+			CopyProviderPricingContext:  turnProviderPricing.Copy,
 			BeforeRequest: func(turn int, payload []byte, originalModel string) error {
 				c.Set(securityAuditWSTurnContextKey, turn)
 				service.BeginOpsStreamTurn(c, turn)
@@ -3550,11 +3551,10 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 				return mapping.MappedModel, nil
 			},
 			BeforeTurn: func(turn int) error {
-				currentPricing, err := service.RefreshCindyPricingContext(ctx, account)
+				_, err := turnProviderPricing.Copy(turn, ctx)
 				if err != nil {
 					return newOpenAIWSLocalTurnCloseError(coderws.StatusTryAgainLater, "provider policy unavailable", err)
 				}
-				turnProviderPricing.Store(&currentPricing)
 				// turn==1 的会话屏蔽已由握手层检查覆盖；连接内 flag 只拦截后续 turn。
 				if cyberBlockedThisConn {
 					return newOpenAIWSLocalTurnCloseError(coderws.StatusPolicyViolation, cyberSessionBlockedClientMsg, nil)
@@ -3603,6 +3603,7 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 				return nil
 			},
 			AfterTurn: func(turn int, result *service.OpenAIForwardResult, turnErr error) {
+				turnUsageCtx, capturedProvider := turnProviderPricing.Take(turn, quotaUsageCtx)
 				// Telemetry first: the deferred releaseTurnSlots safety net below
 				// must find no open turn for a normally reported turn.
 				finishOpenWSTrafficTurn(result, turnErr)
@@ -3688,7 +3689,10 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 				turnUsageInput := turnUsageSnapshot.Input(result, h.apiKeyService, turnRecordPricingAt)
 				accountID := account.ID
 				requestID := result.RequestID
-				turnUsageCtx := service.CopyProviderPricingContext(*turnProviderPricing.Load(), quotaUsageCtx)
+				if !capturedProvider {
+					reqLog.Error("openai.websocket_provider_turn_context_missing", zap.Int("turn", turn))
+					return
+				}
 				h.submitOpenAIUsageRecordTask(turnUsageCtx, result, func(taskCtx context.Context) {
 					if err := h.gatewayService.RecordUsage(taskCtx, turnUsageInput); err != nil {
 						reqLog.Error("openai.websocket_record_usage_failed",
