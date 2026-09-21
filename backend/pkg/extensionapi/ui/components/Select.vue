@@ -4,7 +4,7 @@
       ref="triggerRef"
       type="button"
       @click="toggle"
-      :disabled="disabled"
+      :disabled="interactionDisabled"
       :aria-expanded="isOpen"
       :aria-haspopup="true"
       :id="id"
@@ -14,7 +14,7 @@
         'select-trigger',
         isOpen && 'select-trigger-open',
         error && 'select-trigger-error',
-        disabled && 'select-trigger-disabled'
+        interactionDisabled && 'select-trigger-disabled'
       ]"
       @keydown.down.prevent="onTriggerKeyDown"
       @keydown.up.prevent="onTriggerKeyDown"
@@ -25,7 +25,7 @@
         </slot>
       </span>
       <span
-        v-if="clearable && hasValue && !disabled"
+        v-if="clearable && hasValue && !interactionDisabled"
         class="select-clear"
         role="button"
         tabindex="-1"
@@ -121,9 +121,10 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, watch, onMounted, onUnmounted, nextTick } from 'vue'
+import { ref, computed, inject, watch, onMounted, onUnmounted, nextTick } from 'vue'
 import { useI18n } from 'vue-i18n'
 import Icon from './Icon.vue'
+import { extensionAvailabilityKey } from '../context'
 
 const { t } = useI18n()
 
@@ -180,6 +181,8 @@ const props = withDefaults(defineProps<Props>(), {
 })
 
 const emit = defineEmits<Emits>()
+const extensionAvailable = inject(extensionAvailabilityKey, computed(() => true))
+const interactionDisabled = computed(() => props.disabled || !extensionAvailable.value)
 
 const isOpen = ref(false)
 const searchQuery = ref('')
@@ -364,9 +367,13 @@ const calculateDropdownPosition = () => {
 }
 
 const toggle = () => {
-  if (props.disabled) return
+  if (interactionDisabled.value) return
   isOpen.value = !isOpen.value
 }
+
+// Teleported options are outside the dialog/root inert subtree. Close them
+// when admission is lost without emitting a new value or clearing the draft.
+watch(interactionDisabled, (disabled) => { if (disabled) isOpen.value = false })
 
 watch(isOpen, (open) => {
   if (open) {
@@ -412,6 +419,7 @@ watch(searchQuery, (query) => {
 })
 
 const selectOption = (option: any) => {
+  if (interactionDisabled.value || isOptionDisabled(option)) return
   const value = getOptionValue(option) ?? null
   emit('update:modelValue', value)
   emit('change', value, option)
@@ -420,19 +428,21 @@ const selectOption = (option: any) => {
 }
 
 const clearSelection = () => {
-  if (props.disabled) return
+  if (interactionDisabled.value) return
   emit('update:modelValue', null)
   emit('change', null, null)
 }
 
 // Keyboards
 const onTriggerKeyDown = () => {
+  if (interactionDisabled.value) return
   if (!isOpen.value) {
     isOpen.value = true
   }
 }
 
 const onDropdownKeyDown = (e: KeyboardEvent) => {
+  if (interactionDisabled.value) { e.preventDefault(); isOpen.value = false; return }
   switch (e.key) {
     case 'ArrowDown':
       e.preventDefault()
