@@ -2,9 +2,10 @@ package policy
 
 import (
 	"errors"
-	extensionv1 "github.com/Wei-Shaw/sub2api/pkg/extensionapi/v1"
 	"slices"
 	"strings"
+
+	extensionv1 "github.com/Wei-Shaw/sub2api/pkg/extensionapi/v1"
 )
 
 func planBatch(request extensionv1.BatchTestPlanningRequest) (extensionv1.BatchTestPlan, error) {
@@ -36,9 +37,10 @@ func planBatch(request extensionv1.BatchTestPlanningRequest) (extensionv1.BatchT
 			return plan, invalid
 		}
 		for _, id := range request.AccountIDs {
-			if id > 0 {
-				plan.Models[id] = plan.ModelID
+			if id <= 0 {
+				return plan, invalid
 			}
+			plan.Models[id] = plan.ModelID
 		}
 		for id := range plan.Models {
 			plan.AccountIDs = append(plan.AccountIDs, id)

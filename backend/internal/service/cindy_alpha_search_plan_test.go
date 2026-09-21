@@ -11,12 +11,28 @@ import (
 )
 
 type cindyAlphaSearchPlanInvoker struct {
-	invocation extensionv1.Invocation
-	plan       CindyAlphaSearchPlan
+	invocation   extensionv1.Invocation
+	plan         CindyAlphaSearchPlan
+	queries      []extensionv1.Invocation
+	rawPlan      json.RawMessage
+	catalogModel string
+	catalogOwner int64
 }
 
 func (f *cindyAlphaSearchPlanInvoker) InvokeOperation(_ context.Context, _, _ string, in extensionv1.Invocation) (extensionv1.Result, error) {
+	f.queries = append(f.queries, in)
+	if in.Operation == "cindy.catalog" {
+		model := f.catalogModel
+		if model == "" {
+			model = "openai/gpt-5.6-luna"
+		}
+		raw, err := json.Marshal([]any{model, true})
+		return extensionv1.Result{Payload: raw, PluginID: f.catalogOwner}, err
+	}
 	f.invocation = in
+	if f.rawPlan != nil {
+		return extensionv1.Result{Payload: f.rawPlan}, nil
+	}
 	raw, err := json.Marshal(f.plan)
 	return extensionv1.Result{Payload: raw}, err
 }
@@ -45,6 +61,35 @@ func TestResolveCindyAlphaSearchPlanSendsOnlyRequestedModel(t *testing.T) {
 	require.Equal(t, "cindy.search.plan", fixture.invocation.Operation)
 	require.Equal(t, int64(42), fixture.invocation.AccountID)
 	require.JSONEq(t, `{"model":"gpt-5.6-luna"}`, string(fixture.invocation.Payload))
+	require.Len(t, fixture.queries, 2)
+	require.EqualValues(t, 42, fixture.queries[1].AccountID)
+}
+
+func TestCindyAlphaSearchPlanCannotChangeCatalogIdentityOrReturnTrailingJSON(t *testing.T) {
+	previous := processExtensionOperations.Load()
+	t.Cleanup(func() { processExtensionOperations.Store(previous) })
+	base := CindyAlphaSearchPlan{Allowed: true, RequestedModel: "gpt-5.6-luna", UpstreamModel: "openai/gpt-5.6-luna", PrimaryProtocol: "responses", ResponsesToolType: "web_search", MaxSearchUses: 1}
+	for _, kind := range []string{"different-model", "different-owner", "trailing-json"} {
+		t.Run(kind, func(t *testing.T) {
+			fixture := &cindyAlphaSearchPlanInvoker{plan: base}
+			switch kind {
+			case "different-model":
+				fixture.catalogModel = "openai/gpt-6-astra"
+			case "different-owner":
+				fixture.catalogOwner = 9
+			case "trailing-json":
+				raw, err := json.Marshal(base)
+				require.NoError(t, err)
+				fixture.rawPlan = append(raw, []byte(` {"allowed":false}`)...)
+			}
+			processExtensionOperations.Store(&extensionOperationProvider{invoker: fixture})
+			_, err := resolveCindyAlphaSearchPlanForAccount(context.Background(), base.RequestedModel, 42)
+			require.Error(t, err)
+			if kind == "trailing-json" {
+				require.Len(t, fixture.queries, 1, "ambiguous JSON must fail before the catalog read")
+			}
+		})
+	}
 }
 
 func TestValidateCindyAlphaSearchPlanRejectsUnboundedOrUnexpectedFallback(t *testing.T) {

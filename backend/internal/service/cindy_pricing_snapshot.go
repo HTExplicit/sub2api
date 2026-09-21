@@ -31,7 +31,7 @@ func CaptureCindyPricingContext(ctx context.Context, c *gin.Context, account *Ac
 	}
 	call, cancel := context.WithTimeout(ctx, time.Second)
 	defer cancel()
-	result, err := invokeProcessExtensionCached(call, PlatformCindy, AccountTypeAPIKey, extensionv1.Invocation{Capability: extensionv1.CapabilityProvider, Operation: "cindy.pricing", Payload: json.RawMessage(`{}`)})
+	result, err := invokeProcessExtensionCached(call, PlatformCindy, AccountTypeAPIKey, extensionv1.Invocation{Capability: extensionv1.CapabilityProvider, Operation: "cindy.pricing", AccountID: account.ID, Payload: json.RawMessage(`{}`)})
 	if err != nil || result.Code != "" {
 		return ctx, errors.New("Cindy provider policy is unavailable")
 	}
@@ -58,7 +58,7 @@ func EnsureCindyProviderAvailable(ctx context.Context, account *Account) error {
 	}
 	call, cancel := context.WithTimeout(ctx, time.Second)
 	defer cancel()
-	result, err := invokeProcessExtensionCached(call, PlatformCindy, AccountTypeAPIKey, extensionv1.Invocation{Capability: extensionv1.CapabilityProvider, Operation: "cindy.features", Payload: json.RawMessage(`{}`)})
+	result, err := invokeProcessExtensionCached(call, PlatformCindy, AccountTypeAPIKey, extensionv1.Invocation{Capability: extensionv1.CapabilityProvider, Operation: "cindy.features", AccountID: account.ID, Payload: json.RawMessage(`{}`)})
 	if err != nil || result.Code != "" {
 		return errors.New("Cindy provider policy is unavailable")
 	}

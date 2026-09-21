@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"strings"
 	"time"
 
@@ -27,7 +28,7 @@ func ResolveCindyAlphaSearchPlan(ctx context.Context, requestedModel string) (Ci
 
 func resolveCindyAlphaSearchPlanForAccount(ctx context.Context, requestedModel string, accountID int64) (CindyAlphaSearchPlan, error) {
 	requestedModel = strings.TrimSpace(requestedModel)
-	if requestedModel == "" {
+	if requestedModel == "" || len(requestedModel) > 256 || accountID < 0 {
 		return CindyAlphaSearchPlan{}, fmt.Errorf("Cindy search model is required")
 	}
 	payload, err := json.Marshal(extensionv1.CindyAlphaSearchPlanRequest{Model: requestedModel})
@@ -54,8 +55,27 @@ func resolveCindyAlphaSearchPlanForAccount(ctx context.Context, requestedModel s
 	if err := decoder.Decode(&plan); err != nil {
 		return CindyAlphaSearchPlan{}, fmt.Errorf("decode Cindy search plan: %w", err)
 	}
+	if decoder.Decode(new(any)) != io.EOF {
+		return CindyAlphaSearchPlan{}, fmt.Errorf("invalid Cindy search plan: trailing JSON")
+	}
 	if err := validateCindyAlphaSearchPlan(requestedModel, plan); err != nil {
 		return CindyAlphaSearchPlan{}, err
+	}
+	if plan.Allowed {
+		// The execution plan cannot silently select a different billed model
+		// from the provider's admitted catalog. Both reads use the actual account
+		// scope and must be owned by the same plugin; no host model list is copied.
+		model, _ := json.Marshal(requestedModel)
+		query, _ := json.Marshal(extensionv1.CindyCatalogQuery{Method: "CindyAlphaSearchUpstreamModel", Args: []json.RawMessage{model}})
+		catalog, err := invokeProcessExtensionCached(callCtx, PlatformCindy, AccountTypeAPIKey, extensionv1.Invocation{
+			Capability: extensionv1.CapabilityProvider, Operation: "cindy.catalog", AccountID: accountID, Payload: query,
+		})
+		var upstream string
+		var allowed bool
+		if err != nil || catalog.Code != "" || catalog.PluginID != result.PluginID ||
+			!decodeCindyCatalogResult(catalog.Payload, []any{&upstream, &allowed}) || !allowed || upstream != plan.UpstreamModel {
+			return CindyAlphaSearchPlan{}, fmt.Errorf("invalid Cindy search plan: catalog identity mismatch")
+		}
 	}
 	return plan, nil
 }
@@ -63,6 +83,9 @@ func resolveCindyAlphaSearchPlanForAccount(ctx context.Context, requestedModel s
 func validateCindyAlphaSearchPlan(requestedModel string, plan CindyAlphaSearchPlan) error {
 	if plan.RequestedModel != requestedModel {
 		return fmt.Errorf("invalid Cindy search plan: requested model mismatch")
+	}
+	if len(plan.RequestedModel) > 256 || len(plan.UpstreamModel) > 256 || len(plan.NativeMessagesModel) > 256 {
+		return fmt.Errorf("invalid Cindy search plan: model identity exceeds limit")
 	}
 	if strings.Contains(plan.RequestedModel, "://") || strings.Contains(plan.UpstreamModel, "://") || strings.Contains(plan.NativeMessagesModel, "://") {
 		return fmt.Errorf("invalid Cindy search plan: URL-like model value")

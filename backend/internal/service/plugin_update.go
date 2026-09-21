@@ -117,24 +117,40 @@ func (m *PluginManager) stagePluginReplacement(ctx context.Context, previous, ca
 	if previous.State == PluginStateUpdating {
 		return ErrPluginStateChanged
 	}
-	candidate.ID, candidate.ConfigEncrypted = previous.ID, previous.ConfigEncrypted
-	candidate.Bindings = PluginReplacementBindings(previous.Bindings, candidate.Manifest)
+	if err := m.validatePluginReplacementRegistry(ctx, previous, candidate); err != nil {
+		return err
+	}
+	if err := m.validatePluginCandidate(ctx, candidate); err != nil {
+		return err
+	}
+	// Other hosts can change bindings while the candidate process is checked.
+	if err := m.validatePluginReplacementRegistry(ctx, previous, candidate); err != nil {
+		return err
+	}
+	return store.StagePluginUpdate(ctx, previous, candidate, policy)
+}
+
+// Admission must use persisted desired bindings, not the local runtime or UI
+// registry. Keep the caller's revision/config fence so a concurrent disable is
+// retried with its new intent instead of silently enabling the replacement.
+func (m *PluginManager) validatePluginReplacementRegistry(ctx context.Context, previous, candidate *PluginInstallation) error {
 	all, err := m.repo.List(ctx)
 	if err != nil {
 		return err
 	}
 	for index, installation := range all {
 		if installation.ID == previous.ID {
+			if installation.Revision != previous.Revision || installation.State != previous.State ||
+				installation.ConfigEncrypted != previous.ConfigEncrypted || !samePluginRuntime(installation, previous) {
+				return ErrPluginStateChanged
+			}
+			candidate.ID, candidate.ConfigEncrypted = installation.ID, installation.ConfigEncrypted
+			candidate.Bindings = PluginReplacementBindings(installation.Bindings, candidate.Manifest)
 			all[index] = candidate
+			return validatePluginRegistry(all)
 		}
 	}
-	if err = validatePluginRegistry(all); err != nil {
-		return err
-	}
-	if err = m.validatePluginCandidate(ctx, candidate); err != nil {
-		return err
-	}
-	return store.StagePluginUpdate(ctx, previous, candidate, policy)
+	return ErrPluginStateChanged
 }
 
 // Keep the desired contributions visible as unavailable while only this
@@ -183,11 +199,16 @@ func (m *PluginManager) resumePluginUpdate(ctx context.Context, previous *Plugin
 	if candidate.PluginKey != previous.PluginKey {
 		return nil, errors.New("pending plugin identity differs")
 	}
-	candidate.ID, candidate.ConfigEncrypted = previous.ID, previous.ConfigEncrypted
 	if !candidate.Compatibility.Compatible {
 		return nil, errors.New(candidate.Compatibility.Message)
 	}
+	if err = m.validatePluginReplacementRegistry(ctx, previous, candidate); err != nil {
+		return nil, err
+	}
 	if err = m.validatePluginCandidate(ctx, candidate); err != nil {
+		return nil, err
+	}
+	if err = m.validatePluginReplacementRegistry(ctx, previous, candidate); err != nil {
 		return nil, err
 	}
 	if err = store.CommitPluginUpdate(ctx, previous, candidate); err != nil {

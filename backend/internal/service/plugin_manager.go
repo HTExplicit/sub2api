@@ -1008,19 +1008,16 @@ func (m *PluginManager) CreateUIAssetSession(ctx context.Context, id int64, cont
 	} else if permission != "admin" {
 		return session, errors.New("a user page contribution is required")
 	}
-	if len(installation.Bindings) > 0 {
-		capability := ""
-		if selected != nil {
-			capability = selected.Capability
-		}
-		enabled := false
-		for _, binding := range installation.Bindings {
-			if binding.Enabled && (capability == "" || binding.Capability == capability) {
-				enabled = true
-				break
-			}
-		}
-		if !enabled {
+	// The unqualified administrator page is the plugin configuration surface.
+	// It must remain reachable while a plugin is disabled or unhealthy so an
+	// administrator can repair its configuration. It does not authorize any
+	// plugin operation; resource/invoke/job paths perform their own live gates.
+	if selected != nil {
+		// A disabled plugin must not mint a new business-page session, even if a
+		// stale process or fixture still carries an enabled binding. Error and
+		// incompatible states intentionally remain renderable so the static page
+		// can preserve user input while its actions report unavailable.
+		if installation.State == PluginStateDisabled || !pluginUIContributionBindingEnabled(installation, selected) {
 			return session, ErrExtensionOperationDisabled
 		}
 	}
@@ -1040,6 +1037,34 @@ func (m *PluginManager) CreateUIAssetSession(ctx context.Context, id int64, cont
 		return session, fmt.Errorf("加密插件 UI 会话: %w", err)
 	}
 	return PluginUIAssetSession{Token: base64.RawURLEncoding.EncodeToString([]byte(encrypted)), Expires: expires, PackageSHA256: installation.PackageSHA256, Permission: permission, PluginKey: installation.PluginKey}, nil
+}
+
+// pluginUIContributionBindingEnabled mirrors the contribution admission rules
+// used by the host registry for a newly opened business page. A contribution
+// without a capability still needs the plugin to have an enabled binding (for
+// example, legacy admin actions whose capability is inferred by the host). A
+// global contribution is stronger: only a wildcard binding at 100% can expose
+// it because the page has no account-specific scope to apply.
+func pluginUIContributionBindingEnabled(installation *PluginInstallation, contribution *extensionv1.Contribution) bool {
+	if installation == nil || contribution == nil {
+		return false
+	}
+	if contribution.AllAccounts && contribution.Capability == "" {
+		return false
+	}
+	for _, binding := range installation.Bindings {
+		if !binding.Enabled {
+			continue
+		}
+		if contribution.Capability != "" && binding.Capability != contribution.Capability {
+			continue
+		}
+		if contribution.AllAccounts && (binding.Platform != "*" || binding.AccountType != "*" || binding.RolloutPercent != 100) {
+			continue
+		}
+		return true
+	}
+	return false
 }
 
 func (m *PluginManager) ResolveUIAssetToken(token string) (int64, error) {

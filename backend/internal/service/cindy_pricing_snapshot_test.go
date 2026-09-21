@@ -94,3 +94,34 @@ func TestCindyNewTurnRefreshesPricingWithoutChangingPendingBill(t *testing.T) {
 	require.NoError(t, err, "an already completed request retains its exact pricing reference")
 	require.Positive(t, cost.InputCost)
 }
+
+func TestCindyPricingScopeCannotReuseAnExcludedAccountPolicyCache(t *testing.T) {
+	previous := processExtensionOperations.Load()
+	t.Cleanup(func() { processExtensionOperations.Store(previous) })
+	module := cindy.New()
+	require.NoError(t, module.ApplyConfig(context.Background(), []byte(`{"catalog_enabled":true}`)))
+	var calls []extensionv1.Invocation
+	manager := ticketTestManager(t, config.OpenAICodexTicketConfig{}, func(in extensionv1.Invocation) (extensionv1.Result, error) {
+		calls = append(calls, in)
+		return module.Invoke(context.Background(), in)
+	})
+	installation := manager.extensions.Load().installations[1]
+	installation.Bindings = []PluginBinding{{Capability: extensionv1.CapabilityProvider, Platform: PlatformCindy, AccountType: AccountTypeAPIKey, Enabled: true, RolloutPercent: 100}}
+	installation.Manifest.Operations = map[string][]string{extensionv1.CapabilityProvider: {"cindy.features", "cindy.pricing"}}
+	processExtensionOperations.Store(&extensionOperationProvider{invoker: manager})
+	account := &Account{ID: 41, Platform: PlatformCindy, Type: AccountTypeAPIKey, Credentials: map[string]any{"base_url": "https://api.laxarouter.ai", "api_key": "private-fixture-token"}}
+	parent, err := CaptureCindyPricingContext(context.Background(), nil, account)
+	require.NoError(t, err)
+	require.Len(t, calls, 2)
+	for _, call := range calls {
+		require.EqualValues(t, 41, call.AccountID)
+		require.JSONEq(t, `{}`, string(call.Payload), "scope metadata must not carry the account's credentials")
+	}
+	pendingBill := CopyProviderPricingContext(parent, context.Background())
+	installation.Bindings[0].RolloutPercent = int(stablePluginBucket(account.ID))
+	require.Error(t, EnsureCindyProviderAvailable(context.Background(), account))
+	_, err = CaptureCindyPricingContext(parent, nil, account)
+	require.Error(t, err, "an existing captured value cannot authorize a new excluded request")
+	require.Len(t, calls, 2, "revoked scope must fail before the cached policy can be returned")
+	require.NotNil(t, cindyPricingSnapshotFromContext(pendingBill, account), "a completed request can still settle using its captured reference")
+}
