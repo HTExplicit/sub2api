@@ -1,5 +1,10 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { flushPromises, shallowMount } from '@vue/test-utils'
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
+import postcss, { type Root } from 'postcss'
+import tailwindcss from 'tailwindcss'
+import loadConfig from 'tailwindcss/loadConfig'
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
+import { flushPromises, shallowMount, type VueWrapper } from '@vue/test-utils'
 
 const routeState = vi.hoisted(() => ({
   query: {} as Record<string, unknown>,
@@ -12,6 +17,7 @@ const paymentStore = vi.hoisted(() => ({
   pollOrderStatus: vi.fn(),
 }))
 const loadStripe = vi.hoisted(() => vi.fn())
+const unexpectedNetwork = vi.hoisted(() => vi.fn(() => { throw new Error('Unexpected network in Stripe page regression') }))
 const stripeElements = vi.hoisted(() => ({
   create: vi.fn(),
 }))
@@ -64,6 +70,28 @@ import StripePaymentView from '../StripePaymentView.vue'
 import { formatPaymentAmount } from '@/components/payment/currency'
 import type { PaymentOrder } from '@/types/payment'
 
+let utilityStyles: Root
+const wrappers: VueWrapper[] = []
+let restoreNetwork: () => void
+let initiallyDark = false
+
+beforeAll(async () => {
+  const source = readFileSync(resolve(__dirname, '../StripePaymentView.vue'), 'utf8')
+  const config = loadConfig(resolve(__dirname, '../../../../tailwind.config.js'))
+  utilityStyles = (await postcss([tailwindcss({ ...config, content: [{ raw: source, extension: 'vue' }] })])
+    .process('@tailwind utilities;', { from: undefined })).root
+})
+
+function declarationsFor(element: Element) {
+  const result: Record<string, string> = {}
+  utilityStyles.walkRules(rule => {
+    if (element.matches(rule.selector)) {
+      rule.walkDecls(declaration => { result[declaration.prop] = declaration.value })
+    }
+  })
+  return result
+}
+
 function orderFactory(overrides: Partial<PaymentOrder> = {}): PaymentOrder {
   return {
     id: 42,
@@ -84,7 +112,7 @@ function orderFactory(overrides: Partial<PaymentOrder> = {}): PaymentOrder {
 }
 
 function mountView() {
-  return shallowMount(StripePaymentView, {
+  const wrapper = shallowMount(StripePaymentView, {
     global: {
       stubs: {
         AppLayout: { template: '<div><slot /></div>' },
@@ -92,6 +120,8 @@ function mountView() {
       },
     },
   })
+  wrappers.push(wrapper)
+  return wrapper
 }
 
 describe('StripePaymentView', () => {
@@ -102,6 +132,7 @@ describe('StripePaymentView', () => {
     }
     routerPush.mockReset()
     getOrder.mockReset()
+    getOrder.mockResolvedValue({ data: orderFactory({ currency: 'HKD' }) })
     paymentStore.config = { stripe_publishable_key: 'pk_test' }
     paymentStore.fetchConfig.mockReset().mockResolvedValue(undefined)
     paymentStore.pollOrderStatus.mockReset()
@@ -116,6 +147,54 @@ describe('StripePaymentView', () => {
     stripeInstance.confirmAlipayPayment.mockReset()
     stripeInstance.confirmWechatPayPayment.mockReset()
     window.localStorage.clear()
+    initiallyDark = document.documentElement.classList.contains('dark')
+    document.documentElement.classList.remove('dark')
+    unexpectedNetwork.mockClear()
+    vi.stubGlobal('fetch', unexpectedNetwork)
+    const send = vi.spyOn(XMLHttpRequest.prototype, 'send').mockImplementation(unexpectedNetwork)
+    const open = vi.spyOn(window, 'open').mockImplementation(unexpectedNetwork)
+    restoreNetwork = () => { send.mockRestore(); open.mockRestore() }
+  })
+
+  afterEach(() => {
+    wrappers.splice(0).forEach(wrapper => wrapper.unmount())
+    restoreNetwork()
+    vi.unstubAllGlobals()
+    document.documentElement.classList.toggle('dark', initiallyDark)
+    expect(unexpectedNetwork).not.toHaveBeenCalled()
+    expect(stripeInstance.confirmPayment).not.toHaveBeenCalled()
+    expect(stripeInstance.confirmAlipayPayment).not.toHaveBeenCalled()
+    expect(stripeInstance.confirmWechatPayPayment).not.toHaveBeenCalled()
+  })
+
+  it('keeps the standalone light-theme amount on an opaque branded background', async () => {
+    const wrapper = mountView()
+    await flushPromises()
+    await flushPromises()
+    const header = wrapper.get('.card.overflow-hidden > div')
+    expect(header.get('p.text-white').text()).toBe(formatPaymentAmount(103, 'HKD', 'zh-CN'))
+    const styles = declarationsFor(header.element)
+    expect(styles['background-image']).toBe('var(--theme-background-gradient-to-br, linear-gradient(to bottom right, var(--tw-gradient-stops)))')
+    expect(styles['background-color']).toBe('rgb(99 91 255 / var(--tw-bg-opacity, 1))')
+    expect(styles['--tw-bg-opacity']).toBe('1')
+  })
+
+  it('keeps the standalone dark-theme amount fill when the gradient is disabled', async () => {
+    document.documentElement.classList.add('dark')
+    const wrapper = mountView()
+    await flushPromises()
+    await flushPromises()
+    const header = wrapper.get('.card.overflow-hidden > div')
+    const styles = declarationsFor(header.element)
+    const element = header.element as HTMLElement
+    expect(element.style.getPropertyValue('--theme-background-gradient-to-br')).toBe('')
+    element.style.setProperty('--theme-background-gradient-to-br', 'none')
+    expect(styles['background-image']).toContain('var(--theme-background-gradient-to-br,')
+    expect(styles['background-color']).toBe('rgb(99 91 255 / var(--tw-bg-opacity, 1))')
+    expect(styles['--tw-bg-opacity']).toBe('1')
+    expect(stripeInstance.elements).toHaveBeenCalledWith(expect.objectContaining({
+      appearance: expect.objectContaining({ theme: 'night' }),
+    }))
   })
 
   it('本地恢复快照缺失时使用订单接口返回的 Stripe 币种展示金额', async () => {

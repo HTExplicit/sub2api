@@ -178,6 +178,7 @@ jobs:
             src/components/account/__tests__/CreateAccountModal.spec.ts \
             src/components/account/__tests__/CreateAccountModal.codexFingerprint.spec.ts \
             src/components/payment/__tests__/StripePaymentInline.contrast.spec.ts \
+            src/views/user/__tests__/StripePaymentView.spec.ts \
             src/components/account/__tests__/OpenAIReasoningPolicyFields.spec.ts \
             src/utils/__tests__/openaiReasoningPolicy.spec.ts \
             src/components/account/__tests__/EditAccountModal.spec.ts \
