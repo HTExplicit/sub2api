@@ -355,18 +355,18 @@ function isJsonFile(file: File): boolean {
 
 async function setSelectedFiles(source: FileList | File[] | null | undefined): Promise<void> {
   if (busy.value) return
+  const incoming = Array.from(source || [])
+  if (!incoming.length) return
+  const accepted = incoming.filter(isJsonFile)
+  if (!accepted.length) {
+    appStore.showError(t('admin.accounts.dataImportSelectFile'))
+    return
+  }
+  // 只有接受新 JSON 后才替换草稿，选错文件或取消选择不打断当前解析/预览。
   cancelParsing()
   invalidatePreview()
   payload.value = null
   const requestGeneration = selectionGeneration
-  const incoming = Array.from(source || [])
-  const accepted = incoming.filter(isJsonFile)
-  if (!accepted.length) {
-    files.value = []
-    payload.value = null
-    appStore.showError(t('admin.accounts.dataImportSelectFile'))
-    return
-  }
   if (accepted.length !== incoming.length) {
     appStore.showWarning(t('admin.accounts.dataImportIgnoredFiles', { count: incoming.length - accepted.length }))
   }
@@ -465,6 +465,7 @@ async function handlePreview(): Promise<void> {
 async function handleSubmit(): Promise<void> {
   if (!payload.value || parsing.value || busy.value || !proxySelectionValid.value) {
     if (!proxySelectionValid.value) appStore.showError(t('admin.accounts.importProxyRequired'))
+    else if (!payload.value && !parsing.value && !busy.value) appStore.showError(t('admin.accounts.dataImportSelectFile'))
     return
   }
   busy.value = true
