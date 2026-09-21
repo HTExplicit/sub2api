@@ -1385,13 +1385,19 @@ func (m *PluginManager) buildHostServices(installation *PluginInstallation) plug
 		return nil
 	}
 	var directory PluginAccountDirectory
-	if pluginDeclaresOpenAIOAuthCapability(installation.Manifest) {
+	if installation.Manifest.Requires.ExtensionAPI == 0 && pluginDeclaresOpenAIOAuthCapability(installation.Manifest) {
 		m.mu.Lock()
 		directory = m.accountDirectory
 		m.mu.Unlock()
 	}
 	host := newPluginHostServiceServer(installation.PluginKey, m.kvStore, directory)
 	if installation.Manifest.Requires.ExtensionAPI > 0 {
+		// Versioned extensions must use the generation-fenced named broker.
+		// Offering the legacy KV port as well would let a late old process write
+		// state by pluginKey alone after its execution generation was replaced.
+		// The official legacy transport protocol remains unchanged for plugins
+		// that do not opt into the extension API.
+		host.store = nil
 		state, _ := m.repo.(PluginExtensionStateStore)
 		directory, _ := m.accountDirectory.(PluginExtensionAccountDirectory)
 		host.extension = &pluginExtensionHost{key: installation.PluginKey, state: state, directory: directory, installation: installation, activity: m.quotaActivity, traffic: m.traffic, accountScope: func(ctx context.Context) (*PluginInstallation, error) {
