@@ -45,7 +45,7 @@ class PluginBridge {
         this.notify('extension.cancel', { target_request_id: request_id })
         reject(new DOMException('Request canceled', 'AbortError'))
       }
-      const timer = setTimeout(() => { this.pending.delete(request_id); reject(new Error('Operation timed out')) }, 30000)
+      const timer = setTimeout(() => { this.pending.get(request_id)?.cleanup?.(); this.pending.delete(request_id); reject(new Error('Operation timed out')) }, 30000)
       this.pending.set(request_id, { resolve, reject, timer, cleanup: () => signal?.removeEventListener('abort', abort) })
       signal?.addEventListener('abort', abort, { once: true })
       try { this.notify(type, { ...fields, request_id }) }
