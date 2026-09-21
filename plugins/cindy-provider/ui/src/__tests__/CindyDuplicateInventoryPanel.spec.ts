@@ -1,5 +1,7 @@
-import { flushPromises, mount } from '@vue/test-utils'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { enableAutoUnmount, flushPromises, mount } from '@vue/test-utils'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+
+enableAutoUnmount(afterEach)
 
 const { loadInventory, showError } = vi.hoisted(() => ({
   loadInventory: vi.fn(),
@@ -18,6 +20,24 @@ describe('CindyDuplicateInventoryPanel', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     loadInventory.mockResolvedValue([])
+  })
+
+  it('does not label a failed inventory read as an empty successful inventory', async () => {
+    loadInventory.mockRejectedValueOnce(new Error('fixture unavailable'))
+    const wrapper = mount(CindyDuplicateInventoryPanel)
+    await flushPromises()
+    expect(wrapper.find('[data-testid="cindy-duplicate-empty"]').exists()).toBe(false)
+    expect(wrapper.get('[data-testid="cindy-duplicate-load-failed"]').text()).toContain('duplicateLoadFailed')
+  })
+
+  it('does not notify from a late inventory reply after unmount', async () => {
+    let reject!: (error: Error) => void
+    loadInventory.mockReturnValueOnce(new Promise((_, failure) => { reject = failure }))
+    const wrapper = mount(CindyDuplicateInventoryPanel)
+    wrapper.unmount()
+    reject(new Error('late fixture error'))
+    await flushPromises()
+    expect(showError).not.toHaveBeenCalled()
   })
 
   it('loads the redacted inventory without exposing credential material', async () => {

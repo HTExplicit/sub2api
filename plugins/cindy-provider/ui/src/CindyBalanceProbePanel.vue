@@ -31,7 +31,7 @@
               :class="scopeMode === option.value ? activeSegmentClass : inactiveSegmentClass"
               :disabled="loading.preview || loading.create"
               :data-test="`cindy-probe-scope-${option.value}`"
-              @click="scopeMode = option.value"
+              @click="selectScope(option.value)"
             >
               {{ option.label }}
             </button>
@@ -58,6 +58,7 @@
             class="w-full accent-primary-600"
             :disabled="loading.preview || loading.create"
             data-test="cindy-probe-rate"
+            @input="rememberDraft"
           />
           <div class="mt-1 flex justify-between text-[11px] text-gray-400"><span>0.1</span><span>1.0</span></div>
         </div>
@@ -107,8 +108,9 @@
         <div class="flex flex-wrap items-end justify-between gap-3">
           <div class="min-w-[220px] flex-1">
             <label for="cindy-probe-job" class="input-label">{{ t('admin.accounts.cindyProbe.currentAndRecent') }}</label>
-            <select id="cindy-probe-job" v-model.number="selectedJobID" class="input" :disabled="jobs.length === 0" data-test="cindy-probe-job-select">
+            <select id="cindy-probe-job" v-model.number="selectedJobID" class="input" :disabled="jobs.length === 0" data-test="cindy-probe-job-select" @change="selectJob">
               <option :value="0">{{ t('admin.accounts.cindyProbe.noJobs') }}</option>
+              <option v-if="selectedJobID > 0 && !activeJob" :value="selectedJobID">#{{ selectedJobID }}</option>
               <option v-for="job in jobs" :key="job.id" :value="job.id">
                 #{{ job.id }} · {{ jobStatusLabel(job.status) }} · {{ formatDate(job.created_at) }}
               </option>
@@ -140,7 +142,7 @@
           <div class="flex flex-wrap items-end gap-2 border-y border-gray-200 py-3 dark:border-dark-700">
             <div class="w-40">
               <label for="cindy-probe-job-rate" class="input-label">{{ t('admin.accounts.cindyProbe.jobRate') }}</label>
-              <input id="cindy-probe-job-rate" v-model.number="jobRateRPS" type="number" min="0.1" max="1" step="0.1" class="input" :disabled="!canChangeRate || loading.action" data-test="cindy-probe-job-rate" />
+              <input id="cindy-probe-job-rate" v-model.number="jobRateRPS" type="number" min="0.1" max="1" step="0.1" class="input" :disabled="!canChangeRate || loading.action" data-test="cindy-probe-job-rate" @input="rememberJobRate" />
             </div>
             <button type="button" class="btn btn-secondary" :disabled="!canChangeRate || loading.action" data-test="cindy-probe-save-rate" @click="saveJobRate">
               {{ t('common.save') }}
@@ -215,11 +217,11 @@
     <ConfirmDialog
       :show="showCancelConfirm"
       :title="t('admin.accounts.cindyProbe.cancelTitle')"
-      :message="t('admin.accounts.cindyProbe.cancelMessage')"
+      :message="`${t('admin.accounts.cindyProbe.cancelMessage')} #${cancelTargetID}`"
       :confirm-text="t('admin.accounts.cindyProbe.cancelConfirm')"
       danger
       @confirm="confirmCancelJob"
-      @cancel="showCancelConfirm = false"
+      @cancel="dismissCancel"
     />
   </section>
 </template>
@@ -229,7 +231,7 @@ import { computed, inject, onBeforeUnmount, onMounted, reactive, ref, watch } fr
 import { useI18n } from 'vue-i18n'
 import { Icon } from '@sub2api/plugin-ui'
 import { ConfirmDialog } from '@sub2api/plugin-ui'
-import { usePluginContext, useNotifications } from '@sub2api/plugin-ui'
+import { usePluginContext, useNotifications, usePersistentDraft } from '@sub2api/plugin-ui'
 import { extractApiErrorMessage } from '@sub2api/plugin-ui'
 import { extensionAvailabilityKey } from '@sub2api/plugin-ui/context'
 import {
@@ -256,6 +258,7 @@ const appStore = useNotifications()
 const inheritedAvailability = inject(extensionAvailabilityKey, computed(() => true))
 const pluginContext = usePluginContext()
 const extensionAvailable = computed(() => inheritedAvailability.value && pluginContext.value.available !== false)
+const savedDraft = usePersistentDraft('cindy-balance-probe')
 const scopeMode = ref<CindyBalanceProbeScopeMode>('all')
 const expanded = ref(props.initiallyExpanded)
 const rateRPS = ref(0.5)
@@ -266,12 +269,25 @@ const jobRateRPS = ref(0.5)
 const itemState = ref('')
 const itemPageNumber = ref(1)
 const showCancelConfirm = ref(false)
+const cancelTargetID = ref(0)
 const itemPageSize = 20
 const itemPage = reactive<CindyBalanceProbeItemPage>({ items: [], total: 0, page: 1, page_size: itemPageSize })
 const loading = reactive({ preview: false, create: false, jobs: false, items: false, action: false })
 let pollTimer: ReturnType<typeof setInterval> | null = null
 let itemsRequestSequence = 0
 let itemsLoadQueued = false
+let disposed = false
+let previewRevision = 0
+let previewRequestSequence = 0
+let applyingPreviewRate = false
+let jobsRevision = 0
+let polling = false
+let draftTouched = false
+let draftRestored = false
+let preserveJobSelection = false
+let jobRateOwnerID = 0
+let jobRateEdited = false
+let selectedJobRequestSequence = 0
 
 const activeSegmentClass = 'bg-white text-gray-950 shadow-outline dark:bg-dark-700 dark:text-white'
 const inactiveSegmentClass = 'text-gray-500 hover:text-gray-900 dark:text-dark-300 dark:hover:text-white'
@@ -320,6 +336,83 @@ const itemStateOptions = [
   'skipped_stale', 'unknown_after_crash', 'canceled',
 ]
 
+function isDraftRate(value: unknown): value is number {
+  return typeof value === 'number' && Number.isFinite(value) && value >= 0.1 && value <= 1
+}
+
+function saveDraft(): void {
+  if (disposed || (!draftTouched && !draftRestored) || !isDraftRate(rateRPS.value) || !isDraftRate(jobRateRPS.value) ||
+      !Number.isSafeInteger(selectedJobID.value) || selectedJobID.value < 0) return
+  // Selection/filter authority belongs to the current host context. A draft
+  // contains presentation choices only, never account IDs or an old preview.
+  savedDraft.value = JSON.stringify({ version: 1, scope_mode: scopeMode.value, rate_rps: rateRPS.value,
+    selected_job_id: selectedJobID.value, job_rate_rps: jobRateRPS.value })
+}
+
+function rememberDraft(): void {
+  draftTouched = true
+  preserveJobSelection = selectedJobID.value > 0
+  saveDraft()
+}
+
+function selectScope(mode: CindyBalanceProbeScopeMode): void {
+  scopeMode.value = mode
+  rememberDraft()
+}
+
+function selectJob(): void {
+  preserveJobSelection = selectedJobID.value > 0
+  jobRateOwnerID = selectedJobID.value
+  jobRateEdited = false
+  jobRateRPS.value = activeJob.value?.rate_rps || 0.5
+  rememberDraft()
+}
+
+function rememberJobRate(): void {
+  jobRateOwnerID = selectedJobID.value
+  jobRateEdited = true
+  rememberDraft()
+}
+
+function restoreDraft(): void {
+  if (disposed || draftTouched || draftRestored || !savedDraft.value) return
+  let draft: { version?: unknown; scope_mode?: unknown; rate_rps?: unknown; selected_job_id?: unknown; job_rate_rps?: unknown }
+  try { draft = JSON.parse(savedDraft.value) } catch { return }
+  if (!draft || draft.version !== 1 || typeof draft.scope_mode !== 'string' || !['all', 'filter', 'selected'].includes(draft.scope_mode) ||
+      !isDraftRate(draft.rate_rps) || !isDraftRate(draft.job_rate_rps) ||
+      typeof draft.selected_job_id !== 'number' || !Number.isSafeInteger(draft.selected_job_id) || draft.selected_job_id < 0) return
+  draftRestored = true
+  scopeMode.value = draft.scope_mode as CindyBalanceProbeScopeMode
+  rateRPS.value = draft.rate_rps
+  preserveJobSelection = draft.selected_job_id > 0
+  jobRateOwnerID = draft.selected_job_id
+  jobRateEdited = preserveJobSelection
+  jobRateRPS.value = draft.job_rate_rps
+  selectedJobID.value = draft.selected_job_id
+  previewRevision += 1
+  previewRequestSequence += 1
+  loading.preview = false
+  preview.value = null
+  if (selectedJobID.value && !loading.jobs) void loadSelectedJob()
+}
+
+async function loadSelectedJob(): Promise<void> {
+  const jobID = selectedJobID.value
+  if (disposed || !jobID || jobs.value.some(job => job.id === jobID)) return
+  const sequence = ++selectedJobRequestSequence
+  const revision = jobsRevision
+  try {
+    const job = await cindyBalanceProbeAPI.get(jobID)
+    if (disposed || sequence !== selectedJobRequestSequence || revision !== jobsRevision || selectedJobID.value !== jobID) return
+    if (job.id !== jobID) throw new Error(t('admin.accounts.cindyProbe.loadFailed'))
+    mergeJob(job)
+  } catch (error) {
+    if (!disposed && sequence === selectedJobRequestSequence && revision === jobsRevision && selectedJobID.value === jobID) {
+      appStore.showError(extractApiErrorMessage(error, t('admin.accounts.cindyProbe.loadFailed')))
+    }
+  }
+}
+
 function compactFilters(filters: CindyBalanceProbeFilters): CindyBalanceProbeFilters {
   return Object.fromEntries(Object.entries(filters).filter(([, value]) => {
     if (value == null || value === '') return false
@@ -339,72 +432,97 @@ function buildPreviewRequest(): CindyBalanceProbePreviewRequest {
 }
 
 async function previewJob(): Promise<void> {
-  if (!extensionAvailable.value) return
+  if (disposed || !extensionAvailable.value || loading.preview || loading.create) return
+  rememberDraft()
+  const revision = previewRevision
+  const sequence = ++previewRequestSequence
   loading.preview = true
   preview.value = null
   try {
     const result = await cindyBalanceProbeAPI.preview(buildPreviewRequest())
-    preview.value = result
+    if (disposed || !extensionAvailable.value || sequence !== previewRequestSequence || revision !== previewRevision) return
+    applyingPreviewRate = true
     rateRPS.value = result.rate_rps
+    applyingPreviewRate = false
+    preview.value = result
+    saveDraft()
   } catch (error) {
-    appStore.showError(extractApiErrorMessage(error, t('admin.accounts.cindyProbe.previewFailed')))
+    if (!disposed && sequence === previewRequestSequence && revision === previewRevision) {
+      appStore.showError(extractApiErrorMessage(error, t('admin.accounts.cindyProbe.previewFailed')))
+    }
   } finally {
-    loading.preview = false
+    if (!disposed && sequence === previewRequestSequence) loading.preview = false
   }
 }
 
 async function createJob(): Promise<void> {
-  if (!extensionAvailable.value || !preview.value) return
+  if (disposed || !extensionAvailable.value || !preview.value || loading.create) return
+  const submitted = preview.value
+  const selection = selectedJobID.value
   loading.create = true
+  jobsRevision += 1
   try {
     const job = await cindyBalanceProbeAPI.create({
-      scope: canonicalizeCindyBalanceProbeScope(preview.value.scope),
-      rate_rps: preview.value.rate_rps,
-      expected_count: preview.value.candidate_count,
-      candidate_fingerprint: preview.value.candidate_fingerprint,
+      scope: canonicalizeCindyBalanceProbeScope(submitted.scope),
+      rate_rps: submitted.rate_rps,
+      expected_count: submitted.candidate_count,
+      candidate_fingerprint: submitted.candidate_fingerprint,
     })
+    if (disposed) return
     mergeJob(job)
-    selectedJobID.value = job.id
-    preview.value = null
+    if (selectedJobID.value === selection) { selectedJobID.value = job.id; selectJob() }
+    if (preview.value === submitted) preview.value = null
     appStore.showSuccess(t('admin.accounts.cindyProbe.created'))
   } catch (error) {
-    appStore.showError(extractApiErrorMessage(error, t('admin.accounts.cindyProbe.createFailed')))
+    if (!disposed) appStore.showError(extractApiErrorMessage(error, t('admin.accounts.cindyProbe.createFailed')))
   } finally {
-    loading.create = false
+    if (!disposed) loading.create = false
   }
 }
 
 async function loadJobs(): Promise<void> {
+  if (disposed || loading.jobs) return
+  const revision = jobsRevision
   loading.jobs = true
   try {
     const result = await cindyBalanceProbeAPI.list(10)
+    if (disposed || revision !== jobsRevision) return
+    jobsRevision += 1
     jobs.value = Array.isArray(result.items) ? result.items : []
-    if (!jobs.value.some((job) => job.id === selectedJobID.value)) {
+    if (preserveJobSelection && selectedJobID.value) {
+      await loadSelectedJob()
+      if (disposed) return
+    } else if (!jobs.value.some((job) => job.id === selectedJobID.value)) {
       selectedJobID.value = jobs.value.find((job) => activeStatuses.has(job.status))?.id || jobs.value[0]?.id || 0
     }
     if (jobs.value.some((job) => activeStatuses.has(job.status))) expanded.value = true
     if (selectedJobID.value) queueItemsLoad()
   } catch (error) {
-    appStore.showError(extractApiErrorMessage(error, t('admin.accounts.cindyProbe.loadFailed')))
+    if (!disposed && revision === jobsRevision) appStore.showError(extractApiErrorMessage(error, t('admin.accounts.cindyProbe.loadFailed')))
   } finally {
-    loading.jobs = false
+    if (!disposed) loading.jobs = false
   }
 }
 
 async function refreshActiveJob(): Promise<void> {
   const jobID = selectedJobID.value
-  if (!jobID || !activeJob.value || !activeStatuses.has(activeJob.value.status)) return
+  if (disposed || polling || !jobID || !activeJob.value || !activeStatuses.has(activeJob.value.status)) return
+  const revision = jobsRevision
+  polling = true
   try {
     const job = await cindyBalanceProbeAPI.get(jobID)
-    if (selectedJobID.value !== jobID) return
+    if (disposed || revision !== jobsRevision || selectedJobID.value !== jobID) return
     mergeJob(job)
     await loadItems()
   } catch {
     // The manual refresh path surfaces errors; polling remains quiet.
+  } finally {
+    polling = false
   }
 }
 
 async function loadItems(): Promise<void> {
+  if (disposed) return
   const requestSequence = ++itemsRequestSequence
   const jobID = selectedJobID.value
   if (!jobID) {
@@ -419,41 +537,50 @@ async function loadItems(): Promise<void> {
       page: itemPageNumber.value,
       page_size: itemPageSize,
     })
-    if (requestSequence === itemsRequestSequence && selectedJobID.value === jobID) Object.assign(itemPage, result)
+    if (!disposed && requestSequence === itemsRequestSequence && selectedJobID.value === jobID) Object.assign(itemPage, result)
   } catch (error) {
-    if (requestSequence === itemsRequestSequence) {
+    if (!disposed && requestSequence === itemsRequestSequence) {
       appStore.showError(extractApiErrorMessage(error, t('admin.accounts.cindyProbe.itemsFailed')))
     }
   } finally {
-    if (requestSequence === itemsRequestSequence) loading.items = false
+    if (!disposed && requestSequence === itemsRequestSequence) loading.items = false
   }
 }
 
 function queueItemsLoad(): void {
-  if (itemsLoadQueued) return
+  if (disposed || itemsLoadQueued) return
   itemsLoadQueued = true
   void Promise.resolve().then(async () => {
     itemsLoadQueued = false
-    await loadItems()
+    if (!disposed) await loadItems()
   })
 }
 
 function mergeJob(job: CindyBalanceProbeJob): void {
+  jobsRevision += 1
   const index = jobs.value.findIndex((candidate) => candidate.id === job.id)
   if (index >= 0) jobs.value.splice(index, 1, job)
   else jobs.value.unshift(job)
-  jobs.value = [...jobs.value].sort((a, b) => b.id - a.id).slice(0, 10)
+  const sorted = [...jobs.value].sort((a, b) => b.id - a.id)
+  const recent = sorted.slice(0, 10)
+  const selected = sorted.find(candidate => candidate.id === selectedJobID.value)
+  jobs.value = selected && !recent.some(candidate => candidate.id === selected.id) ? [...recent, selected] : recent
 }
 
-async function mutateJob(action: () => Promise<CindyBalanceProbeJob>, successKey: string): Promise<void> {
+async function mutateJob(action: () => Promise<CindyBalanceProbeJob>, successKey: string): Promise<CindyBalanceProbeJob | undefined> {
+  if (disposed || loading.action) return
   loading.action = true
+  jobsRevision += 1
   try {
-    mergeJob(await action())
+    const result = await action()
+    if (disposed) return
+    mergeJob(result)
     appStore.showSuccess(t(successKey))
+    return result
   } catch (error) {
-    appStore.showError(extractApiErrorMessage(error, t('admin.accounts.cindyProbe.actionFailed')))
+    if (!disposed) appStore.showError(extractApiErrorMessage(error, t('admin.accounts.cindyProbe.actionFailed')))
   } finally {
-    loading.action = false
+    if (!disposed) loading.action = false
   }
 }
 
@@ -461,7 +588,13 @@ async function saveJobRate(): Promise<void> {
   const jobID = selectedJobID.value
   const rate = Math.min(1, Math.max(0.1, Number(jobRateRPS.value) || 0))
   if (!jobID || rate < 0.1) return
-  await mutateJob(() => cindyBalanceProbeAPI.setRate(jobID, rate), 'admin.accounts.cindyProbe.rateSaved')
+  const result = await mutateJob(() => cindyBalanceProbeAPI.setRate(jobID, rate), 'admin.accounts.cindyProbe.rateSaved')
+  if (!disposed && result && selectedJobID.value === jobID && Number(jobRateRPS.value) === rate) {
+    jobRateEdited = false
+    jobRateOwnerID = jobID
+    jobRateRPS.value = result.rate_rps
+    saveDraft()
+  }
 }
 
 async function pauseJob(): Promise<void> {
@@ -474,12 +607,20 @@ async function resumeJob(): Promise<void> {
 }
 
 async function cancelJob(): Promise<void> {
-  if (selectedJobID.value) showCancelConfirm.value = true
+  if (!disposed && !loading.action && canCancel.value) {
+    cancelTargetID.value = selectedJobID.value
+    showCancelConfirm.value = true
+  }
+}
+
+function dismissCancel(): void {
+  showCancelConfirm.value = false
+  cancelTargetID.value = 0
 }
 
 async function confirmCancelJob(): Promise<void> {
-  const jobID = selectedJobID.value
-  showCancelConfirm.value = false
+  const jobID = cancelTargetID.value
+  dismissCancel()
   if (jobID) await mutateJob(() => cindyBalanceProbeAPI.cancel(jobID), 'admin.accounts.cindyProbe.cancelRequested')
 }
 
@@ -516,25 +657,42 @@ function formatDate(value: string): string {
 }
 
 watch([scopeMode, rateRPS, () => props.selectedIds, () => props.filters], () => {
+  if (applyingPreviewRate) return
+  previewRevision += 1
+  previewRequestSequence += 1
+  loading.preview = false
   preview.value = null
-}, { deep: true })
+}, { deep: true, flush: 'sync' })
 
-watch(activeJob, (job) => {
-  jobRateRPS.value = job?.rate_rps || 0.5
+watch(extensionAvailable, available => {
+  if (!available) {
+    previewRequestSequence += 1
+    loading.preview = false
+  }
+}, { flush: 'sync' })
+
+watch(activeJob, job => {
+  if (jobRateOwnerID !== selectedJobID.value) jobRateEdited = false
+  jobRateOwnerID = selectedJobID.value
+  if (!jobRateEdited) jobRateRPS.value = job?.rate_rps || 0.5
 })
 
 watch(selectedJobID, () => {
+  selectedJobRequestSequence += 1
+  itemsRequestSequence += 1
   itemPageNumber.value = 1
   itemState.value = ''
   queueItemsLoad()
-})
+}, { flush: 'sync' })
 
 watch(itemState, () => {
+  itemsRequestSequence += 1
   itemPageNumber.value = 1
   queueItemsLoad()
 })
 
 watch(itemPageNumber, () => {
+  itemsRequestSequence += 1
   queueItemsLoad()
 })
 
@@ -543,7 +701,15 @@ onMounted(() => {
   pollTimer = setInterval(() => void refreshActiveJob(), 3000)
 })
 
+watch(savedDraft, restoreDraft, { immediate: true })
+
 onBeforeUnmount(() => {
+  saveDraft()
+  disposed = true
+  previewRequestSequence += 1
+  itemsRequestSequence += 1
+  jobsRevision += 1
+  selectedJobRequestSequence += 1
   if (pollTimer) clearInterval(pollTimer)
 })
 </script>

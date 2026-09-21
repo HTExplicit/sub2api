@@ -116,6 +116,57 @@ function render(available = ref(true)) {
 }
 
 describe('CindyBalanceProbePanel', () => {
+  it('ignores a late preview after selected accounts change', async () => {
+    let finish!: (value: typeof preview) => void
+    mocks.preview.mockReturnValueOnce(new Promise(resolve => { finish = resolve }))
+    const wrapper = render()
+    await flushPromises()
+    await wrapper.get('[data-test="cindy-probe-scope-selected"]').trigger('click')
+    await wrapper.get('[data-test="cindy-probe-preview"]').trigger('click')
+    await wrapper.setProps({ selectedIds: [11] })
+    finish(preview)
+    await flushPromises()
+    expect(wrapper.find('[data-test="cindy-probe-preview-result"]').exists()).toBe(false)
+    expect(mocks.create).not.toHaveBeenCalled()
+  })
+
+  it('keeps the cancellation target captured when confirmation opened', async () => {
+    mocks.list.mockResolvedValue({ items: [runningJob, { ...runningJob, id: 8 }], total: 2 })
+    const wrapper = render()
+    await flushPromises()
+    await wrapper.get('[data-test="cindy-probe-cancel"]').trigger('click')
+    await wrapper.get('[data-test="cindy-probe-job-select"]').setValue('8')
+    await wrapper.get('[data-test="cancel-confirm-submit"]').trigger('click')
+    await flushPromises()
+    expect(mocks.cancel).toHaveBeenCalledTimes(1)
+    expect(mocks.cancel).toHaveBeenCalledWith(7)
+  })
+
+  it('preserves an edited rate across polling and sends no item request after unmount', async () => {
+    vi.useFakeTimers()
+    let finish!: (value: typeof runningJob) => void
+    mocks.list.mockResolvedValue({ items: [runningJob], total: 1 })
+    mocks.get.mockResolvedValue({ ...runningJob })
+    const wrapper = render()
+    try {
+      await flushPromises()
+      await wrapper.get('[data-test="cindy-probe-job-rate"]').setValue('0.8')
+      await vi.advanceTimersByTimeAsync(3000)
+      await flushPromises()
+      expect(wrapper.get<HTMLInputElement>('[data-test="cindy-probe-job-rate"]').element.value).toBe('0.8')
+      mocks.get.mockReturnValueOnce(new Promise(resolve => { finish = resolve }))
+      await vi.advanceTimersByTimeAsync(3000)
+      const before = mocks.listItems.mock.calls.length
+      wrapper.unmount()
+      finish(runningJob)
+      await flushPromises()
+      expect(mocks.listItems).toHaveBeenCalledTimes(before)
+    } finally {
+      wrapper.unmount()
+      vi.useRealTimers()
+    }
+  })
+
   it('preserves the preview and blocks new work while the provider is unavailable', async () => {
     const available = ref(true)
     const wrapper = render(available)

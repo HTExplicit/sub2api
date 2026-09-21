@@ -1,6 +1,8 @@
 import { enableAutoUnmount, flushPromises, mount } from '@vue/test-utils'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import CindyGroupAuditDialog from '../CindyGroupAuditDialog.vue'
+import { computed, ref } from 'vue'
+import { extensionAvailabilityKey } from '@sub2api/plugin-ui/context'
 
 enableAutoUnmount(afterEach)
 
@@ -24,7 +26,8 @@ vi.mock('../api', () => ({
   },
 }))
 
-vi.mock('@sub2api/plugin-ui', async () => ({ ...await vi.importActual<typeof import('@sub2api/plugin-ui')>('@sub2api/plugin-ui'), useNotifications: () => ({ showError: mocks.showError, showSuccess: mocks.showSuccess }) }))
+const savedDraft = ref('')
+vi.mock('@sub2api/plugin-ui', async () => ({ ...await vi.importActual<typeof import('@sub2api/plugin-ui')>('@sub2api/plugin-ui'), useNotifications: () => ({ showError: mocks.showError, showSuccess: mocks.showSuccess }), usePersistentDraft: () => savedDraft }))
 
 vi.mock('vue-i18n', async () => {
   const actual = await vi.importActual<typeof import('vue-i18n')>('vue-i18n')
@@ -105,15 +108,16 @@ const keyBase = {
   reset_7d_at: null,
 }
 
-function render() {
+function render(available = ref(true)) {
   return mount(CindyGroupAuditDialog, {
     props: { show: true },
     global: {
+      provide: { [extensionAvailabilityKey as symbol]: computed(() => available.value) },
       stubs: {
         BaseDialog: {
           props: ['show', 'title'],
           emits: ['close'],
-          template: '<div v-if="show"><slot /><slot name="footer" /></div>',
+          template: '<div v-if="show"><button data-test="dialog-close" @click="$emit(\'close\')">close</button><slot /><slot name="footer" /></div>',
         },
         Icon: true,
       },
@@ -123,7 +127,8 @@ function render() {
 
 describe('CindyGroupAuditDialog', () => {
   beforeEach(() => {
-    vi.clearAllMocks()
+    vi.resetAllMocks()
+    savedDraft.value = ''
     mocks.auditCindyGroups.mockResolvedValue(audit)
     mocks.getGroupApiKeys
       .mockResolvedValueOnce({
@@ -142,6 +147,60 @@ describe('CindyGroupAuditDialog', () => {
       })
     mocks.previewCindyGroupSplit.mockResolvedValue(preview)
     mocks.splitCindyGroup.mockResolvedValue({ ...preview, target_group_id: 12 })
+  })
+
+  it('preserves split inputs through close and an iframe-style remount', async () => {
+    const wrapper = render()
+    await flushPromises()
+    await wrapper.get('[data-test="cindy-group-split-7"]').trigger('click')
+    await flushPromises()
+    await wrapper.get('[data-test="cindy-group-target-name"]').setValue('Unsaved target')
+    await wrapper.get('[data-test="cindy-group-api-key-19"]').setValue(true)
+    await wrapper.get('[data-test="dialog-close"]').trigger('click')
+    wrapper.unmount()
+    mocks.getGroupApiKeys.mockResolvedValue({ items: [{ ...keyBase, id: 19, name: 'First', display_key: 'sk-****cret' }], total: 1, pages: 1, page_size: 100 })
+    const reopened = render()
+    await flushPromises()
+    expect(reopened.get<HTMLInputElement>('[data-test="cindy-group-target-name"]').element.value).toBe('Unsaved target')
+    expect(reopened.get<HTMLInputElement>('[data-test="cindy-group-api-key-19"]').element.checked).toBe(true)
+    expect(reopened.find('[data-test="cindy-group-split-preview"]').exists()).toBe(false)
+    expect(mocks.splitCindyGroup).not.toHaveBeenCalled()
+  })
+
+  it('blocks new group work while unavailable and ignores preview replies after closing', async () => {
+    const available = ref(true)
+    const wrapper = render(available)
+    await flushPromises()
+    await wrapper.get('[data-test="cindy-group-split-7"]').trigger('click')
+    await flushPromises()
+    await wrapper.get('[data-test="cindy-group-target-name"]').setValue('Retained target')
+    let reject!: (error: Error) => void
+    mocks.previewCindyGroupSplit.mockReturnValueOnce(new Promise((_, failure) => { reject = failure }))
+    await wrapper.get('[data-test="cindy-group-split-preview-button"]').trigger('click')
+    await wrapper.setProps({ show: false })
+    reject(new Error('stale preview'))
+    await flushPromises()
+    expect(mocks.showError).not.toHaveBeenCalled()
+    await wrapper.setProps({ show: true })
+    available.value = false
+    await flushPromises()
+    expect(wrapper.get<HTMLInputElement>('[data-test="cindy-group-target-name"]').element.value).toBe('Retained target')
+    expect(wrapper.get('[data-test="cindy-group-split-preview-button"]').attributes('disabled')).toBeDefined()
+    await wrapper.get('[data-test="cindy-group-split-preview-button"]').trigger('click')
+    expect(mocks.previewCindyGroupSplit).toHaveBeenCalledTimes(1)
+    expect(mocks.splitCindyGroup).not.toHaveBeenCalled()
+  })
+
+  it('does not continue key pagination after the view is closed', async () => {
+    let finish!: (value: { items: never[]; total: number; pages: number; page_size: number }) => void
+    mocks.getGroupApiKeys.mockReset().mockReturnValueOnce(new Promise(resolve => { finish = resolve }))
+    const wrapper = render()
+    await flushPromises()
+    await wrapper.get('[data-test="cindy-group-split-7"]').trigger('click')
+    wrapper.unmount()
+    finish({ items: [], total: 2, pages: 2, page_size: 1 })
+    await flushPromises()
+    expect(mocks.getGroupApiKeys).toHaveBeenCalledTimes(1)
   })
 
   it('offers the split wizard only for mixed groups', async () => {

@@ -16,7 +16,7 @@
           type="button"
           class="icon-button"
           :title="t('common.refresh')"
-          :disabled="loadingAudit"
+          :disabled="loadingAudit || !available"
           data-test="cindy-group-audit-refresh"
           @click="loadAudit"
         >
@@ -68,6 +68,7 @@
                   v-if="group.classification === 'mixed'"
                   type="button"
                   class="btn btn-secondary h-8 px-3 text-xs"
+                  :disabled="!available"
                   :data-test="`cindy-group-split-${group.group_id}`"
                   @click="openSplitWizard(group)"
                 >
@@ -133,7 +134,7 @@
                   name="cindy-source-keeps"
                   :value="option.value"
                   class="mt-0.5 accent-primary-600"
-                  :disabled="submitting"
+                  :disabled="submitting || !available"
                   :data-test="`cindy-source-keeps-${option.value}`"
                 />
                 <span class="min-w-0">
@@ -153,7 +154,7 @@
               class="input"
               maxlength="100"
               :placeholder="t('admin.groups.cindyAudit.targetNamePlaceholder')"
-              :disabled="submitting"
+              :disabled="submitting || !available"
               data-test="cindy-group-target-name"
             />
           </div>
@@ -185,7 +186,7 @@
                 type="checkbox"
                 :value="apiKey.id"
                 class="mt-0.5 accent-primary-600"
-                :disabled="submitting"
+                :disabled="submitting || loadingKeys || !available"
                 :data-test="`cindy-group-api-key-${apiKey.id}`"
               />
               <span class="min-w-0 flex-1">
@@ -269,7 +270,7 @@
           <button
             type="button"
             class="btn btn-primary"
-            :disabled="!preview || previewing || submitting"
+            :disabled="!available || !preview || previewing || submitting"
             data-test="cindy-group-split-submit"
             @click="commitSplit"
           >
@@ -283,7 +284,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, inject, onBeforeUnmount, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { BaseDialog } from '@sub2api/plugin-ui'
 import { Icon } from '@sub2api/plugin-ui'
@@ -295,9 +296,11 @@ import type {
   CindyGroupClassification,
   CindyGroupSourceKeeps,
   CindyGroupSplitPreview,
+  CindyGroupSplitPreviewRequest,
   CindyGroupSplitResult,
 } from './api'
-import { useNotifications } from '@sub2api/plugin-ui'
+import { useNotifications, usePersistentDraft, usePluginContext } from '@sub2api/plugin-ui'
+import { extensionAvailabilityKey } from '@sub2api/plugin-ui/context'
 import { extractApiErrorMessage } from '@sub2api/plugin-ui'
 
 interface Props {
@@ -312,6 +315,10 @@ const emit = defineEmits<{
 
 const { t } = useI18n()
 const appStore = useNotifications()
+const inheritedAvailability = inject(extensionAvailabilityKey, computed(() => true))
+const context = usePluginContext()
+const available = computed(() => inheritedAvailability.value && context.value.available !== false)
+const savedDraft = usePersistentDraft('cindy-group-split')
 
 const audit = ref<CindyGroupAuditResult | null>(null)
 const loadingAudit = ref(false)
@@ -322,11 +329,20 @@ const apiKeys = ref<ApiKey[]>([])
 const selectedKeyIds = ref<number[]>([])
 const loadingKeys = ref(false)
 const preview = ref<CindyGroupSplitPreview | null>(null)
+const approvedInput = ref<CindyGroupSplitPreviewRequest | null>(null)
 const previewing = ref(false)
 const submitting = ref(false)
 const driftDetected = ref(false)
 let formRevision = 0
 let keyLoadRevision = 0
+let auditRevision = 0
+let previewRevision = 0
+let viewRevision = 0
+let viewOpen = props.show
+let disposed = false
+let restoringDraft = false
+let draftTouched = false
+const loadedKeyGroup = ref(0)
 
 const summaryMetrics = computed(() => audit.value ? [
   { key: 'pure_cindy', label: t('admin.groups.cindyAudit.summaryPureCindy'), value: audit.value.summary.pure_cindy_groups },
@@ -347,41 +363,108 @@ const sourceKeepOptions = computed(() => [
   },
 ])
 
-const canPreview = computed(() => Boolean(selectedGroup.value && targetName.value.trim() && !loadingKeys.value))
+const canPreview = computed(() => Boolean(props.show && available.value && selectedGroup.value &&
+  targetName.value.trim() && !loadingKeys.value && loadedKeyGroup.value === selectedGroup.value.group_id))
 const sourceClassification = computed<CindyGroupClassification>(() =>
   sourceKeeps.value === 'cindy' ? 'pure_cindy' : 'no_cindy',
 )
 
-function resetSplitWizard(): void {
+function saveDraft(): void {
+  if (disposed || restoringDraft || !selectedGroup.value) return
+  savedDraft.value = JSON.stringify({ version: 1, group_id: selectedGroup.value.group_id,
+    source_keeps: sourceKeeps.value, target_name: targetName.value, api_key_ids: [...selectedKeyIds.value] })
+}
+
+function resetSplitWizard(clearSaved = true): void {
+  restoringDraft = true
   selectedGroup.value = null
   sourceKeeps.value = 'cindy'
   targetName.value = ''
   apiKeys.value = []
   selectedKeyIds.value = []
   preview.value = null
+  approvedInput.value = null
   previewing.value = false
   submitting.value = false
   driftDetected.value = false
   formRevision += 1
   keyLoadRevision += 1
+  previewRevision += 1
+  loadedKeyGroup.value = 0
+  loadingKeys.value = false
+  restoringDraft = false
+  if (clearSaved) savedDraft.value = ''
+}
+
+function currentView(revision: number): boolean {
+  return !disposed && viewOpen && props.show && available.value && revision === viewRevision
+}
+
+function suspendView(clearPreview: boolean): void {
+  viewRevision += 1
+  auditRevision += 1
+  keyLoadRevision += 1
+  previewRevision += 1
+  loadingAudit.value = false
+  loadingKeys.value = false
+  previewing.value = false
+  if (clearPreview) {
+    preview.value = null
+    approvedInput.value = null
+  }
+}
+
+async function restoreDraft(): Promise<void> {
+  if (disposed || draftTouched || selectedGroup.value || !audit.value || !viewOpen || !available.value || !savedDraft.value) return
+  let draft: { version?: unknown; group_id?: unknown; source_keeps?: unknown; target_name?: unknown; api_key_ids?: unknown }
+  try { draft = JSON.parse(savedDraft.value) } catch { return }
+  if (!draft || draft.version !== 1 || !Number.isSafeInteger(draft.group_id) ||
+      (draft.source_keeps !== 'cindy' && draft.source_keeps !== 'ordinary') ||
+      typeof draft.target_name !== 'string' || draft.target_name.length > 100 ||
+      !Array.isArray(draft.api_key_ids) || draft.api_key_ids.some(id => !Number.isSafeInteger(id) || id <= 0)) return
+  const group = audit.value.groups.find(group => group.group_id === draft.group_id && group.classification === 'mixed')
+  if (!group) return
+  restoringDraft = true
+  selectedGroup.value = group
+  sourceKeeps.value = draft.source_keeps
+  targetName.value = draft.target_name
+  selectedKeyIds.value = [...new Set(draft.api_key_ids as number[])]
+  restoringDraft = false
+  formRevision += 1
+  await loadGroupKeys(group)
 }
 
 async function loadAudit(): Promise<void> {
+  if (disposed || !viewOpen || !props.show || !available.value || loadingAudit.value) return
+  const revision = viewRevision
+  const request = ++auditRevision
   loadingAudit.value = true
   try {
-    audit.value = await adminAPI.groups.auditCindyGroups()
+    const result = await adminAPI.groups.auditCindyGroups()
+    if (!currentView(revision) || request !== auditRevision) return
+    audit.value = result
+    await restoreDraft()
   } catch (error) {
-    appStore.showError(extractApiErrorMessage(error, t('admin.groups.cindyAudit.loadFailed')))
+    if (currentView(revision) && request === auditRevision) appStore.showError(extractApiErrorMessage(error, t('admin.groups.cindyAudit.loadFailed')))
   } finally {
-    loadingAudit.value = false
+    if (!disposed && request === auditRevision) loadingAudit.value = false
   }
 }
 
 async function openSplitWizard(group: CindyGroupAuditEntry): Promise<void> {
-  if (group.classification !== 'mixed') return
-  resetSplitWizard()
+  if (disposed || !viewOpen || !available.value || submitting.value || group.classification !== 'mixed') return
+  draftTouched = true
+  resetSplitWizard(false)
   selectedGroup.value = group
+  saveDraft()
+  await loadGroupKeys(group)
+}
+
+async function loadGroupKeys(group: CindyGroupAuditEntry): Promise<void> {
+  if (disposed || !viewOpen || !props.show || !available.value) return
+  const revision = viewRevision
   const requestRevision = ++keyLoadRevision
+  loadedKeyGroup.value = 0
   loadingKeys.value = true
   try {
     const loaded: ApiKey[] = []
@@ -389,81 +472,95 @@ async function openSplitWizard(group: CindyGroupAuditEntry): Promise<void> {
     let pages = 1
     do {
       const response = await adminAPI.groups.getGroupApiKeys(group.group_id, page, 100)
-      if (requestRevision !== keyLoadRevision || selectedGroup.value?.group_id !== group.group_id) return
+      if (!currentView(revision) || requestRevision !== keyLoadRevision || selectedGroup.value?.group_id !== group.group_id) return
       loaded.push(...response.items)
       pages = Math.max(1, response.pages || Math.ceil(response.total / Math.max(1, response.page_size)))
+      if (!Number.isSafeInteger(pages)) throw new Error(t('admin.groups.cindyAudit.keysLoadFailed'))
       page += 1
     } while (page <= pages)
     apiKeys.value = loaded
-    selectedKeyIds.value = []
+    const ids = new Set(loaded.map(key => key.id))
+    const retained = selectedKeyIds.value.filter(id => ids.has(id))
+    const removed = retained.length !== selectedKeyIds.value.length
+    selectedKeyIds.value = retained
+    loadedKeyGroup.value = group.group_id
+    if (removed) driftDetected.value = true
+    saveDraft()
   } catch (error) {
-    if (requestRevision === keyLoadRevision) {
+    if (currentView(revision) && requestRevision === keyLoadRevision) {
       appStore.showError(extractApiErrorMessage(error, t('admin.groups.cindyAudit.keysLoadFailed')))
     }
   } finally {
-    if (requestRevision === keyLoadRevision) loadingKeys.value = false
+    if (!disposed && requestRevision === keyLoadRevision) loadingKeys.value = false
   }
 }
 
 function leaveSplitWizard(): void {
-  if (!submitting.value) resetSplitWizard()
+  if (!submitting.value) { draftTouched = true; resetSplitWizard() }
 }
 
 function closeDialog(): void {
-  if (submitting.value) return
-  resetSplitWizard()
+  if (submitting.value && available.value) return
+  saveDraft()
+  viewOpen = false
+  suspendView(true)
   emit('close')
 }
 
 async function requestPreview(): Promise<void> {
   const group = selectedGroup.value
-  if (!group || !canPreview.value) return
+  if (!group || !viewOpen || !canPreview.value || previewing.value || submitting.value) return
   const revision = formRevision
+  const view = viewRevision
+  const request = ++previewRevision
+  const input: CindyGroupSplitPreviewRequest = { source_keeps: sourceKeeps.value,
+    target_name: targetName.value.trim(), api_key_ids: [...selectedKeyIds.value] }
   previewing.value = true
   driftDetected.value = false
   preview.value = null
+  approvedInput.value = null
   try {
-    const result = await adminAPI.groups.previewCindyGroupSplit(group.group_id, {
-      source_keeps: sourceKeeps.value,
-      target_name: targetName.value.trim(),
-      api_key_ids: [...selectedKeyIds.value],
-    })
-    if (revision === formRevision && selectedGroup.value?.group_id === group.group_id) {
+    const result = await adminAPI.groups.previewCindyGroupSplit(group.group_id, input)
+    if (currentView(view) && request === previewRevision && revision === formRevision && selectedGroup.value?.group_id === group.group_id) {
       preview.value = result
+      approvedInput.value = input
     }
   } catch (error) {
-    appStore.showError(extractApiErrorMessage(error, t('admin.groups.cindyAudit.previewFailed')))
+    if (currentView(view) && request === previewRevision && revision === formRevision) appStore.showError(extractApiErrorMessage(error, t('admin.groups.cindyAudit.previewFailed')))
   } finally {
-    previewing.value = false
+    if (!disposed && request === previewRevision) previewing.value = false
   }
 }
 
 async function commitSplit(): Promise<void> {
   const group = selectedGroup.value
   const currentPreview = preview.value
-  if (!group || !currentPreview) return
+  const input = approvedInput.value
+  const view = viewRevision
+  if (!currentView(view) || !group || !currentPreview || !input || submitting.value || previewing.value) return
   submitting.value = true
   try {
     const result = await adminAPI.groups.splitCindyGroup(group.group_id, {
-      source_keeps: sourceKeeps.value,
-      target_name: targetName.value.trim(),
-      api_key_ids: [...selectedKeyIds.value],
+      ...input,
       member_fingerprint: currentPreview.member_fingerprint,
     })
+    if (!currentView(view)) return
     appStore.showSuccess(t('admin.groups.cindyAudit.splitSuccess'))
     resetSplitWizard()
-    await loadAudit()
     emit('split', result)
+    await loadAudit()
   } catch (error) {
+    if (!currentView(view)) return
     if (isConflict(error)) {
       preview.value = null
+      approvedInput.value = null
       driftDetected.value = true
       appStore.showError(t('admin.groups.cindyAudit.drift'))
     } else {
       appStore.showError(extractApiErrorMessage(error, t('admin.groups.cindyAudit.splitFailed')))
     }
   } finally {
-    submitting.value = false
+    if (!disposed) submitting.value = false
   }
 }
 
@@ -497,23 +594,39 @@ function shortFingerprint(value: string): string {
 watch(
   [sourceKeeps, targetName, selectedKeyIds],
   () => {
+    if (restoringDraft) return
     formRevision += 1
+    previewRevision += 1
+    previewing.value = false
     preview.value = null
+    approvedInput.value = null
     driftDetected.value = false
+    saveDraft()
   },
-  { deep: true },
+  { deep: true, flush: 'sync' },
 )
 
 watch(
   () => props.show,
   (show) => {
+    viewOpen = show
     if (show) {
-      resetSplitWizard()
-      void loadAudit()
+      if (selectedGroup.value && loadedKeyGroup.value !== selectedGroup.value.group_id) void loadGroupKeys(selectedGroup.value)
+      else if (!selectedGroup.value) void loadAudit()
     } else {
-      resetSplitWizard()
+      suspendView(true)
     }
   },
   { immediate: true },
 )
+
+watch(savedDraft, () => { void restoreDraft() })
+watch(available, value => {
+  if (!value) suspendView(false)
+  else if (viewOpen && props.show) {
+    if (selectedGroup.value && loadedKeyGroup.value !== selectedGroup.value.group_id) void loadGroupKeys(selectedGroup.value)
+    else if (!selectedGroup.value) void loadAudit()
+  }
+}, { flush: 'sync' })
+onBeforeUnmount(() => { saveDraft(); disposed = true; viewOpen = false; suspendView(true) })
 </script>
