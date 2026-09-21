@@ -43,7 +43,7 @@ import { useI18n } from 'vue-i18n'
 import AccountTestModelSelect from './AccountTestModelSelect.vue'
 import AccountTestReasoningSelect from './AccountTestReasoningSelect.vue'
 import { accountJobsAPI, type AccountAvailableModel, type AccountJob, type BatchTestModelRow } from './api'
-import { prepareAccountTestModels, accountTestModelsForMode, defaultAccountTestModel } from './accountTestModels'
+import { prepareAccountTestModels, accountTestModelsForMode, defaultAccountTestModel, isAccountTestReasoningValid } from './accountTestModels'
 import { useNotifications as useAppStore } from '@sub2api/plugin-ui'
 import AccountTextTestPrompt from './AccountTextTestPrompt.vue'
 import { useAccountTestPrompt } from './useAccountTestPrompt'
@@ -62,7 +62,11 @@ let controller = new AbortController()
 const pages = computed(() => Math.max(1, Math.ceil(rows.value.length / 100)))
 const visibleRows = computed(() => rows.value.slice((page.value - 1) * 100, page.value * 100))
 const pending = computed(() => rows.value.some(row => row.loading))
-const ready = computed(() => promptValid.value && rows.value.length > 0 && rows.value.every(row => !row.loading && !row.error_code && (!row.reasoning_effort || row.reasoning_valid) && row.models.some(model => model.id === row.model)))
+const ready = computed(() => promptValid.value && rows.value.length > 0 && rows.value.every(row => {
+  const model = row.models.find(candidate => candidate.id === row.model)
+  // 离页控件不会更新 validity；提交按所有行的当前模型直接校验。
+  return !row.loading && !row.error_code && !!model && isAccountTestReasoningValid(model, row.reasoning_effort)
+}))
 
 async function load(ids: number[], version: number) {
   const idSet = new Set(ids)

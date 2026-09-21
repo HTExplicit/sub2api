@@ -1,6 +1,7 @@
 import { flushPromises, mount } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import BatchTestAccountModal from '../BatchTestAccountModal.vue'
+import AccountTestReasoningSelect from '../AccountTestReasoningSelect.vue'
 const { batchTestModels, batchTest } = vi.hoisted(() => ({ batchTestModels: vi.fn(), batchTest: vi.fn() }))
 vi.mock('../api', () => ({ accountJobsAPI: { batchTestModels, batchTest } }))
 vi.mock('@sub2api/plugin-ui', async () => { const actual = await vi.importActual<typeof import('@sub2api/plugin-ui')>('@sub2api/plugin-ui'); const { ref } = await import('vue'); return { ...actual, useNotifications: () => ({ showError: vi.fn() }), usePersistentDraft: () => ref('') } })
@@ -60,6 +61,56 @@ describe('BatchTestAccountModal per-account selections', () => {
   resolve([catalog(1)]); await flushPromises()
   expect(wrapper.find('[data-account-id="1"]').exists()).toBe(false); expect(wrapper.find('[data-account-id="2"]').exists()).toBe(true)
   expect(batchTestModels.mock.calls[0][1].aborted).toBe(true)
+  wrapper.unmount()
+ })
+ it('blocks an off-page reasoning choice after applying another model without clearing the choice', async () => {
+  batchTestModels.mockImplementation(async (ids: number[]) => ids.map(id => ({
+   ...catalog(id),
+   models: [
+    { id: 'first', display_name: 'First', reasoning_efforts: ['high'] },
+    { id: 'shared', display_name: 'Shared', reasoning_efforts: ['low'] },
+   ],
+  })))
+  const wrapper = mountModal(Array.from({ length: 101 }, (_, index) => index + 1)); await flushPromises()
+  await button(wrapper, 'batchTest.next').trigger('click')
+  await wrapper.get('[data-account-id="101"] label.mt-3 select').setValue('high')
+  await button(wrapper, 'batchTest.previous').trigger('click')
+  await wrapper.get('#batch-model-1').setValue('shared')
+  await button(wrapper, 'batchTest.apply').trigger('click')
+
+  await wrapper.get('form').trigger('submit'); await flushPromises()
+  expect(batchTest).toHaveBeenCalledTimes(0)
+  expect(button(wrapper, 'batchTest.start').attributes('disabled')).toBeDefined()
+  await button(wrapper, 'batchTest.next').trigger('click')
+  expect(wrapper.getComponent(AccountTestReasoningSelect).props('modelValue')).toBe('high')
+  await wrapper.get('[data-account-id="101"] label.mt-3 select').setValue('low')
+  await wrapper.get('form').trigger('submit'); await flushPromises()
+  expect(batchTest).toHaveBeenCalledTimes(1)
+  expect(batchTest.mock.calls[0][0][100]).toEqual({ account_id: 101, model_id: 'shared', reasoning_effort: 'low' })
+  wrapper.unmount()
+ })
+ it('keeps a nonempty reasoning choice when the model has no levels until an explicit default choice', async () => {
+  batchTestModels.mockResolvedValue([{ ...catalog(1), models: [
+   { id: 'first', display_name: 'First', reasoning_efforts: ['high'] },
+   { id: 'plain', display_name: 'Plain' },
+  ] }])
+  const wrapper = mountModal([1]); await flushPromises()
+  await wrapper.get('[data-account-id="1"] label.mt-3 select').setValue('high')
+  await wrapper.get('#batch-model-1').setValue('plain')
+
+  expect(wrapper.getComponent(AccountTestReasoningSelect).props('modelValue')).toBe('high')
+  const reasoningSelect = wrapper.get('[data-account-id="1"] label.mt-3 select')
+  expect((reasoningSelect.element as HTMLSelectElement).value).toBe('high')
+  expect(reasoningSelect.get('option[value="high"]').attributes('disabled')).toBeDefined()
+  await wrapper.get('form').trigger('submit'); await flushPromises()
+  expect(batchTest).toHaveBeenCalledTimes(0)
+  expect(button(wrapper, 'batchTest.start').attributes('disabled')).toBeDefined()
+
+  await reasoningSelect.setValue('')
+  expect(wrapper.getComponent(AccountTestReasoningSelect).props('modelValue')).toBe('')
+  await wrapper.get('form').trigger('submit'); await flushPromises()
+  expect(batchTest).toHaveBeenCalledTimes(1)
+  expect(batchTest).toHaveBeenCalledWith([{ account_id: 1, model_id: 'plain' }], '')
   wrapper.unmount()
  })
 })

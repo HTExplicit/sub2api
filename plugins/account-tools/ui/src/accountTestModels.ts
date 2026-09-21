@@ -3,6 +3,10 @@ import { filterCindyAccountTestModels, pickCindyAccountTestDefault, type CindyAc
 
 const geminiPriority = new Map(['gemini-3.1-flash-image', 'gemini-2.5-flash-image', 'gemini-3.5-flash', 'gemini-2.5-flash', 'gemini-2.5-pro', 'gemini-3-flash-preview', 'gemini-3-pro-preview', 'gemini-2.0-flash'].map((id, index) => [id, index]))
 
+export function isAccountTestReasoningValid(model: AccountAvailableModel | undefined, effort: string): boolean {
+  return effort === '' || model?.reasoning_efforts?.includes(effort) === true
+}
+
 export function prepareAccountTestModels(account: CindyAccountLike, models: AccountAvailableModel[]): AccountAvailableModel[] {
   const filtered = filterCindyAccountTestModels(account, models)
   return account.platform === 'gemini' || account.platform === 'antigravity'
