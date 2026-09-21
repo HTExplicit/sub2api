@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { defineComponent } from 'vue'
 import { flushPromises, mount } from '@vue/test-utils'
 import SystemPromptsView from '../App.vue'
+import SystemPromptAdvancedDrawer from '../SystemPromptAdvancedDrawer.vue'
 
 const mocks = vi.hoisted(() => ({
   list: vi.fn(), get: vi.fn(), create: vi.fn(), updateMetadata: vi.fn(), saveDraft: vi.fn(),
@@ -99,6 +100,19 @@ function mountView() {
     },
   })
 }
+
+function deferred<T>() {
+  let resolve!: (value: T) => void
+  let reject!: (reason: unknown) => void
+  const promise = new Promise<T>((done, fail) => { resolve = done; reject = fail })
+  return { promise, resolve, reject }
+}
+
+const thirdTemplate = () => ({ ...gptTemplate(), id: 3, slug: 'custom', name: 'Custom', managed_source: '' })
+const templateDetail = (id: number) => ({
+  template: id === 1 ? codexTemplate() : id === 2 ? gptTemplate() : thirdTemplate(),
+  versions: [{ ...version(id), id: id * 10, body: id === 3 ? 'third body' : 'seed' }], runtime: runtime(),
+})
 
 describe('SystemPromptsView', () => {
   beforeEach(() => {
@@ -327,5 +341,144 @@ describe('SystemPromptsView', () => {
     expect(mocks.syncManagedSource).toHaveBeenCalledWith(2, { expected_latest_version: 1, expected_revision: 5 })
     expect(mocks.publish).not.toHaveBeenCalled()
     expect(wrapper.get('[data-test="system-prompt-source-candidate"]').exists()).toBe(true)
+  })
+
+  describe('editor request ownership', () => {
+    it('keeps post-send body and note edits against the saved version without resubmitting or publishing', async () => {
+      const save = deferred<ReturnType<typeof version>>()
+      mocks.saveDraft.mockReturnValue(save.promise)
+      const wrapper = mountView(); await flushPromises()
+      await wrapper.get('[data-test="system-prompt-template-2"]').trigger('click'); await flushPromises()
+      await wrapper.get('[data-test="system-prompt-body"]').setValue('sent body')
+      await wrapper.get('[aria-label="版本备注"]').setValue('sent note')
+      await wrapper.get('[data-test="system-prompt-save-version"]').trigger('click')
+      wrapper.get('[data-test="system-prompt-save-version"]').element.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      await wrapper.get('[data-test="system-prompt-body"]').setValue('later body')
+      await wrapper.get('[aria-label="版本备注"]').setValue('later note')
+      save.resolve({ ...version(2), id: 21, version: 2, body: 'sent body', note: 'sent note', is_active: false }); await flushPromises()
+
+      expect(wrapper.get('[data-test="system-prompt-body"]').element).toHaveProperty('value', 'later body')
+      expect(wrapper.get('[aria-label="版本备注"]').element).toHaveProperty('value', 'later note')
+      expect(mocks.saveDraft).toHaveBeenCalledTimes(1)
+      expect(mocks.saveDraft.mock.calls[0]).toEqual([2, expect.objectContaining({ body: 'sent body', note: 'sent note', expected_latest_version: 1, expected_revision: 5 })])
+      expect(wrapper.get('[data-test="system-prompt-set-current"]').attributes('disabled')).toBeDefined()
+      expect(mocks.publish).not.toHaveBeenCalled()
+      mocks.saveDraft.mockResolvedValueOnce({ ...version(2), id: 22, version: 3, body: 'later body', note: 'later note', is_active: false })
+      await wrapper.get('[data-test="system-prompt-save-version"]').trigger('click'); await flushPromises()
+      expect(mocks.saveDraft.mock.calls[1]).toEqual([2, expect.objectContaining({ body: 'later body', note: 'later note', expected_latest_version: 2, expected_revision: 5 })])
+      expect(wrapper.get('[data-test="system-prompt-save-version"]').attributes('disabled')).toBeDefined()
+      wrapper.unmount()
+    })
+
+    it('does not attach a saved version to a template selected after the request began', async () => {
+      const save = deferred<ReturnType<typeof version>>()
+      mocks.saveDraft.mockReturnValueOnce(save.promise)
+      const wrapper = mountView(); await flushPromises()
+      await wrapper.get('[data-test="system-prompt-template-2"]').trigger('click'); await flushPromises()
+      await wrapper.get('[data-test="system-prompt-body"]').setValue('sent body')
+      await wrapper.get('[data-test="system-prompt-save-version"]').trigger('click')
+      // Return to the unchanged baseline so the existing dirty-selection
+      // contract permits this explicit switch; no new discard rule is assumed.
+      await wrapper.get('[data-test="system-prompt-body"]').setValue('seed')
+      await wrapper.get('[data-test="system-prompt-template-1"]').trigger('click'); await flushPromises()
+      save.resolve({ ...version(2), id: 21, version: 2, body: 'sent body', is_active: false }); await flushPromises()
+
+      expect(wrapper.getComponent(SystemPromptAdvancedDrawer).props('sourceTemplate')).toMatchObject({ id: 1 })
+      expect(wrapper.getComponent(SystemPromptAdvancedDrawer).props('sourceVersion')).toMatchObject({ id: 10, template_id: 1 })
+      expect(wrapper.get('[data-test="system-prompt-body"]').element).toHaveProperty('value', 'server effective body')
+      expect(mocks.publish).not.toHaveBeenCalled()
+      expect(mocks.showSuccess).toHaveBeenCalledWith('新提示词版本已保存。')
+      wrapper.unmount()
+    })
+
+    it.each(['success', 'error'])('ignores an older template %s while a later selection is loading', async (outcome) => {
+      mocks.list.mockResolvedValue({ templates: [codexTemplate(), gptTemplate(), thirdTemplate()], runtime: runtime() })
+      const wrapper = mountView(); await flushPromises()
+      const old = deferred<ReturnType<typeof templateDetail>>(), current = deferred<ReturnType<typeof templateDetail>>()
+      mocks.get.mockImplementation((id: number) => id === 2 ? old.promise : current.promise)
+      await wrapper.get('[data-test="system-prompt-template-2"]').trigger('click')
+      await wrapper.get('[data-test="system-prompt-template-3"]').trigger('click')
+      if (outcome === 'success') old.resolve(templateDetail(2))
+      else old.reject(new Error('old template error'))
+      await flushPromises()
+
+      expect(wrapper.get('[data-test="system-prompt-refresh"]').attributes('disabled')).toBeDefined()
+      expect(mocks.showError).not.toHaveBeenCalled()
+      current.resolve(templateDetail(3)); await flushPromises()
+      expect(wrapper.getComponent(SystemPromptAdvancedDrawer).props('sourceTemplate')).toMatchObject({ id: 3 })
+      expect(wrapper.get('[data-test="system-prompt-body"]').element).toHaveProperty('value', 'third body')
+      expect(wrapper.get('[data-test="system-prompt-refresh"]').attributes('disabled')).toBeUndefined()
+      wrapper.unmount()
+    })
+
+    it('does not let an older list refresh select its old template after a newer explicit choice', async () => {
+      const wrapper = mountView(); await flushPromises()
+      const list = deferred<{ templates: ReturnType<typeof gptTemplate>[]; runtime: ReturnType<typeof runtime> }>()
+      mocks.list.mockReturnValueOnce(list.promise)
+      await wrapper.get('[data-test="system-prompt-refresh"]').trigger('click')
+      await wrapper.get('[data-test="system-prompt-template-2"]').trigger('click'); await flushPromises()
+      list.resolve({ templates: [codexTemplate(), gptTemplate()], runtime: runtime() }); await flushPromises()
+      expect(wrapper.getComponent(SystemPromptAdvancedDrawer).props('sourceTemplate')).toMatchObject({ id: 2 })
+      expect(mocks.get.mock.calls.map(call => call[0])).toEqual([1, 2])
+      wrapper.unmount()
+    })
+
+    it('does not show an old managed-body response in a reopened managed selection', async () => {
+      const old = deferred<ReturnType<typeof skillVersionDetail>>(), current = deferred<ReturnType<typeof skillVersionDetail>>()
+      mocks.getSkillVersion.mockReturnValueOnce(old.promise).mockReturnValueOnce(current.promise)
+      const wrapper = mountView(); await flushPromises()
+      await wrapper.get('[data-test="system-prompt-template-2"]').trigger('click'); await flushPromises()
+      await wrapper.get('[data-test="system-prompt-template-1"]').trigger('click'); await flushPromises()
+      old.resolve({ ...skillVersionDetail(), prompt: { ...skillVersionDetail().prompt, effective_body: 'old managed body' } }); await flushPromises()
+      expect(wrapper.find('[data-test="system-prompt-managed-loading"]').exists()).toBe(true)
+      expect(wrapper.find('[data-test="system-prompt-body"]').exists()).toBe(false)
+      current.resolve(skillVersionDetail()); await flushPromises()
+      expect(wrapper.get('[data-test="system-prompt-body"]').element).toHaveProperty('value', 'server effective body')
+      wrapper.unmount()
+    })
+  })
+
+  describe('sync polling lifetime', () => {
+    it('does not schedule a poll from a sync-start response arriving after unmount', async () => {
+      const start = deferred<{ id: number; status: string }>()
+      mocks.startSkillSync.mockReturnValueOnce(start.promise)
+      const wrapper = mountView(); await flushPromises()
+      await wrapper.get('[data-test="system-prompt-open-advanced"]').trigger('click'); await flushPromises()
+      vi.useFakeTimers()
+      try {
+        await wrapper.get('[data-test="system-prompt-skill-sync"]').trigger('click'); await flushPromises()
+        wrapper.unmount()
+        start.resolve({ id: 9, status: 'queued' }); await flushPromises()
+        await vi.advanceTimersByTimeAsync(2400)
+        expect(mocks.startSkillSync).toHaveBeenCalledTimes(1)
+        expect(mocks.getSkillSync).not.toHaveBeenCalled()
+        expect(mocks.publishSkillVersion).not.toHaveBeenCalled()
+        const reopened = mountView(); await flushPromises()
+        expect(reopened.get('[data-test="system-prompt-body"]').element).toHaveProperty('value', 'server effective body')
+        expect(mocks.startSkillSync).toHaveBeenCalledTimes(1)
+        reopened.unmount()
+      } finally { vi.useRealTimers() }
+    })
+
+    it.each(['running', 'succeeded'])('does not continue a pending %s poll after unmount', async (status) => {
+      const poll = deferred<{ id: number; status: string; candidate_bundle_version_id?: number }>()
+      mocks.getSkillSync.mockReturnValueOnce(poll.promise)
+      const wrapper = mountView(); await flushPromises()
+      await wrapper.get('[data-test="system-prompt-open-advanced"]').trigger('click'); await flushPromises()
+      vi.useFakeTimers()
+      try {
+        await wrapper.get('[data-test="system-prompt-skill-sync"]').trigger('click')
+        await vi.advanceTimersByTimeAsync(1200)
+        expect(mocks.getSkillSync).toHaveBeenCalledTimes(1)
+        wrapper.unmount()
+        poll.resolve({ id: 8, status, candidate_bundle_version_id: status === 'succeeded' ? 31 : undefined }); await flushPromises()
+        await vi.advanceTimersByTimeAsync(2400)
+        expect(mocks.getSkillSync).toHaveBeenCalledTimes(1)
+        expect(mocks.getSkillVersion).toHaveBeenCalledTimes(1)
+        expect(mocks.getSkillRegistry).toHaveBeenCalledTimes(1)
+        expect(mocks.publishSkillVersion).not.toHaveBeenCalled()
+        expect(mocks.showSuccess).not.toHaveBeenCalled()
+      } finally { vi.useRealTimers() }
+    })
   })
 })

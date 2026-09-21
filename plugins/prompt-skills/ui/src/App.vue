@@ -218,7 +218,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { BaseDialog, ConfirmDialog, Icon, Toggle, useNotifications, extractApiErrorCode, extractApiErrorMessage } from '@sub2api/plugin-ui'
 import SystemPromptAdvancedDrawer from './SystemPromptAdvancedDrawer.vue'
@@ -288,6 +288,13 @@ const sourceSyncing = ref(false)
 const sourceSyncStatus = ref<ManagedSourceSyncStatus | null>(null)
 const sourceCandidate = ref<ManagedSourceSyncVersion | null>(null)
 let skillSyncTimer: ReturnType<typeof setTimeout> | null = null
+let disposed = false
+let selectionGeneration = 0
+let editorGeneration = 0
+let managedPromptGeneration = 0
+let skillSyncGeneration = 0
+const startingSkillSync = ref(false)
+watch([body, note, compositionMode, bundleId, bundleManifestSHA256], () => { editorGeneration += 1 }, { flush: 'sync' })
 
 const selectedTemplate = computed(() => detail.value?.template ?? null)
 const isRemoteSkillManaged = computed(() => selectedTemplate.value?.managed_source === 'remote_skill_registry')
@@ -307,7 +314,7 @@ const managedPromptBody = computed(() => {
     : activeSkillVersion.value.prompt.raw_body
 })
 const runtimeDirty = computed(() => !!runtime.value && (runtimeDraft.enabled !== runtime.value.enabled || runtimeDraft.expose_server_prompt !== runtime.value.expose_server_prompt || runtimeDraft.compact_enabled !== runtime.value.compact_enabled))
-const skillSyncInProgress = computed(() => skillSyncJob.value?.status === 'queued' || skillSyncJob.value?.status === 'running')
+const skillSyncInProgress = computed(() => startingSkillSync.value || skillSyncJob.value?.status === 'queued' || skillSyncJob.value?.status === 'running')
 
 const confirmTitle = computed(() => {
   if (confirmState.value?.kind === 'delete') return t('admin.systemPrompts.confirm.deleteTitle')
@@ -357,23 +364,33 @@ function handleError(error: unknown, fallback: string) {
 }
 
 async function loadAll(preferredId: number | null = selectedId.value) {
+  if (disposed) return
+  const generation = ++selectionGeneration
   loading.value = true
   try {
     const result = await systemPromptsAPI.list()
+    if (disposed || generation !== selectionGeneration) return
     templates.value = result.templates
     runtime.value = result.runtime
     setRuntimeDraft(result.runtime)
     const nextId = preferredId && result.templates.some(item => item.id === preferredId) ? preferredId : result.templates[0]?.id ?? null
     selectedId.value = nextId
-    if (nextId) await loadDetail(nextId)
+    if (nextId) await loadDetail(nextId, generation)
     else detail.value = null
-    conflict.value = false
-  } catch (error) { handleError(error, t('admin.systemPrompts.errors.load')) } finally { loading.value = false }
+    if (!disposed && generation === selectionGeneration) conflict.value = false
+  } catch (error) {
+    if (!disposed && generation === selectionGeneration) handleError(error, t('admin.systemPrompts.errors.load'))
+  } finally {
+    if (!disposed && generation === selectionGeneration) loading.value = false
+  }
 }
 
-async function loadDetail(id: number) {
+async function loadDetail(id: number, generation = ++selectionGeneration) {
+  if (disposed) return
+  loading.value = true
   try {
     const result = await systemPromptsAPI.get(id)
+    if (disposed || generation !== selectionGeneration) return
     runtime.value = result.runtime
     setRuntimeDraft(result.runtime)
     detail.value = result
@@ -387,9 +404,13 @@ async function loadDetail(id: number) {
     sourceSyncStatus.value = null
     sourceCandidate.value = null
     activeTab.value = 'editor'
-    if (result.template.managed_source === 'remote_skill_registry') await loadManagedPrompt(true)
+    if (result.template.managed_source === 'remote_skill_registry') await loadManagedPrompt(true, generation)
     else resetManagedPrompt()
-  } catch (error) { handleError(error, t('admin.systemPrompts.errors.loadDetail')) }
+  } catch (error) {
+    if (!disposed && generation === selectionGeneration) handleError(error, t('admin.systemPrompts.errors.loadDetail'))
+  } finally {
+    if (!disposed && generation === selectionGeneration) loading.value = false
+  }
 }
 
 async function selectTemplate(id: number) {
@@ -411,14 +432,22 @@ function selectVersion(version: SystemPromptVersion) {
 }
 
 async function saveVersion() {
-  if (!detail.value || !runtime.value || !editorDirty.value) return
+  if (disposed || savingVersion.value || !detail.value || !runtime.value || !editorDirty.value) return
   const bytes = new TextEncoder().encode(body.value).length
   if (!body.value.trim() || body.value.includes('\u0000') || bytes > 64 * 1024) { appStore.showError(t('admin.systemPrompts.errors.invalidBody')); return }
+  const templateID = detail.value.template.id
+  const versionID = selectedVersionId.value
+  const generation = selectionGeneration
+  const editGeneration = editorGeneration
+  const request = { body: body.value, note: note.value, composition_mode: compositionMode.value, bundle_id: compositionMode.value === 'inline' ? '' : bundleId.value, bundle_manifest_sha256: '', expected_latest_version: latestVersion.value?.version ?? 0, expected_revision: runtime.value.revision }
   savingVersion.value = true
   try {
-    const version = await systemPromptsAPI.saveDraft(detail.value.template.id, { body: body.value, note: note.value, composition_mode: compositionMode.value, bundle_id: compositionMode.value === 'inline' ? '' : bundleId.value, bundle_manifest_sha256: '', expected_latest_version: latestVersion.value?.version ?? 0, expected_revision: runtime.value.revision })
-    detail.value.versions = [version, ...detail.value.versions]
-    applyVersionToEditor(version)
+    const version = await systemPromptsAPI.saveDraft(templateID, request)
+    if (!disposed && generation === selectionGeneration && detail.value?.template.id === templateID && selectedVersionId.value === versionID && version.template_id === templateID) {
+      detail.value.versions = [version, ...detail.value.versions]
+      if (editGeneration === editorGeneration) applyVersionToEditor(version)
+      else selectedVersionId.value = version.id
+    }
     appStore.showSuccess(t('admin.systemPrompts.messages.versionSaved'))
   } catch (error) { handleError(error, t('admin.systemPrompts.errors.saveVersion')) } finally { savingVersion.value = false }
 }
@@ -450,69 +479,98 @@ function openAdvanced() {
 }
 
 async function fetchSkillRegistry(force = false) {
+  if (disposed) return null
   if (!force && skillRegistry.value) return skillRegistry.value
   skillLoading.value = true
   try {
     const result = await systemPromptsAPI.getSkillRegistry()
+    if (disposed) return null
     skillRegistry.value = result
     return result
-  } finally { skillLoading.value = false }
+  } finally { if (!disposed) skillLoading.value = false }
 }
 
 async function loadSkillRegistry() {
-  try { await fetchSkillRegistry() } catch (error) { handleError(error, t('admin.systemPrompts.errors.skillLoad')) }
+  try { await fetchSkillRegistry() } catch (error) { if (!disposed) handleError(error, t('admin.systemPrompts.errors.skillLoad')) }
 }
 
 function resetManagedPrompt() {
+  managedPromptGeneration += 1
   activeSkillVersion.value = null
   managedPromptView.value = 'effective'
   managedPromptLoading.value = false
   managedPromptUnavailable.value = false
 }
 
-async function loadManagedPrompt(forceRegistry = false) {
+async function loadManagedPrompt(forceRegistry = false, selection = selectionGeneration) {
+  if (disposed) return
+  const generation = ++managedPromptGeneration
   activeSkillVersion.value = null
   managedPromptView.value = 'effective'
   managedPromptUnavailable.value = false
   managedPromptLoading.value = true
   try {
     const registry = await fetchSkillRegistry(forceRegistry)
+    if (disposed || generation !== managedPromptGeneration || selection !== selectionGeneration || !registry) return
     const activeID = registry.runtime.active?.id
     if (!activeID) throw new Error('active remote skill version is unavailable')
     const version = await systemPromptsAPI.getSkillVersion(activeID)
+    if (disposed || generation !== managedPromptGeneration || selection !== selectionGeneration) return
     if (version.id !== activeID || typeof version.prompt.raw_body !== 'string' || typeof version.prompt.effective_body !== 'string') {
       throw new Error('active remote skill prompt detail is invalid')
     }
     activeSkillVersion.value = version
   } catch {
-    managedPromptUnavailable.value = true
-  } finally { managedPromptLoading.value = false }
+    if (!disposed && generation === managedPromptGeneration && selection === selectionGeneration) managedPromptUnavailable.value = true
+  } finally {
+    if (!disposed && generation === managedPromptGeneration && selection === selectionGeneration) managedPromptLoading.value = false
+  }
 }
 
 function clearSkillSyncTimer() {
   if (skillSyncTimer !== null) { clearTimeout(skillSyncTimer); skillSyncTimer = null }
 }
 
-function scheduleSkillSyncPoll() { clearSkillSyncTimer(); skillSyncTimer = setTimeout(() => void pollSkillSync(), 1200) }
+function scheduleSkillSyncPoll(generation = skillSyncGeneration) {
+  if (disposed || generation !== skillSyncGeneration) return
+  clearSkillSyncTimer()
+  skillSyncTimer = setTimeout(() => void pollSkillSync(generation), 1200)
+}
 
-async function pollSkillSync() {
-  if (!skillSyncJob.value) return
+async function pollSkillSync(generation = skillSyncGeneration) {
+  if (disposed || generation !== skillSyncGeneration || !skillSyncJob.value) return
+  const jobID = skillSyncJob.value.id
   try {
-    skillSyncJob.value = await systemPromptsAPI.getSkillSync(skillSyncJob.value.id)
-    if (skillSyncInProgress.value) { scheduleSkillSyncPoll(); return }
+    const job = await systemPromptsAPI.getSkillSync(jobID)
+    if (disposed || generation !== skillSyncGeneration || skillSyncJob.value?.id !== jobID) return
+    skillSyncJob.value = job
+    if (skillSyncInProgress.value) { scheduleSkillSyncPoll(generation); return }
     if (skillSyncJob.value.status === 'succeeded' && skillSyncJob.value.candidate_bundle_version_id) {
       const [candidate, registry] = await Promise.all([systemPromptsAPI.getSkillVersion(skillSyncJob.value.candidate_bundle_version_id), systemPromptsAPI.getSkillRegistry()])
+      if (disposed || generation !== skillSyncGeneration || skillSyncJob.value?.id !== jobID) return
       skillCandidate.value = candidate
       skillRegistry.value = registry
       appStore.showSuccess(t('admin.systemPrompts.messages.skillCandidateReady'))
     } else if (skillSyncJob.value.status === 'failed') appStore.showError(t('admin.systemPrompts.errors.skillSync'))
-  } catch (error) { handleError(error, t('admin.systemPrompts.errors.skillSync')) }
+  } catch (error) { if (!disposed && generation === skillSyncGeneration) handleError(error, t('admin.systemPrompts.errors.skillSync')) }
 }
 
 async function startSkillSync(promptCapture?: File) {
-  if (!skillRegistry.value || skillSyncInProgress.value) return
+  if (disposed || !skillRegistry.value || skillSyncInProgress.value) return
+  const generation = ++skillSyncGeneration
+  const revision = skillRegistry.value.runtime.revision
+  startingSkillSync.value = true
   skillCandidate.value = null
-  try { skillSyncJob.value = await systemPromptsAPI.startSkillSync(skillRegistry.value.runtime.revision, promptCapture); scheduleSkillSyncPoll() } catch (error) { handleError(error, t('admin.systemPrompts.errors.skillSync')) }
+  try {
+    const job = await systemPromptsAPI.startSkillSync(revision, promptCapture)
+    if (disposed || generation !== skillSyncGeneration) return
+    skillSyncJob.value = job
+    scheduleSkillSyncPoll(generation)
+  } catch (error) {
+    if (!disposed && generation === skillSyncGeneration) handleError(error, t('admin.systemPrompts.errors.skillSync'))
+  } finally {
+    if (!disposed && generation === skillSyncGeneration) startingSkillSync.value = false
+  }
 }
 
 async function publishSkillBundle(versionId: number, rollback: boolean) {
@@ -607,5 +665,11 @@ async function deleteTemplate() {
 async function reloadAfterConflict() { await loadAll(selectedId.value); conflict.value = false }
 
 onMounted(() => void loadAll())
-onBeforeUnmount(clearSkillSyncTimer)
+onBeforeUnmount(() => {
+  disposed = true
+  selectionGeneration += 1
+  managedPromptGeneration += 1
+  skillSyncGeneration += 1
+  clearSkillSyncTimer()
+})
 </script>
