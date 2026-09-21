@@ -1,6 +1,7 @@
 // Explicit one-time publisher setup. Private material is piped directly to the
 // existing authenticated GitHub CLI; only public metadata is printed. Existing
-// keys are never overwritten, including after an interrupted setup.
+// observed keys are never overwritten; incomplete metadata checks fail closed.
+// Authorized first-time setup must not race another publisher initializer.
 package main
 
 import (
@@ -15,6 +16,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"strings"
 	"time"
 )
 
@@ -39,26 +41,56 @@ func github(ctx context.Context, input []byte, args ...string) ([]byte, error) {
 	return output.Bytes(), nil
 }
 
+func publisherSecretExists(ctx context.Context, query func(context.Context, []byte, ...string) ([]byte, error)) (bool, error) {
+	exists, total := false, -1
+	seen := map[string]bool{}
+	for page := 1; page <= 100; page++ {
+		endpoint := fmt.Sprintf("repos/%s/actions/secrets?per_page=100&page=%d", publisherRepository, page)
+		raw, err := query(ctx, nil, "api", endpoint)
+		if err != nil {
+			return false, err
+		}
+		var inventory struct {
+			TotalCount *int `json:"total_count"`
+			Secrets    []struct {
+				Name string `json:"name"`
+			} `json:"secrets"`
+		}
+		if json.Unmarshal(raw, &inventory) != nil || inventory.TotalCount == nil ||
+			*inventory.TotalCount < 0 || inventory.Secrets == nil || len(inventory.Secrets) > 100 {
+			return false, errors.New("invalid GitHub secret metadata response")
+		}
+		if total < 0 {
+			total = *inventory.TotalCount
+		} else if total != *inventory.TotalCount {
+			return false, errors.New("GitHub secret metadata changed during pagination")
+		}
+		for _, secret := range inventory.Secrets {
+			name := strings.ToUpper(secret.Name)
+			if name == "" || name != strings.TrimSpace(name) || seen[name] {
+				return false, errors.New("invalid or repeated GitHub secret metadata")
+			}
+			seen[name] = true
+			exists = exists || name == publisherSecret
+		}
+		if len(seen) == total {
+			return exists, nil
+		}
+		if len(seen) > total || len(inventory.Secrets) < 100 {
+			return false, errors.New("GitHub secret metadata inventory is incomplete")
+		}
+	}
+	return false, errors.New("GitHub secret metadata pagination limit exceeded")
+}
+
 func run() error {
 	initialize := flag.Bool("initialize", false, "initialize the publisher only when neither metadata nor secret exists")
 	flag.Parse()
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
-	raw, err := github(ctx, nil, "api", "repos/"+publisherRepository+"/actions/secrets")
+	exists, err := publisherSecretExists(ctx, github)
 	if err != nil {
 		return err
-	}
-	var inventory struct {
-		Secrets []struct {
-			Name string `json:"name"`
-		} `json:"secrets"`
-	}
-	if err = json.Unmarshal(raw, &inventory); err != nil {
-		return errors.New("invalid GitHub secret metadata response")
-	}
-	exists := false
-	for _, secret := range inventory.Secrets {
-		exists = exists || secret.Name == publisherSecret
 	}
 	metadata, readErr := os.ReadFile(publisherMetadata)
 	if readErr == nil {

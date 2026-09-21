@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"crypto/sha256"
+	"database/sql"
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
@@ -135,30 +136,12 @@ func (m *PluginManager) bootstrapBundle(ctx context.Context) error {
 			return installErr
 		}
 		if installation.PluginKey != entry.ID || installation.Version != entry.Version {
-			return errors.New("bundled plugin identity mismatch")
+			return errors.Join(errors.New("bundled plugin identity mismatch"), m.cleanupInstallationFiles(installation))
 		}
-		if journal, ok := m.repo.(interface {
-			CompletedBundledPlugin(context.Context, string) (bool, error)
-		}); ok {
-			completed, err := journal.CompletedBundledPlugin(ctx, entry.ID)
-			if err != nil {
-				return err
-			}
-			if completed {
-				previous, err := m.repo.GetByKey(ctx, entry.ID)
-				if err != nil {
-					return err
-				}
-				if previous.PackageSHA256 != entry.SHA256 {
-					if err = m.stagePluginReplacement(ctx, previous, installation, PluginUpdateBundled); err != nil {
-						return err
-					}
-				}
-				if err = m.cleanupInstallationFiles(installation); err != nil {
-					return err
-				}
-				continue
-			}
+		if handled, err := m.handleCompletedBundledCandidate(ctx, store, entry, bundleID, installation); err != nil {
+			return err
+		} else if handled {
+			continue
 		}
 		seed := PluginBundleSeed{Enabled: entry.DefaultEnabled, Config: json.RawMessage(`{}`)}
 		if entry.Migration == "codex-tickets-v1" {
@@ -221,4 +204,63 @@ func (m *PluginManager) bootstrapBundle(ctx context.Context) error {
 		}
 	}
 	return nil
+}
+
+// No handled path calls PrepareBundledPlugin: the unique candidate files are
+// still ours, even when staging stores their artifact bytes for a later update.
+// An unfinished migration returns unhandled so its existing ownership transfer
+// and retained paths are not changed by this completed-bundle cleanup.
+func (m *PluginManager) handleCompletedBundledCandidate(ctx context.Context, store PluginBundleRepository, entry BundledPlugin, bundleID string, candidate *PluginInstallation) (handled bool, resultErr error) {
+	journal, ok := m.repo.(interface {
+		CompletedBundledPlugin(context.Context, string) (bool, error)
+	})
+	if !ok {
+		return false, nil
+	}
+	completed, err := journal.CompletedBundledPlugin(ctx, entry.ID)
+	if err == nil && !completed {
+		return false, nil
+	}
+	defer func() {
+		if cleanupErr := m.cleanupInstallationFiles(candidate); cleanupErr != nil {
+			resultErr = errors.Join(resultErr, cleanupErr)
+		}
+	}()
+	if err != nil {
+		return true, err
+	}
+	previous, err := m.repo.GetByKey(ctx, entry.ID)
+	if errors.Is(err, sql.ErrNoRows) {
+		return true, confirmCompletedBundleTakeover(ctx, store, entry.ID, bundleID, err)
+	}
+	if err != nil {
+		return true, err
+	}
+	if previous == nil {
+		return true, errors.New("completed bundled plugin snapshot unavailable")
+	}
+	// The first BundleApplied observation may predate another host's pin or
+	// update. Only a fresh, still-following snapshot permits automatic staging.
+	if previous.UpdatePolicy != PluginUpdateBundled || previous.State == PluginStateUpdating {
+		return true, nil
+	}
+	if previous.PackageSHA256 == entry.SHA256 {
+		return true, nil
+	}
+	err = m.stagePluginReplacement(ctx, previous, candidate, PluginUpdateBundled)
+	if errors.Is(err, ErrPluginStateChanged) {
+		return true, confirmCompletedBundleTakeover(ctx, store, entry.ID, bundleID, err)
+	}
+	return true, err
+}
+
+func confirmCompletedBundleTakeover(ctx context.Context, store PluginBundleRepository, key, bundleID string, original error) error {
+	applied, err := store.BundleApplied(ctx, key, bundleID)
+	if err != nil {
+		return errors.Join(original, err)
+	}
+	if applied {
+		return nil
+	}
+	return original
 }

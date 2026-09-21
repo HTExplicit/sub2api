@@ -40,6 +40,10 @@ jobs:
           check-latest: false
           cache: true
           cache-dependency-path: backend/go.sum
+      - name: Release metadata and publisher inventory contracts
+        run: |
+          python3 .github/scripts/test_release_preflight.py
+          go -C backend test ../.github/scripts/initialize_plugin_publisher.go ../.github/scripts/initialize_plugin_publisher_test.go -run '^TestPublisherSecretInventory' -count=1
       - name: Agent protocol contracts
         run: bash .github/scripts/test_agent_protocol.sh
       - name: First-party plugin contracts and signed process package

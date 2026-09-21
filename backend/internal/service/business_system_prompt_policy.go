@@ -72,10 +72,20 @@ func ApplyBusinessSystemPromptToJSONContext(ctx context.Context, body []byte, sn
 }
 
 func applyBusinessSystemPromptWithInvoker(parent context.Context, body []byte, snapshot BusinessSystemPromptSnapshot, target BusinessSystemPromptTarget, invoke func(context.Context, string, string, extensionv1.Invocation) (extensionv1.Result, error)) ([]byte, BusinessSystemPromptApplication, error) {
+	application, err := planBusinessSystemPromptWithInvoker(parent, body, snapshot, target, invoke)
+	if err != nil {
+		return nil, application, err
+	}
+	return applyBusinessSystemPromptApplication(body, application)
+}
+
+// Planning rechecks the live execution scope, including on request-cache hits.
+// Only bounded policy material and a presence bit cross the RPC boundary.
+func planBusinessSystemPromptWithInvoker(parent context.Context, body []byte, snapshot BusinessSystemPromptSnapshot, target BusinessSystemPromptTarget, invoke func(context.Context, string, string, extensionv1.Invocation) (extensionv1.Result, error)) (BusinessSystemPromptApplication, error) {
 	request := extensionv1.PromptPlanRequest{Snapshot: snapshot, Target: target, HasInstructions: gjson.GetBytes(body, "instructions").Exists(), BaseSHA256: snapshot.BaseSHA256, EffectiveSHA256: snapshot.EffectiveSHA256, EffectiveByteLength: snapshot.EffectiveByteLength}
 	raw, err := json.Marshal(request)
 	if err != nil {
-		return nil, BusinessSystemPromptApplication{}, err
+		return BusinessSystemPromptApplication{}, err
 	}
 	ctx, cancel := context.WithTimeout(parent, time.Second)
 	defer cancel()
@@ -83,20 +93,24 @@ func applyBusinessSystemPromptWithInvoker(parent context.Context, body []byte, s
 	if accountType == "" {
 		accountType = "*"
 	}
-	result, err := invoke(ctx, target.Platform, accountType, extensionv1.Invocation{Capability: extensionv1.CapabilityRequest, Operation: "prompt.plan", Payload: raw})
+	result, err := invoke(ctx, target.Platform, accountType, extensionv1.Invocation{Capability: extensionv1.CapabilityRequest, Operation: "prompt.plan", AccountID: target.AccountID, Payload: raw})
 	if errors.Is(err, ErrExtensionOperationDisabled) {
-		return body, BusinessSystemPromptApplication{}, nil
+		return BusinessSystemPromptApplication{}, nil
 	}
 	if err != nil || result.Code != "" {
 		if !snapshot.Enabled {
-			return body, BusinessSystemPromptApplication{}, nil
+			return BusinessSystemPromptApplication{}, nil
 		}
-		return nil, BusinessSystemPromptApplication{}, ErrBusinessSystemPromptUnavailable
+		return BusinessSystemPromptApplication{}, ErrBusinessSystemPromptUnavailable
 	}
 	var application BusinessSystemPromptApplication
 	if json.Unmarshal(result.Payload, &application) != nil {
-		return nil, application, ErrBusinessSystemPromptUnavailable
+		return application, ErrBusinessSystemPromptUnavailable
 	}
+	return application, nil
+}
+
+func applyBusinessSystemPromptApplication(body []byte, application BusinessSystemPromptApplication) ([]byte, BusinessSystemPromptApplication, error) {
 	if !application.Applied {
 		return body, application, nil
 	}

@@ -84,6 +84,16 @@ func (s *OpenAIGatewayService) forwardAsChatCompletions(
 		c.Set(openAIChatReasoningReplayContextKey, (*openAIChatReasoningReplay)(nil))
 		c.Set(openAIReasoningRecoveryContextKey, (*openAIReasoningRecoveryState)(nil))
 	}
+	nativePromptProtocol := BusinessSystemPromptProtocolChat
+	if !gjson.GetBytes(body, "messages").Exists() && gjson.GetBytes(body, "input").Exists() {
+		nativePromptProtocol = BusinessSystemPromptProtocolResponses
+	}
+	cleanBody, restoreErr := restoreBusinessSystemPromptBeforeConversion(c, body, nativePromptProtocol)
+	if restoreErr != nil {
+		writeChatCompletionsError(c, http.StatusServiceUnavailable, "system_prompt_unavailable", "business system prompt is temporarily unavailable")
+		return nil, restoreErr
+	}
+	body = cleanBody
 	rememberOpenCodeInboundBody(c, body)
 	beginUpstreamResponseModelObservation(c)
 	if account != nil && account.IsOpenAI() {

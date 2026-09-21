@@ -38,6 +38,7 @@ type BusinessSystemPromptSnapshot struct {
 }
 
 type BusinessSystemPromptTarget struct {
+	AccountID   int64  `json:"account_id,omitempty"`
 	Platform    string `json:"platform"`
 	AccountType string `json:"account_type,omitempty"`
 	Protocol    string `json:"protocol"`

@@ -31,6 +31,12 @@ func (s *OpenAIGatewayService) forwardResponsesViaRawChatCompletions(
 	compact bool,
 ) (*OpenAIForwardResult, error) {
 	startTime := time.Now()
+	cleanBody, restoreErr := restoreBusinessSystemPromptBeforeConversion(c, body, BusinessSystemPromptProtocolResponses)
+	if restoreErr != nil {
+		writeOpenAIResponsesFallbackError(c, http.StatusServiceUnavailable, "system_prompt_unavailable", "business system prompt is temporarily unavailable")
+		return nil, restoreErr
+	}
+	body = cleanBody
 
 	var responsesReq apicompat.ResponsesRequest
 	if err := json.Unmarshal(body, &responsesReq); err != nil {

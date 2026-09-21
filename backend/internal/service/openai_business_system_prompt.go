@@ -18,7 +18,9 @@ const (
 	businessSystemPromptRequestSnapshotKey    = "openai_business_system_prompt_snapshot"
 	businessSystemPromptRequestCompiledKey    = "openai_business_system_prompt_compiled_snapshot"
 	businessSystemPromptRequestTurnKey        = "openai_business_system_prompt_turn"
+	businessSystemPromptRequestTargetKey      = "openai_business_system_prompt_target"
 	businessSystemPromptCacheIdentityKey      = "openai_business_system_prompt_cache_identity"
+	businessSystemPromptRestoreMaxBytes       = 64 << 10
 )
 
 // Cache identities belong to one logical request/WS turn, not an account or
@@ -35,10 +37,315 @@ type businessSystemPromptCacheIdentities struct {
 }
 
 type businessSystemPromptRequestState struct {
-	application BusinessSystemPromptApplication
-	snapshot    BusinessSystemPromptSnapshot
-	inputHash   [32]byte
-	output      []byte
+	application      BusinessSystemPromptApplication
+	snapshot         BusinessSystemPromptSnapshot
+	target           BusinessSystemPromptTarget
+	inputHash        [32]byte
+	output           []byte
+	undo             businessSystemPromptUndo
+	otherUndo        businessSystemPromptUndo
+	historyUncertain bool
+}
+
+// One output exists per protocol/turn. At most one proof for each of the two
+// native carriers is retained; only the instructions proof holds a bounded
+// original value. Neither proof stores customer history or another full body.
+type businessSystemPromptUndo struct {
+	present      bool
+	valid        bool
+	restorable   bool
+	carrier      string
+	server       string
+	beforeExists bool
+	beforeHash   [32]byte
+	afterHash    [32]byte
+	instructions []byte
+	messageIndex int
+}
+
+func businessSystemPromptTargetForAccount(account *Account, protocol string, compact bool) BusinessSystemPromptTarget {
+	target := BusinessSystemPromptTarget{Protocol: protocol, Compact: compact}
+	if account != nil {
+		target.AccountID, target.Platform, target.AccountType = account.ID, account.EffectiveWirePlatform(), account.Type
+	}
+	return target
+}
+
+func rememberBusinessSystemPromptTarget(ctx *gin.Context, target BusinessSystemPromptTarget) {
+	if ctx != nil {
+		ctx.Set(businessSystemPromptContextKey(ctx, businessSystemPromptRequestTargetKey, ""), target)
+	}
+}
+
+// Ignore only JSON framing whitespace. Hash slices directly so a large message
+// history is neither copied nor retained in a second request-cache snapshot.
+func businessSystemPromptCarrierHash(raw []byte) [32]byte {
+	digest := sha256.New()
+	quoted, escaped, start := false, false, 0
+	for index, character := range raw {
+		if quoted {
+			if escaped {
+				escaped = false
+			} else if character == '\\' {
+				escaped = true
+			} else if character == '"' {
+				quoted = false
+			}
+			continue
+		}
+		if character == '"' {
+			quoted = true
+			continue
+		}
+		if character == ' ' || character == '\t' || character == '\r' || character == '\n' {
+			_, _ = digest.Write(raw[start:index])
+			start = index + 1
+		}
+	}
+	_, _ = digest.Write(raw[start:])
+	var result [32]byte
+	copy(result[:], digest.Sum(nil))
+	return result
+}
+
+func businessSystemPromptCarrier(body []byte, carrier string) (gjson.Result, []byte, bool) {
+	field := "instructions"
+	if carrier == BusinessSystemPromptCarrierSystemMessage {
+		field = "messages"
+	}
+	// The existing read-only view does not copy a large messages array. Reject
+	// duplicate carriers: encoding/json and gjson select different duplicates,
+	// so an insertion index would not be an unambiguous ownership proof.
+	view := parseRawJSONView(body)
+	if !view.IsObject() {
+		return gjson.Result{}, nil, false
+	}
+	var value gjson.Result
+	matches := 0
+	view.ForEach(func(key, candidate gjson.Result) bool {
+		if key.String() == field {
+			matches++
+			value = candidate
+		}
+		return matches < 2
+	})
+	if matches == 0 {
+		return value, nil, true
+	}
+	if matches != 1 || value.Index <= 0 || value.Index+len(value.Raw) > len(body) {
+		return value, nil, false
+	}
+	return value, body[value.Index : value.Index+len(value.Raw)], true
+}
+
+func cacheBusinessSystemPromptState(input, output []byte, snapshot BusinessSystemPromptSnapshot, target BusinessSystemPromptTarget, application BusinessSystemPromptApplication) businessSystemPromptRequestState {
+	state := businessSystemPromptRequestState{application: application, snapshot: snapshot, target: target, inputHash: sha256.Sum256(input), output: append([]byte(nil), output...)}
+	if !application.Applied {
+		return state
+	}
+	state.undo = businessSystemPromptUndo{present: true, carrier: application.Carrier, server: strings.TrimSpace(application.ServerInstructions)}
+	before, beforeRaw, beforeUnique := businessSystemPromptCarrier(input, application.Carrier)
+	after, afterRaw, afterUnique := businessSystemPromptCarrier(output, application.Carrier)
+	if !beforeUnique || !afterUnique {
+		return state
+	}
+	undo := state.undo
+	undo.beforeExists, undo.beforeHash, undo.afterHash = before.Exists(), businessSystemPromptCarrierHash(beforeRaw), businessSystemPromptCarrierHash(afterRaw)
+	switch application.Carrier {
+	case BusinessSystemPromptCarrierInstructions:
+		undo.valid = after.Type == gjson.String
+		undo.restorable = !before.Exists() || len(beforeRaw) <= businessSystemPromptRestoreMaxBytes
+		if before.Exists() && undo.restorable {
+			undo.instructions = append([]byte(nil), beforeRaw...)
+		}
+	case BusinessSystemPromptCarrierSystemMessage:
+		undo.valid, undo.restorable = before.IsArray() && after.IsArray(), true
+		before.ForEach(func(_, message gjson.Result) bool {
+			role := strings.ToLower(strings.TrimSpace(message.Get("role").String()))
+			if role != "system" && role != "developer" {
+				return false
+			}
+			undo.messageIndex++
+			return true
+		})
+	}
+	state.undo = undo
+	return state
+}
+
+func inheritBusinessSystemPromptProvenance(next, previous businessSystemPromptRequestState) businessSystemPromptRequestState {
+	next.historyUncertain = previous.historyUncertain
+	if !next.application.Applied {
+		next.undo, next.otherUndo = previous.undo, previous.otherUndo
+		return next
+	}
+	for _, old := range [...]businessSystemPromptUndo{previous.undo, previous.otherUndo} {
+		if !old.present {
+			continue
+		}
+		if old.carrier == next.undo.carrier {
+			// A compatible planner need not always return identical text. Keep
+			// no unbounded text history: unknown bodies must now fail closed.
+			if old.server != next.undo.server {
+				next.historyUncertain = true
+			}
+			continue
+		}
+		next.otherUndo = old
+	}
+	return next
+}
+
+func restoreBusinessSystemPromptBody(body []byte, state businessSystemPromptRequestState) ([]byte, error) {
+	if (!state.application.Applied && !state.undo.present && !state.otherUndo.present) || sha256.Sum256(body) == state.inputHash {
+		return body, nil
+	}
+	if state.application.Applied && !state.undo.present {
+		return nil, ErrBusinessSystemPromptUnavailable
+	}
+	// The one cached output was built from an already-clean input. Only its
+	// latest insertion needs removal; older carrier data is known original.
+	if bytes.Equal(body, state.output) {
+		return restoreBusinessSystemPromptCarrier(body, state.undo)
+	}
+	if state.historyUncertain {
+		return nil, ErrBusinessSystemPromptUnavailable
+	}
+	clean, err := restoreBusinessSystemPromptCarrier(body, state.undo)
+	if err != nil {
+		return nil, err
+	}
+	if state.otherUndo.present && !businessSystemPromptPriorCarrierUnchanged(body, state) {
+		return restoreBusinessSystemPromptCarrier(clean, state.otherUndo)
+	}
+	return clean, nil
+}
+
+func businessSystemPromptPriorCarrierUnchanged(body []byte, state businessSystemPromptRequestState) bool {
+	if !state.otherUndo.present || len(state.output) == 0 {
+		return false
+	}
+	value, raw, unique := businessSystemPromptCarrier(body, state.otherUndo.carrier)
+	cached, cachedRaw, cachedUnique := businessSystemPromptCarrier(state.output, state.otherUndo.carrier)
+	return unique && cachedUnique && value.Exists() == cached.Exists() && businessSystemPromptCarrierHash(raw) == businessSystemPromptCarrierHash(cachedRaw)
+}
+
+func restoreBusinessSystemPromptCarrier(body []byte, undo businessSystemPromptUndo) ([]byte, error) {
+	if !undo.present {
+		return body, nil
+	}
+	value, raw, unique := businessSystemPromptCarrier(body, undo.carrier)
+	if !unique {
+		return nil, ErrBusinessSystemPromptUnavailable
+	}
+	// Absence/before is clean only for this carrier, not for every previously
+	// used carrier. The caller must continue checking the other bounded proof.
+	if !value.Exists() {
+		return body, nil
+	}
+	if !undo.valid {
+		return nil, ErrBusinessSystemPromptUnavailable
+	}
+	hash := businessSystemPromptCarrierHash(raw)
+	if value.Exists() == undo.beforeExists && hash == undo.beforeHash {
+		return body, nil
+	}
+	if !value.Exists() || hash != undo.afterHash || !undo.restorable {
+		return nil, ErrBusinessSystemPromptUnavailable
+	}
+	if undo.carrier == BusinessSystemPromptCarrierInstructions {
+		if undo.beforeExists {
+			return sjson.SetRawBytes(body, "instructions", undo.instructions)
+		}
+		return sjson.DeleteBytes(body, "instructions")
+	}
+	return sjson.DeleteBytes(body, "messages."+strconv.Itoa(undo.messageIndex))
+}
+
+// Restore in the source protocol before a converter can relocate our carrier
+// into customer control messages. Never search/delete a system message by text.
+func restoreBusinessSystemPromptBeforeConversion(ctx *gin.Context, body []byte, protocol string) ([]byte, error) {
+	if ctx == nil {
+		return body, nil
+	}
+	value, exists := ctx.Get(businessSystemPromptContextKey(ctx, businessSystemPromptRequestApplicationKey, protocol))
+	if !exists {
+		return body, nil
+	}
+	state, ok := value.(businessSystemPromptRequestState)
+	if !ok {
+		return nil, ErrBusinessSystemPromptUnavailable
+	}
+	return restoreBusinessSystemPromptBody(body, state)
+}
+
+// Another platform may have rebuilt a clean native carrier. Preserve it only
+// when bounded carrier inspection proves our actual insertion text is absent;
+// user messages are not searched and matching control text is never deleted.
+func businessSystemPromptCarrierExcludesInsertion(body []byte, undo businessSystemPromptUndo) bool {
+	value, raw, unique := businessSystemPromptCarrier(body, undo.carrier)
+	if !unique {
+		return false
+	}
+	if !value.Exists() {
+		return true
+	}
+	if undo.server == "" || len(raw) > businessSystemPromptRestoreMaxBytes {
+		return false
+	}
+	if undo.carrier == BusinessSystemPromptCarrierInstructions {
+		return value.Type == gjson.String && !strings.Contains(value.String(), undo.server)
+	}
+	if undo.carrier != BusinessSystemPromptCarrierSystemMessage || !value.IsArray() {
+		return false
+	}
+	clean := true
+	value.ForEach(func(_, message gjson.Result) bool {
+		if !message.IsObject() || hasDuplicateJSONObjectKeys(message) {
+			clean = false
+			return false
+		}
+		role := strings.ToLower(strings.TrimSpace(message.Get("role").String()))
+		if role != "system" && role != "developer" {
+			return true
+		}
+		content := message.Get("content")
+		clean = content.Type == gjson.String && !strings.Contains(content.String(), undo.server)
+		return clean
+	})
+	return clean
+}
+
+func businessSystemPromptExcludesAllInsertions(body []byte, state businessSystemPromptRequestState) bool {
+	if state.historyUncertain || (state.application.Applied && !state.undo.present && !state.otherUndo.present) {
+		return false
+	}
+	if state.undo.present && !businessSystemPromptCarrierExcludesInsertion(body, state.undo) {
+		return false
+	}
+	return !state.otherUndo.present || businessSystemPromptPriorCarrierUnchanged(body, state) || businessSystemPromptCarrierExcludesInsertion(body, state.otherUndo)
+}
+
+func restoreBusinessSystemPromptForExcludedTarget(ctx *gin.Context, body []byte, protocol string) ([]byte, error) {
+	if ctx == nil {
+		return body, nil
+	}
+	value, exists := ctx.Get(businessSystemPromptContextKey(ctx, businessSystemPromptRequestApplicationKey, protocol))
+	if !exists {
+		return body, nil
+	}
+	state, ok := value.(businessSystemPromptRequestState)
+	if !ok {
+		return nil, ErrBusinessSystemPromptUnavailable
+	}
+	clean, err := restoreBusinessSystemPromptBody(body, state)
+	if err == nil {
+		return clean, nil
+	}
+	if businessSystemPromptExcludesAllInsertions(body, state) {
+		return body, nil
+	}
+	return nil, ErrBusinessSystemPromptUnavailable
 }
 
 func (s *OpenAIGatewayService) applyBusinessSystemPrompt(
@@ -67,6 +374,7 @@ func (s *OpenAIGatewayService) applyBusinessSystemPrompt(
 		}
 	}
 	return ApplyBusinessSystemPromptToJSON(body, snapshot, BusinessSystemPromptTarget{
+		AccountID:   account.ID,
 		Platform:    account.EffectiveWirePlatform(),
 		AccountType: account.Type,
 		Protocol:    protocol,
@@ -103,8 +411,8 @@ func (s *OpenAIGatewayService) businessSystemPromptSnapshotForRequest(
 	return snapshot, true, nil
 }
 
-// applyBusinessSystemPromptForRequest stores application metadata on the
-// request context so retries/fallbacks can reuse the same normalized decision
+// Freeze prompt content and retain local rewrite provenance, while rechecking
+// execution admission on every attempt. Admitted retries can reuse their bytes
 // without appending the server prompt a second time.
 func (s *OpenAIGatewayService) applyBusinessSystemPromptForRequest(
 	ctx *gin.Context,
@@ -113,39 +421,59 @@ func (s *OpenAIGatewayService) applyBusinessSystemPromptForRequest(
 	protocol string,
 	compact bool,
 ) ([]byte, BusinessSystemPromptApplication, error) {
-	// Eligibility is checked before consulting request-scoped state. This keeps
-	// an OpenAI attempt's frozen application from crossing into a Grok-specific
-	// transform if a caller ever reuses the Gin context across platforms.
+	target := businessSystemPromptTargetForAccount(account, protocol, compact)
+	// Platform eligibility precedes policy invocation or application reuse.
+	// Local provenance can still undo an earlier OpenAI insertion before an
+	// unrelated platform's transform; clean customer carriers stay untouched.
 	if s == nil || s.businessPromptService == nil || account == nil || !account.IsOpenAI() {
-		return body, BusinessSystemPromptApplication{}, nil
+		clean, err := restoreBusinessSystemPromptForExcludedTarget(ctx, body, protocol)
+		if err != nil {
+			return nil, BusinessSystemPromptApplication{}, err
+		}
+		rememberBusinessSystemPromptTarget(ctx, target)
+		return clean, BusinessSystemPromptApplication{}, nil
 	}
 	if ctx != nil {
 		applicationKey := businessSystemPromptContextKey(ctx, businessSystemPromptRequestApplicationKey, protocol)
 		if value, exists := ctx.Get(applicationKey); exists {
 			if state, ok := value.(businessSystemPromptRequestState); ok {
-				if state.inputHash == sha256.Sum256(body) {
-					return append([]byte(nil), state.output...), state.application, nil
-				}
-				if bytes.Equal(body, state.output) {
-					return body, state.application, nil
-				}
-				if !state.application.Applied || businessSystemPromptAlreadyApplied(body, state.application, protocol) {
-					return body, state.application, nil
-				}
 				frozen := state.snapshot
-				if frozen.Revision < 1 {
+				if frozen.Revision < 1 && state.application.Applied {
 					return nil, BusinessSystemPromptApplication{}, ErrBusinessSystemPromptUnavailable
 				}
-				updated, application, err := ApplyBusinessSystemPromptToJSONContext(promptPolicyRequestContext(ctx), body, frozen, BusinessSystemPromptTarget{
-					Platform: PlatformOpenAI, AccountType: account.Type, Protocol: protocol, Compact: compact,
-				})
+				application, err := planBusinessSystemPromptWithInvoker(promptPolicyRequestContext(ctx), body, frozen, target, invokeProcessExtension)
 				if err != nil {
 					return nil, BusinessSystemPromptApplication{}, err
 				}
-				ctx.Set(applicationKey, businessSystemPromptRequestState{
-					application: application, snapshot: frozen,
-					inputHash: sha256.Sum256(body), output: append([]byte(nil), updated...),
-				})
+				previousPlan := state.application
+				previousPlan.ClientInstructions = ""
+				if state.target == target && previousPlan == application {
+					rememberBusinessSystemPromptTarget(ctx, target)
+					if state.inputHash == sha256.Sum256(body) {
+						return append([]byte(nil), state.output...), state.application, nil
+					}
+					if bytes.Equal(body, state.output) || (!state.historyUncertain && ((!state.application.Applied && !state.undo.present && !state.otherUndo.present) || businessSystemPromptAlreadyApplied(body, state.application, protocol))) {
+						return body, state.application, nil
+					}
+				}
+				clean, restoreErr := restoreBusinessSystemPromptBody(body, state)
+				if restoreErr != nil {
+					// An admitted same-target retry may have rebuilt a new client
+					// carrier. No removal is attempted in that case. Revocation or
+					// cross-target reuse always requires provenance for any undo.
+					if state.target != target || !application.Applied || !businessSystemPromptExcludesAllInsertions(body, state) {
+						return nil, BusinessSystemPromptApplication{}, ErrBusinessSystemPromptUnavailable
+					}
+					clean = body
+				}
+				updated, application, err := applyBusinessSystemPromptApplication(clean, application)
+				if err != nil {
+					return nil, BusinessSystemPromptApplication{}, err
+				}
+				next := cacheBusinessSystemPromptState(clean, updated, frozen, target, application)
+				next = inheritBusinessSystemPromptProvenance(next, state)
+				ctx.Set(applicationKey, next)
+				rememberBusinessSystemPromptTarget(ctx, target)
 				return updated, application, nil
 			} else {
 				return nil, BusinessSystemPromptApplication{}, ErrBusinessSystemPromptUnavailable
@@ -179,23 +507,14 @@ func (s *OpenAIGatewayService) applyBusinessSystemPromptForRequest(
 			}
 		}
 	}
-	updated, application, err := ApplyBusinessSystemPromptToJSONContext(promptPolicyRequestContext(ctx), body, snapshot, BusinessSystemPromptTarget{
-		Platform:    account.EffectiveWirePlatform(),
-		AccountType: account.Type,
-		Protocol:    protocol,
-		Compact:     compact,
-	})
+	updated, application, err := ApplyBusinessSystemPromptToJSONContext(promptPolicyRequestContext(ctx), body, snapshot, target)
 	if err != nil {
 		return nil, application, err
 	}
 	if ctx != nil {
-		ctx.Set(businessSystemPromptContextKey(ctx, businessSystemPromptRequestApplicationKey, protocol), businessSystemPromptRequestState{
-			application: application,
-			snapshot:    snapshot,
-			inputHash:   sha256.Sum256(body),
-			output:      append([]byte(nil), updated...),
-		})
+		ctx.Set(businessSystemPromptContextKey(ctx, businessSystemPromptRequestApplicationKey, protocol), cacheBusinessSystemPromptState(body, updated, snapshot, target, application))
 	}
+	rememberBusinessSystemPromptTarget(ctx, target)
 	return updated, application, nil
 }
 
@@ -232,6 +551,12 @@ func businessSystemPromptApplicationFromRequest(ctx *gin.Context, protocol strin
 		return BusinessSystemPromptApplication{}, false
 	}
 	if state, ok := value.(businessSystemPromptRequestState); ok {
+		if current, exists := ctx.Get(businessSystemPromptContextKey(ctx, businessSystemPromptRequestTargetKey, "")); exists {
+			if target, ok := current.(BusinessSystemPromptTarget); ok &&
+				(target.AccountID != state.target.AccountID || target.Platform != state.target.Platform || target.AccountType != state.target.AccountType || target.Compact != state.target.Compact) {
+				return BusinessSystemPromptApplication{}, false
+			}
+		}
 		return state.application, true
 	}
 	return BusinessSystemPromptApplication{}, false
