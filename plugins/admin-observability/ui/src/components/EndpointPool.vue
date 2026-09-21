@@ -141,7 +141,7 @@
 <script setup lang="ts">
 import { ref } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { BaseDialog } from '@sub2api/plugin-ui'
+import { BaseDialog, confirmAction } from '@sub2api/plugin-ui'
 import type { PromptAuditEndpointDraft, PromptProbeResult } from '../types'
 import { cloneData, createDefaultEndpoint } from '../viewModel'
 
@@ -183,9 +183,16 @@ function saveEditor() {
 function toggleEndpoint(id: string) {
   emit('update:endpoints', props.endpoints.map((item) => item.id === id ? { ...item, enabled: !item.enabled } : cloneData(item)))
 }
-function removeEndpoint(endpoint: PromptAuditEndpointDraft) {
-  if (!window.confirm(t('admin.promptAudit.pool.deleteConfirm', { name: endpoint.name }))) return
-  emit('update:endpoints', props.endpoints.filter((item) => item.id !== endpoint.id).map((item) => cloneData(item)))
+async function removeEndpoint(endpoint: PromptAuditEndpointDraft) {
+  const endpointID = endpoint.id
+  try {
+    if (!await confirmAction(t('admin.promptAudit.pool.deleteConfirm', { name: endpoint.name }))) return
+  } catch {
+    return
+  }
+  const remaining = props.endpoints.filter((item) => item.id !== endpointID)
+  if (remaining.length === props.endpoints.length) return
+  emit('update:endpoints', remaining.map((item) => cloneData(item)))
 }
 function hasCredential(endpoint: PromptAuditEndpointDraft): boolean {
   return Boolean(endpoint.token.trim() || (endpoint.has_token && !endpoint.clear_token))

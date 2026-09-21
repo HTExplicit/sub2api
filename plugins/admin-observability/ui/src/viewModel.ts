@@ -40,6 +40,33 @@ export function configToDraft(config: PromptAuditConfig): PromptAuditDraft {
   }
 }
 
+export function reconcileSavedDraft(
+  submitted: PromptAuditDraft,
+  current: PromptAuditDraft,
+  confirmed: PromptAuditDraft,
+): PromptAuditDraft {
+  if (JSON.stringify(current) === JSON.stringify(submitted)) return cloneData(confirmed)
+  const next = cloneData(current)
+  next.config_version = confirmed.config_version
+  next.effective_mode = confirmed.effective_mode
+  next.updated_at = confirmed.updated_at
+  next.updated_by = confirmed.updated_by
+  next.change_summary = confirmed.change_summary
+  const sentByID = new Map(submitted.endpoints.map(endpoint => [endpoint.id.trim(), endpoint]))
+  const confirmedByID = new Map(confirmed.endpoints.map(endpoint => [endpoint.id, endpoint]))
+  for (const endpoint of next.endpoints) {
+    const sent = sentByID.get(endpoint.id.trim())
+    const saved = confirmedByID.get(endpoint.id.trim())
+    if (!sent || !saved) continue
+    endpoint.has_token = saved.has_token
+    endpoint.token_status = saved.token_status
+    // 只消费本次已确认且未被后写改动的凭据动作，不清掉新输入。
+    if (!sent.clear_token && endpoint.token === sent.token) endpoint.token = ''
+    if (endpoint.clear_token === sent.clear_token) endpoint.clear_token = false
+  }
+  return next
+}
+
 export function createDefaultEndpoint(index = 1): PromptAuditEndpointDraft {
   return {
     id: `guard-${Date.now()}-${index}`,
