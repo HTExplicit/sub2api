@@ -1,9 +1,9 @@
 {
   "schema_version": 3,
   "upstream_base": "aea725f2ea644d5592d0bbb1d63b607efa7e200a",
-  "basis_commit": "ca478eec67f6c831595381e2f45cae50a71b6dfd",
+  "basis_commit": "6cd89eeb67a11774b9ec7bf655bc7f400cbdcb3b",
   "scope": "Current Sub2API downstream source and working tree. Candidate ownership does not establish completed review. Root maintenance, independent services and Worker require a separate audit.",
-  "source_digest": "1fc81c132f60a3662abda8206a79f13fd2ca4ae1af198de09487288e3725ddd9",
+  "source_digest": "74c1decad286b7916380c22e9e09489ca5ce6d10256c283a79e208599ce49943",
   "digest_excludes": [
     "the inventory itself uses a derived structural fingerprint; deletions bind the upstream blob"
   ],
@@ -112,6 +112,8 @@
     "backend/internal/service/account_job_batch_test_runtime.go",
     "backend/internal/service/account_job_plugin.go",
     "backend/internal/service/account_job_test.go",
+    "backend/internal/service/account_quota_window_state.go",
+    "backend/internal/service/account_quota_window_state_test.go",
     "backend/internal/service/account_test_models_test.go",
     "backend/internal/service/account_test_prompt_test.go",
     "backend/internal/service/account_test_reasoning_test.go",
@@ -500,7 +502,7 @@
       "role": "documentation",
       "present": true,
       "content_sha256": null,
-      "review_fingerprint": "e392419e91ded3c4ee6c1c5bfab97355a0368b711264d0a43633c5fec4d75aae",
+      "review_fingerprint": "08f07257bac6061fe71abaf34bd4d378a8862ba0c9ddb04739f6ccb9861ecc06",
       "review_status": "reviewed",
       "decision": "generated-source",
       "owner": "operations",
@@ -10007,41 +10009,22 @@
       ]
     },
     {
-      "path": "backend/internal/service/account_quota_windows.go",
+      "path": "backend/internal/service/account_quota_window_state.go",
       "candidate_owner": "core-quota-and-protocol",
       "role": "source",
       "present": true,
       "content_sha256": "047cc4c6642a225a2bd1589a946fe3be96a60b9b59e45564a5fec20fcdc9ddf7",
       "review_fingerprint": "047cc4c6642a225a2bd1589a946fe3be96a60b9b59e45564a5fec20fcdc9ddf7",
-      "review_status": "reviewed",
-      "decision": "core-correctness",
-      "owner": "core-quota-and-protocol",
-      "reason": "Window conversion preserves explicit upstream minutes, handles 30-day windows as 43200 minutes, keeps unknown reset times unknown, and hard-blocks OpenAI OAuth accounts only when a window is exhausted or an authoritative quota error remains.",
-      "evidence": [
-        "coverage_role=core-quota-and-protocol; coverage_sha256=047cc4c6642a225a2bd1589a946fe3be96a60b9b59e45564a5fec20fcdc9ddf7; current_sha256=047cc4c6642a225a2bd1589a946fe3be96a60b9b59e45564a5fec20fcdc9ddf7; inventory_sha256_match=true",
-        "lines 67-100: raw primary/secondary windows preserve minutes and only derive bounded countdowns",
-        "lines 103-127: legacy 5h/7d aliases are fallback only when raw slots are absent",
-        "lines 164-220: QuotaState combines window and quota-error evidence; unknown reset clears Until rather than inventing a deadline",
-        "lines 239-251: StatsStart/PeriodKey use actual window duration"
-      ]
+      "review_status": "pending"
     },
     {
-      "path": "backend/internal/service/account_quota_windows_test.go",
+      "path": "backend/internal/service/account_quota_window_state_test.go",
       "candidate_owner": "core-quota-and-protocol",
       "role": "test-or-fixture",
       "present": true,
       "content_sha256": "51c71acf7dc423bbbb38d6d5d1d52d7fbc6e88105b3b207b00c5053c21f8a1ec",
       "review_fingerprint": "51c71acf7dc423bbbb38d6d5d1d52d7fbc6e88105b3b207b00c5053c21f8a1ec",
-      "review_status": "reviewed",
-      "decision": "reference",
-      "owner": "core-quota-and-protocol",
-      "reason": "Static tests cover actual 30-day period, independent deadlines, removed slots, unknown recovery, and explicit query evidence; test execution was not repeated.",
-      "evidence": [
-        "coverage_role=core-quota-and-protocol; coverage_sha256=51c71acf7dc423bbbb38d6d5d1d52d7fbc6e88105b3b207b00c5053c21f8a1ec; current_sha256=51c71acf7dc423bbbb38d6d5d1d52d7fbc6e88105b3b207b00c5053c21f8a1ec; inventory_sha256_match=true",
-        "TestAccountQuotaWindowsActualPeriod lines 12-29: 43200-minute window and 30-day StatsStart",
-        "TestQuotaWindowObservationsKeepIndependentDeadlinesAndClearRemovedSlots lines 32-58",
-        "TestQuotaQueryFlagsRemainEvidenceWhenWindowDetailsAreMissing lines 107-120"
-      ]
+      "review_status": "pending"
     },
     {
       "path": "backend/internal/service/account_reasoning_policy_test.go",
