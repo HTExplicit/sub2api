@@ -201,6 +201,7 @@ jobs:
             src/composables/__tests__/useModelWhitelist.spec.ts \
             src/components/account/__tests__/BulkEditAccountModal.spec.ts \
             ../plugins/prompt-skills/ui/src/__tests__/App.spec.ts \
+            ../plugins/prompt-skills/ui/src/__tests__/locales.spec.ts \
             src/views/admin/__tests__/AccountsView.console.spec.ts \
             src/views/admin/__tests__/AccountsView.priorityColumn.spec.ts \
             ../plugins/image-tools/ui/src/__tests__/api.spec.ts \

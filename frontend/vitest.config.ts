@@ -4,6 +4,8 @@ import vue from '@vitejs/plugin-vue'
 
 export default defineConfig({
   plugins: [vue()],
+  // Match the host and public plugin builds: runtime-only i18n uses CSP-safe JIT.
+  define: { __INTLIFY_JIT_COMPILATION__: true },
   server: { fs: { allow: [resolve(__dirname, '..')] } },
   resolve: {
     dedupe: ['vue', 'vue-i18n', '@vue/test-utils', 'vitest', 'vue-draggable-plus'],
