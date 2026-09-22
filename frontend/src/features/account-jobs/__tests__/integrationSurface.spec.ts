@@ -1,7 +1,9 @@
 import { describe, expect, it, vi } from 'vitest'
-import { mount } from '@vue/test-utils'
+import { flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 
+const listJobs = vi.hoisted(() => vi.fn().mockResolvedValue({ items: [], total: 0, page: 1, page_size: 20 }))
+vi.mock('@/api/admin/accountJobs', () => ({ default: { list: listJobs } }))
 vi.mock('@/composables/useOnboardingTour', () => ({
   useOnboardingTour: () => ({ replayTour: vi.fn() }),
 }))
@@ -57,9 +59,18 @@ describe('account job global surface', () => {
 
     expect(wrapper.findAllComponents(AccountTaskDrawer)).toHaveLength(1)
     expect(wrapper.find('[role="dialog"]').exists()).toBe(false)
+    expect(listJobs).not.toHaveBeenCalled()
 
     await wrapper.get('[data-test="account-task-button"]').trigger('click')
+    await flushPromises()
 
     expect(wrapper.find('[role="dialog"]').exists()).toBe(true)
+    expect(listJobs).toHaveBeenCalledTimes(1)
+    auth.user = { ...auth.user!, role: 'user' }
+    await wrapper.vm.$nextTick()
+    expect(wrapper.find('[data-test="account-task-button"]').exists()).toBe(false)
+    expect(wrapper.findAllComponents(AccountTaskDrawer)).toHaveLength(0)
+    expect(listJobs).toHaveBeenCalledTimes(1)
+    wrapper.unmount()
   })
 })

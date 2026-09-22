@@ -2,6 +2,7 @@ import { mount } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
 import { usePluginExtensions } from '@/stores/pluginExtensions'
+import { useAuthStore } from '@/stores/auth'
 import type { PluginContribution } from '@/api/admin/plugins'
 import manifest from '../../../../../plugins/cindy-provider/manifest.source.json'
 import CindyBalanceProbeSummary from '../CindyBalanceProbeSummary.vue'
@@ -59,14 +60,24 @@ describe('CindyBalanceProbeSummary', () => {
     expect(wrapper.find('[data-display-key="job"]').exists()).toBe(false)
   })
 
-  it('withdraws the column data when disabled and retains saved values on failure', async () => {
+  it('retains mounted results with an unavailable reason and clears them for a new actor', async () => {
     const registry = usePluginExtensions()
     const wrapper = mount(CindyBalanceProbeSummary, { props: { account } })
     registry.items = registry.items.map(item => ({ ...item, available: false }))
     await wrapper.vm.$nextTick()
     expect(wrapper.text()).toContain('#912')
+    expect(wrapper.get('[data-extension-display="cindy-probe-summary"]').attributes('title')).toBe('admin.plugins.extensionUnavailable')
     registry.items = []
     await wrapper.vm.$nextTick()
+    expect(wrapper.get('[data-display-key="job"]').text()).toBe('#912')
+    expect(wrapper.get('[data-display-key="outcome"]').text()).toBe('Luna available this run')
+    expect(wrapper.get('[data-extension-display="cindy-probe-summary"]').attributes('title')).toBe('admin.plugins.extensionUnavailable')
+    const fresh = mount(CindyBalanceProbeSummary, { props: { account } })
+    expect(fresh.find('[data-extension-display="cindy-probe-summary"]').exists()).toBe(false)
+    fresh.unmount()
+    useAuthStore().user = { id: 2, role: 'admin' } as never
+    await wrapper.vm.$nextTick()
     expect(wrapper.text()).toBe('')
+    wrapper.unmount()
   })
 })

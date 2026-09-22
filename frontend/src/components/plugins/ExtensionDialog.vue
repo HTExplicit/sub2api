@@ -35,6 +35,7 @@ const capturedAccountID = ref<number>()
 const capturedAccounts = ref<AccountSelectionIdentity[]>([])
 const capturedContext = shallowRef<Record<string, unknown>>({})
 const captureFailed = ref(false)
+// Capture a new launch after Vue has updated all its props, before rendering.
 watch(() => [props.contribution?.plugin_id, props.contribution?.id, props.contribution?.package_sha256, props.launchKey], () => {
   if (!props.contribution) return
   capturedAccountID.value = props.accountId
@@ -45,7 +46,7 @@ watch(() => [props.contribution?.plugin_id, props.contribution?.id, props.contri
   try {
     capturedView.value = props.originView === null ? null : narrowAccountViewSelection(props.originView || viewController?.capture(), capturedIDs.value)
   } catch { captureFailed.value = true }
-}, { immediate: true, flush: 'sync' })
+}, { immediate: true, flush: 'pre' })
 const targetIds = computed(() => props.contribution ? capturedIDs.value : [])
 const selection = useAccountSelectionMetadata(targetIds, capturedAccounts, () => capturedView.value || undefined)
 const admission = computed(() => {

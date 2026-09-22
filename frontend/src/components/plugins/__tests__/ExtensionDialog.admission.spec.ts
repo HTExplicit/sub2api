@@ -6,7 +6,7 @@ import ExtensionDialog from '../ExtensionDialog.vue'
 
 vi.mock('@/api/admin/accounts', () => { const list = vi.fn().mockResolvedValue({ items: [] }); return { list, default: { list } } })
 vi.mock('vue-i18n', async () => ({ ...await vi.importActual<typeof import('vue-i18n')>('vue-i18n'), useI18n: () => ({ locale: { value: 'en' }, t: (key: string) => key }) }))
-vi.mock('../PluginFrame.vue', () => ({ default: { name: 'PluginFrame', props: ['admission'], template: '<div data-frame />' } }))
+vi.mock('../PluginFrame.vue', () => ({ default: { name: 'PluginFrame', props: ['admission', 'context'], template: '<div data-frame />' } }))
 vi.mock('@/components/admin/account-jobs/AccountOperationDialog.vue', () => ({ default: { template: '<div><slot /></div>' } }))
 
 describe('contribution dialog admission', () => {
@@ -22,10 +22,16 @@ describe('contribution dialog admission', () => {
     expect(wrapper.findComponent({ name: 'PluginFrame' }).props('admission').allowed).toBe(false)
     await wrapper.setProps({ accountIds: [2] })
     await flushPromises()
+    expect(wrapper.find('[inert]').exists()).toBe(true)
+    expect(wrapper.findComponent({ name: 'PluginFrame' }).props('context').account_ids).toEqual([2, 3])
+    await wrapper.setProps({ launchKey: 1 })
+    await flushPromises()
     expect(wrapper.find('[inert]').exists()).toBe(false)
     expect(wrapper.findComponent({ name: 'PluginFrame' }).props('admission').allowed).toBe(true)
-    await wrapper.setProps({ accountIds: [2, 999] })
+    expect(wrapper.findComponent({ name: 'PluginFrame' }).props('context').account_ids).toEqual([2])
+    await wrapper.setProps({ accountIds: [2, 999], launchKey: 2 })
     await flushPromises()
+    expect(wrapper.findComponent({ name: 'PluginFrame' }).props('context').account_ids).toEqual([2, 999])
     expect(wrapper.find('[inert]').exists()).toBe(true)
     expect(wrapper.findComponent({ name: 'PluginFrame' }).props('admission').allowed).toBe(false)
     wrapper.unmount()

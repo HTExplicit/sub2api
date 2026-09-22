@@ -1,9 +1,11 @@
 import { mount } from '@vue/test-utils'
 import { createMemoryHistory, createRouter } from 'vue-router'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import type { PluginContribution } from '@/api/admin/plugins'
+import { cindyView } from '@/components/plugins/__tests__/accountView.fixtures'
 import AppSidebar from '../AppSidebar.vue'
 
-const pluginRegistry = vi.hoisted(() => ({ items: [] as Array<{ id: string; slot: string }>, refresh: vi.fn(async () => {}) }))
+const pluginRegistry = vi.hoisted(() => ({ items: [] as PluginContribution[], refresh: vi.fn(async () => {}) }))
 vi.mock('@/stores/pluginExtensions', () => ({ usePluginExtensions: () => pluginRegistry }))
 
 const mocks = vi.hoisted(() => ({
@@ -62,15 +64,18 @@ vi.mock('vue-i18n', async importOriginal => {
   const actual = await importOriginal<typeof import('vue-i18n')>()
   return {
     ...actual,
-    useI18n: () => ({ t: (key: string) => key }),
+    useI18n: () => ({ locale: { value: 'en' }, t: (key: string) => key }),
   }
 })
 
-async function renderSidebar(options: { admin?: boolean; imageStudio?: boolean } = {}) {
+async function renderSidebar(options: { admin?: boolean; imageStudio?: boolean; cindy?: boolean } = {}) {
   mocks.authStore.isAdmin = options.admin === true
   mocks.authStore.isSimpleMode = true
   mocks.appStore.cachedPublicSettings.image_studio_enabled = options.imageStudio !== false
-  pluginRegistry.items = options.imageStudio === false ? [] : [{ id: 'image-studio', slot: 'surface' }]
+  pluginRegistry.items = options.admin && options.cindy !== false ? [cindyView()] : []
+  if (options.imageStudio !== false) {
+    pluginRegistry.items.push({ id: 'image-studio', slot: 'surface', plugin_id: 8, permission: 'user', available: true, label: { en: 'Image Studio' } })
+  }
 
   const router = createRouter({
     history: createMemoryHistory(),
@@ -121,5 +126,10 @@ describe('AppSidebar simple mode extensions', () => {
     const wrapper = await renderSidebar({ admin: true, imageStudio: false })
 
     expect(extensionLinks(wrapper)).toEqual(['/admin/cindy-accounts'])
+    wrapper.unmount()
+    const disabled = await renderSidebar({ admin: true, imageStudio: false, cindy: false })
+    expect(disabled.find('[data-testid="sidebar-extensions"]').exists()).toBe(false)
+    expect(disabled.find('a[href="/admin/cindy-accounts"]').exists()).toBe(false)
+    disabled.unmount()
   })
 })

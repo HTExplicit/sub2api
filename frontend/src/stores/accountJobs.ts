@@ -328,7 +328,9 @@ export const useAccountJobsStore = defineStore('accountJobs', () => {
     activeRequest = controller
     try {
       if (recoveryNeeded) await recoverActive(controller.signal, epoch)
-      const activeIDs = activeJobs.value.map(job => job.id)
+      const detailJobID = drawerOpen.value || embeddedOpen.value ? selectedJobID.value : null
+      // loadCurrent refreshes both the selected job and its items once per tick.
+      const activeIDs = activeJobs.value.map(job => job.id).filter(id => id !== detailJobID)
       for (let offset = 0; offset < activeIDs.length; offset += 5) {
         await Promise.all(activeIDs.slice(offset, offset + 5).map(async id => {
           try {
@@ -348,9 +350,8 @@ export const useAccountJobsStore = defineStore('accountJobs', () => {
         }))
       }
       if (epoch !== generation || controller.signal.aborted) return
-      const jobID = selectedJobID.value
-      if ((drawerOpen.value || embeddedOpen.value) && jobID !== null) {
-        await loadCurrent(jobID)
+      if ((drawerOpen.value || embeddedOpen.value) && detailJobID !== null && selectedJobID.value === detailJobID) {
+        await loadCurrent(detailJobID)
       }
       connectionLost.value = false
     } catch (error) {
