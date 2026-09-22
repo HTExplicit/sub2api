@@ -1,9 +1,9 @@
 {
   "schema_version": 3,
   "upstream_base": "aea725f2ea644d5592d0bbb1d63b607efa7e200a",
-  "basis_commit": "ac5ad6cbc17f6752b63cb0dcc2c0db097de3e6ed",
+  "basis_commit": "2f8e120a1d440e10d2aca17eb41286e052398fe6",
   "scope": "Current Sub2API downstream source and working tree. Candidate ownership does not establish completed review. Root maintenance, independent services and Worker require a separate audit.",
-  "source_digest": "3bff806c95ccf49202f5cb98237479930ad35d6ca6d1b2100aa4df7c66035e32",
+  "source_digest": "819ee0a22a77a5bad34425c7636cdf3e95df7f2fa8d5a2d76250d7b18bee4fcb",
   "digest_excludes": [
     "the inventory itself uses a derived structural fingerprint; deletions bind the upstream blob"
   ],
@@ -555,7 +555,7 @@
       "role": "documentation",
       "present": true,
       "content_sha256": null,
-      "review_fingerprint": "e52ebc8072efe8057c918d19f1c623774c5ea84c3b408a3c6f3a74b149990bb9",
+      "review_fingerprint": "17af2fdfc0ed91b9fa983d7b82e3ca424be4c9fb6488d6defd3f1d2982490aa8",
       "review_status": "reviewed",
       "decision": "generated-source",
       "owner": "operations",
@@ -20902,8 +20902,8 @@
       "candidate_owner": "prompt-skills",
       "role": "test-or-fixture",
       "present": true,
-      "content_sha256": "5664c0241817d7d5dbba9bb196e2d2c5b2a868d6823cbd7bdb0823b6fce463bc",
-      "review_fingerprint": "5664c0241817d7d5dbba9bb196e2d2c5b2a868d6823cbd7bdb0823b6fce463bc",
+      "content_sha256": "059a6ed960d9b45ccdbeab675e7f7b83e815bdd844d947b0cae58bdb90f887a6",
+      "review_fingerprint": "059a6ed960d9b45ccdbeab675e7f7b83e815bdd844d947b0cae58bdb90f887a6",
       "review_status": "pending"
     },
     {

@@ -20,6 +20,7 @@ import (
 
 	"github.com/Wei-Shaw/sub2api/internal/repository"
 	"github.com/Wei-Shaw/sub2api/internal/service"
+	"github.com/Wei-Shaw/sub2api/internal/testextensions"
 	dbmigrations "github.com/Wei-Shaw/sub2api/migrations"
 )
 
@@ -71,8 +72,12 @@ func TestMain(m *testing.M) {
 	os.Exit(code)
 }
 
-func TestRemoteSkillPairedMigrationAndStartupRemoveEightGitHubVersions(t *testing.T) {
+func TestRemoteSkillPairedMigrationAndStartupPreserveEightGitHubVersions(t *testing.T) {
 	ctx := context.Background()
+	// Production initializes this domain only after its plugin is ready. Use
+	// the existing actual module fixture through the same public SDK boundary.
+	testextensions.Install()
+	t.Cleanup(func() { service.ConfigureProcessExtensionServices(nil, nil) })
 	db, schema := remoteSkillMigrationTestDatabase(t)
 	require.NoError(t, execRemoteSkillSQL(ctx, db, remoteSkillPost200FixtureSQL))
 	require.NoError(t, insertEightLegacyRemoteSkillVersions(ctx, db))
@@ -97,18 +102,31 @@ func TestRemoteSkillPairedMigrationAndStartupRemoveEightGitHubVersions(t *testin
 		assertRemoteSkillColumnMissing(t, ctx, db, schema, "system_prompt_skill_sync_jobs", column)
 	}
 
+	readLegacyRecords := func() [2]string {
+		t.Helper()
+		var records [2]string
+		for index, table := range []string{"system_prompt_skill_bundle_versions", "system_prompt_skill_sync_jobs"} {
+			require.NoError(t, db.QueryRowContext(ctx, fmt.Sprintf(`
+				SELECT jsonb_agg(to_jsonb(legacy) ORDER BY id)::text
+				FROM %s AS legacy WHERE id BETWEEN 1 AND 8`, table)).Scan(&records[index]))
+		}
+		return records
+	}
+	legacyRecords := readLegacyRecords()
+
 	registryRoot := t.TempDir()
-	for _, name := range []string{
+	legacyPaths := []string{
 		"private/seed/legacy.txt",
 		"private/versions/legacy.txt",
 		"public/reverse-skill/current.json",
 		"public/bootstrap/legacy.ps1",
 		"public/versions/legacy.zip",
 		"staging/incomplete/partial.txt",
-	} {
+	}
+	for _, name := range legacyPaths {
 		path := filepath.Join(registryRoot, filepath.FromSlash(name))
 		require.NoError(t, os.MkdirAll(filepath.Dir(path), 0o750))
-		require.NoError(t, os.WriteFile(path, []byte("legacy"), 0o640))
+		require.NoError(t, os.WriteFile(path, []byte("legacy:"+name), 0o640))
 	}
 
 	registryFiles := service.NewRemoteSkillRegistryFilesystem(registryRoot)
@@ -120,11 +138,19 @@ func TestRemoteSkillPairedMigrationAndStartupRemoveEightGitHubVersions(t *testin
 	require.NotNil(t, snapshot.Active)
 	require.NotNil(t, snapshot.ActivePrompt)
 	require.Equal(t, int64(5), snapshot.Revision)
+	require.Equal(t, int64(9), snapshot.Active.ID)
 	require.Equal(t, service.RemoteSkillUpstreamSourceID, snapshot.Active.UpstreamSourceID)
 	require.Equal(t, service.RemoteSkillUpstreamRoot, snapshot.Active.UpstreamRoot)
 	require.Equal(t, service.RemoteSkillPublicRoot, snapshot.Active.PublicRoot)
 	require.Equal(t, 458, snapshot.Active.FileCount)
 	require.Equal(t, snapshot.Active.PromptVersionID, snapshot.ActivePrompt.ID)
+	require.NotEmpty(t, snapshot.ActivePrompt.RawBody)
+	require.NotEmpty(t, snapshot.ActivePrompt.EffectiveBody)
+	persisted, err := registryStore.LoadRemoteSkillSnapshot(ctx)
+	require.NoError(t, err)
+	require.Equal(t, snapshot.Revision, persisted.Revision)
+	require.Equal(t, snapshot.Active, persisted.Active)
+	require.Equal(t, snapshot.ActivePrompt, persisted.ActivePrompt)
 
 	var versionCount, promptCount, jobCount, legacyCount int
 	require.NoError(t, db.QueryRowContext(ctx, `SELECT COUNT(*) FROM system_prompt_skill_bundle_versions`).Scan(&versionCount))
@@ -135,18 +161,24 @@ func TestRemoteSkillPairedMigrationAndStartupRemoveEightGitHubVersions(t *testin
 		WHERE upstream_source_id IS DISTINCT FROM $1 OR upstream_root IS DISTINCT FROM $2
 		   OR public_root IS DISTINCT FROM $3 OR prompt_version_id IS NULL`,
 		service.RemoteSkillUpstreamSourceID, service.RemoteSkillUpstreamRoot, service.RemoteSkillPublicRoot).Scan(&legacyCount))
-	require.Equal(t, 1, versionCount)
+	require.Equal(t, 9, versionCount)
 	require.Equal(t, 1, promptCount)
-	require.Zero(t, jobCount)
-	require.Zero(t, legacyCount)
+	require.Equal(t, 8, jobCount)
+	require.Equal(t, 8, legacyCount)
+	require.Equal(t, legacyRecords, readLegacyRecords(), "startup must preserve every surviving field of the eight legacy versions and jobs")
 
 	// Startup is idempotent, while a later no-change sync remains a distinct
 	// audit candidate that shares the same immutable content directory.
 	require.NoError(t, registryService.Initialize(ctx))
 	require.NoError(t, db.QueryRowContext(ctx, `SELECT COUNT(*) FROM system_prompt_skill_bundle_versions`).Scan(&versionCount))
-	require.Equal(t, 1, versionCount)
+	require.Equal(t, 9, versionCount)
+	require.Equal(t, snapshot.Revision, registryService.CurrentSnapshot().Revision)
+	require.Equal(t, snapshot.Active, registryService.CurrentSnapshot().Active)
+	require.Equal(t, snapshot.ActivePrompt, registryService.CurrentSnapshot().ActivePrompt)
 	second, err := registryFiles.LoadSeed(ctx)
 	require.NoError(t, err)
+	require.Equal(t, snapshot.ActivePrompt.RawSHA256, second.Prompt.RawSHA256)
+	require.Equal(t, snapshot.ActivePrompt.EffectiveSHA256, second.Prompt.EffectiveSHA256)
 	second.Version.FetchedAt = snapshot.Active.FetchedAt.Add(time.Minute).UTC()
 	second.Version.AddedFiles = 0
 	second.Version.ModifiedFiles = 0
@@ -163,13 +195,15 @@ func TestRemoteSkillPairedMigrationAndStartupRemoveEightGitHubVersions(t *testin
 	require.NoError(t, db.QueryRowContext(ctx, `SELECT COUNT(*) FROM system_prompt_skill_bundle_versions`).Scan(&versionCount))
 	require.NoError(t, db.QueryRowContext(ctx, `SELECT COUNT(*) FROM system_prompt_skill_prompt_versions`).Scan(&promptCount))
 	require.NoError(t, db.QueryRowContext(ctx, `SELECT COUNT(*) FROM system_prompt_skill_sync_jobs`).Scan(&jobCount))
-	require.Equal(t, 2, versionCount)
+	require.Equal(t, 10, versionCount)
 	require.Equal(t, 1, promptCount)
-	require.Equal(t, 1, jobCount)
+	require.Equal(t, 9, jobCount)
+	require.Equal(t, legacyRecords, readLegacyRecords(), "a later candidate must not replace or remove legacy audit history")
 
-	for _, name := range []string{"private", "public", "staging"} {
-		_, err := os.Stat(filepath.Join(registryRoot, filepath.FromSlash(name)))
-		require.ErrorIs(t, err, os.ErrNotExist)
+	for _, name := range legacyPaths {
+		body, err := os.ReadFile(filepath.Join(registryRoot, filepath.FromSlash(name)))
+		require.NoError(t, err)
+		require.Equal(t, []byte("legacy:"+name), body, "startup must preserve %s", name)
 	}
 	pairedEntries, err := os.ReadDir(filepath.Join(registryRoot, "paired"))
 	require.NoError(t, err)
@@ -226,11 +260,11 @@ func insertEightLegacyRemoteSkillVersions(ctx context.Context, db *sql.DB) error
 		VALUES (1, 8, 4, NOW());
 
 		INSERT INTO system_prompt_skill_sync_jobs
-			(id, status, progress_stage, source_id, source_commit,
+			(status, progress_stage, source_id, source_commit,
 			 candidate_bundle_version_id, created_at, completed_at)
-		SELECT value, 'succeeded', 'candidate_ready', 'github_official',
+		SELECT 'succeeded', 'candidate_ready', 'github_official',
 		       LPAD(value::text, 40, '0'), value, NOW() - INTERVAL '1 day', NOW()
-		FROM generate_series(1, 8) AS value;
+		FROM generate_series(1, 8) AS value ORDER BY value;
 	`)
 	return err
 }
