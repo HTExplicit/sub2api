@@ -14,6 +14,7 @@ import (
 	"github.com/Wei-Shaw/sub2api/internal/handler"
 	servermiddleware "github.com/Wei-Shaw/sub2api/internal/server/middleware"
 	"github.com/Wei-Shaw/sub2api/internal/service"
+	"github.com/Wei-Shaw/sub2api/internal/testextensions"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
 )
@@ -96,6 +97,8 @@ func (u *pinnedModelsRoutesUpstream) Do(req *http.Request, _ string, _ int64, _ 
 
 func TestGatewayRoutesPinnedModelsDispatchesOrdinaryAndCodexRequests(t *testing.T) {
 	gin.SetMode(gin.TestMode)
+	testextensions.Install()
+	t.Cleanup(func() { service.ConfigureProcessExtensionServices(nil, nil) })
 	repo := &pinnedModelsRoutesRepository{account: service.Account{
 		ID: 7, Platform: service.PlatformOpenAI, Type: service.AccountTypeAPIKey,
 		Status: service.StatusActive, Schedulable: true,
