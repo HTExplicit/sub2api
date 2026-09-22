@@ -159,6 +159,12 @@ func (s *CindyBalanceProbeService) Pause(ctx context.Context, jobID int64) (*Cin
 }
 
 func (s *CindyBalanceProbeService) Resume(ctx context.Context, jobID int64) (*CindyBalanceProbeJob, error) {
+	// Fail closed before touching persistence: a disabled or unavailable probe
+	// policy must not load, claim or rebind anything. Scoped jobs re-check the
+	// policy again below inside the rebound origin context.
+	if err := requireCindyBalanceProbePolicy(ctx); err != nil {
+		return nil, err
+	}
 	stored, err := s.repo.GetJob(ctx, jobID)
 	if err != nil {
 		return nil, err
