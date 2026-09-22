@@ -180,6 +180,7 @@ type openAI429SnapshotRepo struct {
 	rateLimitedID      int64
 	rateLimitedAt      time.Time
 	updatedExtra       map[string]any
+	updatedExtraIDs    []int64
 	bulkUpdatedIDs     []int64
 	bulkUpdatedPayload AccountBulkUpdate
 }
@@ -254,7 +255,8 @@ func TestHandle429_OpenAITransientIncidentHeadersFallbackDisabledSkipsPenalty(t 
 	}
 }
 
-func (r *openAI429SnapshotRepo) UpdateExtra(_ context.Context, _ int64, updates map[string]any) error {
+func (r *openAI429SnapshotRepo) UpdateExtra(_ context.Context, id int64, updates map[string]any) error {
+	r.updatedExtraIDs = append(r.updatedExtraIDs, id)
 	if r.updatedExtra == nil {
 		r.updatedExtra = make(map[string]any)
 	}
@@ -315,7 +317,20 @@ func TestHandle429_OpenAISyncsObservedPlanType(t *testing.T) {
 	require.Equal(t, []int64{account.ID}, repo.bulkUpdatedIDs)
 	require.Equal(t, "free", repo.bulkUpdatedPayload.Credentials["plan_type"])
 	require.Equal(t, "free", account.Credentials["plan_type"])
-	require.Equal(t, account.ID, repo.rateLimitedID)
+	require.Zero(t, repo.rateLimitedID, "hard quota is owned by Extra, not the legacy 429 cooldown")
+	require.True(t, repo.rateLimitedAt.IsZero())
+	require.NotEmpty(t, repo.updatedExtraIDs)
+	for _, id := range repo.updatedExtraIDs {
+		require.Equal(t, account.ID, id)
+	}
+	now := time.Now()
+	quota := account.QuotaState(now)
+	require.NotNil(t, quota)
+	require.True(t, quota.Blocked)
+	require.Nil(t, quota.Until, "the expired reset in the response must remain unknown")
+	persisted := *account
+	persisted.Extra = repo.updatedExtra
+	require.Equal(t, quota, persisted.QuotaState(now), "the durable observation must reproduce the hard block")
 }
 
 // TestHandle429_SkipsSparkShadow 外审第8轮 P1:spark 影子的限流状态只由 QueryUsage(/wham/usage
@@ -345,15 +360,39 @@ func TestHandle429_SkipsSparkShadow(t *testing.T) {
 
 	require.Zero(t, shadowRepo.rateLimitedID, "spark shadow must not be SetRateLimited from /responses global 429")
 	require.Empty(t, shadowRepo.updatedExtra, "spark shadow must not get a codex snapshot from /responses 429")
+	require.Empty(t, shadowRepo.updatedExtraIDs)
+	require.Nil(t, shadow.QuotaState(time.Now()), "global quota headers must not block the Spark quota scope")
 
 	// 反向对照:普通 OpenAI OAuth 账号仍按 global 429 限流。
 	normalRepo := &openAI429SnapshotRepo{}
 	normalSvc := NewRateLimitService(normalRepo, nil, nil, nil, nil)
 	normal := &Account{ID: 902, Platform: PlatformOpenAI, Type: AccountTypeOAuth}
 
+	before := time.Now()
 	normalSvc.handle429(context.Background(), normal, headers, nil)
+	now := time.Now()
 
-	require.Equal(t, normal.ID, normalRepo.rateLimitedID, "normal OpenAI OAuth account should still be rate limited")
+	require.Zero(t, normalRepo.rateLimitedID, "normal OAuth hard quota must not duplicate a legacy cooldown")
+	require.True(t, normalRepo.rateLimitedAt.IsZero())
+	require.NotEmpty(t, normalRepo.updatedExtraIDs)
+	for _, id := range normalRepo.updatedExtraIDs {
+		require.Equal(t, normal.ID, id)
+	}
+	require.Equal(t, 100.0, normalRepo.updatedExtra["codex_5h_used_percent"])
+	require.Equal(t, 100.0, normalRepo.updatedExtra["codex_7d_used_percent"])
+	quota := normal.QuotaState(now)
+	require.NotNil(t, quota)
+	require.True(t, quota.Blocked)
+	require.NotNil(t, quota.Until)
+	require.False(t, quota.Until.Before(before.Add(7*24*time.Hour).Truncate(time.Second)))
+	require.False(t, quota.Until.After(now.Add(7*24*time.Hour)))
+	persisted := *normal
+	persisted.Extra = normalRepo.updatedExtra
+	persistedQuota := persisted.QuotaState(now)
+	require.NotNil(t, persistedQuota)
+	require.Equal(t, quota.Blocked, persistedQuota.Blocked)
+	require.Equal(t, quota.Until, persistedQuota.Until)
+	require.Len(t, persistedQuota.Windows, 2, "the durable snapshot also retains both global quota windows")
 }
 
 func TestNormalizedCodexLimits(t *testing.T) {

@@ -1,9 +1,9 @@
 {
   "schema_version": 3,
   "upstream_base": "aea725f2ea644d5592d0bbb1d63b607efa7e200a",
-  "basis_commit": "5d7426442f8b7178b2bd986b9e1409a61371403a",
+  "basis_commit": "ac5ad6cbc17f6752b63cb0dcc2c0db097de3e6ed",
   "scope": "Current Sub2API downstream source and working tree. Candidate ownership does not establish completed review. Root maintenance, independent services and Worker require a separate audit.",
-  "source_digest": "cc908afd26080a976744895ac868e4124388f590c2f456c941344de9e998682a",
+  "source_digest": "3bff806c95ccf49202f5cb98237479930ad35d6ca6d1b2100aa4df7c66035e32",
   "digest_excludes": [
     "the inventory itself uses a derived structural fingerprint; deletions bind the upstream blob"
   ],
@@ -20,6 +20,7 @@
     ".downstream/upstream-review-v0.2.5.md",
     ".downstream/upstream-review-v0.2.6.md",
     ".downstream/upstream-risk.json",
+    ".github/scripts/test_upstream_automation_contract.py",
     ".github/workflows/backend-ci.yml",
     ".github/workflows/downstream-verify.yml",
     ".github/workflows/security-scan.yml",
@@ -258,6 +259,7 @@
     "backend/internal/service/provider_identity_admin_test.go",
     "backend/internal/service/quota_estimate.go",
     "backend/internal/service/ratelimit_service_cindy_balance_test.go",
+    "backend/internal/service/ratelimit_service_openai_test.go",
     "backend/internal/service/remote_skill_prompt.go",
     "backend/internal/service/remote_skill_prompt_test.go",
     "backend/internal/service/remote_skill_publication.go",
@@ -553,7 +555,7 @@
       "role": "documentation",
       "present": true,
       "content_sha256": null,
-      "review_fingerprint": "be27605b4e14711a40539bdb7279cae329e02001fdba40e36f09ce2ffe2bdde6",
+      "review_fingerprint": "e52ebc8072efe8057c918d19f1c623774c5ea84c3b408a3c6f3a74b149990bb9",
       "review_status": "reviewed",
       "decision": "generated-source",
       "owner": "operations",
@@ -836,19 +838,9 @@
       "candidate_owner": "operations",
       "role": "source",
       "present": true,
-      "content_sha256": "877b80c8a6500d9a75e0748676e16b073521bfab0d80f0c4c499ad34aa0b9e1e",
-      "review_fingerprint": "877b80c8a6500d9a75e0748676e16b073521bfab0d80f0c4c499ad34aa0b9e1e",
-      "review_status": "reviewed",
-      "decision": "reference",
-      "owner": "operations",
-      "reason": "下游自动化链的 unittest 契约测试。UpstreamAutomationContractTest 用字符串断言锁定 upstream-sync/upstream-risk-gate/upstream-auto-release/upstream-auto-deploy/production-deploy/upstream-promote/downstream-release 七个工作流的关键约束（每小时只同步 stable、pull_request_target 只执行 trusted 检出、-codexrip.1 标签唯一、deploy-preserve 交接、production 环境审批、publisher 不重跑业务测试、所有 gh 写操作带 --repo \"$GITHUB_REPOSITORY\"），并断言根 Dockerfile 用 SUB2API_ARTIFACT_BUILD=1 pnpm exec vite build；UpstreamPromotionPollingTest 以 mock 证明 require_checks 的 300s/600s/300s 退避序列、ensure_release 只调度一次且失败不重派、promote 对已合并 PR 复用检查/标签/部署。被测对象是 operations 工具而非核心业务，故归 reference/operations。静态阅读，未执行。",
-      "evidence": [
-        "Full-file static review: artifacts/evidence/v027-claude-S47-ops-docs-1-review.json",
-        "L15-L136: 10 text-contract tests reading 7 workflow files + promoter + root Dockerfile/vite.config.ts/package.json (all exist on disk); L131-L136 regex asserts every 'gh label|issue|pr|release|run|workflow' line in sync/release/handoff carries --repo \"$GITHUB_REPOSITORY\".",
-        "L139-L260: polling tests patch upstream_promote.command/api/time.sleep; L162 expects sleep calls [300,600,300]; L184-L185 expects release/runs interleaving; L201-L202 asserts the exact 'gh workflow run downstream-release.yml' dispatch; L258-L260 asserts the production-deploy dispatch args operation=deploy-preserve, confirmation=DEPLOY.",
-        "Consumers: downstream-verify.yml L61 and upstream-sync.yml L44 run it with python3; imports upstream_promote (same directory). Test names alone were not used as evidence; each assertion was matched against the workflow text read in this slice.",
-        "Static read only: the script/workflow was not executed, no test, build, Docker or network action was taken."
-      ]
+      "content_sha256": "09344384f08773d421301905cdf3468d8605e1a34d08375e999e4d5a38c2c112",
+      "review_fingerprint": "09344384f08773d421301905cdf3468d8605e1a34d08375e999e4d5a38c2c112",
+      "review_status": "pending"
     },
     {
       "path": ".github/scripts/test_upstream_risk.py",
@@ -18764,19 +18756,9 @@
       "candidate_owner": "core-quota-and-protocol",
       "role": "test-or-fixture",
       "present": true,
-      "content_sha256": "cf421129cd09d82ea43d9c59ec8991c15cb820ebb4ae34c18ee90356f9037b09",
-      "review_fingerprint": "cf421129cd09d82ea43d9c59ec8991c15cb820ebb4ae34c18ee90356f9037b09",
-      "review_status": "reviewed",
-      "decision": "reference",
-      "owner": "core-quota-and-protocol",
-      "reason": "Static OpenAI rate-limit tests cover header snapshot normalization, hard quota unknown reset, ordinary API-key fallback, and Spark-shadow isolation; tests were not rerun.",
-      "evidence": [
-        "coverage_role=core-quota-and-protocol; coverage_sha256=cf421129cd09d82ea43d9c59ec8991c15cb820ebb4ae34c18ee90356f9037b09; current_sha256=cf421129cd09d82ea43d9c59ec8991c15cb820ebb4ae34c18ee90356f9037b09; inventory_sha256_match=true",
-        "TestHandle429_OpenAIPersistsCodexSnapshotImmediately lines 273-300",
-        "TestHandle429_SkipsSparkShadow lines 321-357",
-        "TestOpenAIOAuth429_HardQuotaWithoutResetKeepsDeadlineUnknown lines 611-622",
-        "TestOpenAIOAuth429OrdinaryAPIKeyUsesOfficialFallbacks lines 624-650"
-      ]
+      "content_sha256": "b2885b87f2a9a47f2383adfb3db6bfd5b14e7ba3793adda369d6b9e1e8e6948b",
+      "review_fingerprint": "b2885b87f2a9a47f2383adfb3db6bfd5b14e7ba3793adda369d6b9e1e8e6948b",
+      "review_status": "pending"
     },
     {
       "path": "backend/internal/service/ratelimit_session_window_test.go",
