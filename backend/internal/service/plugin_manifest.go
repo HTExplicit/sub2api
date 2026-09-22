@@ -225,6 +225,9 @@ func (m PluginManifest) ValidateForRuntime(runtimeKey string) error {
 	if err := validateAccountViewContributions(m); err != nil {
 		return err
 	}
+	if err := validateAccountCreateContributions(m); err != nil {
+		return err
+	}
 	resourceNames := make(map[string]bool)
 	if len(m.Resources) > 256 {
 		return errors.New("插件资源操作数量超过限制")
@@ -310,6 +313,10 @@ func (m PluginManifest) ValidateForRuntime(runtimeKey string) error {
 				return errors.New("插件表单字段声明无效")
 			}
 			switch field.Kind {
+			case "text":
+				if field.MaxLength < 1 || field.MaxLength > 65536 || field.Rows != 0 || field.OptionsSource != "" {
+					return errors.New("插件文本字段范围无效")
+				}
 			case "select":
 				if !validKey.MatchString(field.OptionsSource) || len(field.DefaultLabel) == 0 {
 					return errors.New("插件选择字段声明无效")

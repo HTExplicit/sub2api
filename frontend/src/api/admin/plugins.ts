@@ -2,6 +2,7 @@ import { apiClient } from '../client'
 import { accountJobIdempotencyHeaders, type AccountJob } from './accountJobs'
 import type { PluginResourceDescriptor } from '@/components/plugins/resourceClient'
 import type { AccountResourceActionV1, AccountViewDefinitionV1, AccountViewIdentityV1 } from '@sub2api/plugin-ui/account-view'
+import type { AccountCreateDefinitionV1 } from '@sub2api/plugin-ui/account-create'
 import type { CapturedAccountView } from '@/composables/useAccountViewContext'
 import { accountViewClient } from './accountViewClient'
 import { pluginDispatchClient, pluginDispatchHeaders, type PluginDispatchContext } from './pluginDispatch'
@@ -115,6 +116,9 @@ export interface PluginInstallation {
 
 export interface PluginContribution {
   plugin_key?: string
+  account_create?: AccountCreateDefinitionV1
+  create_definition_digest?: string
+  runtime_generation?: number
   view_definition_digest?: string
   account_view?: AccountViewDefinitionV1
   value_bindings?: Record<string, string>
@@ -152,7 +156,7 @@ export interface PluginDisplayField {
 
 export interface PluginFormField {
   key: string
-  kind: 'select' | 'textarea'
+  kind: 'select' | 'textarea' | 'text'
   label: Record<string, string>
   options_source?: string
   default_label?: Record<string, string>

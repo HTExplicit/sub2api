@@ -124,6 +124,16 @@ func NormalizeCindyDeviceIdentityExtra(
 	requested map[string]any,
 	current map[string]any,
 ) (map[string]any, error) {
+	return normalizeCindyDeviceIdentityExtra(platform, accountType, credentials, requested, current, true)
+}
+
+// Create's business defaults come from the admitted manifest. Duplicate/Update
+// continue to use the legacy wrapper until their separate policy migration.
+func normalizeCindyDeviceIdentityForCreate(platform, accountType string, credentials, requested map[string]any) (map[string]any, error) {
+	return normalizeCindyDeviceIdentityExtra(platform, accountType, credentials, requested, nil, false)
+}
+
+func normalizeCindyDeviceIdentityExtra(platform, accountType string, credentials, requested, current map[string]any, legacyResponsesDefault bool) (map[string]any, error) {
 	if !IsCindyAPIKeyAccount(platform, accountType, credentials) {
 		return requested, nil
 	}
@@ -199,7 +209,9 @@ func NormalizeCindyDeviceIdentityExtra(
 
 	normalized[CindyDeviceIDExtraKey] = deviceID
 	normalized[CindyDeviceIDSourceExtraKey] = source
-	setCindyDefault(normalized, current, CindyResponsesModeExtraKey, "force_responses")
+	if legacyResponsesDefault {
+		setCindyDefault(normalized, current, CindyResponsesModeExtraKey, "force_responses")
+	}
 	preserveCindyRollbackExtra(normalized, current, CindyAlphaSearchExtraKey)
 	preserveCindyRollbackExtra(normalized, current, CindyPromptCacheExtraKey)
 	return normalized, nil

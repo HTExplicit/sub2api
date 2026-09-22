@@ -2,6 +2,10 @@ vi.mock('@/components/admin/account-jobs/AccountOperationDialog.vue', () => ({ d
 import { defineComponent, type PropType } from 'vue'
 import { flushPromises, mount } from '@vue/test-utils'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import cindyManifest from '../../../../../plugins/cindy-provider/manifest.source.json'
+import type { PluginContribution } from '@/api/admin/plugins'
+const createRegistry = vi.hoisted(() => ({ loaded: true, items: [] as PluginContribution[], refresh: vi.fn() }))
+vi.mock('@/stores/pluginExtensions', () => ({ usePluginExtensions: () => createRegistry }))
 
 const {
   createAccountMock,
@@ -317,6 +321,9 @@ async function openCodexImportStep(toggleClicks = 0) {
 
 describe('CreateAccountModal OpenAI long-context billing', () => {
   beforeEach(() => {
+    createRegistry.items = [{ id: 'codex-recovery-settings', slot: 'surface', available: true } as PluginContribution, ...cindyManifest.contributions.map(item => ({ ...structuredClone(item), plugin_id: 7, plugin_key: cindyManifest.id,
+      package_sha256: 'a'.repeat(64), create_definition_digest: 'b'.repeat(64), runtime_generation: 1, available: true,
+      account_scope: { version: 1, bindings: [{ platform: 'cindy', account_type: 'apikey', rollout_percent: 100 }] } })) as PluginContribution[]]
     authIsSimpleMode.value = true
     createAccountMock.mockReset().mockResolvedValue({ id: 42, platform: 'openai', type: 'apikey' })
     probeUpstreamBillingMock.mockReset().mockResolvedValue({})
@@ -575,7 +582,7 @@ describe('CreateAccountModal OpenAI long-context billing', () => {
     wrapper.unmount()
   })
 
-  it('creates a canonical Cindy API-key account with fixed identity defaults', async () => {
+  it('creates a canonical Cindy API-key account with declared identity and inherited defaults', async () => {
     const wrapper = mountModal([
       { id: 1, name: 'Cindy', platform: 'cindy', wire_platform: 'openai', provider_profile: 'cindy_laxa_v1' }
     ])
@@ -583,7 +590,7 @@ describe('CreateAccountModal OpenAI long-context billing', () => {
     await wrapper.get('[data-testid="select-pricing-groups"]').trigger('click')
     await wrapper.get('form#create-account-form input[type="text"]').setValue('Cindy account')
     await wrapper.get('form#create-account-form input[type="password"]').setValue('cindy-api-key')
-    await wrapper.get('[data-testid="cindy-device-id"]').setValue('aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa')
+    await wrapper.get('[data-extension-field="device_id"]').setValue('aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa')
     await wrapper.get('form#create-account-form').trigger('submit.prevent')
     await flushPromises()
 
@@ -595,19 +602,20 @@ describe('CreateAccountModal OpenAI long-context billing', () => {
         api_key: 'cindy-api-key',
         base_url: 'https://api.laxarouter.ai'
       }),
-      extra: expect.objectContaining({
-        cindy_device_id: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
-        cindy_device_id_source: 'input-preserved'
+      provider_create: expect.objectContaining({
+        contribution_id: 'cindy-create',
+        values: { device_id: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa' },
+        inherit_defaults: ['concurrency', 'priority', 'rate_multiplier', 'load_factor', 'responses_mode']
       }),
-      concurrency: 3,
-      priority: 50,
-      rate_multiplier: 1,
       group_ids: [1, 2],
       upstream_billing_probe_enabled: false
     }))
     expect(wrapper.get('[placeholder="https://api.laxarouter.ai"]').attributes('readonly')).toBeDefined()
-    expect(wrapper.find('[data-testid="cindy-managed-create-catalog"]').exists()).toBe(true)
-    expect(wrapper.get('[data-testid="cindy-managed-create-catalog"]').text()).toContain('gpt-5.6-luna')
+    expect(wrapper.find('[data-testid="provider-managed-create-catalog"]').exists()).toBe(true)
+    expect(wrapper.get('[data-testid="provider-managed-create-catalog"]').text()).toContain('gpt-5.6-luna')
+    const submitted = createAccountMock.mock.calls.at(-1)![0]
+    expect(submitted).not.toHaveProperty('concurrency')
+    expect(submitted.extra || {}).not.toHaveProperty('cindy_device_id_source')
   })
 
   it('keeps only the transport selector and removes account-level compatibility modes', async () => {
@@ -624,7 +632,7 @@ describe('CreateAccountModal OpenAI long-context billing', () => {
 
     const responses = wrapper.get<HTMLSelectElement>('[data-testid="openai-responses-mode-select"]')
 
-    expect(responses.element.value).toBe('force_responses')
+    expect(responses.element.value).toBe('auto')
     expect(wrapper.find('[data-testid="openai-alpha-search-mode-select"]').exists()).toBe(false)
     expect(wrapper.find('[data-testid="openai-prompt-cache-key-mode-select"]').exists()).toBe(false)
   })
@@ -1131,7 +1139,3 @@ describe('CreateAccountModal OpenAI long-context billing', () => {
     expect(createOpenAICodexPATMock.mock.calls[0]?.[0]?.extra?.openai_long_context_billing_enabled).toBe(false)
   })
 })
-vi.mock('@/stores/pluginExtensions', () => ({ usePluginExtensions: () => ({
-  loaded: true, refresh: vi.fn(),
-  items: [{ id: 'codex-recovery-settings', slot: 'surface', available: true }]
-}) }))

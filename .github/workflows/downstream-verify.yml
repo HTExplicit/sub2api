@@ -92,9 +92,9 @@ jobs:
           go test -p=1 ./internal/handler/admin -run 'TestUpdateSettings(PartialPayload|RejectsTwoCaptchaProviders|RequiresFourTencentCaptchaCredentials|RetainsStoredTencentCaptchaCredentials|ValidatesTencentCaptchaAppID|ValidatesTurnstileSiteKey)' -count=1
           go test -p=1 ./internal/handler/admin ./internal/service -run 'Test(ExportData|PreviewDataImport|ImportData|DataAccountIdentityKeys|DataIdentityIndex|AccountJobDataImport|OpsMetricsCollectorRecordsDatabasePoolWaitDelta|BulkUpdateAccepts|AccountHandler)' -count=1
           go test -p=1 ./internal/repository -run '^$'
-      - name: Account view scope and execution contracts
+      - name: Account view and create scope contracts
         working-directory: backend
-        run: go test -p=1 -tags unit ./internal/service ./internal/handler/admin ./internal/handler/dto ./internal/repository -run '^(TestAccountView.*|TestCindyRecoveryResourceProjection)$' -count=1
+        run: go test -p=1 -tags unit ./internal/service ./internal/handler/admin ./internal/handler/dto ./internal/repository -run '^(TestAccountView.*|TestAccountCreate.*|TestCindyRecoveryResourceProjection)$' -count=1
       - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
         with:
           python-version: '3.12'
@@ -113,7 +113,7 @@ jobs:
         run: go test -p=1 -tags integration ./internal/repository -run '^(Test(AccountTaxonomy.*|DeleteAccountFolder.*)Integration|TestAPIKeyRepoSuite/TestReleaseAcceptanceKeyIsHiddenButAuthenticates)$' -count=1
       - name: Cindy balance, identity, and split integration tests
         working-directory: backend
-        run: go test -p=1 -tags integration ./internal/repository -run '^Test(CindyBalanceProbe.*|CindyGroupSplit(PreviewDriftAndAtomicCommit|RollsBackAllWritesWhenOutboxInsertFails|KeepsCanonicalSourceAndTreatsLegacyLaxaAsOrdinary)|ClassifyStrictCindyGroupUsesAllNonDeletedMembersAndOpenAIGroup|PGXBatchInsertAuditAndSystemLogs|Migration236.*|AccountView(DualOwnerFence|ScopedProbeTerminalAtomic|ProbeResumeJSONBCAS)Integration)$' -count=1
+        run: go test -p=1 -tags integration ./internal/repository -run '^Test(CindyBalanceProbe.*|CindyGroupSplit(PreviewDriftAndAtomicCommit|RollsBackAllWritesWhenOutboxInsertFails|KeepsCanonicalSourceAndTreatsLegacyLaxaAsOrdinary)|ClassifyStrictCindyGroupUsesAllNonDeletedMembersAndOpenAIGroup|PGXBatchInsertAuditAndSystemLogs|Migration236.*|AccountView(DualOwnerFence|ScopedProbeTerminalAtomic|ProbeResumeJSONBCAS)Integration|AccountCreateEntFenceIntegration)$' -count=1
       - name: Cindy defaults migration tests
         working-directory: backend
         run: |
@@ -188,6 +188,7 @@ jobs:
             src/utils/__tests__/cindyOpenAIDefaults.spec.ts \
             src/components/account/__tests__/CreateAccountModal.spec.ts \
             src/components/account/__tests__/CreateAccountModal.codexFingerprint.spec.ts \
+            src/components/account/__tests__/CreateAccountModal.providerCreate.spec.ts \
             src/components/payment/__tests__/StripePaymentInline.contrast.spec.ts \
             src/views/user/__tests__/StripePaymentView.spec.ts \
             src/components/account/__tests__/OpenAIReasoningPolicyFields.spec.ts \

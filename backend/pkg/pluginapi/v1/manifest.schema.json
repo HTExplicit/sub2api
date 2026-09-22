@@ -306,7 +306,8 @@
               "theme",
               "usage.details",
               "surface",
-              "account.view.v1"
+              "account.view.v1",
+              "account.create.v1"
             ]
           },
           "label": {
@@ -348,7 +349,8 @@
                 "kind": {
                   "enum": [
                     "select",
-                    "textarea"
+                    "textarea",
+                    "text"
                   ]
                 },
                 "rows": {
@@ -515,6 +517,9 @@
                 "const": "refresh_current_account_view"
               }
             }
+          },
+          "account_create": {
+            "$ref": "#/$defs/accountCreate"
           }
         },
         "allOf": [
@@ -594,6 +599,56 @@
                 "permission": {
                   "const": "admin"
                 }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "slot": {
+                  "const": "account.create.v1"
+                }
+              }
+            },
+            "then": {
+              "required": [
+                "account_create",
+                "capability"
+              ],
+              "properties": {
+                "permission": {
+                  "const": "admin"
+                },
+                "capability": {
+                  "const": "extensions.provider.v1"
+                },
+                "entrypoint": {
+                  "maxLength": 0
+                },
+                "action": {
+                  "maxLength": 0
+                },
+                "all_accounts": {
+                  "const": false
+                },
+                "retained_controls": {
+                  "const": false
+                },
+                "fields": {
+                  "maxItems": 8
+                }
+              },
+              "not": {
+                "required": [
+                  "account_filter"
+                ]
+              }
+            },
+            "else": {
+              "not": {
+                "required": [
+                  "account_create"
+                ]
               }
             }
           }
@@ -1084,6 +1139,172 @@
           "enum": [
             "banned"
           ]
+        }
+      }
+    },
+    "accountCreate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "version",
+        "platform",
+        "account_type",
+        "credential_profile",
+        "credential_ui",
+        "defaults",
+        "minimum_effective_groups",
+        "upstream_billing_probe",
+        "model_editing",
+        "catalog_source",
+        "field_bindings"
+      ],
+      "properties": {
+        "version": {
+          "const": 1
+        },
+        "platform": {
+          "const": "cindy"
+        },
+        "account_type": {
+          "const": "apikey"
+        },
+        "credential_profile": {
+          "const": "cindy_laxa_v1"
+        },
+        "credential_ui": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "base_url",
+            "base_url_readonly",
+            "api_key_placeholder",
+            "hint"
+          ],
+          "properties": {
+            "base_url": {
+              "const": "https://api.laxarouter.ai"
+            },
+            "base_url_readonly": {
+              "const": true
+            },
+            "api_key_placeholder": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            },
+            "hint": {
+              "type": "object",
+              "minProperties": 1,
+              "maxProperties": 16,
+              "additionalProperties": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 256
+              }
+            },
+            "base_url_hint": {
+              "type": "object",
+              "minProperties": 1,
+              "maxProperties": 16,
+              "additionalProperties": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 256
+              }
+            },
+            "account_type_hint": {
+              "type": "object",
+              "minProperties": 1,
+              "maxProperties": 16,
+              "additionalProperties": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 256
+              }
+            },
+            "catalog_label": {
+              "type": "object",
+              "minProperties": 1,
+              "maxProperties": 16,
+              "additionalProperties": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 256
+              }
+            },
+            "catalog_hint": {
+              "type": "object",
+              "minProperties": 1,
+              "maxProperties": 16,
+              "additionalProperties": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 256
+              }
+            }
+          }
+        },
+        "defaults": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "concurrency",
+            "priority",
+            "rate_multiplier",
+            "load_factor",
+            "responses_mode"
+          ],
+          "properties": {
+            "concurrency": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "priority": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "rate_multiplier": {
+              "type": "number",
+              "minimum": 0
+            },
+            "load_factor": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "minimum": 1,
+              "maximum": 10000
+            },
+            "responses_mode": {
+              "enum": [
+                "auto",
+                "force_responses",
+                "force_chat_completions"
+              ]
+            }
+          }
+        },
+        "minimum_effective_groups": {
+          "const": 1
+        },
+        "upstream_billing_probe": {
+          "const": "unsupported"
+        },
+        "model_editing": {
+          "const": "provider_managed"
+        },
+        "catalog_source": {
+          "const": "group_model_candidates"
+        },
+        "field_bindings": {
+          "type": "object",
+          "maxProperties": 8,
+          "propertyNames": {
+            "pattern": "^[a-z][a-z0-9_]{0,63}$"
+          },
+          "additionalProperties": {
+            "const": "provider_device_identity_input"
+          }
         }
       }
     }

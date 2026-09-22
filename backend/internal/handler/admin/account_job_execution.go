@@ -294,6 +294,7 @@ func (h *AccountHandler) createAccountJobAccount(ctx context.Context, item Creat
 	}
 	sanitizeExtraBaseRPM(item.Extra)
 	account, err := h.adminService.CreateAccount(ctx, &service.CreateAccountInput{
+		ProviderCreate: item.ProviderCreate, ExplicitCreateFields: item.ExplicitCreateFields,
 		Name: item.Name, Notes: item.Notes, Platform: item.Platform, Type: item.Type,
 		Credentials: item.Credentials, Extra: item.Extra, ProxyID: item.ProxyID,
 		ModelContextOverrides: item.ModelContextOverrides,

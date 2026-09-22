@@ -23,9 +23,10 @@ func (r *recordingAdminCindyMutationRunner) Run(
 }
 
 func TestAdminCreateAccountPersistsCanonicalCindyIdentity(t *testing.T) {
+	useAccountCreateFixture(t)
 	repo := &accountRepoStubForBulkUpdate{createID: 71}
 	runner := &recordingAdminCindyMutationRunner{}
-	svc := &adminServiceImpl{accountRepo: repo, cindyAccountMutations: runner}
+	svc := &adminServiceImpl{accountRepo: repo, groupRepo: accountCreateGroups(), cindyAccountMutations: runner}
 
 	account, err := svc.CreateAccount(context.Background(), &CreateAccountInput{
 		Name:                 "cindy",
@@ -33,6 +34,7 @@ func TestAdminCreateAccountPersistsCanonicalCindyIdentity(t *testing.T) {
 		Type:                 AccountTypeAPIKey,
 		Credentials:          map[string]any{"api_key": "secret", "base_url": "https://API.LAXAROUTER.AI/"},
 		SkipDefaultGroupBind: true,
+		GroupIDs:             []int64{91}, SkipMixedChannelCheck: true,
 	})
 
 	require.NoError(t, err)
@@ -66,6 +68,7 @@ func TestAdminUpdateAccountUsesCanonicalCindyMutationRunner(t *testing.T) {
 }
 
 func TestAdminCreateAccountRejectsCindyCompositeBindingBeforeWrite(t *testing.T) {
+	useAccountCreateFixture(t)
 	accountRepo := &accountRepoStubForBulkUpdate{createID: 72}
 	groupRepo := &groupRepoStubForAdmin{getByIDByID: map[int64]*Group{
 		9: {ID: 9, Platform: PlatformComposite},

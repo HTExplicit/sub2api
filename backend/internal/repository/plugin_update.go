@@ -286,7 +286,35 @@ func (r *pluginRepository) SetPluginUpdatePolicy(ctx context.Context, id, revisi
 
 // State publication shares the installation lock with package/config changes.
 // A stale process cannot race a generation check and then commit its projection.
-func lockPluginExecution(ctx context.Context, tx *sql.Tx, plugin string) error {
+type pluginFenceQuerier interface {
+	QueryContext(context.Context, string, ...any) (*sql.Rows, error)
+}
+
+func scanPluginFenceRow(ctx context.Context, tx pluginFenceQuerier, query string, args []any, destinations ...any) error {
+	rows, err := tx.QueryContext(ctx, query, args...)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+	if !rows.Next() {
+		if err := rows.Err(); err != nil {
+			return err
+		}
+		return sql.ErrNoRows
+	}
+	if err := rows.Scan(destinations...); err != nil {
+		return err
+	}
+	if rows.Next() {
+		return errors.New("ambiguous plugin execution fence")
+	}
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	return rows.Close()
+}
+
+func lockPluginExecution(ctx context.Context, tx pluginFenceQuerier, plugin string) error {
 	fences, err := service.PluginExecutionFences(ctx, plugin)
 	if err != nil {
 		return err
@@ -295,7 +323,7 @@ func lockPluginExecution(ctx context.Context, tx *sql.Tx, plugin string) error {
 		if fence.Primary {
 			var generation int64
 			var state string
-			err := tx.QueryRowContext(ctx, `SELECT runtime_generation,state FROM sub2api_plugin_installations WHERE id=$1 AND plugin_key=$2 FOR SHARE`, fence.ID, plugin).Scan(&generation, &state)
+			err := scanPluginFenceRow(ctx, tx, `SELECT runtime_generation,state FROM sub2api_plugin_installations WHERE id=$1 AND plugin_key=$2 FOR SHARE`, []any{fence.ID, fence.PluginKey}, &generation, &state)
 			if err != nil {
 				return err
 			}
@@ -303,13 +331,39 @@ func lockPluginExecution(ctx context.Context, tx *sql.Tx, plugin string) error {
 				return service.ErrPluginStateChanged
 			}
 		}
-		if fence.OriginView {
+		if fence.OriginCreate {
+			if err := lockAccountCreatePolicy(ctx, tx, fence); err != nil {
+				return err
+			}
+		} else if fence.OriginView {
 			if err := lockOriginAccountView(ctx, tx, fence); err != nil {
 				return err
 			}
 		}
 	}
 	return nil
+}
+
+// Account creation adds definition/config and IDless composite-capability checks
+// under the existing shared row fence. sql.Tx and Ent use this one implementation.
+func lockAccountCreatePolicy(ctx context.Context, tx pluginFenceQuerier, fence service.PluginExecutionFence) error {
+	if err := lockOriginAccountView(ctx, tx, fence); err != nil {
+		if errors.Is(err, service.ErrAccountViewUnavailable) {
+			return service.ErrAccountCreateUnavailable
+		}
+		return err
+	}
+	var manifest []byte
+	var config string
+	var fullProviderAdmin bool
+	err := scanPluginFenceRow(ctx, tx, `SELECT p.manifest,p.config_encrypted,
+			EXISTS (SELECT 1 FROM sub2api_plugin_bindings b WHERE b.plugin_id=p.id AND b.capability='extensions.provider.v1' AND b.enabled AND b.rollout_percent=100 AND b.platform IN ('*','cindy') AND b.account_type IN ('*','apikey')) AND
+			EXISTS (SELECT 1 FROM sub2api_plugin_bindings b WHERE b.plugin_id=p.id AND b.capability='extensions.admin.v1' AND b.enabled AND b.rollout_percent=100 AND b.platform IN ('*','cindy') AND b.account_type IN ('*','apikey'))
+			FROM sub2api_plugin_installations p WHERE p.id=$1`, []any{fence.ID}, &manifest, &config, &fullProviderAdmin)
+	if err != nil {
+		return err
+	}
+	return service.ValidateAccountCreateFenceData(fence, manifest, config, fullProviderAdmin)
 }
 
 var _ service.PluginUpdateRepository = (*pluginRepository)(nil)

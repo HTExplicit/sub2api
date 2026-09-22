@@ -8,3 +8,4 @@ export { resource, resourceAvailability, useNotifications, mountPlugin, usePlugi
 export type { ResourceInput, ResourceAvailability, UIContext } from './client'
 export * from './errors'
 export * from './account-view'
+export * from './account-create'

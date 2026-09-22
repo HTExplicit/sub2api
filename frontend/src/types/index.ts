@@ -1629,6 +1629,7 @@ export interface OpenAIResponsesState {
 }
 
 export interface CreateAccountRequest {
+  provider_create?: import('@sub2api/plugin-ui/account-create').ProviderCreateRequestV1
   name: string
   notes?: string | null
   platform: AccountPlatform

@@ -216,18 +216,21 @@
             MiniMax
           </button>
           <button
+            v-for="profile in providerCreateChoices"
+            :key="`${profile.plugin_key}:${profile.id}`"
             type="button"
-            data-testid="select-cindy-platform"
-            @click="selectCindyPlatform"
+            :data-testid="`select-${profile.account_create.platform}-platform`"
+            :disabled="!createContributionAdmission(profile, { platform: profile.account_create.platform, accountType: profile.account_create.account_type }).allowed"
+            @click="selectProviderPlatform(profile)"
             :class="[
               'flex flex-1 items-center justify-center gap-2 rounded-none px-3 py-2.5 text-sm font-medium transition-all',
-              form.platform === 'cindy'
-                ? 'bg-white text-cyan-700 shadow-outline dark:bg-dark-600 dark:text-cyan-300'
+              form.platform === profile.account_create.platform
+                ? 'bg-white text-primary-700 shadow-outline dark:bg-dark-600 dark:text-primary-300'
                 : 'text-gray-600 hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-200'
             ]"
           >
-            <PlatformIcon platform="cindy" size="sm" />
-            Cindy
+            <PlatformIcon :platform="profile.account_create.platform" size="sm" />
+            {{ profileLabel(profile.label) }}
           </button>
           <button
             type="button"
@@ -245,17 +248,22 @@
         </div>
       </div>
 
-      <div v-if="form.platform === 'cindy'" data-testid="cindy-account-type">
+      <div v-if="createProfile" data-testid="provider-account-type">
         <label class="input-label">{{ t('admin.accounts.accountType') }}</label>
-        <div class="mt-2 flex items-center gap-3 rounded-none border-2 border-cyan-500 bg-cyan-50 p-3 dark:bg-cyan-900/20">
-          <div class="flex h-8 w-8 shrink-0 items-center justify-center rounded-none bg-cyan-600 text-white">
+        <div class="mt-2 flex items-center gap-3 rounded-none border-2 border-primary-500 bg-primary-50 p-3 dark:bg-primary-900/20">
+          <div class="flex h-8 w-8 shrink-0 items-center justify-center rounded-none bg-primary-600 text-white">
             <Icon name="key" size="sm" />
           </div>
           <div>
-            <span class="block text-sm font-medium text-gray-900 dark:text-white">Cindy API Key</span>
-            <span class="text-xs text-gray-500 dark:text-gray-400">{{ t('admin.accounts.cindy.canonicalHint') }}</span>
+            <span class="block text-sm font-medium text-gray-900 dark:text-white">{{ profileLabel(createProfile.label) }} · {{ t('admin.accounts.types.apikey') }}</span>
+            <span class="text-xs text-gray-500 dark:text-gray-400">{{ profileLabel(createProfile.account_create.credential_ui.account_type_hint || {}) }}</span>
           </div>
         </div>
+      </div>
+
+      <div v-if="providerCreate.required.value && !providerCreate.available.value" role="status" class="rounded border border-line p-3 text-sm text-muted" data-testid="provider-create-unavailable">
+        {{ providerCreate.stale.value ? t('admin.plugins.uiVersionChanged') : t('admin.plugins.extensionUnavailable') }}
+        <button v-if="providerCreate.stale.value" type="button" class="btn btn-secondary ml-2" data-testid="provider-create-reconcile" @click="reconcileCreateProfile">{{ t('common.refresh') }}</button>
       </div>
 
       <!-- Account Type Selection (Anthropic) -->
@@ -1400,7 +1408,7 @@
             v-model="apiKeyBaseUrl"
             type="text"
             class="input"
-            :readonly="form.platform === 'cindy'"
+            :readonly="!!createProfile?.account_create.credential_ui.base_url_readonly"
             :placeholder="apiKeyBaseUrlPlaceholder"
           />
           <p v-if="baseUrlHint" class="input-hint">{{ baseUrlHint }}</p>
@@ -1455,21 +1463,12 @@
           <p v-if="apiKeyHint" class="input-hint">{{ apiKeyHint }}</p>
         </div>
 
-        <div v-if="form.platform === 'cindy'">
-          <label class="input-label">{{ t('admin.accounts.cindy.deviceId') }}</label>
-          <input
-            v-model="cindyDeviceID"
-            type="text"
-            class="input font-mono"
-            data-testid="cindy-device-id"
-            :placeholder="t('admin.accounts.cindy.deviceIdPlaceholder')"
-          />
-          <p class="input-hint">{{ t('admin.accounts.cindy.deviceIdHint') }}</p>
-        </div>
+        <ExtensionFields v-if="createProfile" name="account.create.v1" v-model:values="providerFieldValues" :context="{}"
+          :contribution="createProfile" :create-target="{ platform: form.platform, accountType: form.type }" :disabled="!providerCreate.available.value" />
 
         <!-- 上游倍率自动探测：全部 API-key 平台可用（所在区块已限定 apikey 类型） -->
         <div
-          v-if="form.platform !== 'cindy'"
+          v-if="createProfile?.account_create.upstream_billing_probe !== 'unsupported'"
           class="flex items-center justify-between gap-4 border-t border-gray-200 pt-4 dark:border-dark-600"
         >
           <div>
@@ -1500,23 +1499,24 @@
           <label class="input-label">{{ t('admin.accounts.modelRestriction') }}</label>
 
           <div
-            v-if="form.platform === 'cindy'"
-            class="rounded-none border border-cyan-200 bg-cyan-50 p-3 text-sm text-cyan-800 dark:border-cyan-800/50 dark:bg-cyan-900/20 dark:text-cyan-200"
-            data-testid="cindy-managed-create-catalog"
+            v-if="createProfile?.account_create.model_editing === 'provider_managed'"
+            class="rounded-none border border-line bg-raised p-3 text-sm"
+            data-testid="provider-managed-create-catalog"
           >
-            <p class="font-medium">{{ t('admin.accounts.cindyManagedCatalog') }}</p>
-            <p class="mt-1 text-xs">{{ t('admin.accounts.cindy.managedCatalogHint') }}</p>
-            <p v-if="cindyCreateCatalogLoading" class="mt-2 text-xs">{{ t('admin.accounts.cindyCatalogLoading') }}</p>
-            <p v-else-if="cindyCreateCatalogLoadFailed" class="mt-2 text-xs text-red-600 dark:text-red-300">{{ t('admin.accounts.cindyCatalogLoadFailed') }}</p>
+            <p class="font-medium">{{ profileLabel(createProfile.account_create.credential_ui.catalog_label || {}) }}</p>
+            <p class="mt-1 text-xs">{{ profileLabel(createProfile.account_create.credential_ui.catalog_hint || {}) }}</p>
+            <p v-if="providerCreate.draft.value?.catalogLoading" class="mt-2 text-xs">{{ t('common.loading') }}</p>
+            <p v-if="providerCreate.draft.value?.catalogFailed" class="mt-2 text-xs text-red-600 dark:text-red-300">{{ t('common.error') }}</p>
+            <button v-if="providerCreate.draft.value?.catalogFailed" type="button" class="btn btn-secondary mt-2" :disabled="providerCreationBlocked" @click="providerCreate.refreshCatalog()">{{ t('common.retry') }}</button>
             <ModelWhitelistSelector
               v-model:capacity-drafts="capacityDrafts"
               :capacity-rows="capacityRows"
               :sync-source-key="capacitySyncSourceKey"
               @capacity-validity="setCapacityFieldValidity('selector', $event)"
-              v-else
+              v-if="providerCatalogModels.length || !providerCreate.draft.value?.catalogFailed"
               class="mt-2"
               :model-value="[]"
-              :models="cindyCreateCatalog"
+              :models="providerCatalogModels"
               readonly
             />
           </div>
@@ -1530,7 +1530,7 @@
             </p>
           </div>
 
-          <template v-else-if="form.platform !== 'cindy'">
+          <template v-else-if="createProfile?.account_create.model_editing !== 'provider_managed'">
             <!-- Mode Toggle -->
             <div class="mb-4 flex gap-2">
               <button
@@ -3126,21 +3126,22 @@
         <div>
           <label class="input-label">{{ t('admin.accounts.concurrency') }}</label>
           <input v-model.number="form.concurrency" type="number" min="1" class="input"
-            @input="form.concurrency = Math.max(1, form.concurrency || 1)" />
+            @input="form.concurrency = Math.max(1, form.concurrency || 1); providerCreate.markExplicit('concurrency')" />
         </div>
         <div>
           <label class="input-label">{{ t('admin.accounts.loadFactor') }}</label>
           <input v-model.number="form.load_factor" type="number" min="1"
             class="input" :placeholder="String(form.concurrency || 1)"
-            @input="form.load_factor = (form.load_factor &amp;&amp; form.load_factor >= 1) ? form.load_factor : null" />
+            @input="form.load_factor = (form.load_factor &amp;&amp; form.load_factor >= 1) ? form.load_factor : null; providerCreate.markExplicit('load_factor')" />
           <p class="input-hint">{{ t('admin.accounts.loadFactorHint') }}</p>
         </div>
         <div>
           <label class="input-label">{{ t('admin.accounts.priority') }}</label>
           <input
             v-model.number="form.priority"
+            @input="providerCreate.markExplicit('priority')"
             type="number"
-            min="1"
+            :min="createProfile ? 0 : 1"
             class="input"
             data-tour="account-form-priority"
           />
@@ -3148,7 +3149,7 @@
         </div>
         <div>
           <label class="input-label">{{ t('admin.accounts.billingRateMultiplier') }}</label>
-          <input v-model.number="form.rate_multiplier" type="number" min="0" step="0.001" class="input" />
+          <input v-model.number="form.rate_multiplier" type="number" min="0" step="0.001" class="input" @input="providerCreate.markExplicit('rate_multiplier')" />
           <p class="input-hint">{{ t('admin.accounts.billingRateMultiplierHint') }}</p>
         </div>
       </div>
@@ -3482,7 +3483,7 @@
 
       <!-- OpenAI APIKey Responses API support mode -->
       <div
-        v-if="form.platform === 'openai' && accountCategory === 'apikey'"
+        v-if="(form.platform === 'openai' || !!createProfile) && accountCategory === 'apikey'"
         class="space-y-4 border-t border-gray-200 pt-4 dark:border-dark-600"
       >
         <div class="flex items-center justify-between gap-4">
@@ -3495,6 +3496,7 @@
           <div class="w-56">
             <Select
               v-model="openAIResponsesMode"
+              @update:model-value="providerCreate.markExplicit('responses_mode')"
               :options="openAIResponsesModeOptions"
               :disabled="!openAITextGenerationCapabilityEnabled"
               data-testid="openai-responses-mode-select"
@@ -3706,7 +3708,7 @@
         <button
           type="submit"
           form="create-account-form"
-          :disabled="submitting || !capacityValid || !capacityReady"
+          :disabled="submitting || !capacityValid || !capacityReady || providerCreationBlocked"
           class="btn btn-primary"
           data-tour="account-form-submit"
         >
@@ -4011,9 +4013,15 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, computed, watch } from 'vue'
+import { ref, reactive, computed, watch, type Ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useAppStore } from '@/stores/app'
+import { useAuthStore } from '@/stores/auth'
+import { accountCreateDefaultTargets, useAccountCreateProfile } from '@/composables/useAccountCreateProfile'
+import { createContributionAdmission } from '@/components/plugins/contributionAdmission'
+import ExtensionFields from '@/components/plugins/ExtensionFields.vue'
+import type { PluginContribution } from '@/api/admin/plugins'
+import type { ProviderCreateRequestV1 } from '@sub2api/plugin-ui/account-create'
 
 import {
   claudeModels,
@@ -4105,7 +4113,6 @@ import {
   parseDateTimeLocalInput
 } from '@/utils/format'
 import { createStableObjectKeyResolver } from '@/utils/stableObjectKey'
-import { CINDY_OPENAI_DEFAULTS, isCindyOpenAIAPIKeyAccount } from '@/utils/cindyOpenAIDefaults'
 import { getAccountExpiryTimestamp } from '@/components/account/accountExpiry'
 import { VERTEX_LOCATION_OPTIONS } from '@/constants/account'
 import {
@@ -4135,7 +4142,9 @@ interface OAuthFlowExposed {
   reset: () => void
 }
 
-const { t } = useI18n()
+const { t, locale } = useI18n()
+const authStore = useAuthStore()
+const profileLabel = (labels: Record<string, string>) => labels[locale?.value || 'zh'] || labels[(locale?.value || 'zh').split('-')[0]!] || labels.en || labels.zh || ''
 const browserTimeZone = getBrowserTimeZone()
 
 const oauthStepTitle = computed(() => {
@@ -4156,7 +4165,7 @@ const withUpstreamRequestIdHeader = <T extends Record<string, unknown> | undefin
 }
 
 const baseUrlHint = computed(() => {
-  if (form.platform === 'cindy') return t('admin.accounts.cindy.fixedEndpointHint')
+  if (createProfile.value) return profileLabel(createProfile.value.account_create.credential_ui.base_url_hint || {})
   if (form.platform === 'openai') return t('admin.accounts.openai.baseUrlHint')
   if (form.platform === 'gemini') return t('admin.accounts.gemini.baseUrlHint')
   if (form.platform === 'grok') return ''
@@ -4164,7 +4173,7 @@ const baseUrlHint = computed(() => {
 })
 
 const apiKeyHint = computed(() => {
-  if (form.platform === 'cindy') return t('admin.accounts.cindy.apiKeyHint')
+  if (createProfile.value) return profileLabel(createProfile.value.account_create.credential_ui.hint)
   if (form.platform === 'openai') return t('admin.accounts.openai.apiKeyHint')
   if (form.platform === 'gemini') return t('admin.accounts.gemini.apiKeyHint')
   if (form.platform === 'grok') return ''
@@ -4173,13 +4182,12 @@ const apiKeyHint = computed(() => {
 
 // Base URL / API Key 占位符：国产供应商随账号类型变化。
 const apiKeyBaseUrlPlaceholder = computed(() => {
+  if (createProfile.value) return createProfile.value.account_create.credential_ui.base_url
   if (isMultiProtocolPlatform.value) {
     const mode = form.platform === 'opencode_go' ? openCodeAccountMode.value : accountMode.value
     return defaultCNBaseUrl(form.platform, mode, apiProtocol.value) || 'https://api.example.com'
   }
   switch (form.platform) {
-    case 'cindy':
-      return 'https://api.laxarouter.ai'
     case 'openai':
       return 'https://api.openai.com'
     case 'gemini':
@@ -4192,9 +4200,8 @@ const apiKeyBaseUrlPlaceholder = computed(() => {
 })
 
 const apiKeyValuePlaceholder = computed(() => {
+  if (createProfile.value) return createProfile.value.account_create.credential_ui.api_key_placeholder
   switch (form.platform) {
-    case 'cindy':
-      return 'cindy-...'
     case 'openai':
       return 'sk-proj-...'
     case 'gemini':
@@ -4298,11 +4305,6 @@ const accountCategory = ref<'oauth-based' | 'apikey' | 'bedrock' | 'service_acco
 const addMethod = ref<AddMethod>('oauth') // For oauth-based: 'oauth' or 'setup-token'
 const apiKeyBaseUrl = ref('https://api.anthropic.com')
 const apiKeyValue = ref('')
-const cindyDeviceID = ref('')
-const cindyCreateCatalog = ref<AccountAvailableModel[]>([])
-const cindyCreateCatalogLoading = ref(false)
-const cindyCreateCatalogLoadFailed = ref(false)
-const cindyDeviceIDPattern = /^(?:[0-9a-f]{64}|[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})$/
 const upstreamBillingAutoProbeEnabled = ref(true)
 
 // ── 国产供应商（Kimi / Zhipu / DeepSeek）账号类型、API 协议与端点 ──
@@ -4403,7 +4405,9 @@ const cnAccentIconClass = computed(() => {
 // 切换国产供应商平台：强制 apikey 类型，deepseek 无 coding 套餐故锁定 payg，
 // 协议回落 adaptive，并把 base url 重置为该平台默认端点。
 function selectCNPlatform(platform: CnProviderPlatform) {
+  const retained = platformDrafts.has(platform)
   form.platform = platform
+  if (retained) return
   form.type = 'apikey'
   accountCategory.value = 'apikey'
   apiProtocol.value = 'adaptive'
@@ -4414,38 +4418,16 @@ function selectCNPlatform(platform: CnProviderPlatform) {
   resetAdaptiveBaseUrls(platform, accountMode.value)
 }
 
-function selectCindyPlatform() {
-  form.platform = 'cindy'
-  form.type = 'apikey'
-  accountCategory.value = 'apikey'
-  apiKeyBaseUrl.value = 'https://api.laxarouter.ai'
-  void loadCindyCreateCatalog()
-}
-
-async function loadCindyCreateCatalog(): Promise<void> {
-  if (cindyCreateCatalogLoading.value) return
-  cindyCreateCatalogLoading.value = true
-  cindyCreateCatalogLoadFailed.value = false
-  try {
-    const models = await adminAPI.groups.getModelAllowlistCandidates(0, 'cindy')
-    cindyCreateCatalog.value = models.map(id => ({
-      id,
-      type: 'model',
-      display_name: id,
-      created_at: '',
-      managed: true,
-      verified: true
-    }))
-  } catch {
-    cindyCreateCatalog.value = []
-    cindyCreateCatalogLoadFailed.value = true
-  } finally {
-    cindyCreateCatalogLoading.value = false
-  }
+function selectProviderPlatform(profile: PluginContribution) {
+  if (!profile.account_create || !createContributionAdmission(profile, { platform: profile.account_create.platform, accountType: profile.account_create.account_type }).allowed) return
+  providerCreate.activate(profile.account_create.platform)
+  form.platform = profile.account_create.platform
 }
 
 function selectOpenCodeGoPlatform() {
+  const retained = platformDrafts.has('opencode_go')
   form.platform = 'opencode_go'
+  if (retained) return
   form.type = 'apikey'
   accountCategory.value = 'apikey'
   apiProtocol.value = 'adaptive'
@@ -4724,17 +4706,37 @@ const openAIResponsesModeOptions = computed(() => [
   { value: 'force_responses', label: t('admin.accounts.openai.responsesModeForceResponses') },
   { value: 'force_chat_completions', label: t('admin.accounts.openai.responsesModeForceChatCompletions') }
 ])
-const isCindyOpenAIAccount = computed(() =>
-  isCindyOpenAIAPIKeyAccount({
-    platform: form.platform,
-    type: accountCategory.value === 'apikey' ? 'apikey' : form.type,
-    credentials: { base_url: apiKeyBaseUrl.value }
-  })
-)
-watch(isCindyOpenAIAccount, enabled => {
-  if (!enabled) return
-  if (openAIResponsesMode.value === 'auto') openAIResponsesMode.value = CINDY_OPENAI_DEFAULTS.responsesMode
+const providerCreate = useAccountCreateProfile({
+  platform: () => form.platform, accountType: () => form.type, baseURL: () => apiKeyBaseUrl.value,
+  actorID: () => authStore.user?.id,
+  loadCatalog: platform => adminAPI.groups.getModelAllowlistCandidates(0, platform)
 })
+const createProfile = providerCreate.contribution
+const providerCreateChoices = providerCreate.choices
+const providerFieldValues = providerCreate.values
+const providerCreationBlocked = computed(() => providerCreate.required.value && (!providerCreate.available.value || !providerCreate.fieldsValid.value))
+const providerCatalogModels = computed<AccountAvailableModel[]>(() => (providerCreate.draft.value?.catalog || []).map(id => ({ id, type: 'model', display_name: id, created_at: '' })))
+watch(() => [form.concurrency, form.priority, form.rate_multiplier, form.load_factor, openAIResponsesMode.value], (next, previous) => {
+  for (const [index, target] of accountCreateDefaultTargets.entries()) if (next[index] !== previous[index]) providerCreate.markExplicit(target)
+}, { flush: 'sync' })
+function applyProviderDefaults() {
+  const selected = providerCreate.draft.value
+  if (!selected) return
+  providerCreate.preserveIntent(() => {
+    const defaults = selected.contribution.account_create.defaults
+    if (!selected.explicit.has('concurrency')) form.concurrency = defaults.concurrency
+    if (!selected.explicit.has('priority')) form.priority = defaults.priority
+    if (!selected.explicit.has('rate_multiplier')) form.rate_multiplier = defaults.rate_multiplier
+    if (!selected.explicit.has('load_factor')) form.load_factor = defaults.load_factor
+    if (!selected.explicit.has('responses_mode')) openAIResponsesMode.value = defaults.responses_mode
+  })
+}
+function reconcileCreateProfile() {
+  if (providerCreate.reconcile()) {
+    applyProviderDefaults()
+    apiKeyBaseUrl.value = providerCreate.definition.value!.credential_ui.base_url
+  }
+}
 const openAITextEndpointCapabilityLabel = computed(() => {
   if (openAIResponsesMode.value === 'force_responses') {
     return t('admin.accounts.openai.capabilityResponses')
@@ -4981,6 +4983,41 @@ const canExchangeCode = computed(() => {
   return authCode.trim() && oauth.sessionId.value && !oauth.loading.value
 })
 
+// Private component-memory drafts; neither credentials nor form state cross a plugin boundary.
+const platformDraftInputs: Record<string, Ref<unknown>> = {
+  accountCategory, addMethod, apiKeyBaseUrl, apiKeyValue, upstreamBillingAutoProbeEnabled, upstreamModelsPreviewed,
+  upstreamRequestIdHeader, autoPauseOnExpired, poolModeEnabled, poolModeRetryCount, poolModeRetryStatusCodesInput,
+  customErrorCodesEnabled, selectedErrorCodes, customErrorCodeInput, tempUnschedEnabled, tempUnschedRules,
+  openAILongContextBillingEnabled, openAILongContextBillingTouched,
+  modelRestrictionMode, allowedModels, modelMappings, openAICompactModelMappings,
+  openAIResponsesMode, openAICompactMode, openAIReasoningPolicy, openAIReasoningPolicySelected,
+  codexFingerprintMode, openaiPassthroughEnabled, openaiFlattenNamespacesEnabled,
+  openAIEndpointCapabilities, openaiOAuthResponsesWebSocketV2Mode, openaiAPIKeyResponsesWebSocketV2Mode,
+  codexCLIOnlyEnabled, codexCLIOnlyAppServerEnabled, headerOverrideEnabled, headerOverrideRows,
+  accountMode, openCodeAccountMode, apiProtocol, adaptiveBaseUrls, openCodeGoProtocolRules,
+  anthropicPassthroughEnabled, anthropicAPIKeyAuthScheme, webSearchEmulationMode,
+  openAIImagesUrlToB64JsonEnabled, grokOAuthCustomBaseUrlEnabled, grokOAuthBaseUrl,
+  antigravityAccountType, antigravityProjectId, antigravityWhitelistModels, antigravityModelMappings,
+  antigravityModelRestrictionMode, allowOverages, interceptWarmupRequests,
+  bedrockAccessKeyId, bedrockSecretAccessKey, bedrockSessionToken, bedrockRegion, bedrockForceGlobal,
+  bedrockAuthMode, bedrockApiKeyValue, vertexServiceAccountJson, vertexProjectId, vertexClientEmail, vertexLocation
+}
+const cloneDraft = <T,>(value: T): T => JSON.parse(JSON.stringify(value)) as T
+function capturePlatformDraft(platform: AccountPlatform) {
+  return { form: cloneDraft({ ...form, platform }), inputs: Object.fromEntries(Object.entries(platformDraftInputs).map(([key, value]) => [key, cloneDraft(value.value)])) }
+}
+type PlatformDraft = ReturnType<typeof capturePlatformDraft>
+const platformDrafts = new Map<AccountPlatform, PlatformDraft>()
+const initialPlatformDraft = capturePlatformDraft(form.platform)
+let resettingForm = false
+function restorePlatformDraft(snapshot: PlatformDraft, platform: AccountPlatform) {
+  const next = cloneDraft(snapshot)
+  const { platform: _platform, ...nextForm } = next.form
+  Object.assign(form, nextForm)
+  if (form.platform !== platform) form.platform = platform
+  for (const [key, value] of Object.entries(next.inputs)) if (platformDraftInputs[key]) platformDraftInputs[key]!.value = value
+}
+
 // Watchers
 watch(
   () => props.show,
@@ -4991,7 +5028,7 @@ watch(
         .then(profiles => { tlsFingerprintProfiles.value = profiles.map(p => ({ id: p.id, name: p.name })) })
         .catch(() => { tlsFingerprintProfiles.value = [] })
       // Modal opened - fill related models
-      allowedModels.value = [...getModelsByPlatform(form.platform)]
+      if (!providerCreate.required.value) allowedModels.value = [...getModelsByPlatform(form.platform)]
       // Antigravity: 默认使用映射模式并填充默认映射
       if (form.platform === 'antigravity') {
         antigravityModelRestrictionMode.value = 'mapping'
@@ -5038,16 +5075,29 @@ watch(
 // Reset platform-specific settings when platform changes
 watch(
   () => form.platform,
-  (newPlatform, previousPlatform) => {
+  (newPlatform, previousPlatform) => providerCreate.preserveIntent(() => {
+    if (resettingForm) return
+    platformDrafts.set(previousPlatform, capturePlatformDraft(previousPlatform))
+    const saved = platformDrafts.get(newPlatform)
+    const profileDraft = providerCreate.activate(newPlatform)
+    restorePlatformDraft(saved || initialPlatformDraft, newPlatform)
+    if (saved) return
+    if (profileDraft) {
+      accountCategory.value = 'apikey'
+      form.type = profileDraft.contribution.account_create.account_type
+      apiKeyBaseUrl.value = profileDraft.contribution.account_create.credential_ui.base_url
+      upstreamBillingAutoProbeEnabled.value = false
+      allowedModels.value = []
+      applyProviderDefaults()
+      return
+    }
     // Reset base URL based on platform
     if (isCNProviderPlatform(newPlatform) || newPlatform === 'opencode_go') {
       const mode = newPlatform === 'opencode_go' ? openCodeAccountMode.value : accountMode.value
       apiKeyBaseUrl.value = defaultCNBaseUrl(newPlatform, mode, apiProtocol.value)
     } else {
       apiKeyBaseUrl.value =
-        (newPlatform === 'cindy')
-          ? 'https://api.laxarouter.ai'
-          : (newPlatform === 'openai')
+        (newPlatform === 'openai')
             ? 'https://api.openai.com'
           : newPlatform === 'gemini'
             ? 'https://generativelanguage.googleapis.com'
@@ -5081,23 +5131,6 @@ watch(
       modelRestrictionMode.value = 'mapping'
       form.concurrency = 1
       form.load_factor = null
-    }
-    if (newPlatform === 'cindy') {
-      accountCategory.value = 'apikey'
-      form.type = 'apikey'
-      form.concurrency = 3
-      form.load_factor = null
-      form.priority = 50
-      form.rate_multiplier = 1
-      upstreamBillingAutoProbeEnabled.value = false
-      allowedModels.value = []
-      void loadCindyCreateCatalog()
-    } else if (previousPlatform === 'cindy') {
-      cindyDeviceID.value = ''
-      form.concurrency = newPlatform === 'grok' ? 1 : 10
-      form.priority = 1
-      form.rate_multiplier = 1
-      upstreamBillingAutoProbeEnabled.value = true
     }
     if (newPlatform !== 'gemini' && newPlatform !== 'anthropic' && accountCategory.value === 'service_account') {
       accountCategory.value = 'oauth-based'
@@ -5151,7 +5184,8 @@ watch(
     geminiOAuth.resetState()
     antigravityOAuth.resetState()
     grokOAuth.resetState()
-  }
+  }),
+  { flush: 'sync' }
 )
 
 // Gemini AI Studio OAuth availability (requires operator-configured OAuth client)
@@ -5197,7 +5231,8 @@ const handleSelectGeminiOAuthType = (oauthType: 'code_assist' | 'google_one' | '
 // Auto-fill related models when switching to whitelist mode or changing platform
 watch(
   [modelRestrictionMode, () => form.platform],
-  ([newMode]) => {
+  ([newMode, newPlatform], [, previousPlatform]) => {
+    if (providerCreate.required.value || (newPlatform !== previousPlatform && platformDrafts.has(newPlatform))) return
     if (newMode === 'whitelist') {
       allowedModels.value = [...getModelsByPlatform(form.platform)]
     }
@@ -5227,7 +5262,7 @@ const {
   reset: resetCapacityState,
   buildPatch: buildCapacityPatch
 } = useModelContextCapacities({
-  enabled: () => props.show,
+  enabled: () => props.show && !providerCreationBlocked.value,
   identity: () => `${form.platform}:${form.type}`,
   syncIdentity: () => form.platform === 'antigravity' ? upstreamApiKey.value : apiKeyValue.value,
   params: () => {
@@ -5250,11 +5285,10 @@ const {
           ]))
           : undefined
       } : {}),
-      model_mapping: mappings ?? {},
-      model_ids: [...new Set([
+      model_mapping: createProfile.value?.account_create.model_editing === 'provider_managed' ? {} : mappings ?? {},
+      model_ids: createProfile.value?.account_create.model_editing === 'provider_managed' ? (providerCreate.draft.value?.catalog || []) : [...new Set([
         ...getModelsByPlatform(form.platform), ...allowedModels.value,
-        ...openAICompactModelMappings.value.map(mapping => mapping.to),
-        ...cindyCreateCatalog.value.map(model => model.id)
+        ...openAICompactModelMappings.value.map(mapping => mapping.to)
       ])]
     }
   }
@@ -5529,6 +5563,7 @@ const ensureAntigravityMixedChannelConfirmed = async (onConfirm: () => Promise<v
 const submitCreateAccount = async (payload: CreateAccountRequest) => {
   submitting.value = true
   try {
+    if (payload.provider_create) providerCreate.assertRequest(payload.provider_create)
     const overrides = buildCapacityPatch()
     const account = await adminAPI.accounts.create(withAntigravityConfirmFlag({
       ...payload,
@@ -5587,6 +5622,9 @@ const submitCreateAccount = async (payload: CreateAccountRequest) => {
 
 // Methods
 const resetForm = () => {
+  resettingForm = true
+  providerCreate.reset()
+  platformDrafts.clear()
   resetCapacityState()
   step.value = 1
   form.name = ''
@@ -5610,10 +5648,6 @@ const resetForm = () => {
   adaptiveBaseUrls.value = { chat_completions: '', anthropic: '', responses: '' }
   apiKeyBaseUrl.value = 'https://api.anthropic.com'
   apiKeyValue.value = ''
-  cindyDeviceID.value = ''
-  cindyCreateCatalog.value = []
-  cindyCreateCatalogLoading.value = false
-  cindyCreateCatalogLoadFailed.value = false
   upstreamRequestIdHeader.value = ''
   upstreamBillingAutoProbeEnabled.value = true
   editQuotaLimit.value = null
@@ -5708,7 +5742,9 @@ const resetForm = () => {
   antigravityMixedChannelConfirmed.value = false
   upstreamModelsPreviewed.value = false
   clearMixedChannelDialog()
+  resettingForm = false
 }
+watch(() => authStore.user?.id, resetForm)
 
 const handleClose = () => {
   resetCapacityState()
@@ -5828,14 +5864,12 @@ const buildAnthropicExtra = (base?: Record<string, unknown>): Record<string, unk
   return Object.keys(extra).length > 0 ? extra : undefined
 }
 
-const buildCindyExtra = (base?: Record<string, unknown>): Record<string, unknown> | undefined => {
-  if (form.platform !== 'cindy') return base
+const buildProviderExtra = (base?: Record<string, unknown>, intent?: ProviderCreateRequestV1): Record<string, unknown> | undefined => {
+  if (!intent) return base
   const extra = applyOpenAIReasoningPolicyEdits(base, openAIReasoningPolicy.value, openAIReasoningPolicySelected.value)
-  const deviceID = cindyDeviceID.value.trim()
-  if (deviceID) {
-    extra.cindy_device_id = deviceID
-    extra.cindy_device_id_source = 'input-preserved'
-  }
+  // Explicit auto is a value, not an omission that can inherit a provider default.
+  if (intent.inherit_defaults.includes('responses_mode')) delete extra.openai_responses_mode
+  else extra.openai_responses_mode = openAIResponsesMode.value
   return Object.keys(extra).length > 0 ? extra : undefined
 }
 
@@ -5931,6 +5965,10 @@ const handleVertexServiceAccountDrop = async (event: DragEvent) => {
 }
 
 const handleSubmit = async () => {
+  if (providerCreationBlocked.value) {
+    appStore.showError(t(providerCreate.available.value ? 'common.error' : 'admin.plugins.extensionUnavailable'))
+    return
+  }
   if (!capacityReady.value) {
     appStore.showError(t(capacityLoadFailed.value ? 'admin.accounts.contextCapacity.loadFailed' : 'admin.accounts.contextCapacity.loading'))
     return
@@ -6079,18 +6117,7 @@ const handleSubmit = async () => {
   }
 
   // For apikey type, create directly
-  if (form.platform === 'cindy') {
-    if (form.group_ids.length === 0) {
-      appStore.showError(t('admin.accounts.cindy.groupRequired'))
-      return
-    }
-    const deviceID = cindyDeviceID.value.trim()
-    if (deviceID && !cindyDeviceIDPattern.test(deviceID)) {
-      appStore.showError(t('admin.accounts.cindy.deviceIdInvalid'))
-      return
-    }
-    apiKeyBaseUrl.value = 'https://api.laxarouter.ai'
-  }
+  const providerIntent = providerCreate.required.value ? providerCreate.request() : undefined
   if (!apiKeyValue.value.trim()) {
     appStore.showError(t('admin.accounts.pleaseEnterApiKey'))
     return
@@ -6098,15 +6125,13 @@ const handleSubmit = async () => {
 
   // Determine default base URL based on platform
   const defaultBaseUrl =
-    form.platform === 'cindy'
-      ? 'https://api.laxarouter.ai'
-      : form.platform === 'openai'
+    createProfile.value?.account_create.credential_ui.base_url || (form.platform === 'openai'
         ? 'https://api.openai.com'
       : form.platform === 'gemini'
         ? 'https://generativelanguage.googleapis.com'
         : form.platform === 'grok'
           ? 'https://api.x.ai/v1'
-          : 'https://api.anthropic.com'
+          : 'https://api.anthropic.com')
 
   // Build credentials with optional model mapping
   const credentials: Record<string, unknown> = {
@@ -6154,7 +6179,7 @@ const handleSubmit = async () => {
   }
 
   // Add model mapping if configured（OpenAI 开启自动透传时不应用）
-  if (form.platform !== 'cindy' && !isOpenAIModelRestrictionDisabled.value) {
+  if (createProfile.value?.account_create.model_editing !== 'provider_managed' && !isOpenAIModelRestrictionDisabled.value) {
     const modelMapping = buildModelMappingObject(modelRestrictionMode.value, allowedModels.value, modelMappings.value)
     if (modelMapping) {
       credentials.model_mapping = modelMapping
@@ -6202,15 +6227,19 @@ const handleSubmit = async () => {
   }
 
   form.credentials = credentials
-  const extra = buildCindyExtra(buildAnthropicExtra(buildOpenAIExtra()))
+  const extra = buildProviderExtra(buildAnthropicExtra(buildOpenAIExtra()), providerIntent)
 
-  await doCreateAccount({
+  const payload: CreateAccountRequest = {
     ...form,
     group_ids: form.group_ids,
     extra: withUpstreamRequestIdHeader(extra),
-    upstream_billing_probe_enabled: upstreamBillingAutoProbeEnabled.value,
+    upstream_billing_probe_enabled: createProfile.value?.account_create.upstream_billing_probe === 'unsupported' ? false : upstreamBillingAutoProbeEnabled.value,
+    ...(providerIntent ? { provider_create: providerIntent } : {}),
     auto_pause_on_expired: autoPauseOnExpired.value
-  })
+  }
+  // Omission carries inheritance intent; explicit zero/null remain ordinary values.
+  for (const target of providerIntent?.inherit_defaults || []) if (target !== 'responses_mode') delete payload[target]
+  await doCreateAccount(payload)
 }
 
 const goBackToBasicInfo = () => {

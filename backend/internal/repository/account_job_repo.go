@@ -226,10 +226,10 @@ func lockAccountJobPlugin(ctx context.Context, tx *sql.Tx, metadata json.RawMess
 	return nil
 }
 
-func lockOriginAccountView(ctx context.Context, tx *sql.Tx, fence service.PluginExecutionFence) error {
+func lockOriginAccountView(ctx context.Context, tx pluginFenceQuerier, fence service.PluginExecutionFence) error {
 	var generation, revision int64
 	var state, digest string
-	err := tx.QueryRowContext(ctx, `SELECT runtime_generation,state,package_sha256,revision FROM sub2api_plugin_installations WHERE id=$1 AND plugin_key=$2 FOR SHARE`, fence.ID, fence.PluginKey).Scan(&generation, &state, &digest, &revision)
+	err := scanPluginFenceRow(ctx, tx, `SELECT runtime_generation,state,package_sha256,revision FROM sub2api_plugin_installations WHERE id=$1 AND plugin_key=$2 FOR SHARE`, []any{fence.ID, fence.PluginKey}, &generation, &state, &digest, &revision)
 	if errors.Is(err, sql.ErrNoRows) || (err == nil && (generation != fence.Generation || state != service.PluginStateEnabled || digest != fence.PackageSHA256 || revision != fence.PolicyRevision)) {
 		return service.ErrAccountViewUnavailable
 	}

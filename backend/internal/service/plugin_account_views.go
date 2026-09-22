@@ -682,13 +682,17 @@ func ValidateAccountViewFresh(ctx context.Context) error {
 // Shared row locks are acquired in ascending installation ID order for both
 // action and view fences. A->B and B->A operations therefore use one lock order.
 type PluginExecutionFence struct {
-	ID             int64
-	Generation     int64
-	PluginKey      string
-	PackageSHA256  string
-	PolicyRevision int64
-	OriginView     bool
-	Primary        bool
+	OriginCreate           bool
+	CreateContributionID   string
+	CreateDefinitionSHA256 string
+	ConfigSHA256           string
+	ID                     int64
+	Generation             int64
+	PluginKey              string
+	PackageSHA256          string
+	PolicyRevision         int64
+	OriginView             bool
+	Primary                bool
 }
 
 func mergePluginExecutionFences(fences []PluginExecutionFence) ([]PluginExecutionFence, error) {
@@ -711,11 +715,31 @@ func mergePluginExecutionFences(fences []PluginExecutionFence) ([]PluginExecutio
 			if previous.Generation != fence.Generation || (previous.PluginKey != "" && fence.PluginKey != "" && previous.PluginKey != fence.PluginKey) {
 				return nil, ErrAccountViewUnavailable
 			}
-			primary := previous.Primary || fence.Primary
-			if fence.OriginView {
-				*previous = fence
+			previousStrict, nextStrict := previous.OriginView || previous.OriginCreate, fence.OriginView || fence.OriginCreate
+			if previousStrict && nextStrict && (previous.PackageSHA256 != fence.PackageSHA256 || previous.PolicyRevision != fence.PolicyRevision) {
+				return nil, ErrAccountViewUnavailable
 			}
-			previous.Primary = primary
+			if previous.ConfigSHA256 != "" && fence.ConfigSHA256 != "" && previous.ConfigSHA256 != fence.ConfigSHA256 {
+				return nil, ErrAccountViewUnavailable
+			}
+			if previous.OriginCreate && fence.OriginCreate && (previous.CreateContributionID != fence.CreateContributionID || previous.CreateDefinitionSHA256 != fence.CreateDefinitionSHA256 || previous.ConfigSHA256 != fence.ConfigSHA256) {
+				return nil, ErrAccountViewUnavailable
+			}
+			if previous.PluginKey == "" {
+				previous.PluginKey = fence.PluginKey
+			}
+			if previous.ConfigSHA256 == "" {
+				previous.ConfigSHA256 = fence.ConfigSHA256
+			}
+			if nextStrict {
+				previous.PackageSHA256, previous.PolicyRevision = fence.PackageSHA256, fence.PolicyRevision
+			}
+			if fence.OriginCreate {
+				previous.CreateContributionID, previous.CreateDefinitionSHA256, previous.ConfigSHA256 = fence.CreateContributionID, fence.CreateDefinitionSHA256, fence.ConfigSHA256
+			}
+			previous.Primary = previous.Primary || fence.Primary
+			previous.OriginView = previous.OriginView || fence.OriginView
+			previous.OriginCreate = previous.OriginCreate || fence.OriginCreate
 			continue
 		}
 		out = append(out, fence)
@@ -725,11 +749,20 @@ func mergePluginExecutionFences(fences []PluginExecutionFence) ([]PluginExecutio
 
 func PluginExecutionFences(ctx context.Context, primaryKey string) ([]PluginExecutionFence, error) {
 	var fences []PluginExecutionFence
+	if create, bound := AccountCreateFromContext(ctx); bound && primaryKey == "" {
+		primaryKey = create.PrimaryPluginKey
+	}
 	if execution, bound := PluginExecutionFromContext(ctx); bound {
 		fences = append(fences, PluginExecutionFence{ID: execution.ID, Generation: execution.Generation, PluginKey: primaryKey, Primary: true})
 	}
 	if view, bound := AccountViewFromContext(ctx); bound {
-		fences = append(fences, PluginExecutionFence{ID: view.Execution.ID, Generation: view.Execution.Generation, PluginKey: view.Request.PluginKey, PackageSHA256: view.Request.PackageSHA256, PolicyRevision: view.installation.Revision, OriginView: true})
+		fences = append(fences, PluginExecutionFence{ID: view.Execution.ID, Generation: view.Execution.Generation, PluginKey: view.Request.PluginKey, PackageSHA256: view.Request.PackageSHA256, PolicyRevision: view.installation.Revision, ConfigSHA256: accountCreateConfigDigest(view.installation.ConfigEncrypted), OriginView: true})
+	}
+	if create, bound := AccountCreateFromContext(ctx); bound {
+		fences = append(fences, PluginExecutionFence{ID: create.Execution.ID, Generation: create.Execution.Generation,
+			PluginKey: create.installation.PluginKey, PackageSHA256: create.installation.PackageSHA256, PolicyRevision: create.installation.Revision,
+			OriginCreate: true, CreateContributionID: create.contribution.ID, CreateDefinitionSHA256: AccountCreateDefinitionDigest(&create.contribution),
+			ConfigSHA256: accountCreateConfigDigest(create.installation.ConfigEncrypted)})
 	}
 	return mergePluginExecutionFences(fences)
 }

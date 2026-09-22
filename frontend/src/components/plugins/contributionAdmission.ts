@@ -8,6 +8,22 @@ export interface ContributionSelection {
 }
 export interface ContributionAdmission { allowed: boolean; reason?: 'unavailable' | 'unknown' | 'outside_scope' }
 
+/** account_scope is the host's intersection of this owner's required capabilities. */
+export function createContributionAdmission(item: PluginContribution, target: { platform: string; accountType: string }): ContributionAdmission {
+  if (!item.available) return { allowed: false, reason: 'unavailable' }
+  const profile = item.account_create
+  if (item.slot !== 'account.create.v1' || item.permission !== 'admin' || item.capability !== 'extensions.provider.v1' ||
+      !profile || profile.version !== 1 || profile.platform !== target.platform || profile.account_type !== target.accountType ||
+      item.account_filter || item.all_accounts || item.retained_controls || item.action || item.entrypoint) return { allowed: false, reason: 'unknown' }
+  const scope = item.account_scope
+  if (scope?.version !== 1 || !scope.bindings.some(binding =>
+    (binding.platform === '*' || binding.platform === target.platform) &&
+    (binding.account_type === '*' || binding.account_type === target.accountType) && binding.rollout_percent === 100)) {
+    return { allowed: false, reason: 'outside_scope' }
+  }
+  return { allowed: true }
+}
+
 // Keep uint64 overflow identical to stablePluginBucket in the host; Number
 // multiplication loses enough bits to choose a different gray-release bucket.
 export function contributionAccountBucket(id: number): number | null {

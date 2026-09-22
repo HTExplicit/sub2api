@@ -29,6 +29,7 @@ import (
 	"github.com/Wei-Shaw/sub2api/internal/pkg/timezone"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/xai"
 	"github.com/Wei-Shaw/sub2api/internal/service"
+	extensionv1 "github.com/Wei-Shaw/sub2api/pkg/extensionapi/v1"
 
 	"github.com/gin-gonic/gin"
 	"golang.org/x/sync/errgroup"
@@ -126,25 +127,70 @@ func NewAccountHandler(
 
 // CreateAccountRequest represents create account request
 type CreateAccountRequest struct {
-	Name                    string            `json:"name" binding:"required"`
-	Notes                   *string           `json:"notes"`
-	Platform                string            `json:"platform" binding:"required"`
-	WirePlatform            string            `json:"wire_platform"`
-	ProviderProfile         string            `json:"provider_profile"`
-	Type                    string            `json:"type" binding:"required,oneof=oauth setup-token apikey upstream bedrock service_account"`
-	Credentials             map[string]any    `json:"credentials" binding:"required"`
-	Extra                   map[string]any    `json:"extra"`
-	ModelContextOverrides   map[string]*int64 `json:"model_context_overrides"`
-	ProxyID                 *int64            `json:"proxy_id"`
-	Concurrency             int               `json:"concurrency"`
-	Priority                int               `json:"priority"`
-	RateMultiplier          *float64          `json:"rate_multiplier"`
-	LoadFactor              *int              `json:"load_factor"`
-	GroupIDs                []int64           `json:"group_ids"`
-	ExpiresAt               *int64            `json:"expires_at"`
-	AutoPauseOnExpired      *bool             `json:"auto_pause_on_expired"`
-	ProbeEnabled            *bool             `json:"upstream_billing_probe_enabled"`
-	ConfirmMixedChannelRisk *bool             `json:"confirm_mixed_channel_risk"` // 用户确认混合渠道风险
+	ProviderCreate          *extensionv1.ProviderCreateRequestV1 `json:"provider_create,omitempty"`
+	ExplicitCreateFields    map[string]bool                      `json:"-"`
+	Name                    string                               `json:"name" binding:"required"`
+	Notes                   *string                              `json:"notes"`
+	Platform                string                               `json:"platform" binding:"required"`
+	WirePlatform            string                               `json:"wire_platform"`
+	ProviderProfile         string                               `json:"provider_profile"`
+	Type                    string                               `json:"type" binding:"required,oneof=oauth setup-token apikey upstream bedrock service_account"`
+	Credentials             map[string]any                       `json:"credentials" binding:"required"`
+	Extra                   map[string]any                       `json:"extra"`
+	ModelContextOverrides   map[string]*int64                    `json:"model_context_overrides"`
+	ProxyID                 *int64                               `json:"proxy_id"`
+	Concurrency             int                                  `json:"concurrency"`
+	Priority                int                                  `json:"priority"`
+	RateMultiplier          *float64                             `json:"rate_multiplier"`
+	LoadFactor              *int                                 `json:"load_factor"`
+	GroupIDs                []int64                              `json:"group_ids"`
+	ExpiresAt               *int64                               `json:"expires_at"`
+	AutoPauseOnExpired      *bool                                `json:"auto_pause_on_expired"`
+	ProbeEnabled            *bool                                `json:"upstream_billing_probe_enabled"`
+	ConfirmMixedChannelRisk *bool                                `json:"confirm_mixed_channel_risk"` // 用户确认混合渠道风险
+}
+
+// Preserve missing-versus-explicit numeric values only for the new tagged
+// contract. Native requests retain their original JSON/hash representation.
+func (r *CreateAccountRequest) UnmarshalJSON(raw []byte) error {
+	type plain CreateAccountRequest
+	var decoded plain
+	if err := json.Unmarshal(raw, &decoded); err != nil {
+		return err
+	}
+	*r = CreateAccountRequest(decoded)
+	if r.ProviderCreate != nil {
+		var fields map[string]json.RawMessage
+		if err := json.Unmarshal(raw, &fields); err != nil {
+			return err
+		}
+		r.ExplicitCreateFields = map[string]bool{}
+		for _, target := range []string{"concurrency", "priority", "rate_multiplier", "load_factor"} {
+			for key := range fields {
+				r.ExplicitCreateFields[target] = r.ExplicitCreateFields[target] || strings.EqualFold(key, target)
+			}
+		}
+		_, r.ExplicitCreateFields["responses_mode"] = r.Extra[service.CindyResponsesModeExtraKey]
+	}
+	return nil
+}
+
+func (r CreateAccountRequest) MarshalJSON() ([]byte, error) {
+	type plain CreateAccountRequest
+	raw, err := json.Marshal(plain(r))
+	if err != nil || r.ProviderCreate == nil || r.ExplicitCreateFields == nil {
+		return raw, err
+	}
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &fields); err != nil {
+		return nil, err
+	}
+	for _, target := range []string{"concurrency", "priority", "rate_multiplier", "load_factor"} {
+		if !r.ExplicitCreateFields[target] {
+			delete(fields, target)
+		}
+	}
+	return json.Marshal(fields)
 }
 
 // UpdateAccountRequest represents update account request
@@ -1109,6 +1155,8 @@ func (h *AccountHandler) Create(c *gin.Context) {
 
 	result, err := executeAdminIdempotent(c, "admin.accounts.create", req, service.DefaultWriteIdempotencyTTL(), func(ctx context.Context) (any, error) {
 		account, execErr := h.adminService.CreateAccount(ctx, &service.CreateAccountInput{
+			ProviderCreate:        req.ProviderCreate,
+			ExplicitCreateFields:  req.ExplicitCreateFields,
 			Name:                  req.Name,
 			Notes:                 req.Notes,
 			Platform:              req.Platform,
