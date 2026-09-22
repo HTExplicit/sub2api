@@ -5,6 +5,7 @@ package repository
 import (
 	"context"
 	"testing"
+	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/service"
 	"github.com/stretchr/testify/require"
@@ -81,8 +82,27 @@ func TestPluginProcessDiagnosticsLeaseAndBusinessPromotionBarrier(t *testing.T) 
 	require.NoError(t, err)
 	require.ErrorIs(t, repo.CommitPluginUpdate(ctx, pending, candidate), service.ErrPluginUpdateWaiting, "business IO must hold the shared promotion barrier")
 	businessRelease()
-	require.NoError(t, repo.CommitPluginUpdate(ctx, pending, candidate))
+	// Release closes the client session; PostgreSQL may observe that close and
+	// release its advisory lock slightly later. Retry only that lock state.
+	promotionCtx, cancelPromotion := context.WithTimeout(ctx, 5*time.Second)
+	defer cancelPromotion()
+	poll := time.NewTicker(10 * time.Millisecond)
+	defer poll.Stop()
+	for {
+		err = repo.CommitPluginUpdate(promotionCtx, pending, candidate)
+		if err == nil {
+			break
+		}
+		require.ErrorIs(t, err, service.ErrPluginUpdateWaiting, "only the server-side release barrier may delay promotion")
+		select {
+		case <-promotionCtx.Done():
+			t.Fatal("PostgreSQL did not release the promotion barrier within the bounded wait")
+		case <-poll.C:
+		}
+	}
 	updated, err := repo.GetByID(ctx, current.ID)
 	require.NoError(t, err)
 	require.Equal(t, enabled.RuntimeGeneration+1, updated.RuntimeGeneration)
+	require.Equal(t, candidate.Version, updated.Version)
+	require.Equal(t, candidate.PackageSHA256, updated.PackageSHA256)
 }

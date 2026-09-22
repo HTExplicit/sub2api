@@ -1,9 +1,9 @@
 {
   "schema_version": 3,
   "upstream_base": "aea725f2ea644d5592d0bbb1d63b607efa7e200a",
-  "basis_commit": "2f8e120a1d440e10d2aca17eb41286e052398fe6",
+  "basis_commit": "7865a33ae212c9b3ed00a31a8b68ede450346841",
   "scope": "Current Sub2API downstream source and working tree. Candidate ownership does not establish completed review. Root maintenance, independent services and Worker require a separate audit.",
-  "source_digest": "819ee0a22a77a5bad34425c7636cdf3e95df7f2fa8d5a2d76250d7b18bee4fcb",
+  "source_digest": "35a906810602652190312e985499b6328a365ceb8b1e132031d12cff9960d2b6",
   "digest_excludes": [
     "the inventory itself uses a derived structural fingerprint; deletions bind the upstream blob"
   ],
@@ -112,6 +112,7 @@
     "backend/internal/repository/minimax_cindy_quota_migration_integration_test.go",
     "backend/internal/repository/plugin_bundle.go",
     "backend/internal/repository/plugin_extension_state.go",
+    "backend/internal/repository/plugin_host_io_admission_integration_test.go",
     "backend/internal/repository/plugin_registry_tx.go",
     "backend/internal/repository/plugin_update.go",
     "backend/internal/repository/remote_skill_job_expiry_test.go",
@@ -555,7 +556,7 @@
       "role": "documentation",
       "present": true,
       "content_sha256": null,
-      "review_fingerprint": "17af2fdfc0ed91b9fa983d7b82e3ca424be4c9fb6488d6defd3f1d2982490aa8",
+      "review_fingerprint": "513e7e2da059f870b657243aa7caf1a57ee625bc254b80590a375fc438198f6a",
       "review_status": "reviewed",
       "decision": "generated-source",
       "owner": "operations",
@@ -8716,19 +8717,9 @@
       "candidate_owner": "core-extension-and-job-host",
       "role": "test-or-fixture",
       "present": true,
-      "content_sha256": "ee3dd2d1f1aafc72f9e81f9d12ad9b33e7f9ba189b635e334e0d3b667abe80f8",
-      "review_fingerprint": "ee3dd2d1f1aafc72f9e81f9d12ad9b33e7f9ba189b635e334e0d3b667abe80f8",
-      "review_status": "reviewed",
-      "decision": "core-correctness",
-      "owner": "core-extension-and-job-host",
-      "reason": "New actual-PostgreSQL regression tests verify business admission separately from legal disabled process leases and promotion barriers.",
-      "evidence": [
-        "Read all 88 lines. Tests use the real pluginRepository, actual migrated PostgreSQL, dedicated pgx session locks and unique fixture plugin keys inside the task-only database.",
-        "Each stale-snapshot case first acquires a valid marked lease, then persists disable/config/binding changes through repository methods and proves revision advanced while package/generation remain unchanged. Old marked admission must return ErrPluginStateChanged and no release handle.",
-        "A separate selected subcase supplies the current revision number but stale ConfigEncrypted, proving the config comparison independently of revision mismatch. Only this new subcase was run after adding it; already-passed branches were not rerun.",
-        "An unmarked lease for a disabled installation succeeds, while a marked business lease for that same fresh disabled snapshot fails. After reenable, a valid business lease causes CommitPluginUpdate to return ErrPluginUpdateWaiting until release, after which commit succeeds and generation increments.",
-        "The original cases failed on real PostgreSQL before the fix. The initial diagnostics test failed at disabled business admission, so its later promotion-barrier section was reached and verified only after the fix."
-      ]
+      "content_sha256": "4d14dca04412ea51e0618c14c7f832aed57787ca84be18ae78eeb06695ea7c8e",
+      "review_fingerprint": "4d14dca04412ea51e0618c14c7f832aed57787ca84be18ae78eeb06695ea7c8e",
+      "review_status": "pending"
     },
     {
       "path": "backend/internal/repository/plugin_install_guard_integration_test.go",
