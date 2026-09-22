@@ -62,26 +62,14 @@ describe('AccountActionMenu — spark shadow 按钮可见性', () => {
     expect(document.body.querySelector('[data-test="extension-slot"]')?.textContent).toBe('account.actions:1')
     wrapper.unmount()
   })
-  it('仅已标记账号显示 Cindy 恢复入口并发送专用事件', async () => {
+  it('核心菜单不再硬编码 Cindy 恢复入口（cd8c18b54 起由插件 account.actions 槽位承接）', () => {
     const account = makeAccount({ cindy_balance_insufficient: true })
     const wrapper = mount(AccountActionMenu, {
       props: { show: true, account, anchorRect },
       attachTo: document.body,
     })
-
-    const recoverButton = getBodyButtons().find(b => b.textContent?.includes('admin.accounts.cindy.recover'))
-    expect(recoverButton).toBeDefined()
-    recoverButton!.click()
-    await wrapper.vm.$nextTick()
-    expect(wrapper.emitted('recover-cindy-balance')?.[0]?.[0]).toMatchObject({ id: account.id })
+    expect(getBodyButtons().find(b => b.textContent?.includes('admin.accounts.cindy.recover'))).toBeUndefined()
     wrapper.unmount()
-
-    const unmarked = mount(AccountActionMenu, {
-      props: { show: true, account: makeAccount({ cindy_balance_insufficient: false }), anchorRect },
-      attachTo: document.body,
-    })
-    expect(getBodyText()).not.toContain('admin.accounts.cindy.recover')
-    unmarked.unmount()
   })
 
   it('普通账号显示「复制账号」按钮', () => {
