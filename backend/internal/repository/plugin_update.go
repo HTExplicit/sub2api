@@ -323,7 +323,7 @@ func lockPluginExecution(ctx context.Context, tx pluginFenceQuerier, plugin stri
 		if fence.Primary {
 			var generation int64
 			var state string
-			err := scanPluginFenceRow(ctx, tx, `SELECT runtime_generation,state FROM sub2api_plugin_installations WHERE id=$1 AND plugin_key=$2 FOR SHARE`, []any{fence.ID, fence.PluginKey}, &generation, &state)
+			err := scanPluginFenceRow(ctx, tx, `SELECT runtime_generation,state FROM sub2api_plugin_installations WHERE id=$1 AND ($2='' OR plugin_key=$2) FOR SHARE`, []any{fence.ID, fence.PluginKey}, &generation, &state)
 			if err != nil {
 				return err
 			}
@@ -335,13 +335,42 @@ func lockPluginExecution(ctx context.Context, tx pluginFenceQuerier, plugin stri
 			if err := lockAccountCreatePolicy(ctx, tx, fence); err != nil {
 				return err
 			}
-		} else if fence.OriginView {
+		}
+		if fence.OriginEdit {
+			if err := lockAccountEditPolicy(ctx, tx, fence); err != nil {
+				return err
+			}
+		}
+		if fence.OriginView && !fence.OriginCreate && !fence.OriginEdit {
 			if err := lockOriginAccountView(ctx, tx, fence); err != nil {
 				return err
 			}
 		}
 	}
 	return nil
+}
+
+func lockAccountEditPolicy(ctx context.Context, tx pluginFenceQuerier, fence service.PluginExecutionFence) error {
+	if err := lockOriginAccountView(ctx, tx, fence); err != nil {
+		if errors.Is(err, service.ErrAccountViewUnavailable) {
+			return service.ErrAccountEditUnavailable
+		}
+		return err
+	}
+	var manifest, bindingsJSON []byte
+	var config string
+	err := scanPluginFenceRow(ctx, tx, `SELECT p.manifest,p.config_encrypted,
+		COALESCE((SELECT jsonb_agg(jsonb_build_object('capability',b.capability,'platform',b.platform,'account_type',b.account_type,'enabled',b.enabled,'rollout_percent',b.rollout_percent))
+		FROM sub2api_plugin_bindings b WHERE b.plugin_id=p.id),'[]'::jsonb)
+		FROM sub2api_plugin_installations p WHERE p.id=$1`, []any{fence.ID}, &manifest, &config, &bindingsJSON)
+	if err != nil {
+		return err
+	}
+	var bindings []service.PluginBinding
+	if json.Unmarshal(bindingsJSON, &bindings) != nil {
+		return service.ErrAccountEditUnavailable
+	}
+	return service.ValidateAccountEditFenceData(fence, manifest, config, bindings)
 }
 
 // Account creation adds definition/config and IDless composite-capability checks

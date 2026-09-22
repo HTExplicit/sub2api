@@ -40,6 +40,7 @@ type Dependency struct {
 }
 
 type Contribution struct {
+	AccountEdit      *AccountEditDefinitionV1   `json:"account_edit,omitempty"`
 	AccountCreate    *AccountCreateDefinitionV1 `json:"account_create,omitempty"`
 	AccountView      *AccountViewDefinitionV1   `json:"account_view,omitempty"`
 	ValueBindings    map[string]string          `json:"value_bindings,omitempty"`
@@ -118,6 +119,7 @@ func AccountMatchesFilter(account Account, filter *AccountFilter) bool {
 }
 
 var slots = map[string]bool{
+	AccountEditSlot:   true,
 	AccountCreateSlot: true,
 	AccountViewSlot:   true,
 	"admin.page":      true, "admin.settings": true, "account.actions": true,

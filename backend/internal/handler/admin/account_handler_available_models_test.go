@@ -16,6 +16,7 @@ import (
 	"github.com/Wei-Shaw/sub2api/internal/pkg/openai"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/tlsfingerprint"
 	"github.com/Wei-Shaw/sub2api/internal/service"
+	"github.com/Wei-Shaw/sub2api/internal/testextensions"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
 )
@@ -310,6 +311,9 @@ func TestAccountHandlerGetAvailableModels_OpenAIAPIKeyReportsUnavailableDiscover
 }
 
 func TestAccountHandlerGetAvailableModels_CindyUsesManagedCatalogInsteadOfStoredMapping(t *testing.T) {
+	fixture := &testPlanOperations{}
+	service.ConfigureProcessExtensionServices(nil, fixture)
+	t.Cleanup(testextensions.Install)
 	svc := &availableModelsAdminService{
 		stubAdminService: newStubAdminService(),
 		account: service.Account{
@@ -395,6 +399,14 @@ func TestAccountHandlerGetAvailableModels_CindyUsesManagedCatalogInsteadOfStored
 	require.NotContains(t, rec.Body.String(), "must-not-leak")
 	require.NotContains(t, rec.Body.String(), "api_key")
 	require.NotContains(t, rec.Body.String(), "credentials")
+	reads := 0
+	for _, call := range fixture.calls {
+		if call.Operation == "cindy.catalog" {
+			reads++
+			require.EqualValues(t, 47, call.AccountID)
+		}
+	}
+	require.Equal(t, 1, reads, "native management catalog uses one real-account snapshot")
 }
 
 func TestAccountHandlerGetAvailableModels_OpenAISparkShadowReturnsMappingModels(t *testing.T) {

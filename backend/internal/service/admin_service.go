@@ -437,6 +437,7 @@ type ShadowOptions struct {
 }
 
 type UpdateAccountInput struct {
+	ProviderEdit          *extensionv1.ProviderEditRequestV1
 	Name                  string
 	Notes                 *string
 	Type                  string // Account type: oauth, setup-token, apikey

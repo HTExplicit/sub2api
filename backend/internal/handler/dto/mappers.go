@@ -293,6 +293,13 @@ func AccountFromServiceShallow(a *service.Account) *Account {
 		QuotaDimension:             a.QuotaDimension,
 	}
 
+	// Native detail/list paths both provide full persisted account JSON and
+	// credential generation. Compute before redaction; never hash the reduced
+	// DTO or infer a Cindy profile from a URL/client flag alone.
+	if out.AccountViewFacts != nil && out.AccountViewFacts.CanonicalCindy {
+		out.AccountEditStateSHA256 = service.AccountEditStateDigest(a)
+	}
+
 	// 提取 5h 窗口费用控制和会话数量控制配置（仅 Anthropic OAuth/SetupToken 账号有效）
 	if a.IsAnthropicOAuthOrSetupToken() {
 		if limit := a.GetWindowCostLimit(); limit > 0 {
@@ -498,6 +505,7 @@ func AccountListItemFromAccount(a *Account) *AccountListItem {
 		return nil
 	}
 	return &AccountListItem{
+		AccountEditStateSHA256:     a.AccountEditStateSHA256,
 		AccountViewFacts:           a.AccountViewFacts,
 		WirePlatform:               a.WirePlatform,
 		ProviderProfile:            a.ProviderProfile,

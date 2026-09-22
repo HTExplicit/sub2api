@@ -124,16 +124,16 @@ func NormalizeCindyDeviceIdentityExtra(
 	requested map[string]any,
 	current map[string]any,
 ) (map[string]any, error) {
-	return normalizeCindyDeviceIdentityExtra(platform, accountType, credentials, requested, current, true)
+	return normalizeCindyDeviceIdentityExtra(platform, accountType, credentials, requested, current)
 }
 
-// Create's business defaults come from the admitted manifest. Duplicate/Update
-// continue to use the legacy wrapper until their separate policy migration.
+// Create's business defaults come from the admitted manifest. Identity
+// normalization never fills protocol policy; Duplicate preserves its source.
 func normalizeCindyDeviceIdentityForCreate(platform, accountType string, credentials, requested map[string]any) (map[string]any, error) {
-	return normalizeCindyDeviceIdentityExtra(platform, accountType, credentials, requested, nil, false)
+	return normalizeCindyDeviceIdentityExtra(platform, accountType, credentials, requested, nil)
 }
 
-func normalizeCindyDeviceIdentityExtra(platform, accountType string, credentials, requested, current map[string]any, legacyResponsesDefault bool) (map[string]any, error) {
+func normalizeCindyDeviceIdentityExtra(platform, accountType string, credentials, requested, current map[string]any) (map[string]any, error) {
 	if !IsCindyAPIKeyAccount(platform, accountType, credentials) {
 		return requested, nil
 	}
@@ -209,9 +209,6 @@ func normalizeCindyDeviceIdentityExtra(platform, accountType string, credentials
 
 	normalized[CindyDeviceIDExtraKey] = deviceID
 	normalized[CindyDeviceIDSourceExtraKey] = source
-	if legacyResponsesDefault {
-		setCindyDefault(normalized, current, CindyResponsesModeExtraKey, "force_responses")
-	}
 	preserveCindyRollbackExtra(normalized, current, CindyAlphaSearchExtraKey)
 	preserveCindyRollbackExtra(normalized, current, CindyPromptCacheExtraKey)
 	return normalized, nil
@@ -224,17 +221,6 @@ func preserveCindyRollbackExtra(normalized, current map[string]any, key string) 
 	if value, present := current[key]; present {
 		normalized[key] = value
 	}
-}
-
-func setCindyDefault(normalized, current map[string]any, key string, fallback any) {
-	if _, present := normalized[key]; present {
-		return
-	}
-	if value, present := current[key]; present {
-		normalized[key] = value
-		return
-	}
-	normalized[key] = fallback
 }
 
 func MaskCindyDeviceID(value string) string {

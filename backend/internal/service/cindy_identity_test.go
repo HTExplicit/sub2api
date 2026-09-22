@@ -76,7 +76,7 @@ func TestNormalizeCindyDeviceIdentityExtraPreservesInput(t *testing.T) {
 	require.Equal(t, deviceID, got[CindyDeviceIDExtraKey])
 	require.Equal(t, "registration-record", got[CindyDeviceIDSourceExtraKey])
 	require.Equal(t, "kept", got["ordinary"])
-	require.Equal(t, "force_responses", got[CindyResponsesModeExtraKey])
+	require.NotContains(t, got, CindyResponsesModeExtraKey, "identity normalization does not invent protocol policy")
 	require.NotContains(t, got, CindyAlphaSearchExtraKey)
 	require.NotContains(t, got, CindyPromptCacheExtraKey)
 	require.Equal(t, deviceID, requested[CindyDeviceIDExtraKey], "input map must not be mutated")

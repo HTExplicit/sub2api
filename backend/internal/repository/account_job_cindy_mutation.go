@@ -56,6 +56,9 @@ func (r *accountJobCindyMutationRunner) Run(
 	if err := r.FenceAccountCreate(txCtx); err != nil {
 		return nil, err
 	}
+	if err := r.FenceAccountEdit(txCtx); err != nil {
+		return nil, err
+	}
 	var previousGroupIDs []int64
 	if accountID > 0 {
 		if err = lockCindyAccountJobTarget(ctx, txClient, accountID); err != nil {
@@ -128,6 +131,12 @@ func (r *accountJobCindyMutationRunner) Run(
 	if err := service.ValidateAccountCreateFresh(ctx); err != nil {
 		return nil, err
 	}
+	if err := service.ValidateAccountViewFresh(ctx); err != nil {
+		return nil, err
+	}
+	if err := service.ValidateAccountEditFresh(ctx); err != nil {
+		return nil, err
+	}
 	if err = tx.Commit(); err != nil {
 		return nil, err
 	}
@@ -156,7 +165,7 @@ func (r *accountJobCindyMutationRunner) Run(
 func (r *accountJobCindyMutationRunner) FenceAccountCreate(ctx context.Context) error {
 	create, bound := service.AccountCreateFromContext(ctx)
 	if !bound {
-		return nil // Duplicate/Update retain their existing policy in this phase.
+		return nil
 	}
 	if err := service.ValidateAccountCreateFresh(ctx); err != nil {
 		return err
@@ -171,6 +180,26 @@ func (r *accountJobCindyMutationRunner) FenceAccountCreate(ctx context.Context) 
 		}
 		return err
 	}
+	return nil
+}
+
+// All owner fences precede the account lock, even for a basic-only write from a
+// view. Edit admission is independent; unchanged values create no edit fence.
+func (r *accountJobCindyMutationRunner) FenceAccountEdit(ctx context.Context) error {
+	if _, create := service.AccountCreateFromContext(ctx); create {
+		return nil
+	}
+	if err := service.ValidateAccountEditFresh(ctx); err != nil {
+		return err
+	}
+	tx := dbent.TxFromContext(ctx)
+	if tx == nil {
+		return service.ErrAccountEditUnavailable
+	}
+	if err := lockPluginExecution(ctx, tx.Client(), ""); err != nil {
+		return err
+	}
+	service.MarkAccountEditFenced(ctx)
 	return nil
 }
 

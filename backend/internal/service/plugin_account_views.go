@@ -682,6 +682,10 @@ func ValidateAccountViewFresh(ctx context.Context) error {
 // Shared row locks are acquired in ascending installation ID order for both
 // action and view fences. A->B and B->A operations therefore use one lock order.
 type PluginExecutionFence struct {
+	OriginEdit             bool
+	EditAccountID          int64
+	EditContributionID     string
+	EditDefinitionSHA256   string
 	OriginCreate           bool
 	CreateContributionID   string
 	CreateDefinitionSHA256 string
@@ -715,7 +719,7 @@ func mergePluginExecutionFences(fences []PluginExecutionFence) ([]PluginExecutio
 			if previous.Generation != fence.Generation || (previous.PluginKey != "" && fence.PluginKey != "" && previous.PluginKey != fence.PluginKey) {
 				return nil, ErrAccountViewUnavailable
 			}
-			previousStrict, nextStrict := previous.OriginView || previous.OriginCreate, fence.OriginView || fence.OriginCreate
+			previousStrict, nextStrict := previous.OriginView || previous.OriginCreate || previous.OriginEdit, fence.OriginView || fence.OriginCreate || fence.OriginEdit
 			if previousStrict && nextStrict && (previous.PackageSHA256 != fence.PackageSHA256 || previous.PolicyRevision != fence.PolicyRevision) {
 				return nil, ErrAccountViewUnavailable
 			}
@@ -724,6 +728,9 @@ func mergePluginExecutionFences(fences []PluginExecutionFence) ([]PluginExecutio
 			}
 			if previous.OriginCreate && fence.OriginCreate && (previous.CreateContributionID != fence.CreateContributionID || previous.CreateDefinitionSHA256 != fence.CreateDefinitionSHA256 || previous.ConfigSHA256 != fence.ConfigSHA256) {
 				return nil, ErrAccountViewUnavailable
+			}
+			if previous.OriginEdit && fence.OriginEdit && (previous.EditAccountID != fence.EditAccountID || previous.EditContributionID != fence.EditContributionID || previous.EditDefinitionSHA256 != fence.EditDefinitionSHA256) {
+				return nil, ErrAccountEditUnavailable
 			}
 			if previous.PluginKey == "" {
 				previous.PluginKey = fence.PluginKey
@@ -737,9 +744,13 @@ func mergePluginExecutionFences(fences []PluginExecutionFence) ([]PluginExecutio
 			if fence.OriginCreate {
 				previous.CreateContributionID, previous.CreateDefinitionSHA256, previous.ConfigSHA256 = fence.CreateContributionID, fence.CreateDefinitionSHA256, fence.ConfigSHA256
 			}
+			if fence.OriginEdit {
+				previous.EditAccountID, previous.EditContributionID, previous.EditDefinitionSHA256 = fence.EditAccountID, fence.EditContributionID, fence.EditDefinitionSHA256
+			}
 			previous.Primary = previous.Primary || fence.Primary
 			previous.OriginView = previous.OriginView || fence.OriginView
 			previous.OriginCreate = previous.OriginCreate || fence.OriginCreate
+			previous.OriginEdit = previous.OriginEdit || fence.OriginEdit
 			continue
 		}
 		out = append(out, fence)
@@ -749,6 +760,9 @@ func mergePluginExecutionFences(fences []PluginExecutionFence) ([]PluginExecutio
 
 func PluginExecutionFences(ctx context.Context, primaryKey string) ([]PluginExecutionFence, error) {
 	var fences []PluginExecutionFence
+	if edit, bound := AccountEditFromContext(ctx); bound && primaryKey == "" {
+		primaryKey = edit.PrimaryPluginKey
+	}
 	if create, bound := AccountCreateFromContext(ctx); bound && primaryKey == "" {
 		primaryKey = create.PrimaryPluginKey
 	}
@@ -763,6 +777,12 @@ func PluginExecutionFences(ctx context.Context, primaryKey string) ([]PluginExec
 			PluginKey: create.installation.PluginKey, PackageSHA256: create.installation.PackageSHA256, PolicyRevision: create.installation.Revision,
 			OriginCreate: true, CreateContributionID: create.contribution.ID, CreateDefinitionSHA256: AccountCreateDefinitionDigest(&create.contribution),
 			ConfigSHA256: accountCreateConfigDigest(create.installation.ConfigEncrypted)})
+	}
+	if edit, bound := AccountEditFromContext(ctx); bound && edit.changed {
+		fences = append(fences, PluginExecutionFence{ID: edit.Execution.ID, Generation: edit.Execution.Generation,
+			PluginKey: edit.installation.PluginKey, PackageSHA256: edit.installation.PackageSHA256, PolicyRevision: edit.installation.Revision,
+			OriginEdit: true, EditAccountID: edit.AccountID, EditContributionID: edit.contribution.ID, EditDefinitionSHA256: AccountEditDefinitionDigest(&edit.contribution),
+			ConfigSHA256: accountCreateConfigDigest(edit.installation.ConfigEncrypted)})
 	}
 	return mergePluginExecutionFences(fences)
 }

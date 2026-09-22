@@ -228,6 +228,9 @@ func (m PluginManifest) ValidateForRuntime(runtimeKey string) error {
 	if err := validateAccountCreateContributions(m); err != nil {
 		return err
 	}
+	if err := validateAccountEditContributions(m); err != nil {
+		return err
+	}
 	resourceNames := make(map[string]bool)
 	if len(m.Resources) > 256 {
 		return errors.New("插件资源操作数量超过限制")

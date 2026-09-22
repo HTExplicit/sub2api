@@ -957,6 +957,49 @@ export interface AccountTestModeView {
   default_model_id: string
 }
 
+/** Host-native context; never exported through the public plugin UI SDK. */
+export interface AccountEditFieldState<T extends string> {
+  present: boolean
+  recognized: boolean
+  /** Absent/unrecognized strings are not echoed. A stored JSON null stays distinguishable. */
+  value?: T | null
+  effective: T
+}
+
+export interface AccountEditProfileReference {
+  /** References may be absent when no current owner/definition can be resolved. */
+  plugin_id?: number
+  plugin_key?: string
+  contribution_id?: string
+  package_sha256?: string
+  definition_sha256?: string
+  runtime_generation?: number
+  available: boolean
+  reason?: string
+}
+
+export type AccountEditCatalog =
+  | { status: 'ready'; namespace: string; models: AccountAvailableModel[]; aliases: Record<string, string> }
+  | { status: 'unavailable'; reason: string }
+
+export interface ProviderAccountEditContext {
+  schema_version: 1
+  kind: 'provider'
+  account_id: number
+  profile: AccountEditProfileReference
+  edit_state_sha256: string
+  values: {
+    responses_mode: AccountEditFieldState<import('@sub2api/plugin-ui/account-edit').AccountEditResponsesMode>
+    compact_mode: AccountEditFieldState<import('@sub2api/plugin-ui/account-edit').AccountEditCompactMode>
+    responses_websocket_mode: AccountEditFieldState<import('@sub2api/plugin-ui/account-edit').AccountEditWebSocketMode | 'shared' | 'dedicated'>
+  }
+  catalog: AccountEditCatalog
+}
+
+export type AccountEditContext =
+  | { schema_version: 1; kind: 'core'; account_id: number }
+  | ProviderAccountEditContext
+
 export interface AccountTestPlanView {
   schema_version: 1
   account_id: number
@@ -1194,6 +1237,8 @@ export interface OllamaCloudUsageSettings {
 export interface Account {
 	quota_state?: { blocked: boolean; until: string | null; windows: AccountQuotaWindow[] }
   id: number
+  /** Host-only, same-row digest paired with this native account's owned edit fields. */
+  account_edit_state_sha256?: string
   name: string
   notes?: string | null
   platform: AccountPlatform
@@ -1650,6 +1695,7 @@ export interface CreateAccountRequest {
 }
 
 export interface UpdateAccountRequest {
+  provider_edit?: import('@sub2api/plugin-ui/account-edit').ProviderEditRequestV1
   name?: string
   notes?: string | null
   type?: AccountType

@@ -255,7 +255,7 @@
             <Icon name="key" size="sm" />
           </div>
           <div>
-            <span class="block text-sm font-medium text-gray-900 dark:text-white">{{ profileLabel(createProfile.label) }} · {{ t('admin.accounts.types.apikey') }}</span>
+            <span class="block text-sm font-medium text-gray-900 dark:text-white">{{ profileLabel(createProfile.label) }} · {{ t('admin.accounts.apiKey') }}</span>
             <span class="text-xs text-gray-500 dark:text-gray-400">{{ profileLabel(createProfile.account_create.credential_ui.account_type_hint || {}) }}</span>
           </div>
         </div>

@@ -242,6 +242,12 @@ func (s *AccountJobService) Submit(ctx context.Context, createdBy int64, kind, i
 			return nil, false, err
 		}
 	}
+	// Server-only edit snapshots are excluded from the original operation hash.
+	// Replays above reuse the original frozen encrypted payload and lifetime.
+	payload, err = accountJobPayloadWithEdit(ctx, kind, payload, items)
+	if err != nil {
+		return nil, false, err
+	}
 	ciphertext, err := s.encryptor.Encrypt(string(payload))
 	if err != nil {
 		return nil, false, err

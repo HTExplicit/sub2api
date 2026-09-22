@@ -1,5 +1,19 @@
 export default {accounts: {
 
+  providerEdit: {
+    unavailable: 'Provider settings are unavailable. Unchanged provider fields and basic account edits are still retained.',
+    catalogUnavailable: 'The model catalog is unavailable. Existing mappings and any draft remain unchanged.',
+    draftRetained: 'Provider changes are pending. Saving basic fields only keeps this draft open and unsaved.',
+    changed: 'The edit context or catalog changed. Review the retained draft before reconciling it.',
+    reconcile: 'Reconcile retained draft',
+    reloadRequired: 'The account state or provider owner changed. Your draft is retained; reopen the editor to load the new state before applying it.',
+    saveBasic: 'Save basic fields only',
+    clearToDefault: 'Clear stored override (use native default)',
+    clearPending: 'Stored override will be cleared on save.',
+    clearCustomMappings: 'Clear custom mappings',
+    clearCompactMappings: 'Clear compact mappings'
+  },
+
   textTestPrompt: { label: 'Text test prompt', hint: 'Blank uses hi. Remembered only for this site and administrator in this browser.', reset: 'Restore default', tooLong: 'Prompt exceeds 8192 characters. Shorten it to continue.' },
   tickets: {
     stages: { request: 'Request', configuration: 'Configuration', lifecycle: 'Task state', account_auth: 'Account authentication', proxy_auth: 'Proxy authentication', proxy_protocol: 'Proxy protocol', proxy_dns: 'Proxy DNS', proxy_connect: 'Proxy connection', tls: 'TLS certificate', ticket_validation: 'Ticket validation', upstream_http: 'Upstream HTTP', persistence: 'Persistence' },

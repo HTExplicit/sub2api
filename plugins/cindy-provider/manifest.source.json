@@ -475,6 +475,38 @@
       }
     },
     {
+      "id": "cindy-edit",
+      "slot": "account.edit.v1",
+      "capability": "extensions.provider.v1",
+      "permission": "admin",
+      "label": { "zh": "Cindy 账号设置", "en": "Cindy account settings" },
+      "account_edit": {
+        "version": 1,
+        "platform": "cindy",
+        "account_type": "apikey",
+        "credential_profile": "cindy_laxa_v1",
+        "credential_ui": {
+          "base_url": "https://api.laxarouter.ai",
+          "base_url_readonly": true,
+          "hint": { "zh": "凭据和设备身份由宿主管理。", "en": "The host manages credentials and device identity." }
+        },
+        "catalog_source": "provider_catalog_snapshot_v1",
+        "mapping_policy": "managed_catalog_v1",
+        "compact_mapping_editable": true,
+        "wire_controls": [
+          { "target": "responses_mode", "values": ["auto", "force_responses", "force_chat_completions"], "allow_clear": true },
+          { "target": "compact_mode", "values": ["auto", "force_on", "force_off"], "allow_clear": true },
+          { "target": "responses_websocket_mode", "values": ["off", "ctx_pool", "passthrough", "http_bridge"], "allow_clear": true }
+        ],
+        "unlisted_fields": "preserve",
+        "labels": {
+          "managed_catalog": { "zh": "托管目录", "en": "Managed catalog" },
+          "managed_aliases": { "zh": "托管别名", "en": "Managed aliases" },
+          "custom_mappings": { "zh": "自定义映射", "en": "Custom mappings" }
+        }
+      }
+    },
+    {
       "id": "cindy-create",
       "slot": "account.create.v1",
       "capability": "extensions.provider.v1",

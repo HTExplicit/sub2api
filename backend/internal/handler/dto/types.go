@@ -207,14 +207,15 @@ type AdminGroup struct {
 }
 
 type Account struct {
-	AccountViewFacts *service.AccountViewFactsV1 `json:"account_view_facts,omitempty"`
-	ID               int64                       `json:"id"`
-	Name             string                      `json:"name"`
-	Notes            *string                     `json:"notes"`
-	Platform         string                      `json:"platform"`
-	WirePlatform     string                      `json:"wire_platform"`
-	ProviderProfile  string                      `json:"provider_profile"`
-	Type             string                      `json:"type"`
+	AccountEditStateSHA256 string                      `json:"account_edit_state_sha256,omitempty"`
+	AccountViewFacts       *service.AccountViewFactsV1 `json:"account_view_facts,omitempty"`
+	ID                     int64                       `json:"id"`
+	Name                   string                      `json:"name"`
+	Notes                  *string                     `json:"notes"`
+	Platform               string                      `json:"platform"`
+	WirePlatform           string                      `json:"wire_platform"`
+	ProviderProfile        string                      `json:"provider_profile"`
+	Type                   string                      `json:"type"`
 	// Credentials 经 RedactCredentials 处理后默认只含非敏感子键；敏感 token / api_key / 私钥
 	// 的存在性通过 CredentialsStatus（has_<key>）暴露。账号详情在管理员开启 API Key
 	// 可见性后可额外恢复 api_key 原文，其它敏感键仍不返回。
@@ -385,6 +386,7 @@ type AccountFacetOption struct {
 // repeated account_groups and groups object graphs. Fetch /admin/accounts/:id
 // for the complete Account DTO when editing or inspecting an account.
 type AccountListItem struct {
+	AccountEditStateSHA256     string                      `json:"account_edit_state_sha256,omitempty"`
 	AccountViewFacts           *service.AccountViewFactsV1 `json:"account_view_facts,omitempty"`
 	QuotaState                 *service.UpstreamQuotaState `json:"quota_state,omitempty"`
 	WirePlatform               string                      `json:"wire_platform"`

@@ -8,7 +8,7 @@
     <form
       v-if="account"
       id="edit-account-form"
-      @submit.prevent="handleSubmit"
+      @submit.prevent="handleSubmit()"
       class="space-y-5"
     >
       <div>
@@ -26,6 +26,19 @@
         <p class="input-hint">{{ t('admin.accounts.notesHint') }}</p>
       </div>
 
+      <div v-if="isCindyAccount" class="rounded-lg border border-gray-200 p-3 text-sm dark:border-dark-600" data-testid="account-edit-profile-status">
+        <p v-if="providerEdit.draft.value?.loading">{{ t('common.loading') }}</p>
+        <p v-else-if="!providerEdit.available.value">{{ t('admin.accounts.providerEdit.unavailable') }}</p>
+        <p v-if="providerEdit.pending.value" class="mt-1">{{ t('admin.accounts.providerEdit.draftRetained') }}</p>
+        <p v-if="providerEdit.draft.value?.pendingContext || providerEdit.draft.value?.catalogNeedsReview" class="mt-1 text-amber-700 dark:text-amber-300">
+          {{ t('admin.accounts.providerEdit.changed') }}
+        </p>
+        <div class="mt-2 flex flex-wrap gap-2">
+          <button type="button" class="btn btn-secondary text-xs" :disabled="providerEdit.draft.value?.loading" @click="providerEdit.refresh()">{{ t('common.refresh') }}</button>
+          <button v-if="providerEdit.draft.value?.pendingContext || providerEdit.draft.value?.catalogNeedsReview" type="button" class="btn btn-secondary text-xs" data-testid="account-edit-reconcile" @click="reconcileProviderEdit">{{ t('admin.accounts.providerEdit.reconcile') }}</button>
+        </div>
+      </div>
+
       <!-- API Key fields (only for apikey type) -->
       <div v-if="account.type === 'apikey'" class="space-y-4">
         <div v-if="!isCNApiKeyAccount || editApiProtocol !== 'adaptive'">
@@ -38,7 +51,7 @@
             :readonly="isCindyAccount"
             :placeholder="
               isCindyAccount
-                ? 'https://api.laxarouter.ai'
+                ? editProfile?.credential_ui.base_url || editBaseUrl
                 : account.platform === 'openai'
                   ? 'https://api.openai.com'
                 : account.platform === 'gemini'
@@ -309,7 +322,7 @@
                 <div class="mb-2 flex items-center justify-between gap-3">
                   <div>
                     <p class="text-sm font-medium text-gray-700 dark:text-gray-200">
-                      {{ t('admin.accounts.cindyManagedCatalog') }}
+                      {{ profileLabel(editProfile?.labels.managed_catalog) }}
                     </p>
                   </div>
                   <span class="shrink-0 text-xs font-medium text-primary-600 dark:text-primary-400">
@@ -317,17 +330,17 @@
                   </span>
                 </div>
                 <p v-if="cindyCatalogLoading" class="py-3 text-sm text-gray-500 dark:text-gray-400">
-                  {{ t('admin.accounts.cindyCatalogLoading') }}
+                  {{ t('common.loading') }}
                 </p>
                 <p v-else-if="cindyCatalogLoadFailed" class="py-3 text-sm text-red-600 dark:text-red-400">
-                  {{ t('admin.accounts.cindyCatalogLoadFailed') }}
+                  {{ t('admin.accounts.providerEdit.catalogUnavailable') }}
                 </p>
                 <ModelWhitelistSelector
                   v-model:capacity-drafts="capacityDrafts"
                   :capacity-rows="capacityRows"
                   :sync-source-key="capacitySyncSourceKey"
                   @capacity-validity="setCapacityFieldValidity('selector', $event)"
-                  v-else
+                  v-if="cindyManagedCatalog.length > 0"
                   :model-value="[]"
                   :models="cindyManagedCatalog"
                   readonly
@@ -380,7 +393,7 @@
               data-testid="cindy-managed-aliases"
             >
               <p class="text-sm font-medium text-gray-700 dark:text-gray-200">
-                {{ t('admin.accounts.cindyManagedAliases') }}
+                {{ profileLabel(editProfile?.labels.managed_aliases) }}
               </p>
               <div class="mt-2 space-y-2">
                 <div
@@ -401,6 +414,10 @@
             </div>
 
             <!-- Model Mapping List -->
+            <div v-if="isCindyAccount" class="mb-3 flex items-center justify-between gap-2">
+              <span>{{ profileLabel(editProfile?.labels.custom_mappings) }}</span>
+              <button type="button" class="btn btn-secondary text-xs" data-testid="account-edit-clear-model-mapping" @click="providerEdit.clear('model_mapping')">{{ t('admin.accounts.providerEdit.clearCustomMappings') }}</button>
+            </div>
             <div
               v-if="modelMappings.length > 0"
               class="mb-3 space-y-2"
@@ -1886,6 +1903,7 @@
           </div>
           <button
             type="button"
+            data-testid="account-edit-passthrough-toggle"
             @click="openaiPassthroughEnabled = !openaiPassthroughEnabled"
             :class="[
               'relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2',
@@ -2002,7 +2020,7 @@
 
       <!-- OpenAI WS Mode 三态（off/ctx_pool/passthrough） -->
       <div
-        v-if="(account?.platform === 'openai' && (account?.type === 'oauth' || account?.type === 'setup-token' || account?.type === 'apikey')) || isCindyAccount"
+        v-if="showAccountEditMode('responses_websocket_mode')"
         class="border-t border-gray-200 pt-4 dark:border-dark-600"
       >
         <div class="flex items-center justify-between">
@@ -2016,14 +2034,16 @@
             </p>
           </div>
           <div class="w-52">
-            <Select v-model="openaiResponsesWebSocketV2Mode" data-testid="edit-openai-ws-mode-select" :options="openAIWSModeOptions" />
+            <Select v-model="openaiResponsesWebSocketV2Mode" data-testid="edit-openai-ws-mode-select" :options="openAIWSModeOptions" @update:model-value="recordAccountMode('responses_websocket_mode', $event)" />
+            <button v-if="canClearAccountEditMode('responses_websocket_mode')" type="button" class="mt-1 text-xs text-primary-600" data-testid="account-edit-clear-ws" @click="providerEdit.clear('responses_websocket_mode')">{{ t('admin.accounts.providerEdit.clearToDefault') }}</button>
+            <p v-if="providerEdit.changes.value.responses_websocket_mode?.op === 'clear'" class="mt-1 text-xs">{{ t('admin.accounts.providerEdit.clearPending') }}</p>
           </div>
         </div>
       </div>
 
       <!-- OpenAI APIKey Responses API support mode -->
       <div
-        v-if="(account?.platform === 'openai' && account?.type === 'apikey') || isCindyAccount"
+        v-if="showAccountEditMode('responses_mode')"
         class="space-y-4 border-t border-gray-200 pt-4 dark:border-dark-600"
       >
         <div class="flex items-center justify-between gap-4">
@@ -2039,7 +2059,10 @@
               :options="openAIResponsesModeOptions"
               :disabled="!openAITextGenerationCapabilityEnabled"
               data-testid="openai-responses-mode-select"
+              @update:model-value="recordAccountMode('responses_mode', $event)"
             />
+            <button v-if="canClearAccountEditMode('responses_mode')" type="button" class="mt-1 text-xs text-primary-600" data-testid="account-edit-clear-responses" @click="providerEdit.clear('responses_mode')">{{ t('admin.accounts.providerEdit.clearToDefault') }}</button>
+            <p v-if="providerEdit.changes.value.responses_mode?.op === 'clear'" class="mt-1 text-xs">{{ t('admin.accounts.providerEdit.clearPending') }}</p>
           </div>
         </div>
         <div
@@ -2451,10 +2474,10 @@
       </div>
 
       <div
-        v-if="(account?.platform === 'openai' && (account?.type === 'oauth' || account?.type === 'setup-token' || account?.type === 'apikey')) || isCindyAccount"
+        v-if="showAccountEditMode('compact_mode') || (isCindyAccount && editProfile?.compact_mapping_editable)"
         class="border-t border-gray-200 pt-4 dark:border-dark-600 space-y-4"
       >
-        <div class="flex items-center justify-between">
+        <div v-if="showAccountEditMode('compact_mode')" class="flex items-center justify-between">
           <div>
             <label class="input-label mb-0">{{ t('admin.accounts.openai.compactMode') }}</label>
             <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
@@ -2462,7 +2485,9 @@
             </p>
           </div>
           <div class="w-44">
-            <Select v-model="openAICompactMode" :options="openAICompactModeOptions" />
+            <Select v-model="openAICompactMode" :options="openAICompactModeOptions" data-testid="account-edit-compact-mode" @update:model-value="recordAccountMode('compact_mode', $event)" />
+            <button v-if="canClearAccountEditMode('compact_mode')" type="button" class="mt-1 text-xs text-primary-600" data-testid="account-edit-clear-compact" @click="providerEdit.clear('compact_mode')">{{ t('admin.accounts.providerEdit.clearToDefault') }}</button>
+            <p v-if="providerEdit.changes.value.compact_mode?.op === 'clear'" class="mt-1 text-xs">{{ t('admin.accounts.providerEdit.clearPending') }}</p>
           </div>
         </div>
         <div class="rounded-lg bg-gray-50 px-3 py-2 text-xs text-gray-600 dark:bg-dark-700 dark:text-gray-300">
@@ -2475,7 +2500,7 @@
             {{ formatDateTime(new Date(String(account.extra.openai_compact_checked_at))) }}
           </span>
         </div>
-        <div>
+        <div v-if="!isCindyAccount || editProfile?.compact_mapping_editable">
           <label class="input-label">{{ t('admin.accounts.openai.compactModelMapping') }}</label>
           <p class="input-hint">{{ t('admin.accounts.openai.compactModelMappingDesc') }}</p>
           <div v-if="openAICompactModelMappings.length > 0" class="mb-3 space-y-2">
@@ -2513,6 +2538,7 @@
           <button type="button" @click="addOpenAICompactModelMapping" class="btn btn-secondary text-sm">
             + {{ t('admin.accounts.addMapping') }}
           </button>
+          <button v-if="isCindyAccount" type="button" class="btn btn-secondary ml-2 text-sm" data-testid="account-edit-clear-compact-mapping" @click="providerEdit.clear('compact_model_mapping')">{{ t('admin.accounts.providerEdit.clearCompactMappings') }}</button>
         </div>
       </div>
 
@@ -3143,10 +3169,13 @@
         <button @click="handleClose" type="button" class="btn btn-secondary">
           {{ t('common.cancel') }}
         </button>
+        <button v-if="isCindyAccount && providerEdit.pending.value" type="button" class="btn btn-secondary" data-testid="account-edit-save-basic" :disabled="submitting || !accountViewOperation.available.value" @click="handleSubmit(true)">
+          {{ t('admin.accounts.providerEdit.saveBasic') }}
+        </button>
         <button
           type="submit"
           form="edit-account-form"
-          :disabled="submitting || cindyCatalogLoading || !capacityValid || !capacityReady"
+          :disabled="submitting || !providerEdit.canSubmit.value || !capacityValid || !capacityReady || !accountViewOperation.available.value"
           class="btn btn-primary"
           data-tour="account-form-submit"
         >
@@ -3195,6 +3224,10 @@ import { accountAPIForView } from '@/api/admin/accounts'
 import { ref, reactive, computed, watch, nextTick } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useAppStore } from '@/stores/app'
+import { useAuthStore } from '@/stores/auth'
+import { useAccountEditProfile } from '@/composables/useAccountEditProfile'
+import { accountEditModes, applyCoreAccountModeChanges, requiresAccountEditProfile, type AccountEditInput } from '@/utils/accountEditCodec'
+import type { AccountEditChangesV1, AccountEditModeTarget, ProviderEditRequestV1 } from '@sub2api/plugin-ui/account-edit'
 
 import { adminAPI } from '@/api/admin'
 import { useQuotaNotifyState } from '@/composables/useQuotaNotifyState'
@@ -3208,9 +3241,9 @@ import type {
   OpenAIResponsesMode,
   OpenAIEndpointCapability,
   OllamaCloudUsageState,
-  AccountAvailableModel,
   GrokMediaEligibilityMode,
-  GrokMediaEligibilityState
+  GrokMediaEligibilityState,
+  UpdateAccountRequest
 } from '@/types'
 import BaseDialog from '@/components/common/BaseDialog.vue'
 import ConfirmDialog from '@/components/common/ConfirmDialog.vue'
@@ -3276,7 +3309,6 @@ import {
   parseDateTimeLocalInput
 } from '@/utils/format'
 import { createStableObjectKeyResolver } from '@/utils/stableObjectKey'
-import { CINDY_OPENAI_DEFAULTS, isCindyOpenAIAPIKeyAccount } from '@/utils/cindyOpenAIDefaults'
 import { getAccountExpiryTimestamp } from '@/components/account/accountExpiry'
 import { allSelectedGroupsEnableLongContextPricing } from '@/components/account/longContextBilling'
 import { VERTEX_LOCATION_OPTIONS } from '@/constants/account'
@@ -3285,7 +3317,6 @@ import {
   OPENAI_WS_MODE_OFF,
   OPENAI_WS_MODE_PASSTHROUGH,
   OPENAI_WS_MODE_HTTP_BRIDGE,
-  isOpenAIWSModeEnabled,
   resolveOpenAIWSModeHintKey,
   type OpenAIWSMode,
   resolveOpenAIWSModeFromExtra
@@ -3315,8 +3346,9 @@ const emit = defineEmits<{
   updated: [account: Account]
 }>()
 
-const { t } = useI18n()
+const { t, locale } = useI18n()
 const appStore = useAppStore()
+const authStore = useAuthStore()
 const browserTimeZone = getBrowserTimeZone()
 
 const selectableGroups = computed(() => {
@@ -3354,7 +3386,7 @@ const handleOllamaCloudUsageUpdated = (state: OllamaCloudUsageState) => {
 // Platform-specific hint for Base URL
 const baseUrlHint = computed(() => {
   if (!props.account) return t('admin.accounts.baseUrlHint')
-  if (isCindyAccount.value) return t('admin.accounts.cindy.fixedEndpointHint')
+  if (isCindyAccount.value) return profileLabel(editProfile.value?.credential_ui.hint)
   if (props.account.platform === 'openai') return t('admin.accounts.openai.baseUrlHint')
   if (props.account.platform === 'gemini') return t('admin.accounts.gemini.baseUrlHint')
   if (props.account.platform === 'grok') return ''
@@ -3542,13 +3574,13 @@ const modelMappings = ref<ModelMapping[]>([])
 const openAICompactModelMappings = ref<ModelMapping[]>([])
 const modelRestrictionMode = ref<'whitelist' | 'mapping'>('whitelist')
 const allowedModels = ref<string[]>([])
-const cindyManagedCatalog = ref<AccountAvailableModel[]>([])
-const cindyManagedAliases = ref<AccountAvailableModel[]>([])
-const preservedCindyManagedMappings = ref<ModelMapping[]>([])
-const cindyCatalogLoading = ref(false)
-const cindyCatalogLoadFailed = ref(false)
-let cindyCatalogRequestSequence = 0
-const isCindyAccount = computed(() => isCindyOpenAIAPIKeyAccount(props.account))
+const cindyManagedCatalog = computed(() => providerEdit.projection.value.models)
+const cindyManagedAliases = computed(() => providerEdit.projection.value.aliases)
+const preservedCindyManagedMappings = computed(() => Object.entries(providerEdit.draft.value?.preserved || {}).map(([from, to]) => ({ from, to })))
+const cindyCatalogLoading = computed(() => providerEdit.draft.value?.loading === true)
+const cindyCatalogLoadFailed = computed(() => !providerEdit.catalogAvailable.value)
+const isCindyAccount = computed(() => requiresAccountEditProfile(props.account))
+const coreModeChanges = ref<AccountEditChangesV1>({})
 const DEFAULT_POOL_MODE_RETRY_COUNT = 3
 const MAX_POOL_MODE_RETRY_COUNT = 10
 const DEFAULT_POOL_MODE_RETRY_STATUS_CODES = [401, 403, 429]
@@ -3775,12 +3807,12 @@ const codexFingerprintModeOptions = computed(() => [
   { value: 'full' as CodexFingerprintMode, label: t('admin.accounts.openai.codexFingerprintFull') },
 ])
 
-const openAIWSModeOptions = computed(() => [
+const openAIWSModeOptions = computed(() => filterAccountEditModeOptions('responses_websocket_mode', [
   { value: OPENAI_WS_MODE_OFF, label: t('admin.accounts.openai.wsModeOff') },
   { value: OPENAI_WS_MODE_CTX_POOL, label: t('admin.accounts.openai.wsModeCtxPool') },
   { value: OPENAI_WS_MODE_PASSTHROUGH, label: t('admin.accounts.openai.wsModePassthrough') },
   { value: OPENAI_WS_MODE_HTTP_BRIDGE, label: t('admin.accounts.openai.wsModeHttpBridge') }
-])
+]))
 const openaiResponsesWebSocketV2Mode = computed({
   get: () => {
     if (props.account?.type === 'apikey') {
@@ -3859,20 +3891,20 @@ const codexImageToolBadgeClass = computed(() => {
       return 'bg-slate-100 text-slate-600 dark:bg-dark-600 dark:text-slate-300'
   }
 })
-const openAICompactModeOptions = computed(() => [
+const openAICompactModeOptions = computed(() => filterAccountEditModeOptions('compact_mode', [
   { value: 'auto', label: t('admin.accounts.openai.compactModeAuto') },
   { value: 'force_on', label: t('admin.accounts.openai.compactModeForceOn') },
   { value: 'force_off', label: t('admin.accounts.openai.compactModeForceOff') }
-])
+]))
 // OpenAI 订阅档位手动覆盖选项(清空 + Plus/Pro/Free;别名/自定义值友好显示且保留 canonical)
 const planTypeOptions = computed(() =>
   buildPlanTypeOptions(editPlanType.value, t('admin.accounts.openai.planTypeClear'))
 )
-const openAIResponsesModeOptions = computed(() => [
+const openAIResponsesModeOptions = computed(() => filterAccountEditModeOptions('responses_mode', [
   { value: 'auto', label: t('admin.accounts.openai.responsesModeAuto') },
   { value: 'force_responses', label: t('admin.accounts.openai.responsesModeForceResponses') },
   { value: 'force_chat_completions', label: t('admin.accounts.openai.responsesModeForceChatCompletions') }
-])
+]))
 const openAITextEndpointCapabilityLabel = computed(() => {
   if (openAIResponsesMode.value === 'force_responses') {
     return t('admin.accounts.openai.capabilityResponses')
@@ -3895,7 +3927,7 @@ const openAIEndpointCapabilityOptions = computed<{ value: OpenAIEndpointCapabili
   { value: 'seedance', label: 'Seedance (Ark)' }
 ])
 const openAITextGenerationCapabilityEnabled = computed(() =>
-  openAIEndpointCapabilities.value.includes('chat_completions')
+  isCindyAccount.value || openAIEndpointCapabilities.value.includes('chat_completions')
 )
 
 const normalizeOpenAIEndpointCapabilities = (values: OpenAIEndpointCapability[]) => {
@@ -3934,9 +3966,6 @@ const toggleOpenAIEndpointCapability = (capability: OpenAIEndpointCapability, ev
     openAIEndpointCapabilities.value = openAIEndpointCapabilities.value.filter(
       (value) => value !== capability
     )
-    if (!openAITextGenerationCapabilityEnabled.value) {
-      openAIResponsesMode.value = 'auto'
-    }
     return
   }
   openAIEndpointCapabilities.value = normalizeOpenAIEndpointCapabilities([
@@ -3980,8 +4009,7 @@ const openAIResponsesStatusKey = computed(() => {
 })
 const openAICompactStatusKey = computed(() => {
   const extra = props.account?.extra as Record<string, unknown> | undefined
-  if (!props.account || props.account.platform !== 'openai') return ''
-  const mode = typeof extra?.openai_compact_mode === 'string' ? extra.openai_compact_mode : 'auto'
+  const mode = openAICompactMode.value
   if (mode === 'force_on') return 'admin.accounts.openai.compactSupported'
   if (mode === 'force_off') return 'admin.accounts.openai.compactUnsupported'
   if (typeof extra?.openai_compact_supported === 'boolean') {
@@ -4026,7 +4054,7 @@ const tempUnschedPresets = computed(() => [
 
 // Computed: default base URL based on platform
 const defaultBaseUrl = computed(() => {
-  if (isCindyAccount.value) return 'https://api.laxarouter.ai'
+  if (isCindyAccount.value) return String(props.account?.credentials?.base_url || editProfile.value?.credential_ui.base_url || '')
   if (props.account?.platform === 'openai') return 'https://api.openai.com'
   if (props.account?.platform === 'gemini') return 'https://generativelanguage.googleapis.com'
   if (props.account?.platform === 'grok') return 'https://api.x.ai/v1'
@@ -4115,30 +4143,16 @@ const loadModelRestrictionFromMapping = (rawMapping?: Record<string, unknown>) =
       : 'whitelist'
 }
 
-const isManagedCindyMapping = (from: string, to: string) => {
-  const managed = [...cindyManagedCatalog.value, ...cindyManagedAliases.value]
-    .find(model => model.id === from.trim())
-  if (!managed) return false
-
-  const target = to.trim()
-  return [managed.id, managed.alias_target, managed.live_upstream_id]
-    .filter((value): value is string => Boolean(value))
-    .includes(target)
-}
-
 const buildModelRestrictionMapping = () => {
   const editableMapping = buildModelMappingObject('combined', allowedModels.value, modelMappings.value)
   if (!isCindyAccount.value || preservedCindyManagedMappings.value.length === 0) {
     return editableMapping
   }
 
-  const merged: Record<string, string> = {}
-  for (const mapping of preservedCindyManagedMappings.value) {
-    const from = mapping.from.trim()
-    const to = mapping.to.trim()
-    if (from && to) merged[from] = to
-  }
-  Object.assign(merged, editableMapping || {})
+  const managedEntries = preservedCindyManagedMappings.value
+    .map(mapping => [mapping.from.trim(), mapping.to.trim()])
+    .filter(([from, to]) => from && to)
+  const merged: Record<string, string> = { ...Object.fromEntries(managedEntries), ...(editableMapping || {}) }
   return Object.keys(merged).length > 0 ? merged : null
 }
 
@@ -4246,7 +4260,7 @@ const syncFormFromAccount = (newAccount: Account | null) => {
   anthropicPassthroughEnabled.value = false
   anthropicAPIKeyAuthScheme.value = 'x_api_key'
   webSearchEmulationMode.value = 'default'
-  const canonicalCindy = isCindyOpenAIAPIKeyAccount(newAccount)
+  const canonicalCindy = requiresAccountEditProfile(newAccount)
   if ((newAccount.platform === 'openai' && (newAccount.type === 'oauth' || newAccount.type === 'setup-token' || newAccount.type === 'apikey')) || canonicalCindy) {
     openaiPassthroughEnabled.value = extra?.openai_passthrough === true || extra?.openai_oauth_passthrough === true
     openaiFlattenNamespacesEnabled.value =
@@ -4257,18 +4271,12 @@ const syncFormFromAccount = (newAccount: Account | null) => {
     editPlanType.value = newAccount.type === 'oauth'
       ? readPlanType(newAccount.credentials as Record<string, unknown> | undefined)
       : ''
-    openAICompactMode.value = (extra?.openai_compact_mode as OpenAICompactMode) || 'auto'
+    openAICompactMode.value = extra?.openai_compact_mode === 'force_on' || extra?.openai_compact_mode === 'force_off' ? extra.openai_compact_mode : 'auto'
     if (newAccount.type === 'apikey') {
-      const cindy = canonicalCindy
-      openAIResponsesMode.value = normalizeOpenAIResponsesMode(
-        extra?.openai_responses_mode ?? (cindy ? CINDY_OPENAI_DEFAULTS.responsesMode : undefined)
-      )
+      openAIResponsesMode.value = normalizeOpenAIResponsesMode(extra?.openai_responses_mode)
       openAIEndpointCapabilities.value = readOpenAIEndpointCapabilities(
         newAccount.credentials as Record<string, unknown> | undefined
       )
-      if (!openAITextGenerationCapabilityEnabled.value) {
-        openAIResponsesMode.value = 'auto'
-      }
     }
     const codexImageGenerationBridgeValue = typeof extra?.codex_image_generation_bridge === 'boolean'
       ? extra.codex_image_generation_bridge
@@ -4499,7 +4507,7 @@ const syncFormFromAccount = (newAccount: Account | null) => {
     }
     const platformDefaultUrl =
       canonicalCindy
-        ? 'https://api.laxarouter.ai'
+        ? ''
         : newAccount.platform === 'openai'
           ? 'https://api.openai.com'
         : newAccount.platform === 'gemini'
@@ -4612,65 +4620,73 @@ async function loadTLSProfiles() {
   }
 }
 
-const resetCindyManagedModels = () => {
-  cindyManagedCatalog.value = []
-  cindyManagedAliases.value = []
-  preservedCindyManagedMappings.value = []
-  cindyCatalogLoading.value = false
-  cindyCatalogLoadFailed.value = false
+const providerEdit = useAccountEditProfile({
+  active: () => props.show,
+  account: () => props.account,
+  actorID: () => authStore.user?.id,
+  readInput: (): AccountEditInput => ({
+    responses_mode: openAIResponsesMode.value,
+    compact_mode: openAICompactMode.value,
+    responses_websocket_mode: openaiResponsesWebSocketV2Mode.value,
+    model_mapping: { mode: modelRestrictionMode.value, allowed: allowedModels.value, rows: modelMappings.value },
+    compact_model_mapping: openAICompactModelMappings.value
+  }),
+  writeInput: input => {
+    openAIResponsesMode.value = input.responses_mode
+    openAICompactMode.value = input.compact_mode
+    openaiResponsesWebSocketV2Mode.value = input.responses_websocket_mode
+    modelRestrictionMode.value = input.model_mapping.mode
+    allowedModels.value = input.model_mapping.allowed
+    modelMappings.value = input.model_mapping.rows
+    openAICompactModelMappings.value = input.compact_model_mapping
+  },
+  loadContext: (id, signal) => scopedAccounts().getEditContext(id, signal)
+})
+const editProfile = computed(() => providerEdit.definition.value)
+const profileLabel = (labels?: Record<string, string>) => labels?.[locale?.value || 'en'] || labels?.en || labels?.zh || ''
+function showAccountEditMode(target: AccountEditModeTarget) {
+  if (isCindyAccount.value) return !!editProfile.value?.wire_controls.some(control => control.target === target)
+  return props.account?.platform === 'openai' && ['apikey', 'oauth', 'setup-token'].includes(props.account.type) &&
+    (target !== 'responses_mode' || props.account.type === 'apikey')
 }
-
-const preserveManagedCindyMappings = () => {
-  const preserved: ModelMapping[] = []
-  allowedModels.value = allowedModels.value.filter(model => {
-    if (!isManagedCindyMapping(model, model)) return true
-    preserved.push({ from: model, to: model })
-    return false
-  })
-  modelMappings.value = modelMappings.value.filter(mapping => {
-    if (!isManagedCindyMapping(mapping.from, mapping.to)) return true
-    preserved.push({ ...mapping })
-    return false
-  })
-  preservedCindyManagedMappings.value = preserved
+function canClearAccountEditMode(target: AccountEditModeTarget) {
+  return isCindyAccount.value && editProfile.value?.wire_controls.find(control => control.target === target)?.allow_clear === true
 }
-
-const loadCindyManagedModels = async (account: Account) => {
-  const requestSequence = ++cindyCatalogRequestSequence
-  resetCindyManagedModels()
-  if (!isCindyOpenAIAPIKeyAccount(account)) return
-
-  cindyCatalogLoading.value = true
-  try {
-    const models = await scopedAccounts().getAvailableModels(account.id)
-    if (requestSequence !== cindyCatalogRequestSequence) return
-
-    cindyManagedCatalog.value = models.filter(model => model.managed === true && !model.alias_target)
-    cindyManagedAliases.value = models.filter(model => model.managed === true && Boolean(model.alias_target))
-    preserveManagedCindyMappings()
-  } catch {
-    if (requestSequence !== cindyCatalogRequestSequence) return
-    cindyCatalogLoadFailed.value = true
-  } finally {
-    if (requestSequence === cindyCatalogRequestSequence) {
-      cindyCatalogLoading.value = false
-    }
-  }
+function recordAccountMode(target: AccountEditModeTarget, value: unknown) {
+  if (typeof value !== 'string' || !(accountEditModes[target].values as readonly string[]).includes(value)) return
+  if (isCindyAccount.value) providerEdit.updateInput(target, value)
+  else coreModeChanges.value = { ...coreModeChanges.value, [target]: { op: 'set', value } }
 }
+function filterAccountEditModeOptions<T extends { value: string }>(target: AccountEditModeTarget, options: T[]): T[] {
+  if (!isCindyAccount.value) return options
+  const values = editProfile.value?.wire_controls.find(control => control.target === target)?.values || []
+  return options.filter(option => (values as readonly string[]).includes(option.value))
+}
+function reconcileProviderEdit() {
+  if (!providerEdit.reconcile()) appStore.showError(t('admin.accounts.providerEdit.reloadRequired'))
+}
+watch([allowedModels, modelMappings], () => {
+  providerEdit.updateInput('model_mapping')
+}, { deep: true, flush: 'sync' })
+watch(openAICompactModelMappings, () => {
+  providerEdit.updateInput('compact_model_mapping')
+}, { deep: true, flush: 'sync' })
 
 watch(
-  [() => props.show, () => props.account],
-  ([show, newAccount], [wasShow, previousAccount]) => {
+  [() => props.show, () => props.account, () => authStore.user?.id],
+  ([show, newAccount, actor], [wasShow, previousAccount, previousActor]) => {
     if (!show || !newAccount) {
-      cindyCatalogRequestSequence += 1
-      resetCindyManagedModels()
+      providerEdit.cancelRead()
       return
     }
-    if (!wasShow || newAccount !== previousAccount) {
-      syncFormFromAccount(newAccount)
+    if (!wasShow || newAccount.id !== previousAccount?.id || newAccount.platform !== previousAccount?.platform ||
+        newAccount.type !== previousAccount?.type || actor !== previousActor) {
+      coreModeChanges.value = {}
+      providerEdit.preserveIntent(() => syncFormFromAccount(newAccount))
+      providerEdit.activate(newAccount)
       loadTLSProfiles()
-      void loadCindyManagedModels(newAccount)
-    }
+    } else void providerEdit.refresh()
+    // A same-account row refresh must not refill and overwrite a live native draft.
   },
   { immediate: true }
 )
@@ -5222,6 +5238,7 @@ const parseDateTimeLocal = parseDateTimeLocalInput
 
 // Methods
 const handleClose = () => {
+  providerEdit.resetCurrent()
   resetCapacityState()
   antigravityMixedChannelConfirmed.value = false
   clearMixedChannelDialog()
@@ -5265,21 +5282,27 @@ const persistGrokMediaEligibility = async (accountID: number, updatedAccount: Ac
   return updatedAccount
 }
 
-const submitUpdateAccount = async (accountID: number, updatePayload: Record<string, unknown>) => {
+const submitUpdateAccount = async (accountID: number, updatePayload: Record<string, unknown>, basicOnly = false) => {
   submitting.value = true
   try {
-    let updatedAccount = await scopedAccounts().update(accountID, withAntigravityConfirmFlag(updatePayload))
+    const actor = authStore.user?.id
+    if (props.account?.id !== accountID) throw new Error('Account edit target changed')
+    providerEdit.assertRequest(updatePayload.provider_edit as ProviderEditRequestV1 | undefined)
+    const client = scopedAccounts()
+    let updatedAccount = await client.update(accountID, withAntigravityConfirmFlag(updatePayload))
+    if (props.account?.id !== accountID || authStore.user?.id !== actor) return
     updatedAccount = await persistGrokMediaEligibility(accountID, updatedAccount)
     appStore.showSuccess(t('admin.accounts.accountUpdated'))
     emit('updated', updatedAccount)
-    handleClose()
+    if (basicOnly) await providerEdit.refresh()
+    else handleClose()
   } catch (error: any) {
     if (error.status === 409 && error.error === 'mixed_channel_warning' && needsMixedChannelCheck()) {
       openMixedChannelDialog({
         message: error.message,
         onConfirm: async () => {
           antigravityMixedChannelConfirmed.value = true
-          await submitUpdateAccount(accountID, updatePayload)
+          await submitUpdateAccount(accountID, updatePayload, basicOnly)
         }
       })
       return
@@ -5290,13 +5313,17 @@ const submitUpdateAccount = async (accountID: number, updatePayload: Record<stri
   }
 }
 
-const handleSubmit = async () => {
+const handleSubmit = async (basicOnly = false) => {
   if (!props.account) return
-  if (!capacityReady.value) {
+  if (!basicOnly && !providerEdit.canSubmit.value) {
+    appStore.showError(t('admin.accounts.providerEdit.unavailable'))
+    return
+  }
+  if (!basicOnly && !capacityReady.value) {
     appStore.showError(t(capacityLoadFailed.value ? 'admin.accounts.contextCapacity.loadFailed' : 'admin.accounts.contextCapacity.loading'))
     return
   }
-  if (!capacityValid.value) {
+  if (!basicOnly && !capacityValid.value) {
     appStore.showError(t('admin.accounts.contextCapacity.invalid'))
     return
   }
@@ -5306,7 +5333,7 @@ const handleSubmit = async () => {
     appStore.showError(t('admin.accounts.pleaseSelectStatus'))
     return
   }
-	if (autoResetCreditEnabled.value) {
+	if (!basicOnly && autoResetCreditEnabled.value) {
 		const thresholds = [autoResetCredit5hThreshold.value, autoResetCredit7dThreshold.value]
 		if (thresholds.some((value) => !Number.isFinite(value) || value < 0.1 || value > 100)) {
 			appStore.showError(t('admin.accounts.autoResetCredit.thresholdInvalid'))
@@ -5329,6 +5356,12 @@ const handleSubmit = async () => {
       updatePayload.load_factor = 0
     }
     updatePayload.auto_pause_on_expired = autoPauseOnExpired.value
+    if (basicOnly) {
+      // Explicitly save only the native basic form. No credential/Extra snapshot,
+      // capacity edit or pending provider intent is sent or discarded.
+      await submitUpdateAccount(accountID, updatePayload, true)
+      return
+    }
     if (props.account.type === 'apikey') {
       updatePayload.upstream_billing_probe_enabled = upstreamBillingAutoProbeEnabled.value
       updatePayload.upstream_billing_rate_sync_enabled = upstreamBillingRateSyncEnabled.value
@@ -5340,16 +5373,14 @@ const handleSubmit = async () => {
     // For apikey type, handle credentials update
     if (props.account.type === 'apikey') {
       const currentCredentials = (props.account.credentials as Record<string, unknown>) || {}
-      const newBaseUrl = isCindyAccount.value
-        ? 'https://api.laxarouter.ai'
-        : editBaseUrl.value.trim() || defaultBaseUrl.value
+      const newBaseUrl = editBaseUrl.value.trim() || defaultBaseUrl.value
       const shouldApplyModelMapping = !(props.account.platform === 'openai' && openaiPassthroughEnabled.value)
 
       // Always update credentials for apikey type to handle model mapping changes
       const newCredentials: Record<string, unknown> = {
-        ...currentCredentials,
-        base_url: newBaseUrl
+        ...currentCredentials
       }
+      if (!isCindyAccount.value) newCredentials.base_url = newBaseUrl
 
       // 国产供应商：模式与协议写入凭据（决定额度/余额探测与转发端点/格式）。
       if (isCNApiKeyAccount.value) {
@@ -5840,20 +5871,14 @@ const handleSubmit = async () => {
       const currentExtra = (props.account.extra as Record<string, unknown>) || {}
       const newExtra: Record<string, unknown> = { ...currentExtra }
       const hadCodexCLIOnlyEnabled = currentExtra.codex_cli_only === true
-      if (props.account.type === 'oauth' || props.account.type === 'setup-token') {
-        newExtra.openai_oauth_responses_websockets_v2_mode = openaiOAuthResponsesWebSocketV2Mode.value
-        newExtra.openai_oauth_responses_websockets_v2_enabled = isOpenAIWSModeEnabled(openaiOAuthResponsesWebSocketV2Mode.value)
-      } else if (props.account.type === 'apikey') {
-        newExtra.openai_apikey_responses_websockets_v2_mode = openaiAPIKeyResponsesWebSocketV2Mode.value
-        newExtra.openai_apikey_responses_websockets_v2_enabled = isOpenAIWSModeEnabled(openaiAPIKeyResponsesWebSocketV2Mode.value)
-      }
-      delete newExtra.responses_websockets_v2_enabled
-      delete newExtra.openai_ws_enabled
-      if (openaiPassthroughEnabled.value) {
-        newExtra.openai_passthrough = true
-      } else {
-        delete newExtra.openai_passthrough
-        delete newExtra.openai_oauth_passthrough
+      applyCoreAccountModeChanges(newExtra, currentExtra, props.account.type, coreModeChanges.value)
+      const storedPassthrough = currentExtra.openai_passthrough === true || currentExtra.openai_oauth_passthrough === true
+      if (openaiPassthroughEnabled.value !== storedPassthrough) {
+        if (openaiPassthroughEnabled.value) newExtra.openai_passthrough = true
+        else {
+          delete newExtra.openai_passthrough
+          delete newExtra.openai_oauth_passthrough
+        }
       }
       // 缺省即保留 namespace，不写空值，避免 extra 里堆积默认项
       if (props.account.type === 'oauth' && openaiFlattenNamespacesEnabled.value) {
@@ -5866,17 +5891,7 @@ const handleSubmit = async () => {
       } else {
         newExtra.openai_long_context_billing_enabled = openAILongContextBillingEnabled.value
       }
-      if (openAICompactMode.value === 'auto') {
-        delete newExtra.openai_compact_mode
-      } else {
-        newExtra.openai_compact_mode = openAICompactMode.value
-      }
 		if (props.account.type === 'apikey') {
-        if (!openAITextGenerationCapabilityEnabled.value || openAIResponsesMode.value === 'auto') {
-          delete newExtra.openai_responses_mode
-        } else {
-          newExtra.openai_responses_mode = openAIResponsesMode.value
-        }
         if (openAIImagesUrlToB64JsonEnabled.value) {
           newExtra.images_url_to_b64_json = true
         } else {
@@ -5951,32 +5966,6 @@ const handleSubmit = async () => {
         newExtra.codex_fingerprint_mode = codexFingerprintMode.value
       }
 
-      updatePayload.extra = newExtra
-    }
-
-    // Canonical Cindy accounts share the OpenAI wire controls without being
-    // projected back to platform=openai. Keep provider identity immutable and
-    // persist only the Cindy-compatible API-key modes.
-    if (isCindyAccount.value) {
-      const currentExtra = (updatePayload.extra as Record<string, unknown>) ||
-        (props.account.extra as Record<string, unknown>) || {}
-      const newExtra: Record<string, unknown> = { ...currentExtra }
-      newExtra.openai_apikey_responses_websockets_v2_mode = openaiAPIKeyResponsesWebSocketV2Mode.value
-      newExtra.openai_apikey_responses_websockets_v2_enabled = isOpenAIWSModeEnabled(openaiAPIKeyResponsesWebSocketV2Mode.value)
-      delete newExtra.responses_websockets_v2_enabled
-      delete newExtra.openai_ws_enabled
-      if (!openAITextGenerationCapabilityEnabled.value || openAIResponsesMode.value === 'auto') {
-        delete newExtra.openai_responses_mode
-      } else {
-        newExtra.openai_responses_mode = openAIResponsesMode.value
-      }
-      if (openAICompactMode.value === 'auto') {
-        delete newExtra.openai_compact_mode
-      } else {
-        newExtra.openai_compact_mode = openAICompactMode.value
-      }
-      delete newExtra.openai_passthrough
-      delete newExtra.openai_oauth_passthrough
       updatePayload.extra = newExtra
     }
 
@@ -6066,6 +6055,7 @@ const handleSubmit = async () => {
     }
     const overrides = buildCapacityPatch()
     if (Object.keys(overrides).length) updatePayload.model_context_overrides = overrides
+    providerEdit.prepare(updatePayload as UpdateAccountRequest)
 
     const canContinue = await ensureAntigravityMixedChannelConfirmed(async () => {
       await submitUpdateAccount(accountID, updatePayload)

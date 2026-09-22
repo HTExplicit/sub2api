@@ -196,24 +196,42 @@ func (r CreateAccountRequest) MarshalJSON() ([]byte, error) {
 // UpdateAccountRequest represents update account request
 // 使用指针类型来区分"未提供"和"设置为0"
 type UpdateAccountRequest struct {
-	Name                    string            `json:"name"`
-	Notes                   *string           `json:"notes"`
-	Type                    string            `json:"type" binding:"omitempty,oneof=oauth setup-token apikey upstream bedrock service_account"`
-	Credentials             map[string]any    `json:"credentials"`
-	Extra                   map[string]any    `json:"extra"`
-	ModelContextOverrides   map[string]*int64 `json:"model_context_overrides"`
-	ProxyID                 *int64            `json:"proxy_id"`
-	Concurrency             *int              `json:"concurrency"`
-	Priority                *int              `json:"priority"`
-	RateMultiplier          *float64          `json:"rate_multiplier"`
-	LoadFactor              *int              `json:"load_factor"`
-	Status                  string            `json:"status" binding:"omitempty,oneof=active inactive error"`
-	GroupIDs                *[]int64          `json:"group_ids"`
-	ExpiresAt               *int64            `json:"expires_at"`
-	AutoPauseOnExpired      *bool             `json:"auto_pause_on_expired"`
-	ProbeEnabled            *bool             `json:"upstream_billing_probe_enabled"`
-	RateSyncEnabled         *bool             `json:"upstream_billing_rate_sync_enabled"`
-	ConfirmMixedChannelRisk *bool             `json:"confirm_mixed_channel_risk"` // 用户确认混合渠道风险
+	ProviderEdit            *extensionv1.ProviderEditRequestV1 `json:"provider_edit,omitempty"`
+	Name                    string                             `json:"name"`
+	Notes                   *string                            `json:"notes"`
+	Type                    string                             `json:"type" binding:"omitempty,oneof=oauth setup-token apikey upstream bedrock service_account"`
+	Credentials             map[string]any                     `json:"credentials"`
+	Extra                   map[string]any                     `json:"extra"`
+	ModelContextOverrides   map[string]*int64                  `json:"model_context_overrides"`
+	ProxyID                 *int64                             `json:"proxy_id"`
+	Concurrency             *int                               `json:"concurrency"`
+	Priority                *int                               `json:"priority"`
+	RateMultiplier          *float64                           `json:"rate_multiplier"`
+	LoadFactor              *int                               `json:"load_factor"`
+	Status                  string                             `json:"status" binding:"omitempty,oneof=active inactive error"`
+	GroupIDs                *[]int64                           `json:"group_ids"`
+	ExpiresAt               *int64                             `json:"expires_at"`
+	AutoPauseOnExpired      *bool                              `json:"auto_pause_on_expired"`
+	ProbeEnabled            *bool                              `json:"upstream_billing_probe_enabled"`
+	RateSyncEnabled         *bool                              `json:"upstream_billing_rate_sync_enabled"`
+	ConfirmMixedChannelRisk *bool                              `json:"confirm_mixed_channel_risk"` // 用户确认混合渠道风险
+}
+
+func (r *UpdateAccountRequest) UnmarshalJSON(raw []byte) error {
+	type plain UpdateAccountRequest
+	var decoded plain
+	if err := json.Unmarshal(raw, &decoded); err != nil {
+		return err
+	}
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &fields); err != nil {
+		return err
+	}
+	if value, present := fields["provider_edit"]; present && strings.TrimSpace(string(value)) == "null" {
+		return errors.New("invalid provider edit input")
+	}
+	*r = UpdateAccountRequest(decoded)
+	return nil
 }
 
 // BulkUpdateAccountsRequest represents the payload for bulk editing accounts
@@ -1294,6 +1312,7 @@ func (h *AccountHandler) Update(c *gin.Context) {
 	skipCheck := req.ConfirmMixedChannelRisk != nil && *req.ConfirmMixedChannelRisk
 
 	account, err := h.adminService.UpdateAccount(c.Request.Context(), accountID, &service.UpdateAccountInput{
+		ProviderEdit:          req.ProviderEdit,
 		Name:                  req.Name,
 		Notes:                 req.Notes,
 		Type:                  req.Type,
@@ -2144,6 +2163,14 @@ func (h *AccountHandler) BulkUpdate(c *gin.Context) {
 	if viewScopedSubmission {
 		req = submission
 	}
+	if service.HasAccountEditOwnedInput(req.Credentials, req.Extra) {
+		accounts, err := h.adminService.GetAccountsByIDs(c.Request.Context(), ids)
+		if err != nil {
+			response.ErrorFrom(c, err)
+			return
+		}
+		c.Request = c.Request.WithContext(service.WithAccountJobEditAccounts(c.Request.Context(), accounts))
+	}
 	h.submitAccountJob(c, service.AccountJobKindBulkUpdate, req, accountJobSeeds(ids))
 }
 
@@ -2682,6 +2709,28 @@ type cindyAdminAvailableModel struct {
 	CreatedAt string `json:"created_at"`
 }
 
+// GetEditContext uses the stored account identity and preserves any independent
+// account.view origin already bound by the existing middleware.
+func (h *AccountHandler) GetEditContext(c *gin.Context) {
+	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil || id <= 0 {
+		response.BadRequest(c, "Invalid account ID")
+		return
+	}
+	account, err := h.adminService.GetAccount(c.Request.Context(), id)
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	result, err := service.LoadAccountEditContext(c.Request.Context(), account)
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	c.Header("Cache-Control", "no-store")
+	response.Success(c, result)
+}
+
 // GetAvailableModels handles getting available models for an account
 // GET /api/v1/admin/accounts/:id/models
 func (h *AccountHandler) GetAvailableModels(c *gin.Context) {
@@ -2725,8 +2774,27 @@ func (h *AccountHandler) accountTestModels(ctx context.Context, account *service
 	// Handle OpenAI accounts
 	if account.IsOpenAI() {
 		if service.IsCindyAPIKeyAccount(account.Platform, account.Type, account.Credentials) {
-			catalog := service.CindyCatalogModels()
-			catalog = append(catalog, service.CindyManagedModelMappings()...)
+			snapshot, err := service.LoadCindyCatalogSnapshot(ctx, account)
+			if err != nil {
+				return nil, err
+			}
+			if !snapshot.Config.CatalogEnabled {
+				return nil, service.ErrAccountEditCatalogUnavailable
+			}
+			catalog := append([]service.CindyCatalogModel(nil), snapshot.CatalogModels...)
+			public := make(map[string]service.CindyCatalogModel, len(catalog))
+			for _, model := range catalog {
+				if model.PublicModel {
+					public[model.ID] = model
+				}
+			}
+			for alias, target := range snapshot.CompatibilityAliases {
+				if model, ok := public[target]; ok {
+					model.ID, model.AliasTarget = alias, target
+					model.Managed = true
+					catalog = append(catalog, model)
+				}
+			}
 			models := make([]cindyAdminAvailableModel, 0, len(catalog))
 			for _, model := range catalog {
 				models = append(models, cindyAdminAvailableModel{

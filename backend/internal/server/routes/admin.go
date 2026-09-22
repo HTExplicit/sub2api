@@ -483,6 +483,7 @@ func registerAccountRoutes(admin *gin.RouterGroup, h *handler.Handlers, stepUpAu
 		accounts.GET("/api-key-visibility", h.Admin.Account.GetAPIKeyVisibility)
 		accounts.PUT("/api-key-visibility", h.Admin.Account.SetAPIKeyVisibility)
 		accounts.GET("/:id", h.Admin.Account.GetByID)
+		accounts.GET("/:id/edit-context", h.Admin.Account.GetEditContext)
 		accounts.POST("", h.Admin.Account.Create)
 		accounts.POST("/:id/duplicate", h.Admin.Account.Duplicate)
 		accounts.POST("/check-mixed-channel", h.Admin.Account.CheckMixedChannel)

@@ -354,6 +354,11 @@ func (h *AccountHandler) executeBulkUpdateJob(ctx context.Context, raw json.RawM
 			failed++
 			continue
 		}
+		mutationCtx, release, prepareErr := service.PrepareAccountJobEdit(ctx, raw, account, req.Credentials, req.Extra)
+		if prepareErr != nil {
+			failed++
+			continue
+		}
 		apply := func(mutationCtx context.Context) (*service.Account, error) {
 			result, updateErr := h.adminService.BulkUpdateAccounts(mutationCtx, newBulkUpdateAccountInput(req, id))
 			if updateErr != nil {
@@ -365,10 +370,11 @@ func (h *AccountHandler) executeBulkUpdateJob(ctx context.Context, raw json.RawM
 			return h.adminService.GetAccount(mutationCtx, id)
 		}
 		if isStrictCindyAccount(account) {
-			_, getErr = h.runCindyAccountJobMutation(ctx, id, apply)
+			_, getErr = h.runCindyAccountJobMutation(mutationCtx, id, apply)
 		} else {
-			_, getErr = apply(ctx)
+			_, getErr = apply(mutationCtx)
 		}
+		release()
 		if getErr != nil {
 			failed++
 			continue

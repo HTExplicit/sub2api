@@ -1,5 +1,19 @@
 export default {accounts: {
 
+  providerEdit: {
+    unavailable: '供应商设置暂不可用；未改动的供应商字段会保留，基础账号信息仍可保存。',
+    catalogUnavailable: '模型目录暂不可用，已有映射和编辑草稿保持不变。',
+    draftRetained: '供应商改动尚未保存。仅保存基础字段会保持窗口和这份草稿，不会丢弃改动。',
+    changed: '编辑上下文或目录已变化，请核对保留的草稿后再重新绑定。',
+    reconcile: '核对并重新绑定草稿',
+    reloadRequired: '账号状态或供应商归属已变化。当前草稿仍保留；应用前请重新打开编辑器读取新状态。',
+    saveBasic: '仅保存基础字段',
+    clearToDefault: '清除已存覆盖值（使用原生默认）',
+    clearPending: '保存时将清除已存覆盖值。',
+    clearCustomMappings: '清除自定义映射',
+    clearCompactMappings: '清除 Compact 映射'
+  },
+
   textTestPrompt: { label: '文本测试提示词', hint: '留空使用 hi；仅当前站点和管理员浏览器记忆。', reset: '恢复默认', tooLong: '提示词超过8192字符，请缩短后重试。' },
   tickets: {
     stages: { request: '请求', configuration: '配置检查', lifecycle: '任务状态', account_auth: '账号鉴权', proxy_auth: '代理鉴权', proxy_protocol: '代理协议', proxy_dns: '代理DNS', proxy_connect: '代理连接', tls: 'TLS证书', ticket_validation: '票据校验', upstream_http: '上游HTTP', persistence: '持久化' },

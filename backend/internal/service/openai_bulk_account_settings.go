@@ -65,7 +65,11 @@ func normalizeBulkOpenAISettings(input *BulkUpdateAccountsInput) (bulkOpenAISett
 		if input.Extra == nil {
 			input.Extra = make(map[string]any, 1)
 		}
-		input.Extra[openai_compat.ExtraKeyResponsesMode] = nil
+		// Preserve explicitly supplied auto or legacy null. If the caller only
+		// changes endpoint capability, the existing compatibility reset remains.
+		if !settings.responsesMode {
+			input.Extra[openai_compat.ExtraKeyResponsesMode] = nil
+		}
 		settings.responsesMode = true
 	}
 
@@ -133,7 +137,7 @@ func normalizeBulkOpenAIResponsesMode(raw any) (any, bool, error) {
 	}
 	switch openai_compat.ResponsesSupportMode(mode) {
 	case openai_compat.ResponsesSupportModeAuto:
-		return nil, false, nil
+		return mode, false, nil
 	case openai_compat.ResponsesSupportModeForceResponses,
 		openai_compat.ResponsesSupportModeForceChatCompletions:
 		return mode, true, nil

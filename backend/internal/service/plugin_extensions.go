@@ -146,6 +146,9 @@ func validatePluginRegistry(installations []*PluginInstallation) error {
 	if err := validateAccountCreateRegistry(installations); err != nil {
 		return err
 	}
+	if err := validateAccountEditRegistry(installations); err != nil {
+		return err
+	}
 	exclusive := make(map[string]int64)
 	type scopedOperation struct {
 		owner                                   int64
@@ -253,6 +256,7 @@ func pluginDependenciesHealthy(installation *PluginInstallation, registry *plugi
 }
 
 type PluginContribution struct {
+	EditDefinitionDigest   string `json:"edit_definition_digest,omitempty"`
 	CreateDefinitionDigest string `json:"create_definition_digest,omitempty"`
 	RuntimeGeneration      int64  `json:"runtime_generation,omitempty"`
 	PackageSHA256          string `json:"package_sha256,omitempty"`
@@ -325,7 +329,7 @@ func (m *PluginManager) Contributions() []PluginContribution {
 		runtime := registry.runtimes[id]
 		available := registry.unavailable == "" && runtime != nil && !runtime.draining.Load() && !runtime.client.Exited() && pluginDependenciesHealthy(installation, registry, map[int64]bool{})
 		for _, contribution := range installation.Manifest.Contributions {
-			if (contribution.Slot == extensionv1.AccountViewSlot || contribution.Slot == extensionv1.AccountCreateSlot) && installation.State == PluginStateDisabled {
+			if (contribution.Slot == extensionv1.AccountViewSlot || contribution.Slot == extensionv1.AccountCreateSlot || contribution.Slot == extensionv1.AccountEditSlot) && installation.State == PluginStateDisabled {
 				continue
 			}
 			if !pluginContributionBindingsEnabled(installation, &contribution) {
@@ -341,6 +345,13 @@ func (m *PluginManager) Contributions() []PluginContribution {
 				item.RuntimeGeneration = installation.RuntimeGeneration
 				if _, ready := m.accountCreateReady(installation, &contribution); !ready {
 					item.Available, item.Reason = false, "account_create_unavailable"
+				}
+			}
+			if contribution.Slot == extensionv1.AccountEditSlot {
+				item.EditDefinitionDigest = AccountEditDefinitionDigest(&contribution)
+				item.RuntimeGeneration = installation.RuntimeGeneration
+				if _, ready := m.accountEditReady(installation, &contribution, nil); !ready {
+					item.Available, item.Reason = false, "account_edit_unavailable"
 				}
 			}
 			if contribution.Capability != "" {

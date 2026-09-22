@@ -19,6 +19,7 @@ import type {
   AccountUsageInfo,
   WindowStats,
   AccountAvailableModel,
+  AccountEditContext,
   AccountUsageStatsResponse,
   TempUnschedulableStatus,
   AdminDataPayload,
@@ -612,6 +613,12 @@ export async function setSchedulable(id: number, schedulable: boolean, view?: Ca
  */
 export async function getAvailableModels(id: number, view?: CapturedAccountView): Promise<AccountAvailableModel[]> {
   const { data } = await accountViewClient(view).get<AccountAvailableModel[]>(`/admin/accounts/${id}/models`)
+  return data
+}
+
+/** Stored identity selects the edit profile; no caller-selected provider or URL. */
+export async function getEditContext(id: number, signal?: AbortSignal, view?: CapturedAccountView): Promise<AccountEditContext> {
+  const { data } = await accountViewClient(view).get<AccountEditContext>(`/admin/accounts/${id}/edit-context`, { signal })
   return data
 }
 
@@ -1360,6 +1367,7 @@ export const accountsAPI = {
   resetTempUnschedulable,
   setSchedulable,
   getAvailableModels,
+  getEditContext,
   getAccountTestPlan,
   getModelContextCapacities,
   previewModelContextCapacities,
@@ -1455,6 +1463,7 @@ const viewArgumentCounts: Partial<Record<keyof typeof accountsAPI, number>> = {
   getBatchTodayStats: 1,
   setSchedulable: 2,
   getAvailableModels: 1,
+  getEditContext: 2,
   getAccountTestPlan: 2,
   getModelContextCapacities: 2,
   syncUpstreamModels: 1,

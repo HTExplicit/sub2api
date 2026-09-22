@@ -307,7 +307,8 @@
               "usage.details",
               "surface",
               "account.view.v1",
-              "account.create.v1"
+              "account.create.v1",
+              "account.edit.v1"
             ]
           },
           "label": {
@@ -520,9 +521,29 @@
           },
           "account_create": {
             "$ref": "#/$defs/accountCreate"
+          },
+          "account_edit": {
+            "$ref": "#/$defs/accountEdit"
           }
         },
         "allOf": [
+          {
+            "if": {"properties": {"slot": {"const": "account.edit.v1"}}},
+            "then": {
+              "required": ["account_edit", "capability"],
+              "properties": {
+                "permission": {"const": "admin"},
+                "capability": {"const": "extensions.provider.v1"},
+                "entrypoint": {"maxLength": 0}, "action": {"maxLength": 0},
+                "all_accounts": {"const": false}, "retained_controls": {"const": false},
+                "fields": {"maxItems": 0}, "display_fields": {"maxItems": 0},
+                "assets": {"maxItems": 0}, "events": {"maxItems": 0},
+                "value_bindings": {"maxProperties": 0}
+              },
+              "not": {"anyOf": [{"required": ["account_filter"]}, {"required": ["resource_action"]}]}
+            },
+            "else": {"not": {"required": ["account_edit"]}}
+          },
           {
             "if": {
               "properties": {
@@ -1139,6 +1160,54 @@
           "enum": [
             "banned"
           ]
+        }
+      }
+    },
+    "accountEditLabels": {
+      "type": "object", "minProperties": 1, "maxProperties": 16,
+      "propertyNames": {"minLength": 1, "maxLength": 32},
+      "additionalProperties": {"type": "string", "minLength": 1, "maxLength": 256}
+    },
+    "accountEdit": {
+      "type": "object", "additionalProperties": false,
+      "required": ["version", "platform", "account_type", "credential_profile", "credential_ui", "catalog_source", "mapping_policy", "compact_mapping_editable", "wire_controls", "unlisted_fields", "labels"],
+      "properties": {
+        "version": {"const": 1}, "platform": {"const": "cindy"},
+        "account_type": {"const": "apikey"}, "credential_profile": {"const": "cindy_laxa_v1"},
+        "credential_ui": {
+          "type": "object", "additionalProperties": false, "required": ["base_url", "base_url_readonly", "hint"],
+          "properties": {
+            "base_url": {"const": "https://api.laxarouter.ai"}, "base_url_readonly": {"const": true},
+            "hint": {"$ref": "#/$defs/accountEditLabels"}
+          }
+        },
+        "catalog_source": {"const": "provider_catalog_snapshot_v1"},
+        "mapping_policy": {"const": "managed_catalog_v1"},
+        "compact_mapping_editable": {"type": "boolean"},
+        "unlisted_fields": {"const": "preserve"},
+        "wire_controls": {
+          "type": "array", "maxItems": 3,
+          "items": {
+            "type": "object", "additionalProperties": false, "required": ["target", "values", "allow_clear"],
+            "properties": {
+              "target": {"enum": ["responses_mode", "compact_mode", "responses_websocket_mode"]},
+              "values": {"type": "array", "minItems": 1, "maxItems": 4, "uniqueItems": true, "items": {"type": "string"}},
+              "allow_clear": {"type": "boolean"}
+            },
+            "allOf": [
+              {"if": {"properties": {"target": {"const": "responses_mode"}}}, "then": {"properties": {"values": {"maxItems": 3, "items": {"enum": ["auto", "force_responses", "force_chat_completions"]}}}}},
+              {"if": {"properties": {"target": {"const": "compact_mode"}}}, "then": {"properties": {"values": {"maxItems": 3, "items": {"enum": ["auto", "force_on", "force_off"]}}}}},
+              {"if": {"properties": {"target": {"const": "responses_websocket_mode"}}}, "then": {"properties": {"values": {"items": {"enum": ["off", "ctx_pool", "passthrough", "http_bridge"]}}}}}
+            ]
+          }
+        },
+        "labels": {
+          "type": "object", "additionalProperties": false, "required": ["managed_catalog", "managed_aliases", "custom_mappings"],
+          "properties": {
+            "managed_catalog": {"$ref": "#/$defs/accountEditLabels"},
+            "managed_aliases": {"$ref": "#/$defs/accountEditLabels"},
+            "custom_mappings": {"$ref": "#/$defs/accountEditLabels"}
+          }
         }
       }
     },
