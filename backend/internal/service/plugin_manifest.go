@@ -27,6 +27,7 @@ const (
 )
 
 var pluginIDPattern = regexp.MustCompile(`^[a-z0-9]+(?:[._-][a-z0-9]+)+$`)
+var pluginResourceNamePattern = regexp.MustCompile(`^[a-z][a-z0-9]*(-[a-z0-9]+)*(\.[a-z][a-z0-9]*(-[a-z0-9]+)*)+$`)
 
 var ErrPluginStateChanged = errors.New("插件状态已在其他实例中变化，请刷新后重试")
 
@@ -236,7 +237,7 @@ func (m PluginManifest) ValidateForRuntime(runtimeKey string) error {
 		return errors.New("插件资源操作数量超过限制")
 	}
 	for _, resource := range m.Resources {
-		if !regexp.MustCompile(`^[a-z][a-z0-9]*(\.[a-z][a-z0-9]*)+$`).MatchString(resource.Name) || len(resource.Name) > 100 || resourceNames[resource.Name] || (resource.Permission != "admin" && resource.Permission != "user") {
+		if !pluginResourceNamePattern.MatchString(resource.Name) || len(resource.Name) > 100 || resourceNames[resource.Name] || (resource.Permission != "admin" && resource.Permission != "user") {
 			return errors.New("插件资源操作声明无效")
 		}
 		declared := false

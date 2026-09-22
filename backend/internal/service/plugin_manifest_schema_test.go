@@ -24,7 +24,9 @@ func TestPluginManifestSchemaDeclaresContributionFields(t *testing.T) {
 			Contributions struct {
 				Items struct {
 					AdditionalProperties bool `json:"additionalProperties"`
-					Properties map[string]struct { Type string `json:"type"` } `json:"properties"`
+					Properties           map[string]struct {
+						Type string `json:"type"`
+					} `json:"properties"`
 				} `json:"items"`
 			} `json:"contributions"`
 		} `json:"properties"`
@@ -65,9 +67,64 @@ func TestPluginManifestAcceptsRegisteredHyphenatedResources(t *testing.T) {
 	}
 	manifest := testPluginManifest(nil)
 	manifest.Requires.ExtensionAPI = extensionv1.Version
-	manifest.Capabilities = []PluginCapability{{ID: extensionv1.CapabilityAdmin, Platform: "*", AccountType: "*"}}
+	manifest.Capabilities = source.Capabilities
 	manifest.Resources = source.Resources
 	if err := manifest.Validate(); err != nil {
 		t.Fatalf("existing registered resource names must be representable: %v", err)
+	}
+}
+
+func TestPluginManifestResourcePatternParityAndBoundaries(t *testing.T) {
+	raw, err := os.ReadFile("../../pkg/pluginapi/v1/manifest.schema.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var schema map[string]any
+	if err := json.Unmarshal(raw, &schema); err != nil {
+		t.Fatal(err)
+	}
+	lookup := func(keys ...string) string {
+		var value any = schema
+		for _, key := range keys {
+			object, ok := value.(map[string]any)
+			if !ok {
+				t.Fatalf("missing schema object before %q", key)
+			}
+			value = object[key]
+		}
+		text, ok := value.(string)
+		if !ok {
+			t.Fatal("missing schema pattern")
+		}
+		return text
+	}
+	for _, pattern := range []string{
+		lookup("properties", "resources", "items", "properties", "name", "pattern"),
+		lookup("properties", "contributions", "items", "properties", "resource_action", "properties", "resource", "pattern"),
+	} {
+		if pattern != pluginResourceNamePattern.String() {
+			t.Errorf("resource grant, action and runtime name patterns must agree: %q", pattern)
+		}
+	}
+	manifest := testPluginManifest(nil)
+	manifest.Requires.ExtensionAPI = extensionv1.Version
+	manifest.Capabilities = []PluginCapability{{ID: extensionv1.CapabilityUI, Platform: "*", AccountType: "*"}}
+	grant := extensionv1.ResourceGrant{Name: "prompt-audit.batch-delete", Capability: extensionv1.CapabilityUI, Permission: "admin"}
+	for _, name := range []string{"prompt--audit.config", "prompt-audit-.config", "prompt_audit.config", "prompt-audit..config", "../prompt-audit.config", "prompt-audit.config/extra", "prompt-audit", "Prompt-audit.config", "prompt-audit." + strings.Repeat("a", 90)} {
+		grant.Name = name
+		manifest.Resources = []extensionv1.ResourceGrant{grant}
+		if err := manifest.Validate(); err == nil {
+			t.Errorf("invalid resource name %q must still be rejected", name)
+		}
+	}
+	grant.Name = "prompt-audit.batch-delete"
+	manifest.Resources = []extensionv1.ResourceGrant{grant, grant}
+	if err := manifest.Validate(); err == nil {
+		t.Error("duplicate grants must still be rejected")
+	}
+	grant.Capability = extensionv1.CapabilityAdmin
+	manifest.Resources = []extensionv1.ResourceGrant{grant}
+	if err := manifest.Validate(); err == nil {
+		t.Error("undeclared capabilities must still be rejected")
 	}
 }
