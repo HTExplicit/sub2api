@@ -43,10 +43,7 @@ func accountTestUsesTextPrompt(model, mode string) bool {
 	case "compact", "image", "video", "tts", "stt", "realtime":
 		return false
 	}
-	if strings.Contains(strings.ToLower(model), "image") {
-		return false
-	}
-	return true
+	return !strings.Contains(strings.ToLower(model), "image")
 }
 
 func validateAccountPromptExtension(ctx context.Context, account *Account, prompt, model, mode string) error {

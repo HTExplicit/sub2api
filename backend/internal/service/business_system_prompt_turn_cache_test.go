@@ -81,7 +81,9 @@ func TestBusinessSystemPromptTurnCacheKeepsOnlyCurrentMetadata(t *testing.T) {
 		writes.Wait()
 		current, exists := c.Get(businessSystemPromptTurnCacheKey)
 		require.True(t, exists)
-		require.Len(t, current.(*businessSystemPromptTurnCache).values, 2, "only the current observation and current-turn fixture remain")
+		cache, ok := current.(*businessSystemPromptTurnCache)
+		require.True(t, ok)
+		require.Len(t, cache.values, 2, "only the current observation and current-turn fixture remain")
 	}
 	// Starting a prompt turn must not erase unrelated HTTP/session metadata.
 	value, exists = c.Get("http-fixture")

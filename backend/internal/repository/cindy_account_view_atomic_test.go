@@ -18,7 +18,7 @@ func TestAccountViewProbeAtomicTerminalTransaction(t *testing.T) {
 		t.Run(failAt, func(t *testing.T) {
 			db, mock, err := sqlmock.New()
 			require.NoError(t, err)
-			defer db.Close()
+			defer func() { _ = db.Close() }()
 			now := time.Date(2026, 9, 22, 0, 0, 0, 0, time.UTC)
 			updated := now.Add(-time.Hour)
 			credentials := map[string]any{"api_key": "synthetic-atomic-key", "base_url": "https://api.laxarouter.ai"}
@@ -83,7 +83,7 @@ func TestAccountViewProbeAtomicTerminalTransaction(t *testing.T) {
 func TestAccountViewProbeCanceledProgressDoesNotRequireBusinessLease(t *testing.T) {
 	db, mock, err := sqlmock.New()
 	require.NoError(t, err)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 	mock.ExpectBegin()
 	mock.ExpectQuery(`SELECT status FROM cindy_balance_probe_jobs.*lease_token IS NULL.*cancel_requested.*origin.*FOR UPDATE`).WithArgs(int64(7)).WillReturnRows(sqlmock.NewRows([]string{"status"}).AddRow("cancel_requested"))
 	mock.ExpectExec(`UPDATE cindy_balance_probe_items.*luna_running.*terra_running`).WithArgs(int64(7)).WillReturnResult(sqlmock.NewResult(0, 1))

@@ -310,9 +310,10 @@ func TestCindyNativeImagesExistingCaptureStillRequiresFreshAdmission(t *testing.
 			require.NoError(t, err)
 			captured, err := CaptureCindyPricingContext(c.Request.Context(), c, account)
 			require.NoError(t, err)
-			if state == "disabled" {
+			switch state {
+			case "disabled":
 				fixture.disabled = true
-			} else if state == "owner-changed" {
+			case "owner-changed":
 				fixture.owner = 702
 			}
 			fixture.calls = nil
@@ -373,12 +374,13 @@ func TestCindyNativeImagesPreserveExplicitOrdinaryOAuthAndLegacyMappings(t *test
 			fixture.disabled = mode != "legacy-explicit"
 			account := newOpenAIImagesAPIKeyAccount()
 			model, wire := "gpt-image-2", "gpt-image-2.5-flare"
-			if mode == "oauth" || mode == "setup-token" {
+			switch mode {
+			case "oauth", "setup-token":
 				account = directImagesTestAccount()
 				if mode == "setup-token" {
 					account.Type = AccountTypeSetupToken
 				}
-			} else if mode == "legacy-explicit" {
+			case "legacy-explicit":
 				account = cindyHTTPToWSV2TestAccount()
 				account.Platform = PlatformOpenAI
 				model, wire = "gpt-image-legacy-unlisted", "gpt-image-user-pinned"

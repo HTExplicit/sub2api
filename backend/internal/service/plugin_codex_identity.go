@@ -9,10 +9,6 @@ import (
 	extensionv1 "github.com/Wei-Shaw/sub2api/pkg/extensionapi/v1"
 )
 
-func invokeCodexIdentityPolicy(ctx context.Context, operation string, query extensionv1.CodexIdentityQuery) (extensionv1.CodexIdentityResult, error) {
-	return invokeCodexIdentityPolicyForAccount(ctx, nil, operation, query)
-}
-
 // Only shared/pre-create policy material may use the account-free domain path.
 // An existing account keeps its host-selected type and rollout scope on every
 // policy operation, including validation and metadata-only diagnostics.

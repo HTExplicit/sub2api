@@ -107,7 +107,15 @@ func register(server grpc.ServiceRegistrar, service, method string, adapter *rpc
 				return nil, err
 			}
 			call := func(ctx context.Context, req any) (any, error) {
-				return srv.(rpcServer).dispatch(ctx, req.(*wrapperspb.BytesValue))
+				target, ok := srv.(rpcServer)
+				if !ok {
+					return nil, status.Error(codes.Internal, "invalid extension RPC handler")
+				}
+				request, ok := req.(*wrapperspb.BytesValue)
+				if !ok || request == nil {
+					return nil, status.Error(codes.InvalidArgument, "invalid extension RPC request")
+				}
+				return target.dispatch(ctx, request)
 			}
 			if interceptor == nil {
 				return call(ctx, in)

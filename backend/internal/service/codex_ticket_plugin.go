@@ -49,9 +49,6 @@ func (s *OpenAIGatewayService) openAICodexTicketConfig() config.OpenAICodexTicke
 func (s *OpenAIGatewayService) openAICodexTicketEnabledContext(context.Context) bool {
 	return s.openAICodexTicketConfig().Enabled
 }
-func (s *OpenAIGatewayService) openAICodexTicketHarvestProxyURLContext(context.Context) string {
-	return s.openAICodexTicketConfig().HarvestProxyURL
-}
 
 func (s *OpenAIGatewayService) applyOpenAICodexTicket(ctx context.Context, account *Account, model string, headers http.Header) error {
 	if s == nil || s.pluginManager == nil {

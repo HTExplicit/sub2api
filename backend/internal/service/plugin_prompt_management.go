@@ -75,7 +75,11 @@ func planPromptPublication(ctx context.Context, request extensionv1.PromptPublic
 	if err != nil {
 		return plan, err
 	}
-	if strings.ToLower(strings.TrimSpace(plan.Action)) != strings.ToLower(strings.TrimSpace(request.Action)) || !plan.Allowed {
+	// Compare canonical spellings: EqualFold would additionally accept Unicode
+	// folds such as long-s in an otherwise ASCII publication action.
+	plannedAction := strings.ToLower(strings.TrimSpace(plan.Action))
+	requestedAction := strings.ToLower(strings.TrimSpace(request.Action))
+	if plannedAction != requestedAction || !plan.Allowed {
 		return plan, ErrBusinessSystemPromptInvalid
 	}
 	return plan, nil
@@ -86,7 +90,9 @@ func planSkillPublication(ctx context.Context, request extensionv1.SkillPublicat
 	if err := invokePromptManagement(ctx, "skills.publication.plan", request, &plan); err != nil {
 		return err
 	}
-	if strings.ToLower(strings.TrimSpace(plan.Action)) != strings.ToLower(strings.TrimSpace(request.Action)) || !plan.Allowed {
+	plannedAction := strings.ToLower(strings.TrimSpace(plan.Action))
+	requestedAction := strings.ToLower(strings.TrimSpace(request.Action))
+	if plannedAction != requestedAction || !plan.Allowed {
 		return ErrBusinessSystemPromptBundleInvalid
 	}
 	return nil

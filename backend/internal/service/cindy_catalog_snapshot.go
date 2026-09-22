@@ -51,7 +51,7 @@ func LoadCindyCatalogSnapshot(ctx context.Context, account *Account) (*CindyCata
 	accountID := int64(0)
 	if account != nil {
 		if account.ID <= 0 || !IsCindyRuntimeCompatibleAPIKeyAccount(account.Platform, account.Type, account.Credentials) {
-			return nil, errors.New("Cindy catalog account identity is unavailable")
+			return nil, errors.New("provider: Cindy catalog account identity is unavailable")
 		}
 		accountID = account.ID
 	}
@@ -72,10 +72,10 @@ func LoadCindyCatalogSnapshot(ctx context.Context, account *Account) (*CindyCata
 		Capability: extensionv1.CapabilityProvider, Operation: "cindy.catalog", AccountID: accountID, Payload: query,
 	})
 	if err != nil {
-		return nil, fmt.Errorf("Cindy catalog snapshot is unavailable: %w", err)
+		return nil, fmt.Errorf("provider: Cindy catalog snapshot is unavailable: %w", err)
 	}
 	if result.Code != "" || len(result.Payload) == 0 || len(result.Payload) > extensionv1.MaxPayloadBytes {
-		return nil, errors.New("Cindy catalog snapshot is unavailable")
+		return nil, errors.New("provider: Cindy catalog snapshot is unavailable")
 	}
 	if captured != nil && captured.owner != result.PluginID {
 		return nil, errors.New("captured Cindy catalog owner changed")
@@ -103,7 +103,7 @@ func LoadCindyCatalogSnapshot(ctx context.Context, account *Account) (*CindyCata
 
 func newCindyCatalogSnapshot(snapshot extensionv1.CindyCatalogSnapshotV1, owner int64, images extensionv1.ImageToolsConfig) (*CindyCatalogSnapshot, error) {
 	if snapshot.Images != images {
-		return nil, errors.New("Cindy catalog image facts changed")
+		return nil, errors.New("provider: Cindy catalog image facts changed")
 	}
 	index, err := validateCindyCatalogSnapshot(snapshot)
 	if err != nil {

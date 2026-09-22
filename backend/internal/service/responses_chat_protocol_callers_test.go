@@ -88,7 +88,7 @@ func protocolAnthropicStream(arguments string, closeTool bool) string {
 	for _, event := range events {
 		var kind struct{ Type string }
 		_ = json.Unmarshal([]byte(event), &kind)
-		stream.WriteString("event: " + kind.Type + "\ndata: " + event + "\n\n")
+		_, _ = stream.WriteString("event: " + kind.Type + "\ndata: " + event + "\n\n")
 	}
 	return stream.String()
 }
@@ -225,7 +225,7 @@ func TestAntigravityChatCallerSurfacesProtocolFailure(t *testing.T) {
 			}
 			body := `data: {"response":{"responseId":"resp_fixture","candidates":[{"content":{"parts":[{"functionCall":{"id":"call_fixture","name":"lookup","args":{"x":1}}},{"functionCall":{"id":"` + secondID + `","name":"lookup","args":{"x":2}}}]}}],"usageMetadata":{"promptTokenCount":13,"candidatesTokenCount":2}}}` + "\n\n" +
 				`data: {"response":{"candidates":[{"finishReason":"STOP"}],"usageMetadata":{"promptTokenCount":13,"candidatesTokenCount":19}}}` + "\n\n"
-			var reader io.ReadCloser = io.NopCloser(strings.NewReader(body))
+			reader := io.NopCloser(strings.NewReader(body))
 			if mode == "read_error_after_failure" {
 				reader = &antigravityCompatErrorReader{data: []byte(body), err: io.ErrUnexpectedEOF}
 			}

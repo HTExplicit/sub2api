@@ -343,6 +343,8 @@ func TestAccountJobSubmitProcessesMoreThanOneWorkerBatch(t *testing.T) {
 
 	executor := &accountJobTestExecutor{}
 	runtime := NewAccountJobRuntime(jobs, executor)
+	// Start normally installs this context; this test invokes execute directly.
+	runtime.ctx = t.Context()
 	code, message := runtime.execute(job)
 
 	require.Empty(t, code)

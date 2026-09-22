@@ -45,7 +45,12 @@ func TestOpenAIReasoningPolicyAccountDefaultsAndIsolation(t *testing.T) {
 			for _, accountType := range []string{"", AccountTypeUpstream, AccountTypeBedrock} {
 				require.False(t, policy.get(&Account{Platform: PlatformOpenAI, Type: accountType, Extra: map[string]any{policy.key: true}}))
 			}
-			require.True(t, policy.get(&Account{Platform: PlatformCindy, Type: AccountTypeAPIKey}))
+			t.Run("actual_platform_scope", func(t *testing.T) {
+				// The Codex recovery capability is declared for the actual OpenAI
+				// platform; OpenAI-compatible wire protocols do not widen that scope.
+				require.False(t, policy.get(&Account{ID: 1, Platform: PlatformCindy, WirePlatform: WirePlatformOpenAI, ProviderProfile: ProviderProfileCindyLaxaV1, Type: AccountTypeAPIKey, Extra: map[string]any{policy.key: true}}))
+				require.True(t, policy.get(&Account{ID: 2, Platform: PlatformOpenAI, Type: AccountTypeAPIKey, Credentials: map[string]any{"base_url": "https://api.laxarouter.ai"}, Extra: map[string]any{policy.key: true}}), "a legacy Laxa URL does not relabel an ordinary OpenAI account")
+			})
 			require.False(t, policy.get(&Account{Platform: PlatformOpenAI, WirePlatform: PlatformGrok, Type: AccountTypeAPIKey}))
 			require.True(t, policy.get(&Account{Platform: PlatformOpenAI, Type: AccountTypeAPIKey, Extra: map[string]any{"openai_passthrough": true}}))
 		})

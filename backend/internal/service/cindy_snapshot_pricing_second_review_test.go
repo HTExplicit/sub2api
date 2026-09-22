@@ -276,7 +276,7 @@ func TestCindySecondReviewWSTwoTurnsKeepMappingAndBillingTogether(t *testing.T) 
 		})
 	defer server.Close()
 	client := dialPassthroughLifecycleClientWithPayload(t, server, `{"type":"response.create","model":"gpt-5.4-mini","stream":false}`)
-	defer client.CloseNow()
+	defer func() { _ = client.CloseNow() }()
 	for index, want := range []string{f.before.LegacyLiveMappings["gpt-5.4-mini"], f.after.LegacyLiveMappings["gpt-5.4-mini"]} {
 		if index > 0 {
 			writeCtx, done := context.WithTimeout(controlCtx, 3*time.Second)

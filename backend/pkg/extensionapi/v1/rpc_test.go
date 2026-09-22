@@ -12,7 +12,37 @@ import (
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/status"
 	"google.golang.org/grpc/test/bufconn"
+	"google.golang.org/protobuf/types/known/wrapperspb"
 )
+
+type capturedRPCRegistration struct {
+	description    *grpc.ServiceDesc
+	implementation any
+}
+
+func (r *capturedRPCRegistration) RegisterService(description *grpc.ServiceDesc, implementation any) {
+	r.description, r.implementation = description, implementation
+}
+
+func TestExtensionRPCRejectsInvalidDispatchTypes(t *testing.T) {
+	registration := &capturedRPCRegistration{}
+	RegisterPlugin(registration, testHandler{})
+	handler := registration.description.Methods[0].Handler
+	decode := func(any) error { return nil }
+	_, err := handler(struct{}{}, context.Background(), decode, nil)
+	if status.Code(err) != codes.Internal {
+		t.Fatalf("invalid handler did not fail closed: %v", err)
+	}
+	for _, request := range []any{struct{}{}, (*wrapperspb.BytesValue)(nil)} {
+		interceptor := func(ctx context.Context, _ any, _ *grpc.UnaryServerInfo, next grpc.UnaryHandler) (any, error) {
+			return next(ctx, request)
+		}
+		_, err := handler(registration.implementation, context.Background(), decode, interceptor)
+		if status.Code(err) != codes.InvalidArgument {
+			t.Fatalf("invalid interceptor request did not fail closed: %v", err)
+		}
+	}
+}
 
 type testHandler struct{}
 

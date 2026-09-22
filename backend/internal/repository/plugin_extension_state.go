@@ -26,7 +26,7 @@ func (r *pluginRepository) CompareSwapExtensionState(ctx context.Context, plugin
 	if err != nil {
 		return out, err
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 	if err := lockPluginExecution(ctx, tx, plugin); err != nil {
 		return out, err
 	}
@@ -117,7 +117,7 @@ func (r *pluginRepository) DueExtensionStates(ctx context.Context, plugin string
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	out := make([]extensionv1.DueState, 0)
 	for rows.Next() {
 		var row extensionv1.DueState
@@ -135,7 +135,7 @@ func (r *pluginRepository) AcquireExtensionLease(ctx context.Context, plugin str
 	if err != nil {
 		return out, err
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 	if err = lockPluginExecution(ctx, tx, plugin); err != nil {
 		return out, err
 	}
@@ -160,7 +160,7 @@ func (r *pluginRepository) ReleaseExtensionLease(ctx context.Context, plugin str
 	if err != nil {
 		return extensionv1.LeaseResult{}, err
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 	if err = lockPluginExecution(ctx, tx, plugin); err != nil {
 		return extensionv1.LeaseResult{}, err
 	}

@@ -286,10 +286,10 @@ func (s *OpenAIGatewayService) forwardCindyAlphaSearchViaNativeMessages(
 
 func buildCindyAlphaSearchMessagesBody(alphaBody []byte, plan *CindyAlphaSearchPlan) ([]byte, error) {
 	if plan == nil || strings.TrimSpace(plan.NativeMessagesModel) == "" {
-		return nil, fmt.Errorf("Cindy native Messages search plan is required")
+		return nil, fmt.Errorf("provider: Cindy native Messages search plan is required")
 	}
 	if plan.MaxSearchUses < 1 || plan.MaxSearchUses > maxCindyAlphaSearchUses {
-		return nil, fmt.Errorf("Cindy native Messages search max uses is out of bounds")
+		return nil, fmt.Errorf("provider: Cindy native Messages search max uses is out of bounds")
 	}
 	payload := map[string]any{
 		"model":      plan.NativeMessagesModel,
@@ -814,10 +814,10 @@ func buildOpenAIAlphaSearchResponsesWebSearchBody(alphaBody []byte, model string
 	tool := map[string]any{"type": "web_search"}
 	if plan != nil {
 		if strings.TrimSpace(plan.ResponsesToolType) == "" {
-			return nil, fmt.Errorf("Cindy Responses search tool type is required")
+			return nil, fmt.Errorf("provider: Cindy Responses search tool type is required")
 		}
 		if plan.MaxSearchUses < 1 || plan.MaxSearchUses > maxCindyAlphaSearchUses {
-			return nil, fmt.Errorf("Cindy Responses search max uses is out of bounds")
+			return nil, fmt.Errorf("provider: Cindy Responses search max uses is out of bounds")
 		}
 		tool["type"] = plan.ResponsesToolType
 	}

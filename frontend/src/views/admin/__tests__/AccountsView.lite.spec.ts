@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { DOMWrapper, flushPromises, mount } from '@vue/test-utils'
 import { defineComponent } from 'vue'
 import { createPinia, setActivePinia } from 'pinia'
+import { useAccountJobsStore } from '@/stores/accountJobs'
 
 import AccountsView from '../AccountsView.vue'
 import AccountActionMenu from '@/components/admin/account/AccountActionMenu.vue'
@@ -216,6 +217,20 @@ describe('admin AccountsView lite account list', () => {
     await flushPromises()
 
     expect(wrapper.get('[data-test="account-groups"]').text()).toBe('codex')
+    wrapper.unmount()
+  })
+
+  it('opens account operation history from the existing account-page button', async () => {
+    const openHistory = vi.spyOn(useAccountJobsStore(), 'openDrawer').mockResolvedValue(undefined)
+    const wrapper = mountView()
+    await flushPromises()
+
+    const historyButton = wrapper.get('button[data-test="operation-history"]')
+    expect(historyButton.text()).toContain('admin.accountTasks.historyAction')
+    expect(openHistory).not.toHaveBeenCalled()
+    await historyButton.trigger('click')
+    await flushPromises()
+    expect(openHistory).toHaveBeenCalledTimes(1)
     wrapper.unmount()
   })
 

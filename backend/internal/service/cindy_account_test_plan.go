@@ -26,7 +26,7 @@ type CindyAccountTestPlan struct {
 // runtime-compatible legacy identity must not activate management capabilities.
 func LoadCindyAccountTestPlan(ctx context.Context, account *Account) (*CindyAccountTestPlan, error) {
 	if account == nil || account.ID <= 0 || !IsCindyAPIKeyAccount(account.Platform, account.Type, account.Credentials) {
-		return nil, errors.New("Cindy account test plan identity is unavailable")
+		return nil, errors.New("provider: Cindy account test plan identity is unavailable")
 	}
 	if ctx == nil {
 		ctx = context.Background()
@@ -39,10 +39,10 @@ func LoadCindyAccountTestPlan(ctx context.Context, account *Account) (*CindyAcco
 		Capability: extensionv1.CapabilityProvider, Operation: "cindy.catalog", AccountID: account.ID, Payload: query,
 	})
 	if err != nil {
-		return nil, fmt.Errorf("Cindy account test plan is unavailable: %w", err)
+		return nil, fmt.Errorf("provider: Cindy account test plan is unavailable: %w", err)
 	}
 	if result.PluginID <= 0 || result.Code != "" || len(result.Payload) == 0 || len(result.Payload) > extensionv1.MaxPayloadBytes {
-		return nil, errors.New("Cindy account test plan is unavailable")
+		return nil, errors.New("provider: Cindy account test plan is unavailable")
 	}
 	var values []json.RawMessage
 	if json.Unmarshal(result.Payload, &values) != nil || len(values) != 1 {

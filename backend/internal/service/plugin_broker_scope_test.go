@@ -88,7 +88,8 @@ func newBrokerScopeFixture(t *testing.T) (extensionv1.HostHandler, *brokerScopeR
 	process := *installation
 	process.Bindings = append([]PluginBinding(nil), installation.Bindings...)
 	manager.extensions.Store(&pluginExtensionRegistry{installations: map[int64]*PluginInstallation{7: &process}, runtimes: map[int64]*pluginRuntime{}})
-	host := manager.buildHostServices(&process).(*pluginHostServiceServer)
+	host, ok := manager.buildHostServices(&process).(*pluginHostServiceServer)
+	require.True(t, ok)
 	return host.extension, repo, directory
 }
 
@@ -170,7 +171,8 @@ func TestPluginBrokerFailsClosedWhenCurrentScopeCannotBeRead(t *testing.T) {
 
 func TestPluginBrokerFinishesOwnedObservationAfterCapabilityStop(t *testing.T) {
 	broker, repo, directory := newBrokerScopeFixture(t)
-	host := broker.(*pluginExtensionHost)
+	host, ok := broker.(*pluginExtensionHost)
+	require.True(t, ok)
 	store := &quotaActivityMemoryStore{}
 	host.activity = NewQuotaActivityService(store)
 	accountID := directory.accounts[0].ID

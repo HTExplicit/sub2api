@@ -29,7 +29,7 @@ func ResolveCindyAlphaSearchPlan(ctx context.Context, requestedModel string) (Ci
 func resolveCindyAlphaSearchPlanForAccount(ctx context.Context, requestedModel string, accountID int64) (CindyAlphaSearchPlan, error) {
 	requestedModel = strings.TrimSpace(requestedModel)
 	if requestedModel == "" || len(requestedModel) > 256 || accountID < 0 {
-		return CindyAlphaSearchPlan{}, fmt.Errorf("Cindy search model is required")
+		return CindyAlphaSearchPlan{}, fmt.Errorf("provider: Cindy search model is required")
 	}
 	payload, err := json.Marshal(extensionv1.CindyAlphaSearchPlanRequest{Model: requestedModel})
 	if err != nil {

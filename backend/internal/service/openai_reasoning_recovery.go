@@ -398,10 +398,6 @@ func openAIReasoningToolHistoryAllowsRecovery(body []byte) bool {
 	return validateOpenAIResponsesToolOutputs(input, hasServerContext) == nil
 }
 
-func openAIReasoningRejectedIndices(body []byte, rejection openAIReasoningRejection) ([]int, []string) {
-	return openAIReasoningRejectedIndicesContext(context.Background(), body, rejection)
-}
-
 func openAIReasoningRejectedIndicesContext(ctx context.Context, body []byte, rejection openAIReasoningRejection) ([]int, []string) {
 	selection, err := selectOpenAIRecoveryIndices(ctx, body, rejection.param)
 	if err != nil || len(selection.Indices) == 0 {

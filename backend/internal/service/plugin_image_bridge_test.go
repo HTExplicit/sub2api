@@ -58,7 +58,12 @@ func TestImageBridgeUsesOnlyBoundedFactsAndAuthorizedAccount(t *testing.T) {
 	}
 	var request map[string]any
 	require.NoError(t, json.Unmarshal([]byte(`{"model":"gpt-5.6-luna","tools":[{"type":"image_generation"}]}`), &request))
-	request["tools"].([]any)[0].(map[string]any)["model"] = strings.Repeat("private-model", 1000)
+	tools, ok := request["tools"].([]any)
+	require.True(t, ok)
+	require.Len(t, tools, 1)
+	tool, ok := tools[0].(map[string]any)
+	require.True(t, ok)
+	tool["model"] = strings.Repeat("private-model", 1000)
 	facts, err := imageBridgeFacts(request, "validate")
 	require.NoError(t, err)
 	require.True(t, facts.Tools[0].InvalidModel)
@@ -108,4 +113,32 @@ func TestImageBridgePlanCannotChangeBillingIdentityOrUnrelatedTools(t *testing.T
 	plan.Tools[0].Index = 1
 	plan.Tools = append(plan.Tools, plan.Tools[0])
 	require.False(t, validImageBridgePlan(request, plan))
+}
+
+func TestImageBridgePlanRejectsInvalidTargetsBeforeMutation(t *testing.T) {
+	for _, test := range []struct {
+		name   string
+		index  int
+		target any
+	}{
+		{name: "negative index", index: -1, target: map[string]any{}},
+		{name: "out of bounds", index: 1, target: map[string]any{}},
+		{name: "non-object target", target: "invalid"},
+		{name: "nil object", target: map[string]any(nil)},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			body := map[string]any{"model": "original", "n": 2, "tools": []any{test.target}}
+			before, err := json.Marshal(body)
+			require.NoError(t, err)
+			changed, err := applyImageBridgePlan(body, extensionv1.ImageBridgePlan{
+				Model: "replacement", StripCount: true,
+				Tools: []extensionv1.ImageBridgeModelPlan{{Index: test.index, Model: "replacement"}},
+			})
+			require.ErrorIs(t, err, ErrExtensionOperationUnavailable)
+			require.False(t, changed)
+			after, err := json.Marshal(body)
+			require.NoError(t, err)
+			require.Equal(t, before, after, "an invalid target must leave the complete request untouched")
+		})
+	}
 }

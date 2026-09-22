@@ -197,10 +197,6 @@ func (s *adminServiceImpl) SplitCindyGroup(ctx context.Context, groupID int64, i
 	return result, nil
 }
 
-func normalizeCindyGroupSplitInput(input CindyGroupSplitInput, requireFingerprint bool) (CindyGroupSplitInput, error) {
-	return normalizeCindyGroupSplitInputContext(context.Background(), input, requireFingerprint)
-}
-
 // BuildCindySplitTargetGroup clones all persisted group policy required by a
 // split target while resetting identity and runtime-only fields.
 func BuildCindySplitTargetGroup(source *Group, targetName string) *Group {

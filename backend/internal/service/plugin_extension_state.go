@@ -134,12 +134,13 @@ func (h *pluginExtensionHost) Call(ctx context.Context, in extensionv1.HostInvoc
 			if !h.permitsAccount(account.Platform, account.Type, account.ID, in.Operation == extensionv1.HostResolveIdentity) {
 				return extensionv1.Result{}, status.Error(codes.PermissionDenied, "account is outside plugin capability")
 			}
-			if in.Operation == extensionv1.HostAccountRead {
+			switch in.Operation {
+			case extensionv1.HostAccountRead:
 				value = account
-			} else if in.Operation == extensionv1.HostFinishObservation {
+			case extensionv1.HostFinishObservation:
 				err = h.activity.FinishUnbilled(ctx, req.AccountID, h.key, req.ObservationID)
 				value = map[string]bool{"finished": err == nil}
-			} else {
+			default:
 				identity, resolveErr := h.directory.ResolveExtensionIdentity(ctx, req)
 				err = resolveErr
 				if err == nil && identity != nil && req.PrepareCredentials {

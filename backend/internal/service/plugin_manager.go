@@ -483,19 +483,6 @@ func (m *PluginManager) startingStateExpired(installation *PluginInstallation) b
 	return time.Since(installation.UpdatedAt) > recoveryDelay
 }
 
-func (m *PluginManager) detachAllRuntimes() []*pluginRuntime {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	runtimes := make([]*pluginRuntime, 0, len(m.runtimes))
-	for id, runtime := range m.runtimes {
-		runtime.beginDrain()
-		runtimes = append(runtimes, runtime)
-		delete(m.runtimes, id)
-	}
-	m.route.Store(nil)
-	return runtimes
-}
-
 func (m *PluginManager) publishUnavailableRoute(pluginID int64, rollout int, message string) {
 	m.mu.Lock()
 	stale := make([]*pluginRuntime, 0, len(m.runtimes))
@@ -1079,7 +1066,7 @@ func (m *PluginManager) CreateUIAssetSession(ctx context.Context, id int64, cont
 	if contribution != "" {
 		found := false
 		for _, item := range installation.Manifest.Contributions {
-			if item.ID != contribution || item.Entrypoint == "" || (item.Permission != permission && !(permission == "admin" && item.Permission == "user")) {
+			if item.ID != contribution || item.Entrypoint == "" || (item.Permission != permission && (permission != "admin" || item.Permission != "user")) {
 				continue
 			}
 			entrypoint, permission, found = item.Entrypoint, item.Permission, true

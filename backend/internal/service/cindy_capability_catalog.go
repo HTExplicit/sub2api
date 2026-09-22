@@ -32,9 +32,9 @@ const (
 	// Deprecated: Source compatibility only; management inventory is provider-owned.
 	CindyAutoReviewModel = extensionv1.CindyAutoReviewModel
 	// Deprecated: Source compatibility only; runtime consumers use LoadCindyCatalogSnapshot.
-	CindyFreeModelCatalogSourceRevision = extensionv1.CindyFreeModelCatalogSourceRevision
+	CindyFreeModelCatalogSourceRevision = "laxarouter-free-key@2026-09-11"
 	// Deprecated: Source compatibility only; runtime consumers use LoadCindyCatalogSnapshot.
-	CindyFreeModelCatalogSHA256  = extensionv1.CindyFreeModelCatalogSHA256
+	CindyFreeModelCatalogSHA256  = "38045af0a5a90c360ba44013d90a1ccbff65c903db7f9b99701c30ce15ca8821"
 	CindyModelKindText           = extensionv1.CindyModelKindText
 	CindyModelKindImage          = extensionv1.CindyModelKindImage
 	CindyModelKindSpecial        = extensionv1.CindyModelKindSpecial
@@ -209,11 +209,6 @@ func CindyCodexPublicModelIDs() []string {
 	queryCindyCatalog("CindyCodexPublicModelIDs", []any{}, []any{&out0})
 	return out0
 }
-func cindyCapabilitySupportsCodexModels(capability CindyCapability) bool {
-	var out0 bool
-	queryCindyCatalog("cindyCapabilitySupportsCodexModels", []any{capability}, []any{&out0})
-	return out0
-}
 func CindyVerifiedCapabilities() []CindyCapability {
 	var out0 []CindyCapability
 	queryCindyCatalog("CindyVerifiedCapabilities", []any{}, []any{&out0})
@@ -228,9 +223,6 @@ func CindyImageModelCapabilities() []CindyModelCapability {
 	var out0 []CindyModelCapability
 	queryCindyCatalog("CindyImageModelCapabilities", []any{}, []any{&out0})
 	return out0
-}
-func cloneCindyImageRequestControls(in *CindyImageRequestControls) *CindyImageRequestControls {
-	return extensionv1.CloneCindyImageRequestControls(in)
 }
 
 func cindyModelCapabilityFromCapability(capability CindyCapability) CindyModelCapability {

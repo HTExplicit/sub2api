@@ -103,7 +103,10 @@ func (s *OpenAIQuotaService) finishQuotaMeasurement(ctx context.Context, id int6
 	if after == nil || before.identity != after.identity || before.point != after.point || before.activity != after.activity {
 		return
 	}
-	store := s.accountRepo.(QuotaEstimateRepository)
+	store, ok := s.accountRepo.(QuotaEstimateRepository)
+	if !ok {
+		return
+	}
 	limits := usage.RateLimit
 	if after.shadow {
 		limits = nil

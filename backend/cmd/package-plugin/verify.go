@@ -34,7 +34,7 @@ func verifyPluginBundle(path, hostVersion, runtimeKey string, development bool) 
 	if err != nil {
 		return err
 	}
-	defer os.RemoveAll(directory)
+	defer func() { _ = os.RemoveAll(directory) }()
 	cfg := &config.Config{}
 	cfg.Plugins.DataDir = directory
 	cfg.Plugins.MaxUploadBytes = 128 << 20

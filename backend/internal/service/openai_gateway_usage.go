@@ -786,24 +786,6 @@ func (s *OpenAIGatewayService) calculateOpenAIRecordUsageTokenCost(
 	return breakdown, err
 }
 
-func isCindyCompatibilityBillingModel(model string) bool {
-	_, ok := CindyCompatibilityTextPricingForModel(model)
-	return ok
-}
-
-func hasCindyCompatibilityBillingModel(models []string) bool {
-	for _, model := range models {
-		if isCindyCompatibilityBillingModel(model) {
-			return true
-		}
-	}
-	return false
-}
-
-func shouldUseCindyTextPricing(account *Account, model string) bool {
-	return shouldUseCindyTextPricingContext(context.Background(), account, model)
-}
-
 func shouldUseCindyTextPricingContext(ctx context.Context, account *Account, model string) bool {
 	if account == nil || !IsCindyRuntimeCompatibleAPIKeyAccount(account.Platform, account.Type, account.Credentials) {
 		return false

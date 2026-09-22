@@ -31,7 +31,8 @@ type fakeRemoteSkillRegistryStore struct {
 func TestRemoteSkillExpiredJobCannotRestartSourceOrInstallCandidate(t *testing.T) {
 	svc, store, files := testRemoteSkillRegistry(t, testRemoteSkillCandidate(t, 1, 1, "seed"))
 	files.installed = false
-	source := svc.source.(*fakeRemoteSkillCandidateSource)
+	source, ok := svc.source.(*fakeRemoteSkillCandidateSource)
+	require.True(t, ok)
 	source.prompt = RemoteSkillPromptCapture{}
 	svc.runSyncJob(context.Background(), RemoteSkillSyncJob{ID: 9, CreatedBy: 42,
 		CreatedAt: time.Now().Add(-RemoteSkillSyncJobTimeout - time.Minute)}, RemoteSkillPromptCapture{RawBody: []byte("unreplayed")})

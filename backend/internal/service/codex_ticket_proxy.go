@@ -4,8 +4,6 @@ import (
 	proxytransport "github.com/Wei-Shaw/sub2api/pkg/extensionapi/proxy"
 )
 
-const codexTicketProxyTarget = "https://chatgpt.com/backend-api/codex/responses"
-
 type CodexTicketProxyTrust struct {
 	Certificates [][]byte `json:"certificates"`
 	Fingerprint  string   `json:"fingerprint"`

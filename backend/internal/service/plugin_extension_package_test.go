@@ -24,7 +24,7 @@ func TestFirstPartyExtensionSignedPackageContainsIndependentRuntimeAndUI(t *test
 	}
 	file, err := os.Open(path)
 	require.NoError(t, err)
-	defer file.Close()
+	defer func() { _ = file.Close() }()
 	cfg := testPluginConfig(t.TempDir(), false)
 	cfg.Plugins.TrustedPublishers = map[string]string{keyID: public}
 	installer := NewPluginPackageInstaller(cfg, PluginHostInfo{Version: "0.2.7", BuildType: "release"})

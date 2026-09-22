@@ -41,7 +41,7 @@ func readPluginRegistryTx(ctx context.Context, tx *sql.Tx) ([]*service.PluginIns
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	var installations []*service.PluginInstallation
 	for rows.Next() {
 		installation := &service.PluginInstallation{}

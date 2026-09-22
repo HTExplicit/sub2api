@@ -64,10 +64,11 @@ func classifyOpenAIOAuth429At(headers http.Header, responseBody []byte, now time
 
 	window := "unknown"
 	disposition := openAIOAuth429QuotaReset
-	if code == "weekly_limit_reached" {
+	switch code {
+	case "weekly_limit_reached":
 		window = "7d"
 		disposition = openAIOAuth429Quota7d
-	} else if code == "monthly_limit_reached" {
+	case "monthly_limit_reached":
 		window = "30d"
 	}
 	if resetAt != nil && !resetAt.After(now) {
@@ -192,12 +193,4 @@ func openAI429Int64(value any) (int64, bool) {
 	default:
 		return 0, false
 	}
-}
-
-// laterTime returns the later of two instants; used when merging 5h/7d reset windows.
-func laterTime(left, right time.Time) time.Time {
-	if right.After(left) {
-		return right
-	}
-	return left
 }

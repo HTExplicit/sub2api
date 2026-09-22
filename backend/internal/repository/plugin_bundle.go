@@ -219,7 +219,7 @@ func (r *pluginRepository) LegacyBundleSeed(ctx context.Context, key, profile st
 	if err != nil {
 		return fallback, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	for rows.Next() {
 		var key, value string
 		if err := rows.Scan(&key, &value); err != nil {

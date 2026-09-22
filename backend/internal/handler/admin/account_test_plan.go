@@ -96,7 +96,9 @@ func accountTestPlanModels(raw any) ([]map[string]any, error) {
 func basicAccountTestPlan(account *service.Account, models []map[string]any, defaultID string) *accountTestPlanView {
 	ids := make([]string, 0, len(models))
 	for _, model := range models {
-		ids = append(ids, model["id"].(string))
+		// Both callers validate these freshly decoded maps with accountTestPlanModels.
+		id, _ := model["id"].(string)
+		ids = append(ids, id)
 	}
 	view := accountTestModeView{ModelIDs: ids, DefaultModelID: defaultID}
 	return &accountTestPlanView{SchemaVersion: 1, AccountID: account.ID, WirePlatform: account.EffectiveWirePlatform(),
@@ -118,7 +120,8 @@ func ordinaryAccountTestPlan(account *service.Account, raw any) (*accountTestPla
 			priorities[id] = index
 		}
 		priority := func(model map[string]any) int {
-			if value, ok := priorities[model["id"].(string)]; ok {
+			id, _ := model["id"].(string) // Validated above before sorting.
+			if value, ok := priorities[id]; ok {
 				return value
 			}
 			return len(priorities)
@@ -127,10 +130,10 @@ func ordinaryAccountTestPlan(account *service.Account, raw any) (*accountTestPla
 	}
 	defaultID := ""
 	if len(models) > 0 {
-		defaultID = models[0]["id"].(string)
+		defaultID, _ = models[0]["id"].(string)
 		if account.Platform != service.PlatformGemini {
 			for _, model := range models {
-				if id := model["id"].(string); strings.Contains(id, "sonnet") {
+				if id, _ := model["id"].(string); strings.Contains(id, "sonnet") {
 					defaultID = id
 					break
 				}
@@ -146,7 +149,7 @@ func ordinaryAccountTestPlan(account *service.Account, raw any) (*accountTestPla
 	for _, mode := range []string{"text", "image", "video", "search", "tts", "stt", "realtime"} {
 		view := accountTestModeView{ModelIDs: []string{}}
 		for _, model := range models {
-			id := model["id"].(string)
+			id, _ := model["id"].(string)
 			lower := strings.ToLower(id)
 			image := lower == "grok-imagine" || lower == "grok-imagine-edit" || strings.HasPrefix(lower, "grok-imagine-image")
 			video := strings.HasPrefix(lower, "grok-imagine-video") || strings.HasPrefix(lower, "grok-video")

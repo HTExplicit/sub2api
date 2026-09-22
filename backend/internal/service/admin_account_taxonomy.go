@@ -340,10 +340,6 @@ func (s *adminServiceImpl) DeleteAccountTag(ctx context.Context, id int64) error
 	return err
 }
 
-func validateTaxonomyOrderIDs(actual, ordered []int64) error {
-	return validateTaxonomyOrderIDsContext(context.Background(), actual, ordered)
-}
-
 func (s *adminServiceImpl) ReorderAccountFolders(ctx context.Context, orderedIDs []int64) ([]AccountManagementFolder, error) {
 	tx, err := s.entClient.Tx(ctx)
 	if err != nil {

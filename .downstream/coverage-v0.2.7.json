@@ -1,13 +1,13 @@
 {
   "schema_version": 3,
   "upstream_base": "aea725f2ea644d5592d0bbb1d63b607efa7e200a",
-  "basis_commit": "6cd89eeb67a11774b9ec7bf655bc7f400cbdcb3b",
+  "basis_commit": "638758ea9f49f3e2d834cf29e9fe2b42f3c7ebdb",
   "scope": "Current Sub2API downstream source and working tree. Candidate ownership does not establish completed review. Root maintenance, independent services and Worker require a separate audit.",
-  "source_digest": "74c1decad286b7916380c22e9e09489ca5ce6d10256c283a79e208599ce49943",
+  "source_digest": "d55be427622577b3f2bb4ac54b4be77b4bfb8faf8d687b03c6b2691055e1b00d",
   "digest_excludes": [
     "the inventory itself uses a derived structural fingerprint; deletions bind the upstream blob"
   ],
-  "total_paths": 2477,
+  "total_paths": 2479,
   "generated_assets_and_locks": 83,
   "review_complete": false,
   "pending_paths": [
@@ -23,11 +23,14 @@
     ".github/workflows/backend-ci.yml",
     ".github/workflows/downstream-verify.yml",
     ".github/workflows/security-scan.yml",
+    "backend/cmd/package-plugin/main.go",
+    "backend/cmd/package-plugin/verify.go",
     "backend/internal/config/config.go",
     "backend/internal/config/config_test.go",
     "backend/internal/config/image_studio_feature_flags.go",
     "backend/internal/handler/admin/account_batch_testing.go",
     "backend/internal/handler/admin/account_codex_import.go",
+    "backend/internal/handler/admin/account_create_profile_test.go",
     "backend/internal/handler/admin/account_data.go",
     "backend/internal/handler/admin/account_edit_test.go",
     "backend/internal/handler/admin/account_handler.go",
@@ -36,6 +39,7 @@
     "backend/internal/handler/admin/account_job_execution.go",
     "backend/internal/handler/admin/account_job_handler.go",
     "backend/internal/handler/admin/account_taxonomy.go",
+    "backend/internal/handler/admin/account_test_plan.go",
     "backend/internal/handler/admin/cindy_balance_probe_handler.go",
     "backend/internal/handler/admin/cindy_balance_probe_handler_test.go",
     "backend/internal/handler/admin/group_cindy_split.go",
@@ -43,6 +47,7 @@
     "backend/internal/handler/admin/plugin_account_views_test.go",
     "backend/internal/handler/admin/plugin_handler.go",
     "backend/internal/handler/admin/plugin_resources.go",
+    "backend/internal/handler/admin/plugin_update.go",
     "backend/internal/handler/admin/scheduled_test_handler.go",
     "backend/internal/handler/cindy_balance_handler_failover_test.go",
     "backend/internal/handler/cindy_balance_terminal_test.go",
@@ -50,12 +55,14 @@
     "backend/internal/handler/dto/mappers.go",
     "backend/internal/handler/dto/types.go",
     "backend/internal/handler/gateway_handler.go",
+    "backend/internal/handler/gateway_models_test.go",
     "backend/internal/handler/openai_gateway_cindy_count_tokens_test.go",
     "backend/internal/handler/openai_gateway_cindy_image_validation_test.go",
     "backend/internal/handler/openai_gateway_handler_test.go",
     "backend/internal/handler/openai_gateway_ws_model_allowlist_test.go",
     "backend/internal/handler/openai_legacy_cindy_continuation.go",
     "backend/internal/handler/openai_legacy_cindy_continuation_test.go",
+    "backend/internal/handler/openai_profit_slot_recheck_test.go",
     "backend/internal/handler/remote_skill_handler.go",
     "backend/internal/handler/remote_skill_handler_test.go",
     "backend/internal/payment/provider/alipay_test.go",
@@ -86,6 +93,7 @@
     "backend/internal/repository/business_system_prompt_repository_test.go",
     "backend/internal/repository/business_system_prompt_revision_bus.go",
     "backend/internal/repository/business_system_prompt_revision_bus_test.go",
+    "backend/internal/repository/cindy_account_view_atomic_test.go",
     "backend/internal/repository/cindy_balance_probe_finalize_integration_test.go",
     "backend/internal/repository/cindy_balance_probe_lifecycle_integration_test.go",
     "backend/internal/repository/cindy_balance_probe_repo.go",
@@ -97,13 +105,19 @@
     "backend/internal/repository/group_repo_cindy_health_test.go",
     "backend/internal/repository/group_repo_cindy_split.go",
     "backend/internal/repository/group_repo_cindy_split_test.go",
+    "backend/internal/repository/migrations_historical_preflight.go",
+    "backend/internal/repository/migrations_historical_preflight_test.go",
     "backend/internal/repository/migrations_runner.go",
     "backend/internal/repository/minimax_cindy_quota_migration_integration_test.go",
+    "backend/internal/repository/plugin_bundle.go",
+    "backend/internal/repository/plugin_extension_state.go",
+    "backend/internal/repository/plugin_registry_tx.go",
     "backend/internal/repository/plugin_update.go",
     "backend/internal/repository/remote_skill_job_expiry_test.go",
     "backend/internal/repository/remote_skill_registry_repository.go",
     "backend/internal/repository/remote_skill_registry_repository_test.go",
     "backend/internal/repository/remote_skill_registry_revision_bus.go",
+    "backend/internal/server/api_contract_test.go",
     "backend/internal/server/routes/admin.go",
     "backend/internal/server/routes/gateway_models_pinned_test.go",
     "backend/internal/service/account_edit_bulk.go",
@@ -114,7 +128,9 @@
     "backend/internal/service/account_job_test.go",
     "backend/internal/service/account_quota_window_state.go",
     "backend/internal/service/account_quota_window_state_test.go",
+    "backend/internal/service/account_reasoning_policy_test.go",
     "backend/internal/service/account_test_models_test.go",
+    "backend/internal/service/account_test_prompt.go",
     "backend/internal/service/account_test_prompt_test.go",
     "backend/internal/service/account_test_reasoning_test.go",
     "backend/internal/service/account_test_reasoning_wire_test.go",
@@ -124,6 +140,7 @@
     "backend/internal/service/account_test_service_openai_image_test.go",
     "backend/internal/service/account_test_service_openai_test.go",
     "backend/internal/service/account_test_service_opencode_go.go",
+    "backend/internal/service/account_usage_service.go",
     "backend/internal/service/admin_account.go",
     "backend/internal/service/admin_account_cindy_probe.go",
     "backend/internal/service/admin_account_cindy_probe_test.go",
@@ -135,6 +152,7 @@
     "backend/internal/service/admin_service.go",
     "backend/internal/service/admin_service_bulk_update_test.go",
     "backend/internal/service/antigravity_gateway_compat_stream.go",
+    "backend/internal/service/business_system_prompt_account_scope_test.go",
     "backend/internal/service/business_system_prompt_bundle.go",
     "backend/internal/service/business_system_prompt_bundle_test.go",
     "backend/internal/service/business_system_prompt_cache_identity_test.go",
@@ -145,7 +163,12 @@
     "backend/internal/service/business_system_prompt_service.go",
     "backend/internal/service/business_system_prompt_service_test.go",
     "backend/internal/service/business_system_prompt_test.go",
+    "backend/internal/service/business_system_prompt_turn_cache_test.go",
     "backend/internal/service/channel_cindy_managed_crud_test.go",
+    "backend/internal/service/cindy_account_test_plan.go",
+    "backend/internal/service/cindy_alpha_search_plan.go",
+    "backend/internal/service/cindy_capability_catalog.go",
+    "backend/internal/service/cindy_catalog_snapshot.go",
     "backend/internal/service/cindy_group.go",
     "backend/internal/service/cindy_group_identity_test.go",
     "backend/internal/service/cindy_group_materialized_test.go",
@@ -155,8 +178,11 @@
     "backend/internal/service/cindy_identity_test.go",
     "backend/internal/service/cindy_image_pricing_test.go",
     "backend/internal/service/cindy_native_count_tokens_test.go",
+    "backend/internal/service/cindy_native_image_snapshot_test.go",
     "backend/internal/service/cindy_native_messages_test.go",
+    "backend/internal/service/cindy_pricing_snapshot.go",
     "backend/internal/service/cindy_rollout_testmain_test.go",
+    "backend/internal/service/cindy_snapshot_pricing_second_review_test.go",
     "backend/internal/service/cindy_terminal_scheduling_isolation_test.go",
     "backend/internal/service/cindy_text_billing.go",
     "backend/internal/service/cindy_text_billing_test.go",
@@ -167,6 +193,7 @@
     "backend/internal/service/codex_ticket_manual.go",
     "backend/internal/service/codex_ticket_manual_test.go",
     "backend/internal/service/codex_ticket_plugin.go",
+    "backend/internal/service/codex_ticket_proxy.go",
     "backend/internal/service/codex_ticket_proxy_test.go",
     "backend/internal/service/deepseek_pricing.go",
     "backend/internal/service/deepseek_pricing_test.go",
@@ -180,6 +207,8 @@
     "backend/internal/service/gateway_model_availability_test.go",
     "backend/internal/service/gateway_multiplatform_test.go",
     "backend/internal/service/gemini_chat_completions_compat_service.go",
+    "backend/internal/service/model_context_capacity_catalog.go",
+    "backend/internal/service/openai_alpha_search.go",
     "backend/internal/service/openai_alpha_search_cindy_native_first_test.go",
     "backend/internal/service/openai_apikey_responses_probe_test.go",
     "backend/internal/service/openai_bulk_account_settings.go",
@@ -188,28 +217,45 @@
     "backend/internal/service/openai_cindy_continuation_test.go",
     "backend/internal/service/openai_cindy_http_wsv2.go",
     "backend/internal/service/openai_cindy_http_wsv2_test.go",
+    "backend/internal/service/openai_codex_client_identity_test.go",
     "backend/internal/service/openai_codex_ticket.go",
     "backend/internal/service/openai_codex_ticket_scheduler_test.go",
+    "backend/internal/service/openai_codex_ticket_test.go",
     "backend/internal/service/openai_codex_transform_test.go",
     "backend/internal/service/openai_gateway_chat_completions_anthropic_native.go",
     "backend/internal/service/openai_gateway_deepseek_chat_reasoning_test.go",
     "backend/internal/service/openai_gateway_scheduling.go",
+    "backend/internal/service/openai_gateway_usage.go",
     "backend/internal/service/openai_images.go",
     "backend/internal/service/openai_load_sticky_privacy_test.go",
     "backend/internal/service/openai_model_mapping_test.go",
+    "backend/internal/service/openai_oauth_429_classifier.go",
+    "backend/internal/service/openai_reasoning_recovery.go",
     "backend/internal/service/openai_ws_v2_passthrough_lifecycle_test.go",
     "backend/internal/service/plugin_account_edit.go",
     "backend/internal/service/plugin_account_edit_test.go",
     "backend/internal/service/plugin_account_views.go",
+    "backend/internal/service/plugin_broker_scope_test.go",
     "backend/internal/service/plugin_cindy_codex_test.go",
     "backend/internal/service/plugin_cindy_probe.go",
     "backend/internal/service/plugin_cindy_probe_test.go",
+    "backend/internal/service/plugin_codex_identity.go",
+    "backend/internal/service/plugin_extension_package_test.go",
+    "backend/internal/service/plugin_extension_state.go",
+    "backend/internal/service/plugin_host_services_broker_test.go",
+    "backend/internal/service/plugin_image_bridge.go",
     "backend/internal/service/plugin_image_bridge_test.go",
     "backend/internal/service/plugin_jobs.go",
+    "backend/internal/service/plugin_manager.go",
+    "backend/internal/service/plugin_operation.go",
+    "backend/internal/service/plugin_operation_admission_test.go",
+    "backend/internal/service/plugin_package.go",
+    "backend/internal/service/plugin_prompt_management.go",
     "backend/internal/service/plugin_resources.go",
     "backend/internal/service/prompt_domain_runtime.go",
     "backend/internal/service/prompt_domain_runtime_test.go",
     "backend/internal/service/provider_identity_admin_test.go",
+    "backend/internal/service/quota_estimate.go",
     "backend/internal/service/ratelimit_service_cindy_balance_test.go",
     "backend/internal/service/remote_skill_prompt.go",
     "backend/internal/service/remote_skill_prompt_test.go",
@@ -218,6 +264,7 @@
     "backend/internal/service/remote_skill_registry.go",
     "backend/internal/service/remote_skill_registry_filesystem.go",
     "backend/internal/service/remote_skill_registry_filesystem_test.go",
+    "backend/internal/service/remote_skill_registry_manifest.go",
     "backend/internal/service/remote_skill_registry_manifest_test.go",
     "backend/internal/service/remote_skill_registry_source.go",
     "backend/internal/service/remote_skill_registry_source_provenance_test.go",
@@ -225,6 +272,7 @@
     "backend/internal/service/remote_skill_registry_test.go",
     "backend/internal/service/remote_skill_registry_validation.go",
     "backend/internal/service/remote_skill_seed_fixture_test.go",
+    "backend/internal/service/responses_chat_protocol_callers_test.go",
     "backend/internal/service/setting_codex_ticket_test.go",
     "backend/internal/service/testdata/cindy_free_catalog_2026-08-29.json",
     "backend/internal/service/testdata/cindy_free_catalog_2026-09-11.json",
@@ -257,6 +305,8 @@
     "backend/pkg/extensionapi/ui/index.ts",
     "backend/pkg/extensionapi/v1/account_edit.go",
     "backend/pkg/extensionapi/v1/resources.go",
+    "backend/pkg/extensionapi/v1/rpc.go",
+    "backend/pkg/extensionapi/v1/rpc_test.go",
     "deploy/tests/cindy-rollout-defaults-test.sh",
     "deploy/tests/production-deploy-workflow-test.sh",
     "deploy/tests/test_verify_business_system_prompt_bundle.py",
@@ -415,13 +465,13 @@
     "documentation": 28,
     "generated": 68,
     "source": 1092,
-    "test-or-fixture": 816
+    "test-or-fixture": 818
   },
   "owner_counts": {
     "operations": 45,
     "documentation-and-history": 26,
-    "mixed-requires-review": 1104,
-    "core-extension-and-job-host": 258,
+    "mixed-requires-review": 1105,
+    "core-extension-and-job-host": 259,
     "core-data-and-migrations": 21,
     "cindy-provider": 207,
     "image-tools": 45,
@@ -502,7 +552,7 @@
       "role": "documentation",
       "present": true,
       "content_sha256": null,
-      "review_fingerprint": "08f07257bac6061fe71abaf34bd4d378a8862ba0c9ddb04739f6ccb9861ecc06",
+      "review_fingerprint": "93821f4855a2c3f74cb94214797f08feb57245b0b70bd2994986ea95ab7e927b",
       "review_status": "reviewed",
       "decision": "generated-source",
       "owner": "operations",
@@ -1398,36 +1448,18 @@
       "candidate_owner": "core-extension-and-job-host",
       "role": "source",
       "present": true,
-      "content_sha256": "68a5823e640c71d43cf609578a5f05bcef51c8ca565175206cc7a50a2c828c34",
-      "review_fingerprint": "68a5823e640c71d43cf609578a5f05bcef51c8ca565175206cc7a50a2c828c34",
-      "review_status": "reviewed",
-      "decision": "core-mechanism",
-      "owner": "core-extension-and-job-host",
-      "reason": "分离 build/verify/generate/package 模式；正式签名才读 key。source revision 要求 full commit SHA，私钥不放入 assets；每文件 SHA、签名 manifest、稳定 zip 时间/排序和 O_EXCL 输出防本地覆盖；bundle lock 禁止同 ID 重复或 identity 不一致。",
-      "evidence": [
-        "main dispatch",
-        "packagePlugin asset checks/signature/OpenFile O_EXCL",
-        "bundle identity and duplicate guards",
-        "Full-file scope recorded in artifacts/evidence/v027-astra-release-supply-chain-review.json. No real release/signing/CI/deployment is inferred from this source review."
-      ]
+      "content_sha256": "3be27bafe2129f6f1847fda8e51adddc91ba764cc74d13ad53e7acb5327b2efb",
+      "review_fingerprint": "3be27bafe2129f6f1847fda8e51adddc91ba764cc74d13ad53e7acb5327b2efb",
+      "review_status": "pending"
     },
     {
       "path": "backend/cmd/package-plugin/verify.go",
       "candidate_owner": "mixed-requires-review",
       "role": "source",
       "present": true,
-      "content_sha256": "3b77e7731661617726c73018b41bf89a5bcb9efb2b700192e262741d18f84527",
-      "review_fingerprint": "3b77e7731661617726c73018b41bf89a5bcb9efb2b700192e262741d18f84527",
-      "review_status": "reviewed",
-      "decision": "core-mechanism",
-      "owner": "core-extension-and-job-host",
-      "reason": "默认要求锁里的 key ID/public key 等于 embedded FirstPartyPublisher；核对每包 SHA、唯一安全文件名、正式 installer 的签名/路径/文件和兼容性。验证不启动插件。development 只有显式 -development 才放宽 publisher 比较，正式 workflows/Docker release stage 未传该参数。",
-      "evidence": [
-        "fixed release publisher comparison",
-        "VerifyPackage call and checksum checks",
-        "development explicit switch",
-        "Full-file scope recorded in artifacts/evidence/v027-astra-release-supply-chain-review.json. No real release/signing/CI/deployment is inferred from this source review."
-      ]
+      "content_sha256": "f9a01f1f73e9f838998894bc25a55921356e4e5faaa387ada7fbf1cd9b81981a",
+      "review_fingerprint": "f9a01f1f73e9f838998894bc25a55921356e4e5faaa387ada7fbf1cd9b81981a",
+      "review_status": "pending"
     },
     {
       "path": "backend/cmd/profit-preview/main.go",
@@ -3609,16 +3641,9 @@
       "candidate_owner": "mixed-requires-review",
       "role": "test-or-fixture",
       "present": true,
-      "content_sha256": "8982105889c0a7cb4485a7e3f9b7f4c0176747408c6cedc2b8f0d20484598c3d",
-      "review_fingerprint": "8982105889c0a7cb4485a7e3f9b7f4c0176747408c6cedc2b8f0d20484598c3d",
-      "review_status": "reviewed",
-      "decision": "reference",
-      "owner": "core-extension-and-job-host",
-      "reason": "全文109行：通过真实job Submit、opaque加密边界及worker执行路径核显式presence与继承值序列化，客户端伪造presence map不能改变JSON成员事实，native字段次序/零值与旧request hash保持一致。断言24h TTL、secret不进metadata、unknown/null provider成员拒绝且错误不回显；无网络。加密fixture不构成密码算法审计。",
-      "evidence": [
-        "artifacts/evidence/v027-account-create-integration-review.json#verification",
-        "artifacts/evidence/v027-astra-account-create-backend-review.json"
-      ]
+      "content_sha256": "d30ede775695c989322f8eb735501fc34892666b340fc0f9c3720e80b73dfa1c",
+      "review_fingerprint": "d30ede775695c989322f8eb735501fc34892666b340fc0f9c3720e80b73dfa1c",
+      "review_status": "pending"
     },
     {
       "path": "backend/internal/handler/admin/account_data.go",
@@ -4053,17 +4078,9 @@
       "candidate_owner": "mixed-requires-review",
       "role": "source",
       "present": true,
-      "content_sha256": "fa70df3b10b98c22a526a92487151dbb4b356fc74d5805594aad08c8e7073e82",
-      "review_fingerprint": "fa70df3b10b98c22a526a92487151dbb4b356fc74d5805594aad08c8e7073e82",
-      "review_status": "reviewed",
-      "decision": "core-mechanism",
-      "owner": "core-extension-and-job-host",
-      "reason": "single/batch 共用 builder；官方来源 Gemini/Grok/Sonnet 规则留 core，Cindy 规则由 provider 提供。 全文结论来自逐路径冻结审查，区域项未导入；实际测试、前代理报告与未运行边界见同一报告。",
-      "evidence": [
-        "artifacts/evidence/v027-astra-single-test-policy-boundary-review.json#source_index:backend/internal/handler/admin/account_test_plan.go",
-        "artifacts/evidence/v027-astra-single-test-policy-boundary-review.json#validation",
-        "commit 7b4de3ae7; exact SHA rechecked at integration"
-      ]
+      "content_sha256": "4777524f26f774965ef7e868361af226ddbbc461115b4c9a26e79802f6d8e556",
+      "review_fingerprint": "4777524f26f774965ef7e868361af226ddbbc461115b4c9a26e79802f6d8e556",
+      "review_status": "pending"
     },
     {
       "path": "backend/internal/handler/admin/account_test_plan_test.go",
@@ -4459,16 +4476,9 @@
       "candidate_owner": "core-extension-and-job-host",
       "role": "source",
       "present": true,
-      "content_sha256": "9b96521c0ed56f6c5d8a0414484e7c9a9691608c56adcc5e02446da53c84e3c2",
-      "review_fingerprint": "9b96521c0ed56f6c5d8a0414484e7c9a9691608c56adcc5e02446da53c84e3c2",
-      "review_status": "reviewed",
-      "decision": "core-mechanism",
-      "owner": "core-extension-and-job-host",
-      "reason": "Admin update/follow-bundled endpoints require positive expected revision and package digest; the manager remains the authority for validation and CAS.",
-      "evidence": [
-        "plugin_update.go:12-42 bounds .s2plugin upload and passes expected revision/package digest to manager",
-        "plugin_update.go:45-63 validates follow-bundled request identity before manager call"
-      ]
+      "content_sha256": "c798b657b2184c79c1cf621210d1f2bd617fae1c91a2126e76e5f70fbd15c1ab",
+      "review_fingerprint": "c798b657b2184c79c1cf621210d1f2bd617fae1c91a2126e76e5f70fbd15c1ab",
+      "review_status": "pending"
     },
     {
       "path": "backend/internal/handler/admin/plugin_upload_guard_test.go",
@@ -5058,8 +5068,8 @@
       "candidate_owner": "mixed-requires-review",
       "role": "source",
       "present": true,
-      "content_sha256": "3e96406f38ceb55dfbc6f695583832c9ab5347e91e7343099995692a3d0bf851",
-      "review_fingerprint": "3e96406f38ceb55dfbc6f695583832c9ab5347e91e7343099995692a3d0bf851",
+      "content_sha256": "47dfccfdd0a4c6a0966a791b77a587dc3b64a3a270fa0205fdd5e33406bac7e6",
+      "review_fingerprint": "47dfccfdd0a4c6a0966a791b77a587dc3b64a3a270fa0205fdd5e33406bac7e6",
       "review_status": "pending"
     },
     {
@@ -5121,19 +5131,9 @@
       "candidate_owner": "mixed-requires-review",
       "role": "test-or-fixture",
       "present": true,
-      "content_sha256": "c5266ef00f11d76bedc528a353fe7d8ed365d3a19a218ec141d66184cb6f1f4a",
-      "review_fingerprint": "c5266ef00f11d76bedc528a353fe7d8ed365d3a19a218ec141d66184cb6f1f4a",
-      "review_status": "reviewed",
-      "decision": "adapter",
-      "owner": "cindy-provider",
-      "reason": "网关 /v1/models 与 /v1/models/capabilities 的 handler 级测试（1724 行）。下游相对上游 aea725f 新增约 408 行 Cindy 专项内容（L31-L503）：strict-Cindy 分组只返回 9 个已验证公开模型并校验 context_window 元数据、capabilities 隐藏 registry_id/live_upstream/count_tokens、混合分组返回 404 本地特性门并断言 ops 归因（opsErrorClassificationKey=model_capabilities/local_feature_gate）、身份查询失败返回脱敏 503、未标记的 promoted-nil 仓库不 panic。目录数据由 cindy-provider 插件经 extensionv1 契约提供（plugins/cindy-provider/catalog/metadata.go），宿主 handler 只做桥接，故这些桥接测试归 adapter/cindy-provider；其余约 1200 行是上游已有的通用模型列表/allowlist/Codex manifest 测试。测试为静态阅读，未执行。",
-      "evidence": [
-        "Full-file static review: artifacts/evidence/v027-claude-S05-handler-rest-2-review.json",
-        "Delta vs aea725f: 408 insertions confined to L18-L503 (last diff hunk @@ -90,6 +117,386 @@): cindyV4PublicIDsForHandlerTest, stub methods ListCindyGroupIdentityMembers/CindyGroupIdentityReaderMarker/ListModelAvailabilityCandidates, gatewayModelsPromotedNilAccountRepoStub, cindyGatewayModelAccountForTest, and 11 Test functions from TestGatewayModels_StrictCindyUsesVerifiedPublicCatalog (L139) to TestGatewayCindyIdentityLookupFailureReturnsSanitized503 (L472).",
-        "Call chain: h.Models/h.ModelCapabilities live in backend/internal/handler/gateway_handler.go; catalog constants are deprecated aliases in backend/internal/service/cindy_capability_catalog.go re-exporting backend/pkg/extensionapi/v1 (extensionv1), owned by plugins/cindy-provider/catalog/metadata.go — host bridges, plugin owns the catalog.",
-        "L500-L1724 (default model IDs, Codex manifests, allowlist ordering, Grok reasoning efforts) are unchanged upstream v0.2.7 content; no downstream-specific rule hides there.",
-        "No production behavior edit; test not executed (static read only)."
-      ]
+      "content_sha256": "8a9ac65f95fb91c1cc4b5e4e4cfc47db8fcb33c597adcde5cd547b7b85dd1a21",
+      "review_fingerprint": "8a9ac65f95fb91c1cc4b5e4e4cfc47db8fcb33c597adcde5cd547b7b85dd1a21",
+      "review_status": "pending"
     },
     {
       "path": "backend/internal/handler/grok_media.go",
@@ -5900,6 +5900,15 @@
         "Boundary proven: Cindy/Laxa/OAuth branches assert the official HTTP policy does not change other account families' retry semantics.",
         "Statically read only; not executed."
       ]
+    },
+    {
+      "path": "backend/internal/handler/openai_profit_slot_recheck_test.go",
+      "candidate_owner": "mixed-requires-review",
+      "role": "test-or-fixture",
+      "present": true,
+      "content_sha256": "50552bd509f5450167fbd83410e398559a7d3bbdc77001c0c6dff6626e2d8d19",
+      "review_fingerprint": "50552bd509f5450167fbd83410e398559a7d3bbdc77001c0c6dff6626e2d8d19",
+      "review_status": "pending"
     },
     {
       "path": "backend/internal/handler/openai_profit_veto_budget_test.go",
@@ -7536,8 +7545,8 @@
       "candidate_owner": "mixed-requires-review",
       "role": "test-or-fixture",
       "present": true,
-      "content_sha256": "fa829c8ea7f69e9e1247c6399dad396b395c4aed7f60a101357634a616aaa2be",
-      "review_fingerprint": "fa829c8ea7f69e9e1247c6399dad396b395c4aed7f60a101357634a616aaa2be",
+      "content_sha256": "0ab50e15e3b13b71690ea3210e71637a746e728df18c7580e6cf705d291ea3a9",
+      "review_fingerprint": "0ab50e15e3b13b71690ea3210e71637a746e728df18c7580e6cf705d291ea3a9",
       "review_status": "pending"
     },
     {
@@ -7909,19 +7918,9 @@
       "candidate_owner": "cindy-provider",
       "role": "test-or-fixture",
       "present": true,
-      "content_sha256": "2350dbbe08cc67336f5beb0b6d8d08730c523953fa7af50ead3decb208b49981",
-      "review_fingerprint": "2350dbbe08cc67336f5beb0b6d8d08730c523953fa7af50ead3decb208b49981",
-      "review_status": "reviewed",
-      "decision": "adapter",
-      "owner": "cindy-provider",
-      "reason": "sqlmock 单测，锁定 cindy_balance_probe_repo.go 三个事务函数的原子性与并发契约：finalizeAccountMarkerTx（L922）在 health_states 插入、accounts 余额标记更新、probe_items 更新任一步失败或 ctx 取消时必须返回错误、空状态且不发布 committed CindyHealthEpisode，成功路径返回 exhausted 并携带身份指纹；FinishIfDone（L1134）在 lease_token 为空的 cancel_requested 任务上只改 items/jobs 状态、不得触碰 accounts/health SQL；resumeScopedProbeTx（L1282）用 scope JSON 的精确 origin 做 CAS，origin 不一致时返回 ErrCindyBalanceProbeChanged 并回滚。被测主体是宿主为 Cindy 余额探测能力提供的持久化事务层（jobs/items/health_states/scheduler_outbox/auth-cache 失效），探测结论判定规则在插件 catalog/probe.go；此处只证明持久化原子性，归为 cindy-provider 的宿主适配。仅静态阅读，未执行。",
-      "evidence": [
-        "Full-file static review: artifacts/evidence/v027-claude-S53-cindy-rest-T3-review.json",
-        "L16-L81 四个子用例 none/health/marker/item 用 sqlmock 精确排布 FOR UPDATE 行锁、UPDATE cindy_balance_probe_jobs、SELECT accounts、INSERT cindy_health_states、UPDATE accounts SET cindy_balance_insufficient_at、INSERT scheduler_outbox、enqueue_group_api_key_auth_cache_invalidations、UPDATE cindy_balance_probe_items 的顺序，并在失败分支要求 ExpectRollback 且 committed.AccountID 为零。",
-        "L83-L97 断言 FinishIfDone(jobID, \"\") 对 cancel_requested 任务只执行 items 状态回收与 jobs status='canceled'，ExpectationsWereMet 证明没有额外 accounts/health 语句。",
-        "L99-L138 用 service.EncodeCindyBalanceProbeScope 构造原始/冲突 scope，验证 UPDATE ... SET scope=$2::jsonb ... scope=$3::jsonb 的 CAS 条件与 ErrCindyBalanceProbeChanged。",
-        "调用链：被测函数均位于本切片文件 9 cindy_balance_probe_repo.go（L922/L1134/L1282）。相对上游 aea725f 为全新文件；未执行测试，不宣称通过。"
-      ]
+      "content_sha256": "4d36dfe9b61fd77e5da8ae92bb7037e3362c08cac7a2784d4201a3cd9dd3124f",
+      "review_fingerprint": "4d36dfe9b61fd77e5da8ae92bb7037e3362c08cac7a2784d4201a3cd9dd3124f",
+      "review_status": "pending"
     },
     {
       "path": "backend/internal/repository/cindy_balance_probe_complete_integration_test.go",
@@ -8498,34 +8497,18 @@
       "candidate_owner": "mixed-requires-review",
       "role": "source",
       "present": true,
-      "content_sha256": "297f5544061c10b1d9ed35c908f204226d077169ce254707604e6874bc469e01",
-      "review_fingerprint": "297f5544061c10b1d9ed35c908f204226d077169ce254707604e6874bc469e01",
-      "review_status": "reviewed",
-      "decision": "core-correctness",
-      "owner": "core-data-and-migrations",
-      "reason": "完整451行新只读前检查。仅固定SELECT/CTE及系统目录读取，首写前核完整文件名和TrimSpace checksum，复用旧兼容规则；无相关迁移FS不增加查询。已复现的229/234/235条件按实际身份/账本还原与rollback只读预览，241考虑待执行全NULL purge，252预览身份/拓扑；不以任意非空拒绝。30秒边界、固定分类/计数/至多5个数字ID，原SQL detail不外泄，内部cause保留既有瞬态重试判定。",
-      "evidence": [
-        "artifacts/evidence/v027-historical-migration-integration-review.json",
-        "artifacts/evidence/v027-astra-historical-migration-compat-implementation-review.json",
-        "artifacts/evidence/v027-astra-historical-migration-compat-design.json"
-      ]
+      "content_sha256": "37146cfeaf9baf604bb1e0f3ddde5b992448660a896ca77f35be79b52885c9f4",
+      "review_fingerprint": "37146cfeaf9baf604bb1e0f3ddde5b992448660a896ca77f35be79b52885c9f4",
+      "review_status": "pending"
     },
     {
       "path": "backend/internal/repository/migrations_historical_preflight_test.go",
       "candidate_owner": "mixed-requires-review",
       "role": "test-or-fixture",
       "present": true,
-      "content_sha256": "47b1fd834122db1f261f025f7f4584bf35fc01f1d6ea42fb8c696014e4d0c91d",
-      "review_fingerprint": "47b1fd834122db1f261f025f7f4584bf35fc01f1d6ea42fb8c696014e4d0c91d",
-      "review_status": "reviewed",
-      "decision": "reference",
-      "owner": "core-data-and-migrations",
-      "reason": "完整100行4个unit逐断言审查。无关FS零DB调用；真实runner锁后、任何metadata/Atlas/前缀写入前拒绝错checksum；旧054兼容及已记账252跳过数据查询；query异常对外脱敏且保留57P03类型，语义拒绝不重试。4例通过，最后cause分支只复验其1例。",
-      "evidence": [
-        "artifacts/evidence/v027-historical-migration-integration-review.json",
-        "artifacts/evidence/v027-astra-historical-migration-compat-implementation-review.json",
-        "artifacts/evidence/v027-astra-historical-migration-compat-design.json"
-      ]
+      "content_sha256": "523ade7b133064712871892fbcdb73e8d479bb37eb2d52ef6601cce6911ed98c",
+      "review_fingerprint": "523ade7b133064712871892fbcdb73e8d479bb37eb2d52ef6601cce6911ed98c",
+      "review_status": "pending"
     },
     {
       "path": "backend/internal/repository/migrations_runner.go",
@@ -8655,15 +8638,9 @@
       "candidate_owner": "core-extension-and-job-host",
       "role": "source",
       "present": true,
-      "content_sha256": "5b017214cca688a91a7ea7b483b8de0854aeb7340deb0e11a0b0e81fe0a0c81a",
-      "review_fingerprint": "5b017214cca688a91a7ea7b483b8de0854aeb7340deb0e11a0b0e81fe0a0c81a",
-      "review_status": "reviewed",
-      "decision": "core-mechanism",
-      "owner": "core-extension-and-job-host",
-      "reason": "Full bundle repository file read. Prepare and Complete now validate the final transaction-local enabled graph before committing package/bindings/journal updates. Pinned/removal/updating guards, incomplete intent snapshots, config preservation and already-completed no-op behavior remain. Temporary disabled preparation cannot silently remove a required provider; normal completed-bundle upgrades already use Stage/Commit. First-install source bundle order was exercised.",
-      "evidence": [
-        "artifacts/evidence/v027-astra-registry-atomicity-design.json: all-writer matrix, selected SSI proof/limits, controlled PG red/green and exact targeted commands"
-      ]
+      "content_sha256": "364abf312083c0c52964074189c8101464b2372b3b2c690d0f1887b4b959378f",
+      "review_fingerprint": "364abf312083c0c52964074189c8101464b2372b3b2c690d0f1887b4b959378f",
+      "review_status": "pending"
     },
     {
       "path": "backend/internal/repository/plugin_bundle_integration_test.go",
@@ -8721,16 +8698,9 @@
       "candidate_owner": "core-extension-and-job-host",
       "role": "source",
       "present": true,
-      "content_sha256": "c6aec6268e17b6961872e00cc6e9f3816a44aec2e5d80149c74c9bcb47a6b766",
-      "review_fingerprint": "c6aec6268e17b6961872e00cc6e9f3816a44aec2e5d80149c74c9bcb47a6b766",
-      "review_status": "reviewed",
-      "decision": "core-mechanism",
-      "owner": "core-extension-and-job-host",
-      "reason": "State CAS and lease acquire/release take lockPluginExecution in the same transaction as writes. Projection writes lock and recheck account identity, preserve unrelated account fields, and enqueue scheduler refresh atomically. Lease generation is retained on release to prevent ABA. Read/due operations are read-only and namespaced by the authenticated host-supplied plugin key.",
-      "evidence": [
-        "artifacts/evidence/v027-astra-update-persistence-review.json: per-file full-read conclusions, traced SQL/call flow, targeted command RUN/PASS and explicit non-execution limits",
-        "Source inspection is not represented as an executed test."
-      ]
+      "content_sha256": "275bec4c77467d940de99d62748898d8905419a2a92fd4cff32e554d62218376",
+      "review_fingerprint": "275bec4c77467d940de99d62748898d8905419a2a92fd4cff32e554d62218376",
+      "review_status": "pending"
     },
     {
       "path": "backend/internal/repository/plugin_extension_state_integration_test.go",
@@ -8822,15 +8792,9 @@
       "candidate_owner": "core-extension-and-job-host",
       "role": "source",
       "present": true,
-      "content_sha256": "79107ea1f00e2c0615ba66fa016902bea70d38914b8aacd429f97737d5690ae1",
-      "review_fingerprint": "79107ea1f00e2c0615ba66fa016902bea70d38914b8aacd429f97737d5690ae1",
-      "review_status": "reviewed",
-      "decision": "core-mechanism",
-      "owner": "core-extension-and-job-host",
-      "reason": "New common helper owns SERIALIZABLE transaction creation, rollback/error normalization, a transaction-local single-query desired-graph join of installations and bindings, final pure validation and commit. It does not call repo.List, RPC, runtime start/drain, signature validation or network IO. PostgreSQL 40001 maps to the existing ErrPluginStateChanged; other errors retain identity.",
-      "evidence": [
-        "artifacts/evidence/v027-astra-registry-atomicity-design.json: all-writer matrix, selected SSI proof/limits, controlled PG red/green and exact targeted commands"
-      ]
+      "content_sha256": "e698f9dc45601d7bcad0d04f0220a810b63d0f1222722a0e2637efa70e3d333e",
+      "review_fingerprint": "e698f9dc45601d7bcad0d04f0220a810b63d0f1222722a0e2637efa70e3d333e",
+      "review_status": "pending"
     },
     {
       "path": "backend/internal/repository/plugin_registry_tx_integration_test.go",
@@ -8928,8 +8892,8 @@
       "candidate_owner": "core-extension-and-job-host",
       "role": "source",
       "present": true,
-      "content_sha256": "c8eecd66ec56f8b70730836ff69c843ef0cd13f1e7a1ebd812aa265b16a03638",
-      "review_fingerprint": "c8eecd66ec56f8b70730836ff69c843ef0cd13f1e7a1ebd812aa265b16a03638",
+      "content_sha256": "e61641c705172113b8a989f041ebfe58ce35487e7f3118042b78de609f25877f",
+      "review_fingerprint": "e61641c705172113b8a989f041ebfe58ce35487e7f3118042b78de609f25877f",
       "review_status": "pending"
     },
     {
@@ -9406,18 +9370,9 @@
       "candidate_owner": "mixed-requires-review",
       "role": "test-or-fixture",
       "present": true,
-      "content_sha256": "91203c9a35943a1c65b3addc280da5e1ba5a4319fbcee64d26e3bb1a8c6cac08",
-      "review_fingerprint": "91203c9a35943a1c65b3addc280da5e1ba5a4319fbcee64d26e3bb1a8c6cac08",
-      "review_status": "reviewed",
-      "decision": "core-correctness",
-      "owner": "core",
-      "reason": "带 //go:build unit 标签的 REST 契约测试 (3064 行): 用内存 stub 仓储装配 gin 路由, 对 /auth/me、/keys (创建+分页)、/groups/available、/subscriptions、/redeem/history、/usage 与 /usage/stats、/admin/settings (两组)、/admin/accounts/bulk-update 做 require.JSONEq 全量响应比对, 并以编译期断言保证 7 个 stub 满足 service 仓储接口。下游相对上游 aea725f (+122 -14): groups/available 新增 wire_platform 与 provider_profile 字段; 管理端 settings 期望值新增 cindy 平台配额桶、openai_codex_ticket_* 三个票据设置、cindy_managed_compatibility 块 (web_search 已验证模型/别名/主备路径、prompt_cache_key 规则) 与 openai_refusal_* 五个拒答恢复设置; bulk-update 契约从同步 200 + 逐账号结果改为 202 accepted + AccountJob (kind=account_bulk_update, status=pending, target_count=2) 并要求 Idempotency-Key 头, 相应新增 contractAccountJobRepo/contractAccountJobCipher 桩与 SetAccountJobService 注入; NewAdminService 签名改为 cfg 在前并多两个 nil 依赖。这些断言把下游宿主 API 契约 (账号任务化批量更新、设置/分组 DTO 扩展) 钉死, 证明的是宿主行为而非插件业务。注意两处 settings 期望 JSON 里 default_platform_quotas 键被重复写了两行 (内容相同), JSONEq 按 map 解码取后者故不影响结果, 属复制粘贴瑕疵。静态阅读, 未执行。",
-      "evidence": [
-        "Full-file static review (L1-L3064, 7 sequential chunks): artifacts/evidence/v027-claude-S45-backend-pkg-server-2-review.json",
-        "git diff aea725f: wire_platform/provider_profile L356-L357; cindy 配额桶与重复键 L868-L869/L1207-L1208; openai_codex_ticket_* L903-L905/L1252-L1254; cindy_managed_compatibility L958-L968/L1295-L1305; openai_refusal_* L1023-L1027/L1358-L1362; bulk-update 202 契约 L1423-L1449; NewAdminService 新签名 L1531; SetAccountJobService L1537; +contractAccountJobCipher/contractAccountJobRepo L1620-L1677",
-        "被测代码: handler.AuthHandler.GetCurrentUser / APIKeyHandler.List,Create,GetAvailableGroups / UsageHandler / SubscriptionHandler / RedeemHandler / adminhandler.SettingHandler.GetSettings / AccountHandler.BulkUpdate (service.AccountJobService), 均为宿主 handler; stub 接口合规断言 L3051-L3059",
-        "Test source statically read only; not executed."
-      ]
+      "content_sha256": "eb30d6405db0133272d6c7d07cd8839dc0eb8e3e9046c1c616a5c3538a91bf2f",
+      "review_fingerprint": "eb30d6405db0133272d6c7d07cd8839dc0eb8e3e9046c1c616a5c3538a91bf2f",
+      "review_status": "pending"
     },
     {
       "path": "backend/internal/server/middleware/audit_log.go",
@@ -9987,8 +9942,8 @@
       "candidate_owner": "core-extension-and-job-host",
       "role": "test-or-fixture",
       "present": true,
-      "content_sha256": "039ecfb3fe81bedccc56b4c360ba969b173149f4e82496300c69bffb5d126fad",
-      "review_fingerprint": "039ecfb3fe81bedccc56b4c360ba969b173149f4e82496300c69bffb5d126fad",
+      "content_sha256": "61ad1495f2d8fc96a0c92fef042881b7950de6320142fef8c37147e1b91f6531",
+      "review_fingerprint": "61ad1495f2d8fc96a0c92fef042881b7950de6320142fef8c37147e1b91f6531",
       "review_status": "pending"
     },
     {
@@ -10031,18 +9986,9 @@
       "candidate_owner": "mixed-requires-review",
       "role": "test-or-fixture",
       "present": true,
-      "content_sha256": "5647ef40f3e81e065f7fc2b47c89e1ef62a09bd4a956a5957a2d8ea16ce5399a",
-      "review_fingerprint": "5647ef40f3e81e065f7fc2b47c89e1ef62a09bd4a956a5957a2d8ea16ce5399a",
-      "review_status": "reviewed",
-      "decision": "adapter",
-      "owner": "codex-runtime",
-      "reason": "下游新增（//go:build unit）测试，对象是 Account.IsOpenAIChatReasoningReplayEnabled / IsOpenAIReasoningSignatureRecoveryEnabled（经 plugin_codex_recovery.go 的 codex.recovery.enabled 扩展调用取默认与判定）及 adminServiceImpl 对两把策略键的写校验。断言：缺省与空 Extra 视为启用、显式 bool 生效、非 bool 存储值一律 fail-closed；仅 OpenAI wire 平台的 apikey/oauth/setup_token 账号（含 Cindy 平台）参与，Grok wire、upstream/bedrock 类型排除；创建/更新不把默认值写回存储；create/update/merge/bulk 对非法输入在写前返回 400 OPENAI_REASONING_POLICY_INVALID 且不泄露输入值；批量更新加载完整目标集并在任一目标不合格时整体拒绝（OPENAI_BULK_TARGET_INVALID），补丁只含显式键。属于宿主到 codex-runtime 插件策略能力的桥接测试；静态阅读，未执行。",
-      "evidence": [
-        "Full-file static review: artifacts/evidence/v027-claude-S15-svc-account-scheduler-1-review.json",
-        "New downstream file. Tests L15-L53 (defaults/isolation), L55-L80 (create no-persist), L82-L100 (update preserves omitted), L102-L114 (override malformed independently), L116-L149 (reject malformed before write, 4 operations x 2 platforms), L151-L175 (bulk explicit keys only), L177-L204 (bulk full-set validation), L206-L226 (bulk accepts eligible incl. spark shadow and Cindy+WirePlatformOpenAI).",
-        "Bridge traced: Account.isOpenAIReasoningPolicyEnabled (account.go L2213-L2216) -> openAIReasoningPolicyEnabled (service/plugin_codex_recovery.go L88-L100) -> invokeCodexRecoveryPolicy capability recovery, operation codex.recovery.enabled (cached).",
-        "Statically read only; not executed; no claim that the plugin invocation path was exercised."
-      ]
+      "content_sha256": "802acf025b55dcfa6c69ffe12629dd45300fc28cbb531d2a7e858cf4be17ce65",
+      "review_fingerprint": "802acf025b55dcfa6c69ffe12629dd45300fc28cbb531d2a7e858cf4be17ce65",
+      "review_status": "pending"
     },
     {
       "path": "backend/internal/service/account_scheduling_threshold_eval.go",
@@ -10112,17 +10058,9 @@
       "candidate_owner": "account-tools",
       "role": "source",
       "present": true,
-      "content_sha256": "06a401d0b89e1f309948e76b07aa166b56eefc52e32cfd0228300c7a23b4984e",
-      "review_fingerprint": "06a401d0b89e1f309948e76b07aa166b56eefc52e32cfd0228300c7a23b4984e",
-      "review_status": "reviewed",
-      "decision": "adapter",
-      "owner": "account-tools",
-      "reason": "Full-file review and one caller change: nonempty custom text validation carries actual account identity, while blank/native paths remain unchanged.",
-      "evidence": [
-        "validateAccountPromptExtension still skips blank, non-text and search-mode prompts.",
-        "The nonempty supported path now calls accountToolsOperationForAccount, so the existing operation selector enforces account rollout instead of treating the call as shared.",
-        "Prompt content/output-limit/default-hi logic was not changed; explicit out-of-scope nonempty API requests are rejected rather than silently downgraded."
-      ]
+      "content_sha256": "77fc9bad2bc4f9f896efd05dd5b1096ea7c2287a7d5c47c5e570b8258f0b93ac",
+      "review_fingerprint": "77fc9bad2bc4f9f896efd05dd5b1096ea7c2287a7d5c47c5e570b8258f0b93ac",
+      "review_status": "pending"
     },
     {
       "path": "backend/internal/service/account_test_prompt_test.go",
@@ -10246,18 +10184,9 @@
       "candidate_owner": "mixed-requires-review",
       "role": "source",
       "present": true,
-      "content_sha256": "1eafaa551efe18d63fbf208ebd5284e1c17e7b49f476844d5669a6e15db31cdb",
-      "review_fingerprint": "1eafaa551efe18d63fbf208ebd5284e1c17e7b49f476844d5669a6e15db31cdb",
-      "review_status": "reviewed",
-      "decision": "core-mechanism",
-      "owner": "core-quota-and-protocol",
-      "reason": "账号用量查询服务（Anthropic OAuth 主动/被动、Setup Token 估算、OpenAI Codex 探针快照、Gemini/Antigravity/Grok 额度、窗口统计缓存、批量查询）。下游相对上游新增：UsageCommitObserver 类型与 UsageCache.InvalidateAccount（按 accountID 精确失效 windowStats/api/antigravity 三个缓存）；UsageInfo.QuotaWindows；getOpenAIUsage 改为从 OpenAIQuotaWindows 为每个实际窗口独立取窗口统计与配额估算，FiveHour/SevenDay/ThirtyDay 兼容字段只按 300/10080/43200 分钟窗口回填，过期窗口用量归零；Codex 探针请求附加配额活动上下文、改用 enforceCodexIdentityHeadersForAccountContext 与 prepareCodexTransport（禁用 gzip 协商、zstd 边界与推理面一致）。所有缓存与探针节流均以 account.ID 为键，影子账号写自身 codex_* 键并通知母账号。宿主配额/用量机制；静态阅读，未执行。",
-      "evidence": [
-        "Full-file static review: artifacts/evidence/v027-claude-S15-svc-account-scheduler-1-review.json",
-        "Delta vs aea725f (105 lines): UsageCommitObserver L129-L132, InvalidateAccount L139-L148, UsageInfo.QuotaWindows L200, getOpenAIUsage window loop L770-L801 (Estimate via QuotaEstimateRepository, WindowStats via window.StatsStart, compat fields by WindowMinutes), probe activity attach L867-L872, identity header enforcement L922-L924, DisableCompression L937, prepareCodexTransport L944-L948.",
-        "Keys: UsageCache maps and openAIProbeCache/grokProbeCache keyed by accountID (L119-L127, L847-L861, L1294-L1305); shadow path uses account.ID for QueryUsage/persist and notifies ParentAccountID (L739-L758).",
-        "OpenAIQuotaWindows (service/account_quota_windows.go L106) supplies per-window ResetsAt; no cross-window deadline sharing observed. No production behavior edit or test execution."
-      ]
+      "content_sha256": "eded97679871ec2aeb5cca42652f3f2e3022e7047f724bab058b3c9275132b94",
+      "review_fingerprint": "eded97679871ec2aeb5cca42652f3f2e3022e7047f724bab058b3c9275132b94",
+      "review_status": "pending"
     },
     {
       "path": "backend/internal/service/account_usage_service_test.go",
@@ -10381,8 +10310,8 @@
       "candidate_owner": "account-tools",
       "role": "source",
       "present": true,
-      "content_sha256": "66ad4682d7061dcd26e1283a33162645c5bcef64a64a2cee697857ef5b36ca22",
-      "review_fingerprint": "66ad4682d7061dcd26e1283a33162645c5bcef64a64a2cee697857ef5b36ca22",
+      "content_sha256": "017d5d8247ebc1f335641f8c03debbcc2ac71f488c2c5d1d4a9054d9ad48a39b",
+      "review_fingerprint": "017d5d8247ebc1f335641f8c03debbcc2ac71f488c2c5d1d4a9054d9ad48a39b",
       "review_status": "pending"
     },
     {
@@ -10443,8 +10372,8 @@
       "candidate_owner": "cindy-provider",
       "role": "source",
       "present": true,
-      "content_sha256": "fda408babd6ed4f586136cd276fd17b454d695a863ae1f8ecfc829a48e26f009",
-      "review_fingerprint": "fda408babd6ed4f586136cd276fd17b454d695a863ae1f8ecfc829a48e26f009",
+      "content_sha256": "222351acf7d91a1fb742b66ac236ee9a0c423313719ae3d9aafc264ae1c7c500",
+      "review_fingerprint": "222351acf7d91a1fb742b66ac236ee9a0c423313719ae3d9aafc264ae1c7c500",
       "review_status": "pending"
     },
     {
@@ -10452,8 +10381,8 @@
       "candidate_owner": "cindy-provider",
       "role": "test-or-fixture",
       "present": true,
-      "content_sha256": "b9fb5763af2a0bc927d9debfdc38968897619c991eb5794f565d328edabda2dd",
-      "review_fingerprint": "b9fb5763af2a0bc927d9debfdc38968897619c991eb5794f565d328edabda2dd",
+      "content_sha256": "40e44ed76becb0e6915e186359ff95583e2b9313a69fcd1f9776b43645c912fe",
+      "review_fingerprint": "40e44ed76becb0e6915e186359ff95583e2b9313a69fcd1f9776b43645c912fe",
       "review_status": "pending"
     },
     {
@@ -10924,15 +10853,9 @@
       "candidate_owner": "prompt-skills",
       "role": "test-or-fixture",
       "present": true,
-      "content_sha256": "65fa6467ce8111a80552e45b2043cdfa1431a27e3d0ed53d3e38308b47ff495f",
-      "review_fingerprint": "65fa6467ce8111a80552e45b2043cdfa1431a27e3d0ed53d3e38308b47ff495f",
-      "review_status": "reviewed",
-      "decision": "core-mechanism",
-      "owner": "core-extension-and-job-host",
-      "reason": "Targeted tests use actual host scope logic and the independent official prompt planner, or explicitly labeled defensive SDK-result fixtures. Initial task covered 44 new leaf cases; parent post-review adds nine covering real trim behavior, official same-text carrier changes in both directions, bounded two-slot/64KiB invariants, uncertain future text history and incomplete proof. All 53 unique new leaf cases ran and passed in their recorded rounds; only directly affected existing cases/rechecks were repeated.",
-      "evidence": [
-        "artifacts/evidence/v027-astra-prompt-request-scope-review.json: exact phased failures, targeted RUN/PASS, carrier provenance and full-versus-partial file scope"
-      ]
+      "content_sha256": "8a7ea36296ad2b688951311a39623da8bc9cd4728cf2e76a7eb00d832e9c8e82",
+      "review_fingerprint": "8a7ea36296ad2b688951311a39623da8bc9cd4728cf2e76a7eb00d832e9c8e82",
+      "review_status": "pending"
     },
     {
       "path": "backend/internal/service/business_system_prompt_bundle.go",
@@ -11060,16 +10983,9 @@
       "candidate_owner": "prompt-skills",
       "role": "test-or-fixture",
       "present": true,
-      "content_sha256": "1e5e2f3ca8e43abcab77bf3b782e68ee59205d7a189a7a07c5296c01d5aa6506",
-      "review_fingerprint": "1e5e2f3ca8e43abcab77bf3b782e68ee59205d7a189a7a07c5296c01d5aa6506",
-      "review_status": "reviewed",
-      "decision": "core-mechanism",
-      "owner": "core-extension-and-job-host",
-      "reason": "Fully read both new deterministic tests. Four turns apply responses/chat/frozen retries and response rewriting while counting retained connection keys; the second fixture covers nil/HTTP fallback, concurrent same-turn map access, observation marker reset and unrelated metadata. Synthetic inputs only, no sockets.",
-      "evidence": [
-        "artifacts/evidence/v027-prompt-turn-cache-review.json: E-WS-SOURCE, E-WS-RED, E-WS-GREEN and E-WS-DIRECT-CONTROLS",
-        "Targeted passing selectors are bound to the unchanged production delta."
-      ]
+      "content_sha256": "6414a46693bbd947e9b058dbc48b42bc8feaf751db78c3b1edbee3bcfc173334",
+      "review_fingerprint": "6414a46693bbd947e9b058dbc48b42bc8feaf751db78c3b1edbee3bcfc173334",
+      "review_status": "pending"
     },
     {
       "path": "backend/internal/service/channel_cindy_managed_crud_test.go",
@@ -11104,17 +11020,9 @@
       "candidate_owner": "cindy-provider",
       "role": "source",
       "present": true,
-      "content_sha256": "0a21d0bf340c73e5449f79f1e4004549fd4890013cd54dca20033a67fa32eb5a",
-      "review_fingerprint": "0a21d0bf340c73e5449f79f1e4004549fd4890013cd54dca20033a67fa32eb5a",
-      "review_status": "reviewed",
-      "decision": "adapter",
-      "owner": "cindy-provider",
-      "reason": "canonical 账号、正 AccountID、caller context、payload 限制、strict decode、同回复投影结构验证和完整计划摘要。 全文结论来自逐路径冻结审查，区域项未导入；实际测试、前代理报告与未运行边界见同一报告。",
-      "evidence": [
-        "artifacts/evidence/v027-astra-single-test-policy-boundary-review.json#source_index:backend/internal/service/cindy_account_test_plan.go",
-        "artifacts/evidence/v027-astra-single-test-policy-boundary-review.json#validation",
-        "commit 7b4de3ae7; exact SHA rechecked at integration"
-      ]
+      "content_sha256": "24517d0df792f0c9c0f25f887a402b632c01c5e68a5862845bface628cc9f496",
+      "review_fingerprint": "24517d0df792f0c9c0f25f887a402b632c01c5e68a5862845bface628cc9f496",
+      "review_status": "pending"
     },
     {
       "path": "backend/internal/service/cindy_account_view_probe_test.go",
@@ -11140,17 +11048,9 @@
       "candidate_owner": "cindy-provider",
       "role": "source",
       "present": true,
-      "content_sha256": "f1eeeb72be1c89515ac3d34c1f14855c44fe06d7701bafd17cd7c6594baefe6b",
-      "review_fingerprint": "f1eeeb72be1c89515ac3d34c1f14855c44fe06d7701bafd17cd7c6594baefe6b",
-      "review_status": "reviewed",
-      "decision": "adapter",
-      "owner": "cindy-provider",
-      "reason": "The host resolves a model-only search plan under the selected account ID, bounds model identity length, rejects unknown/trailing JSON and unsupported protocol/tool/fallback combinations, then checks the allowed upstream identity against the same plugin's account-scoped catalog. Denial carries no execution fields. No prompt, credential, URL or model IO is delegated through this plan.",
-      "evidence": [
-        "resolveCindyAlphaSearchPlanForAccount: both cindy.search.plan and cindy.catalog carry the same AccountID and one bounded call context; catalog.PluginID must equal plan owner and upstream must match.",
-        "validateCindyAlphaSearchPlan: Responses web_search and optional fixed native helper only, one max use, mismatched request identity and denial-with-routing are rejected.",
-        "Targeted tests passed: TestResolveCindyAlphaSearchPlanSendsOnlyRequestedModel; TestCindyAlphaSearchPlanCannotChangeCatalogIdentityOrReturnTrailingJSON; TestForwardAlphaSearchCindyUsesPublicResponsesModelBeforeHiddenFallback."
-      ]
+      "content_sha256": "573e96df9f1db3c07c81f5519543694273e1ed16c1bddc190884242125a51f5e",
+      "review_fingerprint": "573e96df9f1db3c07c81f5519543694273e1ed16c1bddc190884242125a51f5e",
+      "review_status": "pending"
     },
     {
       "path": "backend/internal/service/cindy_alpha_search_plan_test.go",
@@ -11370,37 +11270,18 @@
       "candidate_owner": "cindy-provider",
       "role": "source",
       "present": true,
-      "content_sha256": "d660cdbd02932521c005d4d1003cb31317f27d6b91ebcb97d0120d2e1036e5c9",
-      "review_fingerprint": "d660cdbd02932521c005d4d1003cb31317f27d6b91ebcb97d0120d2e1036e5c9",
-      "review_status": "reviewed",
-      "decision": "adapter",
-      "owner": "cindy-provider",
-      "reason": "Cindy 目录的宿主 RPC 垫片（240 行，下游新增）：把 CindyCapability/CindyCatalogModel 等类型别名到 extensionapi，保留一组标注 Deprecated 的源码兼容常量，其余 27 个函数全部是薄封装——queryCindyCatalog 把方法名与参数 JSON 编码后经 cindy.catalog 调用 cindy-provider 插件并解码返回值，本文件不含任何模型 ID、价格或端点规则，插件是唯一事实来源，不构成第二执行器。但该垫片使用 context.Background()、不携带 AccountID、也不经 LoadCindyCatalogSnapshot 请求级快照，而 rg 显示仍有 33 处非测试调用点（含 Account.IsModelSupported/ResolveMappedModel、调度器 free-pool/alpha-search 门禁、计费分类 isCindyCompatibilityBillingModel）在请求路径上使用它，与 63a98c8cc 把映射/定价绑定到请求快照的不变量存在缺口，记为低严重度 finding（非阻塞，见 findings[0]）。仅静态阅读，未执行。",
-      "evidence": [
-        "Full-file static review: artifacts/evidence/v027-claude-S49-cindy-service-T1-review.json",
-        "L11-L20 type aliases to extensionv1 (CindyModelKind, CindyCapacitySource, CindyEndpoint, pricing/controls/capability/catalog types); L22-L59 constants, seven marked Deprecated (source compatibility only; runtime consumers use LoadCindyCatalogSnapshot) plus kind/capacity/endpoint/client-surface enums re-exported from extensionv1.",
-        "L61-L80 queryCindyCatalog: json-encode args, attach currentImageToolsConfig(), Invocation{Capability provider, Operation cindy.catalog, Payload} via invokeProcessExtensionCached under context.WithTimeout(context.Background(), 1s); no AccountID; L81-L91 decodeCindyCatalogResult requires len(values)==len(outputs).",
-        "L92-L240 wrappers CindyCapabilities, CindyCatalogModels, CindyManagedModelMappings, ResolveCindyCapability, resolveKnownCindyCapability, CindyCompatibilityMappedUpstreamModel, CindyCompatibilityRoutingTarget, CindyCompatibilityTextPricingForModel, CindyMappedUpstreamModel, CindyModelSupportsEndpoint, CindyFreePoolModelSupportsEndpoint, CindyFreePoolModelAllowed, CindyAlphaSearchModelAvailable, CindyAlphaSearchUpstreamModel, CindyManagedCompatibilityModels/Aliases, CindyModelHasVerifiedEndpoint, CindyModelUsesExplicitZeroPrice, CindyImagePricingForModel, CindyTextPricingForModel, CindyPublicModelIDs, CindyCodexPublicModelIDs, cindyCapabilitySupportsCodexModels, CindyVerifiedCapabilities, CindyVerifiedModelCapabilities, CindyImageModelCapabilities, cloneCindyImageRequestControls (extensionv1.CloneCindyImageRequestControls), cindyModelCapabilityFromCapability; each is a single queryCindyCatalog call returning zero values on failure, so plugin errors are not surfaced to callers.",
-        "Non-test callers (rg, 33 sites): account.go L916/L921/L932/L970/L975/L983; handler/openai_gateway_handler.go L411/L617/L724/L1560/L2928/L3073; handler/openai_images.go L105/L114/L273; handler/openai_chat_completions.go L84; handler/admin/setting_handler.go L429-L430; image_studio_job_service.go L127/L129/L180; model_context_capacity.go L544; openai_account_scheduler.go L2646/L2652/L2660/L2689; openai_gateway_chat_completions.go L113; openai_gateway_forward.go L264/L561; openai_gateway_usage.go L790; openai_images.go L505; plugin_image_bridge.go L222; account_test_reasoning.go L25. Request-scoped alternative exists: cindy_catalog_snapshot.go L47 LoadCindyCatalogSnapshot(ctx, account) with AccountID admission and captured policy; pricing on the usage path already uses queryCindyPricingSnapshot (openai_gateway_usage.go L565/L816/L896). Not executed."
-      ]
+      "content_sha256": "8414571f3984ab5845e5834b43f1ae66c6b36ffc4b941026f96093915b40ae9d",
+      "review_fingerprint": "8414571f3984ab5845e5834b43f1ae66c6b36ffc4b941026f96093915b40ae9d",
+      "review_status": "pending"
     },
     {
       "path": "backend/internal/service/cindy_catalog_snapshot.go",
       "candidate_owner": "cindy-provider",
       "role": "source",
       "present": true,
-      "content_sha256": "8c280399a94621e6bd32428ecfe666428b0c9f09a385afdfc3cbd7a5e6b9df35",
-      "review_fingerprint": "8c280399a94621e6bd32428ecfe666428b0c9f09a385afdfc3cbd7a5e6b9df35",
-      "review_status": "reviewed",
-      "decision": "adapter",
-      "owner": "core-extension-and-job-host",
-      "reason": "完整新适配器逐分支审查。实际账号必须正ID+精确Cindy身份，调用传入accountID/caller ctx；typed严格解码、约束inventory/hash/default/reference与多投影一致性。Namespace绑定宿主stamp owner和完整canonical JSON SHA。已捕获A的请求仍做当前准入/owner检查，但不拿B的内容替换A。",
-      "evidence": [
-        "artifacts/evidence/v027-cindy-snapshot-integration-review.json",
-        "artifacts/evidence/v027-astra-cindy-independent-metadata-review.json",
-        "artifacts/evidence/v027-astra-cindy-snapshot-second-review.json",
-        "Complete new adapter plus approved captured-A branch; actual account validation, fresh exact catalog admission, response owner, typed consistency, full canonical namespace and legacy mapping."
-      ]
+      "content_sha256": "ed3fa5d7dd796690d6f5a2b4f4fdc03ea43a4d6fa2f521fac9de22a2e5005071",
+      "review_fingerprint": "ed3fa5d7dd796690d6f5a2b4f4fdc03ea43a4d6fa2f521fac9de22a2e5005071",
+      "review_status": "pending"
     },
     {
       "path": "backend/internal/service/cindy_channel_catalog.go",
@@ -11686,16 +11567,9 @@
       "candidate_owner": "cindy-provider",
       "role": "test-or-fixture",
       "present": true,
-      "content_sha256": "45b69ba7ca5ac1109ca6eb3ccfadeadeccb6eba7f980cb349eb3947ad6f276a0",
-      "review_fingerprint": "45b69ba7ca5ac1109ca6eb3ccfadeadeccb6eba7f980cb349eb3947ad6f276a0",
-      "review_status": "reviewed",
-      "decision": "reference",
-      "owner": "cindy-provider",
-      "reason": "全文审查410行合成fixture并核当前SHA：先通过真实snapshot结构校验再模拟A→B发布，实际ForwardImages经内存HTTP记录wire、controls及所持价格目录；补别名类型变化、现有capture/停用/换owner和普通APIKey/OAuth/legacy正控。生产内置image仍non-public/unverified，测试显式构造发布态，不冒称真实模型、计费或进程更新验收。",
-      "evidence": [
-        "artifacts/evidence/v027-astra-cindy-native-image-snapshot-review.json#verification",
-        "Parent retained full fixture review from the preceding checkpoint and reverified its frozen digest before commit; five new and two direct existing methods have actual pass records, not rerun here."
-      ]
+      "content_sha256": "67d0d8b1cd0268e5ba934360bcbc262f6d064a803b6f465b374bcd139bc5ec50",
+      "review_fingerprint": "67d0d8b1cd0268e5ba934360bcbc262f6d064a803b6f465b374bcd139bc5ec50",
+      "review_status": "pending"
     },
     {
       "path": "backend/internal/service/cindy_native_messages_scope_test.go",
@@ -11729,18 +11603,9 @@
       "candidate_owner": "cindy-provider",
       "role": "source",
       "present": true,
-      "content_sha256": "ee029b5735e4629dbaa9a47f4fc36bfcaf47cff3fdc235bf8c4bb95f28522ed5",
-      "review_fingerprint": "ee029b5735e4629dbaa9a47f4fc36bfcaf47cff3fdc235bf8c4bb95f28522ed5",
-      "review_status": "reviewed",
-      "decision": "adapter",
-      "owner": "core-extension-and-job-host",
-      "reason": "完整当前文件复核。价格结果必须有同Config/Images的validated companion且owner一致；accountID隔离并复制到异步账单上下文。WS map/BeforeTurn复用同一turn记录，Take后仅回收连接内引用；当前gate失败不允许新Capture，已完成账单保留A。未改变任何金额算式。",
-      "evidence": [
-        "artifacts/evidence/v027-cindy-snapshot-integration-review.json",
-        "artifacts/evidence/v027-astra-cindy-independent-metadata-review.json",
-        "artifacts/evidence/v027-astra-cindy-snapshot-second-review.json",
-        "Capture companion/Config/Images/owner validation, account-keyed reference and turn contexts; existing price Results queries/formulas retained."
-      ]
+      "content_sha256": "2dad2b619bdda9e001014dc1b33ed28ded9b9bceb6c326cfa600fa64febf71ad",
+      "review_fingerprint": "2dad2b619bdda9e001014dc1b33ed28ded9b9bceb6c326cfa600fa64febf71ad",
+      "review_status": "pending"
     },
     {
       "path": "backend/internal/service/cindy_pricing_snapshot_test.go",
@@ -11791,18 +11656,9 @@
       "candidate_owner": "cindy-provider",
       "role": "test-or-fixture",
       "present": true,
-      "content_sha256": "19def416994d2393bfb3c79b306046045b87679ec197aa5a33e1914814577764",
-      "review_fingerprint": "19def416994d2393bfb3c79b306046045b87679ec197aa5a33e1914814577764",
-      "review_status": "reviewed",
-      "decision": "reference",
-      "owner": "core-extension-and-job-host",
-      "reason": "完整当前4个新方法/fixture读完；实际Forward与RecordUsage(SimpleMode)结合fake HTTP复现并修复wireB/priceA，且有新请求B、disabled零新增IO、缺companion/Config/Images/owner和账号隔离反例。真实v2 WS proxy的两个turn结合fake upstream验证A/B分别一致；金额仅内存usage计算，没有实际扣费。",
-      "evidence": [
-        "artifacts/evidence/v027-cindy-snapshot-integration-review.json",
-        "artifacts/evidence/v027-astra-cindy-independent-metadata-review.json",
-        "artifacts/evidence/v027-astra-cindy-snapshot-second-review.json",
-        "New targeted proof/lifecycle/validation/WS fixture only; fake upstream and in-memory SimpleMode usage records."
-      ]
+      "content_sha256": "cecc416a8d204727e008983d66c05fda7441b5cc0f66c4985ada18d8449fcd44",
+      "review_fingerprint": "cecc416a8d204727e008983d66c05fda7441b5cc0f66c4985ada18d8449fcd44",
+      "review_status": "pending"
     },
     {
       "path": "backend/internal/service/cindy_terminal_scheduling_isolation_test.go",
@@ -11908,8 +11764,8 @@
       "candidate_owner": "codex-runtime",
       "role": "source",
       "present": true,
-      "content_sha256": "04fbdaf3b5b8cacc377379a7fb9eb352122021c3268e884408874f4aa3d4be6e",
-      "review_fingerprint": "04fbdaf3b5b8cacc377379a7fb9eb352122021c3268e884408874f4aa3d4be6e",
+      "content_sha256": "0518e7822c0f8e0bc42c7ee025b3732009e5dcec366ef62c98f28b670e8c0d93",
+      "review_fingerprint": "0518e7822c0f8e0bc42c7ee025b3732009e5dcec366ef62c98f28b670e8c0d93",
       "review_status": "pending"
     },
     {
@@ -11917,18 +11773,9 @@
       "candidate_owner": "codex-runtime",
       "role": "source",
       "present": true,
-      "content_sha256": "9442d2882eb2b19065c76deb39a6244d462641beb6f483ef2f509ae11965158f",
-      "review_fingerprint": "9442d2882eb2b19065c76deb39a6244d462641beb6f483ef2f509ae11965158f",
-      "review_status": "reviewed",
-      "decision": "adapter",
-      "owner": "codex-runtime",
-      "reason": "宿主侧为插件“代理预检”结果保留的 DTO 与遗留辅助：CodexTicketProxyStage / CodexTicketProxyTestResult 被 codex_ticket_plugin.go TestCodexTicketProxy 用于反序列化插件 proxy.test 返回并回给管理端，属于 codex-runtime 数据的宿主 DTO 适配。上游无此文件。文件内另有 codexTicketProxyTarget 常量、CodexTicketProxyTrust 类型（全仓零引用）和 NormalizeCodexTicketProxy（仅被自身单测 codex_ticket_proxy_test.go 调用，生产路径零调用；插件自行调用 pkg/extensionapi/proxy.Normalize），属迁移后残留死代码，已记为低级别 finding；不构成第二执行器（无探测、无 IO）。静态阅读，未执行。",
-      "evidence": [
-        "Full-file static review: artifacts/evidence/v027-claude-S62-codex-ticket-T1-review.json",
-        "L21-L33 CodexTicketProxyTestResult 与 L14-L19 CodexTicketProxyStage：唯一使用点 codex_ticket_plugin.go L128-L137（json.Unmarshal 插件载荷后覆写 message）→ setting_codex_ticket_proxy.go L26-L31 直出；无代理 URL 字段。",
-        "rg --no-config -uu 全仓（backend, plugins，排除 dist/node_modules）检索：codexTicketProxyTarget / CodexTicketProxyTrust 除本文件定义外零命中；NormalizeCodexTicketProxy 唯一调用者为 codex_ticket_proxy_test.go L19/L25；proxytransport.Normalize 的生产调用者仅为 plugins/codex-runtime/internal/tickets/proxy.go L135 与 module.go L315。L35-L36 注释“shared by settings validation and the preview test”与现状不符。",
-        "不宣称：未验证插件侧探测实现；未运行任何测试。"
-      ]
+      "content_sha256": "9e5ef45eefcea752870bf2fbf7ff0d46fe901e75d218fbb31ece7b6ce09bfb45",
+      "review_fingerprint": "9e5ef45eefcea752870bf2fbf7ff0d46fe901e75d218fbb31ece7b6ce09bfb45",
+      "review_status": "pending"
     },
     {
       "path": "backend/internal/service/codex_ticket_proxy_test.go",
@@ -12723,16 +12570,9 @@
       "candidate_owner": "model-policy",
       "role": "source",
       "present": true,
-      "content_sha256": "f3ba9c990b5967e5c5a358c4aed9ec4db1b35c5d66b01ceeed616ae555530161",
-      "review_fingerprint": "f3ba9c990b5967e5c5a358c4aed9ec4db1b35c5d66b01ceeed616ae555530161",
-      "review_status": "reviewed",
-      "decision": "core-mechanism",
-      "owner": "core-extension-and-job-host",
-      "reason": "完整当前模型目录实现与此前精确scope审查结合复核。候选按稳定ID遍历，实际账号scope与DB/config检查在缓存前，返回冲突容量不猜测；自己的已持业务租约直接调用同一runtime和同一revision，避免通用准入新增后重复DB读/重复锁。两个精确缓存/中途配置控制通过。",
-      "evidence": [
-        "Detailed source/commands: artifacts/evidence/v027-named-policy-admission-review.json",
-        "Eight exact new leaves plus four directly affected existing methods; no real model/DB requests."
-      ]
+      "content_sha256": "2d23b1c7af03a6af755752455a35de1cc0240ae7e6233fd61bca9bc65a097a1d",
+      "review_fingerprint": "2d23b1c7af03a6af755752455a35de1cc0240ae7e6233fd61bca9bc65a097a1d",
+      "review_status": "pending"
     },
     {
       "path": "backend/internal/service/model_context_capacity_catalog_test.go",
@@ -13197,18 +13037,9 @@
       "candidate_owner": "mixed-requires-review",
       "role": "source",
       "present": true,
-      "content_sha256": "516e31fef9d2b45aa7a71b6b121272b2c7e97751a3a1efc5b07b903c0401e1d2",
-      "review_fingerprint": "516e31fef9d2b45aa7a71b6b121272b2c7e97751a3a1efc5b07b903c0401e1d2",
-      "review_status": "reviewed",
-      "decision": "core-mechanism",
-      "owner": "core-quota-and-protocol",
-      "reason": "Codex 独立 web 搜索 /alpha/search 的宿主转发器（1373 行，下游 +778）。下游新增：严格 Cindy 账号先经 resolveCindyAlphaSearchPlanForAccount 向 cindy-provider 插件取受限计划（模型准入/Responses 工具类型/max_uses/两种回退开关），插件不可用即 503，不落本地目录规则；新增 Cindy 原生 /v1/messages web_search 兜底桥 forwardCindyAlphaSearchViaNativeMessages（L184-L285，含搜索证据与可计费用量双重校验 L394-L401）；Cindy 余额分类挂钩 handleCindyAlphaSearchBalance（L679-L707）；请求级安全拒绝终结 forwardAlphaSearchSafetyRejection（L638-L677，SSE 事件也识别）；PAT 账号改走 hosted web_search Responses 兜底（L97-L103）且 401/404/405 只换号不写账号错误（shouldApplyOpenAIAlphaSearchAccountErrorSideEffects L1074-L1084）；出站强制 Codex 规范身份头与连字符会话头补齐（L775-L806）。业务准入规则在插件侧（plugins/cindy-provider/catalog/search.go），本文件仅保留上游 I/O、failover 语义与按次计费（2xx 才返回 WebSearchCalls=1），未发现第二执行体。静态阅读，未执行。",
-      "evidence": [
-        "Full-file static review: artifacts/evidence/v027-claude-S18-svc-openai-misc-1-review.json",
-        "diff vs aea725f 主要 hunk：+35-95（Cindy 计划门）、+184-484（native Messages 桥）、+530-582（cindy capability/回退分类）、+638-722（安全拒绝+余额 failover）、+1086-1258（副作用白名单、严格证据 SSE 模式、cindy 错误构造）",
-        "调用链：计划经 invokeProcessExtensionCached(cindy.search.plan)（cindy_alpha_search_plan.go L29-L63）到 plugins/cindy-provider/catalog/search.go AlphaSearchPlan；WebSearchCalls 计费落点 openai_gateway_usage.go L600-L612；CaptureCindyPricingContext 对 nil account 安全（cindy_pricing_snapshot.go L27-L30）",
-        "未执行测试或真实搜索请求，不主张上游端点实际行为。"
-      ]
+      "content_sha256": "be95c564eea62d4fa03ac8975b770328f2e98b0d010afa7e6be0f522df7979e7",
+      "review_fingerprint": "be95c564eea62d4fa03ac8975b770328f2e98b0d010afa7e6be0f522df7979e7",
+      "review_status": "pending"
     },
     {
       "path": "backend/internal/service/openai_alpha_search_billing_test.go",
@@ -13593,19 +13424,9 @@
       "candidate_owner": "mixed-requires-review",
       "role": "test-or-fixture",
       "present": true,
-      "content_sha256": "9b35426dac0586bf3b5cc82aeac64afc6216ca4101e189f77e1c8ee68247594a",
-      "review_fingerprint": "9b35426dac0586bf3b5cc82aeac64afc6216ca4101e189f77e1c8ee68247594a",
-      "review_status": "reviewed",
-      "decision": "core-mechanism",
-      "owner": "core-quota-and-protocol",
-      "reason": "下游新增文件（上游无），测试新的账号级 Codex 客户端身份机制（主文件 openai_codex_client_identity.go 在其他切片）：token 刷新走账号级身份且 originator=codex-tui、身份快照不含种子、种子确定性派生 TUI 形态 UA（正则校验三处版本同源）、身份为系统管理字段（表单坏值被忽略、schema 拒绝 OS/沙箱不配对）、ForceCodexCLI 在凭据面与推理面同策略、staged fingerprint 的 sandbox 跟随实际身份来源（父账号/桥接 UA/强制统一关闭时的配对客户端 UA）、scopeCodexAccountIdentityValue 保 UUIDv7 时间位与跨字段同值同映射。测试静态阅读，未执行。",
-      "evidence": [
-        "Full-file static review: artifacts/evidence/v027-claude-S17-svc-openai-codex-1-review.json",
-        "New downstream file; whole file is the delta (git ls-tree aea725f prints nothing for this path).",
-        "Anchors: TestRefreshAccountTokenUsesAccountCodexIdentity (L42-55) via NewOpenAIOAuthService stub RefreshTokenWithIdentity; TestStagedFingerprintSandboxFollowsParentIdentitySource (L170-189) uses codexAccountIdentitySourceContextKey + resolveStagedCodexFingerprintIDs; TestScopeCodexAccountIdentityValuePreservesUUIDv7TimestampAndEquality (L243-259).",
-        "codexTestSeedForOS deterministically searches seeds (L157-167); no network/model calls in the test code itself.",
-        "Statically read only; the test was not executed."
-      ]
+      "content_sha256": "9309d13d03da8537624a09fb1f8c426742a786de8cb51cfdcad43d36a14008c8",
+      "review_fingerprint": "9309d13d03da8537624a09fb1f8c426742a786de8cb51cfdcad43d36a14008c8",
+      "review_status": "pending"
     },
     {
       "path": "backend/internal/service/openai_codex_context_contract.go",
@@ -13876,18 +13697,9 @@
       "candidate_owner": "codex-runtime",
       "role": "test-or-fixture",
       "present": true,
-      "content_sha256": "13fab4e80ce061fd098ae00a95a75e2bfb232b9f03ced35a43c3d3935a24d98a",
-      "review_fingerprint": "13fab4e80ce061fd098ae00a95a75e2bfb232b9f03ced35a43c3d3935a24d98a",
-      "review_status": "reviewed",
-      "decision": "core-mechanism",
-      "owner": "core-extension-and-job-host",
-      "reason": "Full-file static review; the authorized one-line fixture repair mirrors production's always-present runtime installation without weakening production checks.",
-      "evidence": [
-        "Read all 154 lines. ticketTestManager builds in-process operation fixtures with enabled capability bindings, fake serialized RPC, config/scheduling snapshots and no external process/network.",
-        "The only change sets runtime.installation=installation. Production startPluginRuntime already supplies this metadata; no nil-runtime fallback was added to business admission.",
-        "Existing ticket injection/failure/status/model/compact tests were read but not rerun. Their business assertions, fake state, headers and model choices were not changed.",
-        "Only the directly impacted TestCodexIdentityBackfillUsesEachAccountScope (0/50/100 subcases) was rerun after the fixture correction and passed."
-      ]
+      "content_sha256": "e4d0d48eb358c2cba4a036c8284ec74bc32a70f7757d64abc4d65c87c629a63f",
+      "review_fingerprint": "e4d0d48eb358c2cba4a036c8284ec74bc32a70f7757d64abc4d65c87c629a63f",
+      "review_status": "pending"
     },
     {
       "path": "backend/internal/service/openai_codex_transform.go",
@@ -15141,18 +14953,9 @@
       "candidate_owner": "mixed-requires-review",
       "role": "source",
       "present": true,
-      "content_sha256": "9ca9db5adb4e936c5adc798168b19785d3a52eb1d319d72c38774a7cdbe83ca4",
-      "review_fingerprint": "9ca9db5adb4e936c5adc798168b19785d3a52eb1d319d72c38774a7cdbe83ca4",
-      "review_status": "reviewed",
-      "decision": "core-mechanism",
-      "owner": "core-quota-and-protocol",
-      "reason": "OpenAI 用量记录与计费成本计算 (RecordUsage/calculate*Cost/Codex 快照落库)。下游相对上游: RecordUsage 起始向 cindyHealth 上报成功 (cindy-provider 钩子); 输入 token 拆桶尊重 UsageInputTokensExcludeCache (Anthropic 语义不再二次扣减缓存, 正确性修复); 新增 5m/1h 缓存创建桶透传到 UsageTokens 与 usage_logs; account 参数贯穿计费链, 接入 Cindy 严格目录计价 (text/image/web-search 零价) 与 fail-closed (Cindy 定价缺失时返回 err 而非零成本落账); token 计价把渠道定价分支前置并新增 Cindy 目录分支; applyUsageBilling 的 applied 结果驱动 usageCache.InvalidateAccount 与 usageCommitObserver (观测钩子); buildCodexUsageExtraUpdates 增加每窗口 observed_at/reset_at (RFC3339Nano) 并将缺倒计时的 reset_after_seconds 置 nil, 防止陈旧倒计时被重锚到新采样时刻 (正确性修复); +calculateCindyCatalogImageCost (按张/按 token 双计量互斥, 缺价 fail-closed)。Cindy 目录数据由 cindy-provider 插件 (plugins/cindy-provider/catalog) 经 pricing snapshot 提供, 计费执行只在本文件与 cindy_text_billing.go, rg 未见二执行体。发现一处低危迁移死代码, 见 findings。仅静态阅读, 未执行测试。",
-      "evidence": [
-        "Full-file static review (L1-L1359): artifacts/evidence/v027-claude-S11-svc-openai-gateway-3-review.json",
-        "git diff aea725f: UsageInputTokensExcludeCache 拆桶 (L181-L187), +CacheCreation5m/1h (L197-L198, L406-L407), +shouldFailClosedCindyTextPricingContext 早返回 (L261-L263), applied→usageCache/usageCommitObserver (L535-L543), calculateOpenAIRecordUsageTokenCost 渠道定价前置+Cindy 目录分支 (L756-L768), +calculateCindyCatalogImageCost (L909-L978), buildCodexUsageExtraUpdates 窗口 observed_at/reset_at 与 nil 置空 (L1268-L1277)",
-        "call-chain: queryCindyPricingSnapshot→extensionv1.CindyPricingSnapshot (cindy_pricing_snapshot.go), 目录注册表在 plugins/cindy-provider/catalog/catalog.go (CindyTextPricingForModel L417); snapshot.Windows 在 account_quota_windows.go L69; updateCodexUsageSnapshot 有 30s 节流与 5s 超时 goroutine, 且注释明确调用方需排除 spark 影子账号",
-        "No production behavior edit or test execution for this file."
-      ]
+      "content_sha256": "e1e38a1adcd4b09f2f90eeb46f4d90092377c32bbc4679041fcff7e5518bc17a",
+      "review_fingerprint": "e1e38a1adcd4b09f2f90eeb46f4d90092377c32bbc4679041fcff7e5518bc17a",
+      "review_status": "pending"
     },
     {
       "path": "backend/internal/service/openai_guardian_affinity_test.go",
@@ -15491,18 +15294,9 @@
       "candidate_owner": "mixed-requires-review",
       "role": "source",
       "present": true,
-      "content_sha256": "0e5e9573c8e2b73b9f638b829af3890fa4745c6b42525d84b71036219d4dadde",
-      "review_fingerprint": "0e5e9573c8e2b73b9f638b829af3890fa4745c6b42525d84b71036219d4dadde",
-      "review_status": "reviewed",
-      "decision": "core-mechanism",
-      "owner": "core-quota-and-protocol",
-      "reason": "整文件下游新增：OpenAI OAuth 429 分类器。优先读 Codex 用量头（5h/7d/30d 窗口，只有 100% 用尽的未过期窗口才判配额；多窗口取更晚 reset），否则在 JSON/SSE 载荷里递归（限深 8 层）找结构化硬配额码（usage/weekly/monthly_limit_reached、quota_exhausted 等，白名单归一化），都没有则判 transient；reset 时间只取 resets_at/resets_in_seconds 等显式字段，不从消息文本猜。为账号冷却/调度的宿主机制。静态阅读，未执行测试。",
-      "evidence": [
-        "Full-file static review: artifacts/evidence/v027-claude-S19-svc-openai-misc-2-review.json",
-        "New downstream. Anchors: classifyOpenAIOAuth429At L20-83 (ParseCodexRateLimitHeaders first, window switch 300/10080/43200 minutes, multiple windows -> QuotaReset + later reset, unknown reset nils out); findOpenAIHardQuotaSignal/openAI429StructuredPayloads L86-124 (JSON + SSE data: lines); normalizeOpenAIHardQuotaCode L152-163 whitelist; openAIHardQuotaResetFromObject L165-183.",
-        "Callers (rg): ratelimit_service.go, openai_gateway_passthrough.go, openai_account_runtime_block_fastpath.go, account_test_service.go - all core account state paths.",
-        "No production behavior edit or test execution for this file."
-      ]
+      "content_sha256": "2cb5d5d637bf9119f7d37bb9e487d173edf8b2c52cd9bbbc12028c27b54539e0",
+      "review_fingerprint": "2cb5d5d637bf9119f7d37bb9e487d173edf8b2c52cd9bbbc12028c27b54539e0",
+      "review_status": "pending"
     },
     {
       "path": "backend/internal/service/openai_oauth_429_classifier_test.go",
@@ -15897,19 +15691,9 @@
       "candidate_owner": "mixed-requires-review",
       "role": "source",
       "present": true,
-      "content_sha256": "e51f3f545e49849bce5becad077136027a84389e82475cc273488c3e3009df94",
-      "review_fingerprint": "e51f3f545e49849bce5becad077136027a84389e82475cc273488c3e3009df94",
-      "review_status": "reviewed",
-      "decision": "core-mechanism",
-      "owner": "core-quota-and-protocol",
-      "reason": "下游新增：HTTP Responses 发送边界上的单次有损重试引擎（推理签名被上游拒绝时剥离 encrypted_content 重发一次）。策略判定全部经 plugin_codex_recovery.go 委托给 codex-runtime 插件（enabled/rejection/select）；插件不可用时首次尝试降级为禁用恢复并记 policy_unavailable 诊断，重试中途不可用则 StopError 请求级终止，不会静默改写主请求。缓存 scope 绑定 UserID/APIKeyID/GroupID/AccountID 及认证头、代理、token 的 SHA-256 摘要，凭据只进摘要不落日志；重试保留原 deadline/取消、禁用重定向与 GetBody，身份或体变更即终止。发现一处低危：拒绝码字面量与插件重复（见 findings）。仅静态阅读。",
-      "evidence": [
-        "Full-file static review: artifacts/evidence/v027-claude-S14-svc-openai-reasoning-1-review.json",
-        "Anchors: openAIReasoningRecoveryState L31-L64 (single retryUsed budget, immutable original vs wire), PrepareRequest send-boundary re-validation L226-L309 (identity digest L197-L216, deadline/cancel propagation L278-L286, GetBody cleared L306), skipRejectedHistory negative-cache skip with non-sliding TTL L311-L356, TryRecover single-use gate + protected statuses 401/402/403/407/429 L544-L597, StopError terminal never re-enters failover (no Unwrap, NextAccountStop) L599-L705, record() logs digests only L790-L825.",
-        "Plugin boundary: openAIReasoningPolicyEnabled / readOpenAIRecoveryRejection / selectOpenAIRecoveryIndices in plugin_codex_recovery.go L88-L171 invoke capability extensions.recovery.v1 with account scope; selection indices re-validated against local cipher indices (L160-L169) so a faulty plugin cannot strip arbitrary items.",
-        "Finding recorded: L380-L389 parseOpenAIReasoningRejection duplicates the two rejection-code literals also present in plugins/codex-runtime/recovery/policy.go:24 (classification only, not the retry decision).",
-        "git ls-tree aea725f -- <path> empty: new downstream file. Statically read only; tests were not executed and no production behavior was verified."
-      ]
+      "content_sha256": "ba069dac7fde6c786c95ef95222fdfc17faa02a46f0ff4f45b7fdb189c9fec18",
+      "review_fingerprint": "ba069dac7fde6c786c95ef95222fdfc17faa02a46f0ff4f45b7fdb189c9fec18",
+      "review_status": "pending"
     },
     {
       "path": "backend/internal/service/openai_reasoning_recovery_integration_test.go",
@@ -17490,16 +17274,9 @@
       "candidate_owner": "core-extension-and-job-host",
       "role": "test-or-fixture",
       "present": true,
-      "content_sha256": "68b6eeaca0a3d0c7d3eb1416a996345a7a78b481c155dea9a5b9a3c325ebbc86",
-      "review_fingerprint": "68b6eeaca0a3d0c7d3eb1416a996345a7a78b481c155dea9a5b9a3c325ebbc86",
-      "review_status": "reviewed",
-      "decision": "reference",
-      "owner": "core-extension-and-job-host",
-      "reason": "Real manager-built broker with a deliberately stale local projection proves excluded accounts cannot read/resolve/measure or write an account projection, and list output contains only the included cohort. A count assertion requires one installation read per call. Eleven persisted drift cases include revoked binding, zero rollout, type, lifecycle state, package, config and generation changes. Scope-read failure denies; previously issued owned observations finish as unbilled gaps and wrong-owner cleanup is rejected.",
-      "evidence": [
-        "Four new test bodies were read and actually RUN/PASS; the scope regression first failed on real broker calls, not only missing interfaces.",
-        "artifacts/evidence/v027-broker-and-request-scope-review.json"
-      ]
+      "content_sha256": "8a750e01527bb2cd1a34c7dd98a85324607063a44f354993113a03e4b1914924",
+      "review_fingerprint": "8a750e01527bb2cd1a34c7dd98a85324607063a44f354993113a03e4b1914924",
+      "review_status": "pending"
     },
     {
       "path": "backend/internal/service/plugin_bundle.go",
@@ -17660,21 +17437,9 @@
       "candidate_owner": "core-extension-and-job-host",
       "role": "source",
       "present": true,
-      "content_sha256": "b4d0471f13fffdeda4e8beb47680e1f849e5fa866329f88fb06faeb4061bba3b",
-      "review_fingerprint": "b4d0471f13fffdeda4e8beb47680e1f849e5fa866329f88fb06faeb4061bba3b",
-      "review_status": "reviewed",
-      "decision": "adapter",
-      "owner": "codex-runtime",
-      "reason": "新增 account-aware 共用入口；account=nil 才走共享 domain，有账号则携带 AccountID 和真实 platform/type 经 invokeProcessExtensionCached。available 也显式接收 ID。非 OpenAI OAuth-like 账号不进入此策略；原有 8 KiB/一秒边界、结果校验及启用策略失败不能偷偷回落的语义保留。",
-      "evidence": [
-        "invokeCodexIdentityPolicyForAccount",
-        "codexIdentityPolicyAvailable accountID argument",
-        "resolveCodexOutboundIdentityForAccountContext scoped plan",
-        "v027-astra-codex-scope-review.json:T-001",
-        "v027-astra-codex-scope-review.json:T-002",
-        "v027-astra-codex-scope-review.json:T-004",
-        "Source review covers the complete named file; synthetic tests are not real token, model or database validation. Unchanged repository CAS code is not retested here."
-      ]
+      "content_sha256": "5109f9249749ccf73625832abd145af118c6c4501a3649c4329347767a04c9c0",
+      "review_fingerprint": "5109f9249749ccf73625832abd145af118c6c4501a3649c4329347767a04c9c0",
+      "review_status": "pending"
     },
     {
       "path": "backend/internal/service/plugin_codex_identity_test.go",
@@ -17954,16 +17719,9 @@
       "candidate_owner": "core-extension-and-job-host",
       "role": "test-or-fixture",
       "present": true,
-      "content_sha256": "75056b876d31bcbedd91226ffc0a0962f968c15e342dd414b3afd93ecd17c723",
-      "review_fingerprint": "75056b876d31bcbedd91226ffc0a0962f968c15e342dd414b3afd93ecd17c723",
-      "review_status": "reviewed",
-      "decision": "reference",
-      "owner": "core-extension-and-job-host",
-      "reason": "Environment-gated tests install a supplied locally signed package and check independent identity, signature state, extension API, required UI files, and absence of private-key/host-internal path names. Bundle case compares the dynamic domain list, rejects duplicate/undeclared filenames, recomputes each package SHA and checks installed identities/assets. It does not execute processes or prove all business migration paths.",
-      "evidence": [
-        "Both complete test bodies read, including explicit t.Skip on missing artifact environment and the expectedFiles deletion set. Not rerun and not counted as current official bundle acceptance.",
-        "artifacts/evidence/v027-plugin-package-static-review.json"
-      ]
+      "content_sha256": "c02331c8f38ec6ee7335f8965a4960ac61d33439f4ba72b0b73ecfe27b4def41",
+      "review_fingerprint": "c02331c8f38ec6ee7335f8965a4960ac61d33439f4ba72b0b73ecfe27b4def41",
+      "review_status": "pending"
     },
     {
       "path": "backend/internal/service/plugin_extension_runtime_test.go",
@@ -17990,16 +17748,9 @@
       "candidate_owner": "core-extension-and-job-host",
       "role": "source",
       "present": true,
-      "content_sha256": "2d8ca482cf20491d6c2f513f41182a246c348d9f69217792d56c152bec6714cd",
-      "review_fingerprint": "2d8ca482cf20491d6c2f513f41182a246c348d9f69217792d56c152bec6714cd",
-      "review_status": "reviewed",
-      "decision": "core-mechanism",
-      "owner": "core-extension-and-job-host",
-      "reason": "Account-bearing broker calls obtain one current installation snapshot, then require the declared capability, actual account identity and enabled rollout. Lists filter each actual row; credentials require the distinct credential capability; metrics return only recognized counters; projection writes check account identity, bounded fields and scope. Storage keys remain authenticated-plugin namespaces and CAS/lease writes retain generation fencing. Observation completion deliberately keeps owned cleanup available after capability stop without issuing new credentials.",
-      "evidence": [
-        "Call, pluginHostOperationUsesAccountScope, permitsAccount, permitsCapability; actual denied credential resolver/write counters and retained observation gap assertion.",
-        "artifacts/evidence/v027-broker-and-request-scope-review.json"
-      ]
+      "content_sha256": "820654f0505901adeefd0d9a9d3c0aeeae9b3a8a877a6eca06cdfd62e6cc2759",
+      "review_fingerprint": "820654f0505901adeefd0d9a9d3c0aeeae9b3a8a877a6eca06cdfd62e6cc2759",
+      "review_status": "pending"
     },
     {
       "path": "backend/internal/service/plugin_extensions.go",
@@ -18084,33 +17835,30 @@
       ]
     },
     {
+      "path": "backend/internal/service/plugin_host_services_broker_test.go",
+      "candidate_owner": "core-extension-and-job-host",
+      "role": "test-or-fixture",
+      "present": true,
+      "content_sha256": "7b7f005b854bd45f631f7441cd9b96b222b2df0f64800f6fef01efa203193b74",
+      "review_fingerprint": "7b7f005b854bd45f631f7441cd9b96b222b2df0f64800f6fef01efa203193b74",
+      "review_status": "pending"
+    },
+    {
       "path": "backend/internal/service/plugin_image_bridge.go",
       "candidate_owner": "core-extension-and-job-host",
       "role": "source",
       "present": true,
-      "content_sha256": "08d6dbe794969b337c34e0c41a39f8a2749e3049c0f4178532ae1aac94e79e3d",
-      "review_fingerprint": "08d6dbe794969b337c34e0c41a39f8a2749e3049c0f4178532ae1aac94e79e3d",
-      "review_status": "reviewed",
-      "decision": "adapter",
-      "owner": "image-tools",
-      "reason": "下游新增源文件（235 行，上游无此文件）：OpenAI Responses 请求体到 image-tools 插件 image.responses.plan 操作的宿主桥接。imageBridgeText/imageBridgeControls/imageBridgeFacts 把请求体抽成有界事实（字符串 ≤256 字节、image_generation 工具 ≤256 个、n 的 float64/json.Number 处理并剔除 NaN/Inf），queryImageBridgeWithSnapshot 把 Cindy 目录快照的能力、别名与 catalog 开关附在请求上，以 request 能力、1 秒超时、带账号 ID（有账号时）经 invokeProcessExtensionCached 调用插件，把 image_model_not_found 映射为 ErrCindyResponsesImageToolModelNotFound、其他错误码原样报错、解析失败或计划越界视为 ErrExtensionOperationUnavailable；validImageBridgePlan 校验插件返回的改写只指向快照中同一身份的公开模型且只在 n 存在时剥离，applyImageBridgePlan 才改写 body。四个入口：CindyModelSupportsResponsesImageBridge / CindyResponsesImageRoutingModel（预选，无账号）、mapCindyOpenAIResponsesImageModels 与 ResolveCindyResponsesImageToolsForAccount（选定账号，仅 Cindy API-key 账号）。改写策略本身由 plugins/image-tools（manifest 声明 image.responses.plan，policy/module.go 实现）拥有，宿主只做事实抽取、调用、校验与应用，故为 adapter / image-tools；但 validImageBridgePlan 复刻了目录身份语义、ResolveCindyResponsesImageTools 已无生产调用者，见两条 low finding。静态阅读，未执行。",
-      "evidence": [
-        "Full-file static review: artifacts/evidence/v027-claude-S57-plugin-manager-T1-review.json",
-        "New downstream (git ls-tree aea725f prints nothing). Fact extraction L15-L69; queryImageBridge/queryImageBridgeWithSnapshot L71-L108 (AccountID bound L89-L91, context.WithTimeout 1s L92-L93, result code mapping L98-L106); validImageBridgePlan L110-L141; applyImageBridgePlan L143-L162; entry points L164-L235.",
-        "Callers (rg, non-test): handler/openai_gateway_handler.go L419 (CindyModelSupportsResponsesImageBridge), L426 (ResolveCindyResponsesImageToolsForAccount with nil account, preselection), L434 (with account), L823 (CindyResponsesImageRoutingModel); service/openai_gateway_forward.go L31 (ForAccount with account), L460, L568 (mapCindyOpenAIResponsesImageModels with account); openai_account_scheduler.go L2692. ResolveCindyResponsesImageTools L207 has no production caller.",
-        "Plugin side: plugins/image-tools/manifest.source.json L14 declares image.responses.plan under extensions.request.v1; plugins/image-tools/policy/module.go L78 implements it; SDK types ImageBridgeValue/Controls/Tool/Request/ModelPlan/Plan in pkg/extensionapi/v1/image.go L59-L98. Helpers outside the slice: LoadCindyCatalogSnapshot cindy_catalog_snapshot.go L47, resolveKnownCindyCapability cindy_capability_catalog.go L115, IsCindyAPIKeyAccount cindy_identity.go L33, invokeProcessExtensionCached plugin_operation.go L29, ErrCindyResponsesImageToolModelNotFound openai_codex_transform.go L16.",
-        "Safety checks read: L159 type assertion tools[change.Index].(map[string]any) is guarded because validImageBridgePlan (run before apply in every path) only accepts indexes taken from image_generation tool maps; duplicate indexes are rejected by the delete at L138; no secrets are logged (the file has no logging).",
-        "Not claimed: behaviour of the plugin implementation, of the cached invocation path (plugin_operation.go) or of the gateway callers; none of them is in this slice.",
-        "No production behavior edit or test execution for this file."
-      ]
+      "content_sha256": "2e3f9941e7ffea90fe84721913140fd863ea45ee4016ab8a30fe08cdfa639468",
+      "review_fingerprint": "2e3f9941e7ffea90fe84721913140fd863ea45ee4016ab8a30fe08cdfa639468",
+      "review_status": "pending"
     },
     {
       "path": "backend/internal/service/plugin_image_bridge_test.go",
       "candidate_owner": "core-extension-and-job-host",
       "role": "test-or-fixture",
       "present": true,
-      "content_sha256": "57a110c09a7e3b7b3ace2b6aa8ce23ca2af480ffd8eb308498fe80eb93db4542",
-      "review_fingerprint": "57a110c09a7e3b7b3ace2b6aa8ce23ca2af480ffd8eb308498fe80eb93db4542",
+      "content_sha256": "9984fa9cb22f205931c7b9666a149050fde6bb6d535fb46231d4a188917fc09e",
+      "review_fingerprint": "9984fa9cb22f205931c7b9666a149050fde6bb6d535fb46231d4a188917fc09e",
       "review_status": "pending"
     },
     {
@@ -18176,23 +17924,9 @@
       "candidate_owner": "core-extension-and-job-host",
       "role": "source",
       "present": true,
-      "content_sha256": "9968e67352d8cc26ce3094e85b03e70dcb016f6ef635db80058f63114e245a47",
-      "review_fingerprint": "9968e67352d8cc26ce3094e85b03e70dcb016f6ef635db80058f63114e245a47",
-      "review_status": "reviewed",
-      "decision": "core-mechanism",
-      "owner": "core-extension-and-job-host",
-      "reason": "插件管理器（1532 行；上游 aea725f 已有 1154 行版本，git diff -U0 共 793 行差异）。上游版本只管理单个 OpenAI OAuth 出站插件的安装/启停/配置/UI 令牌；下游把它扩成多插件扩展宿主：结构体新增 bundlePath/quotaActivity/traffic 与原子发布的 extensions 注册表，Start 先 bootstrapBundle，Stop 用 CAS 注销进程级 operation/catalog 提供者；reconcile 改为以数据库绑定为权威的多插件循环——读库失败即把扩展注册表标为不可用（fail-closed）、恢复挂起的更新、validatePluginRegistry、依赖就绪检查、每插件兼容性→Incompatible/健康检查失败→Error 并 drain、不再需要的 runtime 先 beginDrain 再 10s drain，最后统一 publishExtensionRegistryLocked；Install 对同 key 已安装直接返回 ErrPluginAlreadyInstalled（上游允许覆盖停用中的旧包），samePluginPackage 增加 PackageSHA256 比对；Enable/Disable/Delete/SaveConfig/Test 全部加 validatePluginPrecondition 与 WithPluginExpectedRevision 乐观并发写（替代上游 BeginEnable），功能插件必须 100% 灰度，Disable 先检查其余启用插件的依赖；配置保存改为「校验→加密→带 revision 写库→回读核对→apply」并返回 PluginConfigSnapshot 回执，apply 失败 pausePluginForUpdate（上游是先 apply 再回滚的 restoreRuntimeConfig，已删除）；UI 资产令牌 claims 新增 actor_id/view_context/entrypoint/permission/package_sha256，CreateUIAssetSession 按贡献页与角色匹配、禁用插件不得铸造业务页会话、ConfigFlag 门控、视图身份必须带 actor，parseUIAssetToken 校验 permission 白名单与 ui/ 下安全相对路径，ReadUIAssetForToken 把读取绑定到令牌里的 package sha 与入口目录；newRuntime 在 RuntimeGeneration>0 时先取 generation 租约再启动进程；buildHostServices 只给 legacy（ExtensionAPI==0）OAuth 插件账号目录，对 extension-API 插件关闭 legacy KV 端口（host.store=nil）改用带 accountScope/active 闭包的 generation 围栏 broker；removeRuntimeLocked 撤回扩展注册。全部是通用扩展宿主机制，无某一插件域的业务规则，归 core-extension-and-job-host。静态阅读，未执行；签名/清单校验发生在 installer（plugin_package.go，不在本 slice），此处只确认管理器依赖 installer 结果并自行做本地二进制与 UI 资产 sha256 复核。",
-      "evidence": [
-        "Full-file static review: artifacts/evidence/v027-claude-S57-plugin-manager-T1-review.json",
-        "Read in six chunks L1-L300, L301-L600, L601-L900, L901-L1200, L1201-L1500, L1501-L1532; delta read as git diff -U0 aea725f (793 lines, upstream blob 8e69978, 1154 lines) in three pieces. Key delta hunks: struct/registry L48-L87; Start/Stop L96-L162; Install duplicate refusal L214-L220; readPluginRegistryForReconcile fail-closed L275-L290; reconcileOnce L302-L391 and reconcilePlugin L393-L469; samePluginPackage L592-L603; Enable L641-L743; Disable dependency check L745-L788; Delete L790-L823; config receipts L825-L971; Test/Status L973-L1034; UI claims/session/token L1036-L1197; readUIAsset L1211-L1261; publishRuntimeLocked L1345-L1354; newRuntime lease L1356-L1381; buildHostServices L1395-L1441; removeRuntimeLocked L1455-L1472.",
-        "Integrity and confinement checks read: verifyLocalPluginBinary L605-L639 (install path under managed root, runtime entry declared, sha256 equals BinarySHA256); ensureLocalInstallation L514-L554 restores from the DB artifact through installer.Install and re-checks samePluginPackage; readUIAsset L1211-L1261 requires the logical path to be declared in Manifest.Files under ui/, joins with safePluginJoin, caps at 32 MiB and compares sha256 with the manifest; removeManagedPath L1488-L1505 refuses paths outside the root.",
-        "Token and config hygiene: parseUIAssetToken L1161-L1197 (len <= 4096, AES-GCM via encryptor, purpose prefix, DisallowUnknownFields + single JSON value, permission whitelist, entrypoint under ui/, expiry <= 1h); config L866-L889 (<= 4 MiB, valid JSON object); decryptConfig L1474-L1486 never logs plaintext; all slog.Warn calls (L124, L269, L313, L577) carry only plugin_id/error.",
-        "Timeouts and cancellation: health 5s L409; config validate/apply 15s L914/L959/L1334; Test 30s L1008; Status 10s L1031; ResolveUIAssetToken 5s L1150; runtime drain 10s (L160, L388, L416, L466, L510, L685, L716); reconcile loop runs on context.WithoutCancel(ctx) with explicit cancel in Stop (L114, L142-L147).",
-        "Legacy port: buildHostServices L1400-L1412 keeps the pluginKey-scoped KV store and the credential directory only for plugins with Requires.ExtensionAPI == 0 that declare the OpenAI OAuth outbound capability; extension-API plugins get host.store = nil and the fenced pluginExtensionHost whose accountScope closure re-reads the DB and requires State == Enabled and an unchanged runtime/config (L1415-L1430).",
-        "Open point resolved in the plugin_runtime.go entry: newRuntime L1377-L1379 returns the observeLease error without a local kill, but observeLease (plugin_runtime.go L353-L370) only fails when the lease is already lost and in that branch calls r.kill() itself, which kills the child and releases the lease under killOnce; no process or lease leak.",
-        "Not claimed: package signature / manifest verification (installer, plugin_package.go), the extension registry publication (plugin_extensions.go), update resume (plugin_update.go) and lease acquisition (plugin_runtime_lease*) are outside this slice.",
-        "No production behavior edit or test execution for this file."
-      ]
+      "content_sha256": "c3255f61d29081c1228b91b7c4a71ee963e520e5ceec805d790d75c9f803bef4",
+      "review_fingerprint": "c3255f61d29081c1228b91b7c4a71ee963e520e5ceec805d790d75c9f803bef4",
+      "review_status": "pending"
     },
     {
       "path": "backend/internal/service/plugin_manifest.go",
@@ -18272,16 +18006,9 @@
       "candidate_owner": "core-extension-and-job-host",
       "role": "source",
       "present": true,
-      "content_sha256": "225ec3cb2c4b94cacbd6b2da997f070a85c3314225672f241a27a2f74086c089",
-      "review_fingerprint": "225ec3cb2c4b94cacbd6b2da997f070a85c3314225672f241a27a2f74086c089",
-      "review_status": "reviewed",
-      "decision": "core-mechanism",
-      "owner": "core-extension-and-job-host",
-      "reason": "全文读取公开操作分发与缓存。缓存按capability/operation/account/configRevision分区并受2048条限制，现统一在cache之前读取选中安装并持有该次业务准入，命中也检查取消与当前配置代次；新RPC直接使用已准入的同一runtime，不再次解析为另一个版本。",
-      "evidence": [
-        "Detailed source/commands: artifacts/evidence/v027-named-policy-admission-review.json",
-        "Eight exact new leaves plus four directly affected existing methods; no real model/DB requests."
-      ]
+      "content_sha256": "18411dac0c0d70bb2f832658a32fea9404fd0fffc76a3f2375809ee4ec2dc01c",
+      "review_fingerprint": "18411dac0c0d70bb2f832658a32fea9404fd0fffc76a3f2375809ee4ec2dc01c",
+      "review_status": "pending"
     },
     {
       "path": "backend/internal/service/plugin_operation_admission.go",
@@ -18304,16 +18031,9 @@
       "candidate_owner": "core-extension-and-job-host",
       "role": "test-or-fixture",
       "present": true,
-      "content_sha256": "c6a3f0dfe00bf6a26ac8e4b59d5f099b75b36b7ce654f767ecf9da6235158cf2",
-      "review_fingerprint": "c6a3f0dfe00bf6a26ac8e4b59d5f099b75b36b7ce654f767ecf9da6235158cf2",
-      "review_status": "reviewed",
-      "decision": "core-mechanism",
-      "owner": "core-extension-and-job-host",
-      "reason": "全文读取两个新测试，共八个实际反例。五类持久变化在缓存热读后拒绝，正控证明一次真实序列化RPC后复用缓存且每次重新取得业务准入；另验证未应用配置、调用期间配置代次变化和本地取消的结果拒绝，租约/inFlight归零。",
-      "evidence": [
-        "Detailed source/commands: artifacts/evidence/v027-named-policy-admission-review.json",
-        "Eight exact new leaves plus four directly affected existing methods; no real model/DB requests."
-      ]
+      "content_sha256": "344e392710e82a0b97254c762b03a1620d6aa4e7dfcd5800c1a4a1d72991fd60",
+      "review_fingerprint": "344e392710e82a0b97254c762b03a1620d6aa4e7dfcd5800c1a4a1d72991fd60",
+      "review_status": "pending"
     },
     {
       "path": "backend/internal/service/plugin_operation_context.go",
@@ -18370,17 +18090,9 @@
       "candidate_owner": "core-extension-and-job-host",
       "role": "source",
       "present": true,
-      "content_sha256": "25675b00dffa0e735a304f25b6503f8480f95536fc24484299609fce2bf34b30",
-      "review_fingerprint": "25675b00dffa0e735a304f25b6503f8480f95536fc24484299609fce2bf34b30",
-      "review_status": "reviewed",
-      "decision": "core-mechanism",
-      "owner": "core-extension-and-job-host",
-      "reason": "Upload/extraction uses bounded archive/file counts, safe paths, no symlinks, signed manifest and content hashes, and creates immutable installation/artifact paths before repository registration.",
-      "evidence": [
-        "plugin_package.go:62-187 bounds upload, extracts to staging, atomically renames install/artifact paths and returns package/binary digests",
-        "plugin_package.go:194-260 validates ZIP entries, manifest declarations, runtime files and signatures",
-        "plugin_package.go:292+ verifies publisher signature and trusted publisher identity"
-      ]
+      "content_sha256": "9efc604a1131d0201d4b5f9783bbbc52400e6c2aa0efab8d78c683c2ee4801f0",
+      "review_fingerprint": "9efc604a1131d0201d4b5f9783bbbc52400e6c2aa0efab8d78c683c2ee4801f0",
+      "review_status": "pending"
     },
     {
       "path": "backend/internal/service/plugin_package_test.go",
@@ -18434,16 +18146,9 @@
       "candidate_owner": "core-extension-and-job-host",
       "role": "source",
       "present": true,
-      "content_sha256": "9ed1bf694b196f802757b564cf2feb103c07245d303bdea22cd6819692ced3de",
-      "review_fingerprint": "9ed1bf694b196f802757b564cf2feb103c07245d303bdea22cd6819692ced3de",
-      "review_status": "reviewed",
-      "decision": "core-mechanism",
-      "owner": "core-extension-and-job-host",
-      "reason": "全文检查管理policy适配与宿主守卫：具名操作序列化、有界超时并将领域错误映射到既有错误；模板所需字段不得被plan丢掉、发布/回滚动作必须等于请求且allowed。注册表profile只能收窄已固定source/root/数量字节，不能增URL权限；存储只能paired双SHA candidate及六slot；文件plan只准三类型及2048字节替换段。宿主保留授权、完整性和原子发布，不复制业务版本目录。",
-      "evidence": [
-        "Full source/fixture review: artifacts/evidence/v027-host-prompt-account-contract-review.json",
-        "Referenced broker/policy/runtime behaviors remain separately tested in existing scoped evidence; no new test success implied."
-      ]
+      "content_sha256": "767d021437e1097f616ec9e55144ff914c07602a639e3f4ec42fbfd6f5015ddb",
+      "review_fingerprint": "767d021437e1097f616ec9e55144ff914c07602a639e3f4ec42fbfd6f5015ddb",
+      "review_status": "pending"
     },
     {
       "path": "backend/internal/service/plugin_prompt_profile_test.go",
@@ -18946,19 +18651,9 @@
       "candidate_owner": "core-quota-and-protocol",
       "role": "source",
       "present": true,
-      "content_sha256": "4da53f6b85f0e8cc65c06c0d943bbf1230972a5855557119347a4eb4a8d8b2fa",
-      "review_fingerprint": "4da53f6b85f0e8cc65c06c0d943bbf1230972a5855557119347a4eb4a8d8b2fa",
-      "review_status": "reviewed",
-      "decision": "core-correctness",
-      "owner": "core-quota-and-protocol",
-      "reason": "Estimate math requires same identity/period, monotonic observation time, positive utilization and cost deltas, a live reset window, and finite values; measurement fences pair upstream usage with a stable local cost point and parent billing identity for Spark.",
-      "evidence": [
-        "coverage_role=core-quota-and-protocol; coverage_sha256=4da53f6b85f0e8cc65c06c0d943bbf1230972a5855557119347a4eb4a8d8b2fa; current_sha256=4da53f6b85f0e8cc65c06c0d943bbf1230972a5855557119347a4eb4a8d8b2fa; inventory_sha256_match=true",
-        "lines 44-62: EstimateQuotaValue fails closed for unpaired, late, reset, non-positive, or non-finite deltas",
-        "lines 71-135: begin/finish fence usage query against activity stamp, usage-log cursor/count/cost, window reset, and settled bill",
-        "lines 138-171: identity includes credential identity and billing multiplier; shadow accounts resolve parent credential/rate",
-        "import path passes or merges Extra, while the first settled post-import quota observation creates the baseline row; no import-time baseline write is required for delta-only estimation"
-      ]
+      "content_sha256": "d9f4ae74a47693cb7a5f54e6f127fc3d4680654c770b7e447ecc2ed52adcd152",
+      "review_fingerprint": "d9f4ae74a47693cb7a5f54e6f127fc3d4680654c770b7e447ecc2ed52adcd152",
+      "review_status": "pending"
     },
     {
       "path": "backend/internal/service/quota_estimate_test.go",
@@ -19253,8 +18948,8 @@
       "candidate_owner": "prompt-skills",
       "role": "source",
       "present": true,
-      "content_sha256": "842016298e08e2a543d0d68045d7be7feec8a6c93bc52e206b21d39fad29ea9c",
-      "review_fingerprint": "842016298e08e2a543d0d68045d7be7feec8a6c93bc52e206b21d39fad29ea9c",
+      "content_sha256": "529d0c49ad86fd2904f4674dd9232637e221902c7e024ce09540970de35ed787",
+      "review_fingerprint": "529d0c49ad86fd2904f4674dd9232637e221902c7e024ce09540970de35ed787",
       "review_status": "pending"
     },
     {
@@ -19316,16 +19011,9 @@
       "candidate_owner": "prompt-skills",
       "role": "source",
       "present": true,
-      "content_sha256": "96d672e948433470d9e34be375b3327c2c2c059c6c9acf0c9a7039e9d274c480",
-      "review_fingerprint": "96d672e948433470d9e34be375b3327c2c2c059c6c9acf0c9a7039e9d274c480",
-      "review_status": "reviewed",
-      "decision": "adapter",
-      "owner": "prompt-skills",
-      "reason": "宿主读取插件索引后独立验证路径/折叠唯一/长度和总量；逐file按≤256KiB chunk累加，零进展/总长不符/超额立即拒绝，最后重算完整文件hash/UTF8。旧pinned入口只转同一chunk读取，排序用通用可移植键；没有旧种子表或源业务目录复制。",
-      "evidence": [
-        "Full current source and caller mapping: artifacts/evidence/v027-prompt-registry-source-review.json",
-        "Static review only; no tests/network run for unchanged source."
-      ]
+      "content_sha256": "b19447050dba028c280c138f8e4d837bb37aab1a1a35959f54f0cf566ba3573c",
+      "review_fingerprint": "b19447050dba028c280c138f8e4d837bb37aab1a1a35959f54f0cf566ba3573c",
+      "review_status": "pending"
     },
     {
       "path": "backend/internal/service/remote_skill_registry_manifest_test.go",
@@ -19368,8 +19056,8 @@
       "candidate_owner": "prompt-skills",
       "role": "test-or-fixture",
       "present": true,
-      "content_sha256": "d79a7747bb594ba68d8f70ec4a1ba74631086eb3b1679ebd3c783ca71622571b",
-      "review_fingerprint": "d79a7747bb594ba68d8f70ec4a1ba74631086eb3b1679ebd3c783ca71622571b",
+      "content_sha256": "36eed723941c168d35a6f5366b7c19142e311d5ec2e942430bd3db6a3c032496",
+      "review_fingerprint": "36eed723941c168d35a6f5366b7c19142e311d5ec2e942430bd3db6a3c032496",
       "review_status": "pending"
     },
     {
@@ -19386,8 +19074,8 @@
       "candidate_owner": "prompt-skills",
       "role": "test-or-fixture",
       "present": true,
-      "content_sha256": "a0f11fedbf4d904e321f879d1400c2dfa58df832cf1def9c855f5251e43c8c8e",
-      "review_fingerprint": "a0f11fedbf4d904e321f879d1400c2dfa58df832cf1def9c855f5251e43c8c8e",
+      "content_sha256": "3147b7527f320a71f5075e4270c774a88ae0ec10d94aafb750c180f4d6d7700a",
+      "review_fingerprint": "3147b7527f320a71f5075e4270c774a88ae0ec10d94aafb750c180f4d6d7700a",
       "review_status": "pending"
     },
     {
@@ -19395,17 +19083,9 @@
       "candidate_owner": "mixed-requires-review",
       "role": "test-or-fixture",
       "present": true,
-      "content_sha256": "de6b5526e107599ddd8c265a1f27e1e4b5081b2ff2866f6de50cc16c62b14b27",
-      "review_fingerprint": "de6b5526e107599ddd8c265a1f27e1e4b5081b2ff2866f6de50cc16c62b14b27",
-      "review_status": "reviewed",
-      "decision": "reference",
-      "owner": "core-quota-and-protocol",
-      "reason": "全文275行复核：内存HTTP body走四个实际生产stream handler，含Antigravity真实三层转换；明确断言非failover错误、commit标记、单error/DONE、无成功finish/usage以及错误后的用量排水。有效工具正控保留实ID/完整参数；Native断连控制防半状态误报，服务入口另核明文/密文路由。不启动HTTP server、不调用模型，源码和18个新叶场景的分次有效绿记录对应。",
-      "evidence": [
-        "artifacts/evidence/v027-astra-protocol-completion-review.json#SERVICE-GREEN",
-        "artifacts/evidence/v027-astra-protocol-completion-review.json#SERVICE-FINAL-TARGETED",
-        "Parent full fixture review and current caller deltas read; no normal success is inferred from test names alone."
-      ]
+      "content_sha256": "bfe0fa29bc6a76c4dcb19c4ca221b9d8ea2fd794424e91fe7b6d451f13601a7c",
+      "review_fingerprint": "bfe0fa29bc6a76c4dcb19c4ca221b9d8ea2fd794424e91fe7b6d451f13601a7c",
+      "review_status": "pending"
     },
     {
       "path": "backend/internal/service/scheduled_test_port.go",
@@ -22080,32 +21760,18 @@
       "candidate_owner": "core-extension-and-job-host",
       "role": "source",
       "present": true,
-      "content_sha256": "9c200e8e1857c6cee816ca2f2e2b0085567c4a8154a93a52596a9e17cf4bfdf9",
-      "review_fingerprint": "9c200e8e1857c6cee816ca2f2e2b0085567c4a8154a93a52596a9e17cf4bfdf9",
-      "review_status": "reviewed",
-      "decision": "core-mechanism",
-      "owner": "core-extension-and-job-host",
-      "reason": "全读公开RPC：BytesValue承载版本JSON，客户端/服务端双向4MiB上限；nil连接、编码/解码错误明确返回。固定Plugin.Invoke/Host.Call路径，plugin端校验capability名单和operation非空，Host权限由注入的HostHandler承担；ctx原样传递，无独立SQL/URL/命令接口。",
-      "evidence": [
-        "Full-file review: artifacts/evidence/v027-public-sdk-contract-review.json",
-        "Static source contract review; domain host policy/transaction validation remains separately scoped."
-      ]
+      "content_sha256": "720b6f4b0603b840ca4804c553185f53036bcda0ed4e8e0deaac6b7247eb8fb3",
+      "review_fingerprint": "720b6f4b0603b840ca4804c553185f53036bcda0ed4e8e0deaac6b7247eb8fb3",
+      "review_status": "pending"
     },
     {
       "path": "backend/pkg/extensionapi/v1/rpc_test.go",
       "candidate_owner": "core-extension-and-job-host",
       "role": "test-or-fixture",
       "present": true,
-      "content_sha256": "377565980154fa4983c79f32920bd3ce4549cc9aee00720c93ef15f0adf0c813",
-      "review_fingerprint": "377565980154fa4983c79f32920bd3ce4549cc9aee00720c93ef15f0adf0c813",
-      "review_status": "reviewed",
-      "decision": "core-mechanism",
-      "owner": "core-extension-and-job-host",
-      "reason": "完整静态审閱bufconn fixture：真实内存gRPC走admit请求并断言精确拒绝原因/model scope，未知shell.exec capability返回InvalidArgument，wait沿20ms上下文DeadlineExceeded。清理server/connection已注册；本轮未执行，亦不以此证明真实进程隔离或业务幂等。",
-      "evidence": [
-        "Full-file review: artifacts/evidence/v027-public-sdk-contract-review.json",
-        "Static source contract review; domain host policy/transaction validation remains separately scoped."
-      ]
+      "content_sha256": "92650b9ec4fb71c5e71d94eaa1f6d9d0d15fc5ddd7453a05d4a9d5184ab9a20b",
+      "review_fingerprint": "92650b9ec4fb71c5e71d94eaa1f6d9d0d15fc5ddd7453a05d4a9d5184ab9a20b",
+      "review_status": "pending"
     },
     {
       "path": "backend/pkg/extensionapi/v1/runtime.go",
@@ -25568,8 +25234,8 @@
       "candidate_owner": "mixed-requires-review",
       "role": "source",
       "present": true,
-      "content_sha256": "cd35c2daed712821d3706ba7da19132c87ee4689af0951d4cfea57d8b8326a37",
-      "review_fingerprint": "cd35c2daed712821d3706ba7da19132c87ee4689af0951d4cfea57d8b8326a37",
+      "content_sha256": "e8fe1070c9ce58879a3f54f7758aee7670d8bd0d696787e608afc9999c38863e",
+      "review_fingerprint": "e8fe1070c9ce58879a3f54f7758aee7670d8bd0d696787e608afc9999c38863e",
       "review_status": "pending"
     },
     {
@@ -26990,8 +26656,8 @@
       "candidate_owner": "core-extension-and-job-host",
       "role": "test-or-fixture",
       "present": true,
-      "content_sha256": "2a85456cc21d4e4ef49d99f828029e5ce6bfe11255c154e50e2fbf311d350b3d",
-      "review_fingerprint": "2a85456cc21d4e4ef49d99f828029e5ce6bfe11255c154e50e2fbf311d350b3d",
+      "content_sha256": "ce84a8bc973e325d8ed5c842e5dd7680c0d4d67b0522ea67f9c9cfd5bbc667da",
+      "review_fingerprint": "ce84a8bc973e325d8ed5c842e5dd7680c0d4d67b0522ea67f9c9cfd5bbc667da",
       "review_status": "pending"
     },
     {
@@ -28591,8 +28257,8 @@
       "candidate_owner": "mixed-requires-review",
       "role": "test-or-fixture",
       "present": true,
-      "content_sha256": "df3ea0d4925c01c7cdcd5a1066435d0a1f690ce923530a3c22803d9fcbc20eaa",
-      "review_fingerprint": "df3ea0d4925c01c7cdcd5a1066435d0a1f690ce923530a3c22803d9fcbc20eaa",
+      "content_sha256": "eec3d3c48db2a8f765bc7ea35205334e3a46858dd589b5f3a2dc58dc353f32e2",
+      "review_fingerprint": "eec3d3c48db2a8f765bc7ea35205334e3a46858dd589b5f3a2dc58dc353f32e2",
       "review_status": "pending"
     },
     {

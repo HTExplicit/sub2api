@@ -121,7 +121,7 @@ func readHistoricalPreflightSchema(ctx context.Context, db historicalMigrationRe
 	if err != nil {
 		return nil, historicalPreflightFailure("HISTORICAL_MIGRATION_PREFLIGHT_UNAVAILABLE", "", "schema", "catalog_query_failed", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	schema := historicalPreflightSchema{}
 	for rows.Next() {
 		var name, kind, column string
@@ -185,7 +185,7 @@ func checkHistoricalMigrationPreconditionsFS(ctx context.Context, db historicalM
 		for rows.Next() {
 			var name, stored string
 			if err := rows.Scan(&name, &stored); err != nil {
-				rows.Close()
+				_ = rows.Close()
 				return historicalPreflightFailure("HISTORICAL_MIGRATION_SCHEMA_UNSUPPORTED", "", "schema_migrations", "ledger_row_unavailable")
 			}
 			ledgerCount++
@@ -194,19 +194,19 @@ func checkHistoricalMigrationPreconditionsFS(ctx context.Context, db historicalM
 				continue
 			}
 			if stored != checksum && !isMigrationChecksumCompatible(name, stored, checksum) {
-				rows.Close()
+				_ = rows.Close()
 				failure := historicalPreflightFailure("HISTORICAL_MIGRATION_CHECKSUM_MISMATCH", name, "schema_migrations", "applied_checksum_unrecognized")
 				failure.Count = 1
 				return failure
 			}
 			if applied[name] {
-				rows.Close()
+				_ = rows.Close()
 				return historicalPreflightFailure("HISTORICAL_MIGRATION_SCHEMA_UNSUPPORTED", name, "schema_migrations", "duplicate_filename")
 			}
 			applied[name] = true
 		}
 		readErr := rows.Err()
-		rows.Close()
+		_ = rows.Close()
 		if readErr != nil {
 			return historicalPreflightFailure("HISTORICAL_MIGRATION_PREFLIGHT_UNAVAILABLE", "", "schema_migrations", "ledger_read_failed", readErr)
 		}
@@ -310,7 +310,7 @@ func checkHistoricalBlockedIDs(ctx context.Context, db historicalMigrationReader
 	if err != nil {
 		return historicalPreflightFailure("HISTORICAL_MIGRATION_PREFLIGHT_UNAVAILABLE", migration, entity, "precondition_query_failed", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	failure := historicalPreflightFailure(code, migration, entity, reason)
 	for rows.Next() {
 		var id, count int64

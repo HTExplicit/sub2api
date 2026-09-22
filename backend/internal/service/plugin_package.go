@@ -282,7 +282,7 @@ func (i *PluginPackageInstaller) VerifyPackage(ctx context.Context, artifact []b
 	if err != nil {
 		return PluginManifest{}, err
 	}
-	defer os.RemoveAll(stage)
+	defer func() { _ = os.RemoveAll(stage) }()
 	if err = i.extractArchive(ctx, archive, manifest, stage); err != nil {
 		return PluginManifest{}, err
 	}

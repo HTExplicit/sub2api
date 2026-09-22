@@ -35,15 +35,23 @@ type ticketExtensionTestConn struct {
 }
 
 func (c *ticketExtensionTestConn) Invoke(_ context.Context, _ string, args, reply any, _ ...grpc.CallOption) error {
+	input, ok := args.(*wrapperspb.BytesValue)
+	if !ok || input == nil {
+		return ErrExtensionOperationUnavailable
+	}
+	output, ok := reply.(*wrapperspb.BytesValue)
+	if !ok || output == nil {
+		return ErrExtensionOperationUnavailable
+	}
 	var request extensionv1.Invocation
-	if err := json.Unmarshal(args.(*wrapperspb.BytesValue).Value, &request); err != nil {
+	if err := json.Unmarshal(input.Value, &request); err != nil {
 		return err
 	}
 	result, err := c.invoke(request)
 	if err != nil {
 		return err
 	}
-	reply.(*wrapperspb.BytesValue).Value, err = json.Marshal(result)
+	output.Value, err = json.Marshal(result)
 	return err
 }
 func ticketTestManager(t *testing.T, cfg config.OpenAICodexTicketConfig, invoke func(extensionv1.Invocation) (extensionv1.Result, error)) *PluginManager {

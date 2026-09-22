@@ -11,7 +11,6 @@ import (
 
 type remoteSkillManifest = extensionv1.SkillManifest
 type remoteSkillManifestEntry = extensionv1.SkillManifestEntry
-type remoteSkillPinnedAssetProvenance = extensionv1.SkillAssetProvenance
 
 func loadRemoteSkillManifest() (remoteSkillManifest, error) {
 	return loadRemoteSkillManifestContext(context.Background())

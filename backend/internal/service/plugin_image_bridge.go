@@ -140,7 +140,22 @@ func validImageBridgePlan(request extensionv1.ImageBridgeRequest, plan extension
 	return true
 }
 
-func applyImageBridgePlan(body map[string]any, plan extensionv1.ImageBridgePlan) bool {
+func applyImageBridgePlan(body map[string]any, plan extensionv1.ImageBridgePlan) (bool, error) {
+	if body == nil {
+		return false, ErrExtensionOperationUnavailable
+	}
+	tools, _ := body["tools"].([]any)
+	targets := make([]map[string]any, len(plan.Tools))
+	for index, change := range plan.Tools {
+		if change.Index < 0 || change.Index >= len(tools) {
+			return false, ErrExtensionOperationUnavailable
+		}
+		target, ok := tools[change.Index].(map[string]any)
+		if !ok || target == nil {
+			return false, ErrExtensionOperationUnavailable
+		}
+		targets[index] = target
+	}
 	changed := false
 	apply := func(target map[string]any, model string, stripCount bool) {
 		if model != "" && target["model"] != model {
@@ -154,11 +169,10 @@ func applyImageBridgePlan(body map[string]any, plan extensionv1.ImageBridgePlan)
 		}
 	}
 	apply(body, plan.Model, plan.StripCount)
-	tools, _ := body["tools"].([]any)
-	for _, change := range plan.Tools {
-		apply(tools[change.Index].(map[string]any), change.Model, change.StripCount)
+	for index, change := range plan.Tools {
+		apply(targets[index], change.Model, change.StripCount)
 	}
-	return changed
+	return changed, nil
 }
 
 func CindyModelSupportsResponsesImageBridge(model string) bool {
@@ -199,7 +213,7 @@ func mapCindyOpenAIResponsesImageModels(ctx context.Context, body map[string]any
 	if err != nil {
 		return false, err
 	}
-	return applyImageBridgePlan(body, plan), nil
+	return applyImageBridgePlan(body, plan)
 }
 
 // ResolveCindyResponsesImageTools is retained for preselection callers. The
@@ -228,7 +242,11 @@ func ResolveCindyResponsesImageToolsForAccount(ctx context.Context, account *Acc
 	if err != nil {
 		return nil, err
 	}
-	if !applyImageBridgePlan(requestBody, plan) {
+	changed, err := applyImageBridgePlan(requestBody, plan)
+	if err != nil {
+		return nil, err
+	}
+	if !changed {
 		return body, nil
 	}
 	return json.Marshal(requestBody)

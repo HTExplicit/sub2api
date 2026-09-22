@@ -184,9 +184,10 @@ func TestPromptAccountChangeRestoresOnlyOwnedCarrier(t *testing.T) {
 				store.loaded = BusinessSystemPromptSnapshot{Revision: 2, Enabled: true, Body: "new-unfrozen-server"}
 				require.NoError(t, gateway.businessPromptService.Reload(context.Background()))
 				retry := first
-				if form == "original" {
+				switch form {
+				case "original":
 					retry = input
-				} else if form == "wire_rewrite" {
+				case "wire_rewrite":
 					retry, err = sjson.SetBytes(retry, "model", "after")
 					require.NoError(t, err)
 				}
@@ -228,9 +229,10 @@ func TestPromptSameAccountCacheRechecksRevocation(t *testing.T) {
 				body, application, err := gateway.applyBusinessSystemPromptForRequest(ctx, input, account, BusinessSystemPromptProtocolResponses, false)
 				require.NoError(t, err)
 				require.True(t, application.Applied)
-				if form == "input" {
+				switch form {
+				case "input":
 					body = input
-				} else if form == "cache_key_rewrite" {
+				case "cache_key_rewrite":
 					body, err = rewriteBusinessSystemPromptCacheKey(ctx, body, application)
 					require.NoError(t, err)
 				}
@@ -290,7 +292,8 @@ func TestPromptUndoMetadataIsBoundedAndHistoryStaysOutOfRPC(t *testing.T) {
 	require.NoError(t, err)
 	require.True(t, application.Applied)
 	value, _ := ctx.Get(businessSystemPromptContextKey(ctx, businessSystemPromptRequestApplicationKey, BusinessSystemPromptProtocolResponses))
-	state := value.(businessSystemPromptRequestState)
+	state, ok := value.(businessSystemPromptRequestState)
+	require.True(t, ok)
 	require.Empty(t, state.undo.instructions)
 	require.False(t, state.undo.restorable)
 	rejected, _, err := gateway.applyBusinessSystemPromptForRequest(ctx, output, excluded, BusinessSystemPromptProtocolResponses, false)
@@ -492,13 +495,14 @@ func TestPromptPlatformChangeUsesBoundedNativeCarrierProof(t *testing.T) {
 				before := append([]byte(nil), body...)
 				grok := &Account{ID: account.ID + 1, Platform: PlatformGrok, Type: AccountTypeAPIKey}
 				clean, application, err := gateway.applyBusinessSystemPromptForRequest(ctx, body, grok, protocol, false)
-				if form == "owned_output" {
+				switch form {
+				case "owned_output":
 					require.NoError(t, err)
 					require.JSONEq(t, gjson.GetBytes(input, field).Raw, gjson.GetBytes(clean, field).Raw)
-				} else if form == "clean_changed" {
+				case "clean_changed":
 					require.NoError(t, err)
 					require.Equal(t, before, clean, "independent customer control and user history remain unchanged")
-				} else {
+				default:
 					require.ErrorIs(t, err, ErrBusinessSystemPromptUnavailable)
 					require.Nil(t, clean)
 				}
@@ -567,7 +571,8 @@ func TestPromptCarrierTransitionCannotForgetEarlierAppliedOutput(t *testing.T) {
 				require.Equal(t, first.ServerInstructions, second.ServerInstructions, "no arbitrary change to approved content is assumed")
 				require.Equal(t, first.Revision, second.Revision)
 				cached, _ := ctx.Get(businessSystemPromptContextKey(ctx, businessSystemPromptRequestApplicationKey, BusinessSystemPromptProtocolChat))
-				state := cached.(businessSystemPromptRequestState)
+				state, ok := cached.(businessSystemPromptRequestState)
+				require.True(t, ok)
 				require.True(t, state.undo.present && state.otherUndo.present)
 				require.NotEqual(t, state.undo.carrier, state.otherUndo.carrier)
 				require.LessOrEqual(t, len(state.undo.instructions)+len(state.otherUndo.instructions), businessSystemPromptRestoreMaxBytes)

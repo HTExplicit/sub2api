@@ -94,7 +94,8 @@ func TestAccountCreateNativeNumericHashAndStrictProviderBlock(t *testing.T) {
 	valid := accountCreateRequestJSON(t, true)
 	var fields map[string]any
 	require.NoError(t, json.Unmarshal(valid, &fields))
-	provider := fields["provider_create"].(map[string]any)
+	provider, ok := fields["provider_create"].(map[string]any)
+	require.True(t, ok)
 	provider["credentials"] = map[string]any{"api_key": "private-must-not-be-echoed"}
 	invalid, err := json.Marshal(fields)
 	require.NoError(t, err)

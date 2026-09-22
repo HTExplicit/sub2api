@@ -18,7 +18,7 @@ import (
 func TestHistoricalMigrationPreflightUnrelatedFSHasNoDatabaseCalls(t *testing.T) {
 	db, mock, err := sqlmock.New()
 	require.NoError(t, err)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 	for _, fsys := range []fstest.MapFS{{}, {"001_unit.sql": {Data: []byte("SELECT 1;")}}} {
 		require.NoError(t, checkHistoricalMigrationPreconditionsFS(context.Background(), db, fsys))
 	}
@@ -28,7 +28,7 @@ func TestHistoricalMigrationPreflightUnrelatedFSHasNoDatabaseCalls(t *testing.T)
 func TestHistoricalMigrationPreflightRunnerRejectsChecksumBeforeAnyWrite(t *testing.T) {
 	db, mock, err := sqlmock.New()
 	require.NoError(t, err)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 	fsys := fstest.MapFS{
 		"001_prefix.sql":  {Data: []byte("CREATE TABLE must_not_be_created (id BIGINT);")},
 		cindyNullTotal252: {Data: []byte("SELECT 252;")},
@@ -52,7 +52,7 @@ func TestHistoricalMigrationPreflightRunnerRejectsChecksumBeforeAnyWrite(t *test
 func TestHistoricalMigrationPreflightAppliedAndExistingCompatibilityRemainAccepted(t *testing.T) {
 	db, mock, err := sqlmock.New()
 	require.NoError(t, err)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 	legacy, err := migrations.FS.ReadFile("054_drop_legacy_cache_columns.sql")
 	require.NoError(t, err)
 	latest := []byte("SELECT 252;")
@@ -72,7 +72,7 @@ func TestHistoricalMigrationPreflightAppliedAndExistingCompatibilityRemainAccept
 func TestHistoricalMigrationPreflightQueryErrorsAreSanitized(t *testing.T) {
 	db, mock, err := sqlmock.New()
 	require.NoError(t, err)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 	upstream := &pq.Error{Code: "57P03", Message: "upstream detail with private credentials"}
 	mock.ExpectQuery(regexp.QuoteMeta(historicalPreflightSchemaSQL)).
 		WillReturnError(upstream)

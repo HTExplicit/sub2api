@@ -1550,19 +1550,6 @@ func writeOpenAIModelsList(c *gin.Context, modelIDs []string) {
 	})
 }
 
-func writeCindyOpenAIModelsList(c *gin.Context, modelIDs []string) {
-	ctx := context.Background()
-	if c.Request != nil {
-		ctx = c.Request.Context()
-	}
-	snapshot, err := service.LoadCindyCatalogSnapshot(ctx, nil)
-	if err != nil {
-		c.JSON(http.StatusServiceUnavailable, gin.H{"error": gin.H{"type": "api_error", "message": "Cindy catalog snapshot is unavailable"}})
-		return
-	}
-	writeCindyOpenAIModelsListSnapshot(c, modelIDs, snapshot)
-}
-
 func writeCindyOpenAIModelsListSnapshot(c *gin.Context, modelIDs []string, snapshot *service.CindyCatalogSnapshot) {
 	defaultsByID := make(map[string]openai.Model, len(openai.DefaultModels))
 	for _, model := range openai.DefaultModels {

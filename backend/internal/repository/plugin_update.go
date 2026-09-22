@@ -175,7 +175,7 @@ func (r *pluginRepository) StagePluginUpdate(ctx context.Context, previous, cand
 	if err != nil {
 		return err
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 	var generation int64
 	// The disabled rows of an unfinished bundle are temporary, not activation
 	// intent. Explicit pinned installs no longer belong to that old journal.
@@ -295,7 +295,7 @@ func scanPluginFenceRow(ctx context.Context, tx pluginFenceQuerier, query string
 	if err != nil {
 		return err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	if !rows.Next() {
 		if err := rows.Err(); err != nil {
 			return err

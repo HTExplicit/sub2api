@@ -21,7 +21,7 @@ func accountViewFenceMetadata() json.RawMessage {
 func TestAccountViewJobFenceLocksBothOwnersInStableOrder(t *testing.T) {
 	db, mock, err := sqlmock.New()
 	require.NoError(t, err)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 	mock.ExpectBegin()
 	mock.ExpectQuery(`SELECT runtime_generation,state,package_sha256,revision.*FOR SHARE`).WithArgs(int64(3), service.CindyAccountViewPluginKey).WillReturnRows(sqlmock.NewRows([]string{"generation", "state", "package", "revision"}).AddRow(11, service.PluginStateEnabled, strings.Repeat("a", 64), 7))
 	mock.ExpectQuery(`SELECT p.runtime_generation,p.state,.*FOR SHARE`).WithArgs(int64(8)).WillReturnRows(sqlmock.NewRows([]string{"generation", "state", "enabled"}).AddRow(4, service.PluginStateEnabled, true))
@@ -36,7 +36,7 @@ func TestAccountViewJobFenceLocksBothOwnersInStableOrder(t *testing.T) {
 func TestAccountViewJobFenceRejectsRevokedOriginBeforeAnyWrite(t *testing.T) {
 	db, mock, err := sqlmock.New()
 	require.NoError(t, err)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 	mock.ExpectBegin()
 	mock.ExpectQuery(`SELECT runtime_generation,state,package_sha256,revision.*FOR SHARE`).WithArgs(int64(3), service.CindyAccountViewPluginKey).WillReturnRows(sqlmock.NewRows([]string{"generation", "state", "package", "revision"}).AddRow(11, service.PluginStateDisabled, strings.Repeat("a", 64), 8))
 	mock.ExpectRollback()

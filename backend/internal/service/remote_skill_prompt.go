@@ -39,7 +39,6 @@ func buildRemoteSkillPromptCapture(raw []byte) (RemoteSkillPromptCapture, error)
 	return capture, nil
 }
 
-
 // rewriteRemoteSkillPromptBlocks supports self-consistency validation fixtures
 // for historical dual-marker pairs. New candidates use rewriteRemoteSkillPromptBlock.
 func rewriteRemoteSkillPromptBlocks(raw []byte, routingBlock, securityResearchRoutingBlock string) ([]byte, error) {

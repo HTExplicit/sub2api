@@ -55,8 +55,12 @@ func (m *PluginManager) InvokeCachedOperation(ctx context.Context, platform, acc
 	runtime := admission.runtime
 	key := in.Capability + "\x00" + in.Operation + "\x00" + strconv.FormatInt(in.AccountID, 10) + "\x00" + strconv.FormatUint(admission.revision, 10) + "\x00" + string(in.Payload)
 	if cached, ok := runtime.catalogCache.Load(key); ok {
+		payload, valid := cached.(json.RawMessage)
+		if !valid {
+			return extensionv1.Result{}, ErrExtensionOperationUnavailable
+		}
 		var result extensionv1.Result
-		if json.Unmarshal(cached.(json.RawMessage), &result) == nil {
+		if json.Unmarshal(payload, &result) == nil {
 			if err := admission.validate(); err != nil {
 				return extensionv1.Result{}, err
 			}

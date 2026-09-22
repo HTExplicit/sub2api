@@ -92,7 +92,11 @@ func (m *PluginManager) ResolveCatalog(ctx context.Context, query extensionv1.Ca
 		cacheKey := strconv.FormatUint(revision, 10) + ":" + string(raw)
 		var payload json.RawMessage
 		if cached, ok := runtime.catalogCache.Load(cacheKey); ok {
-			payload = cached.(json.RawMessage)
+			var valid bool
+			payload, valid = cached.(json.RawMessage)
+			if !valid {
+				return extensionv1.CatalogMatch{}, errors.New("invalid model catalog cache")
+			}
 		} else {
 			// This resolver already read the selected installation and holds its
 			// exact business lease. Invoke that same runtime without a second

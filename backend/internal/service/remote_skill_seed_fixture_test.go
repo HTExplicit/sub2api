@@ -42,7 +42,6 @@ func readRemoteSkillTreeFS(tree fs.FS, root string) (map[string][]byte, error) {
 }
 
 var embeddedBusinessSystemPrompt = registry.DefaultPrompt()
-var embeddedGPT56InstructPrompt = promptsource.DefaultSeed().Body
 
 type remoteSkillSeedFixtureFS struct{ fs.FS }
 

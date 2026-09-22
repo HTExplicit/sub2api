@@ -125,7 +125,7 @@ func TestNormalizeCindyGroupSplitInputRejectsAmbiguousSelections(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			_, err := normalizeCindyGroupSplitInput(test.input, true)
+			_, err := normalizeCindyGroupSplitInputContext(context.Background(), test.input, true)
 			require.Error(t, err)
 		})
 	}

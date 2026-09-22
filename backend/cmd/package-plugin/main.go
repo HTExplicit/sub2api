@@ -190,6 +190,10 @@ func packagePlugin(options packageOptions) error {
 		return errors.New("a valid Ed25519 private signing key is required")
 	}
 	private := ed25519.PrivateKey(key)
+	publisherPublic, ok := private.Public().(ed25519.PublicKey)
+	if !ok {
+		return errors.New("invalid Ed25519 public signing key")
+	}
 	signature := service.PluginSignature{Algorithm: "ed25519", KeyID: options.keyID, Signature: base64.StdEncoding.EncodeToString(ed25519.Sign(private, manifestRaw))}
 	signatureRaw, err := json.Marshal(signature)
 	if err != nil {
@@ -212,7 +216,7 @@ func packagePlugin(options packageOptions) error {
 	sort.Strings(names)
 	for _, name := range names {
 		header := &zip.FileHeader{Name: name, Method: zip.Deflate}
-		header.SetModTime(time.Date(1980, 1, 1, 0, 0, 0, 0, time.UTC))
+		header.Modified = time.Date(1980, 1, 1, 0, 0, 0, 0, time.UTC)
 		header.SetMode(0644)
 		if name == binaryPath {
 			header.SetMode(0755)
@@ -240,7 +244,7 @@ func packagePlugin(options packageOptions) error {
 	}
 	digest := sha256.Sum256(content)
 	packageDigest := hex.EncodeToString(digest[:])
-	publicKey := base64.StdEncoding.EncodeToString(private.Public().(ed25519.PublicKey))
+	publicKey := base64.StdEncoding.EncodeToString(publisherPublic)
 	if options.bundleLock != "" {
 		if strings.TrimSpace(options.hostVersion) == "" {
 			return errors.New("tested-host-version is required when writing a bundle lock")

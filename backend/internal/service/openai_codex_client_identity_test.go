@@ -93,7 +93,7 @@ func TestEnforceCodexIdentityHeadersForAccountUsesDerivedTUIIdentity(t *testing.
 	h := http.Header{}
 	h.Set("originator", "codex_cli_rs")
 	h.Set("user-agent", "codex_cli_rs/0.150.0 (Windows 10.0.19045; x86_64) unknown")
-	enforceCodexIdentityHeadersForAccount(h, account, "")
+	require.NoError(t, enforceCodexIdentityHeadersForAccount(h, account, ""))
 
 	version := resolveCodexOutboundIdentity("").version
 	uaPattern := regexp.MustCompile(`^codex-tui/` + regexp.QuoteMeta(version) +

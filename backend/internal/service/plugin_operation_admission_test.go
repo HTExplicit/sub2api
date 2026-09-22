@@ -53,9 +53,10 @@ func TestNamedPolicyInvocationRejectsChangedAppliedConfigAndCanceledResult(t *te
 			calls := 0
 			runtime.extension = extensionv1.NewClient(&ticketExtensionTestConn{invoke: func(extensionv1.Invocation) (extensionv1.Result, error) {
 				calls++
-				if scenario == "changed-during-call" {
+				switch scenario {
+				case "changed-during-call":
 					runtime.configRevision.Add(1)
-				} else if scenario == "canceled-during-call" {
+				case "canceled-during-call":
 					runtime.beginDrain()
 				}
 				return extensionv1.Result{Payload: []byte(`{"allowed":true}`)}, nil
@@ -76,4 +77,29 @@ func TestNamedPolicyInvocationRejectsChangedAppliedConfigAndCanceledResult(t *te
 			require.Zero(t, runtime.inFlight.Load())
 		})
 	}
+}
+
+func TestNamedPolicyInvocationRejectsInvalidCachedPayload(t *testing.T) {
+	manager, repo, runtime := hostIOAdmissionManager(t)
+	calls := 0
+	runtime.extension = extensionv1.NewClient(&ticketExtensionTestConn{invoke: func(extensionv1.Invocation) (extensionv1.Result, error) {
+		calls++
+		return extensionv1.Result{Payload: []byte(`{"allowed":true}`)}, nil
+	}})
+	in := extensionv1.Invocation{Capability: extensionv1.CapabilityRequest, Operation: "host.io", AccountID: 42, Payload: []byte(`{}`)}
+	_, err := manager.InvokeCachedOperation(context.Background(), PlatformOpenAI, AccountTypeAPIKey, in)
+	require.NoError(t, err)
+	require.Equal(t, 1, calls)
+	var keys []any
+	runtime.catalogCache.Range(func(key, _ any) bool {
+		keys = append(keys, key)
+		return true
+	})
+	require.Len(t, keys, 1)
+	runtime.catalogCache.Store(keys[0], false)
+	_, err = manager.InvokeCachedOperation(context.Background(), PlatformOpenAI, AccountTypeAPIKey, in)
+	require.ErrorIs(t, err, ErrExtensionOperationUnavailable)
+	require.Equal(t, 1, calls, "invalid cached policy must not invoke a fallback")
+	require.Zero(t, repo.active)
+	require.Zero(t, runtime.inFlight.Load())
 }
