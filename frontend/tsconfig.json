@@ -16,7 +16,12 @@
     "noUnusedParameters": true,
     "noFallthroughCasesInSwitch": true,
     "paths": {
-      "@/*": ["./src/*"]
+      "@/*": ["./src/*"],
+      "@sub2api/plugin-ui": ["../backend/pkg/extensionapi/ui/index.ts"],
+      "@sub2api/plugin-ui/*": ["../backend/pkg/extensionapi/ui/*"],
+      "vue-draggable-plus": ["./node_modules/vue-draggable-plus"],
+      "vue": ["./node_modules/vue"],
+      "vue-i18n": ["./node_modules/vue-i18n"]
     },
     "types": ["vite/client"]
   },

@@ -1,11 +1,27 @@
-import { describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { reactive } from 'vue'
 import { mount } from '@vue/test-utils'
 import OpenAIReasoningPolicyFields from '../OpenAIReasoningPolicyFields.vue'
 import { defaultOpenAIReasoningPolicy, emptyOpenAIReasoningPolicySelection } from '@/utils/openaiReasoningPolicy'
 
 vi.mock('vue-i18n', () => ({ useI18n: () => ({ t: (key: string) => key }) }))
+const registry = reactive({ loaded: true, items: [] as Array<{id: string; slot: string; available: boolean}>, refresh: vi.fn() })
+vi.mock('@/stores/pluginExtensions', () => ({ usePluginExtensions: () => registry }))
 
 describe('OpenAI reasoning policy fields', () => {
+  beforeEach(() => { registry.items = [{ id: 'codex-recovery-settings', slot: 'surface', available: true }] })
+  it('withdraws disabled controls and retains the unavailable state without editing values', async () => {
+    registry.items = []
+    const wrapper = mount(OpenAIReasoningPolicyFields, { props: { modelValue: defaultOpenAIReasoningPolicy(), selected: emptyOpenAIReasoningPolicySelection(), idPrefix: 'availability' } })
+    expect(wrapper.find('[data-testid="openai-reasoning-policy"]').exists()).toBe(false)
+    registry.items = [{ id: 'codex-recovery-settings', slot: 'surface', available: false }]
+    await wrapper.vm.$nextTick()
+    const toggle = wrapper.get('[data-testid="openai-reasoning-chatReplay-toggle"]')
+    expect(toggle.attributes('disabled')).toBeDefined()
+    expect(wrapper.text()).toContain('admin.plugins.extensionUnavailable')
+    await toggle.trigger('click')
+    expect(wrapper.emitted('update:modelValue')).toBeUndefined()
+  })
   it('exposes independent accessible switches and tracks only deliberate edits', async () => {
     const wrapper = mount(OpenAIReasoningPolicyFields, {
       props: { modelValue: defaultOpenAIReasoningPolicy(), selected: emptyOpenAIReasoningPolicySelection(), idPrefix: 'test' }

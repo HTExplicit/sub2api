@@ -66,7 +66,7 @@ func imageStudioHandlerContext(method, target string, body io.Reader, contentTyp
 }
 
 func TestImageStudioJobHandlerEligibleKeysNeverReturnsSecret(t *testing.T) {
-	t.Setenv(service.ImageStudioEnabledEnv, "true")
+	enableImageStudioPolicy(t)
 	stub := &imageStudioHandlerServiceStub{eligible: []service.ImageStudioEligibleKey{{
 		APIKey: service.ImageStudioEligibleAPIKey{ID: 9, Name: "studio", GroupID: 10},
 	}}}
@@ -78,7 +78,7 @@ func TestImageStudioJobHandlerEligibleKeysNeverReturnsSecret(t *testing.T) {
 }
 
 func TestImageStudioJobHandlerCreateReturnsAcceptedAndUsesSessionOwner(t *testing.T) {
-	t.Setenv(service.ImageStudioEnabledEnv, "true")
+	enableImageStudioPolicy(t)
 	var body bytes.Buffer
 	writer := multipart.NewWriter(&body)
 	require.NoError(t, writer.WriteField("api_key_id", "9"))
@@ -103,7 +103,7 @@ func TestImageStudioJobHandlerCreateReturnsAcceptedAndUsesSessionOwner(t *testin
 }
 
 func TestImageStudioJobHandlerArtifactUsesSessionOwner(t *testing.T) {
-	t.Setenv(service.ImageStudioEnabledEnv, "true")
+	enableImageStudioPolicy(t)
 	stub := &imageStudioHandlerServiceStub{download: &service.ImageStudioArtifactDownload{
 		Artifact: &service.ImageStudioArtifact{ID: 52, ContentType: "image/png", ByteSize: int64(len(imageStudioExecutorPNG()))},
 		Reader:   io.NopCloser(bytes.NewReader(imageStudioExecutorPNG())),
@@ -117,7 +117,7 @@ func TestImageStudioJobHandlerArtifactUsesSessionOwner(t *testing.T) {
 }
 
 func TestImageStudioJobHandlerRequiresSessionOwner(t *testing.T) {
-	t.Setenv(service.ImageStudioEnabledEnv, "true")
+	enableImageStudioPolicy(t)
 	recorder := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(recorder)
 	c.Request = httptest.NewRequest(http.MethodGet, "/api/v1/image-studio/eligible-keys", nil)

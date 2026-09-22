@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"log/slog"
-	"net/http"
 	"strings"
 	"sync"
 	"time"
@@ -53,19 +52,7 @@ func ClassifyCindyHealthSignal(account *Account, statusCode int, body []byte) Ci
 	if account == nil || !hasCanonicalCindyProviderIdentity(account) {
 		return CindyHealthSignalNone
 	}
-	if statusCode == http.StatusUnauthorized {
-		return CindyHealthSignalBanned
-	}
-	if !CindyBalanceDetectionFeatureEnabled() {
-		return CindyHealthSignalNone
-	}
-	if ClassifyCindyBalanceInsufficient(account, statusCode, body) != CindyBalanceSignalNone {
-		return CindyHealthSignalExactBudget
-	}
-	if statusCode == http.StatusForbidden {
-		return CindyHealthSignalForbidden
-	}
-	return CindyHealthSignalNone
+	return CindyHealthSignal(classifyCindyProviderResponse(account, statusCode, body).Health)
 }
 
 type CindyHealthEpisode struct {
@@ -121,6 +108,10 @@ type CindyHealthEpisodeRuntimeBlocker interface {
 type CindyHealthCoordinator interface {
 	ObserveCindyHealthSignal(ctx context.Context, account *Account, signal CindyHealthSignal)
 	ObserveCindyHealthSuccess(ctx context.Context, account *Account)
+}
+
+type CindyCommittedProbeHealthProjector interface {
+	ApplyCommittedProbeTerminal(context.Context, *Account, CindyHealthEpisode)
 }
 
 type CindyHealthEpisodeAuthority interface {
@@ -292,6 +283,30 @@ func (s *CindyHealthService) ObserveCindyHealthSignal(ctx context.Context, accou
 		s.runtime.BlockAccountScheduling(account, until, "cindy_health_quarantine")
 		_, _ = s.healthRepo.BeginCindyHealthEpisode(stateCtx, episode, signal.evidence(), now, until)
 		return
+	}
+}
+
+// Scoped probes already committed marker, item and terminal health atomically.
+// This method only projects that committed fact into host runtime diagnostics;
+// it does not write health state, claim a pending episode or schedule a retry.
+func (s *CindyHealthService) ApplyCommittedProbeTerminal(ctx context.Context, account *Account, episode CindyHealthEpisode) {
+	if s == nil || s.runtime == nil || account == nil || !episode.terminalValid() || episode.AccountID != account.ID {
+		return
+	}
+	stateCtx, cancel := s.stateContext(ctx)
+	defer cancel()
+	identity, current := s.currentIdentity(stateCtx, account)
+	if !current || identity.Generation != episode.Generation || identity.Fingerprint != episode.Fingerprint {
+		return
+	}
+	reason := "cindy_balance_insufficient"
+	if episode.Status == CindyHealthStatusBanned {
+		reason = "cindy_banned"
+	}
+	if runtime, ok := s.runtime.(CindyHealthEpisodeRuntimeBlocker); ok {
+		runtime.BlockCindyHealthEpisode(account, episode, reason)
+	} else {
+		s.runtime.BlockAccountScheduling(account, time.Time{}, reason)
 	}
 }
 

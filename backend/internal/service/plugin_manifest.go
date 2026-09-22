@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	extensionv1 "github.com/Wei-Shaw/sub2api/pkg/extensionapi/v1"
 	pluginv1 "github.com/Wei-Shaw/sub2api/pkg/pluginapi/v1"
 )
 
@@ -26,22 +27,28 @@ const (
 )
 
 var pluginIDPattern = regexp.MustCompile(`^[a-z0-9]+(?:[._-][a-z0-9]+)+$`)
+var pluginResourceNamePattern = regexp.MustCompile(`^[a-z][a-z0-9]*(-[a-z0-9]+)*(\.[a-z][a-z0-9]*(-[a-z0-9]+)*)+$`)
 
 var ErrPluginStateChanged = errors.New("插件状态已在其他实例中变化，请刷新后重试")
 
 // PluginManifest 是 .s2plugin 包中可在执行二进制前检查的声明。
 type PluginManifest struct {
-	SchemaVersion int                      `json:"schema_version"`
-	ID            string                   `json:"id"`
-	Name          string                   `json:"name"`
-	Version       string                   `json:"version"`
-	Description   string                   `json:"description,omitempty"`
-	Author        string                   `json:"author,omitempty"`
-	Requires      PluginRequirements       `json:"requires"`
-	Capabilities  []PluginCapability       `json:"capabilities"`
-	Runtimes      map[string]PluginRuntime `json:"runtimes"`
-	UI            PluginUIManifest         `json:"ui"`
-	Files         map[string]string        `json:"files"`
+	SourceRevision string                      `json:"source_revision,omitempty"`
+	SchemaVersion  int                         `json:"schema_version"`
+	ID             string                      `json:"id"`
+	Name           string                      `json:"name"`
+	Version        string                      `json:"version"`
+	Description    string                      `json:"description,omitempty"`
+	Author         string                      `json:"author,omitempty"`
+	Requires       PluginRequirements          `json:"requires"`
+	Capabilities   []PluginCapability          `json:"capabilities"`
+	Runtimes       map[string]PluginRuntime    `json:"runtimes"`
+	UI             PluginUIManifest            `json:"ui"`
+	Files          map[string]string           `json:"files"`
+	Dependencies   []extensionv1.Dependency    `json:"dependencies,omitempty"`
+	Contributions  []extensionv1.Contribution  `json:"contributions,omitempty"`
+	Operations     map[string][]string         `json:"operations,omitempty"`
+	Resources      []extensionv1.ResourceGrant `json:"resources,omitempty"`
 }
 
 type PluginRequirements struct {
@@ -51,6 +58,7 @@ type PluginRequirements struct {
 	PluginProtocol            int      `json:"plugin_protocol"`
 	TransportAPI              int      `json:"transport_api"`
 	UIBridge                  int      `json:"ui_bridge"`
+	ExtensionAPI              int      `json:"extension_api,omitempty"`
 }
 
 type PluginCapability struct {
@@ -88,30 +96,35 @@ type PluginCompatibility struct {
 }
 
 type PluginInstallation struct {
-	ID              int64               `json:"id"`
-	PluginKey       string              `json:"plugin_key"`
-	Name            string              `json:"name"`
-	Version         string              `json:"version"`
-	Description     string              `json:"description"`
-	Author          string              `json:"author"`
-	Manifest        PluginManifest      `json:"manifest"`
-	ArtifactData    []byte              `json:"-"`
-	ArtifactPath    string              `json:"-"`
-	InstallPath     string              `json:"-"`
-	BinaryPath      string              `json:"-"`
-	BinarySHA256    string              `json:"binary_sha256"`
-	SignatureStatus string              `json:"signature_status"`
-	State           string              `json:"state"`
-	ConfigEncrypted string              `json:"-"`
-	LastError       string              `json:"last_error"`
-	InstalledBy     *int64              `json:"installed_by"`
-	InstalledAt     time.Time           `json:"installed_at"`
-	EnabledAt       *time.Time          `json:"enabled_at"`
-	UpdatedAt       time.Time           `json:"updated_at"`
-	Bindings        []PluginBinding     `json:"bindings"`
-	Compatibility   PluginCompatibility `json:"compatibility"`
-	RuntimeHealthy  bool                `json:"runtime_healthy"`
-	RuntimeMessage  string              `json:"runtime_message"`
+	Revision          int64               `json:"revision"`
+	RuntimeGeneration int64               `json:"-"`
+	PackageSHA256     string              `json:"package_sha256"`
+	UpdatePolicy      string              `json:"update_policy"`
+	ID                int64               `json:"id"`
+	PluginKey         string              `json:"plugin_key"`
+	Name              string              `json:"name"`
+	Version           string              `json:"version"`
+	Description       string              `json:"description"`
+	Author            string              `json:"author"`
+	Manifest          PluginManifest      `json:"manifest"`
+	ArtifactData      []byte              `json:"-"`
+	ArtifactPath      string              `json:"-"`
+	InstallPath       string              `json:"-"`
+	BinaryPath        string              `json:"-"`
+	BinarySHA256      string              `json:"binary_sha256"`
+	SignatureStatus   string              `json:"signature_status"`
+	State             string              `json:"state"`
+	ConfigEncrypted   string              `json:"-"`
+	LastError         string              `json:"last_error"`
+	InstalledBy       *int64              `json:"installed_by"`
+	InstalledAt       time.Time           `json:"installed_at"`
+	EnabledAt         *time.Time          `json:"enabled_at"`
+	UpdatedAt         time.Time           `json:"updated_at"`
+	Bindings          []PluginBinding     `json:"bindings"`
+	Compatibility     PluginCompatibility `json:"compatibility"`
+	RuntimeHealthy    bool                `json:"runtime_healthy"`
+	RuntimeMessage    string              `json:"runtime_message"`
+	DesiredEnabled    bool                `json:"desired_enabled"`
 }
 
 type PluginBinding struct {
@@ -145,6 +158,13 @@ func (m PluginManifest) RuntimeKey() string {
 }
 
 func (m PluginManifest) Validate() error {
+	return m.ValidateForRuntime(m.RuntimeKey())
+}
+
+func (m PluginManifest) ValidateForRuntime(runtimeKey string) error {
+	if m.SourceRevision != "" && !regexp.MustCompile(`^[a-f0-9]{40}$`).MatchString(m.SourceRevision) {
+		return errors.New("插件源码版本必须是完整提交摘要")
+	}
 	if m.SchemaVersion != 1 {
 		return fmt.Errorf("不支持的插件清单版本: %d", m.SchemaVersion)
 	}
@@ -169,13 +189,168 @@ func (m PluginManifest) Validate() error {
 		return errors.New("插件必须声明至少一个能力")
 	}
 	for _, capability := range m.Capabilities {
-		if capability.ID != PluginCapabilityOpenAIOAuthOutbound || capability.Platform != PlatformOpenAI || capability.AccountType != AccountTypeOAuth {
-			return fmt.Errorf("初期仅支持能力 %s", PluginCapabilityOpenAIOAuthOutbound)
+		if extensionv1.IsCapability(capability.ID) {
+			if m.Requires.ExtensionAPI != extensionv1.Version || capability.Platform == "" || capability.AccountType == "" {
+				return errors.New("扩展能力必须声明兼容版本及明确作用范围")
+			}
+			if capability.ID == extensionv1.CapabilityProvider && (capability.Platform == "*" || capability.AccountType == "*") {
+				return errors.New("Provider能力必须声明具体平台与账号类型")
+			}
+		} else if capability.ID != PluginCapabilityOpenAIOAuthOutbound || capability.Platform != PlatformOpenAI || capability.AccountType != AccountTypeOAuth {
+			return fmt.Errorf("不支持插件能力 %s", capability.ID)
 		}
 	}
-	runtimeEntry, ok := m.Runtimes[m.RuntimeKey()]
+	if m.Requires.ExtensionAPI != 0 && m.Requires.ExtensionAPI != extensionv1.Version {
+		return errors.New("扩展 API 版本不兼容")
+	}
+	for capability, operations := range m.Operations {
+		declared := false
+		for _, entry := range m.Capabilities {
+			if entry.ID == capability {
+				declared = true
+				break
+			}
+		}
+		if !declared || !extensionv1.IsCapability(capability) || len(operations) > 64 {
+			return errors.New("扩展操作必须属于已声明的能力")
+		}
+		seenOperations := map[string]bool{}
+		for _, operation := range operations {
+			if len(operation) == 0 || len(operation) > 80 || !regexp.MustCompile(`^[a-z0-9]+(?:[._-][a-z0-9]+)*$`).MatchString(operation) || seenOperations[operation] {
+				return errors.New("扩展操作标识无效或重复")
+			}
+			seenOperations[operation] = true
+		}
+	}
+	seen := make(map[string]bool)
+	if err := validateAccountViewContributions(m); err != nil {
+		return err
+	}
+	if err := validateAccountCreateContributions(m); err != nil {
+		return err
+	}
+	if err := validateAccountEditContributions(m); err != nil {
+		return err
+	}
+	resourceNames := make(map[string]bool)
+	if len(m.Resources) > 256 {
+		return errors.New("插件资源操作数量超过限制")
+	}
+	for _, resource := range m.Resources {
+		if !pluginResourceNamePattern.MatchString(resource.Name) || len(resource.Name) > 100 || resourceNames[resource.Name] || (resource.Permission != "admin" && resource.Permission != "user") {
+			return errors.New("插件资源操作声明无效")
+		}
+		declared := false
+		for _, capability := range m.Capabilities {
+			declared = declared || capability.ID == resource.Capability
+		}
+		if !declared {
+			return errors.New("插件资源引用未声明的能力")
+		}
+		resourceNames[resource.Name] = true
+	}
+	for _, contribution := range m.Contributions {
+		if len(contribution.Events) > 16 {
+			return errors.New("插件界面事件数量超过限制")
+		}
+		for _, event := range contribution.Events {
+			if !regexp.MustCompile(`^[a-z][a-z0-9_-]{0,63}$`).MatchString(event) {
+				return errors.New("插件界面事件声明无效")
+			}
+		}
+		if contribution.Capability != "" {
+			declared := false
+			for _, capability := range m.Capabilities {
+				if capability.ID == contribution.Capability {
+					declared = true
+					break
+				}
+			}
+			if !declared {
+				return errors.New("插件界面贡献引用未声明的能力")
+			}
+		}
+		if contribution.AllAccounts && (contribution.Capability == "" || contribution.Permission != "admin") {
+			return errors.New("全账号界面必须声明管理员权限和依赖能力")
+		}
+		if contribution.Slot == "theme" {
+			if contribution.Permission != "public" || !strings.HasSuffix(contribution.Entrypoint, ".css") || len(contribution.Assets) > 32 {
+				return errors.New("主题贡献必须声明公开 CSS 和有界资源集合")
+			}
+		} else if len(contribution.Assets) != 0 {
+			return errors.New("只有主题贡献可公开资源")
+		}
+		for _, asset := range contribution.Assets {
+			if !safePluginRelativePath(asset) || !strings.HasPrefix(asset, "ui/") || !strings.HasSuffix(asset, ".woff2") {
+				return errors.New("主题附加资源必须是包内 WOFF2 字体")
+			}
+		}
+		if contribution.ConfigFlag != "" && !regexp.MustCompile(`^[a-z][a-z0-9_]{0,63}$`).MatchString(contribution.ConfigFlag) {
+			return errors.New("插件界面条件必须引用布尔配置字段")
+		}
+		if contribution.ID == "" || seen[contribution.ID] || !extensionv1.ValidSlot(contribution.Slot) ||
+			contribution.Permission == "" || len(contribution.Label) == 0 {
+			return errors.New("插件界面贡献的标识、挂载点或权限无效")
+		}
+		seen[contribution.ID] = true
+		fieldKeys := map[string]bool{}
+		if len(contribution.DisplayFields) > 16 {
+			return errors.New("插件显示字段数量超限")
+		}
+		for _, field := range contribution.DisplayFields {
+			if !regexp.MustCompile(`^[a-z][a-z0-9_]{0,63}$`).MatchString(field.Key) || field.Key == "constructor" || field.Key == "prototype" || fieldKeys[field.Key] || len(field.Prefix) > 32 || len(field.Values) > 64 {
+				return errors.New("插件显示字段声明无效")
+			}
+			if field.Kind != "text" && field.Kind != "badge" && field.Kind != "datetime" {
+				return errors.New("插件显示字段类型无效")
+			}
+			for _, value := range field.Values {
+				if len(value.Label) == 0 || (value.Tone != "" && value.Tone != "neutral" && value.Tone != "success" && value.Tone != "warning" && value.Tone != "danger" && value.Tone != "info") {
+					return errors.New("插件显示值声明无效")
+				}
+			}
+			fieldKeys[field.Key] = true
+		}
+		for _, field := range contribution.Fields {
+			validKey := regexp.MustCompile(`^[a-z][a-z0-9_]{0,63}$`)
+			if !validKey.MatchString(field.Key) || field.Key == "constructor" || field.Key == "prototype" || fieldKeys[field.Key] || len(field.Label) == 0 || (field.DefaultSource != "" && !validKey.MatchString(field.DefaultSource)) {
+				return errors.New("插件表单字段声明无效")
+			}
+			switch field.Kind {
+			case "text":
+				if field.MaxLength < 1 || field.MaxLength > 65536 || field.Rows != 0 || field.OptionsSource != "" {
+					return errors.New("插件文本字段范围无效")
+				}
+			case "select":
+				if !validKey.MatchString(field.OptionsSource) || len(field.DefaultLabel) == 0 {
+					return errors.New("插件选择字段声明无效")
+				}
+			case "textarea":
+				if field.Rows < 1 || field.Rows > 12 || field.MaxLength < 1 || field.MaxLength > 65536 {
+					return errors.New("插件文本字段范围无效")
+				}
+			default:
+				return errors.New("插件表单字段类型无效")
+			}
+			fieldKeys[field.Key] = true
+		}
+		if contribution.Entrypoint != "" && (!safePluginRelativePath(contribution.Entrypoint) || !strings.HasPrefix(contribution.Entrypoint, "ui/")) {
+			return errors.New("插件界面贡献入口必须位于 ui/ 目录")
+		}
+		if contribution.Entrypoint != "" {
+			if _, declared := m.Files[contribution.Entrypoint]; !declared {
+				return errors.New("插件界面贡献入口未包含在签名资源中")
+			}
+		}
+	}
+	for _, dependency := range m.Dependencies {
+		if !extensionv1.IsCapability(dependency.Capability) && dependency.Capability != PluginCapabilityOpenAIOAuthOutbound {
+			return errors.New("插件依赖能力未知")
+		}
+	}
+	runtimeEntry, ok := m.Runtimes[runtimeKey]
 	if !ok || !safePluginRelativePath(runtimeEntry.Path) {
-		return fmt.Errorf("插件不支持当前运行平台 %s", m.RuntimeKey())
+		return fmt.Errorf("插件不支持当前运行平台 %s", runtimeKey)
 	}
 	if !safePluginRelativePath(m.UI.Entrypoint) || !strings.HasPrefix(m.UI.Entrypoint, "ui/") {
 		return errors.New("插件 UI 入口必须位于 ui/ 目录")

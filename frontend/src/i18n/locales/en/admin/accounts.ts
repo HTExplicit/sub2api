@@ -1,5 +1,19 @@
 export default {accounts: {
 
+  providerEdit: {
+    unavailable: 'Provider settings are unavailable. Unchanged provider fields and basic account edits are still retained.',
+    catalogUnavailable: 'The model catalog is unavailable. Existing mappings and any draft remain unchanged.',
+    draftRetained: 'Provider changes are pending. Saving basic fields only keeps this draft open and unsaved.',
+    changed: 'The edit context or catalog changed. Review the retained draft before reconciling it.',
+    reconcile: 'Reconcile retained draft',
+    reloadRequired: 'The account state or provider owner changed. Your draft is retained; reopen the editor to load the new state before applying it.',
+    saveBasic: 'Save basic fields only',
+    clearToDefault: 'Clear stored override (use native default)',
+    clearPending: 'Stored override will be cleared on save.',
+    clearCustomMappings: 'Clear custom mappings',
+    clearCompactMappings: 'Clear compact mappings'
+  },
+
   textTestPrompt: { label: 'Text test prompt', hint: 'Blank uses hi. Remembered only for this site and administrator in this browser.', reset: 'Restore default', tooLong: 'Prompt exceeds 8192 characters. Shorten it to continue.' },
   tickets: {
     stages: { request: 'Request', configuration: 'Configuration', lifecycle: 'Task state', account_auth: 'Account authentication', proxy_auth: 'Proxy authentication', proxy_protocol: 'Proxy protocol', proxy_dns: 'Proxy DNS', proxy_connect: 'Proxy connection', tls: 'TLS certificate', ticket_validation: 'Ticket validation', upstream_http: 'Upstream HTTP', persistence: 'Persistence' },
@@ -459,6 +473,8 @@ export default {accounts: {
         unschedulable: 'Unschedulable',
         rateLimitedUntil: 'Rate limited and removed from scheduling. Auto resumes at {time}',
         rateLimitedAutoResume: 'Auto resumes in {time}',
+        upstreamQuotaExhausted: 'Upstream quota exhausted',
+        quotaResetUnknown: 'Reset time unknown; awaiting upstream quota update',
         modelRateLimitedUntil: '{model} rate limited until {time}',
         modelCreditOveragesUntil: '{model} using AI Credits until {time}',
         creditsExhausted: 'Credits Exhausted',
@@ -992,7 +1008,8 @@ export default {accounts: {
         codexCLIOnlyAppServerDesc:
           "Effective only when the switch above is on. When enabled, this account also allows third-party clients that embed the Codex engine over the app-server protocol (e.g. Claude Code's codex plugin); they still pass the global engine-fingerprint gate. OR-combined with the global app-server toggle.",
         codexFingerprintMode: 'Codex fingerprint convergence',
-        codexFingerprintModeDesc: 'When multiple users share the same OAuth account, converge device/session identifiers to account-level stable values to reduce upstream-visible device and session count. Defaults to "Device only": one account presents a single installation upstream, paired with the account-level Codex client identity. Choose Off to pass client identifiers through as-is.',
+        codexFingerprintModeDesc: 'When multiple users share the same OAuth account, converge device/session identifiers to account-level stable values to reduce upstream-visible device and session count. Default follows the backend/plugin policy; an explicit choice overrides it. Device only presents a single installation upstream, paired with the account-level Codex client identity. Choose Off to pass client identifiers through as-is.',
+        codexFingerprintDefault: 'Default (follow backend)',
         codexFingerprintOff: 'Off (passthrough)',
         codexFingerprintDevice: 'Device only',
         codexFingerprintSession: 'Device + Session',
@@ -1896,6 +1913,7 @@ export default {accounts: {
         usageTrend: '30-Day Cost & Request Trend',
         noData: 'No usage data available for this account'
       },
+      testReasoning: { label: 'Reasoning effort', default: 'Default (model behavior)' },
       usageWindow: {
         statsTitle: '5-Hour Window Usage Statistics',
         statsTitleDaily: 'Daily Usage Statistics',
@@ -1927,8 +1945,11 @@ export default {accounts: {
         grokLastHeadersSeen: 'Headers {time}',
         passiveSampled: 'Passive',
         activeQuery: 'Query',
-        estimatedTotalCost: 'Est. total ${cost}',
-        estimatedTotalCostTooltip: 'Estimated total cost at 100% utilization, based on current window cost and utilization'
+        estimatedTotalCost: 'Est. window value ${cost}',
+        estimatedRemainingCost: 'Est. remaining value ${cost}',
+        estimatePending: 'Awaiting paired observations in this window',
+        unknownPeriod: 'Unknown period',
+        estimatedTotalCostTooltip: 'Estimated from account-cost and upstream utilization changes in the same window. Pre-import costs are unknown; model mix and external usage affect the estimate. Overlapping window values cannot be added.'
       },
       openaiQuotaReset: {
         count: 'Credits',

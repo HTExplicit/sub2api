@@ -161,6 +161,7 @@ func TestSelectResponsesProbeModel(t *testing.T) {
 
 	// Strict Cindy probes must never generate the OpenAI default gpt-5.4.
 	cindy := &Account{
+		ID:              11,
 		Platform:        PlatformCindy,
 		WirePlatform:    WirePlatformOpenAI,
 		ProviderProfile: ProviderProfileCindyLaxaV1,

@@ -31,6 +31,7 @@ const {
 
 const authState = vi.hoisted(() => ({ isSimpleMode: false }))
 
+vi.mock('@/components/plugins/ExtensionSurface.vue', () => ({ default: { template: '<div><slot /></div>' } }))
 vi.mock('@/api/admin', () => ({
   adminAPI: {
     groups: {
@@ -174,6 +175,7 @@ function mountView(plugins: any[] = []) {
         GroupCapacityBadge: true,
         GroupRateMultipliersModal: true,
         GroupRPMOverridesModal: true,
+        CindyGroupAuditDialog: true,
         VueDraggable: true
       }
     }

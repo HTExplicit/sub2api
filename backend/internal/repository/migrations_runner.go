@@ -160,6 +160,12 @@ func applyMigrationsFS(ctx context.Context, db *sql.DB, fsys fs.FS) error {
 		_ = pgAdvisoryUnlock(unlockCtx, lockConn)
 	}()
 
+	// Detect known historical input/checksum failures before any ledger or Atlas
+	// write. This is read-only; each forward migration still owns its transaction.
+	if err := checkHistoricalMigrationPreconditionsFS(ctx, lockConn, fsys); err != nil {
+		return err
+	}
+
 	// 创建迁移记录表（如果不存在）。
 	// 该表记录所有已应用的迁移及其校验和。
 	if _, err := lockConn.ExecContext(ctx, schemaMigrationsTableDDL); err != nil {

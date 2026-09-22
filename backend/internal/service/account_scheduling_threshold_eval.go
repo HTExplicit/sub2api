@@ -248,37 +248,27 @@ func firstStringValue(values map[string]any, keys ...string) string {
 }
 
 func openAIThresholdCandidate(extra map[string]any, window string, now time.Time) *accountSchedulingThresholdCandidate {
-	if len(extra) == 0 {
-		return nil
-	}
-
-	var (
-		usedPercentKey string
-		resetAtKey     string
-	)
+	minutes := 0
 	switch window {
 	case "5h":
-		usedPercentKey = "codex_5h_used_percent"
-		resetAtKey = "codex_5h_reset_at"
+		minutes = 300
 	case "7d":
-		usedPercentKey = "codex_7d_used_percent"
-		resetAtKey = "codex_7d_reset_at"
+		minutes = 10080
 	default:
 		return nil
 	}
-
-	usedPercent, ok := extra[usedPercentKey]
-	if !ok {
-		return nil
+	for _, observed := range OpenAIQuotaWindows(extra, now) {
+		if observed.WindowMinutes != minutes || observed.Expired {
+			continue
+		}
+		// A known upstream deadline remains authoritative when a sample grows old.
+		// An advisory pause without a deadline still requires a recent observation.
+		if observed.ResetsAt == nil && openAICodexSnapshotStaleForPause(extra, now) {
+			continue
+		}
+		return &accountSchedulingThresholdCandidate{window: window, usedPercent: observed.Utilization, until: cloneTimePtr(observed.ResetsAt)}
 	}
-	if openAIQuotaWindowReset(extra, window, now) || openAICodexSnapshotStaleForPause(extra, now) {
-		return nil
-	}
-	return &accountSchedulingThresholdCandidate{
-		window:      window,
-		usedPercent: schedulingPercentValue(usedPercent),
-		until:       parseSchedulingResetAt(extra[resetAtKey]),
-	}
+	return nil
 }
 
 func anthropicThresholdCandidates(account *Account) []*accountSchedulingThresholdCandidate {

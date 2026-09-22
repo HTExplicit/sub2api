@@ -67,7 +67,7 @@ func TestRemoteSkillHandlerServesGETAndHEADWithStableHeaders(t *testing.T) {
 	require.Equal(t, "SKILL.md", reader.requested)
 	require.Equal(t, body, get.Body.Bytes())
 	require.Equal(t, `"abc"`, get.Header().Get("ETag"))
-	require.Equal(t, "public, max-age=300", get.Header().Get("Cache-Control"))
+	require.Equal(t, "public, no-cache", get.Header().Get("Cache-Control"))
 	require.Equal(t, "nosniff", get.Header().Get("X-Content-Type-Options"))
 	require.Equal(t, "text/markdown; charset=utf-8", get.Header().Get("Content-Type"))
 

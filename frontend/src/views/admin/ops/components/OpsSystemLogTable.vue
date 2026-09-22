@@ -391,10 +391,10 @@ onMounted(async () => {
         <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">{{ t('admin.ops.systemLogs.description') }}</p>
       </div>
       <div class="flex flex-wrap items-center gap-2 text-xs">
-        <span class="rounded-none bg-gray-100 px-2 py-1 text-gray-700 dark:bg-dark-700 dark:text-gray-200">{{ t('admin.ops.systemLogs.queue') }} {{ health.queue_depth }}/{{ health.queue_capacity }}</span>
-        <span class="rounded-none bg-gray-100 px-2 py-1 text-gray-700 dark:bg-dark-700 dark:text-gray-200">{{ t('admin.ops.systemLogs.written') }} {{ health.written_count }}</span>
-        <span class="rounded-none bg-amber-100 px-2 py-1 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300">{{ t('admin.ops.systemLogs.dropped') }} {{ health.dropped_count }}</span>
-        <span class="rounded-none bg-red-100 px-2 py-1 text-red-700 dark:bg-red-900/30 dark:text-red-300">{{ t('admin.ops.systemLogs.failed') }} {{ health.write_failed_count }}</span>
+        <span class="rounded-md bg-gray-100 px-2 py-1 text-gray-700 dark:bg-dark-700 dark:text-gray-200">{{ t('admin.ops.systemLogs.queue') }} {{ health.queue_depth }}/{{ health.queue_capacity }}</span>
+        <span class="rounded-md bg-gray-100 px-2 py-1 text-gray-700 dark:bg-dark-700 dark:text-gray-200">{{ t('admin.ops.systemLogs.written') }} {{ health.written_count }}</span>
+        <span class="rounded-md bg-amber-100 px-2 py-1 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300">{{ t('admin.ops.systemLogs.dropped') }} {{ health.dropped_count }}</span>
+        <span class="rounded-md bg-red-100 px-2 py-1 text-red-700 dark:bg-red-900/30 dark:text-red-300">{{ t('admin.ops.systemLogs.failed') }} {{ health.write_failed_count }}</span>
       </div>
     </div>
 
@@ -522,13 +522,13 @@ onMounted(async () => {
       <button type="button" class="btn btn-secondary btn-sm" @click="fetchHealth">{{ t('admin.ops.systemLogs.refreshHealth') }}</button>
     </div>
 
-    <div class="overflow-hidden rounded-none border border-gray-200 dark:border-dark-700">
+    <div class="overflow-hidden rounded-xl border border-gray-200 dark:border-dark-700">
       <div v-if="loading" class="px-4 py-8 text-center text-sm text-gray-500">{{ t('common.loading') }}</div>
       <div v-else-if="!hasData" class="px-4 py-8 text-center text-sm text-gray-500">{{ t('admin.ops.systemLogs.empty') }}</div>
       <div v-else-if="!isDesktopViewport" class="divide-y divide-gray-100 dark:divide-dark-800">
         <div v-for="row in logs" :key="row.id" class="space-y-1.5 p-3">
           <div class="flex items-center justify-between gap-2">
-            <span class="inline-flex rounded-none px-2 py-0.5 text-xs font-semibold" :class="levelBadgeClass(row.level)">
+            <span class="inline-flex rounded-full px-2 py-0.5 text-xs font-semibold" :class="levelBadgeClass(row.level)">
               {{ row.level }}
             </span>
             <span class="text-xs text-gray-500 dark:text-gray-400">{{ formatTime(row.created_at) }}</span>
@@ -558,7 +558,7 @@ onMounted(async () => {
                 <span class="block truncate" :title="row.host || '-'">{{ row.host || '-' }}</span>
               </td>
               <td class="px-3 py-2 text-xs">
-                <span class="inline-flex rounded-none px-2 py-0.5 font-semibold" :class="levelBadgeClass(row.level)">
+                <span class="inline-flex rounded-full px-2 py-0.5 font-semibold" :class="levelBadgeClass(row.level)">
                   {{ row.level }}
                 </span>
               </td>

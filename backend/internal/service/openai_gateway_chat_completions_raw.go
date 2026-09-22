@@ -63,7 +63,10 @@ func (s *OpenAIGatewayService) forwardAsRawChatCompletions(
 	startTime := time.Now()
 	if account != nil && account.IsOpenAI() {
 		requestedModel := gjson.GetBytes(body, "model").String()
-		mappedModel := resolveOpenAIForwardModel(account, requestedModel, defaultMappedModel)
+		mappedModel, modelPolicyErr := resolveOpenAIForwardModelContext(ctx, account, requestedModel, defaultMappedModel)
+		if modelPolicyErr != nil {
+			return nil, modelPolicyErr
+		}
 		withEffort, _, err := materializeOpenAIForwardReasoningEffort(ctx, body, mappedModel)
 		if err != nil {
 			return nil, err
@@ -83,10 +86,15 @@ func (s *OpenAIGatewayService) forwardAsRawChatCompletions(
 	serviceTier := extractOpenAIServiceTierFromBody(body)
 
 	// 2. Resolve model mapping (same as ForwardAsChatCompletions)
-	billingModel := resolveOpenAIForwardModel(account, originalModel, defaultMappedModel)
+	billingModel, modelPolicyErr := resolveOpenAIForwardModelContext(ctx, account, originalModel, defaultMappedModel)
+	if modelPolicyErr != nil {
+		return nil, modelPolicyErr
+	}
 	upstreamModel := normalizeOpenAIModelForUpstream(account, billingModel)
 	if account != nil && IsLegacyCindyAPIKeyAccount(account.Platform, account.Type, account.Credentials) {
-		if legacyModel, mapped := cindyLegacyLaxaLiveUpstreamModel(originalModel); mapped {
+		if legacyModel, mapped, policyErr := cindyLegacyLaxaLiveUpstreamModel(ctx, account, originalModel); policyErr != nil {
+			return nil, policyErr
+		} else if mapped {
 			upstreamModel = legacyModel
 		}
 	}
@@ -212,9 +220,6 @@ func (s *OpenAIGatewayService) forwardAsRawChatCompletions(
 	}
 	SetActualOpenAIUpstreamEndpoint(c, grokChatRawEndpoint)
 	customUA := account.GetOpenAIUserAgent()
-	if customUA == "" && account.IsGrokOAuth() {
-		customUA = "sub2api-grok/1.0"
-	}
 	resp, err := s.sendCCUpstreamRequest(ctx, c, account, targetURL, upstreamBody, clientStream, token, customUA, grokCacheIdentity)
 	if err != nil {
 		return nil, err
@@ -242,11 +247,16 @@ func (s *OpenAIGatewayService) forwardAsRawChatCompletions(
 			})
 			s.handleGrokAccountUpstreamError(withGrokTeamRateLimitModel(ctx, upstreamModel), account, resp.StatusCode, resp.Header, respBody)
 			if s.shouldFailoverGrokUpstreamError(resp.StatusCode, respBody) {
+				retryable, retryDelay, retryDeadline, retryMax := grokSameAccountRetryMetadata(account, resp.StatusCode, respBody)
 				return nil, &UpstreamFailoverError{
-					StatusCode:             resp.StatusCode,
-					ResponseBody:           respBody,
-					ResponseHeaders:        resp.Header.Clone(),
-					RetryableOnSameAccount: account.IsPoolMode() && account.IsPoolModeRetryableStatus(resp.StatusCode),
+					StatusCode:               resp.StatusCode,
+					ResponseBody:             respBody,
+					ResponseHeaders:          resp.Header.Clone(),
+					RetryableOnSameAccount:   retryable,
+					RequestScopedTransient:   retryable && resp.StatusCode == http.StatusTooManyRequests,
+					SameAccountRetryDelay:    retryDelay,
+					SameAccountRetryDeadline: retryDeadline,
+					SameAccountRetryMax:      retryMax,
 				}
 			}
 			return s.handleChatCompletionsErrorResponse(resp, c, account, billingModel)

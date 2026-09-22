@@ -1,30 +1,5 @@
-export type ImageStudioMode = 'generate' | 'edit'
-
-export interface ImageStudioHistoryImage {
-  id: string
-  blob: Blob
-  mimeType: string
-  revisedPrompt?: string
-}
-
-export interface ImageStudioHistoryRecord {
-  id: string
-  jobId?: number
-  status?: import('@/api/imageStudio').ImageStudioJobStatus
-  errorMessage?: string
-  createdAt: number
-  mode: ImageStudioMode
-  model: string
-  prompt: string
-  size: string
-  quality: string
-  count: number
-  sourceImage?: Blob
-  sourceImageName?: string
-  maskImage?: Blob
-  maskImageName?: string
-  images: ImageStudioHistoryImage[]
-}
+import type { ImageStudioHistoryRecord } from '@sub2api/plugin-ui/media'
+export type { ImageStudioMode, ImageStudioHistoryImage, ImageStudioHistoryRecord } from '@sub2api/plugin-ui/media'
 
 const DB_NAME = 'sub2api-image-studio'
 const DB_VERSION = 2
@@ -53,10 +28,12 @@ function openDatabase(): Promise<IDBDatabase | null> {
     }
     request.onupgradeneeded = (event) => {
       const database = request.result
-      // Version 1 records had no owner and cannot be safely attributed. Drop
-      // them instead of exposing one signed-in user's images to another.
+      // Unowned version 1 data must remain recoverable, but must not be exposed
+      // as belonging to whichever user happens to trigger the upgrade.
       if (event.oldVersion < 2 && database.objectStoreNames.contains(STORE_NAME)) {
-        database.deleteObjectStore(STORE_NAME)
+        let retained = 'retained-unowned-runs'
+        while (database.objectStoreNames.contains(retained)) retained += '-old'
+        request.transaction!.objectStore(STORE_NAME).name = retained
       }
       if (!database.objectStoreNames.contains(STORE_NAME)) {
         const store = database.createObjectStore(STORE_NAME, { keyPath: ['ownerKey', 'id'] })

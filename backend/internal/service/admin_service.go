@@ -8,6 +8,7 @@ import (
 	dbent "github.com/Wei-Shaw/sub2api/ent"
 	"github.com/Wei-Shaw/sub2api/internal/config"
 	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
+	extensionv1 "github.com/Wei-Shaw/sub2api/pkg/extensionapi/v1"
 )
 
 // AdminService interface defines admin management operations
@@ -399,6 +400,10 @@ type UpdateGroupInput struct {
 }
 
 type CreateAccountInput struct {
+	ProviderCreate *extensionv1.ProviderCreateRequestV1
+	// Presence is captured by tagged HTTP requests only. Untagged numeric
+	// decoding keeps its existing zero/nil meanings.
+	ExplicitCreateFields  map[string]bool
 	Name                  string
 	Notes                 *string
 	Platform              string
@@ -432,6 +437,7 @@ type ShadowOptions struct {
 }
 
 type UpdateAccountInput struct {
+	ProviderEdit          *extensionv1.ProviderEditRequestV1
 	Name                  string
 	Notes                 *string
 	Type                  string // Account type: oauth, setup-token, apikey

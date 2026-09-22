@@ -28,7 +28,7 @@
         <div
           v-for="subscription in subscriptions"
           :key="subscription.id"
-          class="overflow-hidden rounded-none border bg-white dark:bg-dark-800"
+          class="overflow-hidden rounded-2xl border bg-white dark:bg-dark-800"
           :class="platformBorderClass(subscription.group?.platform || '')"
         >
           <!-- Header -->
@@ -42,7 +42,7 @@
                   <h3 class="font-semibold text-gray-900 dark:text-white">
                     {{ subscription.group?.name || `Group #${subscription.group_id}` }}
                   </h3>
-                  <span :class="['rounded-none border px-2 py-0.5 text-[11px] font-medium', platformBadgeClass(subscription.group?.platform || '')]">
+                  <span :class="['rounded-md border px-2 py-0.5 text-[11px] font-medium', platformBadgeClass(subscription.group?.platform || '')]">
                     {{ platformLabel(subscription.group?.platform || '') }}
                   </span>
                 </div>
@@ -72,7 +72,7 @@
               </span>
               <button
                 v-if="subscription.status === 'active'"
-                :class="['rounded-none px-3 py-1.5 text-xs font-semibold text-white transition-colors', platformButtonClass(subscription.group?.platform || '')]"
+                :class="['rounded-lg px-3 py-1.5 text-xs font-semibold text-white transition-colors', platformButtonClass(subscription.group?.platform || '')]"
                 @click="router.push({ path: '/purchase', query: { tab: 'subscription', group: String(subscription.group_id) } })"
               >
                 {{ t('payment.renewNow') }}

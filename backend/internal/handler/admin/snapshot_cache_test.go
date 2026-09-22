@@ -152,6 +152,78 @@ func TestSnapshotCache_GetOrLoad_ConcurrentSingleflight(t *testing.T) {
 	require.Equal(t, int32(1), loads.Load())
 }
 
+func TestSnapshotCache_ClearDoesNotRepublishInflightResult(t *testing.T) {
+	cache := newSnapshotCache(time.Minute)
+	started, resume := make(chan struct{}), make(chan struct{})
+	finished := make(chan error, 1)
+	var release sync.Once
+	t.Cleanup(func() { release.Do(func() { close(resume) }) })
+	go func() {
+		_, _, err := cache.GetOrLoad("accounts_today_stats:42", func() (any, error) {
+			close(started)
+			<-resume
+			return "pre-commit-stats", nil
+		})
+		finished <- err
+	}()
+	<-started
+	cache.Clear()
+	cache.Set("accounts_today_stats:42", "post-commit-stats")
+	release.Do(func() { close(resume) })
+	require.NoError(t, <-finished)
+	entry, found := cache.Get("accounts_today_stats:42")
+	require.True(t, found)
+	require.Equal(t, "post-commit-stats", entry.Payload, "a pre-invalidation read must not replace a fresh cache entry")
+}
+
+func TestSnapshotCache_ClearSeparatesNewSingleflight(t *testing.T) {
+	cache := newSnapshotCache(time.Minute)
+	oldStarted, oldResume, newStarted := make(chan struct{}), make(chan struct{}), make(chan struct{})
+	oldDone, newDone := make(chan error, 1), make(chan snapshotCacheEntry, 1)
+	var release sync.Once
+	t.Cleanup(func() { release.Do(func() { close(oldResume) }) })
+	go func() {
+		_, _, err := cache.GetOrLoad("same", func() (any, error) { close(oldStarted); <-oldResume; return "old", nil })
+		oldDone <- err
+	}()
+	<-oldStarted
+	cache.Clear()
+	go func() {
+		entry, _, _ := cache.GetOrLoad("same", func() (any, error) { close(newStarted); return "new", nil })
+		newDone <- entry
+	}()
+	select {
+	case <-newStarted:
+	case <-time.After(time.Second):
+		t.Fatal("new-generation caller joined a stale singleflight read")
+	}
+	require.Equal(t, "new", (<-newDone).Payload)
+	release.Do(func() { close(oldResume) })
+	require.NoError(t, <-oldDone)
+	entry, found := cache.Get("same")
+	require.True(t, found)
+	require.Equal(t, "new", entry.Payload)
+}
+
+func TestAccountTodayStatsInvalidationFencesSampledGeneration(t *testing.T) {
+	previous := accountTodayStatsBatchCache
+	t.Cleanup(func() { accountTodayStatsBatchCache = previous })
+	accountTodayStatsBatchCache = newSnapshotCache(time.Minute)
+	key := buildAccountTodayStatsBatchCacheKey([]int64{42})
+	oldGeneration := accountTodayStatsBatchCache.Generation()
+	InvalidateAccountTodayStatsCache(42)
+	entry, stored := accountTodayStatsBatchCache.SetIfGeneration(key, "late-pre-commit-stats", oldGeneration)
+	require.False(t, stored)
+	require.Equal(t, "late-pre-commit-stats", entry.Payload, "the already-running response can complete without repopulating the cache")
+	_, found := accountTodayStatsBatchCache.Get(key)
+	require.False(t, found)
+	_, stored = accountTodayStatsBatchCache.SetIfGeneration(key, "fresh-post-commit-stats", accountTodayStatsBatchCache.Generation())
+	require.True(t, stored)
+	entry, found = accountTodayStatsBatchCache.Get(key)
+	require.True(t, found)
+	require.Equal(t, "fresh-post-commit-stats", entry.Payload)
+}
+
 func TestParseBoolQueryWithDefault(t *testing.T) {
 	tests := []struct {
 		name string

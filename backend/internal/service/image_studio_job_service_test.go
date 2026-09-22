@@ -110,6 +110,9 @@ func TestImageStudioEligibleKeysHidesUnavailableCindyImageCandidatesAndCredentia
 }
 
 func TestImageStudioCreateRejectsRemovedPaidCindyImageModel(t *testing.T) {
+	previous := cindyRolloutFeatures.imageStudio
+	cindyRolloutFeatures.imageStudio = true
+	t.Cleanup(func() { cindyRolloutFeatures.imageStudio = previous })
 	group, key, account := canonicalImageStudioFixture()
 	repo := &imageStudioRepoFake{job: &ImageStudioJob{ID: 61, UserID: 7, APIKeyID: key.ID, Count: 4, Status: ImageStudioJobPending}}
 	store := &imageStudioStoreFake{}

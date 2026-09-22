@@ -12,7 +12,7 @@
           <!-- Total API Keys -->
           <div class="card p-4">
             <div class="flex items-center gap-3">
-              <div class="rounded-none bg-blue-100 p-2 dark:bg-blue-900/30">
+              <div class="rounded-lg bg-blue-100 p-2 dark:bg-blue-900/30">
                 <Icon name="key" size="md" class="text-blue-600 dark:text-blue-400" :stroke-width="2" />
               </div>
               <div>
@@ -32,7 +32,7 @@
           <!-- Service Accounts -->
           <div class="card p-4">
             <div class="flex items-center gap-3">
-              <div class="rounded-none bg-purple-100 p-2 dark:bg-purple-900/30">
+              <div class="rounded-lg bg-purple-100 p-2 dark:bg-purple-900/30">
                 <Icon name="server" size="md" class="text-purple-600 dark:text-purple-400" :stroke-width="2" />
               </div>
               <div>
@@ -57,7 +57,7 @@
           <!-- Today Requests -->
           <div class="card p-4">
             <div class="flex items-center gap-3">
-              <div class="rounded-none bg-green-100 p-2 dark:bg-green-900/30">
+              <div class="rounded-lg bg-green-100 p-2 dark:bg-green-900/30">
                 <Icon name="chart" size="md" class="text-green-600 dark:text-green-400" :stroke-width="2" />
               </div>
               <div>
@@ -77,7 +77,7 @@
           <!-- New Users Today -->
           <div class="card p-4">
             <div class="flex items-center gap-3">
-              <div class="rounded-none bg-emerald-100 p-2 dark:bg-emerald-900/30">
+              <div class="rounded-lg bg-emerald-100 p-2 dark:bg-emerald-900/30">
                 <Icon name="userPlus" size="md" class="text-emerald-600 dark:text-emerald-400" :stroke-width="2" />
               </div>
               <div>
@@ -100,7 +100,7 @@
           <!-- Today Tokens -->
           <div class="card p-4">
             <div class="flex items-center gap-3">
-              <div class="rounded-none bg-amber-100 p-2 dark:bg-amber-900/30">
+              <div class="rounded-lg bg-amber-100 p-2 dark:bg-amber-900/30">
                 <Icon name="cube" size="md" class="text-amber-600 dark:text-amber-400" :stroke-width="2" />
               </div>
               <div>
@@ -136,7 +136,7 @@
           <!-- Total Tokens -->
           <div class="card p-4">
             <div class="flex items-center gap-3">
-              <div class="rounded-none bg-indigo-100 p-2 dark:bg-indigo-900/30">
+              <div class="rounded-lg bg-indigo-100 p-2 dark:bg-indigo-900/30">
                 <Icon name="database" size="md" class="text-indigo-600 dark:text-indigo-400" :stroke-width="2" />
               </div>
               <div>
@@ -172,7 +172,7 @@
           <!-- Performance (RPM/TPM) -->
           <div class="card p-4">
             <div class="flex items-center gap-3">
-              <div class="rounded-none bg-violet-100 p-2 dark:bg-violet-900/30">
+              <div class="rounded-lg bg-violet-100 p-2 dark:bg-violet-900/30">
                 <Icon name="bolt" size="md" class="text-violet-600 dark:text-violet-400" :stroke-width="2" />
               </div>
               <div class="flex-1">
@@ -198,7 +198,7 @@
           <!-- Avg Response Time -->
           <div class="card p-4">
             <div class="flex items-center gap-3">
-              <div class="rounded-none bg-rose-100 p-2 dark:bg-rose-900/30">
+              <div class="rounded-lg bg-rose-100 p-2 dark:bg-rose-900/30">
                 <Icon name="clock" size="md" class="text-rose-600 dark:text-rose-400" :stroke-width="2" />
               </div>
               <div>
@@ -230,7 +230,7 @@
               class="group flex items-center gap-3 rounded-none bg-gray-50 p-3 text-left transition-colors hover:bg-sky-50 dark:bg-dark-800 dark:hover:bg-sky-900/20"
               @click="router.push('/batch-image')"
             >
-              <span class="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-none bg-sky-100 text-sky-600 dark:bg-sky-900/30 dark:text-sky-400">
+              <span class="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-lg bg-sky-100 text-sky-600 dark:bg-sky-900/30 dark:text-sky-400">
                 <Icon name="sparkles" size="md" :stroke-width="2" />
               </span>
               <span class="min-w-0 flex-1">
@@ -248,7 +248,7 @@
               class="group flex items-center gap-3 rounded-none bg-gray-50 p-3 text-left transition-colors hover:bg-emerald-50 dark:bg-dark-800 dark:hover:bg-emerald-900/20"
               @click="router.push('/admin/groups')"
             >
-              <span class="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-none bg-emerald-100 text-emerald-600 dark:bg-emerald-900/30 dark:text-emerald-400">
+              <span class="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-lg bg-emerald-100 text-emerald-600 dark:bg-emerald-900/30 dark:text-emerald-400">
                 <Icon name="grid" size="md" :stroke-width="2" />
               </span>
               <span class="min-w-0 flex-1">
@@ -341,6 +341,7 @@
 </template>
 
 <script setup lang="ts">
+import { usePresentationColors } from '@/composables/usePresentationColors'
 import { ref, computed, onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRouter } from 'vue-router'
@@ -437,14 +438,12 @@ const granularityOptions = computed(() => [
 ])
 
 // Dark mode detection
-const isDarkMode = computed(() => {
-  return document.documentElement.classList.contains('dark')
-})
+const presentation = usePresentationColors()
 
 // Chart colors
 const chartColors = computed(() => ({
-  text: isDarkMode.value ? '#dcdcdc' : '#3a3b40',
-  grid: isDarkMode.value ? '#3a3b40' : '#dcdcdc'
+  text: presentation.value.text,
+  grid: presentation.value.grid
 }))
 
 // Line chart options (for user trend chart)

@@ -14,6 +14,7 @@ ARG POSTGRES_IMAGE=postgres:18-alpine
 ARG GOPROXY=https://goproxy.cn,direct
 ARG GOSUMDB=sum.golang.google.cn
 ARG NPM_CONFIG_REGISTRY=
+ARG PLUGIN_BUNDLE_STAGE=plugin-bundle-development
 
 # -----------------------------------------------------------------------------
 # Stage 1: Frontend Builder
@@ -41,9 +42,11 @@ RUN --mount=type=cache,id=sub2api-pnpm-store,target=/root/.local/share/pnpm/stor
 # Copy only that subtree to keep the build dependency minimal.
 COPY frontend/ ./
 COPY docs/legal/ /app/docs/legal/
+COPY backend/pkg/extensionapi/ui/ /app/backend/pkg/extensionapi/ui/
+COPY plugins/ /app/plugins/
 # Required PR checks own validation; the image stage only compiles the artifact.
 # Scope this flag to the build command, not the runtime image or daily builds.
-RUN SUB2API_ARTIFACT_BUILD=1 pnpm exec vite build
+RUN node /app/backend/pkg/extensionapi/ui/build.mjs && SUB2API_ARTIFACT_BUILD=1 pnpm exec vite build
 
 # -----------------------------------------------------------------------------
 # Stage 2: Backend Builder
@@ -68,36 +71,58 @@ ENV GOPROXY=${GOPROXY}
 ENV GOSUMDB=${GOSUMDB}
 
 # Install build dependencies
-RUN apk add --no-cache git ca-certificates tzdata
+RUN apk add --no-cache git ca-certificates tzdata bash
 
 WORKDIR /app/backend
 
 # Copy go mod files first (better caching)
 COPY backend/go.mod backend/go.sum ./
+COPY plugins/ /app/plugins/
 # Cache mount keeps the module cache across builds so a transient CDN blip on
 # retry resumes instead of re-fetching every zip from scratch.
 RUN --mount=type=cache,id=sub2api-gomod,target=/go/pkg/mod \
-    go mod download
+    go mod download && \
+    for module_dir in /app/plugins/*; do \
+      if [ -f "$module_dir/go.mod" ]; then (cd "$module_dir" && go mod download) || exit 1; fi; \
+    done
 
 # Copy backend source first
 COPY backend/ ./
+COPY --from=frontend-builder /app/plugins/ /app/plugins/
 
 # Copy frontend dist from previous stage (must be after backend copy to avoid being overwritten)
 COPY --from=frontend-builder /app/backend/internal/web/dist ./internal/web/dist
 
-# Build the binary (BuildType=release for CI builds, embed frontend)
+# Build the host. Production plugin packages are independently built and signed
+# before the image build, then copied and verified without being regenerated.
 # Version precedence: build arg VERSION > exact git tag > cmd/server/VERSION
 RUN --mount=type=cache,id=sub2api-gomod,target=/go/pkg/mod \
     --mount=type=cache,id=sub2api-gobuild,target=/root/.cache/go-build \
     VERSION_VALUE="${VERSION}" && \
     if [ -z "${VERSION_VALUE}" ]; then VERSION_VALUE="$(./scripts/resolve-version.sh)"; fi && \
     DATE_VALUE="${DATE:-$(date -u +%Y-%m-%dT%H:%M:%SZ)}" && \
-    CGO_ENABLED=0 GOOS=${TARGETOS:-linux} GOARCH=${TARGETARCH} go build \
+    TARGET_OS="${TARGETOS:-linux}" && TARGET_ARCH="${TARGETARCH:-amd64}" && \
+    CGO_ENABLED=0 GOOS=${TARGET_OS} GOARCH=${TARGET_ARCH} go build \
     -tags embed \
     -ldflags="-s -w -X main.Version=${VERSION_VALUE} -X main.Commit=${COMMIT} -X main.Date=${DATE_VALUE} -X main.BuildType=release" \
     -trimpath \
     -o /app/sub2api \
     ./cmd/server
+
+FROM backend-builder AS plugin-bundle-development
+RUN --mount=type=cache,id=sub2api-gomod,target=/go/pkg/mod \
+    --mount=type=cache,id=sub2api-gobuild,target=/root/.cache/go-build \
+    VERSION_VALUE="${VERSION}" && \
+    if [ -z "${VERSION_VALUE}" ]; then VERSION_VALUE="$(./scripts/resolve-version.sh)"; fi && \
+    bash ./scripts/build-development-plugins.sh /bundle/current "${VERSION_VALUE}" "${TARGETOS:-linux}-${TARGETARCH:-amd64}" "${COMMIT}"
+
+FROM backend-builder AS plugin-bundle-release
+COPY deploy/plugin-bundle/ /bundle/
+RUN --mount=type=cache,id=sub2api-gomod,target=/go/pkg/mod \
+    --mount=type=cache,id=sub2api-gobuild,target=/root/.cache/go-build \
+    go run ./cmd/package-plugin -verify-bundle /bundle/current/lock.json -tested-host-version "${VERSION}" -platform "${TARGETOS:-linux}-${TARGETARCH:-amd64}"
+
+FROM ${PLUGIN_BUNDLE_STAGE} AS plugin-bundle
 
 # -----------------------------------------------------------------------------
 # Stage 3: PostgreSQL Client (version-matched with docker-compose)
@@ -146,6 +171,7 @@ WORKDIR /app
 
 # Copy binary/resources with ownership to avoid extra full-layer chown copy
 COPY --from=backend-builder --chown=sub2api:sub2api /app/sub2api /app/sub2api
+COPY --from=plugin-bundle --chown=sub2api:sub2api /bundle/current /app/bundled-plugins
 COPY --from=backend-builder --chown=sub2api:sub2api /app/backend/resources /app/resources
 COPY --chown=sub2api:sub2api THIRD_PARTY_NOTICES.md /app/THIRD_PARTY_NOTICES.md
 

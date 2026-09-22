@@ -11,7 +11,7 @@
           type="button"
           role="tab"
           :aria-selected="window === opt.value"
-          class="px-3 py-1 rounded-none transition-colors"
+          class="px-3 py-1 rounded-lg transition-colors"
           :class="window === opt.value
             ? 'bg-white dark:bg-dark-700 shadow-outline text-gray-900 dark:text-white font-semibold'
             : 'text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200'"
@@ -22,7 +22,7 @@
       </div>
 
       <span
-        class="inline-flex items-center px-2.5 py-1 rounded-none text-xs font-semibold tracking-wider uppercase"
+        class="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold tracking-wider uppercase"
         :class="overallChipClass"
       >
         <span
@@ -34,7 +34,7 @@
 
       <button
         type="button"
-        class="h-8 w-8 rounded-none flex items-center justify-center text-gray-500 hover:text-gray-700 hover:bg-gray-100 dark:text-gray-400 dark:hover:text-gray-200 dark:hover:bg-dark-700 transition-colors disabled:opacity-50"
+        class="h-8 w-8 rounded-lg flex items-center justify-center text-gray-500 hover:text-gray-700 hover:bg-gray-100 dark:text-gray-400 dark:hover:text-gray-200 dark:hover:bg-dark-700 transition-colors disabled:opacity-50"
         :disabled="loading"
         :title="t('common.refresh')"
         @click="emit('refresh')"

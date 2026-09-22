@@ -554,19 +554,44 @@ func buildAccountForCreate(input *CreateAccountInput, accountExtra map[string]an
 }
 
 func (s *adminServiceImpl) CreateAccount(ctx context.Context, input *CreateAccountInput) (*Account, error) {
-	if input != nil {
-		// Keep the persisted credential endpoint in the same canonical form used
-		// by model previews and connection tests.  This also makes the Cindy
-		// mutation decision see the same normalized identity as the create path.
-		NormalizeAccountCredentialBaseURLs(input.Credentials)
+	if input == nil {
+		return nil, ErrAccountCreateInvalid
 	}
-	if dbent.TxFromContext(ctx) == nil && isCanonicalCindyAccountInput(input.Platform, input.Type, input.Credentials) {
+	NormalizeAccountCredentialBaseURLs(input.Credentials)
+	platform, _, profile, err := ResolveAccountProviderIdentity(input.Platform, input.Type, input.Credentials)
+	if err != nil {
+		return nil, err
+	}
+	if profile == ProviderProfileCindyLaxaV1 && platform == PlatformCindy {
+		copy := *input
+		copy.Credentials, copy.Extra = maps.Clone(input.Credentials), maps.Clone(input.Extra)
+		input = &copy
+		ctx, release, err := bindProcessAccountCreate(ctx, platform, input.Type, profile, input.ProviderCreate)
+		if err != nil {
+			return nil, err
+		}
+		if tx := dbent.TxFromContext(ctx); tx != nil {
+			fencer, ok := s.cindyAccountMutations.(interface{ FenceAccountCreate(context.Context) error })
+			if !ok {
+				release()
+				return nil, ErrAccountCreateUnavailable
+			}
+			retainAccountCreateUntilTransactionEnds(ctx, tx, release)
+			if err := fencer.FenceAccountCreate(ctx); err != nil {
+				return nil, err
+			}
+			return s.createAccount(ctx, input)
+		}
+		defer release()
 		if s.cindyAccountMutations == nil {
-			return nil, errors.New("cindy account mutation is unavailable")
+			return nil, ErrAccountCreateUnavailable
 		}
 		return s.cindyAccountMutations.Run(ctx, 0, func(txCtx context.Context) (*Account, error) {
 			return s.createAccount(txCtx, input)
 		})
+	}
+	if input.ProviderCreate != nil {
+		return nil, ErrAccountCreateInvalid
 	}
 	return s.createAccount(ctx, input)
 }
@@ -581,6 +606,12 @@ func (s *adminServiceImpl) createAccount(ctx context.Context, input *CreateAccou
 		return nil, err
 	}
 	input.Platform = platform
+	canonicalCreate := isCanonicalCindyAccountInput(input.Platform, input.Type, input.Credentials)
+	if canonicalCreate {
+		if err := applyAccountCreateProfile(ctx, input); err != nil {
+			return nil, err
+		}
+	}
 	accountExtra, err := normalizeOpenAILongContextBillingExtra(input.Platform, input.Extra)
 	if err != nil {
 		return nil, err
@@ -589,7 +620,7 @@ func (s *adminServiceImpl) createAccount(ctx context.Context, input *CreateAccou
 	if err != nil {
 		return nil, err
 	}
-	accountExtra, err = NormalizeCindyDeviceIdentityExtra(input.Platform, input.Type, input.Credentials, accountExtra, nil)
+	accountExtra, err = normalizeCindyDeviceIdentityForCreate(input.Platform, input.Type, input.Credentials, accountExtra)
 	if err != nil {
 		return nil, err
 	}
@@ -611,6 +642,9 @@ func (s *adminServiceImpl) createAccount(ctx context.Context, input *CreateAccou
 				}
 			}
 		}
+	}
+	if create, bound := AccountCreateFromContext(ctx); canonicalCreate && bound && len(uniquePositiveIDs(groupIDs)) < create.contribution.AccountCreate.MinimumEffectiveGroups {
+		return nil, ErrAccountCreateGroupsRequired
 	}
 
 	// 检查混合渠道风险（除非用户已确认）
@@ -680,25 +714,56 @@ func (s *adminServiceImpl) createAccount(ctx context.Context, input *CreateAccou
 }
 
 func (s *adminServiceImpl) UpdateAccount(ctx context.Context, id int64, input *UpdateAccountInput) (*Account, error) {
-	if dbent.TxFromContext(ctx) == nil {
-		current, err := s.accountRepo.GetByID(ctx, id)
-		if err != nil {
-			return nil, err
-		}
-		if hasCanonicalCindyProviderIdentity(current) {
-			if s.cindyAccountMutations == nil {
-				return nil, errors.New("cindy account mutation is unavailable")
-			}
-			return s.cindyAccountMutations.Run(ctx, id, func(txCtx context.Context) (*Account, error) {
-				return s.updateAccount(txCtx, id, input)
-			})
-		}
+	if input == nil {
+		return nil, ErrAccountEditInvalid
 	}
-	return s.updateAccount(ctx, id, input)
+	if err := ValidateAccountViewTargets(ctx, []int64{id}); err != nil {
+		return nil, err
+	}
+	current, err := s.accountRepo.GetByID(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	if !hasCanonicalCindyProviderIdentity(current) {
+		if input.ProviderEdit != nil {
+			return nil, ErrAccountEditInvalid
+		}
+		return s.updateAccount(ctx, id, input)
+	}
+	// Prepare from the pre-lock row. Real deltas acquire their independent owner
+	// lease before the runner obtains ordered policy fences and the account lock.
+	if tx := dbent.TxFromContext(ctx); tx != nil {
+		if _, bound := AccountEditFromContext(ctx); !bound {
+			prepared, release, err := PrepareAccountEdit(ctx, current, input.Credentials, input.Extra, input.ProviderEdit)
+			if err != nil {
+				return nil, err
+			}
+			defer release()
+			if edit, present := AccountEditFromContext(prepared); present && edit.changed {
+				return nil, ErrAccountEditUnavailable
+			}
+			ctx = prepared
+		}
+		retainBoundAccountEditLease(ctx, tx)
+		return s.updateAccount(ctx, id, input)
+	}
+	bound, release, err := PrepareAccountEdit(ctx, current, input.Credentials, input.Extra, input.ProviderEdit)
+	if err != nil {
+		return nil, err
+	}
+	defer release()
+	if s.cindyAccountMutations == nil {
+		return nil, errors.New("cindy account mutation is unavailable")
+	}
+	return s.cindyAccountMutations.Run(bound, id, func(txCtx context.Context) (*Account, error) { return s.updateAccount(txCtx, id, input) })
 }
 
 func (s *adminServiceImpl) updateAccount(ctx context.Context, id int64, input *UpdateAccountInput) (*Account, error) {
 	account, err := s.accountRepo.GetByID(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	owned, err := AccountEditOwnedForUpdate(ctx, account, input.Credentials, input.Extra, input.ProviderEdit)
 	if err != nil {
 		return nil, err
 	}
@@ -860,6 +925,9 @@ func (s *adminServiceImpl) updateAccount(ctx context.Context, id int64, input *U
 	if input.Extra == nil {
 		account.Extra = prepareCodexFingerprintExtraForUpdate(account, account.Extra)
 	}
+	// Whole-object legacy forms still own their other fields. Only these finite
+	// omitted keys retain exact raw presence/value, and only typed clear deletes.
+	applyAccountEditOwned(account, owned)
 	account.Extra, err = NormalizeCindyDeviceIdentityExtra(account.Platform, account.Type, account.Credentials, account.Extra, currentCindyExtra)
 	if err != nil {
 		return nil, err
@@ -1103,6 +1171,16 @@ func (s *adminServiceImpl) UpdateAccountExtra(ctx context.Context, id int64, upd
 	if len(updates) == 0 {
 		return nil
 	}
+	if HasAccountEditOwnedInput(nil, updates) {
+		account, err := s.accountRepo.GetByID(ctx, id)
+		if err != nil {
+			return err
+		}
+		if hasCanonicalCindyProviderIdentity(account) {
+			_, err := s.UpdateAccount(ctx, id, &UpdateAccountInput{Extra: mergeAccountEditBulkExtra(account.Extra, updates)})
+			return err
+		}
+	}
 	return s.accountRepo.UpdateExtra(ctx, id, updates)
 }
 
@@ -1160,7 +1238,7 @@ func (s *adminServiceImpl) BulkUpdateAccounts(ctx context.Context, input *BulkUp
 
 	// 预取所有目标账号，供凭据守卫/代理守卫/混合渠道检查共用，避免多次 DB 查询。
 	var cachedTargets []*Account
-	if len(input.Credentials) > 0 || input.ProxyID != nil || input.GroupIDs != nil || needMixedChannelCheck || openAISettings.any() || input.ProbeEnabled != nil || input.RateMultiplier != nil {
+	if len(input.Credentials) > 0 || input.ProxyID != nil || input.GroupIDs != nil || needMixedChannelCheck || openAISettings.any() || input.ProbeEnabled != nil || input.RateMultiplier != nil || HasAccountEditOwnedInput(input.Credentials, input.Extra) {
 		loaded, err := s.accountRepo.GetByIDs(ctx, input.AccountIDs)
 		if err != nil {
 			return nil, err
@@ -1283,6 +1361,9 @@ func (s *adminServiceImpl) BulkUpdateAccounts(ctx context.Context, input *BulkUp
 	}
 
 	// Prepare bulk updates for columns and JSONB fields.
+	if editResult, handled, err := s.runBulkAccountEdits(ctx, input, targetsByID); handled {
+		return editResult, err
+	}
 	repoUpdates := AccountBulkUpdate{
 		Credentials:                input.Credentials,
 		Extra:                      input.Extra,

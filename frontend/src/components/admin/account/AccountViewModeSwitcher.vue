@@ -30,7 +30,9 @@ import Icon from '@/components/icons/Icon.vue'
 
 export type AccountViewMode = 'table' | 'compact' | 'cards'
 
-defineProps<{ modelValue: AccountViewMode }>()
+const props = withDefaults(defineProps<{ modelValue: AccountViewMode; allowedModes?: AccountViewMode[] }>(), {
+  allowedModes: () => ['table', 'compact', 'cards']
+})
 
 const emit = defineEmits<{
   'update:modelValue': [value: AccountViewMode]
@@ -41,5 +43,5 @@ const options = computed(() => [
   { value: 'table' as const, icon: 'sort' as const, label: t('admin.accounts.viewModeTable') },
   { value: 'compact' as const, icon: 'menu' as const, label: t('admin.accounts.viewModeCompact') },
   { value: 'cards' as const, icon: 'grid' as const, label: t('admin.accounts.viewModeCards') }
-])
+].filter(option => props.allowedModes.includes(option.value)))
 </script>

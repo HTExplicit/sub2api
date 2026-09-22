@@ -37,6 +37,7 @@ func imageStudioExecutorPNG() []byte {
 }
 
 func TestImageStudioGatewayExecutorUsesNativeNOneForGenerate(t *testing.T) {
+	enableImageStudioPolicy(t)
 	gin.SetMode(gin.TestMode)
 	var got map[string]any
 	invoker := imageStudioImagesInvokerFunc(func(c *gin.Context) {
@@ -59,6 +60,7 @@ func TestImageStudioGatewayExecutorUsesNativeNOneForGenerate(t *testing.T) {
 }
 
 func TestImageStudioGatewayExecutorUsesNativeNOneForEdit(t *testing.T) {
+	enableImageStudioPolicy(t)
 	gin.SetMode(gin.TestMode)
 	invoker := imageStudioImagesInvokerFunc(func(c *gin.Context) {
 		require.Equal(t, "/v1/images/edits", c.Request.URL.Path)
@@ -90,6 +92,7 @@ func TestImageStudioGatewayExecutorUsesNativeNOneForEdit(t *testing.T) {
 }
 
 func TestImageStudioGatewayExecutorDoesNotExposeUpstreamErrorBody(t *testing.T) {
+	enableImageStudioPolicy(t)
 	executor := newImageStudioGatewayExecutorForTest(imageStudioImagesInvokerFunc(func(c *gin.Context) {
 		c.JSON(http.StatusBadGateway, gin.H{"error": gin.H{"message": "private upstream body"}})
 	}), nil)
@@ -110,6 +113,7 @@ func (s *imageStudioSubscriptionFinderStub) GetActiveSubscription(context.Contex
 }
 
 func TestImageStudioGatewayExecutorPreservesSubscriptionBillingContext(t *testing.T) {
+	enableImageStudioPolicy(t)
 	key := imageStudioExecutorAPIKey()
 	key.Group.SubscriptionType = service.SubscriptionTypeSubscription
 	subscription := &service.UserSubscription{ID: 71, UserID: key.UserID, GroupID: key.Group.ID}

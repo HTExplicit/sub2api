@@ -13,7 +13,7 @@
       <!-- Low balance badge (reactive 402/429 marker or probe-detected) -->
       <span
         v-if="balanceLow"
-        class="inline-flex items-center rounded-none bg-red-100 px-1 py-0.5 text-[10px] font-medium text-red-700 dark:bg-red-900/30 dark:text-red-300"
+        class="inline-flex items-center rounded bg-red-100 px-1 py-0.5 text-[10px] font-medium text-red-700 dark:bg-red-900/30 dark:text-red-300"
       >
         {{ t('admin.accounts.cnProviders.balanceLow') }}
       </span>
@@ -27,7 +27,7 @@
       <button
         type="button"
         data-test="cn-provider-balance-probe"
-        class="inline-flex items-center gap-0.5 whitespace-nowrap rounded-none px-1.5 py-0.5 text-[10px] font-medium leading-4 text-blue-600 transition-colors hover:bg-blue-50 disabled:cursor-not-allowed disabled:opacity-50 dark:text-blue-400 dark:hover:bg-blue-900/30"
+        class="inline-flex items-center gap-0.5 whitespace-nowrap rounded px-1.5 py-0.5 text-[10px] font-medium leading-4 text-blue-600 transition-colors hover:bg-blue-50 disabled:cursor-not-allowed disabled:opacity-50 dark:text-blue-400 dark:hover:bg-blue-900/30"
         :disabled="loading"
         :title="t('admin.accounts.cnProviders.balanceProbeTooltip')"
         @click="handleProbe"
@@ -57,6 +57,8 @@
 </template>
 
 <script setup lang="ts">
+import { readWithAccountView, useAccountViewContext } from '@/composables/useAccountViewContext'
+
 import { computed, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { adminAPI } from '@/api/admin'
@@ -64,6 +66,8 @@ import type { CNProviderBalanceEntry, CNProviderBalanceResult } from '@/api/admi
 import type { Account } from '@/types'
 import { platformTextClass } from '@/utils/platformColors'
 import { cnBalanceCellVisible } from './credentialsBuilder'
+const accountViewController = useAccountViewContext()
+
 
 const props = defineProps<{
   account: Account
@@ -159,7 +163,7 @@ const handleProbe = async () => {
   loading.value = true
   error.value = null
   try {
-    const result = await adminAPI.cnProviders.queryBalance(props.account.id)
+    const result = await readWithAccountView(accountViewController, view => view ? adminAPI.cnProviders.queryBalance(props.account.id, view) : adminAPI.cnProviders.queryBalance(props.account.id))
     // 失败时保留快照展示（仅显示错误行），成功才覆盖。
     if (result.success) {
       data.value = result

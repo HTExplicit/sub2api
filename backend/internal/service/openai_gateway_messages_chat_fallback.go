@@ -59,7 +59,10 @@ func (s *OpenAIGatewayService) forwardAnthropicViaRawChatCompletions(
 		return nil, fmt.Errorf("convert anthropic to chat completions: %w", err)
 	}
 
-	billingModel := resolveOpenAIForwardModel(account, anthropicReq.Model, defaultMappedModel)
+	billingModel, modelPolicyErr := resolveOpenAIForwardModelContext(ctx, account, anthropicReq.Model, defaultMappedModel)
+	if modelPolicyErr != nil {
+		return nil, modelPolicyErr
+	}
 	upstreamModel := normalizeOpenAIModelForUpstream(account, billingModel)
 	chatReq.Model = upstreamModel
 	chatReq.ReasoningEffort = openAICompatAnthropicReasoningEffort(&anthropicReq, upstreamModel, chatReq.ReasoningEffort)

@@ -1140,6 +1140,7 @@ func (h *GatewayHandler) Models(c *gin.Context) {
 	// account model_mapping keys. Compatibility aliases and unverified
 	// candidates are intentionally absent from the public list.
 	strictCindy := false
+	var cindySnapshot *service.CindyCatalogSnapshot
 	// Pinned OpenAI manifests are resolved directly from their configured
 	// account set; they must not be gated by Cindy availability classification
 	// (the two contracts use different account pools).
@@ -1148,18 +1149,26 @@ func (h *GatewayHandler) Models(c *gin.Context) {
 	pinnedOpenAI := platform == service.PlatformOpenAI && pinnedOpenAIConfigured
 	if (platform == service.PlatformOpenAI || platform == service.PlatformCindy) && !pinnedOpenAIConfigured {
 		var err error
-		strictCindy, err = h.gatewayService.ClassifyStrictCindyGroup(c.Request.Context(), authenticatedGroup)
+		strictCindy, err = h.gatewayService.ClassifyCindyIdentityGroup(c.Request.Context(), authenticatedGroup)
 		if err != nil {
 			h.errorResponse(c, http.StatusServiceUnavailable, "api_error", "Unable to determine model availability")
 			return
 		}
+		if strictCindy {
+			cindySnapshot, err = service.LoadCindyCatalogSnapshot(c.Request.Context(), nil)
+			if err != nil {
+				h.errorResponse(c, http.StatusServiceUnavailable, "api_error", "Cindy catalog snapshot is unavailable")
+				return
+			}
+			strictCindy = cindySnapshot.Config.CatalogEnabled
+		}
 	}
 	if strictCindy {
-		availableModels := service.CindyPublicModelIDs()
+		availableModels := cindySnapshot.PublicModelIDs
 		if apiKey != nil && apiKey.Group != nil && apiKey.Group.ModelAllowlistEnabled() {
 			availableModels = apiKey.Group.ModelAllowlist.FilterForListing(availableModels)
 		}
-		writeCindyOpenAIModelsList(c, availableModels)
+		writeCindyOpenAIModelsListSnapshot(c, availableModels, cindySnapshot)
 		return
 	}
 	c.Set(modelCapacityProjectorContextKey, func(body []byte) ([]byte, error) {
@@ -1248,12 +1257,7 @@ func (h *GatewayHandler) ModelCapabilities(c *gin.Context) {
 		h.errorResponse(c, http.StatusNotFound, "not_found_error", "Model capabilities are not available for this group")
 		return
 	}
-	if !service.CindyCapabilityCatalogFeatureEnabled() {
-		markLocalGate()
-		h.errorResponse(c, http.StatusNotFound, "not_found_error", "Model capability catalog is not enabled")
-		return
-	}
-	strictCindy, err := h.gatewayService.ClassifyStrictCindyGroup(c.Request.Context(), apiKey.Group)
+	strictCindy, err := h.gatewayService.ClassifyCindyIdentityGroup(c.Request.Context(), apiKey.Group)
 	if err != nil {
 		h.errorResponse(c, http.StatusServiceUnavailable, "api_error", "Unable to determine model availability")
 		return
@@ -1263,7 +1267,17 @@ func (h *GatewayHandler) ModelCapabilities(c *gin.Context) {
 		h.errorResponse(c, http.StatusNotFound, "not_found_error", "Model capabilities are not available for this group")
 		return
 	}
-	hasSchedulableCindy, err := h.gatewayService.HasSchedulableCindyAccount(c.Request.Context(), apiKey.Group)
+	snapshot, err := service.LoadCindyCatalogSnapshot(c.Request.Context(), nil)
+	if err != nil {
+		h.errorResponse(c, http.StatusServiceUnavailable, "api_error", "Cindy catalog snapshot is unavailable")
+		return
+	}
+	if !snapshot.Config.CatalogEnabled {
+		markLocalGate()
+		h.errorResponse(c, http.StatusNotFound, "not_found_error", "Model capability catalog is not enabled")
+		return
+	}
+	hasSchedulableCindy, err := h.gatewayService.HasSchedulableCindyIdentityAccount(c.Request.Context(), apiKey.Group)
 	if err != nil {
 		h.errorResponse(c, http.StatusServiceUnavailable, "api_error", "Unable to determine model availability")
 		return
@@ -1276,10 +1290,10 @@ func (h *GatewayHandler) ModelCapabilities(c *gin.Context) {
 
 	c.JSON(http.StatusOK, gin.H{
 		"object":           "list",
-		"catalog_version":  service.CindyCapabilityCatalogVersion,
-		"catalog_revision": service.CindyFreeModelCatalogSourceRevision,
-		"catalog_sha256":   service.CindyFreeModelCatalogSHA256,
-		"data":             service.CindyVerifiedModelCapabilities(),
+		"catalog_version":  snapshot.Metadata.CatalogVersion,
+		"catalog_revision": snapshot.Metadata.InventoryRevision,
+		"catalog_sha256":   snapshot.Metadata.InventorySHA256,
+		"data":             snapshot.ModelCapabilities,
 	})
 }
 
@@ -1536,13 +1550,13 @@ func writeOpenAIModelsList(c *gin.Context, modelIDs []string) {
 	})
 }
 
-func writeCindyOpenAIModelsList(c *gin.Context, modelIDs []string) {
+func writeCindyOpenAIModelsListSnapshot(c *gin.Context, modelIDs []string, snapshot *service.CindyCatalogSnapshot) {
 	defaultsByID := make(map[string]openai.Model, len(openai.DefaultModels))
 	for _, model := range openai.DefaultModels {
 		defaultsByID[model.ID] = model
 	}
 	metadataByID := make(map[string]service.CindyCatalogModel, len(modelIDs))
-	for _, model := range service.CindyCatalogModels() {
+	for _, model := range snapshot.CatalogModels {
 		metadataByID[model.ID] = model
 	}
 
@@ -2679,8 +2693,12 @@ func (h *GatewayHandler) submitUsageRecordTask(parent context.Context, task serv
 		return
 	}
 	task = wrapUsageRecordTaskContext(parent, task)
+	task, abandon := service.TrackQuotaUsageTask(parent, task)
 	if h.usageRecordWorkerPool != nil {
 		if mode := h.usageRecordWorkerPool.Submit(task); mode != service.UsageRecordSubmitModeDroppedStopped {
+			if mode.Dropped() {
+				abandon()
+			}
 			return
 		}
 		// 池已停止（进程关停窗口）：计费任务不能静默丢失，降级为内联同步执行。
@@ -2709,6 +2727,7 @@ func (h *GatewayHandler) submitMandatoryUsageRecordTask(parent context.Context, 
 		return
 	}
 	task = wrapUsageRecordTaskContext(parent, task)
+	task, _ = service.TrackQuotaUsageTask(parent, task)
 	if h.usageRecordWorkerPool != nil {
 		if mode := h.usageRecordWorkerPool.Submit(task); !mode.Dropped() {
 			return

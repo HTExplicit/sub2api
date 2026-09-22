@@ -1,8 +1,6 @@
 package handler
 
 import (
-	"context"
-
 	"github.com/Wei-Shaw/sub2api/internal/config"
 	"github.com/Wei-Shaw/sub2api/internal/handler/admin"
 	"github.com/Wei-Shaw/sub2api/internal/securityaudit"
@@ -64,7 +62,6 @@ func ProvideAdminHandlers(
 	accountHandler.SetUpstreamBillingProbeService(upstreamBillingProbe)
 	accountHandler.SetOllamaCloudUsageService(ollamaCloudUsage)
 	accountHandler.SetAccountTrafficObserver(accountTrafficObserver)
-	accountHandler.SetCodexTicketSettings(settingService)
 	return &AdminHandlers{
 		Dashboard:              dashboardHandler,
 		User:                   userHandler,
@@ -176,8 +173,9 @@ func ProvideSystemHandler(updateService *service.UpdateService, lockService *ser
 }
 
 // ProvideSettingHandler creates SettingHandler with version from BuildInfo
-func ProvideSettingHandler(settingService *service.SettingService, buildInfo BuildInfo, notificationEmailService *service.NotificationEmailService) *SettingHandler {
+func ProvideSettingHandler(settingService *service.SettingService, buildInfo BuildInfo, notificationEmailService *service.NotificationEmailService, pluginManager *service.PluginManager) *SettingHandler {
 	h := NewSettingHandler(settingService, buildInfo.Version)
+	h.pluginManager = pluginManager
 	h.SetNotificationEmailService(notificationEmailService)
 	return h
 }
@@ -301,7 +299,7 @@ var ProviderSet = wire.NewSet(
 	admin.NewUserAttributeHandler,
 	admin.NewErrorPassthroughHandler,
 	admin.NewTLSFingerprintProfileHandler,
-	admin.NewPluginHandler,
+	ProvidePluginHandler,
 	admin.NewAdminAPIKeyHandler,
 	admin.NewScheduledTestHandler,
 	admin.NewChannelHandler,
@@ -321,13 +319,16 @@ var ProviderSet = wire.NewSet(
 	ProvideHandlers,
 )
 
-func ProvideAccountJobRuntime(jobs *service.AccountJobService, accountHandler *admin.AccountHandler) (*service.AccountJobRuntime, error) {
+func ProvideAccountJobRuntime(jobs *service.AccountJobService, accountHandler *admin.AccountHandler, pluginManager *service.PluginManager) (*service.AccountJobRuntime, error) {
 	accountHandler.SetAccountJobService(jobs)
-	runtime := service.NewAccountJobRuntime(jobs, accountHandler)
-	if err := runtime.Start(context.Background()); err != nil {
-		return nil, err
-	}
+	runtime := service.NewAccountJobRuntime(jobs, service.NewPluginJobExecutor(pluginManager, accountHandler))
 	return runtime, nil
+}
+
+func ProvidePluginHandler(manager *service.PluginManager, jobs *service.AccountJobService) *admin.PluginHandler {
+	handler := admin.NewPluginHandler(manager)
+	handler.SetAccountJobs(jobs)
+	return handler
 }
 
 func ProvideImageStudioRuntime(
@@ -337,11 +338,5 @@ func ProvideImageStudioRuntime(
 	executor *ImageStudioGatewayExecutor,
 ) (*service.ImageStudioRuntime, error) {
 	runtime := service.NewImageStudioRuntime(repo, studio, store, executor, service.ImageStudioRuntimeOptions{})
-	if !service.ImageStudioFeatureEnabled() {
-		return runtime, nil
-	}
-	if err := runtime.Start(context.Background()); err != nil {
-		return nil, err
-	}
 	return runtime, nil
 }

@@ -8,37 +8,35 @@ import (
 	"net/http"
 	"strings"
 
+	extensionv1 "github.com/Wei-Shaw/sub2api/pkg/extensionapi/v1"
+
 	"github.com/tidwall/gjson"
 )
 
 const cindyBalanceProbeMaxBodyBytes = 64 << 10
 
-// These lowest-positive-input-price free-pool controls are used only by an
-// explicitly created durable admin job. Persisted luna/terra stage names are
-// retained as historical schema labels and no longer identify these models.
-var cindyBalanceProbeModels = [...]string{
-	"tencent/hy3",
-	"z-ai/glm-5.3-flash",
-}
-
-type cindyBalanceProbeOutcome uint8
+type cindyBalanceProbeOutcome = extensionv1.CindyProbeOutcome
 
 const (
-	cindyBalanceProbeOther cindyBalanceProbeOutcome = iota
-	cindyBalanceProbeSuccess
-	cindyBalanceProbeExhausted
-	cindyBalanceProbeNetworkFailure
-	cindyBalanceProbeServerFailure
+	cindyBalanceProbeOther          = extensionv1.CindyProbeOther
+	cindyBalanceProbeSuccess        = extensionv1.CindyProbeSuccess
+	cindyBalanceProbeExhausted      = extensionv1.CindyProbeExhausted
+	cindyBalanceProbeNetworkFailure = extensionv1.CindyProbeNetworkFailure
+	cindyBalanceProbeServerFailure  = extensionv1.CindyProbeServerFailure
 )
 
 func (s *OpenAIGatewayService) probeCindyBalanceModel(ctx context.Context, account *Account, model string) cindyBalanceProbeOutcome {
-	if !CindyBalanceDetectionFeatureEnabled() || s == nil || account == nil || s.httpUpstream == nil {
+	if s == nil || account == nil || account.ID <= 0 || s.httpUpstream == nil {
+		return cindyBalanceProbeOther
+	}
+	plan, err := cindyBalanceProbePlanForAccount(ctx, account.ID)
+	if err != nil || (model != plan.Models[0] && model != plan.Models[1]) {
 		return cindyBalanceProbeOther
 	}
 	body, _ := json.Marshal(map[string]any{
 		"model":             model,
-		"input":             "Reply OK.",
-		"max_output_tokens": 1,
+		"input":             plan.Input,
+		"max_output_tokens": plan.MaxOutputTokens,
 		"stream":            false,
 	})
 	// The account has already passed strict canonical Cindy identity validation;
@@ -64,9 +62,12 @@ func (s *OpenAIGatewayService) probeCindyBalanceModel(ctx context.Context, accou
 		return cindyBalanceProbeNetworkFailure
 	}
 	defer func() { _ = resp.Body.Close() }()
-	responseBody, err := io.ReadAll(io.LimitReader(resp.Body, cindyBalanceProbeMaxBodyBytes))
+	responseBody, err := io.ReadAll(io.LimitReader(resp.Body, cindyBalanceProbeMaxBodyBytes+1))
 	if err != nil {
 		return cindyBalanceProbeNetworkFailure
+	}
+	if len(responseBody) > cindyBalanceProbeMaxBodyBytes {
+		return cindyBalanceProbeOther
 	}
 	if ClassifyCindyBalanceInsufficient(account, resp.StatusCode, responseBody) != CindyBalanceSignalNone {
 		return cindyBalanceProbeExhausted

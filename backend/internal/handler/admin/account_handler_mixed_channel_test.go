@@ -232,8 +232,9 @@ func TestAccountHandlerBulkUpdateMixedChannelConfirmSkips(t *testing.T) {
 }
 
 func TestBulkUpdateAcceptsFilterTargetRequest(t *testing.T) {
-	adminSvc := newStubAdminService()
-	router, _, jobs := setupAccountMixedChannelRouter(adminSvc)
+	adminSvc := newBulkJobScopeAdmin(7)
+	adminSvc.matches = []int64{7}
+	router, _, jobs := newBulkJobScopeRouter(adminSvc)
 
 	body, _ := json.Marshal(map[string]any{
 		"filters": map[string]any{
@@ -247,15 +248,18 @@ func TestBulkUpdateAcceptsFilterTargetRequest(t *testing.T) {
 		"schedulable": true,
 	})
 	rec := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/admin/accounts/bulk-update", bytes.NewReader(body))
+	req := httptest.NewRequest(http.MethodPost, "/bulk", bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	setAccountJobTestIdempotencyKey(req)
 	router.ServeHTTP(rec, req)
 
 	require.Equal(t, http.StatusAccepted, rec.Code)
 	var payload BulkUpdateAccountsRequest
-	params := requireSubmittedAccountJob(t, jobs, service.AccountJobKindBulkUpdate, &payload)
-	require.Len(t, params.Items, 1, "filter-targeted jobs resolve their concrete targets in the worker")
+	params := requireSubmittedAccountJob(t, jobs.accountJobSubmitRepository, service.AccountJobKindBulkUpdate, &payload)
+	require.Len(t, params.Items, 1, "filter-targeted jobs freeze their concrete targets before submission")
+	require.NotNil(t, params.Items[0].TargetAccountID)
+	require.Equal(t, int64(7), *params.Items[0].TargetAccountID)
+	require.Equal(t, 1, adminSvc.filterCalls)
 	filters, err := toServiceBulkUpdateAccountFilters(payload.Filters)
 	require.NoError(t, err)
 	require.NotNil(t, filters)
@@ -263,8 +267,9 @@ func TestBulkUpdateAcceptsFilterTargetRequest(t *testing.T) {
 }
 
 func TestBulkUpdateAcceptsCockpitConsoleFilterTargetRequest(t *testing.T) {
-	adminSvc := newStubAdminService()
-	router, _, jobs := setupAccountMixedChannelRouter(adminSvc)
+	adminSvc := newBulkJobScopeAdmin(7)
+	adminSvc.matches = []int64{7}
+	router, _, jobs := newBulkJobScopeRouter(adminSvc)
 	body, _ := json.Marshal(map[string]any{
 		"filters": map[string]any{
 			"platforms": "openai,grok", "types": "oauth", "statuses": "active,error",
@@ -275,15 +280,18 @@ func TestBulkUpdateAcceptsCockpitConsoleFilterTargetRequest(t *testing.T) {
 		"schedulable": true,
 	})
 	rec := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/admin/accounts/bulk-update", bytes.NewReader(body))
+	req := httptest.NewRequest(http.MethodPost, "/bulk", bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	setAccountJobTestIdempotencyKey(req)
 	router.ServeHTTP(rec, req)
 
 	require.Equal(t, http.StatusAccepted, rec.Code, rec.Body.String())
 	var payload BulkUpdateAccountsRequest
-	params := requireSubmittedAccountJob(t, jobs, service.AccountJobKindBulkUpdate, &payload)
-	require.Len(t, params.Items, 1, "filter-targeted jobs resolve their concrete targets in the worker")
+	params := requireSubmittedAccountJob(t, jobs.accountJobSubmitRepository, service.AccountJobKindBulkUpdate, &payload)
+	require.Len(t, params.Items, 1, "filter-targeted jobs freeze their concrete targets before submission")
+	require.NotNil(t, params.Items[0].TargetAccountID)
+	require.Equal(t, int64(7), *params.Items[0].TargetAccountID)
+	require.Equal(t, 1, adminSvc.filterCalls)
 	converted, err := toServiceBulkUpdateAccountFilters(payload.Filters)
 	require.NoError(t, err)
 	require.NotNil(t, converted)

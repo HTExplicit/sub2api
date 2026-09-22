@@ -8,6 +8,10 @@ import zhCommon from "@/i18n/locales/zh/common";
 import zhSettings from "@/i18n/locales/zh/admin/settings";
 import SettingsView from "../SettingsView.vue";
 
+vi.mock('@/components/plugins/ExtensionSlot.vue', () => ({
+  default: { props: ['name'], template: '<div :data-test-extension-slot="name" />' },
+}));
+
 const {
   getSettings,
   updateSettings,
@@ -774,39 +778,17 @@ describe("admin SettingsView payment visible method controls", () => {
     wrapper.unmount();
   });
 
-  it("submits the Codex ticket harvest toggle", async () => {
-    getSettings.mockResolvedValueOnce({
-      ...baseSettingsResponse,
-      openai_codex_ticket_enabled: false,
-    });
+  it("mounts plugin settings without resubmitting retired ticket configuration", async () => {
     const wrapper = mountView();
     await flushPromises();
     await openGatewayTab(wrapper);
-    const toggle = wrapper.get("#codex-ticket-enabled");
-    await toggle.setValue(true);
+    expect(wrapper.find('[data-test-extension-slot="admin.settings"]').exists()).toBe(true);
+    expect(wrapper.find('#codex-ticket-enabled').exists()).toBe(false);
+    expect(wrapper.find('#codex-ticket-harvest-proxy').exists()).toBe(false);
     await wrapper.find("form").trigger("submit.prevent");
     await flushPromises();
-    expect(updateSettings.mock.calls[0]?.[0].openai_codex_ticket_enabled).toBe(true);
-    wrapper.unmount();
-  });
-
-  it("loads the full administrator Codex proxy and submits a replacement URL", async () => {
-    getSettings.mockResolvedValueOnce({
-      ...baseSettingsResponse,
-      openai_codex_ticket_harvest_proxy_url: "http://user:fixture-old@old.example.com:8080",
-      openai_codex_ticket_harvest_proxy_configured: true,
-    });
-    const wrapper = mountView();
-    await flushPromises();
-    await openGatewayTab(wrapper);
-    const input = wrapper.get<HTMLInputElement>("#codex-ticket-harvest-proxy");
-    expect(input.element.value).toBe("http://user:fixture-old@old.example.com:8080");
-    await input.setValue("socks5h://user:new-secret@new.example.com:1080");
-    await wrapper.find("form").trigger("submit.prevent");
-    await flushPromises();
-    expect(updateSettings.mock.calls[0]?.[0].openai_codex_ticket_harvest_proxy_url)
-      .toBe("socks5h://user:new-secret@new.example.com:1080");
-    expect(updateSettings.mock.calls[0]?.[0]).not.toHaveProperty("openai_codex_ticket_harvest_proxy_configured");
+    expect(updateSettings).toHaveBeenCalledOnce();
+    expect(Object.keys(updateSettings.mock.calls[0][0]).some(key => key.startsWith('openai_codex_ticket_'))).toBe(false);
     wrapper.unmount();
   });
 

@@ -16,14 +16,15 @@ import (
 
 type accountTaxonomyHandlerStub struct {
 	*stubAdminService
-	facets        *service.AccountConsoleFacets
-	lastBulk      service.BulkAccountTaxonomyInput
-	bulkResult    *service.BulkAccountTaxonomyResult
-	folders       []service.AccountManagementFolder
-	tags          []service.AccountManagementTag
-	lastFolderIDs []int64
-	lastTagIDs    []int64
-	lastFacets    service.AccountConsoleFilters
+	facets          *service.AccountConsoleFacets
+	lastBulk        service.BulkAccountTaxonomyInput
+	bulkResult      *service.BulkAccountTaxonomyResult
+	folders         []service.AccountManagementFolder
+	tags            []service.AccountManagementTag
+	lastFolderIDs   []int64
+	lastTagIDs      []int64
+	lastFacets      service.AccountConsoleFilters
+	assignedAccount *service.Account
 }
 
 func newAccountTaxonomyHandlerStub() *accountTaxonomyHandlerStub {
@@ -61,7 +62,27 @@ func (s *accountTaxonomyHandlerStub) UpdateAccountTag(context.Context, int64, se
 func (s *accountTaxonomyHandlerStub) DeleteAccountTag(context.Context, int64) error { return nil }
 
 func (s *accountTaxonomyHandlerStub) SetAccountTaxonomy(context.Context, int64, service.AccountTaxonomyAssignment) (*service.Account, error) {
+	if s.assignedAccount != nil {
+		return s.assignedAccount, nil
+	}
 	return &service.Account{}, nil
+}
+
+func TestTaxonomyPluginResponseDoesNotExposeAccountCredentials(t *testing.T) {
+	stub := newAccountTaxonomyHandlerStub()
+	stub.assignedAccount = &service.Account{ID: 7, Credentials: map[string]any{"api_key": "synthetic-secret"}}
+	h := NewAccountHandler(stub, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	router := gin.New()
+	router.PUT("/accounts/:id/taxonomy", h.SetAccountTaxonomy)
+	request := httptest.NewRequest(http.MethodPut, "/accounts/7/taxonomy", bytes.NewBufferString(`{"folder_id":null,"tag_ids":[]}`))
+	request.Header.Set("Content-Type", "application/json")
+	request.Header.Set("X-Sub2API-Plugin", "3")
+	response := httptest.NewRecorder()
+	router.ServeHTTP(response, request)
+	require.Equal(t, http.StatusOK, response.Code)
+	require.NotContains(t, response.Body.String(), "synthetic-secret")
+	require.NotContains(t, response.Body.String(), "credentials")
+	require.Contains(t, response.Body.String(), `"account_id":7`)
 }
 
 func (s *accountTaxonomyHandlerStub) ListAccountsConsole(context.Context, int, int, service.AccountConsoleFilters) ([]service.Account, int64, error) {

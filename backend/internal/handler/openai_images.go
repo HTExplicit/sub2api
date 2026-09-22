@@ -16,6 +16,15 @@ import (
 	"go.uber.org/zap"
 )
 
+// imagePolicyError distinguishes unavailable execution policy from client input.
+func (h *OpenAIGatewayHandler) imagePolicyError(c *gin.Context, err error) {
+	if errors.Is(err, service.ErrExtensionOperationDisabled) || errors.Is(err, service.ErrExtensionOperationUnavailable) {
+		h.errorResponse(c, http.StatusServiceUnavailable, "service_unavailable", "Image policy is unavailable")
+		return
+	}
+	h.errorResponse(c, http.StatusBadRequest, "invalid_request_error", err.Error())
+}
+
 // Images handles OpenAI Images API requests.
 // POST /v1/images/generations
 // POST /v1/images/edits
@@ -97,8 +106,8 @@ func (h *OpenAIGatewayHandler) Images(c *gin.Context) {
 			h.errorResponse(c, http.StatusNotFound, "model_not_found", "Model is not supported on this Images endpoint")
 			return
 		}
-		if err := service.ValidateCindyImageRequest(requestModel, parsed); err != nil {
-			h.errorResponse(c, http.StatusBadRequest, "invalid_request_error", err.Error())
+		if err := service.ValidateCindyImageRequestForAccount(c.Request.Context(), nil, requestModel, parsed); err != nil {
+			h.imagePolicyError(c, err)
 			return
 		}
 	} else if !service.IsNativeOpenAIImagesModel(requestModel) &&
@@ -260,8 +269,7 @@ func (h *OpenAIGatewayHandler) Images(c *gin.Context) {
 		)
 
 		account := selection.Account
-		if service.CindyCapabilityCatalogFeatureEnabled() &&
-			service.IsCindyAPIKeyAccount(account.Platform, account.Type, account.Credentials) {
+		if service.IsCindyAPIKeyAccount(account.Platform, account.Type, account.Credentials) {
 			if !service.CindyModelSupportsEndpoint(requestModel, cindyEndpoint) {
 				if selection.ReleaseFunc != nil {
 					selection.ReleaseFunc()
@@ -269,11 +277,11 @@ func (h *OpenAIGatewayHandler) Images(c *gin.Context) {
 				h.errorResponse(c, http.StatusNotFound, "model_not_found", "Model is not supported on this Images endpoint")
 				return
 			}
-			if err := service.ValidateCindyImageRequest(requestModel, parsed); err != nil {
+			if err := service.ValidateCindyImageRequestForAccount(c.Request.Context(), account, requestModel, parsed); err != nil {
 				if selection.ReleaseFunc != nil {
 					selection.ReleaseFunc()
 				}
-				h.errorResponse(c, http.StatusBadRequest, "invalid_request_error", err.Error())
+				h.imagePolicyError(c, err)
 				return
 			}
 		}
@@ -315,7 +323,7 @@ func (h *OpenAIGatewayHandler) Images(c *gin.Context) {
 		}
 		forwardStart := time.Now()
 		writerSizeBeforeForward := service.OpenAIImagesJSONKeepaliveAdjustedWrittenSize(c)
-		trafficTurn := h.trafficObserver.Begin(requestCtx, account.ID, service.AccountTrafficProtocolHTTP)
+		trafficTurn := h.trafficObserver.Begin(requestCtx, account, service.AccountTrafficProtocolHTTP)
 		result, err := func() (res *service.OpenAIForwardResult, ferr error) {
 			defer func() {
 				if accountReleaseFunc != nil {

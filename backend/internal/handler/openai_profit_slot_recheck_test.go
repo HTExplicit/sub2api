@@ -2,9 +2,8 @@
 
 package handler
 
-// 槽位终检与生图跳门回归（handler 半程）：
-//   - 槽位获取成功后的利润终检：越线账号释放槽位并要求调用方排除重选，
-//     不写响应、不绑定粘连；
+// 槽位准入与请求能力映射回归（handler 半程）：
+//   - 历史利润设置不再否决账号；获取的槽位保留到调用方释放，且不写响应；
 //   - openAIResponsesRequiredCapability 的请求能力映射覆盖生图与原生远程压缩。
 
 import (
@@ -96,7 +95,7 @@ func TestAcquireResponsesAccountSlotProfitRecheck(t *testing.T) {
 		}
 	}
 
-	t.Run("veto releases slot and requests reschedule without writing response", func(t *testing.T) {
+	t.Run("retired profit control preserves acquired slot without writing response", func(t *testing.T) {
 		cache := &profitCountingConcurrencyCache{}
 		h := newHandler(cache)
 		w := httptest.NewRecorder()
@@ -105,10 +104,13 @@ func TestAcquireResponsesAccountSlotProfitRecheck(t *testing.T) {
 		streamStarted := false
 
 		release, result := h.acquireResponsesAccountSlot(c, &groupID, "", newSelection(profitSlotTestAccount(1, 0.8)), false, &streamStarted, zap.NewNop())
-		require.Equal(t, openAISlotAcquireProfitVetoed, result)
-		require.Nil(t, release)
-		require.Zero(t, w.Body.Len(), "利润终检否决不得写出任何响应")
-		require.Equal(t, int64(1), cache.accountReleases.Load(), "否决后必须立即释放已获取的槽位")
+		require.Equal(t, openAISlotAcquireOK, result, "已退役利润门不得因历史配置否决账号")
+		require.NotNil(t, release)
+		t.Cleanup(release)
+		require.Zero(t, w.Body.Len(), "正常槽位准入不得写出任何响应")
+		require.Zero(t, cache.accountReleases.Load(), "已获取的槽位应保留给调用方")
+		release()
+		require.Equal(t, int64(1), cache.accountReleases.Load(), "调用方结束使用后应释放一次槽位")
 	})
 
 	t.Run("qualifying account acquires normally", func(t *testing.T) {

@@ -32,6 +32,11 @@ const (
 // *OpenAIForwardResult（WebSearchCalls=1，供按次计费）；上游错误被原样透传
 // 给客户端时返回 (nil, nil)，不产生计费。
 func (s *OpenAIGatewayService) ForwardAlphaSearch(ctx context.Context, c *gin.Context, account *Account, body []byte) (*OpenAIForwardResult, error) {
+	pricingContext, pricingErr := CaptureCindyPricingContext(ctx, c, account)
+	if pricingErr != nil {
+		return nil, pricingErr
+	}
+	ctx = pricingContext
 	if s == nil || c == nil || account == nil {
 		return nil, fmt.Errorf("service, context, and account are required")
 	}
@@ -42,12 +47,17 @@ func (s *OpenAIGatewayService) ForwardAlphaSearch(ctx context.Context, c *gin.Co
 	}
 	strictCindy := IsCindyAPIKeyAccount(account.Platform, account.Type, account.Credentials)
 	upstreamModel := ""
+	var cindyPlan *CindyAlphaSearchPlan
 	if strictCindy {
-		var available bool
-		upstreamModel, available = CindyAlphaSearchUpstreamModel(requestedModel)
-		if !available {
+		plan, planErr := resolveCindyAlphaSearchPlanForAccount(ctx, requestedModel, account.ID)
+		if planErr != nil {
+			return nil, NewOpenAIAlphaSearchBridgeUnavailableError(http.StatusServiceUnavailable, nil, nil)
+		}
+		if !plan.Allowed {
 			return nil, NewOpenAIAlphaSearchBridgeUnavailableError(http.StatusNotFound, nil, nil)
 		}
+		cindyPlan = &plan
+		upstreamModel = plan.UpstreamModel
 	} else {
 		upstreamModel = normalizeOpenAIModelForUpstream(account, account.GetMappedModel(requestedModel))
 	}
@@ -71,13 +81,13 @@ func (s *OpenAIGatewayService) ForwardAlphaSearch(ctx context.Context, c *gin.Co
 	}
 	if strictCindy {
 		result, forwardErr := s.forwardAlphaSearchViaResponsesWebSearch(
-			ctx, c, account, body, token, proxyURL, requestedModel, upstreamModel,
+			ctx, c, account, body, token, proxyURL, requestedModel, upstreamModel, cindyPlan,
 		)
 		if !isCindyAlphaSearchMessagesFallback(forwardErr) {
 			return result, forwardErr
 		}
 		return s.forwardCindyAlphaSearchViaNativeMessages(
-			ctx, c, account, body, token, proxyURL, requestedModel, upstreamModel,
+			ctx, c, account, body, token, proxyURL, requestedModel, upstreamModel, cindyPlan,
 		)
 	}
 	if err := s.ensureOpenAIAlphaSearchAuthMetadata(ctx, account, token, proxyURL); err != nil {
@@ -89,7 +99,7 @@ func (s *OpenAIGatewayService) ForwardAlphaSearch(ctx context.Context, c *gin.Co
 	// 拒绝为 no_matching_rule。对 PAT 账号使用等价的 hosted web_search
 	// Responses 路径兜底，避免把可用账号误判为搜索不可用。
 	if account.IsOpenAIPersonalAccessToken() {
-		return s.forwardAlphaSearchViaResponsesWebSearch(ctx, c, account, body, token, proxyURL, requestedModel, upstreamModel)
+		return s.forwardAlphaSearchViaResponsesWebSearch(ctx, c, account, body, token, proxyURL, requestedModel, upstreamModel, nil)
 	}
 
 	req, err := s.buildOpenAIAlphaSearchRequest(ctx, c, account, body, token)
@@ -188,8 +198,9 @@ func (s *OpenAIGatewayService) forwardCindyAlphaSearchViaNativeMessages(
 	proxyURL string,
 	requestedModel string,
 	upstreamModel string,
+	plan *CindyAlphaSearchPlan,
 ) (*OpenAIForwardResult, error) {
-	requestBody, err := buildCindyAlphaSearchMessagesBody(alphaBody)
+	requestBody, err := buildCindyAlphaSearchMessagesBody(alphaBody, plan)
 	if err != nil {
 		return nil, err
 	}
@@ -273,9 +284,15 @@ func (s *OpenAIGatewayService) forwardCindyAlphaSearchViaNativeMessages(
 	}, nil
 }
 
-func buildCindyAlphaSearchMessagesBody(alphaBody []byte) ([]byte, error) {
+func buildCindyAlphaSearchMessagesBody(alphaBody []byte, plan *CindyAlphaSearchPlan) ([]byte, error) {
+	if plan == nil || strings.TrimSpace(plan.NativeMessagesModel) == "" {
+		return nil, fmt.Errorf("provider: Cindy native Messages search plan is required")
+	}
+	if plan.MaxSearchUses < 1 || plan.MaxSearchUses > maxCindyAlphaSearchUses {
+		return nil, fmt.Errorf("provider: Cindy native Messages search max uses is out of bounds")
+	}
 	payload := map[string]any{
-		"model":      CindyWebSearchModel,
+		"model":      plan.NativeMessagesModel,
 		"max_tokens": 256,
 		"stream":     false,
 		"messages": []any{
@@ -288,7 +305,7 @@ func buildCindyAlphaSearchMessagesBody(alphaBody []byte) ([]byte, error) {
 			map[string]any{
 				"type":     "web_search_20250305",
 				"name":     "web_search",
-				"max_uses": 1,
+				"max_uses": plan.MaxSearchUses,
 			},
 		},
 	}
@@ -473,12 +490,13 @@ func (s *OpenAIGatewayService) forwardAlphaSearchViaResponsesWebSearch(
 	proxyURL string,
 	requestedModel string,
 	upstreamModel string,
+	plan *CindyAlphaSearchPlan,
 ) (*OpenAIForwardResult, error) {
 	strictCindy := IsCindyAPIKeyAccount(account.Platform, account.Type, account.Credentials)
 	if upstreamModel == "" {
 		upstreamModel = requestedModel
 	}
-	responsesBody, err := buildOpenAIAlphaSearchResponsesWebSearchBody(alphaBody, upstreamModel)
+	responsesBody, err := buildOpenAIAlphaSearchResponsesWebSearchBody(alphaBody, upstreamModel, plan)
 	if err != nil {
 		return nil, err
 	}
@@ -519,8 +537,11 @@ func (s *OpenAIGatewayService) forwardAlphaSearchViaResponsesWebSearch(
 			upstreamMessage,
 			respBody,
 		)
-		if strictCindy && cindyCapabilityError {
+		if strictCindy && cindyCapabilityError && plan != nil && plan.FallbackOnCapabilityMiss {
 			return nil, newCindyAlphaSearchMessagesFallbackError(resp.StatusCode, resp.Header, respBody)
+		}
+		if strictCindy && cindyCapabilityError {
+			return nil, NewOpenAIAlphaSearchBridgeUnavailableError(resp.StatusCode, resp.Header, respBody)
 		}
 		if s.shouldFailoverOpenAIUpstreamResponse(account, resp.StatusCode, upstreamMessage, respBody) ||
 			bridgeCapabilityError {
@@ -586,7 +607,13 @@ func (s *OpenAIGatewayService) forwardAlphaSearchViaResponsesWebSearch(
 		return nil, err
 	}
 	if strictCindy && !hasSearchEvidence {
-		return nil, newCindyAlphaSearchMessagesFallbackError(http.StatusBadGateway, resp.Header, nil)
+		if plan != nil && plan.FallbackOnMissingSearchEvidence {
+			// The Responses body is fully buffered and no client bytes have been
+			// committed. A provider-approved helper fallback is still safe here;
+			// this fact is distinct from a Responses capability miss.
+			return nil, newCindyAlphaSearchMessagesFallbackError(http.StatusBadGateway, resp.Header, nil)
+		}
+		return nil, NewOpenAIAlphaSearchBridgeUnavailableError(http.StatusBadGateway, resp.Header, nil)
 	}
 	if account.IsOpenAIApiKey() && !hasSearchEvidence {
 		return nil, NewOpenAIAlphaSearchBridgeUnavailableError(
@@ -773,16 +800,27 @@ func (s *OpenAIGatewayService) buildOpenAIAlphaSearchResponsesWebSearchRequest(c
 		fillCodexSessionIdentityHeaders(req.Header, generateSessionUUID(sessionID))
 	}
 	applyCodexAccountIdentityHeaders(req.Header, codexAccountIdentitySource(c, account), apiKeyID)
-	enforceCodexIdentityHeadersForAccount(req.Header, codexAccountIdentitySource(c, account), s.codexIdentityOverrideUA(account))
+	if err := enforceCodexIdentityHeadersForAccountContext(req.Context(), req.Header, codexAccountIdentitySource(c, account), s.codexIdentityOverrideUA(account)); err != nil {
+		return nil, err
+	}
 	account.ApplyHeaderOverrides(req.Header)
 	return req, nil
 }
 
-func buildOpenAIAlphaSearchResponsesWebSearchBody(alphaBody []byte, model string) ([]byte, error) {
+func buildOpenAIAlphaSearchResponsesWebSearchBody(alphaBody []byte, model string, plan *CindyAlphaSearchPlan) ([]byte, error) {
 	if strings.TrimSpace(model) == "" {
 		return nil, fmt.Errorf("model is required")
 	}
 	tool := map[string]any{"type": "web_search"}
+	if plan != nil {
+		if strings.TrimSpace(plan.ResponsesToolType) == "" {
+			return nil, fmt.Errorf("provider: Cindy Responses search tool type is required")
+		}
+		if plan.MaxSearchUses < 1 || plan.MaxSearchUses > maxCindyAlphaSearchUses {
+			return nil, fmt.Errorf("provider: Cindy Responses search max uses is out of bounds")
+		}
+		tool["type"] = plan.ResponsesToolType
+	}
 	if contextSize := strings.TrimSpace(gjson.GetBytes(alphaBody, "settings.search_context_size").String()); contextSize != "" {
 		tool["search_context_size"] = contextSize
 	}
@@ -912,7 +950,9 @@ func (s *OpenAIGatewayService) buildOpenAIAlphaSearchRequest(ctx context.Context
 			req.Header.Set("User-Agent", canonical.userAgent)
 		}
 		applyCodexAccountIdentityHeaders(req.Header, codexAccountIdentitySource(c, account), getAPIKeyIDFromContext(c))
-		enforceCodexIdentityHeadersForAccount(req.Header, codexAccountIdentitySource(c, account), s.codexIdentityOverrideUA(account))
+		if err := enforceCodexIdentityHeadersForAccountContext(req.Context(), req.Header, codexAccountIdentitySource(c, account), s.codexIdentityOverrideUA(account)); err != nil {
+			return nil, err
+		}
 	}
 
 	account.ApplyHeaderOverrides(req.Header)

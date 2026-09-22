@@ -33,6 +33,11 @@ func (s *OpenAIGatewayService) ForwardAsAnthropic(
 	promptCacheKey string,
 	defaultMappedModel string,
 ) (*OpenAIForwardResult, error) {
+	pricingContext, pricingErr := CaptureCindyPricingContext(ctx, c, account)
+	if pricingErr != nil {
+		return nil, pricingErr
+	}
+	ctx = pricingContext
 	rememberOpenCodeInboundBody(c, body)
 	beginUpstreamResponseModelObservation(c)
 	ClearActualOpenAIUpstreamEndpoint(c)
@@ -85,7 +90,10 @@ func (s *OpenAIGatewayService) ForwardAsAnthropic(
 	clientStream := anthropicReq.Stream // client's original stream preference
 
 	// 2. Model mapping
-	billingModel := resolveOpenAIForwardModel(account, normalizedModel, defaultMappedModel)
+	billingModel, modelPolicyErr := resolveOpenAIForwardModelContext(ctx, account, normalizedModel, defaultMappedModel)
+	if modelPolicyErr != nil {
+		return nil, modelPolicyErr
+	}
 	upstreamModel := normalizeOpenAIModelForUpstream(account, billingModel)
 	promptCacheKey = strings.TrimSpace(promptCacheKey)
 	apiKeyID := getAPIKeyIDFromContext(c)
@@ -402,7 +410,9 @@ func (s *OpenAIGatewayService) ForwardAsAnthropic(
 		// 清除身份头。真正发送前恢复完整 Codex 身份，避免 ChatGPT Codex 上游因缺失
 		// originator/OpenAI-Beta 返回 404（issue #3901）。
 		ensureCodexIdentityHeaders(upstreamReq.Header)
-		enforceCodexIdentityHeadersForAccount(upstreamReq.Header, codexAccountIdentitySource(c, account), s.codexIdentityOverrideUA(account))
+		if err := enforceCodexIdentityHeadersForAccountContext(upstreamReq.Context(), upstreamReq.Header, codexAccountIdentitySource(c, account), s.codexIdentityOverrideUA(account)); err != nil {
+			return nil, err
+		}
 		logger.L().Debug("openai messages: upstream identity restored",
 			zap.Int64("account_id", account.ID),
 			zap.String("upstream_model", upstreamModel),
@@ -573,6 +583,8 @@ func (s *OpenAIGatewayService) ForwardAsAnthropic(
 		if snapshot := ParseCodexRateLimitHeaders(resp.Header); snapshot != nil {
 			s.updateCodexUsageSnapshot(ctx, account.ID, snapshot)
 		}
+	} else if handleErr == nil && account.IsShadow() && account.ParentAccountID != nil {
+		notifyOpenAIAutoReset(*account.ParentAccountID)
 	}
 
 	stampOpenAIResponsesUpstreamEndpoint(c, result)
@@ -715,6 +727,9 @@ func (s *OpenAIGatewayService) handleAnthropicBufferedStreamingResponse(
 				result.SearchCount = n
 			}
 		}
+	}
+	if strings.TrimSpace(finalResponse.Status) == "completed" {
+		logOpenAISuccessMissingUsage(c.Request.Context(), c, account, resp, &usage, "response.completed", false)
 	}
 	return result, nil
 }
@@ -985,6 +1000,7 @@ func (s *OpenAIGatewayService) handleAnthropicStreamingResponse(
 	state.Model = originalModel
 	var usage OpenAIUsage
 	responseID := ""
+	terminalEventType := ""
 	var firstTokenMs *int
 	firstChunk := true
 	clientDisconnected := false
@@ -1078,6 +1094,7 @@ func (s *OpenAIGatewayService) handleAnthropicStreamingResponse(
 		isBareErrorEvent := eventType == "error"
 		isTerminalEvent := isOpenAICompatResponsesTerminalEvent(eventType) || isBareErrorEvent
 		if isTerminalEvent {
+			terminalEventType = eventType
 			if event.Response != nil {
 				if id := strings.TrimSpace(event.Response.ID); id != "" {
 					responseID = id
@@ -1213,6 +1230,7 @@ func (s *OpenAIGatewayService) handleAnthropicStreamingResponse(
 				c.Writer.Flush()
 			}
 		}
+		logOpenAISuccessMissingUsage(c.Request.Context(), c, account, resp, &usage, terminalEventType, clientDisconnected)
 		return resultWithUsage(), nil
 	}
 

@@ -9,6 +9,7 @@ import (
 	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/response"
 	"github.com/Wei-Shaw/sub2api/internal/service"
+	extensionv1 "github.com/Wei-Shaw/sub2api/pkg/extensionapi/v1"
 	"github.com/gin-gonic/gin"
 )
 
@@ -346,6 +347,10 @@ func (h *AccountHandler) SetAccountTaxonomy(c *gin.Context) {
 		response.ErrorFrom(c, err)
 		return
 	}
+	if c.GetHeader("X-Sub2API-Plugin") != "" {
+		response.Success(c, gin.H{"account_id": account.ID})
+		return
+	}
 	response.Success(c, h.accountResponseFromService(account))
 }
 
@@ -356,11 +361,34 @@ func (h *AccountHandler) BulkUpdateAccountTaxonomy(c *gin.Context) {
 		return
 	}
 	req.AccountIDs = normalizeInt64IDList(req.AccountIDs)
-	seeds := accountJobSeeds(req.AccountIDs)
+	targetIDs := req.AccountIDs
+	hasFilters := req.Filters != nil
+	if _, bound := service.AccountViewFromContext(c.Request.Context()); bound {
+		if h.replayScopedAccountJob(c, service.AccountJobKindBulkTaxonomy, req) {
+			return
+		}
+		var err error
+		targetIDs, err = h.resolveAccountJobTargetIDs(c.Request.Context(), req.AccountIDs, req.Filters)
+		if err != nil {
+			accountViewRequestError(c, err)
+			return
+		}
+		if len(targetIDs) == 0 || (req.ExpectedMatchCount != nil && *req.ExpectedMatchCount != len(targetIDs)) {
+			accountViewRequestError(c, service.ErrAccountViewScope)
+			return
+		}
+		hasFilters = false // Only seeds change; keep the original request/hash.
+	}
+	owner, err := service.ValidateAccountTaxonomyPlan(c.Request.Context(), extensionv1.TaxonomyBulkPlan{AccountIDs: targetIDs, HasFilters: hasFilters, ExpectedMatchCount: req.ExpectedMatchCount, FolderAction: req.FolderAction, FolderID: req.FolderID, TagAddIDs: req.TagAddIDs, TagRemoveIDs: req.TagRemoveIDs})
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	seeds := accountJobSeeds(targetIDs)
 	if len(seeds) == 0 {
 		seeds = ordinalAccountJobSeeds(1)
 	}
-	h.submitAccountJob(c, service.AccountJobKindBulkTaxonomy, req, seeds)
+	h.submitAccountJob(c, service.AccountJobKindBulkTaxonomy, req, seeds, owner)
 }
 
 func splitQueryValues(c *gin.Context, keys ...string) []string {
@@ -473,6 +501,13 @@ func (h *AccountHandler) GetAccountFacets(c *gin.Context) {
 	facets, err := console.GetAccountConsoleFacets(c.Request.Context(), filters)
 	if err != nil {
 		response.ErrorFrom(c, err)
+		return
+	}
+	if _, bound := service.AccountViewFromContext(c.Request.Context()); bound {
+		response.Success(c, struct {
+			dto.AccountConsoleFacets
+			ViewPresetCounts map[string]int `json:"view_preset_counts"`
+		}{accountFacetsDTO(facets), facets.ViewPresetCounts})
 		return
 	}
 	response.Success(c, accountFacetsDTO(facets))

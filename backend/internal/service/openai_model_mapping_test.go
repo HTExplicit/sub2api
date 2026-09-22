@@ -366,7 +366,7 @@ func TestCanonicalOpenAIAccountSchedulingModelMatchesForwardSemantics(t *testing
 		},
 		{
 			name: "legacy Laxa direct Luna resolves to live upstream ID",
-			account: &Account{Platform: PlatformOpenAI, Type: AccountTypeAPIKey,
+			account: &Account{ID: 11, Platform: PlatformOpenAI, Type: AccountTypeAPIKey,
 				Credentials: map[string]any{"base_url": "https://api.laxarouter.ai"},
 				Extra:       map[string]any{"openai_passthrough": true}},
 			model: "gpt-5.6-luna",
@@ -385,6 +385,7 @@ func TestCanonicalOpenAIAccountSchedulingModelMatchesForwardSemantics(t *testing
 
 func TestLegacyLaxaRawChatFallbackUsesCanonicalLunaWireModel(t *testing.T) {
 	account := &Account{
+		ID:       12,
 		Platform: PlatformOpenAI,
 		Type:     AccountTypeAPIKey,
 		Credentials: map[string]any{

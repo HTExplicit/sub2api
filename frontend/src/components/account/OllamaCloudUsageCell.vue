@@ -25,7 +25,7 @@
     <div v-if="state.configured" class="flex items-center pt-0.5">
       <button
         type="button"
-        class="inline-flex items-center gap-0.5 rounded-none px-1.5 py-0.5 text-[10px] font-medium text-blue-600 transition-colors hover:bg-blue-50 disabled:cursor-not-allowed disabled:opacity-50 dark:text-blue-400 dark:hover:bg-blue-900/30"
+        class="inline-flex items-center gap-0.5 rounded px-1.5 py-0.5 text-[10px] font-medium text-blue-600 transition-colors hover:bg-blue-50 disabled:cursor-not-allowed disabled:opacity-50 dark:text-blue-400 dark:hover:bg-blue-900/30"
         :disabled="refreshing"
         data-testid="ollama-cloud-usage-query"
         @click="refreshUsage"
@@ -52,11 +52,15 @@
 </template>
 
 <script setup lang="ts">
+import { readWithAccountView, useAccountViewContext } from '@/composables/useAccountViewContext'
+
 import { computed, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { adminAPI } from '@/api/admin'
 import type { Account, OllamaCloudUsageState } from '@/types'
 import UsageProgressBar from './UsageProgressBar.vue'
+const accountViewController = useAccountViewContext()
+
 
 const props = withDefaults(defineProps<{
   account: Account
@@ -78,7 +82,7 @@ const refreshUsage = async () => {
   if (refreshing.value) return
   refreshing.value = true
   try {
-    const next = await adminAPI.accounts.refreshOllamaCloudUsage(props.account.id)
+    const next = await readWithAccountView(accountViewController, view => view ? adminAPI.accounts.refreshOllamaCloudUsage(props.account.id, view) : adminAPI.accounts.refreshOllamaCloudUsage(props.account.id))
     state.value = next
     emit('updated', next)
   } catch (error) {

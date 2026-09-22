@@ -5,14 +5,14 @@
       <div class="fixed inset-0 z-[9998]" @click="emit('close')"></div>
       <div
         ref="menuRef"
-        class="action-menu-content fixed z-[9999] w-52 overflow-y-auto overscroll-contain rounded-none bg-white shadow-outline ring-1 ring-black/5 dark:bg-dark-800"
+        class="action-menu-content fixed z-[9999] w-52 overflow-y-auto overscroll-contain rounded-xl bg-white shadow-lg ring-1 ring-black/5 dark:bg-dark-800"
         :style="menuStyle"
         @click.stop
       >
         <p v-if="busy" role="status" class="border-b border-line px-4 py-2 text-xs text-muted">{{ t('common.processing') }}</p>
         <fieldset :disabled="busy" class="py-1 disabled:opacity-60">
           <template v-if="account">
-            <button v-if="canManageCodexTickets(account)" data-test="ticket-harvest" @click="$emit('harvest-tickets', account); $emit('close')" class="flex w-full items-center gap-2 px-4 py-2 text-sm hover:bg-gray-100 dark:hover:bg-dark-700"><Icon name="shield" size="sm" class="text-primary-600" />{{ t('admin.accounts.tickets.title') }}</button>
+            <ExtensionSlot name="account.actions" :account="account" external variant="menu" @open="openExtension" @resource-complete="emit('resource-complete'); emit('close')" />
             <button @click="$emit('test', account); $emit('close')" class="flex w-full items-center gap-2 px-4 py-2 text-sm hover:bg-gray-100 dark:hover:bg-dark-700">
               <Icon name="play" size="sm" class="text-green-500" :stroke-width="2" />
               {{ t('admin.accounts.testConnection') }}
@@ -53,10 +53,6 @@
               <Icon name="sync" size="sm" />
               {{ t('admin.accounts.recoverState') }}
             </button>
-            <button v-if="account.cindy_balance_insufficient" @click="$emit('recover-cindy-balance', account); $emit('close')" class="flex w-full items-center gap-2 px-4 py-2 text-sm text-emerald-600 hover:bg-gray-100 dark:hover:bg-dark-700">
-              <Icon name="sync" size="sm" />
-              {{ t('admin.accounts.cindy.recover') }}
-            </button>
             <button v-if="hasQuotaLimit" @click="$emit('reset-quota', account); $emit('close')" class="flex w-full items-center gap-2 px-4 py-2 text-sm text-teal-600 hover:bg-gray-100 dark:hover:bg-dark-700">
               <Icon name="refresh" size="sm" />
               {{ t('admin.accounts.resetQuota') }}
@@ -66,20 +62,43 @@
       </div>
     </div>
   </Teleport>
+  <ExtensionDialog
+    :contribution="selectedExtension"
+    :account-id="extensionAccountID"
+    :launch-key="extensionLaunch"
+    :origin-view="extensionOrigin"
+    mode="account.actions"
+    @close="selectedExtension = null"
+  />
 </template>
 
 <script setup lang="ts">
-import { computed, ref, watch, onUnmounted } from 'vue'
+import { computed, ref, shallowRef, watch, onUnmounted } from 'vue'
 import { useResizeObserver, useWindowSize } from '@vueuse/core'
 import { useI18n } from 'vue-i18n'
 import { Icon } from '@/components/icons'
 import type { Account } from '@/types'
-import { canManageCodexTickets } from '@/utils/codexTicketEligibility'
+import type { PluginContribution } from '@/api/admin/plugins'
+import ExtensionDialog from '@/components/plugins/ExtensionDialog.vue'
+import ExtensionSlot from '@/components/plugins/ExtensionSlot.vue'
+import { useAccountViewContext, type CapturedAccountView } from '@/composables/useAccountViewContext'
 
 const props = defineProps<{ show: boolean; account: Account | null; anchorRect: DOMRect | null; busy?: boolean }>()
-const emit = defineEmits(['harvest-tickets', 'close', 'test', 'stats', 'schedule', 'duplicate', 'reauth', 'refresh-token', 'recover-state', 'recover-cindy-balance', 'reset-quota', 'set-privacy', 'create-spark-shadow'])
+const emit = defineEmits(['close', 'test', 'stats', 'schedule', 'duplicate', 'reauth', 'refresh-token', 'recover-state', 'resource-complete', 'reset-quota', 'set-privacy', 'create-spark-shadow'])
 const { t } = useI18n()
 const menuRef = ref<HTMLElement | null>(null)
+const selectedExtension = ref<PluginContribution | null>(null)
+const extensionAccountID = ref<number | undefined>()
+const extensionLaunch = ref(0)
+const extensionOrigin = shallowRef<CapturedAccountView>()
+const origin = useAccountViewContext()
+function openExtension(contribution: PluginContribution) {
+  extensionOrigin.value = origin?.capture()
+  extensionLaunch.value++
+  selectedExtension.value = contribution
+  extensionAccountID.value = props.account?.id
+  emit('close')
+}
 const { width: viewportWidth, height: viewportHeight } = useWindowSize()
 const viewportPadding = 8
 const menuPosition = ref({ top: viewportPadding, left: viewportPadding })
@@ -138,7 +157,7 @@ const isAntigravityOAuth = computed(() => props.account?.platform === 'antigravi
 const isOpenAIOAuth = computed(() => props.account?.platform === 'openai' && props.account?.type === 'oauth')
 // 影子账号(链接型,持 parent_account_id)不持凭据、type 不可变,凭据/隐私类操作对其无效。
 const isShadow = computed(() => props.account?.parent_account_id != null)
-// A "parent" OpenAI OAuth account is one that is NOT itself a shadow-outline (parent_account_id == null)
+// A "parent" OpenAI OAuth account is one that is NOT itself a shadow (parent_account_id == null)
 const isOpenAIOAuthParent = computed(() => isOpenAIOAuth.value && !isShadow.value)
 const supportsPrivacy = computed(() => (isAntigravityOAuth.value || isOpenAIOAuth.value) && !isShadow.value)
 const hasQuotaLimit = computed(() => {

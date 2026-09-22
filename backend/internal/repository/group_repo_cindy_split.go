@@ -31,9 +31,10 @@ type cindyGroupSplitSnapshotData struct {
 	public  service.CindyGroupSplitRepositorySnapshot
 	members []cindyGroupSplitMember
 	apiKeys []cindyGroupSplitAPIKey
+	plan    service.CindyGroupPartitionPlan
 }
 
-// AuditCindyGroups classifies every OpenAI group using complete non-deleted
+// AuditCindyGroups classifies OpenAI and canonical Cindy groups using complete non-deleted
 // membership. Account identities never leave the repository.
 func (r *groupRepository) AuditCindyGroups(ctx context.Context) ([]service.CindyGroupAuditEntry, error) {
 	if r == nil || r.sql == nil {
@@ -47,6 +48,7 @@ func (r *groupRepository) AuditCindyGroups(ctx context.Context) ([]service.Cindy
 				COALESCE(SUM(CASE WHEN
 					a.platform = $2
 					AND a.type = $3
+					AND a.wire_platform = $6 AND a.provider_profile = $7
 					AND LOWER(TRIM(a.credentials ->> 'base_url')) IN ($4, $5)
 				THEN 1 ELSE 0 END), 0) AS cindy_account_count
 			FROM account_groups ag
@@ -69,15 +71,17 @@ func (r *groupRepository) AuditCindyGroups(ctx context.Context) ([]service.Cindy
 		FROM groups g
 		LEFT JOIN account_counts ac ON ac.group_id = g.id
 		LEFT JOIN key_counts kc ON kc.group_id = g.id
-		WHERE g.platform = $1
+		WHERE g.platform IN ($1, $2)
 			AND g.deleted_at IS NULL
 		ORDER BY g.sort_order ASC, g.id ASC
 	`,
 		service.PlatformOpenAI,
-		service.PlatformOpenAI,
+		service.PlatformCindy,
 		service.AccountTypeAPIKey,
 		"https://api.laxarouter.ai",
 		"https://api.laxarouter.ai/",
+		service.WirePlatformOpenAI,
+		service.ProviderProfileCindyLaxaV1,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("query Cindy group audit: %w", err)
@@ -99,7 +103,11 @@ func (r *groupRepository) AuditCindyGroups(ctx context.Context) ([]service.Cindy
 			return nil, fmt.Errorf("scan Cindy group audit: %w", err)
 		}
 		entry.OrdinaryAccountCount = accountCount - entry.CindyAccountCount
-		entry.Classification = classifyCindyGroupCounts(entry.CindyAccountCount, entry.OrdinaryAccountCount)
+		plan, err := service.PlanCindyGroupPartition(ctx, entry.CindyAccountCount, entry.OrdinaryAccountCount, "")
+		if err != nil {
+			return nil, err
+		}
+		entry.Classification = plan.Classification
 		entries = append(entries, entry)
 	}
 	if err := rows.Err(); err != nil {
@@ -152,6 +160,13 @@ func (r *groupRepository) CommitCindyGroupSplit(ctx context.Context, groupID int
 	target.ID = 0
 	target.Name = input.TargetName
 	target.Platform = service.PlatformOpenAI
+	if snapshot.plan.TargetCindy {
+		target.Platform = service.PlatformCindy
+	}
+	target.Platform, target.WirePlatform, target.ProviderProfile, err = service.ResolveGroupProviderIdentity(target.Platform)
+	if err != nil {
+		return nil, err
+	}
 	target.DuplicateOperationID = ""
 	target.CreatedAt = time.Time{}
 	target.UpdatedAt = time.Time{}
@@ -159,7 +174,7 @@ func (r *groupRepository) CommitCindyGroupSplit(ctx context.Context, groupID int
 		return nil, fmt.Errorf("create Cindy split target group: %w", err)
 	}
 
-	movedIDs := cindyGroupAccountsToMove(snapshot.members, input.SourceKeeps)
+	movedIDs := cindyGroupAccountsToMove(snapshot.members, snapshot.plan.MoveCindy)
 	insertResult, err := txClient.ExecContext(ctx, `
 		INSERT INTO account_groups (account_id, group_id, priority, created_at)
 		SELECT account_id, $2, priority, NOW()
@@ -192,6 +207,13 @@ func (r *groupRepository) CommitCindyGroupSplit(ctx context.Context, groupID int
 	}
 	if deleted != int64(len(movedIDs)) {
 		return nil, service.ErrCindyGroupSplitDrift
+	}
+	// Change routing identity only after the ordinary members have left. The
+	// existing database topology/channel constraints validate the final graph.
+	if snapshot.plan.SourceCindy {
+		if _, err := txClient.ExecContext(ctx, `UPDATE groups SET platform=$2, wire_platform=$3, provider_profile=$4, updated_at=NOW() WHERE id=$1`, groupID, service.PlatformCindy, service.WirePlatformOpenAI, service.ProviderProfileCindyLaxaV1); err != nil {
+			return nil, fmt.Errorf("update split source identity: %w", err)
+		}
 	}
 
 	if len(input.APIKeyIDs) > 0 {
@@ -286,14 +308,9 @@ func loadCindyGroupSplitSnapshot(
 		}
 	}
 	ordinaryCount := int64(len(members)) - cindyCount
-	if classifyCindyGroupCounts(cindyCount, ordinaryCount) != service.CindyGroupClassificationMixed {
-		return nil, service.ErrCindyGroupNotMixed
-	}
-	targetClassification := service.CindyGroupClassificationNoCindy
-	accountsToMove := ordinaryCount
-	if input.SourceKeeps == service.CindyGroupSourceKeepsOrdinary {
-		targetClassification = service.CindyGroupClassificationPureCindy
-		accountsToMove = cindyCount
+	plan, err := service.PlanCindyGroupPartition(ctx, cindyCount, ordinaryCount, input.SourceKeeps)
+	if err != nil {
+		return nil, err
 	}
 
 	preview := service.CindyGroupSplitPreview{
@@ -301,15 +318,15 @@ func loadCindyGroupSplitSnapshot(
 		SourceGroupName:      source.Name,
 		SourceKeeps:          input.SourceKeeps,
 		TargetName:           input.TargetName,
-		TargetClassification: targetClassification,
+		TargetClassification: plan.TargetClassification,
 		CindyAccountCount:    cindyCount,
 		OrdinaryAccountCount: ordinaryCount,
-		AccountsToMove:       accountsToMove,
+		AccountsToMove:       plan.AccountsToMove,
 		SourceAPIKeyCount:    int64(len(apiKeys)),
 		APIKeysToRebind:      int64(len(input.APIKeyIDs)),
 		APIKeysRemaining:     int64(len(apiKeys) - len(input.APIKeyIDs)),
 	}
-	preview.MemberFingerprint, err = cindyGroupSplitFingerprint(source, members, apiKeys, input)
+	preview.MemberFingerprint, err = cindyGroupSplitFingerprint(source, members, apiKeys, input, plan)
 	if err != nil {
 		return nil, err
 	}
@@ -320,6 +337,7 @@ func loadCindyGroupSplitSnapshot(
 		},
 		members: members,
 		apiKeys: apiKeys,
+		plan:    plan,
 	}, nil
 }
 
@@ -350,6 +368,7 @@ func loadCindyGroupSplitMembers(ctx context.Context, exec sqlExecutor, groupID i
 			CASE WHEN
 				a.platform = $2
 				AND a.type = $3
+				AND a.wire_platform = $6 AND a.provider_profile = $7
 				AND LOWER(TRIM(a.credentials ->> 'base_url')) IN ($4, $5)
 			THEN TRUE ELSE FALSE END
 		FROM account_groups ag
@@ -362,10 +381,12 @@ func loadCindyGroupSplitMembers(ctx context.Context, exec sqlExecutor, groupID i
 	}
 	rows, err := exec.QueryContext(ctx, query,
 		groupID,
-		service.PlatformOpenAI,
+		service.PlatformCindy,
 		service.AccountTypeAPIKey,
 		"https://api.laxarouter.ai",
 		"https://api.laxarouter.ai/",
+		service.WirePlatformOpenAI,
+		service.ProviderProfileCindyLaxaV1,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("query Cindy split members: %w", err)
@@ -433,19 +454,7 @@ func validateCindySplitAPIKeySelection(keys []cindyGroupSplitAPIKey, selected []
 	return nil
 }
 
-func classifyCindyGroupCounts(cindyCount, ordinaryCount int64) string {
-	switch {
-	case cindyCount > 0 && ordinaryCount == 0:
-		return service.CindyGroupClassificationPureCindy
-	case cindyCount > 0 && ordinaryCount > 0:
-		return service.CindyGroupClassificationMixed
-	default:
-		return service.CindyGroupClassificationNoCindy
-	}
-}
-
-func cindyGroupAccountsToMove(members []cindyGroupSplitMember, sourceKeeps string) []int64 {
-	moveCindy := sourceKeeps == service.CindyGroupSourceKeepsOrdinary
+func cindyGroupAccountsToMove(members []cindyGroupSplitMember, moveCindy bool) []int64 {
 	ids := make([]int64, 0, len(members))
 	for _, member := range members {
 		if member.isCindy == moveCindy {
@@ -458,7 +467,7 @@ func cindyGroupAccountsToMove(members []cindyGroupSplitMember, sourceKeeps strin
 // cindyGroupSplitFingerprint covers only state that can change the split's
 // writes. Request-time account/key status and timestamp churn is deliberately
 // excluded; strict identity changes are represented by the derived isCindy bit.
-func cindyGroupSplitFingerprint(source *service.Group, members []cindyGroupSplitMember, keys []cindyGroupSplitAPIKey, input service.CindyGroupSplitInput) (string, error) {
+func cindyGroupSplitFingerprint(source *service.Group, members []cindyGroupSplitMember, keys []cindyGroupSplitAPIKey, input service.CindyGroupSplitInput, plan service.CindyGroupPartitionPlan) (string, error) {
 	targetPolicy, err := json.Marshal(service.BuildCindySplitTargetGroup(source, input.TargetName))
 	if err != nil {
 		return "", fmt.Errorf("marshal Cindy split target policy: %w", err)
@@ -467,7 +476,12 @@ func cindyGroupSplitFingerprint(source *service.Group, members []cindyGroupSplit
 	appendField := func(value string) {
 		fields = append(fields, strconv.Itoa(len(value)), value)
 	}
-	appendField("cindy-group-split-v2")
+	appendField("cindy-group-split-v3")
+	policy, err := json.Marshal(plan)
+	if err != nil {
+		return "", err
+	}
+	appendField(string(policy))
 	appendField(strconv.FormatInt(source.ID, 10))
 	appendField(string(targetPolicy))
 	appendField(input.SourceKeeps)

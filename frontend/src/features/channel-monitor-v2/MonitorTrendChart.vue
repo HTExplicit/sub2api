@@ -27,7 +27,7 @@
         <span class="badge badge-gray shrink-0">{{ bucketLabel }}</span>
         <button
           type="button"
-          class="inline-flex shrink-0 items-center rounded-none border border-gray-200 bg-white px-2 py-1 text-[11px] font-semibold text-gray-600 hover:bg-gray-50 disabled:opacity-50 dark:border-dark-700 dark:bg-dark-900 dark:text-gray-300 dark:hover:bg-dark-800"
+          class="inline-flex shrink-0 items-center rounded-lg border border-gray-200 bg-white px-2 py-1 text-[11px] font-semibold text-gray-600 hover:bg-gray-50 disabled:opacity-50 dark:border-dark-700 dark:bg-dark-900 dark:text-gray-300 dark:hover:bg-dark-800"
           :disabled="!zoomed"
           @click="resetChartZoom"
         >
@@ -58,6 +58,7 @@
 </template>
 
 <script setup lang="ts">
+import { usePresentationColors } from '@/composables/usePresentationColors'
 import { useI18n } from 'vue-i18n'
 import { computed, ref, watch } from 'vue'
 import {
@@ -97,10 +98,6 @@ const props = defineProps<{
 const chartRef = ref<HTMLElement | null>(null)
 const zoom = ref<ZoomState>(resetZoom())
 const zoomed = computed(() => isZoomed(zoom.value))
-
-const isDark = computed(() =>
-  typeof document !== 'undefined' && document.documentElement.classList.contains('dark')
-)
 
 const bucketLabel = computed(() => {
   const seconds = props.coverage?.bucket_seconds || 60
@@ -204,12 +201,13 @@ function smoothTrend(values: Array<number | null>): Array<number | null> {
   })
 }
 
+const presentation = usePresentationColors()
 const chartOptions = computed(() => {
-  const text = isDark.value ? '#8a8b8d' : '#6f6f6f'
-  const grid = isDark.value ? '#3a3b40' : '#f5f5f5'
-  const tooltipBg = isDark.value ? '#26272b' : '#ffffff'
-  const tooltipTitle = isDark.value ? '#f5f5f5' : '#111411'
-  const tooltipBody = isDark.value ? '#bdbdbd' : '#56575a'
+  const text = presentation.value.axis
+  const grid = presentation.value.axisGrid
+  const tooltipBg = presentation.value.tooltip
+  const tooltipTitle = presentation.value.title
+  const tooltipBody = presentation.value.body
   return {
     responsive: true,
     maintainAspectRatio: false,

@@ -1,4 +1,7 @@
 import { apiClient } from '../client'
+import { accountViewClient } from './accountViewClient'
+import type { CapturedAccountView } from '@/composables/useAccountViewContext'
+import { pluginDispatchClient, pluginDispatchHeaders, type PluginDispatchContext } from './pluginDispatch'
 import type { AccountAvailableModel } from '@/types'
 
 const BASE_PATH = '/admin/account-jobs'
@@ -122,9 +125,10 @@ async function list(
   return data
 }
 
-async function get(jobID: number, options: { signal?: AbortSignal } = {}): Promise<AccountJob> {
-  const { data } = await apiClient.get<AccountJob>(`${BASE_PATH}/${jobID}`, {
+async function get(jobID: number, options: { signal?: AbortSignal } = {}, dispatch?: PluginDispatchContext): Promise<AccountJob> {
+  const { data } = await pluginDispatchClient(dispatch).get<AccountJob>(`${BASE_PATH}/${jobID}`, {
     signal: options.signal,
+    ...(dispatch ? { headers: pluginDispatchHeaders(dispatch) } : {}),
   })
   return data
 }
@@ -155,8 +159,8 @@ async function retryFailed(jobID: number): Promise<AccountJob> {
   return data
 }
 
-async function reviewDuplicates(accountIDs: number[]): Promise<AccountJob> {
-  const { data } = await apiClient.post<AccountJob>(
+async function reviewDuplicates(accountIDs: number[], view?: CapturedAccountView): Promise<AccountJob> {
+  const { data } = await accountViewClient(view).post<AccountJob>(
     '/admin/accounts/duplicates/review',
     { account_ids: accountIDs },
     accountJobIdempotencyHeaders('account_duplicate_review'),
@@ -173,7 +177,7 @@ async function mergeDuplicates(request: DuplicateMergeRequest): Promise<AccountJ
   return data
 }
 
-export interface BatchTestSelection { account_id: number; model_id: string }
+export interface BatchTestSelection { account_id: number; model_id: string; reasoning_effort?: string }
 export interface BatchTestModelRow {
   account_id: number
   name: string

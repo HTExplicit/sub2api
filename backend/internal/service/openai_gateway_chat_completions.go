@@ -61,6 +61,11 @@ func (s *OpenAIGatewayService) ForwardAsChatCompletions(
 	promptCacheKey string,
 	defaultMappedModel string,
 ) (*OpenAIForwardResult, error) {
+	pricingContext, pricingErr := CaptureCindyPricingContext(ctx, c, account)
+	if pricingErr != nil {
+		return nil, pricingErr
+	}
+	ctx = pricingContext
 	return s.forwardAsChatCompletions(ctx, c, account, body, promptCacheKey, defaultMappedModel, false)
 }
 
@@ -79,11 +84,24 @@ func (s *OpenAIGatewayService) forwardAsChatCompletions(
 		c.Set(openAIChatReasoningReplayContextKey, (*openAIChatReasoningReplay)(nil))
 		c.Set(openAIReasoningRecoveryContextKey, (*openAIReasoningRecoveryState)(nil))
 	}
+	nativePromptProtocol := BusinessSystemPromptProtocolChat
+	if !gjson.GetBytes(body, "messages").Exists() && gjson.GetBytes(body, "input").Exists() {
+		nativePromptProtocol = BusinessSystemPromptProtocolResponses
+	}
+	cleanBody, restoreErr := restoreBusinessSystemPromptBeforeConversion(c, body, nativePromptProtocol)
+	if restoreErr != nil {
+		writeChatCompletionsError(c, http.StatusServiceUnavailable, "system_prompt_unavailable", "business system prompt is temporarily unavailable")
+		return nil, restoreErr
+	}
+	body = cleanBody
 	rememberOpenCodeInboundBody(c, body)
 	beginUpstreamResponseModelObservation(c)
 	if account != nil && account.IsOpenAI() {
 		requestedModel := gjson.GetBytes(body, "model").String()
-		mappedModel := resolveOpenAIForwardModel(account, requestedModel, defaultMappedModel)
+		mappedModel, modelPolicyErr := resolveOpenAIForwardModelContext(ctx, account, requestedModel, defaultMappedModel)
+		if modelPolicyErr != nil {
+			return nil, modelPolicyErr
+		}
 		withEffort, _, err := materializeOpenAIForwardReasoningEffort(ctx, body, mappedModel)
 		if err != nil {
 			return nil, err
@@ -226,10 +244,15 @@ func (s *OpenAIGatewayService) forwardAsChatCompletions(
 
 	// 2. Resolve model mapping early so compat prompt_cache_key injection can
 	// derive a stable seed from the final upstream model family.
-	billingModel := resolveOpenAIForwardModel(account, originalModel, defaultMappedModel)
+	billingModel, modelPolicyErr := resolveOpenAIForwardModelContext(ctx, account, originalModel, defaultMappedModel)
+	if modelPolicyErr != nil {
+		return nil, modelPolicyErr
+	}
 	upstreamModel := normalizeOpenAIModelForUpstream(account, billingModel)
 	if account != nil && IsLegacyCindyAPIKeyAccount(account.Platform, account.Type, account.Credentials) {
-		if legacyModel, mapped := cindyLegacyLaxaLiveUpstreamModel(originalModel); mapped {
+		if legacyModel, mapped, policyErr := cindyLegacyLaxaLiveUpstreamModel(ctx, account, originalModel); policyErr != nil {
+			return nil, policyErr
+		} else if mapped {
 			upstreamModel = legacyModel
 		}
 	}
@@ -352,6 +375,8 @@ func (s *OpenAIGatewayService) forwardAsChatCompletions(
 			return nil, fmt.Errorf("remarshal after codex transform: %w", err)
 		}
 	}
+	// Codex normalization can change the mapped slug before dispatch.
+	SetOpsUpstreamModel(c, upstreamModel)
 
 	if account.Type == AccountTypeAPIKey {
 		if trimmedKey := strings.TrimSpace(promptCacheKey); trimmedKey != "" {
@@ -583,6 +608,8 @@ func (s *OpenAIGatewayService) forwardAsChatCompletions(
 		if snapshot := ParseCodexRateLimitHeaders(resp.Header); snapshot != nil {
 			s.updateCodexUsageSnapshot(ctx, account.ID, snapshot)
 		}
+	} else if handleErr == nil && account.IsShadow() && account.ParentAccountID != nil {
+		notifyOpenAIAutoReset(*account.ParentAccountID)
 	}
 
 	return result, handleErr
@@ -770,6 +797,9 @@ func (s *OpenAIGatewayService) handleChatBufferedStreamingResponse(
 			}
 		}
 	}
+	if strings.TrimSpace(finalResponse.Status) == "completed" {
+		logOpenAISuccessMissingUsage(c.Request.Context(), c, account, resp, &usage, "response.completed", false)
+	}
 	return result, nil
 }
 
@@ -840,6 +870,7 @@ func (s *OpenAIGatewayService) handleChatStreamingResponse(
 
 	var usage OpenAIUsage
 	var firstTokenMs *int
+	terminalEventType := ""
 	firstChunk := true
 	clientDisconnected := false
 	clientOutputStarted := false
@@ -956,6 +987,7 @@ func (s *OpenAIGatewayService) handleChatStreamingResponse(
 		isBareErrorEvent := eventType == "error"
 		isTerminalEvent := isOpenAICompatResponsesTerminalEvent(eventType) || isBareErrorEvent
 		if isTerminalEvent {
+			terminalEventType = eventType
 			if event.Usage != nil {
 				usage = copyOpenAIUsageFromResponsesUsage(event.Usage)
 			}
@@ -1208,6 +1240,7 @@ func (s *OpenAIGatewayService) handleChatStreamingResponse(
 		if !clientDisconnected {
 			c.Writer.Flush()
 		}
+		logOpenAISuccessMissingUsage(c.Request.Context(), c, account, resp, &usage, terminalEventType, clientDisconnected)
 		return resultWithUsage(), nil
 	}
 

@@ -13,6 +13,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
@@ -81,6 +82,28 @@ func TestPluginPackageInstallerVerifiesTrustedSignature(t *testing.T) {
 
 	require.NoError(t, installErr)
 	assert.Equal(t, PluginSignatureTrusted, installation.SignatureStatus)
+}
+
+func TestPluginPackageVerifierChecksForeignRuntimeAndEveryAsset(t *testing.T) {
+	public, private, err := ed25519.GenerateKey(rand.Reader)
+	require.NoError(t, err)
+	cfg := testPluginConfig(t.TempDir(), false)
+	cfg.Plugins.TrustedPublishers["verify-test"] = base64.StdEncoding.EncodeToString(public)
+	inspector := NewPluginPackageInstaller(cfg, PluginHostInfo{Version: "0.1.179"})
+	manifest := testPluginManifest(nil)
+	manifest.Runtimes = map[string]PluginRuntime{"linux-arm64": {Path: "bin/plugin"}}
+	archive := buildPluginArchive(t, manifest, private, "verify-test", nil)
+	verified, err := inspector.VerifyPackage(context.Background(), archive, "linux-arm64")
+	require.NoError(t, err)
+	require.Equal(t, manifest.ID, verified.ID)
+	// The fixture's program is just the word "binary". Verification must never
+	// execute it, including when its target differs from this machine.
+	_, err = inspector.VerifyPackage(context.Background(), archive, "linux-amd64")
+	require.Error(t, err)
+	manifest.Files["ui/index.html"] = strings.Repeat("0", 64)
+	archive = buildPluginArchive(t, manifest, private, "verify-test", nil)
+	_, err = inspector.VerifyPackage(context.Background(), archive, "linux-arm64")
+	require.Error(t, err)
 }
 
 func TestBuiltInOpenAITransportPublisherDoesNotRequireConfiguration(t *testing.T) {

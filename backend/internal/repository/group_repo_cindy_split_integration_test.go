@@ -37,10 +37,12 @@ func TestCindyGroupSplitPreviewDriftAndAtomicCommit(t *testing.T) {
 	_, err := integrationDB.ExecContext(ctx, "UPDATE groups SET deleted_at = NOW() WHERE id = $1", deletedGroup.ID)
 	require.NoError(t, err)
 	cindy := mustCreateAccount(t, client, &service.Account{
-		Name:     fmt.Sprintf("cindy-split-cindy-%d", suffix),
-		Platform: service.PlatformOpenAI,
-		Type:     service.AccountTypeAPIKey,
-		Status:   service.StatusActive,
+		Name:            fmt.Sprintf("cindy-split-cindy-%d", suffix),
+		Platform:        service.PlatformCindy,
+		WirePlatform:    service.WirePlatformOpenAI,
+		ProviderProfile: service.ProviderProfileCindyLaxaV1,
+		Type:            service.AccountTypeAPIKey,
+		Status:          service.StatusActive,
 		Credentials: map[string]any{
 			"api_key":  "sk-cindy-test",
 			"base_url": "https://api.laxarouter.ai",
@@ -168,7 +170,12 @@ func TestCindyGroupSplitPreviewDriftAndAtomicCommit(t *testing.T) {
 	target, err := repo.GetByIDLite(ctx, targetID)
 	require.NoError(t, err)
 	require.Equal(t, source.RateMultiplier, target.RateMultiplier)
-	require.Equal(t, service.PlatformOpenAI, target.Platform)
+	require.Equal(t, service.PlatformCindy, target.Platform)
+	require.Equal(t, service.WirePlatformOpenAI, target.WirePlatform)
+	require.Equal(t, service.ProviderProfileCindyLaxaV1, target.ProviderProfile)
+	afterSplit, err := repo.AuditCindyGroups(ctx)
+	require.NoError(t, err)
+	require.Equal(t, service.CindyGroupClassificationPureCindy, findCindyAuditEntry(t, afterSplit, targetID).Classification)
 	require.Equal(t, source.Status, target.Status)
 	require.True(t, target.ProfitControlEnabled)
 	require.Equal(t, source.ProfitMinMargin, target.ProfitMinMargin)
@@ -201,10 +208,12 @@ func TestCindyGroupSplitRollsBackAllWritesWhenOutboxInsertFails(t *testing.T) {
 		SubscriptionType: service.SubscriptionTypeStandard,
 	})
 	cindy := mustCreateAccount(t, client, &service.Account{
-		Name:     fmt.Sprintf("cindy-split-rollback-cindy-%d", suffix),
-		Platform: service.PlatformOpenAI,
-		Type:     service.AccountTypeAPIKey,
-		Status:   service.StatusActive,
+		Name:            fmt.Sprintf("cindy-split-rollback-cindy-%d", suffix),
+		Platform:        service.PlatformCindy,
+		WirePlatform:    service.WirePlatformOpenAI,
+		ProviderProfile: service.ProviderProfileCindyLaxaV1,
+		Type:            service.AccountTypeAPIKey,
+		Status:          service.StatusActive,
 		Credentials: map[string]any{
 			"api_key":  "sk-cindy-rollback-test",
 			"base_url": "https://api.laxarouter.ai",

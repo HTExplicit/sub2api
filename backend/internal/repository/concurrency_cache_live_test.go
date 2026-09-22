@@ -104,7 +104,7 @@ func TestAccountTrafficObserveBeginReadsSlotsAndRollingMinute(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, 2, count)
 
-	turn := service.NewAccountTrafficObserver(observe, nil).Begin(ctx, 10, service.AccountTrafficProtocolHTTP)
+	turn := service.NewAccountTrafficObserver(observe, nil).Begin(ctx, &service.Account{ID: 10, Platform: service.PlatformOpenAI, Type: service.AccountTypeOAuth}, service.AccountTrafficProtocolHTTP)
 	require.NotNil(t, turn)
 	turn.Finish(nil, &service.UpstreamFailoverError{StatusCode: 429}, false)
 	turn.Finish(nil, &service.UpstreamFailoverError{StatusCode: 429}, false)

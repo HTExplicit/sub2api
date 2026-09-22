@@ -2,6 +2,7 @@
 package service
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"hash/fnv"
@@ -240,6 +241,9 @@ func (a *Account) IsSchedulable() bool {
 		return false
 	}
 	if a.RateLimitResetAt != nil && now.Before(*a.RateLimitResetAt) {
+		return false
+	}
+	if quota := a.QuotaState(now); quota != nil && quota.Blocked {
 		return false
 	}
 	if a.TempUnschedulableUntil != nil && now.Before(*a.TempUnschedulableUntil) {
@@ -1921,6 +1925,11 @@ func (a *Account) SupportsOpenAIEndpointCapability(capability OpenAIEndpointCapa
 	if a == nil {
 		return false
 	}
+	if capability == OpenAIEndpointCapabilitySeedance {
+		configured, _ := a.openAIEndpointCapabilitySet()
+		return configured["seedance"] && a.Platform == PlatformOpenAI && a.Type == AccountTypeAPIKey &&
+			strings.TrimSpace(a.GetCredential("base_url")) != ""
+	}
 	if capability == "" {
 		return true
 	}
@@ -2202,16 +2211,8 @@ func (a *Account) IsOpenAIReasoningSignatureRecoveryEnabled() bool {
 }
 
 func (a *Account) isOpenAIReasoningPolicyEnabled(key string) bool {
-	if !a.supportsOpenAIReasoningPolicies() {
-		return false
-	}
-	raw, exists := a.Extra[key]
-	if !exists {
-		return true
-	}
-	// Legacy malformed values are not a request to enable a stateful feature.
-	enabled, valid := raw.(bool)
-	return valid && enabled
+	enabled, err := openAIReasoningPolicyEnabled(context.Background(), a, key)
+	return err == nil && enabled
 }
 
 func (a *Account) supportsOpenAIReasoningPolicies() bool {

@@ -2,14 +2,11 @@ package service
 
 import (
 	"context"
-	"encoding/hex"
 	"errors"
 	"fmt"
-	"sort"
-	"strings"
-	"unicode/utf8"
 
 	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
+	extensionv1 "github.com/Wei-Shaw/sub2api/pkg/extensionapi/v1"
 )
 
 const (
@@ -56,12 +53,7 @@ type CindyGroupAuditResult struct {
 
 // CindyGroupSplitInput is shared by preview and commit. MemberFingerprint is
 // required only for commit; APIKeyIDs is intentionally empty by default.
-type CindyGroupSplitInput struct {
-	SourceKeeps       string  `json:"source_keeps"`
-	TargetName        string  `json:"target_name"`
-	APIKeyIDs         []int64 `json:"api_key_ids"`
-	MemberFingerprint string  `json:"member_fingerprint,omitempty"`
-}
+type CindyGroupSplitInput = extensionv1.CindyGroupSplitInput
 
 // CindyGroupSplitPreview contains only anonymous impact counts.
 type CindyGroupSplitPreview struct {
@@ -152,7 +144,7 @@ func (s *adminServiceImpl) PreviewCindyGroupSplit(ctx context.Context, groupID i
 	if groupID <= 0 {
 		return nil, ErrCindyGroupInvalidInput
 	}
-	normalized, err := normalizeCindyGroupSplitInput(input, false)
+	normalized, err := normalizeCindyGroupSplitInputContext(ctx, input, false)
 	if err != nil {
 		return nil, err
 	}
@@ -176,7 +168,13 @@ func (s *adminServiceImpl) SplitCindyGroup(ctx context.Context, groupID int64, i
 	if groupID <= 0 {
 		return nil, ErrCindyGroupInvalidInput
 	}
-	normalized, err := normalizeCindyGroupSplitInput(input, true)
+	bound, release, err := bindProcessExtensionContext(ctx, PlatformCindy, AccountTypeAPIKey, extensionv1.Invocation{Capability: extensionv1.CapabilityProvider, Operation: "cindy.groups.partition"})
+	if err != nil {
+		return nil, ErrCindyGroupAdminUnavailable
+	}
+	defer release()
+	ctx = bound
+	normalized, err := normalizeCindyGroupSplitInputContext(ctx, input, true)
 	if err != nil {
 		return nil, err
 	}
@@ -197,40 +195,6 @@ func (s *adminServiceImpl) SplitCindyGroup(ctx context.Context, groupID int64, i
 		s.authCacheInvalidator.InvalidateAuthCacheByGroupID(ctx, result.TargetGroupID)
 	}
 	return result, nil
-}
-
-func normalizeCindyGroupSplitInput(input CindyGroupSplitInput, requireFingerprint bool) (CindyGroupSplitInput, error) {
-	input.SourceKeeps = strings.ToLower(strings.TrimSpace(input.SourceKeeps))
-	if input.SourceKeeps != CindyGroupSourceKeepsCindy && input.SourceKeeps != CindyGroupSourceKeepsOrdinary {
-		return CindyGroupSplitInput{}, ErrCindyGroupInvalidInput
-	}
-	input.TargetName = strings.TrimSpace(input.TargetName)
-	if input.TargetName == "" || utf8.RuneCountInString(input.TargetName) > maxGroupNameRunes {
-		return CindyGroupSplitInput{}, ErrCindyGroupInvalidInput
-	}
-
-	seen := make(map[int64]struct{}, len(input.APIKeyIDs))
-	normalizedIDs := make([]int64, 0, len(input.APIKeyIDs))
-	for _, id := range input.APIKeyIDs {
-		if id <= 0 {
-			return CindyGroupSplitInput{}, ErrCindyGroupAPIKeySelection
-		}
-		if _, exists := seen[id]; exists {
-			return CindyGroupSplitInput{}, ErrCindyGroupAPIKeySelection
-		}
-		seen[id] = struct{}{}
-		normalizedIDs = append(normalizedIDs, id)
-	}
-	sort.Slice(normalizedIDs, func(i, j int) bool { return normalizedIDs[i] < normalizedIDs[j] })
-	input.APIKeyIDs = normalizedIDs
-	input.MemberFingerprint = strings.ToLower(strings.TrimSpace(input.MemberFingerprint))
-	if requireFingerprint {
-		decoded, err := hex.DecodeString(input.MemberFingerprint)
-		if err != nil || len(decoded) != 32 {
-			return CindyGroupSplitInput{}, ErrCindyGroupInvalidInput
-		}
-	}
-	return input, nil
 }
 
 // BuildCindySplitTargetGroup clones all persisted group policy required by a

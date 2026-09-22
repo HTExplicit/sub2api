@@ -1,5 +1,19 @@
 export default {accounts: {
 
+  providerEdit: {
+    unavailable: '供应商设置暂不可用；未改动的供应商字段会保留，基础账号信息仍可保存。',
+    catalogUnavailable: '模型目录暂不可用，已有映射和编辑草稿保持不变。',
+    draftRetained: '供应商改动尚未保存。仅保存基础字段会保持窗口和这份草稿，不会丢弃改动。',
+    changed: '编辑上下文或目录已变化，请核对保留的草稿后再重新绑定。',
+    reconcile: '核对并重新绑定草稿',
+    reloadRequired: '账号状态或供应商归属已变化。当前草稿仍保留；应用前请重新打开编辑器读取新状态。',
+    saveBasic: '仅保存基础字段',
+    clearToDefault: '清除已存覆盖值（使用原生默认）',
+    clearPending: '保存时将清除已存覆盖值。',
+    clearCustomMappings: '清除自定义映射',
+    clearCompactMappings: '清除 Compact 映射'
+  },
+
   textTestPrompt: { label: '文本测试提示词', hint: '留空使用 hi；仅当前站点和管理员浏览器记忆。', reset: '恢复默认', tooLong: '提示词超过8192字符，请缩短后重试。' },
   tickets: {
     stages: { request: '请求', configuration: '配置检查', lifecycle: '任务状态', account_auth: '账号鉴权', proxy_auth: '代理鉴权', proxy_protocol: '代理协议', proxy_dns: '代理DNS', proxy_connect: '代理连接', tls: 'TLS证书', ticket_validation: '票据校验', upstream_http: '上游HTTP', persistence: '持久化' },
@@ -666,6 +680,8 @@ export default {accounts: {
         unschedulable: '不可调度',
         rateLimitedUntil: '限流中，当前不参与调度，预计 {time} 自动恢复',
         rateLimitedAutoResume: '{time} 自动恢复',
+        upstreamQuotaExhausted: '上游额度已耗尽',
+        quotaResetUnknown: '恢复时间未知，等待上游额度更新',
         modelRateLimitedUntil: '{model} 限流至 {time}',
         modelCreditOveragesUntil: '{model} 正在使用 AI Credits，至 {time}',
         creditsExhausted: '积分已用尽',
@@ -721,6 +737,7 @@ export default {accounts: {
           unavailableDesc: '服务不可用 - 暂停 30 分钟'
         }
       },
+      testReasoning: { label: '推理强度', default: '默认（沿用模型默认行为）' },
       usageWindow: {
         statsTitle: '5小时窗口用量统计',
         statsTitleDaily: '每日用量统计',
@@ -752,8 +769,11 @@ export default {accounts: {
         grokLastHeadersSeen: '响应头 {time}',
         passiveSampled: '被动采样',
         activeQuery: '查询',
-        estimatedTotalCost: '预计总费用 ${cost}',
-        estimatedTotalCostTooltip: '根据当前窗口费用和使用率估算达到 100% 使用率时的总费用'
+        estimatedTotalCost: '预计整窗额度价值 ${cost}',
+        estimatedRemainingCost: '预计剩余额度价值 ${cost}',
+        estimatePending: '待估算：同窗口有效样本不足',
+        unknownPeriod: '周期未知',
+        estimatedTotalCostTooltip: '根据同一窗口的账号费用和上游使用率增量估算，不包含可确认的导入前费用；模型使用结构及本站外消耗会影响估值。不同窗口的额度不可相加。'
       },
       openaiQuotaReset: {
         count: '次数',
@@ -1070,7 +1090,8 @@ export default {accounts: {
         codexCLIOnlyAppServer: '允许 Codex app-server 客户端',
         codexCLIOnlyAppServerDesc: '仅在上方开关开启时生效。开启后本账号额外放行内嵌 Codex 引擎、经 app-server 协议接入的第三方客户端（如 Claude Code 的 codex 插件），仍需通过全局引擎指纹门；与全局 app-server 开关取 OR（任一开即放行）。',
         codexFingerprintMode: 'Codex 指纹收敛',
-        codexFingerprintModeDesc: '多人共享同一 OAuth 账号时，将各用户的设备/会话标识收敛为账号级恒定值，减少上游可见的设备数和会话数。默认"仅设备"：一个账号对上游只表现为一台设备，并配合账号级的 Codex 客户端身份；选择关闭则原样透传客户端标识。',
+        codexFingerprintModeDesc: '多人共享同一 OAuth 账号时，将各用户的设备/会话标识收敛为账号级恒定值，减少上游可见的设备数和会话数。默认遵循后端/插件策略，明确选择后覆盖默认策略。选择“仅设备”时，一个账号对上游只表现为一台设备，并配合账号级的 Codex 客户端身份；选择关闭则原样透传客户端标识。',
+        codexFingerprintDefault: '默认（跟随后端）',
         codexFingerprintOff: '关闭（透传）',
         codexFingerprintDevice: '仅设备',
         codexFingerprintSession: '设备+会话',

@@ -539,6 +539,11 @@ export function buildModelMappingObject(
   modelMappings: ModelMappingEntry[]
 ): Record<string, string> | null {
   const mapping: Record<string, string> = {}
+  // Model IDs are data keys, including __proto__; keep a normal JSON object
+  // without invoking inherited setters. Later entries still replace earlier ones.
+  const setMapping = (from: string, to: string) => Object.defineProperty(mapping, from, {
+    value: to, enumerable: true, configurable: true, writable: true
+  })
 
   if (mode === 'whitelist' || mode === 'combined') {
     for (const model of allowedModels) {
@@ -548,7 +553,7 @@ export function buildModelMappingObject(
       // 写入 model_mapping 会导致 GetMappedModel() 把真实模型映射成 "claude-*"，从而转发失败。
       // 因此这里跳过包含通配符的条目。
       if (!normalizedModel.includes('*')) {
-        mapping[normalizedModel] = normalizedModel
+        setMapping(normalizedModel, normalizedModel)
       }
     }
   }
@@ -568,7 +573,7 @@ export function buildModelMappingObject(
         console.warn(`[buildModelMappingObject] Target model cannot contain a wildcard, skipped: ${from} -> ${to}`)
         continue
       }
-      mapping[from] = to
+      setMapping(from, to)
     }
   }
 

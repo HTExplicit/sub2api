@@ -23,7 +23,6 @@ const (
 	cindyBalanceProbePollInterval       = time.Second
 	cindyBalanceProbeTimeout            = 20 * time.Second
 	cindyBalanceProbeConfirmationWindow = 5 * time.Minute
-	cindyBalanceProbeHistoryRetention   = 30 * 24 * time.Hour
 )
 
 var (
@@ -50,9 +49,23 @@ var (
 )
 
 type CindyBalanceProbeScope struct {
-	Mode       string                `json:"mode"`
-	AccountIDs []int64               `json:"account_ids,omitempty"`
-	Filters    AccountConsoleFilters `json:"filters,omitempty"`
+	// Host-stamped only. The HTTP scope DTO cannot supply this envelope.
+	Origin     *CindyBalanceProbeOrigin `json:"origin,omitempty"`
+	Mode       string                   `json:"mode"`
+	AccountIDs []int64                  `json:"account_ids,omitempty"`
+	Filters    AccountConsoleFilters    `json:"filters,omitempty"`
+}
+
+type CindyBalanceProbeOrigin struct {
+	Version           int                    `json:"version"`
+	PluginID          int64                  `json:"plugin_id"`
+	PluginKey         string                 `json:"plugin_key"`
+	PackageSHA256     string                 `json:"package_sha256"`
+	RuntimeGeneration int64                  `json:"runtime_generation"`
+	View              AccountJobViewMetadata `json:"view"`
+	FrozenAccountIDs  []int64                `json:"frozen_account_ids,omitempty"`
+	OperationKey      string                 `json:"operation_key,omitempty"`
+	RequestDigest     string                 `json:"request_digest"`
 }
 
 type CindyBalanceProbeCandidate struct {
@@ -204,7 +217,16 @@ type CindyBalanceProbeRepository interface {
 	Pause(ctx context.Context, jobID int64) (*CindyBalanceProbeJob, error)
 	Resume(ctx context.Context, jobID int64) (*CindyBalanceProbeJob, error)
 	Cancel(ctx context.Context, jobID int64) (*CindyBalanceProbeJob, error)
-	PruneFinished(ctx context.Context, before time.Time) error
+}
+
+// Optional stronger port: a scoped probe may not fall back to a marker-only
+// commit followed by an unscoped terminal-health retry.
+type CindyScopedProbeTerminalRepository interface {
+	FinalizeScopedExhausted(context.Context, *CindyBalanceProbeReservation, string, time.Time, time.Duration) (string, *CindyHealthEpisode, error)
+}
+
+type CindyScopedProbeResumeRepository interface {
+	ResumeScoped(context.Context, int64, *CindyBalanceProbeOrigin, *CindyBalanceProbeOrigin) (*CindyBalanceProbeJob, error)
 }
 
 func BuildCindyBalanceProbePreview(scope CindyBalanceProbeScope, accounts []Account, rateRPS float64) (*CindyBalanceProbePreview, error) {
@@ -313,6 +335,55 @@ func BuildCindyBalanceProbePreviewFromSnapshot(
 	return BuildCindyBalanceProbePreview(scope, filtered, rateRPS)
 }
 
+// Apply the same host view base/preset/buckets before candidate counting. The
+// probe's own filter remains an additional intersection, never a replacement.
+func BuildCindyBalanceProbePreviewFromSnapshotContext(ctx context.Context, scope CindyBalanceProbeScope, accounts []Account, rateRPS float64, now time.Time) (*CindyBalanceProbePreview, error) {
+	view, bound := AccountViewFromContext(ctx)
+	if !bound {
+		return BuildCindyBalanceProbePreviewFromSnapshot(scope, accounts, rateRPS, now)
+	}
+	pointers := make([]*Account, 0, len(accounts))
+	for index := range accounts {
+		pointers = append(pointers, &accounts[index])
+	}
+	allowed, err := filterAccountViewAccounts(ctx, pointers)
+	if err != nil {
+		return nil, err
+	}
+	filtered := make([]Account, 0, len(allowed))
+	for _, account := range allowed {
+		filtered = append(filtered, *account)
+	}
+	common, err := BuildCindyBalanceProbePreviewFromSnapshot(CindyBalanceProbeScope{Mode: "filter", Filters: AccountViewQueryFilters(view.Request.Query)}, filtered, rateRPS, now)
+	if err != nil {
+		return nil, err
+	}
+	ids := make(map[int64]bool, len(common.Candidates))
+	for _, candidate := range common.Candidates {
+		ids[candidate.AccountID] = true
+	}
+	filtered = filtered[:0]
+	for _, account := range allowed {
+		if ids[account.ID] {
+			filtered = append(filtered, *account)
+		}
+	}
+	preview, err := BuildCindyBalanceProbePreviewFromSnapshot(scope, filtered, rateRPS, now)
+	if err != nil {
+		return nil, err
+	}
+	if scope.Mode == "selected" {
+		selected := CanonicalizeCindyBalanceProbeScope(scope).AccountIDs
+		if err := ValidateAccountViewTargets(ctx, selected); err != nil {
+			return nil, err
+		}
+		if len(selected) != preview.CandidateCount {
+			return nil, ErrAccountViewScope
+		}
+	}
+	return preview, nil
+}
+
 func cindyBalanceProbeContainsID(values []int64, target int64) bool {
 	for _, value := range values {
 		if value == target {
@@ -352,7 +423,13 @@ func EncodeCindyBalanceProbeScope(scope CindyBalanceProbeScope) []byte {
 
 func DecodeCindyBalanceProbeScope(data []byte) CindyBalanceProbeScope {
 	var scope CindyBalanceProbeScope
-	_ = json.Unmarshal(data, &scope)
+	if err := json.Unmarshal(data, &scope); err != nil {
+		var fields map[string]json.RawMessage
+		if json.Unmarshal(data, &fields) == nil && len(fields["origin"]) > 0 && string(fields["origin"]) != "null" {
+			// Never turn a malformed persisted origin into an unscoped legacy job.
+			scope.Origin = &CindyBalanceProbeOrigin{}
+		}
+	}
 	return CanonicalizeCindyBalanceProbeScope(scope)
 }
 

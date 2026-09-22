@@ -3,7 +3,7 @@
     <span
       ref="triggerEl"
       :class="[
-        'inline-flex cursor-help items-center gap-1 rounded-none border px-2 py-0.5 text-xs font-medium transition-colors',
+        'inline-flex cursor-help items-center gap-1 rounded-md border px-2 py-0.5 text-xs font-medium transition-colors',
         effectivePlatform
           ? platformBadgeClass(effectivePlatform)
           : 'border-gray-200 bg-gray-50 text-gray-700 dark:border-dark-600 dark:bg-dark-800 dark:text-gray-300',
@@ -36,13 +36,13 @@
         v-show="show"
         ref="popoverEl"
         role="tooltip"
-        class="pointer-events-none fixed z-[99999] w-80 max-w-[min(22rem,calc(100vw-1rem))] rounded-none border bg-white text-xs dark:bg-dark-800"
+        class="pointer-events-none fixed z-[99999] w-80 max-w-[min(22rem,calc(100vw-1rem))] rounded-lg border bg-white text-xs shadow-xl dark:bg-dark-800"
         :class="[popoverBorderClass]"
         :style="popoverStyle"
       >
         <!-- Header：平台主题色背景，含模型名 + 平台徽章 -->
         <div
-          class="flex items-center justify-between gap-2 rounded-none border-b px-3 py-2"
+          class="flex items-center justify-between gap-2 rounded-t-lg border-b px-3 py-2"
           :class="[popoverHeaderClass, popoverBorderClass]"
         >
           <span class="truncate font-semibold">{{ model.name }}</span>

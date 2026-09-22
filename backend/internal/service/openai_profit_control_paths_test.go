@@ -1,11 +1,9 @@
 package service
 
-// 利润控制请求路径矩阵测试：证明所有文本调度路径都经过利润准入过滤，
-// 且任何 fallback 都不能把已排除账号重新放回候选。
-// 覆盖：高级调度器候选池（openai_profit_control_test.go）、legacy 引擎、
-// previous_response WSv2 粘连（跳过复用但保留绑定 + 倍率恢复重粘连）、
-// failover 排除不回收、抢槽后终检、倍率恢复重新准入、
-// 用户覆盖倍率 D、composite 计费分组与调度分组分离。
+// Runtime path cases follow the downstream retirement contract: legacy profit
+// fields cannot filter accounts, but explicit exclusions, model capability,
+// sticky identity and billing rates remain effective. Private manually-built
+// gate cases preserve the independent numerical/admission helper coverage.
 
 import (
 	"context"
@@ -28,8 +26,9 @@ func profitControlWSAccount(id int64, rate float64, now time.Time) Account {
 	return *account
 }
 
-// previous_response_id 粘连：利润不合格 → 跳过复用但不删绑定；倍率恢复 → 重新粘连。
-func TestProfitControl_PreviousResponseStickyVetoKeepsBinding(t *testing.T) {
+// Dormant admission never rejects the previous-response binding based on a
+// saved legacy margin; both old and subsequently changed rates remain usable.
+func TestProfitControl_DormantPreviousResponseKeepsBinding(t *testing.T) {
 	ctx := profitControlTestCtx(profitControlTestGroup(23, 0.5, 0))
 	groupID := int64(23)
 	now := time.Now()
@@ -48,9 +47,14 @@ func TestProfitControl_PreviousResponseStickyVetoKeepsBinding(t *testing.T) {
 
 	selection, err := svc.SelectAccountByPreviousResponseID(ctx, &groupID, "resp_profit", "gpt-5.1", nil, false)
 	require.NoError(t, err)
-	require.Nil(t, selection, "上游倍率 0.8 超过阈值 0.5 的账号不应继续命中 previous_response_id 粘连")
+	require.NotNil(t, selection)
+	require.Equal(t, expensive.ID, selection.Account.ID)
+	require.False(t, selection.ProfitGateActive())
+	if selection.ReleaseFunc != nil {
+		selection.ReleaseFunc()
+	}
 
-	// 利润不合格与 quota auto-pause 同为暂时状态：绑定必须保留。
+	// Historical profit data must not invalidate the existing response binding.
 	boundAccountID, getErr := store.GetResponseAccount(ctx, groupID, "resp_profit")
 	require.NoError(t, getErr)
 	require.Equal(t, expensive.ID, boundAccountID)
@@ -68,7 +72,7 @@ func TestProfitControl_PreviousResponseStickyVetoKeepsBinding(t *testing.T) {
 }
 
 // legacy 引擎（高级调度器关闭）：候选过滤、全排除错误语义与既有语义一致。
-func TestProfitControl_LegacyEngineFiltersCandidates(t *testing.T) {
+func TestProfitControl_DormantLegacyEngineKeepsEligibleCandidates(t *testing.T) {
 	now := time.Now()
 	cheap := upstreamCostTestAccount(41, UpstreamBillingProbeStatusOK, 0.3, now.Add(-time.Minute), 30*time.Minute)
 	expensive := upstreamCostTestAccount(42, UpstreamBillingProbeStatusOK, 0.8, now.Add(-time.Minute), 30*time.Minute)
@@ -87,25 +91,30 @@ func TestProfitControl_LegacyEngineFiltersCandidates(t *testing.T) {
 	}
 	groupID := int64(7)
 
-	t.Run("legacy path only admits profitable accounts", func(t *testing.T) {
-		ctx := profitControlTestCtx(profitControlTestGroup(groupID, 0.5, 0))
-		for i := 0; i < 5; i++ {
-			selection, _, err := svc.SelectAccountWithScheduler(ctx, &groupID, "", "", "gpt-test", nil, OpenAIUpstreamTransportAny, false)
+	t.Run("legacy path admits either otherwise eligible account", func(t *testing.T) {
+		ctx, pricingAt := svc.WithOpenAIRequestPricingContext(profitControlTestCtx(profitControlTestGroup(groupID, 0.5, 0)), &groupID)
+		for _, expected := range []int64{cheap.ID, expensive.ID} {
+			excluded := map[int64]struct{}{cheap.ID: {}, expensive.ID: {}}
+			delete(excluded, expected)
+			selection, _, err := svc.SelectAccountWithScheduler(ctx, &groupID, "", "", "gpt-test", excluded, OpenAIUpstreamTransportAny, false)
 			require.NoError(t, err)
 			require.NotNil(t, selection)
-			require.Equal(t, cheap.ID, selection.Account.ID)
+			require.Equal(t, expected, selection.Account.ID)
+			require.False(t, selection.ProfitGateActive())
+			require.Equal(t, pricingAt, OpenAIPricingAtFromContext(ctx))
 			if selection.ReleaseFunc != nil {
 				selection.ReleaseFunc()
 			}
 		}
 	})
 
-	t.Run("legacy path all excluded returns standard error", func(t *testing.T) {
+	t.Run("explicit exclusions still return the standard error", func(t *testing.T) {
 		ctx := profitControlTestCtx(profitControlTestGroup(groupID, 0.7, 0.1))
-		selection, _, err := svc.SelectAccountWithScheduler(ctx, &groupID, "", "", "gpt-test", nil, OpenAIUpstreamTransportAny, false)
+		selection, _, err := svc.SelectAccountWithScheduler(ctx, &groupID, "", "", "gpt-test", map[int64]struct{}{cheap.ID: {}, expensive.ID: {}}, OpenAIUpstreamTransportAny, false)
 		require.Nil(t, selection)
 		require.Error(t, err)
 		require.True(t, errors.Is(err, ErrNoAvailableAccounts))
+		require.NotContains(t, err.Error(), openAIProfitFilterReasonThreshold)
 	})
 
 	t.Run("legacy path keeps official behavior when gate disabled", func(t *testing.T) {
@@ -120,8 +129,9 @@ func TestProfitControl_LegacyEngineFiltersCandidates(t *testing.T) {
 	})
 }
 
-// failover：可盈利账号因失败被排除后，剩余不合格账号不得被"放回"候选。
-func TestProfitControl_FailoverDoesNotReadmitExcluded(t *testing.T) {
+// Explicit failures stay excluded; historical profit settings must not also
+// exclude the remaining otherwise eligible account.
+func TestProfitControl_DormantFailoverKeepsExplicitExclusions(t *testing.T) {
 	resetOpenAIAdvancedSchedulerSettingCacheForTest()
 	defer resetOpenAIAdvancedSchedulerSettingCacheForTest()
 
@@ -146,15 +156,21 @@ func TestProfitControl_FailoverDoesNotReadmitExcluded(t *testing.T) {
 		concurrencyService: NewConcurrencyService(cache),
 	}
 	groupID := int64(7)
-	ctx := profitControlTestCtx(profitControlTestGroup(groupID, 0.5, 0))
+	ctx, pricingAt := svc.WithOpenAIRequestPricingContext(profitControlTestCtx(profitControlTestGroup(groupID, 0.5, 0)), &groupID)
 
-	// 模拟 failover：上一轮失败的 cheap 已进入 excludedIDs，仅剩 expensive 不合格。
+	// Simulate a real failure exclusion; the remaining expensive account is
+	// still eligible because profit admission is retired.
 	excluded := map[int64]struct{}{cheap.ID: {}}
 	selection, _, err := svc.SelectAccountWithScheduler(ctx, &groupID, "", "", "gpt-test", excluded, OpenAIUpstreamTransportAny, false)
-	require.Nil(t, selection, "failover 后不得回收利润不合格账号")
-	require.Error(t, err)
-	require.True(t, errors.Is(err, ErrNoAvailableAccounts))
-	require.Contains(t, err.Error(), openAIProfitFilterReasonThreshold+"=1")
+	require.NoError(t, err)
+	require.NotNil(t, selection)
+	require.Equal(t, expensive.ID, selection.Account.ID)
+	require.Contains(t, excluded, cheap.ID)
+	require.False(t, selection.ProfitGateActive())
+	require.Equal(t, pricingAt, OpenAIPricingAtFromContext(ctx))
+	if selection.ReleaseFunc != nil {
+		selection.ReleaseFunc()
+	}
 }
 
 // 抢槽后终检：候选构建后才变得不合格的账号（状态竞态）在取得槽位前被拦截。
@@ -185,8 +201,9 @@ func TestProfitControl_PostSlotRecheckVetoes(t *testing.T) {
 	require.Equal(t, cache.totalAcquires(), cache.releaseCount(expensive.ID), "被拦截账号不得泄漏并发槽位")
 }
 
-// 倍率恢复：探测刷新回落到阈值内后，此前被排除的账号重新参与调度。
-func TestProfitControl_RateRecoveryReadmitsAccount(t *testing.T) {
+// Rate changes remain observable account data but do not toggle retired
+// admission; the only healthy account is selectable on both sides.
+func TestProfitControl_DormantRateChangesKeepAccountEligible(t *testing.T) {
 	resetOpenAIAdvancedSchedulerSettingCacheForTest()
 	defer resetOpenAIAdvancedSchedulerSettingCacheForTest()
 
@@ -209,8 +226,13 @@ func TestProfitControl_RateRecoveryReadmitsAccount(t *testing.T) {
 	ctx := profitControlTestCtx(profitControlTestGroup(groupID, 0.5, 0))
 
 	selection, _, err := svc.SelectAccountWithScheduler(ctx, &groupID, "", "", "gpt-test", nil, OpenAIUpstreamTransportAny, false)
-	require.Nil(t, selection)
-	require.Error(t, err)
+	require.NoError(t, err)
+	require.NotNil(t, selection)
+	require.Equal(t, expensive.ID, selection.Account.ID)
+	require.False(t, selection.ProfitGateActive())
+	if selection.ReleaseFunc != nil {
+		selection.ReleaseFunc()
+	}
 
 	// 同步/手工写回：账号倍率回落到 0.3（阈值 0.5 内）后自动恢复参与。
 	recovered := upstreamCostTestAccount(71, UpstreamBillingProbeStatusOK, 0.3, time.Now().Add(-time.Minute), 30*time.Minute)
@@ -238,8 +260,8 @@ func (r profitControlUserRateRepo) GetByUserAndGroup(context.Context, int64, int
 	return r.rate, nil
 }
 
-// D 必须取请求用户的真实倍率：有用户覆盖时用覆盖值，绝不退回分组默认。
-func TestProfitControl_GateUsesUserOverrideRate(t *testing.T) {
+// Retirement does not alter the ordinary user-specific billing rate resolver.
+func TestProfitControl_DormantGatePreservesUserOverrideRate(t *testing.T) {
 	override := 0.5
 	svc := &OpenAIGatewayService{
 		userGroupRateResolver: newUserGroupRateResolver(
@@ -252,13 +274,15 @@ func TestProfitControl_GateUsesUserOverrideRate(t *testing.T) {
 
 	ctx := context.WithValue(profitControlTestCtx(group), ctxkey.UserID, int64(42))
 	gate := svc.resolveOpenAIProfitControlGate(ctx, &groupID)
-	require.NotNil(t, gate)
-	require.InDelta(t, 0.5, gate.threshold, 1e-12, "阈值必须基于用户覆盖倍率 0.5，而不是分组默认 2.0")
+	require.Nil(t, gate)
+	require.InDelta(t, 0.5, svc.ResolveUserGroupRateMultiplier(ctx, 42, groupID, group.RateMultiplier), 1e-12,
+		"ordinary billing still resolves the saved user override")
 
 	// 无用户身份（内部调用）时按分组默认倍率计算。
 	gate = svc.resolveOpenAIProfitControlGate(profitControlTestCtx(group), &groupID)
-	require.NotNil(t, gate)
-	require.InDelta(t, 2.0, gate.threshold, 1e-12)
+	require.Nil(t, gate)
+	require.Equal(t, 2.0, group.RateMultiplier)
+	require.Equal(t, 0.5, override)
 }
 
 type profitControlGroupRepo struct {
@@ -277,8 +301,8 @@ func (r profitControlGroupRepo) GetByID(context.Context, int64) (*Group, error) 
 	panic("profit control gate must read groups via GetByIDLite (no account-count aggregation)")
 }
 
-// composite 路由：门配置取被调度成员分组，D 取请求真实计费分组（ctx 认证分组）。
-func TestProfitControl_CompositeUsesBillingGroupRate(t *testing.T) {
+// Cross-group retirement preserves both billing and scheduled-group data.
+func TestProfitControl_DormantCompositePreservesBothGroupRates(t *testing.T) {
 	memberGroupID := int64(7)
 	memberGroup := profitControlTestGroup(memberGroupID, 0.5, 0)
 	memberGroup.RateMultiplier = 99 // 若 D 误取成员分组倍率，阈值会是 49.5
@@ -296,8 +320,12 @@ func TestProfitControl_CompositeUsesBillingGroupRate(t *testing.T) {
 
 	ctx := profitControlTestCtx(billingGroup)
 	gate := svc.resolveOpenAIProfitControlGate(ctx, &memberGroupID)
-	require.NotNil(t, gate)
-	require.InDelta(t, 0.5, gate.threshold, 1e-12, "D 必须来自计费分组（composite 父分组）倍率 1.0")
+	require.Nil(t, gate)
+	priced, pricingAt := svc.WithOpenAIRequestPricingContext(ctx, &memberGroupID)
+	require.Equal(t, pricingAt, OpenAIPricingAtFromContext(priced))
+	require.Equal(t, 1.0, billingGroup.RateMultiplier)
+	require.Equal(t, 99.0, memberGroup.RateMultiplier)
+	require.True(t, memberGroup.ProfitControlEnabled, "retirement must not rewrite persisted legacy configuration")
 }
 
 // legacy 引擎与 DB recheck 共用的资格判定直接覆盖利润门。
@@ -322,9 +350,9 @@ func TestProfitControl_EligibilityFunctionVetoes(t *testing.T) {
 	require.True(t, isOpenAICompatibleAccountEligibleForRequest(context.Background(), expensive, PlatformOpenAI, "", false, ""))
 }
 
-// legacy 引擎粘性写回（评审 M-Legacy 回归）：门下选号阶段不得直写粘性——
-// 终检否决的账号不能成为新绑定；无门保持官方 eager 绑定与原 TTL 语义。
-func TestProfitControl_LegacyEngineDefersStickyBindingUnderGate(t *testing.T) {
+// Legacy engine selection keeps ordinary eager binding even if persisted rows
+// still carry retired profit configuration.
+func TestProfitControl_DormantLegacyEngineKeepsEagerStickyBinding(t *testing.T) {
 	now := time.Now()
 	cheap := upstreamCostTestAccount(45, UpstreamBillingProbeStatusOK, 0.3, now.Add(-time.Minute), 30*time.Minute)
 	expensive := upstreamCostTestAccount(46, UpstreamBillingProbeStatusOK, 0.8, now.Add(-time.Minute), 30*time.Minute)
@@ -348,15 +376,16 @@ func TestProfitControl_LegacyEngineDefersStickyBindingUnderGate(t *testing.T) {
 		}, cache
 	}
 
-	t.Run("gated selection defers binding to terminal admission", func(t *testing.T) {
+	t.Run("legacy enabled values keep eager binding without a runtime gate", func(t *testing.T) {
 		svc, cache := newSvc(map[string]int64{})
 		ctx := profitControlTestCtx(profitControlTestGroup(groupID, 0.5, 0))
 		selection, _, err := svc.SelectAccountWithScheduler(ctx, &groupID, "", sessionHash, "gpt-test", nil, OpenAIUpstreamTransportAny, false)
 		require.NoError(t, err)
 		require.NotNil(t, selection)
-		require.Equal(t, cheap.ID, selection.Account.ID)
-		require.Empty(t, cache.sessionBindings, "门下 legacy 选号阶段不得直写粘性绑定")
-		require.True(t, selection.ProfitGateActive(), "legacy 选号结果同样携带门")
+		require.Contains(t, []int64{cheap.ID, expensive.ID}, selection.Account.ID)
+		require.Contains(t, cache.sessionBindings, "openai:"+sessionHash)
+		require.Equal(t, selection.Account.ID, cache.sessionBindings["openai:"+sessionHash])
+		require.False(t, selection.ProfitGateActive())
 		if selection.ReleaseFunc != nil {
 			selection.ReleaseFunc()
 		}

@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 
+	extensionv1 "github.com/Wei-Shaw/sub2api/pkg/extensionapi/v1"
 	pluginv1 "github.com/Wei-Shaw/sub2api/pkg/pluginapi/v1"
 	"golang.org/x/mod/semver"
 )
@@ -23,6 +24,7 @@ func EvaluatePluginCompatibility(manifest PluginManifest, host PluginHostInfo) P
 		UIBridge:           manifest.Requires.UIBridge,
 	}
 	if manifest.Requires.PluginProtocol != pluginv1.ProtocolVersion ||
+		(manifest.Requires.ExtensionAPI != 0 && manifest.Requires.ExtensionAPI != extensionv1.Version) ||
 		manifest.Requires.TransportAPI != pluginv1.TransportAPIVersion ||
 		manifest.Requires.UIBridge != pluginv1.UIBridgeVersion {
 		result.Status = "incompatible"

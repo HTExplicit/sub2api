@@ -2,11 +2,14 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"strings"
 	"time"
+
+	extensionv1 "github.com/Wei-Shaw/sub2api/pkg/extensionapi/v1"
 )
 
 type ImageStudioUpload struct {
@@ -37,6 +40,7 @@ type ImageStudioArtifactDownload struct {
 }
 
 type ImageStudioService struct {
+	runtime  *ImageStudioRuntime
 	repo     ImageStudioRepository
 	apiKeys  APIKeyRepository
 	accounts AccountRepository
@@ -119,27 +123,19 @@ func imageStudioGroupIdentityEligible(group *Group) bool {
 }
 
 func imageStudioModelCapabilities() []CindyModelCapability {
-	result := make([]CindyModelCapability, 0, 2)
-	for _, model := range []string{ImageStudioModelGPTImage2, ImageStudioModelGeminiProImage} {
-		capability := cindyCapabilityByPublicID[model]
-		if capability == nil || capability.Kind != CindyModelKindImage || !capability.PublicModel {
-			continue
+	capabilities := make([]CindyModelCapability, 0)
+	for _, capability := range CindyCapabilities() {
+		if capability.PublicModel && capability.Kind == CindyModelKindImage {
+			capabilities = append(capabilities, cindyModelCapabilityFromCapability(capability))
 		}
-		studioCapability := cindyModelCapabilityFromCapability(*capability)
-		if capability.Controls != nil {
-			studioControls := &CindyCapabilityControls{
-				Generation: cloneCindyImageRequestControls(capability.Controls.Generation),
-				Edit:       cloneCindyImageRequestControls(capability.Controls.Edit),
-			}
-			if studioControls.Generation != nil {
-				studioControls.Generation.MaxOutputCount = ImageStudioMaxOutputCount
-			}
-			if studioControls.Edit != nil {
-				studioControls.Edit.MaxOutputCount = ImageStudioMaxOutputCount
-			}
-			studioCapability.Controls = studioControls
-		}
-		result = append(result, studioCapability)
+	}
+	raw, _ := json.Marshal(extensionv1.ImageStudioCatalogRequest{Capabilities: capabilities})
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	out, err := invokeProcessExtensionCached(ctx, "*", "*", extensionv1.Invocation{Capability: extensionv1.CapabilityRequest, Operation: "image.studio.models", Payload: raw})
+	result := make([]CindyModelCapability, 0)
+	if err == nil && out.Code == "" {
+		_ = json.Unmarshal(out.Payload, &result)
 	}
 	return result
 }
@@ -176,19 +172,16 @@ func (s *ImageStudioService) Create(
 	reference, mask *ImageStudioUpload,
 ) (*ImageStudioJob, error) {
 	input.Prompt = strings.TrimSpace(input.Prompt)
-	input.Model = strings.TrimSpace(input.Model)
-	input.Size = strings.TrimSpace(input.Size)
-	input.Quality = strings.TrimSpace(input.Quality)
-	if input.Size == "" {
-		input.Size = "1024x1024"
-	}
-	if input.Quality == "" {
-		input.Quality = "low"
-	}
-	if err := ValidateImageStudioCreateInput(input, reference != nil, mask != nil); err != nil {
+	plan, err := planImageStudio(ctx, input, reference != nil, mask != nil, true)
+	if err != nil {
 		return nil, err
 	}
-	capability := cindyCapabilityByPublicID[input.Model]
+	input.Model, input.Mode, input.Size, input.Quality = plan.Model, ImageStudioMode(plan.Mode), plan.Size, plan.Quality
+	capabilityValue, known := resolveKnownCindyCapability(input.Model)
+	var capability *CindyCapability
+	if known {
+		capability = &capabilityValue
+	}
 	if capability == nil || !capability.PublicModel || capability.Kind != CindyModelKindImage {
 		return nil, newImageStudioError(400, "model_unavailable", "Image Studio model is unavailable")
 	}
@@ -197,6 +190,11 @@ func (s *ImageStudioService) Create(
 	}
 	if s.repo == nil || s.store == nil {
 		return nil, newImageStudioError(503, "studio_unavailable", "Image Studio is unavailable")
+	}
+	if s.runtime != nil {
+		if err := s.runtime.Start(context.Background()); err != nil {
+			return nil, newImageStudioError(503, "studio_unavailable", "Image Studio is unavailable")
+		}
 	}
 	now := s.now()
 	expiresAt := now.Add(ImageStudioFileRetention)
@@ -253,12 +251,20 @@ func (s *ImageStudioService) Cancel(ctx context.Context, userID, jobID int64) (*
 }
 
 func (s *ImageStudioService) Retry(ctx context.Context, userID, jobID int64) (*ImageStudioJob, error) {
+	if err := EnsureImageStudioAvailable(ctx); err != nil {
+		return nil, err
+	}
 	job, err := s.repo.Get(ctx, userID, jobID)
 	if err != nil {
 		return nil, err
 	}
 	if _, err = s.eligibleAPIKey(ctx, userID, job.APIKeyID); err != nil {
 		return nil, err
+	}
+	if s.runtime != nil {
+		if err := s.runtime.Start(context.Background()); err != nil {
+			return nil, newImageStudioError(503, "studio_unavailable", "Image Studio is unavailable")
+		}
 	}
 	return s.repo.Retry(ctx, userID, jobID, s.now())
 }

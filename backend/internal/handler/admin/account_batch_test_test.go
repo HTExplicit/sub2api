@@ -60,12 +60,44 @@ func TestBatchTestRejectsAmbiguousSelections(t *testing.T) {
 	for _, body := range []string{
 		`{"items":[],"account_ids":[1]}`, `{"items":[{"account_id":1,"model_id":"a"}],"model_id":null}`,
 		`{"items":[{"account_id":1,"model_id":"a"},{"account_id":1,"model_id":"b"}]}`,
+		`{"items":[{"account_id":1,"model_id":"a","reasoning_effort":"low"},{"account_id":1,"model_id":"a","reasoning_effort":"high"}]}`,
 		`{"items":[{"account_id":1,"model_id":" "}]}`, `{"items":[{"account_id":0,"model_id":"a"}]}`, `{"items":null}`, `{}`,
 	} {
 		var payload batchTestJobPayload
 		require.NoError(t, json.Unmarshal([]byte(body), &payload))
 		_, _, err := payload.normalize()
 		require.Error(t, err, body)
+	}
+}
+
+func TestBatchTestReasoningPersistsPerAccountForRetry(t *testing.T) {
+	h := &AccountHandler{}
+	router := gin.New()
+	repo := attachAccountJobSubmitter(router, h)
+	router.POST("/batch-test", h.BatchTest)
+	req := httptest.NewRequest(http.MethodPost, "/batch-test", strings.NewReader(`{"items":[{"account_id":9,"model_id":"alias-a","reasoning_effort":"ultra"},{"account_id":3,"model_id":"other","reasoning_effort":"low"}]}`))
+	req.Header.Set("Content-Type", "application/json")
+	setAccountJobTestIdempotencyKey(req)
+	out := httptest.NewRecorder()
+	router.ServeHTTP(out, req)
+	require.Equal(t, http.StatusAccepted, out.Code, out.Body.String())
+	var payload batchTestJobPayload
+	params := requireSubmittedAccountJob(t, repo, service.AccountJobKindBatchTest, &payload)
+	want := map[int64]string{9: "ultra", 3: "low"}
+	for _, item := range payload.Items {
+		require.Equal(t, want[item.AccountID], item.ReasoningEffort)
+	}
+	for _, seed := range params.Items {
+		var metadata map[string]any
+		require.NoError(t, json.Unmarshal(seed.Metadata, &metadata))
+		require.Equal(t, want[*seed.TargetAccountID], metadata["reasoning_effort"])
+	}
+	// Restore and normalize the persisted payload as the failed-item retry path
+	// does. Choices stay attached to account IDs despite changed item ordinals.
+	_, _, err := payload.normalize()
+	require.NoError(t, err)
+	for _, item := range payload.Items {
+		require.Equal(t, want[item.AccountID], item.ReasoningEffort)
 	}
 }
 

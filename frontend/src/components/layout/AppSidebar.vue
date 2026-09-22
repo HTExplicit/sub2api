@@ -11,7 +11,7 @@
       <!-- Custom Logo or Default Logo -->
       <router-link
         :to="homePath"
-        class="sidebar-logo flex h-9 w-9 items-center justify-center overflow-hidden rounded-none transition-opacity hover:opacity-80"
+        class="sidebar-logo flex h-9 w-9 items-center justify-center overflow-hidden rounded-xl shadow-glow transition-opacity hover:opacity-80"
         @click="handleMenuItemClick(homePath)"
       >
         <img v-if="settingsLoaded" :src="siteLogo || '/logo.svg'" alt="Logo" class="h-full w-full object-contain" />
@@ -239,6 +239,8 @@ import Icon from '@/components/icons/Icon.vue'
 import { sanitizeSvg } from '@/utils/sanitize'
 import { sanitizeUrl } from '@/utils/url'
 import { FeatureFlags, makeSidebarFlag } from '@/utils/featureFlags'
+import { usePluginExtensions } from '@/stores/pluginExtensions'
+import { accountViewPath, isAccountView, localizedPluginLabel, resolveAccountView } from '@/components/plugins/accountView'
 import { resolveSiteBillingMode } from '@/utils/siteBillingMode'
 import { useBatchImageAccess } from '@/composables/useBatchImageAccess'
 
@@ -278,12 +280,13 @@ function applyFeatureFlags(items: NavItem[]): NavItem[] {
   return out
 }
 
-const { t } = useI18n()
+const { t, locale } = useI18n()
 
 const route = useRoute()
 const router = useRouter()
 const appStore = useAppStore()
 const authStore = useAuthStore()
+const pluginExtensions = usePluginExtensions()
 const onboardingStore = useOnboardingStore()
 const adminSettingsStore = useAdminSettingsStore()
 const { canUseBatchImage, refreshBatchImageAccess } = useBatchImageAccess()
@@ -749,7 +752,7 @@ const ChevronDownIcon = {
 const flagChannelMonitor = makeSidebarFlag(FeatureFlags.channelMonitor)
 const flagPayment = makeSidebarFlag(FeatureFlags.payment)
 const flagAvailableChannels = makeSidebarFlag(FeatureFlags.availableChannels)
-const flagImageStudio = makeSidebarFlag(FeatureFlags.imageStudio)
+const flagImageStudio = () => pluginExtensions.items.some(item => item.slot === 'surface' && item.id === 'image-studio')
 const flagSubscription = makeSidebarFlag(FeatureFlags.subscription)
 
 // 购买入口文案随站点计费模式切换：仅充值 → 「充值」，仅订阅 → 「订阅」，否则「充值/订阅」。
@@ -819,7 +822,11 @@ const personalNavItems = computed((): NavItem[] => finalizeNav(buildSelfNavItems
 function buildExtensionNavItems(includeAdmin: boolean): NavItem[] {
   const items: NavItem[] = []
   if (includeAdmin) {
-    items.push({ path: '/admin/cindy-accounts', label: t('nav.cindyAccounts'), icon: GlobeIcon })
+    const views = pluginExtensions.items.filter(isAccountView).filter(item =>
+      item.account_view.navigation?.section === 'admin.extensions' &&
+      resolveAccountView(pluginExtensions.items, item.plugin_key, item.id) === item)
+    views.sort((a, b) => (a.account_view.navigation?.order || 0) - (b.account_view.navigation?.order || 0))
+    for (const view of views) items.push({ path: accountViewPath(view), label: localizedPluginLabel(view.label, locale.value), icon: GlobeIcon })
   }
   items.push({ path: '/image-studio', label: t('nav.imageStudio'), icon: BatchImageIcon, featureFlag: flagImageStudio })
   return items
@@ -874,7 +881,7 @@ const adminNavItems = computed((): NavItem[] => {
       featureFlag: flagRiskControl,
       children: [
         { path: '/admin/risk-control', label: t('nav.contentModeration'), icon: ShieldIcon },
-        { path: '/admin/prompt-audit', label: t('nav.promptAudit'), icon: ShieldIcon },
+        { path: '/admin/prompt-audit', label: t('nav.promptAudit'), icon: ShieldIcon, featureFlag: () => pluginExtensions.items.some(item => item.slot === 'surface' && item.id === 'prompt-audit') },
       ],
     },
     { path: '/admin/redeem', label: t('nav.redeemCodes'), icon: TicketIcon, hideInSimpleMode: true },
@@ -907,7 +914,7 @@ const adminNavItems = computed((): NavItem[] => {
     },
     { path: '/admin/usage', label: t('nav.usage'), icon: ChartIcon },
     { path: '/admin/audit-logs', label: t('nav.auditLogs'), icon: ShieldIcon, hideInSimpleMode: true },
-    { path: '/admin/system-prompts', label: t('nav.systemPrompts'), icon: DocumentIcon }
+    { path: '/admin/system-prompts', label: t('nav.systemPrompts'), icon: DocumentIcon, featureFlag: () => pluginExtensions.items.some(item => item.slot === 'surface' && item.id === 'prompt-management') }
   ]
 
   const visible = applyFeatureFlags(baseItems)
@@ -1025,6 +1032,7 @@ watch(
 )
 
 onMounted(() => {
+  void pluginExtensions.refresh()
   void refreshBatchImageAccess()
   if (isAdmin.value) {
     adminSettingsStore.fetch()

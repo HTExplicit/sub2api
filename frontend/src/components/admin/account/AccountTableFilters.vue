@@ -16,6 +16,7 @@
 </template>
 
 <script setup lang="ts">
+// Compatibility-only generic filter primitive; the live account console mounts AccountConsoleFilters.
 import { computed } from 'vue'; import { useI18n } from 'vue-i18n'; import Select from '@/components/common/Select.vue'; import SearchInput from '@/components/common/SearchInput.vue'
 import type { AdminGroup } from '@/types'
 import { CONCRETE_PLATFORM_OPTIONS } from '@/constants/platforms'

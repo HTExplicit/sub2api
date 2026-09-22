@@ -1,0 +1,60 @@
+{
+  "schema_version": 1,
+  "id": "codexrip.account-tools",
+  "name": "账号工具",
+  "version": "0.2.7",
+  "description": "账号分类操作策略与连接测试选项",
+  "author": "HTExplicit",
+  "requires": { "sub2api": ">=0.2.7-0 <0.2.8", "tested_sub2api_versions": [], "plugin_protocol": 1, "transport_api": 1, "ui_bridge": 1, "extension_api": 1 },
+  "capabilities": [
+    { "id": "extensions.admin.v1", "platform": "*", "account_type": "*" },
+    { "id": "extensions.ui.v1", "platform": "*", "account_type": "*" }
+  ],
+  "operations": { "extensions.admin.v1": ["taxonomy.name", "taxonomy.order", "taxonomy.bulk", "taxonomy.assignment", "taxonomy.delete", "test.reasoning", "test.prompt", "test.batch", "import.plan"] },
+  "resources": [
+    { "name": "import.preview", "capability": "extensions.admin.v1", "permission": "admin" },
+    { "name": "import.submit", "capability": "extensions.admin.v1", "permission": "admin" },
+    { "name": "taxonomy.folders.list", "capability": "extensions.admin.v1", "permission": "admin" },
+    { "name": "taxonomy.folders.create", "capability": "extensions.admin.v1", "permission": "admin" },
+    { "name": "taxonomy.folders.order", "capability": "extensions.admin.v1", "permission": "admin" },
+    { "name": "taxonomy.folders.update", "capability": "extensions.admin.v1", "permission": "admin" },
+    { "name": "taxonomy.folders.delete", "capability": "extensions.admin.v1", "permission": "admin" },
+    { "name": "taxonomy.tags.list", "capability": "extensions.admin.v1", "permission": "admin" },
+    { "name": "taxonomy.tags.create", "capability": "extensions.admin.v1", "permission": "admin" },
+    { "name": "taxonomy.tags.order", "capability": "extensions.admin.v1", "permission": "admin" },
+    { "name": "taxonomy.tags.update", "capability": "extensions.admin.v1", "permission": "admin" },
+    { "name": "taxonomy.tags.delete", "capability": "extensions.admin.v1", "permission": "admin" },
+    { "name": "taxonomy.account.update", "capability": "extensions.admin.v1", "permission": "admin" },
+    { "name": "taxonomy.bulk.update", "capability": "extensions.admin.v1", "permission": "admin" },
+    { "name": "tests.models", "capability": "extensions.admin.v1", "permission": "admin" },
+    { "name": "tests.submit", "capability": "extensions.admin.v1", "permission": "admin" }
+  ],
+  "contributions": [
+    { "id": "account-import", "slot": "surface", "capability": "extensions.admin.v1", "entrypoint": "ui/compiled/index.html", "events": ["close"], "permission": "admin", "label": { "zh": "导入账号", "en": "Import accounts" } },
+    {
+      "id": "test-prompt", "slot": "account.test.prompt", "capability": "extensions.admin.v1", "permission": "admin",
+      "label": { "zh": "文本测试提示词", "en": "Text test prompt" },
+      "fields": [{ "key": "prompt", "kind": "textarea", "rows": 3, "max_length": 8192, "placeholder": "hi",
+        "label": { "zh": "文本测试提示词", "en": "Text test prompt" },
+        "hint": { "zh": "留空使用 hi；仅当前站点和管理员浏览器记忆。", "en": "Blank uses hi. Remembered only for this site and administrator in this browser." },
+        "reset_label": { "zh": "恢复默认", "en": "Restore default" },
+        "limit_message": { "zh": "提示词超过8192字符，请缩短后重试。", "en": "Prompt exceeds 8192 characters. Shorten it to continue." }
+      }]
+    },
+    {
+      "id": "test-reasoning", "slot": "account.test", "capability": "extensions.admin.v1", "permission": "admin",
+      "label": { "zh": "推理强度", "en": "Reasoning effort" },
+      "fields": [{ "key": "reasoning_effort", "kind": "select", "label": { "zh": "推理强度", "en": "Reasoning effort" }, "options_source": "reasoning_efforts", "default_label": { "zh": "默认", "en": "Default" }, "default_source": "default_reasoning_effort" }]
+    },
+    { "id": "account-taxonomy", "slot": "surface", "capability": "extensions.admin.v1", "permission": "admin", "label": { "zh": "账号分类", "en": "Account classification" } },
+    { "id": "account-taxonomy-navigation", "slot": "surface", "capability": "extensions.admin.v1", "entrypoint": "ui/compiled/index.html", "events": ["select", "manage", "retry"], "permission": "admin", "label": { "zh": "账号分类", "en": "Account classification" } },
+    { "id": "account-taxonomy-manager", "slot": "surface", "capability": "extensions.admin.v1", "entrypoint": "ui/compiled/index.html", "events": ["close", "changed"], "permission": "admin", "label": { "zh": "管理分类", "en": "Manage classification" } },
+    { "id": "account-taxonomy-bulk", "slot": "surface", "capability": "extensions.admin.v1", "entrypoint": "ui/compiled/index.html", "events": ["close", "stale"], "permission": "admin", "label": { "zh": "批量分类", "en": "Bulk classification" } },
+    { "id": "account-taxonomy-edit", "slot": "surface", "capability": "extensions.admin.v1", "entrypoint": "ui/compiled/index.html", "events": ["changed"], "permission": "admin", "label": { "zh": "账号分类", "en": "Account classification" } },
+    { "id": "account-batch-test", "slot": "surface", "capability": "extensions.admin.v1", "entrypoint": "ui/compiled/index.html", "events": ["close"], "permission": "admin", "label": { "zh": "批量测试", "en": "Batch testing" } },
+    { "id": "account-tools-settings", "slot": "admin.settings", "capability": "extensions.admin.v1", "action": "tools.describe", "entrypoint": "ui/index.html", "permission": "admin", "label": { "zh": "账号工具", "en": "Account tools" } }
+  ],
+  "runtimes": {},
+  "ui": { "entrypoint": "ui/index.html" },
+  "files": {}
+}

@@ -4,15 +4,16 @@ import (
 	"context"
 	"errors"
 	"io"
-	"strings"
 	"time"
+
+	extensionv1 "github.com/Wei-Shaw/sub2api/pkg/extensionapi/v1"
 )
 
 const (
-	ImageStudioModelGPTImage2      = "gpt-image-2"
-	ImageStudioModelGeminiProImage = "gemini-3-pro-image"
+	ImageStudioModelGPTImage2      = extensionv1.ImageStudioModelGPTImage2
+	ImageStudioModelGeminiProImage = extensionv1.ImageStudioModelGeminiProImage
 
-	ImageStudioMaxOutputCount = 4
+	ImageStudioMaxOutputCount = extensionv1.ImageStudioMaxOutputCount
 	ImageStudioMaxImageBytes  = 20 << 20
 	ImageStudioGlobalBytes    = int64(2 << 30)
 	ImageStudioUserBytes      = int64(250 << 20)
@@ -235,44 +236,8 @@ type ImageStudioRepository interface {
 }
 
 func ValidateImageStudioCreateInput(input ImageStudioCreateInput, hasReference, hasMask bool) error {
-	input.Model = strings.TrimSpace(input.Model)
-	input.Prompt = strings.TrimSpace(input.Prompt)
-	input.Size = strings.TrimSpace(input.Size)
-	input.Quality = strings.TrimSpace(input.Quality)
-	if input.APIKeyID <= 0 {
-		return newImageStudioError(400, "invalid_api_key", "Select an Image Studio API key")
-	}
-	if input.Prompt == "" || len(input.Prompt) > 32000 {
-		return newImageStudioError(400, "invalid_prompt", "Prompt must contain between 1 and 32000 characters")
-	}
-	if input.Count < 1 || input.Count > ImageStudioMaxOutputCount {
-		return newImageStudioError(400, "invalid_count", "Image count must be between 1 and 4")
-	}
-	if input.Model != ImageStudioModelGPTImage2 && input.Model != ImageStudioModelGeminiProImage {
-		return newImageStudioError(400, "unsupported_model", "Image Studio model is not supported")
-	}
-	if input.Mode != ImageStudioModeGenerate && input.Mode != ImageStudioModeEdit {
-		return newImageStudioError(400, "unsupported_mode", "Image Studio mode is not supported")
-	}
-	if input.Mode == ImageStudioModeEdit && input.Model != ImageStudioModelGeminiProImage {
-		return newImageStudioError(400, "unsupported_mode", "This model does not support image editing")
-	}
-	if input.Mode == ImageStudioModeEdit && !hasReference {
-		return newImageStudioError(400, "reference_required", "A reference image is required for editing")
-	}
-	if input.Mode == ImageStudioModeGenerate && hasReference {
-		return newImageStudioError(400, "reference_not_allowed", "Reference images are only supported for editing")
-	}
-	if hasMask && (input.Mode != ImageStudioModeEdit || input.Model != ImageStudioModelGeminiProImage) {
-		return newImageStudioError(400, "mask_not_allowed", "Masks are not supported for this request")
-	}
-	if input.Size != "" && input.Size != "1024x1024" {
-		return newImageStudioError(400, "unsupported_size", "Image size is not supported")
-	}
-	if input.Quality != "" && input.Quality != "low" {
-		return newImageStudioError(400, "unsupported_quality", "Image quality is not supported")
-	}
-	return nil
+	_, err := planImageStudio(context.Background(), input, hasReference, hasMask, false)
+	return err
 }
 
 func ResolveImageStudioTerminalStatus(cancelRequested bool, counts ImageStudioCounts) ImageStudioJobStatus {

@@ -17,13 +17,15 @@ func TestGroupRepositoryAuditCindyGroupsUsesStrictIdentityAndAnonymousCounts(t *
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = db.Close() })
 
-	mock.ExpectQuery(`(?s)WITH account_counts AS .*WHERE g\.platform = \$1\s+AND g\.deleted_at IS NULL.*ORDER BY g\.sort_order ASC, g\.id ASC`).
+	mock.ExpectQuery(`(?s)WITH account_counts AS .*WHERE g\.platform IN \(\$1, \$2\)\s+AND g\.deleted_at IS NULL.*ORDER BY g\.sort_order ASC, g\.id ASC`).
 		WithArgs(
 			service.PlatformOpenAI,
-			service.PlatformOpenAI,
+			service.PlatformCindy,
 			service.AccountTypeAPIKey,
 			"https://api.laxarouter.ai",
 			"https://api.laxarouter.ai/",
+			service.WirePlatformOpenAI,
+			service.ProviderProfileCindyLaxaV1,
 		).
 		WillReturnRows(sqlmock.NewRows([]string{
 			"id", "name", "status", "account_count", "cindy_account_count", "api_key_count",
@@ -87,37 +89,38 @@ func TestCindyGroupSplitFingerprintTracksSemanticDrift(t *testing.T) {
 		TargetName:  "ordinary",
 		APIKeyIDs:   []int64{21},
 	}
+	plan := service.CindyGroupPartitionPlan{SourceCindy: true}
 
-	baseline, err := cindyGroupSplitFingerprint(source, members, keys, input)
+	baseline, err := cindyGroupSplitFingerprint(source, members, keys, input, plan)
 	require.NoError(t, err)
 	require.Len(t, baseline, 64)
 
 	changedMembers := append([]cindyGroupSplitMember(nil), members...)
 	changedMembers[0].priority++
-	changedFingerprint, err := cindyGroupSplitFingerprint(source, changedMembers, keys, input)
+	changedFingerprint, err := cindyGroupSplitFingerprint(source, changedMembers, keys, input, plan)
 	require.NoError(t, err)
 	require.NotEqual(t, baseline, changedFingerprint)
 
 	changedMembers = append([]cindyGroupSplitMember(nil), members...)
 	changedMembers[0].isCindy = false
-	changedFingerprint, err = cindyGroupSplitFingerprint(source, changedMembers, keys, input)
+	changedFingerprint, err = cindyGroupSplitFingerprint(source, changedMembers, keys, input, plan)
 	require.NoError(t, err)
 	require.NotEqual(t, baseline, changedFingerprint)
 
 	changedKeys := append([]cindyGroupSplitAPIKey(nil), keys...)
 	changedKeys[0].id++
-	changedFingerprint, err = cindyGroupSplitFingerprint(source, members, changedKeys, input)
+	changedFingerprint, err = cindyGroupSplitFingerprint(source, members, changedKeys, input, plan)
 	require.NoError(t, err)
 	require.NotEqual(t, baseline, changedFingerprint)
 
 	changedSource := *source
 	changedSource.UpdatedAt = changedSource.UpdatedAt.Add(time.Second)
-	changedFingerprint, err = cindyGroupSplitFingerprint(&changedSource, members, keys, input)
+	changedFingerprint, err = cindyGroupSplitFingerprint(&changedSource, members, keys, input, plan)
 	require.NoError(t, err)
 	require.Equal(t, baseline, changedFingerprint, "generic row timestamps are not target policy")
 
 	changedSource.RateMultiplier++
-	changedFingerprint, err = cindyGroupSplitFingerprint(&changedSource, members, keys, input)
+	changedFingerprint, err = cindyGroupSplitFingerprint(&changedSource, members, keys, input, plan)
 	require.NoError(t, err)
 	require.NotEqual(t, baseline, changedFingerprint)
 }

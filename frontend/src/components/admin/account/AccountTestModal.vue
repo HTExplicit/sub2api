@@ -81,7 +81,9 @@
         />
       </div>
 
-      <AccountTextTestPrompt v-if="supportsTextPrompt" v-model="textPrompt" :disabled="status === 'connecting'" />
+      <AccountTestReasoningSelect v-if="supportsTextPrompt" v-model="reasoningEffort"
+        :model="modelOptionsForMode.find(model => model.id === selectedModelId)" :account="account" :disabled="status === 'connecting'" @validity="reasoningValid = $event" />
+      <AccountTextTestPrompt v-if="supportsTextPrompt" v-model="textPrompt" :account="account" :disabled="status === 'connecting'" @validity="textPromptPolicyValid = $event" />
       <div v-else-if="supportsPromptInput" class="space-y-1.5">
         <TextArea
           v-model="testPrompt"
@@ -130,7 +132,7 @@
           />
         </div>
         <p class="text-xs text-gray-500 dark:text-gray-400">{{ imageUploadHint }}</p>
-        <div v-if="uploadImagePreview" class="overflow-hidden rounded-none border border-gray-200 dark:border-dark-500">
+        <div v-if="uploadImagePreview" class="overflow-hidden rounded-lg border border-gray-200 dark:border-dark-500">
           <img
             :src="uploadImagePreview"
             :alt="t('admin.accounts.grok.uploadPreviewAlt')"
@@ -175,7 +177,7 @@
       <div class="group relative">
         <div
           ref="terminalRef"
-          class="max-h-[240px] min-h-[120px] overflow-y-auto rounded-none border border-gray-700 bg-gray-900 p-4 font-mono text-sm dark:border-gray-800 dark:bg-black"
+          class="max-h-[240px] min-h-[120px] overflow-y-auto rounded-xl border border-gray-700 bg-gray-900 p-4 font-mono text-sm dark:border-gray-800 dark:bg-black"
         >
           <!-- Status Line -->
           <div v-if="status === 'idle'" class="flex items-center gap-2 text-gray-500">
@@ -218,7 +220,7 @@
         <button
           v-if="outputLines.length > 0"
           @click="copyOutput"
-          class="absolute right-2 top-2 rounded-none bg-gray-800/80 p-1.5 text-gray-400 opacity-0 transition-all hover:bg-gray-700 hover:text-white group-hover:opacity-100"
+          class="absolute right-2 top-2 rounded-lg bg-gray-800/80 p-1.5 text-gray-400 opacity-0 transition-all hover:bg-gray-700 hover:text-white group-hover:opacity-100"
           :title="t('admin.accounts.copyOutput')"
         >
           <Icon name="link" size="sm" :stroke-width="2" />
@@ -233,7 +235,7 @@
           <div
             v-for="(image, index) in generatedImages"
             :key="`${image.url}-${index}`"
-            class="group/img relative cursor-pointer overflow-hidden rounded-none border border-gray-200 bg-white transition hover:border-primary-300 dark:border-dark-500 dark:bg-dark-700"
+            class="group/img relative cursor-pointer overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm transition hover:border-primary-300 hover:shadow-md dark:border-dark-500 dark:bg-dark-700"
             @click="previewImageUrl = image.url"
           >
             <img
@@ -258,7 +260,7 @@
         <div
           v-for="(audio, index) in generatedAudios"
           :key="`audio-${index}`"
-          class="rounded-none border border-gray-200 bg-white p-3 dark:border-dark-500 dark:bg-dark-700"
+          class="rounded-xl border border-gray-200 bg-white p-3 dark:border-dark-500 dark:bg-dark-700"
         >
           <audio :src="audio.url" controls class="w-full" :type="audio.mimeType" />
           <div class="mt-1 text-xs text-gray-500 dark:text-gray-300">{{ audio.mimeType || 'audio/*' }}</div>
@@ -272,7 +274,7 @@
         <div
           v-for="(video, index) in generatedVideos"
           :key="`video-${index}`"
-          class="overflow-hidden rounded-none border border-gray-200 bg-black dark:border-dark-500"
+          class="overflow-hidden rounded-xl border border-gray-200 bg-black dark:border-dark-500"
         >
           <video :src="video.url" controls class="max-h-[360px] w-full" :type="video.mimeType" />
           <div class="border-t border-gray-100 bg-white px-3 py-1.5 text-xs text-gray-500 dark:border-dark-500 dark:bg-dark-700 dark:text-gray-300">
@@ -298,7 +300,7 @@
             <img
               :src="previewImageUrl"
               :alt="t('admin.accounts.imageLightboxAlt')"
-              class="max-h-[90vh] max-w-[90vw] rounded-none object-contain shadow-outline"
+              class="max-h-[90vh] max-w-[90vw] rounded-lg object-contain shadow-2xl"
             />
           </div>
         </Transition>
@@ -323,7 +325,7 @@
       <div class="flex justify-end gap-3">
         <button
           @click="handleClose"
-          class="rounded-none bg-gray-100 px-4 py-2 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-200 dark:bg-dark-600 dark:text-gray-300 dark:hover:bg-dark-500"
+          class="rounded-lg bg-gray-100 px-4 py-2 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-200 dark:bg-dark-600 dark:text-gray-300 dark:hover:bg-dark-500"
         >
           {{ t('common.close') }}
         </button>
@@ -331,7 +333,7 @@
           @click="startTest"
           :disabled="!canStartTest"
           :class="[
-            'flex items-center gap-2 rounded-none px-4 py-2 text-sm font-medium transition-all',
+            'flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium transition-all',
             !canStartTest
               ? 'cursor-not-allowed bg-primary-400 text-white'
               : status === 'success'
@@ -366,9 +368,16 @@
 </template>
 
 <script setup lang="ts">
+import { isCancel } from 'axios'
+import { useAccountViewOperation } from '@/composables/useAccountViewContext'
+import { accountAPIForView } from '@/api/admin/accounts'
+import { accountViewRequestConfig } from '@/api/admin/accountViewClient'
+import AccountTestReasoningSelect from './AccountTestReasoningSelect.vue'
 import AccountTextTestPrompt from './AccountTextTestPrompt.vue'
 import { useAccountTestPrompt } from '@/composables/useAccountTestPrompt'
-import { computed, ref, watch, nextTick } from 'vue'
+import { usePluginExtensions } from '@/stores/pluginExtensions'
+import { contributionAdmission } from '@/components/plugins/contributionAdmission'
+import { computed, ref, watch, nextTick, onBeforeUnmount, onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import BaseDialog from '@/components/common/BaseDialog.vue'
 import Select from '@/components/common/Select.vue'
@@ -379,11 +388,8 @@ import { useClipboard } from '@/composables/useClipboard'
 import { buildApiUrl } from '@/api/client'
 import { ADMIN_UI_REQUEST_HEADER } from '@/api/adminUIRequest'
 import { adminAPI } from '@/api/admin'
-import {
-  isCindyOpenAIAPIKeyAccount
-} from '@/utils/cindyOpenAIDefaults'
-import { prepareAccountTestModels, accountTestModelsForMode, defaultAccountTestModel } from '@/utils/accountTestModels'
-import type { Account, AccountAvailableModel } from '@/types'
+import { validateAccountTestPlan, accountTestModelsForMode, defaultAccountTestModel } from '@/utils/accountTestModels'
+import type { Account, AccountAvailableModel, AccountTestPlanView } from '@/types'
 
 const { t } = useI18n()
 const { copyToClipboard } = useClipboard()
@@ -402,6 +408,9 @@ const props = defineProps<{
   show: boolean
   account: Account | null
 }>()
+const accountViewOperation = useAccountViewOperation(() => props.show, () => props.account?.id)
+function scopedAccounts() { return accountAPIForView(accountViewOperation.capture(), adminAPI.accounts) }
+
 
 const emit = defineEmits<{
   (e: 'close'): void
@@ -413,10 +422,17 @@ const outputLines = ref<OutputLine[]>([])
 const streamingContent = ref('')
 const errorMessage = ref('')
 const availableModels = ref<AccountAvailableModel[]>([])
+const modelPlan = ref<AccountTestPlanView | null>(null)
+const currentModelPlan = computed(() => modelPlan.value?.account_id === props.account?.id ? modelPlan.value : null)
+let modelLoadRevision = 0
+let modelLoadController: AbortController | null = null
 const selectedModelId = ref('')
 const { prompt: textPrompt, valid: textPromptValid } = useAccountTestPrompt()
+const promptExtensions = usePluginExtensions()
+const textPromptEnabled = computed(() => promptExtensions.items.some(item => item.slot === 'account.test.prompt' && item.permission === 'admin' && contributionAdmission(item, { account: props.account }).allowed))
+const textPromptPolicyValid = ref(true)
 const mediaTestPrompt = ref('')
-const testPrompt = computed({ get: () => supportsTextPrompt.value ? textPrompt.value : mediaTestPrompt.value,
+const testPrompt = computed({ get: () => supportsTextPrompt.value ? (textPromptEnabled.value ? textPrompt.value : '') : mediaTestPrompt.value,
   set: value => { if (supportsTextPrompt.value) textPrompt.value = value; else mediaTestPrompt.value = value } })
 const loadingModels = ref(false)
 let abortController: AbortController | null = null
@@ -425,6 +441,13 @@ const generatedAudios = ref<PreviewMedia[]>([])
 const generatedVideos = ref<PreviewMedia[]>([])
 const previewImageUrl = ref('')
 const testMode = ref<'default' | 'compact'>('default')
+const reasoningEffort = ref('')
+const reasoningValid = ref(true)
+const effectiveReasoningEffort = computed(() => {
+  const enabled = promptExtensions.items.some(item => item.slot === 'account.test' && item.permission === 'admin' && contributionAdmission(item, { account: props.account }).allowed)
+  const levels = modelOptionsForMode.value.find(model => model.id === selectedModelId.value)?.reasoning_efforts || []
+  return enabled && levels.includes(reasoningEffort.value) ? reasoningEffort.value : ''
+})
 const grokTestMode = ref<'text' | 'image' | 'video' | 'search' | 'tts' | 'stt' | 'realtime'>('text')
 const uploadImageDataURL = ref('')
 const uploadImagePreview = ref('')
@@ -434,7 +457,7 @@ const uploadAudioName = ref('')
 const imageFileInput = ref<HTMLInputElement | null>(null)
 const audioFileInput = ref<HTMLInputElement | null>(null)
 const isOpenAIAccount = computed(() =>
-  props.account?.platform === 'openai' || isCindyOpenAIAPIKeyAccount(props.account)
+  (currentModelPlan.value?.wire_platform || props.account?.platform) === 'openai'
 )
 const isGrokAccount = computed(() => props.account?.platform === 'grok')
 const openAITestModeOptions = computed(() => [
@@ -460,7 +483,7 @@ const supportsGeminiImageTest = computed(() => {
 const supportsOpenAIImageTest = computed(() => {
   const modelID = selectedModelId.value.toLowerCase()
   if (!modelID.startsWith('gpt-image-')) return false
-  return props.account?.platform === 'openai' || isCindyOpenAIAPIKeyAccount(props.account)
+  return isOpenAIAccount.value
 })
 
 const supportsGrokImageTest = computed(
@@ -480,7 +503,7 @@ const showModelSelect = computed(() => {
   return grokTestMode.value === 'text' || grokTestMode.value === 'image' || grokTestMode.value === 'video'
 })
 
-const modelOptionsForMode = computed(() => accountTestModelsForMode(props.account, availableModels.value, grokTestMode.value))
+const modelOptionsForMode = computed(() => accountTestModelsForMode(currentModelPlan.value, isGrokAccount.value ? grokTestMode.value : undefined))
 
 const supportsTextPrompt = computed(() => testMode.value !== 'compact' && !supportsImageTest.value && (!isGrokAccount.value || grokTestMode.value === 'text'))
 const supportsPromptInput = computed(() => {
@@ -662,7 +685,10 @@ const testModeSummary = computed(() => {
 })
 
 const canStartTest = computed(() => {
-  if (supportsTextPrompt.value && !textPromptValid.value) return false
+	if (!accountViewOperation.available.value) return false
+	if (!props.show || !currentModelPlan.value || loadingModels.value) return false
+	if (effectiveReasoningEffort.value && !reasoningValid.value) return false
+  if (supportsTextPrompt.value && textPromptEnabled.value && (!textPromptValid.value || !textPromptPolicyValid.value)) return false
   if (status.value === 'connecting') return false
   if (isGrokAccount.value) {
     if (
@@ -671,11 +697,11 @@ const canStartTest = computed(() => {
       grokTestMode.value === 'stt' ||
       grokTestMode.value === 'realtime'
     ) {
-      return true // standalone modes (prompt/model optional)
+      return Object.prototype.hasOwnProperty.call(currentModelPlan.value.mode_views, grokTestMode.value) // standalone modes (prompt/model optional)
     }
-    return Boolean(selectedModelId.value)
+    return modelOptionsForMode.value.some(model => model.id === selectedModelId.value)
   }
-  return Boolean(selectedModelId.value)
+  return modelOptionsForMode.value.some(model => model.id === selectedModelId.value)
 })
 
 // Load available models when modal opens
@@ -700,24 +726,27 @@ const pickDefaultModelForMode = () => {
     return
   }
   if (opts.some((m) => m.id === selectedModelId.value)) return
-  selectedModelId.value = defaultAccountTestModel(props.account, opts, grokTestMode.value)
+  selectedModelId.value = defaultAccountTestModel(currentModelPlan.value, grokTestMode.value)
 }
 
 watch(
-  () => props.show,
-  async (newVal) => {
+  [() => props.show, () => props.account?.id],
+  async ([newVal]) => {
     if (newVal && props.account) {
+      abortStream()
       mediaTestPrompt.value = ''
       testMode.value = 'default'
+      reasoningEffort.value = ''
       grokTestMode.value = 'text'
       resetState()
-      await loadAvailableModels()
-      if (isGrokAccount.value) {
+      const loaded = await loadAvailableModels()
+      if (loaded && isGrokAccount.value) {
         pickDefaultModelForMode()
         applyDefaultPromptForMode()
       }
     } else {
       abortStream()
+      invalidateModelLoad()
     }
   }
 )
@@ -730,23 +759,49 @@ watch(grokTestMode, () => {
   applyDefaultPromptForMode()
 })
 
-const loadAvailableModels = async () => {
-  if (!props.account) return
-
+const loadAvailableModels = async (): Promise<boolean> => {
+  if (!props.account) return false
+  const accountID = props.account.id
+  const revision = ++modelLoadRevision
+  modelLoadController?.abort()
+  modelLoadController = new AbortController()
   loadingModels.value = true
+  modelPlan.value = null
+  availableModels.value = []
   selectedModelId.value = '' // Reset selection before loading
   try {
-    availableModels.value = prepareAccountTestModels(props.account, await adminAPI.accounts.getAvailableModels(props.account.id))
-    selectedModelId.value = defaultAccountTestModel(props.account, modelOptionsForMode.value, grokTestMode.value)
-  } catch (error) {
-    console.error('Failed to load available models:', error)
+    const result = await scopedAccounts().getAccountTestPlan(accountID, modelLoadController.signal)
+    if (revision !== modelLoadRevision || !props.show || props.account?.id !== accountID) return false
+    modelPlan.value = validateAccountTestPlan(result, accountID)
+    availableModels.value = modelPlan.value.models
+    selectedModelId.value = defaultAccountTestModel(modelPlan.value, isGrokAccount.value ? grokTestMode.value : undefined)
+    return true
+  } catch {
+    if (revision !== modelLoadRevision || !props.show || props.account?.id !== accountID) return false
+    console.error('Failed to load account test plan')
     // Fallback to empty list
+    modelPlan.value = null
     availableModels.value = []
     selectedModelId.value = ''
+    return false
   } finally {
-    loadingModels.value = false
+    if (revision === modelLoadRevision) loadingModels.value = false
   }
 }
+
+function invalidateModelLoad() {
+  modelLoadRevision += 1
+  modelLoadController?.abort()
+  modelLoadController = null
+  loadingModels.value = false
+}
+onBeforeUnmount(invalidateModelLoad)
+onMounted(async () => {
+  if (props.show && props.account && await loadAvailableModels() && isGrokAccount.value) {
+    pickDefaultModelForMode()
+    applyDefaultPromptForMode()
+  }
+})
 
 const resetState = () => {
   status.value = 'idle'
@@ -761,6 +816,7 @@ const resetState = () => {
 
 const handleClose = () => {
   abortStream()
+  invalidateModelLoad()
   emit('close')
 }
 
@@ -770,6 +826,13 @@ const abortStream = () => {
     abortController = null
   }
 }
+watch(accountViewOperation.available, available => {
+  if (available) return
+  abortStream()
+  invalidateModelLoad()
+  if (status.value === 'connecting') status.value = 'idle'
+})
+onBeforeUnmount(abortStream)
 
 const addLine = (text: string, className: string = 'text-gray-300') => {
   outputLines.value.push({ text, class: className })
@@ -800,6 +863,11 @@ const startTest = async () => {
   abortStream()
 
   abortController = new AbortController()
+  const requestController = abortController
+  const accountID = props.account.id
+  let reader: ReadableStreamDefaultReader<Uint8Array> | undefined
+  const isCurrentStream = () => abortController === requestController && !requestController.signal.aborted &&
+    props.show && props.account?.id === accountID && accountViewOperation.available.value
 
   try {
     const requestBody: {
@@ -808,10 +876,12 @@ const startTest = async () => {
       mode?: string
       image_data_url?: string
       audio_data_url?: string
+      reasoning_effort?: string
     } = {
       model_id: showModelSelect.value ? selectedModelId.value : '',
       prompt: supportsPromptInput.value ? testPrompt.value : ''
     }
+    if (supportsTextPrompt.value && effectiveReasoningEffort.value) requestBody.reasoning_effort = effectiveReasoningEffort.value
     if (isOpenAIAccount.value) {
       requestBody.mode = testMode.value
     }
@@ -839,22 +909,27 @@ const startTest = async () => {
     const url = buildApiUrl(`/admin/accounts/${props.account.id}/test`)
 
     // Use fetch with streaming for SSE since EventSource doesn't support POST
+    const view = accountViewOperation.capture()
+    const bound = view ? accountViewRequestConfig(view, { method: 'POST', data: requestBody }) : undefined
     const response = await fetch(url, {
       method: 'POST',
       headers: {
         Authorization: `Bearer ${localStorage.getItem('auth_token')}`,
         'Content-Type': 'application/json',
-        [ADMIN_UI_REQUEST_HEADER]: '1'
+        [ADMIN_UI_REQUEST_HEADER]: '1',
+        ...(bound?.headers as Record<string, string> | undefined)
       },
-      body: JSON.stringify(requestBody),
-      signal: abortController.signal
+      body: JSON.stringify(bound?.data || requestBody),
+      signal: requestController.signal
     })
+    reader = response.body?.getReader()
+    view?.assertCurrent()
+    if (!isCurrentStream()) return
 
     if (!response.ok) {
       throw new Error(`HTTP error! status: ${response.status}`)
     }
 
-    const reader = response.body?.getReader()
     if (!reader) {
       throw new Error(t('admin.accounts.grok.noResponseBody'))
     }
@@ -864,6 +939,8 @@ const startTest = async () => {
 
     while (true) {
       const { done, value } = await reader.read()
+      view?.assertCurrent()
+      if (!isCurrentStream()) { await reader.cancel(); return }
       if (done) break
 
       buffer += decoder.decode(value, { stream: true })
@@ -885,7 +962,8 @@ const startTest = async () => {
       }
     }
   } catch (error: unknown) {
-    if (error instanceof DOMException && error.name === 'AbortError') {
+    if (!isCurrentStream()) return
+    if (isCancel(error) || (error instanceof DOMException && error.name === 'AbortError')) {
       status.value = 'idle'
       return
     }
@@ -893,6 +971,12 @@ const startTest = async () => {
     const msg = error instanceof Error ? error.message : t('common.unknownError')
     errorMessage.value = msg
     addLine(t('admin.accounts.errorPrefix', { message: msg }), 'text-red-400')
+  } finally {
+    if (reader) {
+      try { await reader.cancel() } catch { /* A completed/aborted stream is already closed. */ }
+      reader.releaseLock?.()
+    }
+    if (abortController === requestController) abortController = null
   }
 }
 

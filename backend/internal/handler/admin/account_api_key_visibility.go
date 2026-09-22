@@ -25,12 +25,14 @@ type apiKeyVisibilityState struct {
 // GetAPIKeyVisibility reports whether the current admin may see account API keys.
 // GET /api/v1/admin/accounts/api-key-visibility
 func (h *AccountHandler) GetAPIKeyVisibility(c *gin.Context) {
+	noStoreAPIKeyVisibility(c)
 	response.Success(c, apiKeyVisibilityState{Enabled: h.canRevealAPIKey(c)})
 }
 
 // SetAPIKeyVisibility enables or disables API key reveal for the current admin.
 // Enabling requires the configured reveal password. PUT /api/v1/admin/accounts/api-key-visibility
 func (h *AccountHandler) SetAPIKeyVisibility(c *gin.Context) {
+	noStoreAPIKeyVisibility(c)
 	subject, ok := middleware.GetAuthSubjectFromContext(c)
 	if !ok || subject.UserID <= 0 {
 		response.Unauthorized(c, "Authorization required")
@@ -64,11 +66,17 @@ func (h *AccountHandler) SetAPIKeyVisibility(c *gin.Context) {
 }
 
 func (h *AccountHandler) buildAccountResponseWithRevealedAPIKey(c *gin.Context, account *service.Account) AccountWithConcurrency {
+	noStoreAPIKeyVisibility(c)
 	item := h.buildAccountResponseWithRuntime(c.Request.Context(), account)
 	if h.canRevealAPIKey(c) {
 		dto.RestoreAccountAPIKey(item.Account, account)
 	}
 	return item
+}
+
+func noStoreAPIKeyVisibility(c *gin.Context) {
+	c.Header("Cache-Control", "private, no-store")
+	c.Header("Pragma", "no-cache")
 }
 
 func (h *AccountHandler) canRevealAPIKey(c *gin.Context) bool {

@@ -802,22 +802,32 @@ func prioritizeOpenAICompactAccounts(accounts []*Account) []*Account {
 // would be sent for a given request, honoring the legacy compact-only mapping
 // when the caller is on the /responses/compact path.
 func resolveOpenAIAccountUpstreamModelForRequest(account *Account, requestedModel string, requireCompact bool) string {
+	model, _ := resolveOpenAIAccountUpstreamModelForRequestContext(context.Background(), account, requestedModel, requireCompact)
+	return model
+}
+
+func resolveOpenAIAccountUpstreamModelForRequestContext(ctx context.Context, account *Account, requestedModel string, requireCompact bool) (string, error) {
 	// Forward checks the raw Chat Completions fallback before passthrough.
 	// These API-key accounts therefore apply normal account model_mapping and
 	// upstream normalization, but never compact_model_mapping.
 	if shouldForwardOpenAIResponsesViaRawChatCompletions(account) {
-		upstreamModel := resolveOpenAIForwardModel(account, requestedModel, "")
+		upstreamModel, err := resolveOpenAIForwardModelContext(ctx, account, requestedModel, "")
+		if err != nil {
+			return "", err
+		}
 		if account != nil && IsLegacyCindyAPIKeyAccount(account.Platform, account.Type, account.Credentials) {
 			// A legacy Laxa row can be routed through the raw Chat Completions
 			// fallback when its Responses probe is disabled. Keep the scheduler's
 			// canonical key aligned with the body sent by that fallback; otherwise
 			// a direct Luna request is filtered/cooldown-tracked under the bare
 			// public spelling while the upstream sees the provider-qualified ID.
-			if legacyModel, mapped := cindyLegacyLaxaLiveUpstreamModel(requestedModel); mapped {
-				return legacyModel
+			if legacyModel, mapped, err := cindyLegacyLaxaLiveUpstreamModel(ctx, account, requestedModel); err != nil {
+				return "", err
+			} else if mapped {
+				return legacyModel, nil
 			}
 		}
-		return normalizeOpenAIModelForUpstream(account, upstreamModel)
+		return normalizeOpenAIModelForUpstream(account, upstreamModel), nil
 	}
 
 	// Passthrough accounts only replace authentication. Their Forward path
@@ -828,15 +838,13 @@ func resolveOpenAIAccountUpstreamModelForRequest(account *Account, requestedMode
 	if account != nil && account.IsOpenAIPassthroughEnabled() {
 		upstreamModel := strings.TrimSpace(requestedModel)
 		if upstreamModel == "" {
-			return ""
+			return "", nil
 		}
 		if IsLegacyCindyAPIKeyAccount(account.Platform, account.Type, account.Credentials) {
-			if mapped, ok := CindyMappedUpstreamModel(upstreamModel); ok {
+			if mapped, ok, err := cindyLegacyLaxaLiveUpstreamModel(ctx, account, upstreamModel); err != nil {
+				return "", err
+			} else if ok {
 				upstreamModel = mapped
-			} else if mapped, ok := CindyCompatibilityMappedUpstreamModel(upstreamModel); ok {
-				upstreamModel = mapped
-			} else if upstreamModel == CindyDefaultTestModel {
-				upstreamModel = "openai/gpt-5.6-luna"
 			}
 		}
 		if requireCompact {
@@ -850,33 +858,36 @@ func resolveOpenAIAccountUpstreamModelForRequest(account *Account, requestedMode
 		}
 		if account.IsOpenAIApiKey() {
 			if baseModel, _, accepted := resolveOpenAIModelReasoningAlias(upstreamModel); accepted {
-				return baseModel
+				return baseModel, nil
 			}
 		}
-		return upstreamModel
+		return upstreamModel, nil
 	}
 	if requireCompact && account != nil {
 		if compactModel, matched := account.ResolveCompactMappedModel(strings.TrimSpace(requestedModel)); matched {
 			if compactModel = strings.TrimSpace(compactModel); compactModel != "" {
 				if account.IsOpenAIApiKey() {
-					return normalizeOpenAIModelForUpstream(account, compactModel)
+					return normalizeOpenAIModelForUpstream(account, compactModel), nil
 				}
-				return compactModel
+				return compactModel, nil
 			}
 		}
 	}
 
-	upstreamModel := resolveOpenAIForwardModel(account, requestedModel, "")
+	upstreamModel, err := resolveOpenAIForwardModelContext(ctx, account, requestedModel, "")
+	if err != nil {
+		return "", err
+	}
 	if upstreamModel == "" {
-		return ""
+		return "", nil
 	}
 	if requireCompact {
 		compactModel := resolveOpenAICompactForwardModel(account, upstreamModel)
 		if compactModel != upstreamModel {
-			return compactModel
+			return compactModel, nil
 		}
 	}
-	return normalizeOpenAIModelForUpstream(account, upstreamModel)
+	return normalizeOpenAIModelForUpstream(account, upstreamModel), nil
 }
 
 func (s *OpenAIGatewayService) filterOpenAIAccountsForGroupPrivacy(ctx context.Context, groupID *int64, accounts []Account) []Account {
@@ -1629,6 +1640,9 @@ func (s *OpenAIGatewayService) recheckSelectedOpenAIAccountFromDBBeforeProfit(ct
 	}
 	platform = NormalizeOpenAICompatiblePlatform(platform)
 	if s.schedulerSnapshot == nil || s.accountRepo == nil {
+		if s.openAIGroupRequiresPrivacySet(ctx, groupID) && !account.IsPrivacySet() {
+			return nil
+		}
 		if !isOpenAICompatibleAccountEligibleForRequestBeforeProfit(ctx, account, platform, requestedModel, requireCompact, requiredCapability) {
 			return nil
 		}
@@ -1649,6 +1663,11 @@ func (s *OpenAIGatewayService) recheckSelectedOpenAIAccountFromDBBeforeProfit(ct
 		return nil
 	}
 	if !s.openAIAccountMatchesSchedulingGroup(latest, groupID) {
+		return nil
+	}
+	// The sticky path may bypass the filtered pool, and a pool snapshot may
+	// predate a privacy change. Every fresh selection must satisfy this group.
+	if s.openAIGroupRequiresPrivacySet(ctx, groupID) && !latest.IsPrivacySet() {
 		return nil
 	}
 	if !isOpenAICompatibleAccountEligibleForRequestBeforeProfit(ctx, latest, platform, requestedModel, requireCompact, requiredCapability) {

@@ -4,7 +4,7 @@
     <header class="relative z-20 px-6 py-4">
       <nav class="mx-auto flex max-w-6xl items-center justify-between">
         <router-link to="/home" class="flex items-center gap-3">
-          <div class="h-10 w-10 overflow-hidden rounded-none shadow-outline">
+          <div class="h-10 w-10 overflow-hidden rounded-xl shadow-md">
             <img :src="siteLogo || '/logo.svg'" alt="Logo" class="h-full w-full object-contain" />
           </div>
           <span class="text-lg font-semibold tracking-tight text-gray-900 dark:text-white">{{ siteName }}</span>
@@ -16,14 +16,14 @@
             :href="docUrl"
             target="_blank"
             rel="noopener noreferrer"
-            class="rounded-none p-2 text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-700 dark:text-dark-400 dark:hover:bg-dark-800 dark:hover:text-white"
+            class="rounded-lg p-2 text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-700 dark:text-dark-400 dark:hover:bg-dark-800 dark:hover:text-white"
             :title="t('home.viewDocs')"
           >
             <Icon name="book" size="md" />
           </a>
           <button
             @click="toggleTheme"
-            class="rounded-none p-2 text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-700 dark:text-dark-400 dark:hover:bg-dark-800 dark:hover:text-white"
+            class="rounded-lg p-2 text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-700 dark:text-dark-400 dark:hover:bg-dark-800 dark:hover:text-white"
             :title="isDark ? t('home.switchToLight') : t('home.switchToDark')"
           >
             <Icon v-if="isDark" name="sun" size="md" />
@@ -58,7 +58,7 @@
               v-model="apiKey"
               :type="keyVisible ? 'text' : 'password'"
               :placeholder="t('keyUsage.placeholder')"
-              class="input-ring w-full h-12 pl-12 pr-12 rounded-none border border-gray-200 bg-white text-sm text-gray-900 placeholder:text-gray-400 transition-all dark:border-dark-700 dark:bg-dark-900 dark:text-white dark:placeholder:text-dark-500"
+              class="input-ring w-full h-12 pl-12 pr-12 rounded-xl border border-gray-200 bg-white text-sm text-gray-900 placeholder:text-gray-400 transition-all dark:border-dark-700 dark:bg-dark-900 dark:text-white dark:placeholder:text-dark-500"
               @keydown.enter="queryKey"
             />
             <button
@@ -77,7 +77,7 @@
           <button
             @click="queryKey"
             :disabled="isQuerying"
-            class="h-12 px-7 rounded-none bg-primary-500 hover:bg-primary-600 text-white font-medium text-sm transition-all active:scale-[0.97] flex items-center gap-2 whitespace-nowrap disabled:opacity-60"
+            class="h-12 px-7 rounded-xl bg-primary-500 hover:bg-primary-600 text-white font-medium text-sm transition-all active:scale-[0.97] flex items-center gap-2 whitespace-nowrap disabled:opacity-60"
           >
             <svg v-if="isQuerying" class="w-4 h-4 animate-spin" viewBox="0 0 24 24" fill="none">
               <circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="3" opacity="0.25"/>
@@ -101,7 +101,7 @@
               v-for="range in dateRanges"
               :key="range.key"
               @click="setDateRange(range.key)"
-              class="text-xs px-3 py-1.5 rounded-none border transition-all"
+              class="text-xs px-3 py-1.5 rounded-lg border transition-all"
               :class="currentRange === range.key
                 ? 'bg-primary-500 text-white border-primary-500'
                 : 'border-gray-200 bg-white text-gray-700 dark:border-dark-700 dark:bg-dark-900 dark:text-dark-200 hover:border-primary-300 dark:hover:border-dark-600'"
@@ -110,17 +110,17 @@
               <input
                 v-model="customStartDate"
                 type="date"
-                class="input-ring text-xs px-2 py-1.5 rounded-none border border-gray-200 bg-white text-gray-900 dark:border-dark-700 dark:bg-dark-900 dark:text-white"
+                class="input-ring text-xs px-2 py-1.5 rounded-lg border border-gray-200 bg-white text-gray-900 dark:border-dark-700 dark:bg-dark-900 dark:text-white"
               />
               <span class="text-xs text-gray-400">-</span>
               <input
                 v-model="customEndDate"
                 type="date"
-                class="input-ring text-xs px-2 py-1.5 rounded-none border border-gray-200 bg-white text-gray-900 dark:border-dark-700 dark:bg-dark-900 dark:text-white"
+                class="input-ring text-xs px-2 py-1.5 rounded-lg border border-gray-200 bg-white text-gray-900 dark:border-dark-700 dark:bg-dark-900 dark:text-white"
               />
               <button
                 @click="queryKey"
-                class="text-xs px-3 py-1.5 rounded-none bg-primary-500 text-white hover:bg-primary-600"
+                class="text-xs px-3 py-1.5 rounded-lg bg-primary-500 text-white hover:bg-primary-600"
               >{{ t('keyUsage.apply') }}</button>
             </div>
           </div>
@@ -132,16 +132,16 @@
         <!-- Loading Skeleton -->
         <div v-if="showLoading" class="space-y-6">
           <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <div class="rounded-none border border-gray-200 bg-white p-8 dark:border-dark-700 dark:bg-dark-900">
+            <div class="rounded-2xl border border-gray-200 bg-white p-8 dark:border-dark-700 dark:bg-dark-900">
               <div class="skeleton h-5 w-24 mb-6"></div>
               <div class="flex justify-center"><div class="skeleton w-44 h-44 rounded-full"></div></div>
             </div>
-            <div class="rounded-none border border-gray-200 bg-white p-8 dark:border-dark-700 dark:bg-dark-900">
+            <div class="rounded-2xl border border-gray-200 bg-white p-8 dark:border-dark-700 dark:bg-dark-900">
               <div class="skeleton h-5 w-24 mb-6"></div>
               <div class="flex justify-center"><div class="skeleton w-44 h-44 rounded-full"></div></div>
             </div>
           </div>
-          <div class="rounded-none border border-gray-200 bg-white p-8 dark:border-dark-700 dark:bg-dark-900">
+          <div class="rounded-2xl border border-gray-200 bg-white p-8 dark:border-dark-700 dark:bg-dark-900">
             <div class="skeleton h-5 w-32 mb-6"></div>
             <div class="space-y-4">
               <div class="skeleton h-4 w-full"></div>
@@ -251,7 +251,7 @@
                 class="px-8 py-4 flex items-center justify-between"
               >
                 <div class="flex items-center gap-3">
-                  <div class="w-8 h-8 rounded-none flex items-center justify-center" :class="row.iconBg">
+                  <div class="w-8 h-8 rounded-lg flex items-center justify-center" :class="row.iconBg">
                     <svg
                       class="w-4 h-4"
                       :class="row.iconColor"
@@ -296,12 +296,12 @@
           >
             <div class="flex flex-col gap-3 px-8 py-5 border-b border-gray-200 dark:border-dark-700 sm:flex-row sm:items-center sm:justify-between">
               <h3 class="text-sm font-semibold uppercase tracking-wider text-gray-500 dark:text-dark-400">{{ t('keyUsage.dailyDetail') }}</h3>
-              <div class="inline-flex rounded-none border border-gray-200 bg-white p-0.5 dark:border-dark-700 dark:bg-dark-950">
+              <div class="inline-flex rounded-lg border border-gray-200 bg-white p-0.5 dark:border-dark-700 dark:bg-dark-950">
                 <button
                   v-for="option in dailyUsageOptions"
                   :key="option.value"
                   @click="setDailyUsageDays(option.value)"
-                  class="min-w-12 rounded-none px-3 py-1.5 text-xs font-medium transition-colors"
+                  class="min-w-12 rounded-md px-3 py-1.5 text-xs font-medium transition-colors"
                   :class="dailyUsageDays === option.value
                     ? 'bg-primary-500 text-white'
                     : 'text-gray-600 hover:bg-gray-100 dark:text-dark-300 dark:hover:bg-dark-800'"

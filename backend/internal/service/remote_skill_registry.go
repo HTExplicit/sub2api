@@ -8,6 +8,8 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+
+	extensionv1 "github.com/Wei-Shaw/sub2api/pkg/extensionapi/v1"
 )
 
 const (
@@ -27,6 +29,7 @@ var (
 	ErrRemoteSkillSeedUnavailable = errors.New("remote skill seed unavailable")
 	ErrRemoteSkillVersionNotFound = errors.New("remote skill candidate not found")
 	ErrRemoteSkillSyncNotFound    = errors.New("remote skill sync job not found")
+	ErrRemoteSkillSyncStopped     = errors.New("remote skill sync service is not running")
 )
 
 type RemoteSkillFileChange struct {
@@ -101,6 +104,10 @@ type RemoteSkillSyncJob struct {
 	CompletedAt              *time.Time `json:"completed_at,omitempty"`
 }
 
+// The HTTP source already has a five-minute bound. The complete job, including
+// verification and storage, has one deadline that cannot be extended by restart.
+const RemoteSkillSyncJobTimeout = 10 * time.Minute
+
 type RemoteSkillCandidate struct {
 	Version        RemoteSkillBundleVersion
 	Prompt         RemoteSkillPromptVersion
@@ -119,15 +126,14 @@ type RemoteSkillRegistryStore interface {
 	CompleteRemoteSkillSyncJob(context.Context, int64, RemoteSkillCandidate) (RemoteSkillSyncJob, error)
 	FailRemoteSkillSyncJob(context.Context, int64, string) error
 	GetRemoteSkillSyncJob(context.Context, int64) (RemoteSkillSyncJob, error)
+	ExpireRemoteSkillSyncJobs(context.Context) error
 	PublishRemoteSkillVersion(context.Context, int64, int64, int64) (RemoteSkillRegistrySnapshot, error)
-	CleanupLegacyRemoteSkillData(context.Context) error
 }
 
 type RemoteSkillRegistryFiles interface {
 	LoadSeed(context.Context) (RemoteSkillCandidate, error)
 	InstallCandidate(context.Context, RemoteSkillCandidate) error
 	LoadCandidate(context.Context, RemoteSkillBundleVersion, RemoteSkillPromptVersion, []RemoteSkillFileChange) (RemoteSkillCandidate, error)
-	CleanupLegacy(context.Context) error
 }
 
 type RemoteSkillCandidateSource interface {
@@ -182,16 +188,16 @@ func (s *RemoteSkillRegistryService) Initialize(ctx context.Context) error {
 	if err := s.Reload(ctx); err != nil {
 		return err
 	}
-	if err := s.store.CleanupLegacyRemoteSkillData(ctx); err != nil {
-		return fmt.Errorf("remove legacy remote skill database state: %w", err)
-	}
-	if err := s.files.CleanupLegacy(ctx); err != nil {
-		return fmt.Errorf("remove legacy remote skill files: %w", err)
-	}
 	return nil
 }
 
 func (s *RemoteSkillRegistryService) Start(ctx context.Context) error {
+	if s == nil || s.store == nil {
+		return errors.New("remote skill registry unavailable")
+	}
+	if err := s.store.ExpireRemoteSkillSyncJobs(ctx); err != nil {
+		return err
+	}
 	if err := s.Initialize(ctx); err != nil {
 		return err
 	}
@@ -307,15 +313,17 @@ func (s *RemoteSkillRegistryService) StartSync(ctx context.Context, promptCaptur
 	if err != nil {
 		return RemoteSkillSyncJob{}, err
 	}
-	job, err := s.store.CreateRemoteSkillSyncJob(ctx, actorID, expectedRevision, provided)
-	if err != nil {
-		return RemoteSkillSyncJob{}, err
-	}
 	s.runMu.Lock()
 	if !s.started || s.runCtx == nil {
 		s.runMu.Unlock()
-		_ = s.store.FailRemoteSkillSyncJob(ctx, job.ID, "service_stopped")
-		return RemoteSkillSyncJob{}, errors.New("remote skill sync service is not running")
+		return RemoteSkillSyncJob{}, ErrRemoteSkillSyncStopped
+	}
+	// Serialize job creation with Stop so a stopped domain cannot claim a new
+	// job and only fail it after the plugin gate rejects the worker.
+	job, err := s.store.CreateRemoteSkillSyncJob(ctx, actorID, expectedRevision, provided)
+	if err != nil {
+		s.runMu.Unlock()
+		return RemoteSkillSyncJob{}, err
 	}
 	runCtx := s.runCtx
 	s.wg.Add(1)
@@ -341,8 +349,21 @@ func (s *RemoteSkillRegistryService) resolvePromptCapture(raw []byte) (RemoteSki
 }
 
 func (s *RemoteSkillRegistryService) runSyncJob(ctx context.Context, job RemoteSkillSyncJob, prompt RemoteSkillPromptCapture) {
+	ctx, deadlineCancel := context.WithDeadline(ctx, job.CreatedAt.Add(RemoteSkillSyncJobTimeout))
+	defer deadlineCancel()
+	if err := ctx.Err(); err != nil {
+		s.failSyncJob(ctx, job.ID, "sync_expired")
+		return
+	}
+	bound, release, err := bindProcessDomainExtensionContext(ctx, extensionv1.Invocation{Capability: extensionv1.CapabilityRequest, Operation: "skills.tree.check"})
+	if err != nil {
+		s.failSyncJob(ctx, job.ID, "service_stopped")
+		return
+	}
+	defer release()
+	ctx = bound
 	if err := s.store.UpdateRemoteSkillSyncJobStage(ctx, job.ID, "fetching_source"); err != nil {
-		_ = s.store.FailRemoteSkillSyncJob(ctx, job.ID, "storage_error")
+		s.failSyncJob(ctx, job.ID, "storage_error")
 		return
 	}
 	var active *RemoteSkillCandidate
@@ -350,35 +371,75 @@ func (s *RemoteSkillRegistryService) runSyncJob(ctx context.Context, job RemoteS
 		active = remoteSkillCandidateFromPublication(*publication)
 	}
 	candidate, err := s.source.Build(ctx, prompt, active)
+	if err == nil {
+		err = ctx.Err()
+	}
 	if err != nil {
-		_ = s.store.FailRemoteSkillSyncJob(ctx, job.ID, remoteSkillSyncErrorCode(err))
+		s.failSyncJob(ctx, job.ID, remoteSkillSyncErrorCode(err))
 		return
 	}
 	if err := s.store.UpdateRemoteSkillSyncJobStage(ctx, job.ID, "verifying_candidate"); err != nil {
-		_ = s.store.FailRemoteSkillSyncJob(ctx, job.ID, "storage_error")
+		s.failSyncJob(ctx, job.ID, "storage_error")
 		return
 	}
 	candidate.Version.CreatedBy = job.CreatedBy
 	candidate.Prompt.CreatedBy = job.CreatedBy
 	if err := s.files.InstallCandidate(ctx, candidate); err != nil {
-		_ = s.store.FailRemoteSkillSyncJob(ctx, job.ID, remoteSkillSyncErrorCode(err))
+		s.failSyncJob(ctx, job.ID, remoteSkillSyncErrorCode(err))
 		return
 	}
 	if _, err := s.store.CompleteRemoteSkillSyncJob(ctx, job.ID, candidate); err != nil {
-		_ = s.store.FailRemoteSkillSyncJob(ctx, job.ID, "storage_error")
+		s.failSyncJob(ctx, job.ID, "storage_error")
 	}
 }
 
+func (s *RemoteSkillRegistryService) failSyncJob(ctx context.Context, id int64, code string) {
+	finish, cancel := context.WithTimeout(context.WithoutCancel(ctx), 3*time.Second)
+	defer cancel()
+	_ = s.store.FailRemoteSkillSyncJob(finish, id, code)
+}
+
 func (s *RemoteSkillRegistryService) PublishVersion(ctx context.Context, versionID, expectedRevision, actorID int64) (RemoteSkillRegistrySnapshot, error) {
+	return s.PublishVersionAction(ctx, versionID, expectedRevision, "publish", actorID)
+}
+
+func (s *RemoteSkillRegistryService) PublishVersionAction(ctx context.Context, versionID, expectedRevision int64, action string, actorID int64) (RemoteSkillRegistrySnapshot, error) {
 	s.applyMu.Lock()
 	defer s.applyMu.Unlock()
 	detail, err := s.store.GetRemoteSkillVersion(ctx, versionID)
 	if err != nil {
 		return RemoteSkillRegistrySnapshot{}, err
 	}
+	persisted, err := s.store.LoadRemoteSkillSnapshot(ctx)
+	if err != nil {
+		return RemoteSkillRegistrySnapshot{}, err
+	}
+	if expectedRevision < 1 || persisted.Revision != expectedRevision {
+		return RemoteSkillRegistrySnapshot{}, ErrBusinessSystemPromptRevisionConflict
+	}
 	candidate, err := s.files.LoadCandidate(ctx, detail.RemoteSkillBundleVersion, detail.Prompt, detail.FileChanges)
 	if err != nil {
 		return RemoteSkillRegistrySnapshot{}, fmt.Errorf("%w: paired candidate validation failed", ErrBusinessSystemPromptUnavailable)
+	}
+	currentID := int64(0)
+	if persisted.Active != nil {
+		currentID = persisted.Active.ID
+	}
+	if err := planSkillPublication(ctx, extensionv1.SkillPublicationPolicyRequest{
+		Action:                 action,
+		CurrentBundleVersionID: currentID,
+		Target: extensionv1.SkillPublicationBundleSummary{
+			BundleVersionID:       candidate.Version.ID,
+			PromptVersionID:       candidate.Prompt.ID,
+			UpstreamSourceID:      candidate.Version.UpstreamSourceID,
+			RawTreeSHA256:         candidate.Version.RawTreeSHA256,
+			EffectiveTreeSHA256:   candidate.Version.EffectiveTreeSHA256,
+			RawPromptSHA256:       candidate.Prompt.RawSHA256,
+			EffectivePromptSHA256: candidate.Prompt.EffectiveSHA256,
+			FileCount:             candidate.Version.FileCount,
+		},
+	}); err != nil {
+		return RemoteSkillRegistrySnapshot{}, err
 	}
 	// Validate and materialize the paired public snapshot before the database
 	// CAS.  A post-CAS conversion failure would otherwise leave the database

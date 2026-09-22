@@ -7,8 +7,10 @@ import (
 	"database/sql"
 	"fmt"
 	"log"
+	"net/url"
 	"os"
 	"os/exec"
+	"regexp"
 	"strconv"
 	"strings"
 	"sync/atomic"
@@ -44,6 +46,9 @@ var (
 
 func TestMain(m *testing.M) {
 	ctx := context.Background()
+	if dsn := strings.TrimSpace(os.Getenv("SUB2API_TEST_POSTGRES_ONLY_DSN")); dsn != "" {
+		os.Exit(runLocalPostgresTests(m, dsn))
+	}
 
 	if err := timezone.Init("UTC"); err != nil {
 		log.Printf("failed to init timezone: %v", err)
@@ -136,6 +141,40 @@ func TestMain(m *testing.M) {
 	_ = integrationDB.Close()
 
 	os.Exit(code)
+}
+
+// Explicit local-only mode exercises the same migrations against a disposable
+// native PostgreSQL when Docker is unavailable. Redis-dependent cases are
+// reported skipped, never emulated as successful integration tests.
+func runLocalPostgresTests(m *testing.M, dsn string) int {
+	parsed, err := url.Parse(dsn)
+	if err != nil || parsed.Scheme != "postgresql" || parsed.Hostname() != "127.0.0.1" || parsed.Port() == "" || parsed.Port() == "5432" || parsed.User == nil || parsed.User.Username() != "codex_test" || !regexp.MustCompile(`^/sub2api_test_[a-z0-9_]+$`).MatchString(parsed.Path) {
+		log.Print("local PostgreSQL test DSN must name a disposable loopback database on a nondefault port")
+		return 1
+	}
+	for key := range parsed.Query() {
+		if key != "sslmode" && key != "TimeZone" {
+			log.Print("unsupported local test connection option")
+			return 1
+		}
+	}
+	ctx := context.Background()
+	if err = timezone.Init("UTC"); err != nil {
+		return 1
+	}
+	integrationDB, err = openSQLWithRetry(ctx, dsn, 15*time.Second)
+	if err != nil {
+		log.Print("local PostgreSQL test connection failed")
+		return 1
+	}
+	defer integrationDB.Close()
+	if err = ApplyMigrations(ctx, integrationDB); err != nil {
+		log.Printf("local test migrations failed: %v", err)
+		return 1
+	}
+	integrationEntClient = dbent.NewClient(dbent.Driver(entsql.OpenDB(dialect.Postgres, integrationDB)))
+	defer integrationEntClient.Close()
+	return m.Run()
 }
 
 func dockerIsAvailable(ctx context.Context) bool {
@@ -251,6 +290,9 @@ func testEntSQLTx(t *testing.T) (*dbent.Client, *sql.Tx) {
 
 func testRedis(t *testing.T) *redisclient.Client {
 	t.Helper()
+	if integrationRedis == nil {
+		t.Skip("Redis integration is not available in explicit PostgreSQL-only mode")
+	}
 
 	prefix := fmt.Sprintf(
 		"it:%s:%d:%d:",

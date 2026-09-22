@@ -476,8 +476,14 @@ describe('AccountUsageCell', () => {
     expect(wrapper.text()).toContain('7d|36|900')
   })
 
-  it('仅为 OpenAI OAuth 7d 窗口计算预计总费用', async () => {
+  it('使用服务端的同窗口配对估值，不用导入后的费用除以累计使用率', async () => {
     getUsage.mockResolvedValue({
+      quota_windows: [
+        { id: 'primary', window_minutes: 300, utilization: 25, resets_at: null, remaining_seconds: 0,
+          window_stats: { requests: 1, tokens: 100, cost: 2 }, estimate: { status: 'insufficient_data' } },
+        { id: 'secondary', window_minutes: 10080, utilization: 40, resets_at: null, remaining_seconds: 0,
+          window_stats: { requests: 2, tokens: 200, cost: 12 }, estimate: { status: 'ready', total: 120, remaining: 72 } }
+      ],
       five_hour: {
         utilization: 25,
         resets_at: null,
@@ -510,7 +516,8 @@ describe('AccountUsageCell', () => {
     await flushPromises()
 
     expect(wrapper.text()).toContain('5h|none')
-    expect(wrapper.text()).toContain('7d|30')
+    expect(wrapper.text()).toContain('7d|120')
+    expect(wrapper.text()).not.toContain('7d|30')
   })
 
   it.each([

@@ -178,3 +178,29 @@ func TestAPIKeyVisibilityDisableClearsReveal(t *testing.T) {
 	require.True(t, ok)
 	require.NotContains(t, disabledCreds, "api_key")
 }
+
+func TestAPIKeyVisibilityAndRevealResponsesNeverCache(t *testing.T) {
+	router, _, _ := setupAPIKeyVisibilityRouter(t, testAPIKeyRevealPassword)
+	for _, step := range []struct {
+		name, method, path string
+		body               any
+		status             int
+	}{
+		{"status", http.MethodGet, "/api/v1/admin/accounts/api-key-visibility", nil, http.StatusOK},
+		{"wrong-password", http.MethodPut, "/api/v1/admin/accounts/api-key-visibility", map[string]any{"enabled": true, "password": "wrong-password"}, http.StatusBadRequest},
+		{"enable", http.MethodPut, "/api/v1/admin/accounts/api-key-visibility", map[string]any{"enabled": true, "password": testAPIKeyRevealPassword}, http.StatusOK},
+		{"detail", http.MethodGet, "/api/v1/admin/accounts/42", nil, http.StatusOK},
+		{"update", http.MethodPut, "/api/v1/admin/accounts/42", map[string]any{"name": "api-account"}, http.StatusOK},
+		{"disable", http.MethodPut, "/api/v1/admin/accounts/api-key-visibility", map[string]any{"enabled": false}, http.StatusOK},
+		{"redacted-detail", http.MethodGet, "/api/v1/admin/accounts/42", nil, http.StatusOK},
+	} {
+		t.Run(step.name, func(t *testing.T) {
+			recorder := doAPIKeyVisibilityJSON(t, router, step.method, step.path, step.body)
+			require.Equal(t, step.status, recorder.Code)
+			require.Contains(t, recorder.Header().Get("Cache-Control"), "no-store")
+			require.Equal(t, "no-cache", recorder.Header().Get("Pragma"))
+			require.NotContains(t, recorder.Body.String(), testAPIKeyRevealPassword)
+			require.NotContains(t, recorder.Body.String(), "rt-secret")
+		})
+	}
+}

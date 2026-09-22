@@ -8,7 +8,7 @@
         <header class="page-header mb-0 flex flex-wrap items-start justify-between gap-4 border-b border-gray-100 px-5 py-4 dark:border-dark-700 sm:px-6">
           <div class="min-w-0">
             <h1 class="page-title flex items-center gap-2 text-xl font-black text-gray-900 dark:text-white">
-              <span class="inline-flex h-8 w-8 items-center justify-center rounded-none bg-blue-50 text-blue-500 dark:bg-blue-900/30 dark:text-blue-400">
+              <span class="inline-flex h-8 w-8 items-center justify-center rounded-xl bg-blue-50 text-blue-500 dark:bg-blue-900/30 dark:text-blue-400">
                 <Icon name="chart" size="sm" />
               </span>
               {{ t('channelMonitorV2.title') }}
@@ -954,7 +954,7 @@ onBeforeUnmount(() => {
 .health-healthy  { background: #22c55e; }
 .health-warning  { background: #f59e0b; }
 .health-critical { background: #ef4444; }
-.health-unknown  { background: #8a8b8d; }
+.health-unknown  { background: rgb(var(--theme-color-gray-400, 156 163 175)); }
 .matrix-select {
   min-width: 10rem;
 }

@@ -12,6 +12,11 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// Fixed layout fixture for the existing on-disk compatibility contract.
+func (f *RemoteSkillRegistryFilesystem) candidateRoot(treeSHA, promptSHA string) string {
+	return filepath.Join(f.root, "paired", treeSHA+"-"+promptSHA)
+}
+
 func TestRemoteSkillFilesystemSeedContainsExactCurrentModelGangTreeAndApprovedPrompt(t *testing.T) {
 	files := NewRemoteSkillRegistryFilesystem(t.TempDir())
 	seed, err := files.LoadSeed(context.Background())
@@ -84,7 +89,7 @@ func historical73RemoteSkillCandidateForTest(t *testing.T, seed RemoteSkillCandi
 		RawBody: []byte(seed.Prompt.RawBody), EffectiveBody: []byte(seed.Prompt.EffectiveBody),
 		RawSHA256: seed.Prompt.RawSHA256, EffectiveSHA256: seed.Prompt.EffectiveSHA256, Diff: seed.Prompt.Diff,
 	}
-	historical, err := buildPairedRemoteSkillCandidate(rawFiles, rewriteRemoteSkillPublishedFiles(rawFiles), prompt, nil, seed.Version.FetchedAt)
+	historical, err := buildPairedRemoteSkillCandidate(context.Background(), rawFiles, rewriteRemoteSkillPublishedFiles(rawFiles), prompt, nil, seed.Version.FetchedAt)
 	require.NoError(t, err)
 	return historical
 }
@@ -118,6 +123,7 @@ func TestRemoteSkillFilesystemLoadsImmutableHistoricalPromptPair(t *testing.T) {
 
 	historicalPrompt := historicalRemoteSkillPromptCaptureForTest(t)
 	historical, err := buildPairedRemoteSkillCandidate(
+		context.Background(),
 		seed.RawFiles,
 		seed.EffectiveFiles,
 		historicalPrompt,
@@ -250,20 +256,23 @@ func TestRemoteSkillFilesystemRejectsLinkedMetadataAndPromptFiles(t *testing.T) 
 	}
 }
 
-func TestRemoteSkillFilesystemLegacyCleanupLeavesPairedCandidates(t *testing.T) {
+func TestRemoteSkillFilesystemInstallPreservesExistingDirectories(t *testing.T) {
 	root := t.TempDir()
 	files := NewRemoteSkillRegistryFilesystem(root)
 	seed, err := files.LoadSeed(context.Background())
 	require.NoError(t, err)
-	require.NoError(t, files.InstallCandidate(context.Background(), seed))
 	for _, name := range []string{"private/seed", "private/versions", "public/reverse-skill", "public/bootstrap", "public/versions", "staging/incomplete"} {
 		require.NoError(t, os.MkdirAll(filepath.Join(root, filepath.FromSlash(name)), 0o750))
 	}
-	require.NoError(t, files.CleanupLegacy(context.Background()))
+	require.NoError(t, os.WriteFile(filepath.Join(root, "private", "seed", "history.txt"), []byte("preserve history"), 0600))
+	require.NoError(t, files.InstallCandidate(context.Background(), seed))
 	for _, name := range []string{"private", "public", "staging"} {
 		_, err := os.Stat(filepath.Join(root, filepath.FromSlash(name)))
-		require.ErrorIs(t, err, os.ErrNotExist)
+		require.NoError(t, err)
 	}
+	history, err := os.ReadFile(filepath.Join(root, "private", "seed", "history.txt"))
+	require.NoError(t, err)
+	require.Equal(t, "preserve history", string(history))
 	_, err = os.Stat(files.candidateRoot(seed.Version.EffectiveTreeSHA256, seed.Prompt.EffectiveSHA256))
 	require.NoError(t, err)
 }

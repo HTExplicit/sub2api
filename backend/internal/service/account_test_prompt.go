@@ -1,10 +1,12 @@
 package service
 
 import (
+	"context"
 	"errors"
 	"strings"
 	"unicode/utf8"
 
+	extensionv1 "github.com/Wei-Shaw/sub2api/pkg/extensionapi/v1"
 	"github.com/gin-gonic/gin"
 )
 
@@ -30,14 +32,25 @@ func resolveAntigravityTestPrompt(prompts ...string) string {
 }
 
 func ValidateAccountTextTestPrompt(prompt, model, mode string) error {
-	switch strings.ToLower(strings.TrimSpace(mode)) {
-	case "compact", "image", "video", "tts", "stt", "realtime":
-		return nil
-	}
-	if strings.Contains(strings.ToLower(model), "image") {
+	if !accountTestUsesTextPrompt(model, mode) {
 		return nil
 	}
 	return ValidateAccountTestPrompt(prompt)
+}
+
+func accountTestUsesTextPrompt(model, mode string) bool {
+	switch strings.ToLower(strings.TrimSpace(mode)) {
+	case "compact", "image", "video", "tts", "stt", "realtime":
+		return false
+	}
+	return !strings.Contains(strings.ToLower(model), "image")
+}
+
+func validateAccountPromptExtension(ctx context.Context, account *Account, prompt, model, mode string) error {
+	if strings.TrimSpace(prompt) == "" || !accountTestUsesTextPrompt(model, mode) || mode == "search" {
+		return nil
+	}
+	return accountToolsOperationForAccount(ctx, account, "test.prompt", extensionv1.TextPromptSelection{Characters: utf8.RuneCountInString(prompt), ValidUTF8: utf8.ValidString(prompt)}, nil)
 }
 
 func ValidateAccountTestPrompt(prompt string) error {

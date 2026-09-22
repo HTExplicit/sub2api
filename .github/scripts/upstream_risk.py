@@ -15,22 +15,25 @@ CRITICAL_PATHS = (
     re.compile(r"^(?:Dockerfile|docker-compose[^/]*\.ya?ml|deploy/|\.dockerignore$)"),
     re.compile(r"^(?:backend/go\.(?:mod|sum)|frontend/(?:package\.json|pnpm-lock\.yaml))$"),
     re.compile(r"^backend/(?:migrations|ent)/"),
+    re.compile(r"^(?:plugins/|backend/pkg/(?:pluginapi|extensionapi)/)"),
     re.compile(
         r"^backend/internal/(?:auth|securityaudit|repository|server/middleware|service/"
-        r"(?:billing|pricing|ratelimit|account_scheduler|gateway|openai_|api_key_auth))"
+        r"(?:billing|pricing|ratelimit|account_scheduler|gateway|openai_|plugin_|api_key_auth))"
     ),
 )
 
 
-def git_lines(repo: Path, *args: str) -> list[str]:
+def git_records(repo: Path, *args: str, separator: str = "\n") -> list[str]:
     result = subprocess.run(
         ["git", "-C", str(repo), *args],
         check=True,
         text=True,
+        encoding="utf-8",
+        errors="surrogateescape",
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
     )
-    return sorted({line.strip() for line in result.stdout.splitlines() if line.strip()})
+    return sorted({record for record in result.stdout.split(separator) if record})
 
 
 def is_critical(path: str) -> bool:
@@ -57,9 +60,9 @@ def classify(upstream_files: list[str], downstream_files: list[str]) -> dict[str
 
 
 def analyze(repo: Path, base: str, tag: str, downstream_ref: str) -> dict[str, object]:
-    upstream_files = git_lines(repo, "diff", "--name-only", f"{base}..{tag}")
-    downstream_commit = git_lines(repo, "rev-parse", "--verify", f"{downstream_ref}^{{commit}}")[0]
-    downstream_files = git_lines(repo, "diff", "--name-only", f"{base}..{downstream_commit}")
+    upstream_files = git_records(repo, "diff", "--name-only", "-z", f"{base}..{tag}", separator="\0")
+    downstream_commit = git_records(repo, "rev-parse", "--verify", f"{downstream_ref}^{{commit}}")[0]
+    downstream_files = git_records(repo, "diff", "--name-only", "-z", f"{base}..{downstream_commit}", separator="\0")
     result = classify(upstream_files, downstream_files)
     result.update({
         "schema": 1,

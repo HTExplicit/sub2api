@@ -108,10 +108,6 @@ func (s *cindyBalanceProbeCreateRepositoryStub) CreateJob(
 	return nil, s.err
 }
 
-func (s *cindyBalanceProbeClaimEpochRepositoryStub) PruneFinished(context.Context, time.Time) error {
-	return nil
-}
-
 func (s *cindyBalanceProbeClaimEpochRepositoryStub) ClaimJob(
 	_ context.Context,
 	leaseToken string,

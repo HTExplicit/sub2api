@@ -33,7 +33,7 @@
           </p>
         </div>
         <!-- Order Info -->
-        <div v-if="order" class="rounded-none bg-white p-5 shadow-outline dark:bg-dark-800">
+        <div v-if="order" class="rounded-xl bg-white p-5 shadow-sm dark:bg-dark-800">
           <div class="space-y-3 text-sm">
             <div v-if="hasOrderId(order)" class="flex justify-between">
               <span class="text-gray-500 dark:text-gray-400">{{ t('payment.orders.orderId') }}</span>
@@ -70,7 +70,7 @@
           </div>
         </div>
         <!-- EasyPay return info (when no order loaded) -->
-        <div v-else-if="returnInfo" class="rounded-none bg-white p-5 shadow-outline dark:bg-dark-800">
+        <div v-else-if="returnInfo" class="rounded-xl bg-white p-5 shadow-sm dark:bg-dark-800">
           <div class="space-y-3 text-sm">
             <div v-if="returnInfo.outTradeNo" class="flex justify-between">
               <span class="text-gray-500 dark:text-gray-400">{{ t('payment.orders.orderId') }}</span>

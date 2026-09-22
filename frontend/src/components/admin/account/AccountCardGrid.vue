@@ -41,8 +41,8 @@
           <AccountStatusIndicator :account="account" @show-temp-unsched="emit('showTempUnsched', account)" />
         </div>
 
-        <div v-if="showCindyProbe" class="mt-3 min-w-0 border-t border-gray-100 pt-3 dark:border-dark-700">
-          <CindyBalanceProbeSummary :account="account" show-label />
+        <div v-if="extensionColumns.length" class="mt-3 min-w-0 border-t border-gray-100 pt-3 dark:border-dark-700">
+          <AccountColumnDisplay v-for="column in extensionColumns" :key="`${column.plugin_id}:${column.id}`" :contribution="column" :account="account" show-label />
         </div>
 
         <div class="mt-3 border-t border-gray-100 pt-3 dark:border-dark-700" data-test="account-card-usage">
@@ -97,7 +97,8 @@ import AccountIdentityBadges from '@/components/account/AccountIdentityBadges.vu
 import AccountSelectionCheckbox from '@/components/account/AccountSelectionCheckbox.vue'
 import AccountGroupsCell from '@/components/account/AccountGroupsCell.vue'
 import Icon from '@/components/icons/Icon.vue'
-import CindyBalanceProbeSummary from '@/features/cindy-balance-probe/CindyBalanceProbeSummary.vue'
+import AccountColumnDisplay from '@/components/plugins/AccountColumnDisplay.vue'
+import type { PluginContribution } from '@/api/admin/plugins'
 import type { Account, WindowStats } from '@/types'
 
 const props = withDefaults(defineProps<{
@@ -110,9 +111,9 @@ const props = withDefaults(defineProps<{
   todayStatsUpdatedAt: number | null
   manualRefreshToken: number
   statusNow: number
-  showCindyProbe?: boolean
+  extensionColumns?: PluginContribution[]
 }>(), {
-  showCindyProbe: false,
+  extensionColumns: () => [],
 })
 
 const emit = defineEmits<{

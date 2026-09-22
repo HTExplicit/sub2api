@@ -7,7 +7,7 @@
     <!-- Header: icon + name/model + status chip -->
     <div class="flex items-start gap-3">
       <span
-        class="w-9 h-9 rounded-none ring-1 ring-black/5 dark:ring-white/10 grid place-items-center flex-shrink-0"
+        class="w-9 h-9 rounded-xl ring-1 ring-black/5 dark:ring-white/10 grid place-items-center flex-shrink-0"
         :class="[providerGradient(item.provider), providerTintClass]"
       >
         <ProviderIcon :provider="item.provider" :size="20" />
@@ -18,7 +18,7 @@
         </div>
         <div class="mt-0.5 flex items-center gap-1.5 min-w-0">
           <span
-            class="inline-flex items-center rounded-none px-1.5 py-0.5 text-[10px] font-medium flex-shrink-0"
+            class="inline-flex items-center rounded-md px-1.5 py-0.5 text-[10px] font-medium flex-shrink-0"
             :class="providerBadgeClass(item.provider)"
           >
             {{ providerLabel(item.provider) }}
@@ -29,14 +29,14 @@
           </span>
           <span
             v-if="item.group_name"
-            class="inline-flex items-center rounded-none px-1.5 py-0.5 text-[10px] font-medium bg-gray-100 text-gray-600 dark:bg-dark-700 dark:text-gray-300 flex-shrink-0"
+            class="inline-flex items-center rounded-md px-1.5 py-0.5 text-[10px] font-medium bg-gray-100 text-gray-600 dark:bg-dark-700 dark:text-gray-300 flex-shrink-0"
           >
             {{ item.group_name }}
           </span>
         </div>
       </div>
       <span
-        class="px-2.5 py-1 rounded-none text-xs font-semibold flex-shrink-0"
+        class="px-2.5 py-1 rounded-full text-xs font-semibold flex-shrink-0"
         :class="statusBadgeClass(item.primary_status)"
       >
         {{ statusLabel(item.primary_status) }}

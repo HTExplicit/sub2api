@@ -1,0 +1,168 @@
+name: Independent Plugin Release
+run-name: Plugin release ${{ inputs.plugin_tag }}
+
+on:
+  workflow_dispatch:
+    inputs:
+      plugin_tag:
+        description: Existing immutable plugins/<domain>/v<version> tag on main
+        required: true
+        type: string
+      host_tag:
+        description: Existing compatible Sub2API release tag
+        required: true
+        type: string
+
+permissions:
+  contents: write
+  id-token: write
+  attestations: write
+
+concurrency:
+  group: plugin-release-${{ inputs.plugin_tag }}
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    env:
+      PLUGIN_TAG: ${{ inputs.plugin_tag }}
+      HOST_TAG: ${{ inputs.host_tag }}
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: refs/tags/${{ inputs.plugin_tag }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Validate immutable source and selected domain
+        id: source
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$PLUGIN_TAG" =~ ^plugins/([a-z][a-z0-9-]*)/v([0-9]+\.[0-9]+\.[0-9]+)$ ]]
+          domain=${BASH_REMATCH[1]}
+          version=${BASH_REMATCH[2]}
+          [[ "$HOST_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+-codexrip\.[1-9][0-9]*$ ]]
+          authorization=$(printf 'x-access-token:%s' "$GH_TOKEN" | base64 -w0)
+          printf '::add-mask::%s\n' "$authorization"
+          GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=http.https://github.com/.extraheader \
+            GIT_CONFIG_VALUE_0="AUTHORIZATION: basic $authorization" git fetch origin main
+          unset authorization
+          source_sha=$(git rev-parse --verify "refs/tags/$PLUGIN_TAG^{commit}")
+          host_source_sha=$(git rev-parse --verify "refs/tags/$HOST_TAG^{commit}")
+          [[ "$source_sha" =~ ^[a-f0-9]{40}$ && "$host_source_sha" =~ ^[a-f0-9]{40}$ ]]
+          [[ "$(git rev-parse HEAD)" == "$source_sha" ]]
+          git merge-base --is-ancestor "$source_sha" origin/main
+          git checkout --detach "$source_sha"
+          # Reuse main's required checks only when they exercised the same host
+          # implementation as the selected release. New host APIs require a
+          # host release before independently publishing a plugin that uses them.
+          git diff --quiet "$host_source_sha" "$source_sha" -- backend frontend ':(exclude)**/*_test.go' ':(exclude)**/*.spec.ts' ':(exclude)**/*.test.ts'
+          jq -e --arg domain "$domain" '.plugins | any(.directory == $domain)' plugins/bundle.source.json >/dev/null
+          jq -e --arg version "$version" --arg id "codexrip.$domain" '.version == $version and .id == $id' "plugins/$domain/manifest.source.json" >/dev/null
+          echo "domain=$domain" >> "$GITHUB_OUTPUT"
+          echo "source_sha=$source_sha" >> "$GITHUB_OUTPUT"
+          echo "host_source_sha=$host_source_sha" >> "$GITHUB_OUTPUT"
+          echo "host_version=${HOST_TAG#v}" >> "$GITHUB_OUTPUT"
+      - name: Reject existing or uncertain publication slots
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SOURCE_SHA: ${{ steps.source.outputs.source_sha }}
+          HOST_SOURCE_SHA: ${{ steps.source.outputs.host_source_sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 .github/scripts/release_preflight.py --kind plugin --stage before-sign \
+            --tag "$PLUGIN_TAG" --source-sha "$SOURCE_SHA" --host-tag "$HOST_TAG" --host-source-sha "$HOST_SOURCE_SHA"
+      - uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6
+        with:
+          version: 9.15.9
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: '20'
+          cache: pnpm
+          cache-dependency-path: frontend/pnpm-lock.yaml
+      - name: Build the selected independent interface
+        env:
+          PLUGIN_DOMAIN: ${{ steps.source.outputs.domain }}
+        run: |
+          pnpm --dir frontend install --frozen-lockfile
+          node backend/pkg/extensionapi/ui/build.mjs "$PLUGIN_DOMAIN"
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+        with:
+          go-version-file: backend/go.mod
+          cache-dependency-path: backend/go.sum
+      # Main already passed required PR checks. Build the selected artifact;
+      # do not repeat the host/frontend/business test suites when publishing.
+      - name: Build the selected independent program
+        working-directory: backend
+        env:
+          PLUGIN_DOMAIN: ${{ steps.source.outputs.domain }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          go build -trimpath -o "$RUNNER_TEMP/package-plugin" ./cmd/package-plugin
+          "$RUNNER_TEMP/package-plugin" -build-binaries -bundle-source ../plugins/bundle.source.json \
+            -plugin-domain "$PLUGIN_DOMAIN" -binary-dir "$RUNNER_TEMP/plugin-binaries" -platform linux-amd64
+      - name: Recheck source before exposing the signing key
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SOURCE_SHA: ${{ steps.source.outputs.source_sha }}
+          HOST_SOURCE_SHA: ${{ steps.source.outputs.host_source_sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$(git rev-parse HEAD)" == "$SOURCE_SHA" ]]
+          python3 .github/scripts/release_preflight.py --kind plugin --stage before-sign \
+            --tag "$PLUGIN_TAG" --source-sha "$SOURCE_SHA" --host-tag "$HOST_TAG" --host-source-sha "$HOST_SOURCE_SHA"
+      - name: Sign the selected package
+        working-directory: backend
+        env:
+          SUB2API_PLUGIN_SIGNING_KEY: ${{ secrets.SUB2API_PLUGIN_SIGNING_KEY }}
+          PLUGIN_DOMAIN: ${{ steps.source.outputs.domain }}
+          SOURCE_SHA: ${{ steps.source.outputs.source_sha }}
+          HOST_VERSION: ${{ steps.source.outputs.host_version }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$SUB2API_PLUGIN_SIGNING_KEY"
+          "$RUNNER_TEMP/package-plugin" -bundle-source ../plugins/bundle.source.json -plugin-domain "$PLUGIN_DOMAIN" \
+            -binary-dir "$RUNNER_TEMP/plugin-binaries" -platform linux-amd64 \
+            -tested-host-version "$HOST_VERSION" -source-revision "$SOURCE_SHA" \
+            -output ../deploy/plugin-bundle/current -key-id codexrip-plugins-v1
+          "$RUNNER_TEMP/package-plugin" -verify-bundle ../deploy/plugin-bundle/current/lock.json -tested-host-version "$HOST_VERSION"
+      - name: Attest plugin provenance
+        uses: actions/attest-build-provenance@977bb373ede98d70efdf65b84cb5f73e068dcc2a # v3
+        with:
+          subject-path: deploy/plugin-bundle/current/*
+      - name: Create a draft without replacing any release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SOURCE_SHA: ${{ steps.source.outputs.source_sha }}
+          HOST_VERSION: ${{ steps.source.outputs.host_version }}
+          HOST_SOURCE_SHA: ${{ steps.source.outputs.host_source_sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          printf '%s\n' "Independent signed plugin package." "Source: $SOURCE_SHA" "Compatible host checked during packaging: $HOST_VERSION" \
+            "Upload the .s2plugin using Update package. This keeps its configuration and pins the selected version." > "$RUNNER_TEMP/plugin-notes.md"
+          python3 .github/scripts/release_preflight.py --kind plugin --stage before-create \
+            --tag "$PLUGIN_TAG" --source-sha "$SOURCE_SHA" --host-tag "$HOST_TAG" --host-source-sha "$HOST_SOURCE_SHA"
+          gh release create "$PLUGIN_TAG" --repo "$GITHUB_REPOSITORY" --verify-tag --draft --target "$SOURCE_SHA" --title "$PLUGIN_TAG" \
+            --notes-file "$RUNNER_TEMP/plugin-notes.md" deploy/plugin-bundle/current/*.s2plugin deploy/plugin-bundle/current/lock.json
+      - name: Verify complete assets and publish the draft
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SOURCE_SHA: ${{ steps.source.outputs.source_sha }}
+          HOST_SOURCE_SHA: ${{ steps.source.outputs.host_source_sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$(git rev-parse HEAD)" == "$SOURCE_SHA" ]]
+          result=$(python3 .github/scripts/release_preflight.py --kind plugin --stage before-publish \
+            --tag "$PLUGIN_TAG" --source-sha "$SOURCE_SHA" --host-tag "$HOST_TAG" --host-source-sha "$HOST_SOURCE_SHA")
+          RELEASE_ID=$(jq -er '.release_id | select(type == "number" and . > 0)' <<< "$result")
+          [[ "$RELEASE_ID" =~ ^[1-9][0-9]*$ ]]
+          gh api --hostname github.com --method PATCH "repos/$GITHUB_REPOSITORY/releases/$RELEASE_ID" -F draft=false --silent

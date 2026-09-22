@@ -24,7 +24,7 @@
           <img
             :src="siteLogo || '/logo.svg'"
             alt="Logo"
-            class="h-9 w-9 shrink-0 rounded-none object-contain"
+            class="h-9 w-9 shrink-0 rounded-lg object-contain"
           />
           <span class="min-w-0 truncate text-base font-semibold">{{ siteName }}</span>
         </div>
@@ -35,7 +35,7 @@
             :href="docUrl"
             target="_blank"
             rel="noopener noreferrer"
-            class="flex h-10 w-10 shrink-0 items-center justify-center rounded-none text-gray-500 hover:bg-gray-100 dark:text-dark-400 dark:hover:bg-dark-800"
+            class="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg text-gray-500 hover:bg-gray-100 dark:text-dark-400 dark:hover:bg-dark-800"
             :title="t('home.viewDocs')"
           >
             <Icon name="book" size="md" />
@@ -43,14 +43,14 @@
           <router-link
             v-if="showModelPlazaEntry"
             to="/model-plaza"
-            class="flex h-10 shrink-0 items-center gap-1.5 rounded-none px-2.5 text-sm font-medium text-gray-500 hover:bg-gray-100 hover:text-gray-700 dark:text-dark-400 dark:hover:bg-dark-800 dark:hover:text-white"
+            class="flex h-10 shrink-0 items-center gap-1.5 rounded-lg px-2.5 text-sm font-medium text-gray-500 hover:bg-gray-100 hover:text-gray-700 dark:text-dark-400 dark:hover:bg-dark-800 dark:hover:text-white"
             :title="t('nav.modelPlaza')"
           >
             <Icon name="grid" size="md" />
             <span class="hidden sm:inline">{{ t('nav.modelPlaza') }}</span>
           </router-link>
           <button
-            class="flex h-10 w-10 shrink-0 items-center justify-center rounded-none text-gray-500 hover:bg-gray-100 dark:text-dark-400 dark:hover:bg-dark-800"
+            class="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg text-gray-500 hover:bg-gray-100 dark:text-dark-400 dark:hover:bg-dark-800"
             :title="isDark ? t('home.switchToLight') : t('home.switchToDark')"
             @click="toggleTheme"
           >
@@ -59,7 +59,7 @@
           </button>
           <router-link
             :to="isAuthenticated ? dashboardPath : '/login'"
-            class="inline-flex min-h-10 shrink-0 items-center justify-center rounded-none bg-gray-900 px-4 py-2 text-sm font-medium text-white hover:bg-gray-800 dark:bg-white dark:text-gray-900 dark:hover:bg-gray-200"
+            class="inline-flex min-h-10 shrink-0 items-center justify-center rounded-lg bg-gray-900 px-4 py-2 text-sm font-medium text-white hover:bg-gray-800 dark:bg-white dark:text-gray-900 dark:hover:bg-gray-200"
           >
             {{ isAuthenticated ? t('home.dashboard') : t('home.login') }}
           </router-link>
@@ -72,13 +72,13 @@
         <img
           :src="siteLogo || '/logo.svg'"
           alt="Logo"
-          class="mx-auto mb-6 h-20 w-20 rounded-none object-contain"
+          class="mx-auto mb-6 h-20 w-20 rounded-2xl object-contain"
         />
         <h1 class="[overflow-wrap:anywhere] text-3xl font-bold md:text-4xl">{{ siteName }}</h1>
         <p class="mt-4 whitespace-pre-wrap [overflow-wrap:anywhere] text-base text-gray-600 dark:text-dark-300">{{ siteSubtitle }}</p>
         <router-link
           :to="isAuthenticated ? dashboardPath : '/login'"
-          class="mt-8 inline-flex min-h-10 items-center justify-center rounded-none bg-primary-600 px-5 py-2.5 text-sm font-medium text-white hover:bg-primary-700"
+          class="mt-8 inline-flex min-h-10 items-center justify-center rounded-lg bg-primary-600 px-5 py-2.5 text-sm font-medium text-white hover:bg-primary-700"
         >
           {{ isAuthenticated ? t('home.goToDashboard') : t('home.login') }}
         </router-link>
@@ -100,7 +100,7 @@
       <nav class="mx-auto flex max-w-6xl items-center justify-between">
         <!-- Logo -->
         <div class="flex items-center">
-          <div class="h-10 w-10 overflow-hidden rounded-none shadow-outline">
+          <div class="h-10 w-10 overflow-hidden rounded-xl shadow-md">
             <img :src="siteLogo || '/logo.svg'" alt="Logo" class="h-full w-full object-contain" />
           </div>
         </div>
@@ -116,7 +116,7 @@
             :href="docUrl"
             target="_blank"
             rel="noopener noreferrer"
-            class="rounded-none p-2 text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-700 dark:text-dark-400 dark:hover:bg-dark-800 dark:hover:text-white"
+            class="rounded-lg p-2 text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-700 dark:text-dark-400 dark:hover:bg-dark-800 dark:hover:text-white"
             :title="t('home.viewDocs')"
           >
             <Icon name="book" size="md" />
@@ -126,7 +126,7 @@
           <router-link
             v-if="showModelPlazaEntry"
             to="/model-plaza"
-            class="inline-flex items-center gap-1.5 rounded-none p-2 text-sm text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-700 dark:text-dark-400 dark:hover:bg-dark-800 dark:hover:text-white"
+            class="inline-flex items-center gap-1.5 rounded-lg p-2 text-sm text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-700 dark:text-dark-400 dark:hover:bg-dark-800 dark:hover:text-white"
             :title="t('nav.modelPlaza')"
           >
             <Icon name="grid" size="md" />
@@ -136,7 +136,7 @@
           <!-- Theme Toggle -->
           <button
             @click="toggleTheme"
-            class="rounded-none p-2 text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-700 dark:text-dark-400 dark:hover:bg-dark-800 dark:hover:text-white"
+            class="rounded-lg p-2 text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-700 dark:text-dark-400 dark:hover:bg-dark-800 dark:hover:text-white"
             :title="isDark ? t('home.switchToLight') : t('home.switchToDark')"
           >
             <Icon v-if="isDark" name="sun" size="md" />
@@ -147,7 +147,7 @@
           <router-link
             v-if="isAuthenticated"
             :to="dashboardPath"
-            class="inline-flex items-center gap-1.5 rounded-none bg-gray-900 py-1 pl-1 pr-2.5 transition-colors hover:bg-gray-800 dark:bg-gray-800 dark:hover:bg-gray-700"
+            class="inline-flex items-center gap-1.5 rounded-full bg-gray-900 py-1 pl-1 pr-2.5 transition-colors hover:bg-gray-800 dark:bg-gray-800 dark:hover:bg-gray-700"
           >
             <span
               class="flex h-5 w-5 items-center justify-center rounded-full bg-primary-400 text-[10px] font-semibold text-white"
@@ -172,7 +172,7 @@
           <router-link
             v-else
             to="/login"
-            class="inline-flex items-center rounded-none bg-gray-900 px-3 py-1 text-xs font-medium text-white transition-colors hover:bg-gray-800 dark:bg-gray-800 dark:hover:bg-gray-700"
+            class="inline-flex items-center rounded-full bg-gray-900 px-3 py-1 text-xs font-medium text-white transition-colors hover:bg-gray-800 dark:bg-gray-800 dark:hover:bg-gray-700"
           >
             {{ t('home.login') }}
           </router-link>
@@ -374,7 +374,7 @@
             </div>
             <span class="text-sm font-medium text-gray-700 dark:text-dark-200">{{ t('home.providers.claude') }}</span>
             <span
-              class="rounded-none bg-primary-100 px-1.5 py-0.5 text-[10px] font-medium text-primary-600 dark:bg-primary-900/30 dark:text-primary-400"
+              class="rounded bg-primary-100 px-1.5 py-0.5 text-[10px] font-medium text-primary-600 dark:bg-primary-900/30 dark:text-primary-400"
               >{{ t('home.providers.supported') }}</span
             >
           </div>
@@ -389,7 +389,7 @@
             </div>
             <span class="text-sm font-medium text-gray-700 dark:text-dark-200">GPT</span>
             <span
-              class="rounded-none bg-primary-100 px-1.5 py-0.5 text-[10px] font-medium text-primary-600 dark:bg-primary-900/30 dark:text-primary-400"
+              class="rounded bg-primary-100 px-1.5 py-0.5 text-[10px] font-medium text-primary-600 dark:bg-primary-900/30 dark:text-primary-400"
               >{{ t('home.providers.supported') }}</span
             >
           </div>
@@ -404,7 +404,7 @@
             </div>
             <span class="text-sm font-medium text-gray-700 dark:text-dark-200">{{ t('home.providers.gemini') }}</span>
             <span
-              class="rounded-none bg-primary-100 px-1.5 py-0.5 text-[10px] font-medium text-primary-600 dark:bg-primary-900/30 dark:text-primary-400"
+              class="rounded bg-primary-100 px-1.5 py-0.5 text-[10px] font-medium text-primary-600 dark:bg-primary-900/30 dark:text-primary-400"
               >{{ t('home.providers.supported') }}</span
             >
           </div>
@@ -419,7 +419,7 @@
             </div>
             <span class="text-sm font-medium text-gray-700 dark:text-dark-200">{{ t('home.providers.antigravity') }}</span>
             <span
-              class="rounded-none bg-primary-100 px-1.5 py-0.5 text-[10px] font-medium text-primary-600 dark:bg-primary-900/30 dark:text-primary-400"
+              class="rounded bg-primary-100 px-1.5 py-0.5 text-[10px] font-medium text-primary-600 dark:bg-primary-900/30 dark:text-primary-400"
               >{{ t('home.providers.supported') }}</span
             >
           </div>

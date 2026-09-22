@@ -257,9 +257,6 @@ type UpdateSettingsRequest struct {
 	OpenAICodexUserAgent                   *string `json:"openai_codex_user_agent"`
 	OpenAICodexClientVersion               *string `json:"openai_codex_client_version"`
 	OpenAICodexVersionAutoSyncEnabled      *bool   `json:"openai_codex_version_auto_sync_enabled"`
-	OpenAICodexTicketEnabled               *bool   `json:"openai_codex_ticket_enabled"`
-	OpenAICodexTicketHarvestProxyURL       string  `json:"openai_codex_ticket_harvest_proxy_url"`
-	OpenAICodexTicketClearProxy            bool    `json:"openai_codex_ticket_clear_proxy"`
 
 	// codex_cli_only 加固（global-only）
 	MinCodexVersion                      string `json:"min_codex_version"`
@@ -498,6 +495,12 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 		response.BadRequest(c, "Invalid request: "+err.Error())
 		return
 	}
+	for _, key := range []string{"openai_codex_ticket_enabled", "openai_codex_ticket_harvest_proxy_url", "openai_codex_ticket_clear_proxy"} {
+		if _, sent := sentFields[key]; sent {
+			response.Error(c, 409, "票据配置已迁移，请在 Codex 票据设置中修改")
+			return
+		}
+	}
 	var req UpdateSettingsRequest
 	if err := c.ShouldBindBodyWith(&req, binding.JSON); err != nil {
 		response.BadRequest(c, "Invalid request: "+err.Error())
@@ -505,20 +508,6 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 	}
 	auditReq := settingsAuditRequest(req)
 	omitted := omittedSettingKeys(sentFields)
-	if req.OpenAICodexTicketClearProxy {
-		disabled := false
-		req.OpenAICodexTicketEnabled = &disabled
-		req.OpenAICodexTicketHarvestProxyURL = ""
-		delete(omitted, service.SettingKeyOpenAICodexTicketEnabled)
-		delete(omitted, service.SettingKeyOpenAICodexTicketHarvestProxyURL)
-	} else if raw := strings.TrimSpace(req.OpenAICodexTicketHarvestProxyURL); raw != "" && !service.IsMaskedProxyURL(raw) {
-		normalized, err := service.NormalizeCodexTicketProxy(raw)
-		if err != nil {
-			response.BadRequest(c, err.Error())
-			return
-		}
-		req.OpenAICodexTicketHarvestProxyURL = normalized
-	}
 
 	previousSettings, err := h.settingService.GetAllSettings(c.Request.Context())
 	if err != nil {
@@ -1794,22 +1783,6 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 			}
 			return previousSettings.OpenAICodexVersionAutoSyncEnabled
 		}(),
-		OpenAICodexTicketEnabled: func() bool {
-			if req.OpenAICodexTicketEnabled != nil {
-				return *req.OpenAICodexTicketEnabled
-			}
-			return previousSettings.OpenAICodexTicketEnabled
-		}(),
-		OpenAICodexTicketHarvestProxyURL: func() string {
-			if req.OpenAICodexTicketClearProxy {
-				return ""
-			}
-			next := strings.TrimSpace(req.OpenAICodexTicketHarvestProxyURL)
-			if service.IsMaskedProxyURL(next) {
-				return previousSettings.OpenAICodexTicketHarvestProxyURL
-			}
-			return next
-		}(),
 		MinCodexVersion:       strings.TrimSpace(req.MinCodexVersion),
 		MaxCodexVersion:       strings.TrimSpace(req.MaxCodexVersion),
 		CodexCLIOnlyBlacklist: strings.TrimSpace(req.CodexCLIOnlyBlacklist),
@@ -2370,9 +2343,6 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 		OpenAICodexClientVersion:                               updatedSettings.OpenAICodexClientVersion,
 		OpenAICodexClientVersionSynced:                         updatedSettings.OpenAICodexClientVersionSynced,
 		OpenAICodexVersionAutoSyncEnabled:                      updatedSettings.OpenAICodexVersionAutoSyncEnabled,
-		OpenAICodexTicketEnabled:                               updatedSettings.OpenAICodexTicketEnabled,
-		OpenAICodexTicketHarvestProxyURL:                       updatedSettings.OpenAICodexTicketHarvestProxyURL,
-		OpenAICodexTicketHarvestProxyConfigured:                strings.TrimSpace(updatedSettings.OpenAICodexTicketHarvestProxyURL) != "",
 		MinCodexVersion:                                        updatedSettings.MinCodexVersion,
 		MaxCodexVersion:                                        updatedSettings.MaxCodexVersion,
 		CodexCLIOnlyBlacklist:                                  updatedSettings.CodexCLIOnlyBlacklist,

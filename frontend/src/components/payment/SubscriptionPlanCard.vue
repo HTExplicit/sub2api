@@ -1,7 +1,7 @@
 <template>
   <div
     :class="[
-      'group relative flex flex-col overflow-hidden rounded-none border transition-all',
+      'group relative flex flex-col overflow-hidden rounded-2xl border transition-all',
       'hover:shadow-outline hover:-translate-y-0.5',
       borderClass,
       'bg-white dark:bg-dark-800',
@@ -31,14 +31,14 @@
             <span v-if="plan.currency" class="text-xs font-medium text-muted">{{ plan.currency }}</span>
           </div>
           <div class="flex items-center justify-end gap-1">
-            <span :class="['inline-flex shrink-0 rounded-none px-2 py-0.5 text-[11px] font-medium', badgeLightClass]">
+            <span :class="['inline-flex shrink-0 rounded-full px-2 py-0.5 text-[11px] font-medium', badgeLightClass]">
               {{ pLabel }}
             </span>
             <span class="text-[11px] text-muted">/ {{ validitySuffix }}</span>
           </div>
           <div v-if="plan.original_price" class="mt-0.5 flex items-center justify-end gap-1.5">
             <span class="text-xs text-muted line-through">{{ planCurrencySymbol }}{{ plan.original_price }}<template v-if="plan.currency"> {{ plan.currency }}</template></span>
-            <span :class="['rounded-none px-1 py-0.5 text-[10px] font-semibold', discountClass]">{{ discountText }}</span>
+            <span :class="['rounded px-1 py-0.5 text-[10px] font-semibold', discountClass]">{{ discountText }}</span>
           </div>
         </div>
       </div>
@@ -73,7 +73,7 @@
           <span class="text-muted">{{ t('payment.planCard.models') }}</span>
           <div class="flex flex-wrap justify-end gap-1">
             <span v-for="scope in modelScopeLabels" :key="scope"
-              class="rounded-none bg-gray-200/80 px-1.5 py-0.5 text-[10px] font-medium text-gray-600 dark:bg-dark-600 dark:text-gray-300">
+              class="rounded bg-gray-200/80 px-1.5 py-0.5 text-[10px] font-medium text-gray-600 dark:bg-dark-600 dark:text-gray-300">
               {{ scope }}
             </span>
           </div>
@@ -95,7 +95,7 @@
       <!-- Subscribe Button -->
       <button
         type="button"
-        :class="['w-full rounded-none py-2.5 text-sm font-semibold transition-all active:scale-[0.98]', btnClass]"
+        :class="['w-full rounded-xl py-2.5 text-sm font-semibold transition-all active:scale-[0.98]', btnClass]"
         @click="emit('select', plan)"
       >
         {{ isRenewal ? t('payment.renewNow') : t('payment.subscribeNow') }}

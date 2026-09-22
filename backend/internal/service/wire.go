@@ -48,9 +48,8 @@ func ProvideUpdateService(cache UpdateCache, githubClient GitHubReleaseClient, b
 	return NewUpdateService(cache, githubClient, buildInfo.Version, buildInfo.BuildType)
 }
 
-// ProvideBusinessSystemPromptService initializes the durable prompt catalog
-// before the gateway starts serving requests. The service remains disabled by
-// the migration/runtime defaults until an administrator publishes a toggle.
+// PromptDomainRuntime initializes storage after the policy process is ready.
+// Construction does not execute plugin-dependent operations.
 func ProvideBusinessSystemPromptService(
 	store BusinessSystemPromptStore,
 	bus BusinessSystemPromptRevisionBus,
@@ -60,9 +59,6 @@ func ProvideBusinessSystemPromptService(
 	svc := NewBusinessSystemPromptService(store, bus)
 	svc.SetRemoteSkillRegistryService(remoteSkillRegistry)
 	svc.SetRemoteSkillRegistryRevisionBus(remoteSkillRegistryBus)
-	if err := svc.Start(context.Background()); err != nil {
-		return nil, err
-	}
 	return svc, nil
 }
 
@@ -81,9 +77,6 @@ func ProvideRemoteSkillRegistryService(
 	source RemoteSkillCandidateSource,
 ) (*RemoteSkillRegistryService, error) {
 	svc := NewRemoteSkillRegistryService(store, bus, files, source)
-	if err := svc.Start(context.Background()); err != nil {
-		return nil, err
-	}
 	return svc, nil
 }
 
@@ -305,9 +298,11 @@ func ProvideOpenAIQuotaService(
 	tokenProvider *OpenAITokenProvider,
 	privacyClientFactory PrivacyClientFactory,
 	openAIGatewayService *OpenAIGatewayService,
+	activity *QuotaActivityService,
 ) *OpenAIQuotaService {
 	service := NewOpenAIQuotaService(accountRepo, proxyRepo, tokenProvider, privacyClientFactory)
 	service.agentIdentityWS = openAIGatewayService
+	service.activity = activity
 	return service
 }
 
@@ -383,6 +378,7 @@ func ProvideAccountTestService(
 	openAIGatewayService *OpenAIGatewayService,
 	settingService *SettingService,
 	pluginManager *PluginManager,
+	activity *QuotaActivityService,
 ) *AccountTestService {
 	service := NewAccountTestService(
 		accountRepo,
@@ -398,6 +394,7 @@ func ProvideAccountTestService(
 	service.SetOpenAIGatewayService(openAIGatewayService)
 	service.SetSettingService(settingService)
 	service.SetPluginManager(pluginManager)
+	service.quotaActivity = activity
 	return service
 }
 
@@ -534,11 +531,10 @@ func ProvideOpenAICodexVersionSyncService(
 	return svc
 }
 
-// ProvideCodexClientIdentityBackfillService creates and starts the one-shot backfill that
+// ProvideCodexClientIdentityBackfillService creates the one-shot backfill that
 // persists a Codex client identity for every existing OpenAI OAuth-like account.
 func ProvideCodexClientIdentityBackfillService(accountRepo AccountRepository) *CodexClientIdentityBackfillService {
 	svc := NewCodexClientIdentityBackfillService(accountRepo)
-	svc.Start()
 	return svc
 }
 
@@ -859,6 +855,7 @@ func ProvideOpsService(
 	settingService *SettingService,
 	authCacheInvalidationWorker *AuthCacheInvalidationWorker,
 	apiKeyService *APIKeyService,
+	activity *QuotaActivityService,
 ) *OpsService {
 	svc := NewOpsService(
 		opsRepo,
@@ -881,6 +878,7 @@ func ProvideOpsService(
 	}
 	svc.authCacheInvalidationWorker = authCacheInvalidationWorker
 	svc.apiKeyService = apiKeyService
+	svc.quotaActivity = activity
 	svc.StartRuntimeSettingsRefresh(context.Background())
 	return svc
 }
@@ -1014,6 +1012,7 @@ var ProviderSet = wire.NewSet(
 	ProvideGrokTokenProvider,
 	ProvideOpenAITokenProvider,
 	ProvideOpenAIQuotaService,
+	NewQuotaActivityService,
 	ProvideOpenAIQuotaAutoResetService,
 	ProvideGrokQuotaService,
 	ProvideCNProviderQuotaService,
@@ -1072,7 +1071,7 @@ var ProviderSet = wire.NewSet(
 	NewTotpService,
 	NewErrorPassthroughService,
 	NewTLSFingerprintProfileService,
-	NewPluginManager,
+	ProvidePluginManager,
 	NewDigestSessionStore,
 	ProvideIdempotencyCoordinator,
 	ProvideSystemOperationLockService,

@@ -24,7 +24,6 @@ import (
 	"github.com/cespare/xxhash/v2"
 	"github.com/gin-gonic/gin"
 	"go.uber.org/zap"
-	"golang.org/x/sync/singleflight"
 )
 
 const (
@@ -128,14 +127,16 @@ var codexCLIOnlyDebugHeaderWhitelist = []string{
 
 // OpenAICodexUsageSnapshot represents Codex API usage limits from response headers
 type OpenAICodexUsageSnapshot struct {
-	PrimaryUsedPercent          *float64 `json:"primary_used_percent,omitempty"`
-	PrimaryResetAfterSeconds    *int     `json:"primary_reset_after_seconds,omitempty"`
-	PrimaryWindowMinutes        *int     `json:"primary_window_minutes,omitempty"`
-	SecondaryUsedPercent        *float64 `json:"secondary_used_percent,omitempty"`
-	SecondaryResetAfterSeconds  *int     `json:"secondary_reset_after_seconds,omitempty"`
-	SecondaryWindowMinutes      *int     `json:"secondary_window_minutes,omitempty"`
-	PrimaryOverSecondaryPercent *float64 `json:"primary_over_secondary_percent,omitempty"`
-	UpdatedAt                   string   `json:"updated_at,omitempty"`
+	PrimaryUsedPercent          *float64   `json:"primary_used_percent,omitempty"`
+	PrimaryResetAfterSeconds    *int       `json:"primary_reset_after_seconds,omitempty"`
+	PrimaryResetAt              *time.Time `json:"primary_reset_at,omitempty"`
+	PrimaryWindowMinutes        *int       `json:"primary_window_minutes,omitempty"`
+	SecondaryUsedPercent        *float64   `json:"secondary_used_percent,omitempty"`
+	SecondaryResetAfterSeconds  *int       `json:"secondary_reset_after_seconds,omitempty"`
+	SecondaryResetAt            *time.Time `json:"secondary_reset_at,omitempty"`
+	SecondaryWindowMinutes      *int       `json:"secondary_window_minutes,omitempty"`
+	PrimaryOverSecondaryPercent *float64   `json:"primary_over_secondary_percent,omitempty"`
+	UpdatedAt                   string     `json:"updated_at,omitempty"`
 }
 
 // NormalizedCodexLimits contains normalized 5h/7d rate limit data
@@ -530,14 +531,6 @@ type OpenAIGatewayService struct {
 	// 剥离跨账号回带（openai_codex_turn_state.go）。
 	openaiCodexTurnStateOrigins sync.Map
 	openaiCodexTurnStateWrites  atomic.Uint64
-	// openaiCodexTickets: accountID\x00model → *openAICodexTicket，292 长度门票。
-	openaiCodexTickets           sync.Map
-	openaiCodexTicketFlight      singleflight.Group
-	openaiCodexTicketLifecycleMu sync.Mutex
-	openaiCodexTicketCancel      context.CancelFunc
-	openaiCodexTicketDone        chan struct{}
-	openaiCodexTicketStopped     bool
-	openaiCodexTicketSlots       chan struct{}
 }
 
 // SetBusinessSystemPromptService attaches the global business prompt policy to
@@ -600,9 +593,6 @@ func NewOpenAIGatewayService(
 	if cfg != nil {
 		SetCodexIdentityEnforcementEnabled(!cfg.Gateway.DisableCodexIdentityEnforcement)
 		SetCodexForceCLIEnabled(cfg.Gateway.ForceCodexCLI)
-		// 用量探针同样向 /backend-api/codex/responses 发 OAuth POST，却拿不到网关配置：
-		// 压缩开关也以进程级快照发布，与推理面同一策略。
-		SetCodexRequestZstdEnabled(cfg.Gateway.OpenAICodexRequestZstd)
 	}
 	svc := &OpenAIGatewayService{
 		accountRepo:         accountRepo,
@@ -649,7 +639,6 @@ func NewOpenAIGatewayService(
 		openAITokenProvider.SetAccountRuntimeBlocker(svc)
 	}
 	svc.logOpenAIWSModeBootstrap()
-	svc.StartOpenAICodexTicketHarvester()
 	return svc
 }
 

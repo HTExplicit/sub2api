@@ -324,7 +324,7 @@ func usageRecordContext(parent context.Context, base context.Context) context.Co
 	if requestID, _ := parent.Value(ctxkey.RequestID).(string); strings.TrimSpace(requestID) != "" {
 		base = context.WithValue(base, ctxkey.RequestID, strings.TrimSpace(requestID))
 	}
-	return base
+	return service.CopyProviderPricingContext(parent, service.CopyQuotaActivityContext(parent, base))
 }
 
 func wrapUsageRecordTaskContext(parent context.Context, task service.UsageRecordTask) service.UsageRecordTask {
@@ -419,19 +419,19 @@ func strictCindyResponsesImageBridgeAllowed(model string, body []byte) bool {
 	return service.CindyModelSupportsResponsesImageBridge(model)
 }
 
-func resolveStrictCindyResponsesImageTools(strict bool, body []byte) ([]byte, error) {
-	if !strict || !service.CindyResponsesImageBridgeFeatureEnabled() {
+func resolveStrictCindyResponsesImageTools(ctx context.Context, strict bool, body []byte) ([]byte, error) {
+	if !strict {
 		return body, nil
 	}
-	return service.ResolveCindyResponsesImageTools(body)
+	return service.ResolveCindyResponsesImageToolsForAccount(ctx, nil, body)
 }
 
-func resolveSelectedCindyResponsesImageTools(account *service.Account, body []byte) ([]byte, error) {
-	if !service.CindyResponsesImageBridgeFeatureEnabled() || account == nil ||
+func resolveSelectedCindyResponsesImageTools(ctx context.Context, account *service.Account, body []byte) ([]byte, error) {
+	if account == nil ||
 		!service.IsCindyAPIKeyAccount(account.Platform, account.Type, account.Credentials) {
 		return body, nil
 	}
-	return service.ResolveCindyResponsesImageTools(body)
+	return service.ResolveCindyResponsesImageToolsForAccount(ctx, account, body)
 }
 
 // isResponsesWebSocketCompositePlatform 限定 composite 分组在 Responses WebSocket
@@ -586,6 +586,29 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 		h.errorResponse(c, http.StatusBadRequest, "invalid_request_error", service.OpenAIContinuationAnchorValidationMessage)
 		return
 	}
+	if previousResponseID != "" {
+		groupID := int64(0)
+		if apiKey.GroupID != nil {
+			groupID = *apiKey.GroupID
+		}
+		// Response affinity identifies an upstream account, not a downstream
+		// tenant. Authorize the anchor before any policy lookup or scheduling.
+		owned, ownershipErr := h.gatewayService.ValidateOpenAIHTTPResponseOwner(
+			c.Request.Context(), groupID, previousResponseID, subject.UserID, apiKey.ID,
+		)
+		if ownershipErr != nil {
+			reqLog.Warn("openai.previous_response_owner_lookup_failed")
+		}
+		if ownershipErr != nil || !owned {
+			reqLog.Warn("openai.request_validation_failed", zap.String("reason", "previous_response_owner_mismatch"))
+			h.errorResponse(c, http.StatusBadRequest, "invalid_request_error", "previous_response_id is not available for this user")
+			return
+		}
+	}
+	// Only authenticated middleware identity may own the response registered
+	// by the existing HTTP response handler; body/plugin fields are not authority.
+	service.SetOpenAIHTTPResponseOwner(c, subject.UserID, apiKey.ID)
+
 	ensureCompositeTargetPlatform(c, apiKey, reqModel)
 	if !openAICompatibleTextTargetAllowed(c, apiKey, reqModel) {
 		h.errorResponse(c, http.StatusBadRequest, "invalid_request_error", "Model is not supported by this OpenAI-compatible endpoint for composite groups")
@@ -703,10 +726,12 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 		h.errorResponse(c, http.StatusNotFound, "model_not_found", "Model is not supported on the Responses endpoint")
 		return
 	}
-	body, err = resolveStrictCindyResponsesImageTools(strictCindy, body)
+	body, err = resolveStrictCindyResponsesImageTools(c.Request.Context(), strictCindy, body)
 	if err != nil {
 		if errors.Is(err, service.ErrCindyResponsesImageToolModelNotFound) {
 			h.errorResponse(c, http.StatusNotFound, "model_not_found", "Image tool model is not supported on the Responses endpoint")
+		} else if errors.Is(err, service.ErrExtensionOperationDisabled) || errors.Is(err, service.ErrExtensionOperationUnavailable) {
+			h.errorResponse(c, http.StatusServiceUnavailable, "service_unavailable", "Image bridge is unavailable")
 		} else {
 			h.errorResponse(c, http.StatusBadRequest, "invalid_request_error", err.Error())
 		}
@@ -792,11 +817,12 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 	routingModel := openAIChannelForwardModel(channelMapping, reqModel)
 	forwardMapped := channelMapping.Mapped
 	forwardMappedModel := channelMapping.MappedModel
-	if strictCindyResponsesImageBridgeAllowed(reqModel, body) {
-		// The body must retain the image-only model so the forwarder can build the
-		// verified image tool request. Scheduling, however, targets its Luna text
-		// controller because Cindy does not serve gpt-image-2 as a text endpoint.
-		routingModel = service.CindyDefaultTestModel
+	if cindyIdentityGroup {
+		// The controller is a provider-owned image purpose, not its test default.
+		// The original image body is retained for the separately gated bridge.
+		if controller, supported := service.CindyResponsesImageRoutingModel(c.Request.Context(), reqModel); supported {
+			routingModel = controller
+		}
 	}
 	if compatibilityAlias {
 		routingModel = compatibilityRoutingModel
@@ -1041,7 +1067,7 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 		// 从不可变的 canonical forwardBody 派生本次尝试 body 并整块剔除上游私有的加密
 		// reasoning item（含耦合的 id/summary），避免非透传上游 400 拒绝 Kiro reasoning 形态。
 		attemptBody := h.deriveOpenAIForwardAttemptBody(reqLog, forwardBody, account, &passthroughFailoverState)
-		attemptBody, err = resolveSelectedCindyResponsesImageTools(account, attemptBody)
+		attemptBody, err = resolveSelectedCindyResponsesImageTools(c.Request.Context(), account, attemptBody)
 		if err != nil {
 			if accountReleaseFunc != nil {
 				accountReleaseFunc()
@@ -1053,12 +1079,14 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 			h.gatewayService.ReleaseOpenAIRuntimeBreakerProbeForSelection(selection)
 			if errors.Is(err, service.ErrCindyResponsesImageToolModelNotFound) {
 				h.handleStreamingAwareError(c, http.StatusNotFound, "model_not_found", "Image tool model is not supported on the Responses endpoint", streamStarted)
+			} else if errors.Is(err, service.ErrExtensionOperationDisabled) || errors.Is(err, service.ErrExtensionOperationUnavailable) {
+				h.handleStreamingAwareError(c, http.StatusServiceUnavailable, "service_unavailable", "Image bridge is unavailable", streamStarted)
 			} else {
 				h.handleStreamingAwareError(c, http.StatusBadRequest, "invalid_request_error", err.Error(), streamStarted)
 			}
 			return
 		}
-		trafficTurn := h.trafficObserver.Begin(c.Request.Context(), account.ID, service.AccountTrafficProtocolHTTP)
+		trafficTurn := h.trafficObserver.Begin(c.Request.Context(), account, service.AccountTrafficProtocolHTTP)
 		result, err := func() (res *service.OpenAIForwardResult, ferr error) {
 			defer func() {
 				if accountReleaseFunc != nil {
@@ -1735,7 +1763,7 @@ func (h *OpenAIGatewayHandler) Messages(c *gin.Context) {
 			forwardBody = service.ReplaceModelInBody(body, nativeMessagesModel)
 		}
 		writerSizeBeforeForward := c.Writer.Size()
-		trafficTurn := h.trafficObserver.Begin(c.Request.Context(), account.ID, service.AccountTrafficProtocolHTTP)
+		trafficTurn := h.trafficObserver.Begin(c.Request.Context(), account, service.AccountTrafficProtocolHTTP)
 		result, err := func() (res *service.OpenAIForwardResult, ferr error) {
 			defer func() {
 				if accountReleaseFunc != nil {
@@ -3067,11 +3095,11 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 			turn.Finish(result, turnErr, clientLifecycleCtx.Err() != nil)
 		}
 	}
-	beginWSTrafficTurn := func(accountID int64) {
+	beginWSTrafficTurn := func(account *service.Account) {
 		// A turn still open here never reported; reconcile it first so that
 		// started == sum(outcomes) always holds.
 		finishOpenWSTrafficTurn(nil, nil)
-		wsTrafficTurn.Store(h.trafficObserver.Begin(ctx, accountID, service.AccountTrafficProtocolWS))
+		wsTrafficTurn.Store(h.trafficObserver.Begin(ctx, account, service.AccountTrafficProtocolWS))
 	}
 	releaseAccountSlot := func() {
 		finishOpenWSTrafficTurn(nil, nil)
@@ -3444,6 +3472,15 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 			zap.String("schedule_layer", scheduleDecision.Layer),
 			zap.Int("candidate_count", scheduleDecision.CandidateCount),
 		)
+		pricingContext, pricingErr := service.CaptureCindyPricingContext(ctx, c, account)
+		if pricingErr != nil {
+			closeOpenAIClientWS(wsConn, coderws.StatusInternalError, "provider policy unavailable")
+			return
+		}
+		ctx = pricingContext
+		turnProviderPricing := service.NewProviderPricingTurnContexts(pricingContext, account)
+		quotaUsageCtx := context.WithValue(ctx, ctxkey.AccountID, account.ID)
+		service.ObserveQuotaAccount(quotaUsageCtx, account.ID)
 
 		maxReasoningEffort, reasoningEffortMappings, maxReasoningEffortOverLimit, _ := openAIReasoningEffortPolicyForRequest(c, apiKey)
 		var requestPayloadHash string
@@ -3479,6 +3516,7 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 			MaxReasoningEffortOverLimit: maxReasoningEffortOverLimit,
 			ReasoningEffortMappings:     reasoningEffortMappings,
 			TurnStarted:                 recordTurnStart,
+			CopyProviderPricingContext:  turnProviderPricing.Copy,
 			BeforeRequest: func(turn int, payload []byte, originalModel string) error {
 				c.Set(securityAuditWSTurnContextKey, turn)
 				service.BeginOpsStreamTurn(c, turn)
@@ -3536,6 +3574,10 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 				return mapping.MappedModel, nil
 			},
 			BeforeTurn: func(turn int) error {
+				_, err := turnProviderPricing.Copy(turn, ctx)
+				if err != nil {
+					return newOpenAIWSLocalTurnCloseError(coderws.StatusTryAgainLater, "provider policy unavailable", err)
+				}
 				// turn==1 的会话屏蔽已由握手层检查覆盖；连接内 flag 只拦截后续 turn。
 				if cyberBlockedThisConn {
 					return newOpenAIWSLocalTurnCloseError(coderws.StatusPolicyViolation, cyberSessionBlockedClientMsg, nil)
@@ -3580,10 +3622,11 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 				}
 				currentUserRelease = wrapReleaseOnDone(ctx, userReleaseFunc)
 				currentAccountRelease = wrapReleaseOnDone(ctx, accountReleaseFunc)
-				beginWSTrafficTurn(account.ID)
+				beginWSTrafficTurn(account)
 				return nil
 			},
 			AfterTurn: func(turn int, result *service.OpenAIForwardResult, turnErr error) {
+				turnUsageCtx, capturedProvider := turnProviderPricing.Take(turn, quotaUsageCtx)
 				// Telemetry first: the deferred releaseTurnSlots safety net below
 				// must find no open turn for a normally reported turn.
 				finishOpenWSTrafficTurn(result, turnErr)
@@ -3669,7 +3712,11 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 				turnUsageInput := turnUsageSnapshot.Input(result, h.apiKeyService, turnRecordPricingAt)
 				accountID := account.ID
 				requestID := result.RequestID
-				h.submitOpenAIUsageRecordTask(ctx, result, func(taskCtx context.Context) {
+				if !capturedProvider {
+					reqLog.Error("openai.websocket_provider_turn_context_missing", zap.Int("turn", turn))
+					return
+				}
+				h.submitOpenAIUsageRecordTask(turnUsageCtx, result, func(taskCtx context.Context) {
 					if err := h.gatewayService.RecordUsage(taskCtx, turnUsageInput); err != nil {
 						reqLog.Error("openai.websocket_record_usage_failed",
 							zap.Int64("account_id", accountID),
@@ -3695,7 +3742,7 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 		// WebSocket 首包可能很大，hash 必须在 hooks 外算成字符串，避免 AfterTurn 闭包保活请求体。
 		requestPayloadHash = service.HashUsageRequestPayload(wsFirstMessage)
 
-		beginWSTrafficTurn(account.ID)
+		beginWSTrafficTurn(account)
 		if err := h.gatewayService.ProxyResponsesWebSocketFromClient(ctx, c, wsConn, account, token, wsFirstMessage, hooks); err != nil {
 			if closeErr, postOutputCyber := openAIWSPostOutputCyberClose(err); postOutputCyber {
 				reqLog.Info("openai.websocket_post_output_cyber_closed",
@@ -3928,8 +3975,12 @@ func (h *OpenAIGatewayHandler) submitUsageRecordTask(parent context.Context, tas
 		return
 	}
 	task = wrapUsageRecordTaskContext(parent, task)
+	task, abandon := service.TrackQuotaUsageTask(parent, task)
 	if h.usageRecordWorkerPool != nil {
 		if mode := h.usageRecordWorkerPool.Submit(task); mode != service.UsageRecordSubmitModeDroppedStopped {
+			if mode.Dropped() {
+				abandon()
+			}
 			return
 		}
 		// 池已停止（进程关停窗口）：计费任务不能静默丢失，降级为内联同步执行。
@@ -4230,6 +4281,7 @@ func (h *OpenAIGatewayHandler) submitMandatoryUsageRecordTask(parent context.Con
 		return
 	}
 	task = wrapUsageRecordTaskContext(parent, task)
+	task, _ = service.TrackQuotaUsageTask(parent, task)
 	if h.usageRecordWorkerPool != nil {
 		if mode := h.usageRecordWorkerPool.Submit(task); !mode.Dropped() {
 			return

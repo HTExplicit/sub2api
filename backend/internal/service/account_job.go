@@ -12,6 +12,7 @@ import (
 )
 
 const (
+	AccountJobKindExtensionOperation     = "extension_operation"
 	AccountJobKindImportData             = "account_import"
 	AccountJobKindImportCodex            = "account_import_codex"
 	AccountJobKindBatchCreate            = "account_batch_create"
@@ -201,6 +202,19 @@ func (s *AccountJobService) Submit(ctx context.Context, createdBy int64, kind, i
 	if err := ValidateAccountJobMetadata(metadata); err != nil {
 		return nil, false, err
 	}
+	ctx, metadata, releasePolicy, policyErr := prepareAccountJobSubmission(ctx, metadata, kind)
+	if policyErr != nil {
+		return nil, false, policyErr
+	}
+	defer releasePolicy()
+	metadata, err := stampAccountJobView(ctx, metadata)
+	if err != nil {
+		return nil, false, err
+	}
+	payload, err = accountJobPayloadWithView(ctx, payload)
+	if err != nil {
+		return nil, false, err
+	}
 	for index := range items {
 		if items[index].Ordinal <= 0 {
 			items[index].Ordinal = index + 1
@@ -212,14 +226,26 @@ func (s *AccountJobService) Submit(ctx context.Context, createdBy int64, kind, i
 	}
 	hash := sha256.Sum256(payload)
 	requestHash := hex.EncodeToString(hash[:])
-	existing, err := s.repo.FindIdempotent(ctx, createdBy, kind, idempotencyKey)
+	existing, err := s.findMatchingSubmission(ctx, createdBy, kind, idempotencyKey, requestHash, metadata)
 	if err == nil {
-		if existing.RequestHash != requestHash {
-			return nil, false, ErrAccountJobIdempotencyConflict
-		}
 		return existing, true, nil
 	}
 	if !errors.Is(err, ErrAccountJobNotFound) {
+		return nil, false, err
+	}
+	if _, bound := AccountViewFromContext(ctx); bound && !isCindyCleanupAccountJob(kind) {
+		ids, err := accountViewJobSeedTargets(kind, payload, items)
+		if err != nil {
+			return nil, false, err
+		}
+		if err := ValidateAccountViewSelection(ctx, ids); err != nil {
+			return nil, false, err
+		}
+	}
+	// Server-only edit snapshots are excluded from the original operation hash.
+	// Replays above reuse the original frozen encrypted payload and lifetime.
+	payload, err = accountJobPayloadWithEdit(ctx, kind, payload, items)
+	if err != nil {
 		return nil, false, err
 	}
 	ciphertext, err := s.encryptor.Encrypt(string(payload))
@@ -232,6 +258,58 @@ func (s *AccountJobService) Submit(ctx context.Context, createdBy int64, kind, i
 		PayloadExpires: time.Now().UTC().Add(AccountJobPayloadTTL),
 		Metadata:       normalizeAccountJobMetadata(metadata), Items: items, Attempt: 1,
 	})
+}
+
+// ReplaySubmission checks a previously submitted request before a caller resolves
+// mutable targets. It never creates a job, touches its payload lifetime, or binds
+// a plugin: a plugin owner must already be authorized in the caller's context.
+func (s *AccountJobService) ReplaySubmission(ctx context.Context, createdBy int64, kind, idempotencyKey string, payload json.RawMessage) (*AccountJob, bool, error) {
+	idempotencyKey = strings.TrimSpace(idempotencyKey)
+	kind = strings.TrimSpace(kind)
+	if err := validateAccountViewJobKind(ctx, kind, nil); err != nil {
+		return nil, false, err
+	}
+	if idempotencyKey == "" || len(idempotencyKey) > 255 {
+		return nil, false, ErrAccountJobIdempotencyRequired
+	}
+	if createdBy <= 0 || !validAccountJobKind(kind) || !json.Valid(payload) {
+		return nil, false, errors.New("invalid account job submission")
+	}
+	var metadata json.RawMessage
+	if execution, bound := PluginExecutionFromContext(ctx); bound {
+		var err error
+		metadata, err = stampAccountJobPlugin(nil, execution)
+		if err != nil {
+			return nil, false, err
+		}
+	}
+	metadata, err := stampAccountJobView(ctx, metadata)
+	if err != nil {
+		return nil, false, err
+	}
+	payload, err = accountJobPayloadWithView(ctx, payload)
+	if err != nil {
+		return nil, false, err
+	}
+	hash := sha256.Sum256(payload)
+	existing, err := s.findMatchingSubmission(ctx, createdBy, kind, idempotencyKey, hex.EncodeToString(hash[:]), metadata)
+	if errors.Is(err, ErrAccountJobNotFound) {
+		return nil, false, nil
+	}
+	return existing, err == nil, err
+}
+
+func (s *AccountJobService) findMatchingSubmission(ctx context.Context, createdBy int64, kind, idempotencyKey, requestHash string, metadata json.RawMessage) (*AccountJob, error) {
+	existing, err := s.repo.FindIdempotent(ctx, createdBy, kind, idempotencyKey)
+	if err != nil {
+		return nil, err
+	}
+	oldOwner, _ := AccountJobPluginExecution(existing.Metadata)
+	newOwner, _ := AccountJobPluginExecution(metadata)
+	if existing.RequestHash != requestHash || oldOwner.ID != newOwner.ID || !AccountJobViewIdentityEqual(existing.Metadata, metadata) {
+		return nil, ErrAccountJobIdempotencyConflict
+	}
+	return existing, nil
 }
 
 func (s *AccountJobService) Get(ctx context.Context, jobID int64) (*AccountJob, error) {
@@ -269,26 +347,68 @@ func (s *AccountJobService) RetryFailed(ctx context.Context, jobID, createdBy in
 	if old == nil || len(seeds) == 0 {
 		return nil, false, ErrAccountJobNotRetryable
 	}
+	if err := validateAccountViewJobKind(ctx, old.Kind, old.Metadata); err != nil {
+		return nil, false, err
+	}
 	if cipher == "" || time.Now().UTC().After(expires) {
 		return nil, false, ErrAccountJobPayloadExpired
 	}
-	if _, err = s.encryptor.Decrypt(cipher); err != nil {
+	plaintext, err := s.encryptor.Decrypt(cipher)
+	if err != nil {
 		return nil, false, ErrAccountJobPayloadExpired
 	}
+	ctx, releaseView, err := bindRecordedAccountJobView(ctx, old.Metadata, json.RawMessage(plaintext), true)
+	if err != nil {
+		return nil, false, err
+	}
+	defer releaseView()
 	hashInput, _ := json.Marshal(struct {
 		RetryOfJobID int64 `json:"retry_of_job_id"`
 	}{RetryOfJobID: old.ID})
 	hash := sha256.Sum256(hashInput)
 	requestHash := hex.EncodeToString(hash[:])
 	if existing, findErr := s.repo.FindIdempotent(ctx, createdBy, old.Kind, idempotencyKey); findErr == nil {
-		if existing.RequestHash != requestHash {
+		oldOwner, _ := AccountJobPluginExecution(old.Metadata)
+		retryOwner, _ := AccountJobPluginExecution(existing.Metadata)
+		if existing.RequestHash != requestHash || oldOwner.ID != retryOwner.ID || !AccountJobViewIdentityEqual(old.Metadata, existing.Metadata) {
 			return nil, false, ErrAccountJobIdempotencyConflict
 		}
 		return existing, true, nil
 	} else if !errors.Is(findErr, ErrAccountJobNotFound) {
 		return nil, false, findErr
 	}
-	metadata, _ := json.Marshal(map[string]any{"retry_of_job_id": old.ID, "failed_item_count": len(seeds)})
+	fields := map[string]json.RawMessage{}
+	if len(old.Metadata) > 0 && json.Unmarshal(old.Metadata, &fields) != nil {
+		return nil, false, ErrAccountJobInvalidMetadata
+	}
+	if fields == nil {
+		fields = map[string]json.RawMessage{}
+	}
+	fields["retry_of_job_id"], _ = json.Marshal(old.ID)
+	fields["failed_item_count"], _ = json.Marshal(len(seeds))
+	fields["target_count"], _ = json.Marshal(len(seeds))
+	// An explicit retry admits the saved request to the currently enabled
+	// version. It must keep the same owner, while receiving a fresh fence.
+	delete(fields, "plugin_generation")
+	metadata, _ := json.Marshal(fields)
+	ctx, metadata, releasePolicy, policyErr := prepareAccountJobSubmission(ctx, metadata, old.Kind)
+	if policyErr != nil {
+		return nil, false, policyErr
+	}
+	defer releasePolicy()
+	metadata, err = stampAccountJobView(ctx, metadata)
+	if err != nil {
+		return nil, false, err
+	}
+	if _, bound := AccountViewFromContext(ctx); bound && !isCindyCleanupAccountJob(old.Kind) {
+		ids, err := accountViewJobSeedTargets(old.Kind, json.RawMessage(plaintext), seeds)
+		if err != nil {
+			return nil, false, err
+		}
+		if err := ValidateAccountViewTargets(ctx, ids); err != nil {
+			return nil, false, err
+		}
+	}
 	return s.repo.Create(ctx, CreateAccountJobParams{
 		CreatedBy: createdBy, Kind: old.Kind, IdempotencyKey: idempotencyKey,
 		RequestHash: requestHash, PayloadCipher: cipher, PayloadExpires: expires,
@@ -399,10 +519,25 @@ func (r *AccountJobRuntime) execute(job *AccountJob) (string, string) {
 		}
 	}
 	defer cleanup()
-	if job.Kind == AccountJobKindBatchTest || job.Kind == AccountJobKindCodexTicketHarvest {
+	_, pluginBound := PluginExecutionFromContext(executionCtx)
+	_, viewBound := AccountViewFromContext(executionCtx)
+	if pluginBound || viewBound {
+		// Run before cleanup cancels a normally completed policy context.
+		defer func() {
+			if executionCtx.Err() != nil {
+				cancelCtx, cancel := context.WithTimeout(context.WithoutCancel(r.ctx), 10*time.Second)
+				defer cancel()
+				_, _ = r.jobs.repo.Cancel(cancelCtx, job.ID, job.CreatedBy)
+			}
+		}()
+	}
+	if job.Kind == AccountJobKindBatchTest || job.Kind == AccountJobKindCodexTicketHarvest || job.Kind == AccountJobKindExtensionOperation {
 		return r.executeBatchTests(executionCtx, job, payload)
 	}
 	for {
+		if executionCtx.Err() != nil {
+			return "", ""
+		}
 		canceled, cancelErr := r.jobs.repo.CancelRequested(r.ctx, job.ID)
 		if cancelErr != nil {
 			return normalizeAccountJobFailure("cancel_check_failed")
@@ -418,6 +553,9 @@ func (r *AccountJobRuntime) execute(job *AccountJob) (string, string) {
 			return "", ""
 		}
 		for index, item := range items {
+			if executionCtx.Err() != nil {
+				return "", ""
+			}
 			canceled, cancelErr = r.jobs.repo.CancelRequested(r.ctx, job.ID)
 			if cancelErr != nil {
 				return normalizeAccountJobFailure("cancel_check_failed")
@@ -462,7 +600,7 @@ func (r *AccountJobRuntime) cleanup(now time.Time) {
 
 func validAccountJobKind(kind string) bool {
 	switch kind {
-	case AccountJobKindCodexTicketHarvest:
+	case AccountJobKindCodexTicketHarvest, AccountJobKindExtensionOperation:
 		return true
 	case AccountJobKindImportData, AccountJobKindImportCodex, AccountJobKindBatchCreate, AccountJobKindBatchTest,
 		AccountJobKindBulkUpdate, AccountJobKindBulkTaxonomy, AccountJobKindBatchDelete,

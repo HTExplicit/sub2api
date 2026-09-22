@@ -134,11 +134,16 @@ func TestOpenAIReasoningConfigurationSurvivesAdjacentAdapters(t *testing.T) {
 }
 
 func TestOpenAIReasoningConfigurationCindyCountNumberCompatibility(t *testing.T) {
-	controls := &CindyImageRequestControls{MaxOutputCount: 1}
 	for _, value := range []any{float64(1), json.Number("1"), json.Number("1.0"), json.Number("1e0")} {
-		require.NoError(t, validateCindyResponsesImageToolControls("test", "test-model", controls, map[string]any{"n": value}))
+		fact := imageBridgeControls(map[string]any{"n": value}).Count
+		require.True(t, fact.Valid)
+		require.Equal(t, float64(1), fact.Number)
 	}
-	for _, value := range []any{float64(0), json.Number("0"), json.Number("2"), json.Number("1.5"), json.Number("1e1000"), json.Number("invalid"), "1", nil} {
-		require.Error(t, validateCindyResponsesImageToolControls("test", "test-model", controls, map[string]any{"n": value}))
+	for _, value := range []any{json.Number("1e1000"), json.Number("invalid"), "1", nil} {
+		fact := imageBridgeControls(map[string]any{"n": value}).Count
+		require.True(t, fact.Present)
+		require.False(t, fact.Valid)
+		_, err := json.Marshal(fact)
+		require.NoError(t, err)
 	}
 }

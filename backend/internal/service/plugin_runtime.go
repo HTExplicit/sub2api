@@ -1,6 +1,7 @@
 package service
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -8,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"os/exec"
 	"strconv"
@@ -16,22 +18,39 @@ import (
 	"sync/atomic"
 	"time"
 
+	extensionv1 "github.com/Wei-Shaw/sub2api/pkg/extensionapi/v1"
 	pluginv1 "github.com/Wei-Shaw/sub2api/pkg/pluginapi/v1"
 	hclog "github.com/hashicorp/go-hclog"
 	hcplugin "github.com/hashicorp/go-plugin"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 type pluginRuntime struct {
-	installation *PluginInstallation
-	client       *hcplugin.Client
-	api          pluginv1.TransportPluginClient
-	inFlight     atomic.Int64
-	draining     atomic.Bool
-	done         chan struct{}
-	doneOnce     sync.Once
+	installation     *PluginInstallation
+	client           *hcplugin.Client
+	api              pluginv1.TransportPluginClient
+	extension        *extensionv1.Client
+	scheduling       atomic.Pointer[[]extensionv1.SchedulingRule]
+	configSnapshot   atomic.Pointer[json.RawMessage]
+	configRevision   atomic.Uint64
+	catalogCache     sync.Map
+	catalogCacheSize atomic.Int64
+	inFlight         atomic.Int64
+	draining         atomic.Bool
+	configuring      atomic.Bool
+	policyMu         sync.Mutex
+	policyLeaseID    uint64
+	policyLeases     map[uint64]context.CancelFunc
+	done             chan struct{}
+	doneOnce         sync.Once
+	lease            PluginRuntimeLease
+	leaseWatchDone   <-chan struct{}
+	killOnce         sync.Once
 }
 
-func startPluginRuntime(ctx context.Context, installation *PluginInstallation, startTimeout time.Duration, socketDir string) (*pluginRuntime, error) {
+func startPluginRuntime(ctx context.Context, installation *PluginInstallation, startTimeout time.Duration, socketDir string, hostServices pluginv1.HostServiceServer) (*pluginRuntime, error) {
 	if installation == nil {
 		return nil, errors.New("插件安装记录为空")
 	}
@@ -66,15 +85,17 @@ func startPluginRuntime(ctx context.Context, installation *PluginInstallation, s
 		client.Kill()
 		return nil, fmt.Errorf("获取插件传输能力: %w", err)
 	}
-	api, ok := dispensed.(pluginv1.TransportPluginClient)
-	if !ok {
+	transportClient, ok := dispensed.(*pluginv1.TransportClient)
+	if !ok || transportClient.TransportPluginClient == nil {
 		client.Kill()
 		return nil, errors.New("插件未实现传输 gRPC 客户端")
 	}
+	api := transportClient.TransportPluginClient
 	runtime := &pluginRuntime{
 		installation: installation,
 		client:       client,
 		api:          api,
+		extension:    extensionv1.NewClient(transportClient.Connection),
 		done:         make(chan struct{}),
 	}
 	infoCtx, cancel := context.WithTimeout(ctx, startTimeout)
@@ -97,7 +118,61 @@ func startPluginRuntime(ctx context.Context, installation *PluginInstallation, s
 		}
 		return nil, fmt.Errorf("插件不健康: %s", health.Message)
 	}
+	// 可选地把宿主服务（HostService）反向暴露给插件。这是叠加在传输契约之上的能力：
+	// 老插件不实现 InitHostServices（返回 Unimplemented），此处静默跳过，绝不阻断启动。
+	if err := offerPluginHostServices(ctx, installation, api, transportClient.Broker, hostServices, startTimeout); err != nil && installation.Manifest.Requires.ExtensionAPI > 0 {
+		runtime.kill()
+		return nil, fmt.Errorf("扩展插件需要可用的宿主服务: %w", err)
+	}
 	return runtime, nil
+}
+
+// offerPluginHostServices 在 go-plugin broker 上启动一个宿主服务实例，并通过
+// InitHostServices 把 broker 流 id 交给插件。服务生命周期与插件进程绑定：client.Kill()
+// 会关闭 broker，AcceptAndServe 随之 GracefulStop，无需手动清理。官方旧传输插件
+// 可以不使用此能力；声明扩展协议的插件必须成功握手，失败时禁止启用。
+func offerPluginHostServices(
+	ctx context.Context,
+	installation *PluginInstallation,
+	api pluginv1.TransportPluginClient,
+	broker *hcplugin.GRPCBroker,
+	hostServices pluginv1.HostServiceServer,
+	startTimeout time.Duration,
+) error {
+	if broker == nil || hostServices == nil || api == nil {
+		return errors.New("host broker unavailable")
+	}
+	brokerID := broker.NextId()
+	go broker.AcceptAndServe(brokerID, func(opts []grpc.ServerOption) *grpc.Server {
+		server := grpc.NewServer(opts...)
+		pluginv1.RegisterHostServiceServer(server, hostServices)
+		if registrar, ok := hostServices.(pluginv1.AdditionalServiceRegistrar); ok {
+			registrar.RegisterAdditionalServices(server)
+		}
+		return server
+	})
+	initCtx, cancel := context.WithTimeout(ctx, startTimeout)
+	defer cancel()
+	resp, err := api.InitHostServices(initCtx, &pluginv1.InitHostServicesRequest{
+		HostServiceId:         brokerID,
+		HostServiceApiVersion: pluginv1.HostServiceAPIVersion,
+	})
+	pluginKey := ""
+	if installation != nil {
+		pluginKey = installation.PluginKey
+	}
+	if err != nil {
+		if status.Code(err) == codes.Unimplemented {
+			slog.Debug("plugin_host_services_unimplemented", "plugin", pluginKey)
+		} else {
+			slog.Warn("plugin_host_services_init_failed", "plugin", pluginKey, "error", err)
+		}
+		return err
+	}
+	if resp == nil || !resp.Ready {
+		return errors.New("plugin did not initialize host services")
+	}
+	return nil
 }
 
 func (r *pluginRuntime) validateAndApplyConfig(ctx context.Context, configJSON []byte) error {
@@ -106,6 +181,14 @@ func (r *pluginRuntime) validateAndApplyConfig(ctx context.Context, configJSON [
 }
 
 func (r *pluginRuntime) validateAndApplyNormalizedConfig(ctx context.Context, configJSON []byte) ([]byte, error) {
+	configJSON, err := r.validateNormalizedConfig(ctx, configJSON)
+	if err != nil {
+		return nil, err
+	}
+	return r.applyNormalizedConfig(ctx, configJSON)
+}
+
+func (r *pluginRuntime) validateNormalizedConfig(ctx context.Context, configJSON []byte) ([]byte, error) {
 	validation, err := r.api.ValidateConfig(ctx, &pluginv1.ValidateConfigRequest{ConfigJson: configJSON})
 	if err != nil {
 		return nil, fmt.Errorf("插件配置校验失败: %w", err)
@@ -133,6 +216,16 @@ func (r *pluginRuntime) validateAndApplyNormalizedConfig(ctx context.Context, co
 	if err != nil {
 		return nil, fmt.Errorf("序列化插件规范化配置: %w", err)
 	}
+	return configJSON, nil
+}
+
+func (r *pluginRuntime) applyNormalizedConfig(ctx context.Context, configJSON []byte) ([]byte, error) {
+	if previous := r.configSnapshot.Load(); previous != nil && bytes.Equal(*previous, configJSON) {
+		return configJSON, nil
+	}
+	r.configuring.Store(true)
+	defer r.configuring.Store(false)
+	r.cancelPolicyContexts()
 	applied, err := r.api.ApplyConfig(ctx, &pluginv1.ApplyConfigRequest{ConfigJson: configJSON})
 	if err != nil {
 		return nil, fmt.Errorf("应用插件配置失败: %w", err)
@@ -140,6 +233,35 @@ func (r *pluginRuntime) validateAndApplyNormalizedConfig(ctx context.Context, co
 	if !applied.Applied {
 		return nil, fmt.Errorf("插件拒绝应用配置: %s", applied.Message)
 	}
+	var capabilities []PluginCapability
+	if r.installation != nil {
+		capabilities = r.installation.Manifest.Capabilities
+	}
+	for _, capability := range capabilities {
+		if capability.ID != extensionv1.CapabilityScheduling {
+			continue
+		}
+		result, err := r.extension.Invoke(ctx, extensionv1.Invocation{Capability: extensionv1.CapabilityScheduling, Operation: "describe", Payload: json.RawMessage(`{}`)})
+		if err != nil {
+			return nil, fmt.Errorf("read plugin scheduling contract: %w", err)
+		}
+		var rules []extensionv1.SchedulingRule
+		if json.Unmarshal(result.Payload, &rules) != nil {
+			return nil, errors.New("invalid plugin scheduling contract")
+		}
+		for _, rule := range rules {
+			if (rule.Default != "allow" && rule.Default != "deny") || len(rule.Models) == 0 {
+				return nil, errors.New("invalid plugin scheduling rule")
+			}
+		}
+		r.scheduling.Store(&rules)
+		break
+	}
+	snapshot := json.RawMessage(append([]byte(nil), configJSON...))
+	r.configSnapshot.Store(&snapshot)
+	r.configRevision.Add(1)
+	r.catalogCache.Clear()
+	r.catalogCacheSize.Store(0)
 	return configJSON, nil
 }
 
@@ -161,8 +283,25 @@ func (r *pluginRuntime) checkHealth(ctx context.Context) error {
 	return nil
 }
 
+// status returns the plugin's passive Health response, including any status_json
+// blob it exposes for the config UI. It performs no config apply and no upstream
+// call, so it is safe to serve from a lightweight, ungated status endpoint.
+func (r *pluginRuntime) status(ctx context.Context) (*pluginv1.HealthResponse, error) {
+	if r == nil || r.api == nil || r.client == nil || r.client.Exited() {
+		return nil, errors.New("插件进程已退出")
+	}
+	health, err := r.api.Health(ctx, &pluginv1.HealthRequest{})
+	if err != nil {
+		return nil, fmt.Errorf("插件状态查询失败: %w", err)
+	}
+	if health == nil {
+		return nil, errors.New("插件未返回状态")
+	}
+	return health, nil
+}
+
 func (r *pluginRuntime) beginRequest() bool {
-	if r == nil || r.draining.Load() {
+	if r == nil || r.draining.Load() || r.configuring.Load() {
 		return false
 	}
 	r.inFlight.Add(1)
@@ -183,7 +322,7 @@ func (r *pluginRuntime) drain(timeout time.Duration) {
 	if r == nil {
 		return
 	}
-	r.draining.Store(true)
+	r.beginDrain()
 	if r.inFlight.Load() == 0 {
 		r.doneOnce.Do(func() { close(r.done) })
 	}
@@ -197,9 +336,37 @@ func (r *pluginRuntime) drain(timeout time.Duration) {
 }
 
 func (r *pluginRuntime) kill() {
-	if r != nil && r.client != nil {
-		r.client.Kill()
+	if r == nil {
+		return
 	}
+	r.beginDrain()
+	r.killOnce.Do(func() {
+		if r.client != nil {
+			r.client.Kill()
+		}
+		if r.lease != nil {
+			r.lease.Release()
+		}
+	})
+}
+
+func (r *pluginRuntime) observeLease(lease PluginRuntimeLease) error {
+	r.lease = lease
+	if lease == nil || lease.Done() == nil {
+		return nil
+	}
+	select {
+	case <-lease.Done():
+		err := lease.Err()
+		r.kill()
+		if err == nil {
+			err = ErrPluginRuntimeLeaseLost
+		}
+		return err
+	default:
+	}
+	r.leaseWatchDone = watchPluginRuntimeLease(lease, r.kill)
+	return nil
 }
 
 func (r *pluginRuntime) roundTrip(ctx context.Context, request *http.Request, proxyURL string, account *Account) (*http.Response, error) {

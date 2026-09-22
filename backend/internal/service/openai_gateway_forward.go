@@ -13,12 +13,39 @@ import (
 	"github.com/Wei-Shaw/sub2api/internal/pkg/logger"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/openai"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/openai_compat"
+	extensionv1 "github.com/Wei-Shaw/sub2api/pkg/extensionapi/v1"
 	"github.com/gin-gonic/gin"
 	"github.com/tidwall/gjson"
 )
 
 // Forward forwards request to OpenAI API
 func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, account *Account, body []byte) (_ *OpenAIForwardResult, forwardErr error) {
+	if account != nil && IsCindyAPIKeyAccount(account.Platform, account.Type, account.Credentials) && IsImageGenerationIntent(openAIResponsesEndpoint, gjson.GetBytes(body, "model").String(), body) {
+		bound, release, err := bindProcessExtensionContext(ctx, PlatformCindy, AccountTypeAPIKey, extensionv1.Invocation{Capability: extensionv1.CapabilityRequest, Operation: "image.responses.plan", AccountID: account.ID})
+		if err != nil {
+			c.JSON(http.StatusServiceUnavailable, gin.H{"error": gin.H{"type": "service_unavailable", "message": "Image bridge is unavailable"}})
+			return nil, err
+		}
+		defer release()
+		ctx = bound
+		resolved, err := ResolveCindyResponsesImageToolsForAccount(ctx, account, body)
+		if err != nil {
+			status, code, message := http.StatusBadRequest, "invalid_request_error", "Invalid image bridge request"
+			if errors.Is(err, ErrCindyResponsesImageToolModelNotFound) {
+				status, code, message = http.StatusNotFound, "model_not_found", "Image tool model is not supported on the Responses endpoint"
+			} else if errors.Is(err, ErrExtensionOperationDisabled) || errors.Is(err, ErrExtensionOperationUnavailable) {
+				status, code, message = http.StatusServiceUnavailable, "service_unavailable", "Image bridge is unavailable"
+			}
+			c.JSON(status, gin.H{"error": gin.H{"type": code, "message": message}})
+			return nil, err
+		}
+		body = resolved
+	}
+	pricingContext, pricingErr := CaptureCindyPricingContext(ctx, c, account)
+	if pricingErr != nil {
+		return nil, pricingErr
+	}
+	ctx = pricingContext
 	diagnosticIncomingBody := body
 	// Snapshot the client body for the request integrity check before any
 	// rewrite; re-staged on every entry so a failover never reuses a stale copy.
@@ -31,7 +58,11 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 	var integrityEffortPolicy func([]byte) ([]byte, error)
 	if account != nil && account.IsOpenAI() {
 		requestedModel := gjson.GetBytes(body, "model").String()
-		candidates := []string{account.GetMappedModel(requestedModel)}
+		mappedCandidate, mapErr := resolveOpenAIForwardModelContext(ctx, account, requestedModel, "")
+		if mapErr != nil {
+			return nil, mapErr
+		}
+		candidates := []string{mappedCandidate}
 		if isOpenAIResponsesCompactPath(c) {
 			if compactModel, matched := account.ResolveCompactMappedModel(requestedModel); matched {
 				candidates = append([]string{compactModel}, candidates...)
@@ -456,11 +487,18 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 
 	isCompactRequest := compactPath
 	requestedModel := reqModel
-	billingModel, upstreamModel := resolveOpenAIForwardMappedModels(account, requestedModel, isCompactRequest)
+	billingModel, upstreamModel, modelPolicyErr := resolveOpenAIForwardMappedModelsContext(ctx, account, requestedModel, isCompactRequest)
+	if modelPolicyErr != nil {
+		return nil, modelPolicyErr
+	}
 	if cindyRuntimeAccount {
-		if mappedModel, mapped := CindyCompatibilityMappedUpstreamModel(requestedModel); mapped {
+		snapshot, err := LoadCindyCatalogSnapshot(ctx, account)
+		if err != nil {
+			return nil, err
+		}
+		if mappedModel, mapped := snapshot.CompatibilityMappings[requestedModel]; mapped {
 			upstreamModel = mappedModel
-		} else if mappedModel, mapped := CindyMappedUpstreamModel(requestedModel); mapped {
+		} else if mappedModel, mapped := snapshot.AvailableMappings[requestedModel]; mapped {
 			upstreamModel = mappedModel
 		}
 	}
@@ -527,7 +565,12 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 			markDecodedModified()
 			logger.LegacyPrintf("service.openai_gateway", "[OpenAI] Normalized /responses image-only model request inbound_model=%s image_model=%s upstream_model=%s", requestView.Model, billingModel, upstreamModel)
 		}
-		if mapCindyOpenAIResponsesImageModels(decoded, account) {
+		mapped, mapErr := mapCindyOpenAIResponsesImageModels(ctx, decoded, account)
+		if mapErr != nil {
+			c.JSON(http.StatusServiceUnavailable, gin.H{"error": gin.H{"type": "service_unavailable", "message": "Image bridge is unavailable"}})
+			return nil, mapErr
+		}
+		if mapped {
 			markDecodedModified()
 			logger.LegacyPrintf("service.openai_gateway", "[OpenAI] Applied Cindy /responses image model mapping")
 		}
@@ -1081,6 +1124,11 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 				s.bindCindyOpaqueContinuationAccount(
 					ctx, c, account, cindyOpaqueBindingIDsFromRawItems(wsResult.wsReplayInput),
 				)
+			}
+			if cindyHTTPToWSV2 {
+				// This remains an HTTP response even though its upstream used WS.
+				// Native WS keeps its existing ownership/session behavior.
+				s.bindHTTPResponseAccount(ctx, c, account, wsResult.ResponseID)
 			}
 			return wsResult, nil
 		}
@@ -1673,7 +1721,9 @@ func (s *OpenAIGatewayService) buildUpstreamRequest(ctx context.Context, c *gin.
 	// 终态收口：强制统一 OAuth 出站身份（User-Agent / originator / version 同源自洽），
 	// 身份取自该 OAuth 凭据的账号级 Codex TUI 身份；客户端自报身份不参与构造。
 	if account.UsesOpenAICodexProtocol() {
-		enforceCodexIdentityHeadersForAccount(req.Header, codexAccountIdentitySource(c, account), s.codexIdentityOverrideUA(account))
+		if err := enforceCodexIdentityHeadersForAccountContext(req.Context(), req.Header, codexAccountIdentitySource(c, account), s.codexIdentityOverrideUA(account)); err != nil {
+			return nil, err
+		}
 	}
 
 	// Ensure required headers exist

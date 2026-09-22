@@ -10,22 +10,17 @@
 package proxyutil
 
 import (
-	"context"
-	"fmt"
+	proxytransport "github.com/Wei-Shaw/sub2api/pkg/extensionapi/proxy"
 	"net"
 	"net/http"
 	"net/url"
-	"strings"
-	"time"
-
-	"golang.org/x/net/proxy"
 )
 
 const (
 	// socks5DialTimeout 限制到 SOCKS5 代理自身的 TCP 建连耗时。
-	socks5DialTimeout = 10 * time.Second
+	socks5DialTimeout = proxytransport.SOCKSDialTimeout
 	// socks5DialKeepAlive 与 Go 默认 keepalive 探测间隔保持一致。
-	socks5DialKeepAlive = 30 * time.Second
+	socks5DialKeepAlive = proxytransport.SOCKSKeepAlive
 )
 
 // socks5ForwardDialer 是 SOCKS5 dialer 的底层拨号器。
@@ -53,34 +48,5 @@ var socks5ForwardDialer = &net.Dialer{
 // 返回：
 //   - error: 代理配置错误（协议不支持或 dialer 创建失败）
 func ConfigureTransportProxy(transport *http.Transport, proxyURL *url.URL) error {
-	if proxyURL == nil {
-		return nil
-	}
-
-	scheme := strings.ToLower(proxyURL.Scheme)
-	switch scheme {
-	case "http", "https":
-		transport.Proxy = http.ProxyURL(proxyURL)
-		return nil
-
-	case "socks5", "socks5h":
-		dialer, err := proxy.FromURL(proxyURL, socks5ForwardDialer)
-		if err != nil {
-			return fmt.Errorf("create socks5 dialer: %w", err)
-		}
-		// 优先使用支持 context 的 DialContext，以支持请求取消和超时
-		if contextDialer, ok := dialer.(proxy.ContextDialer); ok {
-			transport.DialContext = contextDialer.DialContext
-		} else {
-			// 回退路径：如果 dialer 不支持 ContextDialer，则包装为简单的 DialContext
-			// 注意：此回退不支持请求取消和超时控制
-			transport.DialContext = func(_ context.Context, network, addr string) (net.Conn, error) {
-				return dialer.Dial(network, addr)
-			}
-		}
-		return nil
-
-	default:
-		return fmt.Errorf("unsupported proxy scheme: %s", scheme)
-	}
+	return proxytransport.Configure(transport, proxyURL, socks5ForwardDialer)
 }

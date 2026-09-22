@@ -4,6 +4,8 @@
  */
 
 import { apiClient } from '../client'
+import { accountViewClient } from './accountViewClient'
+import type { CapturedAccountView } from '@/composables/useAccountViewContext'
 import type { GrokBillingSummary, GrokQuotaWindow, WindowStats } from '@/types'
 
 export type { GrokBillingSummary, GrokQuotaWindow } from '@/types'
@@ -162,8 +164,8 @@ export async function refreshGrokToken(
   return data
 }
 
-export async function queryQuota(id: number): Promise<GrokQuotaProbeResult> {
-  const { data } = await apiClient.get<GrokQuotaProbeResult>(`/admin/grok/accounts/${id}/quota`)
+export async function queryQuota(id: number, view?: CapturedAccountView): Promise<GrokQuotaProbeResult> {
+  const { data } = await accountViewClient(view).get<GrokQuotaProbeResult>(`/admin/grok/accounts/${id}/quota`)
   return data
 }
 

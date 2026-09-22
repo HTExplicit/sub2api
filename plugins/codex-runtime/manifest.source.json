@@ -1,0 +1,55 @@
+{
+  "schema_version": 1,
+  "id": "codexrip.codex-runtime",
+  "name": "Codex 运行扩展",
+  "version": "0.2.7",
+  "description": "292票据、有限续期与代理诊断",
+  "author": "HTExplicit",
+  "requires": {
+    "sub2api": ">=0.2.7-0 <0.2.8",
+    "tested_sub2api_versions": [],
+    "plugin_protocol": 1,
+    "transport_api": 1,
+    "ui_bridge": 1,
+    "extension_api": 1
+  },
+  "capabilities": [
+    { "id": "extensions.recovery.v1", "platform": "openai", "account_type": "*" },
+    { "id": "extensions.credentials.v1", "platform": "openai", "account_type": "oauth" },
+    { "id": "extensions.credentials.v1", "platform": "openai", "account_type": "setup-token" },
+    { "id": "extensions.admin.v1", "platform": "openai", "account_type": "oauth" },
+    { "id": "extensions.admin.v1", "platform": "openai", "account_type": "setup-token" },
+    { "id": "extensions.scheduling.v1", "platform": "openai", "account_type": "oauth" },
+    { "id": "extensions.scheduling.v1", "platform": "openai", "account_type": "setup-token" },
+    { "id": "extensions.request.v1", "platform": "openai", "account_type": "oauth" },
+    { "id": "extensions.request.v1", "platform": "openai", "account_type": "setup-token" },
+    { "id": "extensions.jobs.v1", "platform": "openai", "account_type": "oauth" },
+    { "id": "extensions.jobs.v1", "platform": "openai", "account_type": "setup-token" }
+  ],
+  "operations": {
+    "extensions.request.v1": ["inject", "codex.identity.available", "codex.identity.plan", "codex.identity.derive", "codex.identity.validate", "codex.identity.agent", "codex.identity.sandbox", "codex.transport.plan"],
+    "extensions.recovery.v1": ["codex.recovery.available", "codex.recovery.enabled", "codex.recovery.rejection", "codex.recovery.select", "codex.replay.rules"]
+  },
+  "contributions": [
+    { "id": "ops-error-diagnostics", "slot": "surface", "entrypoint": "ui/diagnostics.html", "capability": "extensions.recovery.v1", "permission": "admin", "label": { "zh": "Codex 续接诊断", "en": "Codex continuation diagnostics" } },
+    { "id": "codex-recovery-settings", "slot": "surface", "capability": "extensions.recovery.v1", "permission": "admin", "label": { "zh": "推理状态与恢复策略", "en": "Reasoning state and recovery" } },
+    {
+      "id": "proxy-settings", "slot": "admin.settings", "capability": "extensions.admin.v1", "action": "proxy.test", "entrypoint": "ui/index.html", "permission": "admin",
+      "label": { "zh": "Codex 票据设置", "en": "Codex ticket settings" }
+    },
+    {
+      "id": "ticket-harvest", "slot": "account.actions", "capability": "extensions.credentials.v1", "action": "harvest", "entrypoint": "ui/index.html", "permission": "admin",
+      "label": { "zh": "采集292票据", "en": "Acquire 292 tickets" },
+      "account_filter": { "platforms": ["openai"], "types": ["oauth", "setup-token"], "exclude_shadows": true }
+    },
+    {
+      "id": "ticket-stop", "slot": "account.actions", "capability": "extensions.admin.v1", "action": "stop", "entrypoint": "ui/index.html", "permission": "admin",
+      "label": { "zh": "停止票据续期", "en": "Stop ticket renewal" },
+      "account_filter": { "platforms": ["openai"], "types": ["oauth", "setup-token"], "exclude_shadows": true }
+    }
+  ],
+  "resources": [{ "name": "ops.error.diagnostics", "capability": "extensions.recovery.v1", "permission": "admin" }],
+  "runtimes": {},
+  "ui": { "entrypoint": "ui/index.html" },
+  "files": {}
+}

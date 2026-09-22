@@ -118,22 +118,25 @@ type codexAccountIndex struct {
 func (h *AccountHandler) ImportCodexSession(c *gin.Context) {
 	var req CodexSessionImportRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		response.BadRequest(c, "Invalid request: "+err.Error())
+		response.BadRequest(c, "Invalid Codex session import request")
 		return
 	}
 	if err := service.ValidateOpenAIReasoningPolicyExtra(req.Extra); err != nil {
 		response.ErrorFrom(c, err)
 		return
 	}
-	count := len(req.Contents)
-	if strings.TrimSpace(req.Content) != "" {
-		count++
+	entries, err := parseCodexSessionImportEntries(req)
+	if err != nil {
+		response.BadRequest(c, "Invalid Codex session import content")
+		return
 	}
-	if count == 0 {
+	if len(entries) == 0 {
 		response.BadRequest(c, "请输入 accessToken 或 Codex session JSON")
 		return
 	}
-	h.submitAccountJob(c, service.AccountJobKindImportCodex, req, ordinalAccountJobSeeds(count))
+	// The worker resolves each ordinal against this same flattened sequence.
+	// Keep the original request as the encrypted payload and idempotency input.
+	h.submitAccountJob(c, service.AccountJobKindImportCodex, req, ordinalAccountJobSeeds(len(entries)))
 }
 
 func (h *AccountHandler) importCodexSessions(ctx context.Context, req CodexSessionImportRequest, entries []codexImportEntry) (CodexSessionImportResult, error) {

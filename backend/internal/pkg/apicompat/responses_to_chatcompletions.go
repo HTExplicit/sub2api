@@ -184,9 +184,10 @@ func ResponsesEventToChatChunks(evt *ResponsesStreamEvent, state *ResponsesEvent
 // FinalizeResponsesChatStream emits a final chunk with finish_reason if the
 // stream ended without a proper completion event (e.g. upstream disconnect).
 // It is idempotent: if a completion event already emitted the finish chunk,
-// this returns nil.
+// this returns nil. A protocol failure must be surfaced by the caller and
+// cannot be converted into a normal finish or usage chunk at EOF.
 func FinalizeResponsesChatStream(state *ResponsesEventToChatState) []ChatCompletionsChunk {
-	if state.Finalized {
+	if state.Finalized || state.ProtocolError != "" {
 		return nil
 	}
 	state.Finalized = true

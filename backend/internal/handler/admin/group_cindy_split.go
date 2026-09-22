@@ -42,6 +42,39 @@ func (h *GroupHandler) AuditCindyGroups(c *gin.Context) {
 	response.Success(c, result)
 }
 
+// CindyGroupKeyChoices exposes selection metadata, never complete API keys or
+// user records, to the independently published group management interface.
+func (h *GroupHandler) CindyGroupKeyChoices(c *gin.Context) {
+	if h.rejectUnsupportedSimpleModeOperation(c, "api_keys") {
+		return
+	}
+	groupID, ok := parsePositiveCindyGroupID(c)
+	if !ok {
+		return
+	}
+	page, pageSize := response.ParsePagination(c)
+	keys, total, err := h.adminService.GetGroupAPIKeys(c.Request.Context(), groupID, page, pageSize)
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	type choice struct {
+		ID         int64  `json:"id"`
+		Name       string `json:"name"`
+		Status     string `json:"status"`
+		DisplayKey string `json:"display_key"`
+	}
+	out := make([]choice, 0, len(keys))
+	for _, key := range keys {
+		display := "****"
+		if len(key.Key) > 8 {
+			display = key.Key[:3] + "****" + key.Key[len(key.Key)-4:]
+		}
+		out = append(out, choice{ID: key.ID, Name: key.Name, Status: key.Status, DisplayKey: display})
+	}
+	response.Paginated(c, out, total, page, pageSize)
+}
+
 // PreviewCindyGroupSplit validates a split selection without mutating state.
 // POST /api/v1/admin/cindy/groups/:id/split-preview
 func (h *GroupHandler) PreviewCindyGroupSplit(c *gin.Context) {

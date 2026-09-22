@@ -27,8 +27,11 @@ describe('System Prompts integration surface', () => {
   it('keeps the page Chinese under the English locale and removes legacy surfaces', () => {
     expect(en.admin.systemPrompts).toEqual(zh.admin.systemPrompts)
     const view = read('../SystemPromptsView.vue')
+    expect(view).toContain('ExtensionPage')
+    expect(view).not.toContain('systemPromptsAPI')
+    const page = read('../../../../../plugins/prompt-skills/ui/src/App.vue')
     for (const marker of ['saveVersion', 'setCurrent', 'rollback', 'syncManagedSource', 'SystemPromptAdvancedDrawer']) {
-      expect(view).toContain(marker)
+      expect(page).toContain(marker)
     }
     expect(view).not.toContain('previewMerge')
     expect(view).not.toContain('previewUpstream')
@@ -36,7 +39,7 @@ describe('System Prompts integration surface', () => {
     expect(view).not.toContain('isLegacyComposition')
     expect(view).not.toContain('copyInstallCommand')
 
-    const drawer = read('../../../components/admin/systemPrompt/SystemPromptAdvancedDrawer.vue')
+    const drawer = read('../../../../../plugins/prompt-skills/ui/src/SystemPromptAdvancedDrawer.vue')
     expect(drawer).toContain('compact_enabled')
     expect(drawer).toContain('expose_server_prompt')
     expect(drawer).toContain('data-test="system-prompt-advanced-drawer"')

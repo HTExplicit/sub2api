@@ -1,0 +1,104 @@
+package service
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"net/http"
+	"slices"
+	"sort"
+	"strings"
+	"time"
+
+	extensionv1 "github.com/Wei-Shaw/sub2api/pkg/extensionapi/v1"
+	"golang.org/x/net/http/httpguts"
+)
+
+func (m *PluginManager) ApplyRequestHeaders(ctx context.Context, account *Account, model string, headers http.Header) error {
+	if m == nil || account == nil || headers == nil {
+		return nil
+	}
+	registry := m.extensions.Load()
+	if registry == nil || registry.unavailable != "" {
+		return errors.New("plugin registry unavailable")
+	}
+	var ids []int64
+	invocation := extensionv1.Invocation{Capability: extensionv1.CapabilityRequest, Operation: "inject", AccountID: account.ID}
+	for id, installation := range registry.installations {
+		operations, explicit := installation.Manifest.Operations[extensionv1.CapabilityRequest]
+		if (!explicit || slices.Contains(operations, "inject")) && pluginHasInvocationCapability(installation, invocation, account.Platform, account.Type) {
+			ids = append(ids, id)
+		}
+	}
+	sort.Slice(ids, func(i, j int) bool { return ids[i] < ids[j] })
+	raw, err := json.Marshal(extensionv1.SchedulingRequest{Account: *extensionAccount(account), Model: model, Now: time.Now().UTC()})
+	if err != nil {
+		return err
+	}
+	invocation.Payload = raw
+	projected := headers.Clone()
+	for _, id := range ids {
+		result, err := m.InvokeExtension(ctx, id, account.Platform, account.Type, invocation)
+		if err != nil {
+			return err
+		}
+		if result.Code != "" {
+			return errors.New("plugin request prerequisite unavailable")
+		}
+		var changes struct {
+			Headers map[string]string `json:"headers"`
+		}
+		if json.Unmarshal(result.Payload, &changes) != nil {
+			return errors.New("invalid plugin header result")
+		}
+		seen := map[string]bool{}
+		for name, value := range changes.Headers {
+			lower := strings.ToLower(name)
+			// Credentials, account routing, tenant correlation and HTTP framing
+			// stay host-owned. Per-request ticket material is the explicit exception
+			// to the ordinary header-override policy.
+			blocked := isHeaderOverrideBlockedName(lower) && lower != "x-codex-turn-state"
+			switch lower {
+			case "openai-organization", "openai-project", "api-key", "set-cookie":
+				blocked = true
+			}
+			if blocked || seen[lower] || !httpguts.ValidHeaderFieldName(name) || !httpguts.ValidHeaderFieldValue(value) {
+				return errors.New("plugin returned a protected or invalid request header")
+			}
+			seen[lower] = true
+			projected.Set(name, value)
+		}
+	}
+	for name, values := range projected {
+		headers[name] = values
+	}
+	return nil
+}
+
+func (m *PluginManager) installedByKey(key string) (*PluginInstallation, *pluginRuntime) {
+	if m == nil {
+		return nil, nil
+	}
+	registry := m.extensions.Load()
+	if registry == nil {
+		return nil, nil
+	}
+	for id, installation := range registry.installations {
+		if installation.PluginKey == key {
+			return installation, registry.runtimes[id]
+		}
+	}
+	return nil, nil
+}
+
+func (m *PluginManager) activeConfig(key string) (json.RawMessage, bool) {
+	installation, runtime := m.installedByKey(key)
+	if installation == nil || !hasEnabledPluginBinding(installation.Bindings) || runtime == nil {
+		return nil, false
+	}
+	config := runtime.configSnapshot.Load()
+	if config == nil {
+		return nil, false
+	}
+	return append(json.RawMessage(nil), (*config)...), true
+}

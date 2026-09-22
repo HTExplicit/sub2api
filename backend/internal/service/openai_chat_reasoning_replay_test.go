@@ -9,11 +9,14 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strings"
 	"testing"
 	"time"
 
+	codexrecovery "github.com/HTExplicit/sub2api-plugins/codexruntime/recovery"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/apicompat"
+	extensionv1 "github.com/Wei-Shaw/sub2api/pkg/extensionapi/v1"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
 	"github.com/tidwall/gjson"
@@ -51,7 +54,7 @@ func openAIChatReplayTestResponse(payload string, status int) *http.Response {
 
 func TestOpenAIChatReasoningReplayRecorderRequiresMatchingCompletedProjection(t *testing.T) {
 	t.Parallel()
-	var recorder openAIChatReasoningReplayRecorder
+	recorder := openAIChatReasoningReplayRecorder{rules: openAIChatReplayTestRules()}
 	recorder.ObserveMessage(openAIChatReplayTestMessage())
 	_, ok := recorder.Batch()
 	require.False(t, ok, "downstream projection is not proof of completion")
@@ -63,7 +66,7 @@ func TestOpenAIChatReasoningReplayRecorderRequiresMatchingCompletedProjection(t 
 	require.JSONEq(t, openAIChatReplayTestOutput, string(mustJSONChatReplay(t, batch.Output)))
 
 	for _, kind := range []string{"response.failed", "response.incomplete", "error"} {
-		r := openAIChatReasoningReplayRecorder{}
+		r := openAIChatReasoningReplayRecorder{rules: openAIChatReplayTestRules()}
 		r.ObservePayload([]byte(`{"type":"` + kind + `"}`))
 		r.ObservePayload(openAIChatReplayTestPayload(openAIChatReplayTestOutput))
 		r.ObserveMessage(openAIChatReplayTestMessage())
@@ -81,7 +84,7 @@ func TestOpenAIChatReasoningReplayRecorderStreamingProjection(t *testing.T) {
 	t.Parallel()
 	for _, mutate := range []string{"none", "different_reasoning", "missing_delta_suffix", "conflicting_arguments", "no_deltas"} {
 		t.Run(mutate, func(t *testing.T) {
-			recorder := openAIChatReasoningReplayRecorder{}
+			recorder := openAIChatReasoningReplayRecorder{rules: openAIChatReplayTestRules()}
 			state := apicompat.NewResponsesEventToChatState()
 			payload := openAIChatReplayTestSSE(openAIChatReplayTestOutput, mutate != "no_deltas")
 			if mutate == "different_reasoning" {
@@ -126,7 +129,7 @@ func TestOpenAIChatReasoningReplayRejectsNonReversibleBatches(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			var raw []json.RawMessage
 			require.NoError(t, json.Unmarshal([]byte(output), &raw))
-			_, ok := projectOpenAIChatReasoningRawBatch(raw)
+			_, ok := projectOpenAIChatReasoningRawBatch(raw, openAIChatReplayTestRules())
 			require.False(t, ok)
 		})
 	}
@@ -134,7 +137,7 @@ func TestOpenAIChatReasoningReplayRejectsNonReversibleBatches(t *testing.T) {
 
 func TestOpenAIChatReasoningReplayOptionalReasoningButRequiredVisibleContent(t *testing.T) {
 	t.Parallel()
-	stored, ok := normalizeOpenAIChatReasoningProjection(openAIChatReplayTestMessage())
+	stored, ok := normalizeOpenAIChatReasoningProjection(openAIChatReplayTestMessage(), openAIChatReplayTestRules())
 	require.True(t, ok)
 	for _, variant := range []string{"normal", "omitted", "alias", "different_reasoning", "different_content", "different_arguments"} {
 		message := openAIChatReplayTestMessage()
@@ -150,12 +153,12 @@ func TestOpenAIChatReasoningReplayOptionalReasoningButRequiredVisibleContent(t *
 		case "different_arguments":
 			message.ToolCalls[0].Function.Arguments = `{"changed":true}`
 		}
-		incoming, ok := normalizeOpenAIChatReasoningProjection(message)
+		incoming, ok := normalizeOpenAIChatReasoningProjection(message, openAIChatReplayTestRules())
 		require.True(t, ok)
 		want := variant == "normal" || variant == "omitted" || variant == "alias"
-		require.Equal(t, want, openAIChatReasoningProjectionMatches(stored, incoming), variant)
+		require.Equal(t, want, openAIChatReasoningProjectionMatches(stored, incoming, openAIChatReplayTestRules()), variant)
 		if want {
-			require.Equal(t, openAIChatReasoningBatchKey("prefix", stored), openAIChatReasoningBatchKey("prefix", incoming))
+			require.Equal(t, openAIChatReasoningBatchKey("prefix", stored, openAIChatReplayTestRules()), openAIChatReasoningBatchKey("prefix", incoming, openAIChatReplayTestRules()))
 		}
 	}
 }
@@ -319,14 +322,14 @@ func TestOpenAIChatReasoningReplayMissDoesNotChangeInput(t *testing.T) {
 			input, _ := openAIChatReasoningInput(wire)
 			prefix, err := openAIChatReasoningPrefixHash(wire, input[:1])
 			require.NoError(t, err)
-			projection, _ := normalizeOpenAIChatReasoningProjection(openAIChatReplayTestMessage())
+			projection, _ := normalizeOpenAIChatReasoningProjection(openAIChatReplayTestMessage(), openAIChatReplayTestRules())
 			var output []json.RawMessage
 			require.NoError(t, json.Unmarshal([]byte(openAIChatReplayTestOutput), &output))
 			batch := OpenAIReasoningBatch{Output: output, Projection: projection, InputPrefixHash: prefix}
 			if variant == "changed_actual_prefix" {
 				batch.InputPrefixHash = strings.Repeat("0", 64)
 			}
-			_, err = cache.PutOpenAIReasoningBatch(context.Background(), scope, openAIChatReasoningBatchKey(prefix, projection), batch)
+			_, err = cache.PutOpenAIReasoningBatch(context.Background(), scope, openAIChatReasoningBatchKey(prefix, projection, openAIChatReplayTestRules()), batch)
 			require.NoError(t, err)
 			switch variant {
 			case "missing":
@@ -427,7 +430,7 @@ func TestOpenAIChatReasoningReplayRejectsDuplicateJSONMembers(t *testing.T) {
 	var output []json.RawMessage
 	ambiguous := strings.Replace(openAIChatReplayTestOutput, `"precision":9007199254740993`, `"precision":9007199254740993,"precision":9007199254740994`, 1)
 	require.NoError(t, json.Unmarshal([]byte(ambiguous), &output))
-	_, ok := projectOpenAIChatReasoningRawBatch(output)
+	_, ok := projectOpenAIChatReasoningRawBatch(output, openAIChatReplayTestRules())
 	require.False(t, ok)
 }
 
@@ -460,4 +463,32 @@ func TestOpenAIChatReasoningReplayTerminalFunctionSnapshotRoundTrip(t *testing.T
 	require.NoError(t, err)
 	require.Equal(t, 1, c.GetInt("openai_chat_reasoning_replay_hits"))
 	require.Contains(t, string(upstream.bodies[1]), "opaque-snapshot")
+}
+
+func openAIChatReplayTestRules() extensionv1.ReplayRules {
+	rules := codexrecovery.ReplayPolicy()
+	slices.Sort(rules.ChatFields)
+	slices.Sort(rules.OutputKinds)
+	return rules
+}
+
+func TestOpenAIChatReasoningReplayRulesChangeIdentityAndOptionalMatching(t *testing.T) {
+	rules := openAIChatReplayTestRules()
+	message := openAIChatReplayTestMessage()
+	stored, ok := normalizeOpenAIChatReasoningProjection(message, rules)
+	require.True(t, ok)
+	message.ReasoningContent, message.Reasoning = "", ""
+	incoming, ok := normalizeOpenAIChatReasoningProjection(message, rules)
+	require.True(t, ok)
+	require.True(t, openAIChatReasoningProjectionMatches(stored, incoming, rules))
+	strict := rules
+	strict.AllowOmittedReasoning = false
+	require.False(t, openAIChatReasoningProjectionMatches(stored, incoming, strict))
+	require.NotEqual(t, openAIChatReasoningBatchKey("prefix", stored, rules), openAIChatReasoningBatchKey("prefix", stored, strict))
+	updated := rules
+	updated.Version = "next-policy"
+	require.NotEqual(t, openAIChatReasoningBatchKey("prefix", stored, rules), openAIChatReasoningBatchKey("prefix", stored, updated))
+	strict = rules
+	strict.ChatFields = []string{"role", "content", "tool_calls"}
+	require.False(t, openAIChatReasoningRawMessageSupported([]byte(`{"role":"assistant","content":"","refusal":null,"tool_calls":[]}`), strict))
 }

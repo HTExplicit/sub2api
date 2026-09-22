@@ -22,6 +22,7 @@ import (
 
 	"github.com/Wei-Shaw/sub2api/internal/pkg/logger"
 	"github.com/Wei-Shaw/sub2api/internal/util/responseheaders"
+	extensionv1 "github.com/Wei-Shaw/sub2api/pkg/extensionapi/v1"
 	"github.com/gin-gonic/gin"
 	"github.com/imroc/req/v3"
 	"github.com/tidwall/gjson"
@@ -510,7 +511,32 @@ func validateOpenAIImagesModel(model string) error {
 	return fmt.Errorf("images endpoint requires an image model, got %q", model)
 }
 
+// Preselection has no account context; final Cindy forwarding must read the
+// selected account's captured catalog instead of consulting current shared data.
+func validateOpenAIImagesModelContext(ctx context.Context, account *Account, model string) error {
+	model = strings.TrimSpace(model)
+	if account == nil || !IsCindyRuntimeCompatibleAPIKeyAccount(account.Platform, account.Type, account.Credentials) || isOpenAIImageGenerationModel(model) {
+		return validateOpenAIImagesModel(model)
+	}
+	snapshot, err := LoadCindyCatalogSnapshot(ctx, account)
+	if err != nil {
+		return err
+	}
+	capability, found := snapshot.Capability(model)
+	if found && capability.PublicModel && capability.Kind == CindyModelKindImage && snapshot.AvailableMappings[capability.PublicID] == capability.LiveUpstreamID {
+		return nil
+	}
+	if model == "" {
+		return fmt.Errorf("images endpoint requires an image model")
+	}
+	return fmt.Errorf("images endpoint requires an image model, got %q", model)
+}
+
 func validateOpenAIImagesUpstreamModel(account *Account, requestModel, upstreamModel string) error {
+	return validateOpenAIImagesUpstreamModelContext(context.Background(), account, requestModel, upstreamModel)
+}
+
+func validateOpenAIImagesUpstreamModelContext(ctx context.Context, account *Account, requestModel, upstreamModel string) error {
 	if isOpenAIImageGenerationModel(upstreamModel) {
 		return nil
 	}
@@ -518,74 +544,15 @@ func validateOpenAIImagesUpstreamModel(account *Account, requestModel, upstreamM
 		return fmt.Errorf("images endpoint requires an image model, got %q", strings.TrimSpace(upstreamModel))
 	}
 
-	capability, ok := ResolveCindyCapability(requestModel)
-	if !ok || capability.Kind != CindyModelKindImage || capability.LiveUpstreamID != strings.TrimSpace(upstreamModel) {
+	snapshot, err := LoadCindyCatalogSnapshot(ctx, account)
+	if err != nil {
+		return err
+	}
+	capability, ok := snapshot.Capability(requestModel)
+	if !ok || !capability.PublicModel || capability.Kind != CindyModelKindImage || capability.LiveUpstreamID != strings.TrimSpace(upstreamModel) || snapshot.AvailableMappings[capability.PublicID] != capability.LiveUpstreamID {
 		return fmt.Errorf("images endpoint requires an image model, got %q", strings.TrimSpace(upstreamModel))
 	}
 	return nil
-}
-
-// ValidateCindyImageRequest enforces the exact image controls verified on the
-// Cindy data plane. Parameters omitted from the capability document remain
-// unavailable instead of being inferred from another provider or endpoint.
-func ValidateCindyImageRequest(model string, req *OpenAIImagesRequest) error {
-	if req == nil {
-		return fmt.Errorf("image request is required")
-	}
-	capability, ok := ResolveCindyCapability(model)
-	if !ok || capability.Kind != CindyModelKindImage || capability.Controls == nil {
-		return fmt.Errorf("model %q has no verified Cindy image capability", strings.TrimSpace(model))
-	}
-
-	endpoint := CindyEndpointImagesGenerate
-	controls := capability.Controls.Generation
-	if req.IsEdits() {
-		endpoint = CindyEndpointImagesEdit
-		controls = capability.Controls.Edit
-	}
-	if !CindyModelSupportsEndpoint(model, endpoint) || controls == nil {
-		return fmt.Errorf("model %q is not verified for %s", capability.PublicID, endpoint)
-	}
-	if req.Stream {
-		return fmt.Errorf("stream is not verified for model %q on %s", capability.PublicID, endpoint)
-	}
-	if controls.MaxOutputCount <= 0 || req.N <= 0 || req.N > controls.MaxOutputCount {
-		return fmt.Errorf("n must be between 1 and %d for model %q on %s", controls.MaxOutputCount, capability.PublicID, endpoint)
-	}
-	if !cindyImageControlAllows(controls.Sizes, req.Size) {
-		return fmt.Errorf("size %q is not verified for model %q on %s", strings.TrimSpace(req.Size), capability.PublicID, endpoint)
-	}
-	if !cindyImageControlAllows(controls.Qualities, req.Quality) {
-		return fmt.Errorf("quality %q is not verified for model %q on %s", strings.TrimSpace(req.Quality), capability.PublicID, endpoint)
-	}
-	if req.ResponseFormat != "" && !strings.EqualFold(strings.TrimSpace(req.ResponseFormat), "b64_json") {
-		return fmt.Errorf("response_format must be b64_json for model %q", capability.PublicID)
-	}
-	if req.Background != "" || req.OutputFormat != "" || req.Moderation != "" || req.InputFidelity != "" || req.Style != "" || req.OutputCompression != nil || req.PartialImages != nil {
-		return fmt.Errorf("request contains an unverified image control for model %q on %s", capability.PublicID, endpoint)
-	}
-	if req.IsEdits() {
-		if !controls.SupportsReferenceImage || req.InputImageCount() == 0 {
-			return fmt.Errorf("a reference image is required for model %q on %s", capability.PublicID, endpoint)
-		}
-		if req.HasMask && !controls.SupportsMask {
-			return fmt.Errorf("mask is not verified for model %q on %s", capability.PublicID, endpoint)
-		}
-	}
-	return nil
-}
-
-func cindyImageControlAllows(allowed []string, value string) bool {
-	value = strings.TrimSpace(value)
-	if value == "" || len(allowed) == 0 {
-		return false
-	}
-	for _, candidate := range allowed {
-		if strings.EqualFold(strings.TrimSpace(candidate), value) {
-			return true
-		}
-	}
-	return false
 }
 
 func normalizeOpenAIImagesEndpointPath(path string) string {
@@ -662,8 +629,30 @@ func (s *OpenAIGatewayService) ForwardImages(
 	parsed *OpenAIImagesRequest,
 	channelMappedModel string,
 ) (*OpenAIForwardResult, error) {
+	if parsed != nil && account != nil && IsCindyAPIKeyAccount(account.Platform, account.Type, account.Credentials) {
+		bound, release, err := bindProcessExtensionContext(ctx, PlatformCindy, AccountTypeAPIKey, extensionv1.Invocation{Capability: extensionv1.CapabilityRequest, Operation: "image.native.validate", AccountID: account.ID})
+		if err != nil {
+			return nil, err
+		}
+		defer release()
+		ctx = bound
+	}
+	pricingContext, pricingErr := CaptureCindyPricingContext(ctx, c, account)
+	if pricingErr != nil {
+		return nil, pricingErr
+	}
+	ctx = pricingContext
 	if parsed == nil {
 		return nil, fmt.Errorf("parsed images request is required")
+	}
+	if account != nil && IsCindyAPIKeyAccount(account.Platform, account.Type, account.Credentials) {
+		model := parsed.Model
+		if strings.TrimSpace(channelMappedModel) != "" {
+			model = channelMappedModel
+		}
+		if err := ValidateCindyImageRequestForAccount(ctx, account, model, parsed); err != nil {
+			return nil, err
+		}
 	}
 	switch account.Type {
 	case AccountTypeAPIKey:
@@ -688,11 +677,14 @@ func (s *OpenAIGatewayService) forwardOpenAIImagesAPIKey(
 	if mapped := strings.TrimSpace(channelMappedModel); mapped != "" {
 		requestModel = mapped
 	}
-	if err := validateOpenAIImagesModel(requestModel); err != nil {
+	if err := validateOpenAIImagesModelContext(ctx, account, requestModel); err != nil {
 		return nil, err
 	}
-	upstreamModel := account.GetMappedModel(requestModel)
-	if err := validateOpenAIImagesUpstreamModel(account, requestModel, upstreamModel); err != nil {
+	upstreamModel, err := resolveOpenAIForwardModelContext(ctx, account, requestModel, "")
+	if err != nil {
+		return nil, err
+	}
+	if err := validateOpenAIImagesUpstreamModelContext(ctx, account, requestModel, upstreamModel); err != nil {
 		return nil, err
 	}
 	logger.LegacyPrintf(

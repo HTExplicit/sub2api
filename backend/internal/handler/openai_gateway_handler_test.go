@@ -201,16 +201,16 @@ func TestResolveStrictCindyResponsesImageTools_PreservesNonCindyAndGatesStrict(t
 	t.Parallel()
 	unknown := []byte(`{"model":"gpt-5.6-luna","tools":[{"type":"image_generation","model":"unknown-image"}]}`)
 
-	ordinary, err := resolveStrictCindyResponsesImageTools(false, unknown)
+	ordinary, err := resolveStrictCindyResponsesImageTools(context.Background(), false, unknown)
 	require.NoError(t, err)
 	require.Equal(t, unknown, ordinary)
 
-	_, err = resolveStrictCindyResponsesImageTools(true, []byte(
+	_, err = resolveStrictCindyResponsesImageTools(context.Background(), true, []byte(
 		`{"model":"gpt-5.6-luna","tools":[{"type":"image_generation","model":"gpt-image-2","n":1}]}`,
 	))
 	require.ErrorIs(t, err, service.ErrCindyResponsesImageToolModelNotFound)
 
-	_, err = resolveStrictCindyResponsesImageTools(true, unknown)
+	_, err = resolveStrictCindyResponsesImageTools(context.Background(), true, unknown)
 	require.ErrorIs(t, err, service.ErrCindyResponsesImageToolModelNotFound)
 }
 
@@ -1364,6 +1364,7 @@ func TestOpenAIResponses_AllowsResponseIDPastHTTPPrevalidation(t *testing.T) {
 	})
 
 	h := newOpenAIHandlerForPreviousResponseIDValidation(t, nil)
+	require.NoError(t, h.gatewayService.BindOpenAIHTTPResponseOwner(context.Background(), groupID, "resp_123456", 1, 101))
 	h.Responses(c)
 
 	require.Equal(t, http.StatusBadGateway, w.Code)
@@ -3709,14 +3710,17 @@ func runOpenAIResponsesWebSocketUsageLogCase(t *testing.T, tc openAIResponsesWSU
 	t.Helper()
 	gin.SetMode(gin.TestMode)
 
-	turnCount := 1
-	if strings.TrimSpace(tc.midPayload) != "" {
-		turnCount++
+	frameCount, turnCount := 0, 0
+	for _, payload := range []string{tc.firstPayload, tc.midPayload, tc.secondPayload} {
+		if strings.TrimSpace(payload) == "" {
+			continue
+		}
+		frameCount++
+		if gjson.Get(payload, "type").String() == "response.create" {
+			turnCount++
+		}
 	}
-	if strings.TrimSpace(tc.secondPayload) != "" {
-		turnCount++
-	}
-	upstreamPayloadCh := make(chan []byte, turnCount)
+	upstreamPayloadCh := make(chan []byte, frameCount)
 	upstreamErrCh := make(chan error, 1)
 	var channelSvc *service.ChannelService
 	upstreamServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -3731,7 +3735,9 @@ func runOpenAIResponsesWebSocketUsageLogCase(t *testing.T, tc openAIResponsesWSU
 			_ = conn.CloseNow()
 		}()
 
-		for turn := 1; turn <= turnCount; turn++ {
+		var sessionModel string
+		completedTurns := 0
+		for frame := 1; frame <= frameCount; frame++ {
 			readCtx, cancelRead := context.WithTimeout(r.Context(), 3*time.Second)
 			msgType, payload, readErr := conn.Read(readCtx)
 			cancelRead()
@@ -3744,18 +3750,39 @@ func runOpenAIResponsesWebSocketUsageLogCase(t *testing.T, tc openAIResponsesWSU
 				return
 			}
 			upstreamPayloadCh <- payload
-			if turn == 1 && tc.afterFirstUpstreamRequest != nil {
+			if frame == 1 && tc.afterFirstUpstreamRequest != nil {
 				if callbackErr := tc.afterFirstUpstreamRequest(channelSvc); callbackErr != nil {
 					upstreamErrCh <- callbackErr
 					return
 				}
 			}
 
-			response := fmt.Sprintf(
-				`{"type":"response.completed","response":{"id":"resp_usage_e2e_%d","model":%q,"usage":{"input_tokens":2,"output_tokens":1}}}`,
-				turn,
-				gjson.GetBytes(payload, "model").String(),
-			)
+			var response string
+			switch gjson.GetBytes(payload, "type").String() {
+			case "session.update":
+				// A session update is a control frame, not a generated response or billed turn.
+				if model := gjson.GetBytes(payload, "session.model").String(); model != "" {
+					sessionModel = model
+				}
+				response = fmt.Sprintf(`{"type":"session.updated","session":{"model":%q}}`, sessionModel)
+			case "response.create":
+				completedTurns++
+				model := gjson.GetBytes(payload, "model").String()
+				if frame == 1 {
+					sessionModel = model
+				}
+				if model == "" {
+					model = sessionModel
+				}
+				response = fmt.Sprintf(
+					`{"type":"response.completed","response":{"id":"resp_usage_e2e_%d","model":%q,"usage":{"input_tokens":2,"output_tokens":1}}}`,
+					completedTurns,
+					model,
+				)
+			default:
+				upstreamErrCh <- errors.New("unexpected upstream websocket event type")
+				return
+			}
 			writeCtx, cancelWrite := context.WithTimeout(r.Context(), 3*time.Second)
 			writeErr := conn.Write(writeCtx, coderws.MessageText, []byte(response))
 			cancelWrite()
@@ -3922,12 +3949,16 @@ func runOpenAIResponsesWebSocketUsageLogCase(t *testing.T, tc openAIResponsesWSU
 	}
 
 	clientEvents := make([][]byte, 0, turnCount)
-	readCompleted := func() {
+	readEvent := func(eventType string) []byte {
 		readCtx, cancelRead := context.WithTimeout(context.Background(), 3*time.Second)
 		_, event, readErr := clientConn.Read(readCtx)
 		cancelRead()
 		require.NoError(t, readErr)
-		require.Equal(t, "response.completed", gjson.GetBytes(event, "type").String())
+		require.Equal(t, eventType, gjson.GetBytes(event, "type").String())
+		return event
+	}
+	readCompleted := func() {
+		event := readEvent("response.completed")
 		clientEvents = append(clientEvents, append([]byte(nil), event...))
 	}
 	readCompleted()
@@ -3936,7 +3967,11 @@ func runOpenAIResponsesWebSocketUsageLogCase(t *testing.T, tc openAIResponsesWSU
 		err = clientConn.Write(writeCtx, coderws.MessageText, []byte(tc.midPayload))
 		cancelWrite()
 		require.NoError(t, err)
-		readCompleted()
+		if gjson.Get(tc.midPayload, "type").String() == "session.update" {
+			readEvent("session.updated")
+		} else {
+			readCompleted()
+		}
 	}
 	if strings.TrimSpace(tc.secondPayload) != "" && (turnCount >= 2) {
 		writeCtx, cancelWrite = context.WithTimeout(context.Background(), 3*time.Second)
@@ -3970,8 +4005,8 @@ func runOpenAIResponsesWebSocketUsageLogCase(t *testing.T, tc openAIResponsesWSU
 		}
 	}
 
-	upstreamPayloads := make([][]byte, 0, turnCount)
-	for len(upstreamPayloads) < turnCount {
+	upstreamPayloads := make([][]byte, 0, frameCount)
+	for len(upstreamPayloads) < frameCount {
 		select {
 		case payload := <-upstreamPayloadCh:
 			upstreamPayloads = append(upstreamPayloads, payload)

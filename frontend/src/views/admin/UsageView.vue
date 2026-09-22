@@ -99,7 +99,7 @@
               </button>
               <div
                 v-if="showColumnDropdown"
-                class="absolute right-0 top-full z-50 mt-1 max-h-80 w-48 overflow-y-auto rounded-none border border-gray-200 bg-white py-1 dark:border-dark-600 dark:bg-dark-800"
+                class="absolute right-0 top-full z-50 mt-1 max-h-80 w-48 overflow-y-auto rounded-lg border border-gray-200 bg-white py-1 shadow-lg dark:border-dark-600 dark:bg-dark-800"
               >
                 <button
                   v-for="col in currentToggleableColumns"
@@ -122,7 +122,7 @@
           </template>
         </UsageFilters>
 
-        <div v-show="activeTab === 'usage'" class="overflow-hidden rounded-none">
+        <div v-show="activeTab === 'usage'" class="overflow-hidden rounded-b-2xl">
           <UsageTable
             flat
             :data="usageLogs"
@@ -137,7 +137,7 @@
           />
           <Pagination v-if="pagination.total > 0" :page="pagination.page" :total="pagination.total" :page-size="pagination.page_size" @update:page="handlePageChange" @update:pageSize="handlePageSizeChange" />
         </div>
-        <div v-show="activeTab === 'errors'" class="overflow-hidden rounded-none">
+        <div v-show="activeTab === 'errors'" class="overflow-hidden rounded-b-2xl">
           <OpsErrorLogTable
             flat
             :rows="errRows" :total="errTotal" :loading="errLoading"
@@ -152,7 +152,7 @@
             @ipGeoBatchFailed="handleIpGeoBatchFailed" />
         </div>
         <!-- 懒挂载：首次切到该 tab 才请求排行数据，之后随筛选自动刷新 -->
-        <div v-if="rankingMounted" v-show="activeTab === 'ranking'" class="overflow-hidden rounded-none">
+        <div v-if="rankingMounted" v-show="activeTab === 'ranking'" class="overflow-hidden rounded-b-2xl">
           <UserTokenRanking
             ref="rankingRef"
             :start-date="startDate"

@@ -87,6 +87,18 @@ func TestPluginUIAssetTokenRejectsOtherEncryptedPayloads(t *testing.T) {
 	require.ErrorContains(t, err, "会话无效")
 }
 
+func TestPluginUIAssetTokenCannotMixResourcesAcrossPackageUpdate(t *testing.T) {
+	repo := &pluginTokenRepository{installation: &PluginInstallation{ID: 42, PackageSHA256: strings.Repeat("a", 64)}}
+	manager := &PluginManager{repo: repo, encryptor: pluginTokenEncryptor{}}
+	token, _, err := manager.CreateUIAssetToken(context.Background(), 42, 30*time.Minute)
+	require.NoError(t, err)
+	repo.installation.PackageSHA256 = strings.Repeat("b", 64)
+	_, err = manager.ResolveUIAssetToken(token)
+	require.ErrorIs(t, err, ErrPluginUISessionChanged)
+	_, _, err = manager.ReadUIAssetForToken(context.Background(), token, "assets/app.js")
+	require.ErrorIs(t, err, ErrPluginUISessionChanged)
+}
+
 func TestPluginReconcileFailsClosedWhenDesiredStateCannotBeRead(t *testing.T) {
 	manager := &PluginManager{
 		repo:               &pluginTokenRepository{listErr: errors.New("数据库不可用")},

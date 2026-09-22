@@ -6,6 +6,8 @@ import PluginsView from '../PluginsView.vue'
 const {
   listPlugins,
   uploadPlugin,
+  updatePlugin,
+  followBundled,
   enablePlugin,
   savePluginConfig,
   createUISession,
@@ -13,6 +15,8 @@ const {
 } = vi.hoisted(() => ({
   listPlugins: vi.fn(),
   uploadPlugin: vi.fn(),
+  updatePlugin: vi.fn(),
+  followBundled: vi.fn(),
   enablePlugin: vi.fn(),
   savePluginConfig: vi.fn(),
   createUISession: vi.fn(),
@@ -24,6 +28,8 @@ vi.mock('@/api/admin', () => ({
     plugins: {
       list: listPlugins,
       upload: uploadPlugin,
+      update: updatePlugin,
+      followBundled,
       enable: enablePlugin,
       disable: vi.fn(),
       remove: vi.fn(),
@@ -56,6 +62,9 @@ vi.mock('vue-i18n', async (importOriginal) => ({
 }))
 
 const plugin = {
+  revision: 4,
+  package_sha256: 'b'.repeat(64),
+  update_policy: 'pinned' as const,
   id: 7,
   plugin_key: 'local.test.transport',
   name: 'Test Transport',
@@ -128,6 +137,8 @@ describe('管理员插件页二次验证', () => {
     stepUpRun.mockImplementation((action: () => Promise<unknown>) => action())
     listPlugins.mockResolvedValue([plugin])
     uploadPlugin.mockResolvedValue(plugin)
+    updatePlugin.mockResolvedValue(plugin)
+    followBundled.mockResolvedValue(plugin)
     enablePlugin.mockResolvedValue(plugin)
     savePluginConfig.mockResolvedValue({ enabled: true })
     createUISession.mockResolvedValue({
@@ -148,7 +159,7 @@ describe('管理员插件页二次验证', () => {
     await flushPromises()
 
     expect(stepUpRun).toHaveBeenCalledTimes(1)
-    expect(enablePlugin).toHaveBeenCalledWith(7, 100, false)
+    expect(enablePlugin).toHaveBeenCalledWith(plugin, 100, false)
   })
 
   it('上传插件通过 step-up 控制器执行', async () => {
@@ -165,5 +176,55 @@ describe('管理员插件页二次验证', () => {
 
     expect(stepUpRun).toHaveBeenCalledTimes(1)
     expect(uploadPlugin).toHaveBeenCalledTimes(1)
+  })
+
+  it('step-up期间不把已读取的操作快照换成新revision', async () => {
+    const displayed = { ...plugin }
+    listPlugins.mockResolvedValue([displayed])
+    let delayed: (() => Promise<unknown>) | undefined
+    let finish: (() => void) | undefined
+    stepUpRun.mockImplementation((action: () => Promise<unknown>) => {
+      delayed = action
+      return new Promise<void>(resolve => { finish = resolve })
+    })
+    const wrapper = mountView()
+    await flushPromises()
+    await wrapper.findAll('button').find(item => item.text().includes('admin.plugins.enable'))!.trigger('click')
+    displayed.revision = 99
+    await delayed!()
+    expect(enablePlugin).toHaveBeenCalledWith(expect.objectContaining({ revision: 4, package_sha256: plugin.package_sha256 }), 100, false)
+    finish!()
+    await flushPromises()
+    wrapper.unmount()
+  })
+
+  it('更新携带当前版本快照且不先停用插件', async () => {
+    const enabled = { ...plugin, state: 'enabled', bindings: [{ ...plugin.bindings[0], enabled: true }] }
+    listPlugins.mockResolvedValue([enabled])
+    const wrapper = mountView()
+    await flushPromises()
+    await wrapper.findAll('button').find(button => button.text().includes('admin.plugins.updatePackage'))!.trigger('click')
+    const input = wrapper.findAll('input[type="file"]')[1]!
+    const file = new File(['new signed package'], 'updated.s2plugin')
+    Object.defineProperty(input.element, 'files', { configurable: true, value: [file] })
+    await input.trigger('change')
+    await flushPromises()
+    expect(stepUpRun).toHaveBeenCalledTimes(1)
+    expect(updatePlugin).toHaveBeenCalledWith(enabled, file)
+    expect(uploadPlugin).not.toHaveBeenCalled()
+    wrapper.unmount()
+  })
+
+  it('固定版本仅在明确选择后恢复跟随内置版', async () => {
+    const pinned = { ...plugin, plugin_key: 'codexrip.account-tools' }
+    listPlugins.mockResolvedValue([pinned])
+    const wrapper = mountView()
+    await flushPromises()
+    expect(followBundled).not.toHaveBeenCalled()
+    await wrapper.findAll('button').find(button => button.text().includes('admin.plugins.followBundle'))!.trigger('click')
+    await flushPromises()
+    expect(stepUpRun).toHaveBeenCalledTimes(1)
+    expect(followBundled).toHaveBeenCalledWith(pinned)
+    wrapper.unmount()
   })
 })

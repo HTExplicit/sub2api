@@ -39,7 +39,7 @@ on:
         default: false
         type: boolean
       cindy_search:
-        description: 'Enable native-first Cindy Search routing'
+        description: 'Enable Cindy Search and its supported protocol fallback'
         required: true
         default: false
         type: boolean

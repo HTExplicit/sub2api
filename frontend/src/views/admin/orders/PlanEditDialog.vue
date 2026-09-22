@@ -22,7 +22,7 @@
       </div>
 
       <!-- Group Info Preview -->
-      <div v-if="selectedGroupInfo" class="rounded-none border border-gray-200 bg-gray-50 p-3 dark:border-dark-600 dark:bg-dark-800">
+      <div v-if="selectedGroupInfo" class="rounded-lg border border-gray-200 bg-gray-50 p-3 dark:border-dark-600 dark:bg-dark-800">
         <div class="mb-2 flex items-center gap-2">
           <GroupBadge :name="selectedGroupInfo.name" :platform="selectedGroupInfo.platform" :rate-multiplier="selectedGroupInfo.rate_multiplier" />
         </div>

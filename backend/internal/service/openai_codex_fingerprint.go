@@ -1,6 +1,7 @@
 package service
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/binary"
 	"encoding/json"
@@ -10,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	extensionv1 "github.com/Wei-Shaw/sub2api/pkg/extensionapi/v1"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"github.com/tidwall/gjson"
@@ -111,13 +113,24 @@ func stripCodexFingerprintSeed(extra map[string]any) map[string]any {
 }
 
 // codexFingerprintModeFromExtra 读取账号完整 extra 上的收敛模式。
-// 未设置、空值或非法值一律按 device 处理：多人共享同一 OAuth 账号时，上游只应看到
-// 一台设备；显式 off 仍然生效（原样透传客户端标识）。
+// 显式配置保持上游语义；下游默认值由 Codex 插件提供，停用时使用上游 off 默认。
 func codexFingerprintModeFromExtra(extra map[string]any) codexFingerprintMode {
+	return codexFingerprintModeFromExtraContext(context.Background(), nil, extra)
+}
+
+func codexFingerprintModeFromExtraContext(ctx context.Context, account *Account, extra map[string]any) codexFingerprintMode {
 	if mode, ok := codexFingerprintModeExplicit(extra); ok {
 		return mode
 	}
-	return codexFingerprintDevice
+	policy, err := invokeCodexIdentityPolicyForAccount(ctx, account, "codex.identity.plan", extensionv1.CodexIdentityQuery{})
+	if err != nil {
+		return codexFingerprintOff
+	}
+	switch mode := codexFingerprintMode(policy.DefaultFingerprintMode); mode {
+	case codexFingerprintOff, codexFingerprintDevice, codexFingerprintSession, codexFingerprintFull:
+		return mode
+	}
+	return codexFingerprintOff
 }
 
 // codexFingerprintModeExplicit 只识别显式写入的合法模式；缺失、空值、非法值返回 false。
@@ -186,10 +199,12 @@ func prepareCodexFingerprintExtraForUpdate(account *Account, extra map[string]an
 	// 身份是系统管理字段：忽略表单带回的值（可能过期或被篡改），保留库中已持久化的
 	// 合法身份；没有则按种子派生。派生确定性，与启动回填并发也只会写出同一个值。
 	delete(prepared, CodexClientIdentityExtraKey)
-	if _, ok := codexClientIdentityFromExtra(account.Extra); ok {
-		prepared[CodexClientIdentityExtraKey] = account.Extra[CodexClientIdentityExtraKey]
+	if stored, exists := account.Extra[CodexClientIdentityExtraKey]; exists {
+		// Keep server-owned data even while its domain is disabled or unavailable.
+		// An available policy can validate and replace an invalid value below.
+		prepared[CodexClientIdentityExtraKey] = stored
 	}
-	return ensureCodexClientIdentityExtra(account.Platform, account.Type, prepared, time.Now())
+	return ensureCodexClientIdentityExtraForAccount(account, prepared, time.Now())
 }
 
 func sanitizedCodexFingerprintExtraUpdates(updates map[string]any) map[string]any {
@@ -219,20 +234,18 @@ func ShouldEnsureCodexFingerprintSeedForExtraUpdates(updates map[string]any) boo
 
 // GetCodexFingerprintMode 从账号 extra JSON 读取指纹收敛模式。
 //
-// **收敛是显式 opt-in**：未设置、空值或非法值一律按 off 处理，只有管理员
-// 明确配置 device / session / full 才收敛。
-//
-// 历史：v0.1.175（#5553）把缺省值当作 session，导致升级后存量 OAuth 账号
-// （普遍没有这个 extra 键）的每个非透传请求都被静默改写 installation /
-// session / thread / turn / window 五类标识；#5555、#5556、#5582 报告的额度
-// 缩水都卡在该版本边界，并有"回退 v0.1.173 即恢复"与"新账号开收敛后降额"
-// 的 A/B 实测。上游的配额判定策略不可观测，因此这里取兼容安全的一侧：
-// 不显式 opt-in 就保持 v0.1.175 之前的客户端身份（#5610）。
+// 管理员显式选择始终保留；仅适用账号类型且启用的 Codex 插件可提供下游默认值。
 func (a *Account) GetCodexFingerprintMode() codexFingerprintMode {
 	if a == nil || !a.IsOpenAIOAuthLike() {
 		return codexFingerprintOff
 	}
-	return codexFingerprintModeFromExtra(a.Extra)
+	if mode, explicit := codexFingerprintModeExplicit(a.Extra); explicit {
+		return mode
+	}
+	if available, err := codexIdentityPolicyAvailable(context.Background(), a.Type, a.ID); err != nil || !available {
+		return codexFingerprintOff
+	}
+	return codexFingerprintModeFromExtraContext(context.Background(), a, a.Extra)
 }
 
 // deriveStableUUIDv4 从种子确定性派生一个 UUIDv4 格式的字符串。
@@ -289,6 +302,7 @@ func resolveConvergedThreadID(seed, clientSessionID string) string {
 // client_metadata.session_id，用于识别 root prompt_cache_key 的默认值。
 type codexFingerprintIDs struct {
 	accountID                     int64
+	accountType                   string
 	mode                          codexFingerprintMode
 	installationID                string
 	sessionID                     string
@@ -317,6 +331,7 @@ func resolveCodexFingerprintIDs(account *Account, clientSessionID string, mode c
 
 	ids := &codexFingerprintIDs{
 		accountID:           account.ID,
+		accountType:         account.Type,
 		mode:                mode,
 		turnStartedAtUnixMs: time.Now().UnixMilli(),
 	}
@@ -426,7 +441,11 @@ func (ids *codexFingerprintIDs) alignSandboxWithUserAgent(userAgent string) {
 	if ids == nil {
 		return
 	}
-	ids.sandbox = codexSandboxForUserAgent(userAgent)
+	var account *Account
+	if ids.accountType != "" {
+		account = &Account{ID: ids.accountID, Platform: PlatformOpenAI, Type: ids.accountType}
+	}
+	ids.sandbox = codexSandboxForUserAgentForAccountContext(context.Background(), account, userAgent)
 }
 
 // turnMetadataFields 在身份字段之外补上与出站 UA 配套的 sandbox 标签，使 turn

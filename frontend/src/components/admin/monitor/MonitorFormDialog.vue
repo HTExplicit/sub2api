@@ -22,7 +22,7 @@
             :data-testid="`monitor-check-mode-${opt.value}`"
             :aria-pressed="form.check_mode === opt.value"
             :disabled="opt.disabled"
-            class="rounded-none border-2 px-3 py-2 text-left transition-colors disabled:cursor-not-allowed disabled:opacity-50"
+            class="rounded-lg border-2 px-3 py-2 text-left transition-colors disabled:cursor-not-allowed disabled:opacity-50"
             :class="checkModeButtonClass(opt.value)"
             @click="selectCheckMode(opt.value)"
           >
@@ -41,7 +41,7 @@
             type="button"
             :data-testid="`monitor-provider-${opt.value}`"
             :aria-pressed="form.provider === opt.value"
-            class="flex items-center justify-center gap-2 rounded-none border-2 px-3 py-2.5 text-sm font-medium transition-colors"
+            class="flex items-center justify-center gap-2 rounded-lg border-2 px-3 py-2.5 text-sm font-medium transition-colors"
             :class="providerPickerClass(opt.value, form.provider === opt.value)"
             @click="selectProvider(opt.value)"
           >
@@ -78,7 +78,7 @@
         </p>
       </div>
 
-      <div v-if="form.provider === PROVIDER_OPENAI && usesProbePart" class="rounded-none border border-blue-100 bg-blue-50/50 p-3 dark:border-blue-500/20 dark:bg-blue-500/10">
+      <div v-if="form.provider === PROVIDER_OPENAI && usesProbePart" class="rounded-lg border border-blue-100 bg-blue-50/50 p-3 dark:border-blue-500/20 dark:bg-blue-500/10">
         <label class="input-label">{{ t('admin.channelMonitor.form.apiMode') }}</label>
         <div class="grid gap-3 sm:grid-cols-2">
           <button
@@ -86,7 +86,7 @@
             :key="opt.value"
             type="button"
             :aria-pressed="form.api_mode === opt.value"
-            class="rounded-none border-2 px-3 py-2 text-left transition-colors"
+            class="rounded-lg border-2 px-3 py-2 text-left transition-colors"
             :class="apiModeButtonClass(opt.value)"
             @click="form.api_mode = opt.value"
           >

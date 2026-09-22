@@ -4,6 +4,8 @@ import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 import en from '@/i18n/locales/en'
 import zh from '@/i18n/locales/zh'
+import pluginEn from '../../../../../plugins/admin-observability/ui/src/locales/en'
+import pluginZh from '../../../../../plugins/admin-observability/ui/src/locales/zh'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const read = (path: string) => readFileSync(resolve(here, path), 'utf8')
@@ -27,11 +29,11 @@ describe('Prompt Audit integration surface', () => {
   })
 
   it('keeps Prompt Audit locale trees symmetric and all operational controls named', () => {
-    expect(Object.keys(zh.admin.promptAudit)).toEqual(Object.keys(en.admin.promptAudit))
+    expect(Object.keys(pluginZh.admin.promptAudit)).toEqual(Object.keys(pluginEn.admin.promptAudit))
     expect(zh.nav.securityAudit).toBeTruthy()
     expect(en.nav.securityAudit).toBeTruthy()
-    const endpoint = read('../components/EndpointPool.vue')
-    const events = read('../components/EventWorkspace.vue')
+    const endpoint = read('../../../../../plugins/admin-observability/ui/src/components/EndpointPool.vue')
+    const events = read('../../../../../plugins/admin-observability/ui/src/components/EventWorkspace.vue')
     expect(endpoint).toContain('aria-label')
     expect(events).toContain('aria-label')
     expect(events).toContain('overflow-x-auto')

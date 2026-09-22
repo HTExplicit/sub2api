@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	extensionv1 "github.com/Wei-Shaw/sub2api/pkg/extensionapi/v1"
 	"github.com/stretchr/testify/require"
 )
 
@@ -25,6 +26,20 @@ type fakeRemoteSkillRegistryStore struct {
 	createdBy       int64
 	createdProvided bool
 	cleaned         bool
+}
+
+func TestRemoteSkillExpiredJobCannotRestartSourceOrInstallCandidate(t *testing.T) {
+	svc, store, files := testRemoteSkillRegistry(t, testRemoteSkillCandidate(t, 1, 1, "seed"))
+	files.installed = false
+	source, ok := svc.source.(*fakeRemoteSkillCandidateSource)
+	require.True(t, ok)
+	source.prompt = RemoteSkillPromptCapture{}
+	svc.runSyncJob(context.Background(), RemoteSkillSyncJob{ID: 9, CreatedBy: 42,
+		CreatedAt: time.Now().Add(-RemoteSkillSyncJobTimeout - time.Minute)}, RemoteSkillPromptCapture{RawBody: []byte("unreplayed")})
+	require.Equal(t, "sync_expired", store.failedCode)
+	require.Empty(t, source.prompt.RawBody)
+	require.False(t, files.installed)
+	require.Zero(t, store.completed.Version.ID)
 }
 
 func (f *fakeRemoteSkillRegistryStore) EnsureRemoteSkillSeed(_ context.Context, candidate RemoteSkillCandidate) (RemoteSkillRegistrySnapshot, error) {
@@ -66,8 +81,12 @@ func (f *fakeRemoteSkillRegistryStore) FailRemoteSkillSyncJob(_ context.Context,
 func (f *fakeRemoteSkillRegistryStore) GetRemoteSkillSyncJob(context.Context, int64) (RemoteSkillSyncJob, error) {
 	return f.job, nil
 }
+func (f *fakeRemoteSkillRegistryStore) ExpireRemoteSkillSyncJobs(context.Context) error { return nil }
 func (f *fakeRemoteSkillRegistryStore) PublishRemoteSkillVersion(context.Context, int64, int64, int64) (RemoteSkillRegistrySnapshot, error) {
 	f.publishCalls++
+	if f.publishErr == nil && f.published.Revision > 0 {
+		f.snapshot = f.published
+	}
 	return f.published, f.publishErr
 }
 func (f *fakeRemoteSkillRegistryStore) CleanupLegacyRemoteSkillData(context.Context) error {
@@ -128,7 +147,7 @@ func testRemoteSkillCandidate(t *testing.T, id, promptID int64, tree string) Rem
 		"README_AI.md": []byte(tree),
 		"SKILL.md":     []byte(tree),
 	}
-	candidate, err := buildPairedRemoteSkillCandidate(raw, rewriteRemoteSkillPublishedFiles(raw), prompt, nil, time.Unix(0, 0).UTC())
+	candidate, err := buildPairedRemoteSkillCandidate(context.Background(), raw, rewriteRemoteSkillPublishedFiles(raw), prompt, nil, time.Unix(0, 0).UTC())
 	require.NoError(t, err)
 	candidate.Version.ID = id
 	candidate.Version.PromptVersionID = promptID
@@ -144,7 +163,7 @@ func testRemoteSkillRegistry(t *testing.T, active RemoteSkillCandidate) (*Remote
 	store := &fakeRemoteSkillRegistryStore{
 		snapshot: RemoteSkillRegistrySnapshot{Revision: 7, Active: &active.Version, ActivePrompt: &active.Prompt, UpdatedAt: time.Now().UTC()},
 		detail:   RemoteSkillBundleVersionDetail{RemoteSkillBundleVersion: active.Version, Prompt: active.Prompt, FileChanges: active.FileChanges},
-		job:      RemoteSkillSyncJob{ID: 9, Status: RemoteSkillSyncStatusQueued},
+		job:      RemoteSkillSyncJob{ID: 9, Status: RemoteSkillSyncStatusQueued, CreatedAt: time.Now()},
 	}
 	files := &fakeRemoteSkillRegistryFiles{seed: active, candidates: map[int64]RemoteSkillCandidate{1: active}}
 	source := &fakeRemoteSkillCandidateSource{}
@@ -161,8 +180,8 @@ func TestRemoteSkillRegistryStartupRequiresAndActivatesPairedSeed(t *testing.T) 
 	require.Equal(t, RemoteSkillUpstreamSourceID, current.Active.UpstreamSourceID)
 	require.Equal(t, current.Active.PromptVersionID, current.ActivePrompt.ID)
 	require.True(t, files.installed)
-	require.True(t, files.cleaned)
-	require.True(t, store.cleaned)
+	require.False(t, files.cleaned, "startup must preserve existing directories")
+	require.False(t, store.cleaned, "startup must preserve historical records")
 }
 
 func TestRemoteSkillRegistrySyncCreatesCandidateWithoutPublishingAndReusesPromptByDefault(t *testing.T) {
@@ -172,7 +191,7 @@ func TestRemoteSkillRegistrySyncCreatesCandidateWithoutPublishingAndReusesPrompt
 	source, ok := svc.source.(*fakeRemoteSkillCandidateSource)
 	require.True(t, ok)
 	source.candidate = candidate
-	svc.runSyncJob(context.Background(), RemoteSkillSyncJob{ID: 9, CreatedBy: 42}, RemoteSkillPromptCapture{
+	svc.runSyncJob(context.Background(), RemoteSkillSyncJob{ID: 9, CreatedBy: 42, CreatedAt: time.Now()}, RemoteSkillPromptCapture{
 		RawBody: []byte(active.Prompt.RawBody), EffectiveBody: []byte(active.Prompt.EffectiveBody), RawSHA256: active.Prompt.RawSHA256, EffectiveSHA256: active.Prompt.EffectiveSHA256,
 	})
 	require.Equal(t, "verifying_candidate", store.stage)
@@ -200,7 +219,7 @@ func TestRemoteSkillRegistryKeepsHistorical73ActiveThrough458SeedSyncPublishAndR
 	store := &fakeRemoteSkillRegistryStore{
 		snapshot: RemoteSkillRegistrySnapshot{Revision: 7, Active: &historical.Version, ActivePrompt: &historical.Prompt, UpdatedAt: time.Now().UTC()},
 		detail:   RemoteSkillBundleVersionDetail{RemoteSkillBundleVersion: historical.Version, Prompt: historical.Prompt, FileChanges: historical.FileChanges},
-		job:      RemoteSkillSyncJob{ID: 9, Status: RemoteSkillSyncStatusQueued},
+		job:      RemoteSkillSyncJob{ID: 9, Status: RemoteSkillSyncStatusQueued, CreatedAt: time.Now()},
 	}
 	files := &fakeRemoteSkillRegistryFiles{seed: seed, candidates: map[int64]RemoteSkillCandidate{1: historical, 2: seed}}
 	source := &fakeRemoteSkillCandidateSource{candidate: seed}
@@ -209,7 +228,7 @@ func TestRemoteSkillRegistryKeepsHistorical73ActiveThrough458SeedSyncPublishAndR
 	require.Equal(t, remoteSkillExpectedFiles, store.ensureSeed.Version.FileCount)
 	require.Equal(t, 73, svc.CurrentSnapshot().Active.FileCount)
 
-	svc.runSyncJob(context.Background(), RemoteSkillSyncJob{ID: 9, CreatedBy: 42}, RemoteSkillPromptCapture{
+	svc.runSyncJob(context.Background(), RemoteSkillSyncJob{ID: 9, CreatedBy: 42, CreatedAt: time.Now()}, RemoteSkillPromptCapture{
 		RawBody: []byte(historical.Prompt.RawBody), EffectiveBody: []byte(historical.Prompt.EffectiveBody),
 		RawSHA256: historical.Prompt.RawSHA256, EffectiveSHA256: historical.Prompt.EffectiveSHA256, Diff: historical.Prompt.Diff,
 	})
@@ -240,6 +259,14 @@ func TestRemoteSkillRegistryPromptUploadIsValidatedBeforeSyncJobCreation(t *test
 	require.Equal(t, int64(0), store.createdBy)
 }
 
+func TestRemoteSkillRegistryStoppedSyncDoesNotCreateJob(t *testing.T) {
+	active := testRemoteSkillCandidate(t, 1, 1, "old")
+	svc, store, _ := testRemoteSkillRegistry(t, active)
+	_, err := svc.StartSync(context.Background(), []byte(modelGangPromptCaptureFixture), 42, 7)
+	require.ErrorIs(t, err, ErrRemoteSkillSyncStopped)
+	require.Equal(t, int64(0), store.createdBy)
+}
+
 func TestRemoteSkillRegistrySyncFailureDoesNotSwitchActivePair(t *testing.T) {
 	active := testRemoteSkillCandidate(t, 1, 1, "active")
 	svc, store, _ := testRemoteSkillRegistry(t, active)
@@ -247,7 +274,7 @@ func TestRemoteSkillRegistrySyncFailureDoesNotSwitchActivePair(t *testing.T) {
 	require.True(t, ok)
 	source.err = ErrBusinessSystemPromptBundleUnavailable
 
-	svc.runSyncJob(context.Background(), RemoteSkillSyncJob{ID: 9, CreatedBy: 42}, RemoteSkillPromptCapture{
+	svc.runSyncJob(context.Background(), RemoteSkillSyncJob{ID: 9, CreatedBy: 42, CreatedAt: time.Now()}, RemoteSkillPromptCapture{
 		RawBody: []byte(active.Prompt.RawBody), EffectiveBody: []byte(active.Prompt.EffectiveBody),
 		RawSHA256: active.Prompt.RawSHA256, EffectiveSHA256: active.Prompt.EffectiveSHA256,
 	})
@@ -288,6 +315,38 @@ func TestRemoteSkillRegistryPublishValidatesPairBeforeDatabaseCAS(t *testing.T) 
 	_, err := svc.PublishVersion(context.Background(), 2, 7, 42)
 	require.ErrorIs(t, err, ErrBusinessSystemPromptUnavailable)
 	require.Zero(t, store.publishCalls)
+	require.Equal(t, int64(1), svc.CurrentSnapshot().Active.ID)
+}
+
+func TestRemoteSkillRegistryPublicationActionRejectsCurrentRollbackButAllowsOtherVersion(t *testing.T) {
+	active := testRemoteSkillCandidate(t, 1, 1, "old")
+	svc, store, files := testRemoteSkillRegistry(t, active)
+	target := testRemoteSkillCandidate(t, 2, 2, "new")
+	store.detail = RemoteSkillBundleVersionDetail{RemoteSkillBundleVersion: active.Version, Prompt: active.Prompt, FileChanges: active.FileChanges}
+	files.candidates[1] = active
+	store.published = RemoteSkillRegistrySnapshot{Revision: 8, Active: &active.Version, ActivePrompt: &active.Prompt, UpdatedAt: time.Now().UTC()}
+	_, err := svc.PublishVersionAction(context.Background(), 1, 7, extensionv1.PublicationActionRollback, 42)
+	require.ErrorIs(t, err, ErrBusinessSystemPromptBundleInvalid)
+	require.Zero(t, store.publishCalls)
+
+	store.detail = RemoteSkillBundleVersionDetail{RemoteSkillBundleVersion: target.Version, Prompt: target.Prompt, FileChanges: target.FileChanges}
+	files.candidates[2] = target
+	store.published = RemoteSkillRegistrySnapshot{Revision: 8, Active: &target.Version, ActivePrompt: &target.Prompt, UpdatedAt: time.Now().UTC()}
+	got, err := svc.PublishVersionAction(context.Background(), 2, 7, extensionv1.PublicationActionRollback, 42)
+	require.NoError(t, err)
+	require.Equal(t, int64(2), got.Active.ID)
+}
+
+func TestRemoteSkillRegistryPublicationUsesPersistedCurrentVersion(t *testing.T) {
+	active := testRemoteSkillCandidate(t, 1, 1, "old")
+	target := testRemoteSkillCandidate(t, 2, 2, "new")
+	svc, store, files := testRemoteSkillRegistry(t, active)
+	store.snapshot = RemoteSkillRegistrySnapshot{Revision: 7, Active: &target.Version, ActivePrompt: &target.Prompt, UpdatedAt: time.Now().UTC()}
+	store.detail = RemoteSkillBundleVersionDetail{RemoteSkillBundleVersion: active.Version, Prompt: active.Prompt, FileChanges: active.FileChanges}
+	files.candidates[1] = active
+	store.published = RemoteSkillRegistrySnapshot{Revision: 8, Active: &active.Version, ActivePrompt: &active.Prompt, UpdatedAt: time.Now().UTC()}
+	_, err := svc.PublishVersionAction(context.Background(), 1, 7, extensionv1.PublicationActionRollback, 42)
+	require.NoError(t, err)
 	require.Equal(t, int64(1), svc.CurrentSnapshot().Active.ID)
 }
 

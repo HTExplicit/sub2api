@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/service"
+	extensionv1 "github.com/Wei-Shaw/sub2api/pkg/extensionapi/v1"
 )
 
 func (h *AccountHandler) ExecuteAccountJob(
@@ -60,13 +61,29 @@ func (h *AccountHandler) executeAccountJobItem(ctx context.Context, kind string,
 		}
 		testCtx, cancel := context.WithTimeout(ctx, 90*time.Second)
 		defer cancel()
-		result, err := h.accountTestService.RunBatchTestBackground(testCtx, id, model, request.Prompt)
+		if _, _, err := service.PlanBatchAccountTests(testCtx, extensionv1.BatchTestPlanningRequest{HasLegacy: true, AccountIDs: []int64{id}, ModelID: model}); err != nil {
+			return accountJobFailed(item.ID, "test_unavailable")
+		}
+		effort := ""
+		for _, selected := range request.Items {
+			if selected.AccountID == id {
+				effort = selected.ReasoningEffort
+				break
+			}
+		}
+		result, err := h.accountTestService.RunBatchTestBackgroundWithOptions(testCtx, id, model, request.Prompt, service.AccountTestOptions{ReasoningEffort: effort})
 		if ctx.Err() != nil {
 			return service.AccountJobExecutionResult{ItemID: item.ID, Status: service.AccountJobItemStatusCanceled}
 		}
 		metadata := map[string]any{"account_id": id, "model_id": model}
+		if effort != "" {
+			metadata["reasoning_effort"] = effort
+		}
 		if result != nil {
 			metadata["latency_ms"] = result.LatencyMs
+			if result.EffectiveReasoningEffort != "" {
+				metadata["effective_reasoning_effort"] = result.EffectiveReasoningEffort
+			}
 		}
 		if err != nil || result == nil || result.Status != "success" {
 			code := "test_failed"
@@ -277,6 +294,7 @@ func (h *AccountHandler) createAccountJobAccount(ctx context.Context, item Creat
 	}
 	sanitizeExtraBaseRPM(item.Extra)
 	account, err := h.adminService.CreateAccount(ctx, &service.CreateAccountInput{
+		ProviderCreate: item.ProviderCreate, ExplicitCreateFields: item.ExplicitCreateFields,
 		Name: item.Name, Notes: item.Notes, Platform: item.Platform, Type: item.Type,
 		Credentials: item.Credentials, Extra: item.Extra, ProxyID: item.ProxyID,
 		ModelContextOverrides: item.ModelContextOverrides,
@@ -320,18 +338,24 @@ func (h *AccountHandler) executeBulkUpdateJob(ctx context.Context, raw json.RawM
 	if json.Unmarshal(raw, &req) != nil {
 		return accountJobFailed(item.ID, "payload_invalid")
 	}
-	ids, err := h.resolveAccountJobTargetIDs(ctx, req.AccountIDs, req.Filters)
-	if err != nil {
-		return accountJobFailed(item.ID, "filters_invalid")
+	id, ok := accountJobTarget(item)
+	if !ok {
+		// Legacy filter-only items never persisted an authorized account set.
+		// Requiring a new submission is safer than resolving a new set now.
+		return accountJobFailed(item.ID, "target_missing")
 	}
-	if id, ok := accountJobTarget(item); ok {
-		ids = []int64{id}
-	}
+	req.AccountIDs = []int64{id}
+	req.Filters = nil
 	succeeded := 0
 	failed := 0
-	for _, id := range ids {
+	for _, id := range req.AccountIDs {
 		account, getErr := h.adminService.GetAccount(ctx, id)
 		if getErr != nil {
+			failed++
+			continue
+		}
+		mutationCtx, release, prepareErr := service.PrepareAccountJobEdit(ctx, raw, account, req.Credentials, req.Extra)
+		if prepareErr != nil {
 			failed++
 			continue
 		}
@@ -346,10 +370,11 @@ func (h *AccountHandler) executeBulkUpdateJob(ctx context.Context, raw json.RawM
 			return h.adminService.GetAccount(mutationCtx, id)
 		}
 		if isStrictCindyAccount(account) {
-			_, getErr = h.runCindyAccountJobMutation(ctx, id, apply)
+			_, getErr = h.runCindyAccountJobMutation(mutationCtx, id, apply)
 		} else {
-			_, getErr = apply(ctx)
+			_, getErr = apply(mutationCtx)
 		}
+		release()
 		if getErr != nil {
 			failed++
 			continue
@@ -382,8 +407,31 @@ func (h *AccountHandler) resolveAccountJobTargetIDs(
 	requested []int64,
 	requestFilters *BulkUpdateAccountFilters,
 ) ([]int64, error) {
+	if _, bound := service.AccountViewFromContext(ctx); bound && len(requested) > 0 {
+		if err := service.ValidateAccountViewSelection(ctx, requested); err != nil {
+			return nil, err
+		}
+	}
 	if ids := normalizeInt64IDList(requested); len(ids) > 0 {
 		return ids, nil
+	}
+	if view, bound := service.AccountViewFromContext(ctx); bound {
+		console, err := h.accountConsoleService()
+		if err != nil {
+			return nil, err
+		}
+		accounts, err := h.listAccountsConsoleFiltered(ctx, console, service.AccountViewQueryFilters(view.Request.Query))
+		if err != nil {
+			return nil, err
+		}
+		ids := make([]int64, 0, len(accounts))
+		for _, account := range accounts {
+			ids = append(ids, account.ID)
+		}
+		if err := service.ValidateAccountViewSelection(ctx, ids); err != nil {
+			return nil, err
+		}
+		return normalizeInt64IDList(ids), nil
 	}
 	filters, err := toServiceBulkUpdateAccountFilters(requestFilters)
 	if err != nil {
@@ -428,9 +476,19 @@ func (h *AccountHandler) executeBulkTaxonomyJob(ctx context.Context, raw json.Ra
 	if json.Unmarshal(raw, &req) != nil {
 		return accountJobFailed(item.ID, "payload_invalid")
 	}
-	ids, err := h.resolveAccountJobTargetIDs(ctx, req.AccountIDs, req.Filters)
-	if err != nil {
-		return accountJobFailed(item.ID, "filters_invalid")
+	var ids []int64
+	if _, bound := service.AccountViewFromContext(ctx); bound {
+		id, exists := accountJobTarget(item)
+		if !exists {
+			return accountJobFailed(item.ID, "target_missing")
+		}
+		ids = []int64{id}
+	} else {
+		var err error
+		ids, err = h.resolveAccountJobTargetIDs(ctx, req.AccountIDs, req.Filters)
+		if err != nil {
+			return accountJobFailed(item.ID, "filters_invalid")
+		}
 	}
 	if id, ok := accountJobTarget(item); ok {
 		ids = []int64{id}

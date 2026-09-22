@@ -2,12 +2,15 @@ package admin
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"sort"
 	"strings"
 
 	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
 	"github.com/Wei-Shaw/sub2api/internal/service"
+	extensionv1 "github.com/Wei-Shaw/sub2api/pkg/extensionapi/v1"
 )
 
 const (
@@ -121,125 +124,72 @@ func (h *AccountHandler) previewDataImport(ctx context.Context, req DataImportRe
 	targetHasCanonicalIdentity := targetGroup != nil && targetGroup.Platform == service.PlatformCindy &&
 		targetGroup.EffectiveWirePlatform() == service.WirePlatformOpenAI &&
 		targetGroup.EffectiveProviderProfile() == service.ProviderProfileCindyLaxaV1
-	// A canonical Cindy group with no members is the only safe bootstrap target:
-	// the repository's strict classifier intentionally returns false for empty
-	// groups, while the first import needs one empty target to establish that
-	// membership. Once any member exists, retain the full strict all-members gate.
-	targetIsStrict := targetHasCanonicalIdentity &&
-		((targetGroup.StrictCindyKnown && targetGroup.StrictCindy) || !targetHasMember)
-
+	request := extensionv1.AccountImportPlanningRequest{TargetCanonical: targetHasCanonicalIdentity, TargetHasMembers: targetHasMember, Items: make([]extensionv1.AccountImportItemFacts, len(req.Data.Accounts))}
+	if req.TargetGroupID != nil {
+		request.TargetGroupID = *req.TargetGroupID
+	}
+	if targetGroup != nil {
+		request.TargetStrict = targetGroup.StrictCindyKnown && targetGroup.StrictCindy
+	}
 	decisions := make([]dataImportDecision, len(req.Data.Accounts))
-	fingerprintItems := make(map[string][]int)
-	deviceItems := make(map[string][]int)
 	for index := range req.Data.Accounts {
 		item := req.Data.Accounts[index]
 		enrichCredentialsFromIDToken(&item)
-		legacyCindy := service.IsLegacyCindyAPIKeyAccount(item.Platform, item.Type, item.Credentials)
-		cindyCandidate := legacyCindy || service.IsCindyAPIKeyAccount(item.Platform, item.Type, item.Credentials)
+		legacy := service.IsLegacyCindyAPIKeyAccount(item.Platform, item.Type, item.Credentials)
+		candidate := legacy || service.IsCindyAPIKeyAccount(item.Platform, item.Type, item.Credentials)
+		key, keyIsString := item.Credentials["api_key"].(string)
+		keyValid := keyIsString && strings.TrimSpace(key) != ""
+		// Canonicalization is a bounded identity projection; the plugin decides
+		// whether it may be used. Credentials remain in this host-only record.
+		if legacy && keyValid {
+			item.Platform = service.PlatformCindy
+		}
+		if service.IsCindyAPIKeyAccount(item.Platform, item.Type, item.Credentials) {
+			item.Groups = nil
+		}
 		decision := dataImportDecision{Account: item}
-		if cindyCandidate {
-			apiKey, ok := item.Credentials["api_key"].(string)
-			if !ok || strings.TrimSpace(apiKey) == "" {
-				rejectDataImportDecision(&decision, dataImportCodeCindyAPIKeyInvalid)
+		facts := extensionv1.AccountImportItemFacts{CindyCandidate: candidate, LegacyCindy: legacy, APIKeyValid: keyValid, PayloadValid: validateDataAccountV2(item) == nil, DeviceValid: true, DeviceSourceValid: true}
+		if raw, present := item.Extra[service.CindyDeviceIDExtraKey]; present {
+			device, validString := raw.(string)
+			device = strings.TrimSpace(device)
+			facts.DeviceValid = validString && service.ValidCindyDeviceID(device)
+			if facts.DeviceValid {
+				decision.deviceID = device
+				digest := sha256.Sum256([]byte(device))
+				facts.DeviceIdentity = hex.EncodeToString(digest[:])
+				owners := deviceOwners[device]
+				facts.DeviceOwners = append([]int64(nil), owners[:min(2, len(owners))]...)
 			}
 		}
-		if legacyCindy && !decision.rejected() {
-			decision.Account.Platform = service.PlatformCindy
+		if raw, present := item.Extra[service.CindyDeviceIDSourceExtraKey]; present {
+			facts.DeviceSourceValid = service.ValidCindyDeviceIDSource(raw)
 		}
-		item = decision.Account
-		isCindy := service.IsCindyAPIKeyAccount(item.Platform, item.Type, item.Credentials)
-		if isCindy {
-			decision.Account.Groups = nil
-			if decision.rejected() {
-				// Preserve the earlier credential validation result.
-			} else if req.TargetGroupID == nil || *req.TargetGroupID <= 0 {
-				rejectDataImportDecision(&decision, dataImportCodeCindyTargetRequired)
-			} else if !targetIsStrict {
-				rejectDataImportDecision(&decision, dataImportCodeCindyTargetInvalid)
-			} else {
-				decision.GroupIDs = []int64{*req.TargetGroupID}
+		keys := dataAccountIdentityKeys(item.Platform, item.Credentials, item.Extra)
+		for _, key := range keys {
+			if key.Label == "credential_fingerprint" {
+				facts.CredentialIdentity = key.Value
+				break
 			}
 		}
-		if !decision.rejected() {
-			if validateErr := validateDataAccountV2(decision.Account); validateErr != nil {
-				rejectDataImportDecision(&decision, dataImportCodePayloadInvalid)
-			}
+		for _, match := range identityIndex.Find(keys) {
+			facts.Matches = append(facts.Matches, match.AccountID)
+			if len(facts.Matches) == 2 {
+				break
+			} // Two witnesses already prove ambiguity.
 		}
-		if isCindy && !decision.rejected() {
-			if rawDevice, present := item.Extra[service.CindyDeviceIDExtraKey]; present {
-				deviceID, ok := rawDevice.(string)
-				deviceID = strings.TrimSpace(deviceID)
-				if !ok || !service.ValidCindyDeviceID(deviceID) {
-					rejectDataImportDecision(&decision, dataImportCodeCindyDeviceInvalid)
-				} else {
-					decision.deviceID = deviceID
-				}
-			}
-			if rawSource, present := item.Extra[service.CindyDeviceIDSourceExtraKey]; present &&
-				!service.ValidCindyDeviceIDSource(rawSource) {
-				rejectDataImportDecision(&decision, dataImportCodeCindyDeviceInvalid)
-			}
-			if !decision.rejected() {
-				if decision.deviceID != "" {
-					deviceItems[decision.deviceID] = append(deviceItems[decision.deviceID], index)
-				}
-				keys := dataAccountIdentityKeys(item.Platform, item.Credentials, item.Extra)
-				for _, key := range keys {
-					if key.Label == "credential_fingerprint" {
-						fingerprintItems[key.Value] = append(fingerprintItems[key.Value], index)
-						break
-					}
-				}
-			}
-		}
-		if !decision.rejected() {
-			matches := identityIndex.Find(dataAccountIdentityKeys(item.Platform, item.Credentials, item.Extra))
-			switch len(matches) {
-			case 0:
-				decision.Action, decision.Code = dataImportActionCreate, dataImportCodeCreate
-			case 1:
-				id := matches[0].AccountID
-				decision.Action, decision.Code, decision.AccountID = dataImportActionUpdate, dataImportCodeUpdate, &id
-			default:
-				if isCindy {
-					rejectDataImportDecision(&decision, dataImportCodeCindyCredentialConflict)
-				} else {
-					rejectDataImportDecision(&decision, dataImportCodeIdentityConflict)
-				}
-			}
-			if !decision.rejected() {
-				decision.Message = dataImportMessage(decision.Code)
-			}
-		}
-		decisions[index] = decision
+		request.Items[index], decisions[index] = facts, decision
 	}
-
-	for _, indexes := range fingerprintItems {
-		if len(indexes) < 2 {
-			continue
-		}
-		for _, index := range indexes {
-			rejectDataImportDecision(&decisions[index], dataImportCodeCindyCredentialConflict)
-		}
+	plans, err := service.PlanAccountImport(ctx, request)
+	if err != nil {
+		return preview, nil, err
 	}
-	for deviceID, indexes := range deviceItems {
-		if len(indexes) > 1 {
-			for _, index := range indexes {
-				rejectDataImportDecision(&decisions[index], dataImportCodeCindyDeviceConflict)
-			}
-			continue
-		}
-		index := indexes[0]
-		owners := deviceOwners[deviceID]
-		if len(owners) == 0 {
-			continue
-		}
-		decisionID := int64(0)
-		if decisions[index].AccountID != nil {
-			decisionID = *decisions[index].AccountID
-		}
-		if len(owners) != 1 || owners[0] != decisionID {
-			rejectDataImportDecision(&decisions[index], dataImportCodeCindyDeviceConflict)
+	for index, plan := range plans {
+		decision := &decisions[index]
+		decision.Action, decision.Code, decision.Message = plan.Action, plan.Code, dataImportMessage(plan.Code)
+		decision.GroupIDs = append([]int64(nil), plan.GroupIDs...)
+		if plan.AccountID > 0 {
+			id := plan.AccountID
+			decision.AccountID = &id
 		}
 	}
 

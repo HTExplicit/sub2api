@@ -50,6 +50,7 @@ export default {
       actions: 'Actions',
     },
     kinds: {
+      extension_operation: "Plugin operation",
       codex_ticket_harvest: 'Manual 292 harvest',
       account_batch_test: 'Batch connection tests',
       account_import: 'Data import',

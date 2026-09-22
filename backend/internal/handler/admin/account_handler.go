@@ -29,6 +29,7 @@ import (
 	"github.com/Wei-Shaw/sub2api/internal/pkg/timezone"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/xai"
 	"github.com/Wei-Shaw/sub2api/internal/service"
+	extensionv1 "github.com/Wei-Shaw/sub2api/pkg/extensionapi/v1"
 
 	"github.com/gin-gonic/gin"
 	"golang.org/x/sync/errgroup"
@@ -68,7 +69,6 @@ type AccountHandler struct {
 	trafficObserver         *service.AccountTrafficObserver
 	accountJobs             *service.AccountJobService
 	cindyJobMutations       service.AccountJobCindyMutationRunner
-	codexTicketSettings     *service.SettingService
 	codexTicketGateway      *service.OpenAIGatewayService
 
 	cfg               *config.Config
@@ -88,11 +88,6 @@ func (h *AccountHandler) SetOllamaCloudUsageService(usage *service.OllamaCloudUs
 // SetAccountTrafficObserver attaches the optional observe-only traffic telemetry.
 func (h *AccountHandler) SetAccountTrafficObserver(observer *service.AccountTrafficObserver) {
 	h.trafficObserver = observer
-}
-
-// SetCodexTicketSettings supplies the live policy without mutating shared config.
-func (h *AccountHandler) SetCodexTicketSettings(settings *service.SettingService) {
-	h.codexTicketSettings = settings
 }
 
 // NewAccountHandler creates a new admin account handler
@@ -132,48 +127,111 @@ func NewAccountHandler(
 
 // CreateAccountRequest represents create account request
 type CreateAccountRequest struct {
-	Name                    string            `json:"name" binding:"required"`
-	Notes                   *string           `json:"notes"`
-	Platform                string            `json:"platform" binding:"required"`
-	WirePlatform            string            `json:"wire_platform"`
-	ProviderProfile         string            `json:"provider_profile"`
-	Type                    string            `json:"type" binding:"required,oneof=oauth setup-token apikey upstream bedrock service_account"`
-	Credentials             map[string]any    `json:"credentials" binding:"required"`
-	Extra                   map[string]any    `json:"extra"`
-	ModelContextOverrides   map[string]*int64 `json:"model_context_overrides"`
-	ProxyID                 *int64            `json:"proxy_id"`
-	Concurrency             int               `json:"concurrency"`
-	Priority                int               `json:"priority"`
-	RateMultiplier          *float64          `json:"rate_multiplier"`
-	LoadFactor              *int              `json:"load_factor"`
-	GroupIDs                []int64           `json:"group_ids"`
-	ExpiresAt               *int64            `json:"expires_at"`
-	AutoPauseOnExpired      *bool             `json:"auto_pause_on_expired"`
-	ProbeEnabled            *bool             `json:"upstream_billing_probe_enabled"`
-	ConfirmMixedChannelRisk *bool             `json:"confirm_mixed_channel_risk"` // 用户确认混合渠道风险
+	ProviderCreate          *extensionv1.ProviderCreateRequestV1 `json:"provider_create,omitempty"`
+	ExplicitCreateFields    map[string]bool                      `json:"-"`
+	Name                    string                               `json:"name" binding:"required"`
+	Notes                   *string                              `json:"notes"`
+	Platform                string                               `json:"platform" binding:"required"`
+	WirePlatform            string                               `json:"wire_platform"`
+	ProviderProfile         string                               `json:"provider_profile"`
+	Type                    string                               `json:"type" binding:"required,oneof=oauth setup-token apikey upstream bedrock service_account"`
+	Credentials             map[string]any                       `json:"credentials" binding:"required"`
+	Extra                   map[string]any                       `json:"extra"`
+	ModelContextOverrides   map[string]*int64                    `json:"model_context_overrides"`
+	ProxyID                 *int64                               `json:"proxy_id"`
+	Concurrency             int                                  `json:"concurrency"`
+	Priority                int                                  `json:"priority"`
+	RateMultiplier          *float64                             `json:"rate_multiplier"`
+	LoadFactor              *int                                 `json:"load_factor"`
+	GroupIDs                []int64                              `json:"group_ids"`
+	ExpiresAt               *int64                               `json:"expires_at"`
+	AutoPauseOnExpired      *bool                                `json:"auto_pause_on_expired"`
+	ProbeEnabled            *bool                                `json:"upstream_billing_probe_enabled"`
+	ConfirmMixedChannelRisk *bool                                `json:"confirm_mixed_channel_risk"` // 用户确认混合渠道风险
+}
+
+// Preserve missing-versus-explicit numeric values only for the new tagged
+// contract. Native requests retain their original JSON/hash representation.
+func (r *CreateAccountRequest) UnmarshalJSON(raw []byte) error {
+	type plain CreateAccountRequest
+	var decoded plain
+	if err := json.Unmarshal(raw, &decoded); err != nil {
+		return err
+	}
+	*r = CreateAccountRequest(decoded)
+	if r.ProviderCreate != nil {
+		var fields map[string]json.RawMessage
+		if err := json.Unmarshal(raw, &fields); err != nil {
+			return err
+		}
+		r.ExplicitCreateFields = map[string]bool{}
+		for _, target := range []string{"concurrency", "priority", "rate_multiplier", "load_factor"} {
+			for key := range fields {
+				r.ExplicitCreateFields[target] = r.ExplicitCreateFields[target] || strings.EqualFold(key, target)
+			}
+		}
+		_, r.ExplicitCreateFields["responses_mode"] = r.Extra[service.CindyResponsesModeExtraKey]
+	}
+	return nil
+}
+
+func (r CreateAccountRequest) MarshalJSON() ([]byte, error) {
+	type plain CreateAccountRequest
+	raw, err := json.Marshal(plain(r))
+	if err != nil || r.ProviderCreate == nil || r.ExplicitCreateFields == nil {
+		return raw, err
+	}
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &fields); err != nil {
+		return nil, err
+	}
+	for _, target := range []string{"concurrency", "priority", "rate_multiplier", "load_factor"} {
+		if !r.ExplicitCreateFields[target] {
+			delete(fields, target)
+		}
+	}
+	return json.Marshal(fields)
 }
 
 // UpdateAccountRequest represents update account request
 // 使用指针类型来区分"未提供"和"设置为0"
 type UpdateAccountRequest struct {
-	Name                    string            `json:"name"`
-	Notes                   *string           `json:"notes"`
-	Type                    string            `json:"type" binding:"omitempty,oneof=oauth setup-token apikey upstream bedrock service_account"`
-	Credentials             map[string]any    `json:"credentials"`
-	Extra                   map[string]any    `json:"extra"`
-	ModelContextOverrides   map[string]*int64 `json:"model_context_overrides"`
-	ProxyID                 *int64            `json:"proxy_id"`
-	Concurrency             *int              `json:"concurrency"`
-	Priority                *int              `json:"priority"`
-	RateMultiplier          *float64          `json:"rate_multiplier"`
-	LoadFactor              *int              `json:"load_factor"`
-	Status                  string            `json:"status" binding:"omitempty,oneof=active inactive error"`
-	GroupIDs                *[]int64          `json:"group_ids"`
-	ExpiresAt               *int64            `json:"expires_at"`
-	AutoPauseOnExpired      *bool             `json:"auto_pause_on_expired"`
-	ProbeEnabled            *bool             `json:"upstream_billing_probe_enabled"`
-	RateSyncEnabled         *bool             `json:"upstream_billing_rate_sync_enabled"`
-	ConfirmMixedChannelRisk *bool             `json:"confirm_mixed_channel_risk"` // 用户确认混合渠道风险
+	ProviderEdit            *extensionv1.ProviderEditRequestV1 `json:"provider_edit,omitempty"`
+	Name                    string                             `json:"name"`
+	Notes                   *string                            `json:"notes"`
+	Type                    string                             `json:"type" binding:"omitempty,oneof=oauth setup-token apikey upstream bedrock service_account"`
+	Credentials             map[string]any                     `json:"credentials"`
+	Extra                   map[string]any                     `json:"extra"`
+	ModelContextOverrides   map[string]*int64                  `json:"model_context_overrides"`
+	ProxyID                 *int64                             `json:"proxy_id"`
+	Concurrency             *int                               `json:"concurrency"`
+	Priority                *int                               `json:"priority"`
+	RateMultiplier          *float64                           `json:"rate_multiplier"`
+	LoadFactor              *int                               `json:"load_factor"`
+	Status                  string                             `json:"status" binding:"omitempty,oneof=active inactive error"`
+	GroupIDs                *[]int64                           `json:"group_ids"`
+	ExpiresAt               *int64                             `json:"expires_at"`
+	AutoPauseOnExpired      *bool                              `json:"auto_pause_on_expired"`
+	ProbeEnabled            *bool                              `json:"upstream_billing_probe_enabled"`
+	RateSyncEnabled         *bool                              `json:"upstream_billing_rate_sync_enabled"`
+	ConfirmMixedChannelRisk *bool                              `json:"confirm_mixed_channel_risk"` // 用户确认混合渠道风险
+}
+
+func (r *UpdateAccountRequest) UnmarshalJSON(raw []byte) error {
+	type plain UpdateAccountRequest
+	var decoded plain
+	if err := json.Unmarshal(raw, &decoded); err != nil {
+		return err
+	}
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &fields); err != nil {
+		return err
+	}
+	if value, present := fields["provider_edit"]; present && strings.TrimSpace(string(value)) == "null" {
+		return errors.New("invalid provider edit input")
+	}
+	*r = UpdateAccountRequest(decoded)
+	return nil
 }
 
 // BulkUpdateAccountsRequest represents the payload for bulk editing accounts
@@ -196,21 +254,24 @@ type BulkUpdateAccountsRequest struct {
 }
 
 type BulkUpdateAccountFilters struct {
-	Platform    string `json:"platform"`
-	Type        string `json:"type"`
-	Status      string `json:"status"`
-	Platforms   string `json:"platforms"`
-	Types       string `json:"types"`
-	Statuses    string `json:"statuses"`
-	Plans       string `json:"plans"`
-	Proxies     string `json:"proxies"`
-	Folder      string `json:"folder"`
-	Folders     string `json:"folders"`
-	Tags        string `json:"tags"`
-	AccountIDs  string `json:"account_ids"`
-	Group       string `json:"group"`
-	Search      string `json:"search"`
-	PrivacyMode string `json:"privacy_mode"`
+	CindyOnly          bool   `json:"cindy_only,omitempty"`
+	CindyBalanceStatus string `json:"cindy_balance_status,omitempty"`
+	CindyHealthStatus  string `json:"cindy_health_status,omitempty"`
+	Platform           string `json:"platform"`
+	Type               string `json:"type"`
+	Status             string `json:"status"`
+	Platforms          string `json:"platforms"`
+	Types              string `json:"types"`
+	Statuses           string `json:"statuses"`
+	Plans              string `json:"plans"`
+	Proxies            string `json:"proxies"`
+	Folder             string `json:"folder"`
+	Folders            string `json:"folders"`
+	Tags               string `json:"tags"`
+	AccountIDs         string `json:"account_ids"`
+	Group              string `json:"group"`
+	Search             string `json:"search"`
+	PrivacyMode        string `json:"privacy_mode"`
 }
 
 // CheckMixedChannelRequest represents check mixed channel risk request
@@ -402,12 +463,8 @@ func (h *AccountHandler) accountListResponseFromService(account *service.Account
 }
 
 func (h *AccountHandler) enrichCodexTicketStatus(account *service.Account, out *dto.Account) {
-	if h != nil && h.cfg != nil && out != nil {
-		cfg := h.cfg.Gateway.OpenAICodexTicket
-		if h.codexTicketSettings != nil {
-			cfg.Enabled = h.codexTicketSettings.GetOpenAICodexTicketEnabled(context.Background(), cfg.Enabled)
-		}
-		out.CodexTurnTickets = service.OpenAICodexTicketStatuses(account, cfg, time.Now())
+	if h != nil && h.codexTicketGateway != nil && out != nil {
+		out.CodexTurnTickets = h.codexTicketGateway.CodexTicketStatuses(account)
 	}
 }
 
@@ -733,7 +790,8 @@ func (h *AccountHandler) List(c *gin.Context) {
 		consoleService accountConsoleAdminService
 		err            error
 	)
-	if hasAccountConsoleFilters(c) {
+	_, accountViewBound := service.AccountViewFromContext(c.Request.Context())
+	if hasAccountConsoleFilters(c) || accountViewBound {
 		filters, filterErr := parseAccountConsoleFilters(c, groupID)
 		if filterErr != nil {
 			response.ErrorFrom(c, filterErr)
@@ -1115,6 +1173,8 @@ func (h *AccountHandler) Create(c *gin.Context) {
 
 	result, err := executeAdminIdempotent(c, "admin.accounts.create", req, service.DefaultWriteIdempotencyTTL(), func(ctx context.Context) (any, error) {
 		account, execErr := h.adminService.CreateAccount(ctx, &service.CreateAccountInput{
+			ProviderCreate:        req.ProviderCreate,
+			ExplicitCreateFields:  req.ExplicitCreateFields,
 			Name:                  req.Name,
 			Notes:                 req.Notes,
 			Platform:              req.Platform,
@@ -1252,6 +1312,7 @@ func (h *AccountHandler) Update(c *gin.Context) {
 	skipCheck := req.ConfirmMixedChannelRisk != nil && *req.ConfirmMixedChannelRisk
 
 	account, err := h.adminService.UpdateAccount(c.Request.Context(), accountID, &service.UpdateAccountInput{
+		ProviderEdit:          req.ProviderEdit,
 		Name:                  req.Name,
 		Notes:                 req.Notes,
 		Type:                  req.Type,
@@ -1341,9 +1402,10 @@ func (h *AccountHandler) Delete(c *gin.Context) {
 
 // TestAccountRequest represents the request body for testing an account
 type TestAccountRequest struct {
-	ModelID string `json:"model_id"`
-	Prompt  string `json:"prompt"`
-	Mode    string `json:"mode"`
+	ReasoningEffort string `json:"reasoning_effort,omitempty"`
+	ModelID         string `json:"model_id"`
+	Prompt          string `json:"prompt"`
+	Mode            string `json:"mode"`
 	// Optional media for Grok (and future) real generation tests.
 	// ImageDataURL / AudioDataURL are data:<mime>;base64,... payloads.
 	ImageDataURL string `json:"image_data_url"`
@@ -1382,8 +1444,9 @@ func (h *AccountHandler) Test(c *gin.Context) {
 	}
 
 	opts := service.AccountTestOptions{
-		ImageDataURL: req.ImageDataURL,
-		AudioDataURL: req.AudioDataURL,
+		ReasoningEffort: req.ReasoningEffort,
+		ImageDataURL:    req.ImageDataURL,
+		AudioDataURL:    req.AudioDataURL,
 	}
 
 	// Use AccountTestService to test the account with SSE streaming
@@ -2029,6 +2092,12 @@ func (h *AccountHandler) BulkUpdate(c *gin.Context) {
 	}
 
 	ids := normalizeInt64IDList(req.AccountIDs)
+	req.AccountIDs = ids
+	submission := req
+	_, viewScopedSubmission := service.AccountViewFromContext(c.Request.Context())
+	if h.replayScopedAccountJob(c, service.AccountJobKindBulkUpdate, submission) {
+		return
+	}
 	if service.HasOpenAIReasoningPolicyUpdates(req.Extra) {
 		// A bulk worker processes individual items. Validate the complete set
 		// before submitting any item, not only the UI's current metadata page.
@@ -2054,13 +2123,55 @@ func (h *AccountHandler) BulkUpdate(c *gin.Context) {
 		// include newly matching accounts after the complete-set preflight.
 		ids = resolvedIDs
 		req.Filters = nil
+		req.AccountIDs = ids
+	} else if len(ids) == 0 {
+		if h.accountJobs == nil {
+			response.ErrorFrom(c, infraerrors.New(503, "ACCOUNT_JOBS_UNAVAILABLE", "account jobs are unavailable"))
+			return
+		}
+		actorID, ok := accountJobActorID(c)
+		if !ok {
+			return
+		}
+		raw, err := json.Marshal(req)
+		if err != nil {
+			response.ErrorFrom(c, infraerrors.BadRequest("ACCOUNT_JOB_PAYLOAD_INVALID", "invalid account job payload"))
+			return
+		}
+		// Replay before querying mutable filters, including a now-empty result.
+		// Keep this original request as the hash input; only seeds freeze IDs.
+		job, replayed, err := h.accountJobs.ReplaySubmission(c.Request.Context(), actorID, service.AccountJobKindBulkUpdate, c.GetHeader("Idempotency-Key"), raw)
+		if err != nil {
+			response.ErrorFrom(c, accountJobHTTPError(err))
+			return
+		}
+		if replayed {
+			c.Header("Idempotency-Replayed", "true")
+			response.Accepted(c, job)
+			return
+		}
+		ids, err = h.resolveAccountJobTargetIDs(c.Request.Context(), nil, req.Filters)
+		if err != nil {
+			response.ErrorFrom(c, err)
+			return
+		}
+		if len(ids) == 0 {
+			response.BadRequest(c, "No matching accounts for bulk update")
+			return
+		}
 	}
-	seeds := accountJobSeeds(ids)
-	if len(seeds) == 0 {
-		seeds = ordinalAccountJobSeeds(1)
+	if viewScopedSubmission {
+		req = submission
 	}
-	req.AccountIDs = ids
-	h.submitAccountJob(c, service.AccountJobKindBulkUpdate, req, seeds)
+	if service.HasAccountEditOwnedInput(req.Credentials, req.Extra) {
+		accounts, err := h.adminService.GetAccountsByIDs(c.Request.Context(), ids)
+		if err != nil {
+			response.ErrorFrom(c, err)
+			return
+		}
+		c.Request = c.Request.WithContext(service.WithAccountJobEditAccounts(c.Request.Context(), accounts))
+	}
+	h.submitAccountJob(c, service.AccountJobKindBulkUpdate, req, accountJobSeeds(ids))
 }
 
 func splitBulkAccountFilterValues(values ...string) []string {
@@ -2088,6 +2199,7 @@ func toServiceBulkUpdateAccountFilters(filters *BulkUpdateAccountFilters) (*serv
 		PrivacyMode: filters.PrivacyMode,
 	}
 	usesConsoleFilters := strings.TrimSpace(filters.Platforms) != "" ||
+		filters.CindyOnly || filters.CindyBalanceStatus != "" || filters.CindyHealthStatus != "" ||
 		strings.TrimSpace(filters.Types) != "" || strings.TrimSpace(filters.Statuses) != "" ||
 		strings.TrimSpace(filters.Plans) != "" || strings.TrimSpace(filters.Proxies) != "" ||
 		strings.TrimSpace(filters.Folder) != "" || strings.TrimSpace(filters.Folders) != "" ||
@@ -2108,9 +2220,13 @@ func toServiceBulkUpdateAccountFilters(filters *BulkUpdateAccountFilters) (*serv
 		statuses = []string{strings.TrimSpace(filters.Status)}
 	}
 	console := &service.AccountConsoleFilters{
+		CindyOnly: filters.CindyOnly, CindyBalanceStatus: filters.CindyBalanceStatus, CindyHealthStatus: filters.CindyHealthStatus,
 		Platforms: platforms, Types: types, Statuses: statuses,
 		Plans: splitBulkAccountFilterValues(filters.Plans), Search: strings.TrimSpace(filters.Search),
 		GroupID: 0, PrivacyMode: strings.TrimSpace(filters.PrivacyMode), SortBy: "id", SortOrder: "asc",
+	}
+	if (filters.CindyBalanceStatus != "" && filters.CindyBalanceStatus != "insufficient") || (filters.CindyHealthStatus != "" && filters.CindyHealthStatus != "banned") {
+		return nil, service.ErrAccountViewInvalid
 	}
 	switch strings.TrimSpace(filters.Group) {
 	case "":
@@ -2448,13 +2564,15 @@ func (h *AccountHandler) GetTrafficTelemetry(c *gin.Context) {
 		"configured_concurrency": account.Concurrency,
 		"state_available":        false,
 	}
-	if h.trafficObserver == nil || !h.trafficObserver.Enabled() {
+	if h.trafficObserver == nil {
 		response.Success(c, payload)
 		return
 	}
-	snapshot, err := h.trafficObserver.Snapshot(c.Request.Context(), account.ID)
+	snapshot, err := h.trafficObserver.Snapshot(c.Request.Context(), account)
 	if err != nil {
-		payload["error"] = "telemetry_unavailable"
+		if !errors.Is(err, service.ErrAccountTrafficTelemetryUnavailable) {
+			payload["error"] = "telemetry_unavailable"
+		}
 		response.Success(c, payload)
 		return
 	}
@@ -2509,6 +2627,7 @@ func (h *AccountHandler) GetBatchTodayStats(c *gin.Context) {
 		return
 	}
 
+	generation := accountTodayStatsBatchCache.Generation()
 	stats, err := h.accountUsageService.GetTodayStatsBatch(c.Request.Context(), accountIDs)
 	if err != nil {
 		response.ErrorFrom(c, err)
@@ -2516,7 +2635,7 @@ func (h *AccountHandler) GetBatchTodayStats(c *gin.Context) {
 	}
 
 	payload := gin.H{"stats": stats}
-	cached := accountTodayStatsBatchCache.Set(cacheKey, payload)
+	cached, _ := accountTodayStatsBatchCache.SetIfGeneration(cacheKey, payload, generation)
 	if cached.ETag != "" {
 		c.Header("ETag", cached.ETag)
 		c.Header("Vary", "If-None-Match")
@@ -2590,6 +2709,28 @@ type cindyAdminAvailableModel struct {
 	CreatedAt string `json:"created_at"`
 }
 
+// GetEditContext uses the stored account identity and preserves any independent
+// account.view origin already bound by the existing middleware.
+func (h *AccountHandler) GetEditContext(c *gin.Context) {
+	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil || id <= 0 {
+		response.BadRequest(c, "Invalid account ID")
+		return
+	}
+	account, err := h.adminService.GetAccount(c.Request.Context(), id)
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	result, err := service.LoadAccountEditContext(c.Request.Context(), account)
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	c.Header("Cache-Control", "no-store")
+	response.Success(c, result)
+}
+
 // GetAvailableModels handles getting available models for an account
 // GET /api/v1/admin/accounts/:id/models
 func (h *AccountHandler) GetAvailableModels(c *gin.Context) {
@@ -2602,6 +2743,21 @@ func (h *AccountHandler) GetAvailableModels(c *gin.Context) {
 	account, err := h.adminService.GetAccount(c.Request.Context(), accountID)
 	if err != nil {
 		response.NotFound(c, "Account not found")
+		return
+	}
+
+	withPlan, err := accountTestPlanRequested(c.Query("view"))
+	if err != nil {
+		response.BadRequest(c, err.Error())
+		return
+	}
+	if withPlan {
+		plan, err := h.accountTestPlan(c.Request.Context(), account)
+		if err != nil {
+			response.Error(c, http.StatusBadGateway, "Unable to load account test plan")
+			return
+		}
+		response.Success(c, plan)
 		return
 	}
 
@@ -2618,8 +2774,27 @@ func (h *AccountHandler) accountTestModels(ctx context.Context, account *service
 	// Handle OpenAI accounts
 	if account.IsOpenAI() {
 		if service.IsCindyAPIKeyAccount(account.Platform, account.Type, account.Credentials) {
-			catalog := service.CindyCatalogModels()
-			catalog = append(catalog, service.CindyManagedModelMappings()...)
+			snapshot, err := service.LoadCindyCatalogSnapshot(ctx, account)
+			if err != nil {
+				return nil, err
+			}
+			if !snapshot.Config.CatalogEnabled {
+				return nil, service.ErrAccountEditCatalogUnavailable
+			}
+			catalog := append([]service.CindyCatalogModel(nil), snapshot.CatalogModels...)
+			public := make(map[string]service.CindyCatalogModel, len(catalog))
+			for _, model := range catalog {
+				if model.PublicModel {
+					public[model.ID] = model
+				}
+			}
+			for alias, target := range snapshot.CompatibilityAliases {
+				if model, ok := public[target]; ok {
+					model.ID, model.AliasTarget = alias, target
+					model.Managed = true
+					catalog = append(catalog, model)
+				}
+			}
 			models := make([]cindyAdminAvailableModel, 0, len(catalog))
 			for _, model := range catalog {
 				models = append(models, cindyAdminAvailableModel{
@@ -2769,7 +2944,15 @@ func (h *AccountHandler) accountTestModels(ctx context.Context, account *service
 // openAIAccountTestModels selects request-side model IDs from this account's
 // saved configuration. Discovery enumerates unrestricted accounts and wildcard
 // candidates; it is not an availability gate for explicitly configured models.
-func (h *AccountHandler) openAIAccountTestModels(ctx context.Context, account *service.Account) ([]openai.Model, error) {
+func (h *AccountHandler) openAIAccountTestModels(ctx context.Context, account *service.Account) (result []openai.Model, resultErr error) {
+	defer func() {
+		if resultErr != nil {
+			return
+		}
+		for i := range result {
+			result[i].ReasoningEfforts, result[i].DefaultReasoningEffort = service.AccountTestReasoningOptions(account, result[i].ID)
+		}
+	}()
 	mapping := account.GetModelMapping()
 	if account.IsOpenAIPassthroughEnabled() || len(mapping) == 0 {
 		return h.discoverOpenAIAccountTestModels(ctx, account)

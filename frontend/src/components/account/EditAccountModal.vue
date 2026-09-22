@@ -8,7 +8,7 @@
     <form
       v-if="account"
       id="edit-account-form"
-      @submit.prevent="handleSubmit"
+      @submit.prevent="handleSubmit()"
       class="space-y-5"
     >
       <div>
@@ -26,6 +26,19 @@
         <p class="input-hint">{{ t('admin.accounts.notesHint') }}</p>
       </div>
 
+      <div v-if="isCindyAccount" class="rounded-lg border border-gray-200 p-3 text-sm dark:border-dark-600" data-testid="account-edit-profile-status">
+        <p v-if="providerEdit.draft.value?.loading">{{ t('common.loading') }}</p>
+        <p v-else-if="!providerEdit.available.value">{{ t('admin.accounts.providerEdit.unavailable') }}</p>
+        <p v-if="providerEdit.pending.value" class="mt-1">{{ t('admin.accounts.providerEdit.draftRetained') }}</p>
+        <p v-if="providerEdit.draft.value?.pendingContext || providerEdit.draft.value?.catalogNeedsReview" class="mt-1 text-amber-700 dark:text-amber-300">
+          {{ t('admin.accounts.providerEdit.changed') }}
+        </p>
+        <div class="mt-2 flex flex-wrap gap-2">
+          <button type="button" class="btn btn-secondary text-xs" :disabled="providerEdit.draft.value?.loading" @click="providerEdit.refresh()">{{ t('common.refresh') }}</button>
+          <button v-if="providerEdit.draft.value?.pendingContext || providerEdit.draft.value?.catalogNeedsReview" type="button" class="btn btn-secondary text-xs" data-testid="account-edit-reconcile" @click="reconcileProviderEdit">{{ t('admin.accounts.providerEdit.reconcile') }}</button>
+        </div>
+      </div>
+
       <!-- API Key fields (only for apikey type) -->
       <div v-if="account.type === 'apikey'" class="space-y-4">
         <div v-if="!isCNApiKeyAccount || editApiProtocol !== 'adaptive'">
@@ -38,7 +51,7 @@
             :readonly="isCindyAccount"
             :placeholder="
               isCindyAccount
-                ? 'https://api.laxarouter.ai'
+                ? editProfile?.credential_ui.base_url || editBaseUrl
                 : account.platform === 'openai'
                   ? 'https://api.openai.com'
                 : account.platform === 'gemini'
@@ -191,7 +204,7 @@
                 <li>{{ t('admin.accounts.cnProviders.zhipuTeam.help.step3') }}</li>
                 <li>{{ t('admin.accounts.cnProviders.zhipuTeam.help.step4') }}</li>
               </ol>
-              <p class="mt-2 break-all rounded-none bg-black/20 p-1.5 font-mono text-[11px] leading-relaxed">
+              <p class="mt-2 break-all rounded bg-black/20 p-1.5 font-mono text-[11px] leading-relaxed">
                 {{ t('admin.accounts.cnProviders.zhipuTeam.help.example') }}
               </p>
             </HelpTooltip>
@@ -241,7 +254,7 @@
 
           <div
             v-if="isOpenAIModelRestrictionDisabled"
-            class="mb-3 rounded-none bg-amber-50 p-3 dark:bg-amber-900/20"
+            class="mb-3 rounded-lg bg-amber-50 p-3 dark:bg-amber-900/20"
           >
             <p class="text-xs text-amber-700 dark:text-amber-400">
               {{ t('admin.accounts.openai.modelRestrictionDisabledByPassthrough') }}
@@ -309,7 +322,7 @@
                 <div class="mb-2 flex items-center justify-between gap-3">
                   <div>
                     <p class="text-sm font-medium text-gray-700 dark:text-gray-200">
-                      {{ t('admin.accounts.cindyManagedCatalog') }}
+                      {{ profileLabel(editProfile?.labels.managed_catalog) }}
                     </p>
                   </div>
                   <span class="shrink-0 text-xs font-medium text-primary-600 dark:text-primary-400">
@@ -317,17 +330,17 @@
                   </span>
                 </div>
                 <p v-if="cindyCatalogLoading" class="py-3 text-sm text-gray-500 dark:text-gray-400">
-                  {{ t('admin.accounts.cindyCatalogLoading') }}
+                  {{ t('common.loading') }}
                 </p>
                 <p v-else-if="cindyCatalogLoadFailed" class="py-3 text-sm text-red-600 dark:text-red-400">
-                  {{ t('admin.accounts.cindyCatalogLoadFailed') }}
+                  {{ t('admin.accounts.providerEdit.catalogUnavailable') }}
                 </p>
                 <ModelWhitelistSelector
                   v-model:capacity-drafts="capacityDrafts"
                   :capacity-rows="capacityRows"
                   :sync-source-key="capacitySyncSourceKey"
                   @capacity-validity="setCapacityFieldValidity('selector', $event)"
-                  v-else
+                  v-if="cindyManagedCatalog.length > 0"
                   :model-value="[]"
                   :models="cindyManagedCatalog"
                   readonly
@@ -355,7 +368,7 @@
 
             <!-- Mapping Mode -->
             <div v-else>
-              <div class="mb-3 rounded-none bg-purple-50 p-3 dark:bg-purple-900/20">
+              <div class="mb-3 rounded-lg bg-purple-50 p-3 dark:bg-purple-900/20">
                 <p class="text-xs text-purple-700 dark:text-purple-400">
                   <svg
                     class="mr-1 inline h-4 w-4"
@@ -380,7 +393,7 @@
               data-testid="cindy-managed-aliases"
             >
               <p class="text-sm font-medium text-gray-700 dark:text-gray-200">
-                {{ t('admin.accounts.cindyManagedAliases') }}
+                {{ profileLabel(editProfile?.labels.managed_aliases) }}
               </p>
               <div class="mt-2 space-y-2">
                 <div
@@ -401,6 +414,10 @@
             </div>
 
             <!-- Model Mapping List -->
+            <div v-if="isCindyAccount" class="mb-3 flex items-center justify-between gap-2">
+              <span>{{ profileLabel(editProfile?.labels.custom_mappings) }}</span>
+              <button type="button" class="btn btn-secondary text-xs" data-testid="account-edit-clear-model-mapping" @click="providerEdit.clear('model_mapping')">{{ t('admin.accounts.providerEdit.clearCustomMappings') }}</button>
+            </div>
             <div
               v-if="modelMappings.length > 0"
               class="mb-3 space-y-2"
@@ -447,7 +464,7 @@
                 <button
                   type="button"
                   @click="removeModelMapping(index)"
-                  class="rounded-none p-2 text-red-500 transition-colors hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-900/20"
+                  class="rounded-lg p-2 text-red-500 transition-colors hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-900/20"
                 >
                   <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path
@@ -464,7 +481,7 @@
             <button
               type="button"
               @click="addModelMapping"
-              class="mb-3 w-full rounded-none border-2 border-dashed border-gray-300 px-4 py-2 text-gray-600 transition-colors hover:border-gray-400 hover:text-gray-700 dark:border-dark-500 dark:text-gray-400 dark:hover:border-dark-400 dark:hover:text-gray-300"
+              class="mb-3 w-full rounded-lg border-2 border-dashed border-gray-300 px-4 py-2 text-gray-600 transition-colors hover:border-gray-400 hover:text-gray-700 dark:border-dark-500 dark:text-gray-400 dark:hover:border-dark-400 dark:hover:text-gray-300"
             >
               <svg
                 class="mr-1 inline h-4 w-4"
@@ -489,7 +506,7 @@
                   :key="preset.label"
                   type="button"
                   @click="addPresetMapping(preset.from, preset.to)"
-                  :class="['rounded-none px-3 py-1 text-xs transition-colors', preset.color]"
+                  :class="['rounded-lg px-3 py-1 text-xs transition-colors', preset.color]"
                 >
                   + {{ preset.label }}
                 </button>
@@ -523,7 +540,7 @@
               />
             </button>
           </div>
-          <div v-if="poolModeEnabled" class="rounded-none bg-blue-50 p-3 dark:bg-blue-900/20">
+          <div v-if="poolModeEnabled" class="rounded-lg bg-blue-50 p-3 dark:bg-blue-900/20">
             <p class="text-xs text-blue-700 dark:text-blue-400">
               <Icon name="exclamationCircle" size="sm" class="mr-1 inline" :stroke-width="2" />
               {{ t('admin.accounts.poolModeInfo') }}
@@ -589,7 +606,7 @@
           </div>
 
           <div v-if="customErrorCodesEnabled" class="space-y-3">
-            <div class="rounded-none bg-amber-50 p-3 dark:bg-amber-900/20">
+            <div class="rounded-lg bg-amber-50 p-3 dark:bg-amber-900/20">
               <p class="text-xs text-amber-700 dark:text-amber-400">
                 <Icon name="exclamationTriangle" size="sm" class="mr-1 inline" :stroke-width="2" />
                 {{ t('admin.accounts.customErrorCodesWarning') }}
@@ -604,7 +621,7 @@
                 type="button"
                 @click="toggleErrorCode(code.value)"
                 :class="[
-                  'rounded-none px-3 py-1.5 text-sm font-medium transition-colors',
+                  'rounded-lg px-3 py-1.5 text-sm font-medium transition-colors',
                   selectedErrorCodes.includes(code.value)
                     ? 'bg-red-100 text-red-700 ring-1 ring-red-500 dark:bg-red-900/30 dark:text-red-400'
                     : 'bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-dark-600 dark:text-dark-300 dark:hover:bg-gray-600'
@@ -642,7 +659,7 @@
               <span
                 v-for="code in selectedErrorCodes.sort((a, b) => a - b)"
                 :key="code"
-                class="inline-flex items-center gap-1 rounded-none bg-red-100 px-2.5 py-0.5 text-sm font-medium text-red-700 dark:bg-red-900/30 dark:text-red-400"
+                class="inline-flex items-center gap-1 rounded-full bg-red-100 px-2.5 py-0.5 text-sm font-medium text-red-700 dark:bg-red-900/30 dark:text-red-400"
               >
                 {{ code }}
                 <button
@@ -711,7 +728,7 @@
           <p v-else-if="grokMediaEligibilityError" class="text-xs text-red-600 dark:text-red-400">
             {{ grokMediaEligibilityError }}
           </p>
-          <div v-else-if="grokMediaEligibilityState" class="rounded-none bg-gray-50 p-3 text-xs dark:bg-dark-700">
+          <div v-else-if="grokMediaEligibilityState" class="rounded-lg bg-gray-50 p-3 text-xs dark:bg-dark-700">
             <span class="font-medium">{{ t('admin.accounts.grokMediaEligibility.current') }}</span>
             <span class="ml-1" data-testid="grok-media-eligibility-status">
               {{ grokMediaEligibilityState.eligible ? t('admin.accounts.grokMediaEligibility.eligible') : t('admin.accounts.grokMediaEligibility.ineligible') }}
@@ -720,7 +737,7 @@
           </div>
           <div
             v-if="grokMediaEligibilityMode === 'enabled'"
-            class="rounded-none bg-amber-50 p-3 dark:bg-amber-900/20"
+            class="rounded-lg bg-amber-50 p-3 dark:bg-amber-900/20"
           >
             <p class="text-xs text-amber-700 dark:text-amber-400">
               <Icon name="exclamationTriangle" size="sm" class="mr-1 inline" :stroke-width="2" />
@@ -801,7 +818,7 @@
         </div>
 
         <div v-if="headerOverrideEnabled" class="space-y-3">
-          <div class="rounded-none bg-blue-50 p-3 dark:bg-blue-900/20">
+          <div class="rounded-lg bg-blue-50 p-3 dark:bg-blue-900/20">
             <p class="text-xs text-blue-700 dark:text-blue-400">
               <Icon name="exclamationCircle" size="sm" class="mr-1 inline" :stroke-width="2" />
               {{ t('admin.accounts.headerOverride.info') }}
@@ -824,7 +841,7 @@
 
         <div
           v-if="isOpenAIModelRestrictionDisabled"
-          class="mb-3 rounded-none bg-amber-50 p-3 dark:bg-amber-900/20"
+          class="mb-3 rounded-lg bg-amber-50 p-3 dark:bg-amber-900/20"
         >
           <p class="text-xs text-amber-700 dark:text-amber-400">
             {{ t('admin.accounts.openai.modelRestrictionDisabledByPassthrough') }}
@@ -879,7 +896,7 @@
 
           <!-- Mapping Mode -->
           <div v-else>
-            <div class="mb-3 rounded-none bg-purple-50 p-3 dark:bg-purple-900/20">
+            <div class="mb-3 rounded-lg bg-purple-50 p-3 dark:bg-purple-900/20">
               <p class="text-xs text-purple-700 dark:text-purple-400">
                 {{ t('admin.accounts.mapRequestModels') }}
               </p>
@@ -927,7 +944,7 @@
                 <button
                   type="button"
                   @click="removeModelMapping(index)"
-                  class="rounded-none p-2 text-red-500 transition-colors hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-900/20"
+                  class="rounded-lg p-2 text-red-500 transition-colors hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-900/20"
                 >
                   <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path
@@ -944,7 +961,7 @@
             <button
               type="button"
               @click="addModelMapping"
-              class="mb-3 w-full rounded-none border-2 border-dashed border-gray-300 px-4 py-2 text-gray-600 transition-colors hover:border-gray-400 hover:text-gray-700 dark:border-dark-500 dark:text-gray-400 dark:hover:border-dark-400 dark:hover:text-gray-300"
+              class="mb-3 w-full rounded-lg border-2 border-dashed border-gray-300 px-4 py-2 text-gray-600 transition-colors hover:border-gray-400 hover:text-gray-700 dark:border-dark-500 dark:text-gray-400 dark:hover:border-dark-400 dark:hover:text-gray-300"
             >
               + {{ t('admin.accounts.addMapping') }}
             </button>
@@ -956,7 +973,7 @@
                 :key="'oauth-' + preset.label"
                 type="button"
                 @click="addPresetMapping(preset.from, preset.to)"
-                :class="['rounded-none px-3 py-1 text-xs transition-colors', preset.color]"
+                :class="['rounded-lg px-3 py-1 text-xs transition-colors', preset.color]"
               >
                 + {{ preset.label }}
               </button>
@@ -1105,7 +1122,7 @@
 
           <!-- Mapping Mode -->
           <div v-else>
-            <div class="mb-3 rounded-none bg-purple-50 p-3 dark:bg-purple-900/20">
+            <div class="mb-3 rounded-lg bg-purple-50 p-3 dark:bg-purple-900/20">
               <p class="text-xs text-purple-700 dark:text-purple-400">
                 <svg
                   class="mr-1 inline h-4 w-4"
@@ -1167,7 +1184,7 @@
                 <button
                   type="button"
                   @click="removeModelMapping(index)"
-                  class="rounded-none p-2 text-red-500 transition-colors hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-900/20"
+                  class="rounded-lg p-2 text-red-500 transition-colors hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-900/20"
                 >
                   <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path
@@ -1184,7 +1201,7 @@
             <button
               type="button"
               @click="addModelMapping"
-              class="mb-3 w-full rounded-none border-2 border-dashed border-gray-300 px-4 py-2 text-gray-600 transition-colors hover:border-gray-400 hover:text-gray-700 dark:border-dark-500 dark:text-gray-400 dark:hover:border-dark-400 dark:hover:text-gray-300"
+              class="mb-3 w-full rounded-lg border-2 border-dashed border-gray-300 px-4 py-2 text-gray-600 transition-colors hover:border-gray-400 hover:text-gray-700 dark:border-dark-500 dark:text-gray-400 dark:hover:border-dark-400 dark:hover:text-gray-300"
             >
               <svg
                 class="mr-1 inline h-4 w-4"
@@ -1209,7 +1226,7 @@
                 :key="preset.label"
                 type="button"
                 @click="addPresetMapping(preset.from, preset.to)"
-                :class="['rounded-none px-3 py-1 text-xs transition-colors', preset.color]"
+                :class="['rounded-lg px-3 py-1 text-xs transition-colors', preset.color]"
               >
                 + {{ preset.label }}
               </button>
@@ -1283,7 +1300,7 @@
             <input
               v-model="editBedrockForceGlobal"
               type="checkbox"
-              class="rounded-none border-gray-300 text-primary-600 focus:ring-primary-500 dark:border-dark-500"
+              class="rounded border-gray-300 text-primary-600 focus:ring-primary-500 dark:border-dark-500"
             />
             <span class="text-sm text-gray-700 dark:text-gray-300">{{ t('admin.accounts.bedrockForceGlobal') }}</span>
           </label>
@@ -1365,7 +1382,7 @@
                 :key="preset.from"
                 type="button"
                 @click="modelMappings.push({ from: preset.from, to: preset.to })"
-                :class="['rounded-none px-3 py-1 text-xs transition-colors', preset.color]"
+                :class="['rounded-lg px-3 py-1 text-xs transition-colors', preset.color]"
               >
                 + {{ preset.label }}
               </button>
@@ -1398,7 +1415,7 @@
               />
             </button>
           </div>
-          <div v-if="poolModeEnabled" class="rounded-none bg-blue-50 p-3 dark:bg-blue-900/20">
+          <div v-if="poolModeEnabled" class="rounded-lg bg-blue-50 p-3 dark:bg-blue-900/20">
             <p class="text-xs text-blue-700 dark:text-blue-400">
               <Icon name="exclamationCircle" size="sm" class="mr-1 inline" :stroke-width="2" />
               {{ t('admin.accounts.poolModeInfo') }}
@@ -1460,7 +1477,7 @@
 
         <!-- Mapping Mode Only (no toggle for Antigravity) -->
         <div>
-          <div class="mb-3 rounded-none bg-purple-50 p-3 dark:bg-purple-900/20">
+          <div class="mb-3 rounded-lg bg-purple-50 p-3 dark:bg-purple-900/20">
             <p class="text-xs text-purple-700 dark:text-purple-400">{{ t('admin.accounts.mapRequestModels') }}</p>
           </div>
 
@@ -1469,7 +1486,7 @@
               type="button"
               @click="syncAntigravityUpstreamModels"
               :disabled="isSyncingAntigravityUpstream || !account?.id"
-              class="rounded-none border border-emerald-200 px-3 py-1.5 text-sm text-emerald-600 hover:bg-emerald-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-emerald-800 dark:text-emerald-400 dark:hover:bg-emerald-900/30"
+              class="rounded-lg border border-emerald-200 px-3 py-1.5 text-sm text-emerald-600 hover:bg-emerald-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-emerald-800 dark:text-emerald-400 dark:hover:bg-emerald-900/30"
             >
               {{ isSyncingAntigravityUpstream ? t('admin.accounts.syncUpstreamModelsLoading') : t('admin.accounts.syncUpstreamModels') }}
             </button>
@@ -1515,7 +1532,7 @@
                 <button
                   type="button"
                   @click="removeAntigravityModelMapping(index)"
-                  class="rounded-none p-2 text-red-500 transition-colors hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-900/20"
+                  class="rounded-lg p-2 text-red-500 transition-colors hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-900/20"
                 >
                   <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path
@@ -1540,7 +1557,7 @@
           <button
             type="button"
             @click="addAntigravityModelMapping"
-            class="mb-3 w-full rounded-none border-2 border-dashed border-gray-300 px-4 py-2 text-gray-600 transition-colors hover:border-gray-400 hover:text-gray-700 dark:border-dark-500 dark:text-gray-400 dark:hover:border-dark-400 dark:hover:text-gray-300"
+            class="mb-3 w-full rounded-lg border-2 border-dashed border-gray-300 px-4 py-2 text-gray-600 transition-colors hover:border-gray-400 hover:text-gray-700 dark:border-dark-500 dark:text-gray-400 dark:hover:border-dark-400 dark:hover:text-gray-300"
           >
             <svg class="mr-1 inline h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
@@ -1554,7 +1571,7 @@
               :key="preset.label"
               type="button"
               @click="addAntigravityPresetMapping(preset.from, preset.to)"
-              :class="['rounded-none px-3 py-1 text-xs transition-colors', preset.color]"
+              :class="['rounded-lg px-3 py-1 text-xs transition-colors', preset.color]"
             >
               + {{ preset.label }}
             </button>
@@ -1589,7 +1606,7 @@
         </div>
 
         <div v-if="tempUnschedEnabled" class="space-y-3">
-          <div class="rounded-none bg-blue-50 p-3 dark:bg-blue-900/20">
+          <div class="rounded-lg bg-blue-50 p-3 dark:bg-blue-900/20">
             <p class="text-xs text-blue-700 dark:text-blue-400">
               <Icon name="exclamationTriangle" size="sm" class="mr-1 inline" :stroke-width="2" />
               {{ t('admin.accounts.tempUnschedulable.notice') }}
@@ -1602,7 +1619,7 @@
               :key="preset.label"
               type="button"
               @click="addTempUnschedRule(preset.rule)"
-              class="rounded-none bg-gray-100 px-3 py-1.5 text-xs font-medium text-gray-600 transition-colors hover:bg-gray-200 dark:bg-dark-600 dark:text-gray-300 dark:hover:bg-dark-500"
+              class="rounded-lg bg-gray-100 px-3 py-1.5 text-xs font-medium text-gray-600 transition-colors hover:bg-gray-200 dark:bg-dark-600 dark:text-gray-300 dark:hover:bg-dark-500"
             >
               + {{ preset.label }}
             </button>
@@ -1612,7 +1629,7 @@
             <div
               v-for="(rule, index) in tempUnschedRules"
               :key="getTempUnschedRuleKey(rule)"
-              class="rounded-none border border-gray-200 p-3 dark:border-dark-600"
+              class="rounded-lg border border-gray-200 p-3 dark:border-dark-600"
             >
               <div class="mb-2 flex items-center justify-between">
                 <span class="text-xs font-medium text-gray-500 dark:text-gray-400">
@@ -1623,7 +1640,7 @@
                     type="button"
                     :disabled="index === 0"
                     @click="moveTempUnschedRule(index, -1)"
-                    class="rounded-none p-1 text-gray-400 transition-colors hover:text-gray-600 disabled:cursor-not-allowed disabled:opacity-40 dark:hover:text-gray-200"
+                    class="rounded p-1 text-gray-400 transition-colors hover:text-gray-600 disabled:cursor-not-allowed disabled:opacity-40 dark:hover:text-gray-200"
                   >
                     <Icon name="chevronUp" size="sm" :stroke-width="2" />
                   </button>
@@ -1631,7 +1648,7 @@
                     type="button"
                     :disabled="index === tempUnschedRules.length - 1"
                     @click="moveTempUnschedRule(index, 1)"
-                    class="rounded-none p-1 text-gray-400 transition-colors hover:text-gray-600 disabled:cursor-not-allowed disabled:opacity-40 dark:hover:text-gray-200"
+                    class="rounded p-1 text-gray-400 transition-colors hover:text-gray-600 disabled:cursor-not-allowed disabled:opacity-40 dark:hover:text-gray-200"
                   >
                     <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                       <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
@@ -1640,7 +1657,7 @@
                   <button
                     type="button"
                     @click="removeTempUnschedRule(index)"
-                    class="rounded-none p-1 text-red-500 transition-colors hover:text-red-600"
+                    class="rounded p-1 text-red-500 transition-colors hover:text-red-600"
                   >
                     <Icon name="x" size="sm" :stroke-width="2" />
                   </button>
@@ -1695,7 +1712,7 @@
           <button
             type="button"
             @click="addTempUnschedRule()"
-            class="w-full rounded-none border-2 border-dashed border-gray-300 px-4 py-2 text-sm text-gray-600 transition-colors hover:border-gray-400 hover:text-gray-700 dark:border-dark-500 dark:text-gray-400 dark:hover:border-dark-400 dark:hover:text-gray-300"
+            class="w-full rounded-lg border-2 border-dashed border-gray-300 px-4 py-2 text-sm text-gray-600 transition-colors hover:border-gray-400 hover:text-gray-700 dark:border-dark-500 dark:text-gray-400 dark:hover:border-dark-400 dark:hover:text-gray-300"
           >
             <svg
               class="mr-1 inline h-4 w-4"
@@ -1727,7 +1744,7 @@
             v-model="accountSchedulingThresholdOverrideEnabled"
             data-testid="account-scheduling-threshold-override-enabled"
             type="checkbox"
-            class="h-4 w-4 rounded-none border-gray-300 text-primary-600 focus:ring-primary-500"
+            class="h-4 w-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500"
           />
         </div>
         <div v-if="accountSchedulingThresholdOverrideEnabled">
@@ -1886,6 +1903,7 @@
           </div>
           <button
             type="button"
+            data-testid="account-edit-passthrough-toggle"
             @click="openaiPassthroughEnabled = !openaiPassthroughEnabled"
             :class="[
               'relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2',
@@ -1938,16 +1956,16 @@
         v-if="account?.platform === 'openai' && (account?.type === 'oauth' || account?.type === 'setup-token' || account?.type === 'apikey')"
         class="border-t border-gray-200 pt-4 dark:border-dark-600"
       >
-        <div class="overflow-hidden rounded-none border border-sky-100 bg-sky-50/60 dark:border-sky-900/50 dark:bg-sky-950/20">
+        <div class="overflow-hidden rounded-lg border border-sky-100 bg-sky-50/60 shadow-sm dark:border-sky-900/50 dark:bg-sky-950/20">
           <div class="flex items-start gap-3 px-4 py-3">
-            <div class="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-none bg-white text-sky-600 shadow-outline ring-1 ring-sky-100 dark:bg-dark-800 dark:text-sky-300 dark:ring-sky-900/60">
+            <div class="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-white text-sky-600 shadow-sm ring-1 ring-sky-100 dark:bg-dark-800 dark:text-sky-300 dark:ring-sky-900/60">
               <Icon name="sparkles" size="sm" />
             </div>
             <div class="min-w-0 flex-1">
               <div class="flex flex-wrap items-center gap-2">
                 <label class="input-label mb-0">{{ t('admin.accounts.openai.codexImageTool') }}</label>
                 <span
-                  class="rounded-none px-2 py-0.5 text-[11px] font-medium"
+                  class="rounded-full px-2 py-0.5 text-[11px] font-medium"
                   :class="codexImageToolBadgeClass"
                 >
                   {{ codexImageToolBadgeLabel }}
@@ -1967,7 +1985,7 @@
                 :data-testid="`codex-image-tool-${option.value}`"
                 @click="codexImageToolMode = option.value"
                 :class="[
-                  'group flex min-h-[62px] items-start gap-2 rounded-none border px-3 py-2 text-left transition-all',
+                  'group flex min-h-[62px] items-start gap-2 rounded-md border px-3 py-2 text-left transition-all',
                   codexImageToolMode === option.value
                     ? option.selectedCardClass
                     : 'border-transparent bg-transparent text-slate-600 hover:border-gray-200 hover:bg-gray-50 dark:text-slate-300 dark:hover:border-dark-500 dark:hover:bg-dark-700'
@@ -2002,7 +2020,7 @@
 
       <!-- OpenAI WS Mode 三态（off/ctx_pool/passthrough） -->
       <div
-        v-if="(account?.platform === 'openai' && (account?.type === 'oauth' || account?.type === 'setup-token' || account?.type === 'apikey')) || isCindyAccount"
+        v-if="showAccountEditMode('responses_websocket_mode')"
         class="border-t border-gray-200 pt-4 dark:border-dark-600"
       >
         <div class="flex items-center justify-between">
@@ -2016,14 +2034,16 @@
             </p>
           </div>
           <div class="w-52">
-            <Select v-model="openaiResponsesWebSocketV2Mode" data-testid="edit-openai-ws-mode-select" :options="openAIWSModeOptions" />
+            <Select v-model="openaiResponsesWebSocketV2Mode" data-testid="edit-openai-ws-mode-select" :options="openAIWSModeOptions" @update:model-value="recordAccountMode('responses_websocket_mode', $event)" />
+            <button v-if="canClearAccountEditMode('responses_websocket_mode')" type="button" class="mt-1 text-xs text-primary-600" data-testid="account-edit-clear-ws" @click="providerEdit.clear('responses_websocket_mode')">{{ t('admin.accounts.providerEdit.clearToDefault') }}</button>
+            <p v-if="providerEdit.changes.value.responses_websocket_mode?.op === 'clear'" class="mt-1 text-xs">{{ t('admin.accounts.providerEdit.clearPending') }}</p>
           </div>
         </div>
       </div>
 
       <!-- OpenAI APIKey Responses API support mode -->
       <div
-        v-if="(account?.platform === 'openai' && account?.type === 'apikey') || isCindyAccount"
+        v-if="showAccountEditMode('responses_mode')"
         class="space-y-4 border-t border-gray-200 pt-4 dark:border-dark-600"
       >
         <div class="flex items-center justify-between gap-4">
@@ -2039,18 +2059,21 @@
               :options="openAIResponsesModeOptions"
               :disabled="!openAITextGenerationCapabilityEnabled"
               data-testid="openai-responses-mode-select"
+              @update:model-value="recordAccountMode('responses_mode', $event)"
             />
+            <button v-if="canClearAccountEditMode('responses_mode')" type="button" class="mt-1 text-xs text-primary-600" data-testid="account-edit-clear-responses" @click="providerEdit.clear('responses_mode')">{{ t('admin.accounts.providerEdit.clearToDefault') }}</button>
+            <p v-if="providerEdit.changes.value.responses_mode?.op === 'clear'" class="mt-1 text-xs">{{ t('admin.accounts.providerEdit.clearPending') }}</p>
           </div>
         </div>
         <div
           v-if="openAITextGenerationCapabilityEnabled"
-          class="rounded-none bg-gray-50 px-3 py-2 text-xs text-gray-600 dark:bg-dark-700 dark:text-gray-300"
+          class="rounded-lg bg-gray-50 px-3 py-2 text-xs text-gray-600 dark:bg-dark-700 dark:text-gray-300"
         >
           <span class="font-medium">{{ t(openAIResponsesStatusKey) }}</span>
         </div>
         <div
           v-else
-          class="rounded-none bg-amber-50 px-3 py-2 text-xs text-amber-700 dark:bg-amber-900/20 dark:text-amber-300"
+          class="rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-700 dark:bg-amber-900/20 dark:text-amber-300"
           data-testid="openai-responses-mode-not-applicable"
         >
           {{ t('admin.accounts.openai.responsesModeTextDisabledHint') }}
@@ -2061,11 +2084,11 @@
             <label
               v-for="option in openAIEndpointCapabilityOptions"
               :key="option.value"
-              class="flex cursor-pointer items-center gap-2 rounded-none border border-gray-200 px-3 py-2 text-sm dark:border-dark-600"
+              class="flex cursor-pointer items-center gap-2 rounded-lg border border-gray-200 px-3 py-2 text-sm dark:border-dark-600"
             >
               <input
                 type="checkbox"
-                class="rounded-none border-gray-300 text-primary-600 focus:ring-primary-500 dark:border-dark-500"
+                class="rounded border-gray-300 text-primary-600 focus:ring-primary-500 dark:border-dark-500"
                 :data-testid="`openai-endpoint-capability-${option.value}`"
                 :checked="openAIEndpointCapabilities.includes(option.value)"
                 @change="toggleOpenAIEndpointCapability(option.value, $event)"
@@ -2451,10 +2474,10 @@
       </div>
 
       <div
-        v-if="(account?.platform === 'openai' && (account?.type === 'oauth' || account?.type === 'setup-token' || account?.type === 'apikey')) || isCindyAccount"
+        v-if="showAccountEditMode('compact_mode') || (isCindyAccount && editProfile?.compact_mapping_editable)"
         class="border-t border-gray-200 pt-4 dark:border-dark-600 space-y-4"
       >
-        <div class="flex items-center justify-between">
+        <div v-if="showAccountEditMode('compact_mode')" class="flex items-center justify-between">
           <div>
             <label class="input-label mb-0">{{ t('admin.accounts.openai.compactMode') }}</label>
             <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
@@ -2462,10 +2485,12 @@
             </p>
           </div>
           <div class="w-44">
-            <Select v-model="openAICompactMode" :options="openAICompactModeOptions" />
+            <Select v-model="openAICompactMode" :options="openAICompactModeOptions" data-testid="account-edit-compact-mode" @update:model-value="recordAccountMode('compact_mode', $event)" />
+            <button v-if="canClearAccountEditMode('compact_mode')" type="button" class="mt-1 text-xs text-primary-600" data-testid="account-edit-clear-compact" @click="providerEdit.clear('compact_mode')">{{ t('admin.accounts.providerEdit.clearToDefault') }}</button>
+            <p v-if="providerEdit.changes.value.compact_mode?.op === 'clear'" class="mt-1 text-xs">{{ t('admin.accounts.providerEdit.clearPending') }}</p>
           </div>
         </div>
-        <div class="rounded-none bg-gray-50 px-3 py-2 text-xs text-gray-600 dark:bg-dark-700 dark:text-gray-300">
+        <div class="rounded-lg bg-gray-50 px-3 py-2 text-xs text-gray-600 dark:bg-dark-700 dark:text-gray-300">
           <span class="font-medium">{{ t(openAICompactStatusKey) }}</span>
           <span
             v-if="account?.extra?.openai_compact_checked_at"
@@ -2475,7 +2500,7 @@
             {{ formatDateTime(new Date(String(account.extra.openai_compact_checked_at))) }}
           </span>
         </div>
-        <div>
+        <div v-if="!isCindyAccount || editProfile?.compact_mapping_editable">
           <label class="input-label">{{ t('admin.accounts.openai.compactModelMapping') }}</label>
           <p class="input-hint">{{ t('admin.accounts.openai.compactModelMappingDesc') }}</p>
           <div v-if="openAICompactModelMappings.length > 0" class="mb-3 space-y-2">
@@ -2513,6 +2538,7 @@
           <button type="button" @click="addOpenAICompactModelMapping" class="btn btn-secondary text-sm">
             + {{ t('admin.accounts.addMapping') }}
           </button>
+          <button v-if="isCindyAccount" type="button" class="btn btn-secondary ml-2 text-sm" data-testid="account-edit-clear-compact-mapping" @click="providerEdit.clear('compact_model_mapping')">{{ t('admin.accounts.providerEdit.clearCompactMappings') }}</button>
         </div>
       </div>
 
@@ -2695,7 +2721,7 @@
         </div>
 
         <!-- Window Cost Limit -->
-        <div class="rounded-none border border-gray-200 p-4 dark:border-dark-600">
+        <div class="rounded-lg border border-gray-200 p-4 dark:border-dark-600">
           <div class="mb-3 flex items-center justify-between">
             <div>
               <label class="input-label mb-0">{{ t('admin.accounts.quotaControl.windowCost.label') }}</label>
@@ -2755,7 +2781,7 @@
         </div>
 
         <!-- Session Limit -->
-        <div class="rounded-none border border-gray-200 p-4 dark:border-dark-600">
+        <div class="rounded-lg border border-gray-200 p-4 dark:border-dark-600">
           <div class="mb-3 flex items-center justify-between">
             <div>
               <label class="input-label mb-0">{{ t('admin.accounts.quotaControl.sessionLimit.label') }}</label>
@@ -2812,7 +2838,7 @@
         </div>
 
         <!-- RPM Limit -->
-        <div class="rounded-none border border-gray-200 p-4 dark:border-dark-600">
+        <div class="rounded-lg border border-gray-200 p-4 dark:border-dark-600">
           <div class="mb-3 flex items-center justify-between">
             <div>
               <label class="input-label mb-0">{{ t('admin.accounts.quotaControl.rpmLimit.label') }}</label>
@@ -2913,7 +2939,7 @@
               <button type="button" v-for="opt in umqModeOptions" :key="opt.value"
                 @click="userMsgQueueMode = opt.value"
                 :class="[
-                  'px-3 py-1.5 text-sm rounded-none border transition-colors',
+                  'px-3 py-1.5 text-sm rounded-md border transition-colors',
                   userMsgQueueMode === opt.value
                     ? 'bg-primary-600 text-white border-primary-600'
                     : 'bg-white dark:bg-dark-700 text-gray-700 dark:text-gray-300 border-gray-300 dark:border-dark-500 hover:bg-gray-50 dark:hover:bg-dark-600'
@@ -2925,7 +2951,7 @@
         </div>
 
         <!-- TLS Fingerprint -->
-        <div class="rounded-none border border-gray-200 p-4 dark:border-dark-600">
+        <div class="rounded-lg border border-gray-200 p-4 dark:border-dark-600">
           <div class="flex items-center justify-between">
             <div>
               <label class="input-label mb-0">{{ t('admin.accounts.quotaControl.tlsFingerprint.label') }}</label>
@@ -2960,7 +2986,7 @@
         </div>
 
         <!-- Session ID Masking -->
-        <div class="rounded-none border border-gray-200 p-4 dark:border-dark-600">
+        <div class="rounded-lg border border-gray-200 p-4 dark:border-dark-600">
           <div class="flex items-center justify-between">
             <div>
               <label class="input-label mb-0">{{ t('admin.accounts.quotaControl.sessionIdMasking.label') }}</label>
@@ -2987,7 +3013,7 @@
         </div>
 
         <!-- Cache TTL Override -->
-        <div class="rounded-none border border-gray-200 p-4 dark:border-dark-600">
+        <div class="rounded-lg border border-gray-200 p-4 dark:border-dark-600">
           <div class="flex items-center justify-between">
             <div>
               <label class="input-label mb-0">{{ t('admin.accounts.quotaControl.cacheTTLOverride.label') }}</label>
@@ -3015,7 +3041,7 @@
             <label class="input-label text-xs">{{ t('admin.accounts.quotaControl.cacheTTLOverride.target') }}</label>
             <select
               v-model="cacheTTLOverrideTarget"
-              class="mt-1 block w-full rounded-none border border-gray-300 bg-white px-3 py-2 text-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500 dark:border-dark-500 dark:bg-dark-700 dark:text-white"
+              class="mt-1 block w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm shadow-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500 dark:border-dark-500 dark:bg-dark-700 dark:text-white"
             >
               <option value="5m">5m</option>
               <option value="1h">1h</option>
@@ -3027,7 +3053,7 @@
         </div>
 
         <!-- Custom Base URL Relay -->
-        <div class="rounded-none border border-gray-200 p-4 dark:border-dark-600">
+        <div class="rounded-lg border border-gray-200 p-4 dark:border-dark-600">
           <div class="flex items-center justify-between">
             <div>
               <label class="input-label mb-0">{{ t('admin.accounts.quotaControl.customBaseUrl.label') }}</label>
@@ -3075,7 +3101,7 @@
               type="checkbox"
               v-model="mixedScheduling"
               disabled
-              class="h-4 w-4 cursor-not-allowed rounded-none border-gray-300 text-primary-500 focus:ring-primary-500 dark:border-dark-500"
+              class="h-4 w-4 cursor-not-allowed rounded border-gray-300 text-primary-500 focus:ring-primary-500 dark:border-dark-500"
             />
             <span class="text-sm font-medium text-gray-700 dark:text-gray-300">
               {{ t('admin.accounts.mixedScheduling') }}
@@ -3089,7 +3115,7 @@
             </span>
             <!-- Tooltip（向下显示避免被弹窗裁剪） -->
             <div
-              class="pointer-events-none absolute left-0 top-full z-[100] mt-1.5 w-72 rounded-none bg-gray-900 px-3 py-2 text-xs text-white opacity-0 transition-opacity group-hover:opacity-100 dark:bg-gray-700"
+              class="pointer-events-none absolute left-0 top-full z-[100] mt-1.5 w-72 rounded bg-gray-900 px-3 py-2 text-xs text-white opacity-0 transition-opacity group-hover:opacity-100 dark:bg-gray-700"
             >
               {{ t('admin.accounts.mixedSchedulingTooltip') }}
               <div
@@ -3103,7 +3129,7 @@
             <input
               type="checkbox"
               v-model="allowOverages"
-              class="h-4 w-4 rounded-none border-gray-300 text-primary-500 focus:ring-primary-500 dark:border-dark-500"
+              class="h-4 w-4 rounded border-gray-300 text-primary-500 focus:ring-primary-500 dark:border-dark-500"
             />
             <span class="text-sm font-medium text-gray-700 dark:text-gray-300">
               {{ t('admin.accounts.allowOverages') }}
@@ -3116,7 +3142,7 @@
               ?
             </span>
             <div
-              class="pointer-events-none absolute left-0 top-full z-[100] mt-1.5 w-72 rounded-none bg-gray-900 px-3 py-2 text-xs text-white opacity-0 transition-opacity group-hover:opacity-100 dark:bg-gray-700"
+              class="pointer-events-none absolute left-0 top-full z-[100] mt-1.5 w-72 rounded bg-gray-900 px-3 py-2 text-xs text-white opacity-0 transition-opacity group-hover:opacity-100 dark:bg-gray-700"
             >
               {{ t('admin.accounts.allowOveragesTooltip') }}
               <div
@@ -3143,10 +3169,13 @@
         <button @click="handleClose" type="button" class="btn btn-secondary">
           {{ t('common.cancel') }}
         </button>
+        <button v-if="isCindyAccount && providerEdit.pending.value" type="button" class="btn btn-secondary" data-testid="account-edit-save-basic" :disabled="submitting || !accountViewOperation.available.value" @click="handleSubmit(true)">
+          {{ t('admin.accounts.providerEdit.saveBasic') }}
+        </button>
         <button
           type="submit"
           form="edit-account-form"
-          :disabled="submitting || cindyCatalogLoading || !capacityValid || !capacityReady"
+          :disabled="submitting || !providerEdit.canSubmit.value || !capacityValid || !capacityReady || !accountViewOperation.available.value"
           class="btn btn-primary"
           data-tour="account-form-submit"
         >
@@ -3190,9 +3219,15 @@
 </template>
 
 <script setup lang="ts">
+import { useAccountViewOperation } from '@/composables/useAccountViewContext'
+import { accountAPIForView } from '@/api/admin/accounts'
 import { ref, reactive, computed, watch, nextTick } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useAppStore } from '@/stores/app'
+import { useAuthStore } from '@/stores/auth'
+import { useAccountEditProfile } from '@/composables/useAccountEditProfile'
+import { accountEditModes, applyCoreAccountModeChanges, requiresAccountEditProfile, type AccountEditInput } from '@/utils/accountEditCodec'
+import type { AccountEditChangesV1, AccountEditModeTarget, ProviderEditRequestV1 } from '@sub2api/plugin-ui/account-edit'
 
 import { adminAPI } from '@/api/admin'
 import { useQuotaNotifyState } from '@/composables/useQuotaNotifyState'
@@ -3206,9 +3241,9 @@ import type {
   OpenAIResponsesMode,
   OpenAIEndpointCapability,
   OllamaCloudUsageState,
-  AccountAvailableModel,
   GrokMediaEligibilityMode,
-  GrokMediaEligibilityState
+  GrokMediaEligibilityState,
+  UpdateAccountRequest
 } from '@/types'
 import BaseDialog from '@/components/common/BaseDialog.vue'
 import ConfirmDialog from '@/components/common/ConfirmDialog.vue'
@@ -3274,7 +3309,6 @@ import {
   parseDateTimeLocalInput
 } from '@/utils/format'
 import { createStableObjectKeyResolver } from '@/utils/stableObjectKey'
-import { CINDY_OPENAI_DEFAULTS, isCindyOpenAIAPIKeyAccount } from '@/utils/cindyOpenAIDefaults'
 import { getAccountExpiryTimestamp } from '@/components/account/accountExpiry'
 import { allSelectedGroupsEnableLongContextPricing } from '@/components/account/longContextBilling'
 import { VERTEX_LOCATION_OPTIONS } from '@/constants/account'
@@ -3283,7 +3317,6 @@ import {
   OPENAI_WS_MODE_OFF,
   OPENAI_WS_MODE_PASSTHROUGH,
   OPENAI_WS_MODE_HTTP_BRIDGE,
-  isOpenAIWSModeEnabled,
   resolveOpenAIWSModeHintKey,
   type OpenAIWSMode,
   resolveOpenAIWSModeFromExtra
@@ -3305,13 +3338,17 @@ interface Props {
 }
 
 const props = defineProps<Props>()
+const accountViewOperation = useAccountViewOperation(() => props.show, () => props.account?.id)
+function scopedAccounts() { return accountAPIForView(accountViewOperation.capture(), adminAPI.accounts) }
+
 const emit = defineEmits<{
   close: []
   updated: [account: Account]
 }>()
 
-const { t } = useI18n()
+const { t, locale } = useI18n()
 const appStore = useAppStore()
+const authStore = useAuthStore()
 const browserTimeZone = getBrowserTimeZone()
 
 const selectableGroups = computed(() => {
@@ -3349,7 +3386,7 @@ const handleOllamaCloudUsageUpdated = (state: OllamaCloudUsageState) => {
 // Platform-specific hint for Base URL
 const baseUrlHint = computed(() => {
   if (!props.account) return t('admin.accounts.baseUrlHint')
-  if (isCindyAccount.value) return t('admin.accounts.cindy.fixedEndpointHint')
+  if (isCindyAccount.value) return profileLabel(editProfile.value?.credential_ui.hint)
   if (props.account.platform === 'openai') return t('admin.accounts.openai.baseUrlHint')
   if (props.account.platform === 'gemini') return t('admin.accounts.gemini.baseUrlHint')
   if (props.account.platform === 'grok') return ''
@@ -3537,13 +3574,13 @@ const modelMappings = ref<ModelMapping[]>([])
 const openAICompactModelMappings = ref<ModelMapping[]>([])
 const modelRestrictionMode = ref<'whitelist' | 'mapping'>('whitelist')
 const allowedModels = ref<string[]>([])
-const cindyManagedCatalog = ref<AccountAvailableModel[]>([])
-const cindyManagedAliases = ref<AccountAvailableModel[]>([])
-const preservedCindyManagedMappings = ref<ModelMapping[]>([])
-const cindyCatalogLoading = ref(false)
-const cindyCatalogLoadFailed = ref(false)
-let cindyCatalogRequestSequence = 0
-const isCindyAccount = computed(() => isCindyOpenAIAPIKeyAccount(props.account))
+const cindyManagedCatalog = computed(() => providerEdit.projection.value.models)
+const cindyManagedAliases = computed(() => providerEdit.projection.value.aliases)
+const preservedCindyManagedMappings = computed(() => Object.entries(providerEdit.draft.value?.preserved || {}).map(([from, to]) => ({ from, to })))
+const cindyCatalogLoading = computed(() => providerEdit.draft.value?.loading === true)
+const cindyCatalogLoadFailed = computed(() => !providerEdit.catalogAvailable.value)
+const isCindyAccount = computed(() => requiresAccountEditProfile(props.account))
+const coreModeChanges = ref<AccountEditChangesV1>({})
 const DEFAULT_POOL_MODE_RETRY_COUNT = 3
 const MAX_POOL_MODE_RETRY_COUNT = 10
 const DEFAULT_POOL_MODE_RETRY_STATUS_CODES = [401, 403, 429]
@@ -3625,7 +3662,7 @@ const loadGrokMediaEligibility = async (accountID: number): Promise<GrokMediaEli
   grokMediaEligibilityLoading.value = true
   grokMediaEligibilityError.value = ''
   try {
-    const state = await adminAPI.accounts.getGrokMediaEligibility(accountID)
+    const state = await scopedAccounts().getGrokMediaEligibility(accountID)
     if (requestVersion !== grokMediaEligibilityRequestVersion) return null
     grokMediaEligibilityState.value = state
     grokMediaEligibilityMode.value = state.mode
@@ -3770,12 +3807,12 @@ const codexFingerprintModeOptions = computed(() => [
   { value: 'full' as CodexFingerprintMode, label: t('admin.accounts.openai.codexFingerprintFull') },
 ])
 
-const openAIWSModeOptions = computed(() => [
+const openAIWSModeOptions = computed(() => filterAccountEditModeOptions('responses_websocket_mode', [
   { value: OPENAI_WS_MODE_OFF, label: t('admin.accounts.openai.wsModeOff') },
   { value: OPENAI_WS_MODE_CTX_POOL, label: t('admin.accounts.openai.wsModeCtxPool') },
   { value: OPENAI_WS_MODE_PASSTHROUGH, label: t('admin.accounts.openai.wsModePassthrough') },
   { value: OPENAI_WS_MODE_HTTP_BRIDGE, label: t('admin.accounts.openai.wsModeHttpBridge') }
-])
+]))
 const openaiResponsesWebSocketV2Mode = computed({
   get: () => {
     if (props.account?.type === 'apikey') {
@@ -3854,20 +3891,20 @@ const codexImageToolBadgeClass = computed(() => {
       return 'bg-slate-100 text-slate-600 dark:bg-dark-600 dark:text-slate-300'
   }
 })
-const openAICompactModeOptions = computed(() => [
+const openAICompactModeOptions = computed(() => filterAccountEditModeOptions('compact_mode', [
   { value: 'auto', label: t('admin.accounts.openai.compactModeAuto') },
   { value: 'force_on', label: t('admin.accounts.openai.compactModeForceOn') },
   { value: 'force_off', label: t('admin.accounts.openai.compactModeForceOff') }
-])
+]))
 // OpenAI 订阅档位手动覆盖选项(清空 + Plus/Pro/Free;别名/自定义值友好显示且保留 canonical)
 const planTypeOptions = computed(() =>
   buildPlanTypeOptions(editPlanType.value, t('admin.accounts.openai.planTypeClear'))
 )
-const openAIResponsesModeOptions = computed(() => [
+const openAIResponsesModeOptions = computed(() => filterAccountEditModeOptions('responses_mode', [
   { value: 'auto', label: t('admin.accounts.openai.responsesModeAuto') },
   { value: 'force_responses', label: t('admin.accounts.openai.responsesModeForceResponses') },
   { value: 'force_chat_completions', label: t('admin.accounts.openai.responsesModeForceChatCompletions') }
-])
+]))
 const openAITextEndpointCapabilityLabel = computed(() => {
   if (openAIResponsesMode.value === 'force_responses') {
     return t('admin.accounts.openai.capabilityResponses')
@@ -3886,16 +3923,17 @@ const openAITextEndpointCapabilityLabel = computed(() => {
 })
 const openAIEndpointCapabilityOptions = computed<{ value: OpenAIEndpointCapability; label: string }[]>(() => [
   { value: 'chat_completions', label: openAITextEndpointCapabilityLabel.value },
-  { value: 'embeddings', label: t('admin.accounts.openai.capabilityEmbeddings') }
+  { value: 'embeddings', label: t('admin.accounts.openai.capabilityEmbeddings') },
+  { value: 'seedance', label: 'Seedance (Ark)' }
 ])
 const openAITextGenerationCapabilityEnabled = computed(() =>
-  openAIEndpointCapabilities.value.includes('chat_completions')
+  isCindyAccount.value || openAIEndpointCapabilities.value.includes('chat_completions')
 )
 
 const normalizeOpenAIEndpointCapabilities = (values: OpenAIEndpointCapability[]) => {
-  const allowed: OpenAIEndpointCapability[] = ['chat_completions', 'embeddings']
+  const allowed: OpenAIEndpointCapability[] = ['chat_completions', 'embeddings', 'seedance']
   const selected = allowed.filter((value) => values.includes(value))
-  return selected.length > 0 ? selected : allowed
+  return selected.length > 0 ? selected : ['chat_completions', 'embeddings'] as OpenAIEndpointCapability[]
 }
 
 const readOpenAIEndpointCapabilities = (credentials?: Record<string, unknown>): OpenAIEndpointCapability[] => {
@@ -3903,7 +3941,7 @@ const readOpenAIEndpointCapabilities = (credentials?: Record<string, unknown>): 
   if (Array.isArray(raw)) {
     return normalizeOpenAIEndpointCapabilities(
       raw.filter((value): value is OpenAIEndpointCapability =>
-        value === 'chat_completions' || value === 'embeddings'
+        value === 'chat_completions' || value === 'embeddings' || value === 'seedance'
       )
     )
   }
@@ -3928,9 +3966,6 @@ const toggleOpenAIEndpointCapability = (capability: OpenAIEndpointCapability, ev
     openAIEndpointCapabilities.value = openAIEndpointCapabilities.value.filter(
       (value) => value !== capability
     )
-    if (!openAITextGenerationCapabilityEnabled.value) {
-      openAIResponsesMode.value = 'auto'
-    }
     return
   }
   openAIEndpointCapabilities.value = normalizeOpenAIEndpointCapabilities([
@@ -3941,7 +3976,7 @@ const toggleOpenAIEndpointCapability = (capability: OpenAIEndpointCapability, ev
 
 const applyOpenAIEndpointCapabilities = (credentials: Record<string, unknown>) => {
   const capabilities = normalizeOpenAIEndpointCapabilities(openAIEndpointCapabilities.value)
-  if (capabilities.length === 2) {
+  if (capabilities.length === 2 && !capabilities.includes('seedance')) {
     delete credentials.openai_capabilities
     return
   }
@@ -3974,8 +4009,7 @@ const openAIResponsesStatusKey = computed(() => {
 })
 const openAICompactStatusKey = computed(() => {
   const extra = props.account?.extra as Record<string, unknown> | undefined
-  if (!props.account || props.account.platform !== 'openai') return ''
-  const mode = typeof extra?.openai_compact_mode === 'string' ? extra.openai_compact_mode : 'auto'
+  const mode = openAICompactMode.value
   if (mode === 'force_on') return 'admin.accounts.openai.compactSupported'
   if (mode === 'force_off') return 'admin.accounts.openai.compactUnsupported'
   if (typeof extra?.openai_compact_supported === 'boolean') {
@@ -4020,7 +4054,7 @@ const tempUnschedPresets = computed(() => [
 
 // Computed: default base URL based on platform
 const defaultBaseUrl = computed(() => {
-  if (isCindyAccount.value) return 'https://api.laxarouter.ai'
+  if (isCindyAccount.value) return String(props.account?.credentials?.base_url || editProfile.value?.credential_ui.base_url || '')
   if (props.account?.platform === 'openai') return 'https://api.openai.com'
   if (props.account?.platform === 'gemini') return 'https://generativelanguage.googleapis.com'
   if (props.account?.platform === 'grok') return 'https://api.x.ai/v1'
@@ -4109,30 +4143,16 @@ const loadModelRestrictionFromMapping = (rawMapping?: Record<string, unknown>) =
       : 'whitelist'
 }
 
-const isManagedCindyMapping = (from: string, to: string) => {
-  const managed = [...cindyManagedCatalog.value, ...cindyManagedAliases.value]
-    .find(model => model.id === from.trim())
-  if (!managed) return false
-
-  const target = to.trim()
-  return [managed.id, managed.alias_target, managed.live_upstream_id]
-    .filter((value): value is string => Boolean(value))
-    .includes(target)
-}
-
 const buildModelRestrictionMapping = () => {
   const editableMapping = buildModelMappingObject('combined', allowedModels.value, modelMappings.value)
   if (!isCindyAccount.value || preservedCindyManagedMappings.value.length === 0) {
     return editableMapping
   }
 
-  const merged: Record<string, string> = {}
-  for (const mapping of preservedCindyManagedMappings.value) {
-    const from = mapping.from.trim()
-    const to = mapping.to.trim()
-    if (from && to) merged[from] = to
-  }
-  Object.assign(merged, editableMapping || {})
+  const managedEntries = preservedCindyManagedMappings.value
+    .map(mapping => [mapping.from.trim(), mapping.to.trim()])
+    .filter(([from, to]) => from && to)
+  const merged: Record<string, string> = { ...Object.fromEntries(managedEntries), ...(editableMapping || {}) }
   return Object.keys(merged).length > 0 ? merged : null
 }
 
@@ -4240,7 +4260,7 @@ const syncFormFromAccount = (newAccount: Account | null) => {
   anthropicPassthroughEnabled.value = false
   anthropicAPIKeyAuthScheme.value = 'x_api_key'
   webSearchEmulationMode.value = 'default'
-  const canonicalCindy = isCindyOpenAIAPIKeyAccount(newAccount)
+  const canonicalCindy = requiresAccountEditProfile(newAccount)
   if ((newAccount.platform === 'openai' && (newAccount.type === 'oauth' || newAccount.type === 'setup-token' || newAccount.type === 'apikey')) || canonicalCindy) {
     openaiPassthroughEnabled.value = extra?.openai_passthrough === true || extra?.openai_oauth_passthrough === true
     openaiFlattenNamespacesEnabled.value =
@@ -4251,18 +4271,12 @@ const syncFormFromAccount = (newAccount: Account | null) => {
     editPlanType.value = newAccount.type === 'oauth'
       ? readPlanType(newAccount.credentials as Record<string, unknown> | undefined)
       : ''
-    openAICompactMode.value = (extra?.openai_compact_mode as OpenAICompactMode) || 'auto'
+    openAICompactMode.value = extra?.openai_compact_mode === 'force_on' || extra?.openai_compact_mode === 'force_off' ? extra.openai_compact_mode : 'auto'
     if (newAccount.type === 'apikey') {
-      const cindy = canonicalCindy
-      openAIResponsesMode.value = normalizeOpenAIResponsesMode(
-        extra?.openai_responses_mode ?? (cindy ? CINDY_OPENAI_DEFAULTS.responsesMode : undefined)
-      )
+      openAIResponsesMode.value = normalizeOpenAIResponsesMode(extra?.openai_responses_mode)
       openAIEndpointCapabilities.value = readOpenAIEndpointCapabilities(
         newAccount.credentials as Record<string, unknown> | undefined
       )
-      if (!openAITextGenerationCapabilityEnabled.value) {
-        openAIResponsesMode.value = 'auto'
-      }
     }
     const codexImageGenerationBridgeValue = typeof extra?.codex_image_generation_bridge === 'boolean'
       ? extra.codex_image_generation_bridge
@@ -4493,7 +4507,7 @@ const syncFormFromAccount = (newAccount: Account | null) => {
     }
     const platformDefaultUrl =
       canonicalCindy
-        ? 'https://api.laxarouter.ai'
+        ? ''
         : newAccount.platform === 'openai'
           ? 'https://api.openai.com'
         : newAccount.platform === 'gemini'
@@ -4606,65 +4620,73 @@ async function loadTLSProfiles() {
   }
 }
 
-const resetCindyManagedModels = () => {
-  cindyManagedCatalog.value = []
-  cindyManagedAliases.value = []
-  preservedCindyManagedMappings.value = []
-  cindyCatalogLoading.value = false
-  cindyCatalogLoadFailed.value = false
+const providerEdit = useAccountEditProfile({
+  active: () => props.show,
+  account: () => props.account,
+  actorID: () => authStore.user?.id,
+  readInput: (): AccountEditInput => ({
+    responses_mode: openAIResponsesMode.value,
+    compact_mode: openAICompactMode.value,
+    responses_websocket_mode: openaiResponsesWebSocketV2Mode.value,
+    model_mapping: { mode: modelRestrictionMode.value, allowed: allowedModels.value, rows: modelMappings.value },
+    compact_model_mapping: openAICompactModelMappings.value
+  }),
+  writeInput: input => {
+    openAIResponsesMode.value = input.responses_mode
+    openAICompactMode.value = input.compact_mode
+    openaiResponsesWebSocketV2Mode.value = input.responses_websocket_mode
+    modelRestrictionMode.value = input.model_mapping.mode
+    allowedModels.value = input.model_mapping.allowed
+    modelMappings.value = input.model_mapping.rows
+    openAICompactModelMappings.value = input.compact_model_mapping
+  },
+  loadContext: (id, signal) => scopedAccounts().getEditContext(id, signal)
+})
+const editProfile = computed(() => providerEdit.definition.value)
+const profileLabel = (labels?: Record<string, string>) => labels?.[locale?.value || 'en'] || labels?.en || labels?.zh || ''
+function showAccountEditMode(target: AccountEditModeTarget) {
+  if (isCindyAccount.value) return !!editProfile.value?.wire_controls.some(control => control.target === target)
+  return props.account?.platform === 'openai' && ['apikey', 'oauth', 'setup-token'].includes(props.account.type) &&
+    (target !== 'responses_mode' || props.account.type === 'apikey')
 }
-
-const preserveManagedCindyMappings = () => {
-  const preserved: ModelMapping[] = []
-  allowedModels.value = allowedModels.value.filter(model => {
-    if (!isManagedCindyMapping(model, model)) return true
-    preserved.push({ from: model, to: model })
-    return false
-  })
-  modelMappings.value = modelMappings.value.filter(mapping => {
-    if (!isManagedCindyMapping(mapping.from, mapping.to)) return true
-    preserved.push({ ...mapping })
-    return false
-  })
-  preservedCindyManagedMappings.value = preserved
+function canClearAccountEditMode(target: AccountEditModeTarget) {
+  return isCindyAccount.value && editProfile.value?.wire_controls.find(control => control.target === target)?.allow_clear === true
 }
-
-const loadCindyManagedModels = async (account: Account) => {
-  const requestSequence = ++cindyCatalogRequestSequence
-  resetCindyManagedModels()
-  if (!isCindyOpenAIAPIKeyAccount(account)) return
-
-  cindyCatalogLoading.value = true
-  try {
-    const models = await adminAPI.accounts.getAvailableModels(account.id)
-    if (requestSequence !== cindyCatalogRequestSequence) return
-
-    cindyManagedCatalog.value = models.filter(model => model.managed === true && !model.alias_target)
-    cindyManagedAliases.value = models.filter(model => model.managed === true && Boolean(model.alias_target))
-    preserveManagedCindyMappings()
-  } catch {
-    if (requestSequence !== cindyCatalogRequestSequence) return
-    cindyCatalogLoadFailed.value = true
-  } finally {
-    if (requestSequence === cindyCatalogRequestSequence) {
-      cindyCatalogLoading.value = false
-    }
-  }
+function recordAccountMode(target: AccountEditModeTarget, value: unknown) {
+  if (typeof value !== 'string' || !(accountEditModes[target].values as readonly string[]).includes(value)) return
+  if (isCindyAccount.value) providerEdit.updateInput(target, value)
+  else coreModeChanges.value = { ...coreModeChanges.value, [target]: { op: 'set', value } }
 }
+function filterAccountEditModeOptions<T extends { value: string }>(target: AccountEditModeTarget, options: T[]): T[] {
+  if (!isCindyAccount.value) return options
+  const values = editProfile.value?.wire_controls.find(control => control.target === target)?.values || []
+  return options.filter(option => (values as readonly string[]).includes(option.value))
+}
+function reconcileProviderEdit() {
+  if (!providerEdit.reconcile()) appStore.showError(t('admin.accounts.providerEdit.reloadRequired'))
+}
+watch([allowedModels, modelMappings], () => {
+  providerEdit.updateInput('model_mapping')
+}, { deep: true, flush: 'sync' })
+watch(openAICompactModelMappings, () => {
+  providerEdit.updateInput('compact_model_mapping')
+}, { deep: true, flush: 'sync' })
 
 watch(
-  [() => props.show, () => props.account],
-  ([show, newAccount], [wasShow, previousAccount]) => {
+  [() => props.show, () => props.account, () => authStore.user?.id],
+  ([show, newAccount, actor], [wasShow, previousAccount, previousActor]) => {
     if (!show || !newAccount) {
-      cindyCatalogRequestSequence += 1
-      resetCindyManagedModels()
+      providerEdit.cancelRead()
       return
     }
-    if (!wasShow || newAccount !== previousAccount) {
-      syncFormFromAccount(newAccount)
+    if (!wasShow || newAccount.id !== previousAccount?.id || newAccount.platform !== previousAccount?.platform ||
+        newAccount.type !== previousAccount?.type || actor !== previousActor) {
+      coreModeChanges.value = {}
+      providerEdit.preserveIntent(() => syncFormFromAccount(newAccount))
+      providerEdit.activate(newAccount)
       loadTLSProfiles()
-      void loadCindyManagedModels(newAccount)
-    }
+    } else void providerEdit.refresh()
+    // A same-account row refresh must not refill and overwrite a live native draft.
   },
   { immediate: true }
 )
@@ -4768,7 +4790,7 @@ const syncAntigravityUpstreamModels = async () => {
   isSyncingAntigravityUpstream.value = true
   try {
     const accountID = props.account.id
-    const result = await synchronizeCapacity(() => adminAPI.accounts.syncUpstreamModels(accountID))
+    const result = await synchronizeCapacity(() => scopedAccounts().syncUpstreamModels(accountID))
     if (!result) return
     const upstreamModels = result.models.map((model) => model.trim()).filter(Boolean)
     if (upstreamModels.length === 0) {
@@ -5189,7 +5211,7 @@ const ensureAntigravityMixedChannelConfirmed = async (onConfirm: () => Promise<v
   }
 
   try {
-    const result = await adminAPI.accounts.checkMixedChannelRisk({
+    const result = await scopedAccounts().checkMixedChannelRisk({
       platform: props.account.platform,
       group_ids: form.group_ids,
       account_id: props.account.id
@@ -5216,6 +5238,7 @@ const parseDateTimeLocal = parseDateTimeLocalInput
 
 // Methods
 const handleClose = () => {
+  providerEdit.resetCurrent()
   resetCapacityState()
   antigravityMixedChannelConfirmed.value = false
   clearMixedChannelDialog()
@@ -5232,7 +5255,7 @@ const persistGrokMediaEligibility = async (accountID: number, updatedAccount: Ac
   }
 
   try {
-    const state = await adminAPI.accounts.updateGrokMediaEligibility(accountID, grokMediaEligibilityMode.value)
+    const state = await scopedAccounts().updateGrokMediaEligibility(accountID, grokMediaEligibilityMode.value)
     grokMediaEligibilityState.value = state
     grokMediaEligibilityInitialMode.value = state.mode
     const nextExtra = { ...((updatedAccount.extra as Record<string, unknown> | undefined) || {}) }
@@ -5259,21 +5282,27 @@ const persistGrokMediaEligibility = async (accountID: number, updatedAccount: Ac
   return updatedAccount
 }
 
-const submitUpdateAccount = async (accountID: number, updatePayload: Record<string, unknown>) => {
+const submitUpdateAccount = async (accountID: number, updatePayload: Record<string, unknown>, basicOnly = false) => {
   submitting.value = true
   try {
-    let updatedAccount = await adminAPI.accounts.update(accountID, withAntigravityConfirmFlag(updatePayload))
+    const actor = authStore.user?.id
+    if (props.account?.id !== accountID) throw new Error('Account edit target changed')
+    providerEdit.assertRequest(updatePayload.provider_edit as ProviderEditRequestV1 | undefined)
+    const client = scopedAccounts()
+    let updatedAccount = await client.update(accountID, withAntigravityConfirmFlag(updatePayload))
+    if (props.account?.id !== accountID || authStore.user?.id !== actor) return
     updatedAccount = await persistGrokMediaEligibility(accountID, updatedAccount)
     appStore.showSuccess(t('admin.accounts.accountUpdated'))
     emit('updated', updatedAccount)
-    handleClose()
+    if (basicOnly) await providerEdit.refresh()
+    else handleClose()
   } catch (error: any) {
     if (error.status === 409 && error.error === 'mixed_channel_warning' && needsMixedChannelCheck()) {
       openMixedChannelDialog({
         message: error.message,
         onConfirm: async () => {
           antigravityMixedChannelConfirmed.value = true
-          await submitUpdateAccount(accountID, updatePayload)
+          await submitUpdateAccount(accountID, updatePayload, basicOnly)
         }
       })
       return
@@ -5284,13 +5313,17 @@ const submitUpdateAccount = async (accountID: number, updatePayload: Record<stri
   }
 }
 
-const handleSubmit = async () => {
+const handleSubmit = async (basicOnly = false) => {
   if (!props.account) return
-  if (!capacityReady.value) {
+  if (!basicOnly && !providerEdit.canSubmit.value) {
+    appStore.showError(t('admin.accounts.providerEdit.unavailable'))
+    return
+  }
+  if (!basicOnly && !capacityReady.value) {
     appStore.showError(t(capacityLoadFailed.value ? 'admin.accounts.contextCapacity.loadFailed' : 'admin.accounts.contextCapacity.loading'))
     return
   }
-  if (!capacityValid.value) {
+  if (!basicOnly && !capacityValid.value) {
     appStore.showError(t('admin.accounts.contextCapacity.invalid'))
     return
   }
@@ -5300,7 +5333,7 @@ const handleSubmit = async () => {
     appStore.showError(t('admin.accounts.pleaseSelectStatus'))
     return
   }
-	if (autoResetCreditEnabled.value) {
+	if (!basicOnly && autoResetCreditEnabled.value) {
 		const thresholds = [autoResetCredit5hThreshold.value, autoResetCredit7dThreshold.value]
 		if (thresholds.some((value) => !Number.isFinite(value) || value < 0.1 || value > 100)) {
 			appStore.showError(t('admin.accounts.autoResetCredit.thresholdInvalid'))
@@ -5323,6 +5356,12 @@ const handleSubmit = async () => {
       updatePayload.load_factor = 0
     }
     updatePayload.auto_pause_on_expired = autoPauseOnExpired.value
+    if (basicOnly) {
+      // Explicitly save only the native basic form. No credential/Extra snapshot,
+      // capacity edit or pending provider intent is sent or discarded.
+      await submitUpdateAccount(accountID, updatePayload, true)
+      return
+    }
     if (props.account.type === 'apikey') {
       updatePayload.upstream_billing_probe_enabled = upstreamBillingAutoProbeEnabled.value
       updatePayload.upstream_billing_rate_sync_enabled = upstreamBillingRateSyncEnabled.value
@@ -5334,16 +5373,14 @@ const handleSubmit = async () => {
     // For apikey type, handle credentials update
     if (props.account.type === 'apikey') {
       const currentCredentials = (props.account.credentials as Record<string, unknown>) || {}
-      const newBaseUrl = isCindyAccount.value
-        ? 'https://api.laxarouter.ai'
-        : editBaseUrl.value.trim() || defaultBaseUrl.value
+      const newBaseUrl = editBaseUrl.value.trim() || defaultBaseUrl.value
       const shouldApplyModelMapping = !(props.account.platform === 'openai' && openaiPassthroughEnabled.value)
 
       // Always update credentials for apikey type to handle model mapping changes
       const newCredentials: Record<string, unknown> = {
-        ...currentCredentials,
-        base_url: newBaseUrl
+        ...currentCredentials
       }
+      if (!isCindyAccount.value) newCredentials.base_url = newBaseUrl
 
       // 国产供应商：模式与协议写入凭据（决定额度/余额探测与转发端点/格式）。
       if (isCNApiKeyAccount.value) {
@@ -5834,20 +5871,14 @@ const handleSubmit = async () => {
       const currentExtra = (props.account.extra as Record<string, unknown>) || {}
       const newExtra: Record<string, unknown> = { ...currentExtra }
       const hadCodexCLIOnlyEnabled = currentExtra.codex_cli_only === true
-      if (props.account.type === 'oauth' || props.account.type === 'setup-token') {
-        newExtra.openai_oauth_responses_websockets_v2_mode = openaiOAuthResponsesWebSocketV2Mode.value
-        newExtra.openai_oauth_responses_websockets_v2_enabled = isOpenAIWSModeEnabled(openaiOAuthResponsesWebSocketV2Mode.value)
-      } else if (props.account.type === 'apikey') {
-        newExtra.openai_apikey_responses_websockets_v2_mode = openaiAPIKeyResponsesWebSocketV2Mode.value
-        newExtra.openai_apikey_responses_websockets_v2_enabled = isOpenAIWSModeEnabled(openaiAPIKeyResponsesWebSocketV2Mode.value)
-      }
-      delete newExtra.responses_websockets_v2_enabled
-      delete newExtra.openai_ws_enabled
-      if (openaiPassthroughEnabled.value) {
-        newExtra.openai_passthrough = true
-      } else {
-        delete newExtra.openai_passthrough
-        delete newExtra.openai_oauth_passthrough
+      applyCoreAccountModeChanges(newExtra, currentExtra, props.account.type, coreModeChanges.value)
+      const storedPassthrough = currentExtra.openai_passthrough === true || currentExtra.openai_oauth_passthrough === true
+      if (openaiPassthroughEnabled.value !== storedPassthrough) {
+        if (openaiPassthroughEnabled.value) newExtra.openai_passthrough = true
+        else {
+          delete newExtra.openai_passthrough
+          delete newExtra.openai_oauth_passthrough
+        }
       }
       // 缺省即保留 namespace，不写空值，避免 extra 里堆积默认项
       if (props.account.type === 'oauth' && openaiFlattenNamespacesEnabled.value) {
@@ -5860,17 +5891,7 @@ const handleSubmit = async () => {
       } else {
         newExtra.openai_long_context_billing_enabled = openAILongContextBillingEnabled.value
       }
-      if (openAICompactMode.value === 'auto') {
-        delete newExtra.openai_compact_mode
-      } else {
-        newExtra.openai_compact_mode = openAICompactMode.value
-      }
 		if (props.account.type === 'apikey') {
-        if (!openAITextGenerationCapabilityEnabled.value || openAIResponsesMode.value === 'auto') {
-          delete newExtra.openai_responses_mode
-        } else {
-          newExtra.openai_responses_mode = openAIResponsesMode.value
-        }
         if (openAIImagesUrlToB64JsonEnabled.value) {
           newExtra.images_url_to_b64_json = true
         } else {
@@ -5945,32 +5966,6 @@ const handleSubmit = async () => {
         newExtra.codex_fingerprint_mode = codexFingerprintMode.value
       }
 
-      updatePayload.extra = newExtra
-    }
-
-    // Canonical Cindy accounts share the OpenAI wire controls without being
-    // projected back to platform=openai. Keep provider identity immutable and
-    // persist only the Cindy-compatible API-key modes.
-    if (isCindyAccount.value) {
-      const currentExtra = (updatePayload.extra as Record<string, unknown>) ||
-        (props.account.extra as Record<string, unknown>) || {}
-      const newExtra: Record<string, unknown> = { ...currentExtra }
-      newExtra.openai_apikey_responses_websockets_v2_mode = openaiAPIKeyResponsesWebSocketV2Mode.value
-      newExtra.openai_apikey_responses_websockets_v2_enabled = isOpenAIWSModeEnabled(openaiAPIKeyResponsesWebSocketV2Mode.value)
-      delete newExtra.responses_websockets_v2_enabled
-      delete newExtra.openai_ws_enabled
-      if (!openAITextGenerationCapabilityEnabled.value || openAIResponsesMode.value === 'auto') {
-        delete newExtra.openai_responses_mode
-      } else {
-        newExtra.openai_responses_mode = openAIResponsesMode.value
-      }
-      if (openAICompactMode.value === 'auto') {
-        delete newExtra.openai_compact_mode
-      } else {
-        newExtra.openai_compact_mode = openAICompactMode.value
-      }
-      delete newExtra.openai_passthrough
-      delete newExtra.openai_oauth_passthrough
       updatePayload.extra = newExtra
     }
 
@@ -6060,6 +6055,7 @@ const handleSubmit = async () => {
     }
     const overrides = buildCapacityPatch()
     if (Object.keys(overrides).length) updatePayload.model_context_overrides = overrides
+    providerEdit.prepare(updatePayload as UpdateAccountRequest)
 
     const canContinue = await ensureAntigravityMixedChannelConfirmed(async () => {
       await submitUpdateAccount(accountID, updatePayload)

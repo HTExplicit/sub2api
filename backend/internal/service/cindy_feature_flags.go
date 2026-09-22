@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
+	extensionv1 "github.com/Wei-Shaw/sub2api/pkg/extensionapi/v1"
 )
 
 const (
@@ -18,10 +19,8 @@ const (
 	CindyImageStudioEnabledEnv = config.LegacyImageStudioEnabledEnv
 )
 
-// Cindy rollout flags are immutable process snapshots. Each variable can be
-// rolled back independently by changing the container environment and
-// rebuilding only Sub2API. Existing balance markers are intentionally not
-// cleared when detection is disabled.
+// Immutable legacy environment snapshots seed plugin configuration once.
+// Existing installations subsequently use their persisted plugin settings.
 var cindyRolloutFeatures = struct {
 	balanceDetection  bool
 	capabilityCatalog bool
@@ -57,20 +56,34 @@ func envBoolWithDefault(name string, defaultValue bool) bool {
 }
 
 func CindyBalanceDetectionFeatureEnabled() bool {
-	return cindyRolloutFeatures.balanceDetection
+	value, _ := currentCindyProviderConfig()
+	return value.BalanceDetection
 }
 
 func CindyCapabilityCatalogFeatureEnabled() bool {
-	return cindyRolloutFeatures.capabilityCatalog
+	value, _ := currentCindyProviderConfig()
+	return value.CatalogEnabled
 }
 
 func CindySearchFeatureEnabled() bool {
-	return cindyRolloutFeatures.search
+	value, _ := currentCindyProviderConfig()
+	return value.SearchEnabled
+}
+
+// Legacy environment values are consulted only by initial migration and
+// contract fixtures. Runtime policy reads the enabled provider configuration.
+func LegacyCindyProviderConfig() extensionv1.CindyProviderConfig {
+	return extensionv1.CindyProviderConfig{BalanceDetection: cindyRolloutFeatures.balanceDetection, CatalogEnabled: cindyRolloutFeatures.capabilityCatalog, SearchEnabled: cindyRolloutFeatures.search}
+}
+
+func LegacyImageToolsConfig() extensionv1.ImageToolsConfig {
+	return extensionv1.ImageToolsConfig{StudioEnabled: cindyRolloutFeatures.imageStudio, ResponsesImageEnabled: cindyRolloutFeatures.responsesImage}
 }
 
 // ImageStudioFeatureEnabled is independent from the Cindy catalog rollout.
 func ImageStudioFeatureEnabled() bool {
-	return cindyRolloutFeatures.imageStudio
+	value, _ := currentImageToolsConfig()
+	return value.StudioEnabled
 }
 
 // CindyImageStudioFeatureEnabled is the one-release compatibility name for
@@ -80,5 +93,6 @@ func CindyImageStudioFeatureEnabled() bool {
 }
 
 func CindyResponsesImageBridgeFeatureEnabled() bool {
-	return cindyRolloutFeatures.responsesImage
+	value, _ := currentImageToolsConfig()
+	return value.ResponsesImageEnabled
 }

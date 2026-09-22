@@ -1,7 +1,12 @@
+import { cindyAccount, cindyView, viewContributions } from '@/components/plugins/__tests__/accountView.fixtures'
+import type { PluginContribution } from '@/api/admin/plugins'
+const viewRegistry = vi.hoisted(() => ({ loaded: true, items: [] as PluginContribution[], refresh: vi.fn() }))
+vi.mock('@/stores/pluginExtensions', () => ({ usePluginExtensions: () => viewRegistry }))
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { DOMWrapper, flushPromises, mount } from '@vue/test-utils'
 import { defineComponent } from 'vue'
 import { createPinia, setActivePinia } from 'pinia'
+import { useAccountJobsStore } from '@/stores/accountJobs'
 
 import AccountsView from '../AccountsView.vue'
 import AccountActionMenu from '@/components/admin/account/AccountActionMenu.vue'
@@ -63,12 +68,12 @@ vi.mock('@/stores/app', () => ({
 }))
 
 vi.mock('@/stores/auth', () => ({
-  useAuthStore: () => ({ token: 'test-token', isSimpleMode: false })
+  useAuthStore: () => ({ token: 'test-token', isSimpleMode: false, user: { id: 41, role: 'admin' }, isAuthenticated: true, isAdmin: true })
 }))
 
 vi.mock('vue-i18n', async () => {
   const actual = await vi.importActual<typeof import('vue-i18n')>('vue-i18n')
-  return { ...actual, useI18n: () => ({ t: (key: string) => key }) }
+  return { ...actual, useI18n: () => ({ locale: { value: 'en' }, t: (key: string) => key }) }
 })
 
 const DataTableStub = defineComponent({
@@ -103,7 +108,7 @@ const AccountStatsModalStub = defineComponent({
   template: '<div data-test="stats-account">{{ show ? account?.name : "" }}</div>'
 })
 
-function mountView(props: { scope?: 'all' | 'cindy' } = {}, stubActionMenu = true) {
+function mountView(props: { viewContribution?: PluginContribution } = {}, stubActionMenu = true) {
   return mount(AccountsView, {
     props,
     attachTo: document.body,
@@ -114,6 +119,7 @@ function mountView(props: { scope?: 'all' | 'cindy' } = {}, stubActionMenu = tru
         DataTable: DataTableStub,
         AccountTableActions: { template: '<div><slot name="after" /></div>' },
         AccountTableFilters: true,
+        ExtensionWidget: true,
         AccountBulkActionsBar: true,
         AccountCardGrid: true,
         Pagination: true,
@@ -172,6 +178,7 @@ describe('admin AccountsView lite account list', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
     localStorage.clear()
+    viewRegistry.items = []
     listAccounts.mockReset().mockResolvedValue({ items: [listRow], total: 1, page: 1, page_size: 20, pages: 1 })
     listWithEtag.mockReset().mockResolvedValue({ notModified: true, etag: 'compact-etag', data: null })
     getById.mockReset().mockResolvedValue(fullAccount)
@@ -213,15 +220,35 @@ describe('admin AccountsView lite account list', () => {
     wrapper.unmount()
   })
 
+  it('opens account operation history from the existing account-page button', async () => {
+    const openHistory = vi.spyOn(useAccountJobsStore(), 'openDrawer').mockResolvedValue(undefined)
+    const wrapper = mountView()
+    await flushPromises()
+
+    const historyButton = wrapper.get('button[data-test="operation-history"]')
+    expect(historyButton.text()).toContain('admin.accountTasks.historyAction')
+    expect(openHistory).not.toHaveBeenCalled()
+    await historyButton.trigger('click')
+    await flushPromises()
+    expect(openHistory).toHaveBeenCalledTimes(1)
+    wrapper.unmount()
+  })
+
   it('keeps Cindy scope filters on compact requests', async () => {
-    const wrapper = mountView({ scope: 'cindy' })
+    viewRegistry.items = viewContributions()
+    listAccounts.mockResolvedValue({ items: [cindyAccount(42)], total: 1, page: 1, page_size: 20, pages: 1 })
+    const wrapper = mountView({ viewContribution: cindyView() })
     await flushPromises()
 
     expect(listAccounts).toHaveBeenCalledWith(
       1, 20,
-      expect.objectContaining({ lite: '1', cindy_only: 'true' }),
-      expect.objectContaining({ signal: expect.any(AbortSignal) })
+      expect.objectContaining({ lite: '1' }),
+      expect.objectContaining({ signal: expect.any(AbortSignal) }),
+      expect.objectContaining({ context: expect.objectContaining({
+        plugin_key: 'codexrip.cindy-provider', view_id: 'cindy-accounts', preset_id: 'cindy'
+      }) })
     )
+    expect(listAccounts.mock.calls.every(call => call[4]?.context.preset_id === 'cindy')).toBe(true)
     wrapper.unmount()
   })
 

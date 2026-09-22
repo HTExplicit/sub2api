@@ -255,7 +255,7 @@ func TestCindyBalanceProbeThirdUpstreamFailurePausesAndResumeClearsStreak(t *tes
 	require.Empty(t, job.FailureReason)
 }
 
-func TestCindyBalanceProbePruneFinishedKeepsThirtyDayBoundary(t *testing.T) {
+func TestCindyBalanceProbeKeepsOldDiagnosticRecordsReadable(t *testing.T) {
 	ctx := context.Background()
 	now := time.Now().UTC()
 	oldJobID := insertCindyBalanceProbeLifecycleJob(t, "completed", "", time.Time{})
@@ -268,7 +268,9 @@ func TestCindyBalanceProbePruneFinishedKeepsThirtyDayBoundary(t *testing.T) {
 	require.NoError(t, err)
 
 	repo := &cindyBalanceProbeRepository{db: integrationDB}
-	require.NoError(t, repo.PruneFinished(ctx, now.Add(-30*24*time.Hour)))
+	oldJob, err := repo.GetJob(ctx, oldJobID)
+	require.NoError(t, err)
+	require.Equal(t, "completed", oldJob.Status)
 	var oldCount, recentCount int
 	require.NoError(t, integrationDB.QueryRowContext(ctx,
 		`SELECT COUNT(*) FROM cindy_balance_probe_jobs WHERE id = $1`, oldJobID,
@@ -276,7 +278,7 @@ func TestCindyBalanceProbePruneFinishedKeepsThirtyDayBoundary(t *testing.T) {
 	require.NoError(t, integrationDB.QueryRowContext(ctx,
 		`SELECT COUNT(*) FROM cindy_balance_probe_jobs WHERE id = $1`, recentJobID,
 	).Scan(&recentCount))
-	require.Zero(t, oldCount)
+	require.Equal(t, 1, oldCount)
 	require.Equal(t, 1, recentCount)
 }
 

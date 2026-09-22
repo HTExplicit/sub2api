@@ -381,6 +381,7 @@ func (s *GatewayService) handleCCStreamingFromAnthropic(
 	var usage ClaudeUsage
 	var firstTokenMs *int
 	firstChunk := true
+	var protocolErr error
 
 	scanner := bufio.NewScanner(resp.Body)
 	maxLineSize := defaultMaxLineSize
@@ -417,6 +418,26 @@ func (s *GatewayService) handleCCStreamingFromAnthropic(
 		return false
 	}
 
+	writeResponseEvent := func(event *apicompat.ResponsesStreamEvent) bool {
+		if protocolErr != nil {
+			return false
+		}
+		chunks := apicompat.ResponsesEventToChatChunks(event, ccState)
+		if ccState.ProtocolError != "" {
+			protocolErr = errors.New(ccState.ProtocolError)
+			MarkResponseCommitted(c)
+			_, _ = fmt.Fprint(c.Writer, buildChatStreamErrorSSE("upstream_protocol_error", ccState.ProtocolError)+"data: [DONE]\n\n")
+			c.Writer.Flush()
+			return false // Keep reading the upstream usage, without further output.
+		}
+		for _, chunk := range chunks {
+			if writeChunk(chunk) {
+				return true
+			}
+		}
+		return false
+	}
+
 	processAnthropicEvent := func(event *apicompat.AnthropicStreamEvent) bool {
 		if firstChunk {
 			firstChunk = false
@@ -432,15 +453,15 @@ func (s *GatewayService) handleCCStreamingFromAnthropic(
 		if event.Type == "message_start" && event.Message != nil {
 			mergeAnthropicUsage(&usage, event.Message.Usage)
 		}
+		if protocolErr != nil {
+			return false
+		}
 
 		// Chain: Anthropic event → Responses events → CC chunks
 		responsesEvents := apicompat.AnthropicEventToResponsesEvents(event, anthState)
 		for _, resEvt := range responsesEvents {
-			ccChunks := apicompat.ResponsesEventToChatChunks(&resEvt, ccState)
-			for _, chunk := range ccChunks {
-				if disconnected := writeChunk(chunk); disconnected {
-					return true
-				}
+			if writeResponseEvent(&resEvt) {
+				return true
 			}
 		}
 		c.Writer.Flush()
@@ -468,7 +489,7 @@ func (s *GatewayService) handleCCStreamingFromAnthropic(
 		}
 
 		if processAnthropicEvent(&event) {
-			return resultWithUsage(), nil
+			return resultWithUsage(), protocolErr
 		}
 	}
 
@@ -484,10 +505,12 @@ func (s *GatewayService) handleCCStreamingFromAnthropic(
 	// Finalize both state machines
 	finalResEvents := apicompat.FinalizeAnthropicResponsesStream(anthState)
 	for _, resEvt := range finalResEvents {
-		ccChunks := apicompat.ResponsesEventToChatChunks(&resEvt, ccState)
-		for _, chunk := range ccChunks {
-			writeChunk(chunk) //nolint:errcheck
+		if writeResponseEvent(&resEvt) {
+			return resultWithUsage(), protocolErr
 		}
+	}
+	if protocolErr != nil {
+		return resultWithUsage(), protocolErr
 	}
 	finalCCChunks := apicompat.FinalizeResponsesChatStream(ccState)
 	for _, chunk := range finalCCChunks {

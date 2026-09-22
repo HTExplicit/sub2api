@@ -60,7 +60,7 @@ func TestCodexIdentitySnapshotIsSecretFreeAndConsistent(t *testing.T) {
 		Credentials: map[string]any{"chatgpt_account_id": "acct-9"},
 		Extra:       map[string]any{codexFingerprintSeedExtraKey: seed}}
 
-	snapshot := resolveCodexIdentitySnapshot(account, account, "", true)
+	snapshot := resolveCodexIdentitySnapshotContext(context.Background(), account, account, "")
 	require.Equal(t, "account", snapshot.IdentitySource)
 	require.Equal(t, resolveCodexOutboundIdentityForAccount(account, "").userAgent, snapshot.UserAgent)
 	raw, err := json.Marshal(snapshot)
@@ -70,7 +70,10 @@ func TestCodexIdentitySnapshotIsSecretFreeAndConsistent(t *testing.T) {
 	t.Cleanup(func() { SetCodexForceCLIEnabled(false) })
 	account.Credentials["user_agent"] = "codex_cli_rs/0.150.0 (Windows 10.0.19045; x86_64) unknown"
 	SetCodexForceCLIEnabled(true)
-	require.Equal(t, "canonical", resolveCodexIdentitySnapshot(account, account, codexAccountIdentityOverrideUA(account), true).IdentitySource)
+	forced := resolveCodexIdentitySnapshotContext(context.Background(), account, account, codexAccountIdentityOverrideUA(account))
+	require.Equal(t, "account", forced.IdentitySource)
+	require.Equal(t, deriveCodexClientIdentity(seed).UserAgent(forced.Version), forced.UserAgent,
+		"ForceCodexCLI drops the custom UA while retaining the account's derived TUI profile")
 }
 
 // 账号级身份：由种子确定性派生，UA 三处版本同源，形态与 codex-rs 的
@@ -90,7 +93,7 @@ func TestEnforceCodexIdentityHeadersForAccountUsesDerivedTUIIdentity(t *testing.
 	h := http.Header{}
 	h.Set("originator", "codex_cli_rs")
 	h.Set("user-agent", "codex_cli_rs/0.150.0 (Windows 10.0.19045; x86_64) unknown")
-	enforceCodexIdentityHeadersForAccount(h, account, "")
+	require.NoError(t, enforceCodexIdentityHeadersForAccount(h, account, ""))
 
 	version := resolveCodexOutboundIdentity("").version
 	uaPattern := regexp.MustCompile(`^codex-tui/` + regexp.QuoteMeta(version) +

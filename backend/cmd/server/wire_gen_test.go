@@ -1,11 +1,14 @@
 package main
 
 import (
+	"context"
+	"errors"
 	"testing"
 	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
 	"github.com/Wei-Shaw/sub2api/internal/handler"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/pagination"
 	"github.com/Wei-Shaw/sub2api/internal/service"
 	"github.com/stretchr/testify/require"
 )
@@ -21,6 +24,11 @@ func TestProvideServiceBuildInfo(t *testing.T) {
 }
 
 func TestProvideCleanup_WithMinimalDependencies_NoPanic(t *testing.T) {
+	cleanup := minimalDependencyCleanup(nil)
+	require.NotPanics(t, cleanup)
+}
+
+func minimalDependencyCleanup(autoReset *service.OpenAIQuotaAutoResetService) func() {
 	cfg := &config.Config{}
 
 	oauthSvc := service.NewOAuthService(nil, nil)
@@ -50,7 +58,7 @@ func TestProvideCleanup_WithMinimalDependencies_NoPanic(t *testing.T) {
 	schedulerSnapshotSvc := service.NewSchedulerSnapshotService(nil, nil, nil, nil, cfg)
 	opsSystemLogSinkSvc := service.NewOpsSystemLogSink(nil)
 
-	cleanup := provideCleanup(
+	return provideCleanup(
 		nil, // entClient
 		nil, // redis
 		&service.OpsMetricsCollector{},
@@ -95,17 +103,69 @@ func TestProvideCleanup_WithMinimalDependencies_NoPanic(t *testing.T) {
 		nil, // upstreamBillingProbe
 		nil, // ollamaCloudUsage
 		nil, // auditLog
-		nil, // openAIAutoReset
+		autoReset,
 		nil, // promptAudit
+		nil, // promptDomain
 		nil, // businessPrompt
 		nil, // remoteSkillRegistry
 		nil, // accountJobRuntime
 		nil, // cindyHealth
 		nil, // cindyBalanceProbe
 		nil, // imageStudioRuntime
+		nil, // pluginManager
 	)
+}
 
-	require.NotPanics(t, func() {
-		cleanup()
-	})
+type cleanupAutoResetAccountRepository struct {
+	service.AccountRepository
+	started chan context.Context
+}
+
+func (r *cleanupAutoResetAccountRepository) GetByID(ctx context.Context, _ int64) (*service.Account, error) {
+	r.started <- ctx
+	<-ctx.Done()
+	return nil, ctx.Err()
+}
+
+func (*cleanupAutoResetAccountRepository) ListWithFilters(context.Context, pagination.PaginationParams, string, string, string, string, int64, string) ([]service.Account, *pagination.PaginationResult, error) {
+	return nil, nil, nil
+}
+
+type cleanupAutoResetQuota struct{ t *testing.T }
+
+func (q *cleanupAutoResetQuota) QueryUsage(context.Context, int64) (*service.OpenAIQuotaUsage, error) {
+	q.t.Error("cleanup fixture must not query an upstream quota")
+	return nil, errors.New("unexpected quota query")
+}
+
+func (q *cleanupAutoResetQuota) CacheResetCreditsSnapshot(context.Context, int64, *service.OpenAIRateLimitResetCredits) error {
+	q.t.Error("cleanup fixture must not cache quota data")
+	return errors.New("unexpected quota cache")
+}
+
+func (q *cleanupAutoResetQuota) CachePostResetSnapshot(context.Context, int64, *service.OpenAIQuotaUsage) error {
+	q.t.Error("cleanup fixture must not cache quota data")
+	return errors.New("unexpected quota cache")
+}
+
+func (q *cleanupAutoResetQuota) ResetCreditTargeted(context.Context, int64, string, string) (*service.OpenAIQuotaResetResult, error) {
+	q.t.Error("cleanup fixture must not consume a reset credit")
+	return nil, errors.New("unexpected quota reset")
+}
+
+func TestProvideCleanupStopsExistingQuotaAutoResetWorker(t *testing.T) {
+	repo := &cleanupAutoResetAccountRepository{started: make(chan context.Context, 1)}
+	autoReset := service.NewOpenAIQuotaAutoResetService(repo, &cleanupAutoResetQuota{t: t}, nil, &service.IdempotencyCoordinator{}, nil, nil, nil)
+	autoReset.Start()
+	t.Cleanup(autoReset.Stop)
+	autoReset.Notify(17)
+	var work context.Context
+	select {
+	case work = <-repo.started:
+	case <-time.After(2 * time.Second):
+		t.Fatal("the actual auto-reset worker did not reach the synthetic repository")
+	}
+	require.NoError(t, work.Err())
+	minimalDependencyCleanup(autoReset)()
+	require.ErrorIs(t, work.Err(), context.Canceled, "application cleanup must stop the existing upstream worker before infrastructure closes")
 }

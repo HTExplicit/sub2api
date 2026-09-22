@@ -1039,6 +1039,14 @@ func (s *RateLimitService) handle403(ctx context.Context, account *Account, upst
 		s.handleCNProviderConcurrencyLimit403(ctx, account)
 		return true
 	}
+	// Kimi 等 CN 供应商把 Coding Plan 配额窗口耗尽打成 403
+	// （error.type=access_terminated_error），这是窗口到期后自动恢复的限流
+	// 信号而非封禁：按 429 口径冷却到真实窗口重置点，避免落入下方通用 403
+	// 升级计数后被永久 SetError。
+	if isCNProviderQuotaExhausted403(account, responseBody, upstreamMsg) {
+		s.handleCNProviderQuotaExhausted403(ctx, account, upstreamMsg)
+		return true
+	}
 	// 国产供应商与 openai 同口径:HTML 403(CDN/代理拦截页)不构成账号失效证据,
 	// 且 403 在 failover 状态集里会被逐账号重放——直接 SetError 会让一个坏请求/
 	// 一层坏代理连环永久禁用整组账号。走 HTML 豁免 + N 次累计 + 临时冷却。
@@ -1241,14 +1249,13 @@ func (s *RateLimitService) handle429(ctx context.Context, account *Account, head
 			"code", classification.Code,
 			"path", "rate_limit_service",
 		)
-		if classification.Disposition != openAIOAuth429Transient && classification.ResetAt != nil {
-			resetAt := classification.ResetAt
-			s.notifyAccountSchedulingBlocked(account, *resetAt, "429")
-			if err := s.accountRepo.SetRateLimited(ctx, account.ID, *resetAt); err != nil {
-				slog.Warn("rate_limit_set_failed", "account_id", account.ID, "error", err)
-				return
+		if classification.Disposition != openAIOAuth429Transient {
+			if err := persistOpenAIQuotaClassification(ctx, s.accountRepo, account, classification, time.Now()); err != nil {
+				slog.Warn("quota_state_write_failed", "account_id", account.ID)
 			}
-			slog.Info("openai_account_rate_limited", "account_id", account.ID, "reset_at", *resetAt)
+			// Quota observations own this restriction. Writing the same deadline
+			// into the ordinary 429 field would survive a verified quota reset and
+			// could only be cleared by also clearing unrelated transient limits.
 			return
 		}
 		s.apply429FallbackRateLimit(ctx, account, "openai_transient_429")

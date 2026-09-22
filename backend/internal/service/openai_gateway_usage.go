@@ -258,7 +258,7 @@ func (s *OpenAIGatewayService) RecordUsage(ctx context.Context, input *OpenAIRec
 		if !isUsagePricingUnavailableError(err) {
 			return err
 		}
-		if shouldFailClosedCindyTextPricing(account, billingModels) {
+		if shouldFailClosedCindyTextPricingContext(ctx, account, billingModels) {
 			return err
 		}
 		logger.L().With(
@@ -536,11 +536,11 @@ func (s *OpenAIGatewayService) RecordUsage(ctx context.Context, input *OpenAIRec
 		if s.usageCache != nil && account != nil {
 			s.usageCache.InvalidateAccount(account.ID)
 		}
-		if s.usageCommitObserver != nil && account != nil {
-			s.usageCommitObserver(account.ID)
-		}
 	}
-	writeUsageLogBestEffort(ctx, s.usageLogRepo, usageLog, "service.openai_gateway")
+	logPersisted := writeUsageLogBestEffort(ctx, s.usageLogRepo, usageLog, "service.openai_gateway")
+	if applied && logPersisted && s.usageCommitObserver != nil && account != nil {
+		s.usageCommitObserver(account.ID)
+	}
 
 	return nil
 }
@@ -559,9 +559,11 @@ func (s *OpenAIGatewayService) hasIdentifiedOpenAIResponsePricing(ctx context.Co
 	if s.resolveOpenAIChannelPricing(ctx, model, apiKey) != nil {
 		return true, true
 	}
-	if CindyCapabilityCatalogFeatureEnabled() && account != nil && IsCindyAPIKeyAccount(account.Platform, account.Type, account.Credentials) {
-		_, hasCatalogPrice := CindyTextPricingForModel(model)
-		return hasCatalogPrice || CindyModelUsesExplicitZeroPrice(model), false
+	if cindyCatalogEnabledForBilling(ctx, account) && account != nil && IsCindyAPIKeyAccount(account.Platform, account.Type, account.Credentials) {
+		var pricing CindyTextPricing
+		var hasCatalogPrice bool
+		queryCindyPricingSnapshot(cindyPricingSnapshotFromContext(ctx, account), "CindyTextPricingForModel", model, []any{&pricing, &hasCatalogPrice})
+		return hasCatalogPrice || cindyZeroPriceForBilling(ctx, account, model), false
 	}
 	return s.billingService.HasIdentifiedTokenPricing(model), false
 }
@@ -601,9 +603,9 @@ func (s *OpenAIGatewayService) calculateOpenAIRecordUsageCost(
 		// 倍率与 image/video 按次口径一致：使用不含高峰因子的基础倍率
 		//（用户专属 > 分组 rate_multiplier > 系统默认），与分组表单的价格预览承诺一致。
 		pricePerCall := webSearchPricePerCallFromAPIKey(apiKey)
-		if pricePerCall == nil && CindyCapabilityCatalogFeatureEnabled() && account != nil &&
+		if pricePerCall == nil && cindyCatalogEnabledForBilling(ctx, account) && account != nil &&
 			IsCindyAPIKeyAccount(account.Platform, account.Type, account.Credentials) &&
-			(CindyModelUsesExplicitZeroPrice(billingModel) || strings.TrimSpace(billingModel) == CindyWebSearchModel) {
+			(cindyZeroPriceForBilling(ctx, account, billingModel) || strings.TrimSpace(billingModel) == CindyWebSearchModel) {
 			zeroPrice := 0.0
 			pricePerCall = &zeroPrice
 		}
@@ -761,9 +763,9 @@ func (s *OpenAIGatewayService) calculateOpenAIRecordUsageTokenCost(
 			LongContextBillingEnabled: longContextBillingGate,
 		})
 	}
-	if shouldUseCindyTextPricing(account, billingModel) {
+	if shouldUseCindyTextPricingContext(ctx, account, billingModel) {
 		longContextBillingEnabled := longContextBillingGate != nil && *longContextBillingGate
-		return calculateCindyCatalogTextCost(s.billingService, billingModel, tokens, multiplier, serviceTier, longContextBillingEnabled)
+		return calculateCindyCatalogTextCost(s.billingService, billingModel, tokens, multiplier, serviceTier, longContextBillingEnabled, cindyPricingSnapshotFromContext(ctx, account))
 	}
 	if s.resolver != nil && apiKey.Group != nil {
 		gid := apiKey.Group.ID
@@ -784,40 +786,36 @@ func (s *OpenAIGatewayService) calculateOpenAIRecordUsageTokenCost(
 	return breakdown, err
 }
 
-func isCindyCompatibilityBillingModel(model string) bool {
-	_, ok := CindyCompatibilityTextPricingForModel(model)
-	return ok
+func shouldUseCindyTextPricingContext(ctx context.Context, account *Account, model string) bool {
+	if account == nil || !IsCindyRuntimeCompatibleAPIKeyAccount(account.Platform, account.Type, account.Credentials) {
+		return false
+	}
+	if IsCindyAPIKeyAccount(account.Platform, account.Type, account.Credentials) && cindyCatalogEnabledForBilling(ctx, account) {
+		return true
+	}
+	var pricing CindyTextPricing
+	var found bool
+	queryCindyPricingSnapshot(cindyPricingSnapshotFromContext(ctx, account), "CindyCompatibilityTextPricingForModel", model, []any{&pricing, &found})
+	return IsCindyRuntimeCompatibleAPIKeyAccount(account.Platform, account.Type, account.Credentials) && found
 }
 
-func hasCindyCompatibilityBillingModel(models []string) bool {
+func shouldFailClosedCindyTextPricing(account *Account, models []string) bool {
+	return shouldFailClosedCindyTextPricingContext(context.Background(), account, models)
+}
+
+func shouldFailClosedCindyTextPricingContext(ctx context.Context, account *Account, models []string) bool {
+	if account == nil {
+		return false
+	}
+	if IsCindyAPIKeyAccount(account.Platform, account.Type, account.Credentials) && cindyCatalogEnabledForBilling(ctx, account) {
+		return true
+	}
 	for _, model := range models {
-		if isCindyCompatibilityBillingModel(model) {
+		if shouldUseCindyTextPricingContext(ctx, account, model) {
 			return true
 		}
 	}
 	return false
-}
-
-func shouldUseCindyTextPricing(account *Account, model string) bool {
-	if account == nil {
-		return false
-	}
-	if IsCindyAPIKeyAccount(account.Platform, account.Type, account.Credentials) && CindyCapabilityCatalogFeatureEnabled() {
-		return true
-	}
-	return IsCindyRuntimeCompatibleAPIKeyAccount(account.Platform, account.Type, account.Credentials) &&
-		isCindyCompatibilityBillingModel(model)
-}
-
-func shouldFailClosedCindyTextPricing(account *Account, models []string) bool {
-	if account == nil {
-		return false
-	}
-	if IsCindyAPIKeyAccount(account.Platform, account.Type, account.Credentials) && CindyCapabilityCatalogFeatureEnabled() {
-		return true
-	}
-	return IsCindyRuntimeCompatibleAPIKeyAccount(account.Platform, account.Type, account.Credentials) &&
-		hasCindyCompatibilityBillingModel(models)
 }
 
 func (s *OpenAIGatewayService) calculateOpenAIImageCost(
@@ -874,11 +872,14 @@ func (s *OpenAIGatewayService) calculateOpenAIImageCost(
 		logger.LegacyPrintf("service.openai_gateway", "Calculate image channel cost failed: %v", err)
 	}
 
-	if CindyCapabilityCatalogFeatureEnabled() && account != nil && IsCindyAPIKeyAccount(account.Platform, account.Type, account.Credentials) {
-		if pricing, ok := CindyImagePricingForModel(billingModel); ok {
+	if cindyCatalogEnabledForBilling(ctx, account) && account != nil && IsCindyAPIKeyAccount(account.Platform, account.Type, account.Credentials) {
+		var pricing CindyImagePricing
+		var ok bool
+		queryCindyPricingSnapshot(cindyPricingSnapshotFromContext(ctx, account), "CindyImagePricingForModel", billingModel, []any{&pricing, &ok})
+		if ok {
 			return s.calculateCindyCatalogImageCost(billingModel, result, tokens, multiplier, pricing)
 		}
-		if CindyModelUsesExplicitZeroPrice(billingModel) {
+		if cindyZeroPriceForBilling(ctx, account, billingModel) {
 			return &CostBreakdown{BillingMode: string(BillingModeImage)}, nil
 		}
 		return nil, fmt.Errorf("%w for strict Cindy image model: %s", ErrModelPricingUnavailable, billingModel)
@@ -1245,7 +1246,17 @@ func buildCodexUsageExtraUpdates(snapshot *OpenAICodexUsageSnapshot, fallbackNow
 	if snapshot.PrimaryOverSecondaryPercent != nil {
 		updates["codex_primary_over_secondary_percent"] = *snapshot.PrimaryOverSecondaryPercent
 	}
-	updates["codex_usage_updated_at"] = baseTime.Format(time.RFC3339)
+	updates["codex_usage_updated_at"] = baseTime.Format(time.RFC3339Nano)
+	for _, window := range snapshot.Windows(baseTime) {
+		prefix := "codex_" + window.ID + "_"
+		updates[prefix+"observed_at"] = baseTime.Format(time.RFC3339Nano)
+		if window.ResetsAt != nil {
+			updates[prefix+"reset_at"] = window.ResetsAt.UTC().Format(time.RFC3339Nano)
+		} else {
+			// A missing countdown must not be rebound to a newer sampling time.
+			updates[prefix+"reset_after_seconds"] = nil
+		}
+	}
 
 	// 归一化到 5h/7d 规范字段
 	if normalized := snapshot.Normalize(); normalized != nil {

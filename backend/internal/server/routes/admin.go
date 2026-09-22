@@ -6,6 +6,7 @@ import (
 	"github.com/Wei-Shaw/sub2api/internal/pkg/response"
 	"github.com/Wei-Shaw/sub2api/internal/server/middleware"
 	"github.com/Wei-Shaw/sub2api/internal/service"
+	extensionv1 "github.com/Wei-Shaw/sub2api/pkg/extensionapi/v1"
 
 	"github.com/gin-gonic/gin"
 )
@@ -30,6 +31,7 @@ func RegisterAdminRoutes(
 	// 审计中间件挂在认证之后：所有管理面变更类操作 + 敏感读取入审计日志
 	admin.Use(gin.HandlerFunc(auditLog))
 	admin.Use(middleware.AdminComplianceGuard(settingService))
+	admin.Use(h.Admin.Plugin.AccountViewRequest())
 	{
 		// 部署与运营合规确认
 		registerAdminComplianceRoutes(admin, h)
@@ -152,60 +154,83 @@ func registerAccountJobRoutes(admin *gin.RouterGroup, h *handler.Handlers) {
 
 func registerCindyBalanceProbeRoutes(admin *gin.RouterGroup, h *handler.Handlers) {
 	jobs := admin.Group("/cindy/balance-probe-jobs")
-	{
-		jobs.GET("", h.Admin.CindyBalanceProbe.List)
-		jobs.POST("", h.Admin.CindyBalanceProbe.Create)
-		jobs.POST("/preview", h.Admin.CindyBalanceProbe.Preview)
-		jobs.GET("/:id", h.Admin.CindyBalanceProbe.Get)
-		jobs.GET("/:id/items", h.Admin.CindyBalanceProbe.ListItems)
-		jobs.PATCH("/:id/rate", h.Admin.CindyBalanceProbe.SetRate)
-		jobs.POST("/:id/pause", h.Admin.CindyBalanceProbe.Pause)
-		jobs.POST("/:id/resume", h.Admin.CindyBalanceProbe.Resume)
-		jobs.POST("/:id/cancel", h.Admin.CindyBalanceProbe.Cancel)
+	for _, route := range []struct {
+		name, method, path string
+		retained, scope    bool
+		handler            gin.HandlerFunc
+	}{
+		{"cindy.probe.list", "GET", "", true, false, h.Admin.CindyBalanceProbe.List},
+		{"cindy.probe.create", "POST", "", false, true, h.Admin.CindyBalanceProbe.Create},
+		{"cindy.probe.preview", "POST", "/preview", false, true, h.Admin.CindyBalanceProbe.Preview},
+		{"cindy.probe.get", "GET", "/:id", true, false, h.Admin.CindyBalanceProbe.Get},
+		{"cindy.probe.items", "GET", "/:id/items", true, false, h.Admin.CindyBalanceProbe.ListItems},
+		{"cindy.probe.rate", "PATCH", "/:id/rate", true, false, h.Admin.CindyBalanceProbe.SetRate},
+		{"cindy.probe.pause", "POST", "/:id/pause", true, false, h.Admin.CindyBalanceProbe.Pause},
+		{"cindy.probe.resume", "POST", "/:id/resume", false, false, h.Admin.CindyBalanceProbe.Resume},
+		{"cindy.probe.cancel", "POST", "/:id/cancel", true, false, h.Admin.CindyBalanceProbe.Cancel},
+	} {
+		descriptor := extensionv1.ResourceDescriptor{ResourceGrant: extensionv1.ResourceGrant{Name: route.name, Capability: extensionv1.CapabilityProvider, Permission: "admin"}, Method: route.method, Path: jobs.BasePath() + route.path, Retained: route.retained}
+		if route.scope {
+			descriptor.AccountScopeField, descriptor.FilterPlatform, descriptor.FilterAccountType = "scope", service.PlatformCindy, service.AccountTypeAPIKey
+		}
+		jobs.Handle(route.method, route.path, h.Admin.Plugin.RegisterResource(descriptor), route.handler)
 	}
 }
 
 func registerSystemPromptRoutes(admin *gin.RouterGroup, h *handler.Handlers) {
 	prompts := admin.Group("/system-prompts")
-	{
-		prompts.GET("", h.Admin.SystemPrompt.List)
-		prompts.POST("", h.Admin.SystemPrompt.Create)
-		prompts.GET("/runtime", h.Admin.SystemPrompt.Runtime)
-		prompts.PUT("/runtime", h.Admin.SystemPrompt.UpdateRuntime)
-		prompts.POST("/preview/merge", h.Admin.SystemPrompt.PreviewMerge)
-		prompts.POST("/preview/upstream", h.Admin.SystemPrompt.PreviewUpstream)
-		prompts.GET("/skill-registry", h.Admin.SystemPrompt.SkillRegistry)
-		prompts.GET("/skill-registry/versions", h.Admin.SystemPrompt.SkillVersions)
-		prompts.GET("/skill-registry/versions/:bundle_version_id", h.Admin.SystemPrompt.SkillVersion)
-		prompts.POST("/skill-registry/syncs", h.Admin.SystemPrompt.StartSkillSync)
-		prompts.GET("/skill-registry/syncs/:sync_id", h.Admin.SystemPrompt.SkillSync)
-		prompts.POST("/skill-registry/versions/:bundle_version_id/publish", h.Admin.SystemPrompt.PublishSkillVersion)
-		prompts.POST("/skill-registry/versions/:bundle_version_id/rollback", h.Admin.SystemPrompt.RollbackSkillVersion)
-		prompts.GET("/:id", h.Admin.SystemPrompt.Get)
-		prompts.GET("/:id/versions", h.Admin.SystemPrompt.Versions)
-		prompts.PATCH("/:id", h.Admin.SystemPrompt.Update)
-		prompts.DELETE("/:id", h.Admin.SystemPrompt.Delete)
-		prompts.POST("/:id/duplicate", h.Admin.SystemPrompt.Duplicate)
-		prompts.POST("/:id/versions", h.Admin.SystemPrompt.SaveVersion)
-		prompts.POST("/:id/upstream-sync", h.Admin.SystemPrompt.SyncManagedSource)
-		prompts.POST("/:id/versions/:version_id/publish", h.Admin.SystemPrompt.Publish)
-		prompts.POST("/:id/versions/:version_id/rollback", h.Admin.SystemPrompt.Rollback)
+	for _, route := range []struct {
+		name, method, path string
+		handler            gin.HandlerFunc
+	}{
+		{"prompts.list", "GET", "", h.Admin.SystemPrompt.List},
+		{"prompts.create", "POST", "", h.Admin.SystemPrompt.Create},
+		{"prompts.runtime.read", "GET", "/runtime", h.Admin.SystemPrompt.Runtime},
+		{"prompts.runtime.update", "PUT", "/runtime", h.Admin.SystemPrompt.UpdateRuntime},
+		{"prompts.preview.merge", "POST", "/preview/merge", h.Admin.SystemPrompt.PreviewMerge},
+		{"prompts.preview.upstream", "POST", "/preview/upstream", h.Admin.SystemPrompt.PreviewUpstream},
+		{"skills.registry", "GET", "/skill-registry", h.Admin.SystemPrompt.SkillRegistry},
+		{"skills.versions", "GET", "/skill-registry/versions", h.Admin.SystemPrompt.SkillVersions},
+		{"skills.version", "GET", "/skill-registry/versions/:bundle_version_id", h.Admin.SystemPrompt.SkillVersion},
+		{"skills.sync.start", "POST", "/skill-registry/syncs", h.Admin.SystemPrompt.StartSkillSync},
+		{"skills.sync.read", "GET", "/skill-registry/syncs/:sync_id", h.Admin.SystemPrompt.SkillSync},
+		{"skills.publish", "POST", "/skill-registry/versions/:bundle_version_id/publish", h.Admin.SystemPrompt.PublishSkillVersion},
+		{"skills.rollback", "POST", "/skill-registry/versions/:bundle_version_id/rollback", h.Admin.SystemPrompt.RollbackSkillVersion},
+		{"prompts.read", "GET", "/:id", h.Admin.SystemPrompt.Get},
+		{"prompts.versions", "GET", "/:id/versions", h.Admin.SystemPrompt.Versions},
+		{"prompts.update", "PATCH", "/:id", h.Admin.SystemPrompt.Update},
+		{"prompts.delete", "DELETE", "/:id", h.Admin.SystemPrompt.Delete},
+		{"prompts.duplicate", "POST", "/:id/duplicate", h.Admin.SystemPrompt.Duplicate},
+		{"prompts.draft", "POST", "/:id/versions", h.Admin.SystemPrompt.SaveVersion},
+		{"prompts.source.sync", "POST", "/:id/upstream-sync", h.Admin.SystemPrompt.SyncManagedSource},
+		{"prompts.publish", "POST", "/:id/versions/:version_id/publish", h.Admin.SystemPrompt.Publish},
+		{"prompts.rollback", "POST", "/:id/versions/:version_id/rollback", h.Admin.SystemPrompt.Rollback},
+	} {
+		descriptor := extensionv1.ResourceDescriptor{ResourceGrant: extensionv1.ResourceGrant{Name: route.name, Capability: extensionv1.CapabilityRequest, Permission: "admin"}, Method: route.method, Path: prompts.BasePath() + route.path}
+		prompts.Handle(route.method, route.path, h.Admin.Plugin.RegisterResource(descriptor), route.handler)
 	}
 }
 
 func registerPromptAuditRoutes(admin *gin.RouterGroup, h *handler.Handlers) {
 	promptAudit := admin.Group("/prompt-audit")
-	{
-		promptAudit.GET("/config", h.Admin.PromptAudit.GetConfig)
-		promptAudit.PUT("/config", h.Admin.PromptAudit.UpdateConfig)
-		promptAudit.POST("/endpoints/probe", h.Admin.PromptAudit.ProbeEndpoint)
-		promptAudit.GET("/runtime", h.Admin.PromptAudit.GetRuntime)
-		promptAudit.GET("/events", h.Admin.PromptAudit.ListEvents)
-		promptAudit.GET("/events/:id", h.Admin.PromptAudit.GetEvent)
-		promptAudit.DELETE("/events/:id", h.Admin.PromptAudit.DeleteEvent)
-		promptAudit.POST("/events/batch-delete", h.Admin.PromptAudit.BatchDelete)
-		promptAudit.POST("/events/delete-preview", h.Admin.PromptAudit.DeletePreview)
-		promptAudit.POST("/events/delete-by-filter", h.Admin.PromptAudit.DeleteByFilter)
+	for _, route := range []struct {
+		method, path, name string
+		handler            gin.HandlerFunc
+	}{
+		{"GET", "/config", "config", h.Admin.PromptAudit.GetConfig},
+		{"PUT", "/config", "update", h.Admin.PromptAudit.UpdateConfig},
+		{"POST", "/endpoints/probe", "probe", h.Admin.PromptAudit.ProbeEndpoint},
+		{"GET", "/runtime", "runtime", h.Admin.PromptAudit.GetRuntime},
+		{"GET", "/events", "events", h.Admin.PromptAudit.ListEvents},
+		{"GET", "/events/:id", "event", h.Admin.PromptAudit.GetEvent},
+		{"DELETE", "/events/:id", "delete", h.Admin.PromptAudit.DeleteEvent},
+		{"POST", "/events/batch-delete", "batch-delete", h.Admin.PromptAudit.BatchDelete},
+		{"POST", "/events/delete-preview", "delete-preview", h.Admin.PromptAudit.DeletePreview},
+		{"POST", "/events/delete-by-filter", "delete-by-filter", h.Admin.PromptAudit.DeleteByFilter},
+		{"GET", "/groups", "groups", h.Admin.Group.PluginOptions},
+	} {
+		descriptor := extensionv1.ResourceDescriptor{ResourceGrant: extensionv1.ResourceGrant{Name: "prompt-audit." + route.name, Capability: extensionv1.CapabilityUI, Permission: "admin"}, Method: route.method, Path: promptAudit.BasePath() + route.path, AllAccounts: true}
+		promptAudit.Handle(route.method, route.path, h.Admin.Plugin.RegisterResource(descriptor), route.handler)
 	}
 }
 
@@ -301,6 +326,7 @@ func registerOpsRoutes(admin *gin.RouterGroup, h *handler.Handlers) {
 		// Error logs (legacy)
 		ops.GET("/errors", h.Admin.Ops.GetErrorLogs)
 		ops.GET("/errors/:id", h.Admin.Ops.GetErrorLogByID)
+		ops.GET("/errors/:id/diagnostics", h.Admin.Plugin.RegisterResource(extensionv1.ResourceDescriptor{ResourceGrant: extensionv1.ResourceGrant{Name: "ops.error.diagnostics", Capability: extensionv1.CapabilityRecovery, Permission: "admin"}, Method: "GET", Path: ops.BasePath() + "/errors/:id/diagnostics"}), h.Admin.Plugin.ErrorDiagnostics(h.Admin.Ops))
 		ops.PUT("/errors/:id/resolve", h.Admin.Ops.UpdateErrorResolution)
 
 		// Request errors (client-visible failures)
@@ -386,10 +412,17 @@ func registerUserManagementRoutes(admin *gin.RouterGroup, h *handler.Handlers) {
 
 func registerGroupRoutes(admin *gin.RouterGroup, h *handler.Handlers) {
 	cindyGroups := admin.Group("/cindy/groups")
-	{
-		cindyGroups.GET("/audit", h.Admin.Group.AuditCindyGroups)
-		cindyGroups.POST("/:id/split-preview", h.Admin.Group.PreviewCindyGroupSplit)
-		cindyGroups.POST("/:id/split", h.Admin.Group.SplitCindyGroup)
+	for _, route := range []struct {
+		name, method, path string
+		handler            gin.HandlerFunc
+	}{
+		{"cindy.groups.audit", "GET", "/audit", h.Admin.Group.AuditCindyGroups},
+		{"cindy.groups.keys", "GET", "/:id/keys", h.Admin.Group.CindyGroupKeyChoices},
+		{"cindy.groups.preview", "POST", "/:id/split-preview", h.Admin.Group.PreviewCindyGroupSplit},
+		{"cindy.groups.split", "POST", "/:id/split", h.Admin.Group.SplitCindyGroup},
+	} {
+		descriptor := extensionv1.ResourceDescriptor{ResourceGrant: extensionv1.ResourceGrant{Name: route.name, Capability: extensionv1.CapabilityProvider, Permission: "admin"}, Method: route.method, Path: cindyGroups.BasePath() + route.path}
+		cindyGroups.Handle(route.method, route.path, h.Admin.Plugin.RegisterResource(descriptor), route.handler)
 	}
 
 	groups := admin.Group("/groups")
@@ -432,35 +465,34 @@ func registerAccountRoutes(admin *gin.RouterGroup, h *handler.Handlers, stepUpAu
 		accounts.GET("/ollama-cloud-usage/settings", h.Admin.Account.GetOllamaCloudUsageSettings)
 		accounts.PUT("/ollama-cloud-usage/settings", h.Admin.Account.UpdateOllamaCloudUsageSettings)
 		accounts.GET("/facets", h.Admin.Account.GetAccountFacets)
-		accounts.GET("/folders", h.Admin.Account.ListAccountFolders)
-		accounts.POST("/folders", h.Admin.Account.CreateAccountFolder)
-		accounts.PUT("/folders/order", h.Admin.Account.ReorderAccountFolders)
-		accounts.PUT("/folders/:id", h.Admin.Account.UpdateAccountFolder)
-		accounts.DELETE("/folders/:id", h.Admin.Account.DeleteAccountFolder)
-		accounts.GET("/tags", h.Admin.Account.ListAccountTags)
-		accounts.POST("/tags", h.Admin.Account.CreateAccountTag)
-		accounts.PUT("/tags/order", h.Admin.Account.ReorderAccountTags)
-		accounts.PUT("/tags/:id", h.Admin.Account.UpdateAccountTag)
-		accounts.DELETE("/tags/:id", h.Admin.Account.DeleteAccountTag)
-		accounts.GET("/cindy/insufficient-delete-preview", h.Admin.Account.PreviewCindyInsufficientDeletion)
-		accounts.POST("/cindy/delete-insufficient", h.Admin.Account.DeleteCindyInsufficient)
-		accounts.GET("/cindy/banned-delete-preview", h.Admin.Account.PreviewCindyBannedDeletion)
-		accounts.POST("/cindy/delete-banned", h.Admin.Account.DeleteCindyBanned)
-		accounts.GET("/cindy/duplicate-identity-inventory", h.Admin.Account.GetCindyDuplicateIdentityInventory)
+		registerAccountToolResources(accounts, h)
+		for _, route := range []struct {
+			name, method, path string
+			handler            gin.HandlerFunc
+		}{
+			{"cindy.cleanup.insufficient.preview", "GET", "/cindy/insufficient-delete-preview", h.Admin.Account.PreviewCindyInsufficientDeletion},
+			{"cindy.cleanup.insufficient.submit", "POST", "/cindy/delete-insufficient", h.Admin.Account.DeleteCindyInsufficient},
+			{"cindy.cleanup.banned.preview", "GET", "/cindy/banned-delete-preview", h.Admin.Account.PreviewCindyBannedDeletion},
+			{"cindy.cleanup.banned.submit", "POST", "/cindy/delete-banned", h.Admin.Account.DeleteCindyBanned},
+		} {
+			descriptor := service.CindyCleanupResourcePolicy()
+			descriptor.Name, descriptor.Method, descriptor.Path = route.name, route.method, accounts.BasePath()+route.path
+			accounts.Handle(route.method, route.path, h.Admin.Plugin.RegisterResource(descriptor), route.handler)
+		}
+		accounts.GET("/cindy/duplicate-identity-inventory", h.Admin.Plugin.RegisterResource(extensionv1.ResourceDescriptor{ResourceGrant: extensionv1.ResourceGrant{Name: "cindy.duplicates", Capability: extensionv1.CapabilityProvider, Permission: "admin"}, Method: "GET", Path: accounts.BasePath() + "/cindy/duplicate-identity-inventory"}), h.Admin.Account.GetCindyDuplicateIdentityInventory)
 		accounts.GET("/api-key-visibility", h.Admin.Account.GetAPIKeyVisibility)
 		accounts.PUT("/api-key-visibility", h.Admin.Account.SetAPIKeyVisibility)
 		accounts.GET("/:id", h.Admin.Account.GetByID)
+		accounts.GET("/:id/edit-context", h.Admin.Account.GetEditContext)
 		accounts.POST("", h.Admin.Account.Create)
 		accounts.POST("/:id/duplicate", h.Admin.Account.Duplicate)
 		accounts.POST("/check-mixed-channel", h.Admin.Account.CheckMixedChannel)
 		accounts.POST("/duplicates/review", h.Admin.Account.ReviewDuplicateAccounts)
 		accounts.POST("/duplicates/merge", h.Admin.Account.MergeDuplicateAccounts)
-		accounts.POST("/bulk-taxonomy", h.Admin.Account.BulkUpdateAccountTaxonomy)
 		accounts.POST("/import/codex-session", h.Admin.Account.ImportCodexSession)
 		accounts.POST("/sync/crs", h.Admin.Account.SyncFromCRS)
 		accounts.POST("/sync/crs/preview", h.Admin.Account.PreviewFromCRS)
 		accounts.PUT("/:id", h.Admin.Account.Update)
-		accounts.PUT("/:id/taxonomy", h.Admin.Account.SetAccountTaxonomy)
 		accounts.GET("/:id/grok-media-eligibility", h.Admin.Account.GetGrokMediaEligibility)
 		accounts.PUT("/:id/grok-media-eligibility", h.Admin.Account.UpdateGrokMediaEligibility)
 		accounts.PUT("/:id/upstream-billing-probe", h.Admin.Account.SetUpstreamBillingProbeEnabled)
@@ -477,7 +509,7 @@ func registerAccountRoutes(admin *gin.RouterGroup, h *handler.Handlers, stepUpAu
 		accounts.POST("/codex-tickets/batch-harvest", h.Admin.Account.BatchHarvestCodexTickets)
 		accounts.POST("/:id/codex-tickets/stop", h.Admin.Account.StopCodexTicketRenewal)
 		accounts.POST("/:id/recover-state", h.Admin.Account.RecoverState)
-		accounts.POST("/:id/cindy-balance/recover", h.Admin.Account.ClearCindyBalanceInsufficient)
+		accounts.POST("/:id/cindy-balance/recover", h.Admin.Plugin.RegisterResource(extensionv1.ResourceDescriptor{ResourceGrant: extensionv1.ResourceGrant{Name: "cindy.balance.recover", Capability: extensionv1.CapabilityProvider, Permission: "admin"}, RequiredCapabilities: []string{extensionv1.CapabilityAdmin}, OwnerPluginKey: service.CindyAccountViewPluginKey, AccountParam: "id", Method: "POST", Path: accounts.BasePath() + "/:id/cindy-balance/recover"}), h.Admin.Account.ClearCindyBalanceInsufficient)
 		accounts.POST("/:id/refresh", h.Admin.Account.Refresh)
 		accounts.POST("/:id/apply-oauth-credentials", h.Admin.Account.ApplyOAuthCredentials)
 		accounts.POST("/:id/set-privacy", h.Admin.Account.SetPrivacy)
@@ -503,16 +535,14 @@ func registerAccountRoutes(admin *gin.RouterGroup, h *handler.Handlers, stepUpAu
 		accounts.POST("/batch", h.Admin.Account.BatchCreate)
 		// 账号导出泄露上游凭证原文——要求 step-up 2FA
 		accounts.GET("/data", gin.HandlerFunc(stepUpAuth), h.Admin.Account.ExportData)
-		accounts.POST("/data/preview", h.Admin.Account.PreviewImportData)
-		accounts.POST("/data", h.Admin.Account.ImportData)
+		accounts.POST("/data/preview", h.Admin.Plugin.RegisterResource(extensionv1.ResourceDescriptor{ResourceGrant: extensionv1.ResourceGrant{Name: "import.preview", Capability: extensionv1.CapabilityAdmin, Permission: "admin"}, Method: "POST", Path: accounts.BasePath() + "/data/preview", AllAccounts: true}), h.Admin.Account.PreviewImportData)
+		accounts.POST("/data", h.Admin.Plugin.RegisterResource(extensionv1.ResourceDescriptor{ResourceGrant: extensionv1.ResourceGrant{Name: "import.submit", Capability: extensionv1.CapabilityAdmin, Permission: "admin"}, Method: "POST", Path: accounts.BasePath() + "/data", AllAccounts: true}), h.Admin.Account.ImportData)
 		accounts.POST("/batch-update-credentials", h.Admin.Account.BatchUpdateCredentials)
 		accounts.POST("/batch-refresh-tier", h.Admin.Account.BatchRefreshTier)
 		accounts.POST("/bulk-update", h.Admin.Account.BulkUpdate)
 		accounts.POST("/batch-delete", h.Admin.Account.BatchDelete)
 		accounts.POST("/batch-clear-error", h.Admin.Account.BatchClearError)
 		accounts.POST("/batch-refresh", h.Admin.Account.BatchRefresh)
-		accounts.POST("/batch-test", h.Admin.Account.BatchTest)
-		accounts.POST("/batch-test-models", h.Admin.Account.BatchTestModels)
 
 		// Antigravity 默认模型映射
 		accounts.GET("/antigravity/default-model-mapping", h.Admin.Account.GetAntigravityDefaultModelMapping)
@@ -854,15 +884,22 @@ func registerPluginRoutes(admin *gin.RouterGroup, h *handler.Handlers, stepUpAut
 	plugins := admin.Group("/plugins")
 	{
 		plugins.GET("", h.Admin.Plugin.List)
+		plugins.GET("/contributions", h.Admin.Plugin.Contributions)
 		plugins.GET("/:id", h.Admin.Plugin.Get)
 		plugins.POST("/upload", gin.HandlerFunc(stepUpAuth), h.Admin.Plugin.Upload)
+		plugins.POST("/:id/update", gin.HandlerFunc(stepUpAuth), h.Admin.Plugin.Update)
+		plugins.POST("/:id/follow-bundled", gin.HandlerFunc(stepUpAuth), h.Admin.Plugin.FollowBundledVersion)
 		plugins.POST("/:id/enable", gin.HandlerFunc(stepUpAuth), h.Admin.Plugin.Enable)
 		plugins.POST("/:id/disable", gin.HandlerFunc(stepUpAuth), h.Admin.Plugin.Disable)
 		plugins.DELETE("/:id", gin.HandlerFunc(stepUpAuth), h.Admin.Plugin.Delete)
 		plugins.GET("/:id/config", h.Admin.Plugin.GetConfig)
+		plugins.GET("/:id/status", h.Admin.Plugin.Status)
+		plugins.GET("/:id/resources", h.Admin.Plugin.Resources)
 		plugins.PUT("/:id/config", gin.HandlerFunc(stepUpAuth), h.Admin.Plugin.SaveConfig)
 		plugins.POST("/:id/test", gin.HandlerFunc(stepUpAuth), h.Admin.Plugin.Test)
 		plugins.POST("/:id/ui-session", h.Admin.Plugin.CreateUISession)
+		plugins.POST("/:id/actions", h.Admin.Plugin.InvokeAdmin)
+		plugins.POST("/:id/jobs", h.Admin.Plugin.SubmitJob)
 	}
 }
 

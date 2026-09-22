@@ -29,6 +29,10 @@ type Application struct {
 	Server        *http.Server
 	PromptAudit   *securityaudit.PromptService
 	PluginManager *service.PluginManager
+	AccountJobs   *service.AccountJobRuntime
+	ImageStudio   *service.ImageStudioRuntime
+	PromptDomain  *service.PromptDomainRuntime
+	CodexIdentity *service.CodexClientIdentityBackfillService
 	Cleanup       func()
 }
 
@@ -55,12 +59,13 @@ func initializeApplication(buildInfo handler.BuildInfo) (*Application, error) {
 		provideServiceBuildInfo,
 		providePluginHostInfo,
 		provideUsageCommitObserver,
+		service.NewPromptDomainRuntime,
 
 		// Cleanup function provider
 		provideCleanup,
 
 		// Application struct
-		wire.Struct(new(Application), "Server", "PromptAudit", "PluginManager", "Cleanup"),
+		wire.Struct(new(Application), "Server", "PromptAudit", "PluginManager", "AccountJobs", "ImageStudio", "PromptDomain", "CodexIdentity", "Cleanup"),
 	)
 	return nil, nil
 }
@@ -136,16 +141,21 @@ func provideCleanup(
 	auditLog *service.AuditLogService,
 	openAIAutoReset *service.OpenAIQuotaAutoResetService,
 	promptAudit *securityaudit.PromptService,
+	promptDomain *service.PromptDomainRuntime,
 	businessPrompt *service.BusinessSystemPromptService,
 	remoteSkillRegistry *service.RemoteSkillRegistryService,
 	accountJobs *service.AccountJobRuntime,
 	cindyHealth *service.CindyHealthService,
 	cindyBalanceProbe *service.CindyBalanceProbeService,
 	imageStudioRuntime *service.ImageStudioRuntime,
+	pluginManager *service.PluginManager,
 ) func() {
 	return func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
+		if promptDomain != nil {
+			promptDomain.Stop()
+		}
 
 		type cleanupStep struct {
 			name string
@@ -163,6 +173,12 @@ func provideCleanup(
 			{"AccountJobRuntime", func() error {
 				if accountJobs != nil {
 					accountJobs.Stop()
+				}
+				return nil
+			}},
+			{"OpenAIQuotaAutoResetService", func() error {
+				if openAIAutoReset != nil {
+					openAIAutoReset.Stop()
 				}
 				return nil
 			}},
@@ -374,12 +390,6 @@ func provideCleanup(
 				}
 				return nil
 			}},
-			{"OpenAICodexTicketHarvester", func() error {
-				if openAIGateway != nil {
-					openAIGateway.StopOpenAICodexTicketHarvester()
-				}
-				return nil
-			}},
 			{"ScheduledTestRunnerService", func() error {
 				if scheduledTestRunner != nil {
 					scheduledTestRunner.Stop()
@@ -474,6 +484,9 @@ func provideCleanup(
 		}
 
 		runParallel(parallelSteps)
+		if pluginManager != nil {
+			pluginManager.Stop()
+		}
 		runSequential(infraSteps)
 
 		// Check if context timed out

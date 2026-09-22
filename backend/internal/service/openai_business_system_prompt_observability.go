@@ -72,10 +72,10 @@ func logBusinessSystemPromptObservation(
 ) {
 	if c != nil {
 		key := businessSystemPromptContextKey(c, businessSystemPromptRequestObservationKey, BusinessSystemPromptProtocolResponses)
-		if _, exists := c.Get(key); exists {
+		if _, exists := businessSystemPromptRequestGet(c, key); exists {
 			return
 		}
-		c.Set(key, true)
+		businessSystemPromptRequestSet(c, key, true)
 	}
 	observation := newBusinessSystemPromptObservation(
 		application,

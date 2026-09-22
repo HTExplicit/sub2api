@@ -7,6 +7,7 @@ import { useAppStore } from '@/stores/app'
 import { updateFavicon } from '@/utils/branding'
 import { isIOSDevice } from '@/utils/device'
 import './style.css'
+import { initializePluginThemes } from '@/components/plugins/theme'
 
 function initIOSViewportZoomFix() {
   // iOS Safari 在输入框字号小于 16px 时聚焦会自动放大页面，且失焦后不会恢复。
@@ -50,7 +51,7 @@ async function bootstrap() {
   }
   updateFavicon(appStore.siteLogo)
 
-  await initI18n()
+  await Promise.all([initI18n(), initializePluginThemes()])
 
   app.use(router)
   app.use(i18n)

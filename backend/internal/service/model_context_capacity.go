@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
+	extensionv1 "github.com/Wei-Shaw/sub2api/pkg/extensionapi/v1"
 )
 
 const (
@@ -24,14 +25,7 @@ const (
 // ModelContextCapacity keeps the upstream's distinct limits intact. A zero is
 // unknown, never a promise of an unlimited window. ObservedAt belongs to an
 // actual upstream observation, not to a registry enrichment or account edit.
-type ModelContextCapacity struct {
-	ContextWindow    int64  `json:"context_window,omitempty"`
-	MaxContextWindow int64  `json:"max_context_window,omitempty"`
-	MaxInputTokens   int64  `json:"max_input_tokens,omitempty"`
-	MaxOutputTokens  int64  `json:"max_output_tokens,omitempty"`
-	CapacityBasis    string `json:"capacity_basis,omitempty"`
-	ObservedAt       string `json:"observed_at,omitempty"`
-}
+type ModelContextCapacity = extensionv1.ModelContextCapacity
 
 type UpstreamModelContextCapacitySnapshot struct {
 	ObservedAt     string                          `json:"observed_at"`
@@ -41,33 +35,11 @@ type UpstreamModelContextCapacitySnapshot struct {
 
 // ModelContextCapacityReference preserves the raw product reference separately
 // from the planning capacity selected by this project.
-type ModelContextCapacityReference struct {
-	Product          string `json:"product"`
-	SourceURL        string `json:"source_url"`
-	Release          string `json:"release"`
-	VerifiedAt       string `json:"verified_at"`
-	ContextWindow    int64  `json:"context_window"`
-	MaxContextWindow int64  `json:"max_context_window"`
-}
+type ModelContextCapacityReference = extensionv1.ModelContextCapacityReference
 
 // OfficialModelContextCapacity is release-owned evidence. Match constraints and
 // reference values are not client-writeable.
-type OfficialModelContextCapacity struct {
-	ModelContextCapacity
-	ModelID            string                         `json:"model_id"`
-	Aliases            []string                       `json:"aliases,omitempty"`
-	Provider           string                         `json:"provider"`
-	Product            string                         `json:"product"`
-	SourceURL          string                         `json:"source_url"`
-	SourceURLs         []string                       `json:"source_urls,omitempty"`
-	VerifiedAt         string                         `json:"verified_at"`
-	OriginalText       string                         `json:"original_text"`
-	NormalizationBasis string                         `json:"normalization_basis,omitempty"`
-	Conditions         string                         `json:"conditions,omitempty"`
-	Reference          *ModelContextCapacityReference `json:"reference,omitempty"`
-	MatchHosts         []string                       `json:"-"`
-	MatchAccountModes  []string                       `json:"-"`
-}
+type OfficialModelContextCapacity = extensionv1.OfficialModelContextCapacity
 
 type ResolvedModelContextCapacity struct {
 	ModelContextCapacity
@@ -513,12 +485,12 @@ func LookupOfficialModelContextCapacity(account *Account, upstreamModelID string
 	if account == nil || !validModelContextID(upstreamModelID) {
 		return nil
 	}
-	for _, candidate := range modelContextReferenceCandidates(upstreamModelID) {
-		if found, matched := lookupExactOfficialModelContextCapacity(account, candidate); matched {
-			return found
-		}
+	query := extensionv1.CatalogQuery{AccountID: account.ID, Candidates: modelContextReferenceCandidates(upstreamModelID), Platform: account.Platform, AccountType: account.Type, AccountMode: account.GetAccountMode()}
+	if parsed, err := url.Parse(upstreamModelRegistryBaseURL(account)); err == nil {
+		query.Scheme, query.Host, query.Port, query.Path = parsed.Scheme, parsed.Hostname(), parsed.Port(), parsed.Path
+		query.HasURLCredentials = parsed.User != nil
 	}
-	return nil
+	return lookupExtensionCatalog(query)
 }
 
 func modelContextReferenceCandidates(modelID string) []string {
@@ -542,79 +514,6 @@ func modelContextReferenceCandidates(modelID string) []string {
 		}
 	}
 	return candidates
-}
-
-func lookupExactOfficialModelContextCapacity(account *Account, modelID string) (*OfficialModelContextCapacity, bool) {
-	var found *OfficialModelContextCapacity
-	for _, entry := range officialModelContextCapacityCatalog {
-		if !strings.EqualFold(entry.ModelID, modelID) && !containsFoldModelContextString(entry.Aliases, modelID) {
-			continue
-		}
-		if !officialModelContextCapacityApplies(account, entry) {
-			continue
-		}
-		if _, ok := modelContextPlanningCapacity(entry.ModelContextCapacity); !ok {
-			continue
-		}
-		if found != nil && found.ModelContextCapacity != entry.ModelContextCapacity {
-			// No table order can resolve conflicting official records.
-			return nil, true
-		}
-		copy := entry
-		copy.Aliases = append([]string(nil), entry.Aliases...)
-		copy.SourceURLs = append([]string(nil), entry.SourceURLs...)
-		if entry.Reference != nil {
-			reference := *entry.Reference
-			copy.Reference = &reference
-		}
-		found = &copy
-	}
-	return found, found != nil
-}
-
-func officialModelContextCapacityApplies(account *Account, entry OfficialModelContextCapacity) bool {
-	baseURL := upstreamModelRegistryBaseURL(account)
-	parsed, err := url.Parse(baseURL)
-	isKimiCodingEndpoint := err == nil && parsed != nil && parsed.Scheme == "https" && parsed.User == nil &&
-		strings.EqualFold(parsed.Hostname(), "api.kimi.com") && (parsed.Port() == "" || parsed.Port() == "443") &&
-		(parsed.Path == "/coding" || strings.HasPrefix(parsed.Path, "/coding/"))
-	// A short model ID such as k3 and a generic "coding" mode cannot identify
-	// the Kimi product on another vendor. A real Kimi account or its exact
-	// official Coding endpoint is required; custom relays remain overridable.
-	if entry.Provider == "kimi" && entry.Product == "coding" && account.Platform != PlatformKimi && !isKimiCodingEndpoint {
-		return false
-	}
-	if len(entry.MatchHosts) > 0 {
-		if err != nil || parsed.Scheme != "https" || parsed.User != nil || parsed.Hostname() == "" || (parsed.Port() != "" && parsed.Port() != "443") {
-			return false
-		}
-		matched := false
-		for _, host := range entry.MatchHosts {
-			if strings.EqualFold(parsed.Hostname(), host) {
-				matched = true
-				break
-			}
-		}
-		if !matched {
-			return false
-		}
-	}
-	if len(entry.MatchAccountModes) > 0 {
-		mode := account.GetAccountMode()
-		// Generic OpenAI-compatible Kimi accounts still have a distinguishable
-		// official Coding endpoint. Never infer membership tier from a model ID.
-		if mode == "" && err == nil && parsed != nil {
-			if isKimiCodingEndpoint {
-				mode = AccountModeCoding
-			} else {
-				mode = AccountModePayG
-			}
-		}
-		if !containsExactModelContextString(entry.MatchAccountModes, mode) {
-			return false
-		}
-	}
-	return true
 }
 
 func containsExactModelContextString(values []string, target string) bool {

@@ -46,12 +46,19 @@
             <div class="min-w-0">
               <p class="truncate text-sm font-medium text-ink">{{ itemLabel(item) }}</p>
               <p v-if="item.metadata.model_id" class="mt-1 break-all text-xs text-muted">{{ item.metadata.model_id }}</p>
+              <p v-else-if="typeof item.metadata.label === 'string'" class="mt-1 break-all text-xs text-muted">{{ item.metadata.label }}</p>
             </div>
-            <span class="shrink-0 text-xs" :class="statusClass(item.status)">{{ ticketResult(item)?.code === 'ticket_skipped' ? t('admin.accountTasks.skipped') : statusLabel(item.status) }}</span>
+            <span class="shrink-0 text-xs" :class="statusClass(item.status)">{{ statusLabel(item.status) }}</span>
           </div>
-          <p v-if="item.error_message" class="mt-2 break-words text-xs text-red-600 dark:text-red-400">{{ item.error_message }}</p>
-          <p v-if="ticketResult(item)" class="mt-2 break-words text-xs leading-relaxed text-muted">{{ ticketResultLabel(item) }}</p>
-          <p v-else-if="typeof item.metadata.latency_ms === 'number'" class="mt-1 text-xs tabular-nums text-muted">{{ item.metadata.latency_ms }} ms</p>
+          <p v-if="typeof item.metadata.message === 'string'" class="mt-2 break-words text-xs" :class="item.status === 'failed' ? 'text-red-600 dark:text-red-400' : 'text-muted'">{{ item.metadata.message }}</p>
+          <p v-else-if="item.error_message" class="mt-2 break-words text-xs text-red-600 dark:text-red-400">{{ item.error_message }}</p>
+          <dl v-if="resultFacts(item).length" class="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted">
+            <div v-for="(fact, index) in resultFacts(item)" :key="index" class="flex gap-1">
+              <dt>{{ fact.label[locale || 'zh'] || fact.label.zh || fact.label.en }}</dt>
+              <dd>{{ fact.timestamp ? formatDateTime(fact.value) : fact.value }}</dd>
+            </div>
+          </dl>
+          <p v-if="typeof item.metadata.latency_ms === 'number'" class="mt-1 text-xs tabular-nums text-muted">{{ item.metadata.latency_ms }} ms</p>
         </div>
         <p v-if="!store.items.length" class="py-5 text-center text-sm text-muted">{{ t(store.loadingCurrent ? 'common.loading' : store.itemFilter ? 'admin.accountTasks.noFailures' : 'admin.accountTasks.awaitingResults') }}</p>
       </div>
@@ -78,15 +85,19 @@ import Icon from '@/components/icons/Icon.vue'
 import { isTerminalAccountJob, useAccountJobsStore } from '@/stores/accountJobs'
 import { list as listAccounts } from '@/api/admin/accounts'
 import type { AccountJobItem, DuplicateReviewMetadata } from '@/api/admin/accountJobs'
-import type { TicketResult } from '@/api/admin/codexTickets'
+import { formatDateTime } from '@/utils/format'
 const emit = defineEmits<{ close: [] }>()
-const { t } = useI18n()
+const { t, locale } = useI18n()
 const store = useAccountJobsStore()
 const job = computed(() => store.currentJob)
 const terminal = computed(() => !!job.value && isTerminalAccountJob(job.value))
 const progress = computed(() => job.value?.target_count ? Math.min(100, Math.round(job.value.processed_count / job.value.target_count * 100)) : 0)
 const busy = ref(false), error = ref(''), retryExpired = ref(false), survivorID = ref<number | null>(null), confirmMerge = ref(false)
 const names = ref<Record<number, string>>({})
+type ResultFact = { label: Record<string, string>; value: string; timestamp?: boolean }
+function resultFacts(item: AccountJobItem): ResultFact[] {
+  return Array.isArray(item.metadata.facts) ? item.metadata.facts.filter((fact): fact is ResultFact => !!fact && typeof fact === 'object' && typeof fact.value === 'string' && !!fact.label && typeof fact.label === 'object') : []
+}
 let nameVersion = 0
 watch(() => job.value?.id, () => { error.value = ''; retryExpired.value = false; survivorID.value = null; confirmMerge.value = false })
 watch(survivorID, () => { confirmMerge.value = false })
@@ -114,12 +125,6 @@ function statusClass(status: string) {
   return status === 'failed' ? 'text-red-600 dark:text-red-400' : ['partially_succeeded', 'canceled'].includes(status) ? 'text-amber-600 dark:text-amber-400' : 'text-primary-600 dark:text-primary-400'
 }
 function itemLabel(item: AccountJobItem) { return (typeof item.metadata.name === 'string' && item.metadata.name) || (item.target_account_id && names.value[item.target_account_id]) || (item.target_account_id ? t('admin.accountTasks.account', { id: item.target_account_id }) : t('admin.accountTasks.item', { ordinal: item.ordinal })) }
-function ticketResult(item: AccountJobItem): TicketResult | null { return item.metadata.ticket_result && typeof item.metadata.ticket_result === 'object' ? item.metadata.ticket_result as TicketResult : null }
-function ticketResultLabel(item: AccountJobItem) {
-  const r = ticketResult(item)
-  if (!r) return ''
-  return [r.message, r.http_status ? `HTTP ${r.http_status}` : '', r.observed_length ? `${t('admin.accounts.tickets.length')}: ${r.observed_length}` : '', r.duration_ms ? `${r.duration_ms} ms` : ''].filter(Boolean).join(' · ')
-}
 async function action(callback: () => Promise<unknown>) {
   if (busy.value) return
   busy.value = true; error.value = ''

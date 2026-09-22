@@ -65,6 +65,9 @@ func newTestContext() (*gin.Context, *httptest.ResponseRecorder) {
 type openAIAccountTestRepo struct {
 	mockAccountRepoForGemini
 	updatedExtra       map[string]any
+	persistedExtra     map[int64]map[string]any
+	extraWriteID       int64
+	extraWriteErr      error
 	bulkUpdatedIDs     []int64
 	bulkUpdatedPayload AccountBulkUpdate
 	rateLimitedID      int64
@@ -98,8 +101,21 @@ func (r *cindyAccountTestRepo) DeleteCindyInsufficient(context.Context, int, str
 	return &CindyInsufficientDeleteResult{}, nil
 }
 
-func (r *openAIAccountTestRepo) UpdateExtra(_ context.Context, _ int64, updates map[string]any) error {
+func (r *openAIAccountTestRepo) UpdateExtra(_ context.Context, id int64, updates map[string]any) error {
+	r.extraWriteID = id
+	if r.extraWriteErr != nil {
+		return r.extraWriteErr
+	}
 	r.updatedExtra = updates
+	if r.persistedExtra == nil {
+		r.persistedExtra = make(map[int64]map[string]any)
+	}
+	if r.persistedExtra[id] == nil {
+		r.persistedExtra[id] = make(map[string]any)
+	}
+	for key, value := range updates {
+		r.persistedExtra[id][key] = value
+	}
 	return nil
 }
 
@@ -124,6 +140,24 @@ func (r *openAIAccountTestRepo) SetError(_ context.Context, id int64, errorMsg s
 	r.setErrorID = id
 	r.setErrorMsg = errorMsg
 	return nil
+}
+
+func requireAccountTestQuotaState(t *testing.T, repo *openAIAccountTestRepo, account *Account) *UpstreamQuotaState {
+	t.Helper()
+	require.Equal(t, account.ID, repo.extraWriteID)
+	require.Len(t, repo.persistedExtra, 1, "quota writes must stay on the observed account")
+	require.Contains(t, repo.persistedExtra, account.ID)
+	now := time.Now()
+	state := account.QuotaState(now)
+	require.NotNil(t, state)
+	require.True(t, state.Blocked)
+	persisted := *account
+	persisted.Extra = repo.persistedExtra[account.ID]
+	require.Equal(t, state, persisted.QuotaState(now))
+	require.Zero(t, repo.rateLimitedID, "hard quota must not create an independent ordinary cooldown")
+	require.Nil(t, repo.rateLimitedAt)
+	require.Zero(t, repo.clearedErrorID, "quota evidence does not resolve another account error")
+	return state
 }
 
 func TestAccountTestService_CindyBudget429DoesNotPersistWithoutConfirmation(t *testing.T) {
@@ -310,6 +344,7 @@ func TestAccountTestService_NonCindyEmptyModelKeepsOpenAIDefault(t *testing.T) {
 func TestAccountTestService_OpenAISuccessPersistsSnapshotFromHeaders(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	ctx, recorder := newTestContext()
+	ctx.Request = ctx.Request.WithContext(withCodexTransportFixture(ctx.Request.Context(), true))
 
 	resp := newJSONResponse(http.StatusOK, "")
 	resp.Body = io.NopCloser(strings.NewReader(`data: {"type":"response.completed"}
@@ -573,7 +608,7 @@ func TestAccountTestService_DeepSeekDefaultBaseURLUsesNativeResponsesPath(t *tes
 	require.Equal(t, "https://api.deepseek.com/responses", upstream.requests[0].URL.String())
 }
 
-func TestAccountTestService_OpenAI429PersistsSnapshotAndRateLimitState(t *testing.T) {
+func TestAccountTestService_OpenAI429PersistsSnapshotAndQuotaState(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	ctx, _ := newTestContext()
 
@@ -599,17 +634,17 @@ func TestAccountTestService_OpenAI429PersistsSnapshotAndRateLimitState(t *testin
 
 	err := svc.testOpenAIAccountConnection(ctx, account, "gpt-5.4", "", "")
 	require.Error(t, err)
-	require.NotEmpty(t, repo.updatedExtra)
-	require.Equal(t, 100.0, repo.updatedExtra["codex_5h_used_percent"])
-	require.Equal(t, account.ID, repo.rateLimitedID)
-	require.NotNil(t, repo.rateLimitedAt)
-	require.Equal(t, account.ID, repo.clearedErrorID)
-	require.Equal(t, StatusActive, account.Status)
+	state := requireAccountTestQuotaState(t, repo, account)
+	require.Equal(t, 100.0, repo.persistedExtra[account.ID]["codex_5h_used_percent"])
+	require.Len(t, state.Windows, 2)
+	require.NotNil(t, state.Until)
+	require.WithinDuration(t, time.Now().Add(7*24*time.Hour), *state.Until, 2*time.Second)
+	require.Equal(t, StatusError, account.Status)
 	require.Empty(t, account.ErrorMessage)
-	require.NotNil(t, account.RateLimitResetAt)
+	require.Nil(t, account.RateLimitResetAt)
 }
 
-func TestAccountTestService_OpenAI429BodyOnlyPersistsRateLimitAndClearsStaleError(t *testing.T) {
+func TestAccountTestService_OpenAI429BodyOnlyPersistsQuotaStateAndPreservesStaleError(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	ctx, _ := newTestContext()
 
@@ -618,25 +653,32 @@ func TestAccountTestService_OpenAI429BodyOnlyPersistsRateLimitAndClearsStaleErro
 	repo := &openAIAccountTestRepo{}
 	upstream := &queuedHTTPUpstream{responses: []*http.Response{resp}}
 	svc := &AccountTestService{accountRepo: repo, httpUpstream: upstream}
+	priorLimitedAt := time.Now().Add(-time.Minute)
+	priorResetAt := time.Now().Add(20 * time.Minute)
+	priorTemporaryUntil := time.Now().Add(30 * time.Minute)
 	account := &Account{
-		ID:           77,
-		Platform:     PlatformOpenAI,
-		Type:         AccountTypeOAuth,
-		Status:       StatusError,
-		ErrorMessage: "Access forbidden (403): account may be suspended or lack permissions",
-		Concurrency:  1,
-		Credentials:  map[string]any{"access_token": "test-token"},
+		ID:            77,
+		Platform:      PlatformOpenAI,
+		Type:          AccountTypeOAuth,
+		Status:        StatusError,
+		ErrorMessage:  "Access forbidden (403): account may be suspended or lack permissions",
+		Concurrency:   1,
+		Credentials:   map[string]any{"access_token": "test-token"},
+		RateLimitedAt: &priorLimitedAt, RateLimitResetAt: &priorResetAt,
+		TempUnschedulableUntil: &priorTemporaryUntil, TempUnschedulableReason: "operator hold",
 	}
 
 	err := svc.testOpenAIAccountConnection(ctx, account, "gpt-5.4", "", "")
 	require.Error(t, err)
-	require.Equal(t, account.ID, repo.rateLimitedID)
-	require.NotNil(t, repo.rateLimitedAt)
-	require.Equal(t, account.ID, repo.clearedErrorID)
-	require.Equal(t, StatusActive, account.Status)
-	require.Empty(t, account.ErrorMessage)
-	require.NotNil(t, account.RateLimitResetAt)
-	require.Empty(t, repo.updatedExtra)
+	state := requireAccountTestQuotaState(t, repo, account)
+	require.Nil(t, state.Until, "the expired body timestamp is not a new reset deadline")
+	require.Equal(t, StatusError, account.Status)
+	require.Equal(t, "Access forbidden (403): account may be suspended or lack permissions", account.ErrorMessage)
+	require.Equal(t, &priorLimitedAt, account.RateLimitedAt)
+	require.Equal(t, &priorResetAt, account.RateLimitResetAt)
+	require.Equal(t, &priorTemporaryUntil, account.TempUnschedulableUntil)
+	require.Equal(t, "operator hold", account.TempUnschedulableReason)
+	require.False(t, account.Schedulable)
 }
 
 func TestAccountTestService_OpenAI429SyncsObservedPlanType(t *testing.T) {
@@ -662,8 +704,9 @@ func TestAccountTestService_OpenAI429SyncsObservedPlanType(t *testing.T) {
 	require.Equal(t, []int64{account.ID}, repo.bulkUpdatedIDs)
 	require.Equal(t, "free", repo.bulkUpdatedPayload.Credentials["plan_type"])
 	require.Equal(t, "free", account.Credentials["plan_type"])
-	require.Equal(t, account.ID, repo.rateLimitedID)
-	require.NotNil(t, account.RateLimitResetAt)
+	state := requireAccountTestQuotaState(t, repo, account)
+	require.Nil(t, state.Until)
+	require.Nil(t, account.RateLimitResetAt)
 }
 
 func TestAccountTestService_OpenAI429ActiveAccountDoesNotClearError(t *testing.T) {
@@ -686,11 +729,11 @@ func TestAccountTestService_OpenAI429ActiveAccountDoesNotClearError(t *testing.T
 
 	err := svc.testOpenAIAccountConnection(ctx, account, "gpt-5.4", "", "")
 	require.Error(t, err)
-	require.Equal(t, account.ID, repo.rateLimitedID)
-	require.NotNil(t, repo.rateLimitedAt)
-	require.Zero(t, repo.clearedErrorID)
+	state := requireAccountTestQuotaState(t, repo, account)
+	require.NotNil(t, state.Until)
+	require.WithinDuration(t, time.Now().Add(time.Hour), *state.Until, 2*time.Second)
 	require.Equal(t, StatusActive, account.Status)
-	require.NotNil(t, account.RateLimitResetAt)
+	require.Nil(t, account.RateLimitResetAt)
 }
 
 func TestAccountTestService_OpenAITransient429UsesShortCooldownDespiteQuotaObservationHeaders(t *testing.T) {
@@ -720,9 +763,13 @@ func TestAccountTestService_OpenAITransient429UsesShortCooldownDespiteQuotaObser
 	require.NotNil(t, repo.rateLimitedAt)
 	require.WithinDuration(t, before.Add(openAIOAuth429FallbackCooldown), *repo.rateLimitedAt, 2*time.Second)
 	require.Less(t, repo.rateLimitedAt.Sub(before), time.Minute)
+	require.NotContains(t, repo.persistedExtra[account.ID], "openai_quota_exhausted")
+	state := account.QuotaState(time.Now())
+	require.NotNil(t, state)
+	require.False(t, state.Blocked)
 }
 
-func TestAccountTestService_OpenAIHardQuotaWithoutResetUsesBoundedFallback(t *testing.T) {
+func TestAccountTestService_OpenAIHardQuotaWithoutResetPreservesUnknownDeadline(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	ctx, _ := newTestContext()
 
@@ -735,21 +782,130 @@ func TestAccountTestService_OpenAIHardQuotaWithoutResetUsesBoundedFallback(t *te
 		ID:           79,
 		Platform:     PlatformOpenAI,
 		Type:         AccountTypeOAuth,
-		Status:       StatusError,
-		ErrorMessage: "stale 403",
+		Status:       StatusDisabled,
+		ErrorMessage: "operator disabled",
 		Concurrency:  1,
 		Credentials:  map[string]any{"access_token": "test-token"},
 	}
 
 	err := svc.testOpenAIAccountConnection(ctx, account, "gpt-5.4", "", "")
 	require.Error(t, err)
-	require.Equal(t, account.ID, repo.rateLimitedID)
-	require.NotNil(t, repo.rateLimitedAt)
-	require.Equal(t, account.ID, repo.clearedErrorID)
-	require.Equal(t, StatusActive, account.Status)
-	require.Empty(t, account.ErrorMessage)
-	require.NotNil(t, account.RateLimitResetAt)
-	require.WithinDuration(t, time.Now().Add(5*time.Hour), *account.RateLimitResetAt, 2*time.Second)
+	state := requireAccountTestQuotaState(t, repo, account)
+	require.Nil(t, state.Until)
+	require.Nil(t, account.RateLimitResetAt)
+	require.Equal(t, StatusDisabled, account.Status)
+	require.Equal(t, "operator disabled", account.ErrorMessage)
+	require.False(t, account.Schedulable)
+}
+
+func TestAccountTestService_OpenAI429PersistenceFailurePreservesState(t *testing.T) {
+	ctx, recorder := newTestContext()
+	repo := &openAIAccountTestRepo{extraWriteErr: fmt.Errorf("synthetic persistence failure")}
+	upstream := &queuedHTTPUpstream{responses: []*http.Response{
+		newJSONResponse(http.StatusTooManyRequests, `{"error":{"type":"usage_limit_reached"}}`),
+	}}
+	svc := &AccountTestService{accountRepo: repo, httpUpstream: upstream}
+	account := &Account{
+		ID: 785, Platform: PlatformOpenAI, Type: AccountTypeOAuth,
+		Status: StatusError, ErrorMessage: "operator review required", Schedulable: false,
+		Credentials: map[string]any{"access_token": "test-token"},
+	}
+
+	err := svc.testOpenAIAccountConnection(ctx, account, "gpt-5.4", "", "")
+	require.Error(t, err)
+	require.Len(t, upstream.requests, 1)
+	require.Equal(t, account.ID, repo.extraWriteID)
+	require.Empty(t, repo.persistedExtra)
+	require.Zero(t, repo.rateLimitedID)
+	require.Zero(t, repo.clearedErrorID)
+	require.Equal(t, StatusError, account.Status)
+	require.Equal(t, "operator review required", account.ErrorMessage)
+	require.False(t, account.Schedulable)
+	state := account.QuotaState(time.Now())
+	require.NotNil(t, state)
+	require.True(t, state.Blocked, "failed persistence must not discard the observed in-memory restriction")
+	require.Nil(t, state.Until)
+	require.NotContains(t, recorder.Body.String(), "synthetic persistence failure")
+	require.NotContains(t, recorder.Body.String(), `"success":true`)
+}
+
+func TestAccountTestService_OpenAI429KeepsNonOAuthScope(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		body      string
+		knownTime bool
+	}{
+		{"known reset keeps ordinary cooldown", `{"error":{"type":"usage_limit_reached","resets_in_seconds":3600}}`, true},
+		{"unknown reset does not fabricate a deadline", `{"error":{"type":"usage_limit_reached"}}`, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			repo := &openAIAccountTestRepo{}
+			svc := &AccountTestService{accountRepo: repo}
+			account := &Account{ID: 786, Platform: PlatformOpenAI, Type: AccountTypeAPIKey, Status: StatusActive}
+			svc.reconcileOpenAI429State(t.Context(), account, http.Header{}, []byte(tc.body))
+			require.Empty(t, repo.persistedExtra)
+			require.NotContains(t, account.Extra, "openai_quota_exhausted")
+			require.Nil(t, account.QuotaState(time.Now()))
+			require.Zero(t, repo.clearedErrorID)
+			if tc.knownTime {
+				require.Equal(t, account.ID, repo.rateLimitedID)
+				require.NotNil(t, repo.rateLimitedAt)
+				require.WithinDuration(t, time.Now().Add(time.Hour), *repo.rateLimitedAt, 2*time.Second)
+			} else {
+				require.Zero(t, repo.rateLimitedID)
+				require.Nil(t, account.RateLimitResetAt)
+			}
+		})
+	}
+}
+
+func TestAccountTestService_OpenAI429SparkIgnoresGlobalQuota(t *testing.T) {
+	for _, mode := range []string{AccountTestModeDefault, AccountTestModeCompact} {
+		t.Run(mode, func(t *testing.T) {
+			ctx, _ := newTestContext()
+			parentID := int64(800)
+			parent := &Account{
+				ID: parentID, Platform: PlatformOpenAI, Type: AccountTypeOAuth, Status: StatusActive,
+				Credentials: map[string]any{"access_token": "parent-token", "plan_type": "plus"},
+				Extra:       map[string]any{"parent_marker": "keep"},
+			}
+			observed := time.Now().UTC().Format(time.RFC3339Nano)
+			shadow := &Account{
+				ID: 801, Platform: PlatformOpenAI, Type: AccountTypeOAuth, Status: StatusActive,
+				ParentAccountID: &parentID, QuotaDimension: QuotaDimensionSpark, Schedulable: true,
+				Extra: map[string]any{
+					"codex_primary_used_percent": 25.0, "codex_primary_window_minutes": 300,
+					"codex_primary_observed_at": observed,
+				},
+			}
+			repo := &openAIAccountTestRepo{mockAccountRepoForGemini: mockAccountRepoForGemini{
+				accountsByID: map[int64]*Account{parentID: parent, shadow.ID: shadow},
+			}}
+			resp := newJSONResponse(http.StatusTooManyRequests, `{"error":{"type":"usage_limit_reached","plan_type":"free"}}`)
+			resp.Header.Set("x-codex-primary-used-percent", "100")
+			resp.Header.Set("x-codex-primary-window-minutes", "10080")
+			resp.Header.Set("x-codex-primary-reset-after-seconds", "3600")
+			upstream := &queuedHTTPUpstream{responses: []*http.Response{resp}}
+			svc := &AccountTestService{accountRepo: repo, httpUpstream: upstream}
+
+			err := svc.testOpenAIAccountConnection(ctx, shadow, "gpt-5.3-codex-spark", "", mode)
+			require.Error(t, err)
+			require.Len(t, upstream.requests, 1)
+			require.Empty(t, repo.bulkUpdatedIDs)
+			require.Zero(t, repo.rateLimitedID)
+			require.Zero(t, repo.clearedErrorID)
+			require.NotContains(t, repo.persistedExtra, parentID)
+			require.NotContains(t, repo.persistedExtra[shadow.ID], "codex_primary_used_percent")
+			require.NotContains(t, repo.persistedExtra[shadow.ID], "openai_quota_exhausted")
+			require.Equal(t, map[string]any{"parent_marker": "keep"}, parent.Extra)
+			require.Equal(t, "plus", parent.Credentials["plan_type"])
+			require.Equal(t, 25.0, shadow.Extra["codex_primary_used_percent"])
+			require.Equal(t, observed, shadow.Extra["codex_primary_observed_at"])
+			require.NotContains(t, shadow.Extra, "openai_quota_exhausted")
+			require.False(t, shadow.QuotaState(time.Now()).Blocked)
+			require.True(t, shadow.Schedulable)
+		})
+	}
 }
 
 func TestAccountTestService_OpenAI401SetsPermanentErrorOnly(t *testing.T) {

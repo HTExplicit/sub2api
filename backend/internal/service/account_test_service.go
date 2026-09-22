@@ -52,12 +52,14 @@ const (
 
 // TestEvent represents a SSE event for account testing
 type TestEvent struct {
-	Type     string `json:"type"`
-	Text     string `json:"text,omitempty"`
-	Model    string `json:"model,omitempty"`
-	Status   string `json:"status,omitempty"`
-	Code     string `json:"code,omitempty"`
-	ImageURL string `json:"image_url,omitempty"`
+	RequestedReasoningEffort string `json:"requested_reasoning_effort,omitempty"`
+	EffectiveReasoningEffort string `json:"effective_reasoning_effort,omitempty"`
+	Type                     string `json:"type"`
+	Text                     string `json:"text,omitempty"`
+	Model                    string `json:"model,omitempty"`
+	Status                   string `json:"status,omitempty"`
+	Code                     string `json:"code,omitempty"`
+	ImageURL                 string `json:"image_url,omitempty"`
 	// AudioURL / VideoURL are data: or https URLs for in-browser media players.
 	AudioURL string `json:"audio_url,omitempty"`
 	VideoURL string `json:"video_url,omitempty"`
@@ -70,6 +72,7 @@ type TestEvent struct {
 // AccountTestOptions carries optional media for admin connectivity tests.
 // ImageDataURL / AudioDataURL are full data URLs (data:<mime>;base64,...).
 type AccountTestOptions struct {
+	ReasoningEffort       string
 	ImageDataURL          string
 	AudioDataURL          string
 	requireSupportedModel bool
@@ -143,6 +146,7 @@ func normalizeGrokAccountTestMode(mode string) string {
 
 // AccountTestService handles account testing operations
 type AccountTestService struct {
+	quotaActivity             *QuotaActivityService
 	accountRepo               AccountRepository
 	geminiTokenProvider       *GeminiTokenProvider
 	claudeTokenProvider       *ClaudeTokenProvider
@@ -358,10 +362,20 @@ func (s *AccountTestService) TestAccountConnection(c *gin.Context, accountID int
 	if err != nil {
 		return s.sendErrorAndEnd(c, "Account not found")
 	}
+	if err := EnsureCindyProviderAvailable(ctx, account); err != nil {
+		return s.sendErrorAndEnd(c, err.Error())
+	}
+	if err := validateAccountPromptExtension(ctx, account, prompt, modelID, mode); err != nil {
+		return s.sendErrorAndEnd(c, err.Error())
+	}
 	if testOpts.requireSupportedModel && strings.TrimSpace(modelID) != "" && !account.IsModelSupported(strings.TrimSpace(modelID)) {
 		s.sendEvent(c, TestEvent{Type: "error", Error: ErrAccountTestModelUnsupported.Error()})
 		return ErrAccountTestModelUnsupported
 	}
+	if err := ValidateAccountTestReasoningContext(ctx, account, modelID, mode, testOpts.ReasoningEffort); err != nil {
+		return s.sendErrorAndEnd(c, err.Error())
+	}
+	c.Set(accountTestReasoningContextKey, testOpts.ReasoningEffort)
 
 	// Synthetic UI load-test accounts exercise the real SSE parsing and modal
 	// interactions, but intentionally do not send their placeholder credentials
@@ -378,6 +392,10 @@ func (s *AccountTestService) TestAccountConnection(c *gin.Context, accountID int
 	}
 
 	// Route to platform-specific test method
+	ctx, finishObservation := s.quotaActivity.Attach(ctx)
+	c.Request = c.Request.WithContext(ctx)
+	ObserveQuotaAccount(ctx, account.ID)
+	defer finishObservation()
 	if account.IsOpenCodeGo() {
 		return s.testOpenCodeGoConnection(c, account, modelID, prompt)
 	}
@@ -735,13 +753,20 @@ func (s *AccountTestService) testOpenAIAccountConnection(c *gin.Context, account
 	ctx := c.Request.Context()
 	mode = normalizeAccountTestMode(mode)
 
-	// Cindy has no gpt-5.4 data-plane model. Select its public Luna ID before
-	// normal model resolution so the wire request uses openai/gpt-5.6-luna.
-	// All other OpenAI accounts retain the package default.
+	// Only Cindy identity acquires a provider dependency. One snapshot owns
+	// both the default and its mapping; ordinary OpenAI retains its own default.
+	var cindySnapshot *CindyCatalogSnapshot
+	if IsCindyAPIKeyAccount(account.Platform, account.Type, account.Credentials) {
+		var err error
+		cindySnapshot, err = LoadCindyCatalogSnapshot(ctx, account)
+		if err != nil {
+			return s.sendErrorAndEnd(c, "Cindy catalog snapshot is unavailable")
+		}
+	}
 	testModelID := modelID
 	if testModelID == "" {
-		if CindyCapabilityCatalogFeatureEnabled() && IsCindyAPIKeyAccount(account.Platform, account.Type, account.Credentials) {
-			testModelID = CindyDefaultTestModel
+		if cindySnapshot != nil && cindySnapshot.Config.CatalogEnabled {
+			testModelID = cindySnapshot.DefaultTestModel.PublicID
 		} else {
 			testModelID = openai.DefaultTestModel
 		}
@@ -751,13 +776,15 @@ func (s *AccountTestService) testOpenAIAccountConnection(c *gin.Context, account
 	// account model mapping. Native remote compaction v2 rides the ordinary
 	// /responses wire and does NOT apply the legacy compact-only mapping
 	// (post-#5641 semantics: compact_model_mapping is /responses/compact-only).
-	testModelID = account.GetMappedModel(testModelID)
-	if IsCindyAPIKeyAccount(account.Platform, account.Type, account.Credentials) {
-		if mappedModel, mapped := CindyCompatibilityMappedUpstreamModel(testModelID); mapped {
+	if cindySnapshot != nil {
+		testModelID = cindyAccountMappedModel(cindySnapshot, account, testModelID)
+		if mappedModel, mapped := cindySnapshot.CompatibilityMappings[testModelID]; mapped {
 			testModelID = mappedModel
-		} else if mappedModel, mapped := CindyMappedUpstreamModel(testModelID); mapped {
+		} else if mappedModel, mapped := cindySnapshot.AvailableMappings[testModelID]; mapped {
 			testModelID = mappedModel
 		}
+	} else {
+		testModelID = account.GetMappedModel(testModelID)
 	}
 	if mode == AccountTestModeCompact {
 		return s.testOpenAICompactConnection(c, account, testModelID)
@@ -838,6 +865,7 @@ func (s *AccountTestService) testOpenAIAccountConnection(c *gin.Context, account
 		upstreamTestModelID = normalizeOpenAIModelForUpstream(credentialAccount, testModelID)
 	}
 	payload := createOpenAITestPayload(upstreamTestModelID, isOAuth, prompt)
+	applyAccountTestReasoning(c, payload, false)
 	payloadBytes, _ := json.Marshal(payload)
 
 	// Send test_start event once. A task-invalid Agent Identity response may
@@ -876,13 +904,18 @@ func (s *AccountTestService) testOpenAIAccountConnection(c *gin.Context, account
 		req.Host = "chatgpt.com"
 		req.Header.Set("accept", "text/event-stream")
 		req.Header.Set("OpenAI-Beta", "responses=experimental")
-		canonical := resolveCodexOutboundIdentityForAccount(credentialAccount, codexAccountIdentityOverrideUA(credentialAccount))
+		canonical, identityErr := resolveCodexOutboundIdentityForAccountContext(req.Context(), credentialAccount, codexAccountIdentityOverrideUA(credentialAccount))
+		if identityErr != nil {
+			return s.sendErrorAndEnd(c, "Codex identity policy unavailable")
+		}
 		req.Header.Set("Originator", canonical.originator)
 		req.Header.Set("User-Agent", canonical.userAgent)
 		setOpenAIChatGPTAccountHeaders(req.Header, credentialAccount)
 		// 与真实转发一致：使用该账号的 Codex TUI 身份，账号级自定义 UA 同样作为管理员
 		// 显式配置传入，否则测试用的身份与该账号真实出站的身份不是同一个。
-		enforceCodexIdentityHeadersForAccount(req.Header, credentialAccount, codexAccountIdentityOverrideUA(credentialAccount))
+		if err := enforceCodexIdentityHeadersForAccountContext(req.Context(), req.Header, credentialAccount, codexAccountIdentityOverrideUA(credentialAccount)); err != nil {
+			return s.sendErrorAndEnd(c, "Codex identity policy unavailable")
+		}
 	}
 
 	// 账号级请求头覆写：测试请求与真实转发保持一致的最终头
@@ -901,7 +934,7 @@ func (s *AccountTestService) testOpenAIAccountConnection(c *gin.Context, account
 	}
 	var codexWireObserved bool
 	if isOAuth {
-		base := resolveCodexIdentitySnapshot(account, credentialAccount, codexAccountIdentityOverrideUA(credentialAccount), s.cfg != nil && s.cfg.Gateway.OpenAICodexRequestZstd)
+		base := resolveCodexIdentitySnapshotContext(ctx, account, credentialAccount, codexAccountIdentityOverrideUA(credentialAccount))
 		req = req.WithContext(withCodexWireObserver(req.Context(), func(wire *http.Request) {
 			codexWireObserved = true
 			s.sendEvent(c, TestEvent{Type: "status", Text: "Final Codex ticket", Data: codexTicketWireSummary(wire.Header)})
@@ -916,7 +949,7 @@ func (s *AccountTestService) testOpenAIAccountConnection(c *gin.Context, account
 		if s.pluginManager != nil && s.pluginManager.ShouldRouteOpenAIOAuth(account) {
 			transport = "plugin"
 		}
-		base := resolveCodexIdentitySnapshot(account, credentialAccount, codexAccountIdentityOverrideUA(credentialAccount), s.cfg != nil && s.cfg.Gateway.OpenAICodexRequestZstd)
+		base := resolveCodexIdentitySnapshotContext(ctx, account, credentialAccount, codexAccountIdentityOverrideUA(credentialAccount))
 		snapshot := base.withWire(transport, req.Header)
 		s.sendEvent(c, TestEvent{Type: "status", Text: snapshot.summary(), Data: snapshot})
 	}
@@ -925,7 +958,7 @@ func (s *AccountTestService) testOpenAIAccountConnection(c *gin.Context, account
 	}
 	defer func() { _ = resp.Body.Close() }()
 
-	if isOAuth && s.accountRepo != nil {
+	if isOAuth && !account.IsShadow() && s.accountRepo != nil {
 		if updates, err := extractOpenAICodexProbeUpdates(resp); err == nil && len(updates) > 0 {
 			_ = s.accountRepo.UpdateExtra(ctx, account.ID, updates)
 			mergeAccountExtra(account, updates)
@@ -1228,6 +1261,13 @@ func (s *AccountTestService) testGrokResponsesConnection(c *gin.Context, ctx con
 	payloadBytes, err := buildGrokQuotaProbeBody(testModelID)
 	if err != nil {
 		return s.sendErrorAndEnd(c, "Failed to create Grok test payload")
+	}
+	if effort := c.GetString(accountTestReasoningContextKey); effort != "" {
+		payloadBytes, err = sjson.SetBytes(payloadBytes, "reasoning.effort", effort)
+		if err != nil {
+			return s.sendErrorAndEnd(c, "Failed to set test reasoning effort")
+		}
+		c.Set("account_test_effective_reasoning_effort", effort)
 	}
 	if custom := c.GetString(accountTestPromptContextKey); strings.TrimSpace(custom) != "" {
 		payloadBytes, err = sjson.SetBytes(payloadBytes, "input", custom)
@@ -2111,6 +2151,7 @@ func (s *AccountTestService) testOpenAIChatCompletionsConnection(
 	c.Writer.Flush()
 
 	payload := createOpenAIChatCompletionsTestPayload(testModelID, prompt)
+	applyAccountTestReasoning(c, payload, true)
 	payloadBytes, _ := json.Marshal(payload)
 
 	s.sendEvent(c, TestEvent{Type: "test_start", Model: testModelID})
@@ -2244,7 +2285,9 @@ func (s *AccountTestService) testOpenAICompactConnection(c *gin.Context, account
 	if isOAuth {
 		// 与真实转发一致：使用该账号的 Codex TUI 身份，账号级自定义 UA 经 ForceCodexCLI
 		// 策略过滤后作为管理员显式配置传入（同普通 OAuth 连接测试）。
-		enforceCodexIdentityHeadersForAccount(req.Header, credentialAccount, codexAccountIdentityOverrideUA(credentialAccount))
+		if err := enforceCodexIdentityHeadersForAccountContext(req.Context(), req.Header, credentialAccount, codexAccountIdentityOverrideUA(credentialAccount)); err != nil {
+			return s.sendErrorAndEnd(c, "Codex identity policy unavailable")
+		}
 	}
 	probeSessionID := compactProbeSessionID(account.ID)
 	req.Header.Set("Session_ID", probeSessionID)
@@ -2295,8 +2338,10 @@ func (s *AccountTestService) testOpenAICompactConnection(c *gin.Context, account
 	compactionFound := openAICompactProbeFoundCompactionItem(body)
 	if s.accountRepo != nil {
 		updates := buildOpenAICompactProbeExtraUpdates(resp, body, nil, compactionFound, time.Now())
-		if codexUpdates, err := extractOpenAICodexProbeUpdates(resp); err == nil && len(codexUpdates) > 0 {
-			updates = mergeExtraUpdates(updates, codexUpdates)
+		if !account.IsShadow() {
+			if codexUpdates, err := extractOpenAICodexProbeUpdates(resp); err == nil && len(codexUpdates) > 0 {
+				updates = mergeExtraUpdates(updates, codexUpdates)
+			}
 		}
 		if len(updates) > 0 {
 			_ = s.accountRepo.UpdateExtra(ctx, account.ID, updates)
@@ -2329,6 +2374,10 @@ func (s *AccountTestService) reconcileOpenAI429State(ctx context.Context, accoun
 	if s == nil || s.accountRepo == nil || account == nil {
 		return
 	}
+	// Spark quota is observed through its own /wham scope, not global probe 429s.
+	if account.IsShadow() {
+		return
+	}
 
 	persistOpenAI429PlanType(ctx, s.accountRepo, account, body)
 
@@ -2354,6 +2403,18 @@ func (s *AccountTestService) reconcileOpenAI429State(ctx context.Context, accoun
 		"path", "account_test",
 	)
 
+	if isOpenAIOAuthAccount(account) && classification.Disposition != openAIOAuth429Transient {
+		if err := persistOpenAIQuotaClassification(ctx, s.accountRepo, account, classification, now); err != nil {
+			slog.Warn("quota_state_write_failed", "account_id", account.ID, "path", "account_test")
+		}
+		// The quota observation owns this restriction, including unknown reset times.
+		// Preserve existing errors, scheduling choices and unrelated rate limits.
+		return
+	}
+	if resetAt == nil {
+		slog.Warn("account_test_rate_limit_reset_unknown", "account_id", account.ID)
+		return
+	}
 	if err := s.accountRepo.SetRateLimited(ctx, account.ID, *resetAt); err != nil {
 		return
 	}
@@ -3185,20 +3246,25 @@ func (s *AccountTestService) testOpenAIImageOAuth(c *gin.Context, ctx context.Co
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", "text/event-stream")
 	req.Header.Set("OpenAI-Beta", "responses=experimental")
-	canonical := resolveCodexOutboundIdentityForAccount(credentialAccount, codexAccountIdentityOverrideUA(credentialAccount))
+	canonical, identityErr := resolveCodexOutboundIdentityForAccountContext(req.Context(), credentialAccount, codexAccountIdentityOverrideUA(credentialAccount))
+	if identityErr != nil {
+		return s.sendErrorAndEnd(c, "Codex identity policy unavailable")
+	}
 	req.Header.Set("originator", canonical.originator)
 	req.Header.Set("User-Agent", canonical.userAgent)
 	setOpenAIChatGPTAccountHeaders(req.Header, credentialAccount)
 	// 与真实转发一致（同普通 OAuth 连接测试）：使用该账号的 Codex TUI 身份，账号级自定义 UA
 	// 经 ForceCodexCLI 策略过滤后作为管理员显式配置传入。
-	enforceCodexIdentityHeadersForAccount(req.Header, credentialAccount, codexAccountIdentityOverrideUA(credentialAccount))
+	if err := enforceCodexIdentityHeadersForAccountContext(req.Context(), req.Header, credentialAccount, codexAccountIdentityOverrideUA(credentialAccount)); err != nil {
+		return s.sendErrorAndEnd(c, "Codex identity policy unavailable")
+	}
 
 	proxyURL := ""
 	if account.ProxyID != nil && account.Proxy != nil {
 		proxyURL = account.Proxy.URL()
 	}
 	// 复用压缩准备，但保留图像探针原来的直接 Do 路由；不顺带启用插件或 TLS 回退。
-	wire, err := prepareOpenAICodexWireRequestWithConfig(s.cfg, req, credentialAccount)
+	wire, err := prepareCodexTransport(req, credentialAccount)
 	if err != nil {
 		return s.sendErrorAndEnd(c, fmt.Sprintf("Responses API request failed: %s", err.Error()))
 	}
@@ -3258,6 +3324,10 @@ func (s *AccountTestService) testOpenAIImageOAuth(c *gin.Context, ctx context.Co
 }
 
 func (s *AccountTestService) sendEvent(c *gin.Context, event TestEvent) {
+	if event.Type == "test_start" || event.Type == "test_complete" {
+		event.RequestedReasoningEffort = c.GetString(accountTestReasoningContextKey)
+		event.EffectiveReasoningEffort = c.GetString("account_test_effective_reasoning_effort")
+	}
 	if event.Type == "test_complete" {
 		if suppress, ok := c.Get(accountTestSuppressCompletionContextKey); ok {
 			if suppressCompletion, _ := suppress.(bool); suppressCompletion {
@@ -3371,17 +3441,26 @@ func (s *AccountTestService) RunBatchTestBackground(ctx context.Context, account
 	return s.runTestBackground(ctx, accountID, modelID, true, prompts...)
 }
 func (s *AccountTestService) runTestBackground(ctx context.Context, accountID int64, modelID string, requireSupported bool, prompts ...string) (*ScheduledTestResult, error) {
+	prompt := ""
+	if len(prompts) > 0 {
+		prompt = prompts[0]
+	}
+	return s.runTestBackgroundWithOptions(ctx, accountID, modelID, prompt, AccountTestOptions{requireSupportedModel: requireSupported})
+}
+
+func (s *AccountTestService) RunBatchTestBackgroundWithOptions(ctx context.Context, accountID int64, modelID, prompt string, opts AccountTestOptions) (*ScheduledTestResult, error) {
+	opts.requireSupportedModel = true
+	return s.runTestBackgroundWithOptions(ctx, accountID, modelID, prompt, opts)
+}
+
+func (s *AccountTestService) runTestBackgroundWithOptions(ctx context.Context, accountID int64, modelID, prompt string, opts AccountTestOptions) (*ScheduledTestResult, error) {
 	startedAt := time.Now()
 	collector := &accountTestEventCollector{}
 	ginCtx, _ := gin.CreateTestContext(httptest.NewRecorder())
 	ginCtx.Request = (&http.Request{}).WithContext(ctx)
 	ginCtx.Set("account_test_event_collector", collector)
-	ginCtx.Set(accountTestScheduledDefaultsContextKey, !requireSupported)
-	prompt := ""
-	if len(prompts) > 0 {
-		prompt = prompts[0]
-	}
-	testErr := s.TestAccountConnection(ginCtx, accountID, modelID, prompt, AccountTestModeDefault, AccountTestOptions{requireSupportedModel: requireSupported})
+	ginCtx.Set(accountTestScheduledDefaultsContextKey, !opts.requireSupportedModel)
+	testErr := s.TestAccountConnection(ginCtx, accountID, modelID, prompt, AccountTestModeDefault, opts)
 	if testErr == nil {
 		testErr = ctx.Err()
 	}
@@ -3397,5 +3476,6 @@ func (s *AccountTestService) runTestBackground(ctx context.Context, accountID in
 	}
 	finishedAt := time.Now()
 	return &ScheduledTestResult{Status: status, ResponseText: collector.text.String(), ErrorMessage: collector.errorMessage,
+		RequestedReasoningEffort: opts.ReasoningEffort, EffectiveReasoningEffort: ginCtx.GetString("account_test_effective_reasoning_effort"),
 		LatencyMs: finishedAt.Sub(startedAt).Milliseconds(), StartedAt: startedAt, FinishedAt: finishedAt}, testErr
 }

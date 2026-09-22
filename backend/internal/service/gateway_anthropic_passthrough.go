@@ -61,11 +61,25 @@ func (s *GatewayService) ForwardCindyAnthropicMessages(
 	if s == nil || account == nil || !IsCindyAPIKeyAccount(account.Platform, account.Type, account.Credentials) {
 		return nil, errors.New("strict Cindy account is required for native Messages passthrough")
 	}
+	pricingContext, pricingErr := CaptureCindyPricingContext(ctx, c, account)
+	if pricingErr != nil {
+		return nil, pricingErr
+	}
+	ctx = pricingContext
 	requestedModel = strings.TrimSpace(requestedModel)
-	if !CindyFreePoolModelSupportsEndpoint(requestedModel, CindyEndpointMessages) {
+	snapshot, err := LoadCindyCatalogSnapshot(ctx, account)
+	if err != nil {
+		return nil, err
+	}
+	capability, known := snapshot.Capability(requestedModel)
+	verifiedMessages := false
+	for _, endpoint := range capability.VerifiedEndpoints {
+		verifiedMessages = verifiedMessages || endpoint == CindyEndpointMessages
+	}
+	if !known || !capability.PublicModel || capability.Kind != CindyModelKindText || !verifiedMessages {
 		return nil, fmt.Errorf("cindy model %q is not verified for native Messages", requestedModel)
 	}
-	upstreamModel, ok := CindyMappedUpstreamModel(requestedModel)
+	upstreamModel, ok := snapshot.AvailableMappings[requestedModel]
 	if !ok {
 		return nil, fmt.Errorf("cindy model %q is not in the fixed catalogue", requestedModel)
 	}

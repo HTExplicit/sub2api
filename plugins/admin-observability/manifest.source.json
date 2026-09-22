@@ -1,0 +1,157 @@
+{
+  "schema_version": 1,
+  "id": "codexrip.admin-observability",
+  "name": "界面与观测",
+  "version": "0.2.7",
+  "description": "账号流量观测规则与指标展示",
+  "author": "HTExplicit",
+  "requires": {
+    "sub2api": ">=0.2.7-0 <0.2.8",
+    "tested_sub2api_versions": [],
+    "plugin_protocol": 1,
+    "transport_api": 1,
+    "ui_bridge": 1,
+    "extension_api": 1
+  },
+  "capabilities": [
+    {
+      "id": "extensions.ui.v1",
+      "platform": "*",
+      "account_type": "*"
+    },
+    {
+      "id": "extensions.observability.v1",
+      "platform": "*",
+      "account_type": "*"
+    },
+    {
+      "id": "extensions.admin.v1",
+      "platform": "*",
+      "account_type": "*"
+    }
+  ],
+  "operations": {
+    "extensions.observability.v1": [
+      "observability.policy"
+    ]
+  },
+  "contributions": [
+    {
+      "id": "flat-theme",
+      "slot": "theme",
+      "capability": "extensions.ui.v1",
+      "config_flag": "theme_enabled",
+      "entrypoint": "ui/assets/theme.css",
+      "assets": [
+        "ui/assets/fonts/MiSans-Regular.woff2",
+        "ui/assets/fonts/MiSans-Medium.woff2",
+        "ui/assets/fonts/MiSans-Semibold.woff2",
+        "ui/assets/fonts/MiSans-Bold.woff2"
+      ],
+      "permission": "public",
+      "label": {
+        "zh": "平面主题",
+        "en": "Flat theme"
+      }
+    },
+    {
+      "id": "account-traffic",
+      "slot": "account.details",
+      "capability": "extensions.observability.v1",
+      "config_flag": "telemetry_enabled",
+      "action": "telemetry.read",
+      "entrypoint": "ui/index.html",
+      "permission": "admin",
+      "label": {
+        "zh": "流量观测",
+        "en": "Traffic observations"
+      }
+    },
+    {
+      "id": "observability-settings",
+      "slot": "admin.settings",
+      "capability": "extensions.admin.v1",
+      "action": "observability.describe",
+      "entrypoint": "ui/index.html",
+      "permission": "admin",
+      "label": {
+        "zh": "观测设置",
+        "en": "Observation settings"
+      }
+    },
+    {
+      "id": "prompt-audit",
+      "slot": "surface",
+      "entrypoint": "ui/compiled/index.html",
+      "capability": "extensions.ui.v1",
+      "permission": "admin",
+      "all_accounts": true,
+      "label": {
+        "zh": "提示词审计",
+        "en": "Prompt Audit"
+      }
+    }
+  ],
+  "runtimes": {},
+  "ui": {
+    "entrypoint": "ui/index.html"
+  },
+  "files": {},
+  "resources": [
+    {
+      "name": "prompt-audit.config",
+      "capability": "extensions.ui.v1",
+      "permission": "admin"
+    },
+    {
+      "name": "prompt-audit.update",
+      "capability": "extensions.ui.v1",
+      "permission": "admin"
+    },
+    {
+      "name": "prompt-audit.probe",
+      "capability": "extensions.ui.v1",
+      "permission": "admin"
+    },
+    {
+      "name": "prompt-audit.runtime",
+      "capability": "extensions.ui.v1",
+      "permission": "admin"
+    },
+    {
+      "name": "prompt-audit.events",
+      "capability": "extensions.ui.v1",
+      "permission": "admin"
+    },
+    {
+      "name": "prompt-audit.event",
+      "capability": "extensions.ui.v1",
+      "permission": "admin"
+    },
+    {
+      "name": "prompt-audit.delete",
+      "capability": "extensions.ui.v1",
+      "permission": "admin"
+    },
+    {
+      "name": "prompt-audit.batch-delete",
+      "capability": "extensions.ui.v1",
+      "permission": "admin"
+    },
+    {
+      "name": "prompt-audit.delete-preview",
+      "capability": "extensions.ui.v1",
+      "permission": "admin"
+    },
+    {
+      "name": "prompt-audit.delete-by-filter",
+      "capability": "extensions.ui.v1",
+      "permission": "admin"
+    },
+    {
+      "name": "prompt-audit.groups",
+      "capability": "extensions.ui.v1",
+      "permission": "admin"
+    }
+  ]
+}

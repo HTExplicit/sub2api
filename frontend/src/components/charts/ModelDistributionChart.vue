@@ -9,11 +9,11 @@
       <div class="flex flex-wrap items-center justify-end gap-2">
         <div
           v-if="showSourceToggle"
-          class="inline-flex rounded-none border border-gray-200 bg-gray-50 p-0.5 dark:border-dark-700 dark:bg-dark-800"
+          class="inline-flex rounded-lg border border-gray-200 bg-gray-50 p-0.5 dark:border-dark-700 dark:bg-dark-800"
         >
           <button
             type="button"
-            class="rounded-none px-2.5 py-1 text-xs font-medium transition-colors"
+            class="rounded-md px-2.5 py-1 text-xs font-medium transition-colors"
             :class="source === 'requested'
               ? 'bg-white text-gray-900 shadow-outline dark:bg-dark-700 dark:text-white'
               : 'text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200'"
@@ -23,7 +23,7 @@
           </button>
           <button
             type="button"
-            class="rounded-none px-2.5 py-1 text-xs font-medium transition-colors"
+            class="rounded-md px-2.5 py-1 text-xs font-medium transition-colors"
             :class="source === 'upstream'
               ? 'bg-white text-gray-900 shadow-outline dark:bg-dark-700 dark:text-white'
               : 'text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200'"
@@ -33,7 +33,7 @@
           </button>
           <button
             type="button"
-            class="rounded-none px-2.5 py-1 text-xs font-medium transition-colors"
+            class="rounded-md px-2.5 py-1 text-xs font-medium transition-colors"
             :class="source === 'mapping'
               ? 'bg-white text-gray-900 shadow-outline dark:bg-dark-700 dark:text-white'
               : 'text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200'"
@@ -44,11 +44,11 @@
         </div>
         <div
           v-if="showMetricToggle"
-          class="inline-flex rounded-none border border-gray-200 bg-gray-50 p-0.5 dark:border-dark-700 dark:bg-dark-800"
+          class="inline-flex rounded-lg border border-gray-200 bg-gray-50 p-0.5 dark:border-dark-700 dark:bg-dark-800"
         >
           <button
             type="button"
-            class="rounded-none px-2.5 py-1 text-xs font-medium transition-colors"
+            class="rounded-md px-2.5 py-1 text-xs font-medium transition-colors"
             :class="metric === 'tokens'
               ? 'bg-white text-gray-900 shadow-outline dark:bg-dark-700 dark:text-white'
               : 'text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200'"
@@ -58,7 +58,7 @@
           </button>
           <button
             type="button"
-            class="rounded-none px-2.5 py-1 text-xs font-medium transition-colors"
+            class="rounded-md px-2.5 py-1 text-xs font-medium transition-colors"
             :class="metric === 'actual_cost'
               ? 'bg-white text-gray-900 shadow-outline dark:bg-dark-700 dark:text-white'
               : 'text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200'"
@@ -67,10 +67,10 @@
             {{ t('admin.dashboard.metricActualCost') }}
           </button>
         </div>
-        <div v-if="enableRankingView" class="inline-flex rounded-none bg-gray-100 p-1 dark:bg-dark-800">
+        <div v-if="enableRankingView" class="inline-flex rounded-lg bg-gray-100 p-1 dark:bg-dark-800">
           <button
             type="button"
-            class="rounded-none px-2.5 py-1 text-xs font-medium transition-colors"
+            class="rounded-md px-2.5 py-1 text-xs font-medium transition-colors"
             :class="
               activeView === 'model_distribution'
                 ? 'bg-white text-gray-900 shadow-outline dark:bg-dark-700 dark:text-white'
@@ -82,7 +82,7 @@
           </button>
           <button
             type="button"
-            class="rounded-none px-2.5 py-1 text-xs font-medium transition-colors"
+            class="rounded-md px-2.5 py-1 text-xs font-medium transition-colors"
             :class="
               activeView === 'spending_ranking'
                 ? 'bg-white text-gray-900 shadow-outline dark:bg-dark-700 dark:text-white'
@@ -243,6 +243,7 @@
 </template>
 
 <script setup lang="ts">
+import { usePresentationColors } from '@/composables/usePresentationColors'
 import { computed, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { Chart as ChartJS, ArcElement, Tooltip, Legend } from 'chart.js'
@@ -255,6 +256,7 @@ import { getUserBreakdown } from '@/api/admin/dashboard'
 ChartJS.register(ArcElement, Tooltip, Legend)
 
 const { t } = useI18n()
+const presentation = usePresentationColors()
 
 type DistributionMetric = 'tokens' | 'actual_cost'
 type ModelSource = 'requested' | 'upstream' | 'mapping'
@@ -391,7 +393,7 @@ const rankingChartData = computed(() => {
   if (otherRankingItem.value) {
     labels.push(t('admin.dashboard.spendingRankingOther'))
     data.push(otherRankingItem.value.actual_cost)
-    backgroundColor.push('#8a8b8d')
+    backgroundColor.push(presentation.value.gray)
   }
 
   return {

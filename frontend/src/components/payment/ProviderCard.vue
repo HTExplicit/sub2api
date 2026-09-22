@@ -1,7 +1,7 @@
 <template>
   <div
     :class="[
-      'group relative rounded-none border transition-all',
+      'group relative rounded-lg border transition-all',
       enabled ? 'border-gray-200 dark:border-dark-600' : 'border-gray-200 bg-gray-50 opacity-50 dark:border-dark-700 dark:bg-dark-800',
     ]"
     :title="!enabled ? t('admin.settings.payment.typeDisabled') + ' — ' + t('admin.settings.payment.enableTypesFirst') : undefined"
@@ -13,7 +13,7 @@
       <!-- Left: icon + name + key badge + type badges -->
       <div class="flex items-center gap-3">
         <div :class="[
-          'rounded-none p-1.5',
+          'rounded-md p-1.5',
           provider.enabled && enabled ? 'bg-green-100 dark:bg-green-900/30' : 'bg-gray-100 dark:bg-dark-700',
         ]">
           <Icon
@@ -48,11 +48,11 @@
         <ToggleSwitch :label="t('admin.settings.payment.refundEnabled')" :checked="provider.refund_enabled" @toggle="emit('toggleField', 'refund_enabled')" />
         <ToggleSwitch v-if="provider.refund_enabled" :label="t('admin.settings.payment.allowUserRefund')" :checked="provider.allow_user_refund" @toggle="emit('toggleField', 'allow_user_refund')" />
         <div class="flex items-center gap-2 border-l border-gray-200 pl-3 dark:border-dark-600">
-          <button type="button" @click="emit('edit')" class="flex flex-col items-center gap-0.5 rounded-none p-1.5 text-gray-500 transition-colors hover:bg-blue-50 hover:text-blue-600 dark:hover:bg-blue-900/20 dark:hover:text-blue-400">
+          <button type="button" @click="emit('edit')" class="flex flex-col items-center gap-0.5 rounded-lg p-1.5 text-gray-500 transition-colors hover:bg-blue-50 hover:text-blue-600 dark:hover:bg-blue-900/20 dark:hover:text-blue-400">
             <Icon name="edit" size="sm" />
             <span class="text-xs">{{ t('common.edit') }}</span>
           </button>
-          <button type="button" @click="emit('delete')" class="flex flex-col items-center gap-0.5 rounded-none p-1.5 text-gray-500 transition-colors hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-900/20 dark:hover:text-red-400">
+          <button type="button" @click="emit('delete')" class="flex flex-col items-center gap-0.5 rounded-lg p-1.5 text-gray-500 transition-colors hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-900/20 dark:hover:text-red-400">
             <Icon name="trash" size="sm" />
             <span class="text-xs">{{ t('common.delete') }}</span>
           </button>

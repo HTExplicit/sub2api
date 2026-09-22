@@ -1,6 +1,7 @@
 package service
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"strconv"
@@ -8,6 +9,7 @@ import (
 	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/pkg/openai"
+	extensionv1 "github.com/Wei-Shaw/sub2api/pkg/extensionapi/v1"
 )
 
 // codexIdentitySnapshot is the secret-free execution state reported by an
@@ -42,7 +44,7 @@ type codexIdentitySnapshot struct {
 // resolveCodexIdentitySnapshot computes the identity and fingerprint state
 // from the routed account and the credential source used for this attempt.
 // It intentionally contains no credential, seed, cookie, or proxy URL data.
-func resolveCodexIdentitySnapshot(routed, source *Account, overrideUA string, zstdEnabled bool) codexIdentitySnapshot {
+func resolveCodexIdentitySnapshotContext(ctx context.Context, routed, source *Account, overrideUA string) codexIdentitySnapshot {
 	if source == nil {
 		source = routed
 	}
@@ -51,7 +53,11 @@ func resolveCodexIdentitySnapshot(routed, source *Account, overrideUA string, zs
 		SchemaVersion:      1,
 		EnforcementEnabled: codexIdentityEnforcement.Load(),
 		ForceCodexCLI:      codexForceCLI.Load(),
-		ZstdEnabled:        zstdEnabled,
+	}
+	if source != nil && source.IsOpenAIOAuthLike() {
+		if plan, err := codexTransportPlan(ctx, source.Type, source.ID, extensionv1.CodexTransportQuery{}); err == nil {
+			snapshot.ZstdEnabled = plan.Enabled
+		}
 	}
 	if routed != nil {
 		snapshot.AccountID = routed.ID
@@ -81,25 +87,24 @@ func resolveCodexIdentitySnapshot(routed, source *Account, overrideUA string, zs
 		snapshot.IdentityAccountID = source.ID
 		snapshot.AccountRevision = source.UpdatedAt
 		snapshot.IdentityPersisted = func() bool {
-			_, ok := codexClientIdentityFromExtra(source.Extra)
+			_, ok := codexClientIdentityFromExtraContext(ctx, source, source.Extra)
 			return ok
 		}()
 	}
 
-	identity := resolveCodexOutboundIdentityForAccount(source, overrideUA)
+	identity, _ := resolveCodexOutboundIdentityForAccountContext(ctx, source, overrideUA)
 	snapshot.UserAgent = identity.userAgent
 	snapshot.Originator = identity.originator
 	snapshot.Version = identity.version
 	snapshot.IdentitySource = "canonical"
-	if snapshot.ForceCodexCLI {
-		// ForceCodexCLI deliberately suppresses account-level UA selection. The
-		// effective identity is therefore reported as canonical even when the
-		// account has a persisted Codex profile.
-		snapshot.IdentitySource = "canonical"
-	} else if strings.TrimSpace(overrideUA) != "" && identity.userAgent == overrideUA {
-		snapshot.IdentitySource = "override_ua"
+	if strings.TrimSpace(overrideUA) != "" {
+		// The selector rebuilds the effective version. Comparing complete UA
+		// strings would mislabel a valid override carrying an older version.
+		if _, _, ok := openai.PairCodexClientIdentity(overrideUA); ok {
+			snapshot.IdentitySource = "override_ua"
+		}
 	} else if source != nil {
-		if accountIdentity, ok := source.CodexClientIdentity(); ok && accountIdentity.UserAgent(identity.version) == identity.userAgent {
+		if accountIdentity, ok := source.codexClientIdentityContext(ctx); ok && accountIdentity.userAgentForAccountContext(ctx, source, identity.version) == identity.userAgent {
 			snapshot.IdentitySource = "account"
 		}
 	}

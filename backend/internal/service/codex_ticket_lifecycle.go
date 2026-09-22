@@ -1,10 +1,8 @@
 package service
 
 import (
-	"context"
 	"crypto/sha256"
 	"encoding/hex"
-	"encoding/json"
 	"errors"
 	"net/http"
 	"strings"
@@ -54,16 +52,6 @@ type CodexTicketRecord struct {
 	Attempts   int       `json:"attempts"`
 }
 
-// Optional capability on AccountRepository keeps the gateway's existing
-// constructor and test adapters intact. Production accountRepository owns SQL.
-type CodexTicketRepository interface {
-	SeedCodexTicketRenewals(context.Context, []string, int, time.Time) error
-	DueCodexTickets(context.Context, []string, time.Time, int) ([]CodexTicketLifecycle, error)
-	ClaimCodexTicket(context.Context, int64, string, string, int64, bool, bool, time.Time) (*CodexTicketLifecycle, error)
-	FinishCodexTicket(context.Context, *CodexTicketLifecycle, *CodexTicketRecord, CodexTicketResult, time.Time) (bool, error)
-	StopCodexTicket(context.Context, int64, []string, time.Time) error
-}
-
 var ErrCodexTicketBusy = errors.New("ticket operation already running")
 var ErrCodexTicketAlreadyAttempted = errors.New("ticket operation already attempted")
 var ErrCodexTicketInactive = errors.New("ticket account is unavailable")
@@ -93,30 +81,31 @@ func CodexTicketAccountEligible(a *Account) bool {
 
 func CodexTicketFailure(code string) CodexTicketResult {
 	messages := map[string]string{
-		"ticket_disabled":       "票据总开关未开启",
-		"ticket_proxy_missing":  "未配置打票代理",
-		"ticket_ineligible":     "仅 OpenAI OAuth/Setup Token 非影子账号可打票",
-		"ticket_model_invalid":  "模型不在票据配置范围内",
-		"ticket_busy":           "该账号和模型已有打票任务",
-		"ticket_interrupted":    "上次请求已开始，结果未确认；不会自动重复发送",
-		"ticket_token":          "无法取得账号访问令牌",
-		"ticket_timeout":        "请求超时",
-		"ticket_transport":      "打票代理传输失败",
-		"ticket_upstream":       "上游拒绝打票请求",
-		"ticket_length":         "响应票据长度不符合292规则",
-		"ticket_prefix":         "响应票据格式不符合规则",
-		"ticket_missing_header": "响应未包含票据头",
-		"ticket_persist":        "票据持久化失败，未加入自动续期",
-		"ticket_stale":          "账号身份、任务或续期状态已经变化",
-		"ticket_canceled":       "任务已取消",
-		"ticket_stopped":        "自动续期已停止",
-		"ticket_proxy_auth":     "代理鉴权失败",
-		"ticket_proxy_protocol": "代理协议握手失败，请核对HTTP或SOCKS协议",
-		"ticket_proxy_dns":      "代理主机DNS解析失败",
-		"ticket_proxy_connect":  "代理连接被拒绝或CONNECT失败",
-		"ticket_proxy_eof":      "连接被对端提前关闭（EOF）",
-		"ticket_proxy_reset":    "连接被对端重置",
-		"ticket_proxy_tls":      "代理TLS证书验证失败，请测试代理连接",
+		"ticket_plugin_unavailable": "票据插件未启用或暂不可用",
+		"ticket_disabled":           "票据总开关未开启",
+		"ticket_proxy_missing":      "未配置打票代理",
+		"ticket_ineligible":         "仅 OpenAI OAuth/Setup Token 非影子账号可打票",
+		"ticket_model_invalid":      "模型不在票据配置范围内",
+		"ticket_busy":               "该账号和模型已有打票任务",
+		"ticket_interrupted":        "上次请求已开始，结果未确认；不会自动重复发送",
+		"ticket_token":              "无法取得账号访问令牌",
+		"ticket_timeout":            "请求超时",
+		"ticket_transport":          "打票代理传输失败",
+		"ticket_upstream":           "上游拒绝打票请求",
+		"ticket_length":             "响应票据长度不符合292规则",
+		"ticket_prefix":             "响应票据格式不符合规则",
+		"ticket_missing_header":     "响应未包含票据头",
+		"ticket_persist":            "票据持久化失败，未加入自动续期",
+		"ticket_stale":              "账号身份、任务或续期状态已经变化",
+		"ticket_canceled":           "任务已取消",
+		"ticket_stopped":            "自动续期已停止",
+		"ticket_proxy_auth":         "代理鉴权失败",
+		"ticket_proxy_protocol":     "代理协议握手失败，请核对HTTP或SOCKS协议",
+		"ticket_proxy_dns":          "代理主机DNS解析失败",
+		"ticket_proxy_connect":      "代理连接被拒绝或CONNECT失败",
+		"ticket_proxy_eof":          "连接被对端提前关闭（EOF）",
+		"ticket_proxy_reset":        "连接被对端重置",
+		"ticket_proxy_tls":          "代理TLS证书验证失败，请测试代理连接",
 	}
 	message, ok := messages[code]
 	if !ok {
@@ -149,93 +138,6 @@ func CodexTicketFailure(code string) CodexTicketResult {
 		stage = "persistence"
 	}
 	return CodexTicketResult{Code: code, Message: message, Stage: stage}
-}
-
-// Begin consumes an automatic stage before any network IO. An abandoned
-// attempt cannot be repeated after a process crash.
-func (s *CodexTicketLifecycle) Begin(now time.Time, manual bool) error {
-	if manual {
-		s.ManualWasEnrolled = s.Phase == "ready" || s.Phase == "retry"
-		s.Phase = "manual_running"
-		return nil
-	}
-	if s.NextAt == nil || now.Before(*s.NextAt) || s.ExpiresAt == nil {
-		return ErrCodexTicketNotDue
-	}
-	switch s.Phase {
-	case "ready":
-		if !now.Before(*s.ExpiresAt) {
-			due := s.ExpiresAt.Add(time.Minute)
-			s.Phase = "retry"
-			s.NextAt = &due
-			if now.Before(due) {
-				return ErrCodexTicketNotDue
-			}
-			s.Phase = "post_running"
-		} else {
-			s.Phase = "pre_running"
-		}
-	case "retry":
-		s.Phase = "post_running"
-	default:
-		return ErrCodexTicketNotDue
-	}
-	return nil
-}
-
-func (s *CodexTicketLifecycle) Complete(now time.Time, ticket *CodexTicketRecord, result CodexTicketResult) {
-	prior := s.Phase
-	if s.LastAttemptAt == nil {
-		s.LastAttemptAt = &now
-	}
-	s.LastResult = &result
-	s.LeaseID = ""
-	s.LeaseUntil = nil
-	s.JobID = 0
-	if ticket != nil && result.Success {
-		due := ticket.ExpiresAt.Add(-time.Minute)
-		s.ExpiresAt = &ticket.ExpiresAt
-		s.NextAt = &due
-		s.Phase = "ready"
-		return
-	}
-	if (prior == "pre_running" || prior == "manual_running") && s.ExpiresAt != nil {
-		// A failed forced refresh never discards a usable previous ticket.
-		if prior == "manual_running" && s.ManualWasEnrolled && now.Before(*s.ExpiresAt) {
-			due := s.ExpiresAt.Add(-time.Minute)
-			if !now.Before(due) {
-				due = s.ExpiresAt.Add(time.Minute)
-				s.Phase = "retry"
-			} else {
-				s.Phase = "ready"
-			}
-			s.NextAt = &due
-			return
-		}
-		if prior == "pre_running" {
-			due := s.ExpiresAt.Add(time.Minute)
-			s.NextAt = &due
-			s.Phase = "retry"
-			return
-		}
-	}
-	s.Phase = "stopped"
-	s.NextAt = nil
-}
-
-func codexTicketRuntimeFromExtra(account *Account, model string) *CodexTicketLifecycle {
-	if account == nil || account.Extra == nil {
-		return nil
-	}
-	raw, err := json.Marshal(account.Extra[CodexTicketRuntimeExtraPrefix+model])
-	if err != nil {
-		return nil
-	}
-	var state CodexTicketLifecycle
-	if json.Unmarshal(raw, &state) != nil || state.Phase == "" {
-		return nil
-	}
-	return &state
 }
 
 func codexTicketWireSummary(headers http.Header) map[string]any {

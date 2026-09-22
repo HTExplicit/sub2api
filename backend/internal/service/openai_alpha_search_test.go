@@ -151,7 +151,7 @@ func TestForwardAlphaSearchPATUsesResponsesWebSearchFallback(t *testing.T) {
 		},
 	}
 
-	result, err := service.ForwardAlphaSearch(context.Background(), c, account, body)
+	result, err := service.ForwardAlphaSearch(withCodexTransportFixture(context.Background(), true), c, account, body)
 
 	require.NoError(t, err)
 	require.NotNil(t, result)
@@ -473,6 +473,9 @@ func TestForwardAlphaSearchCindyNativeMessagesRejectsUnverifiedSuccessWithoutPen
 			require.ErrorAs(t, err, &failoverErr)
 			require.False(t, failoverErr.IsOpenAIAlphaSearchBridgeUnavailable())
 			require.False(t, failoverErr.SuppressAccountHealthPenalty)
+			require.Len(t, upstream.requests, 2)
+			require.Equal(t, "/v1/responses", upstream.requests[0].URL.Path)
+			require.Equal(t, "/v1/messages", upstream.requests[1].URL.Path)
 			require.False(t, c.Writer.Written())
 			require.Zero(t, repo.setErrorCalls)
 		})
@@ -530,6 +533,9 @@ func testForwardAlphaSearchCindyRejectsInvalidToolResult(t *testing.T, upstreamB
 	require.ErrorAs(t, err, &failoverErr)
 	require.False(t, failoverErr.IsOpenAIAlphaSearchBridgeUnavailable())
 	require.False(t, failoverErr.SuppressAccountHealthPenalty)
+	require.Len(t, upstream.requests, 2)
+	require.Equal(t, "/v1/responses", upstream.requests[0].URL.Path)
+	require.Equal(t, "/v1/messages", upstream.requests[1].URL.Path)
 	require.False(t, c.Writer.Written())
 	require.Zero(t, repo.setErrorCalls)
 }

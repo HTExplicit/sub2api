@@ -6,7 +6,7 @@
         class="fixed inset-0 z-[120] flex items-start justify-center overflow-y-auto bg-black/70 p-4 pt-[8vh]"
       >
         <div
-          class="w-full max-w-[680px] overflow-hidden rounded-none bg-white shadow-outline ring-1 ring-black/5 dark:bg-dark-800 dark:ring-white/10"
+          class="w-full max-w-[680px] overflow-hidden rounded-3xl bg-white shadow-2xl ring-1 ring-black/5 dark:bg-dark-800 dark:ring-white/10"
           @click.stop
         >
           <!-- Header with warm gradient -->
@@ -191,11 +191,11 @@ onBeforeUnmount(() => {
 }
 
 .overflow-y-auto::-webkit-scrollbar-thumb {
-  background: #8a8b8d;
-  border-radius: 0;
+  background: var(--theme-scrollbar-thumb, linear-gradient(to bottom, #cbd5e1, #94a3b8));
+  border-radius: var(--theme-radius-default, 4px);
 }
 
 .dark .overflow-y-auto::-webkit-scrollbar-thumb {
-  background: #3a3b40;
+  background: var(--theme-scrollbar-thumb, linear-gradient(to bottom, #4b5563, #374151));
 }
 </style>

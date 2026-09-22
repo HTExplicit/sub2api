@@ -82,7 +82,7 @@
       <div
         data-testid="model-selector-toggle"
         @click="toggleDropdown"
-        class="cursor-pointer rounded-none border border-gray-300 bg-white px-3 py-2 dark:border-dark-500 dark:bg-dark-700"
+        class="cursor-pointer rounded-lg border border-gray-300 bg-white px-3 py-2 dark:border-dark-500 dark:bg-dark-700"
       >
         <div class="grid grid-cols-2 gap-1.5">
           <span
@@ -126,7 +126,7 @@
       <!-- Dropdown List -->
       <div
         v-if="showDropdown"
-        class="absolute left-0 right-0 top-full z-50 mt-1 rounded-none border border-gray-200 bg-white dark:border-dark-600 dark:bg-dark-700"
+        class="absolute left-0 right-0 top-full z-50 mt-1 rounded-lg border border-gray-200 bg-white shadow-lg dark:border-dark-600 dark:bg-dark-700"
       >
         <div class="sticky top-0 border-b border-gray-200 bg-white p-2 dark:border-dark-600 dark:bg-dark-700">
           <input
@@ -200,7 +200,7 @@
         type="button"
         data-testid="fill-related-models"
         @click="fillRelated"
-        class="rounded-none border border-blue-200 px-3 py-1.5 text-sm text-blue-600 hover:bg-blue-50 dark:border-blue-800 dark:text-blue-400 dark:hover:bg-blue-900/30"
+        class="rounded-lg border border-blue-200 px-3 py-1.5 text-sm text-blue-600 hover:bg-blue-50 dark:border-blue-800 dark:text-blue-400 dark:hover:bg-blue-900/30"
       >
         {{ t('admin.accounts.fillRelatedModels') }}
       </button>
@@ -211,14 +211,14 @@
         @click="syncUpstreamModels"
         :disabled="isSyncingUpstream || syncDisabled"
         :title="syncDisabledReason"
-        class="rounded-none border border-emerald-200 px-3 py-1.5 text-sm text-emerald-600 hover:bg-emerald-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-emerald-800 dark:text-emerald-400 dark:hover:bg-emerald-900/30"
+        class="rounded-lg border border-emerald-200 px-3 py-1.5 text-sm text-emerald-600 hover:bg-emerald-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-emerald-800 dark:text-emerald-400 dark:hover:bg-emerald-900/30"
       >
         {{ isSyncingUpstream ? t('admin.accounts.syncUpstreamModelsLoading') : t('admin.accounts.syncUpstreamModels') }}
       </button>
       <button
         type="button"
         @click="clearAll"
-        class="rounded-none border border-red-200 px-3 py-1.5 text-sm text-red-600 hover:bg-red-50 dark:border-red-800 dark:text-red-400 dark:hover:bg-red-900/30"
+        class="rounded-lg border border-red-200 px-3 py-1.5 text-sm text-red-600 hover:bg-red-50 dark:border-red-800 dark:text-red-400 dark:hover:bg-red-900/30"
       >
         {{ t('admin.accounts.clearAllModels') }}
       </button>
@@ -240,7 +240,7 @@
         <button
           type="button"
           @click="addCustom"
-          class="rounded-none bg-primary-50 px-4 py-2 text-sm font-medium text-primary-600 hover:bg-primary-100 dark:bg-primary-900/30 dark:text-primary-400 dark:hover:bg-primary-900/50"
+          class="rounded-lg bg-primary-50 px-4 py-2 text-sm font-medium text-primary-600 hover:bg-primary-100 dark:bg-primary-900/30 dark:text-primary-400 dark:hover:bg-primary-900/50"
         >
           {{ t('admin.accounts.addModel') }}
         </button>

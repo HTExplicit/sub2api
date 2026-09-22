@@ -150,6 +150,8 @@ func accountJobHTTPError(err error) error {
 		return infraerrors.Conflict("ACCOUNT_JOB_NOT_RETRYABLE", "account job has no failed items to retry")
 	case errors.Is(err, service.ErrAccountJobInvalidMetadata):
 		return infraerrors.BadRequest("ACCOUNT_JOB_METADATA_REJECTED", "account job metadata must not contain credentials")
+	case errors.Is(err, service.ErrAccountJobPluginUnavailable):
+		return infraerrors.ServiceUnavailable("ACCOUNT_JOB_PLUGIN_UNAVAILABLE", "account job plugin is unavailable or has changed")
 	default:
 		return err
 	}
@@ -167,7 +169,37 @@ func (h *AccountHandler) SetAccountJobService(jobs *service.AccountJobService) {
 	h.accountJobs = jobs
 }
 
-func (h *AccountHandler) submitAccountJob(c *gin.Context, kind string, payload any, seeds []service.AccountJobItemSeed) {
+func (h *AccountHandler) replayScopedAccountJob(c *gin.Context, kind string, payload any) bool {
+	if _, bound := service.AccountViewFromContext(c.Request.Context()); !bound {
+		return false
+	}
+	if h.accountJobs == nil {
+		accountViewRequestError(c, infraerrors.New(503, "ACCOUNT_JOBS_UNAVAILABLE", "account jobs are unavailable"))
+		return true
+	}
+	actorID, ok := accountJobActorID(c)
+	if !ok {
+		return true
+	}
+	raw, err := json.Marshal(payload)
+	if err != nil {
+		accountViewRequestError(c, service.ErrAccountViewInvalid)
+		return true
+	}
+	job, replayed, err := h.accountJobs.ReplaySubmission(c.Request.Context(), actorID, kind, c.GetHeader("Idempotency-Key"), raw)
+	if err != nil {
+		response.ErrorFrom(c, accountJobHTTPError(err))
+		return true
+	}
+	if !replayed {
+		return false
+	}
+	c.Header("Idempotency-Replayed", "true")
+	response.Accepted(c, job)
+	return true
+}
+
+func (h *AccountHandler) submitAccountJob(c *gin.Context, kind string, payload any, seeds []service.AccountJobItemSeed, owner ...int64) {
 	if h == nil || h.accountJobs == nil {
 		response.ErrorFrom(c, infraerrors.New(503, "ACCOUNT_JOBS_UNAVAILABLE", "account jobs are unavailable"))
 		return
@@ -181,7 +213,18 @@ func (h *AccountHandler) submitAccountJob(c *gin.Context, kind string, payload a
 		response.ErrorFrom(c, infraerrors.BadRequest("ACCOUNT_JOB_PAYLOAD_INVALID", "invalid account job payload"))
 		return
 	}
-	metadata, _ := json.Marshal(map[string]any{"target_count": len(seeds)})
+	meta := map[string]any{"target_count": len(seeds)}
+	if execution, bound := service.PluginExecutionFromContext(c.Request.Context()); bound {
+		if len(owner) > 0 && owner[0] > 0 && owner[0] != execution.ID {
+			response.Forbidden(c, "Plugin job ownership changed")
+			return
+		}
+		meta["plugin_id"] = execution.ID
+	}
+	if len(owner) > 0 && owner[0] > 0 {
+		meta["plugin_id"] = owner[0]
+	}
+	metadata, _ := json.Marshal(meta)
 	job, replayed, err := h.accountJobs.Submit(c.Request.Context(), actorID, kind, c.GetHeader("Idempotency-Key"), raw, metadata, seeds)
 	if err != nil {
 		response.ErrorFrom(c, accountJobHTTPError(err))

@@ -166,7 +166,8 @@ func (r *remoteSkillRegistryRepository) UpdateRemoteSkillSyncJobStage(ctx contex
 	result, err := r.db.ExecContext(ctx, `
 		UPDATE system_prompt_skill_sync_jobs
 		SET status = 'running', progress_stage = $2, started_at = COALESCE(started_at, NOW())
-		WHERE id = $1 AND status IN ('queued', 'running')`, id, stage)
+		WHERE id = $1 AND status IN ('queued', 'running')
+		  AND created_at > clock_timestamp() - $3 * INTERVAL '1 second'`, id, stage, int64(service.RemoteSkillSyncJobTimeout/time.Second))
 	if err != nil {
 		return err
 	}
@@ -187,7 +188,9 @@ func (r *remoteSkillRegistryRepository) CompleteRemoteSkillSyncJob(ctx context.C
 	defer func() { _ = tx.Rollback() }()
 	var status string
 	var createdBy sql.NullInt64
-	if err := tx.QueryRowContext(ctx, `SELECT status, created_by FROM system_prompt_skill_sync_jobs WHERE id = $1 FOR UPDATE`, id).Scan(&status, &createdBy); err != nil {
+	if err := tx.QueryRowContext(ctx, `SELECT status, created_by FROM system_prompt_skill_sync_jobs
+		WHERE id = $1 AND created_at > clock_timestamp() - $2 * INTERVAL '1 second' FOR UPDATE`,
+		id, int64(service.RemoteSkillSyncJobTimeout/time.Second)).Scan(&status, &createdBy); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return service.RemoteSkillSyncJob{}, service.ErrRemoteSkillSyncNotFound
 		}
@@ -208,7 +211,8 @@ func (r *remoteSkillRegistryRepository) CompleteRemoteSkillSyncJob(ctx context.C
 		UPDATE system_prompt_skill_sync_jobs
 		SET status = 'succeeded', progress_stage = 'candidate_ready',
 		    candidate_bundle_version_id = $2, error_code = NULL, completed_at = NOW()
-		WHERE id = $1`, id, detail.ID)
+		WHERE id = $1 AND created_at > clock_timestamp() - $3 * INTERVAL '1 second'`,
+		id, detail.ID, int64(service.RemoteSkillSyncJobTimeout/time.Second))
 	if err != nil {
 		return service.RemoteSkillSyncJob{}, err
 	}
@@ -243,6 +247,9 @@ func (r *remoteSkillRegistryRepository) GetRemoteSkillSyncJob(ctx context.Contex
 	if err := r.requireDatabase(); err != nil {
 		return service.RemoteSkillSyncJob{}, err
 	}
+	if err := r.ExpireRemoteSkillSyncJobs(ctx); err != nil {
+		return service.RemoteSkillSyncJob{}, err
+	}
 	var job service.RemoteSkillSyncJob
 	var candidateID, createdBy sql.NullInt64
 	var errorCode sql.NullString
@@ -265,6 +272,21 @@ func (r *remoteSkillRegistryRepository) GetRemoteSkillSyncJob(ctx context.Contex
 	job.StartedAt = nullableTimePointer(startedAt)
 	job.CompletedAt = nullableTimePointer(completedAt)
 	return job, nil
+}
+
+// Expiry is measured by the database clock and touches only unfinished jobs.
+// Another instance's active job remains owned by that instance until its fixed
+// deadline. Abandoned jobs are failed, never replayed or published on startup.
+func (r *remoteSkillRegistryRepository) ExpireRemoteSkillSyncJobs(ctx context.Context) error {
+	if err := r.requireDatabase(); err != nil {
+		return err
+	}
+	_, err := r.db.ExecContext(ctx, `
+		UPDATE system_prompt_skill_sync_jobs
+		SET status = 'failed', progress_stage = 'failed', error_code = 'sync_expired', completed_at = NOW()
+		WHERE status IN ('queued', 'running')
+		  AND created_at <= clock_timestamp() - $1 * INTERVAL '1 second'`, int64(service.RemoteSkillSyncJobTimeout/time.Second))
+	return err
 }
 
 func (r *remoteSkillRegistryRepository) PublishRemoteSkillVersion(ctx context.Context, versionID, expectedRevision, actorID int64) (service.RemoteSkillRegistrySnapshot, error) {
@@ -310,69 +332,6 @@ func (r *remoteSkillRegistryRepository) PublishRemoteSkillVersion(ctx context.Co
 		return service.RemoteSkillRegistrySnapshot{}, err
 	}
 	return snapshot, nil
-}
-
-func (r *remoteSkillRegistryRepository) CleanupLegacyRemoteSkillData(ctx context.Context) error {
-	if err := r.requireDatabase(); err != nil {
-		return err
-	}
-	tx, err := r.db.BeginTx(ctx, nil)
-	if err != nil {
-		return err
-	}
-	defer func() { _ = tx.Rollback() }()
-	var activeVersionID int64
-	var activeCreatedAt time.Time
-	err = tx.QueryRowContext(ctx, `
-		SELECT v.id, v.created_at
-		FROM system_prompt_skill_runtime AS r
-		JOIN system_prompt_skill_bundle_versions AS v ON v.id = r.active_bundle_version_id
-		JOIN system_prompt_skill_prompt_versions AS p ON p.id = r.active_prompt_version_id AND p.id = v.prompt_version_id
-		WHERE r.id = 1 AND v.upstream_source_id = $1 AND v.upstream_root = $2 AND v.public_root = $3
-		  AND v.raw_tree_sha256 IS NOT NULL AND v.effective_tree_sha256 IS NOT NULL`,
-		service.RemoteSkillUpstreamSourceID, service.RemoteSkillUpstreamRoot, service.RemoteSkillPublicRoot).Scan(&activeVersionID, &activeCreatedAt)
-	if err != nil {
-		return fmt.Errorf("active paired remote skill gate failed: %w", err)
-	}
-	if _, err := tx.ExecContext(ctx, `SET LOCAL sub2api.remote_skill_cleanup = 'on'`); err != nil {
-		return err
-	}
-	if _, err := tx.ExecContext(ctx, `
-		DELETE FROM system_prompt_skill_sync_jobs AS j
-		WHERE (j.candidate_bundle_version_id IS NOT NULL AND EXISTS (
-			SELECT 1 FROM system_prompt_skill_bundle_versions AS v
-			WHERE v.id = j.candidate_bundle_version_id
-			  AND (v.upstream_source_id IS DISTINCT FROM $1 OR v.upstream_root IS DISTINCT FROM $2
-			       OR v.public_root IS DISTINCT FROM $3 OR v.prompt_version_id IS NULL)
-		)) OR (j.candidate_bundle_version_id IS NULL AND j.created_at < $4)`,
-		service.RemoteSkillUpstreamSourceID, service.RemoteSkillUpstreamRoot, service.RemoteSkillPublicRoot, activeCreatedAt); err != nil {
-		return err
-	}
-	if _, err := tx.ExecContext(ctx, `
-		DELETE FROM system_prompt_skill_bundle_versions
-		WHERE id <> $1 AND (
-			upstream_source_id IS DISTINCT FROM $2 OR upstream_root IS DISTINCT FROM $3
-			OR public_root IS DISTINCT FROM $4 OR prompt_version_id IS NULL
-		)`, activeVersionID, service.RemoteSkillUpstreamSourceID, service.RemoteSkillUpstreamRoot, service.RemoteSkillPublicRoot); err != nil {
-		return err
-	}
-	if _, err := tx.ExecContext(ctx, `
-		DELETE FROM system_prompt_skill_prompt_versions AS p
-		WHERE NOT EXISTS (SELECT 1 FROM system_prompt_skill_bundle_versions AS v WHERE v.prompt_version_id = p.id)`); err != nil {
-		return err
-	}
-	var legacyCount int
-	if err := tx.QueryRowContext(ctx, `
-		SELECT COUNT(*) FROM system_prompt_skill_bundle_versions
-		WHERE upstream_source_id IS DISTINCT FROM $1 OR upstream_root IS DISTINCT FROM $2
-		   OR public_root IS DISTINCT FROM $3 OR prompt_version_id IS NULL`,
-		service.RemoteSkillUpstreamSourceID, service.RemoteSkillUpstreamRoot, service.RemoteSkillPublicRoot).Scan(&legacyCount); err != nil {
-		return err
-	}
-	if legacyCount != 0 {
-		return fmt.Errorf("legacy remote skill rows remain after cleanup")
-	}
-	return tx.Commit()
 }
 
 const remoteSkillVersionSelect = `

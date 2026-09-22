@@ -1,6 +1,7 @@
 package service
 
 import (
+	"context"
 	"net/http"
 	"regexp"
 	"strings"
@@ -273,37 +274,31 @@ func pairCodexIdentityHeaders(h http.Header) {
 // 版本段仍由生效版本重建）> 账号持久化 / 种子派生的 Codex TUI 身份 > 全局规范身份。
 // 版本号三处同源：UA 首段、UA 尾部括号组与 version 头都取当前生效的官方版本。
 func resolveCodexOutboundIdentityForAccount(account *Account, overrideUA string) codexOutboundIdentity {
-	if strings.TrimSpace(overrideUA) != "" {
-		return resolveCodexOutboundIdentity(overrideUA)
-	}
-	canonical := resolveCodexOutboundIdentity("")
-	if account == nil {
-		return canonical
-	}
-	identity, ok := account.CodexClientIdentity()
-	if !ok {
-		return canonical
-	}
-	return codexOutboundIdentity{
-		userAgent:  identity.UserAgent(canonical.version),
-		originator: codexTUIOriginator,
-		version:    canonical.version,
-	}
+	identity, _ := resolveCodexOutboundIdentityForAccountContext(context.Background(), account, overrideUA)
+	return identity
 }
 
 // enforceCodexIdentityHeadersForAccount 与 enforceCodexIdentityHeadersWithUA 语义相同，
 // 但强制统一时使用账号级身份而不是全局规范身份，使同一账号的所有出站请求
 // 表现为同一台机器上的同一个 Codex TUI。
-func enforceCodexIdentityHeadersForAccount(h http.Header, account *Account, overrideUA string) {
+func enforceCodexIdentityHeadersForAccount(h http.Header, account *Account, overrideUA string) error {
+	return enforceCodexIdentityHeadersForAccountContext(context.Background(), h, account, overrideUA)
+}
+
+func enforceCodexIdentityHeadersForAccountContext(ctx context.Context, h http.Header, account *Account, overrideUA string) error {
 	if h == nil || h.Get("originator") == "" {
-		return
+		return nil
 	}
 	if !codexIdentityEnforcement.Load() {
 		pairCodexIdentityHeaders(h)
-		return
+		return nil
 	}
-	identity := resolveCodexOutboundIdentityForAccount(account, overrideUA)
+	identity, err := resolveCodexOutboundIdentityForAccountContext(ctx, account, overrideUA)
+	if err != nil {
+		return err
+	}
 	h.Set("user-agent", identity.userAgent)
 	h.Set("originator", identity.originator)
 	h.Set("version", identity.version)
+	return nil
 }

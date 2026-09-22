@@ -27,7 +27,7 @@
           @click="closeModal"
         >
           <div
-            class="w-full max-w-[620px] overflow-hidden rounded-none bg-white shadow-outline ring-1 ring-black/5 dark:bg-dark-800 dark:ring-white/10"
+            class="w-full max-w-[620px] overflow-hidden rounded-3xl bg-white shadow-2xl ring-1 ring-black/5 dark:bg-dark-800 dark:ring-white/10"
             @click.stop
           >
             <!-- Header with Gradient -->
@@ -52,7 +52,7 @@
                     v-if="unreadCount > 0"
                     @click="markAllAsRead"
                     :disabled="loading"
-                    class="rounded-none bg-blue-600 px-4 py-2 text-xs font-medium text-white transition-all hover:bg-blue-700 disabled:opacity-50 dark:bg-blue-500 dark:hover:bg-blue-600"
+                    class="rounded-lg bg-blue-600 px-4 py-2 text-xs font-medium text-white shadow-lg shadow-blue-500/30 transition-all hover:bg-blue-700 hover:shadow-xl disabled:opacity-50 dark:bg-blue-500 dark:hover:bg-blue-600"
                   >
                     {{ t('announcements.markAllRead') }}
                   </button>
@@ -96,7 +96,7 @@
                       class="relative flex h-10 w-10 items-center justify-center rounded-none bg-blue-500 text-white"
                     >
                       <!-- Pulse ring -->
-                      <span class="absolute inline-flex h-full w-full animate-ping rounded-none bg-blue-400 opacity-75"></span>
+                      <span class="absolute inline-flex h-full w-full animate-ping rounded-xl bg-blue-400 opacity-75"></span>
                       <!-- Icon -->
                       <svg class="relative z-10 h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
                         <path stroke-linecap="round" stroke-linejoin="round" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
@@ -124,7 +124,7 @@
                         </time>
                         <span
                           v-if="!item.read_at"
-                          class="inline-flex items-center gap-1 rounded-none bg-blue-100 px-1.5 py-0.5 text-xs font-medium text-blue-700 dark:bg-blue-900/40 dark:text-blue-300"
+                          class="inline-flex items-center gap-1 rounded-md bg-blue-100 px-1.5 py-0.5 text-xs font-medium text-blue-700 dark:bg-blue-900/40 dark:text-blue-300"
                         >
                           <span class="relative flex h-1.5 w-1.5">
                             <span class="absolute inline-flex h-full w-full animate-ping rounded-full bg-blue-500 opacity-75"></span>
@@ -187,7 +187,7 @@
           @click="closeDetail"
         >
           <div
-            class="w-full max-w-[780px] overflow-hidden rounded-none bg-white shadow-outline ring-1 ring-black/5 dark:bg-dark-800 dark:ring-white/10"
+            class="w-full max-w-[780px] overflow-hidden rounded-3xl bg-white shadow-2xl ring-1 ring-black/5 dark:bg-dark-800 dark:ring-white/10"
             @click.stop
           >
             <!-- Header with Decorative Elements -->
@@ -207,7 +207,7 @@
                       </svg>
                     </div>
                     <div class="flex items-center gap-2">
-                      <span class="rounded-none bg-blue-100 px-2.5 py-1 text-xs font-medium text-blue-700 dark:bg-blue-900/40 dark:text-blue-300">
+                      <span class="rounded-lg bg-blue-100 px-2.5 py-1 text-xs font-medium text-blue-700 dark:bg-blue-900/40 dark:text-blue-300">
                         {{ t('announcements.title') }}
                       </span>
                       <span
@@ -285,7 +285,7 @@
                 <div class="flex items-center gap-3">
                   <button
                     @click="closeDetail"
-                    class="rounded-none border border-gray-300 bg-white px-5 py-2.5 text-sm font-medium text-gray-700 transition-all hover:bg-gray-50 dark:border-dark-600 dark:bg-dark-700 dark:text-gray-300 dark:hover:bg-dark-600"
+                    class="rounded-xl border border-gray-300 bg-white px-5 py-2.5 text-sm font-medium text-gray-700 shadow-sm transition-all hover:bg-gray-50 hover:shadow dark:border-dark-600 dark:bg-dark-700 dark:text-gray-300 dark:hover:bg-dark-600"
                   >
                     {{ t('common.close') }}
                   </button>
@@ -456,19 +456,19 @@ watch(
 }
 
 .overflow-y-auto::-webkit-scrollbar-thumb {
-  background: #8a8b8d;
-  border-radius: 0;
+  background: var(--theme-scrollbar-thumb, linear-gradient(to bottom, #cbd5e1, #94a3b8));
+  border-radius: var(--theme-radius-default, 4px);
 }
 
 .dark .overflow-y-auto::-webkit-scrollbar-thumb {
-  background: #3a3b40;
+  background: var(--theme-scrollbar-thumb, linear-gradient(to bottom, #4b5563, #374151));
 }
 
 .overflow-y-auto::-webkit-scrollbar-thumb:hover {
-  background: #6f6f6f;
+  background: var(--theme-scrollbar-hover, linear-gradient(to bottom, #94a3b8, #64748b));
 }
 
 .dark .overflow-y-auto::-webkit-scrollbar-thumb:hover {
-  background: #56575a;
+  background: var(--theme-scrollbar-hover, linear-gradient(to bottom, #6b7280, #4b5563));
 }
 </style>

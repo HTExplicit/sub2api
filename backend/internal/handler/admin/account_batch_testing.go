@@ -1,28 +1,27 @@
 package admin
 
 import (
+	"context"
 	"encoding/json"
-	"errors"
-	"strings"
 	"sync"
+
+	extensionv1 "github.com/Wei-Shaw/sub2api/pkg/extensionapi/v1"
 
 	"github.com/Wei-Shaw/sub2api/internal/pkg/response"
 	"github.com/Wei-Shaw/sub2api/internal/service"
 	"github.com/gin-gonic/gin"
 )
 
-type batchTestJobItem struct {
-	AccountID int64  `json:"account_id"`
-	ModelID   string `json:"model_id"`
-}
+type batchTestJobItem = extensionv1.BatchTestSelection
 
 type batchTestJobPayload struct {
-	Prompt     string             `json:"prompt,omitempty"`
-	AccountIDs []int64            `json:"account_ids,omitempty"`
-	ModelID    string             `json:"model_id,omitempty"`
-	Items      []batchTestJobItem `json:"items,omitempty"`
-	hasItems   bool
-	hasLegacy  bool
+	Prompt        string             `json:"prompt,omitempty"`
+	AccountIDs    []int64            `json:"account_ids,omitempty"`
+	ModelID       string             `json:"model_id,omitempty"`
+	Items         []batchTestJobItem `json:"items,omitempty"`
+	hasItems      bool
+	hasLegacy     bool
+	ownerPluginID int64
 }
 
 func (p *batchTestJobPayload) UnmarshalJSON(raw []byte) error {
@@ -46,48 +45,24 @@ func (p *batchTestJobPayload) UnmarshalJSON(raw []byte) error {
 // Normalize once before persistence and again on recovery of an older payload.
 // Models are keyed by account identity, never by task ordinals (which change on retry).
 func (p *batchTestJobPayload) normalize() ([]int64, map[int64]string, error) {
+	return p.normalizeContext(context.Background())
+}
+func (p *batchTestJobPayload) normalizeContext(ctx context.Context) ([]int64, map[int64]string, error) {
 	if err := service.ValidateAccountTestPrompt(p.Prompt); err != nil {
 		return nil, nil, err
 	}
-	invalid := errors.New("invalid or mixed batch test selections")
-	if p.hasItems && p.hasLegacy {
-		return nil, nil, invalid
+	explicit := p.hasItems || p.Items != nil
+	plan, owner, err := service.PlanBatchAccountTests(ctx, extensionv1.BatchTestPlanningRequest{HasItems: explicit, HasLegacy: p.hasLegacy, AccountIDs: p.AccountIDs, ModelID: p.ModelID, Items: p.Items})
+	if err != nil {
+		return nil, nil, err
 	}
-	models := make(map[int64]string)
-	ids := make([]int64, 0)
-	if p.hasItems || p.Items != nil {
-		items := make([]batchTestJobItem, 0, len(p.Items))
-		for _, item := range p.Items {
-			item.ModelID = strings.TrimSpace(item.ModelID)
-			if item.AccountID <= 0 || item.ModelID == "" || len(item.ModelID) > 256 {
-				return nil, nil, invalid
-			}
-			if previous, exists := models[item.AccountID]; exists {
-				if previous != item.ModelID {
-					return nil, nil, invalid
-				}
-				continue
-			}
-			ids = append(ids, item.AccountID)
-			models[item.AccountID] = item.ModelID
-			items = append(items, item)
-		}
-		p.Items = items
+	if explicit {
+		p.Items = plan.Items
 	} else {
-		p.AccountIDs = normalizeInt64IDList(p.AccountIDs)
-		p.ModelID = strings.TrimSpace(p.ModelID)
-		if len(p.ModelID) > 256 {
-			return nil, nil, invalid
-		}
-		ids = p.AccountIDs
-		for _, id := range ids {
-			models[id] = p.ModelID
-		}
+		p.AccountIDs, p.ModelID = plan.AccountIDs, plan.ModelID
 	}
-	if len(ids) == 0 {
-		return nil, nil, invalid
-	}
-	return ids, models, nil
+	p.ownerPluginID = owner
+	return plan.AccountIDs, plan.Models, nil
 }
 
 type batchTestModelContextKey struct{}
@@ -98,29 +73,38 @@ func (h *AccountHandler) BatchTest(c *gin.Context) {
 		response.BadRequest(c, "invalid batch test request")
 		return
 	}
-	ids, models, err := req.normalize()
+	ids, models, err := req.normalizeContext(c.Request.Context())
 	if err != nil {
 		response.BadRequest(c, err.Error())
 		return
 	}
 	seeds := accountJobSeeds(ids)
-	for i, id := range ids {
-		seeds[i].Metadata, _ = json.Marshal(map[string]any{"model_id": models[id]})
+	efforts := make(map[int64]string, len(req.Items))
+	for _, item := range req.Items {
+		efforts[item.AccountID] = item.ReasoningEffort
 	}
-	h.submitAccountJob(c, service.AccountJobKindBatchTest, req, seeds)
+	for i, id := range ids {
+		metadata := map[string]any{"model_id": models[id]}
+		if effort := efforts[id]; effort != "" {
+			metadata["reasoning_effort"] = effort
+		}
+		seeds[i].Metadata, _ = json.Marshal(metadata)
+	}
+	h.submitAccountJob(c, service.AccountJobKindBatchTest, req, seeds, req.ownerPluginID)
 }
 
 // Shared across requests, including catalog loads by multiple administrators.
 var batchTestCatalogSlots = make(chan struct{}, 5)
 
 type batchTestModelRow struct {
-	AccountID int64  `json:"account_id"`
-	Name      string `json:"name"`
-	Platform  string `json:"platform"`
-	Type      string `json:"type"`
-	IsCindy   bool   `json:"is_cindy"`
-	Models    any    `json:"models"`
-	ErrorCode string `json:"error_code,omitempty"`
+	AccountID int64                `json:"account_id"`
+	Name      string               `json:"name"`
+	Platform  string               `json:"platform"`
+	Type      string               `json:"type"`
+	IsCindy   bool                 `json:"is_cindy"`
+	Models    any                  `json:"models"`
+	ErrorCode string               `json:"error_code,omitempty"`
+	TestPlan  *accountTestPlanView `json:"test_plan,omitempty"`
 }
 
 func (h *AccountHandler) BatchTestModels(c *gin.Context) {
@@ -136,6 +120,15 @@ func (h *AccountHandler) BatchTestModels(c *gin.Context) {
 		}
 	}
 	ids := normalizeInt64IDList(req.AccountIDs)
+	withPlan, err := accountTestPlanRequested(c.Query("view"))
+	if err != nil {
+		response.BadRequest(c, err.Error())
+		return
+	}
+	if _, _, err := service.PlanBatchAccountTests(c.Request.Context(), extensionv1.BatchTestPlanningRequest{HasLegacy: true, AccountIDs: ids}); err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
 	accounts, err := h.adminService.GetAccountsByIDs(c.Request.Context(), ids)
 	if err != nil {
 		response.ErrorFrom(c, err)
@@ -169,6 +162,15 @@ func (h *AccountHandler) BatchTestModels(c *gin.Context) {
 			}
 			rows[i].Name, rows[i].Platform, rows[i].Type = account.Name, account.Platform, account.Type
 			rows[i].IsCindy = service.IsCindyAPIKeyAccount(account.Platform, account.Type, account.Credentials)
+			if withPlan {
+				plan, err := h.accountTestPlan(ctx, account)
+				if err != nil || ctx.Err() != nil {
+					rows[i].ErrorCode = "catalog_failed"
+					return
+				}
+				rows[i].Models, rows[i].TestPlan = plan.Models, plan
+				return
+			}
 			models, err := h.accountTestModels(ctx, account)
 			if err != nil || ctx.Err() != nil {
 				rows[i].ErrorCode = "catalog_failed"

@@ -52,6 +52,13 @@ func (r *accountJobCindyMutationRunner) Run(
 	}
 	defer func() { _ = tx.Rollback() }()
 	txClient := tx.Client()
+	txCtx := dbent.NewTxContext(ctx, tx)
+	if err := r.FenceAccountCreate(txCtx); err != nil {
+		return nil, err
+	}
+	if err := r.FenceAccountEdit(txCtx); err != nil {
+		return nil, err
+	}
 	var previousGroupIDs []int64
 	if accountID > 0 {
 		if err = lockCindyAccountJobTarget(ctx, txClient, accountID); err != nil {
@@ -62,7 +69,6 @@ func (r *accountJobCindyMutationRunner) Run(
 			return nil, err
 		}
 	}
-	txCtx := dbent.NewTxContext(ctx, tx)
 	account, err := mutate(txCtx)
 	if err != nil {
 		return nil, err
@@ -122,6 +128,15 @@ func (r *accountJobCindyMutationRunner) Run(
 	if err = enqueueSchedulerOutbox(ctx, txClient, service.SchedulerOutboxEventAccountChanged, &current.ID, nil, nil); err != nil {
 		return nil, err
 	}
+	if err := service.ValidateAccountCreateFresh(ctx); err != nil {
+		return nil, err
+	}
+	if err := service.ValidateAccountViewFresh(ctx); err != nil {
+		return nil, err
+	}
+	if err := service.ValidateAccountEditFresh(ctx); err != nil {
+		return nil, err
+	}
 	if err = tx.Commit(); err != nil {
 		return nil, err
 	}
@@ -143,6 +158,49 @@ func (r *accountJobCindyMutationRunner) Run(
 		}
 	}
 	return account, nil
+}
+
+// Reuse the same ordered multi-owner fence on the exact Ent transaction that
+// creates the account. This is also called by nested batch/import creation.
+func (r *accountJobCindyMutationRunner) FenceAccountCreate(ctx context.Context) error {
+	create, bound := service.AccountCreateFromContext(ctx)
+	if !bound {
+		return nil
+	}
+	if err := service.ValidateAccountCreateFresh(ctx); err != nil {
+		return err
+	}
+	tx := dbent.TxFromContext(ctx)
+	if tx == nil {
+		return service.ErrAccountCreateUnavailable
+	}
+	if err := lockPluginExecution(ctx, tx.Client(), create.PrimaryPluginKey); err != nil {
+		if errors.Is(err, service.ErrAccountViewUnavailable) {
+			return service.ErrAccountCreateUnavailable
+		}
+		return err
+	}
+	return nil
+}
+
+// All owner fences precede the account lock, even for a basic-only write from a
+// view. Edit admission is independent; unchanged values create no edit fence.
+func (r *accountJobCindyMutationRunner) FenceAccountEdit(ctx context.Context) error {
+	if _, create := service.AccountCreateFromContext(ctx); create {
+		return nil
+	}
+	if err := service.ValidateAccountEditFresh(ctx); err != nil {
+		return err
+	}
+	tx := dbent.TxFromContext(ctx)
+	if tx == nil {
+		return service.ErrAccountEditUnavailable
+	}
+	if err := lockPluginExecution(ctx, tx.Client(), ""); err != nil {
+		return err
+	}
+	service.MarkAccountEditFenced(ctx)
+	return nil
 }
 
 func claimCindyDeviceIdentity(ctx context.Context, client *dbent.Client, account *service.Account) error {

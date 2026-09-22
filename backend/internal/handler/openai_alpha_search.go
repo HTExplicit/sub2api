@@ -94,9 +94,16 @@ func (h *OpenAIGatewayHandler) AlphaSearch(c *gin.Context) {
 		h.errorResponse(c, http.StatusNotFound, "not_found_error", "Codex alpha search only supports OpenAI models for Composite groups")
 		return
 	}
-	if cindySearch && !service.CindyAlphaSearchModelAvailable(requestedModel) {
-		h.errorResponse(c, http.StatusNotFound, "model_not_found", "Model is not supported on the alpha search endpoint")
-		return
+	if cindySearch {
+		plan, planErr := service.ResolveCindyAlphaSearchPlan(c.Request.Context(), requestedModel)
+		if planErr != nil {
+			h.errorResponse(c, http.StatusServiceUnavailable, "api_error", "Unable to determine model availability")
+			return
+		}
+		if !plan.Allowed {
+			h.errorResponse(c, http.StatusNotFound, "model_not_found", "Model is not supported on the alpha search endpoint")
+			return
+		}
 	}
 	if cindySearch && !h.ensureResponsesDependencies(c, reqLog) {
 		return
@@ -234,7 +241,7 @@ func (h *OpenAIGatewayHandler) AlphaSearch(c *gin.Context) {
 		var result *service.OpenAIForwardResult
 		service.SetActualOpenAIUpstreamEndpoint(c, "")
 		setActualUpstreamEndpoint(c, "")
-		trafficTurn := h.trafficObserver.Begin(c.Request.Context(), account.ID, service.AccountTrafficProtocolHTTP)
+		trafficTurn := h.trafficObserver.Begin(c.Request.Context(), account, service.AccountTrafficProtocolHTTP)
 		result, err = func() (res *service.OpenAIForwardResult, ferr error) {
 			defer func() {
 				trafficTurn.Finish(res, ferr, c.Request.Context().Err() != nil)

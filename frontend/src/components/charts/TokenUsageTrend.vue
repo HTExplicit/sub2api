@@ -19,6 +19,7 @@
 </template>
 
 <script setup lang="ts">
+import { usePresentationColors } from '@/composables/usePresentationColors'
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import {
@@ -54,13 +55,11 @@ const props = defineProps<{
   loading?: boolean
 }>()
 
-const isDarkMode = computed(() => {
-  return document.documentElement.classList.contains('dark')
-})
+const presentation = usePresentationColors()
 
 const chartColors = computed(() => ({
-  text: isDarkMode.value ? '#dcdcdc' : '#3a3b40',
-  grid: isDarkMode.value ? '#3a3b40' : '#dcdcdc',
+  text: presentation.value.text,
+  grid: presentation.value.grid,
   input: '#3b82f6',
   output: '#10b981',
   cacheCreation: '#f59e0b',

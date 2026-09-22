@@ -1,8 +1,12 @@
 # Upstream v0.2.1 integration review
 
 > Document type: release integration evidence
-> Status: candidate; production acceptance pending
+> Status: historical integration snapshot; not a current release gate
 > Last verified: 2026-09-05
+
+Current delivery status and required validation are recorded in
+[the current implementation record](implementation-v0.2.7.md); the checks below
+describe this historical integration only.
 
 The integration baseline is downstream main `5b8c1092a5c5c46cf0b49825dc957d537ada3de2`
 and official `v0.2.1` (peeled commit `578785ee7`). The correct merge has 33 conflicted

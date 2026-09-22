@@ -181,7 +181,7 @@ onMounted(() => {
 </script>
 
 <template>
-  <div class="rounded-none bg-white p-6 shadow-outline ring-1 ring-gray-900/5 dark:bg-dark-800 dark:ring-dark-700">
+  <div class="rounded-3xl bg-white p-6 shadow-sm ring-1 ring-gray-900/5 dark:bg-dark-800 dark:ring-dark-700">
     <div class="mb-4 flex items-start justify-between gap-4">
       <div>
         <h3 class="text-sm font-bold text-gray-900 dark:text-white">{{ t('admin.ops.email.title') }}</h3>
@@ -189,7 +189,7 @@ onMounted(() => {
       </div>
       <div class="flex items-center gap-2">
         <button
-          class="flex items-center gap-1.5 rounded-none bg-gray-100 px-3 py-1.5 text-xs font-bold text-gray-700 transition-colors hover:bg-gray-200 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-dark-700 dark:text-gray-300 dark:hover:bg-dark-600"
+          class="flex items-center gap-1.5 rounded-lg bg-gray-100 px-3 py-1.5 text-xs font-bold text-gray-700 transition-colors hover:bg-gray-200 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-dark-700 dark:text-gray-300 dark:hover:bg-dark-600"
           :disabled="loading"
           @click="loadConfig"
         >
@@ -256,7 +256,7 @@ onMounted(() => {
     <div v-if="draft" class="space-y-6">
       <div
         v-if="!editorValidation.valid"
-        class="rounded-none border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800 dark:border-amber-900/50 dark:bg-amber-900/20 dark:text-amber-200"
+        class="rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800 dark:border-amber-900/50 dark:bg-amber-900/20 dark:text-amber-200"
       >
         <div class="font-bold">{{ t('admin.ops.email.validation.title') }}</div>
         <ul class="mt-1 list-disc space-y-1 pl-4">
@@ -269,7 +269,7 @@ onMounted(() => {
           <div>
             <div class="mb-1 text-xs font-medium text-gray-600 dark:text-gray-300">{{ t('common.enabled') }}</div>
             <label class="inline-flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
-              <input v-model="draft.alert.enabled" type="checkbox" class="h-4 w-4 rounded-none border-gray-300" />
+              <input v-model="draft.alert.enabled" type="checkbox" class="h-4 w-4 rounded border-gray-300" />
               <span>{{ draft.alert.enabled ? t('common.enabled') : t('common.disabled') }}</span>
             </label>
           </div>
@@ -298,7 +298,7 @@ onMounted(() => {
               <span
                 v-for="email in draft.alert.recipients"
                 :key="email"
-                class="inline-flex items-center gap-2 rounded-none bg-blue-100 px-3 py-1 text-xs font-medium text-blue-700 dark:bg-blue-900/30 dark:text-blue-400"
+                class="inline-flex items-center gap-2 rounded-full bg-blue-100 px-3 py-1 text-xs font-medium text-blue-700 dark:bg-blue-900/30 dark:text-blue-400"
               >
                 {{ email }}
                 <button
@@ -326,7 +326,7 @@ onMounted(() => {
           <div>
             <div class="mb-1 text-xs font-medium text-gray-600 dark:text-gray-300">{{ t('admin.ops.email.includeResolved') }}</div>
             <label class="inline-flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
-              <input v-model="draft.alert.include_resolved_alerts" type="checkbox" class="h-4 w-4 rounded-none border-gray-300" />
+              <input v-model="draft.alert.include_resolved_alerts" type="checkbox" class="h-4 w-4 rounded border-gray-300" />
               <span>{{ draft.alert.include_resolved_alerts ? t('common.enabled') : t('common.disabled') }}</span>
             </label>
           </div>
@@ -339,7 +339,7 @@ onMounted(() => {
           <div>
             <div class="mb-1 text-xs font-medium text-gray-600 dark:text-gray-300">{{ t('common.enabled') }}</div>
             <label class="inline-flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
-              <input v-model="draft.report.enabled" type="checkbox" class="h-4 w-4 rounded-none border-gray-300" />
+              <input v-model="draft.report.enabled" type="checkbox" class="h-4 w-4 rounded border-gray-300" />
               <span>{{ draft.report.enabled ? t('common.enabled') : t('common.disabled') }}</span>
             </label>
           </div>
@@ -363,7 +363,7 @@ onMounted(() => {
               <span
                 v-for="email in draft.report.recipients"
                 :key="email"
-                class="inline-flex items-center gap-2 rounded-none bg-blue-100 px-3 py-1 text-xs font-medium text-blue-700 dark:bg-blue-900/30 dark:text-blue-400"
+                class="inline-flex items-center gap-2 rounded-full bg-blue-100 px-3 py-1 text-xs font-medium text-blue-700 dark:bg-blue-900/30 dark:text-blue-400"
               >
                 {{ email }}
                 <button
@@ -383,7 +383,7 @@ onMounted(() => {
                 <div class="mb-1 text-xs font-medium text-gray-600 dark:text-gray-300">{{ t('admin.ops.email.dailySummary') }}</div>
                 <div class="flex items-center gap-2">
                   <label class="inline-flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
-                    <input v-model="draft.report.daily_summary_enabled" type="checkbox" class="h-4 w-4 rounded-none border-gray-300" />
+                    <input v-model="draft.report.daily_summary_enabled" type="checkbox" class="h-4 w-4 rounded border-gray-300" />
                   </label>
                   <input v-model="draft.report.daily_summary_schedule" type="text" class="input" :placeholder="t('admin.ops.email.cronPlaceholder')" />
                 </div>
@@ -392,7 +392,7 @@ onMounted(() => {
                 <div class="mb-1 text-xs font-medium text-gray-600 dark:text-gray-300">{{ t('admin.ops.email.weeklySummary') }}</div>
                 <div class="flex items-center gap-2">
                   <label class="inline-flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
-                    <input v-model="draft.report.weekly_summary_enabled" type="checkbox" class="h-4 w-4 rounded-none border-gray-300" />
+                    <input v-model="draft.report.weekly_summary_enabled" type="checkbox" class="h-4 w-4 rounded border-gray-300" />
                   </label>
                   <input v-model="draft.report.weekly_summary_schedule" type="text" class="input" :placeholder="t('admin.ops.email.cronPlaceholder')" />
                 </div>
@@ -401,7 +401,7 @@ onMounted(() => {
                 <div class="mb-1 text-xs font-medium text-gray-600 dark:text-gray-300">{{ t('admin.ops.email.errorDigest') }}</div>
                 <div class="flex items-center gap-2">
                   <label class="inline-flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
-                    <input v-model="draft.report.error_digest_enabled" type="checkbox" class="h-4 w-4 rounded-none border-gray-300" />
+                    <input v-model="draft.report.error_digest_enabled" type="checkbox" class="h-4 w-4 rounded border-gray-300" />
                   </label>
                   <input v-model="draft.report.error_digest_schedule" type="text" class="input" :placeholder="t('admin.ops.email.cronPlaceholder')" />
                 </div>
@@ -414,7 +414,7 @@ onMounted(() => {
                 <div class="mb-1 text-xs font-medium text-gray-600 dark:text-gray-300">{{ t('admin.ops.email.accountHealth') }}</div>
                 <div class="flex items-center gap-2">
                   <label class="inline-flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
-                    <input v-model="draft.report.account_health_enabled" type="checkbox" class="h-4 w-4 rounded-none border-gray-300" />
+                    <input v-model="draft.report.account_health_enabled" type="checkbox" class="h-4 w-4 rounded border-gray-300" />
                   </label>
                   <input v-model="draft.report.account_health_schedule" type="text" class="input" :placeholder="t('admin.ops.email.cronPlaceholder')" />
                 </div>

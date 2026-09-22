@@ -2,7 +2,7 @@
   <div ref="rootRef" :data-usage-variant="variant">
     <template v-if="variant === 'compact'">
       <div v-if="compactLoading" class="flex h-5 items-center gap-1.5" data-test="usage-loading">
-        <div class="h-3 w-12 animate-pulse rounded-none bg-gray-200 dark:bg-gray-700"></div>
+        <div class="h-3 w-12 animate-pulse rounded bg-gray-200 dark:bg-gray-700"></div>
         <div class="h-3 w-16 animate-pulse rounded-none bg-gray-200 dark:bg-gray-700"></div>
       </div>
       <div
@@ -67,20 +67,20 @@
       <div v-if="loading && !usageInfo" class="space-y-1.5">
         <!-- OAuth: 3 rows, Setup Token: 1 row -->
         <div class="flex items-center gap-1">
-          <div class="h-3 w-[32px] animate-pulse rounded-none bg-gray-200 dark:bg-gray-700"></div>
+          <div class="h-3 w-[32px] animate-pulse rounded bg-gray-200 dark:bg-gray-700"></div>
           <div class="h-1.5 w-8 animate-pulse rounded-full bg-gray-200 dark:bg-gray-700"></div>
-          <div class="h-3 w-[32px] animate-pulse rounded-none bg-gray-200 dark:bg-gray-700"></div>
+          <div class="h-3 w-[32px] animate-pulse rounded bg-gray-200 dark:bg-gray-700"></div>
         </div>
         <template v-if="account.type === 'oauth'">
           <div class="flex items-center gap-1">
-            <div class="h-3 w-[32px] animate-pulse rounded-none bg-gray-200 dark:bg-gray-700"></div>
+            <div class="h-3 w-[32px] animate-pulse rounded bg-gray-200 dark:bg-gray-700"></div>
             <div class="h-1.5 w-8 animate-pulse rounded-full bg-gray-200 dark:bg-gray-700"></div>
-            <div class="h-3 w-[32px] animate-pulse rounded-none bg-gray-200 dark:bg-gray-700"></div>
+            <div class="h-3 w-[32px] animate-pulse rounded bg-gray-200 dark:bg-gray-700"></div>
           </div>
           <div class="flex items-center gap-1">
-            <div class="h-3 w-[32px] animate-pulse rounded-none bg-gray-200 dark:bg-gray-700"></div>
+            <div class="h-3 w-[32px] animate-pulse rounded bg-gray-200 dark:bg-gray-700"></div>
             <div class="h-1.5 w-8 animate-pulse rounded-full bg-gray-200 dark:bg-gray-700"></div>
-            <div class="h-3 w-[32px] animate-pulse rounded-none bg-gray-200 dark:bg-gray-700"></div>
+            <div class="h-3 w-[32px] animate-pulse rounded bg-gray-200 dark:bg-gray-700"></div>
           </div>
         </template>
       </div>
@@ -148,7 +148,7 @@
           <button
             v-if="canInteract"
             type="button"
-            class="inline-flex items-center gap-0.5 rounded-none px-1.5 py-0.5 text-[9px] font-medium text-blue-600 hover:bg-blue-50 dark:text-blue-400 dark:hover:bg-blue-900/30 transition-colors"
+            class="inline-flex items-center gap-0.5 rounded px-1.5 py-0.5 text-[9px] font-medium text-blue-600 hover:bg-blue-50 dark:text-blue-400 dark:hover:bg-blue-900/30 transition-colors"
             :disabled="activeQueryLoading"
             @click="loadActiveUsage"
           >
@@ -198,25 +198,18 @@
       </div>
       <div v-if="hasOpenAIUsageFallback" class="space-y-1">
         <UsageProgressBar
-          v-if="usageInfo?.five_hour"
+          v-for="window in openAIQuotaWindows"
+          :key="window.id"
           :density="usageBarDensity"
-          label="5h"
-          :utilization="usageInfo.five_hour.utilization"
-          :resets-at="usageInfo.five_hour.resets_at"
-          :window-stats="usageInfo.five_hour.window_stats"
+          :label="quotaWindowLabel(window.window_minutes)"
+          :utilization="window.utilization"
+          :resets-at="window.resets_at"
+          :window-stats="window.window_stats"
+          :estimated-total-cost="window.estimate?.total"
+          :estimated-remaining-cost="window.estimate?.remaining"
+          :estimate-status="window.estimate?.status"
           :show-now-when-idle="true"
           color="indigo"
-        />
-        <UsageProgressBar
-          v-if="usageInfo?.seven_day"
-          :density="usageBarDensity"
-          label="7d"
-          :utilization="usageInfo.seven_day.utilization"
-          :resets-at="usageInfo.seven_day.resets_at"
-          :window-stats="usageInfo.seven_day.window_stats"
-          :estimated-total-cost="openAISevenDayEstimatedTotalCost"
-          :show-now-when-idle="true"
-          color="emerald"
         />
         <!--
           Upstream codex /wham/usage quota query + reset. The local active-sampling
@@ -231,7 +224,7 @@
           <template #pre-actions>
             <button
               type="button"
-              class="inline-flex items-center gap-0.5 rounded-none px-1.5 py-0.5 text-[10px] font-medium text-blue-600 hover:bg-blue-50 dark:text-blue-400 dark:hover:bg-blue-900/30 transition-colors disabled:cursor-not-allowed disabled:opacity-50"
+              class="inline-flex items-center gap-0.5 rounded px-1.5 py-0.5 text-[10px] font-medium text-blue-600 hover:bg-blue-50 dark:text-blue-400 dark:hover:bg-blue-900/30 transition-colors disabled:cursor-not-allowed disabled:opacity-50"
               :disabled="activeQueryLoading"
               @click="loadActiveUsage"
             >
@@ -256,14 +249,14 @@
       </div>
       <div v-else-if="loading && !usageInfo" class="space-y-1.5">
         <div class="flex items-center gap-1">
-          <div class="h-3 w-[32px] animate-pulse rounded-none bg-gray-200 dark:bg-gray-700"></div>
+          <div class="h-3 w-[32px] animate-pulse rounded bg-gray-200 dark:bg-gray-700"></div>
           <div class="h-1.5 w-8 animate-pulse rounded-full bg-gray-200 dark:bg-gray-700"></div>
-          <div class="h-3 w-[32px] animate-pulse rounded-none bg-gray-200 dark:bg-gray-700"></div>
+          <div class="h-3 w-[32px] animate-pulse rounded bg-gray-200 dark:bg-gray-700"></div>
         </div>
         <div class="flex items-center gap-1">
-          <div class="h-3 w-[32px] animate-pulse rounded-none bg-gray-200 dark:bg-gray-700"></div>
+          <div class="h-3 w-[32px] animate-pulse rounded bg-gray-200 dark:bg-gray-700"></div>
           <div class="h-1.5 w-8 animate-pulse rounded-full bg-gray-200 dark:bg-gray-700"></div>
-          <div class="h-3 w-[32px] animate-pulse rounded-none bg-gray-200 dark:bg-gray-700"></div>
+          <div class="h-3 w-[32px] animate-pulse rounded bg-gray-200 dark:bg-gray-700"></div>
         </div>
       </div>
       <div v-else>
@@ -308,7 +301,7 @@
             />
           </svg>
           <span
-            class="pointer-events-none absolute left-0 top-full z-50 mt-1 w-80 whitespace-normal break-words rounded-none bg-gray-900 px-3 py-2 text-xs leading-relaxed text-white opacity-0 transition-opacity group-hover:opacity-100 dark:bg-gray-700"
+            class="pointer-events-none absolute left-0 top-full z-50 mt-1 w-80 whitespace-normal break-words rounded bg-gray-900 px-3 py-2 text-xs leading-relaxed text-white opacity-0 shadow-lg transition-opacity group-hover:opacity-100 dark:bg-gray-700"
           >
             {{ t('admin.accounts.ineligibleWarning') }}
           </span>
@@ -348,14 +341,14 @@
 
       <!-- Needs reauth (401) -->
       <div v-else-if="needsReauth" class="space-y-1">
-        <span class="inline-block rounded-none px-1.5 py-0.5 text-[10px] font-medium bg-orange-100 text-orange-700 dark:bg-orange-900/40 dark:text-orange-300">
+        <span class="inline-block rounded px-1.5 py-0.5 text-[10px] font-medium bg-orange-100 text-orange-700 dark:bg-orange-900/40 dark:text-orange-300">
           {{ t('admin.accounts.needsReauth') }}
         </span>
       </div>
 
       <!-- Degraded error (non-403, non-401) -->
       <div v-else-if="usageInfo?.error" class="space-y-1">
-        <span class="inline-block rounded-none px-1.5 py-0.5 text-[10px] font-medium bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300">
+        <span class="inline-block rounded px-1.5 py-0.5 text-[10px] font-medium bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300">
           {{ usageErrorLabel }}
         </span>
       </div>
@@ -363,9 +356,9 @@
       <!-- Loading state -->
       <div v-else-if="loading && !usageInfo" class="space-y-1.5">
         <div class="flex items-center gap-1">
-          <div class="h-3 w-[32px] animate-pulse rounded-none bg-gray-200 dark:bg-gray-700"></div>
+          <div class="h-3 w-[32px] animate-pulse rounded bg-gray-200 dark:bg-gray-700"></div>
           <div class="h-1.5 w-8 animate-pulse rounded-full bg-gray-200 dark:bg-gray-700"></div>
-          <div class="h-3 w-[32px] animate-pulse rounded-none bg-gray-200 dark:bg-gray-700"></div>
+          <div class="h-3 w-[32px] animate-pulse rounded bg-gray-200 dark:bg-gray-700"></div>
         </div>
       </div>
 
@@ -430,21 +423,21 @@
     <template v-else-if="account.platform === 'grok' && account.type === 'oauth'">
       <div v-if="loading && !usageInfo" class="space-y-1.5">
         <div class="flex items-center gap-1">
-          <div class="h-3 w-[32px] animate-pulse rounded-none bg-gray-200 dark:bg-gray-700"></div>
+          <div class="h-3 w-[32px] animate-pulse rounded bg-gray-200 dark:bg-gray-700"></div>
           <div class="h-1.5 w-8 animate-pulse rounded-full bg-gray-200 dark:bg-gray-700"></div>
-          <div class="h-3 w-[32px] animate-pulse rounded-none bg-gray-200 dark:bg-gray-700"></div>
+          <div class="h-3 w-[32px] animate-pulse rounded bg-gray-200 dark:bg-gray-700"></div>
         </div>
       </div>
       <div v-else-if="error && !usageInfo" class="text-xs text-red-500">
         {{ error }}
       </div>
       <div v-else-if="needsReauth" class="space-y-1">
-        <span class="inline-block rounded-none px-1.5 py-0.5 text-[10px] font-medium bg-orange-100 text-orange-700 dark:bg-orange-900/40 dark:text-orange-300">
+        <span class="inline-block rounded px-1.5 py-0.5 text-[10px] font-medium bg-orange-100 text-orange-700 dark:bg-orange-900/40 dark:text-orange-300">
           {{ t('admin.accounts.needsReauth') }}
         </span>
       </div>
       <div v-else-if="isForbidden" class="space-y-1">
-        <span class="inline-block rounded-none px-1.5 py-0.5 text-[10px] font-medium bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300">
+        <span class="inline-block rounded px-1.5 py-0.5 text-[10px] font-medium bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300">
           {{ usageInfo?.grok_entitlement_status || t('admin.accounts.forbidden') }}
         </span>
       </div>
@@ -492,7 +485,7 @@
           >
             <span
               v-if="grokPrepaidMoneyLine.showPrepaid"
-              class="rounded-none bg-emerald-50 px-1 py-0.5 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300"
+              class="rounded bg-emerald-50 px-1 py-0.5 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300"
               :title="t('admin.accounts.usageWindow.grokPrepaid')"
             >
               {{ t('admin.accounts.usageWindow.grokPrepaid') }} ${{ grokPrepaidMoneyLine.prepaid }}
@@ -578,7 +571,7 @@
             />
           </svg>
           <span
-            class="pointer-events-none absolute left-0 top-full z-50 mt-1 w-80 whitespace-normal break-words rounded-none bg-gray-900 px-3 py-2 text-xs leading-relaxed text-white opacity-0 transition-opacity group-hover:opacity-100 dark:bg-gray-700"
+            class="pointer-events-none absolute left-0 top-full z-50 mt-1 w-80 whitespace-normal break-words rounded bg-gray-900 px-3 py-2 text-xs leading-relaxed text-white opacity-0 shadow-lg transition-opacity group-hover:opacity-100 dark:bg-gray-700"
           >
             <div class="font-semibold mb-1">{{ t('admin.accounts.gemini.quotaPolicy.title') }}</div>
             <div class="mb-2 text-gray-300">{{ t('admin.accounts.gemini.quotaPolicy.note') }}</div>
@@ -602,18 +595,18 @@
           class="mb-0.5 flex items-center"
         >
           <div class="flex flex-wrap items-center gap-1.5 text-[9px] text-gray-500 dark:text-gray-400">
-            <span class="rounded-none bg-gray-100 px-1.5 py-0.5 dark:bg-gray-800">
+            <span class="rounded bg-gray-100 px-1.5 py-0.5 dark:bg-gray-800">
               {{ formatKeyRequests }} req
             </span>
-            <span class="rounded-none bg-gray-100 px-1.5 py-0.5 dark:bg-gray-800">
+            <span class="rounded bg-gray-100 px-1.5 py-0.5 dark:bg-gray-800">
               {{ formatKeyTokens }}
             </span>
-            <span class="rounded-none bg-gray-100 px-1.5 py-0.5 dark:bg-gray-800" :title="t('usage.accountBilled')">
+            <span class="rounded bg-gray-100 px-1.5 py-0.5 dark:bg-gray-800" :title="t('usage.accountBilled')">
               A ${{ formatKeyCost }}
             </span>
             <span
               v-if="todayStats.user_cost != null"
-              class="rounded-none bg-gray-100 px-1.5 py-0.5 dark:bg-gray-800"
+              class="rounded bg-gray-100 px-1.5 py-0.5 dark:bg-gray-800"
               :title="t('usage.userBilled')"
             >
               U ${{ formatKeyUserCost }}
@@ -624,15 +617,15 @@
           v-else-if="showGeminiTodayStats && todayStatsLoading"
           class="mb-0.5 flex items-center gap-1"
         >
-          <div class="h-3 w-10 animate-pulse rounded-none bg-gray-200 dark:bg-gray-700"></div>
-          <div class="h-3 w-8 animate-pulse rounded-none bg-gray-200 dark:bg-gray-700"></div>
-          <div class="h-3 w-12 animate-pulse rounded-none bg-gray-200 dark:bg-gray-700"></div>
+          <div class="h-3 w-10 animate-pulse rounded bg-gray-200 dark:bg-gray-700"></div>
+          <div class="h-3 w-8 animate-pulse rounded bg-gray-200 dark:bg-gray-700"></div>
+          <div class="h-3 w-12 animate-pulse rounded bg-gray-200 dark:bg-gray-700"></div>
         </div>
         <div v-if="loading && !usageInfo" class="space-y-1">
           <div class="flex items-center gap-1">
-            <div class="h-3 w-[32px] animate-pulse rounded-none bg-gray-200 dark:bg-gray-700"></div>
+            <div class="h-3 w-[32px] animate-pulse rounded bg-gray-200 dark:bg-gray-700"></div>
             <div class="h-1.5 w-8 animate-pulse rounded-full bg-gray-200 dark:bg-gray-700"></div>
-            <div class="h-3 w-[32px] animate-pulse rounded-none bg-gray-200 dark:bg-gray-700"></div>
+            <div class="h-3 w-[32px] animate-pulse rounded bg-gray-200 dark:bg-gray-700"></div>
           </div>
         </div>
         <div v-else-if="error && !usageInfo" class="text-xs text-red-500">
@@ -708,18 +701,18 @@
         class="mb-0.5 flex items-center"
       >
         <div class="flex flex-wrap items-center gap-1.5 text-[9px] text-gray-500 dark:text-gray-400">
-          <span class="rounded-none bg-gray-100 px-1.5 py-0.5 dark:bg-gray-800">
+          <span class="rounded bg-gray-100 px-1.5 py-0.5 dark:bg-gray-800">
             {{ formatKeyRequests }} req
           </span>
-          <span class="rounded-none bg-gray-100 px-1.5 py-0.5 dark:bg-gray-800">
+          <span class="rounded bg-gray-100 px-1.5 py-0.5 dark:bg-gray-800">
             {{ formatKeyTokens }}
           </span>
-          <span class="rounded-none bg-gray-100 px-1.5 py-0.5 dark:bg-gray-800" :title="t('usage.accountBilled')">
+          <span class="rounded bg-gray-100 px-1.5 py-0.5 dark:bg-gray-800" :title="t('usage.accountBilled')">
             A ${{ formatKeyCost }}
           </span>
           <span
             v-if="todayStats.user_cost != null"
-            class="rounded-none bg-gray-100 px-1.5 py-0.5 dark:bg-gray-800"
+            class="rounded bg-gray-100 px-1.5 py-0.5 dark:bg-gray-800"
             :title="t('usage.userBilled')"
           >
             U ${{ formatKeyUserCost }}
@@ -731,9 +724,9 @@
         v-else-if="todayStatsLoading"
         class="mb-0.5 flex items-center gap-1"
       >
-        <div class="h-3 w-10 animate-pulse rounded-none bg-gray-200 dark:bg-gray-700"></div>
-        <div class="h-3 w-8 animate-pulse rounded-none bg-gray-200 dark:bg-gray-700"></div>
-        <div class="h-3 w-12 animate-pulse rounded-none bg-gray-200 dark:bg-gray-700"></div>
+        <div class="h-3 w-10 animate-pulse rounded bg-gray-200 dark:bg-gray-700"></div>
+        <div class="h-3 w-8 animate-pulse rounded bg-gray-200 dark:bg-gray-700"></div>
+        <div class="h-3 w-12 animate-pulse rounded bg-gray-200 dark:bg-gray-700"></div>
       </div>
 
       <!-- API Key accounts with quota limits: show progress bars -->
@@ -788,24 +781,28 @@
 
 <script lang="ts">
 // These caches must live at module scope so table/card/drawer instances share them.
-const _usageCache = new Map<number, {
+const _usageCache = new Map<string, {
   data: import('@/types').AccountUsageInfo
   ts: number
   failedAt?: number
 }>()
-const _usageRequests = new Map<number, {
+const _usageRequests = new Map<string, {
   force: boolean
   promise: Promise<import('@/types').AccountUsageInfo>
 }>()
 </script>
 
 <script setup lang="ts">
+import { CanceledError, isCancel } from 'axios'
+import { useAccountViewContext } from '@/composables/useAccountViewContext'
+import { accountAPIForView } from '@/api/admin/accounts'
 import { ref, computed, onMounted, onBeforeUnmount, onUnmounted, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { adminAPI } from '@/api/admin'
 import type { GrokQuotaProbeResult } from '@/api/admin/grok'
 import type { Account, AccountUsageInfo, GeminiCredentials, WindowStats } from '@/types'
 import { buildOpenAIUsageRefreshKey } from '@/utils/accountUsageRefresh'
+import { accountQuotaWindows } from '@/utils/accountQuotaWindows'
 import { enqueueUsageRequest } from '@/utils/usageLoadQueue'
 import { formatCompactNumber, formatRelativeTime } from '@/utils/format'
 import UsageProgressBar from './UsageProgressBar.vue'
@@ -816,6 +813,10 @@ import CNProviderQuotaCell from './CNProviderQuotaCell.vue'
 import CNProviderBalanceCell from './CNProviderBalanceCell.vue'
 import OllamaCloudUsageCell from './OllamaCloudUsageCell.vue'
 import { cnQuotaCellVisible as cnQuotaCellVisibleFn, cnBalanceCellVisible as cnBalanceCellVisibleFn } from './credentialsBuilder'
+const accountViewController = useAccountViewContext()
+const usageContextKey = () => accountViewController?.revision() || 'native-core'
+const usageCacheKey = (id: number) => `${usageContextKey()}:${id}`
+
 
 const USAGE_CACHE_TTL = 5 * 60 * 1000 // 5 minutes
 const USAGE_STALE_AFTER = 15 * 60 * 1000
@@ -827,9 +828,21 @@ const requestUsage = async (
   source?: 'passive' | 'active',
   force = false
 ): Promise<AccountUsageInfo> => {
-  const existing = _usageRequests.get(account.id)
+  const revision = usageContextKey()
+  const key = usageCacheKey(account.id)
+  const view = accountViewController?.capture()
+  const api = accountAPIForView(view, adminAPI.accounts)
+  const ensureCurrent = () => {
+    view?.assertCurrent()
+    if (revision !== usageContextKey()) throw new CanceledError('Account view query changed')
+  }
+  const existing = _usageRequests.get(key)
   if (existing) {
-    if (!force || existing.force) return existing.promise
+    if (!force || existing.force) {
+      const result = await existing.promise
+      ensureCurrent()
+      return result
+    }
     // A manual force refresh must not be swallowed by an older passive request.
     try {
       await existing.promise
@@ -838,17 +851,21 @@ const requestUsage = async (
     }
   }
 
-  const promise = enqueueUsageRequest(account, () => {
-    if (force) return adminAPI.accounts.getUsage(account.id, source, true)
-    if (source) return adminAPI.accounts.getUsage(account.id, source)
-    return adminAPI.accounts.getUsage(account.id)
+  const promise = enqueueUsageRequest(account, async () => {
+    ensureCurrent()
+    const result = force ? await api.getUsage(account.id, source, true)
+      : source ? await api.getUsage(account.id, source) : await api.getUsage(account.id)
+    ensureCurrent()
+    return result
   })
-  _usageRequests.set(account.id, { force, promise })
+  _usageRequests.set(key, { force, promise })
   try {
-    return await promise
+    const result = await promise
+    ensureCurrent()
+    return result
   } finally {
-    if (_usageRequests.get(account.id)?.promise === promise) {
-      _usageRequests.delete(account.id)
+    if (_usageRequests.get(key)?.promise === promise) {
+      _usageRequests.delete(key)
     }
   }
 }
@@ -984,9 +1001,10 @@ const geminiUsageAvailable = computed(() => {
   )
 })
 
+const openAIQuotaWindows = computed(() => accountQuotaWindows(usageInfo.value))
 const hasOpenAIUsageFallback = computed(() => {
   if (props.account.platform !== 'openai' || props.account.type !== 'oauth') return false
-  return !!usageInfo.value?.five_hour || !!usageInfo.value?.seven_day
+  return openAIQuotaWindows.value.length > 0
 })
 
 const codexTurnTickets = computed(() => props.account.codex_turn_tickets ?? [])
@@ -1004,24 +1022,12 @@ function formatCodexTicketRemaining(seconds: number) {
   return `${m}m${String(s).padStart(2, '0')}s`
 }
 
-const openAISevenDayEstimatedTotalCost = computed(() => {
-  const sevenDay = usageInfo.value?.seven_day
-  const utilization = sevenDay?.utilization
-  const currentCost = sevenDay?.window_stats?.cost
-  if (
-    typeof utilization !== 'number' ||
-    typeof currentCost !== 'number' ||
-    !Number.isFinite(utilization) ||
-    !Number.isFinite(currentCost) ||
-    utilization <= 0 ||
-    currentCost <= 0
-  ) {
-    return null
-  }
-
-  const estimate = (currentCost * 100) / utilization
-  return Number.isFinite(estimate) && estimate > 0 ? estimate : null
-})
+function quotaWindowLabel(minutes: number): string {
+  if (minutes <= 0) return t('admin.accounts.usageWindow.unknownPeriod')
+  if (minutes % 1440 === 0) return `${minutes / 1440}d`
+  if (minutes % 60 === 0) return `${minutes / 60}h`
+  return `${minutes}m`
+}
 
 const openAIUsageRefreshKey = computed(() => buildOpenAIUsageRefreshKey(props.account))
 
@@ -1631,12 +1637,12 @@ const isAnthropicOAuthOrSetupToken = computed(() => {
 
 const applyUsageResult = (result: AccountUsageInfo) => {
   const fetchedAt = Date.now()
-  const cached = _usageCache.get(props.account.id)
+  const cached = _usageCache.get(usageCacheKey(props.account.id))
 
   if (result.error) {
     error.value = t('admin.accounts.usageFetchFailed')
     if (cached) {
-      _usageCache.set(props.account.id, { ...cached, failedAt: fetchedAt })
+      _usageCache.set(usageCacheKey(props.account.id), { ...cached, failedAt: fetchedAt })
       usageLastSuccessAt.value = cached.ts
       // Details still expose the latest diagnostic state; list views retain the last good quota.
       usageInfo.value = props.variant === 'detail' ? result : cached.data
@@ -1649,13 +1655,13 @@ const applyUsageResult = (result: AccountUsageInfo) => {
   usageInfo.value = result
   usageLastSuccessAt.value = fetchedAt
   error.value = null
-  _usageCache.set(props.account.id, { data: result, ts: fetchedAt })
+  _usageCache.set(usageCacheKey(props.account.id), { data: result, ts: fetchedAt })
 }
 
 const markUsageRequestFailed = () => {
-  const cached = _usageCache.get(props.account.id)
+  const cached = _usageCache.get(usageCacheKey(props.account.id))
   if (cached) {
-    _usageCache.set(props.account.id, { ...cached, failedAt: Date.now() })
+    _usageCache.set(usageCacheKey(props.account.id), { ...cached, failedAt: Date.now() })
   }
   error.value = t('admin.accounts.usageFetchFailed')
 }
@@ -1677,14 +1683,16 @@ const loadUsage = async (options?: {
   bypassCache?: boolean
   force?: boolean
 }) => {
-  if (!shouldFetchUsage.value) return
+  if (!shouldFetchUsage.value || accountViewController?.available() === false) return
   if (isBatchManaged.value) {
     requestParentBatchUsage({ force: options?.force === true || options?.bypassCache === true })
     return
   }
 
+  const revision = usageContextKey()
+  const accountID = props.account.id
   // An expired value is still useful while a refresh is running or failing.
-  const cached = _usageCache.get(props.account.id)
+  const cached = _usageCache.get(usageCacheKey(props.account.id))
   if (cached) {
     usageInfo.value = cached.data
     usageLastSuccessAt.value = cached.ts
@@ -1700,16 +1708,16 @@ const loadUsage = async (options?: {
 
   try {
     const result = await requestUsage(props.account, options?.source, options?.force)
-    if (!unmounted.value) {
+    if (!unmounted.value && revision === usageContextKey() && props.account.id === accountID) {
       applyUsageResult(result)
     }
   } catch (e: any) {
-    if (!unmounted.value) {
+    if (!isCancel(e) && !unmounted.value && revision === usageContextKey() && props.account.id === accountID) {
       markUsageRequestFailed()
       console.error('Failed to load usage:', e)
     }
   } finally {
-    if (!unmounted.value) loading.value = false
+    if (!unmounted.value && revision === usageContextKey() && props.account.id === accountID) loading.value = false
   }
 }
 
@@ -1830,7 +1838,7 @@ const handleGrokProbed = (result: GrokQuotaProbeResult) => {
   const fetchedAt = Date.now()
   usageLastSuccessAt.value = fetchedAt
   error.value = null
-  _usageCache.set(props.account.id, { data: merged, ts: fetchedAt })
+  _usageCache.set(usageCacheKey(props.account.id), { data: merged, ts: fetchedAt })
 }
 
 // ===== API Key quota progress bars =====
@@ -2218,6 +2226,17 @@ watch(isBatchManaged, (managed, wasManaged) => {
     requestParentBatchUsage()
   }
 })
+
+watch(usageContextKey, () => {
+  loading.value = false
+  pendingAutoLoad.value = false
+  if (accountViewController?.available() === false) return
+  if (isBatchManaged.value) { syncManagedUsageState(); requestParentBatchUsage(); return }
+  usageInfo.value = null
+  usageLastSuccessAt.value = null
+  error.value = null
+  if (shouldAutoLoadUsageOnMount.value) requestAutoLoad(isAnthropicOAuthOrSetupToken.value ? 'passive' : undefined)
+}, { flush: 'post' })
 
 watch(
   () => [props.account.id, props.account.platform, props.account.type, isBatchManaged.value] as const,
