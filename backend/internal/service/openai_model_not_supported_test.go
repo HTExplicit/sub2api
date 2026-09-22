@@ -46,6 +46,7 @@ func TestOpenAIModelNotSupportedClassifierIsStrict(t *testing.T) {
 func TestLegacyCindyModelCooldownUsesCanonicalKeyForReads(t *testing.T) {
 	reset := time.Now().Add(time.Minute)
 	account := &Account{
+		ID:          701,
 		Platform:    PlatformOpenAI,
 		Type:        AccountTypeAPIKey,
 		Status:      StatusActive,
@@ -86,6 +87,7 @@ func TestLegacyCindyCompactCooldownUsesForwardedCompactTarget(t *testing.T) {
 
 func TestLegacyCindyCompactMappingChecksCanonicalKey(t *testing.T) {
 	account := &Account{
+		ID:          703,
 		Platform:    PlatformOpenAI,
 		Type:        AccountTypeAPIKey,
 		Status:      StatusActive,

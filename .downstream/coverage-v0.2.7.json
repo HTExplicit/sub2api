@@ -1,9 +1,9 @@
 {
   "schema_version": 3,
   "upstream_base": "aea725f2ea644d5592d0bbb1d63b607efa7e200a",
-  "basis_commit": "638758ea9f49f3e2d834cf29e9fe2b42f3c7ebdb",
+  "basis_commit": "5d7426442f8b7178b2bd986b9e1409a61371403a",
   "scope": "Current Sub2API downstream source and working tree. Candidate ownership does not establish completed review. Root maintenance, independent services and Worker require a separate audit.",
-  "source_digest": "d55be427622577b3f2bb4ac54b4be77b4bfb8faf8d687b03c6b2691055e1b00d",
+  "source_digest": "cc908afd26080a976744895ac868e4124388f590c2f456c941344de9e998682a",
   "digest_excludes": [
     "the inventory itself uses a derived structural fingerprint; deletions bind the upstream blob"
   ],
@@ -229,6 +229,7 @@
     "backend/internal/service/openai_images.go",
     "backend/internal/service/openai_load_sticky_privacy_test.go",
     "backend/internal/service/openai_model_mapping_test.go",
+    "backend/internal/service/openai_model_not_supported_test.go",
     "backend/internal/service/openai_oauth_429_classifier.go",
     "backend/internal/service/openai_reasoning_recovery.go",
     "backend/internal/service/openai_ws_v2_passthrough_lifecycle_test.go",
@@ -552,7 +553,7 @@
       "role": "documentation",
       "present": true,
       "content_sha256": null,
-      "review_fingerprint": "93821f4855a2c3f74cb94214797f08feb57245b0b70bd2994986ea95ab7e927b",
+      "review_fingerprint": "be27605b4e14711a40539bdb7279cae329e02001fdba40e36f09ce2ffe2bdde6",
       "review_status": "reviewed",
       "decision": "generated-source",
       "owner": "operations",
@@ -10111,8 +10112,8 @@
       "candidate_owner": "account-tools",
       "role": "source",
       "present": true,
-      "content_sha256": "d77b8fc42648a837b56d73ab21b6ac378c1e50e1b16a21e61ea7fad7a42f980f",
-      "review_fingerprint": "d77b8fc42648a837b56d73ab21b6ac378c1e50e1b16a21e61ea7fad7a42f980f",
+      "content_sha256": "915d4d7fb9a898d8799ea6320be2e9067256eaca462c3ef0c9ed9343ec227974",
+      "review_fingerprint": "915d4d7fb9a898d8799ea6320be2e9067256eaca462c3ef0c9ed9343ec227974",
       "review_status": "pending"
     },
     {
@@ -10147,8 +10148,8 @@
       "candidate_owner": "account-tools",
       "role": "test-or-fixture",
       "present": true,
-      "content_sha256": "9546adc119b3a9097187c45f90a2f0a57f57dfa4efef9c192e755152e8aa407b",
-      "review_fingerprint": "9546adc119b3a9097187c45f90a2f0a57f57dfa4efef9c192e755152e8aa407b",
+      "content_sha256": "11e1244e657f55da00b03d53c49bb8f2889ece5810a12f0d1990684a6c004b00",
+      "review_fingerprint": "11e1244e657f55da00b03d53c49bb8f2889ece5810a12f0d1990684a6c004b00",
       "review_status": "pending"
     },
     {
@@ -15186,18 +15187,9 @@
       "candidate_owner": "mixed-requires-review",
       "role": "test-or-fixture",
       "present": true,
-      "content_sha256": "108697cbcef30d10d0c96e9b8455815786f5a1dc1ad945571699f6d2227943bd",
-      "review_fingerprint": "108697cbcef30d10d0c96e9b8455815786f5a1dc1ad945571699f6d2227943bd",
-      "review_status": "reviewed",
-      "decision": "core-correctness",
-      "owner": "core-quota-and-protocol",
-      "reason": "下游新增 unit 标签测试：证明 model_not_supported 分类器的严格性（12 个正反例，含 unsupported parameter/feature 拒绝）、冷却读写用 canonical key（openai/gpt-5.6-luna）与 compact 转发目标、WS prewarm 保留该错误语义并落模型冷却、failover 抑制账号健康惩罚、HTTP/流两路仅对 legacy Laxa 账号放行 failover（普通 OpenAI 账号不受影响）、RateLimitService 写入 30 分钟模型冷却且无视自定义错误码过滤。主题全部为核心 failover/调度机制。静态阅读，未执行测试。",
-      "evidence": [
-        "Full-file static review: artifacts/evidence/v027-claude-S19-svc-openai-misc-2-review.json",
-        "New downstream file, //go:build unit. Anchors: TestOpenAIModelNotSupportedClassifierIsStrict L18-45; canonical-key cooldown reads L47-61; compact target cooldown write via HandleUpstreamModelNotFound L115-136; WS prewarm preservation TestOpenAIWSPrewarmResponseFailedPreservesModelNotSupported L148-189; cindy-only gating L197-224; RateLimitService cooldown L226-249, custom error-code bypass L266-280.",
-        "Asserted subjects: isOpenAIModelNotSupportedError/Payload, IsSchedulableForModelWithContext, HandleUpstreamModelNotFound, shouldFailoverOpenAIUpstreamResponseForAccount, openAIStream*ShouldFailoverForAccount, performOpenAIWSGeneratePrewarm.",
-        "Test read statically only; not executed."
-      ]
+      "content_sha256": "868e3fbda5fba9661564aa2ab75b2dabcafc45658975eb296fe8aa10da9a1be7",
+      "review_fingerprint": "868e3fbda5fba9661564aa2ab75b2dabcafc45658975eb296fe8aa10da9a1be7",
+      "review_status": "pending"
     },
     {
       "path": "backend/internal/service/openai_model_reasoning_alias_test.go",

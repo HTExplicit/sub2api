@@ -958,7 +958,7 @@ func (s *AccountTestService) testOpenAIAccountConnection(c *gin.Context, account
 	}
 	defer func() { _ = resp.Body.Close() }()
 
-	if isOAuth && s.accountRepo != nil {
+	if isOAuth && !account.IsShadow() && s.accountRepo != nil {
 		if updates, err := extractOpenAICodexProbeUpdates(resp); err == nil && len(updates) > 0 {
 			_ = s.accountRepo.UpdateExtra(ctx, account.ID, updates)
 			mergeAccountExtra(account, updates)
@@ -2338,8 +2338,10 @@ func (s *AccountTestService) testOpenAICompactConnection(c *gin.Context, account
 	compactionFound := openAICompactProbeFoundCompactionItem(body)
 	if s.accountRepo != nil {
 		updates := buildOpenAICompactProbeExtraUpdates(resp, body, nil, compactionFound, time.Now())
-		if codexUpdates, err := extractOpenAICodexProbeUpdates(resp); err == nil && len(codexUpdates) > 0 {
-			updates = mergeExtraUpdates(updates, codexUpdates)
+		if !account.IsShadow() {
+			if codexUpdates, err := extractOpenAICodexProbeUpdates(resp); err == nil && len(codexUpdates) > 0 {
+				updates = mergeExtraUpdates(updates, codexUpdates)
+			}
 		}
 		if len(updates) > 0 {
 			_ = s.accountRepo.UpdateExtra(ctx, account.ID, updates)
@@ -2372,6 +2374,10 @@ func (s *AccountTestService) reconcileOpenAI429State(ctx context.Context, accoun
 	if s == nil || s.accountRepo == nil || account == nil {
 		return
 	}
+	// Spark quota is observed through its own /wham scope, not global probe 429s.
+	if account.IsShadow() {
+		return
+	}
 
 	persistOpenAI429PlanType(ctx, s.accountRepo, account, body)
 
@@ -2397,6 +2403,18 @@ func (s *AccountTestService) reconcileOpenAI429State(ctx context.Context, accoun
 		"path", "account_test",
 	)
 
+	if isOpenAIOAuthAccount(account) && classification.Disposition != openAIOAuth429Transient {
+		if err := persistOpenAIQuotaClassification(ctx, s.accountRepo, account, classification, now); err != nil {
+			slog.Warn("quota_state_write_failed", "account_id", account.ID, "path", "account_test")
+		}
+		// The quota observation owns this restriction, including unknown reset times.
+		// Preserve existing errors, scheduling choices and unrelated rate limits.
+		return
+	}
+	if resetAt == nil {
+		slog.Warn("account_test_rate_limit_reset_unknown", "account_id", account.ID)
+		return
+	}
 	if err := s.accountRepo.SetRateLimited(ctx, account.ID, *resetAt); err != nil {
 		return
 	}
