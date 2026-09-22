@@ -1,9 +1,9 @@
 {
   "schema_version": 3,
   "upstream_base": "aea725f2ea644d5592d0bbb1d63b607efa7e200a",
-  "basis_commit": "7865a33ae212c9b3ed00a31a8b68ede450346841",
+  "basis_commit": "beb74d35bf938d9e6299fd08809cd7341c8fc4d7",
   "scope": "Current Sub2API downstream source and working tree. Candidate ownership does not establish completed review. Root maintenance, independent services and Worker require a separate audit.",
-  "source_digest": "35a906810602652190312e985499b6328a365ceb8b1e132031d12cff9960d2b6",
+  "source_digest": "97557326168c20f43dda0ecfac9c87ec5b250b50834c36c957049664b0435eab",
   "digest_excludes": [
     "the inventory itself uses a derived structural fingerprint; deletions bind the upstream blob"
   ],
@@ -115,6 +115,7 @@
     "backend/internal/repository/plugin_host_io_admission_integration_test.go",
     "backend/internal/repository/plugin_registry_tx.go",
     "backend/internal/repository/plugin_update.go",
+    "backend/internal/repository/plugin_update_integration_test.go",
     "backend/internal/repository/remote_skill_job_expiry_test.go",
     "backend/internal/repository/remote_skill_registry_repository.go",
     "backend/internal/repository/remote_skill_registry_repository_test.go",
@@ -556,7 +557,7 @@
       "role": "documentation",
       "present": true,
       "content_sha256": null,
-      "review_fingerprint": "513e7e2da059f870b657243aa7caf1a57ee625bc254b80590a375fc438198f6a",
+      "review_fingerprint": "170d2291e9231ef547571507cccbaafc2e5dc5a52e67441071b68f89f43c8982",
       "review_status": "reviewed",
       "decision": "generated-source",
       "owner": "operations",
@@ -8885,16 +8886,9 @@
       "candidate_owner": "core-extension-and-job-host",
       "role": "test-or-fixture",
       "present": true,
-      "content_sha256": "a6df7b75fe886de0d0cb2b766900427e4bb6f3de5527c8a907ac9a38bd2e3dcb",
-      "review_fingerprint": "a6df7b75fe886de0d0cb2b766900427e4bb6f3de5527c8a907ac9a38bd2e3dcb",
-      "review_status": "reviewed",
-      "decision": "core-mechanism",
-      "owner": "core-extension-and-job-host",
-      "reason": "Fully inspected fixtures and assertions: two dedicated process leases must drain before promotion; UI-only package updates advance generation; saved config/rollout and newly disabled capabilities are retained; stale config/disable revisions are rejected; persisted pending bytes support a new repository instance; old-generation state and lease writes fail. No tests from this file were rerun in this task.",
-      "evidence": [
-        "artifacts/evidence/v027-astra-update-persistence-review.json: per-file full-read conclusions, traced SQL/call flow, targeted command RUN/PASS and explicit non-execution limits",
-        "Source inspection is not represented as an executed test."
-      ]
+      "content_sha256": "3df59c02e7fe29e5dece0b7d5f22a64580ea3ae31305a7c8637647ef1a304444",
+      "review_fingerprint": "3df59c02e7fe29e5dece0b7d5f22a64580ea3ae31305a7c8637647ef1a304444",
+      "review_status": "pending"
     },
     {
       "path": "backend/internal/repository/postgres_batch_insert.go",

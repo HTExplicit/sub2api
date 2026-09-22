@@ -60,11 +60,27 @@ func TestPluginIndependentUpdateWaitsForAllOldProcessesAndPreservesIntent(t *tes
 	releaseOne()
 	require.ErrorIs(t, repo.CommitPluginUpdate(ctx, pending, candidate), service.ErrPluginUpdateWaiting)
 	releaseTwo()
-	require.NoError(t, repo.CommitPluginUpdate(ctx, pending, candidate))
+	// Client close can precede PostgreSQL releasing both session locks. Keep
+	// the original deadline and retry only the server-side draining barrier.
+	poll := time.NewTicker(10 * time.Millisecond)
+	defer poll.Stop()
+	for {
+		err = repo.CommitPluginUpdate(ctx, pending, candidate)
+		if err == nil {
+			break
+		}
+		require.ErrorIs(t, err, service.ErrPluginUpdateWaiting, "only the server-side release barrier may delay promotion")
+		select {
+		case <-ctx.Done():
+			t.Fatal("PostgreSQL did not release the promotion barrier within the original deadline")
+		case <-poll.C:
+		}
+	}
 	updated, err := repo.GetByID(ctx, current.ID)
 	require.NoError(t, err)
 	require.Equal(t, "saved-config", updated.ConfigEncrypted)
 	require.Equal(t, current.RuntimeGeneration+1, updated.RuntimeGeneration)
+	require.Equal(t, candidate.Version, updated.Version)
 	require.Equal(t, candidate.PackageSHA256, updated.PackageSHA256)
 	require.Equal(t, service.PluginUpdatePinned, updated.UpdatePolicy)
 	for _, binding := range updated.Bindings {
