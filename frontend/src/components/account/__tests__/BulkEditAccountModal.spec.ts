@@ -30,7 +30,8 @@ vi.mock('@/api/admin', () => ({
 }))
 
 vi.mock('@/api/admin/accounts', () => ({
-  getAntigravityDefaultModelMapping: vi.fn()
+  getAntigravityDefaultModelMapping: vi.fn(),
+  accountAPIForView: vi.fn((_view: unknown, core: unknown) => core)
 }))
 
 vi.mock('vue-i18n', async () => {
