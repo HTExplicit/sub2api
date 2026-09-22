@@ -1444,6 +1444,7 @@ func TestNormalizeOpenAIResponsesImageOnlyModel_UsesOfficialControllerAndExactCi
 	require.True(t, normalizeOpenAIResponsesImageOnlyModel(cindyBody))
 	require.Equal(t, "gpt-5.6-luna", cindyBody["model"])
 	cindy := &Account{
+		ID:              11,
 		Platform:        PlatformCindy,
 		WirePlatform:    WirePlatformOpenAI,
 		ProviderProfile: ProviderProfileCindyLaxaV1,
@@ -1460,6 +1461,7 @@ func TestNormalizeOpenAIResponsesImageOnlyModel_UsesOfficialControllerAndExactCi
 
 func TestMapCindyOpenAIResponsesImageModels_MapsControllerAndNestedTool(t *testing.T) {
 	cindy := &Account{
+		ID:              12,
 		Platform:        PlatformCindy,
 		WirePlatform:    WirePlatformOpenAI,
 		ProviderProfile: ProviderProfileCindyLaxaV1,

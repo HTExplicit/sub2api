@@ -273,15 +273,17 @@ func testPassthroughLifecycleLaterTurnRateLimit(t *testing.T, accountType string
 	require.Equal(t, "upstream rate limit exceeded; please reconnect", websocketCloseErr.Reason)
 	// Downstream quota handling deliberately does not persist legacy account
 	// status. The OAuth case proves this same later-turn signal reaches the
-	// existing hard-quota classifier and records the runtime reset deadline.
+	// existing hard-quota classifier and records the shared quota reset deadline.
 	require.Empty(t, repo.rateLimitCalls, "a WS quota event must not restore legacy persistent account penalties")
 	if accountType == AccountTypeOAuth {
 		require.True(t, svc.isOpenAIAccountRuntimeBlocked(account))
-		value, ok := svc.openaiAccountRuntimeBlockUntil.Load(account.ID)
-		require.True(t, ok)
-		until, ok := value.(time.Time)
-		require.True(t, ok)
-		require.WithinDuration(t, time.Unix(resetAt, 0), until, 2*time.Second)
+		quota := account.QuotaState(time.Now())
+		require.NotNil(t, quota)
+		require.True(t, quota.Blocked)
+		require.NotNil(t, quota.Until)
+		require.WithinDuration(t, time.Unix(resetAt, 0), *quota.Until, 2*time.Second)
+		_, legacyBlock := svc.openaiAccountRuntimeBlockUntil.Load(account.ID)
+		require.False(t, legacyBlock, "hard quota must not duplicate the shared quota state in the legacy runtime map")
 	} else {
 		require.False(t, svc.isOpenAIAccountRuntimeBlocked(account), "ordinary API-key cooldown remains owned by request failover")
 	}

@@ -47,7 +47,9 @@ func TestImageBridgeUsesOnlyBoundedFactsAndAuthorizedAccount(t *testing.T) {
 	fixture := &capturedImageBridgeFixture{}
 	processExtensionOperations.Store(&extensionOperationProvider{invoker: fixture})
 	body := []byte(`{"model":"gpt-5.6-luna","input":"private-prompt","reasoning":{"encrypted_content":"private-cipher"},"tools":[{"type":"image_generation","model":"gpt-image-2","mask":"private-image","quality":{"text":"private-object"}}]}`)
-	_, err := ResolveCindyResponsesImageToolsForAccount(context.Background(), &Account{ID: 37}, body)
+	account := cindyHTTPToWSV2TestAccount()
+	account.ID = 37
+	_, err := ResolveCindyResponsesImageToolsForAccount(context.Background(), account, body)
 	require.ErrorIs(t, err, ErrCindyResponsesImageToolModelNotFound)
 	require.Len(t, fixture.queries, 1)
 	require.EqualValues(t, 37, fixture.queries[0].AccountID)

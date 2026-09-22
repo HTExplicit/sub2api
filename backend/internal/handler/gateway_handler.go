@@ -1267,6 +1267,16 @@ func (h *GatewayHandler) ModelCapabilities(c *gin.Context) {
 		h.errorResponse(c, http.StatusNotFound, "not_found_error", "Model capabilities are not available for this group")
 		return
 	}
+	snapshot, err := service.LoadCindyCatalogSnapshot(c.Request.Context(), nil)
+	if err != nil {
+		h.errorResponse(c, http.StatusServiceUnavailable, "api_error", "Cindy catalog snapshot is unavailable")
+		return
+	}
+	if !snapshot.Config.CatalogEnabled {
+		markLocalGate()
+		h.errorResponse(c, http.StatusNotFound, "not_found_error", "Model capability catalog is not enabled")
+		return
+	}
 	hasSchedulableCindy, err := h.gatewayService.HasSchedulableCindyIdentityAccount(c.Request.Context(), apiKey.Group)
 	if err != nil {
 		h.errorResponse(c, http.StatusServiceUnavailable, "api_error", "Unable to determine model availability")
@@ -1278,16 +1288,6 @@ func (h *GatewayHandler) ModelCapabilities(c *gin.Context) {
 		return
 	}
 
-	snapshot, err := service.LoadCindyCatalogSnapshot(c.Request.Context(), nil)
-	if err != nil {
-		h.errorResponse(c, http.StatusServiceUnavailable, "api_error", "Cindy catalog snapshot is unavailable")
-		return
-	}
-	if !snapshot.Config.CatalogEnabled {
-		markLocalGate()
-		h.errorResponse(c, http.StatusNotFound, "not_found_error", "Model capability catalog is not enabled")
-		return
-	}
 	c.JSON(http.StatusOK, gin.H{
 		"object":           "list",
 		"catalog_version":  snapshot.Metadata.CatalogVersion,
