@@ -1,4 +1,8 @@
 export default {
+  supportMatrix: '协议支持矩阵', supportMatrixHint: '以下是本站最终发包的字段与角色。上游模型是否接受仍受账号目录与实际协议限制；先选账号和模型做预览。不支持的严格角色会明确报错。',
+  finalProtocol: '最终上游协议 / 账号', matrixCodex: 'Codex OAuth / Setup Token · Responses（含 Lite）', matrixResponses: 'API Key / Cindy · Responses', matrixChat: 'API Key / Cindy · Chat Completions', matrixRejected: '不支持，明确报错',
+  matrixPositions: 'native_control 仅支持控制区前置 / 后置；严格 system / developer 支持控制区前后及本次消息数组头尾。OAuth 的严格 system 全部拒绝，不能静默变成其他角色。',
+  matrixConversions: 'Messages 和 Chat 入站经转换后，按最终上游协议应用规则。HTTP→WS、WS 连接池和透传均使用最终 Responses 结构；WS 需要账号启用且最终协议为 Responses。数组头尾只作用于本次发送，不修改上游隐藏历史。',
   title: '应用规则与预览', templatesTab: '提示词模板', rulesTab: '应用规则',
   description: '提示词正文保存在模板版本中，规则决定位置、角色和模型范围。账号可以继承默认、关闭或选择规则。',
   load: '加载规则', reload: '重新加载', save: '保存规则', saved: '规则已保存', add: '添加规则', remove: '移除',

@@ -1,4 +1,8 @@
 export default {
+  supportMatrix: 'Protocol support matrix', supportMatrixHint: 'These are the final fields and roles emitted by this gateway. Model acceptance still depends on the account catalog and upstream protocol; preview with the selected account and model. Unsupported strict roles return an explicit error.',
+  finalProtocol: 'Final upstream protocol / account', matrixCodex: 'Codex OAuth / Setup Token · Responses (including Lite)', matrixResponses: 'API Key / Cindy · Responses', matrixChat: 'API Key / Cindy · Chat Completions', matrixRejected: 'Rejected explicitly',
+  matrixPositions: 'native_control supports control prepend/append only. Strict system/developer supports all four positions, subject to the table above. OAuth always rejects strict system; it is never silently changed to another role.',
+  matrixConversions: 'Messages and Chat ingress apply rules after conversion to the final upstream protocol. HTTP-to-WS, pooled WS and WS passthrough use the final Responses structure. WS requires account support and a final Responses protocol. Head/tail affects only this outbound sequence, not upstream hidden history.',
   title: 'Application rules and preview', templatesTab: 'Prompt templates', rulesTab: 'Application rules',
   description: 'Template versions store content. Rules select placement, delivery and model scope. Accounts inherit defaults, turn rules off, or select a custom set.',
   load: 'Load rules', reload: 'Reload', save: 'Save rules', saved: 'Rules saved', add: 'Add rule', remove: 'Remove',

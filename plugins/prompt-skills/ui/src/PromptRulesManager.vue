@@ -11,6 +11,22 @@
     <p v-if="invalid" role="status" class="text-sm text-amber-700">{{ text('invalid') }}</p>
     <p class="text-xs text-muted">{{ text('nativeHint') }}</p>
     <p class="text-xs text-muted">{{ text('defaultHint') }}</p>
+    <details class="rounded border border-line p-3" data-test="prompt-support-matrix">
+      <summary class="cursor-pointer text-sm font-medium">{{ text('supportMatrix') }}</summary>
+      <p class="mt-2 text-xs text-muted">{{ text('supportMatrixHint') }}</p>
+      <div class="mt-3 overflow-x-auto">
+        <table class="w-full text-left text-xs">
+          <thead><tr class="border-b border-line"><th class="p-2">{{ text('finalProtocol') }}</th><th class="p-2">{{ text('transport') }}</th><th class="p-2">native_control</th><th class="p-2">system</th><th class="p-2">developer</th></tr></thead>
+          <tbody>
+            <tr class="border-b border-line"><th class="p-2">{{ text('matrixCodex') }}</th><td class="p-2">HTTP / WS</td><td class="p-2 font-mono">instructions</td><td class="p-2">{{ text('matrixRejected') }}</td><td class="p-2 font-mono">input[].role=developer</td></tr>
+            <tr class="border-b border-line"><th class="p-2">{{ text('matrixResponses') }}</th><td class="p-2">HTTP / WS</td><td class="p-2 font-mono">instructions</td><td class="p-2 font-mono">input[].role=system</td><td class="p-2 font-mono">input[].role=developer</td></tr>
+            <tr><th class="p-2">{{ text('matrixChat') }}</th><td class="p-2">HTTP</td><td class="p-2 font-mono">messages[].role=system</td><td class="p-2 font-mono">messages[].role=system</td><td class="p-2 font-mono">messages[].role=developer</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p class="mt-3 text-xs text-muted">{{ text('matrixPositions') }}</p>
+      <p class="mt-2 text-xs text-muted">{{ text('matrixConversions') }}</p>
+    </details>
     <p v-if="hasLegacyRule" class="text-xs text-muted">{{ text('migration') }}</p>
     <article v-for="(rule, index) in draft.rules" :key="rule.id" class="space-y-3 border border-line p-4" :data-test="`prompt-rule-${rule.id}`">
       <div class="flex flex-wrap items-center gap-3">
