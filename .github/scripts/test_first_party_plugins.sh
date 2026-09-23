@@ -22,7 +22,7 @@ go build -trimpath -o "$plugin_build_dir/package-plugin" ./cmd/package-plugin
   -bundle-source ../plugins/bundle.source.json \
   -binary-dir "$plugin_build_dir/binaries" \
   -platform linux-amd64 \
-  -tested-host-version 0.2.7-codexrip.2 \
+  -tested-host-version 0.2.8-codexrip.1 \
   -output "$plugin_build_dir/bundle" \
   -signing-key-file "$plugin_build_dir/publisher.key" \
   -key-id codexrip-plugins-test
