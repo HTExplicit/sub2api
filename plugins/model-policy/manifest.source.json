@@ -2,7 +2,7 @@
   "schema_version": 1,
   "id": "codexrip.model-policy",
   "name": "模型目录与容量策略",
-  "version": "0.2.10",
+  "version": "0.2.11",
   "description": "精确模型别名、供应商范围与经过核对的容量参考",
   "author": "HTExplicit",
   "requires": {
