@@ -485,6 +485,7 @@ func NewOpenAIGatewayHandler(
 // Responses handles OpenAI Responses API endpoint
 // POST /openai/v1/responses
 func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
+	service.StageCodexQualityHeaders(c)
 	// 局部兜底：确保该 handler 内部任何 panic 都不会击穿到进程级。
 	streamStarted := false
 	defer h.recoverResponsesPanic(c, &streamStarted)
@@ -544,6 +545,10 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 
 	if len(body) == 0 {
 		h.errorResponse(c, http.StatusBadRequest, "invalid_request_error", "Request body is empty")
+		return
+	}
+	if err := h.gatewayService.AdmitCodexQualityRequest(c, apiKey, body, h.apiKeyService.GetByID); err != nil {
+		h.errorResponse(c, http.StatusConflict, "codex_quality_unavailable", "Codex quality run unavailable")
 		return
 	}
 
@@ -923,7 +928,10 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 			scheduleDecision service.OpenAIAccountScheduleDecision
 			err              error
 		)
-		if retryingSameAccount {
+		if service.IsCodexQualityRequest(c.Request.Context()) {
+			selection, err = h.gatewayService.SelectCodexQualityAccount(c.Request.Context())
+			scheduleDecision.Layer = "codex_quality"
+		} else if retryingSameAccount {
 			selection, err = h.gatewayService.ReacquireOpenAISameAccountSelection(c.Request.Context(), sameAccountRetrySelection)
 			sameAccountRetrySelection = nil
 			scheduleDecision.Layer = "same_account_retry"
@@ -1037,6 +1045,10 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 			accountReleaseFunc, slotResult = h.acquireResponsesAccountSlot(c, apiKey.GroupID, sessionHash, selection, reqStream, &streamStarted, reqLog)
 		}
 		if slotResult == openAISlotAcquireProfitVetoed {
+			if service.IsCodexQualityRequest(c.Request.Context()) {
+				h.handleStreamingAwareError(c, http.StatusConflict, "codex_quality_unavailable", "Codex quality run unavailable", streamStarted)
+				return
+			}
 			// 利润终检否决：排除该账号重新选号，全池耗尽由下一轮选号报错；
 			// 否决次数达上限则直接终止，避免排队抢槽后才终检的延迟放大。
 			if !recordOpenAIProfitVeto(failedAccountIDs, account.ID, &profitVetoCount) {
@@ -1121,6 +1133,7 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 			stampOpenAIRequestedReasoningEffort(res, c)
 			usageSnapshot := snapshotOpenAIUsageMetadata(c, apiKey, account, subscription, channelMapping, reqModel, res, body)
 			usageInput := usageSnapshot.Input(res, h.apiKeyService, pricingAt)
+			usageInput.CodexQuality = service.IsCodexQualityRequest(c.Request.Context())
 			usageAPIKeyID := usageInput.APIKey.ID
 			usageGroupID := usageInput.APIKey.GroupID
 			usageAccountID := usageInput.Account.ID
@@ -1136,6 +1149,14 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 					).Error("openai.record_usage_failed", zap.Error(err))
 				}
 			})
+		}
+		if err != nil && service.IsCodexQualityRequest(c.Request.Context()) {
+			h.gatewayService.ReleaseOpenAIRuntimeBreakerProbeForSelection(selection)
+			if shouldSubmitOpenAIUsage(err, result) {
+				submitResponsesUsage(result)
+			}
+			h.handleStreamingAwareError(c, http.StatusBadGateway, "codex_quality_failed", "Diagnostic attempt did not complete", streamStarted || c.Writer.Written())
+			return
 		}
 		if err != nil {
 			if result != nil && result.ClientDisconnect {
@@ -2680,7 +2701,7 @@ func (h *OpenAIGatewayHandler) acquireResponsesAccountSlotWithFailureResponse(
 		selection.Account = latest
 		// 调度器已抢槽路径无门时由选号内部完成 eager 绑定；门下选号内部
 		// 推迟绑定，这里在终检通过后补准入后绑定。
-		if selection.ProfitGateActive() {
+		if selection.ProfitGateActive() && !service.IsCodexQualityRequest(ctx) {
 			if err := h.gatewayService.BindStickySessionAfterProfitAdmission(ctx, groupID, sessionHash, account.ID); err != nil {
 				reqLog.Warn("openai.bind_sticky_session_after_profit_admission_failed", zap.Int64("account_id", account.ID), zap.Error(err))
 			}

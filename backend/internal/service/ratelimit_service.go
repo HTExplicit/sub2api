@@ -2826,6 +2826,9 @@ func truncateTempUnschedMessage(body []byte, maxBytes int) string {
 // 根据系统设置决定是否标记账户为临时不可调度或错误状态
 // 返回是否应该停止该账号的调度
 func (s *RateLimitService) HandleStreamTimeout(ctx context.Context, account *Account, model string) bool {
+	if IsCodexQualityRequest(ctx) {
+		return false
+	}
 	if account == nil {
 		return false
 	}

@@ -45,7 +45,14 @@ func (s *OpenAIGatewayService) prepareQualifiedCodexRequest(request *http.Reques
 	if request.URL == nil || request.URL.Scheme != "https" || request.URL.Hostname() != "chatgpt.com" || (request.URL.Path != "/backend-api/codex/responses" && request.URL.Path != "/backend-api/codex/responses/compact") {
 		return request, nil, nil, errCodexRoutingUnavailable
 	}
-	q, installation, err := s.pluginManager.codexRoutingQualification(request.Context(), account, model)
+	var q *extensionv1.CodexRoutingQualification
+	var installation *PluginInstallation
+	var err error
+	if IsCodexQualityRequest(request.Context()) {
+		q, installation, err = codexQualityRequestQualification(request.Context(), account, model)
+	} else {
+		q, installation, err = s.pluginManager.codexRoutingQualification(request.Context(), account, model)
+	}
 	if err != nil {
 		return request, nil, installation, err
 	}
@@ -85,7 +92,17 @@ func (s *OpenAIGatewayService) doQualifiedCodexUpstream(request *http.Request, a
 		return nil, true, errCodexRoutingUnavailable
 	}
 	start := time.Now()
+	if err := reserveCodexQualitySend(wire, account, q); err != nil {
+		return nil, true, err
+	}
 	response, _, err := transport.DoWithCodexConnectionLease(wire, proxyURL, account.ID, codexRoutingScopeKey(q.Scope), q.Scope.ConnectionLeaseID, q.ExpiresAt, nil)
+	if IsCodexQualityRequest(request.Context()) {
+		if response != nil {
+			observeCodexInfrastructureCookies(q.Scope, response.Header, q.ExpiresAt)
+		}
+		observeCodexQualityResponse(request.Context(), response, err, q)
+		return response, true, err
+	}
 	if err != nil {
 		s.publishCodexRoutingObservation(request.Context(), account, installation, q, extensionv1.CodexRoutingObservation{Code: "routing_connection_expired", Stage: "business", RequestedModel: model, ObservedAt: time.Now().UTC(), Transport: "http", CookieSent: false}, nil)
 		return nil, true, err
@@ -257,7 +274,7 @@ func (s *OpenAIGatewayService) recordCodexRoutingDeletions(ctx context.Context, 
 	ctx = WithPluginExecution(context.WithoutCancel(ctx), installation)
 	ctx, cancel := context.WithTimeout(ctx, time.Second)
 	defer cancel()
-	key := "clock." + codexRoutingScopeKey(q.Scope)
+	key := codexQualityClockKey(ctx, "clock."+codexRoutingScopeKey(q.Scope))
 	for range 3 {
 		record, err := store.ReadExtensionState(ctx, installation.PluginKey, extensionv1.StateRequest{Namespace: codexRoutingPrivateNamespace, Key: key})
 		var clock codexRoutingCookieClock

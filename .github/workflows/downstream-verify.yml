@@ -54,7 +54,7 @@ jobs:
         run: bash .github/scripts/test_model_context_capacity.sh
       - name: Service tests
         working-directory: backend
-        run: go test -p=1 -tags unit ./internal/service -run 'Test.*(Refusal|CyberPolicy|Continuation|InvalidEncryptedContent|PreviousResponseNotFound|CapacityShed|RequestScopedTransient|ServerOverloaded|BusinessSystemPrompt|RemoteSkill|Cindy|CompatibilityModes|AlphaSearch)|Test(UpdateService|NormalizeAccountTaxonomyName|FilterConsoleAccounts|AccountConsolePlan|AccountFacetMatcher)' -count=1
+        run: go test -p=1 -tags unit ./internal/service -run 'Test.*(Refusal|CyberPolicy|Continuation|InvalidEncryptedContent|PreviousResponseNotFound|CapacityShed|RequestScopedTransient|ServerOverloaded|BusinessSystemPrompt|RemoteSkill|Cindy|CompatibilityModes|AlphaSearch|CodexQuality)|Test(UpdateService|NormalizeAccountTaxonomyName|FilterConsoleAccounts|AccountConsolePlan|AccountFacetMatcher)' -count=1
       - name: Upstream automation classifier tests
         run: |
           python3 .github/scripts/test_upstream_risk.py

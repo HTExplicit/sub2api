@@ -40,6 +40,10 @@ func (h *OpenAIGatewayHandler) reportOpenAIHTTPAccountScheduleResult(
 	firstTokenMs *int,
 	observedErr error,
 ) {
+	if c != nil && c.Request != nil && service.IsCodexQualityRequest(c.Request.Context()) {
+		h.gatewayService.ReleaseOpenAIRuntimeBreakerProbeForSelection(selection)
+		return
+	}
 	if isOpenAIOfficialHTTPFailover(c, account) {
 		if !success && failoverClientGone(c) {
 			return
