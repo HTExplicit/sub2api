@@ -157,7 +157,7 @@ func (h *pluginExtensionHost) callCodexRouting(ctx context.Context, in extension
 		result.Observation.Code = "routing_stale"
 		return marshal(result)
 	}
-	if response.StatusCode != http.StatusOK && !(query.Transport == "ws" && response.StatusCode == http.StatusSwitchingProtocols) {
+	if response.StatusCode != http.StatusOK && (query.Transport != "ws" || response.StatusCode != http.StatusSwitchingProtocols) {
 		result.Observation.Code = "routing_upstream"
 		return marshal(result)
 	}

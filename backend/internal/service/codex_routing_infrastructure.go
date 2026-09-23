@@ -38,8 +38,8 @@ func codexInfrastructureJar(scope extensionv1.CodexRoutingScope, expires time.Ti
 	}
 	key := codexRoutingDigest(codexRoutingScopeKey(scope), scope.ConnectionLeaseID)
 	if value, ok := codexInfrastructureJars.Load(key); ok {
-		jar := value.(*codexInfrastructureCookies)
-		if time.Now().Before(jar.expires) {
+		jar, valid := value.(*codexInfrastructureCookies)
+		if valid && jar != nil && time.Now().Before(jar.expires) {
 			return jar
 		}
 		codexInfrastructureJars.Delete(key)
@@ -56,7 +56,11 @@ func codexInfrastructureJar(scope extensionv1.CodexRoutingScope, expires time.Ti
 	if !loaded {
 		time.AfterFunc(time.Until(value.expires), func() { codexInfrastructureJars.CompareAndDelete(key, value) })
 	}
-	return actual.(*codexInfrastructureCookies)
+	stored, ok := actual.(*codexInfrastructureCookies)
+	if !ok {
+		return nil
+	}
+	return stored
 }
 
 func observeCodexInfrastructureCookies(scope extensionv1.CodexRoutingScope, headers http.Header, expires time.Time) {

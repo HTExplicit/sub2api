@@ -101,7 +101,8 @@ func TestPromptRulesLegacyHybridAndMaximumCompiledBody(t *testing.T) {
 		require.True(t, ok)
 		old, err := service.compileBusinessSystemPromptSnapshot(snapshot)
 		require.NoError(t, err)
-		store := service.store.(*fakeBusinessSystemPromptStore)
+		store, ok := service.store.(*fakeBusinessSystemPromptStore)
+		require.True(t, ok)
 		store.detail = BusinessSystemPromptTemplateDetail{Versions: []BusinessSystemPromptVersion{{ID: snapshot.VersionID, TemplateID: snapshot.TemplateID, Body: snapshot.Body, SHA256: snapshot.SHA256, ByteLength: snapshot.ByteLength, CompositionMode: snapshot.CompositionMode, BundleID: snapshot.BundleID}}}
 		snapshot.RulePolicy = &extensionv1.PromptRulePolicy{Version: 1, DefaultRuleIDs: []string{"legacy-default"}, Rules: []extensionv1.PromptRule{{ID: "legacy-default", Name: "Legacy default", Enabled: true, FollowActive: true, Delivery: "native_control", Position: "control_append"}}}
 		require.NoError(t, service.preparePromptRulesSnapshot(&snapshot))

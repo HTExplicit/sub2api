@@ -231,9 +231,10 @@ func promptRulesUndo(input, output []byte, application BusinessSystemPromptAppli
 			counts := map[int]int{}
 			for _, placement := range placements {
 				index := 0
-				if placement.Position == extensionv1.PromptPositionControlAppend {
+				switch placement.Position {
+				case extensionv1.PromptPositionControlAppend:
 					index = controlEnd
-				} else if placement.Position == extensionv1.PromptPositionConversationTail {
+				case extensionv1.PromptPositionConversationTail:
 					index = len(original)
 				}
 				counts[index]++
@@ -451,11 +452,11 @@ func rewritePromptRulesStructuredSSE(c *gin.Context, body []byte, protocol strin
 			for end > start && (line[end-1] == '\n' || line[end-1] == '\r') {
 				end--
 			}
-			result.Write(line[:start])
-			result.Write(rewritePromptRulesStructuredEcho(c, line[start:end], protocol))
-			result.Write(line[end:])
+			_, _ = result.Write(line[:start])
+			_, _ = result.Write(rewritePromptRulesStructuredEcho(c, line[start:end], protocol))
+			_, _ = result.Write(line[end:])
 		} else {
-			result.Write(line)
+			_, _ = result.Write(line)
 		}
 	}
 	return result.Bytes()

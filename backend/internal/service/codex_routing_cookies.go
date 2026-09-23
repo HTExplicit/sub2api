@@ -17,7 +17,7 @@ import (
 
 const codexRoutingPrivateNamespace = "codex-routing-private"
 
-var errCodexRoutingUnavailable = errors.New("Codex routing qualification unavailable")
+var errCodexRoutingUnavailable = errors.New("codex routing qualification unavailable")
 
 type codexRoutingCookie struct {
 	Name      string    `json:"name"`

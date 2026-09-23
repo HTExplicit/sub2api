@@ -24,7 +24,8 @@ func TestCodexConnectionLeaseReusesPhysicalConnectionAndRejectsScope(t *testing.
 	}
 	server.Start()
 	t.Cleanup(server.Close)
-	upstream := NewHTTPUpstream(nil).(*httpUpstreamService)
+	upstream, ok := NewHTTPUpstream(nil).(*httpUpstreamService)
+	require.True(t, ok)
 	request := func() *http.Request {
 		req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, server.URL, nil)
 		require.NoError(t, err)
@@ -59,7 +60,8 @@ func TestCodexConnectionLeaseNeverRedialsAfterUpstreamCloses(t *testing.T) {
 		_, _ = io.WriteString(w, "complete")
 	}))
 	t.Cleanup(server.Close)
-	upstream := NewHTTPUpstream(nil).(*httpUpstreamService)
+	upstream, ok := NewHTTPUpstream(nil).(*httpUpstreamService)
+	require.True(t, ok)
 	request := func() *http.Request {
 		req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, server.URL, nil)
 		require.NoError(t, err)
@@ -82,7 +84,8 @@ func TestCodexConnectionLeaseExpiryAndRedirectDoNotSendAnotherRequest(t *testing
 		http.Redirect(w, r, "/other", http.StatusFound)
 	}))
 	t.Cleanup(server.Close)
-	upstream := NewHTTPUpstream(nil).(*httpUpstreamService)
+	upstream, ok := NewHTTPUpstream(nil).(*httpUpstreamService)
+	require.True(t, ok)
 	request := func() *http.Request {
 		req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, server.URL, nil)
 		require.NoError(t, err)

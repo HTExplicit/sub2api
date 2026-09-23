@@ -20,10 +20,14 @@ func TestGPT6NamedModelRoutingAndWireEffort(t *testing.T) {
 			request := map[string]any{"model": model + "-" + effort, "reasoning": map[string]any{"summary": "none"}}
 			require.True(t, applyOpenAIModelReasoningAlias(request))
 			require.Equal(t, model, request["model"])
-			require.Equal(t, effort, request["reasoning"].(map[string]any)["effort"])
+			reasoning, ok := request["reasoning"].(map[string]any)
+			require.True(t, ok)
+			require.Equal(t, effort, reasoning["effort"])
 			request = map[string]any{"model": model + "-" + effort, "reasoning": map[string]any{"effort": "high"}}
 			require.True(t, applyOpenAIModelReasoningAlias(request))
-			require.Equal(t, "high", request["reasoning"].(map[string]any)["effort"])
+			reasoning, ok = request["reasoning"].(map[string]any)
+			require.True(t, ok)
+			require.Equal(t, "high", reasoning["effort"])
 		}
 		req := &apicompat.AnthropicRequest{OutputConfig: &apicompat.AnthropicOutputConfig{Effort: "max"}}
 		require.Equal(t, "max", openAICompatAnthropicReasoningEffort(req, model, "xhigh"))

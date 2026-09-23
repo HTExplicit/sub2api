@@ -177,9 +177,10 @@ func (s *BusinessSystemPromptService) PromptAccountBindings(ctx context.Context,
 			return nil, err
 		}
 		effective := []string{}
-		if binding.Mode == "inherit" {
+		switch binding.Mode {
+		case "inherit":
 			effective = state.Policy.DefaultRuleIDs
-		} else if binding.Mode == "custom" {
+		case "custom":
 			effective = binding.RuleIDs
 		}
 		views = append(views, PromptAccountBindingView{AccountID: account.ID, Name: account.Name, Platform: account.Platform, AccountType: account.Type, UpdatedAt: account.UpdatedAt, Binding: binding, EffectiveRuleIDs: effective, Supported: account.IsOpenAI()})
