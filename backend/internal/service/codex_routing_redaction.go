@@ -11,6 +11,9 @@ import (
 )
 
 func fixedCodexRoutingBundleKey(ctx context.Context, query extensionv1.CodexRoutingQuery, kind string) string {
+	if key := codexQualityBundleKey(ctx, kind); key != "" {
+		return key
+	}
 	suffix := ""
 	if _, validation := codexValidationFromContext(ctx); validation {
 		suffix = ".validation"

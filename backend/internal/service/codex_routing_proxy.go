@@ -44,7 +44,12 @@ func (s *OpenAIGatewayService) doCodexRoutingAcquisition(request *http.Request, 
 		if s.httpUpstream == nil {
 			return nil, errCodexRoutingUnavailable
 		}
-		return s.httpUpstream.Do(wire, normal, accountID, 1)
+		if err := reserveCodexQualityAcquisition(wire, accountID); err != nil {
+			return nil, err
+		}
+		response, err := s.httpUpstream.Do(wire, normal, accountID, 1)
+		observeCodexQualityResponse(wire.Context(), response, err, nil)
+		return response, err
 	}
 	var trust codexRoutingProxyTrust
 	if len(record.Value) > 128*1024 || json.Unmarshal(record.Value, &trust) != nil || len(trust.Certificates) != 1 {
@@ -62,7 +67,12 @@ func (s *OpenAIGatewayService) doCodexRoutingAcquisition(request *http.Request, 
 	}
 	defer transport.CloseIdleConnections()
 	client := &http.Client{Transport: transport, Timeout: 25 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
-	return client.Do(wire)
+	if err := reserveCodexQualityAcquisition(wire, accountID); err != nil {
+		return nil, err
+	}
+	response, err := client.Do(wire)
+	observeCodexQualityResponse(wire.Context(), response, err, nil)
+	return response, err
 }
 
 func verifyCodexRoutingProxyCertificate(state tls.ConnectionState, pinnedRoots *x509.CertPool) error {

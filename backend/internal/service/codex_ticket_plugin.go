@@ -51,6 +51,10 @@ func (s *OpenAIGatewayService) openAICodexTicketEnabledContext(context.Context) 
 }
 
 func (s *OpenAIGatewayService) applyOpenAICodexTicket(ctx context.Context, account *Account, model string, headers http.Header) error {
+	if IsCodexQualityRequest(ctx) {
+		_, _, err := codexQualityRequestQualification(ctx, account, model)
+		return err
+	}
 	if s == nil || s.pluginManager == nil {
 		return nil
 	}
