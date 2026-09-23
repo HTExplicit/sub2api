@@ -23,7 +23,7 @@ func codexQualityWireFields(req *http.Request) (string, string, error) {
 	if err != nil {
 		return "", "", ErrCodexQualityUnavailable
 	}
-	defer body.Close()
+	defer func() { _ = body.Close() }()
 	var reader io.Reader = body
 	if strings.EqualFold(req.Header.Get("Content-Encoding"), "zstd") {
 		decoder, err := zstd.NewReader(body, zstd.WithDecoderMaxMemory(8<<20))
@@ -166,9 +166,10 @@ func qualitySafeModel(model string) string {
 		return "other"
 	}
 	for _, r := range model {
-		if !(r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' || strings.ContainsRune("._-", r)) {
-			return "other"
+		if r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' || strings.ContainsRune("._-", r) {
+			continue
 		}
+		return "other"
 	}
 	return model
 }
