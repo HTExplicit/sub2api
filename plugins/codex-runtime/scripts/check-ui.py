@@ -145,7 +145,7 @@ def main():
                     control.check()
                     frame.get_by_role("button", name="保存设置", exact=True).click()
                     page.wait_for_function("saved.at(-1)?.request_zstd===true")
-                    frame.get_by_role("button", name="清除代理并停用票据", exact=True).click()
+                    frame.get_by_role("button", name="清除代理并停用路由采集", exact=True).click()
                     page.wait_for_function("saved.at(-1)?.enabled===false && saved.at(-1)?.request_zstd===true")
                     assert control.is_checked()
                     control.uncheck()
@@ -170,7 +170,7 @@ def main():
                         frame.get_by_role("button", name="测试连接", exact=True).wait_for()
                         # Inspect the live accessibility names before interaction.
                         labels = frame.get_by_role("button").all_text_contents()
-                        assert labels == ["测试连接", "复制", "清除代理并停用票据", "保存设置"], labels
+                        assert labels == ["测试连接", "复制", "清除代理并停用路由采集", "保存设置"], labels
                         dropdown = frame.get_by_label("协议").bounding_box()
                         test_button = frame.get_by_role("button", name="测试连接", exact=True).bounding_box()
                         assert abs(dropdown["y"] + dropdown["height"] - test_button["y"] - test_button["height"]) <= 1
@@ -179,7 +179,7 @@ def main():
                         frame.get_by_text("代理链路已连接，目标返回 HTTP 405；本次未发送账号凭据。", exact=True).wait_for()
                         assert frame.locator("body").evaluate("node=>node.scrollWidth<=innerWidth")
                         page.screenshot(path=str(args.output / f"proxy-{width}-{theme}.png"), full_page=True)
-                        frame.get_by_role("button", name="清除代理并停用票据", exact=True).click()
+                        frame.get_by_role("button", name="清除代理并停用路由采集", exact=True).click()
                         frame.get_by_text("已清除并关闭", exact=True).wait_for()
                         assert page.evaluate("saved.at(-1).enabled===false && saved.at(-1).proxy_url===''")
                         assert not errors, errors

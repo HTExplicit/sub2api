@@ -1019,8 +1019,8 @@ type GatewayConfig struct {
 	// OpenAICompactModel: /responses/compact 上游使用的模型。
 	// compact 端点支持模型滞后于普通 /responses 时，可用该配置降级规避上游错误。
 	OpenAICompactModel string `mapstructure:"openai_compact_model"`
-	// OpenAICodexTicket: ChatGPT OAuth 账号按 (账号, 模型) 捕获 292 长度
-	// x-codex-turn-state，并在住宅 IP 业务请求中注入该头。默认关闭。
+	// OpenAICodexTicket: Codex 路由插件的旧配置兼容入口。路由材料须按
+	// 所选账号、模型与业务出口验证，不使用 STATE 长度判定资格。默认关闭。
 	OpenAICodexTicket OpenAICodexTicketConfig `mapstructure:"openai_codex_ticket"`
 	// OpenAIWS: OpenAI Responses WebSocket 配置（默认开启，可按需回滚到 HTTP）
 	OpenAIWS GatewayOpenAIWSConfig `mapstructure:"openai_ws"`
@@ -1239,14 +1239,13 @@ func (c *UserMessageQueueConfig) GetEffectiveMode() string {
 	return ""
 }
 
-// OpenAICodexTicketConfig 控制 ChatGPT OAuth 的 x-codex-turn-state 门票。
-// 打票走 harvest_proxy_url（SOCKS），业务出站仍用账号住宅 proxy_id，只替换该请求头。
-// 门票默认有效 3600 秒，临近过期前 refresh_before_seconds 重新打票。
+// OpenAICodexTicketConfig retains the legacy bootstrap configuration. Runtime
+// route validation and expiry are owned by the Codex routing plugin.
 type OpenAICodexTicketConfig struct {
 	Enabled                      bool     `mapstructure:"enabled"`
-	TargetLength                 int      `mapstructure:"target_length"`
-	TTLSeconds                   int      `mapstructure:"ttl_seconds"`
-	RefreshBeforeSeconds         int      `mapstructure:"refresh_before_seconds"`
+	TargetLength                 int      `mapstructure:"target_length"`          // Deprecated: accepted for old files, ignored by routing.
+	TTLSeconds                   int      `mapstructure:"ttl_seconds"`            // Deprecated: not a routing-material lifetime.
+	RefreshBeforeSeconds         int      `mapstructure:"refresh_before_seconds"` // Deprecated: ignored by routing.
 	HarvestProxyURL              string   `mapstructure:"harvest_proxy_url"`
 	HarvestProbeIntervalSeconds  int      `mapstructure:"harvest_probe_interval_seconds"`
 	HarvestAttemptTimeoutSeconds int      `mapstructure:"harvest_attempt_timeout_seconds"`
@@ -2425,9 +2424,6 @@ func setDefaults() {
 	viper.SetDefault("gateway.openai_passthrough_allow_timeout_headers", false)
 	viper.SetDefault("gateway.openai_compact_model", "gpt-5.5")
 	viper.SetDefault("gateway.openai_codex_ticket.enabled", false)
-	viper.SetDefault("gateway.openai_codex_ticket.target_length", 292)
-	viper.SetDefault("gateway.openai_codex_ticket.ttl_seconds", 3600)
-	viper.SetDefault("gateway.openai_codex_ticket.refresh_before_seconds", 60)
 	viper.SetDefault("gateway.openai_codex_ticket.harvest_proxy_url", "")
 	viper.SetDefault("gateway.openai_codex_ticket.harvest_probe_interval_seconds", 6)
 	viper.SetDefault("gateway.openai_codex_ticket.harvest_attempt_timeout_seconds", 25)

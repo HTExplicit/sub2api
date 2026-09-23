@@ -461,6 +461,14 @@ describe('validateHeaderOverrideRows session isolation headers', () => {
 })
 
 describe('plan_type helpers', () => {
+  it('preserves Business workspace identifiers when presenting plan options', () => {
+    for (const [plan, label] of [['business', 'Business'], ['self_serve_business_usage_based', 'Business (usage-based)']]) {
+      expect(planTypeDisplayLabel(plan)).toBe(label)
+      expect(buildPlanTypeOptions(plan, 'Clear').find(option => option.value === plan)).toEqual({ value: plan, label })
+      expect(applyPlanType({ chatgpt_account_id: 'selected-team' }, plan)).toEqual({ chatgpt_account_id: 'selected-team', plan_type: plan })
+    }
+  })
+
   describe('planTypeDisplayLabel', () => {
     it('maps canonical + alias values to friendly labels', () => {
       expect(planTypeDisplayLabel('plus')).toBe('Plus')

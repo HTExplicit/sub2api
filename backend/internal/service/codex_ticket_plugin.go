@@ -20,7 +20,7 @@ func (s *OpenAIGatewayService) CodexTicketStatuses(account *Account) []OpenAICod
 }
 
 func (s *OpenAIGatewayService) openAICodexTicketConfig() config.OpenAICodexTicketConfig {
-	cfg := config.OpenAICodexTicketConfig{FailClosed: true, TargetLength: 292, TTLSeconds: 3600, RefreshBeforeSeconds: 60, Models: []string{openAICodexTicketDefaultModel, openAICodexTicketDefaultSolModel}}
+	cfg := config.OpenAICodexTicketConfig{FailClosed: true, Models: []string{openAICodexTicketDefaultModel, openAICodexTicketDefaultSolModel}}
 	if s == nil || s.pluginManager == nil {
 		return cfg
 	}
@@ -159,7 +159,7 @@ func OpenAICodexTicketStatuses(account *Account, cfg config.OpenAICodexTicketCon
 				if observation.Code != "" {
 					result := CodexTicketFailure(observation.Code)
 					if observation.Code == "routing_verified" || observation.Code == "ticket_skipped" {
-						result = CodexTicketResult{Code: observation.Code, Success: true, Message: "业务出口 Cookie 路由已验证"}
+						result = CodexTicketResult{Code: observation.Code, Success: true, Message: "路由验证记录：业务出口响应完整、模型声明一致；本项未验证质量"}
 					}
 					entry.LastResult = &result
 				}

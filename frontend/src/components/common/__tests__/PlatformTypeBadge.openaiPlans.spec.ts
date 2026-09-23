@@ -55,6 +55,16 @@ describe('PlatformTypeBadge ChatGPT plan tiers', () => {
     }
   })
 
+  it('shows generic and usage-based Business plans without inventing a personal Pro tier', () => {
+    for (const [planType, label] of [['business', 'Business'], ['self_serve_business_usage_based', 'Business (usage-based)']]) {
+      const wrapper = mountPlan('openai', planType)
+      expect(wrapper.text()).toContain(label)
+      expect(wrapper.html()).toContain('bg-indigo-100')
+      expect(wrapper.text()).not.toContain('Pro 20x')
+      expect(wrapper.text()).not.toContain('Pro 5x')
+    }
+  })
+
   it('keeps plus, free and abnormal labels unchanged', () => {
     const plus = mountPlan('openai', 'plus')
     expect(plus.text()).toContain('Plus')
