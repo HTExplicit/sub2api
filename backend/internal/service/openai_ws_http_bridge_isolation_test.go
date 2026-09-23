@@ -199,12 +199,13 @@ func TestOpenAIWSHTTPBridgeSessionIsolationAcrossSameSessionHash(t *testing.T) {
 		return event
 	}
 	clients := make([]*coderws.Conn, 0, 2)
+	logicalTurns := map[string]string{"alpha": "9c45fb37-1798-40aa-9ce5-3e08aabb6401", "beta": "9c45fb37-1798-40aa-9ce5-3e08aabb6402"}
 	for _, id := range []string{"alpha", "beta"} {
 		conn, _, err := coderws.Dial(ctx, "ws"+strings.TrimPrefix(server.URL, "http"), nil)
 		require.NoError(t, err)
 		defer func() { _ = conn.CloseNow() }()
 		clients = append(clients, conn)
-		payload := fmt.Sprintf(`{"type":"response.create","model":"gpt-5","prompt_cache_key":%q,"client_metadata":{"thread_id":%q},"input":%q}`, id+"-cache", id+"-thread", id)
+		payload := fmt.Sprintf(`{"type":"response.create","model":"gpt-5","prompt_cache_key":%q,"client_metadata":{"thread_id":%q,"turn_id":%q},"input":%q}`, id+"-cache", id+"-thread", logicalTurns[id], id)
 		require.NoError(t, conn.Write(ctx, coderws.MessageText, []byte(payload)))
 		readEvent(conn, "response.created")
 		readEvent(conn, "response.output_item.added")
@@ -216,7 +217,7 @@ func TestOpenAIWSHTTPBridgeSessionIsolationAcrossSameSessionHash(t *testing.T) {
 		require.Equal(t, "resp_"+id+"_1", gjson.GetBytes(event, "response.id").String())
 	}
 	for i, id := range []string{"alpha", "beta"} {
-		payload := fmt.Sprintf(`{"type":"response.create","model":"gpt-5","previous_response_id":%q,"input":[{"type":"function_call_output","call_id":%q,"output":%q}]}`, "resp_"+id+"_1", "call_"+id, id+"-result")
+		payload := fmt.Sprintf(`{"type":"response.create","model":"gpt-5","previous_response_id":%q,"client_metadata":{"turn_id":%q},"input":[{"type":"function_call_output","call_id":%q,"output":%q}]}`, "resp_"+id+"_1", logicalTurns[id], "call_"+id, id+"-result")
 		require.NoError(t, clients[i].Write(ctx, coderws.MessageText, []byte(payload)))
 		readEvent(clients[i], "response.created")
 		event := readEvent(clients[i], "response.completed")
@@ -265,10 +266,12 @@ func TestOpenAIWSHTTPBridgeClearsOwnedStateWhenResponseOmitsHeader(t *testing.T)
 	cfg.Gateway.OpenAIWS.ReadTimeoutSeconds = 3
 	cfg.Gateway.OpenAIWS.WriteTimeoutSeconds = 3
 	upstream := &httpUpstreamRecorder{}
-	for turn := 1; turn <= 3; turn++ {
+	for turn := 1; turn <= 5; turn++ {
 		headers := http.Header{"Content-Type": []string{"text/event-stream"}}
 		if turn == 1 {
 			headers.Set(openAIWSTurnStateHeader, "state-from-first-turn")
+		} else if turn == 2 {
+			headers.Set(openAIWSTurnStateHeader, "later-value-must-not-replace-first")
 		}
 		upstream.responses = append(upstream.responses, &http.Response{
 			StatusCode: http.StatusOK,
@@ -296,7 +299,7 @@ func TestOpenAIWSHTTPBridgeClearsOwnedStateWhenResponseOmitsHeader(t *testing.T)
 	seedHash := svc.GenerateSessionHash(seedContext, nil)
 	stateStore.BindSessionTurnState(groupID, seedHash, account.ID, "native-state-sentinel", time.Hour)
 	stateStore.BindSessionConn(groupID, seedHash, "native-conn-sentinel", time.Hour)
-	thirdTurnIngressHeader := make(chan string, 1)
+	newTurnIngressHeader := make(chan string, 1)
 	serverResult := make(chan error, 1)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		conn, err := coderws.Accept(w, r, nil)
@@ -312,8 +315,8 @@ func TestOpenAIWSHTTPBridgeClearsOwnedStateWhenResponseOmitsHeader(t *testing.T)
 		}
 		c := newContext(r)
 		hooks := &OpenAIWSIngressHooks{AfterTurn: func(turn int, _ *OpenAIForwardResult, _ error) {
-			if turn == 3 {
-				thirdTurnIngressHeader <- c.Request.Header.Get(openAIWSTurnStateHeader)
+			if turn == 5 {
+				newTurnIngressHeader <- c.Request.Header.Get(openAIWSTurnStateHeader)
 			}
 		}}
 		serverResult <- svc.ProxyResponsesWebSocketFromClient(ctx, c, conn, account, "test-token", firstMessage, hooks)
@@ -322,8 +325,15 @@ func TestOpenAIWSHTTPBridgeClearsOwnedStateWhenResponseOmitsHeader(t *testing.T)
 	client, _, err := coderws.Dial(ctx, "ws"+strings.TrimPrefix(server.URL, "http"), nil)
 	require.NoError(t, err)
 	defer func() { _ = client.CloseNow() }()
-	for turn := 1; turn <= 3; turn++ {
-		payload := fmt.Sprintf(`{"type":"response.create","model":"gpt-5","input":"turn %d"}`, turn)
+	for turn := 1; turn <= 5; turn++ {
+		logicalTurn := "9c45fb37-1798-40aa-9ce5-3e08aabb6403"
+		anchor := ""
+		if turn == 5 {
+			logicalTurn = "9c45fb37-1798-40aa-9ce5-3e08aabb6404"
+		} else if turn > 1 {
+			anchor = fmt.Sprintf(`,"previous_response_id":"resp_clear_%d"`, turn-1)
+		}
+		payload := fmt.Sprintf(`{"type":"response.create","model":"gpt-5","client_metadata":{"turn_id":%q},"input":"turn %d"%s}`, logicalTurn, turn, anchor)
 		require.NoError(t, client.Write(ctx, coderws.MessageText, []byte(payload)))
 		_, event, readErr := client.Read(ctx)
 		require.NoError(t, readErr)
@@ -334,15 +344,17 @@ func TestOpenAIWSHTTPBridgeClearsOwnedStateWhenResponseOmitsHeader(t *testing.T)
 	case err := <-serverResult:
 		require.NoError(t, err)
 	case <-ctx.Done():
-		t.Fatal("bridge did not finish the three-turn state-clear regression")
+		t.Fatal("bridge did not finish the turn-state regression")
 	}
-	require.Len(t, upstream.requests, 3)
-	for index, want := range []string{"", "state-from-first-turn", ""} {
+	require.Len(t, upstream.requests, 5)
+	// Continuations retain the first response's value despite a changed or
+	// absent later header. The next logical turn starts without that value.
+	for index, want := range []string{"", "state-from-first-turn", "state-from-first-turn", "state-from-first-turn", ""} {
 		require.Equal(t, want, upstream.requests[index].Header.Get(openAIWSTurnStateHeader))
 	}
 	// The HTTP provenance guard could mask a stale ingress header. Observe it
-	// after third-turn header synchronization as well as the real upstream wire.
-	require.Empty(t, <-thirdTurnIngressHeader)
+	// after the new turn's header synchronization as well as the upstream wire.
+	require.Empty(t, <-newTurnIngressHeader)
 	state, ok := stateStore.GetSessionTurnState(groupID, seedHash, account.ID)
 	require.True(t, ok)
 	require.Equal(t, "native-state-sentinel", state)

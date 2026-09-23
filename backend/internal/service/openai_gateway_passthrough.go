@@ -817,9 +817,13 @@ func (s *OpenAIGatewayService) buildUpstreamRequestOpenAIPassthrough(
 
 	// 客户端回带的 x-codex-turn-state 若已知由其他账号铸造（failover 换号），
 	// 剥离后再出站（openai_codex_turn_state.go）。
+	if c != nil {
+		if _, staged := c.Get(codexRoutingTurnContextKey); !staged {
+			stageCodexRoutingTurn(c, body)
+		}
+	}
 	s.guardOpenAICodexTurnStateEcho(c, account, req.Header)
 	req = withCodexRoutingModel(req, extractOpenAICodexTicketModel(body))
-	stageCodexRoutingTurn(c, body)
 	if err := s.applyOpenAICodexTicket(ctx, account, extractOpenAICodexTicketModel(body), req.Header); err != nil {
 		return nil, err
 	}

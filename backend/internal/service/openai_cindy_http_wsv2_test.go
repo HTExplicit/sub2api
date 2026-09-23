@@ -886,7 +886,7 @@ func TestCindyHTTPToWSV2TurnStateStagesUntilOutputAndRecordsFailoverAttempt(t *t
 	_, ok = store.GetSessionTurnState(groupID, sessionHash, accountA.ID)
 	require.False(t, ok)
 
-	rawOrigin, ok := svc.openaiCodexTurnStateOrigins.Load(openAICodexTurnStateSeed(c))
+	rawOrigin, ok := svc.openaiCodexTurnStateOrigins.Load(openAICodexTurnStateSeed(c, accountB))
 	require.True(t, ok)
 	origin, ok := rawOrigin.(openAICodexTurnStateOrigin)
 	require.True(t, ok)
@@ -939,7 +939,7 @@ func TestCindyHTTPToWSV2TurnStateNoStateClearsPriorOwnerAndProvenance(t *testing
 	require.False(t, ok, "B's successful no-state turn must invalidate A's stale state")
 	_, ok = store.GetSessionTurnState(groupID, sessionHash, accountB.ID)
 	require.False(t, ok)
-	_, ok = svc.openaiCodexTurnStateOrigins.Load(openAICodexTurnStateSeed(cB))
+	_, ok = svc.openaiCodexTurnStateOrigins.Load(openAICodexTurnStateSeed(cB, accountB))
 	require.False(t, ok, "a successful no-state turn must clear stale provenance")
 	connIDB, ok := store.GetResponseConn(resultB.RequestID)
 	require.True(t, ok)

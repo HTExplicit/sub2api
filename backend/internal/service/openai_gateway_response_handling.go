@@ -73,7 +73,7 @@ func (s *OpenAIGatewayService) commitOpenAIHTTPResponseTurnState(
 ) {
 	if headerApplied {
 		if strings.TrimSpace(staged.Get(openAICodexTurnStateHeader)) != "" && (account == nil || account.ID <= 0) {
-			s.clearOpenAICodexTurnStateProvenance(c)
+			s.clearOpenAICodexTurnStateProvenance(c, account)
 			return
 		}
 		s.noteStagedOpenAICodexTurnStateCommitted(c, account, staged)
@@ -81,7 +81,7 @@ func (s *OpenAIGatewayService) commitOpenAIHTTPResponseTurnState(
 	}
 	// A successful body after an account-neutral header commit did not deliver
 	// the new state. Clear the previous owner so the next echo fails closed.
-	s.clearOpenAICodexTurnStateProvenance(c)
+	s.clearOpenAICodexTurnStateProvenance(c, account)
 }
 
 func writeOpenAIHTTPResponseData(c *gin.Context, statusCode int, contentType string, body []byte) error {
@@ -184,7 +184,7 @@ func (s *OpenAIGatewayService) handleStreamingResponseWithReasoning(ctx context.
 		// Headers may already have been committed by an account-neutral keepalive.
 		// In that case the staged state was not delivered; invalidate any previous
 		// owner instead of claiming the client received the new account's blob.
-		s.clearOpenAICodexTurnStateProvenance(c)
+		s.clearOpenAICodexTurnStateProvenance(c, account)
 	}
 
 	w := c.Writer
