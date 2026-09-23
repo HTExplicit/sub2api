@@ -202,6 +202,12 @@ func TestCodexRoutingCompletionRequiresOriginalModelAndDelimitedTerminal(t *test
 			require.Equal(t, test.ok, o.ModelMatched)
 		})
 	}
+	var untyped extensionv1.CodexRoutingObservation
+	stream := `event: response.completed
+data: {"type":"response.completed","response":{"status":"completed","model":"gpt-6-astra"}}
+
+`
+	require.NoError(t, readCodexRoutingCompletion(strings.NewReader(stream), "", "gpt-6-astra", &untyped), "ChatGPT streams arrive without Content-Type")
 }
 
 func TestCodexRoutingHostSeparatesCandidateQualifiedAndPrivateMaterial(t *testing.T) {

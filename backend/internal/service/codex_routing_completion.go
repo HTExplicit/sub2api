@@ -93,7 +93,9 @@ func readCodexRoutingCompletion(body io.Reader, contentType, requested string, o
 		return errCodexRoutingUnavailable
 	}
 	var completed codexRoutingCompletion
-	if strings.Contains(strings.ToLower(contentType), "text/event-stream") {
+	// The ChatGPT edge omits Content-Type on streamed replies (2026-09-23);
+	// an untyped body is still recognised by its SSE framing.
+	if strings.Contains(strings.ToLower(contentType), "text/event-stream") || (strings.TrimSpace(contentType) == "" && bodyHasSSEFraming(data)) {
 		completed.feed(data)
 	} else {
 		completed.json(data)
