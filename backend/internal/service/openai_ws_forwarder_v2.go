@@ -64,7 +64,7 @@ func (s *OpenAIGatewayService) forwardOpenAIWSV2WithScope(
 	}
 	if c != nil {
 		if _, staged := c.Get(codexRoutingTurnContextKey); !staged {
-			stageCodexRoutingTurn(c, codexWSMetadataBody(reqBody))
+			stageCodexRoutingWSTurn(c, codexWSMetadataBody(reqBody))
 		}
 	}
 	refusalRuntime := s.openAIRefusalRecoveryRuntime(ctx)

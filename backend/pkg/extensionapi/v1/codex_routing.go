@@ -39,31 +39,33 @@ type CodexRoutingBundleRef struct {
 }
 
 type CodexRoutingQuery struct {
-	AccountID   int64                  `json:"account_id"`
-	Model       string                 `json:"model,omitempty"`
-	Transport   string                 `json:"transport,omitempty"`
-	Stage       string                 `json:"stage,omitempty"` // acquire or verify
-	OperationID string                 `json:"operation_id,omitempty"`
-	Bundle      *CodexRoutingBundleRef `json:"bundle,omitempty"`
-	Scope       *CodexRoutingScope     `json:"scope,omitempty"`
+	AccountID       int64                  `json:"account_id"`
+	Model           string                 `json:"model,omitempty"`
+	ReasoningEffort string                 `json:"reasoning_effort,omitempty"`
+	Transport       string                 `json:"transport,omitempty"`
+	Stage           string                 `json:"stage,omitempty"` // acquire or verify
+	OperationID     string                 `json:"operation_id,omitempty"`
+	Bundle          *CodexRoutingBundleRef `json:"bundle,omitempty"`
+	Scope           *CodexRoutingScope     `json:"scope,omitempty"`
 }
 
 // All observation fields are safe for an authenticated read-only account view.
 // Cookie and STATE values, tokens, proxy URLs and response text are excluded.
 type CodexRoutingObservation struct {
-	Stage          string    `json:"stage"`
-	Code           string    `json:"code"`
-	HTTPStatus     int       `json:"http_status,omitempty"`
-	RequestedModel string    `json:"requested_model,omitempty"`
-	ResponseModel  string    `json:"response_model,omitempty"`
-	Completed      bool      `json:"completed"`
-	ModelMatched   bool      `json:"model_matched"`
-	StateLength    int       `json:"state_length,omitempty"`
-	CookieNames    []string  `json:"cookie_names,omitempty"`
-	ObservedAt     time.Time `json:"observed_at"`
-	DurationMS     int64     `json:"duration_ms,omitempty"`
-	Transport      string    `json:"transport,omitempty"`
-	CookieSent     bool      `json:"cookie_sent"`
+	Stage           string    `json:"stage"`
+	Code            string    `json:"code"`
+	HTTPStatus      int       `json:"http_status,omitempty"`
+	RequestedModel  string    `json:"requested_model,omitempty"`
+	ReasoningEffort string    `json:"reasoning_effort,omitempty"`
+	ResponseModel   string    `json:"response_model,omitempty"`
+	Completed       bool      `json:"completed"`
+	ModelMatched    bool      `json:"model_matched"`
+	StateLength     int       `json:"state_length,omitempty"`
+	CookieNames     []string  `json:"cookie_names,omitempty"`
+	ObservedAt      time.Time `json:"observed_at"`
+	DurationMS      int64     `json:"duration_ms,omitempty"`
+	Transport       string    `json:"transport,omitempty"`
+	CookieSent      bool      `json:"cookie_sent"`
 }
 
 type CodexRoutingProbeResult struct {
