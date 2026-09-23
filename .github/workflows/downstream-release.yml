@@ -66,6 +66,31 @@ jobs:
           echo "version=$version" >> "$GITHUB_OUTPUT"
           echo "upstream_version=$upstream_version" >> "$GITHUB_OUTPUT"
           echo "build_date=$(git show -s --format=%cI "$source_sha")" >> "$GITHUB_OUTPUT"
+      # Every release re-signs the bundled packages. An installed immutable plugin
+      # version cannot take different bytes, so a reused version leaves the plugin
+      # manager degraded and every gateway request unavailable after deploy.
+      - name: Require new bundled plugin versions
+        shell: bash
+        run: |
+          set -euo pipefail
+          previous=$(git tag --merged HEAD --list 'v*.*.*-codexrip.*' --sort=-v:refname | grep -vxF "$RELEASE_TAG" | head -n1 || true)
+          if [[ -z "$previous" ]]; then
+            echo 'No earlier release tag on this history; nothing to compare.'
+            exit 0
+          fi
+          reused=()
+          for manifest in plugins/*/manifest.source.json; do
+            # A plugin added since the previous release has nothing to compare.
+            git cat-file -e "$previous:$manifest" 2>/dev/null || continue
+            current=$(jq -r .version "$manifest")
+            before=$(git show "$previous:$manifest" | jq -r .version)
+            [[ "$current" != "$before" ]] || reused+=("$(basename "$(dirname "$manifest")")@$current")
+          done
+          if ((${#reused[@]})); then
+            echo "::error::Bundled plugin versions unchanged since $previous: ${reused[*]}. Bump every bundled plugin before tagging."
+            exit 1
+          fi
+          echo "Bundled plugin versions all differ from $previous."
       # Required PR checks admit code to main. Reuse that validation here;
       # publishing verifies immutable source metadata and builds the artifact,
       # rather than rerunning source, frontend, race or migration test suites.

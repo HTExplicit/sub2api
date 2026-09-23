@@ -353,8 +353,10 @@ jobs:
             -p "$VPS_PORT" \
             "${VPS_USER}@${VPS_HOST}" \
             "$remote_command"
+      # The recreated container needs time for migrations and plugin bootstrap; the
+      # edge answers 502/503 until then, so keep retrying for up to three minutes.
       - name: Verify public health
         env:
           PUBLIC_HEALTH_URL: ${{ secrets.PUBLIC_HEALTH_URL }}
         shell: bash
-        run: curl --fail --silent --show-error --retry 3 --retry-delay 2 --max-time 30 "$PUBLIC_HEALTH_URL" >/dev/null
+        run: curl --fail --silent --show-error --retry 36 --retry-delay 5 --retry-max-time 180 --retry-connrefused --max-time 30 "$PUBLIC_HEALTH_URL" >/dev/null
