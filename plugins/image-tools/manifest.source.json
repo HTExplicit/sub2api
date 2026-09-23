@@ -2,7 +2,7 @@
   "schema_version": 1,
   "id": "codexrip.image-tools",
   "name": "图像工具",
-  "version": "0.2.11",
+  "version": "0.2.12",
   "description": "Image Studio 请求计划、模型能力和 Responses 图像桥接策略",
   "author": "HTExplicit",
   "requires": { "sub2api": ">=0.2.7-codexrip.2 <0.2.9", "tested_sub2api_versions": [], "plugin_protocol": 1, "transport_api": 1, "ui_bridge": 1, "extension_api": 1 },
