@@ -128,7 +128,12 @@ func (s *OpenAIGatewayService) observeCodexWire(ctx context.Context, account *Ac
 	value := CodexWireFingerprint{ObservedAt: time.Now().UTC(), Source: "final_outbound", Transport: "http", UserAgent: request.Header.Get("User-Agent"), Originator: request.Header.Get("originator"), Version: request.Header.Get("version"), HTTPProtocol: response.Proto, RequestEncoding: request.Header.Get("Content-Encoding"), TLSImplementation: "go-crypto-tls", JA3: "unknown", CookieNames: []string{}, SessionPresent: extractClientSessionID(request.Header) != "", ThreadPresent: request.Header.Get("thread-id") != "", WindowPresent: request.Header.Get("x-codex-window-id") != "", StatePresent: request.Header.Get(openAICodexTurnStateHeader) != "", StateLength: len(request.Header.Get(openAICodexTurnStateHeader))}
 	value.Ingress = "http"
 	value.CookieVersions = map[string]string{}
-	body, _ := request.Context().Value(codexIdentityBodyKey{}).(codexIdentityBodyObservation)
+	body, carried := request.Context().Value(codexIdentityBodyKey{}).(codexIdentityBodyObservation)
+	if !carried {
+		// Only a rewritten (zstd) wire copy carries a pre-encoding observation;
+		// an unrewritten request still exposes its plaintext replay body.
+		body = inspectCodexIdentityBody(request)
+	}
 	value.IdentityFields = codexIdentityFieldObservations(request.Header, body)
 	if ingress, ok := request.Context().Value(codexRoutingIngressKey{}).(string); ok && ingress == "ws" {
 		value.Ingress = ingress

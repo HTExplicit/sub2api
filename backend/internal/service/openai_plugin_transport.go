@@ -62,13 +62,14 @@ func (s *AccountTestService) doOpenAIAccountTestUpstream(
 	if err != nil {
 		return nil, err
 	}
-	if observer := codexWireObserverFromContext(wire.Context()); observer != nil {
-		observer(wire)
-	}
 	if s.openAIGatewayService != nil && account.IsOpenAIOAuthLike() {
+		// A qualified route reports its final leased wire itself, once.
 		if response, handled, routingErr := s.openAIGatewayService.doQualifiedCodexUpstream(wire, account, proxyURL); handled {
 			return response, routingErr
 		}
+	}
+	if observer := codexWireObserverFromContext(wire.Context()); observer != nil {
+		observer(wire)
 	}
 	if useTLSFallback && !account.IsOpenAIOAuthLike() {
 		return s.httpUpstream.DoWithTLS(

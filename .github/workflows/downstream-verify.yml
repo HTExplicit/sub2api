@@ -254,7 +254,9 @@ jobs:
       - name: Resolve candidate compatibility version
         id: version
         shell: bash
-        run: printf 'value=%s-candidate\n' "$(tr -d '\r\n' < backend/cmd/server/VERSION)" >> "$GITHUB_OUTPUT"
+        # A codexrip prerelease that sorts above every numbered codexrip.N of this
+        # base, so bundled plugins requiring the newest downstream host verify.
+        run: printf 'value=%s-codexrip.candidate\n' "$(tr -d '\r\n' < backend/cmd/server/VERSION)" >> "$GITHUB_OUTPUT"
       - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
       - name: Build candidate
         uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6

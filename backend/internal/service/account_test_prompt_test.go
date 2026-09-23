@@ -121,36 +121,64 @@ func TestAccountTestPromptOAuthFinalTicketUsesMappedModel(t *testing.T) {
 	a.Credentials["header_overrides"] = map[string]any{openAICodexTurnStateHeader: fakeCodexTicketState(312)}
 	a.Extra = map[string]any{openAICodexTicketExtraKey("gpt-5.6-sol"): &CodexTicketRecord{State: fakeCodexTicketState(292), Length: 292, AccountID: a.ID, Model: "gpt-5.6-sol", ExpiresAt: time.Now().Add(time.Hour)}}
 	upstream := &queuedHTTPUpstream{responses: []*http.Response{newJSONResponse(200, "data: {\"type\":\"response.completed\"}\n\n")}}
-	gateway := &OpenAIGatewayService{cfg: cfg}
-	available := true
+	gateway := &OpenAIGatewayService{cfg: cfg, httpUpstream: upstream, accountRepo: &routingAccountRepositoryFixture{account: a}}
+	// Cookie routing replaced the 292 header: the plugin only references a
+	// host-verified qualification, gated like business traffic on the final model.
+	var qualification *extensionv1.CodexRoutingQualification
 	gateway.pluginManager = ticketTestManager(t, cfg.Gateway.OpenAICodexTicket, func(in extensionv1.Invocation) (extensionv1.Result, error) {
+		if in.Operation == "codex.routing.observe" {
+			return extensionv1.Result{Payload: json.RawMessage(`{}`)}, nil
+		}
 		var request extensionv1.SchedulingRequest
 		require.NoError(t, json.Unmarshal(in.Payload, &request))
 		require.Equal(t, "gpt-5.6-sol", request.Model)
-		if !available {
+		if qualification == nil {
 			return extensionv1.Result{Code: "ticket_missing"}, nil
 		}
-		raw, _ := json.Marshal(map[string]any{"headers": map[string]string{openAICodexTurnStateHeader: fakeCodexTicketState(292)}})
+		raw, _ := json.Marshal(extensionv1.CodexRoutingInjection{Headers: map[string]string{}, Qualification: qualification})
 		return extensionv1.Result{Payload: raw}, nil
 	})
+	installation := gateway.pluginManager.extensions.Load().installations[1]
+	installation.State = PluginStateEnabled
+	store := &routingMemoryStore{PluginRepository: &pluginTokenRepository{installation: installation}, values: map[string]extensionv1.StateResult{}}
+	gateway.pluginManager.repo = store
+	scope, err := gateway.PrepareCodexRoutingScope(t.Context(), a.ID, "http")
+	require.NoError(t, err)
+	scope.ConnectionLeaseID, scope.RouteEvidence = "account-test-connection", "connection"
+	now := time.Now().UTC()
+	expiry := now.Add(time.Minute)
+	cookie := codexRoutingCookie{Name: "__cflb", Value: "verified-route", Domain: "chatgpt.com", Path: "/", FirstSeen: now, ExpiresAt: expiry}
+	clock := codexRoutingCookieClock{Scope: scope}
+	clock.apply([]codexRoutingCookieChange{{Cookie: cookie}}, now)
+	clockKey := "clock." + codexRoutingScopeKey(scope)
+	raw, _ := json.Marshal(clock)
+	_, err = store.CompareSwapExtensionState(t.Context(), codexRuntimePluginKey, extensionv1.StateRequest{Namespace: codexRoutingPrivateNamespace, Key: clockKey, Value: raw})
+	require.NoError(t, err)
+	raw, _ = json.Marshal(codexRoutingPrivateBundle{Schema: 2, Scope: scope, Cookies: []codexRoutingCookie{cookie}, ClockKey: clockKey, ClockRevision: 1, Status: "qualified", Model: "gpt-5.6-sol", ExpiresAt: expiry})
+	_, err = store.CompareSwapExtensionState(t.Context(), codexRuntimePluginKey, extensionv1.StateRequest{Namespace: codexRoutingPrivateNamespace, Key: "bundle.account-test", Value: raw})
+	require.NoError(t, err)
+	qualification = &extensionv1.CodexRoutingQualification{Scope: scope, Model: "gpt-5.6-sol", VerifiedAt: now, ExpiresAt: expiry, Bundle: extensionv1.CodexRoutingBundleRef{Key: "bundle.account-test", Revision: 1, ExpiresAt: expiry, ConnectionLeaseID: scope.ConnectionLeaseID}}
 	svc := &AccountTestService{cfg: cfg, httpUpstream: upstream, openAIGatewayService: gateway}
 	c, rec := newTestContext()
 	prompt := "你的知识库库截止日期是什么时间,直接回复不要联网"
 	c.Request = c.Request.WithContext(withCodexTransportFixture(c.Request.Context(), true))
 	require.NoError(t, svc.testOpenAIAccountConnection(c, a, "alias", prompt, ""))
 	require.Len(t, upstream.requests, 1)
+	require.Equal(t, []string{"account-test-connection"}, upstream.leases)
 	req := upstream.requests[0]
-	require.Equal(t, fakeCodexTicketState(292), req.Header.Get(openAICodexTurnStateHeader))
-	raw, err := io.ReadAll(req.Body)
+	require.Equal(t, "__cflb=verified-route", req.Header.Get("Cookie"))
+	require.Empty(t, req.Header.Get(openAICodexTurnStateHeader), "legacy 292/312 material never reaches the wire")
+	raw, err = io.ReadAll(req.Body)
 	require.NoError(t, err)
 	body := zstdDecodeForTest(t, raw)
 	require.Equal(t, "gpt-5.6-sol", gjson.GetBytes(body, "model").String())
 	require.Equal(t, prompt, gjson.GetBytes(body, "input.0.content.0.text").String())
-	require.Contains(t, rec.Body.String(), "ticket_fingerprint")
+	require.NotContains(t, rec.Body.String(), "verified-route")
 	require.NotContains(t, rec.Body.String(), fakeCodexTicketState(292))
+	require.Equal(t, 1, strings.Count(rec.Body.String(), "Final Codex ticket"), "the leased wire is reported once")
 	c, rec = newTestContext()
-	available = false // Legacy Extra still has a ticket; only the plugin may provide it.
+	qualification = nil // Legacy Extra still has a ticket; only the plugin qualification may admit the model.
 	require.Error(t, svc.testOpenAIAccountConnection(c, a, "alias", prompt, ""))
 	require.Len(t, upstream.requests, 1)
-	require.Contains(t, rec.Body.String(), "没有有效292")
+	require.Contains(t, rec.Body.String(), "没有有效的 Cookie 路由验证")
 }
