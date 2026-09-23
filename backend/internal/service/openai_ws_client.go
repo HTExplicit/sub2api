@@ -328,6 +328,14 @@ func (c *coderOpenAIWSClientConn) UpstreamPingCount() int64 {
 
 var _ openaiwsv2.FrameConn = (*coderOpenAIWSClientConn)(nil)
 
+// SetReadLimit lowers the per-message read limit for a bounded exchange.
+func (c *coderOpenAIWSClientConn) SetReadLimit(limit int64) {
+	if c == nil || c.conn == nil {
+		return
+	}
+	c.conn.SetReadLimit(limit)
+}
+
 func (c *coderOpenAIWSClientConn) WriteJSON(ctx context.Context, value any) error {
 	if c == nil || c.conn == nil {
 		return errOpenAIWSConnClosed

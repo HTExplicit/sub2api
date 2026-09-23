@@ -351,7 +351,7 @@ func TestOpenAIWSIngressTurnStateCommitsOnlyAfterDownstreamOutput(t *testing.T) 
 			return
 		}
 		sessionHashCh <- svc.GenerateSessionHash(ginCtx, firstMessage)
-		seedCh <- openAICodexTurnStateSeed(ginCtx)
+		seedCh <- openAICodexTurnStateSeed(ginCtx, account)
 		serverErrCh <- svc.ProxyResponsesWebSocketFromClient(
 			r.Context(), ginCtx, conn, account, "sk-test", firstMessage, nil,
 		)

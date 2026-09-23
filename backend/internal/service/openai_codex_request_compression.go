@@ -2,6 +2,7 @@ package service
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -109,7 +110,14 @@ func prepareOpenAICodexWireRequestUngated(req *http.Request, account *Account) (
 		slog.Debug("codex_request_zstd_skipped", "reason", "encode", "error", err)
 		return req, nil
 	}
-	wire := req.Clone(req.Context())
+	// The zstd body is opaque to final-outbound diagnostics, so only this copy
+	// carries the plaintext identity-field observation. Unrewritten requests stay
+	// the caller's object and are inspected directly by observeCodexWire.
+	ctx := req.Context()
+	if _, ok := ctx.Value(codexIdentityBodyKey{}).(codexIdentityBodyObservation); !ok {
+		ctx = context.WithValue(ctx, codexIdentityBodyKey{}, inspectCodexIdentityBody(req))
+	}
+	wire := req.Clone(ctx)
 	wire.Body = io.NopCloser(bytes.NewReader(compressed))
 	wire.ContentLength = int64(len(compressed))
 	wire.Header.Set("Content-Encoding", "zstd")
@@ -130,5 +138,12 @@ func (s *OpenAIGatewayService) doOpenAICodexUpstream(req *http.Request, account 
 	if err != nil {
 		return nil, err
 	}
-	return s.httpUpstream.Do(wire, proxyURL, account.ID, account.Concurrency)
+	if response, handled, routingErr := s.doQualifiedCodexUpstream(wire, account, proxyURL); handled {
+		return response, routingErr
+	}
+	response, err := s.httpUpstream.Do(wire, proxyURL, account.ID, account.Concurrency)
+	if err == nil && isOpenAICodexTicketAccount(account) {
+		s.observeCodexWire(wire.Context(), account, wire, response, nil)
+	}
+	return response, err
 }

@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/openai"
 	extensionv1 "github.com/Wei-Shaw/sub2api/pkg/extensionapi/v1"
 )
 
@@ -565,8 +566,18 @@ func protectedAccountModelContextCapacity(account *Account, modelID string, live
 	// display value. It is never relabelled as a raw upstream observation.
 	if metadata, ok := account.GetUpstreamModelMetadata(modelID); ok {
 		result.ModelContextCapacity, _ = modelContextPlanningCapacity(ModelContextCapacity{
-			ContextWindow: metadata.ContextWindow, MaxOutputTokens: metadata.MaxOutputTokens,
+			ContextWindow: metadata.ContextWindow, MaxContextWindow: metadata.MaxContextWindow, MaxOutputTokens: metadata.MaxOutputTokens,
 		})
+		if result.ContextWindow > 0 {
+			return result
+		}
+	}
+	if account.IsOpenAIOAuthLike() && isOpenAIGPT6SolOrLunaModel(modelID) {
+		result.ModelContextCapacity = ModelContextCapacity{
+			ContextWindow: openai.GPT6CodexContextWindow, MaxContextWindow: openai.GPT6CodexMaxContextWindow,
+			CapacityBasis: ModelContextCapacityBasisTotal,
+		}
+		result.Reason = "codex_catalog_reference"
 	}
 	return result
 }
@@ -642,6 +653,10 @@ func BuildAccountModelContextCapacityRows(account *Account, modelIDs []string) [
 			automatic = ResolveModelContextCapacityForAccount(account, nil, row.Official, row.Upstream)
 		} else {
 			automatic = resolve(modelID, nil)
+			if account.IsOpenAIOAuthLike() && isOpenAIGPT6SolOrLunaModel(modelID) {
+				// Expose product references without applying API limits to OAuth.
+				row.Official = LookupOfficialModelContextCapacity(account, modelID)
+			}
 		}
 		effective := resolve(modelID, nil)
 		row.AutomaticContextWindow, row.AutomaticSource = automatic.ContextWindow, automatic.Source

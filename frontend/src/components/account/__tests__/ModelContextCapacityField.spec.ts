@@ -31,6 +31,19 @@ function mountField(row: ModelContextCapacityRow | undefined = capacityRow(), dr
 }
 
 describe('ModelContextCapacityField', () => {
+  it('labels the GPT-6 OAuth fallback as a Codex reference and keeps it read-only', () => {
+    const wrapper = mountField(capacityRow({
+      upstream_model_id: 'gpt-6-sol', aliases: [], editable: false, upstream: undefined,
+      automatic_context_window: 272000, effective_context_window: 272000,
+      automatic_source: 'protected', effective_source: 'protected', max_context_window: 872000,
+      reason: 'codex_catalog_reference'
+    }), undefined, 'gpt-6-sol')
+    expect(wrapper.get('[data-testid="context-capacity-value"]').text()).toBe('[272K]')
+    expect(wrapper.get('[data-testid="context-capacity-source"]').text()).toContain('sources.codex_reference')
+    expect(wrapper.find('button').exists()).toBe(false)
+    expect(wrapper.emitted('commit')).toBeUndefined()
+  })
+
   it('explains the selected GPT reference without rewriting a namespaced model ID', () => {
     const modelId = 'team/gpt-6'
     const row = capacityRow({

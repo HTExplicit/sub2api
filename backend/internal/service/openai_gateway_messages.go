@@ -33,6 +33,7 @@ func (s *OpenAIGatewayService) ForwardAsAnthropic(
 	promptCacheKey string,
 	defaultMappedModel string,
 ) (*OpenAIForwardResult, error) {
+	rememberPromptRequestedModel(c, body)
 	pricingContext, pricingErr := CaptureCindyPricingContext(ctx, c, account)
 	if pricingErr != nil {
 		return nil, pricingErr
@@ -425,6 +426,7 @@ func (s *OpenAIGatewayService) ForwardAsAnthropic(
 	if compatTurnState != "" && upstreamReq.Header.Get("x-codex-turn-state") == "" {
 		upstreamReq.Header.Set("x-codex-turn-state", compatTurnState)
 	}
+	upstreamReq = withCodexRoutingModel(upstreamReq, upstreamModel)
 	if err := s.applyOpenAICodexTicket(ctx, account, upstreamModel, upstreamReq.Header); err != nil {
 		return nil, err
 	}

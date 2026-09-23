@@ -148,10 +148,13 @@ func (*serviceTestRemoteSkillSource) Build(context.Context, service.RemoteSkillP
 func TestWriteBusinessSystemPromptErrorUsesStableProtocolCodes(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	for name, testCase := range map[string]struct {
-		err        error
-		wantStatus int
-		wantReason string
+		err         error
+		wantStatus  int
+		wantReason  string
+		wantMessage string
 	}{
+		"unsupported rule delivery": {err: service.ErrPromptDeliveryUnsupported, wantStatus: http.StatusUnprocessableEntity, wantReason: "prompt_delivery_unsupported", wantMessage: "The selected prompt delivery or position is unsupported by this destination"},
+		"referenced rule":           {err: service.ErrPromptRuleReferenced, wantStatus: http.StatusConflict, wantReason: "prompt_rule_referenced", wantMessage: "An account still references this rule"},
 		"revision conflict": {
 			err: service.ErrBusinessSystemPromptRevisionConflict, wantStatus: http.StatusConflict,
 			wantReason: "system_prompt_revision_conflict",
@@ -184,7 +187,11 @@ func TestWriteBusinessSystemPromptErrorUsesStableProtocolCodes(t *testing.T) {
 			writeBusinessSystemPromptError(ctx, testCase.err)
 			require.Equal(t, testCase.wantStatus, recorder.Code)
 			require.Equal(t, testCase.wantReason, gjson.Get(recorder.Body.String(), "reason").String())
-			require.Equal(t, testCase.wantReason, gjson.Get(recorder.Body.String(), "message").String())
+			message := testCase.wantMessage
+			if message == "" {
+				message = testCase.wantReason
+			}
+			require.Equal(t, message, gjson.Get(recorder.Body.String(), "message").String())
 		})
 	}
 }

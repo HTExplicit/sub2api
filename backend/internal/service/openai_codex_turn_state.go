@@ -25,11 +25,15 @@ type openAICodexTurnStateOrigin struct {
 	expiresAt time.Time
 }
 
-// openAICodexTurnStateSeed 返回溯源表键：API Key + 客户端原始会话标识。
-// 客户端会话标识取自请求头（与指纹收敛的 thread 派生同源，见
-// extractClientSessionID），确保同一下游会话的记录/守卫两侧使用同一键。
-// 无会话标识时返回空串，表示不做跟踪（保持透传现状）。
-func openAICodexTurnStateSeed(c *gin.Context) string {
+// API-key destinations (including Cindy) retain their existing session/owner
+// contract. Codex OAuth state additionally belongs to one logical turn.
+func openAICodexTurnStateUsesSessionContract(account *Account) bool {
+	return account != nil && (account.Type == AccountTypeAPIKey || account.Platform == PlatformCindy || account.Platform == PlatformGrok)
+}
+
+// Optional account preserves the strict Codex scope for callers without a
+// destination. Production reads, commits and clears always pass the account.
+func openAICodexTurnStateSeed(c *gin.Context, accounts ...*Account) string {
 	if c == nil || c.Request == nil {
 		return ""
 	}
@@ -37,7 +41,25 @@ func openAICodexTurnStateSeed(c *gin.Context) string {
 	if sessionID == "" {
 		return ""
 	}
-	return strconv.FormatInt(getAPIKeyIDFromContext(c), 10) + "\x00" + sessionID
+	seed := strconv.FormatInt(getAPIKeyIDFromContext(c), 10) + "\x00" + sessionID
+	if len(accounts) > 0 && openAICodexTurnStateUsesSessionContract(accounts[0]) {
+		return seed
+	}
+	turnID := codexRoutingTurnID(c)
+	if turnID == "" {
+		return ""
+	}
+	return seed + "\x00" + turnID
+}
+
+func openAIWSTurnStateScope(c *gin.Context, account *Account, sessionHash string) string {
+	if sessionHash == "" || openAICodexTurnStateUsesSessionContract(account) {
+		return sessionHash
+	}
+	if turn := codexRoutingTurnID(c); turn != "" {
+		return sessionHash + "\x00" + turn
+	}
+	return ""
 }
 
 // relayOpenAICodexTurnState 将上游响应中的 turn-state 显式写入下游响应头，
@@ -53,7 +75,7 @@ func (s *OpenAIGatewayService) relayOpenAICodexTurnState(c *gin.Context, account
 	state := extractOpenAICodexTurnState(upstream)
 	if state == "" {
 		c.Writer.Header().Del(canonical)
-		s.clearOpenAICodexTurnStateProvenance(c)
+		s.clearOpenAICodexTurnStateProvenance(c, account)
 		return
 	}
 	c.Writer.Header().Set(canonical, state)
@@ -89,7 +111,7 @@ func stageOpenAICodexTurnState(dst *http.Header, upstream http.Header) {
 // 成功提交但无 state 表示上一来源已失效，必须清除旧 provenance。
 func (s *OpenAIGatewayService) noteStagedOpenAICodexTurnStateCommitted(c *gin.Context, account *Account, staged http.Header) {
 	if staged == nil || strings.TrimSpace(staged.Get(openAICodexTurnStateHeader)) == "" {
-		s.clearOpenAICodexTurnStateProvenance(c)
+		s.clearOpenAICodexTurnStateProvenance(c, account)
 		return
 	}
 	s.noteOpenAICodexTurnStateProvenance(c, account)
@@ -107,7 +129,7 @@ func (s *OpenAIGatewayService) noteOpenAICodexTurnStateProvenance(c *gin.Context
 	if s == nil || account == nil || account.ID <= 0 {
 		return
 	}
-	seed := openAICodexTurnStateSeed(c)
+	seed := openAICodexTurnStateSeed(c, account)
 	if seed == "" {
 		return
 	}
@@ -118,19 +140,20 @@ func (s *OpenAIGatewayService) noteOpenAICodexTurnStateProvenance(c *gin.Context
 	s.sweepOpenAICodexTurnStateOrigins()
 }
 
-func (s *OpenAIGatewayService) clearOpenAICodexTurnStateProvenance(c *gin.Context) {
+func (s *OpenAIGatewayService) clearOpenAICodexTurnStateProvenance(c *gin.Context, accounts ...*Account) {
 	if s == nil {
 		return
 	}
-	if seed := openAICodexTurnStateSeed(c); seed != "" {
+	if seed := openAICodexTurnStateSeed(c, accounts...); seed != "" {
 		s.openaiCodexTurnStateOrigins.Delete(seed)
 	}
 }
 
 // commitOpenAIWSSessionTurnState updates the server-side WS fallback state at
-// the same commit boundary as the downstream response. An empty successful
-// state invalidates every previous owner for the session; a failed attempt
-// must never call this helper.
+// the same commit boundary as the downstream response. Codex retains its first
+// value within the logical turn. API destinations retain the existing contract
+// where an empty successful response clears the prior session owner. A failed
+// attempt must never call this helper.
 func (s *OpenAIGatewayService) commitOpenAIWSSessionTurnState(
 	c *gin.Context,
 	account *Account,
@@ -140,15 +163,21 @@ func (s *OpenAIGatewayService) commitOpenAIWSSessionTurnState(
 	turnState string,
 ) {
 	turnState = strings.TrimSpace(turnState)
-	if stateStore != nil && sessionHash != "" {
+	stateScope := openAIWSTurnStateScope(c, account, sessionHash)
+	if stateStore != nil && stateScope != "" {
+		if !openAICodexTurnStateUsesSessionContract(account) && account != nil {
+			if first, ok := stateStore.GetSessionTurnState(groupID, stateScope, account.ID); ok {
+				turnState = first
+			}
+		}
 		if turnState == "" {
-			stateStore.DeleteSessionTurnState(groupID, sessionHash)
+			stateStore.DeleteSessionTurnState(groupID, stateScope)
 		} else if account != nil && account.ID > 0 {
-			stateStore.BindSessionTurnState(groupID, sessionHash, account.ID, turnState, s.openAIWSSessionStickyTTL())
+			stateStore.BindSessionTurnState(groupID, stateScope, account.ID, turnState, s.openAIWSSessionStickyTTL())
 		}
 	}
 	if turnState == "" {
-		s.clearOpenAICodexTurnStateProvenance(c)
+		s.clearOpenAICodexTurnStateProvenance(c, account)
 		return
 	}
 	s.noteOpenAICodexTurnStateProvenance(c, account)
@@ -156,8 +185,8 @@ func (s *OpenAIGatewayService) commitOpenAIWSSessionTurnState(
 
 // guardOpenAICodexTurnStateEcho 出站守卫：客户端回带的 turn-state 只有在
 // 能证明由当前账号铸造时才保留。来源未知、过期、缺少会话标识或来自其他
-// 账号的值均剥离。此守卫只处理回显；开启票据功能后，后续注入步骤会
-// 按当前 OpenAI OAuth/Setup Token 账号和出站模型覆盖为有效的服务端票据。
+// 账号的值均剥离。此守卫只处理 STATE 回显；Cookie 路由资格在独立的宿主
+// 传输路径处理，不以 STATE 长度或此来源表授予模型资格。
 func (s *OpenAIGatewayService) guardOpenAICodexTurnStateEcho(c *gin.Context, account *Account, h http.Header) {
 	if h == nil {
 		return
@@ -169,7 +198,7 @@ func (s *OpenAIGatewayService) guardOpenAICodexTurnStateEcho(c *gin.Context, acc
 		h.Del(openAICodexTurnStateHeader)
 		return
 	}
-	seed := openAICodexTurnStateSeed(c)
+	seed := openAICodexTurnStateSeed(c, account)
 	if seed == "" {
 		h.Del(openAICodexTurnStateHeader)
 		return

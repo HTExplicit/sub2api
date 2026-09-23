@@ -11,6 +11,7 @@ import (
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/openai"
+	extensionv1 "github.com/Wei-Shaw/sub2api/pkg/extensionapi/v1"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
@@ -72,7 +73,7 @@ func TestCodexIdentitySnapshotIsSecretFreeAndConsistent(t *testing.T) {
 	SetCodexForceCLIEnabled(true)
 	forced := resolveCodexIdentitySnapshotContext(context.Background(), account, account, codexAccountIdentityOverrideUA(account))
 	require.Equal(t, "account", forced.IdentitySource)
-	require.Equal(t, deriveCodexClientIdentity(seed).UserAgent(forced.Version), forced.UserAgent,
+	require.Equal(t, legacyCodexClientIdentity(seed).UserAgent(forced.Version), forced.UserAgent,
 		"ForceCodexCLI drops the custom UA while retaining the account's derived TUI profile")
 }
 
@@ -116,10 +117,13 @@ func TestCodexClientIdentityIsSystemManagedAndSchemaChecked(t *testing.T) {
 	prepared := prepareCodexFingerprintExtraForUpdate(account, map[string]any{CodexClientIdentityExtraKey: crafted})
 	got, ok := codexClientIdentityFromExtra(prepared)
 	require.True(t, ok)
-	require.Equal(t, deriveCodexClientIdentity(seed), got.withoutGeneratedAt())
+	require.Equal(t, legacyCodexClientIdentity(seed), got.withoutGeneratedAt(), "已有账号保留按种子派生的 v1 身份")
 	require.NotContains(t, sanitizedCodexFingerprintExtraUpdates(map[string]any{CodexClientIdentityExtraKey: crafted}), CodexClientIdentityExtraKey)
+	created, ok := codexClientIdentityFromExtra(prepareCodexFingerprintExtraForCreate(PlatformOpenAI, AccountTypeOAuth, map[string]any{CodexClientIdentityExtraKey: crafted}))
+	require.True(t, ok)
+	require.Equal(t, deriveCodexClientIdentity(seed), created.withoutGeneratedAt(), "新建账号同样忽略表单身份，落库官方 Windows CLI 参照（v2）")
 
-	mismatched := deriveCodexClientIdentity(seed)
+	mismatched := legacyCodexClientIdentity(seed)
 	mismatched.Sandbox = "seccomp"
 	mismatched.OSType = "Windows"
 	require.False(t, mismatched.valid())
@@ -153,12 +157,19 @@ func TestRefreshAccountTokenSharesForceCodexCLIOverridePolicy(t *testing.T) {
 	require.Equal(t, resolveCodexOutboundIdentityForAccount(account, "").userAgent, stub.userAgent, "ForceCodexCLI 时与推理面一样忽略显式 UA")
 }
 
-// codexTestSeedForOS 返回一个派生出指定操作系统身份的合法种子（确定性搜索）。
+// legacyCodexClientIdentity 是已有账号（有 ID、未存储身份）按种子派生的 v1 身份；
+// 不带账号的 deriveCodexClientIdentity 表示新建账号，得到官方 Windows CLI 参照（v2）。
+func legacyCodexClientIdentity(seed string) codexClientIdentity {
+	result, _ := invokeCodexIdentityPolicyForAccount(context.Background(), nil, "codex.identity.derive", extensionv1.CodexIdentityQuery{Seed: seed, Preset: "legacy"})
+	return codexClientIdentity(result.Profile)
+}
+
+// codexTestSeedForOS 返回一个让已有账号派生出指定操作系统身份的合法种子（确定性搜索）。
 func codexTestSeedForOS(t *testing.T, osType string) string {
 	t.Helper()
 	for i := 0; i < 4096; i++ {
 		seed := fmt.Sprintf("00000000-0000-4000-8000-%012d", i)
-		if deriveCodexClientIdentity(seed).OSType == osType {
+		if legacyCodexClientIdentity(seed).OSType == osType {
 			return seed
 		}
 	}

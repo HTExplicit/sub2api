@@ -67,6 +67,8 @@ func (s *OpenAIGatewayService) ResolveExtensionIdentity(ctx context.Context, que
 		return nil, err
 	}
 	ensureCodexIdentityHeaders(headers)
-	enforceCodexIdentityHeaders(headers)
+	if err := enforceCodexIdentityHeadersForAccountContext(ctx, headers, a, codexAccountIdentityOverrideUA(a)); err != nil {
+		return nil, err
+	}
 	return &extensionv1.OutboundIdentity{AccountID: a.ID, Identity: CodexTicketAccountIdentity(a), Token: token, Headers: headers, ProxyURL: resolveAccountProxyURL(a)}, nil
 }

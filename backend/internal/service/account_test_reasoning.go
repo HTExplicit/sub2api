@@ -5,6 +5,7 @@ import (
 	"errors"
 	"strings"
 
+	"github.com/Wei-Shaw/sub2api/internal/pkg/openai"
 	extensionv1 "github.com/Wei-Shaw/sub2api/pkg/extensionapi/v1"
 	"github.com/gin-gonic/gin"
 )
@@ -31,7 +32,14 @@ func AccountTestReasoningOptions(account *Account, model string) ([]string, stri
 		if !*metadata.Reasoning {
 			return nil, ""
 		}
-		return normalizeReasoningLevels(metadata.SupportedReasoningLevels), normalizeReasoningLevel(metadata.DefaultReasoningLevel)
+		levels := normalizeReasoningLevels(metadata.SupportedReasoningLevels)
+		if isOpenAIGPT6SolOrLunaModel(model) {
+			levels = intersectOrderedStrings(levels, openai.GPT6APIReasoningEfforts())
+		}
+		return levels, normalizeReasoningLevel(metadata.DefaultReasoningLevel)
+	}
+	if account.IsOpenAIApiKey() && isOpenAIGPT6SolOrLunaModel(model) {
+		return openai.GPT6APIReasoningEfforts(), "medium"
 	}
 	var levels []configuredCodexReasoningLevel
 	switch {
@@ -42,6 +50,10 @@ func AccountTestReasoningOptions(account *Account, model string) ([]string, stri
 	}
 	out := make([]string, 0, len(levels))
 	for _, level := range levels {
+		// Ultra is client orchestration, never a native inference effort.
+		if level.Effort == "ultra" && isOpenAIGPT6SolOrLunaModel(model) {
+			continue
+		}
 		out = append(out, level.Effort)
 	}
 	return out, ""

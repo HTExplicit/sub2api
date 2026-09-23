@@ -2395,7 +2395,7 @@ func normalizeOpenAIReasoningEffortForModel(raw, model string) string {
 // has a distinct max level. Only explicit cross-protocol adapters may use this
 // capability hint; native parameter/usage extraction must preserve wire values.
 func supportsOpenAIReasoningEffortMax(model string) bool {
-	if isOpenAIGPT6AstraModel(model) || isOpenAIGPT56Model(model) {
+	if isOpenAIGPT6AstraModel(model) || isOpenAIGPT6SolOrLunaModel(model) || isOpenAIGPT56Model(model) {
 		return true
 	}
 

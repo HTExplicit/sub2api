@@ -206,6 +206,10 @@ func remoteSkillVersionDetailResponse(detail service.RemoteSkillBundleVersionDet
 
 func writeBusinessSystemPromptError(c *gin.Context, err error) {
 	switch {
+	case errors.Is(err, service.ErrPromptDeliveryUnsupported):
+		response.ErrorWithDetails(c, http.StatusUnprocessableEntity, "The selected prompt delivery or position is unsupported by this destination", "prompt_delivery_unsupported", nil)
+	case errors.Is(err, service.ErrPromptRuleReferenced):
+		response.ErrorWithDetails(c, http.StatusConflict, "An account still references this rule", "prompt_rule_referenced", nil)
 	case errors.Is(err, service.ErrBusinessSystemPromptRevisionConflict):
 		response.ErrorWithDetails(c, http.StatusConflict, "system_prompt_revision_conflict", "system_prompt_revision_conflict", nil)
 	case errors.Is(err, service.ErrBusinessSystemPromptUnavailable):

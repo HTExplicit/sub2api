@@ -2,11 +2,11 @@
   "schema_version": 1,
   "id": "codexrip.model-policy",
   "name": "模型目录与容量策略",
-  "version": "0.2.7",
+  "version": "0.2.8",
   "description": "精确模型别名、供应商范围与经过核对的容量参考",
   "author": "HTExplicit",
   "requires": {
-    "sub2api": ">=0.2.7-0 <0.2.8",
+    "sub2api": ">=0.2.7-codexrip.2 <0.2.8",
     "tested_sub2api_versions": [],
     "plugin_protocol": 1,
     "transport_api": 1,

@@ -17,6 +17,8 @@ import (
 // process state published by NewOpenAIGatewayService, so the snapshot describes
 // the policy that was actually active in this process.
 type codexIdentitySnapshot struct {
+	ProfileSource             string    `json:"profile_source"`
+	ProfileSchema             int       `json:"profile_schema"`
 	SchemaVersion             int       `json:"v"`
 	AccountID                 int64     `json:"account_id"`
 	IdentityAccountID         int64     `json:"identity_account_id"`
@@ -29,6 +31,7 @@ type codexIdentitySnapshot struct {
 	EnforcementEnabled        bool      `json:"enforcement_enabled"`
 	ForceCodexCLI             bool      `json:"force_codex_cli"`
 	UserAgent                 string    `json:"user_agent"`
+	UAOverridePresent         bool      `json:"ua_override_present"`
 	Originator                string    `json:"originator"`
 	Version                   string    `json:"version"`
 	FingerprintModeConfigured string    `json:"fingerprint_mode_configured"`
@@ -53,6 +56,7 @@ func resolveCodexIdentitySnapshotContext(ctx context.Context, routed, source *Ac
 		SchemaVersion:      1,
 		EnforcementEnabled: codexIdentityEnforcement.Load(),
 		ForceCodexCLI:      codexForceCLI.Load(),
+		UAOverridePresent:  strings.TrimSpace(overrideUA) != "",
 	}
 	if source != nil && source.IsOpenAIOAuthLike() {
 		if plan, err := codexTransportPlan(ctx, source.Type, source.ID, extensionv1.CodexTransportQuery{}); err == nil {
@@ -84,6 +88,13 @@ func resolveCodexIdentitySnapshotContext(ctx context.Context, routed, source *Ac
 		}
 	}
 	if source != nil {
+		if profile, ok := source.codexClientIdentityContext(ctx); ok {
+			snapshot.ProfileSchema = profile.Version
+			snapshot.ProfileSource = profile.Source
+			if snapshot.ProfileSource == "" {
+				snapshot.ProfileSource = "legacy_generated"
+			}
+		}
 		snapshot.IdentityAccountID = source.ID
 		snapshot.AccountRevision = source.UpdatedAt
 		snapshot.IdentityPersisted = func() bool {

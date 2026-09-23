@@ -681,6 +681,15 @@ func (r *businessSystemPromptRepository) SoftDeleteBusinessSystemPromptTemplate(
 	if activeID.Valid && activeID.Int64 == id {
 		return service.ErrBusinessSystemPromptActive
 	}
+	var referenced bool
+	if err := tx.QueryRowContext(ctx, `SELECT EXISTS (
+        SELECT 1 FROM system_prompt_rule_policies p, jsonb_array_elements(p.policy->'rules') rule
+        WHERE p.id = 1 AND rule->>'template_id' = $1 AND COALESCE(rule->>'follow_active', 'false') <> 'true')`, fmt.Sprint(id)).Scan(&referenced); err != nil {
+		return err
+	}
+	if referenced {
+		return service.ErrBusinessSystemPromptActive
+	}
 	if _, err := tx.ExecContext(ctx, `UPDATE system_prompt_templates SET deleted_at = NOW(), updated_by = $2, updated_at = NOW() WHERE id = $1`, id, nullableActor(actorID)); err != nil {
 		return err
 	}

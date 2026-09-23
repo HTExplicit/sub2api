@@ -901,6 +901,14 @@ func (s *OpenAIGatewayService) proxyResponsesWebSocketV2PassthroughAttempt(
 		return NewOpenAIWSClientCloseError(coderws.StatusPolicyViolation, blocked.Message, blocked)
 	}
 	firstClientMessage = updatedFirst
+	beginBusinessSystemPromptRequestTurn(c)
+	if initialRequestModel != "" {
+		businessSystemPromptRequestSet(c, promptRequestedModelContextKey, initialRequestModel)
+	}
+	firstClientMessage, policyErr = s.finalizeBusinessPromptForSend(c, account, firstClientMessage, BusinessSystemPromptProtocolResponses, isOpenAIResponsesCompactPath(c))
+	if policyErr != nil {
+		return businessPromptWSCloseError(policyErr)
+	}
 	// Last rewrite of the first frame is done; compare before it is written upstream.
 	if integrityErr := s.checkRequestIntegrity(c, account, "ws_passthrough", "first_frame", integrityOriginalFirst, firstClientMessage, requestIntegrityOptions{
 		UpstreamModel: capturedSessionModel,
@@ -1058,6 +1066,11 @@ func (s *OpenAIGatewayService) proxyResponsesWebSocketV2PassthroughAttempt(
 	if !ok {
 		return errors.New("openai ws passthrough upstream connection does not support frame relay")
 	}
+	observedConnectionID := "passthrough-" + codexRoutingDigest(capturedSessionModel, headers.Get("session-id"), time.Now().UTC().Format(time.RFC3339Nano))
+	s.observeNativeCodexWS(ctx, account, headers, handshakeHeaders, nil, observedConnectionID)
+	upstreamFrameConn = &codexObservedNativeFrameConn{FrameConn: upstreamFrameConn, observe: func(frameCtx context.Context, payload []byte) {
+		s.observeNativeCodexWS(frameCtx, account, headers, handshakeHeaders, payload, observedConnectionID)
+	}}
 	relayUpstreamFrameConn := &openAIWSPassthroughFirstOutputFrameConn{
 		inner:             upstreamFrameConn,
 		activeReadTimeout: s.openAIWSPassthroughIdleTimeout(),
@@ -1096,6 +1109,7 @@ func (s *OpenAIGatewayService) proxyResponsesWebSocketV2PassthroughAttempt(
 		interTurnIdleTimeout: s.openAIWSIngressInterTurnIdleTimeout(),
 		interTurnStarted:     make(chan struct{}, 1),
 		restoreResponseModel: func(payload []byte) []byte {
+			payload = s.rewriteBusinessSystemPromptJSONForRequest(c, payload, BusinessSystemPromptProtocolResponses)
 			eventType := strings.TrimSpace(gjson.GetBytes(payload, "type").String())
 			if !openAIWSEventMayContainModel(eventType) {
 				return payload
@@ -1303,6 +1317,16 @@ func (s *OpenAIGatewayService) proxyResponsesWebSocketV2PassthroughAttempt(
 				}
 			}
 			out, blocked, policyErr := s.applyOpenAIFastPolicyToWSResponseCreate(ctx, account, model, payload)
+			if isResponseCreate && policyErr == nil && blocked == nil {
+				beginBusinessSystemPromptRequestTurn(c)
+				if requestModelForThisFrame != "" {
+					businessSystemPromptRequestSet(c, promptRequestedModelContextKey, requestModelForThisFrame)
+				}
+				out, policyErr = s.finalizeBusinessPromptForSend(c, account, out, BusinessSystemPromptProtocolResponses, isOpenAIResponsesCompactPath(c))
+				if policyErr != nil {
+					return payload, nil, businessPromptWSCloseError(policyErr)
+				}
+			}
 			// Last rewrite of the frame is done; compare before it is written
 			// upstream. Runs on the client->upstream goroutine; gin Context.Set is
 			// mutex-guarded.
@@ -1332,6 +1356,17 @@ func (s *OpenAIGatewayService) proxyResponsesWebSocketV2PassthroughAttempt(
 			//     extractOpenAIServiceTierFromBody 返回 nil；这里有意
 			//     覆盖（Store(nil)），因为 OpenAI 上游对该帧实际不传
 			//     service_tier 时按 default 处理，billing 应如实反映。
+			if policyErr == nil && blocked == nil && (isResponseCreate || eventType == "session.update") {
+				finalModel := model
+				if isResponseCreate {
+					if selected := strings.TrimSpace(gjson.GetBytes(out, "model").String()); selected != "" {
+						finalModel = selected
+					}
+				}
+				if routingErr := s.guardCodexRoutingNativeModel(account, finalModel); routingErr != nil {
+					return out, nil, routingErr
+				}
+			}
 			if policyErr == nil && blocked == nil && isResponseCreate {
 				usageMeta.updateFromResponseCreate(out, model, requestModelForThisFrame)
 				responseCreateAtCopy := responseCreateAt
@@ -1376,6 +1411,9 @@ func (s *OpenAIGatewayService) proxyResponsesWebSocketV2PassthroughAttempt(
 		relayClientConn = &openAIRefusalRecoveryWSFrameConn{inner: policyClientConn, output: refusalOutput}
 	}
 	upstreamFirstMessageSent := false
+	if routingErr := s.guardCodexRoutingNativeModel(account, capturedSessionModel); routingErr != nil {
+		return routingErr
+	}
 	firstWriteCtx, cancelFirstWrite := context.WithTimeout(ctx, s.openAIWSWriteTimeout())
 	firstWriteErr := relayUpstreamFrameConn.WriteFrame(firstWriteCtx, coderws.MessageText, firstClientMessage)
 	cancelFirstWrite()

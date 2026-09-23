@@ -140,9 +140,18 @@ func TestProxyPreflightAndHarvestUseSamePinnedTransport(t *testing.T) {
 	if result.Success || !result.NetworkReachable || result.HTTPStatus != 405 || result.CertificateTrust != "proxy_certificate_pinned" {
 		t.Fatalf("preflight confused transport success with inference success: %+v", result)
 	}
-	ticket, outcome := probe(ctx, client, extensionv1.OutboundIdentity{AccountID: 7, Identity: "subject", Token: "synthetic-oauth"}, "gpt-6-astra")
-	if !outcome.Success || ticket == nil || ticket.State != material {
-		t.Fatalf("pinned harvest failed: %+v", outcome)
+	request, err := http.NewRequestWithContext(ctx, http.MethodPost, "https://chatgpt.com/backend-api/codex/responses", strings.NewReader(`{"model":"synthetic-model"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	request.Header.Set("Authorization", "Bearer synthetic-oauth")
+	response, err := client.Do(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = response.Body.Close()
+	if response.StatusCode != http.StatusOK || response.Header.Get("x-codex-turn-state") != material {
+		t.Fatal("authenticated request did not use the pinned transport")
 	}
 	mu.Lock()
 	defer mu.Unlock()

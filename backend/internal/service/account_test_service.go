@@ -921,8 +921,9 @@ func (s *AccountTestService) testOpenAIAccountConnection(c *gin.Context, account
 	// 账号级请求头覆写：测试请求与真实转发保持一致的最终头
 	credentialAccount.ApplyHeaderOverrides(req.Header)
 	if isOAuth && !account.IsCredentialShadow() && s.openAIGatewayService != nil {
+		req = withCodexRoutingModel(req, upstreamTestModelID)
 		if err := s.openAIGatewayService.applyOpenAICodexTicket(ctx, credentialAccount, upstreamTestModelID, req.Header); err != nil {
-			return s.sendErrorAndEnd(c, "当前账号/模型没有有效292票据，请先手动打票；此次连接测试未发送上游请求")
+			return s.sendErrorAndEnd(c, "当前账号/模型没有有效的 Cookie 路由验证，请先执行采集与业务出口复验；此次连接测试未发送上游请求")
 		}
 		s.sendEvent(c, TestEvent{Type: "status", Text: "Codex ticket", Data: codexTicketWireSummary(req.Header)})
 	}

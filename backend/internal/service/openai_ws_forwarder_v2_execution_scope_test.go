@@ -125,12 +125,8 @@ func TestOpenAIGatewayService_Forward_WSv2_ExecutionScopeUsesOriginalIdentity(t 
 	completed := func(id string) []byte {
 		return []byte(`{"type":"response.completed","response":{"id":"` + id + `","model":"gpt-5.1","usage":{"input_tokens":1,"output_tokens":1}}}`)
 	}
-	captureConn := &openAIWSCaptureConn{events: [][]byte{completed("resp_a"), completed("resp_b"), completed("resp_c")}}
 	handshake := http.Header{}
 	handshake.Set(openAIWSTurnStateHeader, "turn-state-from-upstream")
-	pool := newOpenAIWSConnPool(cfg)
-	pool.setClientDialerForTest(&openAIWSCaptureDialer{conn: captureConn, handshake: handshake})
-	defer pool.Close()
 
 	stateStore := NewOpenAIWSStateStore(nil)
 	svc := &OpenAIGatewayService{
@@ -139,7 +135,6 @@ func TestOpenAIGatewayService_Forward_WSv2_ExecutionScopeUsesOriginalIdentity(t 
 		cache:              &stubGatewayCache{},
 		openaiWSResolver:   NewOpenAIWSProtocolResolver(cfg),
 		toolCorrector:      NewCodexToolCorrector(),
-		openaiWSPool:       pool,
 		openaiWSStateStore: stateStore,
 	}
 	groupID := int64(9)
@@ -161,6 +156,12 @@ func TestOpenAIGatewayService_Forward_WSv2_ExecutionScopeUsesOriginalIdentity(t 
 	}
 
 	forward := func(sessionID, body string) (*gin.Context, []byte) {
+		// A pooled socket's handshake state belongs to the turn that dialed it and
+		// is never adopted by another session's turn, so each request dials anew.
+		pool := newOpenAIWSConnPool(cfg)
+		pool.setClientDialerForTest(&openAIWSCaptureDialer{conn: &openAIWSCaptureConn{events: [][]byte{completed("resp_" + sessionID)}}, handshake: handshake})
+		t.Cleanup(pool.Close)
+		svc.openaiWSPool = pool
 		rec := httptest.NewRecorder()
 		c, _ := gin.CreateTestContext(rec)
 		c.Request = httptest.NewRequest(http.MethodPost, "/openai/v1/responses", nil)
@@ -173,7 +174,7 @@ func TestOpenAIGatewayService_Forward_WSv2_ExecutionScopeUsesOriginalIdentity(t 
 		return c, raw
 	}
 
-	plainBody := `{"model":"gpt-5.1","stream":false,"input":[{"type":"input_text","text":"hello"}]}`
+	plainBody := `{"model":"gpt-5.1","stream":false,"client_metadata":{"turn_id":"turn-plain"},"input":[{"type":"input_text","text":"hello"}]}`
 	cA, rawA := forward("session-a", plainBody)
 	cB, rawB := forward("session-b", plainBody)
 
@@ -181,21 +182,22 @@ func TestOpenAIGatewayService_Forward_WSv2_ExecutionScopeUsesOriginalIdentity(t 
 	scopeB, _ := resolveOpenAIWSExecutionScope(cB, rawB, apiKeyID)
 	require.NotEmpty(t, scopeA)
 	require.NotEqual(t, scopeA, scopeB, "不同 session_id 的会话必须落在不同的作用域")
-	_, boundA := stateStore.GetSessionTurnState(groupID, scopeA)
+	// Codex OAuth state is keyed by the execution scope plus the logical turn.
+	_, boundA := stateStore.GetSessionTurnState(groupID, openAIWSTurnStateScope(cA, account, scopeA))
 	require.True(t, boundA, "会话 A 的 turn state 应落在按原始 session_id 算出的作用域")
-	_, boundB := stateStore.GetSessionTurnState(groupID, scopeB)
+	_, boundB := stateStore.GetSessionTurnState(groupID, openAIWSTurnStateScope(cB, account, scopeB))
 	require.True(t, boundB, "会话 B 的 turn state 应落在按原始 session_id 算出的作用域")
 
 	injected := resolveCodexFingerprintIDs(account, "", codexFingerprintFull)
 	require.NotNil(t, injected)
 	injectedScope, _ := deriveOpenAISessionHashes(fmt.Sprintf("openai_ws_exec:%d|thread=%s", apiKeyID, injected.threadID))
-	_, boundToInjected := stateStore.GetSessionTurnState(groupID, injectedScope)
+	_, boundToInjected := stateStore.GetSessionTurnState(groupID, openAIWSTurnStateScope(cA, account, injectedScope))
 	require.False(t, boundToInjected, "指纹收敛注入的固定 thread_id 不得成为状态键")
 
-	threadBody := `{"model":"gpt-5.1","stream":false,"client_metadata":{"thread_id":"child-thread"},"input":[{"type":"input_text","text":"hello"}]}`
+	threadBody := `{"model":"gpt-5.1","stream":false,"client_metadata":{"thread_id":"child-thread","turn_id":"turn-thread"},"input":[{"type":"input_text","text":"hello"}]}`
 	cC, rawC := forward("session-c", threadBody)
 	scopeC, threadC := resolveOpenAIWSExecutionScope(cC, rawC, apiKeyID)
 	require.Equal(t, "child-thread", threadC)
-	_, boundC := stateStore.GetSessionTurnState(groupID, scopeC)
+	_, boundC := stateStore.GetSessionTurnState(groupID, openAIWSTurnStateScope(cC, account, scopeC))
 	require.True(t, boundC, "客户端自带线程标识时，键必须与按原始报文算出的一致，不受账号 namespace 改写影响")
 }

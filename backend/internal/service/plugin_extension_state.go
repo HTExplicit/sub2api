@@ -41,7 +41,7 @@ func (h *pluginExtensionHost) Call(ctx context.Context, in extensionv1.HostInvoc
 	if h.installation != nil && h.installation.RuntimeGeneration > 0 {
 		ctx = WithPluginExecution(ctx, h.installation)
 	}
-	if (in.Operation == extensionv1.HostResolveIdentity || in.Operation == extensionv1.HostLeaseAcquire || in.Operation == extensionv1.HostStateDue || in.Operation == extensionv1.HostJobSubmit || in.Operation == extensionv1.HostMetricsQuery) && h.active != nil && !h.active() {
+	if (in.Operation == extensionv1.HostResolveIdentity || in.Operation == extensionv1.HostLeaseAcquire || in.Operation == extensionv1.HostStateDue || in.Operation == extensionv1.HostJobSubmit || in.Operation == extensionv1.HostMetricsQuery || isCodexRoutingHostOperation(in.Operation)) && h.active != nil && !h.active() {
 		return extensionv1.Result{}, status.Error(codes.Unavailable, "plugin capability is no longer active")
 	}
 	if h.state == nil && in.Operation != extensionv1.HostMetricsQuery {
@@ -67,6 +67,9 @@ func (h *pluginExtensionHost) Call(ctx context.Context, in extensionv1.HostInvoc
 	}
 	var value any
 	var err error
+	if isCodexRoutingHostOperation(in.Operation) {
+		return h.callCodexRouting(ctx, in)
+	}
 	switch in.Operation {
 	case extensionv1.HostMetricsQuery:
 		var request extensionv1.AccountQuery
@@ -98,6 +101,9 @@ func (h *pluginExtensionHost) Call(ctx context.Context, in extensionv1.HostInvoc
 		var req extensionv1.DueStateRequest
 		if json.Unmarshal(in.Payload, &req) != nil || validatePluginKVNamespace(req.Namespace) != nil || req.Limit < 1 || req.Limit > 100 {
 			return extensionv1.Result{}, status.Error(codes.InvalidArgument, "invalid due-state query")
+		}
+		if req.Namespace == codexRoutingPrivateNamespace {
+			return extensionv1.Result{}, status.Error(codes.PermissionDenied, "host-owned routing material is private")
 		}
 		value, err = h.state.DueExtensionStates(ctx, h.key, req)
 	case extensionv1.HostAccountRead, extensionv1.HostAccountList, extensionv1.HostResolveIdentity, extensionv1.HostFinishObservation:
@@ -153,6 +159,9 @@ func (h *pluginExtensionHost) Call(ctx context.Context, in extensionv1.HostInvoc
 		var req extensionv1.StateRequest
 		if json.Unmarshal(in.Payload, &req) != nil || validatePluginKVNamespace(req.Namespace) != nil || validatePluginKVKey(req.Key) != nil || req.ExpectedRevision < 0 {
 			return extensionv1.Result{}, status.Error(codes.InvalidArgument, "invalid state request")
+		}
+		if req.Namespace == codexRoutingPrivateNamespace {
+			return extensionv1.Result{}, status.Error(codes.PermissionDenied, "host-owned routing material is private")
 		}
 		if in.Operation == extensionv1.HostStateRead {
 			value, err = h.state.ReadExtensionState(ctx, h.key, req)
@@ -211,6 +220,9 @@ func (h *pluginExtensionHost) Call(ctx context.Context, in extensionv1.HostInvoc
 }
 
 func pluginHostOperationUsesAccountScope(operation extensionv1.HostOperation) bool {
+	if isCodexRoutingHostOperation(operation) {
+		return true
+	}
 	switch operation {
 	case extensionv1.HostAccountRead, extensionv1.HostAccountList, extensionv1.HostResolveIdentity,
 		extensionv1.HostMetricsQuery, extensionv1.HostStateCompareSwap:

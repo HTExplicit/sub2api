@@ -203,7 +203,14 @@ async function loadSession() {
   }
   catch (value) { if (generation === version) { error.value = failure(value); loading.value = false } }
 }
-watch(() => [auth.user?.id, auth.isAdmin, auth.isAuthenticated, props.pluginId, props.context.account_id, props.context.contribution_id], loadSession, { immediate: true, flush: 'sync' })
+watch([
+  () => auth.user?.id,
+  () => auth.isAdmin,
+  () => auth.isAuthenticated,
+  () => props.pluginId,
+  () => props.context.account_id,
+  () => props.context.contribution_id,
+], loadSession, { immediate: true, flush: 'sync' })
 watch(() => [admission.value.allowed, originAvailable()], ([allowed, origin]) => {
   if (allowed && origin && !session.value && !loading.value) void loadSession()
 })

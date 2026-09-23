@@ -584,6 +584,7 @@ func (s *OpenAIGatewayService) proxyOpenAIWSHTTPBridgeTurn(
 		c.Set("openai_passthrough", true)
 		c.Set("openai_ws_http_bridge", true)
 	}
+	upstreamReq = upstreamReq.WithContext(context.WithValue(upstreamReq.Context(), codexRoutingIngressKey{}, "ws"))
 
 	// Bridge turns have no PrepareRequest: compare the frame the bridge received
 	// with the plaintext body just built, before zstd in doOpenAICodexUpstream.

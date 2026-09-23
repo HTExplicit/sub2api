@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/openai"
 	"time"
 
 	extensionv1 "github.com/Wei-Shaw/sub2api/pkg/extensionapi/v1"
@@ -83,7 +84,11 @@ func resolveCodexOutboundIdentityForAccountContext(ctx context.Context, account 
 	if result.UserAgent == "" {
 		return codexOutboundIdentity{}, ErrExtensionOperationUnavailable
 	}
-	return codexOutboundIdentity{userAgent: result.UserAgent, originator: codexTUIOriginator, version: canonical.version}, nil
+	originator, paired, valid := openai.PairCodexClientIdentity(result.UserAgent)
+	if !valid {
+		return codexOutboundIdentity{}, ErrExtensionOperationUnavailable
+	}
+	return codexOutboundIdentity{userAgent: paired, originator: originator, version: openai.CodexUserAgentVersion(paired)}, nil
 }
 
 func codexIdentityPolicyAvailable(ctx context.Context, accountType string, accountID int64) (bool, error) {

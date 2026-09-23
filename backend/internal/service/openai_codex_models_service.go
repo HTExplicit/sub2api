@@ -405,7 +405,8 @@ type configuredCodexModelDescriptor struct {
 	Description                       string                          `json:"description"`
 	DefaultReasoningLevel             *string                         `json:"default_reasoning_level,omitempty"`
 	SupportedReasoningLevels          []configuredCodexReasoningLevel `json:"supported_reasoning_levels"`
-	MultiAgentReasoningEffort         *string                         `json:"multi_agent_reasoning_effort,omitempty"`
+	MultiAgentReasoningEffort         *string                         `json:"multi_agent_reasoning_effort"`
+	MinimalClientVersion              string                          `json:"minimal_client_version,omitempty"`
 	ShellType                         string                          `json:"shell_type"`
 	Visibility                        string                          `json:"visibility"`
 	SupportedInAPI                    bool                            `json:"supported_in_api"`
@@ -536,6 +537,21 @@ func newConfiguredCodexModelDescriptor(modelID string) configuredCodexModelDescr
 			if isOpenAIGPT56Model(modelID) {
 				descriptor.MaxContextWindow = configuredCodexGPT56MaxContext
 			}
+			if isOpenAIGPT6SolOrLunaModel(modelID) {
+				// Pinned Codex subscription defaults; API-key projection uses API
+				// metadata and live account declarations remain authoritative.
+				descriptor.ContextWindow = openai.GPT6CodexContextWindow
+				descriptor.MaxContextWindow = openai.GPT6CodexMaxContextWindow
+				descriptor.MultiAgentVersion = "v2"
+				descriptor.MinimalClientVersion = openai.GPT6CodexMinimumClientVersion
+				descriptor.CompHash = "3000"
+				applyPatch := "freeform"
+				descriptor.ApplyPatchToolType = &applyPatch
+				descriptor.ShellType = "shell_command"
+				descriptor.WebSearchToolType = "text_and_image"
+				descriptor.InputModalities = []string{"text", "image"}
+				descriptor.SupportsImageDetailOriginal = true
+			}
 			if isOpenAIGPT6AstraModel(modelID) {
 				// Codex resolves the Ultra workflow to this effort before inference.
 				// openai/codex a9896da3: codex-rs/models-manager/models.json.
@@ -583,7 +599,7 @@ func configuredCodexSupportsPriorityServiceTier(modelID string) bool {
 		}
 	}
 	// GPT-6 Astra advertises Fast via service_tier=priority in public model metadata.
-	return isOpenAIGPT6AstraModel(modelID)
+	return isOpenAIGPT6AstraModel(modelID) || isOpenAIGPT6SolOrLunaModel(modelID)
 }
 
 func configuredCodexSupportsUltrafastServiceTier(modelID string) bool {
@@ -646,13 +662,13 @@ func configuredCodexGPTReasoningLevels(modelID string) []configuredCodexReasonin
 		{Effort: "xhigh", Description: "Extra-high reasoning depth for difficult tasks"},
 	}
 	normalized := getNormalizedCodexModel(modelID)
-	if isOpenAIGPT56Model(modelID) || isOpenAIGPT6AstraModel(modelID) {
+	if isOpenAIGPT56Model(modelID) || isOpenAIGPT6AstraModel(modelID) || isOpenAIGPT6SolOrLunaModel(modelID) {
 		levels = append(levels, configuredCodexReasoningLevel{
 			Effort:      "max",
 			Description: "Maximum reasoning depth for complex tasks",
 		})
 	}
-	if isOpenAIGPT6AstraModel(modelID) || normalized == "gpt-5.6-sol" || normalized == "gpt-5.6-terra" {
+	if isOpenAIGPT6AstraModel(modelID) || openai.GPT6NamedModel(modelID) == "gpt-6-sol" || normalized == "gpt-5.6-sol" || normalized == "gpt-5.6-terra" {
 		levels = append(levels, configuredCodexReasoningLevel{
 			Effort:      "ultra",
 			Description: "Maximum reasoning with automatic task delegation",
@@ -671,12 +687,12 @@ func isOpenAICodexGPTModel(modelID string) bool {
 
 func isOpenAICodexReasoningGPTModel(modelID string) bool {
 	normalized := canonicalizeOpenAIModelAliasSpelling(modelID)
-	return isOpenAIGPT6AstraModel(normalized) || strings.HasPrefix(normalized, "gpt-5")
+	return isOpenAIGPT6AstraModel(normalized) || isOpenAIGPT6SolOrLunaModel(normalized) || strings.HasPrefix(normalized, "gpt-5")
 }
 
 func isOpenAICodexImageInputModel(modelID string) bool {
 	normalized := canonicalizeOpenAIModelAliasSpelling(modelID)
-	return isOpenAIGPT6AstraModel(normalized) ||
+	return isOpenAIGPT6AstraModel(normalized) || isOpenAIGPT6SolOrLunaModel(normalized) ||
 		strings.HasPrefix(normalized, "gpt-5") ||
 		strings.HasPrefix(normalized, "gpt-4o") ||
 		strings.HasPrefix(normalized, "gpt-4.1") ||
@@ -2371,6 +2387,8 @@ func CodexModelsManifestETag(body []byte) string {
 
 var apiKeyCodexModelsWithoutResponsesLite = map[string]struct{}{
 	"gpt-6-astra":   {},
+	"gpt-6-sol":     {},
+	"gpt-6-luna":    {},
 	"gpt-5.6-sol":   {},
 	"gpt-5.6-terra": {},
 	"gpt-5.6-luna":  {},
@@ -2406,6 +2424,8 @@ func adjustAPIKeyCodexModelsManifest(body []byte, account *Account) ([]byte, err
 		}
 		if isOpenAIGPT6AstraModel(target) {
 			target = "gpt-6-astra"
+		} else if named := openai.GPT6NamedModel(target); named != "" {
+			target = named
 		}
 		if _, targeted := apiKeyCodexModelsWithoutResponsesLite[target]; !targeted {
 			continue
@@ -2488,15 +2508,31 @@ func convertOpenAIModelListToCodexManifestForAccount(body []byte, account *Accou
 		metadataModels[id] = capabilityModel
 		capabilities := accountCodexToolCapabilities(account, capabilityModel)
 		applyCodexToolCapabilities(capabilities, entry, true)
-		modelMetadata[id] = codexModelMetadataOverride{UpstreamModelMetadata: UpstreamModelMetadata{
-			CodexToolCapabilities: capabilities,
-		}}
+		metadata := UpstreamModelMetadata{CodexToolCapabilities: capabilities}
+		if defaults, known := gpt6APIModelMetadata(account, capabilityModel); known {
+			// Raw provider declarations beat local API defaults, including an
+			// explicit false reasoning flag or a narrower modality list.
+			var rawEntry upstreamModelCapabilityEntry
+			if encoded, err := json.Marshal(entry); err == nil && json.Unmarshal(encoded, &rawEntry) == nil {
+				metadata = upstreamMetadataFromCapabilityEntry(id, rawEntry)
+			}
+			if snapshot, exists := account.GetUpstreamModelMetadata(capabilityModel); exists {
+				metadata, _ = mergeUpstreamModelMetadata(metadata, snapshot)
+			}
+			metadata, _ = mergeUpstreamModelMetadata(metadata, defaults)
+			metadata.CodexToolCapabilities = capabilities
+		}
+		modelMetadata[id] = codexModelMetadataOverride{UpstreamModelMetadata: metadata}
 	}
 	if len(modelIDs) == 0 {
 		return body
 	}
 	imageInputModels := make(map[string]bool, len(modelIDs))
 	for _, modelID := range modelIDs {
+		if modalities := modelMetadata[modelID].InputModalities; len(modalities) > 0 {
+			imageInputModels[modelID] = stringSliceContains(modalities, "image")
+			continue
+		}
 		if accountCodexModelSupportsImageInput(account, modelID) {
 			imageInputModels[modelID] = true
 		}
@@ -2617,7 +2653,7 @@ func applySyncedAPIKeyCodexModelMetadata(body []byte, account *Account, overwrit
 			metadata.Description = ""
 		}
 
-		descriptor := newConfiguredCodexModelDescriptor(slug)
+		descriptor := newConfiguredCodexModelDescriptorForAccount(slug, account)
 		applyUpstreamModelMetadataToCodexDescriptor(
 			&descriptor,
 			codexModelMetadataOverride{UpstreamModelMetadata: metadata},
@@ -2657,7 +2693,10 @@ func applySyncedAPIKeyCodexModelMetadata(body []byte, account *Account, overwrit
 			}
 			current, currentExists := model[field]
 			current = bytes.TrimSpace(current)
-			if !overwriteLocalDefaults && currentExists && len(current) > 0 && !bytes.Equal(current, []byte("null")) {
+			// GPT-6 list conversion already merged live > synchronized > local
+			// fields. Reapplying a stale snapshot must not replace live values.
+			overwrite := overwriteLocalDefaults && !isOpenAIGPT6SolOrLunaModel(lookupModel)
+			if !overwrite && currentExists && len(current) > 0 && !bytes.Equal(current, []byte("null")) {
 				continue
 			}
 			if bytes.Equal(current, bytes.TrimSpace(value)) {
@@ -2742,7 +2781,7 @@ func completeAPIKeyCodexModelsManifestMetadata(body []byte, completeAll bool, ac
 			continue
 		}
 
-		descriptor := newConfiguredCodexModelDescriptor(slug)
+		descriptor := newConfiguredCodexModelDescriptorForAccount(slug, account)
 		descriptor.SupportsSearchTool = shouldForwardOpenAIResponsesViaRawChatCompletions(account)
 		if accountCodexModelSupportsImageInput(account, slug) {
 			descriptor.InputModalities = []string{"text", "image"}

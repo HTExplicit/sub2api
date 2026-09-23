@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"strconv"
 	"strings"
@@ -37,6 +38,7 @@ type businessSystemPromptCacheIdentities struct {
 }
 
 type businessSystemPromptRequestState struct {
+	rulesUndo        []promptRulesCarrierUndo
 	application      BusinessSystemPromptApplication
 	snapshot         BusinessSystemPromptSnapshot
 	target           BusinessSystemPromptTarget
@@ -67,6 +69,15 @@ func businessSystemPromptTargetForAccount(account *Account, protocol string, com
 	target := BusinessSystemPromptTarget{Protocol: protocol, Compact: compact}
 	if account != nil {
 		target.AccountID, target.Platform, target.AccountType = account.ID, account.EffectiveWirePlatform(), account.Type
+		target.ProviderPlatform, target.ProviderProfile = account.Platform, account.EffectiveProviderProfile()
+		if binding := account.Extra[PromptAccountBindingExtraKey]; binding != nil {
+			raw, err := json.Marshal(binding)
+			if err == nil {
+				target.BindingJSON = string(raw)
+			} else {
+				target.BindingJSON = "invalid"
+			}
+		}
 	}
 	return target
 }
@@ -140,6 +151,10 @@ func businessSystemPromptCarrier(body []byte, carrier string) (gjson.Result, []b
 
 func cacheBusinessSystemPromptState(input, output []byte, snapshot BusinessSystemPromptSnapshot, target BusinessSystemPromptTarget, application BusinessSystemPromptApplication) businessSystemPromptRequestState {
 	state := businessSystemPromptRequestState{application: application, snapshot: snapshot, target: target, inputHash: sha256.Sum256(input), output: append([]byte(nil), output...)}
+	if application.RulesPlan != nil {
+		state.rulesUndo = promptRulesUndo(input, output, application)
+		return state
+	}
 	if !application.Applied {
 		return state
 	}
@@ -174,6 +189,21 @@ func cacheBusinessSystemPromptState(input, output []byte, snapshot BusinessSyste
 }
 
 func inheritBusinessSystemPromptProvenance(next, previous businessSystemPromptRequestState) businessSystemPromptRequestState {
+	if next.application.RulesPlan != nil || previous.application.RulesPlan != nil {
+		for _, proof := range previous.rulesUndo {
+			present := false
+			for _, current := range next.rulesUndo {
+				if current.field == proof.field {
+					present = true
+					break
+				}
+			}
+			if !present {
+				next.rulesUndo = append(next.rulesUndo, proof)
+			}
+		}
+		return next
+	}
 	next.historyUncertain = previous.historyUncertain
 	if !next.application.Applied {
 		next.undo, next.otherUndo = previous.undo, previous.otherUndo
@@ -197,6 +227,9 @@ func inheritBusinessSystemPromptProvenance(next, previous businessSystemPromptRe
 }
 
 func restoreBusinessSystemPromptBody(body []byte, state businessSystemPromptRequestState) ([]byte, error) {
+	if state.application.RulesPlan != nil || len(state.rulesUndo) > 0 {
+		return restorePromptRules(body, state.rulesUndo)
+	}
 	if (!state.application.Applied && !state.undo.present && !state.otherUndo.present) || sha256.Sum256(body) == state.inputHash {
 		return body, nil
 	}
@@ -317,6 +350,9 @@ func businessSystemPromptCarrierExcludesInsertion(body []byte, undo businessSyst
 }
 
 func businessSystemPromptExcludesAllInsertions(body []byte, state businessSystemPromptRequestState) bool {
+	if state.application.RulesPlan != nil || len(state.rulesUndo) > 0 {
+		return false
+	}
 	if state.historyUncertain || (state.application.Applied && !state.undo.present && !state.otherUndo.present) {
 		return false
 	}
@@ -373,13 +409,7 @@ func (s *OpenAIGatewayService) applyBusinessSystemPrompt(
 			return nil, BusinessSystemPromptApplication{}, err
 		}
 	}
-	return ApplyBusinessSystemPromptToJSON(body, snapshot, BusinessSystemPromptTarget{
-		AccountID:   account.ID,
-		Platform:    account.EffectiveWirePlatform(),
-		AccountType: account.Type,
-		Protocol:    protocol,
-		Compact:     compact,
-	})
+	return ApplyBusinessSystemPromptToJSON(body, snapshot, enrichPromptTarget(nil, body, businessSystemPromptTargetForAccount(account, protocol, compact)))
 }
 
 func (s *OpenAIGatewayService) businessSystemPromptSnapshotForRequest(
@@ -420,8 +450,17 @@ func (s *OpenAIGatewayService) applyBusinessSystemPromptForRequest(
 	account *Account,
 	protocol string,
 	compact bool,
-) ([]byte, BusinessSystemPromptApplication, error) {
-	target := businessSystemPromptTargetForAccount(account, protocol, compact)
+) (out []byte, applied BusinessSystemPromptApplication, returnErr error) {
+	defer func() { writePromptDeliveryError(ctx, returnErr) }()
+	target := enrichPromptTarget(ctx, body, businessSystemPromptTargetForAccount(account, protocol, compact))
+	if s != nil && s.businessPromptService != nil && s.businessPromptService.accountRepo != nil && account != nil && account.IsOpenAI() {
+		fresh, err := s.businessPromptService.accountRepo.GetByID(promptPolicyRequestContext(ctx), account.ID)
+		if err != nil || fresh == nil {
+			return nil, BusinessSystemPromptApplication{}, ErrBusinessSystemPromptUnavailable
+		}
+		freshTarget := businessSystemPromptTargetForAccount(fresh, protocol, compact)
+		target.BindingJSON = freshTarget.BindingJSON
+	}
 	// Platform eligibility precedes policy invocation or application reuse.
 	// Local provenance can still undo an earlier OpenAI insertion before an
 	// unrelated platform's transform; clean customer carriers stay untouched.
@@ -447,12 +486,12 @@ func (s *OpenAIGatewayService) applyBusinessSystemPromptForRequest(
 				}
 				previousPlan := state.application
 				previousPlan.ClientInstructions = ""
-				if state.target == target && previousPlan == application {
+				if state.target == target && sameBusinessPromptPlan(previousPlan, application) {
 					rememberBusinessSystemPromptTarget(ctx, target)
 					if state.inputHash == sha256.Sum256(body) {
 						return append([]byte(nil), state.output...), state.application, nil
 					}
-					if bytes.Equal(body, state.output) || (!state.historyUncertain && ((!state.application.Applied && !state.undo.present && !state.otherUndo.present) || businessSystemPromptAlreadyApplied(body, state.application, protocol))) {
+					if bytes.Equal(body, state.output) || (state.application.RulesPlan != nil && promptRulesCarrierMatches(body, state)) || (state.application.RulesPlan == nil && !state.historyUncertain && ((!state.application.Applied && !state.undo.present && !state.otherUndo.present) || businessSystemPromptAlreadyApplied(body, state.application, protocol))) {
 						return body, state.application, nil
 					}
 				}
@@ -571,7 +610,7 @@ func (s *OpenAIGatewayService) rewriteBusinessSystemPromptJSONForRequest(c *gin.
 	if err != nil {
 		return body
 	}
-	return rewritten
+	return rewritePromptRulesStructuredEcho(c, rewritten, protocol)
 }
 
 func (s *OpenAIGatewayService) rewriteBusinessSystemPromptJSONForAnyRequest(c *gin.Context, body []byte) []byte {
@@ -587,6 +626,9 @@ func (s *OpenAIGatewayService) rewriteBusinessSystemPromptSSEForRequest(c *gin.C
 	rewritten, err := RewriteBusinessSystemPromptSSE(body, application, application.ExposeServerPrompt)
 	if err != nil {
 		return body
+	}
+	if application.RulesPlan != nil {
+		return rewritePromptRulesStructuredSSE(c, rewritten, protocol)
 	}
 	return rewritten
 }
@@ -623,6 +665,9 @@ func beginBusinessSystemPromptRequestTurn(ctx *gin.Context) {
 // This encoding is an internal namespace, never an upstream field. Preserve
 // its historical bytes so Cindy's SHA256(old expanded key) remains unchanged.
 func businessSystemPromptCacheNamespace(application BusinessSystemPromptApplication) string {
+	if application.RulesPlan != nil && application.Applied {
+		return ":prompt-rules:v1:" + strconv.FormatInt(application.Revision, 10) + ":" + application.RulesPlan.SHA256
+	}
 	if !application.Applied || application.Revision < 1 || strings.TrimSpace(application.SHA256) == "" {
 		return ""
 	}
@@ -672,6 +717,18 @@ func deriveBusinessSystemPromptCacheKey(c *gin.Context, key string, application 
 func rewriteBusinessSystemPromptCacheKey(c *gin.Context, body []byte, application BusinessSystemPromptApplication) ([]byte, error) {
 	value := gjson.GetBytes(body, "prompt_cache_key")
 	if !value.Exists() || value.Type != gjson.String {
+		return body, nil
+	}
+	if application.RulesPlan != nil && !application.Applied && c != nil {
+		if stored, ok := c.Get(businessSystemPromptCacheIdentityKey); ok {
+			if identities, ok := stored.(*businessSystemPromptCacheIdentities); ok {
+				for _, identity := range identities.values {
+					if value.String() == identity.wire {
+						return sjson.SetBytes(body, "prompt_cache_key", identity.source)
+					}
+				}
+			}
+		}
 		return body, nil
 	}
 	effective := deriveBusinessSystemPromptCacheKey(c, value.String(), application)

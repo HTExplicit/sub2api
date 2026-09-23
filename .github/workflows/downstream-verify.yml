@@ -149,6 +149,8 @@ jobs:
             src/components/admin/account/__tests__/AccountTestModal.spec.ts \
             src/components/admin/account/__tests__/AccountTestModal.displayContract.spec.ts \
             src/components/admin/account/__tests__/AccountTestModal.policyPlan.spec.ts \
+            src/components/admin/account/__tests__/CodexFingerprintPanel.spec.ts \
+            src/components/keys/__tests__/UseKeyModal.spec.ts \
             src/views/admin/__tests__/SettingsView.spec.ts \
             src/components/common/__tests__/VersionBadge.downstream.spec.ts \
             src/api/__tests__/downstreamStatus.spec.ts \
@@ -169,6 +171,8 @@ jobs:
             src/components/plugins/__tests__/pluginViewDispatch.spec.ts \
             src/components/plugins/__tests__/resourceAvailability.spec.ts \
             src/components/plugins/__tests__/PluginFrame.precondition.spec.ts \
+            src/components/plugins/__tests__/theme.spec.ts \
+            src/components/plugins/__tests__/presentationStability.spec.ts \
             src/components/plugins/__tests__/resourceClient.spec.ts \
             src/components/plugins/__tests__/localResources.spec.ts \
             src/features/image-studio/history.legacy.spec.ts \
@@ -205,6 +209,7 @@ jobs:
             src/composables/__tests__/useModelWhitelist.spec.ts \
             src/components/account/__tests__/BulkEditAccountModal.spec.ts \
             ../plugins/prompt-skills/ui/src/__tests__/App.spec.ts \
+            ../plugins/prompt-skills/ui/src/__tests__/PromptRules.spec.ts \
             ../plugins/prompt-skills/ui/src/__tests__/locales.spec.ts \
             src/views/admin/__tests__/AccountsView.console.spec.ts \
             src/views/admin/__tests__/AccountsView.priorityColumn.spec.ts \
@@ -249,7 +254,9 @@ jobs:
       - name: Resolve candidate compatibility version
         id: version
         shell: bash
-        run: printf 'value=%s-candidate\n' "$(tr -d '\r\n' < backend/cmd/server/VERSION)" >> "$GITHUB_OUTPUT"
+        # A codexrip prerelease that sorts above every numbered codexrip.N of this
+        # base, so bundled plugins requiring the newest downstream host verify.
+        run: printf 'value=%s-codexrip.candidate\n' "$(tr -d '\r\n' < backend/cmd/server/VERSION)" >> "$GITHUB_OUTPUT"
       - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
       - name: Build candidate
         uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6

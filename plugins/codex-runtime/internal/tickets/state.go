@@ -4,6 +4,8 @@ import (
 	"errors"
 	"strings"
 	"time"
+
+	extensionv1 "github.com/Wei-Shaw/sub2api/pkg/extensionapi/v1"
 )
 
 const Length = 292
@@ -30,15 +32,72 @@ func (t *Ticket) Valid(now time.Time, accountID int64, identity, model string) b
 // State includes the spent automatic attempt before any network IO. A process
 // restart resumes only persisted pending stages, never a running/spent attempt.
 type State struct {
-	Identity          string     `json:"identity"`
-	OperationID       string     `json:"operation_id,omitempty"`
-	Phase             string     `json:"phase"`
-	NextAt            *time.Time `json:"next_attempt_at,omitempty"`
-	ExpiresAt         *time.Time `json:"expires_at,omitempty"`
-	ManualWasEnrolled bool       `json:"manual_was_enrolled,omitempty"`
-	LastCode          string     `json:"last_code,omitempty"`
-	LastAttemptAt     *time.Time `json:"last_attempt_at,omitempty"`
-	Ticket            *Ticket    `json:"ticket,omitempty"`
+	Schema            int                                    `json:"schema,omitempty"`
+	Enrolled          bool                                   `json:"enrolled,omitempty"`
+	Failures          int                                    `json:"failures,omitempty"`
+	Qualification     *extensionv1.CodexRoutingQualification `json:"qualification,omitempty"`
+	Observation       *extensionv1.CodexRoutingObservation   `json:"observation,omitempty"`
+	Identity          string                                 `json:"identity"`
+	OperationID       string                                 `json:"operation_id,omitempty"`
+	Phase             string                                 `json:"phase"`
+	NextAt            *time.Time                             `json:"next_attempt_at,omitempty"`
+	ExpiresAt         *time.Time                             `json:"expires_at,omitempty"`
+	ManualWasEnrolled bool                                   `json:"manual_was_enrolled,omitempty"`
+	LastCode          string                                 `json:"last_code,omitempty"`
+	LastAttemptAt     *time.Time                             `json:"last_attempt_at,omitempty"`
+	Ticket            *Ticket                                `json:"ticket,omitempty"`
+}
+
+func (s *State) migrateRouting() {
+	if s.Schema >= extensionv1.CodexRoutingSchema {
+		return
+	}
+	s.Schema = extensionv1.CodexRoutingSchema
+	s.Enrolled = s.Phase == "ready" || s.Phase == "retry"
+	if s.Enrolled {
+		s.Phase = "needs_cookie_verification"
+		now := time.Now().UTC()
+		s.NextAt = &now
+	}
+	// Old STATE is never a Cookie qualification. Keep stopped/running markers
+	// and operation IDs so migration cannot resurrect a spent attempt.
+	s.Ticket, s.Qualification, s.ExpiresAt = nil, nil, nil
+}
+
+func (s *State) beginRouting(now time.Time, manual bool) error {
+	if s.Phase == "manual_running" || s.Phase == "pre_running" || s.Phase == "post_running" {
+		return ErrRunning
+	}
+	if !manual && (!s.Enrolled || s.Phase == "stopped" || s.Failures >= 2 || s.NextAt == nil || now.Before(*s.NextAt)) {
+		return ErrNotDue
+	}
+	s.ManualWasEnrolled = s.Enrolled
+	s.Phase = "pre_running"
+	if manual {
+		s.Phase = "manual_running"
+	}
+	s.LastAttemptAt, s.NextAt = &now, nil
+	return nil
+}
+
+func (s *State) completeRouting(now time.Time, q *extensionv1.CodexRoutingQualification, observation extensionv1.CodexRoutingObservation) {
+	manual := s.Phase == "manual_running"
+	s.Observation, s.LastCode = &observation, observation.Code
+	if q != nil {
+		s.Qualification, s.ExpiresAt = q, &q.ExpiresAt
+		s.Enrolled, s.Failures, s.Phase = true, 0, "ready"
+		due := q.ExpiresAt.Add(-extensionv1.CodexRoutingRefreshLead)
+		s.NextAt = &due
+		return
+	}
+	s.Failures++
+	if (manual && !s.ManualWasEnrolled) || s.Failures >= 2 || observation.Code == "ticket_canceled" || observation.Code == "ticket_interrupted" {
+		s.Stop()
+		return
+	}
+	s.Phase = "retry"
+	due := now.Add(extensionv1.CodexRoutingRefreshLead)
+	s.NextAt = &due
 }
 
 func (s *State) Begin(now time.Time, manual bool) error {

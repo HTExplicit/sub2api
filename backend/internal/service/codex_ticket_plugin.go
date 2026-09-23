@@ -61,6 +61,9 @@ func (s *OpenAIGatewayService) applyOpenAICodexTicket(ctx context.Context, accou
 }
 
 func (s *OpenAIGatewayService) openAICodexTicketBlocksAccount(account *Account, model string) bool {
+	if s != nil && s.pluginManager != nil {
+		s.pluginManager.noteCodexRoutingDemand(account, model)
+	}
 	return s != nil && s.pluginManager != nil && !s.pluginManager.SchedulingDecision(account, model, time.Now()).Allowed
 }
 
@@ -151,13 +154,13 @@ func OpenAICodexTicketStatuses(account *Account, cfg config.OpenAICodexTicketCon
 				entry.Length = observation.Count
 				if observation.Code != "" {
 					result := CodexTicketFailure(observation.Code)
-					if observation.Code == "ticket_ready" || observation.Code == "ticket_skipped" {
-						result = CodexTicketResult{Code: observation.Code, Success: true, Message: "已有有效票据"}
+					if observation.Code == "routing_verified" || observation.Code == "ticket_skipped" {
+						result = CodexTicketResult{Code: observation.Code, Success: true, Message: "业务出口 Cookie 路由已验证"}
 					}
 					entry.LastResult = &result
 				}
 			}
-			if grant, ok := projection.Scheduling[model]; ok && grant.Effect == "allow" && grant.Until != nil && now.Before(*grant.Until) {
+			if grant, ok := projection.Scheduling[model]; ok && grant.Effect == "allow" && grant.Reason == "routing_verified" && grant.Until != nil && now.Before(*grant.Until) {
 				entry.Ready = true
 				entry.ExpiresAt = grant.Until
 				entry.RemainingSeconds = int64(grant.Until.Sub(now).Seconds())

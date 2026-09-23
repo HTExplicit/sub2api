@@ -791,6 +791,10 @@ func (s *OpenAIGatewayService) buildUpstreamRequestOpenAIPassthrough(
 		return nil, fmt.Errorf("normalize compatible Responses reasoning summary: %w", err)
 	}
 
+	body, err = s.finalizeBusinessPromptForSend(c, account, body, BusinessSystemPromptProtocolResponses, isOpenAIResponsesCompactPath(c))
+	if err != nil {
+		return nil, err
+	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, targetURL, bytes.NewReader(body))
 	if err != nil {
 		return nil, err
@@ -813,7 +817,13 @@ func (s *OpenAIGatewayService) buildUpstreamRequestOpenAIPassthrough(
 
 	// 客户端回带的 x-codex-turn-state 若已知由其他账号铸造（failover 换号），
 	// 剥离后再出站（openai_codex_turn_state.go）。
+	if c != nil {
+		if _, staged := c.Get(codexRoutingTurnContextKey); !staged {
+			stageCodexRoutingTurn(c, body)
+		}
+	}
 	s.guardOpenAICodexTurnStateEcho(c, account, req.Header)
+	req = withCodexRoutingModel(req, extractOpenAICodexTicketModel(body))
 	if err := s.applyOpenAICodexTicket(ctx, account, extractOpenAICodexTicketModel(body), req.Header); err != nil {
 		return nil, err
 	}

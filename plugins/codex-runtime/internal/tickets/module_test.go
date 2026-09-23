@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"net"
-	"net/http"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -19,12 +18,14 @@ import (
 )
 
 type memoryHost struct {
-	mu       sync.Mutex
-	state    map[string]extensionv1.StateResult
-	lease    map[string]int64
-	sequence int64
-	account  extensionv1.Account
-	due      []extensionv1.DueState
+	mu           sync.Mutex
+	state        map[string]extensionv1.StateResult
+	lease        map[string]int64
+	sequence     int64
+	account      extensionv1.Account
+	due          []extensionv1.DueState
+	probe        func(extensionv1.CodexRoutingQuery) extensionv1.CodexRoutingProbeResult
+	checkInvalid bool
 }
 
 func TestInvalidConfigurationCannotStopCurrentTicketEpoch(t *testing.T) {
@@ -62,10 +63,25 @@ func TestTransportSettingDoesNotDependOnTicketAcquisitionSwitch(t *testing.T) {
 }
 
 func (h *memoryHost) Call(_ context.Context, in extensionv1.HostInvocation) (extensionv1.Result, error) {
+	if in.Operation == extensionv1.HostCodexRoutingProbe {
+		var query extensionv1.CodexRoutingQuery
+		if json.Unmarshal(in.Payload, &query) != nil {
+			return extensionv1.Result{}, errors.New("invalid probe")
+		}
+		value := h.probe(query)
+		raw, err := json.Marshal(value)
+		return extensionv1.Result{Payload: raw}, err
+	}
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	var value any
 	switch in.Operation {
+	case extensionv1.HostAccountList:
+		value = []extensionv1.Account{}
+	case extensionv1.HostCodexRoutingScope:
+		value = testRoutingScope(h.account)
+	case extensionv1.HostCodexRoutingCheck:
+		value = extensionv1.CodexRoutingProbeResult{Valid: !h.checkInvalid}
 	case extensionv1.HostAccountRead:
 		value = h.account
 	case extensionv1.HostResolveIdentity:
@@ -75,11 +91,15 @@ func (h *memoryHost) Call(_ context.Context, in extensionv1.HostInvocation) (ext
 		if err := json.Unmarshal(in.Payload, &req); err != nil {
 			return extensionv1.Result{}, err
 		}
-		current := h.state[req.Key]
+		key := req.Key
+		if req.Namespace != "tickets" {
+			key = req.Namespace + ":" + key
+		}
+		current := h.state[key]
 		current.Applied = false
 		if in.Operation == extensionv1.HostStateCompareSwap && current.Revision == req.ExpectedRevision {
 			current = extensionv1.StateResult{Found: true, Applied: true, Revision: current.Revision + 1, Value: append([]byte(nil), req.Value...)}
-			h.state[req.Key] = current
+			h.state[key] = current
 		}
 		value = current
 	case extensionv1.HostStateDue:
@@ -133,18 +153,10 @@ func TestModulePersistsManualLifecycleAndNeverReturnsTicketToAdmin(t *testing.T)
 	}
 	t.Cleanup(func() { module.mu.Lock(); module.cancel(); module.mu.Unlock() })
 	var requests atomic.Int32
-	material := "gAAAAA" + strings.Repeat("a", 286)
-	module.prepareProxy = func(context.Context, *extensionv1.Client, string, bool) (*http.Client, *ProxyResult, error) {
-		return &http.Client{}, &ProxyResult{NetworkReachable: true}, nil
-	}
-	module.requestTicket = func(_ context.Context, _ *http.Client, identity extensionv1.OutboundIdentity, model string) (*Ticket, Outcome) {
+	material := "secret-cookie-material"
+	host.probe = func(query extensionv1.CodexRoutingQuery) extensionv1.CodexRoutingProbeResult {
 		requests.Add(1)
-		if identity.Token != "test-only" || identity.Identity != "principal" {
-			t.Error("wrong prepared credential")
-		}
-		now := time.Now().UTC()
-		ticket := &Ticket{State: material, AccountID: identity.AccountID, Identity: identity.Identity, Model: model, CapturedAt: now, ExpiresAt: now.Add(TTL)}
-		return ticket, Outcome{Success: true, Code: "ticket_ready", ObservedLength: 292, HTTPStatus: 200, ExpiresAt: &ticket.ExpiresAt}
+		return testRoutingProbe(host.account, query)
 	}
 	invoke := func(capability, operation string, payload any) extensionv1.Result {
 		t.Helper()
@@ -160,12 +172,12 @@ func TestModulePersistsManualLifecycleAndNeverReturnsTicketToAdmin(t *testing.T)
 	if strings.Contains(string(result.Payload), material) || !strings.Contains(string(result.Payload), `"success":true`) {
 		t.Fatalf("unsafe/failed admin outcome: %s", result.Payload)
 	}
-	if requests.Load() != 1 {
-		t.Fatal("first manual attempt not singular")
+	if requests.Load() != 2 {
+		t.Fatal("one acquisition and one verification required")
 	}
 	request.OperationID = "manual-2"
 	invoke(extensionv1.CapabilityAdmin, "harvest", request)
-	if requests.Load() != 1 {
+	if requests.Load() != 2 {
 		t.Fatal("valid ticket caused another upstream request")
 	}
 	admission := extensionv1.SchedulingRequest{Account: host.account, Model: request.Model, Now: time.Now().UTC()}
@@ -175,8 +187,8 @@ func TestModulePersistsManualLifecycleAndNeverReturnsTicketToAdmin(t *testing.T)
 		t.Fatal("prepared inactive credential was not available for ticket admission")
 	}
 	result = invoke(extensionv1.CapabilityRequest, "inject", admission)
-	if !strings.Contains(string(result.Payload), material) {
-		t.Fatal("internal request hook did not supply the stored ticket")
+	if strings.Contains(string(result.Payload), material) || !strings.Contains(string(result.Payload), "routing_qualification") || strings.Contains(string(result.Payload), "x-codex-turn-state") {
+		t.Fatal("internal request hook must return only qualification reference")
 	}
 	invoke(extensionv1.CapabilityAdmin, "stop", request)
 	host.mu.Lock()
@@ -195,7 +207,17 @@ func TestModulePersistsManualLifecycleAndNeverReturnsTicketToAdmin(t *testing.T)
 	host.mu.Lock()
 	after := host.state[stateKey(7, request.Model)]
 	host.mu.Unlock()
-	if after.Revision != stored.Revision || requests.Load() != 1 {
+	if after.Revision != stored.Revision || requests.Load() != 2 {
 		t.Fatal("configuration changes resurrected stopped renewal")
 	}
+}
+
+func testRoutingScope(account extensionv1.Account) extensionv1.CodexRoutingScope {
+	return extensionv1.CodexRoutingScope{AccountID: account.ID, Identity: account.Identity, ProfileHash: "profile", RouteHash: "route", Transport: "http"}
+}
+
+func testRoutingProbe(account extensionv1.Account, query extensionv1.CodexRoutingQuery) extensionv1.CodexRoutingProbeResult {
+	scope := testRoutingScope(account)
+	scope.ConnectionLeaseID, scope.RouteEvidence = "physical-connection", "connection"
+	return extensionv1.CodexRoutingProbeResult{Scope: scope, Valid: true, Bundle: &extensionv1.CodexRoutingBundleRef{Key: "bundle.reference", Revision: 1, ExpiresAt: time.Now().Add(100 * time.Second), ConnectionLeaseID: scope.ConnectionLeaseID}, Observation: extensionv1.CodexRoutingObservation{Stage: query.Stage, Code: "routing_verified", RequestedModel: query.Model, ResponseModel: query.Model, Completed: true, ModelMatched: true, StateLength: 312, HTTPStatus: 200}}
 }

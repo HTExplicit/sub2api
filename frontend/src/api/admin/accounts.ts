@@ -631,6 +631,7 @@ export async function getAccountTestPlan(id: number, signal?: AbortSignal, view?
 
 export interface SyncUpstreamModelsResult {
   models: string[]
+  model_list_source?: 'upstream' | 'configured'
   metadata?: Record<string, UpstreamModelMetadata>
   warnings?: UpstreamModelSyncWarning[]
   capacity_rows?: ModelContextCapacityRow[]

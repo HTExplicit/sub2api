@@ -1,5 +1,7 @@
+import rules from './rules.en'
 export default {
   systemPrompts: {
+    rules,
     title: 'System Prompts',
     common: { refresh: 'Refresh', close: 'Close', loading: 'Loading', saving: 'Saving', cancel: 'Cancel' },
     runtime: {

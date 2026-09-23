@@ -101,6 +101,7 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 			errors.New("invalid json"),
 		)
 	}
+	stageCodexRoutingTurn(c, trimmedFirstMessage)
 
 	// 预取一次 OpenAI Fast Policy settings，绑定到 ctx，让该 WS session
 	// 内所有帧的 evaluateOpenAIFastPolicy 调用复用同一份快照，避免每帧
@@ -138,8 +139,14 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 		}
 	}
 	strictCindyContinuation := IsCindyAPIKeyAccount(account.Platform, account.Type, account.Credentials) || legacyLaxaContinuation
-	forceHTTPBridge := account.Platform == PlatformGrok
+	// A routing Cookie qualification belongs to the verified HTTP connection.
+	// A new native WS socket cannot inherit that connection's exit evidence.
+	_, cookieRoutingModel := resolveOpenAIForwardMappedModels(account, gjson.GetBytes(firstClientMessage, "model").String(), false)
+	forceHTTPBridge := account.Platform == PlatformGrok || s.codexRoutingApplies(account, cookieRoutingModel)
 	modeRouterV2Enabled := s != nil && s.cfg != nil && s.cfg.Gateway.OpenAIWS.ModeRouterV2Enabled
+	if modeRouterV2Enabled && account.Platform != PlatformGrok && account.ResolveOpenAIResponsesWebSocketV2Mode(s.cfg.Gateway.OpenAIWS.IngressModeDefault) == OpenAIWSIngressModeOff {
+		return NewOpenAIWSClientCloseError(coderws.StatusPolicyViolation, "websocket mode is disabled for this account", nil)
+	}
 	ingressMode := OpenAIWSIngressModeCtxPool
 	if modeRouterV2Enabled && !forceHTTPBridge {
 		ingressMode = account.ResolveOpenAIResponsesWebSocketV2Mode(s.cfg.Gateway.OpenAIWS.IngressModeDefault)
@@ -201,6 +208,9 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 	if forceHTTPBridge {
 		wsHost = "xai-http-bridge"
 		wsPath = "/v1/responses"
+		if account.Platform != PlatformGrok {
+			wsHost, wsPath = "qualified-http-bridge", "/backend-api/codex/responses"
+		}
 	} else {
 		var err error
 		wsURL, err = s.buildOpenAIResponsesWSURL(account)
@@ -229,6 +239,7 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 		requestedReasoningEffort *string
 	}
 	ingressSessionOriginalModel := ""
+	nativeRoutingConnection := false
 
 	applyPayloadMutation := func(current []byte, path string, value any) ([]byte, error) {
 		next, err := sjson.SetBytes(current, path, value)
@@ -533,8 +544,9 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 		}
 		normalized = policyApplied
 		beginBusinessSystemPromptRequestTurn(c)
+		rememberPromptRequestedModel(c, raw)
 		businessPromptApplied := false
-		if updatedPromptPayload, application, promptErr := s.applyBusinessSystemPromptForRequest(
+		if updatedPromptPayload, application, promptErr := s.prepareBusinessPromptWSIngress(
 			c, normalized, account, BusinessSystemPromptProtocolResponses, isOpenAIResponsesCompactPath(c),
 		); promptErr != nil {
 			if errors.Is(promptErr, ErrBusinessSystemPromptUnavailable) {
@@ -595,6 +607,12 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 			return openAIWSClientPayload{}, NewOpenAIWSClientCloseError(coderws.StatusPolicyViolation, integrityErr.Error(), integrityErr)
 		}
 		ingressSessionOriginalModel = originalModel
+		stageCodexRoutingTurn(c, trimmed)
+		if nativeRoutingConnection {
+			if routingErr := s.guardCodexRoutingNativeModel(account, upstreamModel); routingErr != nil {
+				return openAIWSClientPayload{}, routingErr
+			}
+		}
 
 		return openAIWSClientPayload{
 			payloadRaw:               normalized,
@@ -677,6 +695,7 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 
 	useHTTPBridge := forceHTTPBridge || s.shouldBridgeOpenAIWSHTTP(account, firstPayload.payloadBytes, firstPayload.previousResponseID)
 	turnState := strings.TrimSpace(c.GetHeader(openAIWSTurnStateHeader))
+	nativeLogicalTurn := codexRoutingTurnID(c)
 	stateStore := s.getOpenAIWSStateStore()
 	groupID := getOpenAIGroupIDFromContext(c)
 	resolveStrictCindyAnchorConn := func(previousResponseID string, liveConnID string) (string, error) {
@@ -717,8 +736,9 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 			// inherit another connection's native WS turn state or socket binding.
 			return
 		}
-		if turnState == "" && stateStore != nil && sessionHash != "" {
-			if savedTurnState, ok := stateStore.GetSessionTurnState(groupID, sessionHash, account.ID); ok {
+		turnStateScope := openAIWSTurnStateScope(c, account, sessionHash)
+		if (turnState == "" || !openAICodexTurnStateUsesSessionContract(account)) && stateStore != nil && turnStateScope != "" {
+			if savedTurnState, ok := stateStore.GetSessionTurnState(groupID, turnStateScope, account.ID); ok {
 				turnState = savedTurnState
 			}
 		}
@@ -757,7 +777,15 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 		bridgeReplayVerified := false
 		bridgeBaselineResponseID := ""
 		bridgeOwnedTurnState := openAIWSHTTPBridgeTurnState{accountID: account.ID}
+		bridgeLogicalTurn := ""
 		for turn := 1; ; turn++ {
+			stageCodexRoutingTurn(c, currentBridgePayload.rawForHash)
+			currentLogicalTurn := codexRoutingTurnID(c)
+			if bridgeOwnedTurnState.accountID != account.ID || (!openAICodexTurnStateUsesSessionContract(account) && (currentLogicalTurn == "" || currentLogicalTurn != bridgeLogicalTurn)) {
+				turnState, bridgeOwnedTurnState.value = "", ""
+				bridgeOwnedTurnState.accountID = account.ID
+			}
+			bridgeLogicalTurn = currentLogicalTurn
 			if turn > 1 && hooks != nil && hooks.BeforeRequest != nil {
 				if err := hooks.BeforeRequest(turn, currentBridgePayload.payloadRaw, currentBridgePayload.originalModel); err != nil {
 					return err
@@ -894,12 +922,14 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 					ctx, c, account, cindyOpaqueBindingIDsFromRawItems(result.wsReplayInput),
 				)
 			}
-			// Replace this bridge's state even when the response omits it. An
-			// empty value invalidates the prior state without touching shared
-			// native-WS state or provenance belonging to independent connections.
+			// Codex retains the first value within one logical turn, including
+			// tool continuations with an omitted/different response header. A new
+			// turn clears it above. API destinations keep their prior contract.
 			bridgeTurnState := strings.TrimSpace(result.ResponseHeaders.Get(openAIWSTurnStateHeader))
-			turnState = bridgeTurnState
-			bridgeOwnedTurnState.value = bridgeTurnState
+			if openAICodexTurnStateUsesSessionContract(account) || bridgeOwnedTurnState.value == "" {
+				turnState = bridgeTurnState
+				bridgeOwnedTurnState.value = bridgeTurnState
+			}
 			responseID := strings.TrimSpace(result.RequestID)
 			bridgeBaselineResponseID = responseID
 			if responseID != "" && stateStore != nil {
@@ -931,6 +961,7 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 	// Native ingress can retry the first turn once only while no downstream
 	// output has been emitted. Always hold metadata-only preamble frames so a
 	// failed attempt cannot leak response IDs before that retry decision.
+	nativeRoutingConnection = true
 	nativeMatcher := (*OpenAIRefusalMatcher)(nil)
 	if refusalRuntime.RewriteEnabled() {
 		nativeMatcher = refusalRuntime.Matcher
@@ -1160,6 +1191,7 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 	}
 
 	var rejectedFieldRetryState *openAIResponsesRejectedFieldRetryState
+	committedHandshakeConnID := ""
 	sendAndRelay := func(turn int, lease *openAIWSConnLease, payload []byte, payloadBytes int, originalModel string, imageBillingModel string, imageSizeTier string, imageInputSize string, requestedReasoningEffort *string) (*OpenAIForwardResult, error) {
 		policyCtx, policyErr := copyOpenAIWSProviderPricingContext(ctx, hooks, turn)
 		if policyErr != nil {
@@ -1181,12 +1213,20 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 		// actually written. Draining an upstream terminal after client disconnect
 		// must not claim that the client received this attempt's state.
 		handshakeTurnState := strings.TrimSpace(lease.HandshakeHeader(openAIWSTurnStateHeader))
+		if !openAICodexTurnStateUsesSessionContract(account) {
+			if turnState != "" {
+				handshakeTurnState = turnState
+			} else if lease.Reused() || committedHandshakeConnID == lease.ConnID() {
+				handshakeTurnState = ""
+			}
+		}
 		turnStateCommitted := false
 		commitTurnState := func() {
 			if turnStateCommitted {
 				return
 			}
 			turnStateCommitted = true
+			committedHandshakeConnID = lease.ConnID()
 			turnState = handshakeTurnState
 			updatedHeaders := cloneHeader(baseAcquireReq.Headers)
 			if updatedHeaders == nil {
@@ -1216,13 +1256,21 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 			}
 			return wroteDownstream
 		}
-		if err := lease.WriteJSONWithContextTimeout(ctx, json.RawMessage(payload), s.openAIWSWriteTimeout()); err != nil {
+		wirePayload, promptErr := s.finalizeBusinessPromptWSIngress(c, account, payload)
+		if promptErr != nil {
+			return nil, businessPromptWSCloseError(promptErr)
+		}
+		if routingErr := s.guardCodexRoutingNativeModel(account, gjson.GetBytes(wirePayload, "model").String()); routingErr != nil {
+			return nil, routingErr
+		}
+		if err := lease.WriteJSONWithContextTimeout(ctx, json.RawMessage(wirePayload), s.openAIWSWriteTimeout()); err != nil {
 			return nil, wrapOpenAIWSIngressTurnError(
 				"write_upstream",
 				fmt.Errorf("write upstream websocket request: %w", err),
 				false,
 			)
 		}
+		s.observeNativeCodexWS(ctx, account, wsHeaders, lease.HandshakeHeaders(), wirePayload, lease.ConnID())
 		if debugEnabled {
 			logOpenAIWSModeDebug(
 				"ingress_ws_turn_request_sent account_id=%d turn=%d conn_id=%s payload_bytes=%d",
@@ -2120,6 +2168,15 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 		nextPayload, parseErr := parseClientPayload(turn+1, nextClientMessage)
 		if parseErr != nil {
 			return parseErr
+		}
+		if !openAICodexTurnStateUsesSessionContract(account) {
+			nextLogicalTurn := codexRoutingTurnID(c)
+			if nextLogicalTurn == "" || nextLogicalTurn != nativeLogicalTurn {
+				turnState = ""
+				baseAcquireReq.Headers.Del(openAIWSTurnStateHeader)
+				c.Request.Header.Del(openAIWSTurnStateHeader)
+			}
+			nativeLogicalTurn = nextLogicalTurn
 		}
 		nextRoutingFields := gjson.GetManyBytes(nextPayload.payloadRaw, "model", "service_tier")
 		if nextPayload.promptCacheKey != "" {

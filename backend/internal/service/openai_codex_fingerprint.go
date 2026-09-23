@@ -527,6 +527,14 @@ func applyCodexFingerprintToClientMetadataMap(existing map[string]any, ids *code
 	}
 
 	// session / full 模式
+	// A real turn can contain several tool continuations or retries. Preserve
+	// its already-account-scoped UUID instead of minting another turn per HTTP
+	// attempt; headers and body share this same IDs object.
+	if original, ok := existing["turn_id"].(string); ok {
+		if _, err := uuid.Parse(original); err == nil {
+			ids.turnID = original
+		}
+	}
 	existing["session_id"] = ids.sessionID
 	existing["thread_id"] = ids.threadID
 	existing["turn_id"] = ids.turnID

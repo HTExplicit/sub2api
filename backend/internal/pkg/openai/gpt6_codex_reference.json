@@ -1,0 +1,124 @@
+{
+  "source_url": "https://github.com/openai/codex/blob/4b664e0ef0397f82e68c60088a90fcd035deb796/codex-rs/models-manager/models.json",
+  "source_commit": "4b664e0ef0397f82e68c60088a90fcd035deb796",
+  "verified_at": "2026-09-23",
+  "source_sha256": "0178d235c589a31abd6ed0ea1e870935dc5819240eb0e813e178d3ebedf534f4",
+  "models": {
+    "gpt-6-sol": {
+      "slug": "gpt-6-sol",
+      "display_name": "GPT-6-Sol",
+      "context_window": 272000,
+      "max_context_window": 872000,
+      "auto_compact_token_limit": null,
+      "default_reasoning_level": "medium",
+      "supported_reasoning_levels": [
+        {
+          "effort": "low",
+          "description": "Fast responses with lighter reasoning"
+        },
+        {
+          "effort": "medium",
+          "description": "Balances speed and reasoning depth for everyday tasks"
+        },
+        {
+          "effort": "high",
+          "description": "Greater reasoning depth for complex problems"
+        },
+        {
+          "effort": "xhigh",
+          "description": "Extra high reasoning depth for complex problems"
+        },
+        {
+          "effort": "max",
+          "description": "Maximum reasoning depth for the hardest problems"
+        },
+        {
+          "effort": "ultra",
+          "description": "Maximum reasoning with automatic task delegation"
+        }
+      ],
+      "input_modalities": [
+        "text",
+        "image"
+      ],
+      "service_tiers": [
+        {
+          "id": "priority",
+          "name": "Fast",
+          "description": "1.5x speed"
+        }
+      ],
+      "use_responses_lite": true,
+      "multi_agent_reasoning_effort": null,
+      "multi_agent_version": "v2",
+      "minimal_client_version": "0.155.0",
+      "truncation_policy": {
+        "mode": "tokens",
+        "limit": 10000
+      },
+      "tool_mode": "code_mode_only",
+      "apply_patch_tool_type": "freeform",
+      "comp_hash": "3000",
+      "supports_search_tool": true,
+      "instructions_field": "model_messages.instructions_template",
+      "instructions_file": "instructions_gpt6_sol.txt",
+      "instructions_sha256": "b1dd8718c037906c53a305c5cbccb4a4be35ccbb7837461ec349bfc495412f0d"
+    },
+    "gpt-6-luna": {
+      "slug": "gpt-6-luna",
+      "display_name": "GPT-6-Luna",
+      "context_window": 272000,
+      "max_context_window": 872000,
+      "auto_compact_token_limit": null,
+      "default_reasoning_level": "medium",
+      "supported_reasoning_levels": [
+        {
+          "effort": "low",
+          "description": "Fast responses with lighter reasoning"
+        },
+        {
+          "effort": "medium",
+          "description": "Balances speed and reasoning depth for everyday tasks"
+        },
+        {
+          "effort": "high",
+          "description": "Greater reasoning depth for complex problems"
+        },
+        {
+          "effort": "xhigh",
+          "description": "Extra high reasoning depth for complex problems"
+        },
+        {
+          "effort": "max",
+          "description": "Maximum reasoning depth for the hardest problems"
+        }
+      ],
+      "input_modalities": [
+        "text",
+        "image"
+      ],
+      "service_tiers": [
+        {
+          "id": "priority",
+          "name": "Fast",
+          "description": "1.5x speed"
+        }
+      ],
+      "use_responses_lite": true,
+      "multi_agent_reasoning_effort": null,
+      "multi_agent_version": "v2",
+      "minimal_client_version": "0.155.0",
+      "truncation_policy": {
+        "mode": "tokens",
+        "limit": 10000
+      },
+      "tool_mode": "code_mode_only",
+      "apply_patch_tool_type": "freeform",
+      "comp_hash": "3000",
+      "supports_search_tool": true,
+      "instructions_field": "model_messages.instructions_template",
+      "instructions_file": "instructions_gpt6_luna.txt",
+      "instructions_sha256": "b707476816bfe5e571a1bd2179f130fff2b132da5ab8e61063acdb7fd24daf12"
+    }
+  }
+}

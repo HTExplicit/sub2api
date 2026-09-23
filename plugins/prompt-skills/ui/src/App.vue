@@ -1,4 +1,6 @@
 <template>
+  <AccountPromptBinding v-if="accountBindingMode" :account-ids="bindingAccountIds" />
+  <template v-else>
     <div class="mx-auto max-w-[1500px] space-y-4 px-1">
       <header class="flex flex-wrap items-center justify-between gap-3 border-b border-gray-200 pb-4 dark:border-dark-700">
         <div class="flex min-w-0 items-center gap-3">
@@ -21,16 +23,22 @@
         </div>
       </header>
 
+      <nav class="flex gap-2 border-b border-line pb-3" :aria-label="t('admin.systemPrompts.title')">
+        <button type="button" class="btn btn-secondary btn-sm" :aria-pressed="workspaceTab === 'templates'" @click="workspaceTab = 'templates'">{{ t('admin.systemPrompts.rules.templatesTab') }}</button>
+        <button type="button" class="btn btn-secondary btn-sm" :aria-pressed="workspaceTab === 'rules'" data-test="open-prompt-rules" @click="workspaceTab = 'rules'">{{ t('admin.systemPrompts.rules.rulesTab') }}</button>
+      </nav>
+      <PromptRulesManager v-if="workspaceTab === 'rules'" @saved="loadAll()" />
+
       <div v-if="conflict" data-test="system-prompt-conflict" class="flex items-center justify-between gap-3 border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-800 dark:border-amber-800 dark:bg-amber-900/20 dark:text-amber-200">
         <span class="flex min-w-0 items-center gap-2"><Icon name="exclamationTriangle" size="sm" />{{ t('admin.systemPrompts.errors.conflict') }}</span>
         <button type="button" class="btn btn-secondary btn-sm shrink-0" @click="reloadAfterConflict">{{ t('admin.systemPrompts.actions.reload') }}</button>
       </div>
 
-      <div v-if="loading && !runtime" class="flex min-h-[320px] items-center justify-center">
+      <div v-if="workspaceTab === 'templates' && loading && !runtime" class="flex min-h-[320px] items-center justify-center">
         <div class="h-7 w-7 animate-spin rounded-full border-b-2 border-primary-600"></div>
       </div>
 
-      <template v-else>
+      <template v-else-if="workspaceTab === 'templates'">
         <div class="flex min-w-0 items-center gap-2 xl:hidden">
           <label class="sr-only" for="system-prompt-mobile-template">{{ t('admin.systemPrompts.templates.title') }}</label>
           <select id="system-prompt-mobile-template" :value="selectedId ?? ''" data-test="system-prompt-mobile-template" class="input min-w-0 flex-1" @change="selectTemplateFromMobile">
@@ -215,13 +223,16 @@
       @confirm="confirmAction"
       @cancel="confirmState = null"
     />
+  </template>
 </template>
 
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { BaseDialog, ConfirmDialog, Icon, Toggle, useNotifications, extractApiErrorCode, extractApiErrorMessage } from '@sub2api/plugin-ui'
+import { BaseDialog, ConfirmDialog, Icon, Toggle, useNotifications, extractApiErrorCode, extractApiErrorMessage, usePluginContext } from '@sub2api/plugin-ui'
 import SystemPromptAdvancedDrawer from './SystemPromptAdvancedDrawer.vue'
+import PromptRulesManager from './PromptRulesManager.vue'
+import AccountPromptBinding from './AccountPromptBinding.vue'
 import systemPromptsAPI, {
   type ManagedSourceSyncStatus,
   type ManagedSourceSyncVersion,
@@ -237,6 +248,14 @@ import systemPromptsAPI, {
 
 const { t, locale } = useI18n()
 const appStore = useNotifications()
+const pluginContext = usePluginContext()
+const accountBindingMode = computed(() => ['prompt-account-binding', 'prompt-account-binding-action'].includes(String(pluginContext.value.contribution_id)))
+const bindingAccountIds = computed(() => {
+  if (typeof pluginContext.value.account_id === 'number') return [pluginContext.value.account_id]
+  if (Array.isArray(pluginContext.value.account_ids)) return pluginContext.value.account_ids as number[]
+  return (pluginContext.value.view_props as { accountIds?: number[] } | undefined)?.accountIds || []
+})
+const workspaceTab = ref<'templates' | 'rules'>('templates')
 
 type Tab = 'editor' | 'history'
 type ManagedPromptView = 'effective' | 'raw'
@@ -664,7 +683,7 @@ async function deleteTemplate() {
 
 async function reloadAfterConflict() { await loadAll(selectedId.value); conflict.value = false }
 
-onMounted(() => void loadAll())
+onMounted(() => { if (!accountBindingMode.value) void loadAll() })
 onBeforeUnmount(() => {
   disposed = true
   selectionGeneration += 1

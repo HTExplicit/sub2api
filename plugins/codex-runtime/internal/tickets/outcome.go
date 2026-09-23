@@ -11,6 +11,12 @@ import (
 func (o Outcome) MarshalJSON() ([]byte, error) {
 	type wire Outcome
 	message := map[string]string{
+		"routing_verified": "Cookie 已通过同账号业务出口完整响应验证", "routing_candidate": "已取得候选 Cookie，尚未获得业务出口资格",
+		"routing_model_mismatch": "完整响应模型不匹配，未发布路由资格", "routing_incomplete": "响应未完整结束或缺少原始模型，未发布路由资格",
+		"routing_cookie_missing": "响应未给出可用路由 Cookie", "routing_cookie_expired": "Cookie 已到期，需要重新验证",
+		"routing_transport": "采集或业务出口验证连接失败", "routing_stale": "账号主体、出口、指纹或 Cookie 代次已变化",
+		"routing_cookie_deleted": "上游已撤销路由 Cookie", "routing_budget_spent": "本次验证的固定调用预算已使用",
+		"routing_upstream": "上游拒绝路由验证请求", "routing_connection_unknown": "无法绑定经过验证的实际连接",
 		"ticket_ready": "已取得有效292票据", "ticket_skipped": "已有有效票据，本次跳过", "ticket_stopped": "自动续期已停止",
 		"ticket_disabled": "票据功能已关闭", "ticket_model_invalid": "模型不在票据配置范围内", "ticket_proxy_missing": "尚未配置采集代理",
 		"ticket_busy": "账号和模型已有进行中的操作", "ticket_interrupted": "前次请求结果未确认，未重复发送", "ticket_not_due": "未到续期时间",

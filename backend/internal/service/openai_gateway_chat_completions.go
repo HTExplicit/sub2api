@@ -61,6 +61,7 @@ func (s *OpenAIGatewayService) ForwardAsChatCompletions(
 	promptCacheKey string,
 	defaultMappedModel string,
 ) (*OpenAIForwardResult, error) {
+	rememberPromptRequestedModel(c, body)
 	pricingContext, pricingErr := CaptureCindyPricingContext(ctx, c, account)
 	if pricingErr != nil {
 		return nil, pricingErr

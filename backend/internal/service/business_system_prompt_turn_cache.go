@@ -49,3 +49,18 @@ func businessSystemPromptRequestSet(ctx *gin.Context, key string, value any) {
 	}
 	ctx.Set(key, value)
 }
+
+func businessSystemPromptRequestDelete(ctx *gin.Context, key string) {
+	if ctx == nil {
+		return
+	}
+	current, _ := ctx.Get(businessSystemPromptTurnCacheKey)
+	if cache, ok := current.(*businessSystemPromptTurnCache); ok && cache != nil {
+		cache.mu.Lock()
+		delete(cache.values, key)
+		cache.mu.Unlock()
+		return
+	}
+	// HTTP callers never need this operation: it is reserved for the native
+	// WS accumulator's proven clean, service-owned payloads.
+}

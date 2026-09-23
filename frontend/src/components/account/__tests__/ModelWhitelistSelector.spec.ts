@@ -160,6 +160,12 @@ describe('ModelWhitelistSelector', () => {
     expect(syncUpstreamModels).not.toHaveBeenCalled()
     expect(syncUpstreamModelsPreview).not.toHaveBeenCalled()
     expect(wrapper.emitted('update:capacityDrafts')).toBeUndefined()
+    const selected = wrapper.emitted('update:modelValue')![0][0] as string[]
+    expect(selected).toContain('gpt-6-sol')
+    expect(selected).toContain('gpt-6-luna')
+    await wrapper.setProps({ modelValue: selected })
+    await wrapper.get('[data-testid="fill-related-models"]').trigger('click')
+    expect(wrapper.emitted('update:modelValue')![1][0]).toEqual(selected)
     wrapper.unmount()
   })
 

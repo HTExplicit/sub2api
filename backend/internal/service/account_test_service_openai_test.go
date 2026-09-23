@@ -27,13 +27,26 @@ type queuedHTTPUpstream struct {
 	responses []*http.Response
 	requests  []*http.Request
 	tlsFlags  []bool
+	leases    []string
 }
 
-func (u *queuedHTTPUpstream) Do(_ *http.Request, _ string, _ int64, _ int) (*http.Response, error) {
-	return nil, fmt.Errorf("unexpected Do call")
+// OAuth Codex account tests share business traffic's entry points: Do, or the
+// verified connection lease for a qualified route. API-key probes use DoWithTLS.
+func (u *queuedHTTPUpstream) Do(req *http.Request, _ string, _ int64, _ int) (*http.Response, error) {
+	return u.serve(req, nil)
 }
 
 func (u *queuedHTTPUpstream) DoWithTLS(req *http.Request, _ string, _ int64, _ int, profile *tlsfingerprint.Profile) (*http.Response, error) {
+	return u.serve(req, profile)
+}
+
+func (u *queuedHTTPUpstream) DoWithCodexConnectionLease(req *http.Request, _ string, _ int64, _ string, leaseID string, _ time.Time, profile *tlsfingerprint.Profile) (*http.Response, string, error) {
+	u.leases = append(u.leases, leaseID)
+	resp, err := u.serve(req, profile)
+	return resp, leaseID, err
+}
+
+func (u *queuedHTTPUpstream) serve(req *http.Request, profile *tlsfingerprint.Profile) (*http.Response, error) {
 	u.requests = append(u.requests, req)
 	u.tlsFlags = append(u.tlsFlags, profile != nil)
 	if len(u.responses) == 0 {

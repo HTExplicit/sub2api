@@ -55,8 +55,12 @@ func ProvideBusinessSystemPromptService(
 	bus BusinessSystemPromptRevisionBus,
 	remoteSkillRegistry *RemoteSkillRegistryService,
 	remoteSkillRegistryBus RemoteSkillRegistryRevisionBus,
+	accountRepo AccountRepository,
+	cfg *config.Config,
 ) (*BusinessSystemPromptService, error) {
 	svc := NewBusinessSystemPromptService(store, bus)
+	svc.SetAccountRepository(accountRepo)
+	svc.previewConfig = cfg
 	svc.SetRemoteSkillRegistryService(remoteSkillRegistry)
 	svc.SetRemoteSkillRegistryRevisionBus(remoteSkillRegistryBus)
 	return svc, nil

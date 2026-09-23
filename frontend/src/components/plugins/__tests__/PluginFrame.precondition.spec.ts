@@ -36,6 +36,20 @@ beforeEach(() => {
 afterEach(() => { wrapper?.unmount(); wrapper = undefined; vi.restoreAllMocks() })
 
 describe('plugin host-owned read-time preconditions', () => {
+  it('keeps the iframe session when refreshed context has the same identity', async () => {
+    await setup({ account_id: 3, contribution_id: 'classification', count: 1 })
+    const frame = wrapper!.get('iframe').element
+    expect(calls.session).toHaveBeenCalledTimes(1)
+    await wrapper!.setProps({ context: { account_id: 3, contribution_id: 'classification', count: 2 } })
+    await flushPromises()
+    expect(calls.session).toHaveBeenCalledTimes(1)
+    expect(wrapper!.get('iframe').element).toBe(frame)
+    await wrapper!.setProps({ context: { account_id: 4, contribution_id: 'classification', count: 2 } })
+    await flushPromises()
+    expect(calls.session).toHaveBeenCalledTimes(2)
+    expect(wrapper!.get('iframe').element).not.toBe(frame)
+  })
+
   it('keeps the draft and read version on conflict; only an explicit load refreshes it', async () => {
     const { send, posted } = await setup({ mode: 'configuration' })
     const draft = { value: 'my unsaved edit', nested: { preserved: true } }

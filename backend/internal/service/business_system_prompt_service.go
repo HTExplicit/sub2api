@@ -9,6 +9,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/Wei-Shaw/sub2api/internal/config"
 	extensionv1 "github.com/Wei-Shaw/sub2api/pkg/extensionapi/v1"
 )
 
@@ -148,11 +149,13 @@ type BusinessSystemPromptRevisionBus interface {
 }
 
 type BusinessSystemPromptService struct {
-	store       BusinessSystemPromptStore
-	bus         BusinessSystemPromptRevisionBus
-	registry    *RemoteSkillRegistryService
-	registryBus RemoteSkillRegistryRevisionBus
-	source      BusinessSystemPromptSource
+	previewConfig *config.Config
+	accountRepo   AccountRepository
+	store         BusinessSystemPromptStore
+	bus           BusinessSystemPromptRevisionBus
+	registry      *RemoteSkillRegistryService
+	registryBus   RemoteSkillRegistryRevisionBus
+	source        BusinessSystemPromptSource
 
 	snapshot atomic.Pointer[BusinessSystemPromptSnapshot]
 	stateMu  sync.Mutex
@@ -376,7 +379,7 @@ func (s *BusinessSystemPromptService) Reload(ctx context.Context) error {
 	if s == nil || s.store == nil {
 		return errors.New("business system prompt store unavailable")
 	}
-	loaded, err := s.store.LoadBusinessSystemPrompt(ctx)
+	loaded, err := s.loadPromptSnapshot(ctx)
 	if err != nil {
 		return s.retainLastGood(fmt.Errorf("load business system prompt: %w", err))
 	}
@@ -401,6 +404,9 @@ func (s *BusinessSystemPromptService) Reload(ctx context.Context) error {
 }
 
 func (s *BusinessSystemPromptService) prepareBusinessSystemPromptSnapshot(snapshot *BusinessSystemPromptSnapshot) error {
+	if snapshot.RulePolicy != nil {
+		return s.preparePromptRulesSnapshot(snapshot)
+	}
 	if err := validateBusinessSystemPromptSnapshot(snapshot); err != nil {
 		return err
 	}
@@ -498,6 +504,9 @@ func (s *BusinessSystemPromptService) PrepareBusinessSystemPromptPreviewSnapshot
 func (s *BusinessSystemPromptService) compileBusinessSystemPromptSnapshot(
 	snapshot BusinessSystemPromptSnapshot,
 ) (BusinessSystemPromptSnapshot, error) {
+	if snapshot.RulePolicy != nil {
+		return snapshot, nil
+	}
 	if snapshot.CompositionMode == BusinessSystemPromptCompositionInline {
 		return snapshot, nil
 	}
@@ -641,6 +650,12 @@ func (s *BusinessSystemPromptService) PublishVersionAction(ctx context.Context, 
 	if err != nil {
 		return BusinessSystemPromptSnapshot{}, err
 	}
+	if _, rules := s.store.(BusinessSystemPromptRulesStore); rules {
+		snapshot, err = s.loadPromptSnapshot(ctx)
+		if err != nil {
+			return BusinessSystemPromptSnapshot{}, err
+		}
+	}
 	snapshot.Degraded = false
 	if err := s.prepareBusinessSystemPromptSnapshot(&snapshot); err != nil {
 		_ = s.retainLastGood(err)
@@ -672,6 +687,12 @@ func (s *BusinessSystemPromptService) UpdateRuntime(ctx context.Context, update 
 	snapshot, err := s.store.UpdateBusinessSystemPromptRuntime(ctx, update)
 	if err != nil {
 		return BusinessSystemPromptSnapshot{}, err
+	}
+	if _, rules := s.store.(BusinessSystemPromptRulesStore); rules {
+		snapshot, err = s.loadPromptSnapshot(ctx)
+		if err != nil {
+			return BusinessSystemPromptSnapshot{}, err
+		}
 	}
 	snapshot.Degraded = false
 	if err := s.prepareBusinessSystemPromptSnapshot(&snapshot); err != nil {
@@ -833,6 +854,13 @@ func (s *BusinessSystemPromptService) DuplicateTemplate(ctx context.Context, id 
 }
 
 func (s *BusinessSystemPromptService) DeleteTemplate(ctx context.Context, id, actorID, expectedRevision int64) error {
+	if snapshot, ok := s.CurrentSnapshot(); ok && snapshot.RulePolicy != nil {
+		for _, rule := range snapshot.RulePolicy.Rules {
+			if !rule.FollowActive && rule.TemplateID == id {
+				return ErrBusinessSystemPromptActive
+			}
+		}
+	}
 	if err := s.rejectRemoteSkillManagedTemplate(ctx, id); err != nil {
 		return err
 	}
