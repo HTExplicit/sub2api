@@ -47,6 +47,7 @@ jobs:
       - name: Agent protocol contracts
         run: bash .github/scripts/test_agent_protocol.sh
       - name: First-party plugin contracts and signed process package
+        # Includes codex-runtime routing outcomes and legacy-state migration.
         run: bash .github/scripts/test_first_party_plugins.sh
       - name: Reasoning replay and recovery contracts
         run: bash .github/scripts/test_reasoning_replay.sh
@@ -54,7 +55,7 @@ jobs:
         run: bash .github/scripts/test_model_context_capacity.sh
       - name: Service tests
         working-directory: backend
-        run: go test -p=1 -tags unit ./internal/service -run 'Test.*(Refusal|CyberPolicy|Continuation|InvalidEncryptedContent|PreviousResponseNotFound|CapacityShed|RequestScopedTransient|ServerOverloaded|BusinessSystemPrompt|RemoteSkill|Cindy|CompatibilityModes|AlphaSearch|CodexQuality)|Test(UpdateService|NormalizeAccountTaxonomyName|FilterConsoleAccounts|AccountConsolePlan|AccountFacetMatcher)' -count=1
+        run: go test -p=1 -tags unit ./internal/service -run 'Test.*(Refusal|CyberPolicy|Continuation|InvalidEncryptedContent|PreviousResponseNotFound|CapacityShed|RequestScopedTransient|ServerOverloaded|BusinessSystemPrompt|RemoteSkill|Cindy|CompatibilityModes|AlphaSearch|CodexQuality|SelectedWorkspace)|Test(UpdateService|NormalizeAccountTaxonomyName|FilterConsoleAccounts|AccountConsolePlan|AccountFacetMatcher)' -count=1
       - name: Upstream automation classifier tests
         run: |
           python3 .github/scripts/test_upstream_risk.py
@@ -77,10 +78,10 @@ jobs:
       - name: Plugin policy cancellation race tests
         working-directory: backend
         run: go test -race -tags unit ./internal/service -run '^(TestPluginPolicyCancellationSurvivesUpstreamDetachWithoutCancelingBilling|TestPluginPolicyContextsStopOnConfigurationChangeAndDisable|TestSavingIdenticalPluginConfigurationDoesNotCancelHostWork|TestPluginOwnedHostJobHoldsUpdateLeaseUntilCleanup|TestAccountJobRetryPreservesOwnerAndAdmitsCurrentGeneration|TestLegacyImportJobUsesCurrentPluginLifetimeWithoutRewritingHistory|TestPluginJobCompletionDoesNotCancelButPolicyStopPersistsCancellation)$' -count=1
-      - name: Cindy manual balance, split, image, and turn-state tests
+      - name: Account identity, routing leases, balance, image, and turn-state tests
         working-directory: backend
         run: |
-          go test -p=1 -tags unit ./internal/repository ./internal/service ./internal/handler ./internal/handler/admin -run 'Test.*(AccountCredentialIdentity|AccountJobCindyMutation|ProviderIdentityMismatch|CindyBalanceProbe|CindyGroupSplit|CindyCatalog|CindyCodexModels|ImageStudioEligibleKeys|CindyCompatibility|LegacyCindyRuntimeCompatibility|CodexImageGenerationBridgeOverridePrecedence|TurnStateCommits|SchedulerCache|SchedulerRefresh|KeepsCindyRoutingIdentity|StrictCindyGroup|MaterializesCindyIdentity|DisabledOrdinaryMember|SkipsCindyAggregate|GatewayModelCapabilities|GatewayModels|WriteOpenAIModelsList|AccountHandlerGetAvailableModels|ForwardResponsesOllamaClampPreservesContinuationPolicy|AccountAvailableModels|FetchOpenAIAccountModels|SetAnthropicAPIKeyAuthHeader|OllamaCloud.*(MaxTokens|MaxOutputTokens|Bearer)|Clamps.*OllamaBase)' -count=1
+          go test -p=1 -tags unit ./internal/repository ./internal/service ./internal/handler ./internal/handler/admin -run 'Test.*(AccountCredentialIdentity|AccountJobCindyMutation|ProviderIdentityMismatch|CindyBalanceProbe|CindyGroupSplit|CindyCatalog|CindyCodexModels|ImageStudioEligibleKeys|CindyCompatibility|LegacyCindyRuntimeCompatibility|CodexImageGenerationBridgeOverridePrecedence|TurnStateCommits|LegacyCodexRoutingImport|CodexConnectionLease|SchedulerCache|SchedulerRefresh|KeepsCindyRoutingIdentity|StrictCindyGroup|MaterializesCindyIdentity|DisabledOrdinaryMember|SkipsCindyAggregate|GatewayModelCapabilities|GatewayModels|WriteOpenAIModelsList|AccountHandlerGetAvailableModels|ForwardResponsesOllamaClampPreservesContinuationPolicy|AccountAvailableModels|FetchOpenAIAccountModels|SetAnthropicAPIKeyAuthHeader|OllamaCloud.*(MaxTokens|MaxOutputTokens|Bearer)|Clamps.*OllamaBase)' -count=1
           go test -p=1 -tags unit ./migrations -run 'Test.*(Migration222|Migration223|Migration224|Migration230|Migration231|Migration232|Migration235|Migration236|GroupModelAllowlistRepairMigration|ReleaseAcceptance)' -count=1
       - name: Request body recovery tests
         working-directory: backend

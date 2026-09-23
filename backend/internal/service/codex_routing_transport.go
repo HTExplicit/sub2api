@@ -101,7 +101,7 @@ func (s *OpenAIGatewayService) doQualifiedCodexUpstream(request *http.Request, a
 		if response != nil {
 			observeCodexInfrastructureCookies(q.Scope, response.Header, q.ExpiresAt)
 		}
-		observeCodexQualityResponse(request.Context(), response, err, q)
+		s.observeCodexQualityBusinessResponse(request, response, err, q)
 		return response, true, err
 	}
 	if err != nil {
@@ -149,11 +149,15 @@ func (s *OpenAIGatewayService) doQualifiedCodexUpstream(request *http.Request, a
 	return response, true, nil
 }
 
-func (s *OpenAIGatewayService) newCodexRoutingObservedBody(request *http.Request, response *http.Response, model string) *codexRoutingObservedBody {
+func (s *OpenAIGatewayService) codexRoutingBusinessEventLimit() int {
 	maxEventBytes := defaultMaxLineSize
 	if s.cfg != nil && s.cfg.Gateway.MaxLineSize > 0 {
 		maxEventBytes = s.cfg.Gateway.MaxLineSize
 	}
+	return maxEventBytes
+}
+
+func (s *OpenAIGatewayService) newCodexRoutingObservedBody(request *http.Request, response *http.Response, model string) *codexRoutingObservedBody {
 	completionContext := request.Context()
 	if downstream, ok := request.Context().Value(codexRoutingDownstreamContextKey{}).(context.Context); ok {
 		completionContext = downstream
@@ -165,7 +169,7 @@ func (s *OpenAIGatewayService) newCodexRoutingObservedBody(request *http.Request
 		detectSSE:      strings.TrimSpace(response.Header.Get("Content-Type")) == "",
 		maxJSONBytes:   resolveUpstreamResponseReadLimit(s.cfg),
 		rejectMismatch: response.StatusCode == http.StatusOK,
-		completion:     codexRoutingCompletion{RequestedModel: model, maxEventBytes: maxEventBytes},
+		completion:     codexRoutingCompletion{RequestedModel: model, maxEventBytes: s.codexRoutingBusinessEventLimit()},
 	}
 	body.completion.headers(response.Header)
 	return body

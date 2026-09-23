@@ -23,7 +23,7 @@ func codexQualityWireFields(req *http.Request) (string, string, error) {
 	if err != nil {
 		return "", "", ErrCodexQualityUnavailable
 	}
-	defer body.Close()
+	defer func() { _ = body.Close() }()
 	var reader io.Reader = body
 	if strings.EqualFold(req.Header.Get("Content-Encoding"), "zstd") {
 		decoder, err := zstd.NewReader(body, zstd.WithDecoderMaxMemory(8<<20))
@@ -77,7 +77,7 @@ func reserveCodexQualitySend(req *http.Request, account *Account, q *extensionv1
 		return err
 	}
 	model, effort, err := codexQualityWireFields(req)
-	if err != nil || model != codexQualityModel || (e.stage == "business" && effort != codexQualityEffort) {
+	if err != nil || model != codexQualityModel || effort != codexQualityEffort {
 		return ErrCodexQualityUnavailable
 	}
 	if e.stage == "business" {
@@ -103,6 +103,51 @@ func (e *codexQualityExecution) attempt() CodexQualityAttempt {
 	return a
 }
 
+// Read the original response into the diagnostic observer before a protocol
+// guard can reject a frame. The guard's outcome never replaces raw evidence.
+func (s *OpenAIGatewayService) observeCodexQualityBusinessResponse(request *http.Request, response *http.Response, err error, q *extensionv1.CodexRoutingQualification) {
+	observeCodexQualityResponse(request.Context(), response, err, q)
+	if err != nil || response == nil || response.Body == nil {
+		return
+	}
+	guard := s.newCodexRoutingObservedBody(request, response, codexQualityModel)
+	guard.finish = func(completion codexRoutingCompletion) {
+		if completion.observationCode(codexQualityModel, response.StatusCode) == "routing_verified" {
+			return
+		}
+		e := codexQualityExecutionFromContext(request.Context())
+		if e == nil || q == nil {
+			return
+		}
+		ctx, cancel := context.WithTimeout(context.WithoutCancel(request.Context()), 3*time.Second)
+		defer cancel()
+		_, _ = mutateCodexQualityRun(e.runtime.ctx(ctx), e.runtime.store, e.runID, func(run *codexQualityRun) error {
+			// Raw observation can have refreshed the same connection's cookie
+			// revision before Close finishes. A failed guard revokes that lease,
+			// but never a separately renewed connection or ordinary eligibility.
+			if current := run.Qualification; current != nil && current.Bundle.Key == q.Bundle.Key && current.Scope.ConnectionLeaseID == q.Scope.ConnectionLeaseID && current.Scope.SameOwner(q.Scope) {
+				run.Qualification = nil
+			}
+			return nil
+		})
+	}
+	response.Body = guard
+}
+
+func codexQualityModelsMatch(attempt CodexQualityAttempt) bool {
+	if !attempt.Completed || attempt.TerminalModel == nil || *attempt.TerminalModel != codexQualityModel {
+		return false
+	}
+	for _, models := range [][]string{attempt.ResponseModels, attempt.HeaderModels} {
+		for _, model := range models {
+			if model != codexQualityModel {
+				return false
+			}
+		}
+	}
+	return true
+}
+
 func observeCodexQualityResponse(ctx context.Context, response *http.Response, err error, q *extensionv1.CodexRoutingQualification) {
 	e := codexQualityExecutionFromContext(ctx)
 	if e == nil {
@@ -123,19 +168,21 @@ func observeCodexQualityResponse(ctx context.Context, response *http.Response, e
 	if e.stage == "business" && q != nil {
 		deleted = e.runtime.s.recordCodexRoutingDeletions(ctx, e.runtime.installation, q, response.Header, observedAt)
 	}
-	for _, name := range []string{"openai-model", "x-openai-model"} {
-		for _, value := range response.Header.Values(name) {
-			recordCodexQualityHeaderModel(&a, value)
+	for name, values := range response.Header {
+		if strings.EqualFold(name, "openai-model") || strings.EqualFold(name, "x-openai-model") {
+			for _, value := range values {
+				recordCodexQualityHeaderModel(&a, value)
+			}
 		}
 	}
-	observer := &codexQualityObservedBody{ReadCloser: response.Body, sse: strings.Contains(strings.ToLower(response.Header.Get("Content-Type")), "text/event-stream"), sniff: response.Header.Get("Content-Type") == "", attempt: a}
+	observer := e.runtime.s.newCodexQualityObservedBody(response, e.stage, a)
 	observer.finish = func(a CodexQualityAttempt) {
 		finishCodexQualityAttempt(e.runtime.ctx(ctx), e.runtime.store, e.runID, a)
 		if e.stage == "business" {
 			if _, err := e.current(ctx); err != nil {
 				return
 			}
-			matched := a.Completed && a.TerminalModel != nil && *a.TerminalModel == codexQualityModel && !deleted
+			matched := codexQualityModelsMatch(a) && !deleted
 			var replacement *extensionv1.CodexRoutingQualification
 			if matched {
 				replacement = e.runtime.s.refreshObservedCodexCookies(ctx, e.runtime.installation, q, response.Header, extensionv1.CodexRoutingObservation{Stage: "business", Code: "routing_verified", RequestedModel: codexQualityModel, ResponseModel: codexQualityModel, Completed: true, ModelMatched: true, ObservedAt: observedAt})
@@ -166,9 +213,10 @@ func qualitySafeModel(model string) string {
 		return "other"
 	}
 	for _, r := range model {
-		if !(r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' || strings.ContainsRune("._-", r)) {
-			return "other"
+		if r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' || strings.ContainsRune("._-", r) {
+			continue
 		}
+		return "other"
 	}
 	return model
 }
@@ -191,20 +239,39 @@ func recordCodexQualityHeaderModel(attempt *CodexQualityAttempt, value string) {
 
 // A bounded single-frame observer; it never buffers the whole response and
 // always forwards the original bytes without editing model fields or content.
+func (s *OpenAIGatewayService) newCodexQualityObservedBody(response *http.Response, stage string, attempt CodexQualityAttempt) *codexQualityObservedBody {
+	limit, jsonLimit, totalLimit := codexRoutingProbeReadLimit, int64(codexRoutingProbeReadLimit), int64(codexRoutingProbeReadLimit)
+	if stage == "business" {
+		limit, jsonLimit, totalLimit = s.codexRoutingBusinessEventLimit(), resolveUpstreamResponseReadLimit(s.cfg), 0
+	}
+	return &codexQualityObservedBody{
+		ReadCloser: response.Body,
+		sse:        strings.Contains(strings.ToLower(response.Header.Get("Content-Type")), "text/event-stream"),
+		sniff:      strings.TrimSpace(response.Header.Get("Content-Type")) == "",
+		attempt:    attempt, maxEventBytes: limit, maxJSONBytes: jsonLimit, maxReadBytes: totalLimit,
+	}
+}
+
 type codexQualityObservedBody struct {
 	io.ReadCloser
-	sse, sniff, failed, oversized bool
-	pending                       []byte
-	attempt                       CodexQualityAttempt
-	once                          sync.Once
-	finish                        func(CodexQualityAttempt)
+	sse, sniff, failed, oversized         bool
+	pending                               []byte
+	scanFrom, maxEventBytes               int
+	maxJSONBytes, maxReadBytes, readBytes int64
+	attempt                               CodexQualityAttempt
+	once                                  sync.Once
+	mu                                    sync.Mutex
+	done                                  bool
+	finish                                func(CodexQualityAttempt)
 }
 
 func (b *codexQualityObservedBody) Read(p []byte) (int, error) {
 	n, err := b.ReadCloser.Read(p)
-	if n > 0 {
+	b.mu.Lock()
+	if n > 0 && !b.done {
 		b.feed(p[:n])
 	}
+	b.mu.Unlock()
 	if err != nil {
 		b.complete(err)
 	}
@@ -215,28 +282,53 @@ func (b *codexQualityObservedBody) feed(raw []byte) {
 	if b.oversized {
 		return
 	}
-	b.pending = append(b.pending, raw...)
-	if b.sniff && (bytes.HasPrefix(bytes.TrimSpace(b.pending), []byte("data:")) || bytes.HasPrefix(bytes.TrimSpace(b.pending), []byte("event:"))) {
-		b.sse, b.sniff = true, false
-	}
-	if b.sse {
-		b.pending = bytes.ReplaceAll(b.pending, []byte("\r\n"), []byte("\n"))
-		for {
-			end := bytes.Index(b.pending, []byte("\n\n"))
-			if end < 0 {
-				break
-			}
-			var data []string
-			for _, line := range strings.Split(string(b.pending[:end]), "\n") {
-				if strings.HasPrefix(line, "data:") {
-					data = append(data, strings.TrimSpace(strings.TrimPrefix(line, "data:")))
-				}
-			}
-			b.event([]byte(strings.Join(data, "\n")))
-			b.pending = b.pending[end+2:]
+	if b.maxReadBytes > 0 {
+		b.readBytes += int64(len(raw))
+		if b.readBytes > b.maxReadBytes {
+			b.oversized, b.failed, b.pending = true, true, nil
+			return
 		}
 	}
-	if len(b.pending) > codexRoutingProbeReadLimit {
+	b.pending = append(b.pending, raw...)
+	if b.sniff && bodyHasSSEFraming(b.pending) {
+		b.sse, b.sniff = true, false
+	}
+	limit := int64(b.maxEventBytes)
+	if !b.sse {
+		limit = b.maxJSONBytes
+	}
+	if limit <= 0 {
+		limit = codexRoutingProbeReadLimit
+	}
+	if b.sse {
+		for i := b.scanFrom; i < len(b.pending); i++ {
+			if b.pending[i] != '\n' {
+				continue
+			}
+			next := i + 1
+			if next < len(b.pending) && b.pending[next] == '\r' {
+				next++
+			}
+			if next >= len(b.pending) || b.pending[next] != '\n' {
+				continue
+			}
+			if int64(i) > limit {
+				b.oversized, b.failed, b.pending = true, true, nil
+				return
+			}
+			var data [][]byte
+			for _, line := range bytes.Split(b.pending[:i], []byte{'\n'}) {
+				if bytes.HasPrefix(line, []byte("data:")) {
+					data = append(data, bytes.TrimSpace(line[len("data:"):]))
+				}
+			}
+			b.event(bytes.Join(data, []byte{'\n'}))
+			b.pending = b.pending[next+1:]
+			i = -1
+		}
+		b.scanFrom = max(0, len(b.pending)-2)
+	}
+	if int64(len(b.pending)) > limit {
 		b.oversized, b.failed, b.pending = true, true, nil
 	}
 }
@@ -247,17 +339,22 @@ func (b *codexQualityObservedBody) event(raw []byte) {
 	}
 	kind := gjson.GetBytes(raw, "type").String()
 	root := gjson.ParseBytes(raw)
-	for _, path := range []string{"response.headers.openai-model", "response.headers.x-openai-model", "response.metadata.headers.openai-model", "response.metadata.headers.x-openai-model", "headers.openai-model", "headers.x-openai-model", "metadata.headers.openai-model", "metadata.headers.x-openai-model"} {
-		value := root.Get(path)
-		if value.Type == gjson.String {
-			recordCodexQualityHeaderModel(&b.attempt, value.String())
-		} else if value.IsArray() {
-			for _, item := range value.Array() {
-				if item.Type == gjson.String {
-					recordCodexQualityHeaderModel(&b.attempt, item.String())
+	for _, path := range []string{"response.headers", "response.metadata.headers", "headers", "metadata.headers"} {
+		root.Get(path).ForEach(func(name, value gjson.Result) bool {
+			if !strings.EqualFold(name.String(), "openai-model") && !strings.EqualFold(name.String(), "x-openai-model") {
+				return true
+			}
+			if value.Type == gjson.String {
+				recordCodexQualityHeaderModel(&b.attempt, value.String())
+			} else if value.IsArray() {
+				for _, item := range value.Array() {
+					if item.Type == gjson.String {
+						recordCodexQualityHeaderModel(&b.attempt, item.String())
+					}
 				}
 			}
-		}
+			return true
+		})
 	}
 	r := root.Get("response")
 	if !r.Exists() {
@@ -294,6 +391,7 @@ func (b *codexQualityObservedBody) event(raw []byte) {
 
 func (b *codexQualityObservedBody) complete(err error) {
 	b.once.Do(func() {
+		b.mu.Lock()
 		if !b.sse && !b.oversized {
 			b.event(b.pending)
 		}
@@ -308,8 +406,17 @@ func (b *codexQualityObservedBody) complete(err error) {
 		} else {
 			b.attempt.ErrorCode = "incomplete"
 		}
-		b.finish(b.attempt)
+		b.done, b.pending = true, nil
+		attempt := b.attempt
+		b.mu.Unlock()
+		if b.finish != nil {
+			b.finish(attempt)
+		}
 	})
 }
 
-func (b *codexQualityObservedBody) Close() error { b.complete(nil); return b.ReadCloser.Close() }
+func (b *codexQualityObservedBody) Close() error {
+	err := b.ReadCloser.Close()
+	b.complete(nil)
+	return err
+}
