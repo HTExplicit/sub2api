@@ -268,9 +268,10 @@ func TestOpenAIWSHTTPBridgeClearsOwnedStateWhenResponseOmitsHeader(t *testing.T)
 	upstream := &httpUpstreamRecorder{}
 	for turn := 1; turn <= 5; turn++ {
 		headers := http.Header{"Content-Type": []string{"text/event-stream"}}
-		if turn == 1 {
+		switch turn {
+		case 1:
 			headers.Set(openAIWSTurnStateHeader, "state-from-first-turn")
-		} else if turn == 2 {
+		case 2:
 			headers.Set(openAIWSTurnStateHeader, "later-value-must-not-replace-first")
 		}
 		upstream.responses = append(upstream.responses, &http.Response{
