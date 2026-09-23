@@ -102,7 +102,7 @@ func (h *pluginExtensionHost) callCodexRouting(ctx context.Context, in extension
 		result.Observation.Code = "routing_budget_spent"
 		return marshal(result)
 	}
-	clockKey := "clock." + codexRoutingScopeKey(scope)
+	clockKey := codexQualityClockKey(ctx, "clock."+codexRoutingScopeKey(scope))
 	clockRecord, err := h.state.ReadExtensionState(ctx, h.key, extensionv1.StateRequest{Namespace: codexRoutingPrivateNamespace, Key: clockKey})
 	if err != nil {
 		return extensionv1.Result{}, errCodexRoutingUnavailable
@@ -307,8 +307,12 @@ func (s *OpenAIGatewayService) ExecuteCodexRoutingProbe(ctx context.Context, que
 	if !ok {
 		return nil, scope, errCodexRoutingUnavailable
 	}
+	if err := reserveCodexQualitySend(request, a, nil); err != nil {
+		return nil, scope, err
+	}
 	response, lease, err := transport.DoWithCodexConnectionLease(request, resolveAccountProxyURL(a), a.ID, codexRoutingScopeKey(scope), "", deadline, nil)
 	scope.ConnectionLeaseID, scope.RouteEvidence = lease, "connection"
+	observeCodexQualityResponse(ctx, response, err, &extensionv1.CodexRoutingQualification{Scope: scope, Model: query.Model})
 	if err == nil && response != nil {
 		observeCodexInfrastructureCookies(scope, response.Header, deadline)
 		s.observeCodexWire(ctx, a, request, response, &extensionv1.CodexRoutingQualification{Scope: scope, Model: query.Model})
