@@ -210,6 +210,16 @@ data: {"type":"response.completed","response":{"status":"completed","model":"gpt
 	require.NoError(t, readCodexRoutingCompletion(strings.NewReader(stream), "", "gpt-6-astra", &untyped), "ChatGPT streams arrive without Content-Type")
 }
 
+func TestCodexRoutingProbeSpeaksAsAccountIdentity(t *testing.T) {
+	account := &Account{ID: 7, Platform: PlatformOpenAI, Type: AccountTypeOAuth, Credentials: map[string]any{"chatgpt_account_id": "acct-7"}}
+	request, err := (&OpenAIGatewayService{}).buildCodexRoutingProbe(context.Background(), account, "gpt-6-astra", "token", "")
+	require.NoError(t, err)
+	identity, err := resolveCodexOutboundIdentityForAccountContext(context.Background(), account, codexAccountIdentityOverrideUA(account))
+	require.NoError(t, err)
+	require.Equal(t, identity.originator, request.Header.Get("originator"))
+	require.Equal(t, identity.userAgent, request.Header.Get("User-Agent"), "probe must not fall back to Go-http-client")
+}
+
 func TestCodexRoutingHostSeparatesCandidateQualifiedAndPrivateMaterial(t *testing.T) {
 	host, directory, _ := routingHostFixture()
 	call := func(query extensionv1.CodexRoutingQuery) extensionv1.CodexRoutingProbeResult {

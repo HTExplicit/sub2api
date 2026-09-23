@@ -320,7 +320,16 @@ func (s *OpenAIGatewayService) buildCodexRoutingProbe(ctx context.Context, accou
 	session, turn := uuid.Must(uuid.NewV7()).String(), uuid.Must(uuid.NewV7()).String()
 	metadata := map[string]any{"session_id": session, "thread_id": session, "turn_id": turn, "x-codex-window-id": session + ":0"}
 	body := map[string]any{"model": model, "store": false, "stream": true, "instructions": "Reply with exactly: pong", "input": []any{map[string]any{"role": "user", "content": []any{map[string]any{"type": "input_text", "text": "ping"}}}}, "client_metadata": metadata, "prompt_cache_key": session}
+	identity, err := resolveCodexOutboundIdentityForAccountContext(ctx, account, codexAccountIdentityOverrideUA(account))
+	if err != nil {
+		return nil, err
+	}
 	headers := http.Header{}
+	// A probe has no inbound client, so it speaks as the account's outbound
+	// identity: the same triple the routing scope profile hashes.
+	headers.Set("originator", identity.originator)
+	headers.Set("user-agent", identity.userAgent)
+	headers.Set("version", identity.version)
 	headers.Set("session-id", session)
 	headers.Set("thread-id", session)
 	headers.Set("x-client-request-id", session)
