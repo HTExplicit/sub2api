@@ -130,7 +130,9 @@ func qualityProxyID(a *Account) int64 {
 
 func (rt *codexQualityRuntime) account(ctx context.Context, run codexQualityRun) (*Account, error) {
 	a, err := rt.s.accountRepo.GetByID(ctx, run.AccountID)
-	if err != nil || a == nil || a.ID != run.AccountID || a.Platform != PlatformOpenAI || a.Type != AccountTypeOAuth || a.IsShadow() || !slices.Contains(a.GroupIDs, run.GroupID) || qualityProxyID(a) != run.ProxyID || CodexTicketAccountIdentity(a) != run.Scope.Identity {
+	// A diagnostic grant never admits an account enabled for ordinary traffic.
+	// Recheck the authoritative row here, including immediately before each send.
+	if err != nil || a == nil || a.Schedulable || a.ID != run.AccountID || a.Platform != PlatformOpenAI || a.Type != AccountTypeOAuth || a.IsShadow() || !slices.Contains(a.GroupIDs, run.GroupID) || qualityProxyID(a) != run.ProxyID || CodexTicketAccountIdentity(a) != run.Scope.Identity {
 		return nil, ErrCodexQualityUnavailable
 	}
 	plan := strings.ToLower(strings.TrimSpace(a.GetCredential("plan_type")))
