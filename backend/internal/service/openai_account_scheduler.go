@@ -2742,7 +2742,7 @@ func accountSupportsOpenAICapabilities(ctx context.Context, account *Account, re
 		}
 		// Compatible provider image models are served only by API-key Images passthrough.
 		if !isCindy && !IsNativeOpenAIImagesModel(requestedModel) &&
-			!(account.Type == AccountTypeAPIKey && IsCompatibleImagesModel(requestedModel)) {
+			(account.Type != AccountTypeAPIKey || !IsCompatibleImagesModel(requestedModel)) {
 			return false
 		}
 	}
