@@ -40,7 +40,7 @@ func TestAccountAvailableModelsProjectsDiscoveryWithoutChangingCache(t *testing.
 	originalBody := append([]byte(nil), catalog.Body...)
 	originalETag := catalog.ETag
 
-	models, err := svc.FetchOpenAIAccountModels(context.Background(), account)
+	models, err := svc.FetchOpenAIAccountCatalogModels(context.Background(), account)
 	require.NoError(t, err)
 	require.Equal(t, fixture.Expected, models)
 	for _, model := range models {
@@ -48,7 +48,7 @@ func TestAccountAvailableModelsProjectsDiscoveryWithoutChangingCache(t *testing.
 		require.NotEmpty(t, strings.TrimSpace(model.Type))
 	}
 	models[0].DisplayName = "caller-only change"
-	again, err := svc.FetchOpenAIAccountModels(context.Background(), account)
+	again, err := svc.FetchOpenAIAccountCatalogModels(context.Background(), account)
 	require.NoError(t, err)
 	require.Equal(t, fixture.Expected, again)
 	stillRaw, err := gateway.FetchOpenAIModelsList(context.Background(), account)

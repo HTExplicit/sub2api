@@ -110,10 +110,10 @@ func (*viewFixtureDirectory) ListExtensionAccounts(context.Context, extensionv1.
 func (*viewFixtureDirectory) ResolveExtensionIdentity(context.Context, extensionv1.AccountQuery) (*extensionv1.OutboundIdentity, error) {
 	return nil, errors.New("credential API must not be called")
 }
-func (*viewFixtureDirectory) ListPluginAccounts(context.Context, string, string) ([]int64, error) {
+func (*viewFixtureDirectory) ListPluginAccounts(context.Context, PluginAccountScope, string, string) ([]PluginAccountInfo, error) {
 	return nil, errors.New("unexpected plugin account list")
 }
-func (*viewFixtureDirectory) ResolvePluginOutboundIdentity(context.Context, int64) (*PluginOutboundIdentity, error) {
+func (*viewFixtureDirectory) ResolvePluginOutboundIdentity(context.Context, PluginAccountScope, int64) (*PluginOutboundIdentity, error) {
 	return nil, errors.New("credential API must not be called")
 }
 

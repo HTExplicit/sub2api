@@ -245,11 +245,11 @@ func canonicalizeRequestIntegrityBody(body map[string]any, opts requestIntegrity
 }
 
 // canonicalizeRequestIntegrityReasoningMode mirrors
-// normalizeOpenAIResponsesReasoningModeForModel: outside Astra, reasoning.mode
+// normalizeOpenAIResponsesReasoningMode: outside GPT-6, reasoning.mode
 // is dropped and mode=pro without an effort becomes effort=max.
 func canonicalizeRequestIntegrityReasoningMode(body map[string]any, resolvedModel string) {
 	reasoning, ok := body["reasoning"].(map[string]any)
-	if !ok || isOpenAIGPT6AstraModel(resolvedModel) {
+	if !ok || isOpenAIGPT6Model(resolvedModel) {
 		return
 	}
 	mode, ok := reasoning["mode"].(string)

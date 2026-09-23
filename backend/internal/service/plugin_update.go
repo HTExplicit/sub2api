@@ -38,7 +38,7 @@ func (m *PluginManager) validatePluginCandidate(ctx context.Context, candidate *
 	if err := os.MkdirAll(socketDir, 0700); err != nil {
 		return err
 	}
-	host := newPluginHostServiceServer(candidate.PluginKey, nil, nil)
+	host := newPluginHostServiceServer(candidate.PluginKey, nil, nil, PluginAccountScope{})
 	host.extension = stagedPluginHost{}
 	call, cancel := context.WithTimeout(ctx, 15*time.Second)
 	defer cancel()

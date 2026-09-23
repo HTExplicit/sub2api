@@ -243,6 +243,10 @@ func AccountFromServiceShallow(a *service.Account) *Account {
 	if state := service.OllamaCloudUsageStateFromAccount(a); state.Eligible {
 		ollamaCloudUsage = state
 	}
+	var openCodeGoUsage *service.OpenCodeGoUsageState
+	if state := service.OpenCodeGoUsageStateFromAccount(a); state.Eligible {
+		openCodeGoUsage = state
+	}
 	out := &Account{
 		AccountViewFacts:           service.AccountViewFactsFromAccount(a, time.Now()),
 		ID:                         a.ID,
@@ -291,6 +295,7 @@ func AccountFromServiceShallow(a *service.Account) *Account {
 		GroupIDs:                   a.GroupIDs,
 		ParentAccountID:            a.ParentAccountID,
 		QuotaDimension:             a.QuotaDimension,
+		OpenCodeGoUsage:            openCodeGoUsage,
 	}
 
 	// Native detail/list paths both provide full persisted account JSON and
@@ -459,7 +464,9 @@ func redactAccountManagedExtra(extra map[string]any) map[string]any {
 		switch {
 		case key == service.OllamaCloudUsageSessionExtraKey,
 			key == service.OllamaCloudUsageAutoRefreshExtraKey,
-			key == service.OllamaCloudUsageSnapshotExtraKey:
+			key == service.OllamaCloudUsageSnapshotExtraKey,
+			key == service.OpenCodeGoUsageAutoRefreshExtraKey,
+			key == service.OpenCodeGoUsageSnapshotExtraKey:
 			continue
 		case service.IsOpenAICodexTicketPrivateExtraKey(key):
 			continue
@@ -519,7 +526,7 @@ func AccountListItemFromAccount(a *Account) *AccountListItem {
 		CindyBalanceProbeCheckedAt: a.CindyBalanceProbeCheckedAt,
 		ID:                         a.ID, Name: a.Name, Notes: a.Notes, Platform: a.Platform, Type: a.Type,
 		Credentials: a.Credentials, CredentialsStatus: a.CredentialsStatus, Extra: a.Extra,
-		OllamaCloudUsage: a.OllamaCloudUsage, CodexTurnTickets: a.CodexTurnTickets,
+		OllamaCloudUsage: a.OllamaCloudUsage, OpenCodeGoUsage: a.OpenCodeGoUsage, CodexTurnTickets: a.CodexTurnTickets,
 		ProxyID: a.ProxyID, ProxyFallbackOriginID: a.ProxyFallbackOriginID, ProxyFallbackOriginName: a.ProxyFallbackOriginName,
 		Concurrency: a.Concurrency, LoadFactor: a.LoadFactor, Priority: a.Priority, RateMultiplier: a.RateMultiplier,
 		Status: a.Status, ErrorMessage: a.ErrorMessage, LastUsedAt: a.LastUsedAt, ExpiresAt: a.ExpiresAt,

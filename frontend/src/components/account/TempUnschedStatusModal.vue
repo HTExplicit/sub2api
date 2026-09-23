@@ -181,6 +181,7 @@ const appStore = useAppStore()
 const loading = ref(false)
 const resetting = ref(false)
 const status = ref<TempUnschedulableStatus | null>(null)
+let requestVersion = 0
 
 const state = computed(() => status.value?.state || null)
 
@@ -243,15 +244,19 @@ const remainingText = computed(() => {
 const loadStatus = async () => {
   if (!props.account) return
   const accountID = props.account.id, revision = accountViewOperation.revision()
+  const version = ++requestVersion
+  status.value = null
   loading.value = true
   try {
-    status.value = await accountViewOperation.read(view => accountAPIForView(view, adminAPI.accounts).getTempUnschedulableStatus(accountID))
+    const result = await accountViewOperation.read(view => accountAPIForView(view, adminAPI.accounts).getTempUnschedulableStatus(accountID))
+    if (version === requestVersion) status.value = result
   } catch (error: any) {
     if (isCancel(error)) return
+    if (version !== requestVersion) return
     appStore.showError(error?.message || t('admin.accounts.tempUnschedulable.failedToLoad'))
     status.value = null
   } finally {
-    if (revision === accountViewOperation.revision()) loading.value = false
+    if (version === requestVersion && revision === accountViewOperation.revision()) loading.value = false
   }
 }
 
@@ -276,7 +281,8 @@ const handleReset = async () => {
 
 watch(
   () => [props.show, props.account?.id],
-  ([visible]) => {
+  ([visible], _, onCleanup) => {
+    onCleanup(() => { requestVersion++ })
     if (visible && props.account) {
       loadStatus()
       return
