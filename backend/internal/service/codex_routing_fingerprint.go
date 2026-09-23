@@ -25,6 +25,16 @@ var codexRoutingReference json.RawMessage
 // A turn identifier is independent of the conversation/session. Opaque state
 // cannot cross a turn simply because the same downstream session continues.
 func stageCodexRoutingTurn(c *gin.Context, body []byte) {
+	stageCodexRoutingTurnWithHeader(c, body, true)
+}
+
+// A persistent WS handshake header describes the initial request only. Each
+// frame needs its own explicit turn identity before opaque state may be reused.
+func stageCodexRoutingWSTurn(c *gin.Context, body []byte) {
+	stageCodexRoutingTurnWithHeader(c, body, false)
+}
+
+func stageCodexRoutingTurnWithHeader(c *gin.Context, body []byte, allowHeader bool) {
 	if c == nil {
 		return
 	}
@@ -33,7 +43,7 @@ func stageCodexRoutingTurn(c *gin.Context, body []byte) {
 		metadata := gjson.GetBytes(body, "client_metadata.x-codex-turn-metadata").String()
 		turn = strings.TrimSpace(gjson.Get(metadata, "turn_id").String())
 	}
-	if turn == "" && c.Request != nil {
+	if turn == "" && allowHeader && c.Request != nil {
 		turn = strings.TrimSpace(gjson.Get(c.Request.Header.Get(openAIWSTurnMetadataHeader), "turn_id").String())
 	}
 	if len(turn) > 128 {

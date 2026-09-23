@@ -63,7 +63,7 @@ func (s *OpenAIGatewayService) RenewCodexQualityRoute(ctx context.Context, actor
 		defer stop()
 		_, _ = rt.store.ReleaseExtensionLease(release, codexRuntimePluginKey, lease)
 	}()
-	query := extensionv1.CodexRoutingQuery{AccountID: accountID, Model: codexQualityModel, Transport: "http", Stage: "acquire", OperationID: "quality-" + id + "-" + operation, Scope: &run.Scope}
+	query := codexQualityRenewQuery(run, operation)
 	call := func() (extensionv1.CodexRoutingProbeResult, error) {
 		e := &codexQualityExecution{runtime: rt, runID: id, operationID: operation, stage: query.Stage, accountID: accountID, keyLookup: lookup}
 		stageCtx := context.WithValue(ctx, codexQualityExecutionKey{}, e)
@@ -102,4 +102,11 @@ func (s *OpenAIGatewayService) RenewCodexQualityRoute(ctx context.Context, actor
 		s.closeCodexQualityConnection(run.Qualification)
 	}
 	return codexQualityView(saved, rt.installation.RuntimeGeneration), nil
+}
+
+func codexQualityRenewQuery(run codexQualityRun, operation string) extensionv1.CodexRoutingQuery {
+	return extensionv1.CodexRoutingQuery{
+		AccountID: run.AccountID, Model: codexQualityModel, ReasoningEffort: codexQualityEffort,
+		Transport: "http", Stage: "acquire", OperationID: "quality-" + run.RunID + "-" + operation, Scope: &run.Scope,
+	}
 }

@@ -84,17 +84,28 @@ func (r *pluginRepository) importLegacyTicket(ctx context.Context, plugin string
 	if err != nil && !errors.Is(err, sql.ErrNoRows) {
 		return err
 	}
-	ticket := ticketFromAccount(account, model)
-	if legacy == nil && ticket == nil {
+	_, hasLegacyMaterial := account.Extra["codex_turn_ticket:"+model]
+	if legacy == nil && !hasLegacyMaterial {
 		return nil
 	}
+	request, err := legacyCodexRoutingImport(account, model, legacy, time.Now().UTC())
+	if err != nil {
+		return err
+	}
+	_, err = r.CompareSwapExtensionState(ctx, plugin, request)
+	return err
+}
+
+// Retired STATE values never grant access, regardless of length or shape.
+// Only the persisted lifecycle can carry renewal intent across the cutover.
+func legacyCodexRoutingImport(account *service.Account, model string, legacy *service.CodexTicketLifecycle, now time.Time) (extensionv1.StateRequest, error) {
 	identity := service.CodexTicketAccountIdentity(account)
 	phase := "stopped"
-	var next, expiry, attempt *time.Time
+	var next, attempt *time.Time
 	var lastCode, operation string
-	manualEnrolled := false
+	enrolled := false
 	if legacy != nil {
-		phase, next, expiry, attempt, manualEnrolled = legacy.Phase, legacy.NextAt, legacy.ExpiresAt, legacy.LastAttemptAt, legacy.ManualWasEnrolled
+		phase, attempt = legacy.Phase, legacy.LastAttemptAt
 		if legacy.LastResult != nil {
 			lastCode = legacy.LastResult.Code
 		}
@@ -109,45 +120,20 @@ func (r *pluginRepository) importLegacyTicket(ctx context.Context, plugin string
 			lastCode = "ticket_interrupted"
 		}
 	}
-	if ticket != nil && (ticket.AccountID != 0 && ticket.AccountID != account.ID || ticket.Model != "" && ticket.Model != model || len(ticket.State) != 292 || !strings.HasPrefix(ticket.State, "gAAAAA") || ticket.Identity != "" && ticket.Identity != identity) {
-		ticket = nil
-		phase = "stopped"
-		next = nil
+	if phase == "ready" || phase == "retry" {
+		phase, enrolled, next = "needs_cookie_verification", true, &now
 	}
-	var rawTicket any
-	if ticket != nil {
-		captured := ticket.CapturedAt
-		if captured.IsZero() {
-			captured = ticket.ExpiresAt.Add(-time.Hour)
-		}
-		rawTicket = map[string]any{"state": ticket.State, "account_id": account.ID, "identity": identity, "model": model, "captured_at": captured, "expires_at": ticket.ExpiresAt}
-		if legacy == nil && time.Now().Before(ticket.ExpiresAt) {
-			phase = "ready"
-			expiry = &ticket.ExpiresAt
-			due := ticket.ExpiresAt.Add(-time.Minute)
-			next = &due
-		}
+	if lastCode == "" || lastCode == "ticket_ready" || lastCode == "ticket_skipped" {
+		lastCode = "routing_legacy_retired"
 	}
-	if ticket == nil || phase == "stopped" {
-		next = nil
-	}
-	value, err := json.Marshal(map[string]any{"phase": phase, "identity": identity, "operation_id": operation, "next_attempt_at": next, "expires_at": expiry, "manual_was_enrolled": manualEnrolled, "last_code": lastCode, "last_attempt_at": attempt, "ticket": rawTicket})
+	value, err := json.Marshal(map[string]any{"schema": extensionv1.CodexRoutingSchema, "phase": phase, "identity": identity, "enrolled": enrolled, "operation_id": operation, "next_attempt_at": next, "last_code": lastCode, "last_attempt_at": attempt})
 	if err != nil {
-		return err
+		return extensionv1.StateRequest{}, err
 	}
 	constraint := extensionv1.SchedulingConstraint{Model: model, Effect: "deny", Reason: "ticket_missing"}
-	if ticket != nil && time.Now().Before(ticket.ExpiresAt) {
-		constraint.Effect = "allow"
-		constraint.Until = &ticket.ExpiresAt
-		constraint.Reason = "ticket_ready"
-	}
 	sum := sha256.Sum256([]byte(model))
-	observation := extensionv1.AccountObservation{Key: model, Kind: "codex_ticket", State: phase, ExpiresAt: expiry, NextAt: next, CheckedAt: attempt, Code: lastCode}
-	if ticket != nil {
-		observation.Count = len(ticket.State)
-	}
-	_, err = r.CompareSwapExtensionState(ctx, plugin, extensionv1.StateRequest{Namespace: "tickets", Key: strconv.FormatInt(account.ID, 10) + "." + hex.EncodeToString(sum[:]), Value: value, NextAt: next, Projection: &extensionv1.AccountProjection{AccountID: account.ID, Identity: identity, Scheduling: []extensionv1.SchedulingConstraint{constraint}, Observations: []extensionv1.AccountObservation{observation}}})
-	return err
+	observation := extensionv1.AccountObservation{Key: model, Kind: "codex_routing", State: phase, NextAt: next, CheckedAt: attempt, Code: lastCode}
+	return extensionv1.StateRequest{Namespace: "tickets", Key: strconv.FormatInt(account.ID, 10) + "." + hex.EncodeToString(sum[:]), Value: value, NextAt: next, Projection: &extensionv1.AccountProjection{AccountID: account.ID, Identity: identity, Scheduling: []extensionv1.SchedulingConstraint{constraint}, Observations: []extensionv1.AccountObservation{observation}}}, nil
 }
 
 func (r *pluginRepository) importLegacyProxyTrust(ctx context.Context, plugin, raw string) error {

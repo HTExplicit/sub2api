@@ -28,7 +28,7 @@ func (s *OpenAIGatewayService) executeCodexRoutingWSProbe(ctx context.Context, q
 	if err != nil {
 		return nil, scope, errCodexRoutingUnavailable
 	}
-	request, err := s.buildCodexRoutingProbe(ctx, account, query.Model, token, cookies)
+	request, err := s.buildCodexRoutingProbe(ctx, account, query.Model, token, cookies, query.ReasoningEffort)
 	if err != nil {
 		return nil, scope, err
 	}
@@ -73,7 +73,8 @@ func (s *OpenAIGatewayService) executeCodexRoutingWSProbe(ctx context.Context, q
 	if err := connection.WriteJSON(ctx, payload); err != nil {
 		return nil, scope, errCodexRoutingUnavailable
 	}
-	var completion codexRoutingCompletion
+	completion := codexRoutingCompletion{RequestedModel: query.Model}
+	completion.headers(handshake)
 	var terminal []byte
 	readBytes := 0
 	for readBytes < codexRoutingProbeReadLimit {
@@ -86,10 +87,7 @@ func (s *OpenAIGatewayService) executeCodexRoutingWSProbe(ctx context.Context, q
 			return nil, scope, errCodexRoutingUnavailable
 		}
 		completion.json(frame)
-		if completion.Failed {
-			return nil, scope, errCodexRoutingUnavailable
-		}
-		if completion.Completed {
+		if completion.Failed || completion.Completed {
 			terminal = frame
 			break
 		}

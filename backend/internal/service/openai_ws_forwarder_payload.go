@@ -153,9 +153,6 @@ func (s *OpenAIGatewayService) buildOpenAIWSHeaders(
 	}
 
 	if account != nil && account.UsesOpenAICodexProtocol() {
-		if err := resolveAndSetOpenAIChatGPTAccountHeaders(ctx, s.accountRepo, headers, account); err != nil {
-			return nil, sessionResolution, fmt.Errorf("resolve chatgpt account headers: %w", err)
-		}
 		headers.Set("originator", resolveOpenAIUpstreamOriginator(c, isCodexCLI))
 	}
 
@@ -179,21 +176,15 @@ func (s *OpenAIGatewayService) buildOpenAIWSHeaders(
 	if s != nil && s.cfg != nil && s.cfg.Gateway.ForceCodexCLI {
 		headers.Set("user-agent", CodexCanonicalUserAgent())
 	}
-	// 终态收口：WS 握手与 HTTP 出站共用同一套身份语义，账号级自定义 UA 同样作为
-	// 管理员显式配置传入（上面写进 headers 的值只在强制统一被关闭时才参与配对）。
-	if account != nil && account.UsesOpenAICodexProtocol() {
-		if err := enforceCodexIdentityHeadersForAccountContext(ctx, headers, codexAccountIdentitySource(c, account), s.codexIdentityOverrideUA(account)); err != nil {
-			return nil, sessionResolution, err
-		}
-	}
-
 	// 账号级请求头覆写（仅 openai api_key 账号启用时生效；OAuth 路径 no-op）。
 	// 覆盖所有 WS 模式（ctx_pool/dedicated/passthrough）的握手头。
 	account.ApplyHeaderOverrides(headers)
 	// turn-state is minted under the outbound account identity. A value known
 	// to come from another account must not survive an account failover.
 	s.guardOpenAICodexTurnStateEcho(c, account, headers)
-	setOpenAICodexRoutingHint(headers, account, routingModel, routingServiceTier)
+	if err := s.finalizeCodexOutboundHeaders(ctx, c, account, headers, routingModel, routingServiceTier); err != nil {
+		return nil, sessionResolution, err
+	}
 	logOpenAIRoutingDiagnostics(
 		ctx,
 		account,

@@ -134,7 +134,7 @@ func (s *OpenAIGatewayService) handleStreamingResponseWithReasoning(ctx context.
 	// 客户端会在同回合的后续请求中回带（openai_codex_turn_state.go）。
 	// OpenAI 首个语义输出前只暂存，溯源在 applyAttemptResponseHeaders 真正提交时记录。
 	if stageFirstOutput {
-		stageOpenAICodexTurnState(&attemptResponseHeaders, resp.Header)
+		stageOpenAICodexTurnState(&attemptResponseHeaders, s.codexTurnStateResponseHeaders(c, account, resp.Header))
 	} else {
 		s.relayOpenAICodexTurnState(c, account, resp.Header)
 	}
@@ -561,6 +561,17 @@ func (s *OpenAIGatewayService) handleStreamingResponseWithReasoning(ctx context.
 	handleScanErr := func(scanErr error) (*openaiStreamingResult, error, bool) {
 		if scanErr == nil {
 			return nil, nil, false
+		}
+		if errors.Is(scanErr, ErrCodexRoutingModelMismatch) {
+			// The route observer already revoked the mismatched qualification.
+			// Never turn this into an automatic replay, especially after output.
+			if account != nil && account.IsOpenAIOAuthLike() {
+				s.clearOpenAICodexTurnStateProvenance(c, account)
+			}
+			if openAIStreamClientOutputStarted(c, clientOutputStarted) {
+				sendErrorEvent("upstream_model_mismatch", "upstream_model_mismatch")
+			}
+			return resultWithUsage(), ErrCodexRoutingModelMismatch, true
 		}
 		if errors.Is(scanErr, errOpenAIFirstOutputScannerLimit) && !firstOutputProgressObserved {
 			logger.LegacyPrintf("service.openai_gateway", "SSE token exceeded guarded first-output limit: account=%d limit=%d error=%v", account.ID, openAIFirstOutputStageMaxBytes+openAIFirstOutputScannerFramingAllowance, scanErr)
@@ -1876,7 +1887,7 @@ func (s *OpenAIGatewayService) handleNonStreamingResponse(ctx context.Context, r
 	// Codex 协议要求 /responses/compact JSON 响应携带 x-codex-turn-state
 	// （codex-api/src/endpoint/compact.rs 从响应头捕获）。先暂存，只有 body
 	// 真正写成功后才更新该会话的铸造账号。
-	stagedTurnState, turnStateHeaderApplied := stageOpenAIHTTPResponseTurnState(c, resp.Header)
+	stagedTurnState, turnStateHeaderApplied := stageOpenAIHTTPResponseTurnState(c, s.codexTurnStateResponseHeaders(c, account, resp.Header))
 
 	contentType := "application/json"
 	if s.cfg != nil && !s.cfg.Security.ResponseHeaders.Enabled {
@@ -2178,7 +2189,7 @@ func (s *OpenAIGatewayService) handleSSEToJSON(resp *http.Response, c *gin.Conte
 	if terminalErr == nil {
 		logOpenAISuccessMissingUsage(c.Request.Context(), c, account, resp, usage, terminalType, false)
 	}
-	stagedTurnState, turnStateHeaderApplied := stageOpenAIHTTPResponseTurnState(c, resp.Header)
+	stagedTurnState, turnStateHeaderApplied := stageOpenAIHTTPResponseTurnState(c, s.codexTurnStateResponseHeaders(c, account, resp.Header))
 
 	contentType := "application/json; charset=utf-8"
 	if !ok {

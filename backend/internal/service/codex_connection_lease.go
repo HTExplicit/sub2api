@@ -21,3 +21,9 @@ var (
 type CodexConnectionLeaseUpstream interface {
 	DoWithCodexConnectionLease(req *http.Request, proxyURL string, accountID int64, scope string, leaseID string, expiresAt time.Time, profile *tlsfingerprint.Profile) (*http.Response, string, error)
 }
+
+// CodexConnectionLeaseInspector only examines a connection already owned by
+// this process. It must not dial, send a probe, or extend the lease deadline.
+type CodexConnectionLeaseInspector interface {
+	CheckCodexConnectionLease(accountID int64, scope, leaseID string, expiresAt time.Time) error
+}

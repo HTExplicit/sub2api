@@ -20,6 +20,8 @@ type openAICompatSessionResponseBinding struct {
 	ExpiresAt            time.Time
 }
 
+const openAICompatTurnStateCommittedContextKey = "openai_compat_turn_state_committed"
+
 func openAICompatContinuationEnabled(account *Account, model string) bool {
 	if account == nil || account.Type != AccountTypeAPIKey {
 		return false
@@ -292,7 +294,7 @@ func (s *OpenAIGatewayService) getOpenAICompatSessionTurnState(_ context.Context
 	if s == nil {
 		return ""
 	}
-	key := openAICompatSessionResponseKey(c, account, promptCacheKey)
+	key := openAICompatTurnStateKey(c, account, promptCacheKey)
 	if key == "" {
 		return ""
 	}
@@ -315,7 +317,7 @@ func (s *OpenAIGatewayService) bindOpenAICompatSessionTurnState(_ context.Contex
 	if s == nil {
 		return
 	}
-	key := openAICompatSessionResponseKey(c, account, promptCacheKey)
+	key := openAICompatTurnStateKey(c, account, promptCacheKey)
 	state := strings.TrimSpace(turnState)
 	if key == "" || state == "" {
 		return
@@ -324,6 +326,20 @@ func (s *OpenAIGatewayService) bindOpenAICompatSessionTurnState(_ context.Contex
 		TurnState: state,
 		ExpiresAt: time.Now().Add(s.openAIWSResponseStickyTTL()),
 	}
+	if account.IsOpenAIOAuthLike() {
+		for {
+			raw, loaded := s.openaiCompatSessionResponses.LoadOrStore(key, binding)
+			if !loaded {
+				return
+			}
+			if existing, ok := raw.(openAICompatSessionResponseBinding); ok && existing.TurnState != "" && time.Now().Before(existing.ExpiresAt) {
+				return
+			}
+			if s.openaiCompatSessionResponses.CompareAndSwap(key, raw, binding) {
+				return
+			}
+		}
+	}
 	if raw, ok := s.openaiCompatSessionResponses.Load(key); ok {
 		if existing, ok := raw.(openAICompatSessionResponseBinding); ok {
 			binding.ResponseID = existing.ResponseID
@@ -331,4 +347,19 @@ func (s *OpenAIGatewayService) bindOpenAICompatSessionTurnState(_ context.Contex
 		}
 	}
 	s.openaiCompatSessionResponses.Store(key, binding)
+}
+
+func openAICompatTurnStateKey(c *gin.Context, account *Account, promptCacheKey string) string {
+	key := openAICompatSessionResponseKey(c, account, promptCacheKey)
+	if key == "" || openAICodexTurnStateUsesSessionContract(account) {
+		return key
+	}
+	turn := codexRoutingTurnID(c)
+	if turn == "" {
+		// A conversation/cache key alone does not prove a logical turn. In
+		// particular, a Messages history followed by another user prompt must
+		// never inherit the preceding turn's opaque OAuth state.
+		return ""
+	}
+	return key + "\x00" + CodexTicketAccountIdentity(account) + "\x00" + turn
 }

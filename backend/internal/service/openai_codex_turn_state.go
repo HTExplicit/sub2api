@@ -22,6 +22,8 @@ const openAICodexTurnStateHeader = "x-codex-turn-state"
 // 账号，出站守卫据此剥离已知异账号的回带值。
 type openAICodexTurnStateOrigin struct {
 	accountID int64
+	identity  string
+	state     string
 	expiresAt time.Time
 }
 
@@ -57,7 +59,11 @@ func openAIWSTurnStateScope(c *gin.Context, account *Account, sessionHash string
 		return sessionHash
 	}
 	if turn := codexRoutingTurnID(c); turn != "" {
-		return sessionHash + "\x00" + turn
+		scope := sessionHash + "\x00" + turn
+		if account != nil && account.IsOpenAIOAuthLike() {
+			scope += "\x00" + CodexTicketAccountIdentity(account)
+		}
+		return scope
 	}
 	return ""
 }
@@ -72,14 +78,14 @@ func (s *OpenAIGatewayService) relayOpenAICodexTurnState(c *gin.Context, account
 		return
 	}
 	canonical := http.CanonicalHeaderKey(openAICodexTurnStateHeader)
-	state := extractOpenAICodexTurnState(upstream)
+	state := s.firstCommittedCodexTurnState(c, account, extractOpenAICodexTurnState(upstream))
 	if state == "" {
 		c.Writer.Header().Del(canonical)
 		s.clearOpenAICodexTurnStateProvenance(c, account)
 		return
 	}
 	c.Writer.Header().Set(canonical, state)
-	s.noteOpenAICodexTurnStateProvenance(c, account)
+	s.noteOpenAICodexTurnStateProvenance(c, account, state)
 }
 
 // stageOpenAICodexTurnState 将上游 turn-state 暂存到延迟提交的响应头集合
@@ -108,13 +114,14 @@ func stageOpenAICodexTurnState(dst *http.Header, upstream http.Header) {
 // noteStagedOpenAICodexTurnStateCommitted 在暂存响应头真正写入下游时记录
 // 铸造账号——只有此刻客户端才确定收到了该 blob，溯源表才与客户端持有的
 // 值一致（否则被 failover 丢弃的 attempt 会污染溯源，导致后续误剥离）。
-// 成功提交但无 state 表示上一来源已失效，必须清除旧 provenance。
+// OAuth 同主体同 turn 的首个已提交值保持不变；API Key 保留缺失即清除的契约。
 func (s *OpenAIGatewayService) noteStagedOpenAICodexTurnStateCommitted(c *gin.Context, account *Account, staged http.Header) {
-	if staged == nil || strings.TrimSpace(staged.Get(openAICodexTurnStateHeader)) == "" {
+	state := s.firstCommittedCodexTurnState(c, account, extractOpenAICodexTurnState(staged))
+	if state == "" {
 		s.clearOpenAICodexTurnStateProvenance(c, account)
 		return
 	}
-	s.noteOpenAICodexTurnStateProvenance(c, account)
+	s.noteOpenAICodexTurnStateProvenance(c, account, state)
 }
 
 func extractOpenAICodexTurnState(upstream http.Header) string {
@@ -125,7 +132,7 @@ func extractOpenAICodexTurnState(upstream http.Header) string {
 }
 
 // noteOpenAICodexTurnStateProvenance 记录（下游会话 → 铸造账号）。
-func (s *OpenAIGatewayService) noteOpenAICodexTurnStateProvenance(c *gin.Context, account *Account) {
+func (s *OpenAIGatewayService) noteOpenAICodexTurnStateProvenance(c *gin.Context, account *Account, states ...string) {
 	if s == nil || account == nil || account.ID <= 0 {
 		return
 	}
@@ -133,11 +140,68 @@ func (s *OpenAIGatewayService) noteOpenAICodexTurnStateProvenance(c *gin.Context
 	if seed == "" {
 		return
 	}
-	s.openaiCodexTurnStateOrigins.Store(seed, openAICodexTurnStateOrigin{
+	state := ""
+	if len(states) > 0 {
+		state = strings.TrimSpace(states[0])
+	}
+	strict := account.IsOpenAIOAuthLike()
+	if strict && state == "" {
+		return
+	}
+	origin := openAICodexTurnStateOrigin{
 		accountID: account.ID,
+		identity:  CodexTicketAccountIdentity(account),
+		state:     state,
 		expiresAt: time.Now().Add(s.openAIWSSessionStickyTTL()),
-	})
+	}
+	if strict {
+		// The first committed value wins atomically for this owner and turn.
+		for {
+			old, loaded := s.openaiCodexTurnStateOrigins.LoadOrStore(seed, origin)
+			if !loaded {
+				break
+			}
+			if previous, ok := old.(openAICodexTurnStateOrigin); ok && previous.accountID == origin.accountID &&
+				previous.identity == origin.identity && previous.state != "" && time.Now().Before(previous.expiresAt) {
+				return
+			}
+			if s.openaiCodexTurnStateOrigins.CompareAndSwap(seed, old, origin) {
+				break
+			}
+		}
+	} else {
+		s.openaiCodexTurnStateOrigins.Store(seed, origin)
+	}
 	s.sweepOpenAICodexTurnStateOrigins()
+}
+
+func (s *OpenAIGatewayService) firstCommittedCodexTurnState(c *gin.Context, account *Account, candidate string) string {
+	if s == nil || account == nil || !account.IsOpenAIOAuthLike() {
+		return candidate
+	}
+	if raw, ok := s.openaiCodexTurnStateOrigins.Load(openAICodexTurnStateSeed(c, account)); ok {
+		if origin, ok := raw.(openAICodexTurnStateOrigin); ok && origin.accountID == account.ID &&
+			origin.identity == CodexTicketAccountIdentity(account) && origin.state != "" && time.Now().Before(origin.expiresAt) {
+			return origin.state
+		}
+	}
+	return candidate
+}
+
+// Keep the client-facing header consistent with the first committed value,
+// without rewriting the original headers used for upstream observations.
+func (s *OpenAIGatewayService) codexTurnStateResponseHeaders(c *gin.Context, account *Account, upstream http.Header) http.Header {
+	state := extractOpenAICodexTurnState(upstream)
+	first := s.firstCommittedCodexTurnState(c, account, state)
+	if first == state {
+		return upstream
+	}
+	prepared := upstream.Clone()
+	if prepared == nil {
+		prepared = make(http.Header)
+	}
+	prepared.Set(openAICodexTurnStateHeader, first)
+	return prepared
 }
 
 func (s *OpenAIGatewayService) clearOpenAICodexTurnStateProvenance(c *gin.Context, accounts ...*Account) {
@@ -162,7 +226,7 @@ func (s *OpenAIGatewayService) commitOpenAIWSSessionTurnState(
 	sessionHash string,
 	turnState string,
 ) {
-	turnState = strings.TrimSpace(turnState)
+	turnState = s.firstCommittedCodexTurnState(c, account, strings.TrimSpace(turnState))
 	stateScope := openAIWSTurnStateScope(c, account, sessionHash)
 	if stateStore != nil && stateScope != "" {
 		if !openAICodexTurnStateUsesSessionContract(account) && account != nil {
@@ -180,7 +244,7 @@ func (s *OpenAIGatewayService) commitOpenAIWSSessionTurnState(
 		s.clearOpenAICodexTurnStateProvenance(c, account)
 		return
 	}
-	s.noteOpenAICodexTurnStateProvenance(c, account)
+	s.noteOpenAICodexTurnStateProvenance(c, account, turnState)
 }
 
 // guardOpenAICodexTurnStateEcho 出站守卫：客户端回带的 turn-state 只有在
@@ -220,6 +284,11 @@ func (s *OpenAIGatewayService) guardOpenAICodexTurnStateEcho(c *gin.Context, acc
 		return
 	}
 	if origin.accountID != account.ID {
+		h.Del(openAICodexTurnStateHeader)
+		return
+	}
+	if account.IsOpenAIOAuthLike() && (origin.identity != CodexTicketAccountIdentity(account) ||
+		origin.state == "" || strings.TrimSpace(h.Get(openAICodexTurnStateHeader)) != origin.state) {
 		h.Del(openAICodexTurnStateHeader)
 	}
 }

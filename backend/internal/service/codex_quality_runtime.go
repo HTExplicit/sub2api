@@ -364,12 +364,10 @@ func (rt *codexQualityRuntime) qualification(ctx context.Context, run codexQuali
 		return nil, ErrCodexQualityUnavailable
 	}
 	bundle, err := readCodexRoutingBundle(rt.ctx(ctx), rt.store, codexRuntimePluginKey, q.Bundle, q.Scope, true)
-	if err != nil || bundle.Model != codexQualityModel || bundle.Scope.ConnectionLeaseID != q.Scope.ConnectionLeaseID {
+	if err != nil || bundle.Model != codexQualityModel || bundle.Scope.ConnectionLeaseID != q.Scope.ConnectionLeaseID || bundle.Scope.Transport != q.Scope.Transport || q.ExpiresAt.After(bundle.ExpiresAt) {
 		return nil, ErrCodexQualityUnavailable
 	}
-	if leases, ok := rt.s.httpUpstream.(interface {
-		HasCodexQualityConnection(string, int64, string) bool
-	}); !ok || !leases.HasCodexQualityConnection(q.Scope.ConnectionLeaseID, run.AccountID, codexRoutingScopeKey(q.Scope)) {
+	if rt.s.CheckCodexRoutingLease(ctx, q.Scope, q.ExpiresAt) != nil {
 		return nil, ErrCodexQualityUnavailable
 	}
 	return q, nil

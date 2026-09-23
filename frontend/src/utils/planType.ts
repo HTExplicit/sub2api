@@ -35,9 +35,17 @@ export function openAIPlanTypeLabel(value?: string | null): string {
       return 'Business Premium'
     case 'team':
       return 'Business Standard'
+    case 'business':
+      return 'Business'
+    case 'selfservebusinessusagebased':
+      return 'Business (usage-based)'
     case 'free':
       return 'Free'
     default:
       return ''
   }
+}
+
+export function isOpenAIBusinessPlanType(value?: string | null): boolean {
+  return ['team', 'business', 'selfservebusinessprolite', 'selfservebusinessusagebased'].includes(normalizePlanType(value))
 }

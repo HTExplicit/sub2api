@@ -18,9 +18,9 @@ const (
 	openAICodexTicketDefaultSolModel = "gpt-5.6-sol"
 )
 
-// ErrOpenAICodexTicketUnavailable 表示该号该模型没有可用的 292 门票，
-// 且 fail_closed 禁止裸打业务请求。
-var ErrOpenAICodexTicketUnavailable = errors.New("codex turn-state ticket unavailable")
+// ErrOpenAICodexTicketUnavailable 表示该账号和模型没有有效的路由资格，
+// 且 fail_closed 禁止未验证路由的业务请求。
+var ErrOpenAICodexTicketUnavailable = errors.New("codex route qualification unavailable")
 
 func openAICodexTicketExtraKey(model string) string {
 	return openAICodexTicketExtraKeyPrefix + strings.TrimSpace(model)
