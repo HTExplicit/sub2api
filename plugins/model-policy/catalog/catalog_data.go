@@ -30,6 +30,18 @@ const (
 	gptSnapshotAliasSelection             = " 官方 API 文档列出的默认日期快照为同一型号的精确别名（2026-09-17 核实），沿用本行容量；其他日期后缀不推断。"
 )
 
+const GPT6ContextCapacityReferenceCommit = "4b664e0ef0397f82e68c60088a90fcd035deb796"
+const GPT6ContextCapacityReferenceSource = "https://github.com/openai/codex/blob/" + GPT6ContextCapacityReferenceCommit + "/codex-rs/models-manager/models.json"
+const GPT6ContextCapacityReferenceVerifiedAt = "2026-09-23"
+
+func gpt6CodexCapacityReference() *ModelContextCapacityReference {
+	return &ModelContextCapacityReference{
+		Product: "codex_subscription", SourceURL: GPT6ContextCapacityReferenceSource,
+		Release: GPT6ContextCapacityReferenceCommit, VerifiedAt: GPT6ContextCapacityReferenceVerifiedAt,
+		ContextWindow: 272000, MaxContextWindow: 872000,
+	}
+}
+
 const (
 	claudeContextSource   = "https://platform.claude.com/docs/en/build-with-claude/context-windows"
 	claudeIntegerSource   = "https://www-cdn.anthropic.com/78073f739564e986ff3e28522761a7a0b4484f84.pdf#page=30"
@@ -80,6 +92,24 @@ var officialModelContextCapacityCatalog = []OfficialModelContextCapacity{
 		OriginalText:         "1,050,000 context window; 128,000 max output tokens",
 		Reference:            codexModelContextCapacityReference(272000, 872000),
 		Conditions:           gptLongContextSelection,
+	},
+	{
+		ModelID: "gpt-6-sol", Provider: "openai", Product: "api",
+		ModelContextCapacity: ModelContextCapacity{ContextWindow: 1050000, MaxOutputTokens: 128000, CapacityBasis: "total_context"},
+		SourceURL:            "https://developers.openai.com/api/docs/models/gpt-6-sol",
+		VerifiedAt:           GPT6ContextCapacityReferenceVerifiedAt,
+		OriginalText:         "1,050,000 context window; 128,000 max output tokens",
+		Reference:            gpt6CodexCapacityReference(),
+		Conditions:           "API 规格与 Codex 订阅目录分开：订阅回退默认 272000、最大 872000；账号实际目录优先，打包参考不代表账号实测。",
+	},
+	{
+		ModelID: "gpt-6-luna", Provider: "openai", Product: "api",
+		ModelContextCapacity: ModelContextCapacity{ContextWindow: 1050000, MaxOutputTokens: 128000, CapacityBasis: "total_context"},
+		SourceURL:            "https://developers.openai.com/api/docs/models/gpt-6-luna",
+		VerifiedAt:           GPT6ContextCapacityReferenceVerifiedAt,
+		OriginalText:         "1,050,000 context window; 128,000 max output tokens",
+		Reference:            gpt6CodexCapacityReference(),
+		Conditions:           "API 规格与 Codex 订阅目录分开：订阅回退默认 272000、最大 872000；账号实际目录优先，打包参考不代表账号实测。",
 	},
 	{
 		ModelID: "gpt-5.6-sol", Aliases: []string{"gpt-5.6"}, Provider: "openai", Product: "api",

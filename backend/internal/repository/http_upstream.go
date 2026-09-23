@@ -165,6 +165,8 @@ type httpUpstreamService struct {
 	clients map[string]*upstreamClientEntry // 客户端缓存池，key 由隔离策略决定
 	// OpenAI 走 HTTP/HTTPS 代理时的 H2->H1 回退状态（key=标准化 proxyKey）
 	openAIHTTP2Fallbacks sync.Map
+	// Dedicated, expiring connection leases never share a proxy pool across accounts.
+	codexConnectionLeases map[string]*codexConnectionLease
 }
 
 // NewHTTPUpstream 创建通用 HTTP 上游服务

@@ -2,11 +2,11 @@
   "schema_version": 1,
   "id": "codexrip.codex-runtime",
   "name": "Codex 运行扩展",
-  "version": "0.2.7",
-  "description": "292票据、有限续期与代理诊断",
+  "version": "0.2.8",
+  "description": "Cookie 路由资格、按需有界续获与出站指纹",
   "author": "HTExplicit",
   "requires": {
-    "sub2api": ">=0.2.7-0 <0.2.8",
+    "sub2api": ">=0.2.7-codexrip.2 <0.2.8",
     "tested_sub2api_versions": [],
     "plugin_protocol": 1,
     "transport_api": 1,
@@ -27,7 +27,7 @@
     { "id": "extensions.jobs.v1", "platform": "openai", "account_type": "setup-token" }
   ],
   "operations": {
-    "extensions.request.v1": ["inject", "codex.identity.available", "codex.identity.plan", "codex.identity.derive", "codex.identity.validate", "codex.identity.agent", "codex.identity.sandbox", "codex.transport.plan"],
+    "extensions.request.v1": ["inject", "codex.routing.demand", "codex.routing.observe", "codex.identity.available", "codex.identity.plan", "codex.identity.derive", "codex.identity.validate", "codex.identity.agent", "codex.identity.sandbox", "codex.transport.plan"],
     "extensions.recovery.v1": ["codex.recovery.available", "codex.recovery.enabled", "codex.recovery.rejection", "codex.recovery.select", "codex.replay.rules"]
   },
   "contributions": [
@@ -39,7 +39,7 @@
     },
     {
       "id": "ticket-harvest", "slot": "account.actions", "capability": "extensions.credentials.v1", "action": "harvest", "entrypoint": "ui/index.html", "permission": "admin",
-      "label": { "zh": "采集292票据", "en": "Acquire 292 tickets" },
+      "label": { "zh": "采集并验证 Cookie 路由", "en": "Acquire and verify Cookie route" },
       "account_filter": { "platforms": ["openai"], "types": ["oauth", "setup-token"], "exclude_shadows": true }
     },
     {
@@ -48,7 +48,7 @@
       "account_filter": { "platforms": ["openai"], "types": ["oauth", "setup-token"], "exclude_shadows": true }
     }
   ],
-  "resources": [{ "name": "ops.error.diagnostics", "capability": "extensions.recovery.v1", "permission": "admin" }],
+  "resources": [{ "name": "ops.error.diagnostics", "capability": "extensions.recovery.v1", "permission": "admin" }, { "name": "codex.fingerprint", "capability": "extensions.request.v1", "permission": "admin" }, { "name": "codex.fingerprint.profile", "capability": "extensions.request.v1", "permission": "admin" }, { "name": "codex.routing.validate", "capability": "extensions.credentials.v1", "permission": "admin" }],
   "runtimes": {},
   "ui": { "entrypoint": "ui/index.html" },
   "files": {}

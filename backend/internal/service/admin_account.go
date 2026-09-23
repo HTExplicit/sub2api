@@ -902,6 +902,12 @@ func (s *adminServiceImpl) updateAccount(ctx context.Context, id int64, input *U
 			}
 		}
 		normalizedExtra = MergeOpenAICodexTicketExtra(normalizedExtra, account.Extra)
+		// Prompt bindings have their own rule-revision and account-revision CAS.
+		// Ordinary account edits preserve them, including their absence.
+		delete(normalizedExtra, PromptAccountBindingExtraKey)
+		if binding, exists := account.Extra[PromptAccountBindingExtraKey]; exists {
+			normalizedExtra[PromptAccountBindingExtraKey] = binding
+		}
 		normalizedExtra = prepareCodexFingerprintExtraForUpdate(account, normalizedExtra)
 		account.Extra = normalizedExtra
 		if account.Platform == PlatformAntigravity && wasOveragesEnabled && !account.IsOveragesEnabled() {

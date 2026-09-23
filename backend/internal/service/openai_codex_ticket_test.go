@@ -87,7 +87,7 @@ func ticketTestService(t *testing.T, cfg config.OpenAICodexTicketConfig, upstrea
 	return &OpenAIGatewayService{cfg: &config.Config{Gateway: config.GatewayConfig{OpenAICodexTicket: cfg}}, httpUpstream: upstream, pluginManager: ticketTestManager(t, cfg, nil)}
 }
 func setTicketTestProjection(account *Account, model string, expiry time.Time) {
-	projection := PluginAccountProjection{Identity: CodexTicketAccountIdentity(account), Scheduling: map[string]extensionv1.SchedulingConstraint{model: {Model: model, Effect: "allow", Until: &expiry, Reason: "ticket_ready"}}}
+	projection := PluginAccountProjection{Identity: CodexTicketAccountIdentity(account), Scheduling: map[string]extensionv1.SchedulingConstraint{model: {Model: model, Effect: "allow", Until: &expiry, Reason: "routing_verified"}}}
 	raw, _ := json.Marshal(projection)
 	var value map[string]any
 	_ = json.Unmarshal(raw, &value)

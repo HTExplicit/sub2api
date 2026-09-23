@@ -18,7 +18,7 @@ import (
 // 是同一台设备上运行的同一个真实 Codex TUI，而不是多个用户各自的客户端。
 const CodexClientIdentityExtraKey = "codex_client_identity"
 
-const codexClientIdentitySchemaVersion = 1
+const codexClientIdentitySchemaVersion = 1 // legacy persisted representation remains valid
 
 type codexClientIdentity extensionv1.CodexClientProfile
 
@@ -65,7 +65,11 @@ func deriveCodexClientIdentity(seed string) codexClientIdentity {
 }
 
 func deriveCodexClientIdentityForAccountContext(ctx context.Context, account *Account, seed string) codexClientIdentity {
-	result, _ := invokeCodexIdentityPolicyForAccount(ctx, account, "codex.identity.derive", extensionv1.CodexIdentityQuery{Seed: seed})
+	preset := "captured_windows_cli"
+	if account != nil && account.ID > 0 {
+		preset = "legacy"
+	}
+	result, _ := invokeCodexIdentityPolicyForAccount(ctx, account, "codex.identity.derive", extensionv1.CodexIdentityQuery{Seed: seed, Preset: preset})
 	return codexClientIdentity(result.Profile)
 }
 
@@ -140,19 +144,22 @@ func (a *Account) codexClientIdentityContext(ctx context.Context) (codexClientId
 		return codexClientIdentity{}, false
 	}
 	identity := deriveCodexClientIdentityForAccountContext(ctx, a, seed)
-	return identity, identity.Version == codexClientIdentitySchemaVersion
+	return identity, identity.Version == codexClientIdentitySchemaVersion || identity.Version == 2
 }
 
 // codexClientIdentityExtraValue 把身份编码为可直接写入 extra 的 map。
 func codexClientIdentityExtraValue(id codexClientIdentity, now time.Time) map[string]any {
 	return map[string]any{
-		"v":            id.Version,
-		"os_type":      id.OSType,
-		"os_version":   id.OSVersion,
-		"arch":         id.Arch,
-		"terminal":     id.Terminal,
-		"sandbox":      id.Sandbox,
-		"generated_at": now.UTC().Format(time.RFC3339),
+		"source":         id.Source,
+		"originator":     id.Originator,
+		"client_version": id.ClientVersion,
+		"v":              id.Version,
+		"os_type":        id.OSType,
+		"os_version":     id.OSVersion,
+		"arch":           id.Arch,
+		"terminal":       id.Terminal,
+		"sandbox":        id.Sandbox,
+		"generated_at":   now.UTC().Format(time.RFC3339),
 	}
 }
 
@@ -182,7 +189,7 @@ func ensureCodexClientIdentityExtraForAccount(account *Account, extra map[string
 		extra = make(map[string]any, 1)
 	}
 	identity := deriveCodexClientIdentityForAccountContext(context.Background(), account, seed)
-	if identity.Version != codexClientIdentitySchemaVersion {
+	if identity.Version != codexClientIdentitySchemaVersion && identity.Version != 2 {
 		return extra
 	}
 	extra[CodexClientIdentityExtraKey] = codexClientIdentityExtraValue(identity, now)
@@ -298,7 +305,7 @@ func (s *CodexClientIdentityBackfillService) RunOnce(ctx context.Context) (int, 
 			if err := bound.Err(); err != nil {
 				return err
 			}
-			result, err := invokeCodexIdentityPolicyForAccount(bound, account, "codex.identity.derive", extensionv1.CodexIdentityQuery{Seed: seed})
+			result, err := invokeCodexIdentityPolicyForAccount(bound, account, "codex.identity.derive", extensionv1.CodexIdentityQuery{Seed: seed, Preset: "legacy"})
 			if err != nil {
 				return err
 			}

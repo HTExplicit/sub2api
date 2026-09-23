@@ -48,7 +48,10 @@ func (h *SettingHandler) GetPublicPluginThemeAsset(c *gin.Context) {
 	}
 	c.Header("Cache-Control", "no-store")
 	c.Header("X-Content-Type-Options", "nosniff")
-	c.Header("Cross-Origin-Resource-Policy", "same-origin")
+	// Only manifest-declared public appearance assets reach this handler.
+	// Opaque sandboxed plugin frames need CORS for stylesheets and font loads.
+	c.Header("Cross-Origin-Resource-Policy", "cross-origin")
+	c.Header("Access-Control-Allow-Origin", "*")
 	c.Data(http.StatusOK, contentType, data)
 }
 

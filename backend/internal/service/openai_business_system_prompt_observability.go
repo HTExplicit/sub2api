@@ -70,6 +70,11 @@ func logBusinessSystemPromptObservation(
 	upstreamTransport OpenAIUpstreamTransport,
 	selectionReason string,
 ) {
+	// Rule plans are observed at the final serializer, with their actual
+	// placements, instead of reporting an invented single appended string.
+	if application.RulesPlan != nil {
+		return
+	}
 	if c != nil {
 		key := businessSystemPromptContextKey(c, businessSystemPromptRequestObservationKey, BusinessSystemPromptProtocolResponses)
 		if _, exists := businessSystemPromptRequestGet(c, key); exists {

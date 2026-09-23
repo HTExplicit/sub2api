@@ -130,5 +130,12 @@ func (s *OpenAIGatewayService) doOpenAICodexUpstream(req *http.Request, account 
 	if err != nil {
 		return nil, err
 	}
-	return s.httpUpstream.Do(wire, proxyURL, account.ID, account.Concurrency)
+	if response, handled, routingErr := s.doQualifiedCodexUpstream(wire, account, proxyURL); handled {
+		return response, routingErr
+	}
+	response, err := s.httpUpstream.Do(wire, proxyURL, account.ID, account.Concurrency)
+	if err == nil && isOpenAICodexTicketAccount(account) {
+		s.observeCodexWire(wire.Context(), account, wire, response, nil)
+	}
+	return response, err
 }

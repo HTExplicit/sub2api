@@ -1,0 +1,223 @@
+{
+  "source_kind": "official_binary_capture",
+  "capture_method": "local_loopback_synthetic_auth",
+  "captured_at": "2026-09-23T03:07:57.7987060Z",
+  "binary_sha256": "eabc698ea3b1c430623af0cae510c3459165ed453d2a5d2dac14513cf1b25269",
+  "client_version": "0.156.0",
+  "user_agent": "codex_exec/0.156.0 (Windows 10.0.26220; x86_64) dumb (codex_exec; 0.156.0)",
+  "originator": "codex_exec",
+  "http_accept_encoding_present": false,
+  "transport_scope": "responses_https_and_wss_loopback",
+  "tls_alignment": "captured_reference_only",
+  "actual_model_requests": 0,
+  "responses": [
+    {
+      "method": "GET",
+      "path": "/backend-api/codex/responses",
+      "transport": {
+        "scheme": "https",
+        "tls_version": "TLSv1.3",
+        "cipher": "TLS_AES_256_GCM_SHA384",
+        "negotiated_alpn": null,
+        "client_hello": {
+          "legacy_version": 771,
+          "cipher_suites": [
+            4866,
+            4865,
+            4867,
+            49196,
+            49195,
+            52393,
+            49200,
+            49199,
+            52392,
+            255
+          ],
+          "extensions": [
+            23,
+            11,
+            5,
+            45,
+            10,
+            51,
+            35,
+            43,
+            0,
+            13
+          ],
+          "groups": [
+            4588,
+            29,
+            23,
+            24
+          ],
+          "point_formats": [
+            0
+          ],
+          "signature_algorithms": [
+            1283,
+            1027,
+            1539,
+            2055,
+            2054,
+            2053,
+            2052,
+            1537,
+            1281,
+            1025,
+            2308,
+            2309,
+            2310
+          ],
+          "supported_versions": [
+            772,
+            771
+          ],
+          "key_share_groups": [
+            4588,
+            29
+          ],
+          "alpn": [],
+          "ja3": "771,4866-4865-4867-49196-49195-52393-49200-49199-52392-255,23-11-5-45-10-51-35-43-0-13,4588-29-23-24,0",
+          "ja3_md5": "d6a68deca88b2e61c3d20a52c2aaf629"
+        }
+      },
+      "headers": {
+        "upgrade": "websocket",
+        "sec-websocket-version": "13",
+        "user-agent": "codex_exec/0.156.0 (Windows 10.0.26220; x86_64) dumb (codex_exec; 0.156.0)",
+        "originator": "codex_exec",
+        "openai-beta": "responses_websockets=2026-02-06",
+        "sec-websocket-extensions": "permessage-deflate; client_max_window_bits"
+      }
+    },
+    {
+      "method": "POST",
+      "path": "/backend-api/codex/responses",
+      "http_version": "HTTP/1.1",
+      "transport": {
+        "scheme": "https",
+        "tls_version": "TLSv1.3",
+        "cipher": "TLS_AES_256_GCM_SHA384",
+        "negotiated_alpn": "http/1.1",
+        "client_hello": {
+          "legacy_version": 771,
+          "cipher_suites": [
+            4866,
+            4865,
+            4867,
+            49196,
+            49195,
+            52393,
+            49200,
+            49199,
+            52392,
+            255
+          ],
+          "extensions": [
+            5,
+            16,
+            45,
+            13,
+            43,
+            23,
+            11,
+            0,
+            51,
+            10,
+            35
+          ],
+          "groups": [
+            4588,
+            29,
+            23,
+            24
+          ],
+          "point_formats": [
+            0
+          ],
+          "signature_algorithms": [
+            1283,
+            1027,
+            1539,
+            2055,
+            2054,
+            2053,
+            2052,
+            1537,
+            1281,
+            1025,
+            2308,
+            2309,
+            2310
+          ],
+          "supported_versions": [
+            772,
+            771
+          ],
+          "key_share_groups": [
+            4588,
+            29
+          ],
+          "alpn": [
+            "h2",
+            "http/1.1"
+          ],
+          "ja3": "771,4866-4865-4867-49196-49195-52393-49200-49199-52392-255,5-16-45-13-43-23-11-0-51-10-35,4588-29-23-24,0",
+          "ja3_md5": "3baae1d525347c65689cb2ed01b519e3"
+        }
+      },
+      "header_names": [
+        "x-codex-beta-features",
+        "x-codex-window-id",
+        "x-codex-turn-metadata",
+        "x-openai-internal-codex-responses-lite",
+        "x-client-request-id",
+        "session-id",
+        "thread-id",
+        "accept",
+        "content-type",
+        "authorization",
+        "chatgpt-account-id",
+        "originator",
+        "user-agent",
+        "host",
+        "content-length"
+      ],
+      "headers": {
+        "accept": "text/event-stream",
+        "content-type": "application/json",
+        "originator": "codex_exec",
+        "user-agent": "codex_exec/0.156.0 (Windows 10.0.26220; x86_64) dumb (codex_exec; 0.156.0)"
+      },
+      "body_bytes": 77573,
+      "body_keys": [
+        "client_metadata",
+        "include",
+        "input",
+        "model",
+        "parallel_tool_calls",
+        "prompt_cache_key",
+        "reasoning",
+        "store",
+        "stream",
+        "text",
+        "tool_choice"
+      ],
+      "client_metadata_keys": [
+        "root_turn_id",
+        "session_id",
+        "thread_id",
+        "turn_id",
+        "x-codex-installation-id",
+        "x-codex-turn-metadata",
+        "x-codex-window-id"
+      ]
+    }
+  ],
+  "limitations": [
+    "Captured reference is one Windows codex exec build.",
+    "Production Go TLS is a different implementation; no production JA3 or strict match is asserted.",
+    "The captured extension ordering may vary; preserve its actual sample order."
+  ]
+}

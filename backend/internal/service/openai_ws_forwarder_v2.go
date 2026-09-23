@@ -103,6 +103,10 @@ func (s *OpenAIGatewayService) forwardOpenAIWSV2WithScope(
 	}
 	setOpenAIWSTurnMetadata(payload, turnMetadata)
 	applyStagedCodexFingerprintClientMetadata(c, account, payload)
+	if promptErr := validateBusinessSystemPromptFinal(c, payloadAsJSONBytes(payload), BusinessSystemPromptProtocolResponses); promptErr != nil {
+		return nil, promptErr
+	}
+	observePromptRulesFinalFromRequest(c, account, BusinessSystemPromptProtocolResponses)
 	// Final response.create payload versus the client body Forward staged. The
 	// envelope edits above (type/stream/store/background, client_metadata) are
 	// outside the compared set; the marshal only happens when a snapshot exists.
@@ -388,6 +392,12 @@ func (s *OpenAIGatewayService) forwardOpenAIWSV2WithScope(
 		s.commitOpenAIWSSessionTurnState(c, account, stateStore, groupID, sessionHash, handshakeTurnState)
 	}
 
+	if model, _ := payload["model"].(string); model != "" {
+		if routingErr := s.guardCodexRoutingNativeModel(account, model); routingErr != nil {
+			return nil, routingErr
+		}
+	}
+	s.observeNativeCodexWS(ctx, account, wsHeaders, lease.HandshakeHeaders(), nil, lease.ConnID())
 	if err := s.performOpenAIWSGeneratePrewarm(
 		ctx,
 		lease,
@@ -413,6 +423,7 @@ func (s *OpenAIGatewayService) forwardOpenAIWSV2WithScope(
 		)
 		return nil, wrapOpenAIWSFallback("write_request", err)
 	}
+	s.observeNativeCodexWS(ctx, account, wsHeaders, lease.HandshakeHeaders(), codexWSMetadataBody(payload), lease.ConnID())
 	if debugEnabled {
 		logOpenAIWSModeDebug(
 			"write_request_sent account_id=%d conn_id=%s stream=%v payload_bytes=%d previous_response_id_present=%v",

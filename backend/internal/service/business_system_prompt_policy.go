@@ -95,7 +95,17 @@ func planBusinessSystemPromptWithInvoker(parent context.Context, body []byte, sn
 	}
 	result, err := invoke(ctx, target.Platform, accountType, extensionv1.Invocation{Capability: extensionv1.CapabilityRequest, Operation: "prompt.plan", AccountID: target.AccountID, Payload: raw})
 	if errors.Is(err, ErrExtensionOperationDisabled) {
+		if snapshot.RulePolicy != nil {
+			plan := &extensionv1.PromptRulesPlan{Placements: []extensionv1.PromptRulePlacement{}, Skipped: []extensionv1.PromptRuleDecision{}}
+			for _, rule := range snapshot.RulePolicy.Rules {
+				plan.Skipped = append(plan.Skipped, extensionv1.PromptRuleDecision{RuleID: rule.ID, Reason: "plugin_scope"})
+			}
+			return BusinessSystemPromptApplication{Revision: snapshot.Revision, RulesPlan: plan}, nil
+		}
 		return BusinessSystemPromptApplication{}, nil
+	}
+	if result.Code == "prompt_delivery_unsupported" {
+		return BusinessSystemPromptApplication{}, ErrPromptDeliveryUnsupported
 	}
 	if err != nil || result.Code != "" {
 		if !snapshot.Enabled {
@@ -107,10 +117,19 @@ func planBusinessSystemPromptWithInvoker(parent context.Context, body []byte, sn
 	if json.Unmarshal(result.Payload, &application) != nil {
 		return application, ErrBusinessSystemPromptUnavailable
 	}
+	if snapshot.RulePolicy != nil && application.RulesPlan == nil {
+		if !snapshot.Enabled {
+			return BusinessSystemPromptApplication{}, nil
+		}
+		return BusinessSystemPromptApplication{}, ErrBusinessSystemPromptUnavailable
+	}
 	return application, nil
 }
 
 func applyBusinessSystemPromptApplication(body []byte, application BusinessSystemPromptApplication) ([]byte, BusinessSystemPromptApplication, error) {
+	if application.RulesPlan != nil {
+		return applyPromptRules(body, application)
+	}
 	if !application.Applied {
 		return body, application, nil
 	}
@@ -197,6 +216,9 @@ func RewriteBusinessSystemPromptResponseJSON(
 	application BusinessSystemPromptApplication,
 	exposeServerPrompt bool,
 ) ([]byte, error) {
+	if application.RulesPlan != nil {
+		return rewritePromptRulesResponse(body, application, exposeServerPrompt)
+	}
 	if exposeServerPrompt ||
 		application.PreserveInstructionsEcho ||
 		!application.Applied ||
@@ -242,7 +264,7 @@ func RewriteBusinessSystemPromptSSE(
 	if exposeServerPrompt ||
 		application.PreserveInstructionsEcho ||
 		!application.Applied ||
-		application.Carrier != BusinessSystemPromptCarrierInstructions {
+		(application.Carrier != BusinessSystemPromptCarrierInstructions && application.RulesPlan == nil) {
 		return body, nil
 	}
 	lines := bytes.SplitAfter(body, []byte("\n"))

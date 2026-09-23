@@ -20,6 +20,7 @@ import (
 
 // Forward forwards request to OpenAI API
 func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, account *Account, body []byte) (_ *OpenAIForwardResult, forwardErr error) {
+	rememberPromptRequestedModel(c, body)
 	if account != nil && IsCindyAPIKeyAccount(account.Platform, account.Type, account.Credentials) && IsImageGenerationIntent(openAIResponsesEndpoint, gjson.GetBytes(body, "model").String(), body) {
 		bound, release, err := bindProcessExtensionContext(ctx, PlatformCindy, AccountTypeAPIKey, extensionv1.Invocation{Capability: extensionv1.CapabilityRequest, Operation: "image.responses.plan", AccountID: account.ID})
 		if err != nil {
@@ -1625,6 +1626,10 @@ func (s *OpenAIGatewayService) buildUpstreamRequest(ctx context.Context, c *gin.
 		return nil, fmt.Errorf("normalize compatible Responses reasoning summary: %w", err)
 	}
 
+	body, err = s.finalizeBusinessPromptForSend(c, account, body, BusinessSystemPromptProtocolResponses, isOpenAIResponsesCompactPath(c))
+	if err != nil {
+		return nil, err
+	}
 	req, err := http.NewRequestWithContext(ctx, "POST", targetURL, bytes.NewReader(body))
 	if err != nil {
 		return nil, err
@@ -1664,6 +1669,8 @@ func (s *OpenAIGatewayService) buildUpstreamRequest(ctx context.Context, c *gin.
 	// 客户端回带的 x-codex-turn-state 若已知由其他账号铸造（failover 换号），
 	// 剥离后再出站——异账号 blob 与本账号的（指纹收敛后）出站身份自相矛盾。
 	s.guardOpenAICodexTurnStateEcho(c, account, req.Header)
+	req = withCodexRoutingModel(req, extractOpenAICodexTicketModel(body))
+	stageCodexRoutingTurn(c, body)
 	if err := s.applyOpenAICodexTicket(ctx, account, extractOpenAICodexTicketModel(body), req.Header); err != nil {
 		return nil, err
 	}

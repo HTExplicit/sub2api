@@ -69,6 +69,8 @@ type PluginManager struct {
 	reconcileDone      chan struct{}
 	route              atomic.Pointer[pluginRoute]
 	extensions         atomic.Pointer[pluginExtensionRegistry]
+	codexDemandMu      sync.Mutex
+	codexDemandAt      map[string]time.Time
 }
 
 func NewPluginManager(repo PluginRepository, encryptor SecretEncryptor, cfg *config.Config, hostInfo PluginHostInfo, kvStore PluginKVStore) *PluginManager {

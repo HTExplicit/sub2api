@@ -48,10 +48,12 @@ type UpstreamModelMetadataSnapshot struct {
 }
 
 type UpstreamModelCatalog struct {
-	Models       []string                         `json:"models"`
-	Metadata     map[string]UpstreamModelMetadata `json:"metadata,omitempty"`
-	Warnings     []UpstreamModelSyncWarning       `json:"warnings,omitempty"`
-	CapacityRows []AccountModelContextCapacityRow `json:"capacity_rows"`
+	Models []string `json:"models"`
+	// ModelListSource describes the IDs, independently of enriched capabilities.
+	ModelListSource string                           `json:"model_list_source"`
+	Metadata        map[string]UpstreamModelMetadata `json:"metadata,omitempty"`
+	Warnings        []UpstreamModelSyncWarning       `json:"warnings,omitempty"`
+	CapacityRows    []AccountModelContextCapacityRow `json:"capacity_rows"`
 }
 
 type UpstreamModelSyncWarning struct {
@@ -226,6 +228,10 @@ func (s *AccountTestService) SyncUpstreamModelCatalog(ctx context.Context, accou
 		)
 	}
 	catalog := &UpstreamModelCatalog{Models: models, Metadata: make(map[string]UpstreamModelMetadata)}
+	catalog.ModelListSource = "upstream"
+	if !liveListAvailable {
+		catalog.ModelListSource = "configured"
+	}
 	extraUpdates := make(map[string]any)
 	if len(body) > 0 {
 		// Keep only values actually declared by this upstream in the raw capacity

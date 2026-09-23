@@ -1,5 +1,7 @@
+import rules from './rules.zh'
 export default {
   systemPrompts: {
+    rules,
     title: '系统提示词',
     common: { refresh: '刷新', close: '关闭', loading: '加载中', saving: '保存中', cancel: '取消' },
     runtime: {

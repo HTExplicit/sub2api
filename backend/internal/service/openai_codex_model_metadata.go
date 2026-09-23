@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"net/url"
 	"strings"
+
+	"github.com/Wei-Shaw/sub2api/internal/pkg/openai"
 )
 
 var codexToolCapabilityFields = []string{
@@ -50,6 +52,9 @@ func accountCodexToolCapabilities(account *Account, modelID string) map[string]j
 	if metadata, ok := account.GetUpstreamModelMetadata(modelID); ok {
 		applyCodexToolCapabilities(capabilities, metadata.CodexToolCapabilities, true)
 	}
+	if defaults, ok := gpt6APIModelMetadata(account, modelID); ok {
+		applyCodexToolCapabilities(capabilities, defaults.CodexToolCapabilities, false)
+	}
 	if account.IsOpenAI() && shouldForwardOpenAIResponsesViaRawChatCompletions(account) {
 		// This bridge implements client-side tool discovery, even without a native manifest.
 		applyCodexToolCapabilities(capabilities, map[string]json.RawMessage{"supports_search_tool": json.RawMessage("true")}, false)
@@ -63,7 +68,7 @@ func accountCodexToolCapabilities(account *Account, modelID string) map[string]j
 	parsed, err := url.Parse(baseURL)
 	official := err == nil && (strings.EqualFold(parsed.Hostname(), "api.openai.com") ||
 		(account.IsOpenAIOAuth() && strings.EqualFold(parsed.Hostname(), "chatgpt.com")))
-	if account.IsOpenAI() && isOpenAIGPT6AstraModel(modelID) && official {
+	if account.IsOpenAI() && (isOpenAIGPT6AstraModel(modelID) || isOpenAIGPT6SolOrLunaModel(modelID)) && official {
 		defaults := map[string]json.RawMessage{
 			"supports_search_tool":  json.RawMessage("true"),
 			"apply_patch_tool_type": json.RawMessage(`"freeform"`),
@@ -75,12 +80,18 @@ func accountCodexToolCapabilities(account *Account, modelID string) map[string]j
 			defaults["tool_mode"] = json.RawMessage(`"code_mode_only"`)
 			defaults["use_responses_lite"] = json.RawMessage("true")
 		}
+		if isOpenAIGPT6SolOrLunaModel(modelID) {
+			defaults["multi_agent_reasoning_effort"] = json.RawMessage("null")
+			defaults["multi_agent_version"] = json.RawMessage(`"v2"`)
+		}
 		applyCodexToolCapabilities(capabilities, defaults, false)
 	}
 	if account.IsOpenAIApiKey() {
 		target := modelID
 		if isOpenAIGPT6AstraModel(target) {
 			target = "gpt-6-astra"
+		} else if named := openai.GPT6NamedModel(target); named != "" {
+			target = named
 		}
 		_, disabled := apiKeyCodexModelsWithoutResponsesLite[target]
 		if disabled && bytes.Equal(capabilities["use_responses_lite"], []byte("true")) {
@@ -184,6 +195,16 @@ func groupCodexModelMetadata(
 			publicAlias = true
 		}
 		metadata, ok := account.GetUpstreamModelMetadata(lookupModel)
+		if defaults, known := gpt6AccountModelMetadata(account, lookupModel); known {
+			metadata, _ = mergeUpstreamModelMetadata(metadata, defaults)
+			ok = true
+			if account.IsOpenAIOAuthLike() {
+				// Raw capacity snapshots have separate provenance and may be
+				// newer than the enriched capability snapshot.
+				metadata.ContextWindow, metadata.MaxContextWindow = defaults.ContextWindow, defaults.MaxContextWindow
+				metadata.MaxOutputTokens = defaults.MaxOutputTokens
+			}
+		}
 		if !ok {
 			if explicitTargetsConflict {
 				return codexModelMetadataOverride{

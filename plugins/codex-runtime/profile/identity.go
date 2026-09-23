@@ -31,7 +31,11 @@ func Invoke(ctx context.Context, in extensionv1.Invocation) (extensionv1.Result,
 		if query.Seed == "" || len(query.Seed) > 1024 {
 			return extensionv1.Result{}, errors.New("invalid identity seed")
 		}
-		result.Profile, result.Valid = extensionv1.CodexClientProfile(deriveCodexClientIdentity(query.Seed)), true
+		identity := capturedCodexClientIdentity()
+		if query.Preset == "legacy" {
+			identity = deriveCodexClientIdentity(query.Seed)
+		}
+		result.Profile, result.Valid = extensionv1.CodexClientProfile(identity), true
 	case "codex.identity.validate":
 		result.Valid = codexClientIdentity(query.Profile).valid()
 	case "codex.identity.plan":
@@ -93,6 +97,9 @@ var (
 // windows_sandbox=Windows、seccomp=Ubuntu），版本/架构/终端形态受限且不含空白或
 // CR/LF。持久化值或外部写入的坏值一律视为缺失并重新按种子派生，避免脏值进入 UA。
 func (id codexClientIdentity) valid() bool {
+	if id.Version == 2 {
+		return id == capturedCodexClientIdentity() || (id.GeneratedAt != "" && func() bool { id.GeneratedAt = ""; return id == capturedCodexClientIdentity() }())
+	}
 	if id.Version != codexClientIdentitySchemaVersion {
 		return false
 	}
@@ -144,6 +151,9 @@ func codexSandboxForUserAgent(userAgent string) string {
 // 首段版本、尾部括号组版本与 version 头必须同源（codex-rs 三处都取同一个
 // CARGO_PKG_VERSION）。
 func (id codexClientIdentity) UserAgent(version string) string {
+	if id.Version == 2 {
+		return "codex_exec/0.156.0 (Windows 10.0.26220; x86_64) dumb (codex_exec; 0.156.0)"
+	}
 	version = strings.TrimSpace(version)
 	return fmt.Sprintf("%s/%s (%s %s; %s) %s (%s; %s)",
 		codexTUIOriginator, version, id.OSType, id.OSVersion, id.Arch, id.Terminal, codexTUIOriginator, version)
@@ -152,6 +162,12 @@ func (id codexClientIdentity) UserAgent(version string) string {
 // codexTUIOriginator 是交互式 Codex TUI 的 originator（app-server initialize 的
 // clientInfo.name，codex-rs tui/src/lib.rs）。
 const codexTUIOriginator = "codex-tui"
+
+// This is a reference-derived application profile, not a claim that the
+// gateway's Go transport was captured from the native client.
+func capturedCodexClientIdentity() codexClientIdentity {
+	return codexClientIdentity{Version: 2, Source: "reference_derived_windows_cli", Originator: "codex_exec", ClientVersion: "0.156.0", OSType: "Windows", OSVersion: "10.0.26220", Arch: "x86_64", Terminal: "dumb", Sandbox: "windows_sandbox"}
+}
 
 // deriveCodexClientIdentity 从种子确定性派生一份自洽身份。分布按真实 TUI 用户
 // 的大致构成加权：macOS 60%（arm64 为主），Windows 25%，Ubuntu 15%；终端与

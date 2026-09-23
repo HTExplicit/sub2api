@@ -2,16 +2,21 @@
   "schema_version": 1,
   "id": "codexrip.prompt-skills",
   "name": "提示词与技能策略",
-  "version": "0.2.7",
+  "version": "0.2.8",
   "description": "提示词完整性、应用范围与协议载体策略",
   "author": "HTExplicit",
-  "requires": { "sub2api": ">=0.2.7-0 <0.2.8", "tested_sub2api_versions": [], "plugin_protocol": 1, "transport_api": 1, "ui_bridge": 1, "extension_api": 1 },
+  "requires": { "sub2api": ">=0.2.7-codexrip.2 <0.2.8", "tested_sub2api_versions": [], "plugin_protocol": 1, "transport_api": 1, "ui_bridge": 1, "extension_api": 1 },
   "capabilities": [
     { "id": "extensions.request.v1", "platform": "openai", "account_type": "*" },
     { "id": "extensions.admin.v1", "platform": "*", "account_type": "*" }
   ],
-  "operations": { "extensions.request.v1": ["prompt.plan", "prompt.availability", "prompt.composition", "prompt.template", "prompt.publication.plan", "prompt.seeds", "prompt.source.fetch", "prompt.source.validate", "skills.capture", "skills.prompt.seed", "skills.profile", "skills.seed.index", "skills.seed.chunk", "skills.manifest.validate", "skills.tree.check", "skills.file.plan", "skills.publication.plan", "skills.storage.plan"] },
+  "operations": { "extensions.request.v1": ["prompt.plan", "prompt.rules.validate", "prompt.availability", "prompt.composition", "prompt.template", "prompt.publication.plan", "prompt.seeds", "prompt.source.fetch", "prompt.source.validate", "skills.capture", "skills.prompt.seed", "skills.profile", "skills.seed.index", "skills.seed.chunk", "skills.manifest.validate", "skills.tree.check", "skills.file.plan", "skills.publication.plan", "skills.storage.plan"] },
   "resources": [
+    { "name": "prompts.rules.read", "capability": "extensions.request.v1", "permission": "admin" },
+    { "name": "prompts.rules.update", "capability": "extensions.request.v1", "permission": "admin" },
+    { "name": "prompts.rules.preview", "capability": "extensions.admin.v1", "permission": "admin" },
+    { "name": "prompts.bindings.read", "capability": "extensions.admin.v1", "permission": "admin" },
+    { "name": "prompts.bindings.update", "capability": "extensions.admin.v1", "permission": "admin" },
     { "name": "prompts.list", "capability": "extensions.request.v1", "permission": "admin" },
     { "name": "prompts.create", "capability": "extensions.request.v1", "permission": "admin" },
     { "name": "prompts.runtime.read", "capability": "extensions.request.v1", "permission": "admin" },
@@ -36,6 +41,8 @@
     { "name": "prompts.rollback", "capability": "extensions.request.v1", "permission": "admin" }
   ],
   "contributions": [
+    { "id": "prompt-account-binding-action", "slot": "account.actions", "capability": "extensions.admin.v1", "entrypoint": "ui/compiled/index.html", "events": ["changed"], "permission": "admin", "account_filter": { "platforms": ["openai", "cindy"], "types": ["oauth", "setup-token", "apikey"] }, "label": { "zh": "账号提示词", "en": "Account prompts" } },
+    { "id": "prompt-account-binding", "slot": "surface", "capability": "extensions.admin.v1", "entrypoint": "ui/compiled/index.html", "events": ["changed"], "permission": "admin", "label": { "zh": "账号提示词", "en": "Account prompts" } },
     { "id": "prompt-management", "slot": "surface", "capability": "extensions.request.v1", "entrypoint": "ui/compiled/index.html", "permission": "admin", "label": { "zh": "提示词与技能管理", "en": "Prompt and skill management" } },
     { "id": "prompt-policy", "slot": "admin.settings", "capability": "extensions.admin.v1", "action": "prompt.describe", "entrypoint": "ui/index.html", "permission": "admin", "label": { "zh": "提示词应用策略", "en": "Prompt application policy" } }
   ],

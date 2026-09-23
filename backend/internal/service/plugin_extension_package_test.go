@@ -27,7 +27,7 @@ func TestFirstPartyExtensionSignedPackageContainsIndependentRuntimeAndUI(t *test
 	defer func() { _ = file.Close() }()
 	cfg := testPluginConfig(t.TempDir(), false)
 	cfg.Plugins.TrustedPublishers = map[string]string{keyID: public}
-	installer := NewPluginPackageInstaller(cfg, PluginHostInfo{Version: "0.2.7", BuildType: "release"})
+	installer := NewPluginPackageInstaller(cfg, PluginHostInfo{Version: "0.2.7-codexrip.2", BuildType: "release"})
 	installed, err := installer.Install(context.Background(), file, nil)
 	require.NoError(t, err)
 	require.Equal(t, "codexrip.codex-runtime", installed.PluginKey)

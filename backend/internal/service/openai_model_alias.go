@@ -27,6 +27,9 @@ func normalizeKnownOpenAICodexModel(model string) string {
 	if normalized == "" {
 		return ""
 	}
+	if named := openai.GPT6NamedModel(normalized); named != "" {
+		return named
+	}
 
 	if mapped := getNormalizedCodexModel(normalized); mapped != "" {
 		return mapped
@@ -40,6 +43,8 @@ func normalizeKnownOpenAICodexModel(model string) string {
 	switch {
 	case normalized == "gpt-6" || normalized == "gpt-6-astra":
 		return "gpt-6-astra"
+	case strings.HasPrefix(normalized, "gpt-6-"):
+		return ""
 	case strings.Contains(normalized, "gpt-5.6-sol"):
 		return "gpt-5.6-sol"
 	case strings.Contains(normalized, "gpt-5.6-terra"):
@@ -104,6 +109,10 @@ func isOpenAIGPT56Model(model string) bool {
 func isOpenAIGPT6AstraModel(model string) bool {
 	normalized := canonicalizeOpenAIModelAliasSpelling(model)
 	return normalized == "gpt-6" || normalized == "gpt-6-astra" || strings.HasPrefix(normalized, "gpt-6-astra-")
+}
+
+func isOpenAIGPT6SolOrLunaModel(model string) bool {
+	return openai.GPT6NamedModel(model) != ""
 }
 
 func appendUsageBillingModelCandidate(candidates []string, seen map[string]struct{}, model string) []string {

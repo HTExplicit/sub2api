@@ -37,6 +37,9 @@ func prepareCodexTransport(req *http.Request, account *Account) (*http.Request, 
 	if req == nil || req.URL == nil || account == nil || !account.IsOpenAIOAuthLike() {
 		return req, nil
 	}
+	if _, ok := req.Context().Value(codexIdentityBodyKey{}).(codexIdentityBodyObservation); !ok {
+		req = req.WithContext(context.WithValue(req.Context(), codexIdentityBodyKey{}, inspectCodexIdentityBody(req)))
+	}
 	if err := requireCodexIdentityPolicy(req.Context(), account); err != nil {
 		return nil, err
 	}

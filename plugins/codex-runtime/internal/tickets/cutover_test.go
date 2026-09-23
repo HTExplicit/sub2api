@@ -30,7 +30,10 @@ func TestCanceledHarvestCannotPublishLateTicket(t *testing.T) {
 			module.prepareProxy = func(context.Context, *extensionv1.Client, string, bool) (*http.Client, *ProxyResult, error) {
 				return &http.Client{}, &ProxyResult{}, nil
 			}
-			module.requestTicket = func(_ context.Context, _ *http.Client, identity extensionv1.OutboundIdentity, model string) (*Ticket, Outcome) {
+			host.probe = func(query extensionv1.CodexRoutingQuery) extensionv1.CodexRoutingProbeResult {
+				if query.Stage != "verify" {
+					return testRoutingProbe(host.account, query)
+				}
 				if cancelByConfig {
 					if err := module.ApplyConfig(context.Background(), json.RawMessage(`{"enabled":false}`)); err != nil {
 						t.Fatal(err)
@@ -40,8 +43,7 @@ func TestCanceledHarvestCannotPublishLateTicket(t *testing.T) {
 				} else {
 					cancel()
 				}
-				now := time.Now().UTC()
-				return &Ticket{AccountID: identity.AccountID, Identity: identity.Identity, Model: model, State: "gAAAAA" + strings.Repeat("a", 286), CapturedAt: now, ExpiresAt: now.Add(TTL)}, Outcome{Success: true, Code: "ticket_ready"}
+				return testRoutingProbe(host.account, query)
 			}
 			raw, _ := json.Marshal(Operation{AccountID: 7, Model: "gpt-6-astra", OperationID: "cancel-me"})
 			result, err := module.Invoke(ctx, extensionv1.Invocation{Capability: extensionv1.CapabilityAdmin, Operation: "harvest", Payload: raw})
@@ -56,7 +58,7 @@ func TestCanceledHarvestCannotPublishLateTicket(t *testing.T) {
 			stored := host.state[stateKey(7, "gpt-6-astra")]
 			host.mu.Unlock()
 			var state State
-			if json.Unmarshal(stored.Value, &state) != nil || state.Ticket != nil || state.NextAt != nil || state.Phase != "stopped" {
+			if json.Unmarshal(stored.Value, &state) != nil || state.Qualification != nil || state.NextAt != nil || state.Phase != "stopped" {
 				t.Fatalf("canceled attempt enrolled: %s", stored.Value)
 			}
 		})
@@ -68,27 +70,41 @@ func TestTicketAdmissionAndInjectionShareIdentityValidityAndScope(t *testing.T) 
 	account := extensionv1.Account{ID: 7, Platform: "openai", Type: "setup-token", Identity: "principal", Status: "disabled"}
 	for _, tc := range []struct {
 		name          string
-		change        func(*Ticket, *extensionv1.SchedulingRequest)
+		change        func(*extensionv1.CodexRoutingQualification, *extensionv1.SchedulingRequest)
 		allow, inject bool
 	}{
-		{"valid", func(*Ticket, *extensionv1.SchedulingRequest) {}, true, true},
-		{"expired", func(t *Ticket, _ *extensionv1.SchedulingRequest) { t.ExpiresAt = now }, false, false},
-		{"wrong_length", func(t *Ticket, _ *extensionv1.SchedulingRequest) { t.State += "a" }, false, false},
-		{"wrong_prefix", func(t *Ticket, _ *extensionv1.SchedulingRequest) { t.State = strings.Repeat("x", Length) }, false, false},
-		{"wrong_owner", func(t *Ticket, _ *extensionv1.SchedulingRequest) { t.Identity = "other" }, false, false},
-		{"wrong_account", func(t *Ticket, _ *extensionv1.SchedulingRequest) { t.AccountID++ }, false, false},
-		{"wrong_model", func(t *Ticket, _ *extensionv1.SchedulingRequest) { t.Model = "gpt-5.6-sol" }, false, false},
-		{"future_capture", func(t *Ticket, _ *extensionv1.SchedulingRequest) { t.CapturedAt = now.Add(time.Minute) }, false, false},
-		{"excessive_ttl", func(t *Ticket, _ *extensionv1.SchedulingRequest) { t.ExpiresAt = now.Add(2 * time.Hour) }, false, false},
-		{"ungated_model", func(_ *Ticket, r *extensionv1.SchedulingRequest) { r.Model = "gpt-5.5" }, true, false},
-		{"shadow", func(_ *Ticket, r *extensionv1.SchedulingRequest) { r.Account.Shadow = true }, true, false},
-		{"apikey", func(_ *Ticket, r *extensionv1.SchedulingRequest) { r.Account.Type = "apikey" }, true, false},
+		{"valid", func(*extensionv1.CodexRoutingQualification, *extensionv1.SchedulingRequest) {}, true, true},
+		{"expired", func(q *extensionv1.CodexRoutingQualification, _ *extensionv1.SchedulingRequest) { q.ExpiresAt = now }, false, false},
+		{"missing_bundle", func(q *extensionv1.CodexRoutingQualification, _ *extensionv1.SchedulingRequest) { q.Bundle.Key = "" }, false, false},
+		{"missing_revision", func(q *extensionv1.CodexRoutingQualification, _ *extensionv1.SchedulingRequest) {
+			q.Bundle.Revision = 0
+		}, false, false},
+		{"wrong_owner", func(q *extensionv1.CodexRoutingQualification, _ *extensionv1.SchedulingRequest) {
+			q.Scope.Identity = "other"
+		}, false, false},
+		{"wrong_account", func(q *extensionv1.CodexRoutingQualification, _ *extensionv1.SchedulingRequest) { q.Scope.AccountID++ }, false, false},
+		{"wrong_model", func(q *extensionv1.CodexRoutingQualification, _ *extensionv1.SchedulingRequest) {
+			q.Model = "gpt-5.6-sol"
+		}, false, false},
+		{"future_verification", func(q *extensionv1.CodexRoutingQualification, _ *extensionv1.SchedulingRequest) {
+			q.VerifiedAt = now.Add(time.Minute)
+		}, false, false},
+		{"excessive_ttl", func(q *extensionv1.CodexRoutingQualification, _ *extensionv1.SchedulingRequest) {
+			q.ExpiresAt = now.Add(2 * time.Hour)
+		}, false, false},
+		{"ungated_model", func(_ *extensionv1.CodexRoutingQualification, r *extensionv1.SchedulingRequest) { r.Model = "gpt-5.5" }, true, false},
+		{"shadow", func(_ *extensionv1.CodexRoutingQualification, r *extensionv1.SchedulingRequest) {
+			r.Account.Shadow = true
+		}, true, false},
+		{"apikey", func(_ *extensionv1.CodexRoutingQualification, r *extensionv1.SchedulingRequest) {
+			r.Account.Type = "apikey"
+		}, true, false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			ticket := &Ticket{AccountID: account.ID, Identity: account.Identity, Model: "gpt-6-astra", State: "gAAAAA" + strings.Repeat("a", 286), CapturedAt: now, ExpiresAt: now.Add(TTL)}
-			request := extensionv1.SchedulingRequest{Account: account, Model: ticket.Model, Now: now}
-			tc.change(ticket, &request)
-			rawState, _ := json.Marshal(State{Identity: account.Identity, Ticket: ticket})
+			qualification := &extensionv1.CodexRoutingQualification{Scope: testRoutingScope(account), Model: "gpt-6-astra", VerifiedAt: now, ExpiresAt: now.Add(time.Minute), Bundle: extensionv1.CodexRoutingBundleRef{Key: "bundle.test", Revision: 1, ExpiresAt: now.Add(time.Minute)}}
+			request := extensionv1.SchedulingRequest{Account: account, Model: qualification.Model, Now: now}
+			tc.change(qualification, &request)
+			rawState, _ := json.Marshal(State{Schema: 2, Identity: account.Identity, Qualification: qualification})
 			host := &memoryHost{account: account, state: map[string]extensionv1.StateResult{stateKey(account.ID, "gpt-6-astra"): {Found: true, Value: rawState}}}
 			module := NewModule()
 			module.SetHost(testHostClient(t, host))
@@ -112,8 +128,8 @@ func TestTicketAdmissionAndInjectionShareIdentityValidityAndScope(t *testing.T) 
 			if (injection.Code == "") != tc.allow {
 				t.Fatalf("injection disagrees with admission: %+v", injection)
 			}
-			if strings.Contains(string(injection.Payload), ticket.State) != tc.inject {
-				t.Fatal("unexpected ticket injection")
+			if strings.Contains(string(injection.Payload), "routing_qualification") != tc.inject || strings.Contains(string(injection.Payload), "x-codex-turn-state") {
+				t.Fatal("unexpected opaque-state injection or missing qualification reference")
 			}
 		})
 	}

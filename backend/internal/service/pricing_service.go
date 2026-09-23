@@ -1456,6 +1456,20 @@ func (s *PricingService) matchByModelFamily(model string) *LiteLLMModelPricing {
 // 5. gpt-5.4* -> 业务静态兜底价
 // 6. 最终回退到 DefaultTestModel (gpt-5.1-codex)
 func (s *PricingService) matchOpenAIModel(model string) *LiteLLMModelPricing {
+	if named := openai.GPT6NamedModel(model); named != "" {
+		if pricing, ok := s.pricingData[named]; ok {
+			return pricing
+		}
+		if named == "gpt-6-sol" {
+			return openAIGPT6SolFallbackPricing
+		}
+		return openAIGPT6LunaFallbackPricing
+	}
+	// A future named GPT-6 is not the numeric gpt-6 (Astra) alias, nor the
+	// default test model. Exact custom price cards were already considered.
+	if strings.HasPrefix(model, "gpt-6-") && !isOpenAIGPT6AstraModel(model) {
+		return nil
+	}
 	if strings.HasPrefix(model, "gpt-5.3-codex-spark") {
 		if pricing, ok := s.pricingData["gpt-5.1-codex"]; ok {
 			logger.LegacyPrintf("service.pricing", "[Pricing][SparkBilling] %s -> %s billing", model, "gpt-5.1-codex")

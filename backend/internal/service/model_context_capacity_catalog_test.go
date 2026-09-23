@@ -5,6 +5,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/Wei-Shaw/sub2api/internal/pkg/openai"
 )
 
 func TestOfficialModelContextCapacityCatalogIntegrity(t *testing.T) {
@@ -84,8 +86,12 @@ func TestOfficialModelContextCapacityCatalogIntegrity(t *testing.T) {
 				}
 			}
 			if ref := row.Reference; ref != nil {
-				if ref.Product != "codex_subscription" || ref.SourceURL != gptContextCapacityReferenceSource ||
-					ref.Release != GPTContextCapacityReferenceRelease || ref.VerifiedAt != gptContextCapacityReferenceVerifiedAt ||
+				source, release, verifiedAt := gptContextCapacityReferenceSource, GPTContextCapacityReferenceRelease, gptContextCapacityReferenceVerifiedAt
+				if openai.GPT6NamedModel(row.ModelID) != "" {
+					source, release, verifiedAt = openai.GPT6CodexReferenceSource, openai.GPT6CodexReferenceCommit, openai.GPT6CodexReferenceVerifiedAt
+				}
+				if ref.Product != "codex_subscription" || ref.SourceURL != source ||
+					ref.Release != release || ref.VerifiedAt != verifiedAt ||
 					ref.ContextWindow <= 0 || ref.MaxContextWindow < ref.ContextWindow || row.Conditions == "" {
 					t.Errorf("invalid or unexplained Codex reference: %+v", ref)
 				}

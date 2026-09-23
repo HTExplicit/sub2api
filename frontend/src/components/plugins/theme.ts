@@ -1,38 +1,22 @@
 import { publicContributions, type PluginContribution } from '@/api/admin/plugins'
+import { createStylesheetController, pluginThemeURL } from '@sub2api/plugin-ui/stylesheets'
 
 let flight: Promise<void> | null = null
 let dirty = false
 
-function themeURL(value: string | undefined): string | null {
-  if (!value || !/^\/api\/v1\/settings\/plugins\/[1-9]\d*\/theme\/[a-f0-9]{64}\/[a-zA-Z0-9_./-]+\.css$/.test(value) || value.split('/').includes('..')) return null
-  return value
-}
+let stylesheets: ReturnType<typeof createStylesheetController> | undefined
 
 export function applyPluginThemeContributions(items: PluginContribution[]): Promise<void> {
-  const links = new Map(Array.from(document.querySelectorAll<HTMLLinkElement>('link[data-plugin-theme]')).map(link => [link.dataset.pluginTheme!, link]))
-  const loading: Promise<void>[] = []
+  const desired = new Map<string, string>()
   for (const item of items) {
     if (item.slot !== 'theme' || item.permission !== 'public' || !item.available) continue
-    const href = themeURL(item.stylesheet_url)
+    const href = pluginThemeURL(item.stylesheet_url)
     if (!href) continue
     const key = `${item.plugin_id}:${item.id}`
-    const previous = links.get(key)
-    links.delete(key)
-    if (previous?.getAttribute('href') === href) continue
-    previous?.remove()
-    const link = document.createElement('link')
-    link.rel = 'stylesheet'
-    link.dataset.pluginTheme = key
-    link.href = href
-    loading.push(new Promise(resolve => {
-      const timer = setTimeout(() => { link.remove(); resolve() }, 1500)
-      link.onload = () => { clearTimeout(timer); resolve() }
-      link.onerror = () => { clearTimeout(timer); link.remove(); resolve() }
-    }))
-    document.head.append(link)
+    desired.set(key, href)
   }
-  for (const link of links.values()) link.remove()
-  return Promise.all(loading).then(() => {})
+  stylesheets ||= createStylesheetController(document)
+  return stylesheets.sync(desired)
 }
 
 export function refreshPluginThemes(): Promise<void> {
@@ -40,7 +24,9 @@ export function refreshPluginThemes(): Promise<void> {
   dirty = false
   flight = (async () => {
     try { await applyPluginThemeContributions(await publicContributions()) }
-    catch { await applyPluginThemeContributions([]) }
+    // A failed metadata read does not revoke the last loaded appearance.
+    // Explicit unavailable/removed contributions are handled by sync above.
+    catch { /* keep the last successful appearance */ }
     finally { flight = null; if (dirty) void refreshPluginThemes() }
   })()
   return flight

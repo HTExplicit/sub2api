@@ -48,7 +48,9 @@ func (s *AccountTestService) doOpenAIAccountTestUpstream(
 	account *Account,
 	useTLSFallback bool,
 ) (*http.Response, error) {
-	if s.pluginManager != nil {
+	model, _ := request.Context().Value(codexRoutingModelKey{}).(string)
+	qualifiedRoute := s.openAIGatewayService != nil && s.openAIGatewayService.codexRoutingApplies(account, model)
+	if s.pluginManager != nil && !qualifiedRoute {
 		response, handled, err := s.pluginManager.RoundTripOpenAIOAuth(request.Context(), request, proxyURL, account)
 		if handled {
 			return response, err
@@ -63,7 +65,12 @@ func (s *AccountTestService) doOpenAIAccountTestUpstream(
 	if observer := codexWireObserverFromContext(wire.Context()); observer != nil {
 		observer(wire)
 	}
-	if useTLSFallback {
+	if s.openAIGatewayService != nil && account.IsOpenAIOAuthLike() {
+		if response, handled, routingErr := s.openAIGatewayService.doQualifiedCodexUpstream(wire, account, proxyURL); handled {
+			return response, routingErr
+		}
+	}
+	if useTLSFallback && !account.IsOpenAIOAuthLike() {
 		return s.httpUpstream.DoWithTLS(
 			wire,
 			proxyURL,
@@ -72,5 +79,9 @@ func (s *AccountTestService) doOpenAIAccountTestUpstream(
 			s.tlsFPProfileService.ResolveTLSProfile(account),
 		)
 	}
-	return s.httpUpstream.Do(wire, proxyURL, account.ID, account.Concurrency)
+	response, err := s.httpUpstream.Do(wire, proxyURL, account.ID, account.Concurrency)
+	if err == nil && isOpenAICodexTicketAccount(account) && s.openAIGatewayService != nil {
+		s.openAIGatewayService.observeCodexWire(wire.Context(), account, wire, response, nil)
+	}
+	return response, err
 }

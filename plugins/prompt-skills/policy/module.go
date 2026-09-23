@@ -33,6 +33,9 @@ func validateBusinessSystemPromptBodyWithLimit(body string, limit int) (string, 
 	return extensionv1.ValidateTextDocument(body, limit)
 }
 func Plan(snapshot BusinessSystemPromptSnapshot, target BusinessSystemPromptTarget, hasInstructions bool) (BusinessSystemPromptApplication, error) {
+	if snapshot.RulePolicy != nil {
+		return planRules(snapshot, target)
+	}
 	bundleManifestSHA256 := snapshot.BundleManifestSHA256
 	if snapshot.CompositionMode == BusinessSystemPromptCompositionCodexSkillHybrid {
 		bundleManifestSHA256 = snapshot.RegistryEffectiveTreeSHA256
@@ -167,6 +170,18 @@ func (m *Module) Invoke(ctx context.Context, in extensionv1.Invocation) (extensi
 		return m.invokeSource(ctx, in)
 	}
 	if in.Operation != "prompt.plan" {
+		if in.Operation == "prompt.rules.validate" {
+			var policy extensionv1.PromptRulePolicy
+			if json.Unmarshal(in.Payload, &policy) != nil {
+				return extensionv1.Result{}, errors.New("invalid prompt rule policy")
+			}
+			normalized, err := ValidateRulePolicy(policy)
+			if err != nil {
+				return extensionv1.Result{Code: "prompt_rules_invalid", HTTPStatus: 422, Message: err.Error()}, nil
+			}
+			raw, err := json.Marshal(normalized)
+			return extensionv1.Result{Payload: raw}, err
+		}
 		return invokeManagement(in.Operation, in.Payload)
 	}
 	var request extensionv1.PromptPlanRequest
@@ -176,6 +191,9 @@ func (m *Module) Invoke(ctx context.Context, in extensionv1.Invocation) (extensi
 	request.Snapshot.BaseSHA256, request.Snapshot.EffectiveSHA256, request.Snapshot.EffectiveByteLength = request.BaseSHA256, request.EffectiveSHA256, request.EffectiveByteLength
 	application, err := Plan(request.Snapshot, request.Target, request.HasInstructions)
 	if err != nil {
+		if errors.Is(err, ErrPromptDeliveryUnsupported) {
+			return extensionv1.Result{Code: "prompt_delivery_unsupported", HTTPStatus: 422, Message: "The selected prompt delivery is not supported by this destination"}, nil
+		}
 		return extensionv1.Result{Code: "prompt_unavailable", Message: "Configured prompt is unavailable"}, nil
 	}
 	raw, err := json.Marshal(application)

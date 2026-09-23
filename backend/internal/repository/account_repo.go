@@ -739,6 +739,12 @@ func lockAndMergeAccountProbeExtra(
 	}
 	extra = service.MergeOpenAICodexTicketExtra(extra, currentExtra)
 	extra = preservePluginAccountProjection(extra, currentExtra)
+	// Preserve the prompt binding read under the row lock. A stale general
+	// account editor cannot overwrite a concurrent dedicated binding CAS.
+	delete(extra, service.PromptAccountBindingExtraKey)
+	if binding, exists := currentExtra[service.PromptAccountBindingExtraKey]; exists {
+		extra[service.PromptAccountBindingExtraKey] = binding
+	}
 	for _, key := range []string{
 		service.UpstreamBillingProbeEnabledExtraKey,
 		service.UpstreamBillingRateSyncEnabledExtraKey,

@@ -3,9 +3,9 @@ export default {accounts: {
   textTestPrompt: { label: '文本测试提示词', hint: '留空使用 hi；仅当前站点和管理员浏览器记忆。', reset: '恢复默认', tooLong: '提示词超过8192字符，请缩短后重试。' },
   tickets: {
     stages: { request: '请求', configuration: '配置检查', lifecycle: '任务状态', account_auth: '账号鉴权', proxy_auth: '代理鉴权', proxy_protocol: '代理协议', proxy_dns: '代理DNS', proxy_connect: '代理连接', tls: 'TLS证书', ticket_validation: '票据校验', upstream_http: '上游HTTP', persistence: '持久化' },
-    title: '打292 / 管理续期', description: '每个账号和模型仅请求一次；有效票默认跳过。成功后在到期前1分钟续期，失败仅在到期后1分钟再试一次。收起窗口后仍继续执行。',
+    title: 'Cookie 路由 / 管理续获', description: '每个账号和模型每周期最多一次采集和一次业务出口复验；有效资格默认跳过。Cookie 最长120秒，按需提前20秒续获，连续失败两周期停止。',
     disabled: '票据总开关未开启。', force: '重新打票（已有有效票据也执行一次）', ineligible: '不适用：仅 OpenAI OAuth/Setup Token 非影子账号。',
-    valid: '有效', stop: '停止自动续期', start: '开始打292', limit: '一次最多选择100个账号。', loadFailed: '无法读取账号或票据配置。',
+    valid: '有效', stop: '停止自动续期', start: '采集并复验', limit: '一次最多选择100个账号。', loadFailed: '无法读取账号或票据配置。',
     submitFailed: '操作失败，请查看状态后重试。', next: '下次续期', last: '最近尝试', length: '票据长度', expires: '到期时间',
     states: { idle: '待手动打票', ready: '自动续期待命', retry: '等待到期后重试', stopped: '自动续期已停止', manual_running: '手动打票中', pre_running: '到期前续期中', post_running: '到期后重试中' }
   },
@@ -81,6 +81,7 @@ export default {accounts: {
           upstream: '上游',
           default: '默认',
           protected: '供应商专用',
+          codex_reference: 'Codex 参考',
           invalid: '草稿无效'
         },
         basis: {
@@ -1082,11 +1083,11 @@ export default {accounts: {
         codexFingerprintDevice: '仅设备',
         codexFingerprintSession: '设备+会话',
         codexFingerprintFull: '完全收敛',
-        codexTurnTicket: 'Codex 292 门票',
+        codexTurnTicket: 'Codex Cookie 路由',
         codexTurnTicketDesc: '显示已配置模型的门票状态。仅在启用缺票拦截时，没有有效门票的模型才会暂停调度。',
         codexTurnTicketMissing: '暂无有效门票，仍允许请求',
         codexTurnTicketReady: '剩余 {time}',
-        codexTurnTicketPaused: '未打到 292，该模型已暂停',
+        codexTurnTicketPaused: '该模型尚无有效 Cookie 路由资格',
         codexImageTool: 'Codex 图片桥接策略',
         codexImageToolDesc:
           '统一控制 Codex /responses 文本请求的 hosted image_generation 桥接和客户端图片工具声明。hosted 工具自动注入仅适用于非 Responses Lite 请求；账号级策略优先于渠道和全局配置，不影响独立图片生成接口。',

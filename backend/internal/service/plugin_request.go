@@ -45,11 +45,12 @@ func (m *PluginManager) ApplyRequestHeaders(ctx context.Context, account *Accoun
 		if result.Code != "" {
 			return errors.New("plugin request prerequisite unavailable")
 		}
-		var changes struct {
-			Headers map[string]string `json:"headers"`
-		}
+		var changes extensionv1.CodexRoutingInjection
 		if json.Unmarshal(result.Payload, &changes) != nil {
 			return errors.New("invalid plugin header result")
+		}
+		if changes.Qualification != nil && (registry.installations[id].PluginKey != codexRuntimePluginKey || !changes.Qualification.Valid(time.Now(), account.ID, CodexTicketAccountIdentity(account), model)) {
+			return errors.New("invalid routing qualification reference")
 		}
 		seen := map[string]bool{}
 		for name, value := range changes.Headers {

@@ -1,6 +1,8 @@
 import { computed, createApp, ref, readonly, watch, onScopeDispose, toRaw, type Component } from 'vue'
 import { createI18n } from 'vue-i18n'
 import { extensionAvailabilityKey, extensionUnavailableMessageKey } from './context'
+import { createPluginPresentation } from './presentation'
+import { createPluginSizing } from './sizing'
 import './bridge.js'
 
 export interface UIContext {
@@ -111,32 +113,15 @@ export function useNotifications() {
   }
 }
 
-function applyPresentation(context: UIContext) {
-  document.documentElement.classList.toggle('dark', context.theme === 'dark')
-  const current = document.documentElement.style
-  for (let index = current.length - 1; index >= 0; index--) {
-    const key = current[index]!
-    if (/^--(?:ui|theme)-/.test(key)) current.removeProperty(key)
-  }
-  for (const [key, value] of Object.entries(context.theme_tokens || {})) {
-    if (/^--(?:ui|theme)-[a-z0-9-]+$/.test(key) && value.length <= 512 && !/url\s*\(/i.test(value)) current.setProperty(key, value)
-  }
-  for (const element of document.querySelectorAll('[data-plugin-theme]')) element.remove()
-  for (const path of context.theme_stylesheets || []) {
-    if (!/^\/api\/v1\/settings\/plugins\/\d+\/theme\/[a-f0-9]+\//.test(path) || /[\\\s]/.test(path)) continue
-    const link = document.createElement('link')
-    link.rel = 'stylesheet'; link.href = path; link.dataset.pluginTheme = 'true'
-    document.head.append(link)
-  }
-}
-
 // A plugin owns its page and locale messages. The public SDK supplies only
 // rendering, presentation context and named host operations.
 export async function mountPlugin(App: Component, messages: Record<string, TranslationMessages>) {
   const client = bridge()
   const context = sharedContext
   context.value = await client.context()
-  applyPresentation(context.value)
+  const scheduleSizing = { run: () => {} }
+  const presentation = createPluginPresentation(document, () => scheduleSizing.run())
+  presentation.update(context.value)
   const i18n = createI18n({ legacy: false, locale: String(context.value.locale || 'zh').startsWith('zh') ? 'zh' : 'en', fallbackLocale: 'en', messages })
   const app = createApp(App)
   app.use(i18n)
@@ -145,28 +130,9 @@ export async function mountPlugin(App: Component, messages: Record<string, Trans
   app.mount('#app')
   const root = document.getElementById('app')!
   root.inert = context.value.retained_controls !== true && context.value.available === false
-  const stop = client.onContextChange(next => { context.value = next; root.inert = next.retained_controls !== true && next.available === false; applyPresentation(next); i18n.global.locale.value = String(next.locale).startsWith('zh') ? 'zh' : 'en' })
-  const resize = () => {
-    let bottom = root.getBoundingClientRect().bottom
-    for (const menu of document.querySelectorAll<HTMLElement>('[role="listbox"], [role="menu"]')) {
-      const box = menu.getBoundingClientRect()
-      if (box.height) bottom = Math.max(bottom, box.bottom)
-    }
-    // Teleported dialogs have no measurable height inside #app. Use their
-    // natural content height, including the currently clipped scroll body,
-    // so a small frame does not permanently keep its own dialog collapsed.
-    for (const panel of document.querySelectorAll<HTMLElement>('[role="dialog"] .modal-content')) {
-      const body = panel.querySelector<HTMLElement>('.modal-body')
-      const natural = panel.scrollHeight + (body ? Math.max(0, body.scrollHeight - body.clientHeight) : 0)
-      if (panel.getBoundingClientRect().height) bottom = Math.max(bottom, natural + 32)
-      observer.observe(panel)
-    }
-    client.resize(Math.ceil(bottom) + (context.value.layout === 'inline' ? 0 : 24))
-  }
+  const stop = client.onContextChange(next => { context.value = next; root.inert = next.retained_controls !== true && next.available === false; presentation.update(next); i18n.global.locale.value = String(next.locale).startsWith('zh') ? 'zh' : 'en' })
   if (context.value.layout === 'inline') document.body.style.minHeight = '0'
-  const observer = new ResizeObserver(resize)
-  const mutations = new MutationObserver(resize)
-  observer.observe(root)
-  mutations.observe(document.body, { childList: true, subtree: true })
-  window.addEventListener('pagehide', () => { stop(); observer.disconnect(); mutations.disconnect(); app.unmount(); client.dispose() }, { once: true })
+  const sizing = createPluginSizing(root, height => client.resize(height), () => context.value.layout === 'inline')
+  scheduleSizing.run = sizing.schedule
+  window.addEventListener('pagehide', () => { stop(); sizing.dispose(); presentation.dispose(); app.unmount(); client.dispose() }, { once: true })
 }

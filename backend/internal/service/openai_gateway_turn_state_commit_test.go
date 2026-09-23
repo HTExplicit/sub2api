@@ -25,6 +25,7 @@ func newOpenAITurnStateCommitContext(t *testing.T, writer gin.ResponseWriter) (*
 	c, _ := gin.CreateTestContext(writer)
 	c.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", nil)
 	c.Request.Header.Set("session_id", "sess-http-commit")
+	c.Request.Header.Set(openAIWSTurnMetadataHeader, `{"turn_id":"turn-fixture"}`)
 	c.Set("api_key", &APIKey{ID: 801})
 	return c, openAICodexTurnStateSeed(c)
 }

@@ -19,11 +19,11 @@
     return control
   }
   const configuration = context.mode === 'configuration' || context.mode === 'admin.settings'
-  app.append(el('h2', configuration ? text('Codex 运行设置', 'Codex runtime settings') : text('账号票据操作', 'Account ticket operation')))
+  app.append(el('h2', configuration ? text('Codex 运行设置', 'Codex runtime settings') : text('Cookie 路由操作', 'Cookie route operation')))
   if (configuration) {
     let config = await bridge.config()
     const enabled = el('input'); enabled.type = 'checkbox'; enabled.checked = !!config.enabled
-    const toggle = el('label', '', 'check'); toggle.append(enabled, document.createTextNode(text('启用票据采集与续期', 'Enable ticket acquisition and renewal'))); app.append(toggle)
+    const toggle = el('label', '', 'check'); toggle.append(enabled, document.createTextNode(text('启用 Cookie 采集与业务出口复验', 'Enable Cookie acquisition and route verification'))); app.append(toggle)
     const compression = el('input'); compression.type = 'checkbox'; compression.checked = config.request_zstd !== false
     const compressionToggle = el('label', '', 'check'); compressionToggle.append(compression, document.createTextNode(text('压缩 Codex Responses 请求体', 'Compress Codex Responses requests'))); app.append(compressionToggle)
     const address = el('textarea'); address.rows = 4; address.autocomplete = 'off'; address.spellcheck = false; address.value = config.proxy_url || ''
@@ -48,7 +48,7 @@
     controls.append(button(text('清除代理并停用票据', 'Clear proxy and stop tickets'), async () => {
       config = await bridge.save({ ...config, proxy_url: '', enabled: false }); address.value = ''; enabled.checked = false; show(text('已清除并关闭', 'Cleared and disabled'))
     }))
-    app.append(controls, el('p', text('连接测试验证代理与证书；成功连接不代表已取得292票据。', 'Connection tests verify the proxy and certificate; they do not acquire a 292 ticket.'), 'muted'))
+    app.append(controls, el('p', text('连接测试验证代理与证书；成功连接不代表 Cookie 路由已验证。', 'Connection tests verify the proxy and certificate; they do not verify the Cookie route.'), 'muted'))
     const actions = el('div', '', 'actions')
     actions.append(button(text('保存设置', 'Save settings'), async () => {
       config = await bridge.save({ ...config, enabled: enabled.checked, proxy_url: address.value, proxy_protocol: protocol.value, request_zstd: compression.checked })
@@ -60,12 +60,12 @@
   const settings = JSON.parse(status.status_json || '{}')
   const accountIDs = context.account_id ? [context.account_id] : context.account_ids || []
   if (accountIDs.length > 100) throw new Error(text('一次最多操作 100 个账号。', 'At most 100 accounts can be operated at once.'))
-  app.append(el('p', text(`已选择 ${accountIDs.length} 个账号。每个账号和模型最多请求一次；有效旧票默认跳过。`, `${accountIDs.length} accounts selected. Each account/model is attempted once; valid tickets are skipped by default.`), 'muted'))
+  app.append(el('p', text(`已选择 ${accountIDs.length} 个账号。每个账号和模型每周期最多一次采集加一次业务出口复验；有效资格默认跳过。`, `${accountIDs.length} accounts selected. Each account/model cycle has one acquisition and one business-route verification; valid qualifications are skipped.`), 'muted'))
   const modelBox = el('div', '', 'models'), choices = []
   for (const model of settings.models || []) { const check = el('input'); check.type = 'checkbox'; check.value = model; check.checked = true; choices.push(check); const label = el('label', '', 'check'); label.append(check, document.createTextNode(model)); modelBox.append(label) }
   app.append(modelBox)
   const force = el('input'); force.type = 'checkbox'
-  if (context.operation !== 'stop') { const label = el('label', '', 'check'); label.append(force, document.createTextNode(text('重新采集仍有效的票据', 'Replace tickets that are still valid'))); app.append(label) }
+  if (context.operation !== 'stop') { const label = el('label', '', 'check'); label.append(force, document.createTextNode(text('重新采集并复验仍有效的资格', 'Reacquire and verify a still-valid route'))); app.append(label) }
   let operationKey = null
   const actions = el('div', '', 'actions')
   actions.append(button(context.operation === 'stop' ? text('停止续期', 'Stop renewal') : text('开始采集', 'Start acquisition'), async () => {

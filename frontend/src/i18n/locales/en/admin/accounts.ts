@@ -17,7 +17,7 @@ export default {accounts: {
   textTestPrompt: { label: 'Text test prompt', hint: 'Blank uses hi. Remembered only for this site and administrator in this browser.', reset: 'Restore default', tooLong: 'Prompt exceeds 8192 characters. Shorten it to continue.' },
   tickets: {
     stages: { request: 'Request', configuration: 'Configuration', lifecycle: 'Task state', account_auth: 'Account authentication', proxy_auth: 'Proxy authentication', proxy_protocol: 'Proxy protocol', proxy_dns: 'Proxy DNS', proxy_connect: 'Proxy connection', tls: 'TLS certificate', ticket_validation: 'Ticket validation', upstream_http: 'Upstream HTTP', persistence: 'Persistence' },
-    title: 'Harvest 292 / renewal', description: 'One request per account and model. Valid tickets are skipped by default. Success enrolls renewal at 1 minute before expiry, with one retry at 1 minute after expiry. Harvesting continues when this window is minimized.',
+    title: 'Cookie routing / renewal', description: 'Each account/model cycle has at most one acquisition and one business-route verification. Valid qualifications are skipped. Cookies live at most 120 seconds; demand renewal starts 20 seconds early and stops after two failed cycles.',
     disabled: 'The ticket switch is off.', force: 'Harvest again even with a valid ticket', ineligible: 'Not eligible: requires a non-shadow OpenAI OAuth or Setup Token account.',
     valid: 'Valid', stop: 'Stop automatic renewal', start: 'Start harvesting', limit: 'Select up to 100 accounts.', loadFailed: 'Could not load accounts or ticket configuration.',
     submitFailed: 'Operation failed. Check the current status before retrying.', next: 'Next renewal', last: 'Last attempt', length: 'Ticket length', expires: 'Expires',
@@ -95,6 +95,7 @@ export default {accounts: {
           upstream: 'Upstream',
           default: 'Default',
           protected: 'Provider-managed',
+          codex_reference: 'Codex reference',
           invalid: 'Invalid draft'
         },
         basis: {
@@ -1014,7 +1015,7 @@ export default {accounts: {
         codexFingerprintDevice: 'Device only',
         codexFingerprintSession: 'Device + Session',
         codexFingerprintFull: 'Full convergence',
-        codexTurnTicket: 'Codex 292 ticket',
+        codexTurnTicket: 'Codex Cookie route',
         codexTurnTicketDesc: 'Ticket status for the configured models. Requests are paused without a valid ticket only when fail-closed is enabled.',
         codexTurnTicketMissing: 'No valid ticket; requests remain allowed',
         codexTurnTicketReady: '{time} left',

@@ -45,3 +45,26 @@ func TestCatalogSnapshotCannotMutateActiveReferences(t *testing.T) {
 		t.Fatal("unknown configuration accepted")
 	}
 }
+
+func TestGPT6NamedModelReferencesSeparateAPIAndCodex(t *testing.T) {
+	for _, model := range []string{"gpt-6-sol", "gpt-6-luna"} {
+		query := extensionv1.CatalogQuery{Candidates: []string{model}, Platform: "openai", AccountType: "apikey", Scheme: "https", Host: "api.openai.com"}
+		match, err := New().ResolveCatalog(context.Background(), query)
+		if err != nil || match.Entry == nil {
+			t.Fatalf("%s: reference unavailable: %v", model, err)
+		}
+		entry := match.Entry
+		if entry.Product != "api" || entry.ContextWindow != 1050000 || entry.MaxOutputTokens != 128000 || entry.MaxInputTokens != 0 || len(entry.Aliases) != 0 {
+			t.Fatalf("%s: incorrect API capacity or invented alias: %+v", model, entry)
+		}
+		ref := entry.Reference
+		if ref == nil || ref.ContextWindow != 272000 || ref.MaxContextWindow != 872000 || ref.SourceURL != GPT6ContextCapacityReferenceSource || ref.Release != GPT6ContextCapacityReferenceCommit {
+			t.Fatalf("%s: incorrect subscription reference: %+v", model, ref)
+		}
+		query.Candidates = []string{model + "-2099-01-01"}
+		unknown, err := New().ResolveCatalog(context.Background(), query)
+		if err != nil || unknown.Entry != nil {
+			t.Fatal("unpublished dated snapshots must not inherit capacity")
+		}
+	}
+}

@@ -187,6 +187,11 @@ func registerSystemPromptRoutes(admin *gin.RouterGroup, h *handler.Handlers) {
 		{"prompts.create", "POST", "", h.Admin.SystemPrompt.Create},
 		{"prompts.runtime.read", "GET", "/runtime", h.Admin.SystemPrompt.Runtime},
 		{"prompts.runtime.update", "PUT", "/runtime", h.Admin.SystemPrompt.UpdateRuntime},
+		{"prompts.rules.read", "GET", "/rules", h.Admin.SystemPrompt.Rules},
+		{"prompts.rules.update", "PUT", "/rules", h.Admin.SystemPrompt.UpdateRules},
+		{"prompts.bindings.read", "POST", "/accounts/resolve", h.Admin.SystemPrompt.AccountBindings},
+		{"prompts.bindings.update", "POST", "/accounts/bindings", h.Admin.SystemPrompt.UpdateAccountBindings},
+		{"prompts.rules.preview", "POST", "/rules/preview/:account_id", h.Admin.SystemPrompt.PreviewRules},
 		{"prompts.preview.merge", "POST", "/preview/merge", h.Admin.SystemPrompt.PreviewMerge},
 		{"prompts.preview.upstream", "POST", "/preview/upstream", h.Admin.SystemPrompt.PreviewUpstream},
 		{"skills.registry", "GET", "/skill-registry", h.Admin.SystemPrompt.SkillRegistry},
@@ -207,6 +212,18 @@ func registerSystemPromptRoutes(admin *gin.RouterGroup, h *handler.Handlers) {
 		{"prompts.rollback", "POST", "/:id/versions/:version_id/rollback", h.Admin.SystemPrompt.Rollback},
 	} {
 		descriptor := extensionv1.ResourceDescriptor{ResourceGrant: extensionv1.ResourceGrant{Name: route.name, Capability: extensionv1.CapabilityRequest, Permission: "admin"}, Method: route.method, Path: prompts.BasePath() + route.path}
+		if route.name == "prompts.bindings.read" {
+			descriptor.AccountBodyField = "account_ids"
+		}
+		if route.name == "prompts.bindings.update" {
+			descriptor.AccountItemsField = "updates"
+		}
+		if route.name == "prompts.rules.preview" {
+			descriptor.AccountParam = "account_id"
+		}
+		if route.name == "prompts.bindings.read" || route.name == "prompts.bindings.update" || route.name == "prompts.rules.preview" {
+			descriptor.Capability = extensionv1.CapabilityAdmin
+		}
 		prompts.Handle(route.method, route.path, h.Admin.Plugin.RegisterResource(descriptor), route.handler)
 	}
 }
@@ -508,6 +525,9 @@ func registerAccountRoutes(admin *gin.RouterGroup, h *handler.Handlers, stepUpAu
 		accounts.POST("/:id/codex-tickets/harvest", h.Admin.Account.HarvestCodexTicket)
 		accounts.POST("/codex-tickets/batch-harvest", h.Admin.Account.BatchHarvestCodexTickets)
 		accounts.POST("/:id/codex-tickets/stop", h.Admin.Account.StopCodexTicketRenewal)
+		accounts.GET("/:id/codex-fingerprint", h.Admin.Plugin.RegisterResource(extensionv1.ResourceDescriptor{ResourceGrant: extensionv1.ResourceGrant{Name: "codex.fingerprint", Capability: extensionv1.CapabilityRequest, Permission: "admin"}, OwnerPluginKey: "codexrip.codex-runtime", AccountParam: "id", Method: "GET", Path: accounts.BasePath() + "/:id/codex-fingerprint"}), h.Admin.Account.CodexFingerprint)
+		accounts.POST("/:id/codex-routing/validate", h.Admin.Plugin.RegisterResource(extensionv1.ResourceDescriptor{ResourceGrant: extensionv1.ResourceGrant{Name: "codex.routing.validate", Capability: extensionv1.CapabilityCredentials, Permission: "admin"}, OwnerPluginKey: "codexrip.codex-runtime", AccountParam: "id", Method: "POST", Path: accounts.BasePath() + "/:id/codex-routing/validate"}), h.Admin.Account.ValidateCodexRouting)
+		accounts.PUT("/:id/codex-fingerprint/profile", h.Admin.Plugin.RegisterResource(extensionv1.ResourceDescriptor{ResourceGrant: extensionv1.ResourceGrant{Name: "codex.fingerprint.profile", Capability: extensionv1.CapabilityRequest, Permission: "admin"}, RequiredCapabilities: []string{extensionv1.CapabilityAdmin}, OwnerPluginKey: "codexrip.codex-runtime", AccountParam: "id", Method: "PUT", Path: accounts.BasePath() + "/:id/codex-fingerprint/profile"}), h.Admin.Account.SelectCodexProfile)
 		accounts.POST("/:id/recover-state", h.Admin.Account.RecoverState)
 		accounts.POST("/:id/cindy-balance/recover", h.Admin.Plugin.RegisterResource(extensionv1.ResourceDescriptor{ResourceGrant: extensionv1.ResourceGrant{Name: "cindy.balance.recover", Capability: extensionv1.CapabilityProvider, Permission: "admin"}, RequiredCapabilities: []string{extensionv1.CapabilityAdmin}, OwnerPluginKey: service.CindyAccountViewPluginKey, AccountParam: "id", Method: "POST", Path: accounts.BasePath() + "/:id/cindy-balance/recover"}), h.Admin.Account.ClearCindyBalanceInsufficient)
 		accounts.POST("/:id/refresh", h.Admin.Account.Refresh)

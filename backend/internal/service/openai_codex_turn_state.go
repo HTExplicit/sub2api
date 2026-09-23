@@ -34,10 +34,11 @@ func openAICodexTurnStateSeed(c *gin.Context) string {
 		return ""
 	}
 	sessionID := extractClientSessionID(c.Request.Header)
-	if sessionID == "" {
+	turnID := codexRoutingTurnID(c)
+	if sessionID == "" || turnID == "" {
 		return ""
 	}
-	return strconv.FormatInt(getAPIKeyIDFromContext(c), 10) + "\x00" + sessionID
+	return strconv.FormatInt(getAPIKeyIDFromContext(c), 10) + "\x00" + sessionID + "\x00" + turnID
 }
 
 // relayOpenAICodexTurnState 将上游响应中的 turn-state 显式写入下游响应头，

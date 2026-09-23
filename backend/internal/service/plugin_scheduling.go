@@ -66,6 +66,11 @@ func (m *PluginManager) SchedulingDecision(account *Account, model string, now t
 			if projection.Identity != CodexTicketAccountIdentity(account) {
 				observed = false
 			}
+			// Legacy length-only grants cannot survive a runtime cutover into the
+			// Cookie qualification policy, even before its background migration.
+			if installation.PluginKey == codexRuntimePluginKey && constraint.Effect == "allow" && constraint.Reason != "routing_verified" {
+				observed = false
+			}
 			if observed && constraint.Until != nil && !now.Before(*constraint.Until) {
 				observed = false
 			}
