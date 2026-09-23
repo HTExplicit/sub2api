@@ -131,6 +131,7 @@ func (s *httpUpstreamService) DoWithCodexConnectionLease(req *http.Request, prox
 		return nil, "", service.ErrCodexConnectionLeaseTransport
 	}
 	decompressResponseBody(response)
+	restoreCodexEventStreamContentType(response)
 	return response, leaseID, nil
 }
 

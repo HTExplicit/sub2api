@@ -231,6 +231,7 @@ func (s *httpUpstreamService) Do(req *http.Request, proxyURL string, accountID i
 
 	// 如果上游返回了压缩内容，解压后再交给业务层
 	decompressResponseBody(resp)
+	restoreCodexEventStreamContentType(resp)
 
 	// 包装响应体，在关闭时自动减少计数并更新时间戳
 	// 这确保了流式响应（如 SSE）在完全读取前不会被淘汰
@@ -292,6 +293,7 @@ func (s *httpUpstreamService) DoWithTLS(req *http.Request, proxyURL string, acco
 	}
 
 	decompressResponseBody(resp)
+	restoreCodexEventStreamContentType(resp)
 
 	resp.Body = wrapTrackedBody(resp.Body, func() {
 		atomic.AddInt64(&entry.inFlight, -1)
@@ -1497,6 +1499,21 @@ func wrapTrackedBody(body io.ReadCloser, onClose func()) io.ReadCloser {
 		return body
 	}
 	return &trackedBody{ReadCloser: body, onClose: onClose}
+}
+
+// restoreCodexEventStreamContentType 为缺少 Content-Type 的 ChatGPT Codex /responses 流补回
+// text/event-stream。ChatGPT 边缘自 2026-09-23 起不再为这类 SSE 响应发送该头，而路由观测、
+// 工具名映射和图片流等消费方都按它识别流；请求声明接受 SSE 且上游 200 时响应体就是 SSE。
+func restoreCodexEventStreamContentType(resp *http.Response) {
+	if resp == nil || resp.StatusCode != http.StatusOK || resp.Header == nil || resp.Header.Get("Content-Type") != "" {
+		return
+	}
+	req := resp.Request
+	if req == nil || req.URL == nil || req.Method != http.MethodPost || !strings.EqualFold(req.URL.Hostname(), "chatgpt.com") ||
+		req.URL.Path != "/backend-api/codex/responses" || !strings.Contains(strings.ToLower(req.Header.Get("Accept")), "text/event-stream") {
+		return
+	}
+	resp.Header.Set("Content-Type", "text/event-stream")
 }
 
 // decompressResponseBody 根据 Content-Encoding 解压响应体。

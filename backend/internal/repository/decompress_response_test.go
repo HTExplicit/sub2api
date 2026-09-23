@@ -34,6 +34,22 @@ func TestDecompressResponseBodyZstdUsage(t *testing.T) {
 	require.NoError(t, resp.Body.Close())
 }
 
+func TestRestoreCodexEventStreamContentType(t *testing.T) {
+	response := func(path string) *http.Response {
+		req, err := http.NewRequest(http.MethodPost, "https://chatgpt.com"+path, nil)
+		require.NoError(t, err)
+		req.Header.Set("Accept", "text/event-stream")
+		return &http.Response{StatusCode: http.StatusOK, Header: http.Header{}, Request: req}
+	}
+	stream := response("/backend-api/codex/responses")
+	restoreCodexEventStreamContentType(stream)
+	require.Equal(t, "text/event-stream", stream.Header.Get("Content-Type"))
+
+	compact := response("/backend-api/codex/responses/compact")
+	restoreCodexEventStreamContentType(compact)
+	require.Empty(t, compact.Header.Get("Content-Type"))
+}
+
 func TestDecompressResponseBodyExistingEncodings(t *testing.T) {
 	payload := []byte(`{"ok":true}`)
 	tests := []struct {
