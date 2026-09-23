@@ -65,6 +65,10 @@ func (s *OpenAIGatewayService) executeCodexRoutingWSProbe(ctx context.Context, q
 		return nil, scope, errCodexRoutingUnavailable
 	}
 	defer func() { _ = connection.Close() }()
+	// The validation read cap covers every frame, not only the gaps between them.
+	if limited, ok := connection.(interface{ SetReadLimit(int64) }); ok {
+		limited.SetReadLimit(codexRoutingProbeReadLimit)
+	}
 	scope.ConnectionLeaseID, scope.RouteEvidence, scope.Transport = "ws-validation-"+uuid.NewString(), "closed_validation_connection", "ws"
 	if err := connection.WriteJSON(ctx, payload); err != nil {
 		return nil, scope, errCodexRoutingUnavailable
@@ -78,6 +82,9 @@ func (s *OpenAIGatewayService) executeCodexRoutingWSProbe(ctx context.Context, q
 			return nil, scope, errCodexRoutingUnavailable
 		}
 		readBytes += len(frame)
+		if readBytes > codexRoutingProbeReadLimit {
+			return nil, scope, errCodexRoutingUnavailable
+		}
 		completion.json(frame)
 		if completion.Failed {
 			return nil, scope, errCodexRoutingUnavailable
