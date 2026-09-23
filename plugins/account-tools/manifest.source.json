@@ -2,7 +2,7 @@
   "schema_version": 1,
   "id": "codexrip.account-tools",
   "name": "账号工具",
-  "version": "0.2.8",
+  "version": "0.2.9",
   "description": "账号分类操作策略与连接测试选项",
   "author": "HTExplicit",
   "requires": { "sub2api": ">=0.2.7-codexrip.2 <0.2.8", "tested_sub2api_versions": [], "plugin_protocol": 1, "transport_api": 1, "ui_bridge": 1, "extension_api": 1 },
