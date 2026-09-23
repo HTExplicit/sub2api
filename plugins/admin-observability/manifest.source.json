@@ -2,11 +2,11 @@
   "schema_version": 1,
   "id": "codexrip.admin-observability",
   "name": "界面与观测",
-  "version": "0.2.9",
+  "version": "0.2.10",
   "description": "账号流量观测规则与指标展示",
   "author": "HTExplicit",
   "requires": {
-    "sub2api": ">=0.2.7-codexrip.2 <0.2.8",
+    "sub2api": ">=0.2.7-codexrip.2 <0.2.9",
     "tested_sub2api_versions": [],
     "plugin_protocol": 1,
     "transport_api": 1,

@@ -111,6 +111,7 @@ func (h *OpenAIGatewayHandler) Images(c *gin.Context) {
 			return
 		}
 	} else if !service.IsNativeOpenAIImagesModel(requestModel) &&
+		!service.IsCompatibleImagesModel(requestModel) &&
 		!service.CindyModelSupportsEndpoint(requestModel, cindyEndpoint) {
 		h.errorResponse(c, http.StatusBadRequest, "invalid_request_error", "images endpoint requires an image model")
 		return
@@ -209,7 +210,7 @@ func (h *OpenAIGatewayHandler) Images(c *gin.Context) {
 				sessionHash,
 				routingModel,
 				failedAccountIDs,
-				parsed.RequiredCapability,
+				parsed.RequiredCapabilityForModel(channelMapping.MappedModel),
 				cindyEndpoint,
 				requestPlatform,
 			)

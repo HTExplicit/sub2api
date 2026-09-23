@@ -133,7 +133,7 @@ func TestNormalizeOpenAIResponsesReasoningMode_AstraPreservesBody(t *testing.T) 
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			normalized, changed, err := normalizeOpenAIResponsesReasoningMode([]byte(tt.body))
+			normalized, changed, err := normalizeOpenAIResponsesReasoningMode([]byte(tt.body), "")
 			require.NoError(t, err)
 			require.False(t, changed)
 			require.JSONEq(t, tt.body, string(normalized))
@@ -153,7 +153,7 @@ func TestNormalizeOpenAIResponsesReasoningMode_NonAstraKeepsLegacyBehavior(t *te
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			normalized, changed, err := normalizeOpenAIResponsesReasoningMode([]byte(tt.body))
+			normalized, changed, err := normalizeOpenAIResponsesReasoningMode([]byte(tt.body), "")
 			require.NoError(t, err)
 			require.True(t, changed)
 			require.False(t, gjson.GetBytes(normalized, "reasoning.mode").Exists())
@@ -178,7 +178,7 @@ func TestNormalizeOpenAIResponsesReasoningModeForModel_UsesResolvedTarget(t *tes
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			original := []byte(tc.body)
-			normalized, changed, err := normalizeOpenAIResponsesReasoningModeForModel(original, tc.target)
+			normalized, changed, err := normalizeOpenAIResponsesReasoningMode(original, tc.target)
 			require.NoError(t, err)
 			require.Equal(t, tc.wantChanged, changed)
 			require.Equal(t, tc.wantMode, gjson.GetBytes(normalized, "reasoning.mode").String())

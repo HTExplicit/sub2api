@@ -1177,7 +1177,7 @@ func TestExtractOpenAIReasoningEffortFromBody(t *testing.T) {
 			wantValue: "max",
 		},
 		{
-			name:      "minimal 保留实际语义",
+			name:      "minimal 保留用于计费",
 			body:      []byte(`{"reasoning":{"effort":"minimal"}}`),
 			model:     "gpt-5-high",
 			wantValue: "minimal",

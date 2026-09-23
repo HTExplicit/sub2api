@@ -301,6 +301,20 @@ func (u *grokHybridUpstream) snapshot() ([]*http.Request, [][]byte) {
 	return requests, bodies
 }
 
+func (u *grokHybridUpstream) quotaSnapshot() ([]*http.Request, [][]byte) {
+	requests, bodies := u.snapshot()
+	quotaRequests := make([]*http.Request, 0, len(requests))
+	quotaBodies := make([][]byte, 0, len(bodies))
+	for i, req := range requests {
+		if req.URL.Path == "/v1/models" {
+			continue
+		}
+		quotaRequests = append(quotaRequests, req)
+		quotaBodies = append(quotaBodies, bodies[i])
+	}
+	return quotaRequests, quotaBodies
+}
+
 func (r *grokQuotaProxyRepo) GetByID(_ context.Context, id int64) (*Proxy, error) {
 	r.calls++
 	return r.proxies[id], nil

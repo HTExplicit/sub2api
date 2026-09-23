@@ -67,6 +67,7 @@ var codexVersionModelPrefixes = []struct {
 	prefix string
 	target string
 }{
+	// GPT-6 Sol/Luna are intentionally absent: undocumented dated snapshots must pass through unchanged (#192).
 	{prefix: "gpt-5.6-sol", target: "gpt-5.6-sol"},
 	{prefix: "gpt-5.6-terra", target: "gpt-5.6-terra"},
 	{prefix: "gpt-5.6-luna", target: "gpt-5.6-luna"},

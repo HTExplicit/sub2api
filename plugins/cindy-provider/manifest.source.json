@@ -2,11 +2,11 @@
   "schema_version": 1,
   "id": "codexrip.cindy-provider",
   "name": "Cindy Provider",
-  "version": "0.2.9",
+  "version": "0.2.10",
   "description": "Cindy 模型目录、协议能力、价格参考及账号健康判定",
   "author": "HTExplicit",
   "requires": {
-    "sub2api": ">=0.2.7-codexrip.2 <0.2.8",
+    "sub2api": ">=0.2.7-codexrip.2 <0.2.9",
     "tested_sub2api_versions": [],
     "plugin_protocol": 1,
     "transport_api": 1,

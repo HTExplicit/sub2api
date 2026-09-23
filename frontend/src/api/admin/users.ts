@@ -5,6 +5,7 @@
 
 import { apiClient } from '../client'
 import type { AccountPlatform, AdminUser, UpdateUserRequest, PaginatedResponse, ApiKey } from '@/types'
+import { CONCRETE_PLATFORM_VALUES } from '@/constants/platforms'
 
 export interface AdminBindAuthIdentityChannelRequest {
   channel: string
@@ -331,6 +332,9 @@ export async function bindUserAuthIdentity(
  * Platform quota types
  */
 export type PlatformQuotaPlatform = AccountPlatform
+
+// Downstream: every concrete account platform (including Cindy) supports platform quotas.
+export const PLATFORM_QUOTA_PLATFORMS = [...CONCRETE_PLATFORM_VALUES] as PlatformQuotaPlatform[]
 export type PlatformQuotaWindow = 'daily' | 'weekly' | 'monthly'
 
 export interface PlatformQuotaItem {

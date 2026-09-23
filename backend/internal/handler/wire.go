@@ -56,12 +56,14 @@ func ProvideAdminHandlers(
 	accountTrafficObserver *service.AccountTrafficObserver,
 	settingService *service.SettingService,
 	codexTicketGateway *service.OpenAIGatewayService,
+	opencodeGoUsage *service.OpenCodeGoUsageService,
 ) *AdminHandlers {
 	accountHandler.SetCodexTicketGateway(codexTicketGateway)
 	settingHandler.SetCodexTicketGateway(codexTicketGateway)
 	accountHandler.SetUpstreamBillingProbeService(upstreamBillingProbe)
 	accountHandler.SetOllamaCloudUsageService(ollamaCloudUsage)
 	accountHandler.SetAccountTrafficObserver(accountTrafficObserver)
+	accountHandler.SetOpenCodeGoUsageService(opencodeGoUsage)
 	return &AdminHandlers{
 		Dashboard:              dashboardHandler,
 		User:                   userHandler,

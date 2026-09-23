@@ -49,6 +49,7 @@ func minimalDependencyCleanup(autoReset *service.OpenAIQuotaAutoResetService) fu
 	)
 	accountExpirySvc := service.NewAccountExpiryService(nil, time.Second)
 	codexVersionSyncSvc := service.NewOpenAICodexVersionSyncService(nil, nil, nil, time.Second)
+	claudeCodeVersionSyncSvc := service.NewClaudeCodeVersionSyncService(nil, nil, nil, time.Second)
 	proxyExpirySvc := service.NewProxyExpiryService(nil, time.Second)
 	subscriptionExpirySvc := service.NewSubscriptionExpiryService(nil, time.Second)
 	pricingSvc := service.NewPricingService(cfg, nil)
@@ -77,6 +78,7 @@ func minimalDependencyCleanup(autoReset *service.OpenAIQuotaAutoResetService) fu
 		nil, // cnProviderBalanceCheck
 		codexVersionSyncSvc,
 		nil, // codexClientIdentityBackfill
+		claudeCodeVersionSyncSvc,
 		proxyExpirySvc,
 		subscriptionExpirySvc,
 		&service.UsageCleanupService{},
@@ -102,6 +104,7 @@ func minimalDependencyCleanup(autoReset *service.OpenAIQuotaAutoResetService) fu
 		nil, // quotaFlusher
 		nil, // upstreamBillingProbe
 		nil, // ollamaCloudUsage
+		nil, // opencodeGoUsage
 		nil, // auditLog
 		autoReset,
 		nil, // promptAudit

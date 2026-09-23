@@ -13,13 +13,13 @@ import (
 )
 
 type runtimeBlockRecorder struct {
-	accounts                []*Account
-	until                   []time.Time
-	reasons                 []string
-	clearedIDs              []int64
-	clearedCindyHealthIDs   []int64
-	terminalPending         *CindyHealthEpisode
-	replacementOnClear      *CindyHealthEpisode
+	accounts              []*Account
+	until                 []time.Time
+	reasons               []string
+	clearedIDs            []int64
+	clearedCindyHealthIDs []int64
+	terminalPending       *CindyHealthEpisode
+	replacementOnClear    *CindyHealthEpisode
 }
 
 func (r *runtimeBlockRecorder) BlockAccountScheduling(account *Account, until time.Time, reason string) {

@@ -242,13 +242,14 @@ type Account struct {
 	CreatedAt               time.Time                         `json:"created_at"`
 	UpdatedAt               time.Time                         `json:"updated_at"`
 
-	Schedulable                bool       `json:"schedulable"`
-	IsCindy                    bool       `json:"is_cindy"`
-	CindyBalanceInsufficient   bool       `json:"cindy_balance_insufficient"`
-	CindyBanned                bool       `json:"cindy_banned"`
-	CindyBalanceProbeJobID     *int64     `json:"cindy_balance_probe_job_id"`
-	CindyBalanceProbeOutcome   *string    `json:"cindy_balance_probe_outcome"`
-	CindyBalanceProbeCheckedAt *time.Time `json:"cindy_balance_probe_checked_at"`
+	Schedulable                bool                          `json:"schedulable"`
+	IsCindy                    bool                          `json:"is_cindy"`
+	CindyBalanceInsufficient   bool                          `json:"cindy_balance_insufficient"`
+	CindyBanned                bool                          `json:"cindy_banned"`
+	CindyBalanceProbeJobID     *int64                        `json:"cindy_balance_probe_job_id"`
+	CindyBalanceProbeOutcome   *string                       `json:"cindy_balance_probe_outcome"`
+	CindyBalanceProbeCheckedAt *time.Time                    `json:"cindy_balance_probe_checked_at"`
+	OpenCodeGoUsage            *service.OpenCodeGoUsageState `json:"opencode_go_usage,omitempty"`
 
 	RateLimitedAt    *time.Time `json:"rate_limited_at"`
 	RateLimitResetAt *time.Time `json:"rate_limit_reset_at"`
@@ -410,6 +411,7 @@ type AccountListItem struct {
 	Extra             map[string]any                    `json:"extra,omitempty"`
 	OllamaCloudUsage  *service.OllamaCloudUsageState    `json:"ollama_cloud_usage,omitempty"`
 	CodexTurnTickets  []service.OpenAICodexTicketStatus `json:"codex_turn_tickets,omitempty"`
+	OpenCodeGoUsage   *service.OpenCodeGoUsageState     `json:"opencode_go_usage,omitempty"`
 
 	ProxyID                 *int64     `json:"proxy_id"`
 	ProxyFallbackOriginID   *int64     `json:"proxy_fallback_origin_id"`
