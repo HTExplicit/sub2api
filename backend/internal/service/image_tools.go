@@ -30,16 +30,31 @@ var imageStudioStop = struct {
 	ch chan struct{}
 }{ch: make(chan struct{})}
 
+// imageStudioStarter starts the Image Studio background runtime. The server
+// registers it so that switching Image Studio on after boot needs no restart.
+var imageStudioStarter atomic.Pointer[func()]
+
+// SetImageStudioStarter registers the runtime start used when Image Studio is
+// switched on after boot. Starting an already running runtime is a no-op.
+func SetImageStudioStarter(start func()) {
+	imageStudioStarter.Store(&start)
+}
+
 // ConfigureImageTools installs the effective switches (startup load, admin
 // update, tests). A nil value falls back to the deploy-time rollout flags.
 func ConfigureImageTools(config *extensionv1.ImageToolsConfig) {
 	imageToolsConfigOverride.Store(config)
-	if current, _ := currentImageToolsConfig(); !current.StudioEnabled {
-		imageStudioStop.mu.Lock()
-		close(imageStudioStop.ch)
-		imageStudioStop.ch = make(chan struct{})
-		imageStudioStop.mu.Unlock()
+	current, _ := currentImageToolsConfig()
+	if current.StudioEnabled {
+		if start := imageStudioStarter.Load(); start != nil {
+			(*start)()
+		}
+		return
 	}
+	imageStudioStop.mu.Lock()
+	close(imageStudioStop.ch)
+	imageStudioStop.ch = make(chan struct{})
+	imageStudioStop.mu.Unlock()
 }
 
 // bindImageStudioEnabled returns a context that is canceled when Image Studio

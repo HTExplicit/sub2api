@@ -124,3 +124,21 @@ func TestImageToolsStudioPlanRequiresExplicitEnablementAndKeepsNativeOne(t *test
 		t.Fatalf("supported editing plan unavailable: %+v %v", plan, err)
 	}
 }
+
+func TestSwitchingImageStudioOnStartsTheRuntime(t *testing.T) {
+	previousConfig, previousStarter := imageToolsConfigOverride.Load(), imageStudioStarter.Load()
+	t.Cleanup(func() {
+		imageToolsConfigOverride.Store(previousConfig)
+		imageStudioStarter.Store(previousStarter)
+	})
+	starts := 0
+	SetImageStudioStarter(func() { starts++ })
+	ConfigureImageTools(&extensionv1.ImageToolsConfig{})
+	if starts != 0 {
+		t.Fatalf("switching Image Studio off must not start the runtime, starts=%d", starts)
+	}
+	ConfigureImageTools(&extensionv1.ImageToolsConfig{StudioEnabled: true})
+	if starts != 1 {
+		t.Fatalf("switching Image Studio on must start the runtime once, starts=%d", starts)
+	}
+}

@@ -28,8 +28,8 @@ func (s *SettingService) LoadImageToolsConfig(ctx context.Context) {
 	}
 }
 
-// UpdateImageToolsConfig persists the switches and applies them to this process.
-// Image Studio's background runtime still starts only at boot, as before.
+// UpdateImageToolsConfig persists the switches and applies them to this process,
+// starting the Image Studio runtime when it is switched on.
 func (s *SettingService) UpdateImageToolsConfig(ctx context.Context, config extensionv1.ImageToolsConfig) error {
 	if err := s.writeJSONSetting(ctx, SettingKeyImageToolsConfig, config); err != nil {
 		return err
