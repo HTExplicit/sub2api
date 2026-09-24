@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"slices"
@@ -100,7 +101,7 @@ func (s *OpenAIGatewayService) doQualifiedCodexUpstream(request *http.Request, a
 		if response != nil {
 			observeCodexInfrastructureCookies(q.Scope, response.Header, q.ExpiresAt)
 		}
-		observeCodexQualityResponse(request.Context(), response, err, q)
+		s.observeCodexQualityBusinessResponse(request, response, err, q)
 		return response, true, err
 	}
 	if err != nil {
@@ -128,17 +129,13 @@ func (s *OpenAIGatewayService) doQualifiedCodexUpstream(request *http.Request, a
 			observation.CookieNames = append(observation.CookieNames, cookie.Name)
 		}
 	}
-	body := &codexRoutingObservedBody{ReadCloser: response.Body, sse: strings.Contains(strings.ToLower(response.Header.Get("Content-Type")), "text/event-stream")}
+	body := s.newCodexRoutingObservedBody(request, response, model)
 	body.finish = func(completion codexRoutingCompletion) {
 		observation.Completed = completion.Completed && !completion.Failed && response.StatusCode == http.StatusOK
 		observation.ResponseModel = completion.Model
-		observation.ModelMatched = observation.Completed && completion.Model == model
+		observation.ModelMatched = observation.Completed && !completion.Mismatch && completion.Model == model
 		observation.DurationMS = time.Since(start).Milliseconds()
-		if observation.ModelMatched {
-			observation.Code = "routing_verified"
-		} else if observation.Completed {
-			observation.Code = "routing_model_mismatch"
-		}
+		observation.Code = completion.observationCode(model, response.StatusCode)
 		if deleted {
 			observation.Code = "routing_cookie_deleted"
 		}
@@ -152,42 +149,134 @@ func (s *OpenAIGatewayService) doQualifiedCodexUpstream(request *http.Request, a
 	return response, true, nil
 }
 
+func (s *OpenAIGatewayService) codexRoutingBusinessEventLimit() int {
+	maxEventBytes := defaultMaxLineSize
+	if s.cfg != nil && s.cfg.Gateway.MaxLineSize > 0 {
+		maxEventBytes = s.cfg.Gateway.MaxLineSize
+	}
+	return maxEventBytes
+}
+
+func (s *OpenAIGatewayService) newCodexRoutingObservedBody(request *http.Request, response *http.Response, model string) *codexRoutingObservedBody {
+	completionContext := request.Context()
+	if downstream, ok := request.Context().Value(codexRoutingDownstreamContextKey{}).(context.Context); ok {
+		completionContext = downstream
+	}
+	body := &codexRoutingObservedBody{
+		ReadCloser:     response.Body,
+		ctx:            completionContext,
+		sse:            strings.Contains(strings.ToLower(response.Header.Get("Content-Type")), "text/event-stream"),
+		detectSSE:      strings.TrimSpace(response.Header.Get("Content-Type")) == "",
+		maxJSONBytes:   resolveUpstreamResponseReadLimit(s.cfg),
+		rejectMismatch: response.StatusCode == http.StatusOK,
+		completion:     codexRoutingCompletion{RequestedModel: model, maxEventBytes: s.codexRoutingBusinessEventLimit()},
+	}
+	body.completion.headers(response.Header)
+	return body
+}
+
+// Ungated OAuth requests have the same model contract, but observing them
+// cannot mint or refresh a Cookie qualification. API-key aliases are untouched.
+func (s *OpenAIGatewayService) observeUnqualifiedCodexResponse(request *http.Request, account *Account, response *http.Response) {
+	if account == nil || !account.IsOpenAIOAuthLike() || request == nil || request.URL == nil ||
+		request.URL.Hostname() != "chatgpt.com" || request.URL.Path != "/backend-api/codex/responses" || response == nil || response.Body == nil {
+		return
+	}
+	model, _ := request.Context().Value(codexRoutingModelKey{}).(string)
+	if model == "" {
+		return
+	}
+	response.Body = s.newCodexRoutingObservedBody(request, response, model)
+}
+
 type codexRoutingObservedBody struct {
 	io.ReadCloser
-	sse        bool
-	completion codexRoutingCompletion
-	json       []byte
-	once       sync.Once
-	finish     func(codexRoutingCompletion)
+	sse            bool
+	detectSSE      bool
+	ctx            context.Context
+	maxJSONBytes   int64
+	rejectMismatch bool
+	completion     codexRoutingCompletion
+	json           []byte
+	once           sync.Once
+	mu             sync.Mutex
+	done           bool
+	finish         func(codexRoutingCompletion)
 }
 
 func (body *codexRoutingObservedBody) Read(p []byte) (int, error) {
+	body.mu.Lock()
+	rejected := body.rejectMismatch && body.completion.Mismatch
+	body.mu.Unlock()
+	if rejected {
+		body.complete()
+		return 0, ErrCodexRoutingModelMismatch
+	}
 	n, err := body.ReadCloser.Read(p)
-	if n > 0 {
+	body.mu.Lock()
+	if n > 0 && !body.done {
 		if body.sse {
 			body.completion.feed(p[:n])
-		} else if len(body.json)+n <= codexRoutingProbeReadLimit {
-			body.json = append(body.json, p[:n]...)
 		} else {
-			body.completion.Failed = true
+			limit := body.maxJSONBytes
+			if limit <= 0 {
+				limit = defaultUpstreamResponseReadMaxBytes
+			}
+			if int64(len(body.json))+int64(n) <= limit {
+				body.json = append(body.json, p[:n]...)
+				if body.detectSSE && bodyHasSSEFraming(body.json) {
+					body.sse, body.detectSSE = true, false
+					body.completion.feed(body.json)
+					body.json = nil
+				}
+			} else {
+				body.completion.fail("routing_incomplete")
+				body.json = nil
+			}
 		}
 	}
+	if errors.Is(err, context.Canceled) {
+		body.completion.fail("routing_cancelled")
+	}
+	rejected = body.rejectMismatch && body.completion.Mismatch
+	body.mu.Unlock()
 	if err != nil {
 		body.complete()
+		body.mu.Lock()
+		rejected = body.rejectMismatch && body.completion.Mismatch
+		body.mu.Unlock()
+	}
+	if rejected {
+		body.complete()
+		return 0, ErrCodexRoutingModelMismatch
 	}
 	return n, err
 }
 
 func (body *codexRoutingObservedBody) complete() {
 	body.once.Do(func() {
+		body.mu.Lock()
 		if !body.sse && !body.completion.Failed {
 			body.completion.json(body.json)
 		}
-		body.finish(body.completion)
+		if body.ctx != nil && errors.Is(body.ctx.Err(), context.Canceled) {
+			body.completion.fail("routing_cancelled")
+		}
+		body.done = true
+		body.json, body.completion.pending = nil, nil
+		completed := body.completion
+		body.mu.Unlock()
+		if body.finish != nil {
+			body.finish(completed)
+		}
 	})
 }
 
-func (body *codexRoutingObservedBody) Close() error { body.complete(); return body.ReadCloser.Close() }
+func (body *codexRoutingObservedBody) Close() error {
+	err := body.ReadCloser.Close()
+	body.complete()
+	return err
+}
 
 func (s *OpenAIGatewayService) publishCodexRoutingObservation(ctx context.Context, account *Account, installation *PluginInstallation, q *extensionv1.CodexRoutingQualification, observation extensionv1.CodexRoutingObservation, replacement *extensionv1.CodexRoutingQualification) {
 	if s.pluginManager == nil || installation == nil || q == nil {

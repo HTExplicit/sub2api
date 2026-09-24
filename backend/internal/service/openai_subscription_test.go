@@ -260,8 +260,8 @@ func TestEnrichTokenInfo_KeepsEntitlementWhenAccountMatches(t *testing.T) {
 	require.Zero(t, subscriptionCalls, "账号一致时不应额外请求订阅端点")
 }
 
-// 反向不变式：套餐本身就取自 accounts/check（JWT 没有 plan_type）时，到期时间必须
-// 跟着取同一条记录，否则会变成「workspace 套餐 + 个人到期时间」的另一种错配。
+// 反向不变式：所选 workspace 的套餐取自 accounts/check（JWT 没有 plan_type）时，
+// 到期时间必须跟着取同一条记录，不能混用其他 workspace 的订阅。
 func TestEnrichTokenInfo_WorkspacePlanTypeKeepsItsOwnExpiry(t *testing.T) {
 	const workspaceAccountID = "workspace-b"
 	workspaceExpiresAt := time.Now().Add(720 * time.Hour).UTC().Format(time.RFC3339)
@@ -289,7 +289,7 @@ func TestEnrichTokenInfo_WorkspacePlanTypeKeepsItsOwnExpiry(t *testing.T) {
 
 	tokenInfo := &OpenAITokenInfo{
 		AccessToken:      "access-token",
-		ChatGPTAccountID: "personal-account-a",
+		ChatGPTAccountID: workspaceAccountID,
 		OrganizationID:   workspaceAccountID,
 		// id_token 没带 chatgpt_plan_type
 	}

@@ -594,10 +594,10 @@ export default {
         claudeCodeVersionAutoSyncHint: 'Fetches the latest Claude Code client version from the official release channel every hour, so you never need to upgrade this service just to keep the version current. When disabled, fetching stops but the previously synced version remains available. The manual version above always takes priority.',
         claudeCodeVersionSyncedValue: 'Currently synced: {version}',
         codexHardeningTitle: "Codex Settings",
-        codexTicketEnabled: "292 ticket harvest",
+        codexTicketEnabled: "Codex route acquisition and verification",
         codexTicketEnabledDesc:
-          "When off, no tickets are harvested or injected. When on, manual harvesting is available. Only successful account/model pairs renew with a limited retry; missing tickets still block the corresponding models.",
-        codexTicketHarvestProxy: "292 harvest proxy",
+          "Enables account/model-specific material acquisition and business-route verification, with bounded renewal for enrolled routes. STATE length does not determine plan or model quality. Quality is not tested here.",
+        codexTicketHarvestProxy: "Codex route acquisition proxy",
         codexTicketHarvestProxyDesc:
           "Used only for harvesting. Saved changes apply in about 5 seconds without restart. Supports HTTP(S), SOCKS5(H), and labeled fields in any order. Business traffic uses account proxies. Use Clear and save to remove the proxy.",
         codexTicketHarvestProxyPlaceholder: "http://user:pass{'@'}proxy.example.com:1080",

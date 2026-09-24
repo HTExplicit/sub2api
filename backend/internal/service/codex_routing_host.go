@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -18,6 +19,10 @@ import (
 type codexRoutingHostDirectory interface {
 	PrepareCodexRoutingScope(context.Context, int64, string) (extensionv1.CodexRoutingScope, error)
 	ExecuteCodexRoutingProbe(context.Context, extensionv1.CodexRoutingQuery, string, time.Time) (*http.Response, extensionv1.CodexRoutingScope, error)
+}
+
+type codexRoutingLeaseDirectory interface {
+	CheckCodexRoutingLease(context.Context, extensionv1.CodexRoutingScope, time.Time) error
 }
 
 func isCodexRoutingHostOperation(operation extensionv1.HostOperation) bool {
@@ -60,7 +65,11 @@ func (h *pluginExtensionHost) callCodexRouting(ctx context.Context, in extension
 	if query.Model == "" || len(query.Model) > 256 {
 		return extensionv1.Result{}, errCodexRoutingUnavailable
 	}
-	result := extensionv1.CodexRoutingProbeResult{Scope: scope, Observation: extensionv1.CodexRoutingObservation{Stage: query.Stage, Code: "routing_unavailable", RequestedModel: query.Model, Transport: query.Transport, ObservedAt: time.Now().UTC()}}
+	query.ReasoningEffort, err = codexRoutingProbeEffort(query.ReasoningEffort)
+	if err != nil {
+		return extensionv1.Result{}, err
+	}
+	result := extensionv1.CodexRoutingProbeResult{Scope: scope, Observation: extensionv1.CodexRoutingObservation{Stage: query.Stage, Code: "routing_unavailable", RequestedModel: query.Model, ReasoningEffort: query.ReasoningEffort, Transport: query.Transport, ObservedAt: time.Now().UTC()}}
 	var bundle codexRoutingPrivateBundle
 	var bundleRef extensionv1.CodexRoutingBundleRef
 	cookieHeader := ""
@@ -79,8 +88,17 @@ func (h *pluginExtensionHost) callCodexRouting(ctx context.Context, in extension
 		}
 	}
 	if in.Operation == extensionv1.HostCodexRoutingCheck {
-		result.Valid = query.Bundle != nil && bundle.Status == "qualified" && bundle.Model == query.Model && bundle.Scope.ConnectionLeaseID != ""
 		result.Scope, result.Bundle = bundle.Scope, query.Bundle
+		checker, ok := h.directory.(codexRoutingLeaseDirectory)
+		if !ok || query.Bundle == nil || bundle.Status != "qualified" || bundle.Model != query.Model ||
+			bundle.Scope.Transport != query.Transport || query.Scope == nil || !query.Scope.SameOwner(bundle.Scope) ||
+			query.Scope.Transport != bundle.Scope.Transport || query.Scope.ConnectionLeaseID != bundle.Scope.ConnectionLeaseID ||
+			checker.CheckCodexRoutingLease(ctx, bundle.Scope, bundle.ExpiresAt) != nil {
+			result.Observation.Code = "routing_connection_expired"
+			return marshal(result)
+		}
+		result.Valid = true
+		result.Observation.Code = "routing_verified"
 		return marshal(result)
 	}
 	if query.OperationID == "" || len(query.OperationID) > 256 || (query.Stage != "acquire" && query.Stage != "verify") || (query.Stage == "verify" && query.Bundle == nil) {
@@ -137,6 +155,9 @@ func (h *pluginExtensionHost) callCodexRouting(ctx context.Context, in extension
 	result.Observation.DurationMS = time.Since(start).Milliseconds()
 	if probeErr != nil || response == nil {
 		result.Observation.Code = "routing_transport"
+		if errors.Is(probeErr, context.Canceled) || errors.Is(ctx.Err(), context.Canceled) {
+			result.Observation.Code = "routing_cancelled"
+		}
 		return marshal(result)
 	}
 	defer func() { _ = response.Body.Close() }()
@@ -161,7 +182,7 @@ func (h *pluginExtensionHost) callCodexRouting(ctx context.Context, in extension
 		result.Observation.Code = "routing_upstream"
 		return marshal(result)
 	}
-	if err := readCodexRoutingCompletion(response.Body, response.Header.Get("Content-Type"), query.Model, &result.Observation); err != nil {
+	if err := readCodexRoutingCompletion(response.Body, response.Header.Get("Content-Type"), query.Model, &result.Observation, response.Header); err != nil {
 		// A completed cold acquisition can issue a useful routing Cookie even
 		// when that cold turn selected another model. It is only a candidate;
 		// business-exit verification remains the sole model qualification gate.
@@ -226,7 +247,7 @@ func readCodexRoutingBundle(ctx context.Context, store PluginExtensionStateStore
 		return bundle, errCodexRoutingUnavailable
 	}
 	record, err := store.ReadExtensionState(ctx, key, extensionv1.StateRequest{Namespace: codexRoutingPrivateNamespace, Key: ref.Key})
-	if err != nil || !record.Found || record.Revision != ref.Revision || json.Unmarshal(record.Value, &bundle) != nil || bundle.Schema != extensionv1.CodexRoutingSchema || !scope.SameOwner(bundle.Scope) || !time.Now().Before(bundle.ExpiresAt) || (qualified && bundle.Status != "qualified") {
+	if err != nil || !record.Found || record.Revision != ref.Revision || json.Unmarshal(record.Value, &bundle) != nil || bundle.Schema != extensionv1.CodexRoutingSchema || !scope.SameOwner(bundle.Scope) || !time.Now().Before(bundle.ExpiresAt) || !ref.ExpiresAt.Equal(bundle.ExpiresAt) || ref.ConnectionLeaseID != bundle.Scope.ConnectionLeaseID || (qualified && bundle.Status != "qualified") {
 		return bundle, errCodexRoutingUnavailable
 	}
 	clockRecord, err := store.ReadExtensionState(ctx, key, extensionv1.StateRequest{Namespace: codexRoutingPrivateNamespace, Key: bundle.ClockKey})
@@ -261,7 +282,7 @@ func (s *OpenAIGatewayService) PrepareCodexRoutingScope(ctx context.Context, id 
 	if err != nil || !isOpenAICodexTicketAccount(a) {
 		return extensionv1.CodexRoutingScope{}, errCodexRoutingUnavailable
 	}
-	identity, err := resolveCodexOutboundIdentityForAccountContext(ctx, a, codexAccountIdentityOverrideUA(a))
+	identity, err := resolveCodexOutboundIdentityForAccountContext(ctx, a, s.codexIdentityOverrideUA(a))
 	if err != nil {
 		return extensionv1.CodexRoutingScope{}, err
 	}
@@ -269,6 +290,17 @@ func (s *OpenAIGatewayService) PrepareCodexRoutingScope(ctx context.Context, id 
 	profile := codexRoutingDigest(identity.userAgent, identity.originator, identity.version, seed, resolveConvergedInstallationID(a, seed), string(a.GetCodexFingerprintMode()), "go-crypto-tls", "native-http1")
 	config := s.openAICodexTicketConfig()
 	return extensionv1.CodexRoutingScope{AccountID: id, Identity: CodexTicketAccountIdentity(a), ProfileHash: profile, RouteHash: codexRoutingDigest(resolveAccountProxyURL(a), config.HarvestProxyURL), RouteEvidence: "connection_required", Transport: transport}, nil
+}
+
+func (s *OpenAIGatewayService) CheckCodexRoutingLease(ctx context.Context, scope extensionv1.CodexRoutingScope, expiresAt time.Time) error {
+	if ctx.Err() != nil || scope.Transport != "http" || scope.ConnectionLeaseID == "" {
+		return ErrCodexConnectionLeaseExpired
+	}
+	inspector, ok := s.httpUpstream.(CodexConnectionLeaseInspector)
+	if !ok {
+		return ErrCodexConnectionLeaseExpired
+	}
+	return inspector.CheckCodexConnectionLease(scope.AccountID, codexRoutingScopeKey(scope), scope.ConnectionLeaseID, expiresAt)
 }
 
 func (s *OpenAIGatewayService) ExecuteCodexRoutingProbe(ctx context.Context, query extensionv1.CodexRoutingQuery, cookies string, deadline time.Time) (*http.Response, extensionv1.CodexRoutingScope, error) {
@@ -292,7 +324,7 @@ func (s *OpenAIGatewayService) ExecuteCodexRoutingProbe(ctx context.Context, que
 	if err != nil {
 		return nil, scope, errCodexRoutingUnavailable
 	}
-	request, err := s.buildCodexRoutingProbe(ctx, a, query.Model, token, cookies)
+	request, err := s.buildCodexRoutingProbe(ctx, a, query.Model, token, cookies, query.ReasoningEffort)
 	if err != nil {
 		return nil, scope, err
 	}
@@ -320,11 +352,22 @@ func (s *OpenAIGatewayService) ExecuteCodexRoutingProbe(ctx context.Context, que
 	return response, scope, err
 }
 
-func (s *OpenAIGatewayService) buildCodexRoutingProbe(ctx context.Context, account *Account, model, token, cookies string) (*http.Request, error) {
+func (s *OpenAIGatewayService) buildCodexRoutingProbe(ctx context.Context, account *Account, model, token, cookies string, explicitEffort ...string) (*http.Request, error) {
+	effort := ""
+	if len(explicitEffort) > 0 {
+		effort = explicitEffort[0]
+	}
+	effort, err := codexRoutingProbeEffort(effort)
+	if err != nil {
+		return nil, err
+	}
 	session, turn := uuid.Must(uuid.NewV7()).String(), uuid.Must(uuid.NewV7()).String()
 	metadata := map[string]any{"session_id": session, "thread_id": session, "turn_id": turn, "x-codex-window-id": session + ":0"}
 	body := map[string]any{"model": model, "store": false, "stream": true, "instructions": "Reply with exactly: pong", "input": []any{map[string]any{"role": "user", "content": []any{map[string]any{"type": "input_text", "text": "ping"}}}}, "client_metadata": metadata, "prompt_cache_key": session}
-	identity, err := resolveCodexOutboundIdentityForAccountContext(ctx, account, codexAccountIdentityOverrideUA(account))
+	if effort != "" {
+		body["reasoning"] = map[string]any{"effort": effort}
+	}
+	identity, err := resolveCodexOutboundIdentityForAccountContext(ctx, account, s.codexIdentityOverrideUA(account))
 	if err != nil {
 		return nil, err
 	}
@@ -343,12 +386,10 @@ func (s *OpenAIGatewayService) buildCodexRoutingProbe(ctx context.Context, accou
 	ids := resolveCodexFingerprintIDsFromRequest(account, headers)
 	applyCodexFingerprintClientMetadata(body, ids)
 	applyCodexFingerprintHeaders(headers, ids)
-	if err := enforceCodexIdentityHeadersForAccountContext(ctx, headers, account, codexAccountIdentityOverrideUA(account)); err != nil {
+	if err := s.finalizeCodexOutboundHeaders(ctx, nil, account, headers, model, ""); err != nil {
 		return nil, err
 	}
-	if err := resolveAndSetOpenAIChatGPTAccountHeaders(ctx, s.accountRepo, headers, account); err != nil {
-		return nil, err
-	}
+	applyOpenAICodexBetaFeatures(nil, account, headers)
 	headers.Set("Authorization", "Bearer "+token)
 	headers.Set("Accept", "text/event-stream")
 	headers.Set("Content-Type", "application/json")

@@ -6,20 +6,14 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	extensionv1 "github.com/Wei-Shaw/sub2api/pkg/extensionapi/v1"
 )
 
 func TestRenewalStagesPersistAndStop(t *testing.T) {
 	now := time.Date(2026, 9, 19, 8, 0, 0, 0, time.UTC)
-	ticket := &Ticket{State: "gAAAAA" + strings.Repeat("a", 286), AccountID: 1, Identity: "subject", Model: "astra", CapturedAt: now, ExpiresAt: now.Add(TTL)}
-	state := State{}
-	if err := state.Begin(now, true); err != nil {
-		t.Fatal(err)
-	}
-	state.Complete(now, ticket, "ticket_ready")
-	if !ticket.Valid(now, 1, "subject", "astra") || ticket.Valid(now, 1, "different", "astra") {
-		t.Fatal("ticket ownership mismatch")
-	}
-	if err := state.Begin(now.Add(59*time.Minute), false); err != nil {
+	state := State{Schema: extensionv1.CodexRoutingSchema, Enrolled: true, Phase: "ready", NextAt: &now}
+	if err := state.beginRouting(now, false); err != nil {
 		t.Fatal(err)
 	}
 	raw, _ := json.Marshal(state)
@@ -27,22 +21,48 @@ func TestRenewalStagesPersistAndStop(t *testing.T) {
 	if err := json.Unmarshal(raw, &restarted); err != nil {
 		t.Fatal(err)
 	}
-	if !errors.Is(restarted.Begin(now.Add(59*time.Minute), false), ErrRunning) {
+	if !errors.Is(restarted.beginRouting(now, false), ErrRunning) {
 		t.Fatal("restarted running stage was replayed")
 	}
-	state.Complete(now.Add(59*time.Minute), nil, "ticket_length")
-	if !errors.Is(state.Begin(now.Add(time.Hour), false), ErrNotDue) {
-		t.Fatal("post expiry retry ran early")
+	state.completeRouting(now, nil, extensionv1.CodexRoutingObservation{Code: "routing_incomplete"})
+	if !errors.Is(state.beginRouting(now, false), ErrNotDue) {
+		t.Fatal("retry ran before its persisted due time")
 	}
-	if err := state.Begin(now.Add(61*time.Minute), false); err != nil {
+	due := *state.NextAt
+	if err := state.beginRouting(due, false); err != nil {
 		t.Fatal(err)
 	}
-	state.Complete(now.Add(61*time.Minute), nil, "ticket_length")
+	state.completeRouting(due, nil, extensionv1.CodexRoutingObservation{Code: "routing_incomplete"})
 	if state.Phase != "stopped" || state.NextAt != nil {
 		t.Fatal("renewal did not stop after its second failure")
 	}
-	if !errors.Is(state.Begin(now.Add(2*time.Hour), false), ErrNotDue) {
+	if !errors.Is(state.beginRouting(now.Add(2*time.Hour), false), ErrNotDue) {
 		t.Fatal("stopped renewal restarted")
+	}
+}
+
+func TestRoutingMigrationDiscardsEveryLegacyStateShape(t *testing.T) {
+	for _, length := range []int{292, 312, 332, 356, 780} {
+		for _, phase := range []string{"ready", "retry", "stopped", "manual_running"} {
+			// Legacy timestamps are intentionally opaque: retired material must
+			// neither reject the account nor become current routing evidence.
+			raw, _ := json.Marshal(map[string]any{"phase": phase, "operation_id": "spent-job", "ticket": map[string]any{"state": strings.Repeat("x", length), "expires_at": "retired-format"}})
+			var state State
+			if err := json.Unmarshal(raw, &state); err != nil {
+				t.Fatal(err)
+			}
+			state.migrateRouting()
+			if state.Ticket != nil || state.Qualification != nil || state.ExpiresAt != nil || state.OperationID != "spent-job" {
+				t.Fatalf("length %d: legacy material was not retired", length)
+			}
+			if phase == "stopped" || phase == "manual_running" {
+				if state.Phase != phase || state.Enrolled || state.NextAt != nil {
+					t.Fatalf("length %d: spent state was revived", length)
+				}
+			} else if state.Phase != "needs_cookie_verification" || !state.Enrolled {
+				t.Fatalf("length %d: renewal intent was lost", length)
+			}
+		}
 	}
 }
 

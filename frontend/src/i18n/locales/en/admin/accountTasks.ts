@@ -19,7 +19,7 @@ export default {
     nextOperation: "Next operation",
     selectionChanged: "The selected accounts have changed or include unsupported accounts. Select them again.",
     confirmAction: "This operation will affect {count} accounts.",
-    accountUnchanged: "Ticket harvesting does not change account status or business scheduling.",
+    accountUnchanged: "Route acquisition preserves account status and the scheduling switch; route validation still controls model eligibility.",
     historyAction: "Operation history",
     title: 'Operation history',
     description: 'Track account imports and bulk operations.',
@@ -51,7 +51,7 @@ export default {
     },
     kinds: {
       extension_operation: "Plugin operation",
-      codex_ticket_harvest: 'Manual 292 harvest',
+      codex_ticket_harvest: 'Codex route acquisition and verification',
       account_batch_test: 'Batch connection tests',
       account_import: 'Data import',
       account_import_codex: 'Codex import',

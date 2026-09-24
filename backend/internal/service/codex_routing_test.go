@@ -400,7 +400,17 @@ func TestCodexRoutingAnotherModelClockDoesNotBlockOwnCookieRefresh(t *testing.T)
 	raw, _ = json.Marshal(clock)
 	_, err = store.CompareSwapExtensionState(context.Background(), codexRuntimePluginKey, extensionv1.StateRequest{Namespace: codexRoutingPrivateNamespace, Key: clockKey, ExpectedRevision: 1, Value: raw})
 	require.NoError(t, err)
-	q := &extensionv1.CodexRoutingQualification{Scope: scope, Model: "gpt-6-astra", VerifiedAt: now, ExpiresAt: expiry, Bundle: extensionv1.CodexRoutingBundleRef{Key: "bundle.astra", Revision: 1, ExpiresAt: expiry}}
+	q := &extensionv1.CodexRoutingQualification{Scope: scope, Model: "gpt-6-astra", VerifiedAt: now, ExpiresAt: expiry, Bundle: extensionv1.CodexRoutingBundleRef{Key: "bundle.astra", Revision: 1, ExpiresAt: expiry, ConnectionLeaseID: scope.ConnectionLeaseID}}
+	// Match the host-issued reference contract: another model may update the
+	// shared clock, but a missing or different connection cannot own this bundle.
+	for _, leaseID := range []string{"", "connection-sol"} {
+		wrongConnection := q.Bundle
+		wrongConnection.ConnectionLeaseID = leaseID
+		_, err = readCodexRoutingBundle(context.Background(), store, codexRuntimePluginKey, wrongConnection, scope, true)
+		require.Error(t, err)
+	}
+	_, err = readCodexRoutingBundle(context.Background(), store, codexRuntimePluginKey, q.Bundle, scope, true)
+	require.NoError(t, err, "refresh must reach the Cookie clock logic with a valid connection-bound reference")
 	next := service.refreshObservedCodexCookies(context.Background(), installation, q, http.Header{"Set-Cookie": []string{"__oailb=astra-refreshed; Path=/; Secure; Max-Age=100"}}, extensionv1.CodexRoutingObservation{ObservedAt: time.Now().UTC(), Completed: true, ModelMatched: true, ResponseModel: "gpt-6-astra"})
 	require.NotNil(t, next)
 	require.Equal(t, q.ExpiresAt, next.ExpiresAt)
@@ -467,7 +477,9 @@ func TestCodexRoutingUnchangedCookiesDoNotGrowAndExpiryRedactsValues(t *testing.
 	raw, _ = json.Marshal(bundle)
 	_, err = store.CompareSwapExtensionState(context.Background(), codexRuntimePluginKey, extensionv1.StateRequest{Namespace: codexRoutingPrivateNamespace, Key: bundleKey, Value: raw, NextAt: &expires})
 	require.NoError(t, err)
-	q := &extensionv1.CodexRoutingQualification{Scope: scope, Model: "gpt-6-astra", VerifiedAt: now, ExpiresAt: expires, Bundle: extensionv1.CodexRoutingBundleRef{Key: bundleKey, Revision: 1, ExpiresAt: expires}}
+	q := &extensionv1.CodexRoutingQualification{Scope: scope, Model: "gpt-6-astra", VerifiedAt: now, ExpiresAt: expires, Bundle: extensionv1.CodexRoutingBundleRef{Key: bundleKey, Revision: 1, ExpiresAt: expires, ConnectionLeaseID: scope.ConnectionLeaseID}}
+	_, err = readCodexRoutingBundle(context.Background(), store, codexRuntimePluginKey, q.Bundle, scope, true)
+	require.NoError(t, err, "nil refresh must mean unchanged Cookies, not an invalid fixture reference")
 	service := &OpenAIGatewayService{pluginManager: &PluginManager{repo: store}}
 	before := len(store.values)
 	updated := service.refreshObservedCodexCookies(context.Background(), &PluginInstallation{PluginKey: codexRuntimePluginKey}, q, http.Header{"Set-Cookie": []string{"__cflb=temporary-private-value; Path=/; Secure; Max-Age=100"}}, extensionv1.CodexRoutingObservation{ObservedAt: now})

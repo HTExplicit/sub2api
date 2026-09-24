@@ -82,8 +82,12 @@ func CodexTicketAccountEligible(a *Account) bool {
 func CodexTicketFailure(code string) CodexTicketResult {
 	messages := map[string]string{
 		"routing_candidate":          "已取得候选 Cookie，尚未通过业务出口验证",
-		"routing_model_mismatch":     "业务出口返回模型不匹配，未发布资格",
-		"routing_incomplete":         "响应未完整结束或缺少模型字段",
+		"routing_model_mismatch":     "业务出口的上游模型声明不匹配，未发布路由资格",
+		"routing_incomplete":         "响应未完整结束或缺少模型声明",
+		"routing_capacity":           "上游容量不足或流内限流，未完成路由验证",
+		"routing_policy":             "上游策略检查阻止请求，未完成路由验证",
+		"routing_cancelled":          "客户端取消，本次响应未完成验证",
+		"routing_legacy_retired":     "旧 STATE 材料已丢弃，尚未获得路由资格",
 		"routing_cookie_missing":     "未取得可用路由 Cookie",
 		"routing_cookie_expired":     "路由 Cookie 已到期",
 		"routing_cookie_deleted":     "上游已撤销路由 Cookie",
@@ -91,21 +95,21 @@ func CodexTicketFailure(code string) CodexTicketResult {
 		"routing_stale":              "账号、设备、出口或 Cookie 代次已变化",
 		"routing_connection_expired": "已验证连接不可复用，需要重新验证",
 		"routing_upstream":           "上游拒绝路由验证请求",
-		"ticket_plugin_unavailable":  "票据插件未启用或暂不可用",
-		"ticket_disabled":            "票据总开关未开启",
-		"ticket_proxy_missing":       "未配置打票代理",
-		"ticket_ineligible":          "仅 OpenAI OAuth/Setup Token 非影子账号可打票",
-		"ticket_model_invalid":       "模型不在票据配置范围内",
-		"ticket_busy":                "该账号和模型已有打票任务",
+		"ticket_plugin_unavailable":  "Codex 路由插件未启用或暂不可用",
+		"ticket_disabled":            "Codex 路由采集与验证未开启",
+		"ticket_proxy_missing":       "未配置路由采集代理",
+		"ticket_ineligible":          "仅 OpenAI OAuth/Setup Token 非影子账号支持路由采集",
+		"ticket_model_invalid":       "模型不在路由配置范围内",
+		"ticket_busy":                "该账号和模型已有路由采集任务",
 		"ticket_interrupted":         "上次请求已开始，结果未确认；不会自动重复发送",
 		"ticket_token":               "无法取得账号访问令牌",
 		"ticket_timeout":             "请求超时",
-		"ticket_transport":           "打票代理传输失败",
-		"ticket_upstream":            "上游拒绝打票请求",
-		"ticket_length":              "响应票据长度不符合292规则",
-		"ticket_prefix":              "响应票据格式不符合规则",
-		"ticket_missing_header":      "响应未包含票据头",
-		"ticket_persist":             "票据持久化失败，未加入自动续期",
+		"ticket_transport":           "路由采集代理传输失败",
+		"ticket_upstream":            "上游拒绝路由采集请求",
+		"ticket_length":              "历史 STATE 长度检查失败（该规则已停用）",
+		"ticket_prefix":              "历史 STATE 格式检查失败（该规则已停用）",
+		"ticket_missing_header":      "历史采集响应未包含 STATE 头",
+		"ticket_persist":             "路由验证记录持久化失败，未加入自动续期",
 		"ticket_stale":               "账号身份、任务或续期状态已经变化",
 		"ticket_canceled":            "任务已取消",
 		"ticket_stopped":             "自动续期已停止",
@@ -128,6 +132,12 @@ func CodexTicketFailure(code string) CodexTicketResult {
 		stage = "configuration"
 	case "ticket_busy", "ticket_interrupted", "ticket_stale", "ticket_stopped", "ticket_canceled":
 		stage = "lifecycle"
+	case "routing_cancelled", "routing_legacy_retired":
+		stage = "lifecycle"
+	case "routing_capacity":
+		stage = "upstream_stream"
+	case "routing_policy":
+		stage = "upstream_policy"
 	case "ticket_token":
 		stage = "account_auth"
 	case "ticket_proxy_auth":

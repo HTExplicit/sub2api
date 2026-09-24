@@ -26,6 +26,31 @@ type codexConnectionLease struct {
 	expiresAt     time.Time
 	client        *http.Client
 	transport     *http.Transport
+	alive         *atomic.Bool
+}
+
+type codexLeasedConn struct {
+	net.Conn
+	alive *atomic.Bool
+}
+
+func (c *codexLeasedConn) Close() error {
+	c.alive.Store(false)
+	return c.Conn.Close()
+}
+
+func (s *httpUpstreamService) CheckCodexConnectionLease(accountID int64, scope, leaseID string, expiresAt time.Time) error {
+	s.mu.RLock()
+	lease := s.codexConnectionLeases[leaseID]
+	s.mu.RUnlock()
+	now := time.Now()
+	if lease == nil || lease.alive == nil || !lease.alive.Load() || !now.Before(lease.expiresAt) || !now.Before(expiresAt) {
+		return service.ErrCodexConnectionLeaseExpired
+	}
+	if accountID <= 0 || lease.accountID != accountID || scope == "" || lease.scope != scope || expiresAt.After(lease.expiresAt) {
+		return service.ErrCodexConnectionLeaseScope
+	}
+	return nil
 }
 
 func (s *httpUpstreamService) DoWithCodexConnectionLease(req *http.Request, proxyURL string, accountID int64, scope string, leaseID string, expiresAt time.Time, profile *tlsfingerprint.Profile) (*http.Response, string, error) {
@@ -57,6 +82,13 @@ func (s *httpUpstreamService) DoWithCodexConnectionLease(req *http.Request, prox
 		if lease.accountID != accountID || lease.scope != scope || lease.origin != origin || lease.transportHash != transportHash {
 			return nil, "", service.ErrCodexConnectionLeaseScope
 		}
+		checkDeadline := expiresAt
+		if checkDeadline.IsZero() {
+			checkDeadline = lease.expiresAt
+		}
+		if err := s.CheckCodexConnectionLease(accountID, scope, leaseID, checkDeadline); err != nil {
+			return nil, "", err
+		}
 	} else {
 		if expiresAt.IsZero() || expiresAt.After(now.Add(120*time.Second)) {
 			expiresAt = now.Add(120 * time.Second)
@@ -80,12 +112,18 @@ func (s *httpUpstreamService) DoWithCodexConnectionLease(req *http.Request, prox
 		// Exactly one physical dial is authorized. A disconnected/expired lease
 		// must fail before any request can reach a different residential exit.
 		var dialed atomic.Bool
+		alive := &atomic.Bool{}
 		wrap := func(dial func(context.Context, string, string) (net.Conn, error)) func(context.Context, string, string) (net.Conn, error) {
 			return func(ctx context.Context, network, address string) (net.Conn, error) {
 				if !time.Now().Before(expiresAt) || !dialed.CompareAndSwap(false, true) {
 					return nil, service.ErrCodexConnectionLeaseExpired
 				}
-				return dial(ctx, network, address)
+				connection, err := dial(ctx, network, address)
+				if err != nil {
+					return nil, err
+				}
+				alive.Store(true)
+				return &codexLeasedConn{Conn: connection, alive: alive}, nil
 			}
 		}
 		if transport.DialContext != nil {
@@ -101,7 +139,7 @@ func (s *httpUpstreamService) DoWithCodexConnectionLease(req *http.Request, prox
 		}
 		leaseID = hex.EncodeToString(id[:])
 		lease = &codexConnectionLease{accountID: accountID, scope: scope, origin: origin, transportHash: transportHash,
-			expiresAt: expiresAt, transport: transport,
+			expiresAt: expiresAt, transport: transport, alive: alive,
 			client: &http.Client{Transport: transport, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}}
 		s.mu.Lock()
 		if s.codexConnectionLeases == nil {

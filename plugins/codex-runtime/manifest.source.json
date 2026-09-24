@@ -2,7 +2,7 @@
   "schema_version": 1,
   "id": "codexrip.codex-runtime",
   "name": "Codex 运行扩展",
-  "version": "0.2.12",
+  "version": "0.2.13",
   "description": "Cookie 路由资格、按需有界续获与出站指纹",
   "author": "HTExplicit",
   "requires": {
@@ -35,16 +35,16 @@
     { "id": "codex-recovery-settings", "slot": "surface", "capability": "extensions.recovery.v1", "permission": "admin", "label": { "zh": "推理状态与恢复策略", "en": "Reasoning state and recovery" } },
     {
       "id": "proxy-settings", "slot": "admin.settings", "capability": "extensions.admin.v1", "action": "proxy.test", "entrypoint": "ui/index.html", "permission": "admin",
-      "label": { "zh": "Codex 票据设置", "en": "Codex ticket settings" }
+      "label": { "zh": "Codex 路由采集与验证", "en": "Codex route acquisition and verification" }
     },
     {
       "id": "ticket-harvest", "slot": "account.actions", "capability": "extensions.credentials.v1", "action": "harvest", "entrypoint": "ui/index.html", "permission": "admin",
-      "label": { "zh": "采集并验证 Cookie 路由", "en": "Acquire and verify Cookie route" },
+      "label": { "zh": "采集并验证 Codex 路由", "en": "Acquire and verify Codex route" },
       "account_filter": { "platforms": ["openai"], "types": ["oauth", "setup-token"], "exclude_shadows": true }
     },
     {
       "id": "ticket-stop", "slot": "account.actions", "capability": "extensions.admin.v1", "action": "stop", "entrypoint": "ui/index.html", "permission": "admin",
-      "label": { "zh": "停止票据续期", "en": "Stop ticket renewal" },
+      "label": { "zh": "停止路由续期", "en": "Stop route renewal" },
       "account_filter": { "platforms": ["openai"], "types": ["oauth", "setup-token"], "exclude_shadows": true }
     }
   ],

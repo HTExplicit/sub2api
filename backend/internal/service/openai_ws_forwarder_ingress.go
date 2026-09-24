@@ -101,7 +101,7 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 			errors.New("invalid json"),
 		)
 	}
-	stageCodexRoutingTurn(c, trimmedFirstMessage)
+	stageCodexRoutingWSTurn(c, trimmedFirstMessage)
 
 	// 预取一次 OpenAI Fast Policy settings，绑定到 ctx，让该 WS session
 	// 内所有帧的 evaluateOpenAIFastPolicy 调用复用同一份快照，避免每帧
@@ -607,7 +607,7 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 			return openAIWSClientPayload{}, NewOpenAIWSClientCloseError(coderws.StatusPolicyViolation, integrityErr.Error(), integrityErr)
 		}
 		ingressSessionOriginalModel = originalModel
-		stageCodexRoutingTurn(c, trimmed)
+		stageCodexRoutingWSTurn(c, trimmed)
 		if nativeRoutingConnection {
 			if routingErr := s.guardCodexRoutingNativeModel(account, upstreamModel); routingErr != nil {
 				return openAIWSClientPayload{}, routingErr
@@ -776,15 +776,17 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 		bridgeReplayInputExists := false
 		bridgeReplayVerified := false
 		bridgeBaselineResponseID := ""
-		bridgeOwnedTurnState := openAIWSHTTPBridgeTurnState{accountID: account.ID}
+		bridgeOwnedTurnState := openAIWSHTTPBridgeTurnState{accountID: account.ID, identity: CodexTicketAccountIdentity(account)}
 		bridgeLogicalTurn := ""
 		for turn := 1; ; turn++ {
-			stageCodexRoutingTurn(c, currentBridgePayload.rawForHash)
+			stageCodexRoutingWSTurn(c, currentBridgePayload.rawForHash)
 			currentLogicalTurn := codexRoutingTurnID(c)
-			if bridgeOwnedTurnState.accountID != account.ID || (!openAICodexTurnStateUsesSessionContract(account) && (currentLogicalTurn == "" || currentLogicalTurn != bridgeLogicalTurn)) {
+			if bridgeOwnedTurnState.accountID != account.ID || (account.IsOpenAIOAuthLike() && bridgeOwnedTurnState.identity != CodexTicketAccountIdentity(account)) || (!openAICodexTurnStateUsesSessionContract(account) && (currentLogicalTurn == "" || currentLogicalTurn != bridgeLogicalTurn)) {
 				turnState, bridgeOwnedTurnState.value = "", ""
 				bridgeOwnedTurnState.accountID = account.ID
+				bridgeOwnedTurnState.identity = CodexTicketAccountIdentity(account)
 			}
+			bridgeOwnedTurnState.turnID = currentLogicalTurn
 			bridgeLogicalTurn = currentLogicalTurn
 			if turn > 1 && hooks != nil && hooks.BeforeRequest != nil {
 				if err := hooks.BeforeRequest(turn, currentBridgePayload.payloadRaw, currentBridgePayload.originalModel); err != nil {
@@ -926,7 +928,7 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 			// tool continuations with an omitted/different response header. A new
 			// turn clears it above. API destinations keep their prior contract.
 			bridgeTurnState := strings.TrimSpace(result.ResponseHeaders.Get(openAIWSTurnStateHeader))
-			if openAICodexTurnStateUsesSessionContract(account) || bridgeOwnedTurnState.value == "" {
+			if openAICodexTurnStateUsesSessionContract(account) || (bridgeOwnedTurnState.value == "" && !result.ClientDisconnect && isOpenAIWSSuccessTerminalEvent(result.UpstreamTerminalEvent)) {
 				turnState = bridgeTurnState
 				bridgeOwnedTurnState.value = bridgeTurnState
 			}

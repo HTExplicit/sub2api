@@ -35,6 +35,8 @@ type openAIWSHTTPBridgeToolState struct {
 // upstream response. It never enters the shared native-WS session state store.
 type openAIWSHTTPBridgeTurnState struct {
 	accountID int64
+	identity  string
+	turnID    string
 	value     string
 }
 
@@ -566,7 +568,12 @@ func (s *OpenAIGatewayService) proxyOpenAIWSHTTPBridgeTurn(
 	applyBridgeOwnedTurnState := func(req *http.Request) {
 		if account.Platform != PlatformGrok && len(bridgeStates) > 0 {
 			state := bridgeStates[0]
-			if state.accountID > 0 && state.accountID == account.ID && strings.TrimSpace(state.value) != "" {
+			ownerMatches := state.accountID > 0 && state.accountID == account.ID
+			if account.IsOpenAIOAuthLike() {
+				ownerMatches = ownerMatches && state.identity == CodexTicketAccountIdentity(account) &&
+					state.turnID != "" && state.turnID == codexRoutingTurnID(c)
+			}
+			if ownerMatches && strings.TrimSpace(state.value) != "" {
 				// The general HTTP builder strips unproven client-supplied state.
 				// This value is independently proven by the owning bridge, so carry
 				// it without publishing shared provenance for other connections.
@@ -735,6 +742,7 @@ func (s *OpenAIGatewayService) proxyOpenAIWSHTTPBridgeTurn(
 			UpstreamTerminalEvent:         upstreamTerminalEvent,
 			UpstreamTerminalStatus:        upstreamTerminalStatus,
 			ResponseHeaders:               cloneHeader(resp.Header),
+			ClientDisconnect:              clientDisconnected,
 			Duration:                      time.Since(turnStart),
 			FirstTokenMs:                  firstTokenMs,
 		}

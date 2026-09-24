@@ -116,6 +116,10 @@ var (
 // orgID is used to match the correct account when multiple accounts exist (e.g., personal + team).
 // Returns nil on any failure (best-effort, non-blocking).
 func fetchChatGPTAccountInfo(ctx context.Context, clientFactory PrivacyClientFactory, accessToken, proxyURL, orgID string) *ChatGPTAccountInfo {
+	return fetchChatGPTAccountInfoForWorkspace(ctx, clientFactory, accessToken, proxyURL, orgID, "")
+}
+
+func fetchChatGPTAccountInfoForWorkspace(ctx context.Context, clientFactory PrivacyClientFactory, accessToken, proxyURL, orgID, selectedAccountID string) *ChatGPTAccountInfo {
 	if accessToken == "" || clientFactory == nil {
 		return nil
 	}
@@ -155,6 +159,11 @@ func fetchChatGPTAccountInfo(ctx context.Context, clientFactory PrivacyClientFac
 	if !ok {
 		slog.Debug("chatgpt_account_check_no_accounts", "body", truncate(resp.String(), 300))
 		return nil
+	}
+	// An existing account selects one workspace. Never fall back to the token's
+	// default or another paid workspace when that exact identity is absent.
+	if strings.TrimSpace(selectedAccountID) != "" {
+		return chatGPTAccountInfoForSelectedWorkspace(accounts, selectedAccountID, time.Now())
 	}
 
 	// 优先匹配 orgID 对应的账号（access_token JWT 中的 poid）

@@ -28,6 +28,7 @@ type qualityWireUpstream struct {
 	HTTPUpstream
 	accountID int64
 	scope     extensionv1.CodexRoutingScope
+	expiresAt time.Time
 	calls     int
 	request   *http.Request
 	body      []byte
@@ -35,6 +36,17 @@ type qualityWireUpstream struct {
 
 func (u *qualityWireUpstream) HasCodexQualityConnection(id string, accountID int64, scope string) bool {
 	return id == u.scope.ConnectionLeaseID && accountID == u.accountID && scope == codexRoutingScopeKey(u.scope)
+}
+
+func (u *qualityWireUpstream) CheckCodexConnectionLease(accountID int64, scope, id string, expiresAt time.Time) error {
+	now := time.Now()
+	if id != u.scope.ConnectionLeaseID || !now.Before(u.expiresAt) || !now.Before(expiresAt) {
+		return ErrCodexConnectionLeaseExpired
+	}
+	if accountID <= 0 || accountID != u.accountID || scope == "" || scope != codexRoutingScopeKey(u.scope) || expiresAt.After(u.expiresAt) {
+		return ErrCodexConnectionLeaseScope
+	}
+	return nil
 }
 
 func (u *qualityWireUpstream) DoWithCodexConnectionLease(req *http.Request, _ string, accountID int64, scope, id string, _ time.Time, _ *tlsfingerprint.Profile) (*http.Response, string, error) {
@@ -106,6 +118,7 @@ func qualityWireServiceFixture(t *testing.T, compressed, recovery bool) (*OpenAI
 	leaseScope := scope
 	leaseScope.ConnectionLeaseID, leaseScope.RouteEvidence = "quality-wire-connection", "connection"
 	upstream.scope = leaseScope
+	upstream.expiresAt = expiry
 	cookie := codexRoutingCookie{Name: "__cflb", Value: "quality-wire-route", Domain: "chatgpt.com", Path: "/", FirstSeen: now, ExpiresAt: expiry}
 	clock := codexRoutingCookieClock{Scope: scope}
 	clock.apply([]codexRoutingCookieChange{{Cookie: cookie}}, now)

@@ -19,7 +19,7 @@ export default {
     nextOperation: "下一个操作",
     selectionChanged: "选中账号已变化或包含不适用账号，请重新选择。",
     confirmAction: "即将对 {count} 个账号执行此操作。",
-    accountUnchanged: "打票不改变账号状态或业务调度设置。",
+    accountUnchanged: "路由采集不修改账号状态或调度开关；模型是否可调度仍受路由验证结果约束。",
     historyAction: "操作记录",
     title: '操作记录',
     description: '查看近期账号操作及其执行结果。',
@@ -51,7 +51,7 @@ export default {
     },
     kinds: {
       extension_operation: "插件操作",
-      codex_ticket_harvest: '手动打292',
+      codex_ticket_harvest: 'Codex 路由采集与验证',
       account_batch_test: '批量测试连接',
       account_import: '数据导入',
       account_import_codex: 'Codex 导入',

@@ -16,15 +16,15 @@ export default {accounts: {
 
   textTestPrompt: { label: 'Text test prompt', hint: 'Blank uses hi. Remembered only for this site and administrator in this browser.', reset: 'Restore default', tooLong: 'Prompt exceeds 8192 characters. Shorten it to continue.' },
   tickets: {
-    stages: { request: 'Request', configuration: 'Configuration', lifecycle: 'Task state', account_auth: 'Account authentication', proxy_auth: 'Proxy authentication', proxy_protocol: 'Proxy protocol', proxy_dns: 'Proxy DNS', proxy_connect: 'Proxy connection', tls: 'TLS certificate', ticket_validation: 'Ticket validation', upstream_http: 'Upstream HTTP', persistence: 'Persistence' },
-    title: 'Cookie routing / renewal', description: 'Each account/model cycle has at most one acquisition and one business-route verification. Valid qualifications are skipped. Cookies live at most 120 seconds; demand renewal starts 20 seconds early and stops after two failed cycles.',
-    disabled: 'The ticket switch is off.', force: 'Harvest again even with a valid ticket', ineligible: 'Not eligible: requires a non-shadow OpenAI OAuth or Setup Token account.',
-    valid: 'Valid', stop: 'Stop automatic renewal', start: 'Start harvesting', limit: 'Select up to 100 accounts.', loadFailed: 'Could not load accounts or ticket configuration.',
-    submitFailed: 'Operation failed. Check the current status before retrying.', next: 'Next renewal', last: 'Last attempt', length: 'Ticket length', expires: 'Expires',
-    states: { idle: 'Awaiting manual harvest', ready: 'Renewal scheduled', retry: 'Waiting for retry after expiry', stopped: 'Automatic renewal stopped', manual_running: 'Manual harvest running', pre_running: 'Renewing before expiry', post_running: 'Retrying after expiry' }
+    stages: { request: 'Request', configuration: 'Configuration', lifecycle: 'Task state', account_auth: 'Account authentication', proxy_auth: 'Proxy authentication', proxy_protocol: 'Proxy protocol', proxy_dns: 'Proxy DNS', proxy_connect: 'Proxy connection', tls: 'TLS certificate', ticket_validation: 'Legacy STATE validation', upstream_http: 'Upstream HTTP', upstream_stream: 'Upstream stream', upstream_policy: 'Upstream policy', persistence: 'Persistence' },
+    title: 'Codex route acquisition and verification', description: 'Each account/model cycle has at most one acquisition and one business-route verification. Valid routes are skipped. Routing records last at most 120 seconds locally and renew on demand; this is not an upstream guarantee. Material validity, response completion and matching model declarations are separate evidence. Quality is not tested here; STATE length is an observation only.',
+    disabled: 'Route acquisition and verification is off.', force: 'Acquire and verify again even with a valid route', ineligible: 'Not eligible: requires a non-shadow OpenAI OAuth or Setup Token account.',
+    valid: 'Routing record valid; quality unverified', stop: 'Stop automatic renewal', start: 'Acquire and verify', limit: 'Select up to 100 accounts.', loadFailed: 'Could not load accounts or route configuration.',
+    submitFailed: 'Operation failed. Check the current status before retrying.', next: 'Next renewal', last: 'Last attempt', length: 'STATE length (observation only)', expires: 'Routing record expires',
+    states: { idle: 'Awaiting manual acquisition', ready: 'Routing record valid; awaiting renewal', retry: 'Waiting for route retry', stopped: 'Automatic renewal stopped', manual_running: 'Acquiring and verifying', pre_running: 'Verifying route renewal', post_running: 'Retrying route verification', needs_cookie_verification: 'Awaiting business-route verification' }
   },
   ticketProxy: {
-    address: 'Full harvest proxy address', protocol: 'Protocol', test: 'Test connection', clear: 'Clear proxy and disable tickets', hint: 'Blur only parses the input. Testing uses the draft without saving, OAuth credentials or model requests. Full proxy credentials are visible to administrators only.',
+    address: 'Full harvest proxy address', protocol: 'Protocol', test: 'Test connection', clear: 'Clear proxy and disable route acquisition', hint: 'Blur only parses the input. Testing uses the draft without saving, OAuth credentials or model requests. Full proxy credentials are visible to administrators only.',
     trust: 'Certificate verification', copyFailed: 'Could not copy. Copy the address manually.', testFailed: 'Proxy test did not complete. Try again.',
     stages: { parse: 'Input parsing', dns: 'Proxy DNS', tcp: 'Proxy TCP', connect: 'CONNECT', tls: 'TLS', http: 'ChatGPT response', protocol: 'Protocol handshake', auth: 'Proxy authentication', pinned_connection: 'Reconnect using pinned trust' },
     errors: { too_long: 'Proxy input is too long.', unknown_field: 'Unknown field. Use host, port, username and password labels.', duplicate_field: 'Duplicate field. Check the unchanged input.', incomplete: 'Host, port or credentials are incomplete.', ambiguous: 'Ambiguous fields. Use labeled lines.', invalid_url: 'Invalid or unsupported proxy URL.', invalid_port: 'Enter a port between 1 and 65535.' }
@@ -1040,11 +1040,11 @@ export default {accounts: {
         codexFingerprintDevice: 'Device only',
         codexFingerprintSession: 'Device + Session',
         codexFingerprintFull: 'Full convergence',
-        codexTurnTicket: 'Codex Cookie route',
-        codexTurnTicketDesc: 'Ticket status for the configured models. Requests are paused without a valid ticket only when fail-closed is enabled.',
-        codexTurnTicketMissing: 'No valid ticket; requests remain allowed',
-        codexTurnTicketReady: '{time} left',
-        codexTurnTicketPaused: 'No 292 ticket; this model is paused',
+        codexTurnTicket: 'Codex route acquisition and verification',
+        codexTurnTicketDesc: 'Valid routing material, a complete response and a matching model declaration are separate observations. STATE length proves neither plan nor model quality; quality is not tested here. Models without a valid route are paused only when fail-closed is enabled.',
+        codexTurnTicketMissing: 'No valid route; requests remain allowed',
+        codexTurnTicketReady: 'Route verified, {time} left; quality unverified',
+        codexTurnTicketPaused: 'No valid route; this model is paused',
         codexImageTool: 'Codex image bridge policy',
         codexImageToolDesc:
           'Controls the hosted image_generation bridge and client-declared image tools on Codex /responses text requests. Hosted auto-injection applies only to non-Responses Lite requests. Account policy takes precedence over channel and global settings; standalone image-generation endpoints are unaffected.',

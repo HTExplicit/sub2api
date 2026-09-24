@@ -34,7 +34,7 @@ func TestRoutingConfigMigratesOnlyUnversionedExactDefaults(t *testing.T) {
 
 func TestRoutingMigrationAndTwoFailuresPreserveStop(t *testing.T) {
 	for _, phase := range []string{"ready", "retry", "stopped", "manual_running"} {
-		state := State{Phase: phase, Ticket: &Ticket{State: "old292"}}
+		state := State{Phase: phase, Ticket: json.RawMessage(`{"state":"retired-state"}`)}
 		state.migrateRouting()
 		if state.Ticket != nil || state.Qualification != nil {
 			t.Fatal("legacy state became qualification")
