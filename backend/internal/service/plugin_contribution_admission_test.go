@@ -137,30 +137,3 @@ func TestContributionAdminAdmissionRejectsUnappliedConfiguration(t *testing.T) {
 	require.NoError(t, err, "matching enabled configuration should remain callable")
 	require.Equal(t, 1, calls)
 }
-
-func TestAccountTestOptionsKeepActualAccountScopeAndNativeDefaults(t *testing.T) {
-	var calls []extensionv1.Invocation
-	manager := ticketTestManager(t, config.OpenAICodexTicketConfig{}, func(in extensionv1.Invocation) (extensionv1.Result, error) {
-		calls = append(calls, in)
-		return extensionv1.Result{Payload: json.RawMessage(`{}`)}, nil
-	})
-	installation := manager.extensions.Load().installations[1]
-	installation.Manifest.Operations = map[string][]string{extensionv1.CapabilityAdmin: {"test.prompt", "test.reasoning"}}
-	installation.Bindings = []PluginBinding{{Capability: extensionv1.CapabilityAdmin, Platform: PlatformOpenAI, AccountType: AccountTypeAPIKey, Enabled: true, RolloutPercent: 50}}
-	previous := processExtensionOperations.Load()
-	t.Cleanup(func() { processExtensionOperations.Store(previous) })
-	processExtensionOperations.Store(&extensionOperationProvider{invoker: manager})
-	for _, id := range []int64{2, 3} {
-		account := &Account{ID: id, Platform: PlatformOpenAI, Type: AccountTypeAPIKey}
-		promptErr := validateAccountPromptExtension(context.Background(), account, "custom", "gpt-5.4", "default")
-		reasoningErr := ValidateAccountTestReasoningContext(context.Background(), account, "gpt-5.4", "default", "high")
-		require.Equal(t, id == 3, promptErr != nil)
-		require.Equal(t, id == 3, reasoningErr != nil)
-		require.NoError(t, validateAccountPromptExtension(context.Background(), account, "", "gpt-5.4", "default"))
-		require.NoError(t, ValidateAccountTestReasoningContext(context.Background(), account, "gpt-5.4", "default", ""))
-	}
-	require.Len(t, calls, 2)
-	for _, call := range calls {
-		require.EqualValues(t, 2, call.AccountID)
-	}
-}

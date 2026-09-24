@@ -1,10 +1,12 @@
+vi.mock('@/components/admin/account-jobs/AccountOperationDialog.vue', () => ({ default: { props: ['job', 'show'], template: '<div><slot/><slot name="footer"/></div>' } }))
 import { flushPromises, mount } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import BatchTestAccountModal from '../BatchTestAccountModal.vue'
 import AccountTestReasoningSelect from '../AccountTestReasoningSelect.vue'
 const { batchTestModels, batchTest } = vi.hoisted(() => ({ batchTestModels: vi.fn(), batchTest: vi.fn() }))
-vi.mock('../api', () => ({ accountJobsAPI: { batchTestModels, batchTest } }))
-vi.mock('@sub2api/plugin-ui', async () => { const actual = await vi.importActual<typeof import('@sub2api/plugin-ui')>('@sub2api/plugin-ui'); const { ref } = await import('vue'); return { ...actual, useNotifications: () => ({ showError: vi.fn() }), usePersistentDraft: () => ref('') } })
+vi.mock('@/api/admin/accountJobs', () => ({ default: { batchTestModels, batchTest } }))
+vi.mock('@/stores/app', () => ({ useAppStore: () => ({ showError: vi.fn() }) }))
+vi.mock('@/stores/auth', () => ({ useAuthStore: () => ({ user: { id: 1 } }) }))
 vi.mock('vue-i18n', async importOriginal => ({ ...await importOriginal<typeof import('vue-i18n')>(), useI18n: () => ({ t: (key: string, args?: unknown) => key + (args ? JSON.stringify(args) : '') }) }))
 function catalog(id: number, choices: Array<string | { id: string; display_name: string; reasoning_efforts?: string[] }> = ['first', 'shared']) {
   const models = choices.map(choice => typeof choice === 'string' ? { id: choice, display_name: `Display ${choice}` } : choice)

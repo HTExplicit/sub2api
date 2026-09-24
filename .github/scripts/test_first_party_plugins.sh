@@ -29,8 +29,7 @@ go build -trimpath -o "$plugin_build_dir/package-plugin" ./cmd/package-plugin
 
 export SUB2API_EXTENSION_TEST_BINARY="$plugin_build_dir/binaries/codex-runtime"
 export SUB2API_EXTENSION_TEST_BUNDLE="$plugin_build_dir/bundle/lock.json"
-export SUB2API_ACCOUNT_TOOLS_TEST_BINARY="$plugin_build_dir/binaries/account-tools"
 export SUB2API_CINDY_PROVIDER_TEST_BINARY="$plugin_build_dir/binaries/cindy-provider"
 export SUB2API_EXTENSION_TEST_PUBLIC_KEY
 SUB2API_EXTENSION_TEST_PUBLIC_KEY=$(jq -r .public_key "$plugin_build_dir/publisher.json")
-go test ./internal/service -run '^(TestExtensionRuntimeUsesOfficialProcessAndHostBroker|TestAccountToolsExtensionRuntimeUsesIndependentProcess|TestCindyProviderExtensionRuntimeUsesIndependentProcess|TestFirstPartyBundleContainsMatchingSignedDomainPackages)$' -count=1
+go test ./internal/service -run '^(TestExtensionRuntimeUsesOfficialProcessAndHostBroker|TestCindyProviderExtensionRuntimeUsesIndependentProcess|TestFirstPartyBundleContainsMatchingSignedDomainPackages)$' -count=1

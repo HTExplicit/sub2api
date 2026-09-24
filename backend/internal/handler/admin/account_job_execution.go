@@ -61,7 +61,7 @@ func (h *AccountHandler) executeAccountJobItem(ctx context.Context, kind string,
 		}
 		testCtx, cancel := context.WithTimeout(ctx, 90*time.Second)
 		defer cancel()
-		if _, _, err := service.PlanBatchAccountTests(testCtx, extensionv1.BatchTestPlanningRequest{HasLegacy: true, AccountIDs: []int64{id}, ModelID: model}); err != nil {
+		if _, err := service.PlanBatchAccountTests(testCtx, extensionv1.BatchTestPlanningRequest{HasLegacy: true, AccountIDs: []int64{id}, ModelID: model}); err != nil {
 			return accountJobFailed(item.ID, "test_unavailable")
 		}
 		effort := ""

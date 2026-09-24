@@ -175,9 +175,6 @@ issues/
 !/plugins/cindy-provider/
 !/plugins/cindy-provider/scripts/
 !/plugins/cindy-provider/scripts/check-ui.py
-!/plugins/account-tools/
-!/plugins/account-tools/scripts/
-!/plugins/account-tools/scripts/check-ui.py
 !/plugins/prompt-skills/
 !/plugins/prompt-skills/scripts/
 !/plugins/prompt-skills/scripts/check-ui.py

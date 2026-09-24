@@ -1,15 +1,13 @@
 import { flushPromises, mount, type VueWrapper } from '@vue/test-utils'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import BatchTestAccountModal from '../BatchTestAccountModal.vue'
-import type { BatchTestModelRow } from '../api'
+import type { BatchTestModelRow } from '@/api/admin/accountJobs'
 
-const { batchTestModels, batchTest, resource } = vi.hoisted(() => ({ batchTestModels: vi.fn(), batchTest: vi.fn(), resource: vi.fn() }))
-vi.mock('../api', () => ({ accountJobsAPI: { batchTestModels, batchTest } }))
-vi.mock('@sub2api/plugin-ui', async () => {
-  const actual = await vi.importActual<typeof import('@sub2api/plugin-ui')>('@sub2api/plugin-ui')
-  const { ref } = await import('vue')
-  return { ...actual, resource, useNotifications: () => ({ showError: vi.fn() }), usePersistentDraft: () => ref('') }
-})
+const { batchTestModels, batchTest, post } = vi.hoisted(() => ({ batchTestModels: vi.fn(), batchTest: vi.fn(), post: vi.fn() }))
+vi.mock('@/api/admin/accountJobs', () => ({ default: { batchTestModels, batchTest } }))
+vi.mock('@/api/client', () => ({ apiClient: { post } }))
+vi.mock('@/stores/app', () => ({ useAppStore: () => ({ showError: vi.fn() }) }))
+vi.mock('@/components/admin/account-jobs/AccountOperationDialog.vue', () => ({ default: { props: ['job', 'show'], template: '<div><slot/><slot name="footer"/></div>' } }))
 vi.mock('vue-i18n', async importOriginal => ({ ...await importOriginal<typeof import('vue-i18n')>(), useI18n: () => ({ t: (key: string) => key }) }))
 
 function row(id: number, ids = [`raw-${id}-a`, `raw-${id}-b`], defaultID = ids[ids.length - 1] || ''): BatchTestModelRow {
@@ -81,12 +79,12 @@ describe('BatchTestAccountModal versioned plans', () => {
     expect(batchTest).toHaveBeenCalledWith([{ account_id: 2, model_id: 'raw-2-b' }], '')
   })
 
-  it('requests the named view through the existing scoped tests.models resource', async () => {
-    const actual = await vi.importActual<typeof import('../api')>('../api')
+  it('requests the account test plan view for every row', async () => {
+    const actual = await vi.importActual<typeof import('@/api/admin/accountJobs')>('@/api/admin/accountJobs')
     const controller = new AbortController()
-    resource.mockResolvedValueOnce({ items: [row(7)] })
-    expect(await actual.accountJobsAPI.batchTestModels([7], controller.signal)).toEqual([row(7)])
-    expect(resource).toHaveBeenCalledWith('tests.models', { body: { account_ids: [7] }, query: { view: 'account-test-plan-v1' } }, controller.signal)
+    post.mockResolvedValueOnce({ data: { items: [row(7)] } })
+    expect(await actual.default.batchTestModels([7], controller.signal)).toEqual([row(7)])
+    expect(post).toHaveBeenCalledWith('/admin/accounts/batch-test-models', { account_ids: [7] }, { params: { view: 'account-test-plan-v1' }, signal: controller.signal })
     expect(batchTest).not.toHaveBeenCalled()
   })
 })

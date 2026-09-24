@@ -2,7 +2,6 @@ import { flushPromises, mount, type VueWrapper } from '@vue/test-utils'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createPinia } from 'pinia'
 import { nextTick } from 'vue'
-import { usePluginExtensions } from '@/stores/pluginExtensions'
 import { ADMIN_UI_REQUEST_HEADER } from '@/api/adminUIRequest'
 import type { Account, AccountTestPlanView } from '@/types'
 import AccountTestModal from '../AccountTestModal.vue'
@@ -26,9 +25,6 @@ function account(id: number, platform = 'cindy'): Account {
 let wrapper: VueWrapper | undefined
 function open(target = account(88)) {
   const pinia = createPinia()
-  const extensions = usePluginExtensions(pinia)
-  extensions.loaded = true
-  extensions.items = [] // A basic single test does not require account-tools UI.
   wrapper = mount(AccountTestModal, { attachTo: document.body, props: { show: true, account: target },
     global: { plugins: [pinia], stubs: { BaseDialog: { template: '<div><slot/><slot name="footer"/></div>' }, Icon: true } } })
   return wrapper

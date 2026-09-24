@@ -8,8 +8,8 @@ import (
 	"strings"
 	"testing"
 
-	accounttools "github.com/HTExplicit/sub2api-plugins/accounttools/policy"
 	cindy "github.com/HTExplicit/sub2api-plugins/cindyprovider/catalog"
+	accounttools "github.com/Wei-Shaw/sub2api/internal/accounttools/policy"
 	"github.com/Wei-Shaw/sub2api/internal/service"
 	"github.com/Wei-Shaw/sub2api/internal/testextensions"
 	extensionv1 "github.com/Wei-Shaw/sub2api/pkg/extensionapi/v1"

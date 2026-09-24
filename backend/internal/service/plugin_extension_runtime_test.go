@@ -97,29 +97,3 @@ func TestCindyProviderExtensionRuntimeUsesIndependentProcess(t *testing.T) {
 	require.True(t, known)
 	require.Positive(t, pricing.InputCostPerToken)
 }
-
-func TestAccountToolsExtensionRuntimeUsesIndependentProcess(t *testing.T) {
-	binary := os.Getenv("SUB2API_ACCOUNT_TOOLS_TEST_BINARY")
-	if binary == "" {
-		t.Skip("set SUB2API_ACCOUNT_TOOLS_TEST_BINARY to the independent account-tools program")
-	}
-	data, err := os.ReadFile(binary)
-	require.NoError(t, err)
-	digest := sha256.Sum256(data)
-	installation := &PluginInstallation{ID: 10, PluginKey: "codexrip.account-tools", Version: firstPartyTestVersion(t, "account-tools"), BinaryPath: binary, BinarySHA256: hex.EncodeToString(digest[:]), Manifest: PluginManifest{Requires: PluginRequirements{ExtensionAPI: 1}, Capabilities: []PluginCapability{{ID: extensionv1.CapabilityAdmin, Platform: "*", AccountType: "*"}}}}
-	host := newPluginHostServiceServer(installation.PluginKey, nil, nil, PluginAccountScope{})
-	host.extension = &pluginExtensionHost{key: installation.PluginKey, state: &extensionReadOnlyFixture{}}
-	socketDir := filepath.Join(t.TempDir(), "runtime")
-	require.NoError(t, os.MkdirAll(socketDir, 0700))
-	runtime, err := startPluginRuntime(context.Background(), installation, 15*time.Second, socketDir, host)
-	require.NoError(t, err)
-	t.Cleanup(runtime.kill)
-	require.NoError(t, runtime.validateAndApplyConfig(context.Background(), []byte(`{}`)))
-	out, err := runtime.extension.Invoke(context.Background(), extensionv1.Invocation{Capability: extensionv1.CapabilityAdmin, Operation: "taxonomy.name", Payload: []byte(`{"name":"  Production  "}`)})
-	require.NoError(t, err)
-	require.Empty(t, out.Code)
-	var name extensionv1.TaxonomyName
-	require.NoError(t, json.Unmarshal(out.Payload, &name))
-	require.Equal(t, "Production", name.Name)
-	require.Equal(t, "production", name.Normalized)
-}

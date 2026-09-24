@@ -457,7 +457,20 @@ func registerAccountRoutes(admin *gin.RouterGroup, h *handler.Handlers, stepUpAu
 		accounts.GET("/ollama-cloud-usage/settings", h.Admin.Account.GetOllamaCloudUsageSettings)
 		accounts.PUT("/ollama-cloud-usage/settings", h.Admin.Account.UpdateOllamaCloudUsageSettings)
 		accounts.GET("/facets", h.Admin.Account.GetAccountFacets)
-		registerAccountToolResources(accounts, h)
+		accounts.GET("/folders", h.Admin.Account.ListAccountFolders)
+		accounts.POST("/folders", h.Admin.Account.CreateAccountFolder)
+		accounts.PUT("/folders/order", h.Admin.Account.ReorderAccountFolders)
+		accounts.PUT("/folders/:id", h.Admin.Account.UpdateAccountFolder)
+		accounts.DELETE("/folders/:id", h.Admin.Account.DeleteAccountFolder)
+		accounts.GET("/tags", h.Admin.Account.ListAccountTags)
+		accounts.POST("/tags", h.Admin.Account.CreateAccountTag)
+		accounts.PUT("/tags/order", h.Admin.Account.ReorderAccountTags)
+		accounts.PUT("/tags/:id", h.Admin.Account.UpdateAccountTag)
+		accounts.DELETE("/tags/:id", h.Admin.Account.DeleteAccountTag)
+		accounts.PUT("/:id/taxonomy", h.Admin.Account.SetAccountTaxonomy)
+		accounts.POST("/bulk-taxonomy", h.Admin.Account.BulkUpdateAccountTaxonomy)
+		accounts.POST("/batch-test-models", h.Admin.Account.BatchTestModels)
+		accounts.POST("/batch-test", h.Admin.Account.BatchTest)
 		for _, route := range []struct {
 			name, method, path string
 			handler            gin.HandlerFunc
@@ -541,8 +554,8 @@ func registerAccountRoutes(admin *gin.RouterGroup, h *handler.Handlers, stepUpAu
 		accounts.POST("/batch", h.Admin.Account.BatchCreate)
 		// 账号导出泄露上游凭证原文——要求 step-up 2FA
 		accounts.GET("/data", gin.HandlerFunc(stepUpAuth), h.Admin.Account.ExportData)
-		accounts.POST("/data/preview", h.Admin.Plugin.RegisterResource(extensionv1.ResourceDescriptor{ResourceGrant: extensionv1.ResourceGrant{Name: "import.preview", Capability: extensionv1.CapabilityAdmin, Permission: "admin"}, Method: "POST", Path: accounts.BasePath() + "/data/preview", AllAccounts: true}), h.Admin.Account.PreviewImportData)
-		accounts.POST("/data", h.Admin.Plugin.RegisterResource(extensionv1.ResourceDescriptor{ResourceGrant: extensionv1.ResourceGrant{Name: "import.submit", Capability: extensionv1.CapabilityAdmin, Permission: "admin"}, Method: "POST", Path: accounts.BasePath() + "/data", AllAccounts: true}), h.Admin.Account.ImportData)
+		accounts.POST("/data/preview", h.Admin.Account.PreviewImportData)
+		accounts.POST("/data", h.Admin.Account.ImportData)
 		accounts.POST("/batch-update-credentials", h.Admin.Account.BatchUpdateCredentials)
 		accounts.POST("/batch-refresh-tier", h.Admin.Account.BatchRefreshTier)
 		accounts.POST("/bulk-update", h.Admin.Account.BulkUpdate)

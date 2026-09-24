@@ -1,3 +1,4 @@
+vi.mock('@/components/admin/account-jobs/AccountOperationDialog.vue', () => ({ default: { props: ['job', 'show'], template: '<div><slot/><slot name="footer"/></div>' } }))
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import AccountBulkTaxonomyModal from '../AccountBulkTaxonomyModal.vue'
@@ -6,8 +7,8 @@ const { bulkUpdateTaxonomy, showError } = vi.hoisted(() => ({
   bulkUpdateTaxonomy: vi.fn(),
   showError: vi.fn()
 }))
-vi.mock('../api', () => ({ adminAPI: { accounts: { bulkUpdateTaxonomy } } }))
-vi.mock('@sub2api/plugin-ui', async () => ({ ...await vi.importActual<typeof import('@sub2api/plugin-ui')>('@sub2api/plugin-ui'), useNotifications: () => ({ showError }) }))
+vi.mock('@/api/admin', () => ({ adminAPI: { accounts: { bulkUpdateTaxonomy } } }))
+vi.mock('@/stores/app', () => ({ useAppStore: () => ({ showError }) }))
 vi.mock('vue-i18n', () => ({ useI18n: () => ({ t: (key: string, params?: Record<string, unknown>) => `${key}${params?.count ?? ''}` }) }))
 
 const BaseDialogStub = { props: ['show'], template: '<div v-if="show"><slot /><slot name="footer" /></div>' }

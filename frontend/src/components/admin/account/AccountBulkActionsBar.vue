@@ -45,7 +45,7 @@
     <div class="flex flex-wrap gap-2">
       <template v-if="selectedIds.length > 0">
         <button @click="$emit('delete')" class="btn btn-danger btn-sm">{{ t('admin.accounts.bulkActions.delete') }}</button>
-        <ExtensionSurface name="account-batch-test"><button data-test="batch-test" @click="$emit('test')" class="btn btn-secondary btn-sm">{{ t('admin.accounts.batchTest.title') }}</button></ExtensionSurface>
+        <button data-test="batch-test" @click="$emit('test')" class="btn btn-secondary btn-sm">{{ t('admin.accounts.batchTest.title') }}</button>
         <ExtensionSlot name="account.actions" :account-ids="selectedIds" :accounts="selectedAccounts" />
         <button v-if="promptBindingAvailable" type="button" data-test="account-prompt-binding-bulk" class="btn btn-secondary btn-sm" @click="promptBindingOpen = true">
           {{ t('admin.systemPrompts.accountPrompts') }}
@@ -66,14 +66,14 @@
         <button @click="$emit('toggle-schedulable', true)" class="btn btn-success btn-sm">{{ t('admin.accounts.bulkActions.enableScheduling') }}</button>
         <button @click="$emit('toggle-schedulable', false)" class="btn btn-warning btn-sm">{{ t('admin.accounts.bulkActions.disableScheduling') }}</button>
         <button @click="$emit('edit-selected')" class="btn btn-primary btn-sm">{{ t('admin.accounts.bulkActions.edit') }}</button>
-        <ExtensionSurface name="account-taxonomy"><button @click="$emit('taxonomy-selected')" class="btn btn-secondary btn-sm">{{ t('admin.accounts.bulkTaxonomy.selectedAction') }}</button></ExtensionSurface>
+        <button @click="$emit('taxonomy-selected')" class="btn btn-secondary btn-sm">{{ t('admin.accounts.bulkTaxonomy.selectedAction') }}</button>
       </template>
       <button @click="$emit('edit-filtered')" class="btn btn-primary btn-sm">
         {{ t('admin.accounts.bulkEdit.submit') }}
       </button>
-      <ExtensionSurface name="account-taxonomy"><button @click="$emit('taxonomy-filtered')" class="btn btn-secondary btn-sm">
+      <button @click="$emit('taxonomy-filtered')" class="btn btn-secondary btn-sm">
         {{ t('admin.accounts.bulkTaxonomy.filteredAction') }}
-      </button></ExtensionSurface>
+      </button>
     </div>
   </div>
   <BaseDialog :show="promptBindingOpen" :title="t('admin.systemPrompts.accountPrompts')" width="normal" @close="promptBindingOpen = false">
@@ -83,7 +83,6 @@
 
 <script setup lang="ts">
 import { computed, defineAsyncComponent, ref } from 'vue'
-import ExtensionSurface from '@/components/plugins/ExtensionSurface.vue'
 import { useI18n } from 'vue-i18n'
 import BaseDialog from '@/components/common/BaseDialog.vue'
 import { accountPromptBindingLimit, supportsAccountPromptBinding } from '@/utils/accountPromptBinding'

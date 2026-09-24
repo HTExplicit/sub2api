@@ -51,7 +51,7 @@ describe('accountJobsAPI', () => {
     post.mockResolvedValueOnce({ data: { items: [{ account_id: 7, models: [] }] } })
     expect(await accountJobsAPI.batchTestModels([7], signal)).toEqual([{ account_id: 7, models: [] }])
     await accountJobsAPI.batchTest([{ account_id: 7, model_id: 'raw-alias' }])
-    expect(post).toHaveBeenNthCalledWith(1, '/admin/accounts/batch-test-models', { account_ids: [7] }, { signal })
+    expect(post).toHaveBeenNthCalledWith(1, '/admin/accounts/batch-test-models', { account_ids: [7] }, { params: { view: 'account-test-plan-v1' }, signal })
     expect(post).toHaveBeenNthCalledWith(2, '/admin/accounts/batch-test', { items: [{ account_id: 7, model_id: 'raw-alias' }], prompt: '' }, { headers: { 'Idempotency-Key': expect.stringMatching(/^account_batch_test-/) } })
   })
 

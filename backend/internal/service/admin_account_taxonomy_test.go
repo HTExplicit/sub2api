@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"testing"
 	"time"
 
@@ -15,20 +16,14 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-type taxonomyAssignmentPlanFixture struct {
-	promptPolicyFixture
-	plan extensionv1.TaxonomyAssignmentPlan
+func replaceAccountTools(t *testing.T, invoke func(context.Context, extensionv1.Invocation) (extensionv1.Result, error)) {
+	t.Helper()
+	previous := invokeAccountTools
+	t.Cleanup(func() { invokeAccountTools = previous })
+	invokeAccountTools = invoke
 }
 
-func (f taxonomyAssignmentPlanFixture) InvokeOperation(ctx context.Context, platform, kind string, in extensionv1.Invocation) (extensionv1.Result, error) {
-	if in.Operation == "taxonomy.assignment" {
-		raw, err := json.Marshal(f.plan)
-		return extensionv1.Result{Payload: raw}, err
-	}
-	return f.promptPolicyFixture.InvokeOperation(ctx, platform, kind, in)
-}
-
-func TestSetAccountTaxonomyRejectsChangedPluginAssignmentBeforeTransaction(t *testing.T) {
+func TestSetAccountTaxonomyRejectsChangedAssignmentPlanBeforeTransaction(t *testing.T) {
 	folder, otherFolder := int64(7), int64(8)
 	for _, tc := range []struct {
 		name string
@@ -40,16 +35,17 @@ func TestSetAccountTaxonomyRejectsChangedPluginAssignmentBeforeTransaction(t *te
 		{"omitted-tag", extensionv1.TaxonomyAssignmentPlan{FolderID: &folder, TagIDs: []int64{5}}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			previous := processExtensionOperations.Load()
-			t.Cleanup(func() { processExtensionOperations.Store(previous) })
-			processExtensionOperations.Store(&extensionOperationProvider{invoker: taxonomyAssignmentPlanFixture{plan: tc.plan}})
+			replaceAccountTools(t, func(context.Context, extensionv1.Invocation) (extensionv1.Result, error) {
+				raw, err := json.Marshal(tc.plan)
+				return extensionv1.Result{Payload: raw}, err
+			})
 			db, mock, err := sqlmock.New()
 			require.NoError(t, err)
 			client := dbent.NewClient(dbent.Driver(entsql.OpenDB(dialect.Postgres, db)))
 			t.Cleanup(func() { _ = client.Close() })
 			svc := &adminServiceImpl{entClient: client}
 			account, err := svc.SetAccountTaxonomy(context.Background(), 42, AccountTaxonomyAssignment{FolderID: &folder, TagIDs: []int64{5, 5, 6}})
-			require.ErrorIs(t, err, ErrExtensionOperationUnavailable, "a plugin cannot replace or expand the user's assignment")
+			require.ErrorIs(t, err, ErrExtensionOperationUnavailable, "a plan cannot replace or expand the user's assignment")
 			require.Nil(t, account)
 			require.NoError(t, mock.ExpectationsWereMet(), "no transaction or query should be started for a changed assignment")
 		})
@@ -57,21 +53,20 @@ func TestSetAccountTaxonomyRejectsChangedPluginAssignmentBeforeTransaction(t *te
 }
 
 func TestTaxonomyAssignmentPreservesPolicyNormalizationAndFailsClosed(t *testing.T) {
-	previous := processExtensionOperations.Load()
-	t.Cleanup(func() { processExtensionOperations.Store(previous) })
-	processExtensionOperations.Store(&extensionOperationProvider{invoker: promptPolicyFixture{}})
 	folder := int64(7)
 	input := AccountTaxonomyAssignment{FolderID: &folder, TagIDs: []int64{6, 5, 6}}
 	var plan extensionv1.TaxonomyAssignmentPlan
-	require.NoError(t, accountToolsOperation(context.Background(), "*", "*", "taxonomy.assignment", extensionv1.TaxonomyAssignmentPlan{FolderID: input.FolderID, TagIDs: input.TagIDs}, &plan))
-	require.Equal(t, []int64{6, 5}, plan.TagIDs, "plugin remains the owner of stable deduplication")
+	require.NoError(t, accountToolsOperation(context.Background(), "taxonomy.assignment", extensionv1.TaxonomyAssignmentPlan{FolderID: input.FolderID, TagIDs: input.TagIDs}, &plan))
+	require.Equal(t, []int64{6, 5}, plan.TagIDs, "the policy owns stable deduplication")
 	require.NoError(t, validateTaxonomyAssignmentIntent(input, plan))
 	require.NoError(t, validateTaxonomyAssignmentIntent(AccountTaxonomyAssignment{}, extensionv1.TaxonomyAssignmentPlan{}))
-	processExtensionOperations.Store(nil)
+	replaceAccountTools(t, func(context.Context, extensionv1.Invocation) (extensionv1.Result, error) {
+		return extensionv1.Result{}, errors.New("policy failed")
+	})
 	svc := &adminServiceImpl{}
 	account, err := svc.SetAccountTaxonomy(context.Background(), 42, input)
 	require.Error(t, err)
-	require.Nil(t, account, "disabled policy must fail before using the nil database, without a host fallback")
+	require.Nil(t, account, "a failed policy must stop before using the nil database")
 	result, err := svc.BulkUpdateAccountTaxonomy(context.Background(), BulkAccountTaxonomyInput{AccountIDs: []int64{42}, FolderAction: "clear"})
 	require.Error(t, err)
 	require.Nil(t, result)

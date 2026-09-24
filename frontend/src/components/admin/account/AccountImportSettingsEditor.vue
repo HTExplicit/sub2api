@@ -93,7 +93,7 @@
 <script setup lang="ts">
 import { computed, defineComponent, h } from 'vue'
 import { useI18n } from 'vue-i18n'
-import type { AccountManagementFolder, AccountManagementTag, AdminGroup, Proxy } from './api'
+import type { AccountManagementFolder, AccountManagementTag, AdminGroup, Proxy } from '@/types'
 
 export interface AccountImportSettingsDraft {
   enabled: {

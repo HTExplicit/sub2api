@@ -15,13 +15,12 @@ import (
 type batchTestJobItem = extensionv1.BatchTestSelection
 
 type batchTestJobPayload struct {
-	Prompt        string             `json:"prompt,omitempty"`
-	AccountIDs    []int64            `json:"account_ids,omitempty"`
-	ModelID       string             `json:"model_id,omitempty"`
-	Items         []batchTestJobItem `json:"items,omitempty"`
-	hasItems      bool
-	hasLegacy     bool
-	ownerPluginID int64
+	Prompt     string             `json:"prompt,omitempty"`
+	AccountIDs []int64            `json:"account_ids,omitempty"`
+	ModelID    string             `json:"model_id,omitempty"`
+	Items      []batchTestJobItem `json:"items,omitempty"`
+	hasItems   bool
+	hasLegacy  bool
 }
 
 func (p *batchTestJobPayload) UnmarshalJSON(raw []byte) error {
@@ -52,7 +51,7 @@ func (p *batchTestJobPayload) normalizeContext(ctx context.Context) ([]int64, ma
 		return nil, nil, err
 	}
 	explicit := p.hasItems || p.Items != nil
-	plan, owner, err := service.PlanBatchAccountTests(ctx, extensionv1.BatchTestPlanningRequest{HasItems: explicit, HasLegacy: p.hasLegacy, AccountIDs: p.AccountIDs, ModelID: p.ModelID, Items: p.Items})
+	plan, err := service.PlanBatchAccountTests(ctx, extensionv1.BatchTestPlanningRequest{HasItems: explicit, HasLegacy: p.hasLegacy, AccountIDs: p.AccountIDs, ModelID: p.ModelID, Items: p.Items})
 	if err != nil {
 		return nil, nil, err
 	}
@@ -61,7 +60,6 @@ func (p *batchTestJobPayload) normalizeContext(ctx context.Context) ([]int64, ma
 	} else {
 		p.AccountIDs, p.ModelID = plan.AccountIDs, plan.ModelID
 	}
-	p.ownerPluginID = owner
 	return plan.AccountIDs, plan.Models, nil
 }
 
@@ -90,7 +88,7 @@ func (h *AccountHandler) BatchTest(c *gin.Context) {
 		}
 		seeds[i].Metadata, _ = json.Marshal(metadata)
 	}
-	h.submitAccountJob(c, service.AccountJobKindBatchTest, req, seeds, req.ownerPluginID)
+	h.submitAccountJob(c, service.AccountJobKindBatchTest, req, seeds)
 }
 
 // Shared across requests, including catalog loads by multiple administrators.
@@ -125,7 +123,7 @@ func (h *AccountHandler) BatchTestModels(c *gin.Context) {
 		response.BadRequest(c, err.Error())
 		return
 	}
-	if _, _, err := service.PlanBatchAccountTests(c.Request.Context(), extensionv1.BatchTestPlanningRequest{HasLegacy: true, AccountIDs: ids}); err != nil {
+	if _, err := service.PlanBatchAccountTests(c.Request.Context(), extensionv1.BatchTestPlanningRequest{HasLegacy: true, AccountIDs: ids}); err != nil {
 		response.ErrorFrom(c, err)
 		return
 	}

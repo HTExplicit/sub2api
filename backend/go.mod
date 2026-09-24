@@ -4,13 +4,10 @@ go 1.27.0
 
 replace github.com/HTExplicit/sub2api-plugins/codexruntime => ../plugins/codex-runtime
 
-replace github.com/HTExplicit/sub2api-plugins/accounttools => ../plugins/account-tools
-
 replace github.com/HTExplicit/sub2api-plugins/cindyprovider => ../plugins/cindy-provider
 
 require (
 	github.com/HTExplicit/sub2api-plugins/codexruntime v0.0.0
-	github.com/HTExplicit/sub2api-plugins/accounttools v0.0.0
 	github.com/HTExplicit/sub2api-plugins/cindyprovider v0.0.0
 	entgo.io/ent v0.14.5
 	github.com/DATA-DOG/go-sqlmock v1.5.2

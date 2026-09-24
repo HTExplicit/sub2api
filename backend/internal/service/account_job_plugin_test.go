@@ -44,7 +44,7 @@ func TestPluginOwnedHostJobHoldsUpdateLeaseUntilCleanup(t *testing.T) {
 	manager, runtime, repo := accountJobPolicyManager()
 	core := &accountJobHostFixture{}
 	executor := NewPluginJobExecutor(manager, core)
-	job := &AccountJob{Kind: AccountJobKindImportData, Metadata: []byte(`{"plugin_id":7,"plugin_generation":2}`)}
+	job := &AccountJob{Kind: AccountJobKindImportCodex, Metadata: []byte(`{"plugin_id":7,"plugin_generation":2}`)}
 	_, _, err := executor.PrepareAccountJob(context.Background(), job, []byte(`{}`))
 	require.ErrorIs(t, err, ErrAccountJobPluginUnavailable)
 	require.Zero(t, repo.held.Load())
@@ -108,23 +108,6 @@ func TestPluginAdminSubmissionUsesTheActualAccountScopeAndRollout(t *testing.T) 
 	require.Error(t, manager.ValidateAdminExtension(context.Background(), 7, 37, "fixture.run"))
 }
 
-func TestLegacyImportJobUsesCurrentPluginLifetimeWithoutRewritingHistory(t *testing.T) {
-	manager, runtime, plugins := accountJobPolicyManager()
-	plugins.installation.Manifest.Operations = map[string][]string{extensionv1.CapabilityAdmin: {"import.plan"}}
-	executor := NewPluginJobExecutor(manager, &accountJobHostFixture{})
-	job := &AccountJob{Kind: AccountJobKindImportData, Metadata: []byte(`{}`)}
-	ctx, release, err := executor.PrepareAccountJob(context.Background(), job, []byte(`{}`))
-	require.NoError(t, err)
-	owner, bound := PluginExecutionFromContext(ctx)
-	require.True(t, bound)
-	require.Equal(t, PluginExecution{ID: 7, Generation: 3}, owner)
-	require.JSONEq(t, `{}`, string(job.Metadata))
-	runtime.beginDrain()
-	require.ErrorIs(t, ctx.Err(), context.Canceled)
-	release()
-	require.Zero(t, plugins.held.Load())
-}
-
 type pluginJobCancellationRepo struct {
 	*accountJobTestRepo
 	cancels    atomic.Int32
@@ -156,10 +139,9 @@ func (e *pluginJobCancellationExecutor) ExecuteAccountJob(ctx context.Context, _
 func TestPluginJobCompletionDoesNotCancelButPolicyStopPersistsCancellation(t *testing.T) {
 	for _, stop := range []bool{false, true} {
 		manager, plugin, plugins := accountJobPolicyManager()
-		plugins.installation.Manifest.Operations = map[string][]string{extensionv1.CapabilityAdmin: {"import.plan"}}
 		repo := &pluginJobCancellationRepo{accountJobTestRepo: newAccountJobTestRepo()}
 		jobs := NewAccountJobService(repo, accountJobTestCipher{})
-		job, _, err := jobs.Submit(context.Background(), 9, AccountJobKindImportData, "fixture", []byte(`{}`), nil, []AccountJobItemSeed{{Ordinal: 1}})
+		job, _, err := jobs.Submit(WithPluginExecution(context.Background(), plugins.installation), 9, AccountJobKindImportCodex, "fixture", []byte(`{}`), nil, []AccountJobItemSeed{{Ordinal: 1}})
 		require.NoError(t, err)
 		core := &pluginJobCancellationExecutor{wait: stop, started: make(chan struct{})}
 		runner := &AccountJobRuntime{jobs: jobs, executor: NewPluginJobExecutor(manager, core), ctx: context.Background()}

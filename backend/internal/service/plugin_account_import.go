@@ -123,7 +123,7 @@ func collectAccountImportPlans(ctx context.Context, in extensionv1.AccountImport
 	const chunkSize = 1000
 	if len(in.Items) <= chunkSize {
 		var plans []extensionv1.AccountImportItemPlan
-		err := accountToolsOperation(ctx, "*", "*", "import.plan", in, &plans)
+		err := accountToolsOperation(ctx, "import.plan", in, &plans)
 		return plans, err
 	}
 	prepared := make([]extensionv1.AccountImportItemPlan, 0, len(in.Items))
@@ -133,7 +133,7 @@ func collectAccountImportPlans(ctx context.Context, in extensionv1.AccountImport
 		chunk.Phase = "prepare"
 		chunk.Items = in.Items[start:end]
 		var plans []extensionv1.AccountImportItemPlan
-		if err := accountToolsOperation(ctx, "*", "*", "import.plan", chunk, &plans); err != nil {
+		if err := accountToolsOperation(ctx, "import.plan", chunk, &plans); err != nil {
 			return nil, err
 		}
 		if len(plans) != len(chunk.Items) {
@@ -169,7 +169,7 @@ func collectAccountImportPlans(ctx context.Context, in extensionv1.AccountImport
 			}
 		}
 		var plans []extensionv1.AccountImportItemPlan
-		if err := accountToolsOperation(ctx, "*", "*", "import.plan", chunk, &plans); err != nil {
+		if err := accountToolsOperation(ctx, "import.plan", chunk, &plans); err != nil {
 			return nil, err
 		}
 		if len(plans) != len(chunk.Items) {

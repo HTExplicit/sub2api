@@ -73,9 +73,8 @@
             </p>
           </section>
 
-          <ExtensionWidget name="account-taxonomy-edit" plugin-key="codexrip.account-tools"
-            :context="{ account_id: account.id, view_props: { accountId: account.id, folderId: account.management_folder?.id, tagIds: (account.tags || []).map(tag => tag.id), folders, tags } }"
-            @event="name => { if (name === 'changed') refreshTaxonomyAccount() }" />
+          <AccountTaxonomyEditor :account-id="account.id" :folder-id="account.management_folder?.id" :tag-ids="(account.tags || []).map(tag => tag.id)"
+            :folders="folders" :tags="tags" @changed="refreshTaxonomyAccount" />
 
           <AccountPromptBindingPanel v-if="account.platform === 'openai' || account.platform === 'cindy'"
             :account-ids="[account.id]" @changed="refreshTaxonomyAccount" />
@@ -162,7 +161,7 @@
 <script setup lang="ts">
 import { provideAccountViewContext, useAccountViewOperation } from '@/composables/useAccountViewContext'
 import { accountAPIForView } from '@/api/admin/accounts'
-import ExtensionWidget from '@/components/plugins/ExtensionWidget.vue'
+import AccountTaxonomyEditor from './AccountTaxonomyEditor.vue'
 import AccountPromptBindingPanel from './AccountPromptBindingPanel.vue'
 import CodexFingerprintPanel from './CodexFingerprintPanel.vue'
 import { computed, onMounted, onUnmounted } from 'vue'

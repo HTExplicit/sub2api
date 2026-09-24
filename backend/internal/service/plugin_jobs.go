@@ -38,6 +38,11 @@ func (e *PluginJobExecutor) PrepareAccountJob(ctx context.Context, job *AccountJ
 	if err != nil {
 		return ctx, nil, err
 	}
+	if isInProcessAccountToolsJob(job.Kind) {
+		// Import, batch test and bulk classification plans run in process now;
+		// an account-tools owner recorded before the upgrade has nothing to bind.
+		owner = PluginExecution{}
+	}
 	ctx, releaseView, err := e.manager.BindAccountJobView(ctx, job.Metadata, payload, false)
 	if err != nil {
 		return ctx, nil, err
@@ -63,33 +68,11 @@ func (e *PluginJobExecutor) PrepareAccountJob(ctx context.Context, job *AccountJ
 	} else {
 		// Pre-plugin pending jobs keep their records, but use the current
 		// domain policy and lifetime once their execution path has migrated.
-		operation := ""
-		switch job.Kind {
-		case AccountJobKindImportData:
-			operation = "import.plan"
-		case AccountJobKindBatchTest:
-			operation = "test.batch"
-		case AccountJobKindBulkTaxonomy:
-			operation = "taxonomy.bulk"
-		}
 		if isCindyCleanupAccountJob(job.Kind) {
 			if e.manager == nil {
 				return ctx, nil, ErrAccountJobPluginUnavailable
 			}
 			id, lookupErr := e.manager.PinnedPluginOwner(ctx, CindyAccountViewPluginKey)
-			if lookupErr != nil {
-				return ctx, nil, ErrAccountJobPluginUnavailable
-			}
-			ctx, releasePrimary, err = e.manager.BindAccountJobExecution(ctx, id, 0, job.Kind)
-			if err != nil {
-				releasePrimary = func() {}
-				return ctx, nil, err
-			}
-		} else if operation != "" {
-			if e.manager == nil {
-				return ctx, nil, ErrAccountJobPluginUnavailable
-			}
-			id, _, lookupErr := e.manager.operationOwner("*", "*", extensionv1.Invocation{Capability: extensionv1.CapabilityAdmin, Operation: operation})
 			if lookupErr != nil {
 				return ctx, nil, ErrAccountJobPluginUnavailable
 			}
@@ -141,6 +124,9 @@ func (e *PluginJobExecutor) ExecuteAccountJob(ctx context.Context, job *AccountJ
 	owner, ownerErr := AccountJobPluginExecution(job.Metadata)
 	if ownerErr != nil {
 		return nil, ownerErr
+	}
+	if isInProcessAccountToolsJob(job.Kind) {
+		owner = PluginExecution{}
 	}
 	execution, bound := PluginExecutionFromContext(ctx)
 	if owner.ID == 0 && bound {
@@ -236,4 +222,8 @@ func (e *PluginJobExecutor) ExecuteAccountJob(ctx context.Context, job *AccountJ
 		result.ErrorMessage = ""
 	}
 	return []AccountJobExecutionResult{result}, nil
+}
+
+func isInProcessAccountToolsJob(kind string) bool {
+	return kind == AccountJobKindImportData || kind == AccountJobKindBatchTest || kind == AccountJobKindBulkTaxonomy
 }

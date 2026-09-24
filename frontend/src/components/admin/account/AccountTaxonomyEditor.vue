@@ -21,19 +21,20 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { useNotifications } from '@sub2api/plugin-ui'
-import { accounts, type AccountManagementFolder, type AccountManagementTag } from './api'
+import { adminAPI } from '@/api/admin'
+import { useAppStore } from '@/stores/app'
+import type { AccountManagementFolder, AccountManagementTag } from '@/types'
 const props = defineProps<{ accountId: number; folderId?: number | null; tagIds: number[]; folders: AccountManagementFolder[]; tags: AccountManagementTag[] }>()
 const emit = defineEmits<{ changed: [] }>()
 const { t } = useI18n()
-const notifications = useNotifications()
+const notifications = useAppStore()
 const folder = ref(''), selectedTags = ref<number[]>([]), saving = ref(false)
 watch(() => props.accountId, () => { folder.value = props.folderId ? String(props.folderId) : ''; selectedTags.value = [...props.tagIds] }, { immediate: true })
 const dirty = computed(() => folder.value !== (props.folderId ? String(props.folderId) : '') || JSON.stringify([...selectedTags.value].sort((a, b) => a - b)) !== JSON.stringify([...props.tagIds].sort((a, b) => a - b)))
 async function save() {
   if (saving.value || !dirty.value) return
   saving.value = true
-  try { await accounts.setTaxonomy(props.accountId, folder.value ? Number(folder.value) : null, selectedTags.value); emit('changed'); notifications.showSuccess(t('admin.accounts.taxonomySaved')) }
+  try { await adminAPI.accounts.setTaxonomy(props.accountId, folder.value ? Number(folder.value) : null, selectedTags.value); emit('changed'); notifications.showSuccess(t('admin.accounts.taxonomySaved')) }
   catch (error) { notifications.showError(error instanceof Error ? error.message : t('common.operationFailed')) }
   finally { saving.value = false }
 }

@@ -61,8 +61,6 @@ coverage/
 !/plugins/model-policy/**
 !/plugins/prompt-skills/
 !/plugins/prompt-skills/**
-!/plugins/account-tools/
-!/plugins/account-tools/**
 !/plugins/cindy-provider/
 !/plugins/cindy-provider/**
 !/plugins/image-tools/

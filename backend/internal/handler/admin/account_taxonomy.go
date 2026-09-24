@@ -379,8 +379,7 @@ func (h *AccountHandler) BulkUpdateAccountTaxonomy(c *gin.Context) {
 		}
 		hasFilters = false // Only seeds change; keep the original request/hash.
 	}
-	owner, err := service.ValidateAccountTaxonomyPlan(c.Request.Context(), extensionv1.TaxonomyBulkPlan{AccountIDs: targetIDs, HasFilters: hasFilters, ExpectedMatchCount: req.ExpectedMatchCount, FolderAction: req.FolderAction, FolderID: req.FolderID, TagAddIDs: req.TagAddIDs, TagRemoveIDs: req.TagRemoveIDs})
-	if err != nil {
+	if err := service.ValidateAccountTaxonomyPlan(c.Request.Context(), extensionv1.TaxonomyBulkPlan{AccountIDs: targetIDs, HasFilters: hasFilters, ExpectedMatchCount: req.ExpectedMatchCount, FolderAction: req.FolderAction, FolderID: req.FolderID, TagAddIDs: req.TagAddIDs, TagRemoveIDs: req.TagRemoveIDs}); err != nil {
 		response.ErrorFrom(c, err)
 		return
 	}
@@ -388,7 +387,7 @@ func (h *AccountHandler) BulkUpdateAccountTaxonomy(c *gin.Context) {
 	if len(seeds) == 0 {
 		seeds = ordinalAccountJobSeeds(1)
 	}
-	h.submitAccountJob(c, service.AccountJobKindBulkTaxonomy, req, seeds, owner)
+	h.submitAccountJob(c, service.AccountJobKindBulkTaxonomy, req, seeds)
 }
 
 func splitQueryValues(c *gin.Context, keys ...string) []string {

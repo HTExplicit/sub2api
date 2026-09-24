@@ -156,14 +156,13 @@ jobs:
             src/components/common/__tests__/VersionBadge.downstream.spec.ts \
             src/api/__tests__/downstreamStatus.spec.ts \
             src/i18n/__tests__/accountConsoleLocales.spec.ts \
-            ../plugins/account-tools/ui/src/__tests__/data-import.spec.ts \
-            ../plugins/account-tools/ui/src/__tests__/ImportDataModal.spec.ts \
+            src/__tests__/integration/data-import.spec.ts \
+            src/components/admin/account/__tests__/ImportDataModal.spec.ts \
             src/components/admin/account-jobs/__tests__/AccountTaskDrawer.spec.ts \
             src/stores/__tests__/accountJobs.spec.ts \
             src/composables/__tests__/useAccountSelectionMetadata.spec.ts \
             src/api/__tests__/accountOperationIdempotency.spec.ts \
             src/components/plugins/__tests__/ExtensionSlot.spec.ts \
-            src/components/plugins/__tests__/ExtensionFields.spec.ts \
             src/components/plugins/__tests__/AccountViewPage.spec.ts \
             src/components/plugins/__tests__/CindyAccountControls.spec.ts \
             src/components/plugins/__tests__/accountView.spec.ts \
@@ -177,11 +176,11 @@ jobs:
             src/components/plugins/__tests__/resourceClient.spec.ts \
             src/components/plugins/__tests__/localResources.spec.ts \
             src/features/image-studio/history.legacy.spec.ts \
-            ../plugins/account-tools/ui/src/__tests__/BatchTestAccountModal.spec.ts \
-            ../plugins/account-tools/ui/src/__tests__/BatchTestAccountModal.plan.spec.ts \
-            ../plugins/account-tools/ui/src/__tests__/AccountFolderBar.spec.ts \
-            ../plugins/account-tools/ui/src/__tests__/AccountTaxonomyManager.spec.ts \
-            ../plugins/account-tools/ui/src/__tests__/AccountBulkTaxonomyModal.spec.ts \
+            src/components/admin/account/__tests__/BatchTestAccountModal.spec.ts \
+            src/components/admin/account/__tests__/BatchTestAccountModal.plan.spec.ts \
+            src/components/admin/account/__tests__/AccountFolderBar.spec.ts \
+            src/components/admin/account/__tests__/AccountTaxonomyManager.spec.ts \
+            src/components/admin/account/__tests__/AccountBulkTaxonomyModal.spec.ts \
             src/components/admin/account/__tests__/AccountBulkActionsBar.spec.ts \
             src/components/admin/account/__tests__/AccountActionMenu.spark_shadow.spec.ts \
             src/components/admin/account/__tests__/AccountConsoleFilters.spec.ts \

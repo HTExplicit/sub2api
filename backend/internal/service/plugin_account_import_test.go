@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"testing"
 
 	extensionv1 "github.com/Wei-Shaw/sub2api/pkg/extensionapi/v1"
@@ -10,14 +11,13 @@ import (
 )
 
 type importPlanFixture struct {
-	promptPolicyFixture
 	payloadSizes []int
 	requests     []extensionv1.AccountImportPlanningRequest
 	corrupt      bool
 	mutate       func(extensionv1.AccountImportPlanningRequest, []extensionv1.AccountImportItemPlan)
 }
 
-func (f *importPlanFixture) InvokeOperation(ctx context.Context, platform, kind string, in extensionv1.Invocation) (extensionv1.Result, error) {
+func (f *importPlanFixture) invoke(ctx context.Context, in extensionv1.Invocation) (extensionv1.Result, error) {
 	var request extensionv1.AccountImportPlanningRequest
 	if in.Operation == "import.plan" {
 		f.payloadSizes = append(f.payloadSizes, len(in.Payload))
@@ -30,7 +30,7 @@ func (f *importPlanFixture) InvokeOperation(ctx context.Context, platform, kind 
 			return extensionv1.Result{Payload: raw}, nil
 		}
 	}
-	result, err := f.promptPolicyFixture.InvokeOperation(ctx, platform, kind, in)
+	result, err := accountTools().Invoke(ctx, in)
 	if err != nil || f.mutate == nil || in.Operation != "import.plan" {
 		return result, err
 	}
@@ -45,9 +45,7 @@ func (f *importPlanFixture) InvokeOperation(ctx context.Context, platform, kind 
 
 func installImportPlanFixture(t *testing.T, fixture *importPlanFixture) {
 	t.Helper()
-	previous := processExtensionOperations.Load()
-	t.Cleanup(func() { processExtensionOperations.Store(previous) })
-	processExtensionOperations.Store(&extensionOperationProvider{invoker: fixture})
+	replaceAccountTools(t, fixture.invoke)
 }
 
 func importPlanRequestWithOrdinaryItems(count int) extensionv1.AccountImportPlanningRequest {
@@ -59,10 +57,8 @@ func importPlanRequestWithOrdinaryItems(count int) extensionv1.AccountImportPlan
 }
 
 func TestAccountImportPlanKeepsCrossChunkConflictPriorityAndScope(t *testing.T) {
-	previous := processExtensionOperations.Load()
-	t.Cleanup(func() { processExtensionOperations.Store(previous) })
 	fixture := &importPlanFixture{}
-	processExtensionOperations.Store(&extensionOperationProvider{invoker: fixture})
+	installImportPlanFixture(t, fixture)
 	input := extensionv1.AccountImportPlanningRequest{TargetGroupID: 12, TargetCanonical: true, Items: make([]extensionv1.AccountImportItemFacts, 1002)}
 	for index := range input.Items {
 		input.Items[index].PayloadValid = true
@@ -99,10 +95,12 @@ func TestAccountImportPlanKeepsCrossChunkConflictPriorityAndScope(t *testing.T) 
 	}
 	fixture.corrupt = true
 	_, err = PlanAccountImport(context.Background(), extensionv1.AccountImportPlanningRequest{Items: []extensionv1.AccountImportItemFacts{{PayloadValid: true, Matches: []int64{37}}}})
-	require.ErrorIs(t, err, ErrExtensionOperationUnavailable, "plugin cannot choose another existing account")
-	processExtensionOperations.Store(nil)
+	require.ErrorIs(t, err, ErrExtensionOperationUnavailable, "a plan cannot choose another existing account")
+	replaceAccountTools(t, func(context.Context, extensionv1.Invocation) (extensionv1.Result, error) {
+		return extensionv1.Result{}, errors.New("policy failed")
+	})
 	_, err = PlanAccountImport(context.Background(), input)
-	require.Error(t, err, "disabled policy must not restore the host decision engine")
+	require.Error(t, err, "a failed policy must not fall back to a host decision")
 }
 
 func TestAccountImportPlanRejectsForgedCrossChunkTrackingFlags(t *testing.T) {

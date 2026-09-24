@@ -193,7 +193,7 @@ func (s *adminServiceImpl) UpdateAccountFolder(ctx context.Context, id int64, in
 }
 
 func (s *adminServiceImpl) DeleteAccountFolder(ctx context.Context, id int64, moveAccounts bool) error {
-	if err := accountToolsOperation(ctx, "*", "*", "taxonomy.delete", map[string]int64{"id": id}, nil); err != nil {
+	if err := accountToolsOperation(ctx, "taxonomy.delete", map[string]int64{"id": id}, nil); err != nil {
 		return err
 	}
 	tx, err := s.entClient.Tx(ctx)
@@ -330,7 +330,7 @@ func (s *adminServiceImpl) UpdateAccountTag(ctx context.Context, id int64, input
 }
 
 func (s *adminServiceImpl) DeleteAccountTag(ctx context.Context, id int64) error {
-	if err := accountToolsOperation(ctx, "*", "*", "taxonomy.delete", map[string]int64{"id": id}, nil); err != nil {
+	if err := accountToolsOperation(ctx, "taxonomy.delete", map[string]int64{"id": id}, nil); err != nil {
 		return err
 	}
 	err := s.entClient.AccountTag.DeleteOneID(id).Exec(ctx)
@@ -414,7 +414,7 @@ func uniquePositiveIDs(ids []int64) []int64 {
 
 func (s *adminServiceImpl) BulkUpdateAccountTaxonomy(ctx context.Context, input BulkAccountTaxonomyInput) (*BulkAccountTaxonomyResult, error) {
 	plan := extensionv1.TaxonomyBulkPlan{AccountIDs: input.AccountIDs, HasFilters: input.Filters != nil, ExpectedMatchCount: input.ExpectedMatchCount, FolderAction: input.FolderAction, FolderID: input.FolderID, TagAddIDs: input.TagAddIDs, TagRemoveIDs: input.TagRemoveIDs}
-	if err := accountToolsOperation(ctx, "*", "*", "taxonomy.bulk", plan, nil); err != nil {
+	if err := accountToolsOperation(ctx, "taxonomy.bulk", plan, nil); err != nil {
 		return nil, err
 	}
 	filteredTarget := input.Filters != nil
@@ -607,7 +607,7 @@ func (s *adminServiceImpl) hydrateAccountTaxonomy(ctx context.Context, accounts 
 
 func (s *adminServiceImpl) SetAccountTaxonomy(ctx context.Context, accountID int64, assignment AccountTaxonomyAssignment) (*Account, error) {
 	var plan extensionv1.TaxonomyAssignmentPlan
-	if err := accountToolsOperation(ctx, "*", "*", "taxonomy.assignment", extensionv1.TaxonomyAssignmentPlan{FolderID: assignment.FolderID, TagIDs: assignment.TagIDs}, &plan); err != nil {
+	if err := accountToolsOperation(ctx, "taxonomy.assignment", extensionv1.TaxonomyAssignmentPlan{FolderID: assignment.FolderID, TagIDs: assignment.TagIDs}, &plan); err != nil {
 		return nil, err
 	}
 	if err := validateTaxonomyAssignmentIntent(assignment, plan); err != nil {

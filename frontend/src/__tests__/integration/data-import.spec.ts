@@ -1,10 +1,11 @@
+vi.mock('@/components/admin/account-jobs/AccountOperationDialog.vue', () => ({ default: { props: ['job', 'show'], template: '<div><slot/><slot name="footer"/></div>' } }))
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount, type VueWrapper } from '@vue/test-utils'
-import ImportDataModal from '../ImportDataModal.vue'
-import { readAccountImportFiles } from '../accountImportWorker'
+import ImportDataModal from '@/components/admin/account/ImportDataModal.vue'
+import { readAccountImportFiles } from '@/utils/accountImportWorker'
 import AccountImportSettingsEditor, {
   type AccountImportSettingsDraft,
-} from '../AccountImportSettingsEditor.vue'
+} from '@/components/admin/account/AccountImportSettingsEditor.vue'
 
 const { importData, previewImportData, showError, showSuccess, showWarning } = vi.hoisted(() => ({
   importData: vi.fn(),
@@ -14,10 +15,12 @@ const { importData, previewImportData, showError, showSuccess, showWarning } = v
   showWarning: vi.fn(),
 }))
 
-vi.mock('../api', () => ({ adminAPI: { accounts: { importData, previewImportData } } }))
-vi.mock('@sub2api/plugin-ui', async () => ({ ...await vi.importActual<typeof import('@sub2api/plugin-ui')>('@sub2api/plugin-ui'), useNotifications: () => ({ showError, showSuccess, showWarning, showInfo: vi.fn() }) }))
-vi.mock('../accountImportWorker', async () => {
-  const { parseAccountImportFiles } = await vi.importActual<typeof import('../accountImportParser')>('../accountImportParser')
+vi.mock('@/api/admin', () => ({ adminAPI: { accounts: { importData, previewImportData } } }))
+vi.mock('@/stores/app', () => ({
+  useAppStore: () => ({ showError, showSuccess, showWarning, showInfo: vi.fn() }),
+}))
+vi.mock('@/utils/accountImportWorker', async () => {
+  const { parseAccountImportFiles } = await vi.importActual<typeof import('@/utils/accountImportParser')>('@/utils/accountImportParser')
   return { readAccountImportFiles: vi.fn((files: File[]) => parseAccountImportFiles(files)) }
 })
 vi.mock('vue-i18n', () => ({
