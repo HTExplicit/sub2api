@@ -2,7 +2,7 @@
   "schema_version": 1,
   "id": "codexrip.cindy-provider",
   "name": "Cindy Provider",
-  "version": "0.2.12",
+  "version": "0.2.13",
   "description": "Cindy 模型目录、协议能力、价格参考及账号健康判定",
   "author": "HTExplicit",
   "requires": {
