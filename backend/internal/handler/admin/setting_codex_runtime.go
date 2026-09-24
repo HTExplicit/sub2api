@@ -1,13 +1,22 @@
 package admin
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"net/http"
+	"strconv"
 
 	"github.com/Wei-Shaw/sub2api/internal/pkg/response"
 	"github.com/Wei-Shaw/sub2api/internal/service"
 	"github.com/gin-gonic/gin"
+)
+
+const (
+	nativeCodexHostingModeHeader       = "X-Sub2API-Codex-Hosting-Mode"
+	nativeCodexConfigVersionHeader     = "X-Sub2API-Codex-Config-Version"
+	nativeCodexConfigSHA256Header      = "X-Sub2API-Codex-Config-SHA256"
+	nativeCodexRuntimeGenerationHeader = "X-Sub2API-Codex-Runtime-Generation"
 )
 
 func (h *SettingHandler) SetNativeCodexConfigEncryptor(encryptor service.SecretEncryptor) {
@@ -15,12 +24,23 @@ func (h *SettingHandler) SetNativeCodexConfigEncryptor(encryptor service.SecretE
 }
 
 func (h *SettingHandler) GetNativeCodexConfiguration(c *gin.Context) {
+	writeNativeCodexConfiguration(c, h.codexTicketGateway.NativeCodexConfiguration)
+}
+
+func writeNativeCodexConfiguration(c *gin.Context, read func(context.Context) (json.RawMessage, service.NativeCodexMetadata, error)) {
 	c.Header("Cache-Control", "no-store")
-	raw, err := h.codexTicketGateway.NativeCodexConfiguration()
+	for _, name := range [...]string{nativeCodexHostingModeHeader, nativeCodexConfigVersionHeader, nativeCodexConfigSHA256Header, nativeCodexRuntimeGenerationHeader} {
+		c.Writer.Header().Del(name)
+	}
+	raw, metadata, err := read(c.Request.Context())
 	if err != nil {
 		response.Error(c, 503, "Codex runtime is unavailable")
 		return
 	}
+	c.Header(nativeCodexHostingModeHeader, "native")
+	c.Header(nativeCodexConfigVersionHeader, strconv.FormatInt(metadata.ConfigVersion, 10))
+	c.Header(nativeCodexConfigSHA256Header, metadata.ConfigSHA256)
+	c.Header(nativeCodexRuntimeGenerationHeader, strconv.FormatInt(metadata.RuntimeGeneration, 10))
 	c.Data(http.StatusOK, "application/json; charset=utf-8", raw)
 }
 

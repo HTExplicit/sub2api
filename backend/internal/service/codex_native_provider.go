@@ -2,6 +2,8 @@ package service
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 
@@ -60,15 +62,33 @@ func ProvideNativeCodexRuntime(gateway *OpenAIGatewayService, repo NativeCodexRe
 	return runtime
 }
 
-func (s *OpenAIGatewayService) NativeCodexConfiguration() (json.RawMessage, error) {
-	if s == nil || s.nativeCodexRuntime == nil {
-		return nil, ErrNativeCodexRuntimeUnavailable
+func (s *OpenAIGatewayService) NativeCodexConfiguration(ctx context.Context) (json.RawMessage, NativeCodexMetadata, error) {
+	if s == nil || s.nativeCodexRuntime == nil || ctx == nil || ctx.Err() != nil {
+		return nil, NativeCodexMetadata{}, ErrNativeCodexRuntimeUnavailable
 	}
-	snapshot := s.nativeCodexRuntime.snapshot.Load()
-	if snapshot == nil {
-		return nil, ErrNativeCodexRuntimeUnavailable
+	runtime := s.nativeCodexRuntime
+	// Keep the receipt in the same lifecycle epoch throughout the persistent read.
+	runtime.mu.Lock()
+	defer runtime.mu.Unlock()
+	snapshot := runtime.snapshot.Load()
+	if !runtime.started || runtime.repo == nil || snapshot == nil || snapshot.metadata == nil || len(snapshot.raw) == 0 ||
+		snapshot.ctx == nil || snapshot.ctx.Err() != nil || ctx.Err() != nil {
+		return nil, NativeCodexMetadata{}, ErrNativeCodexRuntimeUnavailable
 	}
-	return append(json.RawMessage(nil), snapshot.raw...), nil
+	metadata := *snapshot.metadata
+	if metadata.ID <= 0 || metadata.ConfigVersion <= 0 || metadata.RuntimeGeneration <= 0 {
+		return nil, NativeCodexMetadata{}, ErrNativeCodexRuntimeUnavailable
+	}
+	raw := append(json.RawMessage(nil), snapshot.raw...)
+	sum := sha256.Sum256(raw)
+	if metadata.ConfigSHA256 != hex.EncodeToString(sum[:]) {
+		return nil, NativeCodexMetadata{}, ErrNativeCodexRuntimeUnavailable
+	}
+	current, err := runtime.repo.LoadNativeCodexMetadata(ctx)
+	if err != nil || current == nil || *current != metadata || ctx.Err() != nil || snapshot.ctx.Err() != nil {
+		return nil, NativeCodexMetadata{}, ErrNativeCodexRuntimeUnavailable
+	}
+	return raw, metadata, nil
 }
 
 func (s *OpenAIGatewayService) UpdateNativeCodexConfiguration(ctx context.Context, raw json.RawMessage, encryptor SecretEncryptor) error {

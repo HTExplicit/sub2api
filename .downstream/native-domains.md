@@ -22,6 +22,34 @@ The older synchronous ticket-stop endpoint remains compatible. Ordinary account
 bulk editing remains HTTP 202; this change does not replace background tasks with
 synchronous editing. Existing API-key reveal and account-field protections remain.
 
+### Codex runtime receipt after v0.2.8-codexrip.5
+
+The headers below extend the native API after `v0.2.8-codexrip.5`.
+That published image remains immutable; these headers are not part of its contract.
+
+`GET /admin/settings/codex-runtime` retains the raw JSON body and
+`Cache-Control: no-store`, and adds:
+
+| Response header | Value |
+| --- | --- |
+| `X-Sub2API-Codex-Hosting-Mode` | `native` |
+| `X-Sub2API-Codex-Config-Version` | Active snapshot configuration version. |
+| `X-Sub2API-Codex-Config-SHA256` | Lowercase SHA-256 of the exact snapshot body bytes. |
+| `X-Sub2API-Codex-Runtime-Generation` | Active snapshot runtime generation. |
+
+Version and generation are positive signed 64-bit integers serialized as canonical
+decimal strings without leading zeros. The hash covers the exact `snapshot.raw`
+UTF-8 bytes after decoding any response `Content-Encoding`; do not reorder JSON,
+pretty-print it, or append a newline.
+
+HTTP 200 requires the body and receipt to come from the same active snapshot,
+whose runtime has started and is not cancelled, with matching persisted fence
+metadata and configuration hash. Otherwise the endpoint returns HTTP 503 with
+`{"code":503,"message":"Codex runtime is unavailable"}`, without receipt headers
+or raw configuration. The receipt describes the epoch observed by that read;
+later operations still use their existing execution fences. Retained
+disabled installation rows stay unchanged; no generic metadata endpoint is added.
+
 ## Startup and retained data
 
 Before loading native settings or starting either runtime, one transaction:
