@@ -2504,24 +2504,26 @@ const handleSelectAllResults = async () => {
   if (selectingAllResults.value || pagination.total === 0) return
 
   const requestVersion = ++selectionRequestVersion.value
+  const selectionAtStart = selectedSet.value
+  const isCurrentSelectionRequest = () => requestVersion === selectionRequestVersion.value && selectedSet.value === selectionAtStart
   const filters = buildBulkEditFilterSnapshot()
   selectingAllResults.value = true
   try {
     const ids = await fetchAllAccountIds(
       async (page, pageSize, requestFilters) => {
-        if (requestVersion !== selectionRequestVersion.value) throw new CanceledError('Account view selection changed')
+        if (!isCurrentSelectionRequest()) throw new CanceledError('Account view selection changed')
         const result = await readAccounts(api => api.list(page, pageSize, requestFilters))
         rememberAccountIdentities(result.items)
         return result
       },
       filters
     )
-    if (requestVersion !== selectionRequestVersion.value) return
+    if (!isCurrentSelectionRequest()) return
 
     setSelectedIds(ids)
     selectedAllResultIDs.value = new Set(ids)
   } catch (error) {
-    if (requestVersion !== selectionRequestVersion.value) return
+    if (!isCurrentSelectionRequest()) return
     console.error('Failed to select all account results:', error)
     appStore.showError(t('admin.accounts.bulkActions.selectAllFailed'))
   } finally {
@@ -2548,8 +2550,10 @@ const openBulkEditSelected = () => {
 }
 
 const openBulkEditFiltered = async () => {
+  if (selIds.value.length) return openBulkEditSelected()
   const filters = buildBulkEditFilterSnapshot()
   const preview = await readAccounts(api => api.list(1, 100, filters))
+  if (selIds.value.length) return openBulkEditSelected()
   const { selectedPlatforms, selectedTypes } = collectSelectionMetadata(preview.items)
   bulkEditTarget.value = {
     mode: 'filtered',

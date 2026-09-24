@@ -2115,6 +2115,10 @@ func (h *AccountHandler) BulkUpdate(c *gin.Context) {
 	}
 
 	ids := normalizeInt64IDList(req.AccountIDs)
+	if len(req.AccountIDs) > 0 && len(ids) == 0 {
+		response.BadRequest(c, "account_ids must include at least one positive ID")
+		return
+	}
 	req.AccountIDs = ids
 	submission := req
 	_, viewScopedSubmission := service.AccountViewFromContext(c.Request.Context())
