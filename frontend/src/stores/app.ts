@@ -13,6 +13,7 @@ import {
   type ReleaseInfo
 } from '@/api/admin/system'
 import { getPublicSettings as fetchPublicSettingsAPI } from '@/api/auth'
+import { applyFlatTheme } from '@/utils/flatTheme'
 
 export const useAppStore = defineStore('app', () => {
   // ==================== State ====================
@@ -303,6 +304,7 @@ export const useAppStore = defineStore('app', () => {
       window.__APP_CONFIG__ = { ...config }
     }
     cachedPublicSettings.value = config
+    applyFlatTheme(config.flat_theme_enabled)
     siteName.value = config.site_name || 'Sub2API'
     siteLogo.value = config.site_logo || ''
     siteVersion.value = config.version || ''

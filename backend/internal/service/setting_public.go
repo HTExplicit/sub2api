@@ -366,6 +366,7 @@ func (s *SettingService) GetPublicSettings(ctx context.Context) (*PublicSettings
 
 		AvailableChannelsEnabled: settings[SettingKeyAvailableChannelsEnabled] == "true",
 		ImageStudioEnabled:       CindyImageStudioFeatureEnabled(),
+		FlatThemeEnabled:         FlatThemeEnabled(),
 
 		SubscriptionEnabled: !isFalseSettingValue(settings[SettingKeySubscriptionEnabled]),
 
@@ -638,6 +639,7 @@ type PublicSettingsInjectionPayload struct {
 	ChannelMonitorHideUserRanking bool `json:"channel_monitor_hide_user_ranking"`
 	AvailableChannelsEnabled      bool `json:"available_channels_enabled"`
 	ImageStudioEnabled            bool `json:"image_studio_enabled"`
+	FlatThemeEnabled              bool `json:"flat_theme_enabled"`
 	SubscriptionEnabled           bool `json:"subscription_enabled"`
 	ModelPlazaEnabled             bool `json:"model_plaza_enabled"`
 	ModelPlazaRequireAuth         bool `json:"model_plaza_require_auth"`
@@ -723,6 +725,7 @@ func (s *SettingService) GetPublicSettingsForInjection(ctx context.Context) (any
 		ChannelMonitorHideUserRanking:        settings.ChannelMonitorHideUserRanking,
 		AvailableChannelsEnabled:             settings.AvailableChannelsEnabled,
 		ImageStudioEnabled:                   settings.ImageStudioEnabled,
+		FlatThemeEnabled:                     settings.FlatThemeEnabled,
 		SubscriptionEnabled:                  settings.SubscriptionEnabled,
 		ModelPlazaEnabled:                    settings.ModelPlazaEnabled,
 		ModelPlazaRequireAuth:                settings.ModelPlazaRequireAuth,

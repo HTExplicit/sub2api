@@ -100,8 +100,6 @@ func (h *SettingHandler) SetStepUpDeps(totpService *service.TotpService, userSer
 	h.userService = userService
 }
 
-// GetSettings 获取所有系统设置
-// GET /api/v1/admin/settings
 // GetOfficialModelContextCatalog returns the release-pinned official model
 // capacity catalog for the read-only admin browser.
 // GET /api/v1/admin/settings/model-context-catalog
@@ -133,6 +131,30 @@ func (h *SettingHandler) UpdateImageToolsSettings(c *gin.Context) {
 	response.Success(c, req)
 }
 
+// GetObservabilitySettings returns the account traffic telemetry and flat theme switches.
+// GET /api/v1/admin/settings/observability
+func (h *SettingHandler) GetObservabilitySettings(c *gin.Context) {
+	response.Success(c, h.settingService.GetAdminObservabilityConfig(c.Request.Context()))
+}
+
+// UpdateObservabilitySettings saves the account traffic telemetry and flat theme switches.
+// Omitted switches stay on, as they did in the former plugin configuration.
+// PUT /api/v1/admin/settings/observability
+func (h *SettingHandler) UpdateObservabilitySettings(c *gin.Context) {
+	req := extensionv1.AdminObservabilityConfig{TelemetryEnabled: true, ThemeEnabled: true}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.BadRequest(c, "Invalid observability settings")
+		return
+	}
+	if err := h.settingService.UpdateAdminObservabilityConfig(c.Request.Context(), req); err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	response.Success(c, req)
+}
+
+// GetSettings 获取所有系统设置
+// GET /api/v1/admin/settings
 func (h *SettingHandler) GetSettings(c *gin.Context) {
 	c.Header("Cache-Control", "no-store")
 	settings, err := h.settingService.GetAllSettings(c.Request.Context())

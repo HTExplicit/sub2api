@@ -12,7 +12,7 @@ const mocks = vi.hoisted(() => ({
 }))
 
 vi.mock('../api', () => ({ default: mocks }))
-vi.mock('@sub2api/plugin-ui', async importOriginal => ({ ...await importOriginal<typeof import('@sub2api/plugin-ui')>(), useNotifications: () => ({ showSuccess: mocks.showSuccess, showError: mocks.showError }) }))
+vi.mock('@/stores/app', () => ({ useAppStore: () => ({ showSuccess: mocks.showSuccess, showError: mocks.showError }) }))
 vi.mock('vue-i18n', async () => {
   const actual = await vi.importActual<typeof import('vue-i18n')>('vue-i18n')
   return { ...actual, useI18n: () => ({ locale: { value: 'en' }, t: (key: string, params?: Record<string, unknown>) => key.replace(/\{(\w+)\}/g, (_, token) => String(params?.[token] ?? `{${token}}`)) }) }

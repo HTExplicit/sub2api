@@ -920,8 +920,10 @@ func ProvideOpsIngressRejectAggregator(opsRepo OpsRepository, opsService *OpsSer
 // ProvideSettingService wires SettingService with group reader and proxy repo.
 func ProvideSettingService(settingRepo SettingRepository, groupRepo GroupRepository, proxyRepo ProxyRepository, cfg *config.Config) *SettingService {
 	svc := NewSettingService(settingRepo, cfg)
-	// Image tool switches are read by package-level gates before Image Studio starts.
+	// Image tool and observability switches are read by package-level gates
+	// before Image Studio and the gateway start.
 	svc.LoadImageToolsConfig(context.Background())
+	svc.LoadAdminObservabilityConfig(context.Background())
 	svc.SetDefaultSubscriptionGroupReader(groupRepo)
 	svc.SetProxyRepository(proxyRepo)
 	if err := svc.LoadForwardedClientIPSettings(context.Background()); err != nil {

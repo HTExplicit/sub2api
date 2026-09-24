@@ -11,7 +11,6 @@ import (
 	codexrecovery "github.com/HTExplicit/sub2api-plugins/codexruntime/recovery"
 
 	accounttools "github.com/HTExplicit/sub2api-plugins/accounttools/policy"
-	observability "github.com/HTExplicit/sub2api-plugins/adminobservability/policy"
 
 	policy "github.com/HTExplicit/sub2api-plugins/promptskills/policy"
 	extensionv1 "github.com/Wei-Shaw/sub2api/pkg/extensionapi/v1"
@@ -51,9 +50,6 @@ func (promptPolicyFixture) InvokeOperation(ctx context.Context, _ string, _ stri
 	}
 	if strings.HasPrefix(in.Operation, "codex.identity.") {
 		return codexprofile.Invoke(ctx, in)
-	}
-	if strings.HasPrefix(in.Operation, "observability.") {
-		return observability.New().Invoke(ctx, in)
 	}
 	if strings.HasPrefix(in.Operation, "cindy.") {
 		module := cindy.New()

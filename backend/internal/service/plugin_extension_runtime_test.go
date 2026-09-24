@@ -119,36 +119,6 @@ func TestPromptExtensionRuntimeUsesIndependentProcess(t *testing.T) {
 	require.Greater(t, total, extensionv1.MaxPayloadBytes, "a complete seed larger than the RPC ceiling must remain loadable")
 }
 
-func TestObservabilityExtensionRuntimeUsesScopedMetricsBroker(t *testing.T) {
-	binary := os.Getenv("SUB2API_ADMIN_OBSERVABILITY_TEST_BINARY")
-	if binary == "" {
-		t.Skip("set SUB2API_ADMIN_OBSERVABILITY_TEST_BINARY to the independent observability program")
-	}
-	data, err := os.ReadFile(binary)
-	require.NoError(t, err)
-	digest := sha256.Sum256(data)
-	installation := &PluginInstallation{ID: 13, PluginKey: "codexrip.admin-observability", Version: firstPartyTestVersion(t, "admin-observability"), BinaryPath: binary, BinarySHA256: hex.EncodeToString(digest[:]), Manifest: PluginManifest{Requires: PluginRequirements{ExtensionAPI: 1}, Capabilities: []PluginCapability{{ID: extensionv1.CapabilityObservability, Platform: "*", AccountType: "*"}, {ID: extensionv1.CapabilityAdmin, Platform: "*", AccountType: "*"}, {ID: extensionv1.CapabilityUI, Platform: "*", AccountType: "*"}}}}
-	directory := &credentialScopeDirectory{}
-	host := newPluginHostServiceServer(installation.PluginKey, nil, nil, PluginAccountScope{})
-	host.extension = &pluginExtensionHost{key: installation.PluginKey, installation: installation, directory: directory, traffic: &trafficPolicyCache{}}
-	socketDir := filepath.Join(t.TempDir(), "runtime")
-	require.NoError(t, os.MkdirAll(socketDir, 0700))
-	runtime, err := startPluginRuntime(context.Background(), installation, 15*time.Second, socketDir, host)
-	require.NoError(t, err)
-	t.Cleanup(runtime.kill)
-	require.NoError(t, runtime.validateAndApplyConfig(context.Background(), []byte(`{}`)))
-	out, err := runtime.extension.Invoke(context.Background(), extensionv1.Invocation{Capability: extensionv1.CapabilityAdmin, Operation: "telemetry.read", Payload: []byte(`{"account_id":7}`)})
-	require.NoError(t, err)
-	require.Empty(t, out.Code)
-	var rows []extensionv1.AccountTrafficDisplay
-	require.NoError(t, json.Unmarshal(out.Payload, &rows))
-	require.Len(t, rows, 1)
-	require.Equal(t, "http", rows[0].Protocol)
-	require.EqualValues(t, 3, rows[0].Finished)
-	require.InDelta(t, 2.0/3, *rows[0].CompletionRate, 1e-12)
-	require.Zero(t, directory.calls, "metrics access must not resolve credentials")
-}
-
 func TestCindyProviderExtensionRuntimeUsesIndependentProcess(t *testing.T) {
 	binary := os.Getenv("SUB2API_CINDY_PROVIDER_TEST_BINARY")
 	if binary == "" {

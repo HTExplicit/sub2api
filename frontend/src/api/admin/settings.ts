@@ -1164,6 +1164,22 @@ export async function updateImageToolsSettings(settings: ImageToolsSettings): Pr
   return data;
 }
 
+export interface ObservabilitySettings {
+  telemetry_enabled: boolean
+  theme_enabled: boolean
+}
+
+/** Account traffic telemetry and flat site theme switches. */
+export async function getObservabilitySettings(): Promise<ObservabilitySettings> {
+  const { data } = await apiClient.get<ObservabilitySettings>("/admin/settings/observability");
+  return data;
+}
+
+export async function updateObservabilitySettings(settings: ObservabilitySettings): Promise<ObservabilitySettings> {
+  const { data } = await apiClient.put<ObservabilitySettings>("/admin/settings/observability", settings);
+  return data;
+}
+
 /** Read-only release-pinned official model capacity catalog. */
 export async function getOfficialModelCapacityCatalog(): Promise<OfficialModelCapacityCatalog> {
   const { data } = await apiClient.get<OfficialModelCapacityCatalog>("/admin/settings/model-context-catalog");
@@ -1689,6 +1705,8 @@ export const settingsAPI = {
   getOfficialModelCapacityCatalog,
   getImageToolsSettings,
   updateImageToolsSettings,
+  getObservabilitySettings,
+  updateObservabilitySettings,
   updateSettings,
   testSmtpConnection,
   sendTestEmail,

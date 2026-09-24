@@ -278,6 +278,8 @@ export interface PublicSettings {
   channel_monitor_hide_user_ranking?: boolean
   available_channels_enabled: boolean
   image_studio_enabled?: boolean
+  /** When false, the flat site theme is off. Absent means on. */
+  flat_theme_enabled?: boolean
   /** When false, the whole user-facing subscription surface is hidden. Default true. */
   subscription_enabled: boolean
   /** Mirrors payment config BALANCE_PAYMENT_DISABLED; true = balance top-up closed (subscription-only site). */

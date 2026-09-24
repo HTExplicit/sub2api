@@ -141,7 +141,8 @@
 <script setup lang="ts">
 import { ref } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { BaseDialog, confirmAction } from '@sub2api/plugin-ui'
+import BaseDialog from '@/components/common/BaseDialog.vue'
+import { confirmAction } from '@/utils/browserActions'
 import type { PromptAuditEndpointDraft, PromptProbeResult } from '../types'
 import { cloneData, createDefaultEndpoint } from '../viewModel'
 

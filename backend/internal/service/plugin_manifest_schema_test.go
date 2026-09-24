@@ -53,27 +53,6 @@ func TestPluginManifestSchemaDeclaresContributionFields(t *testing.T) {
 	}
 }
 
-func TestPluginManifestAcceptsRegisteredHyphenatedResources(t *testing.T) {
-	raw, err := os.ReadFile("../../../plugins/admin-observability/manifest.source.json")
-	if err != nil {
-		t.Fatal(err)
-	}
-	var source PluginManifest
-	if err := json.Unmarshal(raw, &source); err != nil {
-		t.Fatal(err)
-	}
-	if len(source.Resources) == 0 {
-		t.Fatal("the fixture must use the actual registered Prompt Audit resources")
-	}
-	manifest := testPluginManifest(nil)
-	manifest.Requires.ExtensionAPI = extensionv1.Version
-	manifest.Capabilities = source.Capabilities
-	manifest.Resources = source.Resources
-	if err := manifest.Validate(); err != nil {
-		t.Fatalf("existing registered resource names must be representable: %v", err)
-	}
-}
-
 func TestPluginManifestResourcePatternParityAndBoundaries(t *testing.T) {
 	raw, err := os.ReadFile("../../pkg/pluginapi/v1/manifest.schema.json")
 	if err != nil {

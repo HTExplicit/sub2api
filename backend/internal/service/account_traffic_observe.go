@@ -119,22 +119,18 @@ type AccountTrafficObserver struct {
 	cache AccountTrafficObserveCache
 }
 
-// The legacy gateway flag is imported during plugin bootstrap. Runtime intent
-// and classification come from the observability plugin.
+// Whether turns are recorded follows the admin_observability_config setting,
+// whose default is the legacy gateway flag.
 func NewAccountTrafficObserver(cache AccountTrafficObserveCache, _ *config.Config) *AccountTrafficObserver {
 	return &AccountTrafficObserver{
 		cache: cache,
 	}
 }
 
-// Enabled reports unscoped plugin availability for management displays. It is
-// not account admission: Begin and Snapshot resolve the actual account scope.
+// Enabled reports whether telemetry is switched on, for management displays.
+// Begin and Snapshot additionally require a concrete account identity.
 func (o *AccountTrafficObserver) Enabled() bool {
-	if o == nil || o.cache == nil {
-		return false
-	}
-	policy, ok := currentTrafficObservationPolicy(context.Background())
-	return ok && policy.Enabled
+	return o != nil && o.cache != nil && currentAdminObservabilityConfig().TelemetryEnabled
 }
 
 // Begin records one started turn for account/protocol and samples in-flight
@@ -147,7 +143,7 @@ func (o *AccountTrafficObserver) Begin(ctx context.Context, account *Account, pr
 	if ctx == nil {
 		ctx = context.Background()
 	}
-	policy, available := currentAccountTrafficObservationPolicy(ctx, account)
+	policy, available := currentAccountTrafficObservationPolicy(account)
 	if !available || !policy.Enabled {
 		return nil
 	}
@@ -173,7 +169,7 @@ func (o *AccountTrafficObserver) Snapshot(ctx context.Context, account *Account)
 	if ctx == nil {
 		ctx = context.Background()
 	}
-	policy, available := currentAccountTrafficObservationPolicy(ctx, account)
+	policy, available := currentAccountTrafficObservationPolicy(account)
 	if !available || !policy.Enabled {
 		return nil, ErrAccountTrafficTelemetryUnavailable
 	}
@@ -218,13 +214,9 @@ func (t *AccountTrafficTurn) Finish(result *OpenAIForwardResult, err error, clie
 }
 
 // Compatibility facade for callers without a begun turn. Started observations
-// instead evaluate the immutable rule table captured before incrementing.
+// instead evaluate the rule table captured before incrementing.
 func classifyAccountTrafficOutcome(result *OpenAIForwardResult, err error, clientCancelled bool) AccountTrafficOutcome {
-	policy, ok := currentTrafficObservationPolicy(context.Background())
-	if !ok {
-		return AccountTrafficOutcomeFailedOther
-	}
-	return evaluateAccountTrafficOutcome(policy.Classification, result, err, clientCancelled)
+	return evaluateAccountTrafficOutcome(accountTrafficOutcomeRules, result, err, clientCancelled)
 }
 
 func evaluateAccountTrafficOutcome(table extensionv1.DecisionTable, result *OpenAIForwardResult, err error, clientCancelled bool) AccountTrafficOutcome {

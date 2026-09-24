@@ -533,6 +533,16 @@ export default {
         loadFailed: 'Failed to load image tool settings',
         saveFailed: 'Save failed'
       },
+      observability: {
+        title: 'Appearance and observations',
+        description: 'Account traffic observations record real gateway attempts without running test requests. They do not restrict accounts or change billing.',
+        telemetryEnabled: 'Enable account traffic observations',
+        themeEnabled: 'Enable flat theme',
+        save: 'Save settings',
+        saved: 'Settings saved',
+        loadFailed: 'Failed to load appearance and observation settings',
+        saveFailed: 'Save failed'
+      },
       officialModelCatalog: {
         title: 'Model catalog and capacity references',
         description: 'References support capacity planning. Account overrides and live upstream declarations retain their existing precedence.',

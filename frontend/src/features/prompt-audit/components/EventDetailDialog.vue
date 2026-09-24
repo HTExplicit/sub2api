@@ -78,7 +78,7 @@
 <script setup lang="ts">
 import { ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { BaseDialog } from '@sub2api/plugin-ui'
+import BaseDialog from '@/components/common/BaseDialog.vue'
 import type { PromptAuditEvent, PromptIssueSummary } from '../types'
 import { SCANNER_CATALOG } from '../viewModel'
 

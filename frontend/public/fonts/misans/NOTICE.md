@@ -4,7 +4,7 @@ Copyright Xiaomi. Distributed under the MiSans Font Intellectual Property Licens
 
 Original, unmodified WOFF2 files extracted from the official [MiSans download](https://hyperos.mi.com/font-download/MiSans.zip). No subsetting, conversion or glyph modifications were performed.
 
-The official license is included as [MiSans-Font-Intellectual-Property-License.pdf](MiSans-Font-Intellectual-Property-License.pdf). Fonts are included in the signed admin-observability plugin and loaded with `font-display: swap` while its theme is enabled.
+The official license is included as [MiSans-Font-Intellectual-Property-License.pdf](MiSans-Font-Intellectual-Property-License.pdf). The fonts live in `frontend/src/assets/fonts/misans/` and are loaded with `font-display: swap` while the flat theme is enabled.
 
 ## Original font checksums
 

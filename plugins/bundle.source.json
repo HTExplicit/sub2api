@@ -4,7 +4,6 @@
     { "directory": "codex-runtime", "default_enabled": true, "migration": "codex-tickets-v1" },
     { "directory": "prompt-skills", "default_enabled": true },
     { "directory": "account-tools", "default_enabled": true },
-    { "directory": "cindy-provider", "default_enabled": true, "migration": "cindy-provider-v1" },
-    { "directory": "admin-observability", "default_enabled": true, "migration": "admin-observability-v1" }
+    { "directory": "cindy-provider", "default_enabled": true, "migration": "cindy-provider-v1" }
   ]
 }

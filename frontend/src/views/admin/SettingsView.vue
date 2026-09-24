@@ -4504,6 +4504,7 @@
             <div class="p-6 space-y-4">
                 <ExtensionSlot name="admin.settings" />
                 <ImageToolsSettingsPanel />
+                <ObservabilitySettingsPanel />
                 <OfficialModelCatalogPanel />
                 <div>
                   <h3 class="text-base font-semibold text-gray-900 dark:text-white">
@@ -9169,6 +9170,7 @@
 <script setup lang="ts">
 import ExtensionSlot from '@/components/plugins/ExtensionSlot.vue'
 import ImageToolsSettingsPanel from '@/components/admin/ImageToolsSettingsPanel.vue'
+import ObservabilitySettingsPanel from '@/components/admin/ObservabilitySettingsPanel.vue'
 import OfficialModelCatalogPanel from '@/components/admin/OfficialModelCatalogPanel.vue'
 import { ref, reactive, computed, onMounted, watch } from "vue";
 import { useI18n } from "vue-i18n";

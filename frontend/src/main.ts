@@ -7,6 +7,8 @@ import { useAppStore } from '@/stores/app'
 import { updateFavicon } from '@/utils/branding'
 import { isIOSDevice } from '@/utils/device'
 import './style.css'
+import './styles/flat-theme.css'
+import { applyFlatTheme } from '@/utils/flatTheme'
 import { initializePluginThemes } from '@/components/plugins/theme'
 
 function initIOSViewportZoomFix() {
@@ -34,6 +36,7 @@ function initThemeClass() {
 async function bootstrap() {
   // Apply theme class globally before app mount to keep all routes consistent.
   initThemeClass()
+  applyFlatTheme(window.__APP_CONFIG__?.flat_theme_enabled)
   initIOSViewportZoomFix()
 
   const app = createApp(App)

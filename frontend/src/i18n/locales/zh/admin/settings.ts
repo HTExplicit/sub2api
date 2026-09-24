@@ -526,6 +526,16 @@ export default {
         loadFailed: '图像工具设置加载失败',
         saveFailed: '保存失败'
       },
+      observability: {
+        title: '界面与观测',
+        description: '账号流量观测只记录实际业务转发的结果，不触发测试请求，也不用于限制账号或改变计费。',
+        telemetryEnabled: '启用账号流量观测',
+        themeEnabled: '启用平面主题',
+        save: '保存设置',
+        saved: '设置已保存',
+        loadFailed: '界面与观测设置加载失败',
+        saveFailed: '保存失败'
+      },
       officialModelCatalog: {
         title: '模型目录与容量参考',
         description: '参考数据用于容量规划；账号自定义值与实时上游声明继续按既有优先级处理。',

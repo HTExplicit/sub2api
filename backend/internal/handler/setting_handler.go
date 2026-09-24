@@ -148,6 +148,7 @@ func (h *SettingHandler) GetPublicSettings(c *gin.Context) {
 
 		AvailableChannelsEnabled: settings.AvailableChannelsEnabled,
 		ImageStudioEnabled:       settings.ImageStudioEnabled,
+		FlatThemeEnabled:         settings.FlatThemeEnabled,
 		SubscriptionEnabled:      settings.SubscriptionEnabled,
 
 		ModelPlazaEnabled:       settings.ModelPlazaEnabled,

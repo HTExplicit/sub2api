@@ -13,7 +13,6 @@ import (
 	codexrecovery "github.com/HTExplicit/sub2api-plugins/codexruntime/recovery"
 
 	accounttools "github.com/HTExplicit/sub2api-plugins/accounttools/policy"
-	observability "github.com/HTExplicit/sub2api-plugins/adminobservability/policy"
 	prompt "github.com/HTExplicit/sub2api-plugins/promptskills/policy"
 	"github.com/Wei-Shaw/sub2api/internal/service"
 	extensionv1 "github.com/Wei-Shaw/sub2api/pkg/extensionapi/v1"
@@ -38,9 +37,6 @@ func (operations) InvokeOperation(ctx context.Context, _, _ string, in extension
 		raw, err := json.Marshal(codexprofile.TransportPlan(query, false))
 		return extensionv1.Result{Payload: raw}, err
 	}
-	if strings.HasPrefix(in.Operation, "observability.") {
-		return observability.New().Invoke(ctx, in)
-	}
 	if strings.HasPrefix(in.Operation, "cindy.") {
 		module := cindy.New()
 		raw, _ := json.Marshal(service.LegacyCindyProviderConfig())
@@ -60,6 +56,7 @@ func (operations) InvokeOperation(ctx context.Context, _, _ string, in extension
 func Install() {
 	service.ConfigureProcessExtensionServices(nil, operations{})
 	service.ConfigureImageTools(nil)
+	service.ConfigureAdminObservability(nil)
 }
 
 func InstallImageTools(config extensionv1.ImageToolsConfig) {

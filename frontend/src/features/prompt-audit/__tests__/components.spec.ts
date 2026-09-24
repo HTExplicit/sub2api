@@ -10,9 +10,7 @@ import type { PromptAuditDraft, PromptAuditEndpointDraft, PromptAuditEvent, Prom
 import { emptyEventFilters, resolveDeleteRangeFilters, SCANNER_CATALOG } from '../viewModel'
 
 const confirmAction = vi.hoisted(() => vi.fn())
-vi.mock('@sub2api/plugin-ui', async importOriginal => ({
-  ...await importOriginal<typeof import('@sub2api/plugin-ui')>(), confirmAction,
-}))
+vi.mock('@/utils/browserActions', () => ({ confirmAction }))
 
 vi.mock('vue-i18n', async () => {
   const actual = await vi.importActual<typeof import('vue-i18n')>('vue-i18n')
