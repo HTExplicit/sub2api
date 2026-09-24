@@ -13,6 +13,10 @@
         <fieldset :disabled="busy" class="py-1 disabled:opacity-60">
           <template v-if="account">
             <ExtensionSlot name="account.actions" :account="account" external variant="menu" @open="openExtension" @resource-complete="emit('resource-complete'); emit('close')" />
+            <button v-if="supportsAccountPromptBinding(account)" data-test="account-prompt-binding-action" @click="openPromptBinding(account)" class="flex w-full items-center gap-2 px-4 py-2 text-sm hover:bg-gray-100 dark:hover:bg-dark-700">
+              <Icon name="document" size="sm" class="text-gray-500" />
+              {{ t('admin.systemPrompts.accountPrompts') }}
+            </button>
             <button @click="$emit('test', account); $emit('close')" class="flex w-full items-center gap-2 px-4 py-2 text-sm hover:bg-gray-100 dark:hover:bg-dark-700">
               <Icon name="play" size="sm" class="text-green-500" :stroke-width="2" />
               {{ t('admin.accounts.testConnection') }}
@@ -70,16 +74,21 @@
     mode="account.actions"
     @close="selectedExtension = null"
   />
+  <BaseDialog :show="promptBindingAccountIds.length > 0" :title="t('admin.systemPrompts.accountPrompts')" width="normal" @close="promptBindingAccountIds = []">
+    <AccountPromptBindingPanel v-if="promptBindingAccountIds.length > 0" :account-ids="promptBindingAccountIds" @changed="emit('resource-complete')" />
+  </BaseDialog>
 </template>
 
 <script setup lang="ts">
-import { computed, ref, shallowRef, watch, onUnmounted } from 'vue'
+import { computed, defineAsyncComponent, ref, shallowRef, watch, onUnmounted } from 'vue'
 import { useResizeObserver, useWindowSize } from '@vueuse/core'
 import { useI18n } from 'vue-i18n'
 import { Icon } from '@/components/icons'
 import type { Account } from '@/types'
 import type { PluginContribution } from '@/api/admin/plugins'
 import ExtensionDialog from '@/components/plugins/ExtensionDialog.vue'
+import BaseDialog from '@/components/common/BaseDialog.vue'
+import { supportsAccountPromptBinding } from '@/utils/accountPromptBinding'
 import ExtensionSlot from '@/components/plugins/ExtensionSlot.vue'
 import { useAccountViewContext, type CapturedAccountView } from '@/composables/useAccountViewContext'
 
@@ -92,6 +101,13 @@ const extensionAccountID = ref<number | undefined>()
 const extensionLaunch = ref(0)
 const extensionOrigin = shallowRef<CapturedAccountView>()
 const origin = useAccountViewContext()
+// Loaded when the dialog first opens; the menu itself stays light.
+const AccountPromptBindingPanel = defineAsyncComponent(() => import('./AccountPromptBindingPanel.vue'))
+const promptBindingAccountIds = ref<number[]>([])
+function openPromptBinding(account: Account) {
+  promptBindingAccountIds.value = [account.id]
+  emit('close')
+}
 function openExtension(contribution: PluginContribution) {
   extensionOrigin.value = origin?.capture()
   extensionLaunch.value++

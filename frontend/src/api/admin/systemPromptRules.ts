@@ -1,4 +1,4 @@
-import { resource } from '@sub2api/plugin-ui'
+import { apiClient } from '../client'
 
 export type PromptDelivery = 'native_control' | 'system' | 'developer'
 export type PromptPosition = 'control_prepend' | 'control_append' | 'conversation_head' | 'conversation_tail'
@@ -36,10 +36,16 @@ export interface PromptPreview {
   }
 }
 export const legalPromptPosition = (delivery: PromptDelivery, position: PromptPosition) => delivery !== 'native_control' || position.startsWith('control_')
+const basePath = '/admin/system-prompts'
+
 export const rulesAPI = {
-  read: () => resource<PromptRuleState>('prompts.rules.read'),
-  save: (policy: PromptRulePolicy, revision: number) => resource<PromptRuleState>('prompts.rules.update', { body: { policy, expected_revision: revision } }),
-  accounts: (ids: number[]) => resource<PromptAccountBinding[]>('prompts.bindings.read', { body: { account_ids: ids } }),
-  bind: (updates: Array<{ account_id: number; expected_updated_at: string; binding: PromptBinding }>, revision: number) => resource<PromptBindingResult[]>('prompts.bindings.update', { body: { updates, expected_revision: revision } }),
-  preview: (accountId: number, body: { protocol: string; transport: string; compact: boolean; body: unknown; policy?: PromptRulePolicy; binding?: PromptBinding; simulate_enabled?: boolean }) => resource<PromptPreview>('prompts.rules.preview', { params: { account_id: accountId }, body })
+  read: async () => (await apiClient.get<PromptRuleState>(`${basePath}/rules`)).data,
+  save: async (policy: PromptRulePolicy, revision: number) =>
+    (await apiClient.put<PromptRuleState>(`${basePath}/rules`, { policy, expected_revision: revision })).data,
+  accounts: async (ids: number[]) =>
+    (await apiClient.post<PromptAccountBinding[]>(`${basePath}/accounts/resolve`, { account_ids: ids })).data,
+  bind: async (updates: Array<{ account_id: number; expected_updated_at: string; binding: PromptBinding }>, revision: number) =>
+    (await apiClient.post<PromptBindingResult[]>(`${basePath}/accounts/bindings`, { updates, expected_revision: revision })).data,
+  preview: async (accountId: number, body: { protocol: string; transport: string; compact: boolean; body: unknown; policy?: PromptRulePolicy; binding?: PromptBinding; simulate_enabled?: boolean }) =>
+    (await apiClient.post<PromptPreview>(`${basePath}/rules/preview/${encodeURIComponent(String(accountId))}`, body)).data,
 }

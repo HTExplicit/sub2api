@@ -12,7 +12,7 @@ import (
 
 	accounttools "github.com/HTExplicit/sub2api-plugins/accounttools/policy"
 
-	policy "github.com/HTExplicit/sub2api-plugins/promptskills/policy"
+	policy "github.com/Wei-Shaw/sub2api/internal/promptskills/policy"
 	extensionv1 "github.com/Wei-Shaw/sub2api/pkg/extensionapi/v1"
 )
 

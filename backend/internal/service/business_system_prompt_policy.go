@@ -61,14 +61,14 @@ func MergeBusinessSystemPromptInstructions(client, server string) string {
 	}
 }
 
-// ApplyBusinessSystemPromptToJSON applies the plugin's bounded policy result to
-// the original request locally. Large user histories never cross the RPC limit.
+// ApplyBusinessSystemPromptToJSON applies the bounded policy result to the
+// original request locally. Large user histories never enter the policy input.
 func ApplyBusinessSystemPromptToJSON(body []byte, snapshot BusinessSystemPromptSnapshot, target BusinessSystemPromptTarget) ([]byte, BusinessSystemPromptApplication, error) {
 	return ApplyBusinessSystemPromptToJSONContext(context.Background(), body, snapshot, target)
 }
 
 func ApplyBusinessSystemPromptToJSONContext(ctx context.Context, body []byte, snapshot BusinessSystemPromptSnapshot, target BusinessSystemPromptTarget) ([]byte, BusinessSystemPromptApplication, error) {
-	return applyBusinessSystemPromptWithInvoker(ctx, body, snapshot, target, invokeProcessExtension)
+	return applyBusinessSystemPromptWithInvoker(ctx, body, snapshot, target, promptPlanInvoke)
 }
 
 func applyBusinessSystemPromptWithInvoker(parent context.Context, body []byte, snapshot BusinessSystemPromptSnapshot, target BusinessSystemPromptTarget, invoke func(context.Context, string, string, extensionv1.Invocation) (extensionv1.Result, error)) ([]byte, BusinessSystemPromptApplication, error) {

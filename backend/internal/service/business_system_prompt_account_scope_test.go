@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	promptpolicy "github.com/HTExplicit/sub2api-plugins/promptskills/policy"
+	promptpolicy "github.com/Wei-Shaw/sub2api/internal/promptskills/policy"
 	extensionv1 "github.com/Wei-Shaw/sub2api/pkg/extensionapi/v1"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
@@ -17,51 +17,36 @@ import (
 )
 
 type accountScopedPromptInvoker struct {
-	manager      *PluginManager
-	installation *PluginInstallation
-	module       *promptpolicy.Module
-	other        extensionv1.OperationInvoker
-	calls        []extensionv1.Invocation
+	module  *promptpolicy.Module
+	rollout int
+	calls   []extensionv1.Invocation
 }
 
-func (p *accountScopedPromptInvoker) InvokeOperation(ctx context.Context, platform, kind string, in extensionv1.Invocation) (extensionv1.Result, error) {
-	if in.Operation != "prompt.plan" && in.Operation != "prompt.availability" {
-		if p.other != nil {
-			return p.other.InvokeOperation(ctx, platform, kind, in)
-		}
+// allows models a per-account prompt decision: 0 denies every account, 100
+// allows every account and anything between allows odd account IDs.
+// Accountless previews are always allowed.
+func (p *accountScopedPromptInvoker) allows(accountID int64) bool {
+	switch {
+	case accountID == 0 || p.rollout >= 100:
+		return true
+	case p.rollout <= 0:
+		return false
+	default:
+		return accountID%2 == 1
+	}
+}
+
+// invoke denies prompt plans for accounts outside the modeled scope, which
+// covers API-key accounts only.
+func (p *accountScopedPromptInvoker) invoke(ctx context.Context, in extensionv1.Invocation) (extensionv1.Result, error) {
+	if in.Operation != "prompt.plan" {
+		return p.module.Invoke(ctx, in)
+	}
+	p.calls = append(p.calls, in)
+	if accountType := gjson.GetBytes(in.Payload, "target.account_type").String(); !p.allows(in.AccountID) || accountType != AccountTypeAPIKey {
 		return extensionv1.Result{}, ErrExtensionOperationDisabled
 	}
-	if in.Operation == "prompt.plan" {
-		p.calls = append(p.calls, in)
-	}
-	// Use the actual host operation ownership/cohort gate, then run only the
-	// independent policy module in process. No customer body or model IO exists.
-	if _, _, err := p.manager.operationOwner(platform, kind, in); err != nil {
-		return extensionv1.Result{}, err
-	}
 	return p.module.Invoke(ctx, in)
-}
-
-func (p *accountScopedPromptInvoker) InvokeDomainOperation(ctx context.Context, in extensionv1.Invocation, _ bool) (extensionv1.Result, error) {
-	if in.Operation != "prompt.availability" {
-		if other, ok := p.other.(domainOperationInvoker); ok {
-			return other.InvokeDomainOperation(ctx, in, false)
-		}
-		return p.InvokeOperation(ctx, "*", "*", in)
-	}
-	platform, kind, err := p.manager.domainOperationScope(ctx, in)
-	if err != nil {
-		return extensionv1.Result{}, err
-	}
-	return p.InvokeOperation(ctx, platform, kind, in)
-}
-
-func (p *accountScopedPromptInvoker) BindDomainOperationContext(ctx context.Context, in extensionv1.Invocation) (context.Context, context.CancelFunc, error) {
-	if _, _, err := p.manager.domainOperationScope(ctx, in); err != nil {
-		return nil, nil, err
-	}
-	bound, cancel := context.WithCancel(ctx)
-	return bound, cancel, nil
 }
 
 func newAccountScopedPromptGateway(t *testing.T, rollout int) (*OpenAIGatewayService, *accountScopedPromptInvoker, *fakeBusinessSystemPromptStore) {
@@ -69,37 +54,16 @@ func newAccountScopedPromptGateway(t *testing.T, rollout int) (*OpenAIGatewaySer
 	store := &fakeBusinessSystemPromptStore{loaded: BusinessSystemPromptSnapshot{Revision: 1, Enabled: true, Body: "account-scoped-server"}}
 	policy := NewBusinessSystemPromptService(store, nil)
 	require.NoError(t, policy.Initialize(context.Background()))
-	installation := &PluginInstallation{ID: 7, State: PluginStateEnabled,
-		Manifest: PluginManifest{Operations: map[string][]string{extensionv1.CapabilityRequest: {"prompt.plan", "prompt.availability"}}},
-		Bindings: []PluginBinding{{Capability: extensionv1.CapabilityRequest, Platform: PlatformOpenAI, AccountType: AccountTypeAPIKey, Enabled: true, RolloutPercent: rollout}},
-	}
-	manager := NewPluginManager(nil, nil, nil, PluginHostInfo{}, nil)
-	manager.extensions.Store(&pluginExtensionRegistry{installations: map[int64]*PluginInstallation{installation.ID: installation}, runtimes: map[int64]*pluginRuntime{}})
-	invoker := &accountScopedPromptInvoker{manager: manager, installation: installation, module: promptpolicy.New()}
-	previous := processExtensionOperations.Load()
-	if previous != nil {
-		invoker.other = previous.invoker
-	}
-	processExtensionOperations.Store(&extensionOperationProvider{invoker: invoker})
-	t.Cleanup(func() { processExtensionOperations.Store(previous) })
+	invoker := &accountScopedPromptInvoker{module: promptpolicy.New(), rollout: rollout}
+	previous := invokePromptSkills
+	invokePromptSkills = invoker.invoke
+	t.Cleanup(func() { invokePromptSkills = previous })
 	return &OpenAIGatewayService{businessPromptService: policy}, invoker, store
 }
 
 func promptScopeAccounts(t *testing.T) (*Account, *Account) {
 	t.Helper()
-	var included, excluded *Account
-	for id := int64(1); id <= 1000 && (included == nil || excluded == nil); id++ {
-		account := &Account{ID: id, Platform: PlatformOpenAI, Type: AccountTypeAPIKey}
-		if stablePluginBucket(id) < 50 && included == nil {
-			included = account
-		}
-		if stablePluginBucket(id) >= 50 && excluded == nil {
-			excluded = account
-		}
-	}
-	require.NotNil(t, included)
-	require.NotNil(t, excluded)
-	return included, excluded
+	return &Account{ID: 1, Platform: PlatformOpenAI, Type: AccountTypeAPIKey}, &Account{ID: 2, Platform: PlatformOpenAI, Type: AccountTypeAPIKey}
 }
 
 func TestPromptRealAccountZeroRolloutRejected(t *testing.T) {
@@ -140,7 +104,7 @@ func TestPromptRealAccountRolloutAndAccountlessPreview(t *testing.T) {
 				input := []byte(`{"instructions":"client","input":"private-customer-history"}`)
 				_, application, err := gateway.applyBusinessSystemPrompt(input, account, BusinessSystemPromptProtocolResponses, false)
 				require.NoError(t, err)
-				require.Equal(t, int(stablePluginBucket(account.ID)) < rollout, application.Applied)
+				require.Equal(t, invoker.allows(account.ID), application.Applied)
 				call := invoker.calls[len(invoker.calls)-1]
 				require.Equal(t, account.ID, call.AccountID)
 				require.Equal(t, account.ID, gjson.GetBytes(call.Payload, "target.account_id").Int())
@@ -219,7 +183,7 @@ func TestPromptAccountChangeRestoresOnlyOwnedCarrier(t *testing.T) {
 }
 
 func TestPromptSameAccountCacheRechecksRevocation(t *testing.T) {
-	for _, revoke := range []string{"zero_rollout", "disabled"} {
+	for _, revoke := range []string{"denied"} {
 		for _, form := range []string{"input", "output", "cache_key_rewrite"} {
 			t.Run(revoke+"/"+form, func(t *testing.T) {
 				gateway, invoker, _ := newAccountScopedPromptGateway(t, 100)
@@ -236,12 +200,7 @@ func TestPromptSameAccountCacheRechecksRevocation(t *testing.T) {
 					body, err = rewriteBusinessSystemPromptCacheKey(ctx, body, application)
 					require.NoError(t, err)
 				}
-				if revoke == "disabled" {
-					invoker.installation.State = PluginStateDisabled
-					invoker.installation.Bindings[0].Enabled = false
-				} else {
-					invoker.installation.Bindings[0].RolloutPercent = 0
-				}
+				invoker.rollout = 0
 				clean, denied, err := gateway.applyBusinessSystemPromptForRequest(ctx, body, account, BusinessSystemPromptProtocolResponses, false)
 				require.NoError(t, err)
 				require.False(t, denied.Applied)
@@ -580,7 +539,7 @@ func TestPromptCarrierTransitionCannotForgetEarlierAppliedOutput(t *testing.T) {
 				other := &Account{ID: secondAccount.ID + 10000, Platform: PlatformGrok, Type: AccountTypeAPIKey}
 				if destination == "denied" {
 					other.Platform = PlatformOpenAI
-					invoker.installation.Bindings[0].RolloutPercent = 0
+					invoker.rollout = 0
 				}
 				clean, application, err := gateway.applyBusinessSystemPromptForRequest(ctx, olderOutput, other, BusinessSystemPromptProtocolChat, false)
 				if err != nil {

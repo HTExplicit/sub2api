@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	policy "github.com/HTExplicit/sub2api-plugins/promptskills/policy"
+	policy "github.com/Wei-Shaw/sub2api/internal/promptskills/policy"
 	extensionv1 "github.com/Wei-Shaw/sub2api/pkg/extensionapi/v1"
 	"github.com/stretchr/testify/require"
 	"github.com/tidwall/gjson"

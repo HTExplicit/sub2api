@@ -1,8 +1,9 @@
-import rules from './rules.zh'
+import rules from './systemPromptRules'
 export default {
   systemPrompts: {
     rules,
     title: '系统提示词',
+    accountPrompts: '账号提示词',
     common: { refresh: '刷新', close: '关闭', loading: '加载中', saving: '保存中', cancel: '取消' },
     runtime: {
       active: '已启用',

@@ -28,29 +28,6 @@ func scopedPromptManager(t *testing.T) *PluginManager {
 	return manager
 }
 
-func TestPromptDomainUsesActiveScopeWithoutBroadeningRequestBindings(t *testing.T) {
-	manager := scopedPromptManager(t)
-	previous := processExtensionOperations.Load()
-	t.Cleanup(func() { processExtensionOperations.Store(previous) })
-	processExtensionOperations.Store(&extensionOperationProvider{invoker: manager})
-	require.NoError(t, promptPolicyAvailability(context.Background()))
-	prompts := &BusinessSystemPromptService{}
-	prompts.snapshot.Store(&BusinessSystemPromptSnapshot{Enabled: true, Body: "scoped-server"})
-	snapshot, ok := prompts.CurrentSnapshot()
-	require.True(t, ok)
-	require.Equal(t, "scoped-server", snapshot.Body)
-	name := "scoped"
-	plan, err := planPromptTemplate(context.Background(), extensionv1.PromptTemplatePolicyRequest{Name: &name})
-	require.NoError(t, err)
-	require.Equal(t, name, *plan.Name)
-	body := []byte(`{"input":"client"}`)
-	out, applied, err := ApplyBusinessSystemPromptToJSONContext(context.Background(), body, snapshot,
-		BusinessSystemPromptTarget{Platform: PlatformOpenAI, AccountType: AccountTypeAPIKey, Protocol: BusinessSystemPromptProtocolResponses})
-	require.NoError(t, err)
-	require.Equal(t, body, out)
-	require.False(t, applied.Applied, "global metadata must not broaden account request scope")
-}
-
 func TestPromptDomainAvailabilityDistinguishesDisabledFailureAndAmbiguousOwners(t *testing.T) {
 	manager := scopedPromptManager(t)
 	query := extensionv1.Invocation{Capability: extensionv1.CapabilityRequest, Operation: "prompt.availability", Payload: []byte(`{}`)}

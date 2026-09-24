@@ -1,8 +1,9 @@
-import rules from './rules.en'
+import rules from './systemPromptRules'
 export default {
   systemPrompts: {
     rules,
     title: 'System Prompts',
+    accountPrompts: 'Account prompts',
     common: { refresh: 'Refresh', close: 'Close', loading: 'Loading', saving: 'Saving', cancel: 'Cancel' },
     runtime: {
       active: 'Enabled',

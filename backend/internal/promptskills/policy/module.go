@@ -7,8 +7,8 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/HTExplicit/sub2api-plugins/promptskills/registry"
-	"github.com/HTExplicit/sub2api-plugins/promptskills/source"
+	"github.com/Wei-Shaw/sub2api/internal/promptskills/registry"
+	"github.com/Wei-Shaw/sub2api/internal/promptskills/source"
 	extensionv1 "github.com/Wei-Shaw/sub2api/pkg/extensionapi/v1"
 )
 

@@ -126,6 +126,8 @@ scripts
 !.github/scripts/*.py
 !backend/scripts/
 !backend/scripts/resolve-version.sh
+!/backend/internal/promptskills/registry/seed/tree/scripts/
+!/backend/internal/promptskills/registry/seed/tree/scripts/**
 .code-review-state
 #openspec/
 code-reviews/

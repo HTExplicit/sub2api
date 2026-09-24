@@ -95,7 +95,7 @@ jobs:
           go test -p=1 ./internal/repository -run '^$'
       - name: Account view, create, and edit scope contracts
         working-directory: backend
-        run: go test -p=1 -tags unit ./internal/service ./internal/handler/admin ./internal/handler/dto ./internal/repository -run '^(TestAccountView.*|TestAccountCreate.*|TestAccountEdit.*|TestPluginManifest(SchemaDeclaresContributionFields|AcceptsRegisteredHyphenatedResources|ResourcePatternParityAndBoundaries)|TestCindyRecoveryResourceProjection)$' -count=1
+        run: go test -p=1 -tags unit ./internal/service ./internal/handler/admin ./internal/handler/dto ./internal/repository -run '^(TestAccountView.*|TestAccountCreate.*|TestAccountEdit.*|TestPluginManifest(SchemaDeclaresContributionFields|ResourcePatternParityAndBoundaries)|TestCindyRecoveryResourceProjection)$' -count=1
       - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
         with:
           python-version: '3.12'
@@ -104,9 +104,9 @@ jobs:
           python -m pip install 'PyYAML==6.0.2'
           candidate=$(mktemp -d)/security-research
           mkdir -p "$candidate"
-          cp -a plugins/prompt-skills/registry/seed/tree/. "$candidate/"
+          cp -a backend/internal/promptskills/registry/seed/tree/. "$candidate/"
           install -D -m 0644 \
-            plugins/prompt-skills/registry/seed/pinned/waf-bypass.md \
+            backend/internal/promptskills/registry/seed/pinned/waf-bypass.md \
             "$candidate/skills/sec-assessment-tooling/pentest-tools/src-hunter/references/payloader/waf-bypass.md"
           python "$candidate/scripts/validate_skill.py" "$candidate" --require-evals --json
       - name: Account taxonomy migration integration test
@@ -209,9 +209,9 @@ jobs:
             src/api/__tests__/admin.accounts.contextCapacity.spec.ts \
             src/composables/__tests__/useModelWhitelist.spec.ts \
             src/components/account/__tests__/BulkEditAccountModal.spec.ts \
-            ../plugins/prompt-skills/ui/src/__tests__/App.spec.ts \
-            ../plugins/prompt-skills/ui/src/__tests__/PromptRules.spec.ts \
-            ../plugins/prompt-skills/ui/src/__tests__/locales.spec.ts \
+            src/views/admin/__tests__/SystemPromptsView.spec.ts \
+            src/views/admin/__tests__/SystemPromptsView.locale.spec.ts \
+            src/components/admin/systemPrompt/__tests__/PromptRules.spec.ts \
             src/views/admin/__tests__/AccountsView.console.spec.ts \
             src/views/admin/__tests__/AccountsView.priorityColumn.spec.ts \
             src/features/image-studio/__tests__/api.spec.ts \

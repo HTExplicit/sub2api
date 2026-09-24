@@ -914,7 +914,7 @@ const adminNavItems = computed((): NavItem[] => {
     },
     { path: '/admin/usage', label: t('nav.usage'), icon: ChartIcon },
     { path: '/admin/audit-logs', label: t('nav.auditLogs'), icon: ShieldIcon, hideInSimpleMode: true },
-    { path: '/admin/system-prompts', label: t('nav.systemPrompts'), icon: DocumentIcon, featureFlag: () => pluginExtensions.items.some(item => item.slot === 'surface' && item.id === 'prompt-management') }
+    { path: '/admin/system-prompts', label: t('nav.systemPrompts'), icon: DocumentIcon }
   ]
 
   const visible = applyFeatureFlags(baseItems)

@@ -297,7 +297,7 @@ func TestPromptRulesExecutionScopeRevocationRestoresWireAndCacheKey(t *testing.T
 	wire, err := gateway.finalizeBusinessPromptForSend(c, account, input, "responses", false)
 	require.NoError(t, err)
 	require.Contains(t, string(wire), "site-rule-content")
-	invoker.installation.Bindings[0].RolloutPercent = 0
+	invoker.rollout = 0
 	clean, err := gateway.finalizeBusinessPromptForSend(c, account, wire, "responses", false)
 	require.NoError(t, err)
 	require.JSONEq(t, string(input), string(clean))

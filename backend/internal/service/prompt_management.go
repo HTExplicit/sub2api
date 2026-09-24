@@ -14,10 +14,6 @@ import (
 )
 
 func invokePromptManagement(ctx context.Context, operation string, input, output any) error {
-	return invokePromptManagementPolicy(ctx, operation, input, output, false)
-}
-
-func invokePromptManagementPolicy(ctx context.Context, operation string, input, output any, cached bool) error {
 	raw, err := json.Marshal(input)
 	if err != nil {
 		return err
@@ -27,7 +23,7 @@ func invokePromptManagementPolicy(ctx context.Context, operation string, input, 
 	if operation == "prompt.source.fetch" {
 		call = ctx
 	}
-	result, err := invokeProcessDomainExtension(call, extensionv1.Invocation{Capability: extensionv1.CapabilityRequest, Operation: operation, Payload: raw}, cached)
+	result, err := invokePromptSkills(call, extensionv1.Invocation{Capability: extensionv1.CapabilityRequest, Operation: operation, Payload: raw})
 	if err != nil {
 		if strings.HasPrefix(operation, "prompt.source.") {
 			return ErrBusinessSystemPromptSourceUnavailable
@@ -100,7 +96,7 @@ func planSkillPublication(ctx context.Context, request extensionv1.SkillPublicat
 
 func LoadRemoteSkillRegistryProfile(ctx context.Context) (extensionv1.SkillRegistryPolicyProfile, error) {
 	var profile extensionv1.SkillRegistryPolicyProfile
-	if err := invokePromptManagementPolicy(ctx, "skills.profile", struct{}{}, &profile, true); err != nil {
+	if err := invokePromptManagement(ctx, "skills.profile", struct{}{}, &profile); err != nil {
 		return profile, err
 	}
 	if err := validateRemoteSkillRegistryProfile(profile); err != nil {
@@ -136,10 +132,10 @@ func planRemoteSkillStorage(ctx context.Context, candidate RemoteSkillCandidate)
 		return extensionv1.SkillStorageLayoutPlan{}, ErrBusinessSystemPromptBundleInvalid
 	}
 	var plan extensionv1.SkillStorageLayoutPlan
-	err := invokePromptManagementPolicy(ctx, "skills.storage.plan", extensionv1.SkillStorageLayoutRequest{
+	err := invokePromptManagement(ctx, "skills.storage.plan", extensionv1.SkillStorageLayoutRequest{
 		BundleVersionID: candidate.Version.ID, PromptVersionID: candidate.Prompt.ID,
 		EffectiveTreeSHA256: candidate.Version.EffectiveTreeSHA256, EffectivePromptSHA256: candidate.Prompt.EffectiveSHA256,
-	}, &plan, true)
+	}, &plan)
 	if err != nil {
 		return plan, err
 	}
@@ -166,7 +162,7 @@ func planRemoteSkillStorage(ctx context.Context, candidate RemoteSkillCandidate)
 
 func remoteSkillFilePlan(ctx context.Context, name string, data []byte) (extensionv1.SkillFilePlan, error) {
 	var plan extensionv1.SkillFilePlan
-	err := invokePromptManagementPolicy(ctx, "skills.file.plan", extensionv1.SkillFileInspection{Path: name, Prefix: data[:min(2, len(data))], UTF8: utf8.Valid(data)}, &plan, true)
+	err := invokePromptManagement(ctx, "skills.file.plan", extensionv1.SkillFileInspection{Path: name, Prefix: data[:min(2, len(data))], UTF8: utf8.Valid(data)}, &plan)
 	if err == nil && (plan.Kind != "text" && plan.Kind != "script" && plan.Kind != "binary" || len(plan.ReplaceFrom) > 2048 || len(plan.ReplaceTo) > 2048) {
 		err = ErrBusinessSystemPromptBundleInvalid
 	}

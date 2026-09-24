@@ -47,6 +47,9 @@
         <button @click="$emit('delete')" class="btn btn-danger btn-sm">{{ t('admin.accounts.bulkActions.delete') }}</button>
         <ExtensionSurface name="account-batch-test"><button data-test="batch-test" @click="$emit('test')" class="btn btn-secondary btn-sm">{{ t('admin.accounts.batchTest.title') }}</button></ExtensionSurface>
         <ExtensionSlot name="account.actions" :account-ids="selectedIds" :accounts="selectedAccounts" />
+        <button v-if="promptBindingAvailable" type="button" data-test="account-prompt-binding-bulk" class="btn btn-secondary btn-sm" @click="promptBindingOpen = true">
+          {{ t('admin.systemPrompts.accountPrompts') }}
+        </button>
         <button @click="$emit('reset-status')" class="btn btn-secondary btn-sm">{{ t('admin.accounts.bulkActions.resetStatus') }}</button>
         <button @click="$emit('refresh-token')" class="btn btn-secondary btn-sm">{{ t('admin.accounts.bulkActions.refreshToken') }}</button>
         <button data-test="refresh-tier" @click="$emit('refresh-tier')" class="btn btn-secondary btn-sm">{{ t('admin.accounts.bulkActions.refreshTier') }}</button>
@@ -73,15 +76,21 @@
       </button></ExtensionSurface>
     </div>
   </div>
+  <BaseDialog :show="promptBindingOpen" :title="t('admin.systemPrompts.accountPrompts')" width="normal" @close="promptBindingOpen = false">
+    <AccountPromptBindingPanel v-if="promptBindingOpen" :account-ids="selectedIds" />
+  </BaseDialog>
 </template>
 
 <script setup lang="ts">
+import { computed, defineAsyncComponent, ref } from 'vue'
 import ExtensionSurface from '@/components/plugins/ExtensionSurface.vue'
 import { useI18n } from 'vue-i18n'
+import BaseDialog from '@/components/common/BaseDialog.vue'
+import { accountPromptBindingLimit, supportsAccountPromptBinding } from '@/utils/accountPromptBinding'
 import type { AccountSelectionIdentity } from '@/composables/useAccountSelectionMetadata'
 import ExtensionSlot from '@/components/plugins/ExtensionSlot.vue'
 
-defineProps<{
+const props = defineProps<{
   selectedIds: number[]
   totalResults: number
   selectingAll: boolean
@@ -108,4 +117,14 @@ defineEmits([
 ])
 
 const { t } = useI18n()
+const AccountPromptBindingPanel = defineAsyncComponent(() => import('./AccountPromptBindingPanel.vue'))
+const promptBindingOpen = ref(false)
+const promptBindingAvailable = computed(() => {
+  if (!props.selectedIds.length || props.selectedIds.length > accountPromptBindingLimit) return false
+  const known = new Map((props.selectedAccounts || []).map(account => [account.id, account]))
+  return props.selectedIds.every(id => {
+    const account = known.get(id)
+    return !!account && supportsAccountPromptBinding(account)
+  })
+})
 </script>

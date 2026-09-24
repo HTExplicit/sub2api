@@ -1,8 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount, type VueWrapper } from '@vue/test-utils'
 import { createI18n } from 'vue-i18n'
-import en from '../locales/en'
-import zh from '../locales/zh'
+import en from '@/i18n/locales/en/admin/systemPrompts'
+import zh from '@/i18n/locales/zh/admin/systemPrompts'
 
 const api = vi.hoisted(() => ({
   list: vi.fn(), get: vi.fn(), create: vi.fn(), saveDraft: vi.fn(), updateMetadata: vi.fn(),
@@ -10,13 +10,10 @@ const api = vi.hoisted(() => ({
   getSkillRegistry: vi.fn(), startSkillSync: vi.fn(), publishSkillVersion: vi.fn(),
 }))
 const notifications = vi.hoisted(() => ({ showError: vi.fn(), showSuccess: vi.fn(), showWarning: vi.fn() }))
-vi.mock('../api', () => ({ default: api }))
-vi.mock('@sub2api/plugin-ui', async () => ({
-  ...await vi.importActual<typeof import('@sub2api/plugin-ui')>('@sub2api/plugin-ui'),
-  useNotifications: () => notifications,
-}))
+vi.mock('@/api/admin/systemPrompts', () => ({ default: api }))
+vi.mock('@/stores/app', () => ({ useAppStore: () => notifications }))
 
-import App from '../App.vue'
+import App from '../SystemPromptsView.vue'
 
 function messages(value: object, prefix = ''): Record<string, string> {
   return Object.fromEntries(Object.entries(value).flatMap(([key, child]) => {
@@ -63,6 +60,7 @@ describe('prompt-skills site language', () => {
       zh: { admin: zh, common: { confirm: '确认', cancel: '取消', close: '关闭' } },
     } })
     const wrapper = mount(App, { global: { plugins: [i18n], stubs: {
+      AppLayout: { template: '<div><slot /></div>' },
       Icon: true, Toggle: true, SystemPromptAdvancedDrawer: true,
       BaseDialog: true, ConfirmDialog: true,
     } } })

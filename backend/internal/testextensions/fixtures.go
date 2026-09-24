@@ -13,7 +13,7 @@ import (
 	codexrecovery "github.com/HTExplicit/sub2api-plugins/codexruntime/recovery"
 
 	accounttools "github.com/HTExplicit/sub2api-plugins/accounttools/policy"
-	prompt "github.com/HTExplicit/sub2api-plugins/promptskills/policy"
+	prompt "github.com/Wei-Shaw/sub2api/internal/promptskills/policy"
 	"github.com/Wei-Shaw/sub2api/internal/service"
 	extensionv1 "github.com/Wei-Shaw/sub2api/pkg/extensionapi/v1"
 )

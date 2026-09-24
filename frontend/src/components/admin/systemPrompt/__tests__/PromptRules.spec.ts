@@ -1,16 +1,16 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import { createI18n } from 'vue-i18n'
-import en from '../locales/en'
-import zh from '../locales/zh'
+import en from '@/i18n/locales/en/admin/systemPrompts'
+import zh from '@/i18n/locales/zh/admin/systemPrompts'
 import PromptRulesManager from '../PromptRulesManager.vue'
-import AccountPromptBinding from '../AccountPromptBinding.vue'
-import { legalPromptPosition } from '../rules-api'
+import AccountPromptBinding from '@/components/admin/account/AccountPromptBindingPanel.vue'
+import { legalPromptPosition } from '@/api/admin/systemPromptRules'
 
-const mocks = vi.hoisted(() => ({ read: vi.fn(), save: vi.fn(), accounts: vi.fn(), bind: vi.fn(), preview: vi.fn(), list: vi.fn(), listVersions: vi.fn(), notify: vi.fn(), event: vi.fn() }))
-vi.mock('../rules-api', async () => ({ ...await vi.importActual<typeof import('../rules-api')>('../rules-api'), rulesAPI: { read: mocks.read, save: mocks.save, accounts: mocks.accounts, bind: mocks.bind, preview: mocks.preview } }))
-vi.mock('../api', () => ({ default: { list: mocks.list, listVersions: mocks.listVersions } }))
-vi.mock('@sub2api/plugin-ui', async () => ({ ...await vi.importActual<typeof import('@sub2api/plugin-ui')>('@sub2api/plugin-ui'), useNotifications: () => ({ showSuccess: mocks.notify }), emitHostEvent: mocks.event }))
+const mocks = vi.hoisted(() => ({ read: vi.fn(), save: vi.fn(), accounts: vi.fn(), bind: vi.fn(), preview: vi.fn(), list: vi.fn(), listVersions: vi.fn(), notify: vi.fn() }))
+vi.mock('@/api/admin/systemPromptRules', async () => ({ ...await vi.importActual<typeof import('@/api/admin/systemPromptRules')>('@/api/admin/systemPromptRules'), rulesAPI: { read: mocks.read, save: mocks.save, accounts: mocks.accounts, bind: mocks.bind, preview: mocks.preview } }))
+vi.mock('@/api/admin/systemPrompts', () => ({ default: { list: mocks.list, listVersions: mocks.listVersions } }))
+vi.mock('@/stores/app', () => ({ useAppStore: () => ({ showSuccess: mocks.notify }) }))
 const i18n = () => createI18n({ legacy: false, locale: 'en', messages: { en: { admin: en }, zh: { admin: zh } } })
 const rule = () => ({ id: 'default', name: 'Default rule', enabled: true, follow_active: true, template_id: 1, version_id: 2, order: 100, delivery: 'native_control', position: 'control_append', model_match: 'upstream', models: [] })
 const state = () => ({ revision: 7, enabled: true, compact_enabled: false, policy: { version: 1, default_rule_ids: ['default'], rules: [rule()] } })
@@ -64,7 +64,7 @@ describe('account prompt bindings', () => {
     await wrapper.get('[data-test="save-binding"]').trigger('click'); await flushPromises()
     expect(mocks.bind).toHaveBeenCalledWith([1, 2].map(id => ({ account_id: id, expected_updated_at: account(id).updated_at, binding: { mode: 'custom', rule_ids: ['default'] } })), 7)
     expect(wrapper.text()).toContain('Account changed; refresh before retrying')
-    expect(mocks.event).toHaveBeenCalledWith('changed', { account_ids: [1] })
+    expect(wrapper.emitted('changed')).toHaveLength(1)
     expect(JSON.stringify(mocks.bind.mock.calls)).not.toContain('Site text')
     wrapper.unmount()
   })

@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	promptsource "github.com/HTExplicit/sub2api-plugins/promptskills/source"
+	promptsource "github.com/Wei-Shaw/sub2api/internal/promptskills/source"
 
 	"github.com/DATA-DOG/go-sqlmock"
 	"github.com/Wei-Shaw/sub2api/internal/service"

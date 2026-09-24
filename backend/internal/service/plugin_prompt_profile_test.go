@@ -31,36 +31,34 @@ func TestSkillStorageRejectsNonHashPathBeforeCallingThePlugin(t *testing.T) {
 	require.ErrorIs(t, err, ErrBusinessSystemPromptBundleInvalid)
 }
 
-type restrictedSkillProfileFixture struct {
-	promptPolicyFixture
-	bytesOnly bool
-}
-
-func (f restrictedSkillProfileFixture) InvokeOperation(ctx context.Context, platform, kind string, in extensionv1.Invocation) (extensionv1.Result, error) {
-	result, err := f.promptPolicyFixture.InvokeOperation(ctx, platform, kind, in)
-	if err != nil || in.Operation != "skills.profile" {
+// restrictedSkillProfile lowers one registry profile limit returned by invoke.
+func restrictedSkillProfile(invoke func(context.Context, extensionv1.Invocation) (extensionv1.Result, error), bytesOnly bool) func(context.Context, extensionv1.Invocation) (extensionv1.Result, error) {
+	return func(ctx context.Context, in extensionv1.Invocation) (extensionv1.Result, error) {
+		result, err := invoke(ctx, in)
+		if err != nil || in.Operation != "skills.profile" {
+			return result, err
+		}
+		var profile extensionv1.SkillRegistryPolicyProfile
+		if err = json.Unmarshal(result.Payload, &profile); err != nil {
+			return result, err
+		}
+		if bytesOnly {
+			profile.MaxTotalBytes = 1
+		} else {
+			profile.MaxFileCount = 1
+		}
+		result.Payload, err = json.Marshal(profile)
 		return result, err
 	}
-	var profile extensionv1.SkillRegistryPolicyProfile
-	if err = json.Unmarshal(result.Payload, &profile); err != nil {
-		return result, err
-	}
-	if f.bytesOnly {
-		profile.MaxTotalBytes = 1
-	} else {
-		profile.MaxFileCount = 1
-	}
-	result.Payload, err = json.Marshal(profile)
-	return result, err
 }
 
 func TestSkillProfileLimitsStopDownloadsBeforeAnyNetworkRequest(t *testing.T) {
 	prompt, err := buildRemoteSkillPromptCapture([]byte(modelGangPromptCaptureFixture))
 	require.NoError(t, err)
-	previous := processExtensionOperations.Load()
-	t.Cleanup(func() { processExtensionOperations.Store(previous) })
+	previous := invokePromptSkills
+	t.Cleanup(func() { invokePromptSkills = previous })
 	for _, bytesOnly := range []bool{false, true} {
-		processExtensionOperations.Store(&extensionOperationProvider{invoker: restrictedSkillProfileFixture{bytesOnly: bytesOnly}})
+		invokePromptSkills = restrictedSkillProfile(previous, bytesOnly)
 		client := &fakeRemoteSkillHTTPClient{}
 		_, err := NewMoxinggangRemoteSkillCandidateSource(client).Build(context.Background(), prompt, nil)
 		require.ErrorIs(t, err, ErrBusinessSystemPromptBundleInvalid)

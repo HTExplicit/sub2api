@@ -82,12 +82,13 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { extractApiErrorCode, extractApiErrorMessage, useNotifications } from '@sub2api/plugin-ui'
-import promptAPI, { type SystemPromptTemplate, type SystemPromptVersion } from './api'
-import { legalPromptPosition, rulesAPI, type PromptDelivery, type PromptPosition, type PromptPreview, type PromptRule, type PromptRulePolicy, type PromptRuleState } from './rules-api'
+import { useAppStore } from '@/stores/app'
+import { extractApiErrorCode, extractApiErrorMessage } from '@/utils/apiError'
+import promptAPI, { type SystemPromptTemplate, type SystemPromptVersion } from '@/api/admin/systemPrompts'
+import { legalPromptPosition, rulesAPI, type PromptDelivery, type PromptPosition, type PromptPreview, type PromptRule, type PromptRulePolicy, type PromptRuleState } from '@/api/admin/systemPromptRules'
 const { t } = useI18n()
 const text = (key: string) => t(`admin.systemPrompts.rules.${key}`)
-const notifications = useNotifications()
+const notifications = useAppStore()
 const emit = defineEmits<{ saved: [] }>()
 const state = ref<PromptRuleState | null>(null), draft = ref<PromptRulePolicy>({ version: 1, rules: [], default_rule_ids: [] })
 const templates = ref<SystemPromptTemplate[]>([]), versions = ref<Record<number, SystemPromptVersion[]>>({})

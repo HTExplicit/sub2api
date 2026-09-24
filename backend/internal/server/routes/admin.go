@@ -179,52 +179,34 @@ func registerCindyBalanceProbeRoutes(admin *gin.RouterGroup, h *handler.Handlers
 
 func registerSystemPromptRoutes(admin *gin.RouterGroup, h *handler.Handlers) {
 	prompts := admin.Group("/system-prompts")
-	for _, route := range []struct {
-		name, method, path string
-		handler            gin.HandlerFunc
-	}{
-		{"prompts.list", "GET", "", h.Admin.SystemPrompt.List},
-		{"prompts.create", "POST", "", h.Admin.SystemPrompt.Create},
-		{"prompts.runtime.read", "GET", "/runtime", h.Admin.SystemPrompt.Runtime},
-		{"prompts.runtime.update", "PUT", "/runtime", h.Admin.SystemPrompt.UpdateRuntime},
-		{"prompts.rules.read", "GET", "/rules", h.Admin.SystemPrompt.Rules},
-		{"prompts.rules.update", "PUT", "/rules", h.Admin.SystemPrompt.UpdateRules},
-		{"prompts.bindings.read", "POST", "/accounts/resolve", h.Admin.SystemPrompt.AccountBindings},
-		{"prompts.bindings.update", "POST", "/accounts/bindings", h.Admin.SystemPrompt.UpdateAccountBindings},
-		{"prompts.rules.preview", "POST", "/rules/preview/:account_id", h.Admin.SystemPrompt.PreviewRules},
-		{"prompts.preview.merge", "POST", "/preview/merge", h.Admin.SystemPrompt.PreviewMerge},
-		{"prompts.preview.upstream", "POST", "/preview/upstream", h.Admin.SystemPrompt.PreviewUpstream},
-		{"skills.registry", "GET", "/skill-registry", h.Admin.SystemPrompt.SkillRegistry},
-		{"skills.versions", "GET", "/skill-registry/versions", h.Admin.SystemPrompt.SkillVersions},
-		{"skills.version", "GET", "/skill-registry/versions/:bundle_version_id", h.Admin.SystemPrompt.SkillVersion},
-		{"skills.sync.start", "POST", "/skill-registry/syncs", h.Admin.SystemPrompt.StartSkillSync},
-		{"skills.sync.read", "GET", "/skill-registry/syncs/:sync_id", h.Admin.SystemPrompt.SkillSync},
-		{"skills.publish", "POST", "/skill-registry/versions/:bundle_version_id/publish", h.Admin.SystemPrompt.PublishSkillVersion},
-		{"skills.rollback", "POST", "/skill-registry/versions/:bundle_version_id/rollback", h.Admin.SystemPrompt.RollbackSkillVersion},
-		{"prompts.read", "GET", "/:id", h.Admin.SystemPrompt.Get},
-		{"prompts.versions", "GET", "/:id/versions", h.Admin.SystemPrompt.Versions},
-		{"prompts.update", "PATCH", "/:id", h.Admin.SystemPrompt.Update},
-		{"prompts.delete", "DELETE", "/:id", h.Admin.SystemPrompt.Delete},
-		{"prompts.duplicate", "POST", "/:id/duplicate", h.Admin.SystemPrompt.Duplicate},
-		{"prompts.draft", "POST", "/:id/versions", h.Admin.SystemPrompt.SaveVersion},
-		{"prompts.source.sync", "POST", "/:id/upstream-sync", h.Admin.SystemPrompt.SyncManagedSource},
-		{"prompts.publish", "POST", "/:id/versions/:version_id/publish", h.Admin.SystemPrompt.Publish},
-		{"prompts.rollback", "POST", "/:id/versions/:version_id/rollback", h.Admin.SystemPrompt.Rollback},
-	} {
-		descriptor := extensionv1.ResourceDescriptor{ResourceGrant: extensionv1.ResourceGrant{Name: route.name, Capability: extensionv1.CapabilityRequest, Permission: "admin"}, Method: route.method, Path: prompts.BasePath() + route.path}
-		if route.name == "prompts.bindings.read" {
-			descriptor.AccountBodyField = "account_ids"
-		}
-		if route.name == "prompts.bindings.update" {
-			descriptor.AccountItemsField = "updates"
-		}
-		if route.name == "prompts.rules.preview" {
-			descriptor.AccountParam = "account_id"
-		}
-		if route.name == "prompts.bindings.read" || route.name == "prompts.bindings.update" || route.name == "prompts.rules.preview" {
-			descriptor.Capability = extensionv1.CapabilityAdmin
-		}
-		prompts.Handle(route.method, route.path, h.Admin.Plugin.RegisterResource(descriptor), route.handler)
+	{
+		prompts.GET("", h.Admin.SystemPrompt.List)
+		prompts.POST("", h.Admin.SystemPrompt.Create)
+		prompts.GET("/runtime", h.Admin.SystemPrompt.Runtime)
+		prompts.PUT("/runtime", h.Admin.SystemPrompt.UpdateRuntime)
+		prompts.GET("/rules", h.Admin.SystemPrompt.Rules)
+		prompts.PUT("/rules", h.Admin.SystemPrompt.UpdateRules)
+		prompts.POST("/accounts/resolve", h.Admin.SystemPrompt.AccountBindings)
+		prompts.POST("/accounts/bindings", h.Admin.SystemPrompt.UpdateAccountBindings)
+		prompts.POST("/rules/preview/:account_id", h.Admin.SystemPrompt.PreviewRules)
+		prompts.POST("/preview/merge", h.Admin.SystemPrompt.PreviewMerge)
+		prompts.POST("/preview/upstream", h.Admin.SystemPrompt.PreviewUpstream)
+		prompts.GET("/skill-registry", h.Admin.SystemPrompt.SkillRegistry)
+		prompts.GET("/skill-registry/versions", h.Admin.SystemPrompt.SkillVersions)
+		prompts.GET("/skill-registry/versions/:bundle_version_id", h.Admin.SystemPrompt.SkillVersion)
+		prompts.POST("/skill-registry/syncs", h.Admin.SystemPrompt.StartSkillSync)
+		prompts.GET("/skill-registry/syncs/:sync_id", h.Admin.SystemPrompt.SkillSync)
+		prompts.POST("/skill-registry/versions/:bundle_version_id/publish", h.Admin.SystemPrompt.PublishSkillVersion)
+		prompts.POST("/skill-registry/versions/:bundle_version_id/rollback", h.Admin.SystemPrompt.RollbackSkillVersion)
+		prompts.GET("/:id", h.Admin.SystemPrompt.Get)
+		prompts.GET("/:id/versions", h.Admin.SystemPrompt.Versions)
+		prompts.PATCH("/:id", h.Admin.SystemPrompt.Update)
+		prompts.DELETE("/:id", h.Admin.SystemPrompt.Delete)
+		prompts.POST("/:id/duplicate", h.Admin.SystemPrompt.Duplicate)
+		prompts.POST("/:id/versions", h.Admin.SystemPrompt.SaveVersion)
+		prompts.POST("/:id/upstream-sync", h.Admin.SystemPrompt.SyncManagedSource)
+		prompts.POST("/:id/versions/:version_id/publish", h.Admin.SystemPrompt.Publish)
+		prompts.POST("/:id/versions/:version_id/rollback", h.Admin.SystemPrompt.Rollback)
 	}
 }
 

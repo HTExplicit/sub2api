@@ -207,12 +207,6 @@ func (s *BusinessSystemPromptService) SyncManagedSource(
 	if !ok {
 		return BusinessSystemPromptSourceSyncResult{}, ErrBusinessSystemPromptSourceUnavailable
 	}
-	bound, release, err := bindProcessDomainExtensionContext(ctx, extensionv1.Invocation{Capability: extensionv1.CapabilityRequest, Operation: "prompt.source.fetch"})
-	if err != nil {
-		return BusinessSystemPromptSourceSyncResult{}, ErrBusinessSystemPromptSourceUnavailable
-	}
-	defer release()
-	ctx = bound
 	candidate, err := s.source.Fetch(ctx)
 	if err != nil {
 		return BusinessSystemPromptSourceSyncResult{}, err
@@ -233,7 +227,7 @@ func (s *BusinessSystemPromptService) Initialize(ctx context.Context) error {
 		return errors.New("business system prompt store unavailable")
 	}
 	var seeds []BusinessSystemPromptSeed
-	if err := invokePromptManagementPolicy(ctx, "prompt.seeds", struct{}{}, &seeds, true); err != nil {
+	if err := invokePromptManagement(ctx, "prompt.seeds", struct{}{}, &seeds); err != nil {
 		return err
 	}
 	for i := range seeds {
