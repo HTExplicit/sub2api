@@ -101,6 +101,16 @@ func (h *SettingHandler) SetStepUpDeps(totpService *service.TotpService, userSer
 
 // GetSettings 获取所有系统设置
 // GET /api/v1/admin/settings
+// GetOfficialModelContextCatalog returns the release-pinned official model
+// capacity catalog for the read-only admin browser.
+// GET /api/v1/admin/settings/model-context-catalog
+func (h *SettingHandler) GetOfficialModelContextCatalog(c *gin.Context) {
+	response.Success(c, gin.H{
+		"reference_release": service.GPTContextCapacityReferenceRelease,
+		"entries":           service.OfficialModelCatalogSnapshot(),
+	})
+}
+
 func (h *SettingHandler) GetSettings(c *gin.Context) {
 	c.Header("Cache-Control", "no-store")
 	settings, err := h.settingService.GetAllSettings(c.Request.Context())

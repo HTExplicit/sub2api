@@ -1,18 +1,4 @@
-package catalog
-
-import extensionv1 "github.com/Wei-Shaw/sub2api/pkg/extensionapi/v1"
-
-const ModelContextCapacityBasisMaximum = extensionv1.ModelContextCapacityBasisMaximum
-const ModelContextCapacityBasisTotal = extensionv1.ModelContextCapacityBasisTotal
-
-type ModelContextCapacity = extensionv1.ModelContextCapacity
-type ModelContextCapacityReference = extensionv1.ModelContextCapacityReference
-type OfficialModelContextCapacity = extensionv1.OfficialModelContextCapacity
-
-const (
-	AccountModeCoding = "coding"
-	AccountModePayG   = "payg"
-)
+package service
 
 // This release-pinned catalog describes capacity, not model availability or routing.
 // Stored IDs/aliases are exact; matching-only namespace and GPT spelling variants

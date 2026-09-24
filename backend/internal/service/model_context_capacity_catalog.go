@@ -16,17 +16,23 @@ type extensionCatalogProvider struct{ resolver extensionv1.CatalogResolver }
 var processExtensionCatalog atomic.Pointer[extensionCatalogProvider]
 
 func lookupExtensionCatalog(query extensionv1.CatalogQuery) *OfficialModelContextCapacity {
+	official, err := resolveOfficialModelCatalog(query)
+	if err != nil {
+		return nil
+	}
 	provider := processExtensionCatalog.Load()
 	if provider == nil {
-		return nil
+		return official.Entry
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
+	// Remaining plugin catalogs (Cindy) still answer through the plugin manager.
+	// An unavailable enabled catalog keeps the lookup conservative, as before.
 	result, err := provider.resolver.ResolveCatalog(ctx, query)
 	if err != nil {
 		return nil
 	}
-	return result.Entry
+	return mergeCatalogMatches(official, result).Entry
 }
 func (m *PluginManager) ResolveCatalog(ctx context.Context, query extensionv1.CatalogQuery) (extensionv1.CatalogMatch, error) {
 	if err := ctx.Err(); err != nil {

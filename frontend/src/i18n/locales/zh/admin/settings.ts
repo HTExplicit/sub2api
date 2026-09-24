@@ -516,6 +516,17 @@ export default {
         saved: 'OpenCode Go 用量刷新设置已保存',
         saveFailed: '保存 OpenCode Go 用量刷新设置失败'
       },
+      officialModelCatalog: {
+        title: '模型目录与容量参考',
+        description: '参考数据用于容量规划；账号自定义值与实时上游声明继续按既有优先级处理。',
+        search: '搜索模型或供应商',
+        count: '{count} 项匹配，显示前 {shown} 项。',
+        context: '上下文',
+        maxOutput: '最大输出',
+        subscriptionMaximum: '订阅参考最大窗口',
+        verified: '核对日期',
+        loadFailed: '模型目录加载失败'
+      },
       gatewayForwarding: {
         title: '请求转发行为',
         description: '控制请求转发到上游 OAuth 账号时的行为',

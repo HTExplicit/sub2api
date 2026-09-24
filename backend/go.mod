@@ -2,8 +2,6 @@ module github.com/Wei-Shaw/sub2api
 
 go 1.27.0
 
-replace github.com/HTExplicit/sub2api-plugins/modelpolicy => ../plugins/model-policy
-
 replace github.com/HTExplicit/sub2api-plugins/codexruntime => ../plugins/codex-runtime
 
 replace github.com/HTExplicit/sub2api-plugins/promptskills => ../plugins/prompt-skills
@@ -17,7 +15,6 @@ replace github.com/HTExplicit/sub2api-plugins/imagetools => ../plugins/image-too
 replace github.com/HTExplicit/sub2api-plugins/adminobservability => ../plugins/admin-observability
 
 require (
-	github.com/HTExplicit/sub2api-plugins/modelpolicy v0.0.0
 	github.com/HTExplicit/sub2api-plugins/codexruntime v0.0.0
 	github.com/HTExplicit/sub2api-plugins/promptskills v0.0.0
 	github.com/HTExplicit/sub2api-plugins/accounttools v0.0.0

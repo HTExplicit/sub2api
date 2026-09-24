@@ -523,6 +523,17 @@ export default {
         saved: 'OpenCode Go usage refresh settings saved',
         saveFailed: 'Failed to save OpenCode Go usage refresh settings'
       },
+      officialModelCatalog: {
+        title: 'Model catalog and capacity references',
+        description: 'References support capacity planning. Account overrides and live upstream declarations retain their existing precedence.',
+        search: 'Search model or provider',
+        count: '{count} matches; showing the first {shown}.',
+        context: 'Context',
+        maxOutput: 'Max output',
+        subscriptionMaximum: 'Subscription reference maximum',
+        verified: 'Verified',
+        loadFailed: 'Failed to load the model catalog'
+      },
       gatewayForwarding: {
         title: 'Request Forwarding',
         description: 'Control how requests are forwarded to upstream OAuth accounts',

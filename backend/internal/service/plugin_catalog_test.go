@@ -7,7 +7,6 @@ import (
 	"strings"
 	"testing"
 
-	modelcatalog "github.com/HTExplicit/sub2api-plugins/modelpolicy/catalog"
 	"github.com/Wei-Shaw/sub2api/internal/config"
 	extensionv1 "github.com/Wei-Shaw/sub2api/pkg/extensionapi/v1"
 	"github.com/stretchr/testify/require"
@@ -222,8 +221,8 @@ func TestPluginCatalogDiscardsReplyFromChangedConfigRevision(t *testing.T) {
 func TestPluginCatalogNamespaceLimitMatchesHostCandidates(t *testing.T) {
 	previous := processExtensionCatalog.Load()
 	t.Cleanup(func() { processExtensionCatalog.Store(previous) })
-	module := modelcatalog.New()
-	processExtensionCatalog.Store(&extensionCatalogProvider{resolver: module})
+	// The official catalog resolves in process; no plugin catalog is installed.
+	processExtensionCatalog.Store(nil)
 	account := &Account{ID: 42, Platform: PlatformOpenAI, Type: AccountTypeAPIKey, Credentials: map[string]any{"base_url": "https://api.openai.com/v1"}}
 	model := strings.Repeat("namespace", 35) + "/gpt-6-astra"
 	require.Greater(t, len(model), 300)
@@ -239,6 +238,6 @@ func TestPluginCatalogNamespaceLimitMatchesHostCandidates(t *testing.T) {
 	require.Len(t, tooLong, 513)
 	require.False(t, validModelContextID(tooLong))
 	require.Nil(t, LookupOfficialModelContextCapacity(account, tooLong))
-	_, err := module.ResolveCatalog(context.Background(), extensionv1.CatalogQuery{Candidates: modelContextReferenceCandidates(tooLong), Platform: PlatformOpenAI, AccountType: AccountTypeAPIKey})
-	require.Error(t, err, "the plugin must independently reject a 513-byte candidate")
+	_, err := resolveOfficialModelCatalog(extensionv1.CatalogQuery{Candidates: modelContextReferenceCandidates(tooLong), Platform: PlatformOpenAI, AccountType: AccountTypeAPIKey})
+	require.Error(t, err, "the official catalog must independently reject a 513-byte candidate")
 }

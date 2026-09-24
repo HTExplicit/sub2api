@@ -15,7 +15,6 @@ import (
 	accounttools "github.com/HTExplicit/sub2api-plugins/accounttools/policy"
 	observability "github.com/HTExplicit/sub2api-plugins/adminobservability/policy"
 	imagetools "github.com/HTExplicit/sub2api-plugins/imagetools/policy"
-	catalog "github.com/HTExplicit/sub2api-plugins/modelpolicy/catalog"
 	prompt "github.com/HTExplicit/sub2api-plugins/promptskills/policy"
 	"github.com/Wei-Shaw/sub2api/internal/service"
 	extensionv1 "github.com/Wei-Shaw/sub2api/pkg/extensionapi/v1"
@@ -71,8 +70,8 @@ func (fixture operations) InvokeOperation(ctx context.Context, _, _ string, in e
 	}
 	return extensionv1.Result{}, service.ErrExtensionOperationDisabled
 }
-func Install() { service.ConfigureProcessExtensionServices(catalog.New(), operations{}) }
+func Install() { service.ConfigureProcessExtensionServices(nil, operations{}) }
 
 func InstallImageTools(config extensionv1.ImageToolsConfig) {
-	service.ConfigureProcessExtensionServices(catalog.New(), operations{imageConfig: &config})
+	service.ConfigureProcessExtensionServices(nil, operations{imageConfig: &config})
 }

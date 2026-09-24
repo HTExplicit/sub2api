@@ -68,33 +68,6 @@ func TestExtensionRuntimeUsesOfficialProcessAndHostBroker(t *testing.T) {
 	// HTTP upstream exists in this test, so it cannot issue a real model request.
 }
 
-func TestCatalogExtensionRuntimeUsesIndependentProcess(t *testing.T) {
-	binary := os.Getenv("SUB2API_MODEL_POLICY_TEST_BINARY")
-	if binary == "" {
-		t.Skip("set SUB2API_MODEL_POLICY_TEST_BINARY to the independent model-policy program")
-	}
-	data, err := os.ReadFile(binary)
-	require.NoError(t, err)
-	digest := sha256.Sum256(data)
-	installation := &PluginInstallation{ID: 8, PluginKey: "codexrip.model-policy", Version: firstPartyTestVersion(t, "model-policy"), BinaryPath: binary, BinarySHA256: hex.EncodeToString(digest[:]), Manifest: PluginManifest{Requires: PluginRequirements{ExtensionAPI: 1}, Capabilities: []PluginCapability{{ID: extensionv1.CapabilityCatalog, Platform: "*", AccountType: "*"}}}}
-	host := newPluginHostServiceServer(installation.PluginKey, nil, nil, PluginAccountScope{})
-	host.extension = &pluginExtensionHost{key: installation.PluginKey, state: &extensionReadOnlyFixture{}}
-	socketDir := filepath.Join(t.TempDir(), "runtime")
-	require.NoError(t, os.MkdirAll(socketDir, 0700))
-	runtime, err := startPluginRuntime(context.Background(), installation, 15*time.Second, socketDir, host)
-	require.NoError(t, err)
-	t.Cleanup(runtime.kill)
-	require.NoError(t, runtime.validateAndApplyConfig(context.Background(), []byte(`{}`)))
-	raw, _ := json.Marshal(extensionv1.CatalogQuery{Candidates: []string{"gpt-6-astra"}, Platform: PlatformOpenAI, AccountType: AccountTypeAPIKey, Scheme: "https", Host: "api.openai.com"})
-	result, err := runtime.extension.Invoke(context.Background(), extensionv1.Invocation{Capability: extensionv1.CapabilityCatalog, Operation: "resolve", Payload: raw})
-	require.NoError(t, err)
-	var match extensionv1.CatalogMatch
-	require.NoError(t, json.Unmarshal(result.Payload, &match))
-	require.NotNil(t, match.Entry)
-	require.EqualValues(t, 1050000, match.Entry.ContextWindow)
-	require.Equal(t, "gpt-6-astra", match.Entry.ModelID)
-}
-
 func TestPromptExtensionRuntimeUsesIndependentProcess(t *testing.T) {
 	binary := os.Getenv("SUB2API_PROMPT_SKILLS_TEST_BINARY")
 	if binary == "" {

@@ -28,7 +28,6 @@ go build -trimpath -o "$plugin_build_dir/package-plugin" ./cmd/package-plugin
   -key-id codexrip-plugins-test
 
 export SUB2API_EXTENSION_TEST_BINARY="$plugin_build_dir/binaries/codex-runtime"
-export SUB2API_MODEL_POLICY_TEST_BINARY="$plugin_build_dir/binaries/model-policy"
 export SUB2API_EXTENSION_TEST_BUNDLE="$plugin_build_dir/bundle/lock.json"
 export SUB2API_PROMPT_SKILLS_TEST_BINARY="$plugin_build_dir/binaries/prompt-skills"
 export SUB2API_ACCOUNT_TOOLS_TEST_BINARY="$plugin_build_dir/binaries/account-tools"
@@ -37,4 +36,4 @@ export SUB2API_IMAGE_TOOLS_TEST_BINARY="$plugin_build_dir/binaries/image-tools"
 export SUB2API_ADMIN_OBSERVABILITY_TEST_BINARY="$plugin_build_dir/binaries/admin-observability"
 export SUB2API_EXTENSION_TEST_PUBLIC_KEY
 SUB2API_EXTENSION_TEST_PUBLIC_KEY=$(jq -r .public_key "$plugin_build_dir/publisher.json")
-go test ./internal/service -run '^(TestExtensionRuntimeUsesOfficialProcessAndHostBroker|TestCatalogExtensionRuntimeUsesIndependentProcess|TestPromptExtensionRuntimeUsesIndependentProcess|TestAccountToolsExtensionRuntimeUsesIndependentProcess|TestCindyProviderExtensionRuntimeUsesIndependentProcess|TestImageToolsExtensionRuntimeUsesIndependentProcess|TestObservabilityExtensionRuntimeUsesScopedMetricsBroker|TestFirstPartyBundleContainsMatchingSignedDomainPackages)$' -count=1
+go test ./internal/service -run '^(TestExtensionRuntimeUsesOfficialProcessAndHostBroker|TestPromptExtensionRuntimeUsesIndependentProcess|TestAccountToolsExtensionRuntimeUsesIndependentProcess|TestCindyProviderExtensionRuntimeUsesIndependentProcess|TestImageToolsExtensionRuntimeUsesIndependentProcess|TestObservabilityExtensionRuntimeUsesScopedMetricsBroker|TestFirstPartyBundleContainsMatchingSignedDomainPackages)$' -count=1

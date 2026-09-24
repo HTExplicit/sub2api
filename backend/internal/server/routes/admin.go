@@ -722,6 +722,7 @@ func registerSettingsRoutes(admin *gin.RouterGroup, h *handler.Handlers) {
 	{
 		adminSettings.GET("", h.Admin.Setting.GetSettings)
 		adminSettings.PUT("", h.Admin.Setting.UpdateSettings)
+		adminSettings.GET("/model-context-catalog", h.Admin.Setting.GetOfficialModelContextCatalog)
 		adminSettings.POST("/openai-codex-ticket/proxy-test", h.Admin.Setting.TestCodexTicketProxy)
 		adminSettings.POST("/test-smtp", h.Admin.Setting.TestSMTPConnection)
 		adminSettings.POST("/send-test-email", h.Admin.Setting.SendTestEmail)
