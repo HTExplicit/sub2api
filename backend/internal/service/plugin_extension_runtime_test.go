@@ -68,6 +68,36 @@ func TestExtensionRuntimeUsesOfficialProcessAndHostBroker(t *testing.T) {
 	// HTTP upstream exists in this test, so it cannot issue a real model request.
 }
 
+func TestCindyProviderExtensionRuntimeUsesIndependentProcess(t *testing.T) {
+	binary := os.Getenv("SUB2API_CINDY_PROVIDER_TEST_BINARY")
+	if binary == "" {
+		t.Skip("set SUB2API_CINDY_PROVIDER_TEST_BINARY to the independent Cindy provider program")
+	}
+	data, err := os.ReadFile(binary)
+	require.NoError(t, err)
+	digest := sha256.Sum256(data)
+	installation := &PluginInstallation{ID: 11, PluginKey: "codexrip.cindy-provider", Version: firstPartyTestVersion(t, "cindy-provider"), BinaryPath: binary, BinarySHA256: hex.EncodeToString(digest[:]), Manifest: PluginManifest{Requires: PluginRequirements{ExtensionAPI: 1}, Capabilities: []PluginCapability{{ID: extensionv1.CapabilityProvider, Platform: PlatformCindy, AccountType: AccountTypeAPIKey}}}}
+	host := newPluginHostServiceServer(installation.PluginKey, nil, nil, PluginAccountScope{})
+	host.extension = &pluginExtensionHost{key: installation.PluginKey, state: &extensionReadOnlyFixture{}}
+	socketDir := filepath.Join(t.TempDir(), "runtime")
+	require.NoError(t, os.MkdirAll(socketDir, 0700))
+	runtime, err := startPluginRuntime(context.Background(), installation, 15*time.Second, socketDir, host)
+	require.NoError(t, err)
+	t.Cleanup(runtime.kill)
+	require.NoError(t, runtime.validateAndApplyConfig(context.Background(), []byte(`{"catalog_enabled":true,"search_enabled":true}`)))
+	out, err := runtime.extension.Invoke(context.Background(), extensionv1.Invocation{Capability: extensionv1.CapabilityProvider, Operation: "cindy.pricing", Payload: []byte(`{}`)})
+	require.NoError(t, err)
+	require.Empty(t, out.Code)
+	var snapshot extensionv1.CindyPricingSnapshot
+	require.NoError(t, json.Unmarshal(out.Payload, &snapshot))
+	require.True(t, snapshot.Config.CatalogEnabled)
+	var pricing CindyTextPricing
+	var known bool
+	require.True(t, queryCindyPricingSnapshot(&snapshot, "CindyTextPricingForModel", "gpt-5.6-luna", []any{&pricing, &known}))
+	require.True(t, known)
+	require.Positive(t, pricing.InputCostPerToken)
+}
+
 func TestAccountToolsExtensionRuntimeUsesIndependentProcess(t *testing.T) {
 	binary := os.Getenv("SUB2API_ACCOUNT_TOOLS_TEST_BINARY")
 	if binary == "" {
