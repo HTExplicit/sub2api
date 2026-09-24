@@ -316,7 +316,13 @@
 <script setup lang="ts">
 import { computed, defineComponent, h, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { BaseDialog, Icon, useNotifications, usePluginContext, confirmAction, downloadBlob } from '@sub2api/plugin-ui'
+import BaseDialog from '@/components/common/BaseDialog.vue'
+import Icon from '@/components/icons/Icon.vue'
+import { useAppStore } from '@/stores/app'
+import { useAuthStore } from '@/stores/auth'
+import { confirmAction, downloadBlob } from '@/utils/browserActions'
+import zh from './locales/zh'
+import en from './locales/en'
 import {
 	cancelImageStudioJob,
 	createImageStudioJob,
@@ -394,10 +400,10 @@ const ImageFileField = defineComponent({
   },
 })
 
-const { t } = useI18n()
-const appStore = useNotifications()
-const context = usePluginContext()
-const studioAvailable = computed(() => context.value.available !== false)
+const { t } = useI18n({ messages: { zh, en } })
+const appStore = useAppStore()
+const authStore = useAuthStore()
+const studioAvailable = computed(() => appStore.cachedPublicSettings?.image_studio_enabled !== false)
 const eligibleKeys = ref<EligibleImageStudioKey[]>([])
 const history = ref<DisplayHistoryRecord[]>([])
 const loadingKeys = ref(false)
@@ -431,7 +437,7 @@ const selectedEligibleKey = computed(() => eligibleKeys.value.find(
 const selectedApiKey = computed(() => selectedEligibleKey.value?.api_key || null)
 const capabilities = computed<ModelCapability[]>(() => selectedEligibleKey.value?.capabilities || [])
 const historyOwnerKey = computed(() => {
-  const userID = Number(context.value.actor_id)
+  const userID = Number(authStore.user?.id)
   return Number.isSafeInteger(userID) && userID > 0 ? `user:${userID}` : ''
 })
 const imageModels = computed(() => capabilities.value.filter(capability =>

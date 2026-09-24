@@ -149,44 +149,6 @@ func TestObservabilityExtensionRuntimeUsesScopedMetricsBroker(t *testing.T) {
 	require.Zero(t, directory.calls, "metrics access must not resolve credentials")
 }
 
-func TestImageToolsExtensionRuntimeUsesIndependentProcess(t *testing.T) {
-	binary := os.Getenv("SUB2API_IMAGE_TOOLS_TEST_BINARY")
-	if binary == "" {
-		t.Skip("set SUB2API_IMAGE_TOOLS_TEST_BINARY to the independent image tools program")
-	}
-	data, err := os.ReadFile(binary)
-	require.NoError(t, err)
-	digest := sha256.Sum256(data)
-	installation := &PluginInstallation{ID: 12, PluginKey: "codexrip.image-tools", Version: firstPartyTestVersion(t, "image-tools"), BinaryPath: binary, BinarySHA256: hex.EncodeToString(digest[:]), Manifest: PluginManifest{Requires: PluginRequirements{ExtensionAPI: 1}, Capabilities: []PluginCapability{{ID: extensionv1.CapabilityRequest, Platform: "*", AccountType: "*"}}}}
-	host := newPluginHostServiceServer(installation.PluginKey, nil, nil, PluginAccountScope{})
-	host.extension = &pluginExtensionHost{key: installation.PluginKey, state: &extensionReadOnlyFixture{}}
-	socketDir := filepath.Join(t.TempDir(), "runtime")
-	require.NoError(t, os.MkdirAll(socketDir, 0700))
-	runtime, err := startPluginRuntime(context.Background(), installation, 15*time.Second, socketDir, host)
-	require.NoError(t, err)
-	t.Cleanup(runtime.kill)
-	require.NoError(t, runtime.validateAndApplyConfig(context.Background(), []byte(`{}`)))
-	raw, _ := json.Marshal(extensionv1.ImageStudioPlanRequest{APIKeySelected: true, Mode: "generate", Model: "gpt-image-2", PromptBytes: 5, Count: 4})
-	invocation := extensionv1.Invocation{Capability: extensionv1.CapabilityRequest, Operation: "image.studio.plan", Payload: raw}
-	out, err := runtime.extension.Invoke(context.Background(), invocation)
-	require.NoError(t, err)
-	require.Equal(t, "studio_disabled", out.Code)
-	require.NoError(t, runtime.validateAndApplyConfig(context.Background(), []byte(`{"studio_enabled":true}`)))
-	out, err = runtime.extension.Invoke(context.Background(), invocation)
-	require.NoError(t, err)
-	require.Empty(t, out.Code)
-	var plan extensionv1.ImageStudioPlan
-	require.NoError(t, json.Unmarshal(out.Payload, &plan))
-	require.Equal(t, 1, plan.OutputPerRequest)
-	require.Equal(t, "/v1/images/generations", plan.Endpoint)
-	// Exercise the new operation through the actual process transport. Only
-	// synthetic provider metadata crosses the RPC, without any upstream client.
-	raw, _ = json.Marshal(extensionv1.ImageBridgeRequest{Stage: "validate", Model: "controller", Tools: []extensionv1.ImageBridgeTool{{Index: 0}}})
-	out, err = runtime.extension.Invoke(context.Background(), extensionv1.Invocation{Capability: extensionv1.CapabilityRequest, Operation: "image.responses.plan", AccountID: 9, Payload: raw})
-	require.NoError(t, err)
-	require.Equal(t, "image_model_not_found", out.Code)
-}
-
 func TestCindyProviderExtensionRuntimeUsesIndependentProcess(t *testing.T) {
 	binary := os.Getenv("SUB2API_CINDY_PROVIDER_TEST_BINARY")
 	if binary == "" {

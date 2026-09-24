@@ -5,7 +5,6 @@
     { "directory": "prompt-skills", "default_enabled": true },
     { "directory": "account-tools", "default_enabled": true },
     { "directory": "cindy-provider", "default_enabled": true, "migration": "cindy-provider-v1" },
-    { "directory": "image-tools", "default_enabled": true, "migration": "image-tools-v1" },
     { "directory": "admin-observability", "default_enabled": true, "migration": "admin-observability-v1" }
   ]
 }

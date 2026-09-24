@@ -11,51 +11,14 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-type capturedImageBridgeFixture struct {
-	promptPolicyFixture
-	queries []extensionv1.Invocation
-}
-
-func (f *capturedImageBridgeFixture) InvokeOperation(ctx context.Context, platform, kind string, in extensionv1.Invocation) (extensionv1.Result, error) {
-	if in.Operation == "image.responses.plan" || in.Operation == "image.native.validate" {
-		f.queries = append(f.queries, in)
-	}
-	return f.promptPolicyFixture.InvokeOperation(ctx, platform, kind, in)
-}
-
-func TestCindyNativeImagePolicyReceivesNoPromptOrImageContent(t *testing.T) {
+func TestImageBridgeUsesOnlyBoundedFacts(t *testing.T) {
 	previous := processExtensionOperations.Load()
 	t.Cleanup(func() { processExtensionOperations.Store(previous) })
-	fixture := &capturedImageBridgeFixture{}
-	processExtensionOperations.Store(&extensionOperationProvider{invoker: fixture})
-	request := &OpenAIImagesRequest{Endpoint: openAIImagesEditsEndpoint, Prompt: "private-image-prompt", InputImageURLs: []string{"https://private.invalid/reference"}, N: 1, Size: "1024x1024", Quality: "low", HasMask: true}
-	account := cindyHTTPToWSV2TestAccount()
-	account.ID = 37
-	err := ValidateCindyImageRequestForAccount(context.Background(), account, "gpt-image-2", request)
-	require.Error(t, err)
-	require.Len(t, fixture.queries, 1)
-	require.EqualValues(t, 37, fixture.queries[0].AccountID)
-	require.NotContains(t, string(fixture.queries[0].Payload), "private-image-prompt")
-	require.NotContains(t, string(fixture.queries[0].Payload), "private.invalid")
-	processExtensionOperations.Store(nil)
-	require.ErrorIs(t, ValidateCindyImageRequest("gpt-image-2", request), ErrExtensionOperationDisabled)
-}
-
-func TestImageBridgeUsesOnlyBoundedFactsAndAuthorizedAccount(t *testing.T) {
-	previous := processExtensionOperations.Load()
-	t.Cleanup(func() { processExtensionOperations.Store(previous) })
-	fixture := &capturedImageBridgeFixture{}
-	processExtensionOperations.Store(&extensionOperationProvider{invoker: fixture})
 	body := []byte(`{"model":"gpt-5.6-luna","input":"private-prompt","reasoning":{"encrypted_content":"private-cipher"},"tools":[{"type":"image_generation","model":"gpt-image-2","mask":"private-image","quality":{"text":"private-object"}}]}`)
 	account := cindyHTTPToWSV2TestAccount()
 	account.ID = 37
 	_, err := ResolveCindyResponsesImageToolsForAccount(context.Background(), account, body)
 	require.ErrorIs(t, err, ErrCindyResponsesImageToolModelNotFound)
-	require.Len(t, fixture.queries, 1)
-	require.EqualValues(t, 37, fixture.queries[0].AccountID)
-	for _, private := range []string{"private-prompt", "private-cipher", "private-image", "private-object"} {
-		require.NotContains(t, string(fixture.queries[0].Payload), private)
-	}
 	var request map[string]any
 	require.NoError(t, json.Unmarshal([]byte(`{"model":"gpt-5.6-luna","tools":[{"type":"image_generation"}]}`), &request))
 	tools, ok := request["tools"].([]any)

@@ -1148,6 +1148,22 @@ export interface OfficialModelCapacityCatalog {
   entries: OfficialModelCapacityEntry[]
 }
 
+export interface ImageToolsSettings {
+  studio_enabled: boolean
+  responses_image_enabled: boolean
+}
+
+/** Image Studio and Cindy Responses image bridge switches. */
+export async function getImageToolsSettings(): Promise<ImageToolsSettings> {
+  const { data } = await apiClient.get<ImageToolsSettings>("/admin/settings/image-tools");
+  return data;
+}
+
+export async function updateImageToolsSettings(settings: ImageToolsSettings): Promise<ImageToolsSettings> {
+  const { data } = await apiClient.put<ImageToolsSettings>("/admin/settings/image-tools", settings);
+  return data;
+}
+
 /** Read-only release-pinned official model capacity catalog. */
 export async function getOfficialModelCapacityCatalog(): Promise<OfficialModelCapacityCatalog> {
   const { data } = await apiClient.get<OfficialModelCapacityCatalog>("/admin/settings/model-context-catalog");
@@ -1671,6 +1687,8 @@ export async function resetWebSearchUsage(payload: {
 export const settingsAPI = {
   getSettings,
   getOfficialModelCapacityCatalog,
+  getImageToolsSettings,
+  updateImageToolsSettings,
   updateSettings,
   testSmtpConnection,
   sendTestEmail,

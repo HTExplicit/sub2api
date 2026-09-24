@@ -991,13 +991,10 @@ router.beforeEach(async (to, _from, next) => {
     return
   }
 
-  if (to.meta.requiresImageStudio) {
-    const extensions = usePluginExtensions()
-    await extensions.refresh()
-    if (!extensions.items.some(item => item.slot === 'surface' && item.id === 'image-studio')) {
-      next(authStore.isAdmin ? '/admin/dashboard' : '/dashboard')
-      return
-    }
+  // Image Studio is opt-in: only an explicit enable admits the page.
+  if (to.meta.requiresImageStudio && appStore.cachedPublicSettings?.image_studio_enabled !== true) {
+    next(authStore.isAdmin ? '/admin/dashboard' : '/dashboard')
+    return
   }
 
   if (to.meta.accountView) {

@@ -2,25 +2,66 @@ package service
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"slices"
 	"strings"
-	"time"
+	"sync"
+	"sync/atomic"
 
 	extensionv1 "github.com/Wei-Shaw/sub2api/pkg/extensionapi/v1"
 )
 
+var imageToolsConfigOverride atomic.Pointer[extensionv1.ImageToolsConfig]
+
+// currentImageToolsConfig returns the effective Image Studio and Responses image
+// bridge switches: the stored administrator setting once loaded, otherwise the
+// deploy-time rollout flags (the value the former image-tools plugin was seeded with).
 func currentImageToolsConfig() (extensionv1.ImageToolsConfig, bool) {
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
-	defer cancel()
-	result, err := invokeProcessExtensionCached(ctx, "*", "*", extensionv1.Invocation{Capability: extensionv1.CapabilityRequest, Operation: "image.features", Payload: json.RawMessage(`{}`)})
-	var config extensionv1.ImageToolsConfig
-	if err != nil || result.Code != "" || json.Unmarshal(result.Payload, &config) != nil {
-		return extensionv1.ImageToolsConfig{}, false
+	if config := imageToolsConfigOverride.Load(); config != nil {
+		return *config, true
 	}
-	return config, true
+	return LegacyImageToolsConfig(), true
 }
+
+// imageStudioStop is closed whenever Image Studio is switched off so running
+// executions stop, as the former plugin's policy lease did.
+var imageStudioStop = struct {
+	mu sync.Mutex
+	ch chan struct{}
+}{ch: make(chan struct{})}
+
+// ConfigureImageTools installs the effective switches (startup load, admin
+// update, tests). A nil value falls back to the deploy-time rollout flags.
+func ConfigureImageTools(config *extensionv1.ImageToolsConfig) {
+	imageToolsConfigOverride.Store(config)
+	if current, _ := currentImageToolsConfig(); !current.StudioEnabled {
+		imageStudioStop.mu.Lock()
+		close(imageStudioStop.ch)
+		imageStudioStop.ch = make(chan struct{})
+		imageStudioStop.mu.Unlock()
+	}
+}
+
+// bindImageStudioEnabled returns a context that is canceled when Image Studio
+// is switched off.
+func bindImageStudioEnabled(ctx context.Context) (context.Context, context.CancelFunc) {
+	imageStudioStop.mu.Lock()
+	stop := imageStudioStop.ch
+	imageStudioStop.mu.Unlock()
+	ctx, cancel := context.WithCancel(ctx)
+	go func() {
+		select {
+		case <-stop:
+			cancel()
+		case <-ctx.Done():
+		}
+	}()
+	return ctx, cancel
+}
+
+// observeNativeImageFacts lets tests inspect the facts the host derives for the
+// native image policy. It is nil in production.
+var observeNativeImageFacts func(extensionv1.ImageNativeRequest)
 
 func ValidateCindyImageRequest(model string, request *OpenAIImagesRequest) error {
 	return ValidateCindyImageRequestForAccount(context.Background(), nil, model, request)
@@ -47,36 +88,17 @@ func ValidateCindyImageRequestForAccount(ctx context.Context, account *Account, 
 	verified := found && capability.PublicModel && snapshot.Config.CatalogEnabled && snapshot.Images.StudioEnabled && slices.Contains(capability.VerifiedEndpoints, endpoint)
 	facts := extensionv1.ImageNativeRequest{Model: strings.TrimSpace(model), Capability: capability, Verified: verified, Editing: request.IsEdits(), Stream: request.Stream, Count: request.N, Size: strings.TrimSpace(request.Size), Quality: strings.TrimSpace(request.Quality), ResponseFormat: strings.TrimSpace(request.ResponseFormat), HasReference: request.InputImageCount() > 0, HasMask: request.HasMask,
 		UnverifiedControls: request.Background != "" || request.OutputFormat != "" || request.Moderation != "" || request.InputFidelity != "" || request.Style != "" || request.OutputCompression != nil || request.PartialImages != nil}
-	raw, err := json.Marshal(facts)
-	if err != nil {
-		return ErrExtensionOperationUnavailable
+	if observeNativeImageFacts != nil {
+		observeNativeImageFacts(facts)
 	}
-	in := extensionv1.Invocation{Capability: extensionv1.CapabilityRequest, Operation: "image.native.validate", Payload: raw}
-	if account != nil {
-		in.AccountID = account.ID
-	}
-	call, cancel := context.WithTimeout(ctx, time.Second)
-	defer cancel()
-	result, err := invokeProcessExtension(call, PlatformCindy, AccountTypeAPIKey, in)
-	if err != nil {
-		return err
-	}
-	if result.Code != "" {
-		return errors.New(result.Message)
-	}
-	var valid bool
-	if json.Unmarshal(result.Payload, &valid) != nil || !valid {
-		return ErrExtensionOperationUnavailable
-	}
-	return nil
+	return validateNativeImageRequest(facts)
 }
 
 func EnsureImageStudioAvailable(ctx context.Context) error {
-	result, err := invokeProcessExtensionCached(ctx, "*", "*", extensionv1.Invocation{Capability: extensionv1.CapabilityRequest, Operation: "image.features", Payload: json.RawMessage(`{}`)})
-	var config extensionv1.ImageToolsConfig
-	if err != nil || result.Code != "" || json.Unmarshal(result.Payload, &config) != nil {
+	if err := ctx.Err(); err != nil {
 		return newImageStudioError(503, "studio_unavailable", "Image Studio is unavailable")
 	}
+	config, _ := currentImageToolsConfig()
 	if !config.StudioEnabled {
 		return newImageStudioError(404, "studio_disabled", "Image Studio is not enabled")
 	}
@@ -85,23 +107,15 @@ func EnsureImageStudioAvailable(ctx context.Context) error {
 
 func planImageStudio(ctx context.Context, input ImageStudioCreateInput, hasReference, hasMask, execute bool) (extensionv1.ImageStudioPlan, error) {
 	request := extensionv1.ImageStudioPlanRequest{APIKeySelected: input.APIKeyID > 0, Mode: string(input.Mode), Model: input.Model, PromptBytes: len(strings.TrimSpace(input.Prompt)), Count: input.Count, Size: input.Size, Quality: input.Quality, HasReference: hasReference, HasMask: hasMask}
-	raw, _ := json.Marshal(request)
-	operation := "image.studio.validate"
-	if execute {
-		operation = "image.studio.plan"
+	if err := ctx.Err(); err != nil {
+		return extensionv1.ImageStudioPlan{}, newImageStudioError(503, "studio_unavailable", "Image Studio is unavailable")
 	}
-	call, cancel := context.WithTimeout(ctx, time.Second)
-	defer cancel()
-	result, err := invokeProcessExtension(call, "*", "*", extensionv1.Invocation{Capability: extensionv1.CapabilityRequest, Operation: operation, Payload: raw})
-	var plan extensionv1.ImageStudioPlan
-	if err != nil {
-		return plan, newImageStudioError(503, "studio_unavailable", "Image Studio is unavailable")
+	plan, code, message := planImageStudioRequest(request)
+	if code != "" {
+		return plan, newImageStudioError(400, code, message)
 	}
-	if result.Code != "" {
-		return plan, newImageStudioError(result.HTTPStatus, result.Code, result.Message)
-	}
-	if json.Unmarshal(result.Payload, &plan) != nil || plan.Model == "" || plan.OutputPerRequest != 1 || (plan.Endpoint != "/v1/images/generations" && plan.Endpoint != "/v1/images/edits") || plan.ResponseFormat != "b64_json" {
-		return plan, newImageStudioError(503, "studio_unavailable", "Image Studio returned an invalid request plan")
+	if config, _ := currentImageToolsConfig(); execute && !config.StudioEnabled {
+		return plan, newImageStudioError(404, "studio_disabled", "Image Studio is not enabled")
 	}
 	return plan, nil
 }

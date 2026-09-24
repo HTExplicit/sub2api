@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"math"
 	"strings"
-	"time"
 
 	extensionv1 "github.com/Wei-Shaw/sub2api/pkg/extensionapi/v1"
 )
@@ -80,28 +79,15 @@ func queryImageBridgeWithSnapshot(ctx context.Context, account *Account, request
 	request.Capabilities = snapshot.Capabilities
 	request.Aliases = snapshot.CompatibilityAliases
 	request.CatalogEnabled = snapshot.Config.CatalogEnabled
-	raw, err := json.Marshal(request)
-	var plan extensionv1.ImageBridgePlan
-	if err != nil {
-		return plan, err
+	config, _ := currentImageToolsConfig()
+	plan, code, message := planResponsesImageBridge(request, config)
+	if code == "image_model_not_found" {
+		return plan, fmt.Errorf("%w: %s", ErrCindyResponsesImageToolModelNotFound, message)
 	}
-	in := extensionv1.Invocation{Capability: extensionv1.CapabilityRequest, Operation: "image.responses.plan", Payload: raw}
-	if account != nil {
-		in.AccountID = account.ID
+	if code != "" {
+		return plan, errors.New(message)
 	}
-	call, cancel := context.WithTimeout(ctx, time.Second)
-	defer cancel()
-	result, err := invokeProcessExtensionCached(call, PlatformCindy, AccountTypeAPIKey, in)
-	if err != nil {
-		return plan, err
-	}
-	if result.Code == "image_model_not_found" {
-		return plan, fmt.Errorf("%w: %s", ErrCindyResponsesImageToolModelNotFound, result.Message)
-	}
-	if result.Code != "" {
-		return plan, errors.New(result.Message)
-	}
-	if json.Unmarshal(result.Payload, &plan) != nil || !validImageBridgePlan(request, plan) {
+	if !validImageBridgePlan(request, plan) {
 		return plan, ErrExtensionOperationUnavailable
 	}
 	return plan, nil

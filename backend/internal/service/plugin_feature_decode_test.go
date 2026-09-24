@@ -32,19 +32,6 @@ func TestPluginFeatureConfigsDiscardPartiallyDecodedFlags(t *testing.T) {
 		require.False(t, CindyBalanceDetectionFeatureEnabled())
 		require.False(t, CindySearchFeatureEnabled())
 	})
-	for _, payload := range []string{
-		`{"studio_enabled":true,"responses_image_enabled":"invalid"}`,
-		`{"studio_enabled":"invalid","responses_image_enabled":true}`,
-	} {
-		t.Run(payload, func(t *testing.T) {
-			withFeatureDecodeFixture(t, payload)
-			value, ok := currentImageToolsConfig()
-			require.False(t, ok)
-			require.Equal(t, extensionv1.ImageToolsConfig{}, value)
-			require.False(t, ImageStudioFeatureEnabled())
-			require.False(t, CindyResponsesImageBridgeFeatureEnabled())
-		})
-	}
 }
 
 func TestCindyResponseDecisionDiscardsPartialDecode(t *testing.T) {
@@ -65,11 +52,5 @@ func TestPluginFeatureConfigsKeepValidExplicitFlags(t *testing.T) {
 		value, ok := currentCindyProviderConfig()
 		require.True(t, ok)
 		require.Equal(t, extensionv1.CindyProviderConfig{BalanceDetection: true, SearchEnabled: true}, value)
-	})
-	t.Run("image", func(t *testing.T) {
-		withFeatureDecodeFixture(t, `{"studio_enabled":true,"responses_image_enabled":false}`)
-		value, ok := currentImageToolsConfig()
-		require.True(t, ok)
-		require.Equal(t, extensionv1.ImageToolsConfig{StudioEnabled: true}, value)
 	})
 }

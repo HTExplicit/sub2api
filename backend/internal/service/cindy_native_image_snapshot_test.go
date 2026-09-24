@@ -26,17 +26,6 @@ type cindyNativeImageSnapshotFixture struct {
 
 func (f *cindyNativeImageSnapshotFixture) InvokeOperation(ctx context.Context, platform, accountType string, in extensionv1.Invocation) (extensionv1.Result, error) {
 	f.calls = append(f.calls, in)
-	if in.Operation == "image.features" {
-		raw, err := json.Marshal(f.before.Images)
-		return extensionv1.Result{Payload: raw}, err
-	}
-	if in.Operation == "image.native.validate" {
-		var facts extensionv1.ImageNativeRequest
-		if err := json.Unmarshal(in.Payload, &facts); err != nil {
-			return extensionv1.Result{}, err
-		}
-		f.nativeFacts = append(f.nativeFacts, facts)
-	}
 	if in.Operation == "cindy.catalog" && !f.disabled {
 		var query extensionv1.CindyCatalogQuery
 		if err := json.Unmarshal(in.Payload, &query); err != nil {
@@ -211,7 +200,14 @@ func newNativeImageSnapshotFixture(t *testing.T, studioEnabled bool) *cindyNativ
 		before: before, after: after, pricing: pricing, pricingAfter: &pricingAfter, fallback: previous.invoker,
 	}}
 	processExtensionOperations.Store(&extensionOperationProvider{invoker: fixture})
-	t.Cleanup(func() { processExtensionOperations.Store(previous) })
+	images := before.Images
+	ConfigureImageTools(&images)
+	observeNativeImageFacts = func(facts extensionv1.ImageNativeRequest) { fixture.nativeFacts = append(fixture.nativeFacts, facts) }
+	t.Cleanup(func() {
+		processExtensionOperations.Store(previous)
+		ConfigureImageTools(nil)
+		observeNativeImageFacts = nil
+	})
 	return fixture
 }
 

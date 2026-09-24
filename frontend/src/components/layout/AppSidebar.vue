@@ -752,7 +752,7 @@ const ChevronDownIcon = {
 const flagChannelMonitor = makeSidebarFlag(FeatureFlags.channelMonitor)
 const flagPayment = makeSidebarFlag(FeatureFlags.payment)
 const flagAvailableChannels = makeSidebarFlag(FeatureFlags.availableChannels)
-const flagImageStudio = () => pluginExtensions.items.some(item => item.slot === 'surface' && item.id === 'image-studio')
+const flagImageStudio = makeSidebarFlag(FeatureFlags.imageStudio)
 const flagSubscription = makeSidebarFlag(FeatureFlags.subscription)
 
 // 购买入口文案随站点计费模式切换：仅充值 → 「充值」，仅订阅 → 「订阅」，否则「充值/订阅」。

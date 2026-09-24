@@ -1,4 +1,4 @@
-import { resource } from '@sub2api/plugin-ui'
+import { resource } from '@/utils/nativeResource'
 
 export type ImageStudioEndpoint = 'images.generations' | 'images.edits' | string
 export type ImageStudioMode = 'generate' | 'edit'

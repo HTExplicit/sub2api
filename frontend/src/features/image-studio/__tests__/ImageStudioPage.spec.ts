@@ -1,7 +1,7 @@
 import { flushPromises, mount } from '@vue/test-utils'
 import { ref } from 'vue'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import ImageStudioView from '../App.vue'
+import ImageStudioView from '../ImageStudioPage.vue'
 
 const mocks = vi.hoisted(() => ({
   context: null as any,
@@ -39,10 +39,17 @@ vi.mock('../history', () => ({
   deleteImageStudioHistory: mocks.deleteHistory,
   clearImageStudioHistory: mocks.clearHistory,
 }))
-vi.mock('@sub2api/plugin-ui', async () => ({
-  ...await vi.importActual<typeof import('@sub2api/plugin-ui')>('@sub2api/plugin-ui'),
-  useNotifications: () => ({ showError: mocks.showError, showSuccess: mocks.showSuccess }),
-  usePluginContext: () => mocks.context,
+vi.mock('@/stores/app', () => ({
+  useAppStore: () => ({
+    showError: mocks.showError,
+    showSuccess: mocks.showSuccess,
+    get cachedPublicSettings() { return { image_studio_enabled: mocks.context.value.available } },
+  }),
+}))
+vi.mock('@/stores/auth', () => ({
+  useAuthStore: () => ({ get user() { return { id: mocks.context.value.actor_id } } }),
+}))
+vi.mock('@/utils/browserActions', () => ({
   confirmAction: async (message: string) => window.confirm(message),
   downloadBlob: vi.fn(),
 }))

@@ -4,7 +4,6 @@ import (
 	"github.com/Wei-Shaw/sub2api/internal/handler"
 	"github.com/Wei-Shaw/sub2api/internal/server/middleware"
 	"github.com/Wei-Shaw/sub2api/internal/service"
-	extensionv1 "github.com/Wei-Shaw/sub2api/pkg/extensionapi/v1"
 
 	"github.com/gin-gonic/gin"
 )
@@ -99,25 +98,15 @@ func RegisterUserRoutes(
 		}
 
 		imageStudio := authenticated.Group("/image-studio")
-		for _, route := range []struct {
-			name, method, path, response string
-			retained                     bool
-			handler                      gin.HandlerFunc
-		}{
-			{"image.keys", "GET", "/eligible-keys", "", false, h.ImageStudio.EligibleKeys},
-			{"image.create", "POST", "/jobs", "", false, h.ImageStudio.Create},
-			{"image.jobs", "GET", "/jobs", "", true, h.ImageStudio.List},
-			{"image.job", "GET", "/jobs/:id", "", true, h.ImageStudio.Get},
-			{"image.items", "GET", "/jobs/:id/items", "", true, h.ImageStudio.Items},
-			{"image.cancel", "POST", "/jobs/:id/cancel", "", true, h.ImageStudio.Cancel},
-			{"image.retry", "POST", "/jobs/:id/retry", "", false, h.ImageStudio.Retry},
-			{"image.artifact", "GET", "/jobs/:id/artifacts/:artifact_id", "blob", true, h.ImageStudio.Artifact},
-		} {
-			descriptor := extensionv1.ResourceDescriptor{ResourceGrant: extensionv1.ResourceGrant{Name: route.name, Capability: extensionv1.CapabilityRequest, Permission: "user"}, Method: route.method, Path: imageStudio.BasePath() + route.path, ResponseKind: route.response, Retained: route.retained}
-			imageStudio.Handle(route.method, route.path, h.Admin.Plugin.RegisterResource(descriptor), route.handler)
-		}
-		for _, name := range []string{"image.history.list", "image.history.save", "image.history.delete", "image.history.clear"} {
-			h.Admin.Plugin.RegisterResource(extensionv1.ResourceDescriptor{ResourceGrant: extensionv1.ResourceGrant{Name: name, Capability: extensionv1.CapabilityRequest, Permission: "user"}, Method: "LOCAL", Retained: true})
+		{
+			imageStudio.GET("/eligible-keys", h.ImageStudio.EligibleKeys)
+			imageStudio.POST("/jobs", h.ImageStudio.Create)
+			imageStudio.GET("/jobs", h.ImageStudio.List)
+			imageStudio.GET("/jobs/:id", h.ImageStudio.Get)
+			imageStudio.GET("/jobs/:id/items", h.ImageStudio.Items)
+			imageStudio.POST("/jobs/:id/cancel", h.ImageStudio.Cancel)
+			imageStudio.POST("/jobs/:id/retry", h.ImageStudio.Retry)
+			imageStudio.GET("/jobs/:id/artifacts/:artifact_id", h.ImageStudio.Artifact)
 		}
 
 		// 使用记录（聚合统计属重查询，叠加更严格的按用户限流）

@@ -523,6 +523,16 @@ export default {
         saved: 'OpenCode Go usage refresh settings saved',
         saveFailed: 'Failed to save OpenCode Go usage refresh settings'
       },
+      imageTools: {
+        title: 'Image tools',
+        description: 'Image Studio uses existing account image capabilities and group permissions. Each upstream request generates one image, with up to four images per job. Disabling the feature stops new generation work and preserves saved results.',
+        studioEnabled: 'Enable Image Studio',
+        responsesImageEnabled: 'Enable Cindy Responses image bridge',
+        save: 'Save settings',
+        saved: 'Settings saved',
+        loadFailed: 'Failed to load image tool settings',
+        saveFailed: 'Save failed'
+      },
       officialModelCatalog: {
         title: 'Model catalog and capacity references',
         description: 'References support capacity planning. Account overrides and live upstream declarations retain their existing precedence.',

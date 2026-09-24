@@ -12,6 +12,7 @@ import (
 	"github.com/Wei-Shaw/sub2api/internal/handler/dto"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/response"
 	"github.com/Wei-Shaw/sub2api/internal/service"
+	extensionv1 "github.com/Wei-Shaw/sub2api/pkg/extensionapi/v1"
 
 	"github.com/gin-gonic/gin"
 )
@@ -109,6 +110,27 @@ func (h *SettingHandler) GetOfficialModelContextCatalog(c *gin.Context) {
 		"reference_release": service.GPTContextCapacityReferenceRelease,
 		"entries":           service.OfficialModelCatalogSnapshot(),
 	})
+}
+
+// GetImageToolsSettings returns the Image Studio and Responses image bridge switches.
+// GET /api/v1/admin/settings/image-tools
+func (h *SettingHandler) GetImageToolsSettings(c *gin.Context) {
+	response.Success(c, h.settingService.GetImageToolsConfig(c.Request.Context()))
+}
+
+// UpdateImageToolsSettings saves the Image Studio and Responses image bridge switches.
+// PUT /api/v1/admin/settings/image-tools
+func (h *SettingHandler) UpdateImageToolsSettings(c *gin.Context) {
+	var req extensionv1.ImageToolsConfig
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.BadRequest(c, "Invalid image tools settings")
+		return
+	}
+	if err := h.settingService.UpdateImageToolsConfig(c.Request.Context(), req); err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	response.Success(c, req)
 }
 
 func (h *SettingHandler) GetSettings(c *gin.Context) {

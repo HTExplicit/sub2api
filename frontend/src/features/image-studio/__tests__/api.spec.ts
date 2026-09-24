@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { createImageStudioJob, downloadImageStudioArtifact, getImageStudioJob, listEligibleImageStudioKeys } from '../api'
 const invoke = vi.hoisted(() => vi.fn())
-vi.mock('@sub2api/plugin-ui', () => ({ resource: invoke }))
+vi.mock('@/utils/nativeResource', () => ({ resource: invoke }))
 
 describe('image studio named resources', () => {
   beforeEach(() => invoke.mockReset())

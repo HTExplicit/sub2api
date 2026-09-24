@@ -214,7 +214,7 @@ jobs:
             ../plugins/prompt-skills/ui/src/__tests__/locales.spec.ts \
             src/views/admin/__tests__/AccountsView.console.spec.ts \
             src/views/admin/__tests__/AccountsView.priorityColumn.spec.ts \
-            ../plugins/image-tools/ui/src/__tests__/api.spec.ts \
+            src/features/image-studio/__tests__/api.spec.ts \
             src/api/__tests__/cindyBalanceProbe.spec.ts \
             src/api/__tests__/admin.groups.cindy-split.spec.ts \
             ../plugins/cindy-provider/ui/src/__tests__/CindyGroupAuditDialog.spec.ts \
@@ -227,7 +227,7 @@ jobs:
             src/components/layout/__tests__/AppSidebar.spec.ts \
             src/components/layout/__tests__/AppSidebar.simple-mode.spec.ts \
             src/views/admin/__tests__/GroupsView.columnSettings.spec.ts \
-            ../plugins/image-tools/ui/src/__tests__/App.spec.ts \
+            src/features/image-studio/__tests__/ImageStudioPage.spec.ts \
             src/views/admin/__tests__/AccountsView.bulkEdit.spec.ts \
             src/views/admin/__tests__/AccountsView.schedulerScore.spec.ts \
             src/views/admin/__tests__/AccountsView.sparkShadow.spec.ts \

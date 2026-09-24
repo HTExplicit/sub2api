@@ -96,6 +96,9 @@ func TestCindyNewTurnRefreshesPricingWithoutChangingPendingBill(t *testing.T) {
 }
 
 func TestCindyPricingScopeCannotReuseAnExcludedAccountPolicyCache(t *testing.T) {
+	// Image tool switches are host state now; keep them empty so only scope metadata is compared.
+	ConfigureImageTools(&extensionv1.ImageToolsConfig{})
+	t.Cleanup(func() { ConfigureImageTools(nil) })
 	previous := processExtensionOperations.Load()
 	t.Cleanup(func() { processExtensionOperations.Store(previous) })
 	module := cindy.New()

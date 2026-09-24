@@ -19,6 +19,9 @@ import (
 )
 
 func TestCindyNativeMessagesUsesActualAccountAdmissionAndCapturedPricing(t *testing.T) {
+	// Image tool switches are host state now; keep them empty so only scope metadata is compared.
+	ConfigureImageTools(&extensionv1.ImageToolsConfig{})
+	t.Cleanup(func() { ConfigureImageTools(nil) })
 	for _, tc := range []struct {
 		name      string
 		accountID int64
