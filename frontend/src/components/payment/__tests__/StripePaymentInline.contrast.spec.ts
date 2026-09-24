@@ -91,7 +91,7 @@ describe('StripePaymentInline amount contrast', () => {
 
   it('keeps the solid fill independent of the flat theme gradient token, even when the gradient is disabled', async () => {
     const header = await amountHeader()
-    const theme = postcss.parse(readFileSync(resolve(__dirname, '../../../../../plugins/admin-observability/ui/assets/theme.css'), 'utf8'))
+    const theme = postcss.parse(readFileSync(resolve(__dirname, '../../../styles/flat-theme.css'), 'utf8'))
     const headerElement = header.element as HTMLElement
     let flatGradient = ''
     theme.walkDecls('--theme-background-gradient-to-br', declaration => { flatGradient = declaration.value })

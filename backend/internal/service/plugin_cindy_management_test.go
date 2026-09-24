@@ -4,7 +4,7 @@ import (
 	"context"
 	"testing"
 
-	extensionv1 "github.com/Wei-Shaw/sub2api/pkg/extensionapi/v1"
+	extensionv1 "github.com/Wei-Shaw/sub2api/internal/nativeapi"
 	"github.com/stretchr/testify/require"
 )
 
@@ -21,10 +21,10 @@ func (f *capturedCindyManagement) InvokeOperation(ctx context.Context, platform,
 }
 
 func TestCindyManagementKeepsCredentialsInHostAndStopsWhenProviderDisabled(t *testing.T) {
-	previous := processExtensionOperations.Load()
-	t.Cleanup(func() { processExtensionOperations.Store(previous) })
+	previous := captureNativeCindyTestInvoker()
+	t.Cleanup(func() { restoreNativeCindyTestInvoker(previous) })
 	fixture := &capturedCindyManagement{}
-	processExtensionOperations.Store(&extensionOperationProvider{invoker: fixture})
+	setNativeCindyTestInvoker(fixture)
 	accounts := []Account{{ID: 1, Platform: PlatformCindy, Type: AccountTypeAPIKey, Status: StatusActive, Credentials: map[string]any{"api_key": "private-key-material", "base_url": "https://api.laxarouter.ai"}}}
 	duplicate := accounts[0]
 	duplicate.ID = 2
@@ -35,7 +35,7 @@ func TestCindyManagementKeepsCredentialsInHostAndStopsWhenProviderDisabled(t *te
 	require.Len(t, fixture.payloads, 1)
 	require.NotContains(t, fixture.payloads[0], "private-key-material")
 	require.NotContains(t, fixture.payloads[0], "api.laxarouter.ai")
-	processExtensionOperations.Store(nil)
+	setNativeCindyTestInvoker(nil)
 	_, err = buildCindyDuplicateIdentityInventory(context.Background(), accounts)
 	require.ErrorIs(t, err, ErrCindyGroupAdminUnavailable)
 	_, err = PlanCindyGroupPartition(context.Background(), 1, 1, "cindy")

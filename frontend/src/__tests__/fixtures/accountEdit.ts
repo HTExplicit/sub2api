@@ -1,15 +1,14 @@
 import { createHash } from 'node:crypto'
-import manifest from '../../../../plugins/cindy-provider/manifest.source.json'
+import { cindyEditDefinition } from '@/features/cindy/accountForm'
 import type { Account, AccountEditFieldState, ProviderAccountEditContext } from '@/types'
-import type { AccountEditContribution } from '@/composables/useAccountEditProfile'
+import type { AccountEditDefinitionV1 } from '@/types/accountEdit'
 import { accountEditModes, captureAccountEditState, mappingInputFromStored, type AccountEditInput, type ReadyAccountEditCatalog } from '@/utils/accountEditCodec'
 import { resolveOpenAIWSModeFromExtra } from '@/utils/openaiWsMode'
 
-export function editContribution(overrides: Partial<AccountEditContribution> = {}): AccountEditContribution {
+interface NativeEditFixture { account_edit: AccountEditDefinitionV1; available: boolean }
+export function editContribution(overrides: Partial<NativeEditFixture> = {}): NativeEditFixture {
   return {
-    ...JSON.parse(JSON.stringify(manifest.contributions.find(item => item.slot === 'account.edit.v1'))),
-    plugin_id: 7, plugin_key: 'codexrip.cindy-provider', package_sha256: 'a'.repeat(64), edit_definition_digest: 'b'.repeat(64), runtime_generation: 1,
-    available: true, account_scope: { version: 1, bindings: [{ platform: 'cindy', account_type: 'apikey', rollout_percent: 100 }] }, ...overrides
+    account_edit: structuredClone(cindyEditDefinition), available: true, ...overrides
   }
 }
 export function editAccount(overrides: Partial<Account> = {}): Account {
@@ -50,8 +49,7 @@ export function editContext(account = editAccount(), contribution = editContribu
   }
   return {
     schema_version: 1, kind: 'provider', account_id: account.id,
-    profile: { plugin_id: contribution.plugin_id, plugin_key: contribution.plugin_key, contribution_id: contribution.id,
-      package_sha256: contribution.package_sha256, definition_sha256: contribution.edit_definition_digest, runtime_generation: contribution.runtime_generation, available: contribution.available },
+    profile: { native: true, policy_sha256: 'b'.repeat(64), available: contribution.available },
     edit_state_sha256: editFixtureStateDigest(account),
     values: {
       responses_mode: field(accountEditModes.responses_mode.key, input.responses_mode, accountEditModes.responses_mode.values),

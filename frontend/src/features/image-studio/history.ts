@@ -1,5 +1,5 @@
-import type { ImageStudioHistoryRecord } from '@sub2api/plugin-ui/media'
-export type { ImageStudioMode, ImageStudioHistoryImage, ImageStudioHistoryRecord } from '@sub2api/plugin-ui/media'
+import type { ImageStudioHistoryRecord } from '@/types/imageStudio'
+export type { ImageStudioMode, ImageStudioHistoryImage, ImageStudioHistoryRecord } from '@/types/imageStudio'
 
 const DB_NAME = 'sub2api-image-studio'
 const DB_VERSION = 2

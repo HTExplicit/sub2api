@@ -12,7 +12,7 @@ import (
 	"strings"
 	"time"
 
-	extensionv1 "github.com/Wei-Shaw/sub2api/pkg/extensionapi/v1"
+	extensionv1 "github.com/Wei-Shaw/sub2api/internal/nativeapi"
 	"github.com/google/uuid"
 )
 
@@ -29,7 +29,7 @@ func isCodexRoutingHostOperation(operation extensionv1.HostOperation) bool {
 	return operation == extensionv1.HostCodexRoutingScope || operation == extensionv1.HostCodexRoutingProbe || operation == extensionv1.HostCodexRoutingCheck || operation == extensionv1.HostCodexRoutingCleanup
 }
 
-func (h *pluginExtensionHost) callCodexRouting(ctx context.Context, in extensionv1.HostInvocation) (extensionv1.Result, error) {
+func (h *nativeCodexHost) callCodexRouting(ctx context.Context, in extensionv1.HostInvocation) (extensionv1.Result, error) {
 	if in.Operation == extensionv1.HostCodexRoutingCleanup {
 		return h.redactExpiredCodexRoutingMaterial(ctx)
 	}
@@ -241,7 +241,7 @@ func (h *pluginExtensionHost) callCodexRouting(ctx context.Context, in extension
 	return marshal(result)
 }
 
-func readCodexRoutingBundle(ctx context.Context, store PluginExtensionStateStore, key string, ref extensionv1.CodexRoutingBundleRef, scope extensionv1.CodexRoutingScope, qualified bool) (codexRoutingPrivateBundle, error) {
+func readCodexRoutingBundle(ctx context.Context, store NativeCodexStateStore, key string, ref extensionv1.CodexRoutingBundleRef, scope extensionv1.CodexRoutingScope, qualified bool) (codexRoutingPrivateBundle, error) {
 	var bundle codexRoutingPrivateBundle
 	if store == nil || !strings.HasPrefix(ref.Key, "bundle.") || len(ref.Key) > 80 || ref.Revision <= 0 || !time.Now().Before(ref.ExpiresAt) {
 		return bundle, errCodexRoutingUnavailable

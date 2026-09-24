@@ -124,6 +124,7 @@ func TestCindyBalanceProbeRepositoryCreateJobRejectsTransactionalCandidateDrift(
 	}
 	previewedAccount := service.Account{
 		ID: 17, Name: "candidate-one", Platform: service.PlatformCindy,
+		WirePlatform: service.WirePlatformOpenAI, ProviderProfile: service.ProviderProfileCindyLaxaV1,
 		Type: service.AccountTypeAPIKey, Status: service.StatusActive, Schedulable: true,
 		Credentials: credentials, Extra: map[string]any{}, UpdatedAt: now,
 	}
@@ -134,10 +135,12 @@ func TestCindyBalanceProbeRepositoryCreateJobRejectsTransactionalCandidateDrift(
 		now,
 	)
 	require.NoError(t, err)
+	require.Equal(t, 1, expected.CandidateCount, "the confirmed preview must contain the canonical Cindy account")
 
 	tests := []struct {
-		name string
-		rows *sqlmock.Rows
+		name       string
+		rows       *sqlmock.Rows
+		accountIDs []int64
 	}{
 		{
 			name: "existing candidate generation changed",
@@ -146,6 +149,7 @@ func TestCindyBalanceProbeRepositoryCreateJobRejectsTransactionalCandidateDrift(
 				mustMarshalCindyBalanceProbeTestJSON(t, credentials), []byte(`{}`), nil, nil,
 				service.StatusActive, true, now.Add(time.Second), nil, nil, nil, "{}", "{}",
 			),
+			accountIDs: []int64{17},
 		},
 		{
 			name: "new matching candidate appeared",
@@ -160,6 +164,7 @@ func TestCindyBalanceProbeRepositoryCreateJobRejectsTransactionalCandidateDrift(
 					[]byte(`{"api_key":"sk-candidate-two","base_url":"https://api.laxarouter.ai"}`), []byte(`{}`), nil, nil,
 					service.StatusActive, true, now, nil, nil, nil, "{}", "{}",
 				),
+			accountIDs: []int64{17, 18},
 		},
 	}
 
@@ -171,6 +176,13 @@ func TestCindyBalanceProbeRepositoryCreateJobRejectsTransactionalCandidateDrift(
 			mock.ExpectBegin()
 			mock.ExpectQuery(`SELECT a\.id, a\.name, a\.platform, a\.type, a\.credentials, a\.extra,[\s\S]+FROM accounts a[\s\S]+ORDER BY a\.id`).
 				WillReturnRows(tt.rows)
+			identityRows := sqlmock.NewRows([]string{"id", "wire_platform", "provider_profile", "cindy_banned_at"})
+			for _, id := range tt.accountIDs {
+				identityRows.AddRow(id, service.WirePlatformOpenAI, service.ProviderProfileCindyLaxaV1, nil)
+			}
+			mock.ExpectQuery(regexp.QuoteMeta(`SELECT id,wire_platform,provider_profile,cindy_banned_at FROM accounts WHERE deleted_at IS NULL ORDER BY id`)).
+				WillReturnRows(identityRows).
+				RowsWillBeClosed()
 			mock.ExpectRollback()
 
 			job, err := (&cindyBalanceProbeRepository{db: db}).CreateJob(

@@ -14,8 +14,8 @@ import (
 	dbaccounttag "github.com/Wei-Shaw/sub2api/ent/accounttag"
 	dbaccounttagbinding "github.com/Wei-Shaw/sub2api/ent/accounttagbinding"
 	"github.com/Wei-Shaw/sub2api/ent/schema/mixins"
+	extensionv1 "github.com/Wei-Shaw/sub2api/internal/nativeapi"
 	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
-	extensionv1 "github.com/Wei-Shaw/sub2api/pkg/extensionapi/v1"
 
 	entsql "entgo.io/ent/dialect/sql"
 	"entgo.io/ent/dialect/sql/sqljson"
@@ -81,7 +81,6 @@ type AccountFacetOption struct {
 }
 
 type AccountConsoleFacets struct {
-	ViewPresetCounts   map[string]int            `json:"view_preset_counts,omitempty"`
 	Total              int                       `json:"total"`
 	UncategorizedCount int                       `json:"uncategorized_count"`
 	Platforms          []AccountFacetOption      `json:"platforms"`
@@ -193,7 +192,7 @@ func (s *adminServiceImpl) UpdateAccountFolder(ctx context.Context, id int64, in
 }
 
 func (s *adminServiceImpl) DeleteAccountFolder(ctx context.Context, id int64, moveAccounts bool) error {
-	if err := accountToolsOperation(ctx, "*", "*", "taxonomy.delete", map[string]int64{"id": id}, nil); err != nil {
+	if err := accountToolsOperation(ctx, "taxonomy.delete", map[string]int64{"id": id}, nil); err != nil {
 		return err
 	}
 	tx, err := s.entClient.Tx(ctx)
@@ -330,7 +329,7 @@ func (s *adminServiceImpl) UpdateAccountTag(ctx context.Context, id int64, input
 }
 
 func (s *adminServiceImpl) DeleteAccountTag(ctx context.Context, id int64) error {
-	if err := accountToolsOperation(ctx, "*", "*", "taxonomy.delete", map[string]int64{"id": id}, nil); err != nil {
+	if err := accountToolsOperation(ctx, "taxonomy.delete", map[string]int64{"id": id}, nil); err != nil {
 		return err
 	}
 	err := s.entClient.AccountTag.DeleteOneID(id).Exec(ctx)
@@ -414,7 +413,7 @@ func uniquePositiveIDs(ids []int64) []int64 {
 
 func (s *adminServiceImpl) BulkUpdateAccountTaxonomy(ctx context.Context, input BulkAccountTaxonomyInput) (*BulkAccountTaxonomyResult, error) {
 	plan := extensionv1.TaxonomyBulkPlan{AccountIDs: input.AccountIDs, HasFilters: input.Filters != nil, ExpectedMatchCount: input.ExpectedMatchCount, FolderAction: input.FolderAction, FolderID: input.FolderID, TagAddIDs: input.TagAddIDs, TagRemoveIDs: input.TagRemoveIDs}
-	if err := accountToolsOperation(ctx, "*", "*", "taxonomy.bulk", plan, nil); err != nil {
+	if err := accountToolsOperation(ctx, "taxonomy.bulk", plan, nil); err != nil {
 		return nil, err
 	}
 	filteredTarget := input.Filters != nil
@@ -607,7 +606,7 @@ func (s *adminServiceImpl) hydrateAccountTaxonomy(ctx context.Context, accounts 
 
 func (s *adminServiceImpl) SetAccountTaxonomy(ctx context.Context, accountID int64, assignment AccountTaxonomyAssignment) (*Account, error) {
 	var plan extensionv1.TaxonomyAssignmentPlan
-	if err := accountToolsOperation(ctx, "*", "*", "taxonomy.assignment", extensionv1.TaxonomyAssignmentPlan{FolderID: assignment.FolderID, TagIDs: assignment.TagIDs}, &plan); err != nil {
+	if err := accountToolsOperation(ctx, "taxonomy.assignment", extensionv1.TaxonomyAssignmentPlan{FolderID: assignment.FolderID, TagIDs: assignment.TagIDs}, &plan); err != nil {
 		return nil, err
 	}
 	if err := validateTaxonomyAssignmentIntent(assignment, plan); err != nil {
@@ -919,10 +918,6 @@ func (s *adminServiceImpl) listAccountConsoleAll(ctx context.Context, filters Ac
 	if err := s.hydrateAccountTaxonomy(ctx, accounts); err != nil {
 		return nil, err
 	}
-	accounts, err = filterAccountViewAccounts(ctx, accounts)
-	if err != nil {
-		return nil, err
-	}
 	accounts = filterConsoleAccounts(accounts, filters)
 	if filters.SortBy == "upstream_billing_rate" {
 		now := time.Now()
@@ -1163,19 +1158,7 @@ func filterAccountsForFacet(accounts []*Account, matcher accountFacetMatcher, ig
 }
 
 func (s *adminServiceImpl) GetAccountConsoleFacets(ctx context.Context, filters AccountConsoleFilters) (*AccountConsoleFacets, error) {
-	var viewPresetCounts map[string]int
-	if view, bound := AccountViewFromContext(ctx); bound {
-		viewPresetCounts = make(map[string]int, len(view.contribution.AccountView.Presets))
-		common := filters
-		common.CindyOnly, common.CindyBalanceStatus, common.CindyHealthStatus = false, "", ""
-		for _, preset := range view.contribution.AccountView.Presets {
-			candidates, err := s.listAccountConsoleAll(accountViewPresetContext(ctx, preset), common)
-			if err != nil {
-				return nil, err
-			}
-			viewPresetCounts[preset.ID] = accountViewCounter(preset.Counter, candidates)
-		}
-	}
+
 	baseFilters := filters
 	baseFilters.Platforms = nil
 	baseFilters.Types = nil
@@ -1292,7 +1275,6 @@ func (s *adminServiceImpl) GetAccountConsoleFacets(ctx context.Context, filters 
 		return strings.ToLower(proxyOptions[i].Label) < strings.ToLower(proxyOptions[j].Label)
 	})
 	return &AccountConsoleFacets{
-		ViewPresetCounts: viewPresetCounts,
 		// Folder navigation always represents the complete result set after all
 		// non-folder filters, so total must use the same population as its counts.
 		Total: len(folderAccounts), UncategorizedCount: uncategorizedCount,

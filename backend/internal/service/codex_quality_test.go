@@ -12,7 +12,7 @@ import (
 	"testing"
 	"time"
 
-	extensionv1 "github.com/Wei-Shaw/sub2api/pkg/extensionapi/v1"
+	extensionv1 "github.com/Wei-Shaw/sub2api/internal/nativeapi"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
@@ -274,7 +274,7 @@ func TestCodexQualityKeyRevalidationRejectsExpiredQuotaAndDrift(t *testing.T) {
 		change(&other)
 		require.False(t, codexQualityKeyUsable(&other, 9, 101, 53))
 		store, run := qualityStateFixture(t, 3)
-		rt := &codexQualityRuntime{store: store, installation: &PluginInstallation{}}
+		rt := &codexQualityRuntime{store: store, installation: &NativeCodexMetadata{}}
 		e := &codexQualityExecution{runtime: rt, runID: run.RunID, grantDigest: run.GrantDigest, accountID: run.AccountID, stage: "acquire", operationID: uuid.NewString(), keyLookup: func(context.Context, int64) (*APIKey, error) { return &other, nil }}
 		ctx := context.WithValue(context.Background(), codexQualityExecutionKey{}, e)
 		req, err := http.NewRequestWithContext(ctx, http.MethodPost, "https://chatgpt.com/backend-api/codex/responses", strings.NewReader(`{"model":"gpt-6-astra"}`))

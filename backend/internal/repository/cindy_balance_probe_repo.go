@@ -63,7 +63,7 @@ func (r *cindyBalanceProbeRepository) CreateJob(
 	if origin := scope.Origin; origin != nil {
 		if origin.OperationKey != "" {
 			if requestedBy == nil || *requestedBy <= 0 {
-				return nil, service.ErrAccountViewInvalid
+				return nil, service.ErrCindyBalanceProbeChanged
 			}
 			key := fmt.Sprintf("cindy-probe-view:%d:%s", *requestedBy, origin.OperationKey)
 			if _, err := tx.ExecContext(ctx, `SELECT pg_advisory_xact_lock(hashtextextended($1,0))`, key); err != nil {
@@ -85,9 +85,6 @@ func (r *cindyBalanceProbeRepository) CreateJob(
 			if !errors.Is(err, sql.ErrNoRows) {
 				return nil, err
 			}
-		}
-		if err := lockPluginExecution(ctx, tx, origin.PluginKey); err != nil {
-			return nil, err
 		}
 	}
 	preview, err := loadCindyBalanceProbePreview(ctx, tx, scope, rateRPS)
@@ -149,7 +146,7 @@ func loadCindyBalanceProbePreview(
 	if err != nil {
 		return nil, err
 	}
-	if _, bound := service.AccountViewFromContext(ctx); bound {
+	{
 		rows, err := tx.QueryContext(ctx, `SELECT id,wire_platform,provider_profile,cindy_banned_at FROM accounts WHERE deleted_at IS NULL ORDER BY id`)
 		if err != nil {
 			return nil, err
@@ -869,7 +866,7 @@ func (r *cindyBalanceProbeRepository) FinalizeExhausted(
 
 func (r *cindyBalanceProbeRepository) FinalizeScopedExhausted(ctx context.Context, reservation *service.CindyBalanceProbeReservation, leaseToken string, observedAt time.Time, confirmationWindow time.Duration) (string, *service.CindyHealthEpisode, error) {
 	if _, scoped := service.CindyBalanceProbeOriginOwner(ctx); !scoped {
-		return "", nil, service.ErrAccountViewUnavailable
+		return "", nil, service.ErrCindyBalanceProbeChanged
 	}
 	var committed service.CindyHealthEpisode
 	state, err := r.finalizeAccountMarker(ctx, reservation, nil, leaseToken, observedAt, confirmationWindow, true, &committed)
@@ -908,12 +905,7 @@ func (r *cindyBalanceProbeRepository) finalizeAccountMarker(
 		return "", err
 	}
 	defer func() { _ = tx.Rollback() }()
-	owner, scoped := service.CindyBalanceProbeOriginOwner(ctx)
-	if scoped {
-		if err := lockPluginExecution(ctx, tx, owner); err != nil {
-			return "", err
-		}
-	}
+	_, scoped := service.CindyBalanceProbeOriginOwner(ctx)
 	return r.finalizeAccountMarkerTx(ctx, tx, reservation, accountSnapshot, leaseToken, observedAt, confirmationWindow, mark, scoped, committedResult...)
 }
 
@@ -1253,14 +1245,13 @@ func (r *cindyBalanceProbeRepository) Resume(ctx context.Context, jobID int64) (
 
 func (r *cindyBalanceProbeRepository) ResumeScoped(ctx context.Context, jobID int64, expected, next *service.CindyBalanceProbeOrigin) (*service.CindyBalanceProbeJob, error) {
 	if expected == nil || next == nil {
-		return nil, service.ErrAccountViewInvalid
+		return nil, service.ErrCindyBalanceProbeChanged
 	}
 	semantic := *next
-	semantic.RuntimeGeneration, semantic.View.RuntimeGeneration, semantic.View.PolicyRevision = expected.RuntimeGeneration, expected.View.RuntimeGeneration, expected.View.PolicyRevision
 	before, _ := json.Marshal(expected)
 	after, _ := json.Marshal(semantic)
 	if !bytes.Equal(before, after) {
-		return nil, service.ErrAccountViewUnavailable
+		return nil, service.ErrCindyBalanceProbeChanged
 	}
 	if err := service.ValidateCindyBalanceProbeOriginContext(ctx, next); err != nil {
 		return nil, err
@@ -1270,9 +1261,6 @@ func (r *cindyBalanceProbeRepository) ResumeScoped(ctx context.Context, jobID in
 		return nil, err
 	}
 	defer func() { _ = tx.Rollback() }()
-	if err := lockPluginExecution(ctx, tx, next.PluginKey); err != nil {
-		return nil, err
-	}
 	if err := resumeScopedProbeTx(ctx, tx, jobID, before, next); err != nil {
 		return nil, err
 	}

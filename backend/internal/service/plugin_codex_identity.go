@@ -7,7 +7,7 @@ import (
 	"github.com/Wei-Shaw/sub2api/internal/pkg/openai"
 	"time"
 
-	extensionv1 "github.com/Wei-Shaw/sub2api/pkg/extensionapi/v1"
+	extensionv1 "github.com/Wei-Shaw/sub2api/internal/nativeapi"
 )
 
 // Only shared/pre-create policy material may use the account-free domain path.
@@ -15,11 +15,11 @@ import (
 // policy operation, including validation and metadata-only diagnostics.
 func invokeCodexIdentityPolicyForAccount(ctx context.Context, account *Account, operation string, query extensionv1.CodexIdentityQuery) (extensionv1.CodexIdentityResult, error) {
 	if account != nil && !account.IsOpenAIOAuthLike() {
-		return extensionv1.CodexIdentityResult{}, ErrExtensionOperationDisabled
+		return extensionv1.CodexIdentityResult{}, ErrNativeCodexPolicyDisabled
 	}
 	raw, err := json.Marshal(query)
 	if err != nil || len(raw) > 8192 {
-		return extensionv1.CodexIdentityResult{}, ErrExtensionOperationUnavailable
+		return extensionv1.CodexIdentityResult{}, ErrNativeCodexRuntimeUnavailable
 	}
 	call, cancel := context.WithTimeout(ctx, time.Second)
 	defer cancel()
@@ -28,17 +28,17 @@ func invokeCodexIdentityPolicyForAccount(ctx context.Context, account *Account, 
 	}
 	var result extensionv1.Result
 	if account == nil {
-		result, err = invokeProcessDomainExtension(call, invocation, true)
+		result, err = invokeNativeCodex(call, "", "", invocation)
 	} else {
 		invocation.AccountID = account.ID
-		result, err = invokeProcessExtensionCached(call, account.Platform, account.Type, invocation)
+		result, err = invokeNativeCodex(call, account.Platform, account.Type, invocation)
 	}
 	if err != nil {
 		return extensionv1.CodexIdentityResult{}, err
 	}
 	var identity extensionv1.CodexIdentityResult
 	if result.Code != "" || json.Unmarshal(result.Payload, &identity) != nil {
-		return identity, ErrExtensionOperationUnavailable
+		return identity, ErrNativeCodexRuntimeUnavailable
 	}
 	return identity, nil
 }
@@ -73,8 +73,8 @@ func resolveCodexOutboundIdentityForAccountContext(ctx context.Context, account 
 		Seed: codexClientIdentitySeed(account), Profile: profile, Version: canonical.version,
 	})
 	if err != nil {
-		if errors.Is(err, ErrExtensionOperationDisabled) {
-			err = ErrExtensionOperationUnavailable
+		if errors.Is(err, ErrNativeCodexPolicyDisabled) {
+			err = ErrNativeCodexRuntimeUnavailable
 		}
 		return codexOutboundIdentity{}, err
 	}
@@ -82,11 +82,11 @@ func resolveCodexOutboundIdentityForAccountContext(ctx context.Context, account 
 		return canonical, nil
 	}
 	if result.UserAgent == "" {
-		return codexOutboundIdentity{}, ErrExtensionOperationUnavailable
+		return codexOutboundIdentity{}, ErrNativeCodexRuntimeUnavailable
 	}
 	originator, paired, valid := openai.PairCodexClientIdentity(result.UserAgent)
 	if !valid {
-		return codexOutboundIdentity{}, ErrExtensionOperationUnavailable
+		return codexOutboundIdentity{}, ErrNativeCodexRuntimeUnavailable
 	}
 	return codexOutboundIdentity{userAgent: paired, originator: originator, version: openai.CodexUserAgentVersion(paired)}, nil
 }
@@ -94,10 +94,10 @@ func resolveCodexOutboundIdentityForAccountContext(ctx context.Context, account 
 func codexIdentityPolicyAvailable(ctx context.Context, accountType string, accountID int64) (bool, error) {
 	call, cancel := context.WithTimeout(ctx, time.Second)
 	defer cancel()
-	result, err := invokeProcessExtensionCached(call, PlatformOpenAI, accountType, extensionv1.Invocation{
+	result, err := invokeNativeCodex(call, PlatformOpenAI, accountType, extensionv1.Invocation{
 		Capability: extensionv1.CapabilityRequest, Operation: "codex.identity.available", Payload: []byte(`{}`), AccountID: accountID,
 	})
-	if errors.Is(err, ErrExtensionOperationDisabled) {
+	if errors.Is(err, ErrNativeCodexPolicyDisabled) {
 		return false, nil // Explicitly disabled: use the upstream host identity contract.
 	}
 	if err != nil {
@@ -105,7 +105,7 @@ func codexIdentityPolicyAvailable(ctx context.Context, accountType string, accou
 	}
 	var status extensionv1.CodexIdentityResult
 	if result.Code != "" || json.Unmarshal(result.Payload, &status) != nil || !status.Valid {
-		return false, ErrExtensionOperationUnavailable
+		return false, ErrNativeCodexRuntimeUnavailable
 	}
 	return true, nil
 }

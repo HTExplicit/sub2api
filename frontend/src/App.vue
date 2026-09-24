@@ -11,7 +11,6 @@ import { getSetupStatus } from '@/api/setup'
 import { updateFavicon } from '@/utils/branding'
 import { FeatureFlags, isFeatureFlagEnabled } from '@/utils/featureFlags'
 import { resolveSiteBillingMode } from '@/utils/siteBillingMode'
-import { startPluginThemeRefresh } from '@/components/plugins/theme'
 
 const router = useRouter()
 const route = useRoute()
@@ -23,7 +22,6 @@ const adminComplianceStore = useAdminComplianceStore()
 const adminSettingsStore = useAdminSettingsStore()
 const accountJobsStore = useAccountJobsStore()
 let accountJobsSessionKey: string | null = null
-let stopPluginThemeRefresh: (() => void) | undefined
 
 watch(
   [
@@ -155,14 +153,12 @@ router.afterEach(() => {
 })
 
 onBeforeUnmount(() => {
-  stopPluginThemeRefresh?.()
   accountJobsStore.clear()
   document.removeEventListener('visibilitychange', onVisibilityChange)
   window.removeEventListener('admin-compliance-required', onAdminComplianceRequired)
 })
 
 onMounted(async () => {
-  stopPluginThemeRefresh = startPluginThemeRefresh()
   window.addEventListener('admin-compliance-required', onAdminComplianceRequired)
 
   // Check if setup is needed

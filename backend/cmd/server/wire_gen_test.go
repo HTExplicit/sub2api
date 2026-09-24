@@ -116,6 +116,7 @@ func minimalDependencyCleanup(autoReset *service.OpenAIQuotaAutoResetService) fu
 		nil, // cindyBalanceProbe
 		nil, // imageStudioRuntime
 		nil, // pluginManager
+		nil, // nativeCodexRuntime
 	)
 }
 

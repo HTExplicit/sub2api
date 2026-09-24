@@ -8,9 +8,9 @@ import (
 	"strconv"
 	"testing"
 
+	extensionv1 "github.com/Wei-Shaw/sub2api/internal/nativeapi"
 	"github.com/Wei-Shaw/sub2api/internal/service"
 	"github.com/Wei-Shaw/sub2api/internal/testextensions"
-	extensionv1 "github.com/Wei-Shaw/sub2api/pkg/extensionapi/v1"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
 )
@@ -43,34 +43,12 @@ func (s *scopedTrafficAdminService) GetAccount(ctx context.Context, id int64) (*
 	return s.stubAdminService.GetAccount(ctx, id)
 }
 
-type scopedTrafficPolicy struct {
-	t       *testing.T
-	allowed bool
-	calls   int
-}
-
-func (p *scopedTrafficPolicy) InvokeOperation(_ context.Context, platform, kind string, in extensionv1.Invocation) (extensionv1.Result, error) {
-	p.calls++
-	require.Equal(p.t, service.PlatformOpenAI, platform)
-	require.Equal(p.t, service.AccountTypeAPIKey, kind)
-	require.EqualValues(p.t, 18, in.AccountID)
-	require.Equal(p.t, extensionv1.CapabilityObservability, in.Capability)
-	require.Equal(p.t, "observability.policy", in.Operation)
-	require.JSONEq(p.t, `{}`, string(in.Payload))
-	if !p.allowed {
-		return extensionv1.Result{}, service.ErrExtensionOperationDisabled
-	}
-	raw, err := json.Marshal(extensionv1.TrafficObservationPolicy{Enabled: true, Classification: extensionv1.DecisionTable{Default: string(service.AccountTrafficOutcomeFailedOther)}})
-	return extensionv1.Result{Payload: raw}, err
-}
-
-func TestAccountHandlerTrafficTelemetryUsesLoadedAccountScope(t *testing.T) {
+func TestAccountHandlerTrafficTelemetryFollowsTelemetrySwitch(t *testing.T) {
 	gin.SetMode(gin.TestMode)
-	for _, allowed := range []bool{false, true} {
-		t.Run(strconv.FormatBool(allowed), func(t *testing.T) {
+	for _, enabled := range []bool{false, true} {
+		t.Run(strconv.FormatBool(enabled), func(t *testing.T) {
 			t.Cleanup(testextensions.Install)
-			policy := &scopedTrafficPolicy{t: t, allowed: allowed}
-			service.ConfigureProcessExtensionServices(nil, policy)
+			service.ConfigureAdminObservability(&extensionv1.AdminObservabilityConfig{TelemetryEnabled: enabled})
 			stub := &scopedTrafficAdminService{stubAdminService: newStubAdminService()}
 			stub.getAccountResult = &service.Account{ID: 18, Platform: service.PlatformOpenAI, Type: service.AccountTypeAPIKey, Concurrency: 3, Credentials: map[string]any{"api_key": "never-return-secret"}}
 			cache := &stubAccountTrafficObserveCache{snapshot: map[service.AccountTrafficProtocol]service.AccountTrafficObserveState{service.AccountTrafficProtocolHTTP: {Started: 3, Completed2xx: 2}}}
@@ -86,18 +64,17 @@ func TestAccountHandlerTrafficTelemetryUsesLoadedAccountScope(t *testing.T) {
 				Data map[string]any `json:"data"`
 			}
 			require.NoError(t, json.Unmarshal(recorder.Body.Bytes(), &response))
-			require.Equal(t, allowed, response.Data["state_available"])
+			require.Equal(t, enabled, response.Data["state_available"])
 			require.EqualValues(t, 18, response.Data["account_id"])
-			require.Equal(t, 1, stub.reads, "policy selection must reuse the account already loaded by the handler")
-			require.Equal(t, 1, policy.calls, "an unscoped Enabled preflight must not precede account-specific admission")
+			require.Equal(t, 1, stub.reads)
 			require.NotContains(t, recorder.Body.String(), "never-return-secret")
-			if allowed {
+			if enabled {
 				require.Equal(t, 1, cache.snapshotCalls)
 				require.Contains(t, response.Data, "protocols")
 			} else {
 				require.Zero(t, cache.snapshotCalls)
 				require.NotContains(t, response.Data, "protocols")
-				require.NotContains(t, response.Data, "error", "out-of-scope telemetry keeps the existing disabled no-data response")
+				require.NotContains(t, response.Data, "error", "disabled telemetry keeps the no-data response")
 			}
 		})
 	}

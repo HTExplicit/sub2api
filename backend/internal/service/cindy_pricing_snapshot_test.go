@@ -7,9 +7,9 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	cindy "github.com/HTExplicit/sub2api-plugins/cindyprovider/catalog"
+	cindy "github.com/Wei-Shaw/sub2api/internal/cindyprovider/catalog"
 	"github.com/Wei-Shaw/sub2api/internal/config"
-	extensionv1 "github.com/Wei-Shaw/sub2api/pkg/extensionapi/v1"
+	extensionv1 "github.com/Wei-Shaw/sub2api/internal/nativeapi"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
 )
@@ -39,9 +39,9 @@ type cindyPricingFixture struct {
 }
 
 func TestCindyUnavailableBlocksTokenCountingAndEmbeddingsBeforeIO(t *testing.T) {
-	previous := processExtensionOperations.Load()
-	processExtensionOperations.Store(nil)
-	t.Cleanup(func() { processExtensionOperations.Store(previous) })
+	previous := captureNativeCindyTestInvoker()
+	setNativeCindyTestInvoker(nil)
+	t.Cleanup(func() { restoreNativeCindyTestInvoker(previous) })
 	account := &Account{ID: 41, Platform: PlatformCindy, Type: AccountTypeAPIKey, Credentials: map[string]any{"base_url": "https://api.laxarouter.ai"}}
 	service := &OpenAIGatewayService{}
 	for _, endpoint := range []string{"responses-input-tokens", "messages-count-tokens", "embeddings"} {
@@ -72,10 +72,10 @@ func (f *cindyPricingFixture) InvokeOperation(ctx context.Context, _, _ string, 
 }
 
 func TestCindyNewTurnRefreshesPricingWithoutChangingPendingBill(t *testing.T) {
-	previous := processExtensionOperations.Load()
-	t.Cleanup(func() { processExtensionOperations.Store(previous) })
+	previous := captureNativeCindyTestInvoker()
+	t.Cleanup(func() { restoreNativeCindyTestInvoker(previous) })
 	fixture := &cindyPricingFixture{module: cindy.New()}
-	processExtensionOperations.Store(&extensionOperationProvider{invoker: fixture})
+	setNativeCindyTestInvoker(fixture)
 	account := &Account{ID: 41, Platform: PlatformCindy, Type: AccountTypeAPIKey, Credentials: map[string]any{"base_url": "https://api.laxarouter.ai"}}
 	require.NoError(t, fixture.module.ApplyConfig(context.Background(), []byte(`{"catalog_enabled":true}`)))
 	first, err := CaptureCindyPricingContext(context.Background(), nil, account)
@@ -96,19 +96,18 @@ func TestCindyNewTurnRefreshesPricingWithoutChangingPendingBill(t *testing.T) {
 }
 
 func TestCindyPricingScopeCannotReuseAnExcludedAccountPolicyCache(t *testing.T) {
-	previous := processExtensionOperations.Load()
-	t.Cleanup(func() { processExtensionOperations.Store(previous) })
+	// Image tool switches are host state now; keep them empty so only scope metadata is compared.
+	ConfigureImageTools(&extensionv1.ImageToolsConfig{})
+	t.Cleanup(func() { ConfigureImageTools(nil) })
+	previous := captureNativeCindyTestInvoker()
+	t.Cleanup(func() { restoreNativeCindyTestInvoker(previous) })
 	module := cindy.New()
 	require.NoError(t, module.ApplyConfig(context.Background(), []byte(`{"catalog_enabled":true}`)))
 	var calls []extensionv1.Invocation
-	manager := ticketTestManager(t, config.OpenAICodexTicketConfig{}, func(in extensionv1.Invocation) (extensionv1.Result, error) {
+	setNativeCindyTestInvoker(nativeCindyTestInvoker(func(ctx context.Context, in extensionv1.Invocation) (extensionv1.Result, error) {
 		calls = append(calls, in)
-		return module.Invoke(context.Background(), in)
-	})
-	installation := manager.extensions.Load().installations[1]
-	installation.Bindings = []PluginBinding{{Capability: extensionv1.CapabilityProvider, Platform: PlatformCindy, AccountType: AccountTypeAPIKey, Enabled: true, RolloutPercent: 100}}
-	installation.Manifest.Operations = map[string][]string{extensionv1.CapabilityProvider: {"cindy.features", "cindy.pricing"}}
-	processExtensionOperations.Store(&extensionOperationProvider{invoker: manager})
+		return module.Invoke(ctx, in)
+	}))
 	account := &Account{ID: 41, Platform: PlatformCindy, Type: AccountTypeAPIKey, Credentials: map[string]any{"base_url": "https://api.laxarouter.ai", "api_key": "private-fixture-token"}}
 	parent, err := CaptureCindyPricingContext(context.Background(), nil, account)
 	require.NoError(t, err)
@@ -118,10 +117,10 @@ func TestCindyPricingScopeCannotReuseAnExcludedAccountPolicyCache(t *testing.T) 
 		require.JSONEq(t, `{}`, string(call.Payload), "scope metadata must not carry the account's credentials")
 	}
 	pendingBill := CopyProviderPricingContext(parent, context.Background())
-	installation.Bindings[0].RolloutPercent = int(stablePluginBucket(account.ID))
+	setNativeCindyTestInvoker(nil)
 	require.Error(t, EnsureCindyProviderAvailable(context.Background(), account))
 	_, err = CaptureCindyPricingContext(parent, nil, account)
 	require.Error(t, err, "an existing captured value cannot authorize a new excluded request")
-	require.Len(t, calls, 2, "revoked scope must fail before the cached policy can be returned")
+	require.Len(t, calls, 2, "a failed current module must not reuse an earlier reply")
 	require.NotNil(t, cindyPricingSnapshotFromContext(pendingBill, account), "a completed request can still settle using its captured reference")
 }

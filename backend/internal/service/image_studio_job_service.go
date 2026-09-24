@@ -2,14 +2,11 @@ package service
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"strings"
 	"time"
-
-	extensionv1 "github.com/Wei-Shaw/sub2api/pkg/extensionapi/v1"
 )
 
 type ImageStudioUpload struct {
@@ -129,15 +126,7 @@ func imageStudioModelCapabilities() []CindyModelCapability {
 			capabilities = append(capabilities, cindyModelCapabilityFromCapability(capability))
 		}
 	}
-	raw, _ := json.Marshal(extensionv1.ImageStudioCatalogRequest{Capabilities: capabilities})
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
-	defer cancel()
-	out, err := invokeProcessExtensionCached(ctx, "*", "*", extensionv1.Invocation{Capability: extensionv1.CapabilityRequest, Operation: "image.studio.models", Payload: raw})
-	result := make([]CindyModelCapability, 0)
-	if err == nil && out.Code == "" {
-		_ = json.Unmarshal(out.Payload, &result)
-	}
-	return result
+	return imageStudioModelChoices(capabilities)
 }
 
 func (s *ImageStudioService) eligibleAPIKey(ctx context.Context, userID, apiKeyID int64) (*APIKey, error) {

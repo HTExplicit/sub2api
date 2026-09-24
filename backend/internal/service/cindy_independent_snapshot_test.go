@@ -14,11 +14,10 @@ import (
 	"testing"
 	"time"
 
-	cindy "github.com/HTExplicit/sub2api-plugins/cindyprovider/catalog"
-	"github.com/Wei-Shaw/sub2api/internal/config"
+	cindy "github.com/Wei-Shaw/sub2api/internal/cindyprovider/catalog"
+	extensionv1 "github.com/Wei-Shaw/sub2api/internal/nativeapi"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/openai"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/tlsfingerprint"
-	extensionv1 "github.com/Wei-Shaw/sub2api/pkg/extensionapi/v1"
 	"github.com/gin-gonic/gin"
 	gocache "github.com/patrickmn/go-cache"
 	"github.com/stretchr/testify/require"
@@ -108,9 +107,9 @@ func independentCindySnapshot(t *testing.T, suffix string, enabled bool) extensi
 
 func installIndependentCindyFixture(t *testing.T, f *cindyIndependentSnapshotFixture) {
 	t.Helper()
-	previous := processExtensionOperations.Load()
-	processExtensionOperations.Store(&extensionOperationProvider{invoker: f})
-	t.Cleanup(func() { processExtensionOperations.Store(previous) })
+	previous := captureNativeCindyTestInvoker()
+	setNativeCindyTestInvoker(f)
+	t.Cleanup(func() { restoreNativeCindyTestInvoker(previous) })
 }
 
 func TestCindyPluginOwnedDefaultAndLegacyWire(t *testing.T) {
@@ -244,20 +243,7 @@ func TestCindySnapshotOrdinaryAndPinnedPathsHaveNoProviderDependency(t *testing.
 }
 
 func TestCindySnapshotActualAccountAdmissionAndValidation(t *testing.T) {
-	previous := processExtensionOperations.Load()
-	t.Cleanup(func() { processExtensionOperations.Store(previous) })
-	calls := 0
-	manager := ticketTestManager(t, config.OpenAICodexTicketConfig{}, func(extensionv1.Invocation) (extensionv1.Result, error) {
-		calls++
-		return extensionv1.Result{}, nil
-	})
-	installation := manager.extensions.Load().installations[1]
-	installation.Bindings = []PluginBinding{{Capability: extensionv1.CapabilityProvider, Platform: PlatformCindy, AccountType: AccountTypeAPIKey, Enabled: true, RolloutPercent: 0}}
-	installation.Manifest.Operations = map[string][]string{extensionv1.CapabilityProvider: {"cindy.catalog"}}
-	processExtensionOperations.Store(&extensionOperationProvider{invoker: manager})
-	_, err := LoadCindyCatalogSnapshot(context.Background(), newCindyNativeMessagesAccount())
-	require.ErrorIs(t, err, ErrExtensionOperationDisabled)
-	require.Zero(t, calls, "zero-percent actual accounts must not receive policy content")
+	var err error
 	for _, enabled := range []bool{false, true} {
 		_, err = validateCindyCatalogSnapshot(independentCindySnapshot(t, "valid", enabled))
 		require.NoError(t, err, "catalog-off snapshots retain valid descriptive defaults")

@@ -20,6 +20,7 @@ import (
 	"github.com/Wei-Shaw/sub2api/internal/config"
 	"github.com/Wei-Shaw/sub2api/internal/domain"
 	"github.com/Wei-Shaw/sub2api/internal/handler/dto"
+	extensionv1 "github.com/Wei-Shaw/sub2api/internal/nativeapi"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/antigravity"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/claude"
 	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
@@ -29,7 +30,6 @@ import (
 	"github.com/Wei-Shaw/sub2api/internal/pkg/timezone"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/xai"
 	"github.com/Wei-Shaw/sub2api/internal/service"
-	extensionv1 "github.com/Wei-Shaw/sub2api/pkg/extensionapi/v1"
 
 	"github.com/gin-gonic/gin"
 	"golang.org/x/sync/errgroup"
@@ -795,8 +795,7 @@ func (h *AccountHandler) List(c *gin.Context) {
 		consoleService accountConsoleAdminService
 		err            error
 	)
-	_, accountViewBound := service.AccountViewFromContext(c.Request.Context())
-	if hasAccountConsoleFilters(c) || accountViewBound {
+	if hasAccountConsoleFilters(c) {
 		filters, filterErr := parseAccountConsoleFilters(c, groupID)
 		if filterErr != nil {
 			response.ErrorFrom(c, filterErr)
@@ -2115,10 +2114,13 @@ func (h *AccountHandler) BulkUpdate(c *gin.Context) {
 	}
 
 	ids := normalizeInt64IDList(req.AccountIDs)
+	if len(req.AccountIDs) > 0 && len(ids) == 0 {
+		response.BadRequest(c, "account_ids must include at least one positive ID")
+		return
+	}
 	req.AccountIDs = ids
 	submission := req
-	_, viewScopedSubmission := service.AccountViewFromContext(c.Request.Context())
-	if h.replayScopedAccountJob(c, service.AccountJobKindBulkUpdate, submission) {
+	if h.replayAccountJob(c, service.AccountJobKindBulkUpdate, submission) {
 		return
 	}
 	if service.HasOpenAIReasoningPolicyUpdates(req.Extra) {
@@ -2142,11 +2144,9 @@ func (h *AccountHandler) BulkUpdate(c *gin.Context) {
 			response.ErrorFrom(c, err)
 			return
 		}
-		// Freeze selection; workers must not re-evaluate a filter and silently
-		// include newly matching accounts after the complete-set preflight.
+		// Freeze the validated selection in item seeds. The original request
+		// remains the replay source; workers execute only each seed's target.
 		ids = resolvedIDs
-		req.Filters = nil
-		req.AccountIDs = ids
 	} else if len(ids) == 0 {
 		if h.accountJobs == nil {
 			response.ErrorFrom(c, infraerrors.New(503, "ACCOUNT_JOBS_UNAVAILABLE", "account jobs are unavailable"))
@@ -2183,10 +2183,8 @@ func (h *AccountHandler) BulkUpdate(c *gin.Context) {
 			return
 		}
 	}
-	if viewScopedSubmission {
-		req = submission
-	}
-	if service.HasAccountEditOwnedInput(req.Credentials, req.Extra) {
+	// Keep the submitted operation identity; only item seeds freeze resolved IDs.
+	if service.HasAccountEditOwnedInput(submission.Credentials, submission.Extra) {
 		accounts, err := h.adminService.GetAccountsByIDs(c.Request.Context(), ids)
 		if err != nil {
 			response.ErrorFrom(c, err)
@@ -2194,7 +2192,7 @@ func (h *AccountHandler) BulkUpdate(c *gin.Context) {
 		}
 		c.Request = c.Request.WithContext(service.WithAccountJobEditAccounts(c.Request.Context(), accounts))
 	}
-	h.submitAccountJob(c, service.AccountJobKindBulkUpdate, req, accountJobSeeds(ids))
+	h.submitAccountJob(c, service.AccountJobKindBulkUpdate, submission, accountJobSeeds(ids))
 }
 
 func splitBulkAccountFilterValues(values ...string) []string {
@@ -2249,7 +2247,7 @@ func toServiceBulkUpdateAccountFilters(filters *BulkUpdateAccountFilters) (*serv
 		GroupID: 0, PrivacyMode: strings.TrimSpace(filters.PrivacyMode), SortBy: "id", SortOrder: "asc",
 	}
 	if (filters.CindyBalanceStatus != "" && filters.CindyBalanceStatus != "insufficient") || (filters.CindyHealthStatus != "" && filters.CindyHealthStatus != "banned") {
-		return nil, service.ErrAccountViewInvalid
+		return nil, infraerrors.BadRequest("INVALID_ACCOUNT_FILTER", "invalid account filter")
 	}
 	switch strings.TrimSpace(filters.Group) {
 	case "":
@@ -2745,7 +2743,11 @@ func (h *AccountHandler) GetEditContext(c *gin.Context) {
 		response.ErrorFrom(c, err)
 		return
 	}
-	result, err := service.LoadAccountEditContext(c.Request.Context(), account)
+	wsDefault := "ctx_pool"
+	if h.cfg != nil {
+		wsDefault = h.cfg.Gateway.OpenAIWS.IngressModeDefault
+	}
+	result, err := service.LoadAccountEditContext(c.Request.Context(), account, wsDefault)
 	if err != nil {
 		response.ErrorFrom(c, err)
 		return

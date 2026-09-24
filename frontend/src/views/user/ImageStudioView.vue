@@ -1,5 +1,6 @@
-<template><AppLayout><ExtensionPage name="image-studio" /></AppLayout></template>
+<template><AppLayout><ImageStudioPage /></AppLayout></template>
+
 <script setup lang="ts">
 import AppLayout from '@/components/layout/AppLayout.vue'
-import ExtensionPage from '@/components/plugins/ExtensionPage.vue'
+import ImageStudioPage from '@/features/image-studio/ImageStudioPage.vue'
 </script>

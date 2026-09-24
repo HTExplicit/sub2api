@@ -21,7 +21,7 @@ func (s *OpenAIGatewayService) prepareBusinessPromptWSIngress(c *gin.Context, bo
 		return s.applyBusinessSystemPromptForRequest(c, body, account, protocol, compact)
 	}
 	target := enrichPromptTarget(c, body, businessSystemPromptTargetForAccount(account, protocol, compact))
-	application, err := planBusinessSystemPromptWithInvoker(promptPolicyRequestContext(c), body, snapshot, target, invokeProcessExtension)
+	application, err := planBusinessSystemPromptWithInvoker(promptPolicyRequestContext(c), body, snapshot, target, promptPlanInvoke)
 	if err != nil {
 		return nil, application, err
 	}

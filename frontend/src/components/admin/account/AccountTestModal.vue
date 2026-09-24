@@ -375,8 +375,6 @@ import { accountViewRequestConfig } from '@/api/admin/accountViewClient'
 import AccountTestReasoningSelect from './AccountTestReasoningSelect.vue'
 import AccountTextTestPrompt from './AccountTextTestPrompt.vue'
 import { useAccountTestPrompt } from '@/composables/useAccountTestPrompt'
-import { usePluginExtensions } from '@/stores/pluginExtensions'
-import { contributionAdmission } from '@/components/plugins/contributionAdmission'
 import { computed, ref, watch, nextTick, onBeforeUnmount, onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import BaseDialog from '@/components/common/BaseDialog.vue'
@@ -428,11 +426,9 @@ let modelLoadRevision = 0
 let modelLoadController: AbortController | null = null
 const selectedModelId = ref('')
 const { prompt: textPrompt, valid: textPromptValid } = useAccountTestPrompt()
-const promptExtensions = usePluginExtensions()
-const textPromptEnabled = computed(() => promptExtensions.items.some(item => item.slot === 'account.test.prompt' && item.permission === 'admin' && contributionAdmission(item, { account: props.account }).allowed))
 const textPromptPolicyValid = ref(true)
 const mediaTestPrompt = ref('')
-const testPrompt = computed({ get: () => supportsTextPrompt.value ? (textPromptEnabled.value ? textPrompt.value : '') : mediaTestPrompt.value,
+const testPrompt = computed({ get: () => supportsTextPrompt.value ? textPrompt.value : mediaTestPrompt.value,
   set: value => { if (supportsTextPrompt.value) textPrompt.value = value; else mediaTestPrompt.value = value } })
 const loadingModels = ref(false)
 let abortController: AbortController | null = null
@@ -444,9 +440,8 @@ const testMode = ref<'default' | 'compact'>('default')
 const reasoningEffort = ref('')
 const reasoningValid = ref(true)
 const effectiveReasoningEffort = computed(() => {
-  const enabled = promptExtensions.items.some(item => item.slot === 'account.test' && item.permission === 'admin' && contributionAdmission(item, { account: props.account }).allowed)
   const levels = modelOptionsForMode.value.find(model => model.id === selectedModelId.value)?.reasoning_efforts || []
-  return enabled && levels.includes(reasoningEffort.value) ? reasoningEffort.value : ''
+  return levels.includes(reasoningEffort.value) ? reasoningEffort.value : ''
 })
 const grokTestMode = ref<'text' | 'image' | 'video' | 'search' | 'tts' | 'stt' | 'realtime'>('text')
 const uploadImageDataURL = ref('')
@@ -688,7 +683,7 @@ const canStartTest = computed(() => {
 	if (!accountViewOperation.available.value) return false
 	if (!props.show || !currentModelPlan.value || loadingModels.value) return false
 	if (effectiveReasoningEffort.value && !reasoningValid.value) return false
-  if (supportsTextPrompt.value && textPromptEnabled.value && (!textPromptValid.value || !textPromptPolicyValid.value)) return false
+  if (supportsTextPrompt.value && (!textPromptValid.value || !textPromptPolicyValid.value)) return false
   if (status.value === 'connecting') return false
   if (isGrokAccount.value) {
     if (

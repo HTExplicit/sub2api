@@ -7,7 +7,7 @@ import (
 	"slices"
 	"time"
 
-	extensionv1 "github.com/Wei-Shaw/sub2api/pkg/extensionapi/v1"
+	extensionv1 "github.com/Wei-Shaw/sub2api/internal/nativeapi"
 	"github.com/google/uuid"
 )
 
@@ -51,7 +51,7 @@ func codexValidationFromContext(ctx context.Context) (codexValidationContext, bo
 	return value, ok
 }
 
-func consumeCodexValidationBudget(ctx context.Context, store PluginExtensionStateStore, plugin string, query extensionv1.CodexRoutingQuery) error {
+func consumeCodexValidationBudget(ctx context.Context, store NativeCodexStateStore, plugin string, query extensionv1.CodexRoutingQuery) error {
 	validation, ok := codexValidationFromContext(ctx)
 	if !ok {
 		return nil
@@ -94,28 +94,30 @@ func consumeCodexValidationBudget(ctx context.Context, store PluginExtensionStat
 }
 
 func (s *OpenAIGatewayService) ValidateCodexRouting(ctx context.Context, id int64, request CodexRoutingValidationRequest) (*CodexRoutingValidationResult, error) {
-	if uuid.Validate(request.ValidationID) != nil || !slices.Contains(codexValidationModels, request.Model) || (request.Transport != "http" && request.Transport != "ws") || s.pluginManager == nil {
+	if uuid.Validate(request.ValidationID) != nil || !slices.Contains(codexValidationModels, request.Model) || (request.Transport != "http" && request.Transport != "ws") || s.nativeCodexRuntime == nil {
 		return nil, errCodexRoutingUnavailable
 	}
 	account, err := s.accountRepo.GetByID(ctx, id)
 	if err != nil || !isOpenAICodexTicketAccount(account) {
 		return nil, errCodexRoutingUnavailable
 	}
-	installation, _ := s.pluginManager.installedByKey(codexRuntimePluginKey)
-	store, ok := s.pluginManager.repo.(PluginExtensionStateStore)
+	installation := s.nativeCodexRuntime.metadata()
+	store := s.nativeCodexRuntime.repo
+	ok := store != nil
 	if installation == nil || !ok {
 		return nil, errCodexRoutingUnavailable
 	}
-	server, ok := s.pluginManager.buildHostServices(installation).(*pluginHostServiceServer)
-	if !ok || server.extension == nil {
+	snapshot := s.nativeCodexRuntime.current()
+	if snapshot == nil {
 		return nil, errCodexRoutingUnavailable
 	}
-	ctx = WithPluginExecution(ctx, installation)
+
+	ctx = WithNativeCodexExecution(ctx, installation)
 	ctx = context.WithValue(ctx, codexValidationContextKey{}, codexValidationContext{ID: request.ValidationID, AccountID: id, Model: request.Model, Transport: request.Transport})
 	ctx, cancel := context.WithTimeout(ctx, 60*time.Second)
 	defer cancel()
 	lease := extensionv1.LeaseRequest{Namespace: "routing-account", Key: fmt.Sprint(id), Owner: uuid.NewString(), TTLSeconds: 75}
-	locked, err := store.AcquireExtensionLease(ctx, installation.PluginKey, lease)
+	locked, err := store.AcquireExtensionLease(ctx, NativeCodexPluginKey, lease)
 	if err != nil || !locked.Acquired {
 		return nil, ErrCodexTicketBusy
 	}
@@ -123,12 +125,12 @@ func (s *OpenAIGatewayService) ValidateCodexRouting(ctx context.Context, id int6
 	defer func() {
 		release, stop := context.WithTimeout(context.WithoutCancel(ctx), 3*time.Second)
 		defer stop()
-		_, _ = store.ReleaseExtensionLease(release, installation.PluginKey, lease)
+		_, _ = store.ReleaseExtensionLease(release, NativeCodexPluginKey, lease)
 	}()
 	result := &CodexRoutingValidationResult{ValidationID: request.ValidationID, AccountID: id, Model: request.Model, Transport: request.Transport, BudgetLimit: 7, Observations: []extensionv1.CodexRoutingObservation{}}
 	call := func(query extensionv1.CodexRoutingQuery) (extensionv1.CodexRoutingProbeResult, error) {
 		raw, _ := json.Marshal(query)
-		response, err := server.extension.Call(ctx, extensionv1.HostInvocation{Operation: extensionv1.HostCodexRoutingProbe, Payload: raw})
+		response, err := snapshot.host.Call(ctx, extensionv1.HostInvocation{Operation: extensionv1.HostCodexRoutingProbe, Payload: raw})
 		var value extensionv1.CodexRoutingProbeResult
 		if err != nil || response.Code != "" || json.Unmarshal(response.Payload, &value) != nil {
 			return value, errCodexRoutingUnavailable
@@ -143,7 +145,7 @@ func (s *OpenAIGatewayService) ValidateCodexRouting(ctx context.Context, id int6
 		query.Stage = "acquire"
 		acquired, err = call(query)
 	} else {
-		previous, readErr := store.ReadExtensionState(ctx, installation.PluginKey, extensionv1.StateRequest{Namespace: codexRoutingPrivateNamespace, Key: storedKey})
+		previous, readErr := store.ReadExtensionState(ctx, NativeCodexPluginKey, extensionv1.StateRequest{Namespace: codexRoutingPrivateNamespace, Key: storedKey})
 		if readErr != nil || !previous.Found || json.Unmarshal(previous.Value, &acquired) != nil {
 			return nil, errCodexRoutingUnavailable
 		}
@@ -155,13 +157,13 @@ func (s *OpenAIGatewayService) ValidateCodexRouting(ctx context.Context, id int6
 		result.Success = err == nil && verified.Valid
 		if result.Success && request.Transport == "http" {
 			raw, _ := json.Marshal(verified)
-			_, _ = store.CompareSwapExtensionState(ctx, installation.PluginKey, extensionv1.StateRequest{Namespace: codexRoutingPrivateNamespace, Key: storedKey, Value: raw})
+			_, _ = store.CompareSwapExtensionState(ctx, NativeCodexPluginKey, extensionv1.StateRequest{Namespace: codexRoutingPrivateNamespace, Key: storedKey, Value: raw})
 		}
 	}
 	if err != nil {
 		result.Observations = append(result.Observations, extensionv1.CodexRoutingObservation{Stage: query.Stage, Code: "routing_validation_unavailable", RequestedModel: request.Model, Transport: request.Transport, ObservedAt: time.Now().UTC()})
 	}
-	budgetRecord, readErr := store.ReadExtensionState(context.WithoutCancel(ctx), installation.PluginKey, extensionv1.StateRequest{Namespace: codexRoutingPrivateNamespace, Key: "validation." + request.ValidationID})
+	budgetRecord, readErr := store.ReadExtensionState(context.WithoutCancel(ctx), NativeCodexPluginKey, extensionv1.StateRequest{Namespace: codexRoutingPrivateNamespace, Key: "validation." + request.ValidationID})
 	if readErr == nil {
 		var budget codexValidationBudget
 		if json.Unmarshal(budgetRecord.Value, &budget) == nil {

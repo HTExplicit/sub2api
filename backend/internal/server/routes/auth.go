@@ -244,8 +244,6 @@ func RegisterAuthRoutes(
 	settings.Use(panelRateLimiter.PublicIP())
 	{
 		settings.GET("/public", h.Setting.GetPublicSettings)
-		settings.GET("/plugins", h.Setting.GetPublicPluginContributions)
-		settings.GET("/plugins/:id/theme/:revision/*path", h.Setting.GetPublicPluginThemeAsset)
 		settings.GET("/email-unsubscribe", h.Setting.UnsubscribeNotificationEmail)
 	}
 

@@ -51,32 +51,8 @@ coverage/
 .env.*
 !.env.example
 
-# Only the reviewed first-party module enters the build context. Local plugin
-# packages, generated binaries and publisher keys remain excluded.
-/plugins/*
-!/plugins/bundle.source.json
-!/plugins/codex-runtime/
-!/plugins/codex-runtime/**
-!/plugins/model-policy/
-!/plugins/model-policy/**
-!/plugins/prompt-skills/
-!/plugins/prompt-skills/**
-!/plugins/account-tools/
-!/plugins/account-tools/**
-!/plugins/cindy-provider/
-!/plugins/cindy-provider/**
-!/plugins/image-tools/
-!/plugins/image-tools/**
-!/plugins/admin-observability/
-!/plugins/admin-observability/**
-/plugins/codex-runtime/dist/
-/plugins/model-policy/dist/
-/plugins/*/dist/
-/plugins/*/node_modules/
-/plugins/*/ui/compiled/
-/plugins/**/*.key
-/plugins/**/*.s2plugin
-/plugins/**/*.exe
+# Local third-party packages and credentials do not enter the host image.
+/plugins/
 
 # Local config
 config.yaml

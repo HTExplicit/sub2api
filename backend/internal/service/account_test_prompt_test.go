@@ -11,7 +11,7 @@ import (
 	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
-	extensionv1 "github.com/Wei-Shaw/sub2api/pkg/extensionapi/v1"
+	extensionv1 "github.com/Wei-Shaw/sub2api/internal/nativeapi"
 	"github.com/stretchr/testify/require"
 	"github.com/tidwall/gjson"
 )
@@ -100,18 +100,6 @@ func TestAccountTestPromptAdaptiveAndOpenCodeFinalRequests(t *testing.T) {
 	}
 }
 
-func TestDisabledTextPromptExtensionDoesNotDispatch(t *testing.T) {
-	previous := processExtensionOperations.Load()
-	processExtensionOperations.Store(nil)
-	t.Cleanup(func() { processExtensionOperations.Store(previous) })
-	account := adaptiveCNAccountTestAccount(993, PlatformDeepseek)
-	svc, upstream := adaptiveCNAccountTestService(account, adaptiveCNChatTestResponse())
-	c, _ := newTestContext()
-	err := svc.TestAccountConnection(c, account.ID, "deepseek-v4-pro", "custom text", "")
-	require.Error(t, err)
-	require.Empty(t, upstream.requests)
-}
-
 func TestAccountTestPromptOAuthFinalTicketUsesMappedModel(t *testing.T) {
 	cfg := &config.Config{Gateway: config.GatewayConfig{OpenAICodexTicket: config.OpenAICodexTicketConfig{Enabled: true, FailClosed: true}, OpenAICodexRequestZstd: true}}
 	a := ticketTestAccount(41)
@@ -125,7 +113,7 @@ func TestAccountTestPromptOAuthFinalTicketUsesMappedModel(t *testing.T) {
 	// Cookie routing replaced the 292 header: the plugin only references a
 	// host-verified qualification, gated like business traffic on the final model.
 	var qualification *extensionv1.CodexRoutingQualification
-	gateway.pluginManager = ticketTestManager(t, cfg.Gateway.OpenAICodexTicket, func(in extensionv1.Invocation) (extensionv1.Result, error) {
+	gateway.nativeCodexRuntime = nativeTicketTestRuntime(t, cfg.Gateway.OpenAICodexTicket, func(in extensionv1.Invocation) (extensionv1.Result, error) {
 		if in.Operation == "codex.routing.observe" {
 			return extensionv1.Result{Payload: json.RawMessage(`{}`)}, nil
 		}
@@ -138,10 +126,9 @@ func TestAccountTestPromptOAuthFinalTicketUsesMappedModel(t *testing.T) {
 		raw, _ := json.Marshal(extensionv1.CodexRoutingInjection{Headers: map[string]string{}, Qualification: qualification})
 		return extensionv1.Result{Payload: raw}, nil
 	})
-	installation := gateway.pluginManager.extensions.Load().installations[1]
-	installation.State = PluginStateEnabled
-	store := &routingMemoryStore{PluginRepository: &pluginTokenRepository{installation: installation}, values: map[string]extensionv1.StateResult{}}
-	gateway.pluginManager.repo = store
+	store := &routingMemoryStore{values: map[string]extensionv1.StateResult{}}
+	gateway.nativeCodexRuntime.repo = store
+
 	scope, err := gateway.PrepareCodexRoutingScope(t.Context(), a.ID, "http")
 	require.NoError(t, err)
 	scope.ConnectionLeaseID, scope.RouteEvidence = "account-test-connection", "connection"

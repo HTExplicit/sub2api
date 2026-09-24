@@ -188,6 +188,7 @@ export default {
     plugins: '插件管理',
     tasks: '任务',
     cindyAccounts: 'Cindy 账号',
+    codexRuntime: 'Codex 路由设置',
     proxies: 'IP管理',
     redeemCodes: '兑换码',
     ops: '运维监控',

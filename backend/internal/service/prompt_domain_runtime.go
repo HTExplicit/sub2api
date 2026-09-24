@@ -7,11 +7,11 @@ import (
 	"sync"
 	"time"
 
-	extensionv1 "github.com/Wei-Shaw/sub2api/pkg/extensionapi/v1"
+	extensionv1 "github.com/Wei-Shaw/sub2api/internal/nativeapi"
 )
 
-// Initialize domain storage only after the signed policy process is ready.
-// Existing state stays available for history while the plugin is disabled.
+// Initialize domain storage only after the embedded skill registry is ready.
+// Existing state stays available for history otherwise.
 type PromptDomainRuntime struct {
 	registry    *RemoteSkillRegistryService
 	prompts     *BusinessSystemPromptService
@@ -30,7 +30,7 @@ func NewPromptDomainRuntime(registry *RemoteSkillRegistryService, prompts *Busin
 func promptPolicyAvailability(ctx context.Context) error {
 	call, cancel := context.WithTimeout(ctx, time.Second)
 	defer cancel()
-	result, err := invokeProcessDomainExtension(call, extensionv1.Invocation{Capability: extensionv1.CapabilityRequest, Operation: "prompt.availability", Payload: []byte(`{}`)}, true)
+	result, err := invokePromptSkills(call, extensionv1.Invocation{Capability: extensionv1.CapabilityRequest, Operation: "prompt.availability", Payload: []byte(`{}`)})
 	if err != nil {
 		return err
 	}

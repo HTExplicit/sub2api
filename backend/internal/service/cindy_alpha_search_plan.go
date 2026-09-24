@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	extensionv1 "github.com/Wei-Shaw/sub2api/pkg/extensionapi/v1"
+	extensionv1 "github.com/Wei-Shaw/sub2api/internal/nativeapi"
 )
 
 const maxCindyAlphaSearchUses = 1
@@ -37,7 +37,7 @@ func resolveCindyAlphaSearchPlanForAccount(ctx context.Context, requestedModel s
 	}
 	callCtx, cancel := context.WithTimeout(ctx, time.Second)
 	defer cancel()
-	result, err := invokeProcessExtensionCached(callCtx, PlatformCindy, AccountTypeAPIKey, extensionv1.Invocation{
+	result, err := invokeCindyProviderCached(callCtx, extensionv1.Invocation{
 		Capability: extensionv1.CapabilityProvider,
 		Operation:  "cindy.search.plan",
 		Payload:    payload,
@@ -67,7 +67,7 @@ func resolveCindyAlphaSearchPlanForAccount(ctx context.Context, requestedModel s
 		// scope and must be owned by the same plugin; no host model list is copied.
 		model, _ := json.Marshal(requestedModel)
 		query, _ := json.Marshal(extensionv1.CindyCatalogQuery{Method: "CindyAlphaSearchUpstreamModel", Args: []json.RawMessage{model}})
-		catalog, err := invokeProcessExtensionCached(callCtx, PlatformCindy, AccountTypeAPIKey, extensionv1.Invocation{
+		catalog, err := invokeCindyProviderCached(callCtx, extensionv1.Invocation{
 			Capability: extensionv1.CapabilityProvider, Operation: "cindy.catalog", AccountID: accountID, Payload: query,
 		})
 		var upstream string

@@ -7,8 +7,8 @@ import (
 	"strings"
 	"testing"
 
-	promptpolicy "github.com/HTExplicit/sub2api-plugins/promptskills/policy"
-	extensionv1 "github.com/Wei-Shaw/sub2api/pkg/extensionapi/v1"
+	extensionv1 "github.com/Wei-Shaw/sub2api/internal/nativeapi"
+	promptpolicy "github.com/Wei-Shaw/sub2api/internal/promptskills/policy"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
 	"github.com/tidwall/gjson"

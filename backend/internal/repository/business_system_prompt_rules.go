@@ -6,8 +6,8 @@ import (
 	"encoding/json"
 	"errors"
 
+	extensionv1 "github.com/Wei-Shaw/sub2api/internal/nativeapi"
 	"github.com/Wei-Shaw/sub2api/internal/service"
-	extensionv1 "github.com/Wei-Shaw/sub2api/pkg/extensionapi/v1"
 )
 
 func (r *businessSystemPromptRepository) LoadBusinessSystemPromptRules(ctx context.Context) (service.BusinessSystemPromptSnapshot, error) {

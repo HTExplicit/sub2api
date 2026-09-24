@@ -5,7 +5,7 @@ import (
 	"encoding/json"
 	"time"
 
-	extensionv1 "github.com/Wei-Shaw/sub2api/pkg/extensionapi/v1"
+	extensionv1 "github.com/Wei-Shaw/sub2api/internal/nativeapi"
 )
 
 type CindyModelKind = extensionv1.CindyModelKind
@@ -73,7 +73,7 @@ func queryCindyCatalog(method string, args, outputs []any) bool {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
-	result, err := invokeProcessExtensionCached(ctx, PlatformCindy, AccountTypeAPIKey, extensionv1.Invocation{Capability: extensionv1.CapabilityProvider, Operation: "cindy.catalog", Payload: raw})
+	result, err := invokeCindyProviderCached(ctx, extensionv1.Invocation{Capability: extensionv1.CapabilityProvider, Operation: "cindy.catalog", Payload: raw})
 	if err != nil || result.Code != "" {
 		return false
 	}

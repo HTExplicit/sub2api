@@ -7,8 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Wei-Shaw/sub2api/internal/config"
-	extensionv1 "github.com/Wei-Shaw/sub2api/pkg/extensionapi/v1"
+	extensionv1 "github.com/Wei-Shaw/sub2api/internal/nativeapi"
 	"github.com/stretchr/testify/require"
 )
 
@@ -18,33 +17,33 @@ func (partialCodexIdentityFailure) InvokeOperation(_ context.Context, _, _ strin
 	if in.Operation == "codex.identity.available" {
 		return extensionv1.Result{Payload: []byte(`{"valid":true}`)}, nil
 	}
-	return extensionv1.Result{}, ErrExtensionOperationUnavailable
+	return extensionv1.Result{}, ErrNativeCodexRuntimeUnavailable
 }
 
 func TestCodexIdentityPlanFailureCannotSendCanonicalFallback(t *testing.T) {
-	previous := processExtensionOperations.Load()
-	t.Cleanup(func() { processExtensionOperations.Store(previous) })
-	processExtensionOperations.Store(&extensionOperationProvider{invoker: partialCodexIdentityFailure{}})
+	previous := invokeNativeCodex
+	t.Cleanup(func() { invokeNativeCodex = previous })
+	invokeNativeCodex = partialCodexIdentityFailure{}.InvokeOperation
 	account := &Account{ID: 7, Platform: PlatformOpenAI, Type: AccountTypeOAuth,
 		Credentials: map[string]any{"refresh_token": "fixture-refresh"},
 		Extra:       map[string]any{codexFingerprintSeedExtraKey: "1c0a3d9e-58b2-4f8c-a2d1-7f3b9e6c4a55"}}
 	headers := http.Header{"Originator": []string{"fixture-original"}}
 	err := enforceCodexIdentityHeadersForAccountContext(context.Background(), headers, account, "")
-	require.ErrorIs(t, err, ErrExtensionOperationUnavailable)
+	require.ErrorIs(t, err, ErrNativeCodexRuntimeUnavailable)
 	require.Equal(t, "fixture-original", headers.Get("Originator"))
 	req, err := http.NewRequest(http.MethodPost, "https://chatgpt.com/backend-api/codex/responses", strings.NewReader(`{"input":"fixture"}`))
 	require.NoError(t, err)
 	_, err = prepareCodexTransport(req, account)
-	require.ErrorIs(t, err, ErrExtensionOperationUnavailable)
+	require.ErrorIs(t, err, ErrNativeCodexRuntimeUnavailable)
 	client := &identityRefreshingOAuthClientStub{}
 	_, err = NewOpenAIOAuthService(nil, client).RefreshAccountToken(context.Background(), account)
-	require.ErrorIs(t, err, ErrExtensionOperationUnavailable)
+	require.ErrorIs(t, err, ErrNativeCodexRuntimeUnavailable)
 	require.Empty(t, client.userAgent)
 }
 
 func TestCodexIdentityDisabledKeepsDataAndFailureBlocksHTTPAndRefresh(t *testing.T) {
-	previous := processExtensionOperations.Load()
-	t.Cleanup(func() { processExtensionOperations.Store(previous) })
+	previous := invokeNativeCodex
+	t.Cleanup(func() { invokeNativeCodex = previous })
 	account := &Account{ID: 7, Platform: PlatformOpenAI, Type: AccountTypeOAuth,
 		Credentials: map[string]any{"refresh_token": "fixture-refresh"},
 		Extra:       map[string]any{codexFingerprintSeedExtraKey: "1c0a3d9e-58b2-4f8c-a2d1-7f3b9e6c4a55"}}
@@ -52,7 +51,9 @@ func TestCodexIdentityDisabledKeepsDataAndFailureBlocksHTTPAndRefresh(t *testing
 	stored := account.Extra[CodexClientIdentityExtraKey]
 	require.NotNil(t, stored)
 	require.Equal(t, codexFingerprintDevice, account.GetCodexFingerprintMode())
-	processExtensionOperations.Store(nil)
+	invokeNativeCodex = func(context.Context, string, string, extensionv1.Invocation) (extensionv1.Result, error) {
+		return extensionv1.Result{}, ErrNativeCodexPolicyDisabled
+	}
 	_, found := account.CodexClientIdentity()
 	require.False(t, found)
 	require.Equal(t, stored, account.Extra[CodexClientIdentityExtraKey])
@@ -66,25 +67,27 @@ func TestCodexIdentityDisabledKeepsDataAndFailureBlocksHTTPAndRefresh(t *testing
 	wire, err := prepareCodexTransport(req, account)
 	require.NoError(t, err)
 	require.Same(t, req, wire)
-	processExtensionOperations.Store(&extensionOperationProvider{invoker: failedPromptProcess{}})
+	invokeNativeCodex = func(context.Context, string, string, extensionv1.Invocation) (extensionv1.Result, error) {
+		return extensionv1.Result{}, ErrNativeCodexRuntimeUnavailable
+	}
 	_, err = prepareCodexTransport(req, account)
-	require.ErrorIs(t, err, ErrExtensionOperationUnavailable, "policy failure cannot silently send canonical identity")
+	require.ErrorIs(t, err, ErrNativeCodexRuntimeUnavailable, "policy failure cannot silently send canonical identity")
 	client := &identityRefreshingOAuthClientStub{}
 	_, err = NewOpenAIOAuthService(nil, client).RefreshAccountToken(context.Background(), account)
-	require.ErrorIs(t, err, ErrExtensionOperationUnavailable)
+	require.ErrorIs(t, err, ErrNativeCodexRuntimeUnavailable)
 	require.Empty(t, client.userAgent)
 }
 
 func TestCodexProfileMetadataDoesNotBroadenAccountBinding(t *testing.T) {
-	manager := ticketTestManager(t, config.OpenAICodexTicketConfig{}, func(in extensionv1.Invocation) (extensionv1.Result, error) {
-		return promptPolicyFixture{}.InvokeOperation(context.Background(), "", "", in)
-	})
-	registry := manager.extensions.Load()
-	registry.installations[1].Bindings = []PluginBinding{{Capability: extensionv1.CapabilityRequest, Platform: PlatformOpenAI, AccountType: AccountTypeSetupToken, Enabled: true}}
-	registry.installations[1].Manifest.Operations = map[string][]string{extensionv1.CapabilityRequest: {"codex.identity.available", "codex.identity.derive", "codex.identity.validate"}}
-	previous := processExtensionOperations.Load()
-	t.Cleanup(func() { processExtensionOperations.Store(previous) })
-	processExtensionOperations.Store(&extensionOperationProvider{invoker: manager})
+	previous := invokeNativeCodex
+	t.Cleanup(func() { invokeNativeCodex = previous })
+	invokeNativeCodex = func(ctx context.Context, platform, kind string, in extensionv1.Invocation) (extensionv1.Result, error) {
+		if kind != AccountTypeSetupToken {
+			return extensionv1.Result{}, ErrNativeCodexPolicyDisabled
+		}
+		return (promptPolicyFixture{}).InvokeOperation(ctx, platform, kind, in)
+	}
+
 	account := &Account{Platform: PlatformOpenAI, Type: AccountTypeOAuth, Extra: map[string]any{codexFingerprintSeedExtraKey: "1c0a3d9e-58b2-4f8c-a2d1-7f3b9e6c4a55"}}
 	_, found := account.CodexClientIdentity()
 	require.False(t, found)

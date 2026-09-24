@@ -7,7 +7,8 @@ import { useAppStore } from '@/stores/app'
 import { updateFavicon } from '@/utils/branding'
 import { isIOSDevice } from '@/utils/device'
 import './style.css'
-import { initializePluginThemes } from '@/components/plugins/theme'
+import './styles/flat-theme.css'
+import { applyFlatTheme } from '@/utils/flatTheme'
 
 function initIOSViewportZoomFix() {
   // iOS Safari 在输入框字号小于 16px 时聚焦会自动放大页面，且失焦后不会恢复。
@@ -34,6 +35,7 @@ function initThemeClass() {
 async function bootstrap() {
   // Apply theme class globally before app mount to keep all routes consistent.
   initThemeClass()
+  applyFlatTheme(window.__APP_CONFIG__?.flat_theme_enabled)
   initIOSViewportZoomFix()
 
   const app = createApp(App)
@@ -51,7 +53,7 @@ async function bootstrap() {
   }
   updateFavicon(appStore.siteLogo)
 
-  await Promise.all([initI18n(), initializePluginThemes()])
+  await initI18n()
 
   app.use(router)
   app.use(i18n)

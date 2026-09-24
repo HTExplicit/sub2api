@@ -169,12 +169,9 @@ func (h *AccountHandler) SetAccountJobService(jobs *service.AccountJobService) {
 	h.accountJobs = jobs
 }
 
-func (h *AccountHandler) replayScopedAccountJob(c *gin.Context, kind string, payload any) bool {
-	if _, bound := service.AccountViewFromContext(c.Request.Context()); !bound {
-		return false
-	}
+func (h *AccountHandler) replayAccountJob(c *gin.Context, kind string, payload any) bool {
 	if h.accountJobs == nil {
-		accountViewRequestError(c, infraerrors.New(503, "ACCOUNT_JOBS_UNAVAILABLE", "account jobs are unavailable"))
+		response.ErrorFrom(c, infraerrors.New(503, "ACCOUNT_JOBS_UNAVAILABLE", "account jobs are unavailable"))
 		return true
 	}
 	actorID, ok := accountJobActorID(c)
@@ -183,7 +180,7 @@ func (h *AccountHandler) replayScopedAccountJob(c *gin.Context, kind string, pay
 	}
 	raw, err := json.Marshal(payload)
 	if err != nil {
-		accountViewRequestError(c, service.ErrAccountViewInvalid)
+		response.ErrorFrom(c, service.ErrAccountViewInvalid)
 		return true
 	}
 	job, replayed, err := h.accountJobs.ReplaySubmission(c.Request.Context(), actorID, kind, c.GetHeader("Idempotency-Key"), raw)
@@ -199,7 +196,7 @@ func (h *AccountHandler) replayScopedAccountJob(c *gin.Context, kind string, pay
 	return true
 }
 
-func (h *AccountHandler) submitAccountJob(c *gin.Context, kind string, payload any, seeds []service.AccountJobItemSeed, owner ...int64) {
+func (h *AccountHandler) submitAccountJob(c *gin.Context, kind string, payload any, seeds []service.AccountJobItemSeed) {
 	if h == nil || h.accountJobs == nil {
 		response.ErrorFrom(c, infraerrors.New(503, "ACCOUNT_JOBS_UNAVAILABLE", "account jobs are unavailable"))
 		return
@@ -214,16 +211,7 @@ func (h *AccountHandler) submitAccountJob(c *gin.Context, kind string, payload a
 		return
 	}
 	meta := map[string]any{"target_count": len(seeds)}
-	if execution, bound := service.PluginExecutionFromContext(c.Request.Context()); bound {
-		if len(owner) > 0 && owner[0] > 0 && owner[0] != execution.ID {
-			response.Forbidden(c, "Plugin job ownership changed")
-			return
-		}
-		meta["plugin_id"] = execution.ID
-	}
-	if len(owner) > 0 && owner[0] > 0 {
-		meta["plugin_id"] = owner[0]
-	}
+
 	metadata, _ := json.Marshal(meta)
 	job, replayed, err := h.accountJobs.Submit(c.Request.Context(), actorID, kind, c.GetHeader("Idempotency-Key"), raw, metadata, seeds)
 	if err != nil {

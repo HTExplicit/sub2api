@@ -9,7 +9,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	extensionv1 "github.com/Wei-Shaw/sub2api/pkg/extensionapi/v1"
+	extensionv1 "github.com/Wei-Shaw/sub2api/internal/nativeapi"
 )
 
 const (
@@ -355,13 +355,6 @@ func (s *RemoteSkillRegistryService) runSyncJob(ctx context.Context, job RemoteS
 		s.failSyncJob(ctx, job.ID, "sync_expired")
 		return
 	}
-	bound, release, err := bindProcessDomainExtensionContext(ctx, extensionv1.Invocation{Capability: extensionv1.CapabilityRequest, Operation: "skills.tree.check"})
-	if err != nil {
-		s.failSyncJob(ctx, job.ID, "service_stopped")
-		return
-	}
-	defer release()
-	ctx = bound
 	if err := s.store.UpdateRemoteSkillSyncJobStage(ctx, job.ID, "fetching_source"); err != nil {
 		s.failSyncJob(ctx, job.ID, "storage_error")
 		return

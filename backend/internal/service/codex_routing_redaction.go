@@ -7,7 +7,7 @@ import (
 	"strings"
 	"time"
 
-	extensionv1 "github.com/Wei-Shaw/sub2api/pkg/extensionapi/v1"
+	extensionv1 "github.com/Wei-Shaw/sub2api/internal/nativeapi"
 )
 
 func fixedCodexRoutingBundleKey(ctx context.Context, query extensionv1.CodexRoutingQuery, kind string) string {
@@ -36,7 +36,7 @@ func codexCookieClockDeadline(clock codexRoutingCookieClock) *time.Time {
 
 // Only expired raw values in this domain's private namespace are redacted.
 // No row, observation, first-seen digest, tombstone or ledger is deleted.
-func (h *pluginExtensionHost) redactExpiredCodexRoutingMaterial(ctx context.Context) (extensionv1.Result, error) {
+func (h *nativeCodexHost) redactExpiredCodexRoutingMaterial(ctx context.Context) (extensionv1.Result, error) {
 	if h.key != codexRuntimePluginKey || h.state == nil {
 		return extensionv1.Result{}, errCodexRoutingUnavailable
 	}

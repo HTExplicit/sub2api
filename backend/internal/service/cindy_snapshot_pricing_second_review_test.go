@@ -10,9 +10,9 @@ import (
 	"testing"
 	"time"
 
-	cindy "github.com/HTExplicit/sub2api-plugins/cindyprovider/catalog"
+	cindy "github.com/Wei-Shaw/sub2api/internal/cindyprovider/catalog"
 	"github.com/Wei-Shaw/sub2api/internal/config"
-	extensionv1 "github.com/Wei-Shaw/sub2api/pkg/extensionapi/v1"
+	extensionv1 "github.com/Wei-Shaw/sub2api/internal/nativeapi"
 	coderws "github.com/coder/websocket"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
@@ -141,11 +141,11 @@ func newCindySecondReviewSwap(t *testing.T) *cindySecondReviewSwap {
 	for _, id := range []string{target.PublicID, target.LiveUpstreamID} {
 		pricingAfter.Results[cindy.PricingKey("CindyCompatibilityTextPricingForModel", id)] = pricing.Results[cindy.PricingKey("CindyTextPricingForModel", target.PublicID)]
 	}
-	previous := processExtensionOperations.Load()
+	previous := captureNativeCindyTestInvoker()
 	require.NotNil(t, previous)
 	f := &cindySecondReviewSwap{before: before, after: after, pricing: pricing, pricingAfter: &pricingAfter, fallback: previous.invoker}
-	processExtensionOperations.Store(&extensionOperationProvider{invoker: f})
-	t.Cleanup(func() { processExtensionOperations.Store(previous) })
+	setNativeCindyTestInvoker(f)
+	t.Cleanup(func() { restoreNativeCindyTestInvoker(previous) })
 	return f
 }
 
@@ -331,11 +331,11 @@ func TestCindySecondReviewForwardKeepsCapturedAliasIdentity(t *testing.T) {
 	require.NoError(t, err, "A is a complete legal snapshot")
 	_, err = validateCindyCatalogSnapshot(second)
 	require.NoError(t, err, "B is a complete legal snapshot, not an invalid-fixture shortcut")
-	previous := processExtensionOperations.Load()
+	previous := captureNativeCindyTestInvoker()
 	require.NotNil(t, previous)
 	swap := &cindySecondReviewSwap{before: first, after: second, pricing: registry.PricingSnapshot(), fallback: previous.invoker}
-	processExtensionOperations.Store(&extensionOperationProvider{invoker: swap})
-	t.Cleanup(func() { processExtensionOperations.Store(previous) })
+	setNativeCindyTestInvoker(swap)
+	t.Cleanup(func() { restoreNativeCindyTestInvoker(previous) })
 
 	upstream := &httpUpstreamRecorder{resp: &http.Response{
 		StatusCode: http.StatusOK, Header: http.Header{"Content-Type": []string{"application/json"}},

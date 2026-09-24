@@ -4,59 +4,38 @@ package repository
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
-	"encoding/json"
-	"os"
-	"strings"
-	"testing"
-
+	"database/sql"
 	dbent "github.com/Wei-Shaw/sub2api/ent"
 	"github.com/Wei-Shaw/sub2api/internal/service"
-	extensionv1 "github.com/Wei-Shaw/sub2api/pkg/extensionapi/v1"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/stretchr/testify/require"
+	"strings"
+	"testing"
 )
 
-// One local PostgreSQL method covers the newly introduced edit fence/codec
-// persistence seam. It invokes no provider process, model or external service.
+type cindyEditTestQuerier interface {
+	QueryContext(context.Context, string, ...any) (*sql.Rows, error)
+}
+
+func scanCindyEditTestRow(ctx context.Context, q cindyEditTestQuerier, query string, args []any, dest ...any) error {
+	rows, err := q.QueryContext(ctx, query, args...)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+	if !rows.Next() {
+		if err := rows.Err(); err != nil {
+			return err
+		}
+		return sql.ErrNoRows
+	}
+	return rows.Scan(dest...)
+}
+
+// The native account transaction retains raw presence, state CAS, row locking,
+// and atomic account/outbox rollback without an installation fixture.
 func TestAccountEditEntFenceNullDeletionAndStateCASIntegration(t *testing.T) {
 	ctx := context.Background()
-	raw, err := os.ReadFile("../../../plugins/cindy-provider/manifest.source.json")
-	require.NoError(t, err)
-	var source service.PluginManifest
-	require.NoError(t, json.Unmarshal(raw, &source))
-	var edit extensionv1.Contribution
-	for _, contribution := range source.Contributions {
-		if contribution.Slot == extensionv1.AccountEditSlot {
-			edit = contribution
-		}
-	}
-	require.NotNil(t, edit.AccountEdit)
-	manifest := service.PluginManifest{ID: service.CindyAccountViewPluginKey, Contributions: []extensionv1.Contribution{edit}, Capabilities: []service.PluginCapability{
-		{ID: extensionv1.CapabilityProvider, Platform: service.PlatformCindy, AccountType: service.AccountTypeAPIKey},
-		{ID: extensionv1.CapabilityAdmin, Platform: service.PlatformCindy, AccountType: service.AccountTypeAPIKey},
-	}}
-	plugins := &pluginRepository{db: integrationDB}
-	artifact := &service.PluginInstallation{PluginKey: manifest.ID, Name: "synthetic-edit-provider", Version: "1.0.0", Manifest: manifest,
-		BinarySHA256: strings.Repeat("a", 64), SignatureStatus: service.PluginSignatureTrusted, ArtifactData: []byte("synthetic edit fence package")}
-	installed, err := plugins.PrepareBundledPlugin(ctx, artifact, "account-edit-fixture", "", true, "synthetic-edit-config")
-	require.NoError(t, err)
-	t.Cleanup(func() {
-		for _, table := range []string{"sub2api_plugin_state", "sub2api_plugin_bootstrap", "sub2api_plugin_installations"} {
-			_, err := integrationDB.ExecContext(context.Background(), "DELETE FROM "+table+" WHERE plugin_key=$1", manifest.ID)
-			require.NoError(t, err)
-		}
-	})
-	require.NoError(t, plugins.CompleteBundledPlugin(ctx, installed.ID, "account-edit-fixture"))
-	current, err := plugins.GetByID(ctx, installed.ID)
-	require.NoError(t, err)
-	for index := range current.Bindings {
-		current.Bindings[index].Enabled, current.Bindings[index].RolloutPercent = true, 100
-	}
-	require.NoError(t, plugins.UpdateBindingsAndState(ctx, current.ID, current.Bindings, service.PluginStateEnabled, "", nil, current.State, current.BinarySHA256))
-	current, err = plugins.GetByID(ctx, installed.ID)
-	require.NoError(t, err)
 	accountRepo := NewAccountRepository(testEntClient(t), integrationDB, nil)
 	account := &service.Account{Name: "synthetic-edit-original", Platform: service.PlatformCindy, WirePlatform: service.WirePlatformOpenAI, ProviderProfile: service.ProviderProfileCindyLaxaV1,
 		Type: service.AccountTypeAPIKey, Status: service.StatusActive, Concurrency: 1, Schedulable: false,
@@ -72,42 +51,7 @@ func TestAccountEditEntFenceNullDeletionAndStateCASIntegration(t *testing.T) {
 		_, err = integrationDB.ExecContext(context.Background(), `DELETE FROM accounts WHERE id=$1`, account.ID)
 		require.NoError(t, err)
 	})
-	account, err = accountRepo.GetByID(ctx, account.ID)
-	require.NoError(t, err)
-	configDigest := sha256.Sum256([]byte(current.ConfigEncrypted))
-	fence := service.PluginExecutionFence{ID: current.ID, Generation: current.RuntimeGeneration, PluginKey: current.PluginKey, PackageSHA256: current.PackageSHA256,
-		PolicyRevision: current.Revision, OriginEdit: true, EditAccountID: account.ID, EditContributionID: edit.ID, EditDefinitionSHA256: service.AccountEditDefinitionDigest(&edit), ConfigSHA256: hex.EncodeToString(configDigest[:])}
-	denied := func(wanted service.PluginExecutionFence) {
-		t.Helper()
-		tx, err := testEntClient(t).Tx(ctx)
-		require.NoError(t, err)
-		defer tx.Rollback()
-		require.ErrorIs(t, lockAccountEditPolicy(ctx, tx.Client(), wanted), service.ErrAccountEditUnavailable)
-	}
-	wrong := fence
-	wrong.ConfigSHA256 = strings.Repeat("0", 64)
-	denied(wrong)
-	wrong = fence
-	wrong.EditDefinitionSHA256 = strings.Repeat("0", 64)
-	denied(wrong)
-	wrong = fence
-	wrong.Generation++
-	denied(wrong)
-	for _, capability := range []string{extensionv1.CapabilityProvider, extensionv1.CapabilityAdmin} {
-		_, err := integrationDB.ExecContext(ctx, `UPDATE sub2api_plugin_bindings SET rollout_percent=0 WHERE plugin_id=$1 AND capability=$2`, current.ID, capability)
-		require.NoError(t, err)
-		denied(fence)
-		_, err = integrationDB.ExecContext(ctx, `UPDATE sub2api_plugin_bindings SET rollout_percent=100 WHERE plugin_id=$1 AND capability=$2`, current.ID, capability)
-		require.NoError(t, err)
-	}
-	// Demonstrate real-account rollout (not Create's full-100 rule) using the
-	// exact stable bucket algorithm on the newly inserted positive account ID.
-	value := uint64(account.ID)
-	value ^= value >> 33
-	value *= 0xff51afd7ed558ccd
-	value ^= value >> 33
-	percent := int(value%100) + 1
-	_, err = integrationDB.ExecContext(ctx, `UPDATE sub2api_plugin_bindings SET rollout_percent=$2 WHERE plugin_id=$1`, current.ID, percent)
+	account, err := accountRepo.GetByID(ctx, account.ID)
 	require.NoError(t, err)
 	noopExtra := map[string]any{"openai_compact_mode": nil}
 	bound, release, err := service.PrepareAccountEdit(ctx, account, nil, noopExtra, nil)
@@ -130,10 +74,10 @@ func TestAccountEditEntFenceNullDeletionAndStateCASIntegration(t *testing.T) {
 		delete(stored.Credentials, "compact_model_mapping")
 		require.NoError(t, accountRepo.Update(txCtx, stored))
 	}
-	checkStored := func(q pluginFenceQuerier, cleared bool) {
+	checkStored := func(q cindyEditTestQuerier, cleared bool) {
 		t.Helper()
 		var isCleared, compactNull, normalNull, compactRemoved, independent bool
-		err := scanPluginFenceRow(ctx, q, `SELECT NOT(extra ? 'openai_responses_mode') AND NOT(extra ? 'openai_apikey_responses_websockets_v2_mode') AND NOT(extra ? 'openai_apikey_responses_websockets_v2_enabled') AND NOT(extra ? 'responses_websockets_v2_enabled') AND NOT(extra ? 'openai_ws_enabled'),
+		err := scanCindyEditTestRow(ctx, q, `SELECT NOT(extra ? 'openai_responses_mode') AND NOT(extra ? 'openai_apikey_responses_websockets_v2_mode') AND NOT(extra ? 'openai_apikey_responses_websockets_v2_enabled') AND NOT(extra ? 'responses_websockets_v2_enabled') AND NOT(extra ? 'openai_ws_enabled'),
 			extra ? 'openai_compact_mode' AND extra->'openai_compact_mode'='null'::jsonb,
 			credentials ? 'model_mapping' AND credentials->'model_mapping'='null'::jsonb,
 			NOT(credentials ? 'compact_model_mapping'),
@@ -149,7 +93,6 @@ func TestAccountEditEntFenceNullDeletionAndStateCASIntegration(t *testing.T) {
 	tx, err := testEntClient(t).Tx(ctx)
 	require.NoError(t, err)
 	defer tx.Rollback()
-	require.NoError(t, lockAccountEditPolicy(ctx, tx.Client(), fence))
 	require.NoError(t, lockCindyAccountJobTarget(ctx, tx.Client(), account.ID))
 	txCtx := dbent.NewTxContext(bound, tx)
 	locked, err := accountRepo.GetByID(txCtx, account.ID)
@@ -165,7 +108,7 @@ func TestAccountEditEntFenceNullDeletionAndStateCASIntegration(t *testing.T) {
 	defer other.Rollback()
 	_, err = other.ExecContext(ctx, `SET LOCAL lock_timeout='150ms'`)
 	require.NoError(t, err)
-	_, err = other.ExecContext(ctx, `UPDATE sub2api_plugin_installations SET config_encrypted='late' WHERE id=$1`, current.ID)
+	_, err = other.ExecContext(ctx, `UPDATE accounts SET name='blocked-native-write' WHERE id=$1`, account.ID)
 	var pgError *pgconn.PgError
 	require.ErrorAs(t, err, &pgError)
 	require.Equal(t, "55P03", pgError.Code)
@@ -184,7 +127,6 @@ func TestAccountEditEntFenceNullDeletionAndStateCASIntegration(t *testing.T) {
 	committed, err := testEntClient(t).Tx(ctx)
 	require.NoError(t, err)
 	defer committed.Rollback()
-	require.NoError(t, lockAccountEditPolicy(ctx, committed.Client(), fence))
 	require.NoError(t, lockCindyAccountJobTarget(ctx, committed.Client(), account.ID))
 	applyStorage(dbent.NewTxContext(ctx, committed), unchanged)
 	require.NoError(t, committed.Commit())

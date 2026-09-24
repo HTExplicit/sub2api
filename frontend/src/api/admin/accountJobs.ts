@@ -1,8 +1,7 @@
 import { apiClient } from '../client'
 import { accountViewClient } from './accountViewClient'
 import type { CapturedAccountView } from '@/composables/useAccountViewContext'
-import { pluginDispatchClient, pluginDispatchHeaders, type PluginDispatchContext } from './pluginDispatch'
-import type { AccountAvailableModel } from '@/types'
+import type { AccountAvailableModel, AccountTestPlanView } from '@/types'
 
 const BASE_PATH = '/admin/account-jobs'
 
@@ -125,10 +124,9 @@ async function list(
   return data
 }
 
-async function get(jobID: number, options: { signal?: AbortSignal } = {}, dispatch?: PluginDispatchContext): Promise<AccountJob> {
-  const { data } = await pluginDispatchClient(dispatch).get<AccountJob>(`${BASE_PATH}/${jobID}`, {
+async function get(jobID: number, options: { signal?: AbortSignal } = {}): Promise<AccountJob> {
+  const { data } = await apiClient.get<AccountJob>(`${BASE_PATH}/${jobID}`, {
     signal: options.signal,
-    ...(dispatch ? { headers: pluginDispatchHeaders(dispatch) } : {}),
   })
   return data
 }
@@ -186,6 +184,8 @@ export interface BatchTestModelRow {
   is_cindy: boolean
   models: AccountAvailableModel[]
   error_code?: string
+  // Present when the account-test-plan-v1 view is requested.
+  test_plan?: AccountTestPlanView
 }
 
 const accountJobsAPI = {
@@ -196,7 +196,7 @@ const accountJobsAPI = {
   },
   async batchTestModels(accountIDs: number[], signal?: AbortSignal): Promise<BatchTestModelRow[]> {
     const { data } = await apiClient.post<{ items: BatchTestModelRow[] }>('/admin/accounts/batch-test-models',
-      { account_ids: accountIDs }, { signal })
+      { account_ids: accountIDs }, { params: { view: 'account-test-plan-v1' }, signal })
     return data.items
   },
   async resultAccountIDs(jobID: number): Promise<number[]> {

@@ -1,6 +1,6 @@
 name: Production Deploy
 run-name: >-
-  ${{ inputs.operation == 'rollback' && format('Rollback to {0}', inputs.release_tag) || inputs.operation == 'reconcile-runtime' && format('Reconcile runtime for {0}', inputs.release_tag) || inputs.operation == 'deploy-preserve' && format('Deploy {0} (preserve)', inputs.release_tag) || format('Deploy {0} (explicit)', inputs.release_tag) }}
+  ${{ inputs.operation == 'rollback' && format('Rollback to {0}', inputs.release_tag) || inputs.operation == 'rollback-preserve' && format('Rollback to {0} (preserve)', inputs.release_tag) || inputs.operation == 'reconcile-runtime' && format('Reconcile runtime for {0}', inputs.release_tag) || inputs.operation == 'deploy-preserve' && format('Deploy {0} (preserve)', inputs.release_tag) || format('Deploy {0} (explicit)', inputs.release_tag) }}
 
 on:
   workflow_dispatch:
@@ -15,6 +15,7 @@ on:
           - deploy-preserve
           - reconcile-runtime
           - rollback
+          - rollback-preserve
       release_tag:
         description: 'Target release tag; for reconcile, the exact release currently running'
         required: true
@@ -120,6 +121,10 @@ jobs:
           if [[ "$OPERATION" == deploy-preserve ]]; then
             OPERATION=deploy
             runtime_mode=preserve
+          elif [[ "$OPERATION" == rollback-preserve ]]; then
+            # Keeps the running runtime flags; the host refuses unless the data contract is unchanged.
+            OPERATION=rollback
+            runtime_mode=preserve
           fi
           RESOURCE_PROFILE="${RESOURCE_PROFILE:-preserve}"
           log() { printf 'RESOLVE|%s\n' "$1" >&2; }
@@ -219,7 +224,7 @@ jobs:
           [[ "$RESOURCE_PROFILE" == preserve || "$RESOURCE_PROFILE" == auto || "$RESOURCE_PROFILE" == high ]] || exit 1
           if [[ "$runtime_mode" == preserve ]]; then
             [[ "$INTERRUPT_BUSINESS" == false ]] || exit 1
-            [[ "$OPERATION" == deploy ]] || exit 1
+            [[ "$OPERATION" == deploy || "$OPERATION" == rollback ]] || exit 1
             [[ "$RESOURCE_PROFILE" == preserve ]] || exit 1
           else
             for flag in "$CINDY_HEALTH" "$CINDY_CAPABILITY_CATALOG" "$CINDY_SEARCH" "$IMAGE_STUDIO" "$CINDY_RESPONSES_IMAGE_BRIDGE"; do
@@ -305,7 +310,8 @@ jobs:
             [[ -z "$MAINTENANCE_SPEC" || "$MAINTENANCE_SPEC" == maintenance=interrupt ]] || exit 1
             [[ "$OPERATION" == deploy || "$OPERATION" == reconcile-runtime || -z "$MAINTENANCE_SPEC" ]] || exit 1
           else
-            [[ -z "$CINDY_ROLLOUT" && -z "$MAINTENANCE_SPEC" && "$RESOURCE_SPEC" == resource=preserve && "$OPERATION" == deploy ]] || exit 1
+            [[ -z "$CINDY_ROLLOUT" && -z "$MAINTENANCE_SPEC" && "$RESOURCE_SPEC" == resource=preserve ]] || exit 1
+            [[ "$OPERATION" == deploy || "$OPERATION" == rollback ]] || exit 1
           fi
           case "$OPERATION" in
             deploy)
@@ -334,7 +340,11 @@ jobs:
               [[ "$EXPECTED_CURRENT_IMAGE_REF" =~ ^ghcr\.io/htexplicit/sub2api:[0-9]+\.[0-9]+\.[0-9]+-codexrip\.[1-9][0-9]*@sha256:[0-9a-f]{64}$ ]] || exit 1
               [[ "$EXPECTED_CURRENT_IMAGE_REF" != "$IMAGE_REF" ]] || exit 1
               [[ "$RESOURCE_SPEC" == resource=preserve ]] || exit 1
-              remote_command="rollback ${IMAGE_REF} from=${EXPECTED_CURRENT_IMAGE_REF} ${CINDY_ROLLOUT}"
+              if [[ "$RUNTIME_SPEC" == runtime=preserve ]]; then
+                remote_command="rollback ${IMAGE_REF} from=${EXPECTED_CURRENT_IMAGE_REF} runtime=preserve"
+              else
+                remote_command="rollback ${IMAGE_REF} from=${EXPECTED_CURRENT_IMAGE_REF} ${CINDY_ROLLOUT}"
+              fi
               ;;
             *)
               echo 'Operation must be deploy, reconcile-runtime, or rollback' >&2
@@ -353,8 +363,10 @@ jobs:
             -p "$VPS_PORT" \
             "${VPS_USER}@${VPS_HOST}" \
             "$remote_command"
+      # The recreated container needs time for startup and migrations; the
+      # edge answers 502/503 until then, so keep retrying for up to three minutes.
       - name: Verify public health
         env:
           PUBLIC_HEALTH_URL: ${{ secrets.PUBLIC_HEALTH_URL }}
         shell: bash
-        run: curl --fail --silent --show-error --retry 3 --retry-delay 2 --max-time 30 "$PUBLIC_HEALTH_URL" >/dev/null
+        run: curl --fail --silent --show-error --retry 36 --retry-delay 5 --retry-max-time 180 --retry-connrefused --max-time 30 "$PUBLIC_HEALTH_URL" >/dev/null

@@ -131,9 +131,6 @@ func (r *accountJobCindyMutationRunner) Run(
 	if err := service.ValidateAccountCreateFresh(ctx); err != nil {
 		return nil, err
 	}
-	if err := service.ValidateAccountViewFresh(ctx); err != nil {
-		return nil, err
-	}
 	if err := service.ValidateAccountEditFresh(ctx); err != nil {
 		return nil, err
 	}
@@ -163,7 +160,7 @@ func (r *accountJobCindyMutationRunner) Run(
 // Reuse the same ordered multi-owner fence on the exact Ent transaction that
 // creates the account. This is also called by nested batch/import creation.
 func (r *accountJobCindyMutationRunner) FenceAccountCreate(ctx context.Context) error {
-	create, bound := service.AccountCreateFromContext(ctx)
+	_, bound := service.AccountCreateFromContext(ctx)
 	if !bound {
 		return nil
 	}
@@ -174,12 +171,7 @@ func (r *accountJobCindyMutationRunner) FenceAccountCreate(ctx context.Context) 
 	if tx == nil {
 		return service.ErrAccountCreateUnavailable
 	}
-	if err := lockPluginExecution(ctx, tx.Client(), create.PrimaryPluginKey); err != nil {
-		if errors.Is(err, service.ErrAccountViewUnavailable) {
-			return service.ErrAccountCreateUnavailable
-		}
-		return err
-	}
+
 	return nil
 }
 
@@ -195,9 +187,6 @@ func (r *accountJobCindyMutationRunner) FenceAccountEdit(ctx context.Context) er
 	tx := dbent.TxFromContext(ctx)
 	if tx == nil {
 		return service.ErrAccountEditUnavailable
-	}
-	if err := lockPluginExecution(ctx, tx.Client(), ""); err != nil {
-		return err
 	}
 	service.MarkAccountEditFenced(ctx)
 	return nil

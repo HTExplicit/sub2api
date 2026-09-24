@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/Wei-Shaw/sub2api/internal/handler/dto"
+	extensionv1 "github.com/Wei-Shaw/sub2api/internal/nativeapi"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/response"
 	"github.com/Wei-Shaw/sub2api/internal/service"
 
@@ -51,18 +52,19 @@ func firstNonEmpty(values ...string) string {
 
 // SettingHandler 系统设置处理器
 type SettingHandler struct {
-	codexTicketGateway       *service.OpenAIGatewayService
-	settingService           *service.SettingService
-	emailService             *service.EmailService
-	turnstileService         *service.TurnstileService
-	aliyunCaptchaService     *service.AliyunCaptchaService
-	opsService               *service.OpsService
-	paymentConfigService     *service.PaymentConfigService
-	paymentService           *service.PaymentService
-	userAttributeService     *service.UserAttributeService
-	notificationEmailService *service.NotificationEmailService
-	totpService              *service.TotpService
-	userService              *service.UserService
+	codexTicketGateway         *service.OpenAIGatewayService
+	nativeCodexConfigEncryptor service.SecretEncryptor
+	settingService             *service.SettingService
+	emailService               *service.EmailService
+	turnstileService           *service.TurnstileService
+	aliyunCaptchaService       *service.AliyunCaptchaService
+	opsService                 *service.OpsService
+	paymentConfigService       *service.PaymentConfigService
+	paymentService             *service.PaymentService
+	userAttributeService       *service.UserAttributeService
+	notificationEmailService   *service.NotificationEmailService
+	totpService                *service.TotpService
+	userService                *service.UserService
 }
 
 // NewSettingHandler 创建系统设置处理器
@@ -97,6 +99,94 @@ func (h *SettingHandler) SetAliyunCaptchaService(aliyunCaptchaService *service.A
 func (h *SettingHandler) SetStepUpDeps(totpService *service.TotpService, userService *service.UserService) {
 	h.totpService = totpService
 	h.userService = userService
+}
+
+// GetOfficialModelContextCatalog returns the release-pinned official model
+// capacity catalog for the read-only admin browser.
+// GET /api/v1/admin/settings/model-context-catalog
+func (h *SettingHandler) GetOfficialModelContextCatalog(c *gin.Context) {
+	response.Success(c, gin.H{
+		"reference_release": service.GPTContextCapacityReferenceRelease,
+		"entries":           service.OfficialModelCatalogSnapshot(),
+	})
+}
+
+// GetImageToolsSettings returns the Image Studio and Responses image bridge
+// switches this process applies.
+// GET /api/v1/admin/settings/image-tools
+func (h *SettingHandler) GetImageToolsSettings(c *gin.Context) {
+	response.Success(c, service.EffectiveImageToolsConfig())
+}
+
+// UpdateImageToolsSettings saves the Image Studio and Responses image bridge
+// switches. Omitted switches are off, as in the former plugin configuration.
+// PUT /api/v1/admin/settings/image-tools
+func (h *SettingHandler) UpdateImageToolsSettings(c *gin.Context) {
+	var req extensionv1.ImageToolsConfig
+	raw, err := c.GetRawData()
+	if err != nil || service.DecodeSwitchSettings(raw, &req, "studio_enabled", "responses_image_enabled") != nil {
+		response.BadRequest(c, "Invalid image tools settings")
+		return
+	}
+	if err := h.settingService.UpdateImageToolsConfig(c.Request.Context(), req); err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	response.Success(c, req)
+}
+
+// GetObservabilitySettings returns the account traffic telemetry and flat theme
+// switches this process applies.
+// GET /api/v1/admin/settings/observability
+func (h *SettingHandler) GetObservabilitySettings(c *gin.Context) {
+	response.Success(c, service.EffectiveAdminObservabilityConfig())
+}
+
+// UpdateObservabilitySettings saves the account traffic telemetry and flat theme
+// switches. Omitted switches stay on, as in the former plugin configuration.
+// PUT /api/v1/admin/settings/observability
+func (h *SettingHandler) UpdateObservabilitySettings(c *gin.Context) {
+	req := extensionv1.AdminObservabilityConfig{TelemetryEnabled: true, ThemeEnabled: true}
+	raw, err := c.GetRawData()
+	if err != nil || service.DecodeSwitchSettings(raw, &req, "telemetry_enabled", "theme_enabled") != nil {
+		response.BadRequest(c, "Invalid observability settings")
+		return
+	}
+	if err := h.settingService.UpdateAdminObservabilityConfig(c.Request.Context(), req); err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	response.Success(c, req)
+}
+
+// GetCindyProviderSettings returns the Cindy balance detection, catalog and
+// search switches this process applies.
+// GET /api/v1/admin/settings/cindy-provider
+func (h *SettingHandler) GetCindyProviderSettings(c *gin.Context) {
+	response.Success(c, service.EffectiveCindyProviderConfig())
+}
+
+// UpdateCindyProviderSettings saves the Cindy switches. An omitted balance
+// detection switch stays on, as in the former plugin configuration.
+// PUT /api/v1/admin/settings/cindy-provider
+func (h *SettingHandler) UpdateCindyProviderSettings(c *gin.Context) {
+	req := extensionv1.CindyProviderConfig{BalanceDetection: true}
+	raw, err := c.GetRawData()
+	if err != nil || service.DecodeSwitchSettings(raw, &req, "balance_detection", "catalog_enabled", "search_enabled") != nil {
+		response.BadRequest(c, "Invalid Cindy provider settings")
+		return
+	}
+	if err := h.settingService.UpdateCindyProviderConfig(c.Request.Context(), req); err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	response.Success(c, req)
+}
+
+// GetCindyProviderCatalog lists the Cindy model catalog for the settings page.
+// GET /api/v1/admin/settings/cindy-provider/catalog
+func (h *SettingHandler) GetCindyProviderCatalog(c *gin.Context) {
+	response.Success(c, service.CindyCatalogModels())
 }
 
 // GetSettings 获取所有系统设置

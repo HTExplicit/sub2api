@@ -10,8 +10,8 @@ import (
 	"strings"
 	"testing"
 
-	cindy "github.com/HTExplicit/sub2api-plugins/cindyprovider/catalog"
-	extensionv1 "github.com/Wei-Shaw/sub2api/pkg/extensionapi/v1"
+	cindy "github.com/Wei-Shaw/sub2api/internal/cindyprovider/catalog"
+	extensionv1 "github.com/Wei-Shaw/sub2api/internal/nativeapi"
 	"github.com/stretchr/testify/require"
 	"github.com/tidwall/gjson"
 )
@@ -26,17 +26,6 @@ type cindyNativeImageSnapshotFixture struct {
 
 func (f *cindyNativeImageSnapshotFixture) InvokeOperation(ctx context.Context, platform, accountType string, in extensionv1.Invocation) (extensionv1.Result, error) {
 	f.calls = append(f.calls, in)
-	if in.Operation == "image.features" {
-		raw, err := json.Marshal(f.before.Images)
-		return extensionv1.Result{Payload: raw}, err
-	}
-	if in.Operation == "image.native.validate" {
-		var facts extensionv1.ImageNativeRequest
-		if err := json.Unmarshal(in.Payload, &facts); err != nil {
-			return extensionv1.Result{}, err
-		}
-		f.nativeFacts = append(f.nativeFacts, facts)
-	}
 	if in.Operation == "cindy.catalog" && !f.disabled {
 		var query extensionv1.CindyCatalogQuery
 		if err := json.Unmarshal(in.Payload, &query); err != nil {
@@ -205,13 +194,20 @@ func newNativeImageSnapshotFixture(t *testing.T, studioEnabled bool) *cindyNativ
 	after := cloneNativeImageCatalog(t, before)
 	publishNativeImageFixture(t, &after, "native-image-b", "fixture-b/native-image", "high", 0.5)
 	pricing, pricingAfter := nativeImagePricingFixture(t, registry, before), nativeImagePricingFixture(t, registry, after)
-	previous := processExtensionOperations.Load()
+	previous := captureNativeCindyTestInvoker()
 	require.NotNil(t, previous)
 	fixture := &cindyNativeImageSnapshotFixture{cindySecondReviewSwap: &cindySecondReviewSwap{
 		before: before, after: after, pricing: pricing, pricingAfter: &pricingAfter, fallback: previous.invoker,
 	}}
-	processExtensionOperations.Store(&extensionOperationProvider{invoker: fixture})
-	t.Cleanup(func() { processExtensionOperations.Store(previous) })
+	setNativeCindyTestInvoker(fixture)
+	images := before.Images
+	ConfigureImageTools(&images)
+	observeNativeImageFacts = func(facts extensionv1.ImageNativeRequest) { fixture.nativeFacts = append(fixture.nativeFacts, facts) }
+	t.Cleanup(func() {
+		restoreNativeCindyTestInvoker(previous)
+		ConfigureImageTools(nil)
+		observeNativeImageFacts = nil
+	})
 	return fixture
 }
 

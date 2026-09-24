@@ -10,9 +10,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Wei-Shaw/sub2api/internal/config"
+	extensionv1 "github.com/Wei-Shaw/sub2api/internal/nativeapi"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/tlsfingerprint"
-	extensionv1 "github.com/Wei-Shaw/sub2api/pkg/extensionapi/v1"
 	"github.com/stretchr/testify/require"
 )
 
@@ -66,18 +65,11 @@ func (u *cindyProbeScopeUpstream) DoWithTLS(req *http.Request, proxy string, acc
 }
 
 func TestCindyProbeReservationHonorsCurrentAccountScope(t *testing.T) {
-	var included, excluded int64
-	for id := int64(1); included == 0 || excluded == 0; id++ {
-		if stablePluginBucket(id) < 50 {
-			included = id
-		} else {
-			excluded = id
-		}
-	}
+	included, excluded := int64(2), int64(3)
 	for _, tc := range []struct {
 		name        string
 		accountID   int64
-		rollout     int
+		stale       bool
 		disabled    bool
 		unavailable bool
 		planFailure bool
@@ -86,21 +78,26 @@ func TestCindyProbeReservationHonorsCurrentAccountScope(t *testing.T) {
 		wantSend    bool
 		wantStale   bool
 	}{
-		{name: "zero_rollout", accountID: included, rollout: 0, wantStale: true},
-		{name: "partial_excluded", accountID: excluded, rollout: 50, wantStale: true},
-		{name: "partial_included", accountID: included, rollout: 50, wantSend: true},
-		{name: "full_rollout", accountID: excluded, rollout: 100, wantSend: true},
-		{name: "capability_disabled", accountID: included, rollout: 100, disabled: true, wantStale: true},
-		{name: "runtime_unavailable_is_not_stale", accountID: included, rollout: 100, unavailable: true},
-		{name: "plan_failure_is_not_stale", accountID: included, rollout: 100, planFailure: true},
-		{name: "cancellation_is_not_stale", accountID: included, rollout: 0, cancel: true},
-		{name: "lost_reservation_is_not_stale", accountID: included, rollout: 0, lostLease: true},
+		{name: "changed_identity", accountID: included, stale: true, wantStale: true},
+		{name: "native_first_account", accountID: included, wantSend: true},
+		{name: "native_other_account", accountID: excluded, wantSend: true},
+		{name: "capability_disabled", accountID: included, disabled: true},
+		{name: "runtime_unavailable_is_not_stale", accountID: included, unavailable: true},
+		{name: "plan_failure_is_not_stale", accountID: included, planFailure: true},
+		{name: "cancellation_is_not_stale", accountID: included, cancel: true},
+		{name: "lost_reservation_is_not_stale", accountID: included, lostLease: true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			previous := processExtensionOperations.Load()
-			t.Cleanup(func() { processExtensionOperations.Store(previous) })
+			previous := captureNativeCindyTestInvoker()
+			t.Cleanup(func() { restoreNativeCindyTestInvoker(previous) })
 			var invocations []extensionv1.Invocation
-			manager := ticketTestManager(t, config.OpenAICodexTicketConfig{}, func(in extensionv1.Invocation) (extensionv1.Result, error) {
+			setNativeCindyTestInvoker(nativeCindyTestInvoker(func(ctx context.Context, in extensionv1.Invocation) (extensionv1.Result, error) {
+				if tc.disabled {
+					return extensionv1.Result{Code: "disabled"}, nil
+				}
+				if tc.unavailable {
+					return extensionv1.Result{}, ErrExtensionOperationUnavailable
+				}
 				invocations = append(invocations, in)
 				if tc.planFailure && in.Operation == "cindy.probe.plan" {
 					return extensionv1.Result{}, errors.New("synthetic policy failure")
@@ -118,18 +115,15 @@ func TestCindyProbeReservationHonorsCurrentAccountScope(t *testing.T) {
 				}
 				raw, err := json.Marshal(payload)
 				return extensionv1.Result{Payload: raw}, err
-			})
-			registry := manager.extensions.Load()
-			registry.installations[1].Bindings = []PluginBinding{{Capability: extensionv1.CapabilityProvider, Platform: PlatformCindy, AccountType: AccountTypeAPIKey, Enabled: !tc.disabled, RolloutPercent: tc.rollout}}
-			registry.installations[1].Manifest.Operations = map[string][]string{extensionv1.CapabilityProvider: {"cindy.features", "cindy.probe.plan", "cindy.probe.decide", "cindy.health"}}
-			if tc.unavailable {
-				registry.runtimes[1].beginDrain()
-			}
-			processExtensionOperations.Store(&extensionOperationProvider{invoker: manager})
+			}))
+
 			account := newFirstClassCindyRateLimitAccount(tc.accountID, false)
 			fingerprint, err := CindyAccountIdentityFingerprint(account.Platform, account.Type, account.Credentials)
 			require.NoError(t, err)
 			reservation := &CindyBalanceProbeReservation{JobID: 17, ItemID: 18, AccountID: account.ID, Stage: "luna", LeaseToken: "scope-lease", RequestCount: 1, JobRequestCount: 5, IdentityFingerprint: fingerprint, AccountUpdatedAt: account.UpdatedAt}
+			if tc.stale {
+				reservation.IdentityFingerprint = "different-identity"
+			}
 			repo := &cindyProbeScopeRepository{ready: !tc.lostLease}
 			upstream := &cindyProbeScopeUpstream{}
 			svc := &CindyBalanceProbeService{repo: repo, accountRepo: &cindyBalanceProbeAccountRepositoryStub{account: account}, gateway: &OpenAIGatewayService{httpUpstream: upstream}}
@@ -175,20 +169,18 @@ func TestCindyProbeReservationHonorsCurrentAccountScope(t *testing.T) {
 }
 
 func TestCindyProbeReservationPolicyCancellationReachesActualHTTP(t *testing.T) {
-	previous := processExtensionOperations.Load()
-	t.Cleanup(func() { processExtensionOperations.Store(previous) })
-	manager := ticketTestManager(t, config.OpenAICodexTicketConfig{}, func(in extensionv1.Invocation) (extensionv1.Result, error) {
+	previous := captureNativeCindyTestInvoker()
+	t.Cleanup(func() { restoreNativeCindyTestInvoker(previous) })
+	setNativeCindyTestInvoker(nativeCindyTestInvoker(func(_ context.Context, in extensionv1.Invocation) (extensionv1.Result, error) {
 		var payload any = extensionv1.CindyProviderConfig{BalanceDetection: true}
 		if in.Operation == "cindy.probe.plan" {
 			payload = extensionv1.CindyProbePlan{Models: [2]string{"tencent/hy3", "z-ai/glm-5.3-flash"}, Input: "Reply OK.", MaxOutputTokens: 1}
 		}
 		raw, err := json.Marshal(payload)
 		return extensionv1.Result{Payload: raw}, err
-	})
-	registry := manager.extensions.Load()
-	registry.installations[1].Bindings = []PluginBinding{{Capability: extensionv1.CapabilityProvider, Platform: PlatformCindy, AccountType: AccountTypeAPIKey, Enabled: true, RolloutPercent: 100}}
-	registry.installations[1].Manifest.Operations = map[string][]string{extensionv1.CapabilityProvider: {"cindy.features", "cindy.probe.plan", "cindy.probe.decide", "cindy.health"}}
-	processExtensionOperations.Store(&extensionOperationProvider{invoker: manager})
+	}))
+	requestContext, cancelRequest := context.WithCancel(context.Background())
+	defer cancelRequest()
 	account := newFirstClassCindyRateLimitAccount(37, false)
 	fingerprint, err := CindyAccountIdentityFingerprint(account.Platform, account.Type, account.Credentials)
 	require.NoError(t, err)
@@ -196,13 +188,13 @@ func TestCindyProbeReservationPolicyCancellationReachesActualHTTP(t *testing.T) 
 	repo := &cindyProbeScopeRepository{ready: true}
 	requestCanceled := false
 	upstream := &cindyProbeScopeUpstream{onSend: func(request *http.Request) {
-		registry.runtimes[1].beginDrain()
+		cancelRequest()
 		requestCanceled = errors.Is(request.Context().Err(), context.Canceled)
 	}}
 	svc := &CindyBalanceProbeService{repo: repo, accountRepo: &cindyBalanceProbeAccountRepositoryStub{account: account}, gateway: &OpenAIGatewayService{httpUpstream: upstream}}
-	require.False(t, svc.executeReservation(context.Background(), reservation, reservation.LeaseToken))
+	require.False(t, svc.executeReservation(requestContext, reservation, reservation.LeaseToken))
 	require.Equal(t, 1, upstream.calls)
-	require.True(t, requestCanceled, "a replacement/stop must revoke the same generation's actual HTTP context")
+	require.True(t, requestCanceled, "native cancellation must reach the actual HTTP context")
 	require.Zero(t, repo.completions)
 	require.Zero(t, repo.healthWrites)
 	require.False(t, repo.networkFailure)

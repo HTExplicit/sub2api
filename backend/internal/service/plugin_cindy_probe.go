@@ -7,8 +7,8 @@ import (
 	"strings"
 	"time"
 
+	extensionv1 "github.com/Wei-Shaw/sub2api/internal/nativeapi"
 	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
-	extensionv1 "github.com/Wei-Shaw/sub2api/pkg/extensionapi/v1"
 )
 
 func requireCindyBalanceProbePolicy(ctx context.Context) error {
@@ -29,8 +29,7 @@ func invokeCindyProbePolicy(ctx context.Context, accountID int64, operation stri
 	}
 	call, cancel := context.WithTimeout(ctx, time.Second)
 	defer cancel()
-	result, err := invokeProcessExtensionCached(call, PlatformCindy, AccountTypeAPIKey,
-		extensionv1.Invocation{Capability: extensionv1.CapabilityProvider, Operation: operation, AccountID: accountID, Payload: raw})
+	result, err := invokeCindyProviderCached(call, extensionv1.Invocation{Capability: extensionv1.CapabilityProvider, Operation: operation, AccountID: accountID, Payload: raw})
 	if err != nil {
 		return err
 	}

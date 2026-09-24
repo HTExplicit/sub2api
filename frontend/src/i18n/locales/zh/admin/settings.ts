@@ -516,6 +516,37 @@ export default {
         saved: 'OpenCode Go 用量刷新设置已保存',
         saveFailed: '保存 OpenCode Go 用量刷新设置失败'
       },
+      imageTools: {
+        title: '图像工具',
+        description: 'Image Studio 使用账号现有的图像能力与分组权限。每次上游请求生成一张图像，一项任务最多四张。关闭功能会停止新的生成操作，已保存的结果保留。',
+        studioEnabled: '启用 Image Studio',
+        responsesImageEnabled: '启用 Cindy Responses 图像桥接',
+        save: '保存设置',
+        saved: '设置已保存',
+        loadFailed: '图像工具设置加载失败',
+        saveFailed: '保存失败'
+      },
+      observability: {
+        title: '界面与观测',
+        description: '账号流量观测只记录实际业务转发的结果，不触发测试请求，也不用于限制账号或改变计费。',
+        telemetryEnabled: '启用账号流量观测',
+        themeEnabled: '启用平面主题',
+        save: '保存设置',
+        saved: '设置已保存',
+        loadFailed: '界面与观测设置加载失败',
+        saveFailed: '保存失败'
+      },
+      officialModelCatalog: {
+        title: '模型目录与容量参考',
+        description: '参考数据用于容量规划；账号自定义值与实时上游声明继续按既有优先级处理。',
+        search: '搜索模型或供应商',
+        count: '{count} 项匹配，显示前 {shown} 项。',
+        context: '上下文',
+        maxOutput: '最大输出',
+        subscriptionMaximum: '订阅参考最大窗口',
+        verified: '核对日期',
+        loadFailed: '模型目录加载失败'
+      },
       gatewayForwarding: {
         title: '请求转发行为',
         description: '控制请求转发到上游 OAuth 账号时的行为',

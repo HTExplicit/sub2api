@@ -918,8 +918,15 @@ func ProvideOpsIngressRejectAggregator(opsRepo OpsRepository, opsService *OpsSer
 }
 
 // ProvideSettingService wires SettingService with group reader and proxy repo.
-func ProvideSettingService(settingRepo SettingRepository, groupRepo GroupRepository, proxyRepo ProxyRepository, cfg *config.Config) *SettingService {
+func ProvideSettingService(settingRepo SettingRepository, groupRepo GroupRepository, proxyRepo ProxyRepository, cfg *config.Config, _ *NativeFeatureBootstrap) (*SettingService, error) {
 	svc := NewSettingService(settingRepo, cfg)
+	// Image tool, observability and Cindy provider switches are read by
+	// package-level gates before Image Studio and the gateway start.
+	for _, load := range []func(context.Context) error{svc.LoadImageToolsConfig, svc.LoadAdminObservabilityConfig, svc.LoadCindyProviderConfig} {
+		if err := load(context.Background()); err != nil {
+			return nil, err
+		}
+	}
 	svc.SetDefaultSubscriptionGroupReader(groupRepo)
 	svc.SetProxyRepository(proxyRepo)
 	if err := svc.LoadForwardedClientIPSettings(context.Background()); err != nil {
@@ -945,7 +952,7 @@ func ProvideSettingService(settingRepo SettingRepository, groupRepo GroupReposit
 	claude.SetCLIVersionResolver(func() string {
 		return svc.GetClaudeCodeClientVersion(context.Background())
 	})
-	return svc
+	return svc, nil
 }
 
 // ProvideBillingCacheService wires BillingCacheService with its RPM dependencies.
@@ -982,6 +989,8 @@ func ProvideAPIKeyService(
 
 // ProviderSet is the Wire provider set for all services
 var ProviderSet = wire.NewSet(
+	ProvideNativeFeatureBootstrap,
+	ProvideNativeCodexRuntime,
 	// Core services
 	ProvideAuthService,
 	NewPasskeyService,

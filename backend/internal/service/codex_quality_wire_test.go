@@ -15,8 +15,8 @@ import (
 	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
+	extensionv1 "github.com/Wei-Shaw/sub2api/internal/nativeapi"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/tlsfingerprint"
-	extensionv1 "github.com/Wei-Shaw/sub2api/pkg/extensionapi/v1"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
@@ -98,21 +98,19 @@ func qualityWireServiceFixture(t *testing.T, compressed, recovery bool) (*OpenAI
 	if !recovery {
 		account.Extra = map[string]any{OpenAIReasoningSignatureRecoveryEnabledExtraKey: false}
 	}
-	manager := ticketTestManager(t, config.OpenAICodexTicketConfig{Enabled: true, FailClosed: true, Models: []string{codexQualityModel}}, nil)
-	installation := manager.extensions.Load().installations[1]
-	installation.State = PluginStateEnabled
+	manager := nativeTicketTestRuntime(t, config.OpenAICodexTicketConfig{Enabled: true, FailClosed: true, Models: []string{codexQualityModel}}, nil)
+	installation := manager.metadata()
 	host, directory, store := routingHostFixture()
-	store.PluginRepository = &pluginTokenRepository{installation: installation}
+
 	manager.repo = store
 	upstream := &qualityWireUpstream{accountID: account.ID}
-	svc := &OpenAIGatewayService{cfg: &config.Config{}, pluginManager: manager, httpUpstream: upstream,
+	svc := &OpenAIGatewayService{cfg: &config.Config{}, nativeCodexRuntime: manager, httpUpstream: upstream,
 		accountRepo: &routingAccountRepositoryFixture{account: account}}
 	ctx := withCodexTransportFixture(context.Background(), compressed)
 	scope, err := svc.PrepareCodexRoutingScope(ctx, account.ID, "http")
 	require.NoError(t, err)
 	directory.scope, directory.account = scope, *extensionAccount(account)
-	host.installation = installation
-	installation.Manifest.Capabilities = []PluginCapability{{ID: extensionv1.CapabilityCredentials, Platform: PlatformOpenAI, AccountType: AccountTypeOAuth}}
+	host.metadata = installation
 	now := time.Now().UTC()
 	expiry := now.Add(time.Minute)
 	leaseScope := scope

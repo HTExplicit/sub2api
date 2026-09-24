@@ -1,6 +1,6 @@
 // Package testextensions installs actual independent modules as deterministic
 // contract fixtures. It is imported only by host tests; production composes
-// signed plugin processes through ProvidePluginManager.
+// native modules; the remaining plugin manager serves third-party packages.
 package testextensions
 
 import (
@@ -8,24 +8,21 @@ import (
 	"encoding/json"
 	"strings"
 
-	cindy "github.com/HTExplicit/sub2api-plugins/cindyprovider/catalog"
-	codexprofile "github.com/HTExplicit/sub2api-plugins/codexruntime/profile"
-	codexrecovery "github.com/HTExplicit/sub2api-plugins/codexruntime/recovery"
+	cindy "github.com/Wei-Shaw/sub2api/internal/cindyprovider/catalog"
+	codexprofile "github.com/Wei-Shaw/sub2api/internal/codexruntime/profile"
+	codexrecovery "github.com/Wei-Shaw/sub2api/internal/codexruntime/recovery"
 
-	accounttools "github.com/HTExplicit/sub2api-plugins/accounttools/policy"
-	observability "github.com/HTExplicit/sub2api-plugins/adminobservability/policy"
-	imagetools "github.com/HTExplicit/sub2api-plugins/imagetools/policy"
-	catalog "github.com/HTExplicit/sub2api-plugins/modelpolicy/catalog"
-	prompt "github.com/HTExplicit/sub2api-plugins/promptskills/policy"
+	accounttools "github.com/Wei-Shaw/sub2api/internal/accounttools/policy"
+	extensionv1 "github.com/Wei-Shaw/sub2api/internal/nativeapi"
+	prompt "github.com/Wei-Shaw/sub2api/internal/promptskills/policy"
 	"github.com/Wei-Shaw/sub2api/internal/service"
-	extensionv1 "github.com/Wei-Shaw/sub2api/pkg/extensionapi/v1"
 )
 
-type operations struct{ imageConfig *extensionv1.ImageToolsConfig }
+type operations struct{}
 
 var promptFixtureModule = prompt.New()
 
-func (fixture operations) InvokeOperation(ctx context.Context, _, _ string, in extensionv1.Invocation) (extensionv1.Result, error) {
+func (operations) InvokeOperation(ctx context.Context, _, _ string, in extensionv1.Invocation) (extensionv1.Result, error) {
 	if in.Capability == extensionv1.CapabilityRecovery {
 		return codexrecovery.Invoke(ctx, in)
 	}
@@ -39,21 +36,6 @@ func (fixture operations) InvokeOperation(ctx context.Context, _, _ string, in e
 		}
 		raw, err := json.Marshal(codexprofile.TransportPlan(query, false))
 		return extensionv1.Result{Payload: raw}, err
-	}
-	if strings.HasPrefix(in.Operation, "observability.") {
-		return observability.New().Invoke(ctx, in)
-	}
-	if strings.HasPrefix(in.Operation, "image.") {
-		module := imagetools.New()
-		config := service.LegacyImageToolsConfig()
-		if fixture.imageConfig != nil {
-			config = *fixture.imageConfig
-		}
-		raw, _ := json.Marshal(config)
-		if err := module.ApplyConfig(ctx, raw); err != nil {
-			return extensionv1.Result{}, err
-		}
-		return module.Invoke(ctx, in)
 	}
 	if strings.HasPrefix(in.Operation, "cindy.") {
 		module := cindy.New()
@@ -71,8 +53,13 @@ func (fixture operations) InvokeOperation(ctx context.Context, _, _ string, in e
 	}
 	return extensionv1.Result{}, service.ErrExtensionOperationDisabled
 }
-func Install() { service.ConfigureProcessExtensionServices(catalog.New(), operations{}) }
+func Install() {
+	service.ConfigureNativePolicyOperations(operations{})
+	service.ConfigureImageTools(nil)
+	service.ConfigureAdminObservability(nil)
+}
 
 func InstallImageTools(config extensionv1.ImageToolsConfig) {
-	service.ConfigureProcessExtensionServices(catalog.New(), operations{imageConfig: &config})
+	service.ConfigureNativePolicyOperations(operations{})
+	service.ConfigureImageTools(&config)
 }

@@ -9,7 +9,7 @@ import (
 	"sync"
 	"time"
 
-	extensionv1 "github.com/Wei-Shaw/sub2api/pkg/extensionapi/v1"
+	extensionv1 "github.com/Wei-Shaw/sub2api/internal/nativeapi"
 )
 
 // CodexClientIdentityExtraKey 持久化在 accounts.extra 中的每账号 Codex 客户端身份。
@@ -285,10 +285,10 @@ func (s *CodexClientIdentityBackfillService) RunOnce(ctx context.Context) (int, 
 		// The background scan may skip inapplicable accounts, but its policy
 		// lease and write must stay scoped to each actual applicable account.
 		if err := func() error {
-			bound, release, err := bindProcessExtensionContext(ctx, account.Platform, account.Type, extensionv1.Invocation{
+			bound, release, err := bindNativeCodexContext(ctx, account.Platform, account.Type, extensionv1.Invocation{
 				Capability: extensionv1.CapabilityRequest, Operation: "codex.identity.derive", AccountID: account.ID,
 			})
-			if errors.Is(err, ErrExtensionOperationDisabled) {
+			if errors.Is(err, ErrNativeCodexPolicyDisabled) {
 				return nil
 			}
 			if err != nil {

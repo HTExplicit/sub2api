@@ -6,16 +6,14 @@ import (
 	"strings"
 	"testing"
 
-	cindy "github.com/HTExplicit/sub2api-plugins/cindyprovider/catalog"
-	codexprofile "github.com/HTExplicit/sub2api-plugins/codexruntime/profile"
-	codexrecovery "github.com/HTExplicit/sub2api-plugins/codexruntime/recovery"
+	cindy "github.com/Wei-Shaw/sub2api/internal/cindyprovider/catalog"
+	codexprofile "github.com/Wei-Shaw/sub2api/internal/codexruntime/profile"
+	codexrecovery "github.com/Wei-Shaw/sub2api/internal/codexruntime/recovery"
 
-	accounttools "github.com/HTExplicit/sub2api-plugins/accounttools/policy"
-	observability "github.com/HTExplicit/sub2api-plugins/adminobservability/policy"
-	imagetools "github.com/HTExplicit/sub2api-plugins/imagetools/policy"
+	accounttools "github.com/Wei-Shaw/sub2api/internal/accounttools/policy"
 
-	policy "github.com/HTExplicit/sub2api-plugins/promptskills/policy"
-	extensionv1 "github.com/Wei-Shaw/sub2api/pkg/extensionapi/v1"
+	extensionv1 "github.com/Wei-Shaw/sub2api/internal/nativeapi"
+	policy "github.com/Wei-Shaw/sub2api/internal/promptskills/policy"
 )
 
 type promptPolicyFixture struct{}
@@ -53,17 +51,6 @@ func (promptPolicyFixture) InvokeOperation(ctx context.Context, _ string, _ stri
 	if strings.HasPrefix(in.Operation, "codex.identity.") {
 		return codexprofile.Invoke(ctx, in)
 	}
-	if strings.HasPrefix(in.Operation, "observability.") {
-		return observability.New().Invoke(ctx, in)
-	}
-	if strings.HasPrefix(in.Operation, "image.") {
-		module := imagetools.New()
-		raw, _ := json.Marshal(LegacyImageToolsConfig())
-		if err := module.ApplyConfig(ctx, raw); err != nil {
-			return extensionv1.Result{}, err
-		}
-		return module.Invoke(ctx, in)
-	}
 	if strings.HasPrefix(in.Operation, "cindy.") {
 		module := cindy.New()
 		raw, _ := json.Marshal(LegacyCindyProviderConfig())
@@ -78,5 +65,9 @@ func (promptPolicyFixture) InvokeOperation(ctx context.Context, _ string, _ stri
 	return promptFixtureModule.Invoke(ctx, in)
 }
 func init() {
-	processExtensionOperations.Store(&extensionOperationProvider{invoker: promptPolicyFixture{}})
+	invokeNativeCodex = promptPolicyFixture{}.InvokeOperation
+	bindNativeCodexContext = func(ctx context.Context, _ string, _ string, _ extensionv1.Invocation) (context.Context, context.CancelFunc, error) {
+		bound, cancel := context.WithCancel(ctx)
+		return bound, cancel, nil
+	}
 }

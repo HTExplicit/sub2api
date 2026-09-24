@@ -16,15 +16,16 @@ import (
 
 type accountTaxonomyHandlerStub struct {
 	*stubAdminService
-	facets          *service.AccountConsoleFacets
-	lastBulk        service.BulkAccountTaxonomyInput
-	bulkResult      *service.BulkAccountTaxonomyResult
-	folders         []service.AccountManagementFolder
-	tags            []service.AccountManagementTag
-	lastFolderIDs   []int64
-	lastTagIDs      []int64
-	lastFacets      service.AccountConsoleFilters
-	assignedAccount *service.Account
+	facets           *service.AccountConsoleFacets
+	lastBulk         service.BulkAccountTaxonomyInput
+	bulkResult       *service.BulkAccountTaxonomyResult
+	folders          []service.AccountManagementFolder
+	tags             []service.AccountManagementTag
+	lastFolderIDs    []int64
+	lastTagIDs       []int64
+	lastFacets       service.AccountConsoleFilters
+	assignedAccount  *service.Account
+	matchingAccounts []service.Account
 }
 
 func newAccountTaxonomyHandlerStub() *accountTaxonomyHandlerStub {
@@ -68,7 +69,7 @@ func (s *accountTaxonomyHandlerStub) SetAccountTaxonomy(context.Context, int64, 
 	return &service.Account{}, nil
 }
 
-func TestTaxonomyPluginResponseDoesNotExposeAccountCredentials(t *testing.T) {
+func TestTaxonomyNativeResponsePreservesRedactedAccount(t *testing.T) {
 	stub := newAccountTaxonomyHandlerStub()
 	stub.assignedAccount = &service.Account{ID: 7, Credentials: map[string]any{"api_key": "synthetic-secret"}}
 	h := NewAccountHandler(stub, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
@@ -76,17 +77,16 @@ func TestTaxonomyPluginResponseDoesNotExposeAccountCredentials(t *testing.T) {
 	router.PUT("/accounts/:id/taxonomy", h.SetAccountTaxonomy)
 	request := httptest.NewRequest(http.MethodPut, "/accounts/7/taxonomy", bytes.NewBufferString(`{"folder_id":null,"tag_ids":[]}`))
 	request.Header.Set("Content-Type", "application/json")
-	request.Header.Set("X-Sub2API-Plugin", "3")
 	response := httptest.NewRecorder()
 	router.ServeHTTP(response, request)
 	require.Equal(t, http.StatusOK, response.Code)
 	require.NotContains(t, response.Body.String(), "synthetic-secret")
-	require.NotContains(t, response.Body.String(), "credentials")
-	require.Contains(t, response.Body.String(), `"account_id":7`)
+	require.Contains(t, response.Body.String(), "credentials")
+	require.Contains(t, response.Body.String(), `"id":7`)
 }
 
 func (s *accountTaxonomyHandlerStub) ListAccountsConsole(context.Context, int, int, service.AccountConsoleFilters) ([]service.Account, int64, error) {
-	return nil, 0, nil
+	return s.matchingAccounts, int64(len(s.matchingAccounts)), nil
 }
 
 func (s *accountTaxonomyHandlerStub) GetAccountConsoleFacets(_ context.Context, filters service.AccountConsoleFilters) (*service.AccountConsoleFacets, error) {
@@ -168,6 +168,7 @@ func TestAccountFacetsUsesStableSnakeCaseTaxonomyDTO(t *testing.T) {
 
 func TestBulkAccountTaxonomyMapsFilteredTarget(t *testing.T) {
 	adminSvc := newAccountTaxonomyHandlerStub()
+	adminSvc.matchingAccounts = []service.Account{{ID: 7}, {ID: 9}}
 	adminSvc.bulkResult = &service.BulkAccountTaxonomyResult{MatchedCount: 2, UpdatedCount: 2}
 	body, err := json.Marshal(map[string]any{
 		"filters":              map[string]any{"platforms": "openai", "folder": "uncategorized", "tags": "3"},
@@ -186,7 +187,9 @@ func TestBulkAccountTaxonomyMapsFilteredTarget(t *testing.T) {
 	require.Equal(t, http.StatusAccepted, recorder.Code, recorder.Body.String())
 	var payload bulkAccountTaxonomyRequest
 	params := requireSubmittedAccountJob(t, jobs, service.AccountJobKindBulkTaxonomy, &payload)
-	require.Len(t, params.Items, 1, "filter-targeted jobs resolve concrete accounts in the worker")
+	require.Len(t, params.Items, 2, "filter-targeted jobs freeze concrete accounts before submission")
+	require.Equal(t, int64(7), *params.Items[0].TargetAccountID)
+	require.Equal(t, int64(9), *params.Items[1].TargetAccountID)
 	filters, err := toServiceBulkUpdateAccountFilters(payload.Filters)
 	require.NoError(t, err)
 	require.NotNil(t, filters)

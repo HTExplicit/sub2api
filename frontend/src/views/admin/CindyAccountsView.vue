@@ -1,8 +1,16 @@
 <template>
-  <AccountViewPage :plugin-key="CINDY_ACCOUNT_VIEW_ALIAS.plugin_key" :view-id="CINDY_ACCOUNT_VIEW_ALIAS.view_id" />
+  <AccountsView scope="cindy">
+    <template #scope-tools="{ selectedIds, filters }">
+      <div class="min-w-0 space-y-3">
+        <CindyDuplicateInventoryPanel />
+        <CindyBalanceProbePanel :selected-ids="selectedIds" :filters="filters" />
+      </div>
+    </template>
+  </AccountsView>
 </template>
 
 <script setup lang="ts">
-import AccountViewPage from '@/components/plugins/AccountViewPage.vue'
-import { CINDY_ACCOUNT_VIEW_ALIAS } from '@/components/plugins/accountView'
+import AccountsView from './AccountsView.vue'
+import CindyBalanceProbePanel from '@/features/cindy-balance-probe/CindyBalanceProbePanel.vue'
+import CindyDuplicateInventoryPanel from '@/features/cindy-duplicate-inventory/CindyDuplicateInventoryPanel.vue'
 </script>

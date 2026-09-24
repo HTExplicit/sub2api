@@ -16,7 +16,7 @@ import (
 	"strings"
 	"time"
 
-	extensionv1 "github.com/Wei-Shaw/sub2api/pkg/extensionapi/v1"
+	extensionv1 "github.com/Wei-Shaw/sub2api/internal/nativeapi"
 )
 
 // CindyCatalogSnapshot holds one admitted provider reply. Callers pass this
@@ -68,7 +68,7 @@ func LoadCindyCatalogSnapshot(ctx context.Context, account *Account) (*CindyCata
 	query, _ := json.Marshal(extensionv1.CindyCatalogQuery{Method: extensionv1.CindyCatalogSnapshotMethodV1, Images: images})
 	call, cancel := context.WithTimeout(ctx, time.Second)
 	defer cancel()
-	result, err := invokeProcessExtensionCached(call, PlatformCindy, AccountTypeAPIKey, extensionv1.Invocation{
+	result, err := invokeCindyProviderCached(call, extensionv1.Invocation{
 		Capability: extensionv1.CapabilityProvider, Operation: "cindy.catalog", AccountID: accountID, Payload: query,
 	})
 	if err != nil {

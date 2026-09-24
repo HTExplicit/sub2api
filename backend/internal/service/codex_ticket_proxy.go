@@ -1,7 +1,7 @@
 package service
 
 import (
-	proxytransport "github.com/Wei-Shaw/sub2api/pkg/extensionapi/proxy"
+	proxytransport "github.com/Wei-Shaw/sub2api/internal/proxytransport"
 )
 
 type CodexTicketProxyTrust struct {

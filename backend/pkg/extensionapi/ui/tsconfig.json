@@ -1,8 +1,0 @@
-{
-  "extends": "../../../../frontend/tsconfig.json",
-  "compilerOptions": { "types": [] },
-  "files": ["../../../../frontend/node_modules/vite/client.d.ts"],
-  "include": ["./**/*.ts", "./**/*.vue", "../../../../plugins/*/ui/src/**/*.ts", "../../../../plugins/*/ui/src/**/*.vue"],
-  "exclude": ["../../../../plugins/**/__tests__/**", "../../../../plugins/**/*.spec.ts", "../../../../plugins/**/*.test.ts"],
-  "references": []
-}

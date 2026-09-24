@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	extensionv1 "github.com/Wei-Shaw/sub2api/pkg/extensionapi/v1"
+	extensionv1 "github.com/Wei-Shaw/sub2api/internal/nativeapi"
 	"github.com/gin-gonic/gin"
 	"github.com/tidwall/gjson"
 )
@@ -127,11 +127,12 @@ type CodexFingerprintView struct {
 }
 
 func (s *OpenAIGatewayService) observeCodexWire(ctx context.Context, account *Account, request *http.Request, response *http.Response, qualification *extensionv1.CodexRoutingQualification) {
-	if s == nil || s.pluginManager == nil || account == nil || request == nil || response == nil {
+	if s == nil || s.nativeCodexRuntime == nil || account == nil || request == nil || response == nil {
 		return
 	}
-	installation, _ := s.pluginManager.installedByKey(codexRuntimePluginKey)
-	store, ok := s.pluginManager.repo.(PluginExtensionStateStore)
+	installation := s.nativeCodexRuntime.metadata()
+	store := s.nativeCodexRuntime.repo
+	ok := store != nil
 	if installation == nil || !ok {
 		return
 	}
@@ -167,33 +168,34 @@ func (s *OpenAIGatewayService) observeCodexWire(ctx context.Context, account *Ac
 			value.CookieVersions[cookie.Name] = codexRoutingDigest(strconv.FormatInt(account.ID, 10), cookie.Name, cookie.Value)[:16]
 		}
 	}
-	ctx = WithPluginExecution(context.WithoutCancel(ctx), installation)
+	ctx = WithNativeCodexExecution(context.WithoutCancel(ctx), installation)
 	ctx, cancel := context.WithTimeout(ctx, time.Second)
 	defer cancel()
 	key := "wire." + strconv.FormatInt(account.ID, 10)
-	previous, err := store.ReadExtensionState(ctx, installation.PluginKey, extensionv1.StateRequest{Namespace: codexRoutingPrivateNamespace, Key: key})
+	previous, err := store.ReadExtensionState(ctx, NativeCodexPluginKey, extensionv1.StateRequest{Namespace: codexRoutingPrivateNamespace, Key: key})
 	if err != nil {
 		return
 	}
 	raw, _ := json.Marshal(value)
-	_, _ = store.CompareSwapExtensionState(ctx, installation.PluginKey, extensionv1.StateRequest{Namespace: codexRoutingPrivateNamespace, Key: key, ExpectedRevision: previous.Revision, Value: raw})
+	_, _ = store.CompareSwapExtensionState(ctx, NativeCodexPluginKey, extensionv1.StateRequest{Namespace: codexRoutingPrivateNamespace, Key: key, ExpectedRevision: previous.Revision, Value: raw})
 }
 
 // CodexFingerprint is read-only: opening an account never refreshes OAuth,
 // acquires cookies, pings a proxy, or sends a model request.
 func (s *OpenAIGatewayService) CodexFingerprint(ctx context.Context, id int64) (*CodexFingerprintView, error) {
 	a, err := s.accountRepo.GetByID(ctx, id)
-	if err != nil || !isOpenAICodexTicketAccount(a) || s.pluginManager == nil {
+	if err != nil || !isOpenAICodexTicketAccount(a) || s.nativeCodexRuntime == nil {
 		return nil, errCodexRoutingUnavailable
 	}
-	installation, _ := s.pluginManager.installedByKey(codexRuntimePluginKey)
-	store, ok := s.pluginManager.repo.(PluginExtensionStateStore)
+	installation := s.nativeCodexRuntime.metadata()
+	store := s.nativeCodexRuntime.repo
+	ok := store != nil
 	if installation == nil || !ok {
 		return nil, errCodexRoutingUnavailable
 	}
 	view := &CodexFingerprintView{AccountID: id, Configured: resolveCodexIdentitySnapshotContext(ctx, a, a, codexAccountIdentityOverrideUA(a)), ReferenceCommit: "4b664e0ef0397f82e68c60088a90fcd035deb796", ReferenceSource: "official_source", Alignment: "application_fields_checked_tls_capture_unknown", CookieMaxAgeSeconds: 120, RefreshLeadSeconds: 20, Models: []CodexRoutingModelStatus{}}
 	currentScope, scopeErr := s.PrepareCodexRoutingScope(ctx, id, "http")
-	wire, err := store.ReadExtensionState(ctx, installation.PluginKey, extensionv1.StateRequest{Namespace: codexRoutingPrivateNamespace, Key: "wire." + strconv.FormatInt(id, 10)})
+	wire, err := store.ReadExtensionState(ctx, NativeCodexPluginKey, extensionv1.StateRequest{Namespace: codexRoutingPrivateNamespace, Key: "wire." + strconv.FormatInt(id, 10)})
 	if err != nil {
 		return nil, err
 	}
@@ -205,7 +207,7 @@ func (s *OpenAIGatewayService) CodexFingerprint(ctx context.Context, id int64) (
 	}
 	for _, model := range s.openAICodexTicketConfig().Models {
 		status := CodexRoutingModelStatus{Model: model, Phase: "idle"}
-		record, readErr := store.ReadExtensionState(ctx, installation.PluginKey, extensionv1.StateRequest{Namespace: "tickets", Key: strconv.FormatInt(id, 10) + "." + codexRoutingDigest(model)})
+		record, readErr := store.ReadExtensionState(ctx, NativeCodexPluginKey, extensionv1.StateRequest{Namespace: "tickets", Key: strconv.FormatInt(id, 10) + "." + codexRoutingDigest(model)})
 		if readErr != nil {
 			return nil, readErr
 		}

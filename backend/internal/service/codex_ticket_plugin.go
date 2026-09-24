@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
+	extensionv1 "github.com/Wei-Shaw/sub2api/internal/nativeapi"
 )
 
 // The compatibility facade is the only host location that identifies this
@@ -21,27 +22,12 @@ func (s *OpenAIGatewayService) CodexTicketStatuses(account *Account) []OpenAICod
 
 func (s *OpenAIGatewayService) openAICodexTicketConfig() config.OpenAICodexTicketConfig {
 	cfg := config.OpenAICodexTicketConfig{FailClosed: true, Models: []string{openAICodexTicketDefaultModel, openAICodexTicketDefaultSolModel}}
-	if s == nil || s.pluginManager == nil {
+	if s == nil || s.nativeCodexRuntime == nil {
 		return cfg
 	}
-	raw, active := s.pluginManager.activeConfig(codexRuntimePluginKey)
-	if !active {
-		return cfg
-	}
-	var value struct {
-		Enabled    bool     `json:"enabled"`
-		FailClosed bool     `json:"fail_closed"`
-		ProxyURL   string   `json:"proxy_url"`
-		Models     []string `json:"models"`
-	}
-	if json.Unmarshal(raw, &value) != nil {
-		return cfg
-	}
-	cfg.Enabled = value.Enabled
-	cfg.FailClosed = value.FailClosed
-	cfg.HarvestProxyURL = value.ProxyURL
-	if len(value.Models) > 0 {
-		cfg.Models = value.Models
+	if snapshot := s.nativeCodexRuntime.current(); snapshot != nil {
+		cfg.Enabled, cfg.FailClosed, cfg.HarvestProxyURL = snapshot.config.Enabled, snapshot.config.FailClosed, snapshot.config.ProxyURL
+		cfg.Models = append([]string(nil), snapshot.config.Models...)
 	}
 	return cfg
 }
@@ -55,27 +41,27 @@ func (s *OpenAIGatewayService) applyOpenAICodexTicket(ctx context.Context, accou
 		_, _, err := codexQualityRequestQualification(ctx, account, model)
 		return err
 	}
-	if s == nil || s.pluginManager == nil {
+	if s == nil || s.nativeCodexRuntime == nil {
 		return nil
 	}
-	if err := s.pluginManager.ApplyRequestHeaders(ctx, account, model, headers); err != nil {
+	if err := s.nativeCodexRuntime.ApplyRequestHeaders(ctx, account, model, headers); err != nil {
 		return fmt.Errorf("%w: extension request prerequisites", ErrOpenAICodexTicketUnavailable)
 	}
 	return nil
 }
 
 func (s *OpenAIGatewayService) openAICodexTicketBlocksAccount(account *Account, model string) bool {
-	if s != nil && s.pluginManager != nil {
-		s.pluginManager.noteCodexRoutingDemand(account, model)
+	if s != nil && s.nativeCodexRuntime != nil {
+		s.nativeCodexRuntime.noteCodexRoutingDemand(account, model)
 	}
-	return s != nil && s.pluginManager != nil && !s.pluginManager.SchedulingDecision(account, model, time.Now()).Allowed
+	return s != nil && s.nativeCodexRuntime != nil && !s.nativeCodexRuntime.SchedulingDecision(account, model, time.Now()).Allowed
 }
 
 func (s *OpenAIGatewayService) HarvestCodexTicket(ctx context.Context, id int64, model, operation string, jobID int64, force bool) CodexTicketResult {
-	if s == nil || s.pluginManager == nil {
+	if s == nil || s.nativeCodexRuntime == nil {
 		return CodexTicketFailure("ticket_plugin_unavailable")
 	}
-	installation, _ := s.pluginManager.installedByKey(codexRuntimePluginKey)
+	installation := s.nativeCodexRuntime.metadata()
 	if installation == nil {
 		return CodexTicketFailure("ticket_plugin_unavailable")
 	}
@@ -83,7 +69,7 @@ func (s *OpenAIGatewayService) HarvestCodexTicket(ctx context.Context, id int64,
 		operation = fmt.Sprintf("job-%d", jobID)
 	}
 	payload, _ := json.Marshal(map[string]any{"account_id": id, "model": model, "operation_id": operation, "force": force})
-	response, err := s.pluginManager.InvokeAdminExtension(ctx, installation.ID, id, "harvest", payload)
+	response, err := s.nativeCodexRuntime.Invoke(ctx, PlatformOpenAI, "", extensionv1.Invocation{Capability: extensionv1.CapabilityAdmin, Operation: "harvest", AccountID: id, Payload: payload})
 	if err != nil {
 		return CodexTicketFailure("ticket_plugin_unavailable")
 	}
@@ -95,16 +81,16 @@ func (s *OpenAIGatewayService) HarvestCodexTicket(ctx context.Context, id int64,
 }
 
 func (s *OpenAIGatewayService) StopCodexTicketRenewal(ctx context.Context, id int64, models []string) error {
-	if s == nil || s.pluginManager == nil {
+	if s == nil || s.nativeCodexRuntime == nil {
 		return errors.New("ticket plugin unavailable")
 	}
-	installation, _ := s.pluginManager.installedByKey(codexRuntimePluginKey)
+	installation := s.nativeCodexRuntime.metadata()
 	if installation == nil {
 		return errors.New("ticket plugin unavailable")
 	}
 	for _, model := range models {
 		raw, _ := json.Marshal(map[string]any{"account_id": id, "model": model})
-		response, err := s.pluginManager.InvokeAdminExtension(ctx, installation.ID, id, "stop", raw)
+		response, err := s.nativeCodexRuntime.Invoke(ctx, PlatformOpenAI, "", extensionv1.Invocation{Capability: extensionv1.CapabilityAdmin, Operation: "stop", AccountID: id, Payload: raw})
 		if err != nil {
 			return err
 		}
@@ -117,15 +103,19 @@ func (s *OpenAIGatewayService) StopCodexTicketRenewal(ctx context.Context, id in
 }
 
 func (s *OpenAIGatewayService) TestCodexTicketProxy(ctx context.Context, raw string) (*CodexTicketProxyTestResult, error) {
-	if s == nil || s.pluginManager == nil {
+	return s.TestCodexTicketProxyWithProtocol(ctx, raw, "")
+}
+
+func (s *OpenAIGatewayService) TestCodexTicketProxyWithProtocol(ctx context.Context, raw, protocol string) (*CodexTicketProxyTestResult, error) {
+	if s == nil || s.nativeCodexRuntime == nil {
 		return nil, errors.New("ticket plugin unavailable")
 	}
-	installation, _ := s.pluginManager.installedByKey(codexRuntimePluginKey)
+	installation := s.nativeCodexRuntime.metadata()
 	if installation == nil {
 		return nil, errors.New("ticket plugin unavailable")
 	}
-	payload, _ := json.Marshal(map[string]string{"proxy_url": raw})
-	response, err := s.pluginManager.InvokeAdminExtension(ctx, installation.ID, 0, "proxy.test", payload)
+	payload, _ := json.Marshal(map[string]string{"proxy_url": raw, "protocol": protocol})
+	response, err := s.nativeCodexRuntime.Invoke(ctx, PlatformOpenAI, "", extensionv1.Invocation{Capability: extensionv1.CapabilityAdmin, Operation: "proxy.test", Payload: payload})
 	if err != nil {
 		return nil, err
 	}
@@ -145,7 +135,7 @@ func OpenAICodexTicketStatuses(account *Account, cfg config.OpenAICodexTicketCon
 	if !cfg.Enabled || !isOpenAICodexTicketAccount(account) {
 		return nil
 	}
-	projection := accountPluginProjection(account, codexRuntimePluginKey)
+	projection := nativeCodexAccountProjection(account)
 	out := make([]OpenAICodexTicketStatus, 0, len(cfg.Models))
 	for _, model := range cfg.Models {
 		entry := OpenAICodexTicketStatus{Model: model, RenewalState: "idle"}

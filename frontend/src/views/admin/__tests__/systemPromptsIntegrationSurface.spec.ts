@@ -2,8 +2,6 @@ import { readFileSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
-import en from '@/i18n/locales/en'
-import zh from '@/i18n/locales/zh'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const read = (path: string) => readFileSync(resolve(here, path), 'utf8')
@@ -24,14 +22,11 @@ describe('System Prompts integration surface', () => {
     expect(sidebar).toContain("t('nav.systemPrompts')")
   })
 
-  it('keeps the page Chinese under the English locale and removes legacy surfaces', () => {
-    expect(en.admin.systemPrompts).toEqual(zh.admin.systemPrompts)
+  it('renders the native management page without legacy surfaces', () => {
     const view = read('../SystemPromptsView.vue')
-    expect(view).toContain('ExtensionPage')
-    expect(view).not.toContain('systemPromptsAPI')
-    const page = read('../../../../../plugins/prompt-skills/ui/src/App.vue')
+    expect(view).not.toContain('ExtensionPage')
     for (const marker of ['saveVersion', 'setCurrent', 'rollback', 'syncManagedSource', 'SystemPromptAdvancedDrawer']) {
-      expect(page).toContain(marker)
+      expect(view).toContain(marker)
     }
     expect(view).not.toContain('previewMerge')
     expect(view).not.toContain('previewUpstream')
@@ -39,7 +34,7 @@ describe('System Prompts integration surface', () => {
     expect(view).not.toContain('isLegacyComposition')
     expect(view).not.toContain('copyInstallCommand')
 
-    const drawer = read('../../../../../plugins/prompt-skills/ui/src/SystemPromptAdvancedDrawer.vue')
+    const drawer = read('../../../components/admin/systemPrompt/SystemPromptAdvancedDrawer.vue')
     expect(drawer).toContain('compact_enabled')
     expect(drawer).toContain('expose_server_prompt')
     expect(drawer).toContain('data-test="system-prompt-advanced-drawer"')

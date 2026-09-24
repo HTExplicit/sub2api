@@ -7,10 +7,9 @@ import (
 	"net/http"
 	"testing"
 
-	codexrecovery "github.com/HTExplicit/sub2api-plugins/codexruntime/recovery"
-	"github.com/Wei-Shaw/sub2api/internal/config"
+	codexrecovery "github.com/Wei-Shaw/sub2api/internal/codexruntime/recovery"
 
-	extensionv1 "github.com/Wei-Shaw/sub2api/pkg/extensionapi/v1"
+	extensionv1 "github.com/Wei-Shaw/sub2api/internal/nativeapi"
 	"github.com/stretchr/testify/require"
 )
 
@@ -27,10 +26,10 @@ func (f *capturedRecoveryFixture) InvokeOperation(ctx context.Context, platform,
 }
 
 func TestRecoveryPolicyDoesNotReceiveHistoryCiphertextOrCredentialMaterial(t *testing.T) {
-	previous := processExtensionOperations.Load()
-	t.Cleanup(func() { processExtensionOperations.Store(previous) })
+	previous := invokeNativeCodex
+	t.Cleanup(func() { invokeNativeCodex = previous })
 	fixture := &capturedRecoveryFixture{}
-	processExtensionOperations.Store(&extensionOperationProvider{invoker: fixture})
+	invokeNativeCodex = fixture.InvokeOperation
 	state, _, _ := newReasoningRecoveryTestState(t, context.Background(), reasoningRecoveryFixture)
 	_, retry := state.TryRecover(http.StatusBadRequest, nil, []byte(`{"error":{"code":"invalid_encrypted_content","message":"private-upstream-text"}}`), false)
 	require.True(t, retry)
@@ -43,10 +42,12 @@ func TestRecoveryPolicyDoesNotReceiveHistoryCiphertextOrCredentialMaterial(t *te
 }
 
 func TestRecoveryDisableAfterFirstAttemptDoesNotSpendAnotherRequest(t *testing.T) {
-	previous := processExtensionOperations.Load()
-	t.Cleanup(func() { processExtensionOperations.Store(previous) })
+	previous := invokeNativeCodex
+	t.Cleanup(func() { invokeNativeCodex = previous })
 	state, _, _ := newReasoningRecoveryTestState(t, context.Background(), reasoningRecoveryFixture)
-	processExtensionOperations.Store(nil)
+	invokeNativeCodex = func(context.Context, string, string, extensionv1.Invocation) (extensionv1.Result, error) {
+		return extensionv1.Result{}, ErrNativeCodexPolicyDisabled
+	}
 	_, retry := state.TryRecover(http.StatusBadRequest, nil, []byte(`{"error":{"code":"invalid_encrypted_content"}}`), false)
 	require.False(t, retry)
 	require.False(t, state.retryUsed)
@@ -55,21 +56,22 @@ func TestRecoveryDisableAfterFirstAttemptDoesNotSpendAnotherRequest(t *testing.T
 }
 
 func TestRecoverySelectionCannotEscapeActualAccountScopeOrRollout(t *testing.T) {
-	previous := processExtensionOperations.Load()
-	t.Cleanup(func() { processExtensionOperations.Store(previous) })
+	previous := invokeNativeCodex
+	t.Cleanup(func() { invokeNativeCodex = previous })
 	var called []extensionv1.Invocation
-	manager := ticketTestManager(t, config.OpenAICodexTicketConfig{}, func(in extensionv1.Invocation) (extensionv1.Result, error) {
+	enabled := true
+	invokeNativeCodex = func(ctx context.Context, platform, kind string, in extensionv1.Invocation) (extensionv1.Result, error) {
+		if platform != PlatformOpenAI || kind != AccountTypeOAuth || !enabled {
+			return extensionv1.Result{}, ErrNativeCodexPolicyDisabled
+		}
 		called = append(called, in)
-		return codexrecovery.Invoke(context.Background(), in)
-	})
-	installation := manager.extensions.Load().installations[1]
-	installation.Bindings = []PluginBinding{{Capability: extensionv1.CapabilityRecovery, Platform: PlatformOpenAI, AccountType: AccountTypeOAuth, Enabled: true, RolloutPercent: 100}}
-	installation.Manifest.Operations = map[string][]string{extensionv1.CapabilityRecovery: {"codex.recovery.enabled", "codex.recovery.rejection", "codex.recovery.select"}}
-	processExtensionOperations.Store(&extensionOperationProvider{invoker: manager})
+		return codexrecovery.Invoke(ctx, in)
+	}
+
 	account := &Account{ID: 37, Platform: PlatformOpenAI, Type: AccountTypeAPIKey}
 	ctx := withCodexRecoveryScope(context.Background(), account)
 	_, _, err := readOpenAIRecoveryRejection(ctx, []byte(`{"error":{"code":"invalid_encrypted_content"}}`))
-	require.ErrorIs(t, err, ErrExtensionOperationDisabled)
+	require.ErrorIs(t, err, ErrNativeCodexPolicyDisabled)
 	require.Empty(t, called)
 	account.Type = AccountTypeOAuth
 	ctx = withCodexRecoveryScope(context.Background(), account)
@@ -81,15 +83,17 @@ func TestRecoverySelectionCannotEscapeActualAccountScopeOrRollout(t *testing.T) 
 	for _, in := range called {
 		require.EqualValues(t, 37, in.AccountID)
 	}
-	installation.Bindings[0].RolloutPercent = int(stablePluginBucket(37))
+	enabled = false
 	_, err = selectOpenAIRecoveryIndices(ctx, []byte(reasoningRecoveryFixture), "")
-	require.ErrorIs(t, err, ErrExtensionOperationDisabled)
+	require.ErrorIs(t, err, ErrNativeCodexPolicyDisabled)
 }
 
 func TestSignatureRejectionRemainsRequestScopedWhenPluginIsAbsent(t *testing.T) {
-	previous := processExtensionOperations.Load()
-	t.Cleanup(func() { processExtensionOperations.Store(previous) })
-	processExtensionOperations.Store(nil)
+	previous := invokeNativeCodex
+	t.Cleanup(func() { invokeNativeCodex = previous })
+	invokeNativeCodex = func(context.Context, string, string, extensionv1.Invocation) (extensionv1.Result, error) {
+		return extensionv1.Result{}, ErrNativeCodexPolicyDisabled
+	}
 	_, ok := parseOpenAIReasoningRejection([]byte(`{"error":{"code":"thinking_signature_invalid"}}`))
 	require.True(t, ok)
 	_, ok = parseOpenAIReasoningRejection([]byte(`{"error":{"status":429,"code":"thinking_signature_invalid"}}`))

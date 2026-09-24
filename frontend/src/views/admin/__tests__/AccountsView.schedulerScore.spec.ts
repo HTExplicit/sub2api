@@ -1,4 +1,4 @@
-vi.mock('@/stores/pluginExtensions', () => ({ usePluginExtensions: () => ({ loaded: true, items: [], refresh: vi.fn() }) }))
+
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 

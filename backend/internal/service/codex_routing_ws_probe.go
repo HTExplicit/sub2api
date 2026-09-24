@@ -8,7 +8,7 @@ import (
 	"net/http"
 	"time"
 
-	extensionv1 "github.com/Wei-Shaw/sub2api/pkg/extensionapi/v1"
+	extensionv1 "github.com/Wei-Shaw/sub2api/internal/nativeapi"
 	"github.com/google/uuid"
 	"github.com/klauspost/compress/zstd"
 )

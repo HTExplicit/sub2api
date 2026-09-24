@@ -480,7 +480,7 @@ func (s *OpenAIGatewayService) applyBusinessSystemPromptForRequest(
 				if frozen.Revision < 1 && state.application.Applied {
 					return nil, BusinessSystemPromptApplication{}, ErrBusinessSystemPromptUnavailable
 				}
-				application, err := planBusinessSystemPromptWithInvoker(promptPolicyRequestContext(ctx), body, frozen, target, invokeProcessExtension)
+				application, err := planBusinessSystemPromptWithInvoker(promptPolicyRequestContext(ctx), body, frozen, target, promptPlanInvoke)
 				if err != nil {
 					return nil, BusinessSystemPromptApplication{}, err
 				}

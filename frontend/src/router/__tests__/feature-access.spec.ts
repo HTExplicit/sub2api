@@ -10,9 +10,6 @@ const routerHarness = vi.hoisted(() => ({
   guard: null as NavigationGuard | null,
 }))
 
-const pluginRegistry = vi.hoisted(() => ({ items: [] as Array<{ id: string; slot: string; available: boolean }>, refresh: vi.fn(async () => {}) }))
-vi.mock('@/stores/pluginExtensions', () => ({ usePluginExtensions: () => pluginRegistry }))
-
 const authStore = vi.hoisted(() => ({
   checkAuth: vi.fn(),
   isAuthenticated: true,
@@ -116,7 +113,6 @@ describe('feature route guard', () => {
   })
 
   beforeEach(() => {
-    pluginRegistry.items = []
     authStore.isAuthenticated = true
     authStore.isAdmin = false
     authStore.isSimpleMode = false
@@ -190,23 +186,15 @@ describe('feature route guard', () => {
     expect(next).toHaveBeenCalledWith('/dashboard')
   })
 
-  it('allows image studio when its plugin contribution is enabled', async () => {
+  it('allows image studio when the public setting enables it', async () => {
     appStore.publicSettingsLoaded = true
-	appStore.cachedPublicSettings = { image_studio_enabled: false }
-	pluginRegistry.items = [{ id: 'image-studio', slot: 'surface', available: true }]
+    appStore.cachedPublicSettings = { image_studio_enabled: true }
 
     const { navigation, next } = runGuard({ requiresImageStudio: true }, '/image-studio')
     await navigation
 
     expect(appStore.fetchPublicSettings).not.toHaveBeenCalled()
     expect(next).toHaveBeenCalledOnce()
-    expect(next).toHaveBeenCalledWith()
-  })
-
-  it('retains the image route to explain an enabled plugin failure', async () => {
-    pluginRegistry.items = [{ id: 'image-studio', slot: 'surface', available: false }]
-    const { navigation, next } = runGuard({ requiresImageStudio: true }, '/image-studio')
-    await navigation
     expect(next).toHaveBeenCalledWith()
   })
 

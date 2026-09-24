@@ -6,7 +6,6 @@ import (
 
 	"github.com/Wei-Shaw/sub2api/internal/pkg/response"
 	"github.com/Wei-Shaw/sub2api/internal/service"
-	extensionv1 "github.com/Wei-Shaw/sub2api/pkg/extensionapi/v1"
 	"github.com/gin-gonic/gin"
 )
 
@@ -21,12 +20,7 @@ func (h *AccountHandler) ClearCindyBalanceInsufficient(c *gin.Context) {
 		response.ErrorFrom(c, err)
 		return
 	}
-	// Native callers keep the existing Account response. Only an authenticated
-	// plugin resource caller gets the explicit credential-free acknowledgement.
-	if service.PluginResourceBound(c.Request.Context()) && c.GetHeader("X-Sub2API-Plugin") != "" {
-		response.Success(c, extensionv1.AccountViewRecoveryAck{AccountID: account.ID, Recovered: true})
-		return
-	}
+
 	response.Success(c, h.buildAccountResponseWithRuntime(c.Request.Context(), account))
 }
 

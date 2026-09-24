@@ -1119,6 +1119,73 @@ export interface UpdateSettingsRequest {
   allow_user_view_error_requests?: boolean;
 }
 
+export interface OfficialModelCapacityReference {
+  product: string
+  source_url: string
+  release: string
+  verified_at: string
+  context_window: number
+  max_context_window: number
+}
+
+export interface OfficialModelCapacityEntry {
+  model_id: string
+  aliases?: string[]
+  provider: string
+  product: string
+  context_window?: number
+  max_context_window?: number
+  max_input_tokens?: number
+  max_output_tokens?: number
+  source_url: string
+  verified_at: string
+  conditions?: string
+  reference?: OfficialModelCapacityReference
+}
+
+export interface OfficialModelCapacityCatalog {
+  reference_release: string
+  entries: OfficialModelCapacityEntry[]
+}
+
+export interface ImageToolsSettings {
+  studio_enabled: boolean
+  responses_image_enabled: boolean
+}
+
+/** Image Studio and Cindy Responses image bridge switches. */
+export async function getImageToolsSettings(): Promise<ImageToolsSettings> {
+  const { data } = await apiClient.get<ImageToolsSettings>("/admin/settings/image-tools");
+  return data;
+}
+
+export async function updateImageToolsSettings(settings: ImageToolsSettings): Promise<ImageToolsSettings> {
+  const { data } = await apiClient.put<ImageToolsSettings>("/admin/settings/image-tools", settings);
+  return data;
+}
+
+export interface ObservabilitySettings {
+  telemetry_enabled: boolean
+  theme_enabled: boolean
+}
+
+/** Account traffic telemetry and flat site theme switches. */
+export async function getObservabilitySettings(): Promise<ObservabilitySettings> {
+  const { data } = await apiClient.get<ObservabilitySettings>("/admin/settings/observability");
+  return data;
+}
+
+export async function updateObservabilitySettings(settings: ObservabilitySettings): Promise<ObservabilitySettings> {
+  const { data } = await apiClient.put<ObservabilitySettings>("/admin/settings/observability", settings);
+  return data;
+}
+
+/** Read-only release-pinned official model capacity catalog. */
+export async function getOfficialModelCapacityCatalog(): Promise<OfficialModelCapacityCatalog> {
+  const { data } = await apiClient.get<OfficialModelCapacityCatalog>("/admin/settings/model-context-catalog");
+  return data;
+}
+
 /**
  * Get all system settings
  * @returns System settings
@@ -1635,6 +1702,11 @@ export async function resetWebSearchUsage(payload: {
 
 export const settingsAPI = {
   getSettings,
+  getOfficialModelCapacityCatalog,
+  getImageToolsSettings,
+  updateImageToolsSettings,
+  getObservabilitySettings,
+  updateObservabilitySettings,
   updateSettings,
   testSmtpConnection,
   sendTestEmail,

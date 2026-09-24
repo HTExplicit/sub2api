@@ -6,20 +6,20 @@ import (
 	"strconv"
 	"time"
 
-	extensionv1 "github.com/Wei-Shaw/sub2api/pkg/extensionapi/v1"
+	extensionv1 "github.com/Wei-Shaw/sub2api/internal/nativeapi"
 )
 
 // Scheduler demand is best-effort and asynchronous. It does not mint a grant,
 // enroll an untouched account, or wait on a process RPC in candidate selection.
-func (m *PluginManager) noteCodexRoutingDemand(account *Account, model string) {
+func (m *NativeCodexRuntime) noteCodexRoutingDemand(account *Account, model string) {
 	if m == nil || !isOpenAICodexTicketAccount(account) || model == "" {
 		return
 	}
-	observation, exists := accountPluginProjection(account, codexRuntimePluginKey).Observations[model]
+	observation, exists := nativeCodexAccountProjection(account).Observations[model]
 	if !exists || observation.State == "stopped" || observation.State == "idle" {
 		return
 	}
-	installation, _ := m.installedByKey(codexRuntimePluginKey)
+	installation := m.metadata()
 	if installation == nil {
 		return
 	}
@@ -51,6 +51,6 @@ func (m *PluginManager) noteCodexRoutingDemand(account *Account, model string) {
 		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 		defer cancel()
 		raw, _ := json.Marshal(extensionv1.CodexRoutingDemand{AccountID: id, Model: model, Transport: "http"})
-		_, _ = m.InvokeExtension(ctx, installation.ID, platform, kind, extensionv1.Invocation{Capability: extensionv1.CapabilityRequest, Operation: "codex.routing.demand", AccountID: id, Payload: raw})
+		_, _ = m.Invoke(ctx, platform, kind, extensionv1.Invocation{Capability: extensionv1.CapabilityRequest, Operation: "codex.routing.demand", AccountID: id, Payload: raw})
 	}()
 }

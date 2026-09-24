@@ -175,19 +175,19 @@ func ProvideSystemHandler(updateService *service.UpdateService, lockService *ser
 }
 
 // ProvideSettingHandler creates SettingHandler with version from BuildInfo
-func ProvideSettingHandler(settingService *service.SettingService, buildInfo BuildInfo, notificationEmailService *service.NotificationEmailService, pluginManager *service.PluginManager) *SettingHandler {
+func ProvideSettingHandler(settingService *service.SettingService, buildInfo BuildInfo, notificationEmailService *service.NotificationEmailService) *SettingHandler {
 	h := NewSettingHandler(settingService, buildInfo.Version)
-	h.pluginManager = pluginManager
 	h.SetNotificationEmailService(notificationEmailService)
 	return h
 }
 
 // ProvideAdminSettingHandler creates admin.SettingHandler with notification template APIs.
-func ProvideAdminSettingHandler(settingService *service.SettingService, emailService *service.EmailService, turnstileService *service.TurnstileService, aliyunCaptchaService *service.AliyunCaptchaService, opsService *service.OpsService, paymentConfigService *service.PaymentConfigService, paymentService *service.PaymentService, userAttributeService *service.UserAttributeService, notificationEmailService *service.NotificationEmailService, totpService *service.TotpService, userService *service.UserService) *admin.SettingHandler {
+func ProvideAdminSettingHandler(settingService *service.SettingService, emailService *service.EmailService, turnstileService *service.TurnstileService, aliyunCaptchaService *service.AliyunCaptchaService, opsService *service.OpsService, paymentConfigService *service.PaymentConfigService, paymentService *service.PaymentService, userAttributeService *service.UserAttributeService, notificationEmailService *service.NotificationEmailService, totpService *service.TotpService, userService *service.UserService, encryptor service.SecretEncryptor) *admin.SettingHandler {
 	h := admin.NewSettingHandler(settingService, emailService, turnstileService, opsService, paymentConfigService, paymentService, userAttributeService)
 	h.SetNotificationEmailService(notificationEmailService)
 	h.SetAliyunCaptchaService(aliyunCaptchaService)
 	h.SetStepUpDeps(totpService, userService)
+	h.SetNativeCodexConfigEncryptor(encryptor)
 	return h
 }
 
@@ -321,15 +321,14 @@ var ProviderSet = wire.NewSet(
 	ProvideHandlers,
 )
 
-func ProvideAccountJobRuntime(jobs *service.AccountJobService, accountHandler *admin.AccountHandler, pluginManager *service.PluginManager) (*service.AccountJobRuntime, error) {
+func ProvideAccountJobRuntime(jobs *service.AccountJobService, accountHandler *admin.AccountHandler) (*service.AccountJobRuntime, error) {
 	accountHandler.SetAccountJobService(jobs)
-	runtime := service.NewAccountJobRuntime(jobs, service.NewPluginJobExecutor(pluginManager, accountHandler))
+	runtime := service.NewAccountJobRuntime(jobs, accountHandler)
 	return runtime, nil
 }
 
-func ProvidePluginHandler(manager *service.PluginManager, jobs *service.AccountJobService) *admin.PluginHandler {
+func ProvidePluginHandler(manager *service.PluginManager) *admin.PluginHandler {
 	handler := admin.NewPluginHandler(manager)
-	handler.SetAccountJobs(jobs)
 	return handler
 }
 

@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	extensionv1 "github.com/Wei-Shaw/sub2api/pkg/extensionapi/v1"
+	extensionv1 "github.com/Wei-Shaw/sub2api/internal/nativeapi"
 
 	"github.com/stretchr/testify/require"
 )
@@ -22,25 +22,9 @@ type imageStudioRuntimeRepoFake struct {
 	failed    atomic.Int32
 }
 
-type imageStudioBoundPolicy struct {
-	promptPolicyFixture
-	runtime *pluginRuntime
-}
-
-func (p imageStudioBoundPolicy) BindOperationContext(ctx context.Context, _, _ string, _ extensionv1.Invocation) (context.Context, context.CancelFunc, error) {
-	return p.runtime.bindPolicyContext(ctx)
-}
-
 func TestImageStudioDisableCancelsHostExecutionAndKeepsSavedInputs(t *testing.T) {
-	previousFlag := cindyRolloutFeatures.imageStudio
-	cindyRolloutFeatures.imageStudio = true
-	previousProvider := processExtensionOperations.Load()
-	t.Cleanup(func() {
-		cindyRolloutFeatures.imageStudio = previousFlag
-		processExtensionOperations.Store(previousProvider)
-	})
-	plugin := &pluginRuntime{}
-	processExtensionOperations.Store(&extensionOperationProvider{invoker: imageStudioBoundPolicy{runtime: plugin}})
+	ConfigureImageTools(&extensionv1.ImageToolsConfig{StudioEnabled: true})
+	t.Cleanup(func() { ConfigureImageTools(nil) })
 	group, key, account := canonicalImageStudioFixture()
 	repo := &imageStudioRuntimeRepoFake{}
 	store := &imageStudioStoreFake{}
@@ -55,11 +39,11 @@ func TestImageStudioDisableCancelsHostExecutionAndKeepsSavedInputs(t *testing.T)
 	case <-time.After(time.Second):
 		t.Fatal("execution did not start")
 	}
-	plugin.beginDrain()
+	ConfigureImageTools(&extensionv1.ImageToolsConfig{})
 	select {
 	case <-done:
 	case <-time.After(time.Second):
-		t.Fatal("plugin disable did not cancel execution")
+		t.Fatal("disabling Image Studio did not cancel execution")
 	}
 	require.EqualValues(t, 1, repo.failed.Load())
 	require.Zero(t, repo.completed.Load())

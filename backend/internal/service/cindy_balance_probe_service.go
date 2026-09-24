@@ -2,18 +2,13 @@ package service
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"log/slog"
-	"regexp"
 	"slices"
 	"strings"
 	"sync"
 	"time"
-
-	extensionv1 "github.com/Wei-Shaw/sub2api/pkg/extensionapi/v1"
 
 	"github.com/google/uuid"
 )
@@ -184,11 +179,11 @@ func (s *CindyBalanceProbeService) Resume(ctx context.Context, jobID int64) (*Ci
 		}
 		repository, ok := s.repo.(CindyScopedProbeResumeRepository)
 		if !ok {
-			return nil, ErrAccountViewUnavailable
+			return nil, ErrCindyBalanceProbeChanged
 		}
 		next, ok := ctx.Value(cindyProbeOriginContextKey{}).(*CindyBalanceProbeOrigin)
 		if !ok || next == nil {
-			return nil, ErrAccountViewUnavailable
+			return nil, ErrCindyBalanceProbeChanged
 		}
 		job, err := repository.ResumeScoped(ctx, jobID, stored.Scope.Origin, next)
 		if err == nil {
@@ -282,15 +277,14 @@ func (s *CindyBalanceProbeService) processJob(job *CindyBalanceProbeJob, leaseTo
 	}
 	var jobCtx context.Context
 	var cancel context.CancelFunc
-	var err error
 	if job.Scope.Origin != nil {
+		var err error
 		jobCtx, cancel, err = bindCindyProbeOrigin(s.ctx, job.Scope)
+		if err != nil {
+			return
+		}
 	} else {
-		jobCtx, cancel, err = bindProcessExtensionContext(s.ctx, PlatformCindy, AccountTypeAPIKey,
-			extensionv1.Invocation{Capability: extensionv1.CapabilityProvider, Operation: "cindy.probe.plan"})
-	}
-	if err != nil {
-		return
+		jobCtx, cancel = context.WithCancel(context.WithValue(s.ctx, cindyNativeProbeContextKey{}, true))
 	}
 	defer cancel()
 	lostLease := make(chan struct{})
@@ -384,14 +378,11 @@ func (s *CindyBalanceProbeService) executeReservation(ctx context.Context, reser
 		return false
 	}
 	if origin, bound := ctx.Value(cindyProbeOriginContextKey{}).(*CindyBalanceProbeOrigin); bound {
-		if reservation == nil || !slices.Contains(origin.FrozenAccountIDs, reservation.AccountID) || ValidateAccountViewTargets(ctx, []int64{reservation.AccountID}) != nil {
-			return false
-		}
-		view, _ := AccountViewFromContext(ctx)
-		if view == nil || view.manager.ValidateResourceAccounts(ctx, extensionv1.CapabilityProvider, []int64{reservation.AccountID}, false) != nil {
+		if origin == nil || reservation == nil || !slices.Contains(origin.FrozenAccountIDs, reservation.AccountID) || ValidateCindyBalanceProbeOriginContext(ctx, origin) != nil {
 			return false
 		}
 	}
+
 	account, eligible := s.loadReservationAccount(ctx, reservation)
 	if !eligible || account.ID <= 0 {
 		keepRunning, applied, err := s.repo.CompleteStage(ctx, reservation, account, leaseToken, "stale", "skipped_stale", false)
@@ -412,23 +403,6 @@ func (s *CindyBalanceProbeService) executeReservation(ctx context.Context, reser
 		// epoch conservatively recovers the pre-send reservation as unknown.
 		return false
 	}
-	// Creating a job only admitted its then-current selection. Bind the actual
-	// reserved account again before any IO, retaining one policy lifetime for
-	// its plan, HTTP request and completion decision.
-	bound, release, err := bindProcessExtensionContext(ctx, PlatformCindy, AccountTypeAPIKey,
-		extensionv1.Invocation{Capability: extensionv1.CapabilityProvider, Operation: "cindy.probe.plan", AccountID: account.ID})
-	if err != nil {
-		if ctx.Err() == nil && errors.Is(err, ErrExtensionOperationDisabled) {
-			// A known admission rejection invalidates the original selection,
-			// not the account's health. Finish via the existing claim CAS so this
-			// reservation is never retried or reported as an upstream failure.
-			slog.Info("cindy_balance_probe_scope_skipped", "job_id", reservation.JobID, "account_id", account.ID, "stage", reservation.Stage)
-			return s.completeStage(ctx, reservation, account, leaseToken, "stale", "skipped_stale", false)
-		}
-		return false
-	}
-	defer release()
-	ctx = bound
 	plan, err := cindyBalanceProbePlanForAccount(ctx, account.ID)
 	if err != nil {
 		return false
@@ -526,8 +500,7 @@ func (s *CindyBalanceProbeService) finalizeRecovery(
 	if recovered {
 		if s.gateway != nil {
 			if store, ok := s.gateway.cindyBalancePendingStore(); ok {
-				clearBase, release := detachPluginPolicyContext(ctx)
-				defer release()
+				clearBase := context.WithoutCancel(ctx)
 				clearCtx, cancel := context.WithTimeout(clearBase, 3*time.Second)
 				if clearErr := store.ClearCindyBalancePendingIfFingerprintMatches(clearCtx, reservation.AccountID, reservation.IdentityFingerprint); clearErr != nil {
 					slog.Error("cindy_balance_probe_recovery_pending_clear_failed", "job_id", reservation.JobID, "error", clearErr)
@@ -592,8 +565,7 @@ func (s *CindyBalanceProbeService) finalizeExhausted(
 			if !ok {
 				return true
 			}
-			clearBase, release := detachPluginPolicyContext(ctx)
-			defer release()
+			clearBase := context.WithoutCancel(ctx)
 			clearCtx, clearCancel := context.WithTimeout(clearBase, 3*time.Second)
 			clearErr := store.ClearCindyBalancePendingIfFingerprintMatches(clearCtx, account.ID, reservation.IdentityFingerprint)
 			clearCancel()
@@ -620,155 +592,56 @@ func WithCindyProbeOperationKey(ctx context.Context, key string) context.Context
 	return context.WithValue(ctx, cindyProbeOperationKeyContextKey{}, strings.TrimSpace(key))
 }
 
-func captureCindyProbeOrigin(ctx context.Context, scope CindyBalanceProbeScope, rate float64, expectedCount int, fingerprint string) (CindyBalanceProbeScope, error) {
-	scope.Origin = nil // Origin is never accepted from an HTTP/plugin scope copy.
-	view, bound := AccountViewFromContext(ctx)
-	if !bound {
-		return scope, nil
-	}
-	if err := ValidateAccountViewFresh(ctx); err != nil {
-		return scope, err
-	}
-	primary, ok := PluginExecutionFromContext(ctx)
-	if !ok {
-		return scope, ErrAccountViewUnavailable
-	}
-	installation, err := view.manager.repo.GetByID(ctx, primary.ID)
-	if err != nil || installation == nil || installation.RuntimeGeneration != primary.Generation || installation.State != PluginStateEnabled {
-		return scope, ErrAccountViewUnavailable
-	}
-	metadata, err := stampAccountJobView(ctx, nil)
-	if err != nil {
-		return scope, err
-	}
-	snapshot, err := AccountJobViewExecution(metadata)
-	if err != nil || snapshot == nil {
-		return scope, ErrAccountViewUnavailable
-	}
-	key, _ := ctx.Value(cindyProbeOperationKeyContextKey{}).(string)
-	if key != "" && !regexp.MustCompile(`^[a-zA-Z0-9:_-]{1,160}$`).MatchString(key) {
-		return scope, ErrAccountViewInvalid
-	}
-	request, _ := json.Marshal(struct {
-		Scope         CindyBalanceProbeScope
-		View          extensionv1.AccountViewIdentityV1
-		QueryDigest   string
-		Owner         int64
-		Package       string
-		Rate          float64
-		ExpectedCount int
-		Fingerprint   string
-	}{CanonicalizeCindyBalanceProbeScope(scope), snapshot.AccountViewIdentityV1, snapshot.NormalizedQueryDigest, primary.ID, installation.PackageSHA256, rate, expectedCount, strings.TrimSpace(fingerprint)})
-	digest := sha256.Sum256(request)
-	scope.Origin = &CindyBalanceProbeOrigin{Version: 1, PluginID: primary.ID, PluginKey: installation.PluginKey, PackageSHA256: installation.PackageSHA256, RuntimeGeneration: primary.Generation, View: *snapshot, OperationKey: key, RequestDigest: hex.EncodeToString(digest[:])}
+// New native requests cannot import a historical origin envelope. Candidate
+// IDs and identity fingerprints are still frozen by CreateJob's transaction.
+func captureCindyProbeOrigin(_ context.Context, scope CindyBalanceProbeScope, _ float64, _ int, _ string) (CindyBalanceProbeScope, error) {
+	scope.Origin = nil
 	return scope, nil
 }
 
-func (m *PluginManager) BindCindyBalanceProbeOrigin(ctx context.Context, scope CindyBalanceProbeScope) (context.Context, context.CancelFunc, error) {
-	return m.bindCindyBalanceProbeOrigin(ctx, scope, false)
-}
+type cindyNativeProbeContextKey struct{}
 
-func (m *PluginManager) RebindCindyBalanceProbeOrigin(ctx context.Context, scope CindyBalanceProbeScope) (context.Context, context.CancelFunc, error) {
-	return m.bindCindyBalanceProbeOrigin(ctx, scope, true)
-}
-
-func (m *PluginManager) bindCindyBalanceProbeOrigin(ctx context.Context, scope CindyBalanceProbeScope, explicitResume bool) (context.Context, context.CancelFunc, error) {
+func bindCindyProbeOrigin(ctx context.Context, scope CindyBalanceProbeScope) (context.Context, context.CancelFunc, error) {
 	origin := scope.Origin
-	if origin == nil || origin.Version != 1 || origin.PluginID <= 0 || origin.RuntimeGeneration <= 0 || origin.View.RuntimeGeneration <= 0 || !accountViewDigestPattern.MatchString(origin.PackageSHA256) || !accountViewDigestPattern.MatchString(origin.RequestDigest) || len(origin.FrozenAccountIDs) == 0 {
-		return nil, nil, ErrAccountViewUnavailable
+	if origin == nil || origin.Version != 1 || !accountEditDigestPattern.MatchString(origin.RequestDigest) || len(origin.FrozenAccountIDs) == 0 {
+		return nil, nil, ErrCindyBalanceProbeChanged
 	}
 	for _, id := range origin.FrozenAccountIDs {
 		if id <= 0 {
-			return nil, nil, ErrAccountViewScope
+			return nil, nil, ErrCindyBalanceProbeChanged
 		}
 	}
-	if existing, bound := AccountViewFromContext(ctx); bound && existing.Request.AccountViewIdentityV1 != origin.View.AccountViewIdentityV1 {
-		return nil, nil, ErrAccountViewUnavailable
-	}
-	viewCtx, releaseView, err := m.BindAccountViewRequest(ctx, extensionv1.AccountViewContextV1{AccountViewIdentityV1: origin.View.AccountViewIdentityV1})
-	if err != nil {
-		return nil, nil, err
-	}
-	view, _ := AccountViewFromContext(viewCtx)
-	if !explicitResume && view.Execution.Generation != origin.View.RuntimeGeneration {
-		releaseView()
-		return nil, nil, ErrAccountViewUnavailable
-	}
-	primary, releasePrimary, err := m.BindResourceContext(viewCtx, origin.PluginID, origin.PackageSHA256, extensionv1.ResourceGrant{Name: "cindy.probe.create", Capability: extensionv1.CapabilityProvider, Permission: "admin"})
-	if err != nil {
-		releaseView()
-		return nil, nil, err
-	}
-	release := func() { releasePrimary(); releaseView() }
-	execution, _ := PluginExecutionFromContext(primary)
-	current, err := m.repo.GetByID(primary, origin.PluginID)
-	if err != nil || current == nil || current.PluginKey != origin.PluginKey || (!explicitResume && execution.Generation != origin.RuntimeGeneration) {
-		release()
-		return nil, nil, ErrAccountViewUnavailable
-	}
-	if err := m.ValidateResourceAccounts(primary, extensionv1.CapabilityProvider, nil, scope.Mode != "selected", PlatformCindy, AccountTypeAPIKey); err != nil {
-		release()
-		return nil, nil, err
-	}
-	next := *origin
-	if explicitResume {
-		if err := ValidateAccountViewTargets(primary, origin.FrozenAccountIDs); err != nil {
-			release()
-			return nil, nil, err
-		}
-		if err := m.ValidateResourceAccounts(primary, extensionv1.CapabilityProvider, origin.FrozenAccountIDs, false); err != nil {
-			release()
-			return nil, nil, err
-		}
-		next.RuntimeGeneration, next.View.RuntimeGeneration, next.View.PolicyRevision = execution.Generation, view.Execution.Generation, view.installation.Revision
-	}
-	return context.WithValue(primary, cindyProbeOriginContextKey{}, &next), release, nil
-}
-
-func bindCindyProbeOrigin(ctx context.Context, scope CindyBalanceProbeScope) (context.Context, context.CancelFunc, error) {
-	provider := processExtensionOperations.Load()
-	if provider == nil {
-		return nil, nil, ErrAccountViewUnavailable
-	}
-	binder, ok := provider.invoker.(interface {
-		BindCindyBalanceProbeOrigin(context.Context, CindyBalanceProbeScope) (context.Context, context.CancelFunc, error)
-	})
-	if !ok {
-		return nil, nil, ErrAccountViewUnavailable
-	}
-	return binder.BindCindyBalanceProbeOrigin(ctx, scope)
+	// Retain the exact historical scope and frozen IDs. A retired installation
+	// can no longer widen or replace them during explicit resume or execution.
+	copy := *origin
+	copy.FrozenAccountIDs = append([]int64(nil), origin.FrozenAccountIDs...)
+	copy.View = append(json.RawMessage(nil), origin.View...)
+	bound := context.WithValue(ctx, cindyProbeOriginContextKey{}, &copy)
+	bound = context.WithValue(bound, cindyNativeProbeContextKey{}, true)
+	call, cancel := context.WithCancel(bound)
+	return call, cancel, nil
 }
 
 func rebindCindyProbeOrigin(ctx context.Context, scope CindyBalanceProbeScope) (context.Context, context.CancelFunc, error) {
-	provider := processExtensionOperations.Load()
-	if provider == nil {
-		return nil, nil, ErrAccountViewUnavailable
-	}
-	binder, ok := provider.invoker.(interface {
-		RebindCindyBalanceProbeOrigin(context.Context, CindyBalanceProbeScope) (context.Context, context.CancelFunc, error)
-	})
-	if !ok {
-		return nil, nil, ErrAccountViewUnavailable
-	}
-	return binder.RebindCindyBalanceProbeOrigin(ctx, scope)
+	return bindCindyProbeOrigin(ctx, scope)
 }
 
+// Kept for the existing atomic terminal-state repository interface. Native
+// workers have no plugin owner, but still use the committed health-episode path.
 func CindyBalanceProbeOriginOwner(ctx context.Context) (string, bool) {
-	origin, ok := ctx.Value(cindyProbeOriginContextKey{}).(*CindyBalanceProbeOrigin)
-	if !ok || origin == nil {
-		return "", false
+	if native, _ := ctx.Value(cindyNativeProbeContextKey{}).(bool); native {
+		return "", true
 	}
-	return origin.PluginKey, true
+	return "", false
 }
 
 func ValidateCindyBalanceProbeOriginContext(ctx context.Context, origin *CindyBalanceProbeOrigin) error {
 	if origin == nil {
 		return nil
 	}
-	view, bound := AccountViewFromContext(ctx)
-	primary, primaryBound := PluginExecutionFromContext(ctx)
-	if !bound || !primaryBound || origin.Version != 1 || view.Request.AccountViewIdentityV1 != origin.View.AccountViewIdentityV1 || view.Execution.Generation != origin.View.RuntimeGeneration || primary.ID != origin.PluginID || primary.Generation != origin.RuntimeGeneration {
-		return ErrAccountViewUnavailable
+	bound, ok := ctx.Value(cindyProbeOriginContextKey{}).(*CindyBalanceProbeOrigin)
+	if !ok || bound == nil || ctx.Err() != nil || !accountEditJSONEqual(bound, origin) {
+		return ErrCindyBalanceProbeChanged
 	}
-	return ValidateAccountViewFresh(ctx)
+	return nil
 }

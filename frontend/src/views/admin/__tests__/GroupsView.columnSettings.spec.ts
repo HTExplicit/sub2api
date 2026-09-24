@@ -51,7 +51,6 @@ const messages: Record<string, string> = {
   'admin.groups.usageTotal': 'Total',
 }
 
-vi.mock('@/components/plugins/ExtensionSurface.vue', () => ({ default: { template: '<div><slot /></div>' } }))
 vi.mock('@/api/admin', () => ({
   adminAPI: {
     groups: {

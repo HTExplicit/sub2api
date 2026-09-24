@@ -8,8 +8,8 @@ import (
 	"strings"
 	"time"
 
+	extensionv1 "github.com/Wei-Shaw/sub2api/internal/nativeapi"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/openai"
-	extensionv1 "github.com/Wei-Shaw/sub2api/pkg/extensionapi/v1"
 )
 
 // codexIdentitySnapshot is the secret-free execution state reported by an

@@ -4,22 +4,34 @@ This fork maintains the `codexrip` patch set over official Sub2API releases.
 
 ## Source baseline
 
-- Integrated upstream: recovered `v0.2.6`, exact commit `49a39b6dc1abed30fd227611e8af1108bc427610`. The public tag was withdrawn when recovered; source is pinned to the commit, not a recreated official tag.
-- Integration base: production `v0.2.5-codexrip.14`, commit `a2f13d34a41bb89225e5d6864d466b4a35d6448f`; embedded version is `0.2.6`.
-- Conflict decisions and validation: [v0.2.6 review](.downstream/upstream-review-v0.2.6.md); exact-SHA evidence: [risk manifest](.downstream/upstream-risk.json).
-- The operator workspace `docs/sub2api.md` owns the current production pointer. A source merge or Release alone does not establish deployment completion.
-- The full recovered tree includes the official changes after v0.2.5 and all six Codex ticket patches. Deployment preserves the existing live ticket switch and proxy; source defaults remain disabled.
-- Tickets apply only to OpenAI OAuth/Setup Token accounts, excluding shadows. Cindy/API-key paths retain their existing identity, health, quota and sticky-session behavior.
+- Integrated official baseline: `v0.2.8`, commit `fd80b08c90b55edcad5b00171b53f08721d30da1`.
+- Retained compatibility decisions: [upstream review](.downstream/upstream-review-v0.2.8.md).
+- The operator workspace `docs/sub2api.md` owns the production version and image digest. A source merge or Release does not establish deployment completion.
 
-## Account tests and ticket lifecycle
+## Native domains and account operations
 
-- Single and batch text tests accept an optional user prompt, up to 8192 Unicode characters; blank uses `hi`. The browser remembers text separately from media, per site and administrator. Batch prompts are held in the existing encrypted task payload, while scheduled tests retain their defaults.
-- Initial 292 harvesting is manual, per account and model, with one model request per item, up to 100 accounts and five concurrent requests. Valid tickets are skipped unless explicitly refreshed. The existing task drawer provides progress, cancellation and failed-item retry.
-- Successful account/model pairs renew once 60 seconds before expiry, then once 60 seconds after expiry if needed. Two failures stop renewal until another manual success. Startup imports only still-valid legacy tickets and never revives stopped enrollments.
-- Migration `244_codex_ticket_lifecycle.sql` stores durable stages and execution leases. Ticket material remains solely in account Extra; ticket and lifecycle writes commit together. Account disablement, deletion or principal changes invalidate in-flight claims; token refresh preserves the principal.
-- The ticket proxy editor accepts URLs, colon-separated fields and labeled fields in any order. Only authenticated administrator settings responses reveal the full proxy credentials; those responses prohibit caching. Explicit clearing also disables tickets.
-- Draft connection tests send no OAuth credentials or model requests. Private certificates can be learned only during an unauthenticated ChatGPT preflight, remain bound to that proxy configuration generation and hostname, and must pass hostname/validity checks. Automatic renewal does not learn certificate changes; manual harvesting or testing the configured proxy can update its trust. Business transports and system roots are unchanged.
-- OpenAI OAuth text tests apply the same account/model ticket policy as forwarding. Diagnostic events expose presence, length and a SHA-256 fingerprint, never the ticket itself. A successful connection or a 292 header does not establish model quality.
+The seven first-party domains now run inside the host and use native Vue pages.
+The official third-party plugin framework remains available. Domain settings,
+startup data preservation and the legacy-host rollback boundary are described in
+[native domains](.downstream/native-domains.md).
+
+Account bulk operations remain HTTP 202 jobs with progress, cancellation and
+failed-item retry. Both edit entries use the frozen selected IDs whenever there
+is a selection; without a selection, filter-based updates retain their existing
+semantics. A late select-all response cannot replace a newer manual selection.
+Invalid nonempty ID lists cannot fall back to all filter results.
+
+Cindy, folder/tag filters, explicit field clearing and untouched-field preservation
+remain supported. Old jobs retain actor, encrypted payload, expiry and frozen
+item targets. An old filter-only job without a saved target fails rather than
+selecting a fresh set of accounts.
+
+Codex routing applies only to OpenAI OAuth/setup-token accounts, excluding shadows.
+Acquisition and stopping renewal use the existing persisted task experience.
+Routing qualification, connection leases and the closed quality-run ledger keep
+their existing contracts; a 292 header or a healthy deployment is not a quality
+result. Proxy settings preserve their saved values and accept the existing input
+formats. Draft proxy tests do not send OAuth credentials or model requests.
 
 ## Official behavior and downstream contracts
 
@@ -46,7 +58,8 @@ The three `238_*` migrations retain separate filenames and checksums.
 - New releases use immutable `vX.Y.Z-codexrip.N` tags on `main`.
 - Images use the tag without `v`: `ghcr.io/htexplicit/sub2api:X.Y.Z-codexrip.N`.
 - Downstream Release authenticates to GHCR, verifies source/build materials and
-  publishes an image digest and provenance. It reuses PR validation.
+  publishes the native host image digest and provenance. It reuses PR validation;
+  first-party package signing and separate plugin release assets are retired.
 - Production Deploy resolves the fixed digest through the existing restricted SSH
   updater. Ordinary updates use `operation=deploy-preserve`, preserving runtime
   settings and resources, naturally draining requests, and rebuilding only Sub2API.

@@ -2,7 +2,7 @@
 set -euo pipefail
 cd "$(dirname "$0")/../.."
 
-# Offline contracts only. The broker-controlled live entry point is excluded
+# Offline contracts only. The live diagnostic entry point is excluded
 # explicitly; this gate cannot consume account credentials or model requests.
 go -C backend test -p=1 -tags unit ./internal/pkg/apicompat ./internal/repository ./internal/service ./internal/handler/admin \
   -run 'Test(OpenAIChatReasoning|OpenAIReasoning|OpenAIHTTPTerminal|GatewayCacheReasoningState|SchedulerCacheReasoningPolicy|ResponsesReasoningConfiguration)' -count=1

@@ -2,10 +2,6 @@ vi.mock('@/components/admin/account-jobs/AccountOperationDialog.vue', () => ({ d
 import { defineComponent, type PropType } from 'vue'
 import { flushPromises, mount } from '@vue/test-utils'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import cindyManifest from '../../../../../plugins/cindy-provider/manifest.source.json'
-import type { PluginContribution } from '@/api/admin/plugins'
-const createRegistry = vi.hoisted(() => ({ loaded: true, items: [] as PluginContribution[], refresh: vi.fn() }))
-vi.mock('@/stores/pluginExtensions', () => ({ usePluginExtensions: () => createRegistry }))
 
 const {
   createAccountMock,
@@ -43,6 +39,7 @@ vi.mock('@/stores/app', () => ({
 
 vi.mock('@/stores/auth', () => ({
   useAuthStore: () => ({
+    user: { id: 41, role: 'admin' },
     get isSimpleMode() {
       return authIsSimpleMode.value
     },
@@ -321,9 +318,7 @@ async function openCodexImportStep(toggleClicks = 0) {
 
 describe('CreateAccountModal OpenAI long-context billing', () => {
   beforeEach(() => {
-    createRegistry.items = [{ id: 'codex-recovery-settings', slot: 'surface', available: true } as PluginContribution, ...cindyManifest.contributions.map(item => ({ ...structuredClone(item), plugin_id: 7, plugin_key: cindyManifest.id,
-      package_sha256: 'a'.repeat(64), create_definition_digest: 'b'.repeat(64), runtime_generation: 1, available: true,
-      account_scope: { version: 1, bindings: [{ platform: 'cindy', account_type: 'apikey', rollout_percent: 100 }] } })) as PluginContribution[]]
+
     authIsSimpleMode.value = true
     createAccountMock.mockReset().mockResolvedValue({ id: 42, platform: 'openai', type: 'apikey' })
     probeUpstreamBillingMock.mockReset().mockResolvedValue({})
@@ -590,7 +585,9 @@ describe('CreateAccountModal OpenAI long-context billing', () => {
     await wrapper.get('[data-testid="select-pricing-groups"]').trigger('click')
     await wrapper.get('form#create-account-form input[type="text"]').setValue('Cindy account')
     await wrapper.get('form#create-account-form input[type="password"]').setValue('cindy-api-key')
-    await wrapper.get('[data-extension-field="device_id"]').setValue('aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa')
+    await wrapper.get('#cindy-create-device-id').setValue('aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa')
+    await flushPromises()
+    expect(wrapper.get('[data-tour="account-form-submit"]').attributes('disabled')).toBeUndefined()
     await wrapper.get('form#create-account-form').trigger('submit.prevent')
     await flushPromises()
 
@@ -602,11 +599,6 @@ describe('CreateAccountModal OpenAI long-context billing', () => {
         api_key: 'cindy-api-key',
         base_url: 'https://api.laxarouter.ai'
       }),
-      provider_create: expect.objectContaining({
-        contribution_id: 'cindy-create',
-        values: { device_id: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa' },
-        inherit_defaults: ['concurrency', 'priority', 'rate_multiplier', 'load_factor', 'responses_mode']
-      }),
       group_ids: [1, 2],
       upstream_billing_probe_enabled: false
     }))
@@ -614,6 +606,10 @@ describe('CreateAccountModal OpenAI long-context billing', () => {
     expect(wrapper.find('[data-testid="provider-managed-create-catalog"]').exists()).toBe(true)
     expect(wrapper.get('[data-testid="provider-managed-create-catalog"]').text()).toContain('gpt-5.6-luna')
     const submitted = createAccountMock.mock.calls.at(-1)![0]
+    expect(submitted.provider_create).toEqual({
+      values: { device_id: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa' },
+      inherit_defaults: ['concurrency', 'priority', 'rate_multiplier', 'load_factor', 'responses_mode']
+    })
     expect(submitted).not.toHaveProperty('concurrency')
     expect(submitted.extra || {}).not.toHaveProperty('cindy_device_id_source')
   })

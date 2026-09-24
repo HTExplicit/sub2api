@@ -6,7 +6,7 @@ import (
 	"sort"
 	"unicode/utf8"
 
-	extensionv1 "github.com/Wei-Shaw/sub2api/pkg/extensionapi/v1"
+	extensionv1 "github.com/Wei-Shaw/sub2api/internal/nativeapi"
 )
 
 type remoteSkillManifest = extensionv1.SkillManifest
@@ -17,7 +17,7 @@ func loadRemoteSkillManifest() (remoteSkillManifest, error) {
 }
 func loadRemoteSkillManifestContext(ctx context.Context) (remoteSkillManifest, error) {
 	var manifest remoteSkillManifest
-	err := invokePromptManagementPolicy(ctx, "skills.seed.index", struct{}{}, &manifest, true)
+	err := invokePromptManagement(ctx, "skills.seed.index", struct{}{}, &manifest)
 	if err != nil {
 		return manifest, err
 	}
@@ -67,7 +67,7 @@ func readRemoteSkillSeedFile(ctx context.Context, entry remoteSkillManifestEntry
 	body := make([]byte, 0, entry.ByteLength)
 	for len(body) < entry.ByteLength {
 		var chunk extensionv1.SkillSeedChunk
-		err := invokePromptManagementPolicy(ctx, "skills.seed.chunk", extensionv1.SkillSeedChunkRequest{Path: entry.Path, Offset: len(body), Limit: 256 << 10}, &chunk, true)
+		err := invokePromptManagement(ctx, "skills.seed.chunk", extensionv1.SkillSeedChunkRequest{Path: entry.Path, Offset: len(body), Limit: 256 << 10}, &chunk)
 		if err != nil {
 			return nil, err
 		}

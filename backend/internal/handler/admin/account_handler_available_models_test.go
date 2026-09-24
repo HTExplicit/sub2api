@@ -312,7 +312,7 @@ func TestAccountHandlerGetAvailableModels_OpenAIAPIKeyReportsUnavailableDiscover
 
 func TestAccountHandlerGetAvailableModels_CindyUsesManagedCatalogInsteadOfStoredMapping(t *testing.T) {
 	fixture := &testPlanOperations{}
-	service.ConfigureProcessExtensionServices(nil, fixture)
+	service.ConfigureNativePolicyOperations(fixture)
 	t.Cleanup(testextensions.Install)
 	svc := &availableModelsAdminService{
 		stubAdminService: newStubAdminService(),

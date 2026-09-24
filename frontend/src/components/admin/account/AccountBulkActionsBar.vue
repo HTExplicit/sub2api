@@ -45,8 +45,11 @@
     <div class="flex flex-wrap gap-2">
       <template v-if="selectedIds.length > 0">
         <button @click="$emit('delete')" class="btn btn-danger btn-sm">{{ t('admin.accounts.bulkActions.delete') }}</button>
-        <ExtensionSurface name="account-batch-test"><button data-test="batch-test" @click="$emit('test')" class="btn btn-secondary btn-sm">{{ t('admin.accounts.batchTest.title') }}</button></ExtensionSurface>
-        <ExtensionSlot name="account.actions" :account-ids="selectedIds" :accounts="selectedAccounts" />
+        <button data-test="batch-test" @click="$emit('test')" class="btn btn-secondary btn-sm">{{ t('admin.accounts.batchTest.title') }}</button>
+        <CodexAccountActions :account-ids="selectedIds" :accounts="selectedAccounts" @open="openCodexOperation" />
+        <button v-if="promptBindingAvailable" type="button" data-test="account-prompt-binding-bulk" class="btn btn-secondary btn-sm" @click="promptBindingOpen = true">
+          {{ t('admin.systemPrompts.accountPrompts') }}
+        </button>
         <button @click="$emit('reset-status')" class="btn btn-secondary btn-sm">{{ t('admin.accounts.bulkActions.resetStatus') }}</button>
         <button @click="$emit('refresh-token')" class="btn btn-secondary btn-sm">{{ t('admin.accounts.bulkActions.refreshToken') }}</button>
         <button data-test="refresh-tier" @click="$emit('refresh-tier')" class="btn btn-secondary btn-sm">{{ t('admin.accounts.bulkActions.refreshTier') }}</button>
@@ -63,25 +66,32 @@
         <button @click="$emit('toggle-schedulable', true)" class="btn btn-success btn-sm">{{ t('admin.accounts.bulkActions.enableScheduling') }}</button>
         <button @click="$emit('toggle-schedulable', false)" class="btn btn-warning btn-sm">{{ t('admin.accounts.bulkActions.disableScheduling') }}</button>
         <button @click="$emit('edit-selected')" class="btn btn-primary btn-sm">{{ t('admin.accounts.bulkActions.edit') }}</button>
-        <ExtensionSurface name="account-taxonomy"><button @click="$emit('taxonomy-selected')" class="btn btn-secondary btn-sm">{{ t('admin.accounts.bulkTaxonomy.selectedAction') }}</button></ExtensionSurface>
+        <button @click="$emit('taxonomy-selected')" class="btn btn-secondary btn-sm">{{ t('admin.accounts.bulkTaxonomy.selectedAction') }}</button>
       </template>
       <button @click="$emit('edit-filtered')" class="btn btn-primary btn-sm">
         {{ t('admin.accounts.bulkEdit.submit') }}
       </button>
-      <ExtensionSurface name="account-taxonomy"><button @click="$emit('taxonomy-filtered')" class="btn btn-secondary btn-sm">
+      <button @click="$emit('taxonomy-filtered')" class="btn btn-secondary btn-sm">
         {{ t('admin.accounts.bulkTaxonomy.filteredAction') }}
-      </button></ExtensionSurface>
+      </button>
     </div>
   </div>
+  <CodexTicketOperationModal v-if="codexTarget" :show="true" :operation="codexTarget.operation" :account-ids="codexTarget.accountIds" @close="codexTarget = null" />
+  <BaseDialog :show="promptBindingOpen" :title="t('admin.systemPrompts.accountPrompts')" width="normal" @close="promptBindingOpen = false">
+    <AccountPromptBindingPanel v-if="promptBindingOpen" :account-ids="selectedIds" />
+  </BaseDialog>
 </template>
 
 <script setup lang="ts">
-import ExtensionSurface from '@/components/plugins/ExtensionSurface.vue'
+import { computed, defineAsyncComponent, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
+import BaseDialog from '@/components/common/BaseDialog.vue'
+import { accountPromptBindingLimit, supportsAccountPromptBinding } from '@/utils/accountPromptBinding'
 import type { AccountSelectionIdentity } from '@/composables/useAccountSelectionMetadata'
-import ExtensionSlot from '@/components/plugins/ExtensionSlot.vue'
+import CodexAccountActions from '@/components/admin/codex/CodexAccountActions.vue'
+import type { CodexTicketOperation } from '@/utils/codexTickets'
 
-defineProps<{
+const props = defineProps<{
   selectedIds: number[]
   totalResults: number
   selectingAll: boolean
@@ -108,4 +118,19 @@ defineEmits([
 ])
 
 const { t } = useI18n()
+const AccountPromptBindingPanel = defineAsyncComponent(() => import('./AccountPromptBindingPanel.vue'))
+const CodexTicketOperationModal = defineAsyncComponent(() => import('@/components/admin/codex/CodexTicketOperationModal.vue'))
+const codexTarget = ref<{ operation: CodexTicketOperation; accountIds: number[] } | null>(null)
+function openCodexOperation(operation: CodexTicketOperation, accountIds: number[]) {
+  codexTarget.value = { operation, accountIds: [...accountIds] }
+}
+const promptBindingOpen = ref(false)
+const promptBindingAvailable = computed(() => {
+  if (!props.selectedIds.length || props.selectedIds.length > accountPromptBindingLimit) return false
+  const known = new Map((props.selectedAccounts || []).map(account => [account.id, account]))
+  return props.selectedIds.every(id => {
+    const account = known.get(id)
+    return !!account && supportsAccountPromptBinding(account)
+  })
+})
 </script>

@@ -12,7 +12,7 @@ import (
 	"strings"
 	"time"
 
-	extensionv1 "github.com/Wei-Shaw/sub2api/pkg/extensionapi/v1"
+	extensionv1 "github.com/Wei-Shaw/sub2api/internal/nativeapi"
 )
 
 const (
@@ -78,7 +78,7 @@ func (f *RemoteSkillRegistryFilesystem) LoadSeed(ctx context.Context) (RemoteSki
 		return RemoteSkillCandidate{}, err
 	}
 	var promptBody string
-	if err := invokePromptManagementPolicy(ctx, "skills.prompt.seed", struct{}{}, &promptBody, true); err != nil {
+	if err := invokePromptManagement(ctx, "skills.prompt.seed", struct{}{}, &promptBody); err != nil {
 		return RemoteSkillCandidate{}, err
 	}
 	prompt, err := buildRemoteSkillPromptCapture([]byte(promptBody))

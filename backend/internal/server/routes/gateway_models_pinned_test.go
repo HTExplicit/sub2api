@@ -98,7 +98,7 @@ func (u *pinnedModelsRoutesUpstream) Do(req *http.Request, _ string, _ int64, _ 
 func TestGatewayRoutesPinnedModelsDispatchesOrdinaryAndCodexRequests(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	testextensions.Install()
-	t.Cleanup(func() { service.ConfigureProcessExtensionServices(nil, nil) })
+	t.Cleanup(func() { service.ConfigureNativePolicyOperations(nil) })
 	repo := &pinnedModelsRoutesRepository{account: service.Account{
 		ID: 7, Platform: service.PlatformOpenAI, Type: service.AccountTypeAPIKey,
 		Status: service.StatusActive, Schedulable: true,

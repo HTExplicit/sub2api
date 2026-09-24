@@ -2,26 +2,24 @@ package service
 
 import (
 	"context"
-	"encoding/json"
 	"sync"
 	"testing"
 	"time"
 
-	"github.com/Wei-Shaw/sub2api/internal/config"
+	extensionv1 "github.com/Wei-Shaw/sub2api/internal/nativeapi"
 	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
-	extensionv1 "github.com/Wei-Shaw/sub2api/pkg/extensionapi/v1"
 	"github.com/stretchr/testify/require"
 )
 
 func TestCindyProbeAPIReportsDisabledAndFailedProviderDistinctly(t *testing.T) {
-	previous := processExtensionOperations.Load()
-	t.Cleanup(func() { processExtensionOperations.Store(previous) })
-	processExtensionOperations.Store(nil)
+	previous := captureNativeCindyTestInvoker()
+	t.Cleanup(func() { restoreNativeCindyTestInvoker(previous) })
+	setNativeCindyTestInvoker(nil)
 	err := requireCindyBalanceProbePolicy(context.Background())
 	var apiError *infraerrors.ApplicationError
 	require.ErrorAs(t, err, &apiError)
 	require.EqualValues(t, 404, apiError.Code)
-	processExtensionOperations.Store(&extensionOperationProvider{invoker: failedPromptProcess{}})
+	setNativeCindyTestInvoker(failedPromptProcess{})
 	err = requireCindyBalanceProbePolicy(context.Background())
 	require.ErrorAs(t, err, &apiError)
 	require.EqualValues(t, 503, apiError.Code)
@@ -58,10 +56,10 @@ func (r *cindyProbeLifecycleRepository) RecoverInterruptedItems(ctx context.Cont
 }
 
 func TestCindyProbeDisabledPolicyDoesNotClaimJobsOrDeleteHistory(t *testing.T) {
-	previous := processExtensionOperations.Load()
-	t.Cleanup(func() { processExtensionOperations.Store(previous) })
+	previous := captureNativeCindyTestInvoker()
+	t.Cleanup(func() { restoreNativeCindyTestInvoker(previous) })
 	fixture := &disabledCindyProbeFixture{seen: make(chan struct{})}
-	processExtensionOperations.Store(&extensionOperationProvider{invoker: fixture})
+	setNativeCindyTestInvoker(fixture)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	repo := &cindyProbeLifecycleRepository{}
@@ -80,19 +78,11 @@ func TestCindyProbeDisabledPolicyDoesNotClaimJobsOrDeleteHistory(t *testing.T) {
 	require.ErrorIs(t, err, ErrExtensionOperationDisabled)
 }
 
-func TestCindyProbeActiveJobContextEndsWhenProviderStops(t *testing.T) {
-	previous := processExtensionOperations.Load()
-	t.Cleanup(func() { processExtensionOperations.Store(previous) })
-	manager := ticketTestManager(t, config.OpenAICodexTicketConfig{}, func(extensionv1.Invocation) (extensionv1.Result, error) {
-		raw, _ := json.Marshal(extensionv1.CindyProbePlan{Models: [2]string{"fixture-a", "fixture-b"}, Input: "Reply OK.", MaxOutputTokens: 1})
-		return extensionv1.Result{Payload: raw}, nil
-	})
-	registry := manager.extensions.Load()
-	registry.installations[1].Bindings = []PluginBinding{{Capability: extensionv1.CapabilityProvider, Platform: PlatformCindy, AccountType: AccountTypeAPIKey, Enabled: true}}
-	registry.installations[1].Manifest.Operations = map[string][]string{extensionv1.CapabilityProvider: {"cindy.probe.plan"}}
-	processExtensionOperations.Store(&extensionOperationProvider{invoker: manager})
-	repo := &cindyProbeLifecycleRepository{stop: registry.runtimes[1].beginDrain}
-	svc := &CindyBalanceProbeService{ctx: context.Background(), repo: repo, now: time.Now}
+func TestCindyProbeActiveJobContextEndsWhenNativeParentStops(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	repo := &cindyProbeLifecycleRepository{stop: cancel}
+	svc := &CindyBalanceProbeService{ctx: ctx, repo: repo, now: time.Now}
 	svc.processJob(&CindyBalanceProbeJob{ID: 17}, "fixture-lease")
 	require.NotNil(t, repo.recoveredContext)
 	require.ErrorIs(t, repo.recoveredContext.Err(), context.Canceled)

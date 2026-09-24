@@ -22,7 +22,6 @@ import (
 
 	"github.com/Wei-Shaw/sub2api/internal/pkg/logger"
 	"github.com/Wei-Shaw/sub2api/internal/util/responseheaders"
-	extensionv1 "github.com/Wei-Shaw/sub2api/pkg/extensionapi/v1"
 	"github.com/gin-gonic/gin"
 	"github.com/imroc/req/v3"
 	"github.com/tidwall/gjson"
@@ -687,14 +686,6 @@ func (s *OpenAIGatewayService) ForwardImages(
 	parsed *OpenAIImagesRequest,
 	channelMappedModel string,
 ) (*OpenAIForwardResult, error) {
-	if parsed != nil && account != nil && IsCindyAPIKeyAccount(account.Platform, account.Type, account.Credentials) {
-		bound, release, err := bindProcessExtensionContext(ctx, PlatformCindy, AccountTypeAPIKey, extensionv1.Invocation{Capability: extensionv1.CapabilityRequest, Operation: "image.native.validate", AccountID: account.ID})
-		if err != nil {
-			return nil, err
-		}
-		defer release()
-		ctx = bound
-	}
 	pricingContext, pricingErr := CaptureCindyPricingContext(ctx, c, account)
 	if pricingErr != nil {
 		return nil, pricingErr

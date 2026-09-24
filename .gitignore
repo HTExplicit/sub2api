@@ -126,6 +126,8 @@ scripts
 !.github/scripts/*.py
 !backend/scripts/
 !backend/scripts/resolve-version.sh
+!/backend/internal/promptskills/registry/seed/tree/scripts/
+!/backend/internal/promptskills/registry/seed/tree/scripts/**
 .code-review-state
 #openspec/
 code-reviews/
@@ -163,35 +165,5 @@ issues/
 
 # Vitest / Vite cache at repo root
 .vite/
-# First-party extension sources are versioned; installed packages and local
-# third-party projects remain outside the source tree.
-/plugins/*
-!/plugins/bundle.source.json
-!/plugins/codex-runtime/
-!/plugins/codex-runtime/scripts/
-!/plugins/codex-runtime/scripts/check-ui.py
-!/plugins/cindy-provider/
-!/plugins/cindy-provider/scripts/
-!/plugins/cindy-provider/scripts/check-ui.py
-!/plugins/account-tools/
-!/plugins/account-tools/scripts/
-!/plugins/account-tools/scripts/check-ui.py
-!/plugins/prompt-skills/
-!/plugins/prompt-skills/scripts/
-!/plugins/prompt-skills/scripts/check-ui.py
-!/plugins/prompt-skills/registry/seed/tree/scripts/
-!/plugins/prompt-skills/registry/seed/tree/scripts/**
-!/plugins/model-catalog/
-!/plugins/model-policy/
-!/plugins/image-tools/
-!/plugins/image-tools/scripts/
-!/plugins/image-tools/scripts/check-ui.py
-!/plugins/admin-observability/
-!/plugins/admin-observability/scripts/
-!/plugins/admin-observability/scripts/check-theme.py
-/plugins/*/dist/
-/plugins/*/node_modules/
-/plugins/*/ui/compiled/
-/plugins/*/*.s2plugin
-/plugins/**/*.key
-/deploy/plugin-bundle/current/
+# Installed packages and local third-party projects are not versioned.
+/plugins/

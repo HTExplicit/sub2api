@@ -13,7 +13,6 @@ import (
 	"github.com/Wei-Shaw/sub2api/internal/pkg/logger"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/openai"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/openai_compat"
-	extensionv1 "github.com/Wei-Shaw/sub2api/pkg/extensionapi/v1"
 	"github.com/gin-gonic/gin"
 	"github.com/tidwall/gjson"
 )
@@ -23,13 +22,6 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 	rememberPromptRequestedModel(c, body)
 	stageCodexRoutingTurn(c, body)
 	if account != nil && IsCindyAPIKeyAccount(account.Platform, account.Type, account.Credentials) && IsImageGenerationIntent(openAIResponsesEndpoint, gjson.GetBytes(body, "model").String(), body) {
-		bound, release, err := bindProcessExtensionContext(ctx, PlatformCindy, AccountTypeAPIKey, extensionv1.Invocation{Capability: extensionv1.CapabilityRequest, Operation: "image.responses.plan", AccountID: account.ID})
-		if err != nil {
-			c.JSON(http.StatusServiceUnavailable, gin.H{"error": gin.H{"type": "service_unavailable", "message": "Image bridge is unavailable"}})
-			return nil, err
-		}
-		defer release()
-		ctx = bound
 		resolved, err := ResolveCindyResponsesImageToolsForAccount(ctx, account, body)
 		if err != nil {
 			status, code, message := http.StatusBadRequest, "invalid_request_error", "Invalid image bridge request"

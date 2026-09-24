@@ -185,28 +185,70 @@ func TestOpenAIReasoningPolicyBulkAdminPreflightsAllTargetsBeforeSubmittingJobs(
 }
 
 func TestOpenAIReasoningPolicyBulkAdminFreezesFilteredSelection(t *testing.T) {
-	stub := &reasoningPolicyBulkAdminStub{stubAdminService: newStubAdminService()}
-	stub.accounts = make([]service.Account, 101)
-	ids := make([]int64, len(stub.accounts))
-	for index := range stub.accounts {
+	ids := make([]int64, 101)
+	for index := range ids {
 		ids[index] = int64(index + 1)
-		stub.accounts[index] = service.Account{ID: ids[index], Platform: service.PlatformOpenAI, Type: service.AccountTypeSetupToken}
 	}
-	stub.accounts[100] = service.Account{ID: 101, Platform: service.PlatformCindy, Type: service.AccountTypeAPIKey}
-	recorder, jobs := submitReasoningPolicyBulkTestRequest(t, stub, BulkUpdateAccountsRequest{
+	stub := newBulkJobScopeAdmin(ids...)
+	for _, account := range stub.accountsByID {
+		account.Type = service.AccountTypeSetupToken
+	}
+	stub.accountsByID[101] = canonicalCindyJobAccount(101)
+	stub.matches = ids
+	router, handler, jobs := newBulkJobScopeRouter(stub)
+	handler.cindyJobMutations = &recordingCindyJobMutationRunner{}
+	req := BulkUpdateAccountsRequest{
 		Filters: &BulkUpdateAccountFilters{Search: "batch"},
 		Extra:   map[string]any{service.OpenAIChatReasoningReplayEnabledExtraKey: true},
-	})
+	}
+	recorder := submitBulkJobScopeRequest(t, router, req, "reasoning-frozen-scope")
 	require.Equal(t, http.StatusAccepted, recorder.Code)
-	var frozen BulkUpdateAccountsRequest
-	params := requireSubmittedAccountJob(t, jobs, service.AccountJobKindBulkUpdate, &frozen)
-	require.Nil(t, frozen.Filters, "workers must not re-resolve the live filter")
-	require.Equal(t, ids, frozen.AccountIDs)
+	var submitted BulkUpdateAccountsRequest
+	params := requireSubmittedAccountJob(t, jobs.accountJobSubmitRepository, service.AccountJobKindBulkUpdate, &submitted)
+	require.Equal(t, req.Filters, submitted.Filters, "the original filter is retained only as the replay source")
+	require.Empty(t, submitted.AccountIDs, "resolved IDs must not change the original request hash")
 	require.Len(t, params.Items, len(ids))
 	for index, seed := range params.Items {
 		require.NotNil(t, seed.TargetAccountID)
 		require.Equal(t, ids[index], *seed.TargetAccountID)
 	}
+	queriesAfterSubmission := stub.filterCalls
+	require.Empty(t, stub.bulkInputs, "submission remains a background job")
+
+	// Every original account leaves the live filter, and a new invalid target
+	// enters it. Execution must still use only the already validated item IDs.
+	stub.accountsByID[102] = &service.Account{ID: 102, Platform: service.PlatformGrok}
+	stub.matches = []int64{102}
+	results := executeBulkJobScopeItems(t, handler, params)
+	require.Len(t, results, len(ids))
+	for _, result := range results {
+		require.Equal(t, service.AccountJobItemStatusSucceeded, result.Status)
+	}
+	require.Equal(t, ids, stub.updatedIDs)
+	require.Len(t, stub.bulkInputs, len(ids))
+	for index, input := range stub.bulkInputs {
+		require.Nil(t, input.Filters, "workers must not re-resolve the live filter")
+		require.Equal(t, []int64{ids[index]}, input.AccountIDs)
+		require.Equal(t, req.Extra, input.Extra)
+	}
+	require.Equal(t, queriesAfterSubmission, stub.filterCalls)
+
+	for _, matches := range [][]int64{{102}, nil} {
+		stub.matches = matches
+		replayed := submitBulkJobScopeRequest(t, router, req, "reasoning-frozen-scope")
+		require.Equal(t, http.StatusAccepted, replayed.Code)
+		require.Equal(t, "true", replayed.Header().Get("Idempotency-Replayed"))
+		require.Len(t, jobs.created, 1)
+		require.Equal(t, params, jobs.created[0], "replay must preserve the original payload, expiry and frozen items")
+		require.Equal(t, queriesAfterSubmission, stub.filterCalls)
+		require.Len(t, stub.bulkInputs, len(ids), "replay cannot execute an item again")
+	}
+	changed := req
+	changed.Extra = map[string]any{service.OpenAIChatReasoningReplayEnabledExtraKey: false}
+	conflict := submitBulkJobScopeRequest(t, router, changed, "reasoning-frozen-scope")
+	require.Equal(t, http.StatusConflict, conflict.Code)
+	require.Len(t, jobs.created, 1)
+	require.Equal(t, queriesAfterSubmission, stub.filterCalls)
 }
 
 func TestOpenAIReasoningPolicyBulkAdminRejectsEmptyAndMissingTargets(t *testing.T) {

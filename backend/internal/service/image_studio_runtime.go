@@ -6,8 +6,6 @@ import (
 	"fmt"
 	"sync"
 	"time"
-
-	extensionv1 "github.com/Wei-Shaw/sub2api/pkg/extensionapi/v1"
 )
 
 type ImageStudioRuntimeOptions struct {
@@ -155,13 +153,8 @@ func (r *ImageStudioRuntime) processClaim(ctx context.Context, claim *ImageStudi
 		return
 	}
 	job := claim.Job
-	policyCtx, release, err := bindProcessExtensionContext(ctx, "*", "*", extensionv1.Invocation{Capability: extensionv1.CapabilityRequest, Operation: "image.studio.plan"})
-	if err != nil {
-		r.failClaim(ctx, job.ID, claim.Item.ID, newImageStudioError(503, "studio_unavailable", "Image Studio is unavailable"))
-		return
-	}
+	ctx, release := bindImageStudioEnabled(ctx)
 	defer release()
-	ctx = policyCtx
 	if err := EnsureImageStudioAvailable(ctx); err != nil {
 		r.failClaim(ctx, job.ID, claim.Item.ID, err)
 		return

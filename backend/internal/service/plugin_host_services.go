@@ -6,9 +6,7 @@ import (
 	"strings"
 	"time"
 
-	extensionv1 "github.com/Wei-Shaw/sub2api/pkg/extensionapi/v1"
 	pluginv1 "github.com/Wei-Shaw/sub2api/pkg/pluginapi/v1"
-	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
@@ -145,15 +143,8 @@ type pluginHostServiceServer struct {
 	pluginKey string
 	store     PluginKVStore
 	directory PluginAccountDirectory
-	extension extensionv1.HostHandler
 	// scope 是宿主授予本插件的账号可见范围。账号目录的两个 RPC 都以它为权限边界。
 	scope PluginAccountScope
-}
-
-func (s *pluginHostServiceServer) RegisterAdditionalServices(server grpc.ServiceRegistrar) {
-	if s.extension != nil {
-		extensionv1.RegisterHost(server, s.extension)
-	}
 }
 
 func newPluginHostServiceServer(pluginKey string, store PluginKVStore, directory PluginAccountDirectory, scope PluginAccountScope) *pluginHostServiceServer {

@@ -2,6 +2,10 @@ import type { AccountAvailableModel, AccountTestPlanView } from '@/types'
 
 // Presentation validates a data contract; provider/model selection rules are
 // evaluated once by the server and never reconstructed in this bundle.
+export function isAccountTestReasoningValid(model: AccountAvailableModel | undefined, effort: string): boolean {
+  return effort === '' || model?.reasoning_efforts?.includes(effort) === true
+}
+
 export function validateAccountTestPlan(value: unknown, accountID: number): AccountTestPlanView {
   const plan = value as AccountTestPlanView | null
   if (!plan || plan.schema_version !== 1 || plan.account_id !== accountID || !Number.isSafeInteger(accountID) || accountID <= 0 ||

@@ -56,56 +56,9 @@ func captureNativeAccountJobEdits(ctx context.Context, items []AccountJobItemSee
 		}
 		snapshot := AccountJobEditSnapshot{StateSHA256: AccountEditStateDigest(account)}
 		if edit, present := AccountEditFromContext(bound); present && edit.changed {
-			snapshot.Profile = accountEditProfile(edit.installation, &edit.contribution)
+			snapshot.Profile = nativeAccountEditProfile(edit.runtime)
 		}
 		release()
-		result[strconv.FormatInt(account.ID, 10)] = snapshot
-	}
-	return result, nil
-}
-
-func (m *PluginManager) CaptureAccountJobEdits(ctx context.Context, items []AccountJobItemSeed, credentials, extra map[string]any) (map[string]AccountJobEditSnapshot, error) {
-	directory, ok := m.accountDirectory.(accountViewAccountDirectory)
-	if !ok {
-		return nil, ErrAccountEditUnavailable
-	}
-	result := map[string]AccountJobEditSnapshot{}
-	for _, item := range items {
-		if item.TargetAccountID == nil || *item.TargetAccountID <= 0 {
-			return nil, ErrAccountEditInvalid
-		}
-		account, err := directory.ReadAccountViewAccount(ctx, *item.TargetAccountID)
-		if err != nil || account == nil || account.ID != *item.TargetAccountID {
-			return nil, ErrAccountEditStateChanged
-		}
-		if !hasCanonicalCindyProviderIdentity(account) {
-			continue
-		}
-		// Existing bulk eligibility is unchanged: in particular Cindy cannot
-		// acquire the ordinary OpenAI-only Responses/capability batch feature.
-		input := &BulkUpdateAccountsInput{AccountIDs: []int64{account.ID}, Credentials: maps.Clone(credentials), Extra: maps.Clone(extra)}
-		settings, err := normalizeBulkOpenAISettings(input)
-		if err != nil {
-			return nil, err
-		}
-		if _, err := validateBulkOpenAISettingsTargets(input, settings, map[int64]*Account{account.ID: account}); err != nil {
-			return nil, err
-		}
-		_, changed, err := accountEditDesired(account, credentials, extra, nil, nil)
-		if err != nil {
-			return nil, err
-		}
-		snapshot := AccountJobEditSnapshot{StateSHA256: AccountEditStateDigest(account)}
-		if changed {
-			current, contribution, err := m.resolveAccountEdit(ctx, account)
-			if err != nil {
-				return nil, err
-			}
-			if _, ready := m.accountEditReady(current, contribution, account); !ready {
-				return nil, ErrAccountEditUnavailable
-			}
-			snapshot.Profile = accountEditProfile(current, contribution)
-		}
 		result[strconv.FormatInt(account.ID, 10)] = snapshot
 	}
 	return result, nil
@@ -137,18 +90,9 @@ func accountJobPayloadWithEdit(ctx context.Context, kind string, payload json.Ra
 	if accounts, ok := ctx.Value(accountJobEditAccountsKey{}).(map[int64]*Account); ok {
 		snapshots, err = captureNativeAccountJobEdits(ctx, items, accounts, input.Credentials, input.Extra)
 	} else {
-		provider := processExtensionOperations.Load()
-		if provider == nil {
-			return nil, ErrAccountEditUnavailable
-		}
-		capture, ok := provider.invoker.(interface {
-			CaptureAccountJobEdits(context.Context, []AccountJobItemSeed, map[string]any, map[string]any) (map[string]AccountJobEditSnapshot, error)
-		})
-		if !ok {
-			return nil, ErrAccountEditUnavailable
-		}
-		snapshots, err = capture.CaptureAccountJobEdits(ctx, items, input.Credentials, input.Extra)
+		return nil, ErrAccountEditUnavailable
 	}
+
 	if err != nil {
 		return nil, err
 	}
@@ -199,12 +143,17 @@ func PrepareAccountJobEdit(ctx context.Context, raw json.RawMessage, account *Ac
 	}
 	edit, _ := AccountEditFromContext(bound)
 	if edit != nil && edit.changed {
-		current := accountEditProfile(edit.installation, &edit.contribution)
-		if snapshot.Profile == nil || current.PluginID != snapshot.Profile.PluginID || current.PluginKey != snapshot.Profile.PluginKey || current.ContributionID != snapshot.Profile.ContributionID ||
-			current.PackageSHA256 != snapshot.Profile.PackageSHA256 || current.DefinitionSHA256 != snapshot.Profile.DefinitionSHA256 || current.RuntimeGeneration != snapshot.Profile.RuntimeGeneration {
+		// Historical encrypted jobs retain their original state digest and
+		// frozen target. Their retired installation is no longer an executor.
+		if snapshot.Profile == nil {
 			release()
 			return nil, nil, ErrAccountEditUnavailable
 		}
+		if snapshot.Profile.Native && snapshot.Profile.PolicySHA256 != nativeAccountEditProfile(edit.runtime).PolicySHA256 {
+			release()
+			return nil, nil, ErrAccountEditUnavailable
+		}
+
 	} else if snapshot.Profile != nil {
 		release()
 		return nil, nil, ErrAccountEditStateChanged

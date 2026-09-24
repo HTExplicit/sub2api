@@ -11,7 +11,7 @@ import (
 	"sync"
 	"time"
 
-	extensionv1 "github.com/Wei-Shaw/sub2api/pkg/extensionapi/v1"
+	extensionv1 "github.com/Wei-Shaw/sub2api/internal/nativeapi"
 )
 
 type codexRoutingModelKey struct{}
@@ -28,13 +28,13 @@ func (s *OpenAIGatewayService) codexRoutingApplies(account *Account, model strin
 	return cfg.Enabled && isOpenAICodexTicketAccount(account) && slices.Contains(cfg.Models, model)
 }
 
-func (m *PluginManager) codexRoutingQualification(ctx context.Context, account *Account, model string) (*extensionv1.CodexRoutingQualification, *PluginInstallation, error) {
-	installation, _ := m.installedByKey(codexRuntimePluginKey)
+func (m *NativeCodexRuntime) codexRoutingQualification(ctx context.Context, account *Account, model string) (*extensionv1.CodexRoutingQualification, *NativeCodexMetadata, error) {
+	installation := m.metadata()
 	if installation == nil {
 		return nil, nil, errCodexRoutingUnavailable
 	}
 	raw, _ := json.Marshal(extensionv1.SchedulingRequest{Account: *extensionAccount(account), Model: model, Now: time.Now().UTC()})
-	result, err := m.InvokeExtension(ctx, installation.ID, account.Platform, account.Type, extensionv1.Invocation{Capability: extensionv1.CapabilityRequest, Operation: "inject", AccountID: account.ID, Payload: raw})
+	result, err := m.Invoke(ctx, account.Platform, account.Type, extensionv1.Invocation{Capability: extensionv1.CapabilityRequest, Operation: "inject", AccountID: account.ID, Payload: raw})
 	var injection extensionv1.CodexRoutingInjection
 	if err != nil || result.Code != "" || json.Unmarshal(result.Payload, &injection) != nil || !injection.Qualification.Valid(time.Now(), account.ID, CodexTicketAccountIdentity(account), model) {
 		return nil, installation, errCodexRoutingUnavailable
@@ -42,17 +42,17 @@ func (m *PluginManager) codexRoutingQualification(ctx context.Context, account *
 	return injection.Qualification, installation, nil
 }
 
-func (s *OpenAIGatewayService) prepareQualifiedCodexRequest(request *http.Request, account *Account, model string) (*http.Request, *extensionv1.CodexRoutingQualification, *PluginInstallation, error) {
+func (s *OpenAIGatewayService) prepareQualifiedCodexRequest(request *http.Request, account *Account, model string) (*http.Request, *extensionv1.CodexRoutingQualification, *NativeCodexMetadata, error) {
 	if request.URL == nil || request.URL.Scheme != "https" || request.URL.Hostname() != "chatgpt.com" || (request.URL.Path != "/backend-api/codex/responses" && request.URL.Path != "/backend-api/codex/responses/compact") {
 		return request, nil, nil, errCodexRoutingUnavailable
 	}
 	var q *extensionv1.CodexRoutingQualification
-	var installation *PluginInstallation
+	var installation *NativeCodexMetadata
 	var err error
 	if IsCodexQualityRequest(request.Context()) {
 		q, installation, err = codexQualityRequestQualification(request.Context(), account, model)
 	} else {
-		q, installation, err = s.pluginManager.codexRoutingQualification(request.Context(), account, model)
+		q, installation, err = s.nativeCodexRuntime.codexRoutingQualification(request.Context(), account, model)
 	}
 	if err != nil {
 		return request, nil, installation, err
@@ -61,8 +61,8 @@ func (s *OpenAIGatewayService) prepareQualifiedCodexRequest(request *http.Reques
 	if err != nil || !q.Scope.SameOwner(scope) || q.Scope.Transport != "http" || q.Scope.ConnectionLeaseID == "" {
 		return request, q, installation, errCodexRoutingUnavailable
 	}
-	store, _ := s.pluginManager.repo.(PluginExtensionStateStore)
-	bundle, err := readCodexRoutingBundle(request.Context(), store, installation.PluginKey, q.Bundle, scope, true)
+	store := s.nativeCodexRuntime.repo
+	bundle, err := readCodexRoutingBundle(request.Context(), store, NativeCodexPluginKey, q.Bundle, scope, true)
 	if err != nil || bundle.Model != model || bundle.Scope.ConnectionLeaseID != q.Scope.ConnectionLeaseID || bundle.Scope.Transport != q.Scope.Transport || q.ExpiresAt.After(bundle.ExpiresAt) {
 		return request, q, installation, errCodexRoutingUnavailable
 	}
@@ -76,7 +76,7 @@ func (s *OpenAIGatewayService) prepareQualifiedCodexRequest(request *http.Reques
 	return wire, q, installation, nil
 }
 
-func (s *OpenAIGatewayService) doQualifiedCodexUpstream(request *http.Request, account *Account, proxyURL string) (*http.Response, bool, error) {
+func (s *OpenAIGatewayService) doQualifiedCodexUpstream(request *http.Request, account *Account, proxyURL string) (response *http.Response, handled bool, returnErr error) {
 	model, _ := request.Context().Value(codexRoutingModelKey{}).(string)
 	if !s.codexRoutingApplies(account, model) {
 		return nil, false, nil
@@ -88,6 +88,18 @@ func (s *OpenAIGatewayService) doQualifiedCodexUpstream(request *http.Request, a
 		}
 		return nil, true, err
 	}
+	bound, release, bindErr := s.nativeCodexRuntime.bindMetadata(wire.Context(), installation)
+	if bindErr != nil {
+		return nil, true, bindErr
+	}
+	wire = wire.WithContext(bound)
+	defer func() {
+		if response != nil && response.Body != nil && returnErr == nil {
+			response.Body = &nativeCodexLeaseBody{body: response.Body, release: release}
+		} else {
+			release()
+		}
+	}()
 	transport, ok := s.httpUpstream.(CodexConnectionLeaseUpstream)
 	if !ok {
 		return nil, true, errCodexRoutingUnavailable
@@ -96,7 +108,7 @@ func (s *OpenAIGatewayService) doQualifiedCodexUpstream(request *http.Request, a
 	if err := reserveCodexQualitySend(wire, account, q); err != nil {
 		return nil, true, err
 	}
-	response, _, err := transport.DoWithCodexConnectionLease(wire, proxyURL, account.ID, codexRoutingScopeKey(q.Scope), q.Scope.ConnectionLeaseID, q.ExpiresAt, nil)
+	response, _, err = transport.DoWithCodexConnectionLease(wire, proxyURL, account.ID, codexRoutingScopeKey(q.Scope), q.Scope.ConnectionLeaseID, q.ExpiresAt, nil)
 	if IsCodexQualityRequest(request.Context()) {
 		if response != nil {
 			observeCodexInfrastructureCookies(q.Scope, response.Header, q.ExpiresAt)
@@ -278,25 +290,26 @@ func (body *codexRoutingObservedBody) Close() error {
 	return err
 }
 
-func (s *OpenAIGatewayService) publishCodexRoutingObservation(ctx context.Context, account *Account, installation *PluginInstallation, q *extensionv1.CodexRoutingQualification, observation extensionv1.CodexRoutingObservation, replacement *extensionv1.CodexRoutingQualification) {
-	if s.pluginManager == nil || installation == nil || q == nil {
+func (s *OpenAIGatewayService) publishCodexRoutingObservation(ctx context.Context, account *Account, installation *NativeCodexMetadata, q *extensionv1.CodexRoutingQualification, observation extensionv1.CodexRoutingObservation, replacement *extensionv1.CodexRoutingQualification) {
+	if s.nativeCodexRuntime == nil || installation == nil || q == nil {
 		return
 	}
 	call, cancel := context.WithTimeout(context.WithoutCancel(ctx), 2*time.Second)
 	defer cancel()
 	raw, _ := json.Marshal(extensionv1.CodexRoutingResponse{AccountID: account.ID, Identity: CodexTicketAccountIdentity(account), Model: q.Model, Qualification: *q, Observation: observation, Replacement: replacement})
-	_, _ = s.pluginManager.InvokeExtension(call, installation.ID, account.Platform, account.Type, extensionv1.Invocation{Capability: extensionv1.CapabilityRequest, Operation: "codex.routing.observe", AccountID: account.ID, Payload: raw})
+	_, _ = s.nativeCodexRuntime.Invoke(WithNativeCodexExecution(call, installation), account.Platform, account.Type, extensionv1.Invocation{Capability: extensionv1.CapabilityRequest, Operation: "codex.routing.observe", AccountID: account.ID, Payload: raw})
 }
 
-func (s *OpenAIGatewayService) refreshObservedCodexCookies(ctx context.Context, installation *PluginInstallation, q *extensionv1.CodexRoutingQualification, headers http.Header, observation extensionv1.CodexRoutingObservation) *extensionv1.CodexRoutingQualification {
-	store, ok := s.pluginManager.repo.(PluginExtensionStateStore)
+func (s *OpenAIGatewayService) refreshObservedCodexCookies(ctx context.Context, installation *NativeCodexMetadata, q *extensionv1.CodexRoutingQualification, headers http.Header, observation extensionv1.CodexRoutingObservation) *extensionv1.CodexRoutingQualification {
+	store := s.nativeCodexRuntime.repo
+	ok := store != nil
 	if !ok {
 		return nil
 	}
-	ctx = WithPluginExecution(context.WithoutCancel(ctx), installation)
+	ctx = WithNativeCodexExecution(context.WithoutCancel(ctx), installation)
 	ctx, cancel := context.WithTimeout(ctx, 2*time.Second)
 	defer cancel()
-	bundle, err := readCodexRoutingBundle(ctx, store, installation.PluginKey, q.Bundle, q.Scope, true)
+	bundle, err := readCodexRoutingBundle(ctx, store, NativeCodexPluginKey, q.Bundle, q.Scope, true)
 	if err != nil {
 		return nil
 	}
@@ -306,7 +319,7 @@ func (s *OpenAIGatewayService) refreshObservedCodexCookies(ctx context.Context, 
 	if len(changes) == 0 {
 		return nil
 	}
-	record, err := store.ReadExtensionState(ctx, installation.PluginKey, extensionv1.StateRequest{Namespace: codexRoutingPrivateNamespace, Key: bundle.ClockKey})
+	record, err := store.ReadExtensionState(ctx, NativeCodexPluginKey, extensionv1.StateRequest{Namespace: codexRoutingPrivateNamespace, Key: bundle.ClockKey})
 	var clock codexRoutingCookieClock
 	if err != nil || !record.Found || json.Unmarshal(record.Value, &clock) != nil || !clock.Scope.SameOwner(q.Scope) {
 		return nil
@@ -316,12 +329,12 @@ func (s *OpenAIGatewayService) refreshObservedCodexCookies(ctx context.Context, 
 			return nil
 		}
 	}
-	if err := preserveCodexCookieFirstSeen(ctx, store, installation.PluginKey, q.Scope, &clock, changes, observation.ObservedAt); err != nil {
+	if err := preserveCodexCookieFirstSeen(ctx, store, NativeCodexPluginKey, q.Scope, &clock, changes, observation.ObservedAt); err != nil {
 		return nil
 	}
 	clock.apply(changes, observation.ObservedAt)
 	raw, _ := json.Marshal(clock)
-	saved, err := store.CompareSwapExtensionState(ctx, installation.PluginKey, extensionv1.StateRequest{Namespace: codexRoutingPrivateNamespace, Key: bundle.ClockKey, ExpectedRevision: record.Revision, Value: raw, NextAt: codexCookieClockDeadline(clock)})
+	saved, err := store.CompareSwapExtensionState(ctx, NativeCodexPluginKey, extensionv1.StateRequest{Namespace: codexRoutingPrivateNamespace, Key: bundle.ClockKey, ExpectedRevision: record.Revision, Value: raw, NextAt: codexCookieClockDeadline(clock)})
 	if err != nil || !saved.Applied {
 		return nil
 	}
@@ -335,7 +348,7 @@ func (s *OpenAIGatewayService) refreshObservedCodexCookies(ctx context.Context, 
 	bundle.ExpiresAt = earlierCodexTime(expiry, q.ExpiresAt)
 	raw, _ = json.Marshal(bundle)
 	key := q.Bundle.Key
-	next, err := store.CompareSwapExtensionState(ctx, installation.PluginKey, extensionv1.StateRequest{Namespace: codexRoutingPrivateNamespace, Key: key, ExpectedRevision: q.Bundle.Revision, Value: raw, NextAt: &bundle.ExpiresAt})
+	next, err := store.CompareSwapExtensionState(ctx, NativeCodexPluginKey, extensionv1.StateRequest{Namespace: codexRoutingPrivateNamespace, Key: key, ExpectedRevision: q.Bundle.Revision, Value: raw, NextAt: &bundle.ExpiresAt})
 	if err != nil || !next.Applied {
 		return nil
 	}
@@ -345,7 +358,7 @@ func (s *OpenAIGatewayService) refreshObservedCodexCookies(ctx context.Context, 
 	return &replacement
 }
 
-func (s *OpenAIGatewayService) recordCodexRoutingDeletions(ctx context.Context, installation *PluginInstallation, q *extensionv1.CodexRoutingQualification, headers http.Header, now time.Time) bool {
+func (s *OpenAIGatewayService) recordCodexRoutingDeletions(ctx context.Context, installation *NativeCodexMetadata, q *extensionv1.CodexRoutingQualification, headers http.Header, now time.Time) bool {
 	target, _ := http.NewRequest(http.MethodGet, "https://chatgpt.com/backend-api/codex/responses", nil)
 	var deletions []codexRoutingCookieChange
 	for _, change := range parseCodexRoutingCookies(headers, target.URL, now) {
@@ -356,23 +369,24 @@ func (s *OpenAIGatewayService) recordCodexRoutingDeletions(ctx context.Context, 
 	if len(deletions) == 0 {
 		return false
 	}
-	store, ok := s.pluginManager.repo.(PluginExtensionStateStore)
+	store := s.nativeCodexRuntime.repo
+	ok := store != nil
 	if !ok {
 		return true
 	}
-	ctx = WithPluginExecution(context.WithoutCancel(ctx), installation)
+	ctx = WithNativeCodexExecution(context.WithoutCancel(ctx), installation)
 	ctx, cancel := context.WithTimeout(ctx, time.Second)
 	defer cancel()
 	key := codexQualityClockKey(ctx, "clock."+codexRoutingScopeKey(q.Scope))
 	for range 3 {
-		record, err := store.ReadExtensionState(ctx, installation.PluginKey, extensionv1.StateRequest{Namespace: codexRoutingPrivateNamespace, Key: key})
+		record, err := store.ReadExtensionState(ctx, NativeCodexPluginKey, extensionv1.StateRequest{Namespace: codexRoutingPrivateNamespace, Key: key})
 		var clock codexRoutingCookieClock
 		if err != nil || !record.Found || json.Unmarshal(record.Value, &clock) != nil {
 			break
 		}
 		clock.apply(deletions, now)
 		raw, _ := json.Marshal(clock)
-		result, err := store.CompareSwapExtensionState(ctx, installation.PluginKey, extensionv1.StateRequest{Namespace: codexRoutingPrivateNamespace, Key: key, ExpectedRevision: record.Revision, Value: raw, NextAt: codexCookieClockDeadline(clock)})
+		result, err := store.CompareSwapExtensionState(ctx, NativeCodexPluginKey, extensionv1.StateRequest{Namespace: codexRoutingPrivateNamespace, Key: key, ExpectedRevision: record.Revision, Value: raw, NextAt: codexCookieClockDeadline(clock)})
 		if err != nil || result.Applied {
 			break
 		}

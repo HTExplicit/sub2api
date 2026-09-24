@@ -12,7 +12,7 @@ import (
 	"strings"
 	"time"
 
-	extensionv1 "github.com/Wei-Shaw/sub2api/pkg/extensionapi/v1"
+	extensionv1 "github.com/Wei-Shaw/sub2api/internal/nativeapi"
 )
 
 const codexRoutingPrivateNamespace = "codex-routing-private"
@@ -172,7 +172,7 @@ func (clock *codexRoutingCookieClock) apply(changes []codexRoutingCookieChange, 
 
 // First-seen records are indexed separately from the compact clock. Retaining
 // only recent digests in a clock must never make an old identical value fresh.
-func preserveCodexCookieFirstSeen(ctx context.Context, store PluginExtensionStateStore, plugin string, scope extensionv1.CodexRoutingScope, clock *codexRoutingCookieClock, changes []codexRoutingCookieChange, now time.Time) error {
+func preserveCodexCookieFirstSeen(ctx context.Context, store NativeCodexStateStore, plugin string, scope extensionv1.CodexRoutingScope, clock *codexRoutingCookieClock, changes []codexRoutingCookieChange, now time.Time) error {
 	for index := range changes {
 		change := &changes[index]
 		if change.Delete {

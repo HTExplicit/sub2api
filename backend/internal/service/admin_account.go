@@ -645,7 +645,7 @@ func (s *adminServiceImpl) createAccount(ctx context.Context, input *CreateAccou
 			}
 		}
 	}
-	if create, bound := AccountCreateFromContext(ctx); canonicalCreate && bound && len(uniquePositiveIDs(groupIDs)) < create.contribution.AccountCreate.MinimumEffectiveGroups {
+	if create, bound := AccountCreateFromContext(ctx); canonicalCreate && bound && len(uniquePositiveIDs(groupIDs)) < create.MinimumEffectiveGroups {
 		return nil, ErrAccountCreateGroupsRequired
 	}
 
@@ -718,9 +718,6 @@ func (s *adminServiceImpl) createAccount(ctx context.Context, input *CreateAccou
 func (s *adminServiceImpl) UpdateAccount(ctx context.Context, id int64, input *UpdateAccountInput) (*Account, error) {
 	if input == nil {
 		return nil, ErrAccountEditInvalid
-	}
-	if err := ValidateAccountViewTargets(ctx, []int64{id}); err != nil {
-		return nil, err
 	}
 	current, err := s.accountRepo.GetByID(ctx, id)
 	if err != nil {

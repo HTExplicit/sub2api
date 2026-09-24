@@ -74,10 +74,10 @@ func TestMain(m *testing.M) {
 
 func TestRemoteSkillPairedMigrationAndStartupPreserveEightGitHubVersions(t *testing.T) {
 	ctx := context.Background()
-	// Production initializes this domain only after its plugin is ready. Use
-	// the existing actual module fixture through the same public SDK boundary.
+	// Exercise the actual native domain fixture without starting the server
+	// or connecting any model transport.
 	testextensions.Install()
-	t.Cleanup(func() { service.ConfigureProcessExtensionServices(nil, nil) })
+	t.Cleanup(func() { service.ConfigureNativePolicyOperations(nil) })
 	db, schema := remoteSkillMigrationTestDatabase(t)
 	require.NoError(t, execRemoteSkillSQL(ctx, db, remoteSkillPost200FixtureSQL))
 	require.NoError(t, insertEightLegacyRemoteSkillVersions(ctx, db))

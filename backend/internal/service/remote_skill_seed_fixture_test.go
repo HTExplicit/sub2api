@@ -6,8 +6,8 @@ import (
 	"io/fs"
 	"strings"
 
-	registry "github.com/HTExplicit/sub2api-plugins/promptskills/registry"
-	promptsource "github.com/HTExplicit/sub2api-plugins/promptskills/source"
+	registry "github.com/Wei-Shaw/sub2api/internal/promptskills/registry"
+	promptsource "github.com/Wei-Shaw/sub2api/internal/promptskills/source"
 )
 
 const (

@@ -3254,13 +3254,13 @@
         <button @click="handleClose" type="button" class="btn btn-secondary">
           {{ t('common.cancel') }}
         </button>
-        <button v-if="isCindyAccount && providerEdit.pending.value" type="button" class="btn btn-secondary" data-testid="account-edit-save-basic" :disabled="submitting || !accountViewOperation.available.value" @click="handleSubmit(true)">
+        <button v-if="isCindyAccount && providerEdit.pending.value" type="button" class="btn btn-secondary" data-testid="account-edit-save-basic" :disabled="submitting" @click="handleSubmit(true)">
           {{ t('admin.accounts.providerEdit.saveBasic') }}
         </button>
         <button
           type="submit"
           form="edit-account-form"
-          :disabled="submitting || !providerEdit.canSubmit.value || !capacityValid || !capacityReady || !accountViewOperation.available.value"
+          :disabled="submitting || !providerEdit.canSubmit.value || !capacityValid || !capacityReady"
           class="btn btn-primary"
           data-tour="account-form-submit"
         >
@@ -3304,15 +3304,13 @@
 </template>
 
 <script setup lang="ts">
-import { useAccountViewOperation } from '@/composables/useAccountViewContext'
-import { accountAPIForView } from '@/api/admin/accounts'
 import { ref, reactive, computed, watch, nextTick, onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useAppStore } from '@/stores/app'
 import { useAuthStore } from '@/stores/auth'
-import { useAccountEditProfile } from '@/composables/useAccountEditProfile'
+import { useCindyAccountEdit } from '@/features/cindy/useCindyAccountEdit'
 import { accountEditModes, applyCoreAccountModeChanges, requiresAccountEditProfile, type AccountEditInput } from '@/utils/accountEditCodec'
-import type { AccountEditChangesV1, AccountEditModeTarget, ProviderEditRequestV1 } from '@sub2api/plugin-ui/account-edit'
+import type { AccountEditChangesV1, AccountEditModeTarget, ProviderEditRequestV1 } from '@/types/accountEdit'
 
 import { adminAPI } from '@/api/admin'
 import { useQuotaNotifyState } from '@/composables/useQuotaNotifyState'
@@ -3426,8 +3424,7 @@ interface Props {
 }
 
 const props = defineProps<Props>()
-const accountViewOperation = useAccountViewOperation(() => props.show, () => props.account?.id)
-function scopedAccounts() { return accountAPIForView(accountViewOperation.capture(), adminAPI.accounts) }
+function scopedAccounts() { return adminAPI.accounts }
 
 const emit = defineEmits<{
   close: []
@@ -4790,7 +4787,7 @@ async function loadTLSProfiles() {
   }
 }
 
-const providerEdit = useAccountEditProfile({
+const providerEdit = useCindyAccountEdit({
   active: () => props.show,
   account: () => props.account,
   actorID: () => authStore.user?.id,

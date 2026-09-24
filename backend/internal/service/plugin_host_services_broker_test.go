@@ -10,8 +10,6 @@ import (
 	hcplugin "github.com/hashicorp/go-plugin"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/status"
 )
 
 // brokerProbePlugin 是仅用于测试的插件传输实现：它实现 HostBrokerReceiver 以拿到
@@ -92,7 +90,7 @@ func TestOfferPluginHostServices_BrokerRoundtrip(t *testing.T) {
 
 	store := newFakePluginKVStore()
 	hostServer := newPluginHostServiceServer("test.plugin", store, nil, PluginAccountScope{})
-	require.NoError(t, offerPluginHostServices(context.Background(), &PluginInstallation{PluginKey: "test.plugin"}, tc.TransportPluginClient, tc.Broker, hostServer, 5*time.Second))
+	offerPluginHostServices(context.Background(), &PluginInstallation{PluginKey: "test.plugin"}, tc.TransportPluginClient, tc.Broker, hostServer, 5*time.Second)
 
 	probe.mu.Lock()
 	defer probe.mu.Unlock()
@@ -115,9 +113,7 @@ func TestOfferPluginHostServices_UnimplementedIsGraceful(t *testing.T) {
 	store := newFakePluginKVStore()
 	hostServer := newPluginHostServiceServer("test.plugin", store, nil, PluginAccountScope{})
 	require.NotPanics(t, func() {
-		err := offerPluginHostServices(context.Background(), &PluginInstallation{PluginKey: "test.plugin"}, tc.TransportPluginClient, tc.Broker, hostServer, 5*time.Second)
-		require.Error(t, err)
-		require.Equal(t, codes.Unimplemented, status.Code(err))
+		offerPluginHostServices(context.Background(), &PluginInstallation{PluginKey: "test.plugin"}, tc.TransportPluginClient, tc.Broker, hostServer, 5*time.Second)
 	})
 
 	_, found, err := store.Get(context.Background(), "test.plugin", "state", "probe")
@@ -129,6 +125,6 @@ func TestOfferPluginHostServices_UnimplementedIsGraceful(t *testing.T) {
 func TestOfferPluginHostServices_NilHostServicesNoop(t *testing.T) {
 	tc := dispenseTransportClient(t, &noHostServicesPlugin{})
 	require.NotPanics(t, func() {
-		require.EqualError(t, offerPluginHostServices(context.Background(), &PluginInstallation{PluginKey: "test.plugin"}, tc.TransportPluginClient, tc.Broker, nil, 5*time.Second), "host broker unavailable")
+		offerPluginHostServices(context.Background(), &PluginInstallation{PluginKey: "test.plugin"}, tc.TransportPluginClient, tc.Broker, nil, 5*time.Second)
 	})
 }

@@ -17,7 +17,6 @@ import (
 	"strings"
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
-	extensionv1 "github.com/Wei-Shaw/sub2api/pkg/extensionapi/v1"
 )
 
 const (
@@ -30,10 +29,9 @@ const (
 )
 
 type PluginPackageInstaller struct {
-	bundledPublishers map[string]string
-	cfg               *config.Config
-	hostInfo          PluginHostInfo
-	rootDir           string
+	cfg      *config.Config
+	hostInfo PluginHostInfo
+	rootDir  string
 }
 
 func NewPluginPackageInstaller(cfg *config.Config, hostInfo PluginHostInfo) *PluginPackageInstaller {
@@ -167,8 +165,6 @@ func (i *PluginPackageInstaller) Install(ctx context.Context, reader io.Reader, 
 	}
 	runtimeEntry := manifest.Runtimes[manifest.RuntimeKey()]
 	return &PluginInstallation{
-		PackageSHA256:   artifactSHA,
-		UpdatePolicy:    PluginUpdatePinned,
 		PluginKey:       manifest.ID,
 		Name:            manifest.Name,
 		Version:         manifest.Version,
@@ -188,10 +184,6 @@ func (i *PluginPackageInstaller) Install(ctx context.Context, reader io.Reader, 
 }
 
 func (i *PluginPackageInstaller) inspectArchive(archive *zip.Reader) (PluginManifest, []byte, string, error) {
-	return i.inspectArchiveForRuntime(archive, PluginManifest{}.RuntimeKey())
-}
-
-func (i *PluginPackageInstaller) inspectArchiveForRuntime(archive *zip.Reader, runtimeKey string) (PluginManifest, []byte, string, error) {
 	if len(archive.File) == 0 || len(archive.File) > pluginArchiveMaxFiles {
 		return PluginManifest{}, nil, "", errors.New("插件包文件数量无效")
 	}
@@ -237,7 +229,7 @@ func (i *PluginPackageInstaller) inspectArchiveForRuntime(archive *zip.Reader, r
 	if err := decoder.Decode(&struct{}{}); err != io.EOF {
 		return PluginManifest{}, nil, "", errors.New("插件清单只能包含一个 JSON 对象")
 	}
-	if err := manifest.ValidateForRuntime(runtimeKey); err != nil {
+	if err := manifest.Validate(); err != nil {
 		return PluginManifest{}, nil, "", err
 	}
 	for path := range entries {
@@ -260,35 +252,6 @@ func (i *PluginPackageInstaller) inspectArchiveForRuntime(archive *zip.Reader, r
 	return manifest, manifestRaw, signatureStatus, nil
 }
 
-// VerifyPackage checks foreign-target artifacts during image cross compilation.
-// It reuses the production archive and extraction checks without registering or
-// executing a package, and the scratch extraction is always removed.
-func (i *PluginPackageInstaller) VerifyPackage(ctx context.Context, artifact []byte, runtimeKey string) (PluginManifest, error) {
-	if i == nil || i.cfg == nil || int64(len(artifact)) > i.cfg.Plugins.MaxUploadBytes {
-		return PluginManifest{}, errors.New("invalid package size")
-	}
-	archive, err := zip.NewReader(bytes.NewReader(artifact), int64(len(artifact)))
-	if err != nil {
-		return PluginManifest{}, err
-	}
-	manifest, _, _, err := i.inspectArchiveForRuntime(archive, runtimeKey)
-	if err != nil {
-		return PluginManifest{}, err
-	}
-	if err = os.MkdirAll(i.RootDir(), 0700); err != nil {
-		return PluginManifest{}, err
-	}
-	stage, err := os.MkdirTemp(i.RootDir(), "verify-")
-	if err != nil {
-		return PluginManifest{}, err
-	}
-	defer func() { _ = os.RemoveAll(stage) }()
-	if err = i.extractArchive(ctx, archive, manifest, stage); err != nil {
-		return PluginManifest{}, err
-	}
-	return manifest, nil
-}
-
 func (i *PluginPackageInstaller) verifySignature(file *zip.File, manifestRaw []byte, pluginID string) (string, error) {
 	if file == nil {
 		if i.cfg.Plugins.AllowUnsigned {
@@ -308,9 +271,6 @@ func (i *PluginPackageInstaller) verifySignature(file *zip.File, manifestRaw []b
 		return "", errors.New("插件签名算法或密钥 ID 无效")
 	}
 	encodedKey := trustedPluginPublisherKey(i.cfg, signature.KeyID, pluginID)
-	if encodedKey == "" && strings.HasPrefix(pluginID, "codexrip.") {
-		encodedKey = i.bundledPublishers[signature.KeyID]
-	}
 	if encodedKey == "" {
 		return "", fmt.Errorf("插件发布者密钥不受信任: %s", signature.KeyID)
 	}
@@ -326,9 +286,6 @@ func (i *PluginPackageInstaller) verifySignature(file *zip.File, manifestRaw []b
 }
 
 func trustedPluginPublisherKey(cfg *config.Config, keyID, pluginID string) string {
-	if key, owned := extensionv1.FirstPartyPublisherKey(keyID, pluginID); owned {
-		return key
-	}
 	// 内置公钥是官方私有插件的固定信任根，不允许被部署配置覆盖。
 	if keyID == builtInOpenAITransportPublisherKeyID {
 		if pluginID != builtInOpenAITransportPluginID {

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import type { AccountEditChangesV1 } from '@sub2api/plugin-ui/account-edit'
+import type { AccountEditChangesV1 } from '@/types/accountEdit'
 import type { UpdateAccountRequest } from '@/types'
 import { buildModelMappingObject } from '@/composables/useModelWhitelist'
 import { editAccount, editCatalog, editContribution, editInput } from '@/__tests__/fixtures/accountEdit'

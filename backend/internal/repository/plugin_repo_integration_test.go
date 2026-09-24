@@ -54,18 +54,15 @@ func TestPluginRepositoryLifecycleIsAtomicAndOptimistic(t *testing.T) {
 	second.BinarySHA256 = strings.Repeat("b", 64)
 	second.ArtifactData = []byte("second-package")
 	_, err = repo.Install(ctx, &second, bindings)
-	require.ErrorIs(t, err, service.ErrPluginAlreadyInstalled)
+	require.ErrorIs(t, err, service.ErrPluginStateChanged)
 
 	bindings[0].Enabled = false
 	require.NoError(t, repo.UpdateBindingsAndState(
 		ctx, installed.ID, bindings, service.PluginStateDisabled, "", nil, "", first.BinarySHA256,
 	))
-	_, err = repo.Install(ctx, &second, bindings)
-	require.ErrorIs(t, err, service.ErrPluginAlreadyInstalled)
-	require.NoError(t, repo.Delete(ctx, installed.ID, first.BinarySHA256))
 	replaced, err := repo.Install(ctx, &second, bindings)
 	require.NoError(t, err)
-	require.NotEqual(t, installed.ID, replaced.ID)
+	require.Equal(t, installed.ID, replaced.ID)
 
 	err = repo.Delete(ctx, replaced.ID, first.BinarySHA256)
 	require.True(t, errors.Is(err, service.ErrPluginStateChanged))

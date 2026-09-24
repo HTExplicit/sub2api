@@ -1,0 +1,242 @@
+/* Flat site theme with the MiSans typeface. It applies while <html> carries the
+   flat-theme class, which follows the admin_observability_config theme switch
+   (public setting flat_theme_enabled). */
+
+@font-face {
+  font-family: 'MiSans';
+  src: url('../assets/fonts/misans/MiSans-Regular.woff2') format('woff2');
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'MiSans';
+  src: url('../assets/fonts/misans/MiSans-Medium.woff2') format('woff2');
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'MiSans';
+  src: url('../assets/fonts/misans/MiSans-Semibold.woff2') format('woff2');
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'MiSans';
+  src: url('../assets/fonts/misans/MiSans-Bold.woff2') format('woff2');
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+}
+
+/* Values are RGB channels to support Tailwind opacity modifiers. Shared by
+   the document and teleported dialogs, menus and notifications. */
+:root.flat-theme {
+  --ui-canvas: 255 255 255;
+  --ui-surface: 245 245 245;
+  --ui-raised: 250 250 250;
+  --ui-line: 220 220 220;
+  --ui-line-strong: 189 189 189;
+  --ui-ink: 17 20 17;
+  --ui-muted: 111 111 111;
+  --ui-accent: #168a49;
+  --ui-link: #137b40;
+  --ui-font: 'MiSans', 'PingFang SC', 'Microsoft YaHei', system-ui, sans-serif;
+  --theme-chart-text: #3a3b40;
+  --theme-chart-grid: #dcdcdc;
+  --theme-chart-axis: #6f6f6f;
+  --theme-chart-axis-grid: #f5f5f5;
+  --theme-chart-tooltip: #ffffff;
+  --theme-chart-title: #111411;
+  --theme-chart-body: #56575a;
+  --theme-chart-gray: #8a8b8d;
+  --theme-scrollbar-thumb: #8a8b8d;
+  --theme-scrollbar-hover: #6f6f6f;
+}
+
+:root.flat-theme.dark {
+  --ui-canvas: 17 17 17;
+  --ui-surface: 22 22 24;
+  --ui-raised: 27 28 30;
+  --ui-line: 38 39 43;
+  --ui-line-strong: 58 59 64;
+  --ui-ink: 237 237 237;
+  --ui-muted: 138 139 141;
+  --ui-link: #5abd80;
+  --theme-chart-text: #dcdcdc;
+  --theme-chart-grid: #3a3b40;
+  --theme-chart-axis: #8a8b8d;
+  --theme-chart-axis-grid: #3a3b40;
+  --theme-chart-tooltip: #26272b;
+  --theme-chart-title: #f5f5f5;
+  --theme-chart-body: #bdbdbd;
+  --theme-scrollbar-thumb: #3a3b40;
+  --theme-scrollbar-hover: #56575a;
+}
+
+/* Decoration belongs only to first-party home/auth shells, not injected HTML. */
+.flat-theme .public-texture {
+  background-color: rgb(var(--ui-canvas));
+  isolation: isolate;
+}
+
+.flat-theme .public-texture::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  opacity: 0.025;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='grain'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.92' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' opacity='.7' filter='url(%23grain)'/%3E%3C/svg%3E");
+}
+
+.flat-theme .public-texture::after {
+  content: '';
+  position: absolute;
+  inset: 0 clamp(16px, 3vw, 40px);
+  z-index: -1;
+  pointer-events: none;
+  border-inline: 1px solid rgb(var(--ui-line) / 0.5);
+}
+
+:root.flat-theme {
+  --theme-color-gray-50: 250 250 250;
+  --theme-color-gray-100: 245 245 245;
+  --theme-color-gray-200: 220 220 220;
+  --theme-color-gray-300: 189 189 189;
+  --theme-color-gray-400: 138 139 141;
+  --theme-color-gray-500: 111 111 111;
+  --theme-color-gray-600: 86 87 90;
+  --theme-color-gray-700: 58 59 64;
+  --theme-color-gray-800: 38 39 43;
+  --theme-color-gray-900: 17 20 17;
+  --theme-color-gray-950: 17 17 17;
+  --theme-color-slate-50: 250 250 250;
+  --theme-color-slate-100: 245 245 245;
+  --theme-color-slate-200: 220 220 220;
+  --theme-color-slate-300: 189 189 189;
+  --theme-color-slate-400: 138 139 141;
+  --theme-color-slate-500: 111 111 111;
+  --theme-color-slate-600: 86 87 90;
+  --theme-color-slate-700: 58 59 64;
+  --theme-color-slate-800: 38 39 43;
+  --theme-color-slate-900: 17 20 17;
+  --theme-color-slate-950: 17 17 17;
+  --theme-color-primary-50: 239 249 242;
+  --theme-color-primary-100: 221 241 227;
+  --theme-color-primary-200: 185 227 200;
+  --theme-color-primary-300: 143 211 168;
+  --theme-color-primary-400: 90 189 128;
+  --theme-color-primary-500: 22 138 73;
+  --theme-color-primary-600: 19 123 64;
+  --theme-color-primary-700: 16 101 54;
+  --theme-color-primary-800: 18 81 46;
+  --theme-color-primary-900: 18 63 39;
+  --theme-color-primary-950: 10 37 23;
+  --theme-color-accent-50: 250 250 250;
+  --theme-color-accent-100: 245 245 245;
+  --theme-color-accent-200: 220 220 220;
+  --theme-color-accent-300: 189 189 189;
+  --theme-color-accent-400: 138 139 141;
+  --theme-color-accent-500: 111 111 111;
+  --theme-color-accent-600: 86 87 90;
+  --theme-color-accent-700: 58 59 64;
+  --theme-color-accent-800: 38 39 43;
+  --theme-color-accent-900: 17 20 17;
+  --theme-color-accent-950: 17 17 17;
+  --theme-color-dark-50: 250 250 250;
+  --theme-color-dark-100: 237 237 237;
+  --theme-color-dark-200: 220 220 220;
+  --theme-color-dark-300: 189 189 189;
+  --theme-color-dark-400: 138 139 141;
+  --theme-color-dark-500: 121 122 125;
+  --theme-color-dark-600: 58 59 64;
+  --theme-color-dark-700: 38 39 43;
+  --theme-color-dark-800: 27 28 30;
+  --theme-color-dark-900: 22 22 24;
+  --theme-color-dark-950: 17 17 17;
+  --theme-radius-sm: 0px;
+  --theme-radius-default: 0px;
+  --theme-radius-md: 0px;
+  --theme-radius-lg: 0px;
+  --theme-radius-xl: 0px;
+  --theme-radius-2xl: 0px;
+  --theme-radius-3xl: 0px;
+  --theme-radius-4xl: 0px;
+  --theme-shadow-sm: none;
+  --theme-shadow-default: none;
+  --theme-shadow-md: none;
+  --theme-shadow-lg: none;
+  --theme-shadow-xl: none;
+  --theme-shadow-2xl: none;
+  --theme-shadow-inner: none;
+  --theme-shadow-none: none;
+  --theme-shadow-glass: 0 0 0 1px rgb(var(--ui-line));
+  --theme-shadow-glass-sm: 0 0 0 1px rgb(var(--ui-line));
+  --theme-shadow-glow: none;
+  --theme-shadow-glow-lg: none;
+  --theme-shadow-card: none;
+  --theme-shadow-card-hover: none;
+  --theme-shadow-inner-glow: none;
+  --theme-shadow-outline: 0 0 0 1px rgb(var(--ui-line));
+  --theme-background-gradient-radial: none;
+  --theme-background-gradient-primary: linear-gradient(rgb(var(--theme-color-primary-500)), rgb(var(--theme-color-primary-500)));
+  --theme-background-gradient-dark: none;
+  --theme-background-gradient-glass: none;
+  --theme-background-mesh-gradient: none;
+  --theme-animation-fade-in: flatThemeFadeIn 0.15s ease-out;
+  --theme-animation-slide-up: flatThemeSlideUp 0.15s ease-out;
+  --theme-animation-slide-down: flatThemeSlideDown 0.15s ease-out;
+  --theme-animation-slide-in-right: flatThemeSlideInRight 0.15s ease-out;
+  --theme-animation-scale-in: flatThemeScaleIn 0.15s ease-out;
+  --theme-animation-pulse-slow: pulse 3s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+  --theme-animation-shimmer: flatThemeShimmer 2s linear infinite;
+  --theme-animation-glow: none;
+}
+
+/* Gradient stops belong to each utility element, so resolve them locally. */
+.flat-theme *, .flat-theme ::before, .flat-theme ::after {
+  --theme-background-gradient-to-t: linear-gradient(to right, var(--tw-gradient-from), var(--tw-gradient-from));
+  --theme-background-gradient-to-tr: linear-gradient(to right, var(--tw-gradient-from), var(--tw-gradient-from));
+  --theme-background-gradient-to-r: linear-gradient(to right, var(--tw-gradient-from), var(--tw-gradient-from));
+  --theme-background-gradient-to-br: linear-gradient(to right, var(--tw-gradient-from), var(--tw-gradient-from));
+  --theme-background-gradient-to-b: linear-gradient(to right, var(--tw-gradient-from), var(--tw-gradient-from));
+  --theme-background-gradient-to-bl: linear-gradient(to right, var(--tw-gradient-from), var(--tw-gradient-from));
+  --theme-background-gradient-to-l: linear-gradient(to right, var(--tw-gradient-from), var(--tw-gradient-from));
+  --theme-background-gradient-to-tl: linear-gradient(to right, var(--tw-gradient-from), var(--tw-gradient-from));
+}
+
+@keyframes flatThemeFadeIn {
+  0% { opacity: 0; }
+  100% { opacity: 1; }
+}
+
+@keyframes flatThemeSlideUp {
+  0% { opacity: 0; transform: translateY(4px); }
+  100% { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes flatThemeSlideDown {
+  0% { opacity: 0; transform: translateY(-4px); }
+  100% { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes flatThemeSlideInRight {
+  0% { opacity: 0; transform: translateX(4px); }
+  100% { opacity: 1; transform: translateX(0); }
+}
+
+@keyframes flatThemeScaleIn {
+  0% { opacity: 0; transform: scale(1); }
+  100% { opacity: 1; transform: scale(1); }
+}
+
+@keyframes flatThemeShimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}

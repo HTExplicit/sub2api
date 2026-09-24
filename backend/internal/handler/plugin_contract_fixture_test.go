@@ -3,8 +3,8 @@ package handler
 import (
 	"testing"
 
+	extensionv1 "github.com/Wei-Shaw/sub2api/internal/nativeapi"
 	"github.com/Wei-Shaw/sub2api/internal/testextensions"
-	extensionv1 "github.com/Wei-Shaw/sub2api/pkg/extensionapi/v1"
 )
 
 func init() { testextensions.Install() }
