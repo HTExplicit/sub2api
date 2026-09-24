@@ -39,6 +39,7 @@ vi.mock('@/stores/app', () => ({
 
 vi.mock('@/stores/auth', () => ({
   useAuthStore: () => ({
+    user: { id: 41, role: 'admin' },
     get isSimpleMode() {
       return authIsSimpleMode.value
     },
@@ -584,7 +585,9 @@ describe('CreateAccountModal OpenAI long-context billing', () => {
     await wrapper.get('[data-testid="select-pricing-groups"]').trigger('click')
     await wrapper.get('form#create-account-form input[type="text"]').setValue('Cindy account')
     await wrapper.get('form#create-account-form input[type="password"]').setValue('cindy-api-key')
-    await wrapper.get('[data-extension-field="device_id"]').setValue('aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa')
+    await wrapper.get('#cindy-create-device-id').setValue('aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa')
+    await flushPromises()
+    expect(wrapper.get('[data-tour="account-form-submit"]').attributes('disabled')).toBeUndefined()
     await wrapper.get('form#create-account-form').trigger('submit.prevent')
     await flushPromises()
 
@@ -596,11 +599,6 @@ describe('CreateAccountModal OpenAI long-context billing', () => {
         api_key: 'cindy-api-key',
         base_url: 'https://api.laxarouter.ai'
       }),
-      provider_create: expect.objectContaining({
-        contribution_id: 'cindy-create',
-        values: { device_id: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa' },
-        inherit_defaults: ['concurrency', 'priority', 'rate_multiplier', 'load_factor', 'responses_mode']
-      }),
       group_ids: [1, 2],
       upstream_billing_probe_enabled: false
     }))
@@ -608,6 +606,10 @@ describe('CreateAccountModal OpenAI long-context billing', () => {
     expect(wrapper.find('[data-testid="provider-managed-create-catalog"]').exists()).toBe(true)
     expect(wrapper.get('[data-testid="provider-managed-create-catalog"]').text()).toContain('gpt-5.6-luna')
     const submitted = createAccountMock.mock.calls.at(-1)![0]
+    expect(submitted.provider_create).toEqual({
+      values: { device_id: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa' },
+      inherit_defaults: ['concurrency', 'priority', 'rate_multiplier', 'load_factor', 'responses_mode']
+    })
     expect(submitted).not.toHaveProperty('concurrency')
     expect(submitted.extra || {}).not.toHaveProperty('cindy_device_id_source')
   })

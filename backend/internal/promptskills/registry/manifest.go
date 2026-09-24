@@ -35,8 +35,6 @@ type remoteSkillManifest = extensionv1.SkillManifest
 
 type remoteSkillManifestEntry = extensionv1.SkillManifestEntry
 
-type remoteSkillPinnedAssetProvenance = extensionv1.SkillAssetProvenance
-
 func loadRemoteSkillManifest() (remoteSkillManifest, error) {
 	raw, err := fs.ReadFile(remoteSkillSeedFS, remoteSkillManifestEmbeddedPath)
 	if err != nil {
@@ -175,20 +173,6 @@ func loadRemoteSkillSeedFiles() (remoteSkillManifest, map[string][]byte, error) 
 
 func remoteSkillManifestEntryMatches(entry remoteSkillManifestEntry, body []byte) bool {
 	return len(body) == entry.ByteLength && len(body) > 0 && utf8.Valid(body) && hashBusinessSystemPromptBundleBytes(body) == entry.SHA256
-}
-
-func loadRemoteSkillPinnedAsset(entry remoteSkillManifestEntry) ([]byte, error) {
-	if entry.SourceKind != "pinned" || entry.EmbeddedPath != remoteSkillPinnedWAFEmbeddedPath {
-		return nil, fmt.Errorf("%w: pinned manifest entry invalid", ErrBusinessSystemPromptBundleInvalid)
-	}
-	body, err := fs.ReadFile(remoteSkillSeedFS, "seed/"+entry.EmbeddedPath)
-	if err != nil {
-		return nil, err
-	}
-	if !remoteSkillManifestEntryMatches(entry, body) {
-		return nil, fmt.Errorf("%w: pinned asset content mismatch", ErrBusinessSystemPromptBundleInvalid)
-	}
-	return append([]byte(nil), body...), nil
 }
 
 func sortRemoteSkillPaths(paths []string) {

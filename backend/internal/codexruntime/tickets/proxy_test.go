@@ -112,15 +112,21 @@ func TestProxyPreflightAndHarvestUseSamePinnedTransport(t *testing.T) {
 			w.WriteHeader(502)
 			return
 		}
-		client, _, err := w.(http.Hijacker).Hijack()
+		hijacker, ok := w.(http.Hijacker)
+		if !ok {
+			_ = upstream.Close()
+			t.Error("proxy response writer does not support hijacking")
+			return
+		}
+		client, _, err := hijacker.Hijack()
 		if err != nil {
 			_ = upstream.Close()
 			return
 		}
 		_, _ = io.WriteString(client, "HTTP/1.1 200 Connection Established\r\n\r\n")
 		go func() {
-			defer client.Close()
-			defer upstream.Close()
+			defer func() { _ = client.Close() }()
+			defer func() { _ = upstream.Close() }()
 			go func() { _, _ = io.Copy(upstream, client) }()
 			_, _ = io.Copy(client, upstream)
 		}()

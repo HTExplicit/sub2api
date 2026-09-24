@@ -81,6 +81,35 @@ const {
 
 const localeRef = vi.hoisted(() => ({ value: "zh-CN" }));
 
+const nativeSettings = vi.hoisted(() => ({
+  image: { studio_enabled: false, responses_image_enabled: false },
+  observability: { telemetry_enabled: true, theme_enabled: true },
+  cindy: { balance_detection: true, catalog_enabled: true, search_enabled: true },
+  updateCindy: vi.fn(async (value) => value),
+}));
+
+vi.mock("@/stores/auth", () => ({
+  useAuthStore: () => ({ user: { id: 41, role: "admin" }, isAuthenticated: true, isAdmin: true }),
+}));
+
+vi.mock("@/api/admin/settings", async () => {
+  const actual = await vi.importActual<typeof import("@/api/admin/settings")>("@/api/admin/settings");
+  const native = {
+    getImageToolsSettings: vi.fn(async () => ({ ...nativeSettings.image })),
+    updateImageToolsSettings: vi.fn(async (value) => value),
+    getObservabilitySettings: vi.fn(async () => ({ ...nativeSettings.observability })),
+    updateObservabilitySettings: vi.fn(async (value) => value),
+    getOfficialModelCapacityCatalog: vi.fn(async () => ({ entries: [] })),
+  };
+  return { ...actual, ...native, settingsAPI: { ...actual.settingsAPI, ...native }, default: { ...actual.default, ...native } };
+});
+
+vi.mock("@/api/admin/cindyProvider", () => ({
+  getCindyProviderSettings: vi.fn(async () => ({ ...nativeSettings.cindy })),
+  updateCindyProviderSettings: nativeSettings.updateCindy,
+  getCindyProviderCatalog: vi.fn(async () => []),
+}));
+
 vi.mock("@/api", () => ({
   adminAPI: {
     settings: {
@@ -263,6 +292,7 @@ vi.mock("vue-i18n", async () => {
 });
 
 const AppLayoutStub = { template: "<div><slot /></div>" };
+const RouterLinkStub = { props: ["to"], template: '<a :href="to"><slot /></a>' };
 const ToggleStub = defineComponent({
   props: {
     modelValue: {
@@ -579,6 +609,7 @@ function mountView() {
     global: {
       stubs: {
         AppLayout: AppLayoutStub,
+        RouterLink: RouterLinkStub,
         Select: SelectStub,
         Toggle: ToggleStub,
         Icon: true,
@@ -775,17 +806,24 @@ describe("admin SettingsView payment visible method controls", () => {
     wrapper.unmount();
   });
 
-  it("mounts plugin settings without resubmitting retired ticket configuration", async () => {
+  it("mounts native settings without resubmitting their configuration through the general settings form", async () => {
     const wrapper = mountView();
     await flushPromises();
     await openGatewayTab(wrapper);
-    expect(wrapper.find('[data-test-extension-slot="admin.settings"]').exists()).toBe(true);
+    expect(wrapper.get('[data-testid="image-tools-settings"]').exists()).toBe(true);
+    expect(wrapper.get('[data-testid="observability-settings"]').exists()).toBe(true);
+    expect(wrapper.get('[data-testid="cindy-provider-settings"]').exists()).toBe(true);
+    expect(wrapper.get('[data-testid="official-model-catalog"]').exists()).toBe(true);
+    expect(wrapper.get<HTMLInputElement>('[data-testid="image-tools-studio"]').element.checked).toBe(false);
+    expect(wrapper.get<HTMLInputElement>('[data-testid="cindy-provider-balance_detection"]').element.checked).toBe(true);
+    expect(wrapper.find('[data-test-extension-slot="admin.settings"]').exists()).toBe(false);
     expect(wrapper.find('#codex-ticket-enabled').exists()).toBe(false);
     expect(wrapper.find('#codex-ticket-harvest-proxy').exists()).toBe(false);
     await wrapper.find("form").trigger("submit.prevent");
     await flushPromises();
     expect(updateSettings).toHaveBeenCalledOnce();
     expect(Object.keys(updateSettings.mock.calls[0][0]).some(key => key.startsWith('openai_codex_ticket_'))).toBe(false);
+    expect(nativeSettings.updateCindy).not.toHaveBeenCalled();
     wrapper.unmount();
   });
 
@@ -1532,6 +1570,7 @@ describe("admin SettingsView payment visible method controls", () => {
       global: {
         stubs: {
           AppLayout: AppLayoutStub,
+          RouterLink: RouterLinkStub,
           Select: SelectStub,
           Toggle: ToggleStub,
           Icon: true,
@@ -1878,6 +1917,7 @@ describe("admin SettingsView payment visible method controls", () => {
       global: {
         stubs: {
           AppLayout: AppLayoutStub,
+          RouterLink: RouterLinkStub,
           Select: SelectStub,
           Toggle: ToggleStub,
           Icon: true,

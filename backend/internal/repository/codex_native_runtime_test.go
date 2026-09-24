@@ -20,7 +20,7 @@ func TestNativeCodexConfigGenerationIsAtomicAndIdempotent(t *testing.T) {
 		t.Run(phase, func(t *testing.T) {
 			db, mock, err := sqlmock.New()
 			require.NoError(t, err)
-			defer db.Close()
+			defer func() { _ = db.Close() }()
 			r := &nativeCodexRepository{db: db}
 			hash := strings.Repeat("a", 64)
 			mock.ExpectQuery(regexp.QuoteMeta(`SELECT id FROM sub2api_plugin_installations WHERE plugin_key=$1`)).WithArgs(service.NativeCodexPluginKey).WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow(7))
@@ -64,7 +64,7 @@ func TestNativeCodexConfigGenerationIsAtomicAndIdempotent(t *testing.T) {
 func TestNativeCodexStoredConfigDistinguishesMissingAndReadError(t *testing.T) {
 	db, mock, err := sqlmock.New()
 	require.NoError(t, err)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 	r := &nativeCodexRepository{db: db}
 	query := regexp.QuoteMeta(`SELECT config_encrypted FROM sub2api_plugin_installations WHERE plugin_key=$1`)
 	sourceQuery := regexp.QuoteMeta(`SELECT value FROM settings WHERE key=$1`)

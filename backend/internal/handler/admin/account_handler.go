@@ -2144,11 +2144,9 @@ func (h *AccountHandler) BulkUpdate(c *gin.Context) {
 			response.ErrorFrom(c, err)
 			return
 		}
-		// Freeze selection; workers must not re-evaluate a filter and silently
-		// include newly matching accounts after the complete-set preflight.
+		// Freeze the validated selection in item seeds. The original request
+		// remains the replay source; workers execute only each seed's target.
 		ids = resolvedIDs
-		req.Filters = nil
-		req.AccountIDs = ids
 	} else if len(ids) == 0 {
 		if h.accountJobs == nil {
 			response.ErrorFrom(c, infraerrors.New(503, "ACCOUNT_JOBS_UNAVAILABLE", "account jobs are unavailable"))
@@ -2186,8 +2184,7 @@ func (h *AccountHandler) BulkUpdate(c *gin.Context) {
 		}
 	}
 	// Keep the submitted operation identity; only item seeds freeze resolved IDs.
-	req = submission
-	if service.HasAccountEditOwnedInput(req.Credentials, req.Extra) {
+	if service.HasAccountEditOwnedInput(submission.Credentials, submission.Extra) {
 		accounts, err := h.adminService.GetAccountsByIDs(c.Request.Context(), ids)
 		if err != nil {
 			response.ErrorFrom(c, err)
@@ -2195,7 +2192,7 @@ func (h *AccountHandler) BulkUpdate(c *gin.Context) {
 		}
 		c.Request = c.Request.WithContext(service.WithAccountJobEditAccounts(c.Request.Context(), accounts))
 	}
-	h.submitAccountJob(c, service.AccountJobKindBulkUpdate, req, accountJobSeeds(ids))
+	h.submitAccountJob(c, service.AccountJobKindBulkUpdate, submission, accountJobSeeds(ids))
 }
 
 func splitBulkAccountFilterValues(values ...string) []string {

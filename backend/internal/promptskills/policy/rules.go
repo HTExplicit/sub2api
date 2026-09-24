@@ -134,9 +134,10 @@ func planRules(snapshot BusinessSystemPromptSnapshot, target BusinessSystemPromp
 		return application, err
 	}
 	selected := policy.DefaultRuleIDs
-	if binding.Mode == "off" {
+	switch binding.Mode {
+	case "off":
 		selected = nil
-	} else if binding.Mode == "custom" {
+	case "custom":
 		selected = binding.RuleIDs
 	}
 	resolved := map[string]extensionv1.ResolvedPromptRule{}

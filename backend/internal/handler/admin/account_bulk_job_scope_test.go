@@ -225,6 +225,7 @@ type bulkJobScopeAdmin struct {
 	filterCalls  int
 	filterErr    error
 	updatedIDs   []int64
+	bulkInputs   []*service.BulkUpdateAccountsInput
 }
 
 func newBulkJobScopeAdmin(ids ...int64) *bulkJobScopeAdmin {
@@ -264,7 +265,18 @@ func (s *bulkJobScopeAdmin) GetAccount(_ context.Context, id int64) (*service.Ac
 	return nil, service.ErrAccountNotFound
 }
 
+func (s *bulkJobScopeAdmin) GetAccountsByIDs(_ context.Context, ids []int64) ([]*service.Account, error) {
+	accounts := make([]*service.Account, 0, len(ids))
+	for _, id := range ids {
+		if account := s.accountsByID[id]; account != nil {
+			accounts = append(accounts, account)
+		}
+	}
+	return accounts, nil
+}
+
 func (s *bulkJobScopeAdmin) BulkUpdateAccounts(_ context.Context, input *service.BulkUpdateAccountsInput) (*service.BulkUpdateAccountsResult, error) {
+	s.bulkInputs = append(s.bulkInputs, input)
 	if len(input.AccountIDs) != 1 || input.Filters != nil {
 		return nil, errors.New("fixture requires a single explicit account")
 	}

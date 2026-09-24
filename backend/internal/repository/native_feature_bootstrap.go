@@ -165,7 +165,7 @@ func readNativeRetirementBindings(ctx context.Context, tx *sql.Tx, id int64) ([]
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	bindings := make([]service.NativeRetirementBinding, 0)
 	for rows.Next() {
 		var binding service.NativeRetirementBinding

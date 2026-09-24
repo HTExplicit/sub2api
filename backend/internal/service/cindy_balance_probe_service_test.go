@@ -52,6 +52,20 @@ type cindyBalanceProbeClaimEpochRepositoryStub struct {
 	claimTokens []string
 }
 
+type cindyBalanceProbeRecoveryFailureRepositoryStub struct {
+	CindyBalanceProbeRepository
+	jobContext context.Context
+}
+
+func (s *cindyBalanceProbeRecoveryFailureRepositoryStub) RecoverInterruptedItems(ctx context.Context, _ int64, _ string) error {
+	s.jobContext = ctx
+	return errors.New("synthetic recovery failure")
+}
+
+func (s *cindyBalanceProbeRecoveryFailureRepositoryStub) Heartbeat(context.Context, int64, string, time.Time) (bool, error) {
+	return true, nil
+}
+
 type cindyBalanceProbeCreateRepositoryStub struct {
 	CindyBalanceProbeRepository
 	scope               CindyBalanceProbeScope
@@ -494,6 +508,32 @@ func TestCindyBalanceProbeMarkedLunaSuccessFinalizesWithPreSendSnapshot(t *testi
 	))
 	require.Equal(t, 1, repo.calls)
 	require.Same(t, account, repo.accountSnapshot)
+}
+
+func TestCindyBalanceProbeProcessJobCancelsContextOnRecoveryFailure(t *testing.T) {
+	for _, test := range []struct {
+		name   string
+		origin *CindyBalanceProbeOrigin
+	}{
+		{name: "native"},
+		{name: "historical_scope", origin: &CindyBalanceProbeOrigin{
+			Version: 1, RequestDigest: strings.Repeat("a", 64), FrozenAccountIDs: []int64{7},
+		}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			repo := &cindyBalanceProbeRecoveryFailureRepositoryStub{}
+			svc := NewCindyBalanceProbeService(repo, nil, nil, nil)
+			defer svc.Stop()
+			svc.processJob(&CindyBalanceProbeJob{
+				ID: 1, Scope: CindyBalanceProbeScope{Mode: "selected", AccountIDs: []int64{7}, Origin: test.origin},
+			}, "lease")
+			require.NotNil(t, repo.jobContext)
+			require.ErrorIs(t, repo.jobContext.Err(), context.Canceled, "early recovery failure must release the worker and heartbeat context")
+			require.NoError(t, svc.ctx.Err(), "finishing one job must not cancel the service")
+			_, native := CindyBalanceProbeOriginOwner(repo.jobContext)
+			require.True(t, native)
+		})
+	}
 }
 
 func TestCindyBalanceProbeUsesFreshTokenForEveryClaim(t *testing.T) {

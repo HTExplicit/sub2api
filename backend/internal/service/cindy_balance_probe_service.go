@@ -277,14 +277,14 @@ func (s *CindyBalanceProbeService) processJob(job *CindyBalanceProbeJob, leaseTo
 	}
 	var jobCtx context.Context
 	var cancel context.CancelFunc
-	var err error
 	if job.Scope.Origin != nil {
+		var err error
 		jobCtx, cancel, err = bindCindyProbeOrigin(s.ctx, job.Scope)
+		if err != nil {
+			return
+		}
 	} else {
 		jobCtx, cancel = context.WithCancel(context.WithValue(s.ctx, cindyNativeProbeContextKey{}, true))
-	}
-	if err != nil {
-		return
 	}
 	defer cancel()
 	lostLease := make(chan struct{})

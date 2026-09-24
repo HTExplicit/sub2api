@@ -1055,7 +1055,7 @@ describe('EditAccountModal', () => {
     await flushPromises()
     expect(showErrorMock.mock.calls).toEqual([])
     const payload = updateAccountMock.mock.calls[0]?.[1]
-    expect(payload.provider_edit).toMatchObject({ contribution_id: 'cindy-edit', expected_package_sha256: 'a'.repeat(64), expected_definition_sha256: 'b'.repeat(64), expected_runtime_generation: 1,
+    expect(payload.provider_edit).toEqual({ expected_state_sha256: account.account_edit_state_sha256,
       changes: { responses_mode: { op: 'set', value: 'auto' }, compact_mode: { op: 'set', value: 'auto' }, responses_websocket_mode: { op: 'set', value: 'http_bridge' } } })
     expect(payload.provider_edit).not.toHaveProperty('expected_catalog_namespace')
     expect(payload.extra).not.toHaveProperty('openai_ws_enabled')

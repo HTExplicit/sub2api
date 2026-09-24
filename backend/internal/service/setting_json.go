@@ -5,8 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"log/slog"
-	"strings"
 )
 
 // Startup must distinguish a missing key from a failed read, so a stored false
@@ -28,33 +26,6 @@ func (s *SettingService) readNativeSwitchSetting(ctx context.Context, key string
 		return false, fmt.Errorf("invalid native setting %s", key)
 	}
 	return true, nil
-}
-
-// readJSONSetting decodes a JSON-valued setting into target. It reports false
-// when the setting is unset, unreadable or not valid JSON for target; read
-// failures other than an unset key are logged, since callers then fall back
-// to defaults.
-func (s *SettingService) readJSONSetting(ctx context.Context, key string, target any) bool {
-	if s == nil || s.settingRepo == nil {
-		return false
-	}
-	dbCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), gatewayForwardingDBTimeout)
-	defer cancel()
-	raw, err := s.settingRepo.GetValue(dbCtx, key)
-	if err != nil {
-		if !errors.Is(err, ErrSettingNotFound) {
-			slog.Warn("json_setting_read_failed", "key", key, "error", err)
-		}
-		return false
-	}
-	if strings.TrimSpace(raw) == "" {
-		return false
-	}
-	if err := json.Unmarshal([]byte(raw), target); err != nil {
-		slog.Warn("json_setting_invalid", "key", key, "error", err)
-		return false
-	}
-	return true
 }
 
 // writeJSONSetting stores value as a JSON-valued setting.

@@ -71,9 +71,10 @@ func invokeCindyProviderCached(ctx context.Context, in extensionv1.Invocation) (
 	runtime := cindyProvider.Load()
 	key := in.Capability + "\x00" + in.Operation + "\x00" + string(in.Payload)
 	if cached, ok := runtime.cache.Load(key); ok {
-		result := cached.(extensionv1.Result)
-		result.Payload = append(json.RawMessage(nil), result.Payload...)
-		return result, nil
+		if result, ok := cached.(extensionv1.Result); ok {
+			result.Payload = append(json.RawMessage(nil), result.Payload...)
+			return result, nil
+		}
 	}
 	// A concurrent settings update must not cache a new runtime's answer in an
 	// earlier configuration's cache, or combine two configuration snapshots.
