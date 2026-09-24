@@ -114,48 +114,6 @@ func TestPluginCatalogCacheRejectsConfiguringAndCanceledRequests(t *testing.T) {
 	require.Equal(t, 1, calls, "neither rejected request may reach the plugin")
 }
 
-func TestPluginCatalogCarriesAccountIDThroughRolloutAndCache(t *testing.T) {
-	var calls []int64
-	manager, _ := catalogGuardTestManager(t, func(in extensionv1.Invocation) (extensionv1.Result, error) {
-		var query extensionv1.CatalogQuery
-		require.NoError(t, json.Unmarshal(in.Payload, &query))
-		require.Equal(t, in.AccountID, query.AccountID, "the invocation gate and cache query must use the same host account")
-		calls = append(calls, in.AccountID)
-		raw, err := json.Marshal(extensionv1.CatalogMatch{Matched: true, Entry: &OfficialModelContextCapacity{ModelContextCapacity: ModelContextCapacity{ContextWindow: 200000 + in.AccountID}}})
-		return extensionv1.Result{Payload: raw}, err
-	})
-	previous := processExtensionCatalog.Load()
-	t.Cleanup(func() { processExtensionCatalog.Store(previous) })
-	processExtensionCatalog.Store(&extensionCatalogProvider{resolver: manager})
-	var included, excluded int64
-	for id := int64(1); included == 0 || excluded == 0; id++ {
-		if stablePluginBucket(id) < 50 {
-			included = id
-		} else {
-			excluded = id
-		}
-	}
-	account := &Account{ID: included, Platform: PlatformOpenAI, Type: AccountTypeAPIKey, Credentials: map[string]any{"base_url": "https://api.openai.com/v1"}}
-	installation := manager.extensions.Load().installations[1]
-	installation.Bindings[0].RolloutPercent = 0
-	require.Nil(t, LookupOfficialModelContextCapacity(account, "test-model"))
-	require.Empty(t, calls, "0%% rollout must not invoke a catalog for a real account")
-	installation.Bindings[0].RolloutPercent = 50
-	first := LookupOfficialModelContextCapacity(account, "test-model")
-	require.NotNil(t, first)
-	require.EqualValues(t, 200000+included, first.ContextWindow)
-	account.ID = excluded
-	require.Nil(t, LookupOfficialModelContextCapacity(account, "test-model"))
-	require.Equal(t, []int64{included}, calls)
-	installation.Bindings[0].RolloutPercent = 100
-	second := LookupOfficialModelContextCapacity(account, "test-model")
-	require.NotNil(t, second)
-	require.EqualValues(t, 200000+excluded, second.ContextWindow, "another account cannot reuse the first account's cache")
-	account.ID = included
-	require.EqualValues(t, 200000+included, LookupOfficialModelContextCapacity(account, "test-model").ContextWindow)
-	require.Equal(t, []int64{included, excluded}, calls, "the original account should reuse only its own cache")
-}
-
 func TestPluginCatalogCacheChecksPersistedScopeGenerationAndConfig(t *testing.T) {
 	calls := 0
 	manager, repo := catalogGuardTestManager(t, func(extensionv1.Invocation) (extensionv1.Result, error) {

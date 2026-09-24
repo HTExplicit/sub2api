@@ -57,21 +57,3 @@ func TestOfficialModelCatalogGPT6SeparatesAPIAndCodex(t *testing.T) {
 		}
 	}
 }
-
-func TestMergeCatalogMatchesKeepsPluginAmbiguityRule(t *testing.T) {
-	a := &OfficialModelContextCapacity{ModelID: "a", ModelContextCapacity: ModelContextCapacity{ContextWindow: 100}}
-	b := &OfficialModelContextCapacity{ModelID: "b", ModelContextCapacity: ModelContextCapacity{ContextWindow: 200}}
-	same := &OfficialModelContextCapacity{ModelID: "same", ModelContextCapacity: ModelContextCapacity{ContextWindow: 100}}
-	if got := mergeCatalogMatches(extensionv1.CatalogMatch{Matched: true, Entry: a}, extensionv1.CatalogMatch{}); got.Entry != a {
-		t.Fatalf("a single match must win: %+v", got)
-	}
-	if got := mergeCatalogMatches(extensionv1.CatalogMatch{Matched: true, Entry: a}, extensionv1.CatalogMatch{Matched: true, Entry: b}); !got.Matched || got.Entry != nil {
-		t.Fatalf("different capacities must be ambiguous: %+v", got)
-	}
-	if got := mergeCatalogMatches(extensionv1.CatalogMatch{Matched: true, Entry: a}, extensionv1.CatalogMatch{Matched: true, Entry: same}); got.Entry != same {
-		t.Fatalf("the later equal-capacity entry must win: %+v", got)
-	}
-	if got := mergeCatalogMatches(extensionv1.CatalogMatch{Matched: true}, extensionv1.CatalogMatch{Matched: true, Entry: a}); !got.Matched || got.Entry != nil {
-		t.Fatalf("an ambiguous answer must stay ambiguous: %+v", got)
-	}
-}

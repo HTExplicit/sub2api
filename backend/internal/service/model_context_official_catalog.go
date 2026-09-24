@@ -106,23 +106,3 @@ func officialCatalogApplies(query extensionv1.CatalogQuery, entry OfficialModelC
 	}
 	return true
 }
-
-// mergeCatalogMatches combines ordered catalog answers with the plugin
-// manager's rule: an ambiguous answer, or two different capacities, is
-// ambiguous; otherwise the later equal-capacity entry wins.
-func mergeCatalogMatches(matches ...extensionv1.CatalogMatch) extensionv1.CatalogMatch {
-	var resolved extensionv1.CatalogMatch
-	for _, match := range matches {
-		if !match.Matched {
-			continue
-		}
-		if match.Entry == nil {
-			return match
-		}
-		if resolved.Entry != nil && resolved.Entry.ModelContextCapacity != match.Entry.ModelContextCapacity {
-			return extensionv1.CatalogMatch{Matched: true}
-		}
-		resolved = match
-	}
-	return resolved
-}
