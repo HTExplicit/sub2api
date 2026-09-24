@@ -6,8 +6,8 @@ import (
 	"encoding/json"
 	"net/http"
 
+	extensionv1 "github.com/Wei-Shaw/sub2api/internal/nativeapi"
 	openaiwsv2 "github.com/Wei-Shaw/sub2api/internal/service/openai_ws_v2"
-	extensionv1 "github.com/Wei-Shaw/sub2api/pkg/extensionapi/v1"
 	coderws "github.com/coder/websocket"
 	"github.com/tidwall/gjson"
 )
@@ -23,7 +23,7 @@ func (s *OpenAIGatewayService) guardCodexRoutingNativeModel(account *Account, mo
 }
 
 func (s *OpenAIGatewayService) observeNativeCodexWS(ctx context.Context, account *Account, headers, handshake http.Header, payload []byte, connection string) {
-	if !isOpenAICodexTicketAccount(account) || s.pluginManager == nil {
+	if !isOpenAICodexTicketAccount(account) || s.nativeCodexRuntime == nil {
 		return
 	}
 	request, _ := http.NewRequestWithContext(ctx, http.MethodGet, "https://chatgpt.com/backend-api/codex/responses", bytes.NewReader(payload))

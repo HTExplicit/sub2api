@@ -130,7 +130,7 @@
         <div class="mt-3 break-words text-sm font-medium text-amber-900 dark:text-amber-100">{{ rootCauseMessage }}</div>
       </div>
 
-      <ExtensionWidget name="ops-error-diagnostics" :context="{ error_id: detail.id }" />
+      <CodexContinuationDiagnostics :error-id="detail.id" />
 
       <div class="rounded-xl bg-gray-50 p-6 dark:bg-dark-900">
         <h3 class="text-sm font-black uppercase tracking-wider text-gray-900 dark:text-white">{{ t('admin.ops.errorDetail.diagnosticPayloads') }}</h3>
@@ -231,7 +231,7 @@ import { computed, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import BaseDialog from '@/components/common/BaseDialog.vue'
 import Icon from '@/components/icons/Icon.vue'
-import ExtensionWidget from '@/components/plugins/ExtensionWidget.vue'
+import CodexContinuationDiagnostics from '@/components/admin/codex/CodexContinuationDiagnostics.vue'
 import { useAppStore } from '@/stores'
 import { opsAPI, type OpsErrorDetail } from '@/api/admin/ops'
 import { formatDateTime } from '@/utils/format'

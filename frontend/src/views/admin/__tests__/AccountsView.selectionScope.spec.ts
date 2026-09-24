@@ -41,9 +41,7 @@ vi.mock('@/api/admin', async () => {
     }
   }
 })
-vi.mock('@/stores/pluginExtensions', () => ({
-  usePluginExtensions: () => ({ loaded: true, items: [], refresh: vi.fn() })
-}))
+
 vi.mock('@/stores/accountJobs', () => ({
   useAccountJobsStore: () => ({ track: trackJob, reviewDuplicates: vi.fn() })
 }))

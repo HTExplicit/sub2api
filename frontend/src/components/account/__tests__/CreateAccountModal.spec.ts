@@ -2,10 +2,6 @@ vi.mock('@/components/admin/account-jobs/AccountOperationDialog.vue', () => ({ d
 import { defineComponent, type PropType } from 'vue'
 import { flushPromises, mount } from '@vue/test-utils'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import cindyManifest from '../../../../../plugins/cindy-provider/manifest.source.json'
-import type { PluginContribution } from '@/api/admin/plugins'
-const createRegistry = vi.hoisted(() => ({ loaded: true, items: [] as PluginContribution[], refresh: vi.fn() }))
-vi.mock('@/stores/pluginExtensions', () => ({ usePluginExtensions: () => createRegistry }))
 
 const {
   createAccountMock,
@@ -321,9 +317,7 @@ async function openCodexImportStep(toggleClicks = 0) {
 
 describe('CreateAccountModal OpenAI long-context billing', () => {
   beforeEach(() => {
-    createRegistry.items = [{ id: 'codex-recovery-settings', slot: 'surface', available: true } as PluginContribution, ...cindyManifest.contributions.map(item => ({ ...structuredClone(item), plugin_id: 7, plugin_key: cindyManifest.id,
-      package_sha256: 'a'.repeat(64), create_definition_digest: 'b'.repeat(64), runtime_generation: 1, available: true,
-      account_scope: { version: 1, bindings: [{ platform: 'cindy', account_type: 'apikey', rollout_percent: 100 }] } })) as PluginContribution[]]
+
     authIsSimpleMode.value = true
     createAccountMock.mockReset().mockResolvedValue({ id: 42, platform: 'openai', type: 'apikey' })
     probeUpstreamBillingMock.mockReset().mockResolvedValue({})

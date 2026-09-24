@@ -4,7 +4,7 @@ import (
 	_ "embed"
 	"net/http"
 
-	extensionv1 "github.com/Wei-Shaw/sub2api/pkg/extensionapi/v1"
+	extensionv1 "github.com/Wei-Shaw/sub2api/internal/nativeapi"
 )
 
 const BusinessSystemPromptMaxBytes = 64 << 10

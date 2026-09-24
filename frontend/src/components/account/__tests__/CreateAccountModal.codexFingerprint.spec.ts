@@ -36,9 +36,7 @@ vi.mock('@/stores/app', () => ({
   useAppStore: () => ({ showError, showSuccess: vi.fn(), showWarning: vi.fn() }),
 }))
 vi.mock('@/stores/auth', () => ({ useAuthStore: () => ({ isSimpleMode: true }) }))
-vi.mock('@/stores/pluginExtensions', () => ({
-  usePluginExtensions: () => ({ loaded: true, items: [], refresh: unexpectedNetwork }),
-}))
+
 vi.mock('vue-i18n', async () => ({
   ...await vi.importActual<typeof import('vue-i18n')>('vue-i18n'),
   useI18n: () => ({ t: (key: string) => key }),

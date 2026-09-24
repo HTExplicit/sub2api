@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	extensionv1 "github.com/Wei-Shaw/sub2api/pkg/extensionapi/v1"
+	extensionv1 "github.com/Wei-Shaw/sub2api/internal/nativeapi"
 	"github.com/stretchr/testify/require"
 )
 
@@ -399,8 +399,8 @@ func (publicationCompositionSubstitutionFixture) InvokeOperation(ctx context.Con
 }
 
 func TestBusinessSystemPromptServiceRejectsPublicationCompositionSubstitution(t *testing.T) {
-	previous := processExtensionOperations.Load()
-	t.Cleanup(func() { processExtensionOperations.Store(previous) })
+	previous := invokePromptSkills
+	t.Cleanup(func() { invokePromptSkills = previous })
 	store := &fakeBusinessSystemPromptStore{
 		loaded:    BusinessSystemPromptSnapshot{Revision: 1, VersionID: 4, Body: "old"},
 		published: BusinessSystemPromptSnapshot{Revision: 2, VersionID: 5, Enabled: true, Body: "new"},
@@ -411,7 +411,9 @@ func TestBusinessSystemPromptServiceRejectsPublicationCompositionSubstitution(t 
 	}
 	svc := NewBusinessSystemPromptService(store, nil)
 	require.NoError(t, svc.Initialize(context.Background()))
-	processExtensionOperations.Store(&extensionOperationProvider{invoker: publicationCompositionSubstitutionFixture{}})
+	invokePromptSkills = func(ctx context.Context, in extensionv1.Invocation) (extensionv1.Result, error) {
+		return (publicationCompositionSubstitutionFixture{}).InvokeOperation(ctx, "", "", in)
+	}
 	_, err := svc.PublishVersionAction(context.Background(), 3, 4, 1, extensionv1.PublicationActionRollback, 9)
 	require.ErrorIs(t, err, ErrBusinessSystemPromptInvalid)
 	require.Zero(t, store.publishCalls)

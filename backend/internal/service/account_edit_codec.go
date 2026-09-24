@@ -6,14 +6,17 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"maps"
+	"regexp"
 	"slices"
 	"strings"
 
-	extensionv1 "github.com/Wei-Shaw/sub2api/pkg/extensionapi/v1"
+	extensionv1 "github.com/Wei-Shaw/sub2api/internal/nativeapi"
 )
 
 // The deletion vocabulary is private and finite. Neither an HTTP client nor a
 // plugin can supply arbitrary JSON paths or keys to remove.
+var accountEditDigestPattern = regexp.MustCompile(`^[a-f0-9]{64}$`)
+
 var accountEditExtraKeys = []string{
 	"openai_responses_mode", "openai_compact_mode",
 	"openai_apikey_responses_websockets_v2_mode", "openai_apikey_responses_websockets_v2_enabled",
@@ -116,11 +119,10 @@ func validateAccountEditRequest(request *extensionv1.ProviderEditRequestV1) erro
 	if request == nil {
 		return nil
 	}
-	if !accountViewIDPattern.MatchString(request.ContributionID) || !accountViewDigestPattern.MatchString(request.ExpectedPackageSHA256) ||
-		!accountViewDigestPattern.MatchString(request.ExpectedDefinitionSHA256) || !accountViewDigestPattern.MatchString(request.ExpectedStateSHA256) ||
-		request.ExpectedRuntimeGeneration <= 0 || request.Changes == nil || len(request.Changes) > 5 || len(request.ExpectedCatalogNamespace) > 512 {
+	if !accountEditDigestPattern.MatchString(request.ExpectedStateSHA256) || request.Changes == nil || len(request.Changes) > 5 || len(request.ExpectedCatalogNamespace) > 512 {
 		return ErrAccountEditInvalid
 	}
+
 	for target, change := range request.Changes {
 		if change.Op != "set" && change.Op != "clear" {
 			return ErrAccountEditInvalid

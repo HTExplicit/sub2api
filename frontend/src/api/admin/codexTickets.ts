@@ -23,7 +23,12 @@ export const codexTicketsAPI = {
   async stop(id: number, models: string[]) {
     await apiClient.post(`/admin/accounts/${id}/codex-tickets/stop`, { models })
   },
-  async testProxy(proxy_url: string) {
-    return (await apiClient.post<ProxyTestResult>('/admin/settings/openai-codex-ticket/proxy-test', { proxy_url }, { timeout: 30000 })).data
+  async stopJob(ids: number[], models: string[], key = accountJobIdempotencyHeaders('codex_ticket_stop')) {
+    const path = ids.length === 1 ? `/admin/accounts/${ids[0]}/codex-tickets/stop-job` : '/admin/accounts/codex-tickets/batch-stop'
+    return (await apiClient.post<AccountJob>(path, { account_ids: ids, models }, key)).data
+  },
+  async testProxy(proxy_url: string, protocol?: string) {
+    const body = protocol ? { proxy_url, protocol } : { proxy_url }
+    return (await apiClient.post<ProxyTestResult>('/admin/settings/openai-codex-ticket/proxy-test', body, { timeout: 30000 })).data
   }
 }

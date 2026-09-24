@@ -14,8 +14,8 @@ import (
 	dbaccounttag "github.com/Wei-Shaw/sub2api/ent/accounttag"
 	dbaccounttagbinding "github.com/Wei-Shaw/sub2api/ent/accounttagbinding"
 	"github.com/Wei-Shaw/sub2api/ent/schema/mixins"
+	extensionv1 "github.com/Wei-Shaw/sub2api/internal/nativeapi"
 	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
-	extensionv1 "github.com/Wei-Shaw/sub2api/pkg/extensionapi/v1"
 
 	entsql "entgo.io/ent/dialect/sql"
 	"entgo.io/ent/dialect/sql/sqljson"
@@ -81,7 +81,6 @@ type AccountFacetOption struct {
 }
 
 type AccountConsoleFacets struct {
-	ViewPresetCounts   map[string]int            `json:"view_preset_counts,omitempty"`
 	Total              int                       `json:"total"`
 	UncategorizedCount int                       `json:"uncategorized_count"`
 	Platforms          []AccountFacetOption      `json:"platforms"`
@@ -919,10 +918,6 @@ func (s *adminServiceImpl) listAccountConsoleAll(ctx context.Context, filters Ac
 	if err := s.hydrateAccountTaxonomy(ctx, accounts); err != nil {
 		return nil, err
 	}
-	accounts, err = filterAccountViewAccounts(ctx, accounts)
-	if err != nil {
-		return nil, err
-	}
 	accounts = filterConsoleAccounts(accounts, filters)
 	if filters.SortBy == "upstream_billing_rate" {
 		now := time.Now()
@@ -1163,19 +1158,7 @@ func filterAccountsForFacet(accounts []*Account, matcher accountFacetMatcher, ig
 }
 
 func (s *adminServiceImpl) GetAccountConsoleFacets(ctx context.Context, filters AccountConsoleFilters) (*AccountConsoleFacets, error) {
-	var viewPresetCounts map[string]int
-	if view, bound := AccountViewFromContext(ctx); bound {
-		viewPresetCounts = make(map[string]int, len(view.contribution.AccountView.Presets))
-		common := filters
-		common.CindyOnly, common.CindyBalanceStatus, common.CindyHealthStatus = false, "", ""
-		for _, preset := range view.contribution.AccountView.Presets {
-			candidates, err := s.listAccountConsoleAll(accountViewPresetContext(ctx, preset), common)
-			if err != nil {
-				return nil, err
-			}
-			viewPresetCounts[preset.ID] = accountViewCounter(preset.Counter, candidates)
-		}
-	}
+
 	baseFilters := filters
 	baseFilters.Platforms = nil
 	baseFilters.Types = nil
@@ -1292,7 +1275,6 @@ func (s *adminServiceImpl) GetAccountConsoleFacets(ctx context.Context, filters 
 		return strings.ToLower(proxyOptions[i].Label) < strings.ToLower(proxyOptions[j].Label)
 	})
 	return &AccountConsoleFacets{
-		ViewPresetCounts: viewPresetCounts,
 		// Folder navigation always represents the complete result set after all
 		// non-folder filters, so total must use the same population as its counts.
 		Total: len(folderAccounts), UncategorizedCount: uncategorizedCount,

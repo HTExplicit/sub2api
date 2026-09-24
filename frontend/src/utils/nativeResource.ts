@@ -1,5 +1,5 @@
 import { apiClient } from '@/api/client'
-import { callLocalResource } from '@/components/plugins/localResources'
+import { callLocalResource } from '@/utils/imageStudioLocalResources'
 import { useAuthStore } from '@/stores/auth'
 
 // Same input shape the former plugin pages used with the bridge `resource()`,
@@ -19,6 +19,24 @@ type NativeResource =
 
 // Former plugin resource names mapped to their host REST routes (relative to the API base).
 const nativeResources: Record<string, NativeResource> = {
+  'cindy.probe.list': { method: 'GET', path: '/admin/cindy/balance-probe-jobs' },
+  'cindy.probe.preview': { method: 'POST', path: '/admin/cindy/balance-probe-jobs/preview' },
+  'cindy.probe.create': { method: 'POST', path: '/admin/cindy/balance-probe-jobs' },
+  'cindy.probe.get': { method: 'GET', path: '/admin/cindy/balance-probe-jobs/:id' },
+  'cindy.probe.items': { method: 'GET', path: '/admin/cindy/balance-probe-jobs/:id/items' },
+  'cindy.probe.rate': { method: 'PATCH', path: '/admin/cindy/balance-probe-jobs/:id/rate' },
+  'cindy.probe.pause': { method: 'POST', path: '/admin/cindy/balance-probe-jobs/:id/pause' },
+  'cindy.probe.resume': { method: 'POST', path: '/admin/cindy/balance-probe-jobs/:id/resume' },
+  'cindy.probe.cancel': { method: 'POST', path: '/admin/cindy/balance-probe-jobs/:id/cancel' },
+  'cindy.duplicates': { method: 'GET', path: '/admin/accounts/cindy/duplicate-identity-inventory' },
+  'cindy.groups.audit': { method: 'GET', path: '/admin/cindy/groups/audit' },
+  'cindy.groups.keys': { method: 'GET', path: '/admin/cindy/groups/:id/keys' },
+  'cindy.groups.preview': { method: 'POST', path: '/admin/cindy/groups/:id/split-preview' },
+  'cindy.groups.split': { method: 'POST', path: '/admin/cindy/groups/:id/split' },
+  'cindy.cleanup.insufficient.preview': { method: 'GET', path: '/admin/accounts/cindy/insufficient-delete-preview' },
+  'cindy.cleanup.insufficient.submit': { method: 'POST', path: '/admin/accounts/cindy/delete-insufficient' },
+  'cindy.cleanup.banned.preview': { method: 'GET', path: '/admin/accounts/cindy/banned-delete-preview' },
+  'cindy.cleanup.banned.submit': { method: 'POST', path: '/admin/accounts/cindy/delete-banned' },
   'image.keys': { method: 'GET', path: '/image-studio/eligible-keys' },
   'image.create': { method: 'POST', path: '/image-studio/jobs' },
   'image.jobs': { method: 'GET', path: '/image-studio/jobs' },

@@ -100,13 +100,12 @@ func TestAccountViewProbeResumeUsesExactOriginCAS(t *testing.T) {
 	for _, conflict := range []bool{false, true} {
 		db, mock, err := sqlmock.New()
 		require.NoError(t, err)
-		origin := &service.CindyBalanceProbeOrigin{Version: 1, PluginID: 3, PluginKey: service.CindyAccountViewPluginKey, PackageSHA256: strings.Repeat("a", 64), RuntimeGeneration: 4, OperationKey: "fixed", RequestDigest: strings.Repeat("b", 64), FrozenAccountIDs: []int64{2, 3}}
-		origin.View.RuntimeGeneration, origin.View.PolicyRevision = 4, 7
+		origin := &service.CindyBalanceProbeOrigin{Version: 1, PluginID: 3, PluginKey: "codexrip.cindy-provider", PackageSHA256: strings.Repeat("a", 64), RuntimeGeneration: 4, OperationKey: "fixed", RequestDigest: strings.Repeat("b", 64), FrozenAccountIDs: []int64{2, 3}}
+		origin.View = json.RawMessage(`{"runtime_generation":4,"policy_revision":7}`)
 		scope := service.CindyBalanceProbeScope{Mode: "all", Origin: origin}
 		originalJSON := service.EncodeCindyBalanceProbeScope(scope)
 		expectedJSON, _ := json.Marshal(origin)
 		next := *origin
-		next.RuntimeGeneration, next.View.RuntimeGeneration, next.View.PolicyRevision = 5, 5, 8
 		updatedScope := scope
 		updatedScope.Origin = &next
 		mock.ExpectBegin()

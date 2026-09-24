@@ -1,7 +1,6 @@
 import { apiClient } from '../client'
 import { accountViewClient } from './accountViewClient'
 import type { CapturedAccountView } from '@/composables/useAccountViewContext'
-import { pluginDispatchClient, pluginDispatchHeaders, type PluginDispatchContext } from './pluginDispatch'
 import type { AccountAvailableModel, AccountTestPlanView } from '@/types'
 
 const BASE_PATH = '/admin/account-jobs'
@@ -125,10 +124,9 @@ async function list(
   return data
 }
 
-async function get(jobID: number, options: { signal?: AbortSignal } = {}, dispatch?: PluginDispatchContext): Promise<AccountJob> {
-  const { data } = await pluginDispatchClient(dispatch).get<AccountJob>(`${BASE_PATH}/${jobID}`, {
+async function get(jobID: number, options: { signal?: AbortSignal } = {}): Promise<AccountJob> {
+  const { data } = await apiClient.get<AccountJob>(`${BASE_PATH}/${jobID}`, {
     signal: options.signal,
-    ...(dispatch ? { headers: pluginDispatchHeaders(dispatch) } : {}),
   })
   return data
 }

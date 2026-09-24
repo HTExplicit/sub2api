@@ -19,16 +19,12 @@ import release_preflight as guard
 
 
 SOURCE = "a" * 40
-HOST_SOURCE = "b" * 40
 TAG = "v0.2.7-codexrip.1"
-PLUGIN_TAG = "plugins/codex-runtime/v0.2.7"
 IMAGE_DIGEST = "sha256:" + "c" * 64
 
 
 def options(stage="before-push", kind="host"):
-    return argparse.Namespace(kind=kind, stage=stage, tag=TAG if kind == "host" else PLUGIN_TAG,
-                              source_sha=SOURCE, host_tag=TAG if kind == "plugin" else "",
-                              host_source_sha=HOST_SOURCE if kind == "plugin" else "",
+    return argparse.Namespace(kind=kind, stage=stage, tag=TAG, source_sha=SOURCE,
                               image_digest=IMAGE_DIGEST if stage in ("before-create", "before-publish") else "")
 
 
@@ -38,8 +34,6 @@ class Repository:
         self.calls = []
         self.source = SOURCE
         self.pages = pages or {1: []}
-        if args.kind == "plugin" and pages is None:
-            self.pages = {1: [{"id": 80, "tag_name": TAG, "draft": False}]}
 
     def __call__(self, path):
         self.calls.append(path)
@@ -47,33 +41,9 @@ class Repository:
             return copy.deepcopy(self.pages.get(int(path.rsplit("=", 1)[1]), []))
         if path.startswith("git/ref/tags/"):
             tag = path.removeprefix("git/ref/tags/")
-            sha = HOST_SOURCE if self.args.kind == "plugin" and tag == TAG else self.source
+            sha = self.source
             return {"ref": "refs/tags/" + tag, "object": {"type": "commit", "sha": sha}}
         raise AssertionError("unexpected metadata request: " + path)
-
-
-def bundle_fixture(root, kind="host"):
-    domains = ["codex-runtime", "model-policy"]
-    source = root / "plugins/bundle.source.json"
-    source.parent.mkdir(parents=True)
-    source.write_text(json.dumps({"schema_version": 1, "plugins": [{"directory": item} for item in domains]}))
-    if kind == "plugin":
-        domains = domains[:1]
-    directory = root / "deploy/plugin-bundle/current"
-    directory.mkdir(parents=True)
-    lock = {"schema_version": 1, "host_version": TAG[1:], "publisher_key_id": "codexrip-plugins-v1", "plugins": []}
-    assets = []
-    for domain in domains:
-        raw = ("synthetic package bytes: " + domain).encode()
-        name = domain + ".s2plugin"
-        sha = hashlib.sha256(raw).hexdigest()
-        (directory / name).write_bytes(raw)
-        lock["plugins"].append({"id": "codexrip." + domain, "file": name, "sha256": sha})
-        assets.append({"name": name, "size": len(raw), "state": "uploaded", "digest": "sha256:" + sha})
-    raw = json.dumps(lock).encode()
-    (directory / "lock.json").write_bytes(raw)
-    assets.append({"name": "lock.json", "size": len(raw), "state": "uploaded", "digest": "sha256:" + hashlib.sha256(raw).hexdigest()})
-    return assets
 
 
 class ReleaseMetadataTests(unittest.TestCase):
@@ -154,52 +124,30 @@ class ReleaseMetadataTests(unittest.TestCase):
                 guard.check(args, github=Repository(args), registry=lambda _: observed)
 
     def test_complete_draft_assets_and_source_allow_publication_by_id(self):
-        for kind in ("host", "plugin"):
-            for target in (SOURCE, "main"):
-                with self.subTest(kind=kind, target=target), tempfile.TemporaryDirectory() as tmp:
-                    args = options("before-publish", kind)
-                    root = Path(tmp)
-                    release = {"id": 101, "tag_name": args.tag, "draft": True, "target_commitish": target,
-                               "assets": bundle_fixture(root, kind)}
-                    records = [release]
-                    if kind == "plugin":
-                        records.append({"id": 80, "tag_name": TAG, "draft": False})
-                    repo = Repository(args, {1: records})
-                    result = guard.check(args, github=repo, registry=lambda _: IMAGE_DIGEST, root=root)
-                    self.assertEqual(101, result["release_id"])
-                    self.assertEqual("git/ref/tags/" + args.tag, repo.calls[-1])
+        for target in (SOURCE, "main"):
+            with self.subTest(target=target), tempfile.TemporaryDirectory() as tmp:
+                args = options("before-publish")
+                release = {"id": 101, "tag_name": args.tag, "draft": True,
+                           "target_commitish": target, "assets": []}
+                repo = Repository(args, {1: [release]})
+                result = guard.check(args, github=repo, registry=lambda _: IMAGE_DIGEST, root=Path(tmp))
+                self.assertEqual(101, result["release_id"])
+                self.assertEqual("git/ref/tags/" + args.tag, repo.calls[-1])
 
     def test_missing_or_changed_draft_asset_metadata_prevents_publication(self):
-        for mutation in ("missing-digest", "wrong-digest", "wrong-size", "partial-upload", "extra-asset", "missing-asset", "wrong-target"):
+        for mutation in ("unexpected-package", "invalid-assets", "wrong-target"):
             with self.subTest(mutation=mutation), tempfile.TemporaryDirectory() as tmp:
                 args = options("before-publish")
-                root = Path(tmp)
-                assets = bundle_fixture(root)
-                release = {"id": 101, "tag_name": TAG, "draft": True, "target_commitish": SOURCE, "assets": assets}
-                if mutation == "missing-digest": assets[0].pop("digest")
-                if mutation == "wrong-digest": assets[0]["digest"] = IMAGE_DIGEST
-                if mutation == "wrong-size": assets[0]["size"] += 1
-                if mutation == "partial-upload": assets[0]["state"] = "starter"
-                if mutation == "extra-asset": assets.append(dict(assets[0], name="unexpected.s2plugin"))
-                if mutation == "missing-asset": assets.pop()
-                if mutation == "wrong-target": release["target_commitish"] = "d" * 40
+                release = {"id": 101, "tag_name": TAG, "draft": True,
+                           "target_commitish": SOURCE, "assets": []}
+                if mutation == "unexpected-package":
+                    release["assets"] = [{"name": "old.s2plugin", "state": "uploaded"}]
+                if mutation == "invalid-assets":
+                    release["assets"] = None
+                if mutation == "wrong-target":
+                    release["target_commitish"] = "d" * 40
                 with self.assertRaises(guard.PreflightError):
-                    guard.check(args, github=Repository(args, {1: [release]}), registry=lambda _: IMAGE_DIGEST, root=root)
-
-    def test_compatible_host_must_be_published_and_keep_its_commit(self):
-        args = options("before-sign", "plugin")
-        repo = Repository(args, {1: [{"id": 80, "tag_name": TAG, "draft": True}]})
-        with self.assertRaisesRegex(guard.PreflightError, "compatible_host_release_unavailable"):
-            guard.check(args, github=repo)
-        repo = Repository(args)
-        normal = repo.__call__
-        def changed_host(path):
-            value = normal(path)
-            if path == "git/ref/tags/" + TAG:
-                value["object"]["sha"] = "d" * 40
-            return value
-        with self.assertRaisesRegex(guard.PreflightError, "compatible_host_tag_changed"):
-            guard.check(args, github=changed_host)
+                    guard.check(args, github=Repository(args, {1: [release]}), registry=lambda _: IMAGE_DIGEST, root=Path(tmp))
 
 
 class ReleaseWorkflowContracts(unittest.TestCase):
@@ -212,7 +160,7 @@ class ReleaseWorkflowContracts(unittest.TestCase):
             bash = shutil.which("bash")
             if bash is None:
                 self.skipTest("Bash is required for the environment-only fixture")
-        for name in ("downstream-release.yml", "plugin-release.yml"):
+        for name in ("downstream-release.yml",):
             source = (guard.ROOT / ".github/workflows" / name).read_text(encoding="utf-8")
             snippet = re.search(r"(?ms)^          authorization=\$\(.*?^          unset authorization$", source)
             self.assertIsNotNone(snippet)
@@ -240,7 +188,7 @@ printf 'TEMPORARY_GIT_AUTH|state=passed|real_git=false\n'
                 self.assertNotIn("fixture-job-token", result.stdout + result.stderr)
 
     def test_write_credentials_are_not_in_build_environments(self):
-        for name in ("downstream-release.yml", "plugin-release.yml"):
+        for name in ("downstream-release.yml",):
             source = (guard.ROOT / ".github/workflows" / name).read_text(encoding="utf-8")
             self.assertEqual([], re.findall(r"(?m)^      GH_TOKEN:.*$", source), "a job-wide token reaches dependency/build subprocesses")
             self.assertEqual(source.count("uses: actions/checkout@"), source.count("persist-credentials: false"))
@@ -269,29 +217,14 @@ printf 'TEMPORARY_GIT_AUTH|state=passed|real_git=false\n'
         self.assertNotIn("--clobber", source)
         self.assertNotIn("gh release delete", source)
 
-    def test_plugin_uses_exact_tag_and_stages_assets_before_publish(self):
-        source = (guard.ROOT / ".github/workflows/plugin-release.yml").read_text(encoding="utf-8")
-        self.assertIn("ref: refs/tags/${{ inputs.plugin_tag }}", source)
-        self.assertIn("host_source_sha=", source)
-        self.assertIn("--stage before-sign", source)
-        self.assertIn("--stage before-create", source)
-        self.assertIn("--stage before-publish", source)
-        self.assertIn("--draft", source)
-        self.assertIn('--target "$SOURCE_SHA"', source)
-        self.assertIn('releases/$RELEASE_ID', source)
-        self.assertNotIn("--clobber", source)
-        self.assertNotIn("gh release delete", source)
-
-    def test_publisher_secret_is_only_on_original_signing_steps(self):
-        for name in ("downstream-release.yml", "plugin-release.yml"):
-            source = (guard.ROOT / ".github/workflows" / name).read_text(encoding="utf-8")
-            self.assertEqual(1, source.count("secrets.SUB2API_PLUGIN_SIGNING_KEY"))
-            step = next(part for part in source.split("      - ") if "secrets.SUB2API_PLUGIN_SIGNING_KEY" in part)
-            self.assertIn("name: Sign", step)
-            self.assertNotIn("release_preflight.py", step)
-            self.assertNotIn("go build", step)
-        helper = Path(guard.__file__).read_text(encoding="utf-8")
-        self.assertNotIn('os.environ.get("SUB2API_PLUGIN_SIGNING_KEY"', helper)
+    def test_native_release_has_no_first_party_signing_or_upload(self):
+        source = (guard.ROOT / ".github/workflows/downstream-release.yml").read_text(encoding="utf-8")
+        for retired in ("SUB2API_PLUGIN_SIGNING_KEY", "package-plugin", "plugin-bundle", ".s2plugin", "extensionapi/ui"):
+            self.assertNotIn(retired, source)
+        self.assertIn("Attest image provenance", source)
+        self.assertIn("Image:", source)
+        self.assertIn("Source:", source)
+        self.assertFalse((guard.ROOT / ".github/workflows/plugin-release.yml").exists())
 
 
 if __name__ == "__main__":

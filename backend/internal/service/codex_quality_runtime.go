@@ -10,16 +10,16 @@ import (
 	"strings"
 	"time"
 
-	extensionv1 "github.com/Wei-Shaw/sub2api/pkg/extensionapi/v1"
+	extensionv1 "github.com/Wei-Shaw/sub2api/internal/nativeapi"
 	"github.com/gin-gonic/gin"
 	"github.com/tidwall/gjson"
 )
 
 type codexQualityRuntime struct {
 	s            *OpenAIGatewayService
-	store        PluginExtensionStateStore
-	installation *PluginInstallation
-	host         *pluginExtensionHost
+	store        NativeCodexStateStore
+	installation *NativeCodexMetadata
+	host         *nativeCodexHost
 }
 
 type codexQualityExecutionKey struct{}
@@ -88,30 +88,30 @@ func StageCodexQualityHeaders(c *gin.Context) {
 }
 
 func (s *OpenAIGatewayService) codexQualityRuntime() (*codexQualityRuntime, error) {
-	if s == nil || s.pluginManager == nil || s.accountRepo == nil {
+	if s == nil || s.nativeCodexRuntime == nil || s.accountRepo == nil {
 		return nil, ErrCodexQualityUnavailable
 	}
-	i, _ := s.pluginManager.installedByKey(codexRuntimePluginKey)
-	store, ok := s.pluginManager.repo.(PluginExtensionStateStore)
-	if !ok || i == nil {
+	runtime := s.nativeCodexRuntime
+	metadata, err := runtime.repo.LoadNativeCodexMetadata(context.Background())
+	if err != nil {
 		return nil, ErrCodexQualityUnavailable
 	}
-	host, ok := s.pluginManager.buildHostServices(i).(*pluginHostServiceServer)
-	if !ok || host == nil || host.extension == nil {
-		return nil, ErrCodexQualityUnavailable
+	snapshot := runtime.current()
+	var host *nativeCodexHost
+	if snapshot != nil {
+		host = snapshot.host
 	}
-	broker, ok := host.extension.(*pluginExtensionHost)
-	if !ok || broker == nil {
-		return nil, ErrCodexQualityUnavailable
-	}
-	return &codexQualityRuntime{s: s, store: store, installation: i, host: broker}, nil
+	return &codexQualityRuntime{s: s, store: runtime.repo, installation: metadata, host: host}, nil
 }
 
 func (rt *codexQualityRuntime) ctx(ctx context.Context) context.Context {
-	return WithPluginExecution(ctx, rt.installation)
+	return WithNativeCodexExecution(ctx, rt.installation)
 }
 
 func (rt *codexQualityRuntime) scope(ctx context.Context, id int64) (extensionv1.CodexRoutingScope, error) {
+	if rt.host == nil {
+		return extensionv1.CodexRoutingScope{}, ErrCodexQualityUnavailable
+	}
 	raw, _ := json.Marshal(extensionv1.CodexRoutingQuery{AccountID: id, Transport: "http"})
 	result, err := rt.host.Call(rt.ctx(ctx), extensionv1.HostInvocation{Operation: extensionv1.HostCodexRoutingScope, Payload: raw})
 	var scope extensionv1.CodexRoutingScope
@@ -414,7 +414,7 @@ func (s *OpenAIGatewayService) SelectCodexQualityAccount(ctx context.Context) (*
 	return attachSelectionProfitGate(ctx, attachSelectionRuntimeBreakerProbe(ctx, &AccountSelectionResult{Account: a, Acquired: true, ReleaseFunc: acquired.ReleaseFunc})), nil
 }
 
-func codexQualityRequestQualification(ctx context.Context, account *Account, model string) (*extensionv1.CodexRoutingQualification, *PluginInstallation, error) {
+func codexQualityRequestQualification(ctx context.Context, account *Account, model string) (*extensionv1.CodexRoutingQualification, *NativeCodexMetadata, error) {
 	e := codexQualityExecutionFromContext(ctx)
 	if e == nil || account == nil || account.ID != e.accountID || model != codexQualityModel {
 		return nil, nil, ErrCodexQualityUnavailable

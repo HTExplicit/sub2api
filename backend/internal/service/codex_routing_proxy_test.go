@@ -22,7 +22,7 @@ import (
 	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
-	extensionv1 "github.com/Wei-Shaw/sub2api/pkg/extensionapi/v1"
+	extensionv1 "github.com/Wei-Shaw/sub2api/internal/nativeapi"
 	"github.com/stretchr/testify/require"
 )
 
@@ -113,9 +113,9 @@ func TestCodexRoutingAcquisitionUsesOnlyExplicitProxyTrust(t *testing.T) {
 	require.NoError(t, err)
 	t.Cleanup(transport.CloseIdleConnections)
 	store := &routingMemoryStore{values: map[string]extensionv1.StateResult{}}
-	manager := ticketTestManager(t, config.OpenAICodexTicketConfig{}, nil)
+	manager := nativeTicketTestRuntime(t, config.OpenAICodexTicketConfig{}, nil)
 	manager.repo = store
-	service := &OpenAIGatewayService{pluginManager: manager, httpUpstream: &routingProxySystemUpstream{client: &http.Client{Transport: transport, Timeout: 3 * time.Second}}}
+	service := &OpenAIGatewayService{nativeCodexRuntime: manager, httpUpstream: &routingProxySystemUpstream{client: &http.Client{Transport: transport, Timeout: 3 * time.Second}}}
 	send := func() (*http.Response, error) {
 		request, err := http.NewRequestWithContext(context.Background(), http.MethodPost, "https://chatgpt.com/backend-api/codex/responses", strings.NewReader(`{"model":"synthetic-model"}`))
 		require.NoError(t, err)

@@ -5,7 +5,7 @@ package service
 import (
 	"testing"
 
-	cindyregistry "github.com/HTExplicit/sub2api-plugins/cindyprovider/catalog"
+	cindyregistry "github.com/Wei-Shaw/sub2api/internal/cindyprovider/catalog"
 	"github.com/stretchr/testify/require"
 )
 

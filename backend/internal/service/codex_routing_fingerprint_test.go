@@ -8,16 +8,16 @@ import (
 	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
-	extensionv1 "github.com/Wei-Shaw/sub2api/pkg/extensionapi/v1"
+	extensionv1 "github.com/Wei-Shaw/sub2api/internal/nativeapi"
 	"github.com/stretchr/testify/require"
 )
 
 func TestCodexFingerprintShowsCookieDigestsAndOriginalVerificationTime(t *testing.T) {
 	account := ticketTestAccount(7)
-	manager := ticketTestManager(t, config.OpenAICodexTicketConfig{Enabled: true, Models: []string{"gpt-6-astra"}}, nil)
+	manager := nativeTicketTestRuntime(t, config.OpenAICodexTicketConfig{Enabled: true, Models: []string{"gpt-6-astra"}}, nil)
 	store := &routingMemoryStore{values: map[string]extensionv1.StateResult{}}
 	manager.repo = store
-	service := &OpenAIGatewayService{pluginManager: manager, accountRepo: &routingAccountRepositoryFixture{account: account}}
+	service := &OpenAIGatewayService{nativeCodexRuntime: manager, accountRepo: &routingAccountRepositoryFixture{account: account}}
 	scope, err := service.PrepareCodexRoutingScope(context.Background(), 7, "http")
 	require.NoError(t, err)
 	verified := time.Now().UTC().Add(-20 * time.Second).Truncate(time.Second)

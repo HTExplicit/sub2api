@@ -4,11 +4,9 @@ import type { CapturedAccountView } from '@/composables/useAccountViewContext'
 const { get, request } = vi.hoisted(() => ({ get: vi.fn(), request: vi.fn() }))
 vi.mock('@/api/client', () => ({ apiClient: { get, request } }))
 import { accountAPIForView, getEditContext } from '@/api/admin/accounts'
-import { ACCOUNT_VIEW_HEADER, accountViewIdentityHeader } from '@/components/plugins/accountView'
 
 function view(assertCurrent = vi.fn()): CapturedAccountView {
-  return { actorID: 9, assertCurrent, context: { version: 1, plugin_id: 7, plugin_key: 'codexrip.cindy-provider', package_sha256: 'a'.repeat(64),
-    view_id: 'cindy-accounts', preset_id: 'cindy', view_definition_digest: 'b'.repeat(64), query: { cindy_only: true } } }
+  return { actorID: 9, assertCurrent }
 }
 describe('fixed account edit-context API', () => {
   beforeEach(() => { get.mockReset(); request.mockReset() })
@@ -21,13 +19,12 @@ describe('fixed account edit-context API', () => {
     expect(request).not.toHaveBeenCalled()
   })
 
-  it('captures the origin view on the fixed read through the existing native facade', async () => {
+  it('retains the native operation read guard without plugin identity headers', async () => {
     const scope = view(), signal = new AbortController().signal
     request.mockResolvedValue({ data: { schema_version: 1, kind: 'core', account_id: 41 } })
     await accountAPIForView(scope).getEditContext(41, signal)
-    const { query: _query, ...identity } = scope.context
-    expect(request).toHaveBeenCalledWith(expect.objectContaining({ url: '/admin/accounts/41/edit-context', method: 'GET', signal,
-      headers: { [ACCOUNT_VIEW_HEADER]: accountViewIdentityHeader(identity) } }))
+    expect(request).toHaveBeenCalledWith({ url: '/admin/accounts/41/edit-context', method: 'GET', signal })
+    expect(scope.assertCurrent).toHaveBeenCalled()
     expect(get).not.toHaveBeenCalled()
   })
 
@@ -43,11 +40,11 @@ describe('fixed account edit-context API', () => {
     expect(get).not.toHaveBeenCalled()
   })
 
-  it('keeps the existing view context on a basic-only native update', async () => {
+  it('keeps a basic-only native update free of a plugin view context', async () => {
     const scope = view()
     request.mockResolvedValue({ data: { id: 41, notes: 'basic edit' } })
     await accountAPIForView(scope).update(41, { notes: 'basic edit' })
     expect(request).toHaveBeenCalledWith(expect.objectContaining({ url: '/admin/accounts/41', method: 'PUT',
-      data: { notes: 'basic edit', view_context: scope.context } }))
+      data: { notes: 'basic edit' } }))
   })
 })

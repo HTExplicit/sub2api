@@ -31,7 +31,6 @@ const {
 
 const authState = vi.hoisted(() => ({ isSimpleMode: false }))
 
-vi.mock('@/components/plugins/ExtensionSurface.vue', () => ({ default: { template: '<div><slot /></div>' } }))
 vi.mock('@/api/admin', () => ({
   adminAPI: {
     groups: {

@@ -7,20 +7,20 @@ import (
 	"net/http"
 	"time"
 
-	extensionv1 "github.com/Wei-Shaw/sub2api/pkg/extensionapi/v1"
+	extensionv1 "github.com/Wei-Shaw/sub2api/internal/nativeapi"
 )
 
 func codexTransportPlan(ctx context.Context, accountType string, accountID int64, query extensionv1.CodexTransportQuery) (extensionv1.CodexTransportPlan, error) {
 	raw, err := json.Marshal(query)
 	if err != nil || len(raw) > 16384 {
-		return extensionv1.CodexTransportPlan{}, ErrExtensionOperationUnavailable
+		return extensionv1.CodexTransportPlan{}, ErrNativeCodexRuntimeUnavailable
 	}
 	call, cancel := context.WithTimeout(ctx, time.Second)
 	defer cancel()
-	result, err := invokeProcessExtensionCached(call, PlatformOpenAI, accountType, extensionv1.Invocation{
+	result, err := invokeNativeCodex(call, PlatformOpenAI, accountType, extensionv1.Invocation{
 		Capability: extensionv1.CapabilityRequest, Operation: "codex.transport.plan", Payload: raw, AccountID: accountID,
 	})
-	if errors.Is(err, ErrExtensionOperationDisabled) {
+	if errors.Is(err, ErrNativeCodexPolicyDisabled) {
 		return extensionv1.CodexTransportPlan{}, nil
 	}
 	if err != nil {
@@ -28,7 +28,7 @@ func codexTransportPlan(ctx context.Context, accountType string, accountID int64
 	}
 	var plan extensionv1.CodexTransportPlan
 	if result.Code != "" || json.Unmarshal(result.Payload, &plan) != nil || (plan.Compress && !plan.Enabled) {
-		return plan, ErrExtensionOperationUnavailable
+		return plan, ErrNativeCodexRuntimeUnavailable
 	}
 	return plan, nil
 }

@@ -7,7 +7,7 @@ import (
 	"strings"
 	"time"
 
-	extensionv1 "github.com/Wei-Shaw/sub2api/pkg/extensionapi/v1"
+	extensionv1 "github.com/Wei-Shaw/sub2api/internal/nativeapi"
 )
 
 func invokeCindyManagement(ctx context.Context, operation string, input, output any) error {
@@ -17,7 +17,7 @@ func invokeCindyManagement(ctx context.Context, operation string, input, output 
 	}
 	call, cancel := context.WithTimeout(ctx, time.Second)
 	defer cancel()
-	result, err := invokeProcessExtension(call, PlatformCindy, AccountTypeAPIKey, extensionv1.Invocation{Capability: extensionv1.CapabilityProvider, Operation: operation, Payload: raw})
+	result, err := invokeCindyProvider(call, extensionv1.Invocation{Capability: extensionv1.CapabilityProvider, Operation: operation, Payload: raw})
 	if err != nil {
 		return ErrCindyGroupAdminUnavailable
 	}

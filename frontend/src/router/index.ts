@@ -8,12 +8,12 @@ import { useAuthStore } from '@/stores/auth'
 import { useAppStore } from '@/stores/app'
 import { useAdminSettingsStore } from '@/stores/adminSettings'
 import { useAdminComplianceStore } from '@/stores/adminCompliance'
-import { usePluginExtensions } from '@/stores/pluginExtensions'
 import { useNavigationLoadingState } from '@/composables/useNavigationLoading'
 import { useRoutePrefetch } from '@/composables/useRoutePrefetch'
 import { getSetupStatus } from '@/api/setup'
 import { resolveCompletedSetupRedirectPath } from './setupRedirect'
 import { resolveRouteDocumentTitle } from './title'
+import { cindyLegacyQuery } from './cindyLegacyRedirect'
 
 /**
  * Route definitions with lazy loading
@@ -570,17 +570,19 @@ const routes: RouteRecordRaw[] = [
     meta: {
       requiresAuth: true,
       requiresAdmin: true,
-      title: 'Account View',
-      titleKey: 'nav.accounts',
-      accountView: true
+      title: 'Cindy Accounts',
+      titleKey: 'nav.cindyAccounts'
     }
   },
   {
-    path: '/admin/account-views/:pluginKey/:viewId',
-    name: 'AdminAccountView',
-    component: () => import('@/components/plugins/AccountViewPage.vue'),
-    props: true,
-    meta: { requiresAuth: true, requiresAdmin: true, titleKey: 'nav.accounts', accountView: true }
+    path: '/admin/account-views/codexrip.cindy-provider/cindy-accounts',
+    redirect: to => ({ path: '/admin/cindy-accounts', query: cindyLegacyQuery(to.query) })
+  },
+  {
+    path: '/admin/codex-runtime',
+    name: 'AdminCodexRuntime',
+    component: () => import('@/views/admin/CodexRuntimeView.vue'),
+    meta: { requiresAuth: true, requiresAdmin: true, title: 'Codex route settings', titleKey: 'nav.codexRuntime' }
   },
   {
     path: '/admin/announcements',
@@ -995,13 +997,6 @@ router.beforeEach(async (to, _from, next) => {
   if (to.meta.requiresImageStudio && appStore.cachedPublicSettings?.image_studio_enabled !== true) {
     next(authStore.isAdmin ? '/admin/dashboard' : '/dashboard')
     return
-  }
-
-  if (to.meta.accountView) {
-    // Keep the destination for a precise unavailable tombstone. The page
-    // resolves its owner and signed declaration before mounting any workbench.
-    const extensions = usePluginExtensions()
-    if (!extensions.loaded) await extensions.refresh()
   }
 
   // 订阅功能是 opt-out 开关：只有显式 false 才拦截「我的订阅」页直达。

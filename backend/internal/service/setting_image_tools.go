@@ -3,7 +3,7 @@ package service
 import (
 	"context"
 
-	extensionv1 "github.com/Wei-Shaw/sub2api/pkg/extensionapi/v1"
+	extensionv1 "github.com/Wei-Shaw/sub2api/internal/nativeapi"
 )
 
 // SettingKeyImageToolsConfig stores the Image Studio and Responses image bridge
@@ -18,11 +18,16 @@ func EffectiveImageToolsConfig() extensionv1.ImageToolsConfig {
 
 // LoadImageToolsConfig installs the stored switches for this process at
 // startup. Without a stored value the deploy-time rollout flags stay in force.
-func (s *SettingService) LoadImageToolsConfig(ctx context.Context) {
+func (s *SettingService) LoadImageToolsConfig(ctx context.Context) error {
 	var stored extensionv1.ImageToolsConfig
-	if s.readJSONSetting(ctx, SettingKeyImageToolsConfig, &stored) {
+	found, err := s.readNativeSwitchSetting(ctx, SettingKeyImageToolsConfig, &stored, "studio_enabled", "responses_image_enabled")
+	if err != nil {
+		return err
+	}
+	if found {
 		ConfigureImageTools(&stored)
 	}
+	return nil
 }
 
 // UpdateImageToolsConfig persists the switches and applies them to this process,

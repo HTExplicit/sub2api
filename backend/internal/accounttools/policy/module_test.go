@@ -5,7 +5,7 @@ import (
 	"encoding/json"
 	"testing"
 
-	extensionv1 "github.com/Wei-Shaw/sub2api/pkg/extensionapi/v1"
+	extensionv1 "github.com/Wei-Shaw/sub2api/internal/nativeapi"
 )
 
 func TestTaxonomyPoliciesRejectAmbiguityAndInvalidAssignments(t *testing.T) {

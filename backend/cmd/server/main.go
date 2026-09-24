@@ -208,6 +208,13 @@ func runMainServer() {
 		log.Fatalf("Failed to initialize application: %v", err)
 	}
 	defer app.Cleanup()
+	if app.CodexRuntime != nil {
+		if err := app.CodexRuntime.Start(context.Background()); err != nil {
+			log.Printf("Native Codex runtime could not start: %v", err)
+			app.Cleanup()
+			os.Exit(1)
+		}
+	}
 	if app.PluginManager != nil {
 		if err := app.PluginManager.Start(context.Background()); err != nil {
 			log.Printf("Plugin manager started in degraded state: %v", err)

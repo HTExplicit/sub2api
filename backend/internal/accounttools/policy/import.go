@@ -1,6 +1,6 @@
 package policy
 
-import extensionv1 "github.com/Wei-Shaw/sub2api/pkg/extensionapi/v1"
+import extensionv1 "github.com/Wei-Shaw/sub2api/internal/nativeapi"
 
 func planImport(in extensionv1.AccountImportPlanningRequest) []extensionv1.AccountImportItemPlan {
 	if in.Phase == "finalize" {

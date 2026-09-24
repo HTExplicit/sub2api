@@ -1,162 +1,233 @@
-# Sub2API 插件开发
+# Sub2API 插件开发教程
 
-本页描述当前 `v0.2.7` 下游分支的实现，尚不代表生产已升级。迁移与交付状态见[实施状态](../.downstream/implementation-v0.2.7.md)。插件以独立模块、独立进程和签名资源包运行；宿主保留鉴权、凭据刷新、事务、金额提交及通用请求生命周期。
+本文面向希望为 Sub2API 开发、打包和发布插件的团队。插件是独立进程和静态 UI 组成的 `.s2plugin` 包，宿主通过稳定的 gRPC 协议调用它。本文以当前宿主已经定义的 `openai.oauth.outbound_transport.v1` 能力作为协议示例，说明开发者需要准备什么、哪些职责属于插件、哪些职责仍由 Sub2API 负责。
 
-## 从现有模块开始
+本文不是一个可直接安装的完整插件，也不代表 Sub2API 已经发布对应的官方插件包。当前文档主要描述公开协议、宿主边界和开发流程。后续是否发布可安装包、支持哪些 Provider，以及如何提供示例仓库，都需要另行公告。
 
-使用与 `backend/go.mod` 一致的 Go 工具链。插件只导入公开的 `backend/pkg/extensionapi/v1` 或旧传输 `backend/pkg/pluginapi/v1`，不能导入宿主 `internal` 包。
+## 1. 准备开发环境
 
-| 模块 | 已迁入的主要职责 |
-|---|---|
-| `plugins/codex-runtime` | 292采集、校验/注入、有限续期、身份/传输、推理恢复/回放规则及诊断界面 |
-| `plugins/model-policy` | 静态容量参考、精确别名与供应商范围 |
-| `plugins/prompt-skills` | 提示词范围、协议载体、回显、发布/回滚、技能来源/存储计划及管理界面 |
-| `plugins/account-tools` | 分类策略、逐账号测试计划和推理选项 |
-| `plugins/cindy-provider` | 目录、价格参考、协议能力及健康错误分类 |
-| `plugins/image-tools` | 图像生成/编辑计划、模型投影和图像功能配置 |
-| `plugins/admin-observability` | 流量规则、指标展示、提示词审计管理界面和可停用主题资源 |
+建议使用以下环境：
 
-这些模块可作为实现示例；剩余混合职责以实施状态中的未完成项为准。`plugins/bundle.source.json` 是镜像内置集合及首次迁移配置的唯一清单。
+- Go 1.21 或更高版本；
+- Node.js（仅在插件 UI 使用 JavaScript 时需要）；
+- Git；
+- 与目标部署环境一致的构建工具链。
 
-每个模块维护自己的 `go.mod`、`cmd/plugin/main.go`、业务包、`manifest.source.json` 和 `ui/`。入口调用 `extensionv1.Serve`，业务模块实现 `Invoke`、`ValidateConfig`、`ApplyConfig` 和 `Status`。需要宿主数据的模块实现 `SetHost(*extensionv1.Client)`。
+协议定义和通用说明位于：
 
-## 声明能力与生命周期
+- `backend/pkg/pluginapi/v1/plugin.proto`：进程间消息和流式请求定义；
+- `backend/pkg/pluginapi/v1/runtime.go`：插件进程启动入口；
+- `backend/pkg/pluginapi/v1/manifest.schema.json`：包清单 JSON Schema；
+- `backend/pkg/pluginapi/docs/`：开发、UI Bridge、包格式和安全边界说明。
 
-manifest 的身份、版本、协议版本和能力必须与程序 `GetInfo` 一致。当前扩展 API 为 1；JSON 请求通过有界 gRPC 信封传送，单次输入和输出上限均为 4 MiB。
+目前暂未提供可直接复制的官方示例源码。开发者可以按照本文的目录和协议说明创建自己的插件工程；示例仓库发布后，会在本文补充正式的获取地址、目录说明和版本要求。公开协议始终以 `backend/pkg/pluginapi/` 为准。
 
-| 能力 | 边界 |
-|---|---|
-| `extensions.provider.v1` | 供应商策略，按平台和账号类型限定 |
-| `extensions.catalog.v1` | 模型目录参考 |
-| `extensions.request.v1` | 请求计划和前置条件，不自动授予凭据权限 |
-| `extensions.scheduling.v1` | 调度约束及持久摘要 |
-| `extensions.jobs.v1` | 宿主持久任务 |
-| `extensions.admin.v1` | 已声明、经管理员授权的操作 |
-| `extensions.observability.v1` | 有范围限制的账号计数器，不包含凭据和请求正文 |
-| `extensions.recovery.v1` | 有账号范围的恢复/回放规则及脱敏诊断，不提供原始客户历史 |
-| `extensions.credentials.v1` | 显式声明范围内的敏感出站身份解析 |
-| `extensions.ui.v1` | 界面贡献；公开主题使用通配平台和账号类型绑定 |
+## 2. 创建插件工程
 
-命名操作通过 manifest 的 `operations` 按能力声明。作用范围重叠的两个已启用插件不能拥有同名操作。宿主在调用前检查实际绑定、依赖和健康状态；结果 `plugin_id` 由宿主写入。旧 `openai.oauth.outbound_transport.v1` 仍支持原有流式契约，参考 `backend/pkg/pluginapi/docs/`；其 `request_sent` 必须准确，防止重复上游请求。
+在示例仓库发布前，可以先创建一个独立的 Go 工程，目录建议如下：
 
-声明 `requires.extension_api` 的进程只使用带账号范围和执行代次的具名宿主端口，不能同时使用旧 `HostService` 的 KV 或账号目录绕过这些限制；旧 transport-only 插件未声明扩展 API 时仍保留原协议。具名策略即使命中缓存，也会重新核验当前持久状态、绑定和已应用配置，调用期间的配置变化或取消会使该次结果失效。需要后续宿主出站的流程仍须保留自身操作上下文，不能把一次策略查询当作无限期授权。
-
-安装、绑定启停、卸载、更新提交及内置初始化的最终写入共享 PostgreSQL `SERIALIZABLE` 事务内的依赖图校验。健康故障不擦除期望启用状态；校验失败会回滚本次图修改和同事务任务取消。序列化冲突返回既有状态冲突，不自动重放业务。这只约束采用该协议的新写入路径，不保证旧版本写入器或绕过仓库的直接 SQL 安全。
-
-不要把完整客户历史、图片或大文件复制进 RPC。传送有界事实与计划，由宿主处理原始载荷。价格和观测规则等需要跨异步边界的结果，在请求开始时冻结，新请求重新检查插件状态。
-
-`ValidateConfig` 拒绝未知字段和错误类型，返回完整规范化对象。宿主加密保存配置，历史环境变量仅用于首次迁移。停用撤下入口并阻止新调用；启用但故障保留入口和不可用原因。已有历史、已停止续期状态、账本和结果保留。
-
-公共扩展运行时也实现官方 `TestConfig` 方法，默认只检查配置和读取被动状态，并明确返回“未测试上游连接”。它不再次应用配置，也不调用业务操作；真正的代理/上游诊断应通过已声明的领域管理操作显式触发，不能把这个本地检查结果当作模型连通性证明。
-
-宿主任务可绑定插件操作上下文，在停用、替换或实际配置变化时取消 IO。保存相同配置不会取消现有任务。已经开始计数或产生费用的请求使用冻结快照收尾。缓存必须有界，按配置版本隔离，使用前仍检查启停和健康；不可用时不得恢复旧宿主业务作为隐式回退。
-
-具名调用的 `account_id` 由宿主从实际授权目标写入；权限与灰度在缓存和执行前检查。账号任务元数据中的 `plugin_id`、`plugin_generation` 也由宿主写入；创建事务检查当前启停与代次。失败重试保留原插件，显式重新校验当前版本与账号范围，不能通过重试扩大已收窄的绑定。旧代次任务不能在新进程上自动继续。
-
-实际账号目录查询也必须传 `CatalogQuery.account_id`；省略或零值仅保留无账号的共享参考查询兼容性。账号型 broker 在读凭据、指标或写账号投影前读取当前安装范围，不能把 payload 里的账号元数据当作调用准入。已经发出的观测仍可按原归属收尾，不因此开始新业务请求。
-
-## 页面和公开主题
-
-配置页面位于 `ui/`，在受限 iframe 中运行。打包器自动加入 `backend/pkg/extensionapi/ui/bridge.js`，页面使用 `Sub2APIPluginBridge`。
-
-复杂页面位于插件自己的 `ui/src`，只导入 Vue 等公开依赖和 `@sub2api/plugin-ui`。公共 UI SDK 提供对话框、图标、错误处理、基础样式和渲染工具；宿主旧组件路径仅作转出适配，插件不引用宿主内部组件。`node backend/pkg/extensionapi/ui/build.mjs prompt-skills` 编译所选域，省略域名编译所有已声明源码入口。构建产物进入 `ui/compiled`，不提交；打包跳过源码和测试目录。贡献的入口必须实际包含在签名包里。
-
-| 方法 | 用途 |
-|---|---|
-| `context()` | 挂载模式、语言、主题与已验证账号上下文 |
-| `config()` / `save(config)` | 配置读取、校验和保存 |
-| `status()` | 被动状态，不执行模型测试 |
-| `invoke(action, payload)` | 贡献中声明的管理操作 |
-| `submit(action, items, key)` | 带稳定幂等键的宿主持久任务 |
-| `resource(name, input)` | 具名宿主数据操作；`params`、`query`、`body` 或 `form` 提供原接口的参数 |
-| UI SDK `resourceAvailability()` | 只读刷新当前会话角色下的具名资源 `{name, available}`；不返回任意 URL 或请求头权限 |
-| `event(name, payload)` | 只发送当前贡献在 `events` 声明的界面事件 |
-| `openJob(id)` | 宿主重新读取并验证归属后展示通用任务进度 |
-| `preference(key)` / `savePreference(key, value)` | 按用户和插件隔离的浏览器偏好，不开放任意存储键 |
-| `resize(height)` / `dispose()` | 尺寸和卸载清理 |
-
-账号操作、详情、测试字段、设置页和宿主表面通过 manifest 贡献接入。`config_flag` 引用一个布尔配置字段，关闭时撤下入口，读取失败时显示不可用。持续任务的进度、取消和历史由宿主管理。
-
-配置页面须先调用 `config()` 再 `save()` 或测试。Bridge 仍传原始配置对象；宿主保留该次读取的安装修订号和包摘要，不让页面载荷伪造版本。冲突不自动读取新版覆盖草稿；用户明确重新加载后才采用新快照。配置请求中名为 `code`、`message` 或 `data` 的字段仍是配置，不按普通 API envelope 解包。
-
-全局管理界面可声明 `all_accounts: true`，同时指定管理员角色与所需能力；只有平台/账号类型均为通配、灰度为100%的绑定才提供该入口。对应资源也声明完整范围，描述、提交与执行使用相同条件。分页组件接受宿主提供的选项；具名 `table-page-size` 偏好沿用原有非敏感浏览器分页设置，其他偏好继续按用户/插件隔离。
-
-第一方贡献都显式声明 `capability`；带管理员动作的贡献还必须满足固有Admin权限。例如票据采集同时需要Credentials与Admin，计数器查看同时需要Observability与Admin。宿主的 `account_scope` 是当前有效绑定交集的只读投影，不是插件可提交的授权字段；界面和提交对整组选中账号使用同一作用范围与灰度。缺少任一账号资料时拒绝整批，不静默剔除目标。旧第三方清单缺能力字段的页面兼容规则保留，执行仍要验证原有管理权限。
-
-数据资源通过 manifest 的 `resources` 显式声明名称、所需能力和用户角色。HTTP 方法与路径由宿主注册，前端桥接只接受名称，不能传任意 URL 或请求头。实际操作仍经过原接口的认证、审计、合规与二次验证链；资源守卫再次检查持久启停状态、包摘要及运行周期。兼容 API 调用同样不能绕过停用状态。
-
-页面可以按资源可用性分别禁用具体动作，并在提交前重新查询；查询失败不得启用动作，界面结果也不能替代后端实时门禁。例如全局文件夹/标签删除需要全账号权限，但局部分类赋值不因此升级为全局操作。管理员配置页在插件停用或故障时仍可打开用于修复，它不授予业务执行权限。
-
-账号资源还核验目标账号及灰度范围，筛选批量操作要求覆盖完整账号范围；没有资格的目标不会被静默过滤。事务使用原接口校验，界面上下文传入领域调用时绑定已验证的插件所有者。分类保存面向插件仅返回账号 ID，不返回完整账号或凭据。创建任务使用 `operation_key` 映射到既有幂等键，任务记录和取消仍由宿主负责。
-
-内联界面用 `ExtensionWidget`，操作弹窗用 `ExtensionModal`；原入口可保留轻量参数适配。SDK 对 JSON 参数去除 Vue 响应式代理，保留原生上传文件；取消或关闭页面会终止仍在执行的资源读取。通用字段支持模型选项和受限文本区域，标签、提示与字符上限由插件声明。
-
-只读表格使用 `display_fields` 声明文本、徽标或日期字段；宿主仅渲染挂载处明确给出的标量，不执行表达式或遍历账号对象。插件上传解析可以使用包内内联 Blob Worker，仍无直接网络权限。浏览器本地媒体使用具名 `LOCAL` 资源与 `local_data`，Blob 保留原生类型，实际所有者由宿主登录用户决定；历史与取消等 `Retained` 资源只由宿主登记，插件声明不能自行取得这一特权。
-
-页面会话按贡献选择签名入口，并限定管理员或普通用户角色；普通用户不能选择管理页面。模块脚本使用隔离来源所需的 CORS 资源响应，iframe 使用 `sandbox="allow-scripts allow-forms"` 以支持表单事件和原生校验，保持同源隔离；CSP 的 `form-action 'none'` 与 `connect-src 'none'` 阻止直接网络提交。主题、语言及可用状态通过桥接更新，故障时保留输入并禁用动作，升级后的旧页面需重新打开。
-
-普通用户通过 `/api/v1/settings/plugins` 获得公开表面元数据，不获得管理员动作、iframe 入口或配置字段。公开主题声明 `slot: "theme"`、`permission: "public"`、CSS `entrypoint` 和最多 32 个 WOFF2 `assets`。宿主仅公开这些已声明且哈希匹配的样式与字体，不公开脚本或其他包文件。资源 URL 绑定资源清单摘要；停用或故障后移除样式，宿主基本样式及可访问性规则继续工作。字体许可证随包分发。
-
-Canvas图表通过宿主通用颜色读取器使用 `--theme-chart-*` 参数，主题加载、撤下及深浅色变化会更新已挂载的图表。数据和统计逻辑不属于主题。技能来源使用已注册的网络与公开根，profile不能自行授予新URL；存储计划只选择受支持布局和槽位，候选键须是内容摘要，宿主执行固定根内的完整性检查和原子发布。
-
-## 构建与签名
-
-只编辑 `manifest.source.json`。打包器生成运行时路径、文件 SHA-256、已测试宿主版本和签名。签名后不再改写 manifest；私钥不进入源码、镜像或插件包。
-
-以下 PowerShell 示例从仓库根目录构建现有模型目录模块，生成的密钥仅供本地开发验证：
-
-```powershell
-$pluginBuild = Join-Path ([IO.Path]::GetTempPath()) ('sub2api-plugin-' + [guid]::NewGuid().ToString('N'))
-New-Item -ItemType Directory -Path $pluginBuild | Out-Null
-go -C plugins/model-policy build -trimpath -o (Join-Path $pluginBuild 'model-policy.exe') ./cmd/plugin
-go -C backend run ./cmd/package-plugin -generate-key (Join-Path $pluginBuild 'publisher.key')
-go -C backend run ./cmd/package-plugin `
-  -source ../plugins/model-policy `
-  -binary (Join-Path $pluginBuild 'model-policy.exe') `
-  -platform windows-amd64 -tested-host-version 0.2.7 `
-  -output (Join-Path $pluginBuild 'model-policy.s2plugin') `
-  -signing-key-file (Join-Path $pluginBuild 'publisher.key') `
-  -key-id local-model-policy-test
+```text
+my-plugin/
+├── cmd/<plugin>/main.go
+├── internal/pluginconfig/
+├── internal/transport/
+├── ui/index.html
+├── ui/assets/
+├── tools/
+├── manifest.source.json
+└── build.sh
 ```
 
-第三方开发包在 `plugins.trusted_publishers` 中配置自己的 `key_id` 和公钥。正式 Codexrip 公钥唯一保存在 `backend/pkg/extensionapi/v1/publisher.json`，宿主内置该信任身份，配置不能覆盖；私钥位于 GitHub Secret `SUB2API_PLUGIN_SIGNING_KEY`。`go run .github/scripts/initialize_plugin_publisher.go` 只检查当前配置，显式 `-initialize` 也拒绝替换已经存在的密钥。
+开发时至少准备以下部分：
 
-集合打包使用 `-bundle-source`、`-binary-dir` 和新的空输出目录；`-plugin-domain` 只选择清单中的一个域。`-build-binaries` 从各 manifest 读取独立版本，并注入程序版本；`-verify-bundle` 复用生产签名、文件和目标平台校验，不执行程序。`-source-revision` 把完整源码提交写入签名清单。构建程序时不传签名密钥，签名步骤只运行已构建的打包器。
+1. `manifest.source.json`：插件 ID、名称、版本、作者、能力和兼容的 Sub2API 版本；
+2. `cmd/<plugin>/main.go`：启动入口和运行时版本注入，并同步打包器中的构建目标和二进制名称；
+3. `internal/pluginconfig/`：配置结构、默认值、严格校验和规范化；
+4. `internal/transport/`：HTTP 客户端、代理、请求头、请求体、网络连接参数、响应流和资源回收；
+5. `ui/index.html` 与 `ui/assets/`：插件自己的配置界面；
+6. 单元测试、进程集成测试和目标平台构建配置。
 
-Downstream Release 先生成 `deploy/plugin-bundle/current`，正式 Docker 阶段校验后原样复制这些包；同一份包与锁清单作为 Release 附件发布。默认候选镜像使用合成开发签名，正式 Codexrip 宿主拒绝开发发布者。开发目录中的旧二进制不用于发布。
+入口文件应保持很小，只负责调用 `pluginv1.Serve`。实际逻辑放在可独立测试的包中，避免把配置解析、网络请求和协议组装全部写在 `main.go`。
 
-Independent Plugin Release 接受不可变 `plugins/<域名>/v<版本>` 标签和已发布宿主标签，只构建所选域。它要求已通过主分支检查的宿主实现与所选宿主 Release 相同（测试源码除外），才能复用其验证结果；需要新宿主接口时先发布宿主。发布不覆盖同名 Release，安装也拒绝同版本不同包。
+## 3. 编写运行时
 
-## 更新单个插件
+运行时实现 `TransportPlugin` 服务，必须满足以下约定：
 
-普通上传只用于首次安装。已有相同插件身份时，无论是否停用，都返回 `409 / PLUGIN_ALREADY_INSTALLED`；不能通过旧上传覆盖包、重置灰度或绕过下列更新契约。明确卸载后的重新安装保留既有迁移/诊断账本，不等于升级回滚。
+| 方法 | 要求 |
+| --- | --- |
+| `GetInfo` | 返回的插件 ID、版本、协议版本、传输 API 版本和能力必须与清单一致。 |
+| `Health` | 快速返回进程是否可以接收新请求，不执行长时间网络探测。 |
+| `ValidateConfig` | 严格解析 JSON，拒绝未知字段和非法范围，并返回完整的规范化配置。 |
+| `ApplyConfig` | 成功后原子切换配置；失败时保留旧配置和旧连接。 |
+| `TestConfig` | 针对已保存配置进行快速诊断，返回简短、可展示的结果。 |
+| `Forward` | 按协议接收请求流，发出上游请求，再按顺序返回响应流。 |
 
-插件管理页的“更新插件包”保持配置、逐能力启停和灰度，接受同 ID 的更高版本签名包。先验证签名、版本、依赖和保存的配置，再提交持久更新记录；候选校验不获得宿主存储、凭据或任务权限。相同包重复提交不重复执行，同版本不同内容拒绝。
+请求帧顺序为 `start`、零到多个 `body_chunk`、`body_end`；响应帧顺序为 `start`、零到多个 `body_chunk`、`end`。不能继续处理时发送 `error` 帧。
 
-| 接口 | 请求 | 结果 |
-|---|---|---|
-| `POST /api/v1/admin/plugins/:id/update` | multipart：`plugin`、`expected_revision`、`expected_package_sha256` | 返回安装记录；`updating` 表示等待旧进程排空 |
-| `POST /api/v1/admin/plugins/:id/follow-bundled` | JSON：`expected_revision`、`expected_package_sha256` | 明确恢复跟随当前镜像内置包 |
+`ForwardResponseError.request_sent` 必须准确：只有在能够确认尚未调用上游 HTTP Transport 时才返回 `false`；一旦已经调用，或无法确认上游是否收到请求，就返回 `true`。宿主会据此决定是否允许切换账号重试，避免重复执行同一个请求。
 
-两个接口沿用管理员授权和现有二次认证。安装记录增加 `revision`、`package_sha256` 和 `update_policy`。独立更新设置为 `pinned`，宿主升级保留该版本；`bundled` 才跟随内置包。恢复跟随可能选择较旧的内置版本，但不会回滚账号或业务数据。
+资源管理也属于运行时契约：复用 HTTP Transport 和连接池，配置切换时关闭旧空闲连接，沿用 gRPC stream 的 context 取消 DNS、连接、上传和响应读取，并始终关闭上游响应体。日志和错误消息不能包含 Token、代理凭据、完整请求体或敏感响应头。
 
-每个运行进程和绑定的宿主操作持有独立 PostgreSQL 会话锁，不占用业务查询池。正常切换先排空旧进程、取消并收尾绑定的宿主 IO，再提交新的执行代次；数据库会话异常失联的限制见下段。上游 IO 可以脱离客户端断线，但仍保留插件取消信号，已经产生的计费则独立提交。更新中的版本与意图保存在数据库，重启继续处理；期间仍可明确停用，新能力默认关闭。旧代次的状态写入、任务创建和租约领取被拒绝。更新失败不切回旧宿主业务，候选校验失败不改变当前版本。
+## 4. 设计插件配置
 
-专用会话现在由宿主观察器检测失联（1秒探测间隔、1秒探测超时），首次失败即排空/取消并关闭原连接，不自动重连。正常释放不报告故障，取消不提前代替宿主任务清理。数据库可能先释放失联会话的锁、再由本机检测到；这不是跨实例原子撤销，不能撤回已被上游接受的IO。持久任务租约、调用前已花费阶段和事务幂等仍是防重复的独立保障。依赖图事务准入与这种在途 IO 的撤销是两项不同保证，不能互相替代。
+插件配置由插件定义，由 Sub2API 加密保存。推荐流程是：
 
-配置保存、启用、停用、测试及删除的 HTTP 请求必须同时携带 `X-Sub2API-Plugin-Revision` 和 `X-Sub2API-Plugin-Package`；动作和新任务提交必须携带包摘要。缺失、非法及过期条件分别返回 428、400、409。读取配置从同一持久快照返回 raw JSON 和上述响应头，并禁止缓存；保存回执使用条件写入的 `RETURNING revision`，不通过后续读取借用另一位管理员的新版本。相同配置仍做 CAS，但不增加修订、不重复应用或取消工作。写入 CAS 冲突不改变现有工作；实际配置变更沿用原有取消和应用机制。应用前后若有另一次并发配置变更，旧进程在当前配置/代次门禁下不可执行，等待协调更新，不声称跨宿主 RPC 与数据库写入原子化。
+1. 在 `internal/pluginconfig.Config` 中定义字段和默认值；
+2. 使用 `json.Decoder.DisallowUnknownFields` 等严格方式解析；
+3. 将空对象规范化为完整默认配置；
+4. 在 `ValidateConfig` 和 `ApplyConfig` 中复用同一套校验；
+5. 配置应用成功后再让宿主保存，保存失败时允许恢复旧配置。
 
-插件资源会话绑定整包摘要，升级后的旧会话返回 410，重新打开界面取得当前版本资源；旧页面的动作/新任务还受上述包版本检查。历史、已完成结果和取消入口不因旧页面版本而被一并封锁。
+JSON 字段统一使用 `snake_case`。敏感配置不要放入 URL、UI 通知、诊断结果或日志。插件不应从 UI 读取、刷新或持久化 OAuth Token；宿主只在运行时调用需要的网络转发接口。
 
-## 按实际改动验证
+## 5. 实现插件自己的配置 UI
 
-独立模块验证自身策略；宿主验证范围、取消、事务和真实进程通信；签名包验证清单、哈希及资源边界。选择与改动风险对应的用例，复用相同代码的已有结果，保留正常 PR 必需检查。
+UI 是插件包内的静态页面，不需要修改 Sub2API 前端源码。宿主会在受限 iframe 中加载 `ui/index.html`，并通过 UI Bridge 提供配置读写和测试能力。
 
-本地模型目录进程契约可使用上面构建的程序：
+页面初始化流程：
 
-```powershell
-$env:SUB2API_MODEL_POLICY_TEST_BINARY = Join-Path $pluginBuild 'model-policy.exe'
-go -C backend test ./internal/service -run '^TestCatalogExtensionRuntimeUsesIndependentProcess$' -count=1
+1. 加载包内 HTML、CSS 和 JavaScript；
+2. 创建 Bridge 并注册 `message` 监听；
+3. 发送 `sub2api.plugin.ready`；
+4. 调用 `config.load` 渲染表单；
+5. 编辑后调用 `config.save`；
+6. 测试前先保存，再调用 `config.test`；
+7. 页面卸载时调用 `dispose()`。
+
+当前 Bridge 支持：
+
+| 消息 | 用途 |
+| --- | --- |
+| `config.load` | 读取当前配置。 |
+| `config.save` | 提交配置，由运行时校验、应用并加密保存。 |
+| `config.test` | 运行已保存配置的诊断。 |
+| `ui.resize` | 调整配置 iframe 高度。 |
+| `ui.notify` | 显示成功、错误或提示消息。 |
+
+每条消息都必须带 `request_id`，并校验 `event.source`、消息来源标识和 Bridge Token。不要依赖 CDN、远程脚本、Cookie 或本地存储。页面需要兼容窄屏和明暗主题，并正确处理加载、保存、测试、超时和未保存状态。
+
+详细信封格式见 `backend/pkg/pluginapi/docs/ui-bridge.md`。如果后续示例仓库提供可复用的 Bridge SDK，本文会在示例仓库章节补充对应路径和使用方式。
+
+## 6. 编写包清单
+
+只维护 `manifest.source.json`，不要手工编辑构建目录中的 `manifest.json`。至少需要填写：
+
+```json
+{
+  "schema_version": 1,
+  "id": "example.openai.transport",
+  "name": "Example OpenAI Transport",
+  "version": "0.1.0",
+  "requires": {
+    "sub2api": ">=0.1.179 <0.2.0",
+    "recommended_sub2api_version": "0.1.179",
+    "tested_sub2api_versions": ["0.1.179"],
+    "plugin_protocol": 1,
+    "transport_api": 1,
+    "ui_bridge": 1
+  },
+  "capabilities": [
+    {
+      "id": "openai.oauth.outbound_transport.v1",
+      "platform": "openai",
+      "account_type": "oauth"
+    }
+  ],
+  "runtimes": {},
+  "ui": { "entrypoint": "ui/index.html" },
+  "files": {}
+}
 ```
 
-这些契约使用合成数据，不需要真实模型请求。主题离线浏览器脚本为 `plugins/admin-observability/scripts/check-theme.py`，票据界面脚本为 `plugins/codex-runtime/scripts/check-ui.py`；已验证范围及未完成项见实施状态。
+打包器会自动填充目标平台运行时、UI 和运行时文件的 SHA-256。清单中的 `requires.sub2api` 是硬兼容范围；`tested_sub2api_versions` 应只填写真实验证过的版本；`recommended_sub2api_version` 用于管理页面展示。当前宿主仅处理 `openai.oauth.outbound_transport.v1`，声明其他能力不会自动产生新路由。后续增加 Provider 支持时，会在协议、能力清单和宿主路由完成适配后，再补充对应的清单示例。
+
+## 7. 生成密钥并签名
+
+生产包应始终签名，宿主默认拒绝未签名包。可以使用插件工程中的密钥生成工具生成一对 Ed25519 密钥；示例仓库发布后会提供标准工具和完整命令：
+
+```bash
+go run ./tools/keygen -out build/keys/my-publisher
+```
+
+生成的 `my-publisher.private` 只保存在受控的开发机或 CI Secret 中，不能提交到源码仓库、插件包或部署服务器。公钥是 Base64 文本，可以提供给部署者。
+
+插件工程的 `build.sh` 应调用标准打包器。自定义发布者密钥时必须同时提供 `-signing-key` 和 `-key-id`：
+
+```bash
+./build.sh \
+  -signing-key /安全目录/my-publisher.private \
+  -key-id my-publisher-v1 \
+  -output dist/my-openai-plugin.s2plugin
+```
+
+签名覆盖最终 `manifest.json` 的精确字节；清单中的文件哈希再覆盖运行时和 UI 文件。签名完成后不要重新格式化 `manifest.json`。
+
+部署者在 Sub2API 配置文件中追加公钥：
+
+```yaml
+plugins:
+  allow_unsigned: false
+  trusted_publishers:
+    my-publisher-v1: "BASE64_ED25519_PUBLIC_KEY"
+```
+
+`trusted_publishers` 是在宿主内置官方公钥之外追加的信任来源，不能覆盖内置公钥。`signature.json` 中的 `key_id` 必须与配置键完全一致。密钥轮换时先发布包含新公钥的宿主配置或版本，再发布新签名包，最后再停用旧密钥。
+
+开发阶段如需使用未签名包，只应在隔离的本地环境临时设置 `plugins.allow_unsigned: true`，测试完成后立即恢复为 `false`。
+
+## 8. 构建、测试和安装
+
+在插件目录执行：
+
+```bash
+go test ./... -count=1
+node --check ui/assets/bridge-v1.js
+node --check ui/assets/app.js
+./build.sh
+unzip -t dist/*.s2plugin
+```
+
+回到 Sub2API 仓库根目录后，再使用真实构建包运行宿主集成测试：
+
+```bash
+cd ../..
+SUB2API_TEST_PLUGIN_PACKAGE=plugins/my-openai-plugin/dist/my-openai-plugin.s2plugin \
+  go test ./backend/internal/service -run '^TestPluginRuntimeIntegration$' -count=1
+```
+
+最低测试集应覆盖配置默认值和边界值、插件身份、请求和响应分块、流式响应、上下文取消、插件退出、代理开关、包哈希、签名、路径安全、目标平台运行时以及 UI Bridge 的加载、保存、测试、错误和超时。
+
+安装后先保持停用，确认清单兼容性、签名和诊断结果，再按账号灰度启用。API Key 账号和未命中灰度的 OAuth 账号继续走 Sub2API 原有路径。
+
+## 9. 发布前检查清单
+
+- 插件版本与 `GetInfo` 返回值一致；
+- `requires.sub2api` 覆盖范围经过验证，没有未经测试的破坏性版本；
+- `tested_sub2api_versions` 与实际测试记录一致；
+- 每个支持的平台和架构都有运行时文件；
+- 生产包存在有效 `signature.json`，公钥已交付部署者；
+- 包中没有私钥、源映射、测试数据、日志和临时文件；
+- UI 不依赖外部资源，也不保存宿主会话信息；
+- 配置切换、请求取消、响应关闭和错误重试语义经过测试；
+- 发布说明包含升级、停用、回滚和兼容版本信息。
+
+## 10. 常见问题
+
+| 现象 | 排查方向 |
+| --- | --- |
+| 安装提示签名不受信任 | 检查 `signature.json.key_id`、Base64 公钥和配置键是否完全一致。 |
+| 插件显示不兼容 | 检查 `requires.sub2api`、`plugin_protocol`、`transport_api` 和 `ui_bridge`。 |
+| 插件进程无法启动 | 检查目标系统和架构对应的运行时路径、可执行权限和运行用户权限。 |
+| 配置页无法加载 | 检查 `ui.entrypoint`、UI 文件哈希、Bridge Token 校验和 iframe 消息来源。 |
+| 保存后配置未生效 | 查看 `ValidateConfig`、`ApplyConfig` 返回的规范化配置和诊断信息。 |
+| 请求失败后重复执行 | 检查 `ForwardResponseError.request_sent` 是否准确反映请求是否可能已发出。 |
+
+## 11. 需要扩展能力时
+
+如果新插件需要支持其他 Provider、其他账号类型或新的消息字段，应先扩展并版本化公开协议，再由宿主增加能力匹配和生命周期处理。不要仅通过清单声明一个宿主尚未实现的能力。这样可以让旧插件继续运行，也能让新宿主明确拒绝不兼容的插件。
+
+Sub2API 后续会持续补充更多 Provider 的插件适配说明，包括能力标识、请求和响应契约、配置字段、UI Bridge 使用方式、版本兼容要求以及测试清单。本文会随着这些能力的落地继续更新，Provider 专属章节会放在本节之后。
+
+## 12. 示例仓库预留
+
+后续计划提供独立的插件示例仓库，用于存放可复用的运行时骨架、UI 组件、打包工具和各 Provider 的最小实现。目前示例仓库尚未准备完成，因此暂不提供地址；正式发布后会在这里补充仓库地址、适用的 Sub2API 版本、示例插件版本和构建说明。

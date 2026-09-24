@@ -5,8 +5,8 @@ import (
 	"encoding/json"
 	"time"
 
+	extensionv1 "github.com/Wei-Shaw/sub2api/internal/nativeapi"
 	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
-	extensionv1 "github.com/Wei-Shaw/sub2api/pkg/extensionapi/v1"
 )
 
 func accountToolsOperation(ctx context.Context, operation string, input, output any) error {

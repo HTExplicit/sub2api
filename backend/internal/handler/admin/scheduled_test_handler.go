@@ -99,10 +99,6 @@ func (h *ScheduledTestHandler) Update(c *gin.Context) {
 		response.NotFound(c, "plan not found")
 		return
 	}
-	if err := service.ValidateAccountViewTargets(c.Request.Context(), []int64{existing.AccountID}); err != nil {
-		accountViewRequestError(c, err)
-		return
-	}
 
 	var req updateScheduledTestPlanRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -142,17 +138,6 @@ func (h *ScheduledTestHandler) Delete(c *gin.Context) {
 		return
 	}
 
-	if _, bound := service.AccountViewFromContext(c.Request.Context()); bound {
-		plan, err := h.scheduledTestSvc.GetPlan(c.Request.Context(), planID)
-		if err != nil || plan == nil {
-			response.NotFound(c, "plan not found")
-			return
-		}
-		if err := service.ValidateAccountViewTargets(c.Request.Context(), []int64{plan.AccountID}); err != nil {
-			accountViewRequestError(c, err)
-			return
-		}
-	}
 	if err := h.scheduledTestSvc.DeletePlan(c.Request.Context(), planID); err != nil {
 		response.InternalError(c, err.Error())
 		return
@@ -168,17 +153,6 @@ func (h *ScheduledTestHandler) ListResults(c *gin.Context) {
 		return
 	}
 
-	if _, bound := service.AccountViewFromContext(c.Request.Context()); bound {
-		plan, err := h.scheduledTestSvc.GetPlan(c.Request.Context(), planID)
-		if err != nil || plan == nil {
-			response.NotFound(c, "plan not found")
-			return
-		}
-		if err := service.ValidateAccountViewTargets(c.Request.Context(), []int64{plan.AccountID}); err != nil {
-			accountViewRequestError(c, err)
-			return
-		}
-	}
 	limit := 50
 	if l, err := strconv.Atoi(c.Query("limit")); err == nil && l > 0 {
 		limit = l

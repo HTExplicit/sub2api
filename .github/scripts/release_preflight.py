@@ -21,7 +21,6 @@ ROOT = Path(__file__).resolve().parents[2]
 REPOSITORY = "HTExplicit/sub2api"
 IMAGE = "ghcr.io/htexplicit/sub2api"
 HOST_TAG = re.compile(r"v[0-9]+\.[0-9]+\.[0-9]+-codexrip\.[1-9][0-9]*")
-PLUGIN_TAG = re.compile(r"plugins/([a-z][a-z0-9-]*)/v([0-9]+\.[0-9]+\.[0-9]+)")
 SHA = re.compile(r"[a-f0-9]{40}")
 DIGEST = re.compile(r"sha256:[a-f0-9]{64}")
 MAX_PAGES = 100
@@ -142,55 +141,17 @@ def registry_manifest(version: str, request=http_get, token=None, actor=None):
 
 
 def local_assets(args, root: Path) -> dict[str, tuple[int, str]]:
-    directory = root / "deploy/plugin-bundle/current"
-    lock_path = directory / "lock.json"
-    require(lock_path.is_file() and not lock_path.is_symlink(), "bundle_lock_missing")
-    raw_lock = lock_path.read_bytes()
-    lock = decode_json(raw_lock)
-    source = decode_json((root / "plugins/bundle.source.json").read_bytes())
-    require(isinstance(source, dict) and isinstance(source.get("plugins"), list), "bundle_source_invalid")
-    domains = [item.get("directory") for item in source["plugins"] if isinstance(item, dict)]
-    require(len(domains) == len(source["plugins"]) and bool(domains)
-            and all(isinstance(domain, str) and re.fullmatch(r"[a-z][a-z0-9-]*", domain) for domain in domains)
-            and len(domains) == len(set(domains)), "bundle_source_invalid")
-    if args.kind == "plugin":
-        domain = PLUGIN_TAG.fullmatch(args.tag)[1]
-        require(domain in domains, "bundle_domain_invalid")
-        domains = [domain]
-    host_version = (args.tag if args.kind == "host" else args.host_tag)[1:]
-    require(isinstance(lock, dict) and lock.get("schema_version") == 1 and lock.get("host_version") == host_version
-            and lock.get("publisher_key_id") == "codexrip-plugins-v1"
-            and isinstance(lock.get("plugins"), list), "bundle_lock_invalid")
-    expected = {"codexrip." + domain: domain + ".s2plugin" for domain in domains}
-    require(len(lock["plugins"]) == len(expected), "bundle_inventory_mismatch")
-    assets = {"lock.json": (len(raw_lock), "sha256:" + hashlib.sha256(raw_lock).hexdigest())}
-    seen = set()
-    for entry in lock["plugins"]:
-        require(isinstance(entry, dict) and entry.get("id") in expected
-                and expected[entry["id"]] == entry.get("file") and entry["id"] not in seen, "bundle_inventory_mismatch")
-        seen.add(entry["id"])
-        path = directory / entry["file"]
-        require(path.is_file() and not path.is_symlink(), "bundle_asset_invalid")
-        raw = path.read_bytes()
-        sha = hashlib.sha256(raw).hexdigest()
-        require(sha == entry.get("sha256"), "bundle_asset_changed")
-        assets[entry["file"]] = (len(raw), "sha256:" + sha)
-    return assets
+    # Native domains ship in the immutable OCI image; there are no separate
+    # first-party package assets attached to a host release.
+    return {}
 
 
 def check(args, github=github_json, registry=registry_manifest, root=ROOT):
     require(SHA.fullmatch(args.source_sha) is not None, "source_sha_invalid")
-    if args.kind == "host":
-        require(HOST_TAG.fullmatch(args.tag) is not None, "release_tag_invalid")
-    else:
-        require(PLUGIN_TAG.fullmatch(args.tag) is not None and HOST_TAG.fullmatch(args.host_tag) is not None
-                and SHA.fullmatch(args.host_source_sha) is not None, "plugin_source_invalid")
-        require(args.stage != "before-push", "plugin_stage_invalid")
+    require(args.kind == "host", "release_kind_invalid")
+    require(HOST_TAG.fullmatch(args.tag) is not None, "release_tag_invalid")
     releases = list_releases(github)
     matches = [release for release in releases if release["tag_name"] == args.tag]
-    if args.kind == "plugin":
-        host = [release for release in releases if release["tag_name"] == args.host_tag]
-        require(len(host) == 1 and host[0].get("draft") is False, "compatible_host_release_unavailable")
     if args.stage == "before-publish":
         require(len(matches) == 1 and matches[0].get("draft") is True, "unique_draft_required")
         release = matches[0]
@@ -214,14 +175,12 @@ def check(args, github=github_json, registry=registry_manifest, root=ROOT):
         require(not matches, "release_already_exists")
     if args.kind == "host":
         digest = registry(args.tag[1:])
-        if args.stage in ("before-sign", "before-push"):
+        if args.stage in ("before-build", "before-push"):
             require(digest is None, "version_image_already_exists")
         else:
             require(DIGEST.fullmatch(args.image_digest) is not None and digest == args.image_digest, "published_image_digest_mismatch")
     # These are deliberately the final remote reads before the workflow's next
     # write. They reduce the gap, but cannot replace server-side immutable tags.
-    if args.kind == "plugin":
-        require(tag_commit(github, args.host_tag) == args.host_source_sha, "compatible_host_tag_changed")
     require(tag_commit(github, args.tag) == args.source_sha, "release_tag_changed")
     result = {"state": "verified", "stage": args.stage, "tag": args.tag, "source_sha": args.source_sha}
     if args.stage == "before-publish":
@@ -231,12 +190,10 @@ def check(args, github=github_json, registry=registry_manifest, root=ROOT):
 
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--kind", choices=("host", "plugin"), required=True)
-    parser.add_argument("--stage", choices=("before-sign", "before-push", "before-create", "before-publish"), required=True)
+    parser.add_argument("--kind", choices=("host",), required=True)
+    parser.add_argument("--stage", choices=("before-build", "before-push", "before-create", "before-publish"), required=True)
     parser.add_argument("--tag", required=True)
     parser.add_argument("--source-sha", required=True)
-    parser.add_argument("--host-tag", default="")
-    parser.add_argument("--host-source-sha", default="")
     parser.add_argument("--image-digest", default="")
     args = parser.parse_args(argv)
     try:

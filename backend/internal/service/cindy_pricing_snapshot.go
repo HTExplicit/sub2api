@@ -10,7 +10,7 @@ import (
 	"sync"
 	"time"
 
-	extensionv1 "github.com/Wei-Shaw/sub2api/pkg/extensionapi/v1"
+	extensionv1 "github.com/Wei-Shaw/sub2api/internal/nativeapi"
 	"github.com/gin-gonic/gin"
 )
 
@@ -49,7 +49,7 @@ func CaptureCindyPricingContext(ctx context.Context, c *gin.Context, account *Ac
 	payload, _ := json.Marshal(query)
 	call, cancel := context.WithTimeout(ctx, time.Second)
 	defer cancel()
-	result, err := invokeProcessExtensionCached(call, PlatformCindy, AccountTypeAPIKey, extensionv1.Invocation{Capability: extensionv1.CapabilityProvider, Operation: "cindy.pricing", AccountID: account.ID, Payload: payload})
+	result, err := invokeCindyProviderCached(call, extensionv1.Invocation{Capability: extensionv1.CapabilityProvider, Operation: "cindy.pricing", AccountID: account.ID, Payload: payload})
 	if err != nil || result.Code != "" || result.PluginID != owner || len(result.Payload) == 0 || len(result.Payload) > extensionv1.MaxPayloadBytes {
 		return ctx, errors.New("provider: Cindy provider policy is unavailable")
 	}
@@ -141,7 +141,7 @@ func cindyProviderAdmissionOwner(ctx context.Context, account *Account) (int64, 
 	}
 	call, cancel := context.WithTimeout(ctx, time.Second)
 	defer cancel()
-	result, err := invokeProcessExtensionCached(call, PlatformCindy, AccountTypeAPIKey, extensionv1.Invocation{Capability: extensionv1.CapabilityProvider, Operation: "cindy.features", AccountID: account.ID, Payload: json.RawMessage(`{}`)})
+	result, err := invokeCindyProviderCached(call, extensionv1.Invocation{Capability: extensionv1.CapabilityProvider, Operation: "cindy.features", AccountID: account.ID, Payload: json.RawMessage(`{}`)})
 	if err != nil || result.Code != "" {
 		return 0, errors.New("provider: Cindy provider policy is unavailable")
 	}

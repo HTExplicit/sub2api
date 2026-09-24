@@ -10,7 +10,7 @@ import (
 	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
-	extensionv1 "github.com/Wei-Shaw/sub2api/pkg/extensionapi/v1"
+	extensionv1 "github.com/Wei-Shaw/sub2api/internal/nativeapi"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 	"github.com/tidwall/gjson"
@@ -36,7 +36,7 @@ func TestCodexQualityComposedRawObservationPrecedesGuard(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			store, run := qualityStateFixture(t, 3)
 			svc := &OpenAIGatewayService{cfg: &config.Config{}}
-			rt := &codexQualityRuntime{s: svc, store: store, installation: &PluginInstallation{PluginKey: codexRuntimePluginKey}}
+			rt := &codexQualityRuntime{s: svc, store: store, installation: &NativeCodexMetadata{}}
 			scope := run.Scope
 			scope.ConnectionLeaseID = "fixture-private-connection"
 			deadline := time.Now().Add(time.Minute)

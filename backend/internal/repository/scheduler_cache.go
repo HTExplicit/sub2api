@@ -1110,7 +1110,7 @@ func filterSchedulerExtra(extra map[string]any) map[string]any {
 		"codex_secondary_observed_at",
 		"openai_quota_exhausted",
 		"openai_quota_status",
-		service.PluginAccountProjectionKey,
+		service.NativeCodexAccountProjectionKey,
 		"auto_pause_5h_threshold",
 		"auto_pause_7d_threshold",
 		"auto_pause_5h_disabled",

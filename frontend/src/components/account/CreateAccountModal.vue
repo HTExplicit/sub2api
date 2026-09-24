@@ -217,10 +217,9 @@
           </button>
           <button
             v-for="profile in providerCreateChoices"
-            :key="`${profile.plugin_key}:${profile.id}`"
+            :key="profile.account_create.platform"
             type="button"
             :data-testid="`select-${profile.account_create.platform}-platform`"
-            :disabled="!createContributionAdmission(profile, { platform: profile.account_create.platform, accountType: profile.account_create.account_type }).allowed"
             @click="selectProviderPlatform(profile)"
             :class="[
               'flex flex-1 items-center justify-center gap-2 rounded-none px-3 py-2.5 text-sm font-medium transition-all',
@@ -262,7 +261,7 @@
       </div>
 
       <div v-if="providerCreate.required.value && !providerCreate.available.value" role="status" class="rounded border border-line p-3 text-sm text-muted" data-testid="provider-create-unavailable">
-        {{ providerCreate.stale.value ? t('admin.plugins.uiVersionChanged') : t('admin.plugins.extensionUnavailable') }}
+        {{ providerCreate.stale.value ? t('admin.accounts.providerEdit.changed') : t('admin.accounts.providerEdit.unavailable') }}
         <button v-if="providerCreate.stale.value" type="button" class="btn btn-secondary ml-2" data-testid="provider-create-reconcile" @click="reconcileCreateProfile">{{ t('common.refresh') }}</button>
       </div>
 
@@ -1463,8 +1462,11 @@
           <p v-if="apiKeyHint" class="input-hint">{{ apiKeyHint }}</p>
         </div>
 
-        <ExtensionFields v-if="createProfile" name="account.create.v1" v-model:values="providerFieldValues" :context="{}"
-          :contribution="createProfile" :create-target="{ platform: form.platform, accountType: form.type }" :disabled="!providerCreate.available.value" />
+        <div v-if="createProfile" data-testid="cindy-device-identity">
+          <label class="input-label" for="cindy-create-device-id">{{ profileLabel(createProfile.fields[0]?.label || {}) }}</label>
+          <input id="cindy-create-device-id" v-model="providerFieldValues.device_id" class="input font-mono" type="text" maxlength="64" autocomplete="off" />
+          <p class="input-hint">{{ profileLabel(createProfile.fields[0]?.hint || {}) }}</p>
+        </div>
 
         <!-- 上游倍率自动探测：全部 API-key 平台可用（所在区块已限定 apikey 类型） -->
         <div
@@ -4017,11 +4019,9 @@ import { ref, reactive, computed, watch, type Ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useAppStore } from '@/stores/app'
 import { useAuthStore } from '@/stores/auth'
-import { accountCreateDefaultTargets, useAccountCreateProfile } from '@/composables/useAccountCreateProfile'
-import { createContributionAdmission } from '@/components/plugins/contributionAdmission'
-import ExtensionFields from '@/components/plugins/ExtensionFields.vue'
-import type { PluginContribution } from '@/api/admin/plugins'
-import type { ProviderCreateRequestV1 } from '@sub2api/plugin-ui/account-create'
+import { accountCreateDefaultTargets, useCindyAccountCreate } from '@/features/cindy/useCindyAccountCreate'
+import type { CindyCreateChoice } from '@/features/cindy/accountForm'
+import type { ProviderCreateRequestV1 } from '@/types/accountCreate'
 
 import {
   claudeModels,
@@ -4418,8 +4418,8 @@ function selectCNPlatform(platform: CnProviderPlatform) {
   resetAdaptiveBaseUrls(platform, accountMode.value)
 }
 
-function selectProviderPlatform(profile: PluginContribution) {
-  if (!profile.account_create || !createContributionAdmission(profile, { platform: profile.account_create.platform, accountType: profile.account_create.account_type }).allowed) return
+function selectProviderPlatform(profile: CindyCreateChoice) {
+  if (profile.account_create.platform !== 'cindy') return
   providerCreate.activate(profile.account_create.platform)
   form.platform = profile.account_create.platform
 }
@@ -4706,7 +4706,7 @@ const openAIResponsesModeOptions = computed(() => [
   { value: 'force_responses', label: t('admin.accounts.openai.responsesModeForceResponses') },
   { value: 'force_chat_completions', label: t('admin.accounts.openai.responsesModeForceChatCompletions') }
 ])
-const providerCreate = useAccountCreateProfile({
+const providerCreate = useCindyAccountCreate({
   platform: () => form.platform, accountType: () => form.type, baseURL: () => apiKeyBaseUrl.value,
   actorID: () => authStore.user?.id,
   loadCatalog: platform => adminAPI.groups.getModelAllowlistCandidates(0, platform)
@@ -5966,7 +5966,7 @@ const handleVertexServiceAccountDrop = async (event: DragEvent) => {
 
 const handleSubmit = async () => {
   if (providerCreationBlocked.value) {
-    appStore.showError(t(providerCreate.available.value ? 'common.error' : 'admin.plugins.extensionUnavailable'))
+    appStore.showError(t(providerCreate.available.value ? 'common.error' : 'admin.accounts.providerEdit.unavailable'))
     return
   }
   if (!capacityReady.value) {

@@ -6,14 +6,14 @@ import (
 	"strings"
 	"testing"
 
-	cindy "github.com/HTExplicit/sub2api-plugins/cindyprovider/catalog"
-	codexprofile "github.com/HTExplicit/sub2api-plugins/codexruntime/profile"
-	codexrecovery "github.com/HTExplicit/sub2api-plugins/codexruntime/recovery"
+	cindy "github.com/Wei-Shaw/sub2api/internal/cindyprovider/catalog"
+	codexprofile "github.com/Wei-Shaw/sub2api/internal/codexruntime/profile"
+	codexrecovery "github.com/Wei-Shaw/sub2api/internal/codexruntime/recovery"
 
 	accounttools "github.com/Wei-Shaw/sub2api/internal/accounttools/policy"
 
+	extensionv1 "github.com/Wei-Shaw/sub2api/internal/nativeapi"
 	policy "github.com/Wei-Shaw/sub2api/internal/promptskills/policy"
-	extensionv1 "github.com/Wei-Shaw/sub2api/pkg/extensionapi/v1"
 )
 
 type promptPolicyFixture struct{}
@@ -65,5 +65,9 @@ func (promptPolicyFixture) InvokeOperation(ctx context.Context, _ string, _ stri
 	return promptFixtureModule.Invoke(ctx, in)
 }
 func init() {
-	processExtensionOperations.Store(&extensionOperationProvider{invoker: promptPolicyFixture{}})
+	invokeNativeCodex = promptPolicyFixture{}.InvokeOperation
+	bindNativeCodexContext = func(ctx context.Context, _ string, _ string, _ extensionv1.Invocation) (context.Context, context.CancelFunc, error) {
+		bound, cancel := context.WithCancel(ctx)
+		return bound, cancel, nil
+	}
 }

@@ -127,7 +127,7 @@ func TestSelectAccountWithSchedulerDefersTicketGateToAuthoritativeAccount(t *tes
 			if tc.advanced {
 				svc.rateLimitService = newOpenAIAdvancedSchedulerRateLimitService("true")
 			}
-			svc.pluginManager = ticketTestManager(t, svc.cfg.Gateway.OpenAICodexTicket, nil)
+			svc.nativeCodexRuntime = nativeTicketTestRuntime(t, svc.cfg.Gateway.OpenAICodexTicket, nil)
 
 			selection, decision, err := svc.SelectAccountWithScheduler(
 				ctx, &groupID, "", "", "gpt-6-astra", nil, OpenAIUpstreamTransportAny, false,
@@ -138,7 +138,7 @@ func TestSelectAccountWithSchedulerDefersTicketGateToAuthoritativeAccount(t *tes
 			require.NotNil(t, selection.Account)
 			require.Equal(t, full.ID, selection.Account.ID)
 			require.Equal(t, openAIAccountScheduleLayerLoadBalance, decision.Layer)
-			require.NotNil(t, selection.Account.Extra[PluginAccountProjectionKey])
+			require.NotNil(t, selection.Account.Extra[NativeCodexAccountProjectionKey])
 		})
 	}
 }
@@ -159,7 +159,7 @@ func TestSelectAccountWithSchedulerKeepsFailClosedForTicketlessAccounts(t *testi
 		schedulerSnapshot:  &SchedulerSnapshotService{cache: snapshotCache},
 		concurrencyService: NewConcurrencyService(schedulerTestConcurrencyCache{}),
 	}
-	svc.pluginManager = ticketTestManager(t, svc.cfg.Gateway.OpenAICodexTicket, nil)
+	svc.nativeCodexRuntime = nativeTicketTestRuntime(t, svc.cfg.Gateway.OpenAICodexTicket, nil)
 
 	selection, _, err := svc.SelectAccountWithScheduler(
 		ctx, &groupID, "", "", "gpt-6-astra", nil, OpenAIUpstreamTransportAny, false,

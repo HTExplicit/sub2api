@@ -4,9 +4,31 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"log/slog"
 	"strings"
 )
+
+// Startup must distinguish a missing key from a failed read, so a stored false
+// switch cannot silently become an enabled deployment default.
+func (s *SettingService) readNativeSwitchSetting(ctx context.Context, key string, target any, allowed ...string) (bool, error) {
+	if s == nil || s.settingRepo == nil {
+		return false, errors.New("native settings repository is unavailable")
+	}
+	dbCtx, cancel := context.WithTimeout(ctx, gatewayForwardingDBTimeout)
+	defer cancel()
+	raw, err := s.settingRepo.GetValue(dbCtx, key)
+	if errors.Is(err, ErrSettingNotFound) {
+		return false, nil
+	}
+	if err != nil {
+		return false, fmt.Errorf("cannot read native setting %s", key)
+	}
+	if err := DecodeSwitchSettings([]byte(raw), target, allowed...); err != nil {
+		return false, fmt.Errorf("invalid native setting %s", key)
+	}
+	return true, nil
+}
 
 // readJSONSetting decodes a JSON-valued setting into target. It reports false
 // when the setting is unset, unreadable or not valid JSON for target; read

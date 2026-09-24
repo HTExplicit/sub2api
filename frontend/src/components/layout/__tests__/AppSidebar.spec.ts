@@ -7,8 +7,7 @@ import { describe, expect, it } from 'vitest'
 const componentPath = resolve(dirname(fileURLToPath(import.meta.url)), '../AppSidebar.vue')
 const componentSource = readFileSync(componentPath, 'utf8')
 const stylePath = resolve(dirname(fileURLToPath(import.meta.url)), '../../../style.css')
-const styleEntrySource = readFileSync(stylePath, 'utf8')
-const styleSource = readFileSync(resolve(dirname(stylePath), '../../backend/pkg/extensionapi/ui/base.css'), 'utf8')
+const styleSource = readFileSync(stylePath, 'utf8')
 
 describe('AppSidebar custom SVG styles', () => {
   it('does not override uploaded SVG fill or stroke colors', () => {
@@ -54,7 +53,6 @@ describe('AppSidebar collapsible groups', () => {
 
 describe('AppSidebar header styles', () => {
   it('does not clip the version badge dropdown', () => {
-    expect(styleEntrySource).toContain("@import '../../backend/pkg/extensionapi/ui/base.css';")
     const sidebarHeaderBlockMatch = styleSource.match(/\.sidebar-header\s*\{[\s\S]*?\n {2}\}/)
     const sidebarBrandBlockMatch = componentSource.match(/\.sidebar-brand\s*\{[\s\S]*?\n\}/)
 
@@ -68,12 +66,9 @@ describe('AppSidebar header styles', () => {
 describe('AppSidebar extensions section', () => {
   it('keeps downstream tools in a dedicated section', () => {
     expect(componentSource).toContain("{{ t('nav.extensions') }}")
-    expect(componentSource).toContain('pluginExtensions.items.filter(isAccountView)')
-    expect(componentSource).toContain('accountViewPath(view)')
-    expect(componentSource).not.toContain("items.push({ path: '/admin/cindy-accounts'")
-    const adapter = readFileSync(resolve(dirname(componentPath), '../plugins/accountView.ts'), 'utf8')
-    expect(adapter).toContain("path: '/admin/cindy-accounts'")
-    expect(adapter).toContain("plugin_key: 'codexrip.cindy-provider'")
+    expect(componentSource).toContain("items.push({ path: '/admin/cindy-accounts'")
+    expect(componentSource).toContain("items.push({ path: '/admin/codex-runtime'")
+    expect(componentSource).not.toContain('pluginExtensions')
     expect(componentSource).toContain("path: '/image-studio'")
   })
 

@@ -4,8 +4,8 @@ import (
 	"encoding/json"
 	"slices"
 
+	extensionv1 "github.com/Wei-Shaw/sub2api/internal/nativeapi"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/openai"
-	extensionv1 "github.com/Wei-Shaw/sub2api/pkg/extensionapi/v1"
 )
 
 // The provider owns descriptor policy. The host validates the protocol plan,

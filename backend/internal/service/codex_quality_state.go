@@ -12,7 +12,7 @@ import (
 	"strings"
 	"time"
 
-	extensionv1 "github.com/Wei-Shaw/sub2api/pkg/extensionapi/v1"
+	extensionv1 "github.com/Wei-Shaw/sub2api/internal/nativeapi"
 	"github.com/google/uuid"
 )
 
@@ -120,7 +120,7 @@ func codexQualityHash(value string) string {
 	return hex.EncodeToString(sum[:])
 }
 
-func readCodexQualityRun(ctx context.Context, store PluginExtensionStateStore, id string) (codexQualityRun, int64, error) {
+func readCodexQualityRun(ctx context.Context, store NativeCodexStateStore, id string) (codexQualityRun, int64, error) {
 	var run codexQualityRun
 	canonical, valid := canonicalCodexQualityID(id)
 	if !valid || store == nil {
@@ -140,7 +140,7 @@ func readCodexQualityRun(ctx context.Context, store PluginExtensionStateStore, i
 	return run, record.Revision, nil
 }
 
-func mutateCodexQualityRun(ctx context.Context, store PluginExtensionStateStore, id string, change func(*codexQualityRun) error) (codexQualityRun, error) {
+func mutateCodexQualityRun(ctx context.Context, store NativeCodexStateStore, id string, change func(*codexQualityRun) error) (codexQualityRun, error) {
 	canonical, valid := canonicalCodexQualityID(id)
 	if !valid {
 		return codexQualityRun{}, ErrCodexQualityUnavailable
@@ -186,7 +186,7 @@ func codexQualityActive(run codexQualityRun, now time.Time) bool {
 	return run.RunID != "" && run.Status == "open" && now.Before(run.ExpiresAt)
 }
 
-func issueCodexQualityGrant(ctx context.Context, store PluginExtensionStateStore, wanted codexQualityRun, digest string, expiry time.Time) (codexQualityRun, error) {
+func issueCodexQualityGrant(ctx context.Context, store NativeCodexStateStore, wanted codexQualityRun, digest string, expiry time.Time) (codexQualityRun, error) {
 	canonical, valid := canonicalCodexQualityID(wanted.RunID)
 	if !valid {
 		return codexQualityRun{}, ErrCodexQualityUnavailable
@@ -207,7 +207,7 @@ func sameCodexQualityAttempt(a, b CodexQualityAttempt) bool {
 	return a.Stage == b.Stage && a.TrialID == b.TrialID && a.OperationID == b.OperationID
 }
 
-func reserveCodexQualityAttempt(ctx context.Context, store PluginExtensionStateStore, id, grantDigest string, attempt CodexQualityAttempt) error {
+func reserveCodexQualityAttempt(ctx context.Context, store NativeCodexStateStore, id, grantDigest string, attempt CodexQualityAttempt) error {
 	_, err := mutateCodexQualityRun(ctx, store, id, func(run *codexQualityRun) error {
 		if !codexQualityActive(*run, time.Now()) || (grantDigest != "" && !codexQualityGrantMatches(*run, grantDigest)) || run.AccountID != attempt.AccountID {
 			return ErrCodexQualityUnavailable
@@ -230,7 +230,7 @@ func reserveCodexQualityAttempt(ctx context.Context, store PluginExtensionStateS
 	return err
 }
 
-func finishCodexQualityAttempt(ctx context.Context, store PluginExtensionStateStore, id string, finished CodexQualityAttempt) {
+func finishCodexQualityAttempt(ctx context.Context, store NativeCodexStateStore, id string, finished CodexQualityAttempt) {
 	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 3*time.Second)
 	defer cancel()
 	_, _ = mutateCodexQualityRun(ctx, store, id, func(run *codexQualityRun) error {

@@ -92,7 +92,7 @@ jobs:
         run: |
           set -euo pipefail
           [[ "$(git rev-parse HEAD)" == "$SOURCE_SHA" ]]
-          python3 .github/scripts/release_preflight.py --kind host --stage before-sign \
+          python3 .github/scripts/release_preflight.py --kind host --stage before-build \
             --tag "$RELEASE_TAG" --source-sha "$SOURCE_SHA"
       - uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6
         with:
@@ -102,45 +102,10 @@ jobs:
           node-version: '20'
           cache: pnpm
           cache-dependency-path: frontend/pnpm-lock.yaml
-      - name: Build independent plugin interfaces
-        run: |
-          pnpm --dir frontend install --frozen-lockfile
-          node backend/pkg/extensionapi/ui/build.mjs
       - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
         with:
           go-version-file: backend/go.mod
           cache-dependency-path: backend/go.sum
-      - name: Build independent plugin programs
-        working-directory: backend
-        shell: bash
-        run: |
-          set -euo pipefail
-          go build -trimpath -o "$RUNNER_TEMP/package-plugin" ./cmd/package-plugin
-          "$RUNNER_TEMP/package-plugin" -build-binaries -bundle-source ../plugins/bundle.source.json \
-            -binary-dir "$RUNNER_TEMP/plugin-binaries" -platform linux-amd64
-      - name: Recheck source before exposing the signing key
-        env:
-          GH_TOKEN: ${{ github.token }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          [[ "$(git rev-parse HEAD)" == "$SOURCE_SHA" ]]
-          python3 .github/scripts/release_preflight.py --kind host --stage before-sign \
-            --tag "$RELEASE_TAG" --source-sha "$SOURCE_SHA"
-      - name: Sign and verify the immutable plugin bundle
-        working-directory: backend
-        env:
-          SUB2API_PLUGIN_SIGNING_KEY: ${{ secrets.SUB2API_PLUGIN_SIGNING_KEY }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          test -n "$SUB2API_PLUGIN_SIGNING_KEY"
-          "$RUNNER_TEMP/package-plugin" -bundle-source ../plugins/bundle.source.json \
-            -binary-dir "$RUNNER_TEMP/plugin-binaries" -platform linux-amd64 \
-            -tested-host-version "$VERSION" -source-revision "$SOURCE_SHA" \
-            -output ../deploy/plugin-bundle/current -key-id codexrip-plugins-v1
-          "$RUNNER_TEMP/package-plugin" -verify-bundle ../deploy/plugin-bundle/current/lock.json \
-            -tested-host-version "$VERSION"
       - name: Verify fixed System Prompt capture
         shell: bash
         run: |
@@ -168,7 +133,6 @@ jobs:
             io.github.htexplicit.patch=codexrip
             io.github.htexplicit.cindy-platform-v1=true
           build-args: |
-            PLUGIN_BUNDLE_STAGE=plugin-bundle-release
             VERSION=${{ env.VERSION }}
             COMMIT=${{ needs.verify.outputs.source_sha }}
             DATE=${{ env.BUILD_DATE }}
@@ -203,11 +167,7 @@ jobs:
           subject-name: ${{ env.IMAGE }}
           subject-digest: ${{ steps.push.outputs.digest }}
           push-to-registry: true
-      - name: Attest signed plugin packages
-        uses: actions/attest-build-provenance@977bb373ede98d70efdf65b84cb5f73e068dcc2a # v3
-        with:
-          subject-path: deploy/plugin-bundle/current/*
-      - name: Create a draft with the exact signed assets
+      - name: Create the immutable image release draft
         env:
           GH_TOKEN: ${{ github.token }}
           IMAGE_DIGEST: ${{ steps.push.outputs.digest }}
@@ -225,11 +185,10 @@ jobs:
           python3 .github/scripts/release_preflight.py --kind host --stage before-create \
             --tag "$RELEASE_TAG" --source-sha "$SOURCE_SHA" --image-digest "$IMAGE_DIGEST"
           gh release create "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" \
-            deploy/plugin-bundle/current/*.s2plugin deploy/plugin-bundle/current/lock.json \
             --verify-tag --draft --target "$SOURCE_SHA" \
             --title "Sub2API ${VERSION}" \
             --notes-file /tmp/release-notes.md
-      - name: Verify complete assets and publish the draft
+      - name: Verify image metadata and publish the draft
         env:
           GH_TOKEN: ${{ github.token }}
           IMAGE_DIGEST: ${{ steps.push.outputs.digest }}

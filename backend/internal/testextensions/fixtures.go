@@ -1,6 +1,6 @@
 // Package testextensions installs actual independent modules as deterministic
 // contract fixtures. It is imported only by host tests; production composes
-// signed plugin processes through ProvidePluginManager.
+// native modules; the remaining plugin manager serves third-party packages.
 package testextensions
 
 import (
@@ -8,14 +8,14 @@ import (
 	"encoding/json"
 	"strings"
 
-	cindy "github.com/HTExplicit/sub2api-plugins/cindyprovider/catalog"
-	codexprofile "github.com/HTExplicit/sub2api-plugins/codexruntime/profile"
-	codexrecovery "github.com/HTExplicit/sub2api-plugins/codexruntime/recovery"
+	cindy "github.com/Wei-Shaw/sub2api/internal/cindyprovider/catalog"
+	codexprofile "github.com/Wei-Shaw/sub2api/internal/codexruntime/profile"
+	codexrecovery "github.com/Wei-Shaw/sub2api/internal/codexruntime/recovery"
 
 	accounttools "github.com/Wei-Shaw/sub2api/internal/accounttools/policy"
+	extensionv1 "github.com/Wei-Shaw/sub2api/internal/nativeapi"
 	prompt "github.com/Wei-Shaw/sub2api/internal/promptskills/policy"
 	"github.com/Wei-Shaw/sub2api/internal/service"
-	extensionv1 "github.com/Wei-Shaw/sub2api/pkg/extensionapi/v1"
 )
 
 type operations struct{}
@@ -54,12 +54,12 @@ func (operations) InvokeOperation(ctx context.Context, _, _ string, in extension
 	return extensionv1.Result{}, service.ErrExtensionOperationDisabled
 }
 func Install() {
-	service.ConfigureProcessExtensionServices(nil, operations{})
+	service.ConfigureNativePolicyOperations(operations{})
 	service.ConfigureImageTools(nil)
 	service.ConfigureAdminObservability(nil)
 }
 
 func InstallImageTools(config extensionv1.ImageToolsConfig) {
-	service.ConfigureProcessExtensionServices(nil, operations{})
+	service.ConfigureNativePolicyOperations(operations{})
 	service.ConfigureImageTools(&config)
 }

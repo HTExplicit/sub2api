@@ -8,7 +8,7 @@ import (
 	"math"
 	"strings"
 
-	extensionv1 "github.com/Wei-Shaw/sub2api/pkg/extensionapi/v1"
+	extensionv1 "github.com/Wei-Shaw/sub2api/internal/nativeapi"
 )
 
 func imageBridgeText(value any) (string, bool) {

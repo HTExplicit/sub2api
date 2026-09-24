@@ -8,11 +8,11 @@ import (
 	"strings"
 	"testing"
 
-	cindy "github.com/HTExplicit/sub2api-plugins/cindyprovider/catalog"
 	accounttools "github.com/Wei-Shaw/sub2api/internal/accounttools/policy"
+	cindy "github.com/Wei-Shaw/sub2api/internal/cindyprovider/catalog"
+	extensionv1 "github.com/Wei-Shaw/sub2api/internal/nativeapi"
 	"github.com/Wei-Shaw/sub2api/internal/service"
 	"github.com/Wei-Shaw/sub2api/internal/testextensions"
-	extensionv1 "github.com/Wei-Shaw/sub2api/pkg/extensionapi/v1"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
 )
@@ -70,7 +70,7 @@ func TestAccountTestPlanOrdinaryAndLegacyKeepCoreWithoutPlugins(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			fixture := &testPlanOperations{rejectAll: true}
-			service.ConfigureProcessExtensionServices(nil, fixture)
+			service.ConfigureNativePolicyOperations(fixture)
 			t.Cleanup(testextensions.Install)
 			account := &service.Account{ID: 42, Platform: service.PlatformOpenAI, Type: service.AccountTypeAPIKey,
 				Credentials: map[string]any{"base_url": tc.baseURL, "model_mapping": map[string]any{"plain-id": "plain-wire"}}}
@@ -139,7 +139,7 @@ func TestAccountTestPlanOrdinaryAndLegacyKeepCoreWithoutPlugins(t *testing.T) {
 
 func TestAccountTestPlanSingleAndBatchUseSameScopedCindyView(t *testing.T) {
 	fixture := &testPlanOperations{}
-	service.ConfigureProcessExtensionServices(nil, fixture)
+	service.ConfigureNativePolicyOperations(fixture)
 	t.Cleanup(testextensions.Install)
 	account := &service.Account{ID: 88, Platform: service.PlatformCindy, Type: service.AccountTypeAPIKey,
 		Credentials: map[string]any{"base_url": "https://api.laxarouter.ai"}}

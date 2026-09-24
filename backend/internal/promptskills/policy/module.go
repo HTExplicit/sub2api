@@ -7,9 +7,9 @@ import (
 	"fmt"
 	"strings"
 
+	extensionv1 "github.com/Wei-Shaw/sub2api/internal/nativeapi"
 	"github.com/Wei-Shaw/sub2api/internal/promptskills/registry"
 	"github.com/Wei-Shaw/sub2api/internal/promptskills/source"
-	extensionv1 "github.com/Wei-Shaw/sub2api/pkg/extensionapi/v1"
 )
 
 type BusinessSystemPromptSnapshot = extensionv1.BusinessSystemPromptSnapshot

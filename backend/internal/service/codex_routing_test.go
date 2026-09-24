@@ -14,7 +14,7 @@ import (
 	"testing"
 	"time"
 
-	extensionv1 "github.com/Wei-Shaw/sub2api/pkg/extensionapi/v1"
+	extensionv1 "github.com/Wei-Shaw/sub2api/internal/nativeapi"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
 )
@@ -96,16 +96,9 @@ func (r *routingAccountRepositoryFixture) GetByID(context.Context, int64) (*Acco
 
 func TestCodexRoutingValidationDoesNotEnrollOrChangeStoppedState(t *testing.T) {
 	host, directory, store := routingHostFixture()
-	installation := host.installation
-	installation.ID, installation.State, installation.Version = 1, PluginStateEnabled, "0.2.7"
-	installation.Manifest.Requires.ExtensionAPI = 1
-	installation.Bindings = []PluginBinding{{Capability: extensionv1.CapabilityCredentials, Platform: PlatformOpenAI, AccountType: AccountTypeOAuth, Enabled: true, RolloutPercent: 100}}
-	store.PluginRepository = &pluginTokenRepository{installation: installation}
-	manager := NewPluginManager(store, nil, nil, PluginHostInfo{}, newFakePluginKVStore())
-	manager.accountDirectory = directory
-	manager.extensions.Store(&pluginExtensionRegistry{installations: map[int64]*PluginInstallation{1: installation}, runtimes: map[int64]*pluginRuntime{}})
+	manager := nativeRoutingFixtureRuntime(host, store)
 	account := &Account{ID: 7, Platform: PlatformOpenAI, Type: AccountTypeOAuth}
-	service := &OpenAIGatewayService{pluginManager: manager, accountRepo: &routingAccountRepositoryFixture{account: account}}
+	service := &OpenAIGatewayService{nativeCodexRuntime: manager, accountRepo: &routingAccountRepositoryFixture{account: account}}
 	legacyKey := "tickets:7." + codexRoutingDigest("gpt-6-astra")
 	stopped := json.RawMessage(`{"schema":2,"phase":"stopped","enrolled":true,"failures":2}`)
 	store.values[legacyKey] = extensionv1.StateResult{Found: true, Revision: 8, Value: stopped}
@@ -155,11 +148,12 @@ func (d *routingHostDirectoryFixture) ExecuteCodexRoutingProbe(_ context.Context
 	return &http.Response{StatusCode: 200, Header: headers, Body: io.NopCloser(strings.NewReader(d.response))}, scope, nil
 }
 
-func routingHostFixture() (*pluginExtensionHost, *routingHostDirectoryFixture, *routingMemoryStore) {
+func routingHostFixture() (*nativeCodexHost, *routingHostDirectoryFixture, *routingMemoryStore) {
 	directory := &routingHostDirectoryFixture{account: extensionv1.Account{ID: 7, Identity: "owner", Platform: PlatformOpenAI, Type: AccountTypeOAuth}, scope: extensionv1.CodexRoutingScope{AccountID: 7, Identity: "owner", RouteHash: "route", ProfileHash: "profile", Transport: "http"}, response: "data: {\"type\":\"response.completed\",\"response\":{\"status\":\"completed\",\"model\":\"gpt-6-astra\"}}\n\n"}
 	store := &routingMemoryStore{values: map[string]extensionv1.StateResult{}}
-	installation := &PluginInstallation{PluginKey: codexRuntimePluginKey, Manifest: PluginManifest{Capabilities: []PluginCapability{{ID: extensionv1.CapabilityCredentials, Platform: PlatformOpenAI, AccountType: AccountTypeOAuth}}}}
-	return &pluginExtensionHost{key: codexRuntimePluginKey, state: store, directory: directory, installation: installation}, directory, store
+	metadata := nativeCodexTestMetadata()
+	return &nativeCodexHost{key: codexRuntimePluginKey, state: store, repo: store, directory: directory, metadata: metadata, epoch: context.Background()}, directory, store
+
 }
 
 func TestCodexRoutingCookieScopeAgeDeletionAndColdCandidate(t *testing.T) {
@@ -326,7 +320,7 @@ func TestCodexRoutingTurnStateCannotCrossLogicalTurn(t *testing.T) {
 
 func TestCodexRoutingGenericCookieHeadersStayProtected(t *testing.T) {
 	for _, name := range []string{"Cookie", "Set-Cookie"} {
-		manager := ticketTestManager(t, config.OpenAICodexTicketConfig{Enabled: true, FailClosed: true}, func(extensionv1.Invocation) (extensionv1.Result, error) {
+		manager := nativeTicketTestRuntime(t, config.OpenAICodexTicketConfig{Enabled: true, FailClosed: true}, func(extensionv1.Invocation) (extensionv1.Result, error) {
 			raw, _ := json.Marshal(extensionv1.CodexRoutingInjection{Headers: map[string]string{name: "__cflb=not-host-owned"}})
 			return extensionv1.Result{Payload: raw}, nil
 		})
@@ -375,8 +369,8 @@ func TestCodexRoutingDeviceChangeInvalidatesQualifiedScopeBeforeSend(t *testing.
 
 func TestCodexRoutingAnotherModelClockDoesNotBlockOwnCookieRefresh(t *testing.T) {
 	store := &routingMemoryStore{values: map[string]extensionv1.StateResult{}}
-	installation := &PluginInstallation{PluginKey: codexRuntimePluginKey}
-	service := &OpenAIGatewayService{pluginManager: &PluginManager{repo: store}}
+	installation := nativeCodexTestMetadata()
+	service := &OpenAIGatewayService{nativeCodexRuntime: &NativeCodexRuntime{repo: store}}
 	scope := extensionv1.CodexRoutingScope{AccountID: 7, Identity: "owner", ProfileHash: "profile", RouteHash: "route", ConnectionLeaseID: "connection-astra", Transport: "http"}
 	now := time.Now().Add(-time.Second).UTC()
 	expiry := now.Add(time.Minute)
@@ -424,11 +418,11 @@ func TestCodexRoutingAnotherModelClockDoesNotBlockOwnCookieRefresh(t *testing.T)
 
 func TestCodexRoutingObservesOrdinaryHTTPAndNativeFramesWithoutCookies(t *testing.T) {
 	account := ticketTestAccount(7)
-	manager := ticketTestManager(t, config.OpenAICodexTicketConfig{Enabled: false}, nil)
+	manager := nativeTicketTestRuntime(t, config.OpenAICodexTicketConfig{Enabled: false}, nil)
 	store := &routingMemoryStore{values: map[string]extensionv1.StateResult{}}
 	manager.repo = store
 	upstream := &httpUpstreamRecorder{resp: &http.Response{StatusCode: 200, Proto: "HTTP/2.0", Header: make(http.Header), Body: io.NopCloser(strings.NewReader(`{}`))}}
-	service := &OpenAIGatewayService{httpUpstream: upstream, pluginManager: manager}
+	service := &OpenAIGatewayService{httpUpstream: upstream, nativeCodexRuntime: manager}
 	request, _ := http.NewRequest("POST", "https://chatgpt.com/backend-api/codex/responses", strings.NewReader(`{"model":"gpt-5.5","input":"private-prompt","client_metadata":{"session_id":"session"}}`))
 	request.Header.Set("Authorization", "Bearer private-token")
 	request.Header.Set("User-Agent", "actual-wire-agent")
@@ -480,9 +474,9 @@ func TestCodexRoutingUnchangedCookiesDoNotGrowAndExpiryRedactsValues(t *testing.
 	q := &extensionv1.CodexRoutingQualification{Scope: scope, Model: "gpt-6-astra", VerifiedAt: now, ExpiresAt: expires, Bundle: extensionv1.CodexRoutingBundleRef{Key: bundleKey, Revision: 1, ExpiresAt: expires, ConnectionLeaseID: scope.ConnectionLeaseID}}
 	_, err = readCodexRoutingBundle(context.Background(), store, codexRuntimePluginKey, q.Bundle, scope, true)
 	require.NoError(t, err, "nil refresh must mean unchanged Cookies, not an invalid fixture reference")
-	service := &OpenAIGatewayService{pluginManager: &PluginManager{repo: store}}
+	service := &OpenAIGatewayService{nativeCodexRuntime: &NativeCodexRuntime{repo: store}}
 	before := len(store.values)
-	updated := service.refreshObservedCodexCookies(context.Background(), &PluginInstallation{PluginKey: codexRuntimePluginKey}, q, http.Header{"Set-Cookie": []string{"__cflb=temporary-private-value; Path=/; Secure; Max-Age=100"}}, extensionv1.CodexRoutingObservation{ObservedAt: now})
+	updated := service.refreshObservedCodexCookies(context.Background(), nativeCodexTestMetadata(), q, http.Header{"Set-Cookie": []string{"__cflb=temporary-private-value; Path=/; Secure; Max-Age=100"}}, extensionv1.CodexRoutingObservation{ObservedAt: now})
 	require.Nil(t, updated)
 	require.Len(t, store.values, before)
 	require.EqualValues(t, 1, store.values[codexRoutingPrivateNamespace+":"+clockKey].Revision)
@@ -498,7 +492,7 @@ func TestCodexRoutingUnchangedCookiesDoNotGrowAndExpiryRedactsValues(t *testing.
 	require.NoError(t, err)
 	_, err = store.CompareSwapExtensionState(context.Background(), codexRuntimePluginKey, extensionv1.StateRequest{Namespace: codexRoutingPrivateNamespace, Key: "spent.keep", Value: json.RawMessage(`{"spent":true}`)})
 	require.NoError(t, err)
-	host := &pluginExtensionHost{key: codexRuntimePluginKey, state: store}
+	host := &nativeCodexHost{key: codexRuntimePluginKey, state: store}
 	_, err = host.redactExpiredCodexRoutingMaterial(context.Background())
 	require.NoError(t, err)
 	require.Len(t, store.values, before+1)

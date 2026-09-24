@@ -7,7 +7,7 @@ import (
 	"slices"
 	"time"
 
-	extensionv1 "github.com/Wei-Shaw/sub2api/pkg/extensionapi/v1"
+	extensionv1 "github.com/Wei-Shaw/sub2api/internal/nativeapi"
 	"github.com/tidwall/gjson"
 )
 
@@ -27,31 +27,28 @@ func withCodexRecoveryScope(ctx context.Context, account *Account) context.Conte
 func invokeCodexRecoveryPolicy(ctx context.Context, accountType, operation string, input, output any) error {
 	raw, err := json.Marshal(input)
 	if err != nil || len(raw) > extensionv1.MaxPayloadBytes {
-		return ErrExtensionOperationUnavailable
+		return ErrNativeCodexRuntimeUnavailable
 	}
 	call, cancel := context.WithTimeout(ctx, time.Second)
 	defer cancel()
 	invocation := extensionv1.Invocation{Capability: extensionv1.CapabilityRecovery, Operation: operation, Payload: raw}
 	if scope, ok := ctx.Value(codexRecoveryScopeKey{}).(codexRecoveryScope); ok {
 		if scope.platform != PlatformOpenAI {
-			return ErrExtensionOperationDisabled
+			return ErrNativeCodexPolicyDisabled
 		}
 		accountType, invocation.AccountID = scope.accountType, scope.accountID
 	}
 	var result extensionv1.Result
-	cached := operation == "codex.recovery.enabled" || operation == "codex.recovery.available" || operation == "codex.replay.rules"
 	if accountType == "" {
-		result, err = invokeProcessDomainExtension(call, invocation, cached)
-	} else if cached {
-		result, err = invokeProcessExtensionCached(call, PlatformOpenAI, accountType, invocation)
+		result, err = invokeNativeCodex(call, "", "", invocation)
 	} else {
-		result, err = invokeProcessExtension(call, PlatformOpenAI, accountType, invocation)
+		result, err = invokeNativeCodex(call, PlatformOpenAI, accountType, invocation)
 	}
 	if err != nil {
 		return err
 	}
 	if result.Code != "" || json.Unmarshal(result.Payload, output) != nil {
-		return ErrExtensionOperationUnavailable
+		return ErrNativeCodexRuntimeUnavailable
 	}
 	return nil
 }
@@ -65,7 +62,7 @@ func readOpenAIReplayRules(ctx context.Context) (extensionv1.ReplayRules, error)
 		return rules, nil
 	}
 	if rules.Version == "" || len(rules.Version) > 64 || rules.MaxToolCalls < 1 || rules.MaxToolCalls > 32 || len(rules.ChatFields) > 6 || len(rules.OutputKinds) > 3 {
-		return rules, ErrExtensionOperationUnavailable
+		return rules, ErrNativeCodexRuntimeUnavailable
 	}
 	validate := func(values, allowed []string) bool {
 		seen := map[string]bool{}
@@ -78,7 +75,7 @@ func readOpenAIReplayRules(ctx context.Context) (extensionv1.ReplayRules, error)
 		return true
 	}
 	if !validate(rules.ChatFields, []string{"role", "content", "reasoning_content", "reasoning", "tool_calls", "refusal"}) || !validate(rules.OutputKinds, []string{"reasoning", "message", "function_call"}) {
-		return rules, ErrExtensionOperationUnavailable
+		return rules, ErrNativeCodexRuntimeUnavailable
 	}
 	slices.Sort(rules.ChatFields)
 	slices.Sort(rules.OutputKinds)
@@ -93,7 +90,7 @@ func openAIReasoningPolicyEnabled(ctx context.Context, account *Account, key str
 	value, valid := raw.(bool)
 	var enabled bool
 	err := invokeCodexRecoveryPolicy(withCodexRecoveryScope(ctx, account), account.Type, "codex.recovery.enabled", extensionv1.RecoverySetting{Configured: configured, Valid: valid, Value: value}, &enabled)
-	if errors.Is(err, ErrExtensionOperationDisabled) {
+	if errors.Is(err, ErrNativeCodexPolicyDisabled) {
 		return false, nil
 	}
 	return enabled, err
@@ -163,7 +160,7 @@ func selectOpenAIRecoveryIndices(ctx context.Context, body []byte, param string)
 	}
 	for _, index := range selection.Indices {
 		if !allowed[index] {
-			return extensionv1.RecoverySelection{}, ErrExtensionOperationUnavailable
+			return extensionv1.RecoverySelection{}, ErrNativeCodexRuntimeUnavailable
 		}
 		delete(allowed, index)
 	}

@@ -15,15 +15,12 @@ import (
 
 const accountJobTestActorID int64 = 77
 
-func TestAccountJobSubmissionRetainsResourceOwner(t *testing.T) {
+func TestAccountJobSubmissionRetainsActorAndNativeMetadata(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	router := gin.New()
 	handler := &AccountHandler{}
 	repo := attachAccountJobSubmitter(router, handler)
-	router.Use(func(c *gin.Context) {
-		c.Request = c.Request.WithContext(service.WithPluginExecution(c.Request.Context(), &service.PluginInstallation{ID: 7, RuntimeGeneration: 2}))
-		c.Next()
-	})
+
 	router.POST("/jobs", func(c *gin.Context) {
 		handler.submitAccountJob(c, service.AccountJobKindImportData, map[string]any{"data": "synthetic"}, ordinalAccountJobSeeds(1))
 	})
@@ -35,7 +32,20 @@ func TestAccountJobSubmissionRetainsResourceOwner(t *testing.T) {
 	require.Len(t, repo.created, 1)
 	var metadata map[string]any
 	require.NoError(t, json.Unmarshal(repo.created[0].Metadata, &metadata))
-	require.Equal(t, float64(7), metadata["plugin_id"])
+	require.Equal(t, map[string]any{"target_count": float64(1)}, metadata)
+	require.NotContains(t, metadata, "plugin_id")
+	require.NotContains(t, metadata, "plugin_generation")
+	require.Equal(t, accountJobTestActorID, repo.created[0].CreatedBy)
+	require.Equal(t, service.AccountJobKindImportData, repo.created[0].Kind)
+	require.Equal(t, "fixture-import", repo.created[0].IdempotencyKey)
+	require.JSONEq(t, `{"data":"synthetic"}`, repo.created[0].PayloadCipher)
+	var response struct {
+		Data service.AccountJob `json:"data"`
+	}
+	require.NoError(t, json.Unmarshal(recorder.Body.Bytes(), &response))
+	require.Equal(t, accountJobTestActorID, response.Data.CreatedBy)
+	require.Equal(t, service.AccountJobStatusPending, response.Data.Status)
+	require.Equal(t, 1, response.Data.TargetCount)
 }
 
 type accountJobSubmitRepository struct {

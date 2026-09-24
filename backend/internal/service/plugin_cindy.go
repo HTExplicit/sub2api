@@ -6,13 +6,13 @@ import (
 	"github.com/tidwall/gjson"
 	"time"
 
-	extensionv1 "github.com/Wei-Shaw/sub2api/pkg/extensionapi/v1"
+	extensionv1 "github.com/Wei-Shaw/sub2api/internal/nativeapi"
 )
 
 func currentCindyProviderConfig() (extensionv1.CindyProviderConfig, bool) {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
-	out, err := invokeProcessExtensionCached(ctx, PlatformCindy, AccountTypeAPIKey, extensionv1.Invocation{Capability: extensionv1.CapabilityProvider, Operation: "cindy.features", Payload: json.RawMessage(`{}`)})
+	out, err := invokeCindyProviderCached(ctx, extensionv1.Invocation{Capability: extensionv1.CapabilityProvider, Operation: "cindy.features", Payload: json.RawMessage(`{}`)})
 	var config extensionv1.CindyProviderConfig
 	if err != nil || out.Code != "" || json.Unmarshal(out.Payload, &config) != nil {
 		return extensionv1.CindyProviderConfig{}, false
@@ -36,7 +36,7 @@ func classifyCindyProviderResponse(account *Account, status int, body []byte) ex
 	raw, _ := json.Marshal(observed)
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
-	result, err := invokeProcessExtensionCached(ctx, PlatformCindy, AccountTypeAPIKey, extensionv1.Invocation{Capability: extensionv1.CapabilityProvider, Operation: "cindy.health", AccountID: account.ID, Payload: raw})
+	result, err := invokeCindyProviderCached(ctx, extensionv1.Invocation{Capability: extensionv1.CapabilityProvider, Operation: "cindy.health", AccountID: account.ID, Payload: raw})
 	var decision extensionv1.CindyResponseDecision
 	if err != nil || result.Code != "" || json.Unmarshal(result.Payload, &decision) != nil {
 		return extensionv1.CindyResponseDecision{}

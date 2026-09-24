@@ -10,9 +10,6 @@ const routerHarness = vi.hoisted(() => ({
   guard: null as NavigationGuard | null,
 }))
 
-const pluginRegistry = vi.hoisted(() => ({ items: [] as Array<{ id: string; slot: string; available: boolean }>, refresh: vi.fn(async () => {}) }))
-vi.mock('@/stores/pluginExtensions', () => ({ usePluginExtensions: () => pluginRegistry }))
-
 const authStore = vi.hoisted(() => ({
   checkAuth: vi.fn(),
   isAuthenticated: true,
@@ -116,7 +113,6 @@ describe('feature route guard', () => {
   })
 
   beforeEach(() => {
-    pluginRegistry.items = []
     authStore.isAuthenticated = true
     authStore.isAdmin = false
     authStore.isSimpleMode = false

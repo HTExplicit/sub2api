@@ -162,10 +162,8 @@ func TestAccountJobBulkReplayUsesSubmissionIdentityWithoutWrites(t *testing.T) {
 	repo := &bulkJobScopeRepository{accountJobSubmitRepository: &accountJobSubmitRepository{}}
 	jobs := service.NewAccountJobService(repo, accountJobTestEncryptor{})
 	payload := json.RawMessage(`{"filters":{"status":"active"},"name":"updated"}`)
-	ownerContext := func(id int64) context.Context {
-		return service.WithPluginExecution(context.Background(), &service.PluginInstallation{ID: id, RuntimeGeneration: 2})
-	}
-	job, replayed, err := jobs.Submit(ownerContext(7), 77, service.AccountJobKindBulkUpdate, "owner-bound", payload, nil, accountJobSeeds([]int64{11}))
+
+	job, replayed, err := jobs.Submit(context.Background(), 77, service.AccountJobKindBulkUpdate, "owner-bound", payload, nil, accountJobSeeds([]int64{11}))
 	require.NoError(t, err)
 	require.False(t, replayed)
 	require.Equal(t, 1, len(repo.created))
@@ -180,13 +178,11 @@ func TestAccountJobBulkReplayUsesSubmissionIdentityWithoutWrites(t *testing.T) {
 		wantReplay bool
 		wantErr    error
 	}{
-		{name: "same_submission", ctx: ownerContext(7), actor: 77, kind: service.AccountJobKindBulkUpdate, key: "owner-bound", payload: payload, wantReplay: true},
-		{name: "other_plugin", ctx: ownerContext(8), actor: 77, kind: service.AccountJobKindBulkUpdate, key: "owner-bound", payload: payload, wantErr: service.ErrAccountJobIdempotencyConflict},
-		{name: "unbound_owner", ctx: context.Background(), actor: 77, kind: service.AccountJobKindBulkUpdate, key: "owner-bound", payload: payload, wantErr: service.ErrAccountJobIdempotencyConflict},
-		{name: "other_actor", ctx: ownerContext(7), actor: 78, kind: service.AccountJobKindBulkUpdate, key: "owner-bound", payload: payload},
-		{name: "other_kind", ctx: ownerContext(7), actor: 77, kind: service.AccountJobKindBatchDelete, key: "owner-bound", payload: payload},
-		{name: "changed_payload", ctx: ownerContext(7), actor: 77, kind: service.AccountJobKindBulkUpdate, key: "owner-bound", payload: json.RawMessage(`{"name":"other"}`), wantErr: service.ErrAccountJobIdempotencyConflict},
-		{name: "missing_key", ctx: ownerContext(7), actor: 77, kind: service.AccountJobKindBulkUpdate, payload: payload, wantErr: service.ErrAccountJobIdempotencyRequired},
+		{name: "same_submission", ctx: context.Background(), actor: 77, kind: service.AccountJobKindBulkUpdate, key: "owner-bound", payload: payload, wantReplay: true},
+		{name: "other_actor", ctx: context.Background(), actor: 78, kind: service.AccountJobKindBulkUpdate, key: "owner-bound", payload: payload},
+		{name: "other_kind", ctx: context.Background(), actor: 77, kind: service.AccountJobKindBatchDelete, key: "owner-bound", payload: payload},
+		{name: "changed_payload", ctx: context.Background(), actor: 77, kind: service.AccountJobKindBulkUpdate, key: "owner-bound", payload: json.RawMessage(`{"name":"other"}`), wantErr: service.ErrAccountJobIdempotencyConflict},
+		{name: "missing_key", ctx: context.Background(), actor: 77, kind: service.AccountJobKindBulkUpdate, payload: payload, wantErr: service.ErrAccountJobIdempotencyRequired},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			got, replayed, err := jobs.ReplaySubmission(test.ctx, test.actor, test.kind, test.key, test.payload)
@@ -206,9 +202,20 @@ func TestAccountJobBulkReplayUsesSubmissionIdentityWithoutWrites(t *testing.T) {
 			require.Equal(t, original, repo.created[0], "lookup must not create, reseed or extend expiry")
 		})
 	}
-	_, _, err = jobs.Submit(ownerContext(8), 77, service.AccountJobKindBulkUpdate, "owner-bound", payload, nil, accountJobSeeds([]int64{13}))
-	require.ErrorIs(t, err, service.ErrAccountJobIdempotencyConflict, "ordinary Submit must retain the same shared owner guard")
+	replayedJob, replayed, err := jobs.Submit(context.Background(), 77, service.AccountJobKindBulkUpdate, "owner-bound", payload, nil, accountJobSeeds([]int64{13}))
+	require.NoError(t, err)
+	require.True(t, replayed)
+	require.Equal(t, job.ID, replayedJob.ID)
+	require.Equal(t, original, repo.created[0], "resubmission must retain the originally frozen target, not the newly supplied seeds")
 	require.Equal(t, 1, len(repo.created))
+	legacy := original
+	legacy.Metadata = json.RawMessage(`{"plugin_id":7,"plugin_generation":2,"target_count":1}`)
+	legacyRepo := &bulkJobScopeRepository{accountJobSubmitRepository: &accountJobSubmitRepository{created: []service.CreateAccountJobParams{legacy}}}
+	legacyJobs := service.NewAccountJobService(legacyRepo, accountJobTestEncryptor{})
+	_, _, err = legacyJobs.ReplaySubmission(context.Background(), 77, service.AccountJobKindBulkUpdate, "owner-bound", payload)
+	require.ErrorIs(t, err, service.ErrAccountJobIdempotencyConflict, "a native request cannot silently claim a historical plugin-owned submission")
+	require.Equal(t, []service.CreateAccountJobParams{legacy}, legacyRepo.created)
+
 }
 
 type bulkJobScopeAdmin struct {

@@ -31,7 +31,6 @@
             accept=".s2plugin,application/zip"
             @change="handleFileSelected"
           />
-          <input ref="updateInput" type="file" class="hidden" accept=".s2plugin,application/zip" @change="handleUpdateSelected" />
           <button
             type="button"
             class="btn btn-primary"
@@ -114,9 +113,6 @@
               <p class="mt-1 text-xs text-gray-500">
                 {{ plugin.plugin_key
                 }}<span v-if="plugin.author"> · {{ plugin.author }}</span>
-              </p>
-              <p class="mt-2 text-xs text-gray-500">
-                {{ t(plugin.update_policy === 'pinned' ? 'admin.plugins.pinnedVersion' : 'admin.plugins.followsBundle') }}
               </p>
               <p
                 v-if="plugin.description"
@@ -215,7 +211,7 @@
               </p>
             </div>
 
-            <div v-if="!plugin.manifest.requires.extension_api" class="md:col-span-2">
+            <div class="md:col-span-2">
               <label
                 class="flex items-center justify-between gap-4 text-xs font-medium text-gray-600 dark:text-gray-300"
               >
@@ -242,17 +238,10 @@
           <div
             class="flex flex-wrap justify-end gap-2 border-t border-gray-100 px-5 py-4 dark:border-dark-700"
           >
-            <button type="button" class="btn btn-secondary btn-sm" :disabled="busyID === plugin.id || plugin.state === 'updating'" @click="selectUpdate(plugin)">
-              {{ t('admin.plugins.updatePackage') }}
-            </button>
-            <button v-if="plugin.update_policy === 'pinned' && plugin.plugin_key.startsWith('codexrip.')" type="button" class="btn btn-secondary btn-sm"
-              :disabled="busyID === plugin.id || plugin.state === 'updating'" @click="followBundle(plugin)">
-              {{ t('admin.plugins.followBundle') }}
-            </button>
             <button
               type="button"
               class="btn btn-secondary btn-sm"
-              :disabled="busyID === plugin.id || plugin.state === 'updating'"
+              :disabled="busyID === plugin.id"
               @click="testPlugin(plugin)"
             >
               <Icon name="beaker" size="sm" />
@@ -275,7 +264,6 @@
               :disabled="
                 busyID === plugin.id ||
                 plugin.state === 'starting' ||
-                plugin.state === 'updating' ||
                 !plugin.compatibility.compatible
               "
               @click="enablePlugin(plugin)"
@@ -286,7 +274,7 @@
             <button
               type="button"
               class="btn btn-danger btn-sm"
-              :disabled="busyID === plugin.id || hasEnabledBinding(plugin) || plugin.state === 'updating'"
+              :disabled="busyID === plugin.id || hasEnabledBinding(plugin)"
               @click="uninstallPlugin(plugin)"
             >
               <Icon name="trash" size="sm" />
@@ -304,8 +292,39 @@
         width="full"
         @close="closeConfiguration"
       >
-        <PluginFrame v-if="configPlugin" :plugin-id="configPlugin.id" :title="configPlugin.name"
-          :context="{ mode: 'configuration' }" @saved="loadPlugins" />
+        <div
+          class="relative min-h-[520px] overflow-hidden bg-gray-50 dark:bg-dark-900"
+          :style="{ height: `${iframeHeight}px` }"
+        >
+          <div
+            v-if="uiLoading"
+            class="absolute inset-0 z-10 flex items-center justify-center text-sm text-gray-500"
+          >
+            {{ t("admin.plugins.loadingUI") }}
+          </div>
+          <div
+            v-if="uiError"
+            class="absolute inset-0 z-20 flex flex-col items-center justify-center p-8 text-center"
+          >
+            <Icon name="exclamationTriangle" size="xl" class="text-amber-500" />
+            <p class="mt-3 font-medium text-gray-800 dark:text-gray-200">
+              {{ t("admin.plugins.uiUnavailable") }}
+            </p>
+            <p class="mt-1 max-w-xl text-sm text-gray-500">{{ uiError }}</p>
+          </div>
+          <iframe
+            v-if="uiSession"
+            ref="pluginFrame"
+            :src="uiSession.url"
+            sandbox="allow-scripts"
+            referrerpolicy="no-referrer"
+            class="h-full w-full border-0 bg-white dark:bg-dark-900"
+            :title="
+              t('admin.plugins.configTitle', { name: configPlugin?.name || '' })
+            "
+            @load="handlePluginFrameLoad"
+          />
+        </div>
       </BaseDialog>
 
       <TotpStepUpDialog :controller="pluginStepUp" />
@@ -314,16 +333,16 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, onBeforeUnmount, ref } from "vue";
+import { onBeforeUnmount, onMounted, ref } from "vue";
 import { useI18n } from "vue-i18n";
 import {
   adminAPI,
   type PluginInstallation,
+  type PluginUISession,
 } from "@/api/admin";
 import { useAppStore } from "@/stores";
 import AppLayout from "@/components/layout/AppLayout.vue";
 import BaseDialog from "@/components/common/BaseDialog.vue";
-import PluginFrame from '@/components/plugins/PluginFrame.vue';
 import Icon from "@/components/icons/Icon.vue";
 import TotpStepUpDialog from "@/components/auth/TotpStepUpDialog.vue";
 import {
@@ -333,6 +352,17 @@ import {
   useStepUp,
 } from "@/composables/useStepUp";
 
+interface PluginBridgeMessage {
+  source?: string;
+  bridge_token?: string;
+  type?: string;
+  request_id?: string;
+  config?: unknown;
+  height?: unknown;
+  level?: unknown;
+  message?: unknown;
+}
+
 const { t } = useI18n();
 const appStore = useAppStore();
 const pluginStepUp = useStepUp();
@@ -341,12 +371,15 @@ const loading = ref(false);
 const uploading = ref(false);
 const busyID = ref<number | null>(null);
 const fileInput = ref<HTMLInputElement | null>(null);
-const updateInput = ref<HTMLInputElement | null>(null);
-const updateTarget = ref<PluginInstallation | null>(null);
-let refreshTimer: ReturnType<typeof setTimeout> | undefined;
-let disposed = false;
 const rolloutValues = ref<Record<number, number>>({});
 const configPlugin = ref<PluginInstallation | null>(null);
+const uiSession = ref<PluginUISession | null>(null);
+const pluginFrame = ref<HTMLIFrameElement | null>(null);
+const uiLoading = ref(false);
+const uiError = ref("");
+const iframeHeight = ref(640);
+const pluginFrameLoaded = ref(false);
+const pendingBridgeRequests = new Map<string, number>();
 
 function errorMessage(error: unknown): string {
   if (typeof error === "object" && error !== null && "message" in error) {
@@ -371,7 +404,6 @@ function reportSensitiveActionError(error: unknown): void {
 }
 
 async function loadPlugins(): Promise<void> {
-  if (refreshTimer) { clearTimeout(refreshTimer); refreshTimer = undefined; }
   loading.value = true;
   try {
     plugins.value = await adminAPI.plugins.list();
@@ -382,42 +414,7 @@ async function loadPlugins(): Promise<void> {
     appStore.showError(errorMessage(error));
   } finally {
     loading.value = false;
-    if (!disposed && plugins.value.some(plugin => plugin.state === 'updating')) {
-      refreshTimer = setTimeout(() => { void loadPlugins(); }, 2000);
-    }
   }
-}
-
-function selectUpdate(plugin: PluginInstallation): void {
-  updateTarget.value = plugin;
-  updateInput.value?.click();
-}
-
-async function handleUpdateSelected(event: Event): Promise<void> {
-  const input = event.target as HTMLInputElement;
-  const file = input.files?.[0];
-  input.value = '';
-  const target = updateTarget.value;
-  updateTarget.value = null;
-  if (!file || !target) return;
-  if (!file.name.toLowerCase().endsWith('.s2plugin')) { appStore.showError(t('admin.plugins.fileRequired')); return; }
-  busyID.value = target.id;
-  try {
-    await pluginStepUp.run(() => adminAPI.plugins.update(target, file));
-    appStore.showSuccess(t('admin.plugins.updateAccepted'));
-    await loadPlugins();
-  } catch (error) { reportSensitiveActionError(error); }
-  finally { busyID.value = null; }
-}
-
-async function followBundle(plugin: PluginInstallation): Promise<void> {
-  busyID.value = plugin.id;
-  try {
-    await pluginStepUp.run(() => adminAPI.plugins.followBundled(plugin));
-    appStore.showSuccess(t('admin.plugins.followBundleAccepted'));
-    await loadPlugins();
-  } catch (error) { reportSensitiveActionError(error); }
-  finally { busyID.value = null; }
 }
 
 async function handleFileSelected(event: Event): Promise<void> {
@@ -464,13 +461,11 @@ async function enablePlugin(plugin: PluginInstallation): Promise<void> {
     if (!acceptUntested) return;
   }
   busyID.value = plugin.id;
-  const expected = { ...plugin };
-  const rollout = rolloutValues.value[plugin.id] || 100;
   try {
     await pluginStepUp.run(() =>
       adminAPI.plugins.enable(
-        expected,
-        rollout,
+        plugin.id,
+        rolloutValues.value[plugin.id] || 100,
         acceptUntested,
       ),
     );
@@ -486,9 +481,8 @@ async function enablePlugin(plugin: PluginInstallation): Promise<void> {
 async function disablePlugin(plugin: PluginInstallation): Promise<void> {
   if (!window.confirm(t("admin.plugins.confirmDisable"))) return;
   busyID.value = plugin.id;
-  const expected = { ...plugin };
   try {
-    await pluginStepUp.run(() => adminAPI.plugins.disable(expected));
+    await pluginStepUp.run(() => adminAPI.plugins.disable(plugin.id));
     appStore.showSuccess(t("admin.plugins.disableSuccess"));
     await loadPlugins();
   } catch (error: unknown) {
@@ -501,9 +495,8 @@ async function disablePlugin(plugin: PluginInstallation): Promise<void> {
 async function uninstallPlugin(plugin: PluginInstallation): Promise<void> {
   if (!window.confirm(t("admin.plugins.confirmUninstall"))) return;
   busyID.value = plugin.id;
-  const expected = { ...plugin };
   try {
-    await pluginStepUp.run(() => adminAPI.plugins.remove(expected));
+    await pluginStepUp.run(() => adminAPI.plugins.remove(plugin.id));
     appStore.showSuccess(t("admin.plugins.uninstallSuccess"));
     await loadPlugins();
   } catch (error: unknown) {
@@ -515,10 +508,9 @@ async function uninstallPlugin(plugin: PluginInstallation): Promise<void> {
 
 async function testPlugin(plugin: PluginInstallation): Promise<void> {
   busyID.value = plugin.id;
-  const expected = { ...plugin };
   try {
     const result = await pluginStepUp.run(() =>
-      adminAPI.plugins.test(expected),
+      adminAPI.plugins.test(plugin.id),
     );
     if (result.success)
       appStore.showSuccess(result.message || t("admin.plugins.testSuccess"));
@@ -530,12 +522,178 @@ async function testPlugin(plugin: PluginInstallation): Promise<void> {
   }
 }
 
-function openConfiguration(plugin: PluginInstallation): void {
+async function openConfiguration(plugin: PluginInstallation): Promise<void> {
   configPlugin.value = plugin;
+  uiSession.value = null;
+  pluginFrameLoaded.value = false;
+  clearPendingBridgeRequests();
+  uiLoading.value = true;
+  uiError.value = "";
+  iframeHeight.value = 640;
+  try {
+    uiSession.value = await adminAPI.plugins.createUISession(plugin.id);
+  } catch (error: unknown) {
+    uiLoading.value = false;
+    uiError.value = errorMessage(error);
+  }
 }
 
 function closeConfiguration(): void {
+  clearPendingBridgeRequests();
+  pluginFrameLoaded.value = false;
   configPlugin.value = null;
+  uiSession.value = null;
+  uiLoading.value = false;
+  uiError.value = "";
+}
+
+function clearPendingBridgeRequests(): void {
+  for (const timeout of pendingBridgeRequests.values()) window.clearTimeout(timeout);
+  pendingBridgeRequests.clear();
+}
+
+function handlePluginFrameLoad(): void {
+  // A load can also be caused by a plugin navigating its iframe. Drop all
+  // outstanding responses so a late config response is never sent to the new document.
+  if (pluginFrameLoaded.value) clearPendingBridgeRequests();
+  pluginFrameLoaded.value = true;
+  uiLoading.value = false;
+}
+
+function registerBridgeRequest(requestID: string): void {
+  const timeout = window.setTimeout(() => {
+    pendingBridgeRequests.delete(requestID);
+  }, 30_000);
+  pendingBridgeRequests.set(requestID, timeout);
+}
+
+function postBridgeResult(
+  request: PluginBridgeMessage,
+  payload: Record<string, unknown>,
+): void {
+  if (!pluginFrame.value?.contentWindow || !uiSession.value) return;
+  const requestID = typeof request.request_id === "string" ? request.request_id.trim() : "";
+  const timeout = pendingBridgeRequests.get(requestID);
+  if (!requestID || timeout === undefined) return;
+  window.clearTimeout(timeout);
+  pendingBridgeRequests.delete(requestID);
+  pluginFrame.value.contentWindow.postMessage(
+    {
+      source: "sub2api-plugin-host",
+      bridge_token: uiSession.value.bridge_token,
+      type: `${request.type}.result`,
+      request_id: requestID,
+      ...payload,
+    },
+    // The sandboxed iframe has an opaque origin, so no fixed target origin exists.
+    // Pending request tracking plus load invalidation prevents cross-navigation leaks.
+    "*",
+  );
+}
+
+async function handleBridgeMessage(event: MessageEvent): Promise<void> {
+  if (
+    !uiSession.value ||
+    !configPlugin.value ||
+    event.source !== pluginFrame.value?.contentWindow ||
+    event.origin !== "null"
+  )
+    return;
+  const message = event.data as PluginBridgeMessage;
+  if (
+    !message ||
+    message.source !== "sub2api-plugin-ui" ||
+    message.bridge_token !== uiSession.value.bridge_token
+  )
+    return;
+
+  const requestID = typeof message.request_id === "string" ? message.request_id.trim() : "";
+  const expectsResponse =
+    message.type === "config.load" ||
+    message.type === "config.save" ||
+    message.type === "config.test" ||
+    message.type === "plugin.status";
+  if (expectsResponse) {
+    if (!requestID || pendingBridgeRequests.has(requestID)) return;
+    registerBridgeRequest(requestID);
+  }
+
+  try {
+    switch (message.type) {
+      case "sub2api.plugin.ready":
+        uiLoading.value = false;
+        break;
+      case "config.load": {
+        const config = await adminAPI.plugins.getConfig(configPlugin.value.id);
+        postBridgeResult(message, { ok: true, config });
+        break;
+      }
+      case "config.save": {
+        if (
+          !message.config ||
+          typeof message.config !== "object" ||
+          Array.isArray(message.config)
+        ) {
+          throw new Error(t("admin.plugins.bridgeRejected"));
+        }
+        const config = await pluginStepUp.run(() =>
+          adminAPI.plugins.saveConfig(
+            configPlugin.value!.id,
+            message.config as Record<string, unknown>,
+          ),
+        );
+        postBridgeResult(message, { ok: true, config });
+        appStore.showSuccess(t("common.saved"));
+        break;
+      }
+      case "config.test": {
+        const result = await pluginStepUp.run(() =>
+          adminAPI.plugins.test(configPlugin.value!.id),
+        );
+        postBridgeResult(message, { ok: result.success, result });
+        // A successful result is delivered back to the plugin UI, which owns how it
+        // presents it (inline status, or an explicit ui.notify). Only force a host
+        // toast on failure so genuine errors are never silently dropped — plugins
+        // may call config.test for lightweight status polling, not just as an
+        // explicit "test" action, and those must not spam a success toast.
+        if (!result.success)
+          appStore.showError(result.message || t("common.error"));
+        break;
+      }
+      case "plugin.status": {
+        // Read-only runtime status (the plugin's Health snapshot). It has no side
+        // effects, so it is intentionally NOT step-up gated and never raises a host
+        // toast — the plugin UI renders it however it likes. This is the generic
+        // channel for any plugin to surface live state without abusing config.test.
+        const result = await adminAPI.plugins.status(configPlugin.value!.id);
+        postBridgeResult(message, { ok: true, result });
+        break;
+      }
+      case "ui.resize": {
+        const height = Number(message.height);
+        if (Number.isFinite(height))
+          iframeHeight.value = Math.min(960, Math.max(520, Math.round(height)));
+        break;
+      }
+      case "ui.notify": {
+        const text =
+          typeof message.message === "string"
+            ? message.message.slice(0, 500)
+            : "";
+        if (!text) break;
+        if (message.level === "error") appStore.showError(text);
+        else if (message.level === "success") appStore.showSuccess(text);
+        else appStore.showInfo(text);
+        break;
+      }
+    }
+  } catch (error: unknown) {
+    if (isStepUpBlocked(error)) reportSensitiveActionError(error);
+    postBridgeResult(message, {
+      ok: false,
+      error: isStepUpCancelled(error) ? t("common.cancel") : errorMessage(error),
+    });
+  }
 }
 
 function stateClass(state: PluginInstallation["state"]): string {
@@ -543,7 +701,7 @@ function stateClass(state: PluginInstallation["state"]): string {
     return "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300";
   if (state === "error" || state === "incompatible")
     return "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300";
-  if (state === "starting" || state === "updating")
+  if (state === "starting")
     return "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300";
   return "bg-gray-100 text-gray-600 dark:bg-dark-700 dark:text-gray-300";
 }
@@ -559,7 +717,12 @@ function compatibilityClass(
 }
 
 onMounted(() => {
+  window.addEventListener("message", handleBridgeMessage);
   void loadPlugins();
 });
-onBeforeUnmount(() => { disposed = true; if (refreshTimer) clearTimeout(refreshTimer); });
+
+onBeforeUnmount(() => {
+  window.removeEventListener("message", handleBridgeMessage);
+  clearPendingBridgeRequests();
+});
 </script>

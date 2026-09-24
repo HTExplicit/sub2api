@@ -969,6 +969,8 @@ export interface AccountEditFieldState<T extends string> {
 }
 
 export interface AccountEditProfileReference {
+  native?: boolean
+  policy_sha256?: string
   /** References may be absent when no current owner/definition can be resolved. */
   plugin_id?: number
   plugin_key?: string
@@ -991,9 +993,9 @@ export interface ProviderAccountEditContext {
   profile: AccountEditProfileReference
   edit_state_sha256: string
   values: {
-    responses_mode: AccountEditFieldState<import('@sub2api/plugin-ui/account-edit').AccountEditResponsesMode>
-    compact_mode: AccountEditFieldState<import('@sub2api/plugin-ui/account-edit').AccountEditCompactMode>
-    responses_websocket_mode: AccountEditFieldState<import('@sub2api/plugin-ui/account-edit').AccountEditWebSocketMode | 'shared' | 'dedicated'>
+    responses_mode: AccountEditFieldState<import('@/types/accountEdit').AccountEditResponsesMode>
+    compact_mode: AccountEditFieldState<import('@/types/accountEdit').AccountEditCompactMode>
+    responses_websocket_mode: AccountEditFieldState<import('@/types/accountEdit').AccountEditWebSocketMode | 'shared' | 'dedicated'>
   }
   catalog: AccountEditCatalog
 }
@@ -1722,7 +1724,7 @@ export interface OpenAIResponsesState {
 }
 
 export interface CreateAccountRequest {
-  provider_create?: import('@sub2api/plugin-ui/account-create').ProviderCreateRequestV1
+  provider_create?: import('@/types/accountCreate').ProviderCreateRequestV1
   name: string
   notes?: string | null
   platform: AccountPlatform
@@ -1743,7 +1745,7 @@ export interface CreateAccountRequest {
 }
 
 export interface UpdateAccountRequest {
-  provider_edit?: import('@sub2api/plugin-ui/account-edit').ProviderEditRequestV1
+  provider_edit?: import('@/types/accountEdit').ProviderEditRequestV1
   name?: string
   notes?: string | null
   type?: AccountType

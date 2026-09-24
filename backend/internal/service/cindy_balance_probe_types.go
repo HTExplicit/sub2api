@@ -57,15 +57,15 @@ type CindyBalanceProbeScope struct {
 }
 
 type CindyBalanceProbeOrigin struct {
-	Version           int                    `json:"version"`
-	PluginID          int64                  `json:"plugin_id"`
-	PluginKey         string                 `json:"plugin_key"`
-	PackageSHA256     string                 `json:"package_sha256"`
-	RuntimeGeneration int64                  `json:"runtime_generation"`
-	View              AccountJobViewMetadata `json:"view"`
-	FrozenAccountIDs  []int64                `json:"frozen_account_ids,omitempty"`
-	OperationKey      string                 `json:"operation_key,omitempty"`
-	RequestDigest     string                 `json:"request_digest"`
+	Version           int             `json:"version"`
+	PluginID          int64           `json:"plugin_id"`
+	PluginKey         string          `json:"plugin_key"`
+	PackageSHA256     string          `json:"package_sha256"`
+	RuntimeGeneration int64           `json:"runtime_generation"`
+	View              json.RawMessage `json:"view"`
+	FrozenAccountIDs  []int64         `json:"frozen_account_ids,omitempty"`
+	OperationKey      string          `json:"operation_key,omitempty"`
+	RequestDigest     string          `json:"request_digest"`
 }
 
 type CindyBalanceProbeCandidate struct {
@@ -338,50 +338,10 @@ func BuildCindyBalanceProbePreviewFromSnapshot(
 // Apply the same host view base/preset/buckets before candidate counting. The
 // probe's own filter remains an additional intersection, never a replacement.
 func BuildCindyBalanceProbePreviewFromSnapshotContext(ctx context.Context, scope CindyBalanceProbeScope, accounts []Account, rateRPS float64, now time.Time) (*CindyBalanceProbePreview, error) {
-	view, bound := AccountViewFromContext(ctx)
-	if !bound {
-		return BuildCindyBalanceProbePreviewFromSnapshot(scope, accounts, rateRPS, now)
-	}
-	pointers := make([]*Account, 0, len(accounts))
-	for index := range accounts {
-		pointers = append(pointers, &accounts[index])
-	}
-	allowed, err := filterAccountViewAccounts(ctx, pointers)
-	if err != nil {
+	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	filtered := make([]Account, 0, len(allowed))
-	for _, account := range allowed {
-		filtered = append(filtered, *account)
-	}
-	common, err := BuildCindyBalanceProbePreviewFromSnapshot(CindyBalanceProbeScope{Mode: "filter", Filters: AccountViewQueryFilters(view.Request.Query)}, filtered, rateRPS, now)
-	if err != nil {
-		return nil, err
-	}
-	ids := make(map[int64]bool, len(common.Candidates))
-	for _, candidate := range common.Candidates {
-		ids[candidate.AccountID] = true
-	}
-	filtered = filtered[:0]
-	for _, account := range allowed {
-		if ids[account.ID] {
-			filtered = append(filtered, *account)
-		}
-	}
-	preview, err := BuildCindyBalanceProbePreviewFromSnapshot(scope, filtered, rateRPS, now)
-	if err != nil {
-		return nil, err
-	}
-	if scope.Mode == "selected" {
-		selected := CanonicalizeCindyBalanceProbeScope(scope).AccountIDs
-		if err := ValidateAccountViewTargets(ctx, selected); err != nil {
-			return nil, err
-		}
-		if len(selected) != preview.CandidateCount {
-			return nil, ErrAccountViewScope
-		}
-	}
-	return preview, nil
+	return BuildCindyBalanceProbePreviewFromSnapshot(scope, accounts, rateRPS, now)
 }
 
 func cindyBalanceProbeContainsID(values []int64, target int64) bool {

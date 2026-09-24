@@ -6,7 +6,6 @@ import (
 	"github.com/Wei-Shaw/sub2api/internal/pkg/response"
 	"github.com/Wei-Shaw/sub2api/internal/server/middleware"
 	"github.com/Wei-Shaw/sub2api/internal/service"
-	extensionv1 "github.com/Wei-Shaw/sub2api/pkg/extensionapi/v1"
 
 	"github.com/gin-gonic/gin"
 )
@@ -31,7 +30,6 @@ func RegisterAdminRoutes(
 	// 审计中间件挂在认证之后：所有管理面变更类操作 + 敏感读取入审计日志
 	admin.Use(gin.HandlerFunc(auditLog))
 	admin.Use(middleware.AdminComplianceGuard(settingService))
-	admin.Use(h.Admin.Plugin.AccountViewRequest())
 	{
 		// 部署与运营合规确认
 		registerAdminComplianceRoutes(admin, h)
@@ -78,7 +76,7 @@ func RegisterAdminRoutes(
 		registerPromoCodeRoutes(admin, h)
 
 		// 系统设置
-		registerSettingsRoutes(admin, h)
+		registerSettingsRoutes(admin, h, stepUpAuth)
 
 		// 数据管理
 		registerDataManagementRoutes(admin, h, stepUpAuth)
@@ -154,26 +152,16 @@ func registerAccountJobRoutes(admin *gin.RouterGroup, h *handler.Handlers) {
 
 func registerCindyBalanceProbeRoutes(admin *gin.RouterGroup, h *handler.Handlers) {
 	jobs := admin.Group("/cindy/balance-probe-jobs")
-	for _, route := range []struct {
-		name, method, path string
-		retained, scope    bool
-		handler            gin.HandlerFunc
-	}{
-		{"cindy.probe.list", "GET", "", true, false, h.Admin.CindyBalanceProbe.List},
-		{"cindy.probe.create", "POST", "", false, true, h.Admin.CindyBalanceProbe.Create},
-		{"cindy.probe.preview", "POST", "/preview", false, true, h.Admin.CindyBalanceProbe.Preview},
-		{"cindy.probe.get", "GET", "/:id", true, false, h.Admin.CindyBalanceProbe.Get},
-		{"cindy.probe.items", "GET", "/:id/items", true, false, h.Admin.CindyBalanceProbe.ListItems},
-		{"cindy.probe.rate", "PATCH", "/:id/rate", true, false, h.Admin.CindyBalanceProbe.SetRate},
-		{"cindy.probe.pause", "POST", "/:id/pause", true, false, h.Admin.CindyBalanceProbe.Pause},
-		{"cindy.probe.resume", "POST", "/:id/resume", false, false, h.Admin.CindyBalanceProbe.Resume},
-		{"cindy.probe.cancel", "POST", "/:id/cancel", true, false, h.Admin.CindyBalanceProbe.Cancel},
-	} {
-		descriptor := extensionv1.ResourceDescriptor{ResourceGrant: extensionv1.ResourceGrant{Name: route.name, Capability: extensionv1.CapabilityProvider, Permission: "admin"}, Method: route.method, Path: jobs.BasePath() + route.path, Retained: route.retained}
-		if route.scope {
-			descriptor.AccountScopeField, descriptor.FilterPlatform, descriptor.FilterAccountType = "scope", service.PlatformCindy, service.AccountTypeAPIKey
-		}
-		jobs.Handle(route.method, route.path, h.Admin.Plugin.RegisterResource(descriptor), route.handler)
+	{
+		jobs.GET("", h.Admin.CindyBalanceProbe.List)
+		jobs.POST("", h.Admin.CindyBalanceProbe.Create)
+		jobs.POST("/preview", h.Admin.CindyBalanceProbe.Preview)
+		jobs.GET("/:id", h.Admin.CindyBalanceProbe.Get)
+		jobs.GET("/:id/items", h.Admin.CindyBalanceProbe.ListItems)
+		jobs.PATCH("/:id/rate", h.Admin.CindyBalanceProbe.SetRate)
+		jobs.POST("/:id/pause", h.Admin.CindyBalanceProbe.Pause)
+		jobs.POST("/:id/resume", h.Admin.CindyBalanceProbe.Resume)
+		jobs.POST("/:id/cancel", h.Admin.CindyBalanceProbe.Cancel)
 	}
 }
 
@@ -318,7 +306,7 @@ func registerOpsRoutes(admin *gin.RouterGroup, h *handler.Handlers) {
 		// Error logs (legacy)
 		ops.GET("/errors", h.Admin.Ops.GetErrorLogs)
 		ops.GET("/errors/:id", h.Admin.Ops.GetErrorLogByID)
-		ops.GET("/errors/:id/diagnostics", h.Admin.Plugin.RegisterResource(extensionv1.ResourceDescriptor{ResourceGrant: extensionv1.ResourceGrant{Name: "ops.error.diagnostics", Capability: extensionv1.CapabilityRecovery, Permission: "admin"}, Method: "GET", Path: ops.BasePath() + "/errors/:id/diagnostics"}), h.Admin.Plugin.ErrorDiagnostics(h.Admin.Ops))
+		ops.GET("/errors/:id/diagnostics", h.Admin.Account.CodexErrorDiagnostics(h.Admin.Ops))
 		ops.PUT("/errors/:id/resolve", h.Admin.Ops.UpdateErrorResolution)
 
 		// Request errors (client-visible failures)
@@ -404,17 +392,11 @@ func registerUserManagementRoutes(admin *gin.RouterGroup, h *handler.Handlers) {
 
 func registerGroupRoutes(admin *gin.RouterGroup, h *handler.Handlers) {
 	cindyGroups := admin.Group("/cindy/groups")
-	for _, route := range []struct {
-		name, method, path string
-		handler            gin.HandlerFunc
-	}{
-		{"cindy.groups.audit", "GET", "/audit", h.Admin.Group.AuditCindyGroups},
-		{"cindy.groups.keys", "GET", "/:id/keys", h.Admin.Group.CindyGroupKeyChoices},
-		{"cindy.groups.preview", "POST", "/:id/split-preview", h.Admin.Group.PreviewCindyGroupSplit},
-		{"cindy.groups.split", "POST", "/:id/split", h.Admin.Group.SplitCindyGroup},
-	} {
-		descriptor := extensionv1.ResourceDescriptor{ResourceGrant: extensionv1.ResourceGrant{Name: route.name, Capability: extensionv1.CapabilityProvider, Permission: "admin"}, Method: route.method, Path: cindyGroups.BasePath() + route.path}
-		cindyGroups.Handle(route.method, route.path, h.Admin.Plugin.RegisterResource(descriptor), route.handler)
+	{
+		cindyGroups.GET("/audit", h.Admin.Group.AuditCindyGroups)
+		cindyGroups.GET("/:id/keys", h.Admin.Group.CindyGroupKeyChoices)
+		cindyGroups.POST("/:id/split-preview", h.Admin.Group.PreviewCindyGroupSplit)
+		cindyGroups.POST("/:id/split", h.Admin.Group.SplitCindyGroup)
 	}
 
 	groups := admin.Group("/groups")
@@ -471,20 +453,11 @@ func registerAccountRoutes(admin *gin.RouterGroup, h *handler.Handlers, stepUpAu
 		accounts.POST("/bulk-taxonomy", h.Admin.Account.BulkUpdateAccountTaxonomy)
 		accounts.POST("/batch-test-models", h.Admin.Account.BatchTestModels)
 		accounts.POST("/batch-test", h.Admin.Account.BatchTest)
-		for _, route := range []struct {
-			name, method, path string
-			handler            gin.HandlerFunc
-		}{
-			{"cindy.cleanup.insufficient.preview", "GET", "/cindy/insufficient-delete-preview", h.Admin.Account.PreviewCindyInsufficientDeletion},
-			{"cindy.cleanup.insufficient.submit", "POST", "/cindy/delete-insufficient", h.Admin.Account.DeleteCindyInsufficient},
-			{"cindy.cleanup.banned.preview", "GET", "/cindy/banned-delete-preview", h.Admin.Account.PreviewCindyBannedDeletion},
-			{"cindy.cleanup.banned.submit", "POST", "/cindy/delete-banned", h.Admin.Account.DeleteCindyBanned},
-		} {
-			descriptor := service.CindyCleanupResourcePolicy()
-			descriptor.Name, descriptor.Method, descriptor.Path = route.name, route.method, accounts.BasePath()+route.path
-			accounts.Handle(route.method, route.path, h.Admin.Plugin.RegisterResource(descriptor), route.handler)
-		}
-		accounts.GET("/cindy/duplicate-identity-inventory", h.Admin.Plugin.RegisterResource(extensionv1.ResourceDescriptor{ResourceGrant: extensionv1.ResourceGrant{Name: "cindy.duplicates", Capability: extensionv1.CapabilityProvider, Permission: "admin"}, Method: "GET", Path: accounts.BasePath() + "/cindy/duplicate-identity-inventory"}), h.Admin.Account.GetCindyDuplicateIdentityInventory)
+		accounts.GET("/cindy/insufficient-delete-preview", h.Admin.Account.PreviewCindyInsufficientDeletion)
+		accounts.POST("/cindy/delete-insufficient", h.Admin.Account.DeleteCindyInsufficient)
+		accounts.GET("/cindy/banned-delete-preview", h.Admin.Account.PreviewCindyBannedDeletion)
+		accounts.POST("/cindy/delete-banned", h.Admin.Account.DeleteCindyBanned)
+		accounts.GET("/cindy/duplicate-identity-inventory", h.Admin.Account.GetCindyDuplicateIdentityInventory)
 		accounts.GET("/api-key-visibility", h.Admin.Account.GetAPIKeyVisibility)
 		accounts.PUT("/api-key-visibility", h.Admin.Account.SetAPIKeyVisibility)
 		accounts.GET("/opencode-go-usage/settings", h.Admin.Account.GetOpenCodeGoUsageSettings)
@@ -518,17 +491,19 @@ func registerAccountRoutes(admin *gin.RouterGroup, h *handler.Handlers, stepUpAu
 		accounts.POST("/:id/codex-tickets/harvest", h.Admin.Account.HarvestCodexTicket)
 		accounts.POST("/codex-tickets/batch-harvest", h.Admin.Account.BatchHarvestCodexTickets)
 		accounts.POST("/:id/codex-tickets/stop", h.Admin.Account.StopCodexTicketRenewal)
-		accounts.GET("/:id/codex-fingerprint", h.Admin.Plugin.RegisterResource(extensionv1.ResourceDescriptor{ResourceGrant: extensionv1.ResourceGrant{Name: "codex.fingerprint", Capability: extensionv1.CapabilityRequest, Permission: "admin"}, OwnerPluginKey: "codexrip.codex-runtime", AccountParam: "id", Method: "GET", Path: accounts.BasePath() + "/:id/codex-fingerprint"}), h.Admin.Account.CodexFingerprint)
-		accounts.POST("/:id/codex-routing/validate", h.Admin.Plugin.RegisterResource(extensionv1.ResourceDescriptor{ResourceGrant: extensionv1.ResourceGrant{Name: "codex.routing.validate", Capability: extensionv1.CapabilityCredentials, Permission: "admin"}, OwnerPluginKey: "codexrip.codex-runtime", AccountParam: "id", Method: "POST", Path: accounts.BasePath() + "/:id/codex-routing/validate"}), h.Admin.Account.ValidateCodexRouting)
+		accounts.POST("/:id/codex-tickets/stop-job", h.Admin.Account.StopCodexTicketRenewalJob)
+		accounts.POST("/codex-tickets/batch-stop", h.Admin.Account.BatchStopCodexTicketRenewal)
+		accounts.GET("/:id/codex-fingerprint", h.Admin.Account.CodexFingerprint)
+		accounts.POST("/:id/codex-routing/validate", h.Admin.Account.ValidateCodexRouting)
 		// Host-private, administrator-owned diagnostics. Each operation rechecks
 		// the existing credentials binding through the named routing host broker.
 		accounts.POST("/:id/codex-quality-runs", h.Admin.Account.CreateCodexQualityRun)
 		accounts.GET("/:id/codex-quality-runs/:run_id", h.Admin.Account.ReadCodexQualityRun)
 		accounts.POST("/:id/codex-quality-runs/:run_id/renew-route", h.Admin.Account.RenewCodexQualityRoute)
 		accounts.POST("/:id/codex-quality-runs/:run_id/close", h.Admin.Account.CloseCodexQualityRun)
-		accounts.PUT("/:id/codex-fingerprint/profile", h.Admin.Plugin.RegisterResource(extensionv1.ResourceDescriptor{ResourceGrant: extensionv1.ResourceGrant{Name: "codex.fingerprint.profile", Capability: extensionv1.CapabilityRequest, Permission: "admin"}, RequiredCapabilities: []string{extensionv1.CapabilityAdmin}, OwnerPluginKey: "codexrip.codex-runtime", AccountParam: "id", Method: "PUT", Path: accounts.BasePath() + "/:id/codex-fingerprint/profile"}), h.Admin.Account.SelectCodexProfile)
+		accounts.PUT("/:id/codex-fingerprint/profile", h.Admin.Account.SelectCodexProfile)
 		accounts.POST("/:id/recover-state", h.Admin.Account.RecoverState)
-		accounts.POST("/:id/cindy-balance/recover", h.Admin.Plugin.RegisterResource(extensionv1.ResourceDescriptor{ResourceGrant: extensionv1.ResourceGrant{Name: "cindy.balance.recover", Capability: extensionv1.CapabilityProvider, Permission: "admin"}, RequiredCapabilities: []string{extensionv1.CapabilityAdmin}, OwnerPluginKey: service.CindyAccountViewPluginKey, AccountParam: "id", Method: "POST", Path: accounts.BasePath() + "/:id/cindy-balance/recover"}), h.Admin.Account.ClearCindyBalanceInsufficient)
+		accounts.POST("/:id/cindy-balance/recover", h.Admin.Account.ClearCindyBalanceInsufficient)
 		accounts.POST("/:id/refresh", h.Admin.Account.Refresh)
 		accounts.POST("/:id/apply-oauth-credentials", h.Admin.Account.ApplyOAuthCredentials)
 		accounts.POST("/:id/set-privacy", h.Admin.Account.SetPrivacy)
@@ -705,16 +680,21 @@ func registerPromoCodeRoutes(admin *gin.RouterGroup, h *handler.Handlers) {
 	}
 }
 
-func registerSettingsRoutes(admin *gin.RouterGroup, h *handler.Handlers) {
+func registerSettingsRoutes(admin *gin.RouterGroup, h *handler.Handlers, stepUpAuth middleware.StepUpAuthMiddleware) {
 	adminSettings := admin.Group("/settings")
 	{
 		adminSettings.GET("", h.Admin.Setting.GetSettings)
 		adminSettings.PUT("", h.Admin.Setting.UpdateSettings)
 		adminSettings.GET("/model-context-catalog", h.Admin.Setting.GetOfficialModelContextCatalog)
 		adminSettings.GET("/image-tools", h.Admin.Setting.GetImageToolsSettings)
-		adminSettings.PUT("/image-tools", h.Admin.Setting.UpdateImageToolsSettings)
+		adminSettings.PUT("/image-tools", gin.HandlerFunc(stepUpAuth), h.Admin.Setting.UpdateImageToolsSettings)
 		adminSettings.GET("/observability", h.Admin.Setting.GetObservabilitySettings)
-		adminSettings.PUT("/observability", h.Admin.Setting.UpdateObservabilitySettings)
+		adminSettings.PUT("/observability", gin.HandlerFunc(stepUpAuth), h.Admin.Setting.UpdateObservabilitySettings)
+		adminSettings.GET("/cindy-provider", h.Admin.Setting.GetCindyProviderSettings)
+		adminSettings.PUT("/cindy-provider", gin.HandlerFunc(stepUpAuth), h.Admin.Setting.UpdateCindyProviderSettings)
+		adminSettings.GET("/cindy-provider/catalog", h.Admin.Setting.GetCindyProviderCatalog)
+		adminSettings.GET("/codex-runtime", h.Admin.Setting.GetNativeCodexConfiguration)
+		adminSettings.PUT("/codex-runtime", gin.HandlerFunc(stepUpAuth), h.Admin.Setting.UpdateNativeCodexConfiguration)
 		adminSettings.POST("/openai-codex-ticket/proxy-test", h.Admin.Setting.TestCodexTicketProxy)
 		adminSettings.POST("/test-smtp", h.Admin.Setting.TestSMTPConnection)
 		adminSettings.POST("/send-test-email", h.Admin.Setting.SendTestEmail)
@@ -910,22 +890,16 @@ func registerPluginRoutes(admin *gin.RouterGroup, h *handler.Handlers, stepUpAut
 	plugins := admin.Group("/plugins")
 	{
 		plugins.GET("", h.Admin.Plugin.List)
-		plugins.GET("/contributions", h.Admin.Plugin.Contributions)
 		plugins.GET("/:id", h.Admin.Plugin.Get)
 		plugins.POST("/upload", gin.HandlerFunc(stepUpAuth), h.Admin.Plugin.Upload)
-		plugins.POST("/:id/update", gin.HandlerFunc(stepUpAuth), h.Admin.Plugin.Update)
-		plugins.POST("/:id/follow-bundled", gin.HandlerFunc(stepUpAuth), h.Admin.Plugin.FollowBundledVersion)
 		plugins.POST("/:id/enable", gin.HandlerFunc(stepUpAuth), h.Admin.Plugin.Enable)
 		plugins.POST("/:id/disable", gin.HandlerFunc(stepUpAuth), h.Admin.Plugin.Disable)
 		plugins.DELETE("/:id", gin.HandlerFunc(stepUpAuth), h.Admin.Plugin.Delete)
 		plugins.GET("/:id/config", h.Admin.Plugin.GetConfig)
 		plugins.GET("/:id/status", h.Admin.Plugin.Status)
-		plugins.GET("/:id/resources", h.Admin.Plugin.Resources)
 		plugins.PUT("/:id/config", gin.HandlerFunc(stepUpAuth), h.Admin.Plugin.SaveConfig)
 		plugins.POST("/:id/test", gin.HandlerFunc(stepUpAuth), h.Admin.Plugin.Test)
 		plugins.POST("/:id/ui-session", h.Admin.Plugin.CreateUISession)
-		plugins.POST("/:id/actions", h.Admin.Plugin.InvokeAdmin)
-		plugins.POST("/:id/jobs", h.Admin.Plugin.SubmitJob)
 	}
 }
 

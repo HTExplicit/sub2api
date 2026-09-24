@@ -98,7 +98,6 @@ export default defineConfig(({ mode }) => {
     dedupe: ['vue', 'vue-i18n'],
     alias: {
       '@': resolve(__dirname, 'src'),
-      '@sub2api/plugin-ui': resolve(__dirname, '../backend/pkg/extensionapi/ui'),
       'vue': resolve(__dirname, 'node_modules/vue/dist/vue.runtime.esm-bundler.js'),
       // 使用 vue-i18n 运行时版本，避免 CSP unsafe-eval 问题
       'vue-i18n': 'vue-i18n/dist/vue-i18n.runtime.esm-bundler.js'

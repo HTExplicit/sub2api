@@ -7,8 +7,8 @@ import (
 	"strings"
 	"testing"
 
+	extensionv1 "github.com/Wei-Shaw/sub2api/internal/nativeapi"
 	policy "github.com/Wei-Shaw/sub2api/internal/promptskills/policy"
-	extensionv1 "github.com/Wei-Shaw/sub2api/pkg/extensionapi/v1"
 	"github.com/stretchr/testify/require"
 	"github.com/tidwall/gjson"
 )

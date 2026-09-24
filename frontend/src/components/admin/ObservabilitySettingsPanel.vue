@@ -23,6 +23,7 @@
         <span v-if="status" class="text-sm text-gray-500 dark:text-gray-400" role="status">{{ status }}</span>
       </div>
     </template>
+    <TotpStepUpDialog :controller="stepUp" />
   </section>
 </template>
 
@@ -32,9 +33,12 @@ import { useI18n } from 'vue-i18n'
 import { getObservabilitySettings, updateObservabilitySettings, type ObservabilitySettings } from '@/api/admin/settings'
 import { useAppStore } from '@/stores'
 import { applyFlatTheme } from '@/utils/flatTheme'
+import { useStepUp, isStepUpCancelled } from '@/composables/useStepUp'
+import TotpStepUpDialog from '@/components/auth/TotpStepUpDialog.vue'
 
 const { t } = useI18n()
 const appStore = useAppStore()
+const stepUp = useStepUp()
 const form = ref<ObservabilitySettings | null>(null)
 const loadError = ref(false)
 const saving = ref(false)
@@ -44,13 +48,14 @@ async function save() {
   if (!form.value) return
   saving.value = true
   status.value = ''
+  const submitted = { ...form.value }
   try {
-    form.value = await updateObservabilitySettings({ ...form.value })
+    form.value = await stepUp.run(() => updateObservabilitySettings(submitted))
     applyFlatTheme(form.value.theme_enabled)
     status.value = t('admin.settings.observability.saved')
     void appStore.fetchPublicSettings(true)
-  } catch {
-    status.value = t('admin.settings.observability.saveFailed')
+  } catch (error) {
+    if (!isStepUpCancelled(error)) status.value = t('admin.settings.observability.saveFailed')
   } finally {
     saving.value = false
   }

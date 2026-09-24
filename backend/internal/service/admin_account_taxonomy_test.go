@@ -11,8 +11,7 @@ import (
 	entsql "entgo.io/ent/dialect/sql"
 	"github.com/DATA-DOG/go-sqlmock"
 	dbent "github.com/Wei-Shaw/sub2api/ent"
-	extensionv1 "github.com/Wei-Shaw/sub2api/pkg/extensionapi/v1"
-	hcplugin "github.com/hashicorp/go-plugin"
+	extensionv1 "github.com/Wei-Shaw/sub2api/internal/nativeapi"
 	"github.com/stretchr/testify/require"
 )
 
@@ -70,30 +69,6 @@ func TestTaxonomyAssignmentPreservesPolicyNormalizationAndFailsClosed(t *testing
 	result, err := svc.BulkUpdateAccountTaxonomy(context.Background(), BulkAccountTaxonomyInput{AccountIDs: []int64{42}, FolderAction: "clear"})
 	require.Error(t, err)
 	require.Nil(t, result)
-}
-
-func TestTaxonomyGlobalDeleteAvailabilityMatchesAccountScopeGate(t *testing.T) {
-	for _, name := range []string{"taxonomy.folders.delete", "taxonomy.tags.delete"} {
-		grant := extensionv1.ResourceGrant{Name: name, Capability: extensionv1.CapabilityAdmin, Permission: "admin"}
-		installation := &PluginInstallation{ID: 7, RuntimeGeneration: 1, State: PluginStateEnabled,
-			Manifest: PluginManifest{Resources: []extensionv1.ResourceGrant{grant}},
-			Bindings: []PluginBinding{{Capability: grant.Capability, Platform: "*", AccountType: "*", Enabled: true, RolloutPercent: 100}}}
-		manager := NewPluginManager(&pluginTokenRepository{installation: installation}, pluginTokenEncryptor{}, nil, PluginHostInfo{}, nil)
-		runtime := &pluginRuntime{installation: installation, client: hcplugin.NewClient(&hcplugin.ClientConfig{}), done: make(chan struct{})}
-		manager.extensions.Store(&pluginExtensionRegistry{installations: map[int64]*PluginInstallation{7: installation}, runtimes: map[int64]*pluginRuntime{7: runtime}})
-		for _, scope := range []struct {
-			platform, kind string
-			rollout        int
-			allowed        bool
-		}{{"*", "*", 100, true}, {PlatformOpenAI, "*", 100, false}, {"*", AccountTypeOAuth, 100, false}, {"*", "*", 99, false}} {
-			installation.Bindings[0].Platform, installation.Bindings[0].AccountType, installation.Bindings[0].RolloutPercent = scope.platform, scope.kind, scope.rollout
-			descriptors, err := manager.ResourceDescriptors(context.Background(), 7, "admin", []extensionv1.ResourceDescriptor{{ResourceGrant: grant, AllAccounts: true, Method: "DELETE", Path: "/fixture"}})
-			require.NoError(t, err)
-			require.Len(t, descriptors, 1)
-			require.Equal(t, scope.allowed, descriptors[0].Available, "%s: %+v", name, scope)
-			require.Equal(t, scope.allowed, manager.ValidateResourceAccounts(WithPluginExecution(context.Background(), installation), grant.Capability, nil, true) == nil)
-		}
-	}
 }
 
 func TestNormalizeAccountTaxonomyNameTrimsAndBuildsCaseInsensitiveKey(t *testing.T) {

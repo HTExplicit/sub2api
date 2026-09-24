@@ -5,7 +5,7 @@ import (
 	"encoding/json"
 	"testing"
 
-	extensionv1 "github.com/Wei-Shaw/sub2api/pkg/extensionapi/v1"
+	extensionv1 "github.com/Wei-Shaw/sub2api/internal/nativeapi"
 	"github.com/stretchr/testify/require"
 	"github.com/tidwall/gjson"
 )
@@ -50,9 +50,9 @@ func TestResolveCindyAlphaSearchPlanSendsOnlyRequestedModel(t *testing.T) {
 		NativeMessagesModel:             CindyWebSearchModel,
 		MaxSearchUses:                   1,
 	}}
-	previous := processExtensionOperations.Load()
-	processExtensionOperations.Store(&extensionOperationProvider{invoker: fixture})
-	t.Cleanup(func() { processExtensionOperations.Store(previous) })
+	previous := captureNativeCindyTestInvoker()
+	setNativeCindyTestInvoker(fixture)
+	t.Cleanup(func() { restoreNativeCindyTestInvoker(previous) })
 
 	plan, err := resolveCindyAlphaSearchPlanForAccount(context.Background(), "gpt-5.6-luna", 42)
 	require.NoError(t, err)
@@ -66,8 +66,8 @@ func TestResolveCindyAlphaSearchPlanSendsOnlyRequestedModel(t *testing.T) {
 }
 
 func TestCindyAlphaSearchPlanCannotChangeCatalogIdentityOrReturnTrailingJSON(t *testing.T) {
-	previous := processExtensionOperations.Load()
-	t.Cleanup(func() { processExtensionOperations.Store(previous) })
+	previous := captureNativeCindyTestInvoker()
+	t.Cleanup(func() { restoreNativeCindyTestInvoker(previous) })
 	base := CindyAlphaSearchPlan{Allowed: true, RequestedModel: "gpt-5.6-luna", UpstreamModel: "openai/gpt-5.6-luna", PrimaryProtocol: "responses", ResponsesToolType: "web_search", MaxSearchUses: 1}
 	for _, kind := range []string{"different-model", "different-owner", "trailing-json"} {
 		t.Run(kind, func(t *testing.T) {
@@ -82,7 +82,7 @@ func TestCindyAlphaSearchPlanCannotChangeCatalogIdentityOrReturnTrailingJSON(t *
 				require.NoError(t, err)
 				fixture.rawPlan = append(raw, []byte(` {"allowed":false}`)...)
 			}
-			processExtensionOperations.Store(&extensionOperationProvider{invoker: fixture})
+			setNativeCindyTestInvoker(fixture)
 			_, err := resolveCindyAlphaSearchPlanForAccount(context.Background(), base.RequestedModel, 42)
 			require.Error(t, err)
 			if kind == "trailing-json" {

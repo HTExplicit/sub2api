@@ -8,10 +8,6 @@ import zhCommon from "@/i18n/locales/zh/common";
 import zhSettings from "@/i18n/locales/zh/admin/settings";
 import SettingsView from "../SettingsView.vue";
 
-vi.mock('@/components/plugins/ExtensionSlot.vue', () => ({
-  default: { props: ['name'], template: '<div :data-test-extension-slot="name" />' },
-}));
-
 const {
   getSettings,
   updateSettings,

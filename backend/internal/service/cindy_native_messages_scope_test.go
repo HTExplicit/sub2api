@@ -10,9 +10,8 @@ import (
 	"strings"
 	"testing"
 
-	cindy "github.com/HTExplicit/sub2api-plugins/cindyprovider/catalog"
-	"github.com/Wei-Shaw/sub2api/internal/config"
-	extensionv1 "github.com/Wei-Shaw/sub2api/pkg/extensionapi/v1"
+	cindy "github.com/Wei-Shaw/sub2api/internal/cindyprovider/catalog"
+	extensionv1 "github.com/Wei-Shaw/sub2api/internal/nativeapi"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -23,31 +22,30 @@ func TestCindyNativeMessagesUsesActualAccountAdmissionAndCapturedPricing(t *test
 	ConfigureImageTools(&extensionv1.ImageToolsConfig{})
 	t.Cleanup(func() { ConfigureImageTools(nil) })
 	for _, tc := range []struct {
-		name      string
-		accountID int64
-		rollout   int
-		nonCindy  bool
-		allowed   bool
+		name        string
+		accountID   int64
+		unavailable bool
+		nonCindy    bool
+		allowed     bool
 	}{
-		{name: "zero_rollout", accountID: 2, rollout: 0},
-		{name: "partial_excluded", accountID: 3, rollout: 50},
-		{name: "partial_included", accountID: 2, rollout: 50, allowed: true},
-		{name: "non_cindy_keeps_identity_error", accountID: 2, rollout: 100, nonCindy: true},
+		{name: "policy_unavailable", accountID: 2, unavailable: true},
+
+		{name: "native_account", accountID: 2, allowed: true},
+		{name: "non_cindy_keeps_identity_error", accountID: 2, nonCindy: true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			previous := processExtensionOperations.Load()
-			t.Cleanup(func() { processExtensionOperations.Store(previous) })
+			previous := captureNativeCindyTestInvoker()
+			t.Cleanup(func() { restoreNativeCindyTestInvoker(previous) })
 			module := cindy.New()
 			require.NoError(t, module.ApplyConfig(context.Background(), []byte(`{"catalog_enabled":true}`)))
 			var invocations []extensionv1.Invocation
-			manager := ticketTestManager(t, config.OpenAICodexTicketConfig{}, func(in extensionv1.Invocation) (extensionv1.Result, error) {
+			setNativeCindyTestInvoker(nativeCindyTestInvoker(func(ctx context.Context, in extensionv1.Invocation) (extensionv1.Result, error) {
+				if tc.unavailable {
+					return extensionv1.Result{}, ErrExtensionOperationDisabled
+				}
 				invocations = append(invocations, in)
-				return module.Invoke(context.Background(), in)
-			})
-			installation := manager.extensions.Load().installations[1]
-			installation.Bindings = []PluginBinding{{Capability: extensionv1.CapabilityProvider, Platform: PlatformCindy, AccountType: AccountTypeAPIKey, Enabled: true, RolloutPercent: tc.rollout}}
-			installation.Manifest.Operations = map[string][]string{extensionv1.CapabilityProvider: {"cindy.features", "cindy.pricing", "cindy.catalog", "cindy.health"}}
-			processExtensionOperations.Store(&extensionOperationProvider{invoker: manager})
+				return module.Invoke(ctx, in)
+			}))
 			account := newCindyNativeMessagesAccount()
 			account.ID = tc.accountID
 			if tc.nonCindy {

@@ -23,6 +23,7 @@
         <span v-if="status" class="text-sm text-gray-500 dark:text-gray-400" role="status">{{ status }}</span>
       </div>
     </template>
+    <TotpStepUpDialog :controller="stepUp" />
   </section>
 </template>
 
@@ -31,9 +32,12 @@ import { onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { getImageToolsSettings, updateImageToolsSettings, type ImageToolsSettings } from '@/api/admin/settings'
 import { useAppStore } from '@/stores'
+import { useStepUp, isStepUpCancelled } from '@/composables/useStepUp'
+import TotpStepUpDialog from '@/components/auth/TotpStepUpDialog.vue'
 
 const { t } = useI18n()
 const appStore = useAppStore()
+const stepUp = useStepUp()
 const form = ref<ImageToolsSettings | null>(null)
 const loadError = ref(false)
 const saving = ref(false)
@@ -43,13 +47,14 @@ async function save() {
   if (!form.value) return
   saving.value = true
   status.value = ''
+  const submitted = { ...form.value }
   try {
-    form.value = await updateImageToolsSettings({ ...form.value })
+    form.value = await stepUp.run(() => updateImageToolsSettings(submitted))
     status.value = t('admin.settings.imageTools.saved')
     // The sidebar and route guard follow the public image_studio_enabled flag.
     void appStore.fetchPublicSettings(true)
-  } catch {
-    status.value = t('admin.settings.imageTools.saveFailed')
+  } catch (error) {
+    if (!isStepUpCancelled(error)) status.value = t('admin.settings.imageTools.saveFailed')
   } finally {
     saving.value = false
   }

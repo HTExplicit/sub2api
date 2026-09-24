@@ -10,7 +10,7 @@
 package proxyutil
 
 import (
-	proxytransport "github.com/Wei-Shaw/sub2api/pkg/extensionapi/proxy"
+	proxytransport "github.com/Wei-Shaw/sub2api/internal/proxytransport"
 	"net"
 	"net/http"
 	"net/url"

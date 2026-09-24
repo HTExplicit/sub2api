@@ -9,8 +9,8 @@ import (
 	"net/url"
 	"time"
 
-	proxytransport "github.com/Wei-Shaw/sub2api/pkg/extensionapi/proxy"
-	extensionv1 "github.com/Wei-Shaw/sub2api/pkg/extensionapi/v1"
+	extensionv1 "github.com/Wei-Shaw/sub2api/internal/nativeapi"
+	proxytransport "github.com/Wei-Shaw/sub2api/internal/proxytransport"
 )
 
 // This is the existing explicit proxy.test record. Only acquisition reads it;
@@ -21,20 +21,21 @@ type codexRoutingProxyTrust struct {
 }
 
 func (s *OpenAIGatewayService) doCodexRoutingAcquisition(request *http.Request, proxyURL string, accountID int64) (*http.Response, error) {
-	if request == nil || request.URL == nil || request.Method != http.MethodPost || request.URL.Scheme != "https" || request.URL.Host != "chatgpt.com" || request.URL.Path != "/backend-api/codex/responses" || request.URL.RawQuery != "" || request.URL.User != nil || s.pluginManager == nil {
+	if request == nil || request.URL == nil || request.Method != http.MethodPost || request.URL.Scheme != "https" || request.URL.Host != "chatgpt.com" || request.URL.Path != "/backend-api/codex/responses" || request.URL.RawQuery != "" || request.URL.User != nil || s.nativeCodexRuntime == nil {
 		return nil, errCodexRoutingUnavailable
 	}
 	normal, err := proxytransport.Normalize(proxyURL)
 	if err != nil || normal == "" {
 		return nil, errCodexRoutingUnavailable
 	}
-	installation, _ := s.pluginManager.installedByKey(codexRuntimePluginKey)
-	store, ok := s.pluginManager.repo.(PluginExtensionStateStore)
+	installation := s.nativeCodexRuntime.metadata()
+	store := s.nativeCodexRuntime.repo
+	ok := store != nil
 	if installation == nil || !ok {
 		return nil, errCodexRoutingUnavailable
 	}
-	ctx := WithPluginExecution(request.Context(), installation)
-	record, err := store.ReadExtensionState(ctx, installation.PluginKey, extensionv1.StateRequest{Namespace: "proxy-trust", Key: codexRoutingDigest(normal, "chatgpt.com")})
+	ctx := WithNativeCodexExecution(request.Context(), installation)
+	record, err := store.ReadExtensionState(ctx, NativeCodexPluginKey, extensionv1.StateRequest{Namespace: "proxy-trust", Key: codexRoutingDigest(normal, "chatgpt.com")})
 	if err != nil {
 		return nil, errCodexRoutingUnavailable
 	}

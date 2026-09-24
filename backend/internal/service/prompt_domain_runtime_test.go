@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	extensionv1 "github.com/Wei-Shaw/sub2api/pkg/extensionapi/v1"
+	extensionv1 "github.com/Wei-Shaw/sub2api/internal/nativeapi"
 	"github.com/stretchr/testify/require"
 )
 
@@ -26,9 +26,11 @@ func (failedPromptProcess) InvokeOperation(context.Context, string, string, exte
 }
 
 func TestPromptDomainHealthyStartReloadsPromptOnce(t *testing.T) {
-	previous := processExtensionOperations.Load()
-	t.Cleanup(func() { processExtensionOperations.Store(previous) })
-	processExtensionOperations.Store(&extensionOperationProvider{invoker: promptPolicyFixture{}})
+	previous := invokePromptSkills
+	t.Cleanup(func() { invokePromptSkills = previous })
+	invokePromptSkills = func(ctx context.Context, in extensionv1.Invocation) (extensionv1.Result, error) {
+		return (promptPolicyFixture{}).InvokeOperation(ctx, "", "", in)
+	}
 	registry, _, _ := testRemoteSkillRegistry(t, testRemoteSkillCandidate(t, 1, 1, "seed"))
 	store := &fakeBusinessSystemPromptStore{loaded: BusinessSystemPromptSnapshot{Revision: 1, Body: embeddedBusinessSystemPrompt}}
 	prompts := NewBusinessSystemPromptService(store, nil)

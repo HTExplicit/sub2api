@@ -4502,9 +4502,9 @@
               </h2>
             </div>
             <div class="p-6 space-y-4">
-                <ExtensionSlot name="admin.settings" />
                 <ImageToolsSettingsPanel />
                 <ObservabilitySettingsPanel />
+                <CindyProviderSettingsPanel />
                 <OfficialModelCatalogPanel />
                 <div>
                   <h3 class="text-base font-semibold text-gray-900 dark:text-white">
@@ -9168,9 +9168,9 @@
 </template>
 
 <script setup lang="ts">
-import ExtensionSlot from '@/components/plugins/ExtensionSlot.vue'
 import ImageToolsSettingsPanel from '@/components/admin/ImageToolsSettingsPanel.vue'
 import ObservabilitySettingsPanel from '@/components/admin/ObservabilitySettingsPanel.vue'
+import CindyProviderSettingsPanel from '@/components/admin/CindyProviderSettingsPanel.vue'
 import OfficialModelCatalogPanel from '@/components/admin/OfficialModelCatalogPanel.vue'
 import { ref, reactive, computed, onMounted, watch } from "vue";
 import { useI18n } from "vue-i18n";

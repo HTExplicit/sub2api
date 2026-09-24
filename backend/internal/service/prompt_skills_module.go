@@ -4,8 +4,8 @@ import (
 	"context"
 	"sync"
 
+	extensionv1 "github.com/Wei-Shaw/sub2api/internal/nativeapi"
 	promptpolicy "github.com/Wei-Shaw/sub2api/internal/promptskills/policy"
-	extensionv1 "github.com/Wei-Shaw/sub2api/pkg/extensionapi/v1"
 )
 
 // promptSkills answers the prompt application and skill registry policy

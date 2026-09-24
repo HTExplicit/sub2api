@@ -49,10 +49,8 @@
         <AccountCapacityCell :account="account" compact class="mt-1" />
       </div>
 
-      <AccountColumnDisplay
-        v-for="column in extensionColumns"
-        :key="`${column.plugin_id}:${column.id}`"
-        :contribution="column"
+      <CindyBalanceProbeSummary
+        v-if="showCindyProbe"
         :account="account"
         show-label
         class="col-start-2 row-start-3 min-w-0 lg:hidden"
@@ -67,7 +65,7 @@
         <div class="mt-1 truncate text-xs text-gray-500 dark:text-dark-300">
           <span class="mr-1 text-[10px] font-medium uppercase text-gray-400">{{ t('admin.accounts.routing') }}</span><AccountGroupsCell :groups="account.groups" /><span>{{ account.proxy?.name || t('admin.accounts.directConnection') }}</span>
         </div>
-        <AccountColumnDisplay v-for="column in extensionColumns" :key="`${column.plugin_id}:${column.id}`" :contribution="column" :account="account" show-label class="mt-2" />
+        <CindyBalanceProbeSummary v-if="showCindyProbe" :account="account" show-label class="mt-2" />
       </div>
 
       <div class="col-start-3 row-span-2 row-start-1 flex items-center gap-0.5 self-start lg:col-start-auto lg:row-span-1 lg:row-start-auto lg:self-center" @click.stop>
@@ -92,8 +90,7 @@ import AccountIdentityBadges from '@/components/account/AccountIdentityBadges.vu
 import AccountSelectionCheckbox from '@/components/account/AccountSelectionCheckbox.vue'
 import AccountGroupsCell from '@/components/account/AccountGroupsCell.vue'
 import Icon from '@/components/icons/Icon.vue'
-import AccountColumnDisplay from '@/components/plugins/AccountColumnDisplay.vue'
-import type { PluginContribution } from '@/api/admin/plugins'
+import CindyBalanceProbeSummary from '@/features/cindy-balance-probe/CindyBalanceProbeSummary.vue'
 import type { Account, WindowStats } from '@/types'
 
 const props = withDefaults(defineProps<{
@@ -106,9 +103,9 @@ const props = withDefaults(defineProps<{
   todayStatsUpdatedAt: number | null
   manualRefreshToken: number
   statusNow: number
-  extensionColumns?: PluginContribution[]
+  showCindyProbe?: boolean
 }>(), {
-  extensionColumns: () => [],
+  showCindyProbe: false,
 })
 
 const emit = defineEmits<{

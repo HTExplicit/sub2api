@@ -3,14 +3,14 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"github.com/Wei-Shaw/sub2api/internal/config"
 	"net/http"
 	"strconv"
 	"strings"
 	"testing"
 	"time"
 
-	"github.com/Wei-Shaw/sub2api/internal/config"
-	extensionv1 "github.com/Wei-Shaw/sub2api/pkg/extensionapi/v1"
+	extensionv1 "github.com/Wei-Shaw/sub2api/internal/nativeapi"
 	"github.com/stretchr/testify/require"
 )
 
@@ -32,23 +32,37 @@ func codexScopeFixtureAccount(id int64, kind string, stored bool) *Account {
 	return account
 }
 
-func codexScopeFixtureManager(t *testing.T, percent int, kind string, calls *[]extensionv1.Invocation) *PluginManager {
+type nativeCodexScopeFixture struct{ unavailable bool }
+
+func codexScopeFixtureManager(t *testing.T, percent int, kind string, calls *[]extensionv1.Invocation) *nativeCodexScopeFixture {
 	t.Helper()
-	manager := ticketTestManager(t, config.OpenAICodexTicketConfig{}, func(in extensionv1.Invocation) (extensionv1.Result, error) {
+	fixture := &nativeCodexScopeFixture{}
+	oldInvoke, oldBind := invokeNativeCodex, bindNativeCodexContext
+	t.Cleanup(func() { invokeNativeCodex, bindNativeCodexContext = oldInvoke, oldBind })
+	check := func(actual string, in extensionv1.Invocation) error {
+		if in.AccountID > 0 && (actual != kind || int(stablePluginBucket(in.AccountID)) >= percent) {
+			return ErrNativeCodexPolicyDisabled
+		}
+		if fixture.unavailable {
+			return ErrNativeCodexRuntimeUnavailable
+		}
+		return nil
+	}
+	invokeNativeCodex = func(ctx context.Context, platform, actual string, in extensionv1.Invocation) (extensionv1.Result, error) {
+		if err := check(actual, in); err != nil {
+			return extensionv1.Result{}, err
+		}
 		*calls = append(*calls, in)
-		return (promptPolicyFixture{}).InvokeOperation(withCodexTransportFixture(context.Background(), true), "", "", in)
-	})
-	installation := manager.extensions.Load().installations[1]
-	installation.Bindings = []PluginBinding{{Capability: extensionv1.CapabilityRequest, Platform: PlatformOpenAI,
-		AccountType: kind, Enabled: true, RolloutPercent: percent}}
-	installation.Manifest.Operations = map[string][]string{extensionv1.CapabilityRequest: {
-		"codex.identity.available", "codex.identity.plan", "codex.identity.derive",
-		"codex.identity.validate", "codex.identity.agent", "codex.identity.sandbox", "codex.transport.plan",
-	}}
-	previous := processExtensionOperations.Load()
-	t.Cleanup(func() { processExtensionOperations.Store(previous) })
-	processExtensionOperations.Store(&extensionOperationProvider{invoker: manager})
-	return manager
+		return (promptPolicyFixture{}).InvokeOperation(withCodexTransportFixture(ctx, true), platform, actual, in)
+	}
+	bindNativeCodexContext = func(ctx context.Context, _ string, actual string, in extensionv1.Invocation) (context.Context, context.CancelFunc, error) {
+		if err := check(actual, in); err != nil {
+			return nil, nil, err
+		}
+		bound, cancel := context.WithCancel(ctx)
+		return bound, cancel, nil
+	}
+	return fixture
 }
 
 func TestCodexAccountPoliciesCarryActualScope(t *testing.T) {
@@ -181,13 +195,13 @@ func TestCodexIdentityBackfillUnavailablePolicyIsAccountScoped(t *testing.T) {
 		t.Run(strconv.Itoa(percent), func(t *testing.T) {
 			var calls []extensionv1.Invocation
 			manager := codexScopeFixtureManager(t, percent, AccountTypeOAuth, &calls)
-			manager.extensions.Load().runtimes = map[int64]*pluginRuntime{}
+			manager.unavailable = true
 			repo := &codexScopeBackfillRepo{accounts: []Account{*codexScopeFixtureAccount(2, AccountTypeOAuth, false)}}
 			updated, failed, err := NewCodexClientIdentityBackfillService(repo).RunOnce(context.Background())
 			if percent == 0 {
 				require.NoError(t, err, "an account outside rollout must not bind the unavailable domain runtime")
 			} else {
-				require.ErrorIs(t, err, ErrExtensionOperationUnavailable)
+				require.ErrorIs(t, err, ErrNativeCodexRuntimeUnavailable)
 			}
 			require.Zero(t, updated)
 			require.Zero(t, failed)
@@ -205,7 +219,7 @@ func TestCodexRefreshScopeAndUnavailableRuntime(t *testing.T) {
 					var calls []extensionv1.Invocation
 					manager := codexScopeFixtureManager(t, percent, AccountTypeOAuth, &calls)
 					if !runtimeAvailable {
-						manager.extensions.Load().runtimes = map[int64]*pluginRuntime{}
+						manager.unavailable = true
 					}
 					account := codexScopeFixtureAccount(id, AccountTypeOAuth, true)
 					client := &identityRefreshingOAuthClientStub{}
@@ -214,7 +228,7 @@ func TestCodexRefreshScopeAndUnavailableRuntime(t *testing.T) {
 					_, err := service.RefreshAccountToken(context.Background(), account)
 					inScope := int(stablePluginBucket(id)) < percent
 					if inScope && !runtimeAvailable {
-						require.ErrorIs(t, err, ErrExtensionOperationUnavailable)
+						require.ErrorIs(t, err, ErrNativeCodexRuntimeUnavailable)
 						require.Empty(t, client.userAgent)
 						return
 					}

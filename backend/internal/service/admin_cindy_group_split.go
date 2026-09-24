@@ -5,8 +5,8 @@ import (
 	"errors"
 	"fmt"
 
+	extensionv1 "github.com/Wei-Shaw/sub2api/internal/nativeapi"
 	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
-	extensionv1 "github.com/Wei-Shaw/sub2api/pkg/extensionapi/v1"
 )
 
 const (
@@ -168,12 +168,6 @@ func (s *adminServiceImpl) SplitCindyGroup(ctx context.Context, groupID int64, i
 	if groupID <= 0 {
 		return nil, ErrCindyGroupInvalidInput
 	}
-	bound, release, err := bindProcessExtensionContext(ctx, PlatformCindy, AccountTypeAPIKey, extensionv1.Invocation{Capability: extensionv1.CapabilityProvider, Operation: "cindy.groups.partition"})
-	if err != nil {
-		return nil, ErrCindyGroupAdminUnavailable
-	}
-	defer release()
-	ctx = bound
 	normalized, err := normalizeCindyGroupSplitInputContext(ctx, input, true)
 	if err != nil {
 		return nil, err

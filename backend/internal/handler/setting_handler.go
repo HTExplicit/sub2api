@@ -3,7 +3,6 @@ package handler
 import (
 	"html"
 	"net/http"
-	"strconv"
 	"strings"
 
 	"github.com/Wei-Shaw/sub2api/internal/handler/dto"
@@ -16,46 +15,11 @@ import (
 
 // SettingHandler 公开设置处理器（无需认证）
 type SettingHandler struct {
-	pluginManager            *service.PluginManager
 	settingService           *service.SettingService
 	notificationEmailService *service.NotificationEmailService
 	version                  string
 }
 
-func (h *SettingHandler) GetPublicPluginContributions(c *gin.Context) {
-	c.Header("Cache-Control", "no-store")
-	if h.pluginManager == nil {
-		response.Success(c, []service.PluginContribution{})
-		return
-	}
-	response.Success(c, h.pluginManager.PublicContributions())
-}
-
-func (h *SettingHandler) GetPublicPluginThemeAsset(c *gin.Context) {
-	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
-	if err != nil || id <= 0 || h.pluginManager == nil {
-		c.Status(http.StatusNotFound)
-		return
-	}
-	data, path, err := h.pluginManager.ReadPublicThemeAsset(c.Request.Context(), id, c.Param("revision"), strings.TrimPrefix(c.Param("path"), "/"))
-	if err != nil {
-		c.Status(http.StatusNotFound)
-		return
-	}
-	contentType := "text/css; charset=utf-8"
-	if strings.HasSuffix(path, ".woff2") {
-		contentType = "font/woff2"
-	}
-	c.Header("Cache-Control", "no-store")
-	c.Header("X-Content-Type-Options", "nosniff")
-	// Only manifest-declared public appearance assets reach this handler.
-	// Opaque sandboxed plugin frames need CORS for stylesheets and font loads.
-	c.Header("Cross-Origin-Resource-Policy", "cross-origin")
-	c.Header("Access-Control-Allow-Origin", "*")
-	c.Data(http.StatusOK, contentType, data)
-}
-
-// NewSettingHandler 创建公开设置处理器
 func NewSettingHandler(settingService *service.SettingService, version string) *SettingHandler {
 	return &SettingHandler{
 		settingService: settingService,

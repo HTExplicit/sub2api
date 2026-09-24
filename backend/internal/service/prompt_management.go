@@ -10,7 +10,7 @@ import (
 	"time"
 	"unicode/utf8"
 
-	extensionv1 "github.com/Wei-Shaw/sub2api/pkg/extensionapi/v1"
+	extensionv1 "github.com/Wei-Shaw/sub2api/internal/nativeapi"
 )
 
 func invokePromptManagement(ctx context.Context, operation string, input, output any) error {

@@ -11,102 +11,8 @@ import (
 	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/service"
-	extensionv1 "github.com/Wei-Shaw/sub2api/pkg/extensionapi/v1"
-	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/stretchr/testify/require"
 )
-
-func accountViewIntegrationMetadata(t *testing.T, primary, origin *service.PluginInstallation) json.RawMessage {
-	t.Helper()
-	view := service.AccountJobViewMetadata{
-		AccountViewIdentityV1: extensionv1.AccountViewIdentityV1{
-			Version: 1, PluginID: origin.ID, PluginKey: origin.PluginKey,
-			PackageSHA256: origin.PackageSHA256, ViewID: "fixture-view", PresetID: "all",
-			ViewDefinitionDigest: strings.Repeat("b", 64),
-		},
-		RuntimeGeneration: origin.RuntimeGeneration, PolicyRevision: origin.Revision,
-		NormalizedQueryDigest: strings.Repeat("c", 64),
-	}
-	raw, err := json.Marshal(map[string]any{
-		"plugin_id": primary.ID, "plugin_generation": primary.RuntimeGeneration, "account_view": view,
-	})
-	require.NoError(t, err)
-	return raw
-}
-
-func TestAccountViewDualOwnerFenceIntegration(t *testing.T) {
-	ctx, cancel := context.WithTimeout(context.Background(), 12*time.Second)
-	defer cancel()
-	plugins, origin, _ := installedUpdateFixture(t)
-	_, primary, _ := installedUpdateFixture(t)
-	require.Less(t, origin.ID, primary.ID, "the origin is deliberately the lower ID")
-	metadata := accountViewIntegrationMetadata(t, primary, origin)
-
-	blocker, err := integrationDB.BeginTx(ctx, nil)
-	require.NoError(t, err)
-	defer blocker.Rollback()
-	var id int64
-	require.NoError(t, blocker.QueryRowContext(ctx,
-		`SELECT id FROM sub2api_plugin_installations WHERE id=$1 FOR UPDATE`, origin.ID).Scan(&id))
-	fenced, err := integrationDB.BeginTx(ctx, nil)
-	require.NoError(t, err)
-	defer fenced.Rollback()
-	var fencePID int
-	require.NoError(t, fenced.QueryRowContext(ctx, `SELECT pg_backend_pid()`).Scan(&fencePID))
-	lockResult := make(chan error, 1)
-	go func() {
-		lockResult <- lockAccountJobPlugin(ctx, fenced, metadata, service.AccountJobKindBulkUpdate)
-	}()
-	// Observe the server-side wait before testing the other row; a sleep alone
-	// could pass while the production helper had not started its first query.
-	require.Eventually(t, func() bool {
-		var waiting bool
-		err := integrationDB.QueryRowContext(ctx,
-			`SELECT COALESCE(wait_event_type='Lock',false) FROM pg_stat_activity WHERE pid=$1`, fencePID).Scan(&waiting)
-		return err == nil && waiting
-	}, 2*time.Second, 10*time.Millisecond)
-	probe, err := integrationDB.BeginTx(ctx, nil)
-	require.NoError(t, err)
-	defer probe.Rollback()
-	require.NoError(t, probe.QueryRowContext(ctx,
-		`SELECT id FROM sub2api_plugin_installations WHERE id=$1 FOR UPDATE NOWAIT`, primary.ID).Scan(&id),
-		"the higher primary row must remain unlocked while the lower origin row is blocked")
-	require.NoError(t, probe.Rollback())
-	require.NoError(t, blocker.Rollback())
-	select {
-	case err := <-lockResult:
-		require.NoError(t, err)
-	case <-ctx.Done():
-		t.Fatal("production dual-owner fence did not finish after the blocker released")
-	}
-	for _, ownerID := range []int64{origin.ID, primary.ID} {
-		other, err := integrationDB.BeginTx(ctx, nil)
-		require.NoError(t, err)
-		_, err = other.ExecContext(ctx, `SET LOCAL lock_timeout='150ms'`)
-		require.NoError(t, err)
-		_, err = other.ExecContext(ctx,
-			`UPDATE sub2api_plugin_installations SET runtime_generation=runtime_generation+1 WHERE id=$1`, ownerID)
-		var pgError *pgconn.PgError
-		require.ErrorAs(t, err, &pgError, "each actual FOR SHARE row lock must block a second connection's update")
-		require.Equal(t, "55P03", pgError.Code)
-		require.NoError(t, other.Rollback())
-	}
-	require.NoError(t, fenced.Commit())
-	_, err = integrationDB.ExecContext(ctx,
-		`UPDATE sub2api_plugin_installations SET runtime_generation=runtime_generation+1 WHERE id=$1`, origin.ID)
-	require.NoError(t, err, "the second connection may update after fence commit")
-	staleOrigin := testTx(t)
-	require.ErrorIs(t, lockAccountJobPlugin(ctx, staleOrigin, metadata), service.ErrAccountViewUnavailable)
-	require.NoError(t, staleOrigin.Rollback())
-	freshOrigin, err := plugins.GetByID(ctx, origin.ID)
-	require.NoError(t, err)
-	_, err = integrationDB.ExecContext(ctx,
-		`UPDATE sub2api_plugin_installations SET runtime_generation=runtime_generation+1 WHERE id=$1`, primary.ID)
-	require.NoError(t, err)
-	stalePrimary := testTx(t)
-	require.ErrorIs(t, lockAccountJobPlugin(ctx, stalePrimary, accountViewIntegrationMetadata(t, primary, freshOrigin)), service.ErrAccountJobPluginUnavailable)
-	require.NoError(t, stalePrimary.Rollback())
-}
 
 func TestAccountViewScopedProbeTerminalAtomicIntegration(t *testing.T) {
 	ctx := context.Background()
@@ -167,7 +73,7 @@ func TestAccountViewScopedProbeTerminalAtomicIntegration(t *testing.T) {
 	require.Zero(t, failedEpisode.AccountID)
 	require.NoError(t, failedTx.Rollback())
 	var markerMissing bool
-	var itemState string
+	var jobStatus, itemState string
 	var healthCount, outboxAfter, failures int
 	require.NoError(t, integrationDB.QueryRowContext(ctx,
 		`SELECT cindy_balance_insufficient_at IS NULL FROM accounts WHERE id=$1`, fixture.account.ID).Scan(&markerMissing))
@@ -179,8 +85,12 @@ func TestAccountViewScopedProbeTerminalAtomicIntegration(t *testing.T) {
 		`SELECT state FROM cindy_balance_probe_items WHERE id=$1`, fixture.reservation.ItemID).Scan(&itemState))
 	require.Equal(t, "terra_running", itemState)
 	require.NoError(t, integrationDB.QueryRowContext(ctx,
-		`SELECT consecutive_upstream_failures FROM cindy_balance_probe_jobs WHERE id=$1`, fixture.reservation.JobID).Scan(&failures))
+		`SELECT status,consecutive_upstream_failures FROM cindy_balance_probe_jobs WHERE id=$1`, fixture.reservation.JobID).Scan(&jobStatus, &failures))
+	require.Equal(t, "running", jobStatus)
 	require.Equal(t, 2, failures)
+	done, err := repo.FinishIfDone(ctx, fixture.reservation.JobID, fixture.leaseToken)
+	require.NoError(t, err)
+	require.False(t, done, "the rolled-back item must keep its job unfinished")
 	require.NoError(t, integrationDB.QueryRowContext(ctx,
 		`SELECT count(*) FROM scheduler_outbox WHERE account_id=$1`, fixture.account.ID).Scan(&outboxAfter))
 	require.Equal(t, outboxBefore, outboxAfter)
@@ -210,54 +120,76 @@ func TestAccountViewScopedProbeTerminalAtomicIntegration(t *testing.T) {
 	require.NoError(t, integrationDB.QueryRowContext(ctx,
 		`SELECT count(*) FROM scheduler_outbox WHERE account_id=$1`, fixture.account.ID).Scan(&outboxAfter))
 	require.Equal(t, outboxBefore+1, outboxAfter, "scoped terminal uses one shared writer, without a second legacy marker/outbox write")
+	done, err = repo.FinishIfDone(ctx, fixture.reservation.JobID, fixture.leaseToken)
+	require.NoError(t, err)
+	require.True(t, done)
+	var jobFinished, leaseReleased bool
+	require.NoError(t, integrationDB.QueryRowContext(ctx,
+		`SELECT status,consecutive_upstream_failures,finished_at IS NOT NULL,lease_token IS NULL AND lease_until IS NULL
+		FROM cindy_balance_probe_jobs WHERE id=$1`, fixture.reservation.JobID).Scan(&jobStatus, &failures, &jobFinished, &leaseReleased))
+	require.Equal(t, "completed", jobStatus)
+	require.Zero(t, failures)
+	require.True(t, jobFinished)
+	require.True(t, leaseReleased)
 }
 
 func TestAccountViewProbeResumeJSONBCASIntegration(t *testing.T) {
 	ctx := context.Background()
+	previousConfig := service.EffectiveCindyProviderConfig()
+	nativeConfig := previousConfig
+	nativeConfig.BalanceDetection = true
+	service.ConfigureCindyProvider(&nativeConfig)
+	t.Cleanup(func() { service.ConfigureCindyProvider(&previousConfig) })
 	first := newCindyBalanceProbeLifecycleAccount(t, "view-resume-first")
 	second := newCindyBalanceProbeLifecycleAccount(t, "view-resume-second")
 	jobID := insertCindyBalanceProbeLifecycleJob(t, "paused", "", time.Time{})
 	insertCindyBalanceProbeLifecycleItem(t, jobID, first, 1)
 	insertCindyBalanceProbeLifecycleItem(t, jobID, second, 2)
 	ids := []int64{first.ID, second.ID}
+	viewJSON, err := json.Marshal(map[string]any{
+		"version": 1, "plugin_id": 102, "plugin_key": "fixture.origin-view", "package_sha256": strings.Repeat("b", 64),
+		"view_id": "fixture-view", "preset_id": "all", "view_definition_digest": strings.Repeat("c", 64),
+		"runtime_generation": 5, "policy_revision": 7, "normalized_query_digest": strings.Repeat("e", 64),
+		"opaque_future_field": true,
+	})
+	require.NoError(t, err)
 	origin := &service.CindyBalanceProbeOrigin{
 		Version: 1, PluginID: 101, PluginKey: service.CindyAccountViewPluginKey,
 		PackageSHA256: strings.Repeat("a", 64), RuntimeGeneration: 4,
 		FrozenAccountIDs: ids, OperationKey: "synthetic-view-resume", RequestDigest: strings.Repeat("d", 64),
-		View: service.AccountJobViewMetadata{
-			AccountViewIdentityV1: extensionv1.AccountViewIdentityV1{
-				Version: 1, PluginID: 102, PluginKey: "fixture.origin-view", PackageSHA256: strings.Repeat("b", 64),
-				ViewID: "fixture-view", PresetID: "all", ViewDefinitionDigest: strings.Repeat("c", 64),
-			},
-			RuntimeGeneration: 5, PolicyRevision: 7, NormalizedQueryDigest: strings.Repeat("e", 64),
-		},
+		View: json.RawMessage(viewJSON),
 	}
+	originJSON, err := json.Marshal(origin)
+	require.NoError(t, err)
 	scope := service.CindyBalanceProbeScope{Mode: "selected", AccountIDs: ids, Origin: origin}
-	_, err := integrationDB.ExecContext(ctx,
+	_, err = integrationDB.ExecContext(ctx,
 		`UPDATE cindy_balance_probe_jobs SET scope=$2::jsonb,consecutive_upstream_failures=2 WHERE id=$1`,
 		jobID, service.EncodeCindyBalanceProbeScope(scope))
 	require.NoError(t, err)
-	next := *origin
-	next.RuntimeGeneration, next.View.RuntimeGeneration, next.View.PolicyRevision = 6, 8, 9
 	repo := &cindyBalanceProbeRepository{db: integrationDB}
-	invalid := next
+	invalid := *origin
 	invalid.FrozenAccountIDs = []int64{first.ID}
 	_, err = repo.ResumeScoped(ctx, jobID, origin, &invalid)
-	require.ErrorIs(t, err, service.ErrAccountViewUnavailable, "the public repository gate rejects target replacement before transaction admission")
-	expectedJSON, err := json.Marshal(origin)
-	require.NoError(t, err)
-	tx := testTx(t)
-	require.NoError(t, resumeScopedProbeTx(ctx, tx, jobID, expectedJSON, &next))
-	job, err := repo.GetJob(ctx, jobID)
+	require.ErrorIs(t, err, service.ErrCindyBalanceProbeChanged, "the public repository gate rejects target replacement before transaction admission")
+	_, err = repo.ResumeScoped(ctx, jobID, origin, origin)
+	require.ErrorIs(t, err, service.ErrCindyBalanceProbeChanged, "historical metadata alone cannot supply the private native worker context")
+	// Resume binds the private native context through the real service. The
+	// worker is never started, so this fixture cannot send a probe request.
+	probe := service.NewCindyBalanceProbeService(repo, nil, nil, nil)
+	t.Cleanup(probe.Stop)
+	job, err := probe.Resume(ctx, jobID)
 	require.NoError(t, err)
 	require.Equal(t, "queued", job.Status)
 	require.Zero(t, job.ConsecutiveFailures)
-	require.Equal(t, &next, job.Scope.Origin, "only generation and revision fields may change")
+	require.NotNil(t, job.Scope.Origin)
+	expectedJSON, err := json.Marshal(job.Scope.Origin)
+	require.NoError(t, err)
+	require.JSONEq(t, string(originJSON), string(expectedJSON), "native resume preserves the entire historical origin")
 	require.Equal(t, ids, job.Scope.AccountIDs)
 	require.Equal(t, origin.FrozenAccountIDs, job.Scope.Origin.FrozenAccountIDs)
 	require.Equal(t, origin.OperationKey, job.Scope.Origin.OperationKey)
 	require.Equal(t, origin.RequestDigest, job.Scope.Origin.RequestDigest)
-	require.Equal(t, origin.View.NormalizedQueryDigest, job.Scope.Origin.View.NormalizedQueryDigest)
+	require.JSONEq(t, string(origin.View), string(job.Scope.Origin.View))
 	rows, err := integrationDB.QueryContext(ctx, `SELECT account_id FROM cindy_balance_probe_items WHERE job_id=$1 ORDER BY ordinal`, jobID)
 	require.NoError(t, err)
 	var persistedIDs []int64
@@ -271,11 +203,27 @@ func TestAccountViewProbeResumeJSONBCASIntegration(t *testing.T) {
 	require.Equal(t, ids, persistedIDs, "resume neither reselects nor reseeds items")
 	_, err = repo.Pause(ctx, jobID)
 	require.NoError(t, err)
+	// Native resume leaves generations and revisions untouched. Model a real
+	// concurrent origin change on this job so the saved expected JSON is stale.
+	next := *job.Scope.Origin
+	changed := next
+	changed.RequestDigest = strings.Repeat("f", 64)
+	changedScope := job.Scope
+	changedScope.Origin = &changed
+	_, err = integrationDB.ExecContext(ctx,
+		`UPDATE cindy_balance_probe_jobs SET scope=$2::jsonb WHERE id=$1 AND status='paused'`,
+		jobID, service.EncodeCindyBalanceProbeScope(changedScope))
+	require.NoError(t, err)
 	staleTx := testTx(t)
 	require.ErrorIs(t, resumeScopedProbeTx(ctx, staleTx, jobID, expectedJSON, &next), service.ErrCindyBalanceProbeChanged)
 	require.NoError(t, staleTx.Rollback())
 	unchanged, err := repo.GetJob(ctx, jobID)
 	require.NoError(t, err)
 	require.Equal(t, "paused", unchanged.Status)
-	require.Equal(t, &next, unchanged.Scope.Origin, "stale expected JSON must not overwrite the already refreshed origin")
+	changedJSON, err := json.Marshal(&changed)
+	require.NoError(t, err)
+	unchangedJSON, err := json.Marshal(unchanged.Scope.Origin)
+	require.NoError(t, err)
+	require.JSONEq(t, string(changedJSON), string(unchangedJSON), "stale expected JSON must not overwrite the concurrent origin")
+	require.Equal(t, ids, unchanged.Scope.AccountIDs)
 }

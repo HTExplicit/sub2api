@@ -13,7 +13,7 @@ import (
 	"strconv"
 	"time"
 
-	extensionv1 "github.com/Wei-Shaw/sub2api/pkg/extensionapi/v1"
+	extensionv1 "github.com/Wei-Shaw/sub2api/internal/nativeapi"
 )
 
 type CindyAccountTestPlan struct {
@@ -35,13 +35,13 @@ func LoadCindyAccountTestPlan(ctx context.Context, account *Account) (*CindyAcco
 	query, _ := json.Marshal(extensionv1.CindyCatalogQuery{Method: extensionv1.CindyAccountTestPlanMethodV1, Images: images})
 	call, cancel := context.WithTimeout(ctx, time.Second)
 	defer cancel()
-	result, err := invokeProcessExtensionCached(call, PlatformCindy, AccountTypeAPIKey, extensionv1.Invocation{
+	result, err := invokeCindyProviderCached(call, extensionv1.Invocation{
 		Capability: extensionv1.CapabilityProvider, Operation: "cindy.catalog", AccountID: account.ID, Payload: query,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("provider: Cindy account test plan is unavailable: %w", err)
 	}
-	if result.PluginID <= 0 || result.Code != "" || len(result.Payload) == 0 || len(result.Payload) > extensionv1.MaxPayloadBytes {
+	if result.Code != "" || len(result.Payload) == 0 || len(result.Payload) > extensionv1.MaxPayloadBytes {
 		return nil, errors.New("provider: Cindy account test plan is unavailable")
 	}
 	var values []json.RawMessage

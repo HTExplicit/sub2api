@@ -1,7 +1,7 @@
 import type {
   AccountEditChangesV1, AccountEditCompactMode, AccountEditModeTarget,
   AccountEditResponsesMode, AccountEditWebSocketMode
-} from '@sub2api/plugin-ui/account-edit'
+} from '@/types/accountEdit'
 import type { Account, AccountAvailableModel, AccountEditCatalog, UpdateAccountRequest } from '@/types'
 import { buildModelMappingObject, splitModelMappingObject } from '@/composables/useModelWhitelist'
 

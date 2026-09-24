@@ -10,8 +10,8 @@ import (
 	"strings"
 	"testing"
 
-	cindy "github.com/HTExplicit/sub2api-plugins/cindyprovider/catalog"
-	extensionv1 "github.com/Wei-Shaw/sub2api/pkg/extensionapi/v1"
+	cindy "github.com/Wei-Shaw/sub2api/internal/cindyprovider/catalog"
+	extensionv1 "github.com/Wei-Shaw/sub2api/internal/nativeapi"
 	"github.com/stretchr/testify/require"
 	"github.com/tidwall/gjson"
 )
@@ -194,17 +194,17 @@ func newNativeImageSnapshotFixture(t *testing.T, studioEnabled bool) *cindyNativ
 	after := cloneNativeImageCatalog(t, before)
 	publishNativeImageFixture(t, &after, "native-image-b", "fixture-b/native-image", "high", 0.5)
 	pricing, pricingAfter := nativeImagePricingFixture(t, registry, before), nativeImagePricingFixture(t, registry, after)
-	previous := processExtensionOperations.Load()
+	previous := captureNativeCindyTestInvoker()
 	require.NotNil(t, previous)
 	fixture := &cindyNativeImageSnapshotFixture{cindySecondReviewSwap: &cindySecondReviewSwap{
 		before: before, after: after, pricing: pricing, pricingAfter: &pricingAfter, fallback: previous.invoker,
 	}}
-	processExtensionOperations.Store(&extensionOperationProvider{invoker: fixture})
+	setNativeCindyTestInvoker(fixture)
 	images := before.Images
 	ConfigureImageTools(&images)
 	observeNativeImageFacts = func(facts extensionv1.ImageNativeRequest) { fixture.nativeFacts = append(fixture.nativeFacts, facts) }
 	t.Cleanup(func() {
-		processExtensionOperations.Store(previous)
+		restoreNativeCindyTestInvoker(previous)
 		ConfigureImageTools(nil)
 		observeNativeImageFacts = nil
 	})

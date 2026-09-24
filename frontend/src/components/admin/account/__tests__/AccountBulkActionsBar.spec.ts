@@ -2,18 +2,6 @@ import { describe, expect, it, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
 
 import AccountBulkActionsBar from '../AccountBulkActionsBar.vue'
-vi.mock('@/components/plugins/ExtensionSurface.vue', () => ({ default: { template: '<div><slot /></div>' } }))
-
-vi.mock('@/components/plugins/ExtensionSlot.vue', () => ({
-  default: {
-    props: {
-      name: String,
-      accountIds: { type: Array, default: () => [] },
-      accounts: { type: Array, default: () => [] }
-    },
-    template: '<span data-test="extension-slot">{{ name }}:{{ accountIds.length }}:{{ accounts.length }}</span>'
-  }
-}))
 
 vi.mock('vue-i18n', () => ({
   useI18n: () => ({
@@ -22,7 +10,7 @@ vi.mock('vue-i18n', () => ({
 }))
 
 describe('AccountBulkActionsBar', () => {
-  it('passes only verified selected account identities to the extension slot', () => {
+  it('offers Codex actions only when every selected identity is known and eligible', async () => {
     const wrapper = mount(AccountBulkActionsBar, {
       props: {
         selectedIds: [1, 2],
@@ -32,7 +20,18 @@ describe('AccountBulkActionsBar', () => {
         allResultsSelected: false
       }
     })
-    expect(wrapper.get('[data-test="extension-slot"]').text()).toBe('account.actions:2:1')
+    expect(wrapper.find('[data-test="codex-harvest"]').exists()).toBe(false)
+    await wrapper.setProps({ selectedAccounts: [
+      { id: 1, platform: 'openai', type: 'oauth', parent_account_id: null },
+      { id: 2, platform: 'openai', type: 'setup-token', parent_account_id: null }
+    ] })
+    expect(wrapper.find('[data-test="codex-harvest"]').exists()).toBe(true)
+    await wrapper.setProps({ selectedAccounts: [
+      { id: 1, platform: 'openai', type: 'oauth', parent_account_id: null },
+      { id: 2, platform: 'openai', type: 'setup-token', parent_account_id: 1 }
+    ] })
+    expect(wrapper.find('[data-test="codex-stop"]').exists()).toBe(false)
+    wrapper.unmount()
   })
   it('allows selecting all results before any row is selected', async () => {
     const wrapper = mount(AccountBulkActionsBar, {

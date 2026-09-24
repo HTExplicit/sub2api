@@ -1,12 +1,7 @@
 import { mount } from '@vue/test-utils'
 import { createMemoryHistory, createRouter } from 'vue-router'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import type { PluginContribution } from '@/api/admin/plugins'
-import { cindyView } from '@/components/plugins/__tests__/accountView.fixtures'
 import AppSidebar from '../AppSidebar.vue'
-
-const pluginRegistry = vi.hoisted(() => ({ items: [] as PluginContribution[], refresh: vi.fn(async () => {}) }))
-vi.mock('@/stores/pluginExtensions', () => ({ usePluginExtensions: () => pluginRegistry }))
 
 const mocks = vi.hoisted(() => ({
   appStore: {
@@ -68,14 +63,10 @@ vi.mock('vue-i18n', async importOriginal => {
   }
 })
 
-async function renderSidebar(options: { admin?: boolean; imageStudio?: boolean; cindy?: boolean } = {}) {
+async function renderSidebar(options: { admin?: boolean; imageStudio?: boolean } = {}) {
   mocks.authStore.isAdmin = options.admin === true
   mocks.authStore.isSimpleMode = true
   mocks.appStore.cachedPublicSettings.image_studio_enabled = options.imageStudio !== false
-  pluginRegistry.items = options.admin && options.cindy !== false ? [cindyView()] : []
-  if (options.imageStudio !== false) {
-    pluginRegistry.items.push({ id: 'image-studio', slot: 'surface', plugin_id: 8, permission: 'user', available: true, label: { en: 'Image Studio' } })
-  }
 
   const router = createRouter({
     history: createMemoryHistory(),
@@ -118,18 +109,14 @@ describe('AppSidebar simple mode extensions', () => {
   it('renders Cindy Accounts and Image Studio for an admin in simple mode', async () => {
     const wrapper = await renderSidebar({ admin: true, imageStudio: true })
 
-    expect(extensionLinks(wrapper)).toEqual(['/admin/cindy-accounts', '/image-studio'])
+    expect(extensionLinks(wrapper)).toEqual(['/admin/cindy-accounts', '/admin/codex-runtime', '/image-studio'])
     expect(wrapper.text()).not.toContain('nav.myAccount')
   })
 
   it('keeps Cindy Accounts visible while hiding Image Studio when its flag is disabled', async () => {
     const wrapper = await renderSidebar({ admin: true, imageStudio: false })
 
-    expect(extensionLinks(wrapper)).toEqual(['/admin/cindy-accounts'])
+    expect(extensionLinks(wrapper)).toEqual(['/admin/cindy-accounts', '/admin/codex-runtime'])
     wrapper.unmount()
-    const disabled = await renderSidebar({ admin: true, imageStudio: false, cindy: false })
-    expect(disabled.find('[data-testid="sidebar-extensions"]').exists()).toBe(false)
-    expect(disabled.find('a[href="/admin/cindy-accounts"]').exists()).toBe(false)
-    disabled.unmount()
   })
 })

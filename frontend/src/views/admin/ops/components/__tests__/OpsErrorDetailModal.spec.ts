@@ -19,8 +19,8 @@ vi.mock('@/stores', () => ({
   useAppStore: () => ({ showError: vi.fn() })
 }))
 
-vi.mock('@/components/plugins/ExtensionWidget.vue', () => ({
-  default: { name: 'ExtensionWidget', props: ['name', 'context'], template: '<div />' }
+vi.mock('@/components/admin/codex/CodexContinuationDiagnostics.vue', () => ({
+  default: { name: 'CodexContinuationDiagnostics', props: ['errorId'], template: '<div />' }
 }))
 
 vi.mock('vue-i18n', async (importOriginal) => {

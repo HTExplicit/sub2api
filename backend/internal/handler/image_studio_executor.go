@@ -14,9 +14,9 @@ import (
 	"strconv"
 	"strings"
 
+	extensionv1 "github.com/Wei-Shaw/sub2api/internal/nativeapi"
 	middleware2 "github.com/Wei-Shaw/sub2api/internal/server/middleware"
 	"github.com/Wei-Shaw/sub2api/internal/service"
-	extensionv1 "github.com/Wei-Shaw/sub2api/pkg/extensionapi/v1"
 	"github.com/gin-gonic/gin"
 )
 

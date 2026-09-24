@@ -3,7 +3,7 @@ package service
 import (
 	"context"
 
-	extensionv1 "github.com/Wei-Shaw/sub2api/pkg/extensionapi/v1"
+	extensionv1 "github.com/Wei-Shaw/sub2api/internal/nativeapi"
 )
 
 // SettingKeyAdminObservabilityConfig stores the account traffic telemetry and
@@ -18,9 +18,13 @@ func EffectiveAdminObservabilityConfig() extensionv1.AdminObservabilityConfig {
 
 // LoadAdminObservabilityConfig installs the effective switches for this process
 // at startup: the stored value, or the deploy-time default when none is stored.
-func (s *SettingService) LoadAdminObservabilityConfig(ctx context.Context) {
+func (s *SettingService) LoadAdminObservabilityConfig(ctx context.Context) error {
 	config := extensionv1.AdminObservabilityConfig{TelemetryEnabled: true, ThemeEnabled: true}
-	if !s.readJSONSetting(ctx, SettingKeyAdminObservabilityConfig, &config) {
+	found, err := s.readNativeSwitchSetting(ctx, SettingKeyAdminObservabilityConfig, &config, "telemetry_enabled", "theme_enabled")
+	if err != nil {
+		return err
+	}
+	if !found {
 		if s == nil {
 			config = LegacyAdminObservabilityConfig(nil)
 		} else {
@@ -28,6 +32,7 @@ func (s *SettingService) LoadAdminObservabilityConfig(ctx context.Context) {
 		}
 	}
 	ConfigureAdminObservability(&config)
+	return nil
 }
 
 // UpdateAdminObservabilityConfig persists the switches and applies them to this

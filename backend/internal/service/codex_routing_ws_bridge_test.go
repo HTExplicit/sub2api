@@ -13,8 +13,8 @@ import (
 	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
+	extensionv1 "github.com/Wei-Shaw/sub2api/internal/nativeapi"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/tlsfingerprint"
-	extensionv1 "github.com/Wei-Shaw/sub2api/pkg/extensionapi/v1"
 	"github.com/coder/websocket"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
@@ -55,18 +55,16 @@ func TestCodexRoutingWebSocketIngressUsesVerifiedHTTPConnection(t *testing.T) {
 	cfg.Gateway.OpenAIWS.ReadTimeoutSeconds = 3
 	cfg.Gateway.OpenAIWS.WriteTimeoutSeconds = 3
 	var qualification *extensionv1.CodexRoutingQualification
-	manager := ticketTestManager(t, config.OpenAICodexTicketConfig{Enabled: true, FailClosed: true, Models: []string{"gpt-6-astra"}}, func(in extensionv1.Invocation) (extensionv1.Result, error) {
+	manager := nativeTicketTestRuntime(t, config.OpenAICodexTicketConfig{Enabled: true, FailClosed: true, Models: []string{"gpt-6-astra"}}, func(in extensionv1.Invocation) (extensionv1.Result, error) {
 		if in.Operation == "codex.routing.observe" || in.Operation == "codex.routing.demand" {
 			return extensionv1.Result{Payload: json.RawMessage(`{}`)}, nil
 		}
 		raw, _ := json.Marshal(extensionv1.CodexRoutingInjection{Headers: map[string]string{}, Qualification: qualification})
 		return extensionv1.Result{Payload: raw}, nil
 	})
-	installation := manager.extensions.Load().installations[1]
-	installation.State = PluginStateEnabled
-	store := &routingMemoryStore{PluginRepository: &pluginTokenRepository{installation: installation}, values: map[string]extensionv1.StateResult{}}
+	store := &routingMemoryStore{values: map[string]extensionv1.StateResult{}}
 	manager.repo = store
-	service := &OpenAIGatewayService{cfg: cfg, httpUpstream: upstream, accountRepo: &routingAccountRepositoryFixture{account: account}, pluginManager: manager, cache: &stubGatewayCache{}, toolCorrector: NewCodexToolCorrector(), openaiWSResolver: NewOpenAIWSProtocolResolver(cfg)}
+	service := &OpenAIGatewayService{cfg: cfg, httpUpstream: upstream, accountRepo: &routingAccountRepositoryFixture{account: account}, nativeCodexRuntime: manager, cache: &stubGatewayCache{}, toolCorrector: NewCodexToolCorrector(), openaiWSResolver: NewOpenAIWSProtocolResolver(cfg)}
 	scope, err := service.PrepareCodexRoutingScope(context.Background(), 7, "http")
 	require.NoError(t, err)
 	scope.ConnectionLeaseID = "verified-connection"
@@ -146,7 +144,7 @@ func TestCodexRoutingNativeWebSocketCannotSwitchIntoQualifiedModel(t *testing.T)
 			upstream := &routingNativeConnFixture{newStagedPassthroughConn()}
 			service := newPassthroughLifecycleService(cfg, upstream.stagedPassthroughConn)
 			service.openaiWSPassthroughDialer = &stagedPassthroughDialer{conn: upstream}
-			service.pluginManager = ticketTestManager(t, config.OpenAICodexTicketConfig{Enabled: true, FailClosed: true, Models: []string{"gpt-6-astra"}}, func(extensionv1.Invocation) (extensionv1.Result, error) {
+			service.nativeCodexRuntime = nativeTicketTestRuntime(t, config.OpenAICodexTicketConfig{Enabled: true, FailClosed: true, Models: []string{"gpt-6-astra"}}, func(extensionv1.Invocation) (extensionv1.Result, error) {
 				return extensionv1.Result{Payload: json.RawMessage(`{"headers":{}}`)}, nil
 			})
 			pool := newOpenAIWSConnPool(cfg)

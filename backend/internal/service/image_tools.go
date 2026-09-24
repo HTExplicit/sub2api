@@ -8,7 +8,7 @@ import (
 	"sync"
 	"sync/atomic"
 
-	extensionv1 "github.com/Wei-Shaw/sub2api/pkg/extensionapi/v1"
+	extensionv1 "github.com/Wei-Shaw/sub2api/internal/nativeapi"
 )
 
 var imageToolsConfigOverride atomic.Pointer[extensionv1.ImageToolsConfig]
@@ -67,8 +67,8 @@ func bindImageStudioEnabled(ctx context.Context) (context.Context, context.Cance
 	stop := imageStudioStop.ch
 	imageStudioStop.mu.Unlock()
 	signal, stopSignal := context.WithCancel(context.Background())
-	signals, _ := ctx.Value(pluginPolicySignalsKey{}).([]context.Context)
-	ctx = context.WithValue(ctx, pluginPolicySignalsKey{}, append(append([]context.Context{}, signals...), signal))
+	signals, _ := ctx.Value(policyCancellationSignalsKey{}).([]context.Context)
+	ctx = context.WithValue(ctx, policyCancellationSignalsKey{}, append(append([]context.Context{}, signals...), signal))
 	ctx, cancel := context.WithCancel(ctx)
 	go func() {
 		select {

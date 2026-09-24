@@ -7,8 +7,8 @@ import (
 	"time"
 
 	dbent "github.com/Wei-Shaw/sub2api/ent"
+	extensionv1 "github.com/Wei-Shaw/sub2api/internal/nativeapi"
 	"github.com/Wei-Shaw/sub2api/internal/service"
-	extensionv1 "github.com/Wei-Shaw/sub2api/pkg/extensionapi/v1"
 )
 
 func (r *accountRepository) UpdatePromptBindingIfRevision(ctx context.Context, id int64, expected time.Time, policyRevision int64, binding extensionv1.PromptAccountBinding) (bool, error) {

@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	extensionv1 "github.com/Wei-Shaw/sub2api/pkg/extensionapi/v1"
+	extensionv1 "github.com/Wei-Shaw/sub2api/internal/nativeapi"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 )
@@ -38,21 +38,16 @@ func (*qualityManualStopConcurrency) ReleaseAccountSlot(context.Context, int64, 
 func TestCodexQualityManualStopRequiredBeforeCreateRenewAndSend(t *testing.T) {
 	ctx := context.Background()
 	host, baseDirectory, store := routingHostFixture()
-	installation := host.installation
-	installation.ID, installation.State, installation.Version = 1, PluginStateEnabled, "0.2.7"
-	installation.Manifest.Requires.ExtensionAPI = 1
-	installation.Bindings = []PluginBinding{{Capability: extensionv1.CapabilityCredentials, Platform: PlatformOpenAI, AccountType: AccountTypeOAuth, Enabled: true, RolloutPercent: 100}}
-	store.PluginRepository = &pluginTokenRepository{installation: installation}
 	directory := &qualityManualStopDirectory{routingHostDirectoryFixture: baseDirectory}
-	manager := NewPluginManager(store, nil, nil, PluginHostInfo{}, newFakePluginKVStore())
-	manager.accountDirectory = directory
-	manager.extensions.Store(&pluginExtensionRegistry{installations: map[int64]*PluginInstallation{1: installation}, runtimes: map[int64]*pluginRuntime{}})
+	host.directory = directory
+	manager := nativeRoutingFixtureRuntime(host, store)
+
 	group, proxy := int64(53), int64(34)
 	account := &Account{ID: 16380, Platform: PlatformOpenAI, Type: AccountTypeOAuth, Status: StatusActive, Schedulable: false, Concurrency: 1, GroupIDs: []int64{group}, ProxyID: &proxy, Credentials: map[string]any{"plan_type": "pro", "chatgpt_account_id": "quality-account"}}
 	directory.account = *extensionAccount(account)
 	directory.scope.AccountID, directory.scope.Identity = account.ID, CodexTicketAccountIdentity(account)
 	slots := &qualityManualStopConcurrency{}
-	s := &OpenAIGatewayService{pluginManager: manager, accountRepo: &routingAccountRepositoryFixture{account: account}, concurrencyService: &ConcurrencyService{cache: slots}}
+	s := &OpenAIGatewayService{nativeCodexRuntime: manager, accountRepo: &routingAccountRepositoryFixture{account: account}, concurrencyService: &ConcurrencyService{cache: slots}}
 	key := &APIKey{ID: 101, UserID: 9, GroupID: &group, Status: StatusAPIKeyActive}
 	lookup := func(context.Context, int64) (*APIKey, error) { return key, nil }
 	request := CodexQualityCreateRequest{RunID: uuid.NewString(), APIKeyID: key.ID, PromptSHA256: codexQualityHash("question"), MaxSends: 6, TTLSeconds: 7200}

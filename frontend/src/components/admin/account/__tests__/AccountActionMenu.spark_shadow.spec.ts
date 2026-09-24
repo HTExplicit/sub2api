@@ -3,14 +3,6 @@ import { mount } from '@vue/test-utils'
 import AccountActionMenu from '../AccountActionMenu.vue'
 import type { Account } from '@/types'
 
-vi.mock('@/components/plugins/ExtensionSlot.vue', () => ({
-  default: {
-    props: ['name', 'account'],
-    template: '<span data-test="extension-slot">{{ name }}:{{ account.id }}</span>'
-  }
-}))
-vi.mock('@/components/plugins/ExtensionDialog.vue', () => ({ default: { template: '<span />' } }))
-
 vi.mock('vue-i18n', async () => {
   const actual = await vi.importActual<typeof import('vue-i18n')>('vue-i18n')
   return {
@@ -57,18 +49,22 @@ const getBodyText = () => document.body.textContent ?? ''
 const getBodyButtons = () => Array.from(document.body.querySelectorAll('button'))
 
 describe('AccountActionMenu — spark shadow 按钮可见性', () => {
-  it('passes the full account identity to the generic extension slot', () => {
+  it('offers native Codex actions for an eligible single account', () => {
     const wrapper = mount(AccountActionMenu, { props: { show: true, account: makeAccount({ status: 'error' }), anchorRect }, attachTo: document.body })
-    expect(document.body.querySelector('[data-test="extension-slot"]')?.textContent).toBe('account.actions:1')
+    expect(document.body.querySelector('[data-test="codex-harvest"]')).not.toBeNull()
     wrapper.unmount()
   })
-  it('核心菜单不再硬编码 Cindy 恢复入口（cd8c18b54 起由插件 account.actions 槽位承接）', () => {
+  it('restores the native Cindy recovery action for only the displayed account', async () => {
     const account = makeAccount({ cindy_balance_insufficient: true })
     const wrapper = mount(AccountActionMenu, {
       props: { show: true, account, anchorRect },
       attachTo: document.body,
     })
-    expect(getBodyButtons().find(b => b.textContent?.includes('admin.accounts.cindy.recover'))).toBeUndefined()
+    const recover = getBodyButtons().find(b => b.textContent?.includes('admin.accounts.cindy.recover'))!
+    expect(recover).toBeDefined()
+    recover.click()
+    await wrapper.vm.$nextTick()
+    expect(wrapper.emitted('recover-cindy-balance')?.[0]).toEqual([account])
     wrapper.unmount()
   })
 

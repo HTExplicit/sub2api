@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { defineComponent, type PropType } from 'vue'
 import { flushPromises, mount } from '@vue/test-utils'
 import type { ModelContextCapacityRow, SyncUpstreamModelsResult } from '@/api/admin/accounts'
-import { editAccount, editContext, editContribution } from '@/__tests__/fixtures/accountEdit'
+import { editAccount, editContext } from '@/__tests__/fixtures/accountEdit'
 
 const { updateAccountMock, checkMixedChannelRiskMock, getAvailableModelsMock, getEditContextMock, getModelContextCapacitiesMock, previewModelContextCapacitiesMock, syncUpstreamModelsMock, authIsSimpleMode, showErrorMock } = vi.hoisted(() => ({
   updateAccountMock: vi.fn(),
@@ -2616,7 +2616,3 @@ describe('EditAccountModal OpenAI 自动使用重置卡', () => {
     wrapper.unmount()
   })
 })
-vi.mock('@/stores/pluginExtensions', () => ({ usePluginExtensions: () => ({
-  loaded: true, refresh: vi.fn(),
-  items: [{ id: 'codex-recovery-settings', slot: 'surface', available: true }, editContribution()]
-}) }))

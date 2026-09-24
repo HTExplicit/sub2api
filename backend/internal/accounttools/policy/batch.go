@@ -5,7 +5,7 @@ import (
 	"slices"
 	"strings"
 
-	extensionv1 "github.com/Wei-Shaw/sub2api/pkg/extensionapi/v1"
+	extensionv1 "github.com/Wei-Shaw/sub2api/internal/nativeapi"
 )
 
 func planBatch(request extensionv1.BatchTestPlanningRequest) (extensionv1.BatchTestPlan, error) {

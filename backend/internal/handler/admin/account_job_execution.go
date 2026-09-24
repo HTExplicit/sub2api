@@ -8,8 +8,8 @@ import (
 	"strings"
 	"time"
 
+	extensionv1 "github.com/Wei-Shaw/sub2api/internal/nativeapi"
 	"github.com/Wei-Shaw/sub2api/internal/service"
-	extensionv1 "github.com/Wei-Shaw/sub2api/pkg/extensionapi/v1"
 )
 
 func (h *AccountHandler) ExecuteAccountJob(
@@ -21,9 +21,18 @@ func (h *AccountHandler) ExecuteAccountJob(
 	if h == nil || job == nil || len(items) != 1 {
 		return nil, errors.New("invalid account job execution")
 	}
+	if err := service.ValidateRecordedAccountJobTargets(job, payload, items); err != nil {
+		return nil, err
+	}
 	item := items[0]
 	if job.Kind == service.AccountJobKindCodexTicketHarvest {
 		return []service.AccountJobExecutionResult{h.executeCodexTicketHarvest(ctx, job, payload, item)}, nil
+	}
+	if job.Kind == service.AccountJobKindCodexTicketStop {
+		return []service.AccountJobExecutionResult{h.executeCodexTicketStop(ctx, payload, item)}, nil
+	}
+	if job.Kind == service.AccountJobKindExtensionOperation {
+		return []service.AccountJobExecutionResult{h.executeLegacyCodexAccountJob(ctx, job, payload, item)}, nil
 	}
 	result := h.executeAccountJobItem(ctx, job.Kind, payload, item)
 	return []service.AccountJobExecutionResult{result}, nil
@@ -407,32 +416,11 @@ func (h *AccountHandler) resolveAccountJobTargetIDs(
 	requested []int64,
 	requestFilters *BulkUpdateAccountFilters,
 ) ([]int64, error) {
-	if _, bound := service.AccountViewFromContext(ctx); bound && len(requested) > 0 {
-		if err := service.ValidateAccountViewSelection(ctx, requested); err != nil {
-			return nil, err
-		}
-	}
+
 	if ids := normalizeInt64IDList(requested); len(ids) > 0 {
 		return ids, nil
 	}
-	if view, bound := service.AccountViewFromContext(ctx); bound {
-		console, err := h.accountConsoleService()
-		if err != nil {
-			return nil, err
-		}
-		accounts, err := h.listAccountsConsoleFiltered(ctx, console, service.AccountViewQueryFilters(view.Request.Query))
-		if err != nil {
-			return nil, err
-		}
-		ids := make([]int64, 0, len(accounts))
-		for _, account := range accounts {
-			ids = append(ids, account.ID)
-		}
-		if err := service.ValidateAccountViewSelection(ctx, ids); err != nil {
-			return nil, err
-		}
-		return normalizeInt64IDList(ids), nil
-	}
+
 	filters, err := toServiceBulkUpdateAccountFilters(requestFilters)
 	if err != nil {
 		return nil, err
@@ -476,25 +464,12 @@ func (h *AccountHandler) executeBulkTaxonomyJob(ctx context.Context, raw json.Ra
 	if json.Unmarshal(raw, &req) != nil {
 		return accountJobFailed(item.ID, "payload_invalid")
 	}
-	var ids []int64
-	if _, bound := service.AccountViewFromContext(ctx); bound {
-		id, exists := accountJobTarget(item)
-		if !exists {
-			return accountJobFailed(item.ID, "target_missing")
-		}
-		ids = []int64{id}
-	} else {
-		var err error
-		ids, err = h.resolveAccountJobTargetIDs(ctx, req.AccountIDs, req.Filters)
-		if err != nil {
-			return accountJobFailed(item.ID, "filters_invalid")
-		}
+	id, ok := accountJobTarget(item)
+	if !ok {
+		return accountJobFailed(item.ID, "target_missing")
 	}
-	if id, ok := accountJobTarget(item); ok {
-		ids = []int64{id}
-	} else if req.Filters != nil && (req.ExpectedMatchCount == nil || *req.ExpectedMatchCount != len(ids)) {
-		return accountJobFailed(item.ID, "taxonomy_target_changed")
-	}
+	ids := []int64{id}
+
 	console, err := h.accountTaxonomyMutationService()
 	if err != nil {
 		return accountJobFailed(item.ID, "taxonomy_unavailable")

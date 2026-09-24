@@ -2,6 +2,7 @@
 
 import json
 import re
+import shlex
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
@@ -81,12 +82,53 @@ class UpstreamAutomationContractTest(unittest.TestCase):
         dockerfile = (ROOT / "Dockerfile").read_text(encoding="utf-8")
         vite = (ROOT / "frontend/vite.config.ts").read_text(encoding="utf-8")
         package = json.loads((ROOT / "frontend/package.json").read_text(encoding="utf-8"))
-        self.assertIn("RUN node /app/backend/pkg/extensionapi/ui/build.mjs && SUB2API_ARTIFACT_BUILD=1 pnpm exec vite build", dockerfile)
+        self.assertIn("RUN SUB2API_ARTIFACT_BUILD=1 pnpm exec vite build", dockerfile)
+        self.assertNotIn("backend/pkg/extensionapi/ui/build.mjs", dockerfile)
         self.assertNotIn("RUN pnpm run build", dockerfile)
         self.assertNotIn("ENV SUB2API_ARTIFACT_BUILD", dockerfile)
         self.assertIn("process.env.SUB2API_ARTIFACT_BUILD === '1'", vite)
         self.assertIn("enableBuild: !artifactBuild", vite)
         self.assertEqual(package["scripts"]["build"], "pnpm run check:i18n && vue-tsc -b && vite build")
+
+    def test_native_ci_preserves_required_checks_and_selects_existing_contracts(self):
+        verify = (ROOT / ".github/workflows/downstream-verify.yml").read_text(encoding="utf-8")
+        for name in ("Downstream backend", "Downstream frontend", "Candidate OCI image"):
+            self.assertRegex(verify, rf"(?m)^    name: {re.escape(name)}$")
+        self.assertIn("run: bash .github/scripts/test_native_domains.sh", verify)
+        for retired in ("test_first_party_plugins.sh", "initialize_plugin_publisher",
+                        "backend/pkg/extensionapi/ui/tsconfig.json", "../plugins/"):
+            self.assertNotIn(retired, verify)
+        specs = re.findall(r"(?m)^\s+(src/\S+\.spec\.ts)(?:\s+\\)?$", verify)
+        self.assertTrue(specs, "the frontend gate must select real spec files")
+        self.assertEqual(len(specs), len(set(specs)), "do not repeat identical frontend specs")
+        for spec in specs:
+            self.assertTrue((ROOT / "frontend" / spec).is_file(), spec)
+
+        script = (ROOT / ".github/scripts/test_native_domains.sh").read_text(encoding="utf-8")
+        self.assertNotRegex(script, r"package-plugin|generate-key|publisher\.key|plugins/\*")
+        commands = [shlex.split(line) for line in script.replace("\\\n", " ").splitlines()
+                    if line.startswith("go -C backend test ")]
+        self.assertEqual(len(commands), 2)
+        for command in commands:
+            selector = command[command.index("-run") + 1] if "-run" in command else r"^Test"
+            skipped = command[command.index("-skip") + 1] if "-skip" in command else r"(?!)"
+            packages = [arg for arg in command if arg.startswith("./")]
+            self.assertTrue(packages)
+            for package in packages:
+                path = ROOT / "backend" / package.removeprefix("./").removesuffix("/...")
+                self.assertTrue(path.is_dir(), package)
+                files = path.rglob("*_test.go") if package.endswith("/...") else path.glob("*_test.go")
+                names = []
+                for file in files:
+                    source = file.read_text(encoding="utf-8")
+                    # These commands select unit fixtures on the Linux PR runner.
+                    build = re.search(r"(?m)^//go:build (.+)$", source)
+                    if build and re.search(r"\b(integration|windows)\b", build.group(1)):
+                        continue
+                    names.extend(re.findall(r"(?m)^func (Test\w+)\(", source))
+                selected = [name for name in names if re.search(selector, name) and not re.search(skipped, name)]
+                self.assertTrue(selected, f"{package}: {selector} selected no unit tests")
+        self.assertIn("-run '^TestNativeModuleLifecycleStartsOnceAndDrains$'", verify)
 
     def test_bot_chain_is_explicit_and_does_not_overwrite_manual_resolutions(self):
         self.assertIn("upstream_tag:", self.sync)
