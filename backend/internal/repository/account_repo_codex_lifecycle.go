@@ -34,18 +34,3 @@ func scanTicketState(row interface{ Scan(...any) error }) (*service.CodexTicketL
 	}
 	return s, nil
 }
-
-func ticketFromAccount(a *service.Account, model string) *service.CodexTicketRecord {
-	if a == nil {
-		return nil
-	}
-	raw, err := json.Marshal(a.Extra["codex_turn_ticket:"+model])
-	if err != nil {
-		return nil
-	}
-	var t service.CodexTicketRecord
-	if json.Unmarshal(raw, &t) != nil || t.State == "" {
-		return nil
-	}
-	return &t
-}

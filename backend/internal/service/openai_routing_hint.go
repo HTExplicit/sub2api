@@ -71,11 +71,6 @@ func deleteOpenAIHeaderEqualFold(headers http.Header, name string) {
 	}
 }
 
-func setOpenAICodexRoutingHintFromBody(headers http.Header, account *Account, body []byte) {
-	fields := gjson.GetManyBytes(body, "model", "service_tier")
-	setOpenAICodexRoutingHint(headers, account, fields[0].String(), fields[1].String())
-}
-
 // logOpenAIRoutingDiagnostics records only gateway-derived routing state. In
 // particular, it deliberately does not include any header values, tokens, or
 // credentials because these diagnostics run on authentication-bearing paths.

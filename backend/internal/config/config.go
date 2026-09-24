@@ -2652,6 +2652,11 @@ func setEnvReachableDefaults() {
 	viper.SetDefault("gateway.user_message_queue.mode", "")
 	viper.SetDefault("update.proxy_url", "")
 
+	// Retired Codex bootstrap fields are accepted for compatibility and ignored by routing.
+	viper.SetDefault("gateway.openai_codex_ticket.target_length", 0)
+	viper.SetDefault("gateway.openai_codex_ticket.ttl_seconds", 0)
+	viper.SetDefault("gateway.openai_codex_ticket.refresh_before_seconds", 0)
+
 	// sticky_escape_enabled is the one exception to the zero-value rule: its
 	// effective default is true, applied post-unmarshal via a viper.IsSet guard.
 	// Registering false would make IsSet always report true and permanently
