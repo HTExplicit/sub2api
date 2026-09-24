@@ -45,11 +45,17 @@ func TestCindyResponseClassifierDoesNotReusePolicyAfterNativeSwitchChange(t *tes
 	}
 	ConfigureCindyProvider(&extensionv1.CindyProviderConfig{BalanceDetection: true})
 	account := cindyHealthScopeAccount(2)
-	body := []byte(`{"error":{"type":"insufficient_quota","code":"budget_exceeded"}}`)
+	account.WirePlatform, account.ProviderProfile = WirePlatformOpenAI, ProviderProfileCindyLaxaV1
+	require.True(t, hasCanonicalCindyProviderIdentity(account))
+	body := []byte(`{"error":{"type":"budget_exceeded","code":"429"}}`)
 	require.Equal(t, CindyHealthSignalExactBudget, ClassifyCindyHealthSignal(account, http.StatusTooManyRequests, body))
+	require.Equal(t, CindyBalanceSignalHTTP429, ClassifyCindyBalanceInsufficient(account, http.StatusTooManyRequests, body))
 	ConfigureCindyProvider(&extensionv1.CindyProviderConfig{})
 	require.Equal(t, CindyHealthSignalNone, ClassifyCindyHealthSignal(account, http.StatusTooManyRequests, body))
 	require.Equal(t, CindyBalanceSignalNone, ClassifyCindyBalanceInsufficient(account, http.StatusTooManyRequests, body))
+	ConfigureCindyProvider(&extensionv1.CindyProviderConfig{BalanceDetection: true})
+	require.Equal(t, CindyHealthSignalExactBudget, ClassifyCindyHealthSignal(account, http.StatusTooManyRequests, body))
+	require.Equal(t, CindyBalanceSignalHTTP429, ClassifyCindyBalanceInsufficient(account, http.StatusTooManyRequests, body))
 }
 
 func cindyHealthScopeAccount(id int64) *Account {

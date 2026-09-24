@@ -1,19 +1,19 @@
 <template>
   <section class="space-y-3" aria-labelledby="cindy-provider-settings-title" data-testid="cindy-provider-settings">
-    <h3 id="cindy-provider-settings-title" class="text-base font-semibold text-ink">{{ t('title') }}</h3>
-    <p class="text-sm text-muted">{{ t('description') }}</p>
-    <p v-if="loadError" role="alert" class="text-sm text-red-600">{{ t('loadFailed') }}</p>
+    <h3 id="cindy-provider-settings-title" class="text-base font-semibold text-ink">{{ localLabel('title') }}</h3>
+    <p class="text-sm text-muted">{{ localLabel('description') }}</p>
+    <p v-if="loadError" role="alert" class="text-sm text-red-600">{{ localLabel('loadFailed') }}</p>
     <template v-if="form">
       <label v-for="key in fields" :key="key" class="flex items-center gap-2 text-sm text-ink">
         <input v-model="form[key]" type="checkbox" :disabled="!available" :data-testid="`cindy-provider-${key}`" />
-        {{ t(key) }}
+        {{ localLabel(key) }}
       </label>
-      <button type="button" class="btn btn-secondary" :disabled="saving || !available" data-testid="cindy-provider-save" @click="save">{{ t('save') }}</button>
-      <p v-if="status" role="status" class="text-sm text-muted">{{ t(status) }}</p>
+      <button type="button" class="btn btn-secondary" :disabled="saving || !available" data-testid="cindy-provider-save" @click="save">{{ localLabel('save') }}</button>
+      <p v-if="status" role="status" class="text-sm text-muted">{{ localLabel(status) }}</p>
     </template>
-    <input v-model="search" type="search" class="input" :aria-label="t('search')" :placeholder="t('search')" />
-    <p v-if="catalogError" role="alert" class="text-sm text-red-600">{{ t('catalogFailed') }}</p>
-    <p v-else class="text-sm text-muted">{{ t('matches', { count: filtered.length }) }}</p>
+    <input v-model="search" type="search" class="input" :aria-label="localLabel('search')" :placeholder="localLabel('search')" />
+    <p v-if="catalogError" role="alert" class="text-sm text-red-600">{{ localLabel('catalogFailed') }}</p>
+    <p v-else class="text-sm text-muted">{{ localLabel('matches', { count: filtered.length }) }}</p>
     <div class="grid gap-2 sm:grid-cols-2">
       <article v-for="entry in filtered.slice(0, 40)" :key="entry.public_id || entry.id || entry.model_id" class="border border-line bg-raised p-3">
         <h4 class="break-all text-sm font-medium text-ink">{{ entry.public_id || entry.id || entry.model_id }}</h4>
@@ -32,7 +32,7 @@ import { useCindyAdminScope } from '@/features/cindy/nativeState'
 import { useStepUp, isStepUpCancelled, isStepUpBlocked, stepUpBlockReason, StepUpCancelledError } from '@/composables/useStepUp'
 import TotpStepUpDialog from '@/components/auth/TotpStepUpDialog.vue'
 
-const { t } = useI18n({ useScope: 'local', messages: {
+const { t: localLabel } = useI18n({ useScope: 'local', messages: {
   zh: { title: 'Cindy 目录与策略', description: '目录提供精确模型名称、协议能力与计费参考。更改设置不清除已有账号健康记录。',
     balance_detection: '余额不足与临时健康状态识别', catalog_enabled: '完整模型目录与价格参考', search_enabled: 'Cindy 搜索',
     save: '保存设置', saved: '设置已保存', unsaved: '设置已保存；后续修改仍未保存', saveFailed: '保存失败', loadFailed: '设置加载失败',
