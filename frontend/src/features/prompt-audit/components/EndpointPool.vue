@@ -10,10 +10,10 @@
       </button>
     </div>
 
-    <div v-if="endpoints.length === 0" class="mt-5 rounded-none border border-dashed border-gray-300 px-5 py-10 text-center text-sm text-gray-500 dark:border-dark-600 dark:bg-dark-900 dark:text-dark-300">
+    <div v-if="endpoints.length === 0" class="mt-5 rounded-xl border border-dashed border-gray-300 px-5 py-10 text-center text-sm text-gray-500 dark:border-dark-600 dark:bg-dark-900 dark:text-dark-300">
       {{ t('admin.promptAudit.pool.empty') }}
     </div>
-    <div v-else class="mt-5 overflow-hidden rounded-none border border-gray-200 bg-white dark:border-dark-700 dark:bg-dark-900">
+    <div v-else class="mt-5 overflow-hidden rounded-xl border border-gray-200 bg-white dark:border-dark-700 dark:bg-dark-900">
       <div class="hidden grid-cols-[minmax(260px,1.45fr)_minmax(210px,1fr)_minmax(190px,.8fr)_minmax(230px,1.15fr)_auto] gap-5 border-b border-l-[3px] border-b-gray-200 border-l-transparent bg-gray-50/80 px-5 py-2.5 text-[11px] font-semibold uppercase tracking-[0.08em] text-gray-500 dark:border-b-dark-700/60 dark:bg-dark-900 dark:text-dark-400 xl:grid">
         <span>{{ t('admin.promptAudit.pool.node') }}</span>
         <span>{{ t('admin.promptAudit.pool.model') }}</span>

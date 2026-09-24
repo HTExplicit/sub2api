@@ -56,7 +56,7 @@
       </div>
     </form>
     <div v-if="error" role="alert" class="mt-4 rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700 dark:bg-red-950/30 dark:text-red-300">{{ error }}</div>
-    <div class="mt-5 overflow-x-auto rounded-none border border-gray-200 dark:border-dark-700">
+    <div class="mt-5 overflow-x-auto rounded-xl border border-gray-200 dark:border-dark-700">
       <table class="min-w-[1120px] w-full text-left text-sm">
         <thead class="bg-gray-50 text-xs uppercase tracking-wide text-gray-500 dark:bg-dark-900 dark:text-dark-400">
           <tr>

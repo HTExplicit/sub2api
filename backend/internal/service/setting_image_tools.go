@@ -10,17 +10,14 @@ import (
 // switches formerly kept in the image-tools plugin configuration.
 const SettingKeyImageToolsConfig = "image_tools_config"
 
-// GetImageToolsConfig returns the stored switches, or the deploy-time rollout
-// flags when the administrator has not saved them yet.
-func (s *SettingService) GetImageToolsConfig(ctx context.Context) extensionv1.ImageToolsConfig {
-	var stored extensionv1.ImageToolsConfig
-	if s.readJSONSetting(ctx, SettingKeyImageToolsConfig, &stored) {
-		return stored
-	}
-	return LegacyImageToolsConfig()
+// EffectiveImageToolsConfig returns the switches this process applies.
+func EffectiveImageToolsConfig() extensionv1.ImageToolsConfig {
+	config, _ := currentImageToolsConfig()
+	return config
 }
 
-// LoadImageToolsConfig installs the stored switches for this process at startup.
+// LoadImageToolsConfig installs the stored switches for this process at
+// startup. Without a stored value the deploy-time rollout flags stay in force.
 func (s *SettingService) LoadImageToolsConfig(ctx context.Context) {
 	var stored extensionv1.ImageToolsConfig
 	if s.readJSONSetting(ctx, SettingKeyImageToolsConfig, &stored) {
@@ -35,5 +32,9 @@ func (s *SettingService) UpdateImageToolsConfig(ctx context.Context, config exte
 		return err
 	}
 	ConfigureImageTools(&config)
+	// image_studio_enabled is a public setting embedded in the served HTML.
+	if s.onUpdate != nil {
+		s.onUpdate()
+	}
 	return nil
 }

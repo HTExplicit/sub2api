@@ -30,9 +30,11 @@
 import { onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { getObservabilitySettings, updateObservabilitySettings, type ObservabilitySettings } from '@/api/admin/settings'
+import { useAppStore } from '@/stores'
 import { applyFlatTheme } from '@/utils/flatTheme'
 
 const { t } = useI18n()
+const appStore = useAppStore()
 const form = ref<ObservabilitySettings | null>(null)
 const loadError = ref(false)
 const saving = ref(false)
@@ -46,6 +48,7 @@ async function save() {
     form.value = await updateObservabilitySettings({ ...form.value })
     applyFlatTheme(form.value.theme_enabled)
     status.value = t('admin.settings.observability.saved')
+    void appStore.fetchPublicSettings(true)
   } catch {
     status.value = t('admin.settings.observability.saveFailed')
   } finally {

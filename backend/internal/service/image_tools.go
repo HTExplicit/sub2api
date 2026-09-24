@@ -58,20 +58,30 @@ func ConfigureImageTools(config *extensionv1.ImageToolsConfig) {
 }
 
 // bindImageStudioEnabled returns a context that is canceled when Image Studio
-// is switched off.
+// is switched off. The switch is also registered as a policy signal: upstream
+// image IO detaches from request cancellation (detachUpstreamContext) but still
+// honours policy signals, so switching off stops an in-flight generation
+// instead of billing a result that can no longer be saved.
 func bindImageStudioEnabled(ctx context.Context) (context.Context, context.CancelFunc) {
 	imageStudioStop.mu.Lock()
 	stop := imageStudioStop.ch
 	imageStudioStop.mu.Unlock()
+	signal, stopSignal := context.WithCancel(context.Background())
+	signals, _ := ctx.Value(pluginPolicySignalsKey{}).([]context.Context)
+	ctx = context.WithValue(ctx, pluginPolicySignalsKey{}, append(append([]context.Context{}, signals...), signal))
 	ctx, cancel := context.WithCancel(ctx)
 	go func() {
 		select {
 		case <-stop:
+			stopSignal()
 			cancel()
 		case <-ctx.Done():
 		}
 	}()
-	return ctx, cancel
+	return ctx, func() {
+		stopSignal()
+		cancel()
+	}
 }
 
 // observeNativeImageFacts lets tests inspect the facts the host derives for the

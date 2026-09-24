@@ -30,8 +30,10 @@
 import { onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { getImageToolsSettings, updateImageToolsSettings, type ImageToolsSettings } from '@/api/admin/settings'
+import { useAppStore } from '@/stores'
 
 const { t } = useI18n()
+const appStore = useAppStore()
 const form = ref<ImageToolsSettings | null>(null)
 const loadError = ref(false)
 const saving = ref(false)
@@ -44,6 +46,8 @@ async function save() {
   try {
     form.value = await updateImageToolsSettings({ ...form.value })
     status.value = t('admin.settings.imageTools.saved')
+    // The sidebar and route guard follow the public image_studio_enabled flag.
+    void appStore.fetchPublicSettings(true)
   } catch {
     status.value = t('admin.settings.imageTools.saveFailed')
   } finally {

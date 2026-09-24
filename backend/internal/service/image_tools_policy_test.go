@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"testing"
+	"time"
 
 	extensionv1 "github.com/Wei-Shaw/sub2api/pkg/extensionapi/v1"
 )
@@ -140,5 +141,21 @@ func TestSwitchingImageStudioOnStartsTheRuntime(t *testing.T) {
 	ConfigureImageTools(&extensionv1.ImageToolsConfig{StudioEnabled: true})
 	if starts != 1 {
 		t.Fatalf("switching Image Studio on must start the runtime once, starts=%d", starts)
+	}
+}
+
+func TestSwitchingImageStudioOffStopsDetachedUpstreamIO(t *testing.T) {
+	previous := imageToolsConfigOverride.Load()
+	t.Cleanup(func() { imageToolsConfigOverride.Store(previous) })
+	ConfigureImageTools(&extensionv1.ImageToolsConfig{StudioEnabled: true})
+	bound, release := bindImageStudioEnabled(context.Background())
+	defer release()
+	upstream, releaseUpstream := detachUpstreamContext(bound)
+	defer releaseUpstream()
+	ConfigureImageTools(&extensionv1.ImageToolsConfig{})
+	select {
+	case <-upstream.Done():
+	case <-time.After(5 * time.Second):
+		t.Fatal("switching Image Studio off must cancel detached upstream IO")
 	}
 }

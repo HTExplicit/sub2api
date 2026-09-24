@@ -110,17 +110,20 @@ func (h *SettingHandler) GetOfficialModelContextCatalog(c *gin.Context) {
 	})
 }
 
-// GetImageToolsSettings returns the Image Studio and Responses image bridge switches.
+// GetImageToolsSettings returns the Image Studio and Responses image bridge
+// switches this process applies.
 // GET /api/v1/admin/settings/image-tools
 func (h *SettingHandler) GetImageToolsSettings(c *gin.Context) {
-	response.Success(c, h.settingService.GetImageToolsConfig(c.Request.Context()))
+	response.Success(c, service.EffectiveImageToolsConfig())
 }
 
-// UpdateImageToolsSettings saves the Image Studio and Responses image bridge switches.
+// UpdateImageToolsSettings saves the Image Studio and Responses image bridge
+// switches. Omitted switches are off, as in the former plugin configuration.
 // PUT /api/v1/admin/settings/image-tools
 func (h *SettingHandler) UpdateImageToolsSettings(c *gin.Context) {
 	var req extensionv1.ImageToolsConfig
-	if err := c.ShouldBindJSON(&req); err != nil {
+	raw, err := c.GetRawData()
+	if err != nil || service.DecodeSwitchSettings(raw, &req, "studio_enabled", "responses_image_enabled") != nil {
 		response.BadRequest(c, "Invalid image tools settings")
 		return
 	}
@@ -131,18 +134,20 @@ func (h *SettingHandler) UpdateImageToolsSettings(c *gin.Context) {
 	response.Success(c, req)
 }
 
-// GetObservabilitySettings returns the account traffic telemetry and flat theme switches.
+// GetObservabilitySettings returns the account traffic telemetry and flat theme
+// switches this process applies.
 // GET /api/v1/admin/settings/observability
 func (h *SettingHandler) GetObservabilitySettings(c *gin.Context) {
-	response.Success(c, h.settingService.GetAdminObservabilityConfig(c.Request.Context()))
+	response.Success(c, service.EffectiveAdminObservabilityConfig())
 }
 
-// UpdateObservabilitySettings saves the account traffic telemetry and flat theme switches.
-// Omitted switches stay on, as they did in the former plugin configuration.
+// UpdateObservabilitySettings saves the account traffic telemetry and flat theme
+// switches. Omitted switches stay on, as in the former plugin configuration.
 // PUT /api/v1/admin/settings/observability
 func (h *SettingHandler) UpdateObservabilitySettings(c *gin.Context) {
 	req := extensionv1.AdminObservabilityConfig{TelemetryEnabled: true, ThemeEnabled: true}
-	if err := c.ShouldBindJSON(&req); err != nil {
+	raw, err := c.GetRawData()
+	if err != nil || service.DecodeSwitchSettings(raw, &req, "telemetry_enabled", "theme_enabled") != nil {
 		response.BadRequest(c, "Invalid observability settings")
 		return
 	}

@@ -11,23 +11,22 @@ import (
 // configuration.
 const SettingKeyAdminObservabilityConfig = "admin_observability_config"
 
-// GetAdminObservabilityConfig returns the stored switches, or the deploy-time
-// default when the administrator has not saved them yet.
-func (s *SettingService) GetAdminObservabilityConfig(ctx context.Context) extensionv1.AdminObservabilityConfig {
-	stored := extensionv1.AdminObservabilityConfig{TelemetryEnabled: true, ThemeEnabled: true}
-	if s.readJSONSetting(ctx, SettingKeyAdminObservabilityConfig, &stored) {
-		return stored
-	}
-	if s == nil {
-		return LegacyAdminObservabilityConfig(nil)
-	}
-	return LegacyAdminObservabilityConfig(s.cfg)
+// EffectiveAdminObservabilityConfig returns the switches this process applies.
+func EffectiveAdminObservabilityConfig() extensionv1.AdminObservabilityConfig {
+	return currentAdminObservabilityConfig()
 }
 
 // LoadAdminObservabilityConfig installs the effective switches for this process
-// at startup, including the deploy-time default.
+// at startup: the stored value, or the deploy-time default when none is stored.
 func (s *SettingService) LoadAdminObservabilityConfig(ctx context.Context) {
-	config := s.GetAdminObservabilityConfig(ctx)
+	config := extensionv1.AdminObservabilityConfig{TelemetryEnabled: true, ThemeEnabled: true}
+	if !s.readJSONSetting(ctx, SettingKeyAdminObservabilityConfig, &config) {
+		if s == nil {
+			config = LegacyAdminObservabilityConfig(nil)
+		} else {
+			config = LegacyAdminObservabilityConfig(s.cfg)
+		}
+	}
 	ConfigureAdminObservability(&config)
 }
 
@@ -38,5 +37,9 @@ func (s *SettingService) UpdateAdminObservabilityConfig(ctx context.Context, con
 		return err
 	}
 	ConfigureAdminObservability(&config)
+	// flat_theme_enabled is a public setting embedded in the served HTML.
+	if s.onUpdate != nil {
+		s.onUpdate()
+	}
 	return nil
 }
