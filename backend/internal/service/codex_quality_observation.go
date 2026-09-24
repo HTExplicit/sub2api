@@ -16,17 +16,42 @@ import (
 )
 
 func codexQualityWireFields(req *http.Request) (string, string, error) {
-	if req == nil || req.GetBody == nil {
+	if req == nil {
 		return "", "", ErrCodexQualityUnavailable
 	}
-	body, err := req.GetBody()
-	if err != nil {
+	// Reasoning recovery deliberately clears GetBody to prevent transparent POST
+	// replay. Inspect the final encoded body without restoring that capability.
+	body := req.Body
+	independent := req.GetBody != nil
+	if independent {
+		var err error
+		body, err = req.GetBody()
+		if err != nil {
+			if body != nil {
+				_ = body.Close()
+			}
+			return "", "", ErrCodexQualityUnavailable
+		}
+	}
+	if body == nil {
 		return "", "", ErrCodexQualityUnavailable
 	}
-	defer func() { _ = body.Close() }()
-	var reader io.Reader = body
+	wire, readErr := io.ReadAll(io.LimitReader(body, (2<<20)+1))
+	closeErr := body.Close()
+	if readErr != nil || closeErr != nil || len(wire) > 2<<20 {
+		if !independent {
+			// The original close chain has run. Neither a consumed prefix nor an
+			// unread suffix may become a later request after a failed snapshot.
+			req.Body = io.NopCloser(codexQualityRejectedWireBody{})
+		}
+		return "", "", ErrCodexQualityUnavailable
+	}
+	if !independent {
+		req.Body = io.NopCloser(bytes.NewReader(wire))
+	}
+	var reader io.Reader = bytes.NewReader(wire)
 	if strings.EqualFold(req.Header.Get("Content-Encoding"), "zstd") {
-		decoder, err := zstd.NewReader(body, zstd.WithDecoderMaxMemory(8<<20))
+		decoder, err := zstd.NewReader(reader, zstd.WithDecoderMaxMemory(8<<20), zstd.WithDecoderConcurrency(1))
 		if err != nil {
 			return "", "", ErrCodexQualityUnavailable
 		}
@@ -38,6 +63,12 @@ func codexQualityWireFields(req *http.Request) (string, string, error) {
 		return "", "", ErrCodexQualityUnavailable
 	}
 	return gjson.GetBytes(raw, "model").String(), gjson.GetBytes(raw, "reasoning.effort").String(), nil
+}
+
+type codexQualityRejectedWireBody struct{}
+
+func (codexQualityRejectedWireBody) Read([]byte) (int, error) {
+	return 0, ErrCodexQualityUnavailable
 }
 
 func reserveCodexQualityAcquisition(req *http.Request, accountID int64) error {
