@@ -44,6 +44,10 @@ python scripts/invoke-codex-quality-acceptance.py status
 
 `reconcile` 不发送模型请求。只有收到应用明确的发送前拒绝、服务器账本也无该 trial，才允许保留原记录并安排新 trial；网络超时或代理错误不能当作“没发送”。
 
+诊断读取最终请求时兼容 reasoning recovery 清除 `GetBody` 的不可重放请求：有界读取实际编码字节后原样恢复 `Body`，保持 `GetBody=nil`、编码头和长度；编码体与解码体分别最多 2 MiB 和 1 MiB。读取或关闭失败时阻止发送，不预留生成预算，不重新启用透明 POST 重放。
+
+如果诊断本身在第一次业务发送前失败，发布者可在仅修诊断的新版本上线并完成旧进程排空后，显式执行 `restart-baseline --version <version> --source-sha <sha> --reason <reason>`。入口要求旧阶段无业务回执、无未结束操作，完整保留旧阶段及未确认结果，为旧未确认 trial 保守占用预算，再建立新 trial/turn 命名空间。它不发模型请求、不重置服务器账本；迟到的旧回执会阻止后续生成。普通 `baseline` 和 `verification` 不能隐式改变已有阶段的源码版本。
+
 ## 发布次序
 
 诊断基础设施先独立发布并采集修前基线。协议与账号身份修复随后发布，在共同宿主基线、同一账号和同一预算下完成修后序列。不能先应用修复再把结果命名为修前基线。
