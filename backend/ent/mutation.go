@@ -2421,71 +2421,65 @@ func (m *APIKeyMutation) ResetEdge(name string) error {
 // AccountMutation represents an operation that mutates the Account nodes in the graph.
 type AccountMutation struct {
 	config
-	op                             Op
-	typ                            string
-	id                             *int64
-	created_at                     *time.Time
-	updated_at                     *time.Time
-	deleted_at                     *time.Time
-	name                           *string
-	notes                          *string
-	platform                       *string
-	wire_platform                  *string
-	provider_profile               *string
-	_type                          *string
-	credentials                    *map[string]interface{}
-	extra                          *map[string]interface{}
-	proxy_fallback_origin_id       *int64
-	addproxy_fallback_origin_id    *int64
-	concurrency                    *int
-	addconcurrency                 *int
-	load_factor                    *int
-	addload_factor                 *int
-	priority                       *int
-	addpriority                    *int
-	rate_multiplier                *float64
-	addrate_multiplier             *float64
-	status                         *string
-	error_message                  *string
-	last_used_at                   *time.Time
-	expires_at                     *time.Time
-	auto_pause_on_expired          *bool
-	schedulable                    *bool
-	cindy_balance_insufficient_at  *time.Time
-	cindy_banned_at                *time.Time
-	cindy_credential_generation    *int64
-	addcindy_credential_generation *int64
-	rate_limited_at                *time.Time
-	rate_limit_reset_at            *time.Time
-	overload_until                 *time.Time
-	temp_unschedulable_until       *time.Time
-	temp_unschedulable_reason      *string
-	session_window_start           *time.Time
-	session_window_end             *time.Time
-	session_window_status          *string
-	quota_dimension                *account.QuotaDimension
-	clearedFields                  map[string]struct{}
-	groups                         map[int64]struct{}
-	removedgroups                  map[int64]struct{}
-	clearedgroups                  bool
-	management_folder              *int64
-	clearedmanagement_folder       bool
-	tags                           map[int64]struct{}
-	removedtags                    map[int64]struct{}
-	clearedtags                    bool
-	proxy                          *int64
-	clearedproxy                   bool
-	parent                         *int64
-	clearedparent                  bool
-	children                       map[int64]struct{}
-	removedchildren                map[int64]struct{}
-	clearedchildren                bool
-	usage_logs                     map[int64]struct{}
-	removedusage_logs              map[int64]struct{}
-	clearedusage_logs              bool
-	done                           bool
-	oldValue                       func(context.Context) (*Account, error)
-	predicates                     []predicate.Account
+	op                          Op
+	typ                         string
+	id                          *int64
+	created_at                  *time.Time
+	updated_at                  *time.Time
+	deleted_at                  *time.Time
+	name                        *string
+	notes                       *string
+	platform                    *string
+	_type                       *string
+	credentials                 *map[string]interface{}
+	extra                       *map[string]interface{}
+	proxy_fallback_origin_id    *int64
+	addproxy_fallback_origin_id *int64
+	concurrency                 *int
+	addconcurrency              *int
+	load_factor                 *int
+	addload_factor              *int
+	priority                    *int
+	addpriority                 *int
+	rate_multiplier             *float64
+	addrate_multiplier          *float64
+	status                      *string
+	error_message               *string
+	last_used_at                *time.Time
+	expires_at                  *time.Time
+	auto_pause_on_expired       *bool
+	schedulable                 *bool
+	rate_limited_at             *time.Time
+	rate_limit_reset_at         *time.Time
+	overload_until              *time.Time
+	temp_unschedulable_until    *time.Time
+	temp_unschedulable_reason   *string
+	session_window_start        *time.Time
+	session_window_end          *time.Time
+	session_window_status       *string
+	quota_dimension             *account.QuotaDimension
+	clearedFields               map[string]struct{}
+	groups                      map[int64]struct{}
+	removedgroups               map[int64]struct{}
+	clearedgroups               bool
+	management_folder           *int64
+	clearedmanagement_folder    bool
+	tags                        map[int64]struct{}
+	removedtags                 map[int64]struct{}
+	clearedtags                 bool
+	proxy                       *int64
+	clearedproxy                bool
+	parent                      *int64
+	clearedparent               bool
+	children                    map[int64]struct{}
+	removedchildren             map[int64]struct{}
+	clearedchildren             bool
+	usage_logs                  map[int64]struct{}
+	removedusage_logs           map[int64]struct{}
+	clearedusage_logs           bool
+	done                        bool
+	oldValue                    func(context.Context) (*Account, error)
+	predicates                  []predicate.Account
 }
 
 var _ ent.Mutation = (*AccountMutation)(nil)
@@ -2826,78 +2820,6 @@ func (m *AccountMutation) OldPlatform(ctx context.Context) (v string, err error)
 // ResetPlatform resets all changes to the "platform" field.
 func (m *AccountMutation) ResetPlatform() {
 	m.platform = nil
-}
-
-// SetWirePlatform sets the "wire_platform" field.
-func (m *AccountMutation) SetWirePlatform(s string) {
-	m.wire_platform = &s
-}
-
-// WirePlatform returns the value of the "wire_platform" field in the mutation.
-func (m *AccountMutation) WirePlatform() (r string, exists bool) {
-	v := m.wire_platform
-	if v == nil {
-		return
-	}
-	return *v, true
-}
-
-// OldWirePlatform returns the old "wire_platform" field's value of the Account entity.
-// If the Account object wasn't provided to the builder, the object is fetched from the database.
-// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
-func (m *AccountMutation) OldWirePlatform(ctx context.Context) (v string, err error) {
-	if !m.op.Is(OpUpdateOne) {
-		return v, errors.New("OldWirePlatform is only allowed on UpdateOne operations")
-	}
-	if m.id == nil || m.oldValue == nil {
-		return v, errors.New("OldWirePlatform requires an ID field in the mutation")
-	}
-	oldValue, err := m.oldValue(ctx)
-	if err != nil {
-		return v, fmt.Errorf("querying old value for OldWirePlatform: %w", err)
-	}
-	return oldValue.WirePlatform, nil
-}
-
-// ResetWirePlatform resets all changes to the "wire_platform" field.
-func (m *AccountMutation) ResetWirePlatform() {
-	m.wire_platform = nil
-}
-
-// SetProviderProfile sets the "provider_profile" field.
-func (m *AccountMutation) SetProviderProfile(s string) {
-	m.provider_profile = &s
-}
-
-// ProviderProfile returns the value of the "provider_profile" field in the mutation.
-func (m *AccountMutation) ProviderProfile() (r string, exists bool) {
-	v := m.provider_profile
-	if v == nil {
-		return
-	}
-	return *v, true
-}
-
-// OldProviderProfile returns the old "provider_profile" field's value of the Account entity.
-// If the Account object wasn't provided to the builder, the object is fetched from the database.
-// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
-func (m *AccountMutation) OldProviderProfile(ctx context.Context) (v string, err error) {
-	if !m.op.Is(OpUpdateOne) {
-		return v, errors.New("OldProviderProfile is only allowed on UpdateOne operations")
-	}
-	if m.id == nil || m.oldValue == nil {
-		return v, errors.New("OldProviderProfile requires an ID field in the mutation")
-	}
-	oldValue, err := m.oldValue(ctx)
-	if err != nil {
-		return v, fmt.Errorf("querying old value for OldProviderProfile: %w", err)
-	}
-	return oldValue.ProviderProfile, nil
-}
-
-// ResetProviderProfile resets all changes to the "provider_profile" field.
-func (m *AccountMutation) ResetProviderProfile() {
-	m.provider_profile = nil
 }
 
 // SetType sets the "type" field.
@@ -3667,160 +3589,6 @@ func (m *AccountMutation) OldSchedulable(ctx context.Context) (v bool, err error
 // ResetSchedulable resets all changes to the "schedulable" field.
 func (m *AccountMutation) ResetSchedulable() {
 	m.schedulable = nil
-}
-
-// SetCindyBalanceInsufficientAt sets the "cindy_balance_insufficient_at" field.
-func (m *AccountMutation) SetCindyBalanceInsufficientAt(t time.Time) {
-	m.cindy_balance_insufficient_at = &t
-}
-
-// CindyBalanceInsufficientAt returns the value of the "cindy_balance_insufficient_at" field in the mutation.
-func (m *AccountMutation) CindyBalanceInsufficientAt() (r time.Time, exists bool) {
-	v := m.cindy_balance_insufficient_at
-	if v == nil {
-		return
-	}
-	return *v, true
-}
-
-// OldCindyBalanceInsufficientAt returns the old "cindy_balance_insufficient_at" field's value of the Account entity.
-// If the Account object wasn't provided to the builder, the object is fetched from the database.
-// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
-func (m *AccountMutation) OldCindyBalanceInsufficientAt(ctx context.Context) (v *time.Time, err error) {
-	if !m.op.Is(OpUpdateOne) {
-		return v, errors.New("OldCindyBalanceInsufficientAt is only allowed on UpdateOne operations")
-	}
-	if m.id == nil || m.oldValue == nil {
-		return v, errors.New("OldCindyBalanceInsufficientAt requires an ID field in the mutation")
-	}
-	oldValue, err := m.oldValue(ctx)
-	if err != nil {
-		return v, fmt.Errorf("querying old value for OldCindyBalanceInsufficientAt: %w", err)
-	}
-	return oldValue.CindyBalanceInsufficientAt, nil
-}
-
-// ClearCindyBalanceInsufficientAt clears the value of the "cindy_balance_insufficient_at" field.
-func (m *AccountMutation) ClearCindyBalanceInsufficientAt() {
-	m.cindy_balance_insufficient_at = nil
-	m.clearedFields[account.FieldCindyBalanceInsufficientAt] = struct{}{}
-}
-
-// CindyBalanceInsufficientAtCleared returns if the "cindy_balance_insufficient_at" field was cleared in this mutation.
-func (m *AccountMutation) CindyBalanceInsufficientAtCleared() bool {
-	_, ok := m.clearedFields[account.FieldCindyBalanceInsufficientAt]
-	return ok
-}
-
-// ResetCindyBalanceInsufficientAt resets all changes to the "cindy_balance_insufficient_at" field.
-func (m *AccountMutation) ResetCindyBalanceInsufficientAt() {
-	m.cindy_balance_insufficient_at = nil
-	delete(m.clearedFields, account.FieldCindyBalanceInsufficientAt)
-}
-
-// SetCindyBannedAt sets the "cindy_banned_at" field.
-func (m *AccountMutation) SetCindyBannedAt(t time.Time) {
-	m.cindy_banned_at = &t
-}
-
-// CindyBannedAt returns the value of the "cindy_banned_at" field in the mutation.
-func (m *AccountMutation) CindyBannedAt() (r time.Time, exists bool) {
-	v := m.cindy_banned_at
-	if v == nil {
-		return
-	}
-	return *v, true
-}
-
-// OldCindyBannedAt returns the old "cindy_banned_at" field's value of the Account entity.
-// If the Account object wasn't provided to the builder, the object is fetched from the database.
-// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
-func (m *AccountMutation) OldCindyBannedAt(ctx context.Context) (v *time.Time, err error) {
-	if !m.op.Is(OpUpdateOne) {
-		return v, errors.New("OldCindyBannedAt is only allowed on UpdateOne operations")
-	}
-	if m.id == nil || m.oldValue == nil {
-		return v, errors.New("OldCindyBannedAt requires an ID field in the mutation")
-	}
-	oldValue, err := m.oldValue(ctx)
-	if err != nil {
-		return v, fmt.Errorf("querying old value for OldCindyBannedAt: %w", err)
-	}
-	return oldValue.CindyBannedAt, nil
-}
-
-// ClearCindyBannedAt clears the value of the "cindy_banned_at" field.
-func (m *AccountMutation) ClearCindyBannedAt() {
-	m.cindy_banned_at = nil
-	m.clearedFields[account.FieldCindyBannedAt] = struct{}{}
-}
-
-// CindyBannedAtCleared returns if the "cindy_banned_at" field was cleared in this mutation.
-func (m *AccountMutation) CindyBannedAtCleared() bool {
-	_, ok := m.clearedFields[account.FieldCindyBannedAt]
-	return ok
-}
-
-// ResetCindyBannedAt resets all changes to the "cindy_banned_at" field.
-func (m *AccountMutation) ResetCindyBannedAt() {
-	m.cindy_banned_at = nil
-	delete(m.clearedFields, account.FieldCindyBannedAt)
-}
-
-// SetCindyCredentialGeneration sets the "cindy_credential_generation" field.
-func (m *AccountMutation) SetCindyCredentialGeneration(i int64) {
-	m.cindy_credential_generation = &i
-	m.addcindy_credential_generation = nil
-}
-
-// CindyCredentialGeneration returns the value of the "cindy_credential_generation" field in the mutation.
-func (m *AccountMutation) CindyCredentialGeneration() (r int64, exists bool) {
-	v := m.cindy_credential_generation
-	if v == nil {
-		return
-	}
-	return *v, true
-}
-
-// OldCindyCredentialGeneration returns the old "cindy_credential_generation" field's value of the Account entity.
-// If the Account object wasn't provided to the builder, the object is fetched from the database.
-// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
-func (m *AccountMutation) OldCindyCredentialGeneration(ctx context.Context) (v int64, err error) {
-	if !m.op.Is(OpUpdateOne) {
-		return v, errors.New("OldCindyCredentialGeneration is only allowed on UpdateOne operations")
-	}
-	if m.id == nil || m.oldValue == nil {
-		return v, errors.New("OldCindyCredentialGeneration requires an ID field in the mutation")
-	}
-	oldValue, err := m.oldValue(ctx)
-	if err != nil {
-		return v, fmt.Errorf("querying old value for OldCindyCredentialGeneration: %w", err)
-	}
-	return oldValue.CindyCredentialGeneration, nil
-}
-
-// AddCindyCredentialGeneration adds i to the "cindy_credential_generation" field.
-func (m *AccountMutation) AddCindyCredentialGeneration(i int64) {
-	if m.addcindy_credential_generation != nil {
-		*m.addcindy_credential_generation += i
-	} else {
-		m.addcindy_credential_generation = &i
-	}
-}
-
-// AddedCindyCredentialGeneration returns the value that was added to the "cindy_credential_generation" field in this mutation.
-func (m *AccountMutation) AddedCindyCredentialGeneration() (r int64, exists bool) {
-	v := m.addcindy_credential_generation
-	if v == nil {
-		return
-	}
-	return *v, true
-}
-
-// ResetCindyCredentialGeneration resets all changes to the "cindy_credential_generation" field.
-func (m *AccountMutation) ResetCindyCredentialGeneration() {
-	m.cindy_credential_generation = nil
-	m.addcindy_credential_generation = nil
 }
 
 // SetRateLimitedAt sets the "rate_limited_at" field.
@@ -4644,7 +4412,7 @@ func (m *AccountMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *AccountMutation) Fields() []string {
-	fields := make([]string, 0, 37)
+	fields := make([]string, 0, 32)
 	if m.created_at != nil {
 		fields = append(fields, account.FieldCreatedAt)
 	}
@@ -4662,12 +4430,6 @@ func (m *AccountMutation) Fields() []string {
 	}
 	if m.platform != nil {
 		fields = append(fields, account.FieldPlatform)
-	}
-	if m.wire_platform != nil {
-		fields = append(fields, account.FieldWirePlatform)
-	}
-	if m.provider_profile != nil {
-		fields = append(fields, account.FieldProviderProfile)
 	}
 	if m._type != nil {
 		fields = append(fields, account.FieldType)
@@ -4716,15 +4478,6 @@ func (m *AccountMutation) Fields() []string {
 	}
 	if m.schedulable != nil {
 		fields = append(fields, account.FieldSchedulable)
-	}
-	if m.cindy_balance_insufficient_at != nil {
-		fields = append(fields, account.FieldCindyBalanceInsufficientAt)
-	}
-	if m.cindy_banned_at != nil {
-		fields = append(fields, account.FieldCindyBannedAt)
-	}
-	if m.cindy_credential_generation != nil {
-		fields = append(fields, account.FieldCindyCredentialGeneration)
 	}
 	if m.rate_limited_at != nil {
 		fields = append(fields, account.FieldRateLimitedAt)
@@ -4776,10 +4529,6 @@ func (m *AccountMutation) Field(name string) (ent.Value, bool) {
 		return m.Notes()
 	case account.FieldPlatform:
 		return m.Platform()
-	case account.FieldWirePlatform:
-		return m.WirePlatform()
-	case account.FieldProviderProfile:
-		return m.ProviderProfile()
 	case account.FieldType:
 		return m.GetType()
 	case account.FieldCredentials:
@@ -4812,12 +4561,6 @@ func (m *AccountMutation) Field(name string) (ent.Value, bool) {
 		return m.AutoPauseOnExpired()
 	case account.FieldSchedulable:
 		return m.Schedulable()
-	case account.FieldCindyBalanceInsufficientAt:
-		return m.CindyBalanceInsufficientAt()
-	case account.FieldCindyBannedAt:
-		return m.CindyBannedAt()
-	case account.FieldCindyCredentialGeneration:
-		return m.CindyCredentialGeneration()
 	case account.FieldRateLimitedAt:
 		return m.RateLimitedAt()
 	case account.FieldRateLimitResetAt:
@@ -4859,10 +4602,6 @@ func (m *AccountMutation) OldField(ctx context.Context, name string) (ent.Value,
 		return m.OldNotes(ctx)
 	case account.FieldPlatform:
 		return m.OldPlatform(ctx)
-	case account.FieldWirePlatform:
-		return m.OldWirePlatform(ctx)
-	case account.FieldProviderProfile:
-		return m.OldProviderProfile(ctx)
 	case account.FieldType:
 		return m.OldType(ctx)
 	case account.FieldCredentials:
@@ -4895,12 +4634,6 @@ func (m *AccountMutation) OldField(ctx context.Context, name string) (ent.Value,
 		return m.OldAutoPauseOnExpired(ctx)
 	case account.FieldSchedulable:
 		return m.OldSchedulable(ctx)
-	case account.FieldCindyBalanceInsufficientAt:
-		return m.OldCindyBalanceInsufficientAt(ctx)
-	case account.FieldCindyBannedAt:
-		return m.OldCindyBannedAt(ctx)
-	case account.FieldCindyCredentialGeneration:
-		return m.OldCindyCredentialGeneration(ctx)
 	case account.FieldRateLimitedAt:
 		return m.OldRateLimitedAt(ctx)
 	case account.FieldRateLimitResetAt:
@@ -4971,20 +4704,6 @@ func (m *AccountMutation) SetField(name string, value ent.Value) error {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
 		m.SetPlatform(v)
-		return nil
-	case account.FieldWirePlatform:
-		v, ok := value.(string)
-		if !ok {
-			return fmt.Errorf("unexpected type %T for field %s", value, name)
-		}
-		m.SetWirePlatform(v)
-		return nil
-	case account.FieldProviderProfile:
-		v, ok := value.(string)
-		if !ok {
-			return fmt.Errorf("unexpected type %T for field %s", value, name)
-		}
-		m.SetProviderProfile(v)
 		return nil
 	case account.FieldType:
 		v, ok := value.(string)
@@ -5098,27 +4817,6 @@ func (m *AccountMutation) SetField(name string, value ent.Value) error {
 		}
 		m.SetSchedulable(v)
 		return nil
-	case account.FieldCindyBalanceInsufficientAt:
-		v, ok := value.(time.Time)
-		if !ok {
-			return fmt.Errorf("unexpected type %T for field %s", value, name)
-		}
-		m.SetCindyBalanceInsufficientAt(v)
-		return nil
-	case account.FieldCindyBannedAt:
-		v, ok := value.(time.Time)
-		if !ok {
-			return fmt.Errorf("unexpected type %T for field %s", value, name)
-		}
-		m.SetCindyBannedAt(v)
-		return nil
-	case account.FieldCindyCredentialGeneration:
-		v, ok := value.(int64)
-		if !ok {
-			return fmt.Errorf("unexpected type %T for field %s", value, name)
-		}
-		m.SetCindyCredentialGeneration(v)
-		return nil
 	case account.FieldRateLimitedAt:
 		v, ok := value.(time.Time)
 		if !ok {
@@ -5212,9 +4910,6 @@ func (m *AccountMutation) AddedFields() []string {
 	if m.addrate_multiplier != nil {
 		fields = append(fields, account.FieldRateMultiplier)
 	}
-	if m.addcindy_credential_generation != nil {
-		fields = append(fields, account.FieldCindyCredentialGeneration)
-	}
 	return fields
 }
 
@@ -5233,8 +4928,6 @@ func (m *AccountMutation) AddedField(name string) (ent.Value, bool) {
 		return m.AddedPriority()
 	case account.FieldRateMultiplier:
 		return m.AddedRateMultiplier()
-	case account.FieldCindyCredentialGeneration:
-		return m.AddedCindyCredentialGeneration()
 	}
 	return nil, false
 }
@@ -5279,13 +4972,6 @@ func (m *AccountMutation) AddField(name string, value ent.Value) error {
 		}
 		m.AddRateMultiplier(v)
 		return nil
-	case account.FieldCindyCredentialGeneration:
-		v, ok := value.(int64)
-		if !ok {
-			return fmt.Errorf("unexpected type %T for field %s", value, name)
-		}
-		m.AddCindyCredentialGeneration(v)
-		return nil
 	}
 	return fmt.Errorf("unknown Account numeric field %s", name)
 }
@@ -5320,12 +5006,6 @@ func (m *AccountMutation) ClearedFields() []string {
 	}
 	if m.FieldCleared(account.FieldExpiresAt) {
 		fields = append(fields, account.FieldExpiresAt)
-	}
-	if m.FieldCleared(account.FieldCindyBalanceInsufficientAt) {
-		fields = append(fields, account.FieldCindyBalanceInsufficientAt)
-	}
-	if m.FieldCleared(account.FieldCindyBannedAt) {
-		fields = append(fields, account.FieldCindyBannedAt)
 	}
 	if m.FieldCleared(account.FieldRateLimitedAt) {
 		fields = append(fields, account.FieldRateLimitedAt)
@@ -5395,12 +5075,6 @@ func (m *AccountMutation) ClearField(name string) error {
 	case account.FieldExpiresAt:
 		m.ClearExpiresAt()
 		return nil
-	case account.FieldCindyBalanceInsufficientAt:
-		m.ClearCindyBalanceInsufficientAt()
-		return nil
-	case account.FieldCindyBannedAt:
-		m.ClearCindyBannedAt()
-		return nil
 	case account.FieldRateLimitedAt:
 		m.ClearRateLimitedAt()
 		return nil
@@ -5454,12 +5128,6 @@ func (m *AccountMutation) ResetField(name string) error {
 	case account.FieldPlatform:
 		m.ResetPlatform()
 		return nil
-	case account.FieldWirePlatform:
-		m.ResetWirePlatform()
-		return nil
-	case account.FieldProviderProfile:
-		m.ResetProviderProfile()
-		return nil
 	case account.FieldType:
 		m.ResetType()
 		return nil
@@ -5507,15 +5175,6 @@ func (m *AccountMutation) ResetField(name string) error {
 		return nil
 	case account.FieldSchedulable:
 		m.ResetSchedulable()
-		return nil
-	case account.FieldCindyBalanceInsufficientAt:
-		m.ResetCindyBalanceInsufficientAt()
-		return nil
-	case account.FieldCindyBannedAt:
-		m.ResetCindyBannedAt()
-		return nil
-	case account.FieldCindyCredentialGeneration:
-		m.ResetCindyCredentialGeneration()
 		return nil
 	case account.FieldRateLimitedAt:
 		m.ResetRateLimitedAt()
@@ -24538,8 +24197,6 @@ type GroupMutation struct {
 	status                                  *string
 	duplicate_operation_id                  *string
 	platform                                *string
-	wire_platform                           *string
-	provider_profile                        *string
 	subscription_type                       *string
 	daily_limit_usd                         *float64
 	adddaily_limit_usd                      *float64
@@ -25323,78 +24980,6 @@ func (m *GroupMutation) OldPlatform(ctx context.Context) (v string, err error) {
 // ResetPlatform resets all changes to the "platform" field.
 func (m *GroupMutation) ResetPlatform() {
 	m.platform = nil
-}
-
-// SetWirePlatform sets the "wire_platform" field.
-func (m *GroupMutation) SetWirePlatform(s string) {
-	m.wire_platform = &s
-}
-
-// WirePlatform returns the value of the "wire_platform" field in the mutation.
-func (m *GroupMutation) WirePlatform() (r string, exists bool) {
-	v := m.wire_platform
-	if v == nil {
-		return
-	}
-	return *v, true
-}
-
-// OldWirePlatform returns the old "wire_platform" field's value of the Group entity.
-// If the Group object wasn't provided to the builder, the object is fetched from the database.
-// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
-func (m *GroupMutation) OldWirePlatform(ctx context.Context) (v string, err error) {
-	if !m.op.Is(OpUpdateOne) {
-		return v, errors.New("OldWirePlatform is only allowed on UpdateOne operations")
-	}
-	if m.id == nil || m.oldValue == nil {
-		return v, errors.New("OldWirePlatform requires an ID field in the mutation")
-	}
-	oldValue, err := m.oldValue(ctx)
-	if err != nil {
-		return v, fmt.Errorf("querying old value for OldWirePlatform: %w", err)
-	}
-	return oldValue.WirePlatform, nil
-}
-
-// ResetWirePlatform resets all changes to the "wire_platform" field.
-func (m *GroupMutation) ResetWirePlatform() {
-	m.wire_platform = nil
-}
-
-// SetProviderProfile sets the "provider_profile" field.
-func (m *GroupMutation) SetProviderProfile(s string) {
-	m.provider_profile = &s
-}
-
-// ProviderProfile returns the value of the "provider_profile" field in the mutation.
-func (m *GroupMutation) ProviderProfile() (r string, exists bool) {
-	v := m.provider_profile
-	if v == nil {
-		return
-	}
-	return *v, true
-}
-
-// OldProviderProfile returns the old "provider_profile" field's value of the Group entity.
-// If the Group object wasn't provided to the builder, the object is fetched from the database.
-// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
-func (m *GroupMutation) OldProviderProfile(ctx context.Context) (v string, err error) {
-	if !m.op.Is(OpUpdateOne) {
-		return v, errors.New("OldProviderProfile is only allowed on UpdateOne operations")
-	}
-	if m.id == nil || m.oldValue == nil {
-		return v, errors.New("OldProviderProfile requires an ID field in the mutation")
-	}
-	oldValue, err := m.oldValue(ctx)
-	if err != nil {
-		return v, fmt.Errorf("querying old value for OldProviderProfile: %w", err)
-	}
-	return oldValue.ProviderProfile, nil
-}
-
-// ResetProviderProfile resets all changes to the "provider_profile" field.
-func (m *GroupMutation) ResetProviderProfile() {
-	m.provider_profile = nil
 }
 
 // SetSubscriptionType sets the "subscription_type" field.
@@ -28436,7 +28021,7 @@ func (m *GroupMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *GroupMutation) Fields() []string {
-	fields := make([]string, 0, 68)
+	fields := make([]string, 0, 66)
 	if m.created_at != nil {
 		fields = append(fields, group.FieldCreatedAt)
 	}
@@ -28478,12 +28063,6 @@ func (m *GroupMutation) Fields() []string {
 	}
 	if m.platform != nil {
 		fields = append(fields, group.FieldPlatform)
-	}
-	if m.wire_platform != nil {
-		fields = append(fields, group.FieldWirePlatform)
-	}
-	if m.provider_profile != nil {
-		fields = append(fields, group.FieldProviderProfile)
 	}
 	if m.subscription_type != nil {
 		fields = append(fields, group.FieldSubscriptionType)
@@ -28677,10 +28256,6 @@ func (m *GroupMutation) Field(name string) (ent.Value, bool) {
 		return m.DuplicateOperationID()
 	case group.FieldPlatform:
 		return m.Platform()
-	case group.FieldWirePlatform:
-		return m.WirePlatform()
-	case group.FieldProviderProfile:
-		return m.ProviderProfile()
 	case group.FieldSubscriptionType:
 		return m.SubscriptionType()
 	case group.FieldDailyLimitUsd:
@@ -28822,10 +28397,6 @@ func (m *GroupMutation) OldField(ctx context.Context, name string) (ent.Value, e
 		return m.OldDuplicateOperationID(ctx)
 	case group.FieldPlatform:
 		return m.OldPlatform(ctx)
-	case group.FieldWirePlatform:
-		return m.OldWirePlatform(ctx)
-	case group.FieldProviderProfile:
-		return m.OldProviderProfile(ctx)
 	case group.FieldSubscriptionType:
 		return m.OldSubscriptionType(ctx)
 	case group.FieldDailyLimitUsd:
@@ -29036,20 +28607,6 @@ func (m *GroupMutation) SetField(name string, value ent.Value) error {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
 		m.SetPlatform(v)
-		return nil
-	case group.FieldWirePlatform:
-		v, ok := value.(string)
-		if !ok {
-			return fmt.Errorf("unexpected type %T for field %s", value, name)
-		}
-		m.SetWirePlatform(v)
-		return nil
-	case group.FieldProviderProfile:
-		v, ok := value.(string)
-		if !ok {
-			return fmt.Errorf("unexpected type %T for field %s", value, name)
-		}
-		m.SetProviderProfile(v)
 		return nil
 	case group.FieldSubscriptionType:
 		v, ok := value.(string)
@@ -29967,12 +29524,6 @@ func (m *GroupMutation) ResetField(name string) error {
 		return nil
 	case group.FieldPlatform:
 		m.ResetPlatform()
-		return nil
-	case group.FieldWirePlatform:
-		m.ResetWirePlatform()
-		return nil
-	case group.FieldProviderProfile:
-		m.ResetProviderProfile()
 		return nil
 	case group.FieldSubscriptionType:
 		m.ResetSubscriptionType()

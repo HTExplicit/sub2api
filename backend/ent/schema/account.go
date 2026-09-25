@@ -64,16 +64,6 @@ func (Account) Fields() []ent.Field {
 		field.String("platform").
 			MaxLen(50).
 			NotEmpty(),
-		// wire_platform selects the protocol handler independently from the
-		// product/provider platform exposed to administrators and billing.
-		field.String("wire_platform").
-			MaxLen(50).
-			Default(""),
-		// provider_profile isolates providers that share a wire contract but
-		// must never share scheduling pools.
-		field.String("provider_profile").
-			MaxLen(100).
-			Default(""),
 
 		// type: 认证类型，如 "api_key", "oauth", "cookie" 等
 		// 不同类型决定了 credentials 中存储的数据结构
@@ -161,20 +151,6 @@ func (Account) Fields() []ent.Field {
 		// false 表示账户暂时不参与请求分配（如正在刷新 token）
 		field.Bool("schedulable").
 			Default(true),
-		field.Time("cindy_balance_insufficient_at").
-			Optional().
-			Nillable().
-			Comment("Recognized Cindy budget exhaustion; NULL means no known balance exhaustion.").
-			SchemaType(map[string]string{dialect.Postgres: "timestamptz"}),
-		field.Time("cindy_banned_at").
-			Optional().
-			Nillable().
-			Comment("Strict Cindy 401 terminal state for the active credential generation.").
-			SchemaType(map[string]string{dialect.Postgres: "timestamptz"}),
-		field.Int64("cindy_credential_generation").
-			Default(0).
-			NonNegative().
-			Comment("Active strict Cindy credential generation projection; zero for non-Cindy accounts."),
 
 		// rate_limited_at: 触发速率限制的时间
 		// 当收到 429 错误时记录
@@ -269,7 +245,6 @@ func (Account) Edges() []ent.Edge {
 func (Account) Indexes() []ent.Index {
 	return []ent.Index{
 		index.Fields("platform"), // 按平台筛选
-		index.Fields("platform", "wire_platform", "provider_profile"),
 		index.Fields("type"),     // 按认证类型筛选
 		index.Fields("status"),   // 按状态筛选
 		index.Fields("proxy_id"), // 按代理筛选

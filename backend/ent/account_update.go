@@ -107,34 +107,6 @@ func (_u *AccountUpdate) SetNillablePlatform(v *string) *AccountUpdate {
 	return _u
 }
 
-// SetWirePlatform sets the "wire_platform" field.
-func (_u *AccountUpdate) SetWirePlatform(v string) *AccountUpdate {
-	_u.mutation.SetWirePlatform(v)
-	return _u
-}
-
-// SetNillableWirePlatform sets the "wire_platform" field if the given value is not nil.
-func (_u *AccountUpdate) SetNillableWirePlatform(v *string) *AccountUpdate {
-	if v != nil {
-		_u.SetWirePlatform(*v)
-	}
-	return _u
-}
-
-// SetProviderProfile sets the "provider_profile" field.
-func (_u *AccountUpdate) SetProviderProfile(v string) *AccountUpdate {
-	_u.mutation.SetProviderProfile(v)
-	return _u
-}
-
-// SetNillableProviderProfile sets the "provider_profile" field if the given value is not nil.
-func (_u *AccountUpdate) SetNillableProviderProfile(v *string) *AccountUpdate {
-	if v != nil {
-		_u.SetProviderProfile(*v)
-	}
-	return _u
-}
-
 // SetType sets the "type" field.
 func (_u *AccountUpdate) SetType(v string) *AccountUpdate {
 	_u.mutation.SetType(v)
@@ -417,67 +389,6 @@ func (_u *AccountUpdate) SetNillableSchedulable(v *bool) *AccountUpdate {
 	if v != nil {
 		_u.SetSchedulable(*v)
 	}
-	return _u
-}
-
-// SetCindyBalanceInsufficientAt sets the "cindy_balance_insufficient_at" field.
-func (_u *AccountUpdate) SetCindyBalanceInsufficientAt(v time.Time) *AccountUpdate {
-	_u.mutation.SetCindyBalanceInsufficientAt(v)
-	return _u
-}
-
-// SetNillableCindyBalanceInsufficientAt sets the "cindy_balance_insufficient_at" field if the given value is not nil.
-func (_u *AccountUpdate) SetNillableCindyBalanceInsufficientAt(v *time.Time) *AccountUpdate {
-	if v != nil {
-		_u.SetCindyBalanceInsufficientAt(*v)
-	}
-	return _u
-}
-
-// ClearCindyBalanceInsufficientAt clears the value of the "cindy_balance_insufficient_at" field.
-func (_u *AccountUpdate) ClearCindyBalanceInsufficientAt() *AccountUpdate {
-	_u.mutation.ClearCindyBalanceInsufficientAt()
-	return _u
-}
-
-// SetCindyBannedAt sets the "cindy_banned_at" field.
-func (_u *AccountUpdate) SetCindyBannedAt(v time.Time) *AccountUpdate {
-	_u.mutation.SetCindyBannedAt(v)
-	return _u
-}
-
-// SetNillableCindyBannedAt sets the "cindy_banned_at" field if the given value is not nil.
-func (_u *AccountUpdate) SetNillableCindyBannedAt(v *time.Time) *AccountUpdate {
-	if v != nil {
-		_u.SetCindyBannedAt(*v)
-	}
-	return _u
-}
-
-// ClearCindyBannedAt clears the value of the "cindy_banned_at" field.
-func (_u *AccountUpdate) ClearCindyBannedAt() *AccountUpdate {
-	_u.mutation.ClearCindyBannedAt()
-	return _u
-}
-
-// SetCindyCredentialGeneration sets the "cindy_credential_generation" field.
-func (_u *AccountUpdate) SetCindyCredentialGeneration(v int64) *AccountUpdate {
-	_u.mutation.ResetCindyCredentialGeneration()
-	_u.mutation.SetCindyCredentialGeneration(v)
-	return _u
-}
-
-// SetNillableCindyCredentialGeneration sets the "cindy_credential_generation" field if the given value is not nil.
-func (_u *AccountUpdate) SetNillableCindyCredentialGeneration(v *int64) *AccountUpdate {
-	if v != nil {
-		_u.SetCindyCredentialGeneration(*v)
-	}
-	return _u
-}
-
-// AddCindyCredentialGeneration adds value to the "cindy_credential_generation" field.
-func (_u *AccountUpdate) AddCindyCredentialGeneration(v int64) *AccountUpdate {
-	_u.mutation.AddCindyCredentialGeneration(v)
 	return _u
 }
 
@@ -925,16 +836,6 @@ func (_u *AccountUpdate) check() error {
 			return &ValidationError{Name: "platform", err: fmt.Errorf(`ent: validator failed for field "Account.platform": %w`, err)}
 		}
 	}
-	if v, ok := _u.mutation.WirePlatform(); ok {
-		if err := account.WirePlatformValidator(v); err != nil {
-			return &ValidationError{Name: "wire_platform", err: fmt.Errorf(`ent: validator failed for field "Account.wire_platform": %w`, err)}
-		}
-	}
-	if v, ok := _u.mutation.ProviderProfile(); ok {
-		if err := account.ProviderProfileValidator(v); err != nil {
-			return &ValidationError{Name: "provider_profile", err: fmt.Errorf(`ent: validator failed for field "Account.provider_profile": %w`, err)}
-		}
-	}
 	if v, ok := _u.mutation.GetType(); ok {
 		if err := account.TypeValidator(v); err != nil {
 			return &ValidationError{Name: "type", err: fmt.Errorf(`ent: validator failed for field "Account.type": %w`, err)}
@@ -943,11 +844,6 @@ func (_u *AccountUpdate) check() error {
 	if v, ok := _u.mutation.Status(); ok {
 		if err := account.StatusValidator(v); err != nil {
 			return &ValidationError{Name: "status", err: fmt.Errorf(`ent: validator failed for field "Account.status": %w`, err)}
-		}
-	}
-	if v, ok := _u.mutation.CindyCredentialGeneration(); ok {
-		if err := account.CindyCredentialGenerationValidator(v); err != nil {
-			return &ValidationError{Name: "cindy_credential_generation", err: fmt.Errorf(`ent: validator failed for field "Account.cindy_credential_generation": %w`, err)}
 		}
 	}
 	if v, ok := _u.mutation.SessionWindowStatus(); ok {
@@ -995,12 +891,6 @@ func (_u *AccountUpdate) sqlSave(ctx context.Context) (_node int, err error) {
 	}
 	if value, ok := _u.mutation.Platform(); ok {
 		_spec.SetField(account.FieldPlatform, field.TypeString, value)
-	}
-	if value, ok := _u.mutation.WirePlatform(); ok {
-		_spec.SetField(account.FieldWirePlatform, field.TypeString, value)
-	}
-	if value, ok := _u.mutation.ProviderProfile(); ok {
-		_spec.SetField(account.FieldProviderProfile, field.TypeString, value)
 	}
 	if value, ok := _u.mutation.GetType(); ok {
 		_spec.SetField(account.FieldType, field.TypeString, value)
@@ -1073,24 +963,6 @@ func (_u *AccountUpdate) sqlSave(ctx context.Context) (_node int, err error) {
 	}
 	if value, ok := _u.mutation.Schedulable(); ok {
 		_spec.SetField(account.FieldSchedulable, field.TypeBool, value)
-	}
-	if value, ok := _u.mutation.CindyBalanceInsufficientAt(); ok {
-		_spec.SetField(account.FieldCindyBalanceInsufficientAt, field.TypeTime, value)
-	}
-	if _u.mutation.CindyBalanceInsufficientAtCleared() {
-		_spec.ClearField(account.FieldCindyBalanceInsufficientAt, field.TypeTime)
-	}
-	if value, ok := _u.mutation.CindyBannedAt(); ok {
-		_spec.SetField(account.FieldCindyBannedAt, field.TypeTime, value)
-	}
-	if _u.mutation.CindyBannedAtCleared() {
-		_spec.ClearField(account.FieldCindyBannedAt, field.TypeTime)
-	}
-	if value, ok := _u.mutation.CindyCredentialGeneration(); ok {
-		_spec.SetField(account.FieldCindyCredentialGeneration, field.TypeInt64, value)
-	}
-	if value, ok := _u.mutation.AddedCindyCredentialGeneration(); ok {
-		_spec.AddField(account.FieldCindyCredentialGeneration, field.TypeInt64, value)
 	}
 	if value, ok := _u.mutation.RateLimitedAt(); ok {
 		_spec.SetField(account.FieldRateLimitedAt, field.TypeTime, value)
@@ -1528,34 +1400,6 @@ func (_u *AccountUpdateOne) SetNillablePlatform(v *string) *AccountUpdateOne {
 	return _u
 }
 
-// SetWirePlatform sets the "wire_platform" field.
-func (_u *AccountUpdateOne) SetWirePlatform(v string) *AccountUpdateOne {
-	_u.mutation.SetWirePlatform(v)
-	return _u
-}
-
-// SetNillableWirePlatform sets the "wire_platform" field if the given value is not nil.
-func (_u *AccountUpdateOne) SetNillableWirePlatform(v *string) *AccountUpdateOne {
-	if v != nil {
-		_u.SetWirePlatform(*v)
-	}
-	return _u
-}
-
-// SetProviderProfile sets the "provider_profile" field.
-func (_u *AccountUpdateOne) SetProviderProfile(v string) *AccountUpdateOne {
-	_u.mutation.SetProviderProfile(v)
-	return _u
-}
-
-// SetNillableProviderProfile sets the "provider_profile" field if the given value is not nil.
-func (_u *AccountUpdateOne) SetNillableProviderProfile(v *string) *AccountUpdateOne {
-	if v != nil {
-		_u.SetProviderProfile(*v)
-	}
-	return _u
-}
-
 // SetType sets the "type" field.
 func (_u *AccountUpdateOne) SetType(v string) *AccountUpdateOne {
 	_u.mutation.SetType(v)
@@ -1838,67 +1682,6 @@ func (_u *AccountUpdateOne) SetNillableSchedulable(v *bool) *AccountUpdateOne {
 	if v != nil {
 		_u.SetSchedulable(*v)
 	}
-	return _u
-}
-
-// SetCindyBalanceInsufficientAt sets the "cindy_balance_insufficient_at" field.
-func (_u *AccountUpdateOne) SetCindyBalanceInsufficientAt(v time.Time) *AccountUpdateOne {
-	_u.mutation.SetCindyBalanceInsufficientAt(v)
-	return _u
-}
-
-// SetNillableCindyBalanceInsufficientAt sets the "cindy_balance_insufficient_at" field if the given value is not nil.
-func (_u *AccountUpdateOne) SetNillableCindyBalanceInsufficientAt(v *time.Time) *AccountUpdateOne {
-	if v != nil {
-		_u.SetCindyBalanceInsufficientAt(*v)
-	}
-	return _u
-}
-
-// ClearCindyBalanceInsufficientAt clears the value of the "cindy_balance_insufficient_at" field.
-func (_u *AccountUpdateOne) ClearCindyBalanceInsufficientAt() *AccountUpdateOne {
-	_u.mutation.ClearCindyBalanceInsufficientAt()
-	return _u
-}
-
-// SetCindyBannedAt sets the "cindy_banned_at" field.
-func (_u *AccountUpdateOne) SetCindyBannedAt(v time.Time) *AccountUpdateOne {
-	_u.mutation.SetCindyBannedAt(v)
-	return _u
-}
-
-// SetNillableCindyBannedAt sets the "cindy_banned_at" field if the given value is not nil.
-func (_u *AccountUpdateOne) SetNillableCindyBannedAt(v *time.Time) *AccountUpdateOne {
-	if v != nil {
-		_u.SetCindyBannedAt(*v)
-	}
-	return _u
-}
-
-// ClearCindyBannedAt clears the value of the "cindy_banned_at" field.
-func (_u *AccountUpdateOne) ClearCindyBannedAt() *AccountUpdateOne {
-	_u.mutation.ClearCindyBannedAt()
-	return _u
-}
-
-// SetCindyCredentialGeneration sets the "cindy_credential_generation" field.
-func (_u *AccountUpdateOne) SetCindyCredentialGeneration(v int64) *AccountUpdateOne {
-	_u.mutation.ResetCindyCredentialGeneration()
-	_u.mutation.SetCindyCredentialGeneration(v)
-	return _u
-}
-
-// SetNillableCindyCredentialGeneration sets the "cindy_credential_generation" field if the given value is not nil.
-func (_u *AccountUpdateOne) SetNillableCindyCredentialGeneration(v *int64) *AccountUpdateOne {
-	if v != nil {
-		_u.SetCindyCredentialGeneration(*v)
-	}
-	return _u
-}
-
-// AddCindyCredentialGeneration adds value to the "cindy_credential_generation" field.
-func (_u *AccountUpdateOne) AddCindyCredentialGeneration(v int64) *AccountUpdateOne {
-	_u.mutation.AddCindyCredentialGeneration(v)
 	return _u
 }
 
@@ -2359,16 +2142,6 @@ func (_u *AccountUpdateOne) check() error {
 			return &ValidationError{Name: "platform", err: fmt.Errorf(`ent: validator failed for field "Account.platform": %w`, err)}
 		}
 	}
-	if v, ok := _u.mutation.WirePlatform(); ok {
-		if err := account.WirePlatformValidator(v); err != nil {
-			return &ValidationError{Name: "wire_platform", err: fmt.Errorf(`ent: validator failed for field "Account.wire_platform": %w`, err)}
-		}
-	}
-	if v, ok := _u.mutation.ProviderProfile(); ok {
-		if err := account.ProviderProfileValidator(v); err != nil {
-			return &ValidationError{Name: "provider_profile", err: fmt.Errorf(`ent: validator failed for field "Account.provider_profile": %w`, err)}
-		}
-	}
 	if v, ok := _u.mutation.GetType(); ok {
 		if err := account.TypeValidator(v); err != nil {
 			return &ValidationError{Name: "type", err: fmt.Errorf(`ent: validator failed for field "Account.type": %w`, err)}
@@ -2377,11 +2150,6 @@ func (_u *AccountUpdateOne) check() error {
 	if v, ok := _u.mutation.Status(); ok {
 		if err := account.StatusValidator(v); err != nil {
 			return &ValidationError{Name: "status", err: fmt.Errorf(`ent: validator failed for field "Account.status": %w`, err)}
-		}
-	}
-	if v, ok := _u.mutation.CindyCredentialGeneration(); ok {
-		if err := account.CindyCredentialGenerationValidator(v); err != nil {
-			return &ValidationError{Name: "cindy_credential_generation", err: fmt.Errorf(`ent: validator failed for field "Account.cindy_credential_generation": %w`, err)}
 		}
 	}
 	if v, ok := _u.mutation.SessionWindowStatus(); ok {
@@ -2446,12 +2214,6 @@ func (_u *AccountUpdateOne) sqlSave(ctx context.Context) (_node *Account, err er
 	}
 	if value, ok := _u.mutation.Platform(); ok {
 		_spec.SetField(account.FieldPlatform, field.TypeString, value)
-	}
-	if value, ok := _u.mutation.WirePlatform(); ok {
-		_spec.SetField(account.FieldWirePlatform, field.TypeString, value)
-	}
-	if value, ok := _u.mutation.ProviderProfile(); ok {
-		_spec.SetField(account.FieldProviderProfile, field.TypeString, value)
 	}
 	if value, ok := _u.mutation.GetType(); ok {
 		_spec.SetField(account.FieldType, field.TypeString, value)
@@ -2524,24 +2286,6 @@ func (_u *AccountUpdateOne) sqlSave(ctx context.Context) (_node *Account, err er
 	}
 	if value, ok := _u.mutation.Schedulable(); ok {
 		_spec.SetField(account.FieldSchedulable, field.TypeBool, value)
-	}
-	if value, ok := _u.mutation.CindyBalanceInsufficientAt(); ok {
-		_spec.SetField(account.FieldCindyBalanceInsufficientAt, field.TypeTime, value)
-	}
-	if _u.mutation.CindyBalanceInsufficientAtCleared() {
-		_spec.ClearField(account.FieldCindyBalanceInsufficientAt, field.TypeTime)
-	}
-	if value, ok := _u.mutation.CindyBannedAt(); ok {
-		_spec.SetField(account.FieldCindyBannedAt, field.TypeTime, value)
-	}
-	if _u.mutation.CindyBannedAtCleared() {
-		_spec.ClearField(account.FieldCindyBannedAt, field.TypeTime)
-	}
-	if value, ok := _u.mutation.CindyCredentialGeneration(); ok {
-		_spec.SetField(account.FieldCindyCredentialGeneration, field.TypeInt64, value)
-	}
-	if value, ok := _u.mutation.AddedCindyCredentialGeneration(); ok {
-		_spec.AddField(account.FieldCindyCredentialGeneration, field.TypeInt64, value)
 	}
 	if value, ok := _u.mutation.RateLimitedAt(); ok {
 		_spec.SetField(account.FieldRateLimitedAt, field.TypeTime, value)

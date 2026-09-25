@@ -28,10 +28,6 @@ const (
 	FieldNotes = "notes"
 	// FieldPlatform holds the string denoting the platform field in the database.
 	FieldPlatform = "platform"
-	// FieldWirePlatform holds the string denoting the wire_platform field in the database.
-	FieldWirePlatform = "wire_platform"
-	// FieldProviderProfile holds the string denoting the provider_profile field in the database.
-	FieldProviderProfile = "provider_profile"
 	// FieldType holds the string denoting the type field in the database.
 	FieldType = "type"
 	// FieldCredentials holds the string denoting the credentials field in the database.
@@ -64,12 +60,6 @@ const (
 	FieldAutoPauseOnExpired = "auto_pause_on_expired"
 	// FieldSchedulable holds the string denoting the schedulable field in the database.
 	FieldSchedulable = "schedulable"
-	// FieldCindyBalanceInsufficientAt holds the string denoting the cindy_balance_insufficient_at field in the database.
-	FieldCindyBalanceInsufficientAt = "cindy_balance_insufficient_at"
-	// FieldCindyBannedAt holds the string denoting the cindy_banned_at field in the database.
-	FieldCindyBannedAt = "cindy_banned_at"
-	// FieldCindyCredentialGeneration holds the string denoting the cindy_credential_generation field in the database.
-	FieldCindyCredentialGeneration = "cindy_credential_generation"
 	// FieldRateLimitedAt holds the string denoting the rate_limited_at field in the database.
 	FieldRateLimitedAt = "rate_limited_at"
 	// FieldRateLimitResetAt holds the string denoting the rate_limit_reset_at field in the database.
@@ -174,8 +164,6 @@ var Columns = []string{
 	FieldName,
 	FieldNotes,
 	FieldPlatform,
-	FieldWirePlatform,
-	FieldProviderProfile,
 	FieldType,
 	FieldCredentials,
 	FieldExtra,
@@ -192,9 +180,6 @@ var Columns = []string{
 	FieldExpiresAt,
 	FieldAutoPauseOnExpired,
 	FieldSchedulable,
-	FieldCindyBalanceInsufficientAt,
-	FieldCindyBannedAt,
-	FieldCindyCredentialGeneration,
 	FieldRateLimitedAt,
 	FieldRateLimitResetAt,
 	FieldOverloadUntil,
@@ -244,14 +229,6 @@ var (
 	NameValidator func(string) error
 	// PlatformValidator is a validator for the "platform" field. It is called by the builders before save.
 	PlatformValidator func(string) error
-	// DefaultWirePlatform holds the default value on creation for the "wire_platform" field.
-	DefaultWirePlatform string
-	// WirePlatformValidator is a validator for the "wire_platform" field. It is called by the builders before save.
-	WirePlatformValidator func(string) error
-	// DefaultProviderProfile holds the default value on creation for the "provider_profile" field.
-	DefaultProviderProfile string
-	// ProviderProfileValidator is a validator for the "provider_profile" field. It is called by the builders before save.
-	ProviderProfileValidator func(string) error
 	// TypeValidator is a validator for the "type" field. It is called by the builders before save.
 	TypeValidator func(string) error
 	// DefaultCredentials holds the default value on creation for the "credentials" field.
@@ -272,10 +249,6 @@ var (
 	DefaultAutoPauseOnExpired bool
 	// DefaultSchedulable holds the default value on creation for the "schedulable" field.
 	DefaultSchedulable bool
-	// DefaultCindyCredentialGeneration holds the default value on creation for the "cindy_credential_generation" field.
-	DefaultCindyCredentialGeneration int64
-	// CindyCredentialGenerationValidator is a validator for the "cindy_credential_generation" field. It is called by the builders before save.
-	CindyCredentialGenerationValidator func(int64) error
 	// SessionWindowStatusValidator is a validator for the "session_window_status" field. It is called by the builders before save.
 	SessionWindowStatusValidator func(string) error
 )
@@ -342,16 +315,6 @@ func ByNotes(opts ...sql.OrderTermOption) OrderOption {
 // ByPlatform orders the results by the platform field.
 func ByPlatform(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldPlatform, opts...).ToFunc()
-}
-
-// ByWirePlatform orders the results by the wire_platform field.
-func ByWirePlatform(opts ...sql.OrderTermOption) OrderOption {
-	return sql.OrderByField(FieldWirePlatform, opts...).ToFunc()
-}
-
-// ByProviderProfile orders the results by the provider_profile field.
-func ByProviderProfile(opts ...sql.OrderTermOption) OrderOption {
-	return sql.OrderByField(FieldProviderProfile, opts...).ToFunc()
 }
 
 // ByType orders the results by the type field.
@@ -422,21 +385,6 @@ func ByAutoPauseOnExpired(opts ...sql.OrderTermOption) OrderOption {
 // BySchedulable orders the results by the schedulable field.
 func BySchedulable(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldSchedulable, opts...).ToFunc()
-}
-
-// ByCindyBalanceInsufficientAt orders the results by the cindy_balance_insufficient_at field.
-func ByCindyBalanceInsufficientAt(opts ...sql.OrderTermOption) OrderOption {
-	return sql.OrderByField(FieldCindyBalanceInsufficientAt, opts...).ToFunc()
-}
-
-// ByCindyBannedAt orders the results by the cindy_banned_at field.
-func ByCindyBannedAt(opts ...sql.OrderTermOption) OrderOption {
-	return sql.OrderByField(FieldCindyBannedAt, opts...).ToFunc()
-}
-
-// ByCindyCredentialGeneration orders the results by the cindy_credential_generation field.
-func ByCindyCredentialGeneration(opts ...sql.OrderTermOption) OrderOption {
-	return sql.OrderByField(FieldCindyCredentialGeneration, opts...).ToFunc()
 }
 
 // ByRateLimitedAt orders the results by the rate_limited_at field.

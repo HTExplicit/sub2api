@@ -32,10 +32,6 @@ type Account struct {
 	Notes *string `json:"notes,omitempty"`
 	// Platform holds the value of the "platform" field.
 	Platform string `json:"platform,omitempty"`
-	// WirePlatform holds the value of the "wire_platform" field.
-	WirePlatform string `json:"wire_platform,omitempty"`
-	// ProviderProfile holds the value of the "provider_profile" field.
-	ProviderProfile string `json:"provider_profile,omitempty"`
 	// Type holds the value of the "type" field.
 	Type string `json:"type,omitempty"`
 	// Credentials holds the value of the "credentials" field.
@@ -68,12 +64,6 @@ type Account struct {
 	AutoPauseOnExpired bool `json:"auto_pause_on_expired,omitempty"`
 	// Schedulable holds the value of the "schedulable" field.
 	Schedulable bool `json:"schedulable,omitempty"`
-	// Recognized Cindy budget exhaustion; NULL means no known balance exhaustion.
-	CindyBalanceInsufficientAt *time.Time `json:"cindy_balance_insufficient_at,omitempty"`
-	// Strict Cindy 401 terminal state for the active credential generation.
-	CindyBannedAt *time.Time `json:"cindy_banned_at,omitempty"`
-	// Active strict Cindy credential generation projection; zero for non-Cindy accounts.
-	CindyCredentialGeneration int64 `json:"cindy_credential_generation,omitempty"`
 	// RateLimitedAt holds the value of the "rate_limited_at" field.
 	RateLimitedAt *time.Time `json:"rate_limited_at,omitempty"`
 	// RateLimitResetAt holds the value of the "rate_limit_reset_at" field.
@@ -223,11 +213,11 @@ func (*Account) scanValues(columns []string) ([]any, error) {
 			values[i] = new(sql.NullBool)
 		case account.FieldRateMultiplier:
 			values[i] = new(sql.NullFloat64)
-		case account.FieldID, account.FieldProxyID, account.FieldProxyFallbackOriginID, account.FieldManagementFolderID, account.FieldConcurrency, account.FieldLoadFactor, account.FieldPriority, account.FieldCindyCredentialGeneration, account.FieldParentAccountID:
+		case account.FieldID, account.FieldProxyID, account.FieldProxyFallbackOriginID, account.FieldManagementFolderID, account.FieldConcurrency, account.FieldLoadFactor, account.FieldPriority, account.FieldParentAccountID:
 			values[i] = new(sql.NullInt64)
-		case account.FieldName, account.FieldNotes, account.FieldPlatform, account.FieldWirePlatform, account.FieldProviderProfile, account.FieldType, account.FieldStatus, account.FieldErrorMessage, account.FieldTempUnschedulableReason, account.FieldSessionWindowStatus, account.FieldQuotaDimension:
+		case account.FieldName, account.FieldNotes, account.FieldPlatform, account.FieldType, account.FieldStatus, account.FieldErrorMessage, account.FieldTempUnschedulableReason, account.FieldSessionWindowStatus, account.FieldQuotaDimension:
 			values[i] = new(sql.NullString)
-		case account.FieldCreatedAt, account.FieldUpdatedAt, account.FieldDeletedAt, account.FieldLastUsedAt, account.FieldExpiresAt, account.FieldCindyBalanceInsufficientAt, account.FieldCindyBannedAt, account.FieldRateLimitedAt, account.FieldRateLimitResetAt, account.FieldOverloadUntil, account.FieldTempUnschedulableUntil, account.FieldSessionWindowStart, account.FieldSessionWindowEnd:
+		case account.FieldCreatedAt, account.FieldUpdatedAt, account.FieldDeletedAt, account.FieldLastUsedAt, account.FieldExpiresAt, account.FieldRateLimitedAt, account.FieldRateLimitResetAt, account.FieldOverloadUntil, account.FieldTempUnschedulableUntil, account.FieldSessionWindowStart, account.FieldSessionWindowEnd:
 			values[i] = new(sql.NullTime)
 		default:
 			values[i] = new(sql.UnknownType)
@@ -287,18 +277,6 @@ func (_m *Account) assignValues(columns []string, values []any) error {
 				return fmt.Errorf("unexpected type %T for field platform", values[i])
 			} else if value.Valid {
 				_m.Platform = value.String
-			}
-		case account.FieldWirePlatform:
-			if value, ok := values[i].(*sql.NullString); !ok {
-				return fmt.Errorf("unexpected type %T for field wire_platform", values[i])
-			} else if value.Valid {
-				_m.WirePlatform = value.String
-			}
-		case account.FieldProviderProfile:
-			if value, ok := values[i].(*sql.NullString); !ok {
-				return fmt.Errorf("unexpected type %T for field provider_profile", values[i])
-			} else if value.Valid {
-				_m.ProviderProfile = value.String
 			}
 		case account.FieldType:
 			if value, ok := values[i].(*sql.NullString); !ok {
@@ -406,26 +384,6 @@ func (_m *Account) assignValues(columns []string, values []any) error {
 				return fmt.Errorf("unexpected type %T for field schedulable", values[i])
 			} else if value.Valid {
 				_m.Schedulable = value.Bool
-			}
-		case account.FieldCindyBalanceInsufficientAt:
-			if value, ok := values[i].(*sql.NullTime); !ok {
-				return fmt.Errorf("unexpected type %T for field cindy_balance_insufficient_at", values[i])
-			} else if value.Valid {
-				_m.CindyBalanceInsufficientAt = new(time.Time)
-				*_m.CindyBalanceInsufficientAt = value.Time
-			}
-		case account.FieldCindyBannedAt:
-			if value, ok := values[i].(*sql.NullTime); !ok {
-				return fmt.Errorf("unexpected type %T for field cindy_banned_at", values[i])
-			} else if value.Valid {
-				_m.CindyBannedAt = new(time.Time)
-				*_m.CindyBannedAt = value.Time
-			}
-		case account.FieldCindyCredentialGeneration:
-			if value, ok := values[i].(*sql.NullInt64); !ok {
-				return fmt.Errorf("unexpected type %T for field cindy_credential_generation", values[i])
-			} else if value.Valid {
-				_m.CindyCredentialGeneration = value.Int64
 			}
 		case account.FieldRateLimitedAt:
 			if value, ok := values[i].(*sql.NullTime); !ok {
@@ -599,12 +557,6 @@ func (_m *Account) String() string {
 	builder.WriteString("platform=")
 	builder.WriteString(_m.Platform)
 	builder.WriteString(", ")
-	builder.WriteString("wire_platform=")
-	builder.WriteString(_m.WirePlatform)
-	builder.WriteString(", ")
-	builder.WriteString("provider_profile=")
-	builder.WriteString(_m.ProviderProfile)
-	builder.WriteString(", ")
 	builder.WriteString("type=")
 	builder.WriteString(_m.Type)
 	builder.WriteString(", ")
@@ -666,19 +618,6 @@ func (_m *Account) String() string {
 	builder.WriteString(", ")
 	builder.WriteString("schedulable=")
 	builder.WriteString(fmt.Sprintf("%v", _m.Schedulable))
-	builder.WriteString(", ")
-	if v := _m.CindyBalanceInsufficientAt; v != nil {
-		builder.WriteString("cindy_balance_insufficient_at=")
-		builder.WriteString(v.Format(time.ANSIC))
-	}
-	builder.WriteString(", ")
-	if v := _m.CindyBannedAt; v != nil {
-		builder.WriteString("cindy_banned_at=")
-		builder.WriteString(v.Format(time.ANSIC))
-	}
-	builder.WriteString(", ")
-	builder.WriteString("cindy_credential_generation=")
-	builder.WriteString(fmt.Sprintf("%v", _m.CindyCredentialGeneration))
 	builder.WriteString(", ")
 	if v := _m.RateLimitedAt; v != nil {
 		builder.WriteString("rate_limited_at=")
