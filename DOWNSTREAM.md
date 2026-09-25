@@ -21,7 +21,7 @@ is a selection; without a selection, filter-based updates retain their existing
 semantics. A late select-all response cannot replace a newer manual selection.
 Invalid nonempty ID lists cannot fall back to all filter results.
 
-Cindy, folder/tag filters, explicit field clearing and untouched-field preservation
+Folder/tag filters, explicit field clearing and untouched-field preservation
 remain supported. Old jobs retain actor, encrypted payload, expiry and frozen
 item targets. An old filter-only job without a saved target fails rather than
 selecting a fresh set of accounts.
@@ -39,12 +39,19 @@ OpenCode Zen/GO, site billing states, WebSocket execution scope and pooling,
 Responses Lite namespaces, native Codex Images, model metadata/provider filters,
 batch administration and Ollama asynchronous quota reset follow official behavior.
 
-Cindy keeps its platform identity, catalog, health/budget handling and existing group
-membership. Continuation, opaque lineage, refusal recovery and destination-specific
-reasoning summaries remain supported. Account test model choices persist; API-key
-reveal requires the configured password. The account test dialog keeps list position.
-Image Studio and the Responses image bridge default off. Public model management
-remains retired; catalog changes do not restore its routes or navigation.
+Cindy accounts are ordinary OpenAI API-key accounts (`https://api.laxarouter.ai`):
+their models come from model sync and the account model mapping, and their prices
+from the ordinary `Cindy Catalog` channel. On any OpenAI-compatible account, a
+`budget_exceeded` HTTP 429 or terminal stream event puts the account into the error
+state with the upstream message; the structured `model_not_supported` 400 cools
+only that account/model. The account option `openai_prompt_cache_key_mode`
+(`passthrough` by default, or `sha256_64`) replaces a prompt cache key longer than
+64 characters with its SHA-256 hex. Continuation, refusal recovery and
+destination-specific reasoning summaries remain supported. Account test model
+choices persist; API-key reveal requires the configured password. The account test
+dialog keeps list position. Image Studio defaults off and lists no eligible key
+until a generic image model source exists. Public model management remains
+retired; catalog changes do not restore its routes or navigation.
 
 Quota storage, aggregation, cleanup and resets follow official semantics. Missing
 quota rows represent unlimited access; rows with three NULL limits are purged by
