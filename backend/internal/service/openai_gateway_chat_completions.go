@@ -61,7 +61,6 @@ func (s *OpenAIGatewayService) ForwardAsChatCompletions(
 	promptCacheKey string,
 	defaultMappedModel string,
 ) (*OpenAIForwardResult, error) {
-	rememberPromptRequestedModel(c, body)
 	pricingContext, pricingErr := CaptureCindyPricingContext(ctx, c, account)
 	if pricingErr != nil {
 		return nil, pricingErr
@@ -465,13 +464,12 @@ func (s *OpenAIGatewayService) forwardAsChatCompletions(
 			attemptCtx, cancelUpstream = context.WithCancel(upstreamRequestCtx)
 			upstreamReq = upstreamReq.WithContext(attemptCtx)
 		}
-		upstreamReq, responsesBody, wireBody, err = prepareBusinessPromptReasoningRequest(c, recovery, upstreamReq, responsesBody, proxyURL)
+		upstreamReq, responsesBody, wireBody, err = prepareReasoningRecoveryRequest(recovery, upstreamReq, responsesBody, proxyURL)
 		if err != nil {
 			cancelUpstream()
 			return nil, recovery.StopError(err)
 		}
-		application, _ := businessSystemPromptApplicationFromRequest(c, BusinessSystemPromptProtocolResponses)
-		finalCacheKey := businessSystemPromptUpstreamCacheKey(c, wireBody, upstreamPromptCacheKey, application)
+		finalCacheKey := finalWirePromptCacheKey(wireBody, upstreamPromptCacheKey)
 		if finalCacheKey != "" {
 			sessionKey := finalCacheKey
 			if !compatPromptCacheTenantIsolated {
@@ -937,7 +935,6 @@ func (s *OpenAIGatewayService) handleChatStreamingResponse(
 				}
 			}
 		}
-		payload = string(s.rewriteBusinessSystemPromptJSONForRequest(c, []byte(payload), BusinessSystemPromptProtocolResponses))
 		if firstChunk {
 			firstChunk = false
 			ms := int(time.Since(startTime).Milliseconds())

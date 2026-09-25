@@ -907,11 +907,11 @@ func (s *adminServiceImpl) updateAccount(ctx context.Context, id int64, input *U
 			}
 		}
 		normalizedExtra = MergeOpenAICodexTicketExtra(normalizedExtra, account.Extra)
-		// Prompt bindings have their own rule-revision and account-revision CAS.
+		// System prompt bindings are written only by the binding endpoint.
 		// Ordinary account edits preserve them, including their absence.
-		delete(normalizedExtra, PromptAccountBindingExtraKey)
-		if binding, exists := account.Extra[PromptAccountBindingExtraKey]; exists {
-			normalizedExtra[PromptAccountBindingExtraKey] = binding
+		delete(normalizedExtra, AccountExtraSystemPromptKey)
+		if binding, exists := account.Extra[AccountExtraSystemPromptKey]; exists {
+			normalizedExtra[AccountExtraSystemPromptKey] = binding
 		}
 		normalizedExtra = prepareCodexFingerprintExtraForUpdate(account, normalizedExtra)
 		account.Extra = normalizedExtra

@@ -289,7 +289,7 @@ func (s *AntigravityGatewayService) handleGeminiStreamingResponse(c *gin.Context
 					firstTokenMs = &ms
 				}
 
-				cw.Fprintf("data: %s\n\n", rewritePromptRulesStructuredEcho(c, []byte(payload), "gemini"))
+				cw.Fprintf("data: %s\n\n", payload)
 				continue
 			}
 
@@ -520,7 +520,7 @@ returnResponse:
 	if err != nil {
 		return nil, fmt.Errorf("failed to marshal response: %w", err)
 	}
-	c.Data(http.StatusOK, "application/json", rewritePromptRulesStructuredEcho(c, respBody, "gemini"))
+	c.Data(http.StatusOK, "application/json", respBody)
 
 	return &antigravityStreamResult{usage: usage, firstTokenMs: firstTokenMs}, nil
 }

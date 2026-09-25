@@ -59,7 +59,6 @@ func (s *AntigravityGatewayService) ForwardAsChatCompletions(
 	body []byte,
 	_ *ParsedRequest,
 ) (*ForwardResult, error) {
-	rememberPromptRequestedModel(c, body)
 	if err := s.validateAntigravityCompatAccount(c, account); err != nil {
 		return nil, err
 	}
@@ -107,7 +106,6 @@ func (s *AntigravityGatewayService) ForwardAsResponses(
 	body []byte,
 	_ *ParsedRequest,
 ) (*ForwardResult, error) {
-	rememberPromptRequestedModel(c, body)
 	if err := s.validateAntigravityCompatAccount(c, account); err != nil {
 		return nil, err
 	}

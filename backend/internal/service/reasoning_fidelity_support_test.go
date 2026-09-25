@@ -6,7 +6,6 @@ import (
 	"context"
 	"errors"
 	"net/http"
-	"strings"
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/ctxkey"
@@ -17,15 +16,7 @@ import (
 // ReasoningFidelityGatewayForTest exposes only in-memory dependency wiring to
 // the external test package. This file is excluded from application builds.
 // No repository that can write account, billing, or session state is attached.
-type ReasoningFidelityPublicationSnapshot struct {
-	Revision      int64                    `json:"revision"`
-	Version       RemoteSkillBundleVersion `json:"version"`
-	Prompt        RemoteSkillPromptVersion `json:"prompt"`
-	RawBody       string                   `json:"raw_body"`
-	EffectiveBody string                   `json:"effective_body"`
-}
-
-func ReasoningFidelityGatewayForTest(cfg *config.Config, upstream HTTPUpstream, prompt BusinessSystemPromptSnapshot, paired *ReasoningFidelityPublicationSnapshot, settings map[string]string) (*OpenAIGatewayService, error) {
+func ReasoningFidelityGatewayForTest(cfg *config.Config, upstream HTTPUpstream, prompts *SystemPromptConfig, settings map[string]string) (*OpenAIGatewayService, error) {
 	svc := NewOpenAIGatewayService(nil, nil, nil, nil, nil, nil, nil, cfg,
 		nil, nil, nil, nil, nil, upstream, nil, nil, nil, nil, nil, nil, nil, nil)
 	// Runtime settings use the same getters against an immutable, read-only
@@ -35,31 +26,14 @@ func ReasoningFidelityGatewayForTest(cfg *config.Config, upstream HTTPUpstream, 
 		frozen.values[key] = value
 	}
 	svc.settingService = NewSettingService(frozen, cfg)
-	if prompt.Enabled {
-		policy := NewBusinessSystemPromptService(nil, nil)
-		if prompt.CompositionMode == BusinessSystemPromptCompositionCodexSkillHybrid {
-			if paired == nil || paired.Revision < 1 || paired.Version.ID < 1 || paired.Prompt.ID < 1 || paired.Version.PromptVersionID != paired.Prompt.ID ||
-				paired.Version.UpstreamSourceID != RemoteSkillUpstreamSourceID || paired.Version.UpstreamRoot != RemoteSkillUpstreamRoot || paired.Version.PublicRoot != RemoteSkillPublicRoot ||
-				!validRemoteSkillSHA256(paired.Version.RawTreeSHA256) || !validRemoteSkillSHA256(paired.Version.EffectiveTreeSHA256) ||
-				strings.TrimSpace(paired.RawBody) == "" || strings.TrimSpace(paired.EffectiveBody) == "" ||
-				hashBusinessSystemPromptBundleBytes([]byte(paired.RawBody)) != paired.Prompt.RawSHA256 || hashBusinessSystemPromptBundleBytes([]byte(paired.EffectiveBody)) != paired.Prompt.EffectiveSHA256 {
-				return nil, errors.New("invalid_frozen_paired_publication")
-			}
-			publication := &RemoteSkillPublication{Revision: paired.Revision, CandidateID: paired.Version.ID,
-				EffectiveTreeSHA256: paired.Version.EffectiveTreeSHA256, EffectivePromptSHA256: paired.Prompt.EffectiveSHA256,
-				EffectivePromptBody: paired.EffectiveBody, RawPromptBody: paired.RawBody, Version: paired.Version, Prompt: paired.Prompt}
-			// Only the prompt component is consumed by Forward. No file download,
-			// candidate install, seed, runtime mutation, or background reload runs.
-			registry := NewRemoteSkillRegistryService(nil, nil, nil, nil)
-			registry.publication.Store(publication)
-			registry.snapshot.Store(&RemoteSkillRegistrySnapshot{Revision: paired.Revision, Active: &publication.Version, ActivePrompt: &publication.Prompt})
-			policy.SetRemoteSkillRegistryService(registry)
-		}
-		if err := policy.prepareBusinessSystemPromptSnapshot(&prompt); err != nil {
+	if prompts != nil {
+		normalized, err := normalizeSystemPromptConfig(*prompts)
+		if err != nil {
 			return nil, errors.New("invalid_frozen_prompt")
 		}
-		policy.snapshot.Store(&prompt)
-		svc.SetBusinessSystemPromptService(policy)
+		policy := &SystemPromptService{}
+		policy.publish(normalized)
+		svc.SetSystemPromptService(policy)
 	}
 	return svc, nil
 }
@@ -137,16 +111,7 @@ func ReasoningFidelityDirectRequestForTest(ctx context.Context, svc *OpenAIGatew
 	if err != nil {
 		return nil, err
 	}
-	body, application, err := svc.applyBusinessSystemPromptForRequest(c, body, account, BusinessSystemPromptProtocolResponses, false)
-	if err != nil {
-		return nil, err
-	}
-	if application.Applied {
-		body, err = rewriteBusinessSystemPromptCacheKey(c, body, application)
-		if err != nil {
-			return nil, err
-		}
-	}
+	// buildUpstreamRequest applies the same final system prompt as Forward.
 	token, _, err := svc.GetAccessToken(ctx, account)
 	if err != nil {
 		return nil, err

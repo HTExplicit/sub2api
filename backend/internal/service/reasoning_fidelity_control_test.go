@@ -196,7 +196,7 @@ func TestReasoningFidelityControl(t *testing.T) {
 		b := fidelityOfflineBootstrap()
 		fake := &fidelityOfflineUpstream{}
 		cfg := &config.Config{}
-		gateway, err := service.ReasoningFidelityGatewayForTest(cfg, fake, b.Source.BusinessPrompt, nil, b.Source.Settings)
+		gateway, err := service.ReasoningFidelityGatewayForTest(cfg, fake, b.Source.SystemPrompts, b.Source.Settings)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -214,7 +214,7 @@ func TestReasoningFidelityControl(t *testing.T) {
 		b := fidelityOfflineBootstrap()
 		b.Source.Group.MaxReasoningEffort = "high"
 		fake := &fidelityOfflineUpstream{}
-		gateway, err := service.ReasoningFidelityGatewayForTest(&config.Config{}, fake, b.Source.BusinessPrompt, nil, b.Source.Settings)
+		gateway, err := service.ReasoningFidelityGatewayForTest(&config.Config{}, fake, b.Source.SystemPrompts, b.Source.Settings)
 		if err != nil {
 			t.Fatal(err)
 		}

@@ -219,11 +219,7 @@ func (s *OpenAIGatewayService) checkRequestIntegrity(c *gin.Context, account *Ac
 			"account_id", account.ID, "path", path, "stage", stage, "reason", "body_too_large")
 		return nil
 	}
-	cleanFinal, promptErr := restorePromptRulesForIntegrity(c, final)
-	if promptErr != nil {
-		return promptErr
-	}
-	field, err := compareRequestIntegrity(account, opts, original, cleanFinal)
+	field, err := compareRequestIntegrity(account, opts, original, undoSystemPromptForIntegrity(c, final))
 	if err != nil {
 		// One side is not a JSON object; report the shape, never the bytes.
 		field = "json"

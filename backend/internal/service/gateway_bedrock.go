@@ -187,15 +187,11 @@ func (s *GatewayService) executeBedrockUpstream(
 	var err error
 	retryStart := time.Now()
 	for attempt := 1; attempt <= maxRetryAttempts; attempt++ {
-		wireBody, _, promptErr := s.businessPromptService.ApplyForSendModel(c, account, body, "messages", false, modelID)
-		if promptErr != nil {
-			return nil, promptErr
-		}
 		var upstreamReq *http.Request
 		if account.IsBedrockAPIKey() {
-			upstreamReq, err = s.buildUpstreamRequestBedrockAPIKey(ctx, wireBody, modelID, region, stream, apiKey)
+			upstreamReq, err = s.buildUpstreamRequestBedrockAPIKey(ctx, body, modelID, region, stream, apiKey)
 		} else {
-			upstreamReq, err = s.buildUpstreamRequestBedrock(ctx, wireBody, modelID, region, stream, signer)
+			upstreamReq, err = s.buildUpstreamRequestBedrock(ctx, body, modelID, region, stream, signer)
 		}
 		if err != nil {
 			return nil, err
@@ -402,6 +398,6 @@ func (s *GatewayService) handleBedrockNonStreamingResponse(
 	if v := resp.Header.Get("x-amzn-requestid"); v != "" {
 		c.Header("x-request-id", v)
 	}
-	c.Data(resp.StatusCode, "application/json", rewritePromptRulesStructuredEcho(c, body, "messages"))
+	c.Data(resp.StatusCode, "application/json", body)
 	return usage, nil
 }

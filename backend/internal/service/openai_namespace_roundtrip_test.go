@@ -7,10 +7,12 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 
 	"github.com/Wei-Shaw/sub2api/internal/pkg/tlsfingerprint"
+	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
 	"github.com/tidwall/gjson"
 )
@@ -49,6 +51,14 @@ func (u *namespaceRoundtripUpstream) Do(req *http.Request, proxy string, id int6
 	return u.httpUpstreamRecorder.Do(req, proxy, id, concurrency)
 }
 
+func newNamespaceRoundtripContext(body []byte) (*gin.Context, *httptest.ResponseRecorder) {
+	recorder := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(recorder)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", bytes.NewReader(body))
+	c.Request.Header.Set("Content-Type", "application/json")
+	return c, recorder
+}
+
 func (u *namespaceRoundtripUpstream) DoWithTLS(req *http.Request, proxy string, id int64, concurrency int, _ *tlsfingerprint.Profile) (*http.Response, error) {
 	return u.Do(req, proxy, id, concurrency)
 }
@@ -67,11 +77,16 @@ func TestOpenAIResponsesNamespaceRoundtripPreservesModelHistory(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			upstream := &namespaceRoundtripUpstream{namespace: tc.namespace}
-			svc := &OpenAIGatewayService{cfg: businessSystemPromptTestConfig(), httpUpstream: upstream, businessPromptService: newGatewayBusinessSystemPromptPolicy(t, false, false)}
-			account := businessSystemPromptAPIKeyAccount(true)
-			account.Extra["openai_passthrough"] = tc.passthrough
+			svc := newOpenAIRejectedFieldTestService(nil)
+			svc.httpUpstream = upstream
+			account := &Account{
+				ID: 61, Name: "openai-compatible", Platform: PlatformOpenAI,
+				Type: AccountTypeAPIKey, Status: StatusActive, Schedulable: true, Concurrency: 1,
+				Credentials: map[string]any{"api_key": "sk-test"},
+				Extra:       map[string]any{"openai_responses_supported": true, "openai_passthrough": tc.passthrough},
+			}
 			first := []byte(`{"model":"gpt-6-astra","reasoning":{"effort":"ultra"},"stream":false,"prompt_cache_key":"local-seed","tools":[{"type":"function","name":"read_state","parameters":{"type":"object","properties":{},"additionalProperties":false}}],"input":[{"role":"user","content":"local diagnostic"}]}`)
-			c, rec := newBusinessSystemPromptGinContext("/v1/responses", first)
+			c, rec := newNamespaceRoundtripContext(first)
 			SetOpenAIClientTransport(c, OpenAIClientTransportHTTP)
 			_, err := svc.Forward(context.Background(), c, account, first)
 			require.NoError(t, err)
@@ -88,7 +103,7 @@ func TestOpenAIResponsesNamespaceRoundtripPreservesModelHistory(t *testing.T) {
 			}
 			second, err := json.Marshal(next)
 			require.NoError(t, err)
-			c2, rec2 := newBusinessSystemPromptGinContext("/v1/responses", second)
+			c2, rec2 := newNamespaceRoundtripContext(second)
 			SetOpenAIClientTransport(c2, OpenAIClientTransportHTTP)
 			_, err = svc.Forward(context.Background(), c2, account, second)
 			require.NoError(t, err)

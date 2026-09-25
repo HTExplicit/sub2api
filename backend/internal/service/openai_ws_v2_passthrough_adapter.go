@@ -901,13 +901,9 @@ func (s *OpenAIGatewayService) proxyResponsesWebSocketV2PassthroughAttempt(
 		return NewOpenAIWSClientCloseError(coderws.StatusPolicyViolation, blocked.Message, blocked)
 	}
 	firstClientMessage = updatedFirst
-	beginBusinessSystemPromptFirstWSTurn(c)
-	if initialRequestModel != "" {
-		businessSystemPromptRequestSet(c, promptRequestedModelContextKey, initialRequestModel)
-	}
-	firstClientMessage, policyErr = s.finalizeBusinessPromptForSend(c, account, firstClientMessage, BusinessSystemPromptProtocolResponses, isOpenAIResponsesCompactPath(c))
+	firstClientMessage, policyErr = s.finalizeResponsesForSend(c, account, firstClientMessage)
 	if policyErr != nil {
-		return businessPromptWSCloseError(policyErr)
+		return NewOpenAIWSClientCloseError(coderws.StatusInternalError, "failed to prepare upstream request", policyErr)
 	}
 	// Last rewrite of the first frame is done; compare before it is written upstream.
 	if integrityErr := s.checkRequestIntegrity(c, account, "ws_passthrough", "first_frame", integrityOriginalFirst, firstClientMessage, requestIntegrityOptions{
@@ -1109,7 +1105,7 @@ func (s *OpenAIGatewayService) proxyResponsesWebSocketV2PassthroughAttempt(
 		interTurnIdleTimeout: s.openAIWSIngressInterTurnIdleTimeout(),
 		interTurnStarted:     make(chan struct{}, 1),
 		restoreResponseModel: func(payload []byte) []byte {
-			payload = s.rewriteBusinessSystemPromptJSONForRequest(c, payload, BusinessSystemPromptProtocolResponses)
+			payload = restoreSystemPromptEcho(c, payload)
 			eventType := strings.TrimSpace(gjson.GetBytes(payload, "type").String())
 			if !openAIWSEventMayContainModel(eventType) {
 				return payload
@@ -1318,13 +1314,9 @@ func (s *OpenAIGatewayService) proxyResponsesWebSocketV2PassthroughAttempt(
 			}
 			out, blocked, policyErr := s.applyOpenAIFastPolicyToWSResponseCreate(ctx, account, model, payload)
 			if isResponseCreate && policyErr == nil && blocked == nil {
-				beginBusinessSystemPromptRequestTurn(c)
-				if requestModelForThisFrame != "" {
-					businessSystemPromptRequestSet(c, promptRequestedModelContextKey, requestModelForThisFrame)
-				}
-				out, policyErr = s.finalizeBusinessPromptForSend(c, account, out, BusinessSystemPromptProtocolResponses, isOpenAIResponsesCompactPath(c))
+				out, policyErr = s.finalizeResponsesForSend(c, account, out)
 				if policyErr != nil {
-					return payload, nil, businessPromptWSCloseError(policyErr)
+					return payload, nil, NewOpenAIWSClientCloseError(coderws.StatusInternalError, "failed to prepare upstream request", policyErr)
 				}
 			}
 			// Last rewrite of the frame is done; compare before it is written

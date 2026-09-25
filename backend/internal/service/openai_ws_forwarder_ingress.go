@@ -543,17 +543,6 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 			)
 		}
 		normalized = policyApplied
-		if turn == 1 {
-			beginBusinessSystemPromptFirstWSTurn(c)
-		} else {
-			beginBusinessSystemPromptRequestTurn(c)
-		}
-		// A continuation may omit model; prompt scopes still use the accepted
-		// client model, before its mapping to the upstream wire ID.
-		rememberPromptRequestedModelName(c, originalModel)
-		if _, _, promptErr := s.prepareBusinessPromptWSIngress(c, normalized, account, BusinessSystemPromptProtocolResponses, isOpenAIResponsesCompactPath(c)); promptErr != nil {
-			return openAIWSClientPayload{}, businessPromptWSCloseError(promptErr)
-		}
 		// Per-frame request integrity check: the client frame versus the frame
 		// this parser produced. The later native wire stage (verified full replay,
 		// inferred previous_response_id) rewrites input on purpose and is not
@@ -1313,7 +1302,7 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 			// Rewrite structured instructions before event parsing, diagnostics,
 			// refusal handling, and downstream forwarding so the server-owned
 			// segment cannot leak through native ingress WS frames or logs.
-			upstreamMessage = s.rewriteBusinessSystemPromptJSONForRequest(c, upstreamMessage, BusinessSystemPromptProtocolResponses)
+			upstreamMessage = restoreSystemPromptEcho(c, upstreamMessage)
 
 			eventType, eventResponseID, _ := parseOpenAIWSEventEnvelope(upstreamMessage)
 			responseModelObserver.ObserveOpenAI(upstreamMessage, eventType)
@@ -1343,7 +1332,7 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 					return nil, NewOpenAIContinuationStateUnavailableError(statusCode, lease.HandshakeHeaders(), upstreamMessage)
 				}
 				if !wroteDownstream && statusCode == http.StatusBadRequest && rejectedFieldRetryState != nil {
-					retryBody, retryReason, changed, retryErr := normalizeBusinessPromptRejectedFieldRetryBody(c,
+					retryBody, retryReason, changed, retryErr := normalizeSystemPromptRejectedFieldRetryBody(c,
 						statusCode,
 						cleanPayload,
 						upstreamMessage,
@@ -1958,9 +1947,9 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 		}
 		// Build a send-only copy after full replay assembly. The clean payload
 		// remains the sole source for retries and the next turn's accumulator.
-		wirePayload, promptErr := s.finalizeBusinessPromptWSIngress(c, account, currentPayload)
-		if promptErr != nil {
-			return businessPromptWSCloseError(promptErr)
+		wirePayload, prepareErr := s.finalizeResponsesForSend(c, account, currentPayload)
+		if prepareErr != nil {
+			return fmt.Errorf("prepare websocket request: %w", prepareErr)
 		}
 		wireFields := gjson.GetManyBytes(wirePayload, "prompt_cache_key", "model", "service_tier")
 		finalHeaders, _, headerErr := s.buildOpenAIWSHeaders(ctx, c, account, token, wsDecision, isCodexCLI, turnState,
