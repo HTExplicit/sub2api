@@ -24,50 +24,10 @@ func resolveOpenAIForwardModel(account *Account, requestedModel, messagesDispatc
 	return mappedModel
 }
 
-// Request paths use their captured provider policy. Shared preselection keeps
-// the existing context-free resolver and never stores request state on Account.
-func resolveOpenAIForwardModelContext(ctx context.Context, account *Account, requestedModel, messagesDispatchMappedModel string) (string, error) {
-	if account == nil || !IsCindyRuntimeCompatibleAPIKeyAccount(account.Platform, account.Type, account.Credentials) {
-		return resolveOpenAIForwardModel(account, requestedModel, messagesDispatchMappedModel), nil
-	}
-	snapshot, err := LoadCindyCatalogSnapshot(ctx, account)
-	if err != nil {
-		return "", err
-	}
-	mapped, matched := resolveCindyMappedModelSnapshot(snapshot, account, requestedModel)
-	if !matched && strings.TrimSpace(messagesDispatchMappedModel) != "" {
-		return strings.TrimSpace(messagesDispatchMappedModel), nil
-	}
-	return mapped, nil
-}
-
-func resolveCindyMappedModelSnapshot(snapshot *CindyCatalogSnapshot, account *Account, requestedModel string) (string, bool) {
-	if IsLegacyCindyAPIKeyAccount(account.Platform, account.Type, account.Credentials) {
-		if mapped, ok := snapshot.CompatibilityMappings[requestedModel]; ok {
-			return mapped, true
-		}
-	}
-	for _, target := range snapshot.CompatibilityMappings {
-		if requestedModel == target {
-			return requestedModel, true
-		}
-	}
-	if IsCindyAPIKeyAccount(account.Platform, account.Type, account.Credentials) {
-		if mapped, ok := snapshot.AvailableMappings[requestedModel]; ok {
-			return mapped, true
-		}
-	}
-	mapping := account.GetModelMapping()
-	if mapped, ok := resolveRequestedModelInMapping(mapping, requestedModel); ok {
-		return mapped, true
-	}
-	normalized := normalizeRequestedModelForLookup(account.Platform, requestedModel)
-	if normalized != requestedModel {
-		if mapped, ok := resolveRequestedModelInMapping(mapping, normalized); ok {
-			return mapped, true
-		}
-	}
-	return requestedModel, false
+// resolveOpenAIForwardModelContext is the request-path spelling of
+// resolveOpenAIForwardModel; account model_mapping is the only model policy.
+func resolveOpenAIForwardModelContext(_ context.Context, account *Account, requestedModel, messagesDispatchMappedModel string) (string, error) {
+	return resolveOpenAIForwardModel(account, requestedModel, messagesDispatchMappedModel), nil
 }
 
 func resolveOpenAIForwardMappedModelsContext(ctx context.Context, account *Account, requestedModel string, requireCompact bool) (billingModel, upstreamModel string, err error) {
@@ -212,8 +172,8 @@ func resolveOpenAICompactForwardModel(account *Account, model string) string {
 }
 
 // resolveOpenAICompactForwardModelWithCanonical also checks the canonical
-// provider-qualified spelling used by the legacy Laxa projection. Compact
-// mappings are intentionally checked against the client spelling first, so an
+// (account-mapped) upstream spelling. Compact mappings are intentionally
+// checked against the client spelling first, so an
 // explicit public alias (including an identity mapping) remains authoritative;
 // the canonical lookup covers configurations written after the live upstream
 // ID was published.

@@ -502,7 +502,7 @@ onUnmounted(() => {
   @apply absolute left-2 top-2 z-10 flex items-center px-2 py-1.5 rounded-md text-sm;
   @apply bg-white dark:bg-dark-700 border border-gray-200 dark:border-dark-500;
   @apply text-gray-600 dark:text-dark-300 hover:bg-gray-100 dark:hover:bg-dark-600;
-  @apply shadow-outline transition-colors cursor-pointer;
+  @apply shadow-sm transition-colors cursor-pointer;
 }
 
 .custom-embed-shell {
@@ -514,7 +514,7 @@ onUnmounted(() => {
 
 .custom-open-fab {
   @apply absolute right-3 top-3 z-10 w-max max-w-full touch-none select-none transition-colors;
-  @apply shadow-outline supports-[backdrop-filter]:bg-white dark:supports-[backdrop-filter]:bg-dark-800;
+  @apply shadow-sm backdrop-blur supports-[backdrop-filter]:bg-white/80 dark:supports-[backdrop-filter]:bg-dark-800/80;
 }
 
 .custom-embed-frame {
@@ -559,7 +559,7 @@ onUnmounted(() => {
   right: 8px;
   padding: 4px 10px;
   font-size: 12px;
-  border-radius: var(--theme-radius-default, 4px);
+  border-radius: 4px;
   background: rgba(255, 255, 255, 0.15);
   color: rgb(var(--theme-color-slate-200, 226 232 240));
   border: 1px solid rgba(255, 255, 255, 0.2);

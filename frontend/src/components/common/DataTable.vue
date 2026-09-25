@@ -1,27 +1,27 @@
 <template>
   <div v-if="!isDesktopViewport" class="space-y-3">
     <template v-if="loading">
-      <div v-for="i in 5" :key="i" class="rounded-none border border-line bg-canvas p-4">
+      <div v-for="i in 5" :key="i" class="rounded-lg border border-gray-200 bg-white p-4 dark:border-dark-700 dark:bg-dark-900">
         <div class="space-y-3">
           <div v-for="column in dataColumns" :key="column.key" class="flex justify-between">
-            <div class="h-4 w-20 animate-pulse rounded-none bg-surface"></div>
-            <div class="h-4 w-32 animate-pulse rounded-none bg-surface"></div>
+            <div class="h-4 w-20 animate-pulse rounded bg-gray-200 dark:bg-dark-700"></div>
+            <div class="h-4 w-32 animate-pulse rounded bg-gray-200 dark:bg-dark-700"></div>
           </div>
           <div v-if="hasActionsColumn" class="border-t border-gray-200 pt-3 dark:border-dark-700">
-            <div class="h-8 w-full animate-pulse rounded-none bg-surface"></div>
+            <div class="h-8 w-full animate-pulse rounded bg-gray-200 dark:bg-dark-700"></div>
           </div>
         </div>
       </div>
     </template>
 
     <template v-else-if="!data || data.length === 0">
-      <div class="rounded-none border border-line bg-canvas p-12 text-center">
+      <div class="rounded-lg border border-gray-200 bg-white p-12 text-center dark:border-dark-700 dark:bg-dark-900">
         <slot name="empty">
           <div class="flex flex-col items-center">
             <Icon
               name="inbox"
               size="xl"
-              class="mb-4 h-12 w-12 text-muted"
+              class="mb-4 h-12 w-12 text-gray-400 dark:text-dark-500"
             />
             <p class="text-lg font-medium text-gray-900 dark:text-gray-100">
               {{ t('empty.noData') }}
@@ -48,7 +48,7 @@
       <div
         v-for="(row, index) in sortedData"
         :key="resolveRowKey(row, index)"
-        class="rounded-none border border-line bg-canvas p-4"
+        class="rounded-lg border border-gray-200 bg-white p-4 dark:border-dark-700 dark:bg-dark-900"
         :class="{
           'cursor-pointer': clickableRows,
           'border-primary-300 bg-primary-50/40 dark:border-primary-700 dark:bg-primary-900/10': selectable && isRowSelected(row, index)
@@ -99,13 +99,13 @@
       'is-scrollable': isScrollable
     }"
   >
-    <table class="w-full min-w-max divide-y divide-line">
-      <thead class="table-header bg-raised">
+    <table class="w-full min-w-max divide-y divide-gray-200 dark:divide-dark-700">
+      <thead class="table-header bg-gray-50 dark:bg-dark-800">
         <tr>
           <th
             v-if="selectable"
             scope="col"
-            class="sticky-header-cell w-11 min-w-11 px-3 py-3 text-center"
+            class="sticky-header-cell w-11 min-w-11 px-3 py-2 text-center"
           >
             <input
               type="checkbox"
@@ -123,9 +123,9 @@
             scope="col"
             :aria-sort="column.sortable ? getColumnAriaSort(column.key) : undefined"
             :class="[
-              'sticky-header-cell py-3 text-left text-xs font-medium uppercase tracking-wider text-muted',
+              'sticky-header-cell py-2 text-left text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-dark-400',
               getAdaptivePaddingClass(),
-              { 'cursor-pointer hover:bg-surface': column.sortable },
+              { 'cursor-pointer hover:bg-gray-100 dark:hover:bg-dark-700': column.sortable },
               getStickyColumnClass(column, index),
               column.class
             ]"
@@ -166,15 +166,15 @@
           </th>
         </tr>
       </thead>
-      <tbody class="table-body divide-y divide-line bg-canvas">
+      <tbody class="table-body divide-y divide-gray-200 bg-white dark:divide-dark-700 dark:bg-dark-900">
         <!-- Loading skeleton -->
         <tr v-if="loading" v-for="i in 5" :key="i">
-          <td v-if="selectable" class="w-11 min-w-11 px-3 py-4">
-            <div class="mx-auto h-4 w-4 animate-pulse rounded-none bg-surface"></div>
+          <td v-if="selectable" class="w-11 min-w-11 px-3 py-2.5">
+            <div class="mx-auto h-4 w-4 animate-pulse rounded bg-gray-200 dark:bg-dark-700"></div>
           </td>
-          <td v-for="column in columns" :key="column.key" :class="['whitespace-nowrap py-4', getAdaptivePaddingClass()]">
+          <td v-for="column in columns" :key="column.key" :class="['whitespace-nowrap py-2.5', getAdaptivePaddingClass()]">
             <div class="animate-pulse">
-              <div class="h-4 w-3/4 rounded-none bg-surface"></div>
+              <div class="h-4 w-3/4 rounded bg-gray-200 dark:bg-dark-700"></div>
             </div>
           </td>
         </tr>
@@ -190,7 +190,7 @@
                 <Icon
                   name="inbox"
                   size="xl"
-                  class="mb-4 h-12 w-12 text-muted"
+                  class="mb-4 h-12 w-12 text-gray-400 dark:text-dark-500"
                 />
                 <p class="text-lg font-medium text-gray-900 dark:text-gray-100">
                   {{ t('empty.noData') }}
@@ -213,14 +213,14 @@
             :data-row-id="resolveRowKey(item.row, item.index)"
             :data-index="item.index"
             :ref="item.measure ? measureElement : undefined"
-            class="hover:bg-raised"
+            class="hover:bg-gray-50 dark:hover:bg-dark-800"
             :class="{
               'cursor-pointer': clickableRows,
               'bg-primary-50/30 dark:bg-primary-900/5': selectable && isRowSelected(item.row, item.index)
             }"
             @click="clickableRows && emit('rowClick', item.row)"
           >
-            <td v-if="selectable" class="w-11 min-w-11 px-3 py-4 text-center">
+            <td v-if="selectable" class="w-11 min-w-11 px-3 py-2.5 text-center">
               <input
                 type="checkbox"
                 class="h-4 w-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500 dark:border-dark-600 dark:bg-dark-800"
@@ -235,7 +235,7 @@
               v-for="(column, colIndex) in columns"
               :key="column.key"
               :class="[
-                'whitespace-nowrap py-4 text-sm text-gray-900 dark:text-gray-100',
+                'whitespace-nowrap py-2.5 text-sm text-gray-900 dark:text-gray-100',
                 getAdaptivePaddingClass(),
                 getStickyColumnClass(column, colIndex),
                 column.class
@@ -558,7 +558,7 @@ const applySortState = (state: PersistedSortState | null) => {
 const getSortIndicatorClass = (key: string, order: 'asc' | 'desc') => {
   return sortKey.value === key && sortOrder.value === order
     ? 'text-primary-600 dark:text-primary-400'
-    : 'text-muted transition-colors'
+    : 'text-gray-400 transition-colors dark:text-dark-500'
 }
 
 const getColumnAriaSort = (key: string) => {
@@ -967,11 +967,7 @@ defineExpose({
   position: sticky;
   top: 0;
   z-index: 200;
-  background-color: rgb(var(--ui-raised));
-}
-
-.dark .table-wrapper .table-header {
-  background-color: rgb(var(--ui-raised));
+  background-color: rgb(var(--ui-surface));
 }
 
 /* 表体保持在表头下方 */
@@ -985,11 +981,7 @@ defineExpose({
   position: sticky;
   top: 0;
   z-index: 210; /* 必须高于所有表体内容 */
-  background-color: rgb(var(--ui-raised));
-}
-
-.dark .sticky-header-cell {
-  background-color: rgb(var(--ui-raised));
+  background-color: rgb(var(--ui-surface));
 }
 
 /* Sticky 列基础样式 */
@@ -1024,21 +1016,22 @@ defineExpose({
 }
 
 /* 表体 sticky 列背景 */
+/* 与表体底色一致:浅色 bg-white(surface),深色 dark:bg-dark-900(sunk) */
 tbody .sticky-col {
-  background-color: rgb(var(--ui-canvas));
+  background-color: rgb(var(--ui-surface));
 }
 
 .dark tbody .sticky-col {
+  background-color: rgb(var(--ui-sunk));
+}
+
+/* hover 状态保持(与行 hover:bg-gray-50 / dark:hover:bg-dark-800 一致) */
+tbody tr:hover .sticky-col {
   background-color: rgb(var(--ui-canvas));
 }
 
-/* hover 状态保持 */
-tbody tr:hover .sticky-col {
-  background-color: rgb(var(--ui-raised));
-}
-
 .dark tbody tr:hover .sticky-col {
-  background-color: rgb(var(--ui-raised));
+  background-color: rgb(var(--ui-surface));
 }
 
 /* 阴影只在可滚动时显示 */
@@ -1113,7 +1106,7 @@ tbody tr:hover .sticky-col {
 
 .table-wrapper::-webkit-scrollbar-track {
   background-color: rgba(0, 0, 0, 0.03) !important;
-  border-radius: 0 !important;
+  border-radius: 6px !important;
   margin: 0 4px !important;
 }
 .dark .table-wrapper::-webkit-scrollbar-track {
@@ -1123,7 +1116,7 @@ tbody tr:hover .sticky-col {
 /* 常驻、不透明的滑块，无视鼠标是否 hover 都在那！ */
 .table-wrapper::-webkit-scrollbar-thumb {
   background-color: rgba(107, 114, 128, 0.75) !important; 
-  border-radius: 0 !important;
+  border-radius: 6px !important;
   border: 2px solid transparent !important;
   background-clip: padding-box !important;
   -webkit-appearance: none !important;

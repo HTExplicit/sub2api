@@ -23,8 +23,8 @@ type ModelAvailabilityDiagnosis struct {
 	HasModelSupport bool
 	// ModelNotSupportedCooldownExhausted is true only when at least one
 	// persistently eligible account supports the model and every such account
-	// is a Cindy/Laxa credential currently carrying the exact
-	// model_not_supported cooldown for this request's canonical wire model.
+	// currently carries the exact model_not_supported cooldown for this
+	// request's canonical wire model.
 	ModelNotSupportedCooldownExhausted bool
 }
 

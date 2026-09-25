@@ -140,8 +140,8 @@ func TestAstraCodexToolCapabilitiesPreserveLiveNullAndFalse(t *testing.T) {
 	require.Empty(t, fields)
 }
 
-// Scenario: mixed groups retain synced capabilities without treating old registry capacity as an upstream observation.
-func TestBuildCodexModelsManifestForGroupUsesSyncedNonCapacityMetadataWithoutTrustingLegacyCapacity(t *testing.T) {
+// Scenario: mixed groups retain synced capabilities and use registry capacity only as a registry reference.
+func TestBuildCodexModelsManifestForGroupUsesSyncedNonCapacityMetadataAndRegistryCapacity(t *testing.T) {
 	t.Parallel()
 
 	const groupID int64 = 735
@@ -189,9 +189,8 @@ func TestBuildCodexModelsManifestForGroupUsesSyncedNonCapacityMetadataWithoutTru
 	require.Equal(t, "low", models[0]["default_reasoning_level"])
 	require.Equal(t, []string{"low", "high", "max"}, effortsFromManifestModel(t, models[0]))
 	require.Equal(t, []any{"text", "image"}, models[0]["input_modalities"])
-	require.EqualValues(t, 200_000, models[0]["context_window"])
-	require.Equal(t, "default", models[0]["context_capacity_source"])
-	require.Equal(t, "no_verified_capacity", models[0]["context_capacity_reason"])
+	require.EqualValues(t, 1_000_000, models[0]["context_window"])
+	require.Equal(t, "registry", models[0]["context_capacity_source"], "models.dev enrichment is never relabelled as an upstream observation")
 }
 
 type openCodeGoCodexCatalogRepo struct {
@@ -397,14 +396,9 @@ func TestBuildCodexModelsManifestForGroupIntersectsSyncedAccountMetadata(t *test
 				SupportedReasoningLevels: levels,
 				InputModalities:          modalities,
 				ContextWindow:            contextWindow,
+				CapacitySource:           ModelContextSourceUpstream,
 			},
 		}})
-		account.SetUpstreamModelContextCapacitySnapshot(UpstreamModelContextCapacitySnapshot{
-			ObservedAt: "2026-09-07T00:00:00Z",
-			Models: map[string]ModelContextCapacity{
-				"shared-model": {ContextWindow: contextWindow},
-			},
-		})
 		return account
 	}
 	svc := &GatewayService{accountRepo: codexModelsVisibilityAccountRepo{byGroup: map[int64][]Account{
@@ -447,14 +441,9 @@ func TestBuildCodexModelsManifestForGroupIntersectsDifferentMappedTargetsWithout
 				SupportedReasoningLevels: levels,
 				InputModalities:          modalities,
 				ContextWindow:            contextWindow,
+				CapacitySource:           ModelContextSourceUpstream,
 			},
 		}})
-		account.SetUpstreamModelContextCapacitySnapshot(UpstreamModelContextCapacitySnapshot{
-			ObservedAt: "2026-09-07T00:00:00Z",
-			Models: map[string]ModelContextCapacity{
-				target: {ContextWindow: contextWindow},
-			},
-		})
 		return account
 	}
 	openAIAccount := newAccount(
@@ -491,7 +480,7 @@ func TestBuildCodexModelsManifestForGroupIntersectsDifferentMappedTargetsWithout
 		require.Equal(t, "Custom model routed through Sub2API.", models[0]["description"])
 		require.Equal(t, []string{"low", "medium", "high"}, effortsFromManifestModel(t, models[0]))
 		require.Equal(t, []any{"text"}, models[0]["input_modalities"])
-		require.EqualValues(t, 272_000, models[0]["context_window"], "relay-declared capacities win on third-party hosts before per-account minimum aggregation")
+		require.EqualValues(t, 272_000, models[0]["context_window"], "each account's own declaration wins before the group minimum")
 		require.Equal(t, "upstream", models[0]["context_capacity_source"])
 	}
 }
@@ -579,7 +568,7 @@ func TestBuildCodexModelsManifestForGroupIgnoresPersistentlyDisabledMappedAccoun
 	models := decodeCodexManifestModels(t, body)
 	require.Len(t, models, 1)
 	require.Equal(t, []any{"text", "image"}, models[0]["input_modalities"])
-	require.EqualValues(t, 1_000_000, models[0]["context_window"], "the remaining relay account's own declaration is advertised, not the disabled account's narrower one")
+	require.EqualValues(t, 272_000, models[0]["context_window"], "an unschedulable active account still bounds capacity; only capability intersection skips it")
 	require.Equal(t, "upstream", models[0]["context_capacity_source"])
 }
 
@@ -607,13 +596,11 @@ func TestBuildCodexModelsManifestForGroupKeepsNonCapacityFallbackWhenAvailabilit
 	)
 	require.NoError(t, err)
 	require.Equal(t, int32(1), repo.calls.Load())
-	require.Equal(t, int32(1), repo.availabilityCalls.Load())
+	require.Equal(t, int32(2), repo.availabilityCalls.Load())
 	models := decodeCodexManifestModels(t, body)
 	require.Len(t, models, 1)
 	require.Equal(t, []any{"text", "image"}, models[0]["input_modalities"])
-	require.EqualValues(t, 200_000, models[0]["context_window"])
-	require.Equal(t, "default", models[0]["context_capacity_source"])
-	require.Equal(t, "account_query_failed", models[0]["context_capacity_reason"])
+	require.NotContains(t, models[0], "context_capacity_source", "a failed capacity lookup never invents a value")
 }
 
 // Scenario: a Composite alias claimed across platforms remains ambiguous and fails closed.

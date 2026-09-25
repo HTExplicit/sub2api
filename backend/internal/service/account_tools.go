@@ -46,12 +46,6 @@ func accountToolsOperationScoped(ctx context.Context, accountID int64, operation
 	return nil
 }
 
-func PlanBatchAccountTests(ctx context.Context, request extensionv1.BatchTestPlanningRequest) (extensionv1.BatchTestPlan, error) {
-	var plan extensionv1.BatchTestPlan
-	err := accountToolsOperation(ctx, "test.batch", request, &plan)
-	return plan, err
-}
-
 func ValidateAccountTaxonomyPlan(ctx context.Context, plan extensionv1.TaxonomyBulkPlan) error {
 	return accountToolsOperation(ctx, "taxonomy.bulk", plan, nil)
 }

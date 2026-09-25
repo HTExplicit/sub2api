@@ -2,25 +2,43 @@ package service
 
 import (
 	"context"
-	"errors"
-	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
 
+	"github.com/Wei-Shaw/sub2api/internal/config"
 	extensionv1 "github.com/Wei-Shaw/sub2api/internal/nativeapi"
 )
 
 var imageToolsConfigOverride atomic.Pointer[extensionv1.ImageToolsConfig]
 
-// currentImageToolsConfig returns the effective Image Studio and Responses image
-// bridge switches: the stored administrator setting once loaded, otherwise the
-// deploy-time rollout flags (the value the former image-tools plugin was seeded with).
+// currentImageToolsConfig returns the effective Image Studio switch: the
+// stored administrator setting once loaded, otherwise the deploy-time flag
+// (the value the former image-tools plugin was seeded with).
 func currentImageToolsConfig() (extensionv1.ImageToolsConfig, bool) {
 	if config := imageToolsConfigOverride.Load(); config != nil {
 		return *config, true
 	}
 	return LegacyImageToolsConfig(), true
+}
+
+// imageStudioEnabledFromEnvironment is the deploy-time
+// GATEWAY_IMAGE_STUDIO_ENABLED value, read once at startup.
+var imageStudioEnabledFromEnvironment = func() bool {
+	enabled, _ := config.ResolveImageStudioEnabledFromEnvironment()
+	return enabled
+}()
+
+// LegacyImageToolsConfig returns the deploy-time switch used until an
+// administrator stores image_tools_config.
+func LegacyImageToolsConfig() extensionv1.ImageToolsConfig {
+	return extensionv1.ImageToolsConfig{StudioEnabled: imageStudioEnabledFromEnvironment}
+}
+
+// ImageStudioFeatureEnabled reports whether Image Studio is switched on.
+func ImageStudioFeatureEnabled() bool {
+	value, _ := currentImageToolsConfig()
+	return value.StudioEnabled
 }
 
 // imageStudioStop is closed whenever Image Studio is switched off so running
@@ -82,41 +100,6 @@ func bindImageStudioEnabled(ctx context.Context) (context.Context, context.Cance
 		stopSignal()
 		cancel()
 	}
-}
-
-// observeNativeImageFacts lets tests inspect the facts the host derives for the
-// native image policy. It is nil in production.
-var observeNativeImageFacts func(extensionv1.ImageNativeRequest)
-
-func ValidateCindyImageRequest(model string, request *OpenAIImagesRequest) error {
-	return ValidateCindyImageRequestForAccount(context.Background(), nil, model, request)
-}
-
-func ValidateCindyImageRequestForAccount(ctx context.Context, account *Account, model string, request *OpenAIImagesRequest) error {
-	if request == nil {
-		return errors.New("image request is required")
-	}
-	for _, value := range []string{model, request.Size, request.Quality, request.ResponseFormat} {
-		if len(value) > 256 {
-			return errors.New("image control exceeds maximum length")
-		}
-	}
-	snapshot, err := LoadCindyCatalogSnapshot(ctx, account)
-	if err != nil {
-		return err
-	}
-	capability, found := snapshot.Capability(model)
-	endpoint := CindyEndpointImagesGenerate
-	if request.IsEdits() {
-		endpoint = CindyEndpointImagesEdit
-	}
-	verified := found && capability.PublicModel && snapshot.Config.CatalogEnabled && snapshot.Images.StudioEnabled && slices.Contains(capability.VerifiedEndpoints, endpoint)
-	facts := extensionv1.ImageNativeRequest{Model: strings.TrimSpace(model), Capability: capability, Verified: verified, Editing: request.IsEdits(), Stream: request.Stream, Count: request.N, Size: strings.TrimSpace(request.Size), Quality: strings.TrimSpace(request.Quality), ResponseFormat: strings.TrimSpace(request.ResponseFormat), HasReference: request.InputImageCount() > 0, HasMask: request.HasMask,
-		UnverifiedControls: request.Background != "" || request.OutputFormat != "" || request.Moderation != "" || request.InputFidelity != "" || request.Style != "" || request.OutputCompression != nil || request.PartialImages != nil}
-	if observeNativeImageFacts != nil {
-		observeNativeImageFacts(facts)
-	}
-	return validateNativeImageRequest(facts)
 }
 
 func EnsureImageStudioAvailable(ctx context.Context) error {

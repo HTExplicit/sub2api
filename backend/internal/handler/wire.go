@@ -49,7 +49,6 @@ func ProvideAdminHandlers(
 	complianceHandler *admin.ComplianceHandler,
 	auditLogHandler *admin.AuditLogHandler,
 	systemPromptHandler *admin.SystemPromptHandler,
-	cindyBalanceProbeHandler *admin.CindyBalanceProbeHandler,
 	_ *service.AccountJobRuntime,
 	upstreamBillingProbe *service.UpstreamBillingProbeService,
 	ollamaCloudUsage *service.OllamaCloudUsageService,
@@ -103,7 +102,6 @@ func ProvideAdminHandlers(
 		Compliance:             complianceHandler,
 		AuditLog:               auditLogHandler,
 		SystemPrompt:           systemPromptHandler,
-		CindyBalanceProbe:      cindyBalanceProbeHandler,
 	}
 }
 
@@ -215,7 +213,6 @@ func ProvideHandlers(
 	asyncImageHandler *AsyncImageHandler,
 	batchImageHandler *BatchImageHandler,
 	imageStudioHandler *ImageStudioJobHandler,
-	remoteSkillHandler *RemoteSkillHandler,
 	_ *service.IdempotencyCoordinator,
 	_ *service.IdempotencyCleanupService,
 ) *Handlers {
@@ -242,7 +239,6 @@ func ProvideHandlers(
 		AsyncImage:       asyncImageHandler,
 		BatchImage:       batchImageHandler,
 		ImageStudio:      imageStudioHandler,
-		RemoteSkill:      remoteSkillHandler,
 	}
 }
 
@@ -273,7 +269,6 @@ var ProviderSet = wire.NewSet(
 	NewImageStudioGatewayExecutor,
 	wire.Bind(new(imageStudioImagesInvoker), new(*OpenAIGatewayHandler)),
 	ProvideImageStudioRuntime,
-	ProvideRemoteSkillHandler,
 
 	// Admin handlers
 	admin.NewDashboardHandler,
@@ -313,7 +308,6 @@ var ProviderSet = wire.NewSet(
 	admin.NewComplianceHandler,
 	admin.NewAuditLogHandler,
 	admin.NewSystemPromptHandler,
-	admin.NewCindyBalanceProbeHandler,
 	ProvideAccountJobRuntime,
 
 	// AdminHandlers and Handlers constructors

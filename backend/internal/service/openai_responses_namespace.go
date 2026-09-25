@@ -91,9 +91,6 @@ func shouldKeepOpenAIResponsesToolCallNamespaces(
 	if account == nil || compactPath {
 		return false
 	}
-	if IsCindyAPIKeyAccount(account.Platform, account.Type, account.Credentials) {
-		return true
-	}
 	if account.IsOpenAIApiKey() {
 		if len(body) == 0 {
 			return false
@@ -189,8 +186,7 @@ func isOpenAIResponsesToolCallItemType(itemType string) bool {
 }
 
 func shouldKeepOpenAIResponsesStandaloneOutputNamespaces(account *Account, compactPath bool) bool {
-	return account != nil && account.Platform == PlatformOpenAI && account.IsOpenAIApiKey() && !compactPath &&
-		!IsCindyRuntimeCompatibleAPIKeyAccount(account.Platform, account.Type, account.Credentials)
+	return account != nil && account.Platform == PlatformOpenAI && account.IsOpenAIApiKey() && !compactPath
 }
 
 func isOpenAIResponsesNamedStandaloneOutput(item gjson.Result) bool {

@@ -869,31 +869,6 @@ func TestOpenAIGatewayServiceForwardImages_OAuthPassesNAndReturnsAllImages(t *te
 	require.Equal(t, "draw a cat 3", gjson.Get(rec.Body.String(), "data.2.revised_prompt").String())
 }
 
-func TestValidateOpenAIImagesUpstreamModel_AllowsOnlyStrictCindyMappedImage(t *testing.T) {
-	cindy := &Account{
-		Platform:        PlatformCindy,
-		WirePlatform:    WirePlatformOpenAI,
-		ProviderProfile: ProviderProfileCindyLaxaV1,
-		Type:            AccountTypeAPIKey,
-		Credentials: map[string]any{
-			"base_url": "https://api.laxarouter.ai",
-		},
-	}
-	ordinary := &Account{
-		Platform: PlatformOpenAI,
-		Type:     AccountTypeAPIKey,
-		Credentials: map[string]any{
-			"base_url": "https://api.laxarouter.ai",
-		},
-	}
-
-	require.Error(t, validateOpenAIImagesUpstreamModel(cindy, "gpt-image-2", "openai/gpt-image-2"))
-	require.Error(t, validateOpenAIImagesUpstreamModel(cindy, "gemini-3-pro-image", "google/gemini-3-pro-image"))
-	require.Error(t, validateOpenAIImagesUpstreamModel(ordinary, "gpt-image-2", "openai/gpt-image-2"))
-	require.Error(t, validateOpenAIImagesUpstreamModel(ordinary, "gemini-3-pro-image", "google/gemini-3-pro-image"))
-	require.Error(t, validateOpenAIImagesUpstreamModel(cindy, "gpt-image-2", "other/gpt-image-2"))
-}
-
 func TestValidateOpenAIImagesModel_RecognizesCatalogImageWithoutChangingNativeSet(t *testing.T) {
 	require.Error(t, validateOpenAIImagesModel("gemini-3-pro-image"))
 	require.Error(t, validateOpenAIImagesModel("google/gemini-3-pro-image"))

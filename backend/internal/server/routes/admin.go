@@ -46,7 +46,6 @@ func RegisterAdminRoutes(
 		// 账号管理
 		registerAccountJobRoutes(admin, h)
 		registerAccountRoutes(admin, h, stepUpAuth)
-		registerCindyBalanceProbeRoutes(admin, h)
 
 		// 公告管理
 		registerAnnouncementRoutes(admin, h)
@@ -150,54 +149,12 @@ func registerAccountJobRoutes(admin *gin.RouterGroup, h *handler.Handlers) {
 	}
 }
 
-func registerCindyBalanceProbeRoutes(admin *gin.RouterGroup, h *handler.Handlers) {
-	jobs := admin.Group("/cindy/balance-probe-jobs")
-	{
-		jobs.GET("", h.Admin.CindyBalanceProbe.List)
-		jobs.POST("", h.Admin.CindyBalanceProbe.Create)
-		jobs.POST("/preview", h.Admin.CindyBalanceProbe.Preview)
-		jobs.GET("/:id", h.Admin.CindyBalanceProbe.Get)
-		jobs.GET("/:id/items", h.Admin.CindyBalanceProbe.ListItems)
-		jobs.PATCH("/:id/rate", h.Admin.CindyBalanceProbe.SetRate)
-		jobs.POST("/:id/pause", h.Admin.CindyBalanceProbe.Pause)
-		jobs.POST("/:id/resume", h.Admin.CindyBalanceProbe.Resume)
-		jobs.POST("/:id/cancel", h.Admin.CindyBalanceProbe.Cancel)
-	}
-}
-
 func registerSystemPromptRoutes(admin *gin.RouterGroup, h *handler.Handlers) {
 	prompts := admin.Group("/system-prompts")
 	{
-		prompts.GET("/config", h.Admin.SystemPrompt.Config)
-		prompts.PUT("/config", h.Admin.SystemPrompt.SaveConfig)
-		prompts.GET("/rules/:rule_id/history", h.Admin.SystemPrompt.RuleHistory)
-		prompts.GET("", h.Admin.SystemPrompt.Retired)
-		prompts.POST("", h.Admin.SystemPrompt.Retired)
-		prompts.GET("/runtime", h.Admin.SystemPrompt.Retired)
-		prompts.PUT("/runtime", h.Admin.SystemPrompt.Retired)
-		prompts.GET("/rules", h.Admin.SystemPrompt.Rules)
-		prompts.PUT("/rules", h.Admin.SystemPrompt.Retired)
-		prompts.POST("/accounts/resolve", h.Admin.SystemPrompt.AccountBindings)
-		prompts.POST("/accounts/bindings", h.Admin.SystemPrompt.UpdateAccountBindings)
-		prompts.POST("/rules/preview/:account_id", h.Admin.SystemPrompt.Retired)
-		prompts.POST("/preview/merge", h.Admin.SystemPrompt.Retired)
-		prompts.POST("/preview/upstream", h.Admin.SystemPrompt.Retired)
-		prompts.GET("/skill-registry", h.Admin.SystemPrompt.Retired)
-		prompts.GET("/skill-registry/versions", h.Admin.SystemPrompt.Retired)
-		prompts.GET("/skill-registry/versions/:bundle_version_id", h.Admin.SystemPrompt.Retired)
-		prompts.POST("/skill-registry/syncs", h.Admin.SystemPrompt.Retired)
-		prompts.GET("/skill-registry/syncs/:sync_id", h.Admin.SystemPrompt.Retired)
-		prompts.POST("/skill-registry/versions/:bundle_version_id/publish", h.Admin.SystemPrompt.Retired)
-		prompts.POST("/skill-registry/versions/:bundle_version_id/rollback", h.Admin.SystemPrompt.Retired)
-		prompts.GET("/:id", h.Admin.SystemPrompt.Retired)
-		prompts.GET("/:id/versions", h.Admin.SystemPrompt.Retired)
-		prompts.PATCH("/:id", h.Admin.SystemPrompt.Retired)
-		prompts.DELETE("/:id", h.Admin.SystemPrompt.Retired)
-		prompts.POST("/:id/duplicate", h.Admin.SystemPrompt.Retired)
-		prompts.POST("/:id/versions", h.Admin.SystemPrompt.Retired)
-		prompts.POST("/:id/upstream-sync", h.Admin.SystemPrompt.Retired)
-		prompts.POST("/:id/versions/:version_id/publish", h.Admin.SystemPrompt.Retired)
-		prompts.POST("/:id/versions/:version_id/rollback", h.Admin.SystemPrompt.Retired)
+		prompts.GET("", h.Admin.SystemPrompt.Get)
+		prompts.PUT("", h.Admin.SystemPrompt.Save)
+		prompts.PUT("/bindings", h.Admin.SystemPrompt.SetBindings)
 	}
 }
 
@@ -394,14 +351,6 @@ func registerUserManagementRoutes(admin *gin.RouterGroup, h *handler.Handlers) {
 }
 
 func registerGroupRoutes(admin *gin.RouterGroup, h *handler.Handlers) {
-	cindyGroups := admin.Group("/cindy/groups")
-	{
-		cindyGroups.GET("/audit", h.Admin.Group.AuditCindyGroups)
-		cindyGroups.GET("/:id/keys", h.Admin.Group.CindyGroupKeyChoices)
-		cindyGroups.POST("/:id/split-preview", h.Admin.Group.PreviewCindyGroupSplit)
-		cindyGroups.POST("/:id/split", h.Admin.Group.SplitCindyGroup)
-	}
-
 	groups := admin.Group("/groups")
 	{
 		groups.GET("", h.Admin.Group.List)
@@ -454,24 +403,14 @@ func registerAccountRoutes(admin *gin.RouterGroup, h *handler.Handlers, stepUpAu
 		accounts.DELETE("/tags/:id", h.Admin.Account.DeleteAccountTag)
 		accounts.PUT("/:id/taxonomy", h.Admin.Account.SetAccountTaxonomy)
 		accounts.POST("/bulk-taxonomy", h.Admin.Account.BulkUpdateAccountTaxonomy)
-		accounts.POST("/batch-test-models", h.Admin.Account.BatchTestModels)
-		accounts.POST("/batch-test", h.Admin.Account.BatchTest)
-		accounts.GET("/cindy/insufficient-delete-preview", h.Admin.Account.PreviewCindyInsufficientDeletion)
-		accounts.POST("/cindy/delete-insufficient", h.Admin.Account.DeleteCindyInsufficient)
-		accounts.GET("/cindy/banned-delete-preview", h.Admin.Account.PreviewCindyBannedDeletion)
-		accounts.POST("/cindy/delete-banned", h.Admin.Account.DeleteCindyBanned)
-		accounts.GET("/cindy/duplicate-identity-inventory", h.Admin.Account.GetCindyDuplicateIdentityInventory)
 		accounts.GET("/api-key-visibility", h.Admin.Account.GetAPIKeyVisibility)
 		accounts.PUT("/api-key-visibility", h.Admin.Account.SetAPIKeyVisibility)
 		accounts.GET("/opencode-go-usage/settings", h.Admin.Account.GetOpenCodeGoUsageSettings)
 		accounts.PUT("/opencode-go-usage/settings", h.Admin.Account.UpdateOpenCodeGoUsageSettings)
 		accounts.GET("/:id", h.Admin.Account.GetByID)
-		accounts.GET("/:id/edit-context", h.Admin.Account.GetEditContext)
 		accounts.POST("", h.Admin.Account.Create)
 		accounts.POST("/:id/duplicate", h.Admin.Account.Duplicate)
 		accounts.POST("/check-mixed-channel", h.Admin.Account.CheckMixedChannel)
-		accounts.POST("/duplicates/review", h.Admin.Account.ReviewDuplicateAccounts)
-		accounts.POST("/duplicates/merge", h.Admin.Account.MergeDuplicateAccounts)
 		accounts.POST("/import/codex-session", h.Admin.Account.ImportCodexSession)
 		accounts.POST("/sync/crs", h.Admin.Account.SyncFromCRS)
 		accounts.POST("/sync/crs/preview", h.Admin.Account.PreviewFromCRS)
@@ -490,6 +429,7 @@ func registerAccountRoutes(admin *gin.RouterGroup, h *handler.Handlers, stepUpAu
 		accounts.POST("/:id/opencode-go-usage/refresh", h.Admin.Account.RefreshOpenCodeGoUsage)
 		accounts.DELETE("/:id", h.Admin.Account.Delete)
 		accounts.POST("/:id/test", h.Admin.Account.Test)
+		accounts.POST("/batch-test", h.Admin.Account.BatchTest)
 		accounts.GET("/codex-tickets/policy", h.Admin.Account.CodexTicketPolicy)
 		accounts.POST("/:id/codex-tickets/harvest", h.Admin.Account.HarvestCodexTicket)
 		accounts.POST("/codex-tickets/batch-harvest", h.Admin.Account.BatchHarvestCodexTickets)
@@ -506,7 +446,6 @@ func registerAccountRoutes(admin *gin.RouterGroup, h *handler.Handlers, stepUpAu
 		accounts.POST("/:id/codex-quality-runs/:run_id/close", h.Admin.Account.CloseCodexQualityRun)
 		accounts.PUT("/:id/codex-fingerprint/profile", h.Admin.Account.SelectCodexProfile)
 		accounts.POST("/:id/recover-state", h.Admin.Account.RecoverState)
-		accounts.POST("/:id/cindy-balance/recover", h.Admin.Account.ClearCindyBalanceInsufficient)
 		accounts.POST("/:id/refresh", h.Admin.Account.Refresh)
 		accounts.POST("/:id/apply-oauth-credentials", h.Admin.Account.ApplyOAuthCredentials)
 		accounts.POST("/:id/set-privacy", h.Admin.Account.SetPrivacy)
@@ -693,9 +632,6 @@ func registerSettingsRoutes(admin *gin.RouterGroup, h *handler.Handlers, stepUpA
 		adminSettings.PUT("/image-tools", gin.HandlerFunc(stepUpAuth), h.Admin.Setting.UpdateImageToolsSettings)
 		adminSettings.GET("/observability", h.Admin.Setting.GetObservabilitySettings)
 		adminSettings.PUT("/observability", gin.HandlerFunc(stepUpAuth), h.Admin.Setting.UpdateObservabilitySettings)
-		adminSettings.GET("/cindy-provider", h.Admin.Setting.GetCindyProviderSettings)
-		adminSettings.PUT("/cindy-provider", gin.HandlerFunc(stepUpAuth), h.Admin.Setting.UpdateCindyProviderSettings)
-		adminSettings.GET("/cindy-provider/catalog", h.Admin.Setting.GetCindyProviderCatalog)
 		adminSettings.GET("/codex-runtime", h.Admin.Setting.GetNativeCodexConfiguration)
 		adminSettings.PUT("/codex-runtime", gin.HandlerFunc(stepUpAuth), h.Admin.Setting.UpdateNativeCodexConfiguration)
 		adminSettings.POST("/openai-codex-ticket/proxy-parse", h.Admin.Setting.ParseCodexTicketProxy)

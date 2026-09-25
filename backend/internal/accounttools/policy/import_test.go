@@ -8,26 +8,25 @@ import (
 	extensionv1 "github.com/Wei-Shaw/sub2api/internal/nativeapi"
 )
 
-func TestImportPolicyPreservesRejectionPriorityAndExplicitGroup(t *testing.T) {
-	valid := extensionv1.AccountImportItemFacts{CindyCandidate: true, APIKeyValid: true, PayloadValid: true, DeviceValid: true, DeviceSourceValid: true}
-	request := extensionv1.AccountImportPlanningRequest{TargetGroupID: 12, TargetCanonical: true, Items: []extensionv1.AccountImportItemFacts{valid}}
-	plan := planImport(request)[0]
-	if plan.Action != "create" || len(plan.GroupIDs) != 1 || plan.GroupIDs[0] != 12 {
-		t.Fatalf("empty canonical group cannot bootstrap: %+v", plan)
+func TestImportPolicyPlansEachItemByIdentityMatches(t *testing.T) {
+	request := extensionv1.AccountImportPlanningRequest{Items: []extensionv1.AccountImportItemFacts{
+		{PayloadValid: true},
+		{PayloadValid: true, Matches: []int64{7}},
+		{PayloadValid: true, Matches: []int64{7, 8}},
+		{PayloadValid: false, Matches: []int64{7}},
+	}}
+	plans := planImport(request)
+	if plans[0].Action != "create" || plans[0].Code != extensionv1.AccountImportCodeCreate {
+		t.Fatalf("unmatched item was not created: %+v", plans[0])
 	}
-	request.Items[0].APIKeyValid = false
-	request.Items[0].PayloadValid = false
-	request.TargetGroupID = 0
-	if planImport(request)[0].Code != extensionv1.AccountImportCodeCindyAPIKeyInvalid {
-		t.Fatal("credential failure priority changed")
+	if plans[1].Action != "update" || plans[1].AccountID != 7 {
+		t.Fatalf("single identity match was not updated: %+v", plans[1])
 	}
-	request.Items[0].APIKeyValid = true
-	if planImport(request)[0].Code != extensionv1.AccountImportCodeCindyTargetRequired {
-		t.Fatal("explicit group requirement was bypassed")
+	if plans[2].Code != extensionv1.AccountImportCodeIdentityConflict {
+		t.Fatal("ambiguous identity was accepted")
 	}
-	request.Items = []extensionv1.AccountImportItemFacts{{PayloadValid: true, Matches: []int64{7, 8}}}
-	if planImport(request)[0].Code != extensionv1.AccountImportCodeIdentityConflict {
-		t.Fatal("ambiguous ordinary identity was accepted")
+	if plans[3].Code != extensionv1.AccountImportCodePayloadInvalid || plans[3].AccountID != 0 {
+		t.Fatal("invalid payload was accepted")
 	}
 	request.Phase = "finalize"
 	raw, _ := json.Marshal(request)

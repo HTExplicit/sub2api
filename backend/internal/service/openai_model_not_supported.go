@@ -10,7 +10,7 @@ import (
 )
 
 // openAIModelNotSupportedReason is deliberately distinct from model-not-found
-// and generic transient failures.  Laxa can advertise a model in its public
+// and generic transient failures.  A relay can advertise a model in its public
 // catalogue while an individual API key is temporarily unable to serve it.
 // Cooling only the account/model pair lets the scheduler try another key
 // without removing the model from the global catalogue.
@@ -85,7 +85,7 @@ func hasModelNotSupportedMessage(message string) bool {
 	// model_not_supported type for a parameter/feature rejection cannot poison
 	// an account's model cooldown. The model token must be the subject of the
 	// unsupported/unavailable phrase, while allowing the quoted model spelling
-	// used by Laxa and the normal "requested model" variants.
+	// used by relays and the normal "requested model" variants.
 	for _, match := range modelNotSupportedMessagePattern.FindAllStringIndex(lower, -1) {
 		// "model is unsupported parameter" and "unsupported model output
 		// format" describe a rejected request field, not an unavailable model.

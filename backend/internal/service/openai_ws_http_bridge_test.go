@@ -983,7 +983,7 @@ func TestProxyOpenAIWSHTTPBridgeTurnSSEErrorFailoverSafety(t *testing.T) {
 	}
 }
 
-func TestProxyOpenAIWSHTTPBridgeTurnCindyBalanceWriteOrdering(t *testing.T) {
+func TestProxyOpenAIWSHTTPBridgeTurnBudgetExceededWriteOrdering(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	for index, tc := range []struct {
 		name         string
@@ -1008,7 +1008,7 @@ func TestProxyOpenAIWSHTTPBridgeTurnCindyBalanceWriteOrdering(t *testing.T) {
 				Header:     http.Header{"Content-Type": []string{"text/event-stream"}},
 				Body:       io.NopCloser(strings.NewReader(tc.body)),
 			}}
-			repo := &cindyRateLimitAccountRepoStub{}
+			repo := &budgetExceededAccountRepoStub{}
 			rateLimitService := NewRateLimitService(repo, nil, &config.Config{}, nil, nil)
 			gateway := &OpenAIGatewayService{
 				cfg:              &config.Config{},
@@ -1017,7 +1017,7 @@ func TestProxyOpenAIWSHTTPBridgeTurnCindyBalanceWriteOrdering(t *testing.T) {
 				rateLimitService: rateLimitService,
 			}
 			rateLimitService.SetAccountRuntimeBlocker(gateway)
-			account := newCindyRateLimitAccount(int64(8540+index), true)
+			account := newBudgetRelayAccount(int64(8540+index), true)
 			account.Concurrency = 1
 			recorder := httptest.NewRecorder()
 			c, _ := gin.CreateTestContext(recorder)
@@ -1037,7 +1037,8 @@ func TestProxyOpenAIWSHTTPBridgeTurnCindyBalanceWriteOrdering(t *testing.T) {
 			var failoverErr *UpstreamFailoverError
 			if tc.wantFailover {
 				require.ErrorAs(t, err, &failoverErr)
-				require.True(t, failoverErr.CindyBalanceInsufficient)
+				require.Equal(t, http.StatusTooManyRequests, failoverErr.StatusCode)
+				require.Equal(t, NextAccountRetry, failoverErr.NextAccountAction)
 				require.Empty(t, writes)
 			} else {
 				require.Error(t, err)
@@ -1050,7 +1051,8 @@ func TestProxyOpenAIWSHTTPBridgeTurnCindyBalanceWriteOrdering(t *testing.T) {
 				require.NotContains(t, string(written), "budget_exceeded")
 				require.NotContains(t, string(written), "sensitive upstream detail")
 			}
-			require.Equal(t, 0, repo.markCalls, "the first exact signal must wait for independent confirmation")
+			require.Equal(t, 1, repo.setErrorCalls, "a budget terminal puts the account into the error state")
+			require.Equal(t, "sensitive upstream detail", repo.lastErrorMsg, "the account keeps the upstream message")
 		})
 	}
 }

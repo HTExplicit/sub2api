@@ -223,7 +223,7 @@ func TestOpenAIDiagnoseModelAvailabilityForPlatform_RateLimitedSupportingAccount
 	require.True(t, diag.HasModelSupport, "OpenAI-compatible diagnosis must keep transiently limited supporting accounts in the configured pool")
 }
 
-func TestOpenAIDiagnoseModelAvailabilityForPlatform_DetectsExhaustedLaxaModelCooldown(t *testing.T) {
+func TestOpenAIDiagnoseModelAvailabilityForPlatform_DetectsExhaustedModelNotSupportedCooldown(t *testing.T) {
 	groupID := int64(44)
 	resetAt := time.Now().Add(30 * time.Minute).UTC().Format(time.RFC3339)
 	accounts := make([]Account, 0, 2)
@@ -232,7 +232,10 @@ func TestOpenAIDiagnoseModelAvailabilityForPlatform_DetectsExhaustedLaxaModelCoo
 			ID: id, Platform: PlatformOpenAI, Type: AccountTypeAPIKey,
 			Status: StatusActive, Schedulable: true,
 			AccountGroups: []AccountGroup{{GroupID: groupID}},
-			Credentials:   map[string]any{"base_url": "https://api.laxarouter.ai"},
+			Credentials: map[string]any{
+				"base_url":      "https://api.laxarouter.ai",
+				"model_mapping": map[string]any{"gpt-5.6-luna": "openai/gpt-5.6-luna"},
+			},
 			Extra: map[string]any{modelRateLimitsKey: map[string]any{
 				"openai/gpt-5.6-luna": map[string]any{
 					"rate_limit_reset_at": resetAt,
@@ -257,7 +260,7 @@ func TestOpenAIDiagnoseModelAvailabilityForPlatform_DetectsExhaustedLaxaModelCoo
 		Credentials:   map[string]any{"base_url": "https://api.openai.com"},
 	})
 	diag = svc.DiagnoseModelAvailabilityForPlatform(context.Background(), &groupID, "gpt-5.6-luna", PlatformOpenAI)
-	require.False(t, diag.ModelNotSupportedCooldownExhausted, "an ordinary supporting account keeps the pool from being classified as Laxa cooldown exhaustion")
+	require.False(t, diag.ModelNotSupportedCooldownExhausted, "an ordinary supporting account keeps the pool from being classified as cooldown exhaustion")
 }
 
 func TestDiagnoseModelAvailabilityForPlatform_WrongPlatformFiltersOut(t *testing.T) {

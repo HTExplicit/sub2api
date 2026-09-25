@@ -16,13 +16,11 @@ type GroupCodexModelsManifestConfig = domain.GroupCodexModelsManifestConfig
 type ReasoningEffortMapping = domain.ReasoningEffortMapping
 
 type Group struct {
-	ID              int64
-	Name            string
-	Description     string
-	Platform        string
-	WirePlatform    string
-	ProviderProfile string
-	RateMultiplier  float64
+	ID             int64
+	Name           string
+	Description    string
+	Platform       string
+	RateMultiplier float64
 	// 高峰时段倍率：peak_rate_enabled 为 true 且当前时刻处于 [PeakStart, PeakEnd) 时，
 	// token 计费倍率额外乘以 PeakRateMultiplier。详见 PeakMultiplierAt。
 	PeakRateEnabled    bool
@@ -32,11 +30,6 @@ type Group struct {
 	IsExclusive        bool
 	Status             string
 	Hydrated           bool // indicates the group was loaded from a trusted repository source
-	// StrictCindyKnown distinguishes an exact materialized group identity from
-	// legacy/test group values that must still be classified through the
-	// repository. StrictCindy is meaningful only when StrictCindyKnown is true.
-	StrictCindyKnown bool
-	StrictCindy      bool
 	// DuplicateOperationID is internal persistence metadata used only to recover
 	// an already committed one-click copy. It must never be mapped to API DTOs.
 	DuplicateOperationID string

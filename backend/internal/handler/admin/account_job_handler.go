@@ -267,10 +267,6 @@ func (h *AccountHandler) submitAccountIDsJob(c *gin.Context, kind string, ids []
 	h.submitAccountJob(c, kind, accountIDsJobPayload{AccountIDs: ids}, accountJobSeeds(ids))
 }
 
-func (h *AccountHandler) submitOneAccountJob(c *gin.Context, kind string, payload any) {
-	h.submitAccountJob(c, kind, payload, ordinalAccountJobSeeds(1))
-}
-
 func accountJobSucceeded(itemID int64, metadata any) service.AccountJobExecutionResult {
 	raw, _ := json.Marshal(metadata)
 	return service.AccountJobExecutionResult{ItemID: itemID, Status: service.AccountJobItemStatusSucceeded, Metadata: raw}

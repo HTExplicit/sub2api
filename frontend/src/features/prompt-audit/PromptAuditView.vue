@@ -229,7 +229,7 @@ const SaveToggle = defineComponent({
       }, [
         h('span', {
           class: [
-            'pointer-events-none inline-block h-5 w-5 rounded-full bg-white shadow-outline transition-transform duration-200 ease-in-out',
+            'pointer-events-none inline-block h-5 w-5 rounded-full bg-white shadow transition-transform duration-200 ease-in-out',
             props.modelValue ? 'translate-x-5' : 'translate-x-0',
           ],
         }),

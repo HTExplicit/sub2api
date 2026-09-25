@@ -63,10 +63,10 @@ func TestClassifyOpenAIWSAcquireError(t *testing.T) {
 
 func TestOpenAIWSInitialDialFailover(t *testing.T) {
 	modelNotSupported := []byte(`{"error":{"code":400,"type":"model_not_supported","message":"model is temporarily not supported"}}`)
-	legacyLaxa := &Account{
+	apiKey := &Account{
 		Platform:    PlatformOpenAI,
 		Type:        AccountTypeAPIKey,
-		Credentials: map[string]any{"base_url": "https://api.laxarouter.ai"},
+		Credentials: map[string]any{"base_url": "https://relay.example.test"},
 	}
 	tests := []struct {
 		name       string
@@ -81,8 +81,8 @@ func TestOpenAIWSInitialDialFailover(t *testing.T) {
 		{name: "server failure retries once", err: &openAIWSDialError{StatusCode: http.StatusBadGateway}, wantRetry: true, wantStatus: http.StatusBadGateway},
 		{name: "network failure retries once", err: &openAIWSDialError{Err: errors.New("no such host")}, wantRetry: true, wantStatus: http.StatusBadGateway, wantReason: OpenAIPersistentTransportFailureReason},
 		{name: "ordinary client rejection stays terminal", err: &openAIWSDialError{StatusCode: http.StatusBadRequest}},
-		{name: "ordinary structured model rejection stays terminal", err: &openAIWSDialError{StatusCode: http.StatusBadRequest, ResponseBody: modelNotSupported}},
-		{name: "legacy Laxa structured model rejection switches immediately", account: legacyLaxa, err: &openAIWSDialError{StatusCode: http.StatusBadRequest, ResponseBody: modelNotSupported}, wantStatus: http.StatusBadRequest, wantReason: openAIModelNotSupportedReason},
+		{name: "structured model rejection without an account stays terminal", err: &openAIWSDialError{StatusCode: http.StatusBadRequest, ResponseBody: modelNotSupported}},
+		{name: "OpenAI-compatible structured model rejection switches immediately", account: apiKey, err: &openAIWSDialError{StatusCode: http.StatusBadRequest, ResponseBody: modelNotSupported}, wantStatus: http.StatusBadRequest, wantReason: openAIModelNotSupportedReason},
 		{name: "local pool pressure stays local", err: errOpenAIWSConnQueueFull},
 	}
 

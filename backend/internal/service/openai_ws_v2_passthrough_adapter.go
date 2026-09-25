@@ -17,7 +17,6 @@ import (
 	coderws "github.com/coder/websocket"
 	"github.com/gin-gonic/gin"
 	"github.com/tidwall/gjson"
-	"github.com/tidwall/sjson"
 )
 
 type openAIWSClientFrameConn struct {
@@ -100,55 +99,6 @@ func openAIWSPassthroughPolicyModelForFrame(account *Account, payload []byte) st
 		return ""
 	}
 	return original
-}
-
-// resolveLegacyCindyOpenAIModel mirrors the legacy Laxa HTTP
-// passthrough wire mapping for Responses WebSocket frames.  The temporary
-// OpenAI-platform projection bypasses the first-class Cindy resolver, so a
-// direct public Luna ID would otherwise reach Laxa without its required
-// provider prefix.  Keep this deliberately narrow: ordinary OpenAI
-// passthrough accounts and any administrator/channel mapping which has
-// already changed the model retain their existing behavior.
-func resolveLegacyCindyOpenAIModel(account *Account, model string) string {
-	mapped, _ := resolveLegacyCindyOpenAIModelContext(context.Background(), account, model)
-	return mapped
-}
-
-func resolveLegacyCindyOpenAIModelContext(ctx context.Context, account *Account, model string) (string, error) {
-	model = strings.TrimSpace(model)
-	if account == nil || model == "" ||
-		!IsLegacyCindyAPIKeyAccount(account.Platform, account.Type, account.Credentials) {
-		return model, nil
-	}
-	if mapped, ok, err := cindyLegacyLaxaLiveUpstreamModel(ctx, account, model); err != nil {
-		return "", err
-	} else if ok {
-		return mapped, nil
-	}
-	return model, nil
-}
-
-func replaceLegacyCindyWSPassthroughSessionModel(account *Account, payload []byte) ([]byte, error) {
-	return replaceLegacyCindyWSPassthroughSessionModelContext(context.Background(), account, payload)
-}
-
-func replaceLegacyCindyWSPassthroughSessionModelContext(ctx context.Context, account *Account, payload []byte) ([]byte, error) {
-	if account == nil || len(payload) == 0 || strings.TrimSpace(gjson.GetBytes(payload, "type").String()) != "session.update" {
-		return payload, nil
-	}
-	current := strings.TrimSpace(gjson.GetBytes(payload, "session.model").String())
-	mapped, err := resolveLegacyCindyOpenAIModelContext(ctx, account, current)
-	if err != nil {
-		return nil, err
-	}
-	if mapped == "" || mapped == current {
-		return payload, nil
-	}
-	next, err := sjson.SetBytes(payload, "session.model", mapped)
-	if err != nil {
-		return nil, err
-	}
-	return next, nil
 }
 
 // openAIWSPassthroughPolicyModelFromSessionFrame returns the upstream model
@@ -769,8 +719,8 @@ func (s *OpenAIGatewayService) proxyResponsesWebSocketV2PassthroughAttempt(
 		return err
 	}
 	refusalRuntime := s.openAIRefusalRecoveryRuntime(ctx)
-	// Request integrity snapshot of the client frame before the Lite/Laxa
-	// normalizers; nil when the check is off.
+	// Request integrity snapshot of the client frame before the Lite
+	// normalizer; nil when the check is off.
 	integrityOriginalFirst := s.requestIntegrityFrameSnapshot(account, firstClientMessage)
 	if isOpenAIResponsesLiteWebSocketPayload(firstClientMessage) {
 		liteFirstMessage, _, liteErr := normalizeOpenAIResponsesLitePayloadForAccount(firstClientMessage, account)
@@ -778,15 +728,6 @@ func (s *OpenAIGatewayService) proxyResponsesWebSocketV2PassthroughAttempt(
 			return NewOpenAIWSClientCloseError(coderws.StatusPolicyViolation, liteErr.Error(), liteErr)
 		}
 		firstClientMessage = liteFirstMessage
-	}
-	if normalizedFirstMessage, normalizeErr := normalizeLegacyLaxaFullReplayStoreFalse(account, firstClientMessage); normalizeErr != nil {
-		return NewOpenAIWSClientCloseError(
-			coderws.StatusPolicyViolation,
-			"invalid websocket request payload",
-			normalizeErr,
-		)
-	} else {
-		firstClientMessage = normalizedFirstMessage
 	}
 	originalFirstClientMessage := firstClientMessage
 	if next, policyErr := applyOpenAIWSReasoningEffortPolicy(firstClientMessage, hooks); policyErr != nil {
@@ -824,37 +765,20 @@ func (s *OpenAIGatewayService) proxyResponsesWebSocketV2PassthroughAttempt(
 	if initialRequestModel == "" {
 		initialRequestModel = openAIWSPassthroughRequestModelForFrame(firstClientMessage)
 	}
-	policyCtx, policyErr := copyOpenAIWSProviderPricingContext(ctx, hooks, 1)
-	if policyErr != nil {
-		return policyErr
-	}
 	if hooks != nil && hooks.MapRequestModel != nil {
 		mappedModel, mapErr := hooks.MapRequestModel(1, initialRequestModel)
 		if mapErr != nil {
 			return mapErr
 		}
 		if mappedModel = strings.TrimSpace(mappedModel); mappedModel != "" {
-			if legacyMapped, policyErr := resolveLegacyCindyOpenAIModelContext(policyCtx, account, mappedModel); policyErr != nil {
-				return policyErr
-			} else if legacyMapped != mappedModel {
-				mappedModel = legacyMapped
-			} else {
-				accountMapped, err := resolveOpenAIForwardModelContext(policyCtx, account, mappedModel, "")
-				if err != nil {
-					return err
-				}
-				if accountMapped = normalizeOpenAIModelForUpstream(account, accountMapped); accountMapped != "" {
-					mappedModel = accountMapped
-				}
+			accountMapped, err := resolveOpenAIForwardModelContext(ctx, account, mappedModel, "")
+			if err != nil {
+				return err
+			}
+			if accountMapped = normalizeOpenAIModelForUpstream(account, accountMapped); accountMapped != "" {
+				mappedModel = accountMapped
 			}
 			firstClientMessage = s.ReplaceModelInBody(firstClientMessage, mappedModel)
-		}
-	}
-	if currentModel := strings.TrimSpace(gjson.GetBytes(firstClientMessage, "model").String()); currentModel != "" {
-		if upstreamModel, policyErr := resolveLegacyCindyOpenAIModelContext(policyCtx, account, currentModel); policyErr != nil {
-			return policyErr
-		} else if upstreamModel != currentModel {
-			firstClientMessage = s.ReplaceModelInBody(firstClientMessage, upstreamModel)
 		}
 	}
 	capturedSessionModel := openAIWSPassthroughPolicyModelForFrame(account, firstClientMessage)
@@ -901,13 +825,9 @@ func (s *OpenAIGatewayService) proxyResponsesWebSocketV2PassthroughAttempt(
 		return NewOpenAIWSClientCloseError(coderws.StatusPolicyViolation, blocked.Message, blocked)
 	}
 	firstClientMessage = updatedFirst
-	beginBusinessSystemPromptFirstWSTurn(c)
-	if initialRequestModel != "" {
-		businessSystemPromptRequestSet(c, promptRequestedModelContextKey, initialRequestModel)
-	}
-	firstClientMessage, policyErr = s.finalizeBusinessPromptForSend(c, account, firstClientMessage, BusinessSystemPromptProtocolResponses, isOpenAIResponsesCompactPath(c))
+	firstClientMessage, policyErr = s.finalizeResponsesForSend(c, account, firstClientMessage)
 	if policyErr != nil {
-		return businessPromptWSCloseError(policyErr)
+		return NewOpenAIWSClientCloseError(coderws.StatusInternalError, "failed to prepare upstream request", policyErr)
 	}
 	// Last rewrite of the first frame is done; compare before it is written upstream.
 	if integrityErr := s.checkRequestIntegrity(c, account, "ws_passthrough", "first_frame", integrityOriginalFirst, firstClientMessage, requestIntegrityOptions{
@@ -1109,7 +1029,7 @@ func (s *OpenAIGatewayService) proxyResponsesWebSocketV2PassthroughAttempt(
 		interTurnIdleTimeout: s.openAIWSIngressInterTurnIdleTimeout(),
 		interTurnStarted:     make(chan struct{}, 1),
 		restoreResponseModel: func(payload []byte) []byte {
-			payload = s.rewriteBusinessSystemPromptJSONForRequest(c, payload, BusinessSystemPromptProtocolResponses)
+			payload = restoreSystemPromptEcho(c, payload)
 			eventType := strings.TrimSpace(gjson.GetBytes(payload, "type").String())
 			if !openAIWSEventMayContainModel(eventType) {
 				return payload
@@ -1135,10 +1055,6 @@ func (s *OpenAIGatewayService) proxyResponsesWebSocketV2PassthroughAttempt(
 			var integrityOriginalFrame []byte
 			if isResponseCreate {
 				integrityOriginalFrame = s.requestIntegrityFrameSnapshot(account, payload)
-			}
-			originalSessionRequestModel := ""
-			if eventType == "session.update" {
-				originalSessionRequestModel = strings.TrimSpace(gjson.GetBytes(payload, "session.model").String())
 			}
 			responsesLite := isOpenAIResponsesLiteWebSocketPayload(payload)
 			responseCreateAt := time.Time{}
@@ -1217,64 +1133,22 @@ func (s *OpenAIGatewayService) proxyResponsesWebSocketV2PassthroughAttempt(
 						return payload, nil, err
 					}
 				}
-				policyCtx, policyErr := copyOpenAIWSProviderPricingContext(ctx, hooks, turnNo)
-				if policyErr != nil {
-					return payload, nil, policyErr
-				}
 				if hooks != nil && hooks.MapRequestModel != nil {
 					upstreamModel, err := hooks.MapRequestModel(turnNo, requestModelForThisFrame)
 					if err != nil {
 						return payload, nil, err
 					}
 					if upstreamModel = strings.TrimSpace(upstreamModel); upstreamModel != "" {
-						if legacyMapped, policyErr := resolveLegacyCindyOpenAIModelContext(policyCtx, account, upstreamModel); policyErr != nil {
-							return payload, nil, policyErr
-						} else if legacyMapped != upstreamModel {
-							upstreamModel = legacyMapped
-						} else {
-							accountMapped, err := resolveOpenAIForwardModelContext(policyCtx, account, upstreamModel, "")
-							if err != nil {
-								return payload, nil, err
-							}
-							if accountMapped = normalizeOpenAIModelForUpstream(account, accountMapped); accountMapped != "" {
-								upstreamModel = accountMapped
-							}
+						accountMapped, err := resolveOpenAIForwardModelContext(ctx, account, upstreamModel, "")
+						if err != nil {
+							return payload, nil, err
+						}
+						if accountMapped = normalizeOpenAIModelForUpstream(account, accountMapped); accountMapped != "" {
+							upstreamModel = accountMapped
 						}
 						payload = s.ReplaceModelInBody(payload, upstreamModel)
 					}
 				}
-				if currentModel := strings.TrimSpace(gjson.GetBytes(payload, "model").String()); currentModel != "" {
-					if upstreamModel, policyErr := resolveLegacyCindyOpenAIModelContext(policyCtx, account, currentModel); policyErr != nil {
-						return payload, nil, policyErr
-					} else if upstreamModel != currentModel {
-						payload = s.ReplaceModelInBody(payload, upstreamModel)
-					}
-				}
-			}
-			if eventType == "session.update" {
-				var sessionModelErr error
-				// A control frame is not a billed turn. Do not inherit an old
-				// connection's price/catalog capture into the next session model.
-				controlCtx := context.WithValue(ctx, cindyPricingContextKey{}, (*capturedCindyPricing)(nil))
-				payload, sessionModelErr = replaceLegacyCindyWSPassthroughSessionModelContext(controlCtx, account, payload)
-				if sessionModelErr != nil {
-					return payload, nil, NewOpenAIWSClientCloseError(
-						coderws.StatusPolicyViolation,
-						"invalid websocket request payload",
-						sessionModelErr,
-					)
-				}
-			}
-			if isResponseCreate {
-				normalizedPayload, normalizeErr := normalizeLegacyLaxaFullReplayStoreFalse(account, payload)
-				if normalizeErr != nil {
-					return payload, nil, NewOpenAIWSClientCloseError(
-						coderws.StatusPolicyViolation,
-						"invalid websocket request payload",
-						normalizeErr,
-					)
-				}
-				payload = normalizedPayload
 			}
 			// 在评估策略前先刷新 capturedSessionModel：客户端可能通过
 			// session.update 修改 session-level model（Realtime /
@@ -1286,14 +1160,7 @@ func (s *OpenAIGatewayService) proxyResponsesWebSocketV2PassthroughAttempt(
 			if updated := openAIWSPassthroughPolicyModelFromSessionFrame(account, payload); updated != "" {
 				capturedSessionModel = updated
 			}
-			if originalSessionRequestModel != "" {
-				// Keep usage/response restoration on the client's public spelling;
-				// the payload itself may already have been rewritten to the
-				// provider-qualified Laxa wire ID above.
-				usageMeta.sessionRequestModel = originalSessionRequestModel
-			} else {
-				usageMeta.updateSessionRequestModel(payload)
-			}
+			usageMeta.updateSessionRequestModel(payload)
 			if requestModelForThisFrame == "" {
 				requestModelForThisFrame = usageMeta.requestModelForFrame(payload)
 			}
@@ -1318,13 +1185,9 @@ func (s *OpenAIGatewayService) proxyResponsesWebSocketV2PassthroughAttempt(
 			}
 			out, blocked, policyErr := s.applyOpenAIFastPolicyToWSResponseCreate(ctx, account, model, payload)
 			if isResponseCreate && policyErr == nil && blocked == nil {
-				beginBusinessSystemPromptRequestTurn(c)
-				if requestModelForThisFrame != "" {
-					businessSystemPromptRequestSet(c, promptRequestedModelContextKey, requestModelForThisFrame)
-				}
-				out, policyErr = s.finalizeBusinessPromptForSend(c, account, out, BusinessSystemPromptProtocolResponses, isOpenAIResponsesCompactPath(c))
+				out, policyErr = s.finalizeResponsesForSend(c, account, out)
 				if policyErr != nil {
-					return payload, nil, businessPromptWSCloseError(policyErr)
+					return payload, nil, NewOpenAIWSClientCloseError(coderws.StatusInternalError, "failed to prepare upstream request", policyErr)
 				}
 			}
 			// Last rewrite of the frame is done; compare before it is written
@@ -1395,14 +1258,10 @@ func (s *OpenAIGatewayService) proxyResponsesWebSocketV2PassthroughAttempt(
 	if refusalRuntime.RewriteEnabled() {
 		matcher = refusalRuntime.Matcher
 	}
-	strictCindy := cindyBalanceReplayBufferEnabled(account)
-	if refusalRuntime.RewriteEnabled() || strictCindy {
-		// Cindy holds metadata-only preamble frames until semantic output so a
-		// first-turn budget terminal remains replay-safe. Ordinary passthrough
-		// accounts retain their legacy immediate preamble and timeout semantics.
+	if refusalRuntime.RewriteEnabled() {
 		refusalOutput = newOpenAIRefusalRecoveryWSOutput(
 			matcher,
-			strictCindy,
+			false,
 			policyClientConn.WriteFrame,
 			func() {
 				logOpenAIWSV2Passthrough("refusal_recovery_buffer_limit account_id=%d transport=websocket", account.ID)
@@ -1506,19 +1365,6 @@ func (s *OpenAIGatewayService) proxyResponsesWebSocketV2PassthroughAttempt(
 					Duration:                      turn.Duration,
 					FirstTokenMs:                  turn.FirstTokenMs,
 				}
-				// Persist account affinity for response anchors produced by the
-				// passthrough relay. A later client reconnect must select the same
-				// legacy Laxa credential instead of replaying an opaque anchor on a
-				// sibling key; the passthrough transport itself owns its connection.
-				if responseID := strings.TrimSpace(turn.RequestID); responseID != "" &&
-					IsLegacyCindyAPIKeyAccount(account.Platform, account.Type, account.Credentials) {
-					stateStore := s.getOpenAIWSStateStore()
-					groupID := getOpenAIGroupIDFromContext(c)
-					if stateStore != nil {
-						ttl := s.openAIWSResponseStickyTTL()
-						logOpenAIWSBindResponseAccountWarn(groupID, account.ID, responseID, stateStore.BindResponseAccount(ctx, groupID, responseID, account.ID, ttl))
-					}
-				}
 				logOpenAIWSV2Passthrough(
 					"relay_turn_completed account_id=%d turn=%d request_id=%s terminal_event=%s turn_requested_model=%s turn_upstream_model=%s duration_ms=%d first_token_ms=%d input_tokens=%d output_tokens=%d cache_read_tokens=%d",
 					account.ID,
@@ -1571,8 +1417,8 @@ func (s *OpenAIGatewayService) proxyResponsesWebSocketV2PassthroughAttempt(
 					failureAccountSideEffectsApplied = false
 				}
 				if eventType == "error" || eventType == "response.failed" {
-					if failoverErr, ok := s.cindyBalanceTerminalFailover(
-						ctx, account, handshakeHeaders, payload, capturedSessionModel,
+					if failoverErr, ok := s.openAIBudgetExceededTerminalFailover(
+						ctx, account, handshakeHeaders, payload,
 					); ok {
 						replaySafe := completedTurns.Load() == 0 && (refusalOutput == nil || !refusalOutput.SemanticOutputStarted())
 						if refusalOutput != nil {
@@ -1587,7 +1433,7 @@ func (s *OpenAIGatewayService) proxyResponsesWebSocketV2PassthroughAttempt(
 						return NewOpenAIWSClientCloseError(
 							coderws.StatusTryAgainLater,
 							"Temporary upstream failure; please retry",
-							errors.New("cindy balance exhausted after downstream output"),
+							errors.New("upstream budget exhausted after downstream output"),
 						)
 					}
 				}
@@ -1600,9 +1446,7 @@ func (s *OpenAIGatewayService) proxyResponsesWebSocketV2PassthroughAttempt(
 				// pre-output failover signal so the ingress handler can switch keys
 				// when the current turn is replay-safe; later continuation turns are
 				// rejected by that handler's existing affinity guard.
-				if !wroteDownstream &&
-					IsCindyRuntimeCompatibleAPIKeyAccount(account.Platform, account.Type, account.Credentials) &&
-					isOpenAIModelNotSupportedPayload(payload) {
+				if !wroteDownstream && account.IsOpenAICompatible() && isOpenAIModelNotSupportedPayload(payload) {
 					model := strings.TrimSpace(capturedSessionModel)
 					failoverErr := newOpenAIModelNotSupportedFailoverError(handshakeHeaders, payload)
 					if model == "" {

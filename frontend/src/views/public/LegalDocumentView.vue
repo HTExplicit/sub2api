@@ -1,6 +1,6 @@
 <template>
   <div class="min-h-screen bg-gray-50 text-gray-900 dark:bg-dark-950 dark:text-white">
-    <header class="border-b border-gray-200 bg-white dark:border-dark-800 dark:bg-dark-900">
+    <header class="border-b border-gray-200 bg-white/95 dark:border-dark-800 dark:bg-dark-900/95">
       <div class="mx-auto flex max-w-5xl items-center justify-between gap-4 px-4 py-4 sm:px-6">
         <RouterLink to="/home" class="flex min-w-0 items-center gap-3">
           <template v-if="settings">
@@ -230,11 +230,11 @@ onMounted(async () => {
 }
 
 .legal-document-content :deep(code) {
-  @apply rounded-none bg-gray-100 px-1.5 py-0.5 font-mono text-sm dark:bg-dark-800;
+  @apply rounded bg-gray-100 px-1.5 py-0.5 font-mono text-sm dark:bg-dark-800;
 }
 
 .legal-document-content :deep(pre) {
-  @apply my-5 overflow-x-auto rounded-none bg-gray-950 p-4 text-gray-100;
+  @apply my-5 overflow-x-auto rounded-lg bg-gray-950 p-4 text-gray-100;
 }
 
 .legal-document-content :deep(pre code) {
@@ -254,7 +254,7 @@ onMounted(async () => {
 }
 
 .legal-document-content :deep(img) {
-  @apply my-5 h-auto max-w-full rounded-none;
+  @apply my-5 h-auto max-w-full rounded-lg;
 }
 
 .legal-document-content :deep(hr) {

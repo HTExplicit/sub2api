@@ -48,10 +48,8 @@ func TestOpenAIReasoningPolicyAccountDefaultsAndIsolation(t *testing.T) {
 			t.Run("actual_platform_scope", func(t *testing.T) {
 				// The Codex recovery capability is declared for the actual OpenAI
 				// platform; OpenAI-compatible wire protocols do not widen that scope.
-				require.False(t, policy.get(&Account{ID: 1, Platform: PlatformCindy, WirePlatform: WirePlatformOpenAI, ProviderProfile: ProviderProfileCindyLaxaV1, Type: AccountTypeAPIKey, Extra: map[string]any{policy.key: true}}))
 				require.True(t, policy.get(&Account{ID: 2, Platform: PlatformOpenAI, Type: AccountTypeAPIKey, Credentials: map[string]any{"base_url": "https://api.laxarouter.ai"}, Extra: map[string]any{policy.key: true}}), "a legacy Laxa URL does not relabel an ordinary OpenAI account")
 			})
-			require.False(t, policy.get(&Account{Platform: PlatformOpenAI, WirePlatform: PlatformGrok, Type: AccountTypeAPIKey}))
 			require.True(t, policy.get(&Account{Platform: PlatformOpenAI, Type: AccountTypeAPIKey, Extra: map[string]any{"openai_passthrough": true}}))
 		})
 	}
@@ -186,7 +184,6 @@ func TestOpenAIReasoningPolicyBulkRejectsInvalidCompleteTargetSet(t *testing.T) 
 		{ID: 101, Platform: PlatformOpenAI, Type: AccountTypeUpstream},
 		{ID: 101, Platform: PlatformOpenAI, Type: AccountTypeBedrock},
 		{ID: 101, Platform: PlatformOpenAI},
-		{ID: 101, Platform: PlatformOpenAI, WirePlatform: PlatformGrok, Type: AccountTypeAPIKey},
 	} {
 		ids := make([]int64, 101)
 		accounts := make([]*Account, 101)
@@ -215,7 +212,6 @@ func TestOpenAIReasoningPolicyBulkAcceptsEligibleTargetsIndependentlyOfCurrentPo
 		{ID: 1, Platform: PlatformOpenAI, Type: AccountTypeOAuth},
 		{ID: 1, Platform: PlatformOpenAI, Type: AccountTypeSetupToken},
 		{ID: 2, Platform: PlatformOpenAI, Type: AccountTypeOAuth, ParentAccountID: &parentID, QuotaDimension: QuotaDimensionSpark},
-		{ID: 1, Platform: PlatformCindy, WirePlatform: WirePlatformOpenAI, Type: AccountTypeAPIKey},
 	} {
 		account.Extra = map[string]any{OpenAIChatReasoningReplayEnabledExtraKey: false, OpenAIReasoningSignatureRecoveryEnabledExtraKey: "legacy-invalid"}
 		repo := &accountRepoStubForBulkUpdate{getByIDsAccounts: []*Account{account}}

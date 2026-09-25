@@ -12,7 +12,7 @@ func TestAPIKeyService_RejectsV24AuthSnapshotWithoutModelAllowlist(t *testing.T)
 	// used version 24 independently. A persisted downstream entry must be missed,
 	// not accepted with a zero-value allowlist after the JSON field rename.
 	var cached APIKeyAuthCacheEntry
-	err := json.Unmarshal([]byte(`{"snapshot":{"version":24,"api_key_id":1,"user_id":2,"group_id":9,"status":"active","user":{"id":2,"status":"active"},"group":{"id":9,"platform":"cindy","status":"active","strict_cindy_known":true,"strict_cindy":true,"models_list_config":{"enabled":true,"models":["gpt-5.4"]}}}}`), &cached)
+	err := json.Unmarshal([]byte(`{"snapshot":{"version":24,"api_key_id":1,"user_id":2,"group_id":9,"status":"active","user":{"id":2,"status":"active"},"group":{"id":9,"platform":"openai","status":"active","models_list_config":{"enabled":true,"models":["gpt-5.4"]}}}}`), &cached)
 	if err != nil {
 		t.Fatalf("decode legacy snapshot: %v", err)
 	}
@@ -40,9 +40,8 @@ func TestAPIKeyAuthSnapshotGroupModelAllowlistRoundtrip(t *testing.T) {
 				ID: 1, UserID: 2, GroupID: &groupID, Status: StatusActive,
 				User: &User{ID: 2, Status: StatusActive},
 				Group: &Group{
-					ID: groupID, Platform: PlatformCindy, Status: StatusActive,
-					Hydrated: true, StrictCindyKnown: true, StrictCindy: true,
-					ModelAllowlist: test.config, ForceOpenAIFast: true,
+					ID: groupID, Platform: PlatformOpenAI, Status: StatusActive,
+					Hydrated: true, ModelAllowlist: test.config, ForceOpenAIFast: true,
 				},
 			}
 			svc := &APIKeyService{}
@@ -65,8 +64,8 @@ func TestAPIKeyAuthSnapshotGroupModelAllowlistRoundtrip(t *testing.T) {
 			if got := group.ModelAllowlist.Allows("gpt-5.4"); got != test.allowed {
 				t.Fatalf("allowlist admission changed in snapshot: got %v want %v", got, test.allowed)
 			}
-			if group.Platform != PlatformCindy || !group.StrictCindyKnown || !group.StrictCindy || !group.ForceOpenAIFast {
-				t.Fatal("allowlist snapshot lost downstream Cindy identity or Fast fields")
+			if group.Platform != PlatformOpenAI || !group.ForceOpenAIFast {
+				t.Fatal("allowlist snapshot lost the group platform or Fast fields")
 			}
 		})
 	}

@@ -45,7 +45,6 @@ type AdminHandlers struct {
 	Compliance             *admin.ComplianceHandler
 	AuditLog               *admin.AuditLogHandler
 	SystemPrompt           *admin.SystemPromptHandler
-	CindyBalanceProbe      *admin.CindyBalanceProbeHandler
 }
 
 // Handlers contains all HTTP handlers
@@ -72,7 +71,6 @@ type Handlers struct {
 	AsyncImage       *AsyncImageHandler
 	BatchImage       *BatchImageHandler
 	ImageStudio      *ImageStudioJobHandler
-	RemoteSkill      *RemoteSkillHandler
 }
 
 // BuildInfo contains build-time information

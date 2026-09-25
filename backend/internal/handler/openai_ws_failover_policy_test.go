@@ -11,7 +11,6 @@ func TestOpenAIWSInitialAccountSwitchReplaySafe(t *testing.T) {
 		name            string
 		payload         string
 		previousCanMove bool
-		strictCindy     bool
 		want            bool
 	}{
 		{
@@ -48,7 +47,7 @@ func TestOpenAIWSInitialAccountSwitchReplaySafe(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			require.Equal(t, tt.want, openAIWSInitialAccountSwitchReplaySafe([]byte(tt.payload), tt.previousCanMove, tt.strictCindy))
+			require.Equal(t, tt.want, openAIWSInitialAccountSwitchReplaySafe([]byte(tt.payload), tt.previousCanMove))
 		})
 	}
 }
@@ -57,27 +56,18 @@ func TestOpenAIWSPreviousResponseCanMove(t *testing.T) {
 	require.False(t, openAIWSPreviousResponseCanMove(
 		[]byte(`{"type":"response.create","previous_response_id":"resp_1","input":"next"}`),
 		"resp_1",
-		false,
 	))
 	require.False(t, openAIWSPreviousResponseCanMove(
 		[]byte(`{"type":"response.create","previous_response_id":"resp_1","input":[{"type":"function_call","call_id":"call_1","name":"tool","arguments":"{}"},{"type":"function_call_output","call_id":"call_1","output":"ok"}]}`),
 		"resp_1",
-		false,
-	))
-	require.False(t, openAIWSPreviousResponseCanMove(
-		[]byte(`{"type":"response.create","previous_response_id":"resp_1","input":[{"type":"function_call","call_id":"call_1","name":"tool","arguments":"{}"},{"type":"function_call_output","call_id":"call_1","output":"ok"}]}`),
-		"resp_1",
-		true,
 	))
 	require.False(t, openAIWSPreviousResponseCanMove(
 		[]byte(`{"type":"response.create","previous_response_id":"resp_1","input":[{"type":"reasoning","encrypted_content":"cipher"},{"type":"function_call","call_id":"call_1","name":"tool","arguments":"{}"},{"type":"function_call_output","call_id":"call_1","output":"ok"}]}`),
 		"resp_1",
-		false,
 	))
 	require.False(t, openAIWSPreviousResponseCanMove(
 		[]byte(`{"type":"response.create","previous_response_id":"","input":[{"type":"item_reference","id":"fc_1"}]}`),
 		"",
-		true,
 	))
 }
 
@@ -88,19 +78,7 @@ func TestOpenAIWSFailoverDoesNotTreatExternalStateAsFullHistory(t *testing.T) {
 		`{"type":"response.create","input":[{"type":"compaction","encrypted_content":"opaque"}]}`,
 		`{"type":"response.create","input":[{"type":"function_call_output","call_id":"unseen","output":"ok"}]}`,
 	} {
-		require.False(t, openAIWSPreviousResponseCanMove([]byte(payload), "", false))
-		require.False(t, openAIWSInitialAccountSwitchReplaySafe([]byte(payload), true, false))
+		require.False(t, openAIWSPreviousResponseCanMove([]byte(payload), ""))
+		require.False(t, openAIWSInitialAccountSwitchReplaySafe([]byte(payload), true))
 	}
-}
-
-func TestOpenAIWSLegacyLaxaReplaySafe(t *testing.T) {
-	require.True(t, openAIWSLegacyLaxaReplaySafe(
-		[]byte(`{"type":"response.create","model":"gpt-5.6-luna","input":"hello"}`),
-	))
-	require.False(t, openAIWSLegacyLaxaReplaySafe(
-		[]byte(`{"type":"response.create","model":"gpt-5.6-luna","previous_response_id":"resp_1","input":"hello"}`),
-	))
-	require.False(t, openAIWSLegacyLaxaReplaySafe(
-		[]byte(`{"type":"response.create","model":"gpt-5.6-luna","input":[{"type":"reasoning","encrypted_content":"opaque"}]}`),
-	))
 }

@@ -184,7 +184,7 @@ func sanitizeUpdateGroupRequestForSimpleMode(req *UpdateGroupRequest) {
 type CreateGroupRequest struct {
 	Name                      string                        `json:"name" binding:"required"`
 	Description               string                        `json:"description"`
-	Platform                  string                        `json:"platform" binding:"omitempty,oneof=anthropic openai cindy gemini antigravity grok kimi zhipu deepseek minimax opencode_go composite"`
+	Platform                  string                        `json:"platform" binding:"omitempty,oneof=anthropic openai gemini antigravity grok kimi zhipu deepseek minimax opencode_go composite"`
 	RateMultiplier            float64                       `json:"rate_multiplier"`
 	IsExclusive               bool                          `json:"is_exclusive"`
 	SubscriptionType          string                        `json:"subscription_type" binding:"omitempty,oneof=standard subscription"`
@@ -258,7 +258,7 @@ type CreateGroupRequest struct {
 type UpdateGroupRequest struct {
 	Name                      string                         `json:"name"`
 	Description               *string                        `json:"description"`
-	Platform                  string                         `json:"platform" binding:"omitempty,oneof=anthropic openai cindy gemini antigravity grok kimi zhipu deepseek minimax opencode_go composite"`
+	Platform                  string                         `json:"platform" binding:"omitempty,oneof=anthropic openai gemini antigravity grok kimi zhipu deepseek minimax opencode_go composite"`
 	RateMultiplier            *float64                       `json:"rate_multiplier"`
 	IsExclusive               *bool                          `json:"is_exclusive"`
 	Status                    string                         `json:"status" binding:"omitempty,oneof=active inactive"`
@@ -608,23 +608,19 @@ func (h *GroupHandler) GetByID(c *gin.Context) {
 // GetGroupModelAllowlistCandidates handles getting candidate model IDs for the group model allowlist.
 // GET /api/v1/admin/groups/:id/model-allowlist-candidates
 func (h *GroupHandler) GetGroupModelAllowlistCandidates(c *gin.Context) {
+	if h.rejectUnsupportedSimpleModeOperation(c, "advanced") {
+		return
+	}
 	groupID, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil || groupID < 0 {
 		response.BadRequest(c, "Invalid group ID")
-		return
-	}
-	platform := c.Query("platform")
-	// Cindy 账号创建用 id=0 读取发行版内置目录，不读取已有分组或账号池。
-	// 仅保留这个本地创建入口；实际分组和其他平台仍遵循简洁模式的高级操作限制。
-	localCindyCreateCatalog := groupID == 0 && platform == service.PlatformCindy
-	if !localCindyCreateCatalog && h.rejectUnsupportedSimpleModeOperation(c, "advanced") {
 		return
 	}
 
 	models, err := h.adminService.GetGroupModelsListCandidates(
 		c.Request.Context(),
 		groupID,
-		platform,
+		c.Query("platform"),
 	)
 	if err != nil {
 		response.ErrorFrom(c, err)

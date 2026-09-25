@@ -13,9 +13,9 @@ func TestAccountBusinessMessageCatalogSeparatesPreviewAndFailureCodes(t *testing
 	require.True(t, ok)
 	require.Equal(t, "account will be created", message)
 
-	code, message := NormalizeAccountBusinessFailure(AccountImportCodeCindyTargetRequired)
-	require.Equal(t, AccountImportCodeCindyTargetRequired, code)
-	require.Equal(t, "one explicit target group is required for Cindy imports", message)
+	code, message := NormalizeAccountBusinessFailure(AccountImportCodeIdentityConflict)
+	require.Equal(t, AccountImportCodeIdentityConflict, code)
+	require.Equal(t, "account identity matches multiple existing accounts", message)
 	code, message = NormalizeAccountBusinessFailure("delete_failed")
 	require.Equal(t, "delete_failed", code)
 	require.Equal(t, "account could not be deleted", message)

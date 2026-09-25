@@ -114,8 +114,6 @@ var (
 		{Name: "name", Type: field.TypeString, Size: 100},
 		{Name: "notes", Type: field.TypeString, Nullable: true, SchemaType: map[string]string{"postgres": "text"}},
 		{Name: "platform", Type: field.TypeString, Size: 50},
-		{Name: "wire_platform", Type: field.TypeString, Size: 50, Default: ""},
-		{Name: "provider_profile", Type: field.TypeString, Size: 100, Default: ""},
 		{Name: "type", Type: field.TypeString, Size: 20},
 		{Name: "credentials", Type: field.TypeJSON, SchemaType: map[string]string{"postgres": "jsonb"}},
 		{Name: "extra", Type: field.TypeJSON, SchemaType: map[string]string{"postgres": "jsonb"}},
@@ -130,9 +128,6 @@ var (
 		{Name: "expires_at", Type: field.TypeTime, Nullable: true, SchemaType: map[string]string{"postgres": "timestamptz"}},
 		{Name: "auto_pause_on_expired", Type: field.TypeBool, Default: true},
 		{Name: "schedulable", Type: field.TypeBool, Default: true},
-		{Name: "cindy_balance_insufficient_at", Type: field.TypeTime, Nullable: true, SchemaType: map[string]string{"postgres": "timestamptz"}},
-		{Name: "cindy_banned_at", Type: field.TypeTime, Nullable: true, SchemaType: map[string]string{"postgres": "timestamptz"}},
-		{Name: "cindy_credential_generation", Type: field.TypeInt64, Default: 0},
 		{Name: "rate_limited_at", Type: field.TypeTime, Nullable: true, SchemaType: map[string]string{"postgres": "timestamptz"}},
 		{Name: "rate_limit_reset_at", Type: field.TypeTime, Nullable: true, SchemaType: map[string]string{"postgres": "timestamptz"}},
 		{Name: "overload_until", Type: field.TypeTime, Nullable: true, SchemaType: map[string]string{"postgres": "timestamptz"}},
@@ -154,19 +149,19 @@ var (
 		ForeignKeys: []*schema.ForeignKey{
 			{
 				Symbol:     "accounts_proxies_proxy",
-				Columns:    []*schema.Column{AccountsColumns[35]},
+				Columns:    []*schema.Column{AccountsColumns[30]},
 				RefColumns: []*schema.Column{ProxiesColumns[0]},
 				OnDelete:   schema.SetNull,
 			},
 			{
 				Symbol:     "accounts_accounts_children",
-				Columns:    []*schema.Column{AccountsColumns[36]},
+				Columns:    []*schema.Column{AccountsColumns[31]},
 				RefColumns: []*schema.Column{AccountsColumns[0]},
 				OnDelete:   schema.Restrict,
 			},
 			{
 				Symbol:     "accounts_account_folders_accounts",
-				Columns:    []*schema.Column{AccountsColumns[37]},
+				Columns:    []*schema.Column{AccountsColumns[32]},
 				RefColumns: []*schema.Column{AccountFoldersColumns[0]},
 				OnDelete:   schema.Restrict,
 			},
@@ -178,69 +173,64 @@ var (
 				Columns: []*schema.Column{AccountsColumns[6]},
 			},
 			{
-				Name:    "account_platform_wire_platform_provider_profile",
-				Unique:  false,
-				Columns: []*schema.Column{AccountsColumns[6], AccountsColumns[7], AccountsColumns[8]},
-			},
-			{
 				Name:    "account_type",
 				Unique:  false,
-				Columns: []*schema.Column{AccountsColumns[9]},
+				Columns: []*schema.Column{AccountsColumns[7]},
 			},
 			{
 				Name:    "account_status",
 				Unique:  false,
-				Columns: []*schema.Column{AccountsColumns[17]},
+				Columns: []*schema.Column{AccountsColumns[15]},
 			},
 			{
 				Name:    "account_proxy_id",
 				Unique:  false,
-				Columns: []*schema.Column{AccountsColumns[35]},
+				Columns: []*schema.Column{AccountsColumns[30]},
 			},
 			{
 				Name:    "account_management_folder_id",
 				Unique:  false,
-				Columns: []*schema.Column{AccountsColumns[37]},
+				Columns: []*schema.Column{AccountsColumns[32]},
 			},
 			{
 				Name:    "account_priority",
 				Unique:  false,
-				Columns: []*schema.Column{AccountsColumns[15]},
+				Columns: []*schema.Column{AccountsColumns[13]},
 			},
 			{
 				Name:    "account_last_used_at",
 				Unique:  false,
-				Columns: []*schema.Column{AccountsColumns[19]},
+				Columns: []*schema.Column{AccountsColumns[17]},
 			},
 			{
 				Name:    "account_schedulable",
 				Unique:  false,
-				Columns: []*schema.Column{AccountsColumns[22]},
+				Columns: []*schema.Column{AccountsColumns[20]},
 			},
 			{
 				Name:    "account_rate_limited_at",
 				Unique:  false,
-				Columns: []*schema.Column{AccountsColumns[26]},
+				Columns: []*schema.Column{AccountsColumns[21]},
 			},
 			{
 				Name:    "account_rate_limit_reset_at",
 				Unique:  false,
-				Columns: []*schema.Column{AccountsColumns[27]},
+				Columns: []*schema.Column{AccountsColumns[22]},
 			},
 			{
 				Name:    "account_overload_until",
 				Unique:  false,
-				Columns: []*schema.Column{AccountsColumns[28]},
+				Columns: []*schema.Column{AccountsColumns[23]},
 			},
 			{
 				Name:    "account_platform_priority",
 				Unique:  false,
-				Columns: []*schema.Column{AccountsColumns[6], AccountsColumns[15]},
+				Columns: []*schema.Column{AccountsColumns[6], AccountsColumns[13]},
 			},
 			{
 				Name:    "account_priority_status",
 				Unique:  false,
-				Columns: []*schema.Column{AccountsColumns[15], AccountsColumns[17]},
+				Columns: []*schema.Column{AccountsColumns[13], AccountsColumns[15]},
 			},
 			{
 				Name:    "account_deleted_at",
@@ -250,7 +240,7 @@ var (
 			{
 				Name:    "account_parent_account_id",
 				Unique:  false,
-				Columns: []*schema.Column{AccountsColumns[36]},
+				Columns: []*schema.Column{AccountsColumns[31]},
 			},
 		},
 	}
@@ -1028,8 +1018,6 @@ var (
 		{Name: "status", Type: field.TypeString, Size: 20, Default: "active"},
 		{Name: "duplicate_operation_id", Type: field.TypeString, Nullable: true, Size: 64},
 		{Name: "platform", Type: field.TypeString, Size: 50, Default: "anthropic"},
-		{Name: "wire_platform", Type: field.TypeString, Size: 50, Default: ""},
-		{Name: "provider_profile", Type: field.TypeString, Size: 100, Default: ""},
 		{Name: "subscription_type", Type: field.TypeString, Size: 20, Default: "standard"},
 		{Name: "daily_limit_usd", Type: field.TypeFloat64, Nullable: true, SchemaType: map[string]string{"postgres": "decimal(20,8)"}},
 		{Name: "weekly_limit_usd", Type: field.TypeFloat64, Nullable: true, SchemaType: map[string]string{"postgres": "decimal(20,8)"}},
@@ -1102,7 +1090,7 @@ var (
 			{
 				Name:    "group_subscription_type",
 				Unique:  false,
-				Columns: []*schema.Column{GroupsColumns[17]},
+				Columns: []*schema.Column{GroupsColumns[15]},
 			},
 			{
 				Name:    "group_is_exclusive",
@@ -1117,7 +1105,7 @@ var (
 			{
 				Name:    "group_sort_order",
 				Unique:  false,
-				Columns: []*schema.Column{GroupsColumns[51]},
+				Columns: []*schema.Column{GroupsColumns[49]},
 			},
 			{
 				Name:    "idx_groups_duplicate_operation_id_active",
@@ -1684,102 +1672,6 @@ var (
 			},
 		},
 	}
-	// SystemPromptRuntimeColumns holds the columns for the "system_prompt_runtime" table.
-	SystemPromptRuntimeColumns = []*schema.Column{
-		{Name: "id", Type: field.TypeInt64, Increment: true},
-		{Name: "enabled", Type: field.TypeBool, Default: false},
-		{Name: "expose_server_prompt", Type: field.TypeBool, Default: false},
-		{Name: "compact_enabled", Type: field.TypeBool, Default: false},
-		{Name: "revision", Type: field.TypeInt64, Default: 1},
-		{Name: "updated_by", Type: field.TypeInt64, Nullable: true},
-		{Name: "updated_at", Type: field.TypeTime},
-		{Name: "active_template_id", Type: field.TypeInt64, Nullable: true},
-		{Name: "active_version_id", Type: field.TypeInt64, Nullable: true},
-	}
-	// SystemPromptRuntimeTable holds the schema information for the "system_prompt_runtime" table.
-	SystemPromptRuntimeTable = &schema.Table{
-		Name:       "system_prompt_runtime",
-		Columns:    SystemPromptRuntimeColumns,
-		PrimaryKey: []*schema.Column{SystemPromptRuntimeColumns[0]},
-		ForeignKeys: []*schema.ForeignKey{
-			{
-				Symbol:     "system_prompt_runtime_system_prompt_templates_active_template",
-				Columns:    []*schema.Column{SystemPromptRuntimeColumns[7]},
-				RefColumns: []*schema.Column{SystemPromptTemplatesColumns[0]},
-				OnDelete:   schema.Restrict,
-			},
-			{
-				Symbol:     "system_prompt_runtime_system_prompt_template_versions_active_version",
-				Columns:    []*schema.Column{SystemPromptRuntimeColumns[8]},
-				RefColumns: []*schema.Column{SystemPromptTemplateVersionsColumns[0]},
-				OnDelete:   schema.Restrict,
-			},
-		},
-	}
-	// SystemPromptTemplatesColumns holds the columns for the "system_prompt_templates" table.
-	SystemPromptTemplatesColumns = []*schema.Column{
-		{Name: "id", Type: field.TypeInt64, Increment: true},
-		{Name: "created_at", Type: field.TypeTime, SchemaType: map[string]string{"postgres": "timestamptz"}},
-		{Name: "updated_at", Type: field.TypeTime, SchemaType: map[string]string{"postgres": "timestamptz"}},
-		{Name: "deleted_at", Type: field.TypeTime, Nullable: true, SchemaType: map[string]string{"postgres": "timestamptz"}},
-		{Name: "slug", Type: field.TypeString, Unique: true, Size: 100},
-		{Name: "name", Type: field.TypeString, Size: 200},
-		{Name: "description", Type: field.TypeString, Default: "", SchemaType: map[string]string{"postgres": "text"}},
-		{Name: "is_seed", Type: field.TypeBool, Default: false},
-		{Name: "managed_source", Type: field.TypeString, Nullable: true, Size: 100},
-		{Name: "created_by", Type: field.TypeInt64, Nullable: true},
-		{Name: "updated_by", Type: field.TypeInt64, Nullable: true},
-	}
-	// SystemPromptTemplatesTable holds the schema information for the "system_prompt_templates" table.
-	SystemPromptTemplatesTable = &schema.Table{
-		Name:       "system_prompt_templates",
-		Columns:    SystemPromptTemplatesColumns,
-		PrimaryKey: []*schema.Column{SystemPromptTemplatesColumns[0]},
-	}
-	// SystemPromptTemplateVersionsColumns holds the columns for the "system_prompt_template_versions" table.
-	SystemPromptTemplateVersionsColumns = []*schema.Column{
-		{Name: "id", Type: field.TypeInt64, Increment: true},
-		{Name: "version", Type: field.TypeInt64},
-		{Name: "body", Type: field.TypeString, SchemaType: map[string]string{"postgres": "text"}},
-		{Name: "sha256", Type: field.TypeString, Size: 64},
-		{Name: "byte_length", Type: field.TypeInt},
-		{Name: "composition_mode", Type: field.TypeString, Size: 32, Default: "inline"},
-		{Name: "bundle_id", Type: field.TypeString, Nullable: true, Size: 128},
-		{Name: "bundle_manifest_sha256", Type: field.TypeString, Nullable: true, Size: 64},
-		{Name: "note", Type: field.TypeString, Size: 500, Default: ""},
-		{Name: "source_repository", Type: field.TypeString, Nullable: true, Size: 200},
-		{Name: "source_commit", Type: field.TypeString, Nullable: true, Size: 40},
-		{Name: "source_version", Type: field.TypeString, Nullable: true, Size: 32},
-		{Name: "source_artifact", Type: field.TypeString, Nullable: true, Size: 255},
-		{Name: "source_artifact_sha256", Type: field.TypeString, Nullable: true, Size: 64},
-		{Name: "source_license_sha256", Type: field.TypeString, Nullable: true, Size: 64},
-		{Name: "created_by", Type: field.TypeInt64, Nullable: true},
-		{Name: "published_at", Type: field.TypeTime, Nullable: true, SchemaType: map[string]string{"postgres": "timestamptz"}},
-		{Name: "published_by", Type: field.TypeInt64, Nullable: true},
-		{Name: "created_at", Type: field.TypeTime, SchemaType: map[string]string{"postgres": "timestamptz"}},
-		{Name: "template_id", Type: field.TypeInt64},
-	}
-	// SystemPromptTemplateVersionsTable holds the schema information for the "system_prompt_template_versions" table.
-	SystemPromptTemplateVersionsTable = &schema.Table{
-		Name:       "system_prompt_template_versions",
-		Columns:    SystemPromptTemplateVersionsColumns,
-		PrimaryKey: []*schema.Column{SystemPromptTemplateVersionsColumns[0]},
-		ForeignKeys: []*schema.ForeignKey{
-			{
-				Symbol:     "system_prompt_template_versions_system_prompt_templates_versions",
-				Columns:    []*schema.Column{SystemPromptTemplateVersionsColumns[19]},
-				RefColumns: []*schema.Column{SystemPromptTemplatesColumns[0]},
-				OnDelete:   schema.Restrict,
-			},
-		},
-		Indexes: []*schema.Index{
-			{
-				Name:    "systemprompttemplateversion_template_id_version",
-				Unique:  true,
-				Columns: []*schema.Column{SystemPromptTemplateVersionsColumns[19], SystemPromptTemplateVersionsColumns[1]},
-			},
-		},
-	}
 	// TLSFingerprintProfilesColumns holds the columns for the "tls_fingerprint_profiles" table.
 	TLSFingerprintProfilesColumns = []*schema.Column{
 		{Name: "id", Type: field.TypeInt64, Increment: true},
@@ -2330,9 +2222,6 @@ var (
 		SecuritySecretsTable,
 		SettingsTable,
 		SubscriptionPlansTable,
-		SystemPromptRuntimeTable,
-		SystemPromptTemplatesTable,
-		SystemPromptTemplateVersionsTable,
 		TLSFingerprintProfilesTable,
 		UsageCleanupTasksTable,
 		UsageLogsTable,
@@ -2470,18 +2359,6 @@ func init() {
 	}
 	SubscriptionPlansTable.Annotation = &entsql.Annotation{
 		Table: "subscription_plans",
-	}
-	SystemPromptRuntimeTable.ForeignKeys[0].RefTable = SystemPromptTemplatesTable
-	SystemPromptRuntimeTable.ForeignKeys[1].RefTable = SystemPromptTemplateVersionsTable
-	SystemPromptRuntimeTable.Annotation = &entsql.Annotation{
-		Table: "system_prompt_runtime",
-	}
-	SystemPromptTemplatesTable.Annotation = &entsql.Annotation{
-		Table: "system_prompt_templates",
-	}
-	SystemPromptTemplateVersionsTable.ForeignKeys[0].RefTable = SystemPromptTemplatesTable
-	SystemPromptTemplateVersionsTable.Annotation = &entsql.Annotation{
-		Table: "system_prompt_template_versions",
 	}
 	TLSFingerprintProfilesTable.Annotation = &entsql.Annotation{
 		Table: "tls_fingerprint_profiles",

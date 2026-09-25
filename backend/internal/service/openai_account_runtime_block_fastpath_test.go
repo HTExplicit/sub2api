@@ -408,93 +408,6 @@ func TestOpenAIStrictContinuation_RuntimeBlockStopsFallbackAndPreservesResponseB
 	require.Equal(t, bound.ID, accountID, "runtime cooldown must preserve the strict continuation anchor")
 }
 
-func TestOpenAIStrictCindyContinuation_TransientRuntimeBlockKeepsBoundAccount(t *testing.T) {
-	ctx := context.Background()
-	groupID := int64(49)
-	bound := Account{
-		ID:          4912,
-		Platform:    PlatformCindy,
-		Type:        AccountTypeAPIKey,
-		Status:      StatusActive,
-		Schedulable: true,
-		Concurrency: 1,
-		Priority:    1,
-		Credentials: map[string]any{
-			"api_key":  "sk-cindy-bound",
-			"base_url": "https://api.laxarouter.ai",
-		},
-		Extra: map[string]any{
-			"openai_apikey_responses_websockets_v2_enabled": true,
-		},
-	}
-	fallback := bound
-	fallback.ID = 4913
-	fallback.Priority = 100
-	fallback.Credentials = map[string]any{
-		"api_key":  "sk-cindy-fallback",
-		"base_url": "https://api.laxarouter.ai",
-	}
-
-	for _, testCase := range []struct {
-		name          string
-		until         time.Time
-		wantSelection bool
-	}{
-		{name: "finite cooldown", until: time.Now().Add(time.Minute), wantSelection: true},
-		{name: "terminal block", until: time.Time{}, wantSelection: false},
-	} {
-		t.Run(testCase.name, func(t *testing.T) {
-			cache := &runtimeBreakerTestCache{}
-			store := NewOpenAIWSStateStore(cache)
-			svc := &OpenAIGatewayService{
-				accountRepo:        stubOpenAIAccountRepo{accounts: []Account{bound, fallback}},
-				cache:              cache,
-				cfg:                newOpenAIWSV2TestConfig(),
-				concurrencyService: NewConcurrencyService(stubConcurrencyCache{}),
-				openaiWSStateStore: store,
-			}
-			require.NoError(t, store.BindResponseAccount(ctx, groupID, "resp_cindy_runtime", bound.ID, time.Hour))
-			reason := "test_cindy_runtime"
-			if testCase.until.IsZero() {
-				reason = "cindy_banned"
-			}
-			svc.BlockAccountScheduling(&bound, testCase.until, reason)
-			require.True(t, svc.isOpenAIAccountRequestRuntimeBlockedContext(ctx, &bound, "gpt-5.6-luna"))
-			require.Equal(t, !testCase.wantSelection,
-				svc.isOpenAIAccountStrictContinuationBlockedContext(ctx, &bound, "gpt-5.6-luna"))
-
-			selection, _, err := svc.SelectAccountWithSchedulerForCapability(
-				ctx,
-				&groupID,
-				"resp_cindy_runtime",
-				"",
-				"gpt-5.6-luna",
-				nil,
-				OpenAIUpstreamTransportResponsesWebsocketV2,
-				OpenAIEndpointCapabilityChatCompletions,
-				false,
-				false,
-				true,
-			)
-			if testCase.wantSelection {
-				require.NoError(t, err)
-				require.NotNil(t, selection)
-				require.Equal(t, bound.ID, selection.Account.ID)
-				return
-			}
-
-			require.Nil(t, selection)
-			var continuationErr *UpstreamFailoverError
-			require.ErrorAs(t, err, &continuationErr)
-			require.True(t, continuationErr.IsOpenAIContinuationStateUnavailable())
-			require.False(t, continuationErr.ShouldRetryNextAccount())
-			accountID, getErr := store.GetResponseAccount(ctx, groupID, "resp_cindy_runtime")
-			require.NoError(t, getErr)
-			require.Equal(t, bound.ID, accountID)
-		})
-	}
-}
-
 func TestOpenAIStrictContinuation_MissingBindingDoesNotFallBackToAnotherAccount(t *testing.T) {
 	ctx := context.Background()
 	groupID := int64(4711)
@@ -1044,18 +957,6 @@ func TestOpenAI429LegacySideEffects_DoNotPersistOrDuplicateRuntimeCooldown(t *te
 	require.False(t, svc.isOpenAIAccountRuntimeBlocked(apiKeyAccount))
 }
 
-func TestFirstClassCindyAccountUsesOpenAIRuntimeBlock(t *testing.T) {
-	svc := &OpenAIGatewayService{}
-	account := newFirstClassCindyRateLimitAccount(4403, false)
-
-	svc.BlockAccountScheduling(account, time.Now().Add(time.Minute), "cindy_health_quarantine")
-
-	require.True(t, svc.isOpenAIAccountRuntimeBlocked(account))
-	require.False(t, accountPersistedSchedulingCooldownActive(account))
-	require.True(t, svc.isOpenAIAccountRequestRuntimeBlocked(account, "gpt-5.6-luna"),
-		"generic persisted cooldown fields must not clear a Cindy quarantine")
-}
-
 func TestOpenAI429FastPath_DoesNotBlockOAuthWhenFallbackDisabled(t *testing.T) {
 	repo := &openAI429SnapshotRepo{}
 	settingRepo := newMockSettingRepo()
@@ -1321,39 +1222,6 @@ func TestCooldownOpenAIRetryExhausted_AccountAndModelScopes(t *testing.T) {
 		require.False(t, svc.isOpenAIAccountRuntimeBlocked(account))
 		require.False(t, svc.isOpenAIAccountRequestRuntimeBlocked(account, "gpt-5.4"))
 	})
-
-	t.Run("Cindy terminal request failure does not cool account", func(t *testing.T) {
-		svc := &OpenAIGatewayService{}
-		account := cindyHTTPToWSV2TestAccount()
-		account.ID = 4707
-
-		svc.CooldownOpenAIRetryExhausted(context.Background(), account, account.GetMappedModel("gpt-5.6-luna"), &UpstreamFailoverError{
-			StatusCode:               http.StatusBadGateway,
-			Scope:                    GatewayFailureScopeRequest,
-			Reason:                   openAICindyHTTPToWSV2TerminalReason,
-			CindyHTTPToWSV2FirstTurn: true,
-		})
-
-		require.False(t, svc.isOpenAIAccountRuntimeBlocked(account))
-		require.False(t, svc.isOpenAIAccountRequestRuntimeBlocked(account, "gpt-5.6-luna"))
-	})
-
-	t.Run("Cindy handshake 502 cools only failed account model", func(t *testing.T) {
-		svc := &OpenAIGatewayService{}
-		account := cindyHTTPToWSV2TestAccount()
-		account.ID = 4708
-
-		svc.CooldownOpenAIRetryExhausted(context.Background(), account, account.GetMappedModel("gpt-5.6-luna"), &UpstreamFailoverError{
-			StatusCode:               http.StatusBadGateway,
-			Scope:                    GatewayFailureScopeAccount,
-			Reason:                   openAICindyHTTPToWSV2FailoverReason,
-			CindyHTTPToWSV2FirstTurn: true,
-		})
-
-		require.False(t, svc.isOpenAIAccountRuntimeBlocked(account))
-		require.True(t, svc.isOpenAIAccountRequestRuntimeBlocked(account, "gpt-5.6-luna"))
-		require.False(t, svc.isOpenAIAccountRequestRuntimeBlocked(account, "gpt-5.6-sol"))
-	})
 }
 
 func TestCooldownOpenAIRetryExhausted_DoesNotShortenExistingBlock(t *testing.T) {
@@ -1614,37 +1482,6 @@ func TestOpenAIRuntimeBlock_ClearAccountSchedulingBlock(t *testing.T) {
 	require.False(t, svc.isOpenAIAccountRuntimeBlocked(account))
 }
 
-func TestCindyBannedRuntimeBlockIsIndefiniteAndGenerationScopedAcrossABA(t *testing.T) {
-	svc := &OpenAIGatewayService{}
-	account := newCindyRateLimitAccount(99101, false)
-	account.CindyCredentialGeneration = 4
-	fingerprint, err := AccountCredentialFingerprint(
-		ProviderProfileCindyLaxaV1, AccountTypeAPIKey, "https://api.laxarouter.ai", account.GetCredential("api_key"),
-	)
-	require.NoError(t, err)
-	episode := CindyHealthEpisode{
-		AccountID: account.ID, Generation: 4, EpisodeID: "episode-generation-4", Fingerprint: fingerprint,
-	}
-
-	require.True(t, svc.BlockCindyHealthEpisode(account, episode, "cindy_banned"))
-	stored, ok := svc.openaiAccountRuntimeBlockUntil.Load(account.ID)
-	require.True(t, ok)
-	require.True(t, stored.(time.Time).IsZero(), "banned runtime block must be indefinite")
-	require.True(t, svc.isOpenAIAccountRuntimeBlockedContext(context.Background(), account))
-	require.False(t, accountPersistedSchedulingCooldownActive(account))
-	snapshot := svc.peekOpenAIAccountRuntimeBlock(account)
-	require.True(t, snapshot.blocked, "peeking must retain the zero-deadline terminal block")
-	svc.clearOpenAIAccountRuntimeBlockIfUnchanged(account.ID, snapshot)
-	require.True(t, svc.isOpenAIAccountRequestRuntimeBlocked(account, "gpt-5.6-luna"),
-		"ordinary cooldown CAS must not clear a Cindy health episode")
-	svc.BlockAccountScheduling(account, time.Now().Add(2*time.Minute), "cindy_health_quarantine")
-
-	currentABA := *account
-	currentABA.CindyCredentialGeneration = 6
-	require.False(t, svc.isOpenAIAccountRequestRuntimeBlockedContext(context.Background(), &currentABA, "gpt-5.6-luna"),
-		"generation 4 evidence must not block generation 6 even when the credential fingerprint repeats")
-}
-
 func TestRuntimeBlockHonorsClearedPersistedCooldown(t *testing.T) {
 	svc := &OpenAIGatewayService{}
 	account := &Account{ID: 92, Platform: PlatformGrok, Type: AccountTypeOAuth, Status: StatusActive, Schedulable: true}
@@ -1700,25 +1537,6 @@ func TestRuntimeBlockConditionalClearKeepsOAuthProbeOwnership(t *testing.T) {
 	require.False(t, svc.isOpenAIAccountRequestRuntimeBlockedContext(
 		withOpenAIRuntimeBreakerProbeOwner(context.Background(), "current-owner"), account, "gpt-5.4",
 	))
-}
-
-func TestRuntimeBlockConditionalClearKeepsCindyBalanceFingerprint(t *testing.T) {
-	svc := &OpenAIGatewayService{}
-	account := newCindyRateLimitAccount(99102, false)
-	svc.BlockAccountScheduling(account, time.Time{}, "cindy_balance_insufficient")
-	snapshot := svc.peekOpenAIAccountRuntimeBlock(account)
-	require.True(t, snapshot.blocked)
-	require.True(t, snapshot.until.IsZero())
-	svc.clearOpenAIAccountRuntimeBlockIfUnchanged(account.ID, snapshot)
-	require.False(t, accountPersistedSchedulingCooldownActive(account))
-	require.True(t, svc.isOpenAIAccountRequestRuntimeBlocked(account, "gpt-5.6-luna"))
-	_, exists := svc.cindyBalanceRuntimeBlockFingerprint.Load(account.ID)
-	require.True(t, exists, "ordinary cooldown cleanup must retain the balance block identity")
-
-	rotated := *account
-	rotated.Credentials = map[string]any{"base_url": "https://api.laxarouter.ai", "api_key": "rotated-balance-key"}
-	require.False(t, svc.isOpenAIAccountRequestRuntimeBlocked(&rotated, "gpt-5.6-luna"),
-		"a credential rotation must still invalidate the old balance fingerprint")
 }
 
 func TestRuntimeBlockKeepsActivePersistedCooldown(t *testing.T) {

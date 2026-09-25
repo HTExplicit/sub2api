@@ -14,16 +14,16 @@
         <div class="flex items-center gap-3">
           <div
             :class="[
-              'flex h-10 w-10 items-center justify-center rounded-none ',
+              'flex h-10 w-10 items-center justify-center rounded-lg bg-gradient-to-br',
               isOpenAILike
-                ? 'bg-green-500 '
+                ? 'from-green-500 to-green-600'
                 : isGemini
-                  ? 'bg-blue-500 '
+                  ? 'from-blue-500 to-blue-600'
                   : isAntigravity
-                    ? 'bg-purple-500 '
+                    ? 'from-purple-500 to-purple-600'
                     : isGrok
                       ? 'bg-zinc-700 '
-                      : 'bg-orange-500 '
+                      : 'from-orange-500 to-orange-600'
             ]"
           >
             <Icon name="sparkles" size="md" class="text-white" />

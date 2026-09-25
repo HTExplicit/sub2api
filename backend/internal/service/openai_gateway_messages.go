@@ -33,14 +33,8 @@ func (s *OpenAIGatewayService) ForwardAsAnthropic(
 	promptCacheKey string,
 	defaultMappedModel string,
 ) (*OpenAIForwardResult, error) {
-	rememberPromptRequestedModel(c, body)
 	stageCodexRoutingTurn(c, body)
 	c.Set(openAICompatTurnStateCommittedContextKey, false)
-	pricingContext, pricingErr := CaptureCindyPricingContext(ctx, c, account)
-	if pricingErr != nil {
-		return nil, pricingErr
-	}
-	ctx = pricingContext
 	// 工具 Schema 清洗必须先于所有分流：下游每条路径（原生 Anthropic 直通、
 	// Chat Completions 转换、Responses 转换）都会把 tools 原样带给上游，而
 	// xAI / Moonshot 等严格校验方会因 input_schema 里的 required:null 或
@@ -374,12 +368,11 @@ func (s *OpenAIGatewayService) ForwardAsAnthropic(
 	if err != nil {
 		return nil, fmt.Errorf("build upstream request: %w", err)
 	}
-	wireBody, err := businessPromptWireRequestBody(upstreamReq, responsesBody)
+	wireBody, err := finalWireRequestBody(upstreamReq, responsesBody)
 	if err != nil {
 		return nil, err
 	}
-	application, _ := businessSystemPromptApplicationFromRequest(c, BusinessSystemPromptProtocolResponses)
-	upstreamPromptCacheKey = businessSystemPromptUpstreamCacheKey(c, wireBody, promptCacheKey, application)
+	upstreamPromptCacheKey = finalWirePromptCacheKey(wireBody, promptCacheKey)
 
 	// Override session_id with a deterministic UUID derived from the isolated
 	// session key, ensuring different API keys produce different upstream sessions.
@@ -871,7 +864,6 @@ func (s *OpenAIGatewayService) readOpenAICompatBufferedTerminal(
 					payload := openAICompatPayloadWithEventType(frame.Data, frame.EventType)
 					observeOpenAIReasoningAttemptUsage(c, []byte(payload))
 					observeOpenAIChatReasoningReplayPayload(c, []byte(payload))
-					payload = string(s.rewriteBusinessSystemPromptJSONForRequest(c, []byte(payload), BusinessSystemPromptProtocolResponses))
 					var event apicompat.ResponsesStreamEvent
 					if err := json.Unmarshal([]byte(payload), &event); err == nil {
 						s.parseSSEUsageBytesWithType([]byte(payload), event.Type, &usage)
@@ -916,7 +908,6 @@ func (s *OpenAIGatewayService) readOpenAICompatBufferedTerminal(
 			payload := openAICompatPayloadWithEventType(frame.Data, frame.EventType)
 			observeOpenAIReasoningAttemptUsage(c, []byte(payload))
 			observeOpenAIChatReasoningReplayPayload(c, []byte(payload))
-			payload = string(s.rewriteBusinessSystemPromptJSONForRequest(c, []byte(payload), BusinessSystemPromptProtocolResponses))
 
 			var event apicompat.ResponsesStreamEvent
 			if err := json.Unmarshal([]byte(payload), &event); err != nil {
@@ -1064,8 +1055,8 @@ func (s *OpenAIGatewayService) handleAnthropicStreamingResponse(
 		rawPayloadBytes := []byte(payload)
 		rawEventType := strings.TrimSpace(gjson.GetBytes(rawPayloadBytes, "type").String())
 		if rawEventType == "response.failed" || rawEventType == "error" {
-			if failoverErr, ok := s.cindyBalanceHTTPResponseTerminalFailover(
-				c.Request.Context(), account, resp.StatusCode, resp.Header, rawPayloadBytes, originalModel,
+			if failoverErr, ok := s.openAIBudgetExceededHTTPResponseTerminalFailover(
+				c.Request.Context(), account, resp.StatusCode, resp.Header, rawPayloadBytes,
 			); ok {
 				if parsedUsage, parsed := extractOpenAIUsageFromJSONBytes(rawPayloadBytes); parsed {
 					usage = parsedUsage
@@ -1074,7 +1065,6 @@ func (s *OpenAIGatewayService) handleAnthropicStreamingResponse(
 				return true
 			}
 		}
-		payload = string(s.rewriteBusinessSystemPromptJSONForRequest(c, []byte(payload), BusinessSystemPromptProtocolResponses))
 		if firstChunk {
 			firstChunk = false
 			ms := int(time.Since(startTime).Milliseconds())

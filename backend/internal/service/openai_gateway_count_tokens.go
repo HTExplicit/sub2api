@@ -50,10 +50,6 @@ func (s *OpenAIGatewayService) ForwardResponsesInputTokens(
 	account *Account,
 	body []byte,
 ) error {
-	if err := EnsureCindyProviderAvailable(ctx, account); err != nil {
-		writeOpenAIResponsesInputTokensError(c, http.StatusServiceUnavailable, "api_error", "Provider is unavailable")
-		return err
-	}
 	if account == nil {
 		writeOpenAIResponsesInputTokensError(c, http.StatusServiceUnavailable, "api_error", "No available OpenAI accounts")
 		return fmt.Errorf("responses input_tokens: missing account")
@@ -263,10 +259,6 @@ func (s *OpenAIGatewayService) ForwardCountTokensAsAnthropic(
 	body []byte,
 	defaultMappedModel string,
 ) error {
-	if err := EnsureCindyProviderAvailable(ctx, account); err != nil {
-		writeAnthropicCountTokensError(c, http.StatusServiceUnavailable, "api_error", "Provider is unavailable")
-		return err
-	}
 	if account == nil {
 		writeAnthropicCountTokensError(c, http.StatusServiceUnavailable, "api_error", "No available OpenAI accounts")
 		return fmt.Errorf("count_tokens: missing account")
@@ -359,8 +351,7 @@ func (s *OpenAIGatewayService) ForwardCountTokensAsAnthropic(
 		if s.shouldFailoverOpenAIUpstreamResponseForAccount(account, resp.StatusCode, upstreamMsg, respBody) {
 			shouldDisable := s.handleOpenAIAccountUpstreamError(ctx, account, resp.StatusCode, resp.Header, respBody, prepared.UpstreamModel)
 			retryableOnSameAccount := !shouldDisable && account.IsPoolMode() && account.IsPoolModeRetryableStatus(resp.StatusCode)
-			if IsCindyRuntimeCompatibleAPIKeyAccount(account.Platform, account.Type, account.Credentials) &&
-				isOpenAIModelNotSupportedError(resp.StatusCode, upstreamMsg, respBody) {
+			if account.IsOpenAICompatible() && isOpenAIModelNotSupportedError(resp.StatusCode, upstreamMsg, respBody) {
 				return newOpenAIModelNotSupportedFailoverError(resp.Header, respBody)
 			}
 			return &UpstreamFailoverError{

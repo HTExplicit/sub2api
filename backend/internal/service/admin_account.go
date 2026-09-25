@@ -14,7 +14,6 @@ import (
 	"strings"
 	"time"
 
-	dbent "github.com/Wei-Shaw/sub2api/ent"
 	"github.com/Wei-Shaw/sub2api/internal/config"
 	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/logger"
@@ -34,9 +33,6 @@ func (s *adminServiceImpl) ListAccounts(ctx context.Context, page, pageSize int,
 		return nil, 0, err
 	}
 	if err := s.hydrateAccountTaxonomyValues(ctx, accounts); err != nil {
-		return nil, 0, err
-	}
-	if err := s.hydrateCindyBalanceProbeLatestValues(ctx, accounts); err != nil {
 		return nil, 0, err
 	}
 	return accounts, result.Total, nil
@@ -337,12 +333,6 @@ func (s *adminServiceImpl) DuplicateAccount(ctx context.Context, id int64, actor
 	if err != nil {
 		return nil, fmt.Errorf("normalize duplicate account extra: %w", err)
 	}
-	delete(accountExtra, CindyDeviceIDExtraKey)
-	delete(accountExtra, CindyDeviceIDSourceExtraKey)
-	accountExtra, err = NormalizeCindyDeviceIdentityExtra(input.Platform, input.Type, input.Credentials, accountExtra, nil)
-	if err != nil {
-		return nil, fmt.Errorf("normalize duplicate Cindy identity: %w", err)
-	}
 	if err := NormalizeHeaderOverrideCredentials(input.Credentials); err != nil {
 		return nil, err
 	}
@@ -473,7 +463,6 @@ func buildAccountForCreate(input *CreateAccountInput, accountExtra map[string]an
 	delete(accountExtra, OllamaCloudUsageSessionExtraKey)
 	delete(accountExtra, OllamaCloudUsageAutoRefreshExtraKey)
 	delete(accountExtra, OllamaCloudUsageSnapshotExtraKey)
-	delete(accountExtra, UpstreamModelContextCapacitiesExtraKey)
 	delete(accountExtra, ModelContextOverridesExtraKey)
 	delete(accountExtra, UpstreamModelMetadataExtraKey)
 	delete(accountExtra, OpenCodeGoUsageAutoRefreshExtraKey)
@@ -492,13 +481,6 @@ func buildAccountForCreate(input *CreateAccountInput, accountExtra map[string]an
 		Status:      StatusActive,
 		Schedulable: true,
 	}
-	platform, wirePlatform, providerProfile, err := ResolveAccountProviderIdentity(account.Platform, account.Type, account.Credentials)
-	if err != nil {
-		return nil, err
-	}
-	account.Platform = platform
-	account.WirePlatform = wirePlatform
-	account.ProviderProfile = providerProfile
 	if err := ValidateModelContextOverrides(account, input.ModelContextOverrides); err != nil {
 		return nil, err
 	}
@@ -556,73 +538,18 @@ func buildAccountForCreate(input *CreateAccountInput, accountExtra map[string]an
 }
 
 func (s *adminServiceImpl) CreateAccount(ctx context.Context, input *CreateAccountInput) (*Account, error) {
-	if input == nil {
-		return nil, ErrAccountCreateInvalid
-	}
-	NormalizeAccountCredentialBaseURLs(input.Credentials)
-	platform, _, profile, err := ResolveAccountProviderIdentity(input.Platform, input.Type, input.Credentials)
-	if err != nil {
-		return nil, err
-	}
-	if profile == ProviderProfileCindyLaxaV1 && platform == PlatformCindy {
-		copy := *input
-		copy.Credentials, copy.Extra = maps.Clone(input.Credentials), maps.Clone(input.Extra)
-		input = &copy
-		ctx, release, err := bindProcessAccountCreate(ctx, platform, input.Type, profile, input.ProviderCreate)
-		if err != nil {
-			return nil, err
-		}
-		if tx := dbent.TxFromContext(ctx); tx != nil {
-			fencer, ok := s.cindyAccountMutations.(interface{ FenceAccountCreate(context.Context) error })
-			if !ok {
-				release()
-				return nil, ErrAccountCreateUnavailable
-			}
-			retainAccountCreateUntilTransactionEnds(ctx, tx, release)
-			if err := fencer.FenceAccountCreate(ctx); err != nil {
-				return nil, err
-			}
-			return s.createAccount(ctx, input)
-		}
-		defer release()
-		if s.cindyAccountMutations == nil {
-			return nil, ErrAccountCreateUnavailable
-		}
-		return s.cindyAccountMutations.Run(ctx, 0, func(txCtx context.Context) (*Account, error) {
-			return s.createAccount(txCtx, input)
-		})
-	}
-	if input.ProviderCreate != nil {
-		return nil, ErrAccountCreateInvalid
-	}
-	return s.createAccount(ctx, input)
-}
-
-func (s *adminServiceImpl) createAccount(ctx context.Context, input *CreateAccountInput) (*Account, error) {
 	NormalizeAccountCredentialBaseURLs(input.Credentials)
 	if err := ValidateOpenAIReasoningPolicyExtra(input.Extra); err != nil {
 		return nil, err
 	}
-	platform, _, _, err := ResolveAccountProviderIdentity(input.Platform, input.Type, input.Credentials)
-	if err != nil {
+	if err := ValidateOpenAIPromptCacheKeyModeExtra(input.Extra); err != nil {
 		return nil, err
-	}
-	input.Platform = platform
-	canonicalCreate := isCanonicalCindyAccountInput(input.Platform, input.Type, input.Credentials)
-	if canonicalCreate {
-		if err := applyAccountCreateProfile(ctx, input); err != nil {
-			return nil, err
-		}
 	}
 	accountExtra, err := normalizeOpenAILongContextBillingExtra(input.Platform, input.Extra)
 	if err != nil {
 		return nil, err
 	}
 	accountExtra, err = normalizeGrokMediaEligibilityExtra(input.Platform, accountExtra)
-	if err != nil {
-		return nil, err
-	}
-	accountExtra, err = normalizeCindyDeviceIdentityForCreate(input.Platform, input.Type, input.Credentials, accountExtra)
 	if err != nil {
 		return nil, err
 	}
@@ -645,10 +572,6 @@ func (s *adminServiceImpl) createAccount(ctx context.Context, input *CreateAccou
 			}
 		}
 	}
-	if create, bound := AccountCreateFromContext(ctx); canonicalCreate && bound && len(uniquePositiveIDs(groupIDs)) < create.MinimumEffectiveGroups {
-		return nil, ErrAccountCreateGroupsRequired
-	}
-
 	// 检查混合渠道风险（除非用户已确认）
 	if len(groupIDs) > 0 && !input.SkipMixedChannelCheck {
 		if err := s.checkMixedChannelRisk(ctx, 0, input.Platform, groupIDs); err != nil {
@@ -668,9 +591,6 @@ func (s *adminServiceImpl) createAccount(ctx context.Context, input *CreateAccou
 
 	account, err := buildAccountForCreate(input, accountExtra)
 	if err != nil {
-		return nil, err
-	}
-	if err := validateProviderIdentityGroupBindings(ctx, s.groupRepo, account, groupIDs); err != nil {
 		return nil, err
 	}
 	if err := s.ValidateAccountGroupBindings(ctx, groupIDs); err != nil {
@@ -716,67 +636,24 @@ func (s *adminServiceImpl) createAccount(ctx context.Context, input *CreateAccou
 }
 
 func (s *adminServiceImpl) UpdateAccount(ctx context.Context, id int64, input *UpdateAccountInput) (*Account, error) {
-	if input == nil {
-		return nil, ErrAccountEditInvalid
-	}
-	current, err := s.accountRepo.GetByID(ctx, id)
-	if err != nil {
-		return nil, err
-	}
-	if !hasCanonicalCindyProviderIdentity(current) {
-		if input.ProviderEdit != nil {
-			return nil, ErrAccountEditInvalid
-		}
-		return s.updateAccount(ctx, id, input)
-	}
-	// Prepare from the pre-lock row. Real deltas acquire their independent owner
-	// lease before the runner obtains ordered policy fences and the account lock.
-	if tx := dbent.TxFromContext(ctx); tx != nil {
-		if _, bound := AccountEditFromContext(ctx); !bound {
-			prepared, release, err := PrepareAccountEdit(ctx, current, input.Credentials, input.Extra, input.ProviderEdit)
-			if err != nil {
-				return nil, err
-			}
-			defer release()
-			if edit, present := AccountEditFromContext(prepared); present && edit.changed {
-				return nil, ErrAccountEditUnavailable
-			}
-			ctx = prepared
-		}
-		retainBoundAccountEditLease(ctx, tx)
-		return s.updateAccount(ctx, id, input)
-	}
-	bound, release, err := PrepareAccountEdit(ctx, current, input.Credentials, input.Extra, input.ProviderEdit)
-	if err != nil {
-		return nil, err
-	}
-	defer release()
-	if s.cindyAccountMutations == nil {
-		return nil, errors.New("cindy account mutation is unavailable")
-	}
-	return s.cindyAccountMutations.Run(bound, id, func(txCtx context.Context) (*Account, error) { return s.updateAccount(txCtx, id, input) })
-}
-
-func (s *adminServiceImpl) updateAccount(ctx context.Context, id int64, input *UpdateAccountInput) (*Account, error) {
 	account, err := s.accountRepo.GetByID(ctx, id)
 	if err != nil {
 		return nil, err
 	}
-	owned, err := AccountEditOwnedForUpdate(ctx, account, input.Credentials, input.Extra, input.ProviderEdit)
-	if err != nil {
-		return nil, err
+	var owned map[string]accountEditRawValue
+	if input.Extra != nil {
+		owned = openAIAPIKeyOwnedExtraForUpdate(account, input.Extra)
 	}
 	NormalizeAccountCredentialBaseURLs(input.Credentials)
 	if err := ValidateModelContextOverrides(account, input.ModelContextOverrides); err != nil {
 		return nil, err
 	}
-	originalPlatform := account.Platform
-	originalWirePlatform := account.EffectiveWirePlatform()
-	originalProviderProfile := account.EffectiveProviderProfile()
-	currentCindyExtra := maps.Clone(account.Extra)
 	var normalizedExtra map[string]any
 	if input.Extra != nil {
 		if err := ValidateOpenAIReasoningPolicyExtra(input.Extra); err != nil {
+			return nil, err
+		}
+		if err := ValidateOpenAIPromptCacheKeyModeExtra(input.Extra); err != nil {
 			return nil, err
 		}
 		normalizedExtra, err = normalizeOpenAILongContextBillingUpdateExtra(account, input)
@@ -850,10 +727,6 @@ func (s *adminServiceImpl) updateAccount(ctx context.Context, id int64, input *U
 		// Strip SSO/password residue that must never sit next to OAuth tokens.
 		account.Credentials = SanitizeStoredCredentials(account.Platform, account.Credentials)
 	}
-	account.Platform, account.WirePlatform, account.ProviderProfile, err = ResolveAccountProviderIdentity(account.Platform, account.Type, account.Credentials)
-	if err != nil {
-		return nil, err
-	}
 	// Extra 使用 map：需要区分“未提供(nil)”与“显式清空({})”。
 	// 关闭配额限制时前端会删除 quota_* 键并提交 extra:{}，此时也必须落库。
 	requestedProbeEnabledUpdate := input.ProbeEnabled
@@ -876,7 +749,6 @@ func (s *adminServiceImpl) updateAccount(ctx context.Context, id int64, input *U
 		delete(normalizedExtra, OllamaCloudUsageSessionExtraKey)
 		delete(normalizedExtra, OllamaCloudUsageAutoRefreshExtraKey)
 		delete(normalizedExtra, OllamaCloudUsageSnapshotExtraKey)
-		delete(normalizedExtra, UpstreamModelContextCapacitiesExtraKey)
 		delete(normalizedExtra, ModelContextOverridesExtraKey)
 		delete(normalizedExtra, UpstreamModelMetadataExtraKey)
 		delete(normalizedExtra, OpenCodeGoUsageAutoRefreshExtraKey)
@@ -895,7 +767,6 @@ func (s *adminServiceImpl) updateAccount(ctx context.Context, id int64, input *U
 			OllamaCloudUsageSessionExtraKey,
 			OllamaCloudUsageAutoRefreshExtraKey,
 			OllamaCloudUsageSnapshotExtraKey,
-			UpstreamModelContextCapacitiesExtraKey,
 			ModelContextOverridesExtraKey,
 			UpstreamModelMetadataExtraKey,
 			OpenAIAutoResetCreditStateExtraKey,
@@ -907,11 +778,11 @@ func (s *adminServiceImpl) updateAccount(ctx context.Context, id int64, input *U
 			}
 		}
 		normalizedExtra = MergeOpenAICodexTicketExtra(normalizedExtra, account.Extra)
-		// Prompt bindings have their own rule-revision and account-revision CAS.
+		// System prompt bindings are written only by the binding endpoint.
 		// Ordinary account edits preserve them, including their absence.
-		delete(normalizedExtra, PromptAccountBindingExtraKey)
-		if binding, exists := account.Extra[PromptAccountBindingExtraKey]; exists {
-			normalizedExtra[PromptAccountBindingExtraKey] = binding
+		delete(normalizedExtra, AccountExtraSystemPromptKey)
+		if binding, exists := account.Extra[AccountExtraSystemPromptKey]; exists {
+			normalizedExtra[AccountExtraSystemPromptKey] = binding
 		}
 		normalizedExtra = prepareCodexFingerprintExtraForUpdate(account, normalizedExtra)
 		account.Extra = normalizedExtra
@@ -936,13 +807,9 @@ func (s *adminServiceImpl) updateAccount(ctx context.Context, id int64, input *U
 	if input.Extra == nil {
 		account.Extra = prepareCodexFingerprintExtraForUpdate(account, account.Extra)
 	}
-	// Whole-object legacy forms still own their other fields. Only these finite
-	// omitted keys retain exact raw presence/value, and only typed clear deletes.
+	// Whole-object forms own the other Extra keys; omitted OpenAI API-key
+	// protocol modes retain their exact stored presence and value.
 	applyAccountEditOwned(account, owned)
-	account.Extra, err = NormalizeCindyDeviceIdentityExtra(account.Platform, account.Type, account.Credentials, account.Extra, currentCindyExtra)
-	if err != nil {
-		return nil, err
-	}
 	if requestedRateSyncEnabledUpdate != nil && *requestedRateSyncEnabledUpdate {
 		if requestedProbeEnabledUpdate != nil && !*requestedProbeEnabledUpdate {
 			return nil, infraerrors.BadRequest(
@@ -1062,9 +929,6 @@ func (s *adminServiceImpl) updateAccount(ctx context.Context, id int64, input *U
 		if err := s.validateGroupIDsExist(ctx, *input.GroupIDs); err != nil {
 			return nil, err
 		}
-		if err := validateProviderIdentityGroupBindings(ctx, s.groupRepo, account, *input.GroupIDs); err != nil {
-			return nil, err
-		}
 		if err := s.ValidateAccountGroupBindings(ctx, *input.GroupIDs); err != nil {
 			return nil, err
 		}
@@ -1076,15 +940,6 @@ func (s *adminServiceImpl) updateAccount(ctx context.Context, id int64, input *U
 			}
 		}
 	}
-	identityChanged := originalPlatform != account.Platform ||
-		originalWirePlatform != account.EffectiveWirePlatform() ||
-		originalProviderProfile != account.EffectiveProviderProfile()
-	if input.GroupIDs == nil && identityChanged {
-		if err := validateProviderIdentityGroupBindings(ctx, s.groupRepo, account, account.GroupIDs); err != nil {
-			return nil, err
-		}
-	}
-
 	if err := ValidateModelContextOverrides(account, input.ModelContextOverrides); err != nil {
 		return nil, err
 	}
@@ -1178,7 +1033,6 @@ func (s *adminServiceImpl) UpdateAccountExtra(ctx context.Context, id int64, upd
 	delete(updates, OllamaCloudUsageSessionExtraKey)
 	delete(updates, OllamaCloudUsageAutoRefreshExtraKey)
 	delete(updates, OllamaCloudUsageSnapshotExtraKey)
-	delete(updates, UpstreamModelContextCapacitiesExtraKey)
 	delete(updates, ModelContextOverridesExtraKey)
 	delete(updates, UpstreamModelMetadataExtraKey)
 	delete(updates, OpenCodeGoUsageAutoRefreshExtraKey)
@@ -1195,16 +1049,6 @@ func (s *adminServiceImpl) UpdateAccountExtra(ctx context.Context, id int64, upd
 	if len(updates) == 0 {
 		return nil
 	}
-	if HasAccountEditOwnedInput(nil, updates) {
-		account, err := s.accountRepo.GetByID(ctx, id)
-		if err != nil {
-			return err
-		}
-		if hasCanonicalCindyProviderIdentity(account) {
-			_, err := s.UpdateAccount(ctx, id, &UpdateAccountInput{Extra: mergeAccountEditBulkExtra(account.Extra, updates)})
-			return err
-		}
-	}
 	return s.accountRepo.UpdateExtra(ctx, id, updates)
 }
 
@@ -1212,6 +1056,9 @@ func (s *adminServiceImpl) UpdateAccountExtra(ctx context.Context, id int64, upd
 // It merges credentials/extra keys instead of overwriting the whole object.
 func (s *adminServiceImpl) BulkUpdateAccounts(ctx context.Context, input *BulkUpdateAccountsInput) (*BulkUpdateAccountsResult, error) {
 	if err := ValidateOpenAIReasoningPolicyExtra(input.Extra); err != nil {
+		return nil, err
+	}
+	if err := ValidateOpenAIPromptCacheKeyModeExtra(input.Extra); err != nil {
 		return nil, err
 	}
 	// Managed probe/session state may only enter through dedicated typed endpoints.
@@ -1224,7 +1071,6 @@ func (s *adminServiceImpl) BulkUpdateAccounts(ctx context.Context, input *BulkUp
 	delete(input.Extra, OllamaCloudUsageSessionExtraKey)
 	delete(input.Extra, OllamaCloudUsageAutoRefreshExtraKey)
 	delete(input.Extra, OllamaCloudUsageSnapshotExtraKey)
-	delete(input.Extra, UpstreamModelContextCapacitiesExtraKey)
 	delete(input.Extra, ModelContextOverridesExtraKey)
 	delete(input.Extra, UpstreamModelMetadataExtraKey)
 	delete(input.Extra, OpenCodeGoUsageAutoRefreshExtraKey)
@@ -1264,7 +1110,7 @@ func (s *adminServiceImpl) BulkUpdateAccounts(ctx context.Context, input *BulkUp
 
 	// 预取所有目标账号，供凭据守卫/代理守卫/混合渠道检查共用，避免多次 DB 查询。
 	var cachedTargets []*Account
-	if len(input.Credentials) > 0 || input.ProxyID != nil || input.GroupIDs != nil || needMixedChannelCheck || openAISettings.any() || input.ProbeEnabled != nil || input.RateMultiplier != nil || HasAccountEditOwnedInput(input.Credentials, input.Extra) {
+	if len(input.Credentials) > 0 || input.ProxyID != nil || needMixedChannelCheck || openAISettings.any() || input.ProbeEnabled != nil || input.RateMultiplier != nil {
 		loaded, err := s.accountRepo.GetByIDs(ctx, input.AccountIDs)
 		if err != nil {
 			return nil, err
@@ -1275,17 +1121,6 @@ func (s *adminServiceImpl) BulkUpdateAccounts(ctx context.Context, input *BulkUp
 	for _, account := range cachedTargets {
 		if account != nil {
 			targetsByID[account.ID] = account
-		}
-	}
-	if input.GroupIDs != nil {
-		for _, accountID := range input.AccountIDs {
-			account, ok := targetsByID[accountID]
-			if !ok {
-				return nil, ErrAccountNotFound
-			}
-			if err := validateProviderIdentityGroupBindings(ctx, s.groupRepo, account, *input.GroupIDs); err != nil {
-				return nil, err
-			}
 		}
 	}
 	if openAISettings.any() {
@@ -1387,9 +1222,6 @@ func (s *adminServiceImpl) BulkUpdateAccounts(ctx context.Context, input *BulkUp
 	}
 
 	// Prepare bulk updates for columns and JSONB fields.
-	if editResult, handled, err := s.runBulkAccountEdits(ctx, input, targetsByID); handled {
-		return editResult, err
-	}
 	repoUpdates := AccountBulkUpdate{
 		Credentials:                input.Credentials,
 		Extra:                      input.Extra,
@@ -1493,12 +1325,6 @@ func updatesUpstreamBillingProbeIdentity(credentials map[string]any) bool {
 		}
 	}
 	return false
-}
-
-func isCanonicalCindyAccountInput(platform, accountType string, credentials map[string]any) bool {
-	resolvedPlatform, wirePlatform, profile, err := ResolveAccountProviderIdentity(platform, accountType, credentials)
-	return err == nil && resolvedPlatform == PlatformCindy &&
-		wirePlatform == WirePlatformOpenAI && profile == ProviderProfileCindyLaxaV1
 }
 
 func upstreamBillingProbeIdentity(account *Account) map[string]any {

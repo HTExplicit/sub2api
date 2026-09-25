@@ -2,7 +2,6 @@ package service
 
 import (
 	"bufio"
-	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -10,220 +9,63 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/Wei-Shaw/sub2api/internal/pkg/claude"
 	"github.com/gin-gonic/gin"
 )
 
+// Connection-test failure classes. A failure reported to administrators always
+// carries the upstream's own terminal content; errors.Is keeps the class.
 var (
-	ErrAccountTestIncomplete  = errors.New("connection stream ended before a recognized terminal state")
-	ErrAccountTestEmpty       = errors.New("connection completed without visible text")
-	ErrAccountTestTerminal    = errors.New("upstream reported an unsuccessful terminal state")
-	ErrAccountTestProtocol    = errors.New("invalid connection test protocol response")
-	ErrAccountTestPlanChanged = errors.New("connection test plan changed; configure a new test")
+	ErrAccountTestIncomplete = errors.New("stream ended before terminal")
+	ErrAccountTestEmpty      = errors.New("completed without visible text")
+	ErrAccountTestTerminal   = errors.New("upstream reported an unsuccessful terminal state")
+	ErrAccountTestProtocol   = errors.New("invalid SSE data")
 )
 
-func AccountTestFailureCode(err error) string {
-	var failure *accountTestTransportFailure
-	if errors.As(err, &failure) {
-		return failure.code
-	}
-	switch {
-	case errors.Is(err, ErrAccountTestModelUnsupported):
-		return "test_model_unsupported"
-	case errors.Is(err, ErrAccountTestPlanChanged):
-		return "test_plan_changed"
-	case errors.Is(err, ErrAccountTestIncomplete):
-		return "test_incomplete"
-	case errors.Is(err, ErrAccountTestEmpty):
-		return "test_empty_response"
-	case errors.Is(err, ErrAccountTestTerminal):
-		return "test_terminal_failed"
-	case errors.Is(err, ErrAccountTestProtocol):
-		return "test_protocol_invalid"
-	case errors.Is(err, context.DeadlineExceeded):
-		return "test_timeout"
-	default:
-		return "test_failed"
-	}
+// accountTestTerminalError is a failed protocol terminal whose message is the
+// upstream's own error text (or the raw terminal JSON) exactly as received.
+type accountTestTerminalError string
+
+func (e accountTestTerminalError) Error() string        { return string(e) }
+func (e accountTestTerminalError) Is(target error) bool { return target == ErrAccountTestTerminal }
+
+func accountTestTerminal(format string, args ...any) error {
+	return accountTestTerminalError(fmt.Sprintf(format, args...))
 }
 
-// AccountTestSupportsTextConversation consumes only supplied catalog identities
-// and local mappings. Catalog projection must not acquire another provider
-// snapshot through Account.GetMappedModel or its compatibility fallbacks.
-func AccountTestSupportsTextConversation(account *Account, model string, catalogTargets ...string) bool {
-	if account == nil {
-		return false
-	}
-	mapped := model
-	if len(catalogTargets) > 0 {
-		if catalogTargets[0] != "" {
-			mapped = catalogTargets[0]
+// accountTestUpstreamError returns the upstream's own error message, or the raw
+// JSON it sent when there is no message field.
+func accountTestUpstreamError(value any) string {
+	switch typed := value.(type) {
+	case string:
+		if strings.TrimSpace(typed) != "" {
+			return typed
 		}
-	} else {
-		mapping := account.GetModelMapping()
-		if target, matched := resolveRequestedModelInMapping(mapping, model); matched {
-			mapped = target
-		} else if target, matched := resolveRequestedModelInMapping(mapping, normalizeRequestedModelForLookup(account.Platform, model)); matched {
-			mapped = target
+	case map[string]any:
+		if message, _ := typed["message"].(string); strings.TrimSpace(message) != "" {
+			return message
 		}
 	}
-	for _, id := range []string{model, mapped} {
-		if isOpenAIImageModel(id) || isGrokImageGenerationModel(id) || isGrokVideoGenerationModel(id) || isImageGenerationModel(id) {
-			return false
-		}
-		lower := strings.ToLower(id)
-		for _, prefix := range []string{"dall-e", "sora", "text-embedding-", "embedding-", "whisper-", "tts-", "omni-moderation-"} {
-			if strings.HasPrefix(lower, prefix) {
-				return false
-			}
-		}
-		for _, suffix := range []string{"-transcribe", "-tts", "-realtime", "-realtime-preview", "-voice-latest"} {
-			if strings.HasSuffix(lower, suffix) {
-				return false
-			}
-		}
-	}
-	return true
+	raw, _ := json.Marshal(value)
+	return string(raw)
 }
 
-type accountTestTransportFailure struct {
-	code    string
-	message string
-	cause   error
-}
-
-func (e *accountTestTransportFailure) Error() string { return e.message }
-func (e *accountTestTransportFailure) Unwrap() error { return e.cause }
-
-// Endpoint labels are supplied by the adapter, never from request URLs or
-// provider error text. This retains protocol diagnostics without credentials.
-type accountTestEndpoint string
-
-const (
-	accountTestEndpointChat              accountTestEndpoint = "Chat Completions API (/v1/chat/completions)"
-	accountTestEndpointAdaptiveAnthropic accountTestEndpoint = "Adaptive Anthropic endpoint"
-	accountTestEndpointAdaptiveResponses accountTestEndpoint = "Adaptive Responses endpoint"
-	accountTestEndpointAnthropic         accountTestEndpoint = "Anthropic endpoint"
-	accountTestEndpointGrokResponses     accountTestEndpoint = "Grok Responses API"
-)
-
-func accountTestRequestFailure(err error, endpoints ...accountTestEndpoint) error {
-	code := "test_network_failed"
-	if errors.Is(err, context.DeadlineExceeded) {
-		code = "test_timeout"
-	}
-	message, _ := AccountBusinessMessage(code)
-	if errors.Is(err, context.DeadlineExceeded) {
-		message += " (" + context.DeadlineExceeded.Error() + ")"
-	}
-	if len(endpoints) > 0 && endpoints[0] != "" {
-		message = string(endpoints[0]) + " request failed: " + message
-	}
-	return &accountTestTransportFailure{code: code, message: message, cause: err}
-}
-
-func accountTestHTTPFailure(status int, endpoints ...accountTestEndpoint) error {
-	code := "test_upstream_failed"
-	if status == http.StatusUnauthorized || status == http.StatusForbidden {
-		code = "test_authentication_failed"
-	}
-	if status == http.StatusTooManyRequests {
-		code = "test_rate_limited"
-	}
-	message, _ := AccountBusinessMessage(code)
-	label := "API"
-	if len(endpoints) > 0 && endpoints[0] != "" {
-		label = string(endpoints[0])
-	}
-	return &accountTestTransportFailure{code: code, message: fmt.Sprintf("%s returned %d: %s", label, status, message)}
-}
-
-// AccountTestSafeFailureMessage is also used by persisted batch results. Only
-// the typed local formatter may add context to the fixed business catalog.
-func AccountTestSafeFailureMessage(err error) string {
-	code := AccountTestFailureCode(err)
-	message, _ := AccountBusinessMessage(code)
-	var transport *accountTestTransportFailure
-	if errors.As(err, &transport) {
-		message = transport.message
-	}
-	return message
-}
-
-func (s *AccountTestService) sendAccountTestFailure(c *gin.Context, err error) error {
-	s.sendEvent(c, TestEvent{Type: "error", Code: AccountTestFailureCode(err), Error: AccountTestSafeFailureMessage(err)})
+// sendTestFailure is sendErrorAndEnd for classified failures: the service log
+// line and the error event carry the same text and the caller keeps the class.
+func (s *AccountTestService) sendTestFailure(c *gin.Context, err error) error {
+	_ = s.sendErrorAndEnd(c, err.Error())
 	return err
 }
 
-func (s *AccountTestService) sendAccountTestRequestError(c *gin.Context, err error, endpoints ...accountTestEndpoint) error {
-	return s.sendAccountTestFailure(c, accountTestRequestFailure(err, endpoints...))
-}
-
-func (s *AccountTestService) sendAccountTestHTTPError(c *gin.Context, status int, endpoints ...accountTestEndpoint) error {
-	return s.sendAccountTestFailure(c, accountTestHTTPFailure(status, endpoints...))
-}
-
 type connectionStreamState struct {
-	protocol   string
-	visible    bool
-	media      bool
-	allowMedia bool
-	limited    bool
-	stopReason string
-	emit       func(TestEvent)
-}
-
-// ResolveAccountTestExecutionModel mirrors the wire mappings of the probe
-// adapters so their execution identity can be persisted before model IO.
-func ResolveAccountTestExecutionModel(ctx context.Context, account *Account, model string) (string, error) {
-	if account == nil {
-		return "", ErrAccountTestPlanChanged
-	}
-	if IsCindyAPIKeyAccount(account.Platform, account.Type, account.Credentials) {
-		snapshot, err := LoadCindyCatalogSnapshot(ctx, account)
-		if err != nil {
-			return "", err
-		}
-		mapped := cindyAccountMappedModel(snapshot, account, model)
-		if target, ok := snapshot.CompatibilityMappings[mapped]; ok {
-			return target, nil
-		}
-		if target, ok := snapshot.AvailableMappings[mapped]; ok {
-			return target, nil
-		}
-		return mapped, nil
-	}
-	if account.Platform == PlatformAntigravity && account.Type != AccountTypeAPIKey {
-		return (*AntigravityGatewayService)(nil).getMappedModel(account, model), nil
-	}
-	if account.IsGemini() || (account.Platform == PlatformAntigravity && strings.HasPrefix(model, "gemini-")) {
-		if account.Type == AccountTypeAPIKey || account.Type == AccountTypeServiceAccount {
-			if mapped, ok := account.GetModelMapping()[model]; ok {
-				return mapped, nil
-			}
-		}
-		return model, nil
-	}
-	if account.IsBedrock() {
-		mapped, ok := ResolveBedrockModelID(account, model)
-		if !ok {
-			return "", ErrAccountTestModelUnsupported
-		}
-		return mapped, nil
-	}
-	if account.Type == AccountTypeServiceAccount && !account.IsOpenAI() && !account.IsCNProvider() {
-		if mapped, ok := account.ResolveMappedModel(model); ok {
-			return mapped, nil
-		}
-		return normalizeVertexAnthropicModelID(claude.NormalizeModelID(model)), nil
-	}
-	if account.IsOpenAI() && account.IsOAuth() {
-		return normalizeOpenAIModelForUpstream(account, account.GetMappedModel(model)), nil
-	}
-	if !account.IsOpenAI() && !account.IsCNProvider() && !account.IsOpenCodeGo() && account.Platform != PlatformGrok && account.Type != AccountTypeAPIKey {
-		return model, nil
-	}
-	return account.GetMappedModel(model), nil
+	protocol      string
+	visible       bool
+	media         bool
+	allowMedia    bool
+	limited       bool
+	stopReason    string
+	lastEvent     string
+	upstreamModel string
+	emit          func(TestEvent)
 }
 
 func (p *connectionStreamState) text(value any) {
@@ -233,16 +75,59 @@ func (p *connectionStreamState) text(value any) {
 	}
 }
 
-func (p *connectionStreamState) complete() (bool, error) {
+// complete accepts a valid terminal only when it produced visible output.
+func (p *connectionStreamState) complete(terminal string) (bool, error) {
 	if !p.visible && (!p.allowMedia || !p.media) {
-		return false, ErrAccountTestEmpty
+		if terminal == "" {
+			return false, ErrAccountTestEmpty
+		}
+		return false, fmt.Errorf("%w (%s)", ErrAccountTestEmpty, terminal)
 	}
 	return true, nil
 }
 
-func (p *connectionStreamState) consume(data map[string]any) (bool, error) {
+func (p *connectionStreamState) incomplete() error {
+	last := p.lastEvent
+	if last == "" {
+		last = "none"
+	}
+	return fmt.Errorf("%w (last event: %s)", ErrAccountTestIncomplete, last)
+}
+
+// upstreamError reports an error object or event sent by the upstream with
+// the same wording the upstream protocol adapters used before the strict parser.
+func (p *connectionStreamState) upstreamError(value any) error {
+	text := accountTestUpstreamError(value)
+	if p.protocol == "chat" {
+		text = "Chat Completions API (/v1/chat/completions) error: " + text
+	}
+	return accountTestTerminalError(text)
+}
+
+func connectionStreamEventName(data map[string]any) string {
+	for _, key := range []string{"type", "object"} {
+		if name, _ := data[key].(string); name != "" {
+			return name
+		}
+	}
+	return "data"
+}
+
+// terminalErrorValue prefers the error object of a failed response event.
+func terminalErrorValue(data map[string]any) (any, bool) {
+	if response, ok := data["response"].(map[string]any); ok && response["error"] != nil {
+		return response["error"], true
+	}
 	if data["error"] != nil {
-		return false, ErrAccountTestTerminal
+		return data["error"], true
+	}
+	return nil, false
+}
+
+func (p *connectionStreamState) consume(data map[string]any) (bool, error) {
+	p.lastEvent = connectionStreamEventName(data)
+	if data["error"] != nil {
+		return false, p.upstreamError(data["error"])
 	}
 	event, _ := data["type"].(string)
 	switch p.protocol {
@@ -263,18 +148,22 @@ func (p *connectionStreamState) consume(data map[string]any) (bool, error) {
 				p.limited = true
 			case "", "end_turn", "stop_sequence", "tool_use", "pause_turn", "refusal":
 			default:
-				return false, ErrAccountTestTerminal
+				return false, accountTestTerminal("message_stop with stop_reason=%s", p.stopReason)
 			}
-			return p.complete()
+			if p.stopReason == "" {
+				return p.complete("")
+			}
+			return p.complete("stop_reason=" + p.stopReason)
 		case "error":
-			return false, ErrAccountTestTerminal
+			raw, _ := json.Marshal(data)
+			return false, accountTestTerminalError(raw)
 		}
 	case "gemini":
 		if response, ok := data["response"].(map[string]any); ok {
 			data = response
 		}
 		if data["error"] != nil {
-			return false, ErrAccountTestTerminal
+			return false, p.upstreamError(data["error"])
 		}
 		candidates, _ := data["candidates"].([]any)
 		if len(candidates) == 0 {
@@ -305,12 +194,19 @@ func (p *connectionStreamState) consume(data map[string]any) (bool, error) {
 			p.limited = true
 		case "STOP", "SAFETY", "RECITATION", "BLOCKLIST", "PROHIBITED_CONTENT", "SPII":
 		default:
-			return false, ErrAccountTestTerminal
+			return false, accountTestTerminal("finishReason=%s", reason)
 		}
-		return p.complete()
+		return p.complete("finishReason=" + reason)
 	case "chat":
 		if event == "error" || event == "response.failed" {
-			return false, ErrAccountTestTerminal
+			value, ok := terminalErrorValue(data)
+			if !ok {
+				value = data
+			}
+			return false, p.upstreamError(value)
+		}
+		if model, ok := data["model"].(string); ok && strings.TrimSpace(model) != "" {
+			p.upstreamModel = strings.TrimSpace(model)
 		}
 		choices, _ := data["choices"].([]any)
 		for _, raw := range choices {
@@ -332,37 +228,47 @@ func (p *connectionStreamState) consume(data map[string]any) (bool, error) {
 				p.limited = true
 			case "stop", "content_filter", "tool_calls", "function_call":
 			default:
-				return false, ErrAccountTestTerminal
+				return false, accountTestTerminal("finish_reason=%s", reason)
 			}
-			return p.complete()
+			return p.complete("finish_reason=" + reason)
 		}
 	case "responses":
+		if response, ok := data["response"].(map[string]any); ok {
+			if model, ok := response["model"].(string); ok && strings.TrimSpace(model) != "" {
+				p.upstreamModel = strings.TrimSpace(model)
+			}
+		}
 		switch event {
 		case "response.output_text.delta", "response.refusal.delta":
 			p.text(data["delta"])
 		case "response.completed", "response.done", "response.incomplete":
 			response, _ := data["response"].(map[string]any)
 			status, _ := response["status"].(string)
-			if status == "failed" || status == "cancelled" || status == "canceled" {
-				return false, ErrAccountTestTerminal
-			}
 			if response["error"] != nil {
-				return false, ErrAccountTestTerminal
+				return false, p.upstreamError(response["error"])
 			}
-			if !p.visible {
+			if status == "failed" || status == "cancelled" || status == "canceled" {
+				return false, accountTestTerminal("%s with status=%s", event, status)
+			}
+			var outputTypes []string
+			output, _ := response["output"].([]any)
+			for _, raw := range output {
+				item, _ := raw.(map[string]any)
+				if kind, _ := item["type"].(string); kind != "" {
+					outputTypes = append(outputTypes, kind)
+				}
+				if p.visible {
+					continue
+				}
 				// Providers may send their only text in the final response object.
-				output, _ := response["output"].([]any)
-				for _, raw := range output {
-					item, _ := raw.(map[string]any)
-					parts, _ := item["content"].([]any)
-					for _, rawPart := range parts {
-						part, _ := rawPart.(map[string]any)
-						if part["type"] == "output_text" {
-							p.text(part["text"])
-						}
-						if part["type"] == "refusal" {
-							p.text(part["refusal"])
-						}
+				parts, _ := item["content"].([]any)
+				for _, rawPart := range parts {
+					part, _ := rawPart.(map[string]any)
+					if part["type"] == "output_text" {
+						p.text(part["text"])
+					}
+					if part["type"] == "refusal" {
+						p.text(part["refusal"])
 					}
 				}
 			}
@@ -372,25 +278,39 @@ func (p *connectionStreamState) consume(data map[string]any) (bool, error) {
 			case (status == "incomplete" && event != "response.completed") || (event == "response.incomplete" && status == ""):
 				details, _ := response["incomplete_details"].(map[string]any)
 				if details["reason"] != "max_output_tokens" {
-					return false, ErrAccountTestTerminal
+					raw, _ := json.Marshal(response["incomplete_details"])
+					return false, accountTestTerminal("%s with incomplete_details=%s", event, raw)
 				}
 				p.limited = true
 			default:
-				return false, ErrAccountTestTerminal
+				if status == "" {
+					status = "none"
+				}
+				return false, accountTestTerminal("%s with status=%s", event, status)
 			}
-			return p.complete()
+			if len(outputTypes) == 0 {
+				return p.complete("")
+			}
+			return p.complete("output: " + strings.Join(outputTypes, ", "))
 		case "response.failed", "response.cancelled", "error":
-			return false, ErrAccountTestTerminal
+			if value, ok := terminalErrorValue(data); ok {
+				return false, p.upstreamError(value)
+			}
+			response, _ := data["response"].(map[string]any)
+			if status, _ := response["status"].(string); status != "" {
+				return false, accountTestTerminal("%s with status=%s", event, status)
+			}
+			return false, accountTestTerminalError(event)
 		}
 	default:
-		return false, ErrAccountTestProtocol
+		return false, fmt.Errorf("%w: unsupported protocol %s", ErrAccountTestProtocol, p.protocol)
 	}
 	return false, nil
 }
 
 // One parser is used by streaming HTTP tests, background tests and the
 // Antigravity adapter. EOF and [DONE] alone never certify completion.
-func parseAccountConnectionStream(protocol string, body io.Reader, allowMedia bool, emit func(TestEvent), observe ...func(map[string]any)) (bool, error) {
+func parseAccountConnectionStream(protocol string, body io.Reader, allowMedia bool, emit func(TestEvent), observe ...func(map[string]any)) (limited bool, upstreamModel string, err error) {
 	p := connectionStreamState{protocol: protocol, allowMedia: allowMedia, emit: emit}
 	scanner := bufio.NewScanner(body)
 	scanner.Buffer(make([]byte, 4096), 32<<20)
@@ -402,11 +322,12 @@ func parseAccountConnectionStream(protocol string, body io.Reader, allowMedia bo
 		raw := strings.Join(lines, "\n")
 		lines = nil
 		if raw == "[DONE]" {
-			return false, ErrAccountTestIncomplete
+			p.lastEvent = "[DONE]"
+			return false, p.incomplete()
 		}
 		var data map[string]any
 		if json.Unmarshal([]byte(raw), &data) != nil {
-			return false, ErrAccountTestProtocol
+			return false, fmt.Errorf("%w: %s", ErrAccountTestProtocol, truncateUTF8(raw, 200))
 		}
 		for _, observer := range observe {
 			observer(data)
@@ -418,7 +339,7 @@ func parseAccountConnectionStream(protocol string, body io.Reader, allowMedia bo
 		if line == "" {
 			done, err := consume()
 			if done || err != nil {
-				return p.limited, err
+				return p.limited, p.upstreamModel, err
 			}
 		} else if strings.HasPrefix(line, "data:") {
 			// A few compatible providers omit blank lines between complete JSON
@@ -426,38 +347,40 @@ func parseAccountConnectionStream(protocol string, body io.Reader, allowMedia bo
 			if len(lines) > 0 && json.Valid([]byte(strings.Join(lines, "\n"))) {
 				done, err := consume()
 				if done || err != nil {
-					return p.limited, err
+					return p.limited, p.upstreamModel, err
 				}
 			}
 			lines = append(lines, strings.TrimPrefix(strings.TrimPrefix(line, "data:"), " "))
 		}
 	}
-	if scanner.Err() != nil {
-		return false, ErrAccountTestIncomplete
+	if readErr := scanner.Err(); readErr != nil {
+		return false, "", fmt.Errorf("%w: %v", p.incomplete(), readErr)
 	}
 	done, err := consume()
 	if err != nil {
-		return false, err
+		return false, "", err
 	}
 	if done {
-		return p.limited, nil
+		return p.limited, p.upstreamModel, nil
 	}
-	return false, ErrAccountTestIncomplete
+	return false, "", p.incomplete()
 }
 
 func (s *AccountTestService) processConnectionStream(c *gin.Context, body io.Reader, protocol string, account *Account) error {
-	limited, err := parseAccountConnectionStream(protocol, body, c.GetBool("account_test_allow_media"), func(event TestEvent) { s.sendEvent(c, event) }, func(data map[string]any) {
+	limited, upstreamModel, err := parseAccountConnectionStream(protocol, body, c.GetBool("account_test_allow_media"), func(event TestEvent) { s.sendEvent(c, event) }, func(data map[string]any) {
 		if account != nil && (data["error"] != nil || data["type"] == "response.failed" || data["type"] == "error") {
 			raw, _ := json.Marshal(data)
-			s.markCindyBalanceInsufficientFromTest(c.Request.Context(), account, http.StatusOK, raw)
+			s.markOpenAIBudgetExceededFromTest(c.Request.Context(), account, http.StatusOK, raw)
 		}
 	})
 	if err != nil {
-		s.sendEvent(c, TestEvent{Type: "error", Code: AccountTestFailureCode(err), Error: err.Error()})
-		return err
+		return s.sendTestFailure(c, err)
 	}
 	if protocol == "chat" {
 		s.sendEvent(c, TestEvent{Type: "status", Text: "已通过 /v1/chat/completions 验证"})
+	}
+	if upstreamModel != "" {
+		s.sendEvent(c, TestEvent{Type: "upstream_model", UpstreamModel: upstreamModel})
 	}
 	s.sendEvent(c, TestEvent{Type: "test_complete", Success: true, OutputLimited: limited})
 	return nil

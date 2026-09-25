@@ -3,7 +3,6 @@ package repository
 import (
 	"context"
 	"fmt"
-	"os"
 	"strings"
 	"testing"
 
@@ -18,25 +17,6 @@ import (
 
 type captureEntQueryMatcher struct {
 	actual *string
-}
-
-func TestEveryAccountRepositoryTerminalAvailabilityPredicateExcludesBanned(t *testing.T) {
-	raw, err := os.ReadFile("account_repo.go")
-	require.NoError(t, err)
-	source := string(raw)
-	require.GreaterOrEqual(t, strings.Count(source, "cindyTerminalStateAvailablePredicate()"), 9)
-	require.Equal(t, 1, strings.Count(source, "CindyBalanceInsufficientAtIsNil()"))
-	require.Contains(t, source, "dbaccount.PlatformNEQ(service.PlatformCindy)")
-	require.Equal(t,
-		strings.Count(source, "CindyBalanceInsufficientAtIsNil()"),
-		strings.Count(source, "CindyBannedAtIsNil()"),
-	)
-	require.Equal(t,
-		strings.Count(source, "a.cindy_balance_insufficient_at IS NULL"),
-		strings.Count(source, "a.cindy_banned_at IS NULL"),
-	)
-	require.Contains(t, source, "a.platform <> 'cindy' OR (a.cindy_balance_insufficient_at IS NULL AND a.cindy_banned_at IS NULL)")
-	require.Contains(t, groupAccountAvailableSQL, "a.platform <> 'cindy' OR (a.cindy_balance_insufficient_at IS NULL AND a.cindy_banned_at IS NULL)")
 }
 
 func (m captureEntQueryMatcher) Match(_, actual string) error {
@@ -92,8 +72,6 @@ func TestListSchedulableAccountLoadsUsesSingleProjectionQuery(t *testing.T) {
 		"auto_pause_on_expired",
 		"overload_until",
 		"rate_limit_reset_at",
-		"cindy_balance_insufficient_at",
-		"cindy_banned_at",
 		"deleted_at",
 	} {
 		require.Contains(t, normalized, predicateColumn)

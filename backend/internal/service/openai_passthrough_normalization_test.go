@@ -248,10 +248,6 @@ func TestNormalizeOpenAIResponsesWebSocketCompatibilityBody_ReasoningModeAccount
 	require.NoError(t, err)
 	require.False(t, changed)
 	require.JSONEq(t, string(body), string(apiKeyBody))
-	cindyBody, changed, err := normalizeOpenAIResponsesWebSocketCompatibilityBody(body, &Account{Platform: PlatformCindy, Type: AccountTypeAPIKey}, false)
-	require.NoError(t, err)
-	require.False(t, changed)
-	require.JSONEq(t, string(body), string(cindyBody))
 }
 
 func TestNormalizeOpenAIResponsesWebSocketCompatibilityBody_SanitizesToolSchemas(t *testing.T) {

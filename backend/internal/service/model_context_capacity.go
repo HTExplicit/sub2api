@@ -1,8 +1,6 @@
 package service
 
 import (
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"net/url"
 	"sort"
@@ -10,44 +8,59 @@ import (
 
 	extensionv1 "github.com/Wei-Shaw/sub2api/internal/nativeapi"
 	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
-	"github.com/Wei-Shaw/sub2api/internal/pkg/openai"
 )
 
 const (
-	DefaultModelContextWindow              int64 = 200000
-	MaxSafeModelContextTokens              int64 = 9007199254740991
-	UpstreamModelContextCapacitiesExtraKey       = "upstream_model_context_capacities"
-	ModelContextOverridesExtraKey                = "model_context_overrides"
-	ModelContextCapacityBasisTotal               = "total_context"
-	ModelContextCapacityBasisInput               = "input_limit"
-	ModelContextCapacityBasisMaximum             = "max_context_window"
+	MaxSafeModelContextTokens        int64 = 9007199254740991
+	ModelContextOverridesExtraKey          = "model_context_overrides"
+	ModelContextCapacityBasisTotal         = "total_context"
+	ModelContextCapacityBasisInput         = "input_limit"
+	ModelContextCapacityBasisMaximum       = "max_context_window"
 )
 
-// ModelContextCapacity keeps the upstream's distinct limits intact. A zero is
-// unknown, never a promise of an unlimited window. ObservedAt belongs to an
-// actual upstream observation, not to a registry enrichment or account edit.
+// Capacity evidence, highest priority first. The order is the same for every
+// account and host: an admin override, what this account's own upstream
+// declared, the release-pinned reference catalog, then the models.dev
+// registry. There is no default: an unknown capacity is never advertised.
+const (
+	ModelContextSourceCustom   = "custom"
+	ModelContextSourceUpstream = "upstream"
+	ModelContextSourceOfficial = "official"
+	ModelContextSourceRegistry = "registry"
+)
+
+// ModelContextCapacity keeps an upstream's distinct limits intact. A zero is
+// unknown, never a promise of an unlimited window.
 type ModelContextCapacity = extensionv1.ModelContextCapacity
 
-type UpstreamModelContextCapacitySnapshot struct {
-	ObservedAt     string                          `json:"observed_at"`
-	SourceIdentity string                          `json:"source_identity"`
-	Models         map[string]ModelContextCapacity `json:"models"`
-}
-
-// ModelContextCapacityReference preserves the raw product reference separately
-// from the planning capacity selected by this project.
+// ModelContextCapacityReference preserves the raw product reference of a
+// catalog entry.
 type ModelContextCapacityReference = extensionv1.ModelContextCapacityReference
 
 // OfficialModelContextCapacity is release-owned evidence. Match constraints and
 // reference values are not client-writeable.
 type OfficialModelContextCapacity = extensionv1.OfficialModelContextCapacity
 
+// ResolvedModelContextCapacity is one answer for one model. An empty Source
+// means unknown; callers must not advertise it.
 type ResolvedModelContextCapacity struct {
 	ModelContextCapacity
-	Source string `json:"source"`
+	Source string `json:"source,omitempty"`
 	Reason string `json:"reason,omitempty"`
 }
 
+// Known reports whether the answer carries a usable planning window.
+func (capacity ResolvedModelContextCapacity) Known() bool {
+	return capacity.Source != "" && validModelContextTokens(capacity.ContextWindow)
+}
+
+func unknownModelContextCapacity(reason string) ResolvedModelContextCapacity {
+	return ResolvedModelContextCapacity{Reason: reason}
+}
+
+// AccountModelContextCapacityRow is the admin view of one real upstream model:
+// every piece of evidence plus the automatic and effective answers. Every
+// account accepts overrides, so Editable is always true.
 type AccountModelContextCapacityRow struct {
 	UpstreamModelID        string                        `json:"upstream_model_id"`
 	Aliases                []string                      `json:"aliases"`
@@ -55,6 +68,7 @@ type AccountModelContextCapacityRow struct {
 	Editable               bool                          `json:"editable"`
 	Upstream               *ModelContextCapacity         `json:"upstream,omitempty"`
 	Official               *OfficialModelContextCapacity `json:"official,omitempty"`
+	Registry               *ModelContextCapacity         `json:"registry,omitempty"`
 	CustomContextWindow    *int64                        `json:"custom_context_window,omitempty"`
 	AutomaticContextWindow int64                         `json:"automatic_context_window"`
 	AutomaticSource        string                        `json:"automatic_source"`
@@ -71,132 +85,36 @@ func validModelContextTokens(value int64) bool {
 	return value > 0 && value <= MaxSafeModelContextTokens
 }
 
-// IsModelContextCapacityProtected follows credential/provider identity, not an
-// editable proxy URL. An OAuth proxy is still an official OAuth wire contract.
-func IsModelContextCapacityProtected(account *Account) bool {
-	return account != nil && (account.Platform == PlatformCindy ||
-		account.EffectiveProviderProfile() == ProviderProfileCindyLaxaV1 ||
-		IsCindyRuntimeCompatibleAPIKeyAccount(account.Platform, account.Type, account.Credentials) ||
-		account.IsOAuth())
+type modelContextEvidence struct {
+	source   string
+	capacity ModelContextCapacity
 }
 
-func CanManageModelContextCapacity(account *Account) bool {
-	if account == nil || IsModelContextCapacityProtected(account) {
-		return false
-	}
-	if account.Type != AccountTypeAPIKey && account.Type != AccountTypeUpstream {
-		return false
-	}
-	switch account.Platform {
-	case PlatformOpenAI, PlatformAnthropic, PlatformGemini, PlatformGrok,
-		PlatformKimi, PlatformZhipu, PlatformDeepseek, PlatformMiniMax, PlatformAntigravity:
-		return true
-	default:
-		return false
-	}
-}
-
-// officialModelContextCapacityAPIHosts are the vendors' own API hosts. Their
-// model lists rarely declare capacities, so the release catalog stays
-// authoritative there. Any other host is a third-party relay that may serve a
-// smaller window than the vendor product: its own declaration outranks the
-// catalog, and official evidence only fills the fields it left blank.
-var officialModelContextCapacityAPIHosts = []string{
-	"api.openai.com", "api.anthropic.com", "generativelanguage.googleapis.com", "api.x.ai", "api.deepseek.com",
-	"dashscope.aliyuncs.com", "dashscope-intl.aliyuncs.com", "dashscope-us.aliyuncs.com", "cn-hongkong.dashscope.aliyuncs.com",
-	"api.moonshot.cn", "api.moonshot.ai", "api.kimi.com", "open.bigmodel.cn", "api.z.ai",
-	"api.minimax.io", "api.minimaxi.com", "api.minimax.chat", "ark.cn-beijing.volces.com",
-}
-
-// modelContextCapacityUpstreamFirst reports whether the account's model list
-// comes from a third-party host. An empty or unparsable endpoint keeps the
-// official-first order rather than guessing a relay.
-func modelContextCapacityUpstreamFirst(account *Account) bool {
-	if account == nil {
-		return false
-	}
-	parsed, err := url.Parse(strings.TrimSpace(upstreamModelRegistryBaseURL(account)))
-	if err != nil || parsed == nil || parsed.Hostname() == "" {
-		return false
-	}
-	return !containsFoldModelContextString(officialModelContextCapacityAPIHosts, parsed.Hostname())
-}
-
-// ResolveModelContextCapacity applies the official-first order used on the
-// vendors' own hosts: custom > official > upstream > default.
-func ResolveModelContextCapacity(custom *int64, official *OfficialModelContextCapacity, upstream *ModelContextCapacity) ResolvedModelContextCapacity {
-	return resolveModelContextCapacity(custom, official, upstream, false)
-}
-
-// ResolveModelContextCapacityForAccount follows the account's host: official
-// first on vendor API hosts, upstream first on third-party relays.
-func ResolveModelContextCapacityForAccount(account *Account, custom *int64, official *OfficialModelContextCapacity, upstream *ModelContextCapacity) ResolvedModelContextCapacity {
-	return resolveModelContextCapacity(custom, official, upstream, modelContextCapacityUpstreamFirst(account))
-}
-
-// resolveModelContextCapacity chooses context/default-maximum as one source
-// tuple. Independent input/output limits retain their own evidence in the same
-// source order when compatible with that planning context. They are never
-// filled from the default, clamped or synthesized from the context window.
-func resolveModelContextCapacity(custom *int64, official *OfficialModelContextCapacity, upstream *ModelContextCapacity, upstreamFirst bool) ResolvedModelContextCapacity {
-	result := resolveModelContextPlanningWindow(custom, official, upstream, upstreamFirst)
-	var officialLimits, upstreamLimits ModelContextCapacity
-	if official != nil {
-		officialLimits = official.ModelContextCapacity
-	}
-	if upstream != nil {
-		upstreamLimits = *upstream
-	}
-	primary, secondary := officialLimits, upstreamLimits
-	if upstreamFirst {
-		primary, secondary = upstreamLimits, officialLimits
-	}
-	compatibleLimit := func(values ...int64) int64 {
-		for _, value := range values {
-			if validModelContextTokens(value) && value <= result.ContextWindow {
-				return value
+// resolveModelContextEvidence takes the planning window (context_window as the
+// default working window, max_context_window as the real maximum) from the
+// highest-priority evidence that states one. Independent input/output limits
+// keep the first compatible declaration in the same priority order; they are
+// never synthesized from the context window.
+func resolveModelContextEvidence(items []modelContextEvidence) ResolvedModelContextCapacity {
+	for _, item := range items {
+		planning, ok := modelContextPlanningCapacity(item.capacity)
+		if !ok {
+			continue
+		}
+		result := ResolvedModelContextCapacity{ModelContextCapacity: planning, Source: item.source}
+		compatible := func(limit func(ModelContextCapacity) int64) int64 {
+			for _, candidate := range items {
+				if value := limit(sanitizeModelContextCapacity(candidate.capacity)); value > 0 && value <= result.ContextWindow {
+					return value
+				}
 			}
+			return 0
 		}
-		return 0
+		result.MaxInputTokens = compatible(func(value ModelContextCapacity) int64 { return value.MaxInputTokens })
+		result.MaxOutputTokens = compatible(func(value ModelContextCapacity) int64 { return value.MaxOutputTokens })
+		return result
 	}
-	result.MaxInputTokens = compatibleLimit(primary.MaxInputTokens, secondary.MaxInputTokens)
-	result.MaxOutputTokens = compatibleLimit(primary.MaxOutputTokens, secondary.MaxOutputTokens)
-	return result
-}
-
-func resolveModelContextPlanningWindow(custom *int64, official *OfficialModelContextCapacity, upstream *ModelContextCapacity, upstreamFirst bool) ResolvedModelContextCapacity {
-	if custom != nil && validModelContextTokens(*custom) {
-		return ResolvedModelContextCapacity{
-			ModelContextCapacity: ModelContextCapacity{ContextWindow: *custom, MaxContextWindow: *custom, CapacityBasis: ModelContextCapacityBasisTotal},
-			Source:               "custom",
-		}
-	}
-	var candidates []ResolvedModelContextCapacity
-	if official != nil {
-		if capacity, ok := modelContextPlanningCapacity(official.ModelContextCapacity); ok {
-			candidates = append(candidates, ResolvedModelContextCapacity{ModelContextCapacity: capacity, Source: "official"})
-		}
-	}
-	if upstream != nil {
-		if capacity, ok := modelContextPlanningCapacity(*upstream); ok {
-			candidate := ResolvedModelContextCapacity{ModelContextCapacity: capacity, Source: "upstream"}
-			if upstreamFirst {
-				candidates = append([]ResolvedModelContextCapacity{candidate}, candidates...)
-			} else {
-				candidates = append(candidates, candidate)
-			}
-		}
-	}
-	if len(candidates) > 0 {
-		return candidates[0]
-	}
-	return ResolvedModelContextCapacity{
-		ModelContextCapacity: ModelContextCapacity{
-			ContextWindow: DefaultModelContextWindow, MaxContextWindow: DefaultModelContextWindow,
-			CapacityBasis: ModelContextCapacityBasisTotal,
-		},
-		Source: "default", Reason: "no_verified_capacity",
-	}
+	return unknownModelContextCapacity("no_capacity_evidence")
 }
 
 func modelContextPlanningCapacity(raw ModelContextCapacity) (ModelContextCapacity, bool) {
@@ -213,10 +131,13 @@ func modelContextPlanningCapacity(raw ModelContextCapacity) (ModelContextCapacit
 	default:
 		return ModelContextCapacity{}, false
 	}
-	// Raw evidence is preserved in the snapshot/admin row. Contradictory maximum
-	// fields are not projected as a false client contract.
+	// A declared maximum below the default window caps it: a client never
+	// plans beyond the real maximum.
 	if value.MaxContextWindow > 0 && value.MaxContextWindow < value.ContextWindow {
-		value.MaxContextWindow = 0
+		value.ContextWindow = value.MaxContextWindow
+	}
+	if value.MaxContextWindow < value.ContextWindow {
+		value.MaxContextWindow = value.ContextWindow
 	}
 	return value, true
 }
@@ -240,123 +161,9 @@ func modelContextCapacityHasLimits(value ModelContextCapacity) bool {
 		validModelContextTokens(value.MaxInputTokens) || validModelContextTokens(value.MaxOutputTokens)
 }
 
-func (account *Account) SetUpstreamModelContextCapacitySnapshot(snapshot UpstreamModelContextCapacitySnapshot) {
-	if account == nil {
-		return
-	}
-	if account.Extra == nil {
-		account.Extra = make(map[string]any)
-	}
-	if snapshot.SourceIdentity == "" {
-		snapshot.SourceIdentity = ModelContextCapacitySourceIdentity(account)
-	}
-	account.Extra[UpstreamModelContextCapacitiesExtraKey] = snapshot
-}
-
-func (account *Account) GetUpstreamModelContextCapacitySnapshot() *UpstreamModelContextCapacitySnapshot {
-	snapshot, _ := readModelContextCapacitySnapshot(account)
-	return snapshot
-}
-
-// ModelContextCapacitySourceIdentity binds observations to the actual upstream
-// endpoint/product/protocol. It intentionally excludes keys, network proxies,
-// names and public model mappings: those are not model-capacity evidence.
-func ModelContextCapacitySourceIdentity(account *Account) string {
-	if account == nil {
-		return ""
-	}
-	normalizeEndpoint := func(endpoint string) string {
-		endpoint = strings.TrimSpace(endpoint)
-		parsed, err := url.Parse(endpoint)
-		if err != nil {
-			return endpoint
-		}
-		parsed.Scheme = strings.ToLower(parsed.Scheme)
-		parsed.Host = strings.ToLower(parsed.Host)
-		if parsed.Port() == "443" && parsed.Scheme == "https" {
-			parsed.Host = parsed.Hostname()
-		}
-		if parsed.Port() == "80" && parsed.Scheme == "http" {
-			parsed.Host = parsed.Hostname()
-		}
-		// Existing request URL builders retain query parameters, which may
-		// select different provider/region backends. Keep them in the private
-		// hash; canonical ordering avoids invalidation from a cosmetic reorder.
-		if query, err := url.ParseQuery(parsed.RawQuery); err == nil {
-			parsed.RawQuery = query.Encode()
-		}
-		parsed.User, parsed.Fragment = nil, ""
-		parsed.ForceQuery = false
-		parsed.Path = strings.TrimRight(parsed.Path, "/")
-		parsed.RawPath = strings.TrimRight(parsed.RawPath, "/")
-		return parsed.String()
-	}
-	identity := struct {
-		Platform         string            `json:"platform"`
-		Wire             string            `json:"wire"`
-		Profile          string            `json:"profile"`
-		BaseURL          string            `json:"base_url"`
-		AnthropicBaseURL string            `json:"anthropic_base_url,omitempty"`
-		AccountMode      string            `json:"account_mode"`
-		APIProtocol      string            `json:"api_protocol"`
-		APIBaseURLs      map[string]string `json:"api_base_urls,omitempty"`
-	}{
-		Platform: account.Platform, Wire: account.EffectiveWirePlatform(), Profile: account.EffectiveProviderProfile(),
-		BaseURL: normalizeEndpoint(upstreamModelRegistryBaseURL(account)),
-		// CN Anthropic requests can use a custom Messages endpoint while model
-		// sync uses a fixed official OpenAI-format endpoint. Bind both identities.
-		AnthropicBaseURL: normalizeEndpoint(account.GetAnthropicProtocolBaseURL()),
-		AccountMode:      account.GetAccountMode(), APIProtocol: account.GetAPIProtocol(),
-		APIBaseURLs: make(map[string]string),
-	}
-	for _, protocol := range []string{APIProtocolChatCompletions, APIProtocolResponses, APIProtocolAnthropic} {
-		var endpoint string
-		switch endpoints := account.Credentials["api_base_urls"].(type) {
-		case map[string]any:
-			endpoint, _ = endpoints[protocol].(string)
-		case map[string]string:
-			endpoint = endpoints[protocol]
-		}
-		if strings.TrimSpace(endpoint) != "" {
-			identity.APIBaseURLs[protocol] = normalizeEndpoint(endpoint)
-		}
-	}
-	body, _ := json.Marshal(identity)
-	digest := sha256.Sum256(body)
-	return "sha256:" + hex.EncodeToString(digest[:])
-}
-
-func readModelContextCapacitySnapshot(account *Account) (*UpstreamModelContextCapacitySnapshot, string) {
-	if account == nil || account.Extra == nil {
-		return nil, ""
-	}
-	body, err := json.Marshal(account.Extra[UpstreamModelContextCapacitiesExtraKey])
-	if err != nil {
-		return nil, "capacity_snapshot_unreadable"
-	}
-	var stored struct {
-		ObservedAt     string                     `json:"observed_at"`
-		SourceIdentity string                     `json:"source_identity"`
-		Models         map[string]json.RawMessage `json:"models"`
-	}
-	if json.Unmarshal(body, &stored) != nil || len(stored.Models) == 0 {
-		return nil, ""
-	}
-	if stored.SourceIdentity == "" || stored.SourceIdentity != ModelContextCapacitySourceIdentity(account) {
-		return nil, "upstream_source_changed"
-	}
-	snapshot := &UpstreamModelContextCapacitySnapshot{ObservedAt: stored.ObservedAt, SourceIdentity: stored.SourceIdentity, Models: make(map[string]ModelContextCapacity, len(stored.Models))}
-	for modelID, raw := range stored.Models {
-		if !validModelContextID(modelID) {
-			continue
-		}
-		value := ParseUpstreamModelContextCapacity(raw, "")
-		if value.ObservedAt == "" {
-			value.ObservedAt = stored.ObservedAt
-		}
-		snapshot.Models[modelID] = value
-	}
-	return snapshot, ""
+func sameModelContextLimits(left, right ModelContextCapacity) bool {
+	return left.ContextWindow == right.ContextWindow && left.MaxContextWindow == right.MaxContextWindow &&
+		left.MaxInputTokens == right.MaxInputTokens && left.MaxOutputTokens == right.MaxOutputTokens
 }
 
 func validModelContextID(modelID string) bool {
@@ -371,14 +178,35 @@ func validModelContextID(modelID string) bool {
 	return true
 }
 
+// isMediaModelForCapacity identifies image, video and audio generators. They
+// have no text-generation window, so no capacity is ever advertised for them.
+func isMediaModelForCapacity(modelID string) bool {
+	if isCodexDedicatedMediaModel(modelID) {
+		return true
+	}
+	id := strings.ToLower(codexProviderQualifiedModelID(modelID))
+	if colon := strings.IndexByte(id, ':'); colon >= 0 {
+		id = id[:colon]
+	}
+	for _, token := range strings.FieldsFunc(id, func(r rune) bool { return r == '-' || r == '_' || r == '.' || r == '/' }) {
+		switch token {
+		case "image", "images", "imagine", "video", "audio", "tts", "whisper", "transcribe", "speech", "realtime",
+			"sora", "veo", "dall", "seedance", "seedream", "kling", "hailuo", "music", "lyria":
+			return true
+		}
+		if strings.HasPrefix(token, "imagen") {
+			return true
+		}
+	}
+	return false
+}
+
 // ValidateModelContextOverrides distinguishes omitted (nil map), no-op (empty
-// map), and deletion (nil value at one model key). It never mutates the account.
-func ValidateModelContextOverrides(account *Account, patch map[string]*int64) error {
+// map), and deletion (nil value at one model key). It never mutates the account;
+// every account may carry overrides.
+func ValidateModelContextOverrides(_ *Account, patch map[string]*int64) error {
 	if patch == nil {
 		return nil
-	}
-	if !CanManageModelContextCapacity(account) {
-		return infraerrors.BadRequest("MODEL_CONTEXT_OVERRIDES_READ_ONLY", "model context overrides are unavailable for this account")
 	}
 	return validateModelContextOverridesPatch(patch)
 }
@@ -430,84 +258,115 @@ func modelContextOverridesFromExtra(raw any) map[string]int64 {
 	return values
 }
 
-// NewAccountModelContextCapacityResolver decodes account snapshots once. A live
-// value replaces only the observed upstream source for this call and never
-// writes to account state or a shared upstream cache.
-func NewAccountModelContextCapacityResolver(account *Account) func(string, *ModelContextCapacity) ResolvedModelContextCapacity {
-	if !CanManageModelContextCapacity(account) {
-		return func(modelID string, live *ModelContextCapacity) ResolvedModelContextCapacity {
-			return protectedAccountModelContextCapacity(account, modelID, live)
-		}
-	}
-	snapshot, snapshotReason := readModelContextCapacitySnapshot(account)
-	observations, observationConflicts := capacitySnapshotTargets(account, snapshot)
-	custom, conflicts := resolveCapacityOverrides(account)
-	return func(modelID string, live *ModelContextCapacity) ResolvedModelContextCapacity {
-		modelID = capacityCanonicalUpstreamID(account, modelID)
-		if !validModelContextID(modelID) {
-			result := ResolveModelContextCapacity(nil, nil, nil)
-			result.Reason = "upstream_model_unresolved"
-			return result
-		}
-		var override *int64
-		if value, ok := custom[modelID]; ok {
-			override = &value
-		}
-		var upstream *ModelContextCapacity
-		if value, ok := observations[modelID]; ok {
-			upstream = &value
-		}
-		if live != nil {
-			upstream = live
-		}
-		result := ResolveModelContextCapacityForAccount(account, override, LookupOfficialModelContextCapacity(account, modelID), upstream)
-		if conflicts[modelID] {
-			result.Reason = "conflicting_alias_overrides"
-		}
-		if result.Source == "default" && observationConflicts[modelID] {
-			result.Reason = "conflicting_upstream_alias_capacities"
-		}
-		if result.Source == "default" && snapshotReason != "" {
-			result.Reason = snapshotReason
-		}
-		return result
-	}
+// accountModelCapacityEvidence decodes one account's evidence once. Resolving a
+// model performs no I/O and never mutates the account.
+type accountModelCapacityEvidence struct {
+	account          *Account
+	overrides        map[string]int64
+	overrideConflict map[string]bool
+	upstream         map[string]ModelContextCapacity
+	registry         map[string]ModelContextCapacity
+	observedConflict map[string]bool
 }
 
+func newAccountModelCapacityEvidence(account *Account) *accountModelCapacityEvidence {
+	evidence := &accountModelCapacityEvidence{account: account}
+	evidence.overrides, evidence.overrideConflict = resolveCapacityOverrides(account)
+	evidence.upstream, evidence.registry, evidence.observedConflict = accountCapacityObservations(account)
+	return evidence
+}
+
+// resolve answers for a real upstream model ID. Without custom it returns the
+// automatic answer an override would replace.
+func (evidence *accountModelCapacityEvidence) resolve(modelID string, useCustom bool) ResolvedModelContextCapacity {
+	account := evidence.account
+	modelID = capacityCanonicalUpstreamID(account, modelID)
+	if !validModelContextID(modelID) {
+		return unknownModelContextCapacity("upstream_model_unresolved")
+	}
+	if isMediaModelForCapacity(modelID) {
+		return unknownModelContextCapacity("media_model")
+	}
+	items := make([]modelContextEvidence, 0, 4)
+	if value, ok := evidence.overrides[modelID]; ok && useCustom {
+		items = append(items, modelContextEvidence{ModelContextSourceCustom, ModelContextCapacity{
+			ContextWindow: value, MaxContextWindow: value, CapacityBasis: ModelContextCapacityBasisTotal,
+		}})
+	}
+	if value, ok := evidence.upstream[modelID]; ok {
+		items = append(items, modelContextEvidence{ModelContextSourceUpstream, value})
+	}
+	if official := LookupOfficialModelContextCapacity(account, modelID); official != nil {
+		items = append(items, modelContextEvidence{ModelContextSourceOfficial, official.ModelContextCapacity})
+	}
+	if value, ok := evidence.registry[modelID]; ok {
+		items = append(items, modelContextEvidence{ModelContextSourceRegistry, value})
+	}
+	result := resolveModelContextEvidence(items)
+	if useCustom && evidence.overrideConflict[modelID] {
+		result.Reason = "conflicting_alias_overrides"
+	} else if !result.Known() && evidence.observedConflict[modelID] {
+		result.Reason = "conflicting_upstream_alias_capacities"
+	}
+	return result
+}
+
+// ResolveAccountModelContextCapacity answers for one account and one real
+// upstream model ID.
 func ResolveAccountModelContextCapacity(account *Account, upstreamModelID string) ResolvedModelContextCapacity {
-	return NewAccountModelContextCapacityResolver(account)(upstreamModelID, nil)
+	if account == nil {
+		return unknownModelContextCapacity("account_missing")
+	}
+	return newAccountModelCapacityEvidence(account).resolve(upstreamModelID, true)
 }
 
-// LookupOfficialModelContextCapacity receives the real upstream target. Matching
-// variants are only reference lookups: they never become request IDs, observation
-// keys or override keys. Exact catalog entries win before namespace/spelling
-// variants. Do not use the Codex routing map: it also upgrades older models.
+// LookupOfficialModelContextCapacity receives the real upstream target. The
+// reference spellings are lookups only: they never become request IDs,
+// observation keys or override keys. Do not use the Codex routing map: it also
+// upgrades older models.
 func LookupOfficialModelContextCapacity(account *Account, upstreamModelID string) *OfficialModelContextCapacity {
 	if account == nil || !validModelContextID(upstreamModelID) {
 		return nil
 	}
-	query := extensionv1.CatalogQuery{AccountID: account.ID, Candidates: modelContextReferenceCandidates(upstreamModelID), Platform: account.Platform, AccountType: account.Type, AccountMode: account.GetAccountMode()}
+	query := officialCatalogQuery{
+		Candidates: modelContextReferenceCandidates(upstreamModelID),
+		Platform:   account.Platform, AccountMode: account.GetAccountMode(),
+	}
 	if parsed, err := url.Parse(upstreamModelRegistryBaseURL(account)); err == nil {
 		query.Scheme, query.Host, query.Port, query.Path = parsed.Scheme, parsed.Hostname(), parsed.Port(), parsed.Path
 		query.HasURLCredentials = parsed.User != nil
 	}
-	return lookupExtensionCatalog(query)
+	return lookupOfficialModelCatalog(query)
 }
 
+// modelContextReferenceCandidates lists reference-lookup spellings of one real
+// upstream ID: the ID itself, then without a service-tier suffix (":free",
+// ":batch"), without a vendor namespace ("anthropic/claude-opus-4.6"), in the
+// recognized GPT spelling and without a finite GPT effort alias. Dotted and
+// hyphenated version separators compare equal in the catalog match itself.
 func modelContextReferenceCandidates(modelID string) []string {
 	candidates := []string{modelID}
 	add := func(candidate string) {
+		candidate = strings.TrimSpace(candidate)
 		if validModelContextID(candidate) && !containsExactModelContextString(candidates, candidate) {
 			candidates = append(candidates, candidate)
 		}
 	}
-	if slash := strings.LastIndexByte(modelID, '/'); slash >= 0 {
-		add(strings.TrimSpace(modelID[slash+1:]))
+	base := modelID
+	if colon := strings.LastIndexByte(base, ':'); colon > 0 {
+		switch strings.ToLower(base[colon+1:]) {
+		case "free", "batch":
+			base = base[:colon]
+			add(base)
+		}
 	}
-	spelling := canonicalizeOpenAIModelAliasSpelling(modelID)
+	if slash := strings.LastIndexByte(base, '/'); slash >= 0 {
+		add(base[slash+1:])
+	}
+	spelling := canonicalizeOpenAIModelAliasSpelling(base)
 	add(spelling)
-	// Only the existing finite effort spellings are identity variants here.
-	// Date-looking and arbitrary suffixes are not evidence for a model family.
+	// Only the finite effort spellings are identity variants here. Date-looking
+	// and arbitrary suffixes are not evidence for a model family.
 	if dash := strings.LastIndexByte(spelling, '-'); dash >= 0 {
 		suffix := spelling[dash+1:]
 		if isKnownCodexModelSuffix(suffix) && !isCodexDateSuffix(suffix) {
@@ -526,62 +385,9 @@ func containsExactModelContextString(values []string, target string) bool {
 	return false
 }
 
-func containsFoldModelContextString(values []string, target string) bool {
-	for _, value := range values {
-		if strings.EqualFold(value, target) {
-			return true
-		}
-	}
-	return false
-}
-
-func protectedAccountModelContextCapacity(account *Account, modelID string, live *ModelContextCapacity) ResolvedModelContextCapacity {
-	result := ResolvedModelContextCapacity{Source: "protected", Reason: "dedicated_catalog_read_only"}
-	if account == nil {
-		return result
-	}
-	if account.Platform == PlatformCindy || account.EffectiveProviderProfile() == ProviderProfileCindyLaxaV1 ||
-		IsCindyRuntimeCompatibleAPIKeyAccount(account.Platform, account.Type, account.Credentials) {
-		if capability, ok := resolveKnownCindyCapability(modelID); ok {
-			result.ModelContextCapacity = ModelContextCapacity{
-				ContextWindow: int64(capability.EffectiveCodexContextWindow()), MaxInputTokens: int64(capability.MaxInputTokens),
-				MaxOutputTokens: int64(capability.MaxOutputTokens), CapacityBasis: ModelContextCapacityBasisInput,
-			}
-		}
-		return result
-	}
-	if live != nil {
-		if capacity, ok := modelContextPlanningCapacity(*live); ok {
-			result.ModelContextCapacity = capacity
-			return result
-		}
-	}
-	if snapshot := account.GetUpstreamModelContextCapacitySnapshot(); snapshot != nil {
-		if capacity, ok := modelContextPlanningCapacity(snapshot.Models[modelID]); ok {
-			result.ModelContextCapacity = capacity
-			return result
-		}
-	}
-	// Legacy mixed-source metadata is usable only as the pre-existing protected
-	// display value. It is never relabelled as a raw upstream observation.
-	if metadata, ok := account.GetUpstreamModelMetadata(modelID); ok {
-		result.ModelContextCapacity, _ = modelContextPlanningCapacity(ModelContextCapacity{
-			ContextWindow: metadata.ContextWindow, MaxContextWindow: metadata.MaxContextWindow, MaxOutputTokens: metadata.MaxOutputTokens,
-		})
-		if result.ContextWindow > 0 {
-			return result
-		}
-	}
-	if account.IsOpenAIOAuthLike() && isOpenAIGPT6SolOrLunaModel(modelID) {
-		result.ModelContextCapacity = ModelContextCapacity{
-			ContextWindow: openai.GPT6CodexContextWindow, MaxContextWindow: openai.GPT6CodexMaxContextWindow,
-			CapacityBasis: ModelContextCapacityBasisTotal,
-		}
-		result.Reason = "codex_catalog_reference"
-	}
-	return result
-}
-
+// BuildAccountModelContextCapacityRows lists the requested models, the
+// account's mapping targets, every model with persisted evidence and every
+// override, each with its evidence and answers.
 func BuildAccountModelContextCapacityRows(account *Account, modelIDs []string) []AccountModelContextCapacityRow {
 	rows := make([]AccountModelContextCapacityRow, 0)
 	if account == nil {
@@ -609,56 +415,41 @@ func BuildAccountModelContextCapacityRows(account *Account, modelIDs []string) [
 			aliases[canonical] = append(aliases[canonical], alias)
 		}
 	}
-	snapshot := account.GetUpstreamModelContextCapacitySnapshot()
-	observations, _ := capacitySnapshotTargets(account, snapshot)
-	if snapshot != nil {
-		for modelID := range snapshot.Models {
+	evidence := newAccountModelCapacityEvidence(account)
+	for _, values := range []map[string]ModelContextCapacity{evidence.upstream, evidence.registry} {
+		for modelID := range values {
 			add(modelID)
 		}
 	}
-	custom, conflicts := resolveCapacityOverrides(account)
-	for modelID := range custom {
-		add(modelID)
-	}
-	for modelID := range conflicts {
-		add(modelID)
-	}
-	if !CanManageModelContextCapacity(account) {
-		if legacy := account.GetUpstreamModelMetadataSnapshot(); legacy != nil {
-			for modelID := range legacy.Models {
-				add(modelID)
-			}
+	for _, flags := range []map[string]bool{evidence.overrideConflict, evidence.observedConflict} {
+		for modelID := range flags {
+			add(modelID)
 		}
+	}
+	for modelID := range evidence.overrides {
+		add(modelID)
 	}
 	ordered := make([]string, 0, len(ids))
 	for modelID := range ids {
 		ordered = append(ordered, modelID)
 	}
 	sort.Strings(ordered)
-	resolve := NewAccountModelContextCapacityResolver(account)
 	for _, modelID := range ordered {
-		row := AccountModelContextCapacityRow{UpstreamModelID: modelID, UpstreamModelIDs: dedupeAndSortModelIDs(variants[modelID]), Aliases: []string{}, Editable: CanManageModelContextCapacity(account)}
+		row := AccountModelContextCapacityRow{UpstreamModelID: modelID, UpstreamModelIDs: dedupeAndSortModelIDs(variants[modelID]), Aliases: []string{}, Editable: true}
 		if len(aliases[modelID])+len(variants[modelID]) > 0 {
 			row.Aliases = dedupeAndSortModelIDs(append(aliases[modelID], variants[modelID]...))
 		}
-		if capacity, ok := observations[modelID]; ok && modelContextCapacityHasLimits(capacity) {
-			row.Upstream = &capacity
+		if value, ok := evidence.upstream[modelID]; ok {
+			row.Upstream = &value
 		}
-		var automatic ResolvedModelContextCapacity
-		if row.Editable {
-			row.Official = LookupOfficialModelContextCapacity(account, modelID)
-			if value, ok := custom[modelID]; ok {
-				row.CustomContextWindow = &value
-			}
-			automatic = ResolveModelContextCapacityForAccount(account, nil, row.Official, row.Upstream)
-		} else {
-			automatic = resolve(modelID, nil)
-			if account.IsOpenAIOAuthLike() && isOpenAIGPT6SolOrLunaModel(modelID) {
-				// Expose product references without applying API limits to OAuth.
-				row.Official = LookupOfficialModelContextCapacity(account, modelID)
-			}
+		if value, ok := evidence.registry[modelID]; ok {
+			row.Registry = &value
 		}
-		effective := resolve(modelID, nil)
+		row.Official = LookupOfficialModelContextCapacity(account, modelID)
+		if value, ok := evidence.overrides[modelID]; ok {
+			row.CustomContextWindow = &value
+		}
+		automatic, effective := evidence.resolve(modelID, false), evidence.resolve(modelID, true)
 		row.AutomaticContextWindow, row.AutomaticSource = automatic.ContextWindow, automatic.Source
 		row.EffectiveContextWindow, row.EffectiveSource = effective.ContextWindow, effective.Source
 		row.CapacityBasis, row.MaxContextWindow = effective.CapacityBasis, effective.MaxContextWindow

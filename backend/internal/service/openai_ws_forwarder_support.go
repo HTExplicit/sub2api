@@ -9,7 +9,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Wei-Shaw/sub2api/internal/config"
 	"github.com/gin-gonic/gin"
 	"github.com/tidwall/gjson"
 	"github.com/tidwall/sjson"
@@ -133,8 +132,7 @@ func (s *OpenAIGatewayService) performOpenAIWSGeneratePrewarm(
 		if eventType == "error" {
 			errCodeRaw, errTypeRaw, errMsgRaw := parseOpenAIWSErrorEventFields(message)
 			prewarmModel, _ := reqBody["model"].(string)
-			modelNotSupported := IsCindyRuntimeCompatibleAPIKeyAccount(account.Platform, account.Type, account.Credentials) &&
-				isOpenAIModelNotSupportedPayload(message)
+			modelNotSupported := account.IsOpenAICompatible() && isOpenAIModelNotSupportedPayload(message)
 			if modelNotSupported {
 				_ = s.handleOpenAIAccountUpstreamError(ctx, account, http.StatusBadRequest, lease.HandshakeHeaders(), message, prewarmModel)
 			}
@@ -172,9 +170,7 @@ func (s *OpenAIGatewayService) performOpenAIWSGeneratePrewarm(
 			}
 			return wrapOpenAIWSFallback("prewarm_error_event", errors.New(errMsg))
 		}
-		if eventType == "response.failed" &&
-			IsCindyRuntimeCompatibleAPIKeyAccount(account.Platform, account.Type, account.Credentials) &&
-			isOpenAIModelNotSupportedPayload(message) {
+		if eventType == "response.failed" && account.IsOpenAICompatible() && isOpenAIModelNotSupportedPayload(message) {
 			prewarmModel, _ := reqBody["model"].(string)
 			_ = s.handleOpenAIAccountUpstreamError(
 				ctx, account, http.StatusBadRequest, lease.HandshakeHeaders(), message, prewarmModel,
@@ -310,7 +306,7 @@ func (s *OpenAIGatewayService) handleOpenAIWSTerminalTransientFailure(ctx contex
 	if terminalEvent != "response.failed" {
 		return terminalEvent
 	}
-	if s.handleCindyBalanceTerminalEvent(ctx, account, headers, payload, canonicalModel) {
+	if s.handleOpenAIBudgetExceededTerminalEvent(ctx, account, payload) {
 		return terminalEvent
 	}
 	status := openAIWSPayloadTransientStatus(payload)
@@ -325,7 +321,7 @@ func (s *OpenAIGatewayService) handleOpenAIWSErrorEventTransientFailure(ctx cont
 	if eventType != "error" {
 		return
 	}
-	if s.handleCindyBalanceTerminalEvent(ctx, account, headers, payload, canonicalModel) {
+	if s.handleOpenAIBudgetExceededTerminalEvent(ctx, account, payload) {
 		return
 	}
 	status := openAIWSPayloadTransientStatus(payload)
@@ -414,7 +410,7 @@ func openAIWSInitialDialFailover(account *Account, err error) (retrySameAccount 
 		statusCode == http.StatusTooManyRequests,
 		statusCode == http.StatusBadRequest &&
 			account != nil &&
-			IsCindyRuntimeCompatibleAPIKeyAccount(account.Platform, account.Type, account.Credentials) &&
+			account.IsOpenAICompatible() &&
 			isOpenAIModelNotSupportedError(statusCode, "", dialErr.ResponseBody):
 		// Authentication and quota failures switch immediately.
 	case statusCode == http.StatusRequestTimeout, statusCode >= http.StatusInternalServerError:
@@ -437,8 +433,7 @@ func openAIWSInitialDialFailover(account *Account, err error) (retrySameAccount 
 			responseBody = append([]byte(nil), openAITransportFailoverBody...)
 		}
 	}
-	if account != nil &&
-		IsCindyRuntimeCompatibleAPIKeyAccount(account.Platform, account.Type, account.Credentials) &&
+	if account != nil && account.IsOpenAICompatible() &&
 		isOpenAIModelNotSupportedError(statusCode, "", dialErr.ResponseBody) {
 		return false, newOpenAIModelNotSupportedFailoverError(dialErr.ResponseHeaders, dialErr.ResponseBody)
 	}
@@ -602,34 +597,14 @@ func (s *OpenAIGatewayService) selectAccountByPreviousResponseIDForStrictContinu
 	requiredCapability OpenAIEndpointCapability,
 	requireCompact bool,
 ) (*AccountSelectionResult, error) {
-	// Ordinary OpenAI API-key continuations historically treat a stale group or
-	// capability binding as a soft miss and may choose a compatible account.
-	// Cindy/Laxa credentials are different: their response anchors and opaque
-	// carriers are credential-bound, so the same policy mismatch must fail
-	// closed. Resolve the binding identity before applying the strict policy.
-	failOnPolicyMismatch, identityErr := s.previousResponseBindingRequiresStrictContinuation(
-		ctx, groupID, previousResponseID,
-	)
-	if identityErr != nil {
-		return nil, identityErr
-	}
-	if !failOnPolicyMismatch {
-		// Keep the historical strict lookup's unavailable-state behavior when
-		// no owner can be identified (for example, a test/legacy deployment with
-		// no continuation store).  Policy mismatches themselves remain soft, as
-		// they did before the account-aware distinction was added; the caller can
-		// then fall back to normal scheduling where that is safe.
-		return s.selectAccountByPreviousResponseIDForCapabilityWithPolicyAndMismatch(
-			ctx,
-			groupID,
-			previousResponseID,
-			requestedModel,
-			excludedIDs,
-			requiredCapability,
-			requireCompact,
-			true,
-			false,
-		)
+	// A continuation store outage fails closed; a stale group or capability
+	// binding remains a soft miss so the caller can fall back to normal
+	// scheduling where that is safe.
+	if s != nil && strings.TrimSpace(previousResponseID) != "" {
+		if store := s.getOpenAIWSStateStore(); store != nil &&
+			LookupOpenAIContinuationBinding(ctx, store, derefGroupID(groupID), strings.TrimSpace(previousResponseID)).State == OpenAIContinuationBindingStoreError {
+			return nil, NewOpenAIContinuationStoreUnavailableError()
+		}
 	}
 	return s.selectAccountByPreviousResponseIDForCapabilityWithPolicyAndMismatch(
 		ctx,
@@ -640,100 +615,8 @@ func (s *OpenAIGatewayService) selectAccountByPreviousResponseIDForStrictContinu
 		requiredCapability,
 		requireCompact,
 		true,
-		failOnPolicyMismatch,
+		false,
 	)
-}
-
-// ClassifyLegacyLaxaAccountPool reports whether the requested OpenAI group has
-// a schedulable legacy Laxa credential and whether every schedulable account in
-// that platform pool is legacy Laxa. The distinction keeps mixed OpenAI groups
-// from forcing an ordinary provider's reference-only request through a Laxa
-// session selector merely because one sibling Laxa credential exists.
-func (s *OpenAIGatewayService) ClassifyLegacyLaxaAccountPool(ctx context.Context, groupID *int64) (hasLegacy, legacyOnly bool, err error) {
-	// An uninitialized service is common in handler validation tests and in
-	// lightweight compatibility probes. There is no account identity to
-	// classify without a repository, so leave the request on its ordinary
-	// OpenAI path instead of turning the auxiliary legacy check into a 503.
-	if s == nil || s.accountRepo == nil || groupID == nil || *groupID <= 0 {
-		return false, false, nil
-	}
-	// Do not use listSchedulableAccounts here: that helper deliberately removes
-	// transient model cooldowns, which would make an all-cooled Laxa pool look
-	// empty and prevent the caller from returning the required structured 400.
-	queryGroupID := groupID
-	includeGrouped := false
-	if s.cfg != nil && s.cfg.RunMode == config.RunModeSimple {
-		queryGroupID = nil
-		includeGrouped = true
-	}
-	accounts, err := s.accountRepo.ListModelAvailabilityCandidates(
-		ctx, queryGroupID, []string{PlatformOpenAI}, includeGrouped,
-	)
-	if err != nil {
-		return false, false, err
-	}
-	hasOrdinary := false
-	for i := range accounts {
-		account := &accounts[i]
-		if account.Platform != PlatformOpenAI || !account.IsActive() || !account.Schedulable ||
-			account.hasCindyTerminalSchedulingBlock() {
-			continue
-		}
-		if IsLegacyCindyAPIKeyAccount(account.Platform, account.Type, account.Credentials) {
-			hasLegacy = true
-		} else {
-			hasOrdinary = true
-		}
-	}
-	return hasLegacy, hasLegacy && !hasOrdinary, nil
-}
-
-func (s *OpenAIGatewayService) previousResponseBindingRequiresStrictContinuation(
-	ctx context.Context,
-	groupID *int64,
-	previousResponseID string,
-) (bool, error) {
-	if s == nil || strings.TrimSpace(previousResponseID) == "" {
-		return false, nil
-	}
-	store := s.getOpenAIWSStateStore()
-	if store == nil {
-		return false, nil
-	}
-	binding := LookupOpenAIContinuationBinding(ctx, store, derefGroupID(groupID), strings.TrimSpace(previousResponseID))
-	switch binding.State {
-	case OpenAIContinuationBindingStoreError:
-		return false, NewOpenAIContinuationStoreUnavailableError()
-	case OpenAIContinuationBindingHit:
-		if s.accountRepo == nil {
-			return false, nil
-		}
-		account, err := s.accountRepo.GetByID(ctx, binding.AccountID)
-		if err != nil || account == nil {
-			return false, nil
-		}
-		return IsCindyRuntimeCompatibleAPIKeyAccount(account.Platform, account.Type, account.Credentials), nil
-	case OpenAIContinuationBindingMiss:
-		// A missing anchor has no owner to inspect. Only a homogeneous Cindy/
-		// Laxa pool can safely infer strict continuation semantics here; mixed
-		// OpenAI groups may contain an ordinary account whose portable request
-		// should retain the historical soft-miss behavior. The HTTP/WS handlers
-		// perform payload-aware legacy classification before reaching this path.
-		accounts, err := s.listSchedulableAccounts(ctx, groupID, PlatformOpenAI)
-		if err != nil {
-			return false, nil
-		}
-		hasRuntime, hasOrdinary := false, false
-		for i := range accounts {
-			if IsCindyRuntimeCompatibleAPIKeyAccount(accounts[i].Platform, accounts[i].Type, accounts[i].Credentials) {
-				hasRuntime = true
-			} else {
-				hasOrdinary = true
-			}
-		}
-		return hasRuntime && !hasOrdinary, nil
-	}
-	return false, nil
 }
 
 func (s *OpenAIGatewayService) selectAccountByPreviousResponseIDForCapabilityWithPolicyAndMismatch(
@@ -881,13 +764,11 @@ func (s *OpenAIGatewayService) resolveAccountByPreviousResponseIDForCapability(
 	if err != nil || account == nil {
 		return miss(true, false)
 	}
-	// 普通 WSv2 与严格 Cindy HTTP -> WSv2 桥接都可以使用 previous_response_id 粘连。
-	// force_http、全局关闭和账号级强制 HTTP 仍会让桥接资格失败。
-	allowStatelessAPIKeyContinuation := account.IsOpenAIApiKey() &&
-		!IsCindyRuntimeCompatibleAPIKeyAccount(account.Platform, account.Type, account.Credentials)
-	allowLegacyLaxaHTTPContinuation := IsLegacyCindyAPIKeyAccount(account.Platform, account.Type, account.Credentials) && account.IsOpenAIPassthroughEnabled()
-	if !allowStatelessAPIKeyContinuation && !allowLegacyLaxaHTTPContinuation && s.getOpenAIWSProtocolResolver().Resolve(account).Transport != OpenAIUpstreamTransportResponsesWebsocketV2 &&
-		!s.cindyHTTPToWSV2ConfigEligible(account) {
+	// OAuth/SetupToken continuation state lives on the WSv2 session and cannot
+	// survive an HTTP fallback. API-key Responses HTTP requests are different:
+	// previous_response_id is scoped to the selected key, so the response-id
+	// binding must retain that key.
+	if !account.IsOpenAIApiKey() && s.getOpenAIWSProtocolResolver().Resolve(account).Transport != OpenAIUpstreamTransportResponsesWebsocketV2 {
 		return 0, nil, responseID, store, errOpenAIContinuationPolicyMismatch
 	}
 	if !account.IsOpenAI() || !account.IsActive() || !account.Schedulable {
@@ -902,8 +783,7 @@ func (s *OpenAIGatewayService) resolveAccountByPreviousResponseIDForCapability(
 	// while an ordinary sticky lookup may decline the hit and let its caller
 	// choose a fresh conversation route.  Use the same account-aware canonical
 	// key as the scheduler and DB recheck so aliases cannot bypass the cooldown.
-	accountRequestedModel := openAIRequestedModelForAccount(ctx, account, requestedModel)
-	if !account.IsSchedulableForModelWithContext(ctx, accountRequestedModel) {
+	if !account.IsSchedulableForModelWithContext(ctx, requestedModel) {
 		return policyMiss()
 	}
 	hasGroupMetadata := len(account.GroupIDs) > 0 || len(account.AccountGroups) > 0
@@ -932,7 +812,7 @@ func (s *OpenAIGatewayService) resolveAccountByPreviousResponseIDForCapability(
 	if vetoed, _ := openAIProfitControlVetoReason(ctx, account); vetoed {
 		return policyMiss()
 	}
-	if s.isOpenAIAccountStrictContinuationBlockedContext(ctx, account, accountRequestedModel, requireCompact) {
+	if s.isOpenAIAccountRequestRuntimeBlockedContext(ctx, account, requestedModel, requireCompact) {
 		return miss(false, true)
 	}
 	if requireCompact && openAICompactSupportTier(account) == 0 {

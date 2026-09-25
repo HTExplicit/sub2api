@@ -187,7 +187,6 @@ export default {
     accounts: 'Accounts',
     plugins: 'Plugins',
     tasks: 'Tasks',
-    cindyAccounts: 'Cindy Accounts',
     codexRuntime: 'Codex route settings',
     proxies: 'Proxies',
     redeemCodes: 'Redeem Codes',

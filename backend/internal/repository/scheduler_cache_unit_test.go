@@ -36,17 +36,15 @@ func newSchedulerCacheUnitWithRedis(t *testing.T) (*schedulerCache, *miniredis.M
 func TestSchedulerCacheIgnoresLegacyMetadataGeneration(t *testing.T) {
 	ctx := context.Background()
 	cache, _ := newSchedulerCacheUnitWithRedis(t)
-	bucket := service.SchedulerBucket{GroupID: 91, Platform: service.PlatformCindy, Mode: service.SchedulerModeSingle}
+	bucket := service.SchedulerBucket{GroupID: 91, Platform: service.PlatformOpenAI, Mode: service.SchedulerModeSingle}
 	account := service.Account{
-		ID:              9101,
-		Platform:        service.PlatformCindy,
-		WirePlatform:    service.WirePlatformOpenAI,
-		ProviderProfile: service.ProviderProfileCindyLaxaV1,
-		Type:            service.AccountTypeAPIKey,
-		Status:          service.StatusActive,
+		ID:       9101,
+		Platform: service.PlatformOpenAI,
+		Type:     service.AccountTypeAPIKey,
+		Status:   service.StatusActive,
 		Credentials: map[string]any{
 			"api_key":  "test-only-key",
-			"base_url": "https://api.laxarouter.ai",
+			"base_url": "https://relay.example.test",
 		},
 	}
 	legacy := buildSchedulerMetadataAccount(account)
@@ -77,11 +75,7 @@ func TestSchedulerCacheIgnoresLegacyMetadataGeneration(t *testing.T) {
 	require.NoError(t, err)
 	require.True(t, hit)
 	require.Len(t, currentSnapshot, 1)
-	require.True(t, service.IsCindyAPIKeyAccount(
-		currentSnapshot[0].Platform,
-		currentSnapshot[0].Type,
-		currentSnapshot[0].Credentials,
-	))
+	require.Equal(t, "https://relay.example.test", currentSnapshot[0].Credentials["base_url"])
 }
 
 func TestSchedulerCacheMetadataGenerationCleansLegacyCredentialCopies(t *testing.T) {
@@ -728,90 +722,6 @@ func TestBuildSchedulerMetadataAccount_KeepsSparkShadowRoutingIdentity(t *testin
 	require.Equal(t, map[string]any{"gpt-5.3-codex-spark": "gpt-5.3-codex-spark"}, got.Credentials["model_mapping"])
 	require.Equal(t, map[string]any{"gpt-5.4": "gpt-5.4-openai-compact"}, got.Credentials["compact_model_mapping"])
 	require.Nil(t, got.Credentials["access_token"])
-}
-
-func TestBuildSchedulerMetadataAccount_KeepsCindyRoutingIdentity(t *testing.T) {
-	tests := []struct {
-		name         string
-		accountID    int64
-		capabilities []any
-		extra        map[string]any
-	}{
-		{
-			name:      "production shape defaults to chat support",
-			accountID: 201,
-		},
-		{
-			name:         "explicit chat capability survives projection",
-			accountID:    202,
-			capabilities: []any{"chat_completions"},
-			extra:        map[string]any{"openai_responses_supported": true},
-		},
-	}
-
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			credentials := map[string]any{
-				"api_key":  "test-key",
-				"base_url": "https://api.laxarouter.ai",
-				"model_mapping": map[string]any{
-					"gpt-5.6-luna": "openai/gpt-5.6-luna",
-				},
-				"header_overrides": map[string]any{"x-secret": "drop-me"},
-				"access_token":     "drop-me",
-				"refresh_token":    "drop-me",
-			}
-			if tc.capabilities != nil {
-				credentials["openai_capabilities"] = tc.capabilities
-			}
-			account := service.Account{
-				ID:              tc.accountID,
-				Platform:        service.PlatformCindy,
-				WirePlatform:    service.WirePlatformOpenAI,
-				ProviderProfile: service.ProviderProfileCindyLaxaV1,
-				Type:            service.AccountTypeAPIKey,
-				Status:          service.StatusActive,
-				Schedulable:     true,
-				Credentials:     credentials,
-				Extra:           tc.extra,
-			}
-
-			cache := newSchedulerCacheUnit(t)
-			ctx := context.Background()
-			bucket := service.SchedulerBucket{
-				GroupID:  tc.accountID,
-				Platform: service.PlatformCindy,
-				Mode:     service.SchedulerModeSingle,
-			}
-			token, err := cache.CaptureBucketWriteToken(ctx, bucket)
-			require.NoError(t, err)
-			require.NoError(t, cache.SetSnapshot(ctx, bucket, token, []service.Account{account}))
-			snapshot, hit, err := cache.GetSnapshot(ctx, bucket)
-			require.NoError(t, err)
-			require.True(t, hit)
-			require.Len(t, snapshot, 1)
-			got := snapshot[0]
-
-			require.Equal(t, "https://api.laxarouter.ai", got.Credentials["base_url"])
-			if tc.capabilities == nil {
-				require.Nil(t, got.Credentials["openai_capabilities"])
-			} else {
-				require.Equal(t, tc.capabilities, got.Credentials["openai_capabilities"])
-			}
-			require.Nil(t, got.Credentials["header_overrides"])
-			require.Nil(t, got.Credentials["access_token"])
-			require.Nil(t, got.Credentials["refresh_token"])
-			require.Equal(t, service.WirePlatformOpenAI, got.WirePlatform)
-			require.Equal(t, service.ProviderProfileCindyLaxaV1, got.ProviderProfile)
-			require.True(t, service.IsCindyAPIKeyAccount(got.Platform, got.Type, got.Credentials))
-			require.True(t, got.IsModelSupported("openai/gpt-5.6-luna"),
-				"the production scheduler snapshot must retain strict Cindy live-model routing")
-			require.True(t, got.SupportsOpenAIEndpointCapability(service.OpenAIEndpointCapabilityChatCompletions))
-			if tc.capabilities != nil {
-				require.True(t, got.SupportsOpenAIEndpointCapability(service.OpenAIEndpointCapabilityResponses))
-			}
-		})
-	}
 }
 
 func TestSchedulerCacheBucketRetirementFencesWritersAndReopen(t *testing.T) {

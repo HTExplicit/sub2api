@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
-	"strconv"
 	"strings"
 
 	"github.com/Wei-Shaw/sub2api/internal/pkg/claude"
@@ -24,8 +23,6 @@ func (s *GatewayService) ForwardCountTokens(ctx context.Context, c *gin.Context,
 		return fmt.Errorf("parse request: empty request")
 	}
 
-	rememberPromptRequestedModel(c, parsed.Body.Bytes())
-	setBusinessSystemPromptRequestProfile(c, account, false)
 	validationModel := parsed.Model
 	if account != nil && account.Type == AccountTypeAPIKey {
 		validationModel = account.GetMappedModel(validationModel)
@@ -69,25 +66,10 @@ func (s *GatewayService) ForwardCountTokens(ctx context.Context, c *gin.Context,
 		return err
 	}
 
-	isClaudeCodeCT := IsClaudeCodeClient(ctx)
-	if c != nil {
-		isClaudeCodeCT = isClaudeCodeCT || isClaudeCodeClient(c.GetHeader("User-Agent"), parsed.MetadataUserID)
-	}
-	if !isClaudeCodeCT && parsed.MetadataUserID != "" {
-		isClaudeCodeCT = systemHasBillingAttributionBlock(body)
-	}
+	isClaudeCodeCT := IsClaudeCodeClient(ctx) || isClaudeCodeClient(c.GetHeader("User-Agent"), parsed.MetadataUserID)
 	shouldMimicClaudeCode := account.IsOAuth() && !isClaudeCodeCT
-	setBusinessSystemPromptRequestProfile(c, account, shouldMimicClaudeCode)
 
 	if shouldMimicClaudeCode {
-		systemRaw, _ := parsed.SystemValue()
-		preparedBase, err := s.prepareClaudeOAuthSystemBase(ctx, c, account, body, systemRaw, claude.NormalizeModelID(reqModel))
-		if err != nil {
-			return err
-		}
-		if err := replaceBody(preparedBase); err != nil {
-			return err
-		}
 		var normalizedBody []byte
 		normalizedBody, reqModel = normalizeClaudeOAuthRequestBody(body, reqModel, claudeOAuthNormalizeOptions{})
 		if err := replaceBody(normalizedBody); err != nil {
@@ -275,7 +257,7 @@ func (s *GatewayService) ForwardCountTokens(ctx context.Context, c *gin.Context,
 	}
 
 	// 透传成功响应
-	c.Data(resp.StatusCode, "application/json", rewritePromptRulesStructuredEcho(c, respBody, "messages"))
+	c.Data(resp.StatusCode, "application/json", respBody)
 	return nil
 }
 
@@ -333,23 +315,6 @@ func (s *GatewayService) forwardCountTokensAnthropicAPIKeyPassthrough(ctx contex
 	}
 
 	if resp.StatusCode >= 400 {
-		// Exact Cindy budget exhaustion must be classified before generic 429
-		// handling or any client response is written, so the handler can switch
-		// accounts and the raw upstream payload never crosses this boundary.
-		if ClassifyCindyBalanceInsufficient(account, resp.StatusCode, respBody) == CindyBalanceSignalHTTP429 {
-			if s.rateLimitService != nil {
-				s.rateLimitService.HandleUpstreamError(ctx, account, resp.StatusCode, resp.Header, respBody, gjson.GetBytes(body, "model").String())
-			}
-			return sanitizeOpenAICindyFailoverError(&UpstreamFailoverError{
-				StatusCode:               resp.StatusCode,
-				ResponseHeaders:          resp.Header.Clone(),
-				ResponseBody:             respBody,
-				RetryableOnSameAccount:   false,
-				Scope:                    GatewayFailureScopeAccount,
-				NextAccountAction:        NextAccountRetry,
-				CindyBalanceInsufficient: true,
-			})
-		}
 		if s.rateLimitService != nil {
 			s.rateLimitService.HandleUpstreamError(ctx, account, resp.StatusCode, resp.Header, respBody)
 		}
@@ -406,26 +371,12 @@ func (s *GatewayService) forwardCountTokensAnthropicAPIKeyPassthrough(ctx contex
 		return fmt.Errorf("upstream error: %d message=%s", resp.StatusCode, upstreamMsg)
 	}
 
-	if IsCindyRuntimeCompatibleAPIKeyAccount(account.Platform, account.Type, account.Credentials) && !validAnthropicCountTokensResponse(respBody) {
-		return &UpstreamFailoverError{
-			StatusCode:             http.StatusBadGateway,
-			ResponseHeaders:        resp.Header.Clone(),
-			NextAccountAction:      NextAccountRetry,
-			Scope:                  GatewayFailureScopeAccount,
-			Reason:                 OpenAITransientTransportFailureReason,
-			ClientStatusCode:       http.StatusBadGateway,
-			ClientMessage:          "Upstream response missing valid input_tokens",
-			ResponseBody:           nil,
-			RetryableOnSameAccount: false,
-		}
-	}
-
 	writeAnthropicPassthroughResponseHeaders(c.Writer.Header(), resp.Header, s.responseHeaderFilter)
 	contentType := strings.TrimSpace(resp.Header.Get("Content-Type"))
 	if contentType == "" {
 		contentType = "application/json"
 	}
-	c.Data(resp.StatusCode, contentType, rewritePromptRulesStructuredEcho(c, respBody, "messages"))
+	c.Data(resp.StatusCode, contentType, respBody)
 	return nil
 }
 
@@ -437,11 +388,6 @@ func (s *GatewayService) buildCountTokensRequestAnthropicAPIKeyPassthrough(
 	token string,
 ) (*http.Request, error) {
 	body = stripDeferredToolCacheControl(body)
-	var promptErr error
-	body, _, promptErr = s.businessPromptService.ApplyForSend(c, account, body, "messages", false)
-	if promptErr != nil {
-		return nil, promptErr
-	}
 	targetURL := claudeAPICountTokensURL
 	baseURL := account.GetBaseURL()
 	if baseURL != "" {
@@ -450,9 +396,6 @@ func (s *GatewayService) buildCountTokensRequestAnthropicAPIKeyPassthrough(
 			return nil, err
 		}
 		targetURL = validatedURL + "/v1/messages/count_tokens?beta=true"
-		if IsCindyRuntimeCompatibleAPIKeyAccount(account.Platform, account.Type, account.Credentials) {
-			targetURL = validatedURL + "/v1/messages/count_tokens"
-		}
 	}
 	body = sanitizeCountTokensRequestBody(body)
 
@@ -506,15 +449,6 @@ func (s *GatewayService) buildCountTokensRequestAnthropicAPIKeyPassthrough(
 	account.ApplyHeaderOverrides(req.Header)
 
 	return req, nil
-}
-
-func validAnthropicCountTokensResponse(body []byte) bool {
-	value := gjson.GetBytes(body, "input_tokens")
-	if !value.Exists() || value.Type != gjson.Number || strings.ContainsAny(value.Raw, ".eE") {
-		return false
-	}
-	inputTokens, err := strconv.ParseInt(value.Raw, 10, 64)
-	return err == nil && inputTokens >= 0
 }
 
 // buildCountTokensRequest 构建 count_tokens 上游请求
@@ -578,12 +512,6 @@ func (s *GatewayService) buildCountTokensRequest(ctx context.Context, c *gin.Con
 	// 一致性铁律：同一次请求内只取一次 mimic UA，billing cc_version 与出站
 	// User-Agent 头共用这一个字符串（同 buildUpstreamRequest）。
 	ctMimicUserAgent := claude.DefaultUserAgent()
-	businessSystemPromptRequestSet(c, businessSystemPromptBillingUserAgentKey, effectiveBillingUserAgent(ctMimicUserAgent, tokenType, mimicClaudeCode, billingFingerprint))
-	var promptErr error
-	body, _, promptErr = s.businessPromptService.ApplyForSendModel(c, account, body, "messages", false, modelID)
-	if promptErr != nil {
-		return nil, nil, promptErr
-	}
 	if billingUA := effectiveBillingUserAgent(ctMimicUserAgent, tokenType, mimicClaudeCode, billingFingerprint); billingUA != "" {
 		body = syncBillingHeaderVersion(body, billingUA)
 	}

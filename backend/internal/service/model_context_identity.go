@@ -9,7 +9,7 @@ import (
 // A -> B and B -> C must not cause a second mapping when resolving A's capacity.
 func capacityCanonicalUpstreamID(account *Account, model string) string {
 	model = strings.TrimSpace(model)
-	if account != nil && CanManageModelContextCapacity(account) && account.IsOpenAIApiKey() {
+	if account != nil && account.IsOpenAIApiKey() {
 		if base, _, accepted := resolveOpenAIModelReasoningAlias(model); accepted {
 			return base
 		}
@@ -57,31 +57,73 @@ func resolveCapacityOverrides(account *Account) (map[string]int64, map[string]bo
 	return values, conflicts
 }
 
-func capacitySnapshotTargets(account *Account, snapshot *UpstreamModelContextCapacitySnapshot) (map[string]ModelContextCapacity, map[string]bool) {
-	values := make(map[string]ModelContextCapacity)
-	conflicts := make(map[string]bool)
+// accountCapacityObservations splits the persisted upstream model snapshot into
+// this account's own upstream declarations and models.dev registry references,
+// keyed by the recognized upstream identity. A real target's own entry wins
+// over alias spellings; two alias spellings with different limits are a
+// conflict, not a choice.
+func accountCapacityObservations(account *Account) (upstream, registry map[string]ModelContextCapacity, conflicts map[string]bool) {
+	upstream = make(map[string]ModelContextCapacity)
+	registry = make(map[string]ModelContextCapacity)
+	conflicts = make(map[string]bool)
+	snapshot := account.GetUpstreamModelMetadataSnapshot()
 	if snapshot == nil {
-		return values, conflicts
+		return upstream, registry, conflicts
 	}
-	for id, value := range snapshot.Models {
-		target := capacityCanonicalUpstreamID(account, id)
-		if exact, exists := snapshot.Models[target]; exists {
-			values[target] = exact
+	valuesFor := func(source string) map[string]ModelContextCapacity {
+		if source == ModelContextSourceRegistry {
+			return registry
+		}
+		return upstream
+	}
+	exact := make(map[string]bool)
+	for id, entry := range snapshot.Models {
+		capacity, source := upstreamMetadataCapacity(snapshot.Source, entry)
+		if source == "" || !validModelContextID(id) || capacityCanonicalUpstreamID(account, id) != id {
 			continue
 		}
-		if previous, exists := values[target]; exists {
-			a, b := previous, value
-			a.ObservedAt, b.ObservedAt = "", ""
-			if a != b {
-				conflicts[target] = true
-			}
+		valuesFor(source)[id] = capacity
+		exact[source+"\x00"+id] = true
+	}
+	for id, entry := range snapshot.Models {
+		capacity, source := upstreamMetadataCapacity(snapshot.Source, entry)
+		target := capacityCanonicalUpstreamID(account, id)
+		if source == "" || !validModelContextID(id) || target == id || exact[source+"\x00"+target] {
+			continue
 		}
-		values[target] = value
+		values := valuesFor(source)
+		if previous, exists := values[target]; exists && !sameModelContextLimits(previous, capacity) {
+			conflicts[target] = true
+		}
+		values[target] = capacity
 	}
 	for target := range conflicts {
-		delete(values, target)
+		delete(upstream, target)
+		delete(registry, target)
 	}
-	return values, conflicts
+	return upstream, registry, conflicts
+}
+
+// upstreamMetadataCapacity returns one snapshot entry's capacity and whose
+// declaration it is. An entry without per-model provenance counts as the
+// upstream's only when the snapshot saw no registry enrichment.
+func upstreamMetadataCapacity(snapshotSource string, entry UpstreamModelMetadata) (ModelContextCapacity, string) {
+	capacity := sanitizeModelContextCapacity(ModelContextCapacity{
+		ContextWindow: entry.ContextWindow, MaxContextWindow: entry.MaxContextWindow,
+		MaxInputTokens: entry.MaxInputTokens, MaxOutputTokens: entry.MaxOutputTokens,
+		ObservedAt: entry.ObservedAt,
+	})
+	if !modelContextCapacityHasLimits(capacity) {
+		return ModelContextCapacity{}, ""
+	}
+	switch entry.CapacitySource {
+	case ModelContextSourceUpstream, ModelContextSourceRegistry:
+		return capacity, entry.CapacitySource
+	}
+	if snapshotSource == ModelContextSourceUpstream {
+		return capacity, ModelContextSourceUpstream
+	}
+	return capacity, ModelContextSourceRegistry
 }
 
 // Explicit edits address one logical upstream model and remove its obsolete

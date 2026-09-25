@@ -111,20 +111,19 @@ func (h *SettingHandler) GetOfficialModelContextCatalog(c *gin.Context) {
 	})
 }
 
-// GetImageToolsSettings returns the Image Studio and Responses image bridge
-// switches this process applies.
+// GetImageToolsSettings returns the Image Studio switch this process applies.
 // GET /api/v1/admin/settings/image-tools
 func (h *SettingHandler) GetImageToolsSettings(c *gin.Context) {
 	response.Success(c, service.EffectiveImageToolsConfig())
 }
 
-// UpdateImageToolsSettings saves the Image Studio and Responses image bridge
-// switches. Omitted switches are off, as in the former plugin configuration.
+// UpdateImageToolsSettings saves the Image Studio switch. An omitted switch is
+// off, as in the former plugin configuration.
 // PUT /api/v1/admin/settings/image-tools
 func (h *SettingHandler) UpdateImageToolsSettings(c *gin.Context) {
 	var req extensionv1.ImageToolsConfig
 	raw, err := c.GetRawData()
-	if err != nil || service.DecodeSwitchSettings(raw, &req, "studio_enabled", "responses_image_enabled") != nil {
+	if err != nil || service.DecodeSwitchSettings(raw, &req, "studio_enabled") != nil {
 		response.BadRequest(c, "Invalid image tools settings")
 		return
 	}
@@ -157,36 +156,6 @@ func (h *SettingHandler) UpdateObservabilitySettings(c *gin.Context) {
 		return
 	}
 	response.Success(c, req)
-}
-
-// GetCindyProviderSettings returns the Cindy balance detection, catalog and
-// search switches this process applies.
-// GET /api/v1/admin/settings/cindy-provider
-func (h *SettingHandler) GetCindyProviderSettings(c *gin.Context) {
-	response.Success(c, service.EffectiveCindyProviderConfig())
-}
-
-// UpdateCindyProviderSettings saves the Cindy switches. An omitted balance
-// detection switch stays on, as in the former plugin configuration.
-// PUT /api/v1/admin/settings/cindy-provider
-func (h *SettingHandler) UpdateCindyProviderSettings(c *gin.Context) {
-	req := extensionv1.CindyProviderConfig{BalanceDetection: true}
-	raw, err := c.GetRawData()
-	if err != nil || service.DecodeSwitchSettings(raw, &req, "balance_detection", "catalog_enabled", "search_enabled") != nil {
-		response.BadRequest(c, "Invalid Cindy provider settings")
-		return
-	}
-	if err := h.settingService.UpdateCindyProviderConfig(c.Request.Context(), req); err != nil {
-		response.ErrorFrom(c, err)
-		return
-	}
-	response.Success(c, req)
-}
-
-// GetCindyProviderCatalog lists the Cindy model catalog for the settings page.
-// GET /api/v1/admin/settings/cindy-provider/catalog
-func (h *SettingHandler) GetCindyProviderCatalog(c *gin.Context) {
-	response.Success(c, service.CindyCatalogModels())
 }
 
 // GetSettings 获取所有系统设置
@@ -360,7 +329,6 @@ func (h *SettingHandler) GetSettings(c *gin.Context) {
 		CyberSessionBlockTTLSeconds:                            settings.CyberSessionBlockTTLSeconds,
 		OpenAIRefusalRecoveryEnabled:                           settings.OpenAIRefusalRecoveryEnabled,
 		OpenAICyberFailoverEnabled:                             settings.OpenAICyberFailoverEnabled,
-		CindyManagedCompatibility:                              cindyManagedCompatibilitySettings(),
 		OpenAIRefusalRewriteEnabled:                            settings.OpenAIRefusalRewriteEnabled,
 		OpenAIRefusalKeywords:                                  append([]string(nil), settings.OpenAIRefusalKeywords...),
 		OpenAIRefusalReplacement:                               settings.OpenAIRefusalReplacement,
@@ -512,22 +480,6 @@ func (h *SettingHandler) GetSettings(c *gin.Context) {
 	}
 
 	response.Success(c, systemSettingsResponseData(payload, authSourceDefaults))
-}
-
-func cindyManagedCompatibilitySettings() dto.CindyManagedCompatibilitySettings {
-	return dto.CindyManagedCompatibilitySettings{
-		ConfigSource: "cindy_group_managed",
-		WebSearch: dto.CindyManagedWebSearchSettings{
-			Enabled:              service.CindySearchFeatureEnabled(),
-			VerifiedTextModels:   service.CindyManagedCompatibilityModels(),
-			CompatibilityAliases: service.CindyManagedCompatibilityAliases(),
-			PrimaryPath:          "responses_web_search",
-			FallbackPath:         "messages_cindy_web_search",
-		},
-		PromptCacheKey: dto.CindyManagedPromptCacheKeySettings{
-			Mode: "automatic", MaxCharacters: 64, OverflowTransform: "sha256_lower_hex",
-		},
-	}
 }
 
 // openaiFastPolicySettingsToDTO converts service -> dto for OpenAI fast policy.

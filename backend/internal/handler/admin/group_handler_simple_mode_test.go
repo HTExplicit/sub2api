@@ -2,7 +2,6 @@ package admin
 
 import (
 	"bytes"
-	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -264,51 +263,6 @@ func TestGroupHandlerSimpleModeAllReadAndWriteResponsesUseFieldAllowlist(t *test
 			var item map[string]any
 			require.NoError(t, json.Unmarshal(payload.Data, &item))
 			assertNoAdvancedFields(t, item)
-		})
-	}
-}
-
-type simpleModeCindyCatalogService struct {
-	*stubAdminService
-	candidateCalls int
-	groupID        int64
-	platform       string
-}
-
-func (s *simpleModeCindyCatalogService) GetGroupModelsListCandidates(_ context.Context, id int64, platform string) ([]string, error) {
-	s.candidateCalls++
-	s.groupID = id
-	s.platform = platform
-	return []string{"gpt-6-astra"}, nil
-}
-
-func TestGroupHandlerSimpleModeAllowsOnlyLocalCindyCreateCatalog(t *testing.T) {
-	gin.SetMode(gin.TestMode)
-	for _, test := range []struct {
-		path string
-		want int
-	}{
-		{path: "/groups/0/model-allowlist-candidates?platform=cindy", want: http.StatusOK},
-		{path: "/groups/1/model-allowlist-candidates?platform=cindy", want: http.StatusForbidden},
-		{path: "/groups/0/model-allowlist-candidates?platform=openai", want: http.StatusForbidden},
-		{path: "/groups/0/model-allowlist-candidates?platform=Cindy", want: http.StatusForbidden},
-		{path: "/groups/0/model-allowlist-candidates", want: http.StatusForbidden},
-		{path: "/groups/-1/model-allowlist-candidates?platform=cindy", want: http.StatusBadRequest},
-		{path: "/groups/invalid/model-allowlist-candidates?platform=cindy", want: http.StatusBadRequest},
-	} {
-		t.Run(test.path, func(t *testing.T) {
-			svc := &simpleModeCindyCatalogService{stubAdminService: newStubAdminService()}
-			res := httptest.NewRecorder()
-			newSimpleModeGroupRouter(svc).ServeHTTP(res, httptest.NewRequest(http.MethodGet, test.path, nil))
-			require.Equal(t, test.want, res.Code)
-			if test.want == http.StatusOK {
-				require.Equal(t, 1, svc.candidateCalls)
-				require.Zero(t, svc.groupID)
-				require.Equal(t, service.PlatformCindy, svc.platform)
-				require.Contains(t, res.Body.String(), `"models":["gpt-6-astra"]`)
-			} else {
-				require.Zero(t, svc.candidateCalls, "blocked requests must not query group/account candidates")
-			}
 		})
 	}
 }

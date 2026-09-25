@@ -61,12 +61,6 @@ func (s *OpenAIGatewayService) ForwardAsChatCompletions(
 	promptCacheKey string,
 	defaultMappedModel string,
 ) (*OpenAIForwardResult, error) {
-	rememberPromptRequestedModel(c, body)
-	pricingContext, pricingErr := CaptureCindyPricingContext(ctx, c, account)
-	if pricingErr != nil {
-		return nil, pricingErr
-	}
-	ctx = pricingContext
 	return s.forwardAsChatCompletions(ctx, c, account, body, promptCacheKey, defaultMappedModel, false)
 }
 
@@ -98,12 +92,6 @@ func (s *OpenAIGatewayService) forwardAsChatCompletions(
 			return nil, err
 		}
 		body = withEffort
-	}
-	if account != nil && IsCindyAPIKeyAccount(account.Platform, account.Type, account.Credentials) {
-		requestedModel := strings.TrimSpace(gjson.GetBytes(body, "model").String())
-		if !CindyFreePoolModelSupportsEndpoint(requestedModel, CindyEndpointChatCompletions) {
-			return nil, fmt.Errorf("cindy model %q is not available to the free-key pool", requestedModel)
-		}
 	}
 	ClearActualOpenAIUpstreamEndpoint(c)
 	if shouldForwardOpenAIResponsesViaRawChatCompletions(account) {
@@ -240,13 +228,6 @@ func (s *OpenAIGatewayService) forwardAsChatCompletions(
 		return nil, modelPolicyErr
 	}
 	upstreamModel := normalizeOpenAIModelForUpstream(account, billingModel)
-	if account != nil && IsLegacyCindyAPIKeyAccount(account.Platform, account.Type, account.Credentials) {
-		if legacyModel, mapped, policyErr := cindyLegacyLaxaLiveUpstreamModel(ctx, account, originalModel); policyErr != nil {
-			return nil, policyErr
-		} else if mapped {
-			upstreamModel = legacyModel
-		}
-	}
 
 	promptCacheKey = strings.TrimSpace(promptCacheKey)
 	compatPromptCacheInjected := false
@@ -465,13 +446,12 @@ func (s *OpenAIGatewayService) forwardAsChatCompletions(
 			attemptCtx, cancelUpstream = context.WithCancel(upstreamRequestCtx)
 			upstreamReq = upstreamReq.WithContext(attemptCtx)
 		}
-		upstreamReq, responsesBody, wireBody, err = prepareBusinessPromptReasoningRequest(c, recovery, upstreamReq, responsesBody, proxyURL)
+		upstreamReq, responsesBody, wireBody, err = prepareReasoningRecoveryRequest(recovery, upstreamReq, responsesBody, proxyURL)
 		if err != nil {
 			cancelUpstream()
 			return nil, recovery.StopError(err)
 		}
-		application, _ := businessSystemPromptApplicationFromRequest(c, BusinessSystemPromptProtocolResponses)
-		finalCacheKey := businessSystemPromptUpstreamCacheKey(c, wireBody, upstreamPromptCacheKey, application)
+		finalCacheKey := finalWirePromptCacheKey(wireBody, upstreamPromptCacheKey)
 		if finalCacheKey != "" {
 			sessionKey := finalCacheKey
 			if !compatPromptCacheTenantIsolated {
@@ -926,8 +906,8 @@ func (s *OpenAIGatewayService) handleChatStreamingResponse(
 		if rawEventType == "response.failed" || rawEventType == "error" {
 			recovery := openAIChatReasoningRecoveryFromContext(c)
 			if recovery == nil || !recovery.RecoveryAttempt() {
-				if failoverErr, ok := s.cindyBalanceHTTPResponseTerminalFailover(
-					c.Request.Context(), account, resp.StatusCode, resp.Header, rawPayloadBytes, originalModel,
+				if failoverErr, ok := s.openAIBudgetExceededHTTPResponseTerminalFailover(
+					c.Request.Context(), account, resp.StatusCode, resp.Header, rawPayloadBytes,
 				); ok {
 					if parsedUsage, parsed := extractOpenAIUsageFromJSONBytes(rawPayloadBytes); parsed {
 						usage = parsedUsage
@@ -937,7 +917,6 @@ func (s *OpenAIGatewayService) handleChatStreamingResponse(
 				}
 			}
 		}
-		payload = string(s.rewriteBusinessSystemPromptJSONForRequest(c, []byte(payload), BusinessSystemPromptProtocolResponses))
 		if firstChunk {
 			firstChunk = false
 			ms := int(time.Since(startTime).Milliseconds())

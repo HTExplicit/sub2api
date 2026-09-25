@@ -36,7 +36,6 @@ const (
 
 	opsUpstreamModelKey          = service.OpsUpstreamModelKey
 	opsRequestTypeKey            = "ops_request_type"
-	opsErrorClassificationKey    = "ops_error_classification"
 	opsDedicatedEntryEnqueuedKey = "ops_dedicated_entry_enqueued"
 
 	// 错误过滤匹配常量 — shouldSkipOpsErrorLog 和错误分类共用
@@ -466,28 +465,6 @@ func setOpsEndpointContext(c *gin.Context, upstreamModel string, requestType int
 		c.Set(opsUpstreamModelKey, upstreamModel)
 	}
 	c.Set(opsRequestTypeKey, requestType)
-}
-
-func setOpsErrorClassification(c *gin.Context, classification string) {
-	if c == nil {
-		return
-	}
-	if classification = strings.TrimSpace(classification); classification != "" {
-		c.Set(opsErrorClassificationKey, classification)
-	}
-}
-
-func opsErrorClassification(c *gin.Context, fallback string) string {
-	if c != nil {
-		if value, ok := c.Get(opsErrorClassificationKey); ok {
-			if classification, ok := value.(string); ok {
-				if classification = strings.TrimSpace(classification); classification != "" {
-					return classification
-				}
-			}
-		}
-	}
-	return strings.TrimSpace(fallback)
 }
 
 func setOpsSelectedAccount(c *gin.Context, accountID int64, platform ...string) {
@@ -1219,7 +1196,7 @@ func OpsErrorLoggerMiddleware(ops *service.OpsService) gin.HandlerFunc {
 			}
 		}
 
-		normalizedType := opsErrorClassification(c, normalizeOpsErrorType(parsed.ErrorType, parsed.Code))
+		normalizedType := normalizeOpsErrorType(parsed.ErrorType, parsed.Code)
 
 		phase, isBusinessLimited, errorOwner, errorSource := classifyOpsErrorLog(c, normalizedType, parsed.Message, parsed.Code, status)
 

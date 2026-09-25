@@ -13,7 +13,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-const cindyModelNotSupportedBody = `{"error":{"code":400,"type":"model_not_supported","message":"Model 'gpt-5.6-luna' is temporarily not supported. Please choose another model from GET /v1/models."}}`
+const relayModelNotSupportedBody = `{"error":{"code":400,"type":"model_not_supported","message":"Model 'gpt-5.6-luna' is temporarily not supported. Please choose another model from GET /v1/models."}}`
 
 func TestOpenAIModelNotSupportedClassifierIsStrict(t *testing.T) {
 	tests := []struct {
@@ -22,10 +22,10 @@ func TestOpenAIModelNotSupportedClassifierIsStrict(t *testing.T) {
 		body   string
 		want   bool
 	}{
-		{"exact cindy response", http.StatusBadRequest, cindyModelNotSupportedBody, true},
+		{"exact relay response", http.StatusBadRequest, relayModelNotSupportedBody, true},
 		{"unquoted model response", http.StatusBadRequest, `{"error":{"code":400,"type":"model_not_supported","message":"Model gpt-5.6-luna is not supported"}}`, true},
 		{"nested response error", http.StatusBadRequest, `{"response":{"error":{"code":"400","type":"model_not_supported","message":"model is not supported"}}}`, true},
-		{"wrong status", http.StatusBadGateway, cindyModelNotSupportedBody, false},
+		{"wrong status", http.StatusBadGateway, relayModelNotSupportedBody, false},
 		{"missing code", http.StatusBadRequest, `{"error":{"type":"model_not_supported","message":"model is not supported"}}`, false},
 		{"empty code", http.StatusBadRequest, `{"error":{"code":"","type":"model_not_supported","message":"model is not supported"}}`, false},
 		{"wrong code", http.StatusBadRequest, `{"error":{"code":401,"type":"model_not_supported","message":"model is not supported"}}`, false},
@@ -43,76 +43,7 @@ func TestOpenAIModelNotSupportedClassifierIsStrict(t *testing.T) {
 	}
 }
 
-func TestLegacyCindyModelCooldownUsesCanonicalKeyForReads(t *testing.T) {
-	reset := time.Now().Add(time.Minute)
-	account := &Account{
-		ID:          701,
-		Platform:    PlatformOpenAI,
-		Type:        AccountTypeAPIKey,
-		Status:      StatusActive,
-		Schedulable: true,
-		Credentials: map[string]any{"base_url": "https://api.laxarouter.ai"},
-		Extra: map[string]any{modelRateLimitsKey: map[string]any{
-			"openai/gpt-5.6-luna": map[string]any{"rate_limit_reset_at": reset.UTC().Format(time.RFC3339)},
-		}},
-	}
-	require.False(t, account.IsSchedulableForModelWithContext(context.Background(), "gpt-5.6-luna"))
-	require.True(t, account.IsSchedulableForModelWithContext(context.Background(), "gpt-5.6-sol"))
-}
-
-func TestLegacyCindyCompactCooldownUsesForwardedCompactTarget(t *testing.T) {
-	account := &Account{
-		Platform:    PlatformOpenAI,
-		Type:        AccountTypeAPIKey,
-		Status:      StatusActive,
-		Schedulable: true,
-		Credentials: map[string]any{
-			"base_url": "https://api.laxarouter.ai",
-			"compact_model_mapping": map[string]any{
-				"gpt-5.6-luna": "luna-compact-wire",
-			},
-		},
-		Extra: map[string]any{
-			modelRateLimitsKey: map[string]any{
-				"luna-compact-wire": map[string]any{
-					"rate_limit_reset_at": time.Now().Add(time.Minute).UTC().Format(time.RFC3339),
-				},
-			},
-			"openai_passthrough": true,
-		},
-	}
-	ctx := WithOpenAIForwardModel(context.Background(), "gpt-5.6-luna", true)
-	require.False(t, account.IsSchedulableForModelWithContext(ctx, "gpt-5.6-luna"))
-}
-
-func TestLegacyCindyCompactMappingChecksCanonicalKey(t *testing.T) {
-	account := &Account{
-		ID:          703,
-		Platform:    PlatformOpenAI,
-		Type:        AccountTypeAPIKey,
-		Status:      StatusActive,
-		Schedulable: true,
-		Credentials: map[string]any{
-			"base_url": "https://api.laxarouter.ai",
-			"compact_model_mapping": map[string]any{
-				"openai/gpt-5.6-luna": "luna-compact-wire",
-			},
-		},
-		Extra: map[string]any{
-			"openai_passthrough": true,
-			modelRateLimitsKey: map[string]any{
-				"luna-compact-wire": map[string]any{
-					"rate_limit_reset_at": time.Now().Add(time.Minute).UTC().Format(time.RFC3339),
-				},
-			},
-		},
-	}
-	ctx := WithOpenAIForwardModel(context.Background(), "gpt-5.6-luna", true)
-	require.False(t, account.IsSchedulableForModelWithContext(ctx, "gpt-5.6-luna"))
-	require.Equal(t, "luna-compact-wire", resolveOpenAIAccountUpstreamModelForRequest(account, "gpt-5.6-luna", true))
-}
-
-func TestLegacyCindyCompactCooldownWritesForwardedCompactTarget(t *testing.T) {
+func TestCompactCooldownWritesForwardedCompactTarget(t *testing.T) {
 	repo := &modelNotFoundAccountRepoStub{}
 	svc := &RateLimitService{accountRepo: repo}
 	account := &Account{
@@ -129,7 +60,7 @@ func TestLegacyCindyCompactCooldownWritesForwardedCompactTarget(t *testing.T) {
 	ctx := WithOpenAIForwardModel(context.Background(), "gpt-5.6-luna", true)
 
 	require.True(t, svc.HandleUpstreamModelNotFound(
-		ctx, account, "luna-compact-wire", http.StatusBadRequest, []byte(cindyModelNotSupportedBody),
+		ctx, account, "luna-compact-wire", http.StatusBadRequest, []byte(relayModelNotSupportedBody),
 	))
 	require.Len(t, repo.modelRateLimitCalls, 1)
 	require.Equal(t, "luna-compact-wire", repo.modelRateLimitCalls[0].scope)
@@ -186,51 +117,51 @@ func TestOpenAIWSPrewarmResponseFailedPreservesModelNotSupported(t *testing.T) {
 }
 
 func TestOpenAIModelNotSupportedFailoverSuppressesAccountHealthPenalty(t *testing.T) {
-	err := newOpenAIModelNotSupportedFailoverError(nil, []byte(cindyModelNotSupportedBody))
+	err := newOpenAIModelNotSupportedFailoverError(nil, []byte(relayModelNotSupportedBody))
 	require.True(t, err.SuppressAccountHealthPenalty)
 	require.False(t, err.ShouldReportAccountScheduleFailure())
 }
 
-func TestOpenAIModelNotSupportedIsCindyOnlyForHTTPFailover(t *testing.T) {
+func TestOpenAIModelNotSupportedHTTPFailoverRequiresOpenAICompatibleAccount(t *testing.T) {
 	svc := &OpenAIGatewayService{}
 	ordinary := &Account{
 		Platform: PlatformOpenAI, Type: AccountTypeAPIKey,
 		Credentials: map[string]any{"base_url": "https://api.openai.com"},
 	}
-	legacyLaxa := &Account{
-		Platform: PlatformOpenAI, Type: AccountTypeAPIKey,
-		Credentials: map[string]any{"base_url": "https://api.laxarouter.ai"},
-	}
+	anthropic := &Account{Platform: PlatformAnthropic, Type: AccountTypeAPIKey}
 
-	require.False(t, svc.shouldFailoverOpenAIUpstreamResponse(nil, http.StatusBadRequest, "", []byte(cindyModelNotSupportedBody)))
-	require.False(t, svc.shouldFailoverOpenAIUpstreamResponseForAccount(ordinary, http.StatusBadRequest, "", []byte(cindyModelNotSupportedBody)))
-	require.True(t, svc.shouldFailoverOpenAIUpstreamResponseForAccount(legacyLaxa, http.StatusBadRequest, "", []byte(cindyModelNotSupportedBody)))
+	require.False(t, svc.shouldFailoverOpenAIUpstreamResponse(nil, http.StatusBadRequest, "", []byte(relayModelNotSupportedBody)))
+	require.True(t, svc.shouldFailoverOpenAIUpstreamResponseForAccount(ordinary, http.StatusBadRequest, "", []byte(relayModelNotSupportedBody)))
+	require.False(t, svc.shouldFailoverOpenAIUpstreamResponseForAccount(anthropic, http.StatusBadRequest, "", []byte(relayModelNotSupportedBody)))
 }
 
-func TestOpenAIModelNotSupportedIsCindyOnlyForStreamFailover(t *testing.T) {
-	payload := []byte(cindyModelNotSupportedBody)
+func TestOpenAIModelNotSupportedStreamFailoverRequiresOpenAICompatibleAccount(t *testing.T) {
+	payload := []byte(relayModelNotSupportedBody)
 	message := extractOpenAISSEErrorMessage(payload)
 	ordinary := &Account{Platform: PlatformOpenAI, Type: AccountTypeAPIKey, Credentials: map[string]any{"base_url": "https://api.openai.com"}}
-	legacyLaxa := &Account{Platform: PlatformOpenAI, Type: AccountTypeAPIKey, Credentials: map[string]any{"base_url": "https://api.laxarouter.ai"}}
-	require.False(t, openAIStreamFailedEventShouldFailoverForAccount(ordinary, payload, message))
-	require.False(t, openAIStreamErrorEventShouldFailoverForAccount(ordinary, payload, message))
-	require.True(t, openAIStreamFailedEventShouldFailoverForAccount(legacyLaxa, payload, message))
-	require.True(t, openAIStreamErrorEventShouldFailoverForAccount(legacyLaxa, payload, message))
+	anthropic := &Account{Platform: PlatformAnthropic, Type: AccountTypeAPIKey}
+	require.True(t, openAIStreamFailedEventShouldFailoverForAccount(ordinary, payload, message))
+	require.True(t, openAIStreamErrorEventShouldFailoverForAccount(ordinary, payload, message))
+	require.False(t, openAIStreamFailedEventShouldFailoverForAccount(anthropic, payload, message))
+	require.False(t, openAIStreamErrorEventShouldFailoverForAccount(anthropic, payload, message))
 }
 
-func TestRateLimitService_HandleUpstreamError_CindyModelNotSupportedUsesModelCooldown(t *testing.T) {
+func TestRateLimitService_HandleUpstreamError_ModelNotSupportedUsesModelCooldown(t *testing.T) {
 	repo := &modelNotFoundAccountRepoStub{}
 	svc := &RateLimitService{accountRepo: repo}
 	account := &Account{
 		ID:          701,
-		Platform:    PlatformCindy,
+		Platform:    PlatformOpenAI,
 		Type:        AccountTypeAPIKey,
 		Status:      StatusActive,
 		Schedulable: true,
-		Credentials: map[string]any{"base_url": "https://api.laxarouter.ai", "api_key": "test-key"},
+		Credentials: map[string]any{
+			"base_url": "https://api.laxarouter.ai", "api_key": "test-key",
+			"model_mapping": map[string]any{"gpt-5.6-luna": "openai/gpt-5.6-luna"},
+		},
 	}
 
-	handled := svc.HandleUpstreamError(context.Background(), account, http.StatusBadRequest, nil, []byte(cindyModelNotSupportedBody), "gpt-5.6-luna")
+	handled := svc.HandleUpstreamError(context.Background(), account, http.StatusBadRequest, nil, []byte(relayModelNotSupportedBody), "gpt-5.6-luna")
 
 	require.True(t, handled)
 	require.Len(t, repo.modelRateLimitCalls, 1)
@@ -239,19 +170,19 @@ func TestRateLimitService_HandleUpstreamError_CindyModelNotSupportedUsesModelCoo
 	require.WithinDuration(t, time.Now().Add(upstreamModelNotSupportedCooldown), repo.modelRateLimitCalls[0].resetAt, 5*time.Second)
 }
 
-func TestRateLimitService_HandleUpstreamError_ModelNotSupportedDoesNotPersistForNonCindy(t *testing.T) {
+func TestRateLimitService_HandleUpstreamError_ModelNotSupportedDoesNotPersistForNonOpenAICompatible(t *testing.T) {
 	repo := &modelNotFoundAccountRepoStub{}
 	svc := &RateLimitService{accountRepo: repo}
 	account := &Account{
 		ID:          702,
-		Platform:    PlatformOpenAI,
+		Platform:    PlatformAnthropic,
 		Type:        AccountTypeAPIKey,
 		Status:      StatusActive,
 		Schedulable: true,
-		Credentials: map[string]any{"base_url": "https://api.openai.com"},
+		Credentials: map[string]any{"base_url": "https://api.anthropic.com"},
 	}
 
-	require.False(t, svc.HandleUpstreamModelNotFound(context.Background(), account, "gpt-5.6-luna", http.StatusBadRequest, []byte(cindyModelNotSupportedBody)))
+	require.False(t, svc.HandleUpstreamModelNotFound(context.Background(), account, "gpt-5.6-luna", http.StatusBadRequest, []byte(relayModelNotSupportedBody)))
 	require.Empty(t, repo.modelRateLimitCalls)
 }
 
@@ -267,6 +198,6 @@ func TestRateLimitService_ModelNotSupportedCooldownIgnoresCustomErrorCodeFilter(
 			"custom_error_codes":         []any{float64(500)},
 		},
 	}
-	require.True(t, svc.HandleUpstreamModelNotFound(context.Background(), account, "gpt-5.6-luna", http.StatusBadRequest, []byte(cindyModelNotSupportedBody)))
+	require.True(t, svc.HandleUpstreamModelNotFound(context.Background(), account, "gpt-5.6-luna", http.StatusBadRequest, []byte(relayModelNotSupportedBody)))
 	require.Len(t, repo.modelRateLimitCalls, 1)
 }

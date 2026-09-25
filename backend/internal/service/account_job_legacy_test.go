@@ -110,7 +110,7 @@ func TestAccountJobLegacyRetryPreservesActorCipherExpiryAndAction64(t *testing.T
 }
 
 func TestAccountJobLegacyViewComparesSavedDigestWithoutQueryingTargets(t *testing.T) {
-	identity := extensionv1.AccountViewIdentityV1{Version: 1, PluginID: 7, PluginKey: "codexrip.cindy-provider", ViewID: "cindy-accounts", PresetID: "cindy", PackageSHA256: strings.Repeat("a", 64), ViewDefinitionDigest: strings.Repeat("b", 64)}
+	identity := extensionv1.AccountViewIdentityV1{Version: 1, PluginID: 7, PluginKey: "codexrip.account-tools", ViewID: "legacy-accounts", PresetID: "openai", PackageSHA256: strings.Repeat("a", 64), ViewDefinitionDigest: strings.Repeat("b", 64)}
 	query := extensionv1.AccountViewQueryV1{Search: "saved-private-query", AccountIDs: []int64{2, 7}}
 	record := AccountJobViewMetadata{AccountViewIdentityV1: identity, RuntimeGeneration: 3, PolicyRevision: 4, NormalizedQueryDigest: accountViewQueryDigest(query)}
 	metadata, err := json.Marshal(map[string]any{"plugin_id": 7, "plugin_generation": 3, "account_view": record})
@@ -125,18 +125,4 @@ func TestAccountJobLegacyViewComparesSavedDigestWithoutQueryingTargets(t *testin
 	target := int64(2)
 	require.NoError(t, ValidateRecordedAccountJobTargets(job, payload, []AccountJobItem{{TargetAccountID: &target}}))
 	require.Error(t, ValidateRecordedAccountJobTargets(job, payload, []AccountJobItem{{}}))
-}
-
-func TestAccountJobLegacyDuplicateTargetsKeepLosers(t *testing.T) {
-	ids, err := accountViewJobTargets(AccountJobKindDuplicateReview, json.RawMessage(`{"account_ids":[2,3]}`), []*int64{nil})
-	require.NoError(t, err)
-	require.Equal(t, []int64{2, 3}, ids)
-	id := int64(2)
-	ids, err = accountViewJobTargets(AccountJobKindDuplicateMerge, json.RawMessage(`{"survivor_account_id":2,"loser_account_ids":[3]}`), []*int64{&id})
-	require.NoError(t, err)
-	require.Equal(t, []int64{2, 3}, ids)
-	_, err = accountViewJobTargets(AccountJobKindDuplicateReview, json.RawMessage(`{}`), []*int64{nil})
-	require.Error(t, err)
-	_, err = accountViewJobTargets(AccountJobKindDuplicateMerge, json.RawMessage(`{"survivor_account_id":2,"loser_account_ids":[-1]}`), []*int64{&id})
-	require.Error(t, err)
 }

@@ -165,7 +165,7 @@
             </div>
 
             <div
-              class="rounded-none border border-gray-200 bg-gray-50 p-4 dark:border-dark-700 dark:bg-dark-800"
+              class="rounded-lg border border-gray-200 bg-gray-50 p-4 dark:border-dark-700 dark:bg-dark-800/60"
             >
               <div class="text-sm font-medium text-gray-900 dark:text-white">
                 {{ t("admin.settings.emailTemplates.placeholders") }}

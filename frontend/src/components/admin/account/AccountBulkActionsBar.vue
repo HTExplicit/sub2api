@@ -1,5 +1,5 @@
 <template>
-  <div class="mb-4 flex flex-col gap-3 rounded-none border border-line border-l-2 border-l-primary-500 bg-raised p-3 xl:flex-row xl:items-center xl:justify-between">
+  <div class="mb-4 flex flex-col gap-3 rounded-md border border-line border-l-2 border-l-primary-500 bg-raised p-3 xl:flex-row xl:items-center xl:justify-between">
     <div class="flex flex-wrap items-center gap-2">
       <span v-if="allResultsSelected" class="text-sm font-medium text-ink">
         {{ t('admin.accounts.bulkActions.selectedAll', { count: selectedIds.length }) }}
@@ -45,7 +45,6 @@
     <div class="flex flex-wrap gap-2">
       <template v-if="selectedIds.length > 0">
         <button @click="$emit('delete')" class="btn btn-danger btn-sm">{{ t('admin.accounts.bulkActions.delete') }}</button>
-        <button data-test="batch-test" @click="$emit('test')" class="btn btn-secondary btn-sm">{{ t('admin.accounts.batchTest.title') }}</button>
         <CodexAccountActions :account-ids="selectedIds" :accounts="selectedAccounts" @open="openCodexOperation" />
         <button v-if="promptBindingAvailable" type="button" data-test="account-prompt-binding-bulk" class="btn btn-secondary btn-sm" @click="promptBindingOpen = true">
           {{ t('admin.systemPrompts.accountPrompts') }}
@@ -63,6 +62,7 @@
           {{ t('admin.accounts.bulkActions.duplicateReview') }}
         </button>
         <button @click="$emit('probe-upstream-billing')" class="btn btn-secondary btn-sm">{{ t('admin.accounts.bulkActions.probeUpstreamBilling') }}</button>
+        <button @click="$emit('test-connection')" class="btn btn-secondary btn-sm">{{ t('admin.accounts.bulkActions.testConnection') }}</button>
         <button @click="$emit('toggle-schedulable', true)" class="btn btn-success btn-sm">{{ t('admin.accounts.bulkActions.enableScheduling') }}</button>
         <button @click="$emit('toggle-schedulable', false)" class="btn btn-warning btn-sm">{{ t('admin.accounts.bulkActions.disableScheduling') }}</button>
         <button @click="$emit('edit-selected')" class="btn btn-primary btn-sm">{{ t('admin.accounts.bulkActions.edit') }}</button>
@@ -78,7 +78,7 @@
   </div>
   <CodexTicketOperationModal v-if="codexTarget" :show="true" :operation="codexTarget.operation" :account-ids="codexTarget.accountIds" @close="codexTarget = null" />
   <BaseDialog :show="promptBindingOpen" :title="t('admin.systemPrompts.accountPrompts')" width="normal" @close="promptBindingOpen = false">
-    <AccountPromptBindingPanel v-if="promptBindingOpen" :account-ids="selectedIds" />
+    <AccountSystemPromptBinding v-if="promptBindingOpen" :account-ids="selectedIds" @changed="promptBindingOpen = false" />
   </BaseDialog>
 </template>
 
@@ -86,7 +86,7 @@
 import { computed, defineAsyncComponent, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import BaseDialog from '@/components/common/BaseDialog.vue'
-import { accountPromptBindingLimit, supportsAccountPromptBinding } from '@/utils/accountPromptBinding'
+import { systemPromptBindingLimit } from '@/utils/systemPromptBinding'
 import type { AccountSelectionIdentity } from '@/composables/useAccountSelectionMetadata'
 import CodexAccountActions from '@/components/admin/codex/CodexAccountActions.vue'
 import type { CodexTicketOperation } from '@/utils/codexTickets'
@@ -100,7 +100,6 @@ const props = defineProps<{
 }>()
 
 defineEmits([
-  'test',
   'delete',
   'edit-selected',
   'edit-filtered',
@@ -114,23 +113,17 @@ defineEmits([
   'refresh-token',
   'refresh-tier',
   'duplicate-review',
-  'probe-upstream-billing'
+  'probe-upstream-billing',
+  'test-connection'
 ])
 
 const { t } = useI18n()
-const AccountPromptBindingPanel = defineAsyncComponent(() => import('./AccountPromptBindingPanel.vue'))
+const AccountSystemPromptBinding = defineAsyncComponent(() => import('./AccountSystemPromptBinding.vue'))
 const CodexTicketOperationModal = defineAsyncComponent(() => import('@/components/admin/codex/CodexTicketOperationModal.vue'))
 const codexTarget = ref<{ operation: CodexTicketOperation; accountIds: number[] } | null>(null)
 function openCodexOperation(operation: CodexTicketOperation, accountIds: number[]) {
   codexTarget.value = { operation, accountIds: [...accountIds] }
 }
 const promptBindingOpen = ref(false)
-const promptBindingAvailable = computed(() => {
-  if (!props.selectedIds.length || props.selectedIds.length > accountPromptBindingLimit) return false
-  const known = new Map((props.selectedAccounts || []).map(account => [account.id, account]))
-  return props.selectedIds.every(id => {
-    const account = known.get(id)
-    return !!account && supportsAccountPromptBinding(account)
-  })
-})
+const promptBindingAvailable = computed(() => props.selectedIds.length > 0 && props.selectedIds.length <= systemPromptBindingLimit)
 </script>

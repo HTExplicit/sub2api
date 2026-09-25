@@ -151,9 +151,6 @@ func newReplayableEndpointFailoverHandler(t *testing.T, upstream service.HTTPUps
 				"pool_mode_retry_count":        10,
 				"pool_mode_retry_status_codes": []any{float64(http.StatusServiceUnavailable)},
 			},
-			Extra: map[string]any{
-				"openai_alpha_search_mode": service.OpenAIAlphaSearchModeResponsesWebSearch,
-			},
 		},
 		{
 			ID:          2,
@@ -165,9 +162,6 @@ func newReplayableEndpointFailoverHandler(t *testing.T, upstream service.HTTPUps
 			Priority:    1,
 			GroupIDs:    []int64{groupID},
 			Credentials: map[string]any{"api_key": "sk-2", "base_url": "https://upstream-2.example/v1"},
-			Extra: map[string]any{
-				"openai_alpha_search_mode": service.OpenAIAlphaSearchModeResponsesWebSearch,
-			},
 		},
 	}
 	cfg := &config.Config{RunMode: config.RunModeSimple}

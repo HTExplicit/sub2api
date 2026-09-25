@@ -121,15 +121,15 @@ func (e *PromptTooLongError) Error() string {
 
 // AntigravityGatewayService 处理 Antigravity 平台的 API 转发
 type AntigravityGatewayService struct {
-	businessPromptService *BusinessSystemPromptService
-	accountRepo           AccountRepository
-	tokenProvider         *AntigravityTokenProvider
-	rateLimitService      *RateLimitService
-	httpUpstream          HTTPUpstream
-	settingService        *SettingService
-	cache                 GatewayCache // 用于模型级限流时清除粘性会话绑定
-	schedulerSnapshot     *SchedulerSnapshotService
-	internal500Cache      Internal500CounterCache // INTERNAL 500 渐进惩罚计数器
+	systemPrompts     *SystemPromptService
+	accountRepo       AccountRepository
+	tokenProvider     *AntigravityTokenProvider
+	rateLimitService  *RateLimitService
+	httpUpstream      HTTPUpstream
+	settingService    *SettingService
+	cache             GatewayCache // 用于模型级限流时清除粘性会话绑定
+	schedulerSnapshot *SchedulerSnapshotService
+	internal500Cache  Internal500CounterCache // INTERNAL 500 渐进惩罚计数器
 }
 
 func (s *AntigravityGatewayService) upstreamErrorBodyReadLimit() int64 {
@@ -427,27 +427,27 @@ func (s *AntigravityGatewayService) TestConnection(ctx context.Context, account 
 		// AccountSwitchError → 测试时不切换账号，返回友好提示
 		var switchErr *AntigravityAccountSwitchError
 		if errors.As(err, &switchErr) {
-			return nil, accountTestHTTPFailure(http.StatusTooManyRequests)
+			return nil, fmt.Errorf("该账号模型 %s 当前限流中，请稍后重试", switchErr.RateLimitedModel)
 		}
-		return nil, accountTestRequestFailure(err)
+		return nil, err
 	}
 
 	if result == nil || result.resp == nil {
-		return nil, ErrAccountTestProtocol
+		return nil, errors.New("upstream returned empty response")
 	}
 	defer func() { _ = result.resp.Body.Close() }()
 
 	respBody, err := io.ReadAll(io.LimitReader(result.resp.Body, s.upstreamErrorBodyReadLimit()))
 	if err != nil {
-		return nil, accountTestRequestFailure(err)
+		return nil, fmt.Errorf("读取响应失败: %w", err)
 	}
 
 	if result.resp.StatusCode >= 400 {
-		return nil, accountTestHTTPFailure(result.resp.StatusCode)
+		return nil, fmt.Errorf("API 返回 %d: %s", result.resp.StatusCode, string(respBody))
 	}
 
 	var text strings.Builder
-	limited, err := parseAccountConnectionStream("gemini", bytes.NewReader(respBody), false, func(event TestEvent) {
+	limited, _, err := parseAccountConnectionStream("gemini", bytes.NewReader(respBody), false, func(event TestEvent) {
 		if event.Type == "content" {
 			_, _ = text.WriteString(event.Text)
 		}

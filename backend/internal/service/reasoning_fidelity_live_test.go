@@ -52,15 +52,14 @@ type fidelityBootstrap struct {
 }
 
 type fidelitySource struct {
-	Account             service.Account                               `json:"account"`
-	Group               service.Group                                 `json:"group"`
-	FastPolicy          *service.OpenAIFastPolicySettings             `json:"fast_policy"`
-	BusinessPrompt      service.BusinessSystemPromptSnapshot          `json:"business_prompt"`
-	RegistryPublication *service.ReasoningFidelityPublicationSnapshot `json:"registry_publication"`
-	Settings            map[string]string                             `json:"settings"`
-	ChannelModels       map[string]string                             `json:"channel_models"`
-	Fingerprint         string                                        `json:"fingerprint"`
-	UserID              int64                                         `json:"user_id"`
+	Account       service.Account                   `json:"account"`
+	Group         service.Group                     `json:"group"`
+	FastPolicy    *service.OpenAIFastPolicySettings `json:"fast_policy"`
+	SystemPrompts *service.SystemPromptConfig       `json:"system_prompts"`
+	Settings      map[string]string                 `json:"settings"`
+	ChannelModels map[string]string                 `json:"channel_models"`
+	Fingerprint   string                            `json:"fingerprint"`
+	UserID        int64                             `json:"user_id"`
 }
 
 type fidelityLedger struct {
@@ -199,7 +198,7 @@ func fidelityRun(input *bufio.Reader, output *json.Encoder) error {
 		u.used[slot] = true
 	}
 	h.upstream = u
-	h.gateway, err = service.ReasoningFidelityGatewayForTest(cfg, u, boot.Source.BusinessPrompt, boot.Source.RegistryPublication, boot.Source.Settings)
+	h.gateway, err = service.ReasoningFidelityGatewayForTest(cfg, u, boot.Source.SystemPrompts, boot.Source.Settings)
 	if err != nil {
 		return errors.New("unsupported_source_policy")
 	}
@@ -254,7 +253,7 @@ func fidelityValidateBootstrap(b fidelityBootstrap) error {
 	if a.ID <= 0 || a.Name != "白嫖666" || a.Type != service.AccountTypeAPIKey || a.Platform != service.PlatformOpenAI || a.Credentials == nil || a.GetOpenAIProtocolAPIKey() == "" || a.Status != service.StatusActive || !a.Schedulable || a.Concurrency < 1 {
 		return errors.New("invalid_fixed_account")
 	}
-	if a.ParentAccountID != nil || service.IsCindyRuntimeCompatibleAPIKeyAccount(a.Platform, a.Type, a.Credentials) || !a.SupportsOpenAIEndpointCapability(service.OpenAIEndpointCapabilityResponses) {
+	if a.ParentAccountID != nil || !a.SupportsOpenAIEndpointCapability(service.OpenAIEndpointCapabilityResponses) {
 		return errors.New("unsupported_fixed_account")
 	}
 	if b.Source.Group.ID <= 0 || b.Source.Group.Platform != service.PlatformOpenAI || b.Source.Group.Status != service.StatusActive {

@@ -17,14 +17,11 @@ const (
 )
 
 type AccountViewPredicate struct {
-	Platforms          []string `json:"platforms,omitempty"`
-	Types              []string `json:"types,omitempty"`
-	Statuses           []string `json:"statuses,omitempty"`
-	Plans              []string `json:"plans,omitempty"`
-	PrivacyMode        string   `json:"privacy_mode,omitempty"`
-	CindyOnly          *bool    `json:"cindy_only,omitempty"`
-	CindyBalanceStatus string   `json:"cindy_balance_status,omitempty"`
-	CindyHealthStatus  string   `json:"cindy_health_status,omitempty"`
+	Platforms   []string `json:"platforms,omitempty"`
+	Types       []string `json:"types,omitempty"`
+	Statuses    []string `json:"statuses,omitempty"`
+	Plans       []string `json:"plans,omitempty"`
+	PrivacyMode string   `json:"privacy_mode,omitempty"`
 }
 
 type AccountViewPreset struct {
@@ -95,9 +92,8 @@ type AccountViewIdentityV1 struct {
 	ViewDefinitionDigest string `json:"view_definition_digest"`
 }
 
-// AccountViewQueryV1 is the normalized user-query layer. Cindy predicates are
-// reserved to the admitted manifest base/preset, never overridden here. Native
-// HTTP pagination stays outside this captured selection query. Folder/proxy
+// AccountViewQueryV1 is the normalized user-query layer. Native HTTP
+// pagination stays outside this captured selection query. Folder/proxy
 // identifiers are decimal strings, with uncategorized/direct sentinels.
 type AccountViewQueryV1 struct {
 	Platforms   []string `json:"platforms,omitempty"`

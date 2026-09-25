@@ -34,7 +34,6 @@ type openaiStreamingResult struct {
 	imageCount       int
 	imageOutputSizes []string
 	searchCount      int
-	opaqueBindingIDs []string
 }
 
 type openaiNonStreamingResult struct {
@@ -44,7 +43,6 @@ type openaiNonStreamingResult struct {
 	imageCount       int
 	imageOutputSizes []string
 	searchCount      int
-	opaqueBindingIDs []string
 }
 
 // stageOpenAIHTTPResponseTurnState prepares the response header without
@@ -469,7 +467,6 @@ func (s *OpenAIGatewayService) handleStreamingResponseWithReasoning(ctx context.
 	streamImageOutputs := make([]json.RawMessage, 0, 1)
 	streamSeenImages := make(map[string]struct{})
 	searchCounter := 0
-	opaqueBindingIDs := make([]string, 0, 2)
 	// Dedup search tool calls across SSE events (item.done + response.completed
 	// both list the same call_id — counting both would ~2× the surcharge).
 	streamSearchSeen := make(map[string]struct{})
@@ -481,7 +478,6 @@ func (s *OpenAIGatewayService) handleStreamingResponseWithReasoning(ctx context.
 			imageCount:       imageCounter.Count(),
 			imageOutputSizes: imageCounter.Sizes(),
 			searchCount:      searchCounter,
-			opaqueBindingIDs: normalizeCindyOpaqueBindingIDs(opaqueBindingIDs),
 		}
 	}
 	flushPending := func(disconnectMessage string) {
@@ -655,7 +651,6 @@ func (s *OpenAIGatewayService) handleStreamingResponseWithReasoning(ctx context.
 				suppressCurrentEvent = true
 				return
 			}
-			opaqueBindingIDs = append(opaqueBindingIDs, cindyOpaqueBindingIDsFromResponsePayload(rawDataBytes)...)
 			rawEventType := effectiveOpenAISSEEventType(rawDataBytes, pendingSSEEventType)
 			if rawEventType == "response.failed" || rawEventType == "error" || (rawEventType == "response.done" && gjson.GetBytes(rawDataBytes, "response.status").String() == "failed") {
 				s.parseSSEUsageBytesWithType(rawDataBytes, rawEventType, usage)
@@ -674,8 +669,8 @@ func (s *OpenAIGatewayService) handleStreamingResponseWithReasoning(ctx context.
 					}
 					return
 				}
-				if failoverErr, ok := s.cindyBalanceHTTPResponseTerminalFailover(
-					ctx, account, resp.StatusCode, resp.Header, rawDataBytes, mappedModel,
+				if failoverErr, ok := s.openAIBudgetExceededHTTPResponseTerminalFailover(
+					ctx, account, resp.StatusCode, resp.Header, rawDataBytes,
 				); ok {
 					s.parseSSEUsageBytes(rawDataBytes, usage)
 					sawFailedEvent = true
@@ -684,7 +679,7 @@ func (s *OpenAIGatewayService) handleStreamingResponseWithReasoning(ctx context.
 				}
 			}
 			dataBytes := rawDataBytes
-			if rewritten := s.rewriteBusinessSystemPromptJSONForRequest(c, dataBytes, BusinessSystemPromptProtocolResponses); !bytes.Equal(rewritten, dataBytes) {
+			if rewritten := restoreSystemPromptEcho(c, dataBytes); !bytes.Equal(rewritten, dataBytes) {
 				dataBytes = rewritten
 				data = string(rewritten)
 				line = replaceOpenAISSEDataLinePayload(line, data)
@@ -1801,18 +1796,16 @@ func (s *OpenAIGatewayService) handleNonStreamingResponse(ctx context.Context, r
 	// Classify the untouched upstream payload before any response rewriting.
 	// A non-stream request may still receive a JSON or SSE terminal event with
 	// HTTP 200.
-	cindyBalanceInsufficient := s.handleCindyBalanceHTTPResponseTerminalEvent(ctx, account, resp.StatusCode, resp.Header, body, mappedModel)
+	budgetFailoverErr, budgetExceeded := s.openAIBudgetExceededHTTPResponseTerminalFailover(ctx, account, resp.StatusCode, resp.Header, body)
 	forEachOpenAISSEDataPayload(string(body), func(payload []byte) {
-		if !cindyBalanceInsufficient &&
-			s.handleCindyBalanceHTTPResponseTerminalEvent(ctx, account, resp.StatusCode, resp.Header, payload, mappedModel) {
-			cindyBalanceInsufficient = true
+		if !budgetExceeded {
+			budgetFailoverErr, budgetExceeded = s.openAIBudgetExceededHTTPResponseTerminalFailover(ctx, account, resp.StatusCode, resp.Header, payload)
 		}
 	})
-	if cindyBalanceInsufficient {
-		return nil, newCindyBalanceTerminalFailover(resp.Header)
+	if budgetExceeded {
+		return nil, budgetFailoverErr
 	}
-	if account != nil && IsCindyRuntimeCompatibleAPIKeyAccount(account.Platform, account.Type, account.Credentials) &&
-		isOpenAIModelNotSupportedPayload(body) {
+	if account != nil && account.IsOpenAICompatible() && isOpenAIModelNotSupportedPayload(body) {
 		model := strings.TrimSpace(mappedModel)
 		if model == "" {
 			model = canonicalOpenAIAccountSchedulingModel(account, originalModel)
@@ -1820,7 +1813,7 @@ func (s *OpenAIGatewayService) handleNonStreamingResponse(ctx context.Context, r
 		_ = s.handleOpenAIAccountUpstreamError(ctx, account, http.StatusBadRequest, resp.Header, body, model)
 		return nil, newOpenAIModelNotSupportedFailoverError(resp.Header, body)
 	}
-	body = s.rewriteBusinessSystemPromptJSONForRequest(c, body, BusinessSystemPromptProtocolResponses)
+	body = restoreSystemPromptEcho(c, body)
 
 	// Detect SSE responses for all account types from the header or genuine
 	// physical framing, never from quoted "data:" text inside JSON strings.
@@ -1912,7 +1905,6 @@ func (s *OpenAIGatewayService) handleNonStreamingResponse(ctx context.Context, r
 		imageCount:       countOpenAIResponseImageOutputsFromJSONBytes(body),
 		imageOutputSizes: collectOpenAIResponseImageOutputSizesFromJSONBytes(body),
 		searchCount:      countGrokNativeSearchCallsFromJSONBytes(body),
-		opaqueBindingIDs: cindyOpaqueBindingIDsFromResponsePayload(body),
 	}, terminalErr
 }
 
@@ -2091,7 +2083,7 @@ func (s *OpenAIGatewayService) handleSSEToJSON(resp *http.Response, c *gin.Conte
 			return nil, recoveryErr
 		}
 	}
-	body = s.rewriteBusinessSystemPromptSSEForRequest(c, body, BusinessSystemPromptProtocolResponses)
+	body = restoreSystemPromptEchoSSE(c, body)
 	bodyText := string(body)
 	terminalType, terminalPayload, terminalOK := extractOpenAISSETerminalEvent(bodyText)
 	if !terminalOK {
@@ -2214,7 +2206,6 @@ func (s *OpenAIGatewayService) handleSSEToJSON(resp *http.Response, c *gin.Conte
 		imageCount:       countOpenAIImageOutputsFromSSEBody(bodyText),
 		imageOutputSizes: collectOpenAIImageOutputSizesFromSSEBody(bodyText),
 		searchCount:      countGrokNativeSearchCallsFromSSEBody(bodyText),
-		opaqueBindingIDs: cindyOpaqueBindingIDsFromResponsePayload(body),
 	}, terminalErr
 }
 

@@ -22,9 +22,6 @@ type AccountJobLegacyOwner struct {
 	Generation int64
 }
 
-const CindyAccountViewPluginKey = "codexrip.cindy-provider"
-const CindyAccountViewID = "cindy-accounts"
-
 var (
 	ErrAccountJobPluginUnavailable     = errors.New("stored account job operation is unavailable")
 	ErrAccountViewInvalid              = ErrAccountJobInvalidMetadata
@@ -195,37 +192,13 @@ func accountJobPayloadView(payload json.RawMessage) (*extensionv1.AccountViewCon
 	return &view, nil
 }
 
-func isCindyCleanupAccountJob(kind string) bool {
-	return kind == AccountJobKindCindyConfirmedCleanup || kind == AccountJobKindCindyBannedCleanup
-}
-
 func accountViewJobTargets(kind string, payload json.RawMessage, targets []*int64) ([]int64, error) {
 	var ids []int64
-	switch kind {
-	case AccountJobKindDuplicateReview:
-		var request struct {
-			AccountIDs []int64 `json:"account_ids"`
-		}
-		if json.Unmarshal(payload, &request) != nil || len(request.AccountIDs) < 2 || len(request.AccountIDs) > AccountJobBatchSize {
+	for _, target := range targets {
+		if target == nil {
 			return nil, ErrAccountViewScope
 		}
-		ids = request.AccountIDs
-	case AccountJobKindDuplicateMerge:
-		var request struct {
-			SurvivorAccountID int64   `json:"survivor_account_id"`
-			LoserAccountIDs   []int64 `json:"loser_account_ids"`
-		}
-		if json.Unmarshal(payload, &request) != nil || request.SurvivorAccountID <= 0 || len(request.LoserAccountIDs) == 0 || len(request.LoserAccountIDs) >= AccountJobBatchSize || len(targets) != 1 || targets[0] == nil || *targets[0] != request.SurvivorAccountID {
-			return nil, ErrAccountViewScope
-		}
-		ids = append([]int64{request.SurvivorAccountID}, request.LoserAccountIDs...)
-	default:
-		for _, target := range targets {
-			if target == nil {
-				return nil, ErrAccountViewScope
-			}
-			ids = append(ids, *target)
-		}
+		ids = append(ids, *target)
 	}
 	for _, id := range ids {
 		if id <= 0 {
@@ -283,7 +256,7 @@ func ValidateRecordedAccountJobTargets(job *AccountJob, payload json.RawMessage,
 		return err
 	}
 	stored, _ := AccountJobViewExecution(job.Metadata)
-	if stored == nil || isCindyCleanupAccountJob(job.Kind) {
+	if stored == nil {
 		return nil
 	}
 	targets := make([]*int64, 0, len(items))

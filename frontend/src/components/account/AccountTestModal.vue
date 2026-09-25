@@ -9,11 +9,11 @@
       <!-- Account Info Card -->
       <div
         v-if="account"
-        class="flex items-center justify-between rounded-none border border-line bg-raised p-3"
+        class="flex items-center justify-between rounded-xl border border-line bg-raised p-3"
       >
         <div class="flex items-center gap-3">
           <div
-            class="flex h-10 w-10 items-center justify-center rounded-none bg-primary-500"
+            class="flex h-10 w-10 items-center justify-center rounded-lg bg-gradient-to-br from-primary-500 to-primary-600"
           >
             <Icon name="play" size="md" class="text-white" :stroke-width="2" />
           </div>
@@ -21,7 +21,7 @@
             <div class="font-semibold text-gray-900 dark:text-gray-100">{{ account.name }}</div>
             <div class="flex items-center gap-1.5 text-xs text-gray-500 dark:text-gray-400">
               <span
-                class="rounded-none border border-line px-1.5 py-0.5 font-mono text-[10px] font-medium uppercase tracking-wide text-gray-700 dark:text-dark-200"
+                class="rounded border border-line px-1.5 py-0.5 font-mono text-[10px] font-medium uppercase tracking-wide text-gray-700 dark:text-dark-200"
               >
                 {{ account.type }}
               </span>
@@ -31,10 +31,10 @@
         </div>
         <span
           :class="[
-            'rounded-none px-2.5 py-1 text-xs font-semibold',
+            'rounded-full px-2.5 py-1 text-xs font-semibold',
             account.status === 'active'
               ? 'bg-green-100 text-green-700 dark:bg-green-500/20 dark:text-green-400'
-              : 'bg-gray-100 text-gray-700 dark:bg-dark-700 dark:text-dark-300'
+              : 'bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-400'
           ]"
         >
           {{ account.status }}

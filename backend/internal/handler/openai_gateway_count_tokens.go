@@ -205,15 +205,6 @@ func (h *OpenAIGatewayHandler) CountTokens(c *gin.Context) {
 		zap.Any("group_id", apiKey.GroupID),
 	)
 
-	cindyIdentity, err := h.gatewayService.ClassifyCindyIdentityGroup(c.Request.Context(), apiKey.Group)
-	if err != nil {
-		h.anthropicErrorResponse(c, http.StatusServiceUnavailable, "api_error", "Unable to determine model availability")
-		return
-	}
-	if cindyIdentity {
-		h.anthropicErrorResponse(c, http.StatusNotFound, "not_found_error", "count_tokens endpoint is not supported by upstream")
-		return
-	}
 	if !allowOpenAICompatibleMessagesDispatch(c, apiKey) {
 		h.anthropicErrorResponse(c, http.StatusForbidden, "permission_error",
 			"This group does not allow /v1/messages dispatch")
@@ -284,7 +275,6 @@ func (h *OpenAIGatewayHandler) CountTokens(c *gin.Context) {
 	// count_tokens 不计费：显式豁免利润门，避免高倍率账号池被门排除后连
 	// token 计数都返回 no available accounts。
 	requestContext := service.WithOpenAIProfitControlSuppressed(c.Request.Context())
-	requestContext = service.WithOpenAICindyRequestedModel(requestContext, reqModel)
 	c.Request = c.Request.WithContext(requestContext)
 	sessionHash := h.gatewayService.GenerateSessionHash(c, body)
 	currentRoutingModel := routingModel

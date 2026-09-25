@@ -3,7 +3,8 @@
  * Handles AI platform account management for administrators
  */
 
-import { apiClient } from '../client'
+import { apiClient, buildApiUrl } from '../client'
+import { ADMIN_UI_REQUEST_HEADER } from '../adminUIRequest'
 import { accountViewClient } from './accountViewClient'
 import type { CapturedAccountView } from '@/composables/useAccountViewContext'
 import {
@@ -20,7 +21,6 @@ import type {
   AccountUsageInfo,
   WindowStats,
   AccountAvailableModel,
-  AccountEditContext,
   AccountUsageStatsResponse,
   TempUnschedulableStatus,
   AdminDataPayload,
@@ -62,9 +62,6 @@ export interface AccountListFilters {
   privacy_mode?: string
   lite?: string
   include_scheduler_score?: string
-  cindy_only?: string
-  cindy_balance_status?: 'insufficient'
-  cindy_health_status?: 'banned'
   sort_by?: string
   sort_order?: 'asc' | 'desc'
 }
@@ -337,6 +334,60 @@ export async function testAccount(id: number, view?: CapturedAccountView): Promi
     latency_ms?: number
   }>(`/admin/accounts/${id}/test`)
   return data
+}
+
+export interface BatchTestAccountEvent {
+  type: 'batch_start' | 'account_started' | 'account_result' | 'batch_complete'
+  account_id?: number
+  account_name?: string
+  platform?: string
+  model_id?: string
+  upstream_model?: string
+  status?: string
+  first_byte_latency_ms?: number
+  latency_ms?: number
+  error?: string
+  completed?: number
+  total?: number
+}
+
+/** An empty modelId lets the server choose each account's test model. */
+export async function batchTestAccounts(
+  accountIds: number[],
+  modelId: string,
+  onEvent: (event: BatchTestAccountEvent) => void,
+  signal?: AbortSignal
+): Promise<void> {
+  const response = await fetch(buildApiUrl('/admin/accounts/batch-test'), {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${localStorage.getItem('auth_token')}`,
+      'Content-Type': 'application/json',
+      [ADMIN_UI_REQUEST_HEADER]: '1'
+    },
+    credentials: 'include',
+    body: JSON.stringify({ account_ids: accountIds, model_id: modelId }),
+    signal
+  })
+  if (!response.ok || !response.body) {
+    let message = ''
+    try { message = ((await response.json()) as { message?: string })?.message || '' } catch { /* keep the status */ }
+    throw new Error(`Batch account test failed (${response.status})${message ? `: ${message}` : ''}`)
+  }
+  const reader = response.body.getReader()
+  const decoder = new TextDecoder()
+  let buffer = ''
+  while (true) {
+    const { value, done } = await reader.read()
+    buffer += decoder.decode(value || new Uint8Array(), { stream: !done })
+    for (const block of buffer.split('\n\n').slice(0, -1)) {
+      const line = block.split('\n').find(item => item.startsWith('data: '))
+      if (!line) continue
+      onEvent(JSON.parse(line.slice(6)) as BatchTestAccountEvent)
+    }
+    buffer = buffer.includes('\n\n') ? buffer.slice(buffer.lastIndexOf('\n\n') + 2) : buffer
+    if (done) break
+  }
 }
 
 /**
@@ -619,12 +670,6 @@ export async function getAvailableModels(id: number, view?: CapturedAccountView)
   return data
 }
 
-/** Stored identity selects the edit profile; no caller-selected provider or URL. */
-export async function getEditContext(id: number, signal?: AbortSignal, view?: CapturedAccountView): Promise<AccountEditContext> {
-  const { data } = await accountViewClient(view).get<AccountEditContext>(`/admin/accounts/${id}/edit-context`, { signal })
-  return data
-}
-
 export async function getAccountTestPlan(id: number, signal?: AbortSignal, view?: CapturedAccountView): Promise<import('@/types').AccountTestPlanView> {
   const { data } = await accountViewClient(view).get<import('@/types').AccountTestPlanView>(`/admin/accounts/${id}/models`, {
     params: { view: 'account-test-plan-v1' }, signal,
@@ -640,7 +685,8 @@ export interface SyncUpstreamModelsResult {
   capacity_rows?: ModelContextCapacityRow[]
 }
 
-export type ModelContextCapacitySource = 'custom' | 'official' | 'upstream' | 'default' | 'protected'
+/** Highest priority first; an empty source means the capacity is unknown. */
+export type ModelContextCapacitySource = 'custom' | 'upstream' | 'official' | 'registry' | ''
 
 export interface ModelContextCapacityValues {
   context_window?: number
@@ -655,6 +701,7 @@ export interface ModelContextCapacityRow {
   aliases: string[]
   editable: boolean
   upstream?: ModelContextCapacityValues & { observed_at: string }
+  registry?: ModelContextCapacityValues & { observed_at?: string }
   official?: ModelContextCapacityValues & {
     model_id: string
     aliases?: string[]
@@ -838,8 +885,8 @@ export async function exportData(options?: {
   } else if (options?.filters) {
     const exportFilterKeys: Array<keyof AccountListFilters> = [
       'platform', 'type', 'status', 'platforms', 'types', 'statuses', 'plans', 'proxies',
-      'folders', 'folder', 'tags', 'account_ids', 'group_id', 'privacy_mode', 'cindy_only',
-      'cindy_balance_status', 'cindy_health_status', 'search', 'sort_by', 'sort_order'
+      'folders', 'folder', 'tags', 'account_ids', 'group_id', 'privacy_mode',
+      'search', 'sort_by', 'sort_order'
     ]
     for (const key of exportFilterKeys) {
       const value = options.filters[key]
@@ -857,15 +904,13 @@ export async function importData(payload: {
   data: AdminDataPayload
   skip_default_group_bind?: boolean
   uniform_settings?: AdminDataImportUniformSettings
-  target_group_id?: number | null
 }): Promise<AccountJob> {
   const { data } = await apiClient.post<AccountJob>(
     '/admin/accounts/data',
     {
       data: payload.data,
       skip_default_group_bind: payload.skip_default_group_bind,
-      uniform_settings: payload.uniform_settings,
-      ...(payload.target_group_id == null ? {} : { target_group_id: payload.target_group_id })
+      uniform_settings: payload.uniform_settings
     },
     accountJobIdempotencyHeaders('account_import')
   )
@@ -883,7 +928,6 @@ export async function previewImportData(payload: {
   data: AdminDataPayload
   skip_default_group_bind?: boolean
   uniform_settings?: AdminDataImportUniformSettings
-  target_group_id?: number | null
 }): Promise<AccountImportPreview> {
   const { data } = await apiClient.post<AccountImportPreview>('/admin/accounts/data/preview', payload)
   return data
@@ -1044,59 +1088,6 @@ export async function batchDelete(accountIds: number[], view?: CapturedAccountVi
     { account_ids: accountIds },
     accountJobIdempotencyHeaders('account_batch_delete')
   )
-  return data
-}
-
-export interface CindyInsufficientDeletePreview {
-  count: number
-  fingerprint: string
-}
-
-export interface CindyDuplicateIdentityGroup {
-  identity_hash: string
-  proposed_owner_id: number
-  other_account_ids: number[]
-}
-
-export async function getCindyDuplicateIdentityInventory(): Promise<CindyDuplicateIdentityGroup[]> {
-  const { data } = await apiClient.get<CindyDuplicateIdentityGroup[]>(
-    '/admin/accounts/cindy/duplicate-identity-inventory'
-  )
-  return data
-}
-
-export async function previewCindyInsufficientDeletion(): Promise<CindyInsufficientDeletePreview> {
-  const { data } = await apiClient.get<CindyInsufficientDeletePreview>('/admin/accounts/cindy/insufficient-delete-preview')
-  return data
-}
-
-export async function previewCindyBannedDeletion(): Promise<CindyInsufficientDeletePreview> {
-  const { data } = await apiClient.get<CindyInsufficientDeletePreview>('/admin/accounts/cindy/banned-delete-preview')
-  return data
-}
-
-export async function deleteCindyBanned(preview: CindyInsufficientDeletePreview): Promise<AccountJob> {
-  const { data } = await apiClient.post<AccountJob>('/admin/accounts/cindy/delete-banned', {
-    expected_count: preview.count,
-    fingerprint: preview.fingerprint
-  }, accountJobIdempotencyHeaders('cindy_banned_cleanup'))
-  return data
-}
-
-export async function deleteCindyInsufficient(preview: CindyInsufficientDeletePreview): Promise<AccountJob> {
-  const { data } = await apiClient.post<AccountJob>(
-    '/admin/accounts/cindy/delete-insufficient',
-    {
-      expected_count: preview.count,
-      fingerprint: preview.fingerprint
-    },
-    accountJobIdempotencyHeaders('cindy_confirmed_cleanup')
-  )
-  return data
-}
-
-export async function clearCindyBalanceInsufficient(accountId: number): Promise<Account> {
-  const { data } = await apiClient.post<Account>(`/admin/accounts/${accountId}/cindy-balance/recover`)
   return data
 }
 
@@ -1413,6 +1404,7 @@ export const accountsAPI = {
   delete: deleteAccount,
   toggleStatus,
   testAccount,
+  batchTestAccounts,
   refreshCredentials,
   applyOAuthCredentials,
   getStats,
@@ -1428,7 +1420,6 @@ export const accountsAPI = {
   resetTempUnschedulable,
   setSchedulable,
   getAvailableModels,
-  getEditContext,
   getAccountTestPlan,
   getModelContextCapacities,
   previewModelContextCapacities,
@@ -1462,12 +1453,6 @@ export const accountsAPI = {
   createOpenAICodexPAT,
   getAntigravityDefaultModelMapping,
   batchDelete,
-  previewCindyInsufficientDeletion,
-  getCindyDuplicateIdentityInventory,
-  deleteCindyInsufficient,
-  previewCindyBannedDeletion,
-  deleteCindyBanned,
-  clearCindyBalanceInsufficient,
   batchClearError,
   batchRefresh,
   batchRefreshTier,
@@ -1529,7 +1514,6 @@ const viewArgumentCounts: Partial<Record<keyof typeof accountsAPI, number>> = {
   getBatchTodayStats: 1,
   setSchedulable: 2,
   getAvailableModels: 1,
-  getEditContext: 2,
   getAccountTestPlan: 2,
   getModelContextCapacities: 2,
   syncUpstreamModels: 1,

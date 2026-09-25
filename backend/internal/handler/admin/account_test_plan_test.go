@@ -5,11 +5,8 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
-	"strings"
 	"testing"
 
-	accounttools "github.com/Wei-Shaw/sub2api/internal/accounttools/policy"
-	cindy "github.com/Wei-Shaw/sub2api/internal/cindyprovider/catalog"
 	extensionv1 "github.com/Wei-Shaw/sub2api/internal/nativeapi"
 	"github.com/Wei-Shaw/sub2api/internal/service"
 	"github.com/Wei-Shaw/sub2api/internal/testextensions"
@@ -43,18 +40,6 @@ func (f *testPlanOperations) InvokeOperation(ctx context.Context, _, _ string, i
 	if f.rejectAll {
 		return extensionv1.Result{}, service.ErrExtensionOperationDisabled
 	}
-	if in.Operation == "test.batch" {
-		return accounttools.New().Invoke(ctx, in)
-	}
-	if in.Operation == "cindy.catalog" {
-		module := cindy.New()
-		if err := module.ApplyConfig(ctx, []byte(`{"catalog_enabled":true}`)); err != nil {
-			return extensionv1.Result{}, err
-		}
-		result, err := module.Invoke(ctx, in)
-		result.PluginID = 701
-		return result, err
-	}
 	return extensionv1.Result{}, service.ErrExtensionOperationDisabled
 }
 
@@ -63,10 +48,8 @@ func TestAccountTestPlanOrdinaryAndLegacyKeepCoreWithoutPlugins(t *testing.T) {
 	for _, tc := range []struct {
 		name    string
 		baseURL string
-		legacy  bool
 	}{
-		{"ordinary", "https://api.openai.com", false},
-		{"legacy_projection", "https://api.laxarouter.ai", true},
+		{"ordinary", "https://api.openai.com"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			fixture := &testPlanOperations{rejectAll: true}
@@ -74,8 +57,6 @@ func TestAccountTestPlanOrdinaryAndLegacyKeepCoreWithoutPlugins(t *testing.T) {
 			t.Cleanup(testextensions.Install)
 			account := &service.Account{ID: 42, Platform: service.PlatformOpenAI, Type: service.AccountTypeAPIKey,
 				Credentials: map[string]any{"base_url": tc.baseURL, "model_mapping": map[string]any{"plain-id": "plain-wire"}}}
-			require.False(t, service.IsCindyAPIKeyAccount(account.Platform, account.Type, account.Credentials))
-			require.Equal(t, tc.legacy, service.IsLegacyCindyAPIKeyAccount(account.Platform, account.Type, account.Credentials))
 			// Only local mapping metadata is available: no test/discovery client,
 			// model IO route, or live extension is installed in this fixture.
 			h := &AccountHandler{adminService: testPlanAdmin{account: account}}
@@ -111,77 +92,9 @@ func TestAccountTestPlanOrdinaryAndLegacyKeepCoreWithoutPlugins(t *testing.T) {
 			require.Equal(t, "plain-id", plan.ModeViews["default"].DefaultModelID)
 			require.Empty(t, plan.PolicyStamp)
 			require.Equal(t, oldCalls, fixture.calls, "the view must not add calls or change optional metadata queries relative to the same legacy GET")
-			if !tc.legacy {
-				require.Empty(t, fixture.calls, "ordinary OpenAI has no Cindy or account-tools dependency")
-				return
-			}
-			// Legacy reasoning metadata already makes best-effort compatibility
-			// queries. They may fail without blocking either GET. Requiring zero
-			// such calls would wrongly change the existing runtime boundary.
-			require.NotEmpty(t, oldCalls)
-			for _, invocation := range fixture.calls {
-				require.Zero(t, invocation.AccountID, "only the unchanged optional metadata path is allowed")
-				switch invocation.Operation {
-				case "cindy.catalog":
-					var query extensionv1.CindyCatalogQuery
-					require.NoError(t, json.Unmarshal(invocation.Payload, &query))
-					require.NotEqual(t, extensionv1.CindyAccountTestPlanMethodV1, query.Method)
-					require.Contains(t, []string{"CindyCompatibilityMappedUpstreamModel", "CindyCompatibilityRoutingTarget"}, query.Method)
-				case "image.features":
-					// Existing compatibility metadata input, not a test invocation.
-				default:
-					t.Fatalf("unexpected operation (including account-tools or model IO): %s", invocation.Operation)
-				}
-			}
+			require.Empty(t, fixture.calls, "ordinary OpenAI has no account-tools dependency")
 		})
 	}
-}
-
-func TestAccountTestPlanSingleAndBatchUseSameScopedCindyView(t *testing.T) {
-	fixture := &testPlanOperations{}
-	service.ConfigureNativePolicyOperations(fixture)
-	t.Cleanup(testextensions.Install)
-	account := &service.Account{ID: 88, Platform: service.PlatformCindy, Type: service.AccountTypeAPIKey,
-		Credentials: map[string]any{"base_url": "https://api.laxarouter.ai"}}
-	h := &AccountHandler{adminService: testPlanAdmin{account: account}}
-	router := gin.New()
-	router.GET("/accounts/:id/models", h.GetAvailableModels)
-	router.POST("/models", h.BatchTestModels)
-	ctx := context.WithValue(context.Background(), testPlanOuterKey{}, "outer-resource-context")
-	out := httptest.NewRecorder()
-	router.ServeHTTP(out, httptest.NewRequest(http.MethodGet, "/accounts/88/models?view=account-test-plan-v1", nil).WithContext(ctx))
-	require.Equal(t, http.StatusOK, out.Code, out.Body.String())
-	var single struct {
-		Data accountTestPlanView `json:"data"`
-	}
-	require.NoError(t, json.Unmarshal(out.Body.Bytes(), &single))
-	out = httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodPost, "/models?view=account-test-plan-v1", strings.NewReader(`{"account_ids":[88]}`)).WithContext(ctx)
-	req.Header.Set("Content-Type", "application/json")
-	router.ServeHTTP(out, req)
-	require.Equal(t, http.StatusOK, out.Code, out.Body.String())
-	var batch struct {
-		Data struct {
-			Items []batchTestModelRow `json:"items"`
-		} `json:"data"`
-	}
-	require.NoError(t, json.Unmarshal(out.Body.Bytes(), &batch))
-	require.Len(t, batch.Data.Items, 1)
-	require.Empty(t, batch.Data.Items[0].ErrorCode)
-	require.Equal(t, &single.Data, batch.Data.Items[0].TestPlan)
-	catalogCalls := 0
-	for index, invocation := range fixture.calls {
-		if invocation.Operation != "cindy.catalog" {
-			continue
-		}
-		catalogCalls++
-		require.Equal(t, account.ID, invocation.AccountID)
-		require.Equal(t, "outer-resource-context", fixture.contexts[index])
-		var query extensionv1.CindyCatalogQuery
-		require.NoError(t, json.Unmarshal(invocation.Payload, &query))
-		require.Equal(t, extensionv1.CindyAccountTestPlanMethodV1, query.Method)
-	}
-	require.Equal(t, 2, catalogCalls, "one companion query per HTTP view, never a split catalog/default read")
 }
 
 func TestAccountTestPlanCoreSelectionSmallMatrix(t *testing.T) {
@@ -198,9 +111,10 @@ func TestAccountTestPlanCoreSelectionSmallMatrix(t *testing.T) {
 		want     string
 		order    []string
 	}{
-		{service.PlatformGemini, models("unknown-a", "gemini-2.5-flash-image", "gemini-3.1-flash-image", "unknown-b"), "gemini-3.1-flash-image", []string{"gemini-3.1-flash-image", "gemini-2.5-flash-image", "unknown-a", "unknown-b"}},
+		{service.PlatformGemini, models("unknown-a", "gemini-2.5-flash-image", "gemini-3.1-flash-image", "unknown-b"), "unknown-a", []string{"gemini-3.1-flash-image", "gemini-2.5-flash-image", "unknown-a", "unknown-b"}},
+		{service.PlatformGemini, models("gemini-2.5-pro", "gemini-2.0-flash"), "gemini-2.0-flash", []string{"gemini-2.5-pro", "gemini-2.0-flash"}},
 		{service.PlatformAntigravity, models("sonnet-custom", "gemini-3.1-flash-image"), "sonnet-custom", []string{"gemini-3.1-flash-image", "sonnet-custom"}},
-		{service.PlatformOpenAI, models("first", "sonnet-custom"), "sonnet-custom", []string{"first", "sonnet-custom"}},
+		{service.PlatformOpenAI, models("codex-auto-review", "first", "sonnet-custom"), "first", []string{"codex-auto-review", "first", "sonnet-custom"}},
 	} {
 		plan, err := ordinaryAccountTestPlan(&service.Account{ID: 42, Platform: tc.platform}, tc.ids)
 		require.NoError(t, err)
@@ -209,7 +123,7 @@ func TestAccountTestPlanCoreSelectionSmallMatrix(t *testing.T) {
 	}
 	plan, err := ordinaryAccountTestPlan(&service.Account{ID: 42, Platform: service.PlatformGrok}, models("grok-4.3", "grok", "grok-4.5-custom", "grok-imagine", "grok-imagine-video"))
 	require.NoError(t, err)
-	require.Equal(t, "grok-4.5-custom", plan.ModeViews["text"].DefaultModelID, "preserve current initial preference, not an upstream UX rollback")
+	require.Equal(t, "grok-4.3", plan.ModeViews["text"].DefaultModelID, "same automatic choice as batch tests: grok-4.5 when listed, else the first text model")
 	require.Equal(t, []string{"grok-imagine"}, plan.ModeViews["image"].ModelIDs)
 	require.Equal(t, []string{"grok-imagine-video"}, plan.ModeViews["video"].ModelIDs)
 	for _, mode := range []string{"search", "tts", "stt", "realtime"} {

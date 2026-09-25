@@ -37,10 +37,8 @@ func continuationRepairBuildFixture(ctx context.Context, cfg *config.Config, sou
 	if cfg == nil || upstream == nil || source.Account.ID != 16050 || source.Group.ID != 35 || source.UserID != 920000016050 || source.FastPolicy == nil {
 		return nil, errors.New("invalid_fixture_source")
 	}
-	// The captured publication contains prompt hashes, not the candidate file
-	// tree required by Registry.Reload. Never synthesize a hybrid publication or
-	// switch an enabled source policy off to make this narrow test proceed.
-	if source.BusinessPrompt.Enabled || source.BusinessPrompt.CompactEnabled || source.BusinessPrompt.ExposeServerPrompt {
+	// Never switch an enabled source policy off to make this narrow test proceed.
+	if source.SystemPrompts != nil && source.SystemPrompts.Enabled {
 		return nil, errors.New("unsupported_source_policy")
 	}
 	encoded, err := json.Marshal(source)
@@ -94,14 +92,6 @@ func continuationRepairBuildFixture(ctx context.Context, cfg *config.Config, sou
 	gateway := service.NewOpenAIGatewayService(account, usage, &continuationRepairBillingStore{users: users, applied: make(map[string]string)}, users,
 		nil, nil, cache, cfg, nil, concurrency, service.NewBillingService(cfg, nil), rateLimits, billing, upstream,
 		service.NewDeferredService(account, nil, time.Minute), nil, nil, nil, channels, nil, settingService, nil)
-	prompt := service.NewBusinessSystemPromptService(&continuationRepairPromptStore{snapshot: frozen.BusinessPrompt}, nil)
-	prompt.SetBusinessSystemPromptSource(nil)
-	if err := prompt.Reload(ctx); err != nil {
-		billing.Stop()
-		gateway.CloseOpenAIWSPool()
-		return nil, errors.New("invalid_frozen_prompt")
-	}
-	gateway.SetBusinessSystemPromptService(prompt)
 	ops := service.NewOpsService(nil, settings, cfg, account, users, concurrency, nil, gateway, nil, nil, nil)
 	keys := service.NewAPIKeyService(nil, users, groups, nil, nil, nil, cfg)
 	h := NewOpenAIGatewayHandler(gateway, concurrency, billing, keys, nil, nil, nil, ops, cfg)
@@ -173,15 +163,6 @@ func (*continuationRepairSettingStore) SetMultiple(context.Context, map[string]s
 }
 func (*continuationRepairSettingStore) Delete(context.Context, string) error {
 	return errors.New("diagnostic_read_only")
-}
-
-type continuationRepairPromptStore struct {
-	service.BusinessSystemPromptStore
-	snapshot service.BusinessSystemPromptSnapshot
-}
-
-func (s *continuationRepairPromptStore) LoadBusinessSystemPrompt(context.Context) (service.BusinessSystemPromptSnapshot, error) {
-	return s.snapshot, nil
 }
 
 type continuationRepairGroupStore struct {

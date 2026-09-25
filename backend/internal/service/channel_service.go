@@ -24,10 +24,6 @@ var (
 		"GROUP_ALREADY_IN_CHANNEL",
 		"one or more groups already belong to another channel",
 	)
-	ErrManagedCindyChannelImmutable = infraerrors.Conflict(
-		"MANAGED_CINDY_CHANNEL_IMMUTABLE",
-		"the managed Cindy catalog channel is maintained by the backend",
-	)
 )
 
 // ChannelRepository 渠道数据访问接口
@@ -341,7 +337,6 @@ func populateChannelCache(channels []Channel, groupPlatforms map[int64]string) *
 	cache.loadedAt = time.Now()
 
 	for i := range channels {
-		hydrateManagedCindyCatalogChannel(&channels[i])
 		channels[i].normalizeBillingModelSource()
 		ch := &channels[i]
 		cache.byID[ch.ID] = ch
@@ -634,9 +629,6 @@ func checkRestricted(lk *channelLookup, groupID int64, model string) bool {
 	if !lk.channel.RestrictModels {
 		return false
 	}
-	if isManagedCindyCatalogChannel(lk.channel) {
-		return !cindyManagedChannelModelAllowed(model)
-	}
 	modelLower := strings.ToLower(model)
 	// 使用与查找定价相同的跨平台逻辑
 	if lookupPricingAcrossPlatforms(lk.cache, groupID, lk.platform, modelLower) != nil {
@@ -846,12 +838,6 @@ func formatMaxTokens(max *int) string {
 
 // Create 创建渠道
 func (s *ChannelService) Create(ctx context.Context, input *CreateChannelInput) (*Channel, error) {
-	if cindyManagedChannelNameReserved(input.Name) || hasCindyManagedChannelMarker(input.FeaturesConfig) {
-		return nil, ErrManagedCindyChannelImmutable
-	}
-	if err := s.rejectCindyGroupsOnOrdinaryChannel(ctx, input.GroupIDs); err != nil {
-		return nil, err
-	}
 	exists, err := s.repo.ExistsByName(ctx, input.Name)
 	if err != nil {
 		return nil, fmt.Errorf("check channel exists: %w", err)
@@ -917,14 +903,6 @@ func (s *ChannelService) Update(ctx context.Context, id int64, input *UpdateChan
 	if err != nil {
 		return nil, fmt.Errorf("get channel: %w", err)
 	}
-	if isManagedCindyCatalogChannel(channel) || cindyManagedChannelNameReserved(input.Name) || hasCindyManagedChannelMarker(input.FeaturesConfig) {
-		return nil, ErrManagedCindyChannelImmutable
-	}
-	if input.GroupIDs != nil {
-		if err := s.rejectCindyGroupsOnOrdinaryChannel(ctx, *input.GroupIDs); err != nil {
-			return nil, err
-		}
-	}
 
 	if err := s.applyUpdateInput(ctx, channel, input); err != nil {
 		return nil, err
@@ -952,22 +930,6 @@ func (s *ChannelService) Update(ctx context.Context, id int64, input *UpdateChan
 	}
 	updated.normalizeBillingModelSource()
 	return updated, nil
-}
-
-func (s *ChannelService) rejectCindyGroupsOnOrdinaryChannel(ctx context.Context, groupIDs []int64) error {
-	if s == nil || s.groupRepo == nil {
-		return nil
-	}
-	for _, groupID := range groupIDs {
-		group, err := s.groupRepo.GetByID(ctx, groupID)
-		if err != nil {
-			return err
-		}
-		if group.Platform == PlatformCindy || group.EffectiveProviderProfile() == ProviderProfileCindyLaxaV1 {
-			return ErrManagedCindyChannelImmutable
-		}
-	}
-	return nil
 }
 
 // applyUpdateInput 将更新请求的字段应用到渠道实体上。

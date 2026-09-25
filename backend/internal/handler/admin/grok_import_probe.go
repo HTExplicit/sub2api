@@ -211,7 +211,6 @@ func ProvideAccountHandler(
 	rpmCache service.RPMCache,
 	tokenCacheInvalidator service.TokenCacheInvalidator,
 	grokQuotaService *service.GrokQuotaService,
-	cindyJobMutations service.AccountJobCindyMutationRunner,
 ) *AccountHandler {
 	handler := NewAccountHandler(
 		adminService,
@@ -230,7 +229,6 @@ func ProvideAccountHandler(
 		tokenCacheInvalidator,
 	)
 	handler.grokImportProber = grokQuotaService
-	handler.cindyJobMutations = cindyJobMutations
 	handler.cfg = cfg
 	return handler
 }

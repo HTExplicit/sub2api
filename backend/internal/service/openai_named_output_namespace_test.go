@@ -11,8 +11,6 @@ import (
 
 func TestOpenAIResponsesStandaloneOutputNamespacePolicy(t *testing.T) {
 	ordinary := newOpenAIRejectedFieldTestAccount()
-	cindy := newOpenAIRejectedFieldTestAccount()
-	cindy.Credentials["base_url"] = "https://api.laxarouter.ai"
 	for _, tt := range []struct {
 		name    string
 		account *Account
@@ -22,7 +20,6 @@ func TestOpenAIResponsesStandaloneOutputNamespacePolicy(t *testing.T) {
 		{"ordinary_native", ordinary, false, true},
 		{"ordinary_compact", ordinary, true, false},
 		{"oauth", newOpenAIOAuthNamespaceTestAccount(), false, false},
-		{"legacy_cindy", cindy, false, false},
 		{"no_account", nil, false, false},
 	} {
 		t.Run(tt.name, func(t *testing.T) {

@@ -55,8 +55,8 @@ func TestSnapshotOpenAIUsageMetadataOwnsValuesBeforeAsyncDispatch(t *testing.T) 
 	accountRate := 1.25
 	parentID := int64(4)
 	dailyWindow := time.Unix(20, 0)
-	apiKey := &service.APIKey{ID: 7, GroupID: &groupID, User: &service.User{ID: 8}, Group: &service.Group{ID: 9, Platform: service.PlatformCindy}}
-	account := &service.Account{ID: 10, Platform: service.PlatformCindy, ParentAccountID: &parentID, RateMultiplier: &accountRate, Credentials: map[string]any{"api_key": "secret"}}
+	apiKey := &service.APIKey{ID: 7, GroupID: &groupID, User: &service.User{ID: 8}, Group: &service.Group{ID: 9, Platform: service.PlatformOpenAI}}
+	account := &service.Account{ID: 10, Platform: service.PlatformOpenAI, ParentAccountID: &parentID, RateMultiplier: &accountRate, Credentials: map[string]any{"api_key": "secret"}}
 	subscription := &service.UserSubscription{ID: 12, DailyWindowStart: &dailyWindow}
 	result := &service.OpenAIForwardResult{UpstreamModel: "gpt-5.6-sol"}
 	mapping := service.ChannelMappingResult{ChannelID: 11, Mapped: true, MappedModel: "gpt-5.6-sol", BillingModelSource: service.BillingModelSourceChannelMapped}

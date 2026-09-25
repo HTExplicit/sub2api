@@ -84,7 +84,7 @@ describe('AccountTasksView', () => {
     await wrapper.get('button.btn-secondary').trigger('click')
     await flushPromises()
     expect(api.list).toHaveBeenCalledTimes(2)
-    expect(wrapper.find('option[value="cindy_banned_cleanup"]').exists()).toBe(true)
+    expect(wrapper.find('option[value="account_duplicate_merge"]').exists()).toBe(true)
     await wrapper.get('[data-test="task-open-41"]').trigger('click')
     await flushPromises()
 

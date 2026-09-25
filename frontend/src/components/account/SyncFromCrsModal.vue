@@ -17,7 +17,7 @@
         {{ t('admin.accounts.syncFromCrsDesc') }}
       </div>
       <div
-        class="rounded-none bg-gray-50 p-3 text-xs text-gray-500 dark:bg-dark-700 dark:text-dark-300"
+        class="rounded-lg bg-gray-50 p-3 text-xs text-gray-500 dark:bg-dark-700/60 dark:text-dark-400"
       >
         {{ t('admin.accounts.crsUpdateBehaviorNote') }}
       </div>
@@ -74,7 +74,7 @@
       <!-- Existing accounts (read-only info) -->
       <div
         v-if="previewResult.existing_accounts.length"
-        class="rounded-none bg-gray-50 p-3 dark:bg-dark-700"
+        class="rounded-lg bg-gray-50 p-3 dark:bg-dark-700/60"
       >
         <div class="mb-2 text-sm font-medium text-gray-700 dark:text-dark-300">
           {{ t('admin.accounts.crsExistingAccounts') }}
@@ -120,7 +120,7 @@
           <label
             v-for="acc in previewResult.new_accounts"
             :key="acc.crs_account_id"
-            class="flex cursor-pointer items-center gap-2 rounded-none px-2 py-1.5 hover:bg-gray-50 dark:hover:bg-dark-700"
+            class="flex cursor-pointer items-center gap-2 rounded px-2 py-1.5 hover:bg-gray-50 dark:hover:bg-dark-700/40"
           >
             <input
               type="checkbox"
@@ -142,7 +142,7 @@
       <!-- Sync options summary -->
       <div class="flex items-center gap-2 text-xs text-gray-500 dark:text-dark-400">
         <span>{{ t('admin.accounts.syncProxies') }}:</span>
-        <span :class="form.sync_proxies ? 'text-green-600 dark:text-green-400' : 'text-muted'">
+        <span :class="form.sync_proxies ? 'text-green-600 dark:text-green-400' : 'text-gray-400 dark:text-dark-500'">
           {{ form.sync_proxies ? t('common.yes') : t('common.no') }}
         </span>
       </div>
@@ -150,7 +150,7 @@
       <!-- No new accounts -->
       <div
         v-if="!previewResult.new_accounts.length"
-        class="rounded-none bg-gray-50 p-4 text-center text-sm text-gray-500 dark:bg-dark-700 dark:text-dark-300"
+        class="rounded-lg bg-gray-50 p-4 text-center text-sm text-gray-500 dark:bg-dark-700/60 dark:text-dark-400"
       >
         {{ t('admin.accounts.crsNoNewAccounts') }}
         <span v-if="previewResult.existing_accounts.length">

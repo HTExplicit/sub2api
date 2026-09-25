@@ -6,21 +6,21 @@ import (
 	extensionv1 "github.com/Wei-Shaw/sub2api/internal/nativeapi"
 )
 
-// SettingKeyImageToolsConfig stores the Image Studio and Responses image bridge
-// switches formerly kept in the image-tools plugin configuration.
+// SettingKeyImageToolsConfig stores the Image Studio switch formerly kept in
+// the image-tools plugin configuration. A missing switch is off.
 const SettingKeyImageToolsConfig = "image_tools_config"
 
-// EffectiveImageToolsConfig returns the switches this process applies.
+// EffectiveImageToolsConfig returns the switch this process applies.
 func EffectiveImageToolsConfig() extensionv1.ImageToolsConfig {
 	config, _ := currentImageToolsConfig()
 	return config
 }
 
-// LoadImageToolsConfig installs the stored switches for this process at
-// startup. Without a stored value the deploy-time rollout flags stay in force.
+// LoadImageToolsConfig installs the stored switch for this process at startup.
+// Without a stored value the deploy-time flag stays in force.
 func (s *SettingService) LoadImageToolsConfig(ctx context.Context) error {
 	var stored extensionv1.ImageToolsConfig
-	found, err := s.readNativeSwitchSetting(ctx, SettingKeyImageToolsConfig, &stored, "studio_enabled", "responses_image_enabled")
+	found, err := s.readNativeSwitchSetting(ctx, SettingKeyImageToolsConfig, &stored, "studio_enabled")
 	if err != nil {
 		return err
 	}
@@ -30,7 +30,7 @@ func (s *SettingService) LoadImageToolsConfig(ctx context.Context) error {
 	return nil
 }
 
-// UpdateImageToolsConfig persists the switches and applies them to this process,
+// UpdateImageToolsConfig persists the switch and applies it to this process,
 // starting the Image Studio runtime when it is switched on.
 func (s *SettingService) UpdateImageToolsConfig(ctx context.Context, config extensionv1.ImageToolsConfig) error {
 	if err := s.writeJSONSetting(ctx, SettingKeyImageToolsConfig, config); err != nil {

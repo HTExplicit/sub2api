@@ -22,15 +22,12 @@ func (r *nativeSwitchReadRepository) GetValue(context.Context, string) (string, 
 
 func TestNativeSettingLoadFailureNeverReenablesSavedSwitches(t *testing.T) {
 	oldImage := EffectiveImageToolsConfig()
-	oldCindy := EffectiveCindyProviderConfig()
 	oldObservability := EffectiveAdminObservabilityConfig()
 	t.Cleanup(func() {
 		ConfigureImageTools(&oldImage)
-		ConfigureCindyProvider(&oldCindy)
 		ConfigureAdminObservability(&oldObservability)
 	})
 	ConfigureImageTools(&extensionv1.ImageToolsConfig{})
-	ConfigureCindyProvider(&extensionv1.CindyProviderConfig{})
 	ConfigureAdminObservability(&extensionv1.AdminObservabilityConfig{})
 	for _, test := range []struct {
 		name  string
@@ -44,17 +41,16 @@ func TestNativeSettingLoadFailureNeverReenablesSavedSwitches(t *testing.T) {
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			svc := NewSettingService(&nativeSwitchReadRepository{value: test.value, err: test.err}, nil)
-			for _, load := range []func(context.Context) error{svc.LoadImageToolsConfig, svc.LoadCindyProviderConfig, svc.LoadAdminObservabilityConfig} {
+			for _, load := range []func(context.Context) error{svc.LoadImageToolsConfig, svc.LoadAdminObservabilityConfig} {
 				require.Error(t, load(context.Background()))
 			}
 			require.Equal(t, extensionv1.ImageToolsConfig{}, EffectiveImageToolsConfig())
-			require.Equal(t, extensionv1.CindyProviderConfig{}, EffectiveCindyProviderConfig())
 			require.Equal(t, extensionv1.AdminObservabilityConfig{}, EffectiveAdminObservabilityConfig())
 		})
 	}
 	svc := NewSettingService(&nativeSwitchReadRepository{err: ErrSettingNotFound}, nil)
 	var value map[string]json.RawMessage
-	found, err := svc.readNativeSwitchSetting(context.Background(), SettingKeyImageToolsConfig, &value, "studio_enabled", "responses_image_enabled")
+	found, err := svc.readNativeSwitchSetting(context.Background(), SettingKeyImageToolsConfig, &value, "studio_enabled")
 	require.NoError(t, err)
 	require.False(t, found)
 }

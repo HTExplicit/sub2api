@@ -82,44 +82,6 @@ func TestOpenAISameAccountRetryLimit_RequiresPoolModeAndExplicitStatus(t *testin
 	))
 }
 
-func TestOpenAISameAccountRetryLimit_CindyBudget429AlwaysSwitchesAccount(t *testing.T) {
-	account := openAIRetryTestAccount(10)
-	account.Platform = service.PlatformCindy
-	account.WirePlatform = service.WirePlatformOpenAI
-	account.ProviderProfile = service.ProviderProfileCindyLaxaV1
-	account.Credentials["base_url"] = "https://api.laxarouter.ai"
-	account.Credentials["api_key"] = "test-key"
-
-	require.Zero(t, openAISameAccountRetryLimit(
-		account,
-		&service.UpstreamFailoverError{
-			StatusCode:             http.StatusTooManyRequests,
-			ResponseBody:           []byte(`{"error":{"message":"ExceededBudget: User=aigw:v1:cindy:fixture-account over budget. Spend=3.0533505, Budget=3.0","type":"budget_exceeded","param":null,"code":"429"}}`),
-			RetryableOnSameAccount: true,
-		},
-		true,
-	))
-	require.Zero(t, openAISameAccountRetryLimit(
-		account,
-		&service.UpstreamFailoverError{
-			StatusCode:               http.StatusTooManyRequests,
-			ResponseBody:             []byte(`{"error":{"type":"rate_limit_error"}}`),
-			RetryableOnSameAccount:   true,
-			CindyBalanceInsufficient: true,
-		},
-		true,
-	), "sanitized in-band budget errors must still switch accounts")
-	require.Equal(t, 10, openAISameAccountRetryLimit(
-		account,
-		&service.UpstreamFailoverError{
-			StatusCode:             http.StatusTooManyRequests,
-			ResponseBody:           []byte(`{"error":{"type":"rate_limit_error"}}`),
-			RetryableOnSameAccount: true,
-		},
-		true,
-	))
-}
-
 func TestOpenAISameAccountRetryLimit_OAuthKeepsBoundedTransientRetry(t *testing.T) {
 	account := &service.Account{ID: 41003, Platform: service.PlatformOpenAI, Type: service.AccountTypeOAuth}
 	require.Equal(t, 1, openAISameAccountRetryLimit(

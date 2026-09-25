@@ -95,34 +95,6 @@ func (_c *AccountCreate) SetPlatform(v string) *AccountCreate {
 	return _c
 }
 
-// SetWirePlatform sets the "wire_platform" field.
-func (_c *AccountCreate) SetWirePlatform(v string) *AccountCreate {
-	_c.mutation.SetWirePlatform(v)
-	return _c
-}
-
-// SetNillableWirePlatform sets the "wire_platform" field if the given value is not nil.
-func (_c *AccountCreate) SetNillableWirePlatform(v *string) *AccountCreate {
-	if v != nil {
-		_c.SetWirePlatform(*v)
-	}
-	return _c
-}
-
-// SetProviderProfile sets the "provider_profile" field.
-func (_c *AccountCreate) SetProviderProfile(v string) *AccountCreate {
-	_c.mutation.SetProviderProfile(v)
-	return _c
-}
-
-// SetNillableProviderProfile sets the "provider_profile" field if the given value is not nil.
-func (_c *AccountCreate) SetNillableProviderProfile(v *string) *AccountCreate {
-	if v != nil {
-		_c.SetProviderProfile(*v)
-	}
-	return _c
-}
-
 // SetType sets the "type" field.
 func (_c *AccountCreate) SetType(v string) *AccountCreate {
 	_c.mutation.SetType(v)
@@ -319,48 +291,6 @@ func (_c *AccountCreate) SetSchedulable(v bool) *AccountCreate {
 func (_c *AccountCreate) SetNillableSchedulable(v *bool) *AccountCreate {
 	if v != nil {
 		_c.SetSchedulable(*v)
-	}
-	return _c
-}
-
-// SetCindyBalanceInsufficientAt sets the "cindy_balance_insufficient_at" field.
-func (_c *AccountCreate) SetCindyBalanceInsufficientAt(v time.Time) *AccountCreate {
-	_c.mutation.SetCindyBalanceInsufficientAt(v)
-	return _c
-}
-
-// SetNillableCindyBalanceInsufficientAt sets the "cindy_balance_insufficient_at" field if the given value is not nil.
-func (_c *AccountCreate) SetNillableCindyBalanceInsufficientAt(v *time.Time) *AccountCreate {
-	if v != nil {
-		_c.SetCindyBalanceInsufficientAt(*v)
-	}
-	return _c
-}
-
-// SetCindyBannedAt sets the "cindy_banned_at" field.
-func (_c *AccountCreate) SetCindyBannedAt(v time.Time) *AccountCreate {
-	_c.mutation.SetCindyBannedAt(v)
-	return _c
-}
-
-// SetNillableCindyBannedAt sets the "cindy_banned_at" field if the given value is not nil.
-func (_c *AccountCreate) SetNillableCindyBannedAt(v *time.Time) *AccountCreate {
-	if v != nil {
-		_c.SetCindyBannedAt(*v)
-	}
-	return _c
-}
-
-// SetCindyCredentialGeneration sets the "cindy_credential_generation" field.
-func (_c *AccountCreate) SetCindyCredentialGeneration(v int64) *AccountCreate {
-	_c.mutation.SetCindyCredentialGeneration(v)
-	return _c
-}
-
-// SetNillableCindyCredentialGeneration sets the "cindy_credential_generation" field if the given value is not nil.
-func (_c *AccountCreate) SetNillableCindyCredentialGeneration(v *int64) *AccountCreate {
-	if v != nil {
-		_c.SetCindyCredentialGeneration(*v)
 	}
 	return _c
 }
@@ -645,14 +575,6 @@ func (_c *AccountCreate) defaults() error {
 		v := account.DefaultUpdatedAt()
 		_c.mutation.SetUpdatedAt(v)
 	}
-	if _, ok := _c.mutation.WirePlatform(); !ok {
-		v := account.DefaultWirePlatform
-		_c.mutation.SetWirePlatform(v)
-	}
-	if _, ok := _c.mutation.ProviderProfile(); !ok {
-		v := account.DefaultProviderProfile
-		_c.mutation.SetProviderProfile(v)
-	}
 	if _, ok := _c.mutation.Credentials(); !ok {
 		if account.DefaultCredentials == nil {
 			return fmt.Errorf("ent: uninitialized account.DefaultCredentials (forgotten import ent/runtime?)")
@@ -691,10 +613,6 @@ func (_c *AccountCreate) defaults() error {
 		v := account.DefaultSchedulable
 		_c.mutation.SetSchedulable(v)
 	}
-	if _, ok := _c.mutation.CindyCredentialGeneration(); !ok {
-		v := account.DefaultCindyCredentialGeneration
-		_c.mutation.SetCindyCredentialGeneration(v)
-	}
 	if _, ok := _c.mutation.QuotaDimension(); !ok {
 		v := account.DefaultQuotaDimension
 		_c.mutation.SetQuotaDimension(v)
@@ -724,22 +642,6 @@ func (_c *AccountCreate) check() error {
 	if v, ok := _c.mutation.Platform(); ok {
 		if err := account.PlatformValidator(v); err != nil {
 			return &ValidationError{Name: "platform", err: fmt.Errorf(`ent: validator failed for field "Account.platform": %w`, err)}
-		}
-	}
-	if _, ok := _c.mutation.WirePlatform(); !ok {
-		return &ValidationError{Name: "wire_platform", err: errors.New(`ent: missing required field "Account.wire_platform"`)}
-	}
-	if v, ok := _c.mutation.WirePlatform(); ok {
-		if err := account.WirePlatformValidator(v); err != nil {
-			return &ValidationError{Name: "wire_platform", err: fmt.Errorf(`ent: validator failed for field "Account.wire_platform": %w`, err)}
-		}
-	}
-	if _, ok := _c.mutation.ProviderProfile(); !ok {
-		return &ValidationError{Name: "provider_profile", err: errors.New(`ent: missing required field "Account.provider_profile"`)}
-	}
-	if v, ok := _c.mutation.ProviderProfile(); ok {
-		if err := account.ProviderProfileValidator(v); err != nil {
-			return &ValidationError{Name: "provider_profile", err: fmt.Errorf(`ent: validator failed for field "Account.provider_profile": %w`, err)}
 		}
 	}
 	if _, ok := _c.mutation.GetType(); !ok {
@@ -778,14 +680,6 @@ func (_c *AccountCreate) check() error {
 	}
 	if _, ok := _c.mutation.Schedulable(); !ok {
 		return &ValidationError{Name: "schedulable", err: errors.New(`ent: missing required field "Account.schedulable"`)}
-	}
-	if _, ok := _c.mutation.CindyCredentialGeneration(); !ok {
-		return &ValidationError{Name: "cindy_credential_generation", err: errors.New(`ent: missing required field "Account.cindy_credential_generation"`)}
-	}
-	if v, ok := _c.mutation.CindyCredentialGeneration(); ok {
-		if err := account.CindyCredentialGenerationValidator(v); err != nil {
-			return &ValidationError{Name: "cindy_credential_generation", err: fmt.Errorf(`ent: validator failed for field "Account.cindy_credential_generation": %w`, err)}
-		}
 	}
 	if v, ok := _c.mutation.SessionWindowStatus(); ok {
 		if err := account.SessionWindowStatusValidator(v); err != nil {
@@ -851,14 +745,6 @@ func (_c *AccountCreate) createSpec() (*Account, *sqlgraph.CreateSpec) {
 		_spec.SetField(account.FieldPlatform, field.TypeString, value)
 		_node.Platform = value
 	}
-	if value, ok := _c.mutation.WirePlatform(); ok {
-		_spec.SetField(account.FieldWirePlatform, field.TypeString, value)
-		_node.WirePlatform = value
-	}
-	if value, ok := _c.mutation.ProviderProfile(); ok {
-		_spec.SetField(account.FieldProviderProfile, field.TypeString, value)
-		_node.ProviderProfile = value
-	}
 	if value, ok := _c.mutation.GetType(); ok {
 		_spec.SetField(account.FieldType, field.TypeString, value)
 		_node.Type = value
@@ -914,18 +800,6 @@ func (_c *AccountCreate) createSpec() (*Account, *sqlgraph.CreateSpec) {
 	if value, ok := _c.mutation.Schedulable(); ok {
 		_spec.SetField(account.FieldSchedulable, field.TypeBool, value)
 		_node.Schedulable = value
-	}
-	if value, ok := _c.mutation.CindyBalanceInsufficientAt(); ok {
-		_spec.SetField(account.FieldCindyBalanceInsufficientAt, field.TypeTime, value)
-		_node.CindyBalanceInsufficientAt = &value
-	}
-	if value, ok := _c.mutation.CindyBannedAt(); ok {
-		_spec.SetField(account.FieldCindyBannedAt, field.TypeTime, value)
-		_node.CindyBannedAt = &value
-	}
-	if value, ok := _c.mutation.CindyCredentialGeneration(); ok {
-		_spec.SetField(account.FieldCindyCredentialGeneration, field.TypeInt64, value)
-		_node.CindyCredentialGeneration = value
 	}
 	if value, ok := _c.mutation.RateLimitedAt(); ok {
 		_spec.SetField(account.FieldRateLimitedAt, field.TypeTime, value)
@@ -1210,30 +1084,6 @@ func (u *AccountUpsert) UpdatePlatform() *AccountUpsert {
 	return u
 }
 
-// SetWirePlatform sets the "wire_platform" field.
-func (u *AccountUpsert) SetWirePlatform(v string) *AccountUpsert {
-	u.Set(account.FieldWirePlatform, v)
-	return u
-}
-
-// UpdateWirePlatform sets the "wire_platform" field to the value that was provided on create.
-func (u *AccountUpsert) UpdateWirePlatform() *AccountUpsert {
-	u.SetExcluded(account.FieldWirePlatform)
-	return u
-}
-
-// SetProviderProfile sets the "provider_profile" field.
-func (u *AccountUpsert) SetProviderProfile(v string) *AccountUpsert {
-	u.Set(account.FieldProviderProfile, v)
-	return u
-}
-
-// UpdateProviderProfile sets the "provider_profile" field to the value that was provided on create.
-func (u *AccountUpsert) UpdateProviderProfile() *AccountUpsert {
-	u.SetExcluded(account.FieldProviderProfile)
-	return u
-}
-
 // SetType sets the "type" field.
 func (u *AccountUpsert) SetType(v string) *AccountUpsert {
 	u.Set(account.FieldType, v)
@@ -1495,60 +1345,6 @@ func (u *AccountUpsert) SetSchedulable(v bool) *AccountUpsert {
 // UpdateSchedulable sets the "schedulable" field to the value that was provided on create.
 func (u *AccountUpsert) UpdateSchedulable() *AccountUpsert {
 	u.SetExcluded(account.FieldSchedulable)
-	return u
-}
-
-// SetCindyBalanceInsufficientAt sets the "cindy_balance_insufficient_at" field.
-func (u *AccountUpsert) SetCindyBalanceInsufficientAt(v time.Time) *AccountUpsert {
-	u.Set(account.FieldCindyBalanceInsufficientAt, v)
-	return u
-}
-
-// UpdateCindyBalanceInsufficientAt sets the "cindy_balance_insufficient_at" field to the value that was provided on create.
-func (u *AccountUpsert) UpdateCindyBalanceInsufficientAt() *AccountUpsert {
-	u.SetExcluded(account.FieldCindyBalanceInsufficientAt)
-	return u
-}
-
-// ClearCindyBalanceInsufficientAt clears the value of the "cindy_balance_insufficient_at" field.
-func (u *AccountUpsert) ClearCindyBalanceInsufficientAt() *AccountUpsert {
-	u.SetNull(account.FieldCindyBalanceInsufficientAt)
-	return u
-}
-
-// SetCindyBannedAt sets the "cindy_banned_at" field.
-func (u *AccountUpsert) SetCindyBannedAt(v time.Time) *AccountUpsert {
-	u.Set(account.FieldCindyBannedAt, v)
-	return u
-}
-
-// UpdateCindyBannedAt sets the "cindy_banned_at" field to the value that was provided on create.
-func (u *AccountUpsert) UpdateCindyBannedAt() *AccountUpsert {
-	u.SetExcluded(account.FieldCindyBannedAt)
-	return u
-}
-
-// ClearCindyBannedAt clears the value of the "cindy_banned_at" field.
-func (u *AccountUpsert) ClearCindyBannedAt() *AccountUpsert {
-	u.SetNull(account.FieldCindyBannedAt)
-	return u
-}
-
-// SetCindyCredentialGeneration sets the "cindy_credential_generation" field.
-func (u *AccountUpsert) SetCindyCredentialGeneration(v int64) *AccountUpsert {
-	u.Set(account.FieldCindyCredentialGeneration, v)
-	return u
-}
-
-// UpdateCindyCredentialGeneration sets the "cindy_credential_generation" field to the value that was provided on create.
-func (u *AccountUpsert) UpdateCindyCredentialGeneration() *AccountUpsert {
-	u.SetExcluded(account.FieldCindyCredentialGeneration)
-	return u
-}
-
-// AddCindyCredentialGeneration adds v to the "cindy_credential_generation" field.
-func (u *AccountUpsert) AddCindyCredentialGeneration(v int64) *AccountUpsert {
-	u.Add(account.FieldCindyCredentialGeneration, v)
 	return u
 }
 
@@ -1852,34 +1648,6 @@ func (u *AccountUpsertOne) SetPlatform(v string) *AccountUpsertOne {
 func (u *AccountUpsertOne) UpdatePlatform() *AccountUpsertOne {
 	return u.Update(func(s *AccountUpsert) {
 		s.UpdatePlatform()
-	})
-}
-
-// SetWirePlatform sets the "wire_platform" field.
-func (u *AccountUpsertOne) SetWirePlatform(v string) *AccountUpsertOne {
-	return u.Update(func(s *AccountUpsert) {
-		s.SetWirePlatform(v)
-	})
-}
-
-// UpdateWirePlatform sets the "wire_platform" field to the value that was provided on create.
-func (u *AccountUpsertOne) UpdateWirePlatform() *AccountUpsertOne {
-	return u.Update(func(s *AccountUpsert) {
-		s.UpdateWirePlatform()
-	})
-}
-
-// SetProviderProfile sets the "provider_profile" field.
-func (u *AccountUpsertOne) SetProviderProfile(v string) *AccountUpsertOne {
-	return u.Update(func(s *AccountUpsert) {
-		s.SetProviderProfile(v)
-	})
-}
-
-// UpdateProviderProfile sets the "provider_profile" field to the value that was provided on create.
-func (u *AccountUpsertOne) UpdateProviderProfile() *AccountUpsertOne {
-	return u.Update(func(s *AccountUpsert) {
-		s.UpdateProviderProfile()
 	})
 }
 
@@ -2188,69 +1956,6 @@ func (u *AccountUpsertOne) SetSchedulable(v bool) *AccountUpsertOne {
 func (u *AccountUpsertOne) UpdateSchedulable() *AccountUpsertOne {
 	return u.Update(func(s *AccountUpsert) {
 		s.UpdateSchedulable()
-	})
-}
-
-// SetCindyBalanceInsufficientAt sets the "cindy_balance_insufficient_at" field.
-func (u *AccountUpsertOne) SetCindyBalanceInsufficientAt(v time.Time) *AccountUpsertOne {
-	return u.Update(func(s *AccountUpsert) {
-		s.SetCindyBalanceInsufficientAt(v)
-	})
-}
-
-// UpdateCindyBalanceInsufficientAt sets the "cindy_balance_insufficient_at" field to the value that was provided on create.
-func (u *AccountUpsertOne) UpdateCindyBalanceInsufficientAt() *AccountUpsertOne {
-	return u.Update(func(s *AccountUpsert) {
-		s.UpdateCindyBalanceInsufficientAt()
-	})
-}
-
-// ClearCindyBalanceInsufficientAt clears the value of the "cindy_balance_insufficient_at" field.
-func (u *AccountUpsertOne) ClearCindyBalanceInsufficientAt() *AccountUpsertOne {
-	return u.Update(func(s *AccountUpsert) {
-		s.ClearCindyBalanceInsufficientAt()
-	})
-}
-
-// SetCindyBannedAt sets the "cindy_banned_at" field.
-func (u *AccountUpsertOne) SetCindyBannedAt(v time.Time) *AccountUpsertOne {
-	return u.Update(func(s *AccountUpsert) {
-		s.SetCindyBannedAt(v)
-	})
-}
-
-// UpdateCindyBannedAt sets the "cindy_banned_at" field to the value that was provided on create.
-func (u *AccountUpsertOne) UpdateCindyBannedAt() *AccountUpsertOne {
-	return u.Update(func(s *AccountUpsert) {
-		s.UpdateCindyBannedAt()
-	})
-}
-
-// ClearCindyBannedAt clears the value of the "cindy_banned_at" field.
-func (u *AccountUpsertOne) ClearCindyBannedAt() *AccountUpsertOne {
-	return u.Update(func(s *AccountUpsert) {
-		s.ClearCindyBannedAt()
-	})
-}
-
-// SetCindyCredentialGeneration sets the "cindy_credential_generation" field.
-func (u *AccountUpsertOne) SetCindyCredentialGeneration(v int64) *AccountUpsertOne {
-	return u.Update(func(s *AccountUpsert) {
-		s.SetCindyCredentialGeneration(v)
-	})
-}
-
-// AddCindyCredentialGeneration adds v to the "cindy_credential_generation" field.
-func (u *AccountUpsertOne) AddCindyCredentialGeneration(v int64) *AccountUpsertOne {
-	return u.Update(func(s *AccountUpsert) {
-		s.AddCindyCredentialGeneration(v)
-	})
-}
-
-// UpdateCindyCredentialGeneration sets the "cindy_credential_generation" field to the value that was provided on create.
-func (u *AccountUpsertOne) UpdateCindyCredentialGeneration() *AccountUpsertOne {
-	return u.Update(func(s *AccountUpsert) {
-		s.UpdateCindyCredentialGeneration()
 	})
 }
 
@@ -2752,34 +2457,6 @@ func (u *AccountUpsertBulk) UpdatePlatform() *AccountUpsertBulk {
 	})
 }
 
-// SetWirePlatform sets the "wire_platform" field.
-func (u *AccountUpsertBulk) SetWirePlatform(v string) *AccountUpsertBulk {
-	return u.Update(func(s *AccountUpsert) {
-		s.SetWirePlatform(v)
-	})
-}
-
-// UpdateWirePlatform sets the "wire_platform" field to the value that was provided on create.
-func (u *AccountUpsertBulk) UpdateWirePlatform() *AccountUpsertBulk {
-	return u.Update(func(s *AccountUpsert) {
-		s.UpdateWirePlatform()
-	})
-}
-
-// SetProviderProfile sets the "provider_profile" field.
-func (u *AccountUpsertBulk) SetProviderProfile(v string) *AccountUpsertBulk {
-	return u.Update(func(s *AccountUpsert) {
-		s.SetProviderProfile(v)
-	})
-}
-
-// UpdateProviderProfile sets the "provider_profile" field to the value that was provided on create.
-func (u *AccountUpsertBulk) UpdateProviderProfile() *AccountUpsertBulk {
-	return u.Update(func(s *AccountUpsert) {
-		s.UpdateProviderProfile()
-	})
-}
-
 // SetType sets the "type" field.
 func (u *AccountUpsertBulk) SetType(v string) *AccountUpsertBulk {
 	return u.Update(func(s *AccountUpsert) {
@@ -3085,69 +2762,6 @@ func (u *AccountUpsertBulk) SetSchedulable(v bool) *AccountUpsertBulk {
 func (u *AccountUpsertBulk) UpdateSchedulable() *AccountUpsertBulk {
 	return u.Update(func(s *AccountUpsert) {
 		s.UpdateSchedulable()
-	})
-}
-
-// SetCindyBalanceInsufficientAt sets the "cindy_balance_insufficient_at" field.
-func (u *AccountUpsertBulk) SetCindyBalanceInsufficientAt(v time.Time) *AccountUpsertBulk {
-	return u.Update(func(s *AccountUpsert) {
-		s.SetCindyBalanceInsufficientAt(v)
-	})
-}
-
-// UpdateCindyBalanceInsufficientAt sets the "cindy_balance_insufficient_at" field to the value that was provided on create.
-func (u *AccountUpsertBulk) UpdateCindyBalanceInsufficientAt() *AccountUpsertBulk {
-	return u.Update(func(s *AccountUpsert) {
-		s.UpdateCindyBalanceInsufficientAt()
-	})
-}
-
-// ClearCindyBalanceInsufficientAt clears the value of the "cindy_balance_insufficient_at" field.
-func (u *AccountUpsertBulk) ClearCindyBalanceInsufficientAt() *AccountUpsertBulk {
-	return u.Update(func(s *AccountUpsert) {
-		s.ClearCindyBalanceInsufficientAt()
-	})
-}
-
-// SetCindyBannedAt sets the "cindy_banned_at" field.
-func (u *AccountUpsertBulk) SetCindyBannedAt(v time.Time) *AccountUpsertBulk {
-	return u.Update(func(s *AccountUpsert) {
-		s.SetCindyBannedAt(v)
-	})
-}
-
-// UpdateCindyBannedAt sets the "cindy_banned_at" field to the value that was provided on create.
-func (u *AccountUpsertBulk) UpdateCindyBannedAt() *AccountUpsertBulk {
-	return u.Update(func(s *AccountUpsert) {
-		s.UpdateCindyBannedAt()
-	})
-}
-
-// ClearCindyBannedAt clears the value of the "cindy_banned_at" field.
-func (u *AccountUpsertBulk) ClearCindyBannedAt() *AccountUpsertBulk {
-	return u.Update(func(s *AccountUpsert) {
-		s.ClearCindyBannedAt()
-	})
-}
-
-// SetCindyCredentialGeneration sets the "cindy_credential_generation" field.
-func (u *AccountUpsertBulk) SetCindyCredentialGeneration(v int64) *AccountUpsertBulk {
-	return u.Update(func(s *AccountUpsert) {
-		s.SetCindyCredentialGeneration(v)
-	})
-}
-
-// AddCindyCredentialGeneration adds v to the "cindy_credential_generation" field.
-func (u *AccountUpsertBulk) AddCindyCredentialGeneration(v int64) *AccountUpsertBulk {
-	return u.Update(func(s *AccountUpsert) {
-		s.AddCindyCredentialGeneration(v)
-	})
-}
-
-// UpdateCindyCredentialGeneration sets the "cindy_credential_generation" field to the value that was provided on create.
-func (u *AccountUpsertBulk) UpdateCindyCredentialGeneration() *AccountUpsertBulk {
-	return u.Update(func(s *AccountUpsert) {
-		s.UpdateCindyCredentialGeneration()
 	})
 }
 

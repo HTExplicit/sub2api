@@ -12,10 +12,6 @@
         <input v-model="form.studio_enabled" type="checkbox" data-testid="image-tools-studio" />
         {{ t('admin.settings.imageTools.studioEnabled') }}
       </label>
-      <label class="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
-        <input v-model="form.responses_image_enabled" type="checkbox" data-testid="image-tools-responses" />
-        {{ t('admin.settings.imageTools.responsesImageEnabled') }}
-      </label>
       <div class="flex items-center gap-3">
         <button type="button" class="btn btn-secondary" :disabled="saving" data-testid="image-tools-save" @click="save">
           {{ t('admin.settings.imageTools.save') }}
@@ -47,9 +43,11 @@ async function save() {
   if (!form.value) return
   saving.value = true
   status.value = ''
-  const submitted = { ...form.value }
+  // Only the Image Studio switch exists; never echo other switch fields back.
+  const submitted: ImageToolsSettings = { studio_enabled: form.value.studio_enabled }
   try {
-    form.value = await stepUp.run(() => updateImageToolsSettings(submitted))
+    const saved = await stepUp.run(() => updateImageToolsSettings(submitted))
+    form.value = { studio_enabled: saved.studio_enabled }
     status.value = t('admin.settings.imageTools.saved')
     // The sidebar and route guard follow the public image_studio_enabled flag.
     void appStore.fetchPublicSettings(true)
@@ -62,7 +60,8 @@ async function save() {
 
 onMounted(async () => {
   try {
-    form.value = await getImageToolsSettings()
+    const settings = await getImageToolsSettings()
+    form.value = { studio_enabled: settings.studio_enabled }
   } catch {
     loadError.value = true
   }

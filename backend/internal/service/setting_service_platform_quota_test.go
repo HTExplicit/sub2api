@@ -63,8 +63,8 @@ func newSettingServiceForPlatformQuotaTest(seed map[string]string) *SettingServi
 func TestGetDefaultPlatformQuotas_ReturnsAllowedPlatforms(t *testing.T) {
 	zero := 0.0
 	svc := newSettingServiceForPlatformQuotaTest(map[string]string{
-		// 新 JSON 格式：保留 Cindy 既有配置，新增 MiniMax 未配置时仍补齐。
-		SettingKeyDefaultPlatformQuotas: `{"anthropic":{"daily":10.5},"openai":{"monthly":0},"cindy":{"daily":7.5}}`,
+		// 新 JSON 格式：anthropic daily=10.5, openai monthly=0, 其他平台无配置
+		SettingKeyDefaultPlatformQuotas: `{"anthropic":{"daily":10.5},"openai":{"monthly":0}}`,
 	})
 	got, err := svc.GetDefaultPlatformQuotas(context.Background())
 	if err != nil {
@@ -76,9 +76,6 @@ func TestGetDefaultPlatformQuotas_ReturnsAllowedPlatforms(t *testing.T) {
 			t.Errorf("missing platform key: %q", platform)
 		}
 	}
-	require.Len(t, got, len(AllowedQuotaPlatforms))
-	require.Equal(t, floatPtrPQ(7.5), got[PlatformCindy].DailyLimitUSD)
-	require.Equal(t, &DefaultPlatformQuotaSetting{}, got[PlatformMiniMax], "new platform must not inherit Cindy's quota")
 	// anthropic daily = 10.5
 	if v := got["anthropic"].DailyLimitUSD; v == nil || *v != 10.5 {
 		t.Errorf("anthropic daily want 10.5, got %v", v)
@@ -163,9 +160,7 @@ func TestSystemPlatformQuotas_WriteReadRoundTrip(t *testing.T) {
 	ten := 10.0
 	ss := &SystemSettings{
 		DefaultPlatformQuotas: map[string]*DefaultPlatformQuotaSetting{
-			"anthropic":     {DailyLimitUSD: &ten, WeeklyLimitUSD: nil, MonthlyLimitUSD: nil},
-			PlatformCindy:   {DailyLimitUSD: floatPtrPQ(7.5)},
-			PlatformMiniMax: {MonthlyLimitUSD: floatPtrPQ(42)},
+			"anthropic": {DailyLimitUSD: &ten, WeeklyLimitUSD: nil, MonthlyLimitUSD: nil},
 		},
 	}
 	if err := svc.UpdateSettings(ctx, ss); err != nil {
@@ -182,10 +177,6 @@ func TestSystemPlatformQuotas_WriteReadRoundTrip(t *testing.T) {
 			t.Errorf("allowed-platform contract violated: missing platform %q", p)
 		}
 	}
-	require.Len(t, got, len(AllowedQuotaPlatforms))
-	require.Equal(t, floatPtrPQ(7.5), got[PlatformCindy].DailyLimitUSD)
-	require.Equal(t, floatPtrPQ(42), got[PlatformMiniMax].MonthlyLimitUSD)
-	require.Nil(t, got[PlatformMiniMax].DailyLimitUSD)
 	// 写入值正确往返
 	if v := got["anthropic"].DailyLimitUSD; v == nil || *v != ten {
 		t.Fatalf("anthropic daily round-trip failed: got %v, want 10", v)

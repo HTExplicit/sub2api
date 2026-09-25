@@ -25,7 +25,7 @@
           <div class="legal-document-content" v-html="renderedDocument"></div>
         </section>
 
-        <aside class="space-y-3 rounded-none border border-gray-200 bg-gray-50 p-4 text-sm dark:border-dark-700 dark:bg-dark-900">
+        <aside class="space-y-3 rounded-lg border border-gray-200 bg-gray-50 p-4 text-sm dark:border-dark-700 dark:bg-dark-900/60">
           <div>
             <p class="text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-dark-400">
               {{ t('adminCompliance.version') }}

@@ -3,22 +3,16 @@ export interface CodexModelsManifestResult {
   modelCount: number
 }
 
-const DEFAULT_CODEX_CLIENT_VERSION = '0.147.0'
-
-function normalizeCodexBaseUrl(baseUrl: string): string {
+function normalizeCodexGatewayRoot(baseUrl: string): string {
   const fallback = typeof window !== 'undefined' ? window.location.origin : ''
-  const value = (baseUrl || fallback).trim().replace(/\/+$/, '')
-  if (!value) return '/v1'
-  return /\/v1$/i.test(value) ? value : `${value}/v1`
+  return (baseUrl || fallback).trim().replace(/\/+$/, '').replace(/\/v1$/i, '')
 }
 
-export function buildCodexModelsManifestUrl(
-  baseUrl: string,
-  clientVersion = DEFAULT_CODEX_CLIENT_VERSION
-): string {
-  const url = normalizeCodexBaseUrl(baseUrl)
-  const params = new URLSearchParams({ client_version: clientVersion })
-  return `${url}/models?${params.toString()}`
+// The ChatGPT-style manifest route takes no client_version: the gateway asks
+// with its configured current Codex version, so a stale pinned version cannot
+// filter newer models out of the downloaded catalog.
+export function buildCodexModelsManifestUrl(baseUrl: string): string {
+  return `${normalizeCodexGatewayRoot(baseUrl)}/backend-api/codex/models`
 }
 
 function isCodexModelsManifest(value: unknown): value is { models: unknown[] } {

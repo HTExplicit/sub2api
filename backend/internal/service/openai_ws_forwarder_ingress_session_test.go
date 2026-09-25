@@ -48,47 +48,6 @@ func (d *openAIWSSingleConnDialer) Dial(
 	return d.conn, 0, nil, nil
 }
 
-type openAIWSIngressDialStep struct {
-	conn      openAIWSClientConn
-	handshake http.Header
-}
-
-type openAIWSIngressSequenceDialer struct {
-	mu      sync.Mutex
-	steps   []openAIWSIngressDialStep
-	headers []http.Header
-}
-
-func (d *openAIWSIngressSequenceDialer) Dial(
-	ctx context.Context,
-	wsURL string,
-	headers http.Header,
-	proxyURL string,
-) (openAIWSClientConn, int, http.Header, error) {
-	_ = ctx
-	_ = wsURL
-	_ = proxyURL
-	d.mu.Lock()
-	defer d.mu.Unlock()
-	d.headers = append(d.headers, cloneHeader(headers))
-	if len(d.steps) == 0 {
-		return nil, 0, nil, errors.New("unexpected ingress WS dial")
-	}
-	step := d.steps[0]
-	d.steps = d.steps[1:]
-	return step.conn, 0, cloneHeader(step.handshake), nil
-}
-
-func (d *openAIWSIngressSequenceDialer) capturedHeaders() []http.Header {
-	d.mu.Lock()
-	defer d.mu.Unlock()
-	result := make([]http.Header, len(d.headers))
-	for i := range d.headers {
-		result[i] = cloneHeader(d.headers[i])
-	}
-	return result
-}
-
 func TestOpenAIWSDownstreamWriteContext_CancellationOwnership(t *testing.T) {
 	t.Run("pre-canceled ordinary context is canceled before return", func(t *testing.T) {
 		controlCtx, cancelControl := context.WithCancelCause(context.Background())
@@ -134,7 +93,31 @@ func TestOpenAIWSDownstreamWriteContext_CancellationOwnership(t *testing.T) {
 	})
 }
 
-func TestOpenAIWSIngressCindyBalanceTerminalWriteOrdering(t *testing.T) {
+// budgetExceededAccountRepoStub records the account error written by the
+// OpenAI-compatible budget_exceeded rule.
+type budgetExceededAccountRepoStub struct {
+	AccountRepository
+	mu            sync.Mutex
+	setErrorCalls int
+	lastErrorMsg  string
+}
+
+func (r *budgetExceededAccountRepoStub) SetError(_ context.Context, _ int64, message string) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.setErrorCalls++
+	r.lastErrorMsg = message
+	return nil
+}
+
+func newBudgetRelayAccount(id int64, poolMode bool) *Account {
+	return &Account{
+		ID: id, Platform: PlatformOpenAI, Type: AccountTypeAPIKey, Status: StatusActive, Schedulable: true,
+		Credentials: map[string]any{"api_key": "sk-test", "base_url": "https://relay.example.test", "pool_mode": poolMode},
+	}
+}
+
+func TestOpenAIWSIngressBudgetExceededTerminalWriteOrdering(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	tests := []struct {
 		name         string
@@ -182,7 +165,7 @@ func TestOpenAIWSIngressCindyBalanceTerminalWriteOrdering(t *testing.T) {
 			pool := newOpenAIWSConnPool(cfg)
 			pool.setClientDialerForTest(&openAIWSCaptureDialer{conn: captureConn})
 			t.Cleanup(pool.Close)
-			repo := &cindyRateLimitAccountRepoStub{}
+			repo := &budgetExceededAccountRepoStub{}
 			rateLimitService := NewRateLimitService(repo, nil, cfg, nil, nil)
 			gateway := &OpenAIGatewayService{
 				cfg:              cfg,
@@ -194,7 +177,7 @@ func TestOpenAIWSIngressCindyBalanceTerminalWriteOrdering(t *testing.T) {
 				rateLimitService: rateLimitService,
 			}
 			rateLimitService.SetAccountRuntimeBlocker(gateway)
-			account := newCindyRateLimitAccount(int64(8530+index), true)
+			account := newBudgetRelayAccount(int64(8530+index), true)
 			account.Extra = map[string]any{"responses_websockets_v2_enabled": true}
 
 			serverErrCh := make(chan error, 1)
@@ -266,7 +249,8 @@ func TestOpenAIWSIngressCindyBalanceTerminalWriteOrdering(t *testing.T) {
 			var failoverErr *UpstreamFailoverError
 			if tt.wantFailover {
 				require.ErrorAs(t, serverErr, &failoverErr)
-				require.True(t, failoverErr.CindyBalanceInsufficient)
+				require.Equal(t, http.StatusTooManyRequests, failoverErr.StatusCode)
+				require.Equal(t, NextAccountRetry, failoverErr.NextAccountAction)
 				require.False(t, failoverErr.RetryableOnSameAccount)
 			} else {
 				require.Error(t, serverErr)
@@ -276,126 +260,10 @@ func TestOpenAIWSIngressCindyBalanceTerminalWriteOrdering(t *testing.T) {
 				require.NotContains(t, string(payload), "budget_exceeded")
 				require.NotContains(t, string(payload), "sensitive upstream detail")
 			}
-			require.Equal(t, 0, repo.markCalls, "the first exact signal must wait for independent confirmation")
+			require.Equal(t, 1, repo.setErrorCalls, "a budget terminal puts the account into the error state")
+			require.Equal(t, "sensitive upstream detail", repo.lastErrorMsg, "the account keeps the upstream message")
 		})
 	}
-}
-
-func TestOpenAIWSIngressTurnStateCommitsOnlyAfterDownstreamOutput(t *testing.T) {
-	gin.SetMode(gin.TestMode)
-	cfg := &config.Config{}
-	cfg.Security.URLAllowlist.Enabled = false
-	cfg.Gateway.OpenAIWS.Enabled = true
-	cfg.Gateway.OpenAIWS.APIKeyEnabled = true
-	cfg.Gateway.OpenAIWS.ResponsesWebsocketsV2 = true
-	cfg.Gateway.OpenAIWS.MaxConnsPerAccount = 1
-	cfg.Gateway.OpenAIWS.MinIdlePerAccount = 0
-	cfg.Gateway.OpenAIWS.MaxIdlePerAccount = 0
-	cfg.Gateway.OpenAIWS.QueueLimitPerConn = 1
-	cfg.Gateway.OpenAIWS.DialTimeoutSeconds = 3
-	cfg.Gateway.OpenAIWS.ReadTimeoutSeconds = 3
-	cfg.Gateway.OpenAIWS.WriteTimeoutSeconds = 3
-
-	dialer := &openAIWSIngressSequenceDialer{steps: []openAIWSIngressDialStep{
-		{
-			conn:      &openAIWSCaptureConn{},
-			handshake: http.Header{"X-Codex-Turn-State": []string{"turn-state-A-uncommitted"}},
-		},
-		{
-			conn: &openAIWSCaptureConn{events: [][]byte{
-				[]byte(`{"type":"response.completed","response":{"id":"resp_ingress_state_b","model":"gpt-5.4","status":"completed","output":[],"usage":{"input_tokens":1,"output_tokens":1}}}`),
-			}},
-			handshake: http.Header{"X-Codex-Turn-State": []string{"turn-state-B"}},
-		},
-	}}
-	pool := newOpenAIWSConnPool(cfg)
-	pool.setClientDialerForTest(dialer)
-	t.Cleanup(pool.Close)
-	svc := &OpenAIGatewayService{
-		cfg:              cfg,
-		cache:            &stubGatewayCache{},
-		openaiWSResolver: NewOpenAIWSProtocolResolver(cfg),
-		toolCorrector:    NewCodexToolCorrector(),
-		openaiWSPool:     pool,
-	}
-	account := cindyHTTPToWSV2TestAccount()
-	account.ID = 9301
-	account.Extra = map[string]any{"responses_websockets_v2_enabled": true}
-	groupID := int64(79)
-	apiKeyID := int64(7003)
-	sessionID := "session-ingress-state-stage"
-
-	serverErrCh := make(chan error, 1)
-	sessionHashCh := make(chan string, 1)
-	seedCh := make(chan string, 1)
-	wsServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		conn, err := coderws.Accept(w, r, &coderws.AcceptOptions{CompressionMode: coderws.CompressionContextTakeover})
-		if err != nil {
-			serverErrCh <- err
-			return
-		}
-		defer func() { _ = conn.CloseNow() }()
-
-		recorder := httptest.NewRecorder()
-		ginCtx, _ := gin.CreateTestContext(recorder)
-		ginCtx.Request = r.Clone(r.Context())
-		ginCtx.Request.Header.Set("User-Agent", "codex_cli_rs/0.146.0")
-		ginCtx.Request.Header.Set("session_id", sessionID)
-		ginCtx.Set("api_key", &APIKey{ID: apiKeyID, GroupID: &groupID})
-
-		readCtx, cancelRead := context.WithTimeout(r.Context(), 3*time.Second)
-		_, firstMessage, readErr := conn.Read(readCtx)
-		cancelRead()
-		if readErr != nil {
-			serverErrCh <- readErr
-			return
-		}
-		sessionHashCh <- svc.GenerateSessionHash(ginCtx, firstMessage)
-		seedCh <- openAICodexTurnStateSeed(ginCtx, account)
-		serverErrCh <- svc.ProxyResponsesWebSocketFromClient(
-			r.Context(), ginCtx, conn, account, "sk-test", firstMessage, nil,
-		)
-	}))
-	defer wsServer.Close()
-
-	dialCtx, cancelDial := context.WithTimeout(context.Background(), 3*time.Second)
-	clientConn, _, err := coderws.Dial(dialCtx, "ws"+strings.TrimPrefix(wsServer.URL, "http"), nil)
-	cancelDial()
-	require.NoError(t, err)
-
-	writeCtx, cancelWrite := context.WithTimeout(context.Background(), 3*time.Second)
-	err = clientConn.Write(writeCtx, coderws.MessageText, []byte(
-		`{"type":"response.create","model":"gpt-5.4","stream":true,"input":"hi"}`,
-	))
-	cancelWrite()
-	require.NoError(t, err)
-
-	readCtx, cancelRead := context.WithTimeout(context.Background(), 3*time.Second)
-	_, payload, err := clientConn.Read(readCtx)
-	cancelRead()
-	require.NoError(t, err)
-	require.Equal(t, "response.completed", gjson.GetBytes(payload, "type").String())
-	require.NoError(t, clientConn.CloseNow())
-
-	select {
-	case serverErr := <-serverErrCh:
-		require.NoError(t, serverErr)
-	case <-time.After(5 * time.Second):
-		t.Fatal("waiting for ingress websocket result timed out")
-	}
-
-	headers := dialer.capturedHeaders()
-	require.Len(t, headers, 2)
-	require.Empty(t, headers[1].Get(openAICodexTurnStateHeader), "retry B must not receive A's uncommitted handshake state")
-	sessionHash := <-sessionHashCh
-	state, ok := svc.getOpenAIWSStateStore().GetSessionTurnState(groupID, sessionHash, account.ID)
-	require.True(t, ok)
-	require.Equal(t, "turn-state-B", state)
-	rawOrigin, ok := svc.openaiCodexTurnStateOrigins.Load(<-seedCh)
-	require.True(t, ok)
-	origin, ok := rawOrigin.(openAICodexTurnStateOrigin)
-	require.True(t, ok)
-	require.Equal(t, account.ID, origin.accountID)
 }
 
 func TestOpenAIGatewayService_ProxyResponsesWebSocketFromClient_KeepLeaseAcrossTurns(t *testing.T) {
@@ -426,16 +294,19 @@ func TestOpenAIGatewayService_ProxyResponsesWebSocketFromClient_KeepLeaseAcrossT
 	captureDialer := &openAIWSCaptureDialer{conn: captureConn}
 	pool := newOpenAIWSConnPool(cfg)
 	pool.setClientDialerForTest(captureDialer)
-	promptPolicy := newGatewayBusinessSystemPromptPolicy(t, false, false)
+	systemPrompts := &SystemPromptService{}
+	systemPrompts.publish(SystemPromptConfig{Enabled: true, DefaultPromptID: "default", Prompts: []SystemPrompt{
+		{ID: "default", Name: "default", Body: "business-server", Position: SystemPromptPositionAppend, Role: SystemPromptRoleAuto},
+	}})
 
 	svc := &OpenAIGatewayService{
-		cfg:                   cfg,
-		httpUpstream:          &httpUpstreamRecorder{},
-		cache:                 &stubGatewayCache{},
-		openaiWSResolver:      NewOpenAIWSProtocolResolver(cfg),
-		toolCorrector:         NewCodexToolCorrector(),
-		openaiWSPool:          pool,
-		businessPromptService: promptPolicy,
+		cfg:              cfg,
+		httpUpstream:     &httpUpstreamRecorder{},
+		cache:            &stubGatewayCache{},
+		openaiWSResolver: NewOpenAIWSProtocolResolver(cfg),
+		toolCorrector:    NewCodexToolCorrector(),
+		openaiWSPool:     pool,
+		systemPrompts:    systemPrompts,
 	}
 
 	account := &Account{
@@ -528,13 +399,13 @@ func TestOpenAIGatewayService_ProxyResponsesWebSocketFromClient_KeepLeaseAcrossT
 	firstTurnEvent := readMessage()
 	require.Equal(t, "response.completed", gjson.GetBytes(firstTurnEvent, "type").String())
 	require.Equal(t, "resp_ingress_turn_1", gjson.GetBytes(firstTurnEvent, "response.id").String())
-	require.False(t, gjson.GetBytes(firstTurnEvent, "response.instructions").Exists())
+	require.Equal(t, gjson.Null, gjson.GetBytes(firstTurnEvent, "response.instructions").Type)
 
 	writeMessage(`{"type":"response.create","model":"gpt-5.1","stream":false,"prompt_cache_key":"business-cache-source","previous_response_id":"resp_ingress_turn_1"}`)
 	secondTurnEvent := readMessage()
 	require.Equal(t, "response.completed", gjson.GetBytes(secondTurnEvent, "type").String())
 	require.Equal(t, "resp_ingress_turn_2", gjson.GetBytes(secondTurnEvent, "response.id").String())
-	require.False(t, gjson.GetBytes(secondTurnEvent, "response.instructions").Exists())
+	require.Equal(t, gjson.Null, gjson.GetBytes(secondTurnEvent, "response.instructions").Type)
 	require.Equal(t, "response.completed", <-turnTerminalCh, "首轮 turn 应保留成功终态")
 	require.Equal(t, "response.completed", <-turnTerminalCh, "第二轮 turn 应保留成功终态")
 
@@ -556,7 +427,7 @@ func TestOpenAIGatewayService_ProxyResponsesWebSocketFromClient_KeepLeaseAcrossT
 		require.NoError(t, err)
 		require.Equal(t, "business-server", gjson.GetBytes(encoded, "instructions").String(), "turn %d", index+1)
 		require.Equal(t, 1, strings.Count(string(encoded), "business-server"), "turn %d", index+1)
-		require.Regexp(t, `^[0-9a-f]{64}$`, gjson.GetBytes(encoded, "prompt_cache_key").String())
+		require.Equal(t, "business-cache-source", gjson.GetBytes(encoded, "prompt_cache_key").String())
 	}
 	require.Equal(t, captureConn.writes[0]["prompt_cache_key"], captureConn.writes[1]["prompt_cache_key"])
 	require.Equal(t, captureConn.writes[0]["prompt_cache_key"], captureDialer.lastHeaders.Get("session_id"), "handshake fallback must use the final wire key")
@@ -970,6 +841,10 @@ func TestOpenAIGatewayService_ProxyResponsesWebSocketFromClient_CodexImageBridge
 	pool := newOpenAIWSConnPool(cfg)
 	pool.setClientDialerForTest(captureDialer)
 
+	systemPrompts := &SystemPromptService{}
+	systemPrompts.publish(SystemPromptConfig{Enabled: true, DefaultPromptID: "site", Prompts: []SystemPrompt{
+		{ID: "site", Name: "site", Body: "site-system-prompt", Position: SystemPromptPositionAppend, Role: SystemPromptRoleAuto},
+	}})
 	svc := &OpenAIGatewayService{
 		cfg:              cfg,
 		httpUpstream:     &httpUpstreamRecorder{},
@@ -977,6 +852,7 @@ func TestOpenAIGatewayService_ProxyResponsesWebSocketFromClient_CodexImageBridge
 		openaiWSResolver: NewOpenAIWSProtocolResolver(cfg),
 		toolCorrector:    NewCodexToolCorrector(),
 		openaiWSPool:     pool,
+		systemPrompts:    systemPrompts,
 	}
 
 	groupID := int64(3)
@@ -1125,11 +1001,13 @@ func TestOpenAIGatewayService_ProxyResponsesWebSocketFromClient_CodexImageBridge
 	require.Equal(t, "png", gjson.Get(nonLitePayload, `tools.#(type=="image_generation").output_format`).String())
 	require.Equal(t, "auto", gjson.Get(nonLitePayload, "tool_choice").String())
 	require.Contains(t, gjson.Get(nonLitePayload, "instructions").String(), "image_generation")
+	require.True(t, strings.HasSuffix(gjson.Get(nonLitePayload, "instructions").String(), "\n\nsite-system-prompt"))
 	require.False(t, gjson.Get(nonLitePayload, "reasoning.context").Exists())
 
 	litePayload := requestToJSONString(captureConn.writes[1])
 	require.False(t, gjson.Get(litePayload, `tools.#(type=="image_generation")`).Exists())
 	require.NotContains(t, gjson.Get(litePayload, "instructions").String(), "image_generation")
+	require.NotContains(t, litePayload, "site-system-prompt", "Codex Responses Lite requests are never injected")
 	require.Equal(t, "exec", gjson.Get(litePayload, `input.#(type=="additional_tools").tools.0.name`).String())
 	require.Contains(t, gjson.Get(litePayload, `input.#(type=="additional_tools").tools.0.description`).String(), "image_gen.imagegen")
 	require.False(t, gjson.Get(litePayload, `tools.#(type=="namespace")`).Exists())

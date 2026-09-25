@@ -7,14 +7,14 @@
     @close="emit('close')"
   >
     <div class="space-y-4">
-      <div class="inline-flex rounded-none bg-gray-100 p-1 dark:bg-dark-800">
+      <div class="inline-flex rounded-md bg-gray-100 p-1 dark:bg-dark-800">
         <button
           v-for="item in tabs"
           :key="item.value"
           type="button"
           :disabled="saving"
-          class="rounded-none px-3 py-1.5 text-sm font-medium transition-colors"
-          :class="tab === item.value ? 'bg-white text-gray-900 shadow-outline dark:bg-dark-700 dark:text-white' : 'text-gray-500 dark:text-dark-300'"
+          class="rounded px-3 py-1.5 text-sm font-medium transition-colors"
+          :class="tab === item.value ? 'bg-white text-gray-900 shadow-sm dark:bg-dark-700 dark:text-white' : 'text-gray-500 dark:text-dark-300'"
           @click="tab = item.value"
         >
           {{ item.label }}
@@ -34,7 +34,7 @@
         </button>
       </form>
 
-      <div class="overflow-hidden rounded-none border border-gray-200 dark:border-dark-700">
+      <div class="overflow-hidden rounded-md border border-gray-200 dark:border-dark-700">
         <VueDraggable
           :model-value="visibleItems"
           :disabled="saving || editingID !== null"

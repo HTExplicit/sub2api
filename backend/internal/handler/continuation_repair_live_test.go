@@ -47,25 +47,16 @@ const (
 	continuationRepairFinal       = "CONTINUATION_OK"
 )
 
-type continuationRepairPublication struct {
-	Revision      int64                            `json:"revision"`
-	Version       service.RemoteSkillBundleVersion `json:"version"`
-	Prompt        service.RemoteSkillPromptVersion `json:"prompt"`
-	RawBody       string                           `json:"raw_body"`
-	EffectiveBody string                           `json:"effective_body"`
-}
-
 type continuationRepairSource struct {
-	Account             service.Account                      `json:"account"`
-	Group               service.Group                        `json:"group"`
-	FastPolicy          *service.OpenAIFastPolicySettings    `json:"fast_policy"`
-	BusinessPrompt      service.BusinessSystemPromptSnapshot `json:"business_prompt"`
-	RegistryPublication *continuationRepairPublication       `json:"registry_publication"`
-	Settings            map[string]string                    `json:"settings"`
-	ChannelModels       map[string]string                    `json:"channel_models"`
-	ChannelImageBridge  *bool                                `json:"channel_image_bridge"`
-	Fingerprint         string                               `json:"fingerprint"`
-	UserID              int64                                `json:"user_id"`
+	Account            service.Account                   `json:"account"`
+	Group              service.Group                     `json:"group"`
+	FastPolicy         *service.OpenAIFastPolicySettings `json:"fast_policy"`
+	SystemPrompts      *service.SystemPromptConfig       `json:"system_prompts"`
+	Settings           map[string]string                 `json:"settings"`
+	ChannelModels      map[string]string                 `json:"channel_models"`
+	ChannelImageBridge *bool                             `json:"channel_image_bridge"`
+	Fingerprint        string                            `json:"fingerprint"`
+	UserID             int64                             `json:"user_id"`
 }
 
 type continuationRepairBootstrap struct {
@@ -290,7 +281,7 @@ func continuationRepairValidateSource(b continuationRepairBootstrap) error {
 	if a.ID != 16050 || a.Name != "白嫖-dmxapi" || a.Platform != service.PlatformOpenAI || a.Type != service.AccountTypeAPIKey ||
 		a.ParentAccountID != nil || a.GetOpenAIProtocolAPIKey() == "" || a.Status != service.StatusActive || !a.Schedulable || a.Concurrency < 1 ||
 		group.ID != 35 || group.Platform != service.PlatformOpenAI || group.Status != service.StatusActive || b.Source.UserID != 920000016050 ||
-		!a.SupportsOpenAIEndpointCapability(service.OpenAIEndpointCapabilityResponses) || service.IsCindyRuntimeCompatibleAPIKeyAccount(a.Platform, a.Type, a.Credentials) {
+		!a.SupportsOpenAIEndpointCapability(service.OpenAIEndpointCapabilityResponses) {
 		return errors.New("source_changed")
 	}
 	member := false
@@ -302,7 +293,7 @@ func continuationRepairValidateSource(b continuationRepairBootstrap) error {
 	}
 	// Live preflight established that the production prompt is disabled. A
 	// changed runtime is a new source, not permission to toggle it for a test.
-	if b.Source.BusinessPrompt.Enabled || b.Source.RegistryPublication != nil || b.Source.FastPolicy == nil || b.Source.Settings == nil || len(b.Source.ChannelModels) != 2 {
+	if (b.Source.SystemPrompts != nil && b.Source.SystemPrompts.Enabled) || b.Source.FastPolicy == nil || b.Source.Settings == nil || len(b.Source.ChannelModels) != 2 {
 		return errors.New("source_changed")
 	}
 	for _, scenario := range []string{"astra", "sol"} {
@@ -1270,9 +1261,8 @@ func continuationRepairOfflineSource() continuationRepairSource {
 			Extra: map[string]any{"use_responses_api": true}},
 		Group:      service.Group{ID: 35, Platform: service.PlatformOpenAI, Status: service.StatusActive, RateMultiplier: 1},
 		FastPolicy: service.DefaultOpenAIFastPolicySettings(), Settings: map[string]string{},
-		BusinessPrompt: service.BusinessSystemPromptSnapshot{Revision: 1, CompositionMode: service.BusinessSystemPromptCompositionCodexSkillHybrid},
-		ChannelModels:  map[string]string{"gpt-6-astra": "gpt-6-astra", "gpt-5.6-sol": "gpt-5.6-sol"},
-		Fingerprint:    strings.Repeat("a", 64), UserID: 920000016050,
+		ChannelModels: map[string]string{"gpt-6-astra": "gpt-6-astra", "gpt-5.6-sol": "gpt-5.6-sol"},
+		Fingerprint:   strings.Repeat("a", 64), UserID: 920000016050,
 	}
 }
 

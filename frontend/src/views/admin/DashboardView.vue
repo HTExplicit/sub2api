@@ -116,15 +116,15 @@
                     :title="t('admin.dashboard.actual')"
                     >${{ formatCost(stats.today_actual_cost) }}</span
                   >
-                  <span class="text-muted"> / </span>
+                  <span class="text-gray-400 dark:text-gray-500"> / </span>
                   <span
                     class="text-orange-500 dark:text-orange-400"
                     :title="t('admin.dashboard.accountCost')"
                     >${{ formatCost(stats.today_account_cost) }}</span
                   >
-                  <span class="text-muted"> / </span>
+                  <span class="text-gray-400 dark:text-gray-500"> / </span>
                   <span
-                    class="text-muted"
+                    class="text-gray-400 dark:text-gray-500"
                     :title="t('admin.dashboard.standard')"
                     >${{ formatCost(stats.today_cost) }}</span
                   >
@@ -152,15 +152,15 @@
                     :title="t('admin.dashboard.actual')"
                     >${{ formatCost(stats.total_actual_cost) }}</span
                   >
-                  <span class="text-muted"> / </span>
+                  <span class="text-gray-400 dark:text-gray-500"> / </span>
                   <span
                     class="text-orange-500 dark:text-orange-400"
                     :title="t('admin.dashboard.accountCost')"
                     >${{ formatCost(stats.total_account_cost) }}</span
                   >
-                  <span class="text-muted"> / </span>
+                  <span class="text-gray-400 dark:text-gray-500"> / </span>
                   <span
-                    class="text-muted"
+                    class="text-gray-400 dark:text-gray-500"
                     :title="t('admin.dashboard.standard')"
                     >${{ formatCost(stats.total_cost) }}</span
                   >
@@ -227,7 +227,7 @@
             <button
               v-if="canUseBatchImage"
               type="button"
-              class="group flex items-center gap-3 rounded-none bg-gray-50 p-3 text-left transition-colors hover:bg-sky-50 dark:bg-dark-800 dark:hover:bg-sky-900/20"
+              class="group flex items-center gap-3 rounded-lg bg-gray-50 p-3 text-left transition-colors hover:bg-sky-50 dark:bg-dark-800/50 dark:hover:bg-sky-900/20"
               @click="router.push('/batch-image')"
             >
               <span class="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-lg bg-sky-100 text-sky-600 dark:bg-sky-900/30 dark:text-sky-400">
@@ -245,7 +245,7 @@
             </button>
             <button
               type="button"
-              class="group flex items-center gap-3 rounded-none bg-gray-50 p-3 text-left transition-colors hover:bg-emerald-50 dark:bg-dark-800 dark:hover:bg-emerald-900/20"
+              class="group flex items-center gap-3 rounded-lg bg-gray-50 p-3 text-left transition-colors hover:bg-emerald-50 dark:bg-dark-800/50 dark:hover:bg-emerald-900/20"
               @click="router.push('/admin/groups')"
             >
               <span class="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-lg bg-emerald-100 text-emerald-600 dark:bg-emerald-900/30 dark:text-emerald-400">

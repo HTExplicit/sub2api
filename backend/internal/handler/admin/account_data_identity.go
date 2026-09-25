@@ -142,21 +142,6 @@ func dataAccountIdentityKeys(platform string, credentials, extra map[string]any)
 		out = appendDataIdentityKey(out, seen, platform, "crs_account_id", dataMapString(source, "crs_account_id"))
 		out = appendDataIdentityKey(out, seen, platform, "service_account_id", dataMapString(source, "service_account_id"))
 	}
-	if service.IsCindyAPIKeyAccount(platform, service.AccountTypeAPIKey, credentials) {
-		normalizedURL, err := service.NormalizeCredentialIdentityBaseURL(service.ProviderProfileCindyLaxaV1, dataMapString(credentials, "base_url"))
-		if err == nil {
-			apiKey, _ := credentials["api_key"].(string)
-			fingerprint, fingerprintErr := service.AccountCredentialFingerprint(
-				service.ProviderProfileCindyLaxaV1,
-				service.AccountTypeAPIKey,
-				normalizedURL,
-				apiKey,
-			)
-			if fingerprintErr == nil {
-				out = appendDataIdentityKey(out, seen, platform, "credential_fingerprint", fingerprint)
-			}
-		}
-	}
 	return out
 }
 

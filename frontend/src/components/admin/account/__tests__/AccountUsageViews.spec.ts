@@ -42,10 +42,7 @@ const account: Account = {
   session_window_end: null,
   session_window_status: null,
   groups: [],
-  tags: [],
-  cindy_balance_probe_job_id: 912,
-  cindy_balance_probe_outcome: 'healthy',
-  cindy_balance_probe_checked_at: '2031-08-16T00:02:00Z'
+  tags: []
 }
 
 const stats: Record<string, WindowStats> = {
@@ -136,7 +133,6 @@ describe('account console usage views', () => {
     expect(cell.attributes('data-refresh-token')).toBe('4')
     expect(usage.classes()).toContain('row-start-2')
     expect(usage.get('[data-test="capacity-cell"]').attributes('data-compact')).toBe('true')
-    expect(wrapper.find('[data-test="cindy-probe-summary"]').exists()).toBe(false)
   })
 
   it('places full list usage before taxonomy in cards and forwards refresh state', () => {
@@ -156,24 +152,5 @@ describe('account console usage views', () => {
     expect(
       usage.element.compareDocumentPosition(taxonomy.element) & Node.DOCUMENT_POSITION_FOLLOWING
     ).toBeTruthy()
-    expect(wrapper.find('[data-test="cindy-probe-summary"]').exists()).toBe(false)
-  })
-
-  it('shows the recent Cindy probe in compact and card layouts only when requested', () => {
-    const compact = mount(AccountCompactList, {
-   props: { ...sharedProps, showCindyProbe: true },
-      global: { plugins: [pinia], stubs: globalStubs }
-    })
-    const cards = mount(AccountCardGrid, {
-   props: { ...sharedProps, showCindyProbe: true },
-      global: { plugins: [pinia], stubs: globalStubs }
-    })
-    mounted.push(compact, cards)
-
-    expect(compact.findAll('[data-test="cindy-probe-summary"]')).toHaveLength(2)
-    expect(compact.text()).toContain('#912')
-    expect(compact.text()).toContain('admin.accounts.cindyProbe.itemState.healthy')
-    expect(cards.get('[data-test="cindy-probe-summary"]').text()).toContain('#912')
-    expect(cards.get('[data-test="cindy-probe-summary"]').text()).toContain('admin.accounts.cindyProbe.itemState.healthy')
   })
 })

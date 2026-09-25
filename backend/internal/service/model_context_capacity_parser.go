@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"math/big"
 	"strconv"
+	"strings"
 )
 
 // parsePositiveSafeModelContextTokens accepts JSON numbers only. Rational
@@ -36,25 +37,36 @@ func parsePositiveSafeModelContextTokens(raw json.RawMessage) int64 {
 
 // ParseUpstreamModelContextCapacity is intentionally field-tolerant. A bad
 // context field cannot discard a valid output limit, other capabilities or the
-// entire model ID. No max_tokens/request budget/usage/rate limit is a context.
+// entire model ID. No request budget/usage/rate limit is a context. It covers
+// the OpenAI/relay (context_window, context_length, OpenRouter top_provider),
+// Codex ModelInfo (max_context_window), Anthropic (max_input_tokens,
+// max_tokens), Gemini (inputTokenLimit/outputTokenLimit) and models.dev
+// (limit.*) shapes.
 func ParseUpstreamModelContextCapacity(raw json.RawMessage, platform string) ModelContextCapacity {
 	var fields map[string]json.RawMessage
 	if json.Unmarshal(raw, &fields) != nil {
 		return ModelContextCapacity{}
 	}
+	var topProvider map[string]json.RawMessage
+	_ = json.Unmarshal(fields["top_provider"], &topProvider)
 	first := func(names ...string) int64 {
 		for _, name := range names {
-			if tokens := parsePositiveSafeModelContextTokens(fields[name]); tokens > 0 {
+			source := fields
+			if nested, ok := strings.CutPrefix(name, "top_provider."); ok {
+				source, name = topProvider, nested
+			}
+			if tokens := parsePositiveSafeModelContextTokens(source[name]); tokens > 0 {
 				return tokens
 			}
 		}
 		return 0
 	}
 	value := ModelContextCapacity{
-		ContextWindow:    first("context_window", "contextWindow", "context_length", "contextLength"),
+		ContextWindow:    first("context_window", "contextWindow", "context_length", "contextLength", "top_provider.context_length"),
 		MaxContextWindow: first("max_context_window", "maxContextWindow"),
 		MaxInputTokens:   first("max_input_tokens", "maxInputTokens", "input_token_limit", "inputTokenLimit"),
-		MaxOutputTokens:  first("max_output_tokens", "maxOutputTokens", "output_token_limit", "outputTokenLimit"),
+		MaxOutputTokens: first("max_output_tokens", "maxOutputTokens", "max_completion_tokens", "top_provider.max_completion_tokens",
+			"output_token_limit", "outputTokenLimit"),
 	}
 	var limits map[string]json.RawMessage
 	if json.Unmarshal(fields["limit"], &limits) == nil {

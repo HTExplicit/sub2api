@@ -16,7 +16,6 @@ import (
 	"github.com/Wei-Shaw/sub2api/internal/pkg/openai"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/tlsfingerprint"
 	"github.com/Wei-Shaw/sub2api/internal/service"
-	"github.com/Wei-Shaw/sub2api/internal/testextensions"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
 )
@@ -24,23 +23,6 @@ import (
 type availableModelsAdminService struct {
 	*stubAdminService
 	account service.Account
-}
-
-type managedAvailableModel struct {
-	ID                 string   `json:"id"`
-	Type               string   `json:"type"`
-	CreatedAt          string   `json:"created_at"`
-	LiveUpstreamID     string   `json:"live_upstream_id"`
-	ContextWindow      int      `json:"context_window"`
-	BaseContextWindow  int      `json:"base_context_window"`
-	CodexContextWindow int      `json:"codex_context_window"`
-	MaxOutputTokens    int      `json:"max_output_tokens"`
-	Endpoints          []string `json:"endpoints"`
-	SourceRevision     string   `json:"source_revision"`
-	AliasTarget        string   `json:"alias_target"`
-	Managed            bool     `json:"managed"`
-	Verified           bool     `json:"verified"`
-	PublicModel        bool     `json:"public_model"`
 }
 
 func (s *availableModelsAdminService) GetAccount(_ context.Context, id int64) (*service.Account, error) {
@@ -288,13 +270,11 @@ func TestAccountHandlerGetAvailableModels_OpenAIAPIKeyReportsUnavailableDiscover
 	svc := &availableModelsAdminService{
 		stubAdminService: newStubAdminService(),
 		account: service.Account{
-			ID:              46,
-			Name:            "openai-apikey",
-			Platform:        service.PlatformCindy,
-			WirePlatform:    service.WirePlatformOpenAI,
-			ProviderProfile: service.ProviderProfileCindyLaxaV1,
-			Type:            service.AccountTypeAPIKey,
-			Status:          service.StatusActive,
+			ID:       46,
+			Name:     "openai-apikey",
+			Platform: service.PlatformOpenAI,
+			Type:     service.AccountTypeAPIKey,
+			Status:   service.StatusActive,
 			Credentials: map[string]any{
 				"api_key": "test-key",
 			},
@@ -308,105 +288,6 @@ func TestAccountHandlerGetAvailableModels_OpenAIAPIKeyReportsUnavailableDiscover
 
 	require.Equal(t, http.StatusBadGateway, rec.Code)
 	require.NotContains(t, rec.Body.String(), "gpt-")
-}
-
-func TestAccountHandlerGetAvailableModels_CindyUsesManagedCatalogInsteadOfStoredMapping(t *testing.T) {
-	fixture := &testPlanOperations{}
-	service.ConfigureNativePolicyOperations(fixture)
-	t.Cleanup(testextensions.Install)
-	svc := &availableModelsAdminService{
-		stubAdminService: newStubAdminService(),
-		account: service.Account{
-			ID:              47,
-			Name:            "cindy-openai-apikey",
-			Platform:        service.PlatformCindy,
-			WirePlatform:    service.WirePlatformOpenAI,
-			ProviderProfile: service.ProviderProfileCindyLaxaV1,
-			Type:            service.AccountTypeAPIKey,
-			Status:          service.StatusActive,
-			Credentials: map[string]any{
-				"api_key":  "must-not-leak",
-				"base_url": "https://api.laxarouter.ai",
-				"model_mapping": map[string]any{
-					"legacy-only": "upstream/legacy-only",
-				},
-			},
-		},
-	}
-	router := setupAvailableModelsRouter(svc)
-
-	rec := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/admin/accounts/47/models", nil)
-	router.ServeHTTP(rec, req)
-
-	require.Equal(t, http.StatusOK, rec.Code)
-
-	var resp struct {
-		Data []managedAvailableModel `json:"data"`
-	}
-	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &resp))
-	require.Len(t, resp.Data, 18, "17 fixed free models and one allowed compatibility alias")
-
-	byID := make(map[string]managedAvailableModel, len(resp.Data))
-	for _, model := range resp.Data {
-		require.True(t, model.Managed)
-		require.Equal(t, "model", model.Type)
-		require.NotEmpty(t, model.SourceRevision)
-		byID[model.ID] = model
-	}
-
-	require.NotContains(t, byID, "legacy-only")
-	for _, id := range []string{"gemini-3.8-flash", "muse-spark-1.3", "hy4-preview"} {
-		require.True(t, byID[id].Verified, id)
-		require.False(t, byID[id].PublicModel, id)
-	}
-	require.False(t, byID["deepseek-flash"].PublicModel)
-	require.False(t, byID["gpt-image-2.5-flare"].PublicModel)
-	require.False(t, byID["gpt-image-2.5-sunburst"].PublicModel)
-	require.NotContains(t, byID, "gpt-6-astra")
-	luna := byID["gpt-5.6-luna"]
-	require.Equal(t, "openai/gpt-5.6-luna", luna.LiveUpstreamID)
-	require.Equal(t, 1050000, luna.ContextWindow)
-	require.Equal(t, 1050000, luna.BaseContextWindow)
-	require.Equal(t, 1050000, luna.CodexContextWindow)
-	require.Equal(t, 128000, luna.MaxOutputTokens)
-	require.True(t, luna.PublicModel)
-	require.True(t, luna.Verified)
-	require.Contains(t, luna.Endpoints, "responses")
-
-	search := byID["cindy/web-search"]
-	require.Equal(t, "cindy/web-search", search.LiveUpstreamID)
-	require.False(t, search.PublicModel)
-	require.True(t, search.Verified)
-	require.Equal(t, []string{"alpha.search"}, search.Endpoints)
-
-	review := byID["cindy/auto-review"]
-	require.Equal(t, "cindy/auto-review", review.LiveUpstreamID)
-	require.False(t, review.PublicModel)
-	require.False(t, review.Verified)
-	require.Empty(t, review.Endpoints)
-
-	mini := byID["gpt-5.4-mini"]
-	require.Equal(t, "gpt-5.6-luna", mini.AliasTarget)
-	require.Equal(t, "openai/gpt-5.6-luna", mini.LiveUpstreamID)
-	require.Equal(t, 1050000, mini.ContextWindow)
-	require.Equal(t, 128000, mini.MaxOutputTokens)
-	require.NotContains(t, byID, "gpt-5.4")
-	require.NotContains(t, byID, "gpt-5.6-sol")
-	require.NotContains(t, byID, "gpt-5.6-terra")
-	require.NotContains(t, byID, "gpt-image-2")
-
-	require.NotContains(t, rec.Body.String(), "must-not-leak")
-	require.NotContains(t, rec.Body.String(), "api_key")
-	require.NotContains(t, rec.Body.String(), "credentials")
-	reads := 0
-	for _, call := range fixture.calls {
-		if call.Operation == "cindy.catalog" {
-			reads++
-			require.EqualValues(t, 47, call.AccountID)
-		}
-	}
-	require.Equal(t, 1, reads, "native management catalog uses one real-account snapshot")
 }
 
 func TestAccountHandlerGetAvailableModels_OpenAISparkShadowReturnsMappingModels(t *testing.T) {

@@ -59,7 +59,7 @@ func RegisterGatewayRoutes(
 	}
 	countTokensHandler := func(c *gin.Context) {
 		switch getGroupPlatform(c) {
-		case service.PlatformCindy, service.PlatformOpenAI, service.PlatformKimi, service.PlatformZhipu, service.PlatformDeepseek, service.PlatformMiniMax, service.PlatformOpenCodeGo:
+		case service.PlatformOpenAI, service.PlatformKimi, service.PlatformZhipu, service.PlatformDeepseek, service.PlatformMiniMax, service.PlatformOpenCodeGo:
 			h.OpenAIGateway.CountTokens(c)
 		case service.PlatformGrok:
 			h.OpenAIGateway.GrokCountTokens(c)
@@ -82,27 +82,21 @@ func RegisterGatewayRoutes(
 	}
 	// Model IDs may carry a provider namespace ("openai/gpt-5.4"), which a
 	// ":model" segment cannot capture, so single-model discovery uses a
-	// catch-all. gin rejects a static sibling next to it, so the fixed
-	// capabilities sub-path is dispatched here. The catch-all value keeps its
-	// leading slash; it is normalized before handlers read c.Param("model").
+	// catch-all. The catch-all value keeps its leading slash; it is normalized
+	// before handlers read c.Param("model").
 	// Single-model discovery never selects the Codex client_version manifest.
-	modelPathHandler := func(withCapabilities bool) gin.HandlerFunc {
-		return func(c *gin.Context) {
-			model := strings.Trim(c.Param("model"), "/")
-			for i := range c.Params {
-				if c.Params[i].Key == "model" {
-					c.Params[i].Value = model
-				}
-			}
-			switch {
-			case model == "":
-				modelsHandler(c)
-			case withCapabilities && model == "capabilities":
-				h.Gateway.ModelCapabilities(c)
-			default:
-				h.Gateway.Models(c)
+	modelPathHandler := func(c *gin.Context) {
+		model := strings.Trim(c.Param("model"), "/")
+		for i := range c.Params {
+			if c.Params[i].Key == "model" {
+				c.Params[i].Value = model
 			}
 		}
+		if model == "" {
+			modelsHandler(c)
+			return
+		}
+		h.Gateway.Models(c)
 	}
 	isOpenAIOnlyEndpointGatewayPlatform := func(c *gin.Context) bool {
 		return getGroupPlatform(c) == service.PlatformOpenAI
@@ -237,7 +231,7 @@ func RegisterGatewayRoutes(
 		// /models endpoint with a client_version query and expect the ChatGPT
 		// Codex manifest format; other clients keep the OpenAI-style list.
 		gateway.GET("/models", modelsHandler)
-		gateway.GET("/models/*model", modelPathHandler(true))
+		gateway.GET("/models/*model", modelPathHandler)
 		gateway.GET("/usage", h.Gateway.Usage)
 		gateway.POST("/live", h.OpenAIGateway.Live)
 		gateway.GET("/live/:call_id", h.OpenAIGateway.LiveSideband)
@@ -407,7 +401,7 @@ func RegisterGatewayRoutes(
 		h.OpenAIGateway.ResponsesWebSocket(c)
 	})
 	rootRoute(http.MethodGet, "/models", bodyLimit, modelsHandler)
-	rootRoute(http.MethodGet, "/models/*model", bodyLimit, modelPathHandler(false))
+	rootRoute(http.MethodGet, "/models/*model", bodyLimit, modelPathHandler)
 	rootRoute(http.MethodPost, "/messages/count_tokens", bodyLimit, countTokensHandler)
 	codexDirect := r.Group("/backend-api/codex")
 	codexDirect.Use(bodyLimit, clientRequestID, opsErrorLogger, endpointNorm, gin.HandlerFunc(apiKeyAuth), groupModelAllowlist, compositeTarget, requireGroupAnthropic)

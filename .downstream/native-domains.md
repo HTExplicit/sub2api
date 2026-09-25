@@ -1,8 +1,8 @@
 # Native domains
 
-Seven first-party domains run inside the host: Codex runtime, model policy,
-prompt/skills, account tools, Cindy, image tools and observability. Native pages
-retain the flat theme, MiSans, account fields and persisted task interactions.
+Six first-party domains run inside the host: Codex runtime, model policy,
+system prompts, account tools, image tools and observability. Native pages
+retain the console theme (flat_theme_enabled), account fields and persisted task interactions.
 The official third-party plugin framework and its own configuration UI remain.
 
 ## Settings and operations
@@ -13,8 +13,7 @@ authentication and the existing step-up policy.
 | Interface | Contract |
 | --- | --- |
 | `GET/PUT /admin/settings/codex-runtime` | Original Codex configuration JSON, without an additional response envelope; `Cache-Control: no-store`. The source is encrypted at rest. |
-| `GET/PUT /admin/settings/cindy-provider` | Balance, catalog and search switches; the catalog is available at the `/catalog` suffix. |
-| `GET/PUT /admin/settings/image-tools` | Image Studio and Responses image bridge switches. |
+| `GET/PUT /admin/settings/image-tools` | Image Studio switch (`studio_enabled`; a missing key is off). |
 | `GET/PUT /admin/settings/observability` | Telemetry and native theme switches. |
 | `POST /admin/accounts/:id/codex-tickets/stop-job` | Persisted single-account stop operation; the batch endpoint is `/admin/accounts/codex-tickets/batch-stop`. Both return HTTP 202 and retain per-account/model retry. |
 
@@ -55,8 +54,9 @@ disabled installation rows stay unchanged; no generic metadata endpoint is added
 Before loading native settings or starting either runtime, one transaction:
 
 1. Validates the saved first-party capability scopes and decrypts configuration.
-2. Imports the effective image, observability and Cindy switches only when their
-   native settings keys are absent. Existing keys are never overwritten.
+2. Imports the effective image and observability switches only when their native
+   settings keys are absent. Existing keys are never overwritten. The retired
+   Cindy provider installation is disabled without importing its switches.
 3. Saves original installation/binding/bootstrap intent under
    `deplugin_retired_plugins`, disables the seven installations and their bindings,
    and marks their bootstrap records removed.
@@ -107,3 +107,17 @@ Normal required PR checks validate the native domain packages, account scope,
 configuration/lease/ledger compatibility and frontend behavior. The release
 reuses that source validation. Health endpoints establish availability only;
 actual model-quality diagnostics remain separately budgeted and coordinated.
+
+## Console theme
+
+`observability.theme_enabled` (public `flat_theme_enabled`, default on) toggles
+`html.flat-theme`; switching it off restores the upstream look. The console look
+lives only in the central layer: `frontend/src/styles/flat-theme.css` (tokens and
+Geist/Geist Mono Latin subsets; CJK uses system fonts), `frontend/tailwind.config.js`
+(every palette, radius, shadow and gradient resolves through a CSS variable whose
+fallback is the upstream value; hue families fold into danger/warning/info/success/
+purple; `primary` is ink), `frontend/src/style.css` (upstream recipes plus a
+`:where(.flat-theme)` console block) and the shared components and layout. Page
+files keep upstream class strings; after upstream merges, re-run the ops-repo
+de-sweep (`artifacts/tmp/admin-rework/ui/desweep/desweep.py`) instead of restyling
+pages.

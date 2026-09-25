@@ -292,14 +292,14 @@ func (e *batchTestConcurrencyExecutor) ExecuteAccountJob(ctx context.Context, _ 
 	return []AccountJobExecutionResult{{ItemID: items[0].ID, Status: AccountJobItemStatusSucceeded, Metadata: json.RawMessage(`{"account_id":1}`)}}, nil
 }
 
-func TestAccountBatchTestRuntimeUsesFiveSharedSlots(t *testing.T) {
+func TestAccountJobConcurrentRuntimeUsesFiveSharedSlots(t *testing.T) {
 	repo := newAccountJobTestRepo()
 	jobs := NewAccountJobService(repo, accountJobTestCipher{})
 	seeds := make([]AccountJobItemSeed, 12)
 	for index := range seeds {
 		seeds[index].Ordinal = index + 1
 	}
-	job, _, err := jobs.Submit(context.Background(), 9, AccountJobKindBatchTest, "batch-test-slots",
+	job, _, err := jobs.Submit(context.Background(), 9, AccountJobKindCodexTicketHarvest, "concurrent-slots",
 		json.RawMessage(`{"model_id":""}`), nil, seeds)
 	require.NoError(t, err)
 	executor := &batchTestConcurrencyExecutor{}

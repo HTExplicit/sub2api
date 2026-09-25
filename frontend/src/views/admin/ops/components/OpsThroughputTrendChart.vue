@@ -234,7 +234,7 @@ function downloadChart() {
         @click="emit('selectGroup', g.group_id)"
       >
         <span class="max-w-[180px] truncate">{{ g.group_name || `#${g.group_id}` }}</span>
-        <span class="text-muted">{{ formatNumber(g.request_count) }}</span>
+        <span class="text-gray-400 dark:text-gray-500">{{ formatNumber(g.request_count) }}</span>
       </button>
     </div>
 
@@ -247,7 +247,7 @@ function downloadChart() {
         @click="emit('selectPlatform', p.platform)"
       >
         <span class="uppercase">{{ p.platform }}</span>
-        <span class="text-muted">{{ formatNumber(p.request_count) }}</span>
+        <span class="text-gray-400 dark:text-gray-500">{{ formatNumber(p.request_count) }}</span>
       </button>
     </div>
 

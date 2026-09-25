@@ -14,7 +14,7 @@
       <button v-for="operation in store.recentJobs" :key="operation.id" type="button" class="flex w-full items-center justify-between gap-4 py-4 text-left transition-colors hover:bg-raised" @click="store.openJob(operation.id)">
         <span class="min-w-0">
           <span class="block text-sm font-medium text-ink">{{ t('admin.accountTasks.kinds.' + operation.kind) }}</span>
-          <span class="mt-1 block text-xs text-muted">{{ formatTime(operation.created_at) }} · {{ t('admin.accountTasks.resultSummary', { succeeded: operation.succeeded_count, failed: operation.failed_count, canceled: operation.canceled_count }) }}</span>
+          <span class="mt-1 block text-xs text-gray-500 dark:text-dark-300">{{ formatTime(operation.created_at) }} · {{ t('admin.accountTasks.resultSummary', { succeeded: operation.succeeded_count, failed: operation.failed_count, canceled: operation.canceled_count }) }}</span>
         </span>
         <span class="shrink-0 text-xs" :class="operation.failed_count ? 'text-amber-600 dark:text-amber-400' : 'text-primary-600 dark:text-primary-400'">{{ t('admin.accountTasks.statuses.' + operation.status) }}</span>
       </button>

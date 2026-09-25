@@ -166,7 +166,6 @@ func TestWebSocketCompatibilityOrphanCleanupAccountScope(t *testing.T) {
 	}
 	for _, account := range []*Account{
 		{Platform: PlatformOpenAI, Type: AccountTypeAPIKey},
-		{Platform: PlatformCindy, Type: AccountTypeAPIKey},
 	} {
 		t.Run(account.Platform+"_apikey", func(t *testing.T) {
 			normalized, changed, err := normalizeOpenAIResponsesWebSocketCompatibilityBody(body, account, false)
@@ -240,8 +239,6 @@ func TestNormalizeOpenAIWSPassthroughSelectedCompatibilityOnlyUsesSelectedRules(
 	for _, account := range []*Account{
 		nil,
 		{Platform: PlatformOpenAI, Type: AccountTypeAPIKey},
-		{Platform: PlatformCindy, Type: AccountTypeAPIKey},
-		{Platform: PlatformCindy, Type: AccountTypeOAuth},
 	} {
 		normalized, changed, err := normalizeOpenAIWSPassthroughSelectedCompatibilityForModel(body, account, "gpt-5.4")
 		require.NoError(t, err)

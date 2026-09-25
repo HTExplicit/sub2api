@@ -98,7 +98,7 @@ function mountView() {
         AccountBulkTaxonomyModal: true,
         AccountTaskDrawer: true,
         AccountTestModal: true,
-        BatchTestAccountModal: true,
+        BatchAccountTestModal: true,
         AccountStatsModal: true,
         ScheduledTestsPanel: true,
         ImportDataModal: true,

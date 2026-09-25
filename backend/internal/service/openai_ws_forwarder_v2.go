@@ -93,12 +93,6 @@ func (s *OpenAIGatewayService) forwardOpenAIWSV2WithScope(
 	)
 
 	payload := s.buildOpenAIWSCreatePayload(reqBody, account)
-	// The WSv2 protocol only emits streaming response events. Cindy's bridge
-	// may receive a non-streaming HTTP request, so keep reqStream unchanged for
-	// downstream JSON aggregation while forcing the upstream WS payload to stream.
-	if decision.Reason == openAICindyHTTPToWSV2Reason {
-		payload["stream"] = true
-	}
 	payloadStrategy, removedKeys := applyOpenAIWSRetryPayloadStrategy(payload, attempt)
 	turnState := ""
 	turnMetadata := ""
@@ -108,7 +102,7 @@ func (s *OpenAIGatewayService) forwardOpenAIWSV2WithScope(
 	}
 	setOpenAIWSTurnMetadata(payload, turnMetadata)
 	applyStagedCodexFingerprintClientMetadata(c, account, payload)
-	wirePayload, promptErr := s.finalizeBusinessPromptForSend(c, account, payloadAsJSONBytes(payload), BusinessSystemPromptProtocolResponses, isOpenAIResponsesCompactPath(c))
+	wirePayload, promptErr := s.finalizeResponsesForSend(c, account, payloadAsJSONBytes(payload))
 	if promptErr != nil {
 		return nil, promptErr
 	}
@@ -131,8 +125,7 @@ func (s *OpenAIGatewayService) forwardOpenAIWSV2WithScope(
 	previousResponseIDKind := ClassifyOpenAIPreviousResponseIDKind(previousResponseID)
 	promptCacheKey := openAIWSPayloadString(payload, "prompt_cache_key")
 	if promptCacheKey == "" {
-		application, _ := businessSystemPromptApplicationFromRequest(c, BusinessSystemPromptProtocolResponses)
-		promptCacheKey = deriveBusinessSystemPromptCacheKey(c, strings.TrimSpace(clientPromptCacheKey), application)
+		promptCacheKey = strings.TrimSpace(clientPromptCacheKey)
 	}
 	_, hasTools := payload["tools"]
 	debugEnabled := isOpenAIWSModeDebugEnabled()
@@ -284,13 +277,7 @@ func (s *OpenAIGatewayService) forwardOpenAIWSV2WithScope(
 			}
 			return nil, &agentIdentityTaskRecoveredError{}
 		}
-		// Cindy's HTTP -> WSv2 bridge classifies and records the first-turn
-		// handshake exactly once in the outer failover boundary. Continuations
-		// are request-scoped and must not mutate account health when affinity is
-		// unavailable.
-		if decision.Reason != openAICindyHTTPToWSV2Reason {
-			s.handleOpenAIWSDialTransientFailure(ctx, account, mappedModel, err)
-		}
+		s.handleOpenAIWSDialTransientFailure(ctx, account, mappedModel, err)
 		dialStatus, dialClass, dialCloseStatus, dialCloseReason, dialRespServer, dialRespVia, dialRespCFRay, dialRespReqID := summarizeOpenAIWSDialError(err)
 		logOpenAIWSModeInfo(
 			"acquire_fail account_id=%d account_type=%s transport=%s reason=%s dial_status=%d dial_class=%s dial_close_status=%s dial_close_reason=%s dial_resp_server=%s dial_resp_via=%s dial_resp_cf_ray=%s dial_resp_x_request_id=%s cause=%s preferred_conn_id=%s force_new_conn=%v ws_host=%s ws_path=%s proxy_enabled=%v",
@@ -724,8 +711,8 @@ readLoop:
 		rawUpstreamMessage := append([]byte(nil), message...)
 		rawEventType, _, _ := parseOpenAIWSEventEnvelope(rawUpstreamMessage)
 		if rawEventType == "error" || rawEventType == "response.failed" {
-			if failoverErr, ok := s.cindyBalanceTerminalFailover(
-				ctx, account, lease.HandshakeHeaders(), rawUpstreamMessage, mappedModel,
+			if failoverErr, ok := s.openAIBudgetExceededTerminalFailover(
+				ctx, account, lease.HandshakeHeaders(), rawUpstreamMessage,
 			); ok {
 				lease.MarkBroken()
 				bufferedStreamEvents = bufferedStreamEvents[:0]
@@ -742,13 +729,13 @@ readLoop:
 						emitStreamMessage(OpenAIWSRetryableFailureEvent(), true)
 					}
 				}
-				return nil, errors.New("cindy balance exhausted after downstream output")
+				return nil, errors.New("upstream budget exhausted after downstream output")
 			}
 		}
 		if normalized, changed := normalizeCompletedImageGenerationStatus(message); changed {
 			message = normalized
 		}
-		message = s.rewriteBusinessSystemPromptJSONForRequest(c, message, BusinessSystemPromptProtocolResponses)
+		message = restoreSystemPromptEcho(c, message)
 
 		eventType, eventResponseID, responseField := parseOpenAIWSEventEnvelope(message)
 		if eventType == "" {
@@ -810,8 +797,6 @@ readLoop:
 		if eventType == "error" || eventType == "response.failed" {
 			markOpenAICyberPolicyEvent(c, message, http.StatusOK, usage)
 		}
-		cindyHTTPToWSV2FirstTurn := decision.Reason == openAICindyHTTPToWSV2Reason &&
-			previousResponseID == "" && !wroteDownstream
 		if eventType == "response.failed" {
 			if continuationKind := classifyOpenAIContinuationStateError("", message); continuationKind != openAIContinuationStateErrorNone && !wroteDownstream {
 				lease.MarkBroken()
@@ -820,22 +805,11 @@ readLoop:
 				}
 				return nil, wrapOpenAIWSFallback(string(continuationKind), errors.New("upstream continuation state rejected"))
 			}
-			if cindyHTTPToWSV2FirstTurn {
-				if failoverErr, ok := s.cindyHTTPToWSV2FirstTurnEventFailover(
-					ctx, c, account, mappedModel, lease.HandshakeHeaders(), message,
-				); ok {
-					if refusalOutput != nil {
-						refusalOutput.DropTurn()
-					}
-					return nil, failoverErr
-				}
-			}
-			if !wroteDownstream && IsCindyRuntimeCompatibleAPIKeyAccount(account.Platform, account.Type, account.Credentials) &&
-				isOpenAIModelNotSupportedPayload(message) {
+			if !wroteDownstream && account.IsOpenAICompatible() && isOpenAIModelNotSupportedPayload(message) {
 				// This is an account/model capability response carried over an
 				// established HTTP-200 WS stream. Preserve the structured signal so
-				// the outer scheduler can cool only this Cindy/Laxa pair and, when
-				// the turn is replay-safe, move to another credential.
+				// the outer scheduler can cool only this account/model pair and,
+				// when the turn is replay-safe, move to another credential.
 				_ = s.handleOpenAIAccountUpstreamError(ctx, account, http.StatusBadRequest, nil, message, mappedModel)
 				lease.MarkBroken()
 				if refusalOutput != nil {
@@ -870,18 +844,7 @@ readLoop:
 		}
 
 		if eventType == "error" {
-			if cindyHTTPToWSV2FirstTurn {
-				if failoverErr, ok := s.cindyHTTPToWSV2FirstTurnEventFailover(
-					ctx, c, account, mappedModel, lease.HandshakeHeaders(), message,
-				); ok {
-					if refusalOutput != nil {
-						refusalOutput.DropTurn()
-					}
-					return nil, failoverErr
-				}
-			}
-			if !wroteDownstream && IsCindyRuntimeCompatibleAPIKeyAccount(account.Platform, account.Type, account.Credentials) &&
-				isOpenAIModelNotSupportedPayload(message) {
+			if !wroteDownstream && account.IsOpenAICompatible() && isOpenAIModelNotSupportedPayload(message) {
 				_ = s.handleOpenAIAccountUpstreamError(ctx, account, http.StatusBadRequest, nil, message, mappedModel)
 				lease.MarkBroken()
 				if refusalOutput != nil {
@@ -891,11 +854,10 @@ readLoop:
 			}
 			s.handleOpenAIWSErrorEventTransientFailure(ctx, account, mappedModel, lease.HandshakeHeaders(), message)
 			errCodeRaw, errTypeRaw, errMsgRaw := parseOpenAIWSErrorEventFields(message)
-			if IsCindyRuntimeCompatibleAPIKeyAccount(account.Platform, account.Type, account.Credentials) &&
-				isOpenAIModelNotSupportedPayload(message) {
+			if account.IsOpenAICompatible() && isOpenAIModelNotSupportedPayload(message) {
 				// The event is carried over an established HTTP-200 WebSocket
 				// stream, but its structured type is an account/model capability
-				// failure. Persist the Cindy pair cooldown before any fallback.
+				// failure. Persist the pair cooldown before any fallback.
 				model := strings.TrimSpace(mappedModel)
 				if model == "" {
 					model = firstNonEmpty(gjson.GetBytes(message, "model").String(), gjson.GetBytes(message, "response.model").String())
@@ -950,8 +912,7 @@ readLoop:
 			// error 事件后连接不再可复用，避免回池后污染下一请求。
 			lease.MarkBroken()
 			if fallbackReason == "model_not_supported" {
-				canFallback = IsCindyRuntimeCompatibleAPIKeyAccount(account.Platform, account.Type, account.Credentials) &&
-					isOpenAIModelNotSupportedPayload(message)
+				canFallback = account.IsOpenAICompatible() && isOpenAIModelNotSupportedPayload(message)
 			}
 			if fallbackReason == "model_not_supported" && canFallback && !wroteDownstream {
 				_ = s.handleOpenAIAccountUpstreamError(ctx, account, http.StatusBadRequest, lease.HandshakeHeaders(), message, mappedModel)

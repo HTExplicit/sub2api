@@ -771,8 +771,9 @@ func TestSyncUpstreamModelCatalogDoesNotOverwriteSnapshotWhenRegistryFails(t *te
 		Code:    UpstreamModelMetadataIncompleteCode,
 		Message: "Model IDs were synced, but capability metadata is incomplete.",
 	}}, catalog.Warnings)
-	require.NotContains(t, repo.updates, UpstreamModelMetadataExtraKey, "a failed metadata enrichment must not erase a previously saved capability snapshot")
-	require.Contains(t, repo.updates, UpstreamModelContextCapacitiesExtraKey, "live model IDs remain available to the local capacity panel")
+	saved, ok := repo.updates[UpstreamModelMetadataExtraKey].(UpstreamModelMetadataSnapshot)
+	require.True(t, ok, "the sync time is recorded even when enrichment fails")
+	require.NotNil(t, saved.Models["x-preview-f-free"].Reasoning, "a failed metadata enrichment must not erase a previously saved capability entry")
 }
 
 func TestSyncUpstreamModelCatalogDoesNotPersistPartialMetadataWhenRegistryFails(t *testing.T) {
@@ -799,8 +800,10 @@ func TestSyncUpstreamModelCatalogDoesNotPersistPartialMetadataWhenRegistryFails(
 	require.Equal(t, []string{"partially-described-model"}, catalog.Models)
 	require.Equal(t, "Partial Model", catalog.Metadata["partially-described-model"].DisplayName)
 	require.Equal(t, UpstreamModelMetadataIncompleteCode, catalog.Warnings[0].Code)
-	require.NotContains(t, repo.updates, UpstreamModelMetadataExtraKey, "partial metadata must not replace a more complete persisted capability snapshot")
-	require.Contains(t, repo.updates, UpstreamModelContextCapacitiesExtraKey)
+	saved, ok := repo.updates[UpstreamModelMetadataExtraKey].(UpstreamModelMetadataSnapshot)
+	require.True(t, ok)
+	require.Equal(t, []string{"low", "high"}, saved.Models["partially-described-model"].SupportedReasoningLevels, "partial metadata must not replace a more complete persisted capability entry")
+	require.Empty(t, saved.Models["partially-described-model"].DisplayName)
 }
 
 // Scenario: 图片专用模型缺少 context 时，不阻止 agent 模型能力落库，也不误报整批失败。

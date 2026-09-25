@@ -11,8 +11,6 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
-	"os"
-	"os/exec"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -112,6 +110,19 @@ func (r splitCodexModelsAccountRepo) ListModelAvailabilityCandidates(_ context.C
 	return append([]Account(nil), r.catalog[*groupID]...), nil
 }
 
+// ListModelCapacityCandidates returns every active member: the schedulable
+// switch narrows capability intersection, not advertised capacity.
+func (r splitCodexModelsAccountRepo) ListModelCapacityCandidates(_ context.Context, groupID *int64, _ []string, _ bool) ([]Account, error) {
+	if groupID == nil {
+		return nil, nil
+	}
+	accounts := r.all[*groupID]
+	if accounts == nil {
+		accounts = r.catalog[*groupID]
+	}
+	return append([]Account(nil), accounts...), nil
+}
+
 func newCodexCatalogMappedAccount(
 	id int64,
 	target string,
@@ -164,15 +175,7 @@ func newCodexCatalogMappedAccount(
 			ContextWindow:            1_000_000,
 		}
 	}
-	account.SetUpstreamModelMetadataSnapshot(UpstreamModelMetadataSnapshot{Models: models})
-	capacities := make(map[string]ModelContextCapacity, len(models))
-	for modelID, metadata := range models {
-		capacities[modelID] = ModelContextCapacity{ContextWindow: metadata.ContextWindow}
-	}
-	account.SetUpstreamModelContextCapacitySnapshot(UpstreamModelContextCapacitySnapshot{
-		ObservedAt: "2026-09-07T00:00:00Z",
-		Models:     capacities,
-	})
+	account.SetUpstreamModelMetadataSnapshot(UpstreamModelMetadataSnapshot{Source: "upstream", Models: models})
 	return account
 }
 
@@ -1108,8 +1111,8 @@ func TestBuildCodexModelsManifestForGroupLoadsAccountsOnce(t *testing.T) {
 		[]string{"vision-alias-a", "vision-alias-b", "deepseek-v4-pro"},
 	)
 	require.NoError(t, err)
-	require.Zero(t, repo.calls.Load(), "successful capacity lookup must not query the transient scheduling pool")
-	require.Equal(t, int32(1), repo.availabilityCalls.Load())
+	require.Equal(t, int32(1), repo.calls.Load())
+	require.Equal(t, int32(2), repo.availabilityCalls.Load(), "one capability and one capacity candidate query")
 	require.NotNil(t, repo.groupID)
 	require.Equal(t, groupID, *repo.groupID)
 	require.False(t, repo.includeGrouped)
@@ -1117,7 +1120,6 @@ func TestBuildCodexModelsManifestForGroupLoadsAccountsOnce(t *testing.T) {
 	require.Contains(t, repo.platforms, PlatformGrok)
 	require.Contains(t, repo.platforms, PlatformDeepseek)
 	require.Contains(t, repo.platforms, PlatformMiniMax)
-	require.Contains(t, repo.platforms, PlatformCindy)
 	require.Contains(t, repo.platforms, PlatformOpenCodeGo)
 	require.NotContains(t, repo.platforms, PlatformComposite)
 }
@@ -1134,14 +1136,12 @@ func TestBuildCodexModelsManifestForGroupUsesFallbackWhenTextOnlyPlatformHasNoSn
 		[]string{"deepseek-v4-pro"},
 	)
 	require.NoError(t, err)
-	require.Zero(t, repo.calls.Load())
-	require.Equal(t, int32(1), repo.availabilityCalls.Load())
+	require.Equal(t, int32(1), repo.calls.Load())
 
 	models := decodeCodexManifestModels(t, body)
 	require.Len(t, models, 1)
 	require.Equal(t, []any{"text"}, models[0]["input_modalities"])
-	require.EqualValues(t, 200_000, models[0]["context_window"])
-	require.Equal(t, "default", models[0]["context_capacity_source"])
+	require.NotContains(t, models[0], "context_capacity_source", "without any account the manifest keeps its descriptor template")
 }
 
 func TestBuildCodexModelsManifestForGroupFallsBackWhenCapabilityLookupFails(t *testing.T) {
@@ -1160,15 +1160,13 @@ func TestBuildCodexModelsManifestForGroupFallsBackWhenCapabilityLookupFails(t *t
 	)
 	require.NoError(t, err)
 	require.Equal(t, int32(1), repo.calls.Load())
-	require.Equal(t, int32(1), repo.availabilityCalls.Load())
 
 	models := decodeCodexManifestModels(t, body)
 	require.Len(t, models, 2)
 	require.Equal(t, []any{"text"}, models[0]["input_modalities"])
 	require.Equal(t, []any{"text"}, models[1]["input_modalities"])
 	for _, model := range models {
-		require.EqualValues(t, 200_000, model["context_window"])
-		require.Equal(t, "account_query_failed", model["context_capacity_reason"])
+		require.NotContains(t, model, "context_capacity_source", "a failed lookup never invents a capacity")
 	}
 }
 
@@ -1249,14 +1247,9 @@ func TestBuildGroupConfiguredCodexModelsManifestUsesAdministratorConfiguration(t
 			SupportedReasoningLevels: []string{"low", "medium", "high"},
 			InputModalities:          []string{"text"},
 			ContextWindow:            1_000_000,
+			CapacitySource:           ModelContextSourceUpstream,
 		},
 	}})
-	arkAccount.SetUpstreamModelContextCapacitySnapshot(UpstreamModelContextCapacitySnapshot{
-		ObservedAt: "2026-09-07T00:00:00Z",
-		Models: map[string]ModelContextCapacity{
-			"glm-5.3": {ContextWindow: 1_000_000},
-		},
-	})
 	svc := &OpenAIGatewayService{accountRepo: codexModelsVisibilityAccountRepo{
 		byGroup: map[int64][]Account{
 			groupID: {
@@ -1327,9 +1320,7 @@ func TestBuildGroupConfiguredCodexModelsManifestUsesResolvedTargetsForOrdinaryGP
 		bySlug[slug] = model
 	}
 	for _, slug := range []string{"gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna"} {
-		require.EqualValues(t, 200_000, bySlug[slug]["context_window"], "public GPT aliases must not identify unknown upstream targets")
-		require.EqualValues(t, 200_000, bySlug[slug]["max_context_window"])
-		require.Equal(t, "default", bySlug[slug]["context_capacity_source"])
+		require.NotContains(t, bySlug[slug], "context_capacity_source", "public GPT aliases must not identify unknown upstream targets")
 		require.Nil(t, bySlug[slug]["auto_compact_token_limit"])
 	}
 	notModified, configured, err := svc.BuildGroupConfiguredCodexModelsManifest(
@@ -1344,7 +1335,7 @@ func TestBuildGroupConfiguredCodexModelsManifestUsesResolvedTargetsForOrdinaryGP
 	require.Equal(t, manifest.ETag, notModified.ETag)
 }
 
-func TestMergeGroupConfiguredCodexModelsForAccountAppliesOfficialCapacityAfterFinalMerge(t *testing.T) {
+func TestMergeGroupConfiguredCodexModelsAppliesReferenceCapacityAfterFinalMerge(t *testing.T) {
 	t.Parallel()
 
 	const groupID int64 = 79
@@ -1358,12 +1349,11 @@ func TestMergeGroupConfiguredCodexModelsForAccountAppliesOfficialCapacityAfterFi
 		{"slug":"gpt-5.6-luna","context_window":272000,"max_context_window":872000,"auto_compact_token_limit":null}
 	]}`)}
 
-	require.NoError(t, svc.MergeGroupConfiguredCodexModelsForAccount(
+	require.NoError(t, svc.MergeGroupConfiguredCodexModels(
 		context.Background(),
 		&Group{ID: groupID, Platform: PlatformOpenAI},
 		manifest,
 		"",
-		account,
 	))
 	models := decodeCodexManifestModels(t, manifest.Body)
 	bySlug := make(map[string]map[string]any, len(models))
@@ -1373,8 +1363,8 @@ func TestMergeGroupConfiguredCodexModelsForAccountAppliesOfficialCapacityAfterFi
 		bySlug[slug] = model
 	}
 	for _, slug := range []string{"gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna"} {
-		require.EqualValues(t, 1_050_000, bySlug[slug]["context_window"])
-		require.EqualValues(t, 1_050_000, bySlug[slug]["max_context_window"])
+		require.EqualValues(t, 272_000, bySlug[slug]["context_window"], "GPT references are the Codex subscription values for API keys too")
+		require.EqualValues(t, 872_000, bySlug[slug]["max_context_window"])
 		require.Equal(t, "official", bySlug[slug]["context_capacity_source"])
 		require.Nil(t, bySlug[slug]["auto_compact_token_limit"], "final projection must not invent a fixed 900K compaction threshold")
 	}
@@ -1385,28 +1375,15 @@ func TestMergeGroupConfiguredCodexModelsForAccountAppliesOfficialCapacityAfterFi
 		{"slug":"gpt-5.6-terra","context_window":272000,"max_context_window":872000,"auto_compact_token_limit":null},
 		{"slug":"gpt-5.6-luna","context_window":272000,"max_context_window":872000,"auto_compact_token_limit":null}
 	]}`)}
-	require.NoError(t, svc.MergeGroupConfiguredCodexModelsForAccount(
+	require.NoError(t, svc.MergeGroupConfiguredCodexModels(
 		context.Background(),
 		&Group{ID: groupID, Platform: PlatformOpenAI},
 		repeated,
 		"W/"+manifest.ETag,
-		account,
 	))
 	require.True(t, repeated.NotModified)
 	require.Empty(t, repeated.Body)
 	require.Equal(t, manifest.ETag, repeated.ETag)
-}
-
-func TestOrdinaryCodexContextNormalizationExcludesOAuthAndCindy(t *testing.T) {
-	t.Parallel()
-
-	require.False(t, CanManageModelContextCapacity(&Account{
-		Platform: PlatformOpenAI,
-		Type:     AccountTypeOAuth,
-	}))
-	cindy := newCodexModelsAPIKeyTestAccount("https://api.laxarouter.ai")
-	cindy.Platform = PlatformCindy
-	require.False(t, CanManageModelContextCapacity(cindy))
 }
 
 // Scenario: OpenAI 通配映射展开组内精确选择，但不发布通配符 slug。
@@ -1532,7 +1509,7 @@ func TestBuildGroupConfiguredCodexModelsManifestIgnoresPersistentlyDisabledMappe
 	require.Equal(t, "my-coder", models[0]["slug"])
 	require.Equal(t, []string{"low", "medium", "high", "xhigh"}, effortsFromManifestModel(t, models[0]))
 	require.Equal(t, []any{"text", "image"}, models[0]["input_modalities"])
-	require.EqualValues(t, 1_000_000, models[0]["context_window"], "the remaining relay account's own declaration is advertised, not the disabled account's narrower one")
+	require.EqualValues(t, 272_000, models[0]["context_window"], "an unschedulable active account still bounds capacity; only capability intersection skips it")
 	require.Equal(t, "upstream", models[0]["context_capacity_source"])
 }
 
@@ -2177,425 +2154,17 @@ func TestFetchCodexModelsManifestAPIKeyConvertsStandardOpenAIModelList(t *testin
 	require.Equal(t, `W/"openai-list"`, manifest.upstreamETag)
 }
 
-func TestFetchCodexModelsManifestNonCindyPreservesLiveAliasAndUnverifiedIDs(t *testing.T) {
-	if !runCindyCodexCatalogEnabledTest(t) {
-		return
-	}
-	const upstreamBody = `{"models":[{"slug":"openai/gpt-5.6-sol"},{"slug":"gpt-5.4"},{"slug":"deepseek/deepseek-v4-pro"}]}`
-	upstream := &codexModelsHTTPUpstreamStub{do: func(_ *http.Request, _ string, _ int64, _ int) (*http.Response, error) {
-		return &http.Response{
-			StatusCode: http.StatusOK,
-			Header:     make(http.Header),
-			Body:       io.NopCloser(strings.NewReader(upstreamBody)),
-		}, nil
-	}}
-
-	s := newCodexModelsAPIKeyTestService(upstream)
-	manifest, err := s.FetchCodexModelsManifest(
-		context.Background(),
-		newCodexModelsAPIKeyTestAccount("https://ordinary.example/v1"),
-		"0.144.0",
-		"",
-	)
-
-	require.NoError(t, err)
-	require.Equal(t, upstreamBody, string(manifest.Body))
-}
-
-func TestProjectCindyCodexModelsManifestMapsLiveAndHiddenAliases(t *testing.T) {
-	if !runCindyCodexCatalogEnabledTest(t) {
-		return
-	}
-	body := []byte(`{"models":[` +
-		`{"slug":"openai/gpt-5.6-sol","display_name":"Sol live"},` +
-		`{"slug":"gpt-5.4","display_name":"duplicate alias"},` +
-		`{"slug":"gpt-5.4-mini","use_responses_lite":true},` +
-		`{"slug":"bytedance-seed/seed-2.1-pro"},` +
-		`{"slug":"deepseek/deepseek-v4-pro"},` +
-		`{"slug":"anthropic/claude-opus-5"},` +
-		`{"slug":"x-ai/grok-4.6"},` +
-		`{"slug":"google/gemini-3-pro-image"},` +
-		`{"slug":"openai/gpt-image-2"}` +
-		`],"metadata":{"version":1}}`)
-
-	projected, err := projectCindyCodexModelsManifest(body)
-
-	require.NoError(t, err)
-	require.JSONEq(t, `{"models":[`+
-		`{"slug":"gpt-5.6-luna","use_responses_lite":true},`+
-		`{"slug":"deepseek-v4-pro"}`+
-		`],"metadata":{"version":1}}`, string(projected))
-	require.NotContains(t, string(projected), "openai/gpt-5.6-sol")
-	require.NotContains(t, string(projected), "gpt-5.4")
-	require.Contains(t, string(projected), "deepseek-v4-pro")
-	require.NotContains(t, string(projected), "claude-opus-5")
-	require.NotContains(t, string(projected), "grok-4.6")
-	require.NotContains(t, string(projected), "gemini-3-pro-image")
-}
-
-func TestBuildCindyCodexModelsManifestMatchesRustV01470ModelInfoContract(t *testing.T) {
-	if !runCindyCodexCatalogEnabledTest(t) {
-		return
-	}
-
-	manifest, err := BuildCindyCodexModelsManifest("")
-	require.NoError(t, err)
-	require.NotEmpty(t, manifest.ETag)
-
-	var envelope struct {
-		Models []map[string]json.RawMessage `json:"models"`
-	}
-	require.NoError(t, json.Unmarshal(manifest.Body, &envelope))
-	require.Len(t, envelope.Models, len(CindyCodexPublicModelIDs()))
-
-	// These are the fields without serde defaults in the official
-	// openai/codex rust-v0.147.0 ModelInfo contract.
-	requiredFields := []string{
-		"slug", "display_name", "description", "default_reasoning_level",
-		"supported_reasoning_levels", "shell_type", "visibility", "supported_in_api",
-		"priority", "additional_speed_tiers", "service_tiers", "default_service_tier",
-		"availability_nux", "upgrade", "base_instructions", "model_messages",
-		"include_skills_usage_instructions", "include_plugin_usage_instructions",
-		"include_apps_usage_instructions", "supports_reasoning_summary_parameter",
-		"default_reasoning_summary", "support_verbosity", "default_verbosity",
-		"apply_patch_tool_type", "web_search_tool_type", "truncation_policy",
-		"supports_parallel_tool_calls", "supports_image_detail_original",
-		"context_window", "max_context_window", "auto_compact_token_limit", "comp_hash",
-		"effective_context_window_percent", "experimental_supported_tools",
-		"input_modalities", "supports_search_tool", "use_responses_lite",
-		"auto_review_model_override", "model_specialty", "tool_mode", "multi_agent_version",
-	}
-	bySlug := make(map[string]map[string]json.RawMessage, len(envelope.Models))
-	for _, model := range envelope.Models {
-		for _, field := range requiredFields {
-			_, ok := model[field]
-			require.Truef(t, ok, "missing rust-v0.147.0 ModelInfo field %q in %s", field, model["slug"])
-		}
-		var slug, shellType, visibility string
-		var supportedInAPI, includeSkills, includePlugins, includeApps, supportsReasoningSummary bool
-		var supportVerbosity, supportsParallel, supportsImageDetail bool
-		var supportsSearch, useResponsesLite bool
-		var priority, effectiveContextPercent int
-		var baseInstructions, defaultReasoningSummary, webSearchToolType string
-		var additionalSpeedTiers, experimentalTools, inputModalities []string
-		var serviceTiers []struct {
-			ID          string `json:"id"`
-			Name        string `json:"name"`
-			Description string `json:"description"`
-		}
-		var description, defaultReasoningLevel *string
-		var supportedReasoningLevels []struct {
-			Effort      string `json:"effort"`
-			Description string `json:"description"`
-		}
-		var contextWindow, maxContextWindow *int
-		require.NoError(t, json.Unmarshal(model["slug"], &slug))
-		require.NoError(t, json.Unmarshal(model["shell_type"], &shellType))
-		require.NoError(t, json.Unmarshal(model["visibility"], &visibility))
-		require.NoError(t, json.Unmarshal(model["supported_in_api"], &supportedInAPI))
-		require.NoError(t, json.Unmarshal(model["priority"], &priority))
-		require.NoError(t, json.Unmarshal(model["description"], &description))
-		require.NoError(t, json.Unmarshal(model["default_reasoning_level"], &defaultReasoningLevel))
-		require.NoError(t, json.Unmarshal(model["supported_reasoning_levels"], &supportedReasoningLevels))
-		require.NoError(t, json.Unmarshal(model["additional_speed_tiers"], &additionalSpeedTiers))
-		require.NoError(t, json.Unmarshal(model["service_tiers"], &serviceTiers))
-		require.NoError(t, json.Unmarshal(model["base_instructions"], &baseInstructions))
-		require.NoError(t, json.Unmarshal(model["include_skills_usage_instructions"], &includeSkills))
-		require.NoError(t, json.Unmarshal(model["include_plugin_usage_instructions"], &includePlugins))
-		require.NoError(t, json.Unmarshal(model["include_apps_usage_instructions"], &includeApps))
-		require.NoError(t, json.Unmarshal(model["supports_reasoning_summary_parameter"], &supportsReasoningSummary))
-		require.NoError(t, json.Unmarshal(model["default_reasoning_summary"], &defaultReasoningSummary))
-		require.NoError(t, json.Unmarshal(model["support_verbosity"], &supportVerbosity))
-		require.NoError(t, json.Unmarshal(model["web_search_tool_type"], &webSearchToolType))
-		require.NoError(t, json.Unmarshal(model["supports_parallel_tool_calls"], &supportsParallel))
-		require.NoError(t, json.Unmarshal(model["supports_image_detail_original"], &supportsImageDetail))
-		require.NoError(t, json.Unmarshal(model["context_window"], &contextWindow))
-		require.NoError(t, json.Unmarshal(model["max_context_window"], &maxContextWindow))
-		require.NoError(t, json.Unmarshal(model["effective_context_window_percent"], &effectiveContextPercent))
-		require.NoError(t, json.Unmarshal(model["experimental_supported_tools"], &experimentalTools))
-		require.NoError(t, json.Unmarshal(model["input_modalities"], &inputModalities))
-		require.NoError(t, json.Unmarshal(model["supports_search_tool"], &supportsSearch))
-		require.NoError(t, json.Unmarshal(model["use_responses_lite"], &useResponsesLite))
-		require.Equal(t, "shell_command", shellType)
-		require.Equal(t, "list", visibility)
-		require.True(t, supportedInAPI)
-		require.Positive(t, priority)
-		require.Empty(t, additionalSpeedTiers)
-		require.Empty(t, serviceTiers)
-		allowedEfforts := []string{"none", "minimal", "low", "medium", "high", "xhigh", "max", "ultra"}
-		if defaultReasoningLevel != nil {
-			require.Contains(t, allowedEfforts, *defaultReasoningLevel)
-		}
-		for _, effort := range supportedReasoningLevels {
-			require.Contains(t, allowedEfforts, effort.Effort)
-			require.NotEmpty(t, effort.Description)
-		}
-		require.NotEmpty(t, baseInstructions)
-		require.False(t, includeSkills)
-		require.False(t, includePlugins)
-		require.False(t, includeApps)
-		require.True(t, supportsReasoningSummary)
-		require.Equal(t, "auto", defaultReasoningSummary)
-		require.False(t, supportVerbosity)
-		require.Equal(t, "text", webSearchToolType)
-		require.False(t, supportsParallel)
-		require.False(t, supportsImageDetail)
-		require.Equal(t, contextWindow, maxContextWindow)
-		require.Equal(t, 95, effectiveContextPercent)
-		require.Empty(t, experimentalTools)
-		require.NotEmpty(t, inputModalities)
-		for _, modality := range inputModalities {
-			require.Contains(t, []string{"text", "image", "audio", "video", "file"}, modality)
-		}
-		require.False(t, supportsSearch)
-		require.False(t, useResponsesLite)
-		for _, nullField := range []string{
-			"default_service_tier", "availability_nux", "upgrade", "model_messages",
-			"default_verbosity", "apply_patch_tool_type", "comp_hash",
-			"auto_review_model_override", "model_specialty", "tool_mode", "multi_agent_version",
-		} {
-			require.JSONEqf(t, "null", string(model[nullField]), "field %s must be explicit null", nullField)
-		}
-		if strings.HasPrefix(slug, "gpt-5.6-") {
-			var autoCompact int
-			require.NoError(t, json.Unmarshal(model["auto_compact_token_limit"], &autoCompact))
-			require.Equal(t, 900000, autoCompact)
-		} else {
-			require.JSONEq(t, "null", string(model["auto_compact_token_limit"]))
-		}
-		var truncation struct {
-			Mode  string `json:"mode"`
-			Limit int64  `json:"limit"`
-		}
-		require.NoError(t, json.Unmarshal(model["truncation_policy"], &truncation))
-		require.Contains(t, []string{"bytes", "tokens"}, truncation.Mode)
-		require.Positive(t, truncation.Limit)
-		bySlug[slug] = model
-	}
-
-	require.NotContains(t, bySlug, "gpt-5.4")
-	require.NotContains(t, bySlug, "gpt-5.4-mini")
-	require.NotContains(t, bySlug, "openai/gpt-5.6-sol")
-	require.Contains(t, bySlug, "deepseek-v4-pro")
-
-	assertCodexModel := func(slug string, contextWindow int, defaultEffort string, efforts []string, truncationMode string) {
-		t.Helper()
-		model := bySlug[slug]
-		require.NotNil(t, model)
-		var gotContext, gotMaxContext int
-		var gotDefault string
-		var gotEfforts []struct {
-			Effort      string `json:"effort"`
-			Description string `json:"description"`
-		}
-		require.NoError(t, json.Unmarshal(model["context_window"], &gotContext))
-		require.NoError(t, json.Unmarshal(model["max_context_window"], &gotMaxContext))
-		require.NoError(t, json.Unmarshal(model["default_reasoning_level"], &gotDefault))
-		require.NoError(t, json.Unmarshal(model["supported_reasoning_levels"], &gotEfforts))
-		require.Equal(t, contextWindow, gotContext)
-		require.Equal(t, contextWindow, gotMaxContext)
-		require.NotContains(t, model, "max_output_tokens")
-		require.Equal(t, defaultEffort, gotDefault)
-		gotEffortNames := make([]string, 0, len(gotEfforts))
-		for _, effort := range gotEfforts {
-			require.NotEmpty(t, effort.Description)
-			gotEffortNames = append(gotEffortNames, effort.Effort)
-		}
-		require.Equal(t, efforts, gotEffortNames)
-		var truncation cindyCodexTruncationPolicy
-		require.NoError(t, json.Unmarshal(model["truncation_policy"], &truncation))
-		require.Equal(t, truncationMode, truncation.Mode)
-		require.Equal(t, int64(10000), truncation.Limit)
-	}
-	assertCodexModel("gpt-5.6-luna", 1050000, "medium", []string{"low", "medium", "high", "xhigh", "max"}, "tokens")
-	assertCodexModel("deepseek-v4-pro", 1048576, "high", []string{"low", "high", "max"}, "bytes")
-	assertCodexModel("qwen3.8-flash", 991808, "medium", []string{"low", "medium", "xhigh"}, "bytes")
-	assertCodexModel("glm-5.3-flash", 1000000, "high", []string{"low", "high", "max"}, "bytes")
-}
-
-func TestMergeCindyCodexModelsManifestPreservesOrdinaryKnownModelIDs(t *testing.T) {
-	if !runCindyCodexCatalogEnabledTest(t) {
-		return
-	}
-	body := []byte(`{"models":[` +
-		`{"slug":"ordinary-model","display_name":"Ordinary"},` +
-		`{"slug":"openai/gpt-5.6-sol"},` +
-		`{"slug":"gpt-5.6-sol","display_name":"Ordinary public Sol"},` +
-		`{"slug":"gpt-5.4"},` +
-		`{"slug":"gpt-5.4-mini"},` +
-		`{"slug":"deepseek/deepseek-v4-pro"},` +
-		`{"slug":"anthropic/claude-opus-5"},` +
-		`{"slug":"x-ai/grok-4.6"},` +
-		`{"slug":"google/gemini-3-pro-image"}` +
-		`],"metadata":{"ordinary":true}}`)
-
-	merged, err := MergeCindyCodexModelsManifest(&OpenAIModelsResponse{Body: body}, "")
-	require.NoError(t, err)
-	require.NotEmpty(t, merged.ETag)
-
-	var envelope struct {
-		Models []struct {
-			Slug string `json:"slug"`
-		} `json:"models"`
-		Metadata map[string]bool `json:"metadata"`
-	}
-	require.NoError(t, json.Unmarshal(merged.Body, &envelope))
-	require.True(t, envelope.Metadata["ordinary"])
-	got := make([]string, 0, len(envelope.Models))
-	for _, model := range envelope.Models {
-		got = append(got, model.Slug)
-	}
-	ordinarySlugs := []string{
-		"ordinary-model",
-		"openai/gpt-5.6-sol",
-		"gpt-5.6-sol",
-		"gpt-5.4",
-		"gpt-5.4-mini",
-		"deepseek/deepseek-v4-pro",
-		"anthropic/claude-opus-5",
-		"x-ai/grok-4.6",
-		"google/gemini-3-pro-image",
-	}
-	want := append([]string(nil), ordinarySlugs...)
-	seen := make(map[string]struct{}, len(want))
-	for _, slug := range want {
-		seen[slug] = struct{}{}
-	}
-	for _, publicID := range CindyCodexPublicModelIDs() {
-		if _, duplicate := seen[publicID]; !duplicate {
-			want = append(want, publicID)
-		}
-	}
-	require.ElementsMatch(t, want, got)
-	exactPublicCount := 0
-	for _, slug := range got {
-		if slug == "gpt-5.6-sol" {
-			exactPublicCount++
-		}
-	}
-	require.Equal(t, 1, exactPublicCount)
-	for _, slug := range ordinarySlugs {
-		require.Contains(t, got, slug)
-	}
-
-	notModified, err := MergeCindyCodexModelsManifest(&OpenAIModelsResponse{Body: body}, merged.ETag)
-	require.NoError(t, err)
-	require.True(t, notModified.NotModified)
-	require.Equal(t, merged.ETag, notModified.ETag)
-}
-
-func TestFetchCodexModelsManifestCindyRolloutProjection(t *testing.T) {
-	for _, test := range []struct {
-		name string
-		env  []string
-		mode string
-	}{
-		{name: "catalog off preserves legacy IDs", env: []string{CindyCapabilityCatalogEnabledEnv + "=false", ImageStudioEnabledEnv + "=true"}, mode: "catalog_off"},
-		{name: "responses image off omits image IDs", env: []string{CindyCapabilityCatalogEnabledEnv + "=true", CindyResponsesImageBridgeEnabledEnv + "=false"}, mode: "image_off"},
-	} {
-		t.Run(test.name, func(t *testing.T) {
-			cmd := exec.Command(os.Args[0], "-test.run=^TestFetchCodexModelsManifestCindyRolloutProjectionHelper$")
-			cmd.Env = append(withoutEnvironmentKeys(os.Environ(),
-				CindyCapabilityCatalogEnabledEnv,
-				ImageStudioEnabledEnv,
-				CindyImageStudioEnabledEnv,
-				CindyResponsesImageBridgeEnabledEnv,
-				"SUB2API_CODEX_MODELS_CINDY_FLAG_HELPER",
-			), append(test.env, "SUB2API_CODEX_MODELS_CINDY_FLAG_HELPER="+test.mode)...)
-			if output, err := cmd.CombinedOutput(); err != nil {
-				t.Fatalf("isolated %s projection failed: %v\n%s", test.mode, err, output)
-			}
-		})
-	}
-}
-
-const cindyCodexCatalogEnabledTestHelperEnv = "SUB2API_CODEX_MODELS_CATALOG_ENABLED_TEST_HELPER"
-
-func runCindyCodexCatalogEnabledTest(t *testing.T) bool {
-	t.Helper()
-	if os.Getenv(cindyCodexCatalogEnabledTestHelperEnv) == "1" {
-		return true
-	}
-	cmd := exec.Command(os.Args[0], "-test.run=^"+t.Name()+"$")
-	cmd.Env = append(withoutEnvironmentKeys(os.Environ(),
-		CindyCapabilityCatalogEnabledEnv,
-		ImageStudioEnabledEnv,
-		CindyImageStudioEnabledEnv,
-		CindyResponsesImageBridgeEnabledEnv,
-		cindyCodexCatalogEnabledTestHelperEnv,
-	),
-		CindyCapabilityCatalogEnabledEnv+"=true",
-		ImageStudioEnabledEnv+"=true",
-		CindyResponsesImageBridgeEnabledEnv+"=true",
-		cindyCodexCatalogEnabledTestHelperEnv+"=1",
-	)
-	if output, err := cmd.CombinedOutput(); err != nil {
-		t.Fatalf("isolated catalog-enabled %s failed: %v\n%s", t.Name(), err, output)
-	}
-	return false
-}
-
-func TestFetchCodexModelsManifestCindyRolloutProjectionHelper(t *testing.T) {
-	mode := os.Getenv("SUB2API_CODEX_MODELS_CINDY_FLAG_HELPER")
-	if mode == "" {
-		t.Skip("subprocess helper")
-	}
-	const upstreamBody = `{"models":[{"slug":"openai/gpt-5.6-sol"},{"slug":"gpt-5.4-mini"},{"slug":"deepseek/deepseek-v4-pro"},{"slug":"anthropic/claude-opus-5"},{"slug":"google/gemini-3-pro-image"},{"slug":"openai/gpt-image-2"}]}`
-	upstream := &codexModelsHTTPUpstreamStub{do: func(_ *http.Request, _ string, _ int64, _ int) (*http.Response, error) {
-		return &http.Response{
-			StatusCode: http.StatusOK,
-			Header:     make(http.Header),
-			Body:       io.NopCloser(strings.NewReader(upstreamBody)),
-		}, nil
-	}}
-	account := newCodexModelsAPIKeyTestAccount("https://api.laxarouter.ai")
-	account.Platform = PlatformCindy
-	account.WirePlatform = WirePlatformOpenAI
-	account.ProviderProfile = ProviderProfileCindyLaxaV1
-	manifest, err := newCodexModelsAPIKeyTestService(upstream).FetchCodexModelsManifest(
-		context.Background(), account, "0.144.0", "",
-	)
-	require.NoError(t, err)
-
-	switch mode {
-	case "catalog_off":
-		require.Equal(t, upstreamBody, string(manifest.Body))
-	case "image_off":
-		models := decodeCompleteCodexManifestModels(t, manifest.Body)
-		require.Equal(t, []string{"gpt-5.6-luna", "deepseek-v4-pro"}, completeCodexManifestModelSlugs(models))
-	default:
-		t.Fatalf("unknown helper mode %q", mode)
-	}
-}
-
-func TestBuildOpenAIModelsCacheKeyIncludesFormatAndCindyRolloutFlags(t *testing.T) {
-	base := openAIModelsRequest{
+func TestBuildOpenAIModelsCacheKeyIncludesFormat(t *testing.T) {
+	request := openAIModelsRequest{
 		accountID:           1,
 		credentialAccountID: 1,
-		url:                 "https://api.laxarouter.ai/models?client_version=0.144.0",
+		url:                 "https://relay.example.test/models?client_version=0.144.0",
 		headers:             http.Header{"Authorization": []string{"Bearer test"}},
 	}
-	baseKey := buildOpenAIModelsCacheKey(base)
-
-	withCatalog := base
-	withCatalog.cindyCatalogEnabled = true
-	withCatalog.cindyCatalogVersion = CindyCapabilityCatalogVersion
-	require.NotEqual(t, baseKey, buildOpenAIModelsCacheKey(withCatalog))
-
-	withImage := withCatalog
-	withImage.cindyResponsesImageEnabled = true
-	require.NotEqual(t, buildOpenAIModelsCacheKey(withCatalog), buildOpenAIModelsCacheKey(withImage))
-
-	withProjection := withImage
-	withProjection.projectCindyCatalog = true
-	require.NotEqual(t, buildOpenAIModelsCacheKey(withImage), buildOpenAIModelsCacheKey(withProjection))
-
-	for _, request := range []openAIModelsRequest{base, withCatalog, withImage, withProjection} {
-		standard := request
-		standard.standardModelsList = true
-		require.NotEqual(t, buildOpenAIModelsCacheKey(request), buildOpenAIModelsCacheKey(standard),
-			"ordinary and Codex representations must remain isolated for every Cindy projection variant")
-	}
+	standard := request
+	standard.standardModelsList = true
+	require.NotEqual(t, buildOpenAIModelsCacheKey(request), buildOpenAIModelsCacheKey(standard),
+		"ordinary and Codex representations must remain isolated")
 }
 
 func TestAdjustAPIKeyCodexModelsManifest(t *testing.T) {
@@ -2653,7 +2222,7 @@ func TestFetchCodexModelsManifestAPIKeyDisablesResponsesLiteForAffectedModels(t 
 	require.Equal(t, manifest.ETag, notModified.ETag)
 }
 
-func TestProjectModelContextCapacityPreservesProtectedAndMalformedRows(t *testing.T) {
+func TestProjectModelContextCapacityPreservesUnknownAndMalformedRows(t *testing.T) {
 	body := []byte(`{"models":[` +
 		`{"slug":"gpt-5.6-sol","context_window":1050000,"max_context_window":1050000,"auto_compact_token_limit":null,"other":"sol"},` +
 		`{"slug":"gpt-5.6-terra","context_window":1050000,"max_context_window":1050000,"auto_compact_token_limit":900000},` +
@@ -2665,8 +2234,8 @@ func TestProjectModelContextCapacityPreservesProtectedAndMalformedRows(t *testin
 		if model == "gpt-5.6-sol" {
 			return ResolvedModelContextCapacity{ModelContextCapacity: ModelContextCapacity{ContextWindow: 650000, MaxContextWindow: 650000, CapacityBasis: "total_context"}, Source: "custom"}
 		}
-		return ResolvedModelContextCapacity{Source: "protected"}
-	}, nil)
+		return ResolvedModelContextCapacity{}
+	})
 	require.NoError(t, err)
 	require.JSONEq(t, `{"models":[`+
 		`{"slug":"gpt-5.6-sol","context_window":650000,"max_context_window":650000,"auto_compact_token_limit":null,"other":"sol","context_capacity_source":"custom","context_capacity_basis":"total_context"},`+
@@ -2676,11 +2245,11 @@ func TestProjectModelContextCapacityPreservesProtectedAndMalformedRows(t *testin
 		`null,"malformed"],"metadata":{"version":7}}`, string(got))
 }
 
-func TestProjectModelContextCapacityLeavesProtectedBodyByteExact(t *testing.T) {
+func TestProjectModelContextCapacityLeavesUnknownBodyByteExact(t *testing.T) {
 	body := []byte(` {"models":[{"slug":"gpt-5.5","context_window":272000}]} `)
 	got, err := projectModelCapacityEnvelope(body, true, func(string) ResolvedModelContextCapacity {
-		return ResolvedModelContextCapacity{Source: "protected"}
-	}, nil)
+		return ResolvedModelContextCapacity{}
+	})
 	require.NoError(t, err)
 	require.Equal(t, body, got)
 }
@@ -3772,14 +3341,9 @@ func TestCompleteAPIKeyCodexModelsManifestForClientUsesCurrentSnapshotForCachedN
 				SupportedReasoningLevels: []string{"high", "ultra"},
 				InputModalities:          []string{"text", "image"},
 				ContextWindow:            contextWindow,
+				CapacitySource:           ModelContextSourceUpstream,
 			},
 		}})
-		account.SetUpstreamModelContextCapacitySnapshot(UpstreamModelContextCapacitySnapshot{
-			ObservedAt: "2026-09-07T00:00:00Z",
-			Models: map[string]ModelContextCapacity{
-				"provider-reasoner": {ContextWindow: contextWindow},
-			},
-		})
 	}
 	setSnapshot("Synced Provider", 256_000)
 
@@ -3802,7 +3366,7 @@ func TestCompleteAPIKeyCodexModelsManifestForClientUsesCurrentSnapshotForCachedN
 	first, err := svc.FetchCodexModelsManifest(context.Background(), account, "0.150.0", "")
 	require.NoError(t, err)
 	require.NoError(t, svc.CompleteAPIKeyCodexModelsManifestForClient(first, account))
-	require.NoError(t, svc.MergeGroupConfiguredCodexModelsForAccount(context.Background(), group, first, "", account))
+	require.NoError(t, svc.MergeGroupConfiguredCodexModels(context.Background(), group, first, ""))
 	firstModel := decodeCodexManifestModels(t, first.Body)[0]
 	require.Equal(t, "Synced Provider", firstModel["display_name"])
 	require.Equal(t, "Provider supplied", firstModel["description"])
@@ -3816,7 +3380,7 @@ func TestCompleteAPIKeyCodexModelsManifestForClientUsesCurrentSnapshotForCachedN
 	second, err := svc.FetchCodexModelsManifest(context.Background(), account, "0.150.0", "")
 	require.NoError(t, err)
 	require.NoError(t, svc.CompleteAPIKeyCodexModelsManifestForClient(second, account))
-	require.NoError(t, svc.MergeGroupConfiguredCodexModelsForAccount(context.Background(), group, second, "", account))
+	require.NoError(t, svc.MergeGroupConfiguredCodexModels(context.Background(), group, second, ""))
 	secondModel := decodeCodexManifestModels(t, second.Body)[0]
 	require.Equal(t, "Refreshed Provider", secondModel["display_name"])
 	require.Equal(t, "Provider supplied", secondModel["description"])
@@ -3883,28 +3447,6 @@ func TestCompleteAPIKeyCodexModelsManifestForClientDoesNotApplyLegacyFixedSolCon
 	require.Nil(t, bySlug["gpt-5.6-luna"]["auto_compact_token_limit"])
 }
 
-func TestCompleteAPIKeyCodexModelsManifestForClientKeepsCindyPinnedContexts(t *testing.T) {
-	if !runCindyCodexCatalogEnabledTest(t) {
-		return
-	}
-	manifest, err := BuildCindyCodexModelsManifest("")
-	require.NoError(t, err)
-	account := newCodexModelsAPIKeyTestAccount("https://api.laxarouter.ai")
-	account.Platform = PlatformCindy
-	account.WirePlatform = WirePlatformOpenAI
-	account.ProviderProfile = ProviderProfileCindyLaxaV1
-
-	require.NoError(t, (&OpenAIGatewayService{}).CompleteAPIKeyCodexModelsManifestForClient(manifest, account))
-	models := decodeCodexManifestModels(t, manifest.Body)
-	for _, model := range models {
-		if model["slug"] == "gpt-5.6-luna" {
-			require.EqualValues(t, 1_050_000, model["context_window"])
-			return
-		}
-	}
-	t.Fatal("Cindy Luna model missing")
-}
-
 // Scenario: 标准 /models 型号列表优先使用已同步账号能力，再使用本地 descriptor 兜底。
 
 func TestCompleteAPIKeyCodexModelsManifestForClientUsesSyncedMetadataForConvertedModelList(t *testing.T) {
@@ -3920,14 +3462,9 @@ func TestCompleteAPIKeyCodexModelsManifestForClientUsesSyncedMetadataForConverte
 			SupportedReasoningLevels: []string{"low", "high", "ultra"},
 			InputModalities:          []string{"text", "image"},
 			ContextWindow:            999_000,
+			CapacitySource:           ModelContextSourceUpstream,
 		},
 	}})
-	account.SetUpstreamModelContextCapacitySnapshot(UpstreamModelContextCapacitySnapshot{
-		ObservedAt: "2026-09-07T00:00:00Z",
-		Models: map[string]ModelContextCapacity{
-			"future-reasoner": {ContextWindow: 999_000},
-		},
-	})
 	upstream := &codexModelsHTTPUpstreamStub{do: func(_ *http.Request, _ string, _ int64, _ int) (*http.Response, error) {
 		return &http.Response{
 			StatusCode: http.StatusOK,
@@ -3941,8 +3478,8 @@ func TestCompleteAPIKeyCodexModelsManifestForClientUsesSyncedMetadataForConverte
 	manifest, err := svc.FetchCodexModelsManifest(context.Background(), account, "0.150.0", "")
 	require.NoError(t, err)
 	require.NoError(t, svc.CompleteAPIKeyCodexModelsManifestForClient(manifest, account))
-	require.NoError(t, svc.MergeGroupConfiguredCodexModelsForAccount(
-		context.Background(), &Group{ID: groupID, Platform: PlatformOpenAI}, manifest, "", account,
+	require.NoError(t, svc.MergeGroupConfiguredCodexModels(
+		context.Background(), &Group{ID: groupID, Platform: PlatformOpenAI}, manifest, "",
 	))
 
 	models := decodeCodexManifestModels(t, manifest.Body)

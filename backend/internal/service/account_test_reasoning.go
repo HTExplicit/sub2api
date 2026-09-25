@@ -22,12 +22,6 @@ func AccountTestReasoningOptions(account *Account, model string) ([]string, stri
 	if !accountTestSupportsReasoningWire(account, model) || isOpenAIImageModel(model) || isGrokVideoGenerationModel(model) {
 		return nil, ""
 	}
-	if IsCindyAPIKeyAccount(account.Platform, account.Type, account.Credentials) {
-		if capability, ok := ResolveCindyCapability(model); ok {
-			return capability.CodexReasoningEfforts(), capability.DefaultReasoningEffort
-		}
-		return nil, ""
-	}
 	if metadata, ok := account.GetUpstreamModelMetadata(model); ok && metadata.Reasoning != nil {
 		if !*metadata.Reasoning {
 			return nil, ""

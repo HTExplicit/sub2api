@@ -158,15 +158,4 @@ func TestSelectResponsesProbeModel(t *testing.T) {
 		"model_mapping": map[string]any{"a": "gpt-*"},
 	}}
 	require.Equal(t, openai.DefaultTestModel, selectResponsesProbeModel(acctAllWild))
-
-	// Strict Cindy probes must never generate the OpenAI default gpt-5.4.
-	cindy := &Account{
-		ID:              11,
-		Platform:        PlatformCindy,
-		WirePlatform:    WirePlatformOpenAI,
-		ProviderProfile: ProviderProfileCindyLaxaV1,
-		Type:            AccountTypeAPIKey,
-		Credentials:     cindyCredentials(),
-	}
-	require.Equal(t, "openai/gpt-5.6-luna", selectResponsesProbeModel(cindy))
 }

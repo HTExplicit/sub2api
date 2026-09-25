@@ -6,7 +6,7 @@
       <!-- Logo & Title -->
       <div class="mb-8 text-center">
         <div
-          class="mb-4 inline-flex h-16 w-16 items-center justify-center rounded-none bg-primary-500 shadow-outline"
+          class="mb-4 inline-flex h-16 w-16 items-center justify-center rounded-2xl bg-gradient-to-br from-primary-500 to-primary-600 shadow-lg"
         >
           <Icon name="cog" size="xl" class="text-white" />
         </div>
@@ -26,7 +26,7 @@
                     ? 'bg-primary-500 text-white'
                     : currentStep === index
                       ? 'bg-primary-500 text-white ring-4 ring-primary-100 dark:ring-primary-900'
-                      : 'bg-gray-200 text-gray-700 dark:bg-dark-700 dark:text-dark-300'
+                      : 'bg-gray-200 text-gray-500 dark:bg-dark-700 dark:text-dark-400'
                 ]"
               >
                 <Icon
@@ -42,7 +42,7 @@
                 :class="
                   currentStep >= index
                     ? 'text-gray-900 dark:text-white'
-                    : 'text-muted'
+                    : 'text-gray-400 dark:text-dark-500'
                 "
               >
                 {{ step.title }}

@@ -13,7 +13,7 @@ import (
 // codexNamespaceRequestBody 模拟 Codex 多智能体请求：collaboration 命名空间声明 +
 // 历史里的命名空间调用项 + 带残留 namespace 的普通消息项。
 const codexNamespaceRequestBody = `{
-	"model":"gpt-5.6-luna",
+	"model":"gpt-5.6-terra",
 	"stream":false,
 	"instructions":"test",
 	"tools":[
@@ -66,34 +66,6 @@ func TestOpenAIGatewayService_OAuthPreservesCodexNamespaceTools(t *testing.T) {
 	require.Empty(t, openAIResponsesNamespaceNames(c))
 }
 
-// Cindy's native Responses endpoint requires namespace-qualified historical
-// calls to be round-tripped exactly, just like the Codex OAuth endpoint.
-func TestOpenAIGatewayService_CindyPreservesCodexToolCallNamespaces(t *testing.T) {
-	body := []byte(codexNamespaceRequestBody)
-	upstream := &httpUpstreamRecorder{responses: []*http.Response{
-		newOpenAIRejectedFieldTestResponse(http.StatusOK, namespaceForwardOKResponse),
-	}}
-	c := newOpenAIRejectedFieldTestContext(body)
-	account := newOpenAIRejectedFieldTestAccount()
-	account.Platform = PlatformCindy
-	account.WirePlatform = WirePlatformOpenAI
-	account.ProviderProfile = ProviderProfileCindyLaxaV1
-	account.Credentials["base_url"] = "https://api.laxarouter.ai"
-
-	result, err := newOpenAIRejectedFieldTestService(upstream).Forward(
-		context.Background(), c, account, body,
-	)
-
-	require.NoError(t, err)
-	require.NotNil(t, result)
-	require.Len(t, upstream.bodies, 1)
-	forwarded := upstream.bodies[0]
-	require.True(t, gjson.GetBytes(forwarded, `tools.#(type=="namespace")`).Exists())
-	require.Equal(t, "collaboration", gjson.GetBytes(forwarded, "input.0.namespace").String())
-	require.Equal(t, "spawn_agent", gjson.GetBytes(forwarded, "input.0.name").String())
-	require.False(t, gjson.GetBytes(forwarded, "input.1.namespace").Exists())
-}
-
 // API Key 自定义上游若接受 namespace 工具声明，也要求历史 function_call 原样携带
 // namespace。声明仍为命名空间工具却清掉调用项字段，会触发 Missing namespace。
 func TestOpenAIGatewayService_APIKeyPreservesDeclaredNamespaceToolCalls(t *testing.T) {
@@ -111,6 +83,7 @@ func TestOpenAIGatewayService_APIKeyPreservesDeclaredNamespaceToolCalls(t *testi
 	require.NotNil(t, result)
 	require.Len(t, upstream.bodies, 1)
 	forwarded := upstream.bodies[0]
+
 	require.True(t, gjson.GetBytes(forwarded, `tools.#(type=="namespace")`).Exists())
 	require.Equal(t, "collaboration", gjson.GetBytes(forwarded, "input.0.namespace").String())
 	require.False(t, gjson.GetBytes(forwarded, "input.1.namespace").Exists())

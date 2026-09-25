@@ -923,8 +923,6 @@ func buildSchedulerMetadataAccount(account service.Account) service.Account {
 		ID:                      account.ID,
 		Name:                    account.Name,
 		Platform:                account.Platform,
-		WirePlatform:            account.WirePlatform,
-		ProviderProfile:         account.ProviderProfile,
 		Type:                    account.Type,
 		Concurrency:             account.Concurrency,
 		LoadFactor:              account.LoadFactor,
@@ -1033,7 +1031,7 @@ func filterSchedulerExtra(extra map[string]any) map[string]any {
 		return nil
 	}
 	keys := []string{
-		service.PromptAccountBindingExtraKey,
+		service.AccountExtraSystemPromptKey,
 		// Anthropic shared-window and Fable-only threshold checks run on this
 		// projection. UpdateExtra refreshes both payloads without a bucket rebuild.
 		"session_window_utilization",

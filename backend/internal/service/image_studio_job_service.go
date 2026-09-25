@@ -27,8 +27,7 @@ type ImageStudioEligibleAPIKey struct {
 }
 
 type ImageStudioEligibleKey struct {
-	APIKey       ImageStudioEligibleAPIKey `json:"api_key"`
-	Capabilities []CindyModelCapability    `json:"capabilities"`
+	APIKey ImageStudioEligibleAPIKey `json:"api_key"`
 }
 
 type ImageStudioArtifactDownload struct {
@@ -56,6 +55,18 @@ func NewImageStudioService(
 	}
 }
 
+// imageStudioModelSource lists the image models Image Studio may offer. The
+// retired provider catalog was its only source, so it stays empty until a
+// generic image model source is added; without models no API key is eligible.
+var imageStudioModelSource []string
+
+func imageStudioGroupEligible(group *Group) bool {
+	return group != nil && group.ID > 0 && group.IsActive() && group.AllowImageGeneration &&
+		len(imageStudioModelSource) > 0
+}
+
+// EligibleKeys lists the caller's active API keys whose group allows image
+// generation while Image Studio has a model source.
 func (s *ImageStudioService) EligibleKeys(ctx context.Context, userID int64) ([]ImageStudioEligibleKey, error) {
 	if s == nil || s.apiKeys == nil || s.accounts == nil || userID <= 0 {
 		return nil, newImageStudioError(503, "studio_unavailable", "Image Studio is unavailable")
@@ -68,65 +79,18 @@ func (s *ImageStudioService) EligibleKeys(ctx context.Context, userID int64) ([]
 	if err != nil {
 		return nil, fmt.Errorf("list image studio keys: %w", err)
 	}
-	capabilities := imageStudioModelCapabilities()
-	if len(capabilities) == 0 {
-		return []ImageStudioEligibleKey{}, nil
-	}
 	items := make([]ImageStudioEligibleKey, 0, len(keys))
-	groupEligibility := make(map[int64]bool)
-	groupChecked := make(map[int64]bool)
 	for i := range keys {
 		key := &keys[i]
-		if key.UserID != userID || !key.IsActive() || key.IsExpired() || key.IsQuotaExhausted() || key.Group == nil {
+		if key.UserID != userID || !key.IsActive() || key.IsExpired() || key.IsQuotaExhausted() || !imageStudioGroupEligible(key.Group) {
 			continue
 		}
-		group := key.Group
-		if !imageStudioGroupIdentityEligible(group) {
-			continue
-		}
-		if !groupChecked[group.ID] {
-			groupChecked[group.ID] = true
-			accounts, listErr := s.accounts.ListSchedulableByGroupID(ctx, group.ID)
-			if listErr != nil {
-				return nil, fmt.Errorf("load image studio accounts: %w", listErr)
-			}
-			for accountIndex := range accounts {
-				account := &accounts[accountIndex]
-				if account.Status == StatusActive && account.Schedulable &&
-					hasCanonicalCindyProviderIdentity(account) && ProviderIdentityCompatible(account, group) {
-					groupEligibility[group.ID] = true
-					break
-				}
-			}
-		}
-		if !groupEligibility[group.ID] {
-			continue
-		}
-		items = append(items, ImageStudioEligibleKey{
-			APIKey: ImageStudioEligibleAPIKey{
-				ID: key.ID, Name: key.Name, GroupID: group.ID,
-				Group: ImageStudioEligibleKeyGroup{ID: group.ID, Name: group.Name},
-			},
-			Capabilities: append([]CindyModelCapability(nil), capabilities...),
-		})
+		items = append(items, ImageStudioEligibleKey{APIKey: ImageStudioEligibleAPIKey{
+			ID: key.ID, Name: key.Name, GroupID: key.Group.ID,
+			Group: ImageStudioEligibleKeyGroup{ID: key.Group.ID, Name: key.Group.Name},
+		}})
 	}
 	return items, nil
-}
-
-func imageStudioGroupIdentityEligible(group *Group) bool {
-	return group != nil && group.ID > 0 && group.IsActive() && group.AllowImageGeneration &&
-		group.Platform == PlatformCindy && group.EffectiveWirePlatform() == WirePlatformOpenAI &&
-		group.EffectiveProviderProfile() == ProviderProfileCindyLaxaV1
-}
-
-func imageStudioModelCapabilities() []CindyModelCapability {
-	capabilities := make([]CindyModelCapability, 0)
-	for _, capability := range CindyCapabilities() {
-		if capability.PublicModel && capability.Kind == CindyModelKindImage {
-			capabilities = append(capabilities, cindyModelCapabilityFromCapability(capability))
-		}
-	}
-	return imageStudioModelChoices(capabilities)
 }
 
 func (s *ImageStudioService) eligibleAPIKey(ctx context.Context, userID, apiKeyID int64) (*APIKey, error) {
@@ -134,24 +98,10 @@ func (s *ImageStudioService) eligibleAPIKey(ctx context.Context, userID, apiKeyI
 		return nil, newImageStudioError(503, "studio_unavailable", "Image Studio is unavailable")
 	}
 	key, err := s.apiKeys.GetByID(ctx, apiKeyID)
-	if err != nil {
+	if err != nil || key == nil || key.UserID != userID || !key.IsActive() || key.IsExpired() || key.IsQuotaExhausted() || !imageStudioGroupEligible(key.Group) {
 		return nil, newImageStudioError(404, "api_key_unavailable", "Image Studio API key is unavailable")
 	}
-	if key == nil || key.UserID != userID || !key.IsActive() || key.IsExpired() || key.IsQuotaExhausted() || !imageStudioGroupIdentityEligible(key.Group) {
-		return nil, newImageStudioError(404, "api_key_unavailable", "Image Studio API key is unavailable")
-	}
-	accounts, err := s.accounts.ListSchedulableByGroupID(ctx, key.Group.ID)
-	if err != nil {
-		return nil, fmt.Errorf("load image studio accounts: %w", err)
-	}
-	for i := range accounts {
-		account := &accounts[i]
-		if account.Status == StatusActive && account.Schedulable &&
-			hasCanonicalCindyProviderIdentity(account) && ProviderIdentityCompatible(account, key.Group) {
-			return key, nil
-		}
-	}
-	return nil, newImageStudioError(404, "api_key_unavailable", "Image Studio API key is unavailable")
+	return key, nil
 }
 
 func (s *ImageStudioService) Create(
@@ -166,14 +116,6 @@ func (s *ImageStudioService) Create(
 		return nil, err
 	}
 	input.Model, input.Mode, input.Size, input.Quality = plan.Model, ImageStudioMode(plan.Mode), plan.Size, plan.Quality
-	capabilityValue, known := resolveKnownCindyCapability(input.Model)
-	var capability *CindyCapability
-	if known {
-		capability = &capabilityValue
-	}
-	if capability == nil || !capability.PublicModel || capability.Kind != CindyModelKindImage {
-		return nil, newImageStudioError(400, "model_unavailable", "Image Studio model is unavailable")
-	}
 	if _, err := s.eligibleAPIKey(ctx, userID, input.APIKeyID); err != nil {
 		return nil, err
 	}

@@ -92,13 +92,6 @@ func (s *OpenAIGatewayService) forwardAsRawChatCompletions(
 		return nil, modelPolicyErr
 	}
 	upstreamModel := normalizeOpenAIModelForUpstream(account, billingModel)
-	if account != nil && IsLegacyCindyAPIKeyAccount(account.Platform, account.Type, account.Credentials) {
-		if legacyModel, mapped, policyErr := cindyLegacyLaxaLiveUpstreamModel(ctx, account, originalModel); policyErr != nil {
-			return nil, policyErr
-		} else if mapped {
-			upstreamModel = legacyModel
-		}
-	}
 	grokCacheIdentity := ""
 	if account.Platform == PlatformGrok {
 		// Resolve before image bridging or other body rewrites so the fallback is

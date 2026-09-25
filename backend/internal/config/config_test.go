@@ -83,23 +83,18 @@ func TestResolveImageStudioEnabledFromEnvironment(t *testing.T) {
 	tests := []struct {
 		name       string
 		primary    string
-		legacy     string
 		want       bool
 		wantErrEnv string
 	}{
-		{name: "unset", primary: "", legacy: "", want: false},
-		{name: "primary", primary: "true", legacy: "", want: true},
-		{name: "legacy fallback", primary: "", legacy: "on", want: true},
-		{name: "matching declarations", primary: "false", legacy: "0", want: false},
-		{name: "conflicting declarations", primary: "true", legacy: "false", wantErrEnv: ImageStudioEnabledEnv},
-		{name: "invalid primary", primary: "sometimes", legacy: "", wantErrEnv: ImageStudioEnabledEnv},
-		{name: "invalid legacy", primary: "", legacy: "sometimes", wantErrEnv: LegacyImageStudioEnabledEnv},
+		{name: "unset", primary: "", want: false},
+		{name: "primary", primary: "true", want: true},
+		{name: "disabled", primary: "false", want: false},
+		{name: "invalid primary", primary: "sometimes", wantErrEnv: ImageStudioEnabledEnv},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Setenv(ImageStudioEnabledEnv, tt.primary)
-			t.Setenv(LegacyImageStudioEnabledEnv, tt.legacy)
 			got, err := ResolveImageStudioEnabledFromEnvironment()
 			if tt.wantErrEnv != "" {
 				require.ErrorContains(t, err, tt.wantErrEnv)
@@ -114,19 +109,9 @@ func TestResolveImageStudioEnabledFromEnvironment(t *testing.T) {
 func TestLoadRejectsInvalidImageStudioEnvironment(t *testing.T) {
 	resetViperWithJWTSecret(t)
 	t.Setenv(ImageStudioEnabledEnv, "not-a-boolean")
-	t.Setenv(LegacyImageStudioEnabledEnv, "")
 
 	_, err := LoadForBootstrap()
 	require.ErrorContains(t, err, ImageStudioEnabledEnv+" must be a boolean")
-}
-
-func TestLoadRejectsConflictingImageStudioEnvironment(t *testing.T) {
-	resetViperWithJWTSecret(t)
-	t.Setenv(ImageStudioEnabledEnv, "true")
-	t.Setenv(LegacyImageStudioEnabledEnv, "false")
-
-	_, err := LoadForBootstrap()
-	require.ErrorContains(t, err, ImageStudioEnabledEnv+" conflicts with deprecated "+LegacyImageStudioEnabledEnv)
 }
 
 func TestLoadSimpleModeKeyRateLimitEnabledFromEnvironment(t *testing.T) {
@@ -502,9 +487,6 @@ func TestLoadDefaultOpenAIWSConfig(t *testing.T) {
 	if !cfg.Gateway.OpenAIWS.Enabled {
 		t.Fatalf("Gateway.OpenAIWS.Enabled = false, want true")
 	}
-	if cfg.Gateway.OpenAIWS.CindyHTTPToWSV2Enabled {
-		t.Fatalf("Gateway.OpenAIWS.CindyHTTPToWSV2Enabled = true, want false")
-	}
 	if !cfg.Gateway.OpenAIWS.ResponsesWebsocketsV2 {
 		t.Fatalf("Gateway.OpenAIWS.ResponsesWebsocketsV2 = false, want true")
 	}
@@ -620,15 +602,6 @@ func TestLoadOpenAIWSClientFirstMessageTimeoutFromEnv(t *testing.T) {
 	cfg, err := Load()
 	require.NoError(t, err)
 	require.Equal(t, 120, cfg.Gateway.OpenAIWS.ClientFirstMessageTimeoutSeconds)
-}
-
-func TestLoadOpenAIWSCindyHTTPToWSV2FromEnv(t *testing.T) {
-	resetViperWithJWTSecret(t)
-	t.Setenv("GATEWAY_OPENAI_WS_CINDY_HTTP_TO_WSV2_ENABLED", "true")
-
-	cfg, err := Load()
-	require.NoError(t, err)
-	require.True(t, cfg.Gateway.OpenAIWS.CindyHTTPToWSV2Enabled)
 }
 
 func TestLoadDefaultOpenAICompactModel(t *testing.T) {

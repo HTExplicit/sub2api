@@ -106,17 +106,17 @@ describe('AppSidebar simple mode extensions', () => {
     expect(wrapper.find('a[href="/usage"]').exists()).toBe(false)
   })
 
-  it('renders Cindy Accounts and Image Studio for an admin in simple mode', async () => {
+  it('renders admin extensions and Image Studio for an admin in simple mode', async () => {
     const wrapper = await renderSidebar({ admin: true, imageStudio: true })
 
-    expect(extensionLinks(wrapper)).toEqual(['/admin/system-prompts', '/admin/cindy-accounts', '/admin/codex-runtime', '/image-studio'])
+    expect(extensionLinks(wrapper)).toEqual(['/admin/system-prompts', '/admin/codex-runtime', '/image-studio'])
     expect(wrapper.text()).not.toContain('nav.myAccount')
   })
 
-  it('keeps Cindy Accounts visible while hiding Image Studio when its flag is disabled', async () => {
+  it('keeps admin extensions visible while hiding Image Studio when its flag is disabled', async () => {
     const wrapper = await renderSidebar({ admin: true, imageStudio: false })
 
-    expect(extensionLinks(wrapper)).toEqual(['/admin/system-prompts', '/admin/cindy-accounts', '/admin/codex-runtime'])
+    expect(extensionLinks(wrapper)).toEqual(['/admin/system-prompts', '/admin/codex-runtime'])
     wrapper.unmount()
   })
 })

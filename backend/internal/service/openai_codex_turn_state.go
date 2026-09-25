@@ -27,10 +27,10 @@ type openAICodexTurnStateOrigin struct {
 	expiresAt time.Time
 }
 
-// API-key destinations (including Cindy) retain their existing session/owner
-// contract. Codex OAuth state additionally belongs to one logical turn.
+// API-key destinations retain their existing session/owner contract. Codex
+// OAuth state additionally belongs to one logical turn.
 func openAICodexTurnStateUsesSessionContract(account *Account) bool {
-	return account != nil && (account.Type == AccountTypeAPIKey || account.Platform == PlatformCindy || account.Platform == PlatformGrok)
+	return account != nil && (account.Type == AccountTypeAPIKey || account.Platform == PlatformGrok)
 }
 
 // Optional account preserves the strict Codex scope for callers without a

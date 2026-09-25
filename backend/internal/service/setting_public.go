@@ -365,7 +365,7 @@ func (s *SettingService) GetPublicSettings(ctx context.Context) (*PublicSettings
 		ChannelMonitorHideUserRanking:        isTrueSettingValue(settings[SettingKeyChannelMonitorHideUserRanking]),
 
 		AvailableChannelsEnabled: settings[SettingKeyAvailableChannelsEnabled] == "true",
-		ImageStudioEnabled:       CindyImageStudioFeatureEnabled(),
+		ImageStudioEnabled:       ImageStudioFeatureEnabled(),
 		FlatThemeEnabled:         FlatThemeEnabled(),
 
 		SubscriptionEnabled: !isFalseSettingValue(settings[SettingKeySubscriptionEnabled]),

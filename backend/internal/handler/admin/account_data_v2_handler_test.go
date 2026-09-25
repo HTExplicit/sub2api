@@ -358,18 +358,6 @@ func TestDataAccountIdentityKeysTreatsClientEmailAsWarningOnly(t *testing.T) {
 	require.Empty(t, keys)
 }
 
-func TestDataAccountIdentityKeysUseCindyCredentialFingerprint(t *testing.T) {
-	credentials := map[string]any{"base_url": "https://api.laxarouter.ai", "api_key": " key "}
-	keys := dataAccountIdentityKeys(service.PlatformCindy, credentials, nil)
-	require.Len(t, keys, 1)
-	require.Equal(t, "credential_fingerprint", keys[0].Label)
-	trimmed := dataAccountIdentityKeys(service.PlatformCindy, map[string]any{
-		"base_url": "https://api.laxarouter.ai", "api_key": "key",
-	}, nil)
-	require.Len(t, trimmed, 1)
-	require.NotEqual(t, keys[0].Value, trimmed[0].Value)
-}
-
 func TestDataIdentityIndexUpdateRemovesStaleKeys(t *testing.T) {
 	account := service.Account{
 		ID: 17, Name: "before", Platform: service.PlatformOpenAI,

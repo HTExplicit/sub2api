@@ -34,14 +34,6 @@ func (r *pinnedModelsRoutesRepository) ListByGroup(_ context.Context, groupID in
 	return nil, nil
 }
 
-func (*pinnedModelsRoutesRepository) CindyGroupIdentityReaderMarker() {}
-
-func (r *pinnedModelsRoutesRepository) ListCindyGroupIdentityMembers(ctx context.Context, groupID int64) ([]service.Account, error) {
-	return r.ListByGroup(ctx, groupID)
-}
-
-func (*pinnedModelsRoutesRepository) CindyCodexModelsAccountReaderMarker() {}
-
 func (r *pinnedModelsRoutesRepository) ListSchedulableByPlatform(_ context.Context, platform string) ([]service.Account, error) {
 	if r.account.Platform == platform && r.account.IsSchedulable() {
 		return []service.Account{r.account}, nil
@@ -139,8 +131,8 @@ func TestGatewayRoutesPinnedModelsDispatchesOrdinaryAndCodexRequests(t *testing.
 		require.Equal(t, "list", response.Object)
 		require.Len(t, response.Data, 1)
 		require.Equal(t, "ordinary-upstream-model", response.Data[0].ID)
-		require.Equal(t, service.DefaultModelContextWindow, response.Data[0].ContextWindow)
-		require.Equal(t, "default", response.Data[0].Source)
+		require.Zero(t, response.Data[0].ContextWindow, "an unknown model carries no invented capacity")
+		require.Empty(t, response.Data[0].Source)
 	}
 	for _, path := range []string{"/v1/models?client_version=" + service.CodexCanonicalClientVersion(), "/models?client_version=" + service.CodexCanonicalClientVersion(), "/backend-api/codex/models"} {
 		w := httptest.NewRecorder()

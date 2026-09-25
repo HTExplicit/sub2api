@@ -25,19 +25,6 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-func (s *GatewayService) observeCindyHealthSignal(ctx context.Context, account *Account, statusCode int, body []byte) CindyHealthSignal {
-	signal := ClassifyCindyHealthSignal(account, statusCode, body)
-	if signal == CindyHealthSignalForbidden {
-		if hit, _, _ := detectOpenAICyberPolicy(body); hit {
-			return CindyHealthSignalNone
-		}
-	}
-	if signal != CindyHealthSignalNone && s != nil && s.cindyHealth != nil {
-		s.cindyHealth.ObserveCindyHealthSignal(ctx, account, signal)
-	}
-	return signal
-}
-
 type anthropicPassthroughForwardInput struct {
 	Body          []byte
 	Parsed        *ParsedRequest
@@ -45,57 +32,6 @@ type anthropicPassthroughForwardInput struct {
 	OriginalModel string
 	RequestStream bool
 	StartTime     time.Time
-}
-
-// ForwardCindyAnthropicMessages reuses the mature Anthropic API-key
-// passthrough for an OpenAI-platform Cindy account. It is intentionally strict:
-// only catalog-verified Messages models are accepted and the public model is
-// rewritten to the exact live data-plane ID before the request is sent.
-func (s *GatewayService) ForwardCindyAnthropicMessages(
-	ctx context.Context,
-	c *gin.Context,
-	account *Account,
-	body []byte,
-	requestedModel string,
-) (*ForwardResult, error) {
-	if s == nil || account == nil || !IsCindyAPIKeyAccount(account.Platform, account.Type, account.Credentials) {
-		return nil, errors.New("strict Cindy account is required for native Messages passthrough")
-	}
-	pricingContext, pricingErr := CaptureCindyPricingContext(ctx, c, account)
-	if pricingErr != nil {
-		return nil, pricingErr
-	}
-	ctx = pricingContext
-	requestedModel = strings.TrimSpace(requestedModel)
-	snapshot, err := LoadCindyCatalogSnapshot(ctx, account)
-	if err != nil {
-		return nil, err
-	}
-	capability, known := snapshot.Capability(requestedModel)
-	verifiedMessages := false
-	for _, endpoint := range capability.VerifiedEndpoints {
-		verifiedMessages = verifiedMessages || endpoint == CindyEndpointMessages
-	}
-	if !known || !capability.PublicModel || capability.Kind != CindyModelKindText || !verifiedMessages {
-		return nil, fmt.Errorf("cindy model %q is not verified for native Messages", requestedModel)
-	}
-	upstreamModel, ok := snapshot.AvailableMappings[requestedModel]
-	if !ok {
-		return nil, fmt.Errorf("cindy model %q is not in the fixed catalogue", requestedModel)
-	}
-	if !gjson.ValidBytes(body) {
-		return nil, errors.New("invalid Anthropic Messages request body")
-	}
-	stream := gjson.GetBytes(body, "stream").Bool()
-	body = s.replaceModelInBody(body, upstreamModel)
-	beginUpstreamResponseModelObservation(c)
-	return s.forwardAnthropicAPIKeyPassthroughWithInput(ctx, c, account, anthropicPassthroughForwardInput{
-		Body:          body,
-		RequestModel:  upstreamModel,
-		OriginalModel: requestedModel,
-		RequestStream: stream,
-		StartTime:     time.Now(),
-	})
 }
 
 func (s *GatewayService) forwardAnthropicAPIKeyPassthrough(
@@ -181,44 +117,6 @@ func (s *GatewayService) forwardAnthropicAPIKeyPassthroughWithInput(
 				UpstreamURL: safeUpstreamURL(upstreamReq.URL.String()),
 				Passthrough: true,
 			})
-		}
-
-		// Native Messages shares the same Cindy health classifier as Responses.
-		// Exact budget and transient 403 signals must be observed before pool-mode
-		// retries or generic account error handling can reinterpret them.
-		if IsCindyAPIKeyAccount(account.Platform, account.Type, account.Credentials) &&
-			(resp.StatusCode == http.StatusTooManyRequests || resp.StatusCode == http.StatusForbidden || resp.StatusCode == http.StatusUnauthorized) {
-			respBody, _ := s.readUpstreamErrorBody(resp)
-			_ = resp.Body.Close()
-			resp.Body = io.NopCloser(bytes.NewReader(respBody))
-			healthSignal := s.observeCindyHealthSignal(ctx, account, resp.StatusCode, respBody)
-			exactBudget := healthSignal == CindyHealthSignalExactBudget
-			banned := healthSignal == CindyHealthSignalBanned
-			cyberPolicy := resp.StatusCode == http.StatusForbidden
-			if cyberPolicy {
-				cyberPolicy, _, _ = detectOpenAICyberPolicy(respBody)
-			}
-			if exactBudget || banned {
-				return nil, sanitizeOpenAICindyFailoverError(&UpstreamFailoverError{
-					StatusCode:               resp.StatusCode,
-					ResponseBody:             respBody,
-					ResponseHeaders:          resp.Header.Clone(),
-					RetryableOnSameAccount:   false,
-					Scope:                    GatewayFailureScopeAccount,
-					NextAccountAction:        NextAccountRetry,
-					CindyBalanceInsufficient: exactBudget,
-				})
-			}
-			if healthSignal == CindyHealthSignalForbidden || cyberPolicy {
-				return nil, sanitizeOpenAICindyFailoverError(&UpstreamFailoverError{
-					StatusCode:             resp.StatusCode,
-					ResponseBody:           respBody,
-					ResponseHeaders:        resp.Header.Clone(),
-					RetryableOnSameAccount: false,
-					Scope:                  GatewayFailureScopeAccount,
-					NextAccountAction:      NextAccountRetry,
-				})
-			}
 		}
 
 		// 透传分支禁止 400 请求体降级重试（该重试会改写请求体）
@@ -401,11 +299,6 @@ func (s *GatewayService) buildUpstreamRequestAnthropicAPIKeyPassthrough(
 	token string,
 ) (*http.Request, []byte, error) {
 	body = stripDeferredToolCacheControl(body)
-	var promptErr error
-	body, _, promptErr = s.businessPromptService.ApplyForSend(c, account, body, "messages", false)
-	if promptErr != nil {
-		return nil, nil, promptErr
-	}
 	targetURL := claudeAPIURL
 	baseURL := account.GetBaseURL()
 	if baseURL != "" {
@@ -413,11 +306,7 @@ func (s *GatewayService) buildUpstreamRequestAnthropicAPIKeyPassthrough(
 		if err != nil {
 			return nil, nil, err
 		}
-		if IsCindyRuntimeCompatibleAPIKeyAccount(account.Platform, account.Type, account.Credentials) {
-			targetURL = validatedURL + "/v1/messages"
-		} else {
-			targetURL = validatedURL + "/v1/messages?beta=true"
-		}
+		targetURL = validatedURL + "/v1/messages?beta=true"
 	}
 
 	// 能力维度 body sanitize：透传路径上 anthropic-beta header 原样透传客户端值，
@@ -522,53 +411,7 @@ func (s *GatewayService) handleStreamingResponseAnthropicAPIKeyPassthrough(
 	usage := &ClaudeUsage{}
 	var firstTokenMs *int
 	clientDisconnected := false
-	clientOutputStarted := false
 	sawTerminalEvent := false
-	bufferCindyPreamble := cindyBalanceReplayBufferEnabled(account)
-	pendingLines := make([]string, 0, 12)
-	currentEventLines := make([]string, 0, 4)
-	currentEventStartsOutput := false
-	currentEventTerminal := false
-	writeLines := func(lines []string) {
-		if clientDisconnected {
-			return
-		}
-		for _, outputLine := range lines {
-			if _, err := io.WriteString(w, outputLine+"\n"); err != nil {
-				clientDisconnected = true
-				logger.LegacyPrintf("service.gateway", "[Anthropic passthrough] Client disconnected during streaming, continue draining upstream for usage: account=%d", account.ID)
-				return
-			}
-		}
-	}
-	commitCurrentEvent := func() {
-		if len(currentEventLines) == 0 {
-			return
-		}
-		if !bufferCindyPreamble {
-			writeLines(currentEventLines)
-			if !clientDisconnected {
-				clientOutputStarted = true
-			}
-		} else if clientOutputStarted {
-			writeLines(currentEventLines)
-		} else {
-			pendingLines = append(pendingLines, currentEventLines...)
-			if currentEventStartsOutput || currentEventTerminal {
-				writeLines(pendingLines)
-				pendingLines = pendingLines[:0]
-				if !clientDisconnected {
-					clientOutputStarted = true
-				}
-			}
-		}
-		if !clientDisconnected && (clientOutputStarted || currentEventTerminal) {
-			flusher.Flush()
-		}
-		currentEventLines = currentEventLines[:0]
-		currentEventStartsOutput = false
-		currentEventTerminal = false
-	}
 
 	scanner := bufio.NewScanner(resp.Body)
 	maxLineSize := defaultMaxLineSize
@@ -655,11 +498,6 @@ func (s *GatewayService) handleStreamingResponseAnthropicAPIKeyPassthrough(
 		select {
 		case ev, ok := <-events:
 			if !ok {
-				commitCurrentEvent()
-				if !clientOutputStarted && len(pendingLines) > 0 {
-					writeLines(pendingLines)
-					pendingLines = pendingLines[:0]
-				}
 				if !clientDisconnected {
 					// 兜底补刷，确保最后一个未以空行结尾的事件也能及时送达客户端。
 					flusher.Flush()
@@ -695,26 +533,6 @@ func (s *GatewayService) handleStreamingResponseAnthropicAPIKeyPassthrough(
 			line := ev.line
 			if data, ok := extractAnthropicSSEDataLine(line); ok {
 				trimmed := strings.TrimSpace(data)
-				payload := []byte(trimmed)
-				healthSignal := s.observeCindyHealthSignal(ctx, account, http.StatusOK, payload)
-				exactBudget := healthSignal == CindyHealthSignalExactBudget
-				if resp.StatusCode == http.StatusOK && exactBudget {
-					if s.rateLimitService != nil {
-						s.rateLimitService.HandleUpstreamError(ctx, account, http.StatusOK, resp.Header, payload, model)
-					}
-					// Do not append this event to currentEventLines. Before the first
-					// semantic output the handler can select another account; after output
-					// it will append one protocol-correct generic terminal error. In both
-					// cases the raw account payload stays behind the service boundary.
-					return &streamingResult{usage: usage, firstTokenMs: firstTokenMs, clientDisconnect: clientDisconnected},
-						newCindyBalanceTerminalFailover(resp.Header)
-				}
-				if anthropicPassthroughDataStartsClientOutput(payload) {
-					currentEventStartsOutput = true
-				}
-				if anthropicStreamEventIsTerminal("", trimmed) {
-					currentEventTerminal = true
-				}
 				observer.ObserveAnthropic([]byte(trimmed))
 				if anthropicStreamEventIsTerminal("", trimmed) {
 					sawTerminalEvent = true
@@ -728,20 +546,19 @@ func (s *GatewayService) handleStreamingResponseAnthropicAPIKeyPassthrough(
 				trimmed := strings.TrimSpace(line)
 				if strings.HasPrefix(trimmed, "event:") && anthropicStreamEventIsTerminal(strings.TrimSpace(strings.TrimPrefix(trimmed, "event:")), "") {
 					sawTerminalEvent = true
-					currentEventTerminal = true
 				}
 			}
 
-			restored := string(reverseToolNamesIfPresent(c, rewritePromptRulesStructuredSSE(c, []byte(line), "messages")))
-			if !bufferCindyPreamble {
-				// Preserve the legacy passthrough behavior for ordinary Anthropic
-				// accounts: forward each line immediately. Only strict Cindy needs
-				// event-transactional buffering for exact budget classification.
-				writeLines([]string{restored})
-				if !clientDisconnected {
-					clientOutputStarted = true
-				}
-				if line == "" {
+			if !clientDisconnected {
+				restored := string(reverseToolNamesIfPresent(c, []byte(line)))
+				if _, err := io.WriteString(w, restored); err != nil {
+					clientDisconnected = true
+					logger.LegacyPrintf("service.gateway", "[Anthropic passthrough] Client disconnected during streaming, continue draining upstream for usage: account=%d", account.ID)
+				} else if _, err := io.WriteString(w, "\n"); err != nil {
+					clientDisconnected = true
+					logger.LegacyPrintf("service.gateway", "[Anthropic passthrough] Client disconnected during streaming, continue draining upstream for usage: account=%d", account.ID)
+				} else if line == "" {
+					// 按 SSE 事件边界刷出，减少每行 flush 带来的 syscall 开销。
 					flusher.Flush()
 					lastDataAt = time.Now()
 					resetKeepaliveTimer()
@@ -749,19 +566,6 @@ func (s *GatewayService) handleStreamingResponseAnthropicAPIKeyPassthrough(
 				} else {
 					inPartialEvent = true
 				}
-				continue
-			}
-			currentEventLines = append(currentEventLines, restored)
-			if line == "" {
-				// Buffer a complete SSE event until its data has been classified.
-				// This preserves account failover for preamble-only streams and prevents
-				// an `event: error` line from committing the response before its payload.
-				commitCurrentEvent()
-				lastDataAt = time.Now()
-				resetKeepaliveTimer()
-				inPartialEvent = false
-			} else {
-				inPartialEvent = true
 			}
 
 		case <-intervalCh:
@@ -780,13 +584,6 @@ func (s *GatewayService) handleStreamingResponseAnthropicAPIKeyPassthrough(
 
 		case <-keepaliveCh:
 			if clientDisconnected {
-				continue
-			}
-			// For Cindy only, a keepalive would commit the HTTP stream and make a
-			// later exact budget event impossible to fail over. Other Anthropic
-			// passthrough accounts retain their normal pre-output idle pings.
-			if bufferCindyPreamble && !clientOutputStarted {
-				resetKeepaliveTimer()
 				continue
 			}
 			if inPartialEvent {
@@ -821,16 +618,6 @@ func extractAnthropicSSEDataLine(line string) (string, bool) {
 		start++
 	}
 	return line[start:], true
-}
-
-func anthropicPassthroughDataStartsClientOutput(payload []byte) bool {
-	eventType := strings.TrimSpace(gjson.GetBytes(payload, "type").String())
-	switch eventType {
-	case "", "ping", "message_start", "error":
-		return false
-	default:
-		return true
-	}
 }
 
 // parseSSEUsagePassthrough 从 Anthropic SSE data 行提取 usage（包级函数：
@@ -1075,22 +862,6 @@ func (s *GatewayService) handleNonStreamingResponseAnthropicAPIKeyPassthrough(
 		observer = beginUpstreamResponseModelObservation(c)
 	}
 	observer.ObserveAnthropic(body)
-	healthSignal := s.observeCindyHealthSignal(ctx, account, resp.StatusCode, body)
-	exactBudget := healthSignal == CindyHealthSignalExactBudget
-	if exactBudget {
-		if s.rateLimitService != nil {
-			s.rateLimitService.HandleUpstreamError(ctx, account, resp.StatusCode, resp.Header, body)
-		}
-		return nil, sanitizeOpenAICindyFailoverError(&UpstreamFailoverError{
-			StatusCode:               http.StatusTooManyRequests,
-			ResponseBody:             body,
-			ResponseHeaders:          resp.Header.Clone(),
-			RetryableOnSameAccount:   false,
-			Scope:                    GatewayFailureScopeAccount,
-			NextAccountAction:        NextAccountRetry,
-			CindyBalanceInsufficient: true,
-		})
-	}
 
 	if resp.StatusCode >= http.StatusOK && resp.StatusCode < http.StatusMultipleChoices {
 		var raw json.RawMessage
@@ -1112,7 +883,6 @@ func (s *GatewayService) handleNonStreamingResponseAnthropicAPIKeyPassthrough(
 	if contentType == "" {
 		contentType = "application/json"
 	}
-	body = rewritePromptRulesStructuredEcho(c, body, "messages")
 	body = reverseToolNamesIfPresent(c, body)
 	c.Data(resp.StatusCode, contentType, body)
 	return usage, nil

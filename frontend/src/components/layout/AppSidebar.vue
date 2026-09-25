@@ -820,7 +820,6 @@ function buildExtensionNavItems(includeAdmin: boolean): NavItem[] {
   const items: NavItem[] = []
   if (includeAdmin) {
     items.push({ path: '/admin/system-prompts', label: t('nav.systemPrompts'), icon: DocumentIcon })
-    items.push({ path: '/admin/cindy-accounts', label: t('nav.cindyAccounts'), icon: GlobeIcon })
     items.push({ path: '/admin/codex-runtime', label: t('nav.codexRuntime'), icon: PluginIcon })
   }
   items.push({ path: '/image-studio', label: t('nav.imageStudio'), icon: BatchImageIcon, featureFlag: flagImageStudio })

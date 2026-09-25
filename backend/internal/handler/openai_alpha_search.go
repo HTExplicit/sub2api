@@ -29,25 +29,8 @@ func (h *OpenAIGatewayHandler) AlphaSearch(c *gin.Context) {
 		h.errorResponse(c, http.StatusUnauthorized, "authentication_error", "Invalid API key")
 		return
 	}
-	if apiKey.Group.Platform != service.PlatformOpenAI && apiKey.Group.Platform != service.PlatformComposite && apiKey.Group.Platform != service.PlatformCindy {
+	if apiKey.Group.Platform != service.PlatformOpenAI && apiKey.Group.Platform != service.PlatformComposite {
 		h.errorResponse(c, http.StatusNotFound, "not_found_error", "Codex alpha search is only available for OpenAI and Composite groups")
-		return
-	}
-	cindySearch := apiKey.Group.Platform == service.PlatformCindy
-	if cindySearch {
-		classified, classifyErr := h.gatewayService.ClassifyCindyIdentityGroup(c.Request.Context(), apiKey.Group)
-		if classifyErr != nil {
-			h.errorResponse(c, http.StatusServiceUnavailable, "api_error", "Unable to determine model availability")
-			return
-		}
-		if !classified {
-			h.errorResponse(c, http.StatusNotFound, "model_not_found", "Model is not supported on the alpha search endpoint")
-			return
-		}
-		service.SetCindyManagedCompatibility(c, true)
-	}
-	if cindySearch && !service.CindySearchFeatureEnabled() {
-		h.errorResponse(c, http.StatusNotFound, "model_not_found", "Model is not supported on the alpha search endpoint")
 		return
 	}
 	subject, ok := middleware2.GetAuthSubjectFromContext(c)
@@ -62,9 +45,10 @@ func (h *OpenAIGatewayHandler) AlphaSearch(c *gin.Context) {
 		zap.Int64("api_key_id", apiKey.ID),
 		zap.Any("group_id", apiKey.GroupID),
 	)
-	if !cindySearch && !h.ensureResponsesDependencies(c, reqLog) {
+	if !h.ensureResponsesDependencies(c, reqLog) {
 		return
 	}
+
 	body, err := pkghttputil.ReadRequestBodyWithPrealloc(c.Request)
 	if err != nil {
 		if maxErr, ok := extractMaxBytesError(err); ok {
@@ -94,20 +78,6 @@ func (h *OpenAIGatewayHandler) AlphaSearch(c *gin.Context) {
 		h.errorResponse(c, http.StatusNotFound, "not_found_error", "Codex alpha search only supports OpenAI models for Composite groups")
 		return
 	}
-	if cindySearch {
-		plan, planErr := service.ResolveCindyAlphaSearchPlan(c.Request.Context(), requestedModel)
-		if planErr != nil {
-			h.errorResponse(c, http.StatusServiceUnavailable, "api_error", "Unable to determine model availability")
-			return
-		}
-		if !plan.Allowed {
-			h.errorResponse(c, http.StatusNotFound, "model_not_found", "Model is not supported on the alpha search endpoint")
-			return
-		}
-	}
-	if cindySearch && !h.ensureResponsesDependencies(c, reqLog) {
-		return
-	}
 	reqLog = reqLog.With(zap.String("model", requestedModel))
 	setOpsRequestContext(c, requestedModel, false)
 	setOpsEndpointContext(c, "", int16(service.RequestTypeSync))
@@ -117,15 +87,7 @@ func (h *OpenAIGatewayHandler) AlphaSearch(c *gin.Context) {
 	}
 
 	channelMapping, _ := h.gatewayService.ResolveChannelMappingAndRestrict(c.Request.Context(), apiKey.GroupID, requestedModel)
-	forwardBody := body
-	if cindySearch {
-		// First-class Cindy Search uses the pinned public-to-upstream mapping;
-		// channel mappings cannot expose or select the hidden fallback model.
-		channelMapping.Mapped = false
-		channelMapping.MappedModel = requestedModel
-	} else {
-		forwardBody = openAIModelMappedBody(body, channelMapping.Mapped, channelMapping.MappedModel, h.gatewayService.ReplaceModelInBody)
-	}
+	forwardBody := openAIModelMappedBody(body, channelMapping.Mapped, channelMapping.MappedModel, h.gatewayService.ReplaceModelInBody)
 	subscription, _ := middleware2.GetSubscriptionFromContext(c)
 	service.SetOpsLatencyMs(c, service.OpsAuthLatencyMsKey, time.Since(requestStart).Milliseconds())
 

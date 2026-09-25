@@ -11,7 +11,7 @@
       v-for="account in accounts"
       v-else
       :key="account.id"
-      class="grid w-full grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-x-3 gap-y-1.5 border-b border-line px-3 py-2.5 text-left transition-colors last:border-b-0 hover:bg-raised lg:grid-cols-[auto_minmax(12rem,1.2fr)_minmax(8rem,0.65fr)_minmax(16rem,1fr)_minmax(12rem,0.9fr)_auto] lg:gap-y-0"
+      class="grid w-full grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-x-3 gap-y-1.5 border-b border-gray-100 px-3 py-2.5 text-left transition-colors last:border-b-0 hover:bg-gray-50 dark:border-dark-700 dark:hover:bg-dark-800 lg:grid-cols-[auto_minmax(12rem,1.2fr)_minmax(8rem,0.65fr)_minmax(16rem,1fr)_minmax(12rem,0.9fr)_auto] lg:gap-y-0"
       :class="selectedSet.has(account.id) ? 'border-l-2 border-l-primary-500 bg-raised' : ''"
       @click="emit('rowClick', account)"
     >
@@ -49,13 +49,6 @@
         <AccountCapacityCell :account="account" compact class="mt-1" />
       </div>
 
-      <CindyBalanceProbeSummary
-        v-if="showCindyProbe"
-        :account="account"
-        show-label
-        class="col-start-2 row-start-3 min-w-0 lg:hidden"
-      />
-
       <div class="hidden min-w-0 lg:block">
         <div class="text-[10px] font-medium uppercase text-gray-400">{{ t('admin.accounts.classification') }}</div>
         <div class="flex items-center gap-2">
@@ -65,7 +58,6 @@
         <div class="mt-1 truncate text-xs text-gray-500 dark:text-dark-300">
           <span class="mr-1 text-[10px] font-medium uppercase text-gray-400">{{ t('admin.accounts.routing') }}</span><AccountGroupsCell :groups="account.groups" /><span>{{ account.proxy?.name || t('admin.accounts.directConnection') }}</span>
         </div>
-        <CindyBalanceProbeSummary v-if="showCindyProbe" :account="account" show-label class="mt-2" />
       </div>
 
       <div class="col-start-3 row-span-2 row-start-1 flex items-center gap-0.5 self-start lg:col-start-auto lg:row-span-1 lg:row-start-auto lg:self-center" @click.stop>
@@ -90,10 +82,9 @@ import AccountIdentityBadges from '@/components/account/AccountIdentityBadges.vu
 import AccountSelectionCheckbox from '@/components/account/AccountSelectionCheckbox.vue'
 import AccountGroupsCell from '@/components/account/AccountGroupsCell.vue'
 import Icon from '@/components/icons/Icon.vue'
-import CindyBalanceProbeSummary from '@/features/cindy-balance-probe/CindyBalanceProbeSummary.vue'
 import type { Account, WindowStats } from '@/types'
 
-const props = withDefaults(defineProps<{
+const props = defineProps<{
   accounts: Account[]
   loading: boolean
   selectedIds: number[]
@@ -103,10 +94,7 @@ const props = withDefaults(defineProps<{
   todayStatsUpdatedAt: number | null
   manualRefreshToken: number
   statusNow: number
-  showCindyProbe?: boolean
-}>(), {
-  showCindyProbe: false,
-})
+}>()
 
 const emit = defineEmits<{
   rowClick: [account: Account]
