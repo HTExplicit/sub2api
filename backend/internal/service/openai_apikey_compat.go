@@ -6,6 +6,7 @@ import (
 	"strings"
 	"unicode/utf8"
 
+	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/logger"
 	"github.com/gin-gonic/gin"
 	"github.com/tidwall/gjson"
@@ -24,6 +25,21 @@ const (
 )
 
 const openAIPromptCacheKeyMaxRunes = 64
+
+// ValidateOpenAIPromptCacheKeyModeExtra accepts an absent or null option and
+// exactly the two documented modes.
+func ValidateOpenAIPromptCacheKeyModeExtra(extra map[string]any) error {
+	raw, exists := extra[OpenAIPromptCacheKeyModeExtraKey]
+	if !exists || raw == nil {
+		return nil
+	}
+	if mode, ok := raw.(string); ok &&
+		(mode == OpenAIPromptCacheKeyModePassthrough || mode == OpenAIPromptCacheKeyModeSHA25664) {
+		return nil
+	}
+	return infraerrors.BadRequest("OPENAI_PROMPT_CACHE_KEY_MODE_INVALID",
+		OpenAIPromptCacheKeyModeExtraKey+" must be passthrough or sha256_64")
+}
 
 // OpenAIPromptCacheKeyMode returns the account's prompt_cache_key forwarding
 // mode. Anything other than sha256_64 forwards the key unchanged.

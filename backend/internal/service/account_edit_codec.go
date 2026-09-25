@@ -9,6 +9,7 @@ var accountEditExtraKeys = []string{
 	"openai_responses_mode", "openai_compact_mode",
 	"openai_apikey_responses_websockets_v2_mode", "openai_apikey_responses_websockets_v2_enabled",
 	"responses_websockets_v2_enabled", "openai_ws_enabled",
+	OpenAIPromptCacheKeyModeExtraKey,
 }
 
 type accountEditRawValue struct {
