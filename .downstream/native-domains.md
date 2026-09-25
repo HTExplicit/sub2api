@@ -107,3 +107,17 @@ Normal required PR checks validate the native domain packages, account scope,
 configuration/lease/ledger compatibility and frontend behavior. The release
 reuses that source validation. Health endpoints establish availability only;
 actual model-quality diagnostics remain separately budgeted and coordinated.
+
+## Console theme
+
+`observability.theme_enabled` (public `flat_theme_enabled`, default on) toggles
+`html.flat-theme`; switching it off restores the upstream look. The console look
+lives only in the central layer: `frontend/src/styles/flat-theme.css` (tokens and
+Geist/Geist Mono Latin subsets; CJK uses system fonts), `frontend/tailwind.config.js`
+(every palette, radius, shadow and gradient resolves through a CSS variable whose
+fallback is the upstream value; hue families fold into danger/warning/info/success/
+purple; `primary` is ink), `frontend/src/style.css` (upstream recipes plus a
+`:where(.flat-theme)` console block) and the shared components and layout. Page
+files keep upstream class strings; after upstream merges, re-run the ops-repo
+de-sweep (`artifacts/tmp/admin-rework/ui/desweep/desweep.py`) instead of restyling
+pages.
