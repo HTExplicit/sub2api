@@ -8,9 +8,9 @@ import (
 	"fmt"
 	"net/http"
 	"sort"
-	"strings"
 
 	extensionv1 "github.com/Wei-Shaw/sub2api/internal/nativeapi"
+	promptpolicy "github.com/Wei-Shaw/sub2api/internal/promptskills/policy"
 	"github.com/gin-gonic/gin"
 	"github.com/tidwall/gjson"
 	"github.com/tidwall/sjson"
@@ -37,113 +37,53 @@ func applyPromptRules(body []byte, application BusinessSystemPromptApplication) 
 	if application.RulesPlan == nil || !application.Applied {
 		return body, application, nil
 	}
-	if !json.Valid(body) {
+	if !json.Valid(body) || !gjson.ParseBytes(body).IsObject() {
 		return nil, application, ErrBusinessSystemPromptInvalid
 	}
-	groups := map[string][]extensionv1.PromptRulePlacement{}
-	for _, placement := range application.RulesPlan.Placements {
-		groups[placement.Carrier] = append(groups[placement.Carrier], placement)
+	originalPlan := application.RulesPlan
+	copied := *originalPlan
+	copied.Placements = append([]extensionv1.PromptRulePlacement{}, originalPlan.Placements...)
+	copied.Skipped = append([]extensionv1.PromptRuleDecision{}, originalPlan.Skipped...)
+	application.RulesPlan = &copied
+	groups := map[string][]int{}
+	for index, placement := range copied.Placements {
+		switch placement.Carrier {
+		case "instructions", "input", "messages", "system", "systemInstruction":
+		default:
+			return nil, application, ErrPromptDeliveryUnsupported
+		}
+		groups[placement.Carrier] = append(groups[placement.Carrier], index)
 	}
+	applied := make([]bool, len(copied.Placements))
 	out := body
-	for _, field := range []string{"instructions", "input", "messages"} {
+	for _, field := range []string{"instructions", "system", "systemInstruction", "input", "messages"} {
 		placements := groups[field]
 		if len(placements) == 0 {
 			continue
 		}
-		value := gjson.GetBytes(out, field)
-		if field == "instructions" {
-			if value.Exists() && value.Type != gjson.String {
-				return nil, application, fmt.Errorf("%w: instructions must be a string", ErrBusinessSystemPromptInvalid)
-			}
-			application.OriginalInstructionsExists = value.Exists()
-			application.ClientInstructions = value.String()
-			before, after := []string{}, []string{}
-			publicBefore, publicAfter := []string{}, []string{}
-			for _, placement := range placements {
-				switch placement.Position {
-				case extensionv1.PromptPositionControlPrepend:
-					before = append(before, placement.Body)
-					if placement.PreserveEcho {
-						publicBefore = append(publicBefore, placement.Body)
-					}
-				case extensionv1.PromptPositionControlAppend:
-					after = append(after, placement.Body)
-					if placement.PreserveEcho {
-						publicAfter = append(publicAfter, placement.Body)
-					}
-				default:
-					return nil, application, ErrPromptDeliveryUnsupported
-				}
-			}
-			parts := append(before, strings.TrimSpace(value.String()))
-			parts = append(parts, after...)
-			parts = nonEmptyPromptParts(parts)
-			application.FinalInstructions = strings.Join(parts, "\n\n")
-			application.PublicInstructions, application.PublicInstructionsExists = value.String(), value.Exists()
-			if len(publicBefore)+len(publicAfter) > 0 {
-				publicParts := append(publicBefore, strings.TrimSpace(value.String()))
-				publicParts = append(publicParts, publicAfter...)
-				application.PublicInstructions, application.PublicInstructionsExists = strings.Join(nonEmptyPromptParts(publicParts), "\n\n"), true
-			}
-			var err error
-			out, err = sjson.SetBytes(out, field, application.FinalInstructions)
-			if err != nil {
-				return nil, application, err
-			}
-			continue
+		var err error
+		switch field {
+		case "instructions":
+			out, err = applyPromptInstructions(out, &application, placements, applied)
+		case "system", "systemInstruction":
+			out, err = applyPromptSystemBlocks(out, field, &application, placements, applied)
+		default:
+			out, err = applyPromptMessages(out, field, &application, placements, applied)
 		}
-		items := []json.RawMessage{}
-		if field == "input" && value.Type == gjson.String {
-			message, _ := json.Marshal(map[string]any{"role": "user", "content": value.String()})
-			items = append(items, message)
-		} else if value.Exists() {
-			if !value.IsArray() || json.Unmarshal([]byte(value.Raw), &items) != nil {
-				return nil, application, fmt.Errorf("%w: %s must be a message array", ErrBusinessSystemPromptInvalid, field)
-			}
-		} else if field == "messages" {
-			return nil, application, fmt.Errorf("%w: messages must be an array", ErrBusinessSystemPromptInvalid)
-		}
-		controlEnd := 0
-		for controlEnd < len(items) {
-			role := gjson.GetBytes(items[controlEnd], "role").String()
-			if role != "system" && role != "developer" {
-				break
-			}
-			controlEnd++
-		}
-		insertions := map[int][]json.RawMessage{}
-		for _, placement := range placements {
-			if placement.Role != "system" && placement.Role != "developer" {
-				return nil, application, ErrPromptDeliveryUnsupported
-			}
-			index := 0
-			switch placement.Position {
-			case extensionv1.PromptPositionControlPrepend, extensionv1.PromptPositionConversationHead:
-			case extensionv1.PromptPositionControlAppend:
-				index = controlEnd
-			case extensionv1.PromptPositionConversationTail:
-				index = len(items)
-			default:
-				return nil, application, ErrPromptDeliveryUnsupported
-			}
-			message, _ := json.Marshal(map[string]string{"role": placement.Role, "content": placement.Body})
-			insertions[index] = append(insertions[index], message)
-		}
-		combined := make([]json.RawMessage, 0, len(items)+len(placements))
-		for index := 0; index <= len(items); index++ {
-			combined = append(combined, insertions[index]...)
-			if index < len(items) {
-				combined = append(combined, items[index])
-			}
-		}
-		raw, err := json.Marshal(combined)
 		if err != nil {
 			return nil, application, err
 		}
-		out, err = sjson.SetRawBytes(out, field, raw)
-		if err != nil {
-			return nil, application, err
+	}
+	retained := make([]extensionv1.PromptRulePlacement, 0, len(copied.Placements))
+	for index, placement := range copied.Placements {
+		if applied[index] {
+			retained = append(retained, placement)
 		}
+	}
+	application.RulesPlan.Placements = retained
+	application = promptpolicy.FinishRulesPlan(application)
+	if !application.Applied {
+		return body, application, nil
 	}
 	return out, application, nil
 }
@@ -199,7 +139,7 @@ func promptRulesUndo(input, output []byte, application BusinessSystemPromptAppli
 	if !application.Applied || application.RulesPlan == nil {
 		return proofs
 	}
-	for _, field := range []string{"instructions", "input", "messages"} {
+	for _, field := range []string{"instructions", "input", "messages", "system", "systemInstruction"} {
 		placements := []extensionv1.PromptRulePlacement{}
 		for _, placement := range application.RulesPlan.Placements {
 			if placement.Carrier == field {
@@ -219,33 +159,25 @@ func promptRulesUndo(input, output []byte, application BusinessSystemPromptAppli
 				proof.scalar = append([]byte(nil), beforeRaw...)
 			}
 		} else {
-			original := before.Array()
-			controlEnd := 0
-			for controlEnd < len(original) {
-				role := original[controlEnd].Get("role").String()
-				if role != "system" && role != "developer" {
-					break
-				}
-				controlEnd++
-			}
-			counts := map[int]int{}
+			seen := map[int]bool{}
 			for _, placement := range placements {
-				index := 0
-				switch placement.Position {
-				case extensionv1.PromptPositionControlAppend:
-					index = controlEnd
-				case extensionv1.PromptPositionConversationTail:
-					index = len(original)
+				if placement.Index == nil {
+					proof.valid = false
+					continue
 				}
-				counts[index]++
-			}
-			added := 0
-			for index := 0; index <= len(original); index++ {
-				for n := 0; n < counts[index]; n++ {
-					proof.indices = append(proof.indices, index+added)
-					added++
+				count := 1
+				if field == "system" && placement.ContentFormat == extensionv1.PromptContentAnthropicSystemBlocks {
+					count = len(gjson.ParseBytes(placement.StructuredContent).Array())
+				}
+				for offset := 0; offset < count; offset++ {
+					index := *placement.Index + offset
+					if !seen[index] {
+						proof.indices = append(proof.indices, index)
+						seen[index] = true
+					}
 				}
 			}
+			sort.Ints(proof.indices)
 			proof.valid = proof.valid && after.IsArray()
 		}
 		proofs = append(proofs, proof)
@@ -290,20 +222,6 @@ func restorePromptRules(body []byte, proofs []promptRulesCarrierUndo) ([]byte, e
 		}
 	}
 	return out, nil
-}
-
-func sameBusinessPromptPlan(left, right BusinessSystemPromptApplication) bool {
-	left.ClientInstructions, right.ClientInstructions = "", ""
-	left.FinalInstructions, right.FinalInstructions = "", ""
-	left.PublicInstructions, right.PublicInstructions = "", ""
-	left.PublicInstructionsExists, right.PublicInstructionsExists = false, false
-	left.OriginalInstructionsExists, right.OriginalInstructionsExists = false, false
-	leftPlan, rightPlan := left.RulesPlan, right.RulesPlan
-	left.RulesPlan, right.RulesPlan = nil, nil
-	if left != right {
-		return false
-	}
-	return (leftPlan == nil && rightPlan == nil) || (leftPlan != nil && rightPlan != nil && leftPlan.SHA256 == rightPlan.SHA256)
 }
 
 func validateBusinessSystemPromptFinal(c *gin.Context, body []byte, protocol string) error {
@@ -372,12 +290,15 @@ func promptRulesUseCarrier(application BusinessSystemPromptApplication, field st
 	return false
 }
 
+var promptRuleEchoPrefixes = []string{"", "response.", "error.", "error.response.", "error.body.", "request.", "generateContentRequest.", "message.", "error.request.", "error.body.request.", "response.request."}
+
 func rewritePromptRulesResponse(body []byte, application BusinessSystemPromptApplication, expose bool) ([]byte, error) {
 	if expose || application.PreserveInstructionsEcho || !application.Applied || application.FinalInstructions == "" || !json.Valid(body) {
 		return body, nil
 	}
 	out := body
-	for _, path := range []string{"instructions", "response.instructions", "error.instructions", "error.response.instructions"} {
+	for _, prefix := range promptRuleEchoPrefixes {
+		path := prefix + "instructions"
 		value := gjson.GetBytes(out, path)
 		if value.Type != gjson.String || value.String() != application.FinalInstructions {
 			continue
@@ -411,7 +332,7 @@ func rewritePromptRulesStructuredEcho(c *gin.Context, body []byte, protocol stri
 		if proof.field == "instructions" {
 			continue
 		}
-		for _, prefix := range []string{"", "response.", "error.", "error.response.", "error.body."} {
+		for _, prefix := range promptRuleEchoPrefixes {
 			path := prefix + proof.field
 			echo := gjson.GetBytes(out, path)
 			if !echo.Exists() || promptRuleFieldHash([]byte(echo.Raw)) != proof.afterHash {
@@ -421,7 +342,7 @@ func rewritePromptRulesStructuredEcho(c *gin.Context, body []byte, protocol stri
 			if err != nil {
 				continue
 			}
-			clean, err := restorePromptRules(envelope, []promptRulesCarrierUndo{proof})
+			clean, err := redactPromptRuleCarrierEcho(envelope, proof, state.application)
 			if err != nil {
 				continue
 			}
@@ -496,15 +417,26 @@ func (s *OpenAIGatewayService) finalizeBusinessPromptForSend(c *gin.Context, acc
 	if err != nil {
 		return nil, err
 	}
+	if protocol == BusinessSystemPromptProtocolResponses {
+		var changed bool
+		updated, changed, err = normalizeCindyManagedPromptCacheKey(updated, c, account)
+		if err != nil {
+			return nil, err
+		}
+		if changed {
+			observeCindyManagedPromptCacheNormalization(c, true)
+		}
+	}
 	if err := validateBusinessSystemPromptFinal(c, updated, protocol); err != nil {
 		return nil, err
 	}
-	observePromptRulesFinal(c, account, protocol, application)
 	return updated, nil
 }
 
 func writePromptDeliveryError(c *gin.Context, err error) {
 	if errors.Is(err, ErrPromptDeliveryUnsupported) && c != nil && c.Writer != nil && !c.Writer.Written() {
 		c.JSON(http.StatusUnprocessableEntity, gin.H{"error": gin.H{"type": "invalid_request_error", "code": "prompt_delivery_unsupported", "message": "The configured prompt role or position is not supported by this destination"}})
+	} else if errors.Is(err, ErrBusinessSystemPromptUnavailable) && c != nil && c.Writer != nil && !c.Writer.Written() {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": gin.H{"type": "system_prompt_unavailable", "code": "system_prompt_unavailable", "message": "The configured prompt is temporarily unavailable"}})
 	}
 }

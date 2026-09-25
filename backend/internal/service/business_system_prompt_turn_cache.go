@@ -8,10 +8,26 @@ import (
 
 const businessSystemPromptTurnCacheKey = "openai_business_system_prompt_turn_cache"
 
+const businessSystemPromptFirstWSTurnKey = "business_system_prompt_first_ws_turn_started"
+
+// Re-entering a WS adapter after an initial dial/account failure still belongs
+// to the first client frame. Only an actually received next frame starts a new
+// snapshot; transport attempts must not observe a just-published revision.
+func beginBusinessSystemPromptFirstWSTurn(c *gin.Context) {
+	if c == nil {
+		return
+	}
+	if started, _ := c.Get(businessSystemPromptFirstWSTurnKey); started == true {
+		return
+	}
+	beginBusinessSystemPromptRequestTurn(c)
+	c.Set(businessSystemPromptFirstWSTurnKey, true)
+}
+
 // A WS connection owns only its current prompt cache. The ingress parser starts
 // a new turn after the previous relay/AfterTurn has finished; accounting has
 // already captured its own metadata and never reads these prompt cache keys.
-// Replacing the pointer releases the completed turn's snapshots and full body
+// Replacing the pointer releases the completed turn's snapshots and echo proofs
 // instead of keeping one set of Gin keys for every turn in the connection.
 type businessSystemPromptTurnCache struct {
 	mu     sync.RWMutex
@@ -48,19 +64,4 @@ func businessSystemPromptRequestSet(ctx *gin.Context, key string, value any) {
 		return
 	}
 	ctx.Set(key, value)
-}
-
-func businessSystemPromptRequestDelete(ctx *gin.Context, key string) {
-	if ctx == nil {
-		return
-	}
-	current, _ := ctx.Get(businessSystemPromptTurnCacheKey)
-	if cache, ok := current.(*businessSystemPromptTurnCache); ok && cache != nil {
-		cache.mu.Lock()
-		delete(cache.values, key)
-		cache.mu.Unlock()
-		return
-	}
-	// HTTP callers never need this operation: it is reserved for the native
-	// WS accumulator's proven clean, service-owned payloads.
 }

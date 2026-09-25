@@ -20,8 +20,8 @@ func TestBusinessSystemPromptWSTurnCacheDoesNotRetainCompletedBodies(t *testing.
 	account := businessSystemPromptAPIKeyAccount(true)
 	keyCount := 0
 	for turn := int64(1); turn <= 4; turn++ {
-		store.loaded = BusinessSystemPromptSnapshot{Enabled: true, Revision: turn, Body: fmt.Sprintf("server-%d", turn)}
-		require.NoError(t, policy.Reload(context.Background()))
+		store.loaded = promptRulesSnapshotForTest(BusinessSystemPromptSnapshot{Enabled: true, Revision: turn, Body: fmt.Sprintf("server-%d", turn)})
+		policy.snapshot.Store(&store.loaded)
 		beginBusinessSystemPromptRequestTurn(c)
 		_, applied := businessSystemPromptApplicationFromRequest(c, BusinessSystemPromptProtocolResponses)
 		require.False(t, applied, "a new turn must not inherit a completed response application")
@@ -34,12 +34,14 @@ func TestBusinessSystemPromptWSTurnCacheDoesNotRetainCompletedBodies(t *testing.
 		require.NoError(t, err)
 		require.Equal(t, body, retried)
 		require.Equal(t, application, repeated)
+		rewritten := gateway.rewriteBusinessSystemPromptJSONForRequest(c, body, BusinessSystemPromptProtocolResponses)
+		require.Equal(t, gjson.GetBytes(original, "instructions").String(), gjson.GetBytes(rewritten, "instructions").String())
 		chat, fallback, err := gateway.applyBusinessSystemPromptForRequest(c, []byte(`{"messages":[{"role":"user","content":"fallback"}]}`), account, BusinessSystemPromptProtocolChat, false)
 		require.NoError(t, err)
 		require.Equal(t, turn, fallback.Revision)
 		require.True(t, chatBodyHasSystemPrompt(chat, store.loaded.Body))
-		rewritten := gateway.rewriteBusinessSystemPromptJSONForRequest(c, body, BusinessSystemPromptProtocolResponses)
-		require.Equal(t, gjson.GetBytes(original, "instructions").String(), gjson.GetBytes(rewritten, "instructions").String())
+		_, staleApplication := businessSystemPromptApplicationFromRequest(c, BusinessSystemPromptProtocolResponses)
+		require.False(t, staleApplication, "the fallback must not expose the superseded protocol's application")
 		wire := deriveBusinessSystemPromptCacheKey(c, "seed", application)
 		require.Equal(t, wire, deriveBusinessSystemPromptCacheKey(c, wire, application))
 		keys := c.Copy().Keys

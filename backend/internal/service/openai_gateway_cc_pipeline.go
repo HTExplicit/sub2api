@@ -209,16 +209,25 @@ func (s *OpenAIGatewayService) sendCCUpstreamRequest(
 	bearerToken string,
 	userAgent string,
 	grokCacheIdentity string,
+	compactOverride ...bool,
 ) (*http.Response, error) {
 	// DeepSeek thinking mode 要求历史 assistant 回传 reasoning_content。
 	// Responses→CC 回退在加密-only / 缺 reasoning item 且缓存未命中时会漏掉该
 	// 字段，上游 400 "The `reasoning_content` in the thinking mode must be
 	// passed back to the API"。在共用出站点补空格占位，真实明文不覆盖。
 	body = ensureDeepSeekChatReasoningPlaceholders(account, body)
+	businessSystemPromptRequestSet(c, businessSystemPromptStrictChatRoleKey, requiresSystemChatRole(account, targetURL))
+	compact := isOpenAIResponsesCompactPath(c)
+	if len(compactOverride) > 0 {
+		compact = compactOverride[0]
+	}
 	var promptErr error
-	body, promptErr = s.finalizeBusinessPromptForSend(c, account, body, BusinessSystemPromptProtocolChat, isOpenAIResponsesCompactPath(c))
+	body, promptErr = s.finalizeBusinessPromptForSend(c, account, body, BusinessSystemPromptProtocolChat, compact)
 	if promptErr != nil {
 		return nil, promptErr
+	}
+	if application, ok := businessSystemPromptApplicationFromRequest(c, BusinessSystemPromptProtocolChat); ok {
+		grokCacheIdentity = grokBusinessPromptCacheIdentity(grokCacheIdentity, application)
 	}
 	upstreamCtx, releaseUpstreamCtx := detachUpstreamContext(ctx)
 	upstreamReq, err := http.NewRequestWithContext(upstreamCtx, http.MethodPost, targetURL, bytes.NewReader(body))

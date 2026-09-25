@@ -329,42 +329,6 @@ func (s *OpenAIGatewayService) forwardOpenAIPassthrough(
 	}
 	body = updatedBody
 
-	// Keep the business policy as the final prompt-owning layer. In particular,
-	// it must not satisfy or bypass the legacy OAuth passthrough preflight above.
-	updatedPromptBody, promptApplication, promptErr := s.applyBusinessSystemPromptForRequest(
-		c, body, account, BusinessSystemPromptProtocolResponses, isOpenAIResponsesCompactPath(c),
-	)
-	if promptErr != nil {
-		if errors.Is(promptErr, ErrBusinessSystemPromptUnavailable) {
-			c.JSON(http.StatusServiceUnavailable, gin.H{"error": gin.H{
-				"type": "system_prompt_unavailable", "code": "system_prompt_unavailable",
-				"message": "business system prompt is temporarily unavailable",
-			}})
-		}
-		return nil, promptErr
-	} else {
-		body = updatedPromptBody
-		body, promptErr = rewriteBusinessSystemPromptCacheKey(c, body, promptApplication)
-		if promptErr != nil {
-			return nil, promptErr
-		}
-	}
-	finalCacheBody, finalCacheChanged, finalCacheErr := normalizeCindyManagedPromptCacheKey(body, c, account)
-	if finalCacheErr != nil {
-		return nil, fmt.Errorf("normalize final passthrough Cindy prompt_cache_key: %w", finalCacheErr)
-	}
-	if finalCacheChanged {
-		body = finalCacheBody
-		observeCindyManagedPromptCacheNormalization(c, true)
-	}
-	logBusinessSystemPromptObservation(
-		ctx,
-		c,
-		promptApplication,
-		OpenAIUpstreamTransportHTTPSSE,
-		"account_passthrough",
-	)
-
 	apiKey := getAPIKeyFromContext(c)
 	// 同一 attempt 的最终 model/body 只判定一次，权限检查与后续图片状态设置共用该结果。
 	imageIntent := resolveOpenAIPassthroughImageIntent(
@@ -452,6 +416,7 @@ func (s *OpenAIGatewayService) forwardOpenAIPassthrough(
 	agentTaskRecoveryTried := false
 	compactModelFallbackRetried := false
 	var reasoningEffort *string
+	var wireBody []byte
 
 retryUpstream:
 	var resp *http.Response
@@ -471,7 +436,7 @@ retryUpstream:
 		if buildErr != nil {
 			return nil, buildErr
 		}
-		upstreamReq, body, buildErr = reasoningRecovery.PrepareRequest(upstreamReq, body, proxyURL)
+		upstreamReq, body, wireBody, buildErr = prepareBusinessPromptReasoningRequest(c, reasoningRecovery, upstreamReq, body, proxyURL)
 		if buildErr != nil {
 			return nil, buildErr
 		}
@@ -480,7 +445,7 @@ retryUpstream:
 		// without a snapshot are a no-op.
 		integrityOpts := requestIntegrityForwardOptionsFromContext(c)
 		integrityOpts.UpstreamModel = actualModel
-		if integrityErr := s.checkStagedRequestIntegrity(c, account, "http_passthrough", body, integrityOpts); integrityErr != nil {
+		if integrityErr := s.checkStagedRequestIntegrity(c, account, "http_passthrough", wireBody, integrityOpts); integrityErr != nil {
 			return nil, integrityErr
 		}
 		reasoningRecovery.BindDiagnosticRequest(diagnosticIncomingBody, upstreamReq)
@@ -508,7 +473,10 @@ retryUpstream:
 		_ = resp.Body.Close()
 		resp.Body = io.NopCloser(bytes.NewReader(probeBody))
 		if retryBody, retry := reasoningRecovery.TryRecover(resp.StatusCode, resp.Header, probeBody, false); retry {
-			body = retryBody
+			body, err = projectReasoningCipherEdits(body, wireBody, retryBody)
+			if err != nil {
+				return nil, err
+			}
 			continue
 		}
 		if reasoningRecovery.RecoveryAttempt() {
@@ -615,7 +583,10 @@ retryUpstream:
 		if err != nil {
 			if retryBody, retry := reasoningRecovery.TryRecoverError(err); retry {
 				_ = resp.Body.Close()
-				body = retryBody
+				body, err = projectReasoningCipherEdits(body, wireBody, retryBody)
+				if err != nil {
+					return nil, err
+				}
 				goto retryUpstream
 			}
 			if reasoningRecovery.RecoveryAttempt() {
@@ -650,7 +621,10 @@ retryUpstream:
 		if err != nil {
 			if retryBody, retry := reasoningRecovery.TryRecoverError(err); retry {
 				_ = resp.Body.Close()
-				body = retryBody
+				body, err = projectReasoningCipherEdits(body, wireBody, retryBody)
+				if err != nil {
+					return nil, err
+				}
 				goto retryUpstream
 			}
 			if reasoningRecovery.RecoveryAttempt() {

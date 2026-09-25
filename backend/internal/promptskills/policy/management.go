@@ -28,7 +28,7 @@ func normalizeComposition(input extensionv1.PromptComposition) (extensionv1.Prom
 		input.Mode = "inline"
 	}
 	switch input.Mode {
-	case "inline":
+	case "inline", extensionv1.PromptContentAnthropicSystemBlocks:
 		if input.BundleID != "" || input.BundleManifestSHA256 != "" {
 			return input, errors.New("inline composition cannot reference a bundle")
 		}

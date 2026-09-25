@@ -58,10 +58,12 @@ func ProvideBusinessSystemPromptService(
 	remoteSkillRegistryBus RemoteSkillRegistryRevisionBus,
 	accountRepo AccountRepository,
 	cfg *config.Config,
+	settings *SettingService,
 ) (*BusinessSystemPromptService, error) {
 	svc := NewBusinessSystemPromptService(store, bus)
 	svc.SetAccountRepository(accountRepo)
 	svc.previewConfig = cfg
+	svc.previewSettings = settings
 	svc.SetRemoteSkillRegistryService(remoteSkillRegistry)
 	svc.SetRemoteSkillRegistryRevisionBus(remoteSkillRegistryBus)
 	return svc, nil
@@ -120,6 +122,75 @@ func ProvideOpenAIGatewayService(
 		deferredService, openAITokenProvider, grokTokenProvider, resolver,
 		channelService, balanceNotifyService, settingService, userPlatformQuotaRepo,
 	)
+	svc.SetBusinessSystemPromptService(businessPromptService)
+	return svc
+}
+
+func ProvideGatewayService(
+	accountRepo AccountRepository,
+	groupRepo GroupRepository,
+	usageLogRepo UsageLogRepository,
+	usageBillingRepo UsageBillingRepository,
+	userRepo UserRepository,
+	userSubRepo UserSubscriptionRepository,
+	userGroupRateRepo UserGroupRateRepository,
+	cache GatewayCache,
+	cfg *config.Config,
+	schedulerSnapshot *SchedulerSnapshotService,
+	concurrencyService *ConcurrencyService,
+	billingService *BillingService,
+	rateLimitService *RateLimitService,
+	billingCacheService *BillingCacheService,
+	identityService *IdentityService,
+	httpUpstream HTTPUpstream,
+	deferredService *DeferredService,
+	claudeTokenProvider *ClaudeTokenProvider,
+	sessionLimitCache SessionLimitCache,
+	rpmCache RPMCache,
+	digestStore *DigestSessionStore,
+	settingService *SettingService,
+	tlsFPProfileService *TLSFingerprintProfileService,
+	channelService *ChannelService,
+	resolver *ModelPricingResolver,
+	compositeResolver *CompositeRouteResolver,
+	balanceNotifyService *BalanceNotifyService,
+	userPlatformQuotaRepo UserPlatformQuotaRepository,
+	businessPromptService *BusinessSystemPromptService,
+) *GatewayService {
+	svc := NewGatewayService(accountRepo, groupRepo, usageLogRepo, usageBillingRepo, userRepo, userSubRepo, userGroupRateRepo, cache, cfg, schedulerSnapshot, concurrencyService, billingService, rateLimitService, billingCacheService, identityService, httpUpstream, deferredService, claudeTokenProvider, sessionLimitCache, rpmCache, digestStore, settingService, tlsFPProfileService, channelService, resolver, compositeResolver, balanceNotifyService, userPlatformQuotaRepo)
+	svc.SetBusinessSystemPromptService(businessPromptService)
+	return svc
+}
+
+func ProvideGeminiMessagesCompatService(
+	accountRepo AccountRepository,
+	groupRepo GroupRepository,
+	cache GatewayCache,
+	schedulerSnapshot *SchedulerSnapshotService,
+	tokenProvider *GeminiTokenProvider,
+	rateLimitService *RateLimitService,
+	httpUpstream HTTPUpstream,
+	antigravityGatewayService *AntigravityGatewayService,
+	cfg *config.Config,
+	businessPromptService *BusinessSystemPromptService,
+) *GeminiMessagesCompatService {
+	svc := NewGeminiMessagesCompatService(accountRepo, groupRepo, cache, schedulerSnapshot, tokenProvider, rateLimitService, httpUpstream, antigravityGatewayService, cfg)
+	svc.SetBusinessSystemPromptService(businessPromptService)
+	return svc
+}
+
+func ProvideAntigravityGatewayService(
+	accountRepo AccountRepository,
+	cache GatewayCache,
+	schedulerSnapshot *SchedulerSnapshotService,
+	tokenProvider *AntigravityTokenProvider,
+	rateLimitService *RateLimitService,
+	httpUpstream HTTPUpstream,
+	settingService *SettingService,
+	internal500Cache Internal500CounterCache,
+	businessPromptService *BusinessSystemPromptService,
+) *AntigravityGatewayService {
+	svc := NewAntigravityGatewayService(accountRepo, cache, schedulerSnapshot, tokenProvider, rateLimitService, httpUpstream, settingService, internal500Cache)
 	svc.SetBusinessSystemPromptService(businessPromptService)
 	return svc
 }
@@ -1012,7 +1083,7 @@ var ProviderSet = wire.NewSet(
 	ProvideBillingCacheService,
 	NewAnnouncementService,
 	NewAdminService,
-	NewGatewayService,
+	ProvideGatewayService,
 	ProvideBusinessSystemPromptService,
 	ProvideRemoteSkillRegistryFiles,
 	ProvideRemoteSkillCandidateSource,
@@ -1042,7 +1113,7 @@ var ProviderSet = wire.NewSet(
 	NewAntigravityOAuthService,
 	ProvideOAuthRefreshAPI,
 	ProvideGeminiTokenProvider,
-	NewGeminiMessagesCompatService,
+	ProvideGeminiMessagesCompatService,
 	ProvideAntigravityTokenProvider,
 	ProvideGrokTokenProvider,
 	ProvideOpenAITokenProvider,
@@ -1054,7 +1125,7 @@ var ProviderSet = wire.NewSet(
 	ProvideCNProviderBalanceService,
 	ProvideCNProviderBalanceCheckService,
 	ProvideClaudeTokenProvider,
-	NewAntigravityGatewayService,
+	ProvideAntigravityGatewayService,
 	ProvideRateLimitService,
 	ProvideAccountUsageService,
 	ProvideAccountTestService,

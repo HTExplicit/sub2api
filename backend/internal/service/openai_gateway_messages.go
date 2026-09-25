@@ -330,34 +330,7 @@ func (s *OpenAIGatewayService) ForwardAsAnthropic(
 		return nil, policyErr
 	}
 	responsesBody = updatedBody
-	updatedPromptBody, application, promptErr := s.applyBusinessSystemPromptForRequest(
-		c, responsesBody, account, BusinessSystemPromptProtocolResponses, false,
-	)
-	if promptErr != nil {
-		if errors.Is(promptErr, ErrBusinessSystemPromptUnavailable) {
-			writeAnthropicError(c, http.StatusServiceUnavailable, "system_prompt_unavailable", "business system prompt is temporarily unavailable")
-		}
-		return nil, promptErr
-	} else {
-		responsesBody = updatedPromptBody
-		if application.Applied {
-			responsesBody, promptErr = rewriteBusinessSystemPromptCacheKey(c, responsesBody, application)
-			if promptErr != nil {
-				return nil, promptErr
-			}
-		}
-	}
 	upstreamPromptCacheKey := promptCacheKey
-	if normalizedBody, changed, normalizeErr := normalizeCindyManagedPromptCacheKey(responsesBody, c, account); normalizeErr != nil {
-		return nil, fmt.Errorf("normalize final Messages-to-Responses Cindy prompt_cache_key: %w", normalizeErr)
-	} else if changed {
-		responsesBody = normalizedBody
-		upstreamPromptCacheKey = strings.TrimSpace(gjson.GetBytes(responsesBody, "prompt_cache_key").String())
-		observeCindyManagedPromptCacheNormalization(c, true)
-	}
-	if application.Applied {
-		upstreamPromptCacheKey = businessSystemPromptUpstreamCacheKey(c, responsesBody, promptCacheKey, application)
-	}
 	responsesReq.ServiceTier = normalizedOpenAIServiceTierValue(gjson.GetBytes(responsesBody, "service_tier").String())
 	grokCacheIdentity := ""
 	if account.Platform == PlatformGrok {
@@ -393,7 +366,7 @@ func (s *OpenAIGatewayService) ForwardAsAnthropic(
 	upstreamCtx, releaseUpstreamCtx := detachUpstreamContext(ctx)
 	var upstreamReq *http.Request
 	if account.Platform == PlatformGrok {
-		upstreamReq, err = buildGrokResponsesRequest(upstreamCtx, c, account, responsesBody, token, grokCacheIdentity, s.cfg, s.settingService)
+		upstreamReq, err = s.buildGrokConversationRequest(upstreamCtx, c, account, responsesBody, token, grokCacheIdentity)
 	} else {
 		upstreamReq, err = s.buildUpstreamRequest(upstreamCtx, c, account, responsesBody, token, isStream, upstreamPromptCacheKey, false)
 	}
@@ -401,6 +374,12 @@ func (s *OpenAIGatewayService) ForwardAsAnthropic(
 	if err != nil {
 		return nil, fmt.Errorf("build upstream request: %w", err)
 	}
+	wireBody, err := businessPromptWireRequestBody(upstreamReq, responsesBody)
+	if err != nil {
+		return nil, err
+	}
+	application, _ := businessSystemPromptApplicationFromRequest(c, BusinessSystemPromptProtocolResponses)
+	upstreamPromptCacheKey = businessSystemPromptUpstreamCacheKey(c, wireBody, promptCacheKey, application)
 
 	// Override session_id with a deterministic UUID derived from the isolated
 	// session key, ensuring different API keys produce different upstream sessions.
@@ -457,7 +436,7 @@ func (s *OpenAIGatewayService) ForwardAsAnthropic(
 				break
 			}
 			upstreamCtxRetry, releaseRetry := detachUpstreamContext(ctx)
-			upstreamReq, err = buildGrokResponsesRequest(upstreamCtxRetry, c, account, responsesBody, token, grokCacheIdentity, s.cfg, s.settingService)
+			upstreamReq, err = s.buildGrokConversationRequest(upstreamCtxRetry, c, account, responsesBody, token, grokCacheIdentity)
 			releaseRetry()
 			if err != nil {
 				return nil, fmt.Errorf("build grok retry request: %w", err)

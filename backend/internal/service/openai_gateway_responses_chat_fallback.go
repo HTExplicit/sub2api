@@ -31,12 +31,6 @@ func (s *OpenAIGatewayService) forwardResponsesViaRawChatCompletions(
 	compact bool,
 ) (*OpenAIForwardResult, error) {
 	startTime := time.Now()
-	cleanBody, restoreErr := restoreBusinessSystemPromptBeforeConversion(c, body, BusinessSystemPromptProtocolResponses)
-	if restoreErr != nil {
-		writeOpenAIResponsesFallbackError(c, http.StatusServiceUnavailable, "system_prompt_unavailable", "business system prompt is temporarily unavailable")
-		return nil, restoreErr
-	}
-	body = cleanBody
 
 	var responsesReq apicompat.ResponsesRequest
 	if err := json.Unmarshal(body, &responsesReq); err != nil {
@@ -122,20 +116,6 @@ func (s *OpenAIGatewayService) forwardResponsesViaRawChatCompletions(
 		}
 		return nil, err
 	}
-	if updatedPromptBody, application, promptErr := s.applyBusinessSystemPromptForRequest(
-		c, chatBody, account, BusinessSystemPromptProtocolChat, compact,
-	); promptErr != nil {
-		if errors.Is(promptErr, ErrBusinessSystemPromptUnavailable) {
-			writeOpenAIResponsesFallbackError(c, http.StatusServiceUnavailable, "system_prompt_unavailable", "business system prompt is temporarily unavailable")
-		}
-		return nil, promptErr
-	} else {
-		chatBody = updatedPromptBody
-		chatBody, promptErr = rewriteBusinessSystemPromptCacheKey(c, chatBody, application)
-		if promptErr != nil {
-			return nil, promptErr
-		}
-	}
 	// /v1/responses 降级到 raw CC 的出站与 forwardAsRawChatCompletions 共用同一个
 	// 独立 Ollama Cloud token 钩子；chatReq.Model 已是模型映射后的 upstreamModel。
 	chatBody = clampOllamaCloudUpstreamMaxTokens(account, chatBody)
@@ -156,7 +136,7 @@ func (s *OpenAIGatewayService) forwardResponsesViaRawChatCompletions(
 	if err != nil {
 		return nil, err
 	}
-	resp, err := s.sendCCUpstreamRequest(ctx, c, account, targetURL, chatBody, clientStream, apiKey, account.GetOpenAIUserAgent(), "")
+	resp, err := s.sendCCUpstreamRequest(ctx, c, account, targetURL, chatBody, clientStream, apiKey, account.GetOpenAIUserAgent(), "", compact)
 	if err != nil {
 		return nil, err
 	}

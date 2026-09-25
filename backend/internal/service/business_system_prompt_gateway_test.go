@@ -32,6 +32,12 @@ func newGatewayBusinessSystemPromptPolicy(t *testing.T, expose, compact bool) *B
 	}}
 	policy := NewBusinessSystemPromptService(store, nil)
 	require.NoError(t, policy.Initialize(context.Background()))
+	snapshot, ok := policy.CurrentSnapshot()
+	require.True(t, ok)
+	snapshot = promptRulesSnapshotForTest(snapshot)
+	policy.snapshot.Store(&snapshot)
+	store.loaded = snapshot
+	store.detail = BusinessSystemPromptTemplateDetail{Versions: []BusinessSystemPromptVersion{{ID: snapshot.VersionID, TemplateID: snapshot.TemplateID, Body: snapshot.Body, SHA256: snapshot.SHA256, ByteLength: snapshot.ByteLength, CompositionMode: snapshot.CompositionMode}}}
 	return policy
 }
 
@@ -70,6 +76,14 @@ func newGatewayHybridBusinessSystemPromptPolicyWithBody(t *testing.T, body strin
 	policy := NewBusinessSystemPromptService(store, nil)
 	policy.SetRemoteSkillRegistryService(registry)
 	require.NoError(t, policy.Initialize(context.Background()))
+	raw, ok := policy.CurrentSnapshot()
+	require.True(t, ok)
+	compiled, err := policy.compileBusinessSystemPromptSnapshot(raw)
+	require.NoError(t, err)
+	snapshot := promptRulesSnapshotForTest(compiled)
+	policy.snapshot.Store(&snapshot)
+	store.loaded = snapshot
+	store.detail = BusinessSystemPromptTemplateDetail{Versions: []BusinessSystemPromptVersion{{ID: raw.VersionID, TemplateID: raw.TemplateID, Body: raw.Body, SHA256: raw.SHA256, ByteLength: raw.ByteLength, CompositionMode: raw.CompositionMode, BundleID: raw.BundleID}}}
 	return policy
 }
 
@@ -92,7 +106,7 @@ func TestBusinessSystemPromptHybridUsesSamePairedPublicationForOfficialCodexAndC
 	require.Equal(t, 1, strings.Count(officialInstructions, "`REMOTE_ROOT/README_AI.md`"))
 	require.Equal(t, 1, strings.Count(officialInstructions, "`REMOTE_ROOT/SKILL.md`"))
 	require.Equal(t, embeddedBusinessSystemPrompt, strings.Replace(officialInstructions, RemoteSkillPublicRoot, RemoteSkillMoxinggangRoot, 1))
-	require.Equal(t, int64(11), officialApplication.BundleRevision)
+	require.Equal(t, int64(20), officialApplication.RulesPlan.Placements[0].VersionID)
 
 	compatible, _ := newBusinessSystemPromptGinContext("/v1/responses", body)
 	compatible.Request.Header.Set("User-Agent", "compatible-client/1.0")
@@ -101,14 +115,14 @@ func TestBusinessSystemPromptHybridUsesSamePairedPublicationForOfficialCodexAndC
 	)
 	require.NoError(t, err)
 	require.Equal(t, officialInstructions, gjson.GetBytes(compatibleBody, "instructions").String())
-	require.Equal(t, int64(11), compatibleApplication.BundleRevision)
+	require.True(t, compatibleApplication.RulesPlan.Placements[0].PreserveEcho)
 
 	retried, retriedApplication, err := svc.applyBusinessSystemPromptForRequest(
-		compatible, compatibleBody, account, BusinessSystemPromptProtocolResponses, false,
+		compatible, body, account, BusinessSystemPromptProtocolResponses, false,
 	)
 	require.NoError(t, err)
 	require.Equal(t, compatibleBody, retried)
-	require.Equal(t, compatibleApplication.EffectiveSHA256, retriedApplication.EffectiveSHA256)
+	require.Equal(t, compatibleApplication.RulesPlan.SHA256, retriedApplication.RulesPlan.SHA256)
 }
 
 func TestBusinessSystemPromptHybridAppliesToFirstClassCindyOpenAIWireAccount(t *testing.T) {
@@ -131,8 +145,8 @@ func TestBusinessSystemPromptHybridAppliesToFirstClassCindyOpenAIWireAccount(t *
 	)
 	require.NoError(t, err)
 	require.True(t, application.Applied)
-	require.Equal(t, BusinessSystemPromptCompositionCodexSkillHybrid, application.CompositionMode)
-	require.Equal(t, "client\n\n"+application.ServerInstructions, gjson.GetBytes(updated, "instructions").String())
+	require.True(t, application.RulesPlan.Placements[0].PreserveEcho)
+	require.Equal(t, "client\n\n"+application.RulesPlan.Placements[0].Body, gjson.GetBytes(updated, "instructions").String())
 }
 
 func TestBusinessSystemPromptHybridPreviewMatchesAppliedBytes(t *testing.T) {
@@ -155,10 +169,10 @@ func TestBusinessSystemPromptHybridPreviewMatchesAppliedBytes(t *testing.T) {
 				BusinessSystemPromptTarget{Platform: PlatformOpenAI, Protocol: BusinessSystemPromptProtocolResponses},
 			)
 			require.NoError(t, err)
-			require.Equal(t, preview.Body, application.ServerInstructions)
+			require.Equal(t, preview.ResolvedRules[0].Body, application.RulesPlan.Placements[0].Body)
 			require.Equal(t, preview.Body, gjson.GetBytes(updated, "instructions").String())
-			require.Equal(t, len([]byte(preview.Body)), application.EffectiveByteLength)
-			require.Equal(t, hashBusinessSystemPromptBundleBytes([]byte(preview.Body)), application.EffectiveSHA256)
+			require.Equal(t, len([]byte(preview.Body)), len(application.RulesPlan.Placements[0].Body))
+			require.Equal(t, hashBusinessSystemPromptBundleBytes([]byte(preview.Body)), application.RulesPlan.Placements[0].SHA256)
 
 			require.Contains(t, preview.Body, RemoteSkillPublicRoot)
 		})
@@ -265,7 +279,7 @@ func TestBusinessSystemPromptNativeResponsesAppliesForAPIKeyAndOAuth(t *testing.
 			require.Error(t, err)
 			require.Nil(t, result)
 			require.NotNil(t, upstream.lastReq)
-			require.Equal(t, "client\n\nbusiness-server", gjson.GetBytes(upstream.lastBody, "instructions").String())
+			require.Equal(t, gjson.GetBytes(body, "instructions").String()+"\n\nbusiness-server", gjson.GetBytes(upstream.lastBody, "instructions").String(), "preserve the customer's instruction bytes")
 			require.Regexp(t, `^[0-9a-f]{64}$`, gjson.GetBytes(upstream.lastBody, "prompt_cache_key").String())
 			require.Equal(t, 1, strings.Count(string(upstream.lastBody), "business-server"))
 		})
@@ -429,15 +443,8 @@ func TestBusinessSystemPromptUpstreamErrorIsSanitizedBeforeInspection(t *testing
 	gin.SetMode(gin.TestMode)
 	c, _ := newBusinessSystemPromptGinContext("/v1/responses", nil)
 	svc := &OpenAIGatewayService{businessPromptService: newGatewayBusinessSystemPromptPolicy(t, false, false)}
-	application := BusinessSystemPromptApplication{
-		Applied:            true,
-		Carrier:            BusinessSystemPromptCarrierInstructions,
-		ClientInstructions: "client",
-		ServerInstructions: "business-server",
-	}
-	c.Set(businessSystemPromptRequestApplicationKey+":"+BusinessSystemPromptProtocolResponses, businessSystemPromptRequestState{
-		application: application,
-	})
+	_, _, err := svc.applyBusinessSystemPromptForRequest(c, []byte(`{"instructions":"client","input":"hello"}`), businessSystemPromptAPIKeyAccount(true), "responses", false)
+	require.NoError(t, err)
 	resp := &http.Response{
 		StatusCode: http.StatusBadRequest,
 		Body: io.NopCloser(strings.NewReader(

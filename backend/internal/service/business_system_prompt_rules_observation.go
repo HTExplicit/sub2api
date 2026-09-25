@@ -24,9 +24,3 @@ func observePromptRulesFinal(c *gin.Context, account *Account, protocol string, 
 	slog.Info("prompt_rules_final", "account_id", account.ID, "protocol", protocol, "revision", application.Revision,
 		"applied", application.Applied, "plan_sha256", application.RulesPlan.SHA256, "placements", placements, "skipped", application.RulesPlan.Skipped, "wire_verified", true)
 }
-
-func observePromptRulesFinalFromRequest(c *gin.Context, account *Account, protocol string) {
-	if application, ok := businessSystemPromptApplicationFromRequest(c, protocol); ok {
-		observePromptRulesFinal(c, account, protocol, application)
-	}
-}

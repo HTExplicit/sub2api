@@ -1,6 +1,7 @@
 import { apiClient } from '../client'
+import type { PromptConfig } from './systemPromptRules'
 
-export type SystemPromptCompositionMode = 'inline' | 'codex_skill_hybrid'
+export type SystemPromptCompositionMode = 'inline' | 'codex_skill_hybrid' | 'anthropic_system_blocks'
 export type SystemPromptClientMode = 'codex' | 'openai_compatible'
 export type RemoteSkillSourceID = 'moxinggang'
 
@@ -270,12 +271,13 @@ export async function getSkillSync(id: number): Promise<RemoteSkillSyncJob> {
 export async function publishSkillVersion(
   id: number,
   expectedRevision: number,
-  rollback = false
+  rollback: boolean,
+  targets: { target_rule_ids: string[]; expected_config_revision: number },
 ): Promise<RemoteSkillRegistrySnapshot> {
   const action = rollback ? 'rollback' : 'publish'
   const { data } = await apiClient.post<RemoteSkillRegistrySnapshot>(
     `/admin/system-prompts/skill-registry/versions/${id}/${action}`,
-    { expected_revision: expectedRevision }
+    { expected_revision: expectedRevision, ...targets }
   )
   return data
 }
@@ -324,12 +326,13 @@ export async function publish(
   id: number,
   versionId: number,
   expectedRevision: number,
-  rollback = false
-): Promise<SystemPromptRuntime> {
+  rollback: boolean,
+  targetRuleIDs: string[],
+): Promise<PromptConfig> {
   const action = rollback ? 'rollback' : 'publish'
-  const { data } = await apiClient.post<SystemPromptRuntime>(
+  const { data } = await apiClient.post<PromptConfig>(
     `/admin/system-prompts/${id}/versions/${versionId}/${action}`,
-    { expected_revision: expectedRevision }
+    { expected_revision: expectedRevision, target_rule_ids: targetRuleIDs }
   )
   return data
 }

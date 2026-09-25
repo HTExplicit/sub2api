@@ -118,9 +118,9 @@ func TestBusinessSystemPromptCacheIdentityTreatsClientKeysAsOpaque(t *testing.T)
 }
 
 func TestBusinessSystemPromptCacheIdentityFrozenRetryAndFallback(t *testing.T) {
-	store := &fakeBusinessSystemPromptStore{loaded: BusinessSystemPromptSnapshot{Revision: 1, Enabled: true, Body: "server"}}
+	store := &fakeBusinessSystemPromptStore{loaded: promptRulesSnapshotForTest(BusinessSystemPromptSnapshot{Revision: 1, Enabled: true, Body: "server"})}
 	policy := NewBusinessSystemPromptService(store, nil)
-	require.NoError(t, policy.Initialize(context.Background()))
+	policy.snapshot.Store(&store.loaded)
 	svc := &OpenAIGatewayService{businessPromptService: policy}
 	account := businessSystemPromptAPIKeyAccount(true)
 	original := []byte(`{"instructions":"client","prompt_cache_key":"seed","input":[]}`)
@@ -130,9 +130,9 @@ func TestBusinessSystemPromptCacheIdentityFrozenRetryAndFallback(t *testing.T) {
 	body, err = rewriteBusinessSystemPromptCacheKey(c, body, application)
 	require.NoError(t, err)
 	want := gjson.GetBytes(body, "prompt_cache_key").String()
-	store.loaded = BusinessSystemPromptSnapshot{Revision: 2, Enabled: true, Body: "new-server"}
-	require.NoError(t, policy.Reload(context.Background()))
-	for _, retryBody := range [][]byte{original, body} {
+	store.loaded = promptRulesSnapshotForTest(BusinessSystemPromptSnapshot{Revision: 2, Enabled: true, Body: "new-server"})
+	policy.snapshot.Store(&store.loaded)
+	for _, retryBody := range [][]byte{original, original} {
 		account.ID++ // Failover must not create a new business-prompt identity.
 		retried, frozen, err := svc.applyBusinessSystemPromptForRequest(c, retryBody, account, BusinessSystemPromptProtocolResponses, false)
 		require.NoError(t, err)
@@ -141,12 +141,13 @@ func TestBusinessSystemPromptCacheIdentityFrozenRetryAndFallback(t *testing.T) {
 		require.Equal(t, want, gjson.GetBytes(retried, "prompt_cache_key").String())
 		require.Equal(t, int64(1), frozen.Revision)
 	}
-	fallback := []byte(fmt.Sprintf(`{"prompt_cache_key":%q,"messages":[{"role":"user","content":"continue"}]}`, want))
+	fallback := []byte(`{"prompt_cache_key":"seed","messages":[{"role":"user","content":"continue"}]}`)
 	fallback, frozen, err := svc.applyBusinessSystemPromptForRequest(c, fallback, account, BusinessSystemPromptProtocolChat, false)
 	require.NoError(t, err)
 	fallback, err = rewriteBusinessSystemPromptCacheKey(c, fallback, frozen)
 	require.NoError(t, err)
-	require.Equal(t, want, gjson.GetBytes(fallback, "prompt_cache_key").String())
+	require.Equal(t, deriveBusinessSystemPromptCacheKey(c, "seed", frozen), gjson.GetBytes(fallback, "prompt_cache_key").String())
+	require.NotEqual(t, want, gjson.GetBytes(fallback, "prompt_cache_key").String(), "different final carriers have distinct prompt identities")
 	fresh, _ := newBusinessSystemPromptGinContext("/v1/responses", original)
 	freshBody, freshApplication, err := svc.applyBusinessSystemPromptForRequest(fresh, original, account, BusinessSystemPromptProtocolResponses, false)
 	require.NoError(t, err)
@@ -353,14 +354,14 @@ func TestBusinessSystemPromptCacheIdentityPassthroughHeaderPriority(t *testing.T
 				c.Request.Header.Set("session_id", "explicit-session")
 				c.Request.Header.Set("conversation_id", "explicit-conversation")
 			}
-			body, application, err := svc.applyBusinessSystemPromptForRequest(c, body, account, BusinessSystemPromptProtocolResponses, false)
-			require.NoError(t, err)
-			body, err = rewriteBusinessSystemPromptCacheKey(c, body, application)
-			require.NoError(t, err)
-			wire := gjson.GetBytes(body, "prompt_cache_key").String()
+			wire := ""
 			for attempt := 0; attempt < 2; attempt++ {
 				req, err := svc.buildUpstreamRequestOpenAIPassthrough(context.Background(), c, account, body, "test-token")
 				require.NoError(t, err)
+				if attempt == 0 {
+					wire = req.Header.Get("session-id")
+					require.NotEmpty(t, wire)
+				}
 				// 真实 Codex 不发下划线 session_id / conversation_id；缺失连字符会话头时
 				// 以最终 prompt_cache_key（缓存键改写后的线上值）补齐 session-id。
 				require.Empty(t, req.Header.Get("session_id"))

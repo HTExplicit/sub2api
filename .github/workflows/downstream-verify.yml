@@ -189,6 +189,8 @@ jobs:
             src/components/account/__tests__/BulkEditAccountModal.spec.ts \
             src/views/admin/__tests__/SystemPromptsView.spec.ts \
             src/views/admin/__tests__/SystemPromptsView.locale.spec.ts \
+            src/views/admin/__tests__/systemPromptsIntegrationSurface.spec.ts \
+            src/api/admin/__tests__/systemPrompts.spec.ts \
             src/components/admin/systemPrompt/__tests__/PromptRules.spec.ts \
             src/views/admin/__tests__/AccountsView.console.spec.ts \
             src/views/admin/__tests__/AccountsView.priorityColumn.spec.ts \

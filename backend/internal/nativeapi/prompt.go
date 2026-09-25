@@ -37,19 +37,22 @@ type BusinessSystemPromptSnapshot struct {
 	BaseSHA256          string `json:"-"`
 	EffectiveSHA256     string `json:"-"`
 	EffectiveByteLength int    `json:"-"`
+	Draft               bool   `json:"-"`
 }
 
 type BusinessSystemPromptTarget struct {
-	RequestedModel   string `json:"requested_model,omitempty"`
-	UpstreamModel    string `json:"upstream_model,omitempty"`
-	ProviderPlatform string `json:"provider_platform,omitempty"`
-	ProviderProfile  string `json:"provider_profile,omitempty"`
-	BindingJSON      string `json:"binding_json,omitempty"`
-	AccountID        int64  `json:"account_id,omitempty"`
-	Platform         string `json:"platform"`
-	AccountType      string `json:"account_type,omitempty"`
-	Protocol         string `json:"protocol"`
-	Compact          bool   `json:"compact"`
+	RequestedModel     string `json:"requested_model,omitempty"`
+	UpstreamModel      string `json:"upstream_model,omitempty"`
+	ProviderPlatform   string `json:"provider_platform,omitempty"`
+	ProviderProfile    string `json:"provider_profile,omitempty"`
+	BindingJSON        string `json:"binding_json,omitempty"`
+	AccountID          int64  `json:"account_id,omitempty"`
+	Platform           string `json:"platform"`
+	AccountType        string `json:"account_type,omitempty"`
+	Protocol           string `json:"protocol"`
+	ChatSystemRoleOnly bool   `json:"chat_system_role_only,omitempty"`
+	RequestProfile     string `json:"request_profile,omitempty"`
+	Compact            bool   `json:"compact"`
 }
 
 type BusinessSystemPromptApplication struct {

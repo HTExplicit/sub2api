@@ -101,7 +101,8 @@ func (r *businessSystemPromptRepository) EnsureBusinessSystemPromptSeed(ctx cont
 	if _, err := tx.ExecContext(ctx, `
 		UPDATE system_prompt_runtime
 		SET active_template_id = $1, active_version_id = $2, updated_at = NOW()
-		WHERE id = 1 AND active_template_id IS NULL`, templateID, versionID); err != nil {
+		WHERE id = 1 AND active_template_id IS NULL
+		  AND NOT EXISTS (SELECT 1 FROM system_prompt_rule_policies WHERE id = 1 AND policy->>'version' = '2')`, templateID, versionID); err != nil {
 		return fmt.Errorf("activate initial system prompt seed: %w", err)
 	}
 	if err := tx.Commit(); err != nil {
@@ -186,7 +187,8 @@ func ensureExistingBusinessSystemPromptSeed(
 		if _, err := tx.ExecContext(ctx, `
 			UPDATE system_prompt_runtime
 			SET active_version_id = $1, revision = revision + 1, updated_at = NOW()
-			WHERE id = 1 AND active_template_id = $2 AND active_version_id = $3`,
+			WHERE id = 1 AND active_template_id = $2 AND active_version_id = $3
+			  AND NOT EXISTS (SELECT 1 FROM system_prompt_rule_policies WHERE id = 1 AND policy->>'version' = '2')`,
 			versionID, templateID, activeVersionID.Int64); err != nil {
 			return err
 		}
@@ -222,7 +224,8 @@ func activateExistingBusinessSystemPromptSeedCandidate(
 	_, err := tx.ExecContext(ctx, `
 		UPDATE system_prompt_runtime
 		SET active_version_id = $1, revision = revision + 1, updated_at = NOW()
-		WHERE id = 1 AND active_template_id = $2 AND active_version_id = $3`,
+		WHERE id = 1 AND active_template_id = $2 AND active_version_id = $3
+		  AND NOT EXISTS (SELECT 1 FROM system_prompt_rule_policies WHERE id = 1 AND policy->>'version' = '2')`,
 		candidateVersionID, templateID, activeVersionID.Int64)
 	return err
 }
@@ -332,10 +335,19 @@ func (r *businessSystemPromptRepository) GetBusinessSystemPromptTemplate(ctx con
 	if err != nil {
 		return service.BusinessSystemPromptTemplateDetail{}, err
 	}
-	runtime, err := r.LoadBusinessSystemPrompt(ctx)
+	runtime, err := r.LoadBusinessSystemPromptRules(ctx)
 	if err == nil {
 		for i := range versions {
-			versions[i].IsActive = versions[i].ID == runtime.VersionID
+			if runtime.RulePolicy == nil {
+				versions[i].IsActive = versions[i].ID == runtime.VersionID
+				continue
+			}
+			for _, rule := range runtime.RulePolicy.Rules {
+				if rule.TemplateID == id && rule.VersionID == versions[i].ID {
+					versions[i].IsActive = true
+					break
+				}
+			}
 		}
 	}
 	return service.BusinessSystemPromptTemplateDetail{Template: template, Versions: versions}, nil
@@ -675,7 +687,9 @@ func (r *businessSystemPromptRepository) SoftDeleteBusinessSystemPromptTemplate(
 		return service.ErrBusinessSystemPromptSeedProtected
 	}
 	var activeID sql.NullInt64
-	if err := tx.QueryRowContext(ctx, `SELECT active_template_id FROM system_prompt_runtime WHERE id = 1`).Scan(&activeID); err != nil {
+	if err := tx.QueryRowContext(ctx, `SELECT CASE WHEN EXISTS (
+		SELECT 1 FROM system_prompt_rule_policies WHERE id = 1 AND policy->>'version' = '2'
+	) THEN NULL ELSE active_template_id END FROM system_prompt_runtime WHERE id = 1`).Scan(&activeID); err != nil {
 		return err
 	}
 	if activeID.Valid && activeID.Int64 == id {
@@ -744,6 +758,13 @@ func (r *businessSystemPromptRepository) PublishBusinessSystemPromptVersion(ctx 
 	if err := validateStoredBusinessSystemPromptVersion(body, hash, byteLength, compositionMode, nullableStringValue(bundleID), nullableStringValue(bundleManifestSHA256)); err != nil {
 		return service.BusinessSystemPromptSnapshot{}, err
 	}
+	var unified bool
+	if err := tx.QueryRowContext(ctx, `SELECT EXISTS (SELECT 1 FROM system_prompt_rule_policies WHERE id = 1 AND policy->>'version' = '2')`).Scan(&unified); err != nil {
+		return service.BusinessSystemPromptSnapshot{}, err
+	}
+	if unified {
+		return service.BusinessSystemPromptSnapshot{}, fmt.Errorf("%w: publishing requires explicit target rules", service.ErrBusinessSystemPromptInvalid)
+	}
 	if _, err := tx.ExecContext(ctx, `UPDATE system_prompt_template_versions SET published_at = COALESCE(published_at, NOW()), published_by = $3 WHERE id = $1 AND template_id = $2`, versionID, templateID, nullableActor(actorID)); err != nil {
 		return service.BusinessSystemPromptSnapshot{}, err
 	}
@@ -771,6 +792,20 @@ func (r *businessSystemPromptRepository) PublishBusinessSystemPromptVersion(ctx 
 }
 
 func (r *businessSystemPromptRepository) UpdateBusinessSystemPromptRuntime(ctx context.Context, update service.BusinessSystemPromptRuntimeUpdate) (service.BusinessSystemPromptSnapshot, error) {
+	current, err := r.LoadBusinessSystemPromptRules(ctx)
+	if err != nil {
+		return service.BusinessSystemPromptSnapshot{}, err
+	}
+	if current.RulePolicy != nil && current.RulePolicy.Version == 2 {
+		if err := r.SavePromptConfig(ctx, service.PromptConfigUpdate{
+			ExpectedRevision: update.ExpectedRevision, Enabled: update.Enabled,
+			ExposeServerPrompt: update.ExposeServerPrompt, CompactEnabled: update.CompactEnabled,
+			Policy: *current.RulePolicy,
+		}, update.ActorID); err != nil {
+			return service.BusinessSystemPromptSnapshot{}, err
+		}
+		return r.LoadBusinessSystemPromptRules(ctx)
+	}
 	tx, err := r.db.BeginTx(ctx, nil)
 	if err != nil {
 		return service.BusinessSystemPromptSnapshot{}, err

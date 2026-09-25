@@ -110,7 +110,7 @@ func (s *OpenAIGatewayService) forwardGrokResponses(
 	upstreamStart := time.Now()
 	var resp *http.Response
 	for attempt := 0; ; attempt++ {
-		upstreamReq, buildErr := buildGrokResponsesRequest(upstreamCtx, c, account, patchedBody, token, cacheIdentity, s.cfg, s.settingService)
+		upstreamReq, buildErr := s.buildGrokConversationRequest(upstreamCtx, c, account, patchedBody, token, cacheIdentity)
 		if buildErr != nil {
 			return nil, buildErr
 		}
@@ -1570,6 +1570,34 @@ func addOpenAIUsage(dst *OpenAIUsage, usage OpenAIUsage) {
 	dst.CacheCreationInputTokens += usage.CacheCreationInputTokens
 	dst.CacheReadInputTokens += usage.CacheReadInputTokens
 	dst.ImageOutputTokens += usage.ImageOutputTokens
+}
+
+// Conversation sends share the final prompt boundary. Auxiliary vision probes
+// and standalone image/audio endpoints keep the lower-level transport builder.
+func (s *OpenAIGatewayService) buildGrokConversationRequest(ctx context.Context, c *gin.Context, account *Account, clean []byte, token, cacheIdentity string) (*http.Request, error) {
+	body, err := s.finalizeBusinessPromptForSend(c, account, clean, BusinessSystemPromptProtocolResponses, isOpenAIResponsesCompactPath(c))
+	if err != nil {
+		return nil, err
+	}
+	if application, ok := businessSystemPromptApplicationFromRequest(c, BusinessSystemPromptProtocolResponses); ok {
+		cacheIdentity = grokBusinessPromptCacheIdentity(cacheIdentity, application)
+		if cacheIdentity != "" {
+			body, err = sjson.SetBytes(body, "prompt_cache_key", cacheIdentity)
+			if err != nil {
+				return nil, err
+			}
+		}
+	}
+	return buildGrokResponsesRequest(ctx, c, account, body, token, cacheIdentity, s.cfg, s.settingService)
+}
+
+func grokBusinessPromptCacheIdentity(identity string, application BusinessSystemPromptApplication) string {
+	if namespace := businessSystemPromptCacheNamespace(application); identity != "" && namespace != "" {
+		// Keep the provider's existing conversation UUID shape while separating
+		// the cache when the effective prompt selection changes.
+		return generateSessionUUID(identity + namespace)
+	}
+	return identity
 }
 
 func buildGrokResponsesRequest(ctx context.Context, c *gin.Context, account *Account, body []byte, token, cacheIdentity string, cfg *config.Config, settings ...*SettingService) (*http.Request, error) {

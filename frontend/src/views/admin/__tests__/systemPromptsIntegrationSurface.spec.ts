@@ -25,9 +25,11 @@ describe('System Prompts integration surface', () => {
   it('renders the native management page without legacy surfaces', () => {
     const view = read('../SystemPromptsView.vue')
     expect(view).not.toContain('ExtensionPage')
-    for (const marker of ['saveVersion', 'setCurrent', 'rollback', 'syncManagedSource', 'SystemPromptAdvancedDrawer']) {
+    for (const marker of ['saveConfig', 'useSystemPromptConfigDraft', 'syncManagedSource', 'SystemPromptAdvancedDrawer']) {
       expect(view).toContain(marker)
     }
+    expect(view).not.toContain('setCurrent')
+    expect(view).not.toContain('saveDraft')
     expect(view).not.toContain('previewMerge')
     expect(view).not.toContain('previewUpstream')
     expect(view).not.toContain('DOMPurify')

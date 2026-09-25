@@ -149,13 +149,14 @@ type BusinessSystemPromptRevisionBus interface {
 }
 
 type BusinessSystemPromptService struct {
-	previewConfig *config.Config
-	accountRepo   AccountRepository
-	store         BusinessSystemPromptStore
-	bus           BusinessSystemPromptRevisionBus
-	registry      *RemoteSkillRegistryService
-	registryBus   RemoteSkillRegistryRevisionBus
-	source        BusinessSystemPromptSource
+	previewConfig   *config.Config
+	previewSettings *SettingService
+	accountRepo     AccountRepository
+	store           BusinessSystemPromptStore
+	bus             BusinessSystemPromptRevisionBus
+	registry        *RemoteSkillRegistryService
+	registryBus     RemoteSkillRegistryRevisionBus
+	source          BusinessSystemPromptSource
 
 	snapshot atomic.Pointer[BusinessSystemPromptSnapshot]
 	stateMu  sync.Mutex
@@ -359,9 +360,6 @@ func (s *BusinessSystemPromptService) CurrentSnapshot() (BusinessSystemPromptSna
 	if s == nil {
 		return BusinessSystemPromptSnapshot{}, false
 	}
-	if errors.Is(promptPolicyAvailability(context.Background()), ErrExtensionOperationDisabled) {
-		return BusinessSystemPromptSnapshot{}, true
-	}
 	current := s.snapshot.Load()
 	if current == nil {
 		return BusinessSystemPromptSnapshot{}, false
@@ -390,7 +388,7 @@ func (s *BusinessSystemPromptService) Reload(ctx context.Context) error {
 		return s.retainLastGood(err)
 	}
 	s.stateMu.Lock()
-	if current := s.snapshot.Load(); current == nil || loaded.Revision >= current.Revision {
+	if current := s.snapshot.Load(); current == nil || promptSnapshotNotOlder(loaded, *current) {
 		s.snapshot.Store(&loaded)
 	}
 	s.stateMu.Unlock()
@@ -508,25 +506,32 @@ func (s *BusinessSystemPromptService) compileBusinessSystemPromptSnapshot(
 		if s == nil || s.registry == nil {
 			return BusinessSystemPromptSnapshot{}, fmt.Errorf("%w: paired registry unavailable", ErrBusinessSystemPromptUnavailable)
 		}
-		publication, err := s.registry.ActivePublication(context.Background())
-		if err != nil {
-			return BusinessSystemPromptSnapshot{}, err
-		}
-		snapshot.Body = publication.EffectivePromptBody
-		snapshot.RegistryRevision = publication.Revision
-		snapshot.RegistryRawTreeSHA256 = publication.Version.RawTreeSHA256
-		snapshot.RegistryEffectiveTreeSHA256 = publication.Version.EffectiveTreeSHA256
-		snapshot.RegistryPromptRawSHA256 = publication.Prompt.RawSHA256
-		snapshot.RegistryPromptEffectiveSHA256 = publication.Prompt.EffectiveSHA256
-		snapshot.RegistryUpstreamSourceID = publication.Version.UpstreamSourceID
-		snapshot.RegistryUpstreamRoot = publication.Version.UpstreamRoot
-		snapshot.RegistryPublicRoot = publication.Version.PublicRoot
-		snapshot.BaseSHA256 = publication.Prompt.RawSHA256
-		snapshot.EffectiveSHA256 = publication.Prompt.EffectiveSHA256
-		snapshot.EffectiveByteLength = len([]byte(publication.EffectivePromptBody))
-		return snapshot, nil
+		return compilePromptPublication(snapshot, s.registry.publication.Load())
 	}
 	return BusinessSystemPromptSnapshot{}, fmt.Errorf("%w: unsupported composition", ErrBusinessSystemPromptUnavailable)
+}
+
+func compilePromptPublication(snapshot BusinessSystemPromptSnapshot, publication *RemoteSkillPublication) (BusinessSystemPromptSnapshot, error) {
+	if publication == nil {
+		return BusinessSystemPromptSnapshot{}, fmt.Errorf("%w: no paired publication", ErrBusinessSystemPromptUnavailable)
+	}
+	snapshot.Body = publication.EffectivePromptBody
+	snapshot.RegistryRevision = publication.Revision
+	snapshot.RegistryRawTreeSHA256 = publication.Version.RawTreeSHA256
+	snapshot.RegistryEffectiveTreeSHA256 = publication.Version.EffectiveTreeSHA256
+	snapshot.RegistryPromptRawSHA256 = publication.Prompt.RawSHA256
+	snapshot.RegistryPromptEffectiveSHA256 = publication.Prompt.EffectiveSHA256
+	snapshot.RegistryUpstreamSourceID = publication.Version.UpstreamSourceID
+	snapshot.RegistryUpstreamRoot = publication.Version.UpstreamRoot
+	snapshot.RegistryPublicRoot = publication.Version.PublicRoot
+	snapshot.BaseSHA256 = publication.Prompt.RawSHA256
+	snapshot.EffectiveSHA256 = publication.Prompt.EffectiveSHA256
+	snapshot.EffectiveByteLength = len(publication.EffectivePromptBody)
+	return snapshot, nil
+}
+
+func promptSnapshotNotOlder(next, current BusinessSystemPromptSnapshot) bool {
+	return next.Revision > current.Revision || (next.Revision == current.Revision && next.RegistryRevision >= current.RegistryRevision)
 }
 
 func (s *BusinessSystemPromptService) retainLastGood(err error) error {
@@ -636,6 +641,9 @@ func (s *BusinessSystemPromptService) PublishVersion(ctx context.Context, templa
 func (s *BusinessSystemPromptService) PublishVersionAction(ctx context.Context, templateID, versionID, expectedRevision int64, action string, actorID int64) (BusinessSystemPromptSnapshot, error) {
 	if s == nil || s.store == nil {
 		return BusinessSystemPromptSnapshot{}, errors.New("business system prompt store unavailable")
+	}
+	if snapshot, ok := s.CurrentSnapshot(); ok && snapshot.RulePolicy != nil {
+		return BusinessSystemPromptSnapshot{}, fmt.Errorf("%w: select target rule IDs instead of a global active template", ErrBusinessSystemPromptInvalid)
 	}
 	if err := s.validateBusinessSystemPromptPublishTarget(ctx, templateID, versionID, expectedRevision, action); err != nil {
 		return BusinessSystemPromptSnapshot{}, err
@@ -767,7 +775,7 @@ func (s *BusinessSystemPromptService) validateBusinessSystemPromptPublishTarget(
 func (s *BusinessSystemPromptService) installBusinessSystemPromptSnapshot(snapshot BusinessSystemPromptSnapshot) {
 	s.stateMu.Lock()
 	defer s.stateMu.Unlock()
-	if current := s.snapshot.Load(); current != nil && current.Revision > snapshot.Revision {
+	if current := s.snapshot.Load(); current != nil && !promptSnapshotNotOlder(snapshot, *current) {
 		return
 	}
 	s.snapshot.Store(&snapshot)

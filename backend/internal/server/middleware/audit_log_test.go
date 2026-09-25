@@ -150,6 +150,8 @@ func TestPromptAuditMutationAuditRoutesHaveStableActionsAndOmitBodies(t *testing
 func TestSystemPromptAuditRoutesHaveStableActionsAndOmitPromptBodies(t *testing.T) {
 	expectedActions := map[string]string{
 		"POST /api/v1/admin/system-prompts":                                                     "admin.system_prompts.create",
+		"PUT /api/v1/admin/system-prompts/config":                                               "admin.system_prompts.config.update",
+		"POST /api/v1/admin/system-prompts/rules/preview/:account_id":                           "admin.system_prompts.rules.preview",
 		"PATCH /api/v1/admin/system-prompts/:id":                                                "admin.system_prompts.update",
 		"DELETE /api/v1/admin/system-prompts/:id":                                               "admin.system_prompts.delete",
 		"POST /api/v1/admin/system-prompts/:id/duplicate":                                       "admin.system_prompts.duplicate",
@@ -167,6 +169,8 @@ func TestSystemPromptAuditRoutesHaveStableActionsAndOmitPromptBodies(t *testing.
 		require.Equal(t, action, auditActionOverrides[route])
 	}
 	for _, route := range []string{
+		"PUT /api/v1/admin/system-prompts/config",
+		"POST /api/v1/admin/system-prompts/rules/preview/:account_id",
 		"POST /api/v1/admin/system-prompts",
 		"POST /api/v1/admin/system-prompts/:id/versions",
 		"POST /api/v1/admin/system-prompts/preview/merge",
@@ -174,6 +178,73 @@ func TestSystemPromptAuditRoutesHaveStableActionsAndOmitPromptBodies(t *testing.
 	} {
 		require.Contains(t, auditPromptBodyOmittedRoutes, route)
 	}
+}
+
+func TestSystemPromptConfigAuditOmitsDraftBodies(t *testing.T) {
+	assertUnifiedSystemPromptAuditOmission(t, http.MethodPut,
+		"/api/v1/admin/system-prompts/config", "/api/v1/admin/system-prompts/config",
+		"admin.system_prompts.config.update",
+		`{"expected_revision":9,"policy":{"version":2,"rules":[{"id":"new","name":"audit-canary-name","role":"developer"}]},"contents":{"new":{"body":"audit-canary-draft-prompt"}}}`)
+}
+
+func TestSystemPromptRulesPreviewAuditOmitsDraftAndClientInput(t *testing.T) {
+	assertUnifiedSystemPromptAuditOmission(t, http.MethodPost,
+		"/api/v1/admin/system-prompts/rules/preview/:account_id", "/api/v1/admin/system-prompts/rules/preview/7",
+		"admin.system_prompts.rules.preview",
+		`{"protocol":"responses","body":{"model":"test","instructions":"audit-canary-client-instructions","input":"audit-canary-client-input"},"contents":{"new":{"body":"audit-canary-draft-prompt"}}}`)
+}
+
+func assertUnifiedSystemPromptAuditOmission(t *testing.T, method, route, path, action, payload string) {
+	t.Helper()
+	gin.SetMode(gin.TestMode)
+	repository := &auditCaptureRepository{}
+	auditService := service.NewAuditLogService(repository, nil)
+	auditService.Start()
+
+	router := gin.New()
+	router.Use(func(c *gin.Context) {
+		c.Set(string(ContextKeyUser), AuthSubject{UserID: 77})
+		c.Set(string(ContextKeyUserRole), "admin")
+		c.Next()
+	})
+	router.Use(gin.HandlerFunc(NewAuditLogMiddleware(auditService)))
+	router.Handle(method, route, func(c *gin.Context) {
+		body, err := c.GetRawData()
+		require.NoError(t, err)
+		require.Equal(t, payload, string(body), "audit omission must preserve the handler input")
+		SetAuditExtra(c, map[string]any{
+			"revision": int64(10), "rule_count": 1, "result": "checked",
+			"error_code": "prompt_delivery_unsupported",
+			"body":       "audit-canary-extra-prompt",
+			"role":       "audit-canary-role",
+			"contents":   map[string]any{"new": "audit-canary-extra-content"},
+		})
+		c.JSON(http.StatusOK, gin.H{"ok": true})
+	})
+
+	request := httptest.NewRequest(method, path, bytes.NewBufferString(payload))
+	request.Header.Set("Content-Type", "application/json")
+	recorder := httptest.NewRecorder()
+	router.ServeHTTP(recorder, request)
+	auditService.Stop()
+	require.Equal(t, http.StatusOK, recorder.Code)
+
+	repository.mu.Lock()
+	logs := append([]*service.AuditLog(nil), repository.logs...)
+	repository.mu.Unlock()
+	require.Len(t, logs, 1)
+	require.Equal(t, action, logs[0].Action)
+	require.Equal(t, route, logs[0].Path)
+	require.Equal(t, "<system prompt body omitted>", logs[0].RequestBody)
+	require.EqualValues(t, 10, logs[0].Extra["revision"])
+	require.EqualValues(t, 1, logs[0].Extra["rule_count"])
+	require.Equal(t, "prompt_delivery_unsupported", logs[0].Extra["error_code"])
+	for _, field := range []string{"body", "role", "contents"} {
+		require.NotContains(t, logs[0].Extra, field)
+	}
+	encoded, err := json.Marshal(logs[0])
+	require.NoError(t, err)
+	require.NotContains(t, string(encoded), "audit-canary")
 }
 
 func TestSystemPromptAuditNeverPersistsPromptOrPreviewInput(t *testing.T) {

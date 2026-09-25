@@ -1,154 +1,159 @@
 <template>
   <section class="space-y-4" data-test="prompt-rules-manager">
     <p class="text-sm text-muted">{{ text('description') }}</p>
-    <div class="flex flex-wrap items-center gap-3">
-      <button class="btn btn-secondary btn-sm" :disabled="busy" @click="load">{{ text('reload') }}</button>
-      <button class="btn btn-secondary btn-sm" :disabled="!state || busy" @click="addRule">{{ text('add') }}</button>
-      <button class="btn btn-primary btn-sm" :disabled="!dirty || invalid || busy" data-test="save-rules" @click="save">{{ text('save') }}</button>
-      <span v-if="state" class="text-xs text-muted">revision {{ state.revision }}</span>
+    <div class="grid min-w-0 gap-4 lg:grid-cols-[240px_minmax(0,1fr)]">
+      <aside class="min-w-0 border border-line">
+        <div class="flex items-center justify-between border-b border-line p-3">
+          <h2 class="text-sm font-semibold">{{ text('list') }}</h2>
+          <button type="button" class="btn btn-secondary btn-sm" data-test="add-prompt" @click="emit('add')">{{ text('add') }}</button>
+        </div>
+        <div class="max-h-[65vh] overflow-auto p-2">
+          <button v-for="rule in config.policy.rules" :key="rule.id" type="button" class="mb-1 flex w-full items-start gap-2 border-l-2 p-3 text-left" :class="selectedId === rule.id ? 'border-primary-500 bg-primary-50 dark:bg-primary-900/20' : 'border-transparent hover:bg-gray-50 dark:hover:bg-dark-800'" :data-test="`select-prompt-${rule.id}`" :aria-current="selectedId === rule.id ? 'true' : undefined" @click="emit('select', rule.id)">
+            <span class="min-w-0 flex-1"><span class="block truncate text-sm font-medium">{{ rule.name || text('unnamed') }}</span><span class="mt-1 block text-xs text-muted">{{ rule.enabled ? text('enabled') : text('rule_disabled') }}<span v-if="config.policy.default_rule_ids.includes(rule.id)"> · {{ text('default') }}</span></span></span>
+            <span v-if="dirtyIds.includes(rule.id)" class="text-amber-600" :aria-label="text('unsaved')">●</span>
+          </button>
+          <p v-if="!config.policy.rules.length" class="px-2 py-5 text-sm text-muted">{{ text('empty') }}</p>
+        </div>
+      </aside>
+      <article v-if="selected && content" class="min-w-0 space-y-4 border border-line p-4" :data-test="`prompt-rule-${selected.id}`">
+        <div class="flex flex-wrap items-center gap-3">
+          <label class="flex items-center gap-2 text-sm"><input v-model="selected.enabled" type="checkbox" data-test="rule-enabled" />{{ text('enabled') }}</label>
+          <label class="flex items-center gap-2 text-sm"><input v-model="config.policy.default_rule_ids" type="checkbox" :value="selected.id" data-test="rule-default" />{{ text('default') }}</label>
+          <div class="ml-auto flex gap-2">
+            <button type="button" class="btn btn-secondary btn-sm" :disabled="selectedIndex === 0" :aria-label="text('orderUp')" @click="move(-1)">↑</button>
+            <button type="button" class="btn btn-secondary btn-sm" :disabled="selectedIndex === config.policy.rules.length - 1" :aria-label="text('orderDown')" @click="move(1)">↓</button>
+            <button type="button" class="btn btn-secondary btn-sm" data-test="duplicate-prompt" :disabled="content.available === false" @click="emit('duplicate')">{{ text('copyIndependent') }}</button>
+            <button type="button" class="btn btn-secondary btn-sm" data-test="remove-prompt" @click="emit('remove', selected.id)">{{ text('remove') }}</button>
+          </div>
+        </div>
+        <label class="block text-sm">{{ text('name') }}<input v-model="selected.name" data-test="prompt-name" class="input mt-1 w-full" maxlength="200" /></label>
+        <label v-if="content.available !== false" class="block text-sm">{{ text('body') }}<textarea v-model="content.body" data-test="system-prompt-body" :readonly="content.managed" class="input mt-1 min-h-[330px] w-full resize-y font-mono text-[13px] leading-6" spellcheck="false" /></label>
+        <p v-else class="border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800 dark:border-amber-800 dark:bg-amber-900/20" data-test="managed-source-unavailable">{{ text('sourceUnavailable') }}</p>
+        <p v-if="content.managed" class="text-xs text-muted" data-test="managed-prompt-hint">{{ text('managedHint') }}</p>
+        <div class="grid gap-3 sm:grid-cols-2">
+          <label class="text-sm">{{ text('role') }}<select v-model="selected.role" data-test="prompt-role" class="input mt-1 w-full"><option v-for="role in roles" :key="role" :value="role" :disabled="!allows(role, selected.position)">{{ text(role) }}</option></select></label>
+          <label class="text-sm">{{ text('position') }}<select v-model="selected.position" data-test="prompt-position" class="input mt-1 w-full"><option v-for="position in positions" :key="position" :value="position" :disabled="!allows(selected.role, position)">{{ text(position) }}</option></select></label>
+        </div>
+        <fieldset class="space-y-2"><legend class="text-sm font-medium">{{ text('platforms') }}</legend><p class="text-xs text-muted">{{ text('platformHint') }}</p><div class="flex flex-wrap gap-x-4 gap-y-2"><label v-for="platform in platforms" :key="platform" class="flex items-center gap-1.5 text-sm"><input v-model="selected.platforms" type="checkbox" :value="platform" :data-test="`platform-${platform}`" />{{ platformName(platform) }}</label></div></fieldset>
+        <div class="grid gap-3 sm:grid-cols-[minmax(180px,1fr)_2fr]">
+          <label class="text-sm">{{ text('modelMatch') }}<select v-model="selected.model_match" class="input mt-1 w-full"><option value="upstream">{{ text('upstream') }}</option><option value="requested">{{ text('requested') }}</option></select></label>
+          <label class="text-sm">{{ text('models') }}<textarea :value="selected.models.join('\n')" data-test="prompt-models" class="input mt-1 min-h-20 w-full font-mono text-xs" @input="selected.models = parseModels(($event.target as HTMLTextAreaElement).value)" /></label>
+        </div>
+        <details class="text-xs"><summary class="cursor-pointer text-muted">{{ text('accountTypes') }}</summary><p class="my-2 text-muted">{{ text('accountTypesHint') }}</p><div class="flex flex-wrap gap-3"><label v-for="type in accountTypes" :key="type"><input :checked="selected.account_types?.includes(type) || false" type="checkbox" @change="toggleAccountType(type, ($event.target as HTMLInputElement).checked)" /> {{ type }}</label></div><p v-if="selected.request_profiles?.length" class="mt-2 text-muted">{{ text('retainedClientScope') }}: {{ selected.request_profiles.join(', ') }}</p><p v-if="selected.exclude_model_contains?.length" class="mt-2 text-muted">{{ text('retainedModelExclusions') }}: {{ selected.exclude_model_contains.join(', ') }}</p></details>
+        <p v-if="invalidReason" class="text-sm text-amber-700" role="status" data-test="prompt-invalid">{{ text(invalidReason) }}</p>
+        <p class="text-xs text-muted">{{ text('defaultHint') }}</p>
+        <div class="flex flex-wrap items-center justify-between gap-2 border-t border-line pt-3 text-xs text-muted"><span>{{ text('reference') }}: {{ selected.id }} · {{ selected.template_id || '—' }}/{{ selected.version_id || '—' }}</span><button type="button" class="btn btn-secondary btn-sm" data-test="system-prompt-open-advanced" @click="emit('advanced')">{{ text('advanced') }}</button></div>
+      </article>
+      <p v-else class="border border-dashed border-line p-10 text-center text-sm text-muted">{{ text('selectPrompt') }}</p>
     </div>
-    <p v-if="error" role="alert" class="text-sm text-red-600">{{ error }}</p>
-    <p v-if="invalid" role="status" class="text-sm text-amber-700">{{ text('invalid') }}</p>
-    <p class="text-xs text-muted">{{ text('nativeHint') }}</p>
-    <p class="text-xs text-muted">{{ text('defaultHint') }}</p>
-    <details class="rounded border border-line p-3" data-test="prompt-support-matrix">
+    <details class="border border-line p-4" data-test="prompt-rules-preview">
+      <summary class="cursor-pointer font-semibold">{{ text('preview') }}</summary>
+      <div class="mt-4 space-y-3">
+        <p class="text-xs text-muted">{{ text('previewDraft') }}</p>
+        <div class="grid gap-3 sm:grid-cols-2">
+          <label class="text-sm">{{ text('account') }}<input v-model.number="accountId" type="number" min="1" class="input mt-1 w-full" /></label>
+          <label class="text-sm">{{ text('previewModel') }}<input v-model="previewModel" class="input mt-1 w-full font-mono" data-test="preview-model" /></label>
+          <label class="text-sm">{{ text('ingress') }}<select v-model="protocol" class="input mt-1 w-full"><option value="responses">Responses</option><option value="chat">Chat Completions</option><option value="messages">Claude Messages</option><option value="gemini">Gemini</option></select></label>
+          <label class="text-sm">{{ text('transport') }}<select v-model="transport" class="input mt-1 w-full"><option value="http">HTTP</option><option value="ws">WebSocket</option></select></label>
+        </div>
+        <div class="flex flex-wrap gap-4 text-sm"><label><input v-model="compact" type="checkbox" /> {{ text('compact') }}</label><label><input v-model="simulate" type="checkbox" /> {{ text('simulate') }}</label></div>
+        <label class="block text-sm">{{ text('sample') }}<textarea v-model="sample" class="input mt-1 min-h-40 w-full font-mono text-xs" /></label>
+        <p v-if="previewError" role="alert" class="text-sm text-red-600">{{ previewError }}</p>
+        <button type="button" class="btn btn-secondary btn-sm" data-test="run-prompt-preview" :disabled="previewBusy || busy || invalid || accountId < 1" @click="preview">{{ text('runPreview') }}</button>
+        <template v-if="result">
+          <div class="flex flex-wrap gap-3 text-xs text-muted"><span>{{ result.protocol }} / {{ result.transport }}</span><span>{{ result.requested_model }} → {{ result.upstream_model }}</span><span v-if="result.wire_verified">{{ text('verified') }}</span><span v-if="result.simulated">{{ text('simulated') }}</span></div>
+          <p class="text-xs text-amber-700">{{ text('sequenceHint') }}</p>
+          <h3 class="text-sm font-semibold">{{ text('site') }}</h3>
+          <ol class="space-y-2"><li v-for="(placement, index) in result.application.rules_plan?.placements || []" :key="`${placement.rule_id}-${index}`" class="border border-line p-3 text-sm"><strong>{{ placement.rule_id }}</strong> · {{ reasonText(placement.position) }} · <code>{{ placement.carrier }}{{ placement.role ? ` / role=${placement.role}` : '' }}{{ placement.index === undefined ? '' : ` [${placement.index}]` }}</code><pre class="mt-2 max-h-44 overflow-auto whitespace-pre-wrap text-xs">{{ placement.body }}</pre></li></ol>
+          <p v-if="!result.application.applied" class="text-sm text-muted">{{ text('noRules') }}</p>
+          <p v-for="skip in result.application.rules_plan?.skipped || []" :key="skip.rule_id" class="text-xs text-muted">{{ skip.rule_id }} — {{ text('skipped') }}: {{ reasonText(skip.reason) }}</p>
+          <details open><summary>{{ text('topInstructions') }}</summary><pre class="max-h-72 overflow-auto whitespace-pre-wrap border border-line p-3 text-xs">{{ pretty(topInstructions) }}</pre></details>
+          <details open><summary>{{ text('messageSequence') }}</summary><pre class="max-h-72 overflow-auto whitespace-pre-wrap border border-line p-3 text-xs">{{ pretty(messageSequence) }}</pre></details>
+          <details><summary>{{ text('base') }}</summary><pre class="max-h-56 overflow-auto whitespace-pre-wrap text-xs">{{ result.gateway_base_instructions || text('noBase') }}</pre></details>
+          <details><summary>{{ text('client') }}</summary><pre class="max-h-56 overflow-auto whitespace-pre-wrap text-xs">{{ pretty(result.client_control) }}</pre></details>
+          <details><summary>{{ text('before') }}</summary><pre class="max-h-72 overflow-auto whitespace-pre-wrap text-xs">{{ pretty(result.before_rules) }}</pre></details>
+          <details><summary>{{ text('final') }}</summary><pre class="max-h-[520px] overflow-auto whitespace-pre-wrap text-xs">{{ pretty(result.body) }}</pre></details>
+        </template>
+      </div>
+    </details>
+    <details class="border border-line p-4" data-test="prompt-support-matrix">
       <summary class="cursor-pointer text-sm font-medium">{{ text('supportMatrix') }}</summary>
       <p class="mt-2 text-xs text-muted">{{ text('supportMatrixHint') }}</p>
-      <div class="mt-3 overflow-x-auto">
-        <table class="w-full text-left text-xs">
-          <thead><tr class="border-b border-line"><th class="p-2">{{ text('finalProtocol') }}</th><th class="p-2">{{ text('transport') }}</th><th class="p-2">native_control</th><th class="p-2">system</th><th class="p-2">developer</th></tr></thead>
-          <tbody>
-            <tr class="border-b border-line"><th class="p-2">{{ text('matrixCodex') }}</th><td class="p-2">HTTP / WS</td><td class="p-2 font-mono">instructions</td><td class="p-2">{{ text('matrixRejected') }}</td><td class="p-2 font-mono">input[].role=developer</td></tr>
-            <tr class="border-b border-line"><th class="p-2">{{ text('matrixResponses') }}</th><td class="p-2">HTTP / WS</td><td class="p-2 font-mono">instructions</td><td class="p-2 font-mono">input[].role=system</td><td class="p-2 font-mono">input[].role=developer</td></tr>
-            <tr><th class="p-2">{{ text('matrixChat') }}</th><td class="p-2">HTTP</td><td class="p-2 font-mono">messages[].role=system</td><td class="p-2 font-mono">messages[].role=system</td><td class="p-2 font-mono">messages[].role=developer</td></tr>
-          </tbody>
-        </table>
-      </div>
-      <p class="mt-3 text-xs text-muted">{{ text('matrixPositions') }}</p>
-      <p class="mt-2 text-xs text-muted">{{ text('matrixConversions') }}</p>
+      <div class="mt-3 overflow-x-auto"><table class="w-full text-left text-xs"><thead><tr class="border-b border-line"><th class="p-2">{{ text('finalProtocol') }}</th><th v-for="role in roles" :key="role" class="p-2">{{ text(role) }}</th></tr></thead><tbody><tr v-for="capability in config.capabilities" :key="capability.protocol" class="border-b border-line"><th class="p-2">{{ capability.protocol }}<span class="block font-normal text-muted">{{ capability.platforms.map(platformName).join(', ') }}</span></th><td v-for="role in roles" :key="role" class="p-2">{{ capability.positions_by_role[role]?.map(reasonText).join(' · ') || text('matrixRejected') }}</td></tr></tbody></table></div>
+      <p class="mt-3 text-xs text-muted">{{ text('nativeHint') }}</p>
     </details>
-    <p v-if="hasLegacyRule" class="text-xs text-muted">{{ text('migration') }}</p>
-    <article v-for="(rule, index) in draft.rules" :key="rule.id" class="space-y-3 border border-line p-4" :data-test="`prompt-rule-${rule.id}`">
-      <div class="flex flex-wrap items-center gap-3">
-        <label class="flex items-center gap-2 text-sm"><input v-model="rule.enabled" type="checkbox" />{{ text('enabled') }}</label>
-        <label class="flex items-center gap-2 text-sm"><input v-model="draft.default_rule_ids" type="checkbox" :value="rule.id" />{{ text('default') }}</label>
-        <span class="flex-1 truncate text-xs text-muted">{{ rule.id }}</span>
-        <button class="btn btn-secondary btn-sm" :disabled="index === 0" :aria-label="text('orderUp')" @click="move(index, -1)">↑</button>
-        <button class="btn btn-secondary btn-sm" :disabled="index === draft.rules.length - 1" :aria-label="text('orderDown')" @click="move(index, 1)">↓</button>
-        <button class="btn btn-secondary btn-sm" @click="remove(rule.id)">{{ text('remove') }}</button>
-      </div>
-      <label class="block text-sm">{{ text('name') }}<input v-model="rule.name" class="input mt-1 w-full" maxlength="200" /></label>
-      <label class="flex items-center gap-2 text-sm"><input v-model="rule.follow_active" type="checkbox" />{{ text('follow') }}</label>
-      <div v-if="!rule.follow_active" class="grid gap-3 sm:grid-cols-2">
-        <label class="text-sm">{{ text('template') }}<select v-model.number="rule.template_id" class="input mt-1 w-full" @change="selectTemplate(rule)"><option :value="0">—</option><option v-for="template in templates" :key="template.id" :value="template.id">{{ template.name }}</option></select></label>
-        <label class="text-sm">{{ text('version') }}<select v-model.number="rule.version_id" class="input mt-1 w-full"><option :value="0">—</option><option v-for="version in versions[rule.template_id] || []" :key="version.id" :value="version.id">v{{ version.version }} · {{ version.note }}</option></select></label>
-      </div>
-      <div class="grid gap-3 sm:grid-cols-2">
-        <label class="text-sm">{{ text('delivery') }}<select v-model="rule.delivery" class="input mt-1 w-full"><option v-for="delivery in deliveries" :key="delivery" :value="delivery" :disabled="!legalPromptPosition(delivery, rule.position)">{{ text(delivery) }}</option></select></label>
-        <label class="text-sm">{{ text('position') }}<select v-model="rule.position" class="input mt-1 w-full"><option v-for="position in positions" :key="position" :value="position" :disabled="!legalPromptPosition(rule.delivery, position)">{{ text(position) }}</option></select></label>
-      </div>
-      <label class="block text-sm">{{ text('modelMatch') }}<select v-model="rule.model_match" class="input ml-3"><option value="upstream">{{ text('upstream') }}</option><option value="requested">{{ text('requested') }}</option></select></label>
-      <label class="block text-sm">{{ text('models') }}<textarea :value="rule.models.join('\n')" class="input mt-1 min-h-20 w-full font-mono" @input="rule.models = parseModels(($event.target as HTMLTextAreaElement).value)" /></label>
-    </article>
-    <p v-if="state && !draft.rules.length" class="text-sm text-muted">{{ text('empty') }}</p>
-    <section class="space-y-3 border-t border-line pt-5" data-test="prompt-rules-preview">
-      <h2 class="font-semibold">{{ text('preview') }}</h2>
-      <p class="text-xs text-muted">{{ text('previewDraft') }}</p>
-      <div class="grid gap-3 sm:grid-cols-2">
-        <label class="text-sm">{{ text('account') }}<input v-model.number="accountId" type="number" min="1" class="input mt-1 w-full" /></label>
-        <label class="text-sm">{{ text('previewModel') }}<input v-model="previewModel" class="input mt-1 w-full font-mono" data-test="preview-model" /></label>
-        <label class="text-sm">{{ text('ingress') }}<select v-model="protocol" class="input mt-1 w-full"><option value="responses">Responses</option><option value="chat">Chat Completions</option><option value="messages">Messages</option></select></label>
-        <label class="text-sm">{{ text('transport') }}<select v-model="transport" class="input mt-1 w-full"><option value="http">HTTP</option><option value="ws">WebSocket</option></select></label>
-      </div>
-      <div class="flex flex-wrap gap-4 text-sm"><label><input v-model="compact" type="checkbox" /> {{ text('compact') }}</label><label><input v-model="simulate" type="checkbox" /> {{ text('simulate') }}</label></div>
-      <label class="block text-sm">{{ text('sample') }}<textarea v-model="sample" class="input mt-1 min-h-40 w-full font-mono text-xs" /></label>
-      <button class="btn btn-secondary btn-sm" :disabled="busy || !state || invalid || accountId < 1" @click="preview">{{ text('runPreview') }}</button>
-      <template v-if="result">
-        <div class="flex flex-wrap gap-3 text-xs text-muted"><span>{{ result.protocol }} / {{ result.transport }}</span><span>{{ result.requested_model }} → {{ result.upstream_model }}</span><span>{{ text('verified') }}</span><span v-if="result.simulated">{{ text('simulated') }}</span></div>
-        <p class="text-xs text-amber-700">{{ text('sequenceHint') }}</p>
-        <h3 class="text-sm font-semibold">{{ text('site') }}</h3>
-        <ol class="space-y-2"><li v-for="placement in result.application.rules_plan?.placements || []" :key="placement.rule_id" class="border border-line p-3 text-sm"><strong>{{ placement.rule_id }}</strong> · {{ text(placement.position) }} · <code>{{ placement.carrier }}{{ placement.role ? ` / role=${placement.role}` : '' }}</code><pre class="mt-2 max-h-44 overflow-auto whitespace-pre-wrap text-xs">{{ placement.body }}</pre></li></ol>
-        <p v-if="!result.application.applied" class="text-sm text-muted">{{ text('noRules') }}</p>
-        <p v-for="skip in result.application.rules_plan?.skipped || []" :key="skip.rule_id" class="text-xs text-muted">{{ skip.rule_id }} — {{ text('skipped') }}: {{ text(skip.reason) }}</p>
-        <details><summary>{{ text('base') }}</summary><pre class="max-h-56 overflow-auto whitespace-pre-wrap text-xs">{{ result.gateway_base_instructions || text('noBase') }}</pre></details>
-        <details><summary>{{ text('client') }}</summary><pre class="max-h-56 overflow-auto whitespace-pre-wrap text-xs">{{ pretty(result.client_control) }}</pre></details>
-        <details><summary>{{ text('before') }}</summary><pre class="max-h-72 overflow-auto whitespace-pre-wrap text-xs">{{ pretty(result.before_rules) }}</pre></details>
-        <details open><summary>{{ text('final') }}</summary><pre class="max-h-[520px] overflow-auto whitespace-pre-wrap border border-line p-3 text-xs">{{ pretty(result.body) }}</pre></details>
-      </template>
-    </section>
   </section>
 </template>
 
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { useAppStore } from '@/stores/app'
-import { extractApiErrorCode, extractApiErrorMessage } from '@/utils/apiError'
-import promptAPI, { type SystemPromptTemplate, type SystemPromptVersion } from '@/api/admin/systemPrompts'
-import { legalPromptPosition, rulesAPI, type PromptDelivery, type PromptPosition, type PromptPreview, type PromptRule, type PromptRulePolicy, type PromptRuleState } from '@/api/admin/systemPromptRules'
-const { t } = useI18n()
+import { extractApiErrorMessage } from '@/utils/apiError'
+import { legalPromptPosition, rulesAPI, type PromptConfig, type PromptPosition, type PromptPreview, type PromptRole } from '@/api/admin/systemPromptRules'
+
+const config = defineModel<PromptConfig>({ required: true })
+const props = defineProps<{ selectedId: string; dirtyIds: string[]; contentEdits: Record<string, { body: string }>; invalid: boolean; invalidReason: string; busy: boolean }>()
+const emit = defineEmits<{ select: [id: string]; add: []; remove: [id: string]; duplicate: []; advanced: [] }>()
+const { t, te } = useI18n()
 const text = (key: string) => t(`admin.systemPrompts.rules.${key}`)
-const notifications = useAppStore()
-const emit = defineEmits<{ saved: [] }>()
-const state = ref<PromptRuleState | null>(null), draft = ref<PromptRulePolicy>({ version: 1, rules: [], default_rule_ids: [] })
-const templates = ref<SystemPromptTemplate[]>([]), versions = ref<Record<number, SystemPromptVersion[]>>({})
-const busy = ref(false), error = ref(''), accountId = ref(0), compact = ref(false), simulate = ref(false)
-const protocol = ref('responses'), transport = ref('http'), sample = ref('{"model":"gpt-6-astra","instructions":"Client instructions","input":[{"role":"user","content":"Hello"}]}')
-const previewModel = computed({
-  get: () => { try { const value = JSON.parse(sample.value); return typeof value?.model === 'string' ? value.model : '' } catch { return '' } },
-  set: (model: string) => {
-    try {
-      const value = JSON.parse(sample.value)
-      if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('invalid request')
-      sample.value = JSON.stringify({ ...value, model }, null, 2)
-    } catch { error.value = text('invalidJSON') }
-  }
-})
-const result = ref<PromptPreview | null>(null)
-const deliveries: PromptDelivery[] = ['native_control', 'system', 'developer']
-const positions: PromptPosition[] = ['control_prepend', 'control_append', 'conversation_head', 'conversation_tail']
-let disposed = false, generation = 0
-const pretty = (value: unknown) => JSON.stringify(value, null, 2)
-const dirty = computed(() => state.value !== null && pretty(draft.value) !== pretty(state.value.policy))
-const hasLegacyRule = computed(() => draft.value.rules.some(rule => rule.id === 'legacy-default'))
-const invalid = computed(() => draft.value.rules.some(rule => !rule.name.trim() || (!rule.follow_active && (!rule.template_id || !rule.version_id)) || !legalPromptPosition(rule.delivery, rule.position)))
+const reasonText = (key: string) => te(`admin.systemPrompts.rules.${key}`) ? text(key) : key
+const selected = computed(() => config.value.policy.rules.find(rule => rule.id === props.selectedId))
+const content = computed(() => config.value.contents[props.selectedId])
+const selectedIndex = computed(() => config.value.policy.rules.findIndex(rule => rule.id === props.selectedId))
+const roles: PromptRole[] = ['auto', 'system', 'developer']
+const positions: PromptPosition[] = ['control_prepend', 'control_append', 'conversation_head', 'conversation_tail', 'before_last_user', 'after_last_user']
+const accountTypes = ['apikey', 'oauth', 'setup-token', 'bedrock', 'service_account', 'upstream']
+const platforms = computed(() => [...new Set(config.value.capabilities.flatMap(capability => capability.platforms))])
+const platformNames: Record<string, string> = { anthropic: 'Claude', openai: 'OpenAI', gemini: 'Gemini', antigravity: 'Antigravity', grok: 'Grok', cindy: 'Cindy', kimi: 'Kimi', zhipu: 'Zhipu', deepseek: 'DeepSeek', minimax: 'MiniMax', opencode_go: 'OpenCode Go' }
+const platformName = (platform: string) => platformNames[platform] || platform
+const allows = (role: PromptRole, position: PromptPosition) => {
+  if (role === 'system' && selected.value?.platforms.some(platform => ['openai', 'cindy'].includes(platform)) && selected.value.account_types?.some(type => ['oauth', 'setup-token'].includes(type))) return false
+  return !selected.value?.platforms.length || legalPromptPosition(role, position, selected.value.platforms, config.value.capabilities, selected.value.account_types)
+}
 const parseModels = (value: string) => [...new Set(value.split(/\r?\n/).map(item => item.trim()).filter(Boolean))]
-function fail(value: unknown) { error.value = extractApiErrorCode(value) === 'system_prompt_revision_conflict' ? text('conflict') : extractApiErrorMessage(value) || text('error') }
-async function load() {
-  if (busy.value) return
-  const current = ++generation
-  busy.value = true; error.value = ''
-  try {
-    const [next, catalog] = await Promise.all([rulesAPI.read(), promptAPI.list()])
-    if (disposed || current !== generation) return
-    const referenced = [...new Set(next.policy.rules.filter(rule => !rule.follow_active).map(rule => rule.template_id))]
-    const details = await Promise.all(referenced.map(id => promptAPI.listVersions(id).then(items => [id, items] as const)))
-    if (disposed || current !== generation) return
-    state.value = next; draft.value = JSON.parse(JSON.stringify(next.policy)); templates.value = catalog.templates; versions.value = Object.fromEntries(details)
-  } catch (value) { if (!disposed && current === generation) fail(value) } finally { if (!disposed && current === generation) busy.value = false }
+function move(direction: number) {
+  const index = selectedIndex.value
+  const [rule] = config.value.policy.rules.splice(index, 1)
+  if (rule) config.value.policy.rules.splice(index + direction, 0, rule)
+  config.value.policy.rules.forEach((rule, order) => { rule.order = (order + 1) * 100 })
 }
-function addRule() { draft.value.rules.push({ id: `rule-${crypto.randomUUID().slice(0, 12)}`, name: '', enabled: true, template_id: 0, version_id: 0, order: (draft.value.rules.length + 1) * 100, delivery: 'native_control', position: 'control_append', model_match: 'upstream', models: [] }) }
-function reorder() { draft.value.rules.forEach((rule, index) => { rule.order = (index + 1) * 100 }) }
-function move(index: number, direction: number) { const [rule] = draft.value.rules.splice(index, 1); if (rule) draft.value.rules.splice(index + direction, 0, rule); reorder() }
-function remove(id: string) { draft.value.rules = draft.value.rules.filter(rule => rule.id !== id); draft.value.default_rule_ids = draft.value.default_rule_ids.filter(ref => ref !== id); reorder() }
-async function selectTemplate(rule: PromptRule) {
-  rule.version_id = 0
-  if (!rule.template_id || versions.value[rule.template_id]) return
-  const id = rule.template_id
-  try { const items = await promptAPI.listVersions(id); if (!disposed) versions.value = { ...versions.value, [id]: items } } catch (value) { if (!disposed) fail(value) }
+function toggleAccountType(type: string, checked: boolean) {
+  if (!selected.value) return
+  const types = new Set(selected.value.account_types || [])
+  if (checked) types.add(type)
+  else types.delete(type)
+  selected.value.account_types = [...types]
 }
-async function save() {
-  if (!state.value || busy.value || invalid.value) return
-  busy.value = true; error.value = ''
-  try { const next = await rulesAPI.save(JSON.parse(JSON.stringify(draft.value)), state.value.revision); if (!disposed) { state.value = next; draft.value = JSON.parse(JSON.stringify(next.policy)); notifications.showSuccess(text('saved')); emit('saved') } } catch (value) { if (!disposed) fail(value) } finally { if (!disposed) busy.value = false }
-}
+const accountId = ref(0), protocol = ref('responses'), transport = ref('http'), compact = ref(false), simulate = ref(false)
+const sample = ref('{"model":"gpt-6-astra","instructions":"Client instructions","input":[{"role":"user","content":"Hello"}]}')
+const previewBusy = ref(false), previewError = ref(''), result = ref<PromptPreview | null>(null)
+let disposed = false
+const pretty = (value: unknown) => JSON.stringify(value, null, 2)
+const previewModel = computed({
+  get: () => { try { return JSON.parse(sample.value)?.model || '' } catch { return '' } },
+  set: (model: string) => { try { const body = JSON.parse(sample.value); if (!body || typeof body !== 'object' || Array.isArray(body)) throw new Error(); sample.value = pretty({ ...body, model }) } catch { previewError.value = text('invalidJSON') } },
+})
+watch(protocol, value => {
+  const model = previewModel.value || 'model-id'
+  if (value === 'messages') sample.value = pretty({ model, max_tokens: 128, system: 'Client instructions', messages: [{ role: 'user', content: 'Hello' }] })
+  else if (value === 'gemini') sample.value = pretty({ model, systemInstruction: { parts: [{ text: 'Client instructions' }] }, contents: [{ role: 'user', parts: [{ text: 'Hello' }] }] })
+  else if (value === 'chat') sample.value = pretty({ model, messages: [{ role: 'system', content: 'Client instructions' }, { role: 'user', content: 'Hello' }] })
+  else sample.value = pretty({ model, instructions: 'Client instructions', input: [{ role: 'user', content: 'Hello' }] })
+  result.value = null
+})
+const finalBody = computed(() => result.value?.body && typeof result.value.body === 'object' ? result.value.body as Record<string, unknown> : {})
+watch([() => config.value.policy, () => config.value.contents, sample, transport, compact, simulate, accountId], () => { result.value = null }, { deep: true })
+const topInstructions = computed(() => Object.fromEntries(['instructions', 'system', 'systemInstruction'].filter(key => key in finalBody.value).map(key => [key, finalBody.value[key]])))
+const messageSequence = computed(() => Object.fromEntries(['input', 'messages', 'contents'].filter(key => key in finalBody.value).map(key => [key, finalBody.value[key]])))
 async function preview() {
-  if (!state.value || accountId.value < 1 || busy.value) return
   let body: unknown
-  try { body = JSON.parse(sample.value) } catch { error.value = text('invalidJSON'); return }
-  busy.value = true; error.value = ''; result.value = null
-  try { const next = await rulesAPI.preview(accountId.value, { protocol: protocol.value, transport: transport.value, compact: compact.value, body, policy: JSON.parse(JSON.stringify(draft.value)), ...(simulate.value ? { simulate_enabled: true } : {}) }); if (!disposed) result.value = next } catch (value) { if (!disposed) fail(value) } finally { if (!disposed) busy.value = false }
+  try { body = JSON.parse(sample.value) } catch { previewError.value = text('invalidJSON'); return }
+  previewBusy.value = true; previewError.value = ''; result.value = null
+  try {
+    const next = await rulesAPI.preview(accountId.value, { protocol: protocol.value, transport: transport.value, compact: compact.value, body, policy: JSON.parse(JSON.stringify(config.value.policy)), contents: JSON.parse(JSON.stringify(props.contentEdits)), simulate_enabled: simulate.value || config.value.enabled })
+    if (!disposed) result.value = next
+  } catch (error) { if (!disposed) previewError.value = extractApiErrorMessage(error) || text('error') }
+  finally { if (!disposed) previewBusy.value = false }
 }
-onMounted(load)
-onBeforeUnmount(() => { disposed = true; generation++ })
+onBeforeUnmount(() => { disposed = true })
 </script>

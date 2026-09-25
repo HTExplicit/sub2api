@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"slices"
 	"time"
 
@@ -32,54 +31,7 @@ func (s *BusinessSystemPromptService) loadPromptSnapshot(ctx context.Context) (B
 }
 
 func (s *BusinessSystemPromptService) preparePromptRulesSnapshot(snapshot *BusinessSystemPromptSnapshot) error {
-	var normalized extensionv1.PromptRulePolicy
-	if err := invokePromptManagement(context.Background(), "prompt.rules.validate", *snapshot.RulePolicy, &normalized); err != nil {
-		return err
-	}
-	snapshot.RulePolicy = &normalized
-	snapshot.ResolvedRules = nil
-	total := 0
-	for _, rule := range normalized.Rules {
-		if !rule.Enabled {
-			continue
-		}
-		if rule.FollowActive {
-			rule.TemplateID, rule.VersionID = snapshot.TemplateID, snapshot.VersionID
-		}
-		if rule.TemplateID == 0 || rule.VersionID == 0 {
-			if !snapshot.Enabled {
-				continue
-			}
-			return ErrBusinessSystemPromptVersionNotFound
-		}
-		detail, err := s.store.GetBusinessSystemPromptTemplate(context.Background(), rule.TemplateID)
-		if err != nil {
-			return err
-		}
-		index := slices.IndexFunc(detail.Versions, func(version BusinessSystemPromptVersion) bool { return version.ID == rule.VersionID })
-		if index < 0 {
-			return ErrBusinessSystemPromptVersionNotFound
-		}
-		version := detail.Versions[index]
-		content := BusinessSystemPromptSnapshot{Enabled: true, Revision: snapshot.Revision, TemplateID: rule.TemplateID, VersionID: rule.VersionID, Body: version.Body, SHA256: version.SHA256, ByteLength: version.ByteLength, CompositionMode: version.CompositionMode, BundleID: version.BundleID, BundleManifestSHA256: version.BundleManifestSHA256}
-		if err := s.prepareBusinessSystemPromptSnapshot(&content); err != nil {
-			return err
-		}
-		content, err = s.compileBusinessSystemPromptSnapshot(content)
-		if err != nil {
-			return err
-		}
-		hash, size, err := validateBusinessSystemPromptBodyWithLimit(content.Body, extensionv1.PromptRulesMaxBytes)
-		if err != nil {
-			return err
-		}
-		total += size
-		if total > extensionv1.PromptRulesMaxBytes {
-			return fmt.Errorf("%w: compiled rule set exceeds 256 KiB", ErrBusinessSystemPromptInvalid)
-		}
-		snapshot.ResolvedRules = append(snapshot.ResolvedRules, extensionv1.ResolvedPromptRule{Rule: rule, Body: content.Body, SHA256: hash, PreserveEcho: version.CompositionMode == BusinessSystemPromptCompositionCodexSkillHybrid})
-	}
-	return nil
+	return s.compilePromptRules(context.Background(), snapshot, nil, false)
 }
 
 type PromptRulePolicyState struct {
@@ -183,7 +135,7 @@ func (s *BusinessSystemPromptService) PromptAccountBindings(ctx context.Context,
 		case "custom":
 			effective = binding.RuleIDs
 		}
-		views = append(views, PromptAccountBindingView{AccountID: account.ID, Name: account.Name, Platform: account.Platform, AccountType: account.Type, UpdatedAt: account.UpdatedAt, Binding: binding, EffectiveRuleIDs: effective, Supported: account.IsOpenAI()})
+		views = append(views, PromptAccountBindingView{AccountID: account.ID, Name: account.Name, Platform: account.Platform, AccountType: account.Type, UpdatedAt: account.UpdatedAt, Binding: binding, EffectiveRuleIDs: effective, Supported: supportsPromptAccount(account)})
 	}
 	return views, nil
 }
@@ -249,7 +201,7 @@ func (s *BusinessSystemPromptService) UpdatePromptAccountBindings(ctx context.Co
 	results := make([]PromptBindingUpdateResult, 0, len(updates))
 	for _, update := range updates {
 		index := slices.IndexFunc(accounts, func(account *Account) bool { return account.ID == update.AccountID })
-		if index < 0 || !accounts[index].IsOpenAI() {
+		if index < 0 || !supportsPromptAccount(accounts[index]) {
 			results = append(results, PromptBindingUpdateResult{AccountID: update.AccountID, Code: "account_not_supported"})
 			continue
 		}

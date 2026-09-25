@@ -4,9 +4,27 @@ const client = vi.hoisted(() => ({ get: vi.fn(), post: vi.fn(), patch: vi.fn(), 
 vi.mock('@/api/client', () => ({ apiClient: client }))
 
 import systemPromptsAPI from '../systemPrompts'
+import { rulesAPI } from '../systemPromptRules'
 
 describe('System Prompts API', () => {
   beforeEach(() => Object.values(client).forEach((mock) => mock.mockReset()))
+
+  it('reads and atomically writes v2 content, rules and runtime through one config endpoint', async () => {
+    client.get.mockResolvedValue({ data: { revision: 7 } })
+    client.put.mockResolvedValue({ data: { revision: 8 } })
+    await rulesAPI.config()
+    expect(client.get).toHaveBeenCalledWith('/admin/system-prompts/config')
+    const payload = { expected_revision: 7, enabled: true, expose_server_prompt: false, compact_enabled: true, policy: { version: 2, rules: [], default_rule_ids: [] }, contents: { custom: { body: 'Draft text' } } }
+    await rulesAPI.saveConfig(payload)
+    expect(client.put).toHaveBeenCalledWith('/admin/system-prompts/config', payload)
+    expect(client.post).not.toHaveBeenCalled()
+  })
+
+  it('binds paired Skill publication to an explicit affected rule set and both revisions', async () => {
+    client.post.mockResolvedValue({ data: {} })
+    await systemPromptsAPI.publishSkillVersion(12, 3, false, { target_rule_ids: ['first', 'second'], expected_config_revision: 7 })
+    expect(client.post).toHaveBeenCalledWith('/admin/system-prompts/skill-registry/versions/12/publish', { expected_revision: 3, expected_config_revision: 7, target_rule_ids: ['first', 'second'] })
+  })
 
   it('uses the independent admin namespace', async () => {
     client.get.mockResolvedValue({ data: { templates: [], runtime: {} } })
@@ -65,10 +83,10 @@ describe('System Prompts API', () => {
     client.post.mockResolvedValue({ data: {} })
     client.put.mockResolvedValue({ data: {} })
 
-    await systemPromptsAPI.publish(12, 33, 7)
-    expect(client.post).toHaveBeenCalledWith('/admin/system-prompts/12/versions/33/publish', { expected_revision: 7 })
-    await systemPromptsAPI.publish(12, 22, 8, true)
-    expect(client.post).toHaveBeenCalledWith('/admin/system-prompts/12/versions/22/rollback', { expected_revision: 8 })
+    await systemPromptsAPI.publish(12, 33, 7, false, ['custom'])
+    expect(client.post).toHaveBeenCalledWith('/admin/system-prompts/12/versions/33/publish', { expected_revision: 7, target_rule_ids: ['custom'] })
+    await systemPromptsAPI.publish(12, 22, 8, true, ['custom'])
+    expect(client.post).toHaveBeenCalledWith('/admin/system-prompts/12/versions/22/rollback', { expected_revision: 8, target_rule_ids: ['custom'] })
 
     await systemPromptsAPI.updateRuntime({ expected_revision: 9, enabled: true, expose_server_prompt: false, compact_enabled: true })
     expect(client.put).toHaveBeenCalledWith('/admin/system-prompts/runtime', expect.objectContaining({ expected_revision: 9, enabled: true }))
@@ -98,9 +116,9 @@ describe('System Prompts API', () => {
     expect(syncForm.get('prompt_capture')).toBe(promptCapture)
     await systemPromptsAPI.getSkillSync(8)
     expect(client.get).toHaveBeenCalledWith('/admin/system-prompts/skill-registry/syncs/8')
-    await systemPromptsAPI.publishSkillVersion(12, 3)
-    expect(client.post).toHaveBeenCalledWith('/admin/system-prompts/skill-registry/versions/12/publish', { expected_revision: 3 })
-    await systemPromptsAPI.publishSkillVersion(9, 4, true)
-    expect(client.post).toHaveBeenCalledWith('/admin/system-prompts/skill-registry/versions/9/rollback', { expected_revision: 4 })
+    await systemPromptsAPI.publishSkillVersion(12, 3, false, { target_rule_ids: ['skill'], expected_config_revision: 8 })
+    expect(client.post).toHaveBeenCalledWith('/admin/system-prompts/skill-registry/versions/12/publish', { expected_revision: 3, target_rule_ids: ['skill'], expected_config_revision: 8 })
+    await systemPromptsAPI.publishSkillVersion(9, 4, true, { target_rule_ids: ['skill'], expected_config_revision: 9 })
+    expect(client.post).toHaveBeenCalledWith('/admin/system-prompts/skill-registry/versions/9/rollback', { expected_revision: 4, target_rule_ids: ['skill'], expected_config_revision: 9 })
   })
 })

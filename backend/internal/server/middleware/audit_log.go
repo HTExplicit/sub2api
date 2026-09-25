@@ -59,7 +59,7 @@ var auditExtraAllowedKeys = map[string]struct{}{
 	"event_id": {}, "requested_count": {}, "deleted_events": {}, "deleted_jobs": {},
 	"matched_count": {}, "snapshot_max_id": {}, "filter_hash": {}, "confirm": {},
 	"template_id": {}, "template_version": {}, "old_sha256": {}, "new_sha256": {},
-	"byte_length": {}, "revision": {}, "expose_server_prompt": {}, "compact_enabled": {},
+	"byte_length": {}, "revision": {}, "rule_count": {}, "expose_server_prompt": {}, "compact_enabled": {},
 	"composition_mode": {}, "bundle_id": {}, "bundle_manifest_sha256": {}, "degraded": {},
 	"bundle_revision": {}, "bundle_archive_sha256": {}, "source_commit": {}, "archive_sha256": {},
 	"file_count": {}, "added_files": {}, "modified_files": {}, "deleted_files": {},
@@ -127,6 +127,7 @@ var auditSensitiveReads = map[string]string{
 	"GET /api/v1/admin/backups/s3-config":                                         "admin.backups.s3_config.read",
 	"GET /api/v1/admin/data-management/s3/config":                                 "admin.data_management.s3_config.read",
 	"GET /api/v1/admin/system-prompts":                                            "admin.system_prompts.list",
+	"GET /api/v1/admin/system-prompts/config":                                     "admin.system_prompts.config.read",
 	"GET /api/v1/admin/system-prompts/:id":                                        "admin.system_prompts.read",
 	"GET /api/v1/admin/system-prompts/:id/versions":                               "admin.system_prompts.versions.list",
 	"GET /api/v1/admin/system-prompts/skill-registry":                             "admin.system_prompts.skill_registry.read",
@@ -158,6 +159,8 @@ var auditActionOverrides = map[string]string{
 	"POST /api/v1/admin/prompt-audit/events/delete-preview":                                 "admin.prompt_audit.events.delete_preview",
 	"POST /api/v1/admin/prompt-audit/events/delete-by-filter":                               "admin.prompt_audit.events.filter_delete",
 	"POST /api/v1/admin/system-prompts":                                                     "admin.system_prompts.create",
+	"PUT /api/v1/admin/system-prompts/config":                                               "admin.system_prompts.config.update",
+	"POST /api/v1/admin/system-prompts/rules/preview/:account_id":                           "admin.system_prompts.rules.preview",
 	"PATCH /api/v1/admin/system-prompts/:id":                                                "admin.system_prompts.update",
 	"DELETE /api/v1/admin/system-prompts/:id":                                               "admin.system_prompts.delete",
 	"POST /api/v1/admin/system-prompts/:id/duplicate":                                       "admin.system_prompts.duplicate",
@@ -192,10 +195,12 @@ var auditBodyOmittedRoutes = map[string]struct{}{
 // larger than ordinary admin payloads. Their content is omitted entirely;
 // handlers attach only allowlisted hashes, lengths, IDs, revisions and flags.
 var auditPromptBodyOmittedRoutes = map[string]struct{}{
-	"POST /api/v1/admin/system-prompts":                  {},
-	"POST /api/v1/admin/system-prompts/:id/versions":     {},
-	"POST /api/v1/admin/system-prompts/preview/merge":    {},
-	"POST /api/v1/admin/system-prompts/preview/upstream": {},
+	"PUT /api/v1/admin/system-prompts/config":                     {},
+	"POST /api/v1/admin/system-prompts/rules/preview/:account_id": {},
+	"POST /api/v1/admin/system-prompts":                           {},
+	"POST /api/v1/admin/system-prompts/:id/versions":              {},
+	"POST /api/v1/admin/system-prompts/preview/merge":             {},
+	"POST /api/v1/admin/system-prompts/preview/upstream":          {},
 }
 
 // NewAuditLogMiddleware 创建审计中间件。
