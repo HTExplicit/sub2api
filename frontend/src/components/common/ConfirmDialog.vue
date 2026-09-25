@@ -18,7 +18,7 @@
           @click="handleConfirm"
           type="button"
           :class="[
-            'rounded-none px-4 py-2 text-sm font-medium text-white focus:outline-none focus:ring-2 focus:ring-offset-2 dark:focus:ring-offset-dark-800',
+            'rounded-md px-4 py-2 text-sm font-medium text-white focus:outline-none focus:ring-2 focus:ring-offset-2 dark:focus:ring-offset-dark-800',
             danger
               ? 'bg-red-600 hover:bg-red-700 focus:ring-red-500'
               : 'bg-primary-600 hover:bg-primary-700 focus:ring-primary-500'

@@ -2,7 +2,7 @@
   <div
     :class="[
       'animate-pulse bg-gray-200 dark:bg-dark-700',
-      variant === 'circle' ? 'rounded-full' : 'rounded-none',
+      variant === 'circle' ? 'rounded-full' : 'rounded-lg',
       customClass
     ]"
     :style="style"

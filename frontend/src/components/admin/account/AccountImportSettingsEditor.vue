@@ -45,9 +45,9 @@
     </SettingField>
 
     <SettingField v-model:enabled="draft.enabled.groups" :label="t('admin.accounts.columns.groups')" class="sm:col-span-2">
-      <div class="flex min-h-9 flex-wrap items-center gap-1.5 rounded-none border border-gray-300 px-2 py-1.5 dark:border-dark-600" :class="!draft.enabled.groups ? 'opacity-50' : ''">
+      <div class="flex min-h-9 flex-wrap items-center gap-1.5 rounded-md border border-gray-300 px-2 py-1.5 dark:border-dark-600" :class="!draft.enabled.groups ? 'opacity-50' : ''">
         <label v-for="group in groups" :key="group.id" class="inline-flex items-center gap-1 text-xs text-gray-700 dark:text-gray-200">
-          <input v-model="draft.groupIDs" type="checkbox" class="rounded-none border-gray-300 text-primary-600" :value="group.id" :disabled="!draft.enabled.groups" />
+          <input v-model="draft.groupIDs" type="checkbox" class="rounded border-gray-300 text-primary-600" :value="group.id" :disabled="!draft.enabled.groups" />
           <span>{{ group.name }}</span>
         </label>
         <span v-if="groups.length === 0" class="text-xs text-gray-400">{{ t('common.noData') }}</span>
@@ -159,7 +159,7 @@ const SettingField = defineComponent({
       h('label', { class: 'mb-1 flex items-center gap-2 text-xs font-medium text-gray-500 dark:text-dark-300' }, [
         h('input', {
           type: 'checkbox',
-          class: 'h-3.5 w-3.5 rounded-none border-gray-300 text-primary-600 focus:ring-primary-500',
+          class: 'h-3.5 w-3.5 rounded border-gray-300 text-primary-600 focus:ring-primary-500',
           checked: fieldProps.enabled,
           onChange: (event: Event) => emit('update:enabled', (event.target as HTMLInputElement).checked)
         }),

@@ -5,6 +5,8 @@
  * instead of defining their own color mappings.
  */
 
+import { flatThemeActive } from './flatTheme'
+
 export type Platform =
   | 'anthropic'
   | 'openai'
@@ -225,6 +227,30 @@ const GRADIENT_SUBTEXT: Record<Platform, string> = {
 }
 const GRADIENT_SUBTEXT_DEFAULT = 'text-primary-200'
 
+// ── Console theme: neutral identity ────────────────────────────────
+// In the console theme a platform is told apart by its logo and label, never by hue: the hue
+// families carry status there (tailwind.config.js folds them into danger/warning/info/success/
+// purple), so Anthropic orange would read as a warning. Upstream look keeps the hues above.
+const NEUTRAL = {
+  badge: 'bg-gray-100 text-gray-700 border-gray-200 dark:bg-dark-700 dark:text-gray-200 dark:border-dark-600',
+  badgeLight: 'bg-gray-100 text-gray-700 dark:bg-dark-700 dark:text-gray-200',
+  border: 'border-gray-200 dark:border-dark-700',
+  borderStrong: 'border-gray-300 dark:border-dark-600',
+  accent: '#737373',
+  accentBar: 'bg-gray-800 dark:bg-gray-300',
+  text: 'text-gray-900 dark:text-gray-100',
+  icon: 'text-gray-700 dark:text-gray-300',
+  button: 'bg-primary-600 text-white hover:bg-primary-700 dark:bg-primary-600 dark:hover:bg-primary-500',
+  discount: 'bg-gray-900 text-white dark:bg-gray-100 dark:text-gray-900',
+  gradient: 'from-gray-800 to-gray-900',
+  gradientText: 'text-gray-100',
+  gradientSubtext: 'text-gray-300',
+}
+
+function identity(hue: string, neutral: string): string {
+  return flatThemeActive.value ? neutral : hue
+}
+
 // ── Public API ──────────────────────────────────────────────────────
 
 function isPlatform(p: string): p is Platform {
@@ -244,55 +270,55 @@ function isPlatform(p: string): p is Platform {
 }
 
 export function platformBadgeClass(p: string): string {
-  return isPlatform(p) ? BADGE[p] : BADGE_DEFAULT
+  return identity(isPlatform(p) ? BADGE[p] : BADGE_DEFAULT, NEUTRAL.badge)
 }
 
 export function platformBadgeLightClass(p: string): string {
-  return isPlatform(p) ? BADGE_LIGHT[p] : BADGE_DEFAULT
+  return identity(isPlatform(p) ? BADGE_LIGHT[p] : BADGE_DEFAULT, NEUTRAL.badgeLight)
 }
 
 export function platformBorderClass(p: string): string {
-  return isPlatform(p) ? BORDER[p] : BORDER_DEFAULT
+  return identity(isPlatform(p) ? BORDER[p] : BORDER_DEFAULT, NEUTRAL.border)
 }
 
 export function platformBorderStrongClass(p: string): string {
-  return isPlatform(p) ? BORDER_STRONG[p] : BORDER_STRONG_DEFAULT
+  return identity(isPlatform(p) ? BORDER_STRONG[p] : BORDER_STRONG_DEFAULT, NEUTRAL.borderStrong)
 }
 
 export function platformAccentColor(p: string): string {
-  return isPlatform(p) ? ACCENT[p] : ACCENT_DEFAULT
+  return identity(isPlatform(p) ? ACCENT[p] : ACCENT_DEFAULT, NEUTRAL.accent)
 }
 
 export function platformAccentBarClass(p: string): string {
-  return isPlatform(p) ? ACCENT_BAR[p] : ACCENT_BAR_DEFAULT
+  return identity(isPlatform(p) ? ACCENT_BAR[p] : ACCENT_BAR_DEFAULT, NEUTRAL.accentBar)
 }
 
 export function platformTextClass(p: string): string {
-  return isPlatform(p) ? TEXT[p] : TEXT_DEFAULT
+  return identity(isPlatform(p) ? TEXT[p] : TEXT_DEFAULT, NEUTRAL.text)
 }
 
 export function platformIconClass(p: string): string {
-  return isPlatform(p) ? ICON[p] : ICON_DEFAULT
+  return identity(isPlatform(p) ? ICON[p] : ICON_DEFAULT, NEUTRAL.icon)
 }
 
 export function platformButtonClass(p: string): string {
-  return isPlatform(p) ? BUTTON[p] : BUTTON_DEFAULT
+  return identity(isPlatform(p) ? BUTTON[p] : BUTTON_DEFAULT, NEUTRAL.button)
 }
 
 export function platformDiscountClass(p: string): string {
-  return isPlatform(p) ? DISCOUNT[p] : DISCOUNT_DEFAULT
+  return identity(isPlatform(p) ? DISCOUNT[p] : DISCOUNT_DEFAULT, NEUTRAL.discount)
 }
 
 export function platformGradientClass(p: string): string {
-  return isPlatform(p) ? GRADIENT[p] : GRADIENT_DEFAULT
+  return identity(isPlatform(p) ? GRADIENT[p] : GRADIENT_DEFAULT, NEUTRAL.gradient)
 }
 
 export function platformGradientTextClass(p: string): string {
-  return isPlatform(p) ? GRADIENT_TEXT[p] : GRADIENT_TEXT_DEFAULT
+  return identity(isPlatform(p) ? GRADIENT_TEXT[p] : GRADIENT_TEXT_DEFAULT, NEUTRAL.gradientText)
 }
 
 export function platformGradientSubtextClass(p: string): string {
-  return isPlatform(p) ? GRADIENT_SUBTEXT[p] : GRADIENT_SUBTEXT_DEFAULT
+  return identity(isPlatform(p) ? GRADIENT_SUBTEXT[p] : GRADIENT_SUBTEXT_DEFAULT, NEUTRAL.gradientSubtext)
 }
 
 export function platformLabel(p: string): string {

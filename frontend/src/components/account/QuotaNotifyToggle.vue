@@ -26,7 +26,7 @@ const emit = defineEmits<{
     >
       <span
         :class="[
-          'pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow-outline ring-0 transition duration-200 ease-in-out',
+          'pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out',
           enabled ? 'translate-x-4' : 'translate-x-0'
         ]"
       />

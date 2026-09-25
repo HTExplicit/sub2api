@@ -402,7 +402,7 @@ const empty = computed(() => events.value.length === 0 && !loading.value)
           <div
             v-for="row in events"
             :key="row.id"
-            class="cursor-pointer space-y-2 p-4 hover:bg-gray-50 dark:hover:bg-dark-700"
+            class="cursor-pointer space-y-2 p-4 hover:bg-gray-50 dark:hover:bg-dark-700/50"
             @click="openDetail(row)"
           >
             <div class="flex flex-wrap items-center gap-2">
@@ -433,12 +433,12 @@ const empty = computed(() => events.value.length === 0 && !loading.value)
                   v-else
                   name="ban"
                   size="xs"
-                  class="text-muted"
+                  class="text-gray-400 dark:text-gray-500"
                 />
                 {{ row.email_sent ? t('admin.ops.alertEvents.table.emailSent') : t('admin.ops.alertEvents.table.emailIgnored') }}
               </span>
             </div>
-            <div class="text-[11px] text-muted">{{ formatDimensionsSummary(row) }}</div>
+            <div class="text-[11px] text-gray-400 dark:text-gray-500">{{ formatDimensionsSummary(row) }}</div>
           </div>
         </div>
         <table v-else class="min-w-full divide-y divide-gray-200 dark:divide-dark-700">
@@ -474,7 +474,7 @@ const empty = computed(() => events.value.length === 0 && !loading.value)
             <tr
               v-for="row in events"
               :key="row.id"
-              class="cursor-pointer hover:bg-gray-50 dark:hover:bg-dark-700"
+              class="cursor-pointer hover:bg-gray-50 dark:hover:bg-dark-700/50"
               @click="openDetail(row)"
               :title="row.title || ''"
             >
@@ -524,7 +524,7 @@ const empty = computed(() => events.value.length === 0 && !loading.value)
                     v-else
                     name="ban"
                     size="sm"
-                    class="text-muted"
+                    class="text-gray-400 dark:text-gray-500"
                   />
                   <span class="text-[11px] font-bold text-gray-600 dark:text-gray-300">
                     {{ row.email_sent ? t('admin.ops.alertEvents.table.emailSent') : t('admin.ops.alertEvents.table.emailIgnored') }}
@@ -670,7 +670,7 @@ const empty = computed(() => events.value.length === 0 && !loading.value)
                 </tr>
               </thead>
               <tbody class="divide-y divide-gray-100 dark:divide-dark-700">
-                <tr v-for="it in history" :key="it.id" class="hover:bg-gray-50 dark:hover:bg-dark-700">
+                <tr v-for="it in history" :key="it.id" class="hover:bg-gray-50 dark:hover:bg-dark-700/50">
                   <td class="px-3 py-2 text-xs text-gray-600 dark:text-gray-300">{{ formatDateTime(it.fired_at || it.created_at) }}</td>
                   <td class="px-3 py-2 text-xs">
                     <span class="inline-flex items-center rounded-full px-2 py-1 text-[10px] font-bold ring-1 ring-inset" :class="statusBadgeClass(it.status)">

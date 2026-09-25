@@ -150,7 +150,7 @@
             class="inline-flex items-center gap-1.5 rounded-full bg-gray-900 py-1 pl-1 pr-2.5 transition-colors hover:bg-gray-800 dark:bg-gray-800 dark:hover:bg-gray-700"
           >
             <span
-              class="flex h-5 w-5 items-center justify-center rounded-full bg-primary-400 text-[10px] font-semibold text-white"
+              class="flex h-5 w-5 items-center justify-center rounded-full bg-gradient-to-br from-primary-400 to-primary-600 text-[10px] font-semibold text-white"
             >
               {{ userInitial }}
             </span>
@@ -200,7 +200,7 @@
             <div>
               <router-link
                 :to="isAuthenticated ? dashboardPath : '/login'"
-                class="btn btn-primary px-8 py-3 text-base shadow-outline"
+                class="btn btn-primary px-8 py-3 text-base shadow-lg shadow-primary-500/30"
               >
                 {{ isAuthenticated ? t('home.goToDashboard') : t('home.getStarted') }}
                 <Icon name="arrowRight" size="md" class="ml-2" :stroke-width="2" />
@@ -249,7 +249,7 @@
         <!-- Feature Tags - Centered -->
         <div class="mb-12 flex flex-wrap items-center justify-center gap-4 md:gap-6">
           <div
-            class="inline-flex items-center gap-2.5 rounded-none border border-gray-200 bg-white px-5 py-2.5 dark:border-dark-700 dark:bg-dark-800"
+            class="inline-flex items-center gap-2.5 rounded-full border border-gray-200/50 bg-white/80 px-5 py-2.5 shadow-sm backdrop-blur-sm dark:border-dark-700/50 dark:bg-dark-800/80"
           >
             <Icon name="swap" size="sm" class="text-primary-500" />
             <span class="text-sm font-medium text-gray-700 dark:text-dark-200">{{
@@ -257,7 +257,7 @@
             }}</span>
           </div>
           <div
-            class="inline-flex items-center gap-2.5 rounded-none border border-gray-200 bg-white px-5 py-2.5 dark:border-dark-700 dark:bg-dark-800"
+            class="inline-flex items-center gap-2.5 rounded-full border border-gray-200/50 bg-white/80 px-5 py-2.5 shadow-sm backdrop-blur-sm dark:border-dark-700/50 dark:bg-dark-800/80"
           >
             <Icon name="shield" size="sm" class="text-primary-500" />
             <span class="text-sm font-medium text-gray-700 dark:text-dark-200">{{
@@ -265,7 +265,7 @@
             }}</span>
           </div>
           <div
-            class="inline-flex items-center gap-2.5 rounded-none border border-gray-200 bg-white px-5 py-2.5 dark:border-dark-700 dark:bg-dark-800"
+            class="inline-flex items-center gap-2.5 rounded-full border border-gray-200/50 bg-white/80 px-5 py-2.5 shadow-sm backdrop-blur-sm dark:border-dark-700/50 dark:bg-dark-800/80"
           >
             <Icon name="chart" size="sm" class="text-primary-500" />
             <span class="text-sm font-medium text-gray-700 dark:text-dark-200">{{
@@ -278,10 +278,10 @@
         <div class="mb-12 grid gap-6 md:grid-cols-3">
           <!-- Feature 1: Unified Gateway -->
           <div
-            class="group rounded-none border border-gray-200 bg-white p-6 transition-all duration-300 dark:border-dark-700 dark:bg-dark-800"
+            class="group rounded-2xl border border-gray-200/50 bg-white/60 p-6 backdrop-blur-sm transition-all duration-300 hover:shadow-xl hover:shadow-primary-500/10 dark:border-dark-700/50 dark:bg-dark-800/60"
           >
             <div
-              class="mb-4 flex h-12 w-12 items-center justify-center rounded-none bg-surface text-ink border border-line"
+              class="mb-4 flex h-12 w-12 items-center justify-center rounded-xl bg-surface text-ink border border-line"
             >
               <Icon name="server" size="lg" class="text-white" />
             </div>
@@ -295,10 +295,10 @@
 
           <!-- Feature 2: Account Pool -->
           <div
-            class="group rounded-none border border-gray-200 bg-white p-6 transition-all duration-300 dark:border-dark-700 dark:bg-dark-800"
+            class="group rounded-2xl border border-gray-200/50 bg-white/60 p-6 backdrop-blur-sm transition-all duration-300 hover:shadow-xl hover:shadow-primary-500/10 dark:border-dark-700/50 dark:bg-dark-800/60"
           >
             <div
-              class="mb-4 flex h-12 w-12 items-center justify-center rounded-none bg-surface text-ink border border-line"
+              class="mb-4 flex h-12 w-12 items-center justify-center rounded-xl bg-surface text-ink border border-line"
             >
               <svg
                 class="h-6 w-6 text-primary-600 dark:text-primary-400"
@@ -324,10 +324,10 @@
 
           <!-- Feature 3: Billing & Quota -->
           <div
-            class="group rounded-none border border-gray-200 bg-white p-6 transition-all duration-300 dark:border-dark-700 dark:bg-dark-800"
+            class="group rounded-2xl border border-gray-200/50 bg-white/60 p-6 backdrop-blur-sm transition-all duration-300 hover:shadow-xl hover:shadow-primary-500/10 dark:border-dark-700/50 dark:bg-dark-800/60"
           >
             <div
-              class="mb-4 flex h-12 w-12 items-center justify-center rounded-none bg-surface text-ink border border-line"
+              class="mb-4 flex h-12 w-12 items-center justify-center rounded-xl bg-surface text-ink border border-line"
             >
               <svg
                 class="h-6 w-6 text-primary-600 dark:text-primary-400"
@@ -365,10 +365,10 @@
         <div class="mb-16 flex flex-wrap items-center justify-center gap-4">
           <!-- Claude - Supported -->
           <div
-            class="flex items-center gap-2 rounded-none border border-primary-200 bg-white px-5 py-3 ring-1 ring-primary-500/20 dark:border-primary-800 dark:bg-dark-800"
+            class="flex items-center gap-2 rounded-xl border border-primary-200 bg-white/60 px-5 py-3 ring-1 ring-primary-500/20 backdrop-blur-sm dark:border-primary-800 dark:bg-dark-800/60"
           >
             <div
-              class="flex h-8 w-8 items-center justify-center rounded-none bg-orange-400"
+              class="flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-to-br from-orange-400 to-orange-500"
             >
               <span class="text-xs font-bold text-white">C</span>
             </div>
@@ -380,10 +380,10 @@
           </div>
           <!-- GPT - Supported -->
           <div
-            class="flex items-center gap-2 rounded-none border border-primary-200 bg-white px-5 py-3 ring-1 ring-primary-500/20 dark:border-primary-800 dark:bg-dark-800"
+            class="flex items-center gap-2 rounded-xl border border-primary-200 bg-white/60 px-5 py-3 ring-1 ring-primary-500/20 backdrop-blur-sm dark:border-primary-800 dark:bg-dark-800/60"
           >
             <div
-              class="flex h-8 w-8 items-center justify-center rounded-none bg-green-500"
+              class="flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-to-br from-green-500 to-green-600"
             >
               <span class="text-xs font-bold text-white">G</span>
             </div>
@@ -395,10 +395,10 @@
           </div>
           <!-- Gemini - Supported -->
           <div
-            class="flex items-center gap-2 rounded-none border border-primary-200 bg-white px-5 py-3 ring-1 ring-primary-500/20 dark:border-primary-800 dark:bg-dark-800"
+            class="flex items-center gap-2 rounded-xl border border-primary-200 bg-white/60 px-5 py-3 ring-1 ring-primary-500/20 backdrop-blur-sm dark:border-primary-800 dark:bg-dark-800/60"
           >
             <div
-              class="flex h-8 w-8 items-center justify-center rounded-none bg-blue-500"
+              class="flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-to-br from-blue-500 to-blue-600"
             >
               <span class="text-xs font-bold text-white">G</span>
             </div>
@@ -410,10 +410,10 @@
           </div>
           <!-- Antigravity - Supported -->
           <div
-            class="flex items-center gap-2 rounded-none border border-primary-200 bg-white px-5 py-3 ring-1 ring-primary-500/20 dark:border-primary-800 dark:bg-dark-800"
+            class="flex items-center gap-2 rounded-xl border border-primary-200 bg-white/60 px-5 py-3 ring-1 ring-primary-500/20 backdrop-blur-sm dark:border-primary-800 dark:bg-dark-800/60"
           >
             <div
-              class="flex h-8 w-8 items-center justify-center rounded-none bg-rose-500"
+              class="flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-to-br from-rose-500 to-pink-600"
             >
               <span class="text-xs font-bold text-white">A</span>
             </div>
@@ -425,16 +425,16 @@
           </div>
           <!-- More - Coming Soon -->
           <div
-            class="flex items-center gap-2 rounded-none border border-gray-200 bg-white px-5 py-3 opacity-60 dark:border-dark-700 dark:bg-dark-800"
+            class="flex items-center gap-2 rounded-xl border border-gray-200/50 bg-white/40 px-5 py-3 opacity-60 backdrop-blur-sm dark:border-dark-700/50 dark:bg-dark-800/40"
           >
             <div
-              class="flex h-8 w-8 items-center justify-center rounded-none bg-gray-500"
+              class="flex h-8 w-8 items-center justify-center rounded-lg bg-gray-500"
             >
               <span class="text-xs font-bold text-white">+</span>
             </div>
             <span class="text-sm font-medium text-gray-700 dark:text-dark-200">{{ t('home.providers.more') }}</span>
             <span
-              class="rounded-none bg-gray-100 px-1.5 py-0.5 text-[10px] font-medium text-gray-500 dark:bg-dark-700 dark:text-dark-300"
+              class="rounded bg-gray-100 px-1.5 py-0.5 text-[10px] font-medium text-gray-500 dark:bg-dark-700 dark:text-dark-400"
               >{{ t('home.providers.soon') }}</span
             >
           </div>
@@ -443,7 +443,7 @@
     </main>
 
     <!-- Footer -->
-    <footer class="relative z-10 border-t border-gray-200 px-6 py-8 dark:border-dark-800">
+    <footer class="relative z-10 border-t border-gray-200/50 px-6 py-8 dark:border-dark-800/50">
       <div
         class="mx-auto flex max-w-6xl flex-col items-center justify-center gap-4 text-center sm:flex-row sm:text-left"
       >
@@ -574,7 +574,7 @@ onMounted(() => {
   background: rgb(var(--ui-surface));
   border: 1px solid rgb(var(--ui-line));
   color: rgb(var(--ui-ink));
-  border-radius: 0;
+  border-radius: 14px;
   box-shadow: none;
   overflow: hidden;
   transform: none;
@@ -686,7 +686,7 @@ onMounted(() => {
   color: var(--ui-link);
   background: rgba(34, 197, 94, 0.15);
   padding: 2px 8px;
-  border-radius: 0;
+  border-radius: 4px;
   font-weight: 600;
 }
 .code-response {

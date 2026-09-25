@@ -9,14 +9,14 @@
     <!-- 全局价格说明(管理员配置,Markdown) -->
     <div
       v-if="descriptionHtml"
-      class="plaza-description rounded-none border border-gray-100 bg-white px-5 py-4 text-sm dark:border-dark-700 dark:bg-dark-800"
+      class="plaza-description rounded-2xl border border-gray-100 bg-white px-5 py-4 text-sm shadow-card dark:border-dark-700/50 dark:bg-dark-800/50"
       v-html="descriptionHtml"
     ></div>
 
     <!-- 未登录提示 -->
     <p
       v-if="!isAuthenticated"
-      class="flex items-center gap-1.5 text-xs text-muted"
+      class="flex items-center gap-1.5 text-xs text-gray-400 dark:text-dark-500"
     >
       <Icon name="infoCircle" size="xs" class="h-3.5 w-3.5" />
       {{ t('modelPlaza.anonymousHint') }}
@@ -186,7 +186,7 @@ const filteredGroups = computed(() => {
 }
 
 .plaza-description :deep(code) {
-  @apply rounded-none bg-gray-100 px-1.5 py-0.5 font-mono text-xs dark:bg-dark-800;
+  @apply rounded bg-gray-100 px-1.5 py-0.5 font-mono text-xs dark:bg-dark-800;
 }
 
 .plaza-description :deep(blockquote) {

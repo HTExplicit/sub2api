@@ -8,7 +8,7 @@
                   :subscription-expires-at="String(account.credentials?.subscription_expires_at || account.parent_subscription_expires_at || '')" />
                 <span
                   v-if="getAntigravityTierLabel(account)"
-                  :class="['inline-block rounded-none px-1.5 py-0.5 text-[10px] font-medium', getAntigravityTierClass(account)]"
+                  :class="['inline-block rounded px-1.5 py-0.5 text-[10px] font-medium', getAntigravityTierClass(account)]"
                 >
                   {{ getAntigravityTierLabel(account) }}
                 </span>
@@ -92,7 +92,7 @@ function getOpenAICompactMeta(row: any): { label: string; className: string; dot
     case 'auto':
       return {
         label: t('admin.accounts.openai.compactAuto'),
-        className: 'text-muted',
+        className: 'text-slate-500 dark:text-slate-400',
         dotClass: 'bg-muted'
       }
   }

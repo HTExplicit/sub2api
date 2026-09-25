@@ -58,7 +58,7 @@
       </span>
     </div>
     <!-- Row 3: Subscription expiration (non-free paid accounts only) -->
-    <div v-if="expiresLabel" class="text-[10px] leading-tight text-muted pl-0.5" :title="subscriptionExpiresAt">
+    <div v-if="expiresLabel" class="text-[10px] leading-tight text-gray-400 dark:text-gray-500 pl-0.5" :title="subscriptionExpiresAt">
       {{ expiresLabel }}
     </div>
   </div>
@@ -70,6 +70,7 @@ import { useI18n } from 'vue-i18n'
 import type { AccountPlatform, AccountType } from '@/types'
 import { platformLabel as sharedPlatformLabel } from '@/utils/platformColors'
 import { isOpenAIBusinessPlanType, normalizePlanType, openAIPlanTypeLabel } from '@/utils/planType'
+import { flatThemeActive } from '@/utils/flatTheme'
 import GrokFreeIcon from './GrokFreeIcon.vue'
 import PlatformIcon from './PlatformIcon.vue'
 import Icon from '@/components/icons/Icon.vue'
@@ -175,7 +176,12 @@ const planIconName = computed<'bolt' | null>(() => {
   return null
 })
 
+// Console theme: platform and plan are told apart by logo and label, not hue (hue = status).
+const NEUTRAL_PLATFORM = 'bg-gray-200/70 text-gray-800 dark:bg-dark-600 dark:text-gray-100'
+const NEUTRAL_TYPE = 'bg-gray-100 text-gray-600 dark:bg-dark-700 dark:text-dark-300'
+
 const platformClass = computed(() => {
+  if (flatThemeActive.value) return NEUTRAL_PLATFORM
   if (props.platform === 'anthropic') {
     return 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400'
   }
@@ -204,6 +210,7 @@ const platformClass = computed(() => {
 })
 
 const typeClass = computed(() => {
+  if (flatThemeActive.value) return NEUTRAL_TYPE
   if (props.platform === 'anthropic') {
     return 'bg-orange-100 text-orange-600 dark:bg-orange-900/30 dark:text-orange-400'
   }
@@ -243,6 +250,7 @@ const planBadgeClass = computed(() => {
   ) {
     return 'bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-300'
   }
+  if (flatThemeActive.value) return NEUTRAL_PLATFORM
   if (props.platform === 'grok' && normalizedPlanType.value) {
     // Heavy / SuperGrok Heavy → purple
     if (normalizedPlanType.value.includes('heavy')) {

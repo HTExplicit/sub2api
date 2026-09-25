@@ -27,7 +27,7 @@
       :aria-invalid="!inputValid"
       :title="t(`${key}.${inputValid ? 'editHint' : 'invalid'}`)"
       :style="{ width: fieldWidth }"
-      class="h-5 min-w-0 rounded-none border bg-white px-1 py-0 text-[11px] leading-4 text-gray-900 outline-none dark:bg-dark-800 dark:text-gray-100"
+      class="h-5 min-w-0 rounded border bg-white px-1 py-0 text-[11px] leading-4 text-gray-900 outline-none dark:bg-dark-800 dark:text-gray-100"
       :class="inputValid
         ? 'border-primary-400 focus:ring-1 focus:ring-primary-400'
         : 'border-red-500 focus:ring-1 focus:ring-red-500'"
@@ -41,7 +41,7 @@
       :aria-label="t(`${key}.edit`, { model: modelId })"
       :title="detailsTitle"
       :style="{ width: fieldWidth }"
-      class="h-5 rounded-none border border-transparent px-1 py-0 text-[11px] leading-4 text-primary-700 hover:border-primary-200 hover:bg-primary-50 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary-400 dark:text-primary-300 dark:hover:border-primary-700 dark:hover:bg-primary-900/30"
+      class="h-5 rounded border border-transparent px-1 py-0 text-[11px] leading-4 text-primary-700 hover:border-primary-200 hover:bg-primary-50 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary-400 dark:text-primary-300 dark:hover:border-primary-700 dark:hover:bg-primary-900/30"
       @click="startEdit"
     ><span data-testid="context-capacity-value">[{{ formattedValue }}]</span></button>
     <span

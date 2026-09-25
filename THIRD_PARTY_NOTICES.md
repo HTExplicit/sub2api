@@ -38,6 +38,6 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
-## MiSans
+## Geist
 
-The frontend includes original MiSans Web fonts by Xiaomi, from the [official MiSans distribution](https://hyperos.mi.com/font/zh/). The fonts are distributed under the MiSans Font Intellectual Property License, included at `frontend/public/fonts/misans/MiSans-Font-Intellectual-Property-License.pdf`. Source and checksums are in `frontend/public/fonts/misans/NOTICE.md`. The font files are unmodified.
+The frontend includes the Geist and Geist Mono variable fonts by Vercel, taken from the npm package [`geist` 1.7.2](https://www.npmjs.com/package/geist) and subset to the Latin range with fontTools (no other glyph changes). The fonts are distributed under the SIL Open Font License 1.1, included at `frontend/src/assets/fonts/geist/OFL.txt`.

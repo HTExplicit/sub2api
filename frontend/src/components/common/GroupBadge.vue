@@ -1,7 +1,7 @@
 <template>
   <span
     :class="[
-      'inline-flex max-w-full items-center gap-1.5 rounded-none px-2 py-0.5 text-xs font-medium transition-colors',
+      'inline-flex max-w-full items-center gap-1.5 rounded-md px-2 py-0.5 text-xs font-medium transition-colors',
       badgeClass
     ]"
   >
@@ -33,6 +33,7 @@ import type { SubscriptionType, GroupPlatform } from '@/types'
 import { useAppStore } from '@/stores/app'
 import { formatPeakRateWindow, serverTimezoneLabel } from '@/utils/peak-rate'
 import PlatformIcon from './PlatformIcon.vue'
+import { flatThemeActive } from '@/utils/flatTheme'
 
 interface Props {
   name: string
@@ -127,7 +128,7 @@ const labelText = computed(() => {
 
 // Label style based on type and days remaining
 const labelClass = computed(() => {
-  const base = 'px-1.5 py-0.5 rounded-none text-[10px] font-semibold'
+  const base = 'px-1.5 py-0.5 rounded text-[10px] font-semibold'
 
   if (!isSubscription.value) {
     // Standard: translucent white pill in both themes (不再为专属倍率使用不同的背景色).
@@ -147,7 +148,10 @@ const labelClass = computed(() => {
     }
   }
 
-  // 正常状态或无天数：根据平台显示主题色
+  // 正常状态或无天数：根据平台显示主题色(控制台主题下平台靠图标区分,色相只表示状态)
+  if (flatThemeActive.value) {
+    return `${base} bg-white/60 text-gray-700 dark:bg-white/10 dark:text-gray-200`
+  }
   if (props.platform === 'anthropic') {
     return `${base} bg-orange-200/60 text-orange-800 dark:bg-orange-800/40 dark:text-orange-300`
   }
@@ -182,11 +186,16 @@ const labelClass = computed(() => {
 })
 
 const peakRateClass = computed(() => {
-  return 'px-1.5 py-0.5 rounded-none text-[10px] font-semibold bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300'
+  return 'px-1.5 py-0.5 rounded text-[10px] font-semibold bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300'
 })
 
 // Badge color based on platform and subscription type
 const badgeClass = computed(() => {
+  if (flatThemeActive.value) {
+    return isSubscription.value
+      ? 'bg-gray-200/70 text-gray-800 dark:bg-dark-600 dark:text-gray-100'
+      : 'bg-gray-100 text-gray-700 dark:bg-dark-700 dark:text-gray-200'
+  }
   if (props.platform === 'anthropic') {
     // Claude: orange theme
     return isSubscription.value

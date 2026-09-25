@@ -21,7 +21,7 @@
           >
           <div class="absolute inset-0 flex items-center justify-center">
             <div
-              class="flex h-24 w-24 items-center justify-center rounded-none bg-primary-500 shadow-outline"
+              class="flex h-24 w-24 items-center justify-center rounded-2xl bg-gradient-to-br from-primary-500 to-primary-600 shadow-lg shadow-primary-500/30"
             >
               <svg
                 class="h-12 w-12 text-white"
@@ -64,7 +64,7 @@
       </div>
 
       <!-- Help Link -->
-      <p class="mt-8 text-sm text-muted">
+      <p class="mt-8 text-sm text-gray-400 dark:text-dark-500">
         Need help?
         <a
           href="#"
