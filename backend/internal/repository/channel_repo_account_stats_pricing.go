@@ -227,7 +227,7 @@ func (r *channelRepository) batchLoadAccountStatsIntervals(ctx context.Context, 
 		return nil, nil
 	}
 	rows, err := r.db.QueryContext(ctx,
-		`SELECT id, pricing_id, min_tokens, max_tokens, COALESCE(tier_label, ''),
+		`SELECT id, pricing_id, min_tokens, max_tokens, tier_label,
 		        input_price, output_price, cache_write_price, cache_write_1h_price, cache_read_price,
 		        per_request_price, sort_order, created_at, updated_at
 		 FROM channel_account_stats_pricing_intervals
