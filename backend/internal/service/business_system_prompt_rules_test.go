@@ -17,6 +17,9 @@ import (
 
 func promptRulesFixture(t *testing.T, protocol string, placements ...extensionv1.PromptRulePlacement) BusinessSystemPromptApplication {
 	t.Helper()
+	for i := range placements {
+		placements[i].Protocol = protocol
+	}
 	return BusinessSystemPromptApplication{Applied: true, Revision: 1, Carrier: "rule_plan", RulesPlan: &extensionv1.PromptRulesPlan{SHA256: "plan", Placements: placements}}
 }
 
@@ -86,9 +89,9 @@ func TestPromptRulesMixedPublicPrivateEchoPreservesClient(t *testing.T) {
 }
 
 func TestPromptRulesPlannerRejectsOAuthSystemBeforeMutation(t *testing.T) {
-	rule := extensionv1.PromptRule{ID: "r", Name: "r", Enabled: true, TemplateID: 1, VersionID: 1, Delivery: "system", Position: "control_append"}
+	rule := extensionv1.PromptRule{ID: "r", Name: "r", Enabled: true, TemplateID: 1, VersionID: 1, Role: "system", Platforms: []string{"openai"}, Position: "control_append"}
 	hash, _, _ := extensionv1.ValidateTextDocument("site", 100)
-	snapshot := BusinessSystemPromptSnapshot{Enabled: true, RulePolicy: &extensionv1.PromptRulePolicy{Version: 1, Rules: []extensionv1.PromptRule{rule}, DefaultRuleIDs: []string{"r"}}, ResolvedRules: []extensionv1.ResolvedPromptRule{{Rule: rule, Body: "site", SHA256: hash}}}
+	snapshot := BusinessSystemPromptSnapshot{Enabled: true, RulePolicy: &extensionv1.PromptRulePolicy{Version: 2, Rules: []extensionv1.PromptRule{rule}, DefaultRuleIDs: []string{"r"}}, ResolvedRules: []extensionv1.ResolvedPromptRule{{Rule: rule, Body: "site", SHA256: hash}}}
 	_, err := promptpolicy.Plan(snapshot, BusinessSystemPromptTarget{Platform: "openai", AccountType: "oauth", Protocol: "responses"}, true)
 	require.ErrorIs(t, err, promptpolicy.ErrPromptDeliveryUnsupported)
 }
@@ -99,16 +102,13 @@ func TestPromptRulesLegacyHybridAndMaximumCompiledBody(t *testing.T) {
 		service := newGatewayHybridBusinessSystemPromptPolicy(t)
 		snapshot, ok := service.CurrentSnapshot()
 		require.True(t, ok)
-		old, err := service.compileBusinessSystemPromptSnapshot(snapshot)
-		require.NoError(t, err)
-		store, ok := service.store.(*fakeBusinessSystemPromptStore)
-		require.True(t, ok)
-		store.detail = BusinessSystemPromptTemplateDetail{Versions: []BusinessSystemPromptVersion{{ID: snapshot.VersionID, TemplateID: snapshot.TemplateID, Body: snapshot.Body, SHA256: snapshot.SHA256, ByteLength: snapshot.ByteLength, CompositionMode: snapshot.CompositionMode, BundleID: snapshot.BundleID}}}
-		snapshot.RulePolicy = &extensionv1.PromptRulePolicy{Version: 1, DefaultRuleIDs: []string{"legacy-default"}, Rules: []extensionv1.PromptRule{{ID: "legacy-default", Name: "Legacy default", Enabled: true, FollowActive: true, Delivery: "native_control", Position: "control_append"}}}
+		require.Len(t, snapshot.ResolvedRules, 1)
+		old := snapshot.ResolvedRules[0]
+		snapshot.RulePolicy = &extensionv1.PromptRulePolicy{Version: 2, DefaultRuleIDs: []string{"legacy-default"}, Rules: []extensionv1.PromptRule{{ID: "legacy-default", Name: "Legacy default", Enabled: true, TemplateID: snapshot.TemplateID, VersionID: snapshot.VersionID, Role: "auto", Platforms: []string{"openai", "cindy"}, Position: "control_append"}}}
 		require.NoError(t, service.preparePromptRulesSnapshot(&snapshot))
 		require.Len(t, snapshot.ResolvedRules, 1)
 		require.Equal(t, old.Body, snapshot.ResolvedRules[0].Body)
-		require.Equal(t, old.EffectiveSHA256, snapshot.ResolvedRules[0].SHA256)
+		require.Equal(t, old.SHA256, snapshot.ResolvedRules[0].SHA256)
 	})
 	t.Run("full_256_KiB_compiled_publication", func(t *testing.T) {
 		body := strings.Repeat("x", BusinessSystemPromptBundleMaxBytes)
@@ -120,7 +120,7 @@ func TestPromptRulesLegacyHybridAndMaximumCompiledBody(t *testing.T) {
 		store := &fakeBusinessSystemPromptStore{detail: BusinessSystemPromptTemplateDetail{Versions: []BusinessSystemPromptVersion{{ID: 2, TemplateID: 1, Body: "base", SHA256: baseHash, ByteLength: baseSize, CompositionMode: BusinessSystemPromptCompositionCodexSkillHybrid, BundleID: BusinessSystemPromptRemoteSkillBundleID}}}}
 		service := NewBusinessSystemPromptService(store, nil)
 		service.registry = registry
-		snapshot := BusinessSystemPromptSnapshot{Revision: 1, Enabled: true, TemplateID: 1, VersionID: 2, RulePolicy: &extensionv1.PromptRulePolicy{Version: 1, DefaultRuleIDs: []string{"legacy-default"}, Rules: []extensionv1.PromptRule{{ID: "legacy-default", Name: "Legacy", Enabled: true, FollowActive: true, Delivery: "native_control", Position: "control_append"}}}}
+		snapshot := BusinessSystemPromptSnapshot{Revision: 1, Enabled: true, TemplateID: 1, VersionID: 2, RulePolicy: &extensionv1.PromptRulePolicy{Version: 2, DefaultRuleIDs: []string{"legacy-default"}, Rules: []extensionv1.PromptRule{{ID: "legacy-default", Name: "Legacy", Enabled: true, TemplateID: 1, VersionID: 2, Role: "auto", Platforms: []string{"openai", "cindy"}, Position: "control_append"}}}}
 		require.NoError(t, service.preparePromptRulesSnapshot(&snapshot))
 		output, application, err := ApplyBusinessSystemPromptToJSONContext(context.Background(), []byte(`{"input":"hello"}`), snapshot, BusinessSystemPromptTarget{Platform: PlatformOpenAI, AccountType: AccountTypeOAuth, Protocol: "responses"})
 		require.NoError(t, err)

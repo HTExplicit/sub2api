@@ -93,6 +93,8 @@ func (s *GatewayService) Forward(ctx context.Context, c *gin.Context, account *A
 	if parsed == nil {
 		return nil, fmt.Errorf("parse request: empty request")
 	}
+	rememberPromptRequestedModel(c, parsed.Body.Bytes())
+	setBusinessSystemPromptRequestProfile(c, account, false)
 	// API-key mappings and OAuth native IDs are resolved before mimicry.
 	validationModel := parsed.Model
 	if account != nil && account.Type == AccountTypeAPIKey {
@@ -205,6 +207,7 @@ func (s *GatewayService) Forward(ctx context.Context, c *gin.Context, account *A
 	}
 
 	shouldMimicClaudeCode := account.IsOAuth() && !isClaudeCode
+	setBusinessSystemPromptRequestProfile(c, account, shouldMimicClaudeCode)
 
 	if shouldMimicClaudeCode {
 		// 与 Parrot 对齐：OAuth 账号无条件重写 system（即使客户端已发了 Claude Code
@@ -213,11 +216,12 @@ func (s *GatewayService) Forward(ctx context.Context, c *gin.Context, account *A
 		// 检测到"有 CC prompt 但无 billing block"的不一致而判为 third-party。
 		// Parrot 的 transform_request 从不检查客户端 system 内容，直接覆盖。
 		systemRaw, _ := parsed.SystemValue()
-		systemPromptInjectionEnabled, systemPrompt, systemPromptBlocks := s.claudeOAuthSystemPromptInjectionSettings(ctx)
-		if systemPromptInjectionEnabled {
-			if err := replaceBody(rewriteSystemForNonClaudeCodeWithPromptBlocks(body, systemRaw, systemPrompt, systemPromptBlocks)); err != nil {
-				return nil, err
-			}
+		preparedBase, err := s.prepareClaudeOAuthSystemBase(ctx, c, account, body, systemRaw, claude.NormalizeModelID(reqModel))
+		if err != nil {
+			return nil, err
+		}
+		if err := replaceBody(preparedBase); err != nil {
+			return nil, err
 		}
 
 		normalizeOpts := claudeOAuthNormalizeOptions{}

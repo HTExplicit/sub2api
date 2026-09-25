@@ -356,7 +356,7 @@ func (s *GatewayService) buildOAuthMetadataUserID(parsed *ParsedRequest, account
 	return FormatMetadataUserID(userID, accountUUID, sessionID, uaVersion)
 }
 
-// applyClaudeCodeOAuthMimicryToBody 将"非 Claude Code 客户端 + Claude OAuth 账号"
+// prepareClaudeCodeOAuthMimicryToBody 将"非 Claude Code 客户端 + Claude OAuth 账号"
 // 路径上原本只在 /v1/messages 里做的完整伪装应用到任意 body 上。
 //
 // 这是 /v1/messages 主路径上 rewriteSystemForNonClaudeCode +
@@ -374,23 +374,24 @@ func (s *GatewayService) buildOAuthMetadataUserID(parsed *ParsedRequest, account
 //   - systemRaw：body 中原始 system 字段（用于判断是否需要 rewrite）。
 //   - model：最终会发给上游的模型 ID（用于模型规范化 + metadata 版本选择）。
 //
-// 返回：改写后的 body。即使中间任何一步失败，也会退化成原 body（不会 panic）。
-func (s *GatewayService) applyClaudeCodeOAuthMimicryToBody(
+// 返回改写后的 body；准备失败会返回错误，由调用方停止本次发送。
+func (s *GatewayService) prepareClaudeCodeOAuthMimicryToBody(
 	ctx context.Context,
 	c *gin.Context,
 	account *Account,
 	body []byte,
 	systemRaw any,
 	model string,
-) []byte {
+) ([]byte, error) {
 	if account == nil || !account.IsOAuth() || len(body) == 0 {
-		return body
+		return body, nil
 	}
 
-	systemPromptInjectionEnabled, systemPrompt, systemPromptBlocks := s.claudeOAuthSystemPromptInjectionSettings(ctx)
-	if systemPromptInjectionEnabled {
-		systemPromptBlocks = claudeOAuthSystemPromptBlocksForModel(model, systemPromptBlocks)
-		body = rewriteSystemForNonClaudeCodeWithPromptBlocks(body, normalizeSystemParam(systemRaw), systemPrompt, systemPromptBlocks)
+	setBusinessSystemPromptRequestProfile(c, account, true)
+	var err error
+	body, err = s.prepareClaudeOAuthSystemBase(ctx, c, account, body, systemRaw, model)
+	if err != nil {
+		return nil, err
 	}
 
 	normalizeOpts := claudeOAuthNormalizeOptions{}
@@ -428,7 +429,28 @@ func (s *GatewayService) applyClaudeCodeOAuthMimicryToBody(
 		body = applyToolsLastCacheBreakpoint(body)
 	}
 
-	return body
+	return body, nil
+}
+
+// prepareClaudeOAuthSystemBase owns only required provider preparation. Custom
+// text is selected from the frozen unified rule snapshot and inserted later by
+// ApplyForSend; the former settings payload is no longer an injection source.
+func (s *GatewayService) prepareClaudeOAuthSystemBase(ctx context.Context, c *gin.Context, account *Account, body []byte, systemRaw any, model string) ([]byte, error) {
+	enabled, _, _ := s.claudeOAuthSystemPromptInjectionSettings(ctx)
+	if !enabled {
+		return body, nil
+	}
+	structured, err := s.businessPromptService.HasAnthropicSystemBlocksForSend(c, account, body, model)
+	if err != nil {
+		return nil, err
+	}
+	blocks := claudeOAuthSystemPromptBlocksForModel(model, "")
+	if structured {
+		// A nonempty configuration with no emitted text yields an empty system
+		// array while preserving the same client-system relocation routine.
+		blocks = `[{"type":"text","text":""}]`
+	}
+	return rewriteSystemForNonClaudeCodeWithPromptBlocks(body, normalizeSystemParam(systemRaw), "", blocks), nil
 }
 
 // buildOAuthMetadataUserIDFromBody 是 buildOAuthMetadataUserID 的变体，
@@ -693,7 +715,34 @@ type claudeOAuthSystemPromptBlockConfig struct {
 }
 
 type claudeOAuthSystemPromptBlocksEnvelope struct {
-	Blocks []claudeOAuthSystemPromptBlockConfig `json:"blocks"`
+	Blocks          []claudeOAuthSystemPromptBlockConfig `json:"blocks"`
+	ExpansionPrompt string                               `json:"expansion_prompt,omitempty"`
+}
+
+// ExpandClaudeOAuthSystemPromptBlocks compiles a structured immutable content
+// source against the final Messages request. Expansion text is substituted in
+// one pass, preserving the former nonrecursive placeholder semantics.
+func ExpandClaudeOAuthSystemPromptBlocks(body []byte, configured string) (json.RawMessage, error) {
+	expansion := ""
+	if strings.HasPrefix(strings.TrimSpace(configured), "{") {
+		var envelope claudeOAuthSystemPromptBlocksEnvelope
+		if err := json.Unmarshal([]byte(configured), &envelope); err != nil {
+			return nil, err
+		}
+		expansion = envelope.ExpansionPrompt
+	}
+	blocks, err := buildClaudeOAuthSystemPromptBlocksJSON(body, expansion, configured)
+	if err != nil {
+		return nil, err
+	}
+	packed, err := sjson.SetRawBytes([]byte(`{}`), "system", buildJSONArrayRaw(blocks))
+	if err != nil {
+		return nil, err
+	}
+	// The old base layout was normalized before sending. Apply that same
+	// narrow identity normalization to this migrated source before hashing it.
+	packed, _ = normalizeClaudeOAuthSystemBody(packed)
+	return json.RawMessage(gjson.GetBytes(packed, "system").Raw), nil
 }
 
 // claudeFableOAuthSystemPromptBlocks keeps the Claude Code identity required by

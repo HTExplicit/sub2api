@@ -8,35 +8,15 @@ import (
 	coderws "github.com/coder/websocket"
 )
 
-const promptRulesDeferredWSKey = "prompt_rules_deferred_ws"
-
-// The native WS accumulator must retain clean customer history. Validate and
-// freeze policy here, but insert explicit messages only after replay assembly.
+// Freeze content when accepting the client turn, while retaining only clean
+// messages in the replay accumulator. Placement is resolved after replay.
 func (s *OpenAIGatewayService) prepareBusinessPromptWSIngress(c *gin.Context, body []byte, account *Account, protocol string, compact bool) ([]byte, BusinessSystemPromptApplication, error) {
-	snapshot, eligible, err := s.businessSystemPromptSnapshotForRequest(c, account)
-	if err != nil {
-		return nil, BusinessSystemPromptApplication{}, err
-	}
-	if !eligible || snapshot.RulePolicy == nil {
-		return s.applyBusinessSystemPromptForRequest(c, body, account, protocol, compact)
-	}
-	target := enrichPromptTarget(c, body, businessSystemPromptTargetForAccount(account, protocol, compact))
-	application, err := planBusinessSystemPromptWithInvoker(promptPolicyRequestContext(c), body, snapshot, target, promptPlanInvoke)
-	if err != nil {
-		return nil, application, err
-	}
-	businessSystemPromptRequestSet(c, promptRulesDeferredWSKey, true)
-	return body, application, nil
+	_, _, err := s.businessSystemPromptSnapshotForRequest(c, account)
+	return body, BusinessSystemPromptApplication{}, err
 }
 
 func (s *OpenAIGatewayService) finalizeBusinessPromptWSIngress(c *gin.Context, account *Account, body []byte) ([]byte, error) {
-	if deferred, _ := businessSystemPromptRequestGet(c, promptRulesDeferredWSKey); deferred == true {
-		// sendAndRelay receives the accumulator's clean array, including on a
-		// verified full replay. Reuse frozen policy, not a prior attempt's edits.
-		businessSystemPromptRequestDelete(c, businessSystemPromptContextKey(c, businessSystemPromptRequestApplicationKey, BusinessSystemPromptProtocolResponses))
-		return s.finalizeBusinessPromptForSend(c, account, body, BusinessSystemPromptProtocolResponses, isOpenAIResponsesCompactPath(c))
-	}
-	return body, validateBusinessSystemPromptFinal(c, body, BusinessSystemPromptProtocolResponses)
+	return s.finalizeBusinessPromptForSend(c, account, body, BusinessSystemPromptProtocolResponses, isOpenAIResponsesCompactPath(c))
 }
 
 func businessPromptWSCloseError(err error) error {

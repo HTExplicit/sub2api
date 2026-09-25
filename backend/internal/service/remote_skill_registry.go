@@ -397,6 +397,25 @@ func (s *RemoteSkillRegistryService) PublishVersion(ctx context.Context, version
 }
 
 func (s *RemoteSkillRegistryService) PublishVersionAction(ctx context.Context, versionID, expectedRevision int64, action string, actorID int64) (RemoteSkillRegistrySnapshot, error) {
+	return s.publishVersionAction(ctx, versionID, expectedRevision, action, actorID, nil)
+}
+
+// PromptSourceTargets names every rule subscribed to the shared paired source.
+// Its public /current tree and prompt are always published together.
+type PromptSourceTargets struct {
+	ExpectedRevision int64
+	RuleIDs          []string
+}
+
+type RemoteSkillPromptPublicationStore interface {
+	PublishRemoteSkillVersionWithPromptTargets(context.Context, int64, int64, int64, PromptSourceTargets) (RemoteSkillRegistrySnapshot, error)
+}
+
+func (s *RemoteSkillRegistryService) PublishVersionForRules(ctx context.Context, versionID, expectedRevision int64, action string, actorID int64, targets PromptSourceTargets) (RemoteSkillRegistrySnapshot, error) {
+	return s.publishVersionAction(ctx, versionID, expectedRevision, action, actorID, &targets)
+}
+
+func (s *RemoteSkillRegistryService) publishVersionAction(ctx context.Context, versionID, expectedRevision int64, action string, actorID int64, targets *PromptSourceTargets) (RemoteSkillRegistrySnapshot, error) {
 	s.applyMu.Lock()
 	defer s.applyMu.Unlock()
 	detail, err := s.store.GetRemoteSkillVersion(ctx, versionID)
@@ -441,7 +460,16 @@ func (s *RemoteSkillRegistryService) PublishVersionAction(ctx context.Context, v
 	if err != nil {
 		return RemoteSkillRegistrySnapshot{}, fmt.Errorf("%w: paired candidate validation failed", ErrBusinessSystemPromptUnavailable)
 	}
-	snapshot, err := s.store.PublishRemoteSkillVersion(ctx, versionID, expectedRevision, actorID)
+	var snapshot RemoteSkillRegistrySnapshot
+	if targets != nil {
+		store, ok := s.store.(RemoteSkillPromptPublicationStore)
+		if !ok {
+			return RemoteSkillRegistrySnapshot{}, ErrBusinessSystemPromptUnavailable
+		}
+		snapshot, err = store.PublishRemoteSkillVersionWithPromptTargets(ctx, versionID, expectedRevision, actorID, *targets)
+	} else {
+		snapshot, err = s.store.PublishRemoteSkillVersion(ctx, versionID, expectedRevision, actorID)
+	}
 	if err != nil {
 		return RemoteSkillRegistrySnapshot{}, err
 	}

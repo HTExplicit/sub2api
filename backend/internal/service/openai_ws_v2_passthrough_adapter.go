@@ -901,7 +901,7 @@ func (s *OpenAIGatewayService) proxyResponsesWebSocketV2PassthroughAttempt(
 		return NewOpenAIWSClientCloseError(coderws.StatusPolicyViolation, blocked.Message, blocked)
 	}
 	firstClientMessage = updatedFirst
-	beginBusinessSystemPromptRequestTurn(c)
+	beginBusinessSystemPromptFirstWSTurn(c)
 	if initialRequestModel != "" {
 		businessSystemPromptRequestSet(c, promptRequestedModelContextKey, initialRequestModel)
 	}

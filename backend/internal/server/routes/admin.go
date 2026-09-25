@@ -168,6 +168,8 @@ func registerCindyBalanceProbeRoutes(admin *gin.RouterGroup, h *handler.Handlers
 func registerSystemPromptRoutes(admin *gin.RouterGroup, h *handler.Handlers) {
 	prompts := admin.Group("/system-prompts")
 	{
+		prompts.GET("/config", h.Admin.SystemPrompt.Config)
+		prompts.PUT("/config", h.Admin.SystemPrompt.SaveConfig)
 		prompts.GET("", h.Admin.SystemPrompt.List)
 		prompts.POST("", h.Admin.SystemPrompt.Create)
 		prompts.GET("/runtime", h.Admin.SystemPrompt.Runtime)

@@ -21,6 +21,11 @@ import (
 func (s *GatewayService) buildUpstreamRequest(ctx context.Context, c *gin.Context, account *Account, body []byte, token, tokenType, modelID string, reqStream bool, mimicClaudeCode bool) (*http.Request, []byte, error) {
 	body = stripDeferredToolCacheControl(body)
 	if account.Platform == PlatformAnthropic && account.Type == AccountTypeServiceAccount {
+		var promptErr error
+		body, _, promptErr = s.businessPromptService.ApplyForSendModel(c, account, body, "messages", false, modelID)
+		if promptErr != nil {
+			return nil, nil, promptErr
+		}
 		req, err := s.buildUpstreamRequestAnthropicVertex(ctx, c, account, body, token, modelID, reqStream)
 		return req, body, err
 	}
@@ -88,6 +93,12 @@ func (s *GatewayService) buildUpstreamRequest(ctx context.Context, c *gin.Contex
 	// 请求体 x-anthropic-billing-header 的 cc_version 都源自这一个字符串，
 	// 避免运行期版本缓存翻转瞬间头/体版本自相矛盾（会被判非正版客户端）。
 	mimicUserAgent := claude.DefaultUserAgent()
+	businessSystemPromptRequestSet(c, businessSystemPromptBillingUserAgentKey, effectiveBillingUserAgent(mimicUserAgent, tokenType, mimicClaudeCode, fingerprint))
+	var promptErr error
+	body, _, promptErr = s.businessPromptService.ApplyForSendModel(c, account, body, "messages", false, modelID)
+	if promptErr != nil {
+		return nil, nil, promptErr
+	}
 
 	// Mimicry may override the cached User-Agent later, even without a fingerprint.
 	if billingUA := effectiveBillingUserAgent(mimicUserAgent, tokenType, mimicClaudeCode, fingerprint); billingUA != "" {

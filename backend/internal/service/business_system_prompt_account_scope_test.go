@@ -2,611 +2,128 @@ package service
 
 import (
 	"context"
-	"encoding/json"
-	"fmt"
-	"net/http/httptest"
 	"strings"
 	"testing"
 
 	extensionv1 "github.com/Wei-Shaw/sub2api/internal/nativeapi"
-	promptpolicy "github.com/Wei-Shaw/sub2api/internal/promptskills/policy"
-	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
 	"github.com/tidwall/gjson"
-	"github.com/tidwall/sjson"
 )
 
-type accountScopedPromptInvoker struct {
-	module  *promptpolicy.Module
-	rollout int
-	calls   []extensionv1.Invocation
+type promptSendBindingRepository struct {
+	AccountRepository
+	accounts map[int64]*Account
+	reads    []int64
 }
 
-// allows models a per-account prompt decision: 0 denies every account, 100
-// allows every account and anything between allows odd account IDs.
-// Accountless previews are always allowed.
-func (p *accountScopedPromptInvoker) allows(accountID int64) bool {
-	switch {
-	case accountID == 0 || p.rollout >= 100:
-		return true
-	case p.rollout <= 0:
-		return false
-	default:
-		return accountID%2 == 1
+func (r *promptSendBindingRepository) GetByID(_ context.Context, id int64) (*Account, error) {
+	r.reads = append(r.reads, id)
+	return r.accounts[id], nil
+}
+
+func TestPromptAccountSelectionUsesFreshBindingAndFrozenContent(t *testing.T) {
+	policy := newPromptRulesGatewayPolicy("system", "control_prepend")
+	included := businessSystemPromptAPIKeyAccount(true)
+	included.ID = 1
+	excluded := businessSystemPromptAPIKeyAccount(true)
+	excluded.ID = 2
+	excluded.Extra[PromptAccountBindingExtraKey] = extensionv1.PromptAccountBinding{Mode: "off"}
+	repo := &promptSendBindingRepository{accounts: map[int64]*Account{1: included, 2: excluded}}
+	policy.SetAccountRepository(repo)
+	gateway := &OpenAIGatewayService{businessPromptService: policy}
+	original := []byte(`{"model":"gpt-5.4","input":[{"role":"system","content":"site-rule-content"},{"role":"user","content":"customer"}]}`)
+	c, _ := newBusinessSystemPromptGinContext("/v1/responses", original)
+	sent, first, err := policy.ApplyForSend(c, included, original, "responses", false)
+	require.NoError(t, err)
+	require.Equal(t, 2, strings.Count(string(sent), "site-rule-content"))
+	require.Equal(t, int64(8), first.Revision)
+
+	changed := promptRulesSnapshotForTest(BusinessSystemPromptSnapshot{Revision: 9, Enabled: true, Body: "next-revision"})
+	policy.snapshot.Store(&changed)
+	staleSelection := *excluded
+	staleSelection.Extra = nil
+	clean, off, err := policy.ApplyForSend(c, &staleSelection, original, "responses", false)
+	require.NoError(t, err)
+	require.False(t, off.Applied)
+	require.Equal(t, original, clean, "failover starts from the untouched customer sequence")
+	require.Equal(t, int64(8), off.Revision)
+	_, oldResponse := businessSystemPromptApplicationFromRequest(c, "chat")
+	require.False(t, oldResponse)
+
+	excluded.Extra[PromptAccountBindingExtraKey] = extensionv1.PromptAccountBinding{Mode: "custom", RuleIDs: []string{"site"}}
+	sent, again, err := gateway.applyBusinessSystemPromptForRequest(c, original, &staleSelection, "responses", false)
+	require.NoError(t, err)
+	require.True(t, again.Applied)
+	require.Equal(t, first.Revision, again.Revision)
+	require.NotContains(t, string(sent), "next-revision")
+	require.Equal(t, []int64{1, 2, 2}, repo.reads)
+	require.Equal(t, 1, strings.Count(string(original), "site-rule-content"))
+}
+
+func TestPromptRulePlatformUsesProviderRatherThanWireProtocol(t *testing.T) {
+	policy := newPromptRulesGatewayPolicy("auto", "control_append")
+	body := []byte(`{"model":"gpt-5.4","instructions":"client","input":"history"}`)
+	for _, platform := range []string{PlatformCindy, PlatformGrok} {
+		t.Run(platform, func(t *testing.T) {
+			account := businessSystemPromptAPIKeyAccount(true)
+			account.Platform, account.WirePlatform = platform, WirePlatformOpenAI
+			c, _ := newBusinessSystemPromptGinContext("/v1/responses", body)
+			wire, app, err := policy.ApplyForSend(c, account, body, "responses", false)
+			require.NoError(t, err)
+			require.Equal(t, platform == PlatformCindy, app.Applied)
+			if platform == PlatformGrok {
+				require.Equal(t, body, wire)
+				require.Equal(t, "platform_scope", app.RulesPlan.Skipped[0].Reason)
+			}
+		})
 	}
 }
 
-// invoke denies prompt plans for accounts outside the modeled scope, which
-// covers API-key accounts only.
-func (p *accountScopedPromptInvoker) invoke(ctx context.Context, in extensionv1.Invocation) (extensionv1.Result, error) {
-	if in.Operation != "prompt.plan" {
-		return p.module.Invoke(ctx, in)
-	}
-	p.calls = append(p.calls, in)
-	if accountType := gjson.GetBytes(in.Payload, "target.account_type").String(); !p.allows(in.AccountID) || accountType != AccountTypeAPIKey {
-		return extensionv1.Result{}, ErrExtensionOperationDisabled
-	}
-	return p.module.Invoke(ctx, in)
-}
-
-func newAccountScopedPromptGateway(t *testing.T, rollout int) (*OpenAIGatewayService, *accountScopedPromptInvoker, *fakeBusinessSystemPromptStore) {
-	t.Helper()
-	store := &fakeBusinessSystemPromptStore{loaded: BusinessSystemPromptSnapshot{Revision: 1, Enabled: true, Body: "account-scoped-server"}}
-	policy := NewBusinessSystemPromptService(store, nil)
-	require.NoError(t, policy.Initialize(context.Background()))
-	invoker := &accountScopedPromptInvoker{module: promptpolicy.New(), rollout: rollout}
+func TestPromptCleanSourceFallbackDoesNotInvokePluginOrCarryPreviousOutput(t *testing.T) {
 	previous := invokePromptSkills
-	invokePromptSkills = invoker.invoke
+	invokePromptSkills = func(context.Context, extensionv1.Invocation) (extensionv1.Result, error) {
+		t.Fatal("ordinary inline prompt reached plugin runtime")
+		return extensionv1.Result{}, nil
+	}
 	t.Cleanup(func() { invokePromptSkills = previous })
-	return &OpenAIGatewayService{businessPromptService: policy}, invoker, store
-}
-
-func promptScopeAccounts(t *testing.T) (*Account, *Account) {
-	t.Helper()
-	return &Account{ID: 1, Platform: PlatformOpenAI, Type: AccountTypeAPIKey}, &Account{ID: 2, Platform: PlatformOpenAI, Type: AccountTypeAPIKey}
-}
-
-func TestPromptRealAccountZeroRolloutRejected(t *testing.T) {
-	gateway, invoker, _ := newAccountScopedPromptGateway(t, 0)
-	account, _ := promptScopeAccounts(t)
-	input := []byte(`{"instructions":"client","input":"customer history"}`)
-	output, application, err := gateway.applyBusinessSystemPrompt(input, account, BusinessSystemPromptProtocolResponses, false)
+	policy := newPromptRulesGatewayPolicy("auto", "control_append")
+	gateway := &OpenAIGatewayService{businessPromptService: policy}
+	account := businessSystemPromptAPIKeyAccount(true)
+	body := []byte(`{"model":"gpt-5.4","instructions":"client","input":"history"}`)
+	c, _ := newBusinessSystemPromptGinContext("/v1/responses", body)
+	wire, app, err := policy.ApplyForSend(c, account, body, "responses", false)
 	require.NoError(t, err)
-	require.False(t, application.Applied)
-	require.Equal(t, input, output)
-	require.Len(t, invoker.calls, 1)
-	require.Equal(t, account.ID, invoker.calls[0].AccountID)
-}
-
-func TestPromptAccountFailoverCannotReusePreviousDecision(t *testing.T) {
-	gateway, invoker, _ := newAccountScopedPromptGateway(t, 50)
-	included, excluded := promptScopeAccounts(t)
-	ctx, _ := gin.CreateTestContext(httptest.NewRecorder())
-	input := []byte(`{"instructions":"client","input":"customer history"}`)
-	_, first, err := gateway.applyBusinessSystemPromptForRequest(ctx, input, included, BusinessSystemPromptProtocolResponses, false)
+	require.True(t, app.Applied)
+	again, _, err := policy.ApplyForSend(c, account, body, "responses", false)
 	require.NoError(t, err)
-	require.True(t, first.Applied)
-	output, second, err := gateway.applyBusinessSystemPromptForRequest(ctx, input, excluded, BusinessSystemPromptProtocolResponses, false)
+	require.Equal(t, wire, again)
+	chat := []byte(`{"model":"gpt-5.4","messages":[{"role":"system","content":"client"},{"role":"user","content":"history"}]}`)
+	converted, applied, err := policy.ApplyForSend(c, account, chat, "chat", false)
 	require.NoError(t, err)
-	require.False(t, second.Applied, "the previous account's input-hash cache hit must not grant the new account")
-	require.Equal(t, "client", gjson.GetBytes(output, "instructions").String())
-	require.Len(t, invoker.calls, 2)
-	require.Equal(t, included.ID, invoker.calls[0].AccountID)
-	require.Equal(t, excluded.ID, invoker.calls[1].AccountID)
+	require.Equal(t, 1, strings.Count(string(converted), "site-rule-content"))
+	require.Equal(t, app.Revision, applied.Revision)
+	require.Equal(t, "client", gjson.GetBytes(converted, "messages.0.content").String())
+	require.Equal(t, "site-rule-content", gjson.GetBytes(converted, "messages.1.content").String())
+	require.Equal(t, body, gateway.rewriteBusinessSystemPromptJSONForRequest(c, body, "responses"))
 }
 
-func TestPromptRealAccountRolloutAndAccountlessPreview(t *testing.T) {
-	for _, rollout := range []int{50, 100} {
-		t.Run(fmt.Sprint(rollout), func(t *testing.T) {
-			gateway, invoker, _ := newAccountScopedPromptGateway(t, rollout)
-			included, excluded := promptScopeAccounts(t)
-			for _, account := range []*Account{included, excluded} {
-				input := []byte(`{"instructions":"client","input":"private-customer-history"}`)
-				_, application, err := gateway.applyBusinessSystemPrompt(input, account, BusinessSystemPromptProtocolResponses, false)
-				require.NoError(t, err)
-				require.Equal(t, invoker.allows(account.ID), application.Applied)
-				call := invoker.calls[len(invoker.calls)-1]
-				require.Equal(t, account.ID, call.AccountID)
-				require.Equal(t, account.ID, gjson.GetBytes(call.Payload, "target.account_id").Int())
-				require.NotContains(t, string(call.Payload), "private-customer-history")
-			}
-		})
-	}
-	t.Run("accountless_preview", func(t *testing.T) {
-		_, invoker, _ := newAccountScopedPromptGateway(t, 0)
-		input := []byte(`{"instructions":"client","input":"preview"}`)
-		_, application, err := ApplyBusinessSystemPromptToJSON(input, BusinessSystemPromptSnapshot{Revision: 1, Enabled: true, Body: "preview-server"}, BusinessSystemPromptTarget{Platform: PlatformOpenAI, AccountType: AccountTypeAPIKey, Protocol: BusinessSystemPromptProtocolResponses})
-		require.NoError(t, err)
-		require.True(t, application.Applied, "global preview keeps its accountless semantics")
-		require.Zero(t, invoker.calls[0].AccountID)
-		require.False(t, gjson.GetBytes(invoker.calls[0].Payload, "target.account_id").Exists())
-	})
-}
-
-func TestPromptAccountChangeRestoresOnlyOwnedCarrier(t *testing.T) {
-	for _, carrier := range []string{"responses", "chat", "chat_instructions"} {
-		for _, form := range []string{"original", "output", "wire_rewrite"} {
-			t.Run(carrier+"/"+form, func(t *testing.T) {
-				gateway, invoker, store := newAccountScopedPromptGateway(t, 50)
-				included, excluded := promptScopeAccounts(t)
-				protocol := BusinessSystemPromptProtocolResponses
-				input := []byte(`{"instructions":"  client  ","input":"private-history","model":"before"}`)
-				if carrier != "responses" {
-					protocol = BusinessSystemPromptProtocolChat
-					// This customer system message deliberately equals our policy.
-					input = []byte(`{"messages":[{"role":"system","content":"account-scoped-server"},{"role":"developer","content":"client-control"},{"role":"user","content":"private-history"}],"model":"before"}`)
-					if carrier == "chat_instructions" {
-						var err error
-						input, err = sjson.SetBytes(input, "instructions", "  client  ")
-						require.NoError(t, err)
-					}
-				}
-				ctx, _ := gin.CreateTestContext(httptest.NewRecorder())
-				first, application, err := gateway.applyBusinessSystemPromptForRequest(ctx, input, included, protocol, false)
-				require.NoError(t, err)
-				require.True(t, application.Applied)
-				store.loaded = BusinessSystemPromptSnapshot{Revision: 2, Enabled: true, Body: "new-unfrozen-server"}
-				require.NoError(t, gateway.businessPromptService.Reload(context.Background()))
-				retry := first
-				switch form {
-				case "original":
-					retry = input
-				case "wire_rewrite":
-					retry, err = sjson.SetBytes(retry, "model", "after")
-					require.NoError(t, err)
-				}
-				clean, rejected, err := gateway.applyBusinessSystemPromptForRequest(ctx, retry, excluded, protocol, false)
-				require.NoError(t, err)
-				require.False(t, rejected.Applied)
-				if carrier == "chat" {
-					require.JSONEq(t, gjson.GetBytes(input, "messages").Raw, gjson.GetBytes(clean, "messages").Raw)
-					require.Equal(t, "account-scoped-server", gjson.GetBytes(clean, "messages.0.content").String())
-				} else {
-					require.Equal(t, gjson.GetBytes(input, "instructions").Raw, gjson.GetBytes(clean, "instructions").Raw)
-				}
-				if form == "wire_rewrite" {
-					require.Equal(t, "after", gjson.GetBytes(clean, "model").String())
-				}
-				_, frozen, err := gateway.applyBusinessSystemPromptForRequest(ctx, clean, included, protocol, false)
-				require.NoError(t, err)
-				require.True(t, frozen.Applied)
-				require.Equal(t, int64(1), frozen.Revision)
-				require.Equal(t, "account-scoped-server", frozen.ServerInstructions)
-				require.Len(t, invoker.calls, 3)
-				for _, call := range invoker.calls {
-					require.Equal(t, int64(1), gjson.GetBytes(call.Payload, "snapshot.revision").Int())
-					require.NotContains(t, string(call.Payload), "private-history")
-				}
-			})
-		}
-	}
-}
-
-func TestPromptSameAccountCacheRechecksRevocation(t *testing.T) {
-	for _, revoke := range []string{"denied"} {
-		for _, form := range []string{"input", "output", "cache_key_rewrite"} {
-			t.Run(revoke+"/"+form, func(t *testing.T) {
-				gateway, invoker, _ := newAccountScopedPromptGateway(t, 100)
-				account, _ := promptScopeAccounts(t)
-				ctx, _ := gin.CreateTestContext(httptest.NewRecorder())
-				input := []byte(`{"instructions":"client","input":"history","prompt_cache_key":"client-key"}`)
-				body, application, err := gateway.applyBusinessSystemPromptForRequest(ctx, input, account, BusinessSystemPromptProtocolResponses, false)
-				require.NoError(t, err)
-				require.True(t, application.Applied)
-				switch form {
-				case "input":
-					body = input
-				case "cache_key_rewrite":
-					body, err = rewriteBusinessSystemPromptCacheKey(ctx, body, application)
-					require.NoError(t, err)
-				}
-				invoker.rollout = 0
-				clean, denied, err := gateway.applyBusinessSystemPromptForRequest(ctx, body, account, BusinessSystemPromptProtocolResponses, false)
-				require.NoError(t, err)
-				require.False(t, denied.Applied)
-				require.Equal(t, "client", gjson.GetBytes(clean, "instructions").String())
-				require.Len(t, invoker.calls, 2)
-				require.Equal(t, account.ID, invoker.calls[1].AccountID)
-			})
-		}
-	}
-}
-
-func TestPromptUnknownCarrierFailsClosedWithoutDeletingClientMessages(t *testing.T) {
-	for _, protocol := range []string{BusinessSystemPromptProtocolResponses, BusinessSystemPromptProtocolChat} {
-		t.Run(protocol, func(t *testing.T) {
-			gateway, _, _ := newAccountScopedPromptGateway(t, 50)
-			included, excluded := promptScopeAccounts(t)
-			input := []byte(`{"instructions":"client","input":"history"}`)
-			if protocol == BusinessSystemPromptProtocolChat {
-				input = []byte(`{"messages":[{"role":"system","content":"account-scoped-server"},{"role":"user","content":"history"}]}`)
-			}
-			ctx, _ := gin.CreateTestContext(httptest.NewRecorder())
-			body, _, err := gateway.applyBusinessSystemPromptForRequest(ctx, input, included, protocol, false)
-			require.NoError(t, err)
-			if protocol == BusinessSystemPromptProtocolResponses {
-				body, err = sjson.SetBytes(body, "instructions", "client\n\naccount-scoped-server\nunknown-transform")
-			} else {
-				body, err = sjson.SetBytes(body, "messages.-1", map[string]string{"role": "user", "content": "unknown-transform"})
-			}
-			require.NoError(t, err)
-			before := append([]byte(nil), body...)
-			output, _, err := gateway.applyBusinessSystemPromptForRequest(ctx, body, excluded, protocol, false)
-			require.ErrorIs(t, err, ErrBusinessSystemPromptUnavailable)
-			require.Nil(t, output)
-			require.Equal(t, before, body)
-		})
-	}
-}
-
-func TestPromptUndoMetadataIsBoundedAndHistoryStaysOutOfRPC(t *testing.T) {
-	gateway, invoker, _ := newAccountScopedPromptGateway(t, 50)
-	included, excluded := promptScopeAccounts(t)
-	ctx, _ := gin.CreateTestContext(httptest.NewRecorder())
-	client := strings.Repeat("private-client-control", businessSystemPromptRestoreMaxBytes/10)
-	history := strings.Repeat("private-history", extensionv1.MaxPayloadBytes/10)
-	input, err := json.Marshal(map[string]string{"instructions": client, "input": history})
+func TestPromptEchoProofPreservesIdenticalClientMessageAtNewPositions(t *testing.T) {
+	policy := newPromptRulesGatewayPolicy("developer", "before_last_user")
+	account := businessSystemPromptAPIKeyAccount(true)
+	clientText := strings.Repeat("customer history ", 10000)
+	body := []byte(`{"model":"gpt-5.4","input":[{"role":"developer","content":"site-rule-content"},{"role":"user","content":"` + clientText + `"}]}`)
+	c, _ := newBusinessSystemPromptGinContext("/v1/responses", body)
+	gateway := &OpenAIGatewayService{businessPromptService: policy}
+	wire, _, err := policy.ApplyForSend(c, account, body, "responses", false)
 	require.NoError(t, err)
-	output, application, err := gateway.applyBusinessSystemPromptForRequest(ctx, input, included, BusinessSystemPromptProtocolResponses, false)
-	require.NoError(t, err)
-	require.True(t, application.Applied)
-	value, _ := ctx.Get(businessSystemPromptContextKey(ctx, businessSystemPromptRequestApplicationKey, BusinessSystemPromptProtocolResponses))
-	state, ok := value.(businessSystemPromptRequestState)
+	stateRaw, ok := businessSystemPromptRequestGet(c, businessSystemPromptContextKey(c, businessSystemPromptRequestApplicationKey, "responses"))
 	require.True(t, ok)
-	require.Empty(t, state.undo.instructions)
-	require.False(t, state.undo.restorable)
-	rejected, _, err := gateway.applyBusinessSystemPromptForRequest(ctx, output, excluded, BusinessSystemPromptProtocolResponses, false)
-	require.ErrorIs(t, err, ErrBusinessSystemPromptUnavailable)
-	require.Nil(t, rejected)
-	// Passing the known original remains safe without retaining a second copy.
-	clean, denied, err := gateway.applyBusinessSystemPromptForRequest(ctx, input, excluded, BusinessSystemPromptProtocolResponses, false)
-	require.NoError(t, err)
-	require.False(t, denied.Applied)
-	require.Equal(t, input, clean)
-	for _, call := range invoker.calls {
-		require.Less(t, len(call.Payload), extensionv1.MaxPayloadBytes)
-		require.NotContains(t, string(call.Payload), "private-client-control")
-		require.NotContains(t, string(call.Payload), "private-history")
-	}
-}
-
-func TestPromptProtocolConversionRestoresCarrierBeforeAccountFailover(t *testing.T) {
-	for _, direction := range []string{"responses_to_chat", "chat_to_responses"} {
-		t.Run(direction, func(t *testing.T) {
-			gateway, invoker, store := newAccountScopedPromptGateway(t, 50)
-			included, excluded := promptScopeAccounts(t)
-			includedID, excludedID := included.ID, excluded.ID
-			included, excluded = businessSystemPromptAPIKeyAccount(true), businessSystemPromptAPIKeyAccount(true)
-			included.ID, excluded.ID = includedID, excludedID
-			protocol, path := BusinessSystemPromptProtocolResponses, "/v1/responses"
-			input := []byte(`{"model":"gpt-5.4","stream":false,"instructions":"client-control","input":"private-adapter-history"}`)
-			if direction == "chat_to_responses" {
-				protocol, path = BusinessSystemPromptProtocolChat, "/v1/chat/completions"
-				input = []byte(`{"model":"gpt-5.4","stream":false,"messages":[{"role":"system","content":"client-control"},{"role":"user","content":"private-adapter-history"}]}`)
-			}
-			ctx, _ := newBusinessSystemPromptGinContext(path, input)
-			body, application, err := gateway.applyBusinessSystemPromptForRequest(ctx, input, included, protocol, false)
-			require.NoError(t, err)
-			require.True(t, application.Applied)
-			store.loaded = BusinessSystemPromptSnapshot{Revision: 2, Enabled: true, Body: "new-unfrozen-server"}
-			require.NoError(t, gateway.businessPromptService.Reload(context.Background()))
-			upstream := &businessCacheStrictUpstream{}
-			gateway.cfg, gateway.httpUpstream = businessSystemPromptTestConfig(), upstream
-			if direction == "responses_to_chat" {
-				_, err = gateway.forwardResponsesViaRawChatCompletions(context.Background(), ctx, excluded, body, false)
-			} else {
-				_, err = gateway.ForwardAsChatCompletions(context.Background(), ctx, excluded, body, "", "")
-			}
-			require.NoError(t, err)
-			require.Len(t, upstream.bodies, 1)
-			require.NotContains(t, string(upstream.lastBody), "account-scoped-server")
-			require.NotContains(t, string(upstream.lastBody), "new-unfrozen-server")
-			require.Contains(t, string(upstream.lastBody), "client-control")
-			require.Contains(t, string(upstream.lastBody), "private-adapter-history")
-			last := invoker.calls[len(invoker.calls)-1]
-			require.Equal(t, excluded.ID, last.AccountID)
-			require.Equal(t, int64(1), gjson.GetBytes(last.Payload, "snapshot.revision").Int())
-			require.NotContains(t, string(last.Payload), "private-adapter-history")
-		})
-	}
-}
-
-func TestPromptDuplicateCarrierCannotAuthorizeUndo(t *testing.T) {
-	for _, protocol := range []string{BusinessSystemPromptProtocolResponses, BusinessSystemPromptProtocolChat} {
-		t.Run(protocol, func(t *testing.T) {
-			gateway, _, _ := newAccountScopedPromptGateway(t, 50)
-			included, excluded := promptScopeAccounts(t)
-			input := []byte(`{"instructions":"first-client","instructions":"last-client","input":"history"}`)
-			if protocol == BusinessSystemPromptProtocolChat {
-				input = []byte(`{"messages":[{"role":"system","content":"first-client-control"},{"role":"user","content":"first-history"}],"messages":[{"role":"user","content":"last-history"}]}`)
-			}
-			ctx, _ := gin.CreateTestContext(httptest.NewRecorder())
-			output, first, err := gateway.applyBusinessSystemPromptForRequest(ctx, input, included, protocol, false)
-			require.NoError(t, err)
-			require.True(t, first.Applied)
-			before := append([]byte(nil), output...)
-			denied, _, err := gateway.applyBusinessSystemPromptForRequest(ctx, output, excluded, protocol, false)
-			require.ErrorIs(t, err, ErrBusinessSystemPromptUnavailable)
-			require.Nil(t, denied)
-			require.Equal(t, before, output, "ambiguous duplicate fields must not delete a customer message")
-			original, application, err := gateway.applyBusinessSystemPromptForRequest(ctx, input, excluded, protocol, false)
-			require.NoError(t, err)
-			require.False(t, application.Applied)
-			require.Equal(t, input, original)
-		})
-	}
-}
-
-func TestPromptCachedTargetSeparatesAccountTypeAndCompact(t *testing.T) {
-	for _, change := range []string{"account_type", "compact"} {
-		t.Run(change, func(t *testing.T) {
-			gateway, invoker, _ := newAccountScopedPromptGateway(t, 100)
-			account, _ := promptScopeAccounts(t)
-			ctx, _ := gin.CreateTestContext(httptest.NewRecorder())
-			input := []byte(`{"instructions":"client","input":"history"}`)
-			output, application, err := gateway.applyBusinessSystemPromptForRequest(ctx, input, account, BusinessSystemPromptProtocolResponses, false)
-			require.NoError(t, err)
-			require.True(t, application.Applied)
-			next := *account
-			compact := change == "compact"
-			if !compact {
-				next.Type = AccountTypeOAuth
-			}
-			clean, current, err := gateway.applyBusinessSystemPromptForRequest(ctx, output, &next, BusinessSystemPromptProtocolResponses, compact)
-			require.NoError(t, err)
-			require.False(t, current.Applied)
-			require.Equal(t, "client", gjson.GetBytes(clean, "instructions").String())
-			require.Len(t, invoker.calls, 2)
-			require.Equal(t, next.Type, gjson.GetBytes(invoker.calls[1].Payload, "target.account_type").String())
-			require.Equal(t, compact, gjson.GetBytes(invoker.calls[1].Payload, "target.compact").Bool())
-		})
-	}
-}
-
-func TestPromptAccountChangeDoesNotReuseOtherProtocolResponseMetadata(t *testing.T) {
-	gateway, _, _ := newAccountScopedPromptGateway(t, 50)
-	included, excluded := promptScopeAccounts(t)
-	ctx, _ := gin.CreateTestContext(httptest.NewRecorder())
-	_, application, err := gateway.applyBusinessSystemPromptForRequest(ctx, []byte(`{"instructions":"client","input":"history"}`), included, BusinessSystemPromptProtocolResponses, false)
-	require.NoError(t, err)
-	require.True(t, application.Applied)
-	_, denied, err := gateway.applyBusinessSystemPromptForRequest(ctx, []byte(`{"messages":[{"role":"user","content":"history"}]}`), excluded, BusinessSystemPromptProtocolChat, false)
-	require.NoError(t, err)
-	require.False(t, denied.Applied)
-	_, present := businessSystemPromptApplicationFromRequest(ctx, BusinessSystemPromptProtocolResponses)
-	require.False(t, present)
-	echo := []byte(`{"instructions":"client\n\naccount-scoped-server","output":[]}`)
-	require.Equal(t, echo, gateway.rewriteBusinessSystemPromptJSONForAnyRequest(ctx, echo), "an excluded account's response must not be scrubbed using an older account's application")
-}
-
-func TestPromptDeniedRetriesStillRecognizeEarlierOwnedOutput(t *testing.T) {
-	for _, protocol := range []string{BusinessSystemPromptProtocolResponses, BusinessSystemPromptProtocolChat} {
-		t.Run(protocol, func(t *testing.T) {
-			gateway, _, _ := newAccountScopedPromptGateway(t, 50)
-			included, excluded := promptScopeAccounts(t)
-			input := []byte(`{"instructions":"client","input":"history"}`)
-			field := "instructions"
-			if protocol == BusinessSystemPromptProtocolChat {
-				field = "messages"
-				input = []byte(`{"messages":[{"role":"system","content":"account-scoped-server"},{"role":"user","content":"history"}]}`)
-			}
-			ctx, _ := gin.CreateTestContext(httptest.NewRecorder())
-			earlier, applied, err := gateway.applyBusinessSystemPromptForRequest(ctx, input, included, protocol, false)
-			require.NoError(t, err)
-			require.True(t, applied.Applied)
-			_, denied, err := gateway.applyBusinessSystemPromptForRequest(ctx, input, excluded, protocol, false)
-			require.NoError(t, err)
-			require.False(t, denied.Applied)
-			clean, stillDenied, err := gateway.applyBusinessSystemPromptForRequest(ctx, earlier, excluded, protocol, false)
-			require.NoError(t, err)
-			require.False(t, stillDenied.Applied)
-			require.JSONEq(t, gjson.GetBytes(input, field).Raw, gjson.GetBytes(clean, field).Raw, "a denied cache entry must not forget previously injected output")
-		})
-	}
-}
-
-func TestPromptPlatformChangeUsesBoundedNativeCarrierProof(t *testing.T) {
-	for _, protocol := range []string{BusinessSystemPromptProtocolResponses, BusinessSystemPromptProtocolChat} {
-		for _, form := range []string{"owned_output", "clean_changed", "unproven_server", "duplicate", "non_string", "oversized_unknown"} {
-			t.Run(protocol+"/"+form, func(t *testing.T) {
-				gateway, invoker, _ := newAccountScopedPromptGateway(t, 100)
-				account, _ := promptScopeAccounts(t)
-				input := []byte(`{"instructions":"client-control","input":"history"}`)
-				field := "instructions"
-				if protocol == BusinessSystemPromptProtocolChat {
-					field = "messages"
-					input = []byte(`{"messages":[{"role":"system","content":"client-control"},{"role":"user","content":"history"}]}`)
-				}
-				ctx, _ := gin.CreateTestContext(httptest.NewRecorder())
-				output, applied, err := gateway.applyBusinessSystemPromptForRequest(ctx, input, account, protocol, false)
-				require.NoError(t, err)
-				require.True(t, applied.Applied)
-				body := output
-				if protocol == BusinessSystemPromptProtocolResponses {
-					switch form {
-					case "clean_changed":
-						body = []byte(`{"instructions":"grok-client","input":"account-scoped-server"}`)
-					case "unproven_server":
-						body = []byte(`{"instructions":"grok-client\n\naccount-scoped-server","input":"history"}`)
-					case "duplicate":
-						body = []byte(`{"instructions":"grok-client","instructions":"account-scoped-server","input":"history"}`)
-					case "non_string":
-						body = []byte(`{"instructions":[{"type":"text","text":"grok-client"}],"input":"history"}`)
-					case "oversized_unknown":
-						body, err = json.Marshal(map[string]string{"instructions": strings.Repeat("other-client", businessSystemPromptRestoreMaxBytes), "input": "history"})
-						require.NoError(t, err)
-					}
-				} else {
-					switch form {
-					case "clean_changed":
-						body = []byte(`{"messages":[{"role":"system","content":"grok-client"},{"role":"user","content":"account-scoped-server"}]}`)
-					case "unproven_server":
-						body = []byte(`{"messages":[{"role":"system","content":"account-scoped-server"},{"role":"user","content":"other-client-history"}]}`)
-					case "duplicate":
-						body = []byte(`{"messages":[{"role":"system","content":"grok-client"}],"messages":[{"role":"system","content":"account-scoped-server"}]}`)
-					case "non_string":
-						body = []byte(`{"messages":[{"role":"system","content":[{"type":"text","text":"grok-client"}]}]}`)
-					case "oversized_unknown":
-						body, err = json.Marshal(map[string]any{"messages": []map[string]string{{"role": "user", "content": strings.Repeat("other-history", businessSystemPromptRestoreMaxBytes)}}})
-						require.NoError(t, err)
-					}
-				}
-				before := append([]byte(nil), body...)
-				grok := &Account{ID: account.ID + 1, Platform: PlatformGrok, Type: AccountTypeAPIKey}
-				clean, application, err := gateway.applyBusinessSystemPromptForRequest(ctx, body, grok, protocol, false)
-				switch form {
-				case "owned_output":
-					require.NoError(t, err)
-					require.JSONEq(t, gjson.GetBytes(input, field).Raw, gjson.GetBytes(clean, field).Raw)
-				case "clean_changed":
-					require.NoError(t, err)
-					require.Equal(t, before, clean, "independent customer control and user history remain unchanged")
-				default:
-					require.ErrorIs(t, err, ErrBusinessSystemPromptUnavailable)
-					require.Nil(t, clean)
-				}
-				require.False(t, application.Applied)
-				require.Equal(t, before, body)
-				require.Len(t, invoker.calls, 1, "an excluded platform performs no prompt-policy RPC")
-			})
-		}
-	}
-}
-
-func TestPromptUndoTracksTrimmedTextActuallyInserted(t *testing.T) {
-	for _, protocol := range []string{BusinessSystemPromptProtocolResponses, BusinessSystemPromptProtocolChat} {
-		t.Run(protocol, func(t *testing.T) {
-			carrier := BusinessSystemPromptCarrierInstructions
-			input := []byte(`{"instructions":"client","input":"history"}`)
-			unknown := []byte(`{"instructions":"different-client\n\napproved-server","input":"history"}`)
-			if protocol == BusinessSystemPromptProtocolChat {
-				carrier = BusinessSystemPromptCarrierSystemMessage
-				input = []byte(`{"messages":[{"role":"user","content":"history"}]}`)
-				unknown = []byte(`{"messages":[{"role":"system","content":"approved-server"},{"role":"user","content":"different-history"}]}`)
-			}
-			// The public Application contract does not require trimmed text.
-			// Both real local appliers nevertheless trim before insertion.
-			snapshot := BusinessSystemPromptSnapshot{Revision: 1, Enabled: true, Body: " \tapproved-server\n "}
-			application := BusinessSystemPromptApplication{Applied: true, Carrier: carrier, ServerInstructions: snapshot.Body, Revision: 1}
-			output, application, err := applyBusinessSystemPromptApplication(input, application)
-			require.NoError(t, err)
-			if protocol == BusinessSystemPromptProtocolResponses {
-				require.Equal(t, "client\n\napproved-server", gjson.GetBytes(output, "instructions").String())
-			} else {
-				require.Equal(t, "approved-server", gjson.GetBytes(output, "messages.0.content").String())
-			}
-			ctx, _ := gin.CreateTestContext(httptest.NewRecorder())
-			target := BusinessSystemPromptTarget{AccountID: 1, Platform: PlatformOpenAI, AccountType: AccountTypeAPIKey, Protocol: protocol}
-			ctx.Set(businessSystemPromptContextKey(ctx, businessSystemPromptRequestApplicationKey, protocol), cacheBusinessSystemPromptState(input, output, snapshot, target, application))
-			before := append([]byte(nil), unknown...)
-			clean, err := restoreBusinessSystemPromptForExcludedTarget(ctx, unknown, protocol)
-			require.ErrorIs(t, err, ErrBusinessSystemPromptUnavailable)
-			require.Nil(t, clean)
-			require.Equal(t, before, unknown)
-		})
-	}
-}
-
-func TestPromptCarrierTransitionCannotForgetEarlierAppliedOutput(t *testing.T) {
-	for _, direction := range []string{"instructions_to_messages", "messages_to_instructions"} {
-		for _, destination := range []string{"grok", "denied"} {
-			t.Run(direction+"/"+destination, func(t *testing.T) {
-				gateway, invoker, _ := newAccountScopedPromptGateway(t, 100)
-				firstAccount, secondAccount := promptScopeAccounts(t)
-				withInstructions := []byte(`{"instructions":"client-control","messages":[{"role":"user","content":"history"}]}`)
-				withoutInstructions := []byte(`{"messages":[{"role":"user","content":"history"}]}`)
-				firstInput, secondInput := withInstructions, withoutInstructions
-				if direction == "messages_to_instructions" {
-					firstInput, secondInput = withoutInstructions, withInstructions
-				}
-				ctx, _ := gin.CreateTestContext(httptest.NewRecorder())
-				olderOutput, first, err := gateway.applyBusinessSystemPromptForRequest(ctx, firstInput, firstAccount, BusinessSystemPromptProtocolChat, false)
-				require.NoError(t, err)
-				require.True(t, first.Applied)
-				_, second, err := gateway.applyBusinessSystemPromptForRequest(ctx, secondInput, secondAccount, BusinessSystemPromptProtocolChat, false)
-				require.NoError(t, err)
-				require.True(t, second.Applied)
-				require.NotEqual(t, first.Carrier, second.Carrier, "the official planner selects by HasInstructions")
-				require.Equal(t, first.ServerInstructions, second.ServerInstructions, "no arbitrary change to approved content is assumed")
-				require.Equal(t, first.Revision, second.Revision)
-				cached, _ := ctx.Get(businessSystemPromptContextKey(ctx, businessSystemPromptRequestApplicationKey, BusinessSystemPromptProtocolChat))
-				state, ok := cached.(businessSystemPromptRequestState)
-				require.True(t, ok)
-				require.True(t, state.undo.present && state.otherUndo.present)
-				require.NotEqual(t, state.undo.carrier, state.otherUndo.carrier)
-				require.LessOrEqual(t, len(state.undo.instructions)+len(state.otherUndo.instructions), businessSystemPromptRestoreMaxBytes)
-				require.False(t, state.historyUncertain, "official frozen text is identical across the two native carriers")
-				other := &Account{ID: secondAccount.ID + 10000, Platform: PlatformGrok, Type: AccountTypeAPIKey}
-				if destination == "denied" {
-					other.Platform = PlatformOpenAI
-					invoker.rollout = 0
-				}
-				clean, application, err := gateway.applyBusinessSystemPromptForRequest(ctx, olderOutput, other, BusinessSystemPromptProtocolChat, false)
-				if err != nil {
-					require.ErrorIs(t, err, ErrBusinessSystemPromptUnavailable)
-					require.Nil(t, clean)
-				} else {
-					require.Equal(t, gjson.GetBytes(firstInput, "instructions").Raw, gjson.GetBytes(clean, "instructions").Raw)
-					require.JSONEq(t, gjson.GetBytes(firstInput, "messages").Raw, gjson.GetBytes(clean, "messages").Raw)
-				}
-				require.False(t, application.Applied)
-			})
-		}
-	}
-}
-
-func TestPromptChangedServerHistoryRejectsOnlyUnprovenBodies(t *testing.T) {
-	for _, protocol := range []string{BusinessSystemPromptProtocolResponses, BusinessSystemPromptProtocolChat} {
-		t.Run(protocol, func(t *testing.T) {
-			carrier := BusinessSystemPromptCarrierInstructions
-			input := []byte(`{"instructions":"client-control","input":"history"}`)
-			unknownClean := []byte(`{"instructions":"grok-client","input":"other-history"}`)
-			if protocol == BusinessSystemPromptProtocolChat {
-				carrier = BusinessSystemPromptCarrierSystemMessage
-				input = []byte(`{"messages":[{"role":"user","content":"history"}]}`)
-				unknownClean = []byte(`{"messages":[{"role":"system","content":"grok-client"},{"role":"user","content":"other-history"}]}`)
-			}
-			snapshot := BusinessSystemPromptSnapshot{Revision: 1, Enabled: true, Body: "approved-server"}
-			target := BusinessSystemPromptTarget{AccountID: 1, Platform: PlatformOpenAI, AccountType: AccountTypeAPIKey, Protocol: protocol}
-			firstPlan := BusinessSystemPromptApplication{Applied: true, Carrier: carrier, ServerInstructions: "approved-server", Revision: 1}
-			olderOutput, first, err := applyBusinessSystemPromptApplication(input, firstPlan)
-			require.NoError(t, err)
-			previous := cacheBusinessSystemPromptState(input, olderOutput, snapshot, target, first)
-			// Defensive SDK-result test, not an assertion that the official
-			// planner changes approved text. The public result structure and
-			// host decoder do not impose equality with Snapshot.Body.
-			nextPlan := firstPlan
-			nextPlan.ServerInstructions = "[approved-server]"
-			latestOutput, latest, err := applyBusinessSystemPromptApplication(input, nextPlan)
-			require.NoError(t, err)
-			next := inheritBusinessSystemPromptProvenance(cacheBusinessSystemPromptState(input, latestOutput, snapshot, target, latest), previous)
-			require.True(t, next.historyUncertain)
-			require.False(t, next.otherUndo.present, "same-carrier text revisions do not grow a history list")
-			ctx, _ := gin.CreateTestContext(httptest.NewRecorder())
-			ctx.Set(businessSystemPromptContextKey(ctx, businessSystemPromptRequestApplicationKey, protocol), next)
-			for _, unproven := range [][]byte{olderOutput, unknownClean} {
-				clean, err := restoreBusinessSystemPromptForExcludedTarget(ctx, unproven, protocol)
-				require.ErrorIs(t, err, ErrBusinessSystemPromptUnavailable)
-				require.Nil(t, clean)
-			}
-			original, err := restoreBusinessSystemPromptForExcludedTarget(ctx, input, protocol)
-			require.NoError(t, err)
-			require.Equal(t, input, original)
-			restored, err := restoreBusinessSystemPromptForExcludedTarget(ctx, latestOutput, protocol)
-			require.NoError(t, err)
-			require.JSONEq(t, string(input), string(restored))
-		})
-	}
-}
-
-func TestPromptAppliedMetadataWithoutUndoIsNotCleanProof(t *testing.T) {
-	ctx, _ := gin.CreateTestContext(httptest.NewRecorder())
-	ctx.Set(businessSystemPromptContextKey(ctx, businessSystemPromptRequestApplicationKey, BusinessSystemPromptProtocolResponses), businessSystemPromptRequestState{
-		snapshot:    BusinessSystemPromptSnapshot{Revision: 1, Enabled: true, Body: "approved-server"},
-		application: BusinessSystemPromptApplication{Applied: true, Carrier: BusinessSystemPromptCarrierInstructions, ServerInstructions: "approved-server", Revision: 1},
-	})
-	input := []byte(`{"instructions":"client\n\napproved-server","input":"history"}`)
-	output, err := restoreBusinessSystemPromptForExcludedTarget(ctx, input, BusinessSystemPromptProtocolResponses)
-	require.ErrorIs(t, err, ErrBusinessSystemPromptUnavailable)
-	require.Nil(t, output)
+	state, ok := stateRaw.(businessSystemPromptRequestState)
+	require.True(t, ok)
+	require.Len(t, state.rulesUndo, 1)
+	require.Empty(t, state.rulesUndo[0].scalar, "large client histories are not copied into echo metadata")
+	require.Equal(t, []int{1}, state.rulesUndo[0].indices)
+	restored := gateway.rewriteBusinessSystemPromptJSONForRequest(c, wire, "responses")
+	require.JSONEq(t, string(body), string(restored))
+	require.Equal(t, 1, strings.Count(string(restored), "site-rule-content"))
 }

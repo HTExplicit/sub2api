@@ -24,6 +24,8 @@ func (s *GatewayService) ForwardCountTokens(ctx context.Context, c *gin.Context,
 		return fmt.Errorf("parse request: empty request")
 	}
 
+	rememberPromptRequestedModel(c, parsed.Body.Bytes())
+	setBusinessSystemPromptRequestProfile(c, account, false)
 	validationModel := parsed.Model
 	if account != nil && account.Type == AccountTypeAPIKey {
 		validationModel = account.GetMappedModel(validationModel)
@@ -67,10 +69,25 @@ func (s *GatewayService) ForwardCountTokens(ctx context.Context, c *gin.Context,
 		return err
 	}
 
-	isClaudeCodeCT := IsClaudeCodeClient(ctx) || isClaudeCodeClient(c.GetHeader("User-Agent"), parsed.MetadataUserID)
+	isClaudeCodeCT := IsClaudeCodeClient(ctx)
+	if c != nil {
+		isClaudeCodeCT = isClaudeCodeCT || isClaudeCodeClient(c.GetHeader("User-Agent"), parsed.MetadataUserID)
+	}
+	if !isClaudeCodeCT && parsed.MetadataUserID != "" {
+		isClaudeCodeCT = systemHasBillingAttributionBlock(body)
+	}
 	shouldMimicClaudeCode := account.IsOAuth() && !isClaudeCodeCT
+	setBusinessSystemPromptRequestProfile(c, account, shouldMimicClaudeCode)
 
 	if shouldMimicClaudeCode {
+		systemRaw, _ := parsed.SystemValue()
+		preparedBase, err := s.prepareClaudeOAuthSystemBase(ctx, c, account, body, systemRaw, claude.NormalizeModelID(reqModel))
+		if err != nil {
+			return err
+		}
+		if err := replaceBody(preparedBase); err != nil {
+			return err
+		}
 		var normalizedBody []byte
 		normalizedBody, reqModel = normalizeClaudeOAuthRequestBody(body, reqModel, claudeOAuthNormalizeOptions{})
 		if err := replaceBody(normalizedBody); err != nil {
@@ -258,7 +275,7 @@ func (s *GatewayService) ForwardCountTokens(ctx context.Context, c *gin.Context,
 	}
 
 	// 透传成功响应
-	c.Data(resp.StatusCode, "application/json", respBody)
+	c.Data(resp.StatusCode, "application/json", rewritePromptRulesStructuredEcho(c, respBody, "messages"))
 	return nil
 }
 
@@ -408,7 +425,7 @@ func (s *GatewayService) forwardCountTokensAnthropicAPIKeyPassthrough(ctx contex
 	if contentType == "" {
 		contentType = "application/json"
 	}
-	c.Data(resp.StatusCode, contentType, respBody)
+	c.Data(resp.StatusCode, contentType, rewritePromptRulesStructuredEcho(c, respBody, "messages"))
 	return nil
 }
 
@@ -420,6 +437,11 @@ func (s *GatewayService) buildCountTokensRequestAnthropicAPIKeyPassthrough(
 	token string,
 ) (*http.Request, error) {
 	body = stripDeferredToolCacheControl(body)
+	var promptErr error
+	body, _, promptErr = s.businessPromptService.ApplyForSend(c, account, body, "messages", false)
+	if promptErr != nil {
+		return nil, promptErr
+	}
 	targetURL := claudeAPICountTokensURL
 	baseURL := account.GetBaseURL()
 	if baseURL != "" {
@@ -556,6 +578,12 @@ func (s *GatewayService) buildCountTokensRequest(ctx context.Context, c *gin.Con
 	// 一致性铁律：同一次请求内只取一次 mimic UA，billing cc_version 与出站
 	// User-Agent 头共用这一个字符串（同 buildUpstreamRequest）。
 	ctMimicUserAgent := claude.DefaultUserAgent()
+	businessSystemPromptRequestSet(c, businessSystemPromptBillingUserAgentKey, effectiveBillingUserAgent(ctMimicUserAgent, tokenType, mimicClaudeCode, billingFingerprint))
+	var promptErr error
+	body, _, promptErr = s.businessPromptService.ApplyForSendModel(c, account, body, "messages", false, modelID)
+	if promptErr != nil {
+		return nil, nil, promptErr
+	}
 	if billingUA := effectiveBillingUserAgent(ctMimicUserAgent, tokenType, mimicClaudeCode, billingFingerprint); billingUA != "" {
 		body = syncBillingHeaderVersion(body, billingUA)
 	}

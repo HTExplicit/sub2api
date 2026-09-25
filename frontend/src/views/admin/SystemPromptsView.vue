@@ -1,691 +1,244 @@
 <template>
   <AppLayout>
     <div class="mx-auto max-w-[1500px] space-y-4 px-1">
-      <header class="flex flex-wrap items-center justify-between gap-3 border-b border-gray-200 pb-4 dark:border-dark-700">
-        <div class="flex min-w-0 items-center gap-3">
-          <span class="flex h-9 w-9 shrink-0 items-center justify-center rounded-none bg-primary-50 text-primary-600 dark:bg-primary-900/30 dark:text-primary-300">
-            <Icon name="document" size="md" />
-          </span>
-          <h1 class="truncate text-xl font-semibold text-gray-900 dark:text-white">{{ t('admin.systemPrompts.title') }}</h1>
-        </div>
-        <div class="flex items-center gap-2">
-          <label class="flex items-center gap-2 text-sm text-gray-600 dark:text-dark-300" data-test="system-prompt-global-toggle">
-            <span>{{ runtimeDraft.enabled ? t('admin.systemPrompts.runtime.active') : t('admin.systemPrompts.runtime.disabled') }}</span>
-            <Toggle :model-value="runtimeDraft.enabled" :aria-label="t('admin.systemPrompts.runtime.enabled')" @update:model-value="toggleGlobalEnabled" />
-          </label>
-          <button type="button" class="icon-button" data-test="system-prompt-refresh" :title="t('admin.systemPrompts.common.refresh')" :disabled="loading" @click="loadAll()">
-            <Icon name="refresh" size="sm" :class="loading ? 'animate-spin' : ''" />
-          </button>
-          <button type="button" class="icon-button" data-test="system-prompt-open-advanced" :title="t('admin.systemPrompts.advanced.title')" @click="openAdvanced">
-            <Icon name="cog" size="sm" />
-          </button>
+      <header class="flex flex-wrap items-center justify-between gap-3 border-b border-line pb-4">
+        <div><h1 class="text-xl font-semibold">{{ t('admin.systemPrompts.title') }}</h1><p v-if="baseline" class="mt-1 text-xs text-muted">{{ text('revision') }} {{ baseline.revision }}<span v-if="dirty"> · {{ text('unsaved') }}</span></p></div>
+        <div class="flex flex-wrap items-center gap-3">
+          <label v-if="draft" class="flex items-center gap-2 text-sm" data-test="system-prompt-global-toggle"><input v-model="draft.enabled" type="checkbox" />{{ t('admin.systemPrompts.runtime.enabled') }}</label>
+          <button type="button" class="btn btn-secondary btn-sm" data-test="system-prompt-refresh" :disabled="loading || saving" @click="load">{{ text('reload') }}</button>
+          <button type="button" class="btn btn-secondary btn-sm" data-test="open-prompt-advanced" :disabled="!draft" @click="openAdvanced">{{ text('advanced') }}</button>
+          <button type="button" class="btn btn-primary btn-sm" data-test="save-rules" :disabled="!dirty || saving || loading || invalid || !!pendingRemote" @click="save">{{ saving ? t('admin.systemPrompts.common.saving') : text('save') }}</button>
         </div>
       </header>
-
-      <nav class="flex gap-2 border-b border-line pb-3" :aria-label="t('admin.systemPrompts.title')">
-        <button type="button" class="btn btn-secondary btn-sm" :aria-pressed="workspaceTab === 'templates'" @click="workspaceTab = 'templates'">{{ t('admin.systemPrompts.rules.templatesTab') }}</button>
-        <button type="button" class="btn btn-secondary btn-sm" :aria-pressed="workspaceTab === 'rules'" data-test="open-prompt-rules" @click="workspaceTab = 'rules'">{{ t('admin.systemPrompts.rules.rulesTab') }}</button>
-      </nav>
-      <PromptRulesManager v-if="workspaceTab === 'rules'" @saved="loadAll()" />
-
-      <div v-if="conflict" data-test="system-prompt-conflict" class="flex items-center justify-between gap-3 border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-800 dark:border-amber-800 dark:bg-amber-900/20 dark:text-amber-200">
-        <span class="flex min-w-0 items-center gap-2"><Icon name="exclamationTriangle" size="sm" />{{ t('admin.systemPrompts.errors.conflict') }}</span>
-        <button type="button" class="btn btn-secondary btn-sm shrink-0" @click="reloadAfterConflict">{{ t('admin.systemPrompts.actions.reload') }}</button>
-      </div>
-
-      <div v-if="workspaceTab === 'templates' && loading && !runtime" class="flex min-h-[320px] items-center justify-center">
-        <div class="h-7 w-7 animate-spin rounded-full border-b-2 border-primary-600"></div>
-      </div>
-
-      <template v-else-if="workspaceTab === 'templates'">
-        <div class="flex min-w-0 items-center gap-2 xl:hidden">
-          <label class="sr-only" for="system-prompt-mobile-template">{{ t('admin.systemPrompts.templates.title') }}</label>
-          <select id="system-prompt-mobile-template" :value="selectedId ?? ''" data-test="system-prompt-mobile-template" class="input min-w-0 flex-1" @change="selectTemplateFromMobile">
-            <option v-for="template in templates" :key="template.id" :value="template.id">{{ templateDisplayName(template) }}</option>
-          </select>
-          <button type="button" class="icon-button shrink-0" data-test="system-prompt-mobile-create" :title="t('admin.systemPrompts.actions.create')" @click="openCreate">
-            <Icon name="plus" size="sm" />
-          </button>
-        </div>
-
-        <div class="grid min-w-0 gap-4 xl:grid-cols-[250px_minmax(0,1fr)]">
-          <aside class="hidden min-w-0 border border-gray-200 bg-white dark:border-dark-700 dark:bg-dark-900 xl:block">
-            <div class="flex items-center justify-between border-b border-gray-200 px-3 py-3 dark:border-dark-700">
-              <h2 class="text-sm font-semibold text-gray-900 dark:text-white">{{ t('admin.systemPrompts.templates.title') }}</h2>
-              <button type="button" class="icon-button" :title="t('admin.systemPrompts.actions.create')" @click="openCreate">
-                <Icon name="plus" size="sm" />
-              </button>
-            </div>
-            <div class="max-h-[calc(100vh-240px)] overflow-y-auto p-2">
-              <button
-                v-for="template in templates"
-                :key="template.id"
-                type="button"
-                class="mb-1 flex w-full min-w-0 items-center gap-2 border-l-2 px-3 py-3 text-left transition-colors"
-                :class="selectedId === template.id ? 'border-primary-500 bg-primary-50 dark:bg-primary-900/20' : 'border-transparent hover:bg-gray-50 dark:hover:bg-dark-800'"
-                :data-test="`system-prompt-template-${template.id}`"
-                @click="selectTemplate(template.id)"
-              >
-                <Icon name="document" size="sm" class="shrink-0 text-gray-400" />
-                <span class="min-w-0 flex-1 truncate text-sm font-medium text-gray-900 dark:text-white" :title="templateDisplayName(template)">{{ templateDisplayName(template) }}</span>
-                <span v-if="runtimeTemplateId === template.id" class="badge badge-success shrink-0">{{ t('admin.systemPrompts.history.active') }}</span>
-              </button>
-              <div v-if="!templates.length" class="px-3 py-8 text-center text-sm text-gray-500 dark:text-dark-400">{{ t('admin.systemPrompts.templates.empty') }}</div>
-            </div>
-          </aside>
-
-          <section v-if="detail" class="min-w-0">
-            <header class="flex flex-wrap items-center justify-between gap-3 border-b border-gray-200 pb-3 dark:border-dark-700">
-              <div class="flex min-w-0 items-center gap-2">
-                <h2 class="truncate text-lg font-semibold text-gray-900 dark:text-white" :title="templateDisplayName(detail.template)">{{ templateDisplayName(detail.template) }}</h2>
-                <span v-if="runtimeTemplateId === detail.template.id" class="badge badge-success shrink-0">{{ t('admin.systemPrompts.editor.activeTemplate') }}</span>
-              </div>
-              <div class="relative flex items-center gap-1">
-                <button v-if="!isRemoteSkillManaged" type="button" class="icon-button" data-test="system-prompt-edit-metadata" :title="t('admin.systemPrompts.actions.editMetadata')" @click="openMetadata">
-                  <Icon name="edit" size="sm" />
-                </button>
-                <button v-if="!isRemoteSkillManaged" type="button" class="icon-button" data-test="system-prompt-template-menu" :title="t('admin.systemPrompts.actions.more')" @click="templateMenuOpen = !templateMenuOpen">
-                  <Icon name="more" size="sm" />
-                </button>
-                <div v-if="templateMenuOpen" class="absolute right-0 top-10 z-10 w-40 border border-gray-200 bg-white py-1 dark:border-dark-700 dark:bg-dark-800">
-                  <button type="button" class="block w-full px-3 py-2 text-left text-sm text-gray-700 hover:bg-gray-50 dark:text-dark-200 dark:hover:bg-dark-700" @click="openMetadata">{{ t('admin.systemPrompts.actions.editMetadata') }}</button>
-                  <button type="button" class="block w-full px-3 py-2 text-left text-sm text-gray-700 hover:bg-gray-50 dark:text-dark-200 dark:hover:bg-dark-700" @click="openDuplicate">{{ t('admin.systemPrompts.actions.duplicate') }}</button>
-                  <button type="button" class="block w-full px-3 py-2 text-left text-sm text-red-600 hover:bg-red-50 dark:text-red-300 dark:hover:bg-red-900/20" @click="openConfirm({ kind: 'delete' })">{{ t('admin.systemPrompts.actions.delete') }}</button>
-                </div>
-              </div>
-            </header>
-
-            <div class="flex items-center justify-between gap-3 border-b border-gray-200 dark:border-dark-700" role="tablist">
-              <div class="flex items-center gap-1">
-                <button type="button" role="tab" data-test="system-prompt-tab-editor" :aria-selected="activeTab === 'editor'" class="border-b-2 px-3 py-2 text-sm font-medium" :class="activeTab === 'editor' ? 'border-primary-500 text-primary-600 dark:text-primary-300' : 'border-transparent text-gray-500 dark:text-dark-400'" @click="activeTab = 'editor'">{{ t('admin.systemPrompts.tabs.editor') }}</button>
-                <button v-if="!isRemoteSkillManaged" type="button" role="tab" data-test="system-prompt-tab-history" :aria-selected="activeTab === 'history'" class="border-b-2 px-3 py-2 text-sm font-medium" :class="activeTab === 'history' ? 'border-primary-500 text-primary-600 dark:text-primary-300' : 'border-transparent text-gray-500 dark:text-dark-400'" @click="activeTab = 'history'">{{ t('admin.systemPrompts.tabs.history') }}</button>
-              </div>
-              <span v-if="selectedVersion && !isRemoteSkillManaged" class="shrink-0 px-2 text-xs text-gray-500 dark:text-dark-400">v{{ selectedVersion.version }}<span v-if="editorDirty" class="ml-2 badge badge-warning">{{ t('admin.systemPrompts.editor.unsaved') }}</span></span>
-            </div>
-
-            <div v-if="activeTab === 'editor'" class="space-y-3 pt-4">
-              <template v-if="isRemoteSkillManaged">
-                <div class="inline-flex border border-gray-200 bg-gray-50 p-0.5 dark:border-dark-700 dark:bg-dark-800" role="group" :aria-label="t('admin.systemPrompts.editor.managedBody')">
-                  <button type="button" data-test="system-prompt-managed-effective" class="px-3 py-1.5 text-sm font-medium transition-colors" :aria-pressed="managedPromptView === 'effective'" :class="managedPromptView === 'effective' ? 'bg-white text-primary-600 shadow-outline dark:bg-dark-900 dark:text-primary-300' : 'text-gray-500 hover:text-gray-900 dark:text-dark-400 dark:hover:text-white'" @click="managedPromptView = 'effective'">{{ t('admin.systemPrompts.editor.effectiveBody') }}</button>
-                  <button type="button" data-test="system-prompt-managed-raw" class="px-3 py-1.5 text-sm font-medium transition-colors" :aria-pressed="managedPromptView === 'raw'" :class="managedPromptView === 'raw' ? 'bg-white text-primary-600 shadow-outline dark:bg-dark-900 dark:text-primary-300' : 'text-gray-500 hover:text-gray-900 dark:text-dark-400 dark:hover:text-white'" @click="managedPromptView = 'raw'">{{ t('admin.systemPrompts.editor.rawBody') }}</button>
-                </div>
-                <div v-if="managedPromptLoading" data-test="system-prompt-managed-loading" class="flex min-h-[430px] items-center justify-center border border-gray-200 bg-gray-50 text-sm text-gray-500 dark:border-dark-700 dark:bg-dark-950 dark:text-dark-400">{{ t('admin.systemPrompts.editor.managedBodyLoading') }}</div>
-                <div v-else-if="managedPromptUnavailable" data-test="system-prompt-managed-unavailable" class="flex min-h-[430px] items-center justify-center border border-red-200 bg-red-50 px-4 text-sm text-red-700 dark:border-red-900 dark:bg-red-900/20 dark:text-red-300">{{ t('admin.systemPrompts.editor.managedBodyUnavailable') }}</div>
-                <textarea v-else :value="managedPromptBody" readonly data-test="system-prompt-body" class="min-h-[430px] w-full resize-y border border-gray-200 bg-white p-4 font-mono text-[13px] leading-6 text-gray-900 outline-none transition-colors focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 dark:border-dark-700 dark:bg-dark-900 dark:text-gray-100" spellcheck="false" :aria-label="t('admin.systemPrompts.editor.managedBody')"></textarea>
-              </template>
-              <template v-else>
-                <textarea v-model="body" data-test="system-prompt-body" class="min-h-[430px] w-full resize-y border border-gray-200 bg-white p-4 font-mono text-[13px] leading-6 text-gray-900 outline-none transition-colors focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 dark:border-dark-700 dark:bg-dark-900 dark:text-gray-100" spellcheck="false" :aria-label="t('admin.systemPrompts.editor.body')"></textarea>
-                <div class="flex flex-wrap items-center justify-between gap-3">
-                  <input v-model="note" type="text" class="input w-full text-sm sm:min-w-0 sm:flex-1" :placeholder="t('admin.systemPrompts.editor.notePlaceholder')" :aria-label="t('admin.systemPrompts.editor.note')" />
-                  <div class="flex w-full items-center justify-end gap-2 sm:w-auto sm:shrink-0">
-                    <button type="button" data-test="system-prompt-save-version" class="btn btn-primary btn-sm" :disabled="savingVersion || !editorDirty" @click="saveVersion">
-                      <Icon name="check" size="sm" class="mr-1" />{{ savingVersion ? t('admin.systemPrompts.common.saving') : t('admin.systemPrompts.actions.saveVersion') }}
-                    </button>
-                    <button type="button" data-test="system-prompt-set-current" class="btn btn-secondary btn-sm" :disabled="!selectedVersion || selectedVersion.id === runtimeVersionId || editorDirty || publishingPrompt" @click="openConfirm({ kind: 'publish', versionId: selectedVersion?.id })">
-                      <Icon name="upload" size="sm" class="mr-1" />{{ publishingPrompt ? t('admin.systemPrompts.common.saving') : t('admin.systemPrompts.actions.setCurrent') }}
-                    </button>
-                  </div>
-                </div>
-              </template>
-            </div>
-
-            <div v-else class="overflow-hidden border border-gray-200 dark:border-dark-700">
-              <div class="overflow-x-auto">
-                <table class="min-w-full text-left text-sm">
-                  <thead class="bg-gray-50 text-xs text-gray-500 dark:bg-dark-800 dark:text-dark-400"><tr><th class="px-3 py-3">{{ t('admin.systemPrompts.history.version') }}</th><th class="px-3 py-3">{{ t('admin.systemPrompts.history.status') }}</th><th class="px-3 py-3">{{ t('admin.systemPrompts.history.created') }}</th><th class="px-3 py-3 text-right">{{ t('admin.systemPrompts.history.actions') }}</th></tr></thead>
-                  <tbody class="divide-y divide-gray-100 dark:divide-dark-800">
-                    <tr v-for="version in detail.versions" :key="version.id" class="hover:bg-gray-50 dark:hover:bg-dark-800">
-                      <td class="whitespace-nowrap px-3 py-3"><button type="button" class="font-semibold text-primary-600 dark:text-primary-300" @click="selectVersion(version)">v{{ version.version }}</button></td>
-                      <td class="whitespace-nowrap px-3 py-3"><span :class="version.id === runtimeVersionId ? 'badge-success' : 'badge-gray'" class="badge">{{ version.id === runtimeVersionId ? t('admin.systemPrompts.history.active') : t('admin.systemPrompts.history.candidate') }}</span></td>
-                      <td class="whitespace-nowrap px-3 py-3 text-gray-500 dark:text-dark-400">{{ formatDate(version.created_at) }}</td>
-                      <td class="whitespace-nowrap px-3 py-3 text-right">
-                        <button type="button" class="icon-button mr-1" :title="t('admin.systemPrompts.actions.details')" @click="versionDetails = version"><Icon name="infoCircle" size="sm" /></button>
-                        <button v-if="!isRemoteSkillManaged" type="button" class="btn btn-secondary btn-sm" :disabled="version.id === runtimeVersionId || publishingPrompt || editorDirty" @click="openConfirm({ kind: 'rollback', versionId: version.id })"><Icon name="refresh" size="xs" class="mr-1" />{{ t('admin.systemPrompts.actions.rollback') }}</button>
-                      </td>
-                    </tr>
-                    <tr v-if="!detail.versions.length"><td colspan="4" class="px-3 py-10 text-center text-sm text-gray-500 dark:text-dark-400">{{ t('admin.systemPrompts.history.empty') }}</td></tr>
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          </section>
-
-          <div v-else class="border border-dashed border-gray-300 px-5 py-16 text-center text-sm text-gray-500 dark:border-dark-700 dark:text-dark-400">{{ t('admin.systemPrompts.templates.select') }}</div>
-        </div>
-      </template>
+      <p v-if="error" role="alert" class="border border-red-200 bg-red-50 p-3 text-sm text-red-700 dark:border-red-900 dark:bg-red-900/20">{{ error }}</p>
+      <section v-if="pendingRemote" data-test="system-prompt-conflict" class="space-y-3 border border-amber-300 bg-amber-50 p-3 text-sm text-amber-800 dark:border-amber-800 dark:bg-amber-900/20">
+        <p>{{ text('conflict') }}</p><p>{{ text('conflictMergeHint') }}</p>
+        <details><summary class="cursor-pointer">{{ text('serverChanges') }} · {{ text('revision') }} {{ pendingRemote.revision }}</summary><div class="mt-2 max-h-80 space-y-3 overflow-auto"><article v-for="rule in pendingRemote.policy.rules" :key="rule.id" class="space-y-1 border-t border-amber-200 pt-2"><strong>{{ rule.name }}</strong><p class="text-xs">{{ text(rule.role) }} · {{ text(rule.position) }} · {{ rule.platforms.join(', ') }} · {{ rule.enabled ? text('enabled') : text('rule_disabled') }}<span v-if="pendingRemote.policy.default_rule_ids.includes(rule.id)"> · {{ text('default') }}</span></p><p v-if="rule.models.length" class="text-xs">{{ rule.models.join(', ') }}</p><pre class="max-h-36 overflow-auto whitespace-pre-wrap text-xs">{{ pendingRemote.contents[rule.id]?.body }}</pre></article></div></details>
+        <button type="button" class="btn btn-secondary btn-sm" data-test="keep-prompt-draft" @click="keepDraft">{{ text('keepDraft') }}</button>
+      </section>
+      <p v-if="invalid && draft" role="status" class="text-sm text-amber-700">{{ text('invalid') }}</p>
+      <p v-if="loading && !draft" class="p-12 text-center text-sm text-muted">{{ t('admin.systemPrompts.common.loading') }}</p>
+      <PromptRulesManager v-if="draft" v-model="draft" :selected-id="selectedID" :dirty-ids="dirtyIDs" :content-edits="contentEdits" :invalid="invalid" :invalid-reason="selectedInvalidReason" :busy="saving" @select="selectedID = $event" @add="add()" @remove="remove" @duplicate="duplicatePrompt" @advanced="openAdvanced" />
     </div>
-
     <SystemPromptAdvancedDrawer
-      :open="advancedOpen"
-      :runtime="runtime"
-      :runtime-draft="runtimeDraft"
-      :runtime-dirty="runtimeDirty"
-      :saving-runtime="savingRuntime"
-      :skill-registry="skillRegistry"
-      :skill-loading="skillLoading"
-      :skill-sync-job="skillSyncJob"
-      :skill-candidate="skillCandidate"
-      :skill-syncing="skillSyncInProgress"
-      :publishing-skill="publishingSkill"
-      :source-template="selectedTemplate"
-      :source-template-display-name="selectedTemplate ? templateDisplayName(selectedTemplate) : ''"
-      :source-version="selectedVersion"
-      :source-sync-status="sourceSyncStatus"
-      :source-candidate="sourceCandidate"
-      :source-syncing="sourceSyncing"
-      @close="advancedOpen = false"
-      @runtime-change="updateRuntimeDraft"
-      @save-runtime="saveRuntime"
-      @sync-skill="startSkillSync"
-      @publish-skill="publishSkillBundle"
-      @sync-source="syncManagedSource"
-    />
-
-    <BaseDialog :show="showMetadataDialog" :title="t('admin.systemPrompts.dialogs.metadataTitle')" width="normal" @close="showMetadataDialog = false">
-      <form class="space-y-4" @submit.prevent="saveMetadata">
-        <div><label class="input-label">{{ t('admin.systemPrompts.editor.name') }}</label><input v-model.trim="metaName" class="input" required /></div>
-        <div><label class="input-label">{{ t('admin.systemPrompts.editor.description') }}</label><textarea v-model="metaDescription" rows="3" class="input resize-y"></textarea></div>
-        <div class="flex justify-end gap-2 border-t border-gray-200 pt-4 dark:border-dark-700"><button type="button" class="btn btn-secondary" @click="showMetadataDialog = false">{{ t('admin.systemPrompts.common.cancel') }}</button><button type="submit" class="btn btn-primary" :disabled="savingMetadata">{{ savingMetadata ? t('admin.systemPrompts.common.saving') : t('admin.systemPrompts.actions.saveMetadata') }}</button></div>
-      </form>
-    </BaseDialog>
-
-    <BaseDialog :show="showCreateDialog" :title="t('admin.systemPrompts.dialogs.createTitle')" width="wide" @close="showCreateDialog = false">
-      <form class="space-y-4" @submit.prevent="createTemplate">
-        <div class="grid gap-4 sm:grid-cols-2"><div><label class="input-label">{{ t('admin.systemPrompts.dialogs.slug') }}</label><input v-model.trim="createForm.slug" class="input" required /></div><div><label class="input-label">{{ t('admin.systemPrompts.dialogs.name') }}</label><input v-model.trim="createForm.name" class="input" required /></div></div>
-        <div><label class="input-label">{{ t('admin.systemPrompts.dialogs.description') }}</label><textarea v-model="createForm.description" rows="2" class="input resize-y"></textarea></div>
-        <div><label class="input-label">{{ t('admin.systemPrompts.dialogs.body') }}</label><textarea v-model="createForm.body" rows="12" class="input resize-y font-mono text-xs" spellcheck="false" required></textarea></div>
-        <div><label class="input-label">{{ t('admin.systemPrompts.dialogs.note') }}</label><input v-model="createForm.note" class="input" /></div>
-        <div class="flex justify-end gap-2 border-t border-gray-200 pt-4 dark:border-dark-700"><button type="button" class="btn btn-secondary" @click="showCreateDialog = false">{{ t('admin.systemPrompts.common.cancel') }}</button><button type="submit" class="btn btn-primary" :disabled="creating"><Icon name="plus" size="sm" class="mr-1" />{{ creating ? t('admin.systemPrompts.common.saving') : t('admin.systemPrompts.actions.create') }}</button></div>
-      </form>
-    </BaseDialog>
-
-    <BaseDialog v-if="versionDetails" :show="!!versionDetails" :title="`v${versionDetails.version}`" width="wide" @close="versionDetails = null">
-      <div class="space-y-3 text-sm text-gray-600 dark:text-dark-300">
-        <div v-if="versionDetails.source_repository" class="space-y-1"><div>{{ t('admin.systemPrompts.source.repository') }}: <span class="font-mono">{{ versionDetails.source_repository }}</span></div><div>{{ t('admin.systemPrompts.source.version') }}: {{ versionDetails.source_version }}</div><div>{{ t('admin.systemPrompts.source.commit') }}: <span class="break-all font-mono">{{ versionDetails.source_commit }}</span></div><div>{{ t('admin.systemPrompts.source.artifact') }}: <span class="break-all font-mono">{{ versionDetails.source_artifact }}</span></div><div class="break-all font-mono">{{ versionDetails.source_artifact_sha256 }}</div><div class="break-all font-mono">{{ versionDetails.source_license_sha256 }}</div></div>
-        <div v-else>{{ t('admin.systemPrompts.source.inline') }}</div>
-      </div>
-    </BaseDialog>
-
-    <BaseDialog :show="showDuplicateDialog" :title="t('admin.systemPrompts.dialogs.duplicateTitle')" width="normal" @close="showDuplicateDialog = false">
-      <form class="space-y-4" @submit.prevent="duplicateTemplate">
-        <div><label class="input-label">{{ t('admin.systemPrompts.dialogs.slug') }}</label><input v-model.trim="duplicateForm.slug" class="input" required /></div>
-        <div><label class="input-label">{{ t('admin.systemPrompts.dialogs.name') }}</label><input v-model.trim="duplicateForm.name" class="input" required /></div>
-        <div class="flex justify-end gap-2 border-t border-gray-200 pt-4 dark:border-dark-700"><button type="button" class="btn btn-secondary" @click="showDuplicateDialog = false">{{ t('admin.systemPrompts.common.cancel') }}</button><button type="submit" class="btn btn-primary" :disabled="duplicating">{{ duplicating ? t('admin.systemPrompts.common.saving') : t('admin.systemPrompts.actions.duplicate') }}</button></div>
-      </form>
-    </BaseDialog>
-
-    <ConfirmDialog
-      :show="!!confirmState"
-      :title="confirmTitle"
-      :message="confirmMessage"
-      :danger="confirmState?.kind === 'delete'"
-      @confirm="confirmAction"
-      @cancel="confirmState = null"
-    />
+      :open="advancedOpen" :runtime="baseline ? { revision: baseline.revision } : null"
+      :runtime-draft="draft || { enabled: false, expose_server_prompt: false, compact_enabled: false }"
+      :runtime-dirty="dirty && !invalid && !pendingRemote && !loading" :saving-runtime="saving" :skill-registry="skillRegistry" :skill-loading="skillLoading"
+      :skill-sync-job="skillSyncJob" :skill-candidate="skillCandidate" :skill-syncing="skillSyncing" :publishing-skill="publishingSkill"
+      :skill-target-rule-names="skillTargets.map(rule => rule.name)" :skill-publish-blocked="dirty || !!pendingRemote"
+      :source-template="detail?.template || null" :source-template-display-name="selectedRule?.name || ''" :source-version="selectedVersion"
+      :source-sync-status="sourceSyncStatus" :source-candidate="sourceCandidate" :source-syncing="sourceSyncing"
+      @close="advancedOpen = false" @runtime-change="updateRuntimeDraft" @save-runtime="save" @sync-skill="startSkillSync" @publish-skill="publishSkillBundle" @sync-source="syncManagedSource"
+    >
+      <template #history>
+        <section class="space-y-3 border-b border-line px-4 py-4 sm:px-5" data-test="prompt-history">
+          <h3 class="text-sm font-semibold">{{ text('history') }}</h3>
+          <p class="text-xs text-muted">{{ text('historyHint') }}</p>
+          <div v-if="skillTargets.length || templates.some(template => template.managed_source === 'remote_skill_registry')" class="space-y-2 border border-line p-3"><p class="text-xs text-muted">{{ text('subscribeSkillHint') }}</p><button type="button" class="btn btn-secondary btn-sm" data-test="subscribe-current-skill" :disabled="subscribingSkill || !skillSubscriptionAvailable" @click="subscribeCurrentSkill">{{ text('subscribeCurrentSkill') }}</button></div>
+          <label class="block text-sm">{{ text('template') }}<select :value="detail?.template.id || 0" class="input mt-1 w-full" data-test="history-template" @change="loadDetail(Number(($event.target as HTMLSelectElement).value))"><option :value="0">—</option><option v-for="template in templates" :key="template.id" :value="template.id">{{ template.name }}</option></select></label>
+          <p v-if="historyLoading" class="text-xs text-muted">{{ t('admin.systemPrompts.common.loading') }}</p>
+          <div v-for="version in detail?.versions || []" :key="version.id" class="space-y-2 border-t border-line pt-3 text-xs">
+            <div class="flex flex-wrap items-center gap-2"><strong>v{{ version.version }}</strong><span>{{ formatDate(version.created_at) }}</span><span v-if="selectedRule?.version_id === version.id" class="badge badge-info">{{ text('referenced') }}</span></div>
+            <details><summary class="cursor-pointer text-muted">{{ text('versionDetails') }}</summary><pre class="mt-2 max-h-44 overflow-auto whitespace-pre-wrap">{{ version.body }}</pre><dl class="mt-2 space-y-1 break-all"><div>SHA-256: {{ version.sha256 }}</div><div v-if="version.source_commit">{{ version.source_repository }} · {{ version.source_commit }}</div><div v-if="version.note">{{ version.note }}</div></dl></details>
+            <div class="flex flex-wrap gap-2"><button type="button" class="btn btn-secondary btn-sm" :disabled="!selectedRule || selectedRule.version_id === version.id || selectedBodyDirty || version.composition_mode === 'codex_skill_hybrid' || detail?.template.managed_source === 'remote_skill_registry'" :data-test="`restore-version-${version.id}`" @click="restoreVersion(version)">{{ text('applyVersion') }}</button><button type="button" class="btn btn-secondary btn-sm" @click="add(`${detail?.template.name || ''} (${text('copy')})`, version.body)">{{ text('copyIndependent') }}</button></div>
+          </div>
+          <p v-if="selectedBodyDirty" class="text-xs text-amber-700">{{ text('historyDraftHint') }}</p>
+          <p v-if="detail?.template.managed_source === 'remote_skill_registry'" class="text-xs text-muted">{{ text('skillHistoryHint') }}</p>
+        </section>
+      </template>
+    </SystemPromptAdvancedDrawer>
   </AppLayout>
 </template>
 
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import AppLayout from '@/components/layout/AppLayout.vue'
-import BaseDialog from '@/components/common/BaseDialog.vue'
-import ConfirmDialog from '@/components/common/ConfirmDialog.vue'
-import Toggle from '@/components/common/Toggle.vue'
-import { Icon } from '@/components/icons'
-import { useAppStore } from '@/stores/app'
-import { extractApiErrorCode, extractApiErrorMessage } from '@/utils/apiError'
-import SystemPromptAdvancedDrawer from '@/components/admin/systemPrompt/SystemPromptAdvancedDrawer.vue'
 import PromptRulesManager from '@/components/admin/systemPrompt/PromptRulesManager.vue'
-import systemPromptsAPI, {
-  type ManagedSourceSyncStatus,
-  type ManagedSourceSyncVersion,
-  type RemoteSkillBundleVersionDetail,
-  type RemoteSkillRegistryResponse,
-  type RemoteSkillSyncJob,
-  type SystemPromptCompositionMode,
-  type SystemPromptRuntime,
-  type SystemPromptTemplate,
-  type SystemPromptVersion,
-  type SystemPromptDetailResponse,
-} from '@/api/admin/systemPrompts'
+import SystemPromptAdvancedDrawer from '@/components/admin/systemPrompt/SystemPromptAdvancedDrawer.vue'
+import { useAppStore } from '@/stores/app'
+import { useAuthStore } from '@/stores/auth'
+import { extractApiErrorCode, extractApiErrorMessage } from '@/utils/apiError'
+import { useSystemPromptConfigDraft } from '@/composables/useSystemPromptConfigDraft'
+import { legalPromptModelScope, legalPromptPosition, rulesAPI, type PromptRule } from '@/api/admin/systemPromptRules'
+import systemPromptsAPI, { type SystemPromptTemplate, type SystemPromptDetailResponse, type SystemPromptVersion, type RemoteSkillRegistryResponse, type RemoteSkillBundleVersionDetail, type RemoteSkillSyncJob, type ManagedSourceSyncStatus, type ManagedSourceSyncVersion } from '@/api/admin/systemPrompts'
 
 const { t, locale } = useI18n()
-const appStore = useAppStore()
-const workspaceTab = ref<'templates' | 'rules'>('templates')
-
-type Tab = 'editor' | 'history'
-type ManagedPromptView = 'effective' | 'raw'
-type ConfirmAction = { kind: 'publish' | 'rollback' | 'delete'; versionId?: number }
-
-const templates = ref<SystemPromptTemplate[]>([])
-const detail = ref<SystemPromptDetailResponse | null>(null)
-const runtime = ref<SystemPromptRuntime | null>(null)
-const selectedId = ref<number | null>(null)
-const selectedVersionId = ref<number | null>(null)
-const body = ref('')
-const note = ref('')
-const compositionMode = ref<SystemPromptCompositionMode>('inline')
-const bundleId = ref('')
-const bundleManifestSHA256 = ref('')
-const metaName = ref('')
-const metaDescription = ref('')
-const activeTab = ref<Tab>('editor')
-const loading = ref(false)
-const savingVersion = ref(false)
-const savingMetadata = ref(false)
-const savingRuntime = ref(false)
-const publishingPrompt = ref(false)
-const creating = ref(false)
-const duplicating = ref(false)
-const conflict = ref(false)
-const templateMenuOpen = ref(false)
-const advancedOpen = ref(false)
-const showMetadataDialog = ref(false)
-const showCreateDialog = ref(false)
-const showDuplicateDialog = ref(false)
-const versionDetails = ref<SystemPromptVersion | null>(null)
-const confirmState = ref<ConfirmAction | null>(null)
-
-const runtimeDraft = reactive({ enabled: false, expose_server_prompt: false, compact_enabled: false })
-const createForm = reactive({ slug: '', name: '', description: '', body: '', note: '', composition_mode: 'inline' as SystemPromptCompositionMode, bundle_id: '', bundle_manifest_sha256: '' })
-const duplicateForm = reactive({ slug: '', name: '' })
-
-const skillRegistry = ref<RemoteSkillRegistryResponse | null>(null)
-const skillLoading = ref(false)
-const activeSkillVersion = ref<RemoteSkillBundleVersionDetail | null>(null)
-const managedPromptView = ref<ManagedPromptView>('effective')
-const managedPromptLoading = ref(false)
-const managedPromptUnavailable = ref(false)
-const skillSyncJob = ref<RemoteSkillSyncJob | null>(null)
-const skillCandidate = ref<RemoteSkillBundleVersionDetail | null>(null)
-const publishingSkill = ref(false)
-const sourceSyncing = ref(false)
-const sourceSyncStatus = ref<ManagedSourceSyncStatus | null>(null)
-const sourceCandidate = ref<ManagedSourceSyncVersion | null>(null)
-let skillSyncTimer: ReturnType<typeof setTimeout> | null = null
-let disposed = false
-let selectionGeneration = 0
-let editorGeneration = 0
-let managedPromptGeneration = 0
-let skillSyncGeneration = 0
-const startingSkillSync = ref(false)
-watch([body, note, compositionMode, bundleId, bundleManifestSHA256], () => { editorGeneration += 1 }, { flush: 'sync' })
-
-const selectedTemplate = computed(() => detail.value?.template ?? null)
-const isRemoteSkillManaged = computed(() => selectedTemplate.value?.managed_source === 'remote_skill_registry')
-const selectedVersion = computed(() => detail.value?.versions.find(item => item.id === selectedVersionId.value) ?? null)
-const latestVersion = computed(() => detail.value?.versions[0] ?? null)
-const runtimeTemplateId = computed(() => runtime.value?.template_id ?? 0)
-const runtimeVersionId = computed(() => runtime.value?.version_id ?? 0)
-const editorDirty = computed(() => {
-  if (isRemoteSkillManaged.value) return false
-  const version = selectedVersion.value
-  return !!version && (body.value !== version.body || note.value !== version.note)
-})
-const managedPromptBody = computed(() => {
-  if (!activeSkillVersion.value) return ''
-  return managedPromptView.value === 'effective'
-    ? activeSkillVersion.value.prompt.effective_body
-    : activeSkillVersion.value.prompt.raw_body
-})
-const runtimeDirty = computed(() => !!runtime.value && (runtimeDraft.enabled !== runtime.value.enabled || runtimeDraft.expose_server_prompt !== runtime.value.expose_server_prompt || runtimeDraft.compact_enabled !== runtime.value.compact_enabled))
-const skillSyncInProgress = computed(() => startingSkillSync.value || skillSyncJob.value?.status === 'queued' || skillSyncJob.value?.status === 'running')
-
-const confirmTitle = computed(() => {
-  if (confirmState.value?.kind === 'delete') return t('admin.systemPrompts.confirm.deleteTitle')
-  if (confirmState.value?.kind === 'rollback') return t('admin.systemPrompts.confirm.rollbackTitle')
-  return t('admin.systemPrompts.confirm.publishTitle')
-})
-const confirmMessage = computed(() => {
-  if (confirmState.value?.kind === 'delete') return t('admin.systemPrompts.confirm.deleteMessage')
-  if (confirmState.value?.kind === 'rollback') return t('admin.systemPrompts.confirm.rollbackMessage')
-  return t('admin.systemPrompts.confirm.publishMessage')
-})
-
+const text = (key: string) => t(`admin.systemPrompts.rules.${key}`)
+const notifications = useAppStore()
+const auth = useAuthStore()
+const { baseline, draft, dirty, pendingRemote, selectedID, selectedRule, selectedContent, contentEdits, ruleDirty, receive, keepDraft, saved, request, add, remove, useVersion } = useSystemPromptConfigDraft(`system-prompts-v2:${auth.user?.id || 'admin'}`)
+const loading = ref(false), saving = ref(false), error = ref(''), advancedOpen = ref(false)
+const templates = ref<SystemPromptTemplate[]>([]), detail = ref<SystemPromptDetailResponse | null>(null), historyLoading = ref(false)
+const skillRegistry = ref<RemoteSkillRegistryResponse | null>(null), skillLoading = ref(false), skillCandidate = ref<RemoteSkillBundleVersionDetail | null>(null), skillSyncJob = ref<RemoteSkillSyncJob | null>(null), startingSkillSync = ref(false), publishingSkill = ref(false), subscribingSkill = ref(false)
+const sourceSyncStatus = ref<ManagedSourceSyncStatus | null>(null), sourceCandidate = ref<ManagedSourceSyncVersion | null>(null), sourceSyncing = ref(false)
+let disposed = false, loadGeneration = 0, detailGeneration = 0
+let skillTimer: ReturnType<typeof setTimeout> | undefined
+const dirtyIDs = computed(() => (draft.value?.policy.rules || []).filter(rule => ruleDirty(rule.id)).map(rule => rule.id))
+const selectedBodyDirty = computed(() => !!selectedID.value && !!contentEdits.value[selectedID.value])
+const selectedVersion = computed(() => detail.value?.versions.find(version => version.id === selectedRule.value?.version_id) || null)
+const skillSyncing = computed(() => startingSkillSync.value || skillSyncJob.value?.status === 'queued' || skillSyncJob.value?.status === 'running')
+const skillTargets = computed(() => (baseline.value?.policy.rules || []).filter(rule => baseline.value?.contents[rule.id]?.composition_mode === 'codex_skill_hybrid'))
+const skillSubscriptionAvailable = computed(() => !!skillRegistry.value?.runtime.active && (!skillTargets.value[0] || baseline.value?.contents[skillTargets.value[0].id]?.available !== false))
+function invalidReason(rule: PromptRule) {
+  const content = draft.value?.contents[rule.id]
+  if (!rule.name.trim() || !content || (!content.managed && (!content.body.trim() || content.body.includes('\u0000') || new TextEncoder().encode(content.body).length > 64 * 1024))) return 'invalidBody'
+  if (!rule.platforms.length) return 'platformRequired'
+  if (rule.role === 'system' && rule.platforms.some(platform => ['openai', 'cindy'].includes(platform)) && rule.account_types?.some(type => ['oauth', 'setup-token'].includes(type))) return 'incompatible'
+  const capabilities = draft.value?.capabilities || []
+  if (!legalPromptPosition(rule.role, rule.position, rule.platforms, capabilities, rule.account_types)) return 'incompatible'
+  if (!legalPromptModelScope(rule, capabilities)) return 'conversationModelRequired'
+  return ''
+}
+const invalid = computed(() => draft.value?.policy.rules.some(rule => !!invalidReason(rule)) || false)
+const selectedInvalidReason = computed(() => selectedRule.value ? invalidReason(selectedRule.value) : '')
+function fail(value: unknown) {
+  error.value = extractApiErrorCode(value) === 'system_prompt_revision_conflict' ? text('conflict') : extractApiErrorMessage(value) || text('error')
+}
+async function load() {
+  if (loading.value || saving.value) return
+  const generation = ++loadGeneration
+  loading.value = true; error.value = ''
+  try { const next = await rulesAPI.config(); if (!disposed && generation === loadGeneration) receive(next) }
+  catch (value) { if (!disposed && generation === loadGeneration) fail(value) }
+  finally { if (!disposed && generation === loadGeneration) loading.value = false }
+}
+async function save() {
+  if (!draft.value || saving.value || loading.value || invalid.value) return
+  const payload = request()
+  if (!payload) return
+  const sent = JSON.parse(JSON.stringify(draft.value))
+  saving.value = true; error.value = ''
+  try {
+    const next = await rulesAPI.saveConfig(payload)
+    if (disposed) return
+    saved(sent, next)
+    notifications.showSuccess(text('saved'))
+    if (advancedOpen.value) void loadAdvanced()
+  } catch (value) {
+    if (disposed) return
+    fail(value)
+    if (extractApiErrorCode(value) === 'system_prompt_revision_conflict') {
+      try { const next = await rulesAPI.config(); if (!disposed) receive(next) } catch { /* The draft and its original revision remain intact. */ }
+    }
+  } finally { if (!disposed) saving.value = false }
+}
+function duplicatePrompt() {
+  if (selectedRule.value && selectedContent.value && selectedContent.value.available !== false) add(`${selectedRule.value.name} (${text('copy')})`, selectedContent.value.body)
+}
+function updateRuntimeDraft(value: Partial<{ enabled: boolean; expose_server_prompt: boolean; compact_enabled: boolean }>) {
+  if (draft.value) Object.assign(draft.value, value)
+}
 function formatDate(value: string) {
   if (!value) return '—'
   try { return new Intl.DateTimeFormat(locale.value, { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(value)) } catch { return value }
 }
-
-function setRuntimeDraft(value: SystemPromptRuntime) {
-  runtimeDraft.enabled = value.enabled
-  runtimeDraft.expose_server_prompt = value.expose_server_prompt
-  runtimeDraft.compact_enabled = value.compact_enabled
+async function loadDetail(id: number) {
+  const generation = ++detailGeneration
+  detail.value = null
+  if (!id) return
+  historyLoading.value = true
+  try { const next = await systemPromptsAPI.get(id); if (!disposed && generation === detailGeneration) detail.value = next }
+  catch (value) { if (!disposed && generation === detailGeneration) fail(value) }
+  finally { if (!disposed && generation === detailGeneration) historyLoading.value = false }
 }
-
-function templateDisplayName(template: SystemPromptTemplate) {
-  if (template.slug === 'codexrip_reverse_skill') return t('admin.systemPrompts.templates.codexripReverseSkill')
-  if (template.slug === 'gpt_5_6_instruct') return t('admin.systemPrompts.templates.gpt56Instruct')
-  return template.name
-}
-
-function applyVersionToEditor(version: SystemPromptVersion) {
-  selectedVersionId.value = version.id
-  body.value = version.body
-  note.value = version.note
-  compositionMode.value = version.composition_mode
-  bundleId.value = version.bundle_id || ''
-  bundleManifestSHA256.value = version.bundle_manifest_sha256 || ''
-}
-
-function isConflictError(error: unknown) {
-  const status = typeof error === 'object' && error !== null ? (error as { status?: number }).status : undefined
-  return status === 409 || extractApiErrorCode(error) === 'system_prompt_revision_conflict'
-}
-
-function handleError(error: unknown, fallback: string) {
-  if (isConflictError(error)) conflict.value = true
-  appStore.showError(extractApiErrorMessage(error, fallback))
-}
-
-async function loadAll(preferredId: number | null = selectedId.value) {
+async function loadAdvanced() {
+  const templateID = selectedRule.value?.template_id || 0
+  const results = await Promise.allSettled([systemPromptsAPI.list(), loadDetail(templateID)])
   if (disposed) return
-  const generation = ++selectionGeneration
-  loading.value = true
-  try {
-    const result = await systemPromptsAPI.list()
-    if (disposed || generation !== selectionGeneration) return
-    templates.value = result.templates
-    runtime.value = result.runtime
-    setRuntimeDraft(result.runtime)
-    const nextId = preferredId && result.templates.some(item => item.id === preferredId) ? preferredId : result.templates[0]?.id ?? null
-    selectedId.value = nextId
-    if (nextId) await loadDetail(nextId, generation)
-    else detail.value = null
-    if (!disposed && generation === selectionGeneration) conflict.value = false
-  } catch (error) {
-    if (!disposed && generation === selectionGeneration) handleError(error, t('admin.systemPrompts.errors.load'))
-  } finally {
-    if (!disposed && generation === selectionGeneration) loading.value = false
-  }
+  if (results[0].status === 'fulfilled') templates.value = results[0].value.templates
+  else fail(results[0].reason)
 }
-
-async function loadDetail(id: number, generation = ++selectionGeneration) {
-  if (disposed) return
-  loading.value = true
-  try {
-    const result = await systemPromptsAPI.get(id)
-    if (disposed || generation !== selectionGeneration) return
-    runtime.value = result.runtime
-    setRuntimeDraft(result.runtime)
-    detail.value = result
-    selectedId.value = id
-    metaName.value = result.template.name
-    metaDescription.value = result.template.description
-    const active = runtime.value?.template_id === id ? result.versions.find(item => item.id === runtime.value?.version_id) : undefined
-    const version = active || result.versions[0]
-    if (version) applyVersionToEditor(version)
-    else { selectedVersionId.value = null; body.value = ''; note.value = ''; compositionMode.value = 'inline'; bundleId.value = ''; bundleManifestSHA256.value = '' }
-    sourceSyncStatus.value = null
-    sourceCandidate.value = null
-    activeTab.value = 'editor'
-    if (result.template.managed_source === 'remote_skill_registry') await loadManagedPrompt(true, generation)
-    else resetManagedPrompt()
-  } catch (error) {
-    if (!disposed && generation === selectionGeneration) handleError(error, t('admin.systemPrompts.errors.loadDetail'))
-  } finally {
-    if (!disposed && generation === selectionGeneration) loading.value = false
-  }
-}
-
-async function selectTemplate(id: number) {
-  if (id === selectedId.value) return
-  if (editorDirty.value) { appStore.showWarning(t('admin.systemPrompts.errors.unsavedSelection')); return }
-  await loadDetail(id)
-}
-
-async function selectTemplateFromMobile(event: Event) {
-  const id = Number((event.target as HTMLSelectElement).value)
-  if (id > 0) await selectTemplate(id)
-}
-
-function selectVersion(version: SystemPromptVersion) {
-  if (version.id === selectedVersionId.value) { activeTab.value = 'editor'; return }
-  if (editorDirty.value) { appStore.showWarning(t('admin.systemPrompts.errors.unsavedSelection')); return }
-  applyVersionToEditor(version)
-  activeTab.value = 'editor'
-}
-
-async function saveVersion() {
-  if (disposed || savingVersion.value || !detail.value || !runtime.value || !editorDirty.value) return
-  const bytes = new TextEncoder().encode(body.value).length
-  if (!body.value.trim() || body.value.includes('\u0000') || bytes > 64 * 1024) { appStore.showError(t('admin.systemPrompts.errors.invalidBody')); return }
-  const templateID = detail.value.template.id
-  const versionID = selectedVersionId.value
-  const generation = selectionGeneration
-  const editGeneration = editorGeneration
-  const request = { body: body.value, note: note.value, composition_mode: compositionMode.value, bundle_id: compositionMode.value === 'inline' ? '' : bundleId.value, bundle_manifest_sha256: '', expected_latest_version: latestVersion.value?.version ?? 0, expected_revision: runtime.value.revision }
-  savingVersion.value = true
-  try {
-    const version = await systemPromptsAPI.saveDraft(templateID, request)
-    if (!disposed && generation === selectionGeneration && detail.value?.template.id === templateID && selectedVersionId.value === versionID && version.template_id === templateID) {
-      detail.value.versions = [version, ...detail.value.versions]
-      if (editGeneration === editorGeneration) applyVersionToEditor(version)
-      else selectedVersionId.value = version.id
-    }
-    appStore.showSuccess(t('admin.systemPrompts.messages.versionSaved'))
-  } catch (error) { handleError(error, t('admin.systemPrompts.errors.saveVersion')) } finally { savingVersion.value = false }
-}
-
-function updateRuntimeDraft(value: Partial<typeof runtimeDraft>) {
-  if (value.enabled !== undefined) runtimeDraft.enabled = value.enabled
-  if (value.expose_server_prompt !== undefined) runtimeDraft.expose_server_prompt = value.expose_server_prompt
-  if (value.compact_enabled !== undefined) runtimeDraft.compact_enabled = value.compact_enabled
-}
-
-async function toggleGlobalEnabled(value: boolean) {
-  updateRuntimeDraft({ enabled: value })
-  await saveRuntime()
-}
-
-async function saveRuntime() {
-  if (!runtime.value || !runtimeDirty.value) return
-  savingRuntime.value = true
-  try {
-    runtime.value = await systemPromptsAPI.updateRuntime({ expected_revision: runtime.value.revision, enabled: runtimeDraft.enabled, expose_server_prompt: runtimeDraft.expose_server_prompt, compact_enabled: runtimeDraft.compact_enabled })
-    setRuntimeDraft(runtime.value)
-    appStore.showSuccess(t('admin.systemPrompts.messages.runtimeSaved'))
-  } catch (error) { setRuntimeDraft(runtime.value); handleError(error, t('admin.systemPrompts.errors.saveRuntime')) } finally { savingRuntime.value = false }
-}
-
-function openAdvanced() {
+async function openAdvanced() {
   advancedOpen.value = true
-  void loadSkillRegistry()
+  await Promise.allSettled([loadAdvanced(), loadSkillRegistry()])
 }
-
-async function fetchSkillRegistry(force = false) {
-  if (disposed) return null
-  if (!force && skillRegistry.value) return skillRegistry.value
-  skillLoading.value = true
+function restoreVersion(version: SystemPromptVersion) {
+  if (!selectedRule.value || !detail.value || selectedBodyDirty.value || version.composition_mode === 'codex_skill_hybrid' || detail.value.template.managed_source === 'remote_skill_registry') return
+  useVersion(selectedRule.value, { body: version.body, composition_mode: version.composition_mode, managed: !!detail.value.template.managed_source || version.composition_mode !== 'inline', template_id: version.template_id, version_id: version.id })
+  advancedOpen.value = false
+}
+async function subscribeCurrentSkill() {
+  if (!baseline.value || !skillRegistry.value?.runtime.active || !skillSubscriptionAvailable.value || subscribingSkill.value) return
+  subscribingSkill.value = true
   try {
-    const result = await systemPromptsAPI.getSkillRegistry()
-    if (disposed) return null
-    skillRegistry.value = result
-    return result
-  } finally { if (!disposed) skillLoading.value = false }
-}
-
-async function loadSkillRegistry() {
-  try { await fetchSkillRegistry() } catch (error) { if (!disposed) handleError(error, t('admin.systemPrompts.errors.skillLoad')) }
-}
-
-function resetManagedPrompt() {
-  managedPromptGeneration += 1
-  activeSkillVersion.value = null
-  managedPromptView.value = 'effective'
-  managedPromptLoading.value = false
-  managedPromptUnavailable.value = false
-}
-
-async function loadManagedPrompt(forceRegistry = false, selection = selectionGeneration) {
-  if (disposed) return
-  const generation = ++managedPromptGeneration
-  activeSkillVersion.value = null
-  managedPromptView.value = 'effective'
-  managedPromptUnavailable.value = false
-  managedPromptLoading.value = true
-  try {
-    const registry = await fetchSkillRegistry(forceRegistry)
-    if (disposed || generation !== managedPromptGeneration || selection !== selectionGeneration || !registry) return
-    const activeID = registry.runtime.active?.id
-    if (!activeID) throw new Error('active remote skill version is unavailable')
-    const version = await systemPromptsAPI.getSkillVersion(activeID)
-    if (disposed || generation !== managedPromptGeneration || selection !== selectionGeneration) return
-    if (version.id !== activeID || typeof version.prompt.raw_body !== 'string' || typeof version.prompt.effective_body !== 'string') {
-      throw new Error('active remote skill prompt detail is invalid')
+    const existing = skillTargets.value[0]
+    let content = existing ? baseline.value.contents[existing.id] : undefined
+    if (!content) {
+      const source = templates.value.find(template => template.managed_source === 'remote_skill_registry')
+      if (!source) return
+      const activeID = skillRegistry.value.runtime.active.id
+      const [sourceDetail, active] = await Promise.all([systemPromptsAPI.get(source.id), systemPromptsAPI.getSkillVersion(activeID)])
+      const version = sourceDetail.versions.filter(version => version.composition_mode === 'codex_skill_hybrid').sort((left, right) => right.version - left.version)[0]
+      if (!version || active.id !== activeID || typeof active.prompt?.effective_body !== 'string') throw new Error(t('admin.systemPrompts.editor.managedBodyUnavailable'))
+      content = { body: active.prompt.effective_body, composition_mode: 'codex_skill_hybrid', managed: true, template_id: source.id, version_id: version.id }
     }
-    activeSkillVersion.value = version
-  } catch {
-    if (!disposed && generation === managedPromptGeneration && selection === selectionGeneration) managedPromptUnavailable.value = true
-  } finally {
-    if (!disposed && generation === managedPromptGeneration && selection === selectionGeneration) managedPromptLoading.value = false
-  }
+    if (disposed) return
+    add(text('skillPromptName'))
+    if (selectedRule.value) useVersion(selectedRule.value, content)
+    advancedOpen.value = false
+  } catch (value) { if (!disposed) fail(value) }
+  finally { if (!disposed) subscribingSkill.value = false }
 }
-
-function clearSkillSyncTimer() {
-  if (skillSyncTimer !== null) { clearTimeout(skillSyncTimer); skillSyncTimer = null }
+async function loadSkillRegistry() {
+  if (skillLoading.value) return
+  skillLoading.value = true
+  try { const next = await systemPromptsAPI.getSkillRegistry(); if (!disposed) skillRegistry.value = next }
+  catch (value) { if (!disposed) fail(value) }
+  finally { if (!disposed) skillLoading.value = false }
 }
-
-function scheduleSkillSyncPoll(generation = skillSyncGeneration) {
-  if (disposed || generation !== skillSyncGeneration) return
-  clearSkillSyncTimer()
-  skillSyncTimer = setTimeout(() => void pollSkillSync(generation), 1200)
-}
-
-async function pollSkillSync(generation = skillSyncGeneration) {
-  if (disposed || generation !== skillSyncGeneration || !skillSyncJob.value) return
-  const jobID = skillSyncJob.value.id
+async function pollSkillSync() {
+  if (disposed || !skillSyncJob.value) return
   try {
-    const job = await systemPromptsAPI.getSkillSync(jobID)
-    if (disposed || generation !== skillSyncGeneration || skillSyncJob.value?.id !== jobID) return
+    const job = await systemPromptsAPI.getSkillSync(skillSyncJob.value.id)
+    if (disposed) return
     skillSyncJob.value = job
-    if (skillSyncInProgress.value) { scheduleSkillSyncPoll(generation); return }
-    if (skillSyncJob.value.status === 'succeeded' && skillSyncJob.value.candidate_bundle_version_id) {
-      const [candidate, registry] = await Promise.all([systemPromptsAPI.getSkillVersion(skillSyncJob.value.candidate_bundle_version_id), systemPromptsAPI.getSkillRegistry()])
-      if (disposed || generation !== skillSyncGeneration || skillSyncJob.value?.id !== jobID) return
-      skillCandidate.value = candidate
-      skillRegistry.value = registry
-      appStore.showSuccess(t('admin.systemPrompts.messages.skillCandidateReady'))
-    } else if (skillSyncJob.value.status === 'failed') appStore.showError(t('admin.systemPrompts.errors.skillSync'))
-  } catch (error) { if (!disposed && generation === skillSyncGeneration) handleError(error, t('admin.systemPrompts.errors.skillSync')) }
+    if (job.status === 'queued' || job.status === 'running') skillTimer = setTimeout(() => void pollSkillSync(), 1200)
+    else if (job.status === 'succeeded' && job.candidate_bundle_version_id) {
+      const [candidate, registry] = await Promise.all([systemPromptsAPI.getSkillVersion(job.candidate_bundle_version_id), systemPromptsAPI.getSkillRegistry()])
+      if (!disposed) { skillCandidate.value = candidate; skillRegistry.value = registry }
+    } else if (job.status === 'failed') error.value = t('admin.systemPrompts.errors.skillSync')
+  } catch (value) { if (!disposed) fail(value) }
 }
-
 async function startSkillSync(promptCapture?: File) {
-  if (disposed || !skillRegistry.value || skillSyncInProgress.value) return
-  const generation = ++skillSyncGeneration
-  const revision = skillRegistry.value.runtime.revision
+  if (!skillRegistry.value || skillSyncing.value) return
   startingSkillSync.value = true
-  skillCandidate.value = null
   try {
-    const job = await systemPromptsAPI.startSkillSync(revision, promptCapture)
-    if (disposed || generation !== skillSyncGeneration) return
-    skillSyncJob.value = job
-    scheduleSkillSyncPoll(generation)
-  } catch (error) {
-    if (!disposed && generation === skillSyncGeneration) handleError(error, t('admin.systemPrompts.errors.skillSync'))
-  } finally {
-    if (!disposed && generation === skillSyncGeneration) startingSkillSync.value = false
-  }
+    const job = await systemPromptsAPI.startSkillSync(skillRegistry.value.runtime.revision, promptCapture)
+    if (disposed) return
+    skillSyncJob.value = job; skillCandidate.value = null
+    skillTimer = setTimeout(() => void pollSkillSync(), 1200)
+  } catch (value) { if (!disposed) fail(value) }
+  finally { if (!disposed) startingSkillSync.value = false }
 }
-
-async function publishSkillBundle(versionId: number, rollback: boolean) {
-  if (!skillRegistry.value) return
+async function publishSkillBundle(id: number, rollback: boolean) {
+  if (!skillRegistry.value || !baseline.value || dirty.value || pendingRemote.value || publishingSkill.value) return
   publishingSkill.value = true
   try {
-    await systemPromptsAPI.publishSkillVersion(versionId, skillRegistry.value.runtime.revision, rollback)
-    if (isRemoteSkillManaged.value) await loadManagedPrompt(true)
-    else await fetchSkillRegistry(true)
+    await systemPromptsAPI.publishSkillVersion(id, skillRegistry.value.runtime.revision, rollback, { target_rule_ids: skillTargets.value.map(rule => rule.id), expected_config_revision: baseline.value.revision })
+    if (disposed) return
     skillCandidate.value = null
-    appStore.showSuccess(rollback ? t('admin.systemPrompts.messages.skillRolledBack') : t('admin.systemPrompts.messages.skillPublished'))
-  } catch (error) { handleError(error, rollback ? t('admin.systemPrompts.errors.skillRollback') : t('admin.systemPrompts.errors.skillPublish')) } finally { publishingSkill.value = false }
+    await Promise.all([load(), loadSkillRegistry()])
+    notifications.showSuccess(t(rollback ? 'admin.systemPrompts.messages.skillRolledBack' : 'admin.systemPrompts.messages.skillPublished'))
+  } catch (value) { if (!disposed) fail(value) }
+  finally { if (!disposed) publishingSkill.value = false }
 }
-
 async function syncManagedSource() {
-  if (!detail.value || !runtime.value || !selectedTemplate.value?.managed_source) return
+  if (!detail.value || !baseline.value || !detail.value.template.managed_source || sourceSyncing.value) return
+  const templateID = detail.value.template.id
   sourceSyncing.value = true
   try {
-    const result = await systemPromptsAPI.syncManagedSource(detail.value.template.id, { expected_latest_version: latestVersion.value?.version ?? 0, expected_revision: runtime.value.revision })
-    if (result.status === 'candidate_created') await loadDetail(detail.value.template.id)
-    sourceSyncStatus.value = result.status
-    sourceCandidate.value = result.version || null
-    if (result.status === 'candidate_created') appStore.showSuccess(t('admin.systemPrompts.messages.sourceCandidateCreated'))
-    else appStore.showSuccess(t(`admin.systemPrompts.source.status.${result.status}`))
-  } catch (error) { handleError(error, t('admin.systemPrompts.errors.sourceSync')) } finally { sourceSyncing.value = false }
+    const next = await systemPromptsAPI.syncManagedSource(templateID, { expected_latest_version: detail.value.versions[0]?.version || 0, expected_revision: baseline.value.revision })
+    if (disposed) return
+    sourceSyncStatus.value = next.status; sourceCandidate.value = next.version || null
+    await Promise.all([load(), loadDetail(templateID)])
+  } catch (value) { if (!disposed) fail(value) }
+  finally { if (!disposed) sourceSyncing.value = false }
 }
-
-function openMetadata() { templateMenuOpen.value = false; showMetadataDialog.value = true }
-
-async function saveMetadata() {
-  if (!detail.value || !runtime.value) return
-  savingMetadata.value = true
-  try {
-    const template = await systemPromptsAPI.updateMetadata(detail.value.template.id, { name: metaName.value, description: metaDescription.value, expected_revision: runtime.value.revision })
-    detail.value.template = template
-    templates.value = templates.value.map(item => item.id === template.id ? template : item)
-    showMetadataDialog.value = false
-    appStore.showSuccess(t('admin.systemPrompts.messages.metadataSaved'))
-  } catch (error) { handleError(error, t('admin.systemPrompts.errors.saveMetadata')) } finally { savingMetadata.value = false }
-}
-
-function openCreate() {
-  Object.assign(createForm, { slug: '', name: '', description: '', body: '', note: '', composition_mode: 'inline', bundle_id: '', bundle_manifest_sha256: '' })
-  showCreateDialog.value = true
-}
-
-async function createTemplate() {
-  if (!runtime.value) return
-  creating.value = true
-  try { const result = await systemPromptsAPI.create({ ...createForm, expected_revision: runtime.value.revision }); showCreateDialog.value = false; await loadAll(result.template.id); appStore.showSuccess(t('admin.systemPrompts.messages.created')) } catch (error) { handleError(error, t('admin.systemPrompts.errors.create')) } finally { creating.value = false }
-}
-
-function openDuplicate() {
-  templateMenuOpen.value = false
-  if (!selectedTemplate.value) return
-  Object.assign(duplicateForm, { slug: `${selectedTemplate.value.slug}-copy`, name: `${selectedTemplate.value.name} (${t('admin.systemPrompts.dialogs.copySuffix')})` })
-  showDuplicateDialog.value = true
-}
-
-async function duplicateTemplate() {
-  if (!selectedTemplate.value || !runtime.value) return
-  duplicating.value = true
-  try { const result = await systemPromptsAPI.duplicate(selectedTemplate.value.id, { ...duplicateForm, expected_revision: runtime.value.revision }); showDuplicateDialog.value = false; await loadAll(result.template.id); appStore.showSuccess(t('admin.systemPrompts.messages.duplicated')) } catch (error) { handleError(error, t('admin.systemPrompts.errors.duplicate')) } finally { duplicating.value = false }
-}
-
-function openConfirm(action: ConfirmAction) {
-  templateMenuOpen.value = false
-  if (action.kind !== 'delete' && editorDirty.value) { appStore.showWarning(t('admin.systemPrompts.errors.saveBeforePublish')); return }
-  confirmState.value = action
-}
-
-async function confirmAction() {
-  const action = confirmState.value
-  confirmState.value = null
-  if (!action) return
-  if (action.kind === 'delete') { await deleteTemplate(); return }
-  if (!runtime.value || !selectedTemplate.value || !action.versionId) return
-  publishingPrompt.value = true
-  try {
-    runtime.value = await systemPromptsAPI.publish(selectedTemplate.value.id, action.versionId, runtime.value.revision, action.kind === 'rollback')
-    setRuntimeDraft(runtime.value)
-    await loadDetail(selectedTemplate.value.id)
-    appStore.showSuccess(action.kind === 'rollback' ? t('admin.systemPrompts.messages.rolledBack') : t('admin.systemPrompts.messages.published'))
-  } catch (error) { handleError(error, action.kind === 'rollback' ? t('admin.systemPrompts.errors.rollback') : t('admin.systemPrompts.errors.publish')) } finally { publishingPrompt.value = false }
-}
-
-async function deleteTemplate() {
-  if (!selectedTemplate.value || !runtime.value) return
-  try { await systemPromptsAPI.remove(selectedTemplate.value.id, runtime.value.revision); await loadAll(null); appStore.showSuccess(t('admin.systemPrompts.messages.deleted')) } catch (error) { handleError(error, t('admin.systemPrompts.errors.delete')) }
-}
-
-async function reloadAfterConflict() { await loadAll(selectedId.value); conflict.value = false }
-
-onMounted(() => { void loadAll() })
-onBeforeUnmount(() => {
-  disposed = true
-  selectionGeneration += 1
-  managedPromptGeneration += 1
-  skillSyncGeneration += 1
-  clearSkillSyncTimer()
+watch(selectedID, () => {
+  sourceSyncStatus.value = null; sourceCandidate.value = null
+  if (advancedOpen.value) void loadDetail(selectedRule.value?.template_id || 0)
 })
+onMounted(() => void load())
+onBeforeUnmount(() => { disposed = true; loadGeneration++; detailGeneration++; if (skillTimer) clearTimeout(skillTimer) })
 </script>

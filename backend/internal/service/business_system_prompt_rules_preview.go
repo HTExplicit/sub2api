@@ -10,17 +10,20 @@ import (
 
 	extensionv1 "github.com/Wei-Shaw/sub2api/internal/nativeapi"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/apicompat"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/claude"
 	"github.com/gin-gonic/gin"
 	"github.com/tidwall/gjson"
 	"github.com/tidwall/sjson"
 )
 
 type PromptRulesPreviewRequest struct {
+	Model           string                            `json:"model,omitempty"`
 	Protocol        string                            `json:"protocol"`
 	Transport       string                            `json:"transport"`
 	Compact         bool                              `json:"compact"`
 	Body            json.RawMessage                   `json:"body"`
 	Policy          *extensionv1.PromptRulePolicy     `json:"policy,omitempty"`
+	Contents        map[string]PromptContentDraft     `json:"contents,omitempty"`
 	Binding         *extensionv1.PromptAccountBinding `json:"binding,omitempty"`
 	SimulateEnabled *bool                             `json:"simulate_enabled,omitempty"`
 }
@@ -51,7 +54,7 @@ func (s *BusinessSystemPromptService) PreviewPromptRules(ctx context.Context, ac
 	if err != nil {
 		return result, err
 	}
-	if account == nil || !account.IsOpenAI() {
+	if !supportsPromptAccount(account) {
 		return result, ErrPromptDeliveryUnsupported
 	}
 	snapshot, ok := s.CurrentSnapshot()
@@ -60,13 +63,16 @@ func (s *BusinessSystemPromptService) PreviewPromptRules(ctx context.Context, ac
 	}
 	if request.Policy != nil {
 		snapshot.RulePolicy = request.Policy
-		if err := s.preparePromptRulesSnapshot(&snapshot); err != nil {
-			return result, err
-		}
 		result.Simulated = true
 	}
 	if request.SimulateEnabled != nil {
 		snapshot.Enabled = *request.SimulateEnabled
+		result.Simulated = true
+	}
+	if request.Policy != nil || len(request.Contents) > 0 || (request.SimulateEnabled != nil && *request.SimulateEnabled) {
+		if err := s.preparePromptRulesDraft(ctx, &snapshot, request.Contents); err != nil {
+			return result, err
+		}
 		result.Simulated = true
 	}
 	if request.Binding != nil {
@@ -79,13 +85,52 @@ func (s *BusinessSystemPromptService) PreviewPromptRules(ctx context.Context, ac
 		account = &cloned
 		result.Simulated = true
 	}
-	before, protocol, base, err := s.preparePromptRulesPreviewBody(account, request)
+	ginContext := &gin.Context{}
+	ginContext.Request, _ = http.NewRequestWithContext(ctx, http.MethodPost, "/preview", nil)
+	// Preview uses the selected account binding, including an unsaved override.
+	// It must never refresh that selection from a live account during preparation.
+	snapshot.Draft = true
+	businessSystemPromptRequestSet(ginContext, businessSystemPromptContextKey(ginContext, businessSystemPromptRequestSnapshotKey, ""), snapshot)
+	requested := strings.TrimSpace(gjson.GetBytes(request.Body, "model").String())
+	if requested == "" {
+		requested = strings.TrimSpace(request.Model)
+	}
+	if requested == "" {
+		return result, fmt.Errorf("%w: preview model is required", ErrBusinessSystemPromptInvalid)
+	}
+	mapped := resolveOpenAIForwardModel(account, requested, "")
+	if mapped == "" {
+		mapped = requested
+	}
+	mapped = normalizeOpenAIModelForUpstream(account, mapped)
+	businessSystemPromptRequestSet(ginContext, promptRequestedModelContextKey, requested)
+	var before []byte
+	var protocol, base, profile string
+	if account.Platform == PlatformAnthropic || account.Platform == PlatformGemini || account.Platform == PlatformAntigravity || account.IsAnthropicProtocol() {
+		ingress := request.Protocol
+		if ingress == "" {
+			ingress = BusinessSystemPromptProtocolResponses
+		}
+		mapped, err = ResolvePromptGatewayPreviewModel(account, ingress, request.Body, requested)
+		if err != nil {
+			return result, err
+		}
+		before, protocol, base, profile, err = PreparePromptGatewayPreview(ctx, ginContext, account, ingress, request.Body, mapped, s.previewSettings, s)
+		if account.IsAnthropicOAuthOrSetupToken() || account.Platform == PlatformAntigravity {
+			result.Simulated = true
+		}
+	} else {
+		before, protocol, base, err = s.preparePromptRulesPreviewBody(account, request)
+	}
 	if err != nil {
 		return result, err
 	}
 	result.Protocol, result.BeforeRules, result.GatewayBaseInstructions = protocol, before, base
-	result.RequestedModel = gjson.GetBytes(request.Body, "model").String()
+	result.RequestedModel = requested
 	result.UpstreamModel = gjson.GetBytes(before, "model").String()
+	if protocol == BusinessSystemPromptProtocolGemini || result.UpstreamModel == "" {
+		result.UpstreamModel = mapped
+	}
 	result.ClientControl = promptPreviewClientControl(request.Body)
 	result.Continuation = gjson.GetBytes(before, "previous_response_id").String() != "" || gjson.GetBytes(before, "input.#(type==\"compaction\")").Exists()
 	if result.Transport == "" {
@@ -99,14 +144,27 @@ func (s *BusinessSystemPromptService) PreviewPromptRules(ctx context.Context, ac
 	}
 	target := businessSystemPromptTargetForAccount(account, protocol, request.Compact)
 	target.RequestedModel, target.UpstreamModel = result.RequestedModel, result.UpstreamModel
+	target.RequestProfile = profile
+	snapshot, target, err = s.prepareAnthropicPromptSend(ginContext, account, before, snapshot, target)
+	if err != nil {
+		return result, err
+	}
 	updated, application, err := ApplyBusinessSystemPromptToJSONContext(ctx, before, snapshot, target)
 	if err != nil {
 		return result, err
 	}
+	if protocol == "messages" {
+		billingUA := ""
+		if profile == "generic-mimic" {
+			billingUA = claude.DefaultUserAgent()
+		}
+		updated, application, err = FinalizePromptMessageApplication(updated, application, account, s.previewSettings, billingUA, ginContext)
+		if err != nil {
+			return result, err
+		}
+	}
 	// This is the identical applier and final carrier validator used at live
 	// HTTP/WS write boundaries. No credentials, ticket, network, or model IO.
-	ginContext := &gin.Context{}
-	ginContext.Request, _ = http.NewRequestWithContext(ctx, http.MethodPost, "/preview", nil)
 	businessSystemPromptRequestSet(ginContext, businessSystemPromptContextKey(ginContext, businessSystemPromptRequestApplicationKey, protocol), cacheBusinessSystemPromptState(before, updated, snapshot, target, application))
 	if err := validateBusinessSystemPromptFinal(ginContext, updated, protocol); err != nil {
 		return result, err
@@ -255,7 +313,7 @@ func (s *BusinessSystemPromptService) preparePromptRulesPreviewBody(account *Acc
 
 func promptPreviewClientControl(body []byte) map[string]any {
 	control := map[string]any{}
-	for _, field := range []string{"instructions", "system"} {
+	for _, field := range []string{"instructions", "system", "systemInstruction"} {
 		value := gjson.GetBytes(body, field)
 		if value.Exists() {
 			control[field] = value.Value()

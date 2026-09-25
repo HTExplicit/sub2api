@@ -7,9 +7,9 @@ import (
 	"errors"
 	"fmt"
 	"strings"
-	"time"
 
 	extensionv1 "github.com/Wei-Shaw/sub2api/internal/nativeapi"
+	promptpolicy "github.com/Wei-Shaw/sub2api/internal/promptskills/policy"
 
 	"github.com/tidwall/gjson"
 	"github.com/tidwall/sjson"
@@ -20,6 +20,8 @@ const (
 
 	BusinessSystemPromptProtocolResponses = "responses"
 	BusinessSystemPromptProtocolChat      = "chat"
+	BusinessSystemPromptProtocolMessages  = "messages"
+	BusinessSystemPromptProtocolGemini    = "gemini"
 
 	BusinessSystemPromptCarrierInstructions  = "instructions"
 	BusinessSystemPromptCarrierSystemMessage = "system_message"
@@ -68,62 +70,32 @@ func ApplyBusinessSystemPromptToJSON(body []byte, snapshot BusinessSystemPromptS
 }
 
 func ApplyBusinessSystemPromptToJSONContext(ctx context.Context, body []byte, snapshot BusinessSystemPromptSnapshot, target BusinessSystemPromptTarget) ([]byte, BusinessSystemPromptApplication, error) {
-	return applyBusinessSystemPromptWithInvoker(ctx, body, snapshot, target, promptPlanInvoke)
-}
-
-func applyBusinessSystemPromptWithInvoker(parent context.Context, body []byte, snapshot BusinessSystemPromptSnapshot, target BusinessSystemPromptTarget, invoke func(context.Context, string, string, extensionv1.Invocation) (extensionv1.Result, error)) ([]byte, BusinessSystemPromptApplication, error) {
-	application, err := planBusinessSystemPromptWithInvoker(parent, body, snapshot, target, invoke)
+	application, err := planBusinessSystemPrompt(ctx, snapshot, target)
 	if err != nil {
 		return nil, application, err
 	}
 	return applyBusinessSystemPromptApplication(body, application)
 }
 
-// Planning rechecks the live execution scope, including on request-cache hits.
-// Only bounded policy material and a presence bit cross the RPC boundary.
-func planBusinessSystemPromptWithInvoker(parent context.Context, body []byte, snapshot BusinessSystemPromptSnapshot, target BusinessSystemPromptTarget, invoke func(context.Context, string, string, extensionv1.Invocation) (extensionv1.Result, error)) (BusinessSystemPromptApplication, error) {
-	request := extensionv1.PromptPlanRequest{Snapshot: snapshot, Target: target, HasInstructions: gjson.GetBytes(body, "instructions").Exists(), BaseSHA256: snapshot.BaseSHA256, EffectiveSHA256: snapshot.EffectiveSHA256, EffectiveByteLength: snapshot.EffectiveByteLength}
-	raw, err := json.Marshal(request)
+func planBusinessSystemPrompt(ctx context.Context, snapshot BusinessSystemPromptSnapshot, target BusinessSystemPromptTarget) (BusinessSystemPromptApplication, error) {
+	if err := ctx.Err(); err != nil {
+		return BusinessSystemPromptApplication{}, fmt.Errorf("%w: %w", ErrBusinessSystemPromptUnavailable, err)
+	}
+	application, err := promptpolicy.PlanRules(snapshot, target)
 	if err != nil {
-		return BusinessSystemPromptApplication{}, err
-	}
-	ctx, cancel := context.WithTimeout(parent, time.Second)
-	defer cancel()
-	accountType := target.AccountType
-	if accountType == "" {
-		accountType = "*"
-	}
-	result, err := invoke(ctx, target.Platform, accountType, extensionv1.Invocation{Capability: extensionv1.CapabilityRequest, Operation: "prompt.plan", AccountID: target.AccountID, Payload: raw})
-	if errors.Is(err, ErrExtensionOperationDisabled) {
-		if snapshot.RulePolicy != nil {
-			plan := &extensionv1.PromptRulesPlan{Placements: []extensionv1.PromptRulePlacement{}, Skipped: []extensionv1.PromptRuleDecision{}}
-			for _, rule := range snapshot.RulePolicy.Rules {
-				plan.Skipped = append(plan.Skipped, extensionv1.PromptRuleDecision{RuleID: rule.ID, Reason: "plugin_scope"})
-			}
-			return BusinessSystemPromptApplication{Revision: snapshot.Revision, RulesPlan: plan}, nil
+		if errors.Is(err, promptpolicy.ErrPromptDeliveryUnsupported) {
+			return application, fmt.Errorf("%w: %v", ErrPromptDeliveryUnsupported, err)
 		}
-		return BusinessSystemPromptApplication{}, nil
-	}
-	if result.Code == "prompt_delivery_unsupported" {
-		return BusinessSystemPromptApplication{}, ErrPromptDeliveryUnsupported
-	}
-	if err != nil || result.Code != "" {
-		if !snapshot.Enabled {
-			return BusinessSystemPromptApplication{}, nil
-		}
-		return BusinessSystemPromptApplication{}, ErrBusinessSystemPromptUnavailable
-	}
-	var application BusinessSystemPromptApplication
-	if json.Unmarshal(result.Payload, &application) != nil {
-		return application, ErrBusinessSystemPromptUnavailable
-	}
-	if snapshot.RulePolicy != nil && application.RulesPlan == nil {
-		if !snapshot.Enabled {
-			return BusinessSystemPromptApplication{}, nil
-		}
-		return BusinessSystemPromptApplication{}, ErrBusinessSystemPromptUnavailable
+		return application, fmt.Errorf("%w: %v", ErrBusinessSystemPromptUnavailable, err)
 	}
 	return application, nil
+}
+
+// PlanBusinessSystemPrompt selects rules and their final protocol carriers
+// without copying or modifying customer history. Anchor validation happens in
+// the shared applier when the final outgoing sequence is available.
+func PlanBusinessSystemPrompt(ctx context.Context, snapshot BusinessSystemPromptSnapshot, target BusinessSystemPromptTarget) (BusinessSystemPromptApplication, error) {
+	return planBusinessSystemPrompt(ctx, snapshot, target)
 }
 
 func applyBusinessSystemPromptApplication(body []byte, application BusinessSystemPromptApplication) ([]byte, BusinessSystemPromptApplication, error) {
@@ -133,82 +105,7 @@ func applyBusinessSystemPromptApplication(body []byte, application BusinessSyste
 	if !application.Applied {
 		return body, application, nil
 	}
-	if !json.Valid(body) {
-		return nil, application, fmt.Errorf("apply business system prompt: invalid JSON")
-	}
-	switch application.Carrier {
-	case BusinessSystemPromptCarrierInstructions:
-		return applyBusinessSystemPromptInstructions(body, application.ServerInstructions, application)
-	case BusinessSystemPromptCarrierSystemMessage:
-		return applyBusinessSystemPromptChatMessages(body, application.ServerInstructions, application)
-	default:
-		return nil, application, ErrBusinessSystemPromptUnavailable
-	}
-}
-
-func applyBusinessSystemPromptInstructions(
-	body []byte,
-	server string,
-	application BusinessSystemPromptApplication,
-) ([]byte, BusinessSystemPromptApplication, error) {
-	instructions := gjson.GetBytes(body, "instructions")
-	if instructions.Exists() && instructions.Type != gjson.String {
-		return nil, BusinessSystemPromptApplication{}, fmt.Errorf("apply business system prompt: instructions must be a string")
-	}
-	application.Carrier = BusinessSystemPromptCarrierInstructions
-	application.ClientInstructions = strings.TrimSpace(instructions.String())
-	merged := MergeBusinessSystemPromptInstructions(application.ClientInstructions, server)
-	updated, err := sjson.SetBytes(body, "instructions", merged)
-	if err != nil {
-		return nil, BusinessSystemPromptApplication{}, fmt.Errorf("apply business system prompt instructions: %w", err)
-	}
-	return updated, application, nil
-}
-
-func applyBusinessSystemPromptChatMessages(
-	body []byte,
-	server string,
-	application BusinessSystemPromptApplication,
-) ([]byte, BusinessSystemPromptApplication, error) {
-	var envelope struct {
-		Messages []json.RawMessage `json:"messages"`
-	}
-	if err := json.Unmarshal(body, &envelope); err != nil {
-		return nil, BusinessSystemPromptApplication{}, fmt.Errorf("parse chat messages: %w", err)
-	}
-	if envelope.Messages == nil {
-		return nil, BusinessSystemPromptApplication{}, fmt.Errorf("apply business system prompt: messages must be an array")
-	}
-
-	insertAt := 0
-	for insertAt < len(envelope.Messages) {
-		role := strings.ToLower(strings.TrimSpace(gjson.GetBytes(envelope.Messages[insertAt], "role").String()))
-		if role != "system" && role != "developer" {
-			break
-		}
-		insertAt++
-	}
-	serverMessage, err := json.Marshal(map[string]string{
-		"role":    "system",
-		"content": strings.TrimSpace(server),
-	})
-	if err != nil {
-		return nil, BusinessSystemPromptApplication{}, err
-	}
-	messages := make([]json.RawMessage, 0, len(envelope.Messages)+1)
-	messages = append(messages, envelope.Messages[:insertAt]...)
-	messages = append(messages, serverMessage)
-	messages = append(messages, envelope.Messages[insertAt:]...)
-	rawMessages, err := json.Marshal(messages)
-	if err != nil {
-		return nil, BusinessSystemPromptApplication{}, fmt.Errorf("marshal chat messages: %w", err)
-	}
-	updated, err := sjson.SetRawBytes(body, "messages", rawMessages)
-	if err != nil {
-		return nil, BusinessSystemPromptApplication{}, fmt.Errorf("apply business system prompt chat messages: %w", err)
-	}
-	application.Carrier = BusinessSystemPromptCarrierSystemMessage
-	return updated, application, nil
+	return nil, application, ErrBusinessSystemPromptUnavailable
 }
 
 func RewriteBusinessSystemPromptResponseJSON(

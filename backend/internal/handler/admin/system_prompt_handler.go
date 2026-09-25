@@ -403,15 +403,25 @@ func (h *SystemPromptHandler) publishSkillVersion(c *gin.Context, action, result
 		return
 	}
 	var req struct {
-		ExpectedRevision int64 `json:"expected_revision" binding:"required"`
+		ExpectedRevision       int64    `json:"expected_revision" binding:"required"`
+		ExpectedConfigRevision int64    `json:"expected_config_revision" binding:"required"`
+		TargetRuleIDs          []string `json:"target_rule_ids"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		response.BadRequest(c, "Invalid request: "+err.Error())
 		return
 	}
 	old := h.skillRegistry.CurrentSnapshot()
-	snapshot, err := h.skillRegistry.PublishVersionAction(c.Request.Context(), versionID, req.ExpectedRevision, action, actorID)
+	if req.TargetRuleIDs == nil {
+		response.BadRequest(c, "Specify the complete set of rules subscribed to this paired source")
+		return
+	}
+	snapshot, err := h.skillRegistry.PublishVersionForRules(c.Request.Context(), versionID, req.ExpectedRevision, action, actorID, service.PromptSourceTargets{ExpectedRevision: req.ExpectedConfigRevision, RuleIDs: req.TargetRuleIDs})
 	if err != nil {
+		writeBusinessSystemPromptError(c, err)
+		return
+	}
+	if err := h.service.Reload(c.Request.Context()); err != nil {
 		writeBusinessSystemPromptError(c, err)
 		return
 	}
@@ -654,7 +664,8 @@ func (h *SystemPromptHandler) publish(c *gin.Context, action, result string) {
 		return
 	}
 	var req struct {
-		ExpectedRevision int64 `json:"expected_revision"`
+		ExpectedRevision int64    `json:"expected_revision"`
+		TargetRuleIDs    []string `json:"target_rule_ids"`
 	}
 	if c.Request.ContentLength != 0 {
 		if err := c.ShouldBindJSON(&req); err != nil {
@@ -665,20 +676,16 @@ func (h *SystemPromptHandler) publish(c *gin.Context, action, result string) {
 	if req.ExpectedRevision == 0 {
 		req.ExpectedRevision, _ = strconv.ParseInt(strings.TrimSpace(c.Query("expected_revision")), 10, 64)
 	}
-	oldSnapshot, _ := h.service.CurrentSnapshot()
-	snapshot, err := h.service.PublishVersionAction(c.Request.Context(), templateID, versionID, req.ExpectedRevision, action, actorID)
+	state, err := h.service.PublishVersionToRules(c.Request.Context(), templateID, versionID, req.ExpectedRevision, req.TargetRuleIDs, action, actorID)
 	if err != nil {
 		writeBusinessSystemPromptError(c, err)
 		return
 	}
 	middleware.SetAuditExtra(c, map[string]any{
-		"template_id": templateID, "template_version": snapshot.TemplateVersion,
-		"old_sha256": oldSnapshot.SHA256, "new_sha256": snapshot.SHA256,
-		"byte_length": snapshot.ByteLength, "revision": snapshot.Revision, "result": result,
-		"composition_mode": snapshot.CompositionMode, "bundle_id": snapshot.BundleID,
-		"bundle_manifest_sha256": snapshot.BundleManifestSHA256, "degraded": snapshot.Degraded,
+		"template_id": templateID, "version_id": versionID,
+		"rule_ids": req.TargetRuleIDs, "revision": state.Revision, "result": result,
 	})
-	response.Success(c, businessSystemPromptRuntimeResponse(snapshot))
+	response.Success(c, state)
 }
 
 func (h *SystemPromptHandler) Duplicate(c *gin.Context) {

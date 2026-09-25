@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"strings"
 
 	extensionv1 "github.com/Wei-Shaw/sub2api/internal/nativeapi"
@@ -29,92 +28,8 @@ const (
 
 var ErrBusinessSystemPromptUnavailable = errors.New("business system prompt unavailable")
 
-func validateBusinessSystemPromptBodyWithLimit(body string, limit int) (string, int, error) {
-	return extensionv1.ValidateTextDocument(body, limit)
-}
-func Plan(snapshot BusinessSystemPromptSnapshot, target BusinessSystemPromptTarget, hasInstructions bool) (BusinessSystemPromptApplication, error) {
-	if snapshot.RulePolicy != nil {
-		return planRules(snapshot, target)
-	}
-	bundleManifestSHA256 := snapshot.BundleManifestSHA256
-	if snapshot.CompositionMode == BusinessSystemPromptCompositionCodexSkillHybrid {
-		bundleManifestSHA256 = snapshot.RegistryEffectiveTreeSHA256
-	}
-	application := BusinessSystemPromptApplication{
-		PreserveInstructionsEcho:    snapshot.ExposeServerPrompt || snapshot.CompositionMode == BusinessSystemPromptCompositionCodexSkillHybrid,
-		ExposeServerPrompt:          snapshot.ExposeServerPrompt,
-		CompactEnabled:              snapshot.CompactEnabled,
-		TemplateID:                  snapshot.TemplateID,
-		VersionID:                   snapshot.VersionID,
-		TemplateVersion:             snapshot.TemplateVersion,
-		Revision:                    snapshot.Revision,
-		SHA256:                      strings.ToLower(strings.TrimSpace(snapshot.SHA256)),
-		BaseSHA256:                  strings.ToLower(strings.TrimSpace(snapshot.BaseSHA256)),
-		EffectiveSHA256:             strings.ToLower(strings.TrimSpace(snapshot.EffectiveSHA256)),
-		EffectiveByteLength:         snapshot.EffectiveByteLength,
-		CompositionMode:             snapshot.CompositionMode,
-		BundleID:                    snapshot.BundleID,
-		BundleManifestSHA256:        strings.ToLower(strings.TrimSpace(bundleManifestSHA256)),
-		BundleRevision:              snapshot.RegistryRevision,
-		BundleRawTreeSHA256:         strings.ToLower(strings.TrimSpace(snapshot.RegistryRawTreeSHA256)),
-		BundleEffectiveTreeSHA256:   strings.ToLower(strings.TrimSpace(snapshot.RegistryEffectiveTreeSHA256)),
-		BundlePromptRawSHA256:       strings.ToLower(strings.TrimSpace(snapshot.RegistryPromptRawSHA256)),
-		BundlePromptEffectiveSHA256: strings.ToLower(strings.TrimSpace(snapshot.RegistryPromptEffectiveSHA256)),
-		BundleUpstreamSourceID:      snapshot.RegistryUpstreamSourceID,
-		BundleUpstreamRoot:          snapshot.RegistryUpstreamRoot,
-		BundlePublicRoot:            snapshot.RegistryPublicRoot,
-		Degraded:                    snapshot.Degraded,
-	}
-	if !snapshot.Enabled || target.Platform != PlatformOpenAI || (target.Compact && !snapshot.CompactEnabled) {
-		return application, nil
-	}
-	maxBytes := BusinessSystemPromptMaxBytes
-	if snapshot.EffectiveSHA256 != "" {
-		maxBytes = BusinessSystemPromptBundleMaxBytes
-	}
-	hash, byteLength, err := validateBusinessSystemPromptBodyWithLimit(snapshot.Body, maxBytes)
-	if err != nil {
-		return application, fmt.Errorf("%w: %v", ErrBusinessSystemPromptUnavailable, err)
-	}
-	expectedHash := snapshot.SHA256
-	expectedLength := snapshot.ByteLength
-	if snapshot.EffectiveSHA256 != "" {
-		expectedHash = snapshot.EffectiveSHA256
-		expectedLength = snapshot.EffectiveByteLength
-	}
-	if expectedHash != "" && !strings.EqualFold(expectedHash, hash) {
-		return application, fmt.Errorf("%w: snapshot hash mismatch", ErrBusinessSystemPromptUnavailable)
-	}
-	if expectedLength > 0 && expectedLength != byteLength {
-		return application, fmt.Errorf("%w: snapshot length mismatch", ErrBusinessSystemPromptUnavailable)
-	}
-
-	application.Applied = true
-	application.ServerInstructions = strings.TrimSpace(snapshot.Body)
-	application.SHA256 = hash
-	if application.BaseSHA256 == "" {
-		application.BaseSHA256 = hash
-	}
-	if application.EffectiveSHA256 == "" {
-		application.EffectiveSHA256 = hash
-	}
-	if application.EffectiveByteLength == 0 {
-		application.EffectiveByteLength = byteLength
-	}
-
-	switch target.Protocol {
-	case BusinessSystemPromptProtocolResponses:
-		application.Carrier = BusinessSystemPromptCarrierInstructions
-	case BusinessSystemPromptProtocolChat:
-		if hasInstructions {
-			application.Carrier = BusinessSystemPromptCarrierInstructions
-		} else {
-			application.Carrier = BusinessSystemPromptCarrierSystemMessage
-		}
-	default:
-		return BusinessSystemPromptApplication{}, fmt.Errorf("unsupported business system prompt protocol %q", target.Protocol)
-	}
-	return application, nil
+func Plan(snapshot BusinessSystemPromptSnapshot, target BusinessSystemPromptTarget, _ bool) (BusinessSystemPromptApplication, error) {
+	return PlanRules(snapshot, target)
 }
 
 type Module struct {

@@ -10,10 +10,48 @@ import (
 	"strings"
 	"testing"
 
+	extensionv1 "github.com/Wei-Shaw/sub2api/internal/nativeapi"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
 	"github.com/tidwall/gjson"
 )
+
+func businessSystemPromptStoreWithV2Rules(t *testing.T, snapshot BusinessSystemPromptSnapshot) *fakeBusinessSystemPromptStore {
+	t.Helper()
+	if snapshot.CompositionMode == "" {
+		snapshot.CompositionMode = BusinessSystemPromptCompositionInline
+	}
+	if snapshot.TemplateVersion == 0 {
+		snapshot.TemplateVersion = 1
+	}
+	snapshot = promptRulesSnapshotForTest(snapshot)
+	hash, length, err := ValidateBusinessSystemPromptBody(snapshot.Body)
+	require.NoError(t, err)
+	snapshot.SHA256, snapshot.ByteLength = hash, length
+	return &fakeBusinessSystemPromptStore{
+		loaded: snapshot,
+		detail: BusinessSystemPromptTemplateDetail{
+			Template: BusinessSystemPromptTemplate{ID: snapshot.TemplateID},
+			Versions: []BusinessSystemPromptVersion{{
+				ID: snapshot.VersionID, TemplateID: snapshot.TemplateID, Version: snapshot.TemplateVersion,
+				Body: snapshot.Body, SHA256: hash, ByteLength: length,
+				CompositionMode: snapshot.CompositionMode, BundleID: snapshot.BundleID,
+				BundleManifestSHA256: snapshot.BundleManifestSHA256,
+			}},
+		},
+	}
+}
+
+func businessSystemPromptResponseApplication(t *testing.T, input string) BusinessSystemPromptApplication {
+	t.Helper()
+	snapshot := unifiedPromptSnapshot(t, PlatformOpenAI, []string{"auto"}, []string{"control_append"}, []string{"server"})
+	_, application, err := ApplyBusinessSystemPromptToJSON([]byte(input), snapshot, BusinessSystemPromptTarget{
+		Platform: PlatformOpenAI, Protocol: BusinessSystemPromptProtocolResponses,
+	})
+	require.NoError(t, err)
+	require.True(t, application.Applied)
+	return application
+}
 
 func TestBusinessSystemPromptSeedRestoresOriginalBehaviorAndRoutingContract(t *testing.T) {
 	seed := embeddedBusinessSystemPrompt
@@ -76,11 +114,7 @@ func TestBusinessSystemPromptSeedPreservesOriginalRemoteEntryOrder(t *testing.T)
 }
 
 func TestBusinessSystemPromptSeedBodyIsInjectedByteForByte(t *testing.T) {
-	snapshot := BusinessSystemPromptSnapshot{
-		Enabled: true, Body: embeddedBusinessSystemPrompt, Revision: 1,
-		CompositionMode: BusinessSystemPromptCompositionCodexSkillHybrid,
-		BundleID:        BusinessSystemPromptRemoteSkillBundleID,
-	}
+	snapshot := unifiedPromptSnapshot(t, PlatformOpenAI, []string{"auto"}, []string{"control_append"}, []string{embeddedBusinessSystemPrompt})
 	body, application, err := ApplyBusinessSystemPromptToJSON(
 		[]byte(`{"model":"gpt-5","input":"hello"}`),
 		snapshot,
@@ -89,7 +123,8 @@ func TestBusinessSystemPromptSeedBodyIsInjectedByteForByte(t *testing.T) {
 	require.NoError(t, err)
 	require.True(t, application.Applied)
 	require.Equal(t, embeddedBusinessSystemPrompt, gjson.GetBytes(body, "instructions").String())
-	require.Equal(t, embeddedBusinessSystemPrompt, application.ServerInstructions)
+	require.Len(t, application.RulesPlan.Placements, 1)
+	require.Equal(t, embeddedBusinessSystemPrompt, application.RulesPlan.Placements[0].Body)
 }
 
 func TestValidateBusinessSystemPromptBodyPreservesWhitespace(t *testing.T) {
@@ -131,7 +166,7 @@ func TestMergeBusinessSystemPromptInstructions(t *testing.T) {
 }
 
 func TestApplyBusinessSystemPromptToResponsesUsesNativeInstructions(t *testing.T) {
-	snapshot := BusinessSystemPromptSnapshot{Enabled: true, Body: "server", Revision: 7}
+	snapshot := unifiedPromptSnapshot(t, PlatformOpenAI, []string{"auto"}, []string{"control_append"}, []string{"server"})
 	body, application, err := ApplyBusinessSystemPromptToJSON(
 		[]byte(`{"model":"gpt-5","instructions":" client ","input":[{"role":"user","content":"hi"}]}`),
 		snapshot,
@@ -139,13 +174,15 @@ func TestApplyBusinessSystemPromptToResponsesUsesNativeInstructions(t *testing.T
 	)
 	require.NoError(t, err)
 	require.True(t, application.Applied)
-	require.Equal(t, "client\n\nserver", gjson.GetBytes(body, "instructions").String())
-	require.Equal(t, "client", application.ClientInstructions)
-	require.Equal(t, "server", application.ServerInstructions)
+	require.Equal(t, " client \n\nserver", gjson.GetBytes(body, "instructions").String())
+	require.Equal(t, " client ", application.ClientInstructions)
+	require.Len(t, application.RulesPlan.Placements, 1)
+	require.Equal(t, "instructions", application.RulesPlan.Placements[0].Carrier)
+	require.Equal(t, "server", application.RulesPlan.Placements[0].Body)
 }
 
 func TestApplyBusinessSystemPromptToChatInsertsSystemAfterExistingControlMessages(t *testing.T) {
-	snapshot := BusinessSystemPromptSnapshot{Enabled: true, Body: "server"}
+	snapshot := unifiedPromptSnapshot(t, PlatformOpenAI, []string{"auto"}, []string{"control_append"}, []string{"server"})
 	body, application, err := ApplyBusinessSystemPromptToJSON(
 		[]byte(`{"model":"gpt-5","messages":[{"role":"system","content":"old"},{"role":"developer","content":"dev"},{"role":"user","content":"hi"}]}`),
 		snapshot,
@@ -167,29 +204,29 @@ func TestApplyBusinessSystemPromptToChatInsertsSystemAfterExistingControlMessage
 }
 
 func TestBusinessSystemPromptScopeAndCompactSwitch(t *testing.T) {
-	snapshot := BusinessSystemPromptSnapshot{Enabled: true, Body: "server"}
-	for name, target := range map[string]BusinessSystemPromptTarget{
-		"grok excluded": {Platform: PlatformGrok, Protocol: BusinessSystemPromptProtocolResponses},
-		"compact off":   {Platform: PlatformOpenAI, Protocol: BusinessSystemPromptProtocolResponses, Compact: true},
+	for _, tc := range []struct {
+		name, reason string
+		target       BusinessSystemPromptTarget
+	}{
+		{"outside explicit platform scope", "platform_scope", BusinessSystemPromptTarget{Platform: PlatformGrok, Protocol: BusinessSystemPromptProtocolResponses}},
+		{"compact off", "compact_disabled", BusinessSystemPromptTarget{Platform: PlatformOpenAI, Protocol: BusinessSystemPromptProtocolResponses, Compact: true}},
 	} {
-		t.Run(name, func(t *testing.T) {
-			if target.Compact {
-				snapshot.CompactEnabled = false
-			}
+		t.Run(tc.name, func(t *testing.T) {
+			snapshot := unifiedPromptSnapshot(t, PlatformOpenAI, []string{"auto"}, []string{"control_append"}, []string{"server"})
 			body := []byte(`{"model":"gpt-5","instructions":"client"}`)
-			got, application, err := ApplyBusinessSystemPromptToJSON(body, snapshot, target)
+			got, application, err := ApplyBusinessSystemPromptToJSON(body, snapshot, tc.target)
 			require.NoError(t, err)
 			require.False(t, application.Applied)
 			require.True(t, bytes.Equal(body, got))
+			require.Equal(t, []extensionv1.PromptRuleDecision{{RuleID: "rule-0", Reason: tc.reason}}, application.RulesPlan.Skipped)
 		})
 	}
 }
 
-func TestDisabledBusinessSystemPromptReturnsSnapshotMetadataWithoutChangingBody(t *testing.T) {
-	snapshot := BusinessSystemPromptSnapshot{
-		Enabled: false, ExposeServerPrompt: true, CompactEnabled: true,
-		TemplateID: 2, VersionID: 3, TemplateVersion: 4, Revision: 5, SHA256: "ABCDEF",
-	}
+func TestDisabledBusinessSystemPromptReturnsRulePlanMetadataWithoutChangingBody(t *testing.T) {
+	snapshot := unifiedPromptSnapshot(t, PlatformOpenAI, []string{"auto"}, []string{"control_append"}, []string{"server"})
+	snapshot.Enabled, snapshot.ExposeServerPrompt, snapshot.CompactEnabled = false, true, true
+	snapshot.Revision = 5
 	body := []byte(`{"instructions":"client"}`)
 	got, application, err := ApplyBusinessSystemPromptToJSON(body, snapshot, BusinessSystemPromptTarget{
 		Platform: PlatformOpenAI, Protocol: BusinessSystemPromptProtocolResponses,
@@ -198,17 +235,15 @@ func TestDisabledBusinessSystemPromptReturnsSnapshotMetadataWithoutChangingBody(
 	require.Equal(t, body, got)
 	require.False(t, application.Applied)
 	require.Equal(t, int64(5), application.Revision)
-	require.Equal(t, "abcdef", application.SHA256)
 	require.True(t, application.ExposeServerPrompt)
+	require.True(t, application.CompactEnabled)
+	require.Empty(t, application.RulesPlan.Placements)
+	require.Equal(t, []extensionv1.PromptRuleDecision{{RuleID: "rule-0", Reason: "global_disabled"}}, application.RulesPlan.Skipped)
+	require.Equal(t, application.RulesPlan.SHA256, application.SHA256)
 }
 
 func TestRewriteBusinessSystemPromptResponseJSONRestoresClientInstructions(t *testing.T) {
-	application := BusinessSystemPromptApplication{
-		Applied:            true,
-		Carrier:            BusinessSystemPromptCarrierInstructions,
-		ClientInstructions: "client",
-		ServerInstructions: "server",
-	}
+	application := businessSystemPromptResponseApplication(t, `{"instructions":"client"}`)
 	body := []byte(`{"id":"resp_1","instructions":"client\n\nserver","output":[]}`)
 	rewritten, err := RewriteBusinessSystemPromptResponseJSON(body, application, false)
 	require.NoError(t, err)
@@ -216,11 +251,7 @@ func TestRewriteBusinessSystemPromptResponseJSONRestoresClientInstructions(t *te
 }
 
 func TestRewriteBusinessSystemPromptResponseJSONDeletesServerOnlyInstructions(t *testing.T) {
-	application := BusinessSystemPromptApplication{
-		Applied:            true,
-		Carrier:            BusinessSystemPromptCarrierInstructions,
-		ServerInstructions: "server",
-	}
+	application := businessSystemPromptResponseApplication(t, `{}`)
 	body := []byte(`{"type":"response.completed","response":{"id":"resp_1","instructions":"server"}}`)
 	rewritten, err := RewriteBusinessSystemPromptResponseJSON(body, application, false)
 	require.NoError(t, err)
@@ -228,10 +259,7 @@ func TestRewriteBusinessSystemPromptResponseJSONDeletesServerOnlyInstructions(t 
 }
 
 func TestRewriteBusinessSystemPromptResponseJSONRestoresStructuredErrorInstructions(t *testing.T) {
-	application := BusinessSystemPromptApplication{
-		Applied: true, Carrier: BusinessSystemPromptCarrierInstructions,
-		ClientInstructions: "client", ServerInstructions: "server",
-	}
+	application := businessSystemPromptResponseApplication(t, `{"instructions":"client"}`)
 	body := []byte(`{"error":{"response":{"instructions":"client\n\nserver"},"message":"unchanged"}}`)
 	rewritten, err := RewriteBusinessSystemPromptResponseJSON(body, application, false)
 	require.NoError(t, err)
@@ -240,11 +268,7 @@ func TestRewriteBusinessSystemPromptResponseJSONRestoresStructuredErrorInstructi
 }
 
 func TestRewriteBusinessSystemPromptResponseJSONDoesNotScrubUnexpectedText(t *testing.T) {
-	application := BusinessSystemPromptApplication{
-		Applied:            true,
-		Carrier:            BusinessSystemPromptCarrierInstructions,
-		ServerInstructions: "server",
-	}
+	application := businessSystemPromptResponseApplication(t, `{}`)
 	body := []byte(`{"instructions":"upstream changed this","output":[{"content":[{"text":"server"}]}]}`)
 	rewritten, err := RewriteBusinessSystemPromptResponseJSON(body, application, false)
 	require.NoError(t, err)
@@ -252,12 +276,7 @@ func TestRewriteBusinessSystemPromptResponseJSONDoesNotScrubUnexpectedText(t *te
 }
 
 func TestRewriteBusinessSystemPromptSSEPreservesFraming(t *testing.T) {
-	application := BusinessSystemPromptApplication{
-		Applied:            true,
-		Carrier:            BusinessSystemPromptCarrierInstructions,
-		ClientInstructions: "client",
-		ServerInstructions: "server",
-	}
+	application := businessSystemPromptResponseApplication(t, `{"instructions":"client"}`)
 	input := []byte("event: response.created\ndata: \t{\"type\":\"response.created\",\"response\":{\"instructions\":\"client\\n\\nserver\"}}\n\ndata: \t[DONE]  \n\n")
 	want := "event: response.created\ndata: \t{\"type\":\"response.created\",\"response\":{\"instructions\":\"client\"}}\n\ndata: \t[DONE]  \n\n"
 	rewritten, err := RewriteBusinessSystemPromptSSE(input, application, false)
@@ -266,11 +285,7 @@ func TestRewriteBusinessSystemPromptSSEPreservesFraming(t *testing.T) {
 }
 
 func TestRewriteBusinessSystemPromptResponseHonorsExposeSwitch(t *testing.T) {
-	application := BusinessSystemPromptApplication{
-		Applied:            true,
-		Carrier:            BusinessSystemPromptCarrierInstructions,
-		ServerInstructions: "server",
-	}
+	application := businessSystemPromptResponseApplication(t, `{}`)
 	body := []byte(`{"instructions":"server"}`)
 	rewritten, err := RewriteBusinessSystemPromptResponseJSON(body, application, true)
 	require.NoError(t, err)
@@ -278,7 +293,9 @@ func TestRewriteBusinessSystemPromptResponseHonorsExposeSwitch(t *testing.T) {
 }
 
 func TestRewriteBusinessSystemPromptResponsePreservesPairedPublicationEcho(t *testing.T) {
-	_, application, err := ApplyBusinessSystemPromptToJSON([]byte(`{"instructions":"client"}`), BusinessSystemPromptSnapshot{Enabled: true, Body: "server", CompositionMode: BusinessSystemPromptCompositionCodexSkillHybrid}, BusinessSystemPromptTarget{Platform: PlatformOpenAI, Protocol: BusinessSystemPromptProtocolResponses})
+	snapshot := unifiedPromptSnapshot(t, PlatformOpenAI, []string{"auto"}, []string{"control_append"}, []string{"server"})
+	snapshot.ResolvedRules[0].PreserveEcho = true
+	_, application, err := ApplyBusinessSystemPromptToJSON([]byte(`{"instructions":"client"}`), snapshot, BusinessSystemPromptTarget{Platform: PlatformOpenAI, Protocol: BusinessSystemPromptProtocolResponses})
 	require.NoError(t, err)
 	require.True(t, application.PreserveInstructionsEcho)
 	jsonBody := []byte(`{"id":"resp_1","instructions":"client\n\nserver","output":[]}`)
@@ -293,12 +310,8 @@ func TestRewriteBusinessSystemPromptResponsePreservesPairedPublicationEcho(t *te
 }
 
 func TestBusinessSystemPromptApplicationCapturesExposeDecision(t *testing.T) {
-	snapshot := BusinessSystemPromptSnapshot{
-		Enabled:            true,
-		ExposeServerPrompt: true,
-		Body:               "server",
-		Revision:           8,
-	}
+	snapshot := unifiedPromptSnapshot(t, PlatformOpenAI, []string{"auto"}, []string{"control_append"}, []string{"server"})
+	snapshot.ExposeServerPrompt, snapshot.Revision = true, 8
 	_, application, err := ApplyBusinessSystemPromptToJSON(
 		[]byte(`{"instructions":"client"}`),
 		snapshot,
@@ -332,9 +345,9 @@ func TestBusinessSystemPromptCacheKeyIncludesAppliedRevisionAndHash(t *testing.T
 }
 
 func TestBusinessSystemPromptRequestDecisionIsFrozenAcrossRetry(t *testing.T) {
-	store := &fakeBusinessSystemPromptStore{loaded: BusinessSystemPromptSnapshot{
+	store := businessSystemPromptStoreWithV2Rules(t, BusinessSystemPromptSnapshot{
 		Revision: 1, Enabled: false, Body: "server",
-	}}
+	})
 	policy := NewBusinessSystemPromptService(store, nil)
 	require.NoError(t, policy.Initialize(context.Background()))
 	gateway := &OpenAIGatewayService{businessPromptService: policy}
@@ -349,7 +362,8 @@ func TestBusinessSystemPromptRequestDecisionIsFrozenAcrossRetry(t *testing.T) {
 	require.False(t, application.Applied)
 	require.Equal(t, "client", gjson.GetBytes(first, "instructions").String())
 
-	store.loaded = BusinessSystemPromptSnapshot{Revision: 2, Enabled: true, Body: "new-server"}
+	next := businessSystemPromptStoreWithV2Rules(t, BusinessSystemPromptSnapshot{Revision: 2, VersionID: 2, Enabled: true, Body: "new-server"})
+	store.loaded, store.detail = next.loaded, next.detail
 	require.NoError(t, policy.Reload(context.Background()))
 	retry, retryApplication, err := gateway.applyBusinessSystemPromptForRequest(
 		c, []byte(`{"instructions":"changed-client"}`), account, BusinessSystemPromptProtocolResponses, false,
@@ -368,10 +382,10 @@ func TestBusinessSystemPromptRequestDecisionIsFrozenAcrossRetry(t *testing.T) {
 	require.Equal(t, "client\n\nnew-server", gjson.GetBytes(fresh, "instructions").String())
 }
 
-func TestBusinessSystemPromptRequestDoesNotDuplicateAfterCacheRewrite(t *testing.T) {
-	store := &fakeBusinessSystemPromptStore{loaded: BusinessSystemPromptSnapshot{
+func TestBusinessSystemPromptCleanRetryDoesNotDuplicateAfterCacheRewrite(t *testing.T) {
+	store := businessSystemPromptStoreWithV2Rules(t, BusinessSystemPromptSnapshot{
 		Revision: 9, Enabled: true, Body: "server",
-	}}
+	})
 	policy := NewBusinessSystemPromptService(store, nil)
 	require.NoError(t, policy.Initialize(context.Background()))
 	gateway := &OpenAIGatewayService{businessPromptService: policy}
@@ -379,27 +393,32 @@ func TestBusinessSystemPromptRequestDoesNotDuplicateAfterCacheRewrite(t *testing
 	gin.SetMode(gin.TestMode)
 	c, _ := gin.CreateTestContext(httptest.NewRecorder())
 	account := &Account{Platform: PlatformOpenAI}
+	clean := []byte(`{"instructions":"client","prompt_cache_key":"key"}`)
+	original := bytes.Clone(clean)
 	body, application, err := gateway.applyBusinessSystemPromptForRequest(
-		c, []byte(`{"instructions":"client","prompt_cache_key":"key"}`), account, BusinessSystemPromptProtocolResponses, false,
+		c, clean, account, BusinessSystemPromptProtocolResponses, false,
 	)
 	require.NoError(t, err)
 	body, err = rewriteBusinessSystemPromptCacheKey(c, body, application)
 	require.NoError(t, err)
 
 	retry, retryApplication, err := gateway.applyBusinessSystemPromptForRequest(
-		c, body, account, BusinessSystemPromptProtocolResponses, false,
+		c, clean, account, BusinessSystemPromptProtocolResponses, false,
 	)
 	require.NoError(t, err)
 	retry, err = rewriteBusinessSystemPromptCacheKey(c, retry, retryApplication)
 	require.NoError(t, err)
+	require.Equal(t, original, clean, "the caller retains clean bytes for retries")
 	require.Equal(t, "client\n\nserver", gjson.GetBytes(retry, "instructions").String())
+	require.Equal(t, 1, strings.Count(gjson.GetBytes(retry, "instructions").String(), "server"))
+	require.Equal(t, application.RulesPlan.SHA256, retryApplication.RulesPlan.SHA256)
 	require.Equal(t, gjson.GetBytes(body, "prompt_cache_key").String(), gjson.GetBytes(retry, "prompt_cache_key").String())
 }
 
 func TestBusinessSystemPromptRetryPreservesRawSnapshotWhitespace(t *testing.T) {
-	store := &fakeBusinessSystemPromptStore{loaded: BusinessSystemPromptSnapshot{
+	store := businessSystemPromptStoreWithV2Rules(t, BusinessSystemPromptSnapshot{
 		Revision: 4, Enabled: true, Body: "  server  ",
-	}}
+	})
 	policy := NewBusinessSystemPromptService(store, nil)
 	require.NoError(t, policy.Initialize(context.Background()))
 	gateway := &OpenAIGatewayService{businessPromptService: policy}
@@ -416,14 +435,15 @@ func TestBusinessSystemPromptRetryPreservesRawSnapshotWhitespace(t *testing.T) {
 		c, []byte(`{"instructions":"changed-client"}`), account, BusinessSystemPromptProtocolResponses, false,
 	)
 	require.NoError(t, err)
-	require.Equal(t, "changed-client\n\nserver", gjson.GetBytes(retry, "instructions").String())
+	require.Equal(t, "changed-client\n\n  server  ", gjson.GetBytes(retry, "instructions").String())
+	require.Equal(t, "  server  ", application.RulesPlan.Placements[0].Body)
 	require.Equal(t, int64(4), application.Revision)
 }
 
 func TestBusinessSystemPromptSnapshotIsFrozenAcrossAdapterFallback(t *testing.T) {
-	store := &fakeBusinessSystemPromptStore{loaded: BusinessSystemPromptSnapshot{
+	store := businessSystemPromptStoreWithV2Rules(t, BusinessSystemPromptSnapshot{
 		Revision: 4, Enabled: true, Body: "old-server",
-	}}
+	})
 	policy := NewBusinessSystemPromptService(store, nil)
 	require.NoError(t, policy.Initialize(context.Background()))
 	gateway := &OpenAIGatewayService{businessPromptService: policy}
@@ -437,33 +457,38 @@ func TestBusinessSystemPromptSnapshotIsFrozenAcrossAdapterFallback(t *testing.T)
 	require.NoError(t, err)
 	require.Equal(t, int64(4), firstApplication.Revision)
 
-	store.loaded = BusinessSystemPromptSnapshot{Revision: 5, Enabled: true, Body: "new-server"}
+	next := businessSystemPromptStoreWithV2Rules(t, BusinessSystemPromptSnapshot{Revision: 5, VersionID: 2, Enabled: true, Body: "new-server"})
+	store.loaded, store.detail = next.loaded, next.detail
 	require.NoError(t, policy.Reload(context.Background()))
 	fallback, fallbackApplication, err := gateway.applyBusinessSystemPromptForRequest(
 		c, []byte(`{"messages":[{"role":"user","content":"hello"}]}`), account, BusinessSystemPromptProtocolChat, false,
 	)
 	require.NoError(t, err)
 	require.Equal(t, int64(4), fallbackApplication.Revision)
+	require.Equal(t, firstApplication.RulesPlan.Placements[0].VersionID, fallbackApplication.RulesPlan.Placements[0].VersionID)
 	require.True(t, chatBodyHasSystemPrompt(fallback, "old-server"))
 	require.NotContains(t, string(fallback), "new-server")
 }
 
 func TestBusinessSystemPromptResponseUsesRequestScopedExposeDecision(t *testing.T) {
-	store := &fakeBusinessSystemPromptStore{loaded: BusinessSystemPromptSnapshot{
-		Revision: 1, Enabled: true, ExposeServerPrompt: true, Body: "server",
-	}}
+	store := businessSystemPromptStoreWithV2Rules(t, BusinessSystemPromptSnapshot{
+		Revision: 1, Enabled: true, ExposeServerPrompt: false, Body: "server",
+	})
 	policy := NewBusinessSystemPromptService(store, nil)
 	require.NoError(t, policy.Initialize(context.Background()))
 	gateway := &OpenAIGatewayService{businessPromptService: policy}
 
 	gin.SetMode(gin.TestMode)
 	c, _ := gin.CreateTestContext(httptest.NewRecorder())
-	c.Set(businessSystemPromptRequestApplicationKey+":"+BusinessSystemPromptProtocolResponses, businessSystemPromptRequestState{
-		application: BusinessSystemPromptApplication{
-			Applied: true, Carrier: BusinessSystemPromptCarrierInstructions,
-			ServerInstructions: "server", ExposeServerPrompt: false,
-		},
-	})
+	_, application, err := policy.ApplyForSend(c, &Account{Platform: PlatformOpenAI}, []byte(`{"input":"hello"}`), BusinessSystemPromptProtocolResponses, false)
+	require.NoError(t, err)
+	require.True(t, application.Applied)
+	require.False(t, application.ExposeServerPrompt)
+	store.loaded.Revision, store.loaded.ExposeServerPrompt = 2, true
+	require.NoError(t, policy.Reload(context.Background()))
+	published, ok := policy.CurrentSnapshot()
+	require.True(t, ok)
+	require.True(t, published.ExposeServerPrompt)
 
 	rewritten := gateway.rewriteBusinessSystemPromptJSONForRequest(
 		c,
@@ -473,8 +498,8 @@ func TestBusinessSystemPromptResponseUsesRequestScopedExposeDecision(t *testing.
 	require.False(t, gjson.GetBytes(rewritten, "response.instructions").Exists())
 }
 
-func TestOpenAIGatewayBusinessSystemPromptHelperScopesAndMerges(t *testing.T) {
-	store := &fakeBusinessSystemPromptStore{loaded: BusinessSystemPromptSnapshot{Revision: 1, Enabled: true, Body: "server"}}
+func TestOpenAIGatewayBusinessSystemPromptHelperHonorsExplicitScopeAndMerges(t *testing.T) {
+	store := businessSystemPromptStoreWithV2Rules(t, BusinessSystemPromptSnapshot{Revision: 1, Enabled: true, Body: "server"})
 	policy := NewBusinessSystemPromptService(store, nil)
 	require.NoError(t, policy.Initialize(context.Background()))
 	gateway := &OpenAIGatewayService{businessPromptService: policy}
@@ -488,12 +513,13 @@ func TestOpenAIGatewayBusinessSystemPromptHelperScopesAndMerges(t *testing.T) {
 	require.NoError(t, err)
 	require.False(t, app.Applied)
 	require.JSONEq(t, `{"instructions":"client"}`, string(grokBody))
+	require.Equal(t, []extensionv1.PromptRuleDecision{{RuleID: "fixture", Reason: "platform_scope"}}, app.RulesPlan.Skipped)
 }
 
-func TestBusinessSystemPromptRequestStateNeverCrossesIntoGrok(t *testing.T) {
-	store := &fakeBusinessSystemPromptStore{loaded: BusinessSystemPromptSnapshot{
+func TestBusinessSystemPromptRequestStateHonorsSelectedPlatformScope(t *testing.T) {
+	store := businessSystemPromptStoreWithV2Rules(t, BusinessSystemPromptSnapshot{
 		Revision: 1, Enabled: true, Body: "server",
-	}}
+	})
 	policy := NewBusinessSystemPromptService(store, nil)
 	require.NoError(t, policy.Initialize(context.Background()))
 	gateway := &OpenAIGatewayService{businessPromptService: policy}
@@ -520,4 +546,5 @@ func TestBusinessSystemPromptRequestStateNeverCrossesIntoGrok(t *testing.T) {
 	require.NoError(t, err)
 	require.False(t, grokApplication.Applied)
 	require.JSONEq(t, `{"instructions":"grok-client"}`, string(grokBody))
+	require.Equal(t, []extensionv1.PromptRuleDecision{{RuleID: "fixture", Reason: "platform_scope"}}, grokApplication.RulesPlan.Skipped)
 }

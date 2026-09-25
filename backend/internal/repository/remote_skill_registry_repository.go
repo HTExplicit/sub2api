@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Wei-Shaw/sub2api/internal/nativeapi"
 	"github.com/Wei-Shaw/sub2api/internal/service"
 )
 
@@ -290,6 +291,14 @@ func (r *remoteSkillRegistryRepository) ExpireRemoteSkillSyncJobs(ctx context.Co
 }
 
 func (r *remoteSkillRegistryRepository) PublishRemoteSkillVersion(ctx context.Context, versionID, expectedRevision, actorID int64) (service.RemoteSkillRegistrySnapshot, error) {
+	return r.publishRemoteSkillVersion(ctx, versionID, expectedRevision, actorID, nil)
+}
+
+func (r *remoteSkillRegistryRepository) PublishRemoteSkillVersionWithPromptTargets(ctx context.Context, versionID, expectedRevision, actorID int64, targets service.PromptSourceTargets) (service.RemoteSkillRegistrySnapshot, error) {
+	return r.publishRemoteSkillVersion(ctx, versionID, expectedRevision, actorID, &targets)
+}
+
+func (r *remoteSkillRegistryRepository) publishRemoteSkillVersion(ctx context.Context, versionID, expectedRevision, actorID int64, targets *service.PromptSourceTargets) (service.RemoteSkillRegistrySnapshot, error) {
 	if err := r.requireDatabase(); err != nil {
 		return service.RemoteSkillRegistrySnapshot{}, err
 	}
@@ -298,6 +307,46 @@ func (r *remoteSkillRegistryRepository) PublishRemoteSkillVersion(ctx context.Co
 		return service.RemoteSkillRegistrySnapshot{}, err
 	}
 	defer func() { _ = tx.Rollback() }()
+	if targets != nil {
+		if err := lockBusinessSystemPromptRuntimeRevision(ctx, tx, targets.ExpectedRevision); err != nil {
+			return service.RemoteSkillRegistrySnapshot{}, err
+		}
+		ids := make(map[string]bool, len(targets.RuleIDs))
+		for _, id := range targets.RuleIDs {
+			if id == "" || ids[id] || len(targets.RuleIDs) > nativeapi.PromptRulesMaxCount {
+				return service.RemoteSkillRegistrySnapshot{}, service.ErrBusinessSystemPromptInvalid
+			}
+			ids[id] = true
+		}
+		rows, err := tx.QueryContext(ctx, `SELECT rule->>'id'
+			FROM system_prompt_rule_policies p, jsonb_array_elements(p.policy->'rules') rule
+			JOIN system_prompt_template_versions v ON v.id = (rule->>'version_id')::bigint
+			WHERE p.id = 1 AND v.composition_mode = 'codex_skill_hybrid'`)
+		if err != nil {
+			return service.RemoteSkillRegistrySnapshot{}, err
+		}
+		matches := 0
+		for rows.Next() {
+			var id string
+			if err := rows.Scan(&id); err != nil {
+				_ = rows.Close()
+				return service.RemoteSkillRegistrySnapshot{}, err
+			}
+			if !ids[id] {
+				_ = rows.Close()
+				return service.RemoteSkillRegistrySnapshot{}, fmt.Errorf("%w: paired source affects all subscribed rules", service.ErrBusinessSystemPromptInvalid)
+			}
+			matches++
+		}
+		rowErr := rows.Err()
+		closeErr := rows.Close()
+		if rowErr != nil || closeErr != nil {
+			return service.RemoteSkillRegistrySnapshot{}, errors.Join(rowErr, closeErr)
+		}
+		if matches != len(ids) {
+			return service.RemoteSkillRegistrySnapshot{}, service.ErrBusinessSystemPromptInvalid
+		}
+	}
 	if err := lockRemoteSkillRevision(ctx, tx, expectedRevision); err != nil {
 		return service.RemoteSkillRegistrySnapshot{}, err
 	}
@@ -323,6 +372,11 @@ func (r *remoteSkillRegistryRepository) PublishRemoteSkillVersion(ctx context.Co
 		    revision = revision + 1, updated_by = $3, updated_at = NOW()
 		WHERE id = 1`, versionID, promptID, nullableActor(actorID)); err != nil {
 		return service.RemoteSkillRegistrySnapshot{}, err
+	}
+	if targets != nil {
+		if _, err := tx.ExecContext(ctx, `UPDATE system_prompt_runtime SET revision = revision + 1, updated_by = $1, updated_at = NOW() WHERE id = 1`, nullableActor(actorID)); err != nil {
+			return service.RemoteSkillRegistrySnapshot{}, err
+		}
 	}
 	snapshot, err := loadRemoteSkillRegistrySnapshot(ctx, tx)
 	if err != nil {

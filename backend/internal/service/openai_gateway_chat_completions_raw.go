@@ -130,20 +130,6 @@ func (s *OpenAIGatewayService) forwardAsRawChatCompletions(
 		return nil, policyErr
 	}
 	upstreamBody = updatedBody
-	if updatedPromptBody, application, promptErr := s.applyBusinessSystemPromptForRequest(
-		c, upstreamBody, account, BusinessSystemPromptProtocolChat, false,
-	); promptErr != nil {
-		if errors.Is(promptErr, ErrBusinessSystemPromptUnavailable) {
-			writeChatCompletionsError(c, http.StatusServiceUnavailable, "system_prompt_unavailable", "business system prompt is temporarily unavailable")
-		}
-		return nil, promptErr
-	} else {
-		upstreamBody = updatedPromptBody
-		upstreamBody, promptErr = rewriteBusinessSystemPromptCacheKey(c, upstreamBody, application)
-		if promptErr != nil {
-			return nil, promptErr
-		}
-	}
 	if account.Platform == PlatformGrok {
 		strippedBody, stripErr := stripRedundantGrokChatViewImageTool(upstreamBody)
 		if stripErr != nil {

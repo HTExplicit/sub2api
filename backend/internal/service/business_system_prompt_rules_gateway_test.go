@@ -16,9 +16,12 @@ import (
 )
 
 func newPromptRulesGatewayPolicy(delivery, position string) *BusinessSystemPromptService {
-	rule := extensionv1.PromptRule{ID: "site", Name: "Site rule", Enabled: true, TemplateID: 1, VersionID: 2, Order: 100, Delivery: delivery, Position: position, ModelMatch: "upstream", Models: []string{}}
+	if delivery == "native_control" {
+		delivery = "auto"
+	}
+	rule := extensionv1.PromptRule{ID: "site", Name: "Site rule", Enabled: true, TemplateID: 1, VersionID: 2, Order: 100, Role: delivery, Platforms: []string{PlatformOpenAI, PlatformCindy}, Position: position, ModelMatch: "upstream", Models: []string{}}
 	hash, _, _ := extensionv1.ValidateTextDocument("site-rule-content", 100)
-	snapshot := BusinessSystemPromptSnapshot{Revision: 8, Enabled: true, RulePolicy: &extensionv1.PromptRulePolicy{Version: 1, Rules: []extensionv1.PromptRule{rule}, DefaultRuleIDs: []string{"site"}}, ResolvedRules: []extensionv1.ResolvedPromptRule{{Rule: rule, Body: "site-rule-content", SHA256: hash}}}
+	snapshot := BusinessSystemPromptSnapshot{Revision: 8, Enabled: true, RulePolicy: &extensionv1.PromptRulePolicy{Version: 2, Rules: []extensionv1.PromptRule{rule}, DefaultRuleIDs: []string{"site"}}, ResolvedRules: []extensionv1.ResolvedPromptRule{{Rule: rule, Body: "site-rule-content", SHA256: hash}}}
 	service := NewBusinessSystemPromptService(nil, nil)
 	service.snapshot.Store(&snapshot)
 	return service
@@ -85,7 +88,7 @@ func TestPromptRulesFinalHTTPPaths(t *testing.T) {
 	}
 }
 
-func TestPromptRulesRetryScopeRestoresOnlyOwnedInsertions(t *testing.T) {
+func TestPromptRulesRetryScopeUsesCleanSource(t *testing.T) {
 	policy := newPromptRulesGatewayPolicy("system", "control_prepend")
 	gateway := &OpenAIGatewayService{businessPromptService: policy}
 	account := businessSystemPromptAPIKeyAccount(true)
@@ -93,12 +96,12 @@ func TestPromptRulesRetryScopeRestoresOnlyOwnedInsertions(t *testing.T) {
 	c, _ := newBusinessSystemPromptGinContext("/v1/responses", input)
 	first, err := gateway.finalizeBusinessPromptForSend(c, account, input, "responses", false)
 	require.NoError(t, err)
-	retry, err := gateway.finalizeBusinessPromptForSend(c, account, first, "responses", false)
+	retry, err := gateway.finalizeBusinessPromptForSend(c, account, input, "responses", false)
 	require.NoError(t, err)
 	require.Equal(t, first, retry)
 	require.Equal(t, 2, strings.Count(string(retry), "site-rule-content"), "the identical customer message must remain")
 	account.Extra[PromptAccountBindingExtraKey] = extensionv1.PromptAccountBinding{Mode: "off"}
-	clean, err := gateway.finalizeBusinessPromptForSend(c, account, retry, "responses", false)
+	clean, err := gateway.finalizeBusinessPromptForSend(c, account, input, "responses", false)
 	require.NoError(t, err)
 	require.JSONEq(t, string(input), string(clean))
 	account.Extra[PromptAccountBindingExtraKey] = extensionv1.PromptAccountBinding{Mode: "inherit"}
@@ -110,9 +113,7 @@ func TestPromptRulesRetryScopeRestoresOnlyOwnedInsertions(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, 2, strings.Count(string(reapplied), "site-rule-content"))
 	require.Equal(t, "resp_keep", gjson.GetBytes(reapplied, "previous_response_id").String())
-	convertedInput, err := restoreBusinessSystemPromptBeforeConversion(c, reapplied, "responses")
-	require.NoError(t, err)
-	require.JSONEq(t, gjson.GetBytes(input, "input").Raw, gjson.GetBytes(convertedInput, "input").Raw)
+	require.Equal(t, 1, strings.Count(string(input), "site-rule-content"), "the clean source retains only its customer-owned message")
 }
 
 func TestPromptRulesPassthroughFirstAndSecondTurnWire(t *testing.T) {
@@ -191,9 +192,8 @@ func TestPromptRulesNativeWSReplayKeepsCleanAccumulatorAndFrozenPolicy(t *testin
 	first := []byte(`{"model":"gpt-5.4","input":[{"role":"user","content":"first"}],"previous_response_id":"resp_anchor"}`)
 	c, _ := newBusinessSystemPromptGinContext("/v1/responses", first)
 	beginBusinessSystemPromptRequestTurn(c)
-	parsed, plan, err := gateway.prepareBusinessPromptWSIngress(c, first, account, "responses", false)
+	parsed, _, err := gateway.prepareBusinessPromptWSIngress(c, first, account, "responses", false)
 	require.NoError(t, err)
-	require.True(t, plan.Applied)
 	require.Equal(t, first, parsed, "the accumulator must never receive the site's messages")
 	wire, err := gateway.finalizeBusinessPromptWSIngress(c, account, parsed)
 	require.NoError(t, err)
@@ -288,21 +288,20 @@ func TestPromptRulesAccountBindingsCASAndShadowIndependence(t *testing.T) {
 	require.NotContains(t, string(encoded), "site-rule-content")
 }
 
-func TestPromptRulesExecutionScopeRevocationRestoresWireAndCacheKey(t *testing.T) {
-	gateway, invoker, _ := newAccountScopedPromptGateway(t, 100)
-	gateway.businessPromptService = newPromptRulesGatewayPolicy("developer", "conversation_tail")
+func TestPromptRulesAccountBindingRevocationUsesCleanSource(t *testing.T) {
+	gateway := &OpenAIGatewayService{businessPromptService: newPromptRulesGatewayPolicy("developer", "conversation_tail")}
 	account := businessSystemPromptAPIKeyAccount(true)
 	input := []byte(`{"model":"gpt-5.4","prompt_cache_key":"original","input":[{"role":"user","content":"hello"}]}`)
 	c, _ := newBusinessSystemPromptGinContext("/v1/responses", input)
 	wire, err := gateway.finalizeBusinessPromptForSend(c, account, input, "responses", false)
 	require.NoError(t, err)
 	require.Contains(t, string(wire), "site-rule-content")
-	invoker.rollout = 0
-	clean, err := gateway.finalizeBusinessPromptForSend(c, account, wire, "responses", false)
+	account.Extra[PromptAccountBindingExtraKey] = extensionv1.PromptAccountBinding{Mode: "off"}
+	clean, err := gateway.finalizeBusinessPromptForSend(c, account, input, "responses", false)
 	require.NoError(t, err)
 	require.JSONEq(t, string(input), string(clean))
 	application, ok := businessSystemPromptApplicationFromRequest(c, "responses")
 	require.True(t, ok)
 	require.False(t, application.Applied)
-	require.Equal(t, "plugin_scope", application.RulesPlan.Skipped[0].Reason)
+	require.Equal(t, "account_scope", application.RulesPlan.Skipped[0].Reason)
 }

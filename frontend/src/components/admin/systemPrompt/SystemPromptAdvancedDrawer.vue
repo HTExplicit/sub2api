@@ -33,7 +33,7 @@
             <div class="mb-3 flex items-center justify-between gap-3">
               <h3 class="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-dark-300">{{ t('admin.systemPrompts.advanced.runtime') }}</h3>
               <button type="button" class="btn btn-primary btn-sm" :disabled="savingRuntime || !runtimeDirty" @click="emit('save-runtime')">
-                <Icon name="check" size="xs" class="mr-1" />{{ savingRuntime ? t('admin.systemPrompts.common.saving') : t('admin.systemPrompts.actions.saveRuntime') }}
+                <Icon name="check" size="xs" class="mr-1" />{{ savingRuntime ? t('admin.systemPrompts.common.saving') : t('admin.systemPrompts.rules.save') }}
               </button>
             </div>
             <div class="divide-y divide-gray-100 border-y border-gray-100 dark:divide-dark-700 dark:border-dark-700">
@@ -55,6 +55,8 @@
               <span v-if="runtime.degraded" class="badge badge-warning">{{ t('admin.systemPrompts.runtime.degraded') }}</span>
             </div>
           </section>
+
+          <slot name="history" />
 
           <section class="border-b border-gray-100 px-4 py-4 dark:border-dark-700 sm:px-5">
             <div class="mb-3 flex flex-wrap items-center justify-between gap-3">
@@ -81,6 +83,8 @@
 
             <div v-if="!skillRegistry && !skillLoading" class="text-sm text-gray-500 dark:text-dark-400">{{ t('admin.systemPrompts.advanced.skillUnavailable') }}</div>
             <div v-else-if="skillRegistry" class="space-y-3">
+              <p class="text-xs text-muted" data-test="skill-target-rules">{{ t('admin.systemPrompts.rules.skillTargets') }}: {{ skillTargetRuleNames.join(', ') || t('admin.systemPrompts.rules.none') }}</p>
+              <p v-if="skillPublishBlocked" class="text-xs text-amber-700">{{ t('admin.systemPrompts.rules.saveBeforeSkill') }}</p>
               <dl class="grid gap-x-4 gap-y-2 border-y border-gray-100 py-3 text-xs sm:grid-cols-[9rem_minmax(0,1fr)] dark:border-dark-700" data-test="system-prompt-skill-source">
                 <dt class="text-gray-500 dark:text-dark-400">{{ t('admin.systemPrompts.skillRegistry.upstreamRoot') }}</dt>
                 <dd class="break-all font-mono text-gray-800 dark:text-dark-100">{{ skillRegistry.source.upstream_root }}</dd>
@@ -125,7 +129,7 @@
                     <div>{{ t('admin.systemPrompts.skillRegistry.changes') }} +{{ skillCandidate.added_files }} / ~{{ skillCandidate.modified_files }} / -{{ skillCandidate.deleted_files }} · {{ t('admin.systemPrompts.skillRegistry.scripts') }} {{ skillCandidate.script_changes }}</div>
 	                    <div>{{ t('admin.systemPrompts.skillRegistry.fetchedAt') }} <span class="font-mono">{{ skillCandidate.fetched_at }}</span> · {{ t('admin.systemPrompts.skillRegistry.operator') }} {{ skillCandidate.created_by || '-' }}</div>
                   </dl>
-                  <button type="button" data-test="system-prompt-skill-publish-candidate" class="btn btn-primary btn-sm" :disabled="publishingSkill || !skillCandidate.verified" @click="requestSkillPublication(skillCandidate.id, false)">{{ t('admin.systemPrompts.skillRegistry.publishCandidate') }}</button>
+                  <button type="button" data-test="system-prompt-skill-publish-candidate" class="btn btn-primary btn-sm" :disabled="publishingSkill || skillPublishBlocked || !skillCandidate.verified" @click="requestSkillPublication(skillCandidate.id, false)">{{ t('admin.systemPrompts.skillRegistry.publishCandidate') }}</button>
                 </div>
                 <details class="mt-3 border-t border-amber-200 pt-3 dark:border-amber-800" open>
                   <summary class="cursor-pointer font-medium">{{ t('admin.systemPrompts.skillRegistry.promptDiff') }}</summary>
@@ -158,7 +162,7 @@
                       <td class="py-2 pr-3">{{ item.file_count }}</td>
 	                      <td class="whitespace-nowrap py-2 pr-3 font-mono">{{ item.fetched_at }}</td>
                       <td class="py-2 pr-3">{{ item.id === skillRegistry.runtime.active?.id ? t('admin.systemPrompts.history.active') : t('admin.systemPrompts.history.candidate') }}</td>
-                      <td class="py-2 text-right"><button type="button" class="btn btn-secondary btn-sm" :title="t('admin.systemPrompts.actions.rollback')" :disabled="publishingSkill || item.id === skillRegistry.runtime.active?.id" @click="requestSkillPublication(item.id, true)"><Icon name="refresh" size="xs" /></button></td>
+                      <td class="py-2 text-right"><button type="button" class="btn btn-secondary btn-sm" :title="t('admin.systemPrompts.actions.rollback')" :disabled="publishingSkill || skillPublishBlocked || item.id === skillRegistry.runtime.active?.id" @click="requestSkillPublication(item.id, true)"><Icon name="refresh" size="xs" /></button></td>
                     </tr>
                   </tbody>
                 </table>
@@ -199,14 +203,13 @@ import type {
   RemoteSkillBundleVersionDetail,
   RemoteSkillRegistryResponse,
   RemoteSkillSyncJob,
-  SystemPromptRuntime,
   SystemPromptTemplate,
   SystemPromptVersion,
 } from '@/api/admin/systemPrompts'
 
 const props = defineProps<{
   open: boolean
-  runtime: SystemPromptRuntime | null
+  runtime: { revision: number; degraded?: boolean } | null
   runtimeDraft: { enabled: boolean; expose_server_prompt: boolean; compact_enabled: boolean }
   runtimeDirty: boolean
   savingRuntime: boolean
@@ -216,6 +219,8 @@ const props = defineProps<{
   skillCandidate: RemoteSkillBundleVersionDetail | null
   skillSyncing: boolean
   publishingSkill: boolean
+  skillTargetRuleNames: string[]
+  skillPublishBlocked: boolean
   sourceTemplate: SystemPromptTemplate | null
   sourceTemplateDisplayName: string
   sourceVersion: SystemPromptVersion | null

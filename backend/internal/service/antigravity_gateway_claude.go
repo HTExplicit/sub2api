@@ -48,6 +48,7 @@ func (s *AntigravityGatewayService) Forward(ctx context.Context, c *gin.Context,
 		return nil, s.writeClaudeError(c, http.StatusBadRequest, "invalid_request_error", "Missing model")
 	}
 
+	rememberPromptRequestedModel(c, body)
 	originalModel := claudeReq.Model
 	mappedModel := s.getMappedModelForThinkingLevel(
 		account,

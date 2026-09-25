@@ -38,10 +38,10 @@ func NormalizeBusinessSystemPromptCompositionStructure(mode, bundleID, manifestS
 	if mode == "" {
 		mode = BusinessSystemPromptCompositionInline
 	}
-	if mode != BusinessSystemPromptCompositionInline && mode != BusinessSystemPromptCompositionCodexSkillHybrid {
+	if mode != BusinessSystemPromptCompositionInline && mode != BusinessSystemPromptCompositionCodexSkillHybrid && mode != extensionv1.PromptContentAnthropicSystemBlocks {
 		return BusinessSystemPromptComposition{}, errors.New("unsupported composition mode")
 	}
-	if mode == BusinessSystemPromptCompositionInline && (bundleID != "" || manifestSHA256 != "") {
+	if (mode == BusinessSystemPromptCompositionInline || mode == extensionv1.PromptContentAnthropicSystemBlocks) && (bundleID != "" || manifestSHA256 != "") {
 		return BusinessSystemPromptComposition{}, errors.New("inline composition cannot reference a bundle")
 	}
 	if mode == BusinessSystemPromptCompositionCodexSkillHybrid && bundleID == "" {

@@ -852,48 +852,6 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 	// A prior rejection is not evidence that an encrypted state item is
 	// dispensable. Preserve the incoming history and let its source validate it.
 
-	// Business System Prompt is deliberately the final service-owned prompt
-	// layer. All legacy Codex/image/compat transforms above run first, so the
-	// feature can be disabled without changing their request bytes.
-	updatedBody, promptApplication, promptErr := s.applyBusinessSystemPromptForRequest(
-		c, body, account, BusinessSystemPromptProtocolResponses, compactPath,
-	)
-	if promptErr != nil {
-		if errors.Is(promptErr, ErrBusinessSystemPromptUnavailable) {
-			c.JSON(http.StatusServiceUnavailable, gin.H{"error": gin.H{
-				"type": "system_prompt_unavailable", "code": "system_prompt_unavailable",
-				"message": "business system prompt is temporarily unavailable",
-			}})
-		}
-		return nil, promptErr
-	} else {
-		body = updatedBody
-		if promptApplication.Applied {
-			body, promptErr = rewriteBusinessSystemPromptCacheKey(c, body, promptApplication)
-			if promptErr != nil {
-				return nil, promptErr
-			}
-			requestView = newOpenAIRequestView(body)
-			reqBody = nil
-		}
-	}
-	finalCacheBody, finalCacheChanged, finalCacheErr := normalizeCindyManagedPromptCacheKey(body, c, account)
-	if finalCacheErr != nil {
-		return nil, fmt.Errorf("normalize final Cindy prompt_cache_key: %w", finalCacheErr)
-	}
-	if finalCacheChanged {
-		body = finalCacheBody
-		observeCindyManagedPromptCacheNormalization(c, true)
-		requestView = newOpenAIRequestView(body)
-		reqBody = nil
-	}
-	// Prefer the final service-owned cache key when it remains on the wire (for
-	// example after business-prompt rewriting), while retaining the pre-transform
-	// seed for compatibility bridges that intentionally strip the body field.
-	if effectivePromptCacheKey := strings.TrimSpace(gjson.GetBytes(body, "prompt_cache_key").String()); effectivePromptCacheKey != "" {
-		promptCacheKey = effectivePromptCacheKey
-	}
-	logBusinessSystemPromptObservation(ctx, c, promptApplication, wsDecision.Transport, wsDecision.Reason)
 	imageBillingModel := ""
 	imageSizeTier := ""
 	imageInputSize := ""
@@ -1160,6 +1118,7 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 	compactModelFallbackRetried := false
 	agentTaskRecoveryTried := false
 	rejectedFieldRetryState := newOpenAIResponsesRejectedFieldRetryState(body)
+	var wireBody []byte
 	for {
 		// Read the final attempt payload. A compatibility retry may have changed
 		// the request, so neither the original alias nor prior attempt is usage
@@ -1198,7 +1157,7 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 		if account.ProxyID != nil && account.Proxy != nil {
 			proxyURL = account.Proxy.URL()
 		}
-		upstreamReq, body, err = reasoningRecovery.PrepareRequest(upstreamReq, body, proxyURL)
+		upstreamReq, body, wireBody, err = prepareBusinessPromptReasoningRequest(c, reasoningRecovery, upstreamReq, body, proxyURL)
 		if err != nil {
 			if headerGuard != nil {
 				headerGuard.close()
@@ -1209,7 +1168,7 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 		// recovery retry edits) and before zstd inside doOpenAICodexUpstream. The
 		// check compares the slice held here and never reads req.Body.
 		integrityOpts.UpstreamModel = upstreamModel
-		if integrityErr := s.checkStagedRequestIntegrity(c, account, "http_forward", body, integrityOpts); integrityErr != nil {
+		if integrityErr := s.checkStagedRequestIntegrity(c, account, "http_forward", wireBody, integrityOpts); integrityErr != nil {
 			if headerGuard != nil {
 				headerGuard.close()
 			}
@@ -1262,7 +1221,10 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 			_ = resp.Body.Close()
 			resp.Body = io.NopCloser(bytes.NewReader(respBody))
 			if retryBody, retry := reasoningRecovery.TryRecover(resp.StatusCode, resp.Header, respBody, false); retry {
-				body = retryBody
+				body, err = projectReasoningCipherEdits(body, wireBody, retryBody)
+				if err != nil {
+					return nil, err
+				}
 				requestView = newOpenAIRequestView(body)
 				reqBody = nil
 				continue
@@ -1310,7 +1272,7 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 				})
 				return nil, NewOpenAIContinuationStateUnavailableError(resp.StatusCode, resp.Header, respBody)
 			}
-			if retryBody, reason, changed, retryErr := normalizeOpenAIResponsesRejectedFieldRetryBody(resp.StatusCode, body, respBody); retryErr != nil {
+			if retryBody, reason, changed, retryErr := normalizeBusinessPromptRejectedFieldRetryBody(c, resp.StatusCode, body, respBody); retryErr != nil {
 				return nil, fmt.Errorf("normalize rejected Responses field retry body: %w", retryErr)
 			} else if changed && rejectedFieldRetryState.Allow(retryBody) {
 				body = retryBody
@@ -1414,7 +1376,10 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 			if err != nil {
 				if retryBody, retry := reasoningRecovery.TryRecoverError(err); retry {
 					_ = resp.Body.Close()
-					body = retryBody
+					body, err = projectReasoningCipherEdits(body, wireBody, retryBody)
+					if err != nil {
+						return nil, err
+					}
 					requestView = newOpenAIRequestView(body)
 					reqBody = nil
 					continue
@@ -1474,7 +1439,10 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 			if err != nil {
 				if retryBody, retry := reasoningRecovery.TryRecoverError(err); retry {
 					_ = resp.Body.Close()
-					body = retryBody
+					body, err = projectReasoningCipherEdits(body, wireBody, retryBody)
+					if err != nil {
+						return nil, err
+					}
 					requestView = newOpenAIRequestView(body)
 					reqBody = nil
 					continue
@@ -1585,6 +1553,12 @@ func shouldForwardOpenAIResponsesViaRawChatCompletions(account *Account) bool {
 }
 
 func (s *OpenAIGatewayService) buildUpstreamRequest(ctx context.Context, c *gin.Context, account *Account, body []byte, token string, isStream bool, promptCacheKey string, isCodexCLI bool) (*http.Request, error) {
+	return s.buildUpstreamRequestPrepared(ctx, c, account, body, token, isStream, promptCacheKey, isCodexCLI, true)
+}
+
+// Replay preparation needs the real endpoint and auth identity, but retains a
+// clean request. Only the final build is allowed to apply the business prompt.
+func (s *OpenAIGatewayService) buildUpstreamRequestPrepared(ctx context.Context, c *gin.Context, account *Account, body []byte, token string, isStream bool, promptCacheKey string, isCodexCLI bool, includePrompt bool) (*http.Request, error) {
 	// Determine target URL based on account type
 	var targetURL string
 	switch account.Type {
@@ -1620,9 +1594,11 @@ func (s *OpenAIGatewayService) buildUpstreamRequest(ctx context.Context, c *gin.
 		return nil, fmt.Errorf("normalize compatible Responses reasoning summary: %w", err)
 	}
 
-	body, err = s.finalizeBusinessPromptForSend(c, account, body, BusinessSystemPromptProtocolResponses, isOpenAIResponsesCompactPath(c))
-	if err != nil {
-		return nil, err
+	if includePrompt {
+		body, err = s.finalizeBusinessPromptForSend(c, account, body, BusinessSystemPromptProtocolResponses, isOpenAIResponsesCompactPath(c))
+		if err != nil {
+			return nil, err
+		}
 	}
 	req, err := http.NewRequestWithContext(ctx, "POST", targetURL, bytes.NewReader(body))
 	if err != nil {

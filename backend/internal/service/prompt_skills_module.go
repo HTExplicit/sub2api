@@ -17,9 +17,3 @@ var promptSkills = sync.OnceValue(promptpolicy.New)
 var invokePromptSkills = func(ctx context.Context, in extensionv1.Invocation) (extensionv1.Result, error) {
 	return promptSkills().Invoke(ctx, in)
 }
-
-// promptPlanInvoke adapts invokePromptSkills to the account-scoped invoker of
-// the prompt application path.
-func promptPlanInvoke(ctx context.Context, _, _ string, in extensionv1.Invocation) (extensionv1.Result, error) {
-	return invokePromptSkills(ctx, in)
-}

@@ -3,7 +3,6 @@ package service
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"net/http"
 	"strings"
@@ -90,20 +89,6 @@ func (s *OpenAIGatewayService) forwardAnthropicViaRawChatCompletions(
 		}
 		if changed {
 			chatBody = policyBody
-		}
-	}
-	if updatedPromptBody, application, promptErr := s.applyBusinessSystemPromptForRequest(
-		c, chatBody, account, BusinessSystemPromptProtocolChat, false,
-	); promptErr != nil {
-		if errors.Is(promptErr, ErrBusinessSystemPromptUnavailable) {
-			writeAnthropicError(c, http.StatusServiceUnavailable, "system_prompt_unavailable", "business system prompt is temporarily unavailable")
-		}
-		return nil, promptErr
-	} else {
-		chatBody = updatedPromptBody
-		chatBody, promptErr = rewriteBusinessSystemPromptCacheKey(c, chatBody, application)
-		if promptErr != nil {
-			return nil, promptErr
 		}
 	}
 	// Provider normalization and policy caps can both change the converted effort.

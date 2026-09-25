@@ -108,10 +108,15 @@ func (s *OpenAIGatewayService) forwardOpenAIWSV2WithScope(
 	}
 	setOpenAIWSTurnMetadata(payload, turnMetadata)
 	applyStagedCodexFingerprintClientMetadata(c, account, payload)
-	if promptErr := validateBusinessSystemPromptFinal(c, payloadAsJSONBytes(payload), BusinessSystemPromptProtocolResponses); promptErr != nil {
+	wirePayload, promptErr := s.finalizeBusinessPromptForSend(c, account, payloadAsJSONBytes(payload), BusinessSystemPromptProtocolResponses, isOpenAIResponsesCompactPath(c))
+	if promptErr != nil {
 		return nil, promptErr
 	}
-	observePromptRulesFinalFromRequest(c, account, BusinessSystemPromptProtocolResponses)
+	// Decode into a new map: reqBody is the clean retry source owned by the
+	// caller and must never retain the server's inserted messages.
+	if err := decodeOpenAIJSONUseNumber(wirePayload, &payload); err != nil {
+		return nil, err
+	}
 	// Final response.create payload versus the client body Forward staged. The
 	// envelope edits above (type/stream/store/background, client_metadata) are
 	// outside the compared set; the marshal only happens when a snapshot exists.
@@ -124,11 +129,10 @@ func (s *OpenAIGatewayService) forwardOpenAIWSV2WithScope(
 	}
 	previousResponseID := openAIWSPayloadString(payload, "previous_response_id")
 	previousResponseIDKind := ClassifyOpenAIPreviousResponseIDKind(previousResponseID)
-	promptCacheKey := strings.TrimSpace(clientPromptCacheKey)
+	promptCacheKey := openAIWSPayloadString(payload, "prompt_cache_key")
 	if promptCacheKey == "" {
-		// Fingerprint convergence may inject a default key when the client did
-		// not send one; retain that fallback without replacing an explicit raw key.
-		promptCacheKey = openAIWSPayloadString(payload, "prompt_cache_key")
+		application, _ := businessSystemPromptApplicationFromRequest(c, BusinessSystemPromptProtocolResponses)
+		promptCacheKey = deriveBusinessSystemPromptCacheKey(c, strings.TrimSpace(clientPromptCacheKey), application)
 	}
 	_, hasTools := payload["tools"]
 	debugEnabled := isOpenAIWSModeDebugEnabled()

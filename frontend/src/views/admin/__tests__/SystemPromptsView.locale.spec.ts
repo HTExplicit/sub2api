@@ -3,16 +3,13 @@ import { flushPromises, mount, type VueWrapper } from '@vue/test-utils'
 import { createI18n } from 'vue-i18n'
 import en from '@/i18n/locales/en/admin/systemPrompts'
 import zh from '@/i18n/locales/zh/admin/systemPrompts'
+import { promptConfig } from './systemPromptFixtures'
 
-const api = vi.hoisted(() => ({
-  list: vi.fn(), get: vi.fn(), create: vi.fn(), saveDraft: vi.fn(), updateMetadata: vi.fn(),
-  updateRuntime: vi.fn(), publish: vi.fn(), remove: vi.fn(), duplicate: vi.fn(),
-  getSkillRegistry: vi.fn(), startSkillSync: vi.fn(), publishSkillVersion: vi.fn(),
-}))
-const notifications = vi.hoisted(() => ({ showError: vi.fn(), showSuccess: vi.fn(), showWarning: vi.fn() }))
-vi.mock('@/api/admin/systemPrompts', () => ({ default: api }))
+const api = vi.hoisted(() => ({ config: vi.fn(), saveConfig: vi.fn(), preview: vi.fn() }))
+const notifications = vi.hoisted(() => ({ showSuccess: vi.fn() }))
+vi.mock('@/api/admin/systemPromptRules', async () => ({ ...await vi.importActual<typeof import('@/api/admin/systemPromptRules')>('@/api/admin/systemPromptRules'), rulesAPI: api }))
 vi.mock('@/stores/app', () => ({ useAppStore: () => notifications }))
-
+vi.mock('@/stores/auth', () => ({ useAuthStore: () => ({ user: { id: 1 } }) }))
 import App from '../SystemPromptsView.vue'
 
 function messages(value: object, prefix = ''): Record<string, string> {
@@ -22,70 +19,39 @@ function messages(value: object, prefix = ''): Record<string, string> {
   }))
 }
 const wrappers: VueWrapper[] = []
-
-describe('prompt-skills site language', () => {
-  beforeEach(() => {
-    Object.values(api).forEach(mock => mock.mockReset())
-    Object.values(notifications).forEach(mock => mock.mockReset())
-    vi.stubGlobal('fetch', vi.fn(() => { throw new Error('Unexpected network in locale regression') }))
-    const template = { id: 5, slug: 'user-template', name: 'Keep 用户名称', description: '', is_seed: false, managed_source: '', created_at: '', updated_at: '' }
-    const runtime = { enabled: true, expose_server_prompt: false, compact_enabled: false, revision: 7, template_id: 5, version_id: 50, degraded: false }
-    const version = { id: 50, template_id: 5, version: 2, body: 'Original 原文', note: 'Original note', composition_mode: 'inline', is_active: true, created_at: '' }
-    api.list.mockResolvedValue({ templates: [template], runtime })
-    api.get.mockResolvedValue({ template, runtime, versions: [version] })
-  })
-  afterEach(() => {
-    wrappers.splice(0).forEach(wrapper => wrapper.unmount())
-    expect(fetch).not.toHaveBeenCalled()
-    vi.unstubAllGlobals()
-  })
-
-  it('owns complete distinct English messages instead of aliasing Chinese', () => {
-    const english = messages(en)
-    const chinese = messages(zh)
+beforeEach(() => {
+  sessionStorage.clear()
+  Object.values(api).forEach(mock => mock.mockReset())
+  const config = promptConfig(); config.policy.rules[0]!.name = 'Keep 用户名称'
+  api.config.mockResolvedValue(config)
+})
+afterEach(() => wrappers.splice(0).forEach(wrapper => wrapper.unmount()))
+describe('unified prompt editor site language', () => {
+  it('owns complete English and Chinese messages', () => {
+    const english = messages(en), chinese = messages(zh)
     expect(Object.keys(english).sort()).toEqual(Object.keys(chinese).sort())
-    for (const [key, value] of Object.entries(english)) {
-      expect(value.trim(), key).not.toBe('')
-      expect(value, key).not.toMatch(/\p{Script=Han}/u)
-    }
+    for (const [key, value] of Object.entries(english)) { expect(value.trim(), key).not.toBe(''); expect(value, key).not.toMatch(/\p{Script=Han}/u) }
     expect(en.systemPrompts.title).toBe('System Prompts')
     expect(zh.systemPrompts.title).toBe('系统提示词')
-    expect(en.systemPrompts.confirm.skillPublishMessage).toContain('paired prompt together')
-    expect(en.systemPrompts.confirm.deleteMessage).toContain('soft-deleted')
   })
-
-  it('switches rendered language without resetting drafts or publishing data', async () => {
-    const i18n = createI18n({ legacy: false, locale: 'en', fallbackLocale: 'en', messages: {
-      en: { admin: en, common: { confirm: 'Confirm', cancel: 'Cancel', close: 'Close' } },
-      zh: { admin: zh, common: { confirm: '确认', cancel: '取消', close: '关闭' } },
-    } })
-    const wrapper = mount(App, { global: { plugins: [i18n], stubs: {
-      AppLayout: { template: '<div><slot /></div>' },
-      Icon: true, Toggle: true, SystemPromptAdvancedDrawer: true,
-      BaseDialog: true, ConfirmDialog: true,
-    } } })
-    wrappers.push(wrapper)
+  it('switches language without resetting content or settings drafts', async () => {
+    const i18n = createI18n({ legacy: false, locale: 'en', messages: { en: { admin: en }, zh: { admin: zh } } })
+    const wrapper = mount(App, { global: { plugins: [i18n], stubs: { AppLayout: { template: '<div><slot /></div>' }, SystemPromptAdvancedDrawer: true } } }); wrappers.push(wrapper)
     await flushPromises()
-    expect(wrapper.get('h1').text()).toBe('System Prompts')
-    expect(wrapper.text()).toContain('Keep 用户名称')
     await wrapper.get('[data-test="system-prompt-body"]').setValue('Unsaved 原文\nKeep bytes')
+    await wrapper.get('[data-test="prompt-position"]').setValue('after_last_user')
     const editor = wrapper.get('[data-test="system-prompt-body"]').element
-    i18n.global.locale.value = 'zh'
-    await flushPromises()
+    i18n.global.locale.value = 'zh'; await flushPromises()
     expect(wrapper.get('h1').text()).toBe('系统提示词')
-    expect(wrapper.get('[data-test="system-prompt-save-version"]').text()).toBe('保存为新版本')
+    expect(wrapper.get('[data-test="save-rules"]').text()).toBe('保存并生效')
+    expect(wrapper.text()).toContain('Keep 用户名称')
     expect(wrapper.get('[data-test="system-prompt-body"]').element).toBe(editor)
     expect(editor).toHaveProperty('value', 'Unsaved 原文\nKeep bytes')
-    i18n.global.locale.value = 'en'
-    await flushPromises()
-    expect(wrapper.get('h1').text()).toBe('System Prompts')
-    expect(wrapper.get('[data-test="system-prompt-save-version"]').text()).toBe('Save as a new version')
-    expect(editor).toHaveProperty('value', 'Unsaved 原文\nKeep bytes')
-    expect(api.list).toHaveBeenCalledTimes(1)
-    expect(api.get).toHaveBeenCalledTimes(1)
-    for (const [name, mock] of Object.entries(api)) {
-      if (name !== 'list' && name !== 'get') expect(mock, name).not.toHaveBeenCalled()
-    }
-    expect(notifications.showError).not.toHaveBeenCalled()
+    i18n.global.locale.value = 'en'; await flushPromises()
+    expect(wrapper.get('[data-test="save-rules"]').text()).toBe('Save and apply')
+    expect(wrapper.get('[data-test="prompt-position"]').element).toHaveProperty('value', 'after_last_user')
+    expect(api.config).toHaveBeenCalledTimes(1)
+    expect(api.saveConfig).not.toHaveBeenCalled()
+    expect(api.preview).not.toHaveBeenCalled()
   })
 })

@@ -85,16 +85,6 @@ func (s *OpenAIGatewayService) forwardAsChatCompletions(
 		c.Set(openAIChatReasoningReplayContextKey, (*openAIChatReasoningReplay)(nil))
 		c.Set(openAIReasoningRecoveryContextKey, (*openAIReasoningRecoveryState)(nil))
 	}
-	nativePromptProtocol := BusinessSystemPromptProtocolChat
-	if !gjson.GetBytes(body, "messages").Exists() && gjson.GetBytes(body, "input").Exists() {
-		nativePromptProtocol = BusinessSystemPromptProtocolResponses
-	}
-	cleanBody, restoreErr := restoreBusinessSystemPromptBeforeConversion(c, body, nativePromptProtocol)
-	if restoreErr != nil {
-		writeChatCompletionsError(c, http.StatusServiceUnavailable, "system_prompt_unavailable", "business system prompt is temporarily unavailable")
-		return nil, restoreErr
-	}
-	body = cleanBody
 	rememberOpenCodeInboundBody(c, body)
 	beginUpstreamResponseModelObservation(c)
 	if account != nil && account.IsOpenAI() {
@@ -411,34 +401,7 @@ func (s *OpenAIGatewayService) forwardAsChatCompletions(
 		return nil, policyErr
 	}
 	responsesBody = updatedBody
-	updatedPromptBody, application, promptErr := s.applyBusinessSystemPromptForRequest(
-		c, responsesBody, account, BusinessSystemPromptProtocolResponses, false,
-	)
-	if promptErr != nil {
-		if errors.Is(promptErr, ErrBusinessSystemPromptUnavailable) {
-			writeChatCompletionsError(c, http.StatusServiceUnavailable, "system_prompt_unavailable", "business system prompt is temporarily unavailable")
-		}
-		return nil, promptErr
-	} else {
-		responsesBody = updatedPromptBody
-		if application.Applied {
-			responsesBody, promptErr = rewriteBusinessSystemPromptCacheKey(c, responsesBody, application)
-			if promptErr != nil {
-				return nil, promptErr
-			}
-		}
-	}
 	upstreamPromptCacheKey := promptCacheKey
-	if normalizedBody, changed, normalizeErr := normalizeCindyManagedPromptCacheKey(responsesBody, c, account); normalizeErr != nil {
-		return nil, fmt.Errorf("normalize final Chat-to-Responses Cindy prompt_cache_key: %w", normalizeErr)
-	} else if changed {
-		responsesBody = normalizedBody
-		upstreamPromptCacheKey = strings.TrimSpace(gjson.GetBytes(responsesBody, "prompt_cache_key").String())
-		observeCindyManagedPromptCacheNormalization(c, true)
-	}
-	if application.Applied {
-		upstreamPromptCacheKey = businessSystemPromptUpstreamCacheKey(c, responsesBody, promptCacheKey, application)
-	}
 	responsesReq.ServiceTier = normalizedOpenAIServiceTierValue(gjson.GetBytes(responsesBody, "service_tier").String())
 
 	// 5. Get access token
@@ -449,25 +412,10 @@ func (s *OpenAIGatewayService) forwardAsChatCompletions(
 
 	// 6. Build upstream request
 	upstreamCtx, releaseUpstreamCtx := detachUpstreamContext(ctx)
-	upstreamReq, err := s.buildUpstreamRequest(upstreamCtx, c, account, responsesBody, token, true, upstreamPromptCacheKey, false)
+	upstreamReq, err := s.buildUpstreamRequestPrepared(upstreamCtx, c, account, responsesBody, token, true, upstreamPromptCacheKey, false, false)
 	releaseUpstreamCtx()
 	if err != nil {
 		return nil, fmt.Errorf("build upstream request: %w", err)
-	}
-
-	if upstreamPromptCacheKey != "" {
-		apiKeyID := getAPIKeyIDFromContext(c)
-		sessionKey := upstreamPromptCacheKey
-		if !compatPromptCacheTenantIsolated {
-			sessionKey = isolateOpenAIUpstreamSessionID(apiKeyID, codexAccountIdentitySource(c, account), upstreamPromptCacheKey)
-		}
-		if account.UsesOpenAICodexProtocol() {
-			// Codex 协议账号：最终形态只有连字符会话头；构造器已就位的连字符头保留，
-			// 缺失时才用隔离会话 ID 补齐。
-			fillCodexSessionIdentityHeaders(upstreamReq.Header, generateSessionUUID(sessionKey))
-		} else {
-			upstreamReq.Header.Set("session_id", generateSessionUUID(sessionKey))
-		}
 	}
 
 	// 7. Send request
@@ -494,29 +442,46 @@ func (s *OpenAIGatewayService) forwardAsChatCompletions(
 		_ = upstreamReq.Body.Close()
 	}
 	responsesBody = replayBody
-	upstreamReq = cloneOpenAIChatRequestWithBody(upstreamReq, responsesBody)
 	recovery := s.newOpenAIReasoningRecoveryState(ctx, c, account, token)
 	defer recovery.Close()
 	recovery.SetRejectedCallback(replay.InvalidateRejected)
 	var resp *http.Response
 	var result *OpenAIForwardResult
 	var handleErr error
+	var wireBody []byte
 	// Keep the builder's transport context as the uncanceled base. Each stream
 	// attempt must cancel before closing its body without canceling the single
 	// same-source reasoning recovery; PrepareRequest reapplies client cancellation
 	// and its deadline to that recovery attempt.
 	upstreamRequestCtx := upstreamReq.Context()
 	for {
+		upstreamReq, err = s.buildUpstreamRequest(upstreamRequestCtx, c, account, responsesBody, token, true, upstreamPromptCacheKey, false)
+		if err != nil {
+			return nil, err
+		}
 		cancelUpstream := func() {}
 		if clientStream {
 			var attemptCtx context.Context
 			attemptCtx, cancelUpstream = context.WithCancel(upstreamRequestCtx)
 			upstreamReq = upstreamReq.WithContext(attemptCtx)
 		}
-		upstreamReq, responsesBody, err = recovery.PrepareRequest(upstreamReq, responsesBody, proxyURL)
+		upstreamReq, responsesBody, wireBody, err = prepareBusinessPromptReasoningRequest(c, recovery, upstreamReq, responsesBody, proxyURL)
 		if err != nil {
 			cancelUpstream()
 			return nil, recovery.StopError(err)
+		}
+		application, _ := businessSystemPromptApplicationFromRequest(c, BusinessSystemPromptProtocolResponses)
+		finalCacheKey := businessSystemPromptUpstreamCacheKey(c, wireBody, upstreamPromptCacheKey, application)
+		if finalCacheKey != "" {
+			sessionKey := finalCacheKey
+			if !compatPromptCacheTenantIsolated {
+				sessionKey = isolateOpenAIUpstreamSessionID(getAPIKeyIDFromContext(c), codexAccountIdentitySource(c, account), finalCacheKey)
+			}
+			if account.UsesOpenAICodexProtocol() {
+				fillCodexSessionIdentityHeaders(upstreamReq.Header, generateSessionUUID(sessionKey))
+			} else {
+				upstreamReq.Header.Set("session_id", generateSessionUUID(sessionKey))
+			}
 		}
 		replay.SetSentBody(responsesBody)
 		resp, err = s.doOpenAICodexUpstream(upstreamReq, account, proxyURL)
@@ -541,8 +506,10 @@ func (s *OpenAIGatewayService) forwardAsChatCompletions(
 			respBody, upstreamMsg := s.readOpenAIUpstreamError(resp, c)
 			if retryBody, retry := recovery.TryRecover(resp.StatusCode, resp.Header, respBody, false); retry {
 				closeUpstreamResponse()
-				upstreamReq = cloneOpenAIChatRequestWithBody(upstreamReq, retryBody)
-				responsesBody = retryBody
+				responsesBody, err = projectReasoningCipherEdits(responsesBody, wireBody, retryBody)
+				if err != nil {
+					return nil, err
+				}
 				continue
 			}
 			if recovery.RecoveryAttempt() {
@@ -579,8 +546,10 @@ func (s *OpenAIGatewayService) forwardAsChatCompletions(
 		}
 		closeUpstreamResponse()
 		if retryBody, retry := recovery.TryRecoverError(handleErr); retry {
-			upstreamReq = cloneOpenAIChatRequestWithBody(upstreamReq, retryBody)
-			responsesBody = retryBody
+			responsesBody, err = projectReasoningCipherEdits(responsesBody, wireBody, retryBody)
+			if err != nil {
+				return nil, err
+			}
 			continue
 		}
 		handleErr = recovery.StopError(handleErr)

@@ -170,7 +170,6 @@ func (s *GatewayService) forwardAnthropicAPIKeyPassthroughWithInput(
 			if err := input.Parsed.ReplaceBody(wireBody); err != nil {
 				return nil, err
 			}
-			input.Body = input.Parsed.Body.Bytes()
 		}
 
 		resp, err = s.httpUpstream.DoWithTLS(upstreamReq, proxyURL, account.ID, account.Concurrency, s.tlsFPProfileService.ResolveTLSProfile(account))
@@ -402,6 +401,11 @@ func (s *GatewayService) buildUpstreamRequestAnthropicAPIKeyPassthrough(
 	token string,
 ) (*http.Request, []byte, error) {
 	body = stripDeferredToolCacheControl(body)
+	var promptErr error
+	body, _, promptErr = s.businessPromptService.ApplyForSend(c, account, body, "messages", false)
+	if promptErr != nil {
+		return nil, nil, promptErr
+	}
 	targetURL := claudeAPIURL
 	baseURL := account.GetBaseURL()
 	if baseURL != "" {
@@ -728,7 +732,7 @@ func (s *GatewayService) handleStreamingResponseAnthropicAPIKeyPassthrough(
 				}
 			}
 
-			restored := string(reverseToolNamesIfPresent(c, []byte(line)))
+			restored := string(reverseToolNamesIfPresent(c, rewritePromptRulesStructuredSSE(c, []byte(line), "messages")))
 			if !bufferCindyPreamble {
 				// Preserve the legacy passthrough behavior for ordinary Anthropic
 				// accounts: forward each line immediately. Only strict Cindy needs
@@ -1108,6 +1112,7 @@ func (s *GatewayService) handleNonStreamingResponseAnthropicAPIKeyPassthrough(
 	if contentType == "" {
 		contentType = "application/json"
 	}
+	body = rewritePromptRulesStructuredEcho(c, body, "messages")
 	body = reverseToolNamesIfPresent(c, body)
 	c.Data(resp.StatusCode, contentType, body)
 	return usage, nil
