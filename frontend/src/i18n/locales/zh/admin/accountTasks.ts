@@ -53,7 +53,6 @@ export default {
       extension_operation: "插件操作",
       codex_ticket_harvest: 'Codex 路由采集与验证',
       codex_ticket_stop: '停止 Codex 路由续期',
-      account_batch_test: '批量测试连接',
       account_import: '数据导入',
       account_import_codex: 'Codex 导入',
       account_batch_create: '批量创建',

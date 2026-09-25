@@ -233,7 +233,7 @@ const commonStubs = {
   },
   ReAuthAccountModal: true,
   AccountTestModal: AccountTestModalStub,
-  BatchTestAccountModal: true,
+  BatchAccountTestModal: true,
   AccountStatsModal: true,
   ScheduledTestsPanel: true,
   SyncFromCrsModal: true,

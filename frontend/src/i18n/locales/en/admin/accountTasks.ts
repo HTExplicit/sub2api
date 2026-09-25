@@ -53,7 +53,6 @@ export default {
       extension_operation: "Plugin operation",
       codex_ticket_harvest: 'Codex route acquisition and verification',
       codex_ticket_stop: 'Stop Codex route renewal',
-      account_batch_test: 'Batch connection tests',
       account_import: 'Data import',
       account_import_codex: 'Codex import',
       account_batch_create: 'Batch create',

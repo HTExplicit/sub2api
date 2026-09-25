@@ -244,13 +244,13 @@
           :total-results="pagination.total"
           :selecting-all="selectingAllResults"
           :all-results-selected="allResultsSelected"
-          @test="openBatchTest"
           @delete="handleBulkDelete"
           @reset-status="handleBulkResetStatus"
           @refresh-token="handleBulkRefreshToken"
           @refresh-tier="handleBulkRefreshTier"
           @duplicate-review="handleDuplicateReview"
           @probe-upstream-billing="handleBulkProbeUpstreamBilling"
+          @test-connection="openBatchTest"
           @edit-selected="openBulkEditSelected"
           @edit-filtered="openBulkEditFiltered"
           @taxonomy-selected="openBulkTaxonomySelected"
@@ -574,7 +574,7 @@
     <EditAccountModal :show="showEdit" :account="edAcc" :proxies="proxies" :groups="groups" @close="showEdit = false" @updated="handleAccountUpdated" />
     <ReAuthAccountModal :show="showReAuth" :account="reAuthAcc" @close="closeReAuthModal" @reauthorized="handleAccountUpdated" />
     <AccountTestModal :show="showTest" :account="testingAcc" @close="closeTestModal" />
-    <BatchTestAccountModal :show="showBatchTest" :account-ids="batchTestAccountIDs" @close="showBatchTest = false; enterAutoRefreshSilentWindow()" />
+    <BatchAccountTestModal :show="showBatchTest" :account-ids="selIds" :accounts="accounts" @close="showBatchTest = false; enterAutoRefreshSilentWindow()" />
     <AccountOperationConfirmDialog v-if="pendingOperation" :show="true" :title="pendingOperation.title" :message="pendingOperation.message" :danger="pendingOperation.danger" :execute="pendingOperation.execute" @close="pendingOperation = null" @submitted="clearSelection()" />
     <AccountStatsModal :show="showStats" :account="statsAcc" @close="closeStatsModal" />
     <ScheduledTestsPanel :show="showSchedulePanel" :account-id="scheduleAcc?.id ?? null" :model-options="scheduleModelOptions" @close="closeSchedulePanel" />
@@ -718,6 +718,7 @@ import AccountViewModeSwitcher, { type AccountViewMode } from '@/components/admi
 import ImportDataModal from '@/components/admin/account/ImportDataModal.vue'
 import ReAuthAccountModal from '@/components/admin/account/ReAuthAccountModal.vue'
 import AccountTestModal from '@/components/admin/account/AccountTestModal.vue'
+import BatchAccountTestModal from '@/components/admin/account/BatchAccountTestModal.vue'
 import AccountStatsModal from '@/components/admin/account/AccountStatsModal.vue'
 import ScheduledTestsPanel from '@/components/admin/account/ScheduledTestsPanel.vue'
 import type { SelectOption } from '@/components/common/Select.vue'
@@ -727,7 +728,6 @@ import AccountGroupsCell from '@/components/account/AccountGroupsCell.vue'
 import AccountCapacityCell from '@/components/account/AccountCapacityCell.vue'
 import AccountUsageCell from '@/components/account/AccountUsageCell.vue'
 import UpstreamBillingRateCell from '@/components/account/UpstreamBillingRateCell.vue'
-import BatchTestAccountModal from '@/components/admin/account/BatchTestAccountModal.vue'
 import AccountOperationConfirmDialog from '@/components/admin/account-jobs/AccountOperationConfirmDialog.vue'
 import { useAccountSelectionMetadata } from '@/composables/useAccountSelectionMetadata'
 import AccountIdentityBadges from '@/components/account/AccountIdentityBadges.vue'
@@ -778,11 +778,7 @@ function confirmAccountOperation(kind: string, ids: number[], execute: () => Pro
 const pendingDataImportJobIDs = new Map<number, number>()
 const completedImportJobIDs = ref<number[]>([])
 const showBatchTest = ref(false)
-const batchTestAccountIDs = ref<number[]>([])
-const openBatchTest = () => { batchTestAccountIDs.value = [...selIds.value]; showBatchTest.value = true }
-watch(() => accountJobsStore.drawerOpen, (open, wasOpen) => {
-  if (wasOpen && !open && accountJobsStore.currentJob?.kind === 'account_batch_test') enterAutoRefreshSilentWindow()
-})
+const openBatchTest = () => { if (selIds.value.length > 0) showBatchTest.value = true }
 const selectingImportedResults = ref(false)
 const importResultSelectionFailed = ref(false)
 let importSelectionRevision = 0
@@ -2632,7 +2628,7 @@ watch(
     for (const job of observedAccountJobs.value) {
       if (isTerminalAccountJob(job) && accountJobsStore.completedJobs?.some(done => done.id === job.id) && !refreshedOperations.has(job.id)) {
         refreshedOperations.add(job.id)
-        if (!pendingDataImportJobIDs.has(job.id) && job.kind !== 'account_batch_test' && job.kind !== 'account_duplicate_review') {
+        if (!pendingDataImportJobIDs.has(job.id) && job.kind !== 'account_duplicate_review') {
           void load()
           if (['account_bulk_taxonomy', 'account_bulk_update', 'account_batch_delete', 'account_duplicate_merge', 'cindy_confirmed_cleanup', 'cindy_banned_cleanup'].includes(job.kind)) void loadFacets()
         }

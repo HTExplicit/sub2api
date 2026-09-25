@@ -144,7 +144,7 @@ const mountView = () => mount(AccountsView, {
       ImportDataModal: true,
       ReAuthAccountModal: true,
       AccountTestModal: true,
-      BatchTestAccountModal: true,
+      BatchAccountTestModal: true,
       AccountStatsModal: true,
       ScheduledTestsPanel: true,
       SyncFromCrsModal: true,

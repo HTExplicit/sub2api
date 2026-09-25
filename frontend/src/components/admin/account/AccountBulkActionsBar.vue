@@ -45,7 +45,6 @@
     <div class="flex flex-wrap gap-2">
       <template v-if="selectedIds.length > 0">
         <button @click="$emit('delete')" class="btn btn-danger btn-sm">{{ t('admin.accounts.bulkActions.delete') }}</button>
-        <button data-test="batch-test" @click="$emit('test')" class="btn btn-secondary btn-sm">{{ t('admin.accounts.batchTest.title') }}</button>
         <CodexAccountActions :account-ids="selectedIds" :accounts="selectedAccounts" @open="openCodexOperation" />
         <button v-if="promptBindingAvailable" type="button" data-test="account-prompt-binding-bulk" class="btn btn-secondary btn-sm" @click="promptBindingOpen = true">
           {{ t('admin.systemPrompts.accountPrompts') }}
@@ -63,6 +62,7 @@
           {{ t('admin.accounts.bulkActions.duplicateReview') }}
         </button>
         <button @click="$emit('probe-upstream-billing')" class="btn btn-secondary btn-sm">{{ t('admin.accounts.bulkActions.probeUpstreamBilling') }}</button>
+        <button @click="$emit('test-connection')" class="btn btn-secondary btn-sm">{{ t('admin.accounts.bulkActions.testConnection') }}</button>
         <button @click="$emit('toggle-schedulable', true)" class="btn btn-success btn-sm">{{ t('admin.accounts.bulkActions.enableScheduling') }}</button>
         <button @click="$emit('toggle-schedulable', false)" class="btn btn-warning btn-sm">{{ t('admin.accounts.bulkActions.disableScheduling') }}</button>
         <button @click="$emit('edit-selected')" class="btn btn-primary btn-sm">{{ t('admin.accounts.bulkActions.edit') }}</button>
@@ -100,7 +100,6 @@ const props = defineProps<{
 }>()
 
 defineEmits([
-  'test',
   'delete',
   'edit-selected',
   'edit-filtered',
@@ -114,7 +113,8 @@ defineEmits([
   'refresh-token',
   'refresh-tier',
   'duplicate-review',
-  'probe-upstream-billing'
+  'probe-upstream-billing',
+  'test-connection'
 ])
 
 const { t } = useI18n()
