@@ -1,6 +1,7 @@
 package service
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -43,22 +44,31 @@ func leadingControlMessages(items []gjson.Result) int {
 	return count
 }
 
+// insertJSONArrayItem keeps every existing element byte-for-byte; re-encoding
+// would rewrite customer content (for example HTML escaping) that retries and
+// reasoning recovery compare by bytes.
 func insertJSONArrayItem(body []byte, path string, items []gjson.Result, at int, item []byte) ([]byte, error) {
-	raw := make([]json.RawMessage, 0, len(items)+1)
+	var out bytes.Buffer
+	out.WriteByte('[')
+	count := 0
+	write := func(raw string) {
+		if count > 0 {
+			out.WriteByte(',')
+		}
+		out.WriteString(raw)
+		count++
+	}
 	for index, existing := range items {
 		if index == at {
-			raw = append(raw, item)
+			write(string(item))
 		}
-		raw = append(raw, json.RawMessage(existing.Raw))
+		write(existing.Raw)
 	}
 	if at >= len(items) {
-		raw = append(raw, item)
+		write(string(item))
 	}
-	encoded, err := json.Marshal(raw)
-	if err != nil {
-		return nil, err
-	}
-	return sjson.SetRawBytes(body, path, encoded)
+	out.WriteByte(']')
+	return sjson.SetRawBytes(body, path, out.Bytes())
 }
 
 // systemPromptEcho remembers what one Responses send changed, so the echoed
