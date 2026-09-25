@@ -40,7 +40,6 @@ const (
 const (
 	PlatformAnthropic   = domain.PlatformAnthropic
 	PlatformOpenAI      = domain.PlatformOpenAI
-	PlatformCindy       = domain.PlatformCindy
 	PlatformGemini      = domain.PlatformGemini
 	PlatformAntigravity = domain.PlatformAntigravity
 	PlatformGrok        = domain.PlatformGrok
@@ -134,7 +133,6 @@ var AllowedQuotaPlatforms = []string{
 	PlatformKimi,
 	PlatformZhipu,
 	PlatformDeepseek,
-	PlatformCindy,
 	PlatformMiniMax,
 	PlatformOpenCodeGo,
 }

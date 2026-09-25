@@ -417,16 +417,6 @@ func (s *OpenAIGatewayService) finalizeBusinessPromptForSend(c *gin.Context, acc
 	if err != nil {
 		return nil, err
 	}
-	if protocol == BusinessSystemPromptProtocolResponses {
-		var changed bool
-		updated, changed, err = normalizeCindyManagedPromptCacheKey(updated, c, account)
-		if err != nil {
-			return nil, err
-		}
-		if changed {
-			observeCindyManagedPromptCacheNormalization(c, true)
-		}
-	}
 	if err := validateBusinessSystemPromptFinal(c, updated, protocol); err != nil {
 		return nil, err
 	}

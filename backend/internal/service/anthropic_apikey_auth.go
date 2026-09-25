@@ -49,14 +49,7 @@ func isOllamaCloudAnthropicAuthBaseURL(baseURL string) bool {
 // 其它上游保持历史 extra/default 行为。baseURL 为该请求实际选用的 Anthropic
 // 上游 base（GetBaseURL / GetAnthropicProtocolBaseURL 等），默认官方端点时传空。
 func setAnthropicAPIKeyAuthHeader(header http.Header, account *Account, token, baseURL string) {
-	// Cindy's native Messages data plane uses Bearer authentication even though
-	// the local account type is an API key. Keep the exception exact so ordinary
-	// Anthropic-compatible API key accounts retain x-api-key semantics.
-	if account != nil && IsCindyRuntimeCompatibleAPIKeyAccount(account.Platform, account.Type, account.Credentials) {
-		header.Set("Authorization", "Bearer "+token)
-		return
-	}
-	if account != nil && account.Type == AccountTypeAPIKey && isOllamaCloudAnthropicAuthBaseURL(baseURL) {
+	if account.Type == AccountTypeAPIKey && isOllamaCloudAnthropicAuthBaseURL(baseURL) {
 		header.Set("Authorization", "Bearer "+token)
 		return
 	}

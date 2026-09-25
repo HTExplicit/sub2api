@@ -700,29 +700,29 @@ func setOpenAIWSPayloadInputSequence(
 	return sjson.SetRawBytes(payload, "input", inputRaw)
 }
 
-func prepareCindyContinuationReplayPayload(
+func prepareOpenAIContinuationReplayPayload(
 	payload []byte,
 	fullInput []json.RawMessage,
 	fullInputExists bool,
 	verifiedFullHistory bool,
-) ([]byte, CindyContinuationClassification, bool) {
-	classification := CindyContinuationClassification{}
+) ([]byte, OpenAIContinuationClassification, bool) {
+	classification := OpenAIContinuationClassification{}
 	candidate, err := setOpenAIWSPayloadInputSequence(payload, fullInput, fullInputExists)
 	if err != nil {
 		return payload, classification, false
 	}
-	classification, err = ClassifyCindyContinuation(candidate, CindyContinuationProof{VerifiedFullHistory: verifiedFullHistory})
+	classification, err = ClassifyOpenAIContinuation(candidate, OpenAIContinuationProof{VerifiedFullHistory: verifiedFullHistory})
 	if err != nil {
 		return payload, classification, false
 	}
 	switch classification.Mode {
-	case CindyContinuationAnchorPlusFull:
+	case OpenAIContinuationAnchorPlusFull:
 		withoutAnchor, removed, dropErr := dropPreviousResponseIDFromRawPayload(candidate)
 		if dropErr != nil || !removed {
 			return payload, classification, false
 		}
 		return withoutAnchor, classification, true
-	case CindyContinuationFullReplay, CindyContinuationOpaqueFull:
+	case OpenAIContinuationFullReplay, OpenAIContinuationOpaqueFull:
 		return candidate, classification, true
 	default:
 		return payload, classification, false
@@ -746,7 +746,7 @@ func buildOpenAIWSCurrentTurnRetryPayload(
 	// This payload is handed to a different account. Classify the intact
 	// candidate before removing its anchor, so opaque or unresolved state can
 	// never become "portable" as a consequence of deleting its requirements.
-	classification, err := ClassifyCindyContinuation(retryPayload, CindyContinuationProof{VerifiedFullHistory: verifiedFullHistory})
+	classification, err := ClassifyOpenAIContinuation(retryPayload, OpenAIContinuationProof{VerifiedFullHistory: verifiedFullHistory})
 	if err != nil || !classification.CanSwitchAccount() || openAIWSHasConversationReference(retryPayload) {
 		return nil, false, err
 	}
@@ -781,7 +781,7 @@ func openAIWSReplayHistoryVerified(payload []byte, baselineResponseID string, ba
 	if anchor != "" {
 		return baselineVerified && anchor == strings.TrimSpace(baselineResponseID)
 	}
-	classification, err := ClassifyCindyContinuation(payload, CindyContinuationProof{})
+	classification, err := ClassifyOpenAIContinuation(payload, OpenAIContinuationProof{})
 	return err == nil && classification.CanReplayWithoutAnchor()
 }
 
@@ -789,7 +789,7 @@ func prepareOpenAIWSVerifiedReplayPayload(payload []byte, fullInput []json.RawMe
 	if !fullInputExists || !verifiedFullHistory || openAIWSHasConversationReference(payload) {
 		return payload, false
 	}
-	candidate, classification, replayable := prepareCindyContinuationReplayPayload(payload, fullInput, true, true)
+	candidate, classification, replayable := prepareOpenAIContinuationReplayPayload(payload, fullInput, true, true)
 	return candidate, replayable && classification.CanReplayWithoutAnchor()
 }
 

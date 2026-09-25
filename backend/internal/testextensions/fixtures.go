@@ -8,7 +8,6 @@ import (
 	"encoding/json"
 	"strings"
 
-	cindy "github.com/Wei-Shaw/sub2api/internal/cindyprovider/catalog"
 	codexprofile "github.com/Wei-Shaw/sub2api/internal/codexruntime/profile"
 	codexrecovery "github.com/Wei-Shaw/sub2api/internal/codexruntime/recovery"
 
@@ -36,14 +35,6 @@ func (operations) InvokeOperation(ctx context.Context, _, _ string, in extension
 		}
 		raw, err := json.Marshal(codexprofile.TransportPlan(query, false))
 		return extensionv1.Result{Payload: raw}, err
-	}
-	if strings.HasPrefix(in.Operation, "cindy.") {
-		module := cindy.New()
-		raw, _ := json.Marshal(service.LegacyCindyProviderConfig())
-		if err := module.ApplyConfig(ctx, raw); err != nil {
-			return extensionv1.Result{}, err
-		}
-		return module.Invoke(ctx, in)
 	}
 	if strings.HasPrefix(in.Operation, "taxonomy.") || strings.HasPrefix(in.Operation, "test.") || strings.HasPrefix(in.Operation, "import.") || in.Operation == "tools.describe" {
 		return accounttools.New().Invoke(ctx, in)

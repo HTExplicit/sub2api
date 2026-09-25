@@ -74,10 +74,7 @@ func validModelContextTokens(value int64) bool {
 // IsModelContextCapacityProtected follows credential/provider identity, not an
 // editable proxy URL. An OAuth proxy is still an official OAuth wire contract.
 func IsModelContextCapacityProtected(account *Account) bool {
-	return account != nil && (account.Platform == PlatformCindy ||
-		account.EffectiveProviderProfile() == ProviderProfileCindyLaxaV1 ||
-		IsCindyRuntimeCompatibleAPIKeyAccount(account.Platform, account.Type, account.Credentials) ||
-		account.IsOAuth())
+	return account != nil && account.IsOAuth()
 }
 
 func CanManageModelContextCapacity(account *Account) bool {
@@ -301,7 +298,7 @@ func ModelContextCapacitySourceIdentity(account *Account) string {
 		APIProtocol      string            `json:"api_protocol"`
 		APIBaseURLs      map[string]string `json:"api_base_urls,omitempty"`
 	}{
-		Platform: account.Platform, Wire: account.EffectiveWirePlatform(), Profile: account.EffectiveProviderProfile(),
+		Platform: account.Platform, Wire: account.Platform, Profile: "",
 		BaseURL: normalizeEndpoint(upstreamModelRegistryBaseURL(account)),
 		// CN Anthropic requests can use a custom Messages endpoint while model
 		// sync uses a fixed official OpenAI-format endpoint. Bind both identities.
@@ -538,16 +535,6 @@ func containsFoldModelContextString(values []string, target string) bool {
 func protectedAccountModelContextCapacity(account *Account, modelID string, live *ModelContextCapacity) ResolvedModelContextCapacity {
 	result := ResolvedModelContextCapacity{Source: "protected", Reason: "dedicated_catalog_read_only"}
 	if account == nil {
-		return result
-	}
-	if account.Platform == PlatformCindy || account.EffectiveProviderProfile() == ProviderProfileCindyLaxaV1 ||
-		IsCindyRuntimeCompatibleAPIKeyAccount(account.Platform, account.Type, account.Credentials) {
-		if capability, ok := resolveKnownCindyCapability(modelID); ok {
-			result.ModelContextCapacity = ModelContextCapacity{
-				ContextWindow: int64(capability.EffectiveCodexContextWindow()), MaxInputTokens: int64(capability.MaxInputTokens),
-				MaxOutputTokens: int64(capability.MaxOutputTokens), CapacityBasis: ModelContextCapacityBasisInput,
-			}
-		}
 		return result
 	}
 	if live != nil {

@@ -829,30 +829,27 @@ func (s *OpenAIGatewayService) proxyOpenAIWSHTTPBridgeTurn(
 
 		rawUpstreamMessage := []byte(openAICompatPayloadWithEventType(trimmedData, pendingSSEEventType))
 		rawEventType, _, _ := parseOpenAIWSEventEnvelope(rawUpstreamMessage)
-		cindyBalanceInsufficient := false
+		budgetExceeded := false
+		var budgetFailoverErr *UpstreamFailoverError
 		if rawEventType == "error" || rawEventType == "response.failed" {
-			cindyBalanceInsufficient = s.handleCindyBalanceTerminalEvent(
-				ctx, account, resp.Header, rawUpstreamMessage,
-				canonicalOpenAIAccountSchedulingModel(account, originalModel),
-			)
+			budgetFailoverErr, budgetExceeded = s.openAIBudgetExceededTerminalFailover(ctx, account, resp.Header, rawUpstreamMessage)
 		}
-		if cindyBalanceInsufficient {
-			failoverErr := newCindyBalanceTerminalFailover(resp.Header)
+		if budgetExceeded {
 			if turn == 1 && !wroteDownstream && !semanticOutputStarted {
-				return nil, failoverErr
+				return nil, budgetFailoverErr
 			}
 			if !clientDisconnected {
 				if err := writeClientMessage(OpenAIWSRetryableFailureEvent()); err != nil {
 					if !isOpenAIWSClientDisconnectError(err) {
 						return nil, wrapOpenAIWSIngressTurnError(
 							"write_client",
-							fmt.Errorf("write sanitized Cindy balance failure: %w", err),
+							fmt.Errorf("write retryable budget failure: %w", err),
 							wroteDownstream,
 						)
 					}
 				}
 			}
-			return resultWithUsage(), errors.New("cindy balance exhausted after downstream output")
+			return resultWithUsage(), errors.New("upstream budget exhausted after downstream output")
 		}
 		upstreamMessage := rawUpstreamMessage
 		if normalized, changed := normalizeCompletedImageGenerationStatus(upstreamMessage); changed {
@@ -918,9 +915,7 @@ func (s *OpenAIGatewayService) proxyOpenAIWSHTTPBridgeTurn(
 				shouldFailover = s.shouldFailoverOpenAIUpstreamResponse(account, statusCode, errMessage, upstreamMessage)
 				// A model_not_supported event is an account/model capability
 				// failure even when this bridge is carrying an HTTP-200 stream.
-				if account != nil &&
-					IsCindyRuntimeCompatibleAPIKeyAccount(account.Platform, account.Type, account.Credentials) &&
-					isOpenAIModelNotSupportedPayload(upstreamMessage) {
+				if account != nil && account.IsOpenAICompatible() && isOpenAIModelNotSupportedPayload(upstreamMessage) {
 					statusCode = http.StatusBadRequest
 					shouldFailover = true
 				}
@@ -948,9 +943,7 @@ func (s *OpenAIGatewayService) proxyOpenAIWSHTTPBridgeTurn(
 			}
 			// A disconnected client needs this attempt drained for usage, not replayed,
 			// even when only non-semantic heartbeats were delivered.
-			modelNotSupported := account != nil &&
-				IsCindyRuntimeCompatibleAPIKeyAccount(account.Platform, account.Type, account.Credentials) &&
-				isOpenAIModelNotSupportedPayload(upstreamMessage)
+			modelNotSupported := account != nil && account.IsOpenAICompatible() && isOpenAIModelNotSupportedPayload(upstreamMessage)
 			if !clientDisconnected && !wroteDownstream && shouldFailover && (turn == 1 || statusCode == http.StatusTooManyRequests || modelNotSupported) {
 				if account.Platform == PlatformGrok {
 					return nil, newOpenAIUpstreamFailoverError(statusCode, resp.Header, upstreamMessage, errMessage, false)
@@ -990,9 +983,7 @@ func (s *OpenAIGatewayService) proxyOpenAIWSHTTPBridgeTurn(
 			isKeepalive := eventType == "keepalive"
 			startsSemanticOutput := openAIWSPassthroughStartsSemanticOutput(clientMessage) &&
 				!isOpenAIWSTerminalEvent(eventType)
-			stageBeforeSemanticOutput := turn == 1 && !wroteDownstream &&
-				(account.Platform == PlatformOpenAI ||
-					(account.EffectiveWirePlatform() == PlatformOpenAI && CindyBalanceDetectionFeatureEnabled()))
+			stageBeforeSemanticOutput := turn == 1 && !wroteDownstream && account.Platform == PlatformOpenAI
 			commitStagedMessages := !stageBeforeSemanticOutput ||
 				openAIStreamDataStartsClientOutput(string(clientMessage), eventType) ||
 				isOpenAIWSTerminalEvent(eventType)

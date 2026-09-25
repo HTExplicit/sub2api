@@ -360,28 +360,18 @@ func (s *RateLimitService) HandleUpstreamError(ctx context.Context, account *Acc
 	// 同请求内与 fastpath 调用点的重复触发由方法内去重吸收。
 	s.maybeHandleOpenAITeamLinkedError(ctx, account, statusCode, responseBody)
 	customErrorCodesEnabled := account.IsCustomErrorCodesEnabled()
-	if ClassifyCindyBalanceInsufficient(account, statusCode, responseBody) != CindyBalanceSignalNone {
-		// An exact event is authoritative only for this request's account
-		// failover. Persistent balance state is owned exclusively by an explicit
-		// administrator-created Cindy balance probe job.
+	// An exhausted key budget stops scheduling completely, including in pool
+	// mode and regardless of custom error-code filtering.
+	if account.IsOpenAICompatible() && isOpenAIBudgetExceededResponse(statusCode, responseBody) {
+		s.handleOpenAIBudgetExceeded(ctx, account, responseBody)
 		return true
 	}
-	// Cindy reports actual budget exhaustion as the structured 429 handled
-	// above. Its generic 402 responses must not persist an account-level balance
-	// or authentication failure; the current request can still fail over.
-	if statusCode == http.StatusPaymentRequired &&
-		IsCindyRuntimeCompatibleAPIKeyAccount(account.Platform, account.Type, account.Credentials) {
-		slog.Info("cindy_402_account_state_skipped", "account_id", account.ID)
-		return false
-	}
 
-	// A structured Cindy/Laxa model_not_supported response is scoped to the
-	// (account, model) pair, not to the account pool.  Persist that cooldown
-	// before the pool-mode early return below; pool accounts otherwise skip all
-	// local error state and would immediately be selected again for the same
-	// model, defeating the bounded cross-key failover contract.
-	if len(requestedModel) > 0 &&
-		IsCindyRuntimeCompatibleAPIKeyAccount(account.Platform, account.Type, account.Credentials) &&
+	// A structured model_not_supported response is scoped to the (account,
+	// model) pair, not to the account pool. Persist that cooldown before the
+	// pool-mode early return below; pool accounts otherwise skip all local
+	// error state and would immediately be selected again for the same model.
+	if len(requestedModel) > 0 && account.IsOpenAICompatible() &&
 		isOpenAIModelNotSupportedError(statusCode, "", responseBody) &&
 		s.HandleUpstreamModelNotFound(ctx, account, requestedModel[0], statusCode, responseBody) {
 		return true
@@ -1035,9 +1025,6 @@ func (s *RateLimitService) handle403(ctx context.Context, account *Account, upst
 	if account.Platform == PlatformAntigravity {
 		return s.handleAntigravity403(ctx, account, upstreamMsg, responseBody)
 	}
-	if IsCindyRuntimeCompatibleAPIKeyAccount(account.Platform, account.Type, account.Credentials) {
-		return s.handleCindy403Transient(ctx, account, upstreamMsg, responseBody)
-	}
 	// Kimi reports its transient per-account concurrency limit as a 403.
 	// Preserve failover without feeding this exact signal into the permanent
 	// 403 escalation counter.
@@ -1067,28 +1054,6 @@ func (s *RateLimitService) handle403(ctx context.Context, account *Account, upst
 		"account may be suspended or lack permissions",
 	)
 	s.handleAuthError(ctx, account, msg)
-	return true
-}
-
-func (s *RateLimitService) handleCindy403Transient(ctx context.Context, account *Account, upstreamMsg string, responseBody []byte) bool {
-	if hit, _, _ := detectOpenAICyberPolicy(responseBody); hit {
-		return false
-	}
-	if isHTMLResponse(responseBody) {
-		slog.Warn("cindy_403_html_body_skips_account_penalty", "account_id", account.ID)
-		return false
-	}
-	msg := buildForbiddenErrorMessage(
-		"Cindy access forbidden (403):",
-		upstreamMsg,
-		responseBody,
-		"temporary upstream access failure",
-	)
-	until := time.Now().Add(cindyHealthForbiddenBackoff)
-	s.notifyAccountSchedulingBlocked(account, until, "cindy_403_transient")
-	if err := s.accountRepo.SetTempUnschedulable(ctx, account.ID, until, msg); err != nil {
-		slog.Warn("cindy_403_set_temp_unschedulable_failed", "account_id", account.ID, "error", err)
-	}
 	return true
 }
 
@@ -2572,8 +2537,7 @@ func (s *RateLimitService) HandleUpstreamModelNotFound(ctx context.Context, acco
 	if s == nil || account == nil || s.accountRepo == nil {
 		return false
 	}
-	modelNotSupported := IsCindyRuntimeCompatibleAPIKeyAccount(account.Platform, account.Type, account.Credentials) &&
-		isOpenAIModelNotSupportedError(statusCode, "", responseBody)
+	modelNotSupported := account.IsOpenAICompatible() && isOpenAIModelNotSupportedError(statusCode, "", responseBody)
 	if !account.ShouldHandleErrorCode(statusCode) && !modelNotSupported {
 		return false
 	}
@@ -2634,29 +2598,6 @@ func modelRateLimitKeyForUpstreamModelNotFound(ctx context.Context, account *Acc
 	modelKey := strings.TrimSpace(requestedModel)
 	if account == nil || modelKey == "" {
 		return modelKey
-	}
-	if IsCindyRuntimeCompatibleAPIKeyAccount(account.Platform, account.Type, account.Credentials) {
-		forwardModel := modelKey
-		requireCompact := false
-		if forwarded, ok := openAIForwardModelFromContext(ctx); ok {
-			if candidate := strings.TrimSpace(forwarded.model); candidate != "" {
-				forwardModel = candidate
-				requireCompact = forwarded.useCompactModelMapping
-			}
-		}
-		canonical := strings.TrimSpace(canonicalOpenAIAccountSchedulingModel(account, forwardModel))
-		if requireCompact {
-			// Resolve from the request-context model exactly as the passthrough
-			// sender does. requestedModel may already be the compact wire target;
-			// comparing it against that target before returning would incorrectly
-			// fall back to canonical Luna and make the read/write keys diverge.
-			if compact := strings.TrimSpace(resolveOpenAIAccountUpstreamModelForRequest(account, forwardModel, true)); compact != "" {
-				return compact
-			}
-		}
-		if canonical != "" {
-			return canonical
-		}
 	}
 	if account.Platform == PlatformAntigravity {
 		if resolved := strings.TrimSpace(resolveFinalAntigravityModelKey(ctx, account, modelKey)); resolved != "" {

@@ -301,27 +301,10 @@ type OpenAIWSIngressHooks struct {
 	TurnStarted             func(turn int, startedAt time.Time)
 	BeforeTurn              func(turn int) error
 	BeforeRequest           func(turn int, payload []byte, originalModel string) error
-	// CopyProviderPricingContext supplies one account-bound catalog/pricing
-	// capture for this turn without replacing base cancellation or lease signals.
-	CopyProviderPricingContext func(turn int, base context.Context) (context.Context, error)
 	// MapRequestModel resolves the current turn's client model to the model
 	// that must be written into the upstream response.create frame.
 	MapRequestModel func(turn int, originalModel string) (string, error)
 	AfterTurn       func(turn int, result *OpenAIForwardResult, turnErr error)
-}
-
-func copyOpenAIWSProviderPricingContext(base context.Context, hooks *OpenAIWSIngressHooks, turn int) (context.Context, error) {
-	if hooks == nil || hooks.CopyProviderPricingContext == nil {
-		return base, nil
-	}
-	ctx, err := hooks.CopyProviderPricingContext(turn, base)
-	if err != nil {
-		return nil, err
-	}
-	if ctx == nil {
-		return nil, ErrExtensionOperationUnavailable
-	}
-	return ctx, nil
 }
 
 func (s *OpenAIGatewayService) getOpenAIWSConnPool() *openAIWSConnPool {

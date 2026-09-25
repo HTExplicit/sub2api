@@ -13,9 +13,7 @@ type dataImportJobStateContextKey struct{}
 type dataImportReferenceCacheContextKey struct{}
 
 type dataImportPreviewState struct {
-	existing      []service.Account
 	identityIndex *dataIdentityIndex
-	groupsByID    map[int64]service.Group
 }
 
 type dataImportReferenceCache struct {
@@ -95,7 +93,6 @@ func (h *AccountHandler) PrepareAccountJob(
 	identityIndex := buildDataIdentityIndex(existing)
 	var allGroups []service.Group
 	needsGroups := dataImportNeedsGroupNames(req.Data.Accounts) ||
-		(req.TargetGroupID != nil && *req.TargetGroupID > 0) ||
 		(req.UniformSettings.GroupIDs != nil && len(*req.UniformSettings.GroupIDs) > 0)
 	if needsGroups {
 		allGroups, err = h.adminService.GetAllGroupsIncludingInactive(ctx)
@@ -103,35 +100,7 @@ func (h *AccountHandler) PrepareAccountJob(
 			return ctx, nil, err
 		}
 	}
-	groupsByID := make(map[int64]service.Group, len(allGroups))
-	for _, group := range allGroups {
-		groupsByID[group.ID] = group
-	}
-	targetGroupID := int64(0)
-	// Group list queries intentionally omit the strict Cindy membership marker.
-	// Hydrate the one explicit import target exactly once so prepared jobs use
-	// the same authoritative decision input as the synchronous preview path.
-	if req.TargetGroupID != nil && *req.TargetGroupID > 0 {
-		targetGroupID = *req.TargetGroupID
-		targetGroup, getGroupErr := h.adminService.GetGroup(ctx, targetGroupID)
-		if getGroupErr != nil {
-			if !errors.Is(getGroupErr, service.ErrGroupNotFound) {
-				return ctx, nil, getGroupErr
-			}
-			delete(groupsByID, targetGroupID)
-		} else if targetGroup == nil || targetGroup.ID != targetGroupID {
-			// A nil result or an ID mismatch is an unavailable target. Do not
-			// retain a stale lightweight entry from the bulk list.
-			delete(groupsByID, targetGroupID)
-		} else {
-			groupsByID[targetGroupID] = *targetGroup
-		}
-	}
-	previewState := &dataImportPreviewState{
-		existing:      existing,
-		identityIndex: identityIndex,
-		groupsByID:    groupsByID,
-	}
+	previewState := &dataImportPreviewState{identityIndex: identityIndex}
 	decisionCtx := context.WithValue(ctx, dataImportPreviewStateContextKey{}, previewState)
 	_, decisions, err := h.previewDataImport(decisionCtx, req)
 	if err != nil {
@@ -163,13 +132,6 @@ func (h *AccountHandler) PrepareAccountJob(
 	groupIDs := make(map[int64]struct{}, len(allGroups))
 	for _, group := range allGroups {
 		groupIDs[group.ID] = struct{}{}
-	}
-	if targetGroupID > 0 {
-		if _, ok := groupsByID[targetGroupID]; ok {
-			// The authoritative lookup wins even if the bulk list raced with a
-			// status change and did not contain the target.
-			groupIDs[targetGroupID] = struct{}{}
-		}
 	}
 	proxyIDs := make(map[int64]struct{}, len(proxyKeyToID))
 	for _, proxyID := range proxyKeyToID {
@@ -230,11 +192,7 @@ func (s *dataImportJobState) currentDecision(index int) (dataImportDecision, err
 		decision.Code = dataImportCodeUpdate
 		decision.AccountID = &accountID
 	default:
-		if service.IsCindyAPIKeyAccount(decision.Account.Platform, decision.Account.Type, decision.Account.Credentials) {
-			rejectDataImportDecision(&decision, dataImportCodeCindyCredentialConflict)
-		} else {
-			rejectDataImportDecision(&decision, dataImportCodeIdentityConflict)
-		}
+		rejectDataImportDecision(&decision, dataImportCodeIdentityConflict)
 		return decision, nil
 	}
 	decision.Message = dataImportMessage(decision.Code)
@@ -261,10 +219,6 @@ func (s *dataImportJobState) executeOne(
 	}
 
 	uniform := s.request.UniformSettings
-	if len(decision.GroupIDs) > 0 {
-		groupIDs := append([]int64(nil), decision.GroupIDs...)
-		uniform.GroupIDs = &groupIDs
-	}
 
 	var account *service.Account
 	var warnings []string

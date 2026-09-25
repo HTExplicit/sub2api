@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
-	"strconv"
 	"strings"
 
 	"github.com/Wei-Shaw/sub2api/internal/pkg/claude"
@@ -333,23 +332,6 @@ func (s *GatewayService) forwardCountTokensAnthropicAPIKeyPassthrough(ctx contex
 	}
 
 	if resp.StatusCode >= 400 {
-		// Exact Cindy budget exhaustion must be classified before generic 429
-		// handling or any client response is written, so the handler can switch
-		// accounts and the raw upstream payload never crosses this boundary.
-		if ClassifyCindyBalanceInsufficient(account, resp.StatusCode, respBody) == CindyBalanceSignalHTTP429 {
-			if s.rateLimitService != nil {
-				s.rateLimitService.HandleUpstreamError(ctx, account, resp.StatusCode, resp.Header, respBody, gjson.GetBytes(body, "model").String())
-			}
-			return sanitizeOpenAICindyFailoverError(&UpstreamFailoverError{
-				StatusCode:               resp.StatusCode,
-				ResponseHeaders:          resp.Header.Clone(),
-				ResponseBody:             respBody,
-				RetryableOnSameAccount:   false,
-				Scope:                    GatewayFailureScopeAccount,
-				NextAccountAction:        NextAccountRetry,
-				CindyBalanceInsufficient: true,
-			})
-		}
 		if s.rateLimitService != nil {
 			s.rateLimitService.HandleUpstreamError(ctx, account, resp.StatusCode, resp.Header, respBody)
 		}
@@ -406,20 +388,6 @@ func (s *GatewayService) forwardCountTokensAnthropicAPIKeyPassthrough(ctx contex
 		return fmt.Errorf("upstream error: %d message=%s", resp.StatusCode, upstreamMsg)
 	}
 
-	if IsCindyRuntimeCompatibleAPIKeyAccount(account.Platform, account.Type, account.Credentials) && !validAnthropicCountTokensResponse(respBody) {
-		return &UpstreamFailoverError{
-			StatusCode:             http.StatusBadGateway,
-			ResponseHeaders:        resp.Header.Clone(),
-			NextAccountAction:      NextAccountRetry,
-			Scope:                  GatewayFailureScopeAccount,
-			Reason:                 OpenAITransientTransportFailureReason,
-			ClientStatusCode:       http.StatusBadGateway,
-			ClientMessage:          "Upstream response missing valid input_tokens",
-			ResponseBody:           nil,
-			RetryableOnSameAccount: false,
-		}
-	}
-
 	writeAnthropicPassthroughResponseHeaders(c.Writer.Header(), resp.Header, s.responseHeaderFilter)
 	contentType := strings.TrimSpace(resp.Header.Get("Content-Type"))
 	if contentType == "" {
@@ -450,9 +418,6 @@ func (s *GatewayService) buildCountTokensRequestAnthropicAPIKeyPassthrough(
 			return nil, err
 		}
 		targetURL = validatedURL + "/v1/messages/count_tokens?beta=true"
-		if IsCindyRuntimeCompatibleAPIKeyAccount(account.Platform, account.Type, account.Credentials) {
-			targetURL = validatedURL + "/v1/messages/count_tokens"
-		}
 	}
 	body = sanitizeCountTokensRequestBody(body)
 
@@ -506,15 +471,6 @@ func (s *GatewayService) buildCountTokensRequestAnthropicAPIKeyPassthrough(
 	account.ApplyHeaderOverrides(req.Header)
 
 	return req, nil
-}
-
-func validAnthropicCountTokensResponse(body []byte) bool {
-	value := gjson.GetBytes(body, "input_tokens")
-	if !value.Exists() || value.Type != gjson.Number || strings.ContainsAny(value.Raw, ".eE") {
-		return false
-	}
-	inputTokens, err := strconv.ParseInt(value.Raw, 10, 64)
-	return err == nil && inputTokens >= 0
 }
 
 // buildCountTokensRequest 构建 count_tokens 上游请求

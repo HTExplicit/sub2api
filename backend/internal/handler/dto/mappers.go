@@ -183,8 +183,6 @@ func groupFromServiceBase(g *service.Group) Group {
 		Name:                            g.Name,
 		Description:                     g.Description,
 		Platform:                        g.Platform,
-		WirePlatform:                    g.EffectiveWirePlatform(),
-		ProviderProfile:                 g.EffectiveProviderProfile(),
 		RateMultiplier:                  g.RateMultiplier,
 		IsExclusive:                     g.IsExclusive,
 		Status:                          g.Status,
@@ -248,61 +246,46 @@ func AccountFromServiceShallow(a *service.Account) *Account {
 		openCodeGoUsage = state
 	}
 	out := &Account{
-		AccountViewFacts:           service.AccountViewFactsFromAccount(a, time.Now()),
-		ID:                         a.ID,
-		Name:                       a.Name,
-		Notes:                      a.Notes,
-		Platform:                   a.Platform,
-		WirePlatform:               a.EffectiveWirePlatform(),
-		ProviderProfile:            a.EffectiveProviderProfile(),
-		Type:                       a.Type,
-		Credentials:                redactedCreds,
-		CredentialsStatus:          credsStatus,
-		Extra:                      extra,
-		OllamaCloudUsage:           ollamaCloudUsage,
-		ProxyID:                    a.ProxyID,
-		ProxyFallbackOriginID:      a.ProxyFallbackOriginID,
-		ProxyFallbackOriginName:    a.ProxyFallbackOriginName,
-		ManagementFolder:           accountManagementFolderFromService(a.ManagementFolder),
-		Tags:                       accountManagementTagsFromService(a.Tags),
-		Concurrency:                a.Concurrency,
-		LoadFactor:                 a.LoadFactor,
-		Priority:                   a.Priority,
-		RateMultiplier:             a.BillingRateMultiplier(),
-		Status:                     a.Status,
-		ErrorMessage:               a.ErrorMessage,
-		LastUsedAt:                 a.LastUsedAt,
-		ExpiresAt:                  timeToUnixSeconds(a.ExpiresAt),
-		AutoPauseOnExpired:         a.AutoPauseOnExpired,
-		CreatedAt:                  a.CreatedAt,
-		UpdatedAt:                  a.UpdatedAt,
-		Schedulable:                a.Schedulable,
-		IsCindy:                    service.IsCindyAPIKeyAccount(a.Platform, a.Type, a.Credentials),
-		CindyBalanceInsufficient:   a.CindyBalanceInsufficientAt != nil,
-		CindyBanned:                a.CindyBannedAt != nil,
-		CindyBalanceProbeJobID:     a.CindyBalanceProbeJobID,
-		CindyBalanceProbeOutcome:   a.CindyBalanceProbeOutcome,
-		CindyBalanceProbeCheckedAt: a.CindyBalanceProbeCheckedAt,
-		RateLimitedAt:              a.RateLimitedAt,
-		RateLimitResetAt:           a.RateLimitResetAt,
-		QuotaState:                 a.QuotaState(time.Now()),
-		OverloadUntil:              a.OverloadUntil,
-		TempUnschedulableUntil:     a.TempUnschedulableUntil,
-		TempUnschedulableReason:    a.TempUnschedulableReason,
-		SessionWindowStart:         a.SessionWindowStart,
-		SessionWindowEnd:           a.SessionWindowEnd,
-		SessionWindowStatus:        a.SessionWindowStatus,
-		GroupIDs:                   a.GroupIDs,
-		ParentAccountID:            a.ParentAccountID,
-		QuotaDimension:             a.QuotaDimension,
-		OpenCodeGoUsage:            openCodeGoUsage,
-	}
-
-	// Native detail/list paths both provide full persisted account JSON and
-	// credential generation. Compute before redaction; never hash the reduced
-	// DTO or infer a Cindy profile from a URL/client flag alone.
-	if out.AccountViewFacts != nil && out.AccountViewFacts.CanonicalCindy {
-		out.AccountEditStateSHA256 = service.AccountEditStateDigest(a)
+		AccountViewFacts:        service.AccountViewFactsFromAccount(a, time.Now()),
+		ID:                      a.ID,
+		Name:                    a.Name,
+		Notes:                   a.Notes,
+		Platform:                a.Platform,
+		Type:                    a.Type,
+		Credentials:             redactedCreds,
+		CredentialsStatus:       credsStatus,
+		Extra:                   extra,
+		OllamaCloudUsage:        ollamaCloudUsage,
+		ProxyID:                 a.ProxyID,
+		ProxyFallbackOriginID:   a.ProxyFallbackOriginID,
+		ProxyFallbackOriginName: a.ProxyFallbackOriginName,
+		ManagementFolder:        accountManagementFolderFromService(a.ManagementFolder),
+		Tags:                    accountManagementTagsFromService(a.Tags),
+		Concurrency:             a.Concurrency,
+		LoadFactor:              a.LoadFactor,
+		Priority:                a.Priority,
+		RateMultiplier:          a.BillingRateMultiplier(),
+		Status:                  a.Status,
+		ErrorMessage:            a.ErrorMessage,
+		LastUsedAt:              a.LastUsedAt,
+		ExpiresAt:               timeToUnixSeconds(a.ExpiresAt),
+		AutoPauseOnExpired:      a.AutoPauseOnExpired,
+		CreatedAt:               a.CreatedAt,
+		UpdatedAt:               a.UpdatedAt,
+		Schedulable:             a.Schedulable,
+		RateLimitedAt:           a.RateLimitedAt,
+		RateLimitResetAt:        a.RateLimitResetAt,
+		QuotaState:              a.QuotaState(time.Now()),
+		OverloadUntil:           a.OverloadUntil,
+		TempUnschedulableUntil:  a.TempUnschedulableUntil,
+		TempUnschedulableReason: a.TempUnschedulableReason,
+		SessionWindowStart:      a.SessionWindowStart,
+		SessionWindowEnd:        a.SessionWindowEnd,
+		SessionWindowStatus:     a.SessionWindowStatus,
+		GroupIDs:                a.GroupIDs,
+		ParentAccountID:         a.ParentAccountID,
+		QuotaDimension:          a.QuotaDimension,
+		OpenCodeGoUsage:         openCodeGoUsage,
 	}
 
 	// 提取 5h 窗口费用控制和会话数量控制配置（仅 Anthropic OAuth/SetupToken 账号有效）
@@ -470,11 +453,6 @@ func redactAccountManagedExtra(extra map[string]any) map[string]any {
 			continue
 		case service.IsOpenAICodexTicketPrivateExtraKey(key):
 			continue
-		case key == service.CindyDeviceIDExtraKey:
-			deviceID, _ := value.(string)
-			if masked := service.MaskCindyDeviceID(deviceID); masked != "" {
-				redacted[key] = masked
-			}
 		default:
 			redacted[key] = value
 		}
@@ -512,19 +490,10 @@ func AccountListItemFromAccount(a *Account) *AccountListItem {
 		return nil
 	}
 	return &AccountListItem{
-		AccountEditStateSHA256:     a.AccountEditStateSHA256,
-		AccountViewFacts:           a.AccountViewFacts,
-		WirePlatform:               a.WirePlatform,
-		ProviderProfile:            a.ProviderProfile,
-		ManagementFolder:           a.ManagementFolder,
-		Tags:                       a.Tags,
-		IsCindy:                    a.IsCindy,
-		CindyBalanceInsufficient:   a.CindyBalanceInsufficient,
-		CindyBanned:                a.CindyBanned,
-		CindyBalanceProbeJobID:     a.CindyBalanceProbeJobID,
-		CindyBalanceProbeOutcome:   a.CindyBalanceProbeOutcome,
-		CindyBalanceProbeCheckedAt: a.CindyBalanceProbeCheckedAt,
-		ID:                         a.ID, Name: a.Name, Notes: a.Notes, Platform: a.Platform, Type: a.Type,
+		AccountViewFacts: a.AccountViewFacts,
+		ManagementFolder: a.ManagementFolder,
+		Tags:             a.Tags,
+		ID:               a.ID, Name: a.Name, Notes: a.Notes, Platform: a.Platform, Type: a.Type,
 		Credentials: a.Credentials, CredentialsStatus: a.CredentialsStatus, Extra: a.Extra,
 		OllamaCloudUsage: a.OllamaCloudUsage, OpenCodeGoUsage: a.OpenCodeGoUsage, CodexTurnTickets: a.CodexTurnTickets,
 		ProxyID: a.ProxyID, ProxyFallbackOriginID: a.ProxyFallbackOriginID, ProxyFallbackOriginName: a.ProxyFallbackOriginName,

@@ -45,7 +45,6 @@ type AdminHandlers struct {
 	Compliance             *admin.ComplianceHandler
 	AuditLog               *admin.AuditLogHandler
 	SystemPrompt           *admin.SystemPromptHandler
-	CindyBalanceProbe      *admin.CindyBalanceProbeHandler
 }
 
 // Handlers contains all HTTP handlers

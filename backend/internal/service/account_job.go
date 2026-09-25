@@ -26,10 +26,6 @@ const (
 	AccountJobKindBatchRefresh           = "account_batch_refresh"
 	AccountJobKindBatchRefreshTier       = "account_batch_refresh_tier"
 	AccountJobKindBatchUpdateCredentials = "account_batch_update_credentials"
-	AccountJobKindDuplicateReview        = "account_duplicate_review"
-	AccountJobKindDuplicateMerge         = "account_duplicate_merge"
-	AccountJobKindCindyConfirmedCleanup  = "cindy_confirmed_cleanup"
-	AccountJobKindCindyBannedCleanup     = "cindy_banned_cleanup"
 
 	AccountJobStatusPending            = "pending"
 	AccountJobStatusRunning            = "running"
@@ -175,15 +171,6 @@ type AccountJobPreparingExecutor interface {
 	PrepareAccountJob(context.Context, *AccountJob, json.RawMessage) (context.Context, func(), error)
 }
 
-// AccountJobCindyMutationRunner supplies the one ordinary PostgreSQL
-// transaction used by strict Cindy job items. The callback performs the
-// existing account/group/taxonomy mutation through a transaction-aware context;
-// the runner then binds credential generation and resets Cindy health before
-// committing.
-type AccountJobCindyMutationRunner interface {
-	Run(context.Context, int64, func(context.Context) (*Account, error)) (*Account, error)
-}
-
 type AccountJobService struct {
 	repo      AccountJobRepository
 	encryptor SecretEncryptor
@@ -231,12 +218,6 @@ func (s *AccountJobService) Submit(ctx context.Context, createdBy int64, kind, i
 		return nil, false, err
 	}
 
-	// Server-only edit snapshots are excluded from the original operation hash.
-	// Replays above reuse the original frozen encrypted payload and lifetime.
-	payload, err = accountJobPayloadWithEdit(ctx, kind, payload, items)
-	if err != nil {
-		return nil, false, err
-	}
 	ciphertext, err := s.encryptor.Encrypt(string(payload))
 	if err != nil {
 		return nil, false, err
@@ -624,8 +605,7 @@ func validAccountJobKind(kind string) bool {
 	case AccountJobKindImportData, AccountJobKindImportCodex, AccountJobKindBatchCreate, AccountJobKindBatchTest,
 		AccountJobKindBulkUpdate, AccountJobKindBulkTaxonomy, AccountJobKindBatchDelete,
 		AccountJobKindBatchClearError, AccountJobKindBatchRefresh, AccountJobKindBatchRefreshTier,
-		AccountJobKindBatchUpdateCredentials, AccountJobKindDuplicateReview,
-		AccountJobKindDuplicateMerge, AccountJobKindCindyConfirmedCleanup, AccountJobKindCindyBannedCleanup:
+		AccountJobKindBatchUpdateCredentials:
 		return true
 	default:
 		return false

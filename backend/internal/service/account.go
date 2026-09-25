@@ -26,8 +26,6 @@ type Account struct {
 	Name                    string
 	Notes                   *string
 	Platform                string
-	WirePlatform            string
-	ProviderProfile         string
 	Type                    string
 	Credentials             map[string]any
 	Extra                   map[string]any
@@ -50,17 +48,6 @@ type Account struct {
 	UpdatedAt          time.Time
 
 	Schedulable bool
-	// CindyBalanceInsufficientAt is set after recognized Cindy budget exhaustion.
-	CindyBalanceInsufficientAt *time.Time
-	// CindyBannedAt is the durable projection of a generation-bound strict Cindy 401 terminal state.
-	CindyBannedAt *time.Time
-	// CindyCredentialGeneration identifies the exact active credential revision carried by this account snapshot.
-	CindyCredentialGeneration int64
-	// The following presentation-only fields are hydrated from durable manual
-	// balance probe items for admin account list responses.
-	CindyBalanceProbeJobID     *int64
-	CindyBalanceProbeOutcome   *string
-	CindyBalanceProbeCheckedAt *time.Time
 
 	RateLimitedAt    *time.Time
 	RateLimitResetAt *time.Time
@@ -230,9 +217,6 @@ func (a *Account) IsSchedulable() bool {
 	if !a.IsActive() || !a.Schedulable {
 		return false
 	}
-	if a.hasCindyTerminalSchedulingBlock() {
-		return false
-	}
 	now := time.Now()
 	if a.AutoPauseOnExpired && a.ExpiresAt != nil && !now.Before(*a.ExpiresAt) {
 		return false
@@ -339,11 +323,6 @@ func (a *Account) IsDeepseek() bool {
 	return a.Platform == PlatformDeepseek
 }
 
-func (a *Account) hasCindyTerminalSchedulingBlock() bool {
-	return hasCanonicalCindyProviderIdentity(a) &&
-		(a.CindyBalanceInsufficientAt != nil || a.CindyBannedAt != nil)
-}
-
 func (a *Account) IsMiniMax() bool {
 	return a.Platform == PlatformMiniMax
 }
@@ -357,7 +336,7 @@ func (a *Account) IsCNProvider() bool {
 // openai/grok 原生走 OpenAI 网关；国产供应商同为 OpenAI Chat Completions
 // 兼容上游，也经 OpenAI 网关转发。OpenCode 同样经 OpenAI 网关按模型分流。
 func (a *Account) IsOpenAICompatible() bool {
-	return a != nil && (a.EffectiveWirePlatform() == PlatformOpenAI || a.Platform == PlatformGrok || a.IsCNProvider() || a.IsOpenCodeGo())
+	return a != nil && (a.Platform == PlatformOpenAI || a.Platform == PlatformGrok || a.IsCNProvider() || a.IsOpenCodeGo())
 }
 
 func (a *Account) GeminiOAuthType() string {
@@ -912,26 +891,6 @@ func resolveRequestedModelInMapping(mapping map[string]string, requestedModel st
 // （isDeepseekServableModel）——未知模型名透传上游只会得到 404/400，并误触发
 // per-(账号,模型) 30 分钟冷却；带 [1m] 上下文后缀的写法先归一化再比对。
 func (a *Account) IsModelSupported(requestedModel string) bool {
-	if a != nil && IsLegacyCindyAPIKeyAccount(a.Platform, a.Type, a.Credentials) {
-		if _, ok := CindyCompatibilityMappedUpstreamModel(requestedModel); ok {
-			return true
-		}
-	}
-	if a != nil && IsCindyRuntimeCompatibleAPIKeyAccount(a.Platform, a.Type, a.Credentials) &&
-		CindyCompatibilityRoutingTarget(requestedModel) {
-		return true
-	}
-	if a != nil && IsCindyAPIKeyAccount(a.Platform, a.Type, a.Credentials) {
-		// Group-aware routing resolves compatibility aliases before account
-		// selection. Exact Cindy accounts accept only those resolved targets;
-		// recognizing aliases here would also rewrite them inside mixed groups.
-		// Cindy's fixed catalogue is authoritative for exact Cindy accounts when
-		// the broader rollout is enabled. This keeps stale per-account mapping
-		// JSON from advertising unsupported models.
-		if CindyCapabilityCatalogFeatureEnabled() {
-			return CindyModelHasVerifiedEndpoint(requestedModel)
-		}
-	}
 	// 透传模式仅替换认证、模型语义完全交由上游决定，因此放行所有模型。
 	// 该短路必须在 model_mapping 判定之前：账号从"白名单模式"切换到透传后，
 	// credentials 里常残留旧的非空 model_mapping，若不在此放行，透传账号会被
@@ -966,24 +925,6 @@ func (a *Account) GetMappedModel(requestedModel string) string {
 // ResolveMappedModel 获取映射后的模型名，并返回是否命中了账号级映射。
 // matched=true 表示命中了精确映射或通配符映射，即使映射结果与原模型名相同。
 func (a *Account) ResolveMappedModel(requestedModel string) (mappedModel string, matched bool) {
-	if a != nil && IsLegacyCindyAPIKeyAccount(a.Platform, a.Type, a.Credentials) {
-		if mappedModel, ok := CindyCompatibilityMappedUpstreamModel(requestedModel); ok {
-			return mappedModel, true
-		}
-	}
-	if a != nil && IsCindyRuntimeCompatibleAPIKeyAccount(a.Platform, a.Type, a.Credentials) &&
-		CindyCompatibilityRoutingTarget(requestedModel) {
-		return requestedModel, true
-	}
-	if a != nil && IsCindyAPIKeyAccount(a.Platform, a.Type, a.Credentials) {
-		// The resolved compatibility target is authoritative and must not be
-		// remapped by stale per-account JSON. Aliases are deliberately excluded:
-		// only a strict Cindy group may resolve them.
-		// Resolve whichever independently enabled Cindy surface owns this model.
-		if mappedModel, ok := CindyMappedUpstreamModel(requestedModel); ok {
-			return mappedModel, true
-		}
-	}
 	mapping := a.GetModelMapping()
 	if len(mapping) == 0 {
 		return requestedModel, false
@@ -1390,7 +1331,7 @@ func (a *Account) IsAPIKeyOrBedrock() bool {
 }
 
 func (a *Account) IsOpenAI() bool {
-	return a != nil && a.EffectiveWirePlatform() == PlatformOpenAI
+	return a != nil && a.Platform == PlatformOpenAI
 }
 
 func (a *Account) IsOpenAILongContextBillingEnabled() bool {
@@ -1954,15 +1895,13 @@ func (a *Account) SupportsOpenAIEndpointCapability(capability OpenAIEndpointCapa
 	switch capability {
 	case OpenAIEndpointCapabilityChatCompletions:
 	case OpenAIEndpointCapabilityCountTokens:
-		// Ordinary OpenAI-compatible accounts retain the existing Anthropic-to-
-		// Responses input_tokens bridge. Cindy is independently catalog-gated by
-		// the scheduler before this compatibility fallback.
+		// OpenAI-compatible accounts retain the existing Anthropic-to-Responses
+		// input_tokens bridge.
 		capability = OpenAIEndpointCapabilityChatCompletions
 	case OpenAIEndpointCapabilityMessages:
 		// /v1/messages is an inbound protocol capability. Ordinary OpenAI-
 		// compatible accounts still use the established chat/Responses adapter,
-		// so existing chat_completions capability declarations remain valid. The
-		// strict Cindy model-by-endpoint gate is applied by the scheduler.
+		// so existing chat_completions capability declarations remain valid.
 		capability = OpenAIEndpointCapabilityChatCompletions
 	case OpenAIEndpointCapabilityLive:
 		return a.Platform == PlatformOpenAI &&

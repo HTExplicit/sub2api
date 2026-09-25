@@ -374,13 +374,9 @@ func (s *OpenAIGatewayService) newOpenAIAccountFailoverErrorWithClassificationHe
 			ClientMessage: "No eligible upstream accepted the budget for this request",
 		}
 	}
-	// `model_not_supported` is only account/model-scoped for the Laxa Cindy
-	// data plane.  Keep the generic constructor account-agnostic: it is also
-	// used by ordinary OpenAI-compatible providers, where treating an arbitrary
-	// 400 as a pool-wide failover would replay a client error.  All Cindy/Laxa
-	// callers that have an account flow through this constructor instead.
-	if account != nil &&
-		IsCindyRuntimeCompatibleAPIKeyAccount(account.Platform, account.Type, account.Credentials) &&
+	// A structured `model_not_supported` 400 is scoped to the account/model
+	// pair: fail over to another account instead of replaying a client error.
+	if account != nil && account.IsOpenAICompatible() &&
 		isOpenAIModelNotSupportedError(statusCode, upstreamMsg, responseBody) {
 		return newOpenAIModelNotSupportedFailoverError(responseHeaders, responseBody)
 	}

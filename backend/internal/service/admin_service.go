@@ -7,7 +7,6 @@ import (
 
 	dbent "github.com/Wei-Shaw/sub2api/ent"
 	"github.com/Wei-Shaw/sub2api/internal/config"
-	extensionv1 "github.com/Wei-Shaw/sub2api/internal/nativeapi"
 	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
 )
 
@@ -106,11 +105,6 @@ type AdminService interface {
 	// ForceAntigravityPrivacy 强制重新设置 Antigravity OAuth 账号隐私，无论当前状态。
 	ForceAntigravityPrivacy(ctx context.Context, account *Account) string
 	SetAccountSchedulable(ctx context.Context, id int64, schedulable bool) (*Account, error)
-	ClearCindyBalanceInsufficient(ctx context.Context, id int64) (*Account, error)
-	PreviewCindyInsufficientDeletion(ctx context.Context) (*CindyInsufficientDeletePreview, error)
-	DeleteCindyInsufficient(ctx context.Context, expectedCount int, fingerprint string) (*CindyInsufficientDeleteResult, error)
-	PreviewCindyBannedDeletion(ctx context.Context) (*CindyInsufficientDeletePreview, error)
-	DeleteCindyBanned(ctx context.Context, expectedCount int, fingerprint string) (*CindyInsufficientDeleteResult, error)
 	BulkUpdateAccounts(ctx context.Context, input *BulkUpdateAccountsInput) (*BulkUpdateAccountsResult, error)
 	CheckMixedChannelRisk(ctx context.Context, currentAccountID int64, currentAccountPlatform string, groupIDs []int64) error
 	// RevertAccountProxyFallback 将账号的 proxy_id 切回 proxy_fallback_origin_id，并清空 origin 字段。
@@ -400,10 +394,6 @@ type UpdateGroupInput struct {
 }
 
 type CreateAccountInput struct {
-	ProviderCreate *extensionv1.ProviderCreateRequestV1
-	// Presence is captured by tagged HTTP requests only. Untagged numeric
-	// decoding keeps its existing zero/nil meanings.
-	ExplicitCreateFields  map[string]bool
 	Name                  string
 	Notes                 *string
 	Platform              string
@@ -437,7 +427,6 @@ type ShadowOptions struct {
 }
 
 type UpdateAccountInput struct {
-	ProviderEdit          *extensionv1.ProviderEditRequestV1
 	Name                  string
 	Notes                 *string
 	Type                  string // Account type: oauth, setup-token, apikey
@@ -700,34 +689,32 @@ var ErrRPMStatusUnavailable = infraerrors.New(http.StatusNotImplemented, "RPM_ST
 
 // adminServiceImpl implements AdminService
 type adminServiceImpl struct {
-	cfg                   *config.Config
-	userRepo              UserRepository
-	groupRepo             GroupRepository
-	groupDuplicateRepo    GroupDuplicateRepository
-	emptyGroupDeleteRepo  EmptyGroupDeleteRepository
-	accountRepo           AccountRepository
-	accountDuplicateRepo  AccountDuplicateRepository
-	accountBillingRepo    AccountBillingSettingsRepository
-	cindyAccountMutations AccountJobCindyMutationRunner
-	cindyBalanceProbeRepo CindyBalanceProbeRepository
-	proxyRepo             ProxyRepository
-	apiKeyRepo            APIKeyRepository
-	redeemCodeRepo        RedeemCodeRepository
-	userGroupRateRepo     UserGroupRateRepository
-	userRPMCache          UserRPMCache
-	billingCacheService   *BillingCacheService
-	proxyProber           ProxyExitInfoProber
-	proxyLatencyCache     ProxyLatencyCache
-	authCacheInvalidator  APIKeyAuthCacheInvalidator
-	entClient             *dbent.Client // 用于开启数据库事务
-	settingService        *SettingService
-	defaultSubAssigner    DefaultSubscriptionAssigner
-	userSubRepo           UserSubscriptionRepository
-	privacyClientFactory  PrivacyClientFactory
-	runtimeBlocker        AccountRuntimeBlocker
-	affiliateService      adminRechargeAffiliateAccruer
-	compositeRouteRepo    CompositeModelRouteRepository
-	compositeResolver     *CompositeRouteResolver
+	cfg                  *config.Config
+	userRepo             UserRepository
+	groupRepo            GroupRepository
+	groupDuplicateRepo   GroupDuplicateRepository
+	emptyGroupDeleteRepo EmptyGroupDeleteRepository
+	accountRepo          AccountRepository
+	accountDuplicateRepo AccountDuplicateRepository
+	accountBillingRepo   AccountBillingSettingsRepository
+	proxyRepo            ProxyRepository
+	apiKeyRepo           APIKeyRepository
+	redeemCodeRepo       RedeemCodeRepository
+	userGroupRateRepo    UserGroupRateRepository
+	userRPMCache         UserRPMCache
+	billingCacheService  *BillingCacheService
+	proxyProber          ProxyExitInfoProber
+	proxyLatencyCache    ProxyLatencyCache
+	authCacheInvalidator APIKeyAuthCacheInvalidator
+	entClient            *dbent.Client // 用于开启数据库事务
+	settingService       *SettingService
+	defaultSubAssigner   DefaultSubscriptionAssigner
+	userSubRepo          UserSubscriptionRepository
+	privacyClientFactory PrivacyClientFactory
+	runtimeBlocker       AccountRuntimeBlocker
+	affiliateService     adminRechargeAffiliateAccruer
+	compositeRouteRepo   CompositeModelRouteRepository
+	compositeResolver    *CompositeRouteResolver
 	// 分组平台变更后用来失效渠道缓存；可为 nil（缓存会在 TTL 到期后自然重建）
 	channelCacheInvalidator ChannelCacheInvalidator
 }
@@ -752,8 +739,6 @@ func NewAdminService(
 	userRepo UserRepository,
 	groupRepo AdminGroupRepository,
 	accountRepo AdminAccountRepository,
-	cindyAccountMutations AccountJobCindyMutationRunner,
-	cindyBalanceProbeRepo CindyBalanceProbeRepository,
 	proxyRepo ProxyRepository,
 	apiKeyRepo APIKeyRepository,
 	redeemCodeRepo RedeemCodeRepository,
@@ -775,34 +760,32 @@ func NewAdminService(
 	channelCacheInvalidator ChannelCacheInvalidator,
 ) AdminService {
 	return &adminServiceImpl{
-		cfg:                   cfg,
-		userRepo:              userRepo,
-		groupRepo:             groupRepo,
-		groupDuplicateRepo:    groupRepo,
-		emptyGroupDeleteRepo:  groupRepo,
-		accountRepo:           accountRepo,
-		accountDuplicateRepo:  accountRepo,
-		accountBillingRepo:    accountRepo,
-		cindyAccountMutations: cindyAccountMutations,
-		cindyBalanceProbeRepo: cindyBalanceProbeRepo,
-		proxyRepo:             proxyRepo,
-		apiKeyRepo:            apiKeyRepo,
-		redeemCodeRepo:        redeemCodeRepo,
-		userGroupRateRepo:     userGroupRateRepo,
-		userRPMCache:          userRPMCache,
-		billingCacheService:   billingCacheService,
-		proxyProber:           proxyProber,
-		proxyLatencyCache:     proxyLatencyCache,
-		authCacheInvalidator:  authCacheInvalidator,
-		entClient:             entClient,
-		settingService:        settingService,
-		defaultSubAssigner:    defaultSubAssigner,
-		userSubRepo:           userSubRepo,
-		privacyClientFactory:  privacyClientFactory,
-		runtimeBlocker:        runtimeBlocker,
-		affiliateService:      affiliateService,
-		compositeRouteRepo:    compositeRouteRepo,
-		compositeResolver:     compositeResolver,
+		cfg:                  cfg,
+		userRepo:             userRepo,
+		groupRepo:            groupRepo,
+		groupDuplicateRepo:   groupRepo,
+		emptyGroupDeleteRepo: groupRepo,
+		accountRepo:          accountRepo,
+		accountDuplicateRepo: accountRepo,
+		accountBillingRepo:   accountRepo,
+		proxyRepo:            proxyRepo,
+		apiKeyRepo:           apiKeyRepo,
+		redeemCodeRepo:       redeemCodeRepo,
+		userGroupRateRepo:    userGroupRateRepo,
+		userRPMCache:         userRPMCache,
+		billingCacheService:  billingCacheService,
+		proxyProber:          proxyProber,
+		proxyLatencyCache:    proxyLatencyCache,
+		authCacheInvalidator: authCacheInvalidator,
+		entClient:            entClient,
+		settingService:       settingService,
+		defaultSubAssigner:   defaultSubAssigner,
+		userSubRepo:          userSubRepo,
+		privacyClientFactory: privacyClientFactory,
+		runtimeBlocker:       runtimeBlocker,
+		affiliateService:     affiliateService,
+		compositeRouteRepo:   compositeRouteRepo,
+		compositeResolver:    compositeResolver,
 
 		channelCacheInvalidator: channelCacheInvalidator,
 	}

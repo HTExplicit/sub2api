@@ -13,7 +13,6 @@ import (
 
 const (
 	openAIAccountStateUpdateTimeout       = 5 * time.Second
-	cindyBalancePendingReadTimeout        = 500 * time.Millisecond
 	openAIOAuth429FallbackCooldown        = 5 * time.Second
 	openAIOAuth429RetryWindow             = 2 * time.Minute
 	openAIOAuth429RetryDelay              = 500 * time.Millisecond
@@ -443,8 +442,7 @@ func isGrokOAuthAccount(account *Account) bool {
 }
 
 func isOpenAIAccount(account *Account) bool {
-	return account != nil && (account.Platform == PlatformOpenAI || account.Platform == PlatformGrok ||
-		hasCanonicalCindyProviderIdentity(account))
+	return account != nil && (account.Platform == PlatformOpenAI || account.Platform == PlatformGrok)
 }
 
 // handleOpenAIAccountUpstreamError expects canonicalModel to be the model used
@@ -463,7 +461,6 @@ func (s *OpenAIGatewayService) handleOpenAIAccountUpstreamError(ctx context.Cont
 	if isOpenAIRequestBudgetRejection(account, statusCode, responseBody) || isOpenAIReportedUpstreamFailure(statusCode, responseBody) {
 		return false
 	}
-	cindyHealthSignal := ClassifyCindyHealthSignal(account, statusCode, responseBody)
 	if account != nil && account.Platform == PlatformGrok && isGrokContentPolicyRejection(statusCode, responseBody) {
 		return false
 	}
@@ -477,16 +474,11 @@ func (s *OpenAIGatewayService) handleOpenAIAccountUpstreamError(ctx context.Cont
 	if account != nil && account.Platform == PlatformOpenAI && isOpenAIRequestScopedCapacityShed("", responseBody) {
 		return false
 	}
-	if cindyHealthSignal == CindyHealthSignalForbidden {
-		if hit, _, _ := detectOpenAICyberPolicy(responseBody); hit {
-			return false
-		}
-	}
-	if cindyHealthSignal != CindyHealthSignalNone {
-		if s != nil && s.cindyHealth != nil {
-			s.cindyHealth.ObserveCindyHealthSignal(ctx, account, cindyHealthSignal)
-		}
-		return cindyHealthSignal == CindyHealthSignalExactBudget || cindyHealthSignal == CindyHealthSignalBanned
+	// An exhausted key budget stops scheduling completely: the account enters
+	// the error state before the request-local API-key 429 handling below.
+	if account != nil && account.IsOpenAICompatible() && isOpenAIBudgetExceededResponse(statusCode, responseBody) {
+		s.handleOpenAIBudgetExceeded(ctx, account, responseBody)
+		return true
 	}
 	if account != nil && account.Platform == PlatformOpenAI &&
 		(isOpenAIHTTPUpstreamAccessStateError(statusCode, "", responseBody) ||
@@ -608,27 +600,6 @@ func (s *OpenAIGatewayService) handleOpenAIAccountUpstreamError(ctx context.Cont
 		}
 	}
 	return shouldDisable
-}
-
-// handleCindyBalanceTerminalEvent consumes an in-band HTTP-200 SSE/WS event
-// before any generic error rewriting can discard the structured Cindy signal.
-func (s *OpenAIGatewayService) handleCindyBalanceTerminalEvent(ctx context.Context, account *Account, headers http.Header, payload []byte, canonicalModel ...string) bool {
-	if ClassifyCindyBalanceInsufficient(account, http.StatusOK, payload) == CindyBalanceSignalNone {
-		return false
-	}
-	if account != nil && account.CindyBalanceInsufficientAt != nil {
-		s.BlockAccountScheduling(account, time.Time{}, "cindy_balance_insufficient")
-		return true
-	}
-	// Preserve the event's real HTTP-200 transport status for the centralized
-	// classifier. The client-facing failover is still normalized to 429, but
-	// reclassifying response.failed as an HTTP 429 would discard its terminal
-	// event shape and skip durable balance persistence.
-	s.handleOpenAIAccountUpstreamError(ctx, account, http.StatusOK, headers, payload, canonicalModel...)
-	// Classification itself is authoritative. Even a partially constructed
-	// service must emit a no-same-account failover instead of reinterpreting the
-	// event as an ordinary transient error.
-	return true
 }
 
 func shouldCooldownOpenAITransientUpstreamError(statusCode int, responseBody []byte) bool {
@@ -756,10 +727,10 @@ func (s *OpenAIGatewayService) BlockAccountScheduling(account *Account, until ti
 }
 
 // BlockAccountSchedulingFromPersistedCooldown mirrors only the ordinary DB
-// cooldown fields. Request-owned cooldowns, credential mutation guards and Cindy
-// health state continue to use BlockAccountScheduling instead.
+// cooldown fields. Request-owned cooldowns and credential mutation guards
+// continue to use BlockAccountScheduling instead.
 func (s *OpenAIGatewayService) BlockAccountSchedulingFromPersistedCooldown(account *Account, until time.Time, reason string) {
-	if until.IsZero() || (account != nil && IsCindyRuntimeCompatibleAPIKeyAccount(account.Platform, account.Type, account.Credentials)) {
+	if until.IsZero() {
 		s.BlockAccountScheduling(account, until, reason)
 		return
 	}
@@ -768,10 +739,6 @@ func (s *OpenAIGatewayService) BlockAccountSchedulingFromPersistedCooldown(accou
 
 func (s *OpenAIGatewayService) blockAccountScheduling(account *Account, until time.Time, reason string, fromPersistedCooldown bool) {
 	if s == nil || !isOpenAIAccount(account) {
-		return
-	}
-	if until.IsZero() && reason == "cindy_balance_insufficient" {
-		s.blockCindyBalanceScheduling(account)
 		return
 	}
 	mu := s.openAIAccountRuntimeBlockLock(account.ID)
@@ -791,312 +758,12 @@ func (s *OpenAIGatewayService) blockAccountScheduling(account *Account, until ti
 	}
 }
 
-type cindyHealthRuntimeBlock struct {
-	Episode CindyHealthEpisode
-	Owner   uint64
-	Reason  string
-}
-
-func (s *OpenAIGatewayService) BlockCindyHealthEpisode(account *Account, episode CindyHealthEpisode, reason string) bool {
-	if s == nil || account == nil || !hasCanonicalCindyProviderIdentity(account) || !episode.valid() ||
-		account.ID != episode.AccountID || account.CindyCredentialGeneration != episode.Generation {
-		return false
-	}
-	fingerprint, err := AccountCredentialFingerprint(
-		ProviderProfileCindyLaxaV1, AccountTypeAPIKey, "https://api.laxarouter.ai", account.GetCredential("api_key"),
-	)
-	if err != nil || fingerprint != episode.Fingerprint {
-		return false
-	}
-	mu := s.openAIAccountRuntimeBlockLock(account.ID)
-	mu.Lock()
-	defer mu.Unlock()
-	owner, _ := s.blockAccountSchedulingLocked(account, time.Time{}, reason)
-	s.cindyHealthRuntimeBlocks.Store(account.ID, cindyHealthRuntimeBlock{Episode: episode, Owner: owner, Reason: reason})
-	return true
-}
-
-func (s *OpenAIGatewayService) ClearCindyHealthEpisodeBlock(episode CindyHealthEpisode) {
-	if s == nil || !episode.valid() {
-		return
-	}
-	mu := s.openAIAccountRuntimeBlockLock(episode.AccountID)
-	mu.Lock()
-	defer mu.Unlock()
-	raw, ok := s.cindyHealthRuntimeBlocks.Load(episode.AccountID)
-	current, valid := raw.(cindyHealthRuntimeBlock)
-	if !ok || !valid || current.Episode.AccountID != episode.AccountID ||
-		current.Episode.Generation != episode.Generation || current.Episode.EpisodeID != episode.EpisodeID ||
-		current.Episode.Fingerprint != episode.Fingerprint || current.Episode.Status != episode.Status {
-		return
-	}
-	owner, _ := s.openaiAccountRuntimeBlockGeneration.Load(episode.AccountID)
-	if owner == current.Owner {
-		s.openaiAccountRuntimeBlockUntil.Delete(episode.AccountID)
-		s.openaiAccountRuntimeBlockSources.Delete(episode.AccountID)
-		s.cindyBalanceRuntimeBlockFingerprint.Delete(episode.AccountID)
-		s.openaiAccountRuntimeBlockGeneration.Store(episode.AccountID, s.openaiAccountRuntimeBlockSequence.Add(1))
-	}
-	s.cindyHealthRuntimeBlocks.Delete(episode.AccountID)
-}
-
-func (s *OpenAIGatewayService) blockCindyBalanceScheduling(account *Account) {
-	if s == nil || account == nil ||
-		!IsCindyAPIKeyAccount(account.Platform, account.Type, account.Credentials) {
-		return
-	}
-	fingerprint, err := CindyAccountIdentityFingerprint(account.Platform, account.Type, account.Credentials)
-	if err != nil {
-		return
-	}
-	mu := s.openAIAccountRuntimeBlockLock(account.ID)
-	mu.Lock()
-	defer mu.Unlock()
-	if previous, ok := s.openaiAccountRuntimeBlockUntil.Load(account.ID); ok {
-		if previousUntil, valid := previous.(time.Time); valid {
-			if previousUntil.IsZero() {
-				storedFingerprint, _ := s.cindyBalanceRuntimeBlockFingerprint.Load(account.ID)
-				if storedFingerprint != fingerprint {
-					generation := s.openaiAccountRuntimeBlockSequence.Add(1)
-					s.openaiAccountRuntimeBlockGeneration.Store(account.ID, generation)
-					s.cindyBalanceRuntimeBlockFingerprint.Store(account.ID, fingerprint)
-				}
-				return
-			}
-		}
-	}
-	_, changed := s.blockAccountSchedulingLocked(account, time.Time{}, "cindy_balance_insufficient")
-	if changed {
-		s.cindyBalanceRuntimeBlockFingerprint.Store(account.ID, fingerprint)
-	}
-}
-
 func (s *OpenAIGatewayService) openAIRuntimeBreakerStore() (OpenAIRuntimeBreakerStore, bool) {
 	if s == nil || s.cache == nil {
 		return nil, false
 	}
 	store, ok := s.cache.(OpenAIRuntimeBreakerStore)
 	return store, ok && store != nil
-}
-
-func (s *OpenAIGatewayService) cindyBalancePendingStore() (CindyBalancePendingStore, bool) {
-	if s == nil || s.cache == nil {
-		return nil, false
-	}
-	store, ok := s.cache.(CindyBalancePendingStore)
-	return store, ok && store != nil
-}
-
-func (s *OpenAIGatewayService) cindyHealthEpisodeStore() (CindyHealthEpisodeStore, bool) {
-	if s == nil || s.cache == nil {
-		return nil, false
-	}
-	store, ok := s.cache.(CindyHealthEpisodeStore)
-	return store, ok && store != nil
-}
-
-func (s *OpenAIGatewayService) isCindyTerminalPendingBlocked(ctx context.Context, account *Account) bool {
-	if s == nil || account == nil || !hasCanonicalCindyProviderIdentity(account) {
-		return false
-	}
-	store, ok := s.cindyHealthEpisodeStore()
-	if !ok {
-		return false
-	}
-	stateCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), cindyBalancePendingReadTimeout)
-	episodes, err := store.GetCindyHealthEpisodes(stateCtx, account.ID)
-	cancel()
-	if err != nil {
-		slog.Error("cindy_terminal_pending_hotpath_read_failed", "account_id", account.ID, "error", err)
-		return true
-	}
-	fingerprint, err := AccountCredentialFingerprint(
-		ProviderProfileCindyLaxaV1, AccountTypeAPIKey, "https://api.laxarouter.ai", account.GetCredential("api_key"),
-	)
-	blocked := false
-	for _, episode := range episodes {
-		if !episode.terminalValid() {
-			return true
-		}
-		candidate := account
-		if account.CindyCredentialGeneration <= 0 || err != nil ||
-			episode.Generation != account.CindyCredentialGeneration || episode.Fingerprint != fingerprint {
-			authority, available := s.cindyHealth.(CindyHealthEpisodeAuthority)
-			if !available {
-				return true
-			}
-			authorityCtx, authorityCancel := context.WithTimeout(context.WithoutCancel(ctx), cindyBalancePendingReadTimeout)
-			authoritativeAccount, current, resolveErr := authority.ResolveCindyHealthEpisode(authorityCtx, episode)
-			authorityCancel()
-			if resolveErr != nil || authoritativeAccount == nil {
-				slog.Error("cindy_terminal_pending_authority_failed", "account_id", account.ID, "error", resolveErr)
-				return true
-			}
-			if current {
-				candidate = authoritativeAccount
-			} else {
-				clearCtx, clearCancel := context.WithTimeout(context.WithoutCancel(ctx), cindyBalancePendingReadTimeout)
-				_ = store.ClearCindyHealthEpisodeIfMatch(clearCtx, episode)
-				clearCancel()
-				continue
-			}
-		}
-		reason := "cindy_banned"
-		if episode.Status == CindyHealthStatusBalanceInsufficient {
-			reason = "cindy_balance_insufficient"
-		}
-		if s.BlockCindyHealthEpisode(candidate, episode, reason) {
-			blocked = true
-		}
-	}
-	return blocked
-}
-
-// ClearCindyBalancePending is used by the explicit admin recovery path. It is
-// deliberately separate from ClearAccountSchedulingBlock: ordinary runtime
-// recovery must never erase a durable Cindy budget signal.
-func (s *OpenAIGatewayService) ClearCindyBalancePending(ctx context.Context, accountID int64) error {
-	store, ok := s.cindyBalancePendingStore()
-	if !ok || accountID <= 0 {
-		return nil
-	}
-	stateCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 3*time.Second)
-	defer cancel()
-	return store.ClearCindyBalancePending(stateCtx, accountID)
-}
-
-func (s *OpenAIGatewayService) ClearAllCindyHealthState(ctx context.Context, accountID int64) error {
-	if s == nil || accountID <= 0 || s.cache == nil {
-		return nil
-	}
-	cleaner, ok := s.cache.(CindyHealthStateCleaner)
-	if !ok {
-		return nil
-	}
-	stateCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 3*time.Second)
-	defer cancel()
-	return cleaner.ClearAllCindyHealthState(stateCtx, accountID)
-}
-
-func (s *OpenAIGatewayService) GetCindyHealthTerminalPending(ctx context.Context, accountID int64, status string) (*CindyHealthEpisode, error) {
-	if s == nil || accountID <= 0 || s.cache == nil {
-		return nil, nil
-	}
-	manager, ok := s.cache.(CindyHealthTerminalPendingManager)
-	if !ok {
-		return nil, nil
-	}
-	stateCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 3*time.Second)
-	defer cancel()
-	return manager.GetCindyHealthTerminalPending(stateCtx, accountID, status)
-}
-
-func (s *OpenAIGatewayService) ClearCindyHealthTerminalPendingIfMatch(ctx context.Context, episode CindyHealthEpisode) (bool, error) {
-	if s == nil || s.cache == nil {
-		return false, nil
-	}
-	manager, ok := s.cache.(CindyHealthTerminalPendingManager)
-	if !ok {
-		return false, nil
-	}
-	stateCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 3*time.Second)
-	defer cancel()
-	return manager.ClearCindyHealthTerminalPendingIfMatch(stateCtx, episode)
-}
-
-func (s *OpenAIGatewayService) ClearCindyBalanceRuntimeBlock(accountID int64) {
-	if s == nil || accountID <= 0 {
-		return
-	}
-	mu := s.openAIAccountRuntimeBlockLock(accountID)
-	mu.Lock()
-	defer mu.Unlock()
-	if raw, ok := s.cindyHealthRuntimeBlocks.Load(accountID); ok {
-		if block, valid := raw.(cindyHealthRuntimeBlock); valid && block.Episode.Status == CindyHealthStatusBanned {
-			return
-		}
-		s.cindyHealthRuntimeBlocks.Delete(accountID)
-	}
-	if _, legacyBalance := s.cindyBalanceRuntimeBlockFingerprint.Load(accountID); legacyBalance {
-		s.cindyBalanceRuntimeBlockFingerprint.Delete(accountID)
-	}
-	s.openaiAccountRuntimeBlockUntil.Delete(accountID)
-	s.openaiAccountRuntimeBlockSources.Delete(accountID)
-	s.openaiAccountRuntimeBlockGeneration.Store(accountID, s.openaiAccountRuntimeBlockSequence.Add(1))
-}
-
-// withCindyBalancePendingSnapshot loads every not-yet-covered strict Cindy
-// account with one Redis MGET and records the result in the request context.
-// Initial filtering, compatibility checks and fresh DB rechecks all reuse it.
-func (s *OpenAIGatewayService) withCindyBalancePendingSnapshot(ctx context.Context, accounts []Account) context.Context {
-	ctx = ensureCindyBalancePendingSnapshotContext(ctx)
-	snapshot := cindyBalancePendingSnapshotFromContext(ctx)
-	accountIDs := snapshot.unknownStrictCindyAccountIDs(accounts)
-	if len(accountIDs) == 0 {
-		return ctx
-	}
-	store, ok := s.cindyBalancePendingStore()
-	if !ok {
-		// The store is an optional extension for alternate/test cache adapters.
-		// Production GatewayCache always implements it.
-		snapshot.record(accountIDs, nil, nil)
-		return ctx
-	}
-	stateCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), cindyBalancePendingReadTimeout)
-	pending, err := store.HasCindyBalancePendingBatch(stateCtx, accountIDs)
-	cancel()
-	snapshot.record(accountIDs, pending, err)
-	if err != nil {
-		slog.Error("cindy_balance_legacy_pending_batch_read_failed", "account_count", len(accountIDs), "error", err)
-	}
-	return ctx
-}
-
-func (s *OpenAIGatewayService) isCindyBalancePendingBlocked(ctx context.Context, account *Account) bool {
-	if s == nil || account == nil || !IsCindyAPIKeyAccount(account.Platform, account.Type, account.Credentials) {
-		return false
-	}
-	// Since v0.1.177 the durable DB marker is the only balance authority. Redis
-	// pending entries are legacy cleanup hints and must never make an unmarked
-	// account unavailable, including when Redis itself is unavailable.
-	if account.CindyBalanceInsufficientAt != nil {
-		return true
-	}
-	ctx = ensureCindyBalancePendingSnapshotContext(ctx)
-	snapshot := cindyBalancePendingSnapshotFromContext(ctx)
-	state, loaded := snapshot.state(account.ID)
-	if !loaded {
-		ctx = s.withCindyBalancePendingSnapshot(ctx, []Account{*account})
-		snapshot = cindyBalancePendingSnapshotFromContext(ctx)
-		state, loaded = snapshot.state(account.ID)
-	}
-	if !loaded || state == cindyBalancePendingSnapshotClear || state == cindyBalancePendingSnapshotReadFailed {
-		return false
-	}
-	store, ok := s.cindyBalancePendingStore()
-	if !ok {
-		snapshot.recordState(account.ID, cindyBalancePendingSnapshotClear)
-		return false
-	}
-	stateCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 3*time.Second)
-	pendingFingerprint, pendingErr := store.GetCindyBalancePendingFingerprint(stateCtx, account.ID)
-	cancel()
-	if pendingErr != nil {
-		slog.Error("cindy_balance_legacy_pending_get_failed", "error", pendingErr)
-		snapshot.recordState(account.ID, cindyBalancePendingSnapshotClear)
-		return false
-	}
-	if pendingFingerprint == "" {
-		snapshot.recordState(account.ID, cindyBalancePendingSnapshotClear)
-		return false
-	}
-	clearCtx, clearCancel := context.WithTimeout(context.WithoutCancel(ctx), 3*time.Second)
-	if clearErr := store.ClearCindyBalancePendingIfFingerprintMatches(clearCtx, account.ID, pendingFingerprint); clearErr != nil {
-		slog.Error("cindy_balance_stale_pending_clear_failed", "error", clearErr)
-	}
-	clearCancel()
-	snapshot.recordState(account.ID, cindyBalancePendingSnapshotClear)
-	return false
 }
 
 func (s *OpenAIGatewayService) persistOpenAIRuntimeBreaker(ctx context.Context, accountID int64, model, reason string, until time.Time) {
@@ -1231,21 +898,12 @@ func (s *OpenAIGatewayService) blockAccountSchedulingLocked(account *Account, un
 func (s *OpenAIGatewayService) blockAccountSchedulingLockedWithSource(account *Account, until time.Time, reason string, fromPersistedCooldown bool) (uint64, bool) {
 	now := time.Now()
 	blockUntil := until
-	indefinite := blockUntil.IsZero() && (reason == "cindy_balance_insufficient" || reason == "cindy_banned")
-	if !indefinite && (blockUntil.IsZero() || !blockUntil.After(now)) {
+	if blockUntil.IsZero() || !blockUntil.After(now) {
 		blockUntil = now.Add(openAIStopSchedulingBridgeCooldown)
 	}
 
 	current, loaded := s.openaiAccountRuntimeBlockUntil.Load(account.ID)
 	currentUntil, validCurrent := current.(time.Time)
-	if loaded && validCurrent && currentUntil.IsZero() {
-		// Cindy terminal state dominates finite cooldowns from either source.
-		owner, _ := s.openaiAccountRuntimeBlockGeneration.Load(account.ID)
-		if generation, valid := owner.(uint64); valid {
-			return generation, false
-		}
-		return 0, false
-	}
 	sources := s.openAIAccountRuntimeBlockSourcesLocked(account.ID)
 	sources.expire(now)
 	generation := s.openaiAccountRuntimeBlockSequence.Add(1)
@@ -1279,8 +937,6 @@ func (s *OpenAIGatewayService) ClearAccountSchedulingBlock(accountID int64) {
 	defer mu.Unlock()
 	s.openaiAccountRuntimeBlockUntil.Delete(accountID)
 	s.openaiAccountRuntimeBlockSources.Delete(accountID)
-	s.cindyBalanceRuntimeBlockFingerprint.Delete(accountID)
-	s.cindyHealthRuntimeBlocks.Delete(accountID)
 	s.openaiAccountRuntimeBlockGeneration.Store(accountID, s.openaiAccountRuntimeBlockSequence.Add(1))
 	state := s.getOpenAIAccountModelTransientState()
 	if state != nil {
@@ -1296,14 +952,13 @@ func (s *OpenAIGatewayService) clearOpenAIAccountSchedulingBlockScope(accountID 
 	mu := s.openAIAccountRuntimeBlockLock(accountID)
 	mu.Lock()
 	if value, ok := s.openaiAccountRuntimeBlockUntil.Load(accountID); ok {
-		if blockUntil, valid := value.(time.Time); valid && (blockUntil.IsZero() || time.Now().Before(blockUntil)) {
+		if blockUntil, valid := value.(time.Time); valid && time.Now().Before(blockUntil) {
 			mu.Unlock()
 			return
 		}
 	}
 	s.openaiAccountRuntimeBlockUntil.Delete(accountID)
 	s.openaiAccountRuntimeBlockSources.Delete(accountID)
-	s.cindyBalanceRuntimeBlockFingerprint.Delete(accountID)
 	s.openaiAccountRuntimeBlockGeneration.Store(accountID, s.openaiAccountRuntimeBlockSequence.Add(1))
 	mu.Unlock()
 	s.clearOpenAIRuntimeBreaker(context.Background(), accountID, "", owner)
@@ -1320,83 +975,22 @@ func (s *OpenAIGatewayService) isOpenAIAccountRuntimeBlockedContext(_ context.Co
 	if quota := account.QuotaState(time.Now()); quota != nil && quota.Blocked {
 		return true
 	}
-	isOpenAI := isOpenAIAccount(account)
-	mu := s.openAIAccountRuntimeBlockLock(account.ID)
-	mu.Lock()
-	value, ok := s.openaiAccountRuntimeBlockUntil.Load(account.ID)
-	if !isOpenAI {
-		if ok {
-			cooldownUntil, valid := value.(time.Time)
-			_, fingerprintLoaded := s.cindyBalanceRuntimeBlockFingerprint.Load(account.ID)
-			if valid && cooldownUntil.IsZero() && fingerprintLoaded {
-				s.openaiAccountRuntimeBlockUntil.Delete(account.ID)
-				s.openaiAccountRuntimeBlockSources.Delete(account.ID)
-				s.cindyBalanceRuntimeBlockFingerprint.Delete(account.ID)
-				s.openaiAccountRuntimeBlockGeneration.Store(account.ID, s.openaiAccountRuntimeBlockSequence.Add(1))
-			}
-		}
-		mu.Unlock()
+	if !isOpenAIAccount(account) {
 		return false
 	}
-	if ok {
-		cooldownUntil, valid := value.(time.Time)
-		if !valid {
-			s.openaiAccountRuntimeBlockUntil.Delete(account.ID)
-			s.openaiAccountRuntimeBlockSources.Delete(account.ID)
-			s.cindyBalanceRuntimeBlockFingerprint.Delete(account.ID)
-			s.openaiAccountRuntimeBlockGeneration.Store(account.ID, s.openaiAccountRuntimeBlockSequence.Add(1))
-		} else if cooldownUntil.IsZero() {
-			if rawHealth, healthLoaded := s.cindyHealthRuntimeBlocks.Load(account.ID); healthLoaded {
-				health, healthValid := rawHealth.(cindyHealthRuntimeBlock)
-				currentFingerprint, fingerprintErr := AccountCredentialFingerprint(
-					ProviderProfileCindyLaxaV1, AccountTypeAPIKey, "https://api.laxarouter.ai", account.GetCredential("api_key"),
-				)
-				if !healthValid || account.CindyCredentialGeneration != health.Episode.Generation ||
-					fingerprintErr != nil || currentFingerprint != health.Episode.Fingerprint {
-					currentOwner, _ := s.openaiAccountRuntimeBlockGeneration.Load(account.ID)
-					if healthValid && currentOwner == health.Owner {
-						s.openaiAccountRuntimeBlockUntil.Delete(account.ID)
-						s.openaiAccountRuntimeBlockSources.Delete(account.ID)
-						s.cindyHealthRuntimeBlocks.Delete(account.ID)
-						s.openaiAccountRuntimeBlockGeneration.Store(account.ID, s.openaiAccountRuntimeBlockSequence.Add(1))
-						mu.Unlock()
-						return false
-					}
-					s.cindyHealthRuntimeBlocks.Delete(account.ID)
-				}
-				if healthValid && account.CindyCredentialGeneration == health.Episode.Generation &&
-					fingerprintErr == nil && currentFingerprint == health.Episode.Fingerprint {
-					mu.Unlock()
-					return true
-				}
-			}
-			storedFingerprint, fingerprintLoaded := s.cindyBalanceRuntimeBlockFingerprint.Load(account.ID)
-			currentFingerprint, fingerprintErr := CindyAccountIdentityFingerprint(
-				account.Platform,
-				account.Type,
-				account.Credentials,
-			)
-			if fingerprintLoaded && fingerprintErr == nil && storedFingerprint != currentFingerprint {
-				s.openaiAccountRuntimeBlockUntil.Delete(account.ID)
-				s.openaiAccountRuntimeBlockSources.Delete(account.ID)
-				s.cindyBalanceRuntimeBlockFingerprint.Delete(account.ID)
-				s.openaiAccountRuntimeBlockGeneration.Store(account.ID, s.openaiAccountRuntimeBlockSequence.Add(1))
-				mu.Unlock()
-				return false
-			}
-			mu.Unlock()
-			return true
-		} else if time.Now().Before(cooldownUntil) {
-			mu.Unlock()
-			return true
-		} else {
-			s.openaiAccountRuntimeBlockUntil.Delete(account.ID)
-			s.openaiAccountRuntimeBlockSources.Delete(account.ID)
-			s.cindyBalanceRuntimeBlockFingerprint.Delete(account.ID)
-			s.openaiAccountRuntimeBlockGeneration.Store(account.ID, s.openaiAccountRuntimeBlockSequence.Add(1))
-		}
+	mu := s.openAIAccountRuntimeBlockLock(account.ID)
+	mu.Lock()
+	defer mu.Unlock()
+	value, ok := s.openaiAccountRuntimeBlockUntil.Load(account.ID)
+	if !ok {
+		return false
 	}
-	mu.Unlock()
+	if cooldownUntil, valid := value.(time.Time); valid && time.Now().Before(cooldownUntil) {
+		return true
+	}
+	s.openaiAccountRuntimeBlockUntil.Delete(account.ID)
+	s.openaiAccountRuntimeBlockSources.Delete(account.ID)
+	s.openaiAccountRuntimeBlockGeneration.Store(account.ID, s.openaiAccountRuntimeBlockSequence.Add(1))
 	return false
 }
 
@@ -1416,13 +1010,6 @@ func canonicalOpenAIAccountSchedulingModel(account *Account, requestedModel stri
 	model := strings.TrimSpace(requestedModel)
 	if account == nil || model == "" {
 		return model
-	}
-	if IsCindyRuntimeCompatibleAPIKeyAccount(account.Platform, account.Type, account.Credentials) {
-		if mapped, ok, err := cindyLegacyLiveModel(context.Background(), account, model); err != nil {
-			return ""
-		} else if ok {
-			return mapped
-		}
 	}
 	if account.IsOpenAI() {
 		return resolveOpenAIAccountUpstreamModelForRequest(account, model, false)
@@ -1521,7 +1108,7 @@ func (s *OpenAIGatewayService) peekOpenAIAccountRuntimeBlock(account *Account) o
 		return openAIAccountRuntimeBlockSnapshot{}
 	}
 	until, isTime := value.(time.Time)
-	if !isTime || (!until.IsZero() && !time.Now().Before(until)) {
+	if !isTime || until.IsZero() || !time.Now().Before(until) {
 		s.openaiAccountRuntimeBlockUntil.Delete(account.ID)
 		s.openaiAccountRuntimeBlockSources.Delete(account.ID)
 		s.openaiOAuth429RetryStartedAt.Delete(account.ID)
@@ -1535,10 +1122,9 @@ func (s *OpenAIGatewayService) peekOpenAIAccountRuntimeBlock(account *Account) o
 
 // clearOpenAIAccountRuntimeBlockIfUnchanged deletes the in-process account block
 // only when generation and deadline are unchanged. A newer block installed after
-// peek must be kept even if its deadline happens to match. Zero deadlines belong
-// to Cindy health/balance state and are never cleared through generic cooldowns.
+// peek must be kept even if its deadline happens to match.
 func (s *OpenAIGatewayService) clearOpenAIAccountRuntimeBlockIfUnchanged(accountID int64, snapshot openAIAccountRuntimeBlockSnapshot) {
-	if s == nil || accountID <= 0 || !snapshot.blocked || snapshot.until.IsZero() || !snapshot.sources.hasPersisted {
+	if s == nil || accountID <= 0 || !snapshot.blocked || !snapshot.sources.hasPersisted {
 		return
 	}
 	mu := s.openAIAccountRuntimeBlockLock(accountID)
@@ -1572,7 +1158,7 @@ func (s *OpenAIGatewayService) clearOpenAIAccountRuntimeBlockIfUnchanged(account
 // source of truth only for explicitly mirrored DB cooldown contributions.
 // Empty/inactive fields remove that contribution with generation+deadline CAS;
 // an independent request/credential block keeps its own deadline and owner.
-// Cindy health/balance, model scopes and OAuth Redis leases remain independent.
+// Model scopes and OAuth Redis leases remain independent.
 func (s *OpenAIGatewayService) isOpenAIAccountRequestRuntimeBlocked(account *Account, requestedModel string, requireCompact ...bool) bool {
 	return s.isOpenAIAccountRequestRuntimeBlockedContext(ensureOpenAIRuntimeBreakerProbeOwner(context.Background()), account, requestedModel, requireCompact...)
 }
@@ -1612,22 +1198,13 @@ func (s *OpenAIGatewayService) isOpenAIAccountRequestRuntimeBlockedContextIntern
 			return true
 		}
 	}
-	if !IsCindyRuntimeCompatibleAPIKeyAccount(account.Platform, account.Type, account.Credentials) {
-		snapshot := s.peekOpenAIAccountRuntimeBlock(account)
-		if snapshot.blocked && snapshot.sources.hasPersisted && !snapshot.until.IsZero() && !accountPersistedSchedulingCooldownActive(account) {
-			s.clearOpenAIAccountRuntimeBlockIfUnchanged(account.ID, snapshot)
-		}
+	snapshot := s.peekOpenAIAccountRuntimeBlock(account)
+	if snapshot.blocked && snapshot.sources.hasPersisted && !accountPersistedSchedulingCooldownActive(account) {
+		s.clearOpenAIAccountRuntimeBlockIfUnchanged(account.ID, snapshot)
 	}
 	// Re-read after the conditional clear so a concurrent replacement remains
-	// blocked, and validate Cindy episode/generation/fingerprint ownership through
-	// its existing path instead of interpreting its zero deadline as expiration.
+	// blocked.
 	if s.isOpenAIAccountRuntimeBlockedContext(ctx, account) || s.isOpenAIAccountModelRuntimeBlocked(account, requestedModel) {
-		return true
-	}
-	if s.isCindyTerminalPendingBlocked(ctx, account) {
-		return true
-	}
-	if s.isCindyBalancePendingBlocked(ctx, account) {
 		return true
 	}
 	if account.Type == AccountTypeAPIKey {
@@ -1684,44 +1261,6 @@ func (s *OpenAIGatewayService) isOpenAIAccountRequestRuntimeBlockedContextIntern
 		}
 	}
 	return false
-}
-
-// isOpenAIAccountStrictContinuationBlockedContext keeps request-scoped terminal
-// Cindy state fail-closed while allowing an already-bound continuation to probe
-// its only valid account during a finite cooldown. A
-// previous_response_id cannot move to another Cindy credential, so translating
-// a short 403/429/transport cooldown into "continuation state unavailable" is
-// both misleading and destructive. Indefinite health/balance blocks and their
-// pending write windows remain terminal.
-func (s *OpenAIGatewayService) isOpenAIAccountStrictContinuationBlockedContext(
-	ctx context.Context,
-	account *Account,
-	requestedModel string,
-	requireCompact ...bool,
-) bool {
-	if !s.isOpenAIAccountRequestRuntimeBlockedContext(ctx, account, requestedModel, requireCompact...) {
-		return false
-	}
-	if account == nil || !IsCindyRuntimeCompatibleAPIKeyAccount(account.Platform, account.Type, account.Credentials) {
-		return true
-	}
-	if s.isCindyTerminalPendingBlocked(ctx, account) || s.isCindyBalancePendingBlocked(ctx, account) {
-		return true
-	}
-
-	// A zero account-wide deadline is owned by a terminal health/balance
-	// episode. A finite deadline, or a model-only transient block with no
-	// account-wide entry, may be probed only through the exact continuation
-	// binding; normal scheduling continues to exclude it.
-	mu := s.openAIAccountRuntimeBlockLock(account.ID)
-	mu.Lock()
-	defer mu.Unlock()
-	value, ok := s.openaiAccountRuntimeBlockUntil.Load(account.ID)
-	if !ok {
-		return false
-	}
-	blockUntil, valid := value.(time.Time)
-	return !valid || blockUntil.IsZero()
 }
 
 // CooldownOpenAIRetryExhausted is the handler-to-scheduler circuit breaker used

@@ -1135,46 +1135,14 @@ func (h *GatewayHandler) Models(c *gin.Context) {
 	if forcedPlatform, ok := middleware2.GetForcePlatformFromContext(c); ok && strings.TrimSpace(forcedPlatform) != "" {
 		platform = forcedPlatform
 	}
-
-	// Strict Cindy groups use the versioned capability catalogue rather than
-	// account model_mapping keys. Compatibility aliases and unverified
-	// candidates are intentionally absent from the public list.
-	strictCindy := false
-	var cindySnapshot *service.CindyCatalogSnapshot
-	// Pinned OpenAI manifests are resolved directly from their configured
-	// account set; they must not be gated by Cindy availability classification
-	// (the two contracts use different account pools).
-	pinnedOpenAIConfigured := apiKey != nil && apiKey.Group != nil &&
-		apiKey.Group.Platform == service.PlatformOpenAI && apiKey.Group.CodexModelsManifestConfig.Enabled
-	pinnedOpenAI := platform == service.PlatformOpenAI && pinnedOpenAIConfigured
-	if (platform == service.PlatformOpenAI || platform == service.PlatformCindy) && !pinnedOpenAIConfigured {
-		var err error
-		strictCindy, err = h.gatewayService.ClassifyCindyIdentityGroup(c.Request.Context(), authenticatedGroup)
-		if err != nil {
-			h.errorResponse(c, http.StatusServiceUnavailable, "api_error", "Unable to determine model availability")
-			return
-		}
-		if strictCindy {
-			cindySnapshot, err = service.LoadCindyCatalogSnapshot(c.Request.Context(), nil)
-			if err != nil {
-				h.errorResponse(c, http.StatusServiceUnavailable, "api_error", "Cindy catalog snapshot is unavailable")
-				return
-			}
-			strictCindy = cindySnapshot.Config.CatalogEnabled
-		}
-	}
-	if strictCindy {
-		availableModels := cindySnapshot.PublicModelIDs
-		if apiKey != nil && apiKey.Group != nil && apiKey.Group.ModelAllowlistEnabled() {
-			availableModels = apiKey.Group.ModelAllowlist.FilterForListing(availableModels)
-		}
-		writeCindyOpenAIModelsListSnapshot(c, availableModels, cindySnapshot)
-		return
-	}
+	// Every list row carries the group's known context capacity; unknown
+	// capacity is simply absent.
 	c.Set(modelCapacityProjectorContextKey, func(body []byte) ([]byte, error) {
 		return h.gatewayService.ProjectModelListContextCapacities(c.Request.Context(), authenticatedGroup, groupID, platform, body)
 	})
-	if pinnedOpenAI {
+
+	if platform == service.PlatformOpenAI && apiKey != nil && apiKey.Group != nil &&
+		apiKey.Group.Platform == service.PlatformOpenAI && apiKey.Group.CodexModelsManifestConfig.Enabled {
 		h.pinnedOpenAIModels(c, apiKey.Group)
 		return
 	}
@@ -1234,66 +1202,6 @@ func (h *GatewayHandler) Models(c *gin.Context) {
 	writePublicModelsJSON(c, gin.H{
 		"object": "list",
 		"data":   claude.DefaultModels,
-	})
-}
-
-// ModelCapabilities returns the verified, client-facing Cindy capability
-// contract. Internal live IDs and registry IDs are deliberately omitted.
-func (h *GatewayHandler) ModelCapabilities(c *gin.Context) {
-	setOpsRequestContext(c, "", false)
-	setOpsEndpointContext(c, "", int16(service.RequestTypeSync))
-	markLocalGate := func() {
-		service.MarkOpsClientBusinessLimited(c, service.OpsClientBusinessLimitedReasonLocalFeatureGate)
-		setOpsErrorClassification(c, "model_capabilities/local_feature_gate")
-	}
-
-	apiKey, ok := middleware2.GetAPIKeyFromContext(c)
-	if !ok || apiKey == nil || apiKey.Group == nil {
-		h.errorResponse(c, http.StatusUnauthorized, "authentication_error", "Invalid API key")
-		return
-	}
-	if apiKey.Group.Platform != service.PlatformOpenAI && apiKey.Group.Platform != service.PlatformCindy {
-		markLocalGate()
-		h.errorResponse(c, http.StatusNotFound, "not_found_error", "Model capabilities are not available for this group")
-		return
-	}
-	strictCindy, err := h.gatewayService.ClassifyCindyIdentityGroup(c.Request.Context(), apiKey.Group)
-	if err != nil {
-		h.errorResponse(c, http.StatusServiceUnavailable, "api_error", "Unable to determine model availability")
-		return
-	}
-	if !strictCindy {
-		markLocalGate()
-		h.errorResponse(c, http.StatusNotFound, "not_found_error", "Model capabilities are not available for this group")
-		return
-	}
-	snapshot, err := service.LoadCindyCatalogSnapshot(c.Request.Context(), nil)
-	if err != nil {
-		h.errorResponse(c, http.StatusServiceUnavailable, "api_error", "Cindy catalog snapshot is unavailable")
-		return
-	}
-	if !snapshot.Config.CatalogEnabled {
-		markLocalGate()
-		h.errorResponse(c, http.StatusNotFound, "not_found_error", "Model capability catalog is not enabled")
-		return
-	}
-	hasSchedulableCindy, err := h.gatewayService.HasSchedulableCindyIdentityAccount(c.Request.Context(), apiKey.Group)
-	if err != nil {
-		h.errorResponse(c, http.StatusServiceUnavailable, "api_error", "Unable to determine model availability")
-		return
-	}
-	if !hasSchedulableCindy {
-		markLocalGate()
-		h.errorResponse(c, http.StatusNotFound, "not_found_error", "Model capabilities are not available for this group")
-		return
-	}
-
-	c.JSON(http.StatusOK, gin.H{
-		"object":           "list",
-		"catalog_version":  snapshot.Metadata.CatalogVersion,
-		"catalog_revision": snapshot.Metadata.InventoryRevision,
-		"catalog_sha256":   snapshot.Metadata.InventorySHA256,
-		"data":             snapshot.ModelCapabilities,
 	})
 }
 
@@ -1545,44 +1453,6 @@ func writeOpenAIModelsList(c *gin.Context, modelIDs []string) {
 		})
 	}
 	writePublicModelsJSON(c, gin.H{
-		"object": "list",
-		"data":   models,
-	})
-}
-
-func writeCindyOpenAIModelsListSnapshot(c *gin.Context, modelIDs []string, snapshot *service.CindyCatalogSnapshot) {
-	defaultsByID := make(map[string]openai.Model, len(openai.DefaultModels))
-	for _, model := range openai.DefaultModels {
-		defaultsByID[model.ID] = model
-	}
-	metadataByID := make(map[string]service.CindyCatalogModel, len(modelIDs))
-	for _, model := range snapshot.CatalogModels {
-		metadataByID[model.ID] = model
-	}
-
-	models := make([]openai.Model, 0, len(modelIDs))
-	for _, modelID := range modelIDs {
-		model, ok := defaultsByID[modelID]
-		if !ok {
-			model = openai.Model{
-				ID:          modelID,
-				Object:      "model",
-				Created:     1704067200,
-				OwnedBy:     "openai",
-				Type:        "model",
-				DisplayName: modelID,
-			}
-		}
-		if metadata, ok := metadataByID[modelID]; ok {
-			model.DisplayName = metadata.DisplayName
-			model.Description = metadata.Description
-			model.ContextWindow = metadata.BaseContextWindow
-			model.MaxInputTokens = metadata.BaseContextWindow
-			model.MaxOutputTokens = metadata.MaxOutputTokens
-		}
-		models = append(models, model)
-	}
-	c.JSON(http.StatusOK, gin.H{
 		"object": "list",
 		"data":   models,
 	})
@@ -2044,12 +1914,6 @@ func (h *GatewayHandler) handleFailoverExhausted(c *gin.Context, failoverErr *se
 	if failoverErr != nil && failoverErr.IsOpenAIModelNotSupported() {
 		service.SetOpsUpstreamError(c, http.StatusBadRequest, service.OpenAIModelNotSupportedClientMessage, "")
 		h.handleStreamingAwareError(c, http.StatusBadRequest, service.OpenAIModelNotSupportedCode, service.OpenAIModelNotSupportedClientMessage, streamStarted)
-		return
-	}
-	if failoverErr.CindyBalanceInsufficient {
-		status, errType, message := h.mapUpstreamError(http.StatusTooManyRequests)
-		service.SetOpsUpstreamError(c, http.StatusTooManyRequests, message, "")
-		h.handleStreamingAwareError(c, status, errType, message, streamStarted)
 		return
 	}
 	statusCode := failoverErr.StatusCode

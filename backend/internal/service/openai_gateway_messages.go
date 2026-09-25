@@ -36,11 +36,6 @@ func (s *OpenAIGatewayService) ForwardAsAnthropic(
 	rememberPromptRequestedModel(c, body)
 	stageCodexRoutingTurn(c, body)
 	c.Set(openAICompatTurnStateCommittedContextKey, false)
-	pricingContext, pricingErr := CaptureCindyPricingContext(ctx, c, account)
-	if pricingErr != nil {
-		return nil, pricingErr
-	}
-	ctx = pricingContext
 	// 工具 Schema 清洗必须先于所有分流：下游每条路径（原生 Anthropic 直通、
 	// Chat Completions 转换、Responses 转换）都会把 tools 原样带给上游，而
 	// xAI / Moonshot 等严格校验方会因 input_schema 里的 required:null 或
@@ -1064,8 +1059,8 @@ func (s *OpenAIGatewayService) handleAnthropicStreamingResponse(
 		rawPayloadBytes := []byte(payload)
 		rawEventType := strings.TrimSpace(gjson.GetBytes(rawPayloadBytes, "type").String())
 		if rawEventType == "response.failed" || rawEventType == "error" {
-			if failoverErr, ok := s.cindyBalanceHTTPResponseTerminalFailover(
-				c.Request.Context(), account, resp.StatusCode, resp.Header, rawPayloadBytes, originalModel,
+			if failoverErr, ok := s.openAIBudgetExceededHTTPResponseTerminalFailover(
+				c.Request.Context(), account, resp.StatusCode, resp.Header, rawPayloadBytes,
 			); ok {
 				if parsedUsage, parsed := extractOpenAIUsageFromJSONBytes(rawPayloadBytes); parsed {
 					usage = parsedUsage

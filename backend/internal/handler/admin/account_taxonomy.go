@@ -79,16 +79,13 @@ func accountFacetDTO(option service.AccountFacetOption) dto.AccountFacetOption {
 func accountFacetsDTO(facets *service.AccountConsoleFacets) dto.AccountConsoleFacets {
 	out := dto.AccountConsoleFacets{
 		Total: facets.Total, UncategorizedCount: facets.UncategorizedCount,
-		Platforms:         make([]dto.AccountFacetOption, 0, len(facets.Platforms)),
-		Types:             make([]dto.AccountFacetOption, 0, len(facets.Types)),
-		Statuses:          make([]dto.AccountFacetOption, 0, len(facets.Statuses)),
-		Plans:             make([]dto.AccountFacetOption, 0, len(facets.Plans)),
-		Proxies:           make([]dto.AccountFacetOption, 0, len(facets.Proxies)),
-		Folders:           make([]dto.AccountManagementFolder, 0, len(facets.Folders)),
-		Tags:              make([]dto.AccountManagementTag, 0, len(facets.Tags)),
-		CindyTotal:        facets.CindyTotal,
-		CindyInsufficient: facets.CindyInsufficient,
-		CindyBanned:       facets.CindyBanned,
+		Platforms: make([]dto.AccountFacetOption, 0, len(facets.Platforms)),
+		Types:     make([]dto.AccountFacetOption, 0, len(facets.Types)),
+		Statuses:  make([]dto.AccountFacetOption, 0, len(facets.Statuses)),
+		Plans:     make([]dto.AccountFacetOption, 0, len(facets.Plans)),
+		Proxies:   make([]dto.AccountFacetOption, 0, len(facets.Proxies)),
+		Folders:   make([]dto.AccountManagementFolder, 0, len(facets.Folders)),
+		Tags:      make([]dto.AccountManagementTag, 0, len(facets.Tags)),
 	}
 	for _, item := range facets.Platforms {
 		out.Platforms = append(out.Platforms, accountFacetDTO(item))
@@ -442,15 +439,6 @@ func parseAccountConsoleFilters(c *gin.Context, groupID int64) (service.AccountC
 		Search: strings.TrimSpace(c.Query("search")), GroupID: groupID,
 		PrivacyMode: strings.TrimSpace(c.Query("privacy_mode")),
 		SortBy:      c.DefaultQuery("sort_by", "name"), SortOrder: c.DefaultQuery("sort_order", "asc"),
-		CindyOnly:          parseBoolQueryWithDefault(c.Query("cindy_only"), false),
-		CindyBalanceStatus: strings.TrimSpace(c.Query("cindy_balance_status")),
-		CindyHealthStatus:  strings.TrimSpace(c.Query("cindy_health_status")),
-	}
-	if filters.CindyBalanceStatus != "" && filters.CindyBalanceStatus != "insufficient" {
-		return filters, infraerrors.BadRequest("INVALID_CINDY_BALANCE_STATUS", "invalid Cindy balance status")
-	}
-	if filters.CindyHealthStatus != "" && filters.CindyHealthStatus != "banned" {
-		return filters, infraerrors.BadRequest("INVALID_CINDY_HEALTH_STATUS", "invalid Cindy health status")
 	}
 	var err error
 	filters.FolderIDs, filters.IncludeUncategorized, err = parseIDQueryValues(splitQueryValues(c, "folders", "folder"), "uncategorized")
@@ -470,7 +458,7 @@ func parseAccountConsoleFilters(c *gin.Context, groupID int64) (service.AccountC
 }
 
 func hasAccountConsoleFilters(c *gin.Context) bool {
-	for _, key := range []string{"platforms", "types", "statuses", "plans", "proxies", "folders", "folder", "tags", "account_ids", "cindy_only", "cindy_balance_status", "cindy_health_status"} {
+	for _, key := range []string{"platforms", "types", "statuses", "plans", "proxies", "folders", "folder", "tags", "account_ids"} {
 		if _, ok := c.GetQuery(key); ok {
 			return true
 		}

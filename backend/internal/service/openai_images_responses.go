@@ -38,7 +38,6 @@ type OpenAIImagesUpstreamError struct {
 	Message           string
 	Param             string
 	UpstreamRequestID string
-	rawPayload        []byte
 
 	// SynthesizedFromModelText marks an error the gateway inferred from the
 	// model's plain-text output instead of reading it off a structured upstream
@@ -623,25 +622,20 @@ func openAIImagesUpstreamErrorFromSSEPayload(payload []byte) *OpenAIImagesUpstre
 	if !gjson.ValidBytes(payload) {
 		return nil
 	}
-	var upstreamErr *OpenAIImagesUpstreamError
 	switch gjson.GetBytes(payload, "type").String() {
 	case "error":
-		upstreamErr = openAIImagesUpstreamErrorFromGJSON(gjson.GetBytes(payload, "error"), "")
+		return openAIImagesUpstreamErrorFromGJSON(gjson.GetBytes(payload, "error"), "")
 	case "response.failed":
 		response := gjson.GetBytes(payload, "response")
-		upstreamErr = openAIImagesUpstreamErrorFromGJSON(response.Get("error"), response.Get("id").String())
+		return openAIImagesUpstreamErrorFromGJSON(response.Get("error"), response.Get("id").String())
 	case "response.incomplete":
 		// 上游在生成预算内未产出图片（超时/被截断），返回 response.incomplete 而非 error。
 		// 旧逻辑识别不到，统一报成模糊的 "upstream did not return image output" + 502，
 		// 且不触发 failover。这里把它显式建模为可重试的上游错误，使其能换账号重试。
-		upstreamErr = openAIImagesIncompleteUpstreamError(gjson.GetBytes(payload, "response"))
+		return openAIImagesIncompleteUpstreamError(gjson.GetBytes(payload, "response"))
 	default:
 		return nil
 	}
-	if upstreamErr != nil {
-		upstreamErr.rawPayload = append([]byte(nil), payload...)
-	}
-	return upstreamErr
 }
 
 // extractOpenAIImagesModelRefusal 从上游 SSE 响应体提取「模型未出图、改用文字拒绝」
@@ -924,11 +918,6 @@ func (s *OpenAIGatewayService) handleOpenAIImagesErrorResponse(
 		upErr := openAIImagesUpstreamErrorFromHTTP(resp.StatusCode, resp.Header, body)
 		writeOpenAIImagesUpstreamErrorResponse(c, upErr)
 		return nil, upErr
-	}
-	if failoverErr, ok := s.handleCindyBalanceHTTPFailover(
-		ctx, account, resp.StatusCode, resp.Header, body, requestedModel...,
-	); ok {
-		return nil, failoverErr
 	}
 
 	upstreamMsg := sanitizeUpstreamErrorMessage(strings.TrimSpace(extractUpstreamErrorMessage(body)))
@@ -1409,7 +1398,6 @@ func (s *OpenAIGatewayService) handleOpenAIImagesOAuthNonStreamingResponse(
 func (s *OpenAIGatewayService) handleOpenAIImagesOAuthStreamingResponse(
 	resp *http.Response,
 	c *gin.Context,
-	account *Account,
 	startTime time.Time,
 	responseFormat string,
 	streamPrefix string,
@@ -1580,24 +1568,6 @@ func (s *OpenAIGatewayService) handleOpenAIImagesOAuthStreamingResponse(
 			imageOutputSizes = openAIResponsesImageResultSizes(finalResults)
 			processDataDone = true
 		case "error", "response.failed":
-			if failoverErr, ok := s.cindyBalanceHTTPResponseTerminalFailover(
-				c.Request.Context(), account, resp.StatusCode, resp.Header, dataBytes, fallbackModel,
-			); ok {
-				responseWritten := OpenAIImagesJSONKeepaliveAdjustedWrittenSize(c) != writerSizeBeforeResponse
-				if !responseWritten {
-					processDataErr = failoverErr
-				} else {
-					if !clientDisconnected {
-						s.tryWriteOpenAIImagesStreamEvent(
-							c, flusher, &clientDisconnected, &lastDownstreamWriteAt, "error",
-							buildOpenAIImagesStreamErrorBody("Temporary upstream failure"),
-						)
-					}
-					processDataErr = errors.New("cindy balance exhausted after downstream output")
-				}
-				processDataDone = true
-				return
-			}
 			if upstreamErr := openAIImagesUpstreamErrorFromSSEPayload(dataBytes); upstreamErr != nil {
 				retryable := IsOpenAIImagesRetryableUpstreamError(upstreamErr)
 				if !clientDisconnected && (!retryable || c.Writer.Size() != writerSizeBeforeResponse) {
@@ -1907,11 +1877,6 @@ func (s *OpenAIGatewayService) forwardOpenAIImagesOAuth(
 			resp.Body = io.NopCloser(bytes.NewReader(s.redactAgentIdentitySensitiveBody(upstreamCtx, account, respBody)))
 			return s.handleOpenAIImagesErrorResponse(upstreamCtx, resp, c, account, requestModel)
 		}
-		if failoverErr, ok := s.handleCindyBalanceHTTPFailover(
-			upstreamCtx, account, resp.StatusCode, resp.Header, respBody, requestModel,
-		); ok {
-			return nil, failoverErr
-		}
 		respBody = s.redactAgentIdentitySensitiveBody(upstreamCtx, account, respBody)
 		if direct && (resp.StatusCode == http.StatusNotFound || resp.StatusCode == http.StatusMethodNotAllowed) {
 			return s.forwardOpenAIImagesOAuth(withOpenAIImagesForceResponses(ctx), c, account, parsed, channelMappedModel)
@@ -1970,7 +1935,7 @@ func (s *OpenAIGatewayService) forwardOpenAIImagesOAuth(
 		if direct {
 			usage, imageCount, imageOutputSizes, firstTokenMs, err = s.handleOpenAIImagesStreamingResponse(resp, c, startTime, parsed)
 		} else {
-			usage, imageCount, imageOutputSizes, firstTokenMs, err = s.handleOpenAIImagesOAuthStreamingResponse(resp, c, account, startTime, parsed.ResponseFormat, openAIImagesStreamPrefix(parsed), upstreamModel)
+			usage, imageCount, imageOutputSizes, firstTokenMs, err = s.handleOpenAIImagesOAuthStreamingResponse(resp, c, startTime, parsed.ResponseFormat, openAIImagesStreamPrefix(parsed), upstreamModel)
 		}
 		if err != nil {
 			if imageCount > 0 {
@@ -2107,14 +2072,6 @@ func (s *OpenAIGatewayService) handleOpenAIImagesOAuthResponseError(
 	if !errors.As(err, &upstreamErr) {
 		return err
 	}
-	cindyBalanceInsufficient := false
-	if len(upstreamErr.rawPayload) > 0 {
-		var eventHeaders http.Header
-		if resp != nil {
-			eventHeaders = resp.Header
-		}
-		cindyBalanceInsufficient = s.handleCindyBalanceTerminalEvent(ctx, account, eventHeaders, upstreamErr.rawPayload, requestedModel)
-	}
 	if isOpenAIImagesMainModelError(upstreamErr.StatusCode, openAIImagesUpstreamErrorResponseBody(upstreamErr)) {
 		if !responseWritten {
 			writeOpenAIImagesUpstreamErrorResponse(c, upstreamErr)
@@ -2122,7 +2079,7 @@ func (s *OpenAIGatewayService) handleOpenAIImagesOAuthResponseError(
 		return err
 	}
 
-	retryable := cindyBalanceInsufficient || IsOpenAIImagesRetryableUpstreamError(upstreamErr)
+	retryable := IsOpenAIImagesRetryableUpstreamError(upstreamErr)
 	kind := "http_error"
 	if retryable {
 		kind = "failover"
@@ -2174,24 +2131,11 @@ func (s *OpenAIGatewayService) handleOpenAIImagesOAuthResponseError(
 			false,
 		)
 	}
-	statusCode := upstreamErr.StatusCode
-	shouldDisable := false
-	if cindyBalanceInsufficient {
-		statusCode = http.StatusTooManyRequests
-		shouldDisable = true
-	} else {
-		shouldDisable = s.handleOpenAIAccountUpstreamError(ctx, account, statusCode, headers, responseBody, requestedModel)
+	shouldDisable := s.handleOpenAIAccountUpstreamError(ctx, account, upstreamErr.StatusCode, headers, responseBody, requestedModel)
+	return &UpstreamFailoverError{
+		StatusCode:             upstreamErr.StatusCode,
+		ResponseBody:           responseBody,
+		ResponseHeaders:        headers,
+		RetryableOnSameAccount: !shouldDisable && account.IsPoolMode() && account.IsPoolModeRetryableStatus(upstreamErr.StatusCode),
 	}
-	failoverErr := &UpstreamFailoverError{
-		StatusCode:               statusCode,
-		ResponseBody:             responseBody,
-		ResponseHeaders:          headers,
-		RetryableOnSameAccount:   !shouldDisable && account.IsPoolMode() && account.IsPoolModeRetryableStatus(statusCode),
-		CindyBalanceInsufficient: cindyBalanceInsufficient,
-	}
-	if cindyBalanceInsufficient {
-		failoverErr.RetryableOnSameAccount = false
-		return sanitizeOpenAICindyFailoverError(failoverErr)
-	}
-	return failoverErr
 }

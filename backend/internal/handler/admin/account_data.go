@@ -82,7 +82,6 @@ type DataImportRequest struct {
 	Data                 DataPayload               `json:"data"`
 	SkipDefaultGroupBind *bool                     `json:"skip_default_group_bind"`
 	UniformSettings      DataImportUniformSettings `json:"uniform_settings,omitempty"`
-	TargetGroupID        *int64                    `json:"target_group_id,omitempty"`
 }
 
 type DataImportResult struct {

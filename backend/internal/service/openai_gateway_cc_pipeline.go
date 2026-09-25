@@ -70,9 +70,9 @@ type rewoundOpenAIUpstreamErrorBody struct {
 
 func (b *rewoundOpenAIUpstreamErrorBody) Close() error { return nil }
 
-// readOpenAIUpstreamError keeps the exact wire bytes available to the Cindy
-// classifier while every other inspector and downstream reader sees only the
-// business-prompt-sanitized body.
+// readOpenAIUpstreamError keeps the exact wire bytes available to the account
+// error classifiers while every other inspector and downstream reader sees
+// only the business-prompt-sanitized body.
 func (s *OpenAIGatewayService) readOpenAIUpstreamError(resp *http.Response, c *gin.Context) ([]byte, string) {
 	rawBody := s.readUpstreamErrorBody(resp)
 	respBody := s.rewriteBusinessSystemPromptJSONForAnyRequest(c, rawBody)
@@ -106,8 +106,8 @@ func (s *OpenAIGatewayService) failoverOpenAIUpstreamHTTPError(
 		markOpenAICyberPolicyFromResponse(c, resp.StatusCode, classificationBody)
 		return nil
 	}
-	if failoverErr, ok := s.handleCindyBalanceHTTPFailover(
-		ctx, account, resp.StatusCode, resp.Header, classificationBody, upstreamModel,
+	if failoverErr, ok := s.handleOpenAIBudgetExceededHTTPFailover(
+		ctx, account, resp.StatusCode, resp.Header, classificationBody,
 	); ok {
 		return failoverErr
 	}

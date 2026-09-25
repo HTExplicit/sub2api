@@ -67,9 +67,6 @@ func (s *adminServiceImpl) GetGroup(ctx context.Context, id int64) (*Group, erro
 	if err != nil {
 		return nil, err
 	}
-	if err = hydrateStrictCindyGroupIdentity(ctx, s.accountRepo, group); err != nil {
-		return nil, err
-	}
 	if err := s.validateSimpleModeGroupAccess(group); err != nil {
 		return nil, err
 	}
@@ -280,8 +277,6 @@ func compositeRouteFromInput(groupID int64, input CompositeRouteInput) (*Composi
 
 func defaultModelsListCandidateIDs(platform string) []string {
 	switch platform {
-	case PlatformCindy:
-		return cindyInternalPublicModelIDs()
 	case PlatformOpenAI:
 		return openai.DefaultModelIDs()
 	case PlatformGemini:
@@ -390,15 +385,7 @@ func (s *adminServiceImpl) CreateGroup(ctx context.Context, input *CreateGroupIn
 		return nil, errors.New("rate_multiplier must be > 0")
 	}
 
-	platform, wirePlatform, providerProfile, err := ResolveGroupProviderIdentity(input.Platform)
-	if err != nil {
-		return nil, err
-	}
-	targetIdentity := &Group{
-		Platform:        platform,
-		WirePlatform:    wirePlatform,
-		ProviderProfile: providerProfile,
-	}
+	platform := NormalizeGroupPlatform(input.Platform)
 	// 固定账号 manifest 配置：账号绑定发生在创建之后，创建时无法校验成员关系，
 	// 拒绝开启并在创建后的编辑里配置。
 	if normalizeCodexModelsManifestConfig(platform, input.CodexModelsManifestConfig).Enabled {
@@ -486,6 +473,7 @@ func (s *adminServiceImpl) CreateGroup(ctx context.Context, input *CreateGroupIn
 	if err := ValidatePeakRateConfig(subscriptionType, peakRateEnabled, peakStart, peakEnd, peakRateMultiplier); err != nil {
 		return nil, infraerrors.BadRequest("INVALID_PEAK_RATE_CONFIG", err.Error())
 	}
+
 	profitMinMargin := 0.0
 	if input.ProfitMinMargin != nil {
 		profitMinMargin = *input.ProfitMinMargin
@@ -494,6 +482,7 @@ func (s *adminServiceImpl) CreateGroup(ctx context.Context, input *CreateGroupIn
 	if input.ProfitSafetyBuffer != nil {
 		profitSafetyBuffer = *input.ProfitSafetyBuffer
 	}
+	// 利润控制与高峰倍率同一收口顺序：先按平台归一化（不支持的平台重置），再校验。
 	profitControlEnabled, profitMinMargin, profitSafetyBuffer := NormalizeProfitControlConfig(platform, input.ProfitControlEnabled, profitMinMargin, profitSafetyBuffer)
 	if err := ValidateProfitControlConfig(platform, profitControlEnabled, profitMinMargin, profitSafetyBuffer); err != nil {
 		return nil, err
@@ -501,9 +490,6 @@ func (s *adminServiceImpl) CreateGroup(ctx context.Context, input *CreateGroupIn
 
 	// 校验降级分组
 	if input.FallbackGroupID != nil {
-		if platform == PlatformCindy && *input.FallbackGroupID > 0 {
-			return nil, errors.New("cindy groups cannot configure fallback groups")
-		}
 		if err := s.validateFallbackGroup(ctx, 0, *input.FallbackGroupID); err != nil {
 			return nil, err
 		}
@@ -511,9 +497,6 @@ func (s *adminServiceImpl) CreateGroup(ctx context.Context, input *CreateGroupIn
 	fallbackOnInvalidRequest := input.FallbackGroupIDOnInvalidRequest
 	if fallbackOnInvalidRequest != nil && *fallbackOnInvalidRequest <= 0 {
 		fallbackOnInvalidRequest = nil
-	}
-	if platform == PlatformCindy && fallbackOnInvalidRequest != nil {
-		return nil, errors.New("cindy groups cannot configure fallback groups")
 	}
 	// 校验无效请求兜底分组
 	if fallbackOnInvalidRequest != nil {
@@ -550,8 +533,7 @@ func (s *adminServiceImpl) CreateGroup(ctx context.Context, input *CreateGroupIn
 			if err != nil {
 				return nil, fmt.Errorf("source group %d not found: %w", srcGroupID, err)
 			}
-			if !canCopyAccountsFromGroupPlatform(platform, srcGroup.Platform) ||
-				(platform != PlatformComposite && !providerGroupIdentityCompatible(targetIdentity, srcGroup)) {
+			if !canCopyAccountsFromGroupPlatform(platform, srcGroup.Platform) {
 				return nil, fmt.Errorf("source group %d platform mismatch: expected %s, got %s", srcGroupID, platform, srcGroup.Platform)
 			}
 		}
@@ -574,8 +556,6 @@ func (s *adminServiceImpl) CreateGroup(ctx context.Context, input *CreateGroupIn
 		Name:                            input.Name,
 		Description:                     input.Description,
 		Platform:                        platform,
-		WirePlatform:                    wirePlatform,
-		ProviderProfile:                 providerProfile,
 		RateMultiplier:                  input.RateMultiplier,
 		IsExclusive:                     input.IsExclusive,
 		Status:                          StatusActive,
@@ -637,13 +617,10 @@ func (s *adminServiceImpl) CreateGroup(ctx context.Context, input *CreateGroupIn
 	}
 	sanitizeGroupMessagesDispatchFields(group)
 	sanitizeGroupOpenAIFast(group)
-	if group.EffectiveWirePlatform() != PlatformOpenAI && group.Platform != PlatformComposite {
+	if group.Platform != PlatformOpenAI && group.Platform != PlatformComposite {
 		group.AllowLive = false
 	}
 	sanitizeGroupReasoningEffortPolicy(group)
-	if err := validateProviderIdentityAccountsForGroup(ctx, s.accountRepo, group, accountIDsToCopy); err != nil {
-		return nil, err
-	}
 	if err := s.groupRepo.Create(ctx, group); err != nil {
 		return nil, err
 	}
@@ -782,8 +759,6 @@ func (s *adminServiceImpl) UpdateGroup(ctx context.Context, id int64, input *Upd
 
 	// 渠道缓存里存了 groupID → platform 的映射，改了平台要让它失效（见函数末尾）
 	previousPlatform := group.Platform
-	previousWirePlatform := group.EffectiveWirePlatform()
-	previousProviderProfile := group.EffectiveProviderProfile()
 
 	if input.Name != "" {
 		group.Name = input.Name
@@ -794,13 +769,6 @@ func (s *adminServiceImpl) UpdateGroup(ctx context.Context, id int64, input *Upd
 	if input.Platform != "" {
 		group.Platform = input.Platform
 	}
-	group.Platform, group.WirePlatform, group.ProviderProfile, err = ResolveGroupProviderIdentity(group.Platform)
-	if err != nil {
-		return nil, err
-	}
-	identityChanged := previousPlatform != group.Platform ||
-		previousWirePlatform != group.EffectiveWirePlatform() ||
-		previousProviderProfile != group.EffectiveProviderProfile()
 	if input.RateMultiplier != nil {
 		if *input.RateMultiplier <= 0 {
 			return nil, errors.New("rate_multiplier must be > 0")
@@ -912,6 +880,8 @@ func (s *adminServiceImpl) UpdateGroup(ctx context.Context, id int64, input *Upd
 	if input.ProfitSafetyBuffer != nil {
 		group.ProfitSafetyBuffer = *input.ProfitSafetyBuffer
 	}
+	// 利润控制与高峰同一收口：按合并后的最终平台归一化（转到不支持平台时静默重置），
+	// 再对合并后的最终配置统一校验，防止部分字段更新拼出非法组合入库。
 	group.ProfitControlEnabled, group.ProfitMinMargin, group.ProfitSafetyBuffer = NormalizeProfitControlConfig(group.Platform, group.ProfitControlEnabled, group.ProfitMinMargin, group.ProfitSafetyBuffer)
 	if err := ValidateProfitControlConfig(group.Platform, group.ProfitControlEnabled, group.ProfitMinMargin, group.ProfitSafetyBuffer); err != nil {
 		return nil, err
@@ -959,9 +929,6 @@ func (s *adminServiceImpl) UpdateGroup(ctx context.Context, id int64, input *Upd
 		group.ClaudeCodeOnly = *input.ClaudeCodeOnly
 	}
 	if input.FallbackGroupID != nil {
-		if group.Platform == PlatformCindy && *input.FallbackGroupID > 0 {
-			return nil, errors.New("cindy groups cannot configure fallback groups")
-		}
 		// 校验降级分组
 		if *input.FallbackGroupID > 0 {
 			if err := s.validateFallbackGroup(ctx, id, *input.FallbackGroupID); err != nil {
@@ -973,9 +940,6 @@ func (s *adminServiceImpl) UpdateGroup(ctx context.Context, id int64, input *Upd
 			group.FallbackGroupID = nil
 		}
 	}
-	if group.Platform == PlatformCindy && group.FallbackGroupID != nil {
-		return nil, errors.New("cindy groups cannot configure fallback groups")
-	}
 	fallbackOnInvalidRequest := group.FallbackGroupIDOnInvalidRequest
 	if input.FallbackGroupIDOnInvalidRequest != nil {
 		if *input.FallbackGroupIDOnInvalidRequest > 0 {
@@ -983,9 +947,6 @@ func (s *adminServiceImpl) UpdateGroup(ctx context.Context, id int64, input *Upd
 		} else {
 			fallbackOnInvalidRequest = nil
 		}
-	}
-	if group.Platform == PlatformCindy && fallbackOnInvalidRequest != nil {
-		return nil, errors.New("cindy groups cannot configure fallback groups")
 	}
 	if fallbackOnInvalidRequest != nil {
 		if err := s.validateFallbackGroupOnInvalidRequest(ctx, id, group.Platform, group.SubscriptionType, *fallbackOnInvalidRequest); err != nil {
@@ -1071,19 +1032,10 @@ func (s *adminServiceImpl) UpdateGroup(ctx context.Context, id int64, input *Upd
 	}
 	sanitizeGroupMessagesDispatchFields(group)
 	sanitizeGroupOpenAIFast(group)
-	if group.EffectiveWirePlatform() != PlatformOpenAI && group.Platform != PlatformComposite {
+	if group.Platform != PlatformOpenAI && group.Platform != PlatformComposite {
 		group.AllowLive = false
 	}
 	sanitizeGroupReasoningEffortPolicy(group)
-	if identityChanged {
-		accountIDs, identityErr := s.groupRepo.GetAccountIDsByGroupIDs(ctx, []int64{id})
-		if identityErr != nil {
-			return nil, identityErr
-		}
-		if identityErr = validateProviderIdentityAccountsForGroup(ctx, s.accountRepo, group, accountIDs); identityErr != nil {
-			return nil, identityErr
-		}
-	}
 	// 固定账号 manifest 配置：按最终平台归一化（切出 openai 平台时静默归零，
 	// 与 ForceOpenAIFast 同一收口）；校验仅在本次显式携带配置时进行，
 	// 避免脏 ID 阻塞无关字段更新。
@@ -1132,8 +1084,7 @@ func (s *adminServiceImpl) UpdateGroup(ctx context.Context, id int64, input *Upd
 			if err != nil {
 				return nil, fmt.Errorf("source group %d not found: %w", srcGroupID, err)
 			}
-			if !canCopyAccountsFromGroupPlatform(group.Platform, srcGroup.Platform) ||
-				(group.Platform != PlatformComposite && !providerGroupIdentityCompatible(group, srcGroup)) {
+			if !canCopyAccountsFromGroupPlatform(group.Platform, srcGroup.Platform) {
 				return nil, fmt.Errorf("source group %d platform mismatch: expected %s, got %s", srcGroupID, group.Platform, srcGroup.Platform)
 			}
 		}
@@ -1142,9 +1093,6 @@ func (s *adminServiceImpl) UpdateGroup(ctx context.Context, id int64, input *Upd
 		accountIDsToCopy, err := s.groupRepo.GetAccountIDsByGroupIDs(ctx, uniqueSourceGroupIDs)
 		if err != nil {
 			return nil, fmt.Errorf("failed to get accounts from source groups: %w", err)
-		}
-		if err := validateProviderIdentityAccountsForGroup(ctx, s.accountRepo, group, accountIDsToCopy); err != nil {
-			return nil, err
 		}
 
 		// 先清空当前分组的所有账号绑定

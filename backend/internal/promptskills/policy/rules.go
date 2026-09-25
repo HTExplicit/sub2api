@@ -20,14 +20,14 @@ var ErrPromptDeliveryUnsupported = errors.New("prompt_delivery_unsupported")
 
 // PromptPlatforms describes the actual selected provider, not its wire protocol.
 func PromptPlatforms() []string {
-	return []string{domain.PlatformOpenAI, domain.PlatformCindy, domain.PlatformAnthropic, domain.PlatformGemini, domain.PlatformAntigravity, domain.PlatformGrok, domain.PlatformKimi, domain.PlatformZhipu, domain.PlatformDeepseek, domain.PlatformMiniMax, domain.PlatformOpenCodeGo}
+	return []string{domain.PlatformOpenAI, domain.PlatformAnthropic, domain.PlatformGemini, domain.PlatformAntigravity, domain.PlatformGrok, domain.PlatformKimi, domain.PlatformZhipu, domain.PlatformDeepseek, domain.PlatformMiniMax, domain.PlatformOpenCodeGo}
 }
 
 func PromptProtocolCapabilities() []extensionv1.PromptProtocolCapability {
 	all := []string{extensionv1.PromptPositionControlPrepend, extensionv1.PromptPositionControlAppend, extensionv1.PromptPositionConversationHead, extensionv1.PromptPositionConversationTail, extensionv1.PromptPositionBeforeLastUser, extensionv1.PromptPositionAfterLastUser}
 	control := slices.Clone(all[:2])
 	claude := append(slices.Clone(control), extensionv1.PromptPositionConversationTail, extensionv1.PromptPositionAfterLastUser)
-	compatible := []string{domain.PlatformOpenAI, domain.PlatformCindy, domain.PlatformGrok, domain.PlatformKimi, domain.PlatformZhipu, domain.PlatformDeepseek, domain.PlatformMiniMax, domain.PlatformOpenCodeGo}
+	compatible := []string{domain.PlatformOpenAI, domain.PlatformGrok, domain.PlatformKimi, domain.PlatformZhipu, domain.PlatformDeepseek, domain.PlatformMiniMax, domain.PlatformOpenCodeGo}
 	roles := []string{extensionv1.PromptRoleAuto, extensionv1.PromptRoleSystem, extensionv1.PromptRoleDeveloper}
 	positions := func(allowedRoles, allowedPositions []string) map[string][]string {
 		result := make(map[string][]string, len(allowedRoles))
@@ -125,7 +125,7 @@ func validateRulePolicy(input extensionv1.PromptRulePolicy, draftRuleIDs []strin
 				return input, errors.New("unsupported prompt account type")
 			}
 		}
-		if r.Role == extensionv1.PromptRoleSystem && (slices.Contains(r.Platforms, domain.PlatformOpenAI) || slices.Contains(r.Platforms, domain.PlatformCindy)) && (slices.Contains(r.AccountTypes, domain.AccountTypeOAuth) || slices.Contains(r.AccountTypes, domain.AccountTypeSetupToken)) {
+		if r.Role == extensionv1.PromptRoleSystem && slices.Contains(r.Platforms, domain.PlatformOpenAI) && (slices.Contains(r.AccountTypes, domain.AccountTypeOAuth) || slices.Contains(r.AccountTypes, domain.AccountTypeSetupToken)) {
 			return input, fmt.Errorf("%w: explicit Codex OAuth scope cannot use system role", ErrPromptDeliveryUnsupported)
 		}
 		for _, profile := range r.RequestProfiles {
@@ -403,7 +403,7 @@ func planPromptPlacement(rule extensionv1.PromptRule, target BusinessSystemPromp
 	case "gemini":
 		placement.Role, placement.Carrier = "system", "systemInstruction"
 	}
-	if (platform == domain.PlatformOpenAI || platform == domain.PlatformCindy) && (target.AccountType == domain.AccountTypeOAuth || target.AccountType == domain.AccountTypeSetupToken) && rule.Role == extensionv1.PromptRoleSystem {
+	if platform == domain.PlatformOpenAI && (target.AccountType == domain.AccountTypeOAuth || target.AccountType == domain.AccountTypeSetupToken) && rule.Role == extensionv1.PromptRoleSystem {
 		return placement, fmt.Errorf("%w: Codex OAuth requires auto or developer role", ErrPromptDeliveryUnsupported)
 	}
 	return placement, nil

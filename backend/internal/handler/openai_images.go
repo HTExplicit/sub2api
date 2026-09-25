@@ -16,15 +16,6 @@ import (
 	"go.uber.org/zap"
 )
 
-// imagePolicyError distinguishes unavailable execution policy from client input.
-func (h *OpenAIGatewayHandler) imagePolicyError(c *gin.Context, err error) {
-	if errors.Is(err, service.ErrExtensionOperationDisabled) || errors.Is(err, service.ErrExtensionOperationUnavailable) {
-		h.errorResponse(c, http.StatusServiceUnavailable, "service_unavailable", "Image policy is unavailable")
-		return
-	}
-	h.errorResponse(c, http.StatusBadRequest, "invalid_request_error", err.Error())
-}
-
 // Images handles OpenAI Images API requests.
 // POST /v1/images/generations
 // POST /v1/images/edits
@@ -92,27 +83,7 @@ func (h *OpenAIGatewayHandler) Images(c *gin.Context) {
 		h.errorResponse(c, http.StatusBadRequest, "invalid_request_error", "Model is not supported by this OpenAI-compatible endpoint for composite groups")
 		return
 	}
-	strictCindy, err := h.gatewayService.ClassifyStrictCindyGroup(c.Request.Context(), apiKey.Group)
-	if err != nil {
-		h.errorResponse(c, http.StatusServiceUnavailable, "api_error", "Unable to determine model availability")
-		return
-	}
-	cindyEndpoint := service.CindyEndpointImagesGenerate
-	if parsed.IsEdits() {
-		cindyEndpoint = service.CindyEndpointImagesEdit
-	}
-	if strictCindy {
-		if !service.CindyModelSupportsEndpoint(requestModel, cindyEndpoint) {
-			h.errorResponse(c, http.StatusNotFound, "model_not_found", "Model is not supported on this Images endpoint")
-			return
-		}
-		if err := service.ValidateCindyImageRequestForAccount(c.Request.Context(), nil, requestModel, parsed); err != nil {
-			h.imagePolicyError(c, err)
-			return
-		}
-	} else if !service.IsNativeOpenAIImagesModel(requestModel) &&
-		!service.IsCompatibleImagesModel(requestModel) &&
-		!service.CindyModelSupportsEndpoint(requestModel, cindyEndpoint) {
+	if !service.IsNativeOpenAIImagesModel(requestModel) && !service.IsCompatibleImagesModel(requestModel) {
 		h.errorResponse(c, http.StatusBadRequest, "invalid_request_error", "images endpoint requires an image model")
 		return
 	}
@@ -211,7 +182,6 @@ func (h *OpenAIGatewayHandler) Images(c *gin.Context) {
 				routingModel,
 				failedAccountIDs,
 				parsed.RequiredCapabilityForModel(channelMapping.MappedModel),
-				cindyEndpoint,
 				requestPlatform,
 			)
 		}
@@ -270,22 +240,6 @@ func (h *OpenAIGatewayHandler) Images(c *gin.Context) {
 		)
 
 		account := selection.Account
-		if service.IsCindyAPIKeyAccount(account.Platform, account.Type, account.Credentials) {
-			if !service.CindyModelSupportsEndpoint(requestModel, cindyEndpoint) {
-				if selection.ReleaseFunc != nil {
-					selection.ReleaseFunc()
-				}
-				h.errorResponse(c, http.StatusNotFound, "model_not_found", "Model is not supported on this Images endpoint")
-				return
-			}
-			if err := service.ValidateCindyImageRequestForAccount(c.Request.Context(), account, requestModel, parsed); err != nil {
-				if selection.ReleaseFunc != nil {
-					selection.ReleaseFunc()
-				}
-				h.imagePolicyError(c, err)
-				return
-			}
-		}
 		sessionHash = ensureOpenAIPoolModeSessionHash(sessionHash, account)
 		reqLog.Debug("openai.images.account_selected", zap.Int64("account_id", account.ID), zap.String("account_name", account.Name))
 		setOpsSelectedAccount(c, account.ID, account.Platform)

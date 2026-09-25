@@ -179,20 +179,6 @@ func ResolveAccountTestExecutionModel(ctx context.Context, account *Account, mod
 	if account == nil {
 		return "", ErrAccountTestPlanChanged
 	}
-	if IsCindyAPIKeyAccount(account.Platform, account.Type, account.Credentials) {
-		snapshot, err := LoadCindyCatalogSnapshot(ctx, account)
-		if err != nil {
-			return "", err
-		}
-		mapped := cindyAccountMappedModel(snapshot, account, model)
-		if target, ok := snapshot.CompatibilityMappings[mapped]; ok {
-			return target, nil
-		}
-		if target, ok := snapshot.AvailableMappings[mapped]; ok {
-			return target, nil
-		}
-		return mapped, nil
-	}
 	if account.Platform == PlatformAntigravity && account.Type != AccountTypeAPIKey {
 		return (*AntigravityGatewayService)(nil).getMappedModel(account, model), nil
 	}
@@ -449,7 +435,7 @@ func (s *AccountTestService) processConnectionStream(c *gin.Context, body io.Rea
 	limited, err := parseAccountConnectionStream(protocol, body, c.GetBool("account_test_allow_media"), func(event TestEvent) { s.sendEvent(c, event) }, func(data map[string]any) {
 		if account != nil && (data["error"] != nil || data["type"] == "response.failed" || data["type"] == "error") {
 			raw, _ := json.Marshal(data)
-			s.markCindyBalanceInsufficientFromTest(c.Request.Context(), account, http.StatusOK, raw)
+			s.markOpenAIBudgetExceededFromTest(c.Request.Context(), account, http.StatusOK, raw)
 		}
 	})
 	if err != nil {

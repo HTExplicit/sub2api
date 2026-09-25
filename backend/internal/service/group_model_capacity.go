@@ -175,7 +175,7 @@ func loadGroupModelCapacityCatalog(ctx context.Context, repo AccountRepository, 
 	if useMixed {
 		platforms = append(platforms, PlatformAntigravity)
 	} else if platform == PlatformComposite {
-		platforms = []string{PlatformAnthropic, PlatformOpenAI, PlatformGemini, PlatformAntigravity, PlatformGrok, PlatformKimi, PlatformZhipu, PlatformDeepseek, PlatformCindy, PlatformMiniMax, PlatformOpenCodeGo}
+		platforms = []string{PlatformAnthropic, PlatformOpenAI, PlatformGemini, PlatformAntigravity, PlatformGrok, PlatformKimi, PlatformZhipu, PlatformDeepseek, PlatformMiniMax, PlatformOpenCodeGo}
 	}
 	queryGroupID, includeGrouped := groupID, false
 	if cfg != nil && cfg.RunMode == config.RunModeSimple && (!useMixed || groupID == nil) {
@@ -520,7 +520,7 @@ func (s *GatewayService) ProjectModelListContextCapacities(ctx context.Context, 
 	}, nil)
 }
 
-// ProjectCodexModelContextCapacities runs after all group/Cindy merges and
+// ProjectCodexModelContextCapacities runs after all group merges and
 // before conditional response handling. Local overlays never enter the raw
 // upstream cache; a changed override therefore changes the final ETag.
 func (s *OpenAIGatewayService) ProjectCodexModelContextCapacities(ctx context.Context, group *Group, manifest *OpenAIModelsResponse, ifNoneMatch string, source *Account) error {

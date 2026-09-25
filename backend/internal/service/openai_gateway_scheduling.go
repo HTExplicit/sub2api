@@ -38,32 +38,6 @@ var explicitOpenAIHeaderSessionNames = []string{
 	codeBuddyConversationHeader,
 }
 
-type openAICindyRequestedModelContextKey struct{}
-
-// WithOpenAICindyRequestedModel preserves the native Messages model for exact
-// Cindy candidates while ordinary accounts continue to use the group's legacy
-// Claude-to-OpenAI dispatch model. It is intentionally request-scoped and is
-// consulted only for strict Cindy accounts.
-func WithOpenAICindyRequestedModel(ctx context.Context, model string) context.Context {
-	model = strings.TrimSpace(model)
-	if ctx == nil || model == "" || !CindyCapabilityCatalogFeatureEnabled() {
-		return ctx
-	}
-	return context.WithValue(ctx, openAICindyRequestedModelContextKey{}, model)
-}
-
-func openAIRequestedModelForAccount(ctx context.Context, account *Account, fallback string) string {
-	if !CindyCapabilityCatalogFeatureEnabled() || account == nil || !IsCindyAPIKeyAccount(account.Platform, account.Type, account.Credentials) || ctx == nil {
-		return fallback
-	}
-	if model, ok := ctx.Value(openAICindyRequestedModelContextKey{}).(string); ok {
-		if model = strings.TrimSpace(model); model != "" {
-			return model
-		}
-	}
-	return fallback
-}
-
 // explicitOpenAIHeaderSessionID resolves stable conversation identifiers sent
 // by OpenAI-compatible clients. Keep this list limited to session-scoped
 // fields: request/message IDs rotate every turn and would defeat sticky routing
@@ -271,14 +245,14 @@ func (s *OpenAIGatewayService) SelectAccountForModelWithExclusions(ctx context.C
 	return s.selectAccountForModelWithExclusions(s.withOpenAIQuotaAutoPauseContext(ctx), groupID, PlatformOpenAI, sessionHash, requestedModel, excludedIDs, false, 0, "", false)
 }
 
-// NormalizeOpenAICompatiblePlatform 保留 Cindy、grok 与国产 OpenAI 兼容供应商（kimi/zhipu/
-// deepseek/minimax）的原值，其他值一律归一为 openai。调度器据此对账号与请求做精确平台匹配：
+// NormalizeOpenAICompatiblePlatform 保留 grok 与国产 OpenAI 兼容供应商（kimi/zhipu/
+// deepseek）的原值，其他值一律归一为 openai。调度器据此对账号与请求做精确平台匹配：
 // kimi 分组请求只命中 kimi 账号，语义与 openai/grok 一致。
 // （upstream 曾将本函数改为未导出 normalizeOpenAICompatiblePlatform，本分支的
 // handler 调度入口仍需导出，保持导出名。）
 func NormalizeOpenAICompatiblePlatform(platform string) string {
 	switch platform {
-	case PlatformCindy, PlatformGrok, PlatformKimi, PlatformZhipu, PlatformDeepseek, PlatformMiniMax, PlatformOpenCodeGo:
+	case PlatformGrok, PlatformKimi, PlatformZhipu, PlatformDeepseek, PlatformMiniMax, PlatformOpenCodeGo:
 		return platform
 	default:
 		return PlatformOpenAI
@@ -401,10 +375,6 @@ func openAICompatibleAccountEligibilityBeforeProfit(ctx context.Context, account
 	if account == nil || account.Platform != platform || !account.IsOpenAICompatible() {
 		return false, "platform_mismatch"
 	}
-	if platform == PlatformCindy && !hasCanonicalCindyProviderIdentity(account) {
-		return false, "provider_identity_mismatch"
-	}
-	requestedModel = openAIRequestedModelForAccount(ctx, account, requestedModel)
 	if !account.IsSchedulableForModelWithContext(ctx, requestedModel) {
 		if account.IsSchedulable() && account.isModelRateLimitedWithContext(ctx, requestedModel) {
 			return false, "model_rate_limited"
@@ -815,18 +785,6 @@ func resolveOpenAIAccountUpstreamModelForRequestContext(ctx context.Context, acc
 		if err != nil {
 			return "", err
 		}
-		if account != nil && IsLegacyCindyAPIKeyAccount(account.Platform, account.Type, account.Credentials) {
-			// A legacy Laxa row can be routed through the raw Chat Completions
-			// fallback when its Responses probe is disabled. Keep the scheduler's
-			// canonical key aligned with the body sent by that fallback; otherwise
-			// a direct Luna request is filtered/cooldown-tracked under the bare
-			// public spelling while the upstream sees the provider-qualified ID.
-			if legacyModel, mapped, err := cindyLegacyLaxaLiveUpstreamModel(ctx, account, requestedModel); err != nil {
-				return "", err
-			} else if mapped {
-				return legacyModel, nil
-			}
-		}
 		return normalizeOpenAIModelForUpstream(account, upstreamModel), nil
 	}
 
@@ -840,18 +798,11 @@ func resolveOpenAIAccountUpstreamModelForRequestContext(ctx context.Context, acc
 		if upstreamModel == "" {
 			return "", nil
 		}
-		if IsLegacyCindyAPIKeyAccount(account.Platform, account.Type, account.Credentials) {
-			if mapped, ok, err := cindyLegacyLaxaLiveUpstreamModel(ctx, account, upstreamModel); err != nil {
-				return "", err
-			} else if ok {
-				upstreamModel = mapped
-			}
-		}
 		if requireCompact {
 			// forwardOpenAIPassthrough resolves compact mappings from the client
-			// spelling after the Cindy mapping. Preserve the compact mapping's
-			// precedence when it actually overrides the raw client spelling;
-			// otherwise retain the canonical Cindy upstream key.
+			// spelling. Preserve the compact mapping's precedence when it
+			// actually overrides the raw client spelling; otherwise retain the
+			// canonical upstream key.
 			if compactModel := strings.TrimSpace(resolveOpenAICompactForwardModelWithCanonical(account, requestedModel, upstreamModel)); compactModel != "" && compactModel != strings.TrimSpace(requestedModel) {
 				upstreamModel = compactModel
 			}
@@ -926,7 +877,6 @@ func (s *OpenAIGatewayService) selectAccountForModelWithExclusionsStickyHit(ctx 
 		return nil, false, fmt.Errorf("query accounts failed: %w", err)
 	}
 	accounts = s.filterOpenAIAccountsForGroupPrivacy(ctx, groupID, accounts)
-	ctx = s.withCindyBalancePendingSnapshot(ctx, accounts)
 	candidateIDs := make(map[int64]struct{}, len(accounts))
 	for i := range accounts {
 		candidateIDs[accounts[i].ID] = struct{}{}
@@ -986,8 +936,7 @@ func (s *OpenAIGatewayService) tryStickySessionHit(ctx context.Context, groupID 
 	}
 	if _, candidate := candidateIDs[accountID]; !candidate {
 		// Preserve the legacy cleanup for a binding that is definitively outside
-		// the requested group without letting an out-of-pool Cindy account start
-		// a second pending-marker lookup.
+		// the requested group.
 		account, err := s.getSchedulableAccount(ctx, accountID)
 		if err == nil && account != nil && !s.openAIAccountMatchesSchedulingGroup(account, groupID) {
 			_ = s.deleteStickySessionAccountIDIfMatches(ctx, groupID, sessionHash, accountID)
@@ -1002,8 +951,7 @@ func (s *OpenAIGatewayService) tryStickySessionHit(ctx context.Context, groupID 
 
 	// 检查账号是否需要清理粘性会话
 	// Check if sticky session should be cleared
-	accountRequestedModel := openAIRequestedModelForAccount(ctx, account, requestedModel)
-	if shouldClearStickySession(account, accountRequestedModel) {
+	if shouldClearStickySession(account, requestedModel) {
 		_ = s.deleteStickySessionAccountIDIfMatches(ctx, groupID, sessionHash, accountID)
 		return nil
 	}
@@ -1017,7 +965,7 @@ func (s *OpenAIGatewayService) tryStickySessionHit(ctx context.Context, groupID 
 		_ = s.deleteStickySessionAccountIDIfMatches(ctx, groupID, sessionHash, accountID)
 		return nil
 	}
-	if s.isOpenAIAccountRequestRuntimeBlockedContext(ctx, account, accountRequestedModel, requireCompact) {
+	if s.isOpenAIAccountRequestRuntimeBlockedContext(ctx, account, requestedModel, requireCompact) {
 		// Runtime blocks and half-open probe ownership are temporary. Preserve the
 		// sticky binding until replacement or permanent invalidation.
 		return nil
@@ -1029,7 +977,7 @@ func (s *OpenAIGatewayService) tryStickySessionHit(ctx context.Context, groupID 
 		return nil
 	}
 	if groupID != nil && s.needsUpstreamChannelRestrictionCheck(ctx, groupID) &&
-		s.isUpstreamModelRestrictedByChannel(ctx, *groupID, account, accountRequestedModel, requireCompact) {
+		s.isUpstreamModelRestrictedByChannel(ctx, *groupID, account, requestedModel, requireCompact) {
 		_ = s.deleteStickySessionAccountIDIfMatches(ctx, groupID, sessionHash, accountID)
 		return nil
 	}
@@ -1050,7 +998,6 @@ func (s *OpenAIGatewayService) tryStickySessionHit(ctx context.Context, groupID 
 // true); the third contains deterministic
 // exclusion diagnostics for the evaluated snapshot.
 func (s *OpenAIGatewayService) selectBestAccount(ctx context.Context, groupID *int64, platform string, accounts []Account, requestedModel string, excludedIDs map[int64]struct{}, requireCompact bool, requiredCapability OpenAIEndpointCapability, preferLowUpstreamRate bool) (*Account, bool, openAISelectionFilterStats) {
-	ctx = s.withCindyBalancePendingSnapshot(ctx, accounts)
 	platform = NormalizeOpenAICompatiblePlatform(platform)
 	compactBlocked := false
 	filterStats := openAISelectionFilterStats{pool: len(accounts)}
@@ -1082,7 +1029,7 @@ func (s *OpenAIGatewayService) selectBestAccount(ctx context.Context, groupID *i
 			filterStats.exclude("privacy_not_set")
 			continue
 		}
-		if needsUpstreamCheck && s.isUpstreamModelRestrictedByChannel(ctx, *groupID, fresh, openAIRequestedModelForAccount(ctx, fresh, requestedModel), requireCompact) {
+		if needsUpstreamCheck && s.isUpstreamModelRestrictedByChannel(ctx, *groupID, fresh, requestedModel, requireCompact) {
 			filterStats.exclude("channel_restricted")
 			continue
 		}
@@ -1222,7 +1169,6 @@ func (s *OpenAIGatewayService) selectAccountWithLoadAwareness(ctx context.Contex
 	if len(accounts) == 0 {
 		return nil, noAvailableOpenAISelectionError(requestedModel, false, "pool=0, no_schedulable_accounts_or_privacy_requirement")
 	}
-	ctx = s.withCindyBalancePendingSnapshot(ctx, accounts)
 
 	isExcluded := func(accountID int64) bool {
 		if excludedIDs == nil {
@@ -1239,8 +1185,7 @@ func (s *OpenAIGatewayService) selectAccountWithLoadAwareness(ctx context.Contex
 		if accountID > 0 && !isExcluded(accountID) {
 			account, err := s.getSchedulableAccount(ctx, accountID)
 			if err == nil {
-				accountRequestedModel := openAIRequestedModelForAccount(ctx, account, requestedModel)
-				clearSticky := shouldClearStickySession(account, accountRequestedModel)
+				clearSticky := shouldClearStickySession(account, requestedModel)
 				if clearSticky {
 					_ = s.deleteStickySessionAccountIDIfMatches(ctx, groupID, sessionHash, accountID)
 				}
@@ -1250,9 +1195,9 @@ func (s *OpenAIGatewayService) selectAccountWithLoadAwareness(ctx context.Contex
 						_ = s.deleteStickySessionAccountIDIfMatches(ctx, groupID, sessionHash, accountID)
 					} else if !s.openAIAccountMatchesSchedulingGroup(account, groupID) {
 						_ = s.deleteStickySessionAccountIDIfMatches(ctx, groupID, sessionHash, accountID)
-					} else if s.isOpenAIAccountRequestRuntimeBlockedContext(ctx, account, accountRequestedModel, requireCompact) {
+					} else if s.isOpenAIAccountRequestRuntimeBlockedContext(ctx, account, requestedModel, requireCompact) {
 						// Keep temporary runtime-blocked sticky bindings.
-					} else if needsUpstreamCheck && s.isUpstreamModelRestrictedByChannel(ctx, *groupID, account, accountRequestedModel, requireCompact) {
+					} else if needsUpstreamCheck && s.isUpstreamModelRestrictedByChannel(ctx, *groupID, account, requestedModel, requireCompact) {
 						_ = s.deleteStickySessionAccountIDIfMatches(ctx, groupID, sessionHash, accountID)
 					} else if !parentHealthyForShadow(account, s.parentAccountLookup(ctx)) {
 						_ = s.deleteStickySessionAccountIDIfMatches(ctx, groupID, sessionHash, accountID)
@@ -1319,16 +1264,15 @@ func (s *OpenAIGatewayService) selectAccountWithLoadAwareness(ctx context.Contex
 			filterStats.exclude("shadow_parent_unhealthy")
 			continue
 		}
-		accountRequestedModel := openAIRequestedModelForAccount(ctx, acc, requestedModel)
 		// This candidate list is the partial scheduler projection. Credential-bound
 		// gates run after resolveFreshSchedulableOpenAIAccount/recheck reads the
 		// authoritative account; doing so here would misclassify valid tickets.
-		if s.isOpenAIAccountCandidateRuntimeBlockedContext(ctx, acc, accountRequestedModel, requireCompact) {
+		if s.isOpenAIAccountCandidateRuntimeBlockedContext(ctx, acc, requestedModel, requireCompact) {
 			filterStats.exclude("runtime_blocked")
 			filterStats.observeRuntimeCooldown(s, acc.ID)
 			continue
 		}
-		if needsUpstreamCheck && s.isUpstreamModelRestrictedByChannel(ctx, *groupID, acc, accountRequestedModel, requireCompact) {
+		if needsUpstreamCheck && s.isUpstreamModelRestrictedByChannel(ctx, *groupID, acc, requestedModel, requireCompact) {
 			filterStats.exclude("channel_upstream_restricted")
 			continue
 		}
@@ -1425,7 +1369,7 @@ func (s *OpenAIGatewayService) selectAccountWithLoadAwareness(ctx context.Contex
 			if fresh == nil {
 				continue
 			}
-			if needsUpstreamCheck && s.isUpstreamModelRestrictedByChannel(ctx, *groupID, fresh, openAIRequestedModelForAccount(ctx, fresh, requestedModel), requireCompact) {
+			if needsUpstreamCheck && s.isUpstreamModelRestrictedByChannel(ctx, *groupID, fresh, requestedModel, requireCompact) {
 				continue
 			}
 			result, err := s.tryAcquireAccountSlot(ctx, fresh.ID, fresh.Concurrency)
@@ -1464,7 +1408,7 @@ func (s *OpenAIGatewayService) selectAccountWithLoadAwareness(ctx context.Contex
 			if fresh == nil {
 				continue
 			}
-			if needsUpstreamCheck && s.isUpstreamModelRestrictedByChannel(ctx, *groupID, fresh, openAIRequestedModelForAccount(ctx, fresh, requestedModel), requireCompact) {
+			if needsUpstreamCheck && s.isUpstreamModelRestrictedByChannel(ctx, *groupID, fresh, requestedModel, requireCompact) {
 				continue
 			}
 			result, err := s.tryAcquireAccountSlot(ctx, fresh.ID, fresh.Concurrency)
@@ -1514,7 +1458,7 @@ func (s *OpenAIGatewayService) selectAccountWithLoadAwareness(ctx context.Contex
 		if fresh == nil {
 			continue
 		}
-		if needsUpstreamCheck && s.isUpstreamModelRestrictedByChannel(ctx, *groupID, fresh, openAIRequestedModelForAccount(ctx, fresh, requestedModel), requireCompact) {
+		if needsUpstreamCheck && s.isUpstreamModelRestrictedByChannel(ctx, *groupID, fresh, requestedModel, requireCompact) {
 			continue
 		}
 		return s.newSelectionResult(ctx, fresh, false, nil, &AccountWaitPlan{
@@ -1608,7 +1552,7 @@ func (s *OpenAIGatewayService) resolveFreshSchedulableOpenAIAccountBeforeProfit(
 	if !parentHealthyForShadow(fresh, s.parentAccountLookup(ctx)) {
 		return nil
 	}
-	if s.isOpenAIAccountRequestRuntimeBlockedContext(ctx, fresh, openAIRequestedModelForAccount(ctx, fresh, requestedModel), requireCompact) {
+	if s.isOpenAIAccountRequestRuntimeBlockedContext(ctx, fresh, requestedModel, requireCompact) {
 		return nil
 	}
 	if s.isOpenAIAccountBlockedBySchedulingThreshold(ctx, fresh) {
@@ -1687,7 +1631,7 @@ func (s *OpenAIGatewayService) recheckSelectedOpenAIAccountFromDBBeforeProfit(ct
 	if !parentHealthyForShadow(latest, s.parentAccountLookup(ctx)) {
 		return nil
 	}
-	if s.isOpenAIAccountRequestRuntimeBlockedContext(ctx, latest, openAIRequestedModelForAccount(ctx, latest, requestedModel), requireCompact) {
+	if s.isOpenAIAccountRequestRuntimeBlockedContext(ctx, latest, requestedModel, requireCompact) {
 		return nil
 	}
 	if s.isOpenAIAccountBlockedBySchedulingThreshold(ctx, latest) {

@@ -186,41 +186,6 @@ func ProvideAntigravityGatewayService(
 	return svc
 }
 
-func ProvideCindyHealthService(
-	accountRepo AccountRepository,
-	identityRepo AccountCredentialIdentityRepository,
-	healthRepo CindyHealthRepository,
-	cache GatewayCache,
-	gateway *OpenAIGatewayService,
-	nativeGateway *GatewayService,
-) *CindyHealthService {
-	var episodeStore CindyHealthEpisodeStore
-	if cache != nil {
-		episodeStore, _ = cache.(CindyHealthEpisodeStore)
-	}
-	svc := NewCindyHealthService(accountRepo, identityRepo, healthRepo, episodeStore, gateway)
-	if gateway != nil {
-		gateway.SetCindyHealthCoordinator(svc)
-	}
-	if nativeGateway != nil {
-		nativeGateway.SetCindyHealthCoordinator(svc)
-	}
-	return svc
-}
-
-// ProvideCindyBalanceProbeService starts the explicit administrator-triggered
-// Cindy balance probe worker. The worker does not create jobs on its own.
-func ProvideCindyBalanceProbeService(
-	repo CindyBalanceProbeRepository,
-	accountRepo AccountRepository,
-	gateway *OpenAIGatewayService,
-	rateLimit *RateLimitService,
-) *CindyBalanceProbeService {
-	svc := NewCindyBalanceProbeService(repo, accountRepo, gateway, rateLimit)
-	svc.Start()
-	return svc
-}
-
 // ProvideEmailQueueService creates EmailQueueService with default worker count
 func ProvideEmailQueueService(emailService *EmailService) *EmailQueueService {
 	return NewEmailQueueService(emailService, 3)
@@ -982,9 +947,9 @@ func ProvideOpsIngressRejectAggregator(opsRepo OpsRepository, opsService *OpsSer
 // ProvideSettingService wires SettingService with group reader and proxy repo.
 func ProvideSettingService(settingRepo SettingRepository, groupRepo GroupRepository, proxyRepo ProxyRepository, cfg *config.Config, _ *NativeFeatureBootstrap) (*SettingService, error) {
 	svc := NewSettingService(settingRepo, cfg)
-	// Image tool, observability and Cindy provider switches are read by
-	// package-level gates before Image Studio and the gateway start.
-	for _, load := range []func(context.Context) error{svc.LoadImageToolsConfig, svc.LoadAdminObservabilityConfig, svc.LoadCindyProviderConfig} {
+	// Image tool and observability switches are read by package-level gates
+	// before Image Studio and the gateway start.
+	for _, load := range []func(context.Context) error{svc.LoadImageToolsConfig, svc.LoadAdminObservabilityConfig} {
 		if err := load(context.Background()); err != nil {
 			return nil, err
 		}
@@ -1079,8 +1044,6 @@ var ProviderSet = wire.NewSet(
 	ProvideRemoteSkillRegistryFiles,
 	ProvideFrozenPromptFiles,
 	ProvideOpenAIGatewayService,
-	ProvideCindyHealthService,
-	ProvideCindyBalanceProbeService,
 	ProvideImageStorageSettingService,
 	ProvideImageTaskService,
 	ProvideBatchImageModelPricingResolver,

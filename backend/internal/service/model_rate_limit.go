@@ -67,39 +67,16 @@ func (a *Account) modelRateLimitKeysForRequest(ctx context.Context, requestedMod
 		return nil
 	}
 
-	// The handler records the channel-mapped model and whether this is the
-	// legacy /responses/compact surface in the request context.  Use that same
-	// forwarding model when present so a cooldown written for a compact target
-	// cannot be read back later under the public Luna spelling.
+	// The handler records the channel-mapped model in the request context. Use
+	// that same forwarding model when present so a cooldown written for the
+	// mapped upstream model is read back under the same key.
 	forwardModel := strings.TrimSpace(requestedModel)
-	requireCompact := false
 	if forwarded, ok := openAIForwardModelFromContext(ctx); ok {
 		if model := strings.TrimSpace(forwarded.model); model != "" {
 			forwardModel = model
-			requireCompact = forwarded.useCompactModelMapping
 		}
 	}
 	modelKey := a.GetMappedModel(forwardModel)
-	// Cindy's public IDs and legacy OpenAI-projection aliases are both written
-	// as their provider-qualified live upstream ID. Read the same key here so a
-	// 30-minute model_not_supported cooldown cannot be bypassed by requesting
-	// the public spelling on the next scheduling pass.
-	if IsCindyRuntimeCompatibleAPIKeyAccount(a.Platform, a.Type, a.Credentials) {
-		canonical := canonicalOpenAIAccountSchedulingModel(a, forwardModel)
-		if requireCompact {
-			compact := resolveOpenAICompactForwardModelWithCanonical(a, forwardModel, canonical)
-			if compact == strings.TrimSpace(forwardModel) && strings.TrimSpace(requestedModel) != strings.TrimSpace(forwardModel) {
-				compact = resolveOpenAICompactForwardModelWithCanonical(a, requestedModel, canonical)
-			}
-			if compact != "" && compact != strings.TrimSpace(requestedModel) && compact != strings.TrimSpace(forwardModel) {
-				modelKey = compact
-			} else if canonical != "" {
-				modelKey = canonical
-			}
-		} else if canonical != "" {
-			modelKey = canonical
-		}
-	}
 	if a.Platform == PlatformAntigravity {
 		modelKey = resolveFinalAntigravityModelKey(ctx, a, requestedModel)
 	}

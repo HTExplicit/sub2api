@@ -46,8 +46,8 @@ type businessSystemPromptRequestState struct {
 func businessSystemPromptTargetForAccount(account *Account, protocol string, compact bool) BusinessSystemPromptTarget {
 	target := BusinessSystemPromptTarget{Protocol: protocol, Compact: compact}
 	if account != nil {
-		target.AccountID, target.Platform, target.AccountType = account.ID, account.EffectiveWirePlatform(), account.Type
-		target.ProviderPlatform, target.ProviderProfile = account.Platform, account.EffectiveProviderProfile()
+		target.AccountID, target.Platform, target.AccountType = account.ID, account.Platform, account.Type
+		target.ProviderPlatform, target.ProviderProfile = account.Platform, ""
 		target.ChatSystemRoleOnly = protocol == BusinessSystemPromptProtocolChat && requiresSystemChatRole(account, account.GetOpenAIBaseURL())
 		if binding := account.Extra[PromptAccountBindingExtraKey]; binding != nil {
 			raw, err := json.Marshal(binding)

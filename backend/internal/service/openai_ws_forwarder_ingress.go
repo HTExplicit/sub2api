@@ -125,20 +125,6 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 	refusalRuntime := s.openAIRefusalRecoveryRuntime(ctx)
 
 	wsDecision := s.getOpenAIWSProtocolResolver().Resolve(account)
-	legacyLaxaAccount := IsLegacyCindyAPIKeyAccount(account.Platform, account.Type, account.Credentials)
-	// Fresh legacy Laxa turns remain on the explicitly selected passthrough
-	// transport. Once a frame carries an anchor, an opaque carrier, or an
-	// external reference, however, it has the same connection-affinity contract
-	// as first-class Cindy continuation state and must use the stateful pool.
-	// Classify the first frame before the mode-router branch so a busy bound
-	// connection cannot be bypassed by an early passthrough return.
-	legacyLaxaContinuation := false
-	if legacyLaxaAccount {
-		if classification, classifyErr := ClassifyCindyContinuation(firstClientMessage, CindyContinuationProof{}); classifyErr == nil {
-			legacyLaxaContinuation = classification.HasAnchor || classification.Mode != CindyContinuationFullReplay
-		}
-	}
-	strictCindyContinuation := IsCindyAPIKeyAccount(account.Platform, account.Type, account.Credentials) || legacyLaxaContinuation
 	// A routing Cookie qualification belongs to the verified HTTP connection.
 	// A new native WS socket cannot inherit that connection's exit evidence.
 	_, cookieRoutingModel := resolveOpenAIForwardMappedModels(account, gjson.GetBytes(firstClientMessage, "model").String(), false)
@@ -159,12 +145,6 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 		}
 		switch ingressMode {
 		case OpenAIWSIngressModePassthrough:
-			if strictCindyContinuation {
-				// Strict Cindy continuation needs parsed anchors, exact live-connection
-				// affinity, accumulator recovery, and opaque output binding.
-				ingressMode = OpenAIWSIngressModeCtxPool
-				break
-			}
 			if wsDecision.Transport != OpenAIUpstreamTransportResponsesWebsocketV2 {
 				return fmt.Errorf("websocket ingress requires ws_v2 transport, got=%s", wsDecision.Transport)
 			}
@@ -323,10 +303,6 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 				)
 			}
 		}
-		policyCtx, policyErr := copyOpenAIWSProviderPricingContext(ctx, hooks, turn)
-		if policyErr != nil {
-			return openAIWSClientPayload{}, policyErr
-		}
 		requestModel := originalModel
 		if hooks != nil && hooks.MapRequestModel != nil {
 			mappedModel, mapErr := hooks.MapRequestModel(turn, originalModel)
@@ -337,39 +313,11 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 				requestModel = mappedModel
 			}
 		}
-		legacyModel, legacyModelKnown := requestModel, false
-		if legacyLaxaAccount {
-			var policyErr error
-			legacyModel, legacyModelKnown, policyErr = cindyLegacyLaxaLiveUpstreamModel(policyCtx, account, requestModel)
-			if policyErr != nil {
-				return openAIWSClientPayload{}, policyErr
-			}
-		}
-		if !legacyModelKnown {
-			legacyModel = requestModel
-		}
-		if legacyModelKnown {
-			// A stale account model_mapping must not override the verified live
-			// wire ID for a direct legacy Laxa public model or compatibility alias.
-			requestModel = legacyModel
-		}
-		mappedRequestModel := requestModel
-		if !legacyModelKnown {
-			mapped, err := resolveOpenAIForwardModelContext(policyCtx, account, requestModel, "")
-			if err != nil {
-				return openAIWSClientPayload{}, err
-			}
-			mappedRequestModel = mapped
+		mappedRequestModel, err := resolveOpenAIForwardModelContext(ctx, account, requestModel, "")
+		if err != nil {
+			return openAIWSClientPayload{}, err
 		}
 		upstreamModel := normalizeOpenAIModelForUpstream(account, mappedRequestModel)
-		// Legacy Laxa API-key rows are still represented as PlatformOpenAI during
-		// the projection window. Their account mapping therefore does not enter
-		// the first-class Cindy resolver; apply the same provider-qualified live
-		// ID used by HTTP passthrough before writing every WS request frame.
-		upstreamModel, modelPolicyErr := resolveLegacyCindyOpenAIModelContext(policyCtx, account, upstreamModel)
-		if modelPolicyErr != nil {
-			return openAIWSClientPayload{}, modelPolicyErr
-		}
 		requestedReasoningEffort := CanonicalRequestedReasoningEffort(normalized, strings.TrimSpace(values[1].String()))
 		if next, policyErr := applyOpenAIWSReasoningEffortPolicy(normalized, hooks); policyErr != nil {
 			return openAIWSClientPayload{}, NewOpenAIWSClientCloseError(coderws.StatusPolicyViolation, policyErr.Error(), policyErr)
@@ -377,12 +325,10 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 			normalized = next
 		}
 		responsesLite := isOpenAIResponsesLiteWebSocketPayload(normalized)
-		if !IsCindyRuntimeCompatibleAPIKeyAccount(account.Platform, account.Type, account.Credentials) {
-			if compatibilityBody, compatibilityChanged, compatibilityErr := normalizeOpenAIResponsesWebSocketCompatibilityBodyForModel(normalized, account, responsesLite, upstreamModel); compatibilityErr != nil {
-				return openAIWSClientPayload{}, NewOpenAIWSClientCloseError(coderws.StatusPolicyViolation, "invalid websocket request payload", compatibilityErr)
-			} else if compatibilityChanged {
-				normalized = compatibilityBody
-			}
+		if compatibilityBody, compatibilityChanged, compatibilityErr := normalizeOpenAIResponsesWebSocketCompatibilityBodyForModel(normalized, account, responsesLite, upstreamModel); compatibilityErr != nil {
+			return openAIWSClientPayload{}, NewOpenAIWSClientCloseError(coderws.StatusPolicyViolation, "invalid websocket request payload", compatibilityErr)
+		} else if compatibilityChanged {
+			normalized = compatibilityBody
 		}
 		if account.IsOpenAIOAuthLike() {
 			aliasedBody, reverse, aliased, aliasErr := aliasOpenAIOAuthReservedToolNamesBody(normalized)
@@ -663,25 +609,6 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 	nativeLogicalTurn := codexRoutingTurnID(c)
 	stateStore := s.getOpenAIWSStateStore()
 	groupID := getOpenAIGroupIDFromContext(c)
-	resolveStrictCindyAnchorConn := func(previousResponseID string, liveConnID string) (string, error) {
-		previousResponseID = strings.TrimSpace(previousResponseID)
-		if !strictCindyContinuation || previousResponseID == "" {
-			return "", nil
-		}
-		if stateStore == nil {
-			return "", NewOpenAIContinuationStateUnavailableError(http.StatusBadRequest, nil, nil)
-		}
-		boundConnID, ok := stateStore.GetResponseConn(previousResponseID)
-		boundConnID = strings.TrimSpace(boundConnID)
-		if !ok || boundConnID == "" {
-			return "", NewOpenAIContinuationStateUnavailableError(http.StatusBadRequest, nil, nil)
-		}
-		liveConnID = strings.TrimSpace(liveConnID)
-		if liveConnID != "" && liveConnID != boundConnID {
-			return "", NewOpenAIContinuationStateUnavailableError(http.StatusBadRequest, nil, nil)
-		}
-		return boundConnID, nil
-	}
 	apiKeyID := getAPIKeyIDFromContext(c)
 	sessionHash := ""
 	preferredConnID := ""
@@ -690,8 +617,7 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 		// 会话级状态按执行作用域隔离：codex 多智能体共用 session-id，只有线程标识能把
 		// 父线程与子智能体区分开；没有声明身份时沿用原会话哈希。账号粘性仍由 handler 决定。
 		sessionHash = s.GenerateSessionHash(c, payload.rawForHash)
-		if scope, _ := resolveOpenAIWSExecutionScope(c, payload.rawForHash, apiKeyID); scope != "" &&
-			!IsCindyRuntimeCompatibleAPIKeyAccount(account.Platform, account.Type, account.Credentials) {
+		if scope, _ := resolveOpenAIWSExecutionScope(c, payload.rawForHash, apiKeyID); scope != "" {
 			sessionHash = scope
 		}
 		preferredConnID = ""
@@ -830,12 +756,8 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 					return fmt.Errorf("resolve Grok websocket cache identity: %w", err)
 				}
 			}
-			policyCtx, policyErr := copyOpenAIWSProviderPricingContext(ctx, hooks, turn)
-			if policyErr != nil {
-				return policyErr
-			}
 			result, bridgeErr := s.proxyOpenAIWSHTTPBridgeTurn(
-				policyCtx,
+				ctx,
 				c,
 				account,
 				token,
@@ -885,9 +807,6 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 			if result.wsReplayInputExists {
 				bridgeReplayInput = combineOpenAIWSReplayItems(bridgeReplayInput, result.wsReplayInput)
 				bridgeReplayInputExists = true
-				s.bindCindyOpaqueContinuationAccount(
-					ctx, c, account, cindyOpaqueBindingIDsFromRawItems(result.wsReplayInput),
-				)
 			}
 			// Codex retains the first value within one logical turn, including
 			// tool continuations with an omitted/different response header. A new
@@ -1092,9 +1011,8 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 				reason := "upstream continuation connection is unavailable; please restart the conversation"
 				// For store=false external anchors, a preferred connection that
 				// drops during preflight is transient. Signal retry (1013) so the
-				// client can reconnect without replaying the stale anchor. Cindy
-				// strict continuation keeps the policy close contract.
-				if turn > 1 && storeDisabled && !strictCindyContinuation {
+				// client can reconnect without replaying the stale anchor.
+				if turn > 1 && storeDisabled {
 					status = coderws.StatusTryAgainLater
 					reason = openAIWSNonInitialTurnRetryCloseReason
 				}
@@ -1160,13 +1078,9 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 	var rejectedFieldRetryState *openAIResponsesRejectedFieldRetryState
 	committedHandshakeConnID := ""
 	sendAndRelay := func(turn int, lease *openAIWSConnLease, cleanPayload, payload []byte, payloadBytes int, originalModel string, imageBillingModel string, imageSizeTier string, imageInputSize string, requestedReasoningEffort *string) (*OpenAIForwardResult, error) {
-		policyCtx, policyErr := copyOpenAIWSProviderPricingContext(ctx, hooks, turn)
-		if policyErr != nil {
-			return nil, policyErr
-		}
 		mappedModel := strings.TrimSpace(gjson.GetBytes(payload, "model").String())
 		if originalModel != "" && mappedModel == "" {
-			mapped, err := resolveOpenAIForwardModelContext(policyCtx, account, originalModel, "")
+			mapped, err := resolveOpenAIForwardModelContext(ctx, account, originalModel, "")
 			if err != nil {
 				return nil, err
 			}
@@ -1281,9 +1195,8 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 			rawUpstreamMessage := append([]byte(nil), upstreamMessage...)
 			rawEventType, _, _ := parseOpenAIWSEventEnvelope(rawUpstreamMessage)
 			if rawEventType == "error" || rawEventType == "response.failed" {
-				canonicalModel := canonicalOpenAIAccountSchedulingModel(account, originalModel)
-				if failoverErr, ok := s.cindyBalanceTerminalFailover(
-					ctx, account, lease.HandshakeHeaders(), rawUpstreamMessage, canonicalModel,
+				if failoverErr, ok := s.openAIBudgetExceededTerminalFailover(
+					ctx, account, lease.HandshakeHeaders(), rawUpstreamMessage,
 				); ok {
 					lease.MarkBroken()
 					replaySafe := turn == 1 && !downstreamOutputStarted()
@@ -1303,7 +1216,7 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 					return nil, NewOpenAIWSClientCloseError(
 						coderws.StatusTryAgainLater,
 						"Temporary upstream failure; please retry",
-						errors.New("cindy balance exhausted after downstream output"),
+						errors.New("upstream budget exhausted after downstream output"),
 					)
 				}
 			}
@@ -1433,10 +1346,9 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 					)
 				}
 				canonicalModel := canonicalOpenAIAccountSchedulingModel(account, originalModel)
-				if IsCindyRuntimeCompatibleAPIKeyAccount(account.Platform, account.Type, account.Credentials) &&
-					isOpenAIModelNotSupportedPayload(upstreamMessage) {
+				if account.IsOpenAICompatible() && isOpenAIModelNotSupportedPayload(upstreamMessage) {
 					// The upstream transport is already HTTP 200, but this exact
-					// structured event means the selected Cindy key cannot serve the
+					// structured event means the selected key cannot serve the
 					// requested model. Persist an account/model cooldown and expose a
 					// replayable failover only before client-visible output. The outer
 					// ingress handler still enforces continuation affinity.
@@ -1486,8 +1398,7 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 					}
 					return nil, continuationErr
 				}
-				if IsCindyRuntimeCompatibleAPIKeyAccount(account.Platform, account.Type, account.Credentials) &&
-					isOpenAIModelNotSupportedPayload(upstreamMessage) {
+				if account.IsOpenAICompatible() && isOpenAIModelNotSupportedPayload(upstreamMessage) {
 					canonicalModel := canonicalOpenAIAccountSchedulingModel(account, originalModel)
 					_ = s.handleOpenAIAccountUpstreamError(ctx, account, http.StatusBadRequest, nil, upstreamMessage, canonicalModel)
 					if !downstreamOutputStarted() {
@@ -1626,7 +1537,7 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 	currentRequestedReasoningEffort := firstPayload.requestedReasoningEffort
 	isStrictAffinityTurn := func(payload []byte) bool {
 		hasAnchor := strings.TrimSpace(openAIWSPayloadStringFromRaw(payload, "previous_response_id")) != ""
-		return hasAnchor && (strictCindyContinuation || storeDisabled)
+		return hasAnchor && storeDisabled
 	}
 	var sessionLease *openAIWSConnLease
 	sessionConnID := ""
@@ -1684,8 +1595,6 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 	turnPrevRecoveryTried := false
 	lastTurnFinishedAt := time.Time{}
 	lastTurnResponseID := ""
-	lastTurnPayload := []byte(nil)
-	var lastTurnStrictState *openAIWSIngressPreviousTurnStrictState
 	lastTurnReplayInput := []json.RawMessage(nil)
 	lastTurnReplayInputExists := false
 	lastTurnReplayVerified := false
@@ -1705,46 +1614,12 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 		sessionConnID = ""
 		preferredConnID = ""
 	}
-	prepareCindyFullReplay := func() (CindyContinuationClassification, bool) {
-		if !currentTurnReplayInputExists || !currentTurnReplayVerified {
-			return CindyContinuationClassification{}, false
-		}
-		candidate, classification, replayable := prepareCindyContinuationReplayPayload(
-			currentPayload,
-			currentTurnReplayInput,
-			currentTurnReplayInputExists,
-			currentTurnReplayVerified,
-		)
-		if !replayable {
-			return classification, false
-		}
-		currentPayload = candidate
-		return classification, true
-	}
 	recoverIngressPrevResponseNotFound := func(relayErr error, turn int, connID string) bool {
 		if !isOpenAIWSIngressPreviousResponseNotFound(relayErr) {
 			return false
 		}
 		if turnRetry >= 1 || turnPrevRecoveryTried || !s.openAIWSIngressPreviousResponseRecoveryEnabled() {
 			return false
-		}
-		if strictCindyContinuation {
-			turnPrevRecoveryTried = true
-			classification, recovered := prepareCindyFullReplay()
-			if !recovered || classification.Mode != CindyContinuationAnchorPlusFull {
-				return false
-			}
-			turnRetry++
-			resetSessionLease(true)
-			skipBeforeTurn = true
-			logOpenAIWSModeInfo(
-				"ingress_ws_prev_response_recovery account_id=%d turn=%d conn_id=%s action=full_replay retry=1 continuation_mode=%s",
-				account.ID,
-				turn,
-				truncateOpenAIWSLogValue(connID, openAIWSIDValueMaxLen),
-				normalizeOpenAIWSLogValue(string(classification.Mode)),
-			)
-			return true
 		}
 		turnPrevRecoveryTried = true
 		updatedWithInput, replayable := prepareOpenAIWSVerifiedReplayPayload(
@@ -1770,25 +1645,10 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 		if transportFailure && initialTransportRetryUsed {
 			return false
 		}
-		if strictCindyContinuation {
-			if !transportFailure || turnRetry >= 1 {
-				return false
-			}
-			classification, replayable := prepareCindyFullReplay()
-			if !replayable {
-				logOpenAIWSModeInfo(
-					"ingress_ws_turn_retry_skip account_id=%d turn=%d conn_id=%s reason=continuation_not_replayable continuation_mode=%s",
-					account.ID,
-					turn,
-					truncateOpenAIWSLogValue(connID, openAIWSIDValueMaxLen),
-					normalizeOpenAIWSLogValue(string(classification.Mode)),
-				)
-				return false
-			}
-		} else if !shouldRetryOpenAIWSIngressTurn(turn, turnRetry, relayErr) {
+		if !shouldRetryOpenAIWSIngressTurn(turn, turnRetry, relayErr) {
 			return false
 		}
-		if !strictCindyContinuation && isStrictAffinityTurn(currentPayload) {
+		if isStrictAffinityTurn(currentPayload) {
 			logOpenAIWSModeInfo(
 				"ingress_ws_turn_retry_skip account_id=%d turn=%d conn_id=%s reason=strict_affinity",
 				account.ID,
@@ -1826,13 +1686,6 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 		}
 		skipBeforeTurn = false
 		currentPreviousResponseID := openAIWSPayloadStringFromRaw(currentPayload, "previous_response_id")
-		if strictCindyContinuation && currentPreviousResponseID != "" && turn > 1 {
-			boundConnID, resolveErr := resolveStrictCindyAnchorConn(currentPreviousResponseID, sessionConnID)
-			if resolveErr != nil {
-				return resolveErr
-			}
-			preferredConnID = boundConnID
-		}
 		expectedPrev := strings.TrimSpace(lastTurnResponseID)
 		toolSignals := ToolContinuationSignals{
 			HasFunctionCallOutput: openAIWSRawPayloadHasToolCallOutput(currentPayload),
@@ -1902,64 +1755,13 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 		replayHasFunctionCallOutput := currentTurnReplayInputExists &&
 			openAIWSRawItemsHasFunctionCallOutput(currentTurnReplayInput)
 		hasFunctionCallOutput = hasFunctionCallOutput || replayHasFunctionCallOutput
-		// Native Responses may change per-turn request parameters or refer to
-		// another valid stored response. Such changes do not authorize replacing
-		// the client's anchor. The stricter Cindy live-connection contract is
-		// maintained separately and may use its verified replay path.
-		if strictCindyContinuation && storeDisabled && turn > 1 && currentPreviousResponseID != "" {
-			shouldKeepPreviousResponseID := false
-			strictReason := ""
-			var strictErr error
-			if strictCindyContinuation && hasFunctionCallOutput &&
-				strings.TrimSpace(currentPreviousResponseID) != expectedPrev {
-				strictReason = "previous_response_id_mismatch"
-			} else if lastTurnStrictState != nil {
-				shouldKeepPreviousResponseID, strictReason, strictErr = shouldKeepIngressPreviousResponseIDWithStrictState(
-					lastTurnStrictState,
-					currentPayload,
-					lastTurnResponseID,
-					hasFunctionCallOutput,
-				)
-			} else {
-				shouldKeepPreviousResponseID, strictReason, strictErr = shouldKeepIngressPreviousResponseID(
-					lastTurnPayload,
-					currentPayload,
-					lastTurnResponseID,
-					hasFunctionCallOutput,
-				)
-			}
-			if strictErr != nil {
-				logOpenAIWSModeInfo(
-					"ingress_ws_prev_response_strict_eval account_id=%d turn=%d conn_id=%s action=keep_previous_response_id reason=%s cause=%s previous_response_id=%s expected_previous_response_id=%s has_function_call_output=%v",
-					account.ID,
-					turn,
-					truncateOpenAIWSLogValue(sessionConnID, openAIWSIDValueMaxLen),
-					normalizeOpenAIWSLogValue(strictReason),
-					truncateOpenAIWSLogValue(strictErr.Error(), openAIWSLogValueMaxLen),
-					truncateOpenAIWSLogValue(currentPreviousResponseID, openAIWSIDValueMaxLen),
-					truncateOpenAIWSLogValue(expectedPrev, openAIWSIDValueMaxLen),
-					hasFunctionCallOutput,
-				)
-			} else if !shouldKeepPreviousResponseID {
-				classification, replayable := prepareCindyFullReplay()
-				if !replayable || classification.Mode != CindyContinuationAnchorPlusFull {
-					return NewOpenAIContinuationStateUnavailableError(http.StatusBadRequest, nil, nil)
-				}
-				logOpenAIWSModeInfo(
-					"ingress_ws_prev_response_strict_eval account_id=%d turn=%d conn_id=%s action=full_replay reason=%s continuation_mode=%s",
-					account.ID,
-					turn,
-					truncateOpenAIWSLogValue(sessionConnID, openAIWSIDValueMaxLen),
-					normalizeOpenAIWSLogValue(strictReason),
-					normalizeOpenAIWSLogValue(string(classification.Mode)),
-				)
-				currentPreviousResponseID = ""
-			}
-		}
 		// Build a send-only copy after full replay assembly. The clean payload
 		// remains the sole source for retries and the next turn's accumulator.
 		wirePayload, promptErr := s.finalizeBusinessPromptWSIngress(c, account, currentPayload)
 		if promptErr != nil {
+			return businessPromptWSCloseError(promptErr)
+		}
+		if wirePayload, promptErr = applyOpenAIAPIKeyPromptCacheKeyMode(c, account, wirePayload); promptErr != nil {
 			return businessPromptWSCloseError(promptErr)
 		}
 		wireFields := gjson.GetManyBytes(wirePayload, "prompt_cache_key", "model", "service_tier")
@@ -2088,27 +1890,7 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 		if result.wsReplayInputExists {
 			lastTurnReplayInput = combineOpenAIWSReplayItems(lastTurnReplayInput, result.wsReplayInput)
 			lastTurnReplayInputExists = true
-			s.bindCindyOpaqueContinuationAccount(
-				ctx, c, account, cindyOpaqueBindingIDsFromRawItems(result.wsReplayInput),
-			)
 		}
-		nextStrictState, strictStateErr := buildOpenAIWSIngressPreviousTurnStrictState(currentPayload)
-		if strictStateErr != nil {
-			lastTurnStrictState = nil
-			// strict 状态不可用时保留整份上一轮 payload 供慢路径比较。
-			lastTurnPayload = currentPayload
-			logOpenAIWSModeInfo(
-				"ingress_ws_prev_response_strict_state_skip account_id=%d turn=%d conn_id=%s reason=build_error cause=%s",
-				account.ID,
-				turn,
-				truncateOpenAIWSLogValue(connID, openAIWSIDValueMaxLen),
-				truncateOpenAIWSLogValue(strictStateErr.Error(), openAIWSLogValueMaxLen),
-			)
-		} else {
-			lastTurnStrictState = nextStrictState
-			lastTurnPayload = nil
-		}
-
 		if responseID != "" && stateStore != nil {
 			ttl := s.openAIWSResponseStickyTTL()
 			logOpenAIWSBindResponseAccountWarn(groupID, account.ID, responseID, stateStore.BindResponseAccount(ctx, groupID, responseID, account.ID, ttl))
@@ -2193,13 +1975,7 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 			)
 		}
 		if nextPayload.previousResponseID != "" {
-			if strictCindyContinuation {
-				boundConnID, resolveErr := resolveStrictCindyAnchorConn(nextPayload.previousResponseID, sessionConnID)
-				if resolveErr != nil {
-					return resolveErr
-				}
-				preferredConnID = boundConnID
-			} else if stateStore != nil {
+			if stateStore != nil {
 				if stickyConnID, ok := stateStore.GetResponseConn(nextPayload.previousResponseID); ok {
 					if sessionConnID != "" && stickyConnID != "" && stickyConnID != sessionConnID {
 						logOpenAIWSModeInfo(

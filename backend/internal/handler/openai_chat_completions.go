@@ -81,25 +81,6 @@ func (h *OpenAIGatewayHandler) ChatCompletions(c *gin.Context) {
 		h.errorResponse(c, http.StatusBadRequest, "invalid_request_error", "Model is not supported by this OpenAI-compatible endpoint for composite groups")
 		return
 	}
-	compatibilityRoutingModel, compatibilityCandidate := service.CindyCompatibilityMappedUpstreamModel(reqModel)
-	cindyIdentityGroup := false
-	if compatibilityCandidate {
-		cindyIdentityGroup, err = h.gatewayService.ClassifyCindyIdentityGroup(c.Request.Context(), apiKey.Group)
-		if err != nil {
-			h.errorResponse(c, http.StatusServiceUnavailable, "api_error", "Unable to determine model availability")
-			return
-		}
-	}
-	compatibilityAlias := compatibilityCandidate && cindyIdentityGroup
-	strictCindyAllowed, err := h.strictCindyModelAllowed(c, apiKey, reqModel, service.CindyEndpointChatCompletions)
-	if err != nil {
-		h.errorResponse(c, http.StatusServiceUnavailable, "api_error", "Unable to determine model availability")
-		return
-	}
-	if !strictCindyAllowed {
-		h.errorResponse(c, http.StatusNotFound, "model_not_found", "Model is not supported on the Chat Completions endpoint")
-		return
-	}
 	if cappedBody, changed, err := applyOpenAIReasoningEffortPolicyForRequest(c, apiKey, body); err != nil {
 		respondOpenAIReasoningEffortPolicyError(c, err, h.errorResponse)
 		return
@@ -138,11 +119,6 @@ func (h *OpenAIGatewayHandler) ChatCompletions(c *gin.Context) {
 	routingModel := openAIChannelForwardModel(channelMapping, reqModel)
 	forwardMapped := channelMapping.Mapped
 	forwardMappedModel := channelMapping.MappedModel
-	if compatibilityAlias {
-		routingModel = compatibilityRoutingModel
-		forwardMapped = true
-		forwardMappedModel = compatibilityRoutingModel
-	}
 
 	if h.errorPassthroughService != nil {
 		service.BindErrorPassthroughService(c, h.errorPassthroughService)

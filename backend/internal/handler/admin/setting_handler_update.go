@@ -2470,7 +2470,6 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 		CyberSessionBlockTTLSeconds:  updatedSettings.CyberSessionBlockTTLSeconds,
 		OpenAIRefusalRecoveryEnabled: updatedSettings.OpenAIRefusalRecoveryEnabled,
 		OpenAICyberFailoverEnabled:   updatedSettings.OpenAICyberFailoverEnabled,
-		CindyManagedCompatibility:    cindyManagedCompatibilitySettings(),
 		OpenAIRefusalRewriteEnabled:  updatedSettings.OpenAIRefusalRewriteEnabled,
 		OpenAIRefusalKeywords:        append([]string(nil), updatedSettings.OpenAIRefusalKeywords...),
 		OpenAIRefusalReplacement:     updatedSettings.OpenAIRefusalReplacement,

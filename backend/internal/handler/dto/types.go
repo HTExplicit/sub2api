@@ -91,15 +91,13 @@ type APIKey struct {
 }
 
 type Group struct {
-	ID              int64   `json:"id"`
-	Name            string  `json:"name"`
-	Description     string  `json:"description"`
-	Platform        string  `json:"platform"`
-	WirePlatform    string  `json:"wire_platform"`
-	ProviderProfile string  `json:"provider_profile"`
-	RateMultiplier  float64 `json:"rate_multiplier"`
-	IsExclusive     bool    `json:"is_exclusive"`
-	Status          string  `json:"status"`
+	ID             int64   `json:"id"`
+	Name           string  `json:"name"`
+	Description    string  `json:"description"`
+	Platform       string  `json:"platform"`
+	RateMultiplier float64 `json:"rate_multiplier"`
+	IsExclusive    bool    `json:"is_exclusive"`
+	Status         string  `json:"status"`
 
 	SubscriptionType          string   `json:"subscription_type"`
 	DailyLimitUSD             *float64 `json:"daily_limit_usd"`
@@ -207,15 +205,12 @@ type AdminGroup struct {
 }
 
 type Account struct {
-	AccountEditStateSHA256 string                      `json:"account_edit_state_sha256,omitempty"`
-	AccountViewFacts       *service.AccountViewFactsV1 `json:"account_view_facts,omitempty"`
-	ID                     int64                       `json:"id"`
-	Name                   string                      `json:"name"`
-	Notes                  *string                     `json:"notes"`
-	Platform               string                      `json:"platform"`
-	WirePlatform           string                      `json:"wire_platform"`
-	ProviderProfile        string                      `json:"provider_profile"`
-	Type                   string                      `json:"type"`
+	AccountViewFacts *service.AccountViewFactsV1 `json:"account_view_facts,omitempty"`
+	ID               int64                       `json:"id"`
+	Name             string                      `json:"name"`
+	Notes            *string                     `json:"notes"`
+	Platform         string                      `json:"platform"`
+	Type             string                      `json:"type"`
 	// Credentials 经 RedactCredentials 处理后默认只含非敏感子键；敏感 token / api_key / 私钥
 	// 的存在性通过 CredentialsStatus（has_<key>）暴露。账号详情在管理员开启 API Key
 	// 可见性后可额外恢复 api_key 原文，其它敏感键仍不返回。
@@ -242,14 +237,8 @@ type Account struct {
 	CreatedAt               time.Time                         `json:"created_at"`
 	UpdatedAt               time.Time                         `json:"updated_at"`
 
-	Schedulable                bool                          `json:"schedulable"`
-	IsCindy                    bool                          `json:"is_cindy"`
-	CindyBalanceInsufficient   bool                          `json:"cindy_balance_insufficient"`
-	CindyBanned                bool                          `json:"cindy_banned"`
-	CindyBalanceProbeJobID     *int64                        `json:"cindy_balance_probe_job_id"`
-	CindyBalanceProbeOutcome   *string                       `json:"cindy_balance_probe_outcome"`
-	CindyBalanceProbeCheckedAt *time.Time                    `json:"cindy_balance_probe_checked_at"`
-	OpenCodeGoUsage            *service.OpenCodeGoUsageState `json:"opencode_go_usage,omitempty"`
+	Schedulable     bool                          `json:"schedulable"`
+	OpenCodeGoUsage *service.OpenCodeGoUsageState `json:"opencode_go_usage,omitempty"`
 
 	RateLimitedAt    *time.Time `json:"rate_limited_at"`
 	RateLimitResetAt *time.Time `json:"rate_limit_reset_at"`
@@ -370,9 +359,6 @@ type AccountConsoleFacets struct {
 	Proxies            []AccountFacetOption      `json:"proxies"`
 	Folders            []AccountManagementFolder `json:"folders"`
 	Tags               []AccountManagementTag    `json:"tags"`
-	CindyTotal         int                       `json:"cindy_total"`
-	CindyInsufficient  int                       `json:"cindy_insufficient_count"`
-	CindyBanned        int                       `json:"cindy_banned_count"`
 }
 
 type AccountFacetOption struct {
@@ -387,24 +373,15 @@ type AccountFacetOption struct {
 // repeated account_groups and groups object graphs. Fetch /admin/accounts/:id
 // for the complete Account DTO when editing or inspecting an account.
 type AccountListItem struct {
-	AccountEditStateSHA256     string                      `json:"account_edit_state_sha256,omitempty"`
-	AccountViewFacts           *service.AccountViewFactsV1 `json:"account_view_facts,omitempty"`
-	QuotaState                 *service.UpstreamQuotaState `json:"quota_state,omitempty"`
-	WirePlatform               string                      `json:"wire_platform"`
-	ProviderProfile            string                      `json:"provider_profile"`
-	ManagementFolder           *AccountManagementFolder    `json:"management_folder,omitempty"`
-	Tags                       []AccountManagementTag      `json:"tags"`
-	IsCindy                    bool                        `json:"is_cindy"`
-	CindyBalanceInsufficient   bool                        `json:"cindy_balance_insufficient"`
-	CindyBanned                bool                        `json:"cindy_banned"`
-	CindyBalanceProbeJobID     *int64                      `json:"cindy_balance_probe_job_id"`
-	CindyBalanceProbeOutcome   *string                     `json:"cindy_balance_probe_outcome"`
-	CindyBalanceProbeCheckedAt *time.Time                  `json:"cindy_balance_probe_checked_at"`
-	ID                         int64                       `json:"id"`
-	Name                       string                      `json:"name"`
-	Notes                      *string                     `json:"notes"`
-	Platform                   string                      `json:"platform"`
-	Type                       string                      `json:"type"`
+	AccountViewFacts *service.AccountViewFactsV1 `json:"account_view_facts,omitempty"`
+	QuotaState       *service.UpstreamQuotaState `json:"quota_state,omitempty"`
+	ManagementFolder *AccountManagementFolder    `json:"management_folder,omitempty"`
+	Tags             []AccountManagementTag      `json:"tags"`
+	ID               int64                       `json:"id"`
+	Name             string                      `json:"name"`
+	Notes            *string                     `json:"notes"`
+	Platform         string                      `json:"platform"`
+	Type             string                      `json:"type"`
 
 	Credentials       map[string]any                    `json:"credentials,omitempty"`
 	CredentialsStatus map[string]bool                   `json:"credentials_status,omitempty"`

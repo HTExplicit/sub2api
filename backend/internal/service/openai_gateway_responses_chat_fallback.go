@@ -81,21 +81,6 @@ func (s *OpenAIGatewayService) forwardResponsesViaRawChatCompletions(
 		return nil, modelPolicyErr
 	}
 	upstreamModel := normalizeOpenAIModelForUpstream(account, billingModel)
-	// Legacy Laxa credentials are represented as OpenAI API-key accounts and
-	// can be routed through this raw Chat Completions fallback when their
-	// Responses capability probe is disabled.  Keep that fallback on the same
-	// narrow wire mapping as the normal passthrough path; otherwise a direct
-	// gpt-5.6-luna request would regress to the bare public ID only on this
-	// branch.  The mapping is intentionally applied after ordinary account
-	// model_mapping resolution, so normal OpenAI accounts and explicit compact
-	// mappings retain their existing precedence.
-	if account != nil && IsLegacyCindyAPIKeyAccount(account.Platform, account.Type, account.Credentials) {
-		if legacyModel, mapped, policyErr := cindyLegacyLaxaLiveUpstreamModel(ctx, account, originalModel); policyErr != nil {
-			return nil, policyErr
-		} else if mapped {
-			upstreamModel = legacyModel
-		}
-	}
 	reasoningEffort := extractOpenAIReasoningEffortFromBody(body, upstreamModel, billingModel, originalModel)
 	// 国产模型默认 effort 补充：需要 mappedModel 判定，推迟到 billingModel 算出之后。
 	reasoningEffort = ApplyThinkingEnabledFallback(reasoningEffort, body, billingModel)

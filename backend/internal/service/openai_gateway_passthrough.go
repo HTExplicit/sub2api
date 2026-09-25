@@ -136,45 +136,8 @@ func (s *OpenAIGatewayService) forwardOpenAIPassthrough(
 ) (_ *OpenAIForwardResult, forwardErr error) {
 	diagnosticIncomingBody := body
 	upstreamPassthroughModel := ""
-	// Legacy Laxa rows are stored as OpenAI API-key accounts and therefore do
-	// not pass through the first-class Cindy handler classification.  At the
-	// wire boundary, however, a complete history without an anchor is the same
-	// portable replay shape as Cindy FULL_REPLAY/OPAQUE_FULL and must be sent
-	// with store=false.  Otherwise a client-supplied store=true can create an
-	// upstream response anchor which is later replayed onto the wrong Laxa key.
-	if account != nil && IsLegacyCindyAPIKeyAccount(account.Platform, account.Type, account.Credentials) {
-		normalizedBody, normalizeErr := normalizeLegacyLaxaFullReplayStoreFalse(account, body)
-		if normalizeErr != nil {
-			return nil, fmt.Errorf("normalize legacy Laxa full replay store: %w", normalizeErr)
-		}
-		body = normalizedBody
-	}
-	if account != nil && IsLegacyCindyAPIKeyAccount(account.Platform, account.Type, account.Credentials) {
-		// Legacy Laxa rows still use the OpenAI platform projection, so their
-		// passthrough branch does not pass through the first-class Cindy model
-		// resolver. Prefer the live catalog ID when it is enabled; retain the
-		// narrow alias fallback for a catalog rollback.
-		if mappedModel, mapped, policyErr := cindyLegacyLaxaLiveUpstreamModel(ctx, account, reqModel); policyErr != nil {
-			return nil, policyErr
-		} else if mapped {
-			nextBody, setErr := sjson.SetBytes(body, "model", mappedModel)
-			if setErr != nil {
-				return nil, fmt.Errorf("set legacy Cindy catalog model: %w", setErr)
-			}
-			body = nextBody
-			upstreamPassthroughModel = mappedModel
-		}
-	}
 	if isOpenAIResponsesCompactPath(c) {
-		canonicalModel := upstreamPassthroughModel
-		if canonicalModel == "" {
-			var policyErr error
-			canonicalModel, _, policyErr = cindyLegacyLaxaLiveUpstreamModel(ctx, account, reqModel)
-			if policyErr != nil {
-				return nil, policyErr
-			}
-		}
-		compactMappedModel := resolveOpenAICompactForwardModelWithCanonical(account, reqModel, canonicalModel)
+		compactMappedModel := resolveOpenAICompactForwardModelWithCanonical(account, reqModel, "")
 		if compactMappedModel != "" && compactMappedModel != reqModel {
 			nextBody, setErr := sjson.SetBytes(body, "model", compactMappedModel)
 			if setErr != nil {
@@ -267,8 +230,7 @@ func (s *OpenAIGatewayService) forwardOpenAIPassthrough(
 			stageCodexFingerprintIDs(c, fpIDs)
 		}
 	}
-	if account != nil && account.IsOpenAI() &&
-		!IsCindyRuntimeCompatibleAPIKeyAccount(account.Platform, account.Type, account.Credentials) {
+	if account != nil && account.IsOpenAI() {
 		responsesLite := isOpenAIResponsesLiteHeader(c.GetHeader(responsesLiteHeader)) || isOpenAIResponsesLiteWebSocketPayload(body)
 		normalizedBody, normalized, normalizeErr := normalizeOpenAIResponsesWebSocketCompatibilityBodyForModel(
 			body, account, responsesLite, gjson.GetBytes(body, "model").String(),
@@ -485,10 +447,8 @@ retryUpstream:
 		if _, rejected := parseOpenAIReasoningRejection(probeBody); rejected {
 			return nil, NewOpenAIContinuationStateUnavailableError(resp.StatusCode, resp.Header, probeBody)
 		}
-		reqModel, _, _ := extractOpenAIRequestMetaFromBody(body)
-		canonicalModel := canonicalOpenAIAccountSchedulingModel(account, reqModel)
-		if failoverErr, ok := s.handleCindyBalanceHTTPFailover(
-			ctx, account, resp.StatusCode, resp.Header, probeBody, canonicalModel,
+		if failoverErr, ok := s.handleOpenAIBudgetExceededHTTPFailover(
+			ctx, account, resp.StatusCode, resp.Header, probeBody,
 		); ok {
 			return nil, failoverErr
 		}
@@ -576,7 +536,6 @@ retryUpstream:
 	responseID := ""
 	imageCount := 0
 	var imageOutputSizes []string
-	var opaqueBindingIDs []string
 	if reqStream {
 		setOpenAIRefusalEarlyStreamEligibility(c, account, body)
 		result, err := s.handleStreamingResponsePassthrough(ctx, resp, c, account, startTime, reqModel, upstreamPassthroughModel)
@@ -615,7 +574,6 @@ retryUpstream:
 		responseID = strings.TrimSpace(result.responseID)
 		imageCount = result.imageCount
 		imageOutputSizes = result.imageOutputSizes
-		opaqueBindingIDs = result.opaqueBindingIDs
 	} else {
 		result, err := s.handleNonStreamingResponsePassthrough(ctx, resp, c, account, reqModel, upstreamPassthroughModel)
 		if err != nil {
@@ -652,10 +610,8 @@ retryUpstream:
 		responseID = strings.TrimSpace(result.responseID)
 		imageCount = result.imageCount
 		imageOutputSizes = result.imageOutputSizes
-		opaqueBindingIDs = result.opaqueBindingIDs
 	}
 	s.bindHTTPResponseAccount(ctx, c, account, responseID)
-	s.bindCindyOpaqueContinuationAccount(ctx, c, account, opaqueBindingIDs)
 
 	// 排除 spark 影子:其 codex_* 仅由 QueryUsage(/wham/usage bengalfox)更新(外审第7轮 P1)。
 	if !account.IsShadow() {
@@ -693,12 +649,6 @@ retryUpstream:
 		forwardResult.BillingModel = imageBillingModel
 	}
 	return forwardResult, nil
-}
-
-// The provider owns the catalog-off narrow wire map independently of its test
-// default. Actual wire callers carry the selected account and caller context.
-func cindyLegacyLaxaLiveUpstreamModel(ctx context.Context, account *Account, model string) (string, bool, error) {
-	return cindyLegacyLiveModel(ctx, account, model)
 }
 
 func logOpenAIPassthroughInstructionsRejected(
@@ -767,6 +717,10 @@ func (s *OpenAIGatewayService) buildUpstreamRequestOpenAIPassthrough(
 	}
 
 	body, err = s.finalizeBusinessPromptForSend(c, account, body, BusinessSystemPromptProtocolResponses, isOpenAIResponsesCompactPath(c))
+	if err != nil {
+		return nil, err
+	}
+	body, err = applyOpenAIAPIKeyPromptCacheKeyMode(c, account, body)
 	if err != nil {
 		return nil, err
 	}
@@ -958,30 +912,13 @@ func shouldFailoverOpenAIPassthroughResponse(account *Account, statusCode int, r
 	if isOpenAIReportedUpstreamFailure(statusCode, responseBody) {
 		return true
 	}
-	if account != nil && IsCindyRuntimeCompatibleAPIKeyAccount(account.Platform, account.Type, account.Credentials) &&
-		isOpenAIModelNotSupportedError(statusCode, "", responseBody) {
+	if account != nil && account.IsOpenAICompatible() && isOpenAIModelNotSupportedError(statusCode, "", responseBody) {
 		return true
 	}
 	if isOpenAIHTTPUpstreamAccessStateError(statusCode, "", responseBody) {
 		return true
 	}
 	if isOpenAIRequestBodyTooLargeError(statusCode, "", responseBody) {
-		return true
-	}
-	if IsCindyBalanceInsufficientResponse(account, statusCode, responseBody) {
-		return true
-	}
-	// A generic Cindy 402 is request-retryable but is not evidence of account
-	// balance exhaustion. Keep failover separate from persistent account state.
-	if statusCode == http.StatusPaymentRequired && account != nil &&
-		IsCindyRuntimeCompatibleAPIKeyAccount(account.Platform, account.Type, account.Credentials) {
-		return true
-	}
-	if statusCode == http.StatusForbidden && account != nil &&
-		IsCindyRuntimeCompatibleAPIKeyAccount(account.Platform, account.Type, account.Credentials) {
-		if hit, _, _ := detectOpenAICyberPolicy(responseBody); hit {
-			return false
-		}
 		return true
 	}
 	if account != nil && account.IsPoolMode() && account.IsPoolModeRetryableStatus(statusCode) {
@@ -1128,10 +1065,6 @@ func (s *OpenAIGatewayService) handleFailoverErrorResponsePassthrough(
 		shouldDisable,
 		!shouldDisable && account.IsPoolMode() && account.IsPoolModeRetryableStatus(resp.StatusCode),
 	)
-	if resp.StatusCode == http.StatusForbidden && account != nil &&
-		IsCindyRuntimeCompatibleAPIKeyAccount(account.Platform, account.Type, account.Credentials) {
-		failoverErr = sanitizeOpenAICindyFailoverError(failoverErr)
-	}
 	return failoverErr
 }
 
@@ -1243,7 +1176,6 @@ type openaiStreamingResultPassthrough struct {
 	responseID       string
 	imageCount       int
 	imageOutputSizes []string
-	opaqueBindingIDs []string
 }
 
 type openaiNonStreamingResultPassthrough struct {
@@ -1252,7 +1184,6 @@ type openaiNonStreamingResultPassthrough struct {
 	responseID       string
 	imageCount       int
 	imageOutputSizes []string
-	opaqueBindingIDs []string
 }
 
 const openAIStreamKeepaliveBytesKey = "openai_stream_keepalive_bytes"
@@ -1732,8 +1663,8 @@ func openAIStreamFailedEventShouldFailover(payload []byte, message string) bool 
 		return false
 	}
 	if isOpenAIModelNotSupportedPayload(payload) {
-		// The account-aware wrapper applies the Cindy/Laxa identity gate before
-		// invoking this transport-neutral predicate. Keep the legacy predicate's
+		// The account-aware wrapper applies the OpenAI-compatible gate before
+		// invoking this transport-neutral predicate. Keep the predicate's
 		// positive classification for callers that only need to recognize the
 		// structured event shape.
 		return true
@@ -1785,14 +1716,14 @@ func openAIStreamFailedEventShouldFailover(payload []byte, message string) bool 
 
 func openAIStreamFailedEventShouldFailoverForAccount(account *Account, payload []byte, message string) bool {
 	if isOpenAIModelNotSupportedPayload(payload) {
-		return account != nil && IsCindyRuntimeCompatibleAPIKeyAccount(account.Platform, account.Type, account.Credentials)
+		return account != nil && account.IsOpenAICompatible()
 	}
 	return openAIStreamFailedEventShouldFailover(payload, message)
 }
 
 func openAIStreamErrorEventShouldFailoverForAccount(account *Account, payload []byte, message string) bool {
 	if isOpenAIModelNotSupportedPayload(payload) {
-		return account != nil && IsCindyRuntimeCompatibleAPIKeyAccount(account.Platform, account.Type, account.Credentials)
+		return account != nil && account.IsOpenAICompatible()
 	}
 	return openAIStreamErrorEventShouldFailover(payload, message)
 }
@@ -1856,8 +1787,7 @@ func (s *OpenAIGatewayService) handleOpenAIStreamTerminalAccountSideEffectsWithC
 	}
 	switch statusCode {
 	case http.StatusBadRequest:
-		if account == nil || !IsCindyRuntimeCompatibleAPIKeyAccount(account.Platform, account.Type, account.Credentials) ||
-			!isOpenAIModelNotSupportedPayload(payload) {
+		if account == nil || !account.IsOpenAICompatible() || !isOpenAIModelNotSupportedPayload(payload) {
 			return statusCode, false
 		}
 		model := firstNonEmpty(canonicalModel...)
@@ -1968,11 +1898,10 @@ func (s *OpenAIGatewayService) newOpenAIStreamFailoverError(
 	if account != nil {
 		canonicalModel = canonicalOpenAIAccountSchedulingModel(account, gjson.GetBytes(payload, "response.model").String())
 	}
-	cindyBalanceInsufficient := s.handleCindyBalanceHTTPResponseTerminalEvent(
-		context.Background(), account, responseStatus, firstOpenAIResponseHeader(responseHeaders), payload, canonicalModel,
-	)
+	budgetExceeded := responseStatus == http.StatusOK &&
+		s.handleOpenAIBudgetExceededTerminalEvent(context.Background(), account, payload)
 	return s.newOpenAIStreamFailoverErrorClassified(
-		c, account, passthrough, upstreamRequestID, payload, message, canonicalModel, cindyBalanceInsufficient, responseHeaders...,
+		c, account, passthrough, upstreamRequestID, payload, message, canonicalModel, budgetExceeded, responseHeaders...,
 	)
 }
 
@@ -1986,11 +1915,9 @@ func (s *OpenAIGatewayService) newOpenAIStreamFailoverErrorWithModel(
 	canonicalModel string,
 	responseHeaders ...http.Header,
 ) *UpstreamFailoverError {
-	cindyBalanceInsufficient := s.handleCindyBalanceHTTPResponseTerminalEvent(
-		context.Background(), account, http.StatusOK, firstOpenAIResponseHeader(responseHeaders), payload, canonicalModel,
-	)
+	budgetExceeded := s.handleOpenAIBudgetExceededTerminalEvent(context.Background(), account, payload)
 	return s.newOpenAIStreamFailoverErrorClassified(
-		c, account, passthrough, upstreamRequestID, payload, message, canonicalModel, cindyBalanceInsufficient, responseHeaders...,
+		c, account, passthrough, upstreamRequestID, payload, message, canonicalModel, budgetExceeded, responseHeaders...,
 	)
 }
 
@@ -2002,7 +1929,7 @@ func (s *OpenAIGatewayService) newOpenAIStreamFailoverErrorClassified(
 	payload []byte,
 	message string,
 	canonicalModel string,
-	cindyBalanceInsufficient bool,
+	budgetExceeded bool,
 	responseHeaders ...http.Header,
 ) *UpstreamFailoverError {
 	message = sanitizeUpstreamErrorMessage(strings.TrimSpace(message))
@@ -2015,7 +1942,7 @@ func (s *OpenAIGatewayService) newOpenAIStreamFailoverErrorClassified(
 	if len(responseHeaders) > 0 && responseHeaders[0] != nil {
 		headers = responseHeaders[0].Clone()
 	}
-	if cindyBalanceInsufficient {
+	if budgetExceeded {
 		statusCode = http.StatusTooManyRequests
 		shouldDisable = true
 	} else {
@@ -2045,17 +1972,15 @@ func (s *OpenAIGatewayService) newOpenAIStreamFailoverErrorClassified(
 	if !failoverErr.IsCredentialFailure() && !failoverErr.RequestScopedTransient {
 		failoverErr.ResponseBody = body
 	}
-	if cindyBalanceInsufficient {
+	if budgetExceeded {
 		failoverErr.RetryableOnSameAccount = false
-		failoverErr.CindyBalanceInsufficient = true
-		return sanitizeOpenAICindyFailoverError(failoverErr)
+		return failoverErr
 	}
-	if account != nil && IsCindyRuntimeCompatibleAPIKeyAccount(account.Platform, account.Type, account.Credentials) &&
-		isOpenAIModelNotSupportedPayload(payload) {
+	if account != nil && account.IsOpenAICompatible() && isOpenAIModelNotSupportedPayload(payload) {
 		// A pre-output terminal event is safe to route to another compatible
 		// account, but the final client result must preserve the structured 400
 		// semantics instead of falling through to the generic 502 mapper.
-		return sanitizeOpenAICindyFailoverError(newOpenAIModelNotSupportedFailoverError(headers, payload))
+		return newOpenAIModelNotSupportedFailoverError(headers, payload)
 	}
 	return failoverErr
 }
@@ -2185,7 +2110,6 @@ func (s *OpenAIGatewayService) handleStreamingResponsePassthrough(
 	imageCounter := newOpenAIImageOutputCounter()
 	var firstTokenMs *int
 	responseID := ""
-	opaqueBindingIDs := make([]string, 0, 2)
 	ttftMode := s.openAITTFTMode(ctx)
 	clientDisconnected := false
 	sawTerminalEvent := false
@@ -2326,7 +2250,6 @@ func (s *OpenAIGatewayService) handleStreamingResponsePassthrough(
 			responseID:       responseID,
 			imageCount:       imageCounter.Count(),
 			imageOutputSizes: imageCounter.Sizes(),
-			opaqueBindingIDs: normalizeCindyOpaqueBindingIDs(opaqueBindingIDs),
 		}
 	}
 
@@ -2361,7 +2284,6 @@ func (s *OpenAIGatewayService) handleStreamingResponsePassthrough(
 				// Transport markers cannot supply a missing Responses terminal.
 				continue
 			}
-			opaqueBindingIDs = append(opaqueBindingIDs, cindyOpaqueBindingIDsFromResponsePayload(rawDataBytes)...)
 			upstreamEventType := effectiveOpenAISSEEventType(rawDataBytes, pendingSSEEventType)
 			s.parseSSEUsageBytesWithType(rawDataBytes, upstreamEventType, usage)
 			if upstreamEventType == "response.failed" || upstreamEventType == "error" || (upstreamEventType == "response.done" && gjson.GetBytes(rawDataBytes, "response.status").String() == "failed") {
@@ -2376,14 +2298,14 @@ func (s *OpenAIGatewayService) handleStreamingResponsePassthrough(
 					pendingErrorEventHeader = false
 					continue
 				}
-				if s.handleCindyBalanceHTTPResponseTerminalEvent(ctx, account, resp.StatusCode, resp.Header, rawDataBytes, mappedModel) {
-					// Classification must happen on the untouched event. Never pass the raw
-					// budget payload through error rules, namespace restoration, or the
-					// client stream. The handler can switch accounts while pendingLines are
-					// still uncommitted; if semantic output already started it appends one
+				if failoverErr, ok := s.openAIBudgetExceededHTTPResponseTerminalFailover(ctx, account, resp.StatusCode, resp.Header, rawDataBytes); ok {
+					// Classification must happen on the untouched event, before error
+					// rules, namespace restoration or the client stream see it. The
+					// handler can switch accounts while pendingLines are still
+					// uncommitted; if semantic output already started it appends one
 					// generic response.failed terminal event instead.
 					s.parseSSEUsageBytes(rawDataBytes, usage)
-					return resultWithUsage(), newCindyBalanceTerminalFailover(resp.Header)
+					return resultWithUsage(), failoverErr
 				}
 			}
 			dataBytes := rawDataBytes
@@ -2792,19 +2714,17 @@ func (s *OpenAIGatewayService) handleNonStreamingResponsePassthrough(
 		observer.ObserveOpenAI(body, strings.TrimSpace(gjson.GetBytes(body, "type").String()))
 	}
 	if account != nil {
-		cindyBalanceInsufficient := s.handleCindyBalanceHTTPResponseTerminalEvent(ctx, account, resp.StatusCode, resp.Header, body, mappedModel)
+		failoverErr, budgetExceeded := s.openAIBudgetExceededHTTPResponseTerminalFailover(ctx, account, resp.StatusCode, resp.Header, body)
 		forEachOpenAISSEDataPayload(string(body), func(payload []byte) {
-			if !cindyBalanceInsufficient &&
-				s.handleCindyBalanceHTTPResponseTerminalEvent(ctx, account, resp.StatusCode, resp.Header, payload, mappedModel) {
-				cindyBalanceInsufficient = true
+			if !budgetExceeded {
+				failoverErr, budgetExceeded = s.openAIBudgetExceededHTTPResponseTerminalFailover(ctx, account, resp.StatusCode, resp.Header, payload)
 			}
 		})
-		if cindyBalanceInsufficient {
-			return nil, newCindyBalanceTerminalFailover(resp.Header)
+		if budgetExceeded {
+			return nil, failoverErr
 		}
 	}
-	if account != nil && IsCindyRuntimeCompatibleAPIKeyAccount(account.Platform, account.Type, account.Credentials) &&
-		isOpenAIModelNotSupportedPayload(body) {
+	if account != nil && account.IsOpenAICompatible() && isOpenAIModelNotSupportedPayload(body) {
 		model := strings.TrimSpace(mappedModel)
 		if model == "" {
 			model = canonicalOpenAIAccountSchedulingModel(account, originalModel)
@@ -2890,7 +2810,6 @@ func (s *OpenAIGatewayService) handleNonStreamingResponsePassthrough(
 		responseID:       extractOpenAIResponseIDFromJSONBytes(body),
 		imageCount:       countOpenAIResponseImageOutputsFromJSONBytes(body),
 		imageOutputSizes: collectOpenAIResponseImageOutputSizesFromJSONBytes(body),
-		opaqueBindingIDs: cindyOpaqueBindingIDsFromResponsePayload(body),
 	}, openAIHTTPResponseTerminalError(body)
 }
 
@@ -3018,7 +2937,6 @@ func (s *OpenAIGatewayService) handlePassthroughSSEToJSON(resp *http.Response, c
 		responseID:       extractOpenAIResponseIDFromJSONBytes(body),
 		imageCount:       countOpenAIImageOutputsFromSSEBody(bodyText),
 		imageOutputSizes: collectOpenAIImageOutputSizesFromSSEBody(bodyText),
-		opaqueBindingIDs: cindyOpaqueBindingIDsFromResponsePayload(body),
 	}, terminalErr
 }
 

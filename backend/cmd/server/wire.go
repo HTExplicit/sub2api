@@ -147,8 +147,6 @@ func provideCleanup(
 	promptDomain *service.PromptDomainRuntime,
 	businessPrompt *service.BusinessSystemPromptService,
 	accountJobs *service.AccountJobRuntime,
-	cindyHealth *service.CindyHealthService,
-	cindyBalanceProbe *service.CindyBalanceProbeService,
 	imageStudioRuntime *service.ImageStudioRuntime,
 	pluginManager *service.PluginManager,
 	codexRuntime *service.NativeCodexRuntime,
@@ -182,18 +180,6 @@ func provideCleanup(
 			{"OpenAIQuotaAutoResetService", func() error {
 				if openAIAutoReset != nil {
 					openAIAutoReset.Stop()
-				}
-				return nil
-			}},
-			{"CindyHealthService", func() error {
-				if cindyHealth != nil {
-					cindyHealth.Stop()
-				}
-				return nil
-			}},
-			{"CindyBalanceProbeService", func() error {
-				if cindyBalanceProbe != nil {
-					cindyBalanceProbe.Stop()
 				}
 				return nil
 			}},

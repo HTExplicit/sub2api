@@ -63,7 +63,7 @@ func (h *OpenAIGatewayHandler) reportOpenAIHTTPAccountScheduleResult(
 
 // Official HTTP failures are reported before deciding whether to retry, as in
 // upstream. The existing selection/probe finalizer remains exclusive to the
-// downstream policy, which includes Cindy, OAuth, and managed routes.
+// downstream policy, which includes OAuth and managed routes.
 func (h *OpenAIGatewayHandler) finalizeOpenAIHTTPFailoverSelection(
 	c *gin.Context,
 	selection *service.AccountSelectionResult,

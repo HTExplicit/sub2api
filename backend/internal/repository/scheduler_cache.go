@@ -923,8 +923,6 @@ func buildSchedulerMetadataAccount(account service.Account) service.Account {
 		ID:                      account.ID,
 		Name:                    account.Name,
 		Platform:                account.Platform,
-		WirePlatform:            account.WirePlatform,
-		ProviderProfile:         account.ProviderProfile,
 		Type:                    account.Type,
 		Concurrency:             account.Concurrency,
 		LoadFactor:              account.LoadFactor,

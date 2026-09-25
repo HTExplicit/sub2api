@@ -62,11 +62,6 @@ func (s *OpenAIGatewayService) ForwardAsChatCompletions(
 	defaultMappedModel string,
 ) (*OpenAIForwardResult, error) {
 	rememberPromptRequestedModel(c, body)
-	pricingContext, pricingErr := CaptureCindyPricingContext(ctx, c, account)
-	if pricingErr != nil {
-		return nil, pricingErr
-	}
-	ctx = pricingContext
 	return s.forwardAsChatCompletions(ctx, c, account, body, promptCacheKey, defaultMappedModel, false)
 }
 
@@ -98,12 +93,6 @@ func (s *OpenAIGatewayService) forwardAsChatCompletions(
 			return nil, err
 		}
 		body = withEffort
-	}
-	if account != nil && IsCindyAPIKeyAccount(account.Platform, account.Type, account.Credentials) {
-		requestedModel := strings.TrimSpace(gjson.GetBytes(body, "model").String())
-		if !CindyFreePoolModelSupportsEndpoint(requestedModel, CindyEndpointChatCompletions) {
-			return nil, fmt.Errorf("cindy model %q is not available to the free-key pool", requestedModel)
-		}
 	}
 	ClearActualOpenAIUpstreamEndpoint(c)
 	if shouldForwardOpenAIResponsesViaRawChatCompletions(account) {
@@ -240,13 +229,6 @@ func (s *OpenAIGatewayService) forwardAsChatCompletions(
 		return nil, modelPolicyErr
 	}
 	upstreamModel := normalizeOpenAIModelForUpstream(account, billingModel)
-	if account != nil && IsLegacyCindyAPIKeyAccount(account.Platform, account.Type, account.Credentials) {
-		if legacyModel, mapped, policyErr := cindyLegacyLaxaLiveUpstreamModel(ctx, account, originalModel); policyErr != nil {
-			return nil, policyErr
-		} else if mapped {
-			upstreamModel = legacyModel
-		}
-	}
 
 	promptCacheKey = strings.TrimSpace(promptCacheKey)
 	compatPromptCacheInjected := false
@@ -926,8 +908,8 @@ func (s *OpenAIGatewayService) handleChatStreamingResponse(
 		if rawEventType == "response.failed" || rawEventType == "error" {
 			recovery := openAIChatReasoningRecoveryFromContext(c)
 			if recovery == nil || !recovery.RecoveryAttempt() {
-				if failoverErr, ok := s.cindyBalanceHTTPResponseTerminalFailover(
-					c.Request.Context(), account, resp.StatusCode, resp.Header, rawPayloadBytes, originalModel,
+				if failoverErr, ok := s.openAIBudgetExceededHTTPResponseTerminalFailover(
+					c.Request.Context(), account, resp.StatusCode, resp.Header, rawPayloadBytes,
 				); ok {
 					if parsedUsage, parsed := extractOpenAIUsageFromJSONBytes(rawPayloadBytes); parsed {
 						usage = parsedUsage

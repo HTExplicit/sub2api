@@ -24,12 +24,6 @@ func (s *OpenAIGatewayService) ForwardEmbeddings(
 	body []byte,
 	defaultMappedModel string,
 ) (*OpenAIForwardResult, error) {
-	pricingContext, pricingErr := CaptureCindyPricingContext(ctx, c, account)
-	if pricingErr != nil {
-		writeOpenAIEmbeddingsError(c, http.StatusServiceUnavailable, "api_error", "Provider is unavailable")
-		return nil, pricingErr
-	}
-	ctx = pricingContext
 	startTime := time.Now()
 
 	originalModel := strings.TrimSpace(gjson.GetBytes(body, "model").String())
@@ -137,11 +131,10 @@ func (s *OpenAIGatewayService) ForwardEmbeddings(
 			})
 			shouldDisable := s.handleOpenAIAccountUpstreamError(ctx, account, resp.StatusCode, resp.Header, respBody, upstreamModel)
 			retryableOnSameAccount := !shouldDisable && account.IsPoolMode() && account.IsPoolModeRetryableStatus(resp.StatusCode)
-			// Only the structured Cindy capability failure needs the enriched
-			// account-aware error. Preserve the historical shape (including empty
-			// headers) for unrelated embeddings failovers.
-			if IsCindyRuntimeCompatibleAPIKeyAccount(account.Platform, account.Type, account.Credentials) &&
-				isOpenAIModelNotSupportedError(resp.StatusCode, upstreamMsg, respBody) {
+			// Only the structured account/model capability failure needs the
+			// enriched account-aware error. Preserve the historical shape
+			// (including empty headers) for unrelated embeddings failovers.
+			if account.IsOpenAICompatible() && isOpenAIModelNotSupportedError(resp.StatusCode, upstreamMsg, respBody) {
 				return nil, newOpenAIModelNotSupportedFailoverError(resp.Header, respBody)
 			}
 			if account.IsOpenAIOAuth() && resp.StatusCode == http.StatusTooManyRequests {

@@ -4,7 +4,6 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"strings"
 
@@ -12,8 +11,6 @@ import (
 	"github.com/tidwall/gjson"
 	"github.com/tidwall/sjson"
 )
-
-var ErrCindyResponsesImageToolModelNotFound = errors.New("cindy Responses image tool model is not verified")
 
 var codexModelMap = map[string]string{
 	"gpt-6-astra":          "gpt-6-astra",

@@ -271,12 +271,10 @@ func (s *OpenAIGatewayService) shouldFailoverOpenAIUpstreamResponse(account *Acc
 	if isOpenAIRequestBudgetRejection(account, statusCode, upstreamBody) {
 		return true
 	}
-	// Cindy/Laxa's structured capability rejection is distinct from the
-	// official model_not_found response below. Keep its account/model scope
-	// without teaching ordinary providers to rotate on this provider-only type.
+	// A structured model_not_supported rejection is distinct from the official
+	// model_not_found response below: it is scoped to the account/model pair.
 	if isOpenAIModelNotSupportedError(statusCode, upstreamMsg, upstreamBody) {
-		return account != nil &&
-			IsCindyRuntimeCompatibleAPIKeyAccount(account.Platform, account.Type, account.Credentials)
+		return account != nil && account.IsOpenAICompatible()
 	}
 	if isOpenAIReportedUpstreamFailure(statusCode, upstreamBody) {
 		return true
@@ -330,7 +328,6 @@ func isOpenAIReportedUpstreamFailure(status int, body []byte) bool {
 
 func isOpenAIRequestBudgetRejection(account *Account, status int, body []byte) bool {
 	return account != nil && account.Platform == PlatformOpenAI && account.Type == AccountTypeAPIKey &&
-		!IsCindyRuntimeCompatibleAPIKeyAccount(account.Platform, account.Type, account.Credentials) &&
 		(status == http.StatusForbidden || status == http.StatusPaymentRequired) &&
 		gjson.GetBytes(body, "error.type").String() == "balance_insufficient_error" &&
 		gjson.GetBytes(body, "error.code").String() == "balance_insufficient"
@@ -682,36 +679,6 @@ func (s *OpenAIGatewayService) readUpstreamErrorBody(resp *http.Response) []byte
 	return body
 }
 
-// handleCindyBalanceHTTPFailover consumes Cindy's exact structured HTTP 429
-// before any generic retry, recovery, rewriting, or account-health policy can
-// reinterpret it. The permanent runtime block is installed synchronously; DB
-// persistence retries remain owned by RateLimitService.
-func (s *OpenAIGatewayService) handleCindyBalanceHTTPFailover(
-	ctx context.Context,
-	account *Account,
-	statusCode int,
-	headers http.Header,
-	body []byte,
-	canonicalModel ...string,
-) (*UpstreamFailoverError, bool) {
-	if ClassifyCindyBalanceInsufficient(account, statusCode, body) != CindyBalanceSignalHTTP429 {
-		return nil, false
-	}
-
-	s.handleOpenAIAccountUpstreamError(ctx, account, statusCode, headers, body, canonicalModel...)
-	failoverErr := newOpenAIUpstreamFailoverError(
-		statusCode,
-		headers,
-		body,
-		"Cindy balance exhausted",
-		false,
-	)
-	failoverErr.Scope = GatewayFailureScopeAccount
-	failoverErr.NextAccountAction = NextAccountRetry
-	failoverErr.CindyBalanceInsufficient = true
-	return sanitizeOpenAICindyFailoverError(failoverErr), true
-}
-
 func (s *OpenAIGatewayService) handleFailoverSideEffects(ctx context.Context, resp *http.Response, account *Account, responseBody []byte, canonicalModel ...string) bool {
 	if len(canonicalModel) > 0 {
 		return s.handleOpenAIAccountUpstreamError(ctx, account, resp.StatusCode, resp.Header, responseBody, canonicalModel[0])
@@ -728,7 +695,7 @@ func (s *OpenAIGatewayService) handleErrorResponse(
 	requestedModel ...string,
 ) (*OpenAIForwardResult, error) {
 	body := s.readUpstreamErrorBody(resp)
-	if failoverErr, ok := s.handleCindyBalanceHTTPFailover(ctx, account, resp.StatusCode, resp.Header, body, requestedModel...); ok {
+	if failoverErr, ok := s.handleOpenAIBudgetExceededHTTPFailover(ctx, account, resp.StatusCode, resp.Header, body); ok {
 		return nil, failoverErr
 	}
 	body = s.redactAgentIdentitySensitiveBody(ctx, account, body)
@@ -977,8 +944,8 @@ func (s *OpenAIGatewayService) handleCompatErrorResponse(
 	requestedModel ...string,
 ) (*OpenAIForwardResult, error) {
 	body := s.readUpstreamErrorBody(resp)
-	if failoverErr, ok := s.handleCindyBalanceHTTPFailover(
-		c.Request.Context(), account, resp.StatusCode, resp.Header, body, requestedModel...,
+	if failoverErr, ok := s.handleOpenAIBudgetExceededHTTPFailover(
+		c.Request.Context(), account, resp.StatusCode, resp.Header, body,
 	); ok {
 		return nil, failoverErr
 	}

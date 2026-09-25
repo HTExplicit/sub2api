@@ -157,8 +157,6 @@ func createAccountRecord(ctx context.Context, client *dbent.Client, account *ser
 		SetName(account.Name).
 		SetNillableNotes(account.Notes).
 		SetPlatform(account.Platform).
-		SetWirePlatform(account.WirePlatform).
-		SetProviderProfile(account.ProviderProfile).
 		SetType(account.Type).
 		SetCredentials(normalizeJSONMap(account.Credentials)).
 		SetExtra(normalizeJSONMap(withoutPluginAccountProjection(account.Extra))).
@@ -520,13 +518,7 @@ func (r *accountRepository) updateLockedAccount(
 	explicitRateSyncEnabled *bool,
 	explicitRateMultiplier *float64,
 ) (*dbent.Account, error) {
-	extra, credentialGenerationChanged, err := lockAndMergeAccountProbeExtra(
-		ctx,
-		client,
-		account,
-		explicitProbeEnabled,
-		explicitRateSyncEnabled,
-	)
+	extra, err := lockAndMergeAccountProbeExtra(ctx, client, account, explicitProbeEnabled, explicitRateSyncEnabled)
 	if err != nil {
 		return nil, err
 	}
@@ -536,12 +528,11 @@ func (r *accountRepository) updateLockedAccount(
 	if account.Status == service.StatusError {
 		schedulable = false
 	}
+
 	builder := client.Account.UpdateOneID(account.ID).
 		SetName(account.Name).
 		SetNillableNotes(account.Notes).
 		SetPlatform(account.Platform).
-		SetWirePlatform(account.WirePlatform).
-		SetProviderProfile(account.ProviderProfile).
 		SetType(account.Type).
 		SetCredentials(normalizeJSONMap(account.Credentials)).
 		SetExtra(extra).
@@ -551,12 +542,6 @@ func (r *accountRepository) updateLockedAccount(
 		SetErrorMessage(account.ErrorMessage).
 		SetSchedulable(schedulable).
 		SetAutoPauseOnExpired(account.AutoPauseOnExpired)
-	if credentialGenerationChanged {
-		builder.ClearCindyBalanceInsufficientAt()
-		builder.ClearCindyBannedAt()
-		account.CindyBalanceInsufficientAt = nil
-		account.CindyBannedAt = nil
-	}
 
 	if explicitRateMultiplier != nil {
 		builder.SetRateMultiplier(*explicitRateMultiplier)
@@ -628,10 +613,10 @@ func lockAndMergeAccountProbeExtra(
 	account *service.Account,
 	explicitProbeEnabled *bool,
 	explicitRateSyncEnabled *bool,
-) (map[string]any, bool, error) {
+) (map[string]any, error) {
 	credentials, err := json.Marshal(normalizeJSONMap(account.Credentials))
 	if err != nil {
-		return nil, false, err
+		return nil, err
 	}
 	var proxyID any
 	if account.ProxyID != nil {
@@ -643,9 +628,6 @@ func lockAndMergeAccountProbeExtra(
 			AND type = $3
 			AND credentials = $4::jsonb
 			AND proxy_id IS NOT DISTINCT FROM $5,
-			platform = $2
-			AND type = $3
-			AND credentials = $4::jsonb,
 			COALESCE(
 				platform IN (`+ollamaCloudUsagePlatformsSQL+`)
 				AND $2 IN (`+ollamaCloudUsagePlatformsSQL+`)
@@ -694,19 +676,18 @@ func lockAndMergeAccountProbeExtra(
 		FOR NO KEY UPDATE
 	`, account.ID, account.Platform, account.Type, string(credentials), proxyID)
 	if err != nil {
-		return nil, false, err
+		return nil, err
 	}
 	defer func() { _ = rows.Close() }()
 	if !rows.Next() {
 		if err := rows.Err(); err != nil {
-			return nil, false, err
+			return nil, err
 		}
-		return nil, false, service.ErrAccountNotFound
+		return nil, service.ErrAccountNotFound
 	}
 
 	var (
 		identityUnchanged              bool
-		credentialGenerationUnchanged  bool
 		ollamaGroupIdentityUnchanged   bool
 		ollamaProxyIdentityUnchanged   bool
 		currentEnabled                 []byte
@@ -725,7 +706,6 @@ func lockAndMergeAccountProbeExtra(
 	)
 	if err := rows.Scan(
 		&identityUnchanged,
-		&credentialGenerationUnchanged,
 		&ollamaGroupIdentityUnchanged,
 		&ollamaProxyIdentityUnchanged,
 		&currentEnabled,
@@ -742,17 +722,17 @@ func lockAndMergeAccountProbeExtra(
 		&currentOpenCodeAutoRefresh,
 		&currentOpenCodeSnapshot,
 	); err != nil {
-		return nil, false, err
+		return nil, err
 	}
 	if err := rows.Err(); err != nil {
-		return nil, false, err
+		return nil, err
 	}
 
 	extra, err := mergeAccountModelContextExtra(
 		account, account.Extra, currentContextCapacities, currentContextOverrides, currentModelMetadata,
 	)
 	if err != nil {
-		return nil, false, err
+		return nil, err
 	}
 	// extra 理论上恒为 JSON 对象，但历史数据若存成非对象（数组/标量），在此硬失败
 	// 会让该账号的任何编辑都保存不了——而这条路径覆盖所有平台的账号更新。
@@ -792,7 +772,7 @@ func lockAndMergeAccountProbeExtra(
 	probeEnabledPresent := false
 	if probeAccount {
 		if enabled, ok, err := decodeAccountExtraJSON(currentEnabled); err != nil {
-			return nil, false, err
+			return nil, err
 		} else if value, isBool := enabled.(bool); ok && isBool {
 			probeEnabled = value
 			probeEnabledPresent = true
@@ -806,7 +786,7 @@ func lockAndMergeAccountProbeExtra(
 	rateSyncEnabledPresent := false
 	if probeAccount {
 		if enabled, ok, err := decodeAccountExtraJSON(currentRateSyncEnabled); err != nil {
-			return nil, false, err
+			return nil, err
 		} else if value, isBool := enabled.(bool); ok && isBool {
 			rateSyncEnabled = value
 			rateSyncEnabledPresent = true
@@ -836,7 +816,7 @@ func lockAndMergeAccountProbeExtra(
 	probeExplicitlyDisabled := probeEnabledPresent && !probeEnabled
 	if identityUnchanged && !probeExplicitlyDisabled {
 		if snapshot, ok, err := decodeAccountExtraJSON(currentSnapshot); err != nil {
-			return nil, false, err
+			return nil, err
 		} else if ok {
 			extra[service.UpstreamBillingProbeExtraKey] = snapshot
 		}
@@ -848,14 +828,14 @@ func lockAndMergeAccountProbeExtra(
 			service.OllamaCloudUsageAutoRefreshExtraKey: currentOllamaAutoRefresh,
 		} {
 			if value, ok, err := decodeAccountExtraJSON(raw); err != nil {
-				return nil, false, err
+				return nil, err
 			} else if ok {
 				extra[key] = value
 			}
 		}
 		if ollamaProxyIdentityUnchanged {
 			if snapshot, ok, err := decodeAccountExtraJSON(currentOllamaSnapshot); err != nil {
-				return nil, false, err
+				return nil, err
 			} else if ok {
 				extra[service.OllamaCloudUsageSnapshotExtraKey] = snapshot
 			}
@@ -868,19 +848,19 @@ func lockAndMergeAccountProbeExtra(
 	// 代理不属于组身份，但 snapshot 外呼与 CAS 经代理，故代理变化时快照失效而开关保留。
 	if service.IsOpenCodeGoUsageAccount(account) && opencodeGroupIdentityUnchanged {
 		if value, ok, err := decodeAccountExtraJSON(currentOpenCodeAutoRefresh); err != nil {
-			return nil, false, err
+			return nil, err
 		} else if ok {
 			extra[service.OpenCodeGoUsageAutoRefreshExtraKey] = value
 		}
 		if ollamaProxyIdentityUnchanged {
 			if snapshot, ok, err := decodeAccountExtraJSON(currentOpenCodeSnapshot); err != nil {
-				return nil, false, err
+				return nil, err
 			} else if ok {
 				extra[service.OpenCodeGoUsageSnapshotExtraKey] = snapshot
 			}
 		}
 	}
-	return extra, !credentialGenerationUnchanged, nil
+	return extra, nil
 }
 
 // mergeAccountModelContextExtra protects service-owned snapshots from stale
@@ -968,14 +948,6 @@ func (r *accountRepository) UpdateCredentials(ctx context.Context, id int64, cre
 		UPDATE accounts
 		SET
 			credentials = $1::jsonb,
-			cindy_balance_insufficient_at = CASE
-				WHEN credentials IS DISTINCT FROM $1::jsonb THEN NULL
-				ELSE cindy_balance_insufficient_at
-			END,
-			cindy_banned_at = CASE
-				WHEN credentials IS DISTINCT FROM $1::jsonb THEN NULL
-				ELSE cindy_banned_at
-			END,
 			extra = CASE
 				-- 正确性依赖（非防御）：OpenCode 分支必须先于 Ollama 分支求值。两分支
 				-- 的 WHEN 并不互斥：Ollama 分支的守卫是宽谓词——NOT(ollamaMatch(old)
@@ -1099,15 +1071,6 @@ func (r *accountRepository) Delete(ctx context.Context, id int64) error {
 	if _, err := txClient.ExecContext(ctx, "DELETE FROM scheduled_test_plans WHERE account_id = $1", id); err != nil {
 		return err
 	}
-	if _, err := txClient.ExecContext(ctx, "DELETE FROM cindy_health_states WHERE account_id = $1", id); err != nil {
-		return err
-	}
-	if _, err := txClient.ExecContext(ctx, `
-		UPDATE account_credential_identities
-		SET active = FALSE, retired_at = NOW(), updated_at = NOW()
-		WHERE account_id = $1 AND active`, id); err != nil {
-		return err
-	}
 	if _, err := txClient.Account.Delete().Where(dbaccount.IDEQ(id)).Exec(ctx); err != nil {
 		return err
 	}
@@ -1143,7 +1106,6 @@ func (r *accountRepository) accountListFilteredQuery(platform, accountType, stat
 			q = q.Where(
 				dbaccount.StatusEQ(status),
 				dbaccount.SchedulableEQ(true),
-				cindyTerminalStateAvailablePredicate(),
 				dbaccount.Or(
 					dbaccount.RateLimitResetAtIsNil(),
 					dbaccount.RateLimitResetAtLTE(time.Now()),
@@ -1399,35 +1361,6 @@ func (r *accountRepository) ListByGroup(ctx context.Context, groupID int64) ([]s
 	}
 	return accounts, nil
 }
-
-// ListCindyGroupIdentityMembers returns every non-deleted member regardless of
-// enabled or schedulable state. Strict Cindy identity is structural and must
-// match the admin audit/split view of group membership.
-func (r *accountRepository) ListCindyGroupIdentityMembers(ctx context.Context, groupID int64) ([]service.Account, error) {
-	return r.queryAccountsByGroup(ctx, groupID, accountGroupQueryOptions{})
-}
-
-// ClassifyStrictCindyGroup evaluates the routing identity with one aggregate
-// query when an authentication snapshot is first materialized or when a
-// legacy caller has no marker. Hydrating every identity member can deserialize
-// thousands of accounts plus related entities, while this gate only needs to
-// know whether at least one non-deleted account exists and every member has the
-// exact Cindy API-key identity.
-func (r *accountRepository) ClassifyStrictCindyGroup(ctx context.Context, groupID int64) (bool, error) {
-	if r == nil {
-		return false, errors.New("account repository SQL executor is unavailable")
-	}
-	return classifyStrictCindyGroupWithSQL(ctx, r.sql, groupID)
-}
-
-// CindyGroupIdentityReaderMarker attests that the dedicated identity reader
-// returns complete non-deleted membership without status/scheduling filters.
-func (r *accountRepository) CindyGroupIdentityReaderMarker() {}
-
-// CindyCodexModelsAccountReaderMarker attests that the concrete repository
-// implements both schedulable OpenAI account queries used by deterministic
-// mixed-group Codex model discovery.
-func (r *accountRepository) CindyCodexModelsAccountReaderMarker() {}
 
 func (r *accountRepository) ListActive(ctx context.Context) ([]service.Account, error) {
 	accounts, err := r.client.Account.Query().
@@ -2166,21 +2099,11 @@ func (r *accountRepository) ListSchedulableAccountLoads(ctx context.Context) ([]
 	return loads, nil
 }
 
-// Cindy-only columns must not exclude an ordinary account carrying old values.
-// Canonical Cindy provider identity is checked separately before routing.
-func cindyTerminalStateAvailablePredicate() dbpredicate.Account {
-	return dbaccount.Or(
-		dbaccount.PlatformNEQ(service.PlatformCindy),
-		dbaccount.And(dbaccount.CindyBalanceInsufficientAtIsNil(), dbaccount.CindyBannedAtIsNil()),
-	)
-}
-
 func (r *accountRepository) schedulableAccountsQuery(ctx context.Context, now time.Time) *dbent.AccountQuery {
 	return r.client.Account.Query().
 		Where(
 			dbaccount.StatusEQ(service.StatusActive),
 			dbaccount.SchedulableEQ(true),
-			cindyTerminalStateAvailablePredicate(),
 			tempUnschedulablePredicate(),
 			notExpiredPredicate(now),
 			dbaccount.Or(dbaccount.OverloadUntilIsNil(), dbaccount.OverloadUntilLTE(now)),
@@ -2239,7 +2162,6 @@ func (r *accountRepository) ListSchedulableCapacityByGroupIDs(ctx context.Contex
 			AND a.deleted_at IS NULL
 			AND a.status = $2
 			AND a.schedulable = TRUE
-			AND (a.platform <> 'cindy' OR (a.cindy_balance_insufficient_at IS NULL AND a.cindy_banned_at IS NULL))
 			AND (a.temp_unschedulable_until IS NULL OR a.temp_unschedulable_until <= $3)
 			AND (a.expires_at IS NULL OR a.expires_at > $3 OR a.auto_pause_on_expired = FALSE)
 			AND (a.overload_until IS NULL OR a.overload_until <= $3)
@@ -2288,7 +2210,6 @@ func (r *accountRepository) ListSchedulableByPlatform(ctx context.Context, platf
 			dbaccount.PlatformEQ(platform),
 			dbaccount.StatusEQ(service.StatusActive),
 			dbaccount.SchedulableEQ(true),
-			cindyTerminalStateAvailablePredicate(),
 			tempUnschedulablePredicate(),
 			notExpiredPredicate(now),
 			dbaccount.Or(dbaccount.OverloadUntilIsNil(), dbaccount.OverloadUntilLTE(now)),
@@ -2323,7 +2244,6 @@ func (r *accountRepository) ListSchedulableByPlatforms(ctx context.Context, plat
 			dbaccount.PlatformIn(platforms...),
 			dbaccount.StatusEQ(service.StatusActive),
 			dbaccount.SchedulableEQ(true),
-			cindyTerminalStateAvailablePredicate(),
 			tempUnschedulablePredicate(),
 			notExpiredPredicate(now),
 			dbaccount.Or(dbaccount.OverloadUntilIsNil(), dbaccount.OverloadUntilLTE(now)),
@@ -2344,7 +2264,6 @@ func (r *accountRepository) ListSchedulableUngroupedByPlatform(ctx context.Conte
 			dbaccount.PlatformEQ(platform),
 			dbaccount.StatusEQ(service.StatusActive),
 			dbaccount.SchedulableEQ(true),
-			cindyTerminalStateAvailablePredicate(),
 			dbaccount.Not(dbaccount.HasAccountGroups()),
 			tempUnschedulablePredicate(),
 			notExpiredPredicate(now),
@@ -2369,7 +2288,6 @@ func (r *accountRepository) ListSchedulableUngroupedByPlatforms(ctx context.Cont
 			dbaccount.PlatformIn(platforms...),
 			dbaccount.StatusEQ(service.StatusActive),
 			dbaccount.SchedulableEQ(true),
-			cindyTerminalStateAvailablePredicate(),
 			dbaccount.Not(dbaccount.HasAccountGroups()),
 			tempUnschedulablePredicate(),
 			notExpiredPredicate(now),
@@ -2421,7 +2339,6 @@ func (r *accountRepository) ListModelAvailabilityCandidates(
 	preds := []dbpredicate.Account{
 		dbaccount.StatusEQ(service.StatusActive),
 		dbaccount.SchedulableEQ(true),
-		cindyTerminalStateAvailablePredicate(),
 		dbaccount.PlatformIn(platforms...),
 	}
 	if !includeGrouped {
@@ -3359,10 +3276,6 @@ func (r *accountRepository) BulkUpdate(ctx context.Context, ids []int64, updates
 		mergedCredentials := "COALESCE(credentials, '{}'::jsonb) || " + credentialPlaceholder + "::jsonb"
 		setClauses = append(setClauses,
 			"credentials = "+mergedCredentials,
-			"cindy_balance_insufficient_at = CASE WHEN credentials IS DISTINCT FROM "+mergedCredentials+
-				" THEN NULL ELSE cindy_balance_insufficient_at END",
-			"cindy_banned_at = CASE WHEN credentials IS DISTINCT FROM "+mergedCredentials+
-				" THEN NULL ELSE cindy_banned_at END",
 		)
 		args = append(args, payload)
 		idx++
@@ -3601,7 +3514,6 @@ func (r *accountRepository) queryAccountsByGroup(ctx context.Context, groupID in
 	if opts.schedulable {
 		preds = append(preds,
 			dbaccount.SchedulableEQ(true),
-			cindyTerminalStateAvailablePredicate(),
 		)
 		if !opts.ignoreTransientState {
 			now := time.Now()
@@ -3920,43 +3832,38 @@ func accountEntityToService(m *dbent.Account) *service.Account {
 	rateMultiplier := m.RateMultiplier
 
 	return &service.Account{
-		ID:                         m.ID,
-		Name:                       m.Name,
-		Notes:                      m.Notes,
-		Platform:                   m.Platform,
-		WirePlatform:               m.WirePlatform,
-		ProviderProfile:            m.ProviderProfile,
-		Type:                       m.Type,
-		Credentials:                copyJSONMap(m.Credentials),
-		Extra:                      copyJSONMap(m.Extra),
-		ProxyID:                    m.ProxyID,
-		ProxyFallbackOriginID:      m.ProxyFallbackOriginID,
-		ManagementFolderID:         m.ManagementFolderID,
-		Concurrency:                m.Concurrency,
-		Priority:                   m.Priority,
-		RateMultiplier:             &rateMultiplier,
-		LoadFactor:                 m.LoadFactor,
-		Status:                     m.Status,
-		ErrorMessage:               derefString(m.ErrorMessage),
-		LastUsedAt:                 m.LastUsedAt,
-		ExpiresAt:                  m.ExpiresAt,
-		AutoPauseOnExpired:         m.AutoPauseOnExpired,
-		CreatedAt:                  m.CreatedAt,
-		UpdatedAt:                  m.UpdatedAt,
-		Schedulable:                m.Schedulable,
-		CindyBalanceInsufficientAt: m.CindyBalanceInsufficientAt,
-		CindyBannedAt:              m.CindyBannedAt,
-		CindyCredentialGeneration:  m.CindyCredentialGeneration,
-		RateLimitedAt:              m.RateLimitedAt,
-		RateLimitResetAt:           m.RateLimitResetAt,
-		OverloadUntil:              m.OverloadUntil,
-		TempUnschedulableUntil:     m.TempUnschedulableUntil,
-		TempUnschedulableReason:    derefString(m.TempUnschedulableReason),
-		SessionWindowStart:         m.SessionWindowStart,
-		SessionWindowEnd:           m.SessionWindowEnd,
-		SessionWindowStatus:        derefString(m.SessionWindowStatus),
-		ParentAccountID:            m.ParentAccountID,
-		QuotaDimension:             string(m.QuotaDimension),
+		ID:                      m.ID,
+		Name:                    m.Name,
+		Notes:                   m.Notes,
+		Platform:                m.Platform,
+		Type:                    m.Type,
+		Credentials:             copyJSONMap(m.Credentials),
+		Extra:                   copyJSONMap(m.Extra),
+		ProxyID:                 m.ProxyID,
+		ProxyFallbackOriginID:   m.ProxyFallbackOriginID,
+		ManagementFolderID:      m.ManagementFolderID,
+		Concurrency:             m.Concurrency,
+		Priority:                m.Priority,
+		RateMultiplier:          &rateMultiplier,
+		LoadFactor:              m.LoadFactor,
+		Status:                  m.Status,
+		ErrorMessage:            derefString(m.ErrorMessage),
+		LastUsedAt:              m.LastUsedAt,
+		ExpiresAt:               m.ExpiresAt,
+		AutoPauseOnExpired:      m.AutoPauseOnExpired,
+		CreatedAt:               m.CreatedAt,
+		UpdatedAt:               m.UpdatedAt,
+		Schedulable:             m.Schedulable,
+		RateLimitedAt:           m.RateLimitedAt,
+		RateLimitResetAt:        m.RateLimitResetAt,
+		OverloadUntil:           m.OverloadUntil,
+		TempUnschedulableUntil:  m.TempUnschedulableUntil,
+		TempUnschedulableReason: derefString(m.TempUnschedulableReason),
+		SessionWindowStart:      m.SessionWindowStart,
+		SessionWindowEnd:        m.SessionWindowEnd,
+		SessionWindowStatus:     derefString(m.SessionWindowStatus),
+		ParentAccountID:         m.ParentAccountID,
+		QuotaDimension:          string(m.QuotaDimension),
 	}
 }
 

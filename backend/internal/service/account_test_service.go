@@ -402,12 +402,9 @@ func (s *AccountTestService) TestAccountConnection(c *gin.Context, accountID int
 	if err != nil {
 		return s.sendErrorAndEnd(c, "Account not found")
 	}
-	if err := EnsureCindyProviderAvailable(ctx, account); err != nil {
-		return s.sendErrorAndEnd(c, err.Error())
-	}
 	if testOpts.ExpectedMappedModel != "" {
 		actualModel, mappingErr := ResolveAccountTestExecutionModel(ctx, account, modelID)
-		if mappingErr != nil || actualModel != testOpts.ExpectedMappedModel || account.EffectiveWirePlatform() != testOpts.ExpectedWirePlatform || account.GetAPIProtocol() != testOpts.ExpectedAPIProtocol {
+		if mappingErr != nil || actualModel != testOpts.ExpectedMappedModel || account.Platform != testOpts.ExpectedWirePlatform || account.GetAPIProtocol() != testOpts.ExpectedAPIProtocol {
 			s.sendEvent(c, TestEvent{Type: "error", Code: "test_plan_changed", Error: ErrAccountTestPlanChanged.Error()})
 			return ErrAccountTestPlanChanged
 		}
@@ -805,39 +802,17 @@ func (s *AccountTestService) testOpenAIAccountConnection(c *gin.Context, account
 	ctx := c.Request.Context()
 	mode = normalizeAccountTestMode(mode)
 
-	// Only Cindy identity acquires a provider dependency. One snapshot owns
-	// both the default and its mapping; ordinary OpenAI retains its own default.
-	var cindySnapshot *CindyCatalogSnapshot
-	if IsCindyAPIKeyAccount(account.Platform, account.Type, account.Credentials) {
-		var err error
-		cindySnapshot, err = LoadCindyCatalogSnapshot(ctx, account)
-		if err != nil {
-			return s.sendErrorAndEnd(c, "Cindy catalog snapshot is unavailable")
-		}
-	}
+	// Default to openai.DefaultTestModel for OpenAI testing
 	testModelID := modelID
 	if testModelID == "" {
-		if cindySnapshot != nil && cindySnapshot.Config.CatalogEnabled {
-			testModelID = cindySnapshot.DefaultTestModel.PublicID
-		} else {
-			testModelID = openai.DefaultTestModel
-		}
+		testModelID = openai.DefaultTestModel
 	}
 
 	// Align test routing with gateway behavior: OpenAI accounts apply normal
 	// account model mapping. Native remote compaction v2 rides the ordinary
 	// /responses wire and does NOT apply the legacy compact-only mapping
 	// (post-#5641 semantics: compact_model_mapping is /responses/compact-only).
-	if cindySnapshot != nil {
-		testModelID = cindyAccountMappedModel(cindySnapshot, account, testModelID)
-		if mappedModel, mapped := cindySnapshot.CompatibilityMappings[testModelID]; mapped {
-			testModelID = mappedModel
-		} else if mappedModel, mapped := cindySnapshot.AvailableMappings[testModelID]; mapped {
-			testModelID = mappedModel
-		}
-	} else {
-		testModelID = account.GetMappedModel(testModelID)
-	}
+	testModelID = account.GetMappedModel(testModelID)
 	if mode == AccountTestModeCompact {
 		return s.testOpenAICompactConnection(c, account, testModelID)
 	}
@@ -1020,7 +995,7 @@ func (s *AccountTestService) testOpenAIAccountConnection(c *gin.Context, account
 
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
-		cindyTerminal := s.markCindyBalanceInsufficientFromTest(ctx, account, resp.StatusCode, body)
+		budgetExceeded := s.markOpenAIBudgetExceededFromTest(ctx, account, resp.StatusCode, body)
 		body = redactAgentIdentitySensitiveBodyForAccount(ctx, s.accountRepo, credentialAccount, body)
 		if !agentIdentityTaskRecoveryWasTried(ctx) && credentialAccount.IsOpenAIAgentIdentity() && isAgentIdentityTaskInvalidHTTPResponse(resp.StatusCode, body) {
 			expectedTaskID := credentialAccount.GetCredential("task_id")
@@ -1030,11 +1005,11 @@ func (s *AccountTestService) testOpenAIAccountConnection(c *gin.Context, account
 			c.Request = c.Request.WithContext(markAgentIdentityTaskRecoveryTried(ctx))
 			return s.testOpenAIAccountConnection(c, account, modelID, prompt, mode)
 		}
-		if resp.StatusCode == http.StatusTooManyRequests && !cindyTerminal {
+		if resp.StatusCode == http.StatusTooManyRequests && !budgetExceeded {
 			s.reconcileOpenAI429State(ctx, account, resp.Header, body)
 		}
 		// 401 Unauthorized: 标记账号为永久错误
-		if resp.StatusCode == http.StatusUnauthorized && !cindyTerminal && s.accountRepo != nil {
+		if resp.StatusCode == http.StatusUnauthorized && !budgetExceeded && s.accountRepo != nil {
 			errMsg := fmt.Sprintf("Authentication failed (401): %s", string(body))
 			_ = s.accountRepo.SetError(ctx, account.ID, errMsg)
 		}
@@ -2238,11 +2213,11 @@ func (s *AccountTestService) testOpenAIChatCompletionsConnection(
 
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
-		cindyTerminal := s.markCindyBalanceInsufficientFromTest(ctx, account, resp.StatusCode, body)
-		if resp.StatusCode == http.StatusTooManyRequests && !cindyTerminal {
+		budgetExceeded := s.markOpenAIBudgetExceededFromTest(ctx, account, resp.StatusCode, body)
+		if resp.StatusCode == http.StatusTooManyRequests && !budgetExceeded {
 			s.reconcileOpenAI429State(ctx, account, resp.Header, body)
 		}
-		if resp.StatusCode == http.StatusUnauthorized && !cindyTerminal && s.accountRepo != nil {
+		if resp.StatusCode == http.StatusUnauthorized && !budgetExceeded && s.accountRepo != nil {
 			errMsg := fmt.Sprintf("Chat Completions authentication failed (401): %s", string(body))
 			_ = s.accountRepo.SetError(ctx, account.ID, errMsg)
 		}
@@ -2380,7 +2355,7 @@ func (s *AccountTestService) testOpenAICompactConnection(c *gin.Context, account
 	defer func() { _ = resp.Body.Close() }()
 
 	body, _ := io.ReadAll(io.LimitReader(resp.Body, 2<<20))
-	cindyTerminal := s.markCindyBalanceInsufficientFromTest(ctx, account, resp.StatusCode, body)
+	budgetExceeded := s.markOpenAIBudgetExceededFromTest(ctx, account, resp.StatusCode, body)
 	body = redactAgentIdentitySensitiveBodyForAccount(ctx, s.accountRepo, credentialAccount, body)
 	if !agentIdentityTaskRecoveryWasTried(ctx) && credentialAccount.IsOpenAIAgentIdentity() && isAgentIdentityTaskInvalidHTTPResponse(resp.StatusCode, body) {
 		expectedTaskID := credentialAccount.GetCredential("task_id")
@@ -2404,13 +2379,13 @@ func (s *AccountTestService) testOpenAICompactConnection(c *gin.Context, account
 			mergeAccountExtra(account, updates)
 		}
 		// 探测如返回 429,主动同步限流状态,避免后续短时间内继续选中。
-		if resp.StatusCode == http.StatusTooManyRequests && !cindyTerminal {
+		if resp.StatusCode == http.StatusTooManyRequests && !budgetExceeded {
 			s.reconcileOpenAI429State(ctx, account, resp.Header, body)
 		}
 	}
 
 	if resp.StatusCode != http.StatusOK {
-		if resp.StatusCode == http.StatusUnauthorized && !cindyTerminal && s.accountRepo != nil {
+		if resp.StatusCode == http.StatusUnauthorized && !budgetExceeded && s.accountRepo != nil {
 			errMsg := fmt.Sprintf("Authentication failed (401): %s", string(body))
 			_ = s.accountRepo.SetError(ctx, account.ID, errMsg)
 		}
@@ -2487,9 +2462,15 @@ func (s *AccountTestService) reconcileOpenAI429State(ctx context.Context, accoun
 	}
 }
 
-func (s *AccountTestService) markCindyBalanceInsufficientFromTest(ctx context.Context, account *Account, statusCode int, body []byte) bool {
-	signal := ClassifyCindyHealthSignal(account, statusCode, body)
-	if signal != CindyHealthSignalExactBudget && signal != CindyHealthSignalBanned {
+// markOpenAIBudgetExceededFromTest applies the gateway's budget rule to a
+// connection test: an HTTP 429 or a terminal stream event whose error is
+// budget_exceeded moves the account to the error state.
+func (s *AccountTestService) markOpenAIBudgetExceededFromTest(ctx context.Context, account *Account, statusCode int, body []byte) bool {
+	if account == nil || !account.IsOpenAICompatible() {
+		return false
+	}
+	if !isOpenAIBudgetExceededResponse(statusCode, body) &&
+		(statusCode != http.StatusOK || !isOpenAIBudgetExceededTerminalEvent(body)) {
 		return false
 	}
 	if s != nil {
@@ -2497,11 +2478,8 @@ func (s *AccountTestService) markCindyBalanceInsufficientFromTest(ctx context.Co
 		if gateway == nil {
 			gateway = s.openaiGatewayService
 		}
-		if gateway != nil && gateway.cindyHealth != nil {
-			gateway.cindyHealth.ObserveCindyHealthSignal(ctx, account, signal)
-		}
+		gateway.handleOpenAIBudgetExceeded(ctx, account, body)
 	}
-	log.Printf("Cindy terminal health signal observed during account test")
 	return true
 }
 
@@ -2935,7 +2913,7 @@ func (s *AccountTestService) testOpenAIImageAPIKey(c *gin.Context, ctx context.C
 	}
 
 	if resp.StatusCode != http.StatusOK {
-		s.markCindyBalanceInsufficientFromTest(ctx, account, resp.StatusCode, body)
+		s.markOpenAIBudgetExceededFromTest(ctx, account, resp.StatusCode, body)
 		return s.sendErrorAndEnd(c, fmt.Sprintf("API returned %d: %s", resp.StatusCode, string(body)))
 	}
 

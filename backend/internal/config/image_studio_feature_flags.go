@@ -6,38 +6,14 @@ import (
 	"strings"
 )
 
-const (
-	ImageStudioEnabledEnv       = "GATEWAY_IMAGE_STUDIO_ENABLED"
-	LegacyImageStudioEnabledEnv = "GATEWAY_CINDY_IMAGE_STUDIO_ENABLED"
-)
+const ImageStudioEnabledEnv = "GATEWAY_IMAGE_STUDIO_ENABLED"
 
-// ResolveImageStudioEnabledFromEnvironment resolves the generic Image Studio
-// flag and its one-release legacy fallback. Empty values are treated as absent
-// because the bundled Compose files inject both variables with empty defaults.
+// ResolveImageStudioEnabledFromEnvironment resolves the Image Studio flag. An
+// empty value is treated as absent because the bundled Compose files inject
+// the variable with an empty default.
 func ResolveImageStudioEnabledFromEnvironment() (bool, error) {
-	primary, primaryConfigured, err := optionalBooleanEnvironment(ImageStudioEnabledEnv)
-	if err != nil {
-		return false, err
-	}
-	legacy, legacyConfigured, err := optionalBooleanEnvironment(LegacyImageStudioEnabledEnv)
-	if err != nil {
-		return false, err
-	}
-
-	if primaryConfigured && legacyConfigured && primary != legacy {
-		return false, fmt.Errorf(
-			"%s conflicts with deprecated %s",
-			ImageStudioEnabledEnv,
-			LegacyImageStudioEnabledEnv,
-		)
-	}
-	if primaryConfigured {
-		return primary, nil
-	}
-	if legacyConfigured {
-		return legacy, nil
-	}
-	return false, nil
+	enabled, _, err := optionalBooleanEnvironment(ImageStudioEnabledEnv)
+	return enabled, err
 }
 
 func optionalBooleanEnvironment(name string) (value bool, configured bool, err error) {

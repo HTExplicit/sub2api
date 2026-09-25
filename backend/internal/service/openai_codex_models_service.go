@@ -17,7 +17,6 @@ import (
 	"sync"
 	"time"
 
-	extensionv1 "github.com/Wei-Shaw/sub2api/internal/nativeapi"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/claude"
 	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/httpclient"
@@ -1661,19 +1660,14 @@ func isRetryableCodexModelsManifestTransportError(err error) bool {
 }
 
 type openAIModelsRequest struct {
-	url                        string
-	headers                    http.Header
-	proxyURL                   string
-	accountID                  int64
-	credentialAccountID        int64
-	credentialAccount          *Account
-	accountConcurrency         int
-	useAPIKeyUpstream          bool
-	cindyCatalogEnabled        bool
-	cindyCatalogVersion        string
-	cindyCatalogSnapshot       *CindyCatalogSnapshot
-	cindyResponsesImageEnabled bool
-	projectCindyCatalog        bool
+	url                 string
+	headers             http.Header
+	proxyURL            string
+	accountID           int64
+	credentialAccountID int64
+	credentialAccount   *Account
+	accountConcurrency  int
+	useAPIKeyUpstream   bool
 	// Cached bodies have already been converted to their requested format.
 	standardModelsList bool
 }
@@ -1861,14 +1855,6 @@ func (s *OpenAIGatewayService) FetchCodexModelsManifest(ctx context.Context, acc
 		proxyURL = account.Proxy.URL()
 	}
 
-	isCindyAccount := IsCindyAPIKeyAccount(credAccount.Platform, credAccount.Type, credAccount.Credentials)
-	var cindySnapshot *CindyCatalogSnapshot
-	if isCindyAccount {
-		cindySnapshot, err = LoadCindyCatalogSnapshot(ctx, credAccount)
-		if err != nil {
-			return nil, err
-		}
-	}
 	request := openAIModelsRequest{
 		url:                 requestURL.String(),
 		headers:             headers,
@@ -1878,13 +1864,6 @@ func (s *OpenAIGatewayService) FetchCodexModelsManifest(ctx context.Context, acc
 		credentialAccount:   credAccount,
 		accountConcurrency:  account.Concurrency,
 		useAPIKeyUpstream:   useAPIKeyUpstream,
-	}
-	if cindySnapshot != nil {
-		request.cindyCatalogSnapshot = cindySnapshot
-		request.cindyCatalogEnabled = cindySnapshot.Config.CatalogEnabled
-		request.cindyCatalogVersion = cindySnapshot.Namespace
-		request.cindyResponsesImageEnabled = cindySnapshot.Images.ResponsesImageEnabled
-		request.projectCindyCatalog = cindySnapshot.Config.CatalogEnabled
 	}
 	if useAPIKeyUpstream {
 		return s.fetchCachedOpenAIModels(ctx, request, s.fetchCodexModelsManifestUpstreamForRequest(request), ifNoneMatch)
@@ -2122,20 +2101,6 @@ func (s *OpenAIGatewayService) fetchCodexModelsManifestUpstream(ctx context.Cont
 			retryable: true,
 		}
 	}
-	if request.projectCindyCatalog {
-		body, err = projectCindyCodexModelsManifest(body, request.cindyCatalogSnapshot)
-		if err != nil {
-			return nil, &codexModelsManifestUpstreamError{
-				err: infraerrors.Newf(
-					http.StatusBadGateway,
-					"OPENAI_CODEX_MODELS_UPSTREAM_INVALID_MANIFEST",
-					"codex models manifest upstream could not be projected onto the Cindy catalog: %v",
-					err,
-				),
-				retryable: true,
-			}
-		}
-	}
 	if request.useAPIKeyUpstream {
 		body, err = completeAPIKeyCodexModelsManifestMetadata(
 			body,
@@ -2181,246 +2146,6 @@ func (s *OpenAIGatewayService) fetchCodexModelsManifestUpstream(ctx context.Cont
 		manifest.ETag = codexModelsManifestBodyETag(body)
 	}
 	return manifest, nil
-}
-
-// projectCindyCodexModelsManifest preserves usable upstream metadata while
-// replacing exact live IDs and hidden compatibility aliases with stable Cindy
-// public IDs. Only Responses-verified text models and the explicit image bridge
-// are eligible for the Codex surface.
-func projectCindyCodexModelsManifest(body []byte, snapshots ...*CindyCatalogSnapshot) ([]byte, error) {
-	return rewriteCindyCodexModelsManifest(body, snapshots...)
-}
-
-type cindyCodexModel = extensionv1.CindyCodexModel
-type cindyCodexTruncationPolicy = extensionv1.CindyCodexTruncationPolicy
-
-// BuildCindyCodexModelsManifest builds the deterministic local manifest used
-// by strict Cindy groups. It never fetches Cindy's upstream /models response,
-// so live IDs, the management-only special IDs, and removed paid models cannot
-// leak.
-func BuildCindyCodexModelsManifest(ifNoneMatch string) (*OpenAIModelsResponse, error) {
-	return BuildCindyCodexModelsManifestContext(context.Background(), ifNoneMatch)
-}
-
-func BuildCindyCodexModelsManifestContext(ctx context.Context, ifNoneMatch string) (*OpenAIModelsResponse, error) {
-	snapshot, err := LoadCindyCatalogSnapshot(ctx, nil)
-	if err != nil {
-		return nil, err
-	}
-	return BuildCindyCodexModelsManifestSnapshot(snapshot, ifNoneMatch)
-}
-
-func BuildCindyCodexModelsManifestSnapshot(snapshot *CindyCatalogSnapshot, ifNoneMatch string) (*OpenAIModelsResponse, error) {
-	if snapshot == nil {
-		return nil, ErrExtensionOperationUnavailable
-	}
-	models := make([]cindyCodexModel, 0, len(snapshot.CodexCapabilities))
-	for priority, capability := range snapshot.CodexCapabilities {
-		model, err := newCindyCodexModel(capability, priority+1)
-		if err != nil {
-			return nil, err
-		}
-		models = append(models, model)
-	}
-	body, err := json.Marshal(map[string]any{"models": models})
-	if err != nil {
-		return nil, fmt.Errorf("encode local Cindy Codex models manifest: %w", err)
-	}
-	manifest := &OpenAIModelsResponse{Body: body, ETag: codexModelsManifestBodyETag(body)}
-	return openAIModelsResponseForClient(manifest, ifNoneMatch), nil
-}
-
-// MergeCindyCodexModelsManifest combines an ordinary account's legacy Codex
-// manifest with every verified Cindy Codex model. All ordinary entries and
-// metadata are preserved without Cindy reinterpretation, even when an
-// ordinary slug happens to match a known Cindy ID or compatibility alias.
-func MergeCindyCodexModelsManifest(manifest *OpenAIModelsResponse, ifNoneMatch string) (*OpenAIModelsResponse, error) {
-	return MergeCindyCodexModelsManifestContext(context.Background(), manifest, ifNoneMatch)
-}
-
-func MergeCindyCodexModelsManifestContext(ctx context.Context, manifest *OpenAIModelsResponse, ifNoneMatch string) (*OpenAIModelsResponse, error) {
-	if manifest == nil {
-		return nil, errors.New("ordinary Codex models manifest is required")
-	}
-	snapshot, err := LoadCindyCatalogSnapshot(ctx, nil)
-	if err != nil {
-		return nil, err
-	}
-	return MergeCindyCodexModelsManifestSnapshot(manifest, ifNoneMatch, snapshot)
-}
-
-func MergeCindyCodexModelsManifestSnapshot(manifest *OpenAIModelsResponse, ifNoneMatch string, snapshot *CindyCatalogSnapshot) (*OpenAIModelsResponse, error) {
-	if manifest == nil || snapshot == nil {
-		return nil, ErrExtensionOperationUnavailable
-	}
-	body, err := mergeCindyCodexModelsManifest(manifest.Body, snapshot)
-	if err != nil {
-		return nil, err
-	}
-	merged := &OpenAIModelsResponse{
-		Body:                         body,
-		ETag:                         codexModelsManifestBodyETag(body),
-		upstreamETag:                 manifest.upstreamETag,
-		upstreamSourceBody:           append([]byte(nil), manifest.upstreamSourceBody...),
-		convertedFromOpenAIModelList: manifest.convertedFromOpenAIModelList,
-		capacityProtectedModels:      make(map[string]bool),
-		capacitySources:              manifest.capacitySources,
-	}
-	for model := range manifest.capacityProtectedModels {
-		merged.capacityProtectedModels[model] = true
-	}
-	// Only newly appended Cindy rows inherit the protected catalog identity;
-	// an ordinary row with the same name retains its existing source identity.
-	var original struct {
-		Models []struct {
-			Slug string `json:"slug"`
-		} `json:"models"`
-	}
-	_ = json.Unmarshal(manifest.Body, &original)
-	existing := make(map[string]bool, len(original.Models))
-	for _, model := range original.Models {
-		existing[model.Slug] = true
-	}
-	for _, capability := range snapshot.CodexCapabilities {
-		if !existing[capability.PublicID] {
-			merged.capacityProtectedModels[capability.PublicID] = true
-		}
-	}
-	return openAIModelsResponseForClient(merged, ifNoneMatch), nil
-}
-
-func rewriteCindyCodexModelsManifest(body []byte, snapshots ...*CindyCatalogSnapshot) ([]byte, error) {
-	snapshot, err := cindyProjectionSnapshot(snapshots)
-	if err != nil {
-		return nil, err
-	}
-	eligible := make(map[string]bool, len(snapshot.CodexCapabilities))
-	for _, capability := range snapshot.CodexCapabilities {
-		eligible[capability.PublicID] = true
-	}
-	var envelope map[string]json.RawMessage
-	if err := json.Unmarshal(body, &envelope); err != nil {
-		return nil, fmt.Errorf("decode JSON object: %w", err)
-	}
-	var models []json.RawMessage
-	if err := json.Unmarshal(envelope["models"], &models); err != nil {
-		return nil, fmt.Errorf("decode top-level models array: %w", err)
-	}
-
-	projected := make([]json.RawMessage, 0, len(models))
-	seen := make(map[string]struct{}, len(models))
-	for _, rawModel := range models {
-		var model map[string]json.RawMessage
-		if err := json.Unmarshal(rawModel, &model); err != nil || model == nil {
-			continue
-		}
-		var slug string
-		if err := json.Unmarshal(model["slug"], &slug); err != nil {
-			continue
-		}
-		capability, knownCindy := snapshot.Capability(strings.TrimSpace(slug))
-		if !knownCindy {
-			continue
-		}
-		if !eligible[capability.PublicID] {
-			continue
-		}
-		if _, duplicate := seen[capability.PublicID]; duplicate {
-			continue
-		}
-		seen[capability.PublicID] = struct{}{}
-		publicSlug, err := json.Marshal(capability.PublicID)
-		if err != nil {
-			return nil, fmt.Errorf("encode public model ID %q: %w", capability.PublicID, err)
-		}
-		model["slug"] = publicSlug
-		projectedModel, err := json.Marshal(model)
-		if err != nil {
-			return nil, fmt.Errorf("encode projected model %q: %w", capability.PublicID, err)
-		}
-		projected = append(projected, projectedModel)
-	}
-
-	projectedModels, err := json.Marshal(projected)
-	if err != nil {
-		return nil, fmt.Errorf("encode projected models array: %w", err)
-	}
-	envelope["models"] = projectedModels
-	projectedBody, err := json.Marshal(envelope)
-	if err != nil {
-		return nil, fmt.Errorf("encode projected manifest: %w", err)
-	}
-	return projectedBody, nil
-}
-
-func mergeCindyCodexModelsManifest(body []byte, snapshots ...*CindyCatalogSnapshot) ([]byte, error) {
-	snapshot, err := cindyProjectionSnapshot(snapshots)
-	if err != nil {
-		return nil, err
-	}
-	var envelope map[string]json.RawMessage
-	if err := json.Unmarshal(body, &envelope); err != nil {
-		return nil, fmt.Errorf("decode JSON object: %w", err)
-	}
-	var models []json.RawMessage
-	if err := json.Unmarshal(envelope["models"], &models); err != nil {
-		return nil, fmt.Errorf("decode top-level models array: %w", err)
-	}
-
-	// The ordinary manifest is an independent provider contract. Preserve its
-	// entries without semantic rewriting, including IDs that happen
-	// to match a Cindy live ID, compatibility alias, or management-only special
-	// ID. Catalog
-	// verification constrains only exact Cindy sources.
-	merged := append([]json.RawMessage(nil), models...)
-	seenExactSlugs := make(map[string]struct{}, len(models))
-	for _, rawModel := range models {
-		var model struct {
-			Slug string `json:"slug"`
-		}
-		if err := json.Unmarshal(rawModel, &model); err == nil && model.Slug != "" {
-			seenExactSlugs[model.Slug] = struct{}{}
-		}
-	}
-	for _, capability := range snapshot.CodexCapabilities {
-		publicID := capability.PublicID
-		if _, duplicate := seenExactSlugs[publicID]; duplicate {
-			continue
-		}
-		model, err := newCindyCodexModel(capability, len(merged)+1)
-		if err != nil {
-			return nil, err
-		}
-		encoded, err := json.Marshal(model)
-		if err != nil {
-			return nil, fmt.Errorf("encode catalog model %q: %w", publicID, err)
-		}
-		merged = append(merged, encoded)
-		seenExactSlugs[publicID] = struct{}{}
-	}
-
-	mergedModels, err := json.Marshal(merged)
-	if err != nil {
-		return nil, fmt.Errorf("encode merged models array: %w", err)
-	}
-	envelope["models"] = mergedModels
-	mergedBody, err := json.Marshal(envelope)
-	if err != nil {
-		return nil, fmt.Errorf("encode merged manifest: %w", err)
-	}
-	return mergedBody, nil
-}
-
-func cindyProjectionSnapshot(snapshots []*CindyCatalogSnapshot) (*CindyCatalogSnapshot, error) {
-	if len(snapshots) > 0 {
-		if snapshots[0] == nil {
-			return nil, ErrExtensionOperationUnavailable
-		}
-		return snapshots[0], nil
-	}
-	// Compatibility helpers are read-only shared projections. Actual account
-	// fetches pass their already admitted snapshot explicitly.
-	return LoadCindyCatalogSnapshot(context.Background(), nil)
 }
 
 func codexModelsManifestBodyETag(body []byte) string {
@@ -2962,19 +2687,7 @@ func validateCodexModelsManifestEnvelope(body []byte) error {
 
 func buildOpenAIModelsCacheKey(request openAIModelsRequest) string {
 	hasher := sha256.New()
-	_, _ = fmt.Fprintf(
-		hasher,
-		"%d\n%d\n%t\n%s\n%s\ncindy-catalog:%t:%s\nresponses-image-bridge:%t\nproject-cindy:%t\n",
-		request.accountID,
-		request.credentialAccountID,
-		request.standardModelsList,
-		request.proxyURL,
-		request.url,
-		request.cindyCatalogEnabled,
-		request.cindyCatalogVersion,
-		request.cindyResponsesImageEnabled,
-		request.projectCindyCatalog,
-	)
+	_, _ = fmt.Fprintf(hasher, "%d\n%d\n%t\n%s\n%s\n", request.accountID, request.credentialAccountID, request.standardModelsList, request.proxyURL, request.url)
 	headerNames := make([]string, 0, len(request.headers))
 	for name := range request.headers {
 		headerNames = append(headerNames, name)

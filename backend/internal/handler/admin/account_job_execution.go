@@ -85,16 +85,7 @@ func (h *AccountHandler) executeAccountJobItem(ctx context.Context, kind string,
 			return accountJobFailed(item.ID, "payload_invalid")
 		}
 		request := payload.Accounts[item.Ordinal-1]
-		create := func(mutationCtx context.Context) (*service.Account, error) {
-			return h.createAccountJobAccount(mutationCtx, request)
-		}
-		var created *service.Account
-		var err error
-		if isStrictCindyAccountInput(request.Platform, request.Type, request.Credentials) {
-			created, err = h.runCindyAccountJobMutation(ctx, 0, create)
-		} else {
-			created, err = create(ctx)
-		}
+		created, err := h.createAccountJobAccount(ctx, request)
 		if err != nil {
 			return accountJobFailed(item.ID, "create_failed")
 		}
@@ -108,8 +99,7 @@ func (h *AccountHandler) executeAccountJobItem(ctx context.Context, kind string,
 		if json.Unmarshal(raw, &req) != nil || !ok {
 			return accountJobFailed(item.ID, "payload_invalid")
 		}
-		account, err := h.adminService.GetAccount(ctx, id)
-		if err != nil {
+		if _, err := h.adminService.GetAccount(ctx, id); err != nil {
 			return accountJobFailed(item.ID, "account_not_found")
 		}
 		updateCredentials := func(mutationCtx context.Context) (*service.Account, error) {
@@ -121,12 +111,7 @@ func (h *AccountHandler) executeAccountJobItem(ctx context.Context, kind string,
 			credentials[req.Field] = req.Value
 			return h.adminService.UpdateAccount(mutationCtx, id, &service.UpdateAccountInput{Credentials: credentials})
 		}
-		if isStrictCindyAccount(account) {
-			_, err = h.runCindyAccountJobMutation(ctx, id, updateCredentials)
-		} else {
-			_, err = updateCredentials(ctx)
-		}
-		if err != nil {
+		if _, err := updateCredentials(ctx); err != nil {
 			return accountJobFailed(item.ID, "credentials_update_failed")
 		}
 		return accountJobSucceeded(item.ID, map[string]any{"account_id": id})
@@ -146,60 +131,6 @@ func (h *AccountHandler) executeAccountJobItem(ctx context.Context, kind string,
 	case service.AccountJobKindImportCodex:
 		return h.executeCodexImportJob(ctx, raw, item)
 
-	case service.AccountJobKindDuplicateReview:
-		var req duplicateReviewRequest
-		if json.Unmarshal(raw, &req) != nil {
-			return accountJobFailed(item.ID, "payload_invalid")
-		}
-		metadata, err := h.duplicateReview(ctx, req.AccountIDs)
-		if err != nil {
-			return accountJobFailed(item.ID, "duplicate_review_failed")
-		}
-		return accountJobSucceeded(item.ID, metadata)
-
-	case service.AccountJobKindDuplicateMerge:
-		var req duplicateMergeRequest
-		if json.Unmarshal(raw, &req) != nil {
-			return accountJobFailed(item.ID, "payload_invalid")
-		}
-		metadata, err := h.mergeDuplicateAccounts(ctx, req)
-		if err != nil {
-			return accountJobFailed(item.ID, "duplicate_merge_failed")
-		}
-		return accountJobSucceeded(item.ID, metadata)
-
-	case service.AccountJobKindCindyConfirmedCleanup:
-		var req struct {
-			ExpectedCount int    `json:"expected_count"`
-			Fingerprint   string `json:"fingerprint"`
-		}
-		if json.Unmarshal(raw, &req) != nil {
-			return accountJobFailed(item.ID, "payload_invalid")
-		}
-		result, err := h.adminService.DeleteCindyInsufficient(ctx, req.ExpectedCount, req.Fingerprint)
-		if err != nil {
-			if errors.Is(err, service.ErrCindyInsufficientDeleteChanged) {
-				return accountJobFailed(item.ID, "cindy_cleanup_target_changed")
-			}
-			return accountJobFailed(item.ID, "cindy_cleanup_failed")
-		}
-		return accountJobSucceeded(item.ID, map[string]any{"deleted_count": result.DeletedCount, "dependent_deleted_count": result.DependentDeletedCount})
-	case service.AccountJobKindCindyBannedCleanup:
-		var req struct {
-			ExpectedCount int    `json:"expected_count"`
-			Fingerprint   string `json:"fingerprint"`
-		}
-		if json.Unmarshal(raw, &req) != nil {
-			return accountJobFailed(item.ID, "payload_invalid")
-		}
-		result, err := h.adminService.DeleteCindyBanned(ctx, req.ExpectedCount, req.Fingerprint)
-		if err != nil {
-			if errors.Is(err, service.ErrCindyInsufficientDeleteChanged) {
-				return accountJobFailed(item.ID, "cindy_cleanup_target_changed")
-			}
-			return accountJobFailed(item.ID, "cindy_cleanup_failed")
-		}
-		return accountJobSucceeded(item.ID, map[string]any{"deleted_count": result.DeletedCount, "dependent_deleted_count": result.DependentDeletedCount})
 	default:
 		return accountJobFailed(item.ID, "kind_unsupported")
 	}
@@ -222,9 +153,6 @@ func cloneAccountJobMap(input map[string]any) map[string]any {
 }
 
 func (h *AccountHandler) createAccountJobAccount(ctx context.Context, item CreateAccountRequest) (*service.Account, error) {
-	if err := validateCreateAccountProviderIdentity(item); err != nil {
-		return nil, err
-	}
 	if err := service.ValidateOpenAILongContextBillingExtra(item.Platform, item.Extra); err != nil {
 		return nil, err
 	}
@@ -236,7 +164,6 @@ func (h *AccountHandler) createAccountJobAccount(ctx context.Context, item Creat
 	}
 	sanitizeExtraBaseRPM(item.Extra)
 	account, err := h.adminService.CreateAccount(ctx, &service.CreateAccountInput{
-		ProviderCreate: item.ProviderCreate, ExplicitCreateFields: item.ExplicitCreateFields,
 		Name: item.Name, Notes: item.Notes, Platform: item.Platform, Type: item.Type,
 		Credentials: item.Credentials, Extra: item.Extra, ProxyID: item.ProxyID,
 		ModelContextOverrides: item.ModelContextOverrides,
@@ -249,30 +176,6 @@ func (h *AccountHandler) createAccountJobAccount(ctx context.Context, item Creat
 		return nil, err
 	}
 	return account, nil
-}
-
-func isStrictCindyAccountInput(platform, accountType string, credentials map[string]any) bool {
-	resolvedPlatform, wirePlatform, profile, err := service.ResolveAccountProviderIdentity(platform, accountType, credentials)
-	return err == nil && resolvedPlatform == service.PlatformCindy &&
-		wirePlatform == service.WirePlatformOpenAI && profile == service.ProviderProfileCindyLaxaV1
-}
-
-func isStrictCindyAccount(account *service.Account) bool {
-	return account != nil && account.Platform == service.PlatformCindy &&
-		account.EffectiveWirePlatform() == service.WirePlatformOpenAI &&
-		account.EffectiveProviderProfile() == service.ProviderProfileCindyLaxaV1 &&
-		service.IsCindyAPIKeyAccount(account.Platform, account.Type, account.Credentials)
-}
-
-func (h *AccountHandler) runCindyAccountJobMutation(
-	ctx context.Context,
-	accountID int64,
-	mutate func(context.Context) (*service.Account, error),
-) (*service.Account, error) {
-	if h == nil || h.cindyJobMutations == nil {
-		return nil, errors.New("cindy account job mutation is unavailable")
-	}
-	return h.cindyJobMutations.Run(ctx, accountID, mutate)
 }
 
 func (h *AccountHandler) executeBulkUpdateJob(ctx context.Context, raw json.RawMessage, item service.AccountJobItem) service.AccountJobExecutionResult {
@@ -291,13 +194,7 @@ func (h *AccountHandler) executeBulkUpdateJob(ctx context.Context, raw json.RawM
 	succeeded := 0
 	failed := 0
 	for _, id := range req.AccountIDs {
-		account, getErr := h.adminService.GetAccount(ctx, id)
-		if getErr != nil {
-			failed++
-			continue
-		}
-		mutationCtx, release, prepareErr := service.PrepareAccountJobEdit(ctx, raw, account, req.Credentials, req.Extra)
-		if prepareErr != nil {
+		if _, getErr := h.adminService.GetAccount(ctx, id); getErr != nil {
 			failed++
 			continue
 		}
@@ -311,13 +208,7 @@ func (h *AccountHandler) executeBulkUpdateJob(ctx context.Context, raw json.RawM
 			}
 			return h.adminService.GetAccount(mutationCtx, id)
 		}
-		if isStrictCindyAccount(account) {
-			_, getErr = h.runCindyAccountJobMutation(mutationCtx, id, apply)
-		} else {
-			_, getErr = apply(mutationCtx)
-		}
-		release()
-		if getErr != nil {
+		if _, err := apply(ctx); err != nil {
 			failed++
 			continue
 		}
@@ -409,8 +300,7 @@ func (h *AccountHandler) executeBulkTaxonomyJob(ctx context.Context, raw json.Ra
 	}
 	updated := 0
 	for _, id := range ids {
-		account, getErr := h.adminService.GetAccount(ctx, id)
-		if getErr != nil {
+		if _, getErr := h.adminService.GetAccount(ctx, id); getErr != nil {
 			return accountJobFailed(item.ID, "taxonomy_update_failed")
 		}
 		apply := func(mutationCtx context.Context) (*service.Account, error) {
@@ -426,12 +316,7 @@ func (h *AccountHandler) executeBulkTaxonomyJob(ctx context.Context, raw json.Ra
 			}
 			return h.adminService.GetAccount(mutationCtx, id)
 		}
-		if isStrictCindyAccount(account) {
-			_, getErr = h.runCindyAccountJobMutation(ctx, id, apply)
-		} else {
-			_, getErr = apply(ctx)
-		}
-		if getErr != nil {
+		if _, err := apply(ctx); err != nil {
 			return accountJobFailed(item.ID, "taxonomy_update_failed")
 		}
 		updated++
@@ -513,13 +398,8 @@ func (h *AccountHandler) executeDataImportJob(ctx context.Context, raw json.RawM
 	if decision.rejected() {
 		return accountJobFailed(item.ID, decision.Code)
 	}
-	account := decision.Account
 	if !prepared {
-		req.Data.Accounts = []DataAccount{account}
-		if len(decision.GroupIDs) > 0 {
-			groupIDs := append([]int64(nil), decision.GroupIDs...)
-			req.UniformSettings.GroupIDs = &groupIDs
-		}
+		req.Data.Accounts = []DataAccount{decision.Account}
 	}
 	importOne := func(mutationCtx context.Context) (*service.Account, DataImportResult, error) {
 		var result DataImportResult
@@ -545,36 +425,12 @@ func (h *AccountHandler) executeDataImportJob(ctx context.Context, raw json.RawM
 		updated, getErr := h.adminService.GetAccount(mutationCtx, *result.Items[0].AccountID)
 		return updated, result, getErr
 	}
-	var result DataImportResult
-	var importedAccount *service.Account
-	var err error
-	if isStrictCindyAccountInput(account.Platform, account.Type, account.Credentials) {
-		targetID := int64(0)
-		if decision.AccountID != nil {
-			targetID = *decision.AccountID
-		}
-		importedAccount, err = h.runCindyAccountJobMutation(ctx, targetID, func(mutationCtx context.Context) (*service.Account, error) {
-			var imported *service.Account
-			var importErr error
-			imported, result, importErr = importOne(mutationCtx)
-			return imported, importErr
-		})
-		if prepared && err == nil {
-			preparedState.recordCommittedAccount(importedAccount)
-			h.scheduleGrokImportProbe(importedAccount)
-		}
-	} else {
-		importedAccount, result, err = importOne(ctx)
-		if prepared && importedAccount != nil {
-			// Non-Cindy imports use the existing item-level mutation semantics.
-			// Even a warning can follow a committed account mutation, so keep the
-			// in-memory identity index aligned before reporting the item failure.
-			preparedState.recordCommittedAccount(importedAccount)
-			h.scheduleGrokImportProbe(importedAccount)
-		}
-	}
-	if errors.Is(err, service.ErrCindyDeviceIdentityConflict) {
-		return accountJobFailed(item.ID, dataImportCodeCindyDeviceConflict)
+	importedAccount, result, err := importOne(ctx)
+	if prepared && importedAccount != nil {
+		// Even a warning can follow a committed account mutation, so keep the
+		// in-memory identity index aligned before reporting the item failure.
+		preparedState.recordCommittedAccount(importedAccount)
+		h.scheduleGrokImportProbe(importedAccount)
 	}
 	if err != nil || result.AccountFailed > 0 {
 		return accountJobFailed(item.ID, dataImportCodeExecutionFailed)

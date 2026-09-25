@@ -9,17 +9,6 @@ import (
 // cross-package contract fixtures. The server constructs NativeCodexRuntime.
 // It has no plugin registry, process transport, capabilities or lifecycle side effects.
 func ConfigureNativePolicyOperations(invoker extensionv1.OperationInvoker) {
-	// Cross-package fixtures can change replies between phases. Start with an
-	// empty Cindy runtime and disable writes to its immutable-answer cache;
-	// the production cache is covered separately with the real native module.
-	ConfigureCindyProvider(nil)
-	cindyProvider.Load().cacheSize.Store(cindyProviderCacheLimit)
-	invokeCindyProvider = func(ctx context.Context, in extensionv1.Invocation) (extensionv1.Result, error) {
-		if invoker == nil {
-			return extensionv1.Result{}, ErrExtensionOperationDisabled
-		}
-		return invoker.InvokeOperation(ctx, "", "", in)
-	}
 	invokeAccountTools = func(ctx context.Context, in extensionv1.Invocation) (extensionv1.Result, error) {
 		if invoker == nil {
 			return extensionv1.Result{}, ErrExtensionOperationDisabled

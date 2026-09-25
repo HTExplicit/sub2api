@@ -98,6 +98,8 @@ func nativeFeatureSettings(plugin NativeRetirementPlugin, encryptor SecretEncryp
 			return nil, err
 		}
 		var value extensionv1.ImageToolsConfig
+		// responses_image_enabled (the removed Cindy Responses image bridge) is
+		// accepted in a saved plugin configuration and dropped.
 		if err := DecodeSwitchSettings(raw, &value, "studio_enabled", "responses_image_enabled"); err != nil {
 			return nil, fmt.Errorf("invalid saved image tool configuration: %w", err)
 		}
@@ -106,7 +108,6 @@ func nativeFeatureSettings(plugin NativeRetirementPlugin, encryptor SecretEncryp
 			return nil, err
 		}
 		value.StudioEnabled = value.StudioEnabled && enabled
-		value.ResponsesImageEnabled = value.ResponsesImageEnabled && enabled
 		return settings, put(SettingKeyImageToolsConfig, value)
 	case "codexrip.admin-observability":
 		if err := validateNativeUnmappedBindings(plugin, "extensions.observability.v1", "extensions.ui.v1"); err != nil {
@@ -128,21 +129,9 @@ func nativeFeatureSettings(plugin NativeRetirementPlugin, encryptor SecretEncryp
 		value.ThemeEnabled = value.ThemeEnabled && theme
 		return settings, put(SettingKeyAdminObservabilityConfig, value)
 	case "codexrip.cindy-provider":
-		if err := validateNativeUnmappedBindings(plugin, "extensions.provider.v1"); err != nil {
-			return nil, err
-		}
-		value := extensionv1.CindyProviderConfig{BalanceDetection: true}
-		if err := DecodeSwitchSettings(raw, &value, "balance_detection", "catalog_enabled", "search_enabled"); err != nil {
-			return nil, fmt.Errorf("invalid saved Cindy configuration: %w", err)
-		}
-		enabled, err := nativeRetirementBindingEnabled(plugin, "extensions.provider.v1", PlatformCindy, AccountTypeAPIKey)
-		if err != nil {
-			return nil, err
-		}
-		value.BalanceDetection = value.BalanceDetection && enabled
-		value.CatalogEnabled = value.CatalogEnabled && enabled
-		value.SearchEnabled = value.SearchEnabled && enabled
-		return settings, put(SettingKeyCindyProviderConfig, value)
+		// The Cindy provider was removed; its saved switches have no native
+		// equivalent and are dropped with the retired installation.
+		return settings, nil
 	default:
 		// Domains without a single equivalent switch cannot silently broaden a
 		// saved partial rollout or turn a disabled domain back on.
@@ -205,8 +194,6 @@ func nativeCapabilityScopeKnown(key, capability, platform, accountType string) b
 		return global && (capability == "extensions.admin.v1" || capability == "extensions.catalog.v1")
 	case "codexrip.image-tools":
 		return global && (capability == "extensions.admin.v1" || capability == "extensions.request.v1")
-	case "codexrip.cindy-provider":
-		return (global && capability == "extensions.admin.v1") || (capability == "extensions.provider.v1" && platform == PlatformCindy && accountType == AccountTypeAPIKey)
 	case "codexrip.prompt-skills":
 		return (global && capability == "extensions.admin.v1") || (capability == "extensions.request.v1" && platform == PlatformOpenAI && accountType == "*")
 	case "codexrip.codex-runtime":
@@ -247,11 +234,9 @@ func nativeRetirementBindingEnabled(plugin NativeRetirementPlugin, capability, p
 func ValidateNativeFeatureSetting(key string, raw []byte) error {
 	switch key {
 	case SettingKeyImageToolsConfig:
-		return DecodeSwitchSettings(raw, &extensionv1.ImageToolsConfig{}, "studio_enabled", "responses_image_enabled")
+		return DecodeSwitchSettings(raw, &extensionv1.ImageToolsConfig{}, "studio_enabled")
 	case SettingKeyAdminObservabilityConfig:
 		return DecodeSwitchSettings(raw, &extensionv1.AdminObservabilityConfig{}, "telemetry_enabled", "theme_enabled")
-	case SettingKeyCindyProviderConfig:
-		return DecodeSwitchSettings(raw, &extensionv1.CindyProviderConfig{}, "balance_detection", "catalog_enabled", "search_enabled")
 	default:
 		return errors.New("unsupported native feature setting")
 	}

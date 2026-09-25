@@ -486,7 +486,6 @@ type OpenAIGatewayService struct {
 	settingService        *SettingService
 	userPlatformQuotaRepo UserPlatformQuotaRepository
 	businessPromptService *BusinessSystemPromptService
-	cindyHealth           CindyHealthCoordinator
 	usageCache            *UsageCache
 	usageCommitObserver   UsageCommitObserver
 	liveAttestation       liveattestation.Provider
@@ -514,8 +513,6 @@ type OpenAIGatewayService struct {
 	openaiAccountRuntimeBlockLocks      sync.Map // key: int64(accountID), value: *sync.Mutex
 	openaiAccountRuntimeBlockGeneration sync.Map // key: int64(accountID), value: uint64
 	openaiAccountRuntimeBlockSources    sync.Map // key: int64(accountID), value: openAIAccountRuntimeBlockSources
-	cindyBalanceRuntimeBlockFingerprint sync.Map // key: int64(accountID), value: opaque credential SHA-256
-	cindyHealthRuntimeBlocks            sync.Map // key: int64(accountID), value: cindyHealthRuntimeBlock
 	openaiAccountRuntimeBlockSequence   atomic.Uint64
 	openaiOAuth429RetryStartedAt        sync.Map // key: int64(accountID), value: time.Time
 	grokCredentialMutationLocks         sync.Map // key: int64(accountID), value: *sync.Mutex
@@ -543,13 +540,6 @@ func (s *OpenAIGatewayService) SetBusinessSystemPromptService(promptService *Bus
 		return
 	}
 	s.businessPromptService = promptService
-}
-
-func (s *OpenAIGatewayService) SetCindyHealthCoordinator(coordinator CindyHealthCoordinator) {
-	if s == nil {
-		return
-	}
-	s.cindyHealth = coordinator
 }
 
 func (s *OpenAIGatewayService) SetUsageCache(cache *UsageCache) {
@@ -680,14 +670,6 @@ func (s *OpenAIGatewayService) isCodexImageGenerationBridgeEnabled(ctx context.C
 			return *override
 		}
 	}
-	// Cindy's Azure-compatible endpoint rejects an automatically injected
-	// image_generation tool unless a separate deployment header is configured.
-	// Keep explicit account/channel overrides authoritative, but do not inherit
-	// the global injection default for the Cindy data plane, including legacy
-	// OpenAI-platform Laxa rows retained during the compatibility window.
-	if account != nil && IsCindyRuntimeCompatibleAPIKeyAccount(account.Platform, account.Type, account.Credentials) {
-		return false
-	}
 	return s != nil && s.cfg != nil && s.cfg.Gateway.CodexImageGenerationBridgeEnabled
 }
 
@@ -777,11 +759,10 @@ func (s *OpenAIGatewayService) logOpenAIWSModeBootstrap() {
 	}
 	wsCfg := s.cfg.Gateway.OpenAIWS
 	logOpenAIWSModeInfo(
-		"bootstrap enabled=%v oauth_enabled=%v apikey_enabled=%v cindy_http_to_wsv2_enabled=%v force_http=%v responses_websockets_v2=%v responses_websockets=%v payload_log_sample_rate=%.3f event_flush_batch_size=%d event_flush_interval_ms=%d prewarm_cooldown_ms=%d retry_backoff_initial_ms=%d retry_backoff_max_ms=%d retry_jitter_ratio=%.3f retry_total_budget_ms=%d ws_read_limit_bytes=%d",
+		"bootstrap enabled=%v oauth_enabled=%v apikey_enabled=%v force_http=%v responses_websockets_v2=%v responses_websockets=%v payload_log_sample_rate=%.3f event_flush_batch_size=%d event_flush_interval_ms=%d prewarm_cooldown_ms=%d retry_backoff_initial_ms=%d retry_backoff_max_ms=%d retry_jitter_ratio=%.3f retry_total_budget_ms=%d ws_read_limit_bytes=%d",
 		wsCfg.Enabled,
 		wsCfg.OAuthEnabled,
 		wsCfg.APIKeyEnabled,
-		wsCfg.CindyHTTPToWSV2Enabled,
 		wsCfg.ForceHTTP,
 		wsCfg.ResponsesWebsocketsV2,
 		wsCfg.ResponsesWebsockets,

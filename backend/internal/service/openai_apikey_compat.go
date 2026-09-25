@@ -3,6 +3,7 @@ package service
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"strings"
 	"unicode/utf8"
 
 	"github.com/Wei-Shaw/sub2api/internal/pkg/logger"
@@ -12,55 +13,61 @@ import (
 	"go.uber.org/zap"
 )
 
-const (
-	OpenAIAlphaSearchModeDirect             = "direct"
-	OpenAIAlphaSearchModeResponsesWebSearch = "responses_web_search"
-	OpenAIAlphaSearchModeDisabled           = "disabled"
+// OpenAIPromptCacheKeyModeExtraKey selects how an API-key account forwards the
+// client prompt_cache_key. Some OpenAI-compatible relays reject keys longer
+// than 64 characters; sha256_64 replaces those keys with their SHA-256 hex.
+const OpenAIPromptCacheKeyModeExtraKey = "openai_prompt_cache_key_mode"
 
+const (
 	OpenAIPromptCacheKeyModePassthrough = "passthrough"
 	OpenAIPromptCacheKeyModeSHA25664    = "sha256_64"
 )
 
-const cindyManagedCompatibilityContextKey = "cindy_managed_compatibility"
+const openAIPromptCacheKeyMaxRunes = 64
 
-// SetCindyManagedCompatibility freezes the authenticated group decision for
-// the request. Account identity is checked again at the final wire boundary,
-// so neither a mixed group nor a non-Cindy account can inherit this policy.
-func SetCindyManagedCompatibility(c *gin.Context, enabled bool) {
-	if c != nil {
-		c.Set(cindyManagedCompatibilityContextKey, enabled)
+// OpenAIPromptCacheKeyMode returns the account's prompt_cache_key forwarding
+// mode. Anything other than sha256_64 forwards the key unchanged.
+func (a *Account) OpenAIPromptCacheKeyMode() string {
+	if a == nil || a.Type != AccountTypeAPIKey || a.Extra == nil {
+		return OpenAIPromptCacheKeyModePassthrough
 	}
+	mode, _ := a.Extra[OpenAIPromptCacheKeyModeExtraKey].(string)
+	if strings.TrimSpace(mode) == OpenAIPromptCacheKeyModeSHA25664 {
+		return OpenAIPromptCacheKeyModeSHA25664
+	}
+	return OpenAIPromptCacheKeyModePassthrough
 }
 
-func cindyManagedCompatibilityEnabled(c *gin.Context) bool {
-	if c == nil {
-		return false
-	}
-	value, exists := c.Get(cindyManagedCompatibilityContextKey)
-	enabled, ok := value.(bool)
-	return exists && ok && enabled
-}
-
-func observeCindyManagedPromptCacheNormalization(c *gin.Context, changed bool) {
+func observeOpenAIPromptCacheKeyNormalization(c *gin.Context, changed bool) {
 	if !changed || c == nil || c.Request == nil {
 		return
 	}
 	logger.FromContext(c.Request.Context()).Info(
-		"openai.cindy_prompt_cache_key_normalized",
+		"openai.prompt_cache_key_normalized",
 		zap.Bool("normalized", true),
 	)
 }
 
-// normalizeCindyManagedPromptCacheKey is the single final-wire normalizer.
-// It intentionally ignores the legacy account extras and global settings,
-// which remain stored for one rollback window only.
-func normalizeCindyManagedPromptCacheKey(body []byte, c *gin.Context, account *Account) ([]byte, bool, error) {
-	if !cindyManagedCompatibilityEnabled(c) || account == nil ||
-		!IsCindyAPIKeyAccount(account.Platform, account.Type, account.Credentials) {
+// applyOpenAIAPIKeyPromptCacheKeyMode applies the account option to a final
+// Responses wire body. The gateway calls it at every send point, after any
+// other body rewrite, so the upstream never sees an over-long key.
+func applyOpenAIAPIKeyPromptCacheKeyMode(c *gin.Context, account *Account, body []byte) ([]byte, error) {
+	normalized, changed, err := normalizeOpenAIAPIKeyPromptCacheKey(body, c, account)
+	if err != nil {
+		return nil, err
+	}
+	observeOpenAIPromptCacheKeyNormalization(c, changed)
+	return normalized, nil
+}
+
+// normalizeOpenAIAPIKeyPromptCacheKey is the single final-wire normalizer for
+// the account option openai_prompt_cache_key_mode=sha256_64.
+func normalizeOpenAIAPIKeyPromptCacheKey(body []byte, _ *gin.Context, account *Account) ([]byte, bool, error) {
+	if account.OpenAIPromptCacheKeyMode() != OpenAIPromptCacheKeyModeSHA25664 {
 		return body, false, nil
 	}
 	value := gjson.GetBytes(body, "prompt_cache_key")
-	if value.Type != gjson.String || utf8.RuneCountInString(value.String()) <= 64 {
+	if value.Type != gjson.String || utf8.RuneCountInString(value.String()) <= openAIPromptCacheKeyMaxRunes {
 		return body, false, nil
 	}
 	digest := sha256.Sum256([]byte(value.String()))

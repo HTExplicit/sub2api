@@ -99,7 +99,6 @@ type batchTestModelRow struct {
 	Name      string               `json:"name"`
 	Platform  string               `json:"platform"`
 	Type      string               `json:"type"`
-	IsCindy   bool                 `json:"is_cindy"`
 	Models    any                  `json:"models"`
 	ErrorCode string               `json:"error_code,omitempty"`
 	TestPlan  *accountTestPlanView `json:"test_plan,omitempty"`
@@ -159,7 +158,6 @@ func (h *AccountHandler) BatchTestModels(c *gin.Context) {
 				return
 			}
 			rows[i].Name, rows[i].Platform, rows[i].Type = account.Name, account.Platform, account.Type
-			rows[i].IsCindy = service.IsCindyAPIKeyAccount(account.Platform, account.Type, account.Credentials)
 			if withPlan {
 				plan, err := h.accountTestPlan(ctx, account)
 				if err != nil || ctx.Err() != nil {

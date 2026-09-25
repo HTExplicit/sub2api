@@ -9,7 +9,7 @@ type openAIOfficialHTTPFailoverContextKey struct{}
 
 // WithOpenAIOfficialHTTPFailover opts the ordinary HTTP handler into the
 // upstream retry/state policy. Identity checks remain at
-// every use site so a shared handler cannot change Cindy or OAuth behavior.
+// every use site so a shared handler cannot change OAuth behavior.
 func WithOpenAIOfficialHTTPFailover(ctx context.Context) context.Context {
 	if ctx == nil {
 		ctx = context.Background()
@@ -22,11 +22,7 @@ func IsOpenAIOfficialHTTPFailover(ctx context.Context, account *Account) bool {
 		return false
 	}
 	marked, _ := ctx.Value(openAIOfficialHTTPFailoverContextKey{}).(bool)
-	if !marked || account.EffectiveProviderProfile() == ProviderProfileCindyLaxaV1 ||
-		IsCindyRuntimeCompatibleAPIKeyAccount(account.Platform, account.Type, account.Credentials) {
-		return false
-	}
-	return true
+	return marked
 }
 
 // ResolveOpenAIAccountUpstreamModelForRequest exposes the scheduler's exact
@@ -37,7 +33,7 @@ func ResolveOpenAIAccountUpstreamModelForRequest(account *Account, requestedMode
 
 // ReportOpenAIOfficialHTTPAccountScheduleResult preserves the upstream health
 // observation and model-streak reset. Downstream probe leases are deliberately
-// not touched: eligible API keys never own those OAuth/Cindy mechanisms.
+// not touched: eligible API keys never own those OAuth mechanisms.
 func (s *OpenAIGatewayService) ReportOpenAIOfficialHTTPAccountScheduleResult(
 	ctx context.Context,
 	account *Account,

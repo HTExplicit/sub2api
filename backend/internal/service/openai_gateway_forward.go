@@ -21,25 +21,6 @@ import (
 func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, account *Account, body []byte) (_ *OpenAIForwardResult, forwardErr error) {
 	rememberPromptRequestedModel(c, body)
 	stageCodexRoutingTurn(c, body)
-	if account != nil && IsCindyAPIKeyAccount(account.Platform, account.Type, account.Credentials) && IsImageGenerationIntent(openAIResponsesEndpoint, gjson.GetBytes(body, "model").String(), body) {
-		resolved, err := ResolveCindyResponsesImageToolsForAccount(ctx, account, body)
-		if err != nil {
-			status, code, message := http.StatusBadRequest, "invalid_request_error", "Invalid image bridge request"
-			if errors.Is(err, ErrCindyResponsesImageToolModelNotFound) {
-				status, code, message = http.StatusNotFound, "model_not_found", "Image tool model is not supported on the Responses endpoint"
-			} else if errors.Is(err, ErrExtensionOperationDisabled) || errors.Is(err, ErrExtensionOperationUnavailable) {
-				status, code, message = http.StatusServiceUnavailable, "service_unavailable", "Image bridge is unavailable"
-			}
-			c.JSON(status, gin.H{"error": gin.H{"type": code, "message": message}})
-			return nil, err
-		}
-		body = resolved
-	}
-	pricingContext, pricingErr := CaptureCindyPricingContext(ctx, c, account)
-	if pricingErr != nil {
-		return nil, pricingErr
-	}
-	ctx = pricingContext
 	diagnosticIncomingBody := body
 	// Snapshot the client body for the request integrity check before any
 	// rewrite; re-staged on every entry so a failover never reuses a stale copy.
@@ -94,7 +75,6 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 	startTime := time.Now()
 	// 固定渠道映射后的请求级 canonical body；账号 normalize/strip 不得改写跨 failover hint。
 	canonicalImageIntentBody := body
-	cindyRuntimeAccount := account != nil && IsCindyRuntimeCompatibleAPIKeyAccount(account.Platform, account.Type, account.Credentials)
 
 	restrictionResult := s.detectCodexClientRestriction(c, account, body)
 	apiKeyID := getAPIKeyIDFromContext(c)
@@ -156,31 +136,9 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 			body = liteBody
 		}
 	}
-	cindyHTTPFallbackBody := body
 	wsDecision := s.getOpenAIWSProtocolResolver().Resolve(account)
-	cindyHTTPToWSV2 := false
-	if isOpenAICindyHTTPToWSV2Bypassed(c) {
-		wsDecision = openAIWSHTTPDecision("cindy_handshake_http_fallback")
-	} else if bridgeDecision, eligible := s.resolveCindyHTTPToWSV2Decision(c, account); eligible {
-		wsDecision = bridgeDecision
-		cindyHTTPToWSV2 = true
-		markOpenAICindyHTTPToWSV2Required(c)
-	} else if isOpenAICindyHTTPToWSV2Required(c) {
-		// Once a request has entered the strict Cindy bridge, account failover may
-		// only select another bridge-eligible Cindy account. Exclude incompatible
-		// candidates without sending or attributing a health failure to them.
-		return nil, newOpenAICindyHTTPToWSV2AccountRequiredError()
-	} else {
-		// 普通账号仍只允许 WS 入站走 WS 上游。Cindy 的 HTTP -> WSv2 是独立、严格受控的例外。
-		wsDecision = resolveOpenAIWSDecisionByClientTransport(wsDecision, GetOpenAIClientTransport(c))
-	}
-	// Cindy HTTP -> WSv2 keeps the legacy session affinity key. The bridge is
-	// intentionally single-turn and must share turn-state with the HTTP path;
-	// execution-scope derivation is reserved for native WS ingress where
-	// multi-agent thread isolation is required.
-	if cindyHTTPToWSV2 {
-		wsExecutionScope = ""
-	}
+	// 仅允许 WS 入站请求走 WS 上游，避免出现 HTTP -> WS 协议混用。
+	wsDecision = resolveOpenAIWSDecisionByClientTransport(wsDecision, GetOpenAIClientTransport(c))
 	if requestedPreviousResponseID != "" && wsDecision.Transport != OpenAIUpstreamTransportResponsesWebsocketV2 &&
 		account.UsesOpenAICodexProtocol() {
 		// This endpoint-specific restriction is independent of the global WS
@@ -191,7 +149,7 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 		}})
 		return nil, errors.New("selected upstream requires Responses WebSocket v2 for previous_response_id")
 	}
-	passthroughEnabled := account.IsOpenAIPassthroughEnabled() && !cindyHTTPToWSV2
+	passthroughEnabled := account.IsOpenAIPassthroughEnabled()
 	compactPath := isOpenAIResponsesCompactPath(c)
 	// Records which service-owned rewrites this attempt applies so the request
 	// integrity check can replay them on the client snapshot
@@ -254,16 +212,6 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 	promptCacheKey := strings.TrimSpace(requestView.PromptCacheKey)
 	clientPromptCacheKey := promptCacheKey
 	originalModel := reqModel
-	if cindyRuntimeAccount {
-		if !CindyFreePoolModelSupportsEndpoint(originalModel, CindyEndpointResponses) {
-			err := fmt.Errorf("cindy model %q is not available to the free-key pool", originalModel)
-			setOpsUpstreamError(c, http.StatusBadRequest, err.Error(), "")
-			c.JSON(http.StatusBadRequest, gin.H{"error": gin.H{
-				"type": "invalid_request_error", "message": err.Error(), "param": "model",
-			}})
-			return nil, err
-		}
-	}
 
 	if account.Platform == PlatformGrok {
 		return s.forwardGrokResponses(ctx, c, account, body, originalModel, reqStream, startTime)
@@ -287,7 +235,7 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 	if account.IsAnthropicProtocol() {
 		return s.forwardResponsesViaNativeAnthropic(ctx, c, account, body, reqModel)
 	}
-	if account.IsOpenAIApiKey() && !cindyRuntimeAccount {
+	if account.IsOpenAIApiKey() {
 		if normalized, changed, normalizeErr := normalizeOpenAIParallelToolCallsWithoutTools(body, responsesLite); normalizeErr != nil {
 			return nil, normalizeErr
 		} else if changed {
@@ -450,8 +398,6 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 	if apiKey != nil {
 		imageGenerationAllowed = GroupAllowsImageGeneration(apiKey.Group)
 	}
-	cindyResponsesImageBridge := IsCindyAPIKeyAccount(account.Platform, account.Type, account.Credentials) &&
-		CindyModelSupportsResponsesImageBridge(originalModel)
 	codexImageGenerationBridgeEnabled := isCodexCLI &&
 		!isOpenAIResponsesLiteHeader(c.GetHeader(responsesLiteHeader)) &&
 		imageGenerationAllowed &&
@@ -485,17 +431,6 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 	if modelPolicyErr != nil {
 		return nil, modelPolicyErr
 	}
-	if cindyRuntimeAccount {
-		snapshot, err := LoadCindyCatalogSnapshot(ctx, account)
-		if err != nil {
-			return nil, err
-		}
-		if mappedModel, mapped := snapshot.CompatibilityMappings[requestedModel]; mapped {
-			upstreamModel = mappedModel
-		} else if mappedModel, mapped := snapshot.AvailableMappings[requestedModel]; mapped {
-			upstreamModel = mappedModel
-		}
-	}
 	if isCompactRequest {
 		if compactModel := s.resolveOpenAICompactFallbackModel(account, requestedModel); compactModel != "" {
 			upstreamModel = compactModel
@@ -524,7 +459,7 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 		}
 	}
 
-	imageIntent = imageIntent || cindyResponsesImageBridge || IsImageGenerationIntent(openAIResponsesEndpoint, reqModel, nil) || isOpenAIImageGenerationModel(upstreamModel)
+	imageIntent = imageIntent || IsImageGenerationIntent(openAIResponsesEndpoint, reqModel, nil) || isOpenAIImageGenerationModel(upstreamModel)
 	if imageIntent && !imageGenerationAllowed {
 		MarkOpsClientBusinessLimited(c, OpsClientBusinessLimitedReasonLocalFeatureGate)
 		c.JSON(http.StatusForbidden, gin.H{"error": gin.H{"type": "permission_error", "message": ImageGenerationPermissionMessage()}})
@@ -533,7 +468,7 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 
 	// /responses/compact 是会话压缩请求：上游不接受 tool_choice（400 unknown_parameter），
 	// 注入 image_generation 工具也没有意义，整块豁免。
-	if imageGenerationAllowed && !isCompactRequest && (codexImageGenerationBridgeEnabled || cindyResponsesImageBridge || isOpenAIImageGenerationModel(requestView.Model) || openAIRequestBodyImageGenerationToolNeedsNormalization(body) || isOpenAIImageGenerationModel(upstreamModel)) {
+	if imageGenerationAllowed && !isCompactRequest && (codexImageGenerationBridgeEnabled || isOpenAIImageGenerationModel(requestView.Model) || openAIRequestBodyImageGenerationToolNeedsNormalization(body) || isOpenAIImageGenerationModel(upstreamModel)) {
 		decoded, decodeErr := ensureReqBody()
 		if decodeErr != nil {
 			return nil, decodeErr
@@ -550,23 +485,9 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 			markDecodedModified()
 			logger.LegacyPrintf("service.openai_gateway", "[OpenAI] Normalized /responses image_generation tool payload")
 		}
-		imageOnlyModel := requestView.Model
-		if cindyResponsesImageBridge {
-			capability, _ := ResolveCindyCapability(originalModel)
-			imageOnlyModel = capability.PublicID
-		}
-		if normalizeOpenAIResponsesImageOnlyModelWithModel(decoded, imageOnlyModel) {
+		if normalizeOpenAIResponsesImageOnlyModelWithModel(decoded, requestView.Model) {
 			markDecodedModified()
 			logger.LegacyPrintf("service.openai_gateway", "[OpenAI] Normalized /responses image-only model request inbound_model=%s image_model=%s upstream_model=%s", requestView.Model, billingModel, upstreamModel)
-		}
-		mapped, mapErr := mapCindyOpenAIResponsesImageModels(ctx, decoded, account)
-		if mapErr != nil {
-			c.JSON(http.StatusServiceUnavailable, gin.H{"error": gin.H{"type": "service_unavailable", "message": "Image bridge is unavailable"}})
-			return nil, mapErr
-		}
-		if mapped {
-			markDecodedModified()
-			logger.LegacyPrintf("service.openai_gateway", "[OpenAI] Applied Cindy /responses image model mapping")
 		}
 		if model, ok := decoded["model"].(string); ok {
 			upstreamModel = strings.TrimSpace(model)
@@ -890,7 +811,6 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 			return nil, err
 		}
 		hasPreviousResponseID := strings.TrimSpace(openAIWSPayloadString(wsReqBody, "previous_response_id")) != ""
-		strictCindyContinuation := cindyRuntimeAccount && hasPreviousResponseID
 		logOpenAIWSModeDebug(
 			"forward_start account_id=%d account_type=%s model=%s stream=%v has_previous_response_id=%v",
 			account.ID,
@@ -900,9 +820,6 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 			hasPreviousResponseID,
 		)
 		maxAttempts := openAIWSReconnectRetryLimit + 1
-		if cindyHTTPToWSV2 {
-			maxAttempts = 1
-		}
 		wsAttempts := 0
 		var wsResult *OpenAIForwardResult
 		var wsErr error
@@ -940,33 +857,12 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 			if c != nil && c.Writer != nil && c.Writer.Written() {
 				break
 			}
-			// Structured Cindy/Laxa capability failures must cross the WS retry
+			// Structured model_not_supported failures must cross the WS retry
 			// boundary intact. They are account/model scoped (and already cooled
-			// by the WS forwarder), so converting them into the generic strict
-			// continuation error would lose the required 400/model_not_supported
-			// response at the handler.
+			// by the WS forwarder), so a reconnect retry must not swallow them.
 			var modelNotSupportedErr *UpstreamFailoverError
 			if errors.As(wsErr, &modelNotSupportedErr) && modelNotSupportedErr.IsOpenAIModelNotSupported() {
 				return nil, modelNotSupportedErr
-			}
-			if cindyHTTPToWSV2 && !hasPreviousResponseID && isOpenAICindyHTTPToWSV2HandshakeForbidden(wsErr) {
-				if fallbackBody, safe := prepareOpenAICindyStatelessHTTPFallback(cindyHTTPFallbackBody); safe {
-					previousBypass, hadPreviousBypass := c.Get(openAICindyHTTPToWSV2BypassContextKey)
-					c.Set(openAICindyHTTPToWSV2BypassContextKey, true)
-					result, fallbackErr := s.Forward(ctx, c, account, fallbackBody)
-					if hadPreviousBypass {
-						c.Set(openAICindyHTTPToWSV2BypassContextKey, previousBypass)
-					} else {
-						c.Set(openAICindyHTTPToWSV2BypassContextKey, false)
-					}
-					logOpenAIWSModeInfo(
-						"cindy_http_bridge_fallback account_id=%d attempt=%d reason=handshake_forbidden success=%v",
-						account.ID,
-						attempt,
-						fallbackErr == nil,
-					)
-					return result, fallbackErr
-				}
 			}
 			var taskRecoveredErr *agentIdentityTaskRecoveredError
 			if errors.As(wsErr, &taskRecoveredErr) {
@@ -979,13 +875,6 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 			}
 			if stateReason := strings.TrimPrefix(reason, "prewarm_"); stateReason == "previous_response_not_found" || stateReason == "invalid_encrypted_content" {
 				break
-			}
-			if cindyHTTPToWSV2 && !hasPreviousResponseID {
-				if failoverErr, ok := s.cindyHTTPToWSV2FirstTurnFailover(
-					ctx, c, account, upstreamModel, wsErr,
-				); ok {
-					return nil, failoverErr
-				}
 			}
 			if retryable && attempt < maxAttempts {
 				backoff := s.openAIWSRetryBackoff(attempt)
@@ -1073,27 +962,7 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 				wsResult.ImageInputSize = imageInputSize
 				wsResult.BillingModel = imageBillingModel
 			}
-			if wsResult != nil && wsResult.wsReplayInputExists {
-				s.bindCindyOpaqueContinuationAccount(
-					ctx, c, account, cindyOpaqueBindingIDsFromRawItems(wsResult.wsReplayInput),
-				)
-			}
-			if cindyHTTPToWSV2 {
-				// This remains an HTTP response even though its upstream used WS.
-				// Native WS keeps its existing ownership/session behavior.
-				s.bindHTTPResponseAccount(ctx, c, account, wsResult.ResponseID)
-			}
 			return wsResult, nil
-		}
-		if strictCindyContinuation {
-			appendOpsUpstreamError(c, OpsUpstreamErrorEvent{
-				Platform:           account.Platform,
-				AccountID:          account.ID,
-				UpstreamStatusCode: http.StatusServiceUnavailable,
-				Kind:               "continuation_state",
-				Message:            OpenAIContinuationStateUnavailableClientMessage,
-			})
-			return nil, NewOpenAIContinuationStateUnavailableError(http.StatusServiceUnavailable, nil, nil)
 		}
 		continuationReason, _ := classifyOpenAIWSReconnectReason(wsErr)
 		switch strings.TrimPrefix(continuationReason, "prewarm_") {
@@ -1235,8 +1104,8 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 			if _, rejected := parseOpenAIReasoningRejection(respBody); rejected {
 				return nil, NewOpenAIContinuationStateUnavailableError(resp.StatusCode, resp.Header, respBody)
 			}
-			if failoverErr, ok := s.handleCindyBalanceHTTPFailover(
-				ctx, account, resp.StatusCode, resp.Header, respBody, upstreamModel,
+			if failoverErr, ok := s.handleOpenAIBudgetExceededHTTPFailover(
+				ctx, account, resp.StatusCode, resp.Header, respBody,
 			); ok {
 				return nil, failoverErr
 			}
@@ -1341,10 +1210,6 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 					shouldDisable,
 					openAIHTTPPoolRetryable(ctx, account, resp.StatusCode, upstreamMsg, respBody, shouldDisable),
 				)
-				if resp.StatusCode == http.StatusForbidden &&
-					IsCindyRuntimeCompatibleAPIKeyAccount(account.Platform, account.Type, account.Credentials) {
-					failoverErr = sanitizeOpenAICindyFailoverError(failoverErr)
-				}
 				return nil, failoverErr
 			}
 			return s.handleErrorResponse(ctx, resp, c, account, body, billingModel)
@@ -1369,7 +1234,6 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 		imageCount := 0
 		searchCount := 0
 		var imageOutputSizes []string
-		var opaqueBindingIDs []string
 		if reqStream {
 			setOpenAIRefusalEarlyStreamEligibility(c, account, body)
 			streamResult, err := s.handleStreamingResponseWithReasoning(ctx, resp, c, account, startTime, originalModel, upstreamModel, reasoningEffortValue)
@@ -1433,7 +1297,6 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 			imageCount = streamResult.imageCount
 			imageOutputSizes = streamResult.imageOutputSizes
 			searchCount = streamResult.searchCount
-			opaqueBindingIDs = streamResult.opaqueBindingIDs
 		} else {
 			nonStreamResult, err := s.handleNonStreamingResponse(ctx, resp, c, account, originalModel, upstreamModel)
 			if err != nil {
@@ -1475,10 +1338,8 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 			imageCount = nonStreamResult.imageCount
 			imageOutputSizes = nonStreamResult.imageOutputSizes
 			searchCount = nonStreamResult.searchCount
-			opaqueBindingIDs = nonStreamResult.opaqueBindingIDs
 		}
 		s.bindHTTPResponseAccount(ctx, c, account, responseID)
-		s.bindCindyOpaqueContinuationAccount(ctx, c, account, opaqueBindingIDs)
 
 		// Extract and save Codex usage snapshot from response headers (for OAuth accounts).
 		// 排除 spark 影子:其 codex_* 仅由 QueryUsage(/wham/usage bengalfox)更新(外审第7轮 P1)。
@@ -1599,6 +1460,10 @@ func (s *OpenAIGatewayService) buildUpstreamRequestPrepared(ctx context.Context,
 		if err != nil {
 			return nil, err
 		}
+	}
+	body, err = applyOpenAIAPIKeyPromptCacheKeyMode(c, account, body)
+	if err != nil {
+		return nil, err
 	}
 	req, err := http.NewRequestWithContext(ctx, "POST", targetURL, bytes.NewReader(body))
 	if err != nil {

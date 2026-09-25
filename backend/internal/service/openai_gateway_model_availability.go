@@ -65,8 +65,7 @@ func (s *OpenAIGatewayService) DiagnoseModelAvailabilityForPlatform(
 		if accounts[i].IsModelSupported(requestedModel) {
 			diag.HasModelSupport = true
 			supportingAccounts++
-			if IsCindyRuntimeCompatibleAPIKeyAccount(accounts[i].Platform, accounts[i].Type, accounts[i].Credentials) &&
-				accounts[i].hasActiveModelRateLimitReasonWithContext(ctx, requestedModel, string(openAIModelNotSupportedReason)) {
+			if accounts[i].hasActiveModelRateLimitReasonWithContext(ctx, requestedModel, string(openAIModelNotSupportedReason)) {
 				modelNotSupportedCooldowns++
 			}
 		}

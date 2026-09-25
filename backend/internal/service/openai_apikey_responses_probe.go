@@ -80,20 +80,6 @@ func openaiResponsesProbePayload(modelID string) []byte {
 // 的上游模型(值),按字典序取首个具体(非通配符)模型以保证可复现;无映射时回退
 // DefaultTestModel(适配 OpenAI 官方 APIKey 账号)。
 func selectResponsesProbeModel(account *Account) string {
-	model, _ := selectResponsesProbeModelContext(context.Background(), account)
-	return model
-}
-
-func selectResponsesProbeModelContext(ctx context.Context, account *Account) (string, error) {
-	if account != nil && IsCindyAPIKeyAccount(account.Platform, account.Type, account.Credentials) {
-		snapshot, err := LoadCindyCatalogSnapshot(ctx, account)
-		if err != nil {
-			return "", err
-		}
-		if snapshot.Config.CatalogEnabled {
-			return snapshot.DefaultTestModel.LiveUpstreamID, nil
-		}
-	}
 	mapping := account.GetModelMapping()
 	candidates := make([]string, 0, len(mapping))
 	for _, upstream := range mapping {
@@ -104,10 +90,10 @@ func selectResponsesProbeModelContext(ctx context.Context, account *Account) (st
 		candidates = append(candidates, upstream)
 	}
 	if len(candidates) == 0 {
-		return openai.DefaultTestModel, nil
+		return openai.DefaultTestModel
 	}
 	sort.Strings(candidates)
-	return candidates[0], nil
+	return candidates[0]
 }
 
 // ProbeOpenAIAPIKeyResponsesSupport 探测 OpenAI APIKey 账号上游是否支持
@@ -176,11 +162,7 @@ func (s *AccountTestService) ProbeOpenAIAPIKeyResponsesSupport(ctx context.Conte
 	}
 
 	probeURL := buildOpenAIResponsesURL(normalizedBaseURL)
-	probeModel, err := selectResponsesProbeModelContext(ctx, account)
-	if err != nil {
-		logger.LegacyPrintf("service.openai_probe", "probe_policy_unavailable: account_id=%d", accountID)
-		return
-	}
+	probeModel := selectResponsesProbeModel(account)
 
 	probeCtx, cancel := context.WithTimeout(ctx, openaiResponsesProbeTimeout)
 	defer cancel()

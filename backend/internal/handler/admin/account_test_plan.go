@@ -43,21 +43,8 @@ func (h *AccountHandler) accountTestPlan(ctx context.Context, account *service.A
 	if account == nil || account.ID <= 0 {
 		return nil, errors.New("account test target is unavailable")
 	}
-	if service.IsCindyAPIKeyAccount(account.Platform, account.Type, account.Credentials) {
-		provider, err := service.LoadCindyAccountTestPlan(ctx, account)
-		if err != nil {
-			return nil, err
-		}
-		models, err := accountTestPlanModels(provider.Models)
-		if err != nil {
-			return nil, err
-		}
-		plan := basicAccountTestPlan(account, models, provider.DefaultModelID)
-		plan.PolicyStamp = provider.Namespace
-		return plan, nil
-	}
-	// Official providers do not acquire an account-tools or Cindy dependency
-	// merely to display a model list or perform a basic connection test.
+	// Official providers do not acquire an account-tools dependency merely to
+	// display a model list or perform a basic connection test.
 	raw, err := h.accountTestModels(ctx, account)
 	if err != nil {
 		return nil, err
@@ -114,7 +101,7 @@ func basicAccountTestPlan(account *service.Account, models []map[string]any, def
 	} else if len(connection.ModelIDs) > 0 {
 		connection.DefaultModelID = connection.ModelIDs[0]
 	}
-	return &accountTestPlanView{SchemaVersion: 1, AccountID: account.ID, WirePlatform: account.EffectiveWirePlatform(),
+	return &accountTestPlanView{SchemaVersion: 1, AccountID: account.ID, WirePlatform: account.Platform,
 		DefaultMode: "default", Models: models, ModeViews: map[string]accountTestModeView{
 			"default": view, "compact": view, "text": view, "connection": connection,
 		}}
