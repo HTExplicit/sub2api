@@ -12,6 +12,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/url"
+	"reflect"
 	"sort"
 	"strconv"
 	"strings"
@@ -1248,6 +1249,7 @@ func (h *AccountHandler) Create(c *gin.Context) {
 	// 探测失败不影响账号创建响应。
 	h.scheduleOpenAIResponsesProbe(createdAccount)
 	h.scheduleGrokImportProbe(createdAccount)
+	h.scheduleUpstreamModelCatalogSync(createdAccount)
 	response.Success(c, result.Data)
 }
 
@@ -1371,6 +1373,7 @@ func (h *AccountHandler) Update(c *gin.Context) {
 	// 异步执行，探测失败不影响账号更新响应。
 	if len(req.Credentials) > 0 {
 		h.scheduleOpenAIResponsesProbe(account)
+		h.scheduleUpstreamModelCatalogSync(account)
 	}
 
 	response.Success(c, h.buildAccountResponseWithRevealedAPIKey(c, account))
@@ -3252,7 +3255,17 @@ func (h *AccountHandler) discoverOpenAIAccountTestModels(ctx context.Context, ac
 	return h.accountTestService.FetchOpenAIAccountCatalogModels(ctx, account)
 }
 
-// GetModelContextCapacities reads the local snapshot, official directory and
+// scheduleUpstreamModelCatalogSync refreshes the upstream model list and the
+// capacities it declares right after an API-key account is created or its
+// credentials change. It runs in the background and never fails the request.
+func (h *AccountHandler) scheduleUpstreamModelCatalogSync(account *service.Account) {
+	if h.accountTestService == nil || !service.UpstreamModelCatalogAutoSyncEligible(account) {
+		return
+	}
+	h.accountTestService.SyncUpstreamModelCatalogInBackground(account.ID)
+}
+
+// GetModelContextCapacities reads the local snapshot, reference catalog and
 // overrides only. It never calls an upstream model endpoint or registry.
 func (h *AccountHandler) GetModelContextCapacities(c *gin.Context) {
 	accountID, err := strconv.ParseInt(c.Param("id"), 10, 64)
@@ -3287,7 +3300,6 @@ func (h *AccountHandler) PreviewModelContextCapacities(c *gin.Context) {
 		return
 	}
 	account := &service.Account{Platform: req.Platform, Type: req.Type, Credentials: make(map[string]any)}
-	protected := false
 	if req.AccountID != nil {
 		if *req.AccountID <= 0 {
 			response.BadRequest(c, "Invalid account ID")
@@ -3304,25 +3316,35 @@ func (h *AccountHandler) PreviewModelContextCapacities(c *gin.Context) {
 		for key, value := range stored.Credentials {
 			account.Credentials[key] = value
 		}
-		protected = service.IsModelContextCapacityProtected(stored)
 	} else if strings.TrimSpace(req.Platform) == "" || strings.TrimSpace(req.Type) == "" {
 		response.BadRequest(c, "platform and type are required for a new account preview")
 		return
 	}
-	// Stored protected identities cannot be reclassified by draft credentials.
-	if !protected {
-		for key, value := range map[string]*string{"base_url": req.BaseURL, "account_mode": req.AccountMode, "api_protocol": req.APIProtocol} {
-			if value != nil {
-				account.Credentials[key] = *value
+	endpointChanged := false
+	for key, value := range map[string]*string{"base_url": req.BaseURL, "account_mode": req.AccountMode, "api_protocol": req.APIProtocol} {
+		if value != nil {
+			current, _ := account.Credentials[key].(string)
+			endpointChanged = endpointChanged || current != *value
+			account.Credentials[key] = *value
+		}
+	}
+	if req.APIBaseURLs != nil {
+		baseURLs := make(map[string]any, len(req.APIBaseURLs))
+		for protocol, baseURL := range req.APIBaseURLs {
+			baseURLs[protocol] = baseURL
+		}
+		endpointChanged = endpointChanged || !reflect.DeepEqual(account.Credentials["api_base_urls"], any(baseURLs))
+		account.Credentials["api_base_urls"] = baseURLs
+	}
+	if endpointChanged && account.Extra != nil {
+		// Stored observations describe the saved endpoint, not an unsaved draft.
+		extra := make(map[string]any, len(account.Extra))
+		for key, value := range account.Extra {
+			if key != service.UpstreamModelMetadataExtraKey {
+				extra[key] = value
 			}
 		}
-		if req.APIBaseURLs != nil {
-			baseURLs := make(map[string]any, len(req.APIBaseURLs))
-			for protocol, baseURL := range req.APIBaseURLs {
-				baseURLs[protocol] = baseURL
-			}
-			account.Credentials["api_base_urls"] = baseURLs
-		}
+		account.Extra = extra
 	}
 	if req.ModelMapping != nil {
 		mapping := make(map[string]any, len(req.ModelMapping))

@@ -46,8 +46,16 @@ func requirePinnedModelContextCapacity(t *testing.T, recorder *httptest.Response
 		rows = envelope.Models
 	}
 	require.NotEmpty(t, rows)
-	// The raw resolver may leave the maximum unspecified. The wire contract
-	// always exposes a usable maximum at least as large as its context window.
+	if !want.Known() {
+		// An unknown capacity leaves the upstream row exactly as discovered.
+		for _, row := range rows {
+			require.EqualValues(t, want.ContextWindow, row["context_window"])
+			require.NotContains(t, row, "context_capacity_source")
+		}
+		return
+	}
+	// The wire contract always exposes a usable maximum at least as large as
+	// its context window.
 	wantMaximum := want.MaxContextWindow
 	if wantMaximum < want.ContextWindow {
 		wantMaximum = want.ContextWindow
@@ -120,12 +128,10 @@ func TestPinnedModelsFinalETagTracksLocalCapacityWithoutRefetching(t *testing.T)
 				}
 				return performOrdinaryPinnedModelsRequest(t, h, group, "/v1/models", etag)
 			}
-			live := &service.ModelContextCapacity{ContextWindow: 410000}
-			wantLive := service.NewAccountModelContextCapacityResolver(&account)(upstreamID, live)
-			require.Equal(t, "upstream", wantLive.Source)
+			require.False(t, service.ResolveAccountModelContextCapacity(&account, upstreamID).Known())
 			first := request("")
 			require.Equal(t, http.StatusOK, first.Code, first.Body.String())
-			requirePinnedModelContextCapacity(t, first, codex, wantLive)
+			requirePinnedModelContextCapacity(t, first, codex, service.ResolvedModelContextCapacity{ModelContextCapacity: service.ModelContextCapacity{ContextWindow: 410000}})
 			firstETag := first.Header().Get("ETag")
 			require.NotEmpty(t, firstETag)
 			unchanged := request(firstETag)
@@ -133,7 +139,7 @@ func TestPinnedModelsFinalETagTracksLocalCapacityWithoutRefetching(t *testing.T)
 			require.Empty(t, unchanged.Body.Bytes())
 
 			account.Extra[service.ModelContextOverridesExtraKey] = map[string]int64{upstreamID: 650001}
-			wantCustom := service.NewAccountModelContextCapacityResolver(&account)(upstreamID, live)
+			wantCustom := service.ResolveAccountModelContextCapacity(&account, upstreamID)
 			require.Equal(t, "custom", wantCustom.Source)
 			changed := request(firstETag)
 			require.Equal(t, http.StatusOK, changed.Code, changed.Body.String())
@@ -243,11 +249,8 @@ func TestPinnedModelsAllowlistExpandsWildcardsForBothRepresentations(t *testing.
 				ModelAllowlist:            service.GroupModelAllowlist{Enabled: true, Models: []string{"public-b", "public-*"}},
 				CodexModelsManifestConfig: service.GroupCodexModelsManifestConfig{Enabled: true, AccountIDs: []int64{1}}}
 			wantCapacity := service.ResolveAccountModelContextCapacity(&accounts[0], "gpt-5.5")
-			require.Equal(t, "official", wantCapacity.Source, "without an upstream declaration the public aliases retain the official real-upstream capacity contract")
+			require.Equal(t, "official", wantCapacity.Source, "without a persisted upstream declaration the public aliases use the real upstream's reference capacity")
 			if codex {
-				// The relay's live manifest declares its own window; on a
-				// third-party host that outranks the official reference.
-				wantCapacity = service.ResolvedModelContextCapacity{ModelContextCapacity: service.ModelContextCapacity{ContextWindow: 424242}, Source: "upstream"}
 				recorder := performPinnedCodexModelsRequest(t, h, group, "")
 				require.Equal(t, http.StatusOK, recorder.Code, recorder.Body.String())
 				require.Equal(t, []string{"public-b", "public-a"}, codexHandlerManifestSlugs(t, recorder))
@@ -292,12 +295,7 @@ func TestPinnedModelsMappingFollowsUpstreamDiscoveryForBothRepresentations(t *te
 			require.Equal(t, http.StatusOK, recorder.Code, recorder.Body.String())
 			require.Equal(t, []int64{2}, upstream.accountIDs(), "mappings must not bypass pinned discovery")
 			wantCapacity := service.ResolveAccountModelContextCapacity(&accounts[1], "gpt-5.5")
-			require.Equal(t, "official", wantCapacity.Source, "without an upstream declaration the official capacity catalog applies")
-			if codex {
-				// The live manifest of this third-party host declares its own
-				// window, which outranks the official reference on relay hosts.
-				wantCapacity = service.ResolvedModelContextCapacity{ModelContextCapacity: service.ModelContextCapacity{ContextWindow: 424242}, Source: "upstream"}
-			}
+			require.Equal(t, "official", wantCapacity.Source, "without a persisted upstream declaration the reference catalog applies")
 			requirePinnedModelContextCapacity(t, recorder, codex, wantCapacity)
 			if codex {
 				require.Equal(t, []string{"custom-concrete", "public-alias"}, codexHandlerManifestSlugs(t, recorder))

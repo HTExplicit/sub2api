@@ -245,7 +245,6 @@ func (s *AccountService) Create(ctx context.Context, req CreateAccountRequest) (
 		Status:      StatusActive,
 		ExpiresAt:   req.ExpiresAt,
 	}
-	delete(account.Extra, UpstreamModelContextCapacitiesExtraKey)
 	delete(account.Extra, ModelContextOverridesExtraKey)
 	delete(account.Extra, UpstreamModelMetadataExtraKey)
 	if req.AutoPauseOnExpired != nil {
@@ -345,7 +344,7 @@ func (s *AccountService) Update(ctx context.Context, id int64, req UpdateAccount
 		delete(extra, OllamaCloudUsageSessionExtraKey)
 		delete(extra, OllamaCloudUsageAutoRefreshExtraKey)
 		delete(extra, OllamaCloudUsageSnapshotExtraKey)
-		for _, key := range []string{UpstreamModelContextCapacitiesExtraKey, ModelContextOverridesExtraKey, UpstreamModelMetadataExtraKey} {
+		for _, key := range []string{ModelContextOverridesExtraKey, UpstreamModelMetadataExtraKey} {
 			delete(extra, key)
 			if current, ok := account.Extra[key]; ok {
 				extra[key] = current

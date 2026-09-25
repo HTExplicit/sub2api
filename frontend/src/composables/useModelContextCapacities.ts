@@ -88,8 +88,9 @@ export function useModelContextCapacities(options: {
       const observation = observations.get(row.upstream_model_id)
       if (!row.editable || row.upstream || !observation?.upstream) return row
       // Unsaved creation previews cannot persist the latest upstream observation.
-      // Retain that actual sync result while asking the backend to resolve new aliases/products.
-      if (row.automatic_source === 'default' && observation.automatic_source === 'upstream') {
+      // Retain that actual sync result while asking the backend to resolve new aliases/products;
+      // an upstream declaration outranks the reference catalog and the registry.
+      if (observation.automatic_source === 'upstream') {
         return {
           ...observation,
           ...row,

@@ -504,30 +504,6 @@ describe('EditAccountModal', () => {
     wrapper.unmount()
   })
 
-  it('keeps protected OAuth capacity inline and read-only without losing the selector account ID', async () => {
-    const account = buildOpenAIOAuthParentAccount()
-    account.credentials.model_mapping = { 'gpt-5.2': 'gpt-5.2' }
-    mockCapacityRows([capacityRow({
-      editable: false,
-      automatic_context_window: 272_000,
-      automatic_source: 'protected',
-      effective_context_window: 272_000,
-      effective_source: 'protected'
-    })])
-    updateAccountMock.mockReset().mockResolvedValue(account)
-    const wrapper = mountModal(account)
-    await flushPromises()
-    expect(wrapper.findComponent(ModelWhitelistSelectorStub).props('accountId')).toBe(account.id)
-    expect(wrapper.find('[data-testid="context-capacity-input"]').exists()).toBe(false)
-    expect(findCapacityField(wrapper).find('[data-testid="context-capacity-edit"]').exists()).toBe(false)
-    expect(findCapacityField(wrapper).get('[data-testid="context-capacity-source"]').text()).toContain('sources.protected')
-    await wrapper.get('form#edit-account-form').trigger('submit.prevent')
-    await flushPromises()
-    expect(updateAccountMock).toHaveBeenCalledTimes(1)
-    expect(updateAccountMock.mock.calls[0]?.[1]).not.toHaveProperty('model_context_overrides')
-    wrapper.unmount()
-  })
-
   it('owns mapping capacity by its actual target ID even when an earlier row aliases that same ID', async () => {
     const account = buildAccount()
     account.credentials.model_mapping = { 'public-sol': 'gpt-5.6-sol' }

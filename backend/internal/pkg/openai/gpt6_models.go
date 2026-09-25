@@ -2,16 +2,13 @@ package openai
 
 import "strings"
 
-// GPT6CodexReferenceSource pins the subscription client's fallback metadata.
-// API capacities are separate; neither reference proves an account's live limits.
+// GPT6CodexReferenceSource pins the subscription client's fallback metadata
+// (instructions and client version). Context capacities live in the service
+// reference catalog; no reference proves an account's live limits.
 const GPT6CodexReferenceCommit = "4b664e0ef0397f82e68c60088a90fcd035deb796"
 const GPT6CodexReferenceSource = "https://github.com/openai/codex/blob/" + GPT6CodexReferenceCommit + "/codex-rs/models-manager/models.json"
 const GPT6CodexReferenceVerifiedAt = "2026-09-23"
 const GPT6CodexMinimumClientVersion = "0.155.0"
-const GPT6CodexContextWindow int64 = 272000
-const GPT6CodexMaxContextWindow int64 = 872000
-const GPT6APIContextWindow int64 = 1050000
-const GPT6APIMaxOutputTokens int64 = 128000
 
 // GPT6NamedModel recognizes the two published named models and finite local
 // effort/compact aliases. Arbitrary future GPT-6 names and unverified snapshots

@@ -117,7 +117,7 @@ func TestCodexContextWindowRegistryEnrichment(t *testing.T) {
 	}{
 		{"preserve upstream limits", `"context_window":272000,"max_context_window":872000`, 272000, 872000, 272000, 872000, "upstream"},
 		{"upstream default without maximum", `"context_window":272000`, 272000, 0, 272000, 272000, "upstream"},
-		{"registry supplies missing limits", `"description":"Model without context metadata"`, 1050000, 1050000, 1050000, 1050000, "official"},
+		{"registry supplies missing limits", `"description":"Model without context metadata"`, 1050000, 1050000, 272000, 872000, "official"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			account := codexContextWindowAccount(t, 1, `"context_window":64000`)
@@ -148,10 +148,10 @@ func TestCodexContextWindowRegistryEnrichment(t *testing.T) {
 			require.NoError(t, err)
 			require.Empty(t, catalog.Warnings)
 			require.Len(t, upstream.requests, 2)
-			// Synchronization preserves the upstream observation. On this
-			// third-party host the public projection follows that declaration;
-			// registry enrichment is not an upstream observation, so a silent
-			// upstream falls back to the release-owned official registry.
+			// Synchronization preserves the upstream observation and the public
+			// projection follows it on every host. Registry enrichment is only a
+			// reference below the release catalog, so a silent upstream is
+			// advertised with the catalog's Codex subscription values.
 			require.EqualValues(t, tc.wantWindow, catalog.Metadata["gpt-6-astra"].ContextWindow)
 			require.EqualValues(t, tc.wantMax, catalog.Metadata["gpt-6-astra"].MaxContextWindow)
 			model := codexContextWindowManifest(t, []Account{account})

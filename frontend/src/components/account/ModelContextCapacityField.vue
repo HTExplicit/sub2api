@@ -96,7 +96,7 @@ const boundRow = computed(() => {
   if (!row || !isConcreteModelId(props.modelId) || !isConcreteModelId(row.upstream_model_id)) return undefined
   return row.upstream_model_id === props.modelId || row.aliases.includes(props.modelId) ? row : undefined
 })
-const editable = computed(() => !!boundRow.value?.editable && boundRow.value.effective_source !== 'protected')
+const editable = computed(() => !!boundRow.value?.editable)
 const preview = computed<{ value: number | null; source: string }>(() => {
   const row = boundRow.value
   if (!row) return { value: null, source: 'unknown' }
@@ -112,12 +112,9 @@ const preview = computed<{ value: number | null; source: string }>(() => {
 const formattedValue = computed(() => formatContextCapacity(preview.value.value))
 const fieldWidth = computed(() => `${Math.max(6, formattedValue.value.length + 2)}ch`)
 const inputValid = computed(() => parseContextCapacityInput(inputValue.value).valid)
-const sourceLabel = computed(() => {
-  if (boundRow.value?.reason === 'codex_catalog_reference') return t(`${key}.sources.codex_reference`)
-  return ['custom', 'official', 'upstream', 'default', 'protected', 'invalid'].includes(preview.value.source)
-    ? t(`${key}.sources.${preview.value.source}`)
-    : t(`${key}.unknown`)
-})
+const sourceLabel = computed(() => ['custom', 'upstream', 'official', 'registry', 'invalid'].includes(preview.value.source)
+  ? t(`${key}.sources.${preview.value.source}`)
+  : t(`${key}.unknown`))
 const detailsTitle = computed(() => {
   const row = boundRow.value
   const details = [t(`${key}.effective`), `${formattedValue.value} · ${sourceLabel.value}`]

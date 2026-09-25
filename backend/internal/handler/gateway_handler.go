@@ -1116,8 +1116,8 @@ func (h *GatewayHandler) Messages(c *gin.Context) {
 	}
 }
 
-// Models handles listing available models
-// GET /v1/models
+// Models lists visible models, or retrieves the exact list entry for a model path parameter.
+// GET /v1/models and /v1/models/:model (also exposed through root aliases)
 // Returns models based on account configurations (model_mapping whitelist)
 // Falls back to default models if no whitelist is configured
 func (h *GatewayHandler) Models(c *gin.Context) {
@@ -1135,46 +1135,14 @@ func (h *GatewayHandler) Models(c *gin.Context) {
 	if forcedPlatform, ok := middleware2.GetForcePlatformFromContext(c); ok && strings.TrimSpace(forcedPlatform) != "" {
 		platform = forcedPlatform
 	}
-
-	// Strict Cindy groups use the versioned capability catalogue rather than
-	// account model_mapping keys. Compatibility aliases and unverified
-	// candidates are intentionally absent from the public list.
-	strictCindy := false
-	var cindySnapshot *service.CindyCatalogSnapshot
-	// Pinned OpenAI manifests are resolved directly from their configured
-	// account set; they must not be gated by Cindy availability classification
-	// (the two contracts use different account pools).
-	pinnedOpenAIConfigured := apiKey != nil && apiKey.Group != nil &&
-		apiKey.Group.Platform == service.PlatformOpenAI && apiKey.Group.CodexModelsManifestConfig.Enabled
-	pinnedOpenAI := platform == service.PlatformOpenAI && pinnedOpenAIConfigured
-	if (platform == service.PlatformOpenAI || platform == service.PlatformCindy) && !pinnedOpenAIConfigured {
-		var err error
-		strictCindy, err = h.gatewayService.ClassifyCindyIdentityGroup(c.Request.Context(), authenticatedGroup)
-		if err != nil {
-			h.errorResponse(c, http.StatusServiceUnavailable, "api_error", "Unable to determine model availability")
-			return
-		}
-		if strictCindy {
-			cindySnapshot, err = service.LoadCindyCatalogSnapshot(c.Request.Context(), nil)
-			if err != nil {
-				h.errorResponse(c, http.StatusServiceUnavailable, "api_error", "Cindy catalog snapshot is unavailable")
-				return
-			}
-			strictCindy = cindySnapshot.Config.CatalogEnabled
-		}
-	}
-	if strictCindy {
-		availableModels := cindySnapshot.PublicModelIDs
-		if apiKey != nil && apiKey.Group != nil && apiKey.Group.ModelAllowlistEnabled() {
-			availableModels = apiKey.Group.ModelAllowlist.FilterForListing(availableModels)
-		}
-		writeCindyOpenAIModelsListSnapshot(c, availableModels, cindySnapshot)
-		return
-	}
+	// Every list row carries the group's known context capacity; unknown
+	// capacity is simply absent.
 	c.Set(modelCapacityProjectorContextKey, func(body []byte) ([]byte, error) {
 		return h.gatewayService.ProjectModelListContextCapacities(c.Request.Context(), authenticatedGroup, groupID, platform, body)
 	})
-	if pinnedOpenAI {
+
+	if platform == service.PlatformOpenAI && apiKey != nil && apiKey.Group != nil &&
+		apiKey.Group.Platform == service.PlatformOpenAI && apiKey.Group.CodexModelsManifestConfig.Enabled {
 		h.pinnedOpenAIModels(c, apiKey.Group)
 		return
 	}
@@ -1212,29 +1180,26 @@ func (h *GatewayHandler) Models(c *gin.Context) {
 
 	// Fallback to default models
 	if platform == service.PlatformOpenAI {
-		writePublicModelsJSON(c, gin.H{
-			"object": "list",
-			"data":   openai.DefaultModels,
-		})
+		writeModelsListResponse(c, openai.DefaultModels)
 		return
 	}
 
 	if platform == service.PlatformGemini {
-		writePublicModelsJSON(c, gin.H{
-			"object": "list",
-			"data":   geminicli.DefaultModels,
-		})
+		writeModelsListResponse(c, geminicli.DefaultModels)
 		return
 	}
 	if platform == service.PlatformGrok {
 		writeGrokModelsList(c, xai.DefaultModelIDs())
 		return
 	}
+	if platform != "" && platform != service.PlatformAnthropic {
+		// A DeepSeek/Kimi/... group lists its own defaults (possibly none),
+		// never Claude's.
+		writeModelsList(c, platform, defaultModelIDsForPlatform(platform))
+		return
+	}
 
-	writePublicModelsJSON(c, gin.H{
-		"object": "list",
-		"data":   claude.DefaultModels,
-	})
+	writeModelsListResponse(c, claude.DefaultModels)
 }
 
 // ModelCapabilities returns the verified, client-facing Cindy capability
@@ -1377,12 +1342,12 @@ func (h *GatewayHandler) compositeAvailableModels(ctx context.Context, groupID *
 	seen := make(map[string]struct{})
 	models := make([]string, 0)
 	schedulablePlatforms := h.gatewayService.GetSchedulablePlatforms(ctx, groupID)
-	for _, platform := range []string{service.PlatformAnthropic, service.PlatformGemini, service.PlatformOpenAI, service.PlatformAntigravity, service.PlatformGrok, service.PlatformKimi, service.PlatformZhipu, service.PlatformDeepseek, service.PlatformMiniMax} {
+	for _, platform := range []string{service.PlatformAnthropic, service.PlatformGemini, service.PlatformOpenAI, service.PlatformAntigravity, service.PlatformGrok, service.PlatformKimi, service.PlatformZhipu, service.PlatformDeepseek, service.PlatformMiniMax, service.PlatformOpenCodeGo} {
 		platformModels := h.gatewayService.GetAvailableModels(ctx, groupID, platform)
 		if len(platformModels) == 0 {
 			// CN 供应商没有静态默认模型列表（defaultModelIDsForPlatform 的
 			// default 分支是 Claude 列表），composite 下只暴露账号映射键。
-			if _, ok := schedulablePlatforms[platform]; ok && !service.IsCNProvider(platform) {
+			if _, ok := schedulablePlatforms[platform]; ok && !service.IsMultiProtocolAPIKeyProvider(platform) {
 				platformModels = defaultModelIDsForPlatform(platform)
 			}
 		}
@@ -1399,33 +1364,6 @@ func (h *GatewayHandler) compositeAvailableModels(ctx context.Context, groupID *
 		}
 	}
 	return models
-}
-
-const modelCapacityProjectorContextKey = "gateway.model-capacity-projector"
-
-func writePublicModelsJSON(c *gin.Context, payload any) {
-	projectorValue, enabled := c.Get(modelCapacityProjectorContextKey)
-	body, err := json.Marshal(payload)
-	if err != nil {
-		c.JSON(http.StatusOK, payload)
-		return
-	}
-	if enabled {
-		if projector, ok := projectorValue.(func([]byte) ([]byte, error)); ok {
-			if projected, projectErr := projector(body); projectErr == nil {
-				body = projected
-			}
-		}
-	}
-	// Collection routes and single-model routes share the same catalogue
-	// representation.  Resolve a requested model from the final projected
-	// payload so metadata (context window, ownership, extensions, ...) exactly
-	// matches the visible collection item.
-	if c.Param("model") != "" {
-		writeRetrievedModel(c, body)
-		return
-	}
-	c.Data(http.StatusOK, "application/json; charset=utf-8", body)
 }
 
 func writeModelsList(c *gin.Context, platform string, modelIDs []string) {
@@ -1446,10 +1384,7 @@ func writeModelsList(c *gin.Context, platform string, modelIDs []string) {
 			CreatedAt:   "2024-01-01T00:00:00Z",
 		})
 	}
-	writePublicModelsJSON(c, gin.H{
-		"object": "list",
-		"data":   models,
-	})
+	writeModelsListResponse(c, models)
 }
 
 func writeAllowlistedModelsList(c *gin.Context, platform string, modelIDs []string) {
@@ -1508,10 +1443,7 @@ func writeGrokModelsList(c *gin.Context, modelIDs []string) {
 		models = append(models, item)
 	}
 
-	writePublicModelsJSON(c, gin.H{
-		"object": "list",
-		"data":   models,
-	})
+	writeModelsListResponse(c, models)
 }
 
 func grokModelSupportsConfigurableReasoning(modelID string) bool {
@@ -1544,48 +1476,7 @@ func writeOpenAIModelsList(c *gin.Context, modelIDs []string) {
 			DisplayName: modelID,
 		})
 	}
-	writePublicModelsJSON(c, gin.H{
-		"object": "list",
-		"data":   models,
-	})
-}
-
-func writeCindyOpenAIModelsListSnapshot(c *gin.Context, modelIDs []string, snapshot *service.CindyCatalogSnapshot) {
-	defaultsByID := make(map[string]openai.Model, len(openai.DefaultModels))
-	for _, model := range openai.DefaultModels {
-		defaultsByID[model.ID] = model
-	}
-	metadataByID := make(map[string]service.CindyCatalogModel, len(modelIDs))
-	for _, model := range snapshot.CatalogModels {
-		metadataByID[model.ID] = model
-	}
-
-	models := make([]openai.Model, 0, len(modelIDs))
-	for _, modelID := range modelIDs {
-		model, ok := defaultsByID[modelID]
-		if !ok {
-			model = openai.Model{
-				ID:          modelID,
-				Object:      "model",
-				Created:     1704067200,
-				OwnedBy:     "openai",
-				Type:        "model",
-				DisplayName: modelID,
-			}
-		}
-		if metadata, ok := metadataByID[modelID]; ok {
-			model.DisplayName = metadata.DisplayName
-			model.Description = metadata.Description
-			model.ContextWindow = metadata.BaseContextWindow
-			model.MaxInputTokens = metadata.BaseContextWindow
-			model.MaxOutputTokens = metadata.MaxOutputTokens
-		}
-		models = append(models, model)
-	}
-	c.JSON(http.StatusOK, gin.H{
-		"object": "list",
-		"data":   models,
-	})
+	writeModelsListResponse(c, models)
 }
 
 // modelListingSource 汇总模型列表过滤的候选来源：账号映射键（availableModels）
@@ -1633,10 +1524,17 @@ func defaultModelIDsForPlatform(platform string) []string {
 		return claude.DefaultModelIDs()
 	case service.PlatformGrok:
 		return xai.DefaultModelIDs()
+	case service.PlatformOpenCodeGo:
+		return service.DefaultOpenCodeGoModelIDs()
+	case service.PlatformDeepseek, service.PlatformMiniMax:
+		return defaultCodexModelIDsForPlatform(platform)
+	case service.PlatformKimi, service.PlatformZhipu:
+		// No published default list: only account mappings are listed.
+		return nil
 	case service.PlatformComposite:
 		ids := make([]string, 0)
 		seen := make(map[string]struct{})
-		for _, concretePlatform := range []string{service.PlatformAnthropic, service.PlatformGemini, service.PlatformOpenAI, service.PlatformAntigravity, service.PlatformGrok, service.PlatformKimi, service.PlatformZhipu, service.PlatformDeepseek, service.PlatformMiniMax} {
+		for _, concretePlatform := range []string{service.PlatformAnthropic, service.PlatformGemini, service.PlatformOpenAI, service.PlatformAntigravity, service.PlatformGrok, service.PlatformKimi, service.PlatformZhipu, service.PlatformDeepseek, service.PlatformMiniMax, service.PlatformOpenCodeGo} {
 			for _, id := range defaultModelIDsForPlatform(concretePlatform) {
 				if _, ok := seen[id]; ok {
 					continue
