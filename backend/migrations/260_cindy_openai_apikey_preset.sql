@@ -170,8 +170,11 @@ UPDATE channel_account_stats_model_pricing SET platform = 'openai', updated_at =
 
 -- 4. Accounts: platform openai, model_mapping = public free baseline (short
 -- public id -> provider/model), protocol defaults kept as ordinary extras
--- (existing values win), dead alpha-search mode removed. cindy_device_id and
--- cindy_device_id_source stay as plain extras without logic.
+-- (existing values win): Responses forced, compact and WS v2 off, long
+-- prompt_cache_key hashed, and no automatic Codex image_generation tool (the
+-- Laxa endpoint rejects it; the Cindy identity used to suppress it). The dead
+-- alpha-search mode is removed. cindy_device_id and cindy_device_id_source stay
+-- as plain extras without logic.
 UPDATE accounts
 SET platform = 'openai',
     credentials = jsonb_set(
@@ -194,7 +197,8 @@ SET platform = 'openai',
         'openai_responses_mode', 'force_responses',
         'openai_compact_mode', 'force_off',
         'openai_apikey_responses_websockets_v2_enabled', FALSE,
-        'openai_prompt_cache_key_mode', 'sha256_64'
+        'openai_prompt_cache_key_mode', 'sha256_64',
+        'codex_image_generation_bridge', FALSE
     ) || (CASE WHEN jsonb_typeof(extra) = 'object' THEN extra ELSE '{}'::jsonb END - 'openai_alpha_search_mode'),
     updated_at = NOW()
 WHERE platform = 'cindy';
@@ -225,6 +229,13 @@ WHERE key = 'default_platform_quotas'
   AND CASE WHEN value IS JSON OBJECT THEN value::jsonb ? 'cindy' ELSE FALSE END;
 
 DELETE FROM settings WHERE key = 'cindy_provider_config';
+
+-- The Responses image bridge served only Cindy image models; its switch leaves
+-- the stored image tools settings (studio_enabled is kept, missing means off).
+UPDATE settings
+SET value = (value::jsonb - 'responses_image_enabled')::text, updated_at = NOW()
+WHERE key = 'image_tools_config'
+  AND CASE WHEN value IS JSON OBJECT THEN value::jsonb ? 'responses_image_enabled' ELSE FALSE END;
 
 -- 7. Cindy tables, functions, constraints and columns.
 DROP TABLE IF EXISTS cindy_balance_probe_items;
