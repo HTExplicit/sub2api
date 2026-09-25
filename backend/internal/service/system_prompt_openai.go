@@ -97,8 +97,10 @@ func undoSystemPromptForIntegrity(c *gin.Context, body []byte) []byte {
 		if value.Type != gjson.String || value.String() != echo.finalInstructions {
 			return body
 		}
-		var err error
-		out := body
+		var (
+			out []byte
+			err error
+		)
 		if echo.clientHadInstructs {
 			out, err = sjson.SetBytes(body, "instructions", echo.clientInstructions)
 		} else {

@@ -49,13 +49,13 @@ func leadingControlMessages(items []gjson.Result) int {
 // reasoning recovery compare by bytes.
 func insertJSONArrayItem(body []byte, path string, items []gjson.Result, at int, item []byte) ([]byte, error) {
 	var out bytes.Buffer
-	out.WriteByte('[')
+	_ = out.WriteByte('[')
 	count := 0
 	write := func(raw string) {
 		if count > 0 {
-			out.WriteByte(',')
+			_ = out.WriteByte(',')
 		}
-		out.WriteString(raw)
+		_, _ = out.WriteString(raw)
 		count++
 	}
 	for index, existing := range items {
@@ -67,7 +67,7 @@ func insertJSONArrayItem(body []byte, path string, items []gjson.Result, at int,
 	if at >= len(items) {
 		write(string(item))
 	}
-	out.WriteByte(']')
+	_ = out.WriteByte(']')
 	return sjson.SetRawBytes(body, path, out.Bytes())
 }
 

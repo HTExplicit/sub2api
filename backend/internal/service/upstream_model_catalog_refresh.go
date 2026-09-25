@@ -251,7 +251,7 @@ func recordUpstreamModelCapacityObservations(ctx context.Context, repo AccountRe
 	digestBody, _ := json.Marshal(observed)
 	digest := string(digestBody)
 	if value, ok := upstreamCapacityObservationMarks.Load(account.ID); ok {
-		if mark := value.(upstreamCapacityObservationMark); mark.digest == digest && now.Sub(mark.at) < upstreamCapacityObservationMaxAge {
+		if mark, ok := value.(upstreamCapacityObservationMark); ok && mark.digest == digest && now.Sub(mark.at) < upstreamCapacityObservationMaxAge {
 			return
 		}
 	}
