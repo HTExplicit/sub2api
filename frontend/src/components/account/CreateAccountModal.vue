@@ -1381,6 +1381,17 @@
             class="mt-2"
             @select="apiKeyBaseUrl = $event"
           />
+          <!-- Cindy is an ordinary OpenAI API-key upstream; the preset only pre-fills its endpoint and protocol defaults. -->
+          <div v-if="form.platform === 'openai'" class="mt-2 flex flex-wrap gap-2">
+            <button
+              type="button"
+              data-testid="openai-cindy-laxa-preset"
+              class="rounded-lg bg-gray-100 px-3 py-1 text-xs text-gray-700 transition-colors hover:bg-primary-50 hover:text-primary-700 dark:bg-dark-600 dark:text-gray-300 dark:hover:bg-primary-900/30 dark:hover:text-primary-400"
+              @click="applyCindyLaxaPreset"
+            >
+              Cindy (Laxa) (api.laxarouter.ai)
+            </button>
+          </div>
           <CnBaseUrlPresets
             v-if="isCNPlatform && !isOpenCodeGoPlatform"
             class="mt-2"
@@ -4603,6 +4614,15 @@ const openAIResponsesModeOptions = computed(() => [
   { value: 'force_responses', label: t('admin.accounts.openai.responsesModeForceResponses') },
   { value: 'force_chat_completions', label: t('admin.accounts.openai.responsesModeForceChatCompletions') }
 ])
+// Cindy (Laxa) is an ordinary OpenAI API-key upstream: the preset only pre-fills its
+// endpoint and protocol defaults; models come from the native upstream sync.
+function applyCindyLaxaPreset() {
+  apiKeyBaseUrl.value = 'https://api.laxarouter.ai'
+  openAIResponsesMode.value = 'force_responses'
+  openAICompactMode.value = 'force_off'
+  openaiAPIKeyResponsesWebSocketV2Mode.value = OPENAI_WS_MODE_OFF
+  allowedModels.value = []
+}
 const openAITextEndpointCapabilityLabel = computed(() => {
   if (openAIResponsesMode.value === 'force_responses') {
     return t('admin.accounts.openai.capabilityResponses')

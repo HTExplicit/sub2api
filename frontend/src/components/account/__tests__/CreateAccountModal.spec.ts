@@ -569,6 +569,32 @@ describe('CreateAccountModal OpenAI long-context billing', () => {
     wrapper.unmount()
   })
 
+  it('creates a Cindy account as an ordinary OpenAI API-key account through the Laxa preset', async () => {
+    const wrapper = mountModal()
+    await selectButtonByText(wrapper, 'OpenAI')
+    await selectButtonByText(wrapper, 'API Key')
+    await wrapper.get('[data-testid="openai-cindy-laxa-preset"]').trigger('click')
+    await wrapper.get('form#create-account-form input[type="text"]').setValue('Cindy account')
+    await wrapper.get('form#create-account-form input[type="password"]').setValue('cindy-api-key')
+    await wrapper.get('form#create-account-form').trigger('submit.prevent')
+    await flushPromises()
+
+    const submitted = createAccountMock.mock.calls.at(-1)![0]
+    expect(submitted).toMatchObject({
+      name: 'Cindy account',
+      platform: 'openai',
+      type: 'apikey',
+      credentials: { api_key: 'cindy-api-key', base_url: 'https://api.laxarouter.ai' },
+      extra: {
+        openai_responses_mode: 'force_responses',
+        openai_compact_mode: 'force_off',
+        openai_apikey_responses_websockets_v2_mode: 'off',
+        openai_apikey_responses_websockets_v2_enabled: false
+      }
+    })
+    expect(submitted.credentials).not.toHaveProperty('model_mapping')
+  })
+
   it('keeps only the transport selector and removes account-level compatibility modes', async () => {
     const wrapper = mountModal()
     await selectButtonByText(wrapper, 'OpenAI')
