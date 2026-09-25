@@ -1549,6 +1549,7 @@ func (h *AccountHandler) BatchTest(c *gin.Context) {
 	c.Header("Content-Type", "text/event-stream")
 	c.Header("Cache-Control", "no-cache")
 	c.Header("Connection", "keep-alive")
+	c.Header("X-Accel-Buffering", "no")
 	c.Status(http.StatusOK)
 
 	var writeMu sync.Mutex
@@ -1620,14 +1621,14 @@ func (h *AccountHandler) BatchTest(c *gin.Context) {
 			name, platform, model := "", "", modelID
 			if account != nil {
 				name, platform = account.Name, account.Platform
-				if model == "" {
-					model = service.PickConnectionTestModel(account)
-				}
 				release, ok := acquire(account)
 				if !ok {
 					return
 				}
 				defer release()
+				if model == "" {
+					model = service.PickConnectionTestModel(account)
+				}
 			}
 			writeEvent(batchTestAccountEvent{Type: "account_started", AccountID: accountID, AccountName: name, Platform: platform, ModelID: model})
 
