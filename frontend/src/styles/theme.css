@@ -1,25 +1,83 @@
-/* Shared semantic defaults. The site theme can override these tokens. */
+/* Role tokens shared by the component recipes, shared components and the few fork-only
+   semantic utilities (bg-surface, text-muted, border-line, ...). These defaults reproduce the
+   upstream (v0.2.8) look; styles/flat-theme.css overrides them while <html> carries the
+   flat-theme class (public setting flat_theme_enabled). Colour values are RGB channels so the
+   Tailwind opacity modifiers keep working. */
 :root {
   --ui-canvas: 249 250 251;
   --ui-surface: 255 255 255;
+  --ui-subtle: 243 244 246;
+  --ui-sunk: 249 250 251;
   --ui-raised: 243 244 246;
+  --ui-hover: 243 244 246;
   --ui-line: 229 231 235;
   --ui-line-strong: 209 213 219;
+  --ui-line-focus: 156 163 175;
   --ui-ink: 17 24 39;
   --ui-muted: 107 114 128;
-  --ui-accent: #14b8a6;
+  --ui-faint: 156 163 175;
+  --ui-primary: 20 184 166;
+  --ui-primary-hover: 13 148 136;
+  --ui-on-primary: 255 255 255;
+  --ui-success: 16 185 129;
+  --ui-success-soft: 236 253 245;
+  --ui-danger: 239 68 68;
+  --ui-danger-soft: 254 242 242;
+  --ui-warning: 245 158 11;
+  --ui-warning-soft: 255 251 235;
+  --ui-info: 59 130 246;
+  --ui-info-soft: 239 246 255;
+  --ui-purple: 168 85 247;
+  --ui-purple-soft: 250 245 255;
   --ui-link: #0d9488;
-  --ui-font: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --ui-radius-sm: 0.375rem;
+  --ui-radius-md: 0.5rem;
+  --ui-radius-lg: 0.75rem;
+  --ui-radius-xl: 1rem;
+  --ui-shadow-popover: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1);
+  --ui-shadow-overlay: 0 25px 50px -12px rgb(0 0 0 / 0.25);
+  --ui-scrim: 0 0 0 / 0.5;
+  --ui-font: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial,
+    'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif;
+  --ui-font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  /* Tailwind box-shadow scale (tailwind.config.js reads these without fallbacks). */
+  --theme-shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.05);
+  --theme-shadow-default: 0 1px 3px 0 rgb(0 0 0 / 0.1), 0 1px 2px -1px rgb(0 0 0 / 0.1);
+  --theme-shadow-md: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
+  --theme-shadow-lg: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1);
+  --theme-shadow-xl: 0 20px 25px -5px rgb(0 0 0 / 0.1), 0 8px 10px -6px rgb(0 0 0 / 0.1);
+  --theme-shadow-2xl: 0 25px 50px -12px rgb(0 0 0 / 0.25);
+  --theme-shadow-inner: inset 0 2px 4px 0 rgb(0 0 0 / 0.05);
+  --theme-shadow-glass: 0 8px 32px rgba(0, 0, 0, 0.08);
+  --theme-shadow-glass-sm: 0 4px 16px rgba(0, 0, 0, 0.06);
+  --theme-shadow-glow: 0 0 20px rgba(20, 184, 166, 0.25);
+  --theme-shadow-glow-lg: 0 0 40px rgba(20, 184, 166, 0.35);
+  --theme-shadow-card: 0 1px 3px rgba(0, 0, 0, 0.04), 0 1px 2px rgba(0, 0, 0, 0.06);
+  --theme-shadow-card-hover: 0 10px 40px rgba(0, 0, 0, 0.08);
+  --theme-shadow-inner-glow: inset 0 1px 0 rgba(255, 255, 255, 0.1);
+  --theme-shadow-outline: 0 0 0 1px rgb(var(--ui-line));
 }
+
 :root.dark {
   --ui-canvas: 2 6 23;
-  --ui-surface: 15 23 42;
-  --ui-raised: 30 41 59;
+  --ui-surface: 30 41 59;
+  --ui-subtle: 51 65 85;
+  --ui-sunk: 15 23 42;
+  --ui-raised: 51 65 85;
+  --ui-hover: 51 65 85;
   --ui-line: 51 65 85;
   --ui-line-strong: 71 85 105;
+  --ui-line-focus: 100 116 139;
   --ui-ink: 243 244 246;
   --ui-muted: 148 163 184;
+  --ui-faint: 100 116 139;
+  --ui-success-soft: 6 78 59;
+  --ui-danger-soft: 127 29 29;
+  --ui-warning-soft: 120 53 15;
+  --ui-info-soft: 30 58 138;
+  --ui-purple-soft: 88 28 135;
   --ui-link: #2dd4bf;
+  --ui-scrim: 0 0 0 / 0.6;
 }
 
 @media (prefers-reduced-motion: reduce) {

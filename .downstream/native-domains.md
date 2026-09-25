@@ -2,7 +2,7 @@
 
 Seven first-party domains run inside the host: Codex runtime, model policy,
 prompt/skills, account tools, Cindy, image tools and observability. Native pages
-retain the flat theme, MiSans, account fields and persisted task interactions.
+retain the console theme (flat_theme_enabled), account fields and persisted task interactions.
 The official third-party plugin framework and its own configuration UI remain.
 
 ## Settings and operations
