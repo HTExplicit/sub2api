@@ -61,16 +61,6 @@
                 :class="loading ? 'animate-spin' : ''"
               />
             </button>
-            <button
-              type="button"
-              class="btn btn-secondary"
-              :title="t('admin.groups.cindyAudit.open')"
-              data-test="cindy-group-audit-open"
-              @click="showCindyGroupAudit = true"
-            >
-              <Icon name="shield" size="md" class="mr-2" />
-              <span class="hidden sm:inline">{{ t("admin.groups.cindyAudit.open") }}</span>
-            </button>
             <div class="relative" ref="columnDropdownRef">
               <button
                 @click="showColumnDropdown = !showColumnDropdown"
@@ -418,17 +408,6 @@
                       : t("admin.groups.duplicate")
                   }}
                 </span>
-              </button>
-              <button
-                v-if="row.platform === 'cindy'"
-                data-test="group-cindy-accounts"
-                :title="t('admin.groups.cindyAccounts')"
-                :aria-label="t('admin.groups.cindyAccounts')"
-                @click="openCindyAccounts(row)"
-                class="flex flex-col items-center gap-0.5 rounded-none p-1.5 text-gray-500 transition-colors hover:bg-cyan-50 hover:text-cyan-600 dark:hover:bg-cyan-900/20 dark:hover:text-cyan-400"
-              >
-                <Icon name="users" size="sm" />
-                <span class="text-xs">{{ t('admin.groups.cindyAccounts') }}</span>
               </button>
               <button
                 v-if="!authStore.isSimpleMode && row.platform === 'composite'"
@@ -4184,19 +4163,12 @@
       @close="showRPMOverridesModal = false"
       @success="loadGroups"
     />
-
-    <CindyGroupAuditDialog
-      :show="showCindyGroupAudit"
-      @close="showCindyGroupAudit = false"
-      @split="handleCindyGroupSplit"
-    />
   </AppLayout>
 </template>
 
 <script setup lang="ts">
 import { ref, reactive, computed, onMounted, onUnmounted, watch } from "vue";
 import { useI18n } from "vue-i18n";
-import { useRouter } from "vue-router";
 import { useAppStore } from "@/stores/app";
 import { useAuthStore } from "@/stores/auth";
 import { useOnboardingStore } from "@/stores/onboarding";
@@ -4231,7 +4203,6 @@ import Icon from "@/components/icons/Icon.vue";
 import GroupRateMultipliersModal from "@/components/admin/group/GroupRateMultipliersModal.vue";
 import GroupRPMOverridesModal from "@/components/admin/group/GroupRPMOverridesModal.vue";
 import GroupCapacityBadge from "@/components/common/GroupCapacityBadge.vue";
-import CindyGroupAuditDialog from "@/features/cindy-group-split/CindyGroupAuditDialog.vue";
 import ReasoningEffortPolicyFields from "@/components/admin/group/ReasoningEffortPolicyFields.vue";
 import CodexManifestAccountsField from "@/components/admin/group/CodexManifestAccountsField.vue";
 import PricingEntryCard from "@/components/admin/channel/PricingEntryCard.vue";
@@ -4373,7 +4344,6 @@ const groupPricingToAPI = (
     }));
 
 const { t } = useI18n();
-const router = useRouter();
 const appStore = useAppStore();
 const authStore = useAuthStore();
 const onboardingStore = useOnboardingStore();
@@ -4548,7 +4518,7 @@ const platformFilterOptions = computed(() => [
 ]);
 
 const compositeRoutePlatformOptions = computed(() => [
-  ...CONCRETE_PLATFORM_OPTIONS.filter((option) => option.value !== "cindy"),
+  ...CONCRETE_PLATFORM_OPTIONS,
 ]);
 
 const compositeRouteEndpointOptions = computed(() => [
@@ -4767,14 +4737,12 @@ const showRateMultipliersModal = ref(false);
 const rateMultipliersGroup = ref<AdminGroup | null>(null);
 const showRPMOverridesModal = ref(false);
 const rpmOverridesGroup = ref<AdminGroup | null>(null);
-const showCindyGroupAudit = ref(false);
 const sortableGroups = ref<AdminGroup[]>([]);
 type ConcreteGroupPlatform = Exclude<GroupPlatform, "composite">;
-type CompositeTargetPlatform = Exclude<ConcreteGroupPlatform, "cindy">;
 type CompositeRouteFormState = {
   public_model: string;
   match_type: CompositeRouteMatchType;
-  target_platform: CompositeTargetPlatform;
+  target_platform: ConcreteGroupPlatform;
   upstream_model: string;
   endpoint: CompositeRouteEndpoint;
   priority: number;
@@ -5563,10 +5531,6 @@ const loadGroups = async () => {
   }
 };
 
-const handleCindyGroupSplit = () => {
-  void loadGroups();
-};
-
 const formatCost = (cost: number): string => {
   if (cost >= 1000) return cost.toFixed(0);
   if (cost >= 100) return cost.toFixed(1);
@@ -6094,17 +6058,6 @@ const closeEditModal = () => {
   editCodexManifestRef.value?.resetValidation?.();
 };
 
-const openCindyAccounts = (group: AdminGroup) => {
-  void router.push({
-    path: '/admin/accounts',
-    query: {
-      platforms: 'cindy',
-      cindy_only: 'true',
-      group_id: String(group.id)
-    }
-  })
-}
-
 const handleUpdateGroup = async () => {
   if (!editingGroup.value) return;
   if (!editForm.name.trim()) {
@@ -6414,12 +6367,6 @@ const closeCompositeRoutesModal = () => {
 };
 
 const editCompositeRoute = (route: CompositeModelRoute) => {
-  // Strict Cindy routing is channel-owned and cannot be a Composite target.
-  // Fail closed if an older or malformed server row reaches this editor.
-  if (route.target_platform === "cindy") {
-    appStore.showError(t("admin.groups.compositeRoutes.failedToLoad"));
-    return;
-  }
   compositeRouteEditingId.value = route.id;
   compositeRouteForm.public_model = route.public_model;
   compositeRouteForm.match_type = route.match_type;

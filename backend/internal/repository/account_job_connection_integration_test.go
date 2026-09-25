@@ -14,7 +14,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestAccountJobConnectionSnapshotAndStoppedRetry(t *testing.T) {
+func TestAccountJobStoppedRetryAndMonitorFailure(t *testing.T) {
 	ctx := context.Background()
 	user := mustCreateUser(t, testEntClient(t), &service.User{Email: "job-connection-" + uuid.NewString() + "@example.com", PasswordHash: "fixture"})
 	repo := &accountJobRepository{db: integrationDB}
@@ -30,7 +30,7 @@ func TestAccountJobConnectionSnapshotAndStoppedRetry(t *testing.T) {
 		for i := range seeds {
 			seeds[i].Ordinal = i + 1
 		}
-		job, _, err := repo.Create(ctx, service.CreateAccountJobParams{CreatedBy: user.ID, Kind: service.AccountJobKindBatchTest, IdempotencyKey: uuid.NewString(), RequestHash: strings.Repeat("a", 64), PayloadCipher: "encrypted-fixture", PayloadExpires: time.Now().Add(time.Hour), Items: seeds, Attempt: 1})
+		job, _, err := repo.Create(ctx, service.CreateAccountJobParams{CreatedBy: user.ID, Kind: service.AccountJobKindBatchDelete, IdempotencyKey: uuid.NewString(), RequestHash: strings.Repeat("a", 64), PayloadCipher: "encrypted-fixture", PayloadExpires: time.Now().Add(time.Hour), Items: seeds, Attempt: 1})
 		require.NoError(t, err)
 		ids = append(ids, job.ID)
 		_, err = integrationDB.ExecContext(ctx, "UPDATE admin_account_jobs SET status='running' WHERE id=$1", job.ID)
@@ -41,13 +41,9 @@ func TestAccountJobConnectionSnapshotAndStoppedRetry(t *testing.T) {
 	items, err := repo.ReservePendingItems(ctx, job.ID, 100)
 	require.NoError(t, err)
 	require.Len(t, items, 3)
-	plan := json.RawMessage(`{"execution_plan":{"model_id":"frozen","mapped_model_id":"wire","reasoning_effort":"high","plan_stamp":"stamp"},"model_id":"wire"}`)
-	require.NoError(t, repo.SaveExecutionSnapshot(ctx, job.ID, items[0].ID, plan))
-	require.NoError(t, repo.SaveExecutionSnapshot(ctx, job.ID, items[0].ID, plan), "the same plan is idempotent")
-	require.Error(t, repo.SaveExecutionSnapshot(ctx, job.ID, items[0].ID, json.RawMessage(`{"execution_plan":{"model_id":"changed"}}`)))
 	require.NoError(t, repo.CompleteItems(ctx, job.ID, []service.AccountJobExecutionResult{
-		{ItemID: items[0].ID, Status: service.AccountJobItemStatusFailed, ErrorCode: "test_timeout", Metadata: json.RawMessage(`{"latency_ms":90}`)},
-		{ItemID: items[1].ID, Status: service.AccountJobItemStatusSucceeded, Metadata: json.RawMessage(`{"recovery_status":"warning"}`)},
+		{ItemID: items[0].ID, Status: service.AccountJobItemStatusFailed, ErrorCode: "delete_failed", Metadata: json.RawMessage(`{"account_id":7}`)},
+		{ItemID: items[1].ID, Status: service.AccountJobItemStatusSucceeded, Metadata: json.RawMessage(`{"account_id":8}`)},
 	}))
 	_, err = repo.Cancel(ctx, job.ID, user.ID)
 	require.NoError(t, err)
@@ -57,7 +53,7 @@ func TestAccountJobConnectionSnapshotAndStoppedRetry(t *testing.T) {
 	_, seeds, _, _, err := repo.FailedItemSeeds(ctx, job.ID, user.ID)
 	require.NoError(t, err)
 	require.Len(t, seeds, 1)
-	require.Contains(t, string(seeds[0].Metadata), `"model_id": "frozen"`)
+	require.Contains(t, string(seeds[0].Metadata), `"account_id": 7`)
 	jobs := service.NewAccountJobService(repo, nil)
 	view, err := jobs.Get(ctx, job.ID)
 	require.NoError(t, err)
@@ -68,8 +64,8 @@ func TestAccountJobConnectionSnapshotAndStoppedRetry(t *testing.T) {
 	require.NoError(t, err)
 	require.False(t, view.RetryEligible)
 	require.Equal(t, "payload_expired", view.RetryUnavailableReason)
-	// All model calls may have succeeded before the monitor failed. The task
-	// remains failed, and retry has no model calls to replay.
+	// All items may have succeeded before the monitor failed. The task remains
+	// failed, and retry has nothing to replay.
 	job = create(1)
 	items, err = repo.ReservePendingItems(ctx, job.ID, 100)
 	require.NoError(t, err)

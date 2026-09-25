@@ -1,11 +1,6 @@
 <template>
   <AppLayout>
     <div v-if="immediateAccountActions.size" role="status" class="mb-3 flex items-center gap-2 text-xs text-muted"><Icon name="refresh" size="sm" class="animate-spin" />{{ t('common.processing') }}</div>
-    <slot
-      name="scope-tools"
-      :selected-ids="selIds"
-      :filters="cindyProbeFilters"
-    />
     <TablePageLayout :content-framed="viewMode !== 'cards'">
       <template #filters>
         <div class="flex flex-wrap-reverse items-start justify-between gap-3">
@@ -189,34 +184,6 @@
             {{ t('admin.accounts.listPendingSyncAction') }}
           </button>
         </div>
-        <div class="mt-3 flex flex-wrap items-center justify-between gap-3 border-t border-gray-200 pt-3 dark:border-dark-700">
-          <div class="inline-flex rounded-none border border-line bg-raised p-1" data-test="cindy-account-view">
-            <button
-              v-for="option in cindyViewOptions"
-              :key="option.value"
-              type="button"
-              class="rounded-none px-3 py-1.5 text-sm font-medium transition-colors"
-              :class="cindyView === option.value
-                ? 'border-b-2 border-primary-500 text-primary-700 dark:text-primary-300'
-                : 'text-gray-500 hover:text-gray-900 dark:text-gray-400 dark:hover:text-white'"
-              @click="handleCindyViewChange(option.value)"
-            >
-              {{ option.label }}
-              <span class="ml-1 text-xs text-gray-400">{{ option.count }}</span>
-            </button>
-          </div>
-          <button
-            v-if="cindyView === 'insufficient' || cindyView === 'banned'"
-            type="button"
-            class="btn btn-danger"
-            :data-test="cindyView === 'banned' ? 'delete-cindy-banned' : 'delete-cindy-insufficient'"
-            :disabled="cindyDeleteCandidateCount === null || cindyDeleteCandidateCount === 0 || cindyDeleteLoading"
-            @click="openCindyTerminalDelete"
-          >
-            <Icon name="trash" size="sm" />
-            {{ cindyView === 'banned' ? t('admin.accounts.cindy.deleteBanned') : t('admin.accounts.cindy.deleteInsufficient') }}
-          </button>
-        </div>
       </template>
       <template #table>
         <div class="flex h-full min-h-0 min-w-0 flex-1 flex-col">
@@ -244,13 +211,13 @@
           :total-results="pagination.total"
           :selecting-all="selectingAllResults"
           :all-results-selected="allResultsSelected"
-          @test="openBatchTest"
           @delete="handleBulkDelete"
           @reset-status="handleBulkResetStatus"
           @refresh-token="handleBulkRefreshToken"
           @refresh-tier="handleBulkRefreshTier"
           @duplicate-review="handleDuplicateReview"
           @probe-upstream-billing="handleBulkProbeUpstreamBilling"
+          @test-connection="openBatchTest"
           @edit-selected="openBulkEditSelected"
           @edit-filtered="openBulkEditFiltered"
           @taxonomy-selected="openBulkTaxonomySelected"
@@ -339,9 +306,6 @@
                 <span class="pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow-outline ring-0 transition duration-200 ease-in-out" :class="[row.schedulable ? 'translate-x-4' : 'translate-x-0']" />
               </button>
             </div>
-          </template>
-          <template #cell-cindy_probe="{ row }">
-            <CindyBalanceProbeSummary :account="row" />
           </template>
           <template #cell-schedulable="{ row }">
             <button @click.stop="handleToggleSchedulable(row)" :disabled="togglingSchedulable === row.id" class="relative inline-flex h-5 w-9 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 dark:focus:ring-offset-dark-800" :class="[row.schedulable ? 'bg-primary-500 hover:bg-primary-600' : 'bg-gray-200 hover:bg-gray-300 dark:bg-dark-600 dark:hover:bg-dark-500']" :title="row.schedulable ? t('admin.accounts.schedulableEnabled') : t('admin.accounts.schedulableDisabled')">
@@ -539,7 +503,6 @@
           :today-stats-updated-at="todayStatsUpdatedAt"
           :manual-refresh-token="usageManualRefreshToken"
           :status-now="usageStatusNow"
-          :show-cindy-probe="isCindyScope"
           @row-click="openDetails"
           @toggle="toggleSel"
           @edit="handleEdit"
@@ -557,7 +520,6 @@
           :today-stats-updated-at="todayStatsUpdatedAt"
           :manual-refresh-token="usageManualRefreshToken"
           :status-now="usageStatusNow"
-          :show-cindy-probe="isCindyScope"
           @row-click="openDetails"
           @toggle="toggleSel"
           @edit="handleEdit"
@@ -574,11 +536,11 @@
     <EditAccountModal :show="showEdit" :account="edAcc" :proxies="proxies" :groups="groups" @close="showEdit = false" @updated="handleAccountUpdated" />
     <ReAuthAccountModal :show="showReAuth" :account="reAuthAcc" @close="closeReAuthModal" @reauthorized="handleAccountUpdated" />
     <AccountTestModal :show="showTest" :account="testingAcc" @close="closeTestModal" />
-    <BatchTestAccountModal :show="showBatchTest" :account-ids="batchTestAccountIDs" @close="showBatchTest = false; enterAutoRefreshSilentWindow()" />
+    <BatchAccountTestModal :show="showBatchTest" :account-ids="selIds" :accounts="accounts" @close="showBatchTest = false; enterAutoRefreshSilentWindow()" />
     <AccountOperationConfirmDialog v-if="pendingOperation" :show="true" :title="pendingOperation.title" :message="pendingOperation.message" :danger="pendingOperation.danger" :execute="pendingOperation.execute" @close="pendingOperation = null" @submitted="clearSelection()" />
     <AccountStatsModal :show="showStats" :account="statsAcc" @close="closeStatsModal" />
     <ScheduledTestsPanel :show="showSchedulePanel" :account-id="scheduleAcc?.id ?? null" :model-options="scheduleModelOptions" @close="closeSchedulePanel" />
-    <AccountActionMenu :busy="!!menu.acc && immediateAccountActions.has(menu.acc.id)" :show="menu.show" :account="menu.acc" :anchor-rect="menu.anchorRect" @close="menu.show = false" @test="handleTest" @stats="handleViewStats" @schedule="handleSchedule" @duplicate="handleDuplicateAccount" @reauth="handleReAuth" @refresh-token="handleRefresh" @recover-state="handleRecoverState" @recover-cindy-balance="handleRecoverCindyBalance" @reset-quota="handleResetQuota" @set-privacy="handleSetPrivacy" @create-spark-shadow="handleCreateSparkShadow" />
+    <AccountActionMenu :busy="!!menu.acc && immediateAccountActions.has(menu.acc.id)" :show="menu.show" :account="menu.acc" :anchor-rect="menu.anchorRect" @close="menu.show = false" @test="handleTest" @stats="handleViewStats" @schedule="handleSchedule" @duplicate="handleDuplicateAccount" @reauth="handleReAuth" @refresh-token="handleRefresh" @recover-state="handleRecoverState" @reset-quota="handleResetQuota" @set-privacy="handleSetPrivacy" @create-spark-shadow="handleCreateSparkShadow" />
     <SyncFromCrsModal :show="showSync" @close="showSync = false" @synced="reload" />
     <ImportDataModal
       :show="showImportData"
@@ -602,8 +564,6 @@
     />
     <TempUnschedStatusModal :show="showTempUnsched" :account="tempUnschedAcc" @close="showTempUnsched = false" @reset="handleTempUnschedReset" />
     <ConfirmDialog :show="showDeleteDialog" :title="t('admin.accounts.deleteAccount')" :message="t('admin.accounts.deleteConfirm', { name: deletingAcc?.name })" :confirm-text="t('common.delete')" :cancel-text="t('common.cancel')" :danger="true" @confirm="confirmDelete" @cancel="showDeleteDialog = false" />
-    <CindyCleanupDialog :show="showCindyDeleteDialog" :kind="cindyCleanupKind" :available="authStore.isAdmin"
-      @submitted="clearSelection()" @close="showCindyDeleteDialog = false" />
     <ConfirmDialog :show="showCreateShadowDialog" :title="t('admin.accounts.createSparkShadow')" :message="t('admin.accounts.createSparkShadowConfirm', { name: creatingShadowAcc?.name })" @confirm="confirmCreateSparkShadow" @cancel="showCreateShadowDialog = false" />
     <ConfirmDialog :show="showExportDataDialog" :title="t('admin.accounts.dataExport')" :message="t('admin.accounts.dataExportConfirmMessage')" :confirm-text="t('admin.accounts.dataExportConfirm')" :cancel-text="t('common.cancel')" @confirm="handleExportData" @cancel="showExportDataDialog = false">
       <label class="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
@@ -706,9 +666,6 @@ import AccountBulkActionsBar from '@/components/admin/account/AccountBulkActions
 import AccountActionMenu from '@/components/admin/account/AccountActionMenu.vue'
 import AccountCardGrid from '@/components/admin/account/AccountCardGrid.vue'
 import AccountCompactList from '@/components/admin/account/AccountCompactList.vue'
-import CindyBalanceProbeSummary from '@/features/cindy-balance-probe/CindyBalanceProbeSummary.vue'
-import CindyCleanupDialog from '@/features/cindy/CindyCleanupDialog.vue'
-import type { CindyCleanupKind } from '@/features/cindy/api'
 import AccountConsoleFilters from '@/components/admin/account/AccountConsoleFilters.vue'
 import AccountDetailsDrawer from '@/components/admin/account/AccountDetailsDrawer.vue'
 import AccountFolderBar from '@/components/admin/account/AccountFolderBar.vue'
@@ -718,6 +675,7 @@ import AccountViewModeSwitcher, { type AccountViewMode } from '@/components/admi
 import ImportDataModal from '@/components/admin/account/ImportDataModal.vue'
 import ReAuthAccountModal from '@/components/admin/account/ReAuthAccountModal.vue'
 import AccountTestModal from '@/components/admin/account/AccountTestModal.vue'
+import BatchAccountTestModal from '@/components/admin/account/BatchAccountTestModal.vue'
 import AccountStatsModal from '@/components/admin/account/AccountStatsModal.vue'
 import ScheduledTestsPanel from '@/components/admin/account/ScheduledTestsPanel.vue'
 import type { SelectOption } from '@/components/common/Select.vue'
@@ -727,7 +685,6 @@ import AccountGroupsCell from '@/components/account/AccountGroupsCell.vue'
 import AccountCapacityCell from '@/components/account/AccountCapacityCell.vue'
 import AccountUsageCell from '@/components/account/AccountUsageCell.vue'
 import UpstreamBillingRateCell from '@/components/account/UpstreamBillingRateCell.vue'
-import BatchTestAccountModal from '@/components/admin/account/BatchTestAccountModal.vue'
 import AccountOperationConfirmDialog from '@/components/admin/account-jobs/AccountOperationConfirmDialog.vue'
 import { useAccountSelectionMetadata } from '@/composables/useAccountSelectionMetadata'
 import AccountIdentityBadges from '@/components/account/AccountIdentityBadges.vue'
@@ -761,12 +718,6 @@ import type {
   UpstreamBillingProbeSnapshot
 } from '@/types'
 
-const props = withDefaults(defineProps<{
-  scope?: 'all' | 'cindy'
-}>(), {
-  scope: 'all'
-})
-
 const { t } = useI18n()
 const appStore = useAppStore()
 const authStore = useAuthStore()
@@ -778,18 +729,13 @@ function confirmAccountOperation(kind: string, ids: number[], execute: () => Pro
 const pendingDataImportJobIDs = new Map<number, number>()
 const completedImportJobIDs = ref<number[]>([])
 const showBatchTest = ref(false)
-const batchTestAccountIDs = ref<number[]>([])
-const openBatchTest = () => { batchTestAccountIDs.value = [...selIds.value]; showBatchTest.value = true }
-watch(() => accountJobsStore.drawerOpen, (open, wasOpen) => {
-  if (wasOpen && !open && accountJobsStore.currentJob?.kind === 'account_batch_test') enterAutoRefreshSilentWindow()
-})
+const openBatchTest = () => { if (selIds.value.length > 0) showBatchTest.value = true }
 const selectingImportedResults = ref(false)
 const importResultSelectionFailed = ref(false)
 let importSelectionRevision = 0
 let applyingImportSelection = false
 let importCompletionRefreshRunning = false
 let importCompletionRefreshQueued = false
-const isCindyScope = computed(() => props.scope === 'cindy')
 const fallbackRoute = reactive({ query: {}, fullPath: '' }) as unknown as RouteLocationNormalizedLoaded
 const fallbackRouter = {
   push: async () => undefined,
@@ -838,15 +784,6 @@ const facetsError = ref<unknown>(null)
 let facetsRequestSequence = 0
 let taxonomyRequestSequence = 0
 const activeFolder = ref(queryString('folder'))
-type CindyAccountView = 'all' | 'cindy' | 'insufficient' | 'banned'
-const initialCindyView = (): CindyAccountView => {
-  if (queryString('cindy_health_status') === 'banned') return 'banned'
-  if (queryString('cindy_balance_status') === 'insufficient') return 'insufficient'
-  if (isCindyScope.value) return 'cindy'
-  if (queryString('cindy_only') === 'true') return 'cindy'
-  return 'all'
-}
-const cindyView = ref<CindyAccountView>(initialCindyView())
 const showTaxonomyManager = ref(false)
 const detailsAccount = ref<Account | null>(null)
 const consoleFilters = ref<AccountConsoleFilterState>({
@@ -868,21 +805,6 @@ const finiteFacetCount = (value: unknown): number | undefined => {
   const count = Number(value)
   return Number.isFinite(count) && count >= 0 ? count : undefined
 }
-const cindyTotal = computed(() => finiteFacetCount(facets.value?.cindy_total) ?? 0)
-const cindyInsufficientCount = computed(() => finiteFacetCount(facets.value?.cindy_insufficient_count) ?? 0)
-const cindyBannedCount = computed(() => finiteFacetCount(facets.value?.cindy_banned_count) ?? 0)
-const cindyViewOptions = computed<Array<{ value: CindyAccountView; label: string; count: number | string }>>(() => {
-  const scopedOptions: Array<{ value: CindyAccountView; label: string; count: number | string }> = [
-    { value: 'cindy', label: t('admin.accounts.cindy.accounts'), count: cindyTotal.value },
-    { value: 'insufficient', label: t('admin.accounts.cindy.insufficient'), count: cindyInsufficientCount.value },
-    { value: 'banned', label: t('admin.accounts.cindy.banned'), count: cindyBannedCount.value }
-  ]
-  if (isCindyScope.value) return scopedOptions
-  return [
-    { value: 'all', label: t('admin.accounts.cindy.allAccounts'), count: finiteFacetCount(facets.value?.total) ?? '-' },
-    ...scopedOptions
-  ]
-})
 const folderNavigationTotal = computed(() => finiteFacetCount(facets.value?.total))
 const folderNavigationUncategorized = computed(() => finiteFacetCount(facets.value?.uncategorized_count))
 const groupsByID = computed(() => new Map(groups.value.map(group => [group.id, group])))
@@ -939,10 +861,6 @@ const showBulkTaxonomy = ref(false)
 const bulkTaxonomyTarget = ref<AccountBulkTaxonomyTarget | null>(null)
 const showTempUnsched = ref(false)
 const showDeleteDialog = ref(false)
-const showCindyDeleteDialog = ref(false)
-const cindyCleanupKind = ref<CindyCleanupKind>('insufficient')
-const cindyDeleteCandidateCount = ref<number | null>(null)
-const cindyDeleteLoading = ref(false)
 const showCreateShadowDialog = ref(false)
 const showReAuth = ref(false)
 const showTest = ref(false)
@@ -1517,9 +1435,6 @@ const buildConsoleRouteQuery = (): Record<string, string> => {
   if (activeFolder.value) query.folder = activeFolder.value
   if (state.group_id) query.group_id = state.group_id
   if (state.privacy_mode) query.privacy_mode = state.privacy_mode
-  if (isCindyScope.value || cindyView.value !== 'all') query.cindy_only = 'true'
-  if (cindyView.value === 'insufficient') query.cindy_balance_status = 'insufficient'
-  if (cindyView.value === 'banned') query.cindy_health_status = 'banned'
   if (sortState.sort_by !== 'name' || sortState.sort_order !== 'asc') query.sort_by = sortState.sort_by
   if (sortState.sort_order !== 'asc') query.sort_order = sortState.sort_order
   if (pagination.page > 1) query.page = String(pagination.page)
@@ -1541,7 +1456,6 @@ const syncConsoleRoute = (mode: 'push' | 'replace' = 'push') => {
 
 const applyConsoleRouteState = () => {
   activeFolder.value = queryString('folder')
-  cindyView.value = initialCindyView()
   consoleFilters.value = {
     ...consoleFilters.value,
     platforms: queryList('platforms'),
@@ -1573,52 +1487,17 @@ const buildConsoleAPIParams = (includeFolder = true) => {
     account_ids: state.account_ids.length ? state.account_ids.join(',') : undefined,
     group_id: state.group_id || undefined,
     privacy_mode: state.privacy_mode || undefined,
-    cindy_only: isCindyScope.value || cindyView.value !== 'all' ? 'true' : undefined,
-    cindy_balance_status: cindyView.value === 'insufficient' ? 'insufficient' as const : undefined,
-    cindy_health_status: cindyView.value === 'banned' ? 'banned' as const : undefined,
     search: state.search.trim() || undefined,
     sort_by: sortState.sort_by,
     sort_order: sortState.sort_order
   }
 }
 
-const cindyProbeFilters = computed(() => {
-  const state = consoleFilters.value
-  const proxyIDs = state.proxies
-    .filter((value) => value !== 'direct')
-    .map(Number)
-    .filter((value) => Number.isSafeInteger(value) && value > 0)
-  const folderID = Number(activeFolder.value)
-  const numericGroupID = Number(state.group_id)
-  return {
-    platforms: [...state.platforms],
-    types: [...state.types],
-    statuses: [...state.statuses],
-    plans: [...state.plans],
-    proxy_ids: proxyIDs,
-    include_direct: state.proxies.includes('direct'),
-    folder_ids: Number.isSafeInteger(folderID) && folderID > 0 ? [folderID] : [],
-    include_uncategorized: activeFolder.value === 'uncategorized',
-    tag_ids: [...state.tags],
-    account_ids: [...state.account_ids],
-    search: state.search.trim(),
-    group_id: state.group_id === ACCOUNT_UNGROUPED_GROUP_QUERY_VALUE
-      ? -1
-      : (Number.isSafeInteger(numericGroupID) && numericGroupID > 0 ? numericGroupID : undefined),
-    privacy_mode: state.privacy_mode || undefined,
-    cindy_balance_status: cindyView.value === 'insufficient' ? 'insufficient' : undefined,
-    cindy_health_status: cindyView.value === 'banned' ? 'banned' : undefined,
-    sort_by: sortState.sort_by,
-    sort_order: sortState.sort_order
-  }
-})
-
 const syncConsoleParams = () => {
   const requestParams = params as Record<string, unknown>
   for (const key of [
     'platform', 'type', 'status', 'platforms', 'types', 'statuses', 'plans', 'proxies',
-    'folder', 'folders', 'tags', 'account_ids', 'group_id', 'privacy_mode', 'search',
-    'cindy_only', 'cindy_balance_status', 'cindy_health_status'
+    'folder', 'folders', 'tags', 'account_ids', 'group_id', 'privacy_mode', 'search'
   ]) {
     delete requestParams[key]
   }
@@ -1642,28 +1521,6 @@ const loadFacets = async () => {
     }
   } finally {
     if (requestSequence === facetsRequestSequence) facetsLoading.value = false
-  }
-}
-
-let cindyDeleteCandidateRequestSequence = 0
-const loadCindyDeleteCandidateCount = async () => {
-  const requestSequence = ++cindyDeleteCandidateRequestSequence
-  if (cindyView.value !== 'insufficient' && cindyView.value !== 'banned') {
-    cindyDeleteCandidateCount.value = null
-    return
-  }
-  cindyDeleteCandidateCount.value = null
-  try {
-    const preview = cindyView.value === 'banned'
-      ? await adminAPI.accounts.previewCindyBannedDeletion()
-      : await adminAPI.accounts.previewCindyInsufficientDeletion()
-    if (requestSequence === cindyDeleteCandidateRequestSequence) {
-      cindyDeleteCandidateCount.value = preview.count
-    }
-  } catch (error) {
-    if (requestSequence === cindyDeleteCandidateRequestSequence) {
-      console.error('Failed to load Cindy deletion candidate count:', error)
-    }
   }
 }
 
@@ -1703,17 +1560,6 @@ const handleConsoleFiltersChanged = () => {
   syncConsoleParams()
   debouncedReload()
   void loadFacets()
-}
-
-const handleCindyViewChange = (view: CindyAccountView) => {
-  if (isCindyScope.value && view === 'all') return
-  if (cindyView.value === view) return
-  cindyView.value = view
-  pagination.page = 1
-  clearSelection()
-  syncConsoleRoute()
-  syncConsoleParams()
-  void Promise.all([load(), loadFacets(), loadCindyDeleteCandidateCount()])
 }
 
 const handleFolderSelect = (folder: string) => {
@@ -2010,7 +1856,6 @@ watch(() => route.fullPath, async () => {
   }
   applyConsoleRouteState()
   syncConsoleParams()
-  if (isCindyScope.value) syncConsoleRoute('replace')
   await Promise.all([load(), loadFacets()])
 })
 
@@ -2024,7 +1869,6 @@ const isAnyModalOpen = computed(() => {
     showBulkEdit.value ||
     showTempUnsched.value ||
     showDeleteDialog.value ||
-    showCindyDeleteDialog.value ||
     showReAuth.value ||
     showTest.value ||
     showBatchTest.value ||
@@ -2057,7 +1901,6 @@ const shouldReplaceAutoRefreshRow = (current: Account, next: Account) => {
     current.rate_limit_reset_at !== next.rate_limit_reset_at ||
     current.overload_until !== next.overload_until ||
     current.temp_unschedulable_until !== next.temp_unschedulable_until ||
-    current.cindy_balance_insufficient !== next.cindy_balance_insufficient ||
     buildOpenAIUsageRefreshKey(current) !== buildOpenAIUsageRefreshKey(next) ||
     buildGrokUsageRefreshKey(current) !== buildGrokUsageRefreshKey(next)
   )
@@ -2274,14 +2117,6 @@ const allColumns = computed(() => {
     { key: 'usage', label: t('admin.accounts.columns.usage'), sortable: false },
     { key: 'status', label: t('admin.accounts.columns.status'), sortable: true }
   ]
-  if (isCindyScope.value) {
-    c.push({
-      key: 'cindy_probe',
-      label: t('admin.accounts.columns.recentCindyProbe'),
-      sortable: false,
-      class: 'w-40 min-w-40 max-w-48'
-    })
-  }
   c.push(
     { key: 'taxonomy_route', label: t('admin.accounts.columns.classificationRoute'), sortable: false },
     { key: 'capacity', label: t('admin.accounts.columns.capacity'), sortable: false },
@@ -2632,9 +2467,9 @@ watch(
     for (const job of observedAccountJobs.value) {
       if (isTerminalAccountJob(job) && accountJobsStore.completedJobs?.some(done => done.id === job.id) && !refreshedOperations.has(job.id)) {
         refreshedOperations.add(job.id)
-        if (!pendingDataImportJobIDs.has(job.id) && job.kind !== 'account_batch_test' && job.kind !== 'account_duplicate_review') {
+        if (!pendingDataImportJobIDs.has(job.id) && job.kind !== 'account_duplicate_review') {
           void load()
-          if (['account_bulk_taxonomy', 'account_bulk_update', 'account_batch_delete', 'account_duplicate_merge', 'cindy_confirmed_cleanup', 'cindy_banned_cleanup'].includes(job.kind)) void loadFacets()
+          if (['account_bulk_taxonomy', 'account_bulk_update', 'account_batch_delete', 'account_duplicate_merge'].includes(job.kind)) void loadFacets()
         }
       }
       const revision = pendingDataImportJobIDs.get(job.id)
@@ -2781,24 +2616,6 @@ const handleProbeUpstreamBilling = async (account: Account) => {
 const handleAccountUpdated = (updatedAccount: Account) => {
   patchAccountInList(updatedAccount)
   enterAutoRefreshSilentWindow()
-}
-const openCindyTerminalDelete = () => {
-  if (!['insufficient', 'banned'].includes(cindyView.value) || cindyDeleteLoading.value) return
-  cindyCleanupKind.value = cindyView.value === 'banned' ? 'banned' : 'insufficient'
-  showCindyDeleteDialog.value = true
-}
-const handleRecoverCindyBalance = async (account: Account) => {
-  if (immediateAccountActions.has(account.id)) return
-  immediateAccountActions.add(account.id)
-  try {
-    const updated = await adminAPI.accounts.clearCindyBalanceInsufficient(account.id)
-    handleAccountUpdated(updated)
-    await Promise.all([reload(), loadFacets(), loadCindyDeleteCandidateCount()])
-    appStore.showSuccess(t('admin.accounts.cindy.recoverSuccess'))
-  } catch (error) {
-    console.error('Failed to clear Cindy insufficient balance marker:', error)
-    appStore.showError(extractApiErrorMessage(error, t('admin.accounts.cindy.recoverFailed')))
-  } finally { immediateAccountActions.delete(account.id) }
 }
 const handleTaxonomyAccountUpdated = async (updatedAccount: Account) => {
   handleAccountUpdated(updatedAccount)
@@ -3121,8 +2938,7 @@ onMounted(async () => {
     }
   }
 
-  if (isCindyScope.value) syncConsoleRoute('replace')
-  await Promise.all([load(), loadFacets(), loadTaxonomy(), loadCindyDeleteCandidateCount(), loadAPIKeyVisibility()])
+  await Promise.all([load(), loadFacets(), loadTaxonomy(), loadAPIKeyVisibility()])
   loadUpstreamBillingProbeGlobalState()
   const [proxiesResult, groupsResult] = await Promise.allSettled([
     adminAPI.proxies.getAll(),

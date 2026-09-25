@@ -38,8 +38,6 @@ func (h *AccountHandler) ExecuteAccountJob(
 
 func (h *AccountHandler) executeAccountJobItem(ctx context.Context, kind string, raw json.RawMessage, item service.AccountJobItem) service.AccountJobExecutionResult {
 	switch kind {
-	case service.AccountJobKindBatchTest:
-		return h.executeBatchConnectionTest(ctx, raw, item)
 	case service.AccountJobKindBatchDelete:
 		id, ok := accountJobTarget(item)
 		if !ok {

@@ -699,7 +699,7 @@ func (s *OpenAIGatewayService) handleErrorResponse(
 		return nil, failoverErr
 	}
 	body = s.redactAgentIdentitySensitiveBody(ctx, account, body)
-	body = s.rewriteBusinessSystemPromptJSONForRequest(c, body, BusinessSystemPromptProtocolResponses)
+	body = restoreSystemPromptEcho(c, body)
 
 	// Safety refusals are terminal for this request, independent of legacy
 	// recovery settings. Retain diagnostics without rotating or cooling accounts.
@@ -950,7 +950,7 @@ func (s *OpenAIGatewayService) handleCompatErrorResponse(
 		return nil, failoverErr
 	}
 	body = s.redactAgentIdentitySensitiveBody(context.Background(), account, body)
-	body = s.rewriteBusinessSystemPromptJSONForAnyRequest(c, body)
+	body = restoreSystemPromptEcho(c, body)
 
 	// cyber_policy：兼容路径（Chat Completions / Anthropic）以各自格式回写错误，
 	// 不原样透传 responses 格式的 cyber body（否则对下游格式不合法）。cyber 是上游网络

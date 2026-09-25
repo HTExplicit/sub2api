@@ -76,9 +76,6 @@
           <AccountTaxonomyEditor :account-id="account.id" :folder-id="account.management_folder?.id" :tag-ids="(account.tags || []).map(tag => tag.id)"
             :folders="folders" :tags="tags" @changed="refreshTaxonomyAccount" />
 
-          <AccountPromptBindingPanel v-if="account.platform === 'openai' || account.platform === 'cindy'"
-            :account-ids="[account.id]" @changed="refreshTaxonomyAccount" />
-
           <CodexFingerprintPanel v-if="account.platform === 'openai' && ['oauth', 'setup-token'].includes(account.type) && account.parent_account_id == null"
             :account-id="account.id" />
 
@@ -140,12 +137,6 @@
               <dd class="text-right text-gray-800 dark:text-gray-100">{{ expiresAt }}</dd>
               <dt class="text-gray-500 dark:text-dark-300">{{ t('admin.accounts.rateLimitResetAt') }}</dt>
               <dd class="text-right text-gray-800 dark:text-gray-100">{{ formatValue(account.rate_limit_reset_at) }}</dd>
-              <template v-if="account.extra?.cindy_device_id">
-                <dt class="text-gray-500 dark:text-dark-300">{{ t('admin.accounts.cindyDeviceId') }}</dt>
-                <dd class="break-all text-right font-mono text-gray-800 dark:text-gray-100" data-test="cindy-device-id">{{ account.extra.cindy_device_id }}</dd>
-                <dt class="text-gray-500 dark:text-dark-300">{{ t('admin.accounts.cindyDeviceIdSource') }}</dt>
-                <dd class="break-all text-right text-gray-800 dark:text-gray-100" data-test="cindy-device-id-source">{{ account.extra.cindy_device_id_source || '-' }}</dd>
-              </template>
             </dl>
             <div class="mt-4 border-t border-gray-100 pt-3 dark:border-dark-700">
               <div class="text-xs font-medium text-gray-500 dark:text-dark-300">{{ t('admin.accounts.notes') }}</div>
@@ -162,7 +153,6 @@
 import { provideAccountViewContext, useAccountViewOperation } from '@/composables/useAccountViewContext'
 import { accountAPIForView } from '@/api/admin/accounts'
 import AccountTaxonomyEditor from './AccountTaxonomyEditor.vue'
-import AccountPromptBindingPanel from './AccountPromptBindingPanel.vue'
 import CodexFingerprintPanel from './CodexFingerprintPanel.vue'
 import { computed, onMounted, onUnmounted } from 'vue'
 import { useI18n } from 'vue-i18n'

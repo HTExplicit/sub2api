@@ -1,7 +1,7 @@
 # Native domains
 
 Six first-party domains run inside the host: Codex runtime, model policy,
-prompt/skills, account tools, image tools and observability. Native pages
+system prompts, account tools, image tools and observability. Native pages
 retain the flat theme, MiSans, account fields and persisted task interactions.
 The official third-party plugin framework and its own configuration UI remain.
 

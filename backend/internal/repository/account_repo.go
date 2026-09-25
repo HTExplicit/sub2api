@@ -645,7 +645,6 @@ func lockAndMergeAccountProbeExtra(
 			extra -> 'ollama_cloud_usage_session',
 			extra -> 'ollama_cloud_usage_auto_refresh',
 			extra -> 'ollama_cloud_usage_snapshot',
-			extra -> 'upstream_model_context_capacities',
 			extra -> 'model_context_overrides',
 			extra -> 'upstream_model_metadata',
 			COALESCE(extra, '{}'::jsonb),
@@ -696,7 +695,6 @@ func lockAndMergeAccountProbeExtra(
 		currentOllamaSession           []byte
 		currentOllamaAutoRefresh       []byte
 		currentOllamaSnapshot          []byte
-		currentContextCapacities       []byte
 		currentContextOverrides        []byte
 		currentModelMetadata           []byte
 		currentExtraJSON               []byte
@@ -714,7 +712,6 @@ func lockAndMergeAccountProbeExtra(
 		&currentOllamaSession,
 		&currentOllamaAutoRefresh,
 		&currentOllamaSnapshot,
-		&currentContextCapacities,
 		&currentContextOverrides,
 		&currentModelMetadata,
 		&currentExtraJSON,
@@ -729,7 +726,7 @@ func lockAndMergeAccountProbeExtra(
 	}
 
 	extra, err := mergeAccountModelContextExtra(
-		account, account.Extra, currentContextCapacities, currentContextOverrides, currentModelMetadata,
+		account, account.Extra, currentContextOverrides, currentModelMetadata,
 	)
 	if err != nil {
 		return nil, err
@@ -749,11 +746,11 @@ func lockAndMergeAccountProbeExtra(
 	}
 	extra = service.MergeOpenAICodexTicketExtra(extra, currentExtra)
 	extra = preservePluginAccountProjection(extra, currentExtra)
-	// Preserve the prompt binding read under the row lock. A stale general
-	// account editor cannot overwrite a concurrent dedicated binding CAS.
-	delete(extra, service.PromptAccountBindingExtraKey)
-	if binding, exists := currentExtra[service.PromptAccountBindingExtraKey]; exists {
-		extra[service.PromptAccountBindingExtraKey] = binding
+	// Preserve the system prompt binding read under the row lock. A stale
+	// general account editor cannot overwrite the dedicated binding endpoint.
+	delete(extra, service.AccountExtraSystemPromptKey)
+	if binding, exists := currentExtra[service.AccountExtraSystemPromptKey]; exists {
+		extra[service.AccountExtraSystemPromptKey] = binding
 	}
 	for _, key := range []string{
 		service.UpstreamBillingProbeEnabledExtraKey,
@@ -870,7 +867,7 @@ func lockAndMergeAccountProbeExtra(
 func mergeAccountModelContextExtra(
 	account *service.Account,
 	extra map[string]any,
-	currentCapacities, currentOverrides, currentMetadata []byte,
+	currentOverrides, currentMetadata []byte,
 ) (map[string]any, error) {
 	if err := service.ValidateModelContextOverrides(account, account.ModelContextOverridesPatch); err != nil {
 		return nil, err
@@ -880,7 +877,6 @@ func mergeAccountModelContextExtra(
 		key string
 		raw []byte
 	}{
-		{service.UpstreamModelContextCapacitiesExtraKey, currentCapacities},
 		{service.ModelContextOverridesExtraKey, currentOverrides},
 		{service.UpstreamModelMetadataExtraKey, currentMetadata},
 	} {
@@ -2339,6 +2335,42 @@ func (r *accountRepository) ListModelAvailabilityCandidates(
 	preds := []dbpredicate.Account{
 		dbaccount.StatusEQ(service.StatusActive),
 		dbaccount.SchedulableEQ(true),
+		dbaccount.PlatformIn(platforms...),
+	}
+	if !includeGrouped {
+		preds = append(preds, dbaccount.Not(dbaccount.HasAccountGroups()))
+	}
+	accounts, err := r.client.Account.Query().
+		Where(preds...).
+		Order(dbent.Asc(dbaccount.FieldPriority)).
+		All(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return r.accountsToService(ctx, accounts)
+}
+
+// ListModelCapacityCandidates returns every active account of the platforms
+// that may bound a model's advertised context capacity. Unlike the availability
+// pool it ignores the schedulable switch: pausing an account changes routing,
+// not what its upstream can hold.
+func (r *accountRepository) ListModelCapacityCandidates(
+	ctx context.Context,
+	groupID *int64,
+	platforms []string,
+	includeGrouped bool,
+) ([]service.Account, error) {
+	if len(platforms) == 0 {
+		return []service.Account{}, nil
+	}
+	if groupID != nil {
+		return r.queryAccountsByGroup(ctx, *groupID, accountGroupQueryOptions{
+			status:    service.StatusActive,
+			platforms: platforms,
+		})
+	}
+	preds := []dbpredicate.Account{
+		dbaccount.StatusEQ(service.StatusActive),
 		dbaccount.PlatformIn(platforms...),
 	}
 	if !includeGrouped {

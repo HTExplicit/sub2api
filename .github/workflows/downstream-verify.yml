@@ -42,7 +42,7 @@ jobs:
         run: bash .github/scripts/test_model_context_capacity.sh
       - name: Service tests
         working-directory: backend
-        run: go test -p=1 -tags unit ./internal/service -run 'Test.*(Refusal|CyberPolicy|Continuation|InvalidEncryptedContent|PreviousResponseNotFound|CapacityShed|RequestScopedTransient|ServerOverloaded|BusinessSystemPrompt|RemoteSkill|Cindy|CompatibilityModes|AlphaSearch|CodexQuality|SelectedWorkspace)|Test(UpdateService|NormalizeAccountTaxonomyName|FilterConsoleAccounts|AccountConsolePlan|AccountFacetMatcher)' -count=1
+        run: go test -p=1 -tags unit ./internal/service -run 'Test.*(Refusal|CyberPolicy|Continuation|InvalidEncryptedContent|PreviousResponseNotFound|CapacityShed|RequestScopedTransient|ServerOverloaded|AlphaSearch|CodexQuality|SelectedWorkspace)|Test(UpdateService|NormalizeAccountTaxonomyName|FilterConsoleAccounts|AccountConsolePlan|AccountFacetMatcher)' -count=1
       - name: Upstream automation classifier tests
         run: |
           python3 .github/scripts/test_upstream_risk.py
@@ -50,15 +50,6 @@ jobs:
       - name: OpenAI probe ownership race tests
         working-directory: backend
         run: go test -race -tags unit ./internal/service -run 'TestOpenAIRuntimeBreaker_(APIKeySameAccountRetryDoesNotUseRedisLease|OAuthSameAccountRetryTransfersProbeUntilFinalFailure|SuppressedRetryReleasesSelectionClaim)' -count=1
-      - name: Remote Skill concurrency race tests
-        working-directory: backend
-        run: go test -race ./internal/service -run 'TestMoxinggangRemoteSkillSource(UsesBoundedConcurrencyAndCanonicalUnicodeURLs|FetchesFixedApprovedTreeAndBuildsPairedCandidate)|TestRemoteSkillRegistryKeepsHistorical73ActiveThrough458SeedSyncPublishAndRollback' -count=1
-      - name: Cindy HTTP to WebSocket v2 continuation race test
-        working-directory: backend
-        run: go test -race ./internal/service -run '^TestCindyHTTPToWSV2ContinuationReusesOneConnectionAcrossIndependentHTTPRequests$' -count=1
-      - name: Cindy manual balance race tests
-        working-directory: backend
-        run: go test -race -tags unit ./internal/service ./internal/repository -run '^TestCindyBalanceProbe' -count=1
       - name: Gateway management isolation race test
         working-directory: backend
         run: go test -race ./internal/handler -run '^TestOpenAIBlockedUpstreamsDoNotSerializeManagementPlane$' -count=1
@@ -67,10 +58,10 @@ jobs:
         run: |
           go test -p=1 -race -tags unit ./internal/service -run '^(TestNativePolicyCancellationSurvivesDetachedClientContext|TestNativeCodexSameConfigSaveKeepsActiveEpoch)$' -count=1
           go test -p=1 -race ./internal/codexruntime/tickets -run '^TestNativeModuleLifecycleStartsOnceAndDrains$' -count=1
-      - name: Account identity, routing leases, balance, image, and turn-state tests
+      - name: Routing leases, image, model list, and turn-state tests
         working-directory: backend
         run: |
-          go test -p=1 -tags unit ./internal/repository ./internal/service ./internal/handler ./internal/handler/admin -run 'Test.*(AccountCredentialIdentity|AccountJobCindyMutation|ProviderIdentityMismatch|CindyBalanceProbe|CindyGroupSplit|CindyCatalog|CindyCodexModels|ImageStudioEligibleKeys|CindyCompatibility|LegacyCindyRuntimeCompatibility|CodexImageGenerationBridgeOverridePrecedence|TurnStateCommits|CodexConnectionLease|SchedulerCache|SchedulerRefresh|KeepsCindyRoutingIdentity|StrictCindyGroup|MaterializesCindyIdentity|DisabledOrdinaryMember|SkipsCindyAggregate|GatewayModelCapabilities|GatewayModels|WriteOpenAIModelsList|AccountHandlerGetAvailableModels|ForwardResponsesOllamaClampPreservesContinuationPolicy|AccountAvailableModels|FetchOpenAIAccountModels|SetAnthropicAPIKeyAuthHeader|OllamaCloud.*(MaxTokens|MaxOutputTokens|Bearer)|Clamps.*OllamaBase)' -count=1
+          go test -p=1 -tags unit ./internal/repository ./internal/service ./internal/handler ./internal/handler/admin -run 'Test.*(ImageStudioEligibleKeys|CodexImageGenerationBridgeOverridePrecedence|TurnStateCommits|CodexConnectionLease|SchedulerCache|SchedulerRefresh|GatewayModels|WriteOpenAIModelsList|AccountHandlerGetAvailableModels|ForwardResponsesOllamaClampPreservesContinuationPolicy|AccountAvailableModels|FetchOpenAIAccountModels|SetAnthropicAPIKeyAuthHeader|OllamaCloud.*(MaxTokens|MaxOutputTokens|Bearer)|Clamps.*OllamaBase)' -count=1
           go test -p=1 -tags unit ./migrations -run 'Test.*(Migration222|Migration223|Migration224|Migration230|Migration231|Migration232|Migration235|Migration236|GroupModelAllowlistRepairMigration|ReleaseAcceptance)' -count=1
       - name: Request body recovery tests
         working-directory: backend
@@ -78,33 +69,20 @@ jobs:
       - name: Handler tests
         working-directory: backend
         run: |
-          go test -p=1 -tags unit ./internal/handler ./internal/handler/admin -run 'Test.*(Refusal|Cyber|Continuation|AlphaSearch|RemoteSkill)' -count=1
+          go test -p=1 -tags unit ./internal/handler ./internal/handler/admin -run 'Test.*(Refusal|Cyber|Continuation|AlphaSearch)' -count=1
           go test -p=1 ./internal/handler/admin -run 'TestUpdateSettings(PartialPayload|RejectsTwoCaptchaProviders|RequiresFourTencentCaptchaCredentials|RetainsStoredTencentCaptchaCredentials|ValidatesTencentCaptchaAppID|ValidatesTurnstileSiteKey)' -count=1
           go test -p=1 ./internal/handler/admin ./internal/service -run 'Test(ExportData|PreviewDataImport|ImportData|DataAccountIdentityKeys|DataIdentityIndex|AccountJobDataImport|OpsMetricsCollectorRecordsDatabasePoolWaitDelta|BulkUpdateAccepts|AccountHandler)' -count=1
           go build ./internal/repository
-      - name: Account view, create, and edit scope contracts
+      - name: Account job and legacy view contracts
         working-directory: backend
-        run: go test -p=1 -tags unit ./internal/service ./internal/handler/admin ./internal/handler/dto ./internal/repository -run '^(TestAccountEdit.*|TestAccountViewProbe.*|TestAccountJobBulk.*|TestNativeCindyRecoveryReturnsAccountDTO|TestLegacyCodexAccountJobRequiresCompleteActionAndFrozenTarget|TestAccountJobLegacy(RetryPreservesActorCipherExpiryAndAction64|ViewComparesSavedDigestWithoutQueryingTargets|DuplicateTargetsKeepLosers))$' -count=1
-      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
-        with:
-          python-version: '3.12'
-      - name: Complete remote Skill closure
-        run: |
-          python -m pip install 'PyYAML==6.0.2'
-          candidate=$(mktemp -d)/security-research
-          mkdir -p "$candidate"
-          cp -a backend/internal/promptskills/registry/seed/tree/. "$candidate/"
-          install -D -m 0644 \
-            backend/internal/promptskills/registry/seed/pinned/waf-bypass.md \
-            "$candidate/skills/sec-assessment-tooling/pentest-tools/src-hunter/references/payloader/waf-bypass.md"
-          python "$candidate/scripts/validate_skill.py" "$candidate" --require-evals --json
+        run: go test -p=1 -tags unit ./internal/service ./internal/handler/admin ./internal/handler/dto ./internal/repository -run '^(TestAccountJobBulk.*|TestLegacyCodexAccountJobRequiresCompleteActionAndFrozenTarget|TestAccountJobLegacy(RetryPreservesActorCipherExpiryAndAction64|ViewComparesSavedDigestWithoutQueryingTargets))$' -count=1
       - name: Account taxonomy migration integration test
         working-directory: backend
         run: go test -p=1 -tags integration ./internal/repository -run '^(Test(AccountTaxonomy.*|DeleteAccountFolder.*)Integration|TestAPIKeyRepoSuite/TestReleaseAcceptanceKeyIsHiddenButAuthenticates)$' -count=1
-      - name: Cindy balance, identity, and split integration tests
+      - name: Repository retirement and audit integration tests
         working-directory: backend
-        run: go test -p=1 -tags integration ./internal/repository -run '^Test(CindyBalanceProbe.*|CindyGroupSplit(PreviewDriftAndAtomicCommit|RollsBackAllWritesWhenOutboxInsertFails|KeepsCanonicalSourceAndTreatsLegacyLaxaAsOrdinary)|ClassifyStrictCindyGroupUsesAllNonDeletedMembersAndOpenAIGroup|PGXBatchInsertAuditAndSystemLogs|Migration236.*|NativeFeatureRetirementIsAtomicAndPreservesLedger|AccountJobPluginActionDigestRoundTrip|AccountViewScopedProbeTerminalAtomicIntegration|AccountViewProbeResumeJSONBCASIntegration)$' -count=1
-      - name: Cindy defaults migration tests
+        run: go test -p=1 -tags integration ./internal/repository -run '^Test(PGXBatchInsertAuditAndSystemLogs|Migration236.*|NativeFeatureRetirementIsAtomicAndPreservesLedger|AccountJobPluginActionDigestRoundTrip)$' -count=1
+      - name: Historical Cindy migration tests
         working-directory: backend
         run: |
           go test -p=1 ./migrations -run '^(TestMigration(207RestoresOnlyCindyNativeOpenAIModes|208UsesCindyPromptCacheHashOnly|209RestoresOnlyCindyAlphaSearchBridge|210ResetsOnlyLegacyCindyBalanceMarkers|211RestoresOnlyExactUnresolvedCindyBudgetMarkers|213ResetsOnlyStrictCindyBalanceMarkers)|TestMigration235RestrictsLedgerReplayToLifecycleExcludedRows)$' -count=1
@@ -156,8 +134,6 @@ jobs:
             src/composables/__tests__/useAccountSelectionMetadata.spec.ts \
             src/api/__tests__/accountOperationIdempotency.spec.ts \
             src/features/image-studio/history.legacy.spec.ts \
-            src/components/admin/account/__tests__/BatchTestAccountModal.spec.ts \
-            src/components/admin/account/__tests__/BatchTestAccountModal.plan.spec.ts \
             src/components/admin/codex/__tests__/CodexRuntime.proxy.spec.ts \
             src/components/admin/account/__tests__/AccountFolderBar.spec.ts \
             src/components/admin/account/__tests__/AccountTaxonomyManager.spec.ts \
@@ -170,10 +146,8 @@ jobs:
             src/components/account/__tests__/AccountUsageCell.spec.ts \
             src/components/account/__tests__/AccountUsageCell.list.spec.ts \
             src/components/account/__tests__/UsageProgressBar.spec.ts \
-            src/utils/__tests__/cindyOpenAIDefaults.spec.ts \
             src/components/account/__tests__/CreateAccountModal.spec.ts \
             src/components/account/__tests__/CreateAccountModal.codexFingerprint.spec.ts \
-            src/components/account/__tests__/CreateAccountModal.providerCreate.spec.ts \
             src/components/payment/__tests__/StripePaymentInline.contrast.spec.ts \
             src/views/user/__tests__/StripePaymentView.spec.ts \
             src/components/account/__tests__/OpenAIReasoningPolicyFields.spec.ts \
@@ -188,24 +162,9 @@ jobs:
             src/api/__tests__/admin.accounts.contextCapacity.spec.ts \
             src/composables/__tests__/useModelWhitelist.spec.ts \
             src/components/account/__tests__/BulkEditAccountModal.spec.ts \
-            src/views/admin/__tests__/SystemPromptsView.spec.ts \
-            src/views/admin/__tests__/SystemPromptsView.locale.spec.ts \
-            src/views/admin/__tests__/systemPromptsIntegrationSurface.spec.ts \
-            src/api/admin/__tests__/systemPrompts.spec.ts \
-            src/components/admin/systemPrompt/__tests__/PromptRules.spec.ts \
             src/views/admin/__tests__/AccountsView.console.spec.ts \
             src/views/admin/__tests__/AccountsView.priorityColumn.spec.ts \
             src/features/image-studio/__tests__/api.spec.ts \
-            src/api/__tests__/cindyBalanceProbe.spec.ts \
-            src/api/__tests__/admin.groups.cindy-split.spec.ts \
-            src/features/cindy-group-split/__tests__/CindyGroupAuditDialog.spec.ts \
-            src/features/cindy-balance-probe/__tests__/CindyBalanceProbePanel.spec.ts \
-            src/features/cindy-duplicate-inventory/__tests__/CindyDuplicateInventoryPanel.spec.ts \
-            src/features/cindy/__tests__/nativeAccountForms.spec.ts \
-            src/router/__tests__/cindy-legacy-redirect.spec.ts \
-            src/features/cindy/__tests__/providerSettings.spec.ts \
-            src/features/cindy-balance-probe/__tests__/CindyBalanceProbeSummary.spec.ts \
-            src/i18n/__tests__/cindyProbeLocales.spec.ts \
             src/components/layout/__tests__/AppSidebar.spec.ts \
             src/components/layout/__tests__/AppSidebar.simple-mode.spec.ts \
             src/views/admin/__tests__/GroupsView.columnSettings.spec.ts \
@@ -215,12 +174,6 @@ jobs:
             src/views/admin/__tests__/AccountsView.schedulerScore.spec.ts \
             src/views/admin/__tests__/AccountsView.sparkShadow.spec.ts \
             src/views/admin/__tests__/AccountsView.usageWindowsHint.spec.ts
-      - name: Native Cindy lite account scope
-        working-directory: frontend
-        run: |
-          pnpm exec vitest run \
-            src/views/admin/__tests__/AccountsView.lite.spec.ts \
-            -t 'keeps Cindy scope filters'
       - name: MiniMax quota and Grok save compatibility
         working-directory: frontend
         run: |

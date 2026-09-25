@@ -12,7 +12,7 @@ func TestAPIKeyService_RejectsV24AuthSnapshotWithoutModelAllowlist(t *testing.T)
 	// used version 24 independently. A persisted downstream entry must be missed,
 	// not accepted with a zero-value allowlist after the JSON field rename.
 	var cached APIKeyAuthCacheEntry
-	err := json.Unmarshal([]byte(`{"snapshot":{"version":24,"api_key_id":1,"user_id":2,"group_id":9,"status":"active","user":{"id":2,"status":"active"},"group":{"id":9,"platform":"cindy","status":"active","strict_cindy_known":true,"strict_cindy":true,"models_list_config":{"enabled":true,"models":["gpt-5.4"]}}}}`), &cached)
+	err := json.Unmarshal([]byte(`{"snapshot":{"version":24,"api_key_id":1,"user_id":2,"group_id":9,"status":"active","user":{"id":2,"status":"active"},"group":{"id":9,"platform":"openai","status":"active","models_list_config":{"enabled":true,"models":["gpt-5.4"]}}}}`), &cached)
 	if err != nil {
 		t.Fatalf("decode legacy snapshot: %v", err)
 	}

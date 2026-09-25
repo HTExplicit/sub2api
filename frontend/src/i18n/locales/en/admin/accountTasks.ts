@@ -53,7 +53,6 @@ export default {
       extension_operation: "Plugin operation",
       codex_ticket_harvest: 'Codex route acquisition and verification',
       codex_ticket_stop: 'Stop Codex route renewal',
-      account_batch_test: 'Batch connection tests',
       account_import: 'Data import',
       account_import_codex: 'Codex import',
       account_batch_create: 'Batch create',
@@ -66,8 +65,6 @@ export default {
       account_batch_update_credentials: 'Update credentials',
       account_duplicate_review: 'Duplicate review',
       account_duplicate_merge: 'Duplicate merge',
-      cindy_confirmed_cleanup: 'Cindy confirmed cleanup',
-      cindy_banned_cleanup: 'Cindy banned cleanup',
     },
     statuses: {
       pending: 'Pending',

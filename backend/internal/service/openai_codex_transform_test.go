@@ -1405,7 +1405,7 @@ func TestNormalizeOpenAIResponsesImageOnlyModel_PreservesExistingImageTool(t *te
 	require.Equal(t, "auto", tool["action"])
 }
 
-func TestNormalizeOpenAIResponsesImageOnlyModelWithModel_UsesOriginalBeforeCindyMapping(t *testing.T) {
+func TestNormalizeOpenAIResponsesImageOnlyModelWithModel_UsesOriginalBeforeAccountMapping(t *testing.T) {
 	reqBody := map[string]any{
 		"model": "openai/gpt-image-2",
 		"input": "draw a cat",

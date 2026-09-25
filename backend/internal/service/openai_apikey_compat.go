@@ -65,8 +65,8 @@ func observeOpenAIPromptCacheKeyNormalization(c *gin.Context, changed bool) {
 }
 
 // applyOpenAIAPIKeyPromptCacheKeyMode applies the account option to a final
-// Responses wire body. The gateway calls it at every send point, after any
-// other body rewrite, so the upstream never sees an over-long key.
+// Responses wire body. finalizeResponsesForSend calls it for every Responses
+// send after the system prompt, so the upstream never sees an over-long key.
 func applyOpenAIAPIKeyPromptCacheKeyMode(c *gin.Context, account *Account, body []byte) ([]byte, error) {
 	normalized, changed, err := normalizeOpenAIAPIKeyPromptCacheKey(body, c, account)
 	if err != nil {

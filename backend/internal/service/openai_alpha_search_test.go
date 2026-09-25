@@ -217,7 +217,7 @@ func TestForwardAlphaSearchOrdinaryAPIKeyIgnoresLegacyBridgeSettings(t *testing.
 		Platform:    PlatformOpenAI,
 		Type:        AccountTypeAPIKey,
 		Concurrency: 1,
-		Credentials: map[string]any{"api_key": "sk-test", "base_url": "https://cindy.example/gateway/v1"},
+		Credentials: map[string]any{"api_key": "sk-test", "base_url": "https://relay.example/gateway/v1"},
 	}
 
 	result, err := service.ForwardAlphaSearch(context.Background(), c, account, body)
@@ -225,7 +225,7 @@ func TestForwardAlphaSearchOrdinaryAPIKeyIgnoresLegacyBridgeSettings(t *testing.
 	require.NoError(t, err)
 	require.NotNil(t, result)
 	require.Equal(t, 1, result.WebSearchCalls)
-	require.Equal(t, "https://cindy.example/gateway/v1/alpha/search", upstream.lastReq.URL.String())
+	require.Equal(t, "https://relay.example/gateway/v1/alpha/search", upstream.lastReq.URL.String())
 	require.Equal(t, "Bearer sk-test", upstream.lastReq.Header.Get("Authorization"))
 	require.Equal(t, http.StatusOK, recorder.Code)
 }

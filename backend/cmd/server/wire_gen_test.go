@@ -97,6 +97,7 @@ func minimalDependencyCleanup(autoReset *service.OpenAIQuotaAutoResetService) fu
 		nil, // grokOAuth
 		nil, // openAIGateway
 		nil, // scheduledTestRunner
+		nil, // upstreamModelCatalogRefresh
 		nil, // backupSvc
 		nil, // paymentOrderExpiry
 		nil, // channelMonitorRunner
@@ -108,8 +109,6 @@ func minimalDependencyCleanup(autoReset *service.OpenAIQuotaAutoResetService) fu
 		nil, // auditLog
 		autoReset,
 		nil, // promptAudit
-		nil, // promptDomain
-		nil, // businessPrompt
 		nil, // accountJobRuntime
 		nil, // imageStudioRuntime
 		nil, // pluginManager

@@ -26,23 +26,6 @@ type accountBusinessMessage struct {
 }
 
 var accountBusinessMessageCatalog = map[string]accountBusinessMessage{
-	"test_network_failed":             {message: "connection to the upstream could not be established", failure: true},
-	"test_authentication_failed":      {message: "upstream rejected this account's authentication or access", failure: true},
-	"test_rate_limited":               {message: "upstream rate limited the connection test", failure: true},
-	"test_upstream_failed":            {message: "upstream rejected the connection test", failure: true},
-	"test_unavailable":                {message: "account testing is unavailable", failure: true},
-	"test_failed":                     {message: "account connection test failed or did not complete", failure: true},
-	"test_timeout":                    {message: "account connection test timed out", failure: true},
-	"test_model_unsupported":          {message: "selected model is not supported by this account", failure: true},
-	"test_catalog_failed":             {message: "account test model catalog is unavailable", failure: true},
-	"test_no_text_model":              {message: "account has no model for a text connection test", failure: true},
-	"test_reasoning_unsupported":      {message: "selected reasoning setting is not supported", failure: true},
-	"test_plan_changed":               {message: "connection test plan changed; configure a new test", failure: true},
-	"test_plan_persist_failed":        {message: "connection test plan could not be saved before execution", failure: true},
-	"test_incomplete":                 {message: "connection stream ended before a recognized terminal state", failure: true},
-	"test_empty_response":             {message: "connection completed without visible text", failure: true},
-	"test_terminal_failed":            {message: "upstream reported an unsuccessful terminal state", failure: true},
-	"test_protocol_invalid":           {message: "invalid connection test protocol response", failure: true},
 	AccountJobCodePayloadExpired:      {message: "account job payload expired", failure: true},
 	AccountJobCodePayloadUnavailable:  {message: "account job payload is unavailable", failure: true},
 	AccountJobCodeCancelCheckFailed:   {message: "account job cancellation state is unavailable", failure: true},

@@ -2,7 +2,6 @@ package service
 
 import (
 	"context"
-	"encoding/json"
 	"testing"
 
 	"github.com/Wei-Shaw/sub2api/internal/pkg/apicompat"
@@ -44,8 +43,8 @@ func TestGPT6CodexReferenceAndAPICatalogDefaults(t *testing.T) {
 		Credentials: map[string]any{"base_url": "https://api.openai.com"}}
 	for _, model := range []string{"gpt-6-sol", "gpt-6-luna"} {
 		descriptor := newConfiguredCodexModelDescriptor(model)
-		require.Equal(t, openai.GPT6CodexContextWindow, descriptor.ContextWindow)
-		require.Equal(t, openai.GPT6CodexMaxContextWindow, descriptor.MaxContextWindow)
+		require.EqualValues(t, 272000, descriptor.ContextWindow)
+		require.EqualValues(t, 872000, descriptor.MaxContextWindow)
 		require.Nil(t, descriptor.AutoCompactTokenLimit)
 		require.Nil(t, descriptor.MultiAgentReasoningEffort)
 		require.Equal(t, "v2", descriptor.MultiAgentVersion)
@@ -62,8 +61,8 @@ func TestGPT6CodexReferenceAndAPICatalogDefaults(t *testing.T) {
 		require.Equal(t, "priority", descriptor.ServiceTiers[0].ID)
 
 		body := convertOpenAIModelListToCodexManifestForAccount([]byte(`{"data":[{"id":"`+model+`"}]}`), account)
-		require.Equal(t, openai.GPT6APIContextWindow, gjson.GetBytes(body, "models.0.context_window").Int())
-		require.Equal(t, openai.GPT6APIContextWindow, gjson.GetBytes(body, "models.0.max_context_window").Int())
+		require.EqualValues(t, 272000, gjson.GetBytes(body, "models.0.context_window").Int(), "API defaults carry capabilities, not a capacity")
+		require.EqualValues(t, 872000, gjson.GetBytes(body, "models.0.max_context_window").Int())
 		require.Equal(t, "medium", gjson.GetBytes(body, "models.0.default_reasoning_level").String())
 		models := decodeCodexManifestModels(t, body)
 		require.Equal(t, openai.GPT6APIReasoningEfforts(), effortsFromManifestModel(t, models[0]))
@@ -71,54 +70,49 @@ func TestGPT6CodexReferenceAndAPICatalogDefaults(t *testing.T) {
 	}
 }
 
-func TestGPT6CapacityKeepsProductAndUpstreamPrecedence(t *testing.T) {
+func TestGPT6CapacityUsesSubscriptionReferenceBelowObservations(t *testing.T) {
 	for _, model := range []string{"gpt-6-sol", "gpt-6-luna"} {
 		t.Run(model, func(t *testing.T) {
 			api := &Account{Platform: PlatformOpenAI, Type: AccountTypeAPIKey, Credentials: map[string]any{"base_url": "https://api.openai.com"}}
 			reference := LookupOfficialModelContextCapacity(api, "openai/"+model)
 			require.NotNil(t, reference)
-			require.EqualValues(t, 1050000, reference.ContextWindow)
+			require.EqualValues(t, 272000, reference.ContextWindow)
+			require.EqualValues(t, 872000, reference.MaxContextWindow)
 			require.EqualValues(t, 128000, reference.MaxOutputTokens)
 			require.Zero(t, reference.MaxInputTokens)
 			require.Equal(t, openai.GPT6CodexReferenceSource, reference.Reference.SourceURL)
 			require.Nil(t, LookupOfficialModelContextCapacity(api, model+"-2099-01-01"))
-			declared := &ModelContextCapacity{ContextWindow: 200000, MaxContextWindow: 400000, MaxOutputTokens: 64000}
-			require.EqualValues(t, 1050000, NewAccountModelContextCapacityResolver(api)(model, declared).ContextWindow)
-			api.Credentials["base_url"] = "https://relay.example.test/v1"
-			relay := NewAccountModelContextCapacityResolver(api)(model, declared)
-			require.EqualValues(t, 200000, relay.ContextWindow)
-			require.EqualValues(t, 64000, relay.MaxOutputTokens)
-			require.Equal(t, "upstream", relay.Source)
-			api.Extra = map[string]any{ModelContextOverridesExtraKey: map[string]int64{model: 512000}}
-			require.EqualValues(t, 512000, NewAccountModelContextCapacityResolver(api)(model, declared).ContextWindow)
+			declared := UpstreamModelMetadataSnapshot{Source: "upstream", Models: map[string]UpstreamModelMetadata{
+				model: {ID: model, ContextWindow: 200000, MaxContextWindow: 400000, MaxOutputTokens: 64000},
+			}}
+			for _, baseURL := range []string{"https://api.openai.com", "https://relay.example.test/v1"} {
+				api.Credentials["base_url"] = baseURL
+				api.Extra = map[string]any{UpstreamModelMetadataExtraKey: declared}
+				observed := ResolveAccountModelContextCapacity(api, model)
+				require.EqualValues(t, 200000, observed.ContextWindow, "the account's own declaration wins on every host")
+				require.EqualValues(t, 64000, observed.MaxOutputTokens)
+				require.Equal(t, "upstream", observed.Source)
+			}
+			api.Extra[ModelContextOverridesExtraKey] = map[string]int64{model: 512000}
+			require.EqualValues(t, 512000, ResolveAccountModelContextCapacity(api, model).ContextWindow)
 
 			oauth := &Account{Platform: PlatformOpenAI, Type: AccountTypeOAuth}
 			fallback := ResolveAccountModelContextCapacity(oauth, model)
-			require.Equal(t, "protected", fallback.Source)
-			require.Equal(t, "codex_catalog_reference", fallback.Reason)
+			require.Equal(t, "official", fallback.Source, "an OAuth account participates through the reference catalog")
 			require.EqualValues(t, 272000, fallback.ContextWindow)
 			require.EqualValues(t, 872000, fallback.MaxContextWindow)
-			require.Zero(t, fallback.MaxOutputTokens, "API output limits must not be presented as OAuth observations")
 			rows := BuildAccountModelContextCapacityRows(oauth, []string{model})
 			require.Len(t, rows, 1)
-			require.False(t, rows[0].Editable)
+			require.True(t, rows[0].Editable)
 			require.NotNil(t, rows[0].Official.Reference)
-			oauth.SetUpstreamModelContextCapacitySnapshot(UpstreamModelContextCapacitySnapshot{Models: map[string]ModelContextCapacity{model: {ContextWindow: 300000, MaxContextWindow: 900000, MaxOutputTokens: 48000}}})
+			oauth.SetUpstreamModelMetadataSnapshot(UpstreamModelMetadataSnapshot{Source: "upstream", Models: map[string]UpstreamModelMetadata{
+				model: {ID: model, ContextWindow: 300000, MaxContextWindow: 900000, MaxOutputTokens: 48000},
+			}})
 			observed := ResolveAccountModelContextCapacity(oauth, model)
 			require.EqualValues(t, 300000, observed.ContextWindow)
 			require.EqualValues(t, 900000, observed.MaxContextWindow)
 			require.EqualValues(t, 48000, observed.MaxOutputTokens)
-			require.NotEqual(t, "codex_catalog_reference", observed.Reason)
-			legacy := &Account{Platform: PlatformOpenAI, Type: AccountTypeOAuth}
-			legacy.SetUpstreamModelMetadataSnapshot(UpstreamModelMetadataSnapshot{Source: "upstream", Models: map[string]UpstreamModelMetadata{
-				model: {ID: model, ContextWindow: 320000, MaxContextWindow: 920000},
-			}})
-			require.EqualValues(t, 920000, ResolveAccountModelContextCapacity(legacy, model).MaxContextWindow)
-			live := NewAccountModelContextCapacityResolver(oauth)(model, declared)
-			require.EqualValues(t, 200000, live.ContextWindow)
-			fields := map[string]json.RawMessage{"context_window": json.RawMessage("200000"), "auto_compact_token_limit": json.RawMessage("150000")}
-			require.False(t, ApplyModelContextCapacityToFields(fields, live, true))
-			require.Equal(t, json.RawMessage("150000"), fields["auto_compact_token_limit"])
+			require.Equal(t, "upstream", observed.Source)
 		})
 	}
 }
@@ -161,18 +155,16 @@ func TestGPT6ProviderMetadataOverridesAPIDefaults(t *testing.T) {
 	}
 	require.Equal(t, []any{"text"}, model["input_modalities"])
 	require.EqualValues(t, 64000, model["context_window"])
-	require.EqualValues(t, 8000, model["max_output_tokens"])
-	require.EqualValues(t, 50000, model["auto_compact_token_limit"])
 	require.Equal(t, false, model["supports_search_tool"])
 }
 
 func TestGPT6ConfiguredOAuthCatalogUsesObservedCapacity(t *testing.T) {
 	const groupID int64 = 764
-	account := Account{ID: 25, Platform: PlatformOpenAI, Type: AccountTypeOAuth,
+	account := Account{ID: 25, Platform: PlatformOpenAI, Type: AccountTypeOAuth, Status: StatusActive,
 		Credentials: map[string]any{"model_mapping": map[string]any{"gpt-6-sol": "gpt-6-sol"}}}
-	account.SetUpstreamModelContextCapacitySnapshot(UpstreamModelContextCapacitySnapshot{
-		Models: map[string]ModelContextCapacity{"gpt-6-sol": {ContextWindow: 320000, MaxContextWindow: 940000}},
-	})
+	account.SetUpstreamModelMetadataSnapshot(UpstreamModelMetadataSnapshot{Source: "upstream", Models: map[string]UpstreamModelMetadata{
+		"gpt-6-sol": {ID: "gpt-6-sol", ContextWindow: 320000, MaxContextWindow: 940000, CapacitySource: ModelContextSourceUpstream},
+	}})
 	svc := &OpenAIGatewayService{accountRepo: codexModelsVisibilityAccountRepo{byGroup: map[int64][]Account{groupID: {account}}}}
 	manifest, configured, err := svc.BuildGroupConfiguredCodexModelsManifest(context.Background(), &Group{ID: groupID, Platform: PlatformOpenAI}, "")
 	require.NoError(t, err)

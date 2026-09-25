@@ -16,7 +16,6 @@ const (
 	AccountJobKindImportData             = "account_import"
 	AccountJobKindImportCodex            = "account_import_codex"
 	AccountJobKindBatchCreate            = "account_batch_create"
-	AccountJobKindBatchTest              = "account_batch_test"
 	AccountJobKindCodexTicketHarvest     = "codex_ticket_harvest"
 	AccountJobKindCodexTicketStop        = "codex_ticket_stop"
 	AccountJobKindBulkUpdate             = "account_bulk_update"
@@ -308,24 +307,6 @@ func (s *AccountJobService) decorateRetryEligibility(ctx context.Context, job *A
 	job.RetryUnavailableReason = ""
 }
 
-// The durable plan is written while the item is running, before any model IO.
-// Keeping this capability separate preserves non-test executors and repositories.
-type AccountJobExecutionSnapshotRepository interface {
-	SaveExecutionSnapshot(context.Context, int64, int64, json.RawMessage) error
-}
-
-func (s *AccountJobService) SaveExecutionSnapshot(ctx context.Context, jobID, itemID int64, metadata json.RawMessage) error {
-	if err := ValidateAccountJobMetadata(metadata); err != nil {
-		return err
-	}
-	if s != nil {
-		if repo, ok := s.repo.(AccountJobExecutionSnapshotRepository); ok {
-			return repo.SaveExecutionSnapshot(ctx, jobID, itemID, metadata)
-		}
-	}
-	return errors.New("account test execution snapshot is unavailable")
-}
-
 // Stop and internal failure take precedence over progress counters. A monitor
 // failure after all item writes must never turn the overall task green.
 func AccountJobTerminalStatus(cancelRequested bool, errorCode string, succeeded, failed, canceled int) string {
@@ -428,17 +409,17 @@ func (s *AccountJobService) RetryFailed(ctx context.Context, jobID, createdBy in
 }
 
 type AccountJobRuntime struct {
-	jobs           *AccountJobService
-	executor       AccountJobExecutor
-	ctx            context.Context
-	cancel         context.CancelFunc
-	stopOnce       sync.Once
-	wg             sync.WaitGroup
-	batchTestSlots chan struct{}
+	jobs            *AccountJobService
+	executor        AccountJobExecutor
+	ctx             context.Context
+	cancel          context.CancelFunc
+	stopOnce        sync.Once
+	wg              sync.WaitGroup
+	concurrentSlots chan struct{}
 }
 
 func NewAccountJobRuntime(jobs *AccountJobService, executor AccountJobExecutor) *AccountJobRuntime {
-	return &AccountJobRuntime{jobs: jobs, executor: executor, batchTestSlots: make(chan struct{}, 5)}
+	return &AccountJobRuntime{jobs: jobs, executor: executor, concurrentSlots: make(chan struct{}, 5)}
 }
 
 func (r *AccountJobRuntime) Start(parent context.Context) error {
@@ -531,8 +512,8 @@ func (r *AccountJobRuntime) execute(job *AccountJob) (string, string) {
 	}
 	defer cleanup()
 
-	if job.Kind == AccountJobKindBatchTest || job.Kind == AccountJobKindCodexTicketHarvest || job.Kind == AccountJobKindCodexTicketStop || job.Kind == AccountJobKindExtensionOperation {
-		return r.executeBatchTests(executionCtx, job, payload)
+	if job.Kind == AccountJobKindCodexTicketHarvest || job.Kind == AccountJobKindCodexTicketStop || job.Kind == AccountJobKindExtensionOperation {
+		return r.executeConcurrently(executionCtx, job, payload)
 	}
 	for {
 		if executionCtx.Err() != nil {
@@ -598,11 +579,121 @@ func (r *AccountJobRuntime) cleanup(now time.Time) {
 	_ = r.jobs.repo.Prune(ctx, now.Add(-AccountJobResultTTL))
 }
 
+// Codex ticket and extension-operation jobs share one runtime-wide pool, even
+// when two administrators submit at once. Import workers retain their ordered
+// identity-resolution path.
+func (r *AccountJobRuntime) executeConcurrently(parent context.Context, job *AccountJob, payload json.RawMessage) (string, string) {
+	ctx, cancel := context.WithCancel(parent)
+	defer cancel()
+	failures := make(chan string, 1)
+	fail := func(code string) {
+		select {
+		case failures <- code:
+		default:
+		}
+		cancel()
+	}
+	monitorDone := make(chan struct{})
+	go func() {
+		defer close(monitorDone)
+		ticker := time.NewTicker(250 * time.Millisecond)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				requested, err := r.jobs.repo.CancelRequested(ctx, job.ID)
+				if err != nil {
+					if ctx.Err() == nil {
+						fail("cancel_check_failed")
+					}
+					return
+				}
+				if requested {
+					cancel()
+					return
+				}
+			}
+		}
+	}()
+	defer func() { cancel(); <-monitorDone }()
+	for ctx.Err() == nil {
+		items, err := r.jobs.repo.ReservePendingItems(ctx, job.ID, AccountJobBatchSize)
+		if err != nil {
+			if ctx.Err() == nil {
+				fail("item_reservation_failed")
+			}
+			break
+		}
+		if len(items) == 0 {
+			break
+		}
+		queue := make(chan AccountJobItem, len(items))
+		for _, item := range items {
+			queue <- item
+		}
+		close(queue)
+		var wg sync.WaitGroup
+		for range min(5, len(items)) {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				for item := range queue {
+					result := AccountJobExecutionResult{ItemID: item.ID, Status: AccountJobItemStatusCanceled}
+					select {
+					case r.concurrentSlots <- struct{}{}:
+						if ctx.Err() == nil {
+							result = r.executeItem(ctx, job, payload, item)
+						}
+						<-r.concurrentSlots
+					case <-ctx.Done():
+					}
+					if err := r.jobs.repo.CompleteItems(r.ctx, job.ID, []AccountJobExecutionResult{result}); err != nil {
+						fail("item_completion_failed")
+						return
+					}
+				}
+			}()
+		}
+		wg.Wait()
+	}
+	cancel()
+	<-monitorDone
+	select {
+	case code := <-failures:
+		return normalizeAccountJobFailure(code)
+	default:
+		return "", ""
+	}
+}
+
+func (r *AccountJobRuntime) executeItem(ctx context.Context, job *AccountJob, payload json.RawMessage, item AccountJobItem) AccountJobExecutionResult {
+	result := AccountJobExecutionResult{ItemID: item.ID, Status: AccountJobItemStatusFailed,
+		ErrorCode: "execution_failed", ErrorMessage: "account job item failed"}
+	if r.executor != nil {
+		results, err := r.executor.ExecuteAccountJob(ctx, job, payload, []AccountJobItem{item})
+		if err == nil && len(results) == 1 && results[0].ItemID == item.ID {
+			result = results[0]
+		}
+	}
+	if err := ValidateAccountJobMetadata(result.Metadata); err != nil {
+		result = AccountJobExecutionResult{ItemID: item.ID, Status: AccountJobItemStatusFailed,
+			ErrorCode: "result_redacted", ErrorMessage: "account job result was rejected"}
+	}
+	if result.Status == AccountJobItemStatusFailed {
+		result.ErrorCode, result.ErrorMessage = normalizeAccountJobFailure(result.ErrorCode)
+	} else {
+		result.ErrorCode, result.ErrorMessage = "", ""
+	}
+	return result
+}
+
 func validAccountJobKind(kind string) bool {
 	switch kind {
 	case AccountJobKindCodexTicketHarvest, AccountJobKindCodexTicketStop, AccountJobKindExtensionOperation:
 		return true
-	case AccountJobKindImportData, AccountJobKindImportCodex, AccountJobKindBatchCreate, AccountJobKindBatchTest,
+	case AccountJobKindImportData, AccountJobKindImportCodex, AccountJobKindBatchCreate,
 		AccountJobKindBulkUpdate, AccountJobKindBulkTaxonomy, AccountJobKindBatchDelete,
 		AccountJobKindBatchClearError, AccountJobKindBatchRefresh, AccountJobKindBatchRefreshTier,
 		AccountJobKindBatchUpdateCredentials:

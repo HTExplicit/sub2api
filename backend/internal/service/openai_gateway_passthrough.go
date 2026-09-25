@@ -398,7 +398,7 @@ retryUpstream:
 		if buildErr != nil {
 			return nil, buildErr
 		}
-		upstreamReq, body, wireBody, buildErr = prepareBusinessPromptReasoningRequest(c, reasoningRecovery, upstreamReq, body, proxyURL)
+		upstreamReq, body, wireBody, buildErr = prepareReasoningRecoveryRequest(reasoningRecovery, upstreamReq, body, proxyURL)
 		if buildErr != nil {
 			return nil, buildErr
 		}
@@ -716,11 +716,7 @@ func (s *OpenAIGatewayService) buildUpstreamRequestOpenAIPassthrough(
 		return nil, fmt.Errorf("normalize compatible Responses reasoning summary: %w", err)
 	}
 
-	body, err = s.finalizeBusinessPromptForSend(c, account, body, BusinessSystemPromptProtocolResponses, isOpenAIResponsesCompactPath(c))
-	if err != nil {
-		return nil, err
-	}
-	body, err = applyOpenAIAPIKeyPromptCacheKeyMode(c, account, body)
+	body, err = s.finalizeResponsesForSend(c, account, body)
 	if err != nil {
 		return nil, err
 	}
@@ -1025,7 +1021,7 @@ func (s *OpenAIGatewayService) handleFailoverErrorResponsePassthrough(
 	responseBody []byte,
 ) error {
 	body := s.redactAgentIdentitySensitiveBody(ctx, account, responseBody)
-	body = s.rewriteBusinessSystemPromptJSONForRequest(c, body, BusinessSystemPromptProtocolResponses)
+	body = restoreSystemPromptEcho(c, body)
 
 	upstreamMsg := strings.TrimSpace(extractUpstreamErrorMessage(body))
 	upstreamMsg = sanitizeUpstreamErrorMessage(upstreamMsg)
@@ -2302,7 +2298,7 @@ func (s *OpenAIGatewayService) handleStreamingResponsePassthrough(
 				}
 			}
 			dataBytes := rawDataBytes
-			if rewritten := s.rewriteBusinessSystemPromptJSONForRequest(c, dataBytes, BusinessSystemPromptProtocolResponses); !bytes.Equal(rewritten, dataBytes) {
+			if rewritten := restoreSystemPromptEcho(c, dataBytes); !bytes.Equal(rewritten, dataBytes) {
 				dataBytes = rewritten
 				data = string(rewritten)
 				line = replaceOpenAISSEDataLinePayload(line, data)
@@ -2725,7 +2721,7 @@ func (s *OpenAIGatewayService) handleNonStreamingResponsePassthrough(
 		_ = s.handleOpenAIAccountUpstreamError(ctx, account, http.StatusBadRequest, resp.Header, body, model)
 		return nil, newOpenAIModelNotSupportedFailoverError(resp.Header, body)
 	}
-	body = s.rewriteBusinessSystemPromptJSONForRequest(c, body, BusinessSystemPromptProtocolResponses)
+	body = restoreSystemPromptEcho(c, body)
 
 	// Detect SSE responses from upstream and convert to JSON.
 	// Some upstreams (e.g. other sub2api instances) may return SSE even when
@@ -2817,7 +2813,7 @@ func (s *OpenAIGatewayService) handlePassthroughSSEToJSON(resp *http.Response, c
 			return nil, recoveryErr
 		}
 	}
-	body = s.rewriteBusinessSystemPromptSSEForRequest(c, body, BusinessSystemPromptProtocolResponses)
+	body = restoreSystemPromptEchoSSE(c, body)
 	bodyText := string(body)
 	terminalType, terminalPayload, terminalOK := extractOpenAISSETerminalEvent(bodyText)
 	if !terminalOK {

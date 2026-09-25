@@ -516,11 +516,6 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 		response.ErrorFrom(c, err)
 		return
 	}
-	if (req.ClaudeOAuthSystemPrompt != nil && *req.ClaudeOAuthSystemPrompt != previousSettings.ClaudeOAuthSystemPrompt) ||
-		(req.ClaudeOAuthSystemPromptBlocks != nil && *req.ClaudeOAuthSystemPromptBlocks != previousSettings.ClaudeOAuthSystemPromptBlocks) {
-		response.ErrorWithDetails(c, http.StatusConflict, "Custom prompts are managed in System Prompts; use /api/v1/admin/system-prompts/config", "prompt_configuration_moved", nil)
-		return
-	}
 	previousAuthSourceDefaults, err := h.settingService.GetAuthSourceDefaultSettings(c.Request.Context())
 	if err != nil {
 		response.ErrorFrom(c, err)

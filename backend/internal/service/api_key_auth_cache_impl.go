@@ -14,7 +14,7 @@ import (
 	"github.com/dgraph-io/ristretto"
 )
 
-const apiKeyAuthSnapshotVersion = 27 // v27: Cindy groups became OpenAI groups in migration 260; reload pre-migration snapshots
+const apiKeyAuthSnapshotVersion = 27 // v27: migration 260 moved retired-platform groups to openai; reload pre-migration snapshots
 
 type apiKeyAuthCacheConfig struct {
 	l1Size        int

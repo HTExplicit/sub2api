@@ -31,7 +31,6 @@ type Application struct {
 	PluginManager *service.PluginManager
 	AccountJobs   *service.AccountJobRuntime
 	ImageStudio   *service.ImageStudioRuntime
-	PromptDomain  *service.PromptDomainRuntime
 	CodexIdentity *service.CodexClientIdentityBackfillService
 	CodexRuntime  *service.NativeCodexRuntime
 	Cleanup       func()
@@ -60,13 +59,12 @@ func initializeApplication(buildInfo handler.BuildInfo) (*Application, error) {
 		provideServiceBuildInfo,
 		providePluginHostInfo,
 		provideUsageCommitObserver,
-		service.NewPromptDomainRuntime,
 
 		// Cleanup function provider
 		provideCleanup,
 
 		// Application struct
-		wire.Struct(new(Application), "Server", "PromptAudit", "PluginManager", "AccountJobs", "ImageStudio", "PromptDomain", "CodexIdentity", "CodexRuntime", "Cleanup"),
+		wire.Struct(new(Application), "Server", "PromptAudit", "PluginManager", "AccountJobs", "ImageStudio", "CodexIdentity", "CodexRuntime", "Cleanup"),
 	)
 	return nil, nil
 }
@@ -133,6 +131,7 @@ func provideCleanup(
 	grokOAuth *service.GrokOAuthService,
 	openAIGateway *service.OpenAIGatewayService,
 	scheduledTestRunner *service.ScheduledTestRunnerService,
+	upstreamModelCatalogRefresh *service.UpstreamModelCatalogRefreshService,
 	backupSvc *service.BackupService,
 	paymentOrderExpiry *service.PaymentOrderExpiryService,
 	channelMonitorRunner *service.ChannelMonitorRunner,
@@ -144,8 +143,6 @@ func provideCleanup(
 	auditLog *service.AuditLogService,
 	openAIAutoReset *service.OpenAIQuotaAutoResetService,
 	promptAudit *securityaudit.PromptService,
-	promptDomain *service.PromptDomainRuntime,
-	businessPrompt *service.BusinessSystemPromptService,
 	accountJobs *service.AccountJobRuntime,
 	imageStudioRuntime *service.ImageStudioRuntime,
 	pluginManager *service.PluginManager,
@@ -154,10 +151,6 @@ func provideCleanup(
 	return func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
-		if promptDomain != nil {
-			promptDomain.Stop()
-		}
-
 		type cleanupStep struct {
 			name string
 			fn   func() error
@@ -180,12 +173,6 @@ func provideCleanup(
 			{"OpenAIQuotaAutoResetService", func() error {
 				if openAIAutoReset != nil {
 					openAIAutoReset.Stop()
-				}
-				return nil
-			}},
-			{"BusinessSystemPromptService", func() error {
-				if businessPrompt != nil {
-					businessPrompt.Stop()
 				}
 				return nil
 			}},
@@ -380,6 +367,12 @@ func provideCleanup(
 			{"ScheduledTestRunnerService", func() error {
 				if scheduledTestRunner != nil {
 					scheduledTestRunner.Stop()
+				}
+				return nil
+			}},
+			{"UpstreamModelCatalogRefreshService", func() error {
+				if upstreamModelCatalogRefresh != nil {
+					upstreamModelCatalogRefresh.Stop()
 				}
 				return nil
 			}},

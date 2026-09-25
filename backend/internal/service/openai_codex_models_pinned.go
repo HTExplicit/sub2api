@@ -139,62 +139,7 @@ func (s *OpenAIGatewayService) FetchPinnedCodexModelsManifest(ctx context.Contex
 	if err != nil {
 		return nil, nil, fmt.Errorf("merge pinned codex models manifests: %w", err)
 	}
-	sources, protected, err := mergePinnedModelsCapacityProvenance(results, true)
-	if err != nil {
-		return nil, nil, err
-	}
-	return &OpenAIModelsResponse{Body: merged, ETag: codexModelsManifestBodyETag(merged),
-		capacitySources: sources, capacityProtectedModels: protected}, results[0].account, nil
-}
-
-// Preserve every successful raw source for capacity aggregation, but only the
-// winning public rows determine protected provenance. Losing duplicates must
-// not change the identity or non-capacity fields of the first returned row.
-func mergePinnedModelsCapacityProvenance(results []pinnedOpenAIModelsResult, codex bool) ([]codexModelCapacitySource, map[string]bool, error) {
-	field, idField := "data", "id"
-	if codex {
-		field, idField = "models", "slug"
-	}
-	seen, protected := make(map[string]bool), make(map[string]bool)
-	sources := make([]codexModelCapacitySource, 0, len(results))
-	for _, result := range results {
-		_, entries, err := modelCatalogEntries(result.response.Body, field)
-		if err != nil {
-			return nil, nil, err
-		}
-		visible := make(map[string]bool)
-		for _, raw := range entries {
-			var entry map[string]json.RawMessage
-			if err := json.Unmarshal(raw, &entry); err != nil {
-				continue
-			}
-			var id string
-			if json.Unmarshal(entry[idField], &id) != nil {
-				continue
-			}
-			id = strings.TrimSpace(id)
-			if id != "" && !seen[id] {
-				seen[id], visible[id] = true, true
-			}
-		}
-		cloned := cloneOpenAIModelsResponse(result.response)
-		for _, source := range cloned.capacitySources {
-			winning := make(map[string]bool)
-			for id := range visible {
-				if source.visibleModels == nil || source.visibleModels[id] {
-					winning[id] = true
-				}
-			}
-			source.visibleModels = winning
-			sources = append(sources, source)
-		}
-		for id := range cloned.capacityProtectedModels {
-			if visible[id] {
-				protected[id] = true
-			}
-		}
-	}
-	return sources, protected, nil
+	return &OpenAIModelsResponse{Body: merged, ETag: codexModelsManifestBodyETag(merged)}, results[0].account, nil
 }
 
 type pinnedOpenAIModelsResult struct {

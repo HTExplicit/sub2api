@@ -150,59 +150,19 @@ func TestPromptAuditMutationAuditRoutesHaveStableActionsAndOmitBodies(t *testing
 }
 
 func TestSystemPromptAuditRoutesHaveStableActionsAndOmitPromptBodies(t *testing.T) {
-	expectedActions := map[string]string{
-		"POST /api/v1/admin/system-prompts":                                                     "admin.system_prompts.create",
-		"PUT /api/v1/admin/system-prompts/config":                                               "admin.system_prompts.config.update",
-		"POST /api/v1/admin/system-prompts/rules/preview/:account_id":                           "admin.system_prompts.rules.preview",
-		"PATCH /api/v1/admin/system-prompts/:id":                                                "admin.system_prompts.update",
-		"DELETE /api/v1/admin/system-prompts/:id":                                               "admin.system_prompts.delete",
-		"POST /api/v1/admin/system-prompts/:id/duplicate":                                       "admin.system_prompts.duplicate",
-		"POST /api/v1/admin/system-prompts/:id/versions":                                        "admin.system_prompts.version.create",
-		"POST /api/v1/admin/system-prompts/:id/versions/:version_id/publish":                    "admin.system_prompts.publish",
-		"POST /api/v1/admin/system-prompts/:id/versions/:version_id/rollback":                   "admin.system_prompts.rollback",
-		"PUT /api/v1/admin/system-prompts/runtime":                                              "admin.system_prompts.runtime.update",
-		"POST /api/v1/admin/system-prompts/preview/merge":                                       "admin.system_prompts.preview.merge",
-		"POST /api/v1/admin/system-prompts/preview/upstream":                                    "admin.system_prompts.preview.upstream",
-		"POST /api/v1/admin/system-prompts/skill-registry/syncs":                                "admin.system_prompts.skill_registry.syncs.create",
-		"POST /api/v1/admin/system-prompts/skill-registry/versions/:bundle_version_id/publish":  "admin.system_prompts.skill_registry.publish",
-		"POST /api/v1/admin/system-prompts/skill-registry/versions/:bundle_version_id/rollback": "admin.system_prompts.skill_registry.rollback",
-	}
-	for route, action := range expectedActions {
-		require.Equal(t, action, auditActionOverrides[route])
-	}
-	for _, route := range []string{
-		"PUT /api/v1/admin/system-prompts/config",
-		"POST /api/v1/admin/system-prompts/rules/preview/:account_id",
-		"POST /api/v1/admin/system-prompts",
-		"POST /api/v1/admin/system-prompts/:id/versions",
-		"POST /api/v1/admin/system-prompts/preview/merge",
-		"POST /api/v1/admin/system-prompts/preview/upstream",
-	} {
-		require.Contains(t, auditPromptBodyOmittedRoutes, route)
-	}
+	require.Equal(t, "admin.system_prompts.read", auditSensitiveReads["GET /api/v1/admin/system-prompts"])
+	require.Equal(t, "admin.system_prompts.update", auditActionOverrides["PUT /api/v1/admin/system-prompts"])
+	require.Equal(t, "admin.system_prompts.bindings.update", auditActionOverrides["PUT /api/v1/admin/system-prompts/bindings"])
+	require.Contains(t, auditPromptBodyOmittedRoutes, "PUT /api/v1/admin/system-prompts")
 }
 
-func TestSystemPromptConfigAuditOmitsDraftBodies(t *testing.T) {
-	assertUnifiedSystemPromptAuditOmission(t, http.MethodPut,
-		"/api/v1/admin/system-prompts/config", "/api/v1/admin/system-prompts/config",
-		"admin.system_prompts.config.update",
-		`{"expected_revision":9,"policy":{"version":2,"rules":[{"id":"new","name":"audit-canary-name","role":"developer"}]},"contents":{"new":{"body":"audit-canary-draft-prompt"}}}`)
-}
-
-func TestSystemPromptRulesPreviewAuditOmitsDraftAndClientInput(t *testing.T) {
-	assertUnifiedSystemPromptAuditOmission(t, http.MethodPost,
-		"/api/v1/admin/system-prompts/rules/preview/:account_id", "/api/v1/admin/system-prompts/rules/preview/7",
-		"admin.system_prompts.rules.preview",
-		`{"protocol":"responses","body":{"model":"test","instructions":"audit-canary-client-instructions","input":"audit-canary-client-input"},"contents":{"new":{"body":"audit-canary-draft-prompt"}}}`)
-}
-
-func assertUnifiedSystemPromptAuditOmission(t *testing.T, method, route, path, action, payload string) {
-	t.Helper()
+func TestSystemPromptConfigAuditOmitsPromptBodies(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	repository := &auditCaptureRepository{}
 	auditService := service.NewAuditLogService(repository, nil)
 	auditService.Start()
 
+	payload := `{"enabled":true,"default_prompt_id":"p1","prompts":[{"id":"p1","name":"audit-canary-name","body":"audit-canary-prompt","role":"developer"}]}`
 	router := gin.New()
 	router.Use(func(c *gin.Context) {
 		c.Set(string(ContextKeyUser), AuthSubject{UserID: 77})
@@ -210,21 +170,19 @@ func assertUnifiedSystemPromptAuditOmission(t *testing.T, method, route, path, a
 		c.Next()
 	})
 	router.Use(gin.HandlerFunc(NewAuditLogMiddleware(auditService)))
-	router.Handle(method, route, func(c *gin.Context) {
+	router.PUT("/api/v1/admin/system-prompts", func(c *gin.Context) {
 		body, err := c.GetRawData()
 		require.NoError(t, err)
 		require.Equal(t, payload, string(body), "audit omission must preserve the handler input")
 		SetAuditExtra(c, map[string]any{
-			"revision": int64(10), "rule_count": 1, "result": "checked",
-			"error_code": "prompt_delivery_unsupported",
-			"body":       "audit-canary-extra-prompt",
-			"role":       "audit-canary-role",
-			"contents":   map[string]any{"new": "audit-canary-extra-content"},
+			"enabled": true, "result": "checked",
+			"body":     "audit-canary-extra-prompt",
+			"contents": map[string]any{"p1": "audit-canary-extra-content"},
 		})
 		c.JSON(http.StatusOK, gin.H{"ok": true})
 	})
 
-	request := httptest.NewRequest(method, path, bytes.NewBufferString(payload))
+	request := httptest.NewRequest(http.MethodPut, "/api/v1/admin/system-prompts", bytes.NewBufferString(payload))
 	request.Header.Set("Content-Type", "application/json")
 	recorder := httptest.NewRecorder()
 	router.ServeHTTP(recorder, request)
@@ -235,104 +193,12 @@ func assertUnifiedSystemPromptAuditOmission(t *testing.T, method, route, path, a
 	logs := append([]*service.AuditLog(nil), repository.logs...)
 	repository.mu.Unlock()
 	require.Len(t, logs, 1)
-	require.Equal(t, action, logs[0].Action)
-	require.Equal(t, route, logs[0].Path)
+	require.Equal(t, "admin.system_prompts.update", logs[0].Action)
 	require.Equal(t, "<system prompt body omitted>", logs[0].RequestBody)
-	require.EqualValues(t, 10, logs[0].Extra["revision"])
-	require.EqualValues(t, 1, logs[0].Extra["rule_count"])
-	require.Equal(t, "prompt_delivery_unsupported", logs[0].Extra["error_code"])
-	for _, field := range []string{"body", "role", "contents"} {
+	require.Equal(t, true, logs[0].Extra["enabled"])
+	for _, field := range []string{"body", "contents"} {
 		require.NotContains(t, logs[0].Extra, field)
 	}
-	encoded, err := json.Marshal(logs[0])
-	require.NoError(t, err)
-	require.NotContains(t, string(encoded), "audit-canary")
-}
-
-func TestSystemPromptAuditNeverPersistsPromptOrPreviewInput(t *testing.T) {
-	gin.SetMode(gin.TestMode)
-	repository := &auditCaptureRepository{}
-	auditService := service.NewAuditLogService(repository, nil)
-	auditService.Start()
-
-	router := gin.New()
-	router.Use(func(c *gin.Context) {
-		c.Set(string(ContextKeyUser), AuthSubject{UserID: 77})
-		c.Set(string(ContextKeyUserRole), "admin")
-		c.Next()
-	})
-	router.Use(gin.HandlerFunc(NewAuditLogMiddleware(auditService)))
-	router.POST("/api/v1/admin/system-prompts/preview/upstream", func(c *gin.Context) {
-		SetAuditExtra(c, map[string]any{
-			"template_id": int64(2), "template_version": int64(4),
-			"new_sha256": "0123456789abcdef", "byte_length": 128,
-			"revision": int64(9), "result": "previewed",
-			"bundle_version_id": int64(12), "status": "active",
-			"old_manifest_sha256": "old-hash", "new_manifest_sha256": "new-hash",
-			"total_bytes": int64(7949823),
-			"raw_prompt":  "audit-canary-server-prompt",
-		})
-		c.JSON(http.StatusOK, gin.H{"ok": true})
-	})
-
-	request := httptest.NewRequest(http.MethodPost, "/api/v1/admin/system-prompts/preview/upstream", bytes.NewBufferString(
-		`{"server_instructions":"audit-canary-server-prompt","body":{"input":"audit-canary-client-input"}}`,
-	))
-	request.Header.Set("Content-Type", "application/json")
-	recorder := httptest.NewRecorder()
-	router.ServeHTTP(recorder, request)
-	require.Equal(t, http.StatusOK, recorder.Code)
-	auditService.Stop()
-
-	repository.mu.Lock()
-	logs := append([]*service.AuditLog(nil), repository.logs...)
-	repository.mu.Unlock()
-	require.Len(t, logs, 1)
-	require.Equal(t, "admin.system_prompts.preview.upstream", logs[0].Action)
-	require.Equal(t, "<system prompt body omitted>", logs[0].RequestBody)
-	require.NotContains(t, logs[0].RequestBody, "audit-canary")
-	require.EqualValues(t, 2, logs[0].Extra["template_id"])
-	require.EqualValues(t, 4, logs[0].Extra["template_version"])
-	require.Equal(t, "0123456789abcdef", logs[0].Extra["new_sha256"])
-	require.EqualValues(t, 12, logs[0].Extra["bundle_version_id"])
-	require.Equal(t, "active", logs[0].Extra["status"])
-	require.Equal(t, "old-hash", logs[0].Extra["old_manifest_sha256"])
-	require.Equal(t, "new-hash", logs[0].Extra["new_manifest_sha256"])
-	require.EqualValues(t, 7949823, logs[0].Extra["total_bytes"])
-	require.NotContains(t, logs[0].Extra, "raw_prompt")
-}
-
-func TestRemoteSkillPromptDetailAuditDoesNotPersistResponseBodies(t *testing.T) {
-	gin.SetMode(gin.TestMode)
-	repository := &auditCaptureRepository{}
-	auditService := service.NewAuditLogService(repository, nil)
-	auditService.Start()
-
-	router := gin.New()
-	router.Use(func(c *gin.Context) {
-		c.Set(string(ContextKeyUser), AuthSubject{UserID: 77})
-		c.Set(string(ContextKeyUserRole), "admin")
-		c.Next()
-	})
-	router.Use(gin.HandlerFunc(NewAuditLogMiddleware(auditService)))
-	router.GET("/api/v1/admin/system-prompts/skill-registry/versions/:bundle_version_id", func(c *gin.Context) {
-		c.JSON(http.StatusOK, gin.H{"prompt": gin.H{
-			"raw_body":       "audit-canary-raw-prompt",
-			"effective_body": "audit-canary-effective-prompt",
-		}})
-	})
-
-	request := httptest.NewRequest(http.MethodGet, "/api/v1/admin/system-prompts/skill-registry/versions/12", nil)
-	recorder := httptest.NewRecorder()
-	router.ServeHTTP(recorder, request)
-	require.Equal(t, http.StatusOK, recorder.Code)
-	auditService.Stop()
-
-	repository.mu.Lock()
-	logs := append([]*service.AuditLog(nil), repository.logs...)
-	repository.mu.Unlock()
-	require.Len(t, logs, 1)
-	require.Equal(t, "admin.system_prompts.skill_registry.versions.read", logs[0].Action)
 	encoded, err := json.Marshal(logs[0])
 	require.NoError(t, err)
 	require.NotContains(t, string(encoded), "audit-canary")

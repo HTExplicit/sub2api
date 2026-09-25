@@ -177,7 +177,7 @@ func TestAccountTestService_Budget429PutsAccountIntoError(t *testing.T) {
 	require.Equal(t, "ExceededBudget: key over budget. Spend=3.05, Budget=3.0", repo.lastErrorMsg, "the account keeps the upstream message")
 }
 
-func TestAccountTestService_NonCindyEmptyModelKeepsOpenAIDefault(t *testing.T) {
+func TestAccountTestService_EmptyModelKeepsOpenAIDefault(t *testing.T) {
 	c, _ := newTestContext()
 	upstream := &queuedHTTPUpstream{responses: []*http.Response{newJSONResponse(
 		http.StatusOK,
@@ -916,8 +916,7 @@ func TestAccountTestService_OpenAIChatCompletionsPathReturns4xx(t *testing.T) {
 	require.Error(t, err)
 	require.Equal(t, "https://compat-upstream.example/v1/chat/completions", upstream.lastReq.URL.String())
 	require.Contains(t, err.Error(), "Chat Completions API (/v1/chat/completions) returned 400")
-	require.Contains(t, recorder.Body.String(), "/v1/chat/completions")
-	require.Contains(t, recorder.Body.String(), "test_upstream_failed")
+	require.Contains(t, recorder.Body.String(), `Chat Completions API (/v1/chat/completions) returned 400: {\"error\":{\"message\":\"bad request\"}}`, "the upstream body is shown verbatim")
 	require.NotContains(t, recorder.Body.String(), `"success":true`)
 }
 
@@ -948,7 +947,7 @@ func TestAccountTestService_OpenAIChatCompletionsPathTimeout(t *testing.T) {
 	require.Contains(t, err.Error(), "Chat Completions API (/v1/chat/completions) request failed")
 	require.Contains(t, err.Error(), context.DeadlineExceeded.Error())
 	require.Contains(t, recorder.Body.String(), "/v1/chat/completions")
-	require.Contains(t, recorder.Body.String(), "test_timeout")
+	require.Contains(t, recorder.Body.String(), context.DeadlineExceeded.Error())
 	require.NotContains(t, recorder.Body.String(), `"success":true`)
 }
 
@@ -981,6 +980,6 @@ func TestAccountTestService_OpenAIChatCompletionsPathRejectsNonJSONStream(t *tes
 	require.Error(t, err)
 	require.Equal(t, "https://compat-upstream.example/v1/chat/completions", upstream.lastReq.URL.String())
 	require.ErrorIs(t, err, ErrAccountTestProtocol)
-	require.Contains(t, recorder.Body.String(), "test_protocol_invalid")
+	require.Contains(t, recorder.Body.String(), "invalid SSE data: not-json")
 	require.NotContains(t, recorder.Body.String(), `"success":true`)
 }

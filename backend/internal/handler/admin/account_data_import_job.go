@@ -64,17 +64,6 @@ func (h *AccountHandler) PrepareAccountJob(
 	if err := service.ValidateRecordedAccountJob(job, raw); err != nil {
 		return ctx, nil, err
 	}
-	if job != nil && job.Kind == service.AccountJobKindBatchTest {
-		var req batchTestJobPayload
-		if err := json.Unmarshal(raw, &req); err != nil {
-			return ctx, nil, err
-		}
-		_, models, err := req.normalize()
-		if err != nil {
-			return ctx, nil, err
-		}
-		return context.WithValue(ctx, batchTestModelContextKey{}, models), func() {}, nil
-	}
 	if h == nil || job == nil || job.Kind != service.AccountJobKindImportData {
 		return ctx, func() {}, nil
 	}

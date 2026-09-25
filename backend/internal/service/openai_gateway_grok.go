@@ -1575,29 +1575,11 @@ func addOpenAIUsage(dst *OpenAIUsage, usage OpenAIUsage) {
 // Conversation sends share the final prompt boundary. Auxiliary vision probes
 // and standalone image/audio endpoints keep the lower-level transport builder.
 func (s *OpenAIGatewayService) buildGrokConversationRequest(ctx context.Context, c *gin.Context, account *Account, clean []byte, token, cacheIdentity string) (*http.Request, error) {
-	body, err := s.finalizeBusinessPromptForSend(c, account, clean, BusinessSystemPromptProtocolResponses, isOpenAIResponsesCompactPath(c))
+	body, err := s.finalizeResponsesForSend(c, account, clean)
 	if err != nil {
 		return nil, err
 	}
-	if application, ok := businessSystemPromptApplicationFromRequest(c, BusinessSystemPromptProtocolResponses); ok {
-		cacheIdentity = grokBusinessPromptCacheIdentity(cacheIdentity, application)
-		if cacheIdentity != "" {
-			body, err = sjson.SetBytes(body, "prompt_cache_key", cacheIdentity)
-			if err != nil {
-				return nil, err
-			}
-		}
-	}
 	return buildGrokResponsesRequest(ctx, c, account, body, token, cacheIdentity, s.cfg, s.settingService)
-}
-
-func grokBusinessPromptCacheIdentity(identity string, application BusinessSystemPromptApplication) string {
-	if namespace := businessSystemPromptCacheNamespace(application); identity != "" && namespace != "" {
-		// Keep the provider's existing conversation UUID shape while separating
-		// the cache when the effective prompt selection changes.
-		return generateSessionUUID(identity + namespace)
-	}
-	return identity
 }
 
 func buildGrokResponsesRequest(ctx context.Context, c *gin.Context, account *Account, body []byte, token, cacheIdentity string, cfg *config.Config, settings ...*SettingService) (*http.Request, error) {

@@ -36,9 +36,7 @@ func (s *OpenAIGatewayService) FetchOpenAIModelsList(ctx context.Context, accoun
 		if err != nil {
 			return nil, invalidOpenAIModelsList(err)
 		}
-		converted := cloneOpenAIModelsResponse(response)
-		converted.Body, converted.ETag = body, codexModelsManifestBodyETag(body)
-		return converted, nil
+		return &OpenAIModelsResponse{Body: body, ETag: codexModelsManifestBodyETag(body)}, nil
 	}
 	req, err := buildOpenAIAPIKeyModelsRequest(ctx, credentialAccount, s.validateUpstreamBaseURL)
 	if err != nil {
@@ -60,10 +58,6 @@ func (s *OpenAIGatewayService) FetchOpenAIModelsList(ctx context.Context, accoun
 		if err != nil {
 			return nil, invalidOpenAIModelsList(err)
 		}
-		response.upstreamSourceBody = append([]byte(nil), response.Body...)
-		source := newCodexModelCapacitySource(credentialAccount, response.upstreamSourceBody)
-		source.accountID = account.ID
-		response.capacitySources = []codexModelCapacitySource{source}
 		response.Body = body
 		response.ETag = codexModelsManifestBodyETag(body)
 		return response, nil
@@ -268,86 +262,7 @@ func ApplyPinnedCodexModelsMapping(response *OpenAIModelsResponse, account *Acco
 	}
 	response.Body = body
 	response.ETag = codexModelsManifestBodyETag(body)
-	return applyMappedModelsCapacityVisibility(response, account, true)
-}
-
-// applyMappedModelsCapacityVisibility records public names without changing
-// raw observation keys. In particular an OAuth upstream slug remains protected
-// after it is exposed as an alias, even if the candidate query later fails.
-func applyMappedModelsCapacityVisibility(response *OpenAIModelsResponse, account *Account, codex bool) error {
-	field, idField := "data", "id"
-	if codex {
-		field, idField = "models", "slug"
-	}
-	_, entries, err := modelCatalogEntries(response.Body, field)
-	if err != nil {
-		return err
-	}
-	publicTargets := make(map[string]string, len(entries))
-	for _, raw := range entries {
-		var entry map[string]json.RawMessage
-		if err := json.Unmarshal(raw, &entry); err != nil {
-			continue
-		}
-		var id string
-		if err := json.Unmarshal(entry[idField], &id); err != nil || strings.TrimSpace(id) == "" {
-			continue
-		}
-		id = strings.TrimSpace(id)
-		target := id
-		if account != nil && !account.IsOpenAIPassthroughEnabled() && len(account.GetModelMapping()) > 0 {
-			if mapped, matched := account.ResolveMappedModel(id); matched {
-				target = strings.TrimSpace(mapped)
-			}
-		}
-		publicTargets[id] = target
-	}
-	for i := range response.capacitySources {
-		source := &response.capacitySources[i]
-		previous := source.visibleModels
-		if previous == nil {
-			previous = rawModelCapacitySourceIDs(source.body)
-		}
-		visible := make(map[string]bool)
-		for public, target := range publicTargets {
-			if previous[public] || previous[target] {
-				visible[public] = true
-			}
-		}
-		source.visibleModels = visible
-	}
-	if response.capacityProtectedModels != nil {
-		protected := make(map[string]bool)
-		for public, target := range publicTargets {
-			if response.capacityProtectedModels[public] || response.capacityProtectedModels[target] {
-				protected[public] = true
-			}
-		}
-		response.capacityProtectedModels = protected
-	}
 	return nil
-}
-
-func rawModelCapacitySourceIDs(body []byte) map[string]bool {
-	ids := make(map[string]bool)
-	var envelope map[string]json.RawMessage
-	if json.Unmarshal(body, &envelope) != nil {
-		return ids
-	}
-	for field, idField := range map[string]string{"models": "slug", "data": "id"} {
-		var entries []json.RawMessage
-		if json.Unmarshal(envelope[field], &entries) != nil {
-			continue
-		}
-		for _, raw := range entries {
-			var entry map[string]json.RawMessage
-			var id string
-			if json.Unmarshal(raw, &entry) == nil && json.Unmarshal(entry[idField], &id) == nil && strings.TrimSpace(id) != "" {
-				ids[strings.TrimSpace(id)] = true
-			}
-		}
-	}
-	return ids
 }
 
 // FetchPinnedOpenAIModelsList includes explicitly enabled scheduler fallback.
@@ -359,13 +274,7 @@ func (s *OpenAIGatewayService) FetchPinnedOpenAIModelsList(ctx context.Context, 
 			return nil, err
 		}
 		response.Body, err = projectAccountModelsBody(response.Body, account, group, false)
-		if err != nil {
-			return nil, err
-		}
-		if err := applyMappedModelsCapacityVisibility(response, account, false); err != nil {
-			return nil, err
-		}
-		return response, nil
+		return response, err
 	}
 	results, err := s.fetchPinnedOpenAIModels(ctx, group, fetch)
 	if err != nil && ctx.Err() == nil && group != nil && group.CodexModelsManifestConfig.FallbackToScheduler {
@@ -406,11 +315,7 @@ func (s *OpenAIGatewayService) FetchPinnedOpenAIModelsList(ctx context.Context, 
 	if err != nil {
 		return nil, nil, err
 	}
-	sources, protected, err := mergePinnedModelsCapacityProvenance(results, false)
-	if err != nil {
-		return nil, nil, err
-	}
-	response := &OpenAIModelsResponse{Body: body, capacitySources: sources, capacityProtectedModels: protected}
+	response := &OpenAIModelsResponse{Body: body, ETag: codexModelsManifestBodyETag(body)}
 	if err := s.ProjectOpenAIModelsListContextCapacities(ctx, group, response, ifNoneMatch); err != nil {
 		return nil, nil, err
 	}

@@ -56,8 +56,8 @@ func NewImageStudioService(
 }
 
 // imageStudioModelSource lists the image models Image Studio may offer. The
-// removed Cindy catalog was its only source, so it stays empty until a generic
-// image model source is added; without models no API key is eligible.
+// retired provider catalog was its only source, so it stays empty until a
+// generic image model source is added; without models no API key is eligible.
 var imageStudioModelSource []string
 
 func imageStudioGroupEligible(group *Group) bool {

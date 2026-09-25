@@ -70,7 +70,7 @@ func TestTicketEligibilityDoesNotDependOnBusinessStatus(t *testing.T) {
 	if !Eligible("openai", "oauth", false) || !Eligible("openai", "setup-token", false) {
 		t.Fatal("OAuth credentials excluded")
 	}
-	if Eligible("cindy", "apikey", false) || Eligible("openai", "apikey", false) || Eligible("openai", "oauth", true) {
+	if Eligible("anthropic", "apikey", false) || Eligible("openai", "apikey", false) || Eligible("openai", "oauth", true) {
 		t.Fatal("unsupported ticket account admitted")
 	}
 }

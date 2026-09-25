@@ -114,30 +114,7 @@ type OpenAIModelsResponse struct {
 	upstreamETag                 string
 	upstreamSourceBody           []byte
 	convertedFromOpenAIModelList bool
-	capacityProtectedModels      map[string]bool
-	capacitySources              []codexModelCapacitySource
 	NotModified                  bool
-}
-
-// Internal immutable provenance for multi-source/pinned manifests. It contains
-// no credential maps, and is never serialized into the public model catalog.
-type codexModelCapacitySource struct {
-	accountID     int64
-	platform      string
-	identity      string
-	protected     bool
-	body          []byte
-	visibleModels map[string]bool
-}
-
-func newCodexModelCapacitySource(account *Account, body []byte) codexModelCapacitySource {
-	if account == nil {
-		return codexModelCapacitySource{}
-	}
-	return codexModelCapacitySource{accountID: account.ID, platform: account.Platform,
-		identity: ModelContextCapacitySourceIdentity(account), protected: !CanManageModelContextCapacity(account),
-		body: append([]byte(nil), body...),
-	}
 }
 
 // BuildGroupConfiguredCodexModelsManifest builds a Codex catalog from configured
@@ -153,20 +130,13 @@ func (s *OpenAIGatewayService) BuildGroupConfiguredCodexModelsManifest(
 		return nil, false, nil
 	}
 
-	visible, err := s.accountRepo.ListSchedulableByGroupID(ctx, group.ID)
+	visible, catalog, err := loadCodexGroupCatalogAccounts(ctx, s.accountRepo, group.ID)
 	if err != nil {
 		return nil, false, fmt.Errorf("load group configured Codex models: %w", err)
 	}
 	configuredModels := openAIConfiguredCodexModelIDsForGroup(visible, group)
 	if len(configuredModels) == 0 {
 		return nil, false, nil
-	}
-	capacityCatalog := loadGroupModelCapacityCatalog(ctx, s.accountRepo, nil, s.channelService, s.cfg, &group.ID, group.Platform)
-	capacityCatalog.group = group
-	catalog := capacityCatalog.accounts
-	if !capacityCatalog.available {
-		// Preserve the old non-capacity fallback while capacity fails closed.
-		catalog = visible
 	}
 
 	body, err := buildCodexModelsManifestForAccounts(
@@ -189,19 +159,12 @@ func (s *OpenAIGatewayService) BuildGroupConfiguredCodexModelsManifest(
 	if err != nil {
 		return nil, false, fmt.Errorf("build group configured Codex models: %w", err)
 	}
-	body, err = projectModelCapacityEnvelope(body, true, func(model string) ResolvedModelContextCapacity {
-		return capacityCatalog.resolve(ctx, group.Platform, model)
-	}, nil)
-	if err != nil {
-		return nil, false, fmt.Errorf("project group model capacities: %w", err)
-	}
 	manifest := &OpenAIModelsResponse{
 		Body: body,
 		ETag: codexModelsManifestBodyETag(body),
 	}
-	if codexModelsManifestETagMatches(ifNoneMatch, manifest.ETag) {
-		manifest.Body = nil
-		manifest.NotModified = true
+	if err := s.ProjectCodexModelContextCapacities(ctx, group, manifest, ifNoneMatch); err != nil {
+		return nil, false, fmt.Errorf("project group model capacities: %w", err)
 	}
 	return manifest, true, nil
 }
@@ -215,37 +178,6 @@ func (s *OpenAIGatewayService) MergeGroupConfiguredCodexModels(
 	group *Group,
 	manifest *OpenAIModelsResponse,
 	ifNoneMatch string,
-) error {
-	return s.mergeGroupConfiguredCodexModels(ctx, group, manifest, ifNoneMatch, nil)
-}
-
-// MergeGroupConfiguredCodexModelsForAccount performs the same group-local
-// merge and then applies account-type-specific final wire invariants. Keeping
-// the normalization after the merge is essential because locally configured
-// model aliases can replace or append descriptors after the upstream manifest
-// was normalized.
-func (s *OpenAIGatewayService) MergeGroupConfiguredCodexModelsForAccount(
-	ctx context.Context,
-	group *Group,
-	manifest *OpenAIModelsResponse,
-	ifNoneMatch string,
-	account *Account,
-) error {
-	return s.mergeGroupConfiguredCodexModels(
-		ctx,
-		group,
-		manifest,
-		ifNoneMatch,
-		account,
-	)
-}
-
-func (s *OpenAIGatewayService) mergeGroupConfiguredCodexModels(
-	ctx context.Context,
-	group *Group,
-	manifest *OpenAIModelsResponse,
-	ifNoneMatch string,
-	sourceAccount *Account,
 ) error {
 	if s == nil || s.accountRepo == nil || group == nil || manifest == nil || manifest.NotModified {
 		return nil
@@ -282,7 +214,7 @@ func (s *OpenAIGatewayService) mergeGroupConfiguredCodexModels(
 		manifest.Body = body
 		manifest.ETag = codexModelsManifestBodyETag(body)
 	}
-	return s.ProjectCodexModelContextCapacities(ctx, group, manifest, ifNoneMatch, sourceAccount)
+	return s.ProjectCodexModelContextCapacities(ctx, group, manifest, ifNoneMatch)
 }
 
 func (s *OpenAIGatewayService) groupConfiguredCodexModelIDs(ctx context.Context, group *Group) ([]string, error) {
@@ -294,6 +226,46 @@ func (s *OpenAIGatewayService) groupConfiguredCodexModelIDs(ctx context.Context,
 		return nil, err
 	}
 	return openAIConfiguredCodexModelIDsForGroup(accounts, group), nil
+}
+
+// loadCodexGroupCatalogAccounts separates picker membership from capability
+// intersection. visible accounts are currently schedulable and decide which
+// public aliases appear. catalog accounts are persistently enabled group
+// members; the availability query ignores transient rate-limit, overload, and
+// temporary-unschedulable state so those conditions cannot widen advertised
+// capabilities. Persistently disabled accounts are excluded because routing
+// cannot select them. If the availability query fails, the catalog falls back
+// to the schedulable set so a listing error does not fail the client request.
+func loadCodexGroupCatalogAccounts(ctx context.Context, repo AccountRepository, groupID int64) (visible []Account, catalog []Account, err error) {
+	if repo == nil {
+		return nil, nil, nil
+	}
+	visible, err = repo.ListSchedulableByGroupID(ctx, groupID)
+	if err != nil {
+		return nil, nil, err
+	}
+	catalog = visible
+	groupAccounts, listErr := repo.ListModelAvailabilityCandidates(
+		ctx,
+		&groupID,
+		[]string{
+			PlatformAnthropic,
+			PlatformOpenAI,
+			PlatformGemini,
+			PlatformAntigravity,
+			PlatformGrok,
+			PlatformKimi,
+			PlatformZhipu,
+			PlatformDeepseek,
+			PlatformMiniMax,
+			PlatformOpenCodeGo,
+		},
+		false,
+	)
+	if listErr != nil {
+		return visible, catalog, nil
+	}
+	return visible, groupAccounts, nil
 }
 
 func openAIConfiguredCodexModelIDs(accounts []Account) []string {
@@ -544,10 +516,6 @@ func newConfiguredCodexModelDescriptor(modelID string) configuredCodexModelDescr
 				descriptor.MaxContextWindow = configuredCodexGPT56MaxContext
 			}
 			if isOpenAIGPT6SolOrLunaModel(modelID) {
-				// Pinned Codex subscription defaults; API-key projection uses API
-				// metadata and live account declarations remain authoritative.
-				descriptor.ContextWindow = openai.GPT6CodexContextWindow
-				descriptor.MaxContextWindow = openai.GPT6CodexMaxContextWindow
 				descriptor.MultiAgentVersion = "v2"
 				descriptor.MinimalClientVersion = openai.GPT6CodexMinimumClientVersion
 				descriptor.CompHash = "3000"
@@ -893,49 +861,48 @@ func (s *GatewayService) BuildCodexModelsManifestForGroup(
 	modelIDs []string,
 ) ([]byte, error) {
 	if s == nil || s.accountRepo == nil || group == nil {
-		return buildDefaultCapacityCodexManifest(modelIDs, "account_query_failed")
+		return BuildCodexModelsManifest(modelIDs)
 	}
 	effectivePlatform := strings.TrimSpace(platformOverride)
 	if effectivePlatform == "" {
 		effectivePlatform = group.Platform
 	}
 	if effectivePlatform != PlatformComposite && !isConcreteRequestPlatform(effectivePlatform) {
-		return buildDefaultCapacityCodexManifest(modelIDs, "unresolved_model_target")
+		return BuildCodexModelsManifest(modelIDs)
 	}
 
-	var routesRepo CompositeModelRouteRepository
-	if s.compositeResolver != nil {
-		routesRepo = s.compositeResolver.repo
+	_, catalog, err := loadCodexGroupCatalogAccounts(ctx, s.accountRepo, group.ID)
+	if err != nil {
+		return BuildCodexModelsManifest(modelIDs)
 	}
-	capacityCatalog := loadGroupModelCapacityCatalog(ctx, s.accountRepo, routesRepo, s.channelService, s.cfg, &group.ID, effectivePlatform)
-	capacityCatalog.group = group
-	metadataAccounts := capacityCatalog.accounts
-	metadataRoutesAvailable := capacityCatalog.routesAvailable
-	if routesRepo == nil {
-		// Legacy non-capacity metadata can use ownership/detection when no
-		// route repository was wired; the new capacity answer remains unknown.
-		metadataRoutesAvailable = true
-	}
-	if !capacityCatalog.available {
-		// Capacity query failure must not erase previously supported reasoning
-		// or input capabilities. Only those legacy metadata paths may fall back
-		// to current schedulable accounts; capacity remains explicitly default.
-		metadataAccounts, _ = s.accountRepo.ListSchedulableByGroupID(ctx, group.ID)
+	var compositeRoutes []CompositeModelRoute
+	compositeRoutesAvailable := true
+	if effectivePlatform == PlatformComposite && s.compositeResolver != nil && s.compositeResolver.repo != nil {
+		compositeRoutes, err = s.compositeResolver.repo.ListByGroup(ctx, group.ID, false)
+		if err != nil {
+			compositeRoutesAvailable = false
+		}
 	}
 	body, err := buildCodexModelsManifestForAccounts(
 		effectivePlatform,
 		modelIDs,
-		metadataAccounts,
+		catalog,
 		group,
-		capacityCatalog.routes,
-		metadataRoutesAvailable,
+		compositeRoutes,
+		compositeRoutesAvailable,
 	)
 	if err != nil {
 		return nil, err
 	}
+	var routesRepo CompositeModelRouteRepository
+	if s.compositeResolver != nil {
+		routesRepo = s.compositeResolver.repo
+	}
+	capacity := loadGroupModelCapacityCatalog(ctx, s.accountRepo, routesRepo, s.channelService, s.cfg, &group.ID, effectivePlatform)
+	capacity.group = group
 	return projectModelCapacityEnvelope(body, true, func(model string) ResolvedModelContextCapacity {
-		return capacityCatalog.resolve(ctx, effectivePlatform, model)
-	}, nil)
+		return capacity.resolve(ctx, effectivePlatform, model)
+	})
 }
 
 func buildCodexModelsManifestForAccounts(
@@ -1719,13 +1686,6 @@ func (c *openAIModelsCache) set(key string, manifest *OpenAIModelsResponse, now 
 	if len(manifest.upstreamSourceBody) > remainingBodyBudget {
 		return
 	}
-	remainingBodyBudget -= len(manifest.upstreamSourceBody)
-	for _, source := range manifest.capacitySources {
-		if len(source.body) > remainingBodyBudget {
-			return
-		}
-		remainingBodyBudget -= len(source.body)
-	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if c.entries == nil {
@@ -2139,9 +2099,11 @@ func (s *OpenAIGatewayService) fetchCodexModelsManifestUpstream(ctx context.Cont
 		upstreamSourceBody:           append([]byte(nil), upstreamBody...),
 		convertedFromOpenAIModelList: convertedFromOpenAIModelList,
 	}
-	source := newCodexModelCapacitySource(request.credentialAccount, manifest.upstreamSourceBody)
-	source.accountID = request.accountID
-	manifest.capacitySources = []codexModelCapacitySource{source}
+	if !request.useAPIKeyUpstream {
+		// OAuth accounts are never polled; the manifest passing through is their
+		// capacity observation.
+		recordUpstreamModelCapacityObservations(ctx, s.accountRepo, request.credentialAccount, upstreamBody)
+	}
 	if request.useAPIKeyUpstream && !bytes.Equal(body, upstreamBody) {
 		manifest.ETag = codexModelsManifestBodyETag(body)
 	}
@@ -2261,7 +2223,6 @@ func convertOpenAIModelListToCodexManifestForAccount(body []byte, account *Accou
 	modelIDs := make([]string, 0, len(entries))
 	modelMetadata := make(map[string]codexModelMetadataOverride, len(entries))
 	metadataModels := make(map[string]string, len(entries))
-	liveCompactLimits := make(map[string]json.RawMessage)
 	for _, entry := range entries {
 		var id string
 		if err := json.Unmarshal(entry["id"], &id); err != nil {
@@ -2272,9 +2233,6 @@ func convertOpenAIModelListToCodexManifestForAccount(body []byte, account *Accou
 			continue
 		}
 		modelIDs = append(modelIDs, id)
-		if limit, exists := entry["auto_compact_token_limit"]; exists {
-			liveCompactLimits[id] = append(json.RawMessage(nil), limit...)
-		}
 		capabilityModel := id
 		if account != nil {
 			capabilityModel = account.GetMappedModel(id)
@@ -2318,31 +2276,6 @@ func convertOpenAIModelListToCodexManifestForAccount(body []byte, account *Accou
 		}
 	}
 	converted, err := buildCodexModelsManifest(modelIDs, imageInputModels, searchToolModels, metadataModels, modelMetadata)
-	if err != nil {
-		return body
-	}
-	if account != nil && !CanManageModelContextCapacity(account) {
-		return converted
-	}
-	platform := PlatformOpenAI
-	if account != nil {
-		platform = account.Platform
-	}
-	observed, _ := ParseUpstreamModelContextCapacities(body, platform)
-	// Conversion must not discard capacities delivered by this very response.
-	// This is raw source evidence only; final priority and routing aggregation
-	// happen later, without persisting observations during a list request.
-	converted, err = projectModelCapacityEnvelope(converted, true, func(model string) ResolvedModelContextCapacity {
-		capacity, ok := observed[model]
-		if !ok {
-			return ResolvedModelContextCapacity{Source: "protected"}
-		}
-		return ResolveModelContextCapacity(nil, nil, &capacity)
-	}, nil)
-	if err != nil {
-		return body
-	}
-	converted, err = restoreLiveCodexAutoCompactLimits(converted, liveCompactLimits)
 	if err != nil {
 		return body
 	}
@@ -2454,7 +2387,7 @@ func applySyncedAPIKeyCodexModelMetadata(body []byte, account *Account, overwrit
 		if len(normalizeCodexInputModalities(metadata.InputModalities)) > 0 {
 			fields = append(fields, "input_modalities")
 		}
-		if metadata.ContextWindow > 0 && !CanManageModelContextCapacity(account) {
+		if metadata.ContextWindow > 0 {
 			fields = append(fields, "context_window", "max_context_window")
 		}
 
@@ -2712,25 +2645,6 @@ func cloneOpenAIModelsResponse(manifest *OpenAIModelsResponse) *OpenAIModelsResp
 	}
 	if manifest.upstreamSourceBody != nil {
 		cloned.upstreamSourceBody = append([]byte(nil), manifest.upstreamSourceBody...)
-	}
-	if manifest.capacityProtectedModels != nil {
-		cloned.capacityProtectedModels = make(map[string]bool, len(manifest.capacityProtectedModels))
-		for model := range manifest.capacityProtectedModels {
-			cloned.capacityProtectedModels[model] = true
-		}
-	}
-	if manifest.capacitySources != nil {
-		cloned.capacitySources = make([]codexModelCapacitySource, len(manifest.capacitySources))
-		for i, source := range manifest.capacitySources {
-			cloned.capacitySources[i] = source
-			cloned.capacitySources[i].body = append([]byte(nil), source.body...)
-			if source.visibleModels != nil {
-				cloned.capacitySources[i].visibleModels = make(map[string]bool, len(source.visibleModels))
-				for model := range source.visibleModels {
-					cloned.capacitySources[i].visibleModels[model] = true
-				}
-			}
-		}
 	}
 	return &cloned
 }

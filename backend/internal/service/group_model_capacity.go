@@ -12,15 +12,13 @@ import (
 	"github.com/Wei-Shaw/sub2api/internal/pkg/xai"
 )
 
-// ApplyModelContextCapacityToFields is the final, capacity-only wire projection.
-// It never changes model membership, request budgets, or tool/reasoning metadata.
-// Protected catalogs deliberately retain their original wire representation.
+// ApplyModelContextCapacityToFields writes one known capacity onto a model row.
+// It never changes model membership, request budgets, or tool/reasoning
+// metadata. An unknown capacity leaves the row untouched: nothing is invented,
+// and a row's own upstream fields are not erased by ignorance.
 func ApplyModelContextCapacityToFields(fields map[string]json.RawMessage, capacity ResolvedModelContextCapacity, codex bool) bool {
-	if fields == nil || capacity.Source == "protected" {
+	if fields == nil || !capacity.Known() {
 		return false
-	}
-	if !validModelContextTokens(capacity.ContextWindow) {
-		capacity = defaultGroupModelCapacity("capacity_unavailable")
 	}
 	changed := false
 	set := func(key string, value any) {
@@ -48,7 +46,7 @@ func ApplyModelContextCapacityToFields(fields map[string]json.RawMessage, capaci
 		if validModelContextTokens(value) {
 			set(key, value)
 		} else {
-			// Do not retain stale lower-priority limits from a source that lost.
+			// Do not retain limits from evidence that lost to this answer.
 			remove(key)
 		}
 	}
@@ -70,66 +68,28 @@ func ApplyModelContextCapacityToFields(fields map[string]json.RawMessage, capaci
 	return changed
 }
 
-func restoreLiveCodexAutoCompactLimits(body []byte, limits map[string]json.RawMessage) ([]byte, error) {
-	if len(limits) == 0 {
-		return body, nil
-	}
-	var envelope map[string]json.RawMessage
-	if err := json.Unmarshal(body, &envelope); err != nil {
-		return nil, err
-	}
-	var rows []json.RawMessage
-	if err := json.Unmarshal(envelope["models"], &rows); err != nil {
-		return nil, err
-	}
-	changed := false
-	for i, row := range rows {
-		var fields map[string]json.RawMessage
-		if json.Unmarshal(row, &fields) != nil {
-			continue
-		}
-		var slug string
-		if json.Unmarshal(fields["slug"], &slug) != nil {
-			continue
-		}
-		raw, exists := limits[slug]
-		if !exists {
-			continue
-		}
-		var limit, window int64
-		_ = json.Unmarshal(fields["context_window"], &window)
-		if json.Unmarshal(raw, &limit) != nil || !validModelContextTokens(limit) || limit > window {
-			raw = json.RawMessage("null")
-		}
-		if !bytes.Equal(fields["auto_compact_token_limit"], raw) {
-			fields["auto_compact_token_limit"] = raw
-			rows[i], _ = json.Marshal(fields)
-			changed = true
-		}
-	}
-	if !changed {
-		return body, nil
-	}
-	envelope["models"], _ = json.Marshal(rows)
-	return json.Marshal(envelope)
+// modelCapacityCandidateLister is implemented by the SQL account repository:
+// every active account that can serve a model bounds its capacity. The
+// scheduler's schedulable switch changes routing, not what an upstream holds.
+type modelCapacityCandidateLister interface {
+	ListModelCapacityCandidates(ctx context.Context, groupID *int64, platforms []string, includeGrouped bool) ([]Account, error)
 }
 
-func defaultGroupModelCapacity(reason string) ResolvedModelContextCapacity {
-	return ResolvedModelContextCapacity{
-		ModelContextCapacity: ModelContextCapacity{
-			ContextWindow: DefaultModelContextWindow, MaxContextWindow: DefaultModelContextWindow,
-			CapacityBasis: "total_context",
-		},
-		Source: "default", Reason: reason,
+func listModelCapacityCandidates(ctx context.Context, repo AccountRepository, groupID *int64, platforms []string, includeGrouped bool) ([]Account, error) {
+	if lister, ok := repo.(modelCapacityCandidateLister); ok {
+		return lister.ListModelCapacityCandidates(ctx, groupID, platforms, includeGrouped)
 	}
+	// Repositories without the capacity query (test doubles) expose their
+	// configured availability pool instead.
+	return repo.ListModelAvailabilityCandidates(ctx, groupID, platforms, includeGrouped)
 }
 
-// groupModelCapacityCatalog is a request-local view of persistent routing
-// candidates. Snapshots and overrides are decoded once per account, not once
-// per model. No external upstream/catalog I/O is performed here.
+// groupModelCapacityCatalog is a request-local view of the group's capacity
+// candidates. Evidence is decoded once per account, not once per model, and no
+// upstream or registry I/O is performed here.
 type groupModelCapacityCatalog struct {
 	accounts        []Account
-	resolvers       []func(string, *ModelContextCapacity) ResolvedModelContextCapacity
+	evidence        []*accountModelCapacityEvidence
 	routes          []CompositeModelRoute
 	available       bool
 	routesAvailable bool
@@ -138,7 +98,6 @@ type groupModelCapacityCatalog struct {
 	channelService  *ChannelService
 	channelLookups  map[string]*channelLookup
 	channelErrors   map[string]bool
-	liveByAccount   map[int64]map[string]ModelContextCapacity
 }
 
 func newGroupModelCapacityCatalog(accounts []Account, available bool, routes []CompositeModelRoute, routesAvailable bool, groupID *int64, channels *ChannelService) *groupModelCapacityCatalog {
@@ -146,27 +105,12 @@ func newGroupModelCapacityCatalog(accounts []Account, available bool, routes []C
 		accounts: accounts, available: available, routes: routes, routesAvailable: routesAvailable,
 		groupID: groupID, channelService: channels,
 		channelLookups: make(map[string]*channelLookup), channelErrors: make(map[string]bool),
-		resolvers:     make([]func(string, *ModelContextCapacity) ResolvedModelContextCapacity, len(accounts)),
-		liveByAccount: make(map[int64]map[string]ModelContextCapacity),
+		evidence: make([]*accountModelCapacityEvidence, len(accounts)),
 	}
 	for i := range catalog.accounts {
-		catalog.resolvers[i] = NewAccountModelContextCapacityResolver(&catalog.accounts[i])
+		catalog.evidence[i] = newAccountModelCapacityEvidence(&catalog.accounts[i])
 	}
 	return catalog
-}
-
-func (catalog *groupModelCapacityCatalog) bindLiveSource(source codexModelCapacitySource) {
-	if source.identity == "" || len(source.body) == 0 {
-		return
-	}
-	for i := range catalog.accounts {
-		account := &catalog.accounts[i]
-		if account.ID == source.accountID && ModelContextCapacitySourceIdentity(account) == source.identity {
-			models, _ := ParseUpstreamModelContextCapacities(source.body, source.platform)
-			catalog.liveByAccount[source.accountID], _ = capacitySnapshotTargets(account, &UpstreamModelContextCapacitySnapshot{Models: models})
-			return
-		}
-	}
 }
 
 func loadGroupModelCapacityCatalog(ctx context.Context, repo AccountRepository, routesRepo CompositeModelRouteRepository, channels *ChannelService, cfg *config.Config, groupID *int64, platform string) *groupModelCapacityCatalog {
@@ -185,7 +129,7 @@ func loadGroupModelCapacityCatalog(ctx context.Context, repo AccountRepository, 
 	available := false
 	if repo != nil {
 		var err error
-		accounts, err = repo.ListModelAvailabilityCandidates(ctx, queryGroupID, platforms, includeGrouped)
+		accounts, err = listModelCapacityCandidates(ctx, repo, queryGroupID, platforms, includeGrouped)
 		available = err == nil
 	}
 	var routes []CompositeModelRoute
@@ -306,10 +250,9 @@ func capacityAccountModelTarget(account *Account, selectionModel, forwardModel s
 	return account.GetMappedModel(forwardModel), true
 }
 
-// possibleAccountTargets checks the text forwarding paths without evaluating
-// transient scheduler gates. Passthrough and Messages dispatch can legitimately
-// select a different model from Responses, so a list-level answer must not infer
-// a capacity from just one of those paths.
+// possibleAccountTargets lists the real upstream models an account may forward
+// a public model to on the text paths (Responses, Chat passthrough, configured
+// Messages dispatch). A list has no endpoint, so every one of them counts.
 func (catalog *groupModelCapacityCatalog) possibleAccountTargets(account *Account, target capacityModelTarget, forwardModel string) ([]string, bool) {
 	selectionModel := target.model
 	compatible := target.platform == PlatformOpenAI || target.platform == PlatformGrok || IsCNProvider(target.platform)
@@ -359,39 +302,37 @@ func (catalog *groupModelCapacityCatalog) possibleAccountTargets(account *Accoun
 	return models, true
 }
 
+// resolve is the group answer for one public model: the minimum over every
+// active candidate account (and every upstream target it may forward to) whose
+// capacity is known. Candidates without evidence do not lower the minimum; when
+// no candidate is known the model has no capacity.
 func (catalog *groupModelCapacityCatalog) resolve(ctx context.Context, platform, model string) ResolvedModelContextCapacity {
+	if isMediaModelForCapacity(model) {
+		return unknownModelContextCapacity("media_model")
+	}
 	if !catalog.available {
-		return defaultGroupModelCapacity("account_query_failed")
+		return unknownModelContextCapacity("account_query_failed")
 	}
 	target := capacityModelTarget{platform: platform, model: model}
 	if platform == PlatformComposite {
 		var reason string
-		target, reason = catalog.compositeTarget(model)
-		if reason != "" {
-			// An ambiguous mixed catalog must never overwrite a protected row
-			// merely because its exact endpoint target could not be resolved.
-			for i := range catalog.accounts {
-				if !CanManageModelContextCapacity(&catalog.accounts[i]) && catalog.accounts[i].IsModelSupported(model) {
-					return ResolvedModelContextCapacity{Source: "protected"}
-				}
-			}
-			return defaultGroupModelCapacity(reason)
+		if target, reason = catalog.compositeTarget(model); reason != "" {
+			return unknownModelContextCapacity(reason)
 		}
 	}
 	lookup, ok := catalog.channel(ctx, target.platform)
 	if !ok {
-		return defaultGroupModelCapacity("channel_query_failed")
+		return unknownModelContextCapacity("channel_query_failed")
 	}
 	mapping := ChannelMappingResult{MappedModel: target.model}
 	if lookup != nil {
 		mapping = resolveMapping(lookup, *catalog.groupID, target.model)
 		if billingModel := billingModelForRestriction(mapping.BillingModelSource, target.model, mapping.MappedModel); billingModel != "" && checkRestricted(lookup, *catalog.groupID, billingModel) {
-			return defaultGroupModelCapacity("model_route_restricted")
+			return unknownModelContextCapacity("model_route_restricted")
 		}
 	}
-	var result ResolvedModelContextCapacity
-	count := 0
-	var minimumMax, minimumInput, minimumOutput int64
+	candidates := 0
+	known := make([]ResolvedModelContextCapacity, 0)
 	for i := range catalog.accounts {
 		account := &catalog.accounts[i]
 		if !capacityAccountMatchesPlatform(account, target.platform) || (target.owned && !explicitModelMappingClaims(*account, model)) {
@@ -404,56 +345,77 @@ func (catalog *groupModelCapacityCatalog) resolve(ctx context.Context, platform,
 		if !supported {
 			continue
 		}
-		if !CanManageModelContextCapacity(account) {
-			return ResolvedModelContextCapacity{Source: "protected"}
-		}
-		upstreamModel := strings.TrimSpace(upstreamModels[0])
-		for _, possible := range upstreamModels[1:] {
-			if strings.TrimSpace(possible) != upstreamModel {
-				return defaultGroupModelCapacity("ambiguous_endpoint_targets")
+		for _, upstreamModel := range dedupeAndSortModelIDs(upstreamModels) {
+			if lookup != nil && lookup.channel.BillingModelSource == BillingModelSourceUpstream && checkRestricted(lookup, *catalog.groupID, upstreamModel) {
+				continue
+			}
+			candidates++
+			if capacity := catalog.evidence[i].resolve(upstreamModel, true); capacity.Known() {
+				known = append(known, capacity)
 			}
 		}
-		if strings.TrimSpace(upstreamModel) == "" {
-			return defaultGroupModelCapacity("unresolved_model_target")
+	}
+	switch {
+	case candidates == 0:
+		return unknownModelContextCapacity("no_model_candidate")
+	case len(known) == 0:
+		return unknownModelContextCapacity("no_capacity_evidence")
+	}
+	return minimumModelContextCapacity(known)
+}
+
+func modelContextSourceRank(source string) int {
+	switch source {
+	case ModelContextSourceCustom:
+		return 0
+	case ModelContextSourceUpstream:
+		return 1
+	case ModelContextSourceOfficial:
+		return 2
+	default:
+		return 3
+	}
+}
+
+// minimumModelContextCapacity takes the smallest known value of every limit so
+// that no candidate is promised a window it cannot hold. The answer carries the
+// source of the smallest default window.
+func minimumModelContextCapacity(candidates []ResolvedModelContextCapacity) ResolvedModelContextCapacity {
+	result := candidates[0]
+	minimum := func(current, value int64) int64 {
+		if value > 0 && (current <= 0 || value < current) {
+			return value
 		}
-		if lookup != nil && lookup.channel.BillingModelSource == BillingModelSourceUpstream && checkRestricted(lookup, *catalog.groupID, upstreamModel) {
-			continue
-		}
-		var live *ModelContextCapacity
-		if observed, exists := catalog.liveByAccount[account.ID][upstreamModel]; exists {
-			live = &observed
-		}
-		candidate := catalog.resolvers[i](upstreamModel, live)
-		maximum := candidate.MaxContextWindow
-		if maximum < candidate.ContextWindow {
-			maximum = candidate.ContextWindow
-		}
-		if count == 0 || maximum < minimumMax {
-			minimumMax = maximum
-		}
-		if count == 0 || candidate.MaxInputTokens < minimumInput {
-			minimumInput = candidate.MaxInputTokens
-		}
-		if count == 0 || candidate.MaxOutputTokens < minimumOutput {
-			minimumOutput = candidate.MaxOutputTokens
-		}
-		if count == 0 || candidate.ContextWindow < result.ContextWindow ||
-			(candidate.ContextWindow == result.ContextWindow && candidate.Source < result.Source) {
+		return current
+	}
+	var maximum, input, output int64
+	for _, candidate := range candidates {
+		if candidate.ContextWindow < result.ContextWindow ||
+			(candidate.ContextWindow == result.ContextWindow && modelContextSourceRank(candidate.Source) < modelContextSourceRank(result.Source)) {
 			result = candidate
 		}
-		count++
+		candidateMaximum := candidate.MaxContextWindow
+		if candidateMaximum < candidate.ContextWindow {
+			candidateMaximum = candidate.ContextWindow
+		}
+		maximum = minimum(maximum, candidateMaximum)
+		input = minimum(input, candidate.MaxInputTokens)
+		output = minimum(output, candidate.MaxOutputTokens)
 	}
-	if count == 0 {
-		return defaultGroupModelCapacity("no_model_candidate")
+	result.MaxContextWindow, result.MaxInputTokens, result.MaxOutputTokens = maximum, input, output
+	if input > result.ContextWindow {
+		result.MaxInputTokens = 0
 	}
-	if count > 1 && result.Reason == "" {
+	if output > result.ContextWindow {
+		result.MaxOutputTokens = 0
+	}
+	if len(candidates) > 1 {
 		result.Reason = "group_minimum"
 	}
-	result.MaxContextWindow, result.MaxInputTokens, result.MaxOutputTokens = minimumMax, minimumInput, minimumOutput
 	return result
 }
 
-func projectModelCapacityEnvelope(body []byte, codex bool, resolve func(string) ResolvedModelContextCapacity, protected map[string]bool) ([]byte, error) {
+func projectModelCapacityEnvelope(body []byte, codex bool, resolve func(string) ResolvedModelContextCapacity) ([]byte, error) {
 	var envelope map[string]json.RawMessage
 	if err := json.Unmarshal(body, &envelope); err != nil {
 		return nil, fmt.Errorf("decode model capacity envelope: %w", err)
@@ -473,7 +435,7 @@ func projectModelCapacityEnvelope(body []byte, codex bool, resolve func(string) 
 			continue
 		}
 		var model string
-		if json.Unmarshal(fields[modelKey], &model) != nil || strings.TrimSpace(model) == "" || protected[model] {
+		if json.Unmarshal(fields[modelKey], &model) != nil || strings.TrimSpace(model) == "" {
 			continue
 		}
 		if ApplyModelContextCapacityToFields(fields, resolve(model), codex) {
@@ -488,18 +450,8 @@ func projectModelCapacityEnvelope(body []byte, codex bool, resolve func(string) 
 	return json.Marshal(envelope)
 }
 
-func buildDefaultCapacityCodexManifest(modelIDs []string, reason string) ([]byte, error) {
-	body, err := BuildCodexModelsManifest(modelIDs)
-	if err != nil {
-		return nil, err
-	}
-	return projectModelCapacityEnvelope(body, true, func(string) ResolvedModelContextCapacity {
-		return defaultGroupModelCapacity(reason)
-	}, nil)
-}
-
-// ProjectModelListContextCapacities appends optional metadata without changing
-// the existing platform-specific /v1/models row shape, IDs, order or filters.
+// ProjectModelListContextCapacities adds known capacities to a /v1/models body
+// without changing its platform-specific row shape, IDs, order or filters.
 func (s *GatewayService) ProjectModelListContextCapacities(ctx context.Context, group *Group, groupID *int64, platform string, body []byte) ([]byte, error) {
 	if platform == "" {
 		platform = PlatformAnthropic
@@ -517,34 +469,33 @@ func (s *GatewayService) ProjectModelListContextCapacities(ctx context.Context, 
 	catalog.group = group
 	return projectModelCapacityEnvelope(body, false, func(model string) ResolvedModelContextCapacity {
 		return catalog.resolve(ctx, platform, model)
-	}, nil)
+	})
 }
 
-// ProjectCodexModelContextCapacities runs after all group merges and
-// before conditional response handling. Local overlays never enter the raw
-// upstream cache; a changed override therefore changes the final ETag.
-func (s *OpenAIGatewayService) ProjectCodexModelContextCapacities(ctx context.Context, group *Group, manifest *OpenAIModelsResponse, ifNoneMatch string, source *Account) error {
+// ProjectCodexModelContextCapacities runs after all group merges and before
+// conditional response handling. It never enters the raw upstream cache, so a
+// changed capacity changes the final ETag.
+func (s *OpenAIGatewayService) ProjectCodexModelContextCapacities(ctx context.Context, group *Group, manifest *OpenAIModelsResponse, ifNoneMatch string) error {
 	if manifest == nil || manifest.NotModified || len(manifest.Body) == 0 || group == nil {
 		return nil
 	}
 	catalog := loadGroupModelCapacityCatalog(ctx, s.accountRepo, nil, s.channelService, s.cfg, &group.ID, group.Platform)
-	return projectCodexModelContextCapacities(ctx, group, manifest, ifNoneMatch, source, catalog)
+	return projectOpenAIModelsContextCapacities(ctx, group, manifest, ifNoneMatch, catalog, true)
 }
 
-// ProjectOpenAIModelsListContextCapacities is the final, request-local overlay
-// for upstream-discovered ordinary catalogs. Discovery sources supply raw
-// observations; capacity candidates still follow the actual forwarding pool.
+// ProjectOpenAIModelsListContextCapacities is the final overlay for
+// upstream-discovered ordinary catalogs.
 func (s *OpenAIGatewayService) ProjectOpenAIModelsListContextCapacities(ctx context.Context, group *Group, response *OpenAIModelsResponse, ifNoneMatch string) error {
 	if response == nil || response.NotModified || len(response.Body) == 0 || group == nil {
 		return nil
 	}
 	catalog := loadGroupModelCapacityCatalog(ctx, s.accountRepo, nil, s.channelService, s.cfg, &group.ID, group.Platform)
-	return projectOpenAIModelsContextCapacities(ctx, group, response, ifNoneMatch, nil, catalog, false)
+	return projectOpenAIModelsContextCapacities(ctx, group, response, ifNoneMatch, catalog, false)
 }
 
 // The shared gateway owns composite route configuration, including the
 // instance attached to the OpenAI-compatible handler for native dispatch.
-func (s *GatewayService) ProjectCodexModelContextCapacities(ctx context.Context, group *Group, manifest *OpenAIModelsResponse, ifNoneMatch string, source *Account) error {
+func (s *GatewayService) ProjectCodexModelContextCapacities(ctx context.Context, group *Group, manifest *OpenAIModelsResponse, ifNoneMatch string) error {
 	if manifest == nil || manifest.NotModified || len(manifest.Body) == 0 || group == nil {
 		return nil
 	}
@@ -553,45 +504,14 @@ func (s *GatewayService) ProjectCodexModelContextCapacities(ctx context.Context,
 		routesRepo = s.compositeResolver.repo
 	}
 	catalog := loadGroupModelCapacityCatalog(ctx, s.accountRepo, routesRepo, s.channelService, s.cfg, &group.ID, group.Platform)
-	return projectCodexModelContextCapacities(ctx, group, manifest, ifNoneMatch, source, catalog)
+	return projectOpenAIModelsContextCapacities(ctx, group, manifest, ifNoneMatch, catalog, true)
 }
 
-func projectCodexModelContextCapacities(ctx context.Context, group *Group, manifest *OpenAIModelsResponse, ifNoneMatch string, source *Account, catalog *groupModelCapacityCatalog) error {
-	return projectOpenAIModelsContextCapacities(ctx, group, manifest, ifNoneMatch, source, catalog, true)
-}
-
-func projectOpenAIModelsContextCapacities(ctx context.Context, group *Group, manifest *OpenAIModelsResponse, ifNoneMatch string, source *Account, catalog *groupModelCapacityCatalog, codex bool) error {
+func projectOpenAIModelsContextCapacities(ctx context.Context, group *Group, manifest *OpenAIModelsResponse, ifNoneMatch string, catalog *groupModelCapacityCatalog, codex bool) error {
 	catalog.group = group
-	sources := manifest.capacitySources
-	if len(sources) == 0 && source != nil {
-		body := manifest.upstreamSourceBody
-		if len(body) == 0 && !CanManageModelContextCapacity(source) {
-			body = manifest.Body
-		}
-		sources = []codexModelCapacitySource{newCodexModelCapacitySource(source, body)}
-	}
-	protected := make(map[string]bool, len(manifest.capacityProtectedModels))
-	for model := range manifest.capacityProtectedModels {
-		protected[model] = true
-	}
-	for _, capacitySource := range sources {
-		catalog.bindLiveSource(capacitySource)
-		if !capacitySource.protected {
-			continue
-		}
-		if capacitySource.visibleModels != nil {
-			for model := range capacitySource.visibleModels {
-				protected[model] = true
-			}
-			continue
-		}
-		for model := range rawModelCapacitySourceIDs(capacitySource.body) {
-			protected[model] = true
-		}
-	}
 	body, err := projectModelCapacityEnvelope(manifest.Body, codex, func(model string) ResolvedModelContextCapacity {
 		return catalog.resolve(ctx, group.Platform, model)
-	}, protected)
+	})
 	if err != nil {
 		return err
 	}

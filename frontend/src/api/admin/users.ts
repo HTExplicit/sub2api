@@ -333,7 +333,7 @@ export async function bindUserAuthIdentity(
  */
 export type PlatformQuotaPlatform = AccountPlatform
 
-// Downstream: every concrete account platform (including Cindy) supports platform quotas.
+// Downstream: every concrete account platform supports platform quotas.
 export const PLATFORM_QUOTA_PLATFORMS = [...CONCRETE_PLATFORM_VALUES] as PlatformQuotaPlatform[]
 export type PlatformQuotaWindow = 'daily' | 'weekly' | 'monthly'
 

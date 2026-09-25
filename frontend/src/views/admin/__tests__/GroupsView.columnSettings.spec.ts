@@ -34,7 +34,6 @@ const {
 
 const messages: Record<string, string> = {
   'admin.groups.columnSettings': 'Column Settings',
-  'admin.groups.cindyAudit.open': 'Cindy Group Audit',
   'admin.groups.columns.name': 'Name',
   'admin.groups.columns.id': 'ID',
   'admin.groups.columns.platform': 'Platform',
@@ -193,18 +192,6 @@ const IconStub = {
   template: '<span data-test="icon">{{ name }}</span>',
 }
 
-const CindyGroupAuditDialogStub = {
-  props: ['show'],
-  emits: ['close', 'split'],
-  template: `
-    <div v-if="show" data-test="cindy-group-audit-dialog">
-      <button data-test="cindy-group-audit-split-success" @click="$emit('split', { target_group_id: 12 })">
-        split
-      </button>
-    </div>
-  `,
-}
-
 const mountView = async () => {
   const wrapper = mount(GroupsView, {
     global: {
@@ -222,7 +209,6 @@ const mountView = async () => {
         GroupCapacityBadge: true,
         GroupRateMultipliersModal: true,
         GroupRPMOverridesModal: true,
-        CindyGroupAuditDialog: CindyGroupAuditDialogStub,
         VueDraggable: { template: '<div><slot /></div>' },
       },
     },
@@ -444,17 +430,5 @@ describe('admin GroupsView column settings', () => {
     expect(text).toContain('Total$9.75')
     expect(text.indexOf('Today')).toBeLessThan(text.indexOf('Yesterday'))
     expect(text.indexOf('Yesterday')).toBeLessThan(text.indexOf('Total'))
-  })
-
-  it('opens the Cindy audit surface and refreshes the group list after a split', async () => {
-    const wrapper = await mountView()
-    expect(listGroups).toHaveBeenCalledTimes(1)
-
-    await wrapper.get('[data-test="cindy-group-audit-open"]').trigger('click')
-    expect(wrapper.get('[data-test="cindy-group-audit-dialog"]').exists()).toBe(true)
-
-    await wrapper.get('[data-test="cindy-group-audit-split-success"]').trigger('click')
-    await flushPromises()
-    expect(listGroups).toHaveBeenCalledTimes(2)
   })
 })

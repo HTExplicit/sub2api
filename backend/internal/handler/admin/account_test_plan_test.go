@@ -7,7 +7,6 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	accounttools "github.com/Wei-Shaw/sub2api/internal/accounttools/policy"
 	extensionv1 "github.com/Wei-Shaw/sub2api/internal/nativeapi"
 	"github.com/Wei-Shaw/sub2api/internal/service"
 	"github.com/Wei-Shaw/sub2api/internal/testextensions"
@@ -40,9 +39,6 @@ func (f *testPlanOperations) InvokeOperation(ctx context.Context, _, _ string, i
 	f.contexts = append(f.contexts, ctx.Value(testPlanOuterKey{}))
 	if f.rejectAll {
 		return extensionv1.Result{}, service.ErrExtensionOperationDisabled
-	}
-	if in.Operation == "test.batch" {
-		return accounttools.New().Invoke(ctx, in)
 	}
 	return extensionv1.Result{}, service.ErrExtensionOperationDisabled
 }
@@ -115,9 +111,10 @@ func TestAccountTestPlanCoreSelectionSmallMatrix(t *testing.T) {
 		want     string
 		order    []string
 	}{
-		{service.PlatformGemini, models("unknown-a", "gemini-2.5-flash-image", "gemini-3.1-flash-image", "unknown-b"), "gemini-3.1-flash-image", []string{"gemini-3.1-flash-image", "gemini-2.5-flash-image", "unknown-a", "unknown-b"}},
+		{service.PlatformGemini, models("unknown-a", "gemini-2.5-flash-image", "gemini-3.1-flash-image", "unknown-b"), "unknown-a", []string{"gemini-3.1-flash-image", "gemini-2.5-flash-image", "unknown-a", "unknown-b"}},
+		{service.PlatformGemini, models("gemini-2.5-pro", "gemini-2.0-flash"), "gemini-2.0-flash", []string{"gemini-2.5-pro", "gemini-2.0-flash"}},
 		{service.PlatformAntigravity, models("sonnet-custom", "gemini-3.1-flash-image"), "sonnet-custom", []string{"gemini-3.1-flash-image", "sonnet-custom"}},
-		{service.PlatformOpenAI, models("first", "sonnet-custom"), "sonnet-custom", []string{"first", "sonnet-custom"}},
+		{service.PlatformOpenAI, models("codex-auto-review", "first", "sonnet-custom"), "first", []string{"codex-auto-review", "first", "sonnet-custom"}},
 	} {
 		plan, err := ordinaryAccountTestPlan(&service.Account{ID: 42, Platform: tc.platform}, tc.ids)
 		require.NoError(t, err)
@@ -126,7 +123,7 @@ func TestAccountTestPlanCoreSelectionSmallMatrix(t *testing.T) {
 	}
 	plan, err := ordinaryAccountTestPlan(&service.Account{ID: 42, Platform: service.PlatformGrok}, models("grok-4.3", "grok", "grok-4.5-custom", "grok-imagine", "grok-imagine-video"))
 	require.NoError(t, err)
-	require.Equal(t, "grok-4.5-custom", plan.ModeViews["text"].DefaultModelID, "preserve current initial preference, not an upstream UX rollback")
+	require.Equal(t, "grok-4.3", plan.ModeViews["text"].DefaultModelID, "same automatic choice as batch tests: grok-4.5 when listed, else the first text model")
 	require.Equal(t, []string{"grok-imagine"}, plan.ModeViews["image"].ModelIDs)
 	require.Equal(t, []string{"grok-imagine-video"}, plan.ModeViews["video"].ModelIDs)
 	for _, mode := range []string{"search", "tts", "stt", "realtime"} {

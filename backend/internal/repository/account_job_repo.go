@@ -425,27 +425,6 @@ func (r *accountJobRepository) CancelRequested(ctx context.Context, jobID int64)
 	return canceled, err
 }
 
-func (r *accountJobRepository) SaveExecutionSnapshot(ctx context.Context, jobID, itemID int64, metadata json.RawMessage) error {
-	if err := service.ValidateAccountJobMetadata(metadata); err != nil {
-		return err
-	}
-	result, err := r.db.ExecContext(ctx, `UPDATE admin_account_job_items
-		SET metadata=metadata || $3::jsonb, updated_at=NOW()
-		WHERE job_id=$1 AND id=$2 AND status='running'
-		AND (NOT (metadata ? 'execution_plan') OR metadata->'execution_plan'=$3::jsonb->'execution_plan')`, jobID, itemID, string(metadata))
-	if err != nil {
-		return err
-	}
-	count, err := result.RowsAffected()
-	if err != nil {
-		return err
-	}
-	if count != 1 {
-		return errors.New("account test execution plan changed")
-	}
-	return nil
-}
-
 func (r *accountJobRepository) CompleteItems(ctx context.Context, jobID int64, results []service.AccountJobExecutionResult) error {
 	tx, err := r.db.BeginTx(ctx, nil)
 	if err != nil {

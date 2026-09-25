@@ -68,16 +68,6 @@ func (m *Module) Invoke(ctx context.Context, in extensionv1.Invocation) (extensi
 		if !request.ValidUTF8 || request.Characters < 0 || request.Characters > 8192 {
 			return failure("ACCOUNT_TEST_PROMPT_INVALID", "test prompt must be valid UTF-8 and at most 8192 characters", 400), nil
 		}
-	case "test.batch":
-		var request extensionv1.BatchTestPlanningRequest
-		if json.Unmarshal(in.Payload, &request) != nil {
-			return extensionv1.Result{}, errors.New("invalid batch selection payload")
-		}
-		plan, err := planBatch(request)
-		if err != nil {
-			return failure("ACCOUNT_TEST_SELECTION_INVALID", err.Error(), 400), nil
-		}
-		output = plan
 	case "tools.describe":
 		raw, err := m.Status(ctx)
 		return extensionv1.Result{Payload: raw}, err

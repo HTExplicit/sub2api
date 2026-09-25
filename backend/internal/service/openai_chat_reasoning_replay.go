@@ -288,10 +288,6 @@ func (s *OpenAIGatewayService) prepareOpenAIChatReasoningReplay(ctx context.Cont
 	if err != nil {
 		return nil, wireBody
 	}
-	scope, err = s.businessPromptReplayScope(c, account, wireBody, scope)
-	if err != nil {
-		return nil, wireBody
-	}
 	input, ok := openAIChatReasoningInput(wireBody)
 	if !ok {
 		return nil, wireBody

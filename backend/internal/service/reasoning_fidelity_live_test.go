@@ -52,15 +52,14 @@ type fidelityBootstrap struct {
 }
 
 type fidelitySource struct {
-	Account             service.Account                               `json:"account"`
-	Group               service.Group                                 `json:"group"`
-	FastPolicy          *service.OpenAIFastPolicySettings             `json:"fast_policy"`
-	BusinessPrompt      service.BusinessSystemPromptSnapshot          `json:"business_prompt"`
-	RegistryPublication *service.ReasoningFidelityPublicationSnapshot `json:"registry_publication"`
-	Settings            map[string]string                             `json:"settings"`
-	ChannelModels       map[string]string                             `json:"channel_models"`
-	Fingerprint         string                                        `json:"fingerprint"`
-	UserID              int64                                         `json:"user_id"`
+	Account       service.Account                   `json:"account"`
+	Group         service.Group                     `json:"group"`
+	FastPolicy    *service.OpenAIFastPolicySettings `json:"fast_policy"`
+	SystemPrompts *service.SystemPromptConfig       `json:"system_prompts"`
+	Settings      map[string]string                 `json:"settings"`
+	ChannelModels map[string]string                 `json:"channel_models"`
+	Fingerprint   string                            `json:"fingerprint"`
+	UserID        int64                             `json:"user_id"`
 }
 
 type fidelityLedger struct {
@@ -199,7 +198,7 @@ func fidelityRun(input *bufio.Reader, output *json.Encoder) error {
 		u.used[slot] = true
 	}
 	h.upstream = u
-	h.gateway, err = service.ReasoningFidelityGatewayForTest(cfg, u, boot.Source.BusinessPrompt, boot.Source.RegistryPublication, boot.Source.Settings)
+	h.gateway, err = service.ReasoningFidelityGatewayForTest(cfg, u, boot.Source.SystemPrompts, boot.Source.Settings)
 	if err != nil {
 		return errors.New("unsupported_source_policy")
 	}

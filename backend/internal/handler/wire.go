@@ -213,7 +213,6 @@ func ProvideHandlers(
 	asyncImageHandler *AsyncImageHandler,
 	batchImageHandler *BatchImageHandler,
 	imageStudioHandler *ImageStudioJobHandler,
-	remoteSkillHandler *RemoteSkillHandler,
 	_ *service.IdempotencyCoordinator,
 	_ *service.IdempotencyCleanupService,
 ) *Handlers {
@@ -240,7 +239,6 @@ func ProvideHandlers(
 		AsyncImage:       asyncImageHandler,
 		BatchImage:       batchImageHandler,
 		ImageStudio:      imageStudioHandler,
-		RemoteSkill:      remoteSkillHandler,
 	}
 }
 
@@ -271,7 +269,6 @@ var ProviderSet = wire.NewSet(
 	NewImageStudioGatewayExecutor,
 	wire.Bind(new(imageStudioImagesInvoker), new(*OpenAIGatewayHandler)),
 	ProvideImageStudioRuntime,
-	ProvideRemoteSkillHandler,
 
 	// Admin handlers
 	admin.NewDashboardHandler,

@@ -198,12 +198,6 @@ func groupCodexModelMetadata(
 		if defaults, known := gpt6AccountModelMetadata(account, lookupModel); known {
 			metadata, _ = mergeUpstreamModelMetadata(metadata, defaults)
 			ok = true
-			if account.IsOpenAIOAuthLike() {
-				// Raw capacity snapshots have separate provenance and may be
-				// newer than the enriched capability snapshot.
-				metadata.ContextWindow, metadata.MaxContextWindow = defaults.ContextWindow, defaults.MaxContextWindow
-				metadata.MaxOutputTokens = defaults.MaxOutputTokens
-			}
 		}
 		if !ok {
 			if explicitTargetsConflict {

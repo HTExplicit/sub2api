@@ -13,13 +13,10 @@ import (
 
 	accounttools "github.com/Wei-Shaw/sub2api/internal/accounttools/policy"
 	extensionv1 "github.com/Wei-Shaw/sub2api/internal/nativeapi"
-	prompt "github.com/Wei-Shaw/sub2api/internal/promptskills/policy"
 	"github.com/Wei-Shaw/sub2api/internal/service"
 )
 
 type operations struct{}
-
-var promptFixtureModule = prompt.New()
 
 func (operations) InvokeOperation(ctx context.Context, _, _ string, in extensionv1.Invocation) (extensionv1.Result, error) {
 	if in.Capability == extensionv1.CapabilityRecovery {
@@ -38,9 +35,6 @@ func (operations) InvokeOperation(ctx context.Context, _, _ string, in extension
 	}
 	if strings.HasPrefix(in.Operation, "taxonomy.") || strings.HasPrefix(in.Operation, "test.") || strings.HasPrefix(in.Operation, "import.") || in.Operation == "tools.describe" {
 		return accounttools.New().Invoke(ctx, in)
-	}
-	if strings.HasPrefix(in.Operation, "prompt.") || strings.HasPrefix(in.Operation, "skills.") {
-		return promptFixtureModule.Invoke(ctx, in)
 	}
 	return extensionv1.Result{}, service.ErrExtensionOperationDisabled
 }

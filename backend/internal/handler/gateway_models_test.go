@@ -8,7 +8,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/Wei-Shaw/sub2api/internal/pkg/claude"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/openai"
 	middleware2 "github.com/Wei-Shaw/sub2api/internal/server/middleware"
 	"github.com/Wei-Shaw/sub2api/internal/service"
@@ -91,7 +90,7 @@ func newGatewayModelsHandlerForTest(repo service.AccountRepository) *GatewayHand
 	}
 }
 
-func TestWriteOpenAIModelsListOmitsCindyMetadataForOrdinaryProviders(t *testing.T) {
+func TestWriteOpenAIModelsListOmitsContextMetadataForOrdinaryProviders(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	rec := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(rec)
@@ -915,15 +914,13 @@ func TestGatewayModels_CompositeUnmappedCNAccountsContributeNoDefaults(t *testin
 	require.NotContains(t, ids, "claude-sonnet-4-6")
 }
 
-// 独立 CN 分组沿用 default 分支的 Claude 默认列表（Claude Code 客户端请求的
-// 就是这些模型名并经账号 model_mapping 转换），composite 支持不得改变该回退。
-func TestDefaultModelIDsForPlatform_CNProvidersKeepClaudeDefaults(t *testing.T) {
-	want := make([]string, 0, len(claude.DefaultModels))
-	for _, model := range claude.DefaultModels {
-		want = append(want, model.ID)
-	}
-	for _, platform := range []string{service.PlatformKimi, service.PlatformZhipu, service.PlatformDeepseek, service.PlatformMiniMax} {
-		require.Equal(t, want, defaultModelIDsForPlatform(platform), "platform=%s", platform)
+// 独立 CN 分组只列出本平台默认模型（没有公开默认列表的平台为空），
+// 不再回落到 Claude 默认列表。
+func TestDefaultModelIDsForPlatform_CNProvidersListOwnDefaults(t *testing.T) {
+	require.Equal(t, defaultCodexModelIDsForPlatform(service.PlatformDeepseek), defaultModelIDsForPlatform(service.PlatformDeepseek))
+	require.Equal(t, defaultCodexModelIDsForPlatform(service.PlatformMiniMax), defaultModelIDsForPlatform(service.PlatformMiniMax))
+	for _, platform := range []string{service.PlatformKimi, service.PlatformZhipu} {
+		require.Empty(t, defaultModelIDsForPlatform(platform), "platform=%s", platform)
 	}
 }
 

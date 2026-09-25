@@ -75,7 +75,7 @@ func TestNativeFeatureBootstrapPreservesEffectiveConfiguration(t *testing.T) {
 		},
 		{
 			name:   "narrow manifest cannot become a global native scope",
-			plugin: NativeRetirementPlugin{Key: "codexrip.account-tools", State: "enabled", Manifest: json.RawMessage(`{"capabilities":[{"id":"extensions.admin.v1","platform":"cindy","account_type":"apikey"}]}`)}, wantErr: true,
+			plugin: NativeRetirementPlugin{Key: "codexrip.account-tools", State: "enabled", Manifest: json.RawMessage(`{"capabilities":[{"id":"extensions.admin.v1","platform":"openai","account_type":"apikey"}]}`)}, wantErr: true,
 		},
 	} {
 		t.Run(test.name, func(t *testing.T) {

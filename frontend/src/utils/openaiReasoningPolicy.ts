@@ -10,7 +10,6 @@ export type OpenAIReasoningPolicyField = keyof OpenAIReasoningPolicy
 
 interface ReasoningPolicyAccount {
   platform?: unknown
-  wire_platform?: unknown
   type?: unknown
 }
 
@@ -21,11 +20,7 @@ const policyKeys = {
 
 export function isOpenAIReasoningPolicyApplicable(account: ReasoningPolicyAccount | null | undefined): boolean {
   if (!account || !['apikey', 'oauth', 'setup-token'].includes(String(account.type))) return false
-  const wirePlatform = typeof account.wire_platform === 'string'
-    ? account.wire_platform.trim().toLowerCase()
-    : ''
-  const platform = typeof account.platform === 'string' ? account.platform.trim().toLowerCase() : ''
-  return (wirePlatform || (platform === 'cindy' ? 'openai' : platform)) === 'openai'
+  return typeof account.platform === 'string' && account.platform.trim().toLowerCase() === 'openai'
 }
 
 export function defaultOpenAIReasoningPolicy(): OpenAIReasoningPolicy {

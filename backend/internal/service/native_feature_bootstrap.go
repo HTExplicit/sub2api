@@ -98,7 +98,7 @@ func nativeFeatureSettings(plugin NativeRetirementPlugin, encryptor SecretEncryp
 			return nil, err
 		}
 		var value extensionv1.ImageToolsConfig
-		// responses_image_enabled (the removed Cindy Responses image bridge) is
+		// responses_image_enabled (the removed Responses image bridge) is
 		// accepted in a saved plugin configuration and dropped.
 		if err := DecodeSwitchSettings(raw, &value, "studio_enabled", "responses_image_enabled"); err != nil {
 			return nil, fmt.Errorf("invalid saved image tool configuration: %w", err)
@@ -129,7 +129,7 @@ func nativeFeatureSettings(plugin NativeRetirementPlugin, encryptor SecretEncryp
 		value.ThemeEnabled = value.ThemeEnabled && theme
 		return settings, put(SettingKeyAdminObservabilityConfig, value)
 	case "codexrip.cindy-provider":
-		// The Cindy provider was removed; its saved switches have no native
+		// The provider plugin was removed; its saved switches have no native
 		// equivalent and are dropped with the retired installation.
 		return settings, nil
 	default:

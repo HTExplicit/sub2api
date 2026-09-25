@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -69,13 +68,8 @@ func notifyPersistedAccountSchedulingCooldown(blocker AccountRuntimeBlocker, acc
 
 // SuccessfulTestRecoveryResult 表示测试成功后恢复了哪些运行时状态。
 type SuccessfulTestRecoveryResult struct {
-	ClearedError         bool
-	ClearedRateLimit     bool
-	ManualStatePreserved bool
-}
-
-type SuccessfulTestRecoveryRepository interface {
-	RecoverAfterSuccessfulTest(context.Context, int64) (*SuccessfulTestRecoveryResult, error)
+	ClearedError     bool
+	ClearedRateLimit bool
 }
 
 // AccountRecoveryOptions 控制账号恢复时的附加行为。
@@ -2206,27 +2200,7 @@ func (s *RateLimitService) RecoverAccountState(ctx context.Context, accountID in
 // RecoverAccountAfterSuccessfulTest 将一次成功测试视为正常请求，
 // 按需恢复 error / rate-limit / overload / temp-unsched / model-rate-limit 等运行时状态。
 func (s *RateLimitService) RecoverAccountAfterSuccessfulTest(ctx context.Context, accountID int64) (*SuccessfulTestRecoveryResult, error) {
-	if s == nil || s.accountRepo == nil {
-		return nil, errors.New("account recovery is unavailable")
-	}
-	repo, ok := s.accountRepo.(SuccessfulTestRecoveryRepository)
-	if !ok {
-		return nil, errors.New("atomic account recovery is unavailable")
-	}
-	result, err := repo.RecoverAfterSuccessfulTest(ctx, accountID)
-	if err != nil || result == nil {
-		return result, err
-	}
-	if result.ClearedRateLimit && s.tempUnschedCache != nil {
-		if err := s.tempUnschedCache.DeleteTempUnsched(ctx, accountID); err != nil {
-			return result, err
-		}
-	}
-	if result.ClearedError || result.ClearedRateLimit {
-		s.ResetOpenAI403Counter(ctx, accountID)
-		s.notifyAccountSchedulingBlockCleared(accountID)
-	}
-	return result, nil
+	return s.RecoverAccountState(ctx, accountID, AccountRecoveryOptions{})
 }
 
 func (s *RateLimitService) ClearTempUnschedulable(ctx context.Context, accountID int64) error {

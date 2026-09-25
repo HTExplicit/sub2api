@@ -679,7 +679,7 @@ func (s *OpenAIGatewayService) handleStreamingResponseWithReasoning(ctx context.
 				}
 			}
 			dataBytes := rawDataBytes
-			if rewritten := s.rewriteBusinessSystemPromptJSONForRequest(c, dataBytes, BusinessSystemPromptProtocolResponses); !bytes.Equal(rewritten, dataBytes) {
+			if rewritten := restoreSystemPromptEcho(c, dataBytes); !bytes.Equal(rewritten, dataBytes) {
 				dataBytes = rewritten
 				data = string(rewritten)
 				line = replaceOpenAISSEDataLinePayload(line, data)
@@ -1813,7 +1813,7 @@ func (s *OpenAIGatewayService) handleNonStreamingResponse(ctx context.Context, r
 		_ = s.handleOpenAIAccountUpstreamError(ctx, account, http.StatusBadRequest, resp.Header, body, model)
 		return nil, newOpenAIModelNotSupportedFailoverError(resp.Header, body)
 	}
-	body = s.rewriteBusinessSystemPromptJSONForRequest(c, body, BusinessSystemPromptProtocolResponses)
+	body = restoreSystemPromptEcho(c, body)
 
 	// Detect SSE responses for all account types from the header or genuine
 	// physical framing, never from quoted "data:" text inside JSON strings.
@@ -2083,7 +2083,7 @@ func (s *OpenAIGatewayService) handleSSEToJSON(resp *http.Response, c *gin.Conte
 			return nil, recoveryErr
 		}
 	}
-	body = s.rewriteBusinessSystemPromptSSEForRequest(c, body, BusinessSystemPromptProtocolResponses)
+	body = restoreSystemPromptEchoSSE(c, body)
 	bodyText := string(body)
 	terminalType, terminalPayload, terminalOK := extractOpenAISSETerminalEvent(bodyText)
 	if !terminalOK {

@@ -96,7 +96,7 @@ func TestImageStudioEligibleKeysHidesUnavailableImageCandidatesAndCredentials(t 
 
 	items, err := studio.EligibleKeys(context.Background(), 7)
 	require.NoError(t, err)
-	require.Empty(t, items, "no Image Studio model source exists after the Cindy catalog removal")
+	require.Empty(t, items, "no Image Studio model source exists after the provider catalog removal")
 
 	raw, err := json.Marshal(items)
 	require.NoError(t, err)

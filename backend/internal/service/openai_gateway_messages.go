@@ -33,7 +33,6 @@ func (s *OpenAIGatewayService) ForwardAsAnthropic(
 	promptCacheKey string,
 	defaultMappedModel string,
 ) (*OpenAIForwardResult, error) {
-	rememberPromptRequestedModel(c, body)
 	stageCodexRoutingTurn(c, body)
 	c.Set(openAICompatTurnStateCommittedContextKey, false)
 	// 工具 Schema 清洗必须先于所有分流：下游每条路径（原生 Anthropic 直通、
@@ -369,12 +368,11 @@ func (s *OpenAIGatewayService) ForwardAsAnthropic(
 	if err != nil {
 		return nil, fmt.Errorf("build upstream request: %w", err)
 	}
-	wireBody, err := businessPromptWireRequestBody(upstreamReq, responsesBody)
+	wireBody, err := finalWireRequestBody(upstreamReq, responsesBody)
 	if err != nil {
 		return nil, err
 	}
-	application, _ := businessSystemPromptApplicationFromRequest(c, BusinessSystemPromptProtocolResponses)
-	upstreamPromptCacheKey = businessSystemPromptUpstreamCacheKey(c, wireBody, promptCacheKey, application)
+	upstreamPromptCacheKey = finalWirePromptCacheKey(wireBody, promptCacheKey)
 
 	// Override session_id with a deterministic UUID derived from the isolated
 	// session key, ensuring different API keys produce different upstream sessions.
@@ -866,7 +864,6 @@ func (s *OpenAIGatewayService) readOpenAICompatBufferedTerminal(
 					payload := openAICompatPayloadWithEventType(frame.Data, frame.EventType)
 					observeOpenAIReasoningAttemptUsage(c, []byte(payload))
 					observeOpenAIChatReasoningReplayPayload(c, []byte(payload))
-					payload = string(s.rewriteBusinessSystemPromptJSONForRequest(c, []byte(payload), BusinessSystemPromptProtocolResponses))
 					var event apicompat.ResponsesStreamEvent
 					if err := json.Unmarshal([]byte(payload), &event); err == nil {
 						s.parseSSEUsageBytesWithType([]byte(payload), event.Type, &usage)
@@ -911,7 +908,6 @@ func (s *OpenAIGatewayService) readOpenAICompatBufferedTerminal(
 			payload := openAICompatPayloadWithEventType(frame.Data, frame.EventType)
 			observeOpenAIReasoningAttemptUsage(c, []byte(payload))
 			observeOpenAIChatReasoningReplayPayload(c, []byte(payload))
-			payload = string(s.rewriteBusinessSystemPromptJSONForRequest(c, []byte(payload), BusinessSystemPromptProtocolResponses))
 
 			var event apicompat.ResponsesStreamEvent
 			if err := json.Unmarshal([]byte(payload), &event); err != nil {
@@ -1069,7 +1065,6 @@ func (s *OpenAIGatewayService) handleAnthropicStreamingResponse(
 				return true
 			}
 		}
-		payload = string(s.rewriteBusinessSystemPromptJSONForRequest(c, []byte(payload), BusinessSystemPromptProtocolResponses))
 		if firstChunk {
 			firstChunk = false
 			ms := int(time.Since(startTime).Milliseconds())

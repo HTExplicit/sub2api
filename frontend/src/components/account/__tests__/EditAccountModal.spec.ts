@@ -2,14 +2,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { defineComponent, type PropType } from 'vue'
 import { flushPromises, mount } from '@vue/test-utils'
 import type { ModelContextCapacityRow, SyncUpstreamModelsResult } from '@/api/admin/accounts'
-import { editAccount, editContext } from '@/__tests__/fixtures/accountEdit'
 
-const { updateAccountMock, checkMixedChannelRiskMock, getAvailableModelsMock, getEditContextMock, getModelContextCapacitiesMock, previewModelContextCapacitiesMock, syncUpstreamModelsMock, authIsSimpleMode, showErrorMock } = vi.hoisted(() => ({
+const { updateAccountMock, checkMixedChannelRiskMock, getAvailableModelsMock, getModelContextCapacitiesMock, previewModelContextCapacitiesMock, syncUpstreamModelsMock, authIsSimpleMode, showErrorMock } = vi.hoisted(() => ({
   updateAccountMock: vi.fn(),
   showErrorMock: vi.fn(),
   checkMixedChannelRiskMock: vi.fn(),
   getAvailableModelsMock: vi.fn(),
-  getEditContextMock: vi.fn(),
   getModelContextCapacitiesMock: vi.fn(),
   previewModelContextCapacitiesMock: vi.fn(),
   syncUpstreamModelsMock: vi.fn(),
@@ -39,7 +37,6 @@ vi.mock('@/api/admin', () => ({
       update: updateAccountMock,
       checkMixedChannelRisk: checkMixedChannelRiskMock,
       getAvailableModels: getAvailableModelsMock,
-      getEditContext: getEditContextMock,
       getModelContextCapacities: getModelContextCapacitiesMock,
       previewModelContextCapacities: previewModelContextCapacitiesMock,
       syncUpstreamModels: syncUpstreamModelsMock
@@ -91,14 +88,6 @@ const ModelWhitelistSelectorStub = defineComponent({
       type: Array as PropType<string[]>,
       default: () => []
     },
-    models: {
-      type: Array,
-      default: () => []
-    },
-    readonly: {
-      type: Boolean,
-      default: false
-    },
     accountId: Number,
     syncedModels: Object as PropType<SyncUpstreamModelsResult>,
     capacityRows: {
@@ -138,11 +127,7 @@ const ModelWhitelistSelectorStub = defineComponent({
   },
   template: `
     <div>
-      <span v-if="readonly" data-testid="managed-model-selector">
-        {{ models.map((model) => model.id).join(',') }}
-      </span>
       <button
-        v-else
         type="button"
         data-testid="rewrite-to-snapshot"
         @click="$emit('update:modelValue', ['gpt-5.2-2025-12-11'])"
@@ -376,15 +361,11 @@ function buildOpenAIOAuthParentAccount() {
   } as any
 }
 
-let editFixtureAccount = buildAccount()
 function mountModal(account = buildAccount(), renderGroupSelector = false) {
-  const projectedAccount = account.platform === 'cindy' && !Object.prototype.hasOwnProperty.call(account, 'account_edit_state_sha256')
-    ? { ...account, account_edit_state_sha256: editContext(account).edit_state_sha256 } : account
-  editFixtureAccount = projectedAccount
   return mount(EditAccountModal, {
     props: {
       show: true,
-      account: projectedAccount,
+      account,
       proxies: [],
       groups: []
     },
@@ -447,7 +428,6 @@ describe('EditAccountModal', () => {
   beforeEach(() => {
     authIsSimpleMode.value = true
     showErrorMock.mockReset()
-    getEditContextMock.mockReset().mockImplementation(id => Promise.resolve(editContext({ ...editFixtureAccount, id })))
     getAvailableModelsMock.mockReset()
     getAvailableModelsMock.mockResolvedValue([])
     getModelContextCapacitiesMock.mockReset().mockResolvedValue({ capacity_rows: [] })
@@ -521,30 +501,6 @@ describe('EditAccountModal', () => {
     expect(wrapper.findComponent(ModelWhitelistSelectorStub).props('capacityDrafts')).toEqual({})
     expect(findCapacityField(wrapper).props('draft')).toBeUndefined()
     expect(findCapacityField(wrapper).get('[data-testid="context-capacity-source"]').text()).toContain('sources.official')
-    wrapper.unmount()
-  })
-
-  it('keeps protected OAuth capacity inline and read-only without losing the selector account ID', async () => {
-    const account = buildOpenAIOAuthParentAccount()
-    account.credentials.model_mapping = { 'gpt-5.2': 'gpt-5.2' }
-    mockCapacityRows([capacityRow({
-      editable: false,
-      automatic_context_window: 272_000,
-      automatic_source: 'protected',
-      effective_context_window: 272_000,
-      effective_source: 'protected'
-    })])
-    updateAccountMock.mockReset().mockResolvedValue(account)
-    const wrapper = mountModal(account)
-    await flushPromises()
-    expect(wrapper.findComponent(ModelWhitelistSelectorStub).props('accountId')).toBe(account.id)
-    expect(wrapper.find('[data-testid="context-capacity-input"]').exists()).toBe(false)
-    expect(findCapacityField(wrapper).find('[data-testid="context-capacity-edit"]').exists()).toBe(false)
-    expect(findCapacityField(wrapper).get('[data-testid="context-capacity-source"]').text()).toContain('sources.protected')
-    await wrapper.get('form#edit-account-form').trigger('submit.prevent')
-    await flushPromises()
-    expect(updateAccountMock).toHaveBeenCalledTimes(1)
-    expect(updateAccountMock.mock.calls[0]?.[1]).not.toHaveProperty('model_context_overrides')
     wrapper.unmount()
   })
 
@@ -748,257 +704,23 @@ describe('EditAccountModal', () => {
     wrapper.unmount()
   })
 
-  it('reasoning policy is available for Cindy wire accounts but not native Grok', () => {
-    const cindy = mountModal({ ...buildAccount(), platform: 'cindy', wire_platform: 'openai' })
-    expect(cindy.find('[data-testid="openai-reasoning-policy"]').exists()).toBe(true)
-    cindy.unmount()
+  it('reasoning policy is available for OpenAI accounts but not native Grok', () => {
+    const openai = mountModal(buildAccount())
+    expect(openai.find('[data-testid="openai-reasoning-policy"]').exists()).toBe(true)
+    openai.unmount()
     const grok = mountModal(buildGrokAPIKeyAccount())
     expect(grok.find('[data-testid="openai-reasoning-policy"]').exists()).toBe(false)
     grok.unmount()
   })
 
   it('does not expose account-level compatibility selectors', () => {
-    const cindy = buildAccount()
-    cindy.platform = 'cindy'
-    cindy.is_cindy = true
-    cindy.credentials.base_url = 'https://api.laxarouter.ai'
-    cindy.extra = {}
-    const cindyWrapper = mountModal(cindy)
-    expect(cindyWrapper.find('[data-testid="openai-alpha-search-mode-select"]').exists()).toBe(false)
-    expect(cindyWrapper.find('[data-testid="openai-prompt-cache-key-mode-select"]').exists()).toBe(false)
-
     const ordinaryWrapper = mountModal(buildAccount())
     expect(ordinaryWrapper.find('[data-testid="openai-alpha-search-mode-select"]').exists()).toBe(false)
     expect(ordinaryWrapper.find('[data-testid="openai-prompt-cache-key-mode-select"]').exists()).toBe(false)
   })
 
-  it('keeps canonical Cindy identity and fixed endpoint on edit submission', async () => {
-    const cindy = buildAccount()
-    cindy.platform = 'cindy'
-    cindy.is_cindy = true
-    cindy.credentials.base_url = 'https://api.laxarouter.ai'
-    cindy.extra = {}
-    updateAccountMock.mockResolvedValue(cindy)
-
-    const wrapper = mountModal(cindy)
-    await flushPromises()
-    const baseUrl = wrapper
-      .findAll<HTMLInputElement>('input')
-      .find((input) => input.element.value === 'https://api.laxarouter.ai')
-    expect(baseUrl?.attributes('readonly')).toBeDefined()
-    await wrapper.get('form#edit-account-form').trigger('submit.prevent')
-    await flushPromises()
-
-    expect(updateAccountMock).toHaveBeenCalledWith(cindy.id, expect.objectContaining({
-      credentials: expect.objectContaining({ base_url: 'https://api.laxarouter.ai' }),
-    }))
-    const submitted = updateAccountMock.mock.calls[0]?.[1] as { extra?: Record<string, unknown> }
-    expect(submitted.extra).not.toHaveProperty('openai_alpha_search_mode')
-    expect(submitted.extra).not.toHaveProperty('openai_prompt_cache_key_mode')
-  })
-
-  it('preserves legacy compatibility values for rollback without exposing controls', async () => {
-    const cindy = buildAccount()
-    cindy.platform = 'cindy'
-    cindy.is_cindy = true
-    cindy.credentials.base_url = 'https://api.laxarouter.ai'
-    cindy.extra = {
-      openai_responses_mode: 'force_responses',
-      openai_alpha_search_mode: 'responses_web_search',
-      openai_prompt_cache_key_mode: 'sha256_64'
-    }
-
-    updateAccountMock.mockResolvedValue(cindy)
-    const wrapper = mountModal(cindy)
-    expect(wrapper.find('[data-testid="openai-alpha-search-mode-select"]').exists()).toBe(false)
-    expect(wrapper.find('[data-testid="openai-prompt-cache-key-mode-select"]').exists()).toBe(false)
-    await wrapper.get('form#edit-account-form').trigger('submit.prevent')
-    await flushPromises()
-    const submitted = updateAccountMock.mock.calls[0]?.[1] as { extra?: Record<string, unknown> }
-    expect(submitted.extra).not.toHaveProperty('openai_alpha_search_mode')
-    expect(submitted.extra).not.toHaveProperty('openai_prompt_cache_key_mode')
-    expect(cindy.extra?.openai_alpha_search_mode).toBe('responses_web_search')
-    expect(cindy.extra?.openai_prompt_cache_key_mode).toBe('sha256_64')
-  })
-
-  it('keeps the Cindy catalog read-only while preserving rollback mappings and custom overrides', async () => {
-    const cindy = buildAccount()
-    cindy.platform = 'cindy'
-    cindy.is_cindy = true
-    cindy.credentials.base_url = 'https://api.laxarouter.ai'
-    cindy.credentials.model_mapping = {
-      'gpt-5.6-luna': 'openai/gpt-5.6-luna',
-      'gpt-5.6-sol': 'openai/gpt-5.6-sol',
-      'gpt-5.6-terra': 'openai/gpt-5.6-terra',
-      'gpt-5.4-mini': 'openai/gpt-5.6-luna',
-      'gpt-5.4': 'custom/gpt-5.4',
-      'customer-latest': 'openai/gpt-5.6-sol'
-    }
-    cindy.extra = {}
-    const catalogModels = [
-      {
-        id: 'gpt-5.6-luna',
-        live_upstream_id: 'openai/gpt-5.6-luna',
-        display_name: 'GPT-5.6 Luna',
-        context_window: 1_050_000,
-        base_context_window: 1_050_000,
-        codex_context_window: 1_050_000,
-        max_output_tokens: 128_000,
-        endpoints: ['responses'],
-        source_revision: 'cindy-v0.1.52',
-        managed: true,
-        verified: true,
-        public_model: true
-      },
-      {
-        id: 'gpt-5.6-sol',
-        live_upstream_id: 'openai/gpt-5.6-sol',
-        display_name: 'GPT-5.6 Sol',
-        context_window: 372_000,
-        base_context_window: 1_050_000,
-        codex_context_window: 372_000,
-        max_output_tokens: 128_000,
-        endpoints: ['responses'],
-        source_revision: 'cindy-v0.1.52',
-        managed: true,
-        verified: true,
-        public_model: true
-      },
-      {
-        id: 'gpt-5.6-terra',
-        live_upstream_id: 'openai/gpt-5.6-terra',
-        display_name: 'GPT-5.6 Terra',
-        context_window: 372_000,
-        base_context_window: 1_050_000,
-        codex_context_window: 372_000,
-        max_output_tokens: 128_000,
-        endpoints: ['responses'],
-        source_revision: 'cindy-v0.1.52',
-        managed: true,
-        verified: true,
-        public_model: true
-      },
-      {
-        id: 'gpt-5.4',
-        live_upstream_id: 'openai/gpt-5.6-sol',
-        display_name: 'GPT-5.4 compatibility alias',
-        context_window: 372_000,
-        base_context_window: 1_050_000,
-        codex_context_window: 372_000,
-        max_output_tokens: 128_000,
-        endpoints: ['responses'],
-        source_revision: 'cindy-v0.1.52',
-        alias_target: 'gpt-5.6-sol',
-        managed: true
-      },
-      {
-        id: 'gpt-5.4-mini',
-        live_upstream_id: 'openai/gpt-5.6-luna',
-        display_name: 'GPT-5.4 Mini compatibility alias',
-        context_window: 1_050_000,
-        base_context_window: 1_050_000,
-        codex_context_window: 1_050_000,
-        max_output_tokens: 128_000,
-        endpoints: ['responses'],
-        source_revision: 'cindy-v0.1.52',
-        alias_target: 'gpt-5.6-luna',
-        managed: true
-      }
-    ]
-    getEditContextMock.mockResolvedValue({ ...editContext(cindy), catalog: {
-      status: 'ready', namespace: 'cindy-edit-fixture', models: catalogModels.filter(model => !model.alias_target),
-      aliases: Object.fromEntries(catalogModels.filter(model => model.alias_target).map(model => [model.id, model.alias_target]))
-    } })
-    updateAccountMock.mockReset()
-    checkMixedChannelRiskMock.mockReset()
-    checkMixedChannelRiskMock.mockResolvedValue({ has_risk: false })
-    updateAccountMock.mockResolvedValue(cindy)
-
-    const wrapper = mountModal(cindy)
-    await flushPromises()
-
-    expect(getEditContextMock).toHaveBeenCalledWith(cindy.id, expect.any(AbortSignal))
-    expect(getAvailableModelsMock).not.toHaveBeenCalled()
-    const whitelistTab = wrapper
-      .findAll('button')
-      .find(button => button.text().includes('admin.accounts.modelWhitelist'))
-    expect(whitelistTab).toBeDefined()
-    await whitelistTab!.trigger('click')
-    expect(wrapper.get('[data-testid="managed-model-selector"]').text()).toContain('gpt-5.6-sol')
-    expect(
-      wrapper.findAllComponents(ModelWhitelistSelectorStub).filter(selector => !selector.props('readonly'))
-    ).toHaveLength(0)
-
-    const mappingTab = wrapper
-      .findAll('button')
-      .find(button => button.text().includes('admin.accounts.modelMapping'))
-    expect(mappingTab).toBeDefined()
-    await mappingTab!.trigger('click')
-
-    const managedAlias = wrapper
-      .findAll('[data-testid="cindy-managed-alias"]')
-      .find(alias => alias.text().includes('gpt-5.4-mini'))
-    expect(managedAlias).toBeDefined()
-    expect(managedAlias!.text()).toContain('gpt-5.4-mini')
-    expect(managedAlias!.text()).toContain('openai/gpt-5.6-luna')
-
-    const editableMappingInputs = wrapper
-      .get('[data-testid="editable-model-mappings"]')
-      .findAll<HTMLInputElement>('input')
-    expect(editableMappingInputs.map(input => input.element.value)).toEqual([
-      'gpt-5.4',
-      'custom/gpt-5.4',
-      'customer-latest',
-      'openai/gpt-5.6-sol'
-    ])
-    await editableMappingInputs[1].setValue('custom/gpt-5.4-v2')
-
-    await wrapper.get('form#edit-account-form').trigger('submit.prevent')
-    await flushPromises()
-
-    expect(updateAccountMock).toHaveBeenCalledTimes(1)
-    expect(updateAccountMock.mock.calls[0]?.[1]?.credentials?.model_mapping).toEqual({
-      'gpt-5.6-luna': 'openai/gpt-5.6-luna',
-      'gpt-5.6-sol': 'openai/gpt-5.6-sol',
-      'gpt-5.6-terra': 'openai/gpt-5.6-terra',
-      'gpt-5.4-mini': 'openai/gpt-5.6-luna',
-      'gpt-5.4': 'custom/gpt-5.4-v2',
-      'customer-latest': 'openai/gpt-5.6-sol'
-    })
-  })
-
-  it('keeps Cindy catalog loading and failure states bounded to the managed projection', async () => {
-    const cindy = buildAccount()
-    cindy.platform = 'cindy'
-    cindy.is_cindy = true
-    cindy.credentials.base_url = 'https://api.laxarouter.ai'
-    cindy.extra = {}
-    let rejectModels: (reason?: unknown) => void = () => undefined
-    getEditContextMock.mockReturnValue(new Promise((_, reject) => {
-      rejectModels = reject
-    }))
-
-    const wrapper = mountModal(cindy)
-    expect(wrapper.text()).toContain('common.loading')
-    expect(wrapper.get('button[form="edit-account-form"]').attributes('disabled')).toBeUndefined()
-
-    rejectModels(new Error('catalog unavailable'))
-    await flushPromises()
-
-    expect(wrapper.text()).toContain('admin.accounts.providerEdit.catalogUnavailable')
-    expect(wrapper.get('button[form="edit-account-form"]').attributes('disabled')).toBeUndefined()
-    expect(wrapper.find('[data-testid="model-whitelist-value"]').exists()).toBe(false)
-
-    await wrapper.get('form#edit-account-form').trigger('submit.prevent')
-    await flushPromises()
-    expect(updateAccountMock.mock.calls.at(-1)?.[1]?.credentials).not.toHaveProperty('model_mapping')
-    expect(updateAccountMock.mock.calls.at(-1)?.[1]).not.toHaveProperty('provider_edit')
-    expect(cindy.credentials.model_mapping).toEqual({ 'gpt-5.2': 'gpt-5.2' })
-  })
-
-  it.each([false, true])('account.edit keeps ordinary OpenAI+Laxa URL, mappings and passthrough with is_cindy=%s', async isCindy => {
+  it('account.edit keeps an OpenAI API-key account on the Laxa endpoint editable like any other', async () => {
     const account = buildAccount()
-    account.is_cindy = isCindy
     account.credentials.base_url = 'https://api.laxarouter.ai'
     account.credentials.model_mapping = { 'custom-source': 'custom-target' }
     account.extra = { openai_oauth_passthrough: true, openai_responses_mode: null, openai_apikey_responses_websockets_v2_mode: 'dedicated' }
@@ -1007,8 +729,6 @@ describe('EditAccountModal', () => {
     await flushPromises()
     expect(wrapper.get('[data-testid="account-base-url"]').attributes('readonly')).toBeUndefined()
     expect(wrapper.find('[data-testid="account-edit-passthrough-toggle"]').exists()).toBe(true)
-    expect(wrapper.find('[data-testid="account-edit-profile-status"]').exists()).toBe(false)
-    expect(getEditContextMock).not.toHaveBeenCalled()
     await wrapper.get('textarea').setValue('ordinary basic edit')
     await wrapper.get('form#edit-account-form').trigger('submit.prevent')
     const payload = updateAccountMock.mock.calls[0]?.[1]
@@ -1018,93 +738,6 @@ describe('EditAccountModal', () => {
     expect(payload.extra).not.toHaveProperty('openai_passthrough')
     expect(payload.extra.openai_responses_mode).toBeNull()
     expect(payload.extra.openai_apikey_responses_websockets_v2_mode).toBe('dedicated')
-    expect(payload).not.toHaveProperty('provider_edit')
-    wrapper.unmount()
-  })
-
-  it.each([undefined, null, 'shared', 'dedicated'])('account.edit retains canonical raw WS %s and unchanged absence without a provider mutation', async mode => {
-    const account = editAccount({ extra: { ...(mode === undefined ? {} : { openai_apikey_responses_websockets_v2_mode: mode }), openai_compact_mode: null,
-      openai_ws_enabled: false, openai_passthrough: true, openai_oauth_passthrough: true, openai_ws_force_http: true } })
-    const original = JSON.parse(JSON.stringify(account))
-    updateAccountMock.mockReset().mockResolvedValue(account)
-    const wrapper = mountModal(account)
-    await flushPromises()
-    expect(wrapper.find('[data-testid="account-edit-passthrough-toggle"]').exists()).toBe(false)
-    await wrapper.get('textarea').setValue('basic only change')
-    await wrapper.get('form#edit-account-form').trigger('submit.prevent')
-    const payload = updateAccountMock.mock.calls[0]?.[1]
-    expect(payload).not.toHaveProperty('provider_edit')
-    for (const key of ['openai_responses_mode', 'openai_compact_mode', 'openai_apikey_responses_websockets_v2_mode', 'openai_apikey_responses_websockets_v2_enabled', 'responses_websockets_v2_enabled', 'openai_ws_enabled']) expect(payload.extra).not.toHaveProperty(key)
-    expect(payload.extra).toMatchObject({ openai_passthrough: true, openai_oauth_passthrough: true, openai_ws_force_http: true })
-    expect(account).toEqual(original)
-    wrapper.unmount()
-  })
-
-  it('account.edit sends literal auto and finite WS sets only as explicit typed changes', async () => {
-    const account = editAccount({ extra: { openai_responses_mode: 'force_responses', openai_compact_mode: null, openai_ws_enabled: false } })
-    updateAccountMock.mockReset().mockResolvedValue(account)
-    const wrapper = mountModal(account)
-    await flushPromises()
-    const profile = (wrapper.vm as any).providerEdit
-    expect(profile.available.value).toBe(true)
-    expect(wrapper.get('[data-testid="edit-openai-ws-mode-select"]').find('option[value="auto"]').exists()).toBe(false)
-    await wrapper.get('[data-testid="openai-responses-mode-select"]').setValue('auto')
-    await wrapper.get('[data-testid="account-edit-compact-mode"]').setValue('auto')
-    await wrapper.get('[data-testid="edit-openai-ws-mode-select"]').setValue('http_bridge')
-    await wrapper.get('form#edit-account-form').trigger('submit.prevent')
-    await flushPromises()
-    expect(showErrorMock.mock.calls).toEqual([])
-    const payload = updateAccountMock.mock.calls[0]?.[1]
-    expect(payload.provider_edit).toEqual({ expected_state_sha256: account.account_edit_state_sha256,
-      changes: { responses_mode: { op: 'set', value: 'auto' }, compact_mode: { op: 'set', value: 'auto' }, responses_websocket_mode: { op: 'set', value: 'http_bridge' } } })
-    expect(payload.provider_edit).not.toHaveProperty('expected_catalog_namespace')
-    expect(payload.extra).not.toHaveProperty('openai_ws_enabled')
-    wrapper.unmount()
-  })
-
-  it('account.edit exposes explicit clears for the five approved targets without raw deletion lists', async () => {
-    const account = editAccount({ extra: { openai_responses_mode: 'auto', openai_compact_mode: null, openai_ws_enabled: true },
-      credentials: { base_url: 'https://api.laxarouter.ai', model_mapping: { managed: 'wire-managed', custom: 'target' }, compact_model_mapping: { compact: 'target' } } })
-    updateAccountMock.mockReset().mockResolvedValue(account)
-    const wrapper = mountModal(account)
-    await flushPromises()
-    for (const control of ['responses', 'compact', 'ws', 'model-mapping', 'compact-mapping']) await wrapper.get(`[data-testid="account-edit-clear-${control}"]`).trigger('click')
-    expect(wrapper.text()).toContain('admin.accounts.providerEdit.clearPending')
-    await wrapper.get('form#edit-account-form').trigger('submit.prevent')
-    await flushPromises()
-    expect(showErrorMock.mock.calls).toEqual([])
-    const payload = updateAccountMock.mock.calls[0]?.[1]
-    expect(payload.provider_edit.changes).toEqual({ responses_mode: { op: 'clear' }, compact_mode: { op: 'clear' }, responses_websocket_mode: { op: 'clear' }, model_mapping: { op: 'clear' }, compact_model_mapping: { op: 'clear' } })
-    expect(payload.provider_edit.expected_catalog_namespace).toBe('catalog-1')
-    expect(payload.credentials).not.toHaveProperty('model_mapping')
-    expect(payload.credentials).not.toHaveProperty('compact_model_mapping')
-    expect(payload).not.toHaveProperty('delete_keys')
-    wrapper.unmount()
-  })
-
-  it('account.edit basic-only save retains pending provider input after failure and same-account refresh', async () => {
-    const account = editAccount()
-    updateAccountMock.mockReset().mockResolvedValue({ ...account, notes: 'saved basic' })
-    const wrapper = mountModal(account)
-    await flushPromises()
-    await wrapper.get('[data-testid="openai-responses-mode-select"]').setValue('force_chat_completions')
-    await wrapper.get('textarea').setValue('saved basic')
-    getEditContextMock.mockRejectedValueOnce(new Error('fixture provider unavailable'))
-    await wrapper.get('[data-testid="account-edit-profile-status"] button').trigger('click')
-    await flushPromises()
-    expect(wrapper.get('button[form="edit-account-form"]').attributes('disabled')).toBeDefined()
-    await wrapper.get('[data-testid="account-edit-save-basic"]').trigger('click')
-    await flushPromises()
-    const payload = updateAccountMock.mock.calls[0]?.[1]
-    expect(payload.notes).toBe('saved basic')
-    expect(payload).not.toHaveProperty('extra')
-    expect(payload).not.toHaveProperty('credentials')
-    expect(payload).not.toHaveProperty('provider_edit')
-    expect(wrapper.emitted('close')).toBeUndefined()
-    await wrapper.setProps({ account: { ...account, notes: 'saved basic', updated_at: 'fixture-refresh' } })
-    await flushPromises()
-    expect(wrapper.get<HTMLSelectElement>('[data-testid="openai-responses-mode-select"]').element.value).toBe('force_chat_completions')
-    expect(wrapper.find('[data-testid="account-edit-save-basic"]').exists()).toBe(true)
     wrapper.unmount()
   })
 
@@ -1115,7 +748,7 @@ describe('EditAccountModal', () => {
     [{ openai_compact_mode: 'auto', openai_compact_supported: false }, 'admin.accounts.openai.compactUnsupported'],
     [{}, 'admin.accounts.openai.compactAuto']
   ])('account.edit renders a finite compact status for canonical state %j', async (extra, expected) => {
-    const wrapper = mountModal(editAccount({ extra }))
+    const wrapper = mountModal({ ...buildAccount(), extra })
     await flushPromises()
     expect(wrapper.text()).toContain(expected)
     wrapper.unmount()
@@ -1138,8 +771,8 @@ describe('EditAccountModal', () => {
     wrapper.unmount()
   })
 
-  it('account.edit preserves a custom __proto__ alias alongside stored managed pairs', async () => {
-    const account = editAccount({ credentials: { base_url: 'https://api.laxarouter.ai', model_mapping: JSON.parse('{"managed":"wire-managed","__proto__":"custom-target"}') } })
+  it('account.edit preserves a custom __proto__ alias in model mappings', async () => {
+    const account = { ...buildAccount(), credentials_status: { has_api_key: true }, credentials: { base_url: 'https://api.laxarouter.ai', model_mapping: JSON.parse('{"managed":"wire-managed","__proto__":"custom-target"}') } }
     updateAccountMock.mockReset().mockResolvedValue(account)
     const wrapper = mountModal(account)
     await flushPromises()
@@ -1152,26 +785,6 @@ describe('EditAccountModal', () => {
     await wrapper.get('form#edit-account-form').trigger('submit.prevent')
     await flushPromises()
     expect(updateAccountMock.mock.calls[0]?.[1]?.credentials.model_mapping).toEqual(JSON.parse('{"managed":"wire-managed","__proto__":"new-custom-target"}'))
-    wrapper.unmount()
-  })
-
-  it('account.edit permits explicit basic-only save when the first context does not match the native baseline', async () => {
-    const account = editAccount({ extra: { openai_responses_mode: 'force_responses' } })
-    const newer = editAccount({ extra: { openai_responses_mode: 'auto' } })
-    getEditContextMock.mockResolvedValue(editContext(newer))
-    updateAccountMock.mockReset().mockResolvedValue({ ...newer, notes: 'basic despite stale context' })
-    const wrapper = mountModal(account)
-    await flushPromises()
-    expect(wrapper.text()).toContain('admin.accounts.providerEdit.changed')
-    await wrapper.get('[data-testid="openai-responses-mode-select"]').setValue('force_responses')
-    expect(wrapper.get('button[form="edit-account-form"]').attributes('disabled')).toBeDefined()
-    await wrapper.get('textarea').setValue('basic despite stale context')
-    await wrapper.get('[data-testid="account-edit-save-basic"]').trigger('click')
-    await flushPromises()
-    expect(updateAccountMock.mock.calls[0]?.[1]).toMatchObject({ notes: 'basic despite stale context' })
-    for (const key of ['extra', 'credentials', 'provider_edit']) expect(updateAccountMock.mock.calls[0]?.[1]).not.toHaveProperty(key)
-    expect(wrapper.emitted('close')).toBeUndefined()
-    expect(wrapper.get<HTMLSelectElement>('[data-testid="openai-responses-mode-select"]').element.value).toBe('force_responses')
     wrapper.unmount()
   })
 

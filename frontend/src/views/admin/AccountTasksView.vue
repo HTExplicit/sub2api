@@ -101,14 +101,11 @@ const jobKinds = [
   'account_bulk_taxonomy',
   'account_batch_delete',
   'account_batch_clear_error',
-  'account_batch_test',
   'account_batch_refresh',
   'account_batch_refresh_tier',
   'account_batch_update_credentials',
   'account_duplicate_review',
   'account_duplicate_merge',
-  'cindy_confirmed_cleanup',
-  'cindy_banned_cleanup',
 ]
 const jobStatuses: AccountJobStatus[] = [
   'pending',
