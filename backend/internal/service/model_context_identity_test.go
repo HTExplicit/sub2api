@@ -10,9 +10,8 @@ import (
 func TestCapacityIdentityUsesForwardTargetAndLegacyOverrides(t *testing.T) {
 	account := newGroupCapacityAccount(1, map[string]any{"public": "gpt-5.6-sol-high", "other": "gpt-5.6-sol"},
 		map[string]int64{"gpt-5.6-sol-high": 650001, "public": 650001})
-	resolve := NewAccountModelContextCapacityResolver(&account)
-	require.Equal(t, int64(650001), resolve("gpt-5.6-sol", nil).ContextWindow)
-	require.Equal(t, int64(650001), resolve("gpt-5.6-sol-high", nil).ContextWindow)
+	require.Equal(t, int64(650001), ResolveAccountModelContextCapacity(&account, "gpt-5.6-sol").ContextWindow)
+	require.Equal(t, int64(650001), ResolveAccountModelContextCapacity(&account, "gpt-5.6-sol-high").ContextWindow)
 	catalog := newGroupModelCapacityCatalog([]Account{account}, true, nil, true, nil, nil)
 	require.Equal(t, int64(650001), catalog.resolve(context.Background(), PlatformOpenAI, "public").ContextWindow)
 	rows := BuildAccountModelContextCapacityRows(&account, []string{"gpt-5.6-sol-high"})
@@ -55,10 +54,10 @@ func TestCapacityIdentityDoesNotRemapRealTargetTwice(t *testing.T) {
 
 func TestCapacityIdentitySnapshotUsesRecognizedSpellingOnly(t *testing.T) {
 	account := newGroupCapacityAccount(1, nil, nil)
-	account.SetUpstreamModelContextCapacitySnapshot(UpstreamModelContextCapacitySnapshot{Models: map[string]ModelContextCapacity{
+	account.Extra[UpstreamModelMetadataExtraKey] = observedCapacityExtra(map[string]UpstreamModelMetadata{
 		"gpt-5.6-sol-high": {ContextWindow: 650001}, "vendor/gpt-5.6-sol-high": {ContextWindow: 450001},
-	}})
-	values, _ := capacitySnapshotTargets(&account, account.GetUpstreamModelContextCapacitySnapshot())
+	})
+	values, _, _ := accountCapacityObservations(&account)
 	require.Equal(t, int64(650001), values["gpt-5.6-sol"].ContextWindow)
 	require.Equal(t, int64(450001), values["vendor/gpt-5.6-sol-high"].ContextWindow)
 }

@@ -139,8 +139,8 @@ func TestGatewayRoutesPinnedModelsDispatchesOrdinaryAndCodexRequests(t *testing.
 		require.Equal(t, "list", response.Object)
 		require.Len(t, response.Data, 1)
 		require.Equal(t, "ordinary-upstream-model", response.Data[0].ID)
-		require.Equal(t, service.DefaultModelContextWindow, response.Data[0].ContextWindow)
-		require.Equal(t, "default", response.Data[0].Source)
+		require.Zero(t, response.Data[0].ContextWindow, "an unknown model carries no invented capacity")
+		require.Empty(t, response.Data[0].Source)
 	}
 	for _, path := range []string{"/v1/models?client_version=" + service.CodexCanonicalClientVersion(), "/models?client_version=" + service.CodexCanonicalClientVersion(), "/backend-api/codex/models"} {
 		w := httptest.NewRecorder()

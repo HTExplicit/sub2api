@@ -49,38 +49,8 @@ func ProvideUpdateService(cache UpdateCache, githubClient GitHubReleaseClient, b
 	return NewUpdateService(cache, githubClient, buildInfo.Version, buildInfo.BuildType)
 }
 
-// The prompt domain migrates existing content once and serves independent
-// versions with a frozen public file tree; it has no live source registry.
-func ProvideBusinessSystemPromptService(
-	store BusinessSystemPromptStore,
-	bus BusinessSystemPromptRevisionBus,
-	frozen *FrozenPromptFiles,
-	accountRepo AccountRepository,
-	cfg *config.Config,
-	settings *SettingService,
-) (*BusinessSystemPromptService, error) {
-	svc := NewBusinessSystemPromptService(store, bus)
-	svc.SetAccountRepository(accountRepo)
-	svc.previewConfig = cfg
-	svc.previewSettings = settings
-	svc.SetFrozenPromptFiles(frozen)
-	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
-	defer cancel()
-	// Content migration is part of application initialization. Do not start a
-	// healthy HTTP server with missing effective prompts or public source files.
-	if err := svc.Initialize(ctx); err != nil {
-		return nil, err
-	}
-	return svc, nil
-}
-
-func ProvideRemoteSkillRegistryFiles() RemoteSkillRegistryFiles {
-	return NewRemoteSkillRegistryFilesystem("")
-}
-
 // ProvideOpenAIGatewayService keeps the existing constructor signature used by
-// tests while wiring the optional global business prompt policy into the
-// production gateway instance.
+// tests while wiring the system prompt service into the production gateway.
 func ProvideOpenAIGatewayService(
 	accountRepo AccountRepository,
 	usageLogRepo UsageLogRepository,
@@ -104,7 +74,7 @@ func ProvideOpenAIGatewayService(
 	balanceNotifyService *BalanceNotifyService,
 	settingService *SettingService,
 	userPlatformQuotaRepo UserPlatformQuotaRepository,
-	businessPromptService *BusinessSystemPromptService,
+	systemPrompts *SystemPromptService,
 ) *OpenAIGatewayService {
 	svc := NewOpenAIGatewayService(
 		accountRepo, usageLogRepo, usageBillingRepo, userRepo, userSubRepo,
@@ -113,7 +83,7 @@ func ProvideOpenAIGatewayService(
 		deferredService, openAITokenProvider, grokTokenProvider, resolver,
 		channelService, balanceNotifyService, settingService, userPlatformQuotaRepo,
 	)
-	svc.SetBusinessSystemPromptService(businessPromptService)
+	svc.SetSystemPromptService(systemPrompts)
 	return svc
 }
 
@@ -146,10 +116,10 @@ func ProvideGatewayService(
 	compositeResolver *CompositeRouteResolver,
 	balanceNotifyService *BalanceNotifyService,
 	userPlatformQuotaRepo UserPlatformQuotaRepository,
-	businessPromptService *BusinessSystemPromptService,
+	systemPrompts *SystemPromptService,
 ) *GatewayService {
 	svc := NewGatewayService(accountRepo, groupRepo, usageLogRepo, usageBillingRepo, userRepo, userSubRepo, userGroupRateRepo, cache, cfg, schedulerSnapshot, concurrencyService, billingService, rateLimitService, billingCacheService, identityService, httpUpstream, deferredService, claudeTokenProvider, sessionLimitCache, rpmCache, digestStore, settingService, tlsFPProfileService, channelService, resolver, compositeResolver, balanceNotifyService, userPlatformQuotaRepo)
-	svc.SetBusinessSystemPromptService(businessPromptService)
+	svc.SetSystemPromptService(systemPrompts)
 	return svc
 }
 
@@ -163,10 +133,10 @@ func ProvideGeminiMessagesCompatService(
 	httpUpstream HTTPUpstream,
 	antigravityGatewayService *AntigravityGatewayService,
 	cfg *config.Config,
-	businessPromptService *BusinessSystemPromptService,
+	systemPrompts *SystemPromptService,
 ) *GeminiMessagesCompatService {
 	svc := NewGeminiMessagesCompatService(accountRepo, groupRepo, cache, schedulerSnapshot, tokenProvider, rateLimitService, httpUpstream, antigravityGatewayService, cfg)
-	svc.SetBusinessSystemPromptService(businessPromptService)
+	svc.SetSystemPromptService(systemPrompts)
 	return svc
 }
 
@@ -179,10 +149,10 @@ func ProvideAntigravityGatewayService(
 	httpUpstream HTTPUpstream,
 	settingService *SettingService,
 	internal500Cache Internal500CounterCache,
-	businessPromptService *BusinessSystemPromptService,
+	systemPrompts *SystemPromptService,
 ) *AntigravityGatewayService {
 	svc := NewAntigravityGatewayService(accountRepo, cache, schedulerSnapshot, tokenProvider, rateLimitService, httpUpstream, settingService, internal500Cache)
-	svc.SetBusinessSystemPromptService(businessPromptService)
+	svc.SetSystemPromptService(systemPrompts)
 	return svc
 }
 
@@ -854,6 +824,17 @@ func ProvideScheduledTestRunnerService(
 	return svc
 }
 
+// ProvideUpstreamModelCatalogRefreshService creates and starts the daily
+// refresh of API-key accounts' upstream model catalogs and capacities.
+func ProvideUpstreamModelCatalogRefreshService(
+	accountRepo AccountRepository,
+	accountTestSvc *AccountTestService,
+) *UpstreamModelCatalogRefreshService {
+	svc := NewUpstreamModelCatalogRefreshService(accountRepo, accountTestSvc)
+	svc.Start()
+	return svc
+}
+
 // ProvideOpsScheduledReportService creates and starts OpsScheduledReportService.
 func ProvideOpsScheduledReportService(
 	opsService *OpsService,
@@ -1075,9 +1056,7 @@ var ProviderSet = wire.NewSet(
 	NewAnnouncementService,
 	NewAdminService,
 	ProvideGatewayService,
-	ProvideBusinessSystemPromptService,
-	ProvideRemoteSkillRegistryFiles,
-	ProvideFrozenPromptFiles,
+	ProvideSystemPromptService,
 	ProvideOpenAIGatewayService,
 	ProvideCindyHealthService,
 	ProvideCindyBalanceProbeService,
@@ -1176,6 +1155,7 @@ var ProviderSet = wire.NewSet(
 	ProvideIdempotencyCleanupService,
 	ProvideScheduledTestService,
 	ProvideScheduledTestRunnerService,
+	ProvideUpstreamModelCatalogRefreshService,
 	NewGroupCapacityService,
 	NewChannelService,
 	wire.Bind(new(ChannelCacheInvalidator), new(*ChannelService)),

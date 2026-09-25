@@ -82,10 +82,8 @@ const {
 const localeRef = vi.hoisted(() => ({ value: "zh-CN" }));
 
 const nativeSettings = vi.hoisted(() => ({
-  image: { studio_enabled: false, responses_image_enabled: false },
+  image: { studio_enabled: false },
   observability: { telemetry_enabled: true, theme_enabled: true },
-  cindy: { balance_detection: true, catalog_enabled: true, search_enabled: true },
-  updateCindy: vi.fn(async (value) => value),
 }));
 
 vi.mock("@/stores/auth", () => ({
@@ -103,12 +101,6 @@ vi.mock("@/api/admin/settings", async () => {
   };
   return { ...actual, ...native, settingsAPI: { ...actual.settingsAPI, ...native }, default: { ...actual.default, ...native } };
 });
-
-vi.mock("@/api/admin/cindyProvider", () => ({
-  getCindyProviderSettings: vi.fn(async () => ({ ...nativeSettings.cindy })),
-  updateCindyProviderSettings: nativeSettings.updateCindy,
-  getCindyProviderCatalog: vi.fn(async () => []),
-}));
 
 vi.mock("@/api", () => ({
   adminAPI: {
@@ -413,31 +405,6 @@ const baseSettingsResponse = {
   default_balance: 0,
   default_concurrency: 1,
   default_subscriptions: [],
-  cindy_managed_compatibility: {
-    config_source: "cindy_group_managed",
-    web_search: {
-      enabled: true,
-      verified_text_models: [
-        "deepseek-v4-flash",
-        "deepseek-v4-flash-vision-exp",
-        "deepseek-v4-pro",
-        "gemini-3.6-flash",
-        "glm-5.3-flash",
-        "gpt-5.6-luna",
-        "hy3",
-        "qwen3.8-27b",
-        "qwen3.8-flash",
-      ],
-      compatibility_aliases: { "gpt-5.4-mini": "gpt-5.6-luna" },
-      primary_path: "responses_web_search",
-      fallback_path: "messages_cindy_web_search",
-    },
-    prompt_cache_key: {
-      mode: "automatic",
-      max_characters: 64,
-      overflow_transform: "sha256_lower_hex",
-    },
-  },
   site_name: "Sub2API",
   site_logo: "",
   site_subtitle: "",
@@ -792,30 +759,14 @@ describe("admin SettingsView payment visible method controls", () => {
     adminSettingsFetch.mockResolvedValue(undefined);
   });
 
-  it("renders Cindy compatibility as a read-only managed capability card", async () => {
-    const wrapper = mountView();
-    await flushPromises();
-    await openFeaturesTab(wrapper);
-
-    expect(wrapper.get('[data-testid="cindy-managed-compatibility-card"]').text()).toContain(
-      "admin.settings.features.riskControl.cindyManaged.title",
-    );
-    expect(wrapper.findAll('[data-testid="cindy-managed-models"] span')).toHaveLength(9);
-    expect(wrapper.find('input[name="openai_apikey_alpha_search_responses_bridge_enabled"]').exists()).toBe(false);
-    expect(wrapper.find('input[name="openai_apikey_prompt_cache_key_normalization_enabled"]').exists()).toBe(false);
-    wrapper.unmount();
-  });
-
   it("mounts native settings without resubmitting their configuration through the general settings form", async () => {
     const wrapper = mountView();
     await flushPromises();
     await openGatewayTab(wrapper);
     expect(wrapper.get('[data-testid="image-tools-settings"]').exists()).toBe(true);
     expect(wrapper.get('[data-testid="observability-settings"]').exists()).toBe(true);
-    expect(wrapper.get('[data-testid="cindy-provider-settings"]').exists()).toBe(true);
     expect(wrapper.get('[data-testid="official-model-catalog"]').exists()).toBe(true);
     expect(wrapper.get<HTMLInputElement>('[data-testid="image-tools-studio"]').element.checked).toBe(false);
-    expect(wrapper.get<HTMLInputElement>('[data-testid="cindy-provider-balance_detection"]').element.checked).toBe(true);
     expect(wrapper.find('[data-test-extension-slot="admin.settings"]').exists()).toBe(false);
     expect(wrapper.find('#codex-ticket-enabled').exists()).toBe(false);
     expect(wrapper.find('#codex-ticket-harvest-proxy').exists()).toBe(false);
@@ -823,7 +774,6 @@ describe("admin SettingsView payment visible method controls", () => {
     await flushPromises();
     expect(updateSettings).toHaveBeenCalledOnce();
     expect(Object.keys(updateSettings.mock.calls[0][0]).some(key => key.startsWith('openai_codex_ticket_'))).toBe(false);
-    expect(nativeSettings.updateCindy).not.toHaveBeenCalled();
     wrapper.unmount();
   });
 
@@ -1475,26 +1425,17 @@ describe("admin SettingsView payment visible method controls", () => {
     );
   });
 
-  it("keeps Claude OAuth protocol controls while routing custom edits to unified prompts", async () => {
+  it("submits Claude OAuth system prompt injection gateway settings", async () => {
     const blocks = `[{"type":"text","text":"custom block","cache_control":true}]`;
-    const legacyPrompt = "  Previous custom prompt\nKeep original bytes  ";
     getSettings.mockResolvedValueOnce({
       ...baseSettingsResponse,
-      enable_claude_oauth_system_prompt_injection: true,
-      claude_oauth_system_prompt: legacyPrompt,
+      enable_claude_oauth_system_prompt_injection: false,
       claude_oauth_system_prompt_blocks: blocks,
     });
 
     const wrapper = mountView();
 
     await flushPromises();
-    await openGatewayTab(wrapper);
-    expect(wrapper.get('[data-test="claude-unified-prompts-link"]').attributes("href")).toBe("/admin/system-prompts");
-    const archive = wrapper.get('[data-test="claude-legacy-prompt-reference"]');
-    expect(archive.find("input, textarea, button").exists()).toBe(false);
-    expect(archive.get('[data-test="claude-legacy-prompt-text"]').element.textContent).toBe(legacyPrompt);
-    expect(archive.get('[data-test="claude-legacy-prompt-blocks"]').element.textContent).toBe(blocks);
-    await wrapper.get('[data-test="claude-protocol-base-instructions"]').setValue(false);
     await wrapper.find("form").trigger("submit.prevent");
     await flushPromises();
 
@@ -1504,14 +1445,20 @@ describe("admin SettingsView payment visible method controls", () => {
         enable_claude_oauth_system_prompt_injection: false,
       }),
     );
-    const payload = updateSettings.mock.calls[0][0];
-    expect(payload).not.toHaveProperty("claude_oauth_system_prompt");
-    expect(payload).not.toHaveProperty("claude_oauth_system_prompt_blocks");
-    expect(enSettings.settings.gatewayForwarding.claudeOAuthSystemPromptInjection).toContain("protocol base instructions");
-    expect(zhSettings.settings.gatewayForwarding.claudeOAuthSystemPromptInjection).toContain("协议基础指令");
-    expect(enSettings.settings.gatewayForwarding.customPromptManagementLink).toBe("Open System Prompts");
-    expect(zhSettings.settings.gatewayForwarding.customPromptManagementLink).toBe("打开系统提示词");
-    wrapper.unmount();
+    const payload = updateSettings.mock.calls[0][0] as {
+      claude_oauth_system_prompt_blocks: string;
+    };
+    expect(JSON.parse(payload.claude_oauth_system_prompt_blocks)).toEqual([
+      {
+        enabled: true,
+        type: "text",
+        text: "custom block",
+        cache_control: {
+          type: "ephemeral",
+          ttl: "5m",
+        },
+      },
+    ]);
   });
 
   it("submits Antigravity user agent version gateway setting", async () => {
@@ -2254,7 +2201,6 @@ describe("admin SettingsView platform quota matrix", () => {
     expect(html).toContain("kimi");
     expect(html).toContain("zhipu");
     expect(html).toContain("deepseek");
-    expect(html).toContain("cindy");
     expect(html).toContain("minimax");
   });
 
@@ -2274,7 +2220,7 @@ describe("admin SettingsView platform quota matrix", () => {
     // 应携带嵌套对象，而非扁平字段
     expect(payload).toHaveProperty("default_platform_quotas");
     const quotas = payload["default_platform_quotas"] as Record<string, unknown>;
-    const platforms = ["anthropic", "openai", "gemini", "antigravity", "grok", "kimi", "zhipu", "deepseek", "cindy", "minimax", "opencode_go"];
+    const platforms = ["anthropic", "openai", "gemini", "antigravity", "grok", "kimi", "zhipu", "deepseek", "minimax", "opencode_go"];
     expect(Object.keys(quotas)).toEqual(platforms);
     for (const p of platforms) {
       expect(quotas).toHaveProperty(p);
@@ -2289,13 +2235,12 @@ describe("admin SettingsView platform quota matrix", () => {
     expect(payload).not.toHaveProperty("default_platform_quota_openai_weekly");
   });
 
-  it("加载后 form.default_platform_quotas 含全 10 平台并同时保留 Cindy 和 MiniMax 数值", async () => {
+  it("加载后 form.default_platform_quotas 含全 10 平台并保留 MiniMax 数值", async () => {
     getSettings.mockResolvedValueOnce({
       ...baseSettingsResponse,
       default_platform_quotas: {
         anthropic: { daily: 5, weekly: null, monthly: null },
         openai:    { daily: null, weekly: 12.5, monthly: null },
-        cindy: { daily: 7, weekly: 35, monthly: 140 },
         minimax: { daily: 0, weekly: 20, monthly: 80 },
         // gemini / antigravity 缺失 → 应被归一化为全 null
       },
@@ -2313,8 +2258,7 @@ describe("admin SettingsView platform quota matrix", () => {
 
     expect(quotas["anthropic"]?.["daily"]).toBe(5);
     expect(quotas["openai"]?.["weekly"]).toBe(12.5);
-    expect(Object.keys(quotas)).toHaveLength(11);
-    expect(quotas["cindy"]).toEqual({ daily: 7, weekly: 35, monthly: 140 });
+    expect(Object.keys(quotas)).toHaveLength(10);
     expect(quotas["minimax"]).toEqual({ daily: 0, weekly: 20, monthly: 80 });
     // 缺失平台应补全为 null
     expect(quotas["gemini"]).toEqual({ daily: null, weekly: null, monthly: null });

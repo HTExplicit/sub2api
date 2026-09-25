@@ -1,79 +1,65 @@
 package admin
 
 import (
-	"errors"
-	"net/http"
-
 	"github.com/Wei-Shaw/sub2api/internal/pkg/response"
 	"github.com/Wei-Shaw/sub2api/internal/server/middleware"
 	"github.com/Wei-Shaw/sub2api/internal/service"
 	"github.com/gin-gonic/gin"
 )
 
+// SystemPromptHandler manages the system prompt library, the global switch,
+// the site default and account bindings.
 type SystemPromptHandler struct {
-	service *service.BusinessSystemPromptService
+	service *service.SystemPromptService
 }
 
-func NewSystemPromptHandler(prompts *service.BusinessSystemPromptService) *SystemPromptHandler {
+func NewSystemPromptHandler(prompts *service.SystemPromptService) *SystemPromptHandler {
 	return &SystemPromptHandler{service: prompts}
 }
 
-func (h *SystemPromptHandler) actorID(c *gin.Context) (int64, bool) {
-	subject, ok := middleware.GetAuthSubjectFromContext(c)
-	if !ok || subject.UserID <= 0 {
-		response.Unauthorized(c, "Unauthorized")
-		return 0, false
-	}
-	return subject.UserID, true
-}
-
-// Retired is routed only inside the existing authenticated admin group. No
-// legacy management service is reachable from these compatibility URLs.
-func (h *SystemPromptHandler) Retired(c *gin.Context) {
-	response.ErrorWithDetails(c, http.StatusGone, "This prompt management endpoint is retired; use the prompt config editor", "system_prompt_management_retired", nil)
-}
-
-func (h *SystemPromptHandler) RuleHistory(c *gin.Context) {
-	versions, err := h.service.PromptRuleHistory(c.Request.Context(), c.Param("rule_id"))
+// Get returns the configuration and how accounts are bound.
+func (h *SystemPromptHandler) Get(c *gin.Context) {
+	state, err := h.service.State(c.Request.Context())
 	if err != nil {
-		writeBusinessSystemPromptError(c, err)
+		response.ErrorFrom(c, err)
 		return
 	}
 	c.Header("Cache-Control", "no-store")
-	response.Success(c, versions)
+	response.Success(c, state)
 }
 
-func writeBusinessSystemPromptError(c *gin.Context, err error) {
-	switch {
-	case errors.Is(err, service.ErrPromptDeliveryUnsupported):
-		response.ErrorWithDetails(c, http.StatusUnprocessableEntity, "The selected prompt delivery or position is unsupported by this destination", "prompt_delivery_unsupported", nil)
-	case errors.Is(err, service.ErrPromptRuleReferenced):
-		response.ErrorWithDetails(c, http.StatusConflict, "An account still references this rule", "prompt_rule_referenced", nil)
-	case errors.Is(err, service.ErrBusinessSystemPromptRevisionConflict):
-		response.ErrorWithDetails(c, http.StatusConflict, "system_prompt_revision_conflict", "system_prompt_revision_conflict", nil)
-	case errors.Is(err, service.ErrBusinessSystemPromptUnavailable):
-		response.ErrorWithDetails(c, http.StatusServiceUnavailable, "system_prompt_unavailable", "system_prompt_unavailable", nil)
-	case errors.Is(err, service.ErrBusinessSystemPromptSourceUnavailable):
-		response.ErrorWithDetails(c, http.StatusServiceUnavailable, "system_prompt_source_unavailable", "system_prompt_source_unavailable", nil)
-	case errors.Is(err, service.ErrBusinessSystemPromptSourceInvalid):
-		response.ErrorWithDetails(c, http.StatusUnprocessableEntity, "system_prompt_source_invalid", "system_prompt_source_invalid", nil)
-	case errors.Is(err, service.ErrBusinessSystemPromptSourceLicenseChanged):
-		response.ErrorWithDetails(c, http.StatusUnprocessableEntity, "system_prompt_source_license_changed", "system_prompt_source_license_changed", nil)
-	case errors.Is(err, service.ErrBusinessSystemPromptSourceNotManaged):
-		response.ErrorWithDetails(c, http.StatusConflict, "system_prompt_source_not_managed", "system_prompt_source_not_managed", nil)
-	case errors.Is(err, service.ErrBusinessSystemPromptBundleInvalid):
-		response.ErrorWithDetails(c, http.StatusUnprocessableEntity, "remote_skill_candidate_invalid", "remote_skill_candidate_invalid", nil)
-	case errors.Is(err, service.ErrBusinessSystemPromptBundleUnavailable):
-		response.ErrorWithDetails(c, http.StatusServiceUnavailable, "remote_skill_source_unavailable", "remote_skill_source_unavailable", nil)
-	case errors.Is(err, service.ErrBusinessSystemPromptTemplateNotFound), errors.Is(err, service.ErrBusinessSystemPromptVersionNotFound):
-		response.NotFound(c, "System prompt template or version not found")
-	case errors.Is(err, service.ErrRemoteSkillVersionNotFound), errors.Is(err, service.ErrRemoteSkillSyncNotFound):
-		response.NotFound(c, "Remote skill version or sync job not found")
-	case errors.Is(err, service.ErrBusinessSystemPromptSeedProtected), errors.Is(err, service.ErrBusinessSystemPromptActive):
-		response.ErrorWithDetails(c, http.StatusConflict, err.Error(), "system_prompt_delete_protected", nil)
-	case errors.Is(err, service.ErrBusinessSystemPromptInvalid):
-		response.BadRequest(c, err.Error())
-	default:
-		response.ErrorFrom(c, err)
+// Save replaces the whole configuration.
+func (h *SystemPromptHandler) Save(c *gin.Context) {
+	var request service.SystemPromptConfig
+	if err := c.ShouldBindJSON(&request); err != nil {
+		response.BadRequest(c, "Invalid system prompt configuration")
+		return
 	}
+	state, err := h.service.Save(c.Request.Context(), request)
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	middleware.SetAuditExtra(c, map[string]any{"enabled": state.Enabled, "result": "system_prompts_saved"})
+	response.Success(c, state)
+}
+
+// SetBindings applies one binding to the selected accounts.
+func (h *SystemPromptHandler) SetBindings(c *gin.Context) {
+	var request struct {
+		AccountIDs []int64 `json:"account_ids" binding:"required"`
+		Mode       string  `json:"mode" binding:"required"`
+		PromptID   string  `json:"prompt_id"`
+	}
+	if err := c.ShouldBindJSON(&request); err != nil {
+		response.BadRequest(c, "Invalid account system prompt binding")
+		return
+	}
+	updated, err := h.service.SetBindings(c.Request.Context(), request.AccountIDs, service.SystemPromptBinding{Mode: request.Mode, PromptID: request.PromptID})
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	middleware.SetAuditExtra(c, map[string]any{"requested_count": len(request.AccountIDs), "matched_count": updated, "result": "system_prompt_bindings_updated"})
+	response.Success(c, gin.H{"updated": updated})
 }

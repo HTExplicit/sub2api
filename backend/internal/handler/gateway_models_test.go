@@ -8,7 +8,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/Wei-Shaw/sub2api/internal/pkg/claude"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/openai"
 	middleware2 "github.com/Wei-Shaw/sub2api/internal/server/middleware"
 	"github.com/Wei-Shaw/sub2api/internal/service"
@@ -27,12 +26,6 @@ type gatewayModelsAccountRepoStub struct {
 type gatewayModelsResponseForTest struct {
 	Object string                    `json:"object"`
 	Data   []gatewayModelItemForTest `json:"data"`
-}
-
-var cindyV4PublicIDsForHandlerTest = []string{
-	"deepseek-v4-flash", "deepseek-v4-flash-vision-exp", "deepseek-v4-pro",
-	"gemini-3.6-flash", "glm-5.3-flash", "gpt-5.6-luna", "hy3",
-	"qwen3.8-27b", "qwen3.8-flash",
 }
 
 type codexModelsResponseForTest struct {
@@ -137,44 +130,6 @@ func cindyGatewayModelAccountForTest(id int64) service.Account {
 	}
 }
 
-func TestGatewayModels_StrictCindyUsesVerifiedPublicCatalog(t *testing.T) {
-	gin.SetMode(gin.TestMode)
-	groupID := int64(5601)
-	h := newGatewayModelsHandlerForTest(&gatewayModelsAccountRepoStub{byGroup: map[int64][]service.Account{
-		groupID: {cindyGatewayModelAccountForTest(1), cindyGatewayModelAccountForTest(2)},
-	}})
-	rec := httptest.NewRecorder()
-	c, _ := gin.CreateTestContext(rec)
-	c.Request = httptest.NewRequest(http.MethodGet, "/v1/models", nil)
-	c.Set(string(middleware2.ContextKeyAPIKey), &service.APIKey{
-		GroupID: &groupID,
-		Group: &service.Group{ID: groupID, Platform: service.PlatformCindy,
-			WirePlatform: service.WirePlatformOpenAI, ProviderProfile: service.ProviderProfileCindyLaxaV1},
-	})
-
-	h.Models(c)
-
-	require.Equal(t, http.StatusOK, rec.Code)
-	var got gatewayModelsResponseForTest
-	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &got))
-	require.Equal(t, cindyV4PublicIDsForHandlerTest, modelIDsForTest(got.Data))
-	require.Len(t, got.Data, 9)
-	require.NotContains(t, modelIDsForTest(got.Data), "gpt-5.4")
-	require.NotContains(t, modelIDsForTest(got.Data), "openai/gpt-5.6-sol")
-	require.NotContains(t, modelIDsForTest(got.Data), "cindy/web-search")
-	require.NotContains(t, modelIDsForTest(got.Data), "cindy/auto-review")
-	byID := make(map[string]gatewayModelItemForTest, len(got.Data))
-	for _, model := range got.Data {
-		byID[model.ID] = model
-	}
-	require.Equal(t, 1050000, byID["gpt-5.6-luna"].ContextWindow)
-	require.Equal(t, 1050000, byID["gpt-5.6-luna"].MaxInputTokens)
-	require.Equal(t, 128000, byID["gpt-5.6-luna"].MaxOutputTokens)
-	require.Equal(t, 262144, byID["hy3"].ContextWindow)
-	require.Equal(t, 991808, byID["qwen3.8-flash"].ContextWindow)
-	require.Equal(t, 1000000, byID["glm-5.3-flash"].ContextWindow)
-}
-
 func TestWriteOpenAIModelsListOmitsCindyMetadataForOrdinaryProviders(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	rec := httptest.NewRecorder()
@@ -186,56 +141,6 @@ func TestWriteOpenAIModelsListOmitsCindyMetadataForOrdinaryProviders(t *testing.
 	require.NotContains(t, rec.Body.String(), "context_window")
 	require.NotContains(t, rec.Body.String(), "max_input_tokens")
 	require.NotContains(t, rec.Body.String(), "max_output_tokens")
-}
-
-func TestGatewayModels_CindyGroupDoesNotUnionOrdinaryProviderModels(t *testing.T) {
-	gin.SetMode(gin.TestMode)
-	groupID := int64(5604)
-	cindy := cindyGatewayModelAccountForTest(1)
-	cindy.Credentials["model_mapping"] = map[string]any{
-		"openai/gpt-5.6-sol": "openai/gpt-5.6-sol",
-		"gpt-5.4":            "openai/gpt-5.6-sol",
-		"deepseek-v4-pro":    "deepseek/deepseek-v4-pro",
-	}
-	ordinary := service.Account{
-		ID:          2,
-		Platform:    service.PlatformOpenAI,
-		Type:        service.AccountTypeAPIKey,
-		Status:      service.StatusActive,
-		Schedulable: true,
-		Credentials: map[string]any{
-			"api_key":  "not-exposed",
-			"base_url": "https://ordinary.example.invalid",
-			"model_mapping": map[string]any{
-				"ordinary-model": "ordinary-upstream",
-			},
-		},
-	}
-	h := newGatewayModelsHandlerForTest(&gatewayModelsAccountRepoStub{byGroup: map[int64][]service.Account{
-		groupID: {cindy, ordinary},
-	}})
-	rec := httptest.NewRecorder()
-	c, _ := gin.CreateTestContext(rec)
-	c.Request = httptest.NewRequest(http.MethodGet, "/v1/models", nil)
-	c.Set(string(middleware2.ContextKeyAPIKey), &service.APIKey{
-		GroupID: &groupID,
-		Group: &service.Group{ID: groupID, Platform: service.PlatformCindy,
-			WirePlatform: service.WirePlatformOpenAI, ProviderProfile: service.ProviderProfileCindyLaxaV1},
-	})
-
-	h.Models(c)
-
-	require.Equal(t, http.StatusOK, rec.Code)
-	var got gatewayModelsResponseForTest
-	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &got))
-	modelIDs := modelIDsForTest(got.Data)
-	require.Equal(t, service.CindyPublicModelIDs(), modelIDs)
-	require.NotContains(t, modelIDs, "ordinary-model")
-	require.NotContains(t, modelIDs, "openai/gpt-5.6-sol")
-	require.NotContains(t, modelIDs, "gpt-5.4")
-	require.Contains(t, modelIDs, "deepseek-v4-pro")
-	require.Contains(t, modelIDs, "qwen3.8-flash")
-	require.NotContains(t, modelIDs, "gpt-5.6-sol")
 }
 
 func TestGatewayModelCapabilities_StrictCindyHidesInternalIDs(t *testing.T) {
@@ -477,27 +382,19 @@ func TestGatewayCindyIdentityLookupFailureReturnsSanitized503(t *testing.T) {
 	groupID := int64(5603)
 	h := newGatewayModelsHandlerForTest(&gatewayModelsAccountRepoStub{err: context.DeadlineExceeded})
 
-	for _, path := range []string{"/v1/models", "/v1/models/capabilities"} {
-		t.Run(path, func(t *testing.T) {
-			rec := httptest.NewRecorder()
-			c, _ := gin.CreateTestContext(rec)
-			c.Request = httptest.NewRequest(http.MethodGet, path, nil)
-			c.Set(string(middleware2.ContextKeyAPIKey), &service.APIKey{
-				GroupID: &groupID,
-				Group:   &service.Group{ID: groupID, Platform: service.PlatformOpenAI},
-			})
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodGet, "/v1/models/capabilities", nil)
+	c.Set(string(middleware2.ContextKeyAPIKey), &service.APIKey{
+		GroupID: &groupID,
+		Group:   &service.Group{ID: groupID, Platform: service.PlatformOpenAI},
+	})
 
-			if path == "/v1/models" {
-				h.Models(c)
-			} else {
-				h.ModelCapabilities(c)
-			}
+	h.ModelCapabilities(c)
 
-			require.Equal(t, http.StatusServiceUnavailable, rec.Code)
-			require.Contains(t, rec.Body.String(), "Unable to determine model availability")
-			require.NotContains(t, rec.Body.String(), context.DeadlineExceeded.Error())
-		})
-	}
+	require.Equal(t, http.StatusServiceUnavailable, rec.Code)
+	require.Contains(t, rec.Body.String(), "Unable to determine model availability")
+	require.NotContains(t, rec.Body.String(), context.DeadlineExceeded.Error())
 }
 
 func TestDefaultModelIDsForCompositeIncludesAntigravityDefaults(t *testing.T) {
@@ -1311,15 +1208,13 @@ func TestGatewayModels_CompositeUnmappedCNAccountsContributeNoDefaults(t *testin
 	require.NotContains(t, ids, "claude-sonnet-4-6")
 }
 
-// 独立 CN 分组沿用 default 分支的 Claude 默认列表（Claude Code 客户端请求的
-// 就是这些模型名并经账号 model_mapping 转换），composite 支持不得改变该回退。
-func TestDefaultModelIDsForPlatform_CNProvidersKeepClaudeDefaults(t *testing.T) {
-	want := make([]string, 0, len(claude.DefaultModels))
-	for _, model := range claude.DefaultModels {
-		want = append(want, model.ID)
-	}
-	for _, platform := range []string{service.PlatformKimi, service.PlatformZhipu, service.PlatformDeepseek, service.PlatformMiniMax} {
-		require.Equal(t, want, defaultModelIDsForPlatform(platform), "platform=%s", platform)
+// 独立 CN 分组只列出本平台默认模型（没有公开默认列表的平台为空），
+// 不再回落到 Claude 默认列表。
+func TestDefaultModelIDsForPlatform_CNProvidersListOwnDefaults(t *testing.T) {
+	require.Equal(t, defaultCodexModelIDsForPlatform(service.PlatformDeepseek), defaultModelIDsForPlatform(service.PlatformDeepseek))
+	require.Equal(t, defaultCodexModelIDsForPlatform(service.PlatformMiniMax), defaultModelIDsForPlatform(service.PlatformMiniMax))
+	for _, platform := range []string{service.PlatformKimi, service.PlatformZhipu} {
+		require.Empty(t, defaultModelIDsForPlatform(platform), "platform=%s", platform)
 	}
 }
 

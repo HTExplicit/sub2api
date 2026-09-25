@@ -11,6 +11,8 @@ import (
 	"log"
 	"log/slog"
 	"net/http"
+	"net/url"
+	"reflect"
 	"sort"
 	"strconv"
 	"strings"
@@ -1247,6 +1249,7 @@ func (h *AccountHandler) Create(c *gin.Context) {
 	// 探测失败不影响账号创建响应。
 	h.scheduleOpenAIResponsesProbe(createdAccount)
 	h.scheduleGrokImportProbe(createdAccount)
+	h.scheduleUpstreamModelCatalogSync(createdAccount)
 	response.Success(c, result.Data)
 }
 
@@ -1370,6 +1373,7 @@ func (h *AccountHandler) Update(c *gin.Context) {
 	// 异步执行，探测失败不影响账号更新响应。
 	if len(req.Credentials) > 0 {
 		h.scheduleOpenAIResponsesProbe(account)
+		h.scheduleUpstreamModelCatalogSync(account)
 	}
 
 	response.Success(c, h.buildAccountResponseWithRevealedAPIKey(c, account))
@@ -1430,6 +1434,26 @@ type TestAccountRequest struct {
 	AudioDataURL string `json:"audio_data_url"`
 }
 
+type batchTestAccountRequest struct {
+	AccountIDs []int64 `json:"account_ids"`
+	ModelID    string  `json:"model_id"`
+}
+
+type batchTestAccountEvent struct {
+	Type               string `json:"type"`
+	AccountID          int64  `json:"account_id,omitempty"`
+	AccountName        string `json:"account_name,omitempty"`
+	Platform           string `json:"platform,omitempty"`
+	ModelID            string `json:"model_id,omitempty"`
+	UpstreamModel      string `json:"upstream_model,omitempty"`
+	Status             string `json:"status,omitempty"`
+	FirstByteLatencyMs int64  `json:"first_byte_latency_ms,omitempty"`
+	LatencyMs          int64  `json:"latency_ms,omitempty"`
+	Error              string `json:"error,omitempty"`
+	Completed          int    `json:"completed,omitempty"`
+	Total              int    `json:"total,omitempty"`
+}
+
 type SyncFromCRSRequest struct {
 	BaseURL            string   `json:"base_url" binding:"required"`
 	Username           string   `json:"username" binding:"required"`
@@ -1478,6 +1502,184 @@ func (h *AccountHandler) Test(c *gin.Context) {
 			_ = c.Error(err)
 		}
 	}
+}
+
+// Batch tests run the single-account test path with bounded concurrency: at
+// most batchTestMaxConcurrency accounts at once and batchTestMaxPerUpstreamHost
+// per upstream host, so copies of one relay are never tested in a burst. Each
+// account gets batchTestAccountTimeout so a stalled upstream cannot hold a slot
+// for the upstream response-header timeout; keep-alive comments keep proxies
+// from closing a quiet stream (closing the stream stops the run).
+const (
+	batchTestMaxConcurrency     = 10
+	batchTestMaxPerUpstreamHost = 3
+	batchTestAccountTimeout     = 90 * time.Second
+	batchTestKeepAliveInterval  = 15 * time.Second
+)
+
+// BatchTest tests selected accounts in parallel and streams per-account results.
+// An empty model_id tests every account with service.PickConnectionTestModel.
+// POST /api/v1/admin/accounts/batch-test
+func (h *AccountHandler) BatchTest(c *gin.Context) {
+	var req batchTestAccountRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.BadRequest(c, "Invalid request: "+err.Error())
+		return
+	}
+	accountIDs := normalizeInt64IDList(req.AccountIDs)
+	modelID := strings.TrimSpace(req.ModelID)
+	if len(accountIDs) == 0 {
+		response.BadRequest(c, "account_ids is required")
+		return
+	}
+	if h.accountTestService == nil {
+		response.Error(c, http.StatusServiceUnavailable, "Account test service unavailable")
+		return
+	}
+
+	accounts, err := h.adminService.GetAccountsByIDs(c.Request.Context(), accountIDs)
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	accountsByID := make(map[int64]*service.Account, len(accounts))
+	for _, account := range accounts {
+		if account != nil {
+			accountsByID[account.ID] = account
+		}
+	}
+
+	c.Header("Content-Type", "text/event-stream")
+	c.Header("Cache-Control", "no-cache")
+	c.Header("Connection", "keep-alive")
+	c.Header("X-Accel-Buffering", "no")
+	c.Status(http.StatusOK)
+
+	var writeMu sync.Mutex
+	writeEvent := func(event batchTestAccountEvent) {
+		writeMu.Lock()
+		defer writeMu.Unlock()
+		payload, _ := json.Marshal(event)
+		_, _ = fmt.Fprintf(c.Writer, "data: %s\n\n", payload)
+		c.Writer.Flush()
+	}
+	writeEvent(batchTestAccountEvent{Type: "batch_start", Total: len(accountIDs), ModelID: modelID})
+
+	ctx := c.Request.Context()
+	keepAliveDone, keepAliveStopped := make(chan struct{}), make(chan struct{})
+	go func() {
+		defer close(keepAliveStopped)
+		ticker := time.NewTicker(batchTestKeepAliveInterval)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-keepAliveDone:
+				return
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				writeMu.Lock()
+				_, _ = fmt.Fprint(c.Writer, ": keep-alive\n\n")
+				c.Writer.Flush()
+				writeMu.Unlock()
+			}
+		}
+	}()
+
+	slots := make(chan struct{}, batchTestMaxConcurrency)
+	var hostMu sync.Mutex
+	hostSlots := make(map[string]chan struct{})
+	acquire := func(account *service.Account) (release func(), ok bool) {
+		host := batchTestUpstreamHost(account)
+		hostMu.Lock()
+		hostSlot := hostSlots[host]
+		if hostSlot == nil {
+			hostSlot = make(chan struct{}, batchTestMaxPerUpstreamHost)
+			hostSlots[host] = hostSlot
+		}
+		hostMu.Unlock()
+		select {
+		case hostSlot <- struct{}{}:
+		case <-ctx.Done():
+			return nil, false
+		}
+		select {
+		case slots <- struct{}{}:
+		case <-ctx.Done():
+			<-hostSlot
+			return nil, false
+		}
+		return func() { <-slots; <-hostSlot }, true
+	}
+
+	var wg sync.WaitGroup
+	completed := 0
+	var completedMu sync.Mutex
+	for _, accountID := range accountIDs {
+		accountID := accountID
+		account := accountsByID[accountID]
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			name, platform, model := "", "", modelID
+			if account != nil {
+				name, platform = account.Name, account.Platform
+				release, ok := acquire(account)
+				if !ok {
+					return
+				}
+				defer release()
+				if model == "" {
+					model = service.PickConnectionTestModel(account)
+				}
+			}
+			writeEvent(batchTestAccountEvent{Type: "account_started", AccountID: accountID, AccountName: name, Platform: platform, ModelID: model})
+
+			result := &service.AccountTestResult{Status: "failed", ErrorMessage: "account not found"}
+			if account != nil {
+				testCtx, cancel := context.WithTimeout(ctx, batchTestAccountTimeout)
+				tested, testErr := h.accountTestService.RunTestBackgroundDetailed(testCtx, accountID, model)
+				cancel()
+				if testErr != nil {
+					result.ErrorMessage = testErr.Error()
+				} else {
+					result = tested
+					if result.Status == "success" && h.rateLimitService != nil {
+						if _, recoverErr := h.rateLimitService.RecoverAccountAfterSuccessfulTest(ctx, accountID); recoverErr != nil {
+							log.Printf("[WARN] Failed to recover account %d after batch test: %v", accountID, recoverErr)
+						}
+					}
+				}
+			}
+
+			completedMu.Lock()
+			completed++
+			current := completed
+			completedMu.Unlock()
+			writeEvent(batchTestAccountEvent{
+				Type: "account_result", AccountID: accountID, AccountName: name, Platform: platform, ModelID: model,
+				UpstreamModel: result.UpstreamModel,
+				Status:        result.Status, FirstByteLatencyMs: result.FirstByteLatencyMs, LatencyMs: result.LatencyMs,
+				Error: result.ErrorMessage, Completed: current, Total: len(accountIDs),
+			})
+		}()
+	}
+	wg.Wait()
+	close(keepAliveDone)
+	<-keepAliveStopped
+	writeEvent(batchTestAccountEvent{Type: "batch_complete", Completed: len(accountIDs), Total: len(accountIDs)})
+}
+
+// batchTestUpstreamHost groups accounts that reach the same upstream: the host
+// of a custom base_url, otherwise the platform's own endpoint for that type.
+func batchTestUpstreamHost(account *service.Account) string {
+	if raw := strings.TrimSpace(account.GetCredential("base_url")); raw != "" {
+		if parsed, err := url.Parse(service.NormalizeUpstreamBaseURLInput(raw)); err == nil && parsed.Hostname() != "" {
+			return strings.ToLower(parsed.Hostname())
+		}
+		return strings.ToLower(raw)
+	}
+	return account.Platform + "/" + account.Type
 }
 
 // RecoverState handles unified recovery of recoverable account runtime state.
@@ -2794,7 +2996,7 @@ func (h *AccountHandler) GetAvailableModels(c *gin.Context) {
 	response.Success(c, models)
 }
 
-// accountTestModels is shared by the single-account and batch catalog endpoints.
+// accountTestModels lists the models the single-account test can select.
 func (h *AccountHandler) accountTestModels(ctx context.Context, account *service.Account) (any, error) {
 	// Handle OpenAI accounts
 	if account.IsOpenAI() {
@@ -3053,7 +3255,17 @@ func (h *AccountHandler) discoverOpenAIAccountTestModels(ctx context.Context, ac
 	return h.accountTestService.FetchOpenAIAccountCatalogModels(ctx, account)
 }
 
-// GetModelContextCapacities reads the local snapshot, official directory and
+// scheduleUpstreamModelCatalogSync refreshes the upstream model list and the
+// capacities it declares right after an API-key account is created or its
+// credentials change. It runs in the background and never fails the request.
+func (h *AccountHandler) scheduleUpstreamModelCatalogSync(account *service.Account) {
+	if h.accountTestService == nil || !service.UpstreamModelCatalogAutoSyncEligible(account) {
+		return
+	}
+	h.accountTestService.SyncUpstreamModelCatalogInBackground(account.ID)
+}
+
+// GetModelContextCapacities reads the local snapshot, reference catalog and
 // overrides only. It never calls an upstream model endpoint or registry.
 func (h *AccountHandler) GetModelContextCapacities(c *gin.Context) {
 	accountID, err := strconv.ParseInt(c.Param("id"), 10, 64)
@@ -3088,7 +3300,6 @@ func (h *AccountHandler) PreviewModelContextCapacities(c *gin.Context) {
 		return
 	}
 	account := &service.Account{Platform: req.Platform, Type: req.Type, Credentials: make(map[string]any)}
-	protected := false
 	if req.AccountID != nil {
 		if *req.AccountID <= 0 {
 			response.BadRequest(c, "Invalid account ID")
@@ -3105,25 +3316,35 @@ func (h *AccountHandler) PreviewModelContextCapacities(c *gin.Context) {
 		for key, value := range stored.Credentials {
 			account.Credentials[key] = value
 		}
-		protected = service.IsModelContextCapacityProtected(stored)
 	} else if strings.TrimSpace(req.Platform) == "" || strings.TrimSpace(req.Type) == "" {
 		response.BadRequest(c, "platform and type are required for a new account preview")
 		return
 	}
-	// Stored protected identities cannot be reclassified by draft credentials.
-	if !protected {
-		for key, value := range map[string]*string{"base_url": req.BaseURL, "account_mode": req.AccountMode, "api_protocol": req.APIProtocol} {
-			if value != nil {
-				account.Credentials[key] = *value
+	endpointChanged := false
+	for key, value := range map[string]*string{"base_url": req.BaseURL, "account_mode": req.AccountMode, "api_protocol": req.APIProtocol} {
+		if value != nil {
+			current, _ := account.Credentials[key].(string)
+			endpointChanged = endpointChanged || current != *value
+			account.Credentials[key] = *value
+		}
+	}
+	if req.APIBaseURLs != nil {
+		baseURLs := make(map[string]any, len(req.APIBaseURLs))
+		for protocol, baseURL := range req.APIBaseURLs {
+			baseURLs[protocol] = baseURL
+		}
+		endpointChanged = endpointChanged || !reflect.DeepEqual(account.Credentials["api_base_urls"], any(baseURLs))
+		account.Credentials["api_base_urls"] = baseURLs
+	}
+	if endpointChanged && account.Extra != nil {
+		// Stored observations describe the saved endpoint, not an unsaved draft.
+		extra := make(map[string]any, len(account.Extra))
+		for key, value := range account.Extra {
+			if key != service.UpstreamModelMetadataExtraKey {
+				extra[key] = value
 			}
 		}
-		if req.APIBaseURLs != nil {
-			baseURLs := make(map[string]any, len(req.APIBaseURLs))
-			for protocol, baseURL := range req.APIBaseURLs {
-				baseURLs[protocol] = baseURL
-			}
-			account.Credentials["api_base_urls"] = baseURLs
-		}
+		account.Extra = extra
 	}
 	if req.ModelMapping != nil {
 		mapping := make(map[string]any, len(req.ModelMapping))

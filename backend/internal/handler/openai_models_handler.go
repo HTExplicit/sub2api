@@ -61,6 +61,33 @@ func writeOpenAIModelsResponse(c *gin.Context, manifest *service.OpenAIModelsRes
 	c.Data(http.StatusOK, "application/json", manifest.Body)
 }
 
+// modelCapacityProjectorContextKey carries the group capacity projection of the
+// current /v1/models request to the shared list writer.
+const modelCapacityProjectorContextKey = "gateway.model-capacity-projector"
+
+// Both discovery endpoints consume the same final catalogue, after group/platform
+// selection, allowlist filtering and capacity projection. Preserve every field on
+// the selected entry.
+func writeModelsListResponse(c *gin.Context, models any) {
+	body, err := json.Marshal(gin.H{"object": "list", "data": models})
+	if err != nil {
+		writeOpenAIModelsError(c, http.StatusInternalServerError, "api_error", "Failed to encode model catalogue")
+		return
+	}
+	if value, ok := c.Get(modelCapacityProjectorContextKey); ok {
+		if project, ok := value.(func([]byte) ([]byte, error)); ok {
+			if projected, projectErr := project(body); projectErr == nil {
+				body = projected
+			}
+		}
+	}
+	if c.Param("model") != "" {
+		writeRetrievedModel(c, body)
+		return
+	}
+	c.Data(http.StatusOK, "application/json; charset=utf-8", body)
+}
+
 func writeRetrievedModel(c *gin.Context, body []byte) {
 	var catalog struct {
 		Data []json.RawMessage `json:"data"`

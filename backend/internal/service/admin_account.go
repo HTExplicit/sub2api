@@ -473,7 +473,6 @@ func buildAccountForCreate(input *CreateAccountInput, accountExtra map[string]an
 	delete(accountExtra, OllamaCloudUsageSessionExtraKey)
 	delete(accountExtra, OllamaCloudUsageAutoRefreshExtraKey)
 	delete(accountExtra, OllamaCloudUsageSnapshotExtraKey)
-	delete(accountExtra, UpstreamModelContextCapacitiesExtraKey)
 	delete(accountExtra, ModelContextOverridesExtraKey)
 	delete(accountExtra, UpstreamModelMetadataExtraKey)
 	delete(accountExtra, OpenCodeGoUsageAutoRefreshExtraKey)
@@ -876,7 +875,6 @@ func (s *adminServiceImpl) updateAccount(ctx context.Context, id int64, input *U
 		delete(normalizedExtra, OllamaCloudUsageSessionExtraKey)
 		delete(normalizedExtra, OllamaCloudUsageAutoRefreshExtraKey)
 		delete(normalizedExtra, OllamaCloudUsageSnapshotExtraKey)
-		delete(normalizedExtra, UpstreamModelContextCapacitiesExtraKey)
 		delete(normalizedExtra, ModelContextOverridesExtraKey)
 		delete(normalizedExtra, UpstreamModelMetadataExtraKey)
 		delete(normalizedExtra, OpenCodeGoUsageAutoRefreshExtraKey)
@@ -895,7 +893,6 @@ func (s *adminServiceImpl) updateAccount(ctx context.Context, id int64, input *U
 			OllamaCloudUsageSessionExtraKey,
 			OllamaCloudUsageAutoRefreshExtraKey,
 			OllamaCloudUsageSnapshotExtraKey,
-			UpstreamModelContextCapacitiesExtraKey,
 			ModelContextOverridesExtraKey,
 			UpstreamModelMetadataExtraKey,
 			OpenAIAutoResetCreditStateExtraKey,
@@ -907,11 +904,11 @@ func (s *adminServiceImpl) updateAccount(ctx context.Context, id int64, input *U
 			}
 		}
 		normalizedExtra = MergeOpenAICodexTicketExtra(normalizedExtra, account.Extra)
-		// Prompt bindings have their own rule-revision and account-revision CAS.
+		// System prompt bindings are written only by the binding endpoint.
 		// Ordinary account edits preserve them, including their absence.
-		delete(normalizedExtra, PromptAccountBindingExtraKey)
-		if binding, exists := account.Extra[PromptAccountBindingExtraKey]; exists {
-			normalizedExtra[PromptAccountBindingExtraKey] = binding
+		delete(normalizedExtra, AccountExtraSystemPromptKey)
+		if binding, exists := account.Extra[AccountExtraSystemPromptKey]; exists {
+			normalizedExtra[AccountExtraSystemPromptKey] = binding
 		}
 		normalizedExtra = prepareCodexFingerprintExtraForUpdate(account, normalizedExtra)
 		account.Extra = normalizedExtra
@@ -1178,7 +1175,6 @@ func (s *adminServiceImpl) UpdateAccountExtra(ctx context.Context, id int64, upd
 	delete(updates, OllamaCloudUsageSessionExtraKey)
 	delete(updates, OllamaCloudUsageAutoRefreshExtraKey)
 	delete(updates, OllamaCloudUsageSnapshotExtraKey)
-	delete(updates, UpstreamModelContextCapacitiesExtraKey)
 	delete(updates, ModelContextOverridesExtraKey)
 	delete(updates, UpstreamModelMetadataExtraKey)
 	delete(updates, OpenCodeGoUsageAutoRefreshExtraKey)
@@ -1224,7 +1220,6 @@ func (s *adminServiceImpl) BulkUpdateAccounts(ctx context.Context, input *BulkUp
 	delete(input.Extra, OllamaCloudUsageSessionExtraKey)
 	delete(input.Extra, OllamaCloudUsageAutoRefreshExtraKey)
 	delete(input.Extra, OllamaCloudUsageSnapshotExtraKey)
-	delete(input.Extra, UpstreamModelContextCapacitiesExtraKey)
 	delete(input.Extra, ModelContextOverridesExtraKey)
 	delete(input.Extra, UpstreamModelMetadataExtraKey)
 	delete(input.Extra, OpenCodeGoUsageAutoRefreshExtraKey)

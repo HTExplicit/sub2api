@@ -123,11 +123,11 @@ describe('BulkEditAccountModal', () => {
     wrapper.unmount()
   })
 
-  it('reasoning policy applies explicit true to Cindy/OpenAI filter targets', async () => {
+  it('reasoning policy applies explicit true to OpenAI filter targets', async () => {
     const wrapper = mountModal({
       selectedPlatforms: ['anthropic'],
       selectedTypes: ['apikey'],
-      target: { mode: 'filtered', previewCount: 4, selectedPlatforms: ['openai', 'cindy'], selectedTypes: ['apikey'], filters: { type: 'apikey' } }
+      target: { mode: 'filtered', previewCount: 4, selectedPlatforms: ['openai'], selectedTypes: ['apikey'], filters: { type: 'apikey' } }
     })
     await wrapper.get('[data-testid="openai-reasoning-chatReplay-selected"]').setValue(true)
     await wrapper.get('#bulk-edit-account-form').trigger('submit.prevent')

@@ -30,28 +30,8 @@ func (h *OpenAIGatewayHandler) CodexModels(c *gin.Context) {
 		h.errorResponse(c, http.StatusUnauthorized, "invalid_request_error", "API key group is required")
 		return
 	}
-	if apiKey.Group.Platform != service.PlatformCindy && apiKey.Group.Platform != service.PlatformOpenAI && apiKey.Group.Platform != service.PlatformComposite {
-		h.errorResponse(c, http.StatusNotFound, "not_found_error", "Codex models manifest is only available for Cindy, OpenAI, and Composite groups")
-		return
-	}
-	cindyScope, err := h.gatewayService.ResolveCindyCodexModelsScope(c.Request.Context(), apiKey.Group)
-	if err != nil {
-		h.errorResponse(c, http.StatusServiceUnavailable, "upstream_error", "Cindy Codex models catalog is temporarily unavailable")
-		return
-	}
-	if cindyScope.CatalogOnly || cindyScope.MergeCatalog {
-		if err := service.ValidateCindyCodexClientVersion(c.Query("client_version")); err != nil {
-			h.errorResponse(c, http.StatusUpgradeRequired, "invalid_request_error", err.Error())
-			return
-		}
-	}
-	if cindyScope.CatalogOnly {
-		manifest, buildErr := service.BuildCindyCodexModelsManifestSnapshot(cindyScope.CatalogSnapshot, c.GetHeader("If-None-Match"))
-		if buildErr != nil {
-			h.errorResponse(c, http.StatusInternalServerError, "upstream_error", "Failed to build Codex models manifest")
-			return
-		}
-		writeOpenAIModelsResponse(c, manifest)
+	if apiKey.Group.Platform != service.PlatformOpenAI && apiKey.Group.Platform != service.PlatformComposite {
+		h.errorResponse(c, http.StatusNotFound, "not_found_error", "Codex models manifest is only available for OpenAI and Composite groups")
 		return
 	}
 
@@ -81,7 +61,7 @@ func (h *OpenAIGatewayHandler) CodexModels(c *gin.Context) {
 		} else {
 			// 让 ops 错误日志携带实际拉取成功的首个固定账号。
 			setOpsSelectedAccount(c, pinnedAccount.ID, pinnedAccount.Platform)
-			if err := h.gatewayService.MergeGroupConfiguredCodexModelsForAccount(c.Request.Context(), apiKey.Group, pinnedManifest, ifNoneMatch, pinnedAccount); err != nil {
+			if err := h.gatewayService.MergeGroupConfiguredCodexModels(c.Request.Context(), apiKey.Group, pinnedManifest, ifNoneMatch); err != nil {
 				h.errorResponse(c, http.StatusInternalServerError, "api_error", "Failed to build Codex models manifest")
 				return
 			}
@@ -93,7 +73,7 @@ func (h *OpenAIGatewayHandler) CodexModels(c *gin.Context) {
 		}
 	}
 
-	if !apiKey.Group.CodexModelsManifestConfig.Enabled && !cindyScope.MergeCatalog {
+	if !apiKey.Group.CodexModelsManifestConfig.Enabled {
 		configuredManifest, configured, err := h.gatewayService.BuildGroupConfiguredCodexModelsManifest(
 			c.Request.Context(),
 			apiKey.Group,
@@ -117,18 +97,6 @@ func (h *OpenAIGatewayHandler) CodexModels(c *gin.Context) {
 		maxAccountSwitches = 3
 	}
 	failedAccountIDs := make(map[int64]struct{})
-	for _, accountID := range cindyScope.ExcludedAccountIDs {
-		failedAccountIDs[accountID] = struct{}{}
-	}
-	mixedOrdinaryIndex := 0
-	advanceMixedOrdinaryAccount := func() bool {
-		if !cindyScope.MergeCatalog || mixedOrdinaryIndex+1 >= len(cindyScope.OrdinaryAccountIDs) {
-			return false
-		}
-		mixedOrdinaryIndex++
-		delete(failedAccountIDs, cindyScope.OrdinaryAccountIDs[mixedOrdinaryIndex])
-		return true
-	}
 	switchCount := 0
 	var lastUpstreamErr error
 	var lastFailoverErr *service.UpstreamFailoverError
@@ -156,9 +124,6 @@ func (h *OpenAIGatewayHandler) CodexModels(c *gin.Context) {
 				h.gatewayService.ReleaseOpenAIRuntimeBreakerProbeForSelection(selection)
 				return
 			}
-			if lastUpstreamErr == nil && advanceMixedOrdinaryAccount() {
-				continue
-			}
 			if retryingSameAccount && lastUpstreamErr != nil {
 				h.errorResponse(c, infraerrors.Code(lastUpstreamErr), "upstream_error", infraerrors.Message(lastUpstreamErr))
 				return
@@ -171,9 +136,6 @@ func (h *OpenAIGatewayHandler) CodexModels(c *gin.Context) {
 			return
 		}
 		if selection == nil || selection.Account == nil {
-			if advanceMixedOrdinaryAccount() {
-				continue
-			}
 			if lastUpstreamErr != nil {
 				h.errorResponse(c, infraerrors.Code(lastUpstreamErr), "upstream_error", infraerrors.Message(lastUpstreamErr))
 			} else {
@@ -182,12 +144,6 @@ func (h *OpenAIGatewayHandler) CodexModels(c *gin.Context) {
 			return
 		}
 		account := selection.Account
-		if cindyScope.MergeCatalog && len(cindyScope.OrdinaryAccountIDs) > 0 &&
-			account.ID != cindyScope.OrdinaryAccountIDs[mixedOrdinaryIndex] {
-			failedAccountIDs[account.ID] = struct{}{}
-			h.gatewayService.ReleaseOpenAIRuntimeBreakerProbeForSelection(selection)
-			continue
-		}
 		// 让 ops 错误日志携带实际选中的上游账号，便于定位失效账号（#4544）。
 		setOpsSelectedAccount(c, account.ID, account.Platform)
 		var accountReleaseFunc func()
@@ -206,7 +162,6 @@ func (h *OpenAIGatewayHandler) CodexModels(c *gin.Context) {
 					h.errorResponse(c, infraerrors.Code(lastUpstreamErr), "upstream_error", infraerrors.Message(lastUpstreamErr))
 				},
 			) {
-				advanceMixedOrdinaryAccount()
 				continue
 			}
 			return
@@ -214,7 +169,7 @@ func (h *OpenAIGatewayHandler) CodexModels(c *gin.Context) {
 
 		// The client ETag represents the final group-specific body rather than
 		// the source manifest, so always fetch a complete source before applying
-		// Cindy merging, provider normalization, or group-local filtering.
+		// provider normalization, group-local filtering and capacity projection.
 		upstreamIfNoneMatch := ""
 		manifest, err := h.gatewayService.FetchCodexModelsManifest(c.Request.Context(), account, c.Query("client_version"), upstreamIfNoneMatch)
 		if accountReleaseFunc != nil {
@@ -252,7 +207,6 @@ func (h *OpenAIGatewayHandler) CodexModels(c *gin.Context) {
 					return
 				}
 				h.gatewayService.RecordOpenAIAccountSwitch()
-				advanceMixedOrdinaryAccount()
 				continue
 			}
 			h.gatewayService.ReleaseOpenAIRuntimeBreakerProbeForSelection(selection)
@@ -269,26 +223,14 @@ func (h *OpenAIGatewayHandler) CodexModels(c *gin.Context) {
 			h.errorResponse(c, http.StatusInternalServerError, "api_error", "Failed to apply model mappings")
 			return
 		}
-		if cindyScope.MergeCatalog {
-			manifest, err = service.MergeCindyCodexModelsManifestSnapshot(manifest, "", cindyScope.CatalogSnapshot)
-			if err != nil {
-				h.gatewayService.ReleaseOpenAIRuntimeBreakerProbeForSelection(selection)
-				h.errorResponse(c, http.StatusBadGateway, "upstream_error", "Failed to merge Codex models manifest")
-				return
-			}
-			if err := h.projectCodexModelContextCapacities(c, apiKey.Group, manifest, ifNoneMatch, account); err != nil {
+		if apiKey.Group.Platform == service.PlatformComposite {
+			if err := h.projectCodexModelContextCapacities(c, apiKey.Group, manifest, ifNoneMatch); err != nil {
 				h.gatewayService.ReleaseOpenAIRuntimeBreakerProbeForSelection(selection)
 				h.errorResponse(c, http.StatusInternalServerError, "api_error", "Failed to project model capacities")
 				return
 			}
-		} else if apiKey.Group.Platform == service.PlatformComposite {
-			if err := h.projectCodexModelContextCapacities(c, apiKey.Group, manifest, ifNoneMatch, account); err != nil {
-				h.gatewayService.ReleaseOpenAIRuntimeBreakerProbeForSelection(selection)
-				h.errorResponse(c, http.StatusInternalServerError, "api_error", "Failed to project model capacities")
-				return
-			}
-		} else if err := h.gatewayService.MergeGroupConfiguredCodexModelsForAccount(
-			c.Request.Context(), apiKey.Group, manifest, ifNoneMatch, account,
+		} else if err := h.gatewayService.MergeGroupConfiguredCodexModels(
+			c.Request.Context(), apiKey.Group, manifest, ifNoneMatch,
 		); err != nil {
 			h.gatewayService.ReleaseOpenAIRuntimeBreakerProbeForSelection(selection)
 			h.errorResponse(c, http.StatusInternalServerError, "api_error", "Failed to build Codex models manifest")
@@ -304,9 +246,9 @@ func (h *OpenAIGatewayHandler) CodexModels(c *gin.Context) {
 	}
 }
 
-func (h *OpenAIGatewayHandler) projectCodexModelContextCapacities(c *gin.Context, group *service.Group, manifest *service.OpenAIModelsResponse, ifNoneMatch string, source *service.Account) error {
+func (h *OpenAIGatewayHandler) projectCodexModelContextCapacities(c *gin.Context, group *service.Group, manifest *service.OpenAIModelsResponse, ifNoneMatch string) error {
 	if group != nil && group.Platform == service.PlatformComposite && h.nativeAnthropicGatewayService != nil {
-		return h.nativeAnthropicGatewayService.ProjectCodexModelContextCapacities(c.Request.Context(), group, manifest, ifNoneMatch, source)
+		return h.nativeAnthropicGatewayService.ProjectCodexModelContextCapacities(c.Request.Context(), group, manifest, ifNoneMatch)
 	}
-	return h.gatewayService.ProjectCodexModelContextCapacities(c.Request.Context(), group, manifest, ifNoneMatch, source)
+	return h.gatewayService.ProjectCodexModelContextCapacities(c.Request.Context(), group, manifest, ifNoneMatch)
 }

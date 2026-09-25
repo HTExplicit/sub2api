@@ -5,12 +5,11 @@ package service
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"io"
+	"net/http"
 	"strings"
 	"testing"
 
-	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
 )
 
@@ -56,77 +55,45 @@ func TestAccountConnectionStreamContract(t *testing.T) {
 		{"chat_complete", "chat", chatText + frame(`{"choices":[{"finish_reason":"stop"}]}`), nil, false},
 		{"chat_limit", "chat", chatText + frame(`{"choices":[{"finish_reason":"length"}]}`), nil, true},
 		{"chat_refusal", "chat", frame(`{"choices":[{"delta":{"refusal":"I cannot help with that."},"finish_reason":"stop"}]}`), nil, false},
+		{"responses_failed_verbatim", "responses", responseText + frame(`{"type":"response.failed","response":{"status":"failed","error":{"code":"credit_balance_exhausted","message":"You have no credits remaining."}}}`), ErrAccountTestTerminal, false},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			for _, background := range []bool{false, true} {
-				c, recorder := newTestContext()
-				collector := &accountTestEventCollector{}
-				if background {
-					c.Set("account_test_event_collector", collector)
-				}
-				err := (&AccountTestService{}).processConnectionStream(c, strings.NewReader(tc.wire), tc.protocol, nil)
-				if tc.want != nil {
-					require.ErrorIs(t, err, tc.want)
-				} else {
-					require.NoError(t, err)
-				}
-				if !background {
-					for _, line := range strings.Split(recorder.Body.String(), "\n") {
-						if strings.HasPrefix(line, "data: ") {
-							var event TestEvent
-							require.NoError(t, json.Unmarshal([]byte(strings.TrimPrefix(line, "data: ")), &event))
-							collector.Add(event)
-						}
+			c, recorder := newTestContext()
+			err := (&AccountTestService{}).processConnectionStream(c, strings.NewReader(tc.wire), tc.protocol, nil)
+			if tc.want != nil {
+				require.ErrorIs(t, err, tc.want)
+			} else {
+				require.NoError(t, err)
+			}
+			var text, errorText string
+			completed, limited := false, false
+			for _, line := range strings.Split(recorder.Body.String(), "\n") {
+				if strings.HasPrefix(line, "data: ") {
+					var event TestEvent
+					require.NoError(t, json.Unmarshal([]byte(strings.TrimPrefix(line, "data: ")), &event))
+					switch event.Type {
+					case "content":
+						text += event.Text
+					case "error":
+						errorText = event.Error
+					case "test_complete":
+						completed, limited = event.Success, event.OutputLimited
 					}
 				}
-				require.Equal(t, tc.want == nil, collector.completed)
-				if tc.want == nil {
-					require.Equal(t, tc.limited, collector.outputLimited)
-					require.NotEmpty(t, strings.TrimSpace(collector.text.String()))
-				}
+			}
+			require.Equal(t, tc.want == nil, completed)
+			if tc.want == nil {
+				require.Equal(t, tc.limited, limited)
+				require.NotEmpty(t, strings.TrimSpace(text))
+			} else {
+				require.Equal(t, err.Error(), errorText, "the event carries the same text as the returned failure")
+			}
+			if tc.name == "responses_failed_verbatim" {
+				require.Equal(t, "You have no credits remaining.", errorText)
 			}
 		})
 	}
-}
-
-func TestAccountConnectionTransportClassification(t *testing.T) {
-	gin.SetMode(gin.TestMode)
-	svc := &AccountTestService{}
-	for _, tc := range []struct {
-		status int
-		code   string
-	}{{401, "test_authentication_failed"}, {403, "test_authentication_failed"}, {429, "test_rate_limited"}, {502, "test_upstream_failed"}} {
-		c, _ := newTestContext()
-		require.Equal(t, tc.code, AccountTestFailureCode(svc.sendAccountTestHTTPError(c, tc.status)))
-	}
-	for _, tc := range []struct {
-		cause error
-		code  string
-	}{{context.DeadlineExceeded, "test_timeout"}, {errors.New("network-secret-material"), "test_network_failed"}} {
-		c, recorder := newTestContext()
-		err := svc.sendAccountTestRequestError(c, tc.cause)
-		require.Equal(t, tc.code, AccountTestFailureCode(err))
-		require.NotContains(t, recorder.Body.String(), "network-secret-material")
-	}
-	for _, tc := range []struct {
-		failure     error
-		code, label string
-	}{
-		{accountTestHTTPFailure(404, accountTestEndpointAdaptiveAnthropic), "test_upstream_failed", "Adaptive Anthropic endpoint returned 404"},
-		{accountTestHTTPFailure(401, accountTestEndpointAnthropic), "test_authentication_failed", "Anthropic endpoint returned 401"},
-		{accountTestHTTPFailure(402, accountTestEndpointGrokResponses), "test_upstream_failed", "Grok Responses API returned 402"},
-		{accountTestRequestFailure(context.DeadlineExceeded, accountTestEndpointChat), "test_timeout", "Chat Completions API (/v1/chat/completions) request failed"},
-		{accountTestRequestFailure(errors.New("network-secret-material"), accountTestEndpointChat), "test_network_failed", "Chat Completions API (/v1/chat/completions) request failed"},
-	} {
-		c, recorder := newTestContext()
-		err := svc.sendAccountTestFailure(c, tc.failure)
-		require.Equal(t, tc.code, AccountTestFailureCode(err))
-		require.Contains(t, recorder.Body.String(), tc.label)
-		require.Contains(t, AccountTestSafeFailureMessage(err), tc.label, "batch and single adapters share the safe diagnostic")
-		require.NotContains(t, AccountTestSafeFailureMessage(err), "network-secret-material")
-	}
-	require.Equal(t, "account connection test failed or did not complete", AccountTestSafeFailureMessage(errors.New("network-secret-material")))
 }
 
 func TestAccountJobTerminalAndRetryContract(t *testing.T) {
@@ -135,27 +102,6 @@ func TestAccountJobTerminalAndRetryContract(t *testing.T) {
 	require.Equal(t, AccountJobStatusPartiallySucceeded, AccountJobTerminalStatus(false, "", 1, 1, 0))
 	require.True(t, AccountJobHasRetryableFailures(&AccountJob{Status: AccountJobStatusCanceled, FailedCount: 1}))
 	require.False(t, AccountJobHasRetryableFailures(&AccountJob{Status: AccountJobStatusCanceled, CanceledCount: 2}))
-}
-
-func TestAccountConnectionAdapterFailurePreservesProtocolCause(t *testing.T) {
-	gin.SetMode(gin.TestMode)
-	svc := &AccountTestService{}
-	for _, test := range []struct {
-		failure error
-		code    string
-	}{
-		{ErrAccountTestIncomplete, "test_incomplete"},
-		{accountTestHTTPFailure(429), "test_rate_limited"},
-		{accountTestRequestFailure(errors.New("adapter-secret-material")), "test_network_failed"},
-		{errors.New("adapter-secret-material"), "test_failed"},
-	} {
-		c, recorder := newTestContext()
-		forwarded := svc.sendAccountTestFailure(c, test.failure)
-		require.ErrorIs(t, forwarded, test.failure)
-		require.Equal(t, test.code, AccountTestFailureCode(forwarded))
-		require.Contains(t, recorder.Body.String(), test.code)
-		require.NotContains(t, recorder.Body.String(), "adapter-secret-material")
-	}
 }
 
 type accountTestCancelOnClose struct {
@@ -172,9 +118,18 @@ func TestAccountConnectionCompletedBeforeCancellation(t *testing.T) {
 	response.Body = accountTestCancelOnClose{ReadCloser: response.Body, cancel: cancel}
 	account := openCodeGoTestAccount(490)
 	svc, _ := adaptiveCNAccountTestService(account, response)
-	result, err := svc.RunBatchTestBackgroundWithOptions(ctx, account.ID, "deepseek-v4-flash", "", AccountTestOptions{})
+	result, err := svc.RunTestBackgroundDetailed(ctx, account.ID, "deepseek-v4-flash")
 	require.ErrorIs(t, ctx.Err(), context.Canceled, "body close canceled immediately after the protocol terminal")
 	require.NoError(t, err)
 	require.Equal(t, "success", result.Status)
 	require.NotEmpty(t, strings.TrimSpace(result.ResponseText))
+}
+
+func TestAccountConnectionBackgroundResultKeepsUpstreamError(t *testing.T) {
+	account := openCodeGoTestAccount(491)
+	svc, _ := adaptiveCNAccountTestService(account, &http.Response{StatusCode: http.StatusPaymentRequired, Header: http.Header{},
+		Body: io.NopCloser(strings.NewReader(`{"error":{"message":"This request requires more credits"}}`))})
+	result, err := svc.RunTestBackgroundDetailed(context.Background(), account.ID, "deepseek-v4-flash")
+	require.NoError(t, err)
+	require.Equal(t, `OpenCode Go API returned 402: {"error":{"message":"This request requires more credits"}}`, result.ErrorMessage)
 }

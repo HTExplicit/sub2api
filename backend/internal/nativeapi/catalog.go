@@ -1,7 +1,6 @@
-// Versioned model-reference contracts shared by the host and domain plugins.
+// Model context capacity values shared by the capacity resolver and its
+// reference catalog.
 package nativeapi
-
-import "context"
 
 const (
 	ModelContextCapacityBasisTotal         = "total_context"
@@ -43,26 +42,4 @@ type OfficialModelContextCapacity struct {
 	Reference          *ModelContextCapacityReference `json:"reference,omitempty"`
 	MatchHosts         []string                       `json:"-"`
 	MatchAccountModes  []string                       `json:"-"`
-}
-
-type CatalogQuery struct {
-	// AccountID comes from the host account being resolved. Zero preserves
-	// non-account shared-reference queries; account lookups must carry their ID.
-	AccountID         int64    `json:"account_id,omitempty"`
-	Candidates        []string `json:"candidates"`
-	Platform          string   `json:"platform"`
-	AccountType       string   `json:"account_type"`
-	AccountMode       string   `json:"account_mode,omitempty"`
-	Scheme            string   `json:"scheme,omitempty"`
-	Host              string   `json:"host,omitempty"`
-	Port              string   `json:"port,omitempty"`
-	Path              string   `json:"path,omitempty"`
-	HasURLCredentials bool     `json:"has_url_credentials,omitempty"`
-}
-type CatalogMatch struct {
-	Matched bool                          `json:"matched"`
-	Entry   *OfficialModelContextCapacity `json:"entry,omitempty"`
-}
-type CatalogResolver interface {
-	ResolveCatalog(context.Context, CatalogQuery) (CatalogMatch, error)
 }

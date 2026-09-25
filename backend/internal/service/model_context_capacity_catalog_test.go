@@ -81,7 +81,7 @@ func TestOfficialModelContextCapacityCatalogIntegrity(t *testing.T) {
 				if parsed.Port() != "" || !officialCapacityCatalogTestContains(allowedHosts, parsed.Hostname()) {
 					t.Errorf("source host %q is not an approved official source for %s", parsed.Host, row.Provider)
 				}
-				if parsed.Hostname() == "github.com" && source != gptContextCapacityReferenceSource {
+				if parsed.Hostname() == "github.com" && source != gptContextCapacityReferenceSource && source != GPT6ContextCapacityReferenceSource {
 					t.Errorf("GitHub reference must be the pinned official Codex catalog: %q", source)
 				}
 			}
@@ -217,7 +217,7 @@ func TestOfficialModelContextCapacityCatalogVerifiedRepresentativeValues(t *test
 		modelID                         string
 		contextWindow, maxInput, maxOut int64
 	}{
-		{"gpt-6-astra", 1050000, 0, 128000},
+		{"gpt-6-astra", 272000, 0, 128000},
 		{"gpt-5.4-mini", 272000, 0, 0},
 		{"gpt-4.1", 1047576, 0, 32768},
 		{"claude-sonnet-4-5-20250929", 200000, 0, 64000},

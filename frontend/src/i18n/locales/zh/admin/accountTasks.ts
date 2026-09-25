@@ -53,7 +53,6 @@ export default {
       extension_operation: "插件操作",
       codex_ticket_harvest: 'Codex 路由采集与验证',
       codex_ticket_stop: '停止 Codex 路由续期',
-      account_batch_test: '批量测试连接',
       account_import: '数据导入',
       account_import_codex: 'Codex 导入',
       account_batch_create: '批量创建',
@@ -66,8 +65,6 @@ export default {
       account_batch_update_credentials: '更新凭据',
       account_duplicate_review: '重复账号复核',
       account_duplicate_merge: '重复账号合并',
-      cindy_confirmed_cleanup: '清理已确认 Cindy 账号',
-      cindy_banned_cleanup: '清理已封禁 Cindy 账号',
     },
     statuses: {
       pending: '等待中',

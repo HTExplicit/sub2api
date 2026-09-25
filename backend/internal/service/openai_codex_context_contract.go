@@ -9,10 +9,10 @@ import (
 
 const (
 	// This deterministic self-test reports policy, not production model limits.
-	OfficialCodexContextContractSuccessLine = "CODEX_CONTEXT_CONTRACT|version=2|valid=true|priority=custom,official,upstream,default|default_context=200000|protected=preserved|sentinel=preserved"
+	OfficialCodexContextContractSuccessLine = "CODEX_CONTEXT_CONTRACT|version=3|valid=true|priority=custom,upstream,official,registry|unknown=unchanged|aggregate=group_minimum|sentinel=preserved"
 	OfficialCodexContextContractFailureLine = "CODEX_CONTEXT_CONTRACT|valid=false|reason=contract-mismatch"
 	OfficialCodexContextInvalidArgsLine     = "CODEX_CONTEXT_CONTRACT|valid=false|reason=invalid-arguments"
-	officialCodexContextContractSentinel    = "codex-context-contract-v2"
+	officialCodexContextContractSentinel    = "codex-context-contract-v3"
 )
 
 type officialCodexContextContractEnvelope struct {
@@ -26,13 +26,14 @@ type officialCodexContextContractModel struct {
 	MaxContextWindow  *int64          `json:"max_context_window"`
 	AutoCompactLimit  json.RawMessage `json:"auto_compact_token_limit"`
 	Source            string          `json:"context_capacity_source"`
-	Basis             string          `json:"context_capacity_basis"`
+	Reason            string          `json:"context_capacity_reason"`
 	ContractSentinel  string          `json:"contract_sentinel"`
 	UnknownCapability json.RawMessage `json:"unknown_capability"`
 }
 
-// VerifyOfficialCodexContextContract exercises the production pure resolver and
-// final projection without configuration, network, credentials, DB, or Redis.
+// VerifyOfficialCodexContextContract exercises the production pure resolver,
+// group aggregation and final projection without configuration, network,
+// credentials, DB, or Redis.
 func VerifyOfficialCodexContextContract() (string, error) {
 	body, err := buildOfficialCodexContextContractFixture()
 	if err != nil {
@@ -45,22 +46,25 @@ func VerifyOfficialCodexContextContract() (string, error) {
 }
 
 func buildOfficialCodexContextContractFixture() ([]byte, error) {
-	custom := int64(512000)
-	official := &OfficialModelContextCapacity{
-		ModelContextCapacity: ModelContextCapacity{ContextWindow: 1000000},
-		ModelID:              "fixture-official",
-	}
-	upstream := &ModelContextCapacity{ContextWindow: 64000, MaxContextWindow: 128000}
+	custom := modelContextEvidence{ModelContextSourceCustom, ModelContextCapacity{ContextWindow: 512000, MaxContextWindow: 512000}}
+	upstream := modelContextEvidence{ModelContextSourceUpstream, ModelContextCapacity{ContextWindow: 64000, MaxContextWindow: 128000}}
+	official := modelContextEvidence{ModelContextSourceOfficial, ModelContextCapacity{ContextWindow: 272000, MaxContextWindow: 872000}}
+	registry := modelContextEvidence{ModelContextSourceRegistry, ModelContextCapacity{ContextWindow: 400000}}
+	relay := modelContextEvidence{ModelContextSourceUpstream, ModelContextCapacity{ContextWindow: 1050000}}
 	cases := []struct {
 		slug     string
 		capacity ResolvedModelContextCapacity
 		compact  int64
 	}{
-		{"fixture-custom", ResolveModelContextCapacity(&custom, official, upstream), 9999999},
-		{"fixture-official", ResolveModelContextCapacity(nil, official, upstream), 9999999},
-		{"fixture-upstream", ResolveModelContextCapacity(nil, nil, upstream), 50000},
-		{"fixture-default", ResolveModelContextCapacity(nil, nil, nil), 9999999},
-		{"fixture-protected", ResolvedModelContextCapacity{Source: "protected"}, 666666},
+		{"fixture-custom", resolveModelContextEvidence([]modelContextEvidence{custom, upstream, official, registry}), 9999999},
+		{"fixture-upstream", resolveModelContextEvidence([]modelContextEvidence{upstream, official, registry}), 50000},
+		{"fixture-official", resolveModelContextEvidence([]modelContextEvidence{official, registry}), 9999999},
+		{"fixture-registry", resolveModelContextEvidence([]modelContextEvidence{registry}), 9999999},
+		{"fixture-unknown", resolveModelContextEvidence(nil), 666666},
+		{"fixture-group", minimumModelContextCapacity([]ResolvedModelContextCapacity{
+			resolveModelContextEvidence([]modelContextEvidence{relay, official}),
+			resolveModelContextEvidence([]modelContextEvidence{official}),
+		}), 9999999},
 	}
 	models := make([]map[string]json.RawMessage, 0, len(cases))
 	for _, test := range cases {
@@ -87,14 +91,15 @@ func verifyNormalizedOfficialCodexContextContract(body []byte) error {
 		return errors.New("top-level sentinel changed")
 	}
 	checks := []struct {
-		slug, source, basis, compact string
-		contextWindow, maxWindow     int64
+		slug, source, reason, compact string
+		contextWindow, maxWindow      int64
 	}{
-		{"fixture-custom", "custom", "total_context", "null", 512000, 512000},
-		{"fixture-official", "official", "total_context", "null", 1000000, 1000000},
-		{"fixture-upstream", "upstream", "total_context", "50000", 64000, 128000},
-		{"fixture-default", "default", "total_context", "null", 200000, 200000},
-		{"fixture-protected", "", "", "666666", 777000, 888000},
+		{"fixture-custom", "custom", "", "null", 512000, 512000},
+		{"fixture-upstream", "upstream", "", "50000", 64000, 128000},
+		{"fixture-official", "official", "", "null", 272000, 872000},
+		{"fixture-registry", "registry", "", "null", 400000, 400000},
+		{"fixture-unknown", "", "", "666666", 777000, 888000},
+		{"fixture-group", "official", "group_minimum", "null", 272000, 872000},
 	}
 	if len(envelope.Models) != len(checks) {
 		return errors.New("model fixture count changed")
@@ -110,7 +115,7 @@ func verifyNormalizedOfficialCodexContextContract(body []byte) error {
 		model, exists := bySlug[check.slug]
 		if !exists || model.ContextWindow == nil || *model.ContextWindow != check.contextWindow ||
 			model.MaxContextWindow == nil || *model.MaxContextWindow != check.maxWindow ||
-			model.Source != check.source || model.Basis != check.basis ||
+			model.Source != check.source || model.Reason != check.reason ||
 			!bytes.Equal(bytes.TrimSpace(model.AutoCompactLimit), []byte(check.compact)) {
 			return fmt.Errorf("model %q policy mismatch", check.slug)
 		}

@@ -115,11 +115,6 @@ func registerRoutes(
 	cfg *config.Config,
 	redisClient *redis.Client,
 ) {
-	if h.RemoteSkill != nil {
-		r.Any("/skills/security-research/current", h.RemoteSkill.Serve)
-		r.Any("/skills/security-research/current/*path", h.RemoteSkill.Serve)
-	}
-
 	// 通用路由（健康检查、状态等）
 	routes.RegisterCommonRoutes(r)
 

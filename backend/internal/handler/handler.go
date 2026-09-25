@@ -72,7 +72,6 @@ type Handlers struct {
 	AsyncImage       *AsyncImageHandler
 	BatchImage       *BatchImageHandler
 	ImageStudio      *ImageStudioJobHandler
-	RemoteSkill      *RemoteSkillHandler
 }
 
 // BuildInfo contains build-time information

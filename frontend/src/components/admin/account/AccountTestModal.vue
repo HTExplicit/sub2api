@@ -1068,7 +1068,7 @@ const handleEvent = (event: {
       }
       if (event.success) {
         status.value = 'success'
-        if (event.output_limited) addLine(t('admin.accounts.batchTest.outputLimited'), 'text-cyan-300')
+        if (event.output_limited) addLine(t('admin.accounts.testOutputLimited'), 'text-cyan-300')
       } else {
         status.value = 'error'
         errorMessage.value = event.error || t('admin.accounts.testFailed')

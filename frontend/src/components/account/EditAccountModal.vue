@@ -8,7 +8,7 @@
     <form
       v-if="account"
       id="edit-account-form"
-      @submit.prevent="handleSubmit()"
+      @submit.prevent="handleSubmit"
       class="space-y-5"
     >
       <div>
@@ -26,19 +26,6 @@
         <p class="input-hint">{{ t('admin.accounts.notesHint') }}</p>
       </div>
 
-      <div v-if="isCindyAccount" class="rounded-lg border border-gray-200 p-3 text-sm dark:border-dark-600" data-testid="account-edit-profile-status">
-        <p v-if="providerEdit.draft.value?.loading">{{ t('common.loading') }}</p>
-        <p v-else-if="!providerEdit.available.value">{{ t('admin.accounts.providerEdit.unavailable') }}</p>
-        <p v-if="providerEdit.pending.value" class="mt-1">{{ t('admin.accounts.providerEdit.draftRetained') }}</p>
-        <p v-if="providerEdit.draft.value?.pendingContext || providerEdit.draft.value?.catalogNeedsReview" class="mt-1 text-amber-700 dark:text-amber-300">
-          {{ t('admin.accounts.providerEdit.changed') }}
-        </p>
-        <div class="mt-2 flex flex-wrap gap-2">
-          <button type="button" class="btn btn-secondary text-xs" :disabled="providerEdit.draft.value?.loading" @click="providerEdit.refresh()">{{ t('common.refresh') }}</button>
-          <button v-if="providerEdit.draft.value?.pendingContext || providerEdit.draft.value?.catalogNeedsReview" type="button" class="btn btn-secondary text-xs" data-testid="account-edit-reconcile" @click="reconcileProviderEdit">{{ t('admin.accounts.providerEdit.reconcile') }}</button>
-        </div>
-      </div>
-
       <!-- API Key fields (only for apikey type) -->
       <div v-if="account.type === 'apikey'" class="space-y-4">
         <div v-if="!isCNApiKeyAccount || editApiProtocol !== 'adaptive'">
@@ -48,12 +35,9 @@
             data-testid="account-base-url"
             type="text"
             class="input"
-            :readonly="isCindyAccount"
             :placeholder="
-              isCindyAccount
-                ? editProfile?.credential_ui.base_url || editBaseUrl
-                : account.platform === 'openai'
-                  ? 'https://api.openai.com'
+              account.platform === 'openai'
+                ? 'https://api.openai.com'
                 : account.platform === 'gemini'
                   ? 'https://generativelanguage.googleapis.com'
                   : account.platform === 'antigravity'
@@ -101,7 +85,7 @@
               type="button"
               @click="editOpenCodeAccountMode = 'zen'"
               :class="[
-                'flex items-center gap-3 rounded-lg border-2 p-3 text-left transition-all',
+                'flex items-center gap-3 rounded-none border-2 p-3 text-left transition-all',
                 editOpenCodeAccountMode === 'zen'
                   ? 'border-amber-500 bg-amber-50 dark:bg-amber-900/20'
                   : 'border-gray-200 hover:border-gray-400 dark:border-dark-600 dark:hover:border-gray-600'
@@ -109,8 +93,8 @@
             >
               <div
                 :class="[
-                  'flex h-8 w-8 shrink-0 items-center justify-center rounded-lg',
-                  editOpenCodeAccountMode === 'zen' ? 'bg-amber-500 text-white' : 'bg-gray-100 text-gray-500 dark:bg-dark-600 dark:text-gray-400'
+                  'flex h-8 w-8 shrink-0 items-center justify-center rounded-none',
+                  editOpenCodeAccountMode === 'zen' ? 'bg-amber-500 text-white' : 'bg-gray-100 text-gray-500 dark:bg-dark-600 dark:text-dark-300'
                 ]"
               >
                 <Icon name="creditCard" size="sm" />
@@ -124,7 +108,7 @@
               type="button"
               @click="editOpenCodeAccountMode = 'go'"
               :class="[
-                'flex items-center gap-3 rounded-lg border-2 p-3 text-left transition-all',
+                'flex items-center gap-3 rounded-none border-2 p-3 text-left transition-all',
                 editOpenCodeAccountMode === 'go'
                   ? 'border-amber-500 bg-amber-50 dark:bg-amber-900/20'
                   : 'border-gray-200 hover:border-gray-400 dark:border-dark-600 dark:hover:border-gray-600'
@@ -132,8 +116,8 @@
             >
               <div
                 :class="[
-                  'flex h-8 w-8 shrink-0 items-center justify-center rounded-lg',
-                  editOpenCodeAccountMode === 'go' ? 'bg-amber-500 text-white' : 'bg-gray-100 text-gray-500 dark:bg-dark-600 dark:text-gray-400'
+                  'flex h-8 w-8 shrink-0 items-center justify-center rounded-none',
+                  editOpenCodeAccountMode === 'go' ? 'bg-amber-500 text-white' : 'bg-gray-100 text-gray-500 dark:bg-dark-600 dark:text-dark-300'
                 ]"
               >
                 <Icon name="bolt" size="sm" />
@@ -154,7 +138,7 @@
               :key="opt.value"
               type="button"
               :class="[
-                'rounded-lg border-2 px-3 py-1.5 text-xs transition-all',
+                'rounded-none border-2 px-3 py-1.5 text-xs transition-all',
                 editAccountMode === opt.value
                   ? 'border-primary-500 bg-primary-50 font-medium text-primary-700 dark:bg-primary-900/30 dark:text-primary-300'
                   : 'border-gray-200 text-gray-700 hover:border-gray-400 dark:border-dark-600 dark:text-gray-300 dark:hover:border-gray-600'
@@ -175,7 +159,7 @@
               :key="opt.value"
               type="button"
               :class="[
-                'rounded-lg border-2 px-3 py-1.5 text-xs transition-all',
+                'rounded-none border-2 px-3 py-1.5 text-xs transition-all',
                 editApiProtocol === opt.value
                   ? 'border-primary-500 bg-primary-50 font-medium text-primary-700 dark:bg-primary-900/30 dark:text-primary-300'
                   : 'border-gray-200 text-gray-700 hover:border-gray-400 dark:border-dark-600 dark:text-gray-300 dark:hover:border-gray-600'
@@ -232,10 +216,8 @@
             data-lpignore="true"
             data-bwignore="true"
             :placeholder="
-              isCindyAccount
-                ? 'cindy-...'
-                : account.platform === 'openai'
-                  ? 'sk-proj-...'
+              account.platform === 'openai'
+                ? 'sk-proj-...'
                 : account.platform === 'gemini'
                   ? 'AIza...'
                   : account.platform === 'antigravity'
@@ -268,10 +250,10 @@
                 type="button"
                 @click="modelRestrictionMode = 'whitelist'"
                 :class="[
-                  'flex-1 rounded-lg px-4 py-2 text-sm font-medium transition-all',
+                  'flex-1 rounded-none px-4 py-2 text-sm font-medium transition-all',
                   modelRestrictionMode === 'whitelist'
                     ? 'bg-primary-100 text-primary-700 dark:bg-primary-900/30 dark:text-primary-400'
-                    : 'bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-dark-600 dark:text-gray-400 dark:hover:bg-dark-500'
+                    : 'bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-dark-600 dark:text-dark-300 dark:hover:bg-gray-600'
                 ]"
               >
                 <svg
@@ -293,10 +275,10 @@
                 type="button"
                 @click="modelRestrictionMode = 'mapping'"
                 :class="[
-                  'flex-1 rounded-lg px-4 py-2 text-sm font-medium transition-all',
+                  'flex-1 rounded-none px-4 py-2 text-sm font-medium transition-all',
                   modelRestrictionMode === 'mapping'
                     ? 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400'
-                    : 'bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-dark-600 dark:text-gray-400 dark:hover:bg-dark-500'
+                    : 'bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-dark-600 dark:text-dark-300 dark:hover:bg-gray-600'
                 ]"
               >
                 <svg
@@ -318,47 +300,18 @@
 
             <!-- Whitelist Mode -->
             <div v-if="modelRestrictionMode === 'whitelist'">
-              <div v-if="isCindyAccount" class="mb-4" data-testid="cindy-managed-catalog">
-                <div class="mb-2 flex items-center justify-between gap-3">
-                  <div>
-                    <p class="text-sm font-medium text-gray-700 dark:text-gray-200">
-                      {{ profileLabel(editProfile?.labels.managed_catalog) }}
-                    </p>
-                  </div>
-                  <span class="shrink-0 text-xs font-medium text-primary-600 dark:text-primary-400">
-                    {{ cindyManagedCatalog.length }}
-                  </span>
-                </div>
-                <p v-if="cindyCatalogLoading" class="py-3 text-sm text-gray-500 dark:text-gray-400">
-                  {{ t('common.loading') }}
-                </p>
-                <p v-else-if="cindyCatalogLoadFailed" class="py-3 text-sm text-red-600 dark:text-red-400">
-                  {{ t('admin.accounts.providerEdit.catalogUnavailable') }}
-                </p>
-                <ModelWhitelistSelector
-                  v-model:capacity-drafts="capacityDrafts"
-                  :capacity-rows="capacityRows"
-                  :sync-source-key="capacitySyncSourceKey"
-                  @capacity-validity="setCapacityFieldValidity('selector', $event)"
-                  v-if="cindyManagedCatalog.length > 0"
-                  :model-value="[]"
-                  :models="cindyManagedCatalog"
-                  readonly
-                />
-              </div>
               <ModelWhitelistSelector
                 v-model:capacity-drafts="capacityDrafts"
                 :capacity-rows="capacityRows"
                 :sync-source-key="capacitySyncSourceKey"
                 @capacity-validity="setCapacityFieldValidity('selector', $event)"
-                v-if="!isCindyAccount"
                 v-model="allowedModels"
                 :platform="account?.platform || 'anthropic'"
                 :account-id="account?.id"
                 :synced-models="capacitySyncedModels"
                 @upstream-synced="acceptCapacitySync"
               />
-              <p v-if="!isCindyAccount" class="text-xs text-gray-500 dark:text-gray-400">
+              <p class="text-xs text-gray-500 dark:text-gray-400">
                 {{ t('admin.accounts.selectedModels', { count: allowedModels.length }) }}
                 <span v-if="allowedModels.length === 0 && modelMappings.length === 0">{{
                   t('admin.accounts.supportsAllModels')
@@ -387,37 +340,7 @@
                 </p>
               </div>
 
-            <div
-              v-if="isCindyAccount && cindyManagedAliases.length > 0"
-              class="mb-4 border-b border-gray-200 pb-4 dark:border-dark-600"
-              data-testid="cindy-managed-aliases"
-            >
-              <p class="text-sm font-medium text-gray-700 dark:text-gray-200">
-                {{ profileLabel(editProfile?.labels.managed_aliases) }}
-              </p>
-              <div class="mt-2 space-y-2">
-                <div
-                  v-for="alias in cindyManagedAliases"
-                  :key="alias.id"
-                  data-testid="cindy-managed-alias"
-                  class="grid min-w-0 grid-cols-1 items-center gap-2 text-sm sm:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)]"
-                >
-                  <div class="min-w-0 break-all rounded border border-gray-200 bg-gray-50 px-3 py-2 text-gray-700 dark:border-dark-500 dark:bg-dark-700 dark:text-gray-200">
-                    {{ alias.id }}
-                  </div>
-                  <Icon name="arrowRight" size="sm" class="mx-auto rotate-90 text-gray-400 sm:rotate-0" />
-                  <div class="min-w-0 break-all rounded border border-gray-200 bg-gray-50 px-3 py-2 text-gray-700 dark:border-dark-500 dark:bg-dark-700 dark:text-gray-200">
-                    {{ alias.live_upstream_id || alias.alias_target }}
-                  </div>
-                </div>
-              </div>
-            </div>
-
             <!-- Model Mapping List -->
-            <div v-if="isCindyAccount" class="mb-3 flex items-center justify-between gap-2">
-              <span>{{ profileLabel(editProfile?.labels.custom_mappings) }}</span>
-              <button type="button" class="btn btn-secondary text-xs" data-testid="account-edit-clear-model-mapping" @click="providerEdit.clear('model_mapping')">{{ t('admin.accounts.providerEdit.clearCustomMappings') }}</button>
-            </div>
             <div
               v-if="modelMappings.length > 0"
               class="mb-3 space-y-2"
@@ -534,7 +457,7 @@
             >
               <span
                 :class="[
-                  'pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out',
+                  'pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow-outline ring-0 transition duration-200 ease-in-out',
                   poolModeEnabled ? 'translate-x-5' : 'translate-x-0'
                 ]"
               />
@@ -598,7 +521,7 @@
             >
               <span
                 :class="[
-                  'pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out',
+                  'pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow-outline ring-0 transition duration-200 ease-in-out',
                   customErrorCodesEnabled ? 'translate-x-5' : 'translate-x-0'
                 ]"
               />
@@ -624,7 +547,7 @@
                   'rounded-lg px-3 py-1.5 text-sm font-medium transition-colors',
                   selectedErrorCodes.includes(code.value)
                     ? 'bg-red-100 text-red-700 ring-1 ring-red-500 dark:bg-red-900/30 dark:text-red-400'
-                    : 'bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-dark-600 dark:text-gray-400 dark:hover:bg-dark-500'
+                    : 'bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-dark-600 dark:text-dark-300 dark:hover:bg-gray-600'
                 ]"
               >
                 {{ code.value }} {{ code.label }}
@@ -773,7 +696,7 @@
           >
             <span
               :class="[
-                'pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out',
+                'pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow-outline ring-0 transition duration-200 ease-in-out',
                 grokOAuthCustomBaseUrlEnabled ? 'translate-x-5' : 'translate-x-0'
               ]"
             />
@@ -810,7 +733,7 @@
           >
             <span
               :class="[
-                'pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out',
+                'pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow-outline ring-0 transition duration-200 ease-in-out',
                 headerOverrideEnabled ? 'translate-x-5' : 'translate-x-0'
               ]"
             />
@@ -855,10 +778,10 @@
               type="button"
               @click="modelRestrictionMode = 'whitelist'"
               :class="[
-                'flex-1 rounded-lg px-4 py-2 text-sm font-medium transition-all',
+                'flex-1 rounded-none px-4 py-2 text-sm font-medium transition-all',
                 modelRestrictionMode === 'whitelist'
                   ? 'bg-primary-100 text-primary-700 dark:bg-primary-900/30 dark:text-primary-400'
-                  : 'bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-dark-600 dark:text-gray-400 dark:hover:bg-dark-500'
+                  : 'bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-dark-600 dark:text-dark-300 dark:hover:bg-gray-600'
               ]"
             >
               {{ t('admin.accounts.modelWhitelist') }}
@@ -867,10 +790,10 @@
               type="button"
               @click="modelRestrictionMode = 'mapping'"
               :class="[
-                'flex-1 rounded-lg px-4 py-2 text-sm font-medium transition-all',
+                'flex-1 rounded-none px-4 py-2 text-sm font-medium transition-all',
                 modelRestrictionMode === 'mapping'
                   ? 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400'
-                  : 'bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-dark-600 dark:text-gray-400 dark:hover:bg-dark-500'
+                  : 'bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-dark-600 dark:text-dark-300 dark:hover:bg-gray-600'
               ]"
             >
               {{ t('admin.accounts.modelMapping') }}
@@ -1055,10 +978,10 @@
               type="button"
               @click="modelRestrictionMode = 'whitelist'"
               :class="[
-                'flex-1 rounded-lg px-4 py-2 text-sm font-medium transition-all',
+                'flex-1 rounded-none px-4 py-2 text-sm font-medium transition-all',
                 modelRestrictionMode === 'whitelist'
                   ? 'bg-primary-100 text-primary-700 dark:bg-primary-900/30 dark:text-primary-400'
-                  : 'bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-dark-600 dark:text-gray-400 dark:hover:bg-dark-500'
+                  : 'bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-dark-600 dark:text-dark-300 dark:hover:bg-gray-600'
               ]"
             >
               <svg
@@ -1080,10 +1003,10 @@
               type="button"
               @click="modelRestrictionMode = 'mapping'"
               :class="[
-                'flex-1 rounded-lg px-4 py-2 text-sm font-medium transition-all',
+                'flex-1 rounded-none px-4 py-2 text-sm font-medium transition-all',
                 modelRestrictionMode === 'mapping'
                   ? 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400'
-                  : 'bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-dark-600 dark:text-gray-400 dark:hover:bg-dark-500'
+                  : 'bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-dark-600 dark:text-dark-300 dark:hover:bg-gray-600'
               ]"
             >
               <svg
@@ -1317,10 +1240,10 @@
               type="button"
               @click="modelRestrictionMode = 'whitelist'"
               :class="[
-                'flex-1 rounded-lg px-4 py-2 text-sm font-medium transition-all',
+                'flex-1 rounded-none px-4 py-2 text-sm font-medium transition-all',
                 modelRestrictionMode === 'whitelist'
                   ? 'bg-primary-100 text-primary-700 dark:bg-primary-900/30 dark:text-primary-400'
-                  : 'bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-dark-600 dark:text-gray-400 dark:hover:bg-dark-500'
+                  : 'bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-dark-600 dark:text-dark-300 dark:hover:bg-gray-600'
               ]"
             >
               {{ t('admin.accounts.modelWhitelist') }}
@@ -1329,10 +1252,10 @@
               type="button"
               @click="modelRestrictionMode = 'mapping'"
               :class="[
-                'flex-1 rounded-lg px-4 py-2 text-sm font-medium transition-all',
+                'flex-1 rounded-none px-4 py-2 text-sm font-medium transition-all',
                 modelRestrictionMode === 'mapping'
                   ? 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400'
-                  : 'bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-dark-600 dark:text-gray-400 dark:hover:bg-dark-500'
+                  : 'bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-dark-600 dark:text-dark-300 dark:hover:bg-gray-600'
               ]"
             >
               {{ t('admin.accounts.modelMapping') }}
@@ -1409,7 +1332,7 @@
             >
               <span
                 :class="[
-                  'pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out',
+                  'pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow-outline ring-0 transition duration-200 ease-in-out',
                   poolModeEnabled ? 'translate-x-5' : 'translate-x-0'
                 ]"
               />
@@ -1598,7 +1521,7 @@
           >
             <span
               :class="[
-                'pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out',
+                'pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow-outline ring-0 transition duration-200 ease-in-out',
                 tempUnschedEnabled ? 'translate-x-5' : 'translate-x-0'
               ]"
             />
@@ -1785,7 +1708,7 @@
           >
             <span
               :class="[
-                'pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out',
+                'pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow-outline ring-0 transition duration-200 ease-in-out',
                 interceptWarmupRequests ? 'translate-x-5' : 'translate-x-0'
               ]"
             />
@@ -1912,7 +1835,7 @@
           >
             <span
               :class="[
-                'pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out',
+                'pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow-outline ring-0 transition duration-200 ease-in-out',
                 openaiPassthroughEnabled ? 'translate-x-5' : 'translate-x-0'
               ]"
             />
@@ -1943,7 +1866,7 @@
           >
             <span
               :class="[
-                'pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out',
+                'pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow-outline ring-0 transition duration-200 ease-in-out',
                 openaiFlattenNamespacesEnabled ? 'translate-x-5' : 'translate-x-0'
               ]"
             />
@@ -1976,7 +1899,7 @@
               </p>
             </div>
           </div>
-          <div class="border-t border-sky-100 bg-white/70 p-2 dark:border-sky-900/50 dark:bg-dark-800/70">
+          <div class="border-t border-sky-100 bg-white p-2 dark:border-sky-900/50 dark:bg-dark-800">
             <div class="grid grid-cols-1 gap-2 sm:grid-cols-2">
               <button
                 v-for="option in codexImageToolOptions"
@@ -2003,7 +1926,7 @@
                 </span>
                 <span class="min-w-0">
                   <span class="block text-sm font-medium">{{ option.label }}</span>
-                  <span class="mt-0.5 block text-xs leading-4 text-slate-500 dark:text-slate-400">{{ option.description }}</span>
+                  <span class="mt-0.5 block text-xs leading-4 text-muted">{{ option.description }}</span>
                 </span>
               </button>
             </div>
@@ -2020,7 +1943,7 @@
 
       <!-- OpenAI WS Mode 三态（off/ctx_pool/passthrough） -->
       <div
-        v-if="showAccountEditMode('responses_websocket_mode')"
+        v-if="account?.platform === 'openai' && (account?.type === 'oauth' || account?.type === 'setup-token' || account?.type === 'apikey')"
         class="border-t border-gray-200 pt-4 dark:border-dark-600"
       >
         <div class="flex items-center justify-between">
@@ -2035,15 +1958,13 @@
           </div>
           <div class="w-52">
             <Select v-model="openaiResponsesWebSocketV2Mode" data-testid="edit-openai-ws-mode-select" :options="openAIWSModeOptions" @update:model-value="recordAccountMode('responses_websocket_mode', $event)" />
-            <button v-if="canClearAccountEditMode('responses_websocket_mode')" type="button" class="mt-1 text-xs text-primary-600" data-testid="account-edit-clear-ws" @click="providerEdit.clear('responses_websocket_mode')">{{ t('admin.accounts.providerEdit.clearToDefault') }}</button>
-            <p v-if="providerEdit.changes.value.responses_websocket_mode?.op === 'clear'" class="mt-1 text-xs">{{ t('admin.accounts.providerEdit.clearPending') }}</p>
           </div>
         </div>
       </div>
 
       <!-- OpenAI APIKey Responses API support mode -->
       <div
-        v-if="showAccountEditMode('responses_mode')"
+        v-if="account?.platform === 'openai' && account?.type === 'apikey'"
         class="space-y-4 border-t border-gray-200 pt-4 dark:border-dark-600"
       >
         <div class="flex items-center justify-between gap-4">
@@ -2061,8 +1982,6 @@
               data-testid="openai-responses-mode-select"
               @update:model-value="recordAccountMode('responses_mode', $event)"
             />
-            <button v-if="canClearAccountEditMode('responses_mode')" type="button" class="mt-1 text-xs text-primary-600" data-testid="account-edit-clear-responses" @click="providerEdit.clear('responses_mode')">{{ t('admin.accounts.providerEdit.clearToDefault') }}</button>
-            <p v-if="providerEdit.changes.value.responses_mode?.op === 'clear'" class="mt-1 text-xs">{{ t('admin.accounts.providerEdit.clearPending') }}</p>
           </div>
         </div>
         <div
@@ -2078,7 +1997,7 @@
         >
           {{ t('admin.accounts.openai.responsesModeTextDisabledHint') }}
         </div>
-        <div v-if="!isCindyAccount">
+        <div>
           <label class="input-label mb-2 block">{{ t('admin.accounts.openai.endpointCapabilities') }}</label>
           <div class="grid grid-cols-1 gap-2 sm:grid-cols-2">
             <label
@@ -2124,7 +2043,7 @@
         >
           <span
             :class="[
-              'pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out',
+              'pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow-outline ring-0 transition duration-200 ease-in-out',
               openAIImagesUrlToB64JsonEnabled ? 'translate-x-5' : 'translate-x-0'
             ]"
           />
@@ -2132,7 +2051,7 @@
       </div>
 
       <div
-        v-if="account?.type === 'apikey' && !isCindyAccount"
+        v-if="account?.type === 'apikey'"
         class="flex items-center justify-between gap-4 border-t border-gray-200 pt-4 dark:border-dark-600"
       >
         <div>
@@ -2262,7 +2181,7 @@
           >
             <span
               :class="[
-                'pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out',
+                'pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow-outline ring-0 transition duration-200 ease-in-out',
                 anthropicPassthroughEnabled ? 'translate-x-5' : 'translate-x-0'
               ]"
             />
@@ -2436,7 +2355,7 @@
           >
             <span
               :class="[
-                'pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out',
+                'pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow-outline ring-0 transition duration-200 ease-in-out',
                 openAILongContextBillingEnabled ? 'translate-x-5' : 'translate-x-0'
               ]"
             />
@@ -2465,7 +2384,7 @@
           >
             <span
               :class="[
-                'pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out',
+                'pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow-outline ring-0 transition duration-200 ease-in-out',
                 codexCLIOnlyEnabled ? 'translate-x-5' : 'translate-x-0'
               ]"
             />
@@ -2491,7 +2410,7 @@
           >
             <span
               :class="[
-                'pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out',
+                'pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow-outline ring-0 transition duration-200 ease-in-out',
                 codexCLIOnlyAppServerEnabled ? 'translate-x-5' : 'translate-x-0'
               ]"
             />
@@ -2559,10 +2478,10 @@
       </div>
 
       <div
-        v-if="showAccountEditMode('compact_mode') || (isCindyAccount && editProfile?.compact_mapping_editable)"
+        v-if="account?.platform === 'openai' && (account?.type === 'oauth' || account?.type === 'setup-token' || account?.type === 'apikey')"
         class="border-t border-gray-200 pt-4 dark:border-dark-600 space-y-4"
       >
-        <div v-if="showAccountEditMode('compact_mode')" class="flex items-center justify-between">
+        <div class="flex items-center justify-between">
           <div>
             <label class="input-label mb-0">{{ t('admin.accounts.openai.compactMode') }}</label>
             <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
@@ -2571,8 +2490,6 @@
           </div>
           <div class="w-44">
             <Select v-model="openAICompactMode" :options="openAICompactModeOptions" data-testid="account-edit-compact-mode" @update:model-value="recordAccountMode('compact_mode', $event)" />
-            <button v-if="canClearAccountEditMode('compact_mode')" type="button" class="mt-1 text-xs text-primary-600" data-testid="account-edit-clear-compact" @click="providerEdit.clear('compact_mode')">{{ t('admin.accounts.providerEdit.clearToDefault') }}</button>
-            <p v-if="providerEdit.changes.value.compact_mode?.op === 'clear'" class="mt-1 text-xs">{{ t('admin.accounts.providerEdit.clearPending') }}</p>
           </div>
         </div>
         <div class="rounded-lg bg-gray-50 px-3 py-2 text-xs text-gray-600 dark:bg-dark-700 dark:text-gray-300">
@@ -2585,7 +2502,7 @@
             {{ formatDateTime(new Date(String(account.extra.openai_compact_checked_at))) }}
           </span>
         </div>
-        <div v-if="!isCindyAccount || editProfile?.compact_mapping_editable">
+        <div>
           <label class="input-label">{{ t('admin.accounts.openai.compactModelMapping') }}</label>
           <p class="input-hint">{{ t('admin.accounts.openai.compactModelMappingDesc') }}</p>
           <div v-if="openAICompactModelMappings.length > 0" class="mb-3 space-y-2">
@@ -2623,7 +2540,6 @@
           <button type="button" @click="addOpenAICompactModelMapping" class="btn btn-secondary text-sm">
             + {{ t('admin.accounts.addMapping') }}
           </button>
-          <button v-if="isCindyAccount" type="button" class="btn btn-secondary ml-2 text-sm" data-testid="account-edit-clear-compact-mapping" @click="providerEdit.clear('compact_model_mapping')">{{ t('admin.accounts.providerEdit.clearCompactMappings') }}</button>
         </div>
       </div>
 
@@ -2647,7 +2563,7 @@
           >
             <span
               :class="[
-                'pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out',
+                'pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow-outline ring-0 transition duration-200 ease-in-out',
                 autoPauseOnExpired ? 'translate-x-5' : 'translate-x-0'
               ]"
             />
@@ -2673,7 +2589,7 @@
             >
               <span
                 :class="[
-                  'pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out',
+                  'pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow-outline ring-0 transition duration-200 ease-in-out',
                   autoPause5hDisabled ? 'translate-x-5' : 'translate-x-0'
                 ]"
               />
@@ -2709,7 +2625,7 @@
             >
               <span
                 :class="[
-                  'pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out',
+                  'pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow-outline ring-0 transition duration-200 ease-in-out',
                   autoPause7dDisabled ? 'translate-x-5' : 'translate-x-0'
                 ]"
               />
@@ -2756,7 +2672,7 @@
           >
             <span
               :class="[
-                'pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out',
+                'pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow-outline ring-0 transition duration-200 ease-in-out',
                 autoResetCreditEnabled ? 'translate-x-5' : 'translate-x-0'
               ]"
             />
@@ -2824,7 +2740,7 @@
             >
               <span
                 :class="[
-                  'pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out',
+                  'pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow-outline ring-0 transition duration-200 ease-in-out',
                   windowCostEnabled ? 'translate-x-5' : 'translate-x-0'
                 ]"
               />
@@ -2884,7 +2800,7 @@
             >
               <span
                 :class="[
-                  'pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out',
+                  'pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow-outline ring-0 transition duration-200 ease-in-out',
                   sessionLimitEnabled ? 'translate-x-5' : 'translate-x-0'
                 ]"
               />
@@ -2941,7 +2857,7 @@
             >
               <span
                 :class="[
-                  'pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out',
+                  'pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow-outline ring-0 transition duration-200 ease-in-out',
                   rpmLimitEnabled ? 'translate-x-5' : 'translate-x-0'
                 ]"
               />
@@ -2970,10 +2886,10 @@
                   type="button"
                   @click="rpmStrategy = 'tiered'"
                   :class="[
-                    'flex-1 rounded-lg px-3 py-2 text-sm font-medium transition-all',
+                    'flex-1 rounded-none px-3 py-2 text-sm font-medium transition-all',
                     rpmStrategy === 'tiered'
                       ? 'bg-primary-100 text-primary-700 dark:bg-primary-900/30 dark:text-primary-400'
-                      : 'bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-dark-600 dark:text-gray-400 dark:hover:bg-dark-500'
+                      : 'bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-dark-600 dark:text-dark-300 dark:hover:bg-gray-600'
                   ]"
                 >
                   <div class="text-center">
@@ -2985,10 +2901,10 @@
                   type="button"
                   @click="rpmStrategy = 'sticky_exempt'"
                   :class="[
-                    'flex-1 rounded-lg px-3 py-2 text-sm font-medium transition-all',
+                    'flex-1 rounded-none px-3 py-2 text-sm font-medium transition-all',
                     rpmStrategy === 'sticky_exempt'
                       ? 'bg-primary-100 text-primary-700 dark:bg-primary-900/30 dark:text-primary-400'
-                      : 'bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-dark-600 dark:text-gray-400 dark:hover:bg-dark-500'
+                      : 'bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-dark-600 dark:text-dark-300 dark:hover:bg-gray-600'
                   ]"
                 >
                   <div class="text-center">
@@ -3054,7 +2970,7 @@
             >
               <span
                 :class="[
-                  'pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out',
+                  'pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow-outline ring-0 transition duration-200 ease-in-out',
                   tlsFingerprintEnabled ? 'translate-x-5' : 'translate-x-0'
                 ]"
               />
@@ -3089,7 +3005,7 @@
             >
               <span
                 :class="[
-                  'pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out',
+                  'pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow-outline ring-0 transition duration-200 ease-in-out',
                   sessionIdMaskingEnabled ? 'translate-x-5' : 'translate-x-0'
                 ]"
               />
@@ -3116,7 +3032,7 @@
             >
               <span
                 :class="[
-                  'pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out',
+                  'pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow-outline ring-0 transition duration-200 ease-in-out',
                   cacheTTLOverrideEnabled ? 'translate-x-5' : 'translate-x-0'
                 ]"
               />
@@ -3156,7 +3072,7 @@
             >
               <span
                 :class="[
-                  'pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out',
+                  'pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow-outline ring-0 transition duration-200 ease-in-out',
                   customBaseUrlEnabled ? 'translate-x-5' : 'translate-x-0'
                 ]"
               />
@@ -3194,7 +3110,7 @@
           </label>
           <div class="group relative">
             <span
-              class="inline-flex h-4 w-4 cursor-help items-center justify-center rounded-full bg-gray-200 text-xs text-gray-500 hover:bg-gray-300 dark:bg-dark-600 dark:text-gray-400 dark:hover:bg-dark-500"
+              class="inline-flex h-4 w-4 cursor-help items-center justify-center rounded-full bg-gray-200 text-xs text-gray-700 hover:bg-gray-300 dark:bg-dark-600 dark:text-dark-300 dark:hover:bg-gray-600"
             >
               ?
             </span>
@@ -3222,7 +3138,7 @@
           </label>
           <div class="group relative">
             <span
-              class="inline-flex h-4 w-4 cursor-help items-center justify-center rounded-full bg-gray-200 text-xs text-gray-500 hover:bg-gray-300 dark:bg-dark-600 dark:text-gray-400 dark:hover:bg-dark-500"
+              class="inline-flex h-4 w-4 cursor-help items-center justify-center rounded-full bg-gray-200 text-xs text-gray-700 hover:bg-gray-300 dark:bg-dark-600 dark:text-dark-300 dark:hover:bg-gray-600"
             >
               ?
             </span>
@@ -3237,6 +3153,15 @@
           </div>
         </div>
       </div>
+
+      <AccountSystemPromptBinding
+        v-if="account"
+        :key="account.id"
+        ref="systemPromptBinding"
+        :account-ids="[account.id]"
+        :current="account.extra?.system_prompt"
+        embedded
+      />
 
       <!-- Group Selection - 所有模式均可配置账号分组 -->
       <GroupSelector
@@ -3254,13 +3179,10 @@
         <button @click="handleClose" type="button" class="btn btn-secondary">
           {{ t('common.cancel') }}
         </button>
-        <button v-if="isCindyAccount && providerEdit.pending.value" type="button" class="btn btn-secondary" data-testid="account-edit-save-basic" :disabled="submitting" @click="handleSubmit(true)">
-          {{ t('admin.accounts.providerEdit.saveBasic') }}
-        </button>
         <button
           type="submit"
           form="edit-account-form"
-          :disabled="submitting || !providerEdit.canSubmit.value || !capacityValid || !capacityReady"
+          :disabled="submitting || !capacityValid || !capacityReady"
           class="btn btn-primary"
           data-tour="account-form-submit"
         >
@@ -3307,10 +3229,8 @@
 import { ref, reactive, computed, watch, nextTick, onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useAppStore } from '@/stores/app'
-import { useAuthStore } from '@/stores/auth'
-import { useCindyAccountEdit } from '@/features/cindy/useCindyAccountEdit'
-import { accountEditModes, applyCoreAccountModeChanges, requiresAccountEditProfile, type AccountEditInput } from '@/utils/accountEditCodec'
-import type { AccountEditChangesV1, AccountEditModeTarget, ProviderEditRequestV1 } from '@/types/accountEdit'
+import { accountEditModes, applyCoreAccountModeChanges } from '@/utils/accountEditCodec'
+import type { AccountEditChangesV1, AccountEditModeTarget } from '@/types/accountEdit'
 
 import { adminAPI } from '@/api/admin'
 import { useQuotaNotifyState } from '@/composables/useQuotaNotifyState'
@@ -3326,7 +3246,6 @@ import type {
   OllamaCloudUsageState,
   GrokMediaEligibilityMode,
   GrokMediaEligibilityState,
-  UpdateAccountRequest,
   OpenCodeGoUsageState,
   OpenCodeGoUsageWindow
 } from '@/types'
@@ -3357,6 +3276,7 @@ import CnBaseUrlPresets from '@/components/account/CnBaseUrlPresets.vue'
 import OpenCodeGoProtocolRulesEditor from '@/components/account/OpenCodeGoProtocolRulesEditor.vue'
 import HeaderOverrideEditor from '@/components/account/HeaderOverrideEditor.vue'
 import OllamaCloudUsageSettings from '@/components/account/OllamaCloudUsageSettings.vue'
+import AccountSystemPromptBinding from '@/components/admin/account/AccountSystemPromptBinding.vue'
 import {
   applyAntigravityProjectID,
   applyHeaderOverride,
@@ -3431,9 +3351,8 @@ const emit = defineEmits<{
   updated: [account: Account]
 }>()
 
-const { t, locale } = useI18n()
+const { t } = useI18n()
 const appStore = useAppStore()
-const authStore = useAuthStore()
 const browserTimeZone = getBrowserTimeZone()
 
 const selectableGroups = computed(() => {
@@ -3553,7 +3472,6 @@ onMounted(() => {
 // Platform-specific hint for Base URL
 const baseUrlHint = computed(() => {
   if (!props.account) return t('admin.accounts.baseUrlHint')
-  if (isCindyAccount.value) return profileLabel(editProfile.value?.credential_ui.hint)
   if (props.account.platform === 'openai') return t('admin.accounts.openai.baseUrlHint')
   if (props.account.platform === 'gemini') return t('admin.accounts.gemini.baseUrlHint')
   if (props.account.platform === 'grok') return ''
@@ -3578,6 +3496,7 @@ interface TempUnschedRuleForm {
 
 // State
 const submitting = ref(false)
+const systemPromptBinding = ref<InstanceType<typeof AccountSystemPromptBinding> | null>(null)
 const editBaseUrl = ref('https://api.anthropic.com')
 const editApiKey = ref('')
 
@@ -3741,12 +3660,6 @@ const modelMappings = ref<ModelMapping[]>([])
 const openAICompactModelMappings = ref<ModelMapping[]>([])
 const modelRestrictionMode = ref<'whitelist' | 'mapping'>('whitelist')
 const allowedModels = ref<string[]>([])
-const cindyManagedCatalog = computed(() => providerEdit.projection.value.models)
-const cindyManagedAliases = computed(() => providerEdit.projection.value.aliases)
-const preservedCindyManagedMappings = computed(() => Object.entries(providerEdit.draft.value?.preserved || {}).map(([from, to]) => ({ from, to })))
-const cindyCatalogLoading = computed(() => providerEdit.draft.value?.loading === true)
-const cindyCatalogLoadFailed = computed(() => !providerEdit.catalogAvailable.value)
-const isCindyAccount = computed(() => requiresAccountEditProfile(props.account))
 const coreModeChanges = ref<AccountEditChangesV1>({})
 const DEFAULT_POOL_MODE_RETRY_COUNT = 3
 const MAX_POOL_MODE_RETRY_COUNT = 10
@@ -3974,12 +3887,12 @@ const codexFingerprintModeOptions = computed(() => [
   { value: 'full' as CodexFingerprintMode, label: t('admin.accounts.openai.codexFingerprintFull') },
 ])
 
-const openAIWSModeOptions = computed(() => filterAccountEditModeOptions('responses_websocket_mode', [
+const openAIWSModeOptions = computed(() => [
   { value: OPENAI_WS_MODE_OFF, label: t('admin.accounts.openai.wsModeOff') },
   { value: OPENAI_WS_MODE_CTX_POOL, label: t('admin.accounts.openai.wsModeCtxPool') },
   { value: OPENAI_WS_MODE_PASSTHROUGH, label: t('admin.accounts.openai.wsModePassthrough') },
   { value: OPENAI_WS_MODE_HTTP_BRIDGE, label: t('admin.accounts.openai.wsModeHttpBridge') }
-]))
+])
 const openaiResponsesWebSocketV2Mode = computed({
   get: () => {
     if (props.account?.type === 'apikey') {
@@ -4009,28 +3922,28 @@ const codexImageToolOptions = computed<Array<{
     value: 'inherit',
     label: t('admin.accounts.openai.codexImageToolInherit'),
     description: t('admin.accounts.openai.codexImageToolInheritDesc'),
-    selectedCardClass: 'border-sky-300 bg-sky-50 text-sky-900 shadow-sm ring-1 ring-sky-200 dark:border-sky-700 dark:bg-sky-900/25 dark:text-sky-100 dark:ring-sky-800',
+    selectedCardClass: 'border-sky-300 bg-sky-50 text-sky-900 shadow-outline ring-1 ring-sky-200 dark:border-sky-700 dark:bg-sky-900/25 dark:text-sky-100 dark:ring-sky-800',
     selectedDotClass: 'border-sky-500 bg-sky-500 text-white'
   },
   {
     value: 'enabled',
     label: t('admin.accounts.openai.codexImageToolEnabled'),
     description: t('admin.accounts.openai.codexImageToolEnabledDesc'),
-    selectedCardClass: 'border-emerald-300 bg-emerald-50 text-emerald-900 shadow-sm ring-1 ring-emerald-200 dark:border-emerald-700 dark:bg-emerald-900/25 dark:text-emerald-100 dark:ring-emerald-800',
+    selectedCardClass: 'border-emerald-300 bg-emerald-50 text-emerald-900 shadow-outline ring-1 ring-emerald-200 dark:border-emerald-700 dark:bg-emerald-900/25 dark:text-emerald-100 dark:ring-emerald-800',
     selectedDotClass: 'border-emerald-500 bg-emerald-500 text-white'
   },
   {
     value: 'disabled',
     label: t('admin.accounts.openai.codexImageToolDisabled'),
     description: t('admin.accounts.openai.codexImageToolDisabledDesc'),
-    selectedCardClass: 'border-amber-300 bg-amber-50 text-amber-900 shadow-sm ring-1 ring-amber-200 dark:border-amber-700 dark:bg-amber-900/25 dark:text-amber-100 dark:ring-amber-800',
+    selectedCardClass: 'border-amber-300 bg-amber-50 text-amber-900 shadow-outline ring-1 ring-amber-200 dark:border-amber-700 dark:bg-amber-900/25 dark:text-amber-100 dark:ring-amber-800',
     selectedDotClass: 'border-amber-500 bg-amber-500 text-white'
   },
   {
     value: 'block',
     label: t('admin.accounts.openai.codexImageToolBlock'),
     description: t('admin.accounts.openai.codexImageToolBlockDesc'),
-    selectedCardClass: 'border-rose-300 bg-rose-50 text-rose-900 shadow-sm ring-1 ring-rose-200 dark:border-rose-700 dark:bg-rose-900/25 dark:text-rose-100 dark:ring-rose-800',
+    selectedCardClass: 'border-rose-300 bg-rose-50 text-rose-900 shadow-outline ring-1 ring-rose-200 dark:border-rose-700 dark:bg-rose-900/25 dark:text-rose-100 dark:ring-rose-800',
     selectedDotClass: 'border-rose-500 bg-rose-500 text-white'
   }
 ])
@@ -4058,20 +3971,20 @@ const codexImageToolBadgeClass = computed(() => {
       return 'bg-slate-100 text-slate-600 dark:bg-dark-600 dark:text-slate-300'
   }
 })
-const openAICompactModeOptions = computed(() => filterAccountEditModeOptions('compact_mode', [
+const openAICompactModeOptions = computed(() => [
   { value: 'auto', label: t('admin.accounts.openai.compactModeAuto') },
   { value: 'force_on', label: t('admin.accounts.openai.compactModeForceOn') },
   { value: 'force_off', label: t('admin.accounts.openai.compactModeForceOff') }
-]))
+])
 // OpenAI 订阅档位手动覆盖选项(清空 + Plus/Pro/Free;别名/自定义值友好显示且保留 canonical)
 const planTypeOptions = computed(() =>
   buildPlanTypeOptions(editPlanType.value, t('admin.accounts.openai.planTypeClear'))
 )
-const openAIResponsesModeOptions = computed(() => filterAccountEditModeOptions('responses_mode', [
+const openAIResponsesModeOptions = computed(() => [
   { value: 'auto', label: t('admin.accounts.openai.responsesModeAuto') },
   { value: 'force_responses', label: t('admin.accounts.openai.responsesModeForceResponses') },
   { value: 'force_chat_completions', label: t('admin.accounts.openai.responsesModeForceChatCompletions') }
-]))
+])
 const openAITextEndpointCapabilityLabel = computed(() => {
   if (openAIResponsesMode.value === 'force_responses') {
     return t('admin.accounts.openai.capabilityResponses')
@@ -4094,7 +4007,7 @@ const openAIEndpointCapabilityOptions = computed<{ value: OpenAIEndpointCapabili
   { value: 'seedance', label: 'Seedance (Ark)' }
 ])
 const openAITextGenerationCapabilityEnabled = computed(() =>
-  isCindyAccount.value || openAIEndpointCapabilities.value.includes('chat_completions')
+  openAIEndpointCapabilities.value.includes('chat_completions')
 )
 
 const normalizeOpenAIEndpointCapabilities = (values: OpenAIEndpointCapability[]) => {
@@ -4221,7 +4134,6 @@ const tempUnschedPresets = computed(() => [
 
 // Computed: default base URL based on platform
 const defaultBaseUrl = computed(() => {
-  if (isCindyAccount.value) return String(props.account?.credentials?.base_url || editProfile.value?.credential_ui.base_url || '')
   if (props.account?.platform === 'openai') return 'https://api.openai.com'
   if (props.account?.platform === 'gemini') return 'https://generativelanguage.googleapis.com'
   if (props.account?.platform === 'grok') return 'https://api.x.ai/v1'
@@ -4310,18 +4222,8 @@ const loadModelRestrictionFromMapping = (rawMapping?: Record<string, unknown>) =
       : 'whitelist'
 }
 
-const buildModelRestrictionMapping = () => {
-  const editableMapping = buildModelMappingObject('combined', allowedModels.value, modelMappings.value)
-  if (!isCindyAccount.value || preservedCindyManagedMappings.value.length === 0) {
-    return editableMapping
-  }
-
-  const managedEntries = preservedCindyManagedMappings.value
-    .map(mapping => [mapping.from.trim(), mapping.to.trim()])
-    .filter(([from, to]) => from && to)
-  const merged: Record<string, string> = { ...Object.fromEntries(managedEntries), ...(editableMapping || {}) }
-  return Object.keys(merged).length > 0 ? merged : null
-}
+const buildModelRestrictionMapping = () =>
+  buildModelMappingObject('combined', allowedModels.value, modelMappings.value)
 
 const applyOpenAIModelMappingCredentials = (credentials: Record<string, unknown>) => {
   const shouldApplyModelMapping = !openaiPassthroughEnabled.value
@@ -4427,8 +4329,7 @@ const syncFormFromAccount = (newAccount: Account | null) => {
   anthropicPassthroughEnabled.value = false
   anthropicAPIKeyAuthScheme.value = 'x_api_key'
   webSearchEmulationMode.value = 'default'
-  const canonicalCindy = requiresAccountEditProfile(newAccount)
-  if ((newAccount.platform === 'openai' && (newAccount.type === 'oauth' || newAccount.type === 'setup-token' || newAccount.type === 'apikey')) || canonicalCindy) {
+  if (newAccount.platform === 'openai' && (newAccount.type === 'oauth' || newAccount.type === 'setup-token' || newAccount.type === 'apikey')) {
     openaiPassthroughEnabled.value = extra?.openai_passthrough === true || extra?.openai_oauth_passthrough === true
     openaiFlattenNamespacesEnabled.value =
       newAccount.type === 'oauth' && extra?.openai_responses_flatten_namespaces === true
@@ -4673,10 +4574,8 @@ const syncFormFromAccount = (newAccount: Account | null) => {
       }
     }
     const platformDefaultUrl =
-      canonicalCindy
-        ? ''
-        : newAccount.platform === 'openai'
-          ? 'https://api.openai.com'
+      newAccount.platform === 'openai'
+        ? 'https://api.openai.com'
         : newAccount.platform === 'gemini'
           ? 'https://generativelanguage.googleapis.com'
           : newAccount.platform === 'grok'
@@ -4787,73 +4686,25 @@ async function loadTLSProfiles() {
   }
 }
 
-const providerEdit = useCindyAccountEdit({
-  active: () => props.show,
-  account: () => props.account,
-  actorID: () => authStore.user?.id,
-  readInput: (): AccountEditInput => ({
-    responses_mode: openAIResponsesMode.value,
-    compact_mode: openAICompactMode.value,
-    responses_websocket_mode: openaiResponsesWebSocketV2Mode.value,
-    model_mapping: { mode: modelRestrictionMode.value, allowed: allowedModels.value, rows: modelMappings.value },
-    compact_model_mapping: openAICompactModelMappings.value
-  }),
-  writeInput: input => {
-    openAIResponsesMode.value = input.responses_mode
-    openAICompactMode.value = input.compact_mode
-    openaiResponsesWebSocketV2Mode.value = input.responses_websocket_mode
-    modelRestrictionMode.value = input.model_mapping.mode
-    allowedModels.value = input.model_mapping.allowed
-    modelMappings.value = input.model_mapping.rows
-    openAICompactModelMappings.value = input.compact_model_mapping
-  },
-  loadContext: (id, signal) => scopedAccounts().getEditContext(id, signal)
-})
-const editProfile = computed(() => providerEdit.definition.value)
-const profileLabel = (labels?: Record<string, string>) => labels?.[locale?.value || 'en'] || labels?.en || labels?.zh || ''
-function showAccountEditMode(target: AccountEditModeTarget) {
-  if (isCindyAccount.value) return !!editProfile.value?.wire_controls.some(control => control.target === target)
-  return props.account?.platform === 'openai' && ['apikey', 'oauth', 'setup-token'].includes(props.account.type) &&
-    (target !== 'responses_mode' || props.account.type === 'apikey')
-}
-function canClearAccountEditMode(target: AccountEditModeTarget) {
-  return isCindyAccount.value && editProfile.value?.wire_controls.find(control => control.target === target)?.allow_clear === true
-}
+// Only protocol modes the admin explicitly changes are written back.
 function recordAccountMode(target: AccountEditModeTarget, value: unknown) {
   if (typeof value !== 'string' || !(accountEditModes[target].values as readonly string[]).includes(value)) return
-  if (isCindyAccount.value) providerEdit.updateInput(target, value)
-  else coreModeChanges.value = { ...coreModeChanges.value, [target]: { op: 'set', value } }
+  coreModeChanges.value = { ...coreModeChanges.value, [target]: { op: 'set', value } }
 }
-function filterAccountEditModeOptions<T extends { value: string }>(target: AccountEditModeTarget, options: T[]): T[] {
-  if (!isCindyAccount.value) return options
-  const values = editProfile.value?.wire_controls.find(control => control.target === target)?.values || []
-  return options.filter(option => (values as readonly string[]).includes(option.value))
-}
-function reconcileProviderEdit() {
-  if (!providerEdit.reconcile()) appStore.showError(t('admin.accounts.providerEdit.reloadRequired'))
-}
-watch([allowedModels, modelMappings], () => {
-  providerEdit.updateInput('model_mapping')
-}, { deep: true, flush: 'sync' })
-watch(openAICompactModelMappings, () => {
-  providerEdit.updateInput('compact_model_mapping')
-}, { deep: true, flush: 'sync' })
 
 watch(
-  [() => props.show, () => props.account, () => authStore.user?.id],
-  ([show, newAccount, actor], [wasShow, previousAccount, previousActor]) => {
+  [() => props.show, () => props.account],
+  ([show, newAccount], [wasShow, previousAccount]) => {
     if (!show || !newAccount) {
-      providerEdit.cancelRead()
       return
     }
     if (!wasShow || newAccount.id !== previousAccount?.id || newAccount.platform !== previousAccount?.platform ||
-        newAccount.type !== previousAccount?.type || actor !== previousActor) {
+        newAccount.type !== previousAccount?.type) {
       coreModeChanges.value = {}
-      providerEdit.preserveIntent(() => syncFormFromAccount(newAccount))
-      providerEdit.activate(newAccount)
+      syncFormFromAccount(newAccount)
       loadTLSProfiles()
-    } else void providerEdit.refresh()
-    // A same-account row refresh must not refill and overwrite a live native draft.
+    }
+    // A same-account row refresh must not refill and overwrite unsaved edits.
   },
   { immediate: true }
 )
@@ -4893,9 +4744,7 @@ const {
       : buildModelRestrictionMapping() ?? {},
     model_ids: [...new Set([
       ...getModelsByPlatform(props.account?.platform ?? ''), ...allowedModels.value,
-      ...openAICompactModelMappings.value.map(mapping => mapping.to),
-      ...cindyManagedCatalog.value.map(model => model.id),
-      ...cindyManagedAliases.value.map(model => model.id)
+      ...openAICompactModelMappings.value.map(mapping => mapping.to)
     ])]
   })
 })
@@ -5405,7 +5254,6 @@ const parseDateTimeLocal = parseDateTimeLocalInput
 
 // Methods
 const handleClose = () => {
-  providerEdit.resetCurrent()
   resetCapacityState()
   antigravityMixedChannelConfirmed.value = false
   clearMixedChannelDialog()
@@ -5449,27 +5297,23 @@ const persistGrokMediaEligibility = async (accountID: number, updatedAccount: Ac
   return updatedAccount
 }
 
-const submitUpdateAccount = async (accountID: number, updatePayload: Record<string, unknown>, basicOnly = false) => {
+const submitUpdateAccount = async (accountID: number, updatePayload: Record<string, unknown>) => {
   submitting.value = true
   try {
-    const actor = authStore.user?.id
-    if (props.account?.id !== accountID) throw new Error('Account edit target changed')
-    providerEdit.assertRequest(updatePayload.provider_edit as ProviderEditRequestV1 | undefined)
-    const client = scopedAccounts()
-    let updatedAccount = await client.update(accountID, withAntigravityConfirmFlag(updatePayload))
-    if (props.account?.id !== accountID || authStore.user?.id !== actor) return
+    let updatedAccount = await adminAPI.accounts.update(accountID, withAntigravityConfirmFlag(updatePayload))
     updatedAccount = await persistGrokMediaEligibility(accountID, updatedAccount)
+    const systemPrompt = await systemPromptBinding.value?.saveIfChanged()
+    if (systemPrompt) updatedAccount = { ...updatedAccount, extra: { ...(updatedAccount.extra || {}), system_prompt: systemPrompt } }
     appStore.showSuccess(t('admin.accounts.accountUpdated'))
     emit('updated', updatedAccount)
-    if (basicOnly) await providerEdit.refresh()
-    else handleClose()
+    handleClose()
   } catch (error: any) {
     if (error.status === 409 && error.error === 'mixed_channel_warning' && needsMixedChannelCheck()) {
       openMixedChannelDialog({
         message: error.message,
         onConfirm: async () => {
           antigravityMixedChannelConfirmed.value = true
-          await submitUpdateAccount(accountID, updatePayload, basicOnly)
+          await submitUpdateAccount(accountID, updatePayload)
         }
       })
       return
@@ -5480,17 +5324,13 @@ const submitUpdateAccount = async (accountID: number, updatePayload: Record<stri
   }
 }
 
-const handleSubmit = async (basicOnly = false) => {
+const handleSubmit = async () => {
   if (!props.account) return
-  if (!basicOnly && !providerEdit.canSubmit.value) {
-    appStore.showError(t('admin.accounts.providerEdit.unavailable'))
-    return
-  }
-  if (!basicOnly && !capacityReady.value) {
+  if (!capacityReady.value) {
     appStore.showError(t(capacityLoadFailed.value ? 'admin.accounts.contextCapacity.loadFailed' : 'admin.accounts.contextCapacity.loading'))
     return
   }
-  if (!basicOnly && !capacityValid.value) {
+  if (!capacityValid.value) {
     appStore.showError(t('admin.accounts.contextCapacity.invalid'))
     return
   }
@@ -5500,7 +5340,7 @@ const handleSubmit = async (basicOnly = false) => {
     appStore.showError(t('admin.accounts.pleaseSelectStatus'))
     return
   }
-	if (!basicOnly && autoResetCreditEnabled.value) {
+	if (autoResetCreditEnabled.value) {
 		const thresholds = [autoResetCredit5hThreshold.value, autoResetCredit7dThreshold.value]
 		if (thresholds.some((value) => !Number.isFinite(value) || value < 0.1 || value > 100)) {
 			appStore.showError(t('admin.accounts.autoResetCredit.thresholdInvalid'))
@@ -5523,12 +5363,6 @@ const handleSubmit = async (basicOnly = false) => {
       updatePayload.load_factor = 0
     }
     updatePayload.auto_pause_on_expired = autoPauseOnExpired.value
-    if (basicOnly) {
-      // Explicitly save only the native basic form. No credential/Extra snapshot,
-      // capacity edit or pending provider intent is sent or discarded.
-      await submitUpdateAccount(accountID, updatePayload, true)
-      return
-    }
     if (props.account.type === 'apikey') {
       updatePayload.upstream_billing_probe_enabled = upstreamBillingAutoProbeEnabled.value
       updatePayload.upstream_billing_rate_sync_enabled = upstreamBillingRateSyncEnabled.value
@@ -5545,9 +5379,9 @@ const handleSubmit = async (basicOnly = false) => {
 
       // Always update credentials for apikey type to handle model mapping changes
       const newCredentials: Record<string, unknown> = {
-        ...currentCredentials
+        ...currentCredentials,
+        base_url: newBaseUrl
       }
-      if (!isCindyAccount.value) newCredentials.base_url = newBaseUrl
 
       // 国产供应商：模式与协议写入凭据（决定额度/余额探测与转发端点/格式）。
       if (isCNApiKeyAccount.value) {
@@ -5609,8 +5443,6 @@ const handleSubmit = async (basicOnly = false) => {
       }
       if (props.account.platform === 'openai') {
         applyOpenAIEndpointCapabilities(newCredentials)
-      }
-      if (props.account.platform === 'openai' || isCindyAccount.value) {
         const compactModelMapping = buildModelMappingObject('mapping', [], openAICompactModelMappings.value)
         if (compactModelMapping) {
           newCredentials.compact_model_mapping = compactModelMapping
@@ -6222,7 +6054,6 @@ const handleSubmit = async (basicOnly = false) => {
     }
     const overrides = buildCapacityPatch()
     if (Object.keys(overrides).length) updatePayload.model_context_overrides = overrides
-    providerEdit.prepare(updatePayload as UpdateAccountRequest)
 
     const canContinue = await ensureAntigravityMixedChannelConfirmed(async () => {
       await submitUpdateAccount(accountID, updatePayload)

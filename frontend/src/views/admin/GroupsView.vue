@@ -11,7 +11,7 @@
               <Icon
                 name="search"
                 size="md"
-                class="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 dark:text-gray-500"
+                class="absolute left-3 top-1/2 -translate-y-1/2 text-muted"
               />
               <input
                 v-model="searchQuery"
@@ -60,16 +60,6 @@
                 size="md"
                 :class="loading ? 'animate-spin' : ''"
               />
-            </button>
-            <button
-              type="button"
-              class="btn btn-secondary"
-              :title="t('admin.groups.cindyAudit.open')"
-              data-test="cindy-group-audit-open"
-              @click="showCindyGroupAudit = true"
-            >
-              <Icon name="shield" size="md" class="mr-2" />
-              <span class="hidden sm:inline">{{ t("admin.groups.cindyAudit.open") }}</span>
             </button>
             <div class="relative" ref="columnDropdownRef">
               <button
@@ -149,7 +139,7 @@
           <template #cell-platform="{ value }">
             <span
               :class="[
-                'inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-medium',
+                'inline-flex items-center gap-1.5 rounded-none px-2.5 py-0.5 text-xs font-medium',
                 value === 'anthropic'
                   ? 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400'
                   : value === 'openai'
@@ -181,7 +171,7 @@
               <!-- Type Badge -->
               <span
                 :class="[
-                  'inline-block rounded-full px-2 py-0.5 text-xs font-medium',
+                  'inline-block rounded-none px-2 py-0.5 text-xs font-medium',
                   row.subscription_type === 'subscription'
                     ? 'bg-violet-100 text-violet-700 dark:bg-violet-900/30 dark:text-violet-400'
                     : 'bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-300',
@@ -209,7 +199,7 @@
                   <span v-if="row.daily_limit_usd" class="whitespace-nowrap">
                     <span
                       v-if="usageLoading"
-                      class="font-medium text-gray-400 dark:text-gray-500"
+                      class="font-medium text-muted"
                       >—</span
                     >
                     <span
@@ -224,7 +214,7 @@
                         formatUsd(usageMap.get(row.id)?.today_cost ?? 0)
                       }}</span
                     >
-                    <span class="text-gray-400 dark:text-gray-500">
+                    <span class="text-muted">
                       / {{ formatUsd(row.daily_limit_usd) }}/{{
                         t("admin.groups.limitDay")
                       }}</span
@@ -254,10 +244,10 @@
                     }}</span
                   >
                 </div>
-                <span v-else class="text-gray-400 dark:text-gray-500">{{
+                <span v-else class="text-muted">{{
                   t("admin.groups.subscription.noLimit")
                 }}</span>
-                <div class="text-gray-400 dark:text-gray-500">
+                <div class="text-muted">
                   {{ t("admin.groups.usageTotal") }}
                   <span class="ml-1 font-medium text-gray-600 dark:text-gray-300"
                     >{{
@@ -346,7 +336,7 @@
             <div v-if="usageLoading" class="text-xs text-gray-400">—</div>
             <div v-else class="space-y-0.5 text-xs">
               <div class="text-gray-500 dark:text-gray-400">
-                <span class="text-gray-400 dark:text-gray-500">{{
+                <span class="text-muted">{{
                   t("admin.groups.usageToday")
                 }}</span>
                 <span class="ml-1 font-medium text-gray-700 dark:text-gray-300"
@@ -356,7 +346,7 @@
                 >
               </div>
               <div class="text-gray-500 dark:text-gray-400">
-                <span class="text-gray-400 dark:text-gray-500">{{
+                <span class="text-muted">{{
                   t("admin.groups.usageYesterday")
                 }}</span>
                 <span class="ml-1 font-medium text-gray-700 dark:text-gray-300"
@@ -366,7 +356,7 @@
                 >
               </div>
               <div class="text-gray-500 dark:text-gray-400">
-                <span class="text-gray-400 dark:text-gray-500">{{
+                <span class="text-muted">{{
                   t("admin.groups.usageTotal")
                 }}</span>
                 <span class="ml-1 font-medium text-gray-700 dark:text-gray-300"
@@ -418,17 +408,6 @@
                       : t("admin.groups.duplicate")
                   }}
                 </span>
-              </button>
-              <button
-                v-if="row.platform === 'cindy'"
-                data-test="group-cindy-accounts"
-                :title="t('admin.groups.cindyAccounts')"
-                :aria-label="t('admin.groups.cindyAccounts')"
-                @click="openCindyAccounts(row)"
-                class="flex flex-col items-center gap-0.5 rounded-lg p-1.5 text-gray-500 transition-colors hover:bg-cyan-50 hover:text-cyan-600 dark:hover:bg-cyan-900/20 dark:hover:text-cyan-400"
-              >
-                <Icon name="users" size="sm" />
-                <span class="text-xs">{{ t('admin.groups.cindyAccounts') }}</span>
               </button>
               <button
                 v-if="!authStore.isSimpleMode && row.platform === 'composite'"
@@ -553,7 +532,7 @@
                 name="questionCircle"
                 size="sm"
                 :stroke-width="2"
-                class="cursor-help text-gray-400 transition-colors hover:text-primary-500 dark:text-gray-500 dark:hover:text-primary-400"
+                class="cursor-help text-muted transition-colors hover:text-primary-500 dark:hover:text-primary-400"
               />
               <div
                 class="pointer-events-none absolute bottom-full left-0 z-50 mb-2 w-72 opacity-0 transition-all duration-200 group-hover:pointer-events-auto group-hover:opacity-100"
@@ -682,7 +661,7 @@
                 name="questionCircle"
                 size="sm"
                 :stroke-width="2"
-                class="cursor-help text-gray-400 transition-colors hover:text-primary-500 dark:text-gray-500 dark:hover:text-primary-400"
+                class="cursor-help text-muted transition-colors hover:text-primary-500 dark:hover:text-primary-400"
               />
               <!-- Tooltip Popover -->
               <div
@@ -803,7 +782,7 @@
           </div>
           <div
             v-if="createModelAllowlistState.enabled"
-            class="overflow-hidden rounded-lg border border-gray-200 bg-gray-50/50 dark:border-dark-600 dark:bg-dark-800/40"
+            class="overflow-hidden rounded-lg border rounded-none border-gray-200 bg-gray-50/50 dark:border-dark-600 dark:bg-dark-800"
           >
             <div
               v-if="!createModelAllowlistLoading && createModelAllowlistState.items.length > 0"
@@ -1253,7 +1232,7 @@
                 name="questionCircle"
                 size="sm"
                 :stroke-width="2"
-                class="cursor-help text-gray-400 transition-colors hover:text-primary-500 dark:text-gray-500 dark:hover:text-primary-400"
+                class="cursor-help text-muted transition-colors hover:text-primary-500 dark:hover:text-primary-400"
               />
               <div
                 class="pointer-events-none absolute bottom-full left-0 z-50 mb-2 w-72 opacity-0 transition-all duration-200 group-hover:pointer-events-auto group-hover:opacity-100"
@@ -1326,7 +1305,7 @@
                 name="questionCircle"
                 size="sm"
                 :stroke-width="2"
-                class="cursor-help text-gray-400 transition-colors hover:text-primary-500 dark:text-gray-500 dark:hover:text-primary-400"
+                class="cursor-help text-muted transition-colors hover:text-primary-500 dark:hover:text-primary-400"
               />
               <div
                 class="pointer-events-none absolute bottom-full left-0 z-50 mb-2 w-72 opacity-0 transition-all duration-200 group-hover:pointer-events-auto group-hover:opacity-100"
@@ -1368,7 +1347,7 @@
                 name="questionCircle"
                 size="sm"
                 :stroke-width="2"
-                class="cursor-help text-gray-400 transition-colors hover:text-primary-500 dark:text-gray-500 dark:hover:text-primary-400"
+                class="cursor-help text-muted transition-colors hover:text-primary-500 dark:hover:text-primary-400"
               />
               <div
                 class="pointer-events-none absolute bottom-full left-0 z-50 mb-2 w-72 opacity-0 transition-all duration-200 group-hover:pointer-events-auto group-hover:opacity-100"
@@ -1618,7 +1597,7 @@
               class="relative overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm dark:border-dark-600 dark:bg-dark-800"
             >
               <div
-                class="border-b border-gray-100 bg-gray-50/80 px-4 py-3 dark:border-dark-700 dark:bg-dark-700/50"
+                class="border-b border-gray-100 bg-gray-50/80 px-4 py-3 dark:border-dark-700 dark:bg-dark-700"
               >
                 <div class="flex items-center gap-2">
                   <div class="h-2 w-2 rounded-full bg-blue-500"></div>
@@ -1704,7 +1683,7 @@
                 </div>
               </div>
 
-              <div class="p-4 bg-gray-50/30 dark:bg-dark-800/30">
+              <div class="p-4 bg-gray-50/30 dark:bg-dark-800">
                 <div
                   v-if="createForm.exact_model_mappings.length === 0"
                   class="flex items-center justify-between gap-3 rounded-xl border-2 border-dashed border-primary-200 bg-white px-5 py-4 text-sm text-primary-700 transition-colors hover:border-primary-300 dark:border-primary-900/40 dark:bg-dark-800 dark:text-primary-300 dark:hover:border-primary-800"
@@ -1880,7 +1859,7 @@
                 name="questionCircle"
                 size="sm"
                 :stroke-width="2"
-                class="cursor-help text-gray-400 transition-colors hover:text-primary-500 dark:text-gray-500 dark:hover:text-primary-400"
+                class="cursor-help text-muted transition-colors hover:text-primary-500 dark:hover:text-primary-400"
               />
               <div
                 class="pointer-events-none absolute bottom-full left-0 z-50 mb-2 w-80 opacity-0 transition-all duration-200 group-hover:pointer-events-auto group-hover:opacity-100"
@@ -2142,7 +2121,7 @@
                 name="questionCircle"
                 size="sm"
                 :stroke-width="2"
-                class="cursor-help text-gray-400 transition-colors hover:text-primary-500 dark:text-gray-500 dark:hover:text-primary-400"
+                class="cursor-help text-muted transition-colors hover:text-primary-500 dark:hover:text-primary-400"
               />
               <div
                 class="pointer-events-none absolute bottom-full left-0 z-50 mb-2 w-72 opacity-0 transition-all duration-200 group-hover:pointer-events-auto group-hover:opacity-100"
@@ -2268,7 +2247,7 @@
                 name="questionCircle"
                 size="sm"
                 :stroke-width="2"
-                class="cursor-help text-gray-400 transition-colors hover:text-primary-500 dark:text-gray-500 dark:hover:text-primary-400"
+                class="cursor-help text-muted transition-colors hover:text-primary-500 dark:hover:text-primary-400"
               />
               <!-- Tooltip Popover -->
               <div
@@ -2394,7 +2373,7 @@
           </div>
           <div
             v-if="editModelAllowlistState.enabled"
-            class="overflow-hidden rounded-lg border border-gray-200 bg-gray-50/50 dark:border-dark-600 dark:bg-dark-800/40"
+            class="overflow-hidden rounded-none border border-gray-200 bg-gray-50/50 dark:border-dark-600 dark:bg-dark-800"
           >
             <div
               v-if="!editModelAllowlistLoading && editModelAllowlistState.items.length > 0"
@@ -2844,7 +2823,7 @@
                 name="questionCircle"
                 size="sm"
                 :stroke-width="2"
-                class="cursor-help text-gray-400 transition-colors hover:text-primary-500 dark:text-gray-500 dark:hover:text-primary-400"
+                class="cursor-help text-muted transition-colors hover:text-primary-500 dark:hover:text-primary-400"
               />
               <div
                 class="pointer-events-none absolute bottom-full left-0 z-50 mb-2 w-72 opacity-0 transition-all duration-200 group-hover:pointer-events-auto group-hover:opacity-100"
@@ -2917,7 +2896,7 @@
                 name="questionCircle"
                 size="sm"
                 :stroke-width="2"
-                class="cursor-help text-gray-400 transition-colors hover:text-primary-500 dark:text-gray-500 dark:hover:text-primary-400"
+                class="cursor-help text-muted transition-colors hover:text-primary-500 dark:hover:text-primary-400"
               />
               <div
                 class="pointer-events-none absolute bottom-full left-0 z-50 mb-2 w-72 opacity-0 transition-all duration-200 group-hover:pointer-events-auto group-hover:opacity-100"
@@ -2959,7 +2938,7 @@
                 name="questionCircle"
                 size="sm"
                 :stroke-width="2"
-                class="cursor-help text-gray-400 transition-colors hover:text-primary-500 dark:text-gray-500 dark:hover:text-primary-400"
+                class="cursor-help text-muted transition-colors hover:text-primary-500 dark:hover:text-primary-400"
               />
               <div
                 class="pointer-events-none absolute bottom-full left-0 z-50 mb-2 w-72 opacity-0 transition-all duration-200 group-hover:pointer-events-auto group-hover:opacity-100"
@@ -3218,7 +3197,7 @@
               class="relative overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm dark:border-dark-600 dark:bg-dark-800"
             >
               <div
-                class="border-b border-gray-100 bg-gray-50/80 px-4 py-3 dark:border-dark-700 dark:bg-dark-700/50"
+                class="border-b border-gray-100 bg-gray-50/80 px-4 py-3 dark:border-dark-700 dark:bg-dark-700"
               >
                 <div class="flex items-center gap-2">
                   <div class="h-2 w-2 rounded-full bg-blue-500"></div>
@@ -3304,7 +3283,7 @@
                 </div>
               </div>
 
-              <div class="p-4 bg-gray-50/30 dark:bg-dark-800/30">
+              <div class="p-4 bg-gray-50/30 dark:bg-dark-800">
                 <div
                   v-if="editForm.exact_model_mappings.length === 0"
                   class="flex items-center justify-between gap-3 rounded-xl border-2 border-dashed border-primary-200 bg-white px-5 py-4 text-sm text-primary-700 transition-colors hover:border-primary-300 dark:border-primary-900/40 dark:bg-dark-800 dark:text-primary-300 dark:hover:border-primary-800"
@@ -3480,7 +3459,7 @@
                 name="questionCircle"
                 size="sm"
                 :stroke-width="2"
-                class="cursor-help text-gray-400 transition-colors hover:text-primary-500 dark:text-gray-500 dark:hover:text-primary-400"
+                class="cursor-help text-muted transition-colors hover:text-primary-500 dark:hover:text-primary-400"
               />
               <div
                 class="pointer-events-none absolute bottom-full left-0 z-50 mb-2 w-80 opacity-0 transition-all duration-200 group-hover:pointer-events-auto group-hover:opacity-100"
@@ -3739,7 +3718,7 @@
               <div class="text-xs text-gray-500 dark:text-gray-400">
                 <span
                   :class="[
-                    'inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium',
+                    'inline-flex items-center gap-1 rounded-none px-2 py-0.5 text-xs font-medium',
                     group.platform === 'anthropic'
                       ? 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400'
                       : group.platform === 'openai'
@@ -4184,19 +4163,12 @@
       @close="showRPMOverridesModal = false"
       @success="loadGroups"
     />
-
-    <CindyGroupAuditDialog
-      :show="showCindyGroupAudit"
-      @close="showCindyGroupAudit = false"
-      @split="handleCindyGroupSplit"
-    />
   </AppLayout>
 </template>
 
 <script setup lang="ts">
 import { ref, reactive, computed, onMounted, onUnmounted, watch } from "vue";
 import { useI18n } from "vue-i18n";
-import { useRouter } from "vue-router";
 import { useAppStore } from "@/stores/app";
 import { useAuthStore } from "@/stores/auth";
 import { useOnboardingStore } from "@/stores/onboarding";
@@ -4231,7 +4203,6 @@ import Icon from "@/components/icons/Icon.vue";
 import GroupRateMultipliersModal from "@/components/admin/group/GroupRateMultipliersModal.vue";
 import GroupRPMOverridesModal from "@/components/admin/group/GroupRPMOverridesModal.vue";
 import GroupCapacityBadge from "@/components/common/GroupCapacityBadge.vue";
-import CindyGroupAuditDialog from "@/features/cindy-group-split/CindyGroupAuditDialog.vue";
 import ReasoningEffortPolicyFields from "@/components/admin/group/ReasoningEffortPolicyFields.vue";
 import CodexManifestAccountsField from "@/components/admin/group/CodexManifestAccountsField.vue";
 import PricingEntryCard from "@/components/admin/channel/PricingEntryCard.vue";
@@ -4373,7 +4344,6 @@ const groupPricingToAPI = (
     }));
 
 const { t } = useI18n();
-const router = useRouter();
 const appStore = useAppStore();
 const authStore = useAuthStore();
 const onboardingStore = useOnboardingStore();
@@ -4548,7 +4518,7 @@ const platformFilterOptions = computed(() => [
 ]);
 
 const compositeRoutePlatformOptions = computed(() => [
-  ...CONCRETE_PLATFORM_OPTIONS.filter((option) => option.value !== "cindy"),
+  ...CONCRETE_PLATFORM_OPTIONS,
 ]);
 
 const compositeRouteEndpointOptions = computed(() => [
@@ -4767,14 +4737,12 @@ const showRateMultipliersModal = ref(false);
 const rateMultipliersGroup = ref<AdminGroup | null>(null);
 const showRPMOverridesModal = ref(false);
 const rpmOverridesGroup = ref<AdminGroup | null>(null);
-const showCindyGroupAudit = ref(false);
 const sortableGroups = ref<AdminGroup[]>([]);
 type ConcreteGroupPlatform = Exclude<GroupPlatform, "composite">;
-type CompositeTargetPlatform = Exclude<ConcreteGroupPlatform, "cindy">;
 type CompositeRouteFormState = {
   public_model: string;
   match_type: CompositeRouteMatchType;
-  target_platform: CompositeTargetPlatform;
+  target_platform: ConcreteGroupPlatform;
   upstream_model: string;
   endpoint: CompositeRouteEndpoint;
   priority: number;
@@ -5563,10 +5531,6 @@ const loadGroups = async () => {
   }
 };
 
-const handleCindyGroupSplit = () => {
-  void loadGroups();
-};
-
 const formatCost = (cost: number): string => {
   if (cost >= 1000) return cost.toFixed(0);
   if (cost >= 100) return cost.toFixed(1);
@@ -6094,17 +6058,6 @@ const closeEditModal = () => {
   editCodexManifestRef.value?.resetValidation?.();
 };
 
-const openCindyAccounts = (group: AdminGroup) => {
-  void router.push({
-    path: '/admin/accounts',
-    query: {
-      platforms: 'cindy',
-      cindy_only: 'true',
-      group_id: String(group.id)
-    }
-  })
-}
-
 const handleUpdateGroup = async () => {
   if (!editingGroup.value) return;
   if (!editForm.name.trim()) {
@@ -6414,12 +6367,6 @@ const closeCompositeRoutesModal = () => {
 };
 
 const editCompositeRoute = (route: CompositeModelRoute) => {
-  // Strict Cindy routing is channel-owned and cannot be a Composite target.
-  // Fail closed if an older or malformed server row reaches this editor.
-  if (route.target_platform === "cindy") {
-    appStore.showError(t("admin.groups.compositeRoutes.failedToLoad"));
-    return;
-  }
   compositeRouteEditingId.value = route.id;
   compositeRouteForm.public_model = route.public_model;
   compositeRouteForm.match_type = route.match_type;

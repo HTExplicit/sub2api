@@ -52,16 +52,12 @@
           </div>
           <p v-if="typeof item.metadata.message === 'string'" class="mt-2 break-words text-xs" :class="item.status === 'failed' ? 'text-red-600 dark:text-red-400' : 'text-muted'">{{ item.metadata.message }}</p>
           <p v-else-if="item.error_message" class="mt-2 break-words text-xs text-red-600 dark:text-red-400">{{ item.error_message }}</p>
-          <p v-if="job.kind === 'account_batch_test' && item.error_code" class="mt-1 text-xs text-muted">{{ item.error_code }}</p>
-          <p v-if="item.metadata.output_limited" class="mt-1 text-xs text-muted">{{ t('admin.accounts.batchTest.outputLimited') }}</p>
-          <p v-if="typeof item.metadata.recovery_status === 'string'" class="mt-1 text-xs" :class="item.metadata.recovery_status === 'warning' ? 'text-amber-600' : 'text-muted'">{{ t(`admin.accounts.batchTest.recovery.${item.metadata.recovery_status}`) }}</p>
           <dl v-if="resultFacts(item).length" class="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted">
             <div v-for="(fact, index) in resultFacts(item)" :key="index" class="flex gap-1">
               <dt>{{ fact.label[locale || 'zh'] || fact.label.zh || fact.label.en }}</dt>
               <dd>{{ fact.timestamp ? formatDateTime(fact.value) : fact.value }}</dd>
             </div>
           </dl>
-          <p v-if="typeof item.metadata.latency_ms === 'number'" class="mt-1 text-xs tabular-nums text-muted">{{ item.metadata.latency_ms }} ms</p>
         </div>
         <p v-if="!store.items.length" class="py-5 text-center text-sm text-muted">{{ t(store.loadingCurrent ? 'common.loading' : store.itemFilter ? 'admin.accountTasks.noFailures' : 'admin.accountTasks.awaitingResults') }}</p>
       </div>

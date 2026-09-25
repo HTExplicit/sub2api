@@ -1,4 +1,3 @@
-import { cindyAccount } from '@/__tests__/fixtures/cindyAccount'
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { DOMWrapper, flushPromises, mount } from '@vue/test-utils'
@@ -106,7 +105,7 @@ const AccountStatsModalStub = defineComponent({
   template: '<div data-test="stats-account">{{ show ? account?.name : "" }}</div>'
 })
 
-function mountView(props: { scope?: 'all' | 'cindy' } = {}, stubActionMenu = true) {
+function mountView(props: Record<string, unknown> = {}, stubActionMenu = true) {
   return mount(AccountsView, {
     props,
     attachTo: document.body,
@@ -229,21 +228,6 @@ describe('admin AccountsView lite account list', () => {
     await historyButton.trigger('click')
     await flushPromises()
     expect(openHistory).toHaveBeenCalledTimes(1)
-    wrapper.unmount()
-  })
-
-  it('keeps Cindy scope filters on compact requests', async () => {
-
-    listAccounts.mockResolvedValue({ items: [cindyAccount(42)], total: 1, page: 1, page_size: 20, pages: 1 })
-    const wrapper = mountView({ scope: 'cindy' })
-    await flushPromises()
-
-    expect(listAccounts).toHaveBeenCalledWith(
-      1, 20,
-      expect.objectContaining({ lite: '1', cindy_only: 'true' }),
-      expect.objectContaining({ signal: expect.any(AbortSignal) })
-    )
-    expect(listAccounts.mock.calls.every(call => call[4] === undefined)).toBe(true)
     wrapper.unmount()
   })
 
