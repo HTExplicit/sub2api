@@ -269,7 +269,7 @@ const iconInfo = computed(() => iconKey.value ? iconData[iconKey.value] : null)
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  border-radius: 0;
+  border-radius: 4px;
   background: #6366f1;
   color: white;
   font-weight: 600;

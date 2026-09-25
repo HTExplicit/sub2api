@@ -9,8 +9,9 @@
  * Colour roles: neutral families (gray/slate/zinc/neutral/stone, dark) resolve per utility
  * (fill, line, text) because upstream uses one shade for several roles; hue families fold into
  * five semantic families (danger, warning, info, success, purple); `primary` is the ink action
- * colour. Solid primary fills export `--theme-on-fill`, which `text-white` reads, so white text on
- * a primary fill follows the fill in dark mode (near-white fill, near-black text).
+ * colour. Solid primary fills export `--theme-on-fill`, which `text-white` and `bg-white` read, so
+ * white text or knobs on a primary fill follow the fill in dark mode (near-white fill, near-black
+ * foreground).
  */
 import defaultColors from 'tailwindcss/colors'
 import plugin from 'tailwindcss/plugin'
@@ -122,6 +123,10 @@ export default {
       textColor: {
         ...neutralColors('text'),
         primary: rolePalette(UPSTREAM_PRIMARY, 'primary', 'text'),
+        white: rgbVar('--theme-on-fill', '255 255 255')
+      },
+      // White on a primary fill (switch knobs, chips on primary banners) is its foreground too.
+      backgroundColor: {
         white: rgbVar('--theme-on-fill', '255 255 255')
       },
       borderColor: lineColors,
