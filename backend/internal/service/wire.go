@@ -854,6 +854,17 @@ func ProvideScheduledTestRunnerService(
 	return svc
 }
 
+// ProvideUpstreamModelCatalogRefreshService creates and starts the daily
+// refresh of API-key accounts' upstream model catalogs and capacities.
+func ProvideUpstreamModelCatalogRefreshService(
+	accountRepo AccountRepository,
+	accountTestSvc *AccountTestService,
+) *UpstreamModelCatalogRefreshService {
+	svc := NewUpstreamModelCatalogRefreshService(accountRepo, accountTestSvc)
+	svc.Start()
+	return svc
+}
+
 // ProvideOpsScheduledReportService creates and starts OpsScheduledReportService.
 func ProvideOpsScheduledReportService(
 	opsService *OpsService,
@@ -1176,6 +1187,7 @@ var ProviderSet = wire.NewSet(
 	ProvideIdempotencyCleanupService,
 	ProvideScheduledTestService,
 	ProvideScheduledTestRunnerService,
+	ProvideUpstreamModelCatalogRefreshService,
 	NewGroupCapacityService,
 	NewChannelService,
 	wire.Bind(new(ChannelCacheInvalidator), new(*ChannelService)),

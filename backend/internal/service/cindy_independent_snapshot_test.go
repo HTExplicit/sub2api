@@ -203,7 +203,6 @@ func TestCindyIndependentSnapshotCacheAndProjectionUseOneReply(t *testing.T) {
 	require.NoError(t, err)
 	require.Contains(t, string(merged.Body), "ordinary-authority")
 	require.Contains(t, string(merged.Body), `"custom":"kept"`)
-	require.False(t, merged.capacityProtectedModels["fixture-default-a"], "same-name ordinary provider metadata keeps precedence")
 	requestA := openAIModelsRequest{accountID: account.ID, cindyCatalogEnabled: true, cindyCatalogVersion: first.Namespace}
 	second, err := LoadCindyCatalogSnapshot(context.Background(), account)
 	require.NoError(t, err)

@@ -42,8 +42,8 @@ func TestAccountHandlerModelContextCapacityGetUsesOnlyLocalState(t *testing.T) {
 		Credentials: map[string]any{"api_key": "never-return-secret", "base_url": "https://private-upstream.example", "model_mapping": map[string]any{"public-model": "real-model"}},
 		Extra:       map[string]any{service.ModelContextOverridesExtraKey: map[string]int64{"real-model": 1050000}},
 	}
-	stub.getAccountResult.SetUpstreamModelContextCapacitySnapshot(service.UpstreamModelContextCapacitySnapshot{
-		ObservedAt: "2026-09-07T00:00:00Z", Models: map[string]service.ModelContextCapacity{"real-model": {ContextWindow: 500000}},
+	stub.getAccountResult.SetUpstreamModelMetadataSnapshot(service.UpstreamModelMetadataSnapshot{
+		Source: "upstream", SyncedAt: "2026-09-07T00:00:00Z", Models: map[string]service.UpstreamModelMetadata{"real-model": {ID: "real-model", ContextWindow: 500000}},
 	})
 	router := setupModelContextCapacityRouter(stub) // No accountTestService or upstream clients.
 	rec := httptest.NewRecorder()
@@ -80,14 +80,14 @@ func TestAccountHandlerModelContextCapacityPreviewNeedsNoAPIKeyAndDoesNotPersist
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &payload))
 	require.Len(t, payload.Data.Rows, 1)
 	require.Equal(t, "unknown-new-model", payload.Data.Rows[0].ID)
-	require.Equal(t, int64(200000), payload.Data.Rows[0].Effective)
+	require.Zero(t, payload.Data.Rows[0].Effective, "an unknown model is not given a default window")
 	require.Equal(t, []string{"friendly-name"}, payload.Data.Rows[0].Aliases)
 	require.Empty(t, stub.createdAccounts)
 	require.Zero(t, stub.updateAccountCalls)
 	require.Zero(t, stub.updateAccountExtraCalls)
 }
 
-func TestAccountHandlerModelContextCapacityPreviewCannotReclassifyProtectedAccount(t *testing.T) {
+func TestAccountHandlerModelContextCapacityPreviewDoesNotMutateStoredOAuthAccount(t *testing.T) {
 	stub := newStubAdminService()
 	stub.getAccountResult = &service.Account{ID: 19, Platform: service.PlatformOpenAI, Type: service.AccountTypeOAuth,
 		Credentials: map[string]any{"base_url": "https://chatgpt.com", "model_mapping": map[string]any{"gpt-5.4": "gpt-5.4"}},
@@ -102,7 +102,7 @@ func TestAccountHandlerModelContextCapacityPreviewCannotReclassifyProtectedAccou
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &payload))
 	require.NotEmpty(t, payload.Data.Rows)
 	for _, row := range payload.Data.Rows {
-		require.False(t, row.Editable)
+		require.True(t, row.Editable, "every account accepts overrides")
 	}
 	require.Equal(t, "https://chatgpt.com", stub.getAccountResult.Credentials["base_url"])
 	require.Equal(t, service.AccountTypeOAuth, stub.getAccountResult.Type)
@@ -113,8 +113,8 @@ func TestAccountHandlerModelContextCapacityPreviewNewEndpointDoesNotReuseOldObse
 	stub.getAccountResult = &service.Account{ID: 20, Platform: service.PlatformOpenAI, Type: service.AccountTypeAPIKey,
 		Credentials: map[string]any{"base_url": "https://old-source.example/v1"},
 	}
-	stub.getAccountResult.SetUpstreamModelContextCapacitySnapshot(service.UpstreamModelContextCapacitySnapshot{
-		ObservedAt: "2026-09-01T00:00:00Z", Models: map[string]service.ModelContextCapacity{"unknown-model": {ContextWindow: 900000}},
+	stub.getAccountResult.SetUpstreamModelMetadataSnapshot(service.UpstreamModelMetadataSnapshot{
+		Source: "upstream", SyncedAt: "2026-09-01T00:00:00Z", Models: map[string]service.UpstreamModelMetadata{"unknown-model": {ID: "unknown-model", ContextWindow: 900000}},
 	})
 	router := setupModelContextCapacityRouter(stub)
 	rec := httptest.NewRecorder()
@@ -126,9 +126,9 @@ func TestAccountHandlerModelContextCapacityPreviewNewEndpointDoesNotReuseOldObse
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &payload))
 	require.Len(t, payload.Data.Rows, 1)
 	require.Nil(t, payload.Data.Rows[0].Upstream)
-	require.Equal(t, int64(200000), payload.Data.Rows[0].Effective)
+	require.Zero(t, payload.Data.Rows[0].Effective)
 	require.Equal(t, "https://old-source.example/v1", stub.getAccountResult.Credentials["base_url"])
-	require.NotNil(t, stub.getAccountResult.GetUpstreamModelContextCapacitySnapshot(), "preview must not mutate saved observations")
+	require.NotNil(t, stub.getAccountResult.GetUpstreamModelMetadataSnapshot(), "preview must not mutate saved observations")
 }
 
 func TestAccountHandlerModelContextOverrideTypedRequestMapping(t *testing.T) {

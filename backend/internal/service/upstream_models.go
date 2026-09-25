@@ -27,6 +27,11 @@ const (
 	UpstreamModelMetadataPartialCode          = "upstream_model_metadata_partial"
 )
 
+// UpstreamModelMetadata is one model of an account's upstream catalog. The
+// capacity fields (context_window, max_context_window, max_input_tokens,
+// max_output_tokens) always come from one declaration, never completed field
+// by field; CapacitySource says whose: "upstream" (this account's upstream) or
+// "registry" (models.dev reference), observed at ObservedAt.
 type UpstreamModelMetadata struct {
 	ID                       string                     `json:"id"`
 	DisplayName              string                     `json:"display_name,omitempty"`
@@ -37,7 +42,10 @@ type UpstreamModelMetadata struct {
 	InputModalities          []string                   `json:"input_modalities,omitempty"`
 	ContextWindow            int64                      `json:"context_window,omitempty"`
 	MaxContextWindow         int64                      `json:"max_context_window,omitempty"`
+	MaxInputTokens           int64                      `json:"max_input_tokens,omitempty"`
 	MaxOutputTokens          int64                      `json:"max_output_tokens,omitempty"`
+	CapacitySource           string                     `json:"source,omitempty"`
+	ObservedAt               string                     `json:"observed_at,omitempty"`
 	CodexToolCapabilities    map[string]json.RawMessage `json:"codex_tool_capabilities,omitempty"`
 }
 
@@ -90,6 +98,7 @@ type modelsDevModalities struct {
 
 type modelsDevLimit struct {
 	Context int64 `json:"context"`
+	Input   int64 `json:"input"`
 	Output  int64 `json:"output"`
 }
 
@@ -201,15 +210,17 @@ func (s *AccountTestService) FetchUpstreamSupportedModels(ctx context.Context, a
 	return models, err
 }
 
-// SyncUpstreamModelCatalog fetches the account's live model list, preserves raw
-// source-bound capacities independently, then enriches legacy capability
-// metadata through the existing provider registry workflow.
+// SyncUpstreamModelCatalog fetches the account's live model list (following
+// pagination), records the capacities this upstream declares and enriches the
+// capability metadata through the existing provider registry workflow. Every
+// result lands in the one account snapshot, Extra["upstream_model_metadata"].
 //
-// Persistence is per-model: models with complete capability fields are saved even
-// when other IDs in the same sync remain incomplete. An incomplete warning is
-// still returned so admins can tell ID sync succeeded without a full capability
-// snapshot. When no model is complete, the existing capability snapshot is left
-// untouched; raw capacity observations and synchronized IDs can still be saved.
+// Capability persistence is per-model: models with complete capability fields
+// are saved even when other IDs in the same sync remain incomplete, and an
+// incomplete warning tells admins that ID sync succeeded without a full
+// capability snapshot. Capacity is the upstream's current declaration: a
+// listed model that no longer declares one falls back to the registry or to
+// nothing, never to an older value from a possibly different endpoint.
 func (s *AccountTestService) SyncUpstreamModelCatalog(ctx context.Context, account *Account) (*UpstreamModelCatalog, error) {
 	models, body, err := s.fetchUpstreamModelList(ctx, account)
 	liveListAvailable := err == nil
@@ -227,44 +238,22 @@ func (s *AccountTestService) SyncUpstreamModelCatalog(ctx context.Context, accou
 			"model_count", len(models),
 		)
 	}
+	syncedAt := time.Now().UTC().Format(time.RFC3339)
 	catalog := &UpstreamModelCatalog{Models: models, Metadata: make(map[string]UpstreamModelMetadata)}
 	catalog.ModelListSource = "upstream"
 	if !liveListAvailable {
 		catalog.ModelListSource = "configured"
 	}
-	extraUpdates := make(map[string]any)
 	if len(body) > 0 {
-		// Keep only values actually declared by this upstream in the raw capacity
-		// namespace. Registry enrichment below must never acquire upstream provenance.
-		if capacities, parseErr := ParseUpstreamModelContextCapacities(body, upstreamModelSyncPlatform(account)); parseErr == nil && account != nil {
-			observedAt := time.Now().UTC().Format(time.RFC3339)
-			previous := account.GetUpstreamModelContextCapacitySnapshot()
-			retainedIDs := dedupeAndSortModelIDs(append(append([]string(nil), models...), configuredUpstreamModelsForCapabilitySync(account)...))
-			observedModels := make(map[string]ModelContextCapacity, len(retainedIDs))
-			for _, modelID := range retainedIDs {
-				entry, declared := capacities[modelID]
-				if declared {
-					entry.ObservedAt = observedAt
-					if previous != nil {
-						entry = mergeObservedModelContextCapacity(entry, previous.Models[modelID], previous.ObservedAt)
-					}
-				} else if previous != nil {
-					entry = previous.Models[modelID]
-					if entry.ObservedAt == "" {
-						entry.ObservedAt = previous.ObservedAt
-					}
-				}
-				// An empty entry still preserves the synchronized model ID for the
-				// local-only capacity panel, without inventing a capacity.
-				observedModels[modelID] = entry
-			}
-			snapshot := UpstreamModelContextCapacitySnapshot{ObservedAt: observedAt, SourceIdentity: ModelContextCapacitySourceIdentity(account), Models: observedModels}
-			account.SetUpstreamModelContextCapacitySnapshot(snapshot)
-			extraUpdates[UpstreamModelContextCapacitiesExtraKey] = snapshot
-		}
-		_, directMetadata, parseErr := extractUpstreamModelCatalog(body, account != nil && account.IsGrok())
+		_, directMetadata, parseErr := extractUpstreamModelCatalog(body, upstreamModelSyncPlatform(account))
 		if parseErr == nil {
 			catalog.Metadata = directMetadata
+		}
+		for modelID, entry := range catalog.Metadata {
+			if entry.CapacitySource == ModelContextSourceUpstream {
+				entry.ObservedAt = syncedAt
+				catalog.Metadata[modelID] = entry
+			}
 		}
 	}
 
@@ -281,6 +270,9 @@ func (s *AccountTestService) SyncUpstreamModelCatalog(ctx context.Context, accou
 	if upstreamCatalogNeedsRegistry(capabilityIDs, catalog.Metadata) {
 		if registryMetadata, registryErr := s.fetchModelsDevMetadata(ctx, account, enrichIDs); registryErr == nil {
 			for modelID, fallback := range registryMetadata {
+				if upstreamModelMetadataHasCapacity(fallback) {
+					fallback.ObservedAt = syncedAt
+				}
 				current := catalog.Metadata[modelID]
 				merged, changed := mergeUpstreamModelMetadata(current, fallback)
 				catalog.Metadata[modelID] = merged
@@ -297,46 +289,77 @@ func (s *AccountTestService) SyncUpstreamModelCatalog(ctx context.Context, accou
 		}
 	}
 
-	completeMetadata := completeUpstreamModelMetadataSubset(capabilityIDs, catalog.Metadata)
-	persistedCapabilities := false
-	if len(completeMetadata) > 0 && account != nil && account.ID > 0 && s.accountRepo != nil {
-		// Retain known metadata only for models still listed or explicitly mapped.
-		if previous := account.GetUpstreamModelMetadataSnapshot(); previous != nil {
-			retainedModels := capabilityIDs
-			if !liveListAvailable {
-				retainedModels = append([]string(nil), capabilityIDs...)
-				for modelID := range previous.Models {
-					retainedModels = append(retainedModels, modelID)
-				}
-			}
-			for _, modelID := range retainedModels {
-				old, exists := previous.Models[modelID]
-				if !exists {
-					continue
-				}
-				if entry, ok := completeMetadata[modelID]; ok {
-					if entry.CodexToolCapabilities == nil {
-						entry.CodexToolCapabilities = make(map[string]json.RawMessage)
-					}
-					applyCodexToolCapabilities(entry.CodexToolCapabilities, old.CodexToolCapabilities, false)
-					completeMetadata[modelID] = entry
-				} else {
-					completeMetadata[modelID] = old
-				}
+	previous := account.GetUpstreamModelMetadataSnapshot()
+	if previous != nil {
+		// Retained entries keep their own provenance, whatever enrichment summary
+		// the rewritten snapshot carries.
+		for modelID, entry := range previous.Models {
+			_, capacitySource := upstreamMetadataCapacity(previous.Source, entry)
+			if _, rewritten := upstreamMetadataCapacity(source, entry); capacitySource != rewritten {
+				entry.CapacitySource = capacitySource
+				previous.Models[modelID] = entry
 			}
 		}
-		snapshot := UpstreamModelMetadataSnapshot{
-			Source:   source,
-			SyncedAt: time.Now().UTC().Format(time.RFC3339),
-			Models:   completeMetadata,
-		}
-		extraUpdates[UpstreamModelMetadataExtraKey] = snapshot
-		account.SetUpstreamModelMetadataSnapshot(snapshot)
-		persistedCapabilities = true
 	}
-	if len(extraUpdates) > 0 && account != nil && account.ID > 0 && s.accountRepo != nil {
-		if err := s.accountRepo.UpdateExtra(ctx, account.ID, extraUpdates); err != nil {
-			return nil, newUpstreamModelSyncInternalError("Failed to save upstream model metadata", err)
+	completeMetadata := completeUpstreamModelMetadataSubset(capabilityIDs, catalog.Metadata)
+	persistedCapabilities := len(completeMetadata) > 0
+	if completeMetadata == nil {
+		completeMetadata = make(map[string]UpstreamModelMetadata)
+	}
+	// Retain known capability metadata only for models still listed or explicitly mapped.
+	if previous != nil {
+		retainedModels := capabilityIDs
+		if !liveListAvailable {
+			retainedModels = append([]string(nil), capabilityIDs...)
+			for modelID := range previous.Models {
+				retainedModels = append(retainedModels, modelID)
+			}
+		}
+		for _, modelID := range retainedModels {
+			old, exists := previous.Models[modelID]
+			if !exists {
+				continue
+			}
+			if entry, ok := completeMetadata[modelID]; ok {
+				if entry.CodexToolCapabilities == nil {
+					entry.CodexToolCapabilities = make(map[string]json.RawMessage)
+				}
+				applyCodexToolCapabilities(entry.CodexToolCapabilities, old.CodexToolCapabilities, false)
+				completeMetadata[modelID] = entry
+			} else {
+				completeMetadata[modelID] = old
+			}
+		}
+	}
+	// Capacity is one declaration per model: a new declaration replaces the kept
+	// one. Without one, only a declaration the live upstream list withdrew is
+	// dropped; registry references survive a partial or failed registry refresh.
+	for _, modelID := range capabilityIDs {
+		declared, ok := catalog.Metadata[modelID]
+		if !ok || !upstreamModelMetadataHasCapacity(declared) {
+			kept, exists := completeMetadata[modelID]
+			if _, keptSource := upstreamMetadataCapacity(source, kept); !exists || !liveListAvailable || keptSource != ModelContextSourceUpstream {
+				continue
+			}
+			declared = UpstreamModelMetadata{}
+		}
+		entry, exists := completeMetadata[modelID]
+		if !exists {
+			entry = UpstreamModelMetadata{ID: modelID}
+		}
+		if entry = withUpstreamModelCapacity(entry, declared); upstreamModelMetadataIsUseful(entry) {
+			completeMetadata[modelID] = entry
+		} else {
+			delete(completeMetadata, modelID)
+		}
+	}
+	snapshot := UpstreamModelMetadataSnapshot{Source: source, SyncedAt: syncedAt, Models: completeMetadata}
+	if account != nil {
+		account.SetUpstreamModelMetadataSnapshot(snapshot)
+		if account.ID > 0 && s.accountRepo != nil {
+			if err := s.accountRepo.UpdateExtra(ctx, account.ID, map[string]any{UpstreamModelMetadataExtraKey: snapshot}); err != nil {
+				return nil, newUpstreamModelSyncInternalError("Failed to save upstream model metadata", err)
+			}
 		}
 	}
 
@@ -357,37 +380,21 @@ func (s *AccountTestService) SyncUpstreamModelCatalog(ctx context.Context, accou
 	return catalog, nil
 }
 
-// A partial capacity observation cannot erase other positive limits observed
-// from the same source. If any field is inherited, use the older timestamp for
-// this row rather than pretending every value was observed during this sync.
-func mergeObservedModelContextCapacity(current, previous ModelContextCapacity, previousObservedAt string) ModelContextCapacity {
-	inherited := false
-	for _, field := range []struct{ current, previous *int64 }{
-		{&current.ContextWindow, &previous.ContextWindow},
-		{&current.MaxContextWindow, &previous.MaxContextWindow},
-		{&current.MaxInputTokens, &previous.MaxInputTokens},
-		{&current.MaxOutputTokens, &previous.MaxOutputTokens},
-	} {
-		if *field.current == 0 && *field.previous > 0 {
-			*field.current = *field.previous
-			inherited = true
-		}
+func upstreamModelMetadataHasCapacity(metadata UpstreamModelMetadata) bool {
+	return metadata.ContextWindow > 0 || metadata.MaxContextWindow > 0 ||
+		metadata.MaxInputTokens > 0 || metadata.MaxOutputTokens > 0
+}
+
+// withUpstreamModelCapacity replaces all capacity fields of entry with one
+// declaration (possibly none), keeping every capability field.
+func withUpstreamModelCapacity(entry, declared UpstreamModelMetadata) UpstreamModelMetadata {
+	entry.ContextWindow, entry.MaxContextWindow = declared.ContextWindow, declared.MaxContextWindow
+	entry.MaxInputTokens, entry.MaxOutputTokens = declared.MaxInputTokens, declared.MaxOutputTokens
+	entry.CapacitySource, entry.ObservedAt = declared.CapacitySource, declared.ObservedAt
+	if !upstreamModelMetadataHasCapacity(entry) {
+		entry.CapacitySource, entry.ObservedAt = "", ""
 	}
-	if inherited {
-		current.ObservedAt = previous.ObservedAt
-		if current.ObservedAt == "" {
-			current.ObservedAt = previousObservedAt
-		}
-	}
-	switch {
-	case current.ContextWindow > 0:
-		current.CapacityBasis = ModelContextCapacityBasisTotal
-	case current.MaxInputTokens > 0:
-		current.CapacityBasis = ModelContextCapacityBasisInput
-	case current.MaxContextWindow > 0:
-		current.CapacityBasis = ModelContextCapacityBasisMaximum
-	}
-	return current
+	return entry
 }
 
 func upstreamModelSyncStatusCode(err error) int {
@@ -462,9 +469,7 @@ func upstreamModelMetadataIsUseful(metadata UpstreamModelMetadata) bool {
 		len(metadata.SupportedReasoningLevels) > 0 ||
 		len(metadata.InputModalities) > 0 ||
 		len(metadata.CodexToolCapabilities) > 0 ||
-		metadata.ContextWindow > 0 ||
-		metadata.MaxContextWindow > 0 ||
-		metadata.MaxOutputTokens > 0
+		upstreamModelMetadataHasCapacity(metadata)
 }
 
 // upstreamModelMetadataIsComplete reports whether a snapshot entry is safe to
@@ -476,7 +481,7 @@ func upstreamModelMetadataIsComplete(metadata UpstreamModelMetadata) bool {
 	if len(normalizeCodexInputModalities(metadata.InputModalities)) == 0 {
 		return false
 	}
-	if metadata.ContextWindow <= 0 {
+	if metadata.ContextWindow <= 0 && metadata.MaxContextWindow <= 0 && metadata.MaxInputTokens <= 0 {
 		return false
 	}
 	if *metadata.Reasoning && len(normalizeReasoningLevels(metadata.SupportedReasoningLevels)) == 0 {
@@ -545,17 +550,10 @@ func mergeUpstreamModelMetadata(primary, fallback UpstreamModelMetadata) (Upstre
 		merged.InputModalities = append([]string(nil), fallback.InputModalities...)
 		changed = true
 	}
-	if merged.ContextWindow <= 0 && fallback.ContextWindow > 0 {
-		merged.ContextWindow = fallback.ContextWindow
-		// Keep the registry's context limits together. A direct upstream default
-		// without an explicit maximum remains the conservative ceiling.
-		if merged.MaxContextWindow <= 0 {
-			merged.MaxContextWindow = fallback.MaxContextWindow
-		}
-		changed = true
-	}
-	if merged.MaxOutputTokens <= 0 && fallback.MaxOutputTokens > 0 {
-		merged.MaxOutputTokens = fallback.MaxOutputTokens
+	// Capacity is one declaration: a fallback only supplies it to a model that
+	// declared none, so every value keeps a true source.
+	if !upstreamModelMetadataHasCapacity(merged) && upstreamModelMetadataHasCapacity(fallback) {
+		merged = withUpstreamModelCapacity(merged, fallback)
 		changed = true
 	}
 	return merged, changed
@@ -663,7 +661,11 @@ func upstreamMetadataFromModelsDevModel(modelID string, model modelsDevModel) Up
 		InputModalities:          normalizeCodexInputModalities(model.Modalities.Input),
 		ContextWindow:            model.Limit.Context,
 		MaxContextWindow:         model.Limit.Context,
+		MaxInputTokens:           model.Limit.Input,
 		MaxOutputTokens:          model.Limit.Output,
+	}
+	if upstreamModelMetadataHasCapacity(metadata) {
+		metadata.CapacitySource = ModelContextSourceRegistry
 	}
 	if len(levels) > 0 {
 		metadata.DefaultReasoningLevel = levels[0]
@@ -820,28 +822,32 @@ func (s *AccountTestService) fetchUpstreamModelList(ctx context.Context, account
 	}
 
 	proxyURL := upstreamModelsProxyURL(account)
-	resp, err := s.doUpstreamModelsRequest(req, proxyURL, account)
-	if err != nil {
-		return nil, nil, newUpstreamModelSyncUpstreamError("Failed to request upstream model list", err)
-	}
-	defer func() { _ = resp.Body.Close() }()
-
 	bodyLimit := resolveModelsListReadLimit(s.cfg)
-	body, err := io.ReadAll(io.LimitReader(resp.Body, bodyLimit+1))
-	if err != nil {
-		return nil, nil, newUpstreamModelSyncUpstreamError("Failed to read upstream model list", err)
+	paging := upstreamModelListPagingFor(account)
+	if paging != nil {
+		req = withUpstreamModelListQuery(req, paging.sizeParam, upstreamModelListPageSize)
 	}
-	if int64(len(body)) > bodyLimit {
-		return nil, nil, newUpstreamModelSyncUpstreamError("Upstream model list response is too large", fmt.Errorf("response exceeds %d bytes", bodyLimit))
-	}
-
-	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
-		return nil, nil, &UpstreamModelSyncError{
-			Kind:       UpstreamModelSyncErrorUpstream,
-			Message:    fmt.Sprintf("Upstream model list request failed with HTTP %d", resp.StatusCode),
-			StatusCode: resp.StatusCode,
-			Err:        fmt.Errorf("upstream model list returned HTTP %d", resp.StatusCode),
+	pages := make([][]byte, 0, 1)
+	seenCursors := make(map[string]bool)
+	for {
+		page, err := s.readUpstreamModelsPage(req, proxyURL, account, bodyLimit)
+		if err != nil {
+			return nil, nil, err
 		}
+		pages = append(pages, page)
+		if paging == nil || len(pages) >= upstreamModelListMaxPages {
+			break
+		}
+		cursor := paging.cursor(page)
+		if cursor == "" || seenCursors[cursor] {
+			break
+		}
+		seenCursors[cursor] = true
+		req = withUpstreamModelListQuery(req, paging.cursorParam, cursor)
+	}
+	body, err := combineUpstreamModelListPages(pages, paging)
+	if err != nil {
+		return nil, nil, newUpstreamModelSyncUpstreamError("Upstream model list response was not valid JSON", err)
 	}
 
 	extractModels := extractUpstreamModelIDs
@@ -857,6 +863,99 @@ func (s *AccountTestService) fetchUpstreamModelList(ctx context.Context, account
 	}
 
 	return models, body, nil
+}
+
+const (
+	upstreamModelListPageSize = "1000"
+	upstreamModelListMaxPages = 20
+)
+
+// upstreamModelListPaging follows the vendor list cursors that a single
+// request misses: Anthropic returns 20 models per page by default and Gemini
+// 50. Other providers return their full list in one response.
+type upstreamModelListPaging struct {
+	field       string
+	sizeParam   string
+	cursorParam string
+}
+
+func upstreamModelListPagingFor(account *Account) *upstreamModelListPaging {
+	switch {
+	case account.IsAnthropic():
+		return &upstreamModelListPaging{field: "data", sizeParam: "limit", cursorParam: "after_id"}
+	case account.IsGemini():
+		return &upstreamModelListPaging{field: "models", sizeParam: "pageSize", cursorParam: "pageToken"}
+	default:
+		return nil
+	}
+}
+
+func (paging *upstreamModelListPaging) cursor(body []byte) string {
+	var page struct {
+		HasMore       bool   `json:"has_more"`
+		LastID        string `json:"last_id"`
+		NextPageToken string `json:"nextPageToken"`
+	}
+	if json.Unmarshal(body, &page) != nil {
+		return ""
+	}
+	if paging.cursorParam == "after_id" {
+		if !page.HasMore {
+			return ""
+		}
+		return strings.TrimSpace(page.LastID)
+	}
+	return strings.TrimSpace(page.NextPageToken)
+}
+
+func withUpstreamModelListQuery(req *http.Request, key, value string) *http.Request {
+	next := req.Clone(req.Context())
+	query := next.URL.Query()
+	query.Set(key, value)
+	next.URL.RawQuery = query.Encode()
+	return next
+}
+
+// combineUpstreamModelListPages keeps a single page byte-identical and joins
+// several pages into one list in the vendor's own field.
+func combineUpstreamModelListPages(pages [][]byte, paging *upstreamModelListPaging) ([]byte, error) {
+	if len(pages) == 1 || paging == nil {
+		return pages[0], nil
+	}
+	entries := make([]json.RawMessage, 0)
+	for _, page := range pages {
+		pageEntries, err := extractUpstreamModelRawEntries(page)
+		if err != nil {
+			return nil, err
+		}
+		entries = append(entries, pageEntries...)
+	}
+	return json.Marshal(map[string][]json.RawMessage{paging.field: entries})
+}
+
+func (s *AccountTestService) readUpstreamModelsPage(req *http.Request, proxyURL string, account *Account, bodyLimit int64) ([]byte, error) {
+	resp, err := s.doUpstreamModelsRequest(req, proxyURL, account)
+	if err != nil {
+		return nil, newUpstreamModelSyncUpstreamError("Failed to request upstream model list", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	body, err := io.ReadAll(io.LimitReader(resp.Body, bodyLimit+1))
+	if err != nil {
+		return nil, newUpstreamModelSyncUpstreamError("Failed to read upstream model list", err)
+	}
+	if int64(len(body)) > bodyLimit {
+		return nil, newUpstreamModelSyncUpstreamError("Upstream model list response is too large", fmt.Errorf("response exceeds %d bytes", bodyLimit))
+	}
+	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
+		return nil, &UpstreamModelSyncError{
+			Kind:       UpstreamModelSyncErrorUpstream,
+			Message:    fmt.Sprintf("Upstream model list request failed with HTTP %d", resp.StatusCode),
+			StatusCode: resp.StatusCode,
+			Err:        fmt.Errorf("upstream model list returned HTTP %d", resp.StatusCode),
+		}
+	}
+	return body, nil
 }
 
 func (s *AccountTestService) buildUpstreamModelsRequest(ctx context.Context, account *Account) (*http.Request, error) {
@@ -1351,13 +1450,13 @@ func extractGrokUpstreamModelIDs(body []byte) ([]string, error) {
 	return extractUpstreamModelIDsWithSelector(body, grokUpstreamModelEntryID)
 }
 
-func extractUpstreamModelCatalog(body []byte, grok bool) ([]string, map[string]UpstreamModelMetadata, error) {
+func extractUpstreamModelCatalog(body []byte, platform string) ([]string, map[string]UpstreamModelMetadata, error) {
 	entries, err := extractUpstreamModelRawEntries(body)
 	if err != nil {
 		return nil, nil, err
 	}
 	selectID := upstreamModelEntryID
-	if grok {
+	if platform == PlatformGrok {
 		selectID = grokUpstreamModelEntryID
 	}
 
@@ -1375,15 +1474,12 @@ func extractUpstreamModelCatalog(body []byte, grok bool) ([]string, map[string]U
 		}
 		models = append(models, modelID)
 		entry := upstreamMetadataFromCapabilityEntry(modelID, capability)
-		capacity := ParseUpstreamModelContextCapacity(raw, "")
-		entry.ContextWindow = capacity.ContextWindow
-		if entry.ContextWindow <= 0 {
-			entry.ContextWindow = capacity.MaxContextWindow
-		}
-		if entry.ContextWindow <= 0 {
-			entry.ContextWindow = capacity.MaxInputTokens
-		}
-		entry.MaxOutputTokens = capacity.MaxOutputTokens
+		capacity := ParseUpstreamModelContextCapacity(raw, platform)
+		entry = withUpstreamModelCapacity(entry, UpstreamModelMetadata{
+			ContextWindow: capacity.ContextWindow, MaxContextWindow: capacity.MaxContextWindow,
+			MaxInputTokens: capacity.MaxInputTokens, MaxOutputTokens: capacity.MaxOutputTokens,
+			CapacitySource: ModelContextSourceUpstream,
+		})
 		var fields map[string]json.RawMessage
 		if err := json.Unmarshal(raw, &fields); err == nil {
 			entry.CodexToolCapabilities = make(map[string]json.RawMessage)

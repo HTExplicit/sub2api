@@ -6,13 +6,11 @@ import (
 	"github.com/Wei-Shaw/sub2api/internal/pkg/openai"
 )
 
-// gpt6APIModelMetadata supplies release-owned API defaults only when an API-key
-// catalog omits them. It is never persisted as an upstream observation.
+// gpt6APIModelMetadata supplies release-owned API capability defaults only when
+// an API-key catalog omits them. It is never persisted as an upstream
+// observation and carries no capacity: windows come from the capacity resolver.
 func gpt6APIModelMetadata(account *Account, model string) (UpstreamModelMetadata, bool) {
-	// IsOpenAIApiKey checks the wire protocol, which Cindy also uses. Product
-	// defaults belong only to ordinary OpenAI accounts, not protected catalogs.
-	if account == nil || account.Platform != PlatformOpenAI || !account.IsOpenAIApiKey() ||
-		IsModelContextCapacityProtected(account) || !isOpenAIGPT6SolOrLunaModel(model) {
+	if account == nil || account.Platform != PlatformOpenAI || !account.IsOpenAIApiKey() || !isOpenAIGPT6SolOrLunaModel(model) {
 		return UpstreamModelMetadata{}, false
 	}
 	reasoning := true
@@ -20,8 +18,6 @@ func gpt6APIModelMetadata(account *Account, model string) (UpstreamModelMetadata
 		ID: model, Reasoning: &reasoning, DefaultReasoningLevel: "medium",
 		SupportedReasoningLevels: openai.GPT6APIReasoningEfforts(),
 		InputModalities:          []string{"text", "image"},
-		ContextWindow:            openai.GPT6APIContextWindow, MaxContextWindow: openai.GPT6APIContextWindow,
-		MaxOutputTokens: openai.GPT6APIMaxOutputTokens,
 		CodexToolCapabilities: map[string]json.RawMessage{
 			"use_responses_lite":           json.RawMessage("false"),
 			"tool_mode":                    json.RawMessage("null"),
@@ -51,11 +47,8 @@ func gpt6AccountModelMetadata(account *Account, model string) (UpstreamModelMeta
 	for _, level := range levels {
 		efforts = append(efforts, level.Effort)
 	}
-	capacity := protectedAccountModelContextCapacity(account, model, nil)
 	return UpstreamModelMetadata{
 		ID: model, Reasoning: &reasoning, DefaultReasoningLevel: "medium",
 		SupportedReasoningLevels: efforts, InputModalities: []string{"text", "image"},
-		ContextWindow: capacity.ContextWindow, MaxContextWindow: capacity.MaxContextWindow,
-		MaxOutputTokens: capacity.MaxOutputTokens,
 	}, true
 }
