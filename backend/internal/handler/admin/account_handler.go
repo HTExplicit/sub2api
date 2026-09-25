@@ -3230,13 +3230,13 @@ func (h *AccountHandler) SyncUpstreamModels(c *gin.Context) {
 			case service.UpstreamModelSyncErrorInternal:
 				response.InternalError(c, syncErr.SafeMessage())
 			default:
-				slog.Warn("sync_upstream_models_failed", "account_id", accountID, "kind", syncErr.Kind)
+				slog.Warn("sync_upstream_models_failed", "account_id", accountID, "kind", syncErr.Kind, "error", err.Error())
 				response.Error(c, http.StatusBadGateway, syncErr.SafeMessage())
 			}
 			return
 		}
 
-		slog.Warn("sync_upstream_models_failed", "account_id", accountID)
+		slog.Warn("sync_upstream_models_failed", "account_id", accountID, "error", err.Error())
 		response.Error(c, http.StatusBadGateway, "Failed to sync upstream models from upstream")
 		return
 	}
