@@ -63,6 +63,16 @@ func (r *openAIIdentityMutationRepo) UpdateCredentials(_ context.Context, _ int6
 	return nil
 }
 
+var openAIIdentityTestAdminMetadataKeys = []string{"model_mapping", "compact_model_mapping", "intercept_warmup_requests"}
+
+func openAIIdentityTestComparableCredentials(credentials map[string]any) map[string]any {
+	comparable := shallowCopyMap(credentials)
+	for _, key := range openAIIdentityTestAdminMetadataKeys {
+		delete(comparable, key)
+	}
+	return comparable
+}
+
 func (r *openAIIdentityMutationRepo) UpdateOpenAIOAuthCredentialsIfUnchanged(
 	_ context.Context,
 	id int64,
@@ -77,12 +87,19 @@ func (r *openAIIdentityMutationRepo) UpdateOpenAIOAuthCredentialsIfUnchanged(
 		return false, err
 	}
 	if r.account.ID != id || !r.account.IsOpenAIOAuth() ||
-		!reflect.DeepEqual(r.account.Credentials, expectedCredentials) ||
+		!reflect.DeepEqual(openAIIdentityTestComparableCredentials(r.account.Credentials), openAIIdentityTestComparableCredentials(expectedCredentials)) ||
 		!reflect.DeepEqual(r.account.ProxyID, expectedProxyID) {
 		r.mu.Unlock()
 		return false, nil
 	}
-	r.account.Credentials = shallowCopyMap(credentials)
+	merged := shallowCopyMap(credentials)
+	for _, key := range openAIIdentityTestAdminMetadataKeys {
+		delete(merged, key)
+		if value, exists := r.account.Credentials[key]; exists {
+			merged[key] = value
+		}
+	}
+	r.account.Credentials = merged
 	afterCAS := r.afterCAS
 	r.afterCAS = nil
 	r.mu.Unlock()
@@ -254,6 +271,104 @@ func TestOpenAIIdentity_AdminCredentialUpdateUsesCurrentTokenAndWorkspace(t *tes
 }
 
 func TestOpenAIIdentity_LateRefreshCannotOverwriteAdminCredentials(t *testing.T) {
+	t.Run("concurrent_non_auth_metadata_preserves_rotation", func(t *testing.T) {
+		for _, edit := range []string{"add", "replace", "delete", "null"} {
+			t.Run(edit, func(t *testing.T) {
+				ctx := context.Background()
+				repo := newOpenAIIdentityMutationRepo()
+				repo.account.Credentials["_token_version"] = int64(17)
+				if edit != "add" {
+					repo.account.Credentials["model_mapping"] = map[string]any{"old-alias": "gpt-5.5"}
+					repo.account.Credentials["compact_model_mapping"] = map[string]any{"old-compact": "gpt-5.5"}
+					repo.account.Credentials["intercept_warmup_requests"] = false
+				}
+				selected, err := repo.GetByID(ctx, repo.account.ID)
+				require.NoError(t, err)
+				rotated := shallowCopyMap(selected.Credentials)
+				rotated["access_token"] = "synthetic-rotated-token-a"
+				rotated["refresh_token"] = "synthetic-rotated-refresh-a"
+				var adminCredentials map[string]any
+				admin := &adminServiceImpl{accountRepo: repo}
+				executor := &refreshAPIExecutorStub{
+					needsRefresh: true,
+					credentials:  rotated,
+					onRefresh: func() {
+						// The real full-object edit preserves A's credentials and
+						// changes only admin-owned settings while A's refresh runs.
+						current, err := repo.GetByID(ctx, selected.ID)
+						require.NoError(t, err)
+						edited := shallowCopyMap(current.Credentials)
+						switch edit {
+						case "add", "replace":
+							// Replace whole maps; mutating a shared nested map would
+							// alter the refresh snapshot and hide this interleaving.
+							edited["model_mapping"] = map[string]any{"admin-alias": "gpt-5.5"}
+							edited["compact_model_mapping"] = map[string]any{"admin-compact": "gpt-5.5"}
+							edited["intercept_warmup_requests"] = true
+						case "delete":
+							for _, key := range openAIIdentityTestAdminMetadataKeys {
+								delete(edited, key)
+							}
+						case "null":
+							for _, key := range openAIIdentityTestAdminMetadataKeys {
+								edited[key] = nil
+							}
+						}
+						updated, err := admin.UpdateAccount(ctx, selected.ID, &UpdateAccountInput{Credentials: edited})
+						require.NoError(t, err)
+						adminCredentials = shallowCopyMap(updated.Credentials)
+					},
+				}
+				result, err := NewOAuthRefreshAPI(repo, nil).RefreshIfNeeded(ctx, selected, executor, time.Minute)
+				require.NoError(t, err)
+				require.True(t, result.Refreshed, "a metadata edit must not discard a completed token rotation")
+				durable, err := repo.GetByID(ctx, selected.ID)
+				require.NoError(t, err)
+				require.Equal(t, "synthetic-rotated-token-a", durable.GetOpenAIAccessToken())
+				require.Equal(t, "synthetic-rotated-refresh-a", durable.GetOpenAIRefreshToken())
+				require.Equal(t, "synthetic-workspace-a", durable.GetChatGPTAccountID())
+				require.Greater(t, durable.GetCredentialAsInt64("_token_version"), int64(17))
+				for _, key := range openAIIdentityTestAdminMetadataKeys {
+					expectedValue, expectedExists := adminCredentials[key]
+					for _, actual := range []map[string]any{durable.Credentials, result.Account.Credentials, result.NewCredentials} {
+						actualValue, actualExists := actual[key]
+						require.Equal(t, expectedExists, actualExists, "preserve admin key presence: %s", key)
+						require.Equal(t, expectedValue, actualValue, "preserve admin key value: %s", key)
+					}
+				}
+			})
+		}
+	})
+
+	t.Run("same_workspace_admin_token_change_still_wins", func(t *testing.T) {
+		ctx := context.Background()
+		repo := newOpenAIIdentityMutationRepo()
+		selected, err := repo.GetByID(ctx, repo.account.ID)
+		require.NoError(t, err)
+		rotated := shallowCopyMap(selected.Credentials)
+		rotated["access_token"] = "synthetic-late-token-a"
+		rotated["refresh_token"] = "synthetic-late-refresh-a"
+		admin := &adminServiceImpl{accountRepo: repo}
+		executor := &refreshAPIExecutorStub{
+			needsRefresh: true,
+			credentials:  rotated,
+			onRefresh: func() {
+				edited := shallowCopyMap(selected.Credentials)
+				edited["access_token"] = "synthetic-admin-token-a"
+				edited["refresh_token"] = "synthetic-admin-refresh-a"
+				_, err := admin.UpdateAccount(ctx, selected.ID, &UpdateAccountInput{Credentials: edited})
+				require.NoError(t, err)
+			},
+		}
+		result, err := NewOAuthRefreshAPI(repo, nil).RefreshIfNeeded(ctx, selected, executor, time.Minute)
+		require.NoError(t, err)
+		require.False(t, result.Refreshed)
+		require.Nil(t, result.NewCredentials)
+		require.Equal(t, "synthetic-workspace-a", result.Account.GetChatGPTAccountID())
+		require.Equal(t, "synthetic-admin-token-a", result.Account.GetOpenAIAccessToken())
+		require.Equal(t, "synthetic-admin-refresh-a", result.Account.GetOpenAIRefreshToken())
+	})
+
 	t.Run("admin_reauthorization_before_cas", func(t *testing.T) {
 		ctx := context.Background()
 		repo := newOpenAIIdentityMutationRepo()

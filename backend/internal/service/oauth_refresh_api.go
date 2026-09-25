@@ -36,6 +36,8 @@ type GrokOAuthRefreshSuccessRepository interface {
 
 // OpenAIOAuthRefreshSuccessRepository keeps a completed token rotation from
 // overwriting credentials or a proxy selected by a concurrent admin edit.
+// Known admin-owned model mappings and warmup settings are preserved from the
+// current row without making a metadata-only edit discard the rotation.
 type OpenAIOAuthRefreshSuccessRepository interface {
 	UpdateOpenAIOAuthCredentialsIfUnchanged(
 		ctx context.Context,
@@ -402,6 +404,9 @@ func (api *OAuthRefreshAPI) RefreshIfNeeded(
 				// Do not apply the old refresh's post-success actions to that edit.
 				return &OAuthRefreshResult{Account: durableAccount}, nil
 			}
+			// The atomic update preserves current admin-owned metadata. Return
+			// that durable document, not the settings captured before refresh.
+			newCredentials = shallowCopyMap(durableAccount.Credentials)
 			freshAccount = durableAccount
 		} else if updateErr := persistAccountCredentials(ctx, api.accountRepo, freshAccount, newCredentials); updateErr != nil {
 			slog.Error("oauth_refresh_update_failed",

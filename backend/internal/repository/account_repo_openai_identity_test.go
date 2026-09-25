@@ -30,7 +30,19 @@ func TestAccountRepository_OAuthIdentityCASPlatformAndAtomicOutbox(t *testing.T)
 			require.Contains(t, query, "WITH updated AS")
 			require.Contains(t, query, "a.platform = $3")
 			require.Contains(t, query, "a.type = $4")
-			require.Contains(t, query, "a.credentials = $5::jsonb")
+			if platform == service.PlatformOpenAI {
+				metadataKeys := "ARRAY['model_mapping', 'compact_model_mapping', 'intercept_warmup_requests']::text[]"
+				require.Contains(t, query, "(a.credentials - "+metadataKeys+") = ($5::jsonb - "+metadataKeys+")")
+				require.Contains(t, query, "SET credentials = ($1::jsonb - "+metadataKeys+") || COALESCE(")
+				require.Contains(t, query, "jsonb_object_agg(metadata.key, metadata.value)")
+				require.Contains(t, query, "FROM jsonb_each(a.credentials) AS metadata")
+				require.Contains(t, query, "metadata.key = ANY ("+metadataKeys+")")
+				require.NotContains(t, query, "jsonb_strip_nulls", "explicit admin null values must survive")
+			} else {
+				require.Contains(t, query, "a.credentials = $5::jsonb")
+				require.NotContains(t, query, "model_mapping", "Grok must retain its full credential comparison")
+				require.NotContains(t, query, "jsonb_object_agg")
+			}
 			require.Contains(t, query, "a.proxy_id IS NOT DISTINCT FROM $6")
 			require.Contains(t, query, "INSERT INTO scheduler_outbox")
 			require.NotContains(t, query, "SET status")

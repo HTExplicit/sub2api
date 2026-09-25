@@ -118,13 +118,20 @@ func (r *refreshAPIAccountRepo) UpdateOpenAIOAuthCredentialsIfUnchanged(
 		return false, r.updateErr
 	}
 	if r.account == nil || r.account.ID != id || !r.account.IsOpenAIOAuth() ||
-		!reflect.DeepEqual(r.account.Credentials, expectedCredentials) ||
+		!reflect.DeepEqual(openAIIdentityTestComparableCredentials(r.account.Credentials), openAIIdentityTestComparableCredentials(expectedCredentials)) ||
 		!reflect.DeepEqual(r.account.ProxyID, expectedProxyID) {
 		return false, nil
 	}
 	r.updateCalls++
 	r.updateCredentialsCalls++
-	r.account.Credentials = shallowCopyMap(credentials)
+	merged := shallowCopyMap(credentials)
+	for _, key := range openAIIdentityTestAdminMetadataKeys {
+		delete(merged, key)
+		if value, exists := r.account.Credentials[key]; exists {
+			merged[key] = value
+		}
+	}
+	r.account.Credentials = merged
 	return true, nil
 }
 
