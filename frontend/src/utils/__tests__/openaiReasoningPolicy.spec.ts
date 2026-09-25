@@ -10,13 +10,10 @@ import {
 } from '../openaiReasoningPolicy'
 
 describe('OpenAI reasoning policy', () => {
-  it('matches the backend effective wire family and accepted account types', () => {
+  it('matches OpenAI accounts of the accepted account types', () => {
     for (const type of ['apikey', 'oauth', 'setup-token']) {
       expect(isOpenAIReasoningPolicyApplicable({ platform: 'openai', type })).toBe(true)
     }
-    expect(isOpenAIReasoningPolicyApplicable({ platform: 'cindy', type: 'apikey' })).toBe(true)
-    expect(isOpenAIReasoningPolicyApplicable({ platform: 'cindy', wire_platform: 'openai', type: 'apikey' })).toBe(true)
-    expect(isOpenAIReasoningPolicyApplicable({ platform: 'openai', wire_platform: 'anthropic', type: 'apikey' })).toBe(false)
     for (const platform of ['anthropic', 'grok', 'gemini']) {
       expect(isOpenAIReasoningPolicyApplicable({ platform, type: 'apikey' })).toBe(false)
     }

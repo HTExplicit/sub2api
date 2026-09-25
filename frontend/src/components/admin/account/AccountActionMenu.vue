@@ -57,10 +57,6 @@
               <Icon name="sync" size="sm" />
               {{ t('admin.accounts.recoverState') }}
             </button>
-            <button v-if="account.cindy_balance_insufficient" data-test="recover-cindy-balance" @click="$emit('recover-cindy-balance', account); $emit('close')" class="flex w-full items-center gap-2 px-4 py-2 text-sm text-emerald-600 hover:bg-gray-100 dark:hover:bg-dark-700">
-              <Icon name="sync" size="sm" />
-              {{ t('admin.accounts.cindy.recover') }}
-            </button>
             <button v-if="hasQuotaLimit" @click="$emit('reset-quota', account); $emit('close')" class="flex w-full items-center gap-2 px-4 py-2 text-sm text-teal-600 hover:bg-gray-100 dark:hover:bg-dark-700">
               <Icon name="refresh" size="sm" />
               {{ t('admin.accounts.resetQuota') }}
@@ -88,7 +84,7 @@ import CodexAccountActions from '@/components/admin/codex/CodexAccountActions.vu
 import type { CodexTicketOperation } from '@/utils/codexTickets'
 
 const props = defineProps<{ show: boolean; account: Account | null; anchorRect: DOMRect | null; busy?: boolean }>()
-const emit = defineEmits(['close', 'test', 'stats', 'schedule', 'duplicate', 'reauth', 'refresh-token', 'recover-state', 'recover-cindy-balance', 'resource-complete', 'reset-quota', 'set-privacy', 'create-spark-shadow'])
+const emit = defineEmits(['close', 'test', 'stats', 'schedule', 'duplicate', 'reauth', 'refresh-token', 'recover-state', 'resource-complete', 'reset-quota', 'set-privacy', 'create-spark-shadow'])
 const { t } = useI18n()
 const menuRef = ref<HTMLElement | null>(null)
 const CodexTicketOperationModal = defineAsyncComponent(() => import('@/components/admin/codex/CodexTicketOperationModal.vue'))

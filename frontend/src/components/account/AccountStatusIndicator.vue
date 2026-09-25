@@ -1,10 +1,6 @@
 <template>
   <div class="flex items-center gap-2">
-    <span v-if="account.cindy_balance_insufficient" class="badge badge-danger text-xs">
-      {{ t('admin.accounts.cindy.insufficient') }}
-    </span>
-
-    <div v-else-if="isUpstreamQuotaExhausted" class="flex flex-col items-center gap-1" data-testid="quota-exhausted-status">
+    <div v-if="isUpstreamQuotaExhausted" class="flex flex-col items-center gap-1" data-testid="quota-exhausted-status">
       <span class="badge text-xs badge-warning">{{ t('admin.accounts.status.upstreamQuotaExhausted') }}</span>
       <span v-if="quotaUntil" class="text-[11px] text-muted" :title="formatDateTime(quotaUntil)">
         {{ quotaResumeText }}
@@ -347,9 +343,6 @@ const tempUnschedRecoveryText = computed(() => {
 
 // Computed: status badge class
 const statusClass = computed(() => {
-  if (props.account.cindy_balance_insufficient) {
-    return 'badge-danger'
-  }
   if (hasError.value) {
     return 'badge-danger'
   }
@@ -370,9 +363,6 @@ const statusClass = computed(() => {
 
 // Computed: status text
 const statusText = computed(() => {
-  if (props.account.cindy_balance_insufficient) {
-    return t('admin.accounts.cindy.insufficient')
-  }
   if (hasError.value) {
     return t('admin.accounts.status.error')
   }

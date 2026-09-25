@@ -55,7 +55,7 @@ declare module 'vue-router' {
      */
     requiresRiskControl?: boolean
 
-    /** Whether this route requires the Cindy Image Studio rollout flag. */
+    /** Whether this route requires the Image Studio rollout flag. */
     requiresImageStudio?: boolean
 
     /**

@@ -47,23 +47,6 @@
         }) }}
       </div>
 
-      <div v-if="payload" class="space-y-1">
-        <label class="input-label" for="account-import-target-group">{{ t('admin.accounts.dataImportTargetGroup') }}</label>
-        <select
-          id="account-import-target-group"
-          v-model="targetGroupID"
-          class="input w-full"
-          :disabled="busy"
-          data-test="import-target-group"
-        >
-          <option value="">{{ t('admin.accounts.dataImportTargetGroupPlaceholder') }}</option>
-          <option v-for="group in importGroups" :key="group.id" :value="String(group.id)">
-            {{ group.name }} · {{ t(`admin.groups.platforms.${group.platform}`) }}
-          </option>
-        </select>
-        <p class="input-hint">{{ t('admin.accounts.dataImportTargetGroupHint') }}</p>
-      </div>
-
       <fieldset v-if="payload" class="space-y-2 rounded-none border border-gray-200 px-3 py-3 dark:border-dark-700">
         <legend class="px-1 text-sm font-semibold text-gray-800 dark:text-gray-100">
           {{ t('admin.accounts.importProxyStrategy') }}
@@ -227,7 +210,6 @@ const busy = ref(false)
 const files = ref<File[]>([])
 const payload = shallowRef<AdminDataPayload | null>(null)
 const uniformDraft = ref(makeSettingsDraft())
-const targetGroupID = ref('')
 type ImportProxyStrategy = 'preserve' | 'direct' | 'existing'
 const proxyStrategy = ref<ImportProxyStrategy>('preserve')
 const selectedProxyID = ref('')
@@ -263,11 +245,6 @@ const selectedFilesLabel = computed(() => {
   return t('admin.accounts.selectedCount', { count: files.value.length })
 })
 const fileListTitle = computed(() => files.value.map((file) => file.name).join(', '))
-const importGroups = computed(() => props.groups.filter((group) =>
-  group.platform === 'cindy' &&
-  (!group.wire_platform || group.wire_platform === 'openai') &&
-  (!group.provider_profile || group.provider_profile === 'cindy_laxa_v1')
-))
 const proxyStrategyOptions = computed<Array<{ value: ImportProxyStrategy; label: string }>>(() => [
   { value: 'preserve', label: t('admin.accounts.importProxyPreserve') },
   { value: 'direct', label: t('admin.accounts.importProxyDirect') },
@@ -323,7 +300,6 @@ function reset(): void {
   busy.value = false
   files.value = []
   payload.value = null
-  targetGroupID.value = ''
   proxyStrategy.value = 'preserve'
   selectedProxyID.value = ''
   preview.value = null
@@ -433,7 +409,6 @@ function buildImportRequest() {
     data: payload.value!,
     skip_default_group_bind: true,
     uniform_settings: buildUniformSettings(uniformDraft.value),
-    ...(targetGroupID.value ? { target_group_id: Number(targetGroupID.value) } : {}),
   }
 }
 
@@ -491,7 +466,7 @@ async function handleSubmit(): Promise<void> {
   }
 }
 
-watch([uniformDraft, targetGroupID, proxyStrategy, selectedProxyID], () => {
+watch([uniformDraft, proxyStrategy, selectedProxyID], () => {
   invalidatePreview()
 }, { deep: true })
 </script>

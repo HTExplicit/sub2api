@@ -37,7 +37,6 @@ import adminComplianceAPI from './compliance'
 import auditAPI from './audit'
 import pluginsAPI from './plugins'
 import systemPromptsAPI from './systemPrompts'
-import cindyBalanceProbeAPI from './cindyBalanceProbe'
 import accountJobsAPI from './accountJobs'
 
 /**
@@ -78,7 +77,6 @@ export const adminAPI = {
   audit: auditAPI,
   plugins: pluginsAPI,
   systemPrompts: systemPromptsAPI,
-  cindyBalanceProbe: cindyBalanceProbeAPI,
   accountJobs: accountJobsAPI
 }
 
@@ -117,7 +115,6 @@ export {
   auditAPI,
   pluginsAPI,
   systemPromptsAPI,
-  cindyBalanceProbeAPI,
   accountJobsAPI
 }
 
@@ -131,17 +128,4 @@ export type { BackupAgentHealth, DataManagementConfig } from './dataManagement'
 export type { TLSFingerprintProfile, CreateProfileRequest, UpdateProfileRequest } from './tlsFingerprintProfile'
 export type { ContentModerationConfig, ContentModerationLog, ModerationMode } from './riskControl'
 export type { PluginInstallation, PluginCompatibility, PluginUISession, PluginTestResult } from './plugins'
-export type {
-  CindyBalanceProbeCounts,
-  CindyBalanceProbeCreateRequest,
-  CindyBalanceProbeFilters,
-  CindyBalanceProbeItem,
-  CindyBalanceProbeItemPage,
-  CindyBalanceProbeJob,
-  CindyBalanceProbeJobList,
-  CindyBalanceProbePreview,
-  CindyBalanceProbePreviewRequest,
-  CindyBalanceProbeScope,
-  CindyBalanceProbeScopeMode
-} from './cindyBalanceProbe'
 export type { SystemPromptCompositionMode, PromptConfig, PromptConfigWrite, PromptHistoryVersion } from './systemPrompts'

@@ -541,7 +541,7 @@ export interface PaginationConfig {
 
 // ==================== API Key & Group Types ====================
 
-export type GroupPlatform = 'anthropic' | 'openai' | 'gemini' | 'antigravity' | 'grok' | 'kimi' | 'zhipu' | 'deepseek' | 'cindy' | 'minimax' | 'opencode_go' | 'composite'
+export type GroupPlatform = 'anthropic' | 'openai' | 'gemini' | 'antigravity' | 'grok' | 'kimi' | 'zhipu' | 'deepseek' | 'minimax' | 'opencode_go' | 'composite'
 
 export type VideoModelPrices = Record<string, Record<string, number>>
 
@@ -568,8 +568,6 @@ export interface Group {
   name: string
   description: string | null
   platform: GroupPlatform
-  wire_platform?: string
-  provider_profile?: string
   rate_multiplier: number
   rpm_limit?: number // Group-level RPM cap (0 = unlimited); overrides user-level rpm_limit when set
   max_reasoning_effort?: string // Anthropic/OpenAI reasoning ceiling; empty means unlimited
@@ -914,7 +912,7 @@ export interface UpdateGroupRequest {
 
 // ==================== Account & Proxy Types ====================
 
-export type AccountPlatform = 'anthropic' | 'openai' | 'gemini' | 'antigravity' | 'grok' | 'kimi' | 'zhipu' | 'deepseek' | 'cindy' | 'minimax' | 'opencode_go'
+export type AccountPlatform = 'anthropic' | 'openai' | 'gemini' | 'antigravity' | 'grok' | 'kimi' | 'zhipu' | 'deepseek' | 'minimax' | 'opencode_go'
 export type AccountType = 'oauth' | 'setup-token' | 'apikey' | 'upstream' | 'bedrock' | 'service_account'
 export type OAuthAddMethod = 'oauth' | 'setup-token'
 export type ProxyProtocol = 'http' | 'https' | 'socks5' | 'socks5h'
@@ -958,51 +956,6 @@ export interface AccountTestModeView {
   model_ids: string[]
   default_model_id: string
 }
-
-/** Host-native context; never exported through the public plugin UI SDK. */
-export interface AccountEditFieldState<T extends string> {
-  present: boolean
-  recognized: boolean
-  /** Absent/unrecognized strings are not echoed. A stored JSON null stays distinguishable. */
-  value?: T | null
-  effective: T
-}
-
-export interface AccountEditProfileReference {
-  native?: boolean
-  policy_sha256?: string
-  /** References may be absent when no current owner/definition can be resolved. */
-  plugin_id?: number
-  plugin_key?: string
-  contribution_id?: string
-  package_sha256?: string
-  definition_sha256?: string
-  runtime_generation?: number
-  available: boolean
-  reason?: string
-}
-
-export type AccountEditCatalog =
-  | { status: 'ready'; namespace: string; models: AccountAvailableModel[]; aliases: Record<string, string> }
-  | { status: 'unavailable'; reason: string }
-
-export interface ProviderAccountEditContext {
-  schema_version: 1
-  kind: 'provider'
-  account_id: number
-  profile: AccountEditProfileReference
-  edit_state_sha256: string
-  values: {
-    responses_mode: AccountEditFieldState<import('@/types/accountEdit').AccountEditResponsesMode>
-    compact_mode: AccountEditFieldState<import('@/types/accountEdit').AccountEditCompactMode>
-    responses_websocket_mode: AccountEditFieldState<import('@/types/accountEdit').AccountEditWebSocketMode | 'shared' | 'dedicated'>
-  }
-  catalog: AccountEditCatalog
-}
-
-export type AccountEditContext =
-  | { schema_version: 1; kind: 'core'; account_id: number }
-  | ProviderAccountEditContext
 
 export interface AccountTestPlanView {
   schema_version: 1
@@ -1281,8 +1234,6 @@ export interface OpenCodeGoUsageSettings {
 export interface Account {
 	quota_state?: { blocked: boolean; until: string | null; windows: AccountQuotaWindow[] }
   id: number
-  /** Host-only, same-row digest paired with this native account's owned edit fields. */
-  account_edit_state_sha256?: string
   name: string
   notes?: string | null
   platform: AccountPlatform
@@ -1365,21 +1316,13 @@ export interface Account {
 
   // Rate limit & scheduling fields
   schedulable: boolean
-  is_cindy?: boolean
-  cindy_balance_insufficient?: boolean
   // Native host projection, not an SDK Account or a client authorization grant.
   account_view_facts?: {
     version: 1
     status: string
     plan: string
     privacy_mode: string
-    canonical_cindy: boolean
-    cindy_balance_insufficient: boolean
-    cindy_banned: boolean
   }
-  cindy_balance_probe_job_id?: number | null
-  cindy_balance_probe_outcome?: string | null
-  cindy_balance_probe_checked_at?: string | null
   rate_limited_at: string | null
   rate_limit_reset_at: string | null
   overload_until: string | null
@@ -1490,9 +1433,6 @@ export interface AccountConsoleFacets {
   proxies: AccountFacetOption[]
   folders: AccountManagementFolder[]
   tags: AccountManagementTag[]
-  cindy_total?: number
-  cindy_insufficient_count?: number
-  cindy_banned_count?: number
 }
 
 export interface AccountBulkTaxonomyTargetFilters {
@@ -1724,7 +1664,6 @@ export interface OpenAIResponsesState {
 }
 
 export interface CreateAccountRequest {
-  provider_create?: import('@/types/accountCreate').ProviderCreateRequestV1
   name: string
   notes?: string | null
   platform: AccountPlatform
@@ -1745,7 +1684,6 @@ export interface CreateAccountRequest {
 }
 
 export interface UpdateAccountRequest {
-  provider_edit?: import('@/types/accountEdit').ProviderEditRequestV1
   name?: string
   notes?: string | null
   type?: AccountType

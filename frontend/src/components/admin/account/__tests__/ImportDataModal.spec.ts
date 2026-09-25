@@ -31,13 +31,13 @@ describe('ImportDataModal', () => {
       create_count: 1,
       update_count: 0,
       reject_count: 0,
-      items: [{ index: 0, name: 'Cindy A', action: 'create', message: 'account will be created' }]
+      items: [{ index: 0, name: 'Account A', action: 'create', message: 'account will be created' }]
     })
   })
 
   it('parses JSON, previews on the server, and submits the same import request', async () => {
     const wrapper = mount(ImportDataModal, {
-      props: { show: true, groups: [{ id: 12, name: 'Cindy strict', platform: 'cindy', wire_platform: 'openai', provider_profile: 'cindy_laxa_v1' }] as any },
+      props: { show: true },
       global: {
         stubs: {
           BaseDialog: BaseDialogStub,
@@ -51,7 +51,7 @@ describe('ImportDataModal', () => {
       version: 2,
       exported_at: '2026-08-21T00:00:00Z',
       proxies: [],
-      accounts: [{ name: 'Cindy A', platform: 'cindy', type: 'apikey' }],
+      accounts: [{ name: 'Account A', platform: 'openai', type: 'apikey' }],
     }
     const file = {
       name: 'accounts.json',
@@ -65,14 +65,12 @@ describe('ImportDataModal', () => {
 
     expect(wrapper.find('[data-test="preview-import"]').exists()).toBe(true)
     expect(wrapper.text()).toContain('1')
-    await wrapper.get('[data-test="import-target-group"]').setValue('12')
     await wrapper.get('[data-test="preview-import"]').trigger('click')
     await flushPromises()
     expect(previewImportData).toHaveBeenCalledWith({
       data: payload,
       skip_default_group_bind: true,
       uniform_settings: {},
-      target_group_id: 12,
     })
     expect(wrapper.find('[data-test="import-preview"]').exists()).toBe(true)
     await wrapper.get('#account-import-job-form').trigger('submit')
@@ -82,7 +80,6 @@ describe('ImportDataModal', () => {
       data: payload,
       skip_default_group_bind: true,
       uniform_settings: {},
-      target_group_id: 12,
     })
     expect(wrapper.emitted('imported')?.[0]?.[0]).toMatchObject({ id: 71, status: 'pending' })
     expect(wrapper.emitted('close')).toBeUndefined()

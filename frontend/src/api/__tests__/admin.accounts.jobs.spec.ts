@@ -13,24 +13,20 @@ describe('admin accounts job submissions', () => {
   })
 
   it('submits every approved import and bulk operation as an idempotent job', async () => {
-    const account = { name: 'Cindy A', platform: 'cindy', type: 'apikey' } as never
+    const account = { name: 'Account A', platform: 'openai', type: 'apikey' } as never
     const data = { type: 'sub2api-data', version: 2, accounts: [], proxies: [] } as never
 
     await accountsAPI.batchCreate([account])
     await accountsAPI.batchUpdateCredentials({ account_ids: [1], field: 'api_key', value: 'test-value' })
     await accountsAPI.bulkUpdate([1], { status: 'inactive' })
     await accountsAPI.importData({ data, uniform_settings: { concurrency: 2 } })
-    await accountsAPI.previewImportData({ data, target_group_id: 12 })
+    await accountsAPI.previewImportData({ data })
     await accountsAPI.bulkUpdateTaxonomy({ account_ids: [1], tag_add_ids: [9] })
     await accountsAPI.importCodexSession({ content: '{"access_token":"test"}' })
     await accountsAPI.batchDelete([1])
     await accountsAPI.batchClearError([1])
     await accountsAPI.batchRefresh([1])
     await accountsAPI.batchRefreshTier([1])
-    await accountsAPI.deleteCindyInsufficient({ count: 1, fingerprint: 'f'.repeat(64) } as never)
-    await accountsAPI.previewCindyBannedDeletion()
-    await accountsAPI.getCindyDuplicateIdentityInventory()
-    await accountsAPI.deleteCindyBanned({ count: 1, fingerprint: 'f'.repeat(64) } as never)
 
     expect(post.mock.calls.map((call) => call[0])).toEqual([
       '/admin/accounts/batch',
@@ -44,21 +40,15 @@ describe('admin accounts job submissions', () => {
       '/admin/accounts/batch-clear-error',
       '/admin/accounts/batch-refresh',
       '/admin/accounts/batch-refresh-tier',
-      '/admin/accounts/cindy/delete-insufficient',
-      '/admin/accounts/cindy/delete-banned',
     ])
     expect(post.mock.calls[3][1]).toEqual({
       data,
       skip_default_group_bind: undefined,
       uniform_settings: { concurrency: 2 },
     })
-    expect(post.mock.calls[3][1]).not.toHaveProperty('target_group_id')
     const keys = post.mock.calls.map((call) => call[2]?.headers?.['Idempotency-Key']).filter((key): key is string => typeof key === 'string')
-    expect(keys).toHaveLength(12)
+    expect(keys).toHaveLength(10)
     expect(keys.every((key) => typeof key === 'string' && key.length > 20)).toBe(true)
-    expect(new Set(keys).size).toBe(12)
-    expect(get.mock.calls.map((call) => call[0])).toContain(
-      '/admin/accounts/cindy/duplicate-identity-inventory'
-    )
+    expect(new Set(keys).size).toBe(10)
   })
 })
