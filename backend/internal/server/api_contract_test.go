@@ -1455,6 +1455,7 @@ func TestAPIContracts(t *testing.T) {
 					"created_by": 1,
 					"kind": "account_bulk_update",
 					"status": "pending",
+					"retry_eligible": false,
 					"metadata": {"target_count": 2},
 					"target_count": 2,
 					"processed_count": 0,

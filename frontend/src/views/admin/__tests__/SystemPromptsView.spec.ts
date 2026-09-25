@@ -1,16 +1,17 @@
+import { reactive } from 'vue'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount, type VueWrapper } from '@vue/test-utils'
 import { createI18n } from 'vue-i18n'
 import en from '@/i18n/locales/en/admin/systemPrompts'
 import zh from '@/i18n/locales/zh/admin/systemPrompts'
-import { promptConfig, template, version } from './systemPromptFixtures'
+import { promptConfig } from './systemPromptFixtures'
 
-const api = vi.hoisted(() => ({ config: vi.fn(), saveConfig: vi.fn(), preview: vi.fn(), list: vi.fn(), get: vi.fn(), getSkillRegistry: vi.fn(), getSkillVersion: vi.fn(), startSkillSync: vi.fn(), getSkillSync: vi.fn(), publishSkillVersion: vi.fn(), syncManagedSource: vi.fn() }))
+const api = vi.hoisted(() => ({ config: vi.fn(), saveConfig: vi.fn(), history: vi.fn(), preview: vi.fn(), list: vi.fn(), get: vi.fn(), getSkillRegistry: vi.fn(), getSkillVersion: vi.fn(), startSkillSync: vi.fn(), getSkillSync: vi.fn(), publishSkillVersion: vi.fn(), syncManagedSource: vi.fn() }))
 const notify = vi.hoisted(() => ({ showSuccess: vi.fn() }))
 vi.mock('@/api/admin/systemPromptRules', async () => ({ ...await vi.importActual<typeof import('@/api/admin/systemPromptRules')>('@/api/admin/systemPromptRules'), rulesAPI: api }))
-vi.mock('@/api/admin/systemPrompts', () => ({ default: api }))
 vi.mock('@/stores/app', () => ({ useAppStore: () => notify }))
-vi.mock('@/stores/auth', () => ({ useAuthStore: () => ({ user: { id: 1 } }) }))
+const authState = reactive({ user: { id: 1 } })
+vi.mock('@/stores/auth', () => ({ useAuthStore: () => authState }))
 import SystemPromptsView from '../SystemPromptsView.vue'
 
 const wrappers: VueWrapper[] = []
@@ -34,8 +35,8 @@ beforeEach(() => {
   sessionStorage.clear()
   Object.values(api).forEach(mock => mock.mockReset())
   api.config.mockResolvedValue(promptConfig())
-  api.list.mockResolvedValue({ templates: [template] })
-  api.get.mockResolvedValue({ template, versions: [version], runtime: {} })
+  api.history.mockResolvedValue([{ id: 9, body: 'Historical body', composition_mode: 'inline', created_at: '2026-01-01T00:00:00Z', restorable: true }])
+  authState.user.id = 1
   api.getSkillRegistry.mockResolvedValue({ runtime: { revision: 3 }, versions: [], source: {} })
 })
 afterEach(() => { wrappers.splice(0).forEach(wrapper => wrapper.unmount()); vi.restoreAllMocks() })
@@ -56,14 +57,13 @@ describe('unified prompt configuration', () => {
     expect(api.saveConfig).toHaveBeenCalledWith(expect.objectContaining({ expected_revision: 7, contents: { first: { body: 'Edited text' } }, policy: expect.objectContaining({ version: 2, default_rule_ids: [], rules: [expect.objectContaining({ id: 'first', name: 'Renamed', role: 'developer', position: 'after_last_user' }), expect.objectContaining({ id: 'second' })] }) }))
     expect(wrapper.get('[data-test="save-rules"]').attributes('disabled')).toBeDefined()
   })
-  it('retains per-prompt drafts across selection, refresh, advanced close and page remount', async () => {
+  it('retains per-prompt drafts across selection, refresh, history and page remount', async () => {
     const wrapper = mountView(); await flushPromises()
     await wrapper.get('[data-test="system-prompt-body"]').setValue('Unsent first')
     await wrapper.get('[data-test="select-prompt-second"]').trigger('click')
     await wrapper.get('[data-test="prompt-name"]').setValue('Unsent second name')
     await wrapper.get('[data-test="system-prompt-refresh"]').trigger('click'); await flushPromises()
-    await wrapper.get('[data-test="open-prompt-advanced"]').trigger('click'); await flushPromises()
-    await wrapper.get('[data-test="system-prompt-advanced-drawer"]').trigger('keydown', { key: 'Escape' })
+    await wrapper.get('[data-test="prompt-open-history"]').trigger('click'); await flushPromises()
     await wrapper.get('[data-test="select-prompt-first"]').trigger('click')
     expect(wrapper.get('[data-test="system-prompt-body"]').element).toHaveProperty('value', 'Unsent first')
     wrapper.unmount(); wrappers.splice(wrappers.indexOf(wrapper), 1)
@@ -134,92 +134,91 @@ describe('unified prompt configuration', () => {
     await wrapper.get('[data-test="save-rules"]').trigger('click'); await flushPromises()
     expect(api.saveConfig).toHaveBeenCalledWith(expect.objectContaining({ expected_revision: 8, contents: { first: { body: 'Locally edited after remote deletion' } }, policy: expect.objectContaining({ rules: expect.arrayContaining([expect.objectContaining({ id: 'first', template_id: 1 })]) }) }))
   })
-  it('preserves source-managed text and copies it into an independent draft', async () => {
-    const config = promptConfig(); config.contents.first!.managed = true
-    api.config.mockResolvedValue(config)
-    const wrapper = mountView(); await flushPromises()
-    expect(wrapper.get('[data-test="system-prompt-body"]').attributes('readonly')).toBeDefined()
-    await wrapper.get('[data-test="duplicate-prompt"]').trigger('click')
-    expect(wrapper.get('[data-test="system-prompt-body"]').attributes('readonly')).toBeUndefined()
-    expect(wrapper.get('[data-test="system-prompt-body"]').element).toHaveProperty('value', 'First body')
-    expect(wrapper.get('[data-test="platform-openai"]').element).toHaveProperty('checked', false)
-    expect(api.saveConfig).not.toHaveBeenCalled()
-  })
-  it('previews unsaved content and reports the final fields and missing user anchor', async () => {
-    api.preview.mockResolvedValue({ requested_model: 'alias', upstream_model: 'mapped', protocol: 'responses', transport: 'http', body: { instructions: 'Client instructions', input: [{ role: 'developer', content: 'Unsent' }] }, before_rules: {}, client_control: {}, gateway_base_instructions: '', simulated: true, wire_verified: true, application: { applied: true, rules_plan: { placements: [{ rule_id: 'first', position: 'conversation_tail', carrier: 'input', role: 'developer', body: 'Unsent', index: 1 }], skipped: [{ rule_id: 'second', reason: 'last_user_missing' }] } } })
-    const wrapper = mountView(); await flushPromises()
-    await wrapper.get('[data-test="system-prompt-body"]').setValue('Unsent')
-    await wrapper.get('input[type="number"]').setValue(42)
-    await wrapper.get('[data-test="run-prompt-preview"]').trigger('click'); await flushPromises()
-    expect(api.preview).toHaveBeenCalledWith(42, expect.objectContaining({ contents: { first: { body: 'Unsent' } }, policy: expect.objectContaining({ version: 2 }) }))
-    expect(wrapper.text()).toContain('role=developer [1]')
-    expect(wrapper.text()).toContain('No user message in this outbound request')
-    expect(wrapper.text()).toContain('Top-level instructions')
-    expect(wrapper.text()).toContain('Outbound message array')
-    expect(api.saveConfig).not.toHaveBeenCalled()
-  })
   it('restores a historical reference for the selected prompt through the unified save', async () => {
     const wrapper = mountView(); await flushPromises()
-    await wrapper.get('[data-test="open-prompt-advanced"]').trigger('click'); await flushPromises()
+    await wrapper.get('[data-test="prompt-open-history"]').trigger('click'); await flushPromises()
     await wrapper.get('[data-test="restore-version-9"]').trigger('click')
     expect(wrapper.get('[data-test="system-prompt-body"]').element).toHaveProperty('value', 'Historical body')
     api.saveConfig.mockImplementation(async payload => ({ ...promptConfig(), revision: 8, policy: payload.policy, contents: { ...promptConfig().contents, first: { ...promptConfig().contents.first!, body: 'Historical body', version_id: 9 } } }))
     await wrapper.get('[data-test="save-rules"]').trigger('click'); await flushPromises()
-    expect(api.saveConfig).toHaveBeenCalledWith(expect.objectContaining({ contents: {}, policy: expect.objectContaining({ rules: [expect.objectContaining({ id: 'first', version_id: 9 }), expect.objectContaining({ id: 'second', version_id: 20 })] }) }))
+    expect(api.saveConfig).toHaveBeenCalledWith(expect.objectContaining({ contents: { first: { body: 'Historical body', restore_version_id: 9 } }, policy: expect.objectContaining({ rules: [expect.objectContaining({ id: 'first', version_id: 10 }), expect.objectContaining({ id: 'second', version_id: 20 })] }) }))
   })
-  it('shows every affected prompt before paired Skill publication and sends explicit targets', async () => {
+  it.each(['envelope', 'array'])('edits only text in structured %s blocks and always shows retained restrictions', async shape => {
     const config = promptConfig()
-    config.policy.rules[1]!.template_id = 1
-    config.contents.first!.managed = true
-    config.contents.second!.managed = true
-    config.contents.first!.composition_mode = 'codex_skill_hybrid'
-    config.contents.second!.composition_mode = 'codex_skill_hybrid'
+    config.policy.rules[0] = { ...config.policy.rules[0]!, platforms: ['anthropic'], account_types: ['oauth'], request_profiles: ['generic-mimic'], exclude_model_contains: ['fable'] }
+    const structured = { blocks: [{ type: 'text', text: 'First', enabled: true, cache_control: { type: 'ephemeral', ttl: '1h' } }, { type: 'text', text: 'Second', enabled: false }], expansion_prompt: 'Expansion' }
+    config.contents.first = { ...config.contents.first!, composition_mode: 'anthropic_system_blocks', body: JSON.stringify(shape === 'array' ? structured.blocks : structured) }
     api.config.mockResolvedValue(config)
-    api.list.mockResolvedValue({ templates: [{ ...template, managed_source: 'remote_skill_registry' }] })
-    api.get.mockResolvedValue({ template: { ...template, managed_source: 'remote_skill_registry' }, versions: [version], runtime: {} })
-    api.getSkillRegistry.mockResolvedValue({ runtime: { revision: 3, active: { id: 30, raw_tree_sha256: 'raw', effective_tree_sha256: 'tree', effective_total_bytes: 10, file_count: 1 } }, versions: [{ id: 29, effective_tree_sha256: 'older-tree', file_count: 1 }], source: {} })
-    api.publishSkillVersion.mockResolvedValue({})
     const wrapper = mountView(); await flushPromises()
-    await wrapper.get('[data-test="open-prompt-advanced"]').trigger('click'); await flushPromises()
-    expect(wrapper.get('[data-test="skill-target-rules"]').text()).toContain('First prompt, Second prompt')
-    await wrapper.get('[title="Roll back"]').trigger('click')
-    expect(api.publishSkillVersion).not.toHaveBeenCalled()
-    await wrapper.get('[data-test="system-prompt-skill-confirm-action"]').trigger('click'); await flushPromises()
-    expect(api.publishSkillVersion).toHaveBeenCalledWith(29, 3, true, { target_rule_ids: ['first', 'second'], expected_config_revision: 7 })
-  })
-  it('subscribes a new prompt to the current paired Skill without copying an old scaffold into a new version', async () => {
-    const source = { ...template, id: 3, managed_source: 'remote_skill_registry' }
-    api.list.mockResolvedValue({ templates: [template, source] })
-    api.get.mockImplementation(async id => id === 3 ? { template: source, versions: [{ ...version, id: 31, template_id: 3, body: 'Old scaffold', composition_mode: 'codex_skill_hybrid' }], runtime: {} } : { template, versions: [version], runtime: {} })
-    api.getSkillRegistry.mockResolvedValue({ runtime: { revision: 3, active: { id: 30, effective_total_bytes: 10 } }, versions: [], source: {} })
-    api.getSkillVersion.mockResolvedValue({ id: 30, prompt: { effective_body: 'Current paired prompt' } })
-    const wrapper = mountView(); await flushPromises()
-    await wrapper.get('[data-test="open-prompt-advanced"]').trigger('click'); await flushPromises()
-    await wrapper.get('[data-test="subscribe-current-skill"]').trigger('click'); await flushPromises()
-    expect(wrapper.get('[data-test="system-prompt-body"]').element).toHaveProperty('value', 'Current paired prompt')
-    expect(wrapper.get('[data-test="system-prompt-body"]').attributes('readonly')).toBeDefined()
-    expect(wrapper.get('[data-test="prompt-role"]').element).toHaveProperty('value', 'auto')
-    expect(wrapper.get('[data-test="platform-openai"]').element).toHaveProperty('checked', false)
-    await wrapper.get('[data-test="platform-openai"]').setValue(true)
-    api.saveConfig.mockImplementation(async payload => {
-      const added = payload.policy.rules.find((rule: { template_id: number }) => rule.template_id === 3)
-      return { ...promptConfig(), revision: 8, policy: payload.policy, contents: { ...promptConfig().contents, [added.id]: { body: 'Current paired prompt', template_id: 3, version_id: 31, composition_mode: 'codex_skill_hybrid', managed: true } } }
-    })
-    await wrapper.get('[data-test="save-rules"]').trigger('click'); await flushPromises()
-    expect(api.saveConfig).toHaveBeenCalledWith(expect.objectContaining({ contents: {}, policy: expect.objectContaining({ rules: expect.arrayContaining([expect.objectContaining({ template_id: 3, version_id: 31, role: 'auto', position: 'control_append', platforms: ['openai'] })]) }) }))
-    expect(api.publishSkillVersion).not.toHaveBeenCalled()
-  })
-  it('shows an unavailable managed source while allowing its settings and global switch to be saved', async () => {
-    const config = promptConfig(); config.contents.first = { ...config.contents.first!, body: '', managed: true, composition_mode: 'codex_skill_hybrid', available: false }
-    api.config.mockResolvedValue(config)
-    api.saveConfig.mockImplementation(async payload => ({ ...config, revision: 8, enabled: payload.enabled, policy: payload.policy }))
-    const wrapper = mountView(); await flushPromises()
-    expect(wrapper.get('[data-test="managed-source-unavailable"]').text()).toContain('current paired source is unavailable')
     expect(wrapper.find('[data-test="system-prompt-body"]').exists()).toBe(false)
-    expect(wrapper.get('[data-test="duplicate-prompt"]').attributes('disabled')).toBeDefined()
-    await wrapper.get('[data-test="prompt-name"]').setValue('Unavailable source')
-    await wrapper.get('[data-test="system-prompt-global-toggle"] input').setValue(false)
+    expect(wrapper.get('[data-test="prompt-scope-summary"]').text()).toContain('generic-mimic')
+    expect(wrapper.get('[data-test="prompt-scope-summary"]').text()).toContain('fable')
+    await wrapper.get('[data-test="prompt-block-0"]').setValue('Changed text')
     await wrapper.get('[data-test="save-rules"]').trigger('click'); await flushPromises()
-    expect(api.saveConfig).toHaveBeenCalledWith(expect.objectContaining({ enabled: false, contents: {}, policy: expect.objectContaining({ rules: expect.arrayContaining([expect.objectContaining({ name: 'Unavailable source' })]) }) }))
+    const editedBlocks = [{ ...structured.blocks[0], text: 'Changed text' }, structured.blocks[1]]
+    expect(JSON.parse(api.saveConfig.mock.lastCall![0].contents.first.body)).toEqual(shape === 'array' ? editedBlocks : { ...structured, blocks: editedBlocks })
+  })
+  it('loads history only for the selected rule and ignores obsolete responses', async () => {
+    const wrapper = mountView(); await flushPromises()
+    let finishFirst!: (value: unknown) => void
+    api.history.mockImplementationOnce(() => new Promise(resolve => { finishFirst = resolve }))
+    await wrapper.get('[data-test="prompt-open-history"]').trigger('click')
+    await wrapper.get('[data-test="select-prompt-second"]').trigger('click'); await flushPromises()
+    expect(api.history).toHaveBeenNthCalledWith(1, 'first')
+    expect(api.history).toHaveBeenNthCalledWith(2, 'second')
+    finishFirst([{ id: 88, body: 'Stale first history', composition_mode: 'inline', restorable: true }]); await flushPromises()
+    expect(wrapper.text()).not.toContain('Stale first history')
+    expect(wrapper.find('[data-test="history-template"]').exists()).toBe(false)
+    await wrapper.get('[data-test="system-prompt-body"]').setValue('Keep unsaved')
+    expect(wrapper.get('[data-test="restore-version-9"]').attributes('disabled')).toBeDefined()
+  })
+  it('saves an edited historical draft as private content while retaining its authorized metadata basis', async () => {
+    const wrapper = mountView(); await flushPromises()
+    await wrapper.get('[data-test="prompt-open-history"]').trigger('click'); await flushPromises()
+    await wrapper.get('[data-test="restore-version-9"]').trigger('click')
+    await wrapper.get('[data-test="system-prompt-body"]').setValue('Historical body with my edit')
+    api.saveConfig.mockResolvedValue(promptConfig())
+    await wrapper.get('[data-test="save-rules"]').trigger('click'); await flushPromises()
+    expect(api.saveConfig).toHaveBeenCalledWith(expect.objectContaining({ contents: { first: { body: 'Historical body with my edit', restore_version_id: 9 } } }))
+  })
+  it('keeps incompatible Skill archives read-only and removes legacy controls', async () => {
+    api.history.mockResolvedValue([{ id: 88, body: 'Old scaffold', composition_mode: 'codex_skill_hybrid', created_at: '', restorable: false }])
+    const wrapper = mountView(); await flushPromises()
+    await wrapper.get('[data-test="prompt-open-history"]').trigger('click'); await flushPromises()
+    expect(wrapper.find('[data-test="restore-version-88"]').exists()).toBe(false)
+    expect(wrapper.text()).toContain('Read-only archive')
+    for (const selector of ['open-prompt-advanced', 'prompt-rules-preview', 'system-prompt-skill-source']) expect(wrapper.find(`[data-test="${selector}"]`).exists()).toBe(false)
+    expect(api.getSkillRegistry).not.toHaveBeenCalled()
+  })
+  it('rejects a late save response after the administrator session changes', async () => {
+    const wrapper = mountView(); await flushPromises()
+    let finishSave!: (value: ReturnType<typeof promptConfig>) => void
+    api.saveConfig.mockImplementationOnce(() => new Promise(resolve => { finishSave = resolve }))
+    await wrapper.get('[data-test="system-prompt-body"]').setValue('Admin one content')
+    await wrapper.get('[data-test="save-rules"]').trigger('click')
+    const second = promptConfig(); second.contents.first!.body = 'Admin two server content'
+    api.config.mockResolvedValue(second)
+    authState.user.id = 2; await flushPromises()
+    await wrapper.get('[data-test="system-prompt-body"]').setValue('Admin two draft')
+    finishSave(savedConfig()); await flushPromises()
+    expect(wrapper.get('[data-test="system-prompt-body"]').element).toHaveProperty('value', 'Admin two draft')
+    expect(wrapper.get('[data-test="save-rules"]').attributes('disabled')).toBeUndefined()
+  })
+  it('keeps a pre-upgrade historical draft when migration replaces its content references', async () => {
+    const baseline = promptConfig(), draft = promptConfig()
+    draft.policy.rules[0]!.version_id = 9
+    draft.contents.first!.version_id = 9
+    draft.contents.first!.body = 'Unsaved historical restoration'
+    sessionStorage.setItem('system-prompts-v2:1', JSON.stringify({ baseline, draft, selectedID: 'first', bodyBases: { first: 'Unsaved historical restoration', second: 'Second body' } }))
+    const remote = promptConfig(); remote.revision = 8
+    remote.policy.rules[0]!.template_id = 3; remote.policy.rules[0]!.version_id = 31
+    remote.contents.first!.template_id = 3; remote.contents.first!.version_id = 31
+    api.config.mockResolvedValue(remote)
+    const wrapper = mountView(); await flushPromises()
+    expect(wrapper.get('[data-test="system-prompt-body"]').element).toHaveProperty('value', 'Unsaved historical restoration')
+    await wrapper.get('[data-test="keep-prompt-draft"]').trigger('click')
+    api.saveConfig.mockResolvedValue(remote)
+    await wrapper.get('[data-test="save-rules"]').trigger('click'); await flushPromises()
+    expect(api.saveConfig).toHaveBeenCalledWith(expect.objectContaining({ expected_revision: 8, contents: { first: { body: 'Unsaved historical restoration' } }, policy: expect.objectContaining({ rules: expect.arrayContaining([expect.objectContaining({ id: 'first', template_id: 3, version_id: 31 })]) }) }))
   })
 })

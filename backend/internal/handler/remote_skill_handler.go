@@ -23,8 +23,8 @@ func NewRemoteSkillHandler(reader RemoteSkillPublicReader) *RemoteSkillHandler {
 	return &RemoteSkillHandler{reader: reader}
 }
 
-func ProvideRemoteSkillHandler(registry *service.RemoteSkillRegistryService) *RemoteSkillHandler {
-	return NewRemoteSkillHandler(registry)
+func ProvideRemoteSkillHandler(files *service.FrozenPromptFiles) *RemoteSkillHandler {
+	return NewRemoteSkillHandler(files)
 }
 
 func (h *RemoteSkillHandler) Serve(c *gin.Context) {

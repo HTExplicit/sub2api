@@ -35,7 +35,8 @@ type TextPromptSelection struct {
 
 type BatchTestSelection struct {
 	AccountID       int64  `json:"account_id"`
-	ModelID         string `json:"model_id"`
+	SelectionMode   string `json:"selection_mode,omitempty"`
+	ModelID         string `json:"model_id,omitempty"`
 	ReasoningEffort string `json:"reasoning_effort,omitempty"`
 }
 type BatchTestPlanningRequest struct {

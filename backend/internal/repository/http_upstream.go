@@ -32,6 +32,7 @@ import (
 	"github.com/Wei-Shaw/sub2api/internal/pkg/servertiming"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/tlsfingerprint"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/xai"
+	"github.com/Wei-Shaw/sub2api/internal/proxytransport"
 	"github.com/Wei-Shaw/sub2api/internal/service"
 	"github.com/Wei-Shaw/sub2api/internal/util/urlvalidator"
 )
@@ -555,7 +556,7 @@ func (s *httpUpstreamService) acquireClientWithTLS(proxyURL string, accountID in
 // TLS 指纹客户端使用独立的缓存键，与普通客户端隔离
 func (s *httpUpstreamService) getClientEntryWithTLS(proxyURL string, accountID int64, accountConcurrency int, profile *tlsfingerprint.Profile, upstreamProfile service.HTTPUpstreamProfile, markInFlight bool, enforceLimit bool) (*upstreamClientEntry, error) {
 	isolation := s.getIsolationMode()
-	proxyKey, parsedProxy, err := normalizeProxyURL(proxyURL)
+	proxyKey, parsedProxy, err := proxyURLForProfile(proxyURL, upstreamProfile)
 	if err != nil {
 		return nil, err
 	}
@@ -716,7 +717,7 @@ func (s *httpUpstreamService) getClientEntry(proxyURL string, accountID int64, a
 	// 获取隔离模式
 	isolation := s.getIsolationMode()
 	// 标准化代理 URL 并解析
-	proxyKey, parsedProxy, err := normalizeProxyURL(proxyURL)
+	proxyKey, parsedProxy, err := proxyURLForProfile(proxyURL, profile)
 	if err != nil {
 		return nil, err
 	}
@@ -1277,6 +1278,18 @@ func (s *openAIHTTP2FallbackState) recordFailure(now time.Time, threshold int, w
 //   - string: 标准化的代理键（空返回 "direct"）
 //   - *url.URL: 解析后的 URL（空返回 nil）
 //   - error: 非空代理 URL 解析失败时返回错误（禁止回退到直连）
+//
+// Acquisition already selected a validated endpoint. Keep that exact protocol
+// and representation, including default ports and host casing used by trust
+// keys; the general account-proxy compatibility normalizer is a different API.
+func proxyURLForProfile(raw string, profile service.HTTPUpstreamProfile) (string, *url.URL, error) {
+	if profile == service.HTTPUpstreamProfileOpenAIHarvest {
+		parsed, err := proxytransport.ParseEndpoint(raw)
+		return raw, parsed, err
+	}
+	return normalizeProxyURL(raw)
+}
+
 func normalizeProxyURL(raw string) (string, *url.URL, error) {
 	_, parsed, err := proxyurl.Parse(raw)
 	if err != nil {

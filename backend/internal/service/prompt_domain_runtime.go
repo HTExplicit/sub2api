@@ -10,23 +10,20 @@ import (
 	extensionv1 "github.com/Wei-Shaw/sub2api/internal/nativeapi"
 )
 
-// Inline prompt serving is independent of the optional paired Skill source.
-// Each service starts once; an unavailable registry is retried independently.
+// Core prompt serving starts after its atomic content migration completes.
 type PromptDomainRuntime struct {
-	registry      *RemoteSkillRegistryService
-	prompts       *BusinessSystemPromptService
-	mu            sync.Mutex
-	reconcileMu   sync.Mutex
-	cancel        context.CancelFunc
-	done          chan struct{}
-	ready         bool
-	promptsReady  bool
-	registryReady bool
-	nextRetry     time.Time
+	prompts      *BusinessSystemPromptService
+	mu           sync.Mutex
+	reconcileMu  sync.Mutex
+	cancel       context.CancelFunc
+	done         chan struct{}
+	ready        bool
+	promptsReady bool
+	nextRetry    time.Time
 }
 
-func NewPromptDomainRuntime(registry *RemoteSkillRegistryService, prompts *BusinessSystemPromptService) *PromptDomainRuntime {
-	return &PromptDomainRuntime{registry: registry, prompts: prompts}
+func NewPromptDomainRuntime(prompts *BusinessSystemPromptService) *PromptDomainRuntime {
+	return &PromptDomainRuntime{prompts: prompts}
 }
 
 func promptPolicyAvailability(ctx context.Context) error {
@@ -91,18 +88,6 @@ func (r *PromptDomainRuntime) reconcile(ctx context.Context, now time.Time) {
 		r.mu.Unlock()
 		return
 	}
-	if !r.registryReady {
-		if r.registry == nil {
-			r.registryReady = true
-		} else if err := r.registry.Start(ctx); err != nil {
-			slog.Warn("prompt_domain_initialization_unavailable", "component", "registry")
-		} else {
-			r.registryReady = true
-			if r.promptsReady {
-				_ = r.prompts.Reload(ctx)
-			}
-		}
-	}
 	if !r.promptsReady {
 		if err := r.prompts.Start(ctx); err != nil {
 			slog.Warn("prompt_domain_initialization_unavailable", "component", "prompts")
@@ -111,7 +96,7 @@ func (r *PromptDomainRuntime) reconcile(ctx context.Context, now time.Time) {
 		}
 	}
 	r.mu.Lock()
-	r.ready = r.promptsReady && r.registryReady
+	r.ready = r.promptsReady
 	if r.ready {
 		r.nextRetry = time.Time{}
 	} else {
@@ -124,17 +109,10 @@ func (r *PromptDomainRuntime) stopDomainServices() {
 	if r == nil {
 		return
 	}
-	// Stop the prompt subscriber before the registry so no late prompt reload
-	// races with registry shutdown. Both services retain their snapshots and
-	// durable records.
 	if r.prompts != nil {
 		r.prompts.Stop()
 	}
-	if r.registry != nil {
-		r.registry.Stop()
-	}
 	r.promptsReady = false
-	r.registryReady = false
 }
 
 func (r *PromptDomainRuntime) Stop() {

@@ -52,6 +52,9 @@
           </div>
           <p v-if="typeof item.metadata.message === 'string'" class="mt-2 break-words text-xs" :class="item.status === 'failed' ? 'text-red-600 dark:text-red-400' : 'text-muted'">{{ item.metadata.message }}</p>
           <p v-else-if="item.error_message" class="mt-2 break-words text-xs text-red-600 dark:text-red-400">{{ item.error_message }}</p>
+          <p v-if="job.kind === 'account_batch_test' && item.error_code" class="mt-1 text-xs text-muted">{{ item.error_code }}</p>
+          <p v-if="item.metadata.output_limited" class="mt-1 text-xs text-muted">{{ t('admin.accounts.batchTest.outputLimited') }}</p>
+          <p v-if="typeof item.metadata.recovery_status === 'string'" class="mt-1 text-xs" :class="item.metadata.recovery_status === 'warning' ? 'text-amber-600' : 'text-muted'">{{ t(`admin.accounts.batchTest.recovery.${item.metadata.recovery_status}`) }}</p>
           <dl v-if="resultFacts(item).length" class="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted">
             <div v-for="(fact, index) in resultFacts(item)" :key="index" class="flex gap-1">
               <dt>{{ fact.label[locale || 'zh'] || fact.label.zh || fact.label.en }}</dt>
@@ -71,7 +74,8 @@
       <span class="text-xs text-muted">{{ t(terminal ? 'admin.accountTasks.savedInHistory' : 'admin.accountTasks.continuesInBackground') }}</span>
       <div class="flex gap-2">
         <button v-if="!terminal" class="btn btn-secondary btn-sm" :disabled="busy || !!job.cancel_requested_at" @click="stop">{{ t(job.cancel_requested_at ? 'admin.accountTasks.stopping' : 'admin.accountTasks.cancel') }}</button>
-        <button v-if="terminal && job.failed_count > 0 && !retryExpired" class="btn btn-secondary btn-sm" :disabled="busy" @click="retry">{{ t('admin.accountTasks.retryFailed') }}</button>
+        <button v-if="job.retry_eligible && !retryExpired" class="btn btn-secondary btn-sm" :disabled="busy" @click="retry">{{ t('admin.accountTasks.retryFailed') }}</button>
+        <span v-if="job.retry_unavailable_reason === 'payload_expired'" class="text-xs text-muted">{{ t('admin.accountTasks.retryExpired') }}</span>
         <button class="btn btn-primary btn-sm" @click="emit('close')">{{ t(terminal ? 'common.close' : 'admin.accountTasks.minimize') }}</button>
       </div>
     </div>

@@ -980,6 +980,7 @@ const handleEvent = (event: {
   text?: string
   model?: string
   success?: boolean
+  output_limited?: boolean
   error?: string
   image_url?: string
   audio_url?: string
@@ -1067,6 +1068,7 @@ const handleEvent = (event: {
       }
       if (event.success) {
         status.value = 'success'
+        if (event.output_limited) addLine(t('admin.accounts.batchTest.outputLimited'), 'text-cyan-300')
       } else {
         status.value = 'error'
         errorMessage.value = event.error || t('admin.accounts.testFailed')

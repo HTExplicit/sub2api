@@ -16,7 +16,7 @@ func TestRemoteSkillPromptVersionDetailRequiresAdminAuthentication(t *testing.T)
 	gin.SetMode(gin.TestMode)
 	router := gin.New()
 	handlers := &handler.Handlers{Admin: &handler.AdminHandlers{
-		SystemPrompt: adminhandler.NewSystemPromptHandler(nil, nil),
+		SystemPrompt: adminhandler.NewSystemPromptHandler(nil),
 	}}
 	adminAuth := servermiddleware.AdminAuthMiddleware(func(c *gin.Context) {
 		if c.GetHeader("Authorization") == "" {
@@ -48,4 +48,42 @@ func TestRemoteSkillPromptVersionDetailRequiresAdminAuthentication(t *testing.T)
 			require.Equal(t, testCase.wantStatus, recorder.Code)
 		})
 	}
+}
+
+func TestRetiredPromptManagementRemainsInsideAdminAuthentication(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	handlers := &handler.Handlers{Admin: &handler.AdminHandlers{
+		SystemPrompt: adminhandler.NewSystemPromptHandler(nil),
+	}}
+	group := router.Group("/api/v1/admin", func(c *gin.Context) {
+		if c.GetHeader("Authorization") != "Bearer admin-token" {
+			c.AbortWithStatus(http.StatusUnauthorized)
+			return
+		}
+		c.Next()
+	})
+	registerSystemPromptRoutes(group, handlers)
+	for _, route := range []struct{ method, path string }{
+		{http.MethodPost, "/api/v1/admin/system-prompts/skill-registry/syncs"},
+		{http.MethodPost, "/api/v1/admin/system-prompts/1/versions/2/publish"},
+		{http.MethodPut, "/api/v1/admin/system-prompts/rules"},
+		{http.MethodGet, "/api/v1/admin/system-prompts/1/versions"},
+	} {
+		t.Run(route.method+" "+route.path, func(t *testing.T) {
+			request := httptest.NewRequest(route.method, route.path, nil)
+			recorder := httptest.NewRecorder()
+			router.ServeHTTP(recorder, request)
+			require.Equal(t, http.StatusUnauthorized, recorder.Code)
+			request = httptest.NewRequest(route.method, route.path, nil)
+			request.Header.Set("Authorization", "Bearer admin-token")
+			recorder = httptest.NewRecorder()
+			router.ServeHTTP(recorder, request)
+			require.Equal(t, http.StatusGone, recorder.Code)
+		})
+	}
+	request := httptest.NewRequest(http.MethodGet, "/api/v1/admin/system-prompts/rules/example/history", nil)
+	recorder := httptest.NewRecorder()
+	router.ServeHTTP(recorder, request)
+	require.Equal(t, http.StatusUnauthorized, recorder.Code)
 }

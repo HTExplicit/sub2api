@@ -4,8 +4,10 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -340,6 +342,44 @@ func TestPasskeyLoginAuditUsesCanonicalLoginActionAndOmitsCredentialBody(t *test
 	route := "POST /api/v1/auth/passkey/login/finish"
 	require.Equal(t, service.AuditActionLogin, auditActionOverrides[route])
 	require.Contains(t, auditBodyOmittedRoutes, route)
+}
+
+func TestCodexProxyDraftRoutesOmitCredentialBearingAuditBodies(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	for _, route := range []struct{ method, path string }{
+		{http.MethodPost, "/api/v1/admin/settings/openai-codex-ticket/proxy-parse"},
+		{http.MethodPost, "/api/v1/admin/settings/openai-codex-ticket/proxy-test"},
+		{http.MethodPut, "/api/v1/admin/settings/codex-runtime"},
+	} {
+		t.Run(route.method+" "+route.path, func(t *testing.T) {
+			repository := &auditCaptureRepository{}
+			auditService := service.NewAuditLogService(repository, nil)
+			auditService.Start()
+			router := gin.New()
+			router.Use(gin.HandlerFunc(NewAuditLogMiddleware(auditService)))
+			body := `{"proxy_url":"proxy.test:8080:user:audit-canary-secret@other.test:9090","proxy_selection_id":"selected"}`
+			router.Handle(route.method, route.path, func(c *gin.Context) {
+				raw, err := io.ReadAll(c.Request.Body)
+				require.NoError(t, err)
+				require.Equal(t, body, string(raw))
+				c.Status(http.StatusOK)
+			})
+			request := httptest.NewRequest(route.method, route.path, strings.NewReader(body))
+			request.Header.Set("Content-Type", "application/json")
+			recorder := httptest.NewRecorder()
+			router.ServeHTTP(recorder, request)
+			auditService.Stop()
+			require.Equal(t, http.StatusOK, recorder.Code)
+			repository.mu.Lock()
+			logs := append([]*service.AuditLog(nil), repository.logs...)
+			repository.mu.Unlock()
+			require.Len(t, logs, 1)
+			require.Equal(t, "<credential-bearing body omitted>", logs[0].RequestBody)
+			encoded, err := json.Marshal(logs[0])
+			require.NoError(t, err)
+			require.NotContains(t, string(encoded), "audit-canary")
+		})
+	}
 }
 
 // Ollama 会话保存的请求体整体就是浏览器 Cookie 明文，键级脱敏清单曾漏掉裸键

@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"net"
 	"net/http"
-	"net/url"
 	"time"
 
 	extensionv1 "github.com/Wei-Shaw/sub2api/internal/nativeapi"
@@ -24,10 +23,11 @@ func (s *OpenAIGatewayService) doCodexRoutingAcquisition(request *http.Request, 
 	if request == nil || request.URL == nil || request.Method != http.MethodPost || request.URL.Scheme != "https" || request.URL.Host != "chatgpt.com" || request.URL.Path != "/backend-api/codex/responses" || request.URL.RawQuery != "" || request.URL.User != nil || s.nativeCodexRuntime == nil {
 		return nil, errCodexRoutingUnavailable
 	}
-	normal, err := proxytransport.Normalize(proxyURL)
-	if err != nil || normal == "" {
+	_, err := proxytransport.ParseEndpoint(proxyURL)
+	if err != nil {
 		return nil, errCodexRoutingUnavailable
 	}
+	normal := proxyURL
 	installation := s.nativeCodexRuntime.metadata()
 	store := s.nativeCodexRuntime.repo
 	ok := store != nil
@@ -102,7 +102,7 @@ func verifyCodexRoutingProxyCertificate(state tls.ConnectionState, pinnedRoots *
 }
 
 func codexRoutingAcquisitionTransport(raw string, pinnedRoots *x509.CertPool) (*http.Transport, error) {
-	address, err := url.Parse(raw)
+	address, err := proxytransport.ParseEndpoint(raw)
 	if err != nil {
 		return nil, errCodexRoutingUnavailable
 	}

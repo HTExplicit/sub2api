@@ -13,7 +13,8 @@ import (
 // PromptContentDraft exists only in an edit/preview request. Published content
 // remains an immutable version referenced by its rule.
 type PromptContentDraft struct {
-	Body string `json:"body"`
+	Body             string `json:"body"`
+	RestoreVersionID int64  `json:"restore_version_id,omitempty"`
 }
 
 type PromptConfigUpdate struct {
@@ -23,6 +24,28 @@ type PromptConfigUpdate struct {
 	CompactEnabled     bool                          `json:"compact_enabled"`
 	Policy             extensionv1.PromptRulePolicy  `json:"policy"`
 	Contents           map[string]PromptContentDraft `json:"contents"`
+	preserveExpose     bool
+	preserveCompact    bool
+}
+
+// The core editor does not expose compatibility switches. Omitted/null fields
+// preserve their current values, while legacy callers can still send a bool.
+func (input *PromptConfigUpdate) UnmarshalJSON(raw []byte) error {
+	type configUpdate PromptConfigUpdate
+	var decoded configUpdate
+	if err := json.Unmarshal(raw, &decoded); err != nil {
+		return err
+	}
+	var compatibility struct {
+		Expose  *bool `json:"expose_server_prompt"`
+		Compact *bool `json:"compact_enabled"`
+	}
+	if err := json.Unmarshal(raw, &compatibility); err != nil {
+		return err
+	}
+	*input = PromptConfigUpdate(decoded)
+	input.preserveExpose, input.preserveCompact = compatibility.Expose == nil, compatibility.Compact == nil
+	return nil
 }
 
 type PromptConfigContent struct {
@@ -120,7 +143,7 @@ func (s *BusinessSystemPromptService) PromptConfig(ctx context.Context) (PromptC
 		}
 		state.Contents[rule.ID] = PromptConfigContent{
 			Body: body, CompositionMode: version.CompositionMode,
-			Managed:    detail.Template.ManagedSource != "" || version.CompositionMode != BusinessSystemPromptCompositionInline,
+			Managed:    detail.Template.ManagedSource != "" || version.CompositionMode == BusinessSystemPromptCompositionCodexSkillHybrid,
 			TemplateID: rule.TemplateID, VersionID: rule.VersionID, Available: available,
 		}
 	}
@@ -138,6 +161,25 @@ func (s *BusinessSystemPromptService) SavePromptConfig(ctx context.Context, inpu
 	}
 	if input.ExpectedRevision < 1 || current.Revision != input.ExpectedRevision {
 		return PromptConfigState{}, ErrBusinessSystemPromptRevisionConflict
+	}
+	if input.preserveExpose {
+		input.ExposeServerPrompt = current.ExposeServerPrompt
+	}
+	if input.preserveCompact {
+		input.CompactEnabled = current.CompactEnabled
+	}
+	for _, rule := range input.Policy.Rules {
+		oldIndex := slices.IndexFunc(current.RulePolicy.Rules, func(previous extensionv1.PromptRule) bool { return previous.ID == rule.ID })
+		if oldIndex < 0 {
+			if rule.TemplateID != 0 || rule.VersionID != 0 {
+				return PromptConfigState{}, ErrBusinessSystemPromptInvalid
+			}
+			if _, ok := input.Contents[rule.ID]; !ok {
+				return PromptConfigState{}, ErrBusinessSystemPromptInvalid
+			}
+		} else if rule.TemplateID != current.RulePolicy.Rules[oldIndex].TemplateID {
+			return PromptConfigState{}, ErrBusinessSystemPromptInvalid
+		}
 	}
 	current.Enabled, current.ExposeServerPrompt, current.CompactEnabled = input.Enabled, input.ExposeServerPrompt, input.CompactEnabled
 	current.RulePolicy = &input.Policy
@@ -195,7 +237,9 @@ func (s *BusinessSystemPromptService) compilePromptRules(ctx context.Context, sn
 	}
 	for _, rule := range policy.Rules {
 		var content BusinessSystemPromptSnapshot
+		preserveEcho := false
 		if draft, edited := drafts[rule.ID]; edited {
+			mode := BusinessSystemPromptCompositionInline
 			if rule.TemplateID > 0 {
 				detail, err := s.store.GetBusinessSystemPromptTemplate(ctx, rule.TemplateID)
 				if err != nil {
@@ -205,15 +249,46 @@ func (s *BusinessSystemPromptService) compilePromptRules(ctx context.Context, sn
 				if index < 0 {
 					return ErrBusinessSystemPromptVersionNotFound
 				}
-				if detail.Template.ManagedSource != "" || detail.Versions[index].CompositionMode != BusinessSystemPromptCompositionInline {
+				mode = detail.Versions[index].CompositionMode
+				if detail.Template.ManagedSource != "" || mode == BusinessSystemPromptCompositionCodexSkillHybrid {
 					return ErrBusinessSystemPromptSourceNotManaged
 				}
+				if draft.RestoreVersionID > 0 {
+					versions, err := s.PromptRuleHistory(ctx, rule.ID)
+					if err != nil {
+						return err
+					}
+					historyIndex := slices.IndexFunc(versions, func(version PromptHistoryVersion) bool {
+						return version.ID == draft.RestoreVersionID && version.Restorable && version.CompositionMode == mode
+					})
+					if historyIndex < 0 {
+						return ErrBusinessSystemPromptVersionNotFound
+					}
+					if mode == extensionv1.PromptContentAnthropicSystemBlocks {
+						if err := ValidateStructuredPromptTextEdit(versions[historyIndex].Body, draft.Body); err != nil {
+							return err
+						}
+					}
+					if store, ok := s.store.(IndependentPromptStore); ok {
+						historicalEcho, err := store.PromptVersionPreserveEcho(ctx, draft.RestoreVersionID)
+						if err != nil {
+							return err
+						}
+						preserveEcho = PreserveRestoredPromptEcho(versions[historyIndex].Body, draft.Body, historicalEcho)
+					}
+				} else if mode == extensionv1.PromptContentAnthropicSystemBlocks {
+					if err := ValidateStructuredPromptTextEdit(detail.Versions[index].Body, draft.Body); err != nil {
+						return err
+					}
+				}
+			} else if draft.RestoreVersionID > 0 {
+				return ErrBusinessSystemPromptVersionNotFound
 			}
 			hash, size, err := ValidateBusinessSystemPromptBody(draft.Body)
 			if err != nil {
 				return err
 			}
-			content = BusinessSystemPromptSnapshot{Enabled: true, Body: draft.Body, SHA256: hash, ByteLength: size, CompositionMode: BusinessSystemPromptCompositionInline}
+			content = BusinessSystemPromptSnapshot{Enabled: true, Body: draft.Body, SHA256: hash, ByteLength: size, CompositionMode: mode}
 		} else {
 			detail, err := s.store.GetBusinessSystemPromptTemplate(ctx, rule.TemplateID)
 			if err != nil {
@@ -224,6 +299,13 @@ func (s *BusinessSystemPromptService) compilePromptRules(ctx context.Context, sn
 				return ErrBusinessSystemPromptVersionNotFound
 			}
 			version := detail.Versions[index]
+			if store, ok := s.store.(IndependentPromptStore); ok {
+				var err error
+				preserveEcho, err = store.PromptVersionPreserveEcho(ctx, version.ID)
+				if err != nil {
+					return err
+				}
+			}
 			content = BusinessSystemPromptSnapshot{Enabled: true, Revision: snapshot.Revision, TemplateID: rule.TemplateID, VersionID: rule.VersionID, Body: version.Body, SHA256: version.SHA256, ByteLength: version.ByteLength, CompositionMode: version.CompositionMode, BundleID: version.BundleID, BundleManifestSHA256: version.BundleManifestSHA256}
 			if content.CompositionMode == extensionv1.PromptContentAnthropicSystemBlocks && !validStructuredPromptScope(rule) {
 				return fmt.Errorf("%w: structured Claude OAuth sources require their native control carrier and request profile", ErrPromptDeliveryUnsupported)
@@ -263,6 +345,14 @@ func (s *BusinessSystemPromptService) compilePromptRules(ctx context.Context, sn
 				}
 			}
 		}
+		if content.CompositionMode == extensionv1.PromptContentAnthropicSystemBlocks {
+			if !validStructuredPromptScope(rule) {
+				return ErrPromptDeliveryUnsupported
+			}
+			if _, err := parseClaudeOAuthSystemPromptBlocksConfig(content.Body); err != nil {
+				return fmt.Errorf("%w: invalid system blocks", ErrBusinessSystemPromptInvalid)
+			}
+		}
 		hash, _, err := validateBusinessSystemPromptBodyWithLimit(content.Body, extensionv1.PromptRulesMaxBytes)
 		if err != nil {
 			return err
@@ -270,7 +360,7 @@ func (s *BusinessSystemPromptService) compilePromptRules(ctx context.Context, sn
 		if !rule.Enabled {
 			continue
 		}
-		resolved := extensionv1.ResolvedPromptRule{Rule: rule, Body: content.Body, SHA256: hash, PreserveEcho: content.CompositionMode == BusinessSystemPromptCompositionCodexSkillHybrid}
+		resolved := extensionv1.ResolvedPromptRule{Rule: rule, Body: content.Body, SHA256: hash, PreserveEcho: preserveEcho || content.CompositionMode == BusinessSystemPromptCompositionCodexSkillHybrid}
 		if content.CompositionMode == extensionv1.PromptContentAnthropicSystemBlocks {
 			resolved.ContentFormat = content.CompositionMode
 			resolved.StructuredContent = json.RawMessage(content.Body)

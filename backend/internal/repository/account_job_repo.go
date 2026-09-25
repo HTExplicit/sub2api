@@ -425,6 +425,27 @@ func (r *accountJobRepository) CancelRequested(ctx context.Context, jobID int64)
 	return canceled, err
 }
 
+func (r *accountJobRepository) SaveExecutionSnapshot(ctx context.Context, jobID, itemID int64, metadata json.RawMessage) error {
+	if err := service.ValidateAccountJobMetadata(metadata); err != nil {
+		return err
+	}
+	result, err := r.db.ExecContext(ctx, `UPDATE admin_account_job_items
+		SET metadata=metadata || $3::jsonb, updated_at=NOW()
+		WHERE job_id=$1 AND id=$2 AND status='running'
+		AND (NOT (metadata ? 'execution_plan') OR metadata->'execution_plan'=$3::jsonb->'execution_plan')`, jobID, itemID, string(metadata))
+	if err != nil {
+		return err
+	}
+	count, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if count != 1 {
+		return errors.New("account test execution plan changed")
+	}
+	return nil
+}
+
 func (r *accountJobRepository) CompleteItems(ctx context.Context, jobID int64, results []service.AccountJobExecutionResult) error {
 	tx, err := r.db.BeginTx(ctx, nil)
 	if err != nil {
@@ -439,7 +460,7 @@ func (r *accountJobRepository) CompleteItems(ctx context.Context, jobID int64, r
 		}
 		metadata := normalizeRepositoryJobMetadata(result.Metadata)
 		updated, updateErr := tx.ExecContext(ctx, `UPDATE admin_account_job_items
-			SET status=$3, metadata=$4::jsonb, error_code=NULLIF($5,''), error_message=NULLIF($6,''),
+			SET status=$3, metadata=metadata || $4::jsonb, error_code=NULLIF($5,''), error_message=NULLIF($6,''),
 			    finished_at=NOW(), updated_at=NOW()
 			WHERE job_id=$1 AND id=$2 AND status='running'`,
 			jobID, result.ItemID, status, string(metadata), result.ErrorCode, result.ErrorMessage)
@@ -514,21 +535,11 @@ func (r *accountJobRepository) Finish(ctx context.Context, jobID int64, errorCod
 	if err = refreshAccountJobCounts(ctx, tx, jobID); err != nil {
 		return nil, err
 	}
-	status := service.AccountJobStatusFailed
-	if cancelRequested {
-		status = service.AccountJobStatusCanceled
-	} else {
-		var succeeded, failed int
-		if err = tx.QueryRowContext(ctx, `SELECT succeeded_count, failed_count FROM admin_account_jobs WHERE id=$1`, jobID).Scan(&succeeded, &failed); err != nil {
-			return nil, err
-		}
-		switch {
-		case failed == 0:
-			status = service.AccountJobStatusSucceeded
-		case succeeded > 0:
-			status = service.AccountJobStatusPartiallySucceeded
-		}
+	var succeeded, failed, canceled int
+	if err = tx.QueryRowContext(ctx, `SELECT succeeded_count, failed_count, canceled_count FROM admin_account_jobs WHERE id=$1`, jobID).Scan(&succeeded, &failed, &canceled); err != nil {
+		return nil, err
 	}
+	status := service.AccountJobTerminalStatus(cancelRequested, errorCode, succeeded, failed, canceled)
 	job, err := scanAccountJob(tx.QueryRowContext(ctx, `UPDATE admin_account_jobs
 		SET status=$2, error_code=NULLIF($3,''), error_message=NULLIF($4,''), finished_at=NOW(), updated_at=NOW()
 		WHERE id=$1 RETURNING `+accountJobSelectColumns, jobID, status, errorCode, errorMessage))
@@ -594,7 +605,7 @@ func (r *accountJobRepository) FailedItemSeeds(ctx context.Context, jobID, creat
 	if err != nil || job.CreatedBy != createdBy {
 		return nil, nil, "", time.Time{}, service.ErrAccountJobNotFound
 	}
-	if job.Status != service.AccountJobStatusFailed && job.Status != service.AccountJobStatusPartiallySucceeded {
+	if !service.AccountJobHasRetryableFailures(job) {
 		return nil, nil, "", time.Time{}, service.ErrAccountJobNotRetryable
 	}
 	payload, expires, err := r.Payload(ctx, jobID)

@@ -102,7 +102,7 @@ func TestPromptConfigDraftAndRejectedEditsDoNotWrite(t *testing.T) {
 func TestPromptConfigInlineRuntimeStartsWithoutSkillRegistry(t *testing.T) {
 	svc, _, _, _ := newPromptConfigService(t)
 	svc.bus = nil
-	runtime := NewPromptDomainRuntime(nil, svc)
+	runtime := NewPromptDomainRuntime(svc)
 	runtime.Start(context.Background())
 	t.Cleanup(runtime.Stop)
 	require.True(t, runtime.ready)

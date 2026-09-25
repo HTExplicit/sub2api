@@ -29,6 +29,34 @@ type rateLimitClearRepoStub struct {
 	clearTempUnschedulableErr error
 }
 
+func (r *rateLimitClearRepoStub) RecoverAfterSuccessfulTest(ctx context.Context, id int64) (*SuccessfulTestRecoveryResult, error) {
+	a, err := r.GetByID(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	result := &SuccessfulTestRecoveryResult{}
+	if a.Status != StatusActive && a.Status != StatusError {
+		result.ManualStatePreserved = true
+		return result, nil
+	}
+	if a.Status == StatusError {
+		if err := r.ClearError(ctx, id); err != nil {
+			return nil, err
+		}
+		result.ClearedError = true
+	}
+	if hasRecoverableRuntimeState(a) {
+		for _, clear := range []func(context.Context, int64) error{r.ClearRateLimit, r.ClearAntigravityQuotaScopes, r.ClearModelRateLimits, r.ClearTempUnschedulable} {
+			if err := clear(ctx, id); err != nil {
+				return nil, err
+			}
+		}
+		result.ClearedRateLimit = true
+	}
+	result.ManualStatePreserved = !a.Schedulable
+	return result, nil
+}
+
 func (r *rateLimitClearRepoStub) GetByID(ctx context.Context, id int64) (*Account, error) {
 	r.getByIDCalls++
 	if r.getByIDErr != nil {

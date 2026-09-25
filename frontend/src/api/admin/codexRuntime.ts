@@ -5,6 +5,7 @@ export interface CodexRuntimeConfig extends Record<string, unknown> {
   request_zstd?: boolean
   proxy_url?: string
   proxy_protocol?: string
+  proxy_selection_id?: string
 }
 
 export const codexRuntimeAPI = {

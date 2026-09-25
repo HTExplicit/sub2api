@@ -1,7 +1,6 @@
 package service
 
 import (
-	"bufio"
 	"bytes"
 	"encoding/json"
 	"fmt"
@@ -90,7 +89,7 @@ func (s *AccountTestService) testCNProviderAdaptiveAnthropicConnection(c *gin.Co
 
 	resp, err := s.doCNProviderAdaptiveRequest(req, account)
 	if err != nil {
-		return s.sendErrorAndEnd(c, fmt.Sprintf("Adaptive Anthropic endpoint request failed: %s", err.Error()))
+		return s.sendAccountTestRequestError(c, err, accountTestEndpointAdaptiveAnthropic)
 	}
 	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
@@ -99,7 +98,7 @@ func (s *AccountTestService) testCNProviderAdaptiveAnthropicConnection(c *gin.Co
 		if resp.StatusCode == http.StatusUnauthorized && s.accountRepo != nil {
 			_ = s.accountRepo.SetError(ctx, account.ID, errMsg)
 		}
-		return s.sendErrorAndEnd(c, errMsg)
+		return s.sendAccountTestHTTPError(c, resp.StatusCode, accountTestEndpointAdaptiveAnthropic)
 	}
 
 	if err := s.processCNProviderAdaptiveAnthropicStream(c, resp.Body); err != nil {
@@ -110,48 +109,7 @@ func (s *AccountTestService) testCNProviderAdaptiveAnthropicConnection(c *gin.Co
 }
 
 func (s *AccountTestService) processCNProviderAdaptiveAnthropicStream(c *gin.Context, body io.Reader) error {
-	reader := bufio.NewReader(body)
-	for {
-		line, err := reader.ReadString('\n')
-		if err != nil {
-			if err == io.EOF {
-				return s.sendErrorAndEnd(c, "Adaptive Anthropic stream ended before message_stop")
-			}
-			return s.sendErrorAndEnd(c, fmt.Sprintf("Adaptive Anthropic stream read error: %s", err.Error()))
-		}
-
-		line = strings.TrimSpace(line)
-		if line == "" || !sseDataPrefix.MatchString(line) {
-			continue
-		}
-		jsonStr := sseDataPrefix.ReplaceAllString(line, "")
-		if jsonStr == "[DONE]" {
-			return nil
-		}
-
-		var data map[string]any
-		if err := json.Unmarshal([]byte(jsonStr), &data); err != nil {
-			continue
-		}
-		switch eventType, _ := data["type"].(string); eventType {
-		case "content_block_delta":
-			if delta, ok := data["delta"].(map[string]any); ok {
-				if text, ok := delta["text"].(string); ok && text != "" {
-					s.sendEvent(c, TestEvent{Type: "content", Text: text})
-				}
-			}
-		case "message_stop":
-			return nil
-		case "error":
-			errorMsg := "Unknown error"
-			if errData, ok := data["error"].(map[string]any); ok {
-				if message, ok := errData["message"].(string); ok && message != "" {
-					errorMsg = message
-				}
-			}
-			return s.sendErrorAndEnd(c, fmt.Sprintf("Adaptive Anthropic endpoint error: %s", errorMsg))
-		}
-	}
+	return s.processConnectionStream(c, body, "claude", nil)
 }
 
 func (s *AccountTestService) testCNProviderAdaptiveResponsesConnection(c *gin.Context, account *Account, testModelID string, authToken string) error {
@@ -185,7 +143,7 @@ func (s *AccountTestService) testCNProviderAdaptiveResponsesConnection(c *gin.Co
 
 	resp, err := s.doCNProviderAdaptiveRequest(req, account)
 	if err != nil {
-		return s.sendErrorAndEnd(c, fmt.Sprintf("Adaptive Responses endpoint request failed: %s", err.Error()))
+		return s.sendAccountTestRequestError(c, err, accountTestEndpointAdaptiveResponses)
 	}
 	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
@@ -194,7 +152,7 @@ func (s *AccountTestService) testCNProviderAdaptiveResponsesConnection(c *gin.Co
 		if resp.StatusCode == http.StatusUnauthorized && s.accountRepo != nil {
 			_ = s.accountRepo.SetError(ctx, account.ID, errMsg)
 		}
-		return s.sendErrorAndEnd(c, errMsg)
+		return s.sendAccountTestHTTPError(c, resp.StatusCode, accountTestEndpointAdaptiveResponses)
 	}
 
 	if err := s.processOpenAIStream(c, ctx, account, resp.Body); err != nil {
@@ -275,7 +233,7 @@ func (s *AccountTestService) testCNProviderAnthropicConnection(c *gin.Context, a
 
 	resp, err := s.doCNProviderAdaptiveRequest(req, account)
 	if err != nil {
-		return s.sendErrorAndEnd(c, fmt.Sprintf("Anthropic endpoint request failed: %s", err.Error()))
+		return s.sendAccountTestRequestError(c, err, accountTestEndpointAnthropic)
 	}
 	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
@@ -284,7 +242,7 @@ func (s *AccountTestService) testCNProviderAnthropicConnection(c *gin.Context, a
 		if (resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden) && s.accountRepo != nil {
 			_ = s.accountRepo.SetError(ctx, account.ID, errMsg)
 		}
-		return s.sendErrorAndEnd(c, errMsg)
+		return s.sendAccountTestHTTPError(c, resp.StatusCode, accountTestEndpointAnthropic)
 	}
 
 	return s.processClaudeStream(c, resp.Body)

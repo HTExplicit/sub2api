@@ -20,7 +20,7 @@ func TestAccountTestPromptBuildersPreserveUserText(t *testing.T) {
 	prompt := "  你的知识库库截止日期是什么时间,直接回复不要联网\n"
 	require.NoError(t, ValidateAccountTestPrompt(strings.Repeat("😀", 8192)))
 	require.Error(t, ValidateAccountTestPrompt(strings.Repeat("😀", 8193)))
-	require.Equal(t, "hi", resolveAccountTestPrompt(" \n"))
+	require.Equal(t, "Reply with OK.", resolveAccountTestPrompt(" \n"))
 	claude, err := createTestPayload("claude-sonnet-4-6", prompt)
 	require.NoError(t, err)
 	raw, _ := json.Marshal(claude)
@@ -57,8 +57,8 @@ func TestAccountTestPromptAntigravityScheduledDefaults(t *testing.T) {
 				want    string
 				limit   int64
 			}{
-				{"scheduled", nil, ".", 1},
-				{"blank manual", []string{""}, "hi", 1},
+				{"scheduled", nil, "Reply with OK.", 256},
+				{"blank manual", []string{""}, "Reply with OK.", 256},
 				{"custom manual", []string{"custom question"}, "custom question", 1024},
 			} {
 				t.Run(input.name, func(t *testing.T) {
@@ -108,7 +108,7 @@ func TestAccountTestPromptOAuthFinalTicketUsesMappedModel(t *testing.T) {
 	a.Credentials["header_override_enabled"] = true
 	a.Credentials["header_overrides"] = map[string]any{openAICodexTurnStateHeader: fakeCodexTicketState(312)}
 	a.Extra = map[string]any{openAICodexTicketExtraKey("gpt-5.6-sol"): &CodexTicketRecord{State: fakeCodexTicketState(292), Length: 292, AccountID: a.ID, Model: "gpt-5.6-sol", ExpiresAt: time.Now().Add(time.Hour)}}
-	upstream := &queuedHTTPUpstream{responses: []*http.Response{newJSONResponse(200, "data: {\"type\":\"response.completed\"}\n\n")}}
+	upstream := &queuedHTTPUpstream{responses: []*http.Response{newJSONResponse(200, "data: {\"type\":\"response.output_text.delta\",\"delta\":\"OK\"}\n\ndata: {\"type\":\"response.completed\",\"response\":{\"status\":\"completed\"}}\n\n")}}
 	gateway := &OpenAIGatewayService{cfg: cfg, httpUpstream: upstream, accountRepo: &routingAccountRepositoryFixture{account: a}}
 	// Cookie routing replaced the 292 header: the plugin only references a
 	// host-verified qualification, gated like business traffic on the final model.

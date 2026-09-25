@@ -36,7 +36,7 @@ describe('unified prompt editor site language', () => {
   })
   it('switches language without resetting content or settings drafts', async () => {
     const i18n = createI18n({ legacy: false, locale: 'en', messages: { en: { admin: en }, zh: { admin: zh } } })
-    const wrapper = mount(App, { global: { plugins: [i18n], stubs: { AppLayout: { template: '<div><slot /></div>' }, SystemPromptAdvancedDrawer: true } } }); wrappers.push(wrapper)
+    const wrapper = mount(App, { global: { plugins: [i18n], stubs: { AppLayout: { template: '<div><slot /></div>' } } } }); wrappers.push(wrapper)
     await flushPromises()
     await wrapper.get('[data-test="system-prompt-body"]').setValue('Unsaved 原文\nKeep bytes')
     await wrapper.get('[data-test="prompt-position"]').setValue('after_last_user')

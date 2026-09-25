@@ -25,7 +25,7 @@ describe('System Prompts integration surface', () => {
   it('renders the native management page without legacy surfaces', () => {
     const view = read('../SystemPromptsView.vue')
     expect(view).not.toContain('ExtensionPage')
-    for (const marker of ['saveConfig', 'useSystemPromptConfigDraft', 'syncManagedSource', 'SystemPromptAdvancedDrawer']) {
+    for (const marker of ['saveConfig', 'useSystemPromptConfigDraft', 'loadHistory']) {
       expect(view).toContain(marker)
     }
     expect(view).not.toContain('setCurrent')
@@ -36,12 +36,13 @@ describe('System Prompts integration surface', () => {
     expect(view).not.toContain('isLegacyComposition')
     expect(view).not.toContain('copyInstallCommand')
 
-    const drawer = read('../../../components/admin/systemPrompt/SystemPromptAdvancedDrawer.vue')
-    expect(drawer).toContain('compact_enabled')
-    expect(drawer).toContain('expose_server_prompt')
-    expect(drawer).toContain('data-test="system-prompt-advanced-drawer"')
-    expect(drawer).toContain('data-test="system-prompt-skill-source"')
-    expect(drawer).not.toContain('system-prompt-copy-acquire')
-    expect(drawer).not.toContain('system-prompt-copy-execute')
+    expect(view).not.toContain('SystemPromptAdvancedDrawer')
+    expect(view).not.toContain('syncManagedSource')
+    expect(view).not.toContain('setTimeout')
+    const sidebar = read('../../../components/layout/AppSidebar.vue')
+    const extensionBuilder = sidebar.slice(sidebar.indexOf('function buildExtensionNavItems'), sidebar.indexOf('const userExtensionNavItems'))
+    expect(extensionBuilder).toContain("path: '/admin/system-prompts'")
+    expect(sidebar.split("path: '/admin/system-prompts'")).toHaveLength(2)
+
   })
 })

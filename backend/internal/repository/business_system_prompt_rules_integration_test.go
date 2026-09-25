@@ -288,7 +288,7 @@ func TestPromptRulesMigrationAndAccountBindingIntegration(t *testing.T) {
 	require.NoError(t, db.QueryRowContext(ctx, `SELECT COUNT(*) FROM system_prompt_template_versions`).Scan(&versionCount))
 	badPolicy := policy
 	badPolicy.Rules = append([]extensionv1.PromptRule{}, policy.Rules...)
-	badPolicy.Rules = append(badPolicy.Rules, promptConfigFixtureRule("unavailable", detail.Template.ID, 9223372036854775807))
+	badPolicy.Rules[1].VersionID = 9223372036854775807
 	edit := service.PromptConfigUpdate{
 		ExpectedRevision: 43, Enabled: true, ExposeServerPrompt: true, CompactEnabled: true,
 		Policy: badPolicy, Contents: map[string]service.PromptContentDraft{"legacy-default": {Body: "Atomic replacement content."}},

@@ -14,6 +14,7 @@ func TestCodexTicketProxyInput(t *testing.T) {
 		{"user:pass@proxy.example.com:8080", "http://user:pass@proxy.example.com:8080"},
 		{"socks5h://u:p@proxy.example.com:1080", "socks5h://u:p@proxy.example.com:1080"},
 		{"[::1]:8080", "http://[::1]:8080"},
+		{"user:pass:host:1234", "http://user:pass@host:1234"},
 	} {
 		t.Run(tc.input, func(t *testing.T) {
 			got, err := NormalizeCodexTicketProxy(tc.input)
@@ -21,7 +22,7 @@ func TestCodexTicketProxyInput(t *testing.T) {
 			require.Equal(t, tc.want, got)
 		})
 	}
-	for _, input := range []string{"host: x\nport: 8080\nport: 90", "host: x\nport: 8080\nusername: u", "username: x\npassword: y", "user:pass:host:1234", "http://x:70000", "ftp://x:21"} {
+	for _, input := range []string{"host: x\nport: 8080\nport: 90", "host: x\nport: 8080\nusername: u", "username: x\npassword: y", "http://x:70000", "ftp://x:21"} {
 		_, err := NormalizeCodexTicketProxy(input)
 		require.Error(t, err)
 	}

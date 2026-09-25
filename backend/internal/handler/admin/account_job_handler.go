@@ -27,6 +27,9 @@ func (h *AccountJobHandler) List(c *gin.Context) {
 		response.ErrorFrom(c, accountJobHTTPError(err))
 		return
 	}
+	for i := range jobs.Items {
+		restrictAccountJobRetryActor(c, &jobs.Items[i])
+	}
 	response.Success(c, jobs)
 }
 
@@ -40,6 +43,7 @@ func (h *AccountJobHandler) Get(c *gin.Context) {
 		response.ErrorFrom(c, accountJobHTTPError(err))
 		return
 	}
+	restrictAccountJobRetryActor(c, job)
 	response.Success(c, job)
 }
 
@@ -115,6 +119,17 @@ func accountJobActorID(c *gin.Context) (int64, bool) {
 		return 0, false
 	}
 	return subject.UserID, true
+}
+
+func restrictAccountJobRetryActor(c *gin.Context, job *service.AccountJob) {
+	if job == nil || !job.RetryEligible {
+		return
+	}
+	actor, ok := servermiddleware.GetAuthSubjectFromContext(c)
+	if !ok || actor.UserID != job.CreatedBy {
+		job.RetryEligible = false
+		job.RetryUnavailableReason = "different_administrator"
+	}
 }
 
 func accountJobPathID(c *gin.Context) (int64, bool) {

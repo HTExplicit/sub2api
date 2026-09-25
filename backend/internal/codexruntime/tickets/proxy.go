@@ -12,7 +12,6 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptrace"
-	"net/url"
 	"sync"
 	"time"
 
@@ -93,7 +92,7 @@ func verifyProxyCertificate(state tls.ConnectionState, trust *ProxyTrust, learn 
 }
 
 func ticketProxyTransport(raw string, trust *ProxyTrust, learn bool, observe func(*ProxyTrust)) (*http.Transport, error) {
-	address, err := url.Parse(raw)
+	address, err := proxytransport.ParseEndpoint(raw)
 	if err != nil {
 		return nil, errors.New("invalid proxy")
 	}
@@ -132,12 +131,12 @@ func loadProxyTrust(ctx context.Context, host HostCaller, raw string) (*ProxyTru
 }
 
 func prepareProxy(ctx context.Context, host HostCaller, raw string, explicitTest bool) (*http.Client, *ProxyResult, error) {
-	normal, err := proxytransport.Normalize(raw)
+	address, err := proxytransport.ParseEndpoint(raw)
 	result := &ProxyResult{Stages: []ProxyStage{}, Code: "invalid_proxy"}
-	if err != nil || normal == "" {
+	if err != nil {
 		return nil, result, errors.New("invalid proxy")
 	}
-	address, _ := url.Parse(normal)
+	normal := raw
 	result.Protocol = address.Scheme
 	trust, revision, err := loadProxyTrust(ctx, host, normal)
 	if err != nil {

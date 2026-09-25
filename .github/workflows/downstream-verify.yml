@@ -158,6 +158,7 @@ jobs:
             src/features/image-studio/history.legacy.spec.ts \
             src/components/admin/account/__tests__/BatchTestAccountModal.spec.ts \
             src/components/admin/account/__tests__/BatchTestAccountModal.plan.spec.ts \
+            src/components/admin/codex/__tests__/CodexRuntime.proxy.spec.ts \
             src/components/admin/account/__tests__/AccountFolderBar.spec.ts \
             src/components/admin/account/__tests__/AccountTaxonomyManager.spec.ts \
             src/components/admin/account/__tests__/AccountBulkTaxonomyModal.spec.ts \

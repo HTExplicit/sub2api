@@ -51,11 +51,19 @@ func (h *SettingHandler) UpdateNativeCodexConfiguration(c *gin.Context) {
 		response.BadRequest(c, "Invalid Codex routing configuration")
 		return
 	}
-	if _, err := service.NormalizeNativeCodexConfig(c.Request.Context(), raw); err != nil {
+	normalized, err := service.NormalizeNativeCodexConfig(c.Request.Context(), raw)
+	if err != nil {
+		if writeCodexProxySelectionError(c, err) {
+			return
+		}
 		response.BadRequest(c, "Invalid Codex routing configuration")
 		return
 	}
-	if err := h.codexTicketGateway.UpdateNativeCodexConfiguration(c.Request.Context(), raw, h.nativeCodexConfigEncryptor); err != nil {
+	if h.codexTicketGateway == nil {
+		response.Error(c, 503, "Codex runtime is unavailable")
+		return
+	}
+	if err := h.codexTicketGateway.UpdateNativeCodexConfiguration(c.Request.Context(), normalized, h.nativeCodexConfigEncryptor); err != nil {
 		if errors.Is(err, service.ErrNativeCodexRuntimeChanged) {
 			response.Error(c, 409, "Codex runtime configuration changed; reload and retry")
 		} else {

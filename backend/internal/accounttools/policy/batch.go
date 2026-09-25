@@ -16,19 +16,32 @@ func planBatch(request extensionv1.BatchTestPlanningRequest) (extensionv1.BatchT
 	plan := extensionv1.BatchTestPlan{Models: make(map[int64]string)}
 	if request.HasItems || request.Items != nil {
 		efforts := map[int64]string{}
+		modes := map[int64]string{}
 		for _, item := range request.Items {
+			if item.ModelID != "" && strings.TrimSpace(item.ModelID) == "" {
+				return plan, invalid
+			}
 			item.ModelID = strings.TrimSpace(item.ModelID)
-			if item.AccountID <= 0 || item.ModelID == "" || len(item.ModelID) > 256 || len(item.ReasoningEffort) > 32 || item.ReasoningEffort != strings.TrimSpace(item.ReasoningEffort) {
+			if item.SelectionMode == "" {
+				item.SelectionMode = "auto"
+				if item.ModelID != "" {
+					item.SelectionMode = "explicit"
+				}
+			}
+			if item.AccountID <= 0 || (item.SelectionMode != "auto" && item.SelectionMode != "explicit") ||
+				(item.SelectionMode == "explicit" && item.ModelID == "") || (item.SelectionMode == "auto" && item.ModelID != "") ||
+				len(item.ModelID) > 256 || len(item.ReasoningEffort) > 32 || item.ReasoningEffort != strings.TrimSpace(item.ReasoningEffort) {
 				return plan, invalid
 			}
 			if previous, exists := plan.Models[item.AccountID]; exists {
-				if previous != item.ModelID || efforts[item.AccountID] != item.ReasoningEffort {
+				if previous != item.ModelID || efforts[item.AccountID] != item.ReasoningEffort || modes[item.AccountID] != item.SelectionMode {
 					return plan, invalid
 				}
 				continue
 			}
 			plan.AccountIDs = append(plan.AccountIDs, item.AccountID)
 			plan.Models[item.AccountID], efforts[item.AccountID] = item.ModelID, item.ReasoningEffort
+			modes[item.AccountID] = item.SelectionMode
 			plan.Items = append(plan.Items, item)
 		}
 	} else {

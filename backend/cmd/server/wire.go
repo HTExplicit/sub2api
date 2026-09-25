@@ -146,7 +146,6 @@ func provideCleanup(
 	promptAudit *securityaudit.PromptService,
 	promptDomain *service.PromptDomainRuntime,
 	businessPrompt *service.BusinessSystemPromptService,
-	remoteSkillRegistry *service.RemoteSkillRegistryService,
 	accountJobs *service.AccountJobRuntime,
 	cindyHealth *service.CindyHealthService,
 	cindyBalanceProbe *service.CindyBalanceProbeService,
@@ -195,12 +194,6 @@ func provideCleanup(
 			{"CindyBalanceProbeService", func() error {
 				if cindyBalanceProbe != nil {
 					cindyBalanceProbe.Stop()
-				}
-				return nil
-			}},
-			{"RemoteSkillRegistryService", func() error {
-				if remoteSkillRegistry != nil {
-					remoteSkillRegistry.Stop()
 				}
 				return nil
 			}},

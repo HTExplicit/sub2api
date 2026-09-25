@@ -182,7 +182,7 @@ func TestAccountTestService_AdaptiveRejectsInvalidAnthropicSuccessBody(t *testin
 	err := svc.TestAccountConnection(c, account.ID, "kimi-k2.5", "", AccountTestModeDefault)
 
 	require.Error(t, err)
-	require.Contains(t, err.Error(), "Adaptive Anthropic stream ended before message_stop")
+	require.ErrorIs(t, err, ErrAccountTestIncomplete)
 	require.Len(t, upstream.requests, 2)
 	require.Contains(t, recorder.Body.String(), `"type":"error"`)
 	require.NotContains(t, recorder.Body.String(), `"type":"test_complete"`)

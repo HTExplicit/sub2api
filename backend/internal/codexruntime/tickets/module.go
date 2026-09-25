@@ -10,7 +10,6 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
-	"net/url"
 	"slices"
 	"strconv"
 	"strings"
@@ -24,13 +23,14 @@ import (
 )
 
 type Config struct {
-	RoutingSchema int      `json:"routing_schema"`
-	Enabled       bool     `json:"enabled"`
-	FailClosed    bool     `json:"fail_closed"`
-	ProxyURL      string   `json:"proxy_url"`
-	ProxyProtocol string   `json:"proxy_protocol,omitempty"`
-	Models        []string `json:"models"`
-	RequestZstd   bool     `json:"request_zstd"`
+	RoutingSchema    int      `json:"routing_schema"`
+	Enabled          bool     `json:"enabled"`
+	FailClosed       bool     `json:"fail_closed"`
+	ProxyURL         string   `json:"proxy_url"`
+	ProxyProtocol    string   `json:"proxy_protocol,omitempty"`
+	ProxySelectionID string   `json:"proxy_selection_id,omitempty"`
+	Models           []string `json:"models"`
+	RequestZstd      bool     `json:"request_zstd"`
 }
 
 type HostCaller interface {
@@ -67,7 +67,7 @@ func (m *Module) ValidateConfig(_ context.Context, raw json.RawMessage) (json.Ra
 	}
 	for key, value := range fields {
 		switch key {
-		case "enabled", "fail_closed", "proxy_url", "proxy_protocol", "models", "request_zstd", "routing_schema":
+		case "enabled", "fail_closed", "proxy_url", "proxy_protocol", "proxy_selection_id", "models", "request_zstd", "routing_schema":
 			if bytes.Equal(bytes.TrimSpace(value), []byte("null")) {
 				return nil, errors.New("null codex runtime setting")
 			}
@@ -96,14 +96,13 @@ func (m *Module) ValidateConfig(_ context.Context, raw json.RawMessage) (json.Ra
 		}
 		seen[model] = true
 	}
-	if cfg.ProxyURL != "" {
-		normal, err := normalizeProxyForm(cfg.ProxyURL, cfg.ProxyProtocol)
-		if err != nil {
-			return nil, errors.New("invalid ticket proxy")
-		}
-		cfg.ProxyURL = normal
+	normal, err := proxytransport.Resolve(cfg.ProxyURL, cfg.ProxyProtocol, cfg.ProxySelectionID)
+	if err != nil {
+		return nil, err
 	}
+	cfg.ProxyURL = normal
 	cfg.ProxyProtocol = ""
+	cfg.ProxySelectionID = ""
 	return json.Marshal(cfg)
 }
 
@@ -337,17 +336,18 @@ func (m *Module) Invoke(ctx context.Context, in extensionv1.Invocation) (extensi
 		value = rules
 	case in.Capability == extensionv1.CapabilityAdmin && in.Operation == "proxy.test":
 		var req struct {
-			ProxyURL string `json:"proxy_url"`
-			Protocol string `json:"protocol"`
+			ProxyURL         string `json:"proxy_url"`
+			Protocol         string `json:"protocol"`
+			ProxySelectionID string `json:"proxy_selection_id"`
 		}
 		if json.Unmarshal(in.Payload, &req) != nil {
 			return extensionv1.Result{}, errors.New("invalid proxy test")
 		}
 		testCtx, testCancel := context.WithTimeout(ctx, 25*time.Second)
 		defer testCancel()
-		normal, normalizeErr := normalizeProxyForm(req.ProxyURL, req.Protocol)
+		normal, normalizeErr := proxytransport.Resolve(req.ProxyURL, req.Protocol, req.ProxySelectionID)
 		if normalizeErr != nil {
-			return extensionv1.Result{}, errors.New("invalid proxy input")
+			return extensionv1.Result{}, normalizeErr
 		}
 		client, result, testErr := m.prepareProxy(testCtx, host, normal, true)
 		if client != nil {
@@ -432,22 +432,6 @@ func (m *Module) Invoke(ctx context.Context, in extensionv1.Invocation) (extensi
 	}
 	raw, err := json.Marshal(value)
 	return extensionv1.Result{Payload: raw}, err
-}
-
-func normalizeProxyForm(raw, protocol string) (string, error) {
-	normal, err := proxytransport.Normalize(raw)
-	if err != nil || normal == "" {
-		return normal, err
-	}
-	if protocol != "" {
-		if !slices.Contains([]string{"http", "https", "socks5", "socks5h"}, protocol) {
-			return "", errors.New("invalid proxy protocol")
-		}
-		address, _ := url.Parse(normal)
-		address.Scheme = protocol
-		normal = address.String()
-	}
-	return normal, nil
 }
 
 func stateKey(accountID int64, model string) string {

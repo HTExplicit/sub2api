@@ -55,20 +55,23 @@ describe('native Codex controls', () => {
   it('retains raw configuration fields and forwards the original proxy input and protocol through step-up', async () => {
     const config = { enabled: true, request_zstd: true, proxy_url: 'host:1080:user:fixture', proxy_protocol: 'socks5h', models: ['model-a'], fail_closed: true, code: 42, data: { retained: true } }
     get.mockResolvedValue({ data: config })
-    post.mockResolvedValue({ data: { network_reachable: true, code: 'target_http_status', http_status: 407, stages: [] } })
+    post.mockImplementation(async (url: string) => ({ data: url.endsWith('/proxy-parse')
+      ? { candidates: [{ selection_id: 'selected', protocol: 'socks5h', host: 'host', port: 1080, source_line: 1, source_column: 1, format: 'four fields' }], issues: [], selection_id: 'selected', selection_required: false }
+      : { network_reachable: true, code: 'target_http_status', http_status: 407, stages: [] } }))
     const wrapper = mount(CodexRuntimeSettings, { global }); wrappers.push(wrapper)
     await flushPromises()
     expect(get).toHaveBeenCalledWith('/admin/settings/codex-runtime', { rawPluginConfig: true })
     await wrapper.get('[data-test="codex-test-proxy"]').trigger('click')
     await flushPromises()
-    expect(post).toHaveBeenCalledWith('/admin/settings/openai-codex-ticket/proxy-test', { proxy_url: config.proxy_url, protocol: 'socks5h' }, { timeout: 30000 })
+    expect(post).toHaveBeenCalledWith('/admin/settings/openai-codex-ticket/proxy-parse', { proxy_url: config.proxy_url, protocol: 'socks5h' })
+    expect(post).toHaveBeenCalledWith('/admin/settings/openai-codex-ticket/proxy-test', { proxy_url: config.proxy_url, protocol: 'socks5h', proxy_selection_id: 'selected' }, { timeout: 30000 })
     await wrapper.get('[data-test="codex-compression"]').setValue(false)
     await wrapper.get('[data-test="codex-save"]').trigger('click')
     await flushPromises()
-    expect(put).toHaveBeenLastCalledWith('/admin/settings/codex-runtime', { ...config, request_zstd: false }, { rawPluginConfig: true })
+    expect(put).toHaveBeenLastCalledWith('/admin/settings/codex-runtime', { ...config, request_zstd: false, proxy_selection_id: 'selected' }, { rawPluginConfig: true })
     await wrapper.get('[data-test="codex-clear-proxy"]').trigger('click')
     await flushPromises()
-    expect(put).toHaveBeenLastCalledWith('/admin/settings/codex-runtime', { ...config, enabled: false, request_zstd: false, proxy_url: '' }, { rawPluginConfig: true })
+    expect(put).toHaveBeenLastCalledWith('/admin/settings/codex-runtime', { ...config, enabled: false, request_zstd: false, proxy_url: '', proxy_selection_id: undefined }, { rawPluginConfig: true })
     expect(stepUpRun).toHaveBeenCalledTimes(3)
   })
 

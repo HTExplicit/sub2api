@@ -347,8 +347,9 @@ func (s *AntigravityGatewayService) IsModelSupported(requestedModel string) bool
 
 // TestConnectionResult 测试连接结果
 type TestConnectionResult struct {
-	Text        string // 响应文本
-	MappedModel string // 实际使用的模型
+	OutputLimited bool
+	Text          string // 响应文本
+	MappedModel   string // 实际使用的模型
 }
 
 // TestConnection 测试 Antigravity 账号连接。
@@ -426,27 +427,35 @@ func (s *AntigravityGatewayService) TestConnection(ctx context.Context, account 
 		// AccountSwitchError → 测试时不切换账号，返回友好提示
 		var switchErr *AntigravityAccountSwitchError
 		if errors.As(err, &switchErr) {
-			return nil, fmt.Errorf("该账号模型 %s 当前限流中，请稍后重试", switchErr.RateLimitedModel)
+			return nil, accountTestHTTPFailure(http.StatusTooManyRequests)
 		}
-		return nil, err
+		return nil, accountTestRequestFailure(err)
 	}
 
 	if result == nil || result.resp == nil {
-		return nil, errors.New("upstream returned empty response")
+		return nil, ErrAccountTestProtocol
 	}
 	defer func() { _ = result.resp.Body.Close() }()
 
 	respBody, err := io.ReadAll(io.LimitReader(result.resp.Body, s.upstreamErrorBodyReadLimit()))
 	if err != nil {
-		return nil, fmt.Errorf("读取响应失败: %w", err)
+		return nil, accountTestRequestFailure(err)
 	}
 
 	if result.resp.StatusCode >= 400 {
-		return nil, fmt.Errorf("API 返回 %d: %s", result.resp.StatusCode, string(respBody))
+		return nil, accountTestHTTPFailure(result.resp.StatusCode)
 	}
 
-	text := extractTextFromSSEResponse(respBody)
-	return &TestConnectionResult{Text: text, MappedModel: mappedModel}, nil
+	var text strings.Builder
+	limited, err := parseAccountConnectionStream("gemini", bytes.NewReader(respBody), false, func(event TestEvent) {
+		if event.Type == "content" {
+			_, _ = text.WriteString(event.Text)
+		}
+	})
+	if err != nil {
+		return nil, err
+	}
+	return &TestConnectionResult{Text: text.String(), MappedModel: mappedModel, OutputLimited: limited}, nil
 }
 
 // testConnectionHandleError 是 TestConnection 使用的轻量 handleError 回调。
@@ -463,7 +472,7 @@ func testConnectionHandleError(
 }
 
 // buildGeminiTestRequest 构建 Gemini 格式测试请求
-// 使用最小 token 消耗：输入 "." + maxOutputTokens: 1
+// Keep a small visible-text budget for the connection probe.
 func (s *AntigravityGatewayService) buildGeminiTestRequest(projectID, model string, prompts ...string) ([]byte, error) {
 	payload := map[string]any{
 		"contents": []map[string]any{
@@ -489,7 +498,7 @@ func (s *AntigravityGatewayService) buildGeminiTestRequest(projectID, model stri
 }
 
 // buildClaudeTestRequest 构建 Claude 格式测试请求并转换为 Gemini 格式
-// 使用最小 token 消耗：输入 "." + MaxTokens: 1
+// Keep a small visible-text budget for the connection probe.
 func (s *AntigravityGatewayService) buildClaudeTestRequest(projectID, mappedModel string, prompts ...string) ([]byte, error) {
 	content, err := json.Marshal(resolveAntigravityTestPrompt(prompts...))
 	if err != nil {
@@ -517,73 +526,6 @@ func (s *AntigravityGatewayService) getClaudeTransformOptions(ctx context.Contex
 	opts.EnableIdentityPatch = s.settingService.IsIdentityPatchEnabled(ctx)
 	opts.IdentityPatch = s.settingService.GetIdentityPatchPrompt(ctx)
 	return opts
-}
-
-// extractTextFromSSEResponse 从 SSE 流式响应中提取文本
-func extractTextFromSSEResponse(respBody []byte) string {
-	var texts []string
-	lines := bytes.Split(respBody, []byte("\n"))
-
-	for _, line := range lines {
-		line = bytes.TrimSpace(line)
-		if len(line) == 0 {
-			continue
-		}
-
-		// 跳过 SSE 前缀
-		if bytes.HasPrefix(line, []byte("data:")) {
-			line = bytes.TrimPrefix(line, []byte("data:"))
-			line = bytes.TrimSpace(line)
-		}
-
-		// 跳过非 JSON 行
-		if len(line) == 0 || line[0] != '{' {
-			continue
-		}
-
-		// 解析 JSON
-		var data map[string]any
-		if err := json.Unmarshal(line, &data); err != nil {
-			continue
-		}
-
-		// 尝试从 response.candidates[0].content.parts[].text 提取
-		response, ok := data["response"].(map[string]any)
-		if !ok {
-			// 尝试直接从 candidates 提取（某些响应格式）
-			response = data
-		}
-
-		candidates, ok := response["candidates"].([]any)
-		if !ok || len(candidates) == 0 {
-			continue
-		}
-
-		candidate, ok := candidates[0].(map[string]any)
-		if !ok {
-			continue
-		}
-
-		content, ok := candidate["content"].(map[string]any)
-		if !ok {
-			continue
-		}
-
-		parts, ok := content["parts"].([]any)
-		if !ok {
-			continue
-		}
-
-		for _, part := range parts {
-			if partMap, ok := part.(map[string]any); ok {
-				if text, ok := partMap["text"].(string); ok && text != "" {
-					texts = append(texts, text)
-				}
-			}
-		}
-	}
-
-	return strings.Join(texts, "")
 }
 
 // injectIdentityPatchToGeminiRequest 为 Gemini 格式请求注入身份提示词

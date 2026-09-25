@@ -6,6 +6,7 @@ import type { BatchTestModelRow } from '@/api/admin/accountJobs'
 const { batchTestModels, batchTest, post } = vi.hoisted(() => ({ batchTestModels: vi.fn(), batchTest: vi.fn(), post: vi.fn() }))
 vi.mock('@/api/admin/accountJobs', () => ({ default: { batchTestModels, batchTest } }))
 vi.mock('@/api/client', () => ({ apiClient: { post } }))
+vi.mock('@/stores/auth', () => ({ useAuthStore: () => ({ user: { id: 1 } }) }))
 vi.mock('@/stores/app', () => ({ useAppStore: () => ({ showError: vi.fn() }) }))
 vi.mock('@/components/admin/account-jobs/AccountOperationDialog.vue', () => ({ default: { props: ['job', 'show'], template: '<div><slot/><slot name="footer"/></div>' } }))
 vi.mock('vue-i18n', async importOriginal => ({ ...await importOriginal<typeof import('vue-i18n')>(), useI18n: () => ({ t: (key: string) => key }) }))
@@ -15,13 +16,16 @@ function row(id: number, ids = [`raw-${id}-a`, `raw-${id}-b`], defaultID = ids[i
   return { account_id: id, name: `Account ${id}`, platform: 'openai', type: 'apikey', is_cindy: false,
     models: [{ id: 'not-in-plan', type: 'model', display_name: 'Do not infer from the raw legacy list' }],
     test_plan: { schema_version: 1, account_id: id, wire_platform: 'openai', default_mode: 'provided', models,
-      mode_views: { provided: { model_ids: ids, default_model_id: defaultID } } } }
+      mode_views: { provided: { model_ids: ids, default_model_id: defaultID }, connection: { model_ids: ids, default_model_id: defaultID } } } }
 }
 let wrapper: VueWrapper | undefined
 function open(ids = [1, 2]) {
   wrapper = mount(BatchTestAccountModal, { props: { show: true, accountIds: ids }, global: { stubs: {
     AccountTestModelSelect: { props: ['modelValue', 'models', 'disabled', 'id'], emits: ['update:modelValue'], template: `<select :id="id" :value="modelValue" :disabled="disabled" @change="$emit('update:modelValue', $event.target.value)"><option v-for="m in models" :key="m.id" :value="m.id">{{ m.display_name }}</option></select>` }
   } } })
+  for (const row of (wrapper.vm as any).rows) row.selection_mode = 'explicit'
+  ;(wrapper.get('details').element as HTMLDetailsElement).open = true
+  void wrapper.get('details').trigger('toggle')
   return wrapper
 }
 function start() { return wrapper!.findAll('button').find(button => button.text().includes('batchTest.start'))! }
@@ -49,7 +53,7 @@ describe('BatchTestAccountModal versioned plans', () => {
     expect(batchTest).not.toHaveBeenCalled()
     await modal.get('form').trigger('submit')
     await flushPromises()
-    expect(batchTest).toHaveBeenCalledWith([{ account_id: 1, model_id: 'raw-1-a' }, { account_id: 2, model_id: 'raw-2-c' }], '')
+    expect(batchTest).toHaveBeenCalledWith([{ account_id: 1, selection_mode: 'explicit', model_id: 'raw-1-a' }, { account_id: 2, selection_mode: 'explicit', model_id: 'raw-2-c' }], '')
     expect(batchTestModels.mock.calls.map(call => call[0])).toEqual([[1, 2], [1]])
   })
 
@@ -76,7 +80,7 @@ describe('BatchTestAccountModal versioned plans', () => {
     await modal.get('[data-account-id="3"] button').trigger('click')
     await modal.get('form').trigger('submit')
     await flushPromises()
-    expect(batchTest).toHaveBeenCalledWith([{ account_id: 2, model_id: 'raw-2-b' }], '')
+    expect(batchTest).toHaveBeenCalledWith([{ account_id: 2, selection_mode: 'explicit', model_id: 'raw-2-b' }], '')
   })
 
   it('requests the account test plan view for every row', async () => {

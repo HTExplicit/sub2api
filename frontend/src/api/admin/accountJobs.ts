@@ -35,6 +35,8 @@ export interface AccountJob {
   finished_at?: string
   created_at: string
   updated_at: string
+  retry_eligible?: boolean
+  retry_unavailable_reason?: string
 }
 
 export interface AccountJobItem {
@@ -175,7 +177,7 @@ async function mergeDuplicates(request: DuplicateMergeRequest): Promise<AccountJ
   return data
 }
 
-export interface BatchTestSelection { account_id: number; model_id: string; reasoning_effort?: string }
+export interface BatchTestSelection { account_id: number; selection_mode?: 'auto' | 'explicit'; model_id?: string; reasoning_effort?: string }
 export interface BatchTestModelRow {
   account_id: number
   name: string

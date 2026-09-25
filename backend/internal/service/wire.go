@@ -49,13 +49,12 @@ func ProvideUpdateService(cache UpdateCache, githubClient GitHubReleaseClient, b
 	return NewUpdateService(cache, githubClient, buildInfo.Version, buildInfo.BuildType)
 }
 
-// PromptDomainRuntime initializes storage after the policy process is ready.
-// Construction does not execute plugin-dependent operations.
+// The prompt domain migrates existing content once and serves independent
+// versions with a frozen public file tree; it has no live source registry.
 func ProvideBusinessSystemPromptService(
 	store BusinessSystemPromptStore,
 	bus BusinessSystemPromptRevisionBus,
-	remoteSkillRegistry *RemoteSkillRegistryService,
-	remoteSkillRegistryBus RemoteSkillRegistryRevisionBus,
+	frozen *FrozenPromptFiles,
 	accountRepo AccountRepository,
 	cfg *config.Config,
 	settings *SettingService,
@@ -64,27 +63,19 @@ func ProvideBusinessSystemPromptService(
 	svc.SetAccountRepository(accountRepo)
 	svc.previewConfig = cfg
 	svc.previewSettings = settings
-	svc.SetRemoteSkillRegistryService(remoteSkillRegistry)
-	svc.SetRemoteSkillRegistryRevisionBus(remoteSkillRegistryBus)
+	svc.SetFrozenPromptFiles(frozen)
+	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+	defer cancel()
+	// Content migration is part of application initialization. Do not start a
+	// healthy HTTP server with missing effective prompts or public source files.
+	if err := svc.Initialize(ctx); err != nil {
+		return nil, err
+	}
 	return svc, nil
 }
 
 func ProvideRemoteSkillRegistryFiles() RemoteSkillRegistryFiles {
 	return NewRemoteSkillRegistryFilesystem("")
-}
-
-func ProvideRemoteSkillCandidateSource() RemoteSkillCandidateSource {
-	return NewMoxinggangRemoteSkillCandidateSource(nil)
-}
-
-func ProvideRemoteSkillRegistryService(
-	store RemoteSkillRegistryStore,
-	bus RemoteSkillRegistryRevisionBus,
-	files RemoteSkillRegistryFiles,
-	source RemoteSkillCandidateSource,
-) (*RemoteSkillRegistryService, error) {
-	svc := NewRemoteSkillRegistryService(store, bus, files, source)
-	return svc, nil
 }
 
 // ProvideOpenAIGatewayService keeps the existing constructor signature used by
@@ -1086,8 +1077,7 @@ var ProviderSet = wire.NewSet(
 	ProvideGatewayService,
 	ProvideBusinessSystemPromptService,
 	ProvideRemoteSkillRegistryFiles,
-	ProvideRemoteSkillCandidateSource,
-	ProvideRemoteSkillRegistryService,
+	ProvideFrozenPromptFiles,
 	ProvideOpenAIGatewayService,
 	ProvideCindyHealthService,
 	ProvideCindyBalanceProbeService,
