@@ -13,7 +13,7 @@
             :key="model"
             data-testid="selected-model"
             :data-model-id="model"
-            class="inline-flex min-w-0 items-center justify-between gap-1 rounded-none bg-gray-100 px-2 py-1 text-xs text-gray-700 dark:bg-dark-600 dark:text-gray-300"
+            class="inline-flex min-w-0 items-center justify-between gap-1 rounded bg-gray-100 px-2 py-1 text-xs text-gray-700 dark:bg-dark-600 dark:text-gray-300"
           >
             <span class="flex min-w-0 items-center gap-1 truncate">
               <ModelIcon :model="model" size="14px" />
@@ -76,7 +76,7 @@
             >
               <span
                 :class="[
-                  'flex h-4 w-4 shrink-0 items-center justify-center rounded-none border',
+                  'flex h-4 w-4 shrink-0 items-center justify-center rounded border',
                   modelValue.includes(model.value)
                     ? 'border-primary-500 bg-primary-500 text-white'
                     : 'border-gray-300 dark:border-dark-500'
@@ -102,7 +102,7 @@
             <button
               type="button"
               data-testid="copy-model-id"
-              class="mr-2 rounded-none p-1.5 text-muted opacity-70 transition-colors hover:bg-gray-200 hover:text-primary-600 focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500 group-hover:opacity-100 dark:hover:bg-dark-500 dark:hover:text-primary-400"
+              class="mr-2 rounded p-1.5 text-gray-400 opacity-70 transition-colors hover:bg-gray-200 hover:text-primary-600 focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500 group-hover:opacity-100 dark:text-gray-500 dark:hover:bg-dark-500 dark:hover:text-primary-400"
               :title="`${t('common.copy')} ${model.value}`"
               :aria-label="`${t('common.copy')} ${model.value}`"
               @click.stop="copyModelId(model.value)"

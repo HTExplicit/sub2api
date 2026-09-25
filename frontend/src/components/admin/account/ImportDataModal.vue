@@ -11,7 +11,7 @@
       <div>
         <label class="input-label">{{ t('admin.accounts.dataImportFile') }}</label>
         <div
-          class="flex items-center justify-between gap-3 rounded-none border border-dashed px-4 py-4 transition-colors"
+          class="flex items-center justify-between gap-3 rounded-md border border-dashed px-4 py-4 transition-colors"
           :class="dragActive
             ? 'border-primary-400 bg-primary-50/70 dark:border-primary-500 dark:bg-primary-900/20'
             : 'border-gray-300 bg-gray-50 dark:border-dark-600 dark:bg-dark-800'"
@@ -40,14 +40,14 @@
         />
       </div>
 
-      <div v-if="payload" class="rounded-none border border-gray-200 px-3 py-2 text-sm dark:border-dark-700">
+      <div v-if="payload" class="rounded-md border border-gray-200 px-3 py-2 text-sm dark:border-dark-700">
         {{ t('admin.accounts.dataImportLocalSummary', {
           accounts: payload.accounts.length,
           proxies: payload.proxies.length
         }) }}
       </div>
 
-      <fieldset v-if="payload" class="space-y-2 rounded-none border border-gray-200 px-3 py-3 dark:border-dark-700">
+      <fieldset v-if="payload" class="space-y-2 rounded-md border border-gray-200 px-3 py-3 dark:border-dark-700">
         <legend class="px-1 text-sm font-semibold text-gray-800 dark:text-gray-100">
           {{ t('admin.accounts.importProxyStrategy') }}
         </legend>
@@ -55,7 +55,7 @@
           <label
             v-for="option in proxyStrategyOptions"
             :key="option.value"
-            class="flex cursor-pointer items-center gap-2 rounded-none border px-2.5 py-2 text-sm"
+            class="flex cursor-pointer items-center gap-2 rounded border px-2.5 py-2 text-sm"
             :class="proxyStrategy === option.value
               ? 'border-primary-400 bg-primary-50 text-primary-700 dark:border-primary-600 dark:bg-primary-900/20 dark:text-primary-200'
               : 'border-gray-200 text-gray-700 dark:border-dark-600 dark:text-dark-200'"
@@ -80,7 +80,7 @@
         </p>
       </fieldset>
 
-      <details v-if="payload" class="rounded-none border border-gray-200 dark:border-dark-700">
+      <details v-if="payload" class="rounded-md border border-gray-200 dark:border-dark-700">
         <summary class="cursor-pointer px-3 py-2.5 text-sm font-medium text-gray-800 dark:text-gray-100">
           {{ t('admin.accounts.importUniformSettings') }}
         </summary>
@@ -98,11 +98,11 @@
         </div>
       </details>
 
-      <div v-if="preview" class="space-y-3 rounded-none border border-gray-200 px-3 py-3 dark:border-dark-700" data-test="import-preview">
+      <div v-if="preview" class="space-y-3 rounded-md border border-gray-200 px-3 py-3 dark:border-dark-700" data-test="import-preview">
         <div class="flex flex-wrap items-center justify-between gap-2">
           <div class="flex min-w-0 flex-wrap items-center gap-2">
             <span class="text-sm font-semibold text-gray-800 dark:text-gray-100">{{ t('admin.accounts.dataImportPreviewItems') }}</span>
-            <span class="rounded-none bg-gray-100 px-2 py-0.5 text-xs text-gray-600 dark:bg-dark-800 dark:text-dark-300">
+            <span class="rounded bg-gray-100 px-2 py-0.5 text-xs text-gray-600 dark:bg-dark-800 dark:text-dark-300">
               {{ t('admin.accounts.importProxySummary', { value: proxySummaryLabel }) }}
             </span>
           </div>
@@ -110,7 +110,7 @@
             {{ t('admin.accounts.dataImportPreviewSummary', { create: preview.create_count, update: preview.update_count, reject: preview.reject_count }) }}
           </span>
         </div>
-        <div class="max-h-52 max-w-full overflow-x-auto overflow-y-auto rounded-none border border-gray-100 dark:border-dark-700">
+        <div class="max-h-52 max-w-full overflow-x-auto overflow-y-auto rounded border border-gray-100 dark:border-dark-700">
           <table class="min-w-full text-left text-xs">
             <thead class="sticky top-0 bg-gray-50 text-gray-500 dark:bg-dark-800 dark:text-dark-300">
               <tr>

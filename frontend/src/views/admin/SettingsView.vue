@@ -828,7 +828,7 @@
                       {{ getBetaDisplayName(rule.beta_token) }}
                     </span>
                     <span
-                      class="rounded-none bg-gray-100 px-2 py-0.5 text-xs text-gray-500 dark:bg-dark-700 dark:text-dark-300"
+                      class="rounded bg-gray-100 px-2 py-0.5 text-xs text-gray-500 dark:bg-dark-700 dark:text-gray-400"
                     >
                       {{ rule.beta_token }}
                     </span>
@@ -879,7 +879,7 @@
                         t('admin.settings.betaPolicy.errorMessagePlaceholder')
                       "
                     />
-                    <p class="mt-1 text-xs text-muted">
+                    <p class="mt-1 text-xs text-gray-400 dark:text-gray-500">
                       {{ t("admin.settings.betaPolicy.errorMessageHint") }}
                     </p>
                   </div>
@@ -912,7 +912,7 @@
                     >
                       {{ t("admin.settings.betaPolicy.modelWhitelist") }}
                     </label>
-                    <p class="mb-2 text-xs text-muted">
+                    <p class="mb-2 text-xs text-gray-400 dark:text-gray-500">
                       {{ t("admin.settings.betaPolicy.modelWhitelistHint") }}
                     </p>
                     <!-- Existing patterns -->
@@ -975,7 +975,7 @@
                     </button>
                     <!-- Common pattern chips -->
                     <div class="flex flex-wrap items-center gap-1.5">
-                      <span class="text-xs text-muted"
+                      <span class="text-xs text-gray-400 dark:text-gray-500"
                         >{{
                           t("admin.settings.betaPolicy.commonPatterns")
                         }}:</span
@@ -1009,7 +1009,7 @@
                       @update:modelValue="rule.fallback_action = $event as any"
                       :options="betaPolicyActionOptions"
                     />
-                    <p class="mt-1 text-xs text-muted">
+                    <p class="mt-1 text-xs text-gray-400 dark:text-gray-500">
                       {{ t("admin.settings.betaPolicy.fallbackActionHint") }}
                     </p>
                     <!-- Fallback Error Message (only when fallback_action=block) -->
@@ -1024,7 +1024,7 @@
                           )
                         "
                       />
-                      <p class="mt-1 text-xs text-muted">
+                      <p class="mt-1 text-xs text-gray-400 dark:text-gray-500">
                         {{ t("admin.settings.betaPolicy.errorMessageHint") }}
                       </p>
                     </div>
@@ -1238,7 +1238,7 @@
                   >
                     {{ t("admin.settings.openaiFastPolicy.userIds") }}
                   </label>
-                  <p class="mb-2 text-xs text-muted">
+                  <p class="mb-2 text-xs text-gray-400 dark:text-gray-500">
                     {{ t("admin.settings.openaiFastPolicy.userIdsHint") }}
                   </p>
                   <OpenAIFastPolicyUserSelector
@@ -1264,7 +1264,7 @@
                       )
                     "
                   />
-                  <p class="mt-1 text-xs text-muted">
+                  <p class="mt-1 text-xs text-gray-400 dark:text-gray-500">
                     {{ t("admin.settings.openaiFastPolicy.errorMessageHint") }}
                   </p>
                 </div>
@@ -1284,7 +1284,7 @@
                   </label>
                   <p
                     :id="`openai-fast-policy-models-hint-${ruleIndex}`"
-                    class="mb-2 text-xs text-muted"
+                    class="mb-2 text-xs text-gray-400 dark:text-gray-500"
                   >
                     {{
                       t("admin.settings.openaiFastPolicy.modelWhitelistHint")
@@ -1370,7 +1370,7 @@
                     "
                     :options="openaiFastPolicyActionOptions"
                   />
-                  <p class="mt-1 text-xs text-muted">
+                  <p class="mt-1 text-xs text-gray-400 dark:text-gray-500">
                     {{
                       t("admin.settings.openaiFastPolicy.fallbackActionHint")
                     }}
@@ -1412,7 +1412,7 @@
                   </svg>
                   {{ t("admin.settings.openaiFastPolicy.addRule") }}
                 </button>
-                <p class="mt-2 text-xs text-muted">
+                <p class="mt-2 text-xs text-gray-400 dark:text-gray-500">
                   {{ t("admin.settings.openaiFastPolicy.saveHint") }}
                 </p>
               </div>
@@ -2083,7 +2083,7 @@
                       class="inline-flex items-center justify-center gap-2 rounded-md px-3 py-2 text-sm font-medium transition"
                       :class="
                         captchaProviderSelection === 'turnstile'
-                          ? 'bg-white text-primary-700 shadow-outline dark:bg-dark-800 dark:text-primary-300'
+                          ? 'bg-white text-primary-700 shadow-sm dark:bg-dark-800 dark:text-primary-300'
                           : 'text-gray-600 hover:text-gray-900 dark:text-dark-300 dark:hover:text-white'
                       "
                       @click="selectCaptchaProvider('turnstile')"
@@ -2096,7 +2096,7 @@
                       class="inline-flex items-center justify-center gap-2 rounded-md px-3 py-2 text-sm font-medium transition"
                       :class="
                         captchaProviderSelection === 'tencent'
-                          ? 'bg-white text-primary-700 shadow-outline dark:bg-dark-800 dark:text-primary-300'
+                          ? 'bg-white text-primary-700 shadow-sm dark:bg-dark-800 dark:text-primary-300'
                           : 'text-gray-600 hover:text-gray-900 dark:text-dark-300 dark:hover:text-white'
                       "
                       @click="selectCaptchaProvider('tencent')"
@@ -2109,7 +2109,7 @@
                       class="inline-flex items-center justify-center gap-2 rounded-md px-3 py-2 text-sm font-medium transition"
                       :class="
                         captchaProviderSelection === 'aliyun'
-                          ? 'bg-white text-primary-700 shadow-outline dark:bg-dark-800 dark:text-primary-300'
+                          ? 'bg-white text-primary-700 shadow-sm dark:bg-dark-800 dark:text-primary-300'
                           : 'text-gray-600 hover:text-gray-900 dark:text-dark-300 dark:hover:text-white'
                       "
                       @click="selectCaptchaProvider('aliyun')"
@@ -2141,7 +2141,7 @@
                       <a
                         href="https://dash.cloudflare.com/"
                         target="_blank"
-                        class="text-primary-600 dark:text-primary-400 hover:text-primary-500"
+                        class="text-primary-600 hover:text-primary-500"
                         >{{
                           t("admin.settings.turnstile.cloudflareDashboard")
                         }}</a
@@ -2185,7 +2185,7 @@
                         class="inline-flex items-center justify-center rounded-md px-3 py-1.5 text-sm font-medium transition"
                         :class="
                           form.tencent_captcha_region !== 'intl'
-                            ? 'bg-white text-primary-700 shadow-outline dark:bg-dark-800 dark:text-primary-300'
+                            ? 'bg-white text-primary-700 shadow-sm dark:bg-dark-800 dark:text-primary-300'
                             : 'text-gray-600 hover:text-gray-900 dark:text-dark-300 dark:hover:text-white'
                         "
                         @click="form.tencent_captcha_region = 'cn'"
@@ -2198,7 +2198,7 @@
                         class="inline-flex items-center justify-center rounded-md px-3 py-1.5 text-sm font-medium transition"
                         :class="
                           form.tencent_captcha_region === 'intl'
-                            ? 'bg-white text-primary-700 shadow-outline dark:bg-dark-800 dark:text-primary-300'
+                            ? 'bg-white text-primary-700 shadow-sm dark:bg-dark-800 dark:text-primary-300'
                             : 'text-gray-600 hover:text-gray-900 dark:text-dark-300 dark:hover:text-white'
                         "
                         @click="form.tencent_captcha_region = 'intl'"
@@ -2296,7 +2296,7 @@
                       :href="tencentCaptchaLinks.console"
                       target="_blank"
                       rel="noopener noreferrer"
-                      class="text-primary-600 dark:text-primary-400 hover:text-primary-500"
+                      class="text-primary-600 hover:text-primary-500"
                     >
                       {{ t("admin.settings.tencentCaptcha.openCaptchaConsole") }}
                     </a>
@@ -2304,7 +2304,7 @@
                       :href="tencentCaptchaLinks.cloudKeys"
                       target="_blank"
                       rel="noopener noreferrer"
-                      class="text-primary-600 dark:text-primary-400 hover:text-primary-500"
+                      class="text-primary-600 hover:text-primary-500"
                     >
                       {{ t("admin.settings.tencentCaptcha.createCloudKeys") }}
                     </a>
@@ -2312,7 +2312,7 @@
                       :href="tencentCaptchaLinks.webDocs"
                       target="_blank"
                       rel="noopener noreferrer"
-                      class="text-primary-600 dark:text-primary-400 hover:text-primary-500"
+                      class="text-primary-600 hover:text-primary-500"
                     >
                       {{ t("admin.settings.tencentCaptcha.openWebDocs") }}
                     </a>
@@ -2336,7 +2336,7 @@
                           class="inline-flex items-center justify-center rounded-md px-3 py-1.5 text-sm font-medium transition"
                           :class="
                             form.aliyun_captcha_region !== 'sgp'
-                              ? 'bg-white text-primary-700 shadow-outline dark:bg-dark-800 dark:text-primary-300'
+                              ? 'bg-white text-primary-700 shadow-sm dark:bg-dark-800 dark:text-primary-300'
                               : 'text-gray-600 hover:text-gray-900 dark:text-dark-300 dark:hover:text-white'
                           "
                           @click="form.aliyun_captcha_region = 'cn'"
@@ -2348,7 +2348,7 @@
                           class="inline-flex items-center justify-center rounded-md px-3 py-1.5 text-sm font-medium transition"
                           :class="
                             form.aliyun_captcha_region === 'sgp'
-                              ? 'bg-white text-primary-700 shadow-outline dark:bg-dark-800 dark:text-primary-300'
+                              ? 'bg-white text-primary-700 shadow-sm dark:bg-dark-800 dark:text-primary-300'
                               : 'text-gray-600 hover:text-gray-900 dark:text-dark-300 dark:hover:text-white'
                           "
                           @click="form.aliyun_captcha_region = 'sgp'"
@@ -2815,7 +2815,7 @@
               >
                 <div class="space-y-4">
                   <div
-                    class="rounded-none border border-gray-200 p-4 dark:border-dark-700"
+                    class="rounded-lg border border-gray-200 p-4 dark:border-dark-700"
                   >
                     <div class="flex items-start justify-between gap-4">
                       <div>
@@ -2888,7 +2888,7 @@
                   </div>
 
                   <div
-                    class="rounded-none border border-gray-200 p-4 dark:border-dark-700"
+                    class="rounded-lg border border-gray-200 p-4 dark:border-dark-700"
                   >
                     <div class="flex items-start justify-between gap-4">
                       <div>
@@ -2966,7 +2966,7 @@
                   </div>
 
                   <div
-                    class="rounded-none border border-gray-200 p-4 dark:border-dark-700"
+                    class="rounded-lg border border-gray-200 p-4 dark:border-dark-700"
                   >
                     <div class="flex items-start justify-between gap-4">
                       <div>
@@ -3234,7 +3234,7 @@
                           v-model="form.dingtalk_connect_corp_restriction_policy"
                           type="radio"
                           value="none"
-                          class="h-4 w-4 text-primary-600 dark:text-primary-400"
+                          class="h-4 w-4 text-primary-600"
                         />
                         <span class="text-sm text-gray-700 dark:text-gray-300">
                           {{ t("admin.settings.dingtalk.corpPolicy.none") }}
@@ -3245,7 +3245,7 @@
                           v-model="form.dingtalk_connect_corp_restriction_policy"
                           type="radio"
                           value="internal_only"
-                          class="h-4 w-4 text-primary-600 dark:text-primary-400"
+                          class="h-4 w-4 text-primary-600"
                         />
                         <span class="text-sm text-gray-700 dark:text-gray-300">
                           {{ t("admin.settings.dingtalk.corpPolicy.internalOnly") }}
@@ -3310,7 +3310,7 @@
                         />
                       </div>
                     </div>
-                    <p v-if="form.dingtalk_connect_sync_display_name" class="text-xs text-muted">
+                    <p v-if="form.dingtalk_connect_sync_display_name" class="text-xs text-gray-400 dark:text-gray-500">
                       {{ t("admin.settings.dingtalk.syncDisplayNameTargetHint") }}
                     </p>
                   </div>
@@ -3356,7 +3356,7 @@
                         />
                       </div>
                     </div>
-                    <p v-if="form.dingtalk_connect_sync_corp_email" class="text-xs text-muted">
+                    <p v-if="form.dingtalk_connect_sync_corp_email" class="text-xs text-gray-400 dark:text-gray-500">
                       {{ t("admin.settings.dingtalk.syncCorpEmailTargetHint") }}
                     </p>
                   </div>
@@ -3402,7 +3402,7 @@
                         />
                       </div>
                     </div>
-                    <p v-if="form.dingtalk_connect_sync_dept" class="text-xs text-muted">
+                    <p v-if="form.dingtalk_connect_sync_dept" class="text-xs text-gray-400 dark:text-gray-500">
                       {{ t("admin.settings.dingtalk.syncDeptTargetHint") }}
                     </p>
                   </div>
@@ -4128,7 +4128,7 @@
                 <div
                   v-for="authSource in authSourceDefaultsMeta"
                   :key="authSource.source"
-                  class="rounded-none border border-gray-200 p-4 dark:border-dark-700"
+                  class="rounded-xl border border-gray-200 p-4 dark:border-dark-700"
                 >
                   <div class="flex items-center justify-between gap-4">
                     <div>
@@ -5059,7 +5059,7 @@
                   <div
                     v-for="platform in schedulingThresholdPlatforms"
                     :key="platform"
-                    class="rounded-none border border-gray-200 p-4 dark:border-dark-700"
+                    class="rounded-lg border border-gray-200 p-4 dark:border-dark-700"
                   >
                     <div class="flex items-start justify-between gap-3">
                       <div>
@@ -5478,7 +5478,7 @@
                   <div
                     v-for="(block, index) in claudeOAuthSystemPromptBlocks"
                     :key="block.id"
-                    class="rounded-none border border-gray-200 bg-gray-50 p-4 dark:border-dark-700 dark:bg-dark-800"
+                    class="rounded-lg border border-gray-200 bg-gray-50 p-4 dark:border-dark-700 dark:bg-dark-800/60"
                   >
                     <div
                       :class="[
@@ -6246,7 +6246,7 @@
                       <button
                         v-if="(provider.quota_used ?? 0) > 0"
                         type="button"
-                        class="text-xs text-primary-600 dark:text-primary-400 hover:text-primary-700 dark:hover:text-primary-300"
+                        class="text-xs text-primary-600 hover:text-primary-700"
                         @click="resetWebSearchUsage(pIdx)"
                       >
                         {{ t("admin.settings.webSearchEmulation.resetUsage") }}
@@ -7004,7 +7004,7 @@
                       class="inline-flex items-center justify-center gap-2 rounded-md px-3 py-2 text-sm font-medium transition"
                       :class="
                         form.login_agreement_mode === 'modal'
-                          ? 'bg-white text-primary-700 shadow-outline dark:bg-dark-800 dark:text-primary-300'
+                          ? 'bg-white text-primary-700 shadow-sm dark:bg-dark-800 dark:text-primary-300'
                           : 'text-gray-600 hover:text-gray-900 dark:text-dark-300 dark:hover:text-white'
                       "
                       @click="form.login_agreement_mode = 'modal'"
@@ -7017,7 +7017,7 @@
                       class="inline-flex items-center justify-center gap-2 rounded-md px-3 py-2 text-sm font-medium transition"
                       :class="
                         form.login_agreement_mode === 'checkbox'
-                          ? 'bg-white text-primary-700 shadow-outline dark:bg-dark-800 dark:text-primary-300'
+                          ? 'bg-white text-primary-700 shadow-sm dark:bg-dark-800 dark:text-primary-300'
                           : 'text-gray-600 hover:text-gray-900 dark:text-dark-300 dark:hover:text-white'
                       "
                       @click="form.login_agreement_mode = 'checkbox'"
@@ -7079,7 +7079,7 @@
                   <div
                     v-for="(doc, index) in form.login_agreement_documents"
                     :key="doc.id || index"
-                    class="rounded-none border border-gray-200 bg-white p-4 dark:border-dark-700 dark:bg-dark-800"
+                    class="rounded-lg border border-gray-200 bg-white p-4 dark:border-dark-700 dark:bg-dark-800/60"
                   >
                     <div class="mb-3 flex items-center justify-between gap-3">
                       <div class="flex min-w-0 items-center gap-3">
@@ -7206,13 +7206,13 @@
                 <label class="input-label">
                   {{ t('admin.settings.features.channelMonitor.mode') }}
                 </label>
-                <div class="mt-1.5 inline-flex w-full max-w-md rounded-none border border-gray-200 bg-gray-50 p-1 dark:border-dark-600 dark:bg-dark-900">
+                <div class="mt-1.5 inline-flex w-full max-w-md rounded-lg border border-gray-200 bg-gray-50 p-1 dark:border-dark-600 dark:bg-dark-900/40">
                   <button
                     type="button"
                     class="inline-flex flex-1 items-center justify-center gap-2 rounded-md px-3 py-2 text-sm font-medium transition"
                     :class="
                       form.channel_monitor_mode === 'v2'
-                        ? 'bg-white text-primary-700 shadow-outline dark:bg-dark-800 dark:text-primary-300'
+                        ? 'bg-white text-primary-700 shadow-sm dark:bg-dark-800 dark:text-primary-300'
                         : 'text-gray-600 hover:text-gray-900 dark:text-dark-300 dark:hover:text-white'
                     "
                     @click="form.channel_monitor_mode = 'v2'"
@@ -7224,7 +7224,7 @@
                     class="inline-flex flex-1 items-center justify-center gap-2 rounded-md px-3 py-2 text-sm font-medium transition"
                     :class="
                       form.channel_monitor_mode === 'v1'
-                        ? 'bg-white text-primary-700 shadow-outline dark:bg-dark-800 dark:text-primary-300'
+                        ? 'bg-white text-primary-700 shadow-sm dark:bg-dark-800 dark:text-primary-300'
                         : 'text-gray-600 hover:text-gray-900 dark:text-dark-300 dark:hover:text-white'
                     "
                     @click="form.channel_monitor_mode = 'v1'"
@@ -7239,7 +7239,7 @@
                       : t('admin.settings.features.channelMonitor.modeV2Hint')
                   }}
                 </p>
-                <p class="mt-1 text-xs text-muted">
+                <p class="mt-1 text-xs text-gray-400 dark:text-gray-500">
                   {{ t('admin.settings.features.channelMonitor.modeHint') }}
                 </p>
               </div>
@@ -7512,7 +7512,7 @@
 
               <div
                 v-if="form.openai_cyber_failover_enabled && form.cyber_session_block_enabled"
-                class="rounded-none border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-700 dark:border-amber-800 dark:bg-amber-900/20 dark:text-amber-300"
+                class="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-700 dark:border-amber-800 dark:bg-amber-900/20 dark:text-amber-300"
                 data-testid="openai-cyber-failover-conflict"
               >
                 {{ t('admin.settings.features.riskControl.refusalRecovery.cyberConflict') }}
@@ -7535,7 +7535,7 @@
 
               <div
                 v-if="form.openai_refusal_recovery_enabled"
-                class="space-y-5 rounded-none border border-gray-200 bg-gray-50 p-4 dark:border-dark-600 dark:bg-dark-800"
+                class="space-y-5 rounded-lg border border-gray-200 bg-gray-50 p-4 dark:border-dark-600 dark:bg-dark-800/50"
               >
                 <div>
                   <h3 class="text-sm font-semibold text-gray-900 dark:text-white">
@@ -7581,13 +7581,13 @@
                       </button>
                     </div>
                     <div
-                      class="min-h-[2.75rem] rounded-none border border-gray-300 bg-white p-2 dark:border-dark-500 dark:bg-dark-700"
+                      class="min-h-[2.75rem] rounded-lg border border-gray-300 bg-white p-2 dark:border-dark-500 dark:bg-dark-700"
                     >
                       <div class="flex flex-wrap items-center gap-2">
                         <span
                           v-for="(keyword, index) in form.openai_refusal_keywords"
                           :key="keyword + '-' + index"
-                          class="inline-flex max-w-full items-center gap-1 rounded-none bg-gray-100 px-2 py-1 text-xs text-gray-700 dark:bg-dark-600 dark:text-gray-200"
+                          class="inline-flex max-w-full items-center gap-1 rounded bg-gray-100 px-2 py-1 text-xs text-gray-700 dark:bg-dark-600 dark:text-gray-200"
                           data-testid="openai-refusal-keyword-tag"
                         >
                           <span class="break-all">{{ keyword }}</span>
@@ -7837,7 +7837,7 @@
                         </td>
                         <td class="px-3 py-2 text-sm">
                           <div class="flex items-center gap-2">
-                            <button type="button" class="text-primary-600 dark:text-primary-400 hover:underline" @click="openAffiliateModal(entry)">
+                            <button type="button" class="text-primary-600 hover:underline" @click="openAffiliateModal(entry)">
                               {{ t('common.edit') }}
                             </button>
                             <button
@@ -8374,7 +8374,7 @@
                       >
                         <span
                           :class="[
-                            'pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow-outline ring-0 transition duration-200 ease-in-out',
+                            'pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out',
                             form.payment_cancel_rate_limit_enabled
                               ? 'translate-x-5'
                               : 'translate-x-0',
@@ -8464,7 +8464,7 @@
                       >
                         <span
                           :class="[
-                            'pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow-outline ring-0 transition duration-200 ease-in-out',
+                            'pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out',
                             form.payment_alipay_force_qrcode
                               ? 'translate-x-5'
                               : 'translate-x-0',
@@ -8496,7 +8496,7 @@
                       >
                         <span
                           :class="[
-                            'pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow-outline ring-0 transition duration-200 ease-in-out',
+                            'pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out',
                             form.payment_alipay_mobile_precreate_deep_link
                               ? 'translate-x-5'
                               : 'translate-x-0',
@@ -8523,14 +8523,14 @@
                       :class="[
                         'rounded-lg border px-3 py-1.5 text-sm font-medium transition-all',
                         isPaymentTypeEnabled(pt.value)
-                          ? 'border-primary-500 bg-primary-500 text-white'
+                          ? 'border-primary-500 bg-primary-500 text-white shadow-sm'
                           : 'border-gray-300 bg-white text-gray-600 hover:border-gray-400 hover:bg-gray-50 dark:border-dark-600 dark:bg-dark-800 dark:text-gray-300 dark:hover:border-dark-500',
                       ]"
                     >
                       {{ pt.label }}
                     </button>
                   </div>
-                  <p class="mt-2 text-xs text-muted">
+                  <p class="mt-2 text-xs text-gray-400 dark:text-gray-500">
                     {{ t("admin.settings.payment.enabledPaymentTypesHint") }}
                     <a
                       :href="paymentMethodsHref"
@@ -8615,7 +8615,7 @@
                 <Icon
                   name="mail"
                   size="md"
-                  class="mt-0.5 flex-shrink-0 text-muted"
+                  class="mt-0.5 flex-shrink-0 text-gray-400 dark:text-gray-500"
                 />
                 <div>
                   <h3 class="font-medium text-gray-900 dark:text-white">
@@ -13584,7 +13584,7 @@ watch(
 
 /* ============ 系统设置 Tab 导航 ============ */
 .settings-tabs-shell {
-  @apply sticky z-20 -mx-1 rounded-none border border-white/80 bg-white p-1.5;
+  @apply sticky z-20 -mx-1 rounded-2xl border border-white/80 bg-white/90 p-1.5 backdrop-blur-xl;
   top: 4.75rem;
   box-shadow: none;
 }
@@ -13604,7 +13604,7 @@ watch(
 }
 
 .settings-tab {
-  @apply relative isolate flex h-10 min-w-[6.75rem] shrink-0 items-center justify-center gap-1.5 whitespace-nowrap rounded-none border border-transparent px-3 text-sm font-medium text-gray-600 outline-none transition-colors duration-200 ease-out dark:text-gray-300;
+  @apply relative isolate flex h-10 min-w-[6.75rem] shrink-0 items-center justify-center gap-1.5 whitespace-nowrap rounded-xl border border-transparent px-3 text-sm font-medium text-gray-600 outline-none transition-colors duration-200 ease-out dark:text-gray-300;
 }
 
 @media (min-width: 768px) {
@@ -13622,7 +13622,7 @@ watch(
 }
 
 .settings-tab::before {
-  @apply absolute inset-0 -z-10 rounded-none opacity-0 transition-opacity duration-200;
+  @apply absolute inset-0 -z-10 rounded-xl opacity-0 transition-opacity duration-200;
   content: "";
   background: rgb(var(--ui-surface));
 }
@@ -13637,7 +13637,7 @@ watch(
 }
 
 .settings-tab-active {
-  @apply border-primary-200/80 bg-white text-primary-700 shadow-outline dark:border-primary-400/30 dark:bg-dark-700 dark:text-primary-200;
+  @apply border-primary-200/80 bg-white text-primary-700 shadow-sm dark:border-primary-400/30 dark:bg-dark-700/95 dark:text-primary-200;
   box-shadow: none;
 }
 
@@ -13657,7 +13657,7 @@ watch(
 }
 
 .settings-tab-icon {
-  @apply flex h-7 w-7 shrink-0 items-center justify-center rounded-none text-gray-500 transition-colors duration-200 dark:text-dark-300;
+  @apply flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-gray-500 transition-colors duration-200 dark:text-gray-400;
 }
 
 .settings-tab:hover .settings-tab-icon,

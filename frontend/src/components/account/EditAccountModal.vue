@@ -85,7 +85,7 @@
               type="button"
               @click="editOpenCodeAccountMode = 'zen'"
               :class="[
-                'flex items-center gap-3 rounded-none border-2 p-3 text-left transition-all',
+                'flex items-center gap-3 rounded-lg border-2 p-3 text-left transition-all',
                 editOpenCodeAccountMode === 'zen'
                   ? 'border-amber-500 bg-amber-50 dark:bg-amber-900/20'
                   : 'border-gray-200 hover:border-gray-400 dark:border-dark-600 dark:hover:border-gray-600'
@@ -93,8 +93,8 @@
             >
               <div
                 :class="[
-                  'flex h-8 w-8 shrink-0 items-center justify-center rounded-none',
-                  editOpenCodeAccountMode === 'zen' ? 'bg-amber-500 text-white' : 'bg-gray-100 text-gray-500 dark:bg-dark-600 dark:text-dark-300'
+                  'flex h-8 w-8 shrink-0 items-center justify-center rounded-lg',
+                  editOpenCodeAccountMode === 'zen' ? 'bg-amber-500 text-white' : 'bg-gray-100 text-gray-500 dark:bg-dark-600 dark:text-gray-400'
                 ]"
               >
                 <Icon name="creditCard" size="sm" />
@@ -108,7 +108,7 @@
               type="button"
               @click="editOpenCodeAccountMode = 'go'"
               :class="[
-                'flex items-center gap-3 rounded-none border-2 p-3 text-left transition-all',
+                'flex items-center gap-3 rounded-lg border-2 p-3 text-left transition-all',
                 editOpenCodeAccountMode === 'go'
                   ? 'border-amber-500 bg-amber-50 dark:bg-amber-900/20'
                   : 'border-gray-200 hover:border-gray-400 dark:border-dark-600 dark:hover:border-gray-600'
@@ -116,8 +116,8 @@
             >
               <div
                 :class="[
-                  'flex h-8 w-8 shrink-0 items-center justify-center rounded-none',
-                  editOpenCodeAccountMode === 'go' ? 'bg-amber-500 text-white' : 'bg-gray-100 text-gray-500 dark:bg-dark-600 dark:text-dark-300'
+                  'flex h-8 w-8 shrink-0 items-center justify-center rounded-lg',
+                  editOpenCodeAccountMode === 'go' ? 'bg-amber-500 text-white' : 'bg-gray-100 text-gray-500 dark:bg-dark-600 dark:text-gray-400'
                 ]"
               >
                 <Icon name="bolt" size="sm" />
@@ -138,7 +138,7 @@
               :key="opt.value"
               type="button"
               :class="[
-                'rounded-none border-2 px-3 py-1.5 text-xs transition-all',
+                'rounded-lg border-2 px-3 py-1.5 text-xs transition-all',
                 editAccountMode === opt.value
                   ? 'border-primary-500 bg-primary-50 font-medium text-primary-700 dark:bg-primary-900/30 dark:text-primary-300'
                   : 'border-gray-200 text-gray-700 hover:border-gray-400 dark:border-dark-600 dark:text-gray-300 dark:hover:border-gray-600'
@@ -159,7 +159,7 @@
               :key="opt.value"
               type="button"
               :class="[
-                'rounded-none border-2 px-3 py-1.5 text-xs transition-all',
+                'rounded-lg border-2 px-3 py-1.5 text-xs transition-all',
                 editApiProtocol === opt.value
                   ? 'border-primary-500 bg-primary-50 font-medium text-primary-700 dark:bg-primary-900/30 dark:text-primary-300'
                   : 'border-gray-200 text-gray-700 hover:border-gray-400 dark:border-dark-600 dark:text-gray-300 dark:hover:border-gray-600'
@@ -250,10 +250,10 @@
                 type="button"
                 @click="modelRestrictionMode = 'whitelist'"
                 :class="[
-                  'flex-1 rounded-none px-4 py-2 text-sm font-medium transition-all',
+                  'flex-1 rounded-lg px-4 py-2 text-sm font-medium transition-all',
                   modelRestrictionMode === 'whitelist'
                     ? 'bg-primary-100 text-primary-700 dark:bg-primary-900/30 dark:text-primary-400'
-                    : 'bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-dark-600 dark:text-dark-300 dark:hover:bg-gray-600'
+                    : 'bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-dark-600 dark:text-gray-400 dark:hover:bg-dark-500'
                 ]"
               >
                 <svg
@@ -275,10 +275,10 @@
                 type="button"
                 @click="modelRestrictionMode = 'mapping'"
                 :class="[
-                  'flex-1 rounded-none px-4 py-2 text-sm font-medium transition-all',
+                  'flex-1 rounded-lg px-4 py-2 text-sm font-medium transition-all',
                   modelRestrictionMode === 'mapping'
                     ? 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400'
-                    : 'bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-dark-600 dark:text-dark-300 dark:hover:bg-gray-600'
+                    : 'bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-dark-600 dark:text-gray-400 dark:hover:bg-dark-500'
                 ]"
               >
                 <svg
@@ -457,7 +457,7 @@
             >
               <span
                 :class="[
-                  'pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow-outline ring-0 transition duration-200 ease-in-out',
+                  'pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out',
                   poolModeEnabled ? 'translate-x-5' : 'translate-x-0'
                 ]"
               />
@@ -521,7 +521,7 @@
             >
               <span
                 :class="[
-                  'pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow-outline ring-0 transition duration-200 ease-in-out',
+                  'pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out',
                   customErrorCodesEnabled ? 'translate-x-5' : 'translate-x-0'
                 ]"
               />
@@ -547,7 +547,7 @@
                   'rounded-lg px-3 py-1.5 text-sm font-medium transition-colors',
                   selectedErrorCodes.includes(code.value)
                     ? 'bg-red-100 text-red-700 ring-1 ring-red-500 dark:bg-red-900/30 dark:text-red-400'
-                    : 'bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-dark-600 dark:text-dark-300 dark:hover:bg-gray-600'
+                    : 'bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-dark-600 dark:text-gray-400 dark:hover:bg-dark-500'
                 ]"
               >
                 {{ code.value }} {{ code.label }}
@@ -696,7 +696,7 @@
           >
             <span
               :class="[
-                'pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow-outline ring-0 transition duration-200 ease-in-out',
+                'pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out',
                 grokOAuthCustomBaseUrlEnabled ? 'translate-x-5' : 'translate-x-0'
               ]"
             />
@@ -733,7 +733,7 @@
           >
             <span
               :class="[
-                'pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow-outline ring-0 transition duration-200 ease-in-out',
+                'pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out',
                 headerOverrideEnabled ? 'translate-x-5' : 'translate-x-0'
               ]"
             />
@@ -778,10 +778,10 @@
               type="button"
               @click="modelRestrictionMode = 'whitelist'"
               :class="[
-                'flex-1 rounded-none px-4 py-2 text-sm font-medium transition-all',
+                'flex-1 rounded-lg px-4 py-2 text-sm font-medium transition-all',
                 modelRestrictionMode === 'whitelist'
                   ? 'bg-primary-100 text-primary-700 dark:bg-primary-900/30 dark:text-primary-400'
-                  : 'bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-dark-600 dark:text-dark-300 dark:hover:bg-gray-600'
+                  : 'bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-dark-600 dark:text-gray-400 dark:hover:bg-dark-500'
               ]"
             >
               {{ t('admin.accounts.modelWhitelist') }}
@@ -790,10 +790,10 @@
               type="button"
               @click="modelRestrictionMode = 'mapping'"
               :class="[
-                'flex-1 rounded-none px-4 py-2 text-sm font-medium transition-all',
+                'flex-1 rounded-lg px-4 py-2 text-sm font-medium transition-all',
                 modelRestrictionMode === 'mapping'
                   ? 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400'
-                  : 'bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-dark-600 dark:text-dark-300 dark:hover:bg-gray-600'
+                  : 'bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-dark-600 dark:text-gray-400 dark:hover:bg-dark-500'
               ]"
             >
               {{ t('admin.accounts.modelMapping') }}
@@ -978,10 +978,10 @@
               type="button"
               @click="modelRestrictionMode = 'whitelist'"
               :class="[
-                'flex-1 rounded-none px-4 py-2 text-sm font-medium transition-all',
+                'flex-1 rounded-lg px-4 py-2 text-sm font-medium transition-all',
                 modelRestrictionMode === 'whitelist'
                   ? 'bg-primary-100 text-primary-700 dark:bg-primary-900/30 dark:text-primary-400'
-                  : 'bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-dark-600 dark:text-dark-300 dark:hover:bg-gray-600'
+                  : 'bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-dark-600 dark:text-gray-400 dark:hover:bg-dark-500'
               ]"
             >
               <svg
@@ -1003,10 +1003,10 @@
               type="button"
               @click="modelRestrictionMode = 'mapping'"
               :class="[
-                'flex-1 rounded-none px-4 py-2 text-sm font-medium transition-all',
+                'flex-1 rounded-lg px-4 py-2 text-sm font-medium transition-all',
                 modelRestrictionMode === 'mapping'
                   ? 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400'
-                  : 'bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-dark-600 dark:text-dark-300 dark:hover:bg-gray-600'
+                  : 'bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-dark-600 dark:text-gray-400 dark:hover:bg-dark-500'
               ]"
             >
               <svg
@@ -1240,10 +1240,10 @@
               type="button"
               @click="modelRestrictionMode = 'whitelist'"
               :class="[
-                'flex-1 rounded-none px-4 py-2 text-sm font-medium transition-all',
+                'flex-1 rounded-lg px-4 py-2 text-sm font-medium transition-all',
                 modelRestrictionMode === 'whitelist'
                   ? 'bg-primary-100 text-primary-700 dark:bg-primary-900/30 dark:text-primary-400'
-                  : 'bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-dark-600 dark:text-dark-300 dark:hover:bg-gray-600'
+                  : 'bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-dark-600 dark:text-gray-400 dark:hover:bg-dark-500'
               ]"
             >
               {{ t('admin.accounts.modelWhitelist') }}
@@ -1252,10 +1252,10 @@
               type="button"
               @click="modelRestrictionMode = 'mapping'"
               :class="[
-                'flex-1 rounded-none px-4 py-2 text-sm font-medium transition-all',
+                'flex-1 rounded-lg px-4 py-2 text-sm font-medium transition-all',
                 modelRestrictionMode === 'mapping'
                   ? 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400'
-                  : 'bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-dark-600 dark:text-dark-300 dark:hover:bg-gray-600'
+                  : 'bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-dark-600 dark:text-gray-400 dark:hover:bg-dark-500'
               ]"
             >
               {{ t('admin.accounts.modelMapping') }}
@@ -1332,7 +1332,7 @@
             >
               <span
                 :class="[
-                  'pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow-outline ring-0 transition duration-200 ease-in-out',
+                  'pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out',
                   poolModeEnabled ? 'translate-x-5' : 'translate-x-0'
                 ]"
               />
@@ -1521,7 +1521,7 @@
           >
             <span
               :class="[
-                'pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow-outline ring-0 transition duration-200 ease-in-out',
+                'pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out',
                 tempUnschedEnabled ? 'translate-x-5' : 'translate-x-0'
               ]"
             />
@@ -1708,7 +1708,7 @@
           >
             <span
               :class="[
-                'pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow-outline ring-0 transition duration-200 ease-in-out',
+                'pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out',
                 interceptWarmupRequests ? 'translate-x-5' : 'translate-x-0'
               ]"
             />
@@ -1835,7 +1835,7 @@
           >
             <span
               :class="[
-                'pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow-outline ring-0 transition duration-200 ease-in-out',
+                'pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out',
                 openaiPassthroughEnabled ? 'translate-x-5' : 'translate-x-0'
               ]"
             />
@@ -1866,7 +1866,7 @@
           >
             <span
               :class="[
-                'pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow-outline ring-0 transition duration-200 ease-in-out',
+                'pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out',
                 openaiFlattenNamespacesEnabled ? 'translate-x-5' : 'translate-x-0'
               ]"
             />
@@ -1899,7 +1899,7 @@
               </p>
             </div>
           </div>
-          <div class="border-t border-sky-100 bg-white p-2 dark:border-sky-900/50 dark:bg-dark-800">
+          <div class="border-t border-sky-100 bg-white/70 p-2 dark:border-sky-900/50 dark:bg-dark-800/70">
             <div class="grid grid-cols-1 gap-2 sm:grid-cols-2">
               <button
                 v-for="option in codexImageToolOptions"
@@ -1926,7 +1926,7 @@
                 </span>
                 <span class="min-w-0">
                   <span class="block text-sm font-medium">{{ option.label }}</span>
-                  <span class="mt-0.5 block text-xs leading-4 text-muted">{{ option.description }}</span>
+                  <span class="mt-0.5 block text-xs leading-4 text-slate-500 dark:text-slate-400">{{ option.description }}</span>
                 </span>
               </button>
             </div>
@@ -2043,7 +2043,7 @@
         >
           <span
             :class="[
-              'pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow-outline ring-0 transition duration-200 ease-in-out',
+              'pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out',
               openAIImagesUrlToB64JsonEnabled ? 'translate-x-5' : 'translate-x-0'
             ]"
           />
@@ -2181,7 +2181,7 @@
           >
             <span
               :class="[
-                'pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow-outline ring-0 transition duration-200 ease-in-out',
+                'pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out',
                 anthropicPassthroughEnabled ? 'translate-x-5' : 'translate-x-0'
               ]"
             />
@@ -2355,7 +2355,7 @@
           >
             <span
               :class="[
-                'pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow-outline ring-0 transition duration-200 ease-in-out',
+                'pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out',
                 openAILongContextBillingEnabled ? 'translate-x-5' : 'translate-x-0'
               ]"
             />
@@ -2384,7 +2384,7 @@
           >
             <span
               :class="[
-                'pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow-outline ring-0 transition duration-200 ease-in-out',
+                'pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out',
                 codexCLIOnlyEnabled ? 'translate-x-5' : 'translate-x-0'
               ]"
             />
@@ -2410,7 +2410,7 @@
           >
             <span
               :class="[
-                'pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow-outline ring-0 transition duration-200 ease-in-out',
+                'pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out',
                 codexCLIOnlyAppServerEnabled ? 'translate-x-5' : 'translate-x-0'
               ]"
             />
@@ -2563,7 +2563,7 @@
           >
             <span
               :class="[
-                'pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow-outline ring-0 transition duration-200 ease-in-out',
+                'pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out',
                 autoPauseOnExpired ? 'translate-x-5' : 'translate-x-0'
               ]"
             />
@@ -2589,7 +2589,7 @@
             >
               <span
                 :class="[
-                  'pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow-outline ring-0 transition duration-200 ease-in-out',
+                  'pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out',
                   autoPause5hDisabled ? 'translate-x-5' : 'translate-x-0'
                 ]"
               />
@@ -2625,7 +2625,7 @@
             >
               <span
                 :class="[
-                  'pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow-outline ring-0 transition duration-200 ease-in-out',
+                  'pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out',
                   autoPause7dDisabled ? 'translate-x-5' : 'translate-x-0'
                 ]"
               />
@@ -2672,7 +2672,7 @@
           >
             <span
               :class="[
-                'pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow-outline ring-0 transition duration-200 ease-in-out',
+                'pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out',
                 autoResetCreditEnabled ? 'translate-x-5' : 'translate-x-0'
               ]"
             />
@@ -2740,7 +2740,7 @@
             >
               <span
                 :class="[
-                  'pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow-outline ring-0 transition duration-200 ease-in-out',
+                  'pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out',
                   windowCostEnabled ? 'translate-x-5' : 'translate-x-0'
                 ]"
               />
@@ -2800,7 +2800,7 @@
             >
               <span
                 :class="[
-                  'pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow-outline ring-0 transition duration-200 ease-in-out',
+                  'pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out',
                   sessionLimitEnabled ? 'translate-x-5' : 'translate-x-0'
                 ]"
               />
@@ -2857,7 +2857,7 @@
             >
               <span
                 :class="[
-                  'pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow-outline ring-0 transition duration-200 ease-in-out',
+                  'pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out',
                   rpmLimitEnabled ? 'translate-x-5' : 'translate-x-0'
                 ]"
               />
@@ -2886,10 +2886,10 @@
                   type="button"
                   @click="rpmStrategy = 'tiered'"
                   :class="[
-                    'flex-1 rounded-none px-3 py-2 text-sm font-medium transition-all',
+                    'flex-1 rounded-lg px-3 py-2 text-sm font-medium transition-all',
                     rpmStrategy === 'tiered'
                       ? 'bg-primary-100 text-primary-700 dark:bg-primary-900/30 dark:text-primary-400'
-                      : 'bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-dark-600 dark:text-dark-300 dark:hover:bg-gray-600'
+                      : 'bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-dark-600 dark:text-gray-400 dark:hover:bg-dark-500'
                   ]"
                 >
                   <div class="text-center">
@@ -2901,10 +2901,10 @@
                   type="button"
                   @click="rpmStrategy = 'sticky_exempt'"
                   :class="[
-                    'flex-1 rounded-none px-3 py-2 text-sm font-medium transition-all',
+                    'flex-1 rounded-lg px-3 py-2 text-sm font-medium transition-all',
                     rpmStrategy === 'sticky_exempt'
                       ? 'bg-primary-100 text-primary-700 dark:bg-primary-900/30 dark:text-primary-400'
-                      : 'bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-dark-600 dark:text-dark-300 dark:hover:bg-gray-600'
+                      : 'bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-dark-600 dark:text-gray-400 dark:hover:bg-dark-500'
                   ]"
                 >
                   <div class="text-center">
@@ -2970,7 +2970,7 @@
             >
               <span
                 :class="[
-                  'pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow-outline ring-0 transition duration-200 ease-in-out',
+                  'pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out',
                   tlsFingerprintEnabled ? 'translate-x-5' : 'translate-x-0'
                 ]"
               />
@@ -3005,7 +3005,7 @@
             >
               <span
                 :class="[
-                  'pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow-outline ring-0 transition duration-200 ease-in-out',
+                  'pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out',
                   sessionIdMaskingEnabled ? 'translate-x-5' : 'translate-x-0'
                 ]"
               />
@@ -3032,7 +3032,7 @@
             >
               <span
                 :class="[
-                  'pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow-outline ring-0 transition duration-200 ease-in-out',
+                  'pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out',
                   cacheTTLOverrideEnabled ? 'translate-x-5' : 'translate-x-0'
                 ]"
               />
@@ -3072,7 +3072,7 @@
             >
               <span
                 :class="[
-                  'pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow-outline ring-0 transition duration-200 ease-in-out',
+                  'pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out',
                   customBaseUrlEnabled ? 'translate-x-5' : 'translate-x-0'
                 ]"
               />
@@ -3110,7 +3110,7 @@
           </label>
           <div class="group relative">
             <span
-              class="inline-flex h-4 w-4 cursor-help items-center justify-center rounded-full bg-gray-200 text-xs text-gray-700 hover:bg-gray-300 dark:bg-dark-600 dark:text-dark-300 dark:hover:bg-gray-600"
+              class="inline-flex h-4 w-4 cursor-help items-center justify-center rounded-full bg-gray-200 text-xs text-gray-500 hover:bg-gray-300 dark:bg-dark-600 dark:text-gray-400 dark:hover:bg-dark-500"
             >
               ?
             </span>
@@ -3138,7 +3138,7 @@
           </label>
           <div class="group relative">
             <span
-              class="inline-flex h-4 w-4 cursor-help items-center justify-center rounded-full bg-gray-200 text-xs text-gray-700 hover:bg-gray-300 dark:bg-dark-600 dark:text-dark-300 dark:hover:bg-gray-600"
+              class="inline-flex h-4 w-4 cursor-help items-center justify-center rounded-full bg-gray-200 text-xs text-gray-500 hover:bg-gray-300 dark:bg-dark-600 dark:text-gray-400 dark:hover:bg-dark-500"
             >
               ?
             </span>
@@ -3922,28 +3922,28 @@ const codexImageToolOptions = computed<Array<{
     value: 'inherit',
     label: t('admin.accounts.openai.codexImageToolInherit'),
     description: t('admin.accounts.openai.codexImageToolInheritDesc'),
-    selectedCardClass: 'border-sky-300 bg-sky-50 text-sky-900 shadow-outline ring-1 ring-sky-200 dark:border-sky-700 dark:bg-sky-900/25 dark:text-sky-100 dark:ring-sky-800',
+    selectedCardClass: 'border-sky-300 bg-sky-50 text-sky-900 shadow-sm ring-1 ring-sky-200 dark:border-sky-700 dark:bg-sky-900/25 dark:text-sky-100 dark:ring-sky-800',
     selectedDotClass: 'border-sky-500 bg-sky-500 text-white'
   },
   {
     value: 'enabled',
     label: t('admin.accounts.openai.codexImageToolEnabled'),
     description: t('admin.accounts.openai.codexImageToolEnabledDesc'),
-    selectedCardClass: 'border-emerald-300 bg-emerald-50 text-emerald-900 shadow-outline ring-1 ring-emerald-200 dark:border-emerald-700 dark:bg-emerald-900/25 dark:text-emerald-100 dark:ring-emerald-800',
+    selectedCardClass: 'border-emerald-300 bg-emerald-50 text-emerald-900 shadow-sm ring-1 ring-emerald-200 dark:border-emerald-700 dark:bg-emerald-900/25 dark:text-emerald-100 dark:ring-emerald-800',
     selectedDotClass: 'border-emerald-500 bg-emerald-500 text-white'
   },
   {
     value: 'disabled',
     label: t('admin.accounts.openai.codexImageToolDisabled'),
     description: t('admin.accounts.openai.codexImageToolDisabledDesc'),
-    selectedCardClass: 'border-amber-300 bg-amber-50 text-amber-900 shadow-outline ring-1 ring-amber-200 dark:border-amber-700 dark:bg-amber-900/25 dark:text-amber-100 dark:ring-amber-800',
+    selectedCardClass: 'border-amber-300 bg-amber-50 text-amber-900 shadow-sm ring-1 ring-amber-200 dark:border-amber-700 dark:bg-amber-900/25 dark:text-amber-100 dark:ring-amber-800',
     selectedDotClass: 'border-amber-500 bg-amber-500 text-white'
   },
   {
     value: 'block',
     label: t('admin.accounts.openai.codexImageToolBlock'),
     description: t('admin.accounts.openai.codexImageToolBlockDesc'),
-    selectedCardClass: 'border-rose-300 bg-rose-50 text-rose-900 shadow-outline ring-1 ring-rose-200 dark:border-rose-700 dark:bg-rose-900/25 dark:text-rose-100 dark:ring-rose-800',
+    selectedCardClass: 'border-rose-300 bg-rose-50 text-rose-900 shadow-sm ring-1 ring-rose-200 dark:border-rose-700 dark:bg-rose-900/25 dark:text-rose-100 dark:ring-rose-800',
     selectedDotClass: 'border-rose-500 bg-rose-500 text-white'
   }
 ])
