@@ -47,13 +47,26 @@ func AccountTestFailureCode(err error) string {
 	}
 }
 
-// AccountTestSupportsTextConversation mirrors the native test dispatchers for
-// model identities that do not declare their capabilities in the catalog.
-func AccountTestSupportsTextConversation(account *Account, model string) bool {
+// AccountTestSupportsTextConversation consumes only supplied catalog identities
+// and local mappings. Catalog projection must not acquire another provider
+// snapshot through Account.GetMappedModel or its compatibility fallbacks.
+func AccountTestSupportsTextConversation(account *Account, model string, catalogTargets ...string) bool {
 	if account == nil {
 		return false
 	}
-	mapped := account.GetMappedModel(model)
+	mapped := model
+	if len(catalogTargets) > 0 {
+		if catalogTargets[0] != "" {
+			mapped = catalogTargets[0]
+		}
+	} else {
+		mapping := account.GetModelMapping()
+		if target, matched := resolveRequestedModelInMapping(mapping, model); matched {
+			mapped = target
+		} else if target, matched := resolveRequestedModelInMapping(mapping, normalizeRequestedModelForLookup(account.Platform, model)); matched {
+			mapped = target
+		}
+	}
 	for _, id := range []string{model, mapped} {
 		if isOpenAIImageModel(id) || isGrokImageGenerationModel(id) || isGrokVideoGenerationModel(id) || isImageGenerationModel(id) {
 			return false
@@ -82,16 +95,34 @@ type accountTestTransportFailure struct {
 func (e *accountTestTransportFailure) Error() string { return e.message }
 func (e *accountTestTransportFailure) Unwrap() error { return e.cause }
 
-func accountTestRequestFailure(err error) error {
+// Endpoint labels are supplied by the adapter, never from request URLs or
+// provider error text. This retains protocol diagnostics without credentials.
+type accountTestEndpoint string
+
+const (
+	accountTestEndpointChat              accountTestEndpoint = "Chat Completions API (/v1/chat/completions)"
+	accountTestEndpointAdaptiveAnthropic accountTestEndpoint = "Adaptive Anthropic endpoint"
+	accountTestEndpointAdaptiveResponses accountTestEndpoint = "Adaptive Responses endpoint"
+	accountTestEndpointAnthropic         accountTestEndpoint = "Anthropic endpoint"
+	accountTestEndpointGrokResponses     accountTestEndpoint = "Grok Responses API"
+)
+
+func accountTestRequestFailure(err error, endpoints ...accountTestEndpoint) error {
 	code := "test_network_failed"
 	if errors.Is(err, context.DeadlineExceeded) {
 		code = "test_timeout"
 	}
 	message, _ := AccountBusinessMessage(code)
+	if errors.Is(err, context.DeadlineExceeded) {
+		message += " (" + context.DeadlineExceeded.Error() + ")"
+	}
+	if len(endpoints) > 0 && endpoints[0] != "" {
+		message = string(endpoints[0]) + " request failed: " + message
+	}
 	return &accountTestTransportFailure{code: code, message: message, cause: err}
 }
 
-func accountTestHTTPFailure(status int) error {
+func accountTestHTTPFailure(status int, endpoints ...accountTestEndpoint) error {
 	code := "test_upstream_failed"
 	if status == http.StatusUnauthorized || status == http.StatusForbidden {
 		code = "test_authentication_failed"
@@ -100,26 +131,36 @@ func accountTestHTTPFailure(status int) error {
 		code = "test_rate_limited"
 	}
 	message, _ := AccountBusinessMessage(code)
-	return &accountTestTransportFailure{code: code, message: fmt.Sprintf("API returned %d: %s", status, message)}
+	label := "API"
+	if len(endpoints) > 0 && endpoints[0] != "" {
+		label = string(endpoints[0])
+	}
+	return &accountTestTransportFailure{code: code, message: fmt.Sprintf("%s returned %d: %s", label, status, message)}
 }
 
-func (s *AccountTestService) sendAccountTestFailure(c *gin.Context, err error) error {
+// AccountTestSafeFailureMessage is also used by persisted batch results. Only
+// the typed local formatter may add context to the fixed business catalog.
+func AccountTestSafeFailureMessage(err error) string {
 	code := AccountTestFailureCode(err)
 	message, _ := AccountBusinessMessage(code)
 	var transport *accountTestTransportFailure
 	if errors.As(err, &transport) {
 		message = transport.message
 	}
-	s.sendEvent(c, TestEvent{Type: "error", Code: code, Error: message})
+	return message
+}
+
+func (s *AccountTestService) sendAccountTestFailure(c *gin.Context, err error) error {
+	s.sendEvent(c, TestEvent{Type: "error", Code: AccountTestFailureCode(err), Error: AccountTestSafeFailureMessage(err)})
 	return err
 }
 
-func (s *AccountTestService) sendAccountTestRequestError(c *gin.Context, err error) error {
-	return s.sendAccountTestFailure(c, accountTestRequestFailure(err))
+func (s *AccountTestService) sendAccountTestRequestError(c *gin.Context, err error, endpoints ...accountTestEndpoint) error {
+	return s.sendAccountTestFailure(c, accountTestRequestFailure(err, endpoints...))
 }
 
-func (s *AccountTestService) sendAccountTestHTTPError(c *gin.Context, status int) error {
-	return s.sendAccountTestFailure(c, accountTestHTTPFailure(status))
+func (s *AccountTestService) sendAccountTestHTTPError(c *gin.Context, status int, endpoints ...accountTestEndpoint) error {
+	return s.sendAccountTestFailure(c, accountTestHTTPFailure(status, endpoints...))
 }
 
 type connectionStreamState struct {

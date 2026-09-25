@@ -108,7 +108,7 @@ func TestAccountTestPromptOAuthFinalTicketUsesMappedModel(t *testing.T) {
 	a.Credentials["header_override_enabled"] = true
 	a.Credentials["header_overrides"] = map[string]any{openAICodexTurnStateHeader: fakeCodexTicketState(312)}
 	a.Extra = map[string]any{openAICodexTicketExtraKey("gpt-5.6-sol"): &CodexTicketRecord{State: fakeCodexTicketState(292), Length: 292, AccountID: a.ID, Model: "gpt-5.6-sol", ExpiresAt: time.Now().Add(time.Hour)}}
-	upstream := &queuedHTTPUpstream{responses: []*http.Response{newJSONResponse(200, "data: {\"type\":\"response.completed\"}\n\n")}}
+	upstream := &queuedHTTPUpstream{responses: []*http.Response{newJSONResponse(200, "data: {\"type\":\"response.output_text.delta\",\"delta\":\"OK\"}\n\ndata: {\"type\":\"response.completed\",\"response\":{\"status\":\"completed\"}}\n\n")}}
 	gateway := &OpenAIGatewayService{cfg: cfg, httpUpstream: upstream, accountRepo: &routingAccountRepositoryFixture{account: a}}
 	// Cookie routing replaced the 292 header: the plugin only references a
 	// host-verified qualification, gated like business traffic on the final model.

@@ -304,7 +304,7 @@ func TestAccountTestService_CindyEmptyModelUsesLuna(t *testing.T) {
 	c, _ := newTestContext()
 	upstream := &queuedHTTPUpstream{responses: []*http.Response{newJSONResponse(
 		http.StatusOK,
-		"data: {\"type\":\"response.completed\"}\n\n",
+		"data: {\"type\":\"response.output_text.delta\",\"delta\":\"OK\"}\n\ndata: {\"type\":\"response.completed\",\"response\":{\"status\":\"completed\"}}\n\n",
 	)}}
 	svc := &AccountTestService{
 		httpUpstream: upstream,
@@ -332,7 +332,7 @@ func TestAccountTestService_NonCindyEmptyModelKeepsOpenAIDefault(t *testing.T) {
 	c, _ := newTestContext()
 	upstream := &queuedHTTPUpstream{responses: []*http.Response{newJSONResponse(
 		http.StatusOK,
-		"data: {\"type\":\"response.completed\"}\n\n",
+		"data: {\"type\":\"response.output_text.delta\",\"delta\":\"OK\"}\n\ndata: {\"type\":\"response.completed\",\"response\":{\"status\":\"completed\"}}\n\n",
 	)}}
 	svc := &AccountTestService{
 		httpUpstream: upstream,
@@ -1067,7 +1067,8 @@ func TestAccountTestService_OpenAIChatCompletionsPathReturns4xx(t *testing.T) {
 	require.Error(t, err)
 	require.Equal(t, "https://compat-upstream.example/v1/chat/completions", upstream.lastReq.URL.String())
 	require.Contains(t, err.Error(), "Chat Completions API (/v1/chat/completions) returned 400")
-	require.Contains(t, recorder.Body.String(), "test_protocol_invalid")
+	require.Contains(t, recorder.Body.String(), "/v1/chat/completions")
+	require.Contains(t, recorder.Body.String(), "test_upstream_failed")
 	require.NotContains(t, recorder.Body.String(), `"success":true`)
 }
 
@@ -1097,7 +1098,8 @@ func TestAccountTestService_OpenAIChatCompletionsPathTimeout(t *testing.T) {
 	require.Equal(t, "https://compat-upstream.example/v1/chat/completions", upstream.lastReq.URL.String())
 	require.Contains(t, err.Error(), "Chat Completions API (/v1/chat/completions) request failed")
 	require.Contains(t, err.Error(), context.DeadlineExceeded.Error())
-	require.Contains(t, recorder.Body.String(), "test_protocol_invalid")
+	require.Contains(t, recorder.Body.String(), "/v1/chat/completions")
+	require.Contains(t, recorder.Body.String(), "test_timeout")
 	require.NotContains(t, recorder.Body.String(), `"success":true`)
 }
 

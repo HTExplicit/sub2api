@@ -24,7 +24,7 @@ func (r *reasoningTestRepo) UpdateExtra(context.Context, int64, map[string]any) 
 func TestAccountTestReasoningSurvivesMappingAndWireCompression(t *testing.T) {
 	a := &Account{ID: 42, Platform: PlatformOpenAI, Type: AccountTypeOAuth, Status: StatusActive,
 		Credentials: map[string]any{"access_token": "test-access", "model_mapping": map[string]any{"friendly": "gpt-6-astra"}}}
-	upstream := &queuedHTTPUpstream{responses: []*http.Response{newJSONResponse(200, "data: {\"type\":\"response.completed\"}\n\n")}}
+	upstream := &queuedHTTPUpstream{responses: []*http.Response{newJSONResponse(200, "data: {\"type\":\"response.output_text.delta\",\"delta\":\"OK\"}\n\ndata: {\"type\":\"response.completed\",\"response\":{\"status\":\"completed\"}}\n\n")}}
 	svc := &AccountTestService{accountRepo: &reasoningTestRepo{account: a}, httpUpstream: upstream, cfg: &config.Config{Gateway: config.GatewayConfig{OpenAICodexRequestZstd: true}}}
 	c, rec := newTestContext()
 	c.Request = c.Request.WithContext(withCodexTransportFixture(c.Request.Context(), true))

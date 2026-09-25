@@ -109,6 +109,24 @@ func TestAccountConnectionTransportClassification(t *testing.T) {
 		require.Equal(t, tc.code, AccountTestFailureCode(err))
 		require.NotContains(t, recorder.Body.String(), "network-secret-material")
 	}
+	for _, tc := range []struct {
+		failure     error
+		code, label string
+	}{
+		{accountTestHTTPFailure(404, accountTestEndpointAdaptiveAnthropic), "test_upstream_failed", "Adaptive Anthropic endpoint returned 404"},
+		{accountTestHTTPFailure(401, accountTestEndpointAnthropic), "test_authentication_failed", "Anthropic endpoint returned 401"},
+		{accountTestHTTPFailure(402, accountTestEndpointGrokResponses), "test_upstream_failed", "Grok Responses API returned 402"},
+		{accountTestRequestFailure(context.DeadlineExceeded, accountTestEndpointChat), "test_timeout", "Chat Completions API (/v1/chat/completions) request failed"},
+		{accountTestRequestFailure(errors.New("network-secret-material"), accountTestEndpointChat), "test_network_failed", "Chat Completions API (/v1/chat/completions) request failed"},
+	} {
+		c, recorder := newTestContext()
+		err := svc.sendAccountTestFailure(c, tc.failure)
+		require.Equal(t, tc.code, AccountTestFailureCode(err))
+		require.Contains(t, recorder.Body.String(), tc.label)
+		require.Contains(t, AccountTestSafeFailureMessage(err), tc.label, "batch and single adapters share the safe diagnostic")
+		require.NotContains(t, AccountTestSafeFailureMessage(err), "network-secret-material")
+	}
+	require.Equal(t, "account connection test failed or did not complete", AccountTestSafeFailureMessage(errors.New("network-secret-material")))
 }
 
 func TestAccountJobTerminalAndRetryContract(t *testing.T) {

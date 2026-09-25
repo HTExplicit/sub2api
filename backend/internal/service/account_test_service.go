@@ -1341,7 +1341,7 @@ func (s *AccountTestService) testGrokResponsesConnection(c *gin.Context, ctx con
 
 	resp, err := s.httpUpstream.Do(req, s.grokTestProxyURL(account), account.ID, account.Concurrency)
 	if err != nil {
-		return s.sendAccountTestRequestError(c, err)
+		return s.sendAccountTestRequestError(c, err, accountTestEndpointGrokResponses)
 	}
 	defer func() { _ = resp.Body.Close() }()
 
@@ -1349,7 +1349,7 @@ func (s *AccountTestService) testGrokResponsesConnection(c *gin.Context, ctx con
 
 	if resp.StatusCode != http.StatusOK {
 		_, _ = io.Copy(io.Discard, resp.Body)
-		return s.sendAccountTestHTTPError(c, resp.StatusCode)
+		return s.sendAccountTestHTTPError(c, resp.StatusCode, accountTestEndpointGrokResponses)
 	}
 
 	return s.processOpenAIStream(c, ctx, account, resp.Body)
@@ -2232,7 +2232,7 @@ func (s *AccountTestService) testOpenAIChatCompletionsConnection(
 
 	resp, err := s.doOpenAIAccountTestUpstream(req, proxyURL, account, true)
 	if err != nil {
-		return s.sendAccountTestRequestError(c, err)
+		return s.sendAccountTestRequestError(c, err, accountTestEndpointChat)
 	}
 	defer func() { _ = resp.Body.Close() }()
 
@@ -2246,7 +2246,7 @@ func (s *AccountTestService) testOpenAIChatCompletionsConnection(
 			errMsg := fmt.Sprintf("Chat Completions authentication failed (401): %s", string(body))
 			_ = s.accountRepo.SetError(ctx, account.ID, errMsg)
 		}
-		return s.sendAccountTestHTTPError(c, resp.StatusCode)
+		return s.sendAccountTestHTTPError(c, resp.StatusCode, accountTestEndpointChat)
 	}
 
 	return s.processOpenAIChatCompletionsStream(c, ctx, account, resp.Body)

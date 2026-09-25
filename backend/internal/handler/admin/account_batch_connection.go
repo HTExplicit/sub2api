@@ -21,7 +21,7 @@ type batchConnectionSnapshot struct {
 	PlanStamp       string `json:"plan_stamp"`
 }
 
-func connectionPlanStamp(plan *accountTestPlanView, account *service.Account, modelID string) string {
+func connectionPlanStamp(plan *accountTestPlanView, account *service.Account, modelID, effectiveModel string) string {
 	var selected map[string]any
 	for _, model := range plan.Models {
 		if model["id"] == modelID {
@@ -32,7 +32,7 @@ func connectionPlanStamp(plan *accountTestPlanView, account *service.Account, mo
 	// Only selected-model execution facts participate. Display names, catalog
 	// order and unrelated models must not invalidate an accepted plan.
 	facts := map[string]any{"purpose": "connection", "wire_platform": plan.WirePlatform,
-		"mapped_model_id": account.GetMappedModel(modelID), "api_protocol": account.GetAPIProtocol(),
+		"mapped_model_id": effectiveModel, "api_protocol": account.GetAPIProtocol(),
 		"policy_stamp": plan.PolicyStamp}
 	for _, key := range []string{"endpoints", "input_modalities", "output_modalities", "reasoning_efforts", "default_reasoning_effort", "live_upstream_id"} {
 		facts[key] = selected[key]
@@ -55,10 +55,12 @@ func (h *AccountHandler) executeBatchConnectionTest(ctx context.Context, raw jso
 		_ = json.Unmarshal(item.Metadata, &metadata)
 	}
 	metadata["stage"], metadata["connection_status"], metadata["recovery_status"] = "selection", "failed", "not_attempted"
-	fail := func(code string) service.AccountJobExecutionResult {
+	metadata["message"] = ""
+	fail := func(code string, causes ...error) service.AccountJobExecutionResult {
 		metadata["latency_ms"] = time.Since(startedAt).Milliseconds()
 		metadata["connection_status"] = "failed"
 		if ctx.Err() != nil {
+			metadata["message"] = ""
 			metadata["connection_status"] = "canceled"
 			encoded, _ := json.Marshal(metadata)
 			return service.AccountJobExecutionResult{ItemID: item.ID, Status: service.AccountJobItemStatusCanceled, Metadata: encoded}
@@ -67,6 +69,10 @@ func (h *AccountHandler) executeBatchConnectionTest(ctx context.Context, raw jso
 			code = "test_timeout"
 		}
 		result := accountJobFailed(item.ID, code)
+		metadata["message"] = result.ErrorMessage
+		if len(causes) > 0 && service.AccountTestFailureCode(causes[0]) == code {
+			metadata["message"] = service.AccountTestSafeFailureMessage(causes[0])
+		}
 		result.Metadata, _ = json.Marshal(metadata)
 		return result
 	}
@@ -114,7 +120,7 @@ func (h *AccountHandler) executeBatchConnectionTest(ctx context.Context, raw jso
 	}
 	if previous.Plan != nil {
 		model, effort = previous.Plan.ModelID, previous.Plan.ReasoningEffort
-		if !slices.Contains(view.ModelIDs, model) || previous.Plan.PlanStamp != connectionPlanStamp(plan, account, model) {
+		if !slices.Contains(view.ModelIDs, model) {
 			return fail("test_plan_changed")
 		}
 	} else if model == "" {
@@ -142,11 +148,12 @@ func (h *AccountHandler) executeBatchConnectionTest(ctx context.Context, raw jso
 	if mappingErr != nil {
 		return fail("test_catalog_failed")
 	}
-	if actualModel == "" || (previous.Plan != nil && previous.Plan.MappedModelID != actualModel) {
+	stamp := connectionPlanStamp(plan, account, model, actualModel)
+	if actualModel == "" || (previous.Plan != nil && (previous.Plan.MappedModelID != actualModel || previous.Plan.PlanStamp != stamp)) {
 		return fail("test_plan_changed")
 	}
 	snapshot := batchConnectionSnapshot{ModelID: model, MappedModelID: actualModel, ReasoningEffort: effort,
-		WirePlatform: plan.WirePlatform, APIProtocol: account.GetAPIProtocol(), PlanStamp: connectionPlanStamp(plan, account, model)}
+		WirePlatform: plan.WirePlatform, APIProtocol: account.GetAPIProtocol(), PlanStamp: stamp}
 	metadata["execution_plan"], metadata["model_id"], metadata["reasoning_effort"] = snapshot, snapshot.MappedModelID, effort
 	metadata["requested_model_id"], metadata["stage"] = model, "connection"
 	metadata["connection_status"] = "running"
@@ -176,7 +183,7 @@ func (h *AccountHandler) executeBatchConnectionTest(ctx context.Context, raw jso
 		if testCtx.Err() == context.DeadlineExceeded {
 			code = "test_timeout"
 		}
-		return fail(code)
+		return fail(code, testErr)
 	}
 	// A completed model call stays successful even when recovery fails, or Stop
 	// arrives after the terminal event. Failed-item retry must not resend it.

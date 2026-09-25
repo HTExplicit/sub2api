@@ -89,7 +89,7 @@ func (s *AccountTestService) testCNProviderAdaptiveAnthropicConnection(c *gin.Co
 
 	resp, err := s.doCNProviderAdaptiveRequest(req, account)
 	if err != nil {
-		return s.sendAccountTestRequestError(c, err)
+		return s.sendAccountTestRequestError(c, err, accountTestEndpointAdaptiveAnthropic)
 	}
 	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
@@ -98,7 +98,7 @@ func (s *AccountTestService) testCNProviderAdaptiveAnthropicConnection(c *gin.Co
 		if resp.StatusCode == http.StatusUnauthorized && s.accountRepo != nil {
 			_ = s.accountRepo.SetError(ctx, account.ID, errMsg)
 		}
-		return s.sendAccountTestHTTPError(c, resp.StatusCode)
+		return s.sendAccountTestHTTPError(c, resp.StatusCode, accountTestEndpointAdaptiveAnthropic)
 	}
 
 	if err := s.processCNProviderAdaptiveAnthropicStream(c, resp.Body); err != nil {
@@ -143,7 +143,7 @@ func (s *AccountTestService) testCNProviderAdaptiveResponsesConnection(c *gin.Co
 
 	resp, err := s.doCNProviderAdaptiveRequest(req, account)
 	if err != nil {
-		return s.sendAccountTestRequestError(c, err)
+		return s.sendAccountTestRequestError(c, err, accountTestEndpointAdaptiveResponses)
 	}
 	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
@@ -152,7 +152,7 @@ func (s *AccountTestService) testCNProviderAdaptiveResponsesConnection(c *gin.Co
 		if resp.StatusCode == http.StatusUnauthorized && s.accountRepo != nil {
 			_ = s.accountRepo.SetError(ctx, account.ID, errMsg)
 		}
-		return s.sendAccountTestHTTPError(c, resp.StatusCode)
+		return s.sendAccountTestHTTPError(c, resp.StatusCode, accountTestEndpointAdaptiveResponses)
 	}
 
 	if err := s.processOpenAIStream(c, ctx, account, resp.Body); err != nil {
@@ -233,7 +233,7 @@ func (s *AccountTestService) testCNProviderAnthropicConnection(c *gin.Context, a
 
 	resp, err := s.doCNProviderAdaptiveRequest(req, account)
 	if err != nil {
-		return s.sendAccountTestRequestError(c, err)
+		return s.sendAccountTestRequestError(c, err, accountTestEndpointAnthropic)
 	}
 	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
@@ -242,7 +242,7 @@ func (s *AccountTestService) testCNProviderAnthropicConnection(c *gin.Context, a
 		if (resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden) && s.accountRepo != nil {
 			_ = s.accountRepo.SetError(ctx, account.ID, errMsg)
 		}
-		return s.sendAccountTestHTTPError(c, resp.StatusCode)
+		return s.sendAccountTestHTTPError(c, resp.StatusCode, accountTestEndpointAnthropic)
 	}
 
 	return s.processClaudeStream(c, resp.Body)

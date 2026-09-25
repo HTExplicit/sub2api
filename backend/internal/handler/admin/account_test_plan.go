@@ -146,7 +146,11 @@ func accountConnectionModel(account *service.Account, model map[string]any) bool
 	if declaredText {
 		return true
 	}
-	if !service.AccountTestSupportsTextConversation(account, id) {
+	var catalogTargets []string
+	if target, ok := model["live_upstream_id"].(string); ok {
+		catalogTargets = []string{target}
+	}
+	if !service.AccountTestSupportsTextConversation(account, id, catalogTargets...) {
 		return false
 	}
 	if endpoints, ok := model["endpoints"].([]any); ok && len(endpoints) > 0 {
