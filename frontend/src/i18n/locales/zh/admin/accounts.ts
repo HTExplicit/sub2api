@@ -30,6 +30,13 @@ export default {accounts: {
     errors: { too_long: '代理输入过长。', unknown_field: '无法识别字段，请使用主机、端口、用户名、密码标签。', duplicate_field: '存在重复字段，保留原输入，请检查。', incomplete: '主机、端口或账密不完整。', ambiguous: '字段存在歧义，请用带标签的分行格式。', invalid_url: '代理URL无法识别或包含不支持的内容。', invalid_port: '请填写1至65535之间的端口。' }
   },
       batchTest: {
+        automaticHint: '默认逐账号选择支持文本对话的模型，个别账号不可用不会阻止其余测试。',
+        advanced: '指定模型、推理设置及测试文本',
+        selectionMode: '模型选择方式',
+        automatic: '自动选择文本模型',
+        explicit: '指定模型',
+        outputLimited: '连接成功，回复达到输出额度。',
+        recovery: { not_attempted: '尚未恢复状态', not_needed: '无须恢复', recovered: '可恢复状态已清除', manual_state_preserved: '已保留手动停用状态', warning: '连接成功；状态恢复失败，请检查账号状态' },
         title: '批量测试连接',
         description: '测试已选中的 {count} 个账号，最多同时测试 5 个。关闭进度窗口后任务继续。',
         model: '测试模型',
@@ -39,7 +46,7 @@ export default {accounts: {
         applied: '已应用 {applied} 个账号，跳过 {skipped} 个账号',
         loadFailed: '模型列表读取失败，请重试或移出此账号。',
         emptyModels: '此账号没有可测试模型，请修正配置或移出此账号。',
-        resolveBeforeStart: '请为每个账号选择模型；读取失败或无模型的账号需重试或移出。',
+        resolveBeforeStart: '请检查指定模型和推理设置；自动选择无需等待模型列表。',
         previous: '上一页',
         next: '下一页',
         defaultModel: '各账号默认模型',

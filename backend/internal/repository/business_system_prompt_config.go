@@ -84,8 +84,12 @@ func (r *businessSystemPromptRepository) SavePromptConfig(ctx context.Context, i
 	for i := range policy.Rules {
 		rule := &policy.Rules[i]
 		draft, hasDraft := input.Contents[rule.ID]
-		if old, exists := previousRules[rule.ID]; exists && old.TemplateID != rule.TemplateID {
+		old, exists := previousRules[rule.ID]
+		if exists && old.TemplateID != rule.TemplateID {
 			return fmt.Errorf("%w: an existing rule cannot change its content source", service.ErrBusinessSystemPromptInvalid)
+		}
+		if !exists && (rule.TemplateID != 0 || rule.VersionID != 0 || !hasDraft) {
+			return fmt.Errorf("%w: a new rule requires independent content", service.ErrBusinessSystemPromptInvalid)
 		}
 		var version promptConfigStoredVersion
 		if rule.TemplateID == 0 && rule.VersionID == 0 && hasDraft {
@@ -106,11 +110,22 @@ func (r *businessSystemPromptRepository) SavePromptConfig(ctx context.Context, i
 				version.compositionMode, version.bundleID, version.bundleManifestSHA256); err != nil {
 				return err
 			}
-			if hasDraft && (version.managedSource != "" || version.compositionMode != service.BusinessSystemPromptCompositionInline) {
+			if version.managedSource != "" || version.compositionMode == service.BusinessSystemPromptCompositionCodexSkillHybrid {
 				return fmt.Errorf("%w: managed prompt content requires an independent copy", service.ErrBusinessSystemPromptSourceNotManaged)
 			}
 		}
 		if hasDraft {
+			preserveEcho := false
+			if draft.RestoreVersionID > 0 {
+				preserveEcho, err = validatePromptHistoryRestore(ctx, tx, rule.ID, rule.TemplateID, version.compositionMode, draft.RestoreVersionID, draft.Body)
+				if err != nil {
+					return err
+				}
+			} else if version.compositionMode == nativeapi.PromptContentAnthropicSystemBlocks {
+				if err := service.ValidateStructuredPromptTextEdit(version.body, draft.Body); err != nil {
+					return err
+				}
+			}
 			version.body = draft.Body
 			version.sha256, version.byteLength, err = service.ValidateBusinessSystemPromptBody(draft.Body)
 			if err != nil {
@@ -126,6 +141,11 @@ func (r *businessSystemPromptRepository) SavePromptConfig(ctx context.Context, i
 				rule.TemplateID, latest+1, version.body, version.sha256, version.byteLength, version.compositionMode,
 				nullableString(version.bundleID), nullableString(version.bundleManifestSHA256), nullableActor(actorID)).Scan(&rule.VersionID); err != nil {
 				return translateBusinessSystemPromptWriteError(err)
+			}
+			if preserveEcho {
+				if _, err := tx.ExecContext(ctx, `INSERT INTO system_prompt_version_compat (version_id, preserve_echo) VALUES ($1, TRUE)`, rule.VersionID); err != nil {
+					return err
+				}
 			}
 		}
 		if !hasDraft {

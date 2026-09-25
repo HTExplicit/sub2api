@@ -47,7 +47,7 @@ describe('account operation presentation', () => {
     await button(wrapper, '.cancel').trigger('click'); await flushPromises()
     expect(button(wrapper, '.stopping').attributes('disabled')).toBeDefined()
     expect(button(wrapper, '.retryFailed')).toBeUndefined()
-    store.currentJob = { ...base, status: 'partially_succeeded', processed_count: 2, failed_count: 1 }
+    store.currentJob = { ...base, status: 'partially_succeeded', processed_count: 2, failed_count: 1, retry_eligible: true }
     await store.loadCurrent(base.id)
     await flushPromises()
     expect(api.listItems.mock.calls.at(-1)?.[1].status).toBe('failed')
@@ -72,7 +72,7 @@ describe('account operation presentation', () => {
     expect(store.currentJob?.id).toBe(52)
   })
   it('keeps expired retry failures actionable without claiming success', async () => {
-    const store = useAccountJobsStore(); store.track({ ...base, status: 'failed', failed_count: 2 })
+    const store = useAccountJobsStore(); store.track({ ...base, status: 'failed', failed_count: 2, retry_eligible: true })
     const wrapper = mount(AccountTaskDrawer, options); wrappers.push(wrapper); await flushPromises()
     api.retryFailed.mockRejectedValue({ code: 'ACCOUNT_JOB_PAYLOAD_EXPIRED' })
     await button(wrapper, '.retryFailed').trigger('click'); await flushPromises()

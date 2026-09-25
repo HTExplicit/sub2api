@@ -85,6 +85,8 @@ func (r *AccountJobRuntime) executeBatchTests(parent context.Context, job *Accou
 		}
 		wg.Wait()
 	}
+	cancel()
+	<-monitorDone
 	select {
 	case code := <-failures:
 		return normalizeAccountJobFailure(code)

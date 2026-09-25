@@ -704,6 +704,36 @@ func (s *HTTPUpstreamSuite) TestOpenAIHarvestProfileDisablesKeepAlives() {
 	require.Equal(s.T(), 0, transport.MaxIdleConns)
 }
 
+func (s *HTTPUpstreamSuite) TestOpenAIHarvestProfilePreservesSelectedEndpoint() {
+	svc := s.newService()
+	for _, raw := range []string{"socks5://u:p@[::1]:1080", "http://u:p@Proxy.Example:80", "https://Proxy.Example"} {
+		key, parsed, err := proxyURLForProfile(raw, service.HTTPUpstreamProfileOpenAIHarvest)
+		require.NoError(s.T(), err)
+		require.Equal(s.T(), raw, key)
+		require.Equal(s.T(), strings.Split(raw, ":")[0], parsed.Scheme)
+		entry, err := svc.getClientEntry(raw, 41, 1, service.HTTPUpstreamProfileOpenAIHarvest, true, false)
+		require.NoError(s.T(), err)
+		require.Equal(s.T(), raw, entry.proxyKey)
+		require.EqualValues(s.T(), 1, atomic.LoadInt64(&entry.inFlight))
+		transport, ok := entry.client.Transport.(*http.Transport)
+		require.True(s.T(), ok)
+		require.True(s.T(), transport.DisableKeepAlives, "acquisition still requires fresh connections")
+		atomic.AddInt64(&entry.inFlight, -1)
+		tlsEntry, err := svc.getClientEntryWithTLS(raw, 41, 1, &tlsfingerprint.Profile{Name: "test"}, service.HTTPUpstreamProfileOpenAIHarvest, false, false)
+		require.NoError(s.T(), err)
+		require.Equal(s.T(), raw, tlsEntry.proxyKey)
+	}
+	for _, draft := range []string{"proxy.example:8080", "proxy.example:8080:user:password", ""} {
+		_, err := svc.getClientEntry(draft, 41, 1, service.HTTPUpstreamProfileOpenAIHarvest, false, false)
+		require.Error(s.T(), err, "acquisition cannot reinterpret drafts or silently use direct egress")
+		_, err = svc.getClientEntryWithTLS(draft, 41, 1, &tlsfingerprint.Profile{Name: "test"}, service.HTTPUpstreamProfileOpenAIHarvest, false, false)
+		require.Error(s.T(), err)
+	}
+	_, parsed, err := proxyURLForProfile("socks5://proxy.example:1080", service.HTTPUpstreamProfileDefault)
+	require.NoError(s.T(), err)
+	require.Equal(s.T(), "socks5h", parsed.Scheme, "general account proxy behavior remains outside this change")
+}
+
 func (s *HTTPUpstreamSuite) TestOpenAIHeaderTimeoutChangeRebuildsClient() {
 	s.cfg.Gateway = config.GatewayConfig{
 		OpenAIHTTP2: config.GatewayOpenAIHTTP2Config{Enabled: true},

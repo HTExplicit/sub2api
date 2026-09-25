@@ -18,7 +18,9 @@ func accountTextTestOutputLimit(prompts ...string) int {
 			return 1024
 		}
 	}
-	return 1
+	// A one-token cap can stop in whitespace or reasoning before any visible
+	// text. Connectivity requires a displayable reply, so reserve a small budget.
+	return 256
 }
 
 const accountTestPromptContextKey = "account_test_user_prompt"
@@ -26,7 +28,7 @@ const accountTestScheduledDefaultsContextKey = "account_test_scheduled_defaults"
 
 func resolveAntigravityTestPrompt(prompts ...string) string {
 	if len(prompts) == 0 {
-		return "."
+		return "Reply with OK."
 	}
 	return resolveAccountTestPrompt(prompts...)
 }
@@ -64,7 +66,7 @@ func resolveAccountTestPrompt(prompts ...string) string {
 	if len(prompts) > 0 && strings.TrimSpace(prompts[0]) != "" {
 		return prompts[0]
 	}
-	return "hi"
+	return "Reply with OK."
 }
 
 func accountTestUserPrompt(c *gin.Context) string {

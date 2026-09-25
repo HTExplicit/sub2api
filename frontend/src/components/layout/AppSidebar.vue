@@ -819,6 +819,7 @@ const personalNavItems = computed((): NavItem[] => finalizeNav(buildSelfNavItems
 function buildExtensionNavItems(includeAdmin: boolean): NavItem[] {
   const items: NavItem[] = []
   if (includeAdmin) {
+    items.push({ path: '/admin/system-prompts', label: t('nav.systemPrompts'), icon: DocumentIcon })
     items.push({ path: '/admin/cindy-accounts', label: t('nav.cindyAccounts'), icon: GlobeIcon })
     items.push({ path: '/admin/codex-runtime', label: t('nav.codexRuntime'), icon: PluginIcon })
   }
@@ -908,7 +909,6 @@ const adminNavItems = computed((): NavItem[] => {
     },
     { path: '/admin/usage', label: t('nav.usage'), icon: ChartIcon },
     { path: '/admin/audit-logs', label: t('nav.auditLogs'), icon: ShieldIcon, hideInSimpleMode: true },
-    { path: '/admin/system-prompts', label: t('nav.systemPrompts'), icon: DocumentIcon }
   ]
 
   const visible = applyFeatureFlags(baseItems)

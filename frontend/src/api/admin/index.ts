@@ -144,15 +144,4 @@ export type {
   CindyBalanceProbeScope,
   CindyBalanceProbeScopeMode
 } from './cindyBalanceProbe'
-export type {
-  RemoteSkillBundleVersion,
-  RemoteSkillBundleVersionDetail,
-  RemoteSkillRegistryResponse,
-  RemoteSkillRegistrySnapshot,
-  RemoteSkillSourceID,
-  RemoteSkillSyncJob,
-  SystemPromptCompositionMode,
-  SystemPromptRuntime,
-  SystemPromptTemplate,
-  SystemPromptVersion
-} from './systemPrompts'
+export type { SystemPromptCompositionMode, PromptConfig, PromptConfigWrite, PromptHistoryVersion } from './systemPrompts'

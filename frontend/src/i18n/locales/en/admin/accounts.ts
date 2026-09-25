@@ -30,6 +30,13 @@ export default {accounts: {
     errors: { too_long: 'Proxy input is too long.', unknown_field: 'Unknown field. Use host, port, username and password labels.', duplicate_field: 'Duplicate field. Check the unchanged input.', incomplete: 'Host, port or credentials are incomplete.', ambiguous: 'Ambiguous fields. Use labeled lines.', invalid_url: 'Invalid or unsupported proxy URL.', invalid_port: 'Enter a port between 1 and 65535.' }
   },
       batchTest: {
+        automaticHint: 'Each account selects a text conversation model automatically. An unavailable account does not block the remaining tests.',
+        advanced: 'Model, reasoning and test message',
+        selectionMode: 'Model selection',
+        automatic: 'Choose a text model automatically',
+        explicit: 'Choose a specific model',
+        outputLimited: 'Connection succeeded; the reply reached its output limit.',
+        recovery: { not_attempted: 'Recovery not attempted', not_needed: 'No recovery needed', recovered: 'Recoverable state cleared', manual_state_preserved: 'Manual disabled state preserved', warning: 'Connection succeeded; state recovery failed. Check the account state.' },
         title: 'Batch connection test',
         description: 'Test {count} selected accounts, up to 5 at a time. Closing progress keeps the job running.',
         model: 'Test model',
@@ -39,7 +46,7 @@ export default {accounts: {
         applied: 'Applied to {applied} accounts; skipped {skipped}',
         loadFailed: 'Could not load models. Retry or remove this account.',
         emptyModels: 'No test models available. Fix configuration or remove this account.',
-        resolveBeforeStart: 'Select a model for every account. Retry or remove accounts with missing models.',
+        resolveBeforeStart: 'Check explicit model and reasoning choices. Automatic selection does not wait for catalog loading.',
         previous: 'Previous',
         next: 'Next',
         defaultModel: 'Each account’s default model',

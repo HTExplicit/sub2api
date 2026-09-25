@@ -91,12 +91,12 @@ func (s *AccountTestService) testOpenCodeGoConnection(c *gin.Context, account *A
 	}
 	resp, err := s.doOpenAIAccountTestUpstream(req, proxyURL, account, true)
 	if err != nil {
-		return s.sendErrorAndEnd(c, fmt.Sprintf("OpenCode Go request failed: %s", err.Error()))
+		return s.sendAccountTestRequestError(c, err)
 	}
 	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
-		return s.sendErrorAndEnd(c, fmt.Sprintf("OpenCode Go API returned %d: %s", resp.StatusCode, string(body)))
+		_, _ = io.Copy(io.Discard, resp.Body)
+		return s.sendAccountTestHTTPError(c, resp.StatusCode)
 	}
 	if protocol == APIProtocolAnthropic {
 		return s.processClaudeStream(c, resp.Body)

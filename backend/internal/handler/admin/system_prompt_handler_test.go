@@ -1,148 +1,24 @@
 package admin
 
 import (
-	"bytes"
-	"context"
-	"errors"
-	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
 	"testing"
-	"time"
 
-	"github.com/Wei-Shaw/sub2api/internal/server/middleware"
 	"github.com/Wei-Shaw/sub2api/internal/service"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
 	"github.com/tidwall/gjson"
 )
 
-func TestStartSkillSyncAcceptsMultipartPromptCaptureForFixedSource(t *testing.T) {
+func TestRetiredPromptManagementHasNoExecutionPath(t *testing.T) {
 	gin.SetMode(gin.TestMode)
-	files := service.NewRemoteSkillRegistryFilesystem(t.TempDir())
-	seed, err := files.LoadSeed(context.Background())
-	require.NoError(t, err)
-	store := &serviceTestRemoteSkillStore{job: service.RemoteSkillSyncJob{ID: 9, Status: service.RemoteSkillSyncStatusQueued, CreatedAt: time.Now()}}
-	registry := service.NewRemoteSkillRegistryService(store, nil, files, &serviceTestRemoteSkillSource{})
-	require.NoError(t, registry.Start(context.Background()))
-	t.Cleanup(registry.Stop)
-	handler := NewSystemPromptHandler(nil, registry)
-
-	var requestBody bytes.Buffer
-	writer := multipart.NewWriter(&requestBody)
-	require.NoError(t, writer.WriteField("expected_revision", "7"))
-	part, err := writer.CreateFormFile("prompt_capture", "capture.txt")
-	require.NoError(t, err)
-	_, err = part.Write([]byte(seed.Prompt.RawBody))
-	require.NoError(t, err)
-	require.NoError(t, writer.Close())
-
 	recorder := httptest.NewRecorder()
 	ctx, _ := gin.CreateTestContext(recorder)
-	ctx.Request = httptest.NewRequest(http.MethodPost, "/api/v1/admin/system-prompts/skill-registry/syncs", &requestBody)
-	ctx.Request.Header.Set("Content-Type", writer.FormDataContentType())
-	ctx.Set(string(middleware.ContextKeyUser), middleware.AuthSubject{UserID: 42})
-	handler.StartSkillSync(ctx)
-
-	require.Equal(t, http.StatusAccepted, recorder.Code)
-	require.Equal(t, int64(42), store.actorID)
-	require.Equal(t, int64(7), store.expectedRevision)
-	require.True(t, store.promptProvided)
-}
-
-func TestSkillVersionDetailIncludesBodiesWithoutLeakingIntoRegistrySummary(t *testing.T) {
-	gin.SetMode(gin.TestMode)
-	files := service.NewRemoteSkillRegistryFilesystem(t.TempDir())
-	seed, err := files.LoadSeed(context.Background())
-	require.NoError(t, err)
-	store := &serviceTestRemoteSkillStore{}
-	registry := service.NewRemoteSkillRegistryService(store, nil, files, &serviceTestRemoteSkillSource{})
-	require.NoError(t, registry.Start(context.Background()))
-	t.Cleanup(registry.Stop)
-	handler := NewSystemPromptHandler(nil, registry)
-
-	detailRecorder := httptest.NewRecorder()
-	detailContext, _ := gin.CreateTestContext(detailRecorder)
-	detailContext.Request = httptest.NewRequest(http.MethodGet, "/api/v1/admin/system-prompts/skill-registry/versions/1", nil)
-	detailContext.Params = gin.Params{{Key: "bundle_version_id", Value: "1"}}
-	handler.SkillVersion(detailContext)
-
-	require.Equal(t, http.StatusOK, detailRecorder.Code)
-	require.Equal(t, seed.Prompt.RawBody, gjson.Get(detailRecorder.Body.String(), "data.prompt.raw_body").String())
-	require.Equal(t, seed.Prompt.EffectiveBody, gjson.Get(detailRecorder.Body.String(), "data.prompt.effective_body").String())
-	require.Equal(t, seed.Prompt.RawSHA256, gjson.Get(detailRecorder.Body.String(), "data.prompt.raw_sha256").String())
-	require.Equal(t, seed.Prompt.EffectiveSHA256, gjson.Get(detailRecorder.Body.String(), "data.prompt.effective_sha256").String())
-
-	summaryRecorder := httptest.NewRecorder()
-	summaryContext, _ := gin.CreateTestContext(summaryRecorder)
-	summaryContext.Request = httptest.NewRequest(http.MethodGet, "/api/v1/admin/system-prompts/skill-registry", nil)
-	handler.SkillRegistry(summaryContext)
-
-	require.Equal(t, http.StatusOK, summaryRecorder.Code)
-	require.False(t, gjson.Get(summaryRecorder.Body.String(), "data.runtime.active_prompt.raw_body").Exists())
-	require.False(t, gjson.Get(summaryRecorder.Body.String(), "data.runtime.active_prompt.effective_body").Exists())
-}
-
-type serviceTestRemoteSkillStore struct {
-	snapshot         service.RemoteSkillRegistrySnapshot
-	detail           service.RemoteSkillBundleVersionDetail
-	job              service.RemoteSkillSyncJob
-	actorID          int64
-	expectedRevision int64
-	promptProvided   bool
-}
-
-func (s *serviceTestRemoteSkillStore) EnsureRemoteSkillSeed(_ context.Context, candidate service.RemoteSkillCandidate) (service.RemoteSkillRegistrySnapshot, error) {
-	candidate.Version.ID = 1
-	candidate.Prompt.ID = 1
-	candidate.Version.PromptVersionID = 1
-	s.detail = service.RemoteSkillBundleVersionDetail{
-		RemoteSkillBundleVersion: candidate.Version,
-		Prompt:                   candidate.Prompt,
-		FileChanges:              candidate.FileChanges,
-	}
-	s.snapshot = service.RemoteSkillRegistrySnapshot{
-		Revision: 7, Active: &candidate.Version, ActivePrompt: &candidate.Prompt, UpdatedAt: time.Now().UTC(),
-	}
-	return s.snapshot, nil
-}
-func (s *serviceTestRemoteSkillStore) LoadRemoteSkillSnapshot(context.Context) (service.RemoteSkillRegistrySnapshot, error) {
-	return s.snapshot, nil
-}
-func (s *serviceTestRemoteSkillStore) ListRemoteSkillVersions(context.Context) ([]service.RemoteSkillBundleVersion, error) {
-	return nil, nil
-}
-func (s *serviceTestRemoteSkillStore) GetRemoteSkillVersion(context.Context, int64) (service.RemoteSkillBundleVersionDetail, error) {
-	return s.detail, nil
-}
-func (s *serviceTestRemoteSkillStore) CreateRemoteSkillSyncJob(_ context.Context, actorID, expectedRevision int64, promptProvided bool) (service.RemoteSkillSyncJob, error) {
-	s.actorID, s.expectedRevision, s.promptProvided = actorID, expectedRevision, promptProvided
-	return s.job, nil
-}
-func (s *serviceTestRemoteSkillStore) UpdateRemoteSkillSyncJobStage(context.Context, int64, string) error {
-	return nil
-}
-func (s *serviceTestRemoteSkillStore) ExpireRemoteSkillSyncJobs(context.Context) error { return nil }
-func (s *serviceTestRemoteSkillStore) CompleteRemoteSkillSyncJob(context.Context, int64, service.RemoteSkillCandidate) (service.RemoteSkillSyncJob, error) {
-	return s.job, nil
-}
-func (s *serviceTestRemoteSkillStore) FailRemoteSkillSyncJob(context.Context, int64, string) error {
-	return nil
-}
-func (s *serviceTestRemoteSkillStore) GetRemoteSkillSyncJob(context.Context, int64) (service.RemoteSkillSyncJob, error) {
-	return s.job, nil
-}
-func (s *serviceTestRemoteSkillStore) PublishRemoteSkillVersion(context.Context, int64, int64, int64) (service.RemoteSkillRegistrySnapshot, error) {
-	return s.snapshot, nil
-}
-func (s *serviceTestRemoteSkillStore) CleanupLegacyRemoteSkillData(context.Context) error {
-	return nil
-}
-
-type serviceTestRemoteSkillSource struct{}
-
-func (*serviceTestRemoteSkillSource) Build(context.Context, service.RemoteSkillPromptCapture, *service.RemoteSkillCandidate) (service.RemoteSkillCandidate, error) {
-	return service.RemoteSkillCandidate{}, errors.New("stop after handler contract")
+	ctx.Request = httptest.NewRequest(http.MethodPost, "/api/v1/admin/system-prompts/skill-registry/syncs", nil)
+	NewSystemPromptHandler(nil).Retired(ctx)
+	require.Equal(t, http.StatusGone, recorder.Code)
+	require.Equal(t, "system_prompt_management_retired", gjson.Get(recorder.Body.String(), "reason").String())
 }
 
 func TestWriteBusinessSystemPromptErrorUsesStableProtocolCodes(t *testing.T) {
@@ -194,34 +70,4 @@ func TestWriteBusinessSystemPromptErrorUsesStableProtocolCodes(t *testing.T) {
 			require.Equal(t, message, gjson.Get(recorder.Body.String(), "message").String())
 		})
 	}
-}
-
-func TestBusinessSystemPromptRuntimeResponseIncludesActiveVersionAndStatus(t *testing.T) {
-	updatedAt := time.Date(2026, 8, 6, 5, 4, 3, 0, time.UTC)
-	got := businessSystemPromptRuntimeResponse(service.BusinessSystemPromptSnapshot{
-		Enabled: true, ExposeServerPrompt: false, CompactEnabled: true,
-		TemplateID: 11, VersionID: 22, TemplateVersion: 3, Revision: 9,
-		SHA256: "ABCDEF", ByteLength: 123, Degraded: true, UpdatedAt: updatedAt,
-	})
-	require.Equal(t, int64(3), got.TemplateVersion)
-	require.Equal(t, int64(9), got.Revision)
-	require.Equal(t, "abcdef", got.SHA256)
-	require.Equal(t, 123, got.ByteLength)
-	require.True(t, got.Degraded)
-	require.Equal(t, updatedAt, got.UpdatedAt)
-}
-
-func TestSelectBusinessSystemPromptVersionUsesLatestOrExplicitID(t *testing.T) {
-	detail := service.BusinessSystemPromptTemplateDetail{Versions: []service.BusinessSystemPromptVersion{
-		{ID: 8, Version: 2, Body: "latest"},
-		{ID: 4, Version: 1, Body: "old"},
-	}}
-	latest, err := selectVersion(detail, 0)
-	require.NoError(t, err)
-	require.Equal(t, int64(2), latest.Version)
-	explicit, err := selectVersion(detail, 4)
-	require.NoError(t, err)
-	require.Equal(t, "old", explicit.Body)
-	_, err = selectVersion(detail, 99)
-	require.ErrorIs(t, err, service.ErrBusinessSystemPromptVersionNotFound)
 }

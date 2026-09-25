@@ -156,15 +156,9 @@ func initializeApplication(buildInfo handler.BuildInfo) (*Application, error) {
 	balanceNotifyService := service.ProvideBalanceNotifyService(emailService, settingRepository, accountRepository, notificationEmailService)
 	businessSystemPromptStore := repository.NewBusinessSystemPromptRepository(db)
 	businessSystemPromptRevisionBus := repository.NewBusinessSystemPromptRevisionBus(redisClient)
-	remoteSkillRegistryStore := repository.NewRemoteSkillRegistryRepository(db)
-	remoteSkillRegistryRevisionBus := repository.NewRemoteSkillRegistryRevisionBus(redisClient)
 	remoteSkillRegistryFiles := service.ProvideRemoteSkillRegistryFiles()
-	remoteSkillCandidateSource := service.ProvideRemoteSkillCandidateSource()
-	remoteSkillRegistryService, err := service.ProvideRemoteSkillRegistryService(remoteSkillRegistryStore, remoteSkillRegistryRevisionBus, remoteSkillRegistryFiles, remoteSkillCandidateSource)
-	if err != nil {
-		return nil, err
-	}
-	businessSystemPromptService, err := service.ProvideBusinessSystemPromptService(businessSystemPromptStore, businessSystemPromptRevisionBus, remoteSkillRegistryService, remoteSkillRegistryRevisionBus, accountRepository, configConfig, settingService)
+	frozenPromptFiles := service.ProvideFrozenPromptFiles(businessSystemPromptStore, remoteSkillRegistryFiles)
+	businessSystemPromptService, err := service.ProvideBusinessSystemPromptService(businessSystemPromptStore, businessSystemPromptRevisionBus, frozenPromptFiles, accountRepository, configConfig, settingService)
 	if err != nil {
 		return nil, err
 	}
@@ -318,7 +312,7 @@ func initializeApplication(buildInfo handler.BuildInfo) (*Application, error) {
 	auditLogRepository := repository.NewAuditLogRepository(db)
 	auditLogService := service.ProvideAuditLogService(auditLogRepository, settingService)
 	auditLogHandler := admin.NewAuditLogHandler(auditLogService, totpService)
-	systemPromptHandler := admin.NewSystemPromptHandler(businessSystemPromptService, remoteSkillRegistryService)
+	systemPromptHandler := admin.NewSystemPromptHandler(businessSystemPromptService)
 	cindyBalanceProbeService := service.ProvideCindyBalanceProbeService(cindyBalanceProbeRepository, accountRepository, openAIGatewayService, rateLimitService)
 	cindyBalanceProbeHandler := admin.NewCindyBalanceProbeHandler(cindyBalanceProbeService)
 	accountJobRuntime, err := handler.ProvideAccountJobRuntime(accountJobService, accountHandler)
@@ -365,7 +359,7 @@ func initializeApplication(buildInfo handler.BuildInfo) (*Application, error) {
 	imageStudioArtifactStore := service.ProvideImageStudioArtifactStore(configConfig, imageStudioRepository)
 	imageStudioService := service.NewImageStudioService(imageStudioRepository, apiKeyRepository, accountRepository, imageStudioArtifactStore)
 	imageStudioJobHandler := handler.NewImageStudioJobHandler(imageStudioService)
-	remoteSkillHandler := handler.ProvideRemoteSkillHandler(remoteSkillRegistryService)
+	remoteSkillHandler := handler.ProvideRemoteSkillHandler(frozenPromptFiles)
 	idempotencyCoordinator := service.ProvideIdempotencyCoordinator(idempotencyRepository, configConfig)
 	idempotencyCleanupService := service.ProvideIdempotencyCleanupService(idempotencyRepository, configConfig)
 	handlers := handler.ProvideHandlers(authHandler, userHandler, apiKeyHandler, usageHandler, redeemHandler, subscriptionHandler, announcementHandler, channelMonitorUserHandler, channelMonitorV2Handler, adminHandlers, gatewayHandler, openAIGatewayHandler, handlerSettingHandler, totpHandler, passkeyHandler, handlerPaymentHandler, paymentWebhookHandler, availableChannelHandler, modelPlazaHandler, asyncImageHandler, batchImageHandler, imageStudioJobHandler, remoteSkillHandler, idempotencyCoordinator, idempotencyCleanupService)
@@ -382,7 +376,7 @@ func initializeApplication(buildInfo handler.BuildInfo) (*Application, error) {
 	if err != nil {
 		return nil, err
 	}
-	promptDomainRuntime := service.NewPromptDomainRuntime(remoteSkillRegistryService, businessSystemPromptService)
+	promptDomainRuntime := service.NewPromptDomainRuntime(businessSystemPromptService)
 	codexClientIdentityBackfillService := service.ProvideCodexClientIdentityBackfillService(accountRepository)
 	nativeCodexRepository := repository.NewNativeCodexRepository(db, accountRepository)
 	nativeCodexRuntime := service.ProvideNativeCodexRuntime(openAIGatewayService, nativeCodexRepository, settingRepository, secretEncryptor, configConfig, nativeFeatureBootstrap, quotaActivityService)
@@ -408,7 +402,7 @@ func initializeApplication(buildInfo handler.BuildInfo) (*Application, error) {
 	openAIQuotaAutoResetService := service.ProvideOpenAIQuotaAutoResetService(accountRepository, openAIQuotaService, rateLimitService, idempotencyCoordinator, auditLogService, settingService, leaderLockCache)
 	cindyHealthRepository := repository.NewCindyHealthRepository(db)
 	cindyHealthService := service.ProvideCindyHealthService(accountRepository, accountCredentialIdentityRepository, cindyHealthRepository, gatewayCache, openAIGatewayService, gatewayService)
-	v := provideCleanup(client, redisClient, opsMetricsCollector, opsAggregationService, opsAlertEvaluatorService, opsCleanupService, opsScheduledReportService, opsSystemLogSink, opsService, opsIngressRejectAggregator, apiKeyService, authCacheInvalidationWorker, schedulerSnapshotService, tokenRefreshService, accountExpiryService, cnProviderBalanceCheckService, openAICodexVersionSyncService, codexClientIdentityBackfillService, claudeCodeVersionSyncService, proxyExpiryService, subscriptionExpiryService, usageCleanupService, idempotencyCleanupService, batchImageCleanupService, batchImageWorkerRuntime, pricingService, emailQueueService, billingCacheService, usageRecordWorkerPool, subscriptionService, oAuthService, openAIOAuthService, geminiOAuthService, antigravityOAuthService, grokOAuthService, openAIGatewayService, scheduledTestRunnerService, backupService, paymentOrderExpiryService, channelMonitorRunner, channelMonitorV2Aggregator, userPlatformQuotaUsageFlusher, upstreamBillingProbeService, ollamaCloudUsageService, openCodeGoUsageService, auditLogService, openAIQuotaAutoResetService, promptService, promptDomainRuntime, businessSystemPromptService, remoteSkillRegistryService, accountJobRuntime, cindyHealthService, cindyBalanceProbeService, imageStudioRuntime, pluginManager, nativeCodexRuntime)
+	v := provideCleanup(client, redisClient, opsMetricsCollector, opsAggregationService, opsAlertEvaluatorService, opsCleanupService, opsScheduledReportService, opsSystemLogSink, opsService, opsIngressRejectAggregator, apiKeyService, authCacheInvalidationWorker, schedulerSnapshotService, tokenRefreshService, accountExpiryService, cnProviderBalanceCheckService, openAICodexVersionSyncService, codexClientIdentityBackfillService, claudeCodeVersionSyncService, proxyExpiryService, subscriptionExpiryService, usageCleanupService, idempotencyCleanupService, batchImageCleanupService, batchImageWorkerRuntime, pricingService, emailQueueService, billingCacheService, usageRecordWorkerPool, subscriptionService, oAuthService, openAIOAuthService, geminiOAuthService, antigravityOAuthService, grokOAuthService, openAIGatewayService, scheduledTestRunnerService, backupService, paymentOrderExpiryService, channelMonitorRunner, channelMonitorV2Aggregator, userPlatformQuotaUsageFlusher, upstreamBillingProbeService, ollamaCloudUsageService, openCodeGoUsageService, auditLogService, openAIQuotaAutoResetService, promptService, promptDomainRuntime, businessSystemPromptService, accountJobRuntime, cindyHealthService, cindyBalanceProbeService, imageStudioRuntime, pluginManager, nativeCodexRuntime)
 	application := &Application{
 		Server:        httpServer,
 		PromptAudit:   promptService,
@@ -512,7 +506,6 @@ func provideCleanup(
 	promptAudit *securityaudit.PromptService,
 	promptDomain *service.PromptDomainRuntime,
 	businessPrompt *service.BusinessSystemPromptService,
-	remoteSkillRegistry *service.RemoteSkillRegistryService,
 	accountJobs *service.AccountJobRuntime,
 	cindyHealth *service.CindyHealthService,
 	cindyBalanceProbe *service.CindyBalanceProbeService,
@@ -560,12 +553,6 @@ func provideCleanup(
 			{"CindyBalanceProbeService", func() error {
 				if cindyBalanceProbe != nil {
 					cindyBalanceProbe.Stop()
-				}
-				return nil
-			}},
-			{"RemoteSkillRegistryService", func() error {
-				if remoteSkillRegistry != nil {
-					remoteSkillRegistry.Stop()
 				}
 				return nil
 			}},

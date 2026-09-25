@@ -6,9 +6,7 @@ import (
 	"errors"
 	"strconv"
 	"strings"
-	"time"
 
-	extensionv1 "github.com/Wei-Shaw/sub2api/internal/nativeapi"
 	"github.com/Wei-Shaw/sub2api/internal/service"
 )
 
@@ -41,72 +39,7 @@ func (h *AccountHandler) ExecuteAccountJob(
 func (h *AccountHandler) executeAccountJobItem(ctx context.Context, kind string, raw json.RawMessage, item service.AccountJobItem) service.AccountJobExecutionResult {
 	switch kind {
 	case service.AccountJobKindBatchTest:
-		var request batchTestJobPayload
-		if json.Unmarshal(raw, &request) != nil || service.ValidateAccountTestPrompt(request.Prompt) != nil {
-			return accountJobFailed(item.ID, "payload_invalid")
-		}
-		id, ok := accountJobTarget(item)
-		if !ok {
-			return accountJobFailed(item.ID, "target_missing")
-		}
-		models, prepared := ctx.Value(batchTestModelContextKey{}).(map[int64]string)
-		if !prepared {
-			var req batchTestJobPayload
-			if json.Unmarshal(raw, &req) != nil {
-				return accountJobFailed(item.ID, "payload_invalid")
-			}
-			var err error
-			_, models, err = req.normalize()
-			if err != nil {
-				return accountJobFailed(item.ID, "payload_invalid")
-			}
-		}
-		model, exists := models[id]
-		if !exists {
-			return accountJobFailed(item.ID, "target_missing")
-		}
-		if h.accountTestService == nil {
-			return accountJobFailed(item.ID, "test_unavailable")
-		}
-		testCtx, cancel := context.WithTimeout(ctx, 90*time.Second)
-		defer cancel()
-		if _, err := service.PlanBatchAccountTests(testCtx, extensionv1.BatchTestPlanningRequest{HasLegacy: true, AccountIDs: []int64{id}, ModelID: model}); err != nil {
-			return accountJobFailed(item.ID, "test_unavailable")
-		}
-		effort := ""
-		for _, selected := range request.Items {
-			if selected.AccountID == id {
-				effort = selected.ReasoningEffort
-				break
-			}
-		}
-		result, err := h.accountTestService.RunBatchTestBackgroundWithOptions(testCtx, id, model, request.Prompt, service.AccountTestOptions{ReasoningEffort: effort})
-		if ctx.Err() != nil {
-			return service.AccountJobExecutionResult{ItemID: item.ID, Status: service.AccountJobItemStatusCanceled}
-		}
-		metadata := map[string]any{"account_id": id, "model_id": model}
-		if effort != "" {
-			metadata["reasoning_effort"] = effort
-		}
-		if result != nil {
-			metadata["latency_ms"] = result.LatencyMs
-			if result.EffectiveReasoningEffort != "" {
-				metadata["effective_reasoning_effort"] = result.EffectiveReasoningEffort
-			}
-		}
-		if err != nil || result == nil || result.Status != "success" {
-			code := "test_failed"
-			if errors.Is(err, service.ErrAccountTestModelUnsupported) {
-				code = "test_model_unsupported"
-			}
-			if testCtx.Err() == context.DeadlineExceeded {
-				code = "test_timeout"
-			}
-			failure := accountJobFailed(item.ID, code)
-			failure.Metadata, _ = json.Marshal(metadata)
-			return failure
-		}
-		return accountJobSucceeded(item.ID, metadata)
+		return h.executeBatchConnectionTest(ctx, raw, item)
 	case service.AccountJobKindBatchDelete:
 		id, ok := accountJobTarget(item)
 		if !ok {

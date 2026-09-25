@@ -114,8 +114,6 @@ var ProviderSet = wire.NewSet(
 	NewContentModerationRepository,
 	NewBusinessSystemPromptRepository,
 	NewBusinessSystemPromptRevisionBus,
-	NewRemoteSkillRegistryRepository,
-	NewRemoteSkillRegistryRevisionBus,
 	NewAffiliateRepository,
 	NewUserPlatformQuotaRepository,     // T14: user × platform quota
 	NewUserPlatformQuotaServiceAdapter, // T14: adapter → service.UserPlatformQuotaRepository

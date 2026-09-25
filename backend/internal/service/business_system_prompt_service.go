@@ -156,6 +156,7 @@ type BusinessSystemPromptService struct {
 	bus             BusinessSystemPromptRevisionBus
 	registry        *RemoteSkillRegistryService
 	registryBus     RemoteSkillRegistryRevisionBus
+	frozenFiles     *FrozenPromptFiles
 	source          BusinessSystemPromptSource
 
 	snapshot atomic.Pointer[BusinessSystemPromptSnapshot]
@@ -226,6 +227,17 @@ func (s *BusinessSystemPromptService) SyncManagedSource(
 func (s *BusinessSystemPromptService) Initialize(ctx context.Context) error {
 	if s == nil || s.store == nil {
 		return errors.New("business system prompt store unavailable")
+	}
+	if s.frozenFiles != nil {
+		if err := s.frozenFiles.Initialize(ctx); err != nil {
+			return err
+		}
+		// The provider performs migration and the first load synchronously.
+		// Domain startup only needs to attach the revision subscriber afterward.
+		if s.snapshot.Load() != nil {
+			return nil
+		}
+		return s.Reload(ctx)
 	}
 	var seeds []BusinessSystemPromptSeed
 	if err := invokePromptManagement(ctx, "prompt.seeds", struct{}{}, &seeds); err != nil {

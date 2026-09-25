@@ -44,3 +44,9 @@ export function settleAccountOperation(config?: OperationConfig): void {
   if (config?.accountOperationSignature) unresolved.delete(config.accountOperationSignature)
 }
 export function clearAccountOperationKeys(): void { unresolved.clear(); session++ }
+
+// Reuse the same actor/session boundary as pending submission keys. Token
+// refresh does not invalidate a session; logout/reset does, even for one actor.
+export function captureAccountOperationSession(): string {
+  return `${session}:${currentAccountOperationActor() ?? 'anonymous'}`
+}

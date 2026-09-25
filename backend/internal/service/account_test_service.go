@@ -1,7 +1,6 @@
 package service
 
 import (
-	"bufio"
 	"bytes"
 	"context"
 	"crypto/rand"
@@ -22,7 +21,6 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
-	"regexp"
 	"strings"
 	"sync"
 	"time"
@@ -41,10 +39,6 @@ import (
 	"github.com/tidwall/gjson"
 )
 
-// sseDataPrefix matches SSE data lines with optional whitespace after colon.
-// Some upstream APIs return non-standard "data:" without space (should be "data: ").
-var sseDataPrefix = regexp.MustCompile(`^data:\s*`)
-
 const (
 	testClaudeAPIURL   = "https://api.anthropic.com/v1/messages?beta=true"
 	chatgptCodexAPIURL = "https://chatgpt.com/backend-api/codex/responses"
@@ -52,6 +46,7 @@ const (
 
 // TestEvent represents a SSE event for account testing
 type TestEvent struct {
+	OutputLimited            bool   `json:"output_limited,omitempty"`
 	RequestedReasoningEffort string `json:"requested_reasoning_effort,omitempty"`
 	EffectiveReasoningEffort string `json:"effective_reasoning_effort,omitempty"`
 	Type                     string `json:"type"`
@@ -72,6 +67,9 @@ type TestEvent struct {
 // AccountTestOptions carries optional media for admin connectivity tests.
 // ImageDataURL / AudioDataURL are full data URLs (data:<mime>;base64,...).
 type AccountTestOptions struct {
+	ExpectedMappedModel   string
+	ExpectedWirePlatform  string
+	ExpectedAPIProtocol   string
 	ReasoningEffort       string
 	ImageDataURL          string
 	AudioDataURL          string
@@ -407,6 +405,14 @@ func (s *AccountTestService) TestAccountConnection(c *gin.Context, accountID int
 	if err := EnsureCindyProviderAvailable(ctx, account); err != nil {
 		return s.sendErrorAndEnd(c, err.Error())
 	}
+	if testOpts.ExpectedMappedModel != "" {
+		actualModel, mappingErr := ResolveAccountTestExecutionModel(ctx, account, modelID)
+		if mappingErr != nil || actualModel != testOpts.ExpectedMappedModel || account.EffectiveWirePlatform() != testOpts.ExpectedWirePlatform || account.GetAPIProtocol() != testOpts.ExpectedAPIProtocol {
+			s.sendEvent(c, TestEvent{Type: "error", Code: "test_plan_changed", Error: ErrAccountTestPlanChanged.Error()})
+			return ErrAccountTestPlanChanged
+		}
+	}
+	c.Set("account_test_allow_media", !accountTestUsesTextPrompt(modelID, mode))
 	if err := validateAccountPromptExtension(ctx, account, prompt, modelID, mode); err != nil {
 		return s.sendErrorAndEnd(c, err.Error())
 	}
@@ -599,7 +605,7 @@ func (s *AccountTestService) testClaudeAccountConnection(c *gin.Context, account
 
 	resp, err := s.httpUpstream.DoWithTLS(req, proxyURL, account.ID, account.Concurrency, s.tlsFPProfileService.ResolveTLSProfile(account))
 	if err != nil {
-		return s.sendErrorAndEnd(c, fmt.Sprintf("Request failed: %s", err.Error()))
+		return s.sendAccountTestRequestError(c, err)
 	}
 	defer func() { _ = resp.Body.Close() }()
 
@@ -612,7 +618,7 @@ func (s *AccountTestService) testClaudeAccountConnection(c *gin.Context, account
 			_ = s.accountRepo.SetError(ctx, account.ID, errMsg)
 		}
 
-		return s.sendErrorAndEnd(c, errMsg)
+		return s.sendAccountTestHTTPError(c, resp.StatusCode)
 	}
 
 	// Process SSE stream
@@ -671,7 +677,7 @@ func (s *AccountTestService) testClaudeVertexServiceAccountConnection(c *gin.Con
 
 	resp, err := s.httpUpstream.DoWithTLS(req, proxyURL, account.ID, account.Concurrency, s.tlsFPProfileService.ResolveTLSProfile(account))
 	if err != nil {
-		return s.sendErrorAndEnd(c, fmt.Sprintf("Request failed: %s", err.Error()))
+		return s.sendAccountTestRequestError(c, err)
 	}
 	defer func() { _ = resp.Body.Close() }()
 
@@ -681,7 +687,7 @@ func (s *AccountTestService) testClaudeVertexServiceAccountConnection(c *gin.Con
 		if resp.StatusCode == http.StatusForbidden {
 			_ = s.accountRepo.SetError(ctx, account.ID, errMsg)
 		}
-		return s.sendErrorAndEnd(c, errMsg)
+		return s.sendAccountTestHTTPError(c, resp.StatusCode)
 	}
 
 	return s.processClaudeStream(c, resp.Body)
@@ -757,19 +763,20 @@ func (s *AccountTestService) testBedrockAccountConnection(c *gin.Context, ctx co
 
 	resp, err := s.httpUpstream.DoWithTLS(req, proxyURL, account.ID, account.Concurrency, nil)
 	if err != nil {
-		return s.sendErrorAndEnd(c, fmt.Sprintf("Request failed: %s", err.Error()))
+		return s.sendAccountTestRequestError(c, err)
 	}
 	defer func() { _ = resp.Body.Close() }()
 
 	body, _ := io.ReadAll(resp.Body)
 
 	if resp.StatusCode != http.StatusOK {
-		return s.sendErrorAndEnd(c, fmt.Sprintf("API returned %d: %s", resp.StatusCode, string(body)))
+		return s.sendAccountTestHTTPError(c, resp.StatusCode)
 	}
 
 	// Bedrock non-streaming response is standard Claude JSON, extract the text
 	var result struct {
-		Content []struct {
+		StopReason string `json:"stop_reason"`
+		Content    []struct {
 			Text string `json:"text"`
 		} `json:"content"`
 	}
@@ -777,16 +784,19 @@ func (s *AccountTestService) testBedrockAccountConnection(c *gin.Context, ctx co
 		return s.sendErrorAndEnd(c, fmt.Sprintf("Failed to parse response: %s", err.Error()))
 	}
 
-	text := ""
-	if len(result.Content) > 0 {
-		text = result.Content[0].Text
+	state := connectionStreamState{protocol: "claude", stopReason: result.StopReason, emit: func(event TestEvent) { s.sendEvent(c, event) }}
+	for _, part := range result.Content {
+		state.text(part.Text)
 	}
-	if text == "" {
-		text = "(empty response)"
+	if result.StopReason == "" {
+		s.sendEvent(c, TestEvent{Type: "error", Code: "test_incomplete", Error: ErrAccountTestIncomplete.Error()})
+		return ErrAccountTestIncomplete
 	}
-
-	s.sendEvent(c, TestEvent{Type: "content", Text: text})
-	s.sendEvent(c, TestEvent{Type: "test_complete", Success: true})
+	if _, err := state.consume(map[string]any{"type": "message_stop"}); err != nil {
+		s.sendEvent(c, TestEvent{Type: "error", Code: AccountTestFailureCode(err), Error: err.Error()})
+		return err
+	}
+	s.sendEvent(c, TestEvent{Type: "test_complete", Success: true, OutputLimited: state.limited})
 	return nil
 }
 
@@ -913,7 +923,7 @@ func (s *AccountTestService) testOpenAIAccountConnection(c *gin.Context, account
 	// Send test_start event once. A task-invalid Agent Identity response may
 	// restart this probe after registering a replacement task.
 	if !agentIdentityTaskRecoveryWasTried(ctx) {
-		s.sendEvent(c, TestEvent{Type: "test_start", Model: testModelID})
+		s.sendEvent(c, TestEvent{Type: "test_start", Model: upstreamTestModelID})
 	}
 
 	req, err := http.NewRequestWithContext(ctx, "POST", apiURL, bytes.NewReader(payloadBytes))
@@ -997,7 +1007,7 @@ func (s *AccountTestService) testOpenAIAccountConnection(c *gin.Context, account
 		s.sendEvent(c, TestEvent{Type: "status", Text: snapshot.summary(), Data: snapshot})
 	}
 	if err != nil {
-		return s.sendErrorAndEnd(c, fmt.Sprintf("Request failed: %s", err.Error()))
+		return s.sendAccountTestRequestError(c, err)
 	}
 	defer func() { _ = resp.Body.Close() }()
 
@@ -1028,7 +1038,7 @@ func (s *AccountTestService) testOpenAIAccountConnection(c *gin.Context, account
 			errMsg := fmt.Sprintf("Authentication failed (401): %s", string(body))
 			_ = s.accountRepo.SetError(ctx, account.ID, errMsg)
 		}
-		return s.sendErrorAndEnd(c, fmt.Sprintf("API returned %d: %s", resp.StatusCode, string(body)))
+		return s.sendAccountTestHTTPError(c, resp.StatusCode)
 	}
 
 	// Process SSE stream
@@ -1331,15 +1341,15 @@ func (s *AccountTestService) testGrokResponsesConnection(c *gin.Context, ctx con
 
 	resp, err := s.httpUpstream.Do(req, s.grokTestProxyURL(account), account.ID, account.Concurrency)
 	if err != nil {
-		return s.sendErrorAndEnd(c, fmt.Sprintf("Grok Responses API request failed: %s", err.Error()))
+		return s.sendAccountTestRequestError(c, err)
 	}
 	defer func() { _ = resp.Body.Close() }()
 
 	s.observeGrokTestResponse(withGrokTeamRateLimitModel(ctx, testModelID), account, resp)
 
 	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
-		return s.sendErrorAndEnd(c, fmt.Sprintf("Grok Responses API returned %d: %s", resp.StatusCode, string(body)))
+		_, _ = io.Copy(io.Discard, resp.Body)
+		return s.sendAccountTestHTTPError(c, resp.StatusCode)
 	}
 
 	return s.processOpenAIStream(c, ctx, account, resp.Body)
@@ -2222,7 +2232,7 @@ func (s *AccountTestService) testOpenAIChatCompletionsConnection(
 
 	resp, err := s.doOpenAIAccountTestUpstream(req, proxyURL, account, true)
 	if err != nil {
-		return s.sendErrorAndEnd(c, fmt.Sprintf("Chat Completions API (/v1/chat/completions) request failed: %s", err.Error()))
+		return s.sendAccountTestRequestError(c, err)
 	}
 	defer func() { _ = resp.Body.Close() }()
 
@@ -2236,7 +2246,7 @@ func (s *AccountTestService) testOpenAIChatCompletionsConnection(
 			errMsg := fmt.Sprintf("Chat Completions authentication failed (401): %s", string(body))
 			_ = s.accountRepo.SetError(ctx, account.ID, errMsg)
 		}
-		return s.sendErrorAndEnd(c, fmt.Sprintf("Chat Completions API (/v1/chat/completions) returned %d: %s", resp.StatusCode, string(body)))
+		return s.sendAccountTestHTTPError(c, resp.StatusCode)
 	}
 
 	return s.processOpenAIChatCompletionsStream(c, ctx, account, resp.Body)
@@ -2555,13 +2565,13 @@ func (s *AccountTestService) testGeminiAccountConnection(c *gin.Context, account
 
 	resp, err := s.httpUpstream.DoWithTLS(req, proxyURL, account.ID, account.Concurrency, s.tlsFPProfileService.ResolveTLSProfile(account))
 	if err != nil {
-		return s.sendErrorAndEnd(c, fmt.Sprintf("Request failed: %s", err.Error()))
+		return s.sendAccountTestRequestError(c, err)
 	}
 	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
-		return s.sendErrorAndEnd(c, fmt.Sprintf("API returned %d: %s", resp.StatusCode, string(body)))
+		_, _ = io.Copy(io.Discard, resp.Body)
+		return s.sendAccountTestHTTPError(c, resp.StatusCode)
 	}
 
 	// Process SSE stream
@@ -2608,15 +2618,16 @@ func (s *AccountTestService) testAntigravityAccountConnection(c *gin.Context, ac
 	}
 	result, err := s.antigravityGatewayService.TestConnection(ctx, account, testModelID, prompts...)
 	if err != nil {
-		return s.sendErrorAndEnd(c, err.Error())
+		return s.sendAccountTestFailure(c, err)
 	}
 
+	s.sendEvent(c, TestEvent{Type: "test_start", Model: result.MappedModel})
 	// 发送响应内容
 	if result.Text != "" {
 		s.sendEvent(c, TestEvent{Type: "content", Text: result.Text})
 	}
 
-	s.sendEvent(c, TestEvent{Type: "test_complete", Success: true})
+	s.sendEvent(c, TestEvent{Type: "test_complete", Success: true, OutputLimited: result.OutputLimited})
 	return nil
 }
 
@@ -2799,83 +2810,7 @@ func createGeminiTestPayload(modelID string, prompt string) []byte {
 
 // processGeminiStream processes SSE stream from Gemini API
 func (s *AccountTestService) processGeminiStream(c *gin.Context, body io.Reader) error {
-	reader := bufio.NewReader(body)
-
-	for {
-		line, err := reader.ReadString('\n')
-		if err != nil {
-			if err == io.EOF {
-				s.sendEvent(c, TestEvent{Type: "test_complete", Success: true})
-				return nil
-			}
-			return s.sendErrorAndEnd(c, fmt.Sprintf("Stream read error: %s", err.Error()))
-		}
-
-		line = strings.TrimSpace(line)
-		if line == "" || !strings.HasPrefix(line, "data: ") {
-			continue
-		}
-
-		jsonStr := strings.TrimPrefix(line, "data: ")
-		if jsonStr == "[DONE]" {
-			s.sendEvent(c, TestEvent{Type: "test_complete", Success: true})
-			return nil
-		}
-
-		var data map[string]any
-		if err := json.Unmarshal([]byte(jsonStr), &data); err != nil {
-			continue
-		}
-
-		// Support two Gemini response formats:
-		// - AI Studio: {"candidates": [...]}
-		// - Gemini CLI: {"response": {"candidates": [...]}}
-		if resp, ok := data["response"].(map[string]any); ok && resp != nil {
-			data = resp
-		}
-		if candidates, ok := data["candidates"].([]any); ok && len(candidates) > 0 {
-			if candidate, ok := candidates[0].(map[string]any); ok {
-				// Extract content first (before checking completion)
-				if content, ok := candidate["content"].(map[string]any); ok {
-					if parts, ok := content["parts"].([]any); ok {
-						for _, part := range parts {
-							if partMap, ok := part.(map[string]any); ok {
-								if text, ok := partMap["text"].(string); ok && text != "" {
-									s.sendEvent(c, TestEvent{Type: "content", Text: text})
-								}
-								if inlineData, ok := partMap["inlineData"].(map[string]any); ok {
-									mimeType, _ := inlineData["mimeType"].(string)
-									data, _ := inlineData["data"].(string)
-									if strings.HasPrefix(strings.ToLower(mimeType), "image/") && data != "" {
-										s.sendEvent(c, TestEvent{
-											Type:     "image",
-											ImageURL: fmt.Sprintf("data:%s;base64,%s", mimeType, data),
-											MimeType: mimeType,
-										})
-									}
-								}
-							}
-						}
-					}
-				}
-
-				// Check for completion after extracting content
-				if finishReason, ok := candidate["finishReason"].(string); ok && finishReason != "" {
-					s.sendEvent(c, TestEvent{Type: "test_complete", Success: true})
-					return nil
-				}
-			}
-		}
-
-		// Handle errors
-		if errData, ok := data["error"].(map[string]any); ok {
-			errorMsg := "Unknown error"
-			if msg, ok := errData["message"].(string); ok {
-				errorMsg = msg
-			}
-			return s.sendErrorAndEnd(c, errorMsg)
-		}
-	}
+	return s.processConnectionStream(c, body, "gemini", nil)
 }
 
 // createOpenAITestPayload creates a test payload for OpenAI Responses API
@@ -2924,207 +2859,18 @@ func createOpenAIChatCompletionsTestPayload(modelID string, prompt string) map[s
 
 // processClaudeStream processes the SSE stream from Claude API
 func (s *AccountTestService) processClaudeStream(c *gin.Context, body io.Reader) error {
-	reader := bufio.NewReader(body)
-
-	for {
-		line, err := reader.ReadString('\n')
-		if err != nil {
-			if err == io.EOF {
-				s.sendEvent(c, TestEvent{Type: "test_complete", Success: true})
-				return nil
-			}
-			return s.sendErrorAndEnd(c, fmt.Sprintf("Stream read error: %s", err.Error()))
-		}
-
-		line = strings.TrimSpace(line)
-		if line == "" || !sseDataPrefix.MatchString(line) {
-			continue
-		}
-
-		jsonStr := sseDataPrefix.ReplaceAllString(line, "")
-		if jsonStr == "[DONE]" {
-			s.sendEvent(c, TestEvent{Type: "test_complete", Success: true})
-			return nil
-		}
-
-		var data map[string]any
-		if err := json.Unmarshal([]byte(jsonStr), &data); err != nil {
-			continue
-		}
-
-		eventType, _ := data["type"].(string)
-
-		switch eventType {
-		case "content_block_delta":
-			if delta, ok := data["delta"].(map[string]any); ok {
-				if text, ok := delta["text"].(string); ok {
-					s.sendEvent(c, TestEvent{Type: "content", Text: text})
-				}
-			}
-		case "message_stop":
-			s.sendEvent(c, TestEvent{Type: "test_complete", Success: true})
-			return nil
-		case "error":
-			errorMsg := "Unknown error"
-			if errData, ok := data["error"].(map[string]any); ok {
-				if msg, ok := errData["message"].(string); ok {
-					errorMsg = msg
-				}
-			}
-			return s.sendErrorAndEnd(c, errorMsg)
-		}
-	}
+	return s.processConnectionStream(c, body, "claude", nil)
 }
 
 // processOpenAIChatCompletionsStream processes SSE chunks from the
 // OpenAI-compatible Chat Completions API.
 func (s *AccountTestService) processOpenAIChatCompletionsStream(c *gin.Context, ctx context.Context, account *Account, body io.Reader) error {
-	reader := bufio.NewReader(body)
-	seenJSON := false
-	seenFinish := false
-
-	for {
-		line, err := reader.ReadString('\n')
-		if err != nil {
-			if err == io.EOF {
-				if seenFinish {
-					s.sendEvent(c, TestEvent{Type: "status", Text: "已通过 /v1/chat/completions 验证"})
-					s.sendEvent(c, TestEvent{Type: "test_complete", Success: true})
-					return nil
-				}
-				if seenJSON {
-					return s.sendErrorAndEnd(c, "Chat Completions stream from /v1/chat/completions ended before [DONE]")
-				}
-				return s.sendErrorAndEnd(c, "Invalid Chat Completions response from /v1/chat/completions: expected SSE JSON data")
-			}
-			return s.sendErrorAndEnd(c, fmt.Sprintf("Chat Completions stream read error from /v1/chat/completions: %s", err.Error()))
-		}
-
-		line = strings.TrimSpace(line)
-		if line == "" || !sseDataPrefix.MatchString(line) {
-			continue
-		}
-
-		jsonStr := sseDataPrefix.ReplaceAllString(line, "")
-		if jsonStr == "[DONE]" {
-			s.sendEvent(c, TestEvent{Type: "status", Text: "已通过 /v1/chat/completions 验证"})
-			s.sendEvent(c, TestEvent{Type: "test_complete", Success: true})
-			return nil
-		}
-
-		var data map[string]any
-		if err := json.Unmarshal([]byte(jsonStr), &data); err != nil {
-			return s.sendErrorAndEnd(c, "Invalid Chat Completions response from /v1/chat/completions: expected JSON data")
-		}
-		seenJSON = true
-		if eventType, _ := data["type"].(string); eventType == "error" || eventType == "response.failed" {
-			s.markCindyBalanceInsufficientFromTest(ctx, account, http.StatusOK, []byte(jsonStr))
-		}
-
-		if errData, ok := data["error"].(map[string]any); ok {
-			errorMsg := "Chat Completions API (/v1/chat/completions) returned an error"
-			if msg, ok := errData["message"].(string); ok && msg != "" {
-				errorMsg = msg
-			}
-			return s.sendErrorAndEnd(c, fmt.Sprintf("Chat Completions API (/v1/chat/completions) error: %s", errorMsg))
-		}
-
-		choices, ok := data["choices"].([]any)
-		if !ok {
-			continue
-		}
-		for _, choiceValue := range choices {
-			choice, ok := choiceValue.(map[string]any)
-			if !ok {
-				continue
-			}
-			if delta, ok := choice["delta"].(map[string]any); ok {
-				if text, ok := delta["content"].(string); ok && text != "" {
-					s.sendEvent(c, TestEvent{Type: "content", Text: text})
-				}
-			}
-			if message, ok := choice["message"].(map[string]any); ok {
-				if text, ok := message["content"].(string); ok && text != "" {
-					s.sendEvent(c, TestEvent{Type: "content", Text: text})
-				}
-			}
-			if finishReason, ok := choice["finish_reason"].(string); ok && finishReason != "" {
-				seenFinish = true
-			}
-		}
-	}
+	return s.processConnectionStream(c, body, "chat", account)
 }
 
 // processOpenAIStream processes the SSE stream from OpenAI Responses API
 func (s *AccountTestService) processOpenAIStream(c *gin.Context, ctx context.Context, account *Account, body io.Reader) error {
-	reader := bufio.NewReader(body)
-	seenCompleted := false
-
-	for {
-		line, err := reader.ReadString('\n')
-		if err != nil {
-			if err == io.EOF {
-				if seenCompleted {
-					s.sendEvent(c, TestEvent{Type: "test_complete", Success: true})
-					return nil
-				}
-				return s.sendErrorAndEnd(c, "Stream ended before response.completed")
-			}
-			return s.sendErrorAndEnd(c, fmt.Sprintf("Stream read error: %s", err.Error()))
-		}
-
-		line = strings.TrimSpace(line)
-		if line == "" || !sseDataPrefix.MatchString(line) {
-			continue
-		}
-
-		jsonStr := sseDataPrefix.ReplaceAllString(line, "")
-		if jsonStr == "[DONE]" {
-			if seenCompleted {
-				s.sendEvent(c, TestEvent{Type: "test_complete", Success: true})
-				return nil
-			}
-			return s.sendErrorAndEnd(c, "Stream ended before response.completed")
-		}
-
-		var data map[string]any
-		if err := json.Unmarshal([]byte(jsonStr), &data); err != nil {
-			continue
-		}
-
-		eventType, _ := data["type"].(string)
-
-		switch eventType {
-		case "response.output_text.delta":
-			// OpenAI Responses API uses "delta" field for text content
-			if delta, ok := data["delta"].(string); ok && delta != "" {
-				s.sendEvent(c, TestEvent{Type: "content", Text: delta})
-			}
-		case "response.completed", "response.done":
-			s.sendEvent(c, TestEvent{Type: "test_complete", Success: true})
-			return nil
-		case "response.failed":
-			s.markCindyBalanceInsufficientFromTest(ctx, account, http.StatusOK, []byte(jsonStr))
-			errorMsg := "OpenAI response failed"
-			if responseData, ok := data["response"].(map[string]any); ok {
-				if errData, ok := responseData["error"].(map[string]any); ok {
-					if msg, ok := errData["message"].(string); ok && msg != "" {
-						errorMsg = msg
-					}
-				}
-			}
-			return s.sendErrorAndEnd(c, errorMsg)
-		case "error":
-			s.markCindyBalanceInsufficientFromTest(ctx, account, http.StatusOK, []byte(jsonStr))
-			errorMsg := "Unknown error"
-			if errData, ok := data["error"].(map[string]any); ok {
-				if msg, ok := errData["message"].(string); ok {
-					errorMsg = msg
-				}
-			}
-			return s.sendErrorAndEnd(c, errorMsg)
-		}
-	}
+	return s.processConnectionStream(c, body, "responses", account)
 }
 
 // testOpenAIImageAPIKey tests OpenAI image generation using an API Key account.
@@ -3464,19 +3210,24 @@ func (s *AccountTestService) sendErrorAndEnd(c *gin.Context, errorMsg string) er
 // Background tests consume the same typed events as the HTTP SSE adapter.
 // Receiving text or reaching EOF alone never proves that a test completed.
 type accountTestEventCollector struct {
-	text         strings.Builder
-	errorMessage string
-	completed    bool
+	text          strings.Builder
+	errorMessage  string
+	completed     bool
+	outputLimited bool
+	actualModel   string
 }
 
 func (c *accountTestEventCollector) Add(event TestEvent) {
 	switch event.Type {
+	case "test_start":
+		c.actualModel = event.Model
 	case "content":
 		_, _ = c.text.WriteString(event.Text)
 	case "error":
 		c.errorMessage = event.Error
 	case "test_complete":
 		c.completed = event.Success
+		c.outputLimited = event.OutputLimited
 	}
 }
 func (s *AccountTestService) RunTestBackground(ctx context.Context, accountID int64, modelID string) (*ScheduledTestResult, error) {
@@ -3507,11 +3258,14 @@ func (s *AccountTestService) runTestBackgroundWithOptions(ctx context.Context, a
 	ginCtx.Set("account_test_event_collector", collector)
 	ginCtx.Set(accountTestScheduledDefaultsContextKey, !opts.requireSupportedModel)
 	testErr := s.TestAccountConnection(ginCtx, accountID, modelID, prompt, AccountTestModeDefault, opts)
-	if testErr == nil {
-		testErr = ctx.Err()
-	}
 	if testErr == nil && !collector.completed {
-		testErr = errors.New("test did not emit a successful completion")
+		testErr = ctx.Err()
+		if testErr == nil {
+			testErr = ErrAccountTestIncomplete
+		}
+	}
+	if testErr == nil && strings.TrimSpace(collector.text.String()) == "" {
+		testErr = ErrAccountTestEmpty
 	}
 	status := "success"
 	if testErr != nil || collector.errorMessage != "" {
@@ -3522,6 +3276,7 @@ func (s *AccountTestService) runTestBackgroundWithOptions(ctx context.Context, a
 	}
 	finishedAt := time.Now()
 	return &ScheduledTestResult{Status: status, ResponseText: collector.text.String(), ErrorMessage: collector.errorMessage,
+		OutputLimited: collector.outputLimited, ActualModel: collector.actualModel,
 		RequestedReasoningEffort: opts.ReasoningEffort, EffectiveReasoningEffort: ginCtx.GetString("account_test_effective_reasoning_effort"),
 		LatencyMs: finishedAt.Sub(startedAt).Milliseconds(), StartedAt: startedAt, FinishedAt: finishedAt}, testErr
 }

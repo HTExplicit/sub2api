@@ -20,7 +20,7 @@ func TestAccountTestPromptBuildersPreserveUserText(t *testing.T) {
 	prompt := "  你的知识库库截止日期是什么时间,直接回复不要联网\n"
 	require.NoError(t, ValidateAccountTestPrompt(strings.Repeat("😀", 8192)))
 	require.Error(t, ValidateAccountTestPrompt(strings.Repeat("😀", 8193)))
-	require.Equal(t, "hi", resolveAccountTestPrompt(" \n"))
+	require.Equal(t, "Reply with OK.", resolveAccountTestPrompt(" \n"))
 	claude, err := createTestPayload("claude-sonnet-4-6", prompt)
 	require.NoError(t, err)
 	raw, _ := json.Marshal(claude)
@@ -57,8 +57,8 @@ func TestAccountTestPromptAntigravityScheduledDefaults(t *testing.T) {
 				want    string
 				limit   int64
 			}{
-				{"scheduled", nil, ".", 1},
-				{"blank manual", []string{""}, "hi", 1},
+				{"scheduled", nil, "Reply with OK.", 256},
+				{"blank manual", []string{""}, "Reply with OK.", 256},
 				{"custom manual", []string{"custom question"}, "custom question", 1024},
 			} {
 				t.Run(input.name, func(t *testing.T) {

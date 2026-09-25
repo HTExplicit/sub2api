@@ -31,10 +31,9 @@ func TestPromptDomainHealthyStartReloadsPromptOnce(t *testing.T) {
 	invokePromptSkills = func(ctx context.Context, in extensionv1.Invocation) (extensionv1.Result, error) {
 		return (promptPolicyFixture{}).InvokeOperation(ctx, "", "", in)
 	}
-	registry, _, _ := testRemoteSkillRegistry(t, testRemoteSkillCandidate(t, 1, 1, "seed"))
 	store := &fakeBusinessSystemPromptStore{loaded: BusinessSystemPromptSnapshot{Revision: 1, Body: embeddedBusinessSystemPrompt}}
 	prompts := NewBusinessSystemPromptService(store, nil)
-	runtime := NewPromptDomainRuntime(registry, prompts)
+	runtime := NewPromptDomainRuntime(prompts)
 	runtime.Start(context.Background())
 	require.True(t, runtime.ready)
 	runtime.Stop()

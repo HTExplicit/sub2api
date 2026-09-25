@@ -12,6 +12,22 @@ export interface ProxyTestResult {
   stages: Array<{ name: string; success: boolean; duration_ms: number; message?: string }>
   certificate_trust?: string; certificate_fingerprint?: string; protocol_suggestion?: string
 }
+export interface ProxyCandidate {
+  selection_id: string
+  protocol: string
+  host: string
+  port: number
+  username_masked?: string
+  source_line: number
+  source_column: number
+  format: string
+}
+export interface ProxyParseResult {
+  candidates: ProxyCandidate[]
+  issues: Array<{ line: number; column: number; field: string; code: string; message: string }>
+  selection_id?: string
+  selection_required: boolean
+}
 export const codexTicketsAPI = {
   async policy() {
     return (await apiClient.get<{ enabled: boolean; models: string[] }>('/admin/accounts/codex-tickets/policy')).data
@@ -27,8 +43,11 @@ export const codexTicketsAPI = {
     const path = ids.length === 1 ? `/admin/accounts/${ids[0]}/codex-tickets/stop-job` : '/admin/accounts/codex-tickets/batch-stop'
     return (await apiClient.post<AccountJob>(path, { account_ids: ids, models }, key)).data
   },
-  async testProxy(proxy_url: string, protocol?: string) {
-    const body = protocol ? { proxy_url, protocol } : { proxy_url }
+  async parseProxy(proxy_url: string, protocol?: string) {
+    return (await apiClient.post<ProxyParseResult>('/admin/settings/openai-codex-ticket/proxy-parse', { proxy_url, protocol })).data
+  },
+  async testProxy(proxy_url: string, protocol?: string, proxy_selection_id?: string) {
+    const body = { proxy_url, ...(protocol ? { protocol } : {}), ...(proxy_selection_id ? { proxy_selection_id } : {}) }
     return (await apiClient.post<ProxyTestResult>('/admin/settings/openai-codex-ticket/proxy-test', body, { timeout: 30000 })).data
   }
 }

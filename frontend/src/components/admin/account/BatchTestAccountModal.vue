@@ -2,6 +2,9 @@
   <AccountOperationDialog :job="operationJob" :show="show" :title="t('admin.accounts.batchTest.title')" width="wide" @close="emit('close')">
     <form id="batch-test-accounts" @submit.prevent="submit">
       <p class="mb-4 text-sm text-gray-600 dark:text-gray-300">{{ t('admin.accounts.batchTest.description', { count: rows.length }) }}</p>
+      <p class="mb-4 text-sm text-muted">{{ t('admin.accounts.batchTest.automaticHint') }}</p>
+      <details :open="advanced" @toggle="toggleAdvanced">
+      <summary class="mb-3 cursor-pointer text-sm">{{ t('admin.accounts.batchTest.advanced') }}</summary>
       <p v-if="applicationResult" class="mb-3 text-sm text-blue-600" role="status">{{ applicationResult }}</p>
       <AccountTextTestPrompt v-model="prompt" :disabled="busy" />
       <div class="space-y-3">
@@ -11,6 +14,11 @@
             <button type="button" class="btn btn-secondary" :disabled="busy" @click="remove(row.account_id)">{{ t('admin.accounts.batchTest.remove') }}</button>
           </div>
           <label :for="`batch-model-${row.account_id}`" class="sr-only">{{ t('admin.accounts.selectTestModel') }} {{ row.name }}</label>
+          <select v-model="row.selection_mode" :disabled="busy" :aria-label="t('admin.accounts.batchTest.selectionMode')" class="input mb-2" :data-selection-id="row.account_id">
+            <option value="auto">{{ t('admin.accounts.batchTest.automatic') }}</option>
+            <option value="explicit">{{ t('admin.accounts.batchTest.explicit') }}</option>
+          </select>
+          <template v-if="row.selection_mode === 'explicit'">
           <AccountTestModelSelect :id="`batch-model-${row.account_id}`" v-model="row.model" :models="row.models" value-key="id" label-key="display_name"
             :disabled="busy || row.loading || !!row.error_code" :placeholder="row.loading ? t('common.loading') : t('admin.accounts.selectTestModel')" />
           <AccountTestReasoningSelect v-model="row.reasoning_effort" :model="row.models.find(model => model.id === row.model)" :disabled="busy || row.loading" @validity="row.reasoning_valid = $event" />
@@ -21,6 +29,7 @@
             </template>
             <button v-else type="button" class="btn btn-secondary" :disabled="busy || pending || !row.model" @click="applyModel(row.model)">{{ t('admin.accounts.batchTest.apply') }}</button>
           </div>
+          </template>
         </div>
       </div>
       <div v-if="pages > 1" class="mt-4 flex items-center justify-between">
@@ -29,6 +38,7 @@
         <button type="button" class="btn btn-secondary" :disabled="page >= pages" @click="page++">{{ t('admin.accounts.batchTest.next') }}</button>
       </div>
       <p v-if="!ready" class="mt-3 text-sm text-gray-500">{{ t('admin.accounts.batchTest.resolveBeforeStart') }}</p>
+      </details>
     </form>
     <template #footer>
       <button type="button" class="btn btn-secondary" :disabled="busy" @click="emit('close')">{{ t('common.cancel') }}</button>
@@ -48,24 +58,29 @@ import { validateAccountTestPlan, accountTestModelsForMode, defaultAccountTestMo
 import { useAppStore } from '@/stores/app'
 import AccountTextTestPrompt from './AccountTextTestPrompt.vue'
 import { useAccountTestPrompt } from '@/composables/useAccountTestPrompt'
+import { captureAccountOperationSession } from '@/api/accountOperationIdempotency'
+import { useAuthStore } from '@/stores/auth'
 
 const props = defineProps<{ show: boolean; accountIds: number[] }>()
 const emit = defineEmits<{ close: []; submitted: [job: AccountJob] }>()
 const { t } = useI18n()
 const operationJob = ref<AccountJob | null>(null)
-watch(() => props.show, show => { if (show) operationJob.value = null })
+const auth = useAuthStore()
 const { prompt, valid: promptValid } = useAccountTestPrompt()
-type Row = BatchTestModelRow & { model: string; reasoning_effort: string; reasoning_valid: boolean; loading: boolean }
+type Row = BatchTestModelRow & { selection_mode: 'auto' | 'explicit'; model: string; reasoning_effort: string; reasoning_valid: boolean; loading: boolean }
 const rows = ref<Row[]>([])
 const busy = ref(false)
 const page = ref(1)
 const applicationResult = ref('')
+const advanced = ref(false)
+let catalogStarted = false
 let generation = 0
 let controller = new AbortController()
 const pages = computed(() => Math.max(1, Math.ceil(rows.value.length / 100)))
 const visibleRows = computed(() => rows.value.slice((page.value - 1) * 100, page.value * 100))
 const pending = computed(() => rows.value.some(row => row.loading))
 const ready = computed(() => promptValid.value && rows.value.length > 0 && rows.value.every(row => {
+  if (row.selection_mode === 'auto') return true
   const model = row.models.find(candidate => candidate.id === row.model)
   // 离页控件不会更新 validity；提交按所有行的当前模型直接校验。
   return !row.loading && !row.error_code && !!model && isAccountTestReasoningValid(model, row.reasoning_effort)
@@ -85,8 +100,8 @@ async function load(ids: number[], version: number) {
       if (loaded.error_code) { row.error_code = loaded.error_code; row.loading = false; continue }
       try {
         const plan = validateAccountTestPlan(loaded.test_plan, row.account_id)
-        const models = accountTestModelsForMode(plan)
-        const model = models.some(m => m.id === row.model) ? row.model : defaultAccountTestModel(plan)
+        const models = accountTestModelsForMode(plan, 'connection')
+        const model = models.some(m => m.id === row.model) ? row.model : defaultAccountTestModel(plan, 'connection')
         Object.assign(row, loaded, { models, model, loading: false, error_code: undefined })
       } catch { row.error_code = 'catalog_invalid'; row.loading = false }
     }
@@ -96,19 +111,30 @@ async function load(ids: number[], version: number) {
   }
 }
 
-watch(() => props.show, async show => {
-  const version = ++generation
+watch(() => [props.show, auth.user?.id] as const, ([show]) => {
+  ++generation
   controller.abort()
   controller = new AbortController()
+  busy.value = false
+  operationJob.value = null
+  advanced.value = false
+  catalogStarted = false
   if (!show) return
   page.value = 1
   applicationResult.value = ''
   const ids = [...new Set(props.accountIds)]
-  rows.value = ids.map(account_id => ({ account_id, name: '', platform: '', type: '', is_cindy: false, models: [], model: '', reasoning_effort: '', reasoning_valid: true, loading: true }))
-  // One batch request at a time; the server bounds upstream discovery.
-  for (let offset = 0; offset < ids.length && version === generation; offset += 100) await load(ids.slice(offset, offset + 100), version)
+  rows.value = ids.map(account_id => ({ account_id, name: '', platform: '', type: '', is_cindy: false, models: [], selection_mode: 'auto', model: '', reasoning_effort: '', reasoning_valid: true, loading: false }))
 }, { immediate: true })
 onBeforeUnmount(() => { generation++; controller.abort() })
+
+async function toggleAdvanced(event: Event) {
+  advanced.value = (event.target as HTMLDetailsElement).open
+  if (!advanced.value || catalogStarted) return
+  catalogStarted = true
+  const version = generation
+  const ids = rows.value.map(row => row.account_id)
+  for (let offset = 0; offset < ids.length && version === generation; offset += 100) await load(ids.slice(offset, offset + 100), version)
+}
 
 function remove(id: number) {
   rows.value = rows.value.filter(row => row.account_id !== id)
@@ -117,18 +143,32 @@ function remove(id: number) {
 function applyModel(model: string) {
   let applied = 0
   for (const row of rows.value) {
-    if (!row.error_code && row.models.some(candidate => candidate.id === model)) { row.model = model; applied++ }
+    if (!row.error_code && row.models.some(candidate => candidate.id === model)) { row.model = model; row.selection_mode = 'explicit'; applied++ }
   }
   applicationResult.value = t('admin.accounts.batchTest.applied', { applied, skipped: rows.value.length - applied })
 }
 async function submit() {
   if (busy.value || !ready.value) return
-  const items = rows.value.map(row => ({ account_id: row.account_id, model_id: row.model, ...(row.reasoning_effort ? { reasoning_effort: row.reasoning_effort } : {}) }))
+  const version = generation
+  const session = captureAccountOperationSession()
+  const actor = auth.user?.id
+  const items = rows.value.map(row => row.selection_mode === 'auto'
+    ? { account_id: row.account_id, selection_mode: 'auto' as const }
+    : { account_id: row.account_id, selection_mode: 'explicit' as const, model_id: row.model, ...(row.reasoning_effort ? { reasoning_effort: row.reasoning_effort } : {}) })
   busy.value = true
   try {
-    operationJob.value = await accountJobsAPI.batchTest(items, prompt.value)
-    emit('submitted', operationJob.value)
-  } catch { useAppStore().showError(t('admin.accounts.batchTest.submitFailed')) }
-  finally { busy.value = false }
+    const accepted = await accountJobsAPI.batchTest(items, prompt.value)
+    if (session !== captureAccountOperationSession() || actor !== auth.user?.id) return
+    if (version === generation && props.show) {
+      operationJob.value = accepted
+      emit('submitted', accepted)
+    } else {
+      const { useAccountJobsStore } = await import('@/stores/accountJobs')
+      if (session === captureAccountOperationSession() && actor === auth.user?.id) useAccountJobsStore().track(accepted, { open: false })
+    }
+  } catch {
+    if (version === generation && session === captureAccountOperationSession() && actor === auth.user?.id) useAppStore().showError(t('admin.accounts.batchTest.submitFailed'))
+  }
+  finally { if (version === generation && session === captureAccountOperationSession() && actor === auth.user?.id) busy.value = false }
 }
 </script>

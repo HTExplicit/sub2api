@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"slices"
 	"sort"
 	"strings"
 
@@ -101,10 +102,64 @@ func basicAccountTestPlan(account *service.Account, models []map[string]any, def
 		ids = append(ids, id)
 	}
 	view := accountTestModeView{ModelIDs: ids, DefaultModelID: defaultID}
+	connection := accountTestModeView{ModelIDs: []string{}}
+	for _, model := range models {
+		id, _ := model["id"].(string)
+		if accountConnectionModel(account, model) {
+			connection.ModelIDs = append(connection.ModelIDs, id)
+		}
+	}
+	if slices.Contains(connection.ModelIDs, defaultID) {
+		connection.DefaultModelID = defaultID
+	} else if len(connection.ModelIDs) > 0 {
+		connection.DefaultModelID = connection.ModelIDs[0]
+	}
 	return &accountTestPlanView{SchemaVersion: 1, AccountID: account.ID, WirePlatform: account.EffectiveWirePlatform(),
 		DefaultMode: "default", Models: models, ModeViews: map[string]accountTestModeView{
-			"default": view, "compact": view, "text": view,
+			"default": view, "compact": view, "text": view, "connection": connection,
 		}}
+}
+
+// A connection probe needs text conversation. Explicit capability declarations
+// take precedence; catalog entries without them use the same model identities
+// and account mappings used by the test dispatcher.
+func accountConnectionModel(account *service.Account, model map[string]any) bool {
+	id, _ := model["id"].(string)
+	if kind, _ := model["kind"].(string); kind != "" {
+		return kind == "text"
+	}
+	declaredText := false
+	for _, key := range []string{"output_modalities", "input_modalities"} {
+		if values, ok := model[key].([]any); ok && len(values) > 0 {
+			text := false
+			for _, value := range values {
+				text = text || value == "text"
+			}
+			if !text {
+				return false
+			}
+			if key == "output_modalities" {
+				declaredText = true
+			}
+		}
+	}
+	if declaredText {
+		return true
+	}
+	if !service.AccountTestSupportsTextConversation(account, id) {
+		return false
+	}
+	if endpoints, ok := model["endpoints"].([]any); ok && len(endpoints) > 0 {
+		for _, value := range endpoints {
+			endpoint, _ := value.(string)
+			lower := strings.ToLower(endpoint)
+			if strings.Contains(lower, "responses") || strings.Contains(lower, "chat") || strings.Contains(lower, "messages") || strings.Contains(lower, "generatecontent") {
+				return true
+			}
+		}
+		return false
+	}
+	return true
 }
 
 // These choices originate in the official single-account test UI. Keep their
@@ -145,7 +200,7 @@ func ordinaryAccountTestPlan(account *service.Account, raw any) (*accountTestPla
 		return plan, nil
 	}
 	plan.DefaultMode = "text"
-	plan.ModeViews = map[string]accountTestModeView{}
+	plan.ModeViews = map[string]accountTestModeView{"connection": plan.ModeViews["connection"]}
 	for _, mode := range []string{"text", "image", "video", "search", "tts", "stt", "realtime"} {
 		view := accountTestModeView{ModelIDs: []string{}}
 		for _, model := range models {
@@ -177,5 +232,10 @@ func ordinaryAccountTestPlan(account *service.Account, raw any) (*accountTestPla
 		plan.ModeViews[mode] = view
 	}
 	plan.ModeViews["default"] = plan.ModeViews["text"]
+	if slices.Contains(plan.ModeViews["connection"].ModelIDs, plan.ModeViews["text"].DefaultModelID) {
+		connection := plan.ModeViews["connection"]
+		connection.DefaultModelID = plan.ModeViews["text"].DefaultModelID
+		plan.ModeViews["connection"] = connection
+	}
 	return plan, nil
 }

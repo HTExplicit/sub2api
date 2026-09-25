@@ -22,6 +22,8 @@ type ScheduledTestPlan struct {
 
 // ScheduledTestResult represents a single test execution result.
 type ScheduledTestResult struct {
+	OutputLimited            bool      `json:"output_limited,omitempty"`
+	ActualModel              string    `json:"actual_model,omitempty"`
 	RequestedReasoningEffort string    `json:"requested_reasoning_effort,omitempty"`
 	EffectiveReasoningEffort string    `json:"effective_reasoning_effort,omitempty"`
 	ID                       int64     `json:"id"`

@@ -110,7 +110,6 @@ func minimalDependencyCleanup(autoReset *service.OpenAIQuotaAutoResetService) fu
 		nil, // promptAudit
 		nil, // promptDomain
 		nil, // businessPrompt
-		nil, // remoteSkillRegistry
 		nil, // accountJobRuntime
 		nil, // cindyHealth
 		nil, // cindyBalanceProbe

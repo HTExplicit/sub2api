@@ -61,27 +61,29 @@ var (
 )
 
 type AccountJob struct {
-	ID                int64           `json:"id"`
-	CreatedBy         int64           `json:"created_by"`
-	Kind              string          `json:"kind"`
-	IdempotencyKey    string          `json:"-"`
-	RequestHash       string          `json:"-"`
-	Status            string          `json:"status"`
-	Metadata          json.RawMessage `json:"metadata"`
-	TargetCount       int             `json:"target_count"`
-	ProcessedCount    int             `json:"processed_count"`
-	SucceededCount    int             `json:"succeeded_count"`
-	FailedCount       int             `json:"failed_count"`
-	CanceledCount     int             `json:"canceled_count"`
-	CancelRequestedAt *time.Time      `json:"cancel_requested_at,omitempty"`
-	ErrorCode         string          `json:"error_code,omitempty"`
-	ErrorMessage      string          `json:"error_message,omitempty"`
-	RetryOfJobID      *int64          `json:"retry_of_job_id,omitempty"`
-	Attempt           int             `json:"attempt"`
-	StartedAt         *time.Time      `json:"started_at,omitempty"`
-	FinishedAt        *time.Time      `json:"finished_at,omitempty"`
-	CreatedAt         time.Time       `json:"created_at"`
-	UpdatedAt         time.Time       `json:"updated_at"`
+	ID                     int64           `json:"id"`
+	CreatedBy              int64           `json:"created_by"`
+	Kind                   string          `json:"kind"`
+	IdempotencyKey         string          `json:"-"`
+	RequestHash            string          `json:"-"`
+	Status                 string          `json:"status"`
+	Metadata               json.RawMessage `json:"metadata"`
+	TargetCount            int             `json:"target_count"`
+	ProcessedCount         int             `json:"processed_count"`
+	SucceededCount         int             `json:"succeeded_count"`
+	FailedCount            int             `json:"failed_count"`
+	CanceledCount          int             `json:"canceled_count"`
+	CancelRequestedAt      *time.Time      `json:"cancel_requested_at,omitempty"`
+	ErrorCode              string          `json:"error_code,omitempty"`
+	ErrorMessage           string          `json:"error_message,omitempty"`
+	RetryOfJobID           *int64          `json:"retry_of_job_id,omitempty"`
+	Attempt                int             `json:"attempt"`
+	StartedAt              *time.Time      `json:"started_at,omitempty"`
+	FinishedAt             *time.Time      `json:"finished_at,omitempty"`
+	CreatedAt              time.Time       `json:"created_at"`
+	UpdatedAt              time.Time       `json:"updated_at"`
+	RetryEligible          bool            `json:"retry_eligible"`
+	RetryUnavailableReason string          `json:"retry_unavailable_reason,omitempty"`
 }
 
 type AccountJobItem struct {
@@ -287,11 +289,81 @@ func (s *AccountJobService) findMatchingSubmission(ctx context.Context, createdB
 }
 
 func (s *AccountJobService) Get(ctx context.Context, jobID int64) (*AccountJob, error) {
-	return s.repo.Get(ctx, jobID)
+	job, err := s.repo.Get(ctx, jobID)
+	if err == nil {
+		s.decorateRetryEligibility(ctx, job)
+	}
+	return job, err
 }
 
 func (s *AccountJobService) List(ctx context.Context, createdBy int64, kind, status string, page, pageSize int) (*AccountJobList, error) {
-	return s.repo.List(ctx, createdBy, kind, status, page, pageSize)
+	list, err := s.repo.List(ctx, createdBy, kind, status, page, pageSize)
+	if err == nil && list != nil {
+		for i := range list.Items {
+			s.decorateRetryEligibility(ctx, &list.Items[i])
+		}
+	}
+	return list, err
+}
+
+func AccountJobHasRetryableFailures(job *AccountJob) bool {
+	return job != nil && job.FailedCount > 0 && (job.Status == AccountJobStatusFailed || job.Status == AccountJobStatusPartiallySucceeded || job.Status == AccountJobStatusCanceled)
+}
+
+func (s *AccountJobService) decorateRetryEligibility(ctx context.Context, job *AccountJob) {
+	if job == nil {
+		return
+	}
+	job.RetryEligible = false
+	if !AccountJobHasRetryableFailures(job) {
+		return
+	}
+	cipher, expires, err := s.repo.Payload(ctx, job.ID)
+	if err != nil || cipher == "" || !time.Now().UTC().Before(expires) {
+		job.RetryUnavailableReason = "payload_expired"
+		return
+	}
+	job.RetryEligible = true
+	job.RetryUnavailableReason = ""
+}
+
+// The durable plan is written while the item is running, before any model IO.
+// Keeping this capability separate preserves non-test executors and repositories.
+type AccountJobExecutionSnapshotRepository interface {
+	SaveExecutionSnapshot(context.Context, int64, int64, json.RawMessage) error
+}
+
+func (s *AccountJobService) SaveExecutionSnapshot(ctx context.Context, jobID, itemID int64, metadata json.RawMessage) error {
+	if err := ValidateAccountJobMetadata(metadata); err != nil {
+		return err
+	}
+	if s != nil {
+		if repo, ok := s.repo.(AccountJobExecutionSnapshotRepository); ok {
+			return repo.SaveExecutionSnapshot(ctx, jobID, itemID, metadata)
+		}
+	}
+	return errors.New("account test execution snapshot is unavailable")
+}
+
+// Stop and internal failure take precedence over progress counters. A monitor
+// failure after all item writes must never turn the overall task green.
+func AccountJobTerminalStatus(cancelRequested bool, errorCode string, succeeded, failed, canceled int) string {
+	if cancelRequested {
+		return AccountJobStatusCanceled
+	}
+	if errorCode != "" {
+		return AccountJobStatusFailed
+	}
+	if canceled > 0 {
+		return AccountJobStatusCanceled
+	}
+	if failed == 0 {
+		return AccountJobStatusSucceeded
+	}
+	if succeeded > 0 {
+		return AccountJobStatusPartiallySucceeded
+	}
+	return AccountJobStatusFailed
 }
 
 func (s *AccountJobService) ListItems(ctx context.Context, jobID int64, status string, page, pageSize int) (*AccountJobItemList, error) {
@@ -306,7 +378,11 @@ func (s *AccountJobService) ResultAccountIDs(ctx context.Context, jobID int64) (
 }
 
 func (s *AccountJobService) Cancel(ctx context.Context, jobID, createdBy int64) (*AccountJob, error) {
-	return s.repo.Cancel(ctx, jobID, createdBy)
+	job, err := s.repo.Cancel(ctx, jobID, createdBy)
+	if err == nil {
+		s.decorateRetryEligibility(ctx, job)
+	}
+	return job, err
 }
 
 func (s *AccountJobService) RetryFailed(ctx context.Context, jobID, createdBy int64, idempotencyKey string) (*AccountJob, bool, error) {

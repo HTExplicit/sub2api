@@ -3,26 +3,72 @@ import { flushPromises, mount } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import BatchTestAccountModal from '../BatchTestAccountModal.vue'
 import AccountTestReasoningSelect from '../AccountTestReasoningSelect.vue'
-const { batchTestModels, batchTest } = vi.hoisted(() => ({ batchTestModels: vi.fn(), batchTest: vi.fn() }))
+const { batchTestModels, batchTest, track, auth } = vi.hoisted(() => ({ batchTestModels: vi.fn(), batchTest: vi.fn(), track: vi.fn(), auth: { user: { id: 1 } } }))
 vi.mock('@/api/admin/accountJobs', () => ({ default: { batchTestModels, batchTest } }))
+vi.mock('@/stores/accountJobs', () => ({ useAccountJobsStore: () => ({ track }) }))
 vi.mock('@/stores/app', () => ({ useAppStore: () => ({ showError: vi.fn() }) }))
-vi.mock('@/stores/auth', () => ({ useAuthStore: () => ({ user: { id: 1 } }) }))
+vi.mock('@/stores/auth', () => ({ useAuthStore: () => auth }))
 vi.mock('vue-i18n', async importOriginal => ({ ...await importOriginal<typeof import('vue-i18n')>(), useI18n: () => ({ t: (key: string, args?: unknown) => key + (args ? JSON.stringify(args) : '') }) }))
 function catalog(id: number, choices: Array<string | { id: string; display_name: string; reasoning_efforts?: string[] }> = ['first', 'shared']) {
   const models = choices.map(choice => typeof choice === 'string' ? { id: choice, display_name: `Display ${choice}` } : choice)
   const test_plan = { schema_version: 1, account_id: id, wire_platform: 'openai', default_mode: 'default', models,
-    mode_views: { default: { model_ids: models.map(model => model.id), default_model_id: models[0]?.id || '' } } }
+    mode_views: { default: { model_ids: models.map(model => model.id), default_model_id: models[0]?.id || '' }, connection: { model_ids: models.map(model => model.id), default_model_id: models[0]?.id || '' } } }
   return { account_id: id, name: `Account ${id}`, platform: 'openai', type: 'apikey', is_cindy: false, models, test_plan }
 }
-function mountModal(ids = [1, 2, 3]) {
- return mount(BatchTestAccountModal, { props: { show: true, accountIds: ids }, global: { stubs: {
+function mountModal(ids = [1, 2, 3], explicit = true) {
+ const wrapper = mount(BatchTestAccountModal, { props: { show: true, accountIds: ids }, global: { stubs: {
   BaseDialog: { template: '<div><slot/><slot name="footer"/></div>' },
   AccountTestModelSelect: { props: ['modelValue', 'models', 'disabled', 'id'], emits: ['update:modelValue'], template: `<select :id="id" :value="modelValue" :disabled="disabled" @change="$emit('update:modelValue', $event.target.value)"><option v-for="m in models" :key="m.id" :value="m.id">{{ m.display_name }}</option></select>` }
  } } })
+ if (explicit) {
+   for (const row of (wrapper.vm as any).rows) row.selection_mode = 'explicit'
+   ;(wrapper.get('details').element as HTMLDetailsElement).open = true
+   void wrapper.get('details').trigger('toggle')
+ }
+ return wrapper
 }
 function button(wrapper: ReturnType<typeof mountModal>, text: string) { return wrapper.findAll('button').find(b => b.text().includes(text))! }
 describe('BatchTestAccountModal per-account selections', () => {
- beforeEach(() => { vi.clearAllMocks(); batchTestModels.mockImplementation(async (ids: number[]) => ids.map(id => catalog(id))); batchTest.mockResolvedValue({ id: 12, status: 'pending' }) })
+ beforeEach(() => { vi.clearAllMocks(); auth.user.id = 1; batchTestModels.mockImplementation(async (ids: number[]) => ids.map(id => catalog(id))); batchTest.mockResolvedValue({ id: 12, status: 'pending' }) })
+ it('starts automatic tests immediately without loading catalogs, including more than one page', async () => {
+  const wrapper = mountModal(Array.from({ length: 101 }, (_, i) => i + 1), false)
+  expect(batchTestModels).not.toHaveBeenCalled()
+  expect(button(wrapper, 'batchTest.start').attributes('disabled')).toBeUndefined()
+  await wrapper.get('form').trigger('submit'); await flushPromises()
+  expect(batchTest.mock.calls[0][0]).toHaveLength(101)
+  expect(batchTest.mock.calls[0][0][100]).toEqual({ account_id: 101, selection_mode: 'auto' })
+  wrapper.unmount()
+ })
+ it('tracks an accepted old submission without replacing a reopened draft or its busy state', async () => {
+  let acceptOld!: (value: unknown) => void
+  let acceptNew!: (value: unknown) => void
+  batchTest.mockImplementationOnce(() => new Promise(resolve => { acceptOld = resolve }))
+  batchTest.mockImplementationOnce(() => new Promise(resolve => { acceptNew = resolve }))
+  const wrapper = mountModal([1], false)
+  await wrapper.get('form').trigger('submit')
+  await wrapper.setProps({ show: false }); await wrapper.setProps({ show: true, accountIds: [2] })
+  await wrapper.get('form').trigger('submit')
+  acceptOld({ id: 40, status: 'pending' }); await flushPromises()
+  expect(track).toHaveBeenCalledWith({ id: 40, status: 'pending' }, { open: false })
+  expect((wrapper.vm as any).operationJob).toBeNull()
+  expect((wrapper.vm as any).busy).toBe(true)
+  acceptNew({ id: 41, status: 'pending' }); await flushPromises()
+  expect((wrapper.vm as any).operationJob.id).toBe(41)
+  expect(wrapper.emitted('submitted')).toEqual([[{ id: 41, status: 'pending' }]])
+  wrapper.unmount()
+ })
+ it('does not attach or display an accepted response after the administrator changes', async () => {
+  let accept!: (value: unknown) => void
+  batchTest.mockImplementationOnce(() => new Promise(resolve => { accept = resolve }))
+  const wrapper = mountModal([1], false)
+  await wrapper.get('form').trigger('submit')
+  auth.user.id = 2
+  accept({ id: 42, status: 'pending' }); await flushPromises()
+  expect(track).not.toHaveBeenCalled()
+  expect(wrapper.emitted('submitted')).toBeUndefined()
+  expect((wrapper.vm as any).operationJob).toBeNull()
+  wrapper.unmount()
+ })
  it('keeps a fixed set, applies raw IDs only to supporting accounts and persists every choice', async () => {
   batchTestModels.mockResolvedValue([catalog(1), catalog(2, ['other']), catalog(3)])
   const wrapper = mountModal(); await flushPromises()
@@ -33,7 +79,7 @@ describe('BatchTestAccountModal per-account selections', () => {
   expect((wrapper.get('#batch-model-3').element as HTMLSelectElement).value).toBe('shared')
   expect(wrapper.text()).toContain('"applied":2,"skipped":1')
   await wrapper.get('form').trigger('submit'); await flushPromises()
-  expect(batchTest).toHaveBeenCalledWith([{ account_id: 1, model_id: 'shared' }, { account_id: 2, model_id: 'other' }, { account_id: 3, model_id: 'shared' }], '')
+  expect(batchTest).toHaveBeenCalledWith([{ account_id: 1, selection_mode: 'explicit', model_id: 'shared' }, { account_id: 2, selection_mode: 'explicit', model_id: 'other' }, { account_id: 3, selection_mode: 'explicit', model_id: 'shared' }], '')
   expect(wrapper.emitted('submitted')?.[0]).toEqual([{ id: 12, status: 'pending' }]); expect(wrapper.emitted('close')).toBeUndefined()
   wrapper.unmount()
  })
@@ -56,7 +102,7 @@ describe('BatchTestAccountModal per-account selections', () => {
   await wrapper.get('#batch-model-101').setValue('shared')
   await wrapper.get('form').trigger('submit'); await flushPromises()
   expect(batchTest.mock.calls[0][0]).toHaveLength(101)
-  expect(batchTest.mock.calls[0][0][100]).toEqual({ account_id: 101, model_id: 'shared' })
+  expect(batchTest.mock.calls[0][0][100]).toEqual({ account_id: 101, selection_mode: 'explicit', model_id: 'shared' })
   wrapper.unmount()
  })
  it('ignores canceled catalog results when reopened for a different selection', async () => {
@@ -88,7 +134,7 @@ describe('BatchTestAccountModal per-account selections', () => {
   await wrapper.get('[data-account-id="101"] label.mt-3 select').setValue('low')
   await wrapper.get('form').trigger('submit'); await flushPromises()
   expect(batchTest).toHaveBeenCalledTimes(1)
-  expect(batchTest.mock.calls[0][0][100]).toEqual({ account_id: 101, model_id: 'shared', reasoning_effort: 'low' })
+  expect(batchTest.mock.calls[0][0][100]).toEqual({ account_id: 101, selection_mode: 'explicit', model_id: 'shared', reasoning_effort: 'low' })
   wrapper.unmount()
  })
  it('keeps a nonempty reasoning choice when the model has no levels until an explicit default choice', async () => {
@@ -112,7 +158,7 @@ describe('BatchTestAccountModal per-account selections', () => {
   expect(wrapper.getComponent(AccountTestReasoningSelect).props('modelValue')).toBe('')
   await wrapper.get('form').trigger('submit'); await flushPromises()
   expect(batchTest).toHaveBeenCalledTimes(1)
-  expect(batchTest).toHaveBeenCalledWith([{ account_id: 1, model_id: 'plain' }], '')
+  expect(batchTest).toHaveBeenCalledWith([{ account_id: 1, selection_mode: 'explicit', model_id: 'plain' }], '')
   wrapper.unmount()
  })
 })
