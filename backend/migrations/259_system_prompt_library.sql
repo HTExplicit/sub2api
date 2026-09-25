@@ -57,7 +57,7 @@ BEGIN
             -- Only plain text survives; Skill/hybrid content depended on the
             -- removed registry and was never plain library text.
             IF version_mode IS DISTINCT FROM 'inline' OR version_body IS NULL
-               OR btrim(version_body) = '' OR octet_length(version_body) > 65536
+               OR version_body !~ '[^[:space:]]' OR octet_length(version_body) > 65536
                OR jsonb_array_length(library) >= 50 THEN
                 CONTINUE;
             END IF;
@@ -68,7 +68,7 @@ BEGIN
             END IF;
             used_ids := used_ids || prompt_id;
             prompt_name := left(btrim(COALESCE(policy_rule->>'name', '')), 100);
-            IF prompt_name = '' THEN
+            IF prompt_name !~ '[^[:space:]]' THEN
                 prompt_name := prompt_id;
             END IF;
             prompt_position := CASE WHEN policy_rule->>'position' IN ('control_prepend', 'conversation_head')
