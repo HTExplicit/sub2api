@@ -167,7 +167,8 @@ func (s *SystemPromptService) publish(config SystemPromptConfig) {
 	s.nextRefresh.Store(time.Now().Add(systemPromptRefreshInterval).UnixNano())
 }
 
-func (s *SystemPromptService) load(ctx context.Context) (SystemPromptConfig, error) {
+// read returns the stored configuration as saved, without validation.
+func (s *SystemPromptService) read(ctx context.Context) (SystemPromptConfig, error) {
 	if s == nil || s.settings == nil {
 		return SystemPromptConfig{}, ErrSystemPromptUnavailable
 	}
@@ -183,6 +184,18 @@ func (s *SystemPromptService) load(ctx context.Context) (SystemPromptConfig, err
 	var config SystemPromptConfig
 	if err := json.Unmarshal([]byte(raw), &config); err != nil {
 		return SystemPromptConfig{}, fmt.Errorf("decode system prompt configuration: %w", err)
+	}
+	if config.Prompts == nil {
+		config.Prompts = []SystemPrompt{}
+	}
+	return config, nil
+}
+
+// load returns the validated stored configuration.
+func (s *SystemPromptService) load(ctx context.Context) (SystemPromptConfig, error) {
+	config, err := s.read(ctx)
+	if err != nil {
+		return SystemPromptConfig{}, err
 	}
 	normalized, err := normalizeSystemPromptConfig(config)
 	if err != nil {
@@ -281,13 +294,18 @@ func AccountSystemPromptBinding(account *Account) SystemPromptBinding {
 	return inherit
 }
 
-// State returns the stored configuration and the current account usage.
+// State returns the stored configuration and the current account usage. A
+// stored value that no longer validates is still returned for editing; it is
+// never published to requests.
 func (s *SystemPromptService) State(ctx context.Context) (SystemPromptState, error) {
-	config, err := s.load(ctx)
+	config, err := s.read(ctx)
 	if err != nil {
 		return SystemPromptState{}, err
 	}
-	s.publish(config)
+	if normalized, invalid := normalizeSystemPromptConfig(config); invalid == nil {
+		config = normalized
+		s.publish(config)
+	}
 	usage, _, err := s.usage(ctx)
 	if err != nil {
 		return SystemPromptState{}, err
@@ -313,7 +331,7 @@ func (s *SystemPromptService) Save(ctx context.Context, config SystemPromptConfi
 	for _, prompt := range normalized.Prompts {
 		kept[prompt.ID] = true
 	}
-	if previous, loadErr := s.load(ctx); loadErr == nil {
+	if previous, readErr := s.read(ctx); readErr == nil {
 		for _, prompt := range previous.Prompts {
 			if accounts := custom[prompt.ID]; !kept[prompt.ID] && accounts > 0 {
 				return SystemPromptState{}, ErrSystemPromptInUse.WithMetadata(map[string]string{"prompt_id": prompt.ID, "accounts": fmt.Sprint(accounts)})
