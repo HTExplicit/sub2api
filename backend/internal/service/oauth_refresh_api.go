@@ -34,6 +34,20 @@ type GrokOAuthRefreshSuccessRepository interface {
 	) (bool, error)
 }
 
+// OpenAIOAuthRefreshSuccessRepository keeps a completed token rotation from
+// overwriting credentials or a proxy selected by a concurrent admin edit.
+// Known admin-owned model mappings and warmup settings are preserved from the
+// current row without making a metadata-only edit discard the rotation.
+type OpenAIOAuthRefreshSuccessRepository interface {
+	UpdateOpenAIOAuthCredentialsIfUnchanged(
+		ctx context.Context,
+		id int64,
+		expectedCredentials map[string]any,
+		expectedProxyID *int64,
+		credentials map[string]any,
+	) (bool, error)
+}
+
 const (
 	defaultRefreshLockTTL                   = 60 * time.Second
 	defaultRefreshLockReleaseTimeout        = 2 * time.Second
@@ -337,7 +351,7 @@ func (api *OAuthRefreshAPI) RefreshIfNeeded(
 				)
 				return &OAuthRefreshResult{Account: currentAccount}, nil
 			}
-			durableAccount, readErr := api.loadGrokDurableAccountAfterPersist(ctx, cacheKey, freshAccount.ID)
+			durableAccount, readErr := api.loadDurableAccountAfterPersist(ctx, cacheKey, freshAccount.ID)
 			if readErr != nil || durableAccount == nil {
 				if readErr == nil {
 					readErr = fmt.Errorf("account not found after Grok OAuth success CAS")
@@ -350,6 +364,49 @@ func (api *OAuthRefreshAPI) RefreshIfNeeded(
 			// mutation may have changed status, schedulability, or cooldown fields
 			// while the provider call was in flight. Return the durable row so
 			// post-refresh cache publication cannot restore that stale snapshot.
+			freshAccount = durableAccount
+		} else if freshAccount.IsOpenAIOAuth() {
+			conditionalRepo, ok := api.accountRepo.(OpenAIOAuthRefreshSuccessRepository)
+			if !ok {
+				return nil, &providerConfigurationRefreshError{
+					err: fmt.Errorf("OpenAI OAuth refresh success CAS repository is not configured"),
+				}
+			}
+			applied, updateErr := conditionalRepo.UpdateOpenAIOAuthCredentialsIfUnchanged(
+				ctx, freshAccount.ID, attemptedAccount.Credentials, attemptedAccount.ProxyID, newCredentials,
+			)
+			if updateErr != nil {
+				return nil, &providerCycleContainmentRefreshError{
+					err: fmt.Errorf("OpenAI OAuth refresh succeeded but credential persistence failed: %w", updateErr),
+				}
+			}
+			if !applied {
+				currentAccount, readErr := api.accountRepo.GetByID(ctx, freshAccount.ID)
+				if readErr != nil || currentAccount == nil {
+					return nil, &providerCycleContainmentRefreshError{
+						err: fmt.Errorf("OpenAI OAuth success CAS lost and current state is unavailable"),
+					}
+				}
+				return &OAuthRefreshResult{Account: currentAccount}, nil
+			}
+			durableAccount, readErr := api.loadDurableAccountAfterPersist(ctx, cacheKey, freshAccount.ID)
+			if readErr != nil || durableAccount == nil {
+				return nil, &providerCycleContainmentRefreshError{
+					err: fmt.Errorf("OpenAI OAuth success persisted but durable account state is unavailable"),
+				}
+			}
+			persistedIdentity := *attemptedAccount
+			persistedIdentity.Credentials = newCredentials
+			if validateOpenAITokenIdentity(&persistedIdentity, durableAccount) != nil ||
+				persistedIdentity.GetOpenAIAccessToken() != durableAccount.GetOpenAIAccessToken() ||
+				persistedIdentity.GetCredentialAsInt64("_token_version") != durableAccount.GetCredentialAsInt64("_token_version") {
+				// An admin edit can also win after CAS but before the durable read.
+				// Do not apply the old refresh's post-success actions to that edit.
+				return &OAuthRefreshResult{Account: durableAccount}, nil
+			}
+			// The atomic update preserves current admin-owned metadata. Return
+			// that durable document, not the settings captured before refresh.
+			newCredentials = shallowCopyMap(durableAccount.Credentials)
 			freshAccount = durableAccount
 		} else if updateErr := persistAccountCredentials(ctx, api.accountRepo, freshAccount, newCredentials); updateErr != nil {
 			slog.Error("oauth_refresh_update_failed",
@@ -385,7 +442,7 @@ func (api *OAuthRefreshAPI) releaseRefreshLock(parent context.Context, cacheKey 
 	}
 }
 
-func (api *OAuthRefreshAPI) loadGrokDurableAccountAfterPersist(parent context.Context, cacheKey string, accountID int64) (*Account, error) {
+func (api *OAuthRefreshAPI) loadDurableAccountAfterPersist(parent context.Context, cacheKey string, accountID int64) (*Account, error) {
 	cleanupParent := context.Background()
 	if parent != nil {
 		cleanupParent = context.WithoutCancel(parent)

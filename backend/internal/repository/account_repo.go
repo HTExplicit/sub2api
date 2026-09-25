@@ -1680,6 +1680,83 @@ func (r *accountRepository) UpdateGrokOAuthCredentialsIfUnchanged(
 	expectedProxyID *int64,
 	credentials map[string]any,
 ) (bool, error) {
+	return r.updateOAuthCredentialsIfUnchanged(ctx, id, service.PlatformGrok, expectedCredentials, expectedProxyID, credentials)
+}
+
+const openAIOAuthRefreshAdminMetadataKeysSQL = "ARRAY['model_mapping', 'compact_model_mapping', 'intercept_warmup_requests']::text[]"
+
+// UpdateOpenAIOAuthCredentialsIfUnchanged compares all identity/credential fields
+// and the proxy, while merging the three known admin-owned settings from the
+// current row. A metadata edit must neither discard a rotated refresh token nor
+// be overwritten by settings captured before the provider call.
+func (r *accountRepository) UpdateOpenAIOAuthCredentialsIfUnchanged(
+	ctx context.Context,
+	id int64,
+	expectedCredentials map[string]any,
+	expectedProxyID *int64,
+	credentials map[string]any,
+) (bool, error) {
+	if r == nil || r.sql == nil {
+		return false, errors.New("account repository SQL executor is not configured")
+	}
+	expectedJSON, err := json.Marshal(normalizeJSONMap(expectedCredentials))
+	if err != nil {
+		return false, err
+	}
+	credentialsJSON, err := json.Marshal(normalizeJSONMap(credentials))
+	if err != nil {
+		return false, err
+	}
+	result, err := r.sql.ExecContext(ctx, `
+		WITH updated AS (
+		UPDATE accounts AS a
+		SET credentials = ($1::jsonb - `+openAIOAuthRefreshAdminMetadataKeysSQL+`) || COALESCE(
+			(SELECT jsonb_object_agg(metadata.key, metadata.value)
+			 FROM jsonb_each(a.credentials) AS metadata
+			 WHERE metadata.key = ANY (`+openAIOAuthRefreshAdminMetadataKeysSQL+`)),
+			'{}'::jsonb),
+			updated_at = NOW()
+		WHERE a.id = $2
+			AND a.deleted_at IS NULL
+			AND a.platform = $3
+			AND a.type = $4
+			AND (a.credentials - `+openAIOAuthRefreshAdminMetadataKeysSQL+`) = ($5::jsonb - `+openAIOAuthRefreshAdminMetadataKeysSQL+`)
+			AND a.proxy_id IS NOT DISTINCT FROM $6
+		RETURNING a.id
+		)
+		INSERT INTO scheduler_outbox (event_type, account_id, group_id, payload)
+		SELECT $7, updated.id, NULL, NULL FROM updated
+	`,
+		string(credentialsJSON),
+		id,
+		service.PlatformOpenAI,
+		service.AccountTypeOAuth,
+		string(expectedJSON),
+		expectedProxyID,
+		service.SchedulerOutboxEventAccountChanged,
+	)
+	if err != nil {
+		return false, err
+	}
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return false, err
+	}
+	if rowsAffected == 0 {
+		return false, nil
+	}
+	r.syncSchedulerAccountSnapshotDetached(ctx, id)
+	return true, nil
+}
+
+func (r *accountRepository) updateOAuthCredentialsIfUnchanged(
+	ctx context.Context,
+	id int64,
+	platform string,
+	expectedCredentials map[string]any,
+	expectedProxyID *int64,
+	credentials map[string]any,
+) (bool, error) {
 	if r == nil || r.sql == nil {
 		return false, errors.New("account repository SQL executor is not configured")
 	}
@@ -1709,7 +1786,7 @@ func (r *accountRepository) UpdateGrokOAuthCredentialsIfUnchanged(
 	`,
 		string(credentialsJSON),
 		id,
-		service.PlatformGrok,
+		platform,
 		service.AccountTypeOAuth,
 		string(expectedJSON),
 		expectedProxyID,

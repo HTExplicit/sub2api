@@ -103,6 +103,38 @@ func (r *refreshAPIAccountRepo) UpdateGrokOAuthCredentialsIfUnchanged(
 	return true, nil
 }
 
+func (r *refreshAPIAccountRepo) UpdateOpenAIOAuthCredentialsIfUnchanged(
+	_ context.Context,
+	id int64,
+	expectedCredentials map[string]any,
+	expectedProxyID *int64,
+	credentials map[string]any,
+) (bool, error) {
+	r.successCASCalls++
+	if r.beforeSuccessCAS != nil {
+		r.beforeSuccessCAS(r)
+	}
+	if r.updateErr != nil {
+		return false, r.updateErr
+	}
+	if r.account == nil || r.account.ID != id || !r.account.IsOpenAIOAuth() ||
+		!reflect.DeepEqual(openAIIdentityTestComparableCredentials(r.account.Credentials), openAIIdentityTestComparableCredentials(expectedCredentials)) ||
+		!reflect.DeepEqual(r.account.ProxyID, expectedProxyID) {
+		return false, nil
+	}
+	r.updateCalls++
+	r.updateCredentialsCalls++
+	merged := shallowCopyMap(credentials)
+	for _, key := range openAIIdentityTestAdminMetadataKeys {
+		delete(merged, key)
+		if value, exists := r.account.Credentials[key]; exists {
+			merged[key] = value
+		}
+	}
+	r.account.Credentials = merged
+	return true, nil
+}
+
 // refreshAPIExecutorStub implements OAuthRefreshExecutor for tests.
 type refreshAPIExecutorStub struct {
 	needsRefresh  bool

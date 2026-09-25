@@ -2647,6 +2647,30 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 		closeOpenAIClientWS(wsConn, coderws.StatusPolicyViolation, service.OpenAIContinuationAnchorValidationMessage)
 		return
 	}
+	responseOwnerGroupID := int64(0)
+	if apiKey.GroupID != nil {
+		responseOwnerGroupID = *apiKey.GroupID
+	}
+	const responseOwnerRejection = "previous_response_id is not available for this user"
+	// Upstream affinity is not downstream authorization. Share the HTTP
+	// ownership contract across first frames and every later response.create.
+	ownsPreviousResponse := func(anchor string) bool {
+		if anchor == "" {
+			return true
+		}
+		owned, ownerErr := h.gatewayService.ValidateOpenAIHTTPResponseOwner(
+			ctx, responseOwnerGroupID, anchor, subject.UserID, apiKey.ID,
+		)
+		if ownerErr != nil {
+			reqLog.Warn("openai.websocket_previous_response_owner_lookup_failed")
+		}
+		return ownerErr == nil && owned
+	}
+	if !ownsPreviousResponse(previousResponseID) {
+		closeOpenAIClientWS(wsConn, coderws.StatusPolicyViolation, responseOwnerRejection)
+		return
+	}
+	service.SetOpenAIHTTPResponseOwner(c, subject.UserID, apiKey.ID)
 	previousResponseIDKind := service.ClassifyOpenAIPreviousResponseIDKind(previousResponseID)
 	reqLog = reqLog.With(
 		zap.Bool("ws_ingress", true),
@@ -3108,6 +3132,13 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 				if !gjson.ValidBytes(payload) {
 					return newOpenAIWSLocalTurnCloseError(coderws.StatusPolicyViolation, "invalid websocket request payload", errors.New("invalid json"))
 				}
+				anchor, anchorErr := service.ParseOpenAIContinuationAnchor(payload)
+				if anchorErr != nil {
+					return newOpenAIWSLocalTurnCloseError(coderws.StatusPolicyViolation, service.OpenAIContinuationAnchorValidationMessage, anchorErr)
+				}
+				if !ownsPreviousResponse(anchor) {
+					return newOpenAIWSLocalTurnCloseError(coderws.StatusPolicyViolation, responseOwnerRejection, nil)
+				}
 				model := strings.TrimSpace(originalModel)
 				if model == "" {
 					model = strings.TrimSpace(gjson.GetBytes(payload, "model").String())
@@ -3262,6 +3293,7 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 				if result == nil {
 					return
 				}
+				h.gatewayService.BindOpenAIWSResponseOwner(ctx, c, account, result)
 				result.BillingModel = openAIWSTurnBillingModel(result, turnMapping, turnRequestedModel, turnUpstreamModel)
 				reqLog.Debug("openai.websocket_turn_billing",
 					zap.Int("turn", turn),
