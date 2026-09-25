@@ -13,7 +13,6 @@ const {
   createOpenAICodexPATMock,
   authIsSimpleMode,
   showSuccess,
-  getCindyModelsMock,
   previewModelContextCapacitiesMock,
 } = vi.hoisted(() => ({
   createAccountMock: vi.fn(),
@@ -25,7 +24,6 @@ const {
   createOpenAICodexPATMock: vi.fn(),
   authIsSimpleMode: { value: true },
   showSuccess: vi.fn(),
-  getCindyModelsMock: vi.fn(),
   previewModelContextCapacitiesMock: vi.fn(),
 }))
 
@@ -64,9 +62,6 @@ vi.mock('@/api/admin', () => ({
     },
     tlsFingerprintProfiles: {
       list: vi.fn().mockResolvedValue([]),
-    },
-    groups: {
-      getModelAllowlistCandidates: getCindyModelsMock,
     },
   },
 }))
@@ -158,8 +153,6 @@ const ModelWhitelistSelectorStub = defineComponent({
     },
     platform: String,
     syncCredentials: Object,
-    models: Array,
-    readonly: Boolean,
     hideSync: Boolean,
     capacityRows: { type: Array as PropType<ModelContextCapacityRow[]>, default: () => [] },
     capacityDrafts: { type: Object as PropType<Record<string, string>>, default: () => ({}) },
@@ -195,7 +188,7 @@ const ModelWhitelistSelectorStub = defineComponent({
         type="button"
         data-testid="model-whitelist-selector"
         @click="$emit('update:modelValue', ['public-glm']); $emit('upstream-synced')"
-      >{{ models?.map((model) => model.id).join(',') || 'models' }}</button>
+      >models</button>
       <template v-for="modelID in modelValue" :key="modelID">
         <ModelContextCapacityField
           v-if="capacityRow(modelID)"
@@ -332,7 +325,6 @@ describe('CreateAccountModal OpenAI long-context billing', () => {
     })
     createOpenAICodexPATMock.mockReset().mockResolvedValue({})
     showSuccess.mockReset()
-    getCindyModelsMock.mockReset().mockResolvedValue(['gpt-5.6-luna', 'gpt-image-2'])
     previewModelContextCapacitiesMock.mockReset().mockResolvedValue({ capacity_rows: [] })
   })
 
@@ -575,43 +567,6 @@ describe('CreateAccountModal OpenAI long-context billing', () => {
     expect(createOpenAICodexPATMock.mock.calls[0]?.[0]?.extra?.openai_chat_reasoning_replay_enabled).toBe(false)
     expect(createOpenAICodexPATMock.mock.calls[0]?.[0]?.extra).not.toHaveProperty('openai_reasoning_signature_recovery_enabled')
     wrapper.unmount()
-  })
-
-  it('creates a canonical Cindy API-key account with declared identity and inherited defaults', async () => {
-    const wrapper = mountModal([
-      { id: 1, name: 'Cindy', platform: 'cindy', wire_platform: 'openai', provider_profile: 'cindy_laxa_v1' }
-    ])
-    await wrapper.get('[data-testid="select-cindy-platform"]').trigger('click')
-    await wrapper.get('[data-testid="select-pricing-groups"]').trigger('click')
-    await wrapper.get('form#create-account-form input[type="text"]').setValue('Cindy account')
-    await wrapper.get('form#create-account-form input[type="password"]').setValue('cindy-api-key')
-    await wrapper.get('#cindy-create-device-id').setValue('aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa')
-    await flushPromises()
-    expect(wrapper.get('[data-tour="account-form-submit"]').attributes('disabled')).toBeUndefined()
-    await wrapper.get('form#create-account-form').trigger('submit.prevent')
-    await flushPromises()
-
-    expect(createAccountMock).toHaveBeenCalledWith(expect.objectContaining({
-      name: 'Cindy account',
-      platform: 'cindy',
-      type: 'apikey',
-      credentials: expect.objectContaining({
-        api_key: 'cindy-api-key',
-        base_url: 'https://api.laxarouter.ai'
-      }),
-      group_ids: [1, 2],
-      upstream_billing_probe_enabled: false
-    }))
-    expect(wrapper.get('[placeholder="https://api.laxarouter.ai"]').attributes('readonly')).toBeDefined()
-    expect(wrapper.find('[data-testid="provider-managed-create-catalog"]').exists()).toBe(true)
-    expect(wrapper.get('[data-testid="provider-managed-create-catalog"]').text()).toContain('gpt-5.6-luna')
-    const submitted = createAccountMock.mock.calls.at(-1)![0]
-    expect(submitted.provider_create).toEqual({
-      values: { device_id: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa' },
-      inherit_defaults: ['concurrency', 'priority', 'rate_multiplier', 'load_factor', 'responses_mode']
-    })
-    expect(submitted).not.toHaveProperty('concurrency')
-    expect(submitted.extra || {}).not.toHaveProperty('cindy_device_id_source')
   })
 
   it('keeps only the transport selector and removes account-level compatibility modes', async () => {

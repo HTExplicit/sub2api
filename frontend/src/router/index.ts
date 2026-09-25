@@ -13,7 +13,6 @@ import { useRoutePrefetch } from '@/composables/useRoutePrefetch'
 import { getSetupStatus } from '@/api/setup'
 import { resolveCompletedSetupRedirectPath } from './setupRedirect'
 import { resolveRouteDocumentTitle } from './title'
-import { cindyLegacyQuery } from './cindyLegacyRedirect'
 
 /**
  * Route definitions with lazy loading
@@ -564,19 +563,16 @@ const routes: RouteRecordRaw[] = [
     }
   },
   {
+    // Former Cindy page: Cindy accounts are ordinary OpenAI API-key accounts filed in the "cindy" folder.
     path: '/admin/cindy-accounts',
-    name: 'AdminCindyAccounts',
-    component: () => import('@/views/admin/CindyAccountsView.vue'),
-    meta: {
-      requiresAuth: true,
-      requiresAdmin: true,
-      title: 'Cindy Accounts',
-      titleKey: 'nav.cindyAccounts'
+    component: () => import('@/views/admin/AccountsView.vue'),
+    meta: { requiresAuth: true, requiresAdmin: true, title: 'Account Management', titleKey: 'admin.accounts.title' },
+    beforeEnter: async () => {
+      const { listFolders } = await import('@/api/admin/accounts')
+      const folders = await listFolders().catch(() => null)
+      const folder = folders?.find((item) => item.name.trim().toLowerCase() === 'cindy')
+      return { path: '/admin/accounts', query: folder ? { folder: String(folder.id) } : {} }
     }
-  },
-  {
-    path: '/admin/account-views/codexrip.cindy-provider/cindy-accounts',
-    redirect: to => ({ path: '/admin/cindy-accounts', query: cindyLegacyQuery(to.query) })
   },
   {
     path: '/admin/codex-runtime',

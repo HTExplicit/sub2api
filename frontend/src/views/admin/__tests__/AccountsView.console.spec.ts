@@ -1,5 +1,3 @@
-import { cindyAccount } from '@/__tests__/fixtures/cindyAccount'
-
 vi.mock('@/components/admin/account-jobs/AccountOperationDialog.vue', () => ({ default: { name: 'AccountOperationDialog', props: ['job', 'show'], template: '<div v-if="show"><slot/><slot name="footer"/></div>' } }))
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
@@ -17,11 +15,6 @@ const {
   listTags,
   getBatchTodayStats,
   getUpstreamBillingProbeSettings,
-  previewCindyInsufficientDeletion,
-  previewCindyBannedDeletion,
-  deleteCindyInsufficient,
-  deleteCindyBanned,
-  clearCindyBalanceInsufficient,
   showSuccess,
   jobTrack,
   reviewDuplicates,
@@ -38,11 +31,6 @@ const {
   listTags: vi.fn(),
   getBatchTodayStats: vi.fn(),
   getUpstreamBillingProbeSettings: vi.fn(),
-  previewCindyInsufficientDeletion: vi.fn(),
-  previewCindyBannedDeletion: vi.fn(),
-  deleteCindyInsufficient: vi.fn(),
-  deleteCindyBanned: vi.fn(),
-  clearCindyBalanceInsufficient: vi.fn(),
   showSuccess: vi.fn(),
   jobTrack: vi.fn(),
   reviewDuplicates: vi.fn(),
@@ -74,11 +62,6 @@ vi.mock('@/api/admin', () => ({
       listTags,
       getBatchTodayStats,
       getUpstreamBillingProbeSettings,
-      previewCindyInsufficientDeletion,
-      previewCindyBannedDeletion,
-      deleteCindyInsufficient,
-      deleteCindyBanned,
-      clearCindyBalanceInsufficient,
       delete: vi.fn(),
       batchClearError: vi.fn(),
       batchRefresh: vi.fn(),
@@ -109,9 +92,7 @@ vi.mock('vue-i18n', async () => {
     ...actual,
     useI18n: () => ({
       locale: { value: 'en' },
-      t: (key: string) => key === 'admin.accounts.cindyProbe.itemState.healthy'
-        ? 'Luna available this run'
-        : key
+      t: (key: string) => key
     })
   }
 })
@@ -130,9 +111,6 @@ const account = {
   extra: {},
   groups: [],
   tags: [],
-  cindy_balance_probe_job_id: 321,
-  cindy_balance_probe_outcome: 'healthy',
-  cindy_balance_probe_checked_at: '2032-08-16T00:02:00Z',
   created_at: '2026-07-29T00:00:00Z',
   updated_at: '2026-07-29T00:00:00Z'
 }
@@ -163,7 +141,6 @@ const DataTableStub = {
         <button data-test="open-row" @click="$emit('row-click', row)">{{ row.name }}</button>
         <slot name="cell-select" :row="row" />
         <slot name="cell-name" :row="row" :value="row.name" />
-        <slot v-for="column in columns.filter(column => column.key === 'cindy_probe')" :name="'cell-' + column.key" :row="row" />
       </div>
     </div>
   `
@@ -205,12 +182,12 @@ const commonStubs = {
   TablePageLayout: { template: '<div><slot name="filters" /><slot name="table" /><slot name="pagination" /></div>' },
   DataTable: DataTableStub,
   AccountCompactList: {
-    props: ['accounts', 'todayStats', 'todayStatsLoading', 'todayStatsError', 'manualRefreshToken', 'showCindyProbe'],
-    template: '<div data-test="view-compact" :data-show-cindy-probe="String(!!showCindyProbe)" :data-refresh-token="String(manualRefreshToken)" :data-requests="String(todayStats[String(accounts[0]?.id)]?.requests ?? -1)">{{ accounts.length }}</div>'
+    props: ['accounts', 'todayStats', 'todayStatsLoading', 'todayStatsError', 'manualRefreshToken'],
+    template: '<div data-test="view-compact" :data-refresh-token="String(manualRefreshToken)" :data-requests="String(todayStats[String(accounts[0]?.id)]?.requests ?? -1)">{{ accounts.length }}</div>'
   },
   AccountCardGrid: {
-    props: ['accounts', 'todayStats', 'todayStatsLoading', 'todayStatsError', 'manualRefreshToken', 'showCindyProbe'],
-    template: '<div data-test="view-cards" :data-show-cindy-probe="String(!!showCindyProbe)" :data-refresh-token="String(manualRefreshToken)" :data-requests="String(todayStats[String(accounts[0]?.id)]?.requests ?? -1)">{{ accounts.length }}</div>'
+    props: ['accounts', 'todayStats', 'todayStatsLoading', 'todayStatsError', 'manualRefreshToken'],
+    template: '<div data-test="view-cards" :data-refresh-token="String(manualRefreshToken)" :data-requests="String(todayStats[String(accounts[0]?.id)]?.requests ?? -1)">{{ accounts.length }}</div>'
   },
   AccountViewModeSwitcher: ViewModeStub,
   AccountConsoleFilters: { props: ['modelValue'], template: '<div data-test="console-account-ids">{{ modelValue.account_ids.join(\',\') }}</div>' },
@@ -256,7 +233,7 @@ const commonStubs = {
 
 const mountView = (
   plugins: any[] = [],
-  props: { scope?: 'all' | 'cindy' } = {},
+  props: Record<string, unknown> = {},
   slots: Record<string, any> = {},
 ) => mount(AccountsView, {
   props,
@@ -294,11 +271,6 @@ describe('admin AccountsView Cockpit console', () => {
     listTags.mockReset().mockResolvedValue([])
     getBatchTodayStats.mockReset().mockResolvedValue({ stats: {} })
     getUpstreamBillingProbeSettings.mockReset().mockResolvedValue({ enabled: true, interval_minutes: 30 })
-    previewCindyInsufficientDeletion.mockReset().mockResolvedValue({ count: 2, fingerprint: 'fingerprint-2' })
-    previewCindyBannedDeletion.mockReset().mockResolvedValue({ count: 1, fingerprint: 'banned-fingerprint' })
-    deleteCindyInsufficient.mockReset().mockResolvedValue({ id: 72, kind: 'cindy_cleanup', status: 'pending' })
-    deleteCindyBanned.mockReset().mockResolvedValue({ id: 73, kind: 'cindy_banned_cleanup', status: 'pending' })
-    clearCindyBalanceInsufficient.mockReset().mockResolvedValue({ ...account, cindy_balance_insufficient: false })
     showSuccess.mockReset()
     jobTrack.mockReset()
     reviewDuplicates.mockReset()
@@ -326,12 +298,10 @@ describe('admin AccountsView Cockpit console', () => {
 
     await wrapper.get('[data-test="mode-compact"]').trigger('click')
     expect(wrapper.find('[data-test="view-compact"]').exists()).toBe(true)
-    expect(wrapper.get('[data-test="view-compact"]').attributes('data-show-cindy-probe')).toBe('false')
     expect(localStorage.getItem('account-console-view-mode')).toBe('compact')
 
     await wrapper.get('[data-test="mode-cards"]').trigger('click')
     expect(wrapper.find('[data-test="view-cards"]').exists()).toBe(true)
-    expect(wrapper.get('[data-test="view-cards"]').attributes('data-show-cindy-probe')).toBe('false')
     expect(localStorage.getItem('account-console-view-mode')).toBe('cards')
     wrapper.unmount()
 
@@ -513,64 +483,12 @@ describe('admin AccountsView Cockpit console', () => {
     wrapper.unmount()
   })
 
-  it('binds native Cindy filters and only shows cleanup controls while their matching preset is selected', async () => {
-    getFacets.mockResolvedValue({ total: 4, uncategorized_count: 4, cindy_total: 4, cindy_insufficient_count: 2, cindy_banned_count: 1, platforms: [], types: [], statuses: [], plans: [], proxies: [], folders: [], tags: [] })
-    const wrapper = mountView()
-    await flushPromises()
-    expect(wrapper.find('[data-test="delete-cindy-insufficient"]').exists()).toBe(false)
-    const buttons = () => wrapper.get('[data-test="cindy-account-view"]').findAll('button')
-    expect(buttons()).toHaveLength(4)
-    await buttons()[2].trigger('click'); await flushPromises()
-    expect(listAccounts.mock.lastCall?.[2]).toMatchObject({ cindy_only: 'true', cindy_balance_status: 'insufficient' })
-    expect(wrapper.find('[data-test="delete-cindy-insufficient"]').exists()).toBe(true)
-    expect(wrapper.findComponent({ name: 'CindyBalanceProbePanel' }).exists()).toBe(false)
-    expect(wrapper.findComponent({ name: 'CindyDuplicateInventoryPanel' }).exists()).toBe(false)
-    await buttons()[0].trigger('click'); await flushPromises()
-    expect(wrapper.find('[data-test="delete-cindy-insufficient"]').exists()).toBe(false)
-    expect(listAccounts.mock.lastCall?.[2]).toMatchObject({ cindy_only: undefined, cindy_balance_status: undefined })
-    expect(listAccounts.mock.lastCall?.[4]).toBeUndefined()
-    wrapper.unmount()
-  })
-
-  it('keeps native Cindy scope even when the legacy query tries to disable it', async () => {
-    const router = createRouter({ history: createMemoryHistory(), routes: [{ path: '/admin/cindy-accounts', component: { template: '<div />' } }] })
-    await router.push('/admin/cindy-accounts?cindy_only=false'); await router.isReady()
-    const wrapper = mountView([router], { scope: 'cindy' })
-    await flushPromises()
-    expect(wrapper.get('[data-test="cindy-account-view"]').findAll('button')).toHaveLength(3)
-    expect(listAccounts.mock.calls.every(call => call[2]?.cindy_only === 'true')).toBe(true)
-    expect(listAccounts.mock.calls.every(call => call[4] === undefined)).toBe(true)
-    expect(router.currentRoute.value.query.cindy_only).toBe('true')
-    await router.push('/admin/cindy-accounts?cindy_only=false&cindy_balance_status=insufficient'); await flushPromises()
-    expect(listAccounts.mock.lastCall?.[2]?.cindy_balance_status).toBe('insufficient')
-    expect(router.currentRoute.value.query.cindy_only).toBe('true')
-    wrapper.unmount()
-  })
-
-  it('renders native Cindy probe columns in all layouts while core remains unchanged', async () => {
-    const ordinary = mountView(); await flushPromises()
-    expect(ordinary.get('[data-test="view-table"]').attributes('data-columns')).not.toContain('cindy_probe')
-    ordinary.unmount()
-    listAccounts.mockResolvedValue({ items: [cindyAccount()], total: 1, page: 1, page_size: 20, pages: 1 })
-    const scoped = mountView([], { scope: 'cindy' }); await flushPromises()
-    expect(scoped.get('[data-test="view-table"]').attributes('data-columns')).toContain('cindy_probe')
-    expect(scoped.get('[data-test="cindy-probe-summary"]').text()).toContain('#321')
-    await scoped.get('[data-test="mode-compact"]').trigger('click')
-    expect(scoped.get('[data-test="view-compact"]').attributes('data-show-cindy-probe')).toBe('true')
-    await scoped.get('[data-test="mode-cards"]').trigger('click')
-    expect(scoped.get('[data-test="view-cards"]').attributes('data-show-cindy-probe')).toBe('true')
-    scoped.unmount()
-  })
-
-  // Cleanup fingerprints/409/no-op and banned-vs-insufficient behavior moved
-  // with their UI to CindyAccountControls.spec.ts. They are not host handlers.
-
   it('preserves the account list and performs no reads when account testing closes', async () => {
     const router = createRouter({
       history: createMemoryHistory(),
       routes: [{ path: '/admin/accounts', component: { template: '<div />' } }]
     })
-    await router.push('/admin/accounts?group_id=23&cindy_balance_status=insufficient&page=3&page_size=100&sort_by=id&sort_order=desc')
+    await router.push('/admin/accounts?group_id=23&page=3&page_size=100&sort_by=id&sort_order=desc')
     await router.isReady()
     const rows = Array.from({ length: 100 }, (_, index) => ({ ...account, id: index + 201 }))
     listAccounts.mockResolvedValue({ items: rows, total: 400, page: 3, page_size: 100, pages: 4 })
@@ -590,7 +508,7 @@ describe('admin AccountsView Cockpit console', () => {
       const currentSort = { ...vm.sortState }
       const currentURL = router.currentRoute.value.fullPath
       const reads = [listAccounts, listWithEtag, getById, getFacets, listFolders, listTags,
-        getBatchTodayStats, previewCindyInsufficientDeletion, previewCindyBannedDeletion]
+        getBatchTodayStats]
       reads.forEach(read => read.mockClear())
 
       await wrapper.get('[data-test="close-account-test"]').trigger('click')

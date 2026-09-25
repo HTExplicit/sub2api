@@ -20,7 +20,6 @@ import type {
   AccountUsageInfo,
   WindowStats,
   AccountAvailableModel,
-  AccountEditContext,
   AccountUsageStatsResponse,
   TempUnschedulableStatus,
   AdminDataPayload,
@@ -62,9 +61,6 @@ export interface AccountListFilters {
   privacy_mode?: string
   lite?: string
   include_scheduler_score?: string
-  cindy_only?: string
-  cindy_balance_status?: 'insufficient'
-  cindy_health_status?: 'banned'
   sort_by?: string
   sort_order?: 'asc' | 'desc'
 }
@@ -619,12 +615,6 @@ export async function getAvailableModels(id: number, view?: CapturedAccountView)
   return data
 }
 
-/** Stored identity selects the edit profile; no caller-selected provider or URL. */
-export async function getEditContext(id: number, signal?: AbortSignal, view?: CapturedAccountView): Promise<AccountEditContext> {
-  const { data } = await accountViewClient(view).get<AccountEditContext>(`/admin/accounts/${id}/edit-context`, { signal })
-  return data
-}
-
 export async function getAccountTestPlan(id: number, signal?: AbortSignal, view?: CapturedAccountView): Promise<import('@/types').AccountTestPlanView> {
   const { data } = await accountViewClient(view).get<import('@/types').AccountTestPlanView>(`/admin/accounts/${id}/models`, {
     params: { view: 'account-test-plan-v1' }, signal,
@@ -838,8 +828,8 @@ export async function exportData(options?: {
   } else if (options?.filters) {
     const exportFilterKeys: Array<keyof AccountListFilters> = [
       'platform', 'type', 'status', 'platforms', 'types', 'statuses', 'plans', 'proxies',
-      'folders', 'folder', 'tags', 'account_ids', 'group_id', 'privacy_mode', 'cindy_only',
-      'cindy_balance_status', 'cindy_health_status', 'search', 'sort_by', 'sort_order'
+      'folders', 'folder', 'tags', 'account_ids', 'group_id', 'privacy_mode',
+      'search', 'sort_by', 'sort_order'
     ]
     for (const key of exportFilterKeys) {
       const value = options.filters[key]
@@ -857,15 +847,13 @@ export async function importData(payload: {
   data: AdminDataPayload
   skip_default_group_bind?: boolean
   uniform_settings?: AdminDataImportUniformSettings
-  target_group_id?: number | null
 }): Promise<AccountJob> {
   const { data } = await apiClient.post<AccountJob>(
     '/admin/accounts/data',
     {
       data: payload.data,
       skip_default_group_bind: payload.skip_default_group_bind,
-      uniform_settings: payload.uniform_settings,
-      ...(payload.target_group_id == null ? {} : { target_group_id: payload.target_group_id })
+      uniform_settings: payload.uniform_settings
     },
     accountJobIdempotencyHeaders('account_import')
   )
@@ -883,7 +871,6 @@ export async function previewImportData(payload: {
   data: AdminDataPayload
   skip_default_group_bind?: boolean
   uniform_settings?: AdminDataImportUniformSettings
-  target_group_id?: number | null
 }): Promise<AccountImportPreview> {
   const { data } = await apiClient.post<AccountImportPreview>('/admin/accounts/data/preview', payload)
   return data
@@ -1044,59 +1031,6 @@ export async function batchDelete(accountIds: number[], view?: CapturedAccountVi
     { account_ids: accountIds },
     accountJobIdempotencyHeaders('account_batch_delete')
   )
-  return data
-}
-
-export interface CindyInsufficientDeletePreview {
-  count: number
-  fingerprint: string
-}
-
-export interface CindyDuplicateIdentityGroup {
-  identity_hash: string
-  proposed_owner_id: number
-  other_account_ids: number[]
-}
-
-export async function getCindyDuplicateIdentityInventory(): Promise<CindyDuplicateIdentityGroup[]> {
-  const { data } = await apiClient.get<CindyDuplicateIdentityGroup[]>(
-    '/admin/accounts/cindy/duplicate-identity-inventory'
-  )
-  return data
-}
-
-export async function previewCindyInsufficientDeletion(): Promise<CindyInsufficientDeletePreview> {
-  const { data } = await apiClient.get<CindyInsufficientDeletePreview>('/admin/accounts/cindy/insufficient-delete-preview')
-  return data
-}
-
-export async function previewCindyBannedDeletion(): Promise<CindyInsufficientDeletePreview> {
-  const { data } = await apiClient.get<CindyInsufficientDeletePreview>('/admin/accounts/cindy/banned-delete-preview')
-  return data
-}
-
-export async function deleteCindyBanned(preview: CindyInsufficientDeletePreview): Promise<AccountJob> {
-  const { data } = await apiClient.post<AccountJob>('/admin/accounts/cindy/delete-banned', {
-    expected_count: preview.count,
-    fingerprint: preview.fingerprint
-  }, accountJobIdempotencyHeaders('cindy_banned_cleanup'))
-  return data
-}
-
-export async function deleteCindyInsufficient(preview: CindyInsufficientDeletePreview): Promise<AccountJob> {
-  const { data } = await apiClient.post<AccountJob>(
-    '/admin/accounts/cindy/delete-insufficient',
-    {
-      expected_count: preview.count,
-      fingerprint: preview.fingerprint
-    },
-    accountJobIdempotencyHeaders('cindy_confirmed_cleanup')
-  )
-  return data
-}
-
-export async function clearCindyBalanceInsufficient(accountId: number): Promise<Account> {
-  const { data } = await apiClient.post<Account>(`/admin/accounts/${accountId}/cindy-balance/recover`)
   return data
 }
 
@@ -1428,7 +1362,6 @@ export const accountsAPI = {
   resetTempUnschedulable,
   setSchedulable,
   getAvailableModels,
-  getEditContext,
   getAccountTestPlan,
   getModelContextCapacities,
   previewModelContextCapacities,
@@ -1462,12 +1395,6 @@ export const accountsAPI = {
   createOpenAICodexPAT,
   getAntigravityDefaultModelMapping,
   batchDelete,
-  previewCindyInsufficientDeletion,
-  getCindyDuplicateIdentityInventory,
-  deleteCindyInsufficient,
-  previewCindyBannedDeletion,
-  deleteCindyBanned,
-  clearCindyBalanceInsufficient,
   batchClearError,
   batchRefresh,
   batchRefreshTier,
@@ -1529,7 +1456,6 @@ const viewArgumentCounts: Partial<Record<keyof typeof accountsAPI, number>> = {
   getBatchTodayStats: 1,
   setSchedulable: 2,
   getAvailableModels: 1,
-  getEditContext: 2,
   getAccountTestPlan: 2,
   getModelContextCapacities: 2,
   syncUpstreamModels: 1,

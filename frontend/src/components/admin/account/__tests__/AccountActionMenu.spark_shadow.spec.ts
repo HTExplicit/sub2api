@@ -54,20 +54,6 @@ describe('AccountActionMenu — spark shadow 按钮可见性', () => {
     expect(document.body.querySelector('[data-test="codex-harvest"]')).not.toBeNull()
     wrapper.unmount()
   })
-  it('restores the native Cindy recovery action for only the displayed account', async () => {
-    const account = makeAccount({ cindy_balance_insufficient: true })
-    const wrapper = mount(AccountActionMenu, {
-      props: { show: true, account, anchorRect },
-      attachTo: document.body,
-    })
-    const recover = getBodyButtons().find(b => b.textContent?.includes('admin.accounts.cindy.recover'))!
-    expect(recover).toBeDefined()
-    recover.click()
-    await wrapper.vm.$nextTick()
-    expect(wrapper.emitted('recover-cindy-balance')?.[0]).toEqual([account])
-    wrapper.unmount()
-  })
-
   it('普通账号显示「复制账号」按钮', () => {
     const account = makeAccount({ platform: 'anthropic', type: 'apikey', parent_account_id: null })
     const wrapper = mount(AccountActionMenu, {
