@@ -21,7 +21,7 @@
     >
       <aside
         v-if="account"
-        class="fixed inset-y-0 right-0 z-[10001] flex w-full max-w-xl flex-col border-l border-gray-200 bg-white shadow-outline dark:border-dark-700 dark:bg-dark-900"
+        class="fixed inset-y-0 right-0 z-[10001] flex w-full max-w-xl flex-col border-l border-gray-200 bg-white shadow-2xl dark:border-dark-700 dark:bg-dark-900"
         role="dialog"
         aria-modal="true"
         :aria-label="t('admin.accounts.detailsTitle')"
@@ -57,7 +57,7 @@
               />
               <AccountStatusIndicator :account="account" @show-temp-unsched="emit('showTempUnsched', account)" />
               <span
-                class="inline-flex items-center rounded-none px-2 py-0.5 text-xs font-medium"
+                class="inline-flex items-center rounded px-2 py-0.5 text-xs font-medium"
                 :class="account.schedulable
                   ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-900/20 dark:text-emerald-300'
                   : 'bg-gray-100 text-gray-600 dark:bg-dark-700 dark:text-gray-300'"
@@ -65,7 +65,7 @@
                 {{ account.schedulable ? t('admin.accounts.schedulableEnabled') : t('admin.accounts.schedulableDisabled') }}
               </span>
             </div>
-            <p v-if="account.error_message" class="mt-3 whitespace-pre-wrap rounded-none bg-red-50 px-3 py-2 text-xs text-red-700 dark:bg-red-900/20 dark:text-red-300">
+            <p v-if="account.error_message" class="mt-3 whitespace-pre-wrap rounded bg-red-50 px-3 py-2 text-xs text-red-700 dark:bg-red-900/20 dark:text-red-300">
               {{ account.error_message }}
             </p>
             <p v-if="account.temp_unschedulable_reason" class="mt-2 whitespace-pre-wrap text-xs text-amber-700 dark:text-amber-300">

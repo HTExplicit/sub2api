@@ -4,7 +4,7 @@
       <button
         ref="mobileTriggerRef"
         type="button"
-        class="flex min-h-11 w-full items-center justify-between gap-3 rounded-none border border-gray-200 bg-white px-3 text-left text-sm text-gray-800 dark:border-dark-700 dark:bg-dark-800 dark:text-gray-100"
+        class="flex min-h-11 w-full items-center justify-between gap-3 rounded-md border border-gray-200 bg-white px-3 text-left text-sm text-gray-800 shadow-sm dark:border-dark-700 dark:bg-dark-800 dark:text-gray-100"
         aria-haspopup="listbox"
         :aria-expanded="mobileOpen"
         @click="mobileOpen = !mobileOpen"
@@ -20,17 +20,17 @@
       </button>
       <div
         v-if="mobileOpen"
-        class="absolute inset-x-3 top-[calc(100%-0.5rem)] z-30 max-h-72 overflow-y-auto rounded-none border border-gray-200 bg-white p-1 dark:border-dark-700 dark:bg-dark-800"
+        class="absolute inset-x-3 top-[calc(100%-0.5rem)] z-30 max-h-72 overflow-y-auto rounded-md border border-gray-200 bg-white p-1 shadow-lg dark:border-dark-700 dark:bg-dark-800"
         role="listbox"
         :aria-label="t('admin.accounts.managementClassification')"
         @keydown="handleMobileMenuKeydown"
       >
-        <button v-if="error" type="button" class="flex min-h-11 w-full items-center justify-between rounded-none px-3 text-left text-sm text-red-600 hover:bg-red-50 dark:text-red-300 dark:hover:bg-red-900/20" @click="emit('retry')">
+        <button v-if="error" type="button" class="flex min-h-11 w-full items-center justify-between rounded px-3 text-left text-sm text-red-600 hover:bg-red-50 dark:text-red-300 dark:hover:bg-red-900/20" @click="emit('retry')">
           <span>{{ t('admin.accounts.facetsLoadFailed') }}</span>
           <span class="font-medium text-primary-700 dark:text-primary-300">{{ t('common.retry') }}</span>
         </button>
         <div v-else-if="loading" class="space-y-2 p-2" aria-live="polite">
-          <div v-for="index in 3" :key="index" class="h-9 animate-pulse rounded-none bg-gray-200/70 dark:bg-dark-700" />
+          <div v-for="index in 3" :key="index" class="h-9 animate-pulse rounded bg-gray-200/70 dark:bg-dark-700" />
         </div>
         <template v-else>
         <button
@@ -39,7 +39,7 @@
           type="button"
           role="option"
           :aria-selected="activeFolder === item.value"
-          class="flex min-h-11 w-full items-center justify-between gap-3 rounded-none px-3 text-left text-sm hover:bg-gray-100 dark:hover:bg-dark-700"
+          class="flex min-h-11 w-full items-center justify-between gap-3 rounded px-3 text-left text-sm hover:bg-gray-100 dark:hover:bg-dark-700"
           :class="activeFolder === item.value ? 'font-semibold text-primary-700 dark:text-primary-300' : 'text-gray-700 dark:text-gray-200'"
           @click="selectMobile(item.value)"
         >
@@ -47,7 +47,7 @@
           <span class="shrink-0 tabular-nums text-gray-400">{{ formatCount(item.count) }}</span>
         </button>
         </template>
-        <button type="button" class="flex min-h-11 w-full items-center gap-2 rounded-none px-3 text-sm text-gray-600 hover:bg-gray-100 dark:text-dark-300 dark:hover:bg-dark-700" @click="manageMobile">
+        <button type="button" class="flex min-h-11 w-full items-center gap-2 rounded px-3 text-sm text-gray-600 hover:bg-gray-100 dark:text-dark-300 dark:hover:bg-dark-700" @click="manageMobile">
           <Icon name="cog" size="sm" />
           <span>{{ t('admin.accounts.manageTaxonomy') }}</span>
         </button>
@@ -65,7 +65,7 @@
 
       <nav class="min-w-0 flex-1 overflow-x-auto" :aria-label="t('admin.accounts.managementClassification')" data-test="desktop-taxonomy-nav">
         <div v-if="loading" class="flex min-w-max items-center gap-2 py-1" aria-live="polite">
-          <div v-for="index in 3" :key="index" class="h-9 w-28 animate-pulse rounded-none bg-gray-200/70 dark:bg-dark-700" />
+          <div v-for="index in 3" :key="index" class="h-9 w-28 animate-pulse rounded bg-gray-200/70 dark:bg-dark-700" />
         </div>
         <div v-else-if="error" class="flex min-h-10 items-center gap-3 py-1 text-xs text-red-600 dark:text-red-300" role="status">
           <span>{{ t('admin.accounts.facetsLoadFailed') }}</span>
@@ -78,7 +78,7 @@
             v-for="item in navigationItems"
             :key="item.value || 'all'"
             type="button"
-            class="flex min-h-10 shrink-0 items-center justify-between gap-2 rounded-none px-3 text-left text-sm transition-colors"
+            class="flex min-h-10 shrink-0 items-center justify-between gap-2 rounded-md px-3 text-left text-sm transition-colors"
             :class="activeFolder === item.value ? 'font-semibold text-primary-700 dark:text-primary-300 border-b-2 border-primary-500' : 'text-gray-600 hover:bg-gray-100 dark:text-dark-300 dark:hover:bg-dark-800'"
             data-test="desktop-taxonomy-option"
             @click="emit('select', item.value)"

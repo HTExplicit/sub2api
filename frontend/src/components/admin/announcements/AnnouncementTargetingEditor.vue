@@ -1,5 +1,5 @@
 <template>
-  <div class="rounded-none border border-gray-200 bg-gray-50 p-4 dark:border-dark-700 dark:bg-dark-800">
+  <div class="rounded-2xl border border-gray-200 bg-gray-50 p-4 dark:border-dark-700 dark:bg-dark-800/50">
     <div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
       <div>
         <div class="text-sm font-medium text-gray-900 dark:text-white">
@@ -89,7 +89,7 @@
           <div
             v-for="(cond, condIndex) in (group.all_of || [])"
             :key="condIndex"
-            class="rounded-none border border-gray-200 bg-gray-50 p-3 dark:border-dark-700 dark:bg-dark-900"
+            class="rounded-xl border border-gray-200 bg-gray-50 p-3 dark:border-dark-700 dark:bg-dark-900/30"
           >
             <div class="flex flex-col gap-3 md:flex-row md:items-end">
               <div class="w-full md:w-52">

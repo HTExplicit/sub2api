@@ -56,9 +56,9 @@
       </div>
     </form>
     <div v-if="error" role="alert" class="mt-4 rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700 dark:bg-red-950/30 dark:text-red-300">{{ error }}</div>
-    <div class="mt-5 overflow-x-auto rounded-xl border border-gray-200 dark:border-dark-700">
+    <div class="mt-5 overflow-x-auto rounded-xl border border-gray-200 dark:border-dark-700/60">
       <table class="min-w-[1120px] w-full text-left text-sm">
-        <thead class="bg-gray-50 text-xs uppercase tracking-wide text-gray-500 dark:bg-dark-900 dark:text-dark-400">
+        <thead class="bg-gray-50 text-xs uppercase tracking-wide text-gray-500 dark:bg-dark-900/70 dark:text-dark-400">
           <tr>
             <th class="w-10 px-3 py-3"><input type="checkbox" :checked="allSelected" :aria-label="t('admin.promptAudit.events.selectAll')" @change="toggleAll" /></th>
             <th class="px-3 py-3 font-medium">{{ t('admin.promptAudit.events.time') }}</th>
@@ -73,7 +73,7 @@
         <tbody class="divide-y divide-gray-100 bg-white dark:divide-dark-700 dark:bg-transparent">
           <tr v-if="loading"><td colspan="8" class="px-4 py-12 text-center text-gray-500" aria-busy="true">{{ t('common.loading') }}</td></tr>
           <tr v-else-if="events.length === 0"><td colspan="8" class="px-4 py-12 text-center text-gray-500">{{ t('admin.promptAudit.events.empty') }}</td></tr>
-          <tr v-for="event in events" v-else :key="event.id" :data-test="`event-${event.id}`" class="align-top hover:bg-gray-50/70 dark:hover:bg-dark-800">
+          <tr v-for="event in events" v-else :key="event.id" :data-test="`event-${event.id}`" class="align-top hover:bg-gray-50/70 dark:hover:bg-dark-800/70">
             <td class="px-3 py-3"><input type="checkbox" :checked="selectedIds.includes(event.id)" :aria-label="t('admin.promptAudit.events.selectEvent', { id: event.id })" @change="toggleOne(event.id)" /></td>
             <td class="whitespace-nowrap px-3 py-3 text-xs text-gray-600 dark:text-dark-300">{{ formatDate(event.created_at) }}</td>
             <td class="px-3 py-3">
@@ -152,7 +152,7 @@ const CopyLine = defineComponent({
       h('span', { class: 'w-16 flex-none text-gray-500 dark:text-dark-400' }, componentProps.label),
       h('span', { class: 'min-w-0 flex-1 truncate text-gray-800 dark:text-dark-100' }, componentProps.value || '—'),
       componentProps.value ? h('button', {
-        type: 'button', class: 'text-primary-600 dark:text-primary-400 hover:underline', 'aria-label': `${t('common.copy')} ${componentProps.label}`,
+        type: 'button', class: 'text-primary-600 hover:underline', 'aria-label': `${t('common.copy')} ${componentProps.label}`,
         onClick: () => navigator.clipboard?.writeText(componentProps.value),
       }, t('common.copy')) : null,
     ])

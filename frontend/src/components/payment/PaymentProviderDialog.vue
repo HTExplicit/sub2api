@@ -43,9 +43,9 @@
               type="button"
               @click="form.payment_mode = mode.value"
               :class="[
-                'rounded-none border px-2.5 py-1 text-xs font-medium transition-all',
+                'rounded-lg border px-2.5 py-1 text-xs font-medium transition-all',
                 form.payment_mode === mode.value
-                  ? 'border-primary-500 bg-primary-500 text-white'
+                  ? 'border-primary-500 bg-primary-500 text-white shadow-sm'
                   : 'border-gray-300 bg-white text-gray-600 hover:border-gray-400 hover:bg-gray-50 dark:border-dark-600 dark:bg-dark-800 dark:text-gray-300 dark:hover:border-dark-500',
               ]"
             >{{ mode.label }}</button>
@@ -60,9 +60,9 @@
               type="button"
               @click="toggleType(pt.value)"
               :class="[
-                'rounded-none border px-2.5 py-1 text-xs font-medium transition-all',
+                'rounded-lg border px-2.5 py-1 text-xs font-medium transition-all',
                 isTypeSelected(pt.value)
-                  ? 'border-primary-500 bg-primary-500 text-white'
+                  ? 'border-primary-500 bg-primary-500 text-white shadow-sm'
                   : 'border-gray-300 bg-white text-gray-600 hover:border-gray-400 hover:bg-gray-50 dark:border-dark-600 dark:bg-dark-800 dark:text-gray-300 dark:hover:border-dark-500',
               ]"
             >{{ pt.label }}</button>
@@ -124,7 +124,7 @@
             <template #trigger>
               <button
                 type="button"
-                class="inline-flex h-5 w-5 items-center justify-center rounded-full border border-gray-300 text-[11px] font-semibold text-muted transition-colors hover:border-primary-500 hover:text-primary-600 dark:border-dark-500 dark:hover:border-primary-400 dark:hover:text-primary-400"
+                class="inline-flex h-5 w-5 items-center justify-center rounded-full border border-gray-300 text-[11px] font-semibold text-gray-400 transition-colors hover:border-primary-500 hover:text-primary-600 dark:border-dark-500 dark:text-gray-500 dark:hover:border-primary-400 dark:hover:text-primary-400"
                 :aria-label="t('admin.settings.payment.paymentGuideTrigger')"
                 :title="t('admin.settings.payment.paymentGuideTrigger')"
               >
@@ -217,14 +217,14 @@
             <label class="input-label">{{ t('admin.settings.payment.field_notifyUrl') }} <span class="text-red-500">*</span></label>
             <div class="flex">
               <input v-model="notifyBaseUrl" type="text" class="input min-w-0 flex-1 !rounded-r-none !border-r-0" :placeholder="defaultBaseUrl" />
-              <span class="inline-flex items-center whitespace-nowrap rounded-none border border-gray-300 bg-gray-50 px-3 text-xs text-gray-500 dark:border-dark-600 dark:bg-dark-700 dark:text-dark-300">{{ callbackPaths.notifyUrl }}</span>
+              <span class="inline-flex items-center whitespace-nowrap rounded-r-lg border border-gray-300 bg-gray-50 px-3 text-xs text-gray-500 dark:border-dark-600 dark:bg-dark-700 dark:text-gray-400">{{ callbackPaths.notifyUrl }}</span>
             </div>
           </div>
           <div v-if="callbackPaths.returnUrl">
             <label class="input-label">{{ t('admin.settings.payment.field_returnUrl') }} <span class="text-red-500">*</span></label>
             <div class="flex">
               <input v-model="returnBaseUrl" type="text" class="input min-w-0 flex-1 !rounded-r-none !border-r-0" :placeholder="defaultBaseUrl" />
-              <span class="inline-flex items-center whitespace-nowrap rounded-none border border-gray-300 bg-gray-50 px-3 text-xs text-gray-500 dark:border-dark-600 dark:bg-dark-700 dark:text-dark-300">{{ callbackPaths.returnUrl }}</span>
+              <span class="inline-flex items-center whitespace-nowrap rounded-r-lg border border-gray-300 bg-gray-50 px-3 text-xs text-gray-500 dark:border-dark-600 dark:bg-dark-700 dark:text-gray-400">{{ callbackPaths.returnUrl }}</span>
             </div>
           </div>
         </div>
@@ -288,7 +288,7 @@
               </div>
             </div>
           </div>
-          <p class="text-xs text-muted">{{ t('admin.settings.payment.limitsHint') }}</p>
+          <p class="text-xs text-gray-400 dark:text-gray-500">{{ t('admin.settings.payment.limitsHint') }}</p>
         </div>
       </div>
     </form>

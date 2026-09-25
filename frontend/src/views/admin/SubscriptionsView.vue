@@ -242,7 +242,7 @@
               :rate-multiplier="row.group.rate_multiplier"
               :show-rate="false"
             />
-            <span v-else class="text-sm text-muted">-</span>
+            <span v-else class="text-sm text-gray-400 dark:text-dark-500">-</span>
           </template>
 
           <template #cell-usage="{ row }">
@@ -365,7 +365,7 @@
                   !row.group?.weekly_limit_usd &&
                   !row.group?.monthly_limit_usd
                 "
-                class="flex items-center gap-2 rounded-none bg-emerald-50 px-3 py-2 dark:bg-emerald-900/20"
+                class="flex items-center gap-2 rounded-lg bg-gradient-to-r from-emerald-50 to-teal-50 px-3 py-2 dark:from-emerald-900/20 dark:to-teal-900/20"
               >
                 <span class="text-lg text-emerald-600 dark:text-emerald-400">∞</span>
                 <span class="text-xs font-medium text-emerald-700 dark:text-emerald-300">

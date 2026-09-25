@@ -399,7 +399,7 @@ onMounted(async () => {
 </script>
 
 <template>
-  <section class="rounded-none border border-gray-200 bg-white p-4 dark:border-dark-700 dark:bg-dark-900">
+  <section class="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm dark:border-dark-700 dark:bg-dark-900/60">
     <div class="mb-4 flex flex-wrap items-center justify-between gap-3">
       <div>
         <h3 class="text-sm font-bold text-gray-900 dark:text-white">{{ t('admin.ops.systemLogs.title') }}</h3>
@@ -413,7 +413,7 @@ onMounted(async () => {
       </div>
     </div>
 
-    <div class="mb-4 rounded-none border border-gray-200 bg-gray-50 p-3 dark:border-dark-700 dark:bg-dark-800">
+    <div class="mb-4 rounded-xl border border-gray-200 bg-gray-50 p-3 dark:border-dark-700 dark:bg-dark-800/70">
       <div class="mb-2 flex items-center justify-between">
         <div class="text-xs font-semibold text-gray-700 dark:text-gray-200">{{ t('admin.ops.systemLogs.runtimeConfig') }}</div>
         <span v-if="runtimeLoading" class="text-xs text-gray-500">{{ t('common.loading') }}</span>

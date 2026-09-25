@@ -75,9 +75,9 @@
               data-testid="codex-auth-mode-legacy"
               :aria-checked="codexAuthMode === 'legacy'"
               :class="[
-                'rounded-none px-3 py-2 text-sm font-medium transition-colors',
+                'rounded-md px-3 py-2 text-sm font-medium transition-colors',
                 codexAuthMode === 'legacy'
-                  ? 'bg-white text-primary-700 shadow-outline dark:bg-dark-800 dark:text-primary-300'
+                  ? 'bg-white text-primary-700 shadow-sm dark:bg-dark-800 dark:text-primary-300'
                   : 'text-gray-600 hover:text-gray-900 dark:text-dark-300 dark:hover:text-white'
               ]"
               @click="codexAuthMode = 'legacy'"
@@ -90,9 +90,9 @@
               data-testid="codex-auth-mode-api-key"
               :aria-checked="codexAuthMode === 'api-key'"
               :class="[
-                'rounded-none px-3 py-2 text-sm font-medium transition-colors',
+                'rounded-md px-3 py-2 text-sm font-medium transition-colors',
                 codexAuthMode === 'api-key'
-                  ? 'bg-white text-primary-700 shadow-outline dark:bg-dark-800 dark:text-primary-300'
+                  ? 'bg-white text-primary-700 shadow-sm dark:bg-dark-800 dark:text-primary-300'
                   : 'text-gray-600 hover:text-gray-900 dark:text-dark-300 dark:hover:text-white'
               ]"
               @click="codexAuthMode = 'api-key'"
@@ -175,7 +175,7 @@
         <section
           v-if="showCodexModelCatalog"
           data-testid="codex-model-catalog"
-          class="overflow-hidden rounded-none border border-gray-200 bg-gray-50 dark:border-dark-700 dark:bg-dark-800"
+          class="overflow-hidden rounded-lg border border-gray-200 bg-gray-50 dark:border-dark-700 dark:bg-dark-800/50"
         >
           <div class="flex flex-col gap-3 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
             <div class="min-w-0">

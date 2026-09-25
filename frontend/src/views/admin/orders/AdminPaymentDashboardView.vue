@@ -9,7 +9,7 @@
               v-for="d in DAYS_OPTIONS"
               :key="d"
               type="button"
-              class="px-3 py-1.5 text-xs font-medium transition-colors first:rounded-none last:rounded-none"
+              class="px-3 py-1.5 text-xs font-medium transition-colors first:rounded-l-lg last:rounded-r-lg"
               :class="days === d
                 ? 'bg-primary-600 text-white'
                 : 'text-gray-600 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-dark-700'"
@@ -104,7 +104,7 @@ function rankClass(idx: number): string {
   if (idx === 0) return 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400'
   if (idx === 1) return 'bg-gray-200 text-gray-600 dark:bg-gray-700 dark:text-gray-300'
   if (idx === 2) return 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400'
-  return 'bg-gray-100 text-gray-500 dark:bg-dark-700 dark:text-dark-300'
+  return 'bg-gray-100 text-gray-500 dark:bg-dark-700 dark:text-gray-400'
 }
 
 function sortedAmounts(amounts: CurrencyAmounts): [string, number][] {

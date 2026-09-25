@@ -13,7 +13,7 @@
             type="checkbox"
             :data-testid="`openai-reasoning-${field.key}-selected`"
             :checked="selected[field.key]"
-            class="rounded-none border-gray-300 text-primary-600 focus:ring-primary-500"
+            class="rounded border-gray-300 text-primary-600 focus:ring-primary-500"
             @change="selectField(field.key, $event)"
           />
           {{ t('admin.accounts.openai.reasoningPolicy.applyField') }}
@@ -29,7 +29,7 @@
         @update:model-value="updateField(field.key, $event)"
       />
     </div>
-    <p class="rounded-none bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:bg-amber-900/20 dark:text-amber-300">
+    <p class="rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:bg-amber-900/20 dark:text-amber-300">
       {{ t('admin.accounts.openai.reasoningPolicy.boundaryHint') }}
     </p>
   </div>

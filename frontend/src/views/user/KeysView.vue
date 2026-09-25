@@ -174,7 +174,7 @@
                   :peak-end="row.group.peak_end"
                   :peak-rate-multiplier="row.group.peak_rate_multiplier"
                 />
-                <span v-else class="text-sm text-muted">{{
+                <span v-else class="text-sm text-gray-400 dark:text-dark-500">{{
                   t('keys.noGroup')
                 }}</span>
                 <span class="text-xs text-gray-500 dark:text-gray-400">{{ t('keys.selectGroup') }}</span>
@@ -198,10 +198,10 @@
           <template #cell-current_concurrency="{ value }">
             <span
               :class="[
-                'inline-flex min-w-8 items-center justify-center rounded-none px-2 py-1 text-sm font-semibold tabular-nums',
+                'inline-flex min-w-8 items-center justify-center rounded px-2 py-1 text-sm font-semibold tabular-nums',
                 (value ?? 0) > 0
                   ? 'bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200 dark:bg-emerald-900/25 dark:text-emerald-300 dark:ring-emerald-800'
-                  : 'bg-gray-100 text-gray-500 dark:bg-dark-700 dark:text-dark-300'
+                  : 'bg-gray-100 text-gray-500 dark:bg-dark-700 dark:text-dark-400'
               ]"
             >
               {{ value ?? 0 }}
@@ -276,7 +276,7 @@
                     :style="{ width: Math.min((row.usage_5h / row.rate_limit_5h) * 100, 100) + '%' }"
                   />
                 </div>
-                <div v-if="row.reset_5h_at && formatResetTime(row.reset_5h_at)" class="text-[10px] text-muted tabular-nums">
+                <div v-if="row.reset_5h_at && formatResetTime(row.reset_5h_at)" class="text-[10px] text-gray-400 dark:text-gray-500 tabular-nums">
                   ⟳ {{ formatResetTime(row.reset_5h_at) }}
                 </div>
               </div>
@@ -304,7 +304,7 @@
                     :style="{ width: Math.min((row.usage_1d / row.rate_limit_1d) * 100, 100) + '%' }"
                   />
                 </div>
-                <div v-if="row.reset_1d_at && formatResetTime(row.reset_1d_at)" class="text-[10px] text-muted tabular-nums">
+                <div v-if="row.reset_1d_at && formatResetTime(row.reset_1d_at)" class="text-[10px] text-gray-400 dark:text-gray-500 tabular-nums">
                   ⟳ {{ formatResetTime(row.reset_1d_at) }}
                 </div>
               </div>
@@ -332,7 +332,7 @@
                     :style="{ width: Math.min((row.usage_7d / row.rate_limit_7d) * 100, 100) + '%' }"
                   />
                 </div>
-                <div v-if="row.reset_7d_at && formatResetTime(row.reset_7d_at)" class="text-[10px] text-muted tabular-nums">
+                <div v-if="row.reset_7d_at && formatResetTime(row.reset_7d_at)" class="text-[10px] text-gray-400 dark:text-gray-500 tabular-nums">
                   ⟳ {{ formatResetTime(row.reset_7d_at) }}
                 </div>
               </div>
@@ -347,7 +347,7 @@
                 {{ t('keys.resetUsage') }}
               </button>
             </div>
-            <span v-else class="text-sm text-muted">-</span>
+            <span v-else class="text-sm text-gray-400 dark:text-dark-500">-</span>
           </template>
 
           <template #cell-expires_at="{ value }">
@@ -357,7 +357,7 @@
             ]">
               {{ formatDateTime(value) }}
             </span>
-            <span v-else class="text-sm text-muted">{{ t('keys.noExpiration') }}</span>
+            <span v-else class="text-sm text-gray-400 dark:text-dark-500">{{ t('keys.noExpiration') }}</span>
           </template>
 
           <template #cell-status="{ value }">
@@ -376,14 +376,14 @@
             <span v-if="value" class="text-sm text-gray-500 dark:text-dark-400">
               {{ formatDateTime(value) }}
             </span>
-            <span v-else class="text-sm text-muted">-</span>
+            <span v-else class="text-sm text-gray-400 dark:text-dark-500">-</span>
           </template>
 
           <template #cell-last_used_ip="{ value }">
             <span v-if="value" class="text-sm text-gray-500 dark:text-dark-400">
               {{ value }}
             </span>
-            <span v-else class="text-sm text-muted">-</span>
+            <span v-else class="text-sm text-gray-400 dark:text-dark-500">-</span>
           </template>
 
           <template #cell-created_at="{ value }">
@@ -511,7 +511,7 @@
                   <span
                     v-for="platform in KEY_GROUP_PROVIDER_ICONS[provider.value]"
                     :key="platform"
-                    class="flex h-6 w-6 shrink-0 items-center justify-center rounded-none"
+                    class="flex h-6 w-6 shrink-0 items-center justify-center rounded-md"
                     :class="platformBadgeLightClass(platform)"
                   >
                     <PlatformIcon :platform="platform" size="md" />
@@ -594,7 +594,7 @@
             >
               <span
                 :class="[
-                  'pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow-outline ring-0 transition duration-200 ease-in-out',
+                  'pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out',
                   formData.use_custom_key ? 'translate-x-4' : 'translate-x-0'
                 ]"
               />
@@ -636,7 +636,7 @@
             >
               <span
                 :class="[
-                  'pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow-outline ring-0 transition duration-200 ease-in-out',
+                  'pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out',
                   formData.enable_ip_restriction ? 'translate-x-4' : 'translate-x-0'
                 ]"
               />
@@ -684,7 +684,7 @@
             >
               <span
                 :class="[
-                  'pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow-outline ring-0 transition duration-200 ease-in-out',
+                  'pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out',
                   formData.enable_quota ? 'translate-x-4' : 'translate-x-0'
                 ]"
               />
@@ -748,7 +748,7 @@
             >
               <span
                 :class="[
-                  'pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow-outline ring-0 transition duration-200 ease-in-out',
+                  'pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out',
                   formData.enable_rate_limit ? 'translate-x-4' : 'translate-x-0'
                 ]"
               />
@@ -922,7 +922,7 @@
             >
               <span
                 :class="[
-                  'pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow-outline ring-0 transition duration-200 ease-in-out',
+                  'pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out',
                   formData.enable_expiration ? 'translate-x-4' : 'translate-x-0'
                 ]"
               />
@@ -938,10 +938,10 @@
                 type="button"
                 @click="setExpirationDays(parseInt(days))"
                 :class="[
-                  'rounded-none px-3 py-1.5 text-sm transition-colors',
+                  'rounded-lg px-3 py-1.5 text-sm transition-colors',
                   formData.expiration_preset === days
                     ? 'bg-primary-100 text-primary-700 dark:bg-primary-900/30 dark:text-primary-400'
-                    : 'bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-dark-700 dark:text-dark-300 dark:hover:bg-dark-600'
+                    : 'bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-dark-700 dark:text-gray-400 dark:hover:bg-dark-600'
                 ]"
               >
                 {{ showEditModal ? t('keys.extendDays', { days }) : t('keys.expiresInDays', { days }) }}
@@ -950,10 +950,10 @@
                 type="button"
                 @click="formData.expiration_preset = 'custom'"
                 :class="[
-                  'rounded-none px-3 py-1.5 text-sm transition-colors',
+                  'rounded-lg px-3 py-1.5 text-sm transition-colors',
                   formData.expiration_preset === 'custom'
                     ? 'bg-primary-100 text-primary-700 dark:bg-primary-900/30 dark:text-primary-400'
-                    : 'bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-dark-700 dark:text-dark-300 dark:hover:bg-dark-600'
+                    : 'bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-dark-700 dark:text-gray-400 dark:hover:bg-dark-600'
                 ]"
               >
                 {{ t('keys.customDate') }}
@@ -1188,7 +1188,7 @@
             />
           </button>
           <!-- Empty state when search has no results -->
-          <div v-if="filteredGroupOptions.length === 0" class="py-4 text-center text-sm text-muted">
+          <div v-if="filteredGroupOptions.length === 0" class="py-4 text-center text-sm text-gray-400 dark:text-gray-500">
             {{ t('keys.noGroupFound') }}
           </div>
         </div>

@@ -10,7 +10,7 @@
       class="select-trigger flex cursor-pointer list-none items-center justify-between gap-1.5 text-left"
       :class="[
         isOpen ? 'select-trigger-open' : '',
-        compact ? 'h-8 rounded-none rounded-xl !px-2 !py-1 text-xs' : 'h-[42px]',
+        compact ? 'h-8 rounded-lg !px-2 !py-1 text-xs' : 'h-[42px]',
       ]"
       :aria-expanded="isOpen"
       aria-haspopup="listbox"
@@ -233,7 +233,7 @@ onBeforeUnmount(() => {
 <style scoped>
 .select-trigger {
   @apply flex w-full items-center justify-between gap-2;
-  @apply rounded-none px-4 py-2.5 text-sm;
+  @apply rounded-xl px-4 py-2.5 text-sm;
   @apply bg-white dark:bg-dark-800;
   @apply border border-gray-200 dark:border-dark-600;
   @apply text-gray-900 dark:text-gray-100;
@@ -252,7 +252,7 @@ onBeforeUnmount(() => {
 }
 
 .filter-dropdown {
-  @apply w-max min-w-[200px] max-h-[min(50vh,360px)] overflow-y-auto rounded-none border border-gray-200 bg-white dark:border-dark-600 dark:bg-dark-800;
+  @apply w-max min-w-[200px] max-h-[min(50vh,360px)] overflow-y-auto rounded-xl border border-gray-200 bg-white shadow-lg dark:border-dark-600 dark:bg-dark-800;
 }
 
 .dropdown-item {

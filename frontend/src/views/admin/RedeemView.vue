@@ -198,7 +198,7 @@
                 </svg>
                 <span class="text-xs">{{ t('common.delete') }}</span>
               </button>
-              <span v-else class="text-muted">-</span>
+              <span v-else class="text-gray-400 dark:text-dark-500">-</span>
             </div>
           </template>
         </DataTable>
@@ -579,7 +579,7 @@
           </div>
           <!-- Footer -->
           <div
-            class="flex justify-end gap-2 rounded-none border-t border-gray-200 bg-gray-50 px-5 py-4 dark:border-dark-600 dark:bg-dark-700"
+            class="flex justify-end gap-2 rounded-b-xl border-t border-gray-200 bg-gray-50 px-5 py-4 dark:border-dark-600 dark:bg-dark-700/50"
           >
             <button
               @click="copyGeneratedCodes"

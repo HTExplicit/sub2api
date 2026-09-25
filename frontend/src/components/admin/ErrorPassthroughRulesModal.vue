@@ -170,7 +170,7 @@
                 >
                   <span
                     :class="[
-                      'pointer-events-none inline-block h-3 w-3 transform rounded-full bg-white shadow-outline ring-0 transition duration-200 ease-in-out',
+                      'pointer-events-none inline-block h-3 w-3 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out',
                       rule.enabled ? 'translate-x-3' : 'translate-x-0'
                     ]"
                   />

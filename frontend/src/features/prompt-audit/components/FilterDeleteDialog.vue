@@ -53,7 +53,7 @@
         </label>
       </div>
 
-      <details class="rounded-xl border border-gray-200 px-4 py-3 dark:border-dark-700" data-test="more-conditions">
+      <details class="rounded-xl border border-gray-200 px-4 py-3 dark:border-dark-700/60" data-test="more-conditions">
         <summary class="cursor-pointer select-none text-xs font-medium text-gray-600 dark:text-dark-200">{{ t('admin.promptAudit.events.moreConditions') }}</summary>
         <div class="mt-3 grid gap-3 sm:grid-cols-2">
           <label class="text-xs text-gray-600 dark:text-dark-200">

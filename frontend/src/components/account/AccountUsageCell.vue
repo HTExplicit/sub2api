@@ -3,7 +3,7 @@
     <template v-if="variant === 'compact'">
       <div v-if="compactLoading" class="flex h-5 items-center gap-1.5" data-test="usage-loading">
         <div class="h-3 w-12 animate-pulse rounded bg-gray-200 dark:bg-gray-700"></div>
-        <div class="h-3 w-16 animate-pulse rounded-none bg-gray-200 dark:bg-gray-700"></div>
+        <div class="h-3 w-16 animate-pulse rounded bg-gray-200 dark:bg-gray-700"></div>
       </div>
       <div
         v-else-if="compactHasData"
@@ -37,7 +37,7 @@
         </span>
         <span
           v-if="showStaleMarker"
-          class="rounded-none bg-amber-100 px-1 py-0.5 font-medium text-amber-700 dark:bg-amber-900/40 dark:text-amber-300"
+          class="rounded bg-amber-100 px-1 py-0.5 font-medium text-amber-700 dark:bg-amber-900/40 dark:text-amber-300"
           data-test="usage-stale"
         >
           {{ t('admin.accounts.usageStale') }}
@@ -47,7 +47,7 @@
         v-else
         :class="[
           'text-xs',
-          hasFetchFailureWithoutData ? 'text-red-500' : 'text-muted'
+          hasFetchFailureWithoutData ? 'text-red-500' : 'text-gray-400 dark:text-gray-500'
         ]"
         :data-test="hasFetchFailureWithoutData ? 'usage-fetch-failed' : 'usage-no-data'"
       >
@@ -141,7 +141,7 @@
         <div class="flex items-center gap-1.5 mt-0.5">
           <span
             v-if="usageInfo.source === 'passive'"
-            class="text-[9px] text-muted italic"
+            class="text-[9px] text-gray-400 dark:text-gray-500 italic"
           >
             {{ t('admin.accounts.usageWindow.passiveSampled') }}
           </span>
@@ -278,7 +278,7 @@
       <div v-if="antigravityTierLabel" class="mb-1 flex items-center gap-1">
         <span
           :class="[
-            'inline-block rounded-none px-1.5 py-0.5 text-[10px] font-medium',
+            'inline-block rounded px-1.5 py-0.5 text-[10px] font-medium',
             antigravityTierClass
           ]"
         >
@@ -312,7 +312,7 @@
       <div v-if="isForbidden" class="space-y-1">
         <span
           :class="[
-            'inline-block rounded-none px-1.5 py-0.5 text-[10px] font-medium',
+            'inline-block rounded px-1.5 py-0.5 text-[10px] font-medium',
             forbiddenBadgeClass
           ]"
         >
@@ -563,7 +563,7 @@
       <div v-if="geminiAuthTypeLabel" class="mb-1 flex items-center gap-1">
         <span
           :class="[
-            'inline-block rounded-none px-1.5 py-0.5 text-[10px] font-medium',
+            'inline-block rounded px-1.5 py-0.5 text-[10px] font-medium',
             geminiTierClass
           ]"
         >
@@ -574,7 +574,7 @@
           class="group relative cursor-help"
         >
           <svg
-            class="h-3.5 w-3.5 text-muted hover:text-gray-600 dark:hover:text-gray-300"
+            class="h-3.5 w-3.5 text-gray-400 hover:text-gray-600 dark:text-gray-500 dark:hover:text-gray-300"
             fill="currentColor"
             viewBox="0 0 20 20"
           >
@@ -657,7 +657,7 @@
             :window-stats="bar.windowStats"
             :color="bar.color"
           />
-          <p class="mt-1 text-[9px] leading-tight text-muted italic">
+          <p class="mt-1 text-[9px] leading-tight text-gray-400 dark:text-gray-500 italic">
             * {{ t('admin.accounts.gemini.quotaPolicy.simulatedNote') || 'Simulated quota' }}
           </p>
         </div>

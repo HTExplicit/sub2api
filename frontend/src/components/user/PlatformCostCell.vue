@@ -9,7 +9,7 @@
       <span class="font-medium text-gray-900 dark:text-white">${{ usage.total_actual_cost.toFixed(4) }}</span>
     </div>
   </div>
-  <span v-else class="text-sm text-muted">—</span>
+  <span v-else class="text-sm text-gray-400 dark:text-gray-500">—</span>
 </template>
 
 <script setup lang="ts">

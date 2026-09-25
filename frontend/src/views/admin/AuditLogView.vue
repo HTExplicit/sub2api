@@ -139,7 +139,7 @@
 
           <template #empty>
             <div class="flex flex-col items-center py-8">
-              <Icon name="shield" size="xl" class="mb-4 h-12 w-12 text-muted" />
+              <Icon name="shield" size="xl" class="mb-4 h-12 w-12 text-gray-300 dark:text-dark-600" />
               <p class="text-sm font-medium text-gray-500 dark:text-gray-400">{{ t('admin.audit.empty') }}</p>
             </div>
           </template>
@@ -176,7 +176,7 @@
 
       <div v-else-if="detail" class="space-y-5 py-2">
         <!-- Hero: action + result at a glance -->
-        <div class="rounded-none border border-gray-200 bg-gray-50/60 p-5 dark:border-dark-700 dark:bg-dark-900">
+        <div class="rounded-2xl border border-gray-200 bg-gray-50/60 p-5 dark:border-dark-700 dark:bg-dark-900/60">
           <div class="flex flex-wrap items-center gap-3">
             <span :class="statusBadgeClass(detail.status_code)">
               <span class="h-1.5 w-1.5 rounded-full" :class="statusDotClass(detail.status_code)"></span>

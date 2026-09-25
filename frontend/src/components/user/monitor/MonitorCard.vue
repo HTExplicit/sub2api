@@ -1,7 +1,7 @@
 <template>
   <button
     type="button"
-    class="group text-left p-5 rounded-none min-h-[280px] w-full bg-white border border-gray-200 dark:bg-dark-800 dark:border-dark-700 hover:-translate-y-1 dark:hover:border-primary-500/30 hover:border-gray-300 transition-all duration-300 ease-out flex flex-col"
+    class="group text-left p-5 rounded-2xl min-h-[280px] w-full bg-white/70 backdrop-blur-xl border border-gray-200/80 shadow-card dark:bg-dark-800/60 dark:border-dark-700/70 hover:-translate-y-1 hover:shadow-card-hover dark:hover:border-primary-500/30 hover:border-gray-300 transition-all duration-300 ease-out flex flex-col"
     @click="emit('click')"
   >
     <!-- Header: icon + name/model + status chip -->
@@ -59,7 +59,7 @@
     <MonitorQuotaView v-if="quotaVisible" :snapshot="item.latest_quota" class="mt-2" />
 
     <!-- Divider -->
-    <div class="mt-4 border-t border-gray-100 dark:border-dark-700"></div>
+    <div class="mt-4 border-t border-gray-100 dark:border-dark-700/60"></div>
 
     <!-- Availability row -->
     <MonitorAvailabilityRow

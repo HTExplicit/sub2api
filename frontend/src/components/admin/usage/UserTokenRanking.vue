@@ -2,10 +2,10 @@
   <!-- 用量页"用户排行"tab 内容：无卡片外观，依赖父级统一卡片；筛选/时间范围复用页面级筛选栏 -->
   <div>
     <!-- Toolbar -->
-    <div class="flex flex-wrap items-center justify-between gap-3 border-b border-gray-100 px-4 py-3 dark:border-dark-700 sm:px-6">
-      <p class="text-xs text-muted">{{ t('admin.usage.tokenRanking.subtitle') }}</p>
+    <div class="flex flex-wrap items-center justify-between gap-3 border-b border-gray-100 px-4 py-3 dark:border-dark-700/50 sm:px-6">
+      <p class="text-xs text-gray-400 dark:text-gray-500">{{ t('admin.usage.tokenRanking.subtitle') }}</p>
       <div class="flex items-center gap-3">
-        <span v-if="!loading && items.length > 0" class="text-xs text-muted">
+        <span v-if="!loading && items.length > 0" class="text-xs text-gray-400 dark:text-gray-500">
           {{ t('admin.usage.tokenRanking.userCount', { count: items.length }) }}
         </span>
         <div class="w-28">
@@ -50,7 +50,7 @@
             v-for="(item, index) in items"
             v-else
             :key="item.user_id"
-            class="cursor-pointer transition-colors hover:bg-gray-50 dark:hover:bg-dark-700"
+            class="cursor-pointer transition-colors hover:bg-gray-50 dark:hover:bg-dark-700/40"
             :title="t('admin.usage.tokenRanking.rowHint')"
             @click="$emit('select-user', item.user_id, item.email)"
           >
@@ -64,7 +64,7 @@
             </td>
             <td class="max-w-[260px] truncate px-4 py-3 text-sm font-medium text-gray-700 dark:text-gray-200" :title="item.email">
               {{ item.email || `User #${item.user_id}` }}
-              <span class="ml-1 font-normal text-muted">#{{ item.user_id }}</span>
+              <span class="ml-1 font-normal text-gray-400 dark:text-gray-500">#{{ item.user_id }}</span>
             </td>
             <td class="whitespace-nowrap px-4 py-3 text-right text-sm tabular-nums text-gray-500 dark:text-gray-400">{{ item.requests.toLocaleString() }}</td>
             <td class="whitespace-nowrap px-4 py-3 text-right text-sm tabular-nums text-gray-500 dark:text-gray-400">{{ fmtTokens(item.input_tokens) }}</td>
