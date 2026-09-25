@@ -37,40 +37,26 @@ API Key 使用完整 Responses。OAuth 目录保留实际 Lite 与上下文字�
 
 管理员接口位于 `/api/v1/admin/accounts/:id/codex-fingerprint`，profile 选择使用其 `/profile` 子路径和账号版本 CAS。`/codex-routing/validate` 是独立、不登记自动续期的限额验证操作，固定支持三款 GPT-6，一次 UUID 绑定一个账号和最多七个出站阶段；重复操作不能重新花费相同阶段。
 
-## 提示词规则与账号选择
+## 系统提示词
 
-从侧栏“扩展功能 → 系统提示词”打开编辑器，选择提示词、修改正文与投递范围，再点击“保存并生效”。页面只保留核心配置和当前提示词的简易历史；独立模板库、来源同步、Skill 发布和请求 JSON 调试已退出管理流程，旧入口在管理员鉴权后返回 HTTP 410。
+侧栏“扩展功能 → 系统提示词”：一个全局开关、一个站点默认提示词和提示词库（名称、正文 ≤64 KiB、位置 prepend/append、角色 auto/system/developer，最多 50 条）。整份配置存为 `settings.system_prompts` 一行 JSON；`GET/PUT /api/v1/admin/system-prompts` 读写整份配置并返回账号使用统计，删除仍被自定义账号使用的提示词返回 409。
 
-管理员 `GET /api/v1/admin/system-prompts/config` 返回配置、按规则 ID 索引的正文和协议能力。`PUT` 提交 `expected_revision`、运行开关、v2 `policy` 及仅包含改动正文的 `contents`，一次事务生成不可变内容版本并更新配置，只递增一次 revision。新规则携带零模板/版本 ID 和正文；历史恢复按当前规则校验，仍加入草稿并通过同一次保存生效。`GET /api/v1/admin/system-prompts/rules/:rule_id/history` 只读取该规则的历史。未展示的 Compact、回显兼容值省略时沿用当前值。
+账号绑定存于 `accounts.extra.system_prompt`（`inherit`、`off`、`custom` + `prompt_id`，缺省为继承）。账号编辑、行菜单和批量栏（≤1000 个）通过 `PUT /api/v1/admin/system-prompts/bindings` 写入，普通账号编辑保留该键。继承的账号在所有平台使用站点默认；全局开关关闭时一律不注入。
 
-| 位置 | 含义 |
+请求路径只读内存快照（保存即替换，60 秒后台刷新以同步多实例）和调度账号自带的绑定，不查询数据库；配置不可用时不注入并告警，不向客户端返回错误。每个最终协议只注入一次：
+
+| 最终协议 | 投递 |
 | --- | --- |
-| control_prepend / control_append | 控制指令区前后 |
-| conversation_head / conversation_tail | 本次最终发送的消息数组头尾 |
-| before_last_user / after_last_user | 本次序列中最后一条真实用户消息的前后，纯工具结果不算用户输入 |
+| Responses | auto/system 追加到 `instructions` 前/后（空行分隔）；developer 作为 developer 输入项放最前，或放在开头 system/developer 之后。Codex Responses Lite 与 compact 请求不注入。 |
+| Chat Completions | 在开头或开头 system/developer 之后插入一条消息；上游只接受 system 时 developer 按 system 发送。 |
+| Anthropic Messages | 顶层 system 前/后（developer 按 system）。Claude OAuth 伪装前注入，随客户端 system 一起迁入 `[System Instructions]`。 |
+| Gemini / Antigravity | `systemInstruction` parts 前/后。 |
 
-v2 使用独立 `role=auto/system/developer` 与 `position`。平台必须显式选择，模型默认按最终上游 ID 精确匹配；空模型集合表示全部，也可选择按请求模型匹配。同一落点按列表顺序排列。
+count_tokens / countTokens 不注入。`prompt_cache_key` 不改写。响应中回显的 `instructions`（JSON、SSE、WS）还原为客户端原值（未传则为 null）。
 
-| 最终协议 | 实际投递 |
-| --- | --- |
-| Responses | auto 控制区使用 instructions，auto 消息位置使用 developer；显式角色保留在 input。Codex OAuth 不接受 system。 |
-| Chat Completions | auto 使用 system；明确要求 system 的目标不接受严格 developer，不做静默角色替换。 |
-| Messages | 控制区使用顶层 system；会话内 system 仅对明确支持的模型及合法边界开放。developer 不支持。 |
-| Gemini | 使用 systemInstruction，系统指令只支持控制区前后。Antigravity upstream 账号按其实际 Messages 协议处理。 |
+Claude OAuth 伪装系统块只由上游设置决定：设置 → 网关的 `enable_claude_oauth_system_prompt_injection`、`claude_oauth_system_prompt` 与 `claude_oauth_system_prompt_blocks` 块编辑器。
 
-找不到最后用户消息，或插入会拆开工具调用配对时，跳过该条规则并返回原因，请求继续。角色/位置与目标不兼容则明确返回错误。位置只指本次出站序列，不包含 previous_response_id 指向的隐藏历史。
-
-账号详情和账号批量操作提供 `inherit / off / custom`：继承默认规则、关闭、或用指定规则替换默认集合。默认集合留空、指定账号选择 custom，即可只对指定账号开启。账号仅存规则引用，不复制正文；shadow 使用自身绑定。
-
-实际转发先转换协议和准备基础指令，再应用规则、生成缓存标识/签名并发送；每次重试从干净输入构建，WS 历史累计器不保存本站注入。每轮冻结内容快照，换账号时重新解析绑定；规则变化隔离缓存，保留续接标识及精确载体回显保护。编辑器直接根据后端协议能力约束可选角色、位置和范围。
-
-迁移 `255_prompt_rule_policy_v2.sql` 固定旧 follow_active 当时的真实版本，并将旧各域开关折入相应规则，保留 OpenAI/Cindy 范围，避免自动扩散到新平台。Claude 旧自定义块保留布局、缓存属性、模型条件及单次占位符展开，统一投递；Settings 页的旧正文字段仅保留核对，修改请求返回迁移提示。单文档保留 64 KiB 上限；配置最多 64 条规则以容纳旧两个域的并集，每个实际请求命中的编译正文仍限制为 256 KiB，互斥平台的配置不相加计算请求预算。
-
-迁移 `256_prompt_independent_content.sql` 提供独立内容及冻结文件存储，应用启动时在同一事务中核验并固定升级前实际生效的正文和完整公共文件集合。规则 ID、顺序、默认选择、范围和账号引用保持；混合 Skill 使用活动配对的有效正文，不能用模板存档代替。迁移不联网、不初始化种子，缺少有效正文或活动文件时不提交部分结果，并使应用初始化失败；完成后重启不重复迁移。
-
-已有 `/skills/security-research/current/` 链接继续读取冻结文件，不再跟随来源更新。旧数据保留；需要其他文件包的旧 Skill 版本只能查看档案，不能恢复文件包。普通正文和 Claude 结构化版本可恢复；结构化文本编辑保留块顺序和缓存属性。迁入的公开 Skill 版本保留原回显语义，编辑后创建的普通新版本默认私有，全局回显兼容值不因此改变。
-
-配置冲突保留编辑器草稿，重新读取后可合并未编辑的远端字段。账号仍用自身版本比较；被账号引用的规则不能直接删除。
+迁移 `259_system_prompt_library.sql` 把旧 v2 规则里的纯文本正文导入提示词库（开关关闭、无默认，请求行为不变），启用的旧 Claude 规则只在与设置不同时写回设置，`prompt_skills` 的 off 转为新键，并删除 12 张旧提示词/Skill 表及其保护函数。旧模板、版本、历史、Skill 注册表与 `/skills/security-research/current/` 均已删除；回滚到旧镜像需先恢复这些表的备份。
 
 ## 292 采集代理输入
 
