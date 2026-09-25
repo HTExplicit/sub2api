@@ -3238,6 +3238,15 @@
         </div>
       </div>
 
+      <AccountSystemPromptBinding
+        v-if="account"
+        :key="account.id"
+        ref="systemPromptBinding"
+        :account-ids="[account.id]"
+        :current="account.extra?.system_prompt"
+        embedded
+      />
+
       <!-- Group Selection - 所有模式均可配置账号分组 -->
       <GroupSelector
         v-model="form.group_ids"
@@ -3357,6 +3366,7 @@ import CnBaseUrlPresets from '@/components/account/CnBaseUrlPresets.vue'
 import OpenCodeGoProtocolRulesEditor from '@/components/account/OpenCodeGoProtocolRulesEditor.vue'
 import HeaderOverrideEditor from '@/components/account/HeaderOverrideEditor.vue'
 import OllamaCloudUsageSettings from '@/components/account/OllamaCloudUsageSettings.vue'
+import AccountSystemPromptBinding from '@/components/admin/account/AccountSystemPromptBinding.vue'
 import {
   applyAntigravityProjectID,
   applyHeaderOverride,
@@ -3578,6 +3588,7 @@ interface TempUnschedRuleForm {
 
 // State
 const submitting = ref(false)
+const systemPromptBinding = ref<InstanceType<typeof AccountSystemPromptBinding> | null>(null)
 const editBaseUrl = ref('https://api.anthropic.com')
 const editApiKey = ref('')
 
@@ -5459,6 +5470,8 @@ const submitUpdateAccount = async (accountID: number, updatePayload: Record<stri
     let updatedAccount = await client.update(accountID, withAntigravityConfirmFlag(updatePayload))
     if (props.account?.id !== accountID || authStore.user?.id !== actor) return
     updatedAccount = await persistGrokMediaEligibility(accountID, updatedAccount)
+    const systemPrompt = await systemPromptBinding.value?.saveIfChanged()
+    if (systemPrompt) updatedAccount = { ...updatedAccount, extra: { ...(updatedAccount.extra || {}), system_prompt: systemPrompt } }
     appStore.showSuccess(t('admin.accounts.accountUpdated'))
     emit('updated', updatedAccount)
     if (basicOnly) await providerEdit.refresh()

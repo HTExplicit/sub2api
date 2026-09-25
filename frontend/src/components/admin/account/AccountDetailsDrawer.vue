@@ -76,9 +76,6 @@
           <AccountTaxonomyEditor :account-id="account.id" :folder-id="account.management_folder?.id" :tag-ids="(account.tags || []).map(tag => tag.id)"
             :folders="folders" :tags="tags" @changed="refreshTaxonomyAccount" />
 
-          <AccountPromptBindingPanel v-if="account.platform === 'openai' || account.platform === 'cindy'"
-            :account-ids="[account.id]" @changed="refreshTaxonomyAccount" />
-
           <CodexFingerprintPanel v-if="account.platform === 'openai' && ['oauth', 'setup-token'].includes(account.type) && account.parent_account_id == null"
             :account-id="account.id" />
 
@@ -162,7 +159,6 @@
 import { provideAccountViewContext, useAccountViewOperation } from '@/composables/useAccountViewContext'
 import { accountAPIForView } from '@/api/admin/accounts'
 import AccountTaxonomyEditor from './AccountTaxonomyEditor.vue'
-import AccountPromptBindingPanel from './AccountPromptBindingPanel.vue'
 import CodexFingerprintPanel from './CodexFingerprintPanel.vue'
 import { computed, onMounted, onUnmounted } from 'vue'
 import { useI18n } from 'vue-i18n'

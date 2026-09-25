@@ -144,4 +144,4 @@ export type {
   CindyBalanceProbeScope,
   CindyBalanceProbeScopeMode
 } from './cindyBalanceProbe'
-export type { SystemPromptCompositionMode, PromptConfig, PromptConfigWrite, PromptHistoryVersion } from './systemPrompts'
+export type { SystemPrompt, SystemPromptBinding, SystemPromptConfig, SystemPromptState } from './systemPrompts'
