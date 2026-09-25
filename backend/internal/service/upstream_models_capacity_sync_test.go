@@ -103,9 +103,11 @@ func TestSyncUpstreamModelCatalogFollowsAnthropicPagination(t *testing.T) {
 }
 
 func TestExtractUpstreamModelContextCatalogMalformedOptionalCapacityKeepsOtherCapabilities(t *testing.T) {
-	models, metadata, err := extractUpstreamModelCatalog([]byte(`{"data":[{"id":"model","context_window":"not-an-integer","max_context_window":700000,"reasoning":false,"input_modalities":["text"],"max_output_tokens":32000}]}`), PlatformOpenAI)
+	body := []byte(`{"data":[{"id":"model","context_window":"not-an-integer","max_context_window":700000,"reasoning":false,"input_modalities":["text"],"max_output_tokens":32000}]}`)
+	models, metadata, err := extractUpstreamModelCatalog(body, false)
 	require.NoError(t, err)
 	require.Equal(t, []string{"model"}, models)
+	applyUpstreamModelCapacityDeclarations(metadata, body, PlatformOpenAI, "2026-09-25T00:00:00Z")
 	require.Zero(t, metadata["model"].ContextWindow)
 	require.Equal(t, int64(700000), metadata["model"].MaxContextWindow)
 	require.Equal(t, int64(32000), metadata["model"].MaxOutputTokens)

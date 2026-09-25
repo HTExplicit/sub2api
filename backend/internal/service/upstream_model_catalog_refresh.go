@@ -262,11 +262,7 @@ func recordUpstreamModelCapacityObservations(ctx context.Context, repo AccountRe
 	stamp := now.Format(time.RFC3339)
 	changed := false
 	for modelID, capacity := range observed {
-		declared := UpstreamModelMetadata{
-			ContextWindow: capacity.ContextWindow, MaxContextWindow: capacity.MaxContextWindow,
-			MaxInputTokens: capacity.MaxInputTokens, MaxOutputTokens: capacity.MaxOutputTokens,
-			CapacitySource: ModelContextSourceUpstream, ObservedAt: stamp,
-		}
+		declared := upstreamCapacityDeclaration(capacity, stamp)
 		entry, exists := snapshot.Models[modelID]
 		if exists && entry.CapacitySource == ModelContextSourceUpstream && entry.ContextWindow == declared.ContextWindow &&
 			entry.MaxContextWindow == declared.MaxContextWindow && entry.MaxInputTokens == declared.MaxInputTokens &&

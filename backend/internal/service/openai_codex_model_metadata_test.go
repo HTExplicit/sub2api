@@ -15,7 +15,7 @@ func TestAstraUltraCatalogPreservesWorkflowMetadata(t *testing.T) {
 	_, metadata, err := extractUpstreamModelCatalog([]byte(`{"models":[{
 		"slug":"gpt-6-astra","supported_reasoning_levels":[{"effort":"high"},{"effort":"ultra"}],
 		"multi_agent_reasoning_effort":"high","multi_agent_version":"v2"
-	}]}`), PlatformOpenAI)
+	}]}`), false)
 	require.NoError(t, err)
 	account := Account{Platform: PlatformOpenAI, Type: AccountTypeAPIKey, Credentials: map[string]any{
 		"base_url": "https://relay.example/v1", "model_mapping": map[string]any{"public-astra": "gpt-6-astra"},

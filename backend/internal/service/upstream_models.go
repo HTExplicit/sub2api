@@ -245,16 +245,11 @@ func (s *AccountTestService) SyncUpstreamModelCatalog(ctx context.Context, accou
 		catalog.ModelListSource = "configured"
 	}
 	if len(body) > 0 {
-		_, directMetadata, parseErr := extractUpstreamModelCatalog(body, upstreamModelSyncPlatform(account))
+		_, directMetadata, parseErr := extractUpstreamModelCatalog(body, account != nil && account.IsGrok())
 		if parseErr == nil {
 			catalog.Metadata = directMetadata
 		}
-		for modelID, entry := range catalog.Metadata {
-			if entry.CapacitySource == ModelContextSourceUpstream {
-				entry.ObservedAt = syncedAt
-				catalog.Metadata[modelID] = entry
-			}
-		}
+		applyUpstreamModelCapacityDeclarations(catalog.Metadata, body, upstreamModelSyncPlatform(account), syncedAt)
 	}
 
 	// Capability enrichment also covers concrete model_mapping targets. Admins may
@@ -378,6 +373,40 @@ func (s *AccountTestService) SyncUpstreamModelCatalog(ctx context.Context, accou
 	}
 	catalog.CapacityRows = BuildAccountModelContextCapacityRows(account, models)
 	return catalog, nil
+}
+
+// applyUpstreamModelCapacityDeclarations replaces the capacity of every model
+// in metadata with what this upstream response declared, parsed strictly and
+// per field by ParseUpstreamModelContextCapacities, so a capability parser's
+// field-by-field completion never becomes a capacity declaration.
+func applyUpstreamModelCapacityDeclarations(metadata map[string]UpstreamModelMetadata, body []byte, platform, observedAt string) {
+	declared, err := ParseUpstreamModelContextCapacities(body, platform)
+	if err != nil {
+		declared = nil
+	}
+	for modelID, entry := range metadata {
+		entry = withUpstreamModelCapacity(entry, upstreamCapacityDeclaration(declared[modelID], observedAt))
+		if upstreamModelMetadataIsUseful(entry) {
+			metadata[modelID] = entry
+		} else {
+			delete(metadata, modelID)
+		}
+	}
+	for modelID, capacity := range declared {
+		if _, exists := metadata[modelID]; !exists {
+			metadata[modelID] = withUpstreamModelCapacity(UpstreamModelMetadata{ID: modelID}, upstreamCapacityDeclaration(capacity, observedAt))
+		}
+	}
+}
+
+// upstreamCapacityDeclaration is one upstream-declared capacity as snapshot
+// fields; an empty capacity declares nothing.
+func upstreamCapacityDeclaration(capacity ModelContextCapacity, observedAt string) UpstreamModelMetadata {
+	return UpstreamModelMetadata{
+		ContextWindow: capacity.ContextWindow, MaxContextWindow: capacity.MaxContextWindow,
+		MaxInputTokens: capacity.MaxInputTokens, MaxOutputTokens: capacity.MaxOutputTokens,
+		CapacitySource: ModelContextSourceUpstream, ObservedAt: observedAt,
+	}
 }
 
 func upstreamModelMetadataHasCapacity(metadata UpstreamModelMetadata) bool {
@@ -1450,13 +1479,13 @@ func extractGrokUpstreamModelIDs(body []byte) ([]string, error) {
 	return extractUpstreamModelIDsWithSelector(body, grokUpstreamModelEntryID)
 }
 
-func extractUpstreamModelCatalog(body []byte, platform string) ([]string, map[string]UpstreamModelMetadata, error) {
+func extractUpstreamModelCatalog(body []byte, grok bool) ([]string, map[string]UpstreamModelMetadata, error) {
 	entries, err := extractUpstreamModelRawEntries(body)
 	if err != nil {
 		return nil, nil, err
 	}
 	selectID := upstreamModelEntryID
-	if platform == PlatformGrok {
+	if grok {
 		selectID = grokUpstreamModelEntryID
 	}
 
@@ -1465,8 +1494,8 @@ func extractUpstreamModelCatalog(body []byte, platform string) ([]string, map[st
 	for _, raw := range entries {
 		var capability upstreamModelCapabilityEntry
 		// A mistyped optional field must not hide the ID or other usable fields.
-		// encoding/json continues decoding after UnmarshalTypeError; the strict
-		// independent capacity parser below discards each invalid capacity field.
+		// encoding/json continues decoding after UnmarshalTypeError; capacity is
+		// parsed strictly and independently by applyUpstreamModelCapacityDeclarations.
 		_ = json.Unmarshal(raw, &capability)
 		modelID := strings.TrimSpace(selectID(capability.upstreamModelEntry))
 		if modelID == "" {
@@ -1474,12 +1503,6 @@ func extractUpstreamModelCatalog(body []byte, platform string) ([]string, map[st
 		}
 		models = append(models, modelID)
 		entry := upstreamMetadataFromCapabilityEntry(modelID, capability)
-		capacity := ParseUpstreamModelContextCapacity(raw, platform)
-		entry = withUpstreamModelCapacity(entry, UpstreamModelMetadata{
-			ContextWindow: capacity.ContextWindow, MaxContextWindow: capacity.MaxContextWindow,
-			MaxInputTokens: capacity.MaxInputTokens, MaxOutputTokens: capacity.MaxOutputTokens,
-			CapacitySource: ModelContextSourceUpstream,
-		})
 		var fields map[string]json.RawMessage
 		if err := json.Unmarshal(raw, &fields); err == nil {
 			entry.CodexToolCapabilities = make(map[string]json.RawMessage)
