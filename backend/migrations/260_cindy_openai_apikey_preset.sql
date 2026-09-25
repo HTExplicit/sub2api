@@ -175,6 +175,15 @@ UPDATE channel_account_stats_model_pricing SET platform = 'openai', updated_at =
 -- Laxa endpoint rejects it; the Cindy identity used to suppress it). The dead
 -- alpha-search mode is removed. cindy_device_id and cindy_device_id_source stay
 -- as plain extras without logic.
+-- The long-context billing trigger (175) rejects a non-boolean flag on any
+-- account update; such a value is invalid either way, so drop it first.
+UPDATE accounts
+SET extra = extra - 'openai_long_context_billing_enabled'
+WHERE platform = 'cindy'
+  AND jsonb_typeof(extra) = 'object'
+  AND extra ? 'openai_long_context_billing_enabled'
+  AND jsonb_typeof(extra->'openai_long_context_billing_enabled') <> 'boolean';
+
 UPDATE accounts
 SET platform = 'openai',
     credentials = jsonb_set(
@@ -225,7 +234,8 @@ ALTER TABLE user_platform_quotas
 
 UPDATE settings
 SET value = (value::jsonb - 'cindy')::text, updated_at = NOW()
-WHERE key = 'default_platform_quotas'
+WHERE (key = 'default_platform_quotas'
+       OR key LIKE 'auth\_source\_default\_%\_platform\_quotas')
   AND CASE WHEN value IS JSON OBJECT THEN value::jsonb ? 'cindy' ELSE FALSE END;
 
 DELETE FROM settings WHERE key = 'cindy_provider_config';
@@ -258,9 +268,9 @@ DROP FUNCTION IF EXISTS project_reconcile_cindy_group_channel(BIGINT);
 DROP FUNCTION IF EXISTS project_assert_cindy_group_topology(BIGINT);
 -- enqueue_channel_group_cache_invalidations(BIGINT),
 -- enqueue_group_api_key_auth_cache_invalidations(BIGINT) and
--- enqueue_channel_group_scheduler_invalidation(BIGINT) are generic helpers that
--- stay: the managed model route trigger from 240
--- (trg_groups_managed_model_routes_invalidation) and migration 242 call them.
+-- enqueue_channel_group_scheduler_invalidation(BIGINT) are generic helpers
+-- (auth-cache and scheduler outbox writes) that stay: migrations 240/242 call
+-- them, so replaying those historical files keeps working.
 DROP FUNCTION IF EXISTS project_managed_cindy_channel_id();
 DROP FUNCTION IF EXISTS project_is_strict_cindy_group(BIGINT);
 DROP FUNCTION IF EXISTS project_cindy_platform_v1_from_legacy();

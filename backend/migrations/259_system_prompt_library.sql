@@ -8,6 +8,9 @@
 -- Inline rule content is kept as library prompts so an administrator can
 -- enable it later. The migrated Claude OAuth rule returns to the upstream
 -- claude_oauth_system_prompt(_blocks) settings.
+SET LOCAL lock_timeout = '10s';
+SET LOCAL statement_timeout = '120s';
+
 DO $system_prompts$
 DECLARE
     library JSONB := '[]'::jsonb;
