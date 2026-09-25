@@ -139,7 +139,7 @@ func (r *channelRepository) batchLoadModelPricing(ctx context.Context, channelID
 // batchLoadIntervals 批量加载多个定价条目的区间
 func (r *channelRepository) batchLoadIntervals(ctx context.Context, pricingIDs []int64) (map[int64][]service.PricingInterval, error) {
 	rows, err := r.db.QueryContext(ctx,
-		`SELECT id, pricing_id, min_tokens, max_tokens, tier_label,
+		`SELECT id, pricing_id, min_tokens, max_tokens, COALESCE(tier_label, ''),
 		        input_price, output_price, cache_write_price, cache_write_1h_price, cache_read_price,
 		        input_multiplier, output_multiplier, cache_write_multiplier, cache_read_multiplier,
 		        per_request_price, sort_order, created_at, updated_at
