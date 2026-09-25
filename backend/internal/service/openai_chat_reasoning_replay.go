@@ -7,7 +7,6 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"io"
 	"net/http"
 	"slices"
 	"strings"
@@ -721,13 +720,4 @@ func openAIChatChunksHaveSemanticOutput(chunks []apicompat.ChatCompletionsChunk)
 
 func openAIChatReasoningReplayError(err error) error {
 	return fmt.Errorf("prepare chat reasoning replay request: %w", err)
-}
-
-func cloneOpenAIChatRequestWithBody(request *http.Request, body []byte) *http.Request {
-	cloned := request.Clone(request.Context())
-	snapshot := bytes.Clone(body)
-	cloned.Body = io.NopCloser(bytes.NewReader(snapshot))
-	cloned.ContentLength = int64(len(snapshot))
-	cloned.GetBody = func() (io.ReadCloser, error) { return io.NopCloser(bytes.NewReader(snapshot)), nil }
-	return cloned
 }

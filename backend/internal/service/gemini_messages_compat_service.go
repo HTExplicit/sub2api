@@ -2807,7 +2807,7 @@ func (s *GeminiMessagesCompatService) handleNativeStreamingResponse(c *gin.Conte
 				payload := strings.TrimSpace(strings.TrimPrefix(trimmed, "data:"))
 				// Keepalive / done markers
 				if payload == "" || payload == "[DONE]" {
-					_, _ = io.WriteString(c.Writer, string(rewritePromptRulesStructuredSSE(c, []byte(line), "gemini")))
+					_, _ = c.Writer.Write(rewritePromptRulesStructuredSSE(c, []byte(line), "gemini"))
 					flusher.Flush()
 				} else {
 					var rawToWrite string
@@ -2844,7 +2844,7 @@ func (s *GeminiMessagesCompatService) handleNativeStreamingResponse(c *gin.Conte
 						_, _ = fmt.Fprintf(c.Writer, "data: %s\n\n", rewritePromptRulesStructuredEcho(c, []byte(rawToWrite), "gemini"))
 					} else {
 						// Pass-through for AI Studio responses.
-						_, _ = io.WriteString(c.Writer, string(rewritePromptRulesStructuredSSE(c, []byte(line), "gemini")))
+						_, _ = c.Writer.Write(rewritePromptRulesStructuredSSE(c, []byte(line), "gemini"))
 					}
 					flusher.Flush()
 				}
@@ -2852,7 +2852,7 @@ func (s *GeminiMessagesCompatService) handleNativeStreamingResponse(c *gin.Conte
 				if !sawDataEvent {
 					fallback.AddLine(trimmed)
 				}
-				_, _ = io.WriteString(c.Writer, string(rewritePromptRulesStructuredSSE(c, []byte(line), "gemini")))
+				_, _ = c.Writer.Write(rewritePromptRulesStructuredSSE(c, []byte(line), "gemini"))
 				flusher.Flush()
 			}
 		}

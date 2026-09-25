@@ -98,16 +98,6 @@ func PlanBusinessSystemPrompt(ctx context.Context, snapshot BusinessSystemPrompt
 	return planBusinessSystemPrompt(ctx, snapshot, target)
 }
 
-// Compatibility wrappers for internal callers while request lifecycle adapters
-// migrate. Planning is local and never invokes the legacy prompt.plan RPC.
-func applyBusinessSystemPromptWithInvoker(ctx context.Context, body []byte, snapshot BusinessSystemPromptSnapshot, target BusinessSystemPromptTarget, _ func(context.Context, string, string, extensionv1.Invocation) (extensionv1.Result, error)) ([]byte, BusinessSystemPromptApplication, error) {
-	return ApplyBusinessSystemPromptToJSONContext(ctx, body, snapshot, target)
-}
-
-func planBusinessSystemPromptWithInvoker(ctx context.Context, _ []byte, snapshot BusinessSystemPromptSnapshot, target BusinessSystemPromptTarget, _ func(context.Context, string, string, extensionv1.Invocation) (extensionv1.Result, error)) (BusinessSystemPromptApplication, error) {
-	return planBusinessSystemPrompt(ctx, snapshot, target)
-}
-
 func applyBusinessSystemPromptApplication(body []byte, application BusinessSystemPromptApplication) ([]byte, BusinessSystemPromptApplication, error) {
 	if application.RulesPlan != nil {
 		return applyPromptRules(body, application)

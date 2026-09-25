@@ -356,7 +356,7 @@ func (s *GatewayService) buildOAuthMetadataUserID(parsed *ParsedRequest, account
 	return FormatMetadataUserID(userID, accountUUID, sessionID, uaVersion)
 }
 
-// applyClaudeCodeOAuthMimicryToBody 将"非 Claude Code 客户端 + Claude OAuth 账号"
+// prepareClaudeCodeOAuthMimicryToBody 将"非 Claude Code 客户端 + Claude OAuth 账号"
 // 路径上原本只在 /v1/messages 里做的完整伪装应用到任意 body 上。
 //
 // 这是 /v1/messages 主路径上 rewriteSystemForNonClaudeCode +
@@ -374,22 +374,7 @@ func (s *GatewayService) buildOAuthMetadataUserID(parsed *ParsedRequest, account
 //   - systemRaw：body 中原始 system 字段（用于判断是否需要 rewrite）。
 //   - model：最终会发给上游的模型 ID（用于模型规范化 + metadata 版本选择）。
 //
-// 返回：改写后的 body。即使中间任何一步失败，也会退化成原 body（不会 panic）。
-func (s *GatewayService) applyClaudeCodeOAuthMimicryToBody(
-	ctx context.Context,
-	c *gin.Context,
-	account *Account,
-	body []byte,
-	systemRaw any,
-	model string,
-) []byte {
-	prepared, err := s.prepareClaudeCodeOAuthMimicryToBody(ctx, c, account, body, systemRaw, model)
-	if err != nil {
-		return body
-	}
-	return prepared
-}
-
+// 返回改写后的 body；准备失败会返回错误，由调用方停止本次发送。
 func (s *GatewayService) prepareClaudeCodeOAuthMimicryToBody(
 	ctx context.Context,
 	c *gin.Context,

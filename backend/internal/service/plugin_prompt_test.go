@@ -18,11 +18,14 @@ func TestPromptNativePlanDoesNotInvokeRPC(t *testing.T) {
 	body := []byte(`{"instructions":"client","input":"` + history + `"}`)
 	snapshot := unifiedPromptSnapshot(t, "openai", []string{"auto"}, []string{"control_append"}, []string{"server"})
 	invoked := 0
-	updated, application, err := applyBusinessSystemPromptWithInvoker(context.Background(), body, snapshot, BusinessSystemPromptTarget{Platform: PlatformOpenAI, Protocol: BusinessSystemPromptProtocolResponses}, func(ctx context.Context, _, _ string, in extensionv1.Invocation) (extensionv1.Result, error) {
+	previous := invokePromptSkills
+	t.Cleanup(func() { invokePromptSkills = previous })
+	invokePromptSkills = func(context.Context, extensionv1.Invocation) (extensionv1.Result, error) {
 		invoked++
 		t.Fatal("native planning invoked a plugin RPC")
 		return extensionv1.Result{}, nil
-	})
+	}
+	updated, application, err := ApplyBusinessSystemPromptToJSONContext(context.Background(), body, snapshot, BusinessSystemPromptTarget{Platform: PlatformOpenAI, Protocol: BusinessSystemPromptProtocolResponses})
 	require.NoError(t, err)
 	require.Equal(t, 0, invoked)
 	require.True(t, application.Applied)
@@ -33,10 +36,13 @@ func TestPromptNativePlanDoesNotInvokeRPC(t *testing.T) {
 func TestPromptNativeCancellationUsesIncomingContext(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	_, _, err := applyBusinessSystemPromptWithInvoker(ctx, []byte(`{"input":"test"}`), BusinessSystemPromptSnapshot{Enabled: true, Body: "server"}, BusinessSystemPromptTarget{Platform: PlatformOpenAI}, func(call context.Context, _, _ string, _ extensionv1.Invocation) (extensionv1.Result, error) {
+	previous := invokePromptSkills
+	t.Cleanup(func() { invokePromptSkills = previous })
+	invokePromptSkills = func(context.Context, extensionv1.Invocation) (extensionv1.Result, error) {
 		t.Fatal("canceled native planning invoked a plugin RPC")
 		return extensionv1.Result{}, nil
-	})
+	}
+	_, _, err := ApplyBusinessSystemPromptToJSONContext(ctx, []byte(`{"input":"test"}`), BusinessSystemPromptSnapshot{Enabled: true, Body: "server"}, BusinessSystemPromptTarget{Platform: PlatformOpenAI})
 	require.ErrorIs(t, err, ErrBusinessSystemPromptUnavailable)
 }
 

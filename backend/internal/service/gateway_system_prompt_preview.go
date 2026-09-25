@@ -138,7 +138,7 @@ func PreparePromptGatewayPreview(ctx context.Context, c *gin.Context, account *A
 	mimic := account.IsAnthropicOAuthOrSetupToken()
 	if mimic && c != nil && c.Request != nil {
 		metadata := gjson.GetBytes(body, "metadata.user_id").String()
-		mimic = !IsClaudeCodeClient(ctx) && !isClaudeCodeClient(c.GetHeader("User-Agent"), metadata) && !(metadata != "" && systemHasBillingAttributionBlock(body))
+		mimic = !IsClaudeCodeClient(ctx) && !isClaudeCodeClient(c.GetHeader("User-Agent"), metadata) && (metadata == "" || !systemHasBillingAttributionBlock(body))
 	}
 	setBusinessSystemPromptRequestProfile(c, account, mimic)
 	if mimic {
