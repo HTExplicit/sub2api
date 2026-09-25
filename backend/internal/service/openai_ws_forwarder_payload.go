@@ -600,6 +600,7 @@ func openAIWSRawItemsHasPrefix(items []json.RawMessage, prefix []json.RawMessage
 	return true
 }
 
+//nolint:unused // upstream parity, see openAIWSIngressPreviousTurnStrictState
 func openAIWSRawItemsHasFunctionCallOutput(items []json.RawMessage) bool {
 	for _, item := range items {
 		if isCodexToolCallOutputItemType(gjson.GetBytes(item, "type").String()) {
@@ -831,10 +832,15 @@ func shouldKeepIngressPreviousResponseID(
 	return true, "strict_incremental_ok", nil
 }
 
+// Upstream's strict previous_response_id comparison. The fork never rewrites a
+// client anchor, so nothing calls it; it stays for upstream parity.
+//
+//nolint:unused
 type openAIWSIngressPreviousTurnStrictState struct {
 	nonInputComparable []byte
 }
 
+//nolint:unused // upstream parity, see openAIWSIngressPreviousTurnStrictState
 func buildOpenAIWSIngressPreviousTurnStrictState(payload []byte) (*openAIWSIngressPreviousTurnStrictState, error) {
 	if len(payload) == 0 {
 		return nil, nil
@@ -848,6 +854,7 @@ func buildOpenAIWSIngressPreviousTurnStrictState(payload []byte) (*openAIWSIngre
 	}, nil
 }
 
+//nolint:unused // upstream parity, see openAIWSIngressPreviousTurnStrictState
 func shouldKeepIngressPreviousResponseIDWithStrictState(
 	previousState *openAIWSIngressPreviousTurnStrictState,
 	currentPayload []byte,

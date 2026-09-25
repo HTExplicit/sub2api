@@ -1985,13 +1985,6 @@ func (s *OpenAIGatewayService) newOpenAIStreamFailoverErrorClassified(
 	return failoverErr
 }
 
-func firstOpenAIResponseHeader(headers []http.Header) http.Header {
-	if len(headers) == 0 {
-		return nil
-	}
-	return headers[0]
-}
-
 // nonStreamingTerminalFailureFailover applies the streaming path's terminal-event
 // verdict to a stream=false request whose upstream answered with SSE anyway
 // (other sub2api instances and several OpenAI-compatible upstreams do this).

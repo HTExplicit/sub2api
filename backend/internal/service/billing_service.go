@@ -1615,6 +1615,7 @@ func (s *BillingService) CalculateCostWithServiceTier(model string, tokens Usage
 	return s.calculateCostInternal(model, tokens, rateMultiplier, serviceTier, nil)
 }
 
+//nolint:unused // upstream parity; OpenAI usage bills through calculateCostInternalWithPolicy with pricingAt
 func (s *BillingService) calculateCostWithServiceTierPolicy(
 	model string,
 	tokens UsageTokens,

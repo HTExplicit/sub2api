@@ -48,47 +48,6 @@ func (d *openAIWSSingleConnDialer) Dial(
 	return d.conn, 0, nil, nil
 }
 
-type openAIWSIngressDialStep struct {
-	conn      openAIWSClientConn
-	handshake http.Header
-}
-
-type openAIWSIngressSequenceDialer struct {
-	mu      sync.Mutex
-	steps   []openAIWSIngressDialStep
-	headers []http.Header
-}
-
-func (d *openAIWSIngressSequenceDialer) Dial(
-	ctx context.Context,
-	wsURL string,
-	headers http.Header,
-	proxyURL string,
-) (openAIWSClientConn, int, http.Header, error) {
-	_ = ctx
-	_ = wsURL
-	_ = proxyURL
-	d.mu.Lock()
-	defer d.mu.Unlock()
-	d.headers = append(d.headers, cloneHeader(headers))
-	if len(d.steps) == 0 {
-		return nil, 0, nil, errors.New("unexpected ingress WS dial")
-	}
-	step := d.steps[0]
-	d.steps = d.steps[1:]
-	return step.conn, 0, cloneHeader(step.handshake), nil
-}
-
-func (d *openAIWSIngressSequenceDialer) capturedHeaders() []http.Header {
-	d.mu.Lock()
-	defer d.mu.Unlock()
-	result := make([]http.Header, len(d.headers))
-	for i := range d.headers {
-		result[i] = cloneHeader(d.headers[i])
-	}
-	return result
-}
-
 func TestOpenAIWSDownstreamWriteContext_CancellationOwnership(t *testing.T) {
 	t.Run("pre-canceled ordinary context is canceled before return", func(t *testing.T) {
 		controlCtx, cancelControl := context.WithCancelCause(context.Background())

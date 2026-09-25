@@ -9,8 +9,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-type failedPromptProcess struct{}
-
 func TestRemoteSkillPairAssemblyKeepsCancellationDuringFilePolicyChecks(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
@@ -19,10 +17,6 @@ func TestRemoteSkillPairAssemblyKeepsCancellationDuringFilePolicyChecks(t *testi
 	require.ErrorIs(t, err, context.Canceled)
 	_, err = remoteSkillFileChangesChecked(ctx, nil, RemoteSkillCandidate{EffectiveFiles: map[string][]byte{"SKILL.md": []byte("fixture")}})
 	require.ErrorIs(t, err, context.Canceled)
-}
-
-func (failedPromptProcess) InvokeOperation(context.Context, string, string, extensionv1.Invocation) (extensionv1.Result, error) {
-	return extensionv1.Result{}, ErrExtensionOperationUnavailable
 }
 
 func TestPromptDomainHealthyStartReloadsPromptOnce(t *testing.T) {

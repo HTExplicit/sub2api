@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"strings"
 	"time"
@@ -54,22 +55,53 @@ func NewImageStudioService(
 	}
 }
 
-// EligibleKeys lists the caller's API keys that can run Image Studio. Its
-// image models and groups came only from the removed Cindy catalog, so no key
-// is eligible until a generic image model source is added.
+// imageStudioModelSource lists the image models Image Studio may offer. The
+// removed Cindy catalog was its only source, so it stays empty until a generic
+// image model source is added; without models no API key is eligible.
+var imageStudioModelSource []string
+
+func imageStudioGroupEligible(group *Group) bool {
+	return group != nil && group.ID > 0 && group.IsActive() && group.AllowImageGeneration &&
+		len(imageStudioModelSource) > 0
+}
+
+// EligibleKeys lists the caller's active API keys whose group allows image
+// generation while Image Studio has a model source.
 func (s *ImageStudioService) EligibleKeys(ctx context.Context, userID int64) ([]ImageStudioEligibleKey, error) {
 	if s == nil || s.apiKeys == nil || s.accounts == nil || userID <= 0 {
 		return nil, newImageStudioError(503, "studio_unavailable", "Image Studio is unavailable")
 	}
-	return []ImageStudioEligibleKey{}, nil
+	lister, ok := s.apiKeys.(apiKeyAllByUserIDLister)
+	if !ok {
+		return nil, newImageStudioError(503, "studio_unavailable", "Image Studio is unavailable")
+	}
+	keys, err := lister.ListAllByUserID(ctx, userID, APIKeyListFilters{Status: StatusActive})
+	if err != nil {
+		return nil, fmt.Errorf("list image studio keys: %w", err)
+	}
+	items := make([]ImageStudioEligibleKey, 0, len(keys))
+	for i := range keys {
+		key := &keys[i]
+		if key.UserID != userID || !key.IsActive() || key.IsExpired() || key.IsQuotaExhausted() || !imageStudioGroupEligible(key.Group) {
+			continue
+		}
+		items = append(items, ImageStudioEligibleKey{APIKey: ImageStudioEligibleAPIKey{
+			ID: key.ID, Name: key.Name, GroupID: key.Group.ID,
+			Group: ImageStudioEligibleKeyGroup{ID: key.Group.ID, Name: key.Group.Name},
+		}})
+	}
+	return items, nil
 }
 
-// eligibleAPIKey rejects every key for the same reason as EligibleKeys.
 func (s *ImageStudioService) eligibleAPIKey(ctx context.Context, userID, apiKeyID int64) (*APIKey, error) {
 	if s == nil || s.apiKeys == nil || s.accounts == nil {
 		return nil, newImageStudioError(503, "studio_unavailable", "Image Studio is unavailable")
 	}
-	return nil, newImageStudioError(404, "api_key_unavailable", "Image Studio API key is unavailable")
+	key, err := s.apiKeys.GetByID(ctx, apiKeyID)
+	if err != nil || key == nil || key.UserID != userID || !key.IsActive() || key.IsExpired() || key.IsQuotaExhausted() || !imageStudioGroupEligible(key.Group) {
+		return nil, newImageStudioError(404, "api_key_unavailable", "Image Studio API key is unavailable")
+	}
+	return key, nil
 }
 
 func (s *ImageStudioService) Create(

@@ -1696,7 +1696,6 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 				toolSignals = AnalyzeToolContinuationSignals(currentReqBody)
 			}
 		}
-		hasFunctionCallOutput := toolSignals.HasFunctionCallOutput
 		// store=false + function_call_output 场景必须有续链锚点。
 		// 若客户端未传 previous_response_id，优先回填上一轮响应 ID，避免上游报 call_id 无法关联。
 		if shouldInferIngressFunctionCallOutputPreviousResponseID(
@@ -1752,9 +1751,6 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 			// the exact prior full-input baseline; item count is not proof.
 			currentTurnReplayVerified = openAIWSReplayHistoryVerified(currentPayload, lastTurnResponseID, lastTurnReplayVerified)
 		}
-		replayHasFunctionCallOutput := currentTurnReplayInputExists &&
-			openAIWSRawItemsHasFunctionCallOutput(currentTurnReplayInput)
-		hasFunctionCallOutput = hasFunctionCallOutput || replayHasFunctionCallOutput
 		// Build a send-only copy after full replay assembly. The clean payload
 		// remains the sole source for retries and the next turn's accumulator.
 		wirePayload, promptErr := s.finalizeBusinessPromptWSIngress(c, account, currentPayload)
