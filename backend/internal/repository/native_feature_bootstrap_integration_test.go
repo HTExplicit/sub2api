@@ -37,7 +37,7 @@ func TestNativeFeatureRetirementIsAtomicAndPreservesLedger(t *testing.T) {
 	require.NoError(t, err)
 	_, err = integrationDB.ExecContext(ctx, `INSERT INTO sub2api_plugin_bootstrap(plugin_key,bundle_sha256,migration_profile,desired_enabled,completed,state_imported) VALUES('codexrip.image-tools','fixture','image-tools-v1',true,true,true)`)
 	require.NoError(t, err)
-	_, err = integrationDB.ExecContext(ctx, `INSERT INTO settings(key,value,updated_at) VALUES('image_tools_config','{"studio_enabled":false,"responses_image_enabled":false}',NOW())`)
+	_, err = integrationDB.ExecContext(ctx, `INSERT INTO settings(key,value,updated_at) VALUES('image_tools_config','{"studio_enabled":false}',NOW())`)
 	require.NoError(t, err)
 	_, err = integrationDB.ExecContext(ctx, `INSERT INTO sub2api_plugin_state(plugin_key,namespace,state_key,value) VALUES('codexrip.codex-runtime','codex-routing-private','quality-run.native-retirement-fixture','{"status":"closed","used_sends":40,"attempts":[{"id":"kept"}],"scope":{"account_id":7}}')`)
 	require.NoError(t, err)
@@ -46,7 +46,7 @@ func TestNativeFeatureRetirementIsAtomicAndPreservesLedger(t *testing.T) {
 	repo := NewNativeFeatureBootstrapRepository(integrationDB)
 	convert := func(plugin service.NativeRetirementPlugin) (map[string]json.RawMessage, error) {
 		if plugin.Key == "codexrip.image-tools" {
-			return map[string]json.RawMessage{service.SettingKeyImageToolsConfig: json.RawMessage(`{"studio_enabled":true,"responses_image_enabled":true}`)}, nil
+			return map[string]json.RawMessage{service.SettingKeyImageToolsConfig: json.RawMessage(`{"studio_enabled":true}`)}, nil
 		}
 		return nil, nil
 	}
@@ -76,7 +76,7 @@ func TestNativeFeatureRetirementIsAtomicAndPreservesLedger(t *testing.T) {
 	require.Equal(t, "010203", artifact)
 	var setting string
 	require.NoError(t, integrationDB.QueryRowContext(ctx, `SELECT value FROM settings WHERE key='image_tools_config'`).Scan(&setting))
-	require.JSONEq(t, `{"studio_enabled":false,"responses_image_enabled":false}`, setting)
+	require.JSONEq(t, `{"studio_enabled":false}`, setting)
 	var bindingEnabled, removed bool
 	require.NoError(t, integrationDB.QueryRowContext(ctx, `SELECT enabled FROM sub2api_plugin_bindings WHERE plugin_id=$1`, imageID).Scan(&bindingEnabled))
 	require.False(t, bindingEnabled)

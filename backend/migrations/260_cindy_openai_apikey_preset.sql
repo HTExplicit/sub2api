@@ -256,9 +256,11 @@ DROP FUNCTION IF EXISTS enqueue_account_identity_auth_cache_invalidations();
 DROP FUNCTION IF EXISTS enqueue_account_group_auth_cache_invalidations();
 DROP FUNCTION IF EXISTS project_reconcile_cindy_group_channel(BIGINT);
 DROP FUNCTION IF EXISTS project_assert_cindy_group_topology(BIGINT);
-DROP FUNCTION IF EXISTS enqueue_channel_group_cache_invalidations(BIGINT);
-DROP FUNCTION IF EXISTS enqueue_channel_group_scheduler_invalidation(BIGINT);
-DROP FUNCTION IF EXISTS enqueue_group_api_key_auth_cache_invalidations(BIGINT);
+-- enqueue_channel_group_cache_invalidations(BIGINT),
+-- enqueue_group_api_key_auth_cache_invalidations(BIGINT) and
+-- enqueue_channel_group_scheduler_invalidation(BIGINT) are generic helpers that
+-- stay: the managed model route trigger from 240
+-- (trg_groups_managed_model_routes_invalidation) and migration 242 call them.
 DROP FUNCTION IF EXISTS project_managed_cindy_channel_id();
 DROP FUNCTION IF EXISTS project_is_strict_cindy_group(BIGINT);
 DROP FUNCTION IF EXISTS project_cindy_platform_v1_from_legacy();
