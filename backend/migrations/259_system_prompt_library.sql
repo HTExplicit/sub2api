@@ -11,7 +11,7 @@
 DO $system_prompts$
 DECLARE
     library JSONB := '[]'::jsonb;
-    rule JSONB;
+    policy_rule JSONB;
     version_body TEXT;
     version_mode TEXT;
     prompt_id TEXT;
@@ -27,7 +27,7 @@ DECLARE
 BEGIN
     IF to_regclass('system_prompt_rule_policies') IS NOT NULL
        AND to_regclass('system_prompt_template_versions') IS NOT NULL THEN
-        FOR rule IN
+        FOR policy_rule IN
             SELECT item.value
             FROM system_prompt_rule_policies p,
                  jsonb_array_elements(CASE WHEN jsonb_typeof(p.policy->'rules') = 'array'
@@ -37,14 +37,14 @@ BEGIN
         LOOP
             version_body := NULL;
             version_mode := NULL;
-            IF (rule->>'version_id') ~ '^[0-9]+$' THEN
+            IF (policy_rule->>'version_id') ~ '^[0-9]+$' THEN
                 SELECT v.body, v.composition_mode INTO version_body, version_mode
                 FROM system_prompt_template_versions v
-                WHERE v.id = (rule->>'version_id')::BIGINT;
+                WHERE v.id = (policy_rule->>'version_id')::BIGINT;
             END IF;
 
             IF version_mode = 'anthropic_system_blocks' THEN
-                IF claude_body IS NULL AND COALESCE((rule->>'enabled')::BOOLEAN, FALSE) THEN
+                IF claude_body IS NULL AND COALESCE((policy_rule->>'enabled')::BOOLEAN, FALSE) THEN
                     BEGIN
                         claude_body := version_body::JSONB;
                     EXCEPTION WHEN others THEN
@@ -62,19 +62,19 @@ BEGIN
                 CONTINUE;
             END IF;
 
-            prompt_id := COALESCE(rule->>'id', '');
+            prompt_id := COALESCE(policy_rule->>'id', '');
             IF prompt_id !~ '^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$' OR prompt_id = ANY(used_ids) THEN
                 prompt_id := 'imported-' || (jsonb_array_length(library) + 1);
             END IF;
             used_ids := used_ids || prompt_id;
-            prompt_name := left(btrim(COALESCE(rule->>'name', '')), 100);
+            prompt_name := left(btrim(COALESCE(policy_rule->>'name', '')), 100);
             IF prompt_name = '' THEN
                 prompt_name := prompt_id;
             END IF;
-            prompt_position := CASE WHEN rule->>'position' IN ('control_prepend', 'conversation_head')
+            prompt_position := CASE WHEN policy_rule->>'position' IN ('control_prepend', 'conversation_head')
                                     THEN 'prepend' ELSE 'append' END;
-            prompt_role := CASE WHEN rule->>'role' IN ('system', 'developer')
-                                THEN rule->>'role' ELSE 'auto' END;
+            prompt_role := CASE WHEN policy_rule->>'role' IN ('system', 'developer')
+                                THEN policy_rule->>'role' ELSE 'auto' END;
             library := library || jsonb_build_array(jsonb_build_object(
                 'id', prompt_id, 'name', prompt_name, 'body', version_body,
                 'position', prompt_position, 'role', prompt_role));
