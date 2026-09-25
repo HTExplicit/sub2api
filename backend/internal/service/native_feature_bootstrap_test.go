@@ -29,7 +29,7 @@ func TestNativeFeatureBootstrapPreservesEffectiveConfiguration(t *testing.T) {
 		{
 			name:   "disabled image installation stays off",
 			plugin: NativeRetirementPlugin{Key: "codexrip.image-tools", State: "disabled", ConfigEncrypted: `{"studio_enabled":true,"responses_image_enabled":true}`},
-			key:    SettingKeyImageToolsConfig, expected: `{"studio_enabled":false,"responses_image_enabled":false}`,
+			key:    SettingKeyImageToolsConfig, expected: `{"studio_enabled":false}`,
 		},
 		{
 			name: "separate theme and telemetry bindings",
@@ -39,10 +39,10 @@ func TestNativeFeatureBootstrapPreservesEffectiveConfiguration(t *testing.T) {
 			}}, key: SettingKeyAdminObservabilityConfig, expected: `{"telemetry_enabled":true,"theme_enabled":false}`,
 		},
 		{
-			name: "Cindy missing balance field keeps module default",
+			name: "retired Cindy provider drops its saved switches",
 			plugin: NativeRetirementPlugin{Key: "codexrip.cindy-provider", State: "enabled", Manifest: json.RawMessage(`{"capabilities":[{"id":"extensions.provider.v1","platform":"cindy","account_type":"apikey"}]}`), ConfigEncrypted: `{"catalog_enabled":true,"search_enabled":false}`, Bindings: []NativeRetirementBinding{
-				{Capability: "extensions.provider.v1", Platform: PlatformCindy, AccountType: AccountTypeAPIKey, Enabled: true, RolloutPercent: 100},
-			}}, key: SettingKeyCindyProviderConfig, expected: `{"balance_detection":true,"catalog_enabled":true,"search_enabled":false}`,
+				{Capability: "extensions.provider.v1", Platform: "cindy", AccountType: AccountTypeAPIKey, Enabled: true, RolloutPercent: 100},
+			}},
 		},
 		{
 			name: "partial telemetry cannot become global",

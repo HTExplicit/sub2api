@@ -86,8 +86,6 @@ func mustCreateGroup(t *testing.T, client *dbent.Client, g *service.Group) *serv
 	create := client.Group.Create().
 		SetName(g.Name).
 		SetPlatform(g.Platform).
-		SetWirePlatform(g.WirePlatform).
-		SetProviderProfile(g.ProviderProfile).
 		SetStatus(g.Status).
 		SetSubscriptionType(g.SubscriptionType).
 		SetRateMultiplier(g.RateMultiplier).
@@ -204,8 +202,6 @@ func mustCreateAccount(t *testing.T, client *dbent.Client, a *service.Account) *
 	create := client.Account.Create().
 		SetName(a.Name).
 		SetPlatform(a.Platform).
-		SetWirePlatform(a.WirePlatform).
-		SetProviderProfile(a.ProviderProfile).
 		SetType(a.Type).
 		SetCredentials(a.Credentials).
 		SetExtra(a.Extra).
@@ -250,9 +246,6 @@ func mustCreateAccount(t *testing.T, client *dbent.Client, a *service.Account) *
 	}
 	if a.QuotaDimension != "" {
 		create.SetQuotaDimension(dbaccount.QuotaDimension(a.QuotaDimension))
-	}
-	if a.CindyBalanceInsufficientAt != nil {
-		create.SetCindyBalanceInsufficientAt(*a.CindyBalanceInsufficientAt)
 	}
 
 	created, err := create.Save(ctx)

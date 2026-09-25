@@ -46,7 +46,6 @@ func TestSchedulerCacheReasoningPolicyAccountRoundTripMatchesSource(t *testing.T
 		{Platform: service.PlatformOpenAI, Type: service.AccountTypeOAuth},
 		{Platform: service.PlatformOpenAI, Type: service.AccountTypeSetupToken},
 		{Platform: service.PlatformOpenAI, Type: service.AccountTypeOAuth, ParentAccountID: &parentID, QuotaDimension: service.QuotaDimensionSpark},
-		{Platform: service.PlatformCindy, WirePlatform: service.WirePlatformOpenAI, Type: service.AccountTypeAPIKey},
 		{Platform: service.PlatformGrok, Type: service.AccountTypeOAuth},
 	}
 	for _, account := range accounts {

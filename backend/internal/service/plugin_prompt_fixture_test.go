@@ -4,9 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"strings"
-	"testing"
 
-	cindy "github.com/Wei-Shaw/sub2api/internal/cindyprovider/catalog"
 	codexprofile "github.com/Wei-Shaw/sub2api/internal/codexruntime/profile"
 	codexrecovery "github.com/Wei-Shaw/sub2api/internal/codexruntime/recovery"
 
@@ -26,15 +24,6 @@ func withCodexTransportFixture(ctx context.Context, enabled bool) context.Contex
 
 var promptFixtureModule = policy.New()
 
-func cindyProbeTestModels(t *testing.T) [2]string {
-	t.Helper()
-	plan, err := cindyBalanceProbePlan(context.Background())
-	if err != nil {
-		t.Fatal(err)
-	}
-	return plan.Models
-}
-
 func (promptPolicyFixture) InvokeOperation(ctx context.Context, _ string, _ string, in extensionv1.Invocation) (extensionv1.Result, error) {
 	if in.Capability == extensionv1.CapabilityRecovery {
 		return codexrecovery.Invoke(ctx, in)
@@ -50,14 +39,6 @@ func (promptPolicyFixture) InvokeOperation(ctx context.Context, _ string, _ stri
 	}
 	if strings.HasPrefix(in.Operation, "codex.identity.") {
 		return codexprofile.Invoke(ctx, in)
-	}
-	if strings.HasPrefix(in.Operation, "cindy.") {
-		module := cindy.New()
-		raw, _ := json.Marshal(LegacyCindyProviderConfig())
-		if err := module.ApplyConfig(ctx, raw); err != nil {
-			return extensionv1.Result{}, err
-		}
-		return module.Invoke(ctx, in)
 	}
 	if strings.HasPrefix(in.Operation, "taxonomy.") || strings.HasPrefix(in.Operation, "test.") || strings.HasPrefix(in.Operation, "import.") || in.Operation == "tools.describe" {
 		return accounttools.New().Invoke(ctx, in)

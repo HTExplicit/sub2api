@@ -25,8 +25,7 @@ func imageStudioExecutorAPIKey() *service.APIKey {
 		ID: 21, UserID: 11, Key: "server-only-secret", Status: service.StatusActive,
 		GroupID: &groupID,
 		Group: &service.Group{
-			ID: groupID, Platform: service.PlatformCindy, WirePlatform: service.WirePlatformOpenAI,
-			ProviderProfile: service.ProviderProfileCindyLaxaV1, Status: service.StatusActive, AllowImageGeneration: true,
+			ID: groupID, Platform: service.PlatformOpenAI, Status: service.StatusActive, AllowImageGeneration: true,
 		},
 		User: &service.User{ID: 11, Status: service.StatusActive, Concurrency: 4},
 	}

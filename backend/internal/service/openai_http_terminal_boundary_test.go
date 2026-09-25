@@ -234,7 +234,7 @@ func TestOpenAIHTTPTerminalBufferedBodyLimitAndCancellation(t *testing.T) {
 
 func TestOpenAIHTTPTerminalPreambleAndKeepaliveDoNotCommitRecovery(t *testing.T) {
 	for _, mode := range []string{"native", "native_async", "passthrough"} {
-		for _, platform := range []string{PlatformOpenAI, PlatformCindy} {
+		for _, platform := range []string{PlatformOpenAI} {
 			t.Run(mode+"/"+platform, func(t *testing.T) {
 				rec := httptest.NewRecorder()
 				c, _ := gin.CreateTestContext(rec)

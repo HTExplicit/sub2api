@@ -14,7 +14,7 @@ func TestNativeCodexErrorDiagnosticsUseStoredAccountsAndRemovePrivateFields(t *t
 			return &Account{ID: 1, Platform: PlatformOpenAI, Type: AccountTypeOAuth}, nil
 		}
 		if id == 2 {
-			return &Account{ID: 2, Platform: PlatformCindy, Type: AccountTypeAPIKey}, nil
+			return &Account{ID: 2, Platform: PlatformAnthropic, Type: AccountTypeAPIKey}, nil
 		}
 		return nil, nil
 	}

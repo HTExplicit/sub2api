@@ -34,14 +34,6 @@ func (r *pinnedModelsRoutesRepository) ListByGroup(_ context.Context, groupID in
 	return nil, nil
 }
 
-func (*pinnedModelsRoutesRepository) CindyGroupIdentityReaderMarker() {}
-
-func (r *pinnedModelsRoutesRepository) ListCindyGroupIdentityMembers(ctx context.Context, groupID int64) ([]service.Account, error) {
-	return r.ListByGroup(ctx, groupID)
-}
-
-func (*pinnedModelsRoutesRepository) CindyCodexModelsAccountReaderMarker() {}
-
 func (r *pinnedModelsRoutesRepository) ListSchedulableByPlatform(_ context.Context, platform string) ([]service.Account, error) {
 	if r.account.Platform == platform && r.account.IsSchedulable() {
 		return []service.Account{r.account}, nil

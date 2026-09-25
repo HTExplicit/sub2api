@@ -145,7 +145,7 @@ func TestOpenAIGatewayHandler_ReasoningRecoveryTerminalNeverReentersScheduler(t 
 				// The minimal router fixture intentionally disables the optional
 				// advanced scheduler. Exercise the same terminal finalizer with an
 				// observable reporter instead of treating inert metrics as evidence.
-				reporter := &cindyFailoverSelectionReporter{}
+				reporter := &recordingFailoverSelectionReporter{}
 				classified := &service.UpstreamFailoverError{StatusCode: failure.status}
 				if failure.clientStatus == http.StatusBadRequest {
 					classified = service.NewOpenAIRequestRejectedError(failure.status, nil)
@@ -160,4 +160,30 @@ func TestOpenAIGatewayHandler_ReasoningRecoveryTerminalNeverReentersScheduler(t 
 			})
 		}
 	}
+}
+
+type recordingFailoverSelectionReporter struct {
+	sameAccountRetries int
+	reportedFailures   int
+	releasedProbes     int
+}
+
+func (r *recordingFailoverSelectionReporter) ReportOpenAIAccountSameAccountRetry(
+	_ *service.AccountSelectionResult, _ int64, _ string,
+) {
+	r.sameAccountRetries++
+}
+
+func (r *recordingFailoverSelectionReporter) ReportOpenAIAccountScheduleResultForSelection(
+	_ *service.AccountSelectionResult, _ int64, _ string, success bool, _ *int,
+) {
+	if !success {
+		r.reportedFailures++
+	}
+}
+
+func (r *recordingFailoverSelectionReporter) ReleaseOpenAIRuntimeBreakerProbeForSelection(
+	_ *service.AccountSelectionResult,
+) {
+	r.releasedProbes++
 }

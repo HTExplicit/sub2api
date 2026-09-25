@@ -118,8 +118,6 @@ func TestOpenAIOfficialHTTPRetryScopeIsolation(t *testing.T) {
 		{name: "marked ordinary API key reselects", marked: true, want: openAIFailoverRetryReselect},
 		{name: "unmarked API key remains exact", want: openAIFailoverRetrySameAccount},
 		{name: "OAuth keeps its current policy", marked: true, configure: func(account *service.Account) { account.Type = service.AccountTypeOAuth }, want: openAIFailoverRetrySwitchAccount},
-		{name: "Cindy keeps exact retries", marked: true, configure: func(account *service.Account) { account.Platform = service.PlatformCindy }, want: openAIFailoverRetrySameAccount},
-		{name: "legacy Laxa keeps exact retries", marked: true, configure: func(account *service.Account) { account.Credentials["base_url"] = "https://api.laxarouter.ai" }, want: openAIFailoverRetrySameAccount},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			account := officialHTTPRetryAccount()

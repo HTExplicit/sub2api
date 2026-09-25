@@ -142,22 +142,6 @@ func TestMergeAccountModelContextExtraRejectsInvalidPatch(t *testing.T) {
 	}
 }
 
-func TestMergeAccountModelContextExtraRevalidatesProtectedAccounts(t *testing.T) {
-	for _, account := range []*service.Account{
-		{Platform: service.PlatformOpenAI, Type: service.AccountTypeOAuth},
-		{Platform: service.PlatformCindy, Type: service.AccountTypeAPIKey, ProviderProfile: service.ProviderProfileCindyLaxaV1},
-	} {
-		t.Run(account.Platform+"/"+account.Type, func(t *testing.T) {
-			account.ModelContextOverridesPatch = map[string]*int64{"model-a": modelContextRepositoryInt64(258000)}
-			_, err := mergeAccountModelContextExtra(account, nil, nil, nil, nil)
-			require.Error(t, err)
-			account.ModelContextOverridesPatch = nil
-			_, err = mergeAccountModelContextExtra(account, nil, nil, nil, nil)
-			require.NoError(t, err, "ordinary protected-account edits must remain supported")
-		})
-	}
-}
-
 func TestMergeAccountModelContextExtraRejectsMalformedStoredJSON(t *testing.T) {
 	for _, malformedColumn := range []int{0, 1, 2} {
 		values := [3][]byte{}
@@ -180,11 +164,11 @@ func TestLockAndMergeAccountProbeExtraUsesLockedModelContextValues(t *testing.T)
 			mock.ExpectQuery(`(?s)SELECT.*extra -> 'upstream_model_context_capacities'.*extra -> 'model_context_overrides'.*extra -> 'upstream_model_metadata'.*FOR NO KEY UPDATE`).
 				WithArgs(int64(27), service.PlatformOpenAI, service.AccountTypeAPIKey, `{"api_key":"sk-test"}`, nil).
 				WillReturnRows(sqlmock.NewRows([]string{
-					"identity_unchanged", "credential_generation_unchanged", "ollama_group_unchanged", "ollama_proxy_unchanged",
+					"identity_unchanged", "ollama_group_unchanged", "ollama_proxy_unchanged",
 					"enabled", "rate_sync_enabled", "snapshot", "ollama_session", "ollama_auto", "ollama_snapshot",
 					"upstream_context_capacities", "model_context_overrides", "upstream_model_metadata", "current_extra",
 					"opencode_group_unchanged", "opencode_auto", "opencode_snapshot",
-				}).AddRow(identityUnchanged, identityUnchanged, false, true, nil, nil, nil, nil, nil, nil,
+				}).AddRow(identityUnchanged, false, true, nil, nil, nil, nil, nil, nil,
 					[]byte(`{"fresh":true}`), []byte(`{"other-model":700000}`), []byte(`{"fresh":true}`), nil, false, nil, nil))
 			account := modelContextRepositoryAccount(map[string]*int64{"model-a": modelContextRepositoryInt64(1050000)})
 			account.Extra = map[string]any{
@@ -193,7 +177,7 @@ func TestLockAndMergeAccountProbeExtraUsesLockedModelContextValues(t *testing.T)
 				service.UpstreamModelMetadataExtraKey:          map[string]any{"stale": true},
 			}
 
-			got, _, err := lockAndMergeAccountProbeExtra(context.Background(), client, account, nil, nil)
+			got, err := lockAndMergeAccountProbeExtra(context.Background(), client, account, nil, nil)
 
 			require.NoError(t, err)
 			require.Equal(t, map[string]any{"fresh": true}, got[service.UpstreamModelContextCapacitiesExtraKey])
@@ -228,11 +212,11 @@ func TestUpdateAccountModelContextPatchClearsOnlyAfterSuccessfulWrite(t *testing
 			mock.ExpectQuery(`(?s)SELECT.*FOR NO KEY UPDATE`).
 				WithArgs(int64(27), service.PlatformOpenAI, service.AccountTypeAPIKey, `{"api_key":"sk-test"}`, nil).
 				WillReturnRows(sqlmock.NewRows([]string{
-					"identity_unchanged", "credential_generation_unchanged", "ollama_group_unchanged", "ollama_proxy_unchanged",
+					"identity_unchanged", "ollama_group_unchanged", "ollama_proxy_unchanged",
 					"enabled", "rate_sync_enabled", "snapshot", "ollama_session", "ollama_auto", "ollama_snapshot",
 					"upstream_context_capacities", "model_context_overrides", "upstream_model_metadata", "current_extra",
 					"opencode_group_unchanged", "opencode_auto", "opencode_snapshot",
-				}).AddRow(true, true, false, true, nil, nil, nil, nil, nil, nil,
+				}).AddRow(true, false, true, nil, nil, nil, nil, nil, nil,
 					[]byte(`{"fresh":true}`), []byte(`{"other-model":700000}`), []byte(`{"fresh":true}`), nil, false, nil, nil))
 			mock.ExpectExec(`(?s)UPDATE .*accounts.*SET.*WHERE .*id.*`).
 				WillReturnResult(sqlmock.NewResult(0, 1))

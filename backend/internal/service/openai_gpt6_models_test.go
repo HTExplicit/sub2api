@@ -164,15 +164,6 @@ func TestGPT6ProviderMetadataOverridesAPIDefaults(t *testing.T) {
 	require.EqualValues(t, 8000, model["max_output_tokens"])
 	require.EqualValues(t, 50000, model["auto_compact_token_limit"])
 	require.Equal(t, false, model["supports_search_tool"])
-	for _, protected := range []*Account{
-		{Platform: PlatformCindy, Type: AccountTypeAPIKey},
-		{Platform: PlatformCindy, Type: AccountTypeAPIKey, Credentials: map[string]any{"base_url": "https://api.laxarouter.ai"}},
-		{Platform: PlatformOpenAI, Type: AccountTypeAPIKey, ProviderProfile: ProviderProfileCindyLaxaV1},
-		{Platform: PlatformOpenAI, Type: AccountTypeAPIKey, Credentials: map[string]any{"base_url": "https://api.laxarouter.ai"}},
-	} {
-		_, projected := gpt6APIModelMetadata(protected, "gpt-6-luna")
-		require.False(t, projected, "a shared wire protocol cannot expand a protected provider's inventory")
-	}
 }
 
 func TestGPT6ConfiguredOAuthCatalogUsesObservedCapacity(t *testing.T) {

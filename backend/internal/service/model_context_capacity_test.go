@@ -175,9 +175,6 @@ func TestModelContextCapacityManagedProviderBoundary(t *testing.T) {
 	}
 	for _, account := range []*Account{
 		nil,
-		{Platform: PlatformCindy, Type: AccountTypeAPIKey},
-		{Platform: PlatformOpenAI, Type: AccountTypeAPIKey, ProviderProfile: ProviderProfileCindyLaxaV1},
-		{Platform: PlatformOpenAI, Type: AccountTypeAPIKey, Credentials: map[string]any{"base_url": "https://api.laxarouter.ai"}},
 		{Platform: PlatformOpenAI, Type: AccountTypeSetupToken, Credentials: map[string]any{"base_url": "https://proxy.invalid"}},
 		{Platform: PlatformAnthropic, Type: AccountTypeBedrock},
 	} {

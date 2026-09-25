@@ -55,7 +55,6 @@ func TestNormalizeOpenAICompatibleResponsesReasoningSummary(t *testing.T) {
 	}{
 		{"missing account", nil, compatEndpoint, compatibleSummaryRequest},
 		{"OAuth", &Account{Platform: PlatformOpenAI, Type: AccountTypeOAuth}, compatEndpoint, compatibleSummaryRequest},
-		{"Cindy", &Account{Platform: PlatformCindy, Type: AccountTypeAPIKey}, compatEndpoint, compatibleSummaryRequest},
 		{"official host", account, "https://api.openai.com/v1/responses", compatibleSummaryRequest},
 		{"other port", account, "https://ai-incubator-api.pnnl.gov:8443/v1/responses", compatibleSummaryRequest},
 		{"HTTP", account, "http://ai-incubator-api.pnnl.gov/v1/responses", compatibleSummaryRequest},

@@ -193,10 +193,13 @@ func TestOpenAIReasoningPolicyBulkAdminFreezesFilteredSelection(t *testing.T) {
 	for _, account := range stub.accountsByID {
 		account.Type = service.AccountTypeSetupToken
 	}
-	stub.accountsByID[101] = canonicalCindyJobAccount(101)
+	stub.accountsByID[101] = &service.Account{
+		ID: 101, Name: "OpenAI API key", Platform: service.PlatformOpenAI, Type: service.AccountTypeAPIKey,
+		Credentials: map[string]any{"base_url": "https://relay.example.test", "api_key": "test-key"},
+		Status:      service.StatusActive,
+	}
 	stub.matches = ids
 	router, handler, jobs := newBulkJobScopeRouter(stub)
-	handler.cindyJobMutations = &recordingCindyJobMutationRunner{}
 	req := BulkUpdateAccountsRequest{
 		Filters: &BulkUpdateAccountFilters{Search: "batch"},
 		Extra:   map[string]any{service.OpenAIChatReasoningReplayEnabledExtraKey: true},

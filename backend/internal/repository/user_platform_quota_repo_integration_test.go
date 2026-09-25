@@ -140,26 +140,6 @@ func TestUserPlatformQuotaRepository_BulkInsertInitial_CNProvidersAllowed(t *tes
 	}
 }
 
-func TestUserPlatformQuotaRepository_BulkInsertInitial_CindyAllowed(t *testing.T) {
-	ctx := context.Background()
-	tx := testEntTx(t)
-	txCtx := dbent.NewTxContext(ctx, tx)
-	client := tx.Client()
-
-	userID := mustCreateUserForQuota(t, client)
-	repo := NewUserPlatformQuotaRepository(client)
-	daily := 15.0
-	require.NoError(t, repo.BulkInsertInitial(txCtx, []UserPlatformQuotaRecord{{
-		UserID: userID, Platform: service.PlatformCindy, DailyLimitUSD: &daily,
-	}}))
-
-	record, err := repo.GetByUserPlatform(txCtx, userID, service.PlatformCindy)
-	require.NoError(t, err)
-	require.NotNil(t, record)
-	require.NotNil(t, record.DailyLimitUSD)
-	require.InDelta(t, daily, *record.DailyLimitUSD, 1e-9)
-}
-
 func TestUserPlatformQuotaRepository_GetByUserPlatform(t *testing.T) {
 	ctx := context.Background()
 	tx := testEntTx(t)

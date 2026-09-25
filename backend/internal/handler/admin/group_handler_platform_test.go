@@ -12,7 +12,9 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// 回归分组平台枚举：CN 平台、Cindy 与 OpenCode Go 必须能通过 Create/Update 的 binding 校验。
+// 回归分组平台枚举:kimi/zhipu/deepseek/opencode_go 必须能通过 Create/Update 的
+// binding 校验（历史 bug:调度/路由链路已支持这些平台,但 oneof 白名单漏加,
+// 导致平台分组无法创建、账号"无可用分组"）;非法值仍须被拒。
 func bindGroupPlatformJSON(t *testing.T, target any, body string) error {
 	t.Helper()
 	gin.SetMode(gin.TestMode)
@@ -24,7 +26,7 @@ func bindGroupPlatformJSON(t *testing.T, target any, body string) error {
 
 func TestGroupPlatformBinding_AllowedPlatforms(t *testing.T) {
 	allowed := []string{
-		"anthropic", "openai", "cindy", "gemini", "antigravity", "grok",
+		"anthropic", "openai", "gemini", "antigravity", "grok",
 		"kimi", "zhipu", "deepseek", "minimax", "opencode_go", "composite",
 	}
 	for _, platform := range allowed {

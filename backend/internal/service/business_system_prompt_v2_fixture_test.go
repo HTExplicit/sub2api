@@ -19,7 +19,7 @@ func promptRulesSnapshotForTest(snapshot BusinessSystemPromptSnapshot) BusinessS
 	rule := extensionv1.PromptRule{ID: "fixture", Name: "Fixture prompt", Enabled: true,
 		TemplateID: snapshot.TemplateID, VersionID: snapshot.VersionID,
 		Role: extensionv1.PromptRoleAuto, Position: extensionv1.PromptPositionControlAppend,
-		Platforms: []string{PlatformOpenAI, PlatformCindy}, ModelMatch: "upstream", Models: []string{}}
+		Platforms: []string{PlatformOpenAI}, ModelMatch: "upstream", Models: []string{}}
 	snapshot.RulePolicy = &extensionv1.PromptRulePolicy{Version: 2, Rules: []extensionv1.PromptRule{rule}, DefaultRuleIDs: []string{rule.ID}}
 	if snapshot.Body != "" {
 		hash, _, _ := extensionv1.ValidateTextDocument(snapshot.Body, extensionv1.PromptRulesMaxBytes)

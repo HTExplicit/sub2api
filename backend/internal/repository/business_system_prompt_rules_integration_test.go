@@ -234,7 +234,7 @@ func TestPromptRulesMigrationAndAccountBindingIntegration(t *testing.T) {
 
 	accounts := NewAccountRepository(client, db, nil).(*accountRepository)
 	account := &service.Account{
-		Name: "prompt-rules-fixture-" + suffix, Platform: service.PlatformOpenAI, WirePlatform: service.WirePlatformOpenAI,
+		Name: "prompt-rules-fixture-" + suffix, Platform: service.PlatformOpenAI,
 		Type: service.AccountTypeAPIKey, Status: service.StatusActive, Concurrency: 1, Schedulable: false,
 		Credentials: map[string]any{"api_key": "synthetic-integration-only"},
 		Extra:       map[string]any{"unrelated_fixture": map[string]any{"nested": []any{true, "retained"}}, "openai_responses_supported": true},

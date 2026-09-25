@@ -7,7 +7,6 @@ import (
 
 	"github.com/Wei-Shaw/sub2api/internal/domain"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/xai"
-	"github.com/stretchr/testify/require"
 )
 
 func TestGrokAccountModelMappingCacheInvalidatesWithRuntimeSettings(t *testing.T) {
@@ -590,48 +589,6 @@ func TestAccountResolveMappedModel(t *testing.T) {
 			}
 		})
 	}
-}
-
-func TestLegacyCindyRuntimeCompatibilityMapsAliasesAndPreservesDirectLiveModels(t *testing.T) {
-	account := &Account{
-		Platform: PlatformOpenAI,
-		Type:     AccountTypeAPIKey,
-		Credentials: map[string]any{
-			"api_key":  "not-exposed",
-			"base_url": "https://api.laxarouter.ai",
-			"model_mapping": map[string]any{
-				"openai/gpt-5.6-sol":   "stale-sol-target",
-				"openai/gpt-5.6-luna":  "stale-luna-target",
-				"openai/gpt-5.6-terra": "custom-terra-target",
-			},
-		},
-	}
-
-	for alias, live := range map[string]string{
-		"gpt-5.4-mini": "openai/gpt-5.6-luna",
-	} {
-		require.True(t, account.IsModelSupported(alias), alias)
-		mapped, matched := account.ResolveMappedModel(alias)
-		require.True(t, matched, alias)
-		require.Equal(t, live, mapped, alias)
-	}
-	for _, model := range []string{"openai/gpt-5.6-luna"} {
-		require.True(t, account.IsModelSupported(model), model)
-		mapped, matched := account.ResolveMappedModel(model)
-		require.True(t, matched, model)
-		require.Equal(t, model, mapped, model)
-	}
-	for _, model := range []string{"gpt-5.4", "gpt-5.6-sol"} {
-		require.False(t, account.IsModelSupported(model), model)
-	}
-	mappedSol, matchedSol := account.ResolveMappedModel("openai/gpt-5.6-sol")
-	require.True(t, matchedSol)
-	require.Equal(t, "stale-sol-target", mappedSol,
-		"account-level legacy mappings remain data, while the Cindy gateway allowlist rejects Sol")
-	_, solRoutable := ResolveCindyCapability("openai/gpt-5.6-sol")
-	require.False(t, solRoutable)
-	require.Equal(t, "custom-terra-target", account.GetMappedModel("openai/gpt-5.6-terra"),
-		"legacy compatibility must not enable the broader Cindy catalog")
 }
 
 func TestAccountGetModelMapping_AntigravityEnsuresGeminiDefaultPassthroughs(t *testing.T) {

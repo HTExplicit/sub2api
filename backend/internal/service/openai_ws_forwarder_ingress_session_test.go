@@ -134,7 +134,31 @@ func TestOpenAIWSDownstreamWriteContext_CancellationOwnership(t *testing.T) {
 	})
 }
 
-func TestOpenAIWSIngressCindyBalanceTerminalWriteOrdering(t *testing.T) {
+// budgetExceededAccountRepoStub records the account error written by the
+// OpenAI-compatible budget_exceeded rule.
+type budgetExceededAccountRepoStub struct {
+	AccountRepository
+	mu            sync.Mutex
+	setErrorCalls int
+	lastErrorMsg  string
+}
+
+func (r *budgetExceededAccountRepoStub) SetError(_ context.Context, _ int64, message string) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.setErrorCalls++
+	r.lastErrorMsg = message
+	return nil
+}
+
+func newBudgetRelayAccount(id int64, poolMode bool) *Account {
+	return &Account{
+		ID: id, Platform: PlatformOpenAI, Type: AccountTypeAPIKey, Status: StatusActive, Schedulable: true,
+		Credentials: map[string]any{"api_key": "sk-test", "base_url": "https://relay.example.test", "pool_mode": poolMode},
+	}
+}
+
+func TestOpenAIWSIngressBudgetExceededTerminalWriteOrdering(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	tests := []struct {
 		name         string
@@ -182,7 +206,7 @@ func TestOpenAIWSIngressCindyBalanceTerminalWriteOrdering(t *testing.T) {
 			pool := newOpenAIWSConnPool(cfg)
 			pool.setClientDialerForTest(&openAIWSCaptureDialer{conn: captureConn})
 			t.Cleanup(pool.Close)
-			repo := &cindyRateLimitAccountRepoStub{}
+			repo := &budgetExceededAccountRepoStub{}
 			rateLimitService := NewRateLimitService(repo, nil, cfg, nil, nil)
 			gateway := &OpenAIGatewayService{
 				cfg:              cfg,
@@ -194,7 +218,7 @@ func TestOpenAIWSIngressCindyBalanceTerminalWriteOrdering(t *testing.T) {
 				rateLimitService: rateLimitService,
 			}
 			rateLimitService.SetAccountRuntimeBlocker(gateway)
-			account := newCindyRateLimitAccount(int64(8530+index), true)
+			account := newBudgetRelayAccount(int64(8530+index), true)
 			account.Extra = map[string]any{"responses_websockets_v2_enabled": true}
 
 			serverErrCh := make(chan error, 1)
@@ -266,7 +290,8 @@ func TestOpenAIWSIngressCindyBalanceTerminalWriteOrdering(t *testing.T) {
 			var failoverErr *UpstreamFailoverError
 			if tt.wantFailover {
 				require.ErrorAs(t, serverErr, &failoverErr)
-				require.True(t, failoverErr.CindyBalanceInsufficient)
+				require.Equal(t, http.StatusTooManyRequests, failoverErr.StatusCode)
+				require.Equal(t, NextAccountRetry, failoverErr.NextAccountAction)
 				require.False(t, failoverErr.RetryableOnSameAccount)
 			} else {
 				require.Error(t, serverErr)
@@ -276,126 +301,10 @@ func TestOpenAIWSIngressCindyBalanceTerminalWriteOrdering(t *testing.T) {
 				require.NotContains(t, string(payload), "budget_exceeded")
 				require.NotContains(t, string(payload), "sensitive upstream detail")
 			}
-			require.Equal(t, 0, repo.markCalls, "the first exact signal must wait for independent confirmation")
+			require.Equal(t, 1, repo.setErrorCalls, "a budget terminal puts the account into the error state")
+			require.Equal(t, "sensitive upstream detail", repo.lastErrorMsg, "the account keeps the upstream message")
 		})
 	}
-}
-
-func TestOpenAIWSIngressTurnStateCommitsOnlyAfterDownstreamOutput(t *testing.T) {
-	gin.SetMode(gin.TestMode)
-	cfg := &config.Config{}
-	cfg.Security.URLAllowlist.Enabled = false
-	cfg.Gateway.OpenAIWS.Enabled = true
-	cfg.Gateway.OpenAIWS.APIKeyEnabled = true
-	cfg.Gateway.OpenAIWS.ResponsesWebsocketsV2 = true
-	cfg.Gateway.OpenAIWS.MaxConnsPerAccount = 1
-	cfg.Gateway.OpenAIWS.MinIdlePerAccount = 0
-	cfg.Gateway.OpenAIWS.MaxIdlePerAccount = 0
-	cfg.Gateway.OpenAIWS.QueueLimitPerConn = 1
-	cfg.Gateway.OpenAIWS.DialTimeoutSeconds = 3
-	cfg.Gateway.OpenAIWS.ReadTimeoutSeconds = 3
-	cfg.Gateway.OpenAIWS.WriteTimeoutSeconds = 3
-
-	dialer := &openAIWSIngressSequenceDialer{steps: []openAIWSIngressDialStep{
-		{
-			conn:      &openAIWSCaptureConn{},
-			handshake: http.Header{"X-Codex-Turn-State": []string{"turn-state-A-uncommitted"}},
-		},
-		{
-			conn: &openAIWSCaptureConn{events: [][]byte{
-				[]byte(`{"type":"response.completed","response":{"id":"resp_ingress_state_b","model":"gpt-5.4","status":"completed","output":[],"usage":{"input_tokens":1,"output_tokens":1}}}`),
-			}},
-			handshake: http.Header{"X-Codex-Turn-State": []string{"turn-state-B"}},
-		},
-	}}
-	pool := newOpenAIWSConnPool(cfg)
-	pool.setClientDialerForTest(dialer)
-	t.Cleanup(pool.Close)
-	svc := &OpenAIGatewayService{
-		cfg:              cfg,
-		cache:            &stubGatewayCache{},
-		openaiWSResolver: NewOpenAIWSProtocolResolver(cfg),
-		toolCorrector:    NewCodexToolCorrector(),
-		openaiWSPool:     pool,
-	}
-	account := cindyHTTPToWSV2TestAccount()
-	account.ID = 9301
-	account.Extra = map[string]any{"responses_websockets_v2_enabled": true}
-	groupID := int64(79)
-	apiKeyID := int64(7003)
-	sessionID := "session-ingress-state-stage"
-
-	serverErrCh := make(chan error, 1)
-	sessionHashCh := make(chan string, 1)
-	seedCh := make(chan string, 1)
-	wsServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		conn, err := coderws.Accept(w, r, &coderws.AcceptOptions{CompressionMode: coderws.CompressionContextTakeover})
-		if err != nil {
-			serverErrCh <- err
-			return
-		}
-		defer func() { _ = conn.CloseNow() }()
-
-		recorder := httptest.NewRecorder()
-		ginCtx, _ := gin.CreateTestContext(recorder)
-		ginCtx.Request = r.Clone(r.Context())
-		ginCtx.Request.Header.Set("User-Agent", "codex_cli_rs/0.146.0")
-		ginCtx.Request.Header.Set("session_id", sessionID)
-		ginCtx.Set("api_key", &APIKey{ID: apiKeyID, GroupID: &groupID})
-
-		readCtx, cancelRead := context.WithTimeout(r.Context(), 3*time.Second)
-		_, firstMessage, readErr := conn.Read(readCtx)
-		cancelRead()
-		if readErr != nil {
-			serverErrCh <- readErr
-			return
-		}
-		sessionHashCh <- svc.GenerateSessionHash(ginCtx, firstMessage)
-		seedCh <- openAICodexTurnStateSeed(ginCtx, account)
-		serverErrCh <- svc.ProxyResponsesWebSocketFromClient(
-			r.Context(), ginCtx, conn, account, "sk-test", firstMessage, nil,
-		)
-	}))
-	defer wsServer.Close()
-
-	dialCtx, cancelDial := context.WithTimeout(context.Background(), 3*time.Second)
-	clientConn, _, err := coderws.Dial(dialCtx, "ws"+strings.TrimPrefix(wsServer.URL, "http"), nil)
-	cancelDial()
-	require.NoError(t, err)
-
-	writeCtx, cancelWrite := context.WithTimeout(context.Background(), 3*time.Second)
-	err = clientConn.Write(writeCtx, coderws.MessageText, []byte(
-		`{"type":"response.create","model":"gpt-5.4","stream":true,"input":"hi"}`,
-	))
-	cancelWrite()
-	require.NoError(t, err)
-
-	readCtx, cancelRead := context.WithTimeout(context.Background(), 3*time.Second)
-	_, payload, err := clientConn.Read(readCtx)
-	cancelRead()
-	require.NoError(t, err)
-	require.Equal(t, "response.completed", gjson.GetBytes(payload, "type").String())
-	require.NoError(t, clientConn.CloseNow())
-
-	select {
-	case serverErr := <-serverErrCh:
-		require.NoError(t, serverErr)
-	case <-time.After(5 * time.Second):
-		t.Fatal("waiting for ingress websocket result timed out")
-	}
-
-	headers := dialer.capturedHeaders()
-	require.Len(t, headers, 2)
-	require.Empty(t, headers[1].Get(openAICodexTurnStateHeader), "retry B must not receive A's uncommitted handshake state")
-	sessionHash := <-sessionHashCh
-	state, ok := svc.getOpenAIWSStateStore().GetSessionTurnState(groupID, sessionHash, account.ID)
-	require.True(t, ok)
-	require.Equal(t, "turn-state-B", state)
-	rawOrigin, ok := svc.openaiCodexTurnStateOrigins.Load(<-seedCh)
-	require.True(t, ok)
-	origin, ok := rawOrigin.(openAICodexTurnStateOrigin)
-	require.True(t, ok)
-	require.Equal(t, account.ID, origin.accountID)
 }
 
 func TestOpenAIGatewayService_ProxyResponsesWebSocketFromClient_KeepLeaseAcrossTurns(t *testing.T) {

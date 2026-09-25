@@ -42,16 +42,6 @@ func TestBusinessSystemPromptCacheIdentity364Regression(t *testing.T) {
 	c, _ := newBusinessSystemPromptGinContext("/v1/responses", nil)
 	require.Equal(t, want, deriveBusinessSystemPromptCacheKey(c, seed, application))
 	require.Equal(t, want, deriveBusinessSystemPromptCacheKey(c, want, application))
-	// The existing independent Cindy policy gives exactly the same wire key.
-	SetCindyManagedCompatibility(c, true)
-	account := businessSystemPromptAPIKeyAccount(true)
-	account.Platform, account.WirePlatform, account.ProviderProfile = PlatformCindy, WirePlatformOpenAI, ProviderProfileCindyLaxaV1
-	account.Credentials["base_url"] = "https://api.laxarouter.ai"
-	oldBody := []byte(fmt.Sprintf(`{"prompt_cache_key":%q}`, legacy))
-	normalized, changed, err := normalizeCindyManagedPromptCacheKey(oldBody, c, account)
-	require.NoError(t, err)
-	require.True(t, changed)
-	require.Equal(t, want, gjson.GetBytes(normalized, "prompt_cache_key").String())
 }
 
 func TestBusinessSystemPromptCacheIdentityChangesWithNamespace(t *testing.T) {

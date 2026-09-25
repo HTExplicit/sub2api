@@ -544,36 +544,6 @@ func TestOpenAIGatewayService_Forward_ImageToolWithImageOnlyModelIsNormalized(t 
 	require.Equal(t, openAIImagesResponsesMainModel, gjson.GetBytes(upstream.lastBody, "model").String())
 }
 
-func TestForwardCindyResponsesTopLevelLiveImageIDUsesLunaController(t *testing.T) {
-	gin.SetMode(gin.TestMode)
-	upstream := &httpUpstreamRecorder{resp: &http.Response{
-		StatusCode: http.StatusOK,
-		Header:     http.Header{"Content-Type": []string{"application/json"}},
-		Body:       io.NopCloser(strings.NewReader(`{"usage":{"input_tokens":1,"output_tokens":2}}`)),
-	}}
-	cfg := &config.Config{}
-	cfg.Security.URLAllowlist.Enabled = false
-	svc := &OpenAIGatewayService{cfg: cfg, httpUpstream: upstream}
-	account := &Account{
-		ID: 12, Name: "cindy", Platform: PlatformCindy, WirePlatform: WirePlatformOpenAI, ProviderProfile: ProviderProfileCindyLaxaV1, Type: AccountTypeAPIKey, Concurrency: 1,
-		Credentials: map[string]any{
-			"api_key":  "sk-test",
-			"base_url": "https://api.laxarouter.ai",
-		},
-		Extra: map[string]any{"use_responses_api": true},
-	}
-	recorder := httptest.NewRecorder()
-	c, _ := gin.CreateTestContext(recorder)
-	c.Request = httptest.NewRequest(http.MethodPost, "/openai/v1/responses", nil)
-	SetOpenAIClientTransport(c, OpenAIClientTransportHTTP)
-
-	result, err := svc.Forward(context.Background(), c, account, []byte(`{"model":"openai/gpt-image-2","stream":false,"input":"draw"}`))
-
-	require.Error(t, err)
-	require.Nil(t, result)
-	require.Empty(t, upstream.lastBody)
-}
-
 func TestOpenAIGatewayService_Forward_HTTPInvalidEncryptedContentStopsWithoutMutatingRawInput(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	upstream := &httpUpstreamRecorder{

@@ -126,17 +126,3 @@ func TestAccountJobLegacyViewComparesSavedDigestWithoutQueryingTargets(t *testin
 	require.NoError(t, ValidateRecordedAccountJobTargets(job, payload, []AccountJobItem{{TargetAccountID: &target}}))
 	require.Error(t, ValidateRecordedAccountJobTargets(job, payload, []AccountJobItem{{}}))
 }
-
-func TestAccountJobLegacyDuplicateTargetsKeepLosers(t *testing.T) {
-	ids, err := accountViewJobTargets(AccountJobKindDuplicateReview, json.RawMessage(`{"account_ids":[2,3]}`), []*int64{nil})
-	require.NoError(t, err)
-	require.Equal(t, []int64{2, 3}, ids)
-	id := int64(2)
-	ids, err = accountViewJobTargets(AccountJobKindDuplicateMerge, json.RawMessage(`{"survivor_account_id":2,"loser_account_ids":[3]}`), []*int64{&id})
-	require.NoError(t, err)
-	require.Equal(t, []int64{2, 3}, ids)
-	_, err = accountViewJobTargets(AccountJobKindDuplicateReview, json.RawMessage(`{}`), []*int64{nil})
-	require.Error(t, err)
-	_, err = accountViewJobTargets(AccountJobKindDuplicateMerge, json.RawMessage(`{"survivor_account_id":2,"loser_account_ids":[-1]}`), []*int64{&id})
-	require.Error(t, err)
-}

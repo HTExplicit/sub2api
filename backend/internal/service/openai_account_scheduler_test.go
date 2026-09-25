@@ -2799,7 +2799,10 @@ func TestOpenAIAccountScheduler_ReportsPersistentModelCooldown(t *testing.T) {
 	account := &Account{
 		ID: 21634, Platform: PlatformOpenAI, Type: AccountTypeAPIKey,
 		Status: StatusActive, Schedulable: true,
-		Credentials: map[string]any{"base_url": "https://api.laxarouter.ai"},
+		Credentials: map[string]any{
+			"base_url":      "https://api.laxarouter.ai",
+			"model_mapping": map[string]any{"gpt-5.6-luna": "openai/gpt-5.6-luna"},
+		},
 		Extra: map[string]any{modelRateLimitsKey: map[string]any{
 			"openai/gpt-5.6-luna": map[string]any{"rate_limit_reset_at": reset.UTC().Format(time.RFC3339)},
 		}},

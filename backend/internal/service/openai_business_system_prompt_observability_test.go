@@ -23,7 +23,7 @@ func TestBusinessSystemPromptObservationContainsOnlyDerivedPromptMetadata(t *tes
 		application,
 		OpenAIClientTransportHTTP,
 		OpenAIUpstreamTransportResponsesWebsocketV2,
-		openAICindyHTTPToWSV2Reason,
+		"fixture_selection_reason",
 	)
 	merged := MergeBusinessSystemPromptInstructions(application.ClientInstructions, application.ServerInstructions)
 	digest := sha256.Sum256([]byte(merged))
@@ -38,7 +38,7 @@ func TestBusinessSystemPromptObservationContainsOnlyDerivedPromptMetadata(t *tes
 	require.Equal(t, hex.EncodeToString(digest[:]), observation.MergedSHA256)
 	require.Equal(t, "http", observation.IngressTransport)
 	require.Equal(t, "responses_websockets_v2", observation.UpstreamTransport)
-	require.Equal(t, openAICindyHTTPToWSV2Reason, observation.SelectionReason)
+	require.Equal(t, "fixture_selection_reason", observation.SelectionReason)
 }
 
 func TestBusinessSystemPromptObservationDoesNotHashAbsentPrompt(t *testing.T) {

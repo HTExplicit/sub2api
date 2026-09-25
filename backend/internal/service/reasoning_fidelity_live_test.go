@@ -254,7 +254,7 @@ func fidelityValidateBootstrap(b fidelityBootstrap) error {
 	if a.ID <= 0 || a.Name != "白嫖666" || a.Type != service.AccountTypeAPIKey || a.Platform != service.PlatformOpenAI || a.Credentials == nil || a.GetOpenAIProtocolAPIKey() == "" || a.Status != service.StatusActive || !a.Schedulable || a.Concurrency < 1 {
 		return errors.New("invalid_fixed_account")
 	}
-	if a.ParentAccountID != nil || service.IsCindyRuntimeCompatibleAPIKeyAccount(a.Platform, a.Type, a.Credentials) || !a.SupportsOpenAIEndpointCapability(service.OpenAIEndpointCapabilityResponses) {
+	if a.ParentAccountID != nil || !a.SupportsOpenAIEndpointCapability(service.OpenAIEndpointCapabilityResponses) {
 		return errors.New("unsupported_fixed_account")
 	}
 	if b.Source.Group.ID <= 0 || b.Source.Group.Platform != service.PlatformOpenAI || b.Source.Group.Status != service.StatusActive {

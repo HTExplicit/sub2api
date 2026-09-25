@@ -132,18 +132,3 @@ func TestOpenAIReasoningConfigurationSurvivesAdjacentAdapters(t *testing.T) {
 	require.True(t, changed)
 	assertOpenAIReasoningConfiguration(t, reasoning, normalized)
 }
-
-func TestOpenAIReasoningConfigurationCindyCountNumberCompatibility(t *testing.T) {
-	for _, value := range []any{float64(1), json.Number("1"), json.Number("1.0"), json.Number("1e0")} {
-		fact := imageBridgeControls(map[string]any{"n": value}).Count
-		require.True(t, fact.Valid)
-		require.Equal(t, float64(1), fact.Number)
-	}
-	for _, value := range []any{json.Number("1e1000"), json.Number("invalid"), "1", nil} {
-		fact := imageBridgeControls(map[string]any{"n": value}).Count
-		require.True(t, fact.Present)
-		require.False(t, fact.Valid)
-		_, err := json.Marshal(fact)
-		require.NoError(t, err)
-	}
-}

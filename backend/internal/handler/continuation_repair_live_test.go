@@ -290,7 +290,7 @@ func continuationRepairValidateSource(b continuationRepairBootstrap) error {
 	if a.ID != 16050 || a.Name != "白嫖-dmxapi" || a.Platform != service.PlatformOpenAI || a.Type != service.AccountTypeAPIKey ||
 		a.ParentAccountID != nil || a.GetOpenAIProtocolAPIKey() == "" || a.Status != service.StatusActive || !a.Schedulable || a.Concurrency < 1 ||
 		group.ID != 35 || group.Platform != service.PlatformOpenAI || group.Status != service.StatusActive || b.Source.UserID != 920000016050 ||
-		!a.SupportsOpenAIEndpointCapability(service.OpenAIEndpointCapabilityResponses) || service.IsCindyRuntimeCompatibleAPIKeyAccount(a.Platform, a.Type, a.Credentials) {
+		!a.SupportsOpenAIEndpointCapability(service.OpenAIEndpointCapabilityResponses) {
 		return errors.New("source_changed")
 	}
 	member := false

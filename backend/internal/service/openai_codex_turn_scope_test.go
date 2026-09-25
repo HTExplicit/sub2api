@@ -36,7 +36,7 @@ func TestOpenAIWSCodexTurnScopeRetainsFirstValueAndRejectsOtherOwners(t *testing
 	c.Request.Header.Del(openAIWSTurnMetadataHeader)
 	stageCodexRoutingTurn(c, nil)
 	require.Empty(t, openAIWSTurnStateScope(c, account, "execution"))
-	cindy := &Account{ID: 9, Platform: PlatformCindy, Type: AccountTypeAPIKey}
-	require.Equal(t, "execution", openAIWSTurnStateScope(c, cindy, "execution"))
-	require.Equal(t, "11\x00session", openAICodexTurnStateSeed(c, cindy))
+	apiKey := &Account{ID: 9, Platform: PlatformOpenAI, Type: AccountTypeAPIKey}
+	require.Equal(t, "execution", openAIWSTurnStateScope(c, apiKey, "execution"))
+	require.Equal(t, "11\x00session", openAICodexTurnStateSeed(c, apiKey))
 }

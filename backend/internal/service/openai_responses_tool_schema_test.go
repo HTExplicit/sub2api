@@ -367,7 +367,7 @@ func TestSanitizeOpenAIResponsesToolParameterTypes_RewriteCountIndependentOfHits
 	const helperEnv = "SUB2API_TOOL_SCHEMA_ALLOCATION_HELPER"
 	if os.Getenv(helperEnv) != "1" {
 		cmd := exec.Command(os.Args[0], "-test.run=^"+t.Name()+"$", "-test.count=1")
-		cmd.Env = append(os.Environ(), helperEnv+"=1", cindyFeatureOnTestMainEnv+"=1")
+		cmd.Env = append(os.Environ(), helperEnv+"=1")
 		output, err := cmd.CombinedOutput()
 		require.NoErrorf(t, err, "isolated allocation guard failed:\n%s", output)
 		return

@@ -105,10 +105,8 @@ func TestAccountReadableSnapshot_DenylistTripwire(t *testing.T) {
 		"TempUnschedulableUntil": {}, "TempUnschedulableReason": {},
 		"SessionWindowStart": {}, "SessionWindowEnd": {}, "SessionWindowStatus": {},
 		"ParentAccountID": {}, "QuotaDimension": {}, "GroupIDs": {},
-		// Downstream-only readable fields: provider identity, management folders/tags, Cindy probe state.
-		"WirePlatform": {}, "ProviderProfile": {}, "ManagementFolderID": {}, "ManagementFolder": {}, "Tags": {},
-		"CindyBalanceInsufficientAt": {}, "CindyBannedAt": {}, "CindyCredentialGeneration": {},
-		"CindyBalanceProbeJobID": {}, "CindyBalanceProbeOutcome": {}, "CindyBalanceProbeCheckedAt": {},
+		// Downstream-only readable fields: management folders/tags.
+		"ManagementFolderID": {}, "ManagementFolder": {}, "Tags": {},
 		"ModelContextOverridesPatch": {}, // json:"-", never serialized
 	}
 	tp := reflect.TypeOf(Account{})

@@ -19,7 +19,7 @@ func newPromptRulesGatewayPolicy(delivery, position string) *BusinessSystemPromp
 	if delivery == "native_control" {
 		delivery = "auto"
 	}
-	rule := extensionv1.PromptRule{ID: "site", Name: "Site rule", Enabled: true, TemplateID: 1, VersionID: 2, Order: 100, Role: delivery, Platforms: []string{PlatformOpenAI, PlatformCindy}, Position: position, ModelMatch: "upstream", Models: []string{}}
+	rule := extensionv1.PromptRule{ID: "site", Name: "Site rule", Enabled: true, TemplateID: 1, VersionID: 2, Order: 100, Role: delivery, Platforms: []string{PlatformOpenAI}, Position: position, ModelMatch: "upstream", Models: []string{}}
 	hash, _, _ := extensionv1.ValidateTextDocument("site-rule-content", 100)
 	snapshot := BusinessSystemPromptSnapshot{Revision: 8, Enabled: true, RulePolicy: &extensionv1.PromptRulePolicy{Version: 2, Rules: []extensionv1.PromptRule{rule}, DefaultRuleIDs: []string{"site"}}, ResolvedRules: []extensionv1.ResolvedPromptRule{{Rule: rule, Body: "site-rule-content", SHA256: hash}}}
 	service := NewBusinessSystemPromptService(nil, nil)

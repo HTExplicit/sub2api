@@ -158,10 +158,6 @@ func TestGroupModelCapacityProtectedCandidatesAndQueryFailure(t *testing.T) {
 	oauth := Account{ID: 2, Platform: PlatformOpenAI, Type: AccountTypeOAuth, Status: StatusActive, Schedulable: true}
 	catalog := newGroupModelCapacityCatalog([]Account{ordinary, oauth}, true, nil, true, nil, nil)
 	require.Equal(t, "protected", catalog.resolve(context.Background(), PlatformOpenAI, "alias").Source)
-	cindy := newGroupCapacityAccount(3, nil, nil)
-	cindy.Credentials["base_url"] = "https://api.laxarouter.ai"
-	catalog = newGroupModelCapacityCatalog([]Account{ordinary, cindy}, true, nil, true, nil, nil)
-	require.Equal(t, "protected", catalog.resolve(context.Background(), PlatformOpenAI, "gpt-5.6-sol").Source)
 	repo := &groupCapacityAccountRepo{err: errors.New("database unavailable")}
 	catalog = loadGroupModelCapacityCatalog(context.Background(), repo, nil, nil, nil, nil, PlatformOpenAI)
 	capacity := catalog.resolve(context.Background(), PlatformOpenAI, "gpt-6-astra")
@@ -336,9 +332,7 @@ func TestMiniMaxCompositeCapacityIncludesFallbackAndKeepsExplicitRoutePrecedence
 	future := time.Now().Add(time.Hour)
 	fallback.RateLimitResetAt = &future
 	other := newGroupCapacityAccount(3, map[string]any{"gpt-6-astra": "other-model"}, map[string]int64{"other-model": 1050000})
-	cindy := newGroupCapacityAccount(4, map[string]any{"unrelated": "unrelated"}, nil)
-	cindy.Platform = PlatformCindy
-	repo := &groupCapacityAccountRepo{accounts: []Account{first, fallback, other, cindy}}
+	repo := &groupCapacityAccountRepo{accounts: []Account{first, fallback, other}}
 	routes := &groupCapacityRouteRepo{routes: []CompositeModelRoute{{ID: 1, PublicModel: "gpt-6-astra", MatchType: CompositeRouteMatchExact, TargetPlatform: PlatformMiniMax, UpstreamModel: "routed-alias", Endpoint: CompositeRouteEndpointAny, Enabled: true}}}
 	svc := &GatewayService{accountRepo: repo, compositeResolver: NewCompositeRouteResolver(routes)}
 	raw := []byte(`{"models":[{"slug":"gpt-6-astra","context_window":900000,"sentinel":"unchanged"}]}`)

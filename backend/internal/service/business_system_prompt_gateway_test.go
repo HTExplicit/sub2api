@@ -125,30 +125,6 @@ func TestBusinessSystemPromptHybridUsesSamePairedPublicationForOfficialCodexAndC
 	require.Equal(t, compatibleApplication.RulesPlan.SHA256, retriedApplication.RulesPlan.SHA256)
 }
 
-func TestBusinessSystemPromptHybridAppliesToFirstClassCindyOpenAIWireAccount(t *testing.T) {
-	gin.SetMode(gin.TestMode)
-	policy := newGatewayHybridBusinessSystemPromptPolicy(t)
-	svc := &OpenAIGatewayService{businessPromptService: policy}
-	account := businessSystemPromptAPIKeyAccount(true)
-	account.Platform = PlatformCindy
-	account.WirePlatform = WirePlatformOpenAI
-	account.ProviderProfile = ProviderProfileCindyLaxaV1
-	account.Credentials = map[string]any{
-		"api_key":  "sk-test",
-		"base_url": "https://api.laxarouter.ai",
-	}
-	body := []byte(`{"model":"gpt-5.6-luna","instructions":"client","input":"Reply with exactly OK."}`)
-
-	ctx, _ := newBusinessSystemPromptGinContext("/v1/responses", body)
-	updated, application, err := svc.applyBusinessSystemPromptForRequest(
-		ctx, body, account, BusinessSystemPromptProtocolResponses, false,
-	)
-	require.NoError(t, err)
-	require.True(t, application.Applied)
-	require.True(t, application.RulesPlan.Placements[0].PreserveEcho)
-	require.Equal(t, "client\n\n"+application.RulesPlan.Placements[0].Body, gjson.GetBytes(updated, "instructions").String())
-}
-
 func TestBusinessSystemPromptHybridPreviewMatchesAppliedBytes(t *testing.T) {
 	policy := newGatewayHybridBusinessSystemPromptPolicy(t)
 	current, ok := policy.CurrentSnapshot()
@@ -249,13 +225,6 @@ func TestBusinessSystemPromptNativeResponsesAppliesForAPIKeyAndOAuth(t *testing.
 	gin.SetMode(gin.TestMode)
 	for name, account := range map[string]*Account{
 		"api key compatible": businessSystemPromptAPIKeyAccount(true),
-		"first-class cindy": {
-			ID: 63, Name: "cindy", Platform: PlatformCindy, WirePlatform: WirePlatformOpenAI,
-			ProviderProfile: ProviderProfileCindyLaxaV1, Type: AccountTypeAPIKey,
-			Status: StatusActive, Schedulable: true, Concurrency: 1,
-			Credentials: map[string]any{"api_key": "sk-test", "base_url": "https://api.laxarouter.ai"},
-			Extra:       map[string]any{"openai_responses_supported": true},
-		},
 		"oauth": {
 			ID: 62, Name: "openai-oauth", Platform: PlatformOpenAI, Type: AccountTypeOAuth,
 			Status: StatusActive, Schedulable: true, Concurrency: 1,
@@ -264,9 +233,6 @@ func TestBusinessSystemPromptNativeResponsesAppliesForAPIKeyAndOAuth(t *testing.
 	} {
 		t.Run(name, func(t *testing.T) {
 			model := "gpt-5.4"
-			if account.Platform == PlatformCindy {
-				model = "gpt-5.6-luna"
-			}
 			body := []byte(`{"model":"` + model + `","stream":false,"instructions":" client ","prompt_cache_key":"cache","input":[{"role":"user","content":"hello"}]}`)
 			c, _ := newBusinessSystemPromptGinContext("/v1/responses", body)
 			upstream := businessSystemPromptErrorUpstream()
@@ -311,31 +277,6 @@ func TestBusinessSystemPromptOrdinaryAPIKeyPromptCacheKeyIsBoundedAfterPromptRew
 	require.Nil(t, result)
 	ordinaryKey := gjson.GetBytes(upstream.lastBody, "prompt_cache_key").String()
 	require.Regexp(t, `^[0-9a-f]{64}$`, ordinaryKey)
-}
-
-func TestBusinessSystemPromptManagedCindyPromptCacheKeyNormalizesAfterFinalRewrite(t *testing.T) {
-	gin.SetMode(gin.TestMode)
-	body := []byte(`{"model":"gpt-5.6-luna","stream":false,"instructions":"client","prompt_cache_key":"` + strings.Repeat("m", 363) + `","input":[]}`)
-	c, _ := newBusinessSystemPromptGinContext("/v1/responses", body)
-	SetCindyManagedCompatibility(c, true)
-	upstream := businessSystemPromptErrorUpstream()
-	account := businessSystemPromptAPIKeyAccount(true)
-	account.Platform = PlatformCindy
-	account.WirePlatform = WirePlatformOpenAI
-	account.ProviderProfile = ProviderProfileCindyLaxaV1
-	account.Credentials["base_url"] = "https://api.laxarouter.ai"
-	account.Extra["openai_prompt_cache_key_mode"] = OpenAIPromptCacheKeyModePassthrough
-	svc := &OpenAIGatewayService{
-		cfg: businessSystemPromptTestConfig(), httpUpstream: upstream,
-		businessPromptService: newGatewayBusinessSystemPromptPolicy(t, false, false),
-	}
-
-	result, err := svc.Forward(context.Background(), c, account, body)
-
-	require.Error(t, err)
-	require.Nil(t, result)
-	require.Regexp(t, `^[0-9a-f]{64}$`, gjson.GetBytes(upstream.lastBody, "prompt_cache_key").String())
-	require.Equal(t, 1, strings.Count(string(upstream.lastBody), "business-server"))
 }
 
 func TestBusinessSystemPromptOrdinaryPassthroughPromptCacheKeyIsBoundedAfterPromptRewrite(t *testing.T) {

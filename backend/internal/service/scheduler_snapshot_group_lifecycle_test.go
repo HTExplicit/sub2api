@@ -339,30 +339,6 @@ func schedulerCanonicalAccountQueryCount() int {
 	return count
 }
 
-func TestSchedulerCanonicalBucketsIncludeCindyAndMiniMax(t *testing.T) {
-	for _, tc := range []struct {
-		name        string
-		bucketCount int
-		queryCount  int
-	}{
-		{name: "standard", bucketCount: 24, queryCount: 13},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			require.Equal(t, tc.bucketCount, schedulerCanonicalBucketCount())
-			require.Equal(t, tc.queryCount, schedulerCanonicalAccountQueryCount())
-			for _, groupID := range []int64{0, 81} {
-				buckets := schedulerCanonicalBuckets(groupID)
-				require.Len(t, buckets, tc.bucketCount)
-				for _, platform := range []string{PlatformCindy, PlatformMiniMax} {
-					for _, mode := range []string{SchedulerModeSingle, SchedulerModeForced} {
-						require.Contains(t, buckets, SchedulerBucket{GroupID: groupID, Platform: platform, Mode: mode})
-					}
-				}
-			}
-		})
-	}
-}
-
 func bucketStrings(buckets []SchedulerBucket) map[string]struct{} {
 	out := make(map[string]struct{}, len(buckets))
 	for _, bucket := range buckets {
@@ -417,11 +393,6 @@ func TestSchedulerGroupLifecycleInactiveAndMissingRetireAllHistoricalBucketsWith
 			expected := bucketStrings(append(current, historical))
 			got := bucketStrings(cache.retiredBuckets())
 			require.Equal(t, expected, got)
-			for _, platform := range []string{PlatformCindy, PlatformMiniMax} {
-				for _, mode := range []string{SchedulerModeSingle, SchedulerModeForced} {
-					require.Contains(t, got, SchedulerBucket{GroupID: groupID, Platform: platform, Mode: mode}.String())
-				}
-			}
 			retireHeld, _ := cache.lifecycleMutationLeaseStates()
 			require.Len(t, retireHeld, len(expected))
 			for _, held := range retireHeld {
@@ -485,8 +456,6 @@ func TestSchedulerGroupLifecycleActiveReopensAndRebuildsAllCurrentBuckets(t *tes
 	require.Len(t, cache.tokens(), len(current))
 	require.Equal(t, schedulerCanonicalAccountQueryCount(), accounts.callCount())
 	require.Equal(t, 1, accounts.platformCallCount(PlatformOpenAI))
-	require.Equal(t, 1, accounts.platformCallCount(PlatformCindy))
-	require.Equal(t, 1, accounts.platformCallCount(PlatformMiniMax))
 	for _, bucket := range current {
 		_, published := cache.counts(bucket)
 		require.Equal(t, 1, published, bucket.String())

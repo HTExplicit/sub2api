@@ -43,13 +43,10 @@ func TestOpenAISatelliteAlphaSafetyRejectionNeverUsesFallback(t *testing.T) {
 		name                  string
 		status                int
 		contentType, response string
-		cindy                 bool
 		wantStatus            int
 	}{
-		{"missing endpoint wrapper", http.StatusNotFound, "application/json", `{"error":{"code":"cyber_policy","type":"invalid_request_error","message":"unsupported tool policy refusal"}}`, false, http.StatusNotFound},
-		{"server error wrapper", http.StatusBadGateway, "application/json", `{"response":{"error":{"code":"cyber_policy","message":"policy refusal"}}}`, false, http.StatusBadGateway},
-		{"Cindy tool capability wrapper", http.StatusBadRequest, "application/json", `{"error":{"code":"cyber_policy","type":"invalid_request_error","message":"unsupported tool policy refusal"}}`, true, http.StatusBadRequest},
-		{"Cindy failed SSE", http.StatusOK, "text/event-stream", "event: response.failed\ndata: {\"type\":\"response.failed\",\"response\":{\"status\":\"failed\",\"error\":{\"code\":\"cyber_policy\",\"message\":\"policy refusal\"}}}\n\n", true, http.StatusBadRequest},
+		{"missing endpoint wrapper", http.StatusNotFound, "application/json", `{"error":{"code":"cyber_policy","type":"invalid_request_error","message":"unsupported tool policy refusal"}}`, http.StatusNotFound},
+		{"server error wrapper", http.StatusBadGateway, "application/json", `{"response":{"error":{"code":"cyber_policy","message":"policy refusal"}}}`, http.StatusBadGateway},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			body := []byte(`{"id":"search","model":"gpt-5.6-luna","commands":{"search_query":[{"q":"test"}]}}`)
@@ -60,9 +57,6 @@ func TestOpenAISatelliteAlphaSafetyRejectionNeverUsesFallback(t *testing.T) {
 			repo := &openAIAuthPolicyAccountRepo{}
 			svc := &OpenAIGatewayService{cfg: &config.Config{}, httpUpstream: upstream, accountRepo: repo}
 			account := &Account{ID: 732, Platform: PlatformOpenAI, Type: AccountTypeAPIKey, Credentials: map[string]any{"api_key": "test", "base_url": "https://compat.example"}}
-			if tt.cindy {
-				account = firstClassCindyAlphaSearchAccount(732)
-			}
 			result, err := svc.ForwardAlphaSearch(context.Background(), c, account, body)
 			require.Nil(t, result, "a refused search is not billable")
 			require.ErrorIs(t, err, errOpenAICyberPolicyForwarded)

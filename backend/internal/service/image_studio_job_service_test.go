@@ -74,20 +74,16 @@ func (f *imageStudioStoreFake) Remove(key string) error {
 }
 
 func canonicalImageStudioFixture() (*Group, APIKey, Account) {
-	group := &Group{
-		ID: 31, Name: "Cindy Images", Platform: PlatformCindy, WirePlatform: WirePlatformOpenAI,
-		ProviderProfile: ProviderProfileCindyLaxaV1, Status: StatusActive, AllowImageGeneration: true,
-	}
+	group := &Group{ID: 31, Name: "Images", Platform: PlatformOpenAI, Status: StatusActive, AllowImageGeneration: true}
 	key := APIKey{ID: 41, UserID: 7, Key: "must-never-leave-server", Name: "Studio", Status: StatusActive, GroupID: &group.ID, Group: group}
 	account := Account{
-		ID: 51, Platform: PlatformCindy, WirePlatform: WirePlatformOpenAI, ProviderProfile: ProviderProfileCindyLaxaV1,
-		Type: AccountTypeAPIKey, Status: StatusActive, Schedulable: true,
-		Credentials: map[string]any{"api_key": "upstream-secret", "base_url": "https://api.laxarouter.ai"},
+		ID: 51, Platform: PlatformOpenAI, Type: AccountTypeAPIKey, Status: StatusActive, Schedulable: true,
+		Credentials: map[string]any{"api_key": "upstream-secret", "base_url": "https://relay.example.test"},
 	}
 	return group, key, account
 }
 
-func TestImageStudioEligibleKeysHidesUnavailableCindyImageCandidatesAndCredentials(t *testing.T) {
+func TestImageStudioEligibleKeysHidesUnavailableImageCandidatesAndCredentials(t *testing.T) {
 	group, key, account := canonicalImageStudioFixture()
 	legacyGroup := &Group{ID: 32, Name: "legacy", Platform: PlatformOpenAI, Status: StatusActive, AllowImageGeneration: true}
 	legacyKey := APIKey{ID: 42, UserID: 7, Key: "legacy-secret", Name: "legacy", Status: StatusActive, GroupID: &legacyGroup.ID, Group: legacyGroup}
@@ -100,37 +96,11 @@ func TestImageStudioEligibleKeysHidesUnavailableCindyImageCandidatesAndCredentia
 
 	items, err := studio.EligibleKeys(context.Background(), 7)
 	require.NoError(t, err)
-	require.Empty(t, items, "the permanent free Cindy catalog has no Image Studio model")
+	require.Empty(t, items, "no Image Studio model source exists after the Cindy catalog removal")
 
 	raw, err := json.Marshal(items)
 	require.NoError(t, err)
 	require.NotContains(t, string(raw), "must-never-leave-server")
 	require.NotContains(t, string(raw), "upstream-secret")
 	require.NotContains(t, string(raw), `"key"`)
-}
-
-func TestImageStudioCreateRejectsRemovedPaidCindyImageModel(t *testing.T) {
-	previous := cindyRolloutFeatures.imageStudio
-	cindyRolloutFeatures.imageStudio = true
-	t.Cleanup(func() { cindyRolloutFeatures.imageStudio = previous })
-	group, key, account := canonicalImageStudioFixture()
-	repo := &imageStudioRepoFake{job: &ImageStudioJob{ID: 61, UserID: 7, APIKeyID: key.ID, Count: 4, Status: ImageStudioJobPending}}
-	store := &imageStudioStoreFake{}
-	studio := NewImageStudioService(
-		repo,
-		&imageStudioAPIKeyRepoFake{keys: []APIKey{key}},
-		&imageStudioAccountReaderFake{accounts: map[int64][]Account{group.ID: {account}}},
-		store,
-	)
-	studio.now = func() time.Time { return time.Date(2026, 8, 21, 10, 0, 0, 0, time.UTC) }
-
-	job, err := studio.Create(context.Background(), 7, ImageStudioCreateInput{
-		APIKeyID: key.ID, Mode: ImageStudioModeEdit, Model: ImageStudioModelGeminiProImage,
-		Prompt: " replace the sky ", Count: 4,
-	}, &ImageStudioUpload{Data: []byte("reference"), ContentType: "image/png"}, &ImageStudioUpload{Data: []byte("mask"), ContentType: "image/png"})
-
-	require.Nil(t, job)
-	require.ErrorContains(t, err, "Image Studio model is unavailable")
-	require.Empty(t, repo.created.Input.Model)
-	require.Empty(t, store.saved)
 }

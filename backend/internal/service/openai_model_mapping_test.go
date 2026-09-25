@@ -158,31 +158,6 @@ func TestResolveOpenAIForwardModel(t *testing.T) {
 	}
 }
 
-func TestLegacyCindyRuntimeCompatibilityMapsResponsesWSMessagesAndCountTokens(t *testing.T) {
-	account := &Account{
-		Platform: PlatformOpenAI,
-		Type:     AccountTypeAPIKey,
-		Credentials: map[string]any{
-			"api_key":  "not-exposed",
-			"base_url": "https://api.laxarouter.ai",
-			"model_mapping": map[string]any{
-				"gpt-5.4":      "stale-sol",
-				"gpt-5.4-mini": "stale-luna",
-			},
-		},
-	}
-
-	for alias, live := range map[string]string{
-		"gpt-5.4-mini": "openai/gpt-5.6-luna",
-	} {
-		for _, dispatch := range []string{"", "unrelated-messages-dispatch"} {
-			if got := resolveOpenAIForwardModel(account, alias, dispatch); got != live {
-				t.Fatalf("resolveOpenAIForwardModel(%q, dispatch=%q) = %q, want %q", alias, dispatch, got, live)
-			}
-		}
-	}
-}
-
 func TestResolveOpenAICompactForwardModel(t *testing.T) {
 	tests := []struct {
 		name          string
@@ -364,14 +339,6 @@ func TestCanonicalOpenAIAccountSchedulingModelMatchesForwardSemantics(t *testing
 			model:   "gpt-5.6",
 			want:    "gpt-5.6",
 		},
-		{
-			name: "legacy Laxa direct Luna resolves to live upstream ID",
-			account: &Account{ID: 11, Platform: PlatformOpenAI, Type: AccountTypeAPIKey,
-				Credentials: map[string]any{"base_url": "https://api.laxarouter.ai"},
-				Extra:       map[string]any{"openai_passthrough": true}},
-			model: "gpt-5.6-luna",
-			want:  "openai/gpt-5.6-luna",
-		},
 	}
 
 	for _, tt := range tests {
@@ -381,23 +348,6 @@ func TestCanonicalOpenAIAccountSchedulingModelMatchesForwardSemantics(t *testing
 			}
 		})
 	}
-}
-
-func TestLegacyLaxaRawChatFallbackUsesCanonicalLunaWireModel(t *testing.T) {
-	account := &Account{
-		ID:       12,
-		Platform: PlatformOpenAI,
-		Type:     AccountTypeAPIKey,
-		Credentials: map[string]any{
-			"base_url": "https://api.laxarouter.ai",
-		},
-		Extra: map[string]any{
-			"openai_responses_supported": false,
-		},
-	}
-
-	require.True(t, shouldForwardOpenAIResponsesViaRawChatCompletions(account))
-	require.Equal(t, "openai/gpt-5.6-luna", resolveOpenAIAccountUpstreamModelForRequest(account, "gpt-5.6-luna", false))
 }
 
 func TestResolveOpenAIErrorSchedulingModelPrefersActualUpstreamModel(t *testing.T) {

@@ -71,45 +71,6 @@ func TestCalculateOpenAIRecordUsageCostWebSearchPerCall(t *testing.T) {
 	require.Error(t, err)
 }
 
-func TestCalculateOpenAIRecordUsageCost_CindyWebSearchExplicitZeroUnlessGroupOverride(t *testing.T) {
-	t.Parallel()
-	svc := &OpenAIGatewayService{billingService: &BillingService{}}
-	groupID := int64(12)
-	apiKey := &APIKey{ID: 2, GroupID: &groupID, Group: &Group{ID: groupID, Platform: PlatformCindy, WirePlatform: WirePlatformOpenAI, ProviderProfile: ProviderProfileCindyLaxaV1}}
-	account := &Account{
-		ID:              22,
-		Platform:        PlatformCindy,
-		WirePlatform:    WirePlatformOpenAI,
-		ProviderProfile: ProviderProfileCindyLaxaV1,
-		Type:            AccountTypeAPIKey,
-		Credentials: map[string]any{
-			"api_key":  "sk-test",
-			"base_url": "https://api.laxarouter.ai",
-		},
-	}
-	result := &OpenAIForwardResult{Model: CindyWebSearchModel, BillingModel: CindyWebSearchModel, WebSearchCalls: 2}
-
-	cost, err := svc.calculateOpenAIRecordUsageCost(
-		context.Background(), result, apiKey, account, []string{CindyWebSearchModel},
-		1.0, 1.0, 1.0, 1.5, UsageTokens{}, "", boolPtr(false),
-		time.Time{},
-	)
-	require.NoError(t, err)
-	require.Equal(t, string(BillingModePerRequest), cost.BillingMode)
-	require.Zero(t, cost.TotalCost)
-	require.Zero(t, cost.ActualCost)
-
-	apiKey.Group.WebSearchPricePerCall = float64Ptr(0.004)
-	cost, err = svc.calculateOpenAIRecordUsageCost(
-		context.Background(), result, apiKey, account, []string{CindyWebSearchModel},
-		1.0, 1.0, 1.0, 1.5, UsageTokens{}, "", boolPtr(false),
-		time.Time{},
-	)
-	require.NoError(t, err)
-	require.InDelta(t, 0.008, cost.TotalCost, 1e-12)
-	require.InDelta(t, 0.012, cost.ActualCost, 1e-12)
-}
-
 func TestAPIKeyService_SnapshotRoundTrip_PreservesWebSearchPricePerCall(t *testing.T) {
 	svc := NewAPIKeyService(nil, nil, nil, nil, nil, nil, &config.Config{})
 	groupID := int64(9)

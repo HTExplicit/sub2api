@@ -60,25 +60,6 @@ func TestPromptAccountSelectionUsesFreshBindingAndFrozenContent(t *testing.T) {
 	require.Equal(t, 1, strings.Count(string(original), "site-rule-content"))
 }
 
-func TestPromptRulePlatformUsesProviderRatherThanWireProtocol(t *testing.T) {
-	policy := newPromptRulesGatewayPolicy("auto", "control_append")
-	body := []byte(`{"model":"gpt-5.4","instructions":"client","input":"history"}`)
-	for _, platform := range []string{PlatformCindy, PlatformGrok} {
-		t.Run(platform, func(t *testing.T) {
-			account := businessSystemPromptAPIKeyAccount(true)
-			account.Platform, account.WirePlatform = platform, WirePlatformOpenAI
-			c, _ := newBusinessSystemPromptGinContext("/v1/responses", body)
-			wire, app, err := policy.ApplyForSend(c, account, body, "responses", false)
-			require.NoError(t, err)
-			require.Equal(t, platform == PlatformCindy, app.Applied)
-			if platform == PlatformGrok {
-				require.Equal(t, body, wire)
-				require.Equal(t, "platform_scope", app.RulesPlan.Skipped[0].Reason)
-			}
-		})
-	}
-}
-
 func TestPromptCleanSourceFallbackDoesNotInvokePluginOrCarryPreviousOutput(t *testing.T) {
 	previous := invokePromptSkills
 	invokePromptSkills = func(context.Context, extensionv1.Invocation) (extensionv1.Result, error) {
