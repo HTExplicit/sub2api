@@ -174,25 +174,14 @@ database recovery period is not treated as a permanent process failure.
 - `schema_migrations` tracks applied migrations (filename + checksum).
 - Migrations are forward-only; rollback requires a DB backup restore or a manual compensating SQL script.
 
-### Cindy staged rollout
+### Image Studio default and the retained rollout tuple
 
-Five immutable process flags allow the Cindy changes to be enabled or rolled
-back independently while rebuilding only the Sub2API service:
-
-| Variable | Scope | Recommended first deployment |
-|----------|-------|------------------------------|
-| `GATEWAY_CINDY_BALANCE_DETECTION_ENABLED` | Cindy health tracking and exact budget confirmation | `false`; enable in the health phase |
-| `GATEWAY_CINDY_CAPABILITY_CATALOG_ENABLED` | Catalog, protocol gates, and capability API; the two exact compatibility aliases remain available while disabled | `false`; enable in the catalog phase |
-| `GATEWAY_CINDY_SEARCH_ENABLED` | Native Cindy Search routing; independent from catalog exposure | `false` |
-| `GATEWAY_CINDY_RESPONSES_IMAGE_BRIDGE_ENABLED` | GPT Image 2 Responses bridge; independent from Image Studio | `false` |
-| `GATEWAY_IMAGE_STUDIO_ENABLED` | Image Studio; only Cindy capabilities are registered in this release | `false` until the strengthened A/B/C codec probe passes |
-
-Disabling balance detection does not clear an existing database balance marker.
-Ordinary traffic may fail over on an exact structured signal but never creates
-or clears an account marker; only an administrator-created durable probe job can
-change that state. Catalog rollback disables enumeration and protocol gates, but
-the exact `gpt-5.4` and `gpt-5.4-mini` Cindy compatibility aliases remain active.
-Each flag is independently reversible.
+`GATEWAY_IMAGE_STUDIO_ENABLED` is the deploy-time default of the Image Studio
+switch until an administrator saves the image tool setting; unset or `false`
+keeps Image Studio off. Cindy accounts are ordinary OpenAI API-key accounts and
+the backend no longer reads any `GATEWAY_CINDY_*` variable. The production
+workflow below still carries its historical `cindy=` tuple and the Cindy
+platform-v1 label check; the backend ignores those values.
 
 The protected production workflow exposes the five values as typed boolean
 inputs. The platform and jobs phase is dispatched with:
@@ -288,10 +277,8 @@ their OCI source revisions to match valid `main` ancestors, and requires
 host rejects it before pulling or mutating state unless the running image is
 byte-for-byte equal to `from=`. Ordinary deploys remain unable to downgrade.
 
-`GATEWAY_CINDY_IMAGE_STUDIO_ENABLED` remains a one-release fallback only when
-`GATEWAY_IMAGE_STUDIO_ENABLED` is absent. Do not set both variables; the
-managed deployment guard fails closed if their values conflict and rewrites a
-successful rollout to the generic variable only.
+The backend reads only `GATEWAY_IMAGE_STUDIO_ENABLED`; the former
+`GATEWAY_CINDY_IMAGE_STUDIO_ENABLED` fallback was removed.
 
 **Verify `users.allowed_groups` → `user_allowed_groups` backfill**
 

@@ -7,7 +7,7 @@ cd "$repo_root"
 # The same domain policies now compile into the host. Lifecycle concurrency is
 # selected once by the workflow's dedicated race step; no package/signing process.
 go -C backend test -p=1 -tags unit \
-  ./internal/accounttools/... ./internal/cindyprovider/... \
+  ./internal/accounttools/... \
   ./internal/codexruntime/... ./internal/promptskills/... \
   -skip '^TestNativeModuleLifecycleStartsOnceAndDrains$' -count=1
 
