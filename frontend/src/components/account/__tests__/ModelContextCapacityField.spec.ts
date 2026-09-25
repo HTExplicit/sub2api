@@ -31,19 +31,6 @@ function mountField(row: ModelContextCapacityRow | undefined = capacityRow(), dr
 }
 
 describe('ModelContextCapacityField', () => {
-  it('labels the GPT-6 OAuth fallback as a Codex reference and keeps it read-only', () => {
-    const wrapper = mountField(capacityRow({
-      upstream_model_id: 'gpt-6-sol', aliases: [], editable: false, upstream: undefined,
-      automatic_context_window: 272000, effective_context_window: 272000,
-      automatic_source: 'protected', effective_source: 'protected', max_context_window: 872000,
-      reason: 'codex_catalog_reference'
-    }), undefined, 'gpt-6-sol')
-    expect(wrapper.get('[data-testid="context-capacity-value"]').text()).toBe('[272K]')
-    expect(wrapper.get('[data-testid="context-capacity-source"]').text()).toContain('sources.codex_reference')
-    expect(wrapper.find('button').exists()).toBe(false)
-    expect(wrapper.emitted('commit')).toBeUndefined()
-  })
-
   it('explains the selected GPT reference without rewriting a namespaced model ID', () => {
     const modelId = 'team/gpt-6'
     const row = capacityRow({
@@ -209,14 +196,12 @@ describe('ModelContextCapacityField', () => {
     expect(wrapper.emitted('editing')?.at(-1)).toEqual([false])
   })
 
-  it('keeps protected catalogs read-only and ignores supplied drafts', async () => {
-    const wrapper = mountField(capacityRow({ editable: false, effective_context_window: 372_000, effective_source: 'protected' }), '2M')
+  it('keeps read-only rows read-only and ignores supplied drafts', () => {
+    const wrapper = mountField(capacityRow({ editable: false, effective_context_window: 372_000 }), '2M')
     expect(wrapper.find('button').exists()).toBe(false)
     expect(wrapper.find('input').exists()).toBe(false)
     expect(wrapper.get('[data-testid="context-capacity-value"]').text()).toBe('[372K]')
-    expect(wrapper.get('[data-testid="context-capacity-source"]').text()).toContain('sources.protected')
-    await wrapper.setProps({ row: capacityRow({ editable: true, effective_context_window: 372_000, effective_source: 'protected' }) })
-    expect(wrapper.find('button').exists()).toBe(false)
+    expect(wrapper.get('[data-testid="context-capacity-source"]').text()).toContain('sources.official')
     expect(wrapper.emitted('commit')).toBeUndefined()
   })
 
@@ -225,7 +210,7 @@ describe('ModelContextCapacityField', () => {
     await wrapper.get('button').trigger('click')
     const input = wrapper.get('input')
     await input.setValue('2M')
-    await wrapper.setProps({ row: capacityRow({ editable: false, effective_source: 'protected' }) })
+    await wrapper.setProps({ row: capacityRow({ editable: false }) })
     await input.trigger('blur')
     expect(wrapper.find('input').exists()).toBe(false)
     expect(wrapper.emitted('commit')).toBeUndefined()

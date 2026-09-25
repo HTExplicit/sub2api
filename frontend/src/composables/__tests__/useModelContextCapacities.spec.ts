@@ -308,19 +308,23 @@ describe('useModelContextCapacities', () => {
     expect(model.buildPatch()).toEqual({ 'dynamic-model': 1_000_000 })
   })
 
-  it('retains upstream evidence but does not replace a newer official automatic selection', async () => {
+  it('lets create-sync upstream evidence outrank a reference catalog selection', async () => {
     const model = setup()
     await settle()
     const synced = syncedResult()
     model.acceptSync(synced)
     const official = row({
       upstream_model_id: 'dynamic-model', aliases: ['official-alias'],
-      automatic_source: 'official', automatic_context_window: 1_050_000,
-      effective_source: 'official', effective_context_window: 1_050_000
+      automatic_source: 'official', automatic_context_window: 272_000,
+      effective_source: 'official', effective_context_window: 272_000
     })
     previewModelContextCapacities.mockResolvedValueOnce({ capacity_rows: [official] })
     await model.refresh()
-    expect(model.rows.value[0]).toEqual({ ...official, upstream: synced.capacity_rows![0].upstream })
+    expect(model.rows.value[0]).toMatchObject({
+      aliases: ['official-alias'], upstream: synced.capacity_rows![0].upstream,
+      automatic_source: 'upstream', automatic_context_window: 350_000,
+      effective_source: 'upstream', effective_context_window: 350_000
+    })
   })
 
   it('invalidates unsaved upstream evidence on endpoint change without discarding drafts', async () => {

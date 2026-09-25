@@ -640,7 +640,8 @@ export interface SyncUpstreamModelsResult {
   capacity_rows?: ModelContextCapacityRow[]
 }
 
-export type ModelContextCapacitySource = 'custom' | 'official' | 'upstream' | 'default' | 'protected'
+/** Highest priority first; an empty source means the capacity is unknown. */
+export type ModelContextCapacitySource = 'custom' | 'upstream' | 'official' | 'registry' | ''
 
 export interface ModelContextCapacityValues {
   context_window?: number
@@ -655,6 +656,7 @@ export interface ModelContextCapacityRow {
   aliases: string[]
   editable: boolean
   upstream?: ModelContextCapacityValues & { observed_at: string }
+  registry?: ModelContextCapacityValues & { observed_at?: string }
   official?: ModelContextCapacityValues & {
     model_id: string
     aliases?: string[]
