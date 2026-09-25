@@ -13,18 +13,22 @@ import (
 	accounttools "github.com/Wei-Shaw/sub2api/internal/accounttools/policy"
 
 	extensionv1 "github.com/Wei-Shaw/sub2api/internal/nativeapi"
-	policy "github.com/Wei-Shaw/sub2api/internal/promptskills/policy"
 )
 
 type promptPolicyFixture struct{}
+
+// failedPromptProcess is a native policy invoker whose module is unavailable.
+type failedPromptProcess struct{}
+
+func (failedPromptProcess) InvokeOperation(context.Context, string, string, extensionv1.Invocation) (extensionv1.Result, error) {
+	return extensionv1.Result{}, ErrExtensionOperationUnavailable
+}
 
 type codexTransportFixtureContextKey struct{}
 
 func withCodexTransportFixture(ctx context.Context, enabled bool) context.Context {
 	return context.WithValue(ctx, codexTransportFixtureContextKey{}, enabled)
 }
-
-var promptFixtureModule = policy.New()
 
 func cindyProbeTestModels(t *testing.T) [2]string {
 	t.Helper()
@@ -62,7 +66,7 @@ func (promptPolicyFixture) InvokeOperation(ctx context.Context, _ string, _ stri
 	if strings.HasPrefix(in.Operation, "taxonomy.") || strings.HasPrefix(in.Operation, "test.") || strings.HasPrefix(in.Operation, "import.") || in.Operation == "tools.describe" {
 		return accounttools.New().Invoke(ctx, in)
 	}
-	return promptFixtureModule.Invoke(ctx, in)
+	return extensionv1.Result{}, ErrExtensionOperationDisabled
 }
 func init() {
 	invokeNativeCodex = promptPolicyFixture{}.InvokeOperation

@@ -13,7 +13,7 @@
         <fieldset :disabled="busy" class="py-1 disabled:opacity-60">
           <template v-if="account">
             <CodexAccountActions :account-ids="[account.id]" :accounts="[account]" variant="menu" @open="openCodexOperation" />
-            <button v-if="supportsAccountPromptBinding(account)" data-test="account-prompt-binding-action" @click="openPromptBinding(account)" class="flex w-full items-center gap-2 px-4 py-2 text-sm hover:bg-gray-100 dark:hover:bg-dark-700">
+            <button data-test="account-prompt-binding-action" @click="openPromptBinding(account)" class="flex w-full items-center gap-2 px-4 py-2 text-sm hover:bg-gray-100 dark:hover:bg-dark-700">
               <Icon name="document" size="sm" class="text-gray-500" />
               {{ t('admin.systemPrompts.accountPrompts') }}
             </button>
@@ -67,8 +67,8 @@
     </div>
   </Teleport>
   <CodexTicketOperationModal v-if="codexTarget" :show="true" :operation="codexTarget.operation" :account-ids="codexTarget.accountIds" @close="codexTarget = null" />
-  <BaseDialog :show="promptBindingAccountIds.length > 0" :title="t('admin.systemPrompts.accountPrompts')" width="normal" @close="promptBindingAccountIds = []">
-    <AccountPromptBindingPanel v-if="promptBindingAccountIds.length > 0" :account-ids="promptBindingAccountIds" @changed="emit('resource-complete')" />
+  <BaseDialog :show="!!promptBindingAccount" :title="t('admin.systemPrompts.accountPrompts')" width="normal" @close="promptBindingAccount = null">
+    <AccountSystemPromptBinding v-if="promptBindingAccount" :account-ids="[promptBindingAccount.id]" :current="promptBindingAccount.extra?.system_prompt" @changed="onPromptBindingChanged" />
   </BaseDialog>
 </template>
 
@@ -79,7 +79,6 @@ import { useI18n } from 'vue-i18n'
 import { Icon } from '@/components/icons'
 import type { Account } from '@/types'
 import BaseDialog from '@/components/common/BaseDialog.vue'
-import { supportsAccountPromptBinding } from '@/utils/accountPromptBinding'
 import CodexAccountActions from '@/components/admin/codex/CodexAccountActions.vue'
 import type { CodexTicketOperation } from '@/utils/codexTickets'
 
@@ -90,11 +89,15 @@ const menuRef = ref<HTMLElement | null>(null)
 const CodexTicketOperationModal = defineAsyncComponent(() => import('@/components/admin/codex/CodexTicketOperationModal.vue'))
 const codexTarget = ref<{ operation: CodexTicketOperation; accountIds: number[] } | null>(null)
 // Loaded when the dialog first opens; the menu itself stays light.
-const AccountPromptBindingPanel = defineAsyncComponent(() => import('./AccountPromptBindingPanel.vue'))
-const promptBindingAccountIds = ref<number[]>([])
+const AccountSystemPromptBinding = defineAsyncComponent(() => import('./AccountSystemPromptBinding.vue'))
+const promptBindingAccount = ref<Account | null>(null)
 function openPromptBinding(account: Account) {
-  promptBindingAccountIds.value = [account.id]
+  promptBindingAccount.value = account
   emit('close')
+}
+function onPromptBindingChanged() {
+  promptBindingAccount.value = null
+  emit('resource-complete')
 }
 function openCodexOperation(operation: CodexTicketOperation, accountIds: number[]) {
   codexTarget.value = { operation, accountIds: [...accountIds] }

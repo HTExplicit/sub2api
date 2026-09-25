@@ -108,7 +108,7 @@ func (s *OpenAIGatewayService) forwardOpenAIWSV2WithScope(
 	}
 	setOpenAIWSTurnMetadata(payload, turnMetadata)
 	applyStagedCodexFingerprintClientMetadata(c, account, payload)
-	wirePayload, promptErr := s.finalizeBusinessPromptForSend(c, account, payloadAsJSONBytes(payload), BusinessSystemPromptProtocolResponses, isOpenAIResponsesCompactPath(c))
+	wirePayload, promptErr := s.finalizeResponsesForSend(c, account, payloadAsJSONBytes(payload))
 	if promptErr != nil {
 		return nil, promptErr
 	}
@@ -131,8 +131,7 @@ func (s *OpenAIGatewayService) forwardOpenAIWSV2WithScope(
 	previousResponseIDKind := ClassifyOpenAIPreviousResponseIDKind(previousResponseID)
 	promptCacheKey := openAIWSPayloadString(payload, "prompt_cache_key")
 	if promptCacheKey == "" {
-		application, _ := businessSystemPromptApplicationFromRequest(c, BusinessSystemPromptProtocolResponses)
-		promptCacheKey = deriveBusinessSystemPromptCacheKey(c, strings.TrimSpace(clientPromptCacheKey), application)
+		promptCacheKey = strings.TrimSpace(clientPromptCacheKey)
 	}
 	_, hasTools := payload["tools"]
 	debugEnabled := isOpenAIWSModeDebugEnabled()
@@ -748,7 +747,7 @@ readLoop:
 		if normalized, changed := normalizeCompletedImageGenerationStatus(message); changed {
 			message = normalized
 		}
-		message = s.rewriteBusinessSystemPromptJSONForRequest(c, message, BusinessSystemPromptProtocolResponses)
+		message = restoreSystemPromptEcho(c, message)
 
 		eventType, eventResponseID, responseField := parseOpenAIWSEventEnvelope(message)
 		if eventType == "" {

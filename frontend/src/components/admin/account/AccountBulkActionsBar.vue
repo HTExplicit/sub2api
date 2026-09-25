@@ -78,7 +78,7 @@
   </div>
   <CodexTicketOperationModal v-if="codexTarget" :show="true" :operation="codexTarget.operation" :account-ids="codexTarget.accountIds" @close="codexTarget = null" />
   <BaseDialog :show="promptBindingOpen" :title="t('admin.systemPrompts.accountPrompts')" width="normal" @close="promptBindingOpen = false">
-    <AccountPromptBindingPanel v-if="promptBindingOpen" :account-ids="selectedIds" />
+    <AccountSystemPromptBinding v-if="promptBindingOpen" :account-ids="selectedIds" @changed="promptBindingOpen = false" />
   </BaseDialog>
 </template>
 
@@ -86,7 +86,7 @@
 import { computed, defineAsyncComponent, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import BaseDialog from '@/components/common/BaseDialog.vue'
-import { accountPromptBindingLimit, supportsAccountPromptBinding } from '@/utils/accountPromptBinding'
+import { systemPromptBindingLimit } from '@/utils/systemPromptBinding'
 import type { AccountSelectionIdentity } from '@/composables/useAccountSelectionMetadata'
 import CodexAccountActions from '@/components/admin/codex/CodexAccountActions.vue'
 import type { CodexTicketOperation } from '@/utils/codexTickets'
@@ -118,19 +118,12 @@ defineEmits([
 ])
 
 const { t } = useI18n()
-const AccountPromptBindingPanel = defineAsyncComponent(() => import('./AccountPromptBindingPanel.vue'))
+const AccountSystemPromptBinding = defineAsyncComponent(() => import('./AccountSystemPromptBinding.vue'))
 const CodexTicketOperationModal = defineAsyncComponent(() => import('@/components/admin/codex/CodexTicketOperationModal.vue'))
 const codexTarget = ref<{ operation: CodexTicketOperation; accountIds: number[] } | null>(null)
 function openCodexOperation(operation: CodexTicketOperation, accountIds: number[]) {
   codexTarget.value = { operation, accountIds: [...accountIds] }
 }
 const promptBindingOpen = ref(false)
-const promptBindingAvailable = computed(() => {
-  if (!props.selectedIds.length || props.selectedIds.length > accountPromptBindingLimit) return false
-  const known = new Map((props.selectedAccounts || []).map(account => [account.id, account]))
-  return props.selectedIds.every(id => {
-    const account = known.get(id)
-    return !!account && supportsAccountPromptBinding(account)
-  })
-})
+const promptBindingAvailable = computed(() => props.selectedIds.length > 0 && props.selectedIds.length <= systemPromptBindingLimit)
 </script>

@@ -485,7 +485,7 @@ type OpenAIGatewayService struct {
 	balanceNotifyService  *BalanceNotifyService
 	settingService        *SettingService
 	userPlatformQuotaRepo UserPlatformQuotaRepository
-	businessPromptService *BusinessSystemPromptService
+	systemPrompts         *SystemPromptService
 	cindyHealth           CindyHealthCoordinator
 	usageCache            *UsageCache
 	usageCommitObserver   UsageCommitObserver
@@ -532,17 +532,6 @@ type OpenAIGatewayService struct {
 	// 剥离跨账号回带（openai_codex_turn_state.go）。
 	openaiCodexTurnStateOrigins sync.Map
 	openaiCodexTurnStateWrites  atomic.Uint64
-}
-
-// SetBusinessSystemPromptService attaches the global business prompt policy to
-// a gateway instance. A nil service is intentionally treated as disabled so
-// existing unit-test constructors and degraded development environments retain
-// their previous request bytes.
-func (s *OpenAIGatewayService) SetBusinessSystemPromptService(promptService *BusinessSystemPromptService) {
-	if s == nil {
-		return
-	}
-	s.businessPromptService = promptService
 }
 
 func (s *OpenAIGatewayService) SetCindyHealthCoordinator(coordinator CindyHealthCoordinator) {

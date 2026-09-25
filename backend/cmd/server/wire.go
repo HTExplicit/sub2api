@@ -31,7 +31,6 @@ type Application struct {
 	PluginManager *service.PluginManager
 	AccountJobs   *service.AccountJobRuntime
 	ImageStudio   *service.ImageStudioRuntime
-	PromptDomain  *service.PromptDomainRuntime
 	CodexIdentity *service.CodexClientIdentityBackfillService
 	CodexRuntime  *service.NativeCodexRuntime
 	Cleanup       func()
@@ -60,13 +59,12 @@ func initializeApplication(buildInfo handler.BuildInfo) (*Application, error) {
 		provideServiceBuildInfo,
 		providePluginHostInfo,
 		provideUsageCommitObserver,
-		service.NewPromptDomainRuntime,
 
 		// Cleanup function provider
 		provideCleanup,
 
 		// Application struct
-		wire.Struct(new(Application), "Server", "PromptAudit", "PluginManager", "AccountJobs", "ImageStudio", "PromptDomain", "CodexIdentity", "CodexRuntime", "Cleanup"),
+		wire.Struct(new(Application), "Server", "PromptAudit", "PluginManager", "AccountJobs", "ImageStudio", "CodexIdentity", "CodexRuntime", "Cleanup"),
 	)
 	return nil, nil
 }
@@ -144,8 +142,6 @@ func provideCleanup(
 	auditLog *service.AuditLogService,
 	openAIAutoReset *service.OpenAIQuotaAutoResetService,
 	promptAudit *securityaudit.PromptService,
-	promptDomain *service.PromptDomainRuntime,
-	businessPrompt *service.BusinessSystemPromptService,
 	accountJobs *service.AccountJobRuntime,
 	cindyHealth *service.CindyHealthService,
 	cindyBalanceProbe *service.CindyBalanceProbeService,
@@ -156,10 +152,6 @@ func provideCleanup(
 	return func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
-		if promptDomain != nil {
-			promptDomain.Stop()
-		}
-
 		type cleanupStep struct {
 			name string
 			fn   func() error
@@ -194,12 +186,6 @@ func provideCleanup(
 			{"CindyBalanceProbeService", func() error {
 				if cindyBalanceProbe != nil {
 					cindyBalanceProbe.Stop()
-				}
-				return nil
-			}},
-			{"BusinessSystemPromptService", func() error {
-				if businessPrompt != nil {
-					businessPrompt.Stop()
 				}
 				return nil
 			}},

@@ -229,9 +229,6 @@ func runMainServer() {
 			log.Printf("Prompt Audit started in degraded state: %v", err)
 		}
 	}
-	if app.PromptDomain != nil {
-		app.PromptDomain.Start(context.Background())
-	}
 	if app.CodexIdentity != nil {
 		app.CodexIdentity.Start()
 	}

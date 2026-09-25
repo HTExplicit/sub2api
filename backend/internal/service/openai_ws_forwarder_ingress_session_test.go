@@ -426,16 +426,19 @@ func TestOpenAIGatewayService_ProxyResponsesWebSocketFromClient_KeepLeaseAcrossT
 	captureDialer := &openAIWSCaptureDialer{conn: captureConn}
 	pool := newOpenAIWSConnPool(cfg)
 	pool.setClientDialerForTest(captureDialer)
-	promptPolicy := newGatewayBusinessSystemPromptPolicy(t, false, false)
+	systemPrompts := &SystemPromptService{}
+	systemPrompts.publish(SystemPromptConfig{Enabled: true, DefaultPromptID: "default", Prompts: []SystemPrompt{
+		{ID: "default", Name: "default", Body: "business-server", Position: SystemPromptPositionAppend, Role: SystemPromptRoleAuto},
+	}})
 
 	svc := &OpenAIGatewayService{
-		cfg:                   cfg,
-		httpUpstream:          &httpUpstreamRecorder{},
-		cache:                 &stubGatewayCache{},
-		openaiWSResolver:      NewOpenAIWSProtocolResolver(cfg),
-		toolCorrector:         NewCodexToolCorrector(),
-		openaiWSPool:          pool,
-		businessPromptService: promptPolicy,
+		cfg:              cfg,
+		httpUpstream:     &httpUpstreamRecorder{},
+		cache:            &stubGatewayCache{},
+		openaiWSResolver: NewOpenAIWSProtocolResolver(cfg),
+		toolCorrector:    NewCodexToolCorrector(),
+		openaiWSPool:     pool,
+		systemPrompts:    systemPrompts,
 	}
 
 	account := &Account{
@@ -528,13 +531,13 @@ func TestOpenAIGatewayService_ProxyResponsesWebSocketFromClient_KeepLeaseAcrossT
 	firstTurnEvent := readMessage()
 	require.Equal(t, "response.completed", gjson.GetBytes(firstTurnEvent, "type").String())
 	require.Equal(t, "resp_ingress_turn_1", gjson.GetBytes(firstTurnEvent, "response.id").String())
-	require.False(t, gjson.GetBytes(firstTurnEvent, "response.instructions").Exists())
+	require.Equal(t, gjson.Null, gjson.GetBytes(firstTurnEvent, "response.instructions").Type)
 
 	writeMessage(`{"type":"response.create","model":"gpt-5.1","stream":false,"prompt_cache_key":"business-cache-source","previous_response_id":"resp_ingress_turn_1"}`)
 	secondTurnEvent := readMessage()
 	require.Equal(t, "response.completed", gjson.GetBytes(secondTurnEvent, "type").String())
 	require.Equal(t, "resp_ingress_turn_2", gjson.GetBytes(secondTurnEvent, "response.id").String())
-	require.False(t, gjson.GetBytes(secondTurnEvent, "response.instructions").Exists())
+	require.Equal(t, gjson.Null, gjson.GetBytes(secondTurnEvent, "response.instructions").Type)
 	require.Equal(t, "response.completed", <-turnTerminalCh, "首轮 turn 应保留成功终态")
 	require.Equal(t, "response.completed", <-turnTerminalCh, "第二轮 turn 应保留成功终态")
 
@@ -556,7 +559,7 @@ func TestOpenAIGatewayService_ProxyResponsesWebSocketFromClient_KeepLeaseAcrossT
 		require.NoError(t, err)
 		require.Equal(t, "business-server", gjson.GetBytes(encoded, "instructions").String(), "turn %d", index+1)
 		require.Equal(t, 1, strings.Count(string(encoded), "business-server"), "turn %d", index+1)
-		require.Regexp(t, `^[0-9a-f]{64}$`, gjson.GetBytes(encoded, "prompt_cache_key").String())
+		require.Equal(t, "business-cache-source", gjson.GetBytes(encoded, "prompt_cache_key").String())
 	}
 	require.Equal(t, captureConn.writes[0]["prompt_cache_key"], captureConn.writes[1]["prompt_cache_key"])
 	require.Equal(t, captureConn.writes[0]["prompt_cache_key"], captureDialer.lastHeaders.Get("session_id"), "handshake fallback must use the final wire key")
@@ -970,6 +973,10 @@ func TestOpenAIGatewayService_ProxyResponsesWebSocketFromClient_CodexImageBridge
 	pool := newOpenAIWSConnPool(cfg)
 	pool.setClientDialerForTest(captureDialer)
 
+	systemPrompts := &SystemPromptService{}
+	systemPrompts.publish(SystemPromptConfig{Enabled: true, DefaultPromptID: "site", Prompts: []SystemPrompt{
+		{ID: "site", Name: "site", Body: "site-system-prompt", Position: SystemPromptPositionAppend, Role: SystemPromptRoleAuto},
+	}})
 	svc := &OpenAIGatewayService{
 		cfg:              cfg,
 		httpUpstream:     &httpUpstreamRecorder{},
@@ -977,6 +984,7 @@ func TestOpenAIGatewayService_ProxyResponsesWebSocketFromClient_CodexImageBridge
 		openaiWSResolver: NewOpenAIWSProtocolResolver(cfg),
 		toolCorrector:    NewCodexToolCorrector(),
 		openaiWSPool:     pool,
+		systemPrompts:    systemPrompts,
 	}
 
 	groupID := int64(3)
@@ -1125,11 +1133,13 @@ func TestOpenAIGatewayService_ProxyResponsesWebSocketFromClient_CodexImageBridge
 	require.Equal(t, "png", gjson.Get(nonLitePayload, `tools.#(type=="image_generation").output_format`).String())
 	require.Equal(t, "auto", gjson.Get(nonLitePayload, "tool_choice").String())
 	require.Contains(t, gjson.Get(nonLitePayload, "instructions").String(), "image_generation")
+	require.True(t, strings.HasSuffix(gjson.Get(nonLitePayload, "instructions").String(), "\n\nsite-system-prompt"))
 	require.False(t, gjson.Get(nonLitePayload, "reasoning.context").Exists())
 
 	litePayload := requestToJSONString(captureConn.writes[1])
 	require.False(t, gjson.Get(litePayload, `tools.#(type=="image_generation")`).Exists())
 	require.NotContains(t, gjson.Get(litePayload, "instructions").String(), "image_generation")
+	require.NotContains(t, litePayload, "site-system-prompt", "Codex Responses Lite requests are never injected")
 	require.Equal(t, "exec", gjson.Get(litePayload, `input.#(type=="additional_tools").tools.0.name`).String())
 	require.Contains(t, gjson.Get(litePayload, `input.#(type=="additional_tools").tools.0.description`).String(), "image_gen.imagegen")
 	require.False(t, gjson.Get(litePayload, `tools.#(type=="namespace")`).Exists())

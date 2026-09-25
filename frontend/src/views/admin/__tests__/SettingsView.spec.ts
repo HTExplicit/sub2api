@@ -1425,26 +1425,17 @@ describe("admin SettingsView payment visible method controls", () => {
     );
   });
 
-  it("keeps Claude OAuth protocol controls while routing custom edits to unified prompts", async () => {
+  it("submits Claude OAuth system prompt injection gateway settings", async () => {
     const blocks = `[{"type":"text","text":"custom block","cache_control":true}]`;
-    const legacyPrompt = "  Previous custom prompt\nKeep original bytes  ";
     getSettings.mockResolvedValueOnce({
       ...baseSettingsResponse,
-      enable_claude_oauth_system_prompt_injection: true,
-      claude_oauth_system_prompt: legacyPrompt,
+      enable_claude_oauth_system_prompt_injection: false,
       claude_oauth_system_prompt_blocks: blocks,
     });
 
     const wrapper = mountView();
 
     await flushPromises();
-    await openGatewayTab(wrapper);
-    expect(wrapper.get('[data-test="claude-unified-prompts-link"]').attributes("href")).toBe("/admin/system-prompts");
-    const archive = wrapper.get('[data-test="claude-legacy-prompt-reference"]');
-    expect(archive.find("input, textarea, button").exists()).toBe(false);
-    expect(archive.get('[data-test="claude-legacy-prompt-text"]').element.textContent).toBe(legacyPrompt);
-    expect(archive.get('[data-test="claude-legacy-prompt-blocks"]').element.textContent).toBe(blocks);
-    await wrapper.get('[data-test="claude-protocol-base-instructions"]').setValue(false);
     await wrapper.find("form").trigger("submit.prevent");
     await flushPromises();
 
@@ -1454,14 +1445,20 @@ describe("admin SettingsView payment visible method controls", () => {
         enable_claude_oauth_system_prompt_injection: false,
       }),
     );
-    const payload = updateSettings.mock.calls[0][0];
-    expect(payload).not.toHaveProperty("claude_oauth_system_prompt");
-    expect(payload).not.toHaveProperty("claude_oauth_system_prompt_blocks");
-    expect(enSettings.settings.gatewayForwarding.claudeOAuthSystemPromptInjection).toContain("protocol base instructions");
-    expect(zhSettings.settings.gatewayForwarding.claudeOAuthSystemPromptInjection).toContain("协议基础指令");
-    expect(enSettings.settings.gatewayForwarding.customPromptManagementLink).toBe("Open System Prompts");
-    expect(zhSettings.settings.gatewayForwarding.customPromptManagementLink).toBe("打开系统提示词");
-    wrapper.unmount();
+    const payload = updateSettings.mock.calls[0][0] as {
+      claude_oauth_system_prompt_blocks: string;
+    };
+    expect(JSON.parse(payload.claude_oauth_system_prompt_blocks)).toEqual([
+      {
+        enabled: true,
+        type: "text",
+        text: "custom block",
+        cache_control: {
+          type: "ephemeral",
+          ttl: "5m",
+        },
+      },
+    ]);
   });
 
   it("submits Antigravity user agent version gateway setting", async () => {

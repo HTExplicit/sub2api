@@ -40,7 +40,6 @@ func (s *AntigravityGatewayService) ForwardUpstream(ctx context.Context, c *gin.
 	if strings.TrimSpace(claudeReq.Model) == "" {
 		return nil, fmt.Errorf("missing model")
 	}
-	rememberPromptRequestedModel(c, body)
 	originalModel := claudeReq.Model
 
 	// 构建上游请求 URL
@@ -53,12 +52,7 @@ func (s *AntigravityGatewayService) ForwardUpstream(ctx context.Context, c *gin.
 	if sanitized, changed := sanitizeAnthropicBodyForBetaTokens(body, clientBeta); changed {
 		body = sanitized
 	}
-
-	var err error
-	body, _, err = s.businessPromptService.ApplyForSend(c, account, body, "messages", false)
-	if err != nil {
-		return nil, err
-	}
+	body = s.systemPrompts.ApplyAnthropic(c, account, body)
 
 	// 创建请求
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, upstreamURL, bytes.NewReader(body))
@@ -105,7 +99,7 @@ func (s *AntigravityGatewayService) ForwardUpstream(ctx context.Context, c *gin.
 		// 透传上游错误
 		c.Header("Content-Type", resp.Header.Get("Content-Type"))
 		c.Status(resp.StatusCode)
-		_, _ = c.Writer.Write(rewritePromptRulesStructuredEcho(c, respBody, "messages"))
+		_, _ = c.Writer.Write(respBody)
 
 		return &ForwardResult{
 			Model: originalModel,
@@ -142,7 +136,7 @@ func (s *AntigravityGatewayService) ForwardUpstream(ctx context.Context, c *gin.
 
 		c.Header("Content-Type", resp.Header.Get("Content-Type"))
 		c.Status(http.StatusOK)
-		_, _ = c.Writer.Write(rewritePromptRulesStructuredEcho(c, respBody, "messages"))
+		_, _ = c.Writer.Write(respBody)
 	}
 
 	// 构建计费结果
@@ -273,7 +267,7 @@ func (s *AntigravityGatewayService) streamUpstreamResponse(c *gin.Context, resp 
 			s.extractSSEUsage(line, usage)
 
 			// 透传行
-			cw.Fprintf("%s\n", rewritePromptRulesStructuredSSE(c, []byte(line), "messages"))
+			cw.Fprintf("%s\n", line)
 
 		case <-intervalCh:
 			lastRead := time.Unix(0, atomic.LoadInt64(&lastReadAt))
