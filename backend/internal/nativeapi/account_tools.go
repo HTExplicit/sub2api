@@ -32,23 +32,3 @@ type TextPromptSelection struct {
 	Characters int  `json:"characters"`
 	ValidUTF8  bool `json:"valid_utf8"`
 }
-
-type BatchTestSelection struct {
-	AccountID       int64  `json:"account_id"`
-	SelectionMode   string `json:"selection_mode,omitempty"`
-	ModelID         string `json:"model_id,omitempty"`
-	ReasoningEffort string `json:"reasoning_effort,omitempty"`
-}
-type BatchTestPlanningRequest struct {
-	HasItems   bool                 `json:"has_items"`
-	HasLegacy  bool                 `json:"has_legacy"`
-	AccountIDs []int64              `json:"account_ids,omitempty"`
-	ModelID    string               `json:"model_id,omitempty"`
-	Items      []BatchTestSelection `json:"items,omitempty"`
-}
-type BatchTestPlan struct {
-	AccountIDs []int64              `json:"account_ids"`
-	Models     map[int64]string     `json:"models"`
-	Items      []BatchTestSelection `json:"items,omitempty"`
-	ModelID    string               `json:"model_id,omitempty"`
-}

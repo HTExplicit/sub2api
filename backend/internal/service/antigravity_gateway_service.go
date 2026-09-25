@@ -427,27 +427,27 @@ func (s *AntigravityGatewayService) TestConnection(ctx context.Context, account 
 		// AccountSwitchError → 测试时不切换账号，返回友好提示
 		var switchErr *AntigravityAccountSwitchError
 		if errors.As(err, &switchErr) {
-			return nil, accountTestHTTPFailure(http.StatusTooManyRequests)
+			return nil, fmt.Errorf("该账号模型 %s 当前限流中，请稍后重试", switchErr.RateLimitedModel)
 		}
-		return nil, accountTestRequestFailure(err)
+		return nil, err
 	}
 
 	if result == nil || result.resp == nil {
-		return nil, ErrAccountTestProtocol
+		return nil, errors.New("upstream returned empty response")
 	}
 	defer func() { _ = result.resp.Body.Close() }()
 
 	respBody, err := io.ReadAll(io.LimitReader(result.resp.Body, s.upstreamErrorBodyReadLimit()))
 	if err != nil {
-		return nil, accountTestRequestFailure(err)
+		return nil, fmt.Errorf("读取响应失败: %w", err)
 	}
 
 	if result.resp.StatusCode >= 400 {
-		return nil, accountTestHTTPFailure(result.resp.StatusCode)
+		return nil, fmt.Errorf("API 返回 %d: %s", result.resp.StatusCode, string(respBody))
 	}
 
 	var text strings.Builder
-	limited, err := parseAccountConnectionStream("gemini", bytes.NewReader(respBody), false, func(event TestEvent) {
+	limited, _, err := parseAccountConnectionStream("gemini", bytes.NewReader(respBody), false, func(event TestEvent) {
 		if event.Type == "content" {
 			_, _ = text.WriteString(event.Text)
 		}
