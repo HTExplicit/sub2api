@@ -75,7 +75,7 @@ func TestSummarizeNoOutputBody_ExtractsDiagnostics(t *testing.T) {
 	}
 }
 
-// 摘要应能抓到 incomplete_reason 并对超长 body 截断。
+// 摘要应能抓到 incomplete_reason；body 按 Ops 能存下的上限保留，只截断超出部分。
 func TestSummarizeNoOutputBody_IncompleteReasonAndTruncation(t *testing.T) {
 	long := strings.Repeat("x", 2000)
 	body := "data: {\"type\":\"response.incomplete\",\"response\":{\"status\":\"incomplete\",\"incomplete_details\":{\"reason\":\"max_output_tokens\"},\"junk\":\"" + long + "\"}}\n\n"
@@ -83,8 +83,12 @@ func TestSummarizeNoOutputBody_IncompleteReasonAndTruncation(t *testing.T) {
 	if !strings.Contains(summary, "incomplete_reason=max_output_tokens") {
 		t.Fatalf("should capture incomplete reason, got %q", summary[:120])
 	}
-	if !strings.Contains(summary, "truncated") {
-		t.Fatalf("oversized body should be truncated, len=%d", len(summary))
+	if !strings.Contains(summary, long) || strings.Contains(summary, "truncated") {
+		t.Fatalf("a body within the Ops detail budget must be kept whole, len=%d", len(summary))
+	}
+	oversized := summarizeOpenAIImagesNoOutputBody([]byte(strings.Repeat("y", opsMaxStoredErrorBodyBytes+10)))
+	if !strings.Contains(oversized, "truncated") {
+		t.Fatalf("a body above the Ops detail budget should be truncated, len=%d", len(oversized))
 	}
 }
 

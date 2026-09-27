@@ -5,7 +5,7 @@ self.onmessage = async (event: MessageEvent<File[]>) => {
     self.postMessage({ payload: await parseAccountImportFiles(event.data) })
   } catch (error) {
     self.postMessage({ error: error instanceof AccountImportParseError
-      ? { code: error.code, fileIndex: error.fileIndex }
-      : { code: 'parse', fileIndex: 0 } })
+      ? { code: error.code, fileIndex: error.fileIndex, detail: error.detail }
+      : { code: 'parse', fileIndex: 0, detail: error instanceof Error ? error.message : String(error) } })
   }
 }

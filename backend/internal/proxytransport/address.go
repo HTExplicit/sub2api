@@ -14,13 +14,16 @@ import (
 
 const parserVersion = "ticket-proxy-v2"
 
-// Candidate deliberately has no exported credential or full address field.
-// Selection is resolved by parsing the original draft again, never a client URL.
+// Candidate shows the recognized protocol, host, port and username (so records
+// that differ only by username stay distinguishable); the password and the
+// full address are not echoed. Selection is resolved by parsing the original
+// draft again, never a client URL.
 type Candidate struct {
 	SelectionID    string `json:"selection_id"`
 	Protocol       string `json:"protocol"`
 	Host           string `json:"host"`
 	Port           int    `json:"port"`
+	Username       string `json:"username,omitempty"`
 	UsernameMasked string `json:"username_masked,omitempty"`
 	SourceLine     int    `json:"source_line"`
 	SourceColumn   int    `json:"source_column"`
@@ -299,7 +302,7 @@ func candidate(raw, format string, line int) (Candidate, error) {
 	if u.User != nil {
 		masked = "***"
 	}
-	return Candidate{Protocol: u.Scheme, Host: u.Hostname(), Port: effectivePort(u), UsernameMasked: masked, SourceLine: line, SourceColumn: 1, Format: format, endpoint: raw, identity: identity}, nil
+	return Candidate{Protocol: u.Scheme, Host: u.Hostname(), Port: effectivePort(u), Username: user, UsernameMasked: masked, SourceLine: line, SourceColumn: 1, Format: format, endpoint: raw, identity: identity}, nil
 }
 
 func fieldsCandidate(fields []string, protocol, format string, line int, reverse bool) (Candidate, error) {

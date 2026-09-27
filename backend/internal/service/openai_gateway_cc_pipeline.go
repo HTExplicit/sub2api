@@ -107,7 +107,7 @@ func (s *OpenAIGatewayService) failoverOpenAIUpstreamHTTPError(
 		return nil
 	}
 	if failoverErr, ok := s.handleOpenAIBudgetExceededHTTPFailover(
-		ctx, account, resp.StatusCode, resp.Header, classificationBody,
+		ctx, c, account, resp.StatusCode, resp.Header, classificationBody,
 	); ok {
 		return failoverErr
 	}
@@ -335,7 +335,7 @@ func (s *OpenAIGatewayService) scanCCStream(
 			st.Usage = *u
 		}
 
-		chunk, err := s.decodeCCStreamChunk(c, account, resp.Header, payload)
+		chunk, err := s.decodeCCStreamChunk(c, account, resp.Header, payload, openAIStreamClientOutputStarted(c, false))
 		if err != nil {
 			st.Err = err
 			break
@@ -378,9 +378,20 @@ func ccStreamProtocolFailure(code, message string) *UpstreamFailoverError {
 	return &UpstreamFailoverError{StatusCode: http.StatusBadGateway, ResponseBody: body, Reason: GatewayFailureReason("openai_upstream_protocol_error"), ClientStatusCode: http.StatusBadGateway, ClientErrorCode: code, ClientMessage: message}
 }
 
+// ccStreamPayloadIsErrorEnvelope reports the upstream error chunk that
+// decodeCCStreamChunk records in Ops.
+func ccStreamPayloadIsErrorEnvelope(payload string) bool {
+	var envelope struct {
+		Error json.RawMessage `json:"error"`
+	}
+	return json.Unmarshal([]byte(payload), &envelope) == nil && len(envelope.Error) > 0 && string(envelope.Error) != "null"
+}
+
 // decodeCCStreamChunk is shared by raw forwarding and protocol conversion.
 // Error envelopes and malformed data must never look like empty completions.
-func (s *OpenAIGatewayService) decodeCCStreamChunk(c *gin.Context, account *Account, headers http.Header, payload string) (*apicompat.ChatCompletionsChunk, error) {
+// clientOutputStarted tells whether the caller can still hand an error chunk
+// to failover.
+func (s *OpenAIGatewayService) decodeCCStreamChunk(c *gin.Context, account *Account, headers http.Header, payload string, clientOutputStarted bool) (*apicompat.ChatCompletionsChunk, error) {
 	var envelope struct {
 		Error json.RawMessage `json:"error"`
 	}
@@ -396,7 +407,29 @@ func (s *OpenAIGatewayService) decodeCCStreamChunk(c *gin.Context, account *Acco
 			failure.Scope = GatewayFailureScopeRequest
 			failure.SuppressAccountHealthPenalty = true
 		}
-		setOpsUpstreamError(c, status, "upstream_stream_error", "")
+		// Record the error chunk itself; the raw forwarder no longer describes
+		// it as a truncated stream. A chunk that moves the request to another
+		// account counts as a failover.
+		kind := "stream_error"
+		if !clientOutputStarted && failure.ShouldRetryNextAccount() {
+			kind = "failover"
+		}
+		detail := s.openAIUpstreamErrorDetail([]byte(payload))
+		setOpsUpstreamError(c, status, message, detail)
+		event := OpsUpstreamErrorEvent{
+			ProxyID:            opsUpstreamProxyID(account),
+			ProxyName:          opsUpstreamProxyName(account),
+			Platform:           PlatformOpenAI,
+			UpstreamStatusCode: status,
+			UpstreamRequestID:  headers.Get("x-request-id"),
+			Kind:               kind,
+			Message:            message,
+			Detail:             detail,
+		}
+		if account != nil {
+			event.Platform, event.AccountID, event.AccountName = account.Platform, account.ID, account.Name
+		}
+		appendOpsUpstreamError(c, event)
 		return nil, failure
 	}
 	var chunk apicompat.ChatCompletionsChunk

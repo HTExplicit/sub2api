@@ -60,12 +60,12 @@ func TestGroupFromServiceOmitsProfitControl(t *testing.T) {
 	}
 }
 
-// TestGroupFromServiceAdminReturnsDormantProfitControlFields keeps the legacy
-// response shape without exposing dormant stored values.
-func TestGroupFromServiceAdminReturnsDormantProfitControlFields(t *testing.T) {
+// TestGroupFromServiceAdminReturnsStoredProfitControlFields shows administrators
+// the stored legacy values of the retired profit control, read-only.
+func TestGroupFromServiceAdminReturnsStoredProfitControlFields(t *testing.T) {
 	admin := GroupFromServiceAdmin(profitControlServiceGroup())
-	if admin.ProfitControlEnabled || admin.ProfitMinMargin != 0 || admin.ProfitSafetyBuffer != 0 {
-		t.Fatalf("管理员 DTO 必须把休眠利润字段固定为零值: %+v", admin)
+	if !admin.ProfitControlEnabled || admin.ProfitMinMargin != 0.3 || admin.ProfitSafetyBuffer != 0.05 {
+		t.Fatalf("管理员 DTO 必须原样返回库里的利润控制旧值: %+v", admin)
 	}
 	fields := marshalToMap(t, admin)
 	for _, f := range profitControlJSONFields {

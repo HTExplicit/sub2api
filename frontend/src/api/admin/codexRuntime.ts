@@ -2,6 +2,9 @@ import { apiClient } from '../client'
 
 export interface CodexRuntimeConfig extends Record<string, unknown> {
   enabled?: boolean
+  fail_closed?: boolean
+  models?: string[]
+  routing_schema?: number
   request_zstd?: boolean
   proxy_url?: string
   proxy_protocol?: string

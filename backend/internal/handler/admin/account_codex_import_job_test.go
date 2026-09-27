@@ -246,9 +246,8 @@ func TestAccountJobCodexImportPreservesReplayRetryAndPayloadBoundary(t *testing.
 	require.Equal(t, service.AccountJobItemStatusSucceeded, results[2].Status)
 	require.Equal(t, 2, len(svc.createdAccounts))
 	require.Equal(t, 3, svc.createAttempts)
-	if strings.Contains(results[1].ErrorMessage+string(results[1].Metadata), tokens[1]) {
-		t.Fatal("synthetic backend error leaked a credential into the job result")
-	}
+	// The job result keeps the backend error text verbatim for administrators.
+	require.Equal(t, "synthetic backend failure: "+tokens[1], results[1].ErrorMessage)
 	repo.failedSeeds = []service.AccountJobItemSeed{params.Items[1]}
 	retry, replayed, err := jobs.RetryFailed(context.Background(), 1, accountJobTestActorID, "retry-fixture")
 	require.NoError(t, err)

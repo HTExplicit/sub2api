@@ -129,8 +129,7 @@ describe('admin AccountsView priority column preferences', () => {
 
   it('shows priority as a sortable column when the saved preference exposes it', async () => {
     localStorage.setItem('account-hidden-columns', JSON.stringify([]))
-    localStorage.setItem('account-hidden-columns-version', 'cockpit-console-defaults-v1')
-    localStorage.setItem('account-usage-column-version', 'usage-visible-v1')
+    localStorage.setItem('account-hidden-columns-version', 'upstream-defaults-v1')
 
     const wrapper = mountView()
     await flushPromises()
@@ -150,8 +149,7 @@ describe('admin AccountsView priority column preferences', () => {
 
   it('preserves an existing preference that explicitly hides priority', async () => {
     localStorage.setItem('account-hidden-columns', JSON.stringify(['priority', 'today_stats']))
-    localStorage.setItem('account-hidden-columns-version', 'cockpit-console-defaults-v1')
-    localStorage.setItem('account-usage-column-version', 'usage-visible-v1')
+    localStorage.setItem('account-hidden-columns-version', 'upstream-defaults-v1')
 
     const wrapper = mountView()
     await flushPromises()
@@ -163,15 +161,15 @@ describe('admin AccountsView priority column preferences', () => {
     ])
   })
 
-  it('applies compact defaults while migrating older saved preferences', async () => {
-    localStorage.setItem('account-hidden-columns', JSON.stringify(['today_stats']))
+  it('replaces older saved preferences with the upstream defaults, which show priority', async () => {
+    localStorage.setItem('account-hidden-columns', JSON.stringify(['today_stats', 'priority']))
 
     const wrapper = mountView()
     await flushPromises()
 
-    expect(wrapper.find('[data-column="priority"]').exists()).toBe(false)
-    expect(JSON.parse(localStorage.getItem('account-hidden-columns') || '[]')).toEqual(
-      expect.arrayContaining(['today_stats', 'scheduler_score', 'priority'])
-    )
+    expect(wrapper.find('[data-column="priority"]').exists()).toBe(true)
+    expect(JSON.parse(localStorage.getItem('account-hidden-columns') || '[]')).toEqual([
+      'today_stats', 'proxy', 'notes', 'scheduler_score', 'rate_multiplier'
+    ])
   })
 })

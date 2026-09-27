@@ -141,6 +141,7 @@ const DataTableStub = {
         <button data-test="open-row" @click="$emit('row-click', row)">{{ row.name }}</button>
         <slot name="cell-select" :row="row" />
         <slot name="cell-name" :row="row" :value="row.name" />
+        <div data-test="taxonomy-cell"><slot name="cell-taxonomy_route" :row="row" /></div>
       </div>
     </div>
   `
@@ -313,9 +314,22 @@ describe('admin AccountsView Cockpit console', () => {
   it('shows usage in the default table order', async () => {
     const wrapper = mountView()
     await flushPromises()
+    // upstream v0.2.8 defaults: only today_stats, proxy, notes, scheduler_score and rate_multiplier are hidden
     expect(wrapper.get('[data-test="view-table"]').attributes('data-columns')).toBe(
-      'select,name,platform_type,usage,status,taxonomy_route,actions'
+      'select,name,id,platform_type,usage,status,taxonomy_route,capacity,schedulable,groups,priority,' +
+        'upstream_billing_rate,last_used_at,created_at,expires_at,actions'
     )
+  })
+
+  it('shows every tag of an account in the classification cell', async () => {
+    const tags = ['tag-a', 'tag-b', 'tag-c', 'tag-d'].map((name, index) => ({ id: index + 1, name }))
+    listAccounts.mockResolvedValue({ items: [{ ...account, tags }], total: 1, page: 1, page_size: 20, pages: 1 })
+    const wrapper = mountView()
+    await flushPromises()
+
+    const cell = wrapper.get('[data-test="taxonomy-cell"]')
+    for (const tag of tags) expect(cell.text()).toContain(tag.name)
+    expect(cell.text()).not.toContain('+2')
   })
 
   it('keeps long account names inside a fixed, truncated column', async () => {
@@ -332,19 +346,30 @@ describe('admin AccountsView Cockpit console', () => {
     expect(name.text()).toBe(longName)
   })
 
-  it('migrates only usage visibility and preserves every other saved column choice', async () => {
+  it('replaces a column layout saved under an older version with the upstream defaults once', async () => {
     localStorage.setItem('account-hidden-columns', JSON.stringify(['id', 'usage', 'priority']))
     localStorage.setItem('account-hidden-columns-version', 'cockpit-console-defaults-v1')
 
     mountView()
     await flushPromises()
 
-    const hidden = JSON.parse(localStorage.getItem('account-hidden-columns') || '[]') as string[]
-    expect(hidden).toContain('id')
-    expect(hidden).toContain('priority')
-    expect(hidden).not.toContain('usage')
-    expect(localStorage.getItem('account-hidden-columns-version')).toBe('cockpit-console-defaults-v1')
-    expect(localStorage.getItem('account-usage-column-version')).toBe('usage-visible-v1')
+    expect(JSON.parse(localStorage.getItem('account-hidden-columns') || '[]')).toEqual([
+      'today_stats', 'proxy', 'notes', 'scheduler_score', 'rate_multiplier'
+    ])
+    expect(localStorage.getItem('account-hidden-columns-version')).toBe('upstream-defaults-v1')
+  })
+
+  it('applies a column layout saved under the current version exactly as saved', async () => {
+    localStorage.setItem('account-hidden-columns', JSON.stringify(['id', 'usage', 'priority']))
+    localStorage.setItem('account-hidden-columns-version', 'upstream-defaults-v1')
+
+    const wrapper = mountView()
+    await flushPromises()
+
+    expect(JSON.parse(localStorage.getItem('account-hidden-columns') || '[]')).toEqual(['id', 'usage', 'priority'])
+    const columns = wrapper.get('[data-test="view-table"]').attributes('data-columns')?.split(',') || []
+    expect(columns).not.toContain('usage')
+    expect(columns).toContain('scheduler_score')
   })
 
   it('forwards today stats and the manual force-refresh token to non-table views', async () => {

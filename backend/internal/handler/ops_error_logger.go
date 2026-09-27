@@ -37,6 +37,10 @@ const (
 	opsUpstreamModelKey          = service.OpsUpstreamModelKey
 	opsRequestTypeKey            = "ops_request_type"
 	opsDedicatedEntryEnqueuedKey = "ops_dedicated_entry_enqueued"
+	// opsLocalErrorDetailKey keeps the concrete reason of a local rejection
+	// whose client response is a fixed sentence. Only the stored Ops message
+	// reads it; classification and error filters use the client message.
+	opsLocalErrorDetailKey = "ops_local_error_detail"
 
 	// 错误过滤匹配常量 — shouldSkipOpsErrorLog 和错误分类共用
 	opsErrContextCanceled            = "context canceled"
@@ -484,6 +488,71 @@ func setOpsSelectedAccount(c *gin.Context, accountID int64, platform ...string) 
 		}
 		c.Request = c.Request.WithContext(ctx)
 	}
+}
+
+// setOpsLocalErrorDetail records, for administrators only, why a local check
+// rejected a request whose client response stays a fixed sentence.
+func setOpsLocalErrorDetail(c *gin.Context, detail string) {
+	if c == nil {
+		return
+	}
+	if detail = strings.TrimSpace(detail); detail != "" {
+		c.Set(opsLocalErrorDetailKey, truncateString(detail, 2048))
+	}
+}
+
+// applyOpsLocalErrorDetail stores the local reason in upstream_error_detail,
+// prefixed "local:". It runs after classification, and error_message keeps the
+// client's sentence: the user error view returns error_message and error_body
+// but never upstream_error_detail.
+func applyOpsLocalErrorDetail(c *gin.Context, entry *service.OpsInsertErrorLogInput) {
+	if c == nil || entry == nil {
+		return
+	}
+	detail := strings.TrimSpace(c.GetString(opsLocalErrorDetailKey))
+	if detail == "" {
+		return
+	}
+	local := "local: " + detail
+	if entry.UpstreamErrorDetail != nil && strings.TrimSpace(*entry.UpstreamErrorDetail) != "" {
+		local += "\n" + *entry.UpstreamErrorDetail
+	}
+	entry.UpstreamErrorDetail = &local
+}
+
+// attachOpsRefusalRecoveryEvidence puts the evidence of HTTP refusal rewrites
+// and prompt retries in front of the attempts of a request that finally
+// failed. It is never classification input: the top-level upstream fields
+// keep coming from the attempts, and the last attempt stays last.
+func attachOpsRefusalRecoveryEvidence(c *gin.Context, entry *service.OpsInsertErrorLogInput) {
+	evidence := service.OpsRefusalRecoveryEvents(c)
+	if entry == nil || len(evidence) == 0 {
+		return
+	}
+	merged := make([]*service.OpsUpstreamErrorEvent, 0, len(evidence)+len(entry.UpstreamErrors))
+	merged = append(merged, evidence...)
+	merged = append(merged, entry.UpstreamErrors...)
+	entry.UpstreamErrors = merged
+}
+
+// isOpsGatewayFixedClientMessage reports whether a client-visible message is a
+// sentence the gateway writes in place of an upstream error text.
+func isOpsGatewayFixedClientMessage(message string) bool {
+	message = strings.TrimSpace(message)
+	if service.IsGatewayFixedClientMessage(message) {
+		return true
+	}
+	switch message {
+	case cyberSessionBlockedClientMsg,
+		"Upstream authentication failed, please contact administrator",
+		"Upstream access forbidden, please contact administrator",
+		"Upstream rate limit exceeded, please retry later",
+		"Upstream service overloaded, please retry later",
+		"Upstream service temporarily unavailable",
+		"Upstream request failed":
+		return true
+	}
+	return false
 }
 
 func markOpsRoutingCapacityLimited(c *gin.Context) {
@@ -1257,7 +1326,10 @@ func OpsErrorLoggerMiddleware(ops *service.OpsService) gin.HandlerFunc {
 		applyOpsLatencyFieldsFromContext(c, entry)
 		applyOpsUpstreamFieldsFromContext(c, entry)
 		if parsed.StreamFailure {
-			if message := strings.TrimSpace(parsed.Message); message != "" {
+			// The terminal text becomes the upstream message (upstream v0.2.8)
+			// unless it is a sentence the gateway wrote in place of the
+			// upstream's text; then the recorded upstream message stays.
+			if message := strings.TrimSpace(parsed.Message); message != "" && !isOpsGatewayFixedClientMessage(message) {
 				entry.UpstreamErrorMessage = &message
 			}
 			// The SSE terminal determines the client-visible semantic status, not
@@ -1270,6 +1342,8 @@ func OpsErrorLoggerMiddleware(ops *service.OpsService) gin.HandlerFunc {
 			}
 		}
 		suppressOpsUpstreamAttributionForLocalModelConfiguration(c, entry)
+		applyOpsLocalErrorDetail(c, entry)
+		attachOpsRefusalRecoveryEvidence(c, entry)
 
 		if apiKey != nil {
 			entry.APIKeyID = &apiKey.ID
@@ -1293,6 +1367,7 @@ func OpsErrorLoggerMiddleware(ops *service.OpsService) gin.HandlerFunc {
 			entry.ClientIP = &clientIP
 		}
 
+		applyImageStudioOpsOrigin(c, entry)
 		enqueueOpsErrorLog(ops, entry)
 	}
 }
@@ -1409,6 +1484,7 @@ func logOpsRecoveredUpstream(c *gin.Context, ops *service.OpsService, finalStatu
 		entry.ClientIP = &clientIP
 	}
 	applyOpsLatencyFieldsFromContext(c, entry)
+	applyImageStudioOpsOrigin(c, entry)
 	enqueueOpsErrorLog(ops, entry)
 }
 
@@ -1579,6 +1655,9 @@ func logOpsStreamErrorValue(c *gin.Context, ops *service.OpsService, wireStatus 
 	if streamErr.Turn > 0 && !streamErr.RequestScoped {
 		applyOpsStreamErrorSnapshot(entry, streamErr)
 	}
+	if streamErr.Turn == 0 && !streamErr.RequestScoped {
+		attachOpsRefusalRecoveryEvidence(c, entry)
+	}
 
 	if apiKey != nil {
 		entry.APIKeyID = &apiKey.ID
@@ -1598,6 +1677,7 @@ func logOpsStreamErrorValue(c *gin.Context, ops *service.OpsService, wireStatus 
 		entry.ClientIP = &clientIP
 	}
 
+	applyImageStudioOpsOrigin(c, entry)
 	enqueueOpsErrorLog(ops, entry)
 }
 

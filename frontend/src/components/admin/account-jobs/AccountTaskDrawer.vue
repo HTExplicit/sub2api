@@ -56,6 +56,7 @@ import Icon from '@/components/icons/Icon.vue'
 import AccountOperationProgress from './AccountOperationProgress.vue'
 import { isTerminalAccountJob, useAccountJobsStore } from '@/stores/accountJobs'
 import { useAppStore } from '@/stores/app'
+import { extractApiErrorMessage } from '@/utils/apiError'
 const { t } = useI18n()
 const store = useAccountJobsStore()
 const dockIndex = ref(0), historyStatus = ref('')
@@ -71,7 +72,7 @@ function closeResult() {
 function formatTime(value: string) { const d = new Date(value); return Number.isNaN(d.getTime()) ? '—' : d.toLocaleString() }
 async function loadHistory(page: number) {
   try { await store.loadRecent({ page, status: historyStatus.value }) }
-  catch { useAppStore().showError(t('admin.accountTasks.loadFailed')) }
+  catch (error) { useAppStore().showError(`${t('admin.accountTasks.loadFailed')}: ${extractApiErrorMessage(error, t('common.unknownError'))}`) }
 }
 </script>
 <style scoped>

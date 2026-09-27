@@ -121,11 +121,15 @@
               </tr>
             </thead>
             <tbody>
-              <tr v-for="item in previewItems" :key="item.index" class="border-t border-gray-100 dark:border-dark-700">
+              <tr v-for="item in previewItems" :key="item.index" class="border-t border-gray-100 align-top dark:border-dark-700">
                 <td class="px-2 py-1.5 text-gray-500">{{ item.index + 1 }}</td>
-                <td class="max-w-[16rem] truncate px-2 py-1.5">{{ redactedItemLabel(item.index) }}</td>
+                <td class="max-w-[16rem] break-words px-2 py-1.5" data-test="import-preview-name">{{ item.name || '--' }}</td>
                 <td class="px-2 py-1.5">{{ item.action }}</td>
-                <td class="max-w-[22rem] truncate px-2 py-1.5 text-gray-500" :title="item.message || item.error || ''">{{ item.message || item.error || item.code || '--' }}</td>
+                <td class="max-w-[22rem] whitespace-pre-wrap break-words px-2 py-1.5 text-gray-500">
+                  <span>{{ item.message || item.error || item.code || '--' }}</span>
+                  <span v-if="item.matched_account_ids?.length" class="block">{{ t('admin.accounts.dataImportMatchedAccounts', { ids: item.matched_account_ids.map((id) => `#${id}`).join(', ') }) }}</span>
+                  <span v-for="(warning, index) in item.warnings || []" :key="index" class="block text-amber-600 dark:text-amber-400">{{ warning }}</span>
+                </td>
               </tr>
             </tbody>
           </table>
@@ -173,6 +177,7 @@ import AccountOperationDialog from '@/components/admin/account-jobs/AccountOpera
 import AccountImportSettingsEditor, { type AccountImportSettingsDraft } from './AccountImportSettingsEditor.vue'
 import { adminAPI } from '@/api/admin'
 import type { AccountImportPreview } from '@/api/admin/accounts'
+import { extractApiErrorMessage } from '@/utils/apiError'
 import { useAppStore } from '@/stores/app'
 import type { AccountJob } from '@/api/admin/accountJobs'
 import type {
@@ -213,7 +218,9 @@ const uniformDraft = ref(makeSettingsDraft())
 type ImportProxyStrategy = 'preserve' | 'direct' | 'existing'
 const proxyStrategy = ref<ImportProxyStrategy>('preserve')
 const selectedProxyID = ref('')
-const preview = ref<AccountImportPreview | null>(null)
+// matched_account_ids lists the existing accounts an entry's identity matched.
+type ImportPreviewItem = AccountImportPreview['items'][number] & { matched_account_ids?: number[] }
+const preview = ref<(Omit<AccountImportPreview, 'items'> & { items: ImportPreviewItem[] }) | null>(null)
 const previewLoading = ref(false)
 const dragDepth = ref(0)
 const fileInput = ref<HTMLInputElement | null>(null)
@@ -257,8 +264,6 @@ const proxySummaryLabel = computed(() => {
   if (proxyStrategy.value === 'existing') return selectedProxy.value?.name || t('admin.accounts.importProxySelect')
   return t('admin.accounts.importProxyPreserve')
 })
-
-const redactedItemLabel = (index: number) => `#${index + 1}`
 
 function makeSettingsDraft(): AccountImportSettingsDraft {
   return {
@@ -361,9 +366,11 @@ async function setSelectedFiles(source: FileList | File[] | null | undefined): P
     if (requestGeneration !== selectionGeneration) return
     files.value = []
     payload.value = null
-    appStore.showError(error instanceof AccountImportParseError
+    const label = error instanceof AccountImportParseError
       ? t(error.code === 'parse' ? 'admin.accounts.dataImportParseFailedFile' : 'admin.accounts.dataImportInvalidFile', { name: accepted[error.fileIndex]?.name || '' })
-      : t('admin.accounts.dataImportFailed'))
+      : t('admin.accounts.dataImportFailed')
+    const detail = error instanceof AccountImportParseError ? error.detail : extractApiErrorMessage(error, '')
+    appStore.showError(detail ? `${label}: ${detail}` : label)
   } finally {
     if (requestGeneration === selectionGeneration) parsing.value = false
   }
@@ -433,7 +440,7 @@ async function handlePreview(): Promise<void> {
     } else if (error?.response?.status === 409) {
       appStore.showWarning(t('admin.accounts.dataImportStalePreview'))
     } else {
-      appStore.showError(error instanceof Error ? error.message : t('admin.accounts.dataImportFailed'))
+      appStore.showError(extractApiErrorMessage(error, t('admin.accounts.dataImportFailed')))
     }
   } finally {
     if (generation === previewGeneration) previewLoading.value = false
@@ -459,7 +466,7 @@ async function handleSubmit(): Promise<void> {
       appStore.showWarning(t('admin.accounts.dataImportStalePreview'))
       await handlePreview()
     } else {
-      appStore.showError(t('admin.accounts.dataImportFailed'))
+      appStore.showError(extractApiErrorMessage(error, t('admin.accounts.dataImportFailed')))
     }
   } finally {
     busy.value = false

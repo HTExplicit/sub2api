@@ -21,8 +21,8 @@ type codexTicketProxyInput struct {
 func (h *SettingHandler) ParseCodexTicketProxy(c *gin.Context) {
 	c.Header("Cache-Control", "no-store")
 	var req codexTicketProxyInput
-	if c.ShouldBindJSON(&req) != nil {
-		response.BadRequest(c, "请求格式不正确")
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.BadRequest(c, "请求格式不正确："+err.Error())
 		return
 	}
 	response.Success(c, proxytransport.Parse(req.ProxyURL, req.Protocol))
@@ -44,8 +44,8 @@ func (h *SettingHandler) SetCodexTicketGateway(gateway *service.OpenAIGatewaySer
 func (h *SettingHandler) TestCodexTicketProxy(c *gin.Context) {
 	c.Header("Cache-Control", "no-store")
 	var req codexTicketProxyInput
-	if c.ShouldBindJSON(&req) != nil {
-		response.BadRequest(c, "请求格式不正确")
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.BadRequest(c, "请求格式不正确："+err.Error())
 		return
 	}
 	normal, err := proxytransport.Resolve(req.ProxyURL, req.Protocol, req.ProxySelectionID)
@@ -61,7 +61,7 @@ func (h *SettingHandler) TestCodexTicketProxy(c *gin.Context) {
 	}
 	result, err := h.codexTicketGateway.TestCodexTicketProxyWithProtocol(c.Request.Context(), normal, "")
 	if err != nil {
-		response.InternalError(c, "无法完成代理测试")
+		response.InternalError(c, "无法完成代理测试："+err.Error())
 		return
 	}
 	response.Success(c, result)

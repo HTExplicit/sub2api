@@ -428,6 +428,7 @@ func (h *OpenAIGatewayHandler) Images(c *gin.Context) {
 			requestPayloadHash = service.HashUsageRequestPayload([]byte(parsed.StickySessionSeed()))
 		}
 		usageSnapshot := snapshotOpenAIUsageMetadataWithHash(c, apiKey, account, subscription, channelMapping, requestModel, result, requestPayloadHash)
+		applyImageStudioUsageOrigin(c, usageSnapshot)
 		usageSnapshot.upstreamEndpoint = GetUpstreamEndpoint(c, account.Platform)
 		usageInput := usageSnapshot.Input(result, h.apiKeyService, service.OpenAIPricingAtFromContext(c.Request.Context()))
 		usageAPIKeyID := usageInput.APIKey.ID

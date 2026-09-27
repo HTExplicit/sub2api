@@ -88,6 +88,11 @@ type APIKey struct {
 
 	User  *User  `json:"user,omitempty"`
 	Group *Group `json:"group,omitempty"`
+
+	// Purpose and LeaseID mark internal keys, such as the leased keys of the
+	// release acceptance runner. Ordinary user keys omit both.
+	Purpose string  `json:"purpose,omitempty"`
+	LeaseID *string `json:"lease_id,omitempty"`
 }
 
 type Group struct {

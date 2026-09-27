@@ -1138,6 +1138,12 @@ func filterSchedulerExtra(extra map[string]any) map[string]any {
 				}
 				value = filteredProbe
 			}
+			if key == service.NativeCodexAccountProjectionKey {
+				value = filterSchedulerCodexProjection(value)
+			}
+			if key == "model_rate_limits" {
+				value = filterSchedulerModelRateLimits(value)
+			}
 			filtered[key] = value
 		}
 	}
@@ -1145,6 +1151,84 @@ func filterSchedulerExtra(extra map[string]any) map[string]any {
 		return nil
 	}
 	return filtered
+}
+
+// filterSchedulerCodexProjection copies the Codex account projection without
+// the administrator-only observation text (message, response_model); the
+// scheduler reads only the constraints and the observation state.
+func filterSchedulerCodexProjection(value any) any {
+	plugins, ok := value.(map[string]any)
+	if !ok {
+		return value
+	}
+	filtered := make(map[string]any, len(plugins))
+	for plugin, raw := range plugins {
+		projection, ok := raw.(map[string]any)
+		observations, hasObservations := projection["observations"].(map[string]any)
+		if !ok || !hasObservations {
+			filtered[plugin] = raw
+			continue
+		}
+		copied := make(map[string]any, len(projection))
+		for key, field := range projection {
+			copied[key] = field
+		}
+		kept := make(map[string]any, len(observations))
+		for model, rawObservation := range observations {
+			observation, ok := rawObservation.(map[string]any)
+			if !ok {
+				kept[model] = rawObservation
+				continue
+			}
+			trimmed := make(map[string]any, len(observation))
+			for key, field := range observation {
+				if key != "message" && key != "response_model" {
+					trimmed[key] = field
+				}
+			}
+			kept[model] = trimmed
+		}
+		copied["observations"] = kept
+		filtered[plugin] = copied
+	}
+	return filtered
+}
+
+// filterSchedulerModelRateLimits drops the administrator-only upstream text
+// from each cooldown entry without touching the account's own map; scheduling
+// reads only the reset time and the reason.
+func filterSchedulerModelRateLimits(value any) any {
+	limits, ok := value.(map[string]any)
+	if !ok {
+		return value
+	}
+	var out map[string]any
+	for scope, raw := range limits {
+		entry, ok := raw.(map[string]any)
+		if !ok {
+			continue
+		}
+		if _, has := entry[service.ModelRateLimitUpstreamMessageKey]; !has {
+			continue
+		}
+		if out == nil {
+			out = make(map[string]any, len(limits))
+			for k, v := range limits {
+				out[k] = v
+			}
+		}
+		trimmed := make(map[string]any, len(entry))
+		for k, v := range entry {
+			if k != service.ModelRateLimitUpstreamMessageKey {
+				trimmed[k] = v
+			}
+		}
+		out[scope] = trimmed
+	}
+	if out == nil {
+		return value
+	}
+	return out
 }
 
 func filterSchedulerUpstreamBillingProbe(value any) map[string]any {

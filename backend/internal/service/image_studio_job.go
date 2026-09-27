@@ -190,6 +190,9 @@ type ImageStudioExecutionRequest struct {
 	ReferenceContentType string
 	Mask                 []byte
 	MaskContentType      string
+	// Origin is the client that submitted or retried the job, when this
+	// process still knows it.
+	Origin ImageStudioRequestOrigin
 }
 
 type ImageStudioExecutionResult struct {

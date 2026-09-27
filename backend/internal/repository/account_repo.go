@@ -74,6 +74,8 @@ var schedulerNeutralExtraKeys = map[string]struct{}{
 	"codex_referral_snapshot":    {},
 	"grok_billing_snapshot":      {},
 	"session_window_utilization": {},
+	// Administrator record of the last upstream 401/403/429; scheduling never reads it.
+	service.OpenAILastUpstreamErrorExtraKey: {},
 }
 
 const postgresParameterBatchSize = 50000
@@ -2524,6 +2526,13 @@ func (r *accountRepository) SetModelRateLimit(ctx context.Context, id int64, sco
 	if len(reason) > 0 {
 		if value := strings.TrimSpace(reason[0]); value != "" {
 			payload["reason"] = value
+		}
+	}
+	// reason[1] is the upstream's own error text, kept for administrators next
+	// to the reason code, which stays the only value anything matches on.
+	if len(reason) > 1 {
+		if value := strings.TrimSpace(reason[1]); value != "" {
+			payload[service.ModelRateLimitUpstreamMessageKey] = value
 		}
 	}
 	raw, err := json.Marshal(payload)

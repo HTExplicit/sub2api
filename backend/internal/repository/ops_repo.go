@@ -953,6 +953,10 @@ func buildOpsErrorLogsWhere(filter *service.OpsErrorLogFilter) (string, []any) {
 		args = append(args, crid)
 		clauses = append(clauses, "COALESCE(e.client_request_id,'') = $"+itoa(len(args)))
 	}
+	if prefix := strings.TrimSpace(filter.ExcludeClientRequestIDPrefix); prefix != "" {
+		args = append(args, escapeLikePattern(prefix)+"%")
+		clauses = append(clauses, "COALESCE(e.client_request_id,'') NOT LIKE $"+itoa(len(args)))
+	}
 
 	if q := strings.TrimSpace(filter.Query); q != "" {
 		like := "%" + q + "%"

@@ -261,7 +261,7 @@ func TestOpenAIWSIngressBudgetExceededTerminalWriteOrdering(t *testing.T) {
 				require.NotContains(t, string(payload), "sensitive upstream detail")
 			}
 			require.Equal(t, 1, repo.setErrorCalls, "a budget terminal puts the account into the error state")
-			require.Equal(t, "sensitive upstream detail", repo.lastErrorMsg, "the account keeps the upstream message")
+			require.Equal(t, "sensitive upstream detail (type=budget_exceeded, code=429)", repo.lastErrorMsg, "the account keeps the upstream message with its type and code")
 		})
 	}
 }

@@ -12,7 +12,7 @@
       <div v-for="menu in menus" :key="menu.key" class="relative">
         <button
           type="button"
-          class="inline-flex h-9 items-center gap-1.5 rounded-md border border-gray-300 bg-white px-3 text-sm text-gray-700 transition-colors hover:border-gray-400 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-primary-500/30 dark:border-dark-600 dark:bg-dark-800 dark:text-gray-200 dark:hover:bg-dark-700"
+          class="inline-flex h-8 items-center gap-1.5 rounded-lg border border-gray-300 bg-white px-3 text-sm font-medium text-gray-700 shadow-sm transition-colors hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-primary-500/30 dark:border-dark-600 dark:bg-dark-800 dark:text-gray-200 dark:hover:bg-dark-700"
           :aria-expanded="openMenu === menu.key"
           :data-test="`account-filter-${menu.key}`"
           @click.stop="toggleMenu(menu.key)"
@@ -65,7 +65,7 @@
 
       <select
         :value="modelValue.group_id"
-        class="input h-9 w-44 py-1.5 text-sm"
+        class="input h-8 w-44 py-1 text-sm"
         :aria-label="t('admin.accounts.columns.groups')"
         @change="updateGroup(($event.target as HTMLSelectElement).value)"
       >

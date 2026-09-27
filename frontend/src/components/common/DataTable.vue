@@ -120,6 +120,7 @@
           <th
             v-for="(column, index) in columns"
             :key="column.key"
+            :data-column="column.key"
             scope="col"
             :aria-sort="column.sortable ? getColumnAriaSort(column.key) : undefined"
             :class="[
@@ -234,6 +235,7 @@
             <td
               v-for="(column, colIndex) in columns"
               :key="column.key"
+              :data-column="column.key"
               :class="[
                 'whitespace-nowrap py-2.5 text-sm text-gray-900 dark:text-gray-100',
                 getAdaptivePaddingClass(),

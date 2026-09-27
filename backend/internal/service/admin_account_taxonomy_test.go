@@ -12,6 +12,7 @@ import (
 	"github.com/DATA-DOG/go-sqlmock"
 	dbent "github.com/Wei-Shaw/sub2api/ent"
 	extensionv1 "github.com/Wei-Shaw/sub2api/internal/nativeapi"
+	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
 	"github.com/stretchr/testify/require"
 )
 
@@ -65,6 +66,7 @@ func TestTaxonomyAssignmentPreservesPolicyNormalizationAndFailsClosed(t *testing
 	svc := &adminServiceImpl{}
 	account, err := svc.SetAccountTaxonomy(context.Background(), 42, input)
 	require.Error(t, err)
+	require.Equal(t, "account tools are unavailable: policy failed", infraerrors.Message(err), "administrators see the underlying failure")
 	require.Nil(t, account, "a failed policy must stop before using the nil database")
 	result, err := svc.BulkUpdateAccountTaxonomy(context.Background(), BulkAccountTaxonomyInput{AccountIDs: []int64{42}, FolderAction: "clear"})
 	require.Error(t, err)

@@ -120,6 +120,7 @@ export default {accounts: {
       dataImportPreviewSummary: '{create} create, {update} update, {reject} reject',
       dataImportPreviewItems: 'Preview items',
       dataImportPreviewAction: 'Action',
+      dataImportMatchedAccounts: 'Matched existing accounts: {ids}',
       dataImportPreviewRequired: 'Preview the import before submitting the task.',
       dataImportStalePreview: 'The preview is no longer current. A fresh preview is required.',
       importUniformSettings: 'Uniform Settings',
@@ -373,12 +374,21 @@ export default {accounts: {
         upstreamQuotaExhausted: 'Upstream quota exhausted',
         quotaResetUnknown: 'Reset time unknown; awaiting upstream quota update',
         modelRateLimitedUntil: '{model} rate limited until {time}',
+        modelCooldownReason: 'Reason code: {reason}',
+        modelCooldownUpstreamMessage: 'Upstream message:',
         modelCreditOveragesUntil: '{model} using AI Credits until {time}',
         creditsExhausted: 'Credits Exhausted',
         creditsExhaustedUntil: 'AI Credits exhausted, expected recovery at {time}',
         overloadedUntil: 'Overloaded until {time}',
         viewTempUnschedDetails: 'View temp unschedulable details',
         tempUnschedulableUntil: 'Resumes {time}'
+      },
+      lastUpstreamError: {
+        title: 'Last upstream error',
+        chip: 'Upstream {status}',
+        chipNoStatus: 'Upstream error',
+        note: 'Verbatim upstream response, recorded only; scheduling is not affected.',
+        source: 'Source: {source}'
       },
       columns: {
         name: 'Name',

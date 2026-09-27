@@ -20,6 +20,10 @@ func TestOpenAIRefusalRecoveryWSOutputRewritesAcrossFramesAndResetsNextTurn(t *t
 		written = append(written, append([]byte(nil), payload...))
 		return nil
 	}, nil)
+	var rewrites []openAIRefusalEvidence
+	output.SetRewriteObserver(func(evidence openAIRefusalEvidence) { rewrites = append(rewrites, evidence) })
+	var delivered [][]byte
+	output.SetDeliveryObserver(func(payload []byte) { delivered = append(delivered, append([]byte(nil), payload...)) })
 
 	firstTurn := [][]byte{
 		[]byte(`{"type":"response.created","response":{"id":"resp_ws_1","model":"gpt-5.4","status":"in_progress","output":[]}}`),
@@ -34,8 +38,11 @@ func TestOpenAIRefusalRecoveryWSOutputRewritesAcrossFramesAndResetsNextTurn(t *t
 			require.Empty(t, written)
 		}
 	}
+	require.Equal(t, []openAIRefusalEvidence{{Keyword: "I'm unable", Text: "I'm unable to help."}}, rewrites)
 
 	require.Len(t, written, 8)
+	// Only frames the client received reach the delivery observer.
+	require.Equal(t, written, delivered)
 	require.Equal(t, "response.created", gjson.GetBytes(written[0], "type").String())
 	require.Equal(t, "继续当前任务", gjson.GetBytes(written[3], "delta").String())
 	require.Equal(t, "resp_ws_1", gjson.GetBytes(written[7], "response.id").String())
@@ -44,7 +51,7 @@ func TestOpenAIRefusalRecoveryWSOutputRewritesAcrossFramesAndResetsNextTurn(t *t
 		require.NotContains(t, string(payload), "I'm unable")
 	}
 
-	written = nil
+	written, delivered = nil, nil
 	secondTurn := [][]byte{
 		[]byte(`{"type":"response.created","response":{"id":"resp_ws_2","model":"gpt-5.4","status":"in_progress","output":[]}}`),
 		[]byte(`{"type":"response.output_text.delta","response_id":"resp_ws_2","item_id":"msg_2","delta":"Normal answer."}`),
@@ -53,6 +60,7 @@ func TestOpenAIRefusalRecoveryWSOutputRewritesAcrossFramesAndResetsNextTurn(t *t
 	for _, payload := range secondTurn {
 		require.NoError(t, output.Write(context.Background(), coderws.MessageText, payload))
 	}
+	require.Equal(t, written, delivered)
 
 	require.Len(t, written, 3)
 	require.Equal(t, "resp_ws_2", gjson.GetBytes(written[0], "response.id").String())

@@ -21,7 +21,7 @@
       <div><span class="block text-lg font-semibold tabular-nums text-ink">{{ job.canceled_count }}</span><span class="text-muted">{{ t('admin.accountTasks.statuses.canceled') }}</span></div>
     </div>
     <p v-if="store.connectionLost" role="status" class="border-l-2 border-amber-500 bg-raised px-3 py-2 text-sm text-amber-700 dark:text-amber-300">{{ t('admin.accountTasks.reconnecting') }}</p>
-    <p v-if="error || job.error_message" role="alert" class="text-sm text-red-600 dark:text-red-400">{{ error || job.error_message }}</p>
+    <p v-if="error || job.error_message" role="alert" class="whitespace-pre-wrap break-words text-sm text-red-600 dark:text-red-400"><span v-if="!error && job.error_code" class="mr-1 font-mono">[{{ job.error_code }}]</span>{{ error || job.error_message }}</p>
 
     <section v-if="duplicateReview" class="space-y-3">
       <p class="text-sm text-muted">{{ t('admin.accountTasks.duplicate.selectSurvivor') }}</p>
@@ -44,19 +44,25 @@
         <div v-for="item in store.items" :key="item.id" class="py-3 first:pt-0">
           <div class="flex items-start justify-between gap-3">
             <div class="min-w-0">
-              <p class="truncate text-sm font-medium text-ink">{{ itemLabel(item) }}</p>
-              <p v-if="item.metadata.model_id" class="mt-1 break-all text-xs text-muted">{{ item.metadata.model_id }}</p>
-              <p v-else-if="typeof item.metadata.label === 'string'" class="mt-1 break-all text-xs text-muted">{{ item.metadata.label }}</p>
+              <p data-test="item-name" class="whitespace-pre-wrap break-words text-sm font-medium text-ink">{{ itemLabel(item) }}</p>
+              <p v-if="typeof item.metadata.model_id === 'string' && item.metadata.model_id" class="mt-1 break-all text-xs text-muted">{{ item.metadata.model_id }}</p>
+              <p v-if="typeof item.metadata.label === 'string' && item.metadata.label" class="mt-1 whitespace-pre-wrap break-words text-xs text-muted">{{ item.metadata.label }}</p>
             </div>
             <span class="shrink-0 text-xs" :class="statusClass(item.status)">{{ statusLabel(item.status) }}</span>
           </div>
-          <p v-if="typeof item.metadata.message === 'string'" class="mt-2 break-words text-xs" :class="item.status === 'failed' ? 'text-red-600 dark:text-red-400' : 'text-muted'">{{ item.metadata.message }}</p>
-          <p v-else-if="item.error_message" class="mt-2 break-words text-xs text-red-600 dark:text-red-400">{{ item.error_message }}</p>
-          <dl v-if="resultFacts(item).length" class="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted">
-            <div v-for="(fact, index) in resultFacts(item)" :key="index" class="flex gap-1">
+          <p v-if="typeof item.metadata.message === 'string'" class="mt-2 max-h-40 overflow-y-auto whitespace-pre-wrap break-words text-xs" :class="item.status === 'failed' ? 'text-red-600 dark:text-red-400' : 'text-muted'">{{ item.metadata.message }}</p>
+          <p v-if="item.error_message && item.error_message !== item.metadata.message" data-test="item-error" class="mt-2 max-h-40 overflow-y-auto whitespace-pre-wrap break-words text-xs" :class="item.status === 'failed' ? 'text-red-600 dark:text-red-400' : 'text-muted'"><span v-if="item.error_code" class="mr-1 font-mono text-muted">[{{ item.error_code }}]</span>{{ item.error_message }}</p>
+          <dl v-if="resultFacts(item).length" class="mt-2 grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-1 text-xs text-muted">
+            <template v-for="(fact, index) in resultFacts(item)" :key="index">
               <dt>{{ fact.label[locale || 'zh'] || fact.label.zh || fact.label.en }}</dt>
-              <dd>{{ fact.timestamp ? formatDateTime(fact.value) : fact.value }}</dd>
-            </div>
+              <dd class="max-h-40 overflow-y-auto whitespace-pre-wrap break-all">{{ fact.timestamp ? formatDateTime(fact.value) : fact.value }}</dd>
+            </template>
+          </dl>
+          <dl v-if="metadataEntries(item).length" data-test="item-metadata" class="mt-2 grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-1 text-xs text-muted">
+            <template v-for="entry in metadataEntries(item)" :key="entry.key">
+              <dt class="font-mono">{{ entry.key }}</dt>
+              <dd class="max-h-40 overflow-y-auto whitespace-pre-wrap break-all font-mono text-ink">{{ entry.value }}</dd>
+            </template>
           </dl>
         </div>
         <p v-if="!store.items.length" class="py-5 text-center text-sm text-muted">{{ t(store.loadingCurrent ? 'common.loading' : store.itemFilter ? 'admin.accountTasks.noFailures' : 'admin.accountTasks.awaitingResults') }}</p>
@@ -86,6 +92,7 @@ import { isTerminalAccountJob, useAccountJobsStore } from '@/stores/accountJobs'
 import { list as listAccounts } from '@/api/admin/accounts'
 import type { AccountJobItem, DuplicateReviewMetadata } from '@/api/admin/accountJobs'
 import { formatDateTime } from '@/utils/format'
+import { extractApiErrorMessage } from '@/utils/apiError'
 const emit = defineEmits<{ close: [] }>()
 const { t, locale } = useI18n()
 const store = useAccountJobsStore()
@@ -97,6 +104,14 @@ const names = ref<Record<number, string>>({})
 type ResultFact = { label: Record<string, string>; value: string; timestamp?: boolean }
 function resultFacts(item: AccountJobItem): ResultFact[] {
   return Array.isArray(item.metadata.facts) ? item.metadata.facts.filter((fact): fact is ResultFact => !!fact && typeof fact === 'object' && typeof fact.value === 'string' && !!fact.label && typeof fact.label === 'object') : []
+}
+// Every stored metadata key is shown; only values already rendered above
+// (name, label, model, message and facts) are not repeated, and result_keys is
+// the server's list of keys a result added (used to seed retries).
+function metadataEntries(item: AccountJobItem): Array<{ key: string; value: string }> {
+  return Object.entries(item.metadata || {})
+    .filter(([key, value]) => !((['name', 'label', 'model_id', 'message'].includes(key) && typeof value === 'string') || (key === 'facts' && Array.isArray(value)) || (key === 'result_keys' && Array.isArray(value))))
+    .map(([key, value]) => ({ key, value: typeof value === 'string' ? value : JSON.stringify(value, null, 2) }))
 }
 let nameVersion = 0
 watch(() => job.value?.id, () => { error.value = ''; retryExpired.value = false; survivorID.value = null; confirmMerge.value = false })
@@ -132,7 +147,9 @@ async function action(callback: () => Promise<unknown>) {
   catch (e) {
     const code = String((e as { code?: string })?.code || '').toLowerCase()
     retryExpired.value = code.includes('payload_expired')
-    error.value = t(retryExpired.value ? 'admin.accountTasks.retryExpired' : 'admin.accountTasks.actionFailed')
+    const label = t(retryExpired.value ? 'admin.accountTasks.retryExpired' : 'admin.accountTasks.actionFailed')
+    const detail = extractApiErrorMessage(e, '')
+    error.value = detail ? `${label}: ${detail}` : label
   } finally { busy.value = false }
 }
 async function stop() { if (job.value) await action(() => store.cancelJob(job.value!.id)) }

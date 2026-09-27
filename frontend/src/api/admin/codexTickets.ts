@@ -1,22 +1,37 @@
 import { apiClient } from '../client'
 import { accountJobIdempotencyHeaders, type AccountJob } from './accountJobs'
 
+/** A recorded Codex routing observation, including original error text. */
+export interface RoutingObservation {
+  stage: string; code: string; http_status?: number; requested_model?: string; reasoning_effort?: string; response_model?: string
+  completed: boolean; model_matched: boolean; state_length?: number; cookie_names?: string[]; observed_at: string
+  duration_ms?: number; transport?: string; cookie_sent: boolean; error?: string
+  upstream_error_type?: string; upstream_error_code?: string; upstream_error_message?: string; upstream_error_param?: string
+  upstream_body?: string; request_id?: string; cf_ray?: string
+  state?: string; response_headers?: Array<{ name: string; value: string }>; response_headers_omitted?: string[]
+}
 export interface TicketResult {
   stage?: string
-  code: string; success: boolean; message?: string; http_status?: number; observed_length?: number
-  duration_ms?: number; expires_at?: string; fingerprint?: string
+  code: string; success: boolean; message?: string; error?: string; http_status?: number; observed_length?: number
+  response_model?: string; duration_ms?: number; expires_at?: string; fingerprint?: string; observation?: RoutingObservation
+}
+export interface ProxyCertificate {
+  server_name?: string; subject: string; issuer: string; serial_number?: string; not_before: string; not_after: string
+  dns_names?: string[]; sha256: string; spki_sha256: string
 }
 export interface ProxyTestResult {
   failure_detail?: string
   success: boolean; network_reachable: boolean; protocol: string; http_status?: number; code: string; message: string
   stages: Array<{ name: string; success: boolean; duration_ms: number; message?: string }>
   certificate_trust?: string; certificate_fingerprint?: string; protocol_suggestion?: string
+  certificates?: ProxyCertificate[]; certificate_error?: string
 }
 export interface ProxyCandidate {
   selection_id: string
   protocol: string
   host: string
   port: number
+  username?: string
   username_masked?: string
   source_line: number
   source_column: number

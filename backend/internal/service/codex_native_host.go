@@ -141,8 +141,13 @@ func (h *nativeCodexHost) Call(ctx context.Context, in extensionv1.HostInvocatio
 		if json.Unmarshal(in.Payload, &req) != nil || validatePluginKVNamespace(req.Namespace) != nil || req.Limit < 1 || req.Limit > 100 {
 			return extensionv1.Result{}, status.Error(codes.InvalidArgument, "invalid due-state query")
 		}
+		// Bundles, cookie clocks, first-seen and validation records are host-only:
+		// they hold live cookie values that bundle expiry and quality-run close
+		// clear. What administrators see (raw STATE, upstream response headers,
+		// errors) reaches the runtime in probe results and is kept in its tickets
+		// records, never read back from this namespace.
 		if req.Namespace == codexRoutingPrivateNamespace {
-			return extensionv1.Result{}, status.Error(codes.PermissionDenied, "host-owned routing material is private")
+			return extensionv1.Result{}, status.Error(codes.PermissionDenied, "codex routing bundles and cookie clocks are host-only state")
 		}
 		value, err = h.state.DueExtensionStates(ctx, h.key, req)
 	case extensionv1.HostAccountRead, extensionv1.HostAccountList, extensionv1.HostResolveIdentity, extensionv1.HostFinishObservation:
@@ -205,8 +210,13 @@ func (h *nativeCodexHost) Call(ctx context.Context, in extensionv1.HostInvocatio
 		if json.Unmarshal(in.Payload, &req) != nil || validatePluginKVNamespace(req.Namespace) != nil || validatePluginKVKey(req.Key) != nil || req.ExpectedRevision < 0 {
 			return extensionv1.Result{}, status.Error(codes.InvalidArgument, "invalid state request")
 		}
+		// Bundles, cookie clocks, first-seen and validation records are host-only:
+		// they hold live cookie values that bundle expiry and quality-run close
+		// clear. What administrators see (raw STATE, upstream response headers,
+		// errors) reaches the runtime in probe results and is kept in its tickets
+		// records, never read back from this namespace.
 		if req.Namespace == codexRoutingPrivateNamespace {
-			return extensionv1.Result{}, status.Error(codes.PermissionDenied, "host-owned routing material is private")
+			return extensionv1.Result{}, status.Error(codes.PermissionDenied, "codex routing bundles and cookie clocks are host-only state")
 		}
 		if in.Operation == extensionv1.HostStateRead {
 			value, err = h.state.ReadExtensionState(ctx, h.key, req)
@@ -231,7 +241,8 @@ func (h *nativeCodexHost) Call(ctx context.Context, in extensionv1.HostInvocatio
 					return extensionv1.Result{}, status.Error(codes.InvalidArgument, "too many observations")
 				}
 				for _, observation := range projection.Observations {
-					if observation.Key == "" || len(observation.Key) > 256 || len(observation.Kind) > 64 || len(observation.State) > 64 || len(observation.Code) > 80 {
+					if observation.Key == "" || len(observation.Key) > 256 || len(observation.Kind) > 64 || len(observation.State) > 64 || len(observation.Code) > 80 ||
+						len(observation.Message) > extensionv1.AccountObservationMessageLimit || len(observation.ResponseModel) > extensionv1.AccountObservationModelLimit {
 						return extensionv1.Result{}, status.Error(codes.InvalidArgument, "invalid account observation")
 					}
 				}

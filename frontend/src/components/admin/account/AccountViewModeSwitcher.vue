@@ -1,6 +1,6 @@
 <template>
   <div
-    class="inline-flex h-9 items-center rounded-md border border-gray-300 bg-white p-0.5 dark:border-dark-600 dark:bg-dark-800"
+    class="inline-flex h-8 items-center gap-0.5 rounded-lg bg-gray-100 p-0.5 dark:bg-dark-700"
     role="group"
     :aria-label="t('admin.accounts.viewModeLabel')"
   >
@@ -8,10 +8,10 @@
       v-for="option in options"
       :key="option.value"
       type="button"
-      class="inline-flex h-7 w-8 items-center justify-center rounded transition-colors"
+      class="inline-flex h-7 w-8 items-center justify-center rounded-md transition-colors"
       :class="modelValue === option.value
-        ? 'border-b-2 border-primary-500 text-primary-700 dark:text-primary-300'
-        : 'text-gray-400 hover:text-gray-700 dark:text-dark-400 dark:hover:text-gray-200'"
+        ? 'bg-white text-gray-900 shadow-sm dark:bg-dark-600 dark:text-white'
+        : 'text-gray-500 hover:text-gray-900 dark:text-dark-400 dark:hover:text-gray-200'"
       :title="option.label"
       :aria-label="option.label"
       :aria-pressed="modelValue === option.value"

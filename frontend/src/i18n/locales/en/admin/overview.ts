@@ -628,6 +628,8 @@ export default {
       apiKeys: 'API Keys',
       userApiKeys: 'User API Keys',
       noApiKeys: 'This user has no API keys',
+      apiKeyPurposeReadOnly: 'Internal purpose: {purpose} (read-only)',
+      apiKeyLease: 'Lease: {lease}',
       group: 'Group',
       none: 'None',
       groupChangedSuccess: 'Group updated successfully',
@@ -1255,6 +1257,15 @@ export default {
         hint: 'Forces service_tier=priority on OpenAI requests in this group. The global Fast/Flex policy can still filter or block it. New requests update immediately after saving; existing WebSocket sessions must reconnect.',
         free: 'Free Fast',
         freeHint: 'Fast requests in this group still use the priority tier, but customers are charged the equivalent Standard price.'
+      },
+      retiredProfitControl: {
+        title: 'Profit control (retired, read-only, no effect)',
+        hint: 'Profit control has been removed. These are the stored legacy values; they cannot be changed and do not affect billing or scheduling.',
+        enabled: 'Enabled',
+        minMargin: 'Minimum margin',
+        safetyBuffer: 'Safety buffer',
+        on: 'On',
+        off: 'Off'
       },
       invalidRequestFallback: {
         title: 'Invalid Request Fallback Group',

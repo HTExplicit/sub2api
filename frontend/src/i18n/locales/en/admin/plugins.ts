@@ -55,6 +55,27 @@ export default {
     fileRequired: 'Select a .s2plugin file',
     bridgeRejected: 'Plugin UI message validation failed',
     onlyOpenAI: 'Independent features with declared capabilities',
-    noAccountCoupling: 'Installation and activation are separate. Disabling retains existing data.'
+    noAccountCoupling: 'Installation and activation are separate. Disabling retains existing data.',
+    retired: {
+      title: 'Retired first-party plugins (read-only)',
+      description: 'These installations were replaced by built-in host features and are not in the managed list above. Their records, saved configuration (decrypted) and retirement receipt are shown read-only.',
+      empty: 'No retired first-party plugin records',
+      loadFailed: 'Failed to load retired plugins',
+      key: 'Plugin key',
+      state: 'Current state',
+      lastError: 'Last error',
+      installedAt: 'Installed',
+      enabledAt: 'Enabled',
+      updatedAt: 'Updated',
+      signature: 'Package signature',
+      binarySHA256: 'Binary SHA-256',
+      paths: 'File paths',
+      bindings: 'Capability bindings',
+      config: 'Saved configuration',
+      configError: 'Configuration could not be decrypted',
+      manifest: 'Manifest',
+      receipt: 'Retirement receipt',
+      retiredAt: 'Retired at'
+    }
   }
 }

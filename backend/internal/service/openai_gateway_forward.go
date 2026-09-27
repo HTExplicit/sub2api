@@ -861,6 +861,7 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 			// by the WS forwarder), so a reconnect retry must not swallow them.
 			var modelNotSupportedErr *UpstreamFailoverError
 			if errors.As(wsErr, &modelNotSupportedErr) && modelNotSupportedErr.IsOpenAIModelNotSupported() {
+				s.recordOpenAIWSModelNotSupportedAttempt(c, account, modelNotSupportedErr.ResponseHeaders, modelNotSupportedErr.ResponseBody)
 				return nil, modelNotSupportedErr
 			}
 			var taskRecoveredErr *agentIdentityTaskRecoveredError
@@ -966,15 +967,11 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 		continuationReason, _ := classifyOpenAIWSReconnectReason(wsErr)
 		switch strings.TrimPrefix(continuationReason, "prewarm_") {
 		case "invalid_encrypted_content", "previous_response_not_found":
-			appendOpsUpstreamError(c, OpsUpstreamErrorEvent{
-				Platform:           account.Platform,
-				AccountID:          account.ID,
-				AccountName:        account.Name,
-				UpstreamStatusCode: http.StatusBadRequest,
-				Kind:               "continuation_state",
-				Message:            OpenAIContinuationStateUnavailableClientMessage,
-			})
+			s.recordOpenAIWSContinuationStateError(c, account, wsErr)
 			return nil, NewOpenAIContinuationStateUnavailableError(http.StatusBadRequest, nil, nil)
+		case "thinking_signature_invalid":
+			// Ops keeps the rejected event; the client path below is unchanged.
+			s.recordOpenAIWSContinuationStateError(c, account, wsErr)
 		}
 		s.writeOpenAIWSFallbackErrorResponse(c, account, wsErr)
 		return nil, wsErr
@@ -1104,7 +1101,7 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 				return nil, NewOpenAIContinuationStateUnavailableError(resp.StatusCode, resp.Header, respBody)
 			}
 			if failoverErr, ok := s.handleOpenAIBudgetExceededHTTPFailover(
-				ctx, account, resp.StatusCode, resp.Header, respBody,
+				ctx, c, account, resp.StatusCode, resp.Header, respBody,
 			); ok {
 				return nil, failoverErr
 			}
@@ -1126,18 +1123,10 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 				// The failure describes request history, not account health. Do not
 				// let a compatibility proxy's 4xx/5xx wrapper fan this one request
 				// out across the remaining scheduler pool.
-				appendOpsUpstreamError(c, OpsUpstreamErrorEvent{
-					Platform:           account.Platform,
-					AccountID:          account.ID,
-					AccountName:        account.Name,
-					UpstreamStatusCode: resp.StatusCode,
-					UpstreamRequestID:  resp.Header.Get("x-request-id"),
-					Kind:               "continuation_state",
-					Message:            OpenAIContinuationStateUnavailableClientMessage,
-					ContinuationDiagnostic: buildOpenAIContinuationDiagnostic(
-						c, diagnosticIncomingBody, upstreamReq, body, respBody, string(continuationStateError),
-					),
-				})
+				s.recordOpenAIRequestTerminalUpstreamError(ctx, c, account, resp.StatusCode, resp.Header, body, respBody,
+					"continuation_state", false,
+					buildOpenAIContinuationDiagnostic(c, diagnosticIncomingBody, upstreamReq, body, respBody, string(continuationStateError)),
+				)
 				return nil, NewOpenAIContinuationStateUnavailableError(resp.StatusCode, resp.Header, respBody)
 			}
 			if retryBody, reason, changed, retryErr := normalizeSystemPromptRejectedFieldRetryBody(c, resp.StatusCode, body, respBody); retryErr != nil {
@@ -1162,18 +1151,10 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 				continue
 			}
 			if classification := classifyOpenAIRequestRejection(resp.StatusCode, upstreamMsg, respBody); classification != "" {
-				appendOpsUpstreamError(c, OpsUpstreamErrorEvent{
-					Platform:           account.Platform,
-					AccountID:          account.ID,
-					AccountName:        account.Name,
-					UpstreamStatusCode: resp.StatusCode,
-					UpstreamRequestID:  resp.Header.Get("x-request-id"),
-					Kind:               "request_rejected",
-					Message:            OpenAIRequestRejectedClientMessage,
-					ContinuationDiagnostic: buildOpenAIContinuationDiagnostic(
-						c, diagnosticIncomingBody, upstreamReq, body, respBody, classification,
-					),
-				})
+				s.recordOpenAIRequestTerminalUpstreamError(ctx, c, account, resp.StatusCode, resp.Header, body, respBody,
+					"request_rejected", false,
+					buildOpenAIContinuationDiagnostic(c, diagnosticIncomingBody, upstreamReq, body, respBody, classification),
+				)
 				return nil, NewOpenAIRequestRejectedError(resp.StatusCode, resp.Header)
 			}
 			shouldFailover := s.shouldFailoverOpenAIUpstreamResponse(account, resp.StatusCode, upstreamMsg, respBody)

@@ -222,4 +222,52 @@ describe('AccountStatusIndicator', () => {
     // AICredits 积分耗尽状态应显示
     expect(wrapper.text()).toContain('admin.accounts.status.creditsExhausted')
   })
+
+  it('模型冷却提示显示原因码和上游原文（完整原文，不截断）', async () => {
+    const upstreamMessage = `The model \`gpt-6-sol\` is not supported when using Codex with a ChatGPT account. ${'detail '.repeat(250)}`.trim()
+    const wrapper = mount(AccountStatusIndicator, {
+      props: {
+        account: makeAccount({
+          platform: 'openai',
+          extra: {
+            model_rate_limits: {
+              'gpt-6-sol': {
+                rate_limited_at: '2026-03-15T00:00:00Z',
+                rate_limit_reset_at: '2099-03-15T00:00:00Z',
+                reason: 'model_not_supported',
+                upstream_message: upstreamMessage
+              }
+            }
+          }
+        })
+      },
+      global: { stubs: { Icon: true, teleport: true } }
+    })
+
+    // the details are rendered only while the popover is open (v-if); the badge is a real button
+    expect(wrapper.find('[data-testid="model-status-reason"]').exists()).toBe(false)
+    await wrapper.get('[data-testid="model-status-trigger"]').trigger('click')
+    expect(wrapper.get('[data-testid="model-status-reason"]').text()).toBe('admin.accounts.status.modelCooldownReason')
+    expect(wrapper.get('[data-testid="model-status-upstream-message"]').text()).toBe(upstreamMessage)
+  })
+
+  it('上游额度耗尽时仍显示正常状态徽标和临时不可调度详情按钮', async () => {
+    const quota_state = { blocked: true, until: '2099-03-15T00:00:00Z', windows: [] }
+    const active = mount(AccountStatusIndicator, {
+      props: { account: makeAccount({ platform: 'openai', quota_state }) },
+      global: { stubs: { Icon: true } }
+    })
+    expect(active.find('[data-testid="quota-exhausted-status"]').exists()).toBe(true)
+    expect(active.find('.badge-success').text()).toBe('admin.accounts.status.active')
+
+    const tempUnsched = mount(AccountStatusIndicator, {
+      props: { account: makeAccount({ platform: 'openai', quota_state, temp_unschedulable_until: '2099-03-15T00:00:00Z' }) },
+      global: { stubs: { Icon: true } }
+    })
+    expect(tempUnsched.find('[data-testid="quota-exhausted-status"]').exists()).toBe(true)
+    const detail = tempUnsched.get('button.badge')
+    expect(detail.text()).toBe('admin.accounts.status.tempUnschedulable')
+    await detail.trigger('click')
+    expect(tempUnsched.emitted('show-temp-unsched')).toHaveLength(1)
+  })
 })

@@ -219,7 +219,7 @@ describe('admin AccountsView bulk edit scope', () => {
     expect(wrapper.get('[data-test="bulk-edit-modal"]').attributes('data-target-mode')).toBe('filtered')
   })
 
-  it('keeps the advanced created_at column hidden in the Cockpit default table', async () => {
+  it('shows the created_at column in the default table (upstream v0.2.8 defaults)', async () => {
     listAccounts.mockResolvedValue({
       items: [
         {
@@ -279,7 +279,7 @@ describe('admin AccountsView bulk edit scope', () => {
     await flushPromises()
 
     const columnKeys = wrapper.findAll('[data-test="column-key"]').map(node => node.text())
-    expect(columnKeys).not.toContain('created_at')
+    expect(columnKeys).toContain('created_at')
   })
 
   it('passes the loaded global probe state to every upstream billing cell', async () => {

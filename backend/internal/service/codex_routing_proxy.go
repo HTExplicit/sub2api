@@ -21,29 +21,29 @@ type codexRoutingProxyTrust struct {
 
 func (s *OpenAIGatewayService) doCodexRoutingAcquisition(request *http.Request, proxyURL string, accountID int64) (*http.Response, error) {
 	if request == nil || request.URL == nil || request.Method != http.MethodPost || request.URL.Scheme != "https" || request.URL.Host != "chatgpt.com" || request.URL.Path != "/backend-api/codex/responses" || request.URL.RawQuery != "" || request.URL.User != nil || s.nativeCodexRuntime == nil {
-		return nil, errCodexRoutingUnavailable
+		return nil, codexRoutingUnavailable("acquisition accepts only POST https://chatgpt.com/backend-api/codex/responses with a loaded Codex runtime")
 	}
 	_, err := proxytransport.ParseEndpoint(proxyURL)
 	if err != nil {
-		return nil, errCodexRoutingUnavailable
+		return nil, codexRoutingUnavailable("acquisition proxy: %v", err)
 	}
 	normal := proxyURL
 	installation := s.nativeCodexRuntime.metadata()
 	store := s.nativeCodexRuntime.repo
 	ok := store != nil
 	if installation == nil || !ok {
-		return nil, errCodexRoutingUnavailable
+		return nil, codexRoutingUnavailable("Codex runtime state is not loaded")
 	}
 	ctx := WithNativeCodexExecution(request.Context(), installation)
 	record, err := store.ReadExtensionState(ctx, NativeCodexPluginKey, extensionv1.StateRequest{Namespace: "proxy-trust", Key: codexRoutingDigest(normal, "chatgpt.com")})
 	if err != nil {
-		return nil, errCodexRoutingUnavailable
+		return nil, codexRoutingUnavailable("read pinned acquisition proxy certificate: %v", err)
 	}
 	wire := request.Clone(WithHTTPUpstreamProfile(request.Context(), HTTPUpstreamProfileOpenAIHarvest))
 	wire.Header.Del("Cookie")
 	if !record.Found {
 		if s.httpUpstream == nil {
-			return nil, errCodexRoutingUnavailable
+			return nil, codexRoutingUnavailable("no upstream transport is configured")
 		}
 		if err := reserveCodexQualityAcquisition(wire, accountID); err != nil {
 			return nil, err
@@ -53,18 +53,27 @@ func (s *OpenAIGatewayService) doCodexRoutingAcquisition(request *http.Request, 
 		return response, err
 	}
 	var trust codexRoutingProxyTrust
-	if len(record.Value) > 128*1024 || json.Unmarshal(record.Value, &trust) != nil || len(trust.Certificates) != 1 {
-		return nil, errCodexRoutingUnavailable
+	if len(record.Value) > 128*1024 {
+		return nil, codexRoutingUnavailable("pinned proxy certificate record of %d bytes exceeds 128 KiB", len(record.Value))
+	}
+	if err := json.Unmarshal(record.Value, &trust); err != nil {
+		return nil, codexRoutingUnavailable("decode pinned proxy certificate: %v", err)
+	}
+	if len(trust.Certificates) != 1 {
+		return nil, codexRoutingUnavailable("pinned proxy certificate record holds %d certificates, expected 1", len(trust.Certificates))
 	}
 	anchor, err := x509.ParseCertificate(trust.Certificates[0])
-	if err != nil || codexRoutingDigest(string(anchor.RawSubjectPublicKeyInfo)) != trust.Fingerprint {
-		return nil, errCodexRoutingUnavailable
+	if err != nil {
+		return nil, codexRoutingUnavailable("parse pinned proxy certificate: %v", err)
+	}
+	if digest := codexRoutingDigest(string(anchor.RawSubjectPublicKeyInfo)); digest != trust.Fingerprint {
+		return nil, codexRoutingUnavailable("pinned proxy certificate key digest %s does not match its record %s", digest, trust.Fingerprint)
 	}
 	roots := x509.NewCertPool()
 	roots.AddCert(anchor)
 	transport, err := codexRoutingAcquisitionTransport(normal, roots)
 	if err != nil {
-		return nil, errCodexRoutingUnavailable
+		return nil, codexRoutingUnavailable("acquisition transport: %v", err)
 	}
 	defer transport.CloseIdleConnections()
 	client := &http.Client{Transport: transport, Timeout: 25 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
@@ -78,25 +87,27 @@ func (s *OpenAIGatewayService) doCodexRoutingAcquisition(request *http.Request, 
 
 func verifyCodexRoutingProxyCertificate(state tls.ConnectionState, pinnedRoots *x509.CertPool) error {
 	if state.ServerName == "" || len(state.PeerCertificates) == 0 {
-		return errCodexRoutingUnavailable
+		return codexRoutingUnavailable("TLS handshake reported no server name or peer certificate")
 	}
 	intermediates := x509.NewCertPool()
 	for _, certificate := range state.PeerCertificates[1:] {
 		intermediates.AddCert(certificate)
 	}
 	opts := x509.VerifyOptions{DNSName: state.ServerName, Intermediates: intermediates}
-	if _, err := state.PeerCertificates[0].Verify(opts); err == nil {
+	_, systemErr := state.PeerCertificates[0].Verify(opts)
+	if systemErr == nil {
 		return nil
 	}
 	// The explicit anchor cannot authorize an HTTPS proxy endpoint, another
 	// origin, an expired certificate or a changed certificate chain. No IO in
 	// this path learns or writes certificate trust, with or without OAuth.
+	leaf := state.PeerCertificates[0]
 	if state.ServerName != "chatgpt.com" || pinnedRoots == nil {
-		return errCodexRoutingUnavailable
+		return codexRoutingUnavailable("certificate %q (issuer %q) for %s is not trusted by the system roots and no pinned proxy certificate applies: %v", leaf.Subject.String(), leaf.Issuer.String(), state.ServerName, systemErr)
 	}
 	opts.Roots = pinnedRoots
-	if _, err := state.PeerCertificates[0].Verify(opts); err != nil {
-		return errCodexRoutingUnavailable
+	if _, err := leaf.Verify(opts); err != nil {
+		return codexRoutingUnavailable("certificate %q (issuer %q) for %s is trusted neither by the system roots (%v) nor by the pinned proxy certificate (%v); test the acquisition proxy again", leaf.Subject.String(), leaf.Issuer.String(), state.ServerName, systemErr, err)
 	}
 	return nil
 }
@@ -104,7 +115,7 @@ func verifyCodexRoutingProxyCertificate(state tls.ConnectionState, pinnedRoots *
 func codexRoutingAcquisitionTransport(raw string, pinnedRoots *x509.CertPool) (*http.Transport, error) {
 	address, err := proxytransport.ParseEndpoint(raw)
 	if err != nil {
-		return nil, errCodexRoutingUnavailable
+		return nil, codexRoutingUnavailable("acquisition proxy: %v", err)
 	}
 	transport := &http.Transport{
 		DialContext:           (&net.Dialer{Timeout: 8 * time.Second}).DialContext,

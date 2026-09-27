@@ -565,3 +565,30 @@ func TestAdminService_AdminUpdateAPIKeyGroupID_Unbind_NoAllowedGroupUpdate(t *te
 	require.False(t, userRepo.addGroupCalled)
 	require.False(t, got.AutoGrantedGroupAccess)
 }
+
+type adminKeyListRepoStub struct {
+	APIKeyRepository
+	userCalls, adminCalls int
+}
+
+func (s *adminKeyListRepoStub) ListByUserID(context.Context, int64, pagination.PaginationParams, APIKeyListFilters) ([]APIKey, *pagination.PaginationResult, error) {
+	s.userCalls++
+	return nil, &pagination.PaginationResult{}, nil
+}
+
+func (s *adminKeyListRepoStub) ListByUserIDForAdmin(context.Context, int64, pagination.PaginationParams, APIKeyListFilters) ([]APIKey, *pagination.PaginationResult, error) {
+	s.adminCalls++
+	return []APIKey{{ID: 5, Purpose: APIKeyPurposeReleaseAcceptance}}, &pagination.PaginationResult{Total: 1}, nil
+}
+
+// The admin console lists a user's internal release-acceptance keys too; the
+// user's own key list (ListByUserID) does not.
+func TestAdminService_GetUserAPIKeysUsesAdminListing(t *testing.T) {
+	repo := &adminKeyListRepoStub{}
+	keys, total, err := (&adminServiceImpl{apiKeyRepo: repo}).GetUserAPIKeys(context.Background(), 9, 1, 20, "created_at", "desc")
+	require.NoError(t, err)
+	require.EqualValues(t, 1, total)
+	require.Equal(t, APIKeyPurposeReleaseAcceptance, keys[0].Purpose)
+	require.Equal(t, 1, repo.adminCalls)
+	require.Zero(t, repo.userCalls)
+}

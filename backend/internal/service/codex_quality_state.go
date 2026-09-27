@@ -9,6 +9,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"strings"
 	"time"
 
@@ -24,9 +25,14 @@ const (
 	codexQualityMaxSends    = 60
 )
 
-// A diagnostic failure is deliberately small and never contains upstream text.
+// Failures wrap these sentinels with the concrete precondition that failed;
+// attempts record upstream error text separately (see CodexQualityAttempt).
 var ErrCodexQualityUnavailable = errors.New("codex_quality_unavailable")
 var ErrCodexQualitySpent = errors.New("codex_quality_attempt_spent")
+
+func codexQualityUnavailable(format string, args ...any) error {
+	return fmt.Errorf("%w: %s", ErrCodexQualityUnavailable, fmt.Sprintf(format, args...))
+}
 
 type CodexQualityCreateRequest struct {
 	RunID        string `json:"run_id"`
@@ -54,6 +60,14 @@ type CodexQualityAttempt struct {
 	Completed                bool       `json:"completed"`
 	HTTPStatus               int        `json:"http_status,omitempty"`
 	ErrorCode                string     `json:"error_code,omitempty"`
+	ErrorMessage             string     `json:"error_message,omitempty"`
+	UpstreamErrorType        string     `json:"upstream_error_type,omitempty"`
+	UpstreamErrorCode        string     `json:"upstream_error_code,omitempty"`
+	UpstreamErrorMessage     string     `json:"upstream_error_message,omitempty"`
+	UpstreamErrorParam       string     `json:"upstream_error_param,omitempty"`
+	UpstreamBody             string     `json:"upstream_body,omitempty"`
+	RequestID                string     `json:"request_id,omitempty"`
+	CFRay                    string     `json:"cf_ray,omitempty"`
 	ReasoningTokens          *int64     `json:"reasoning_tokens"`
 	InputTokens              *int64     `json:"input_tokens"`
 	OutputTokens             *int64     `json:"output_tokens"`
@@ -64,9 +78,11 @@ type CodexQualityAttempt struct {
 type CodexQualityRunView struct {
 	RunID                 string                `json:"run_id"`
 	Grant                 string                `json:"grant,omitempty"`
+	ActorID               int64                 `json:"actor_id"`
 	AccountID             int64                 `json:"account_id"`
 	APIKeyID              int64                 `json:"api_key_id"`
 	GroupID               int64                 `json:"group_id"`
+	ProxyID               int64                 `json:"proxy_id"`
 	Model                 string                `json:"model"`
 	ReasoningEffort       string                `json:"reasoning_effort"`
 	PromptSHA256          string                `json:"prompt_sha256"`
@@ -78,11 +94,17 @@ type CodexQualityRunView struct {
 	RouteExpiresAt        *time.Time            `json:"route_expires_at"`
 	RouteGeneration       int64                 `json:"route_generation"`
 	ConnectionFingerprint string                `json:"connection_fingerprint,omitempty"`
+	RouteError            string                `json:"route_error,omitempty"`
 	Attempts              []CodexQualityAttempt `json:"attempts"`
+	// Set only on a renew-route reply whose renewal did not install a route.
+	RenewalError        string                                `json:"renewal_error,omitempty"`
+	RenewalObservations []extensionv1.CodexRoutingObservation `json:"renewal_observations,omitempty"`
 }
 
-// Stored only in the existing host-private namespace. No grant, key, prompt,
-// response text, Cookie or STATE value is stored in this ledger.
+// Stored only in the existing host-private namespace. No grant, API key,
+// prompt, Cookie or STATE value is stored in this ledger. Attempts keep the
+// upstream error object, transport/stream error text and the bounded failing
+// event or body (which can quote response text) for administrators.
 type codexQualityRun struct {
 	RunID                  string                                 `json:"run_id"`
 	ActorID                int64                                  `json:"actor_id"`
@@ -123,19 +145,25 @@ func codexQualityHash(value string) string {
 func readCodexQualityRun(ctx context.Context, store NativeCodexStateStore, id string) (codexQualityRun, int64, error) {
 	var run codexQualityRun
 	canonical, valid := canonicalCodexQualityID(id)
-	if !valid || store == nil {
-		return run, 0, ErrCodexQualityUnavailable
+	if !valid {
+		return run, 0, codexQualityUnavailable("run id %q is not a canonical UUID", id)
+	}
+	if store == nil {
+		return run, 0, codexQualityUnavailable("Codex runtime state store is unavailable")
 	}
 	id = canonical
 	record, err := store.ReadExtensionState(ctx, codexRuntimePluginKey, extensionv1.StateRequest{Namespace: codexRoutingPrivateNamespace, Key: codexQualityKey(id)})
 	if err != nil {
-		return run, 0, ErrCodexQualityUnavailable
+		return run, 0, codexQualityUnavailable("read quality run %s: %v", id, err)
 	}
 	if !record.Found {
 		return run, 0, nil
 	}
-	if json.Unmarshal(record.Value, &run) != nil || run.RunID != id || run.MaxSends < 1 || run.MaxSends > codexQualityMaxSends || run.UsedSends != len(run.Attempts) || run.UsedSends > run.MaxSends {
-		return codexQualityRun{}, 0, ErrCodexQualityUnavailable
+	if err := json.Unmarshal(record.Value, &run); err != nil {
+		return codexQualityRun{}, 0, codexQualityUnavailable("decode quality run %s: %v", id, err)
+	}
+	if run.RunID != id || run.MaxSends < 1 || run.MaxSends > codexQualityMaxSends || run.UsedSends != len(run.Attempts) || run.UsedSends > run.MaxSends {
+		return codexQualityRun{}, 0, codexQualityUnavailable("quality run record %s is inconsistent (run_id %q, max_sends %d, used_sends %d, attempts %d)", id, run.RunID, run.MaxSends, run.UsedSends, len(run.Attempts))
 	}
 	return run, record.Revision, nil
 }
@@ -143,7 +171,7 @@ func readCodexQualityRun(ctx context.Context, store NativeCodexStateStore, id st
 func mutateCodexQualityRun(ctx context.Context, store NativeCodexStateStore, id string, change func(*codexQualityRun) error) (codexQualityRun, error) {
 	canonical, valid := canonicalCodexQualityID(id)
 	if !valid {
-		return codexQualityRun{}, ErrCodexQualityUnavailable
+		return codexQualityRun{}, codexQualityUnavailable("run id %q is not a canonical UUID", id)
 	}
 	id = canonical
 	for attempt := 0; attempt < 12; attempt++ {
@@ -156,23 +184,23 @@ func mutateCodexQualityRun(ctx context.Context, store NativeCodexStateStore, id 
 		}
 		raw, err := json.Marshal(run)
 		if err != nil {
-			return run, ErrCodexQualityUnavailable
+			return run, codexQualityUnavailable("encode quality run %s: %v", id, err)
 		}
 		result, err := store.CompareSwapExtensionState(ctx, codexRuntimePluginKey, extensionv1.StateRequest{Namespace: codexRoutingPrivateNamespace, Key: codexQualityKey(id), ExpectedRevision: revision, Value: raw})
 		if err != nil {
-			return run, ErrCodexQualityUnavailable
+			return run, codexQualityUnavailable("save quality run %s: %v", id, err)
 		}
 		if result.Applied {
 			return run, nil
 		}
 	}
-	return codexQualityRun{}, ErrCodexQualityUnavailable
+	return codexQualityRun{}, codexQualityUnavailable("quality run %s kept changing concurrently", id)
 }
 
 func newCodexQualityGrant(id string) (string, string, error) {
 	var secret [32]byte
 	if _, err := rand.Read(secret[:]); err != nil {
-		return "", "", ErrCodexQualityUnavailable
+		return "", "", codexQualityUnavailable("generate the grant: %v", err)
 	}
 	grant := id + "." + base64.RawURLEncoding.EncodeToString(secret[:])
 	return grant, codexQualityHash(grant), nil
@@ -186,17 +214,32 @@ func codexQualityActive(run codexQualityRun, now time.Time) bool {
 	return run.RunID != "" && run.Status == "open" && now.Before(run.ExpiresAt)
 }
 
+// codexQualityInactiveReason explains why codexQualityActive is false.
+func codexQualityInactiveReason(run codexQualityRun, now time.Time) string {
+	switch {
+	case run.RunID == "":
+		return "quality run not found"
+	case run.Status != "open":
+		return fmt.Sprintf("quality run %s is %s", run.RunID, run.Status)
+	case !now.Before(run.ExpiresAt):
+		return fmt.Sprintf("quality run %s expired at %s", run.RunID, run.ExpiresAt.UTC().Format(time.RFC3339))
+	}
+	return ""
+}
+
 func issueCodexQualityGrant(ctx context.Context, store NativeCodexStateStore, wanted codexQualityRun, digest string, expiry time.Time) (codexQualityRun, error) {
 	canonical, valid := canonicalCodexQualityID(wanted.RunID)
 	if !valid {
-		return codexQualityRun{}, ErrCodexQualityUnavailable
+		return codexQualityRun{}, codexQualityUnavailable("run id %q is not a canonical UUID", wanted.RunID)
 	}
 	wanted.RunID = canonical
 	return mutateCodexQualityRun(ctx, store, wanted.RunID, func(run *codexQualityRun) error {
 		if run.RunID == "" {
 			*run = wanted
-		} else if run.Status == "closed" || run.ActorID != wanted.ActorID || run.APIKeyID != wanted.APIKeyID || run.AccountID != wanted.AccountID || run.GroupID != wanted.GroupID || run.ProxyID != wanted.ProxyID || run.PromptSHA256 != wanted.PromptSHA256 || run.MaxSends != wanted.MaxSends || !run.Scope.SameOwner(wanted.Scope) {
-			return ErrCodexQualityUnavailable
+		} else if run.Status == "closed" {
+			return codexQualityUnavailable("quality run %s is closed; use a new run id", run.RunID)
+		} else if run.ActorID != wanted.ActorID || run.APIKeyID != wanted.APIKeyID || run.AccountID != wanted.AccountID || run.GroupID != wanted.GroupID || run.ProxyID != wanted.ProxyID || run.PromptSHA256 != wanted.PromptSHA256 || run.MaxSends != wanted.MaxSends || !run.Scope.SameOwner(wanted.Scope) {
+			return codexQualityUnavailable("quality run %s exists with other parameters (actor %d/%d, api key %d/%d, account %d/%d, group %d/%d, proxy %d/%d, max_sends %d/%d, prompt matches %t, routing owner matches %t; stored/requested)", run.RunID, run.ActorID, wanted.ActorID, run.APIKeyID, wanted.APIKeyID, run.AccountID, wanted.AccountID, run.GroupID, wanted.GroupID, run.ProxyID, wanted.ProxyID, run.MaxSends, wanted.MaxSends, run.PromptSHA256 == wanted.PromptSHA256, run.Scope.SameOwner(wanted.Scope))
 		}
 		run.GrantDigest, run.ExpiresAt = digest, expiry
 		return nil
@@ -209,16 +252,22 @@ func sameCodexQualityAttempt(a, b CodexQualityAttempt) bool {
 
 func reserveCodexQualityAttempt(ctx context.Context, store NativeCodexStateStore, id, grantDigest string, attempt CodexQualityAttempt) error {
 	_, err := mutateCodexQualityRun(ctx, store, id, func(run *codexQualityRun) error {
-		if !codexQualityActive(*run, time.Now()) || (grantDigest != "" && !codexQualityGrantMatches(*run, grantDigest)) || run.AccountID != attempt.AccountID {
-			return ErrCodexQualityUnavailable
+		if reason := codexQualityInactiveReason(*run, time.Now()); reason != "" {
+			return codexQualityUnavailable("%s", reason)
+		}
+		if grantDigest != "" && !codexQualityGrantMatches(*run, grantDigest) {
+			return codexQualityUnavailable("the grant does not match quality run %s (it was reissued)", run.RunID)
+		}
+		if run.AccountID != attempt.AccountID {
+			return codexQualityUnavailable("attempt account %d differs from run account %d", attempt.AccountID, run.AccountID)
 		}
 		for _, previous := range run.Attempts {
 			if sameCodexQualityAttempt(previous, attempt) {
-				return ErrCodexQualitySpent
+				return fmt.Errorf("%w: %s attempt (trial %q, operation %q) was already sent", ErrCodexQualitySpent, attempt.Stage, attempt.TrialID, attempt.OperationID)
 			}
 		}
 		if run.UsedSends >= run.MaxSends {
-			return ErrCodexQualitySpent
+			return fmt.Errorf("%w: %d of %d sends used", ErrCodexQualitySpent, run.UsedSends, run.MaxSends)
 		}
 		attempt.State, attempt.ReservedAt = "unknown", time.Now().UTC()
 		attempt.ResponseModels = []string{}
@@ -243,12 +292,12 @@ func finishCodexQualityAttempt(ctx context.Context, store NativeCodexStateStore,
 				return nil
 			}
 		}
-		return ErrCodexQualityUnavailable
+		return codexQualityUnavailable("%s attempt (trial %q, operation %q) was never reserved", finished.Stage, finished.TrialID, finished.OperationID)
 	})
 }
 
 func codexQualityView(run codexQualityRun, generation int64) *CodexQualityRunView {
-	v := &CodexQualityRunView{RunID: run.RunID, AccountID: run.AccountID, APIKeyID: run.APIKeyID, GroupID: run.GroupID, Model: codexQualityModel, ReasoningEffort: codexQualityEffort, PromptSHA256: run.PromptSHA256, Status: run.Status, MaxSends: run.MaxSends, UsedSends: run.UsedSends, ExpiresAt: run.ExpiresAt, RouteGeneration: run.RouteGeneration, Attempts: run.Attempts}
+	v := &CodexQualityRunView{RunID: run.RunID, ActorID: run.ActorID, AccountID: run.AccountID, APIKeyID: run.APIKeyID, GroupID: run.GroupID, ProxyID: run.ProxyID, Model: codexQualityModel, ReasoningEffort: codexQualityEffort, PromptSHA256: run.PromptSHA256, Status: run.Status, MaxSends: run.MaxSends, UsedSends: run.UsedSends, ExpiresAt: run.ExpiresAt, RouteGeneration: run.RouteGeneration, Attempts: run.Attempts}
 	if v.Attempts == nil {
 		v.Attempts = []CodexQualityAttempt{}
 	}
@@ -256,8 +305,32 @@ func codexQualityView(run codexQualityRun, generation int64) *CodexQualityRunVie
 		v.RouteExpiresAt = &q.ExpiresAt
 		v.RouteReady = codexQualityActive(run, time.Now()) && generation == run.RouteRuntimeGeneration && q.Valid(time.Now(), run.AccountID, run.Scope.Identity, codexQualityModel)
 		v.ConnectionFingerprint = codexQualityHash(q.Scope.ConnectionLeaseID)[:16]
+		if !v.RouteReady {
+			v.RouteError = codexQualityRouteReason(run, generation, time.Now())
+		}
 	}
 	return v
+}
+
+// codexQualityRouteReason explains why the installed route of a run cannot be
+// used before the bundle and connection checks, or returns "" when it can.
+func codexQualityRouteReason(run codexQualityRun, generation int64, now time.Time) string {
+	q := run.Qualification
+	switch {
+	case !codexQualityActive(run, now):
+		return codexQualityInactiveReason(run, now)
+	case q == nil:
+		return "no route is installed; renew the route first"
+	case run.RouteRuntimeGeneration != generation:
+		return fmt.Sprintf("the route was installed by runtime generation %d, the current generation is %d", run.RouteRuntimeGeneration, generation)
+	case !q.Valid(now, run.AccountID, run.Scope.Identity, codexQualityModel):
+		return fmt.Sprintf("the route qualification is not valid now (model %q, verified %s, expires %s)", q.Model, q.VerifiedAt.UTC().Format(time.RFC3339), q.ExpiresAt.UTC().Format(time.RFC3339))
+	case !q.Scope.SameOwner(run.Scope):
+		return "the route " + codexRoutingScopeChange(run.Scope, q.Scope)
+	case q.Scope.Transport != "http" || q.Scope.ConnectionLeaseID == "":
+		return fmt.Sprintf("the route is bound to transport %q connection %q; an HTTP connection lease is required", q.Scope.Transport, q.Scope.ConnectionLeaseID)
+	}
+	return ""
 }
 
 func validCodexQualityHash(value string) bool {

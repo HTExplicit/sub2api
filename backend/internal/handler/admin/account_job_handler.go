@@ -272,8 +272,29 @@ func accountJobSucceeded(itemID int64, metadata any) service.AccountJobExecution
 	return service.AccountJobExecutionResult{ItemID: itemID, Status: service.AccountJobItemStatusSucceeded, Metadata: raw}
 }
 
+// accountJobFailed records a failure that has no underlying error text; the
+// catalog sentence of code describes it.
 func accountJobFailed(itemID int64, code string) service.AccountJobExecutionResult {
-	code, message := service.NormalizeAccountJobFailure(code)
+	return accountJobFailedWithError(itemID, code, nil)
+}
+
+// accountJobFailedWithError keeps code and the verbatim text of err for a
+// failed item. Without an err the catalog sentence of code is used.
+func accountJobFailedWithError(itemID int64, code string, err error) service.AccountJobExecutionResult {
+	message := ""
+	if err != nil {
+		message = err.Error()
+	}
+	code, message = service.AccountJobFailure(code, message)
 	return service.AccountJobExecutionResult{ItemID: itemID, Status: service.AccountJobItemStatusFailed,
 		Metadata: json.RawMessage(`{}`), ErrorCode: code, ErrorMessage: message}
+}
+
+// withAccountJobMetadata attaches result metadata, for example the source
+// index or name of a failed item, without changing its status or error.
+func withAccountJobMetadata(result service.AccountJobExecutionResult, metadata map[string]any) service.AccountJobExecutionResult {
+	if len(metadata) > 0 {
+		result.Metadata, _ = json.Marshal(metadata)
+	}
+	return result
 }

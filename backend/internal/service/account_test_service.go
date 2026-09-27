@@ -909,7 +909,7 @@ func (s *AccountTestService) testOpenAIAccountConnection(c *gin.Context, account
 	if credentialAccount.IsOpenAIAgentIdentity() {
 		authHeaders, authErr := buildAgentIdentityAuthenticationHeaders(ctx, s.accountRepo, s.agentIdentityWS, &s.agentIdentityTaskMu, credentialAccount)
 		if authErr != nil {
-			return s.sendErrorAndEnd(c, "Failed to build Agent Identity authentication")
+			return s.sendErrorAndEnd(c, "Failed to build Agent Identity authentication: "+authErr.Error())
 		}
 		for key, values := range authHeaders {
 			for _, value := range values {
@@ -927,7 +927,7 @@ func (s *AccountTestService) testOpenAIAccountConnection(c *gin.Context, account
 		req.Header.Set("OpenAI-Beta", "responses=experimental")
 		canonical, identityErr := resolveCodexOutboundIdentityForAccountContext(req.Context(), credentialAccount, codexAccountIdentityOverrideUA(credentialAccount))
 		if identityErr != nil {
-			return s.sendErrorAndEnd(c, "Codex identity policy unavailable")
+			return s.sendErrorAndEnd(c, "Codex identity policy unavailable: "+identityErr.Error())
 		}
 		req.Header.Set("Originator", canonical.originator)
 		req.Header.Set("User-Agent", canonical.userAgent)
@@ -935,7 +935,7 @@ func (s *AccountTestService) testOpenAIAccountConnection(c *gin.Context, account
 		// 与真实转发一致：使用该账号的 Codex TUI 身份，账号级自定义 UA 同样作为管理员
 		// 显式配置传入，否则测试用的身份与该账号真实出站的身份不是同一个。
 		if err := enforceCodexIdentityHeadersForAccountContext(req.Context(), req.Header, credentialAccount, codexAccountIdentityOverrideUA(credentialAccount)); err != nil {
-			return s.sendErrorAndEnd(c, "Codex identity policy unavailable")
+			return s.sendErrorAndEnd(c, "Codex identity policy unavailable: "+err.Error())
 		}
 	}
 
@@ -944,7 +944,7 @@ func (s *AccountTestService) testOpenAIAccountConnection(c *gin.Context, account
 	if isOAuth && !account.IsCredentialShadow() && s.openAIGatewayService != nil {
 		req = withCodexRoutingModel(req, upstreamTestModelID)
 		if err := s.openAIGatewayService.applyOpenAICodexTicket(ctx, credentialAccount, upstreamTestModelID, req.Header); err != nil {
-			return s.sendErrorAndEnd(c, "当前账号/模型没有有效的 Cookie 路由验证，请先执行采集与业务出口复验；此次连接测试未发送上游请求")
+			return s.sendErrorAndEnd(c, "当前账号/模型没有有效的 Cookie 路由验证，请先执行采集与业务出口复验；此次连接测试未发送上游请求。原始错误："+err.Error())
 		}
 		s.sendEvent(c, TestEvent{Type: "status", Text: "Codex ticket", Data: codexTicketWireSummary(req.Header)})
 	}
@@ -962,6 +962,7 @@ func (s *AccountTestService) testOpenAIAccountConnection(c *gin.Context, account
 			s.sendEvent(c, TestEvent{Type: "status", Text: "Final Codex ticket", Data: codexTicketWireSummary(wire.Header)})
 			snapshot := base.withWire("http", wire.Header)
 			s.sendEvent(c, TestEvent{Type: "status", Text: snapshot.summary(), Data: snapshot})
+			s.sendEvent(c, TestEvent{Type: "status", Text: "Codex wire headers", Data: accountTestWireHeaders(wire.Header)})
 		}))
 	}
 
@@ -974,6 +975,7 @@ func (s *AccountTestService) testOpenAIAccountConnection(c *gin.Context, account
 		base := resolveCodexIdentitySnapshotContext(ctx, account, credentialAccount, codexAccountIdentityOverrideUA(credentialAccount))
 		snapshot := base.withWire(transport, req.Header)
 		s.sendEvent(c, TestEvent{Type: "status", Text: snapshot.summary(), Data: snapshot})
+		s.sendEvent(c, TestEvent{Type: "status", Text: "Codex wire headers", Data: accountTestWireHeaders(req.Header)})
 	}
 	if err != nil {
 		return s.sendErrorAndEnd(c, fmt.Sprintf("Request failed: %s", err.Error()))
@@ -1599,7 +1601,7 @@ func (s *AccountTestService) emitGrokVideoResult(c *gin.Context, ctx context.Con
 			s.sendEvent(c, TestEvent{Type: "test_complete", Success: true})
 			return nil
 		}
-		return s.sendErrorAndEnd(c, fmt.Sprintf("Grok video content returned %d: %s", resp.StatusCode, truncateString(string(body), 300)))
+		return s.sendErrorAndEnd(c, fmt.Sprintf("Grok video content returned %d: %s", resp.StatusCode, string(body)))
 	}
 	ct := resp.Header.Get("Content-Type")
 	if ct == "" || strings.HasPrefix(ct, "application/octet-stream") {
@@ -1692,9 +1694,6 @@ User query:
 			text := strings.TrimSpace(part.Get("text").String())
 			if text == "" {
 				continue
-			}
-			if len(text) > 300 {
-				text = text[:300] + "..."
 			}
 			s.sendEvent(c, TestEvent{Type: "content", Text: text + "\n"})
 			return false
@@ -1843,9 +1842,6 @@ func (s *AccountTestService) testGrokSTT(c *gin.Context, ctx context.Context, ac
 	text := strings.TrimSpace(gjson.GetBytes(respBody, "text").String())
 	if text == "" {
 		text = strings.TrimSpace(string(respBody))
-		if len(text) > 200 {
-			text = text[:200] + "..."
-		}
 	}
 	s.sendEvent(c, TestEvent{Type: "content", Text: fmt.Sprintf("stt ok: %s\n", text)})
 	s.sendEvent(c, TestEvent{Type: "test_complete", Success: true})
@@ -1915,11 +1911,7 @@ func (s *AccountTestService) testGrokRealtime(c *gin.Context, ctx context.Contex
 		detail := dialErr.Error()
 		var hs *openAIWSHandshakeError
 		if errors.As(dialErr, &hs) && len(hs.Body) > 0 {
-			body := strings.TrimSpace(string(hs.Body))
-			if len(body) > 300 {
-				body = body[:300] + "..."
-			}
-			detail = fmt.Sprintf("%s body=%s", detail, body)
+			detail = fmt.Sprintf("%s body=%s", detail, strings.TrimSpace(string(hs.Body)))
 		}
 		if status > 0 {
 			return s.sendErrorAndEnd(c, fmt.Sprintf("Grok Realtime WS handshake failed (HTTP %d): %s", status, detail))
@@ -1940,9 +1932,6 @@ func (s *AccountTestService) testGrokRealtime(c *gin.Context, ctx context.Contex
 			eventType = "unknown"
 		}
 		preview := strings.TrimSpace(string(msg))
-		if len(preview) > 240 {
-			preview = preview[:240] + "..."
-		}
 		s.sendEvent(c, TestEvent{
 			Type: "content",
 			Text: fmt.Sprintf("realtime first event: type=%s payload=%s\n", eventType, preview),
@@ -2043,9 +2032,6 @@ func formatGrokImageTransportError(err error, hasSourceImage bool, payloadBytes 
 
 func formatGrokImagesAPIError(status int, body []byte, hasSourceImage bool) string {
 	msg := strings.TrimSpace(string(body))
-	if len(msg) > 800 {
-		msg = msg[:800] + "..."
-	}
 	prefix := fmt.Sprintf("Grok images API returned %d: %s", status, msg)
 	lower := strings.ToLower(msg)
 	if hasSourceImage && (strings.Contains(lower, "too small") || strings.Contains(lower, "at least 8")) {
@@ -2296,7 +2282,7 @@ func (s *AccountTestService) testOpenAICompactConnection(c *gin.Context, account
 	if credentialAccount.IsOpenAIAgentIdentity() {
 		authHeaders, authErr := buildAgentIdentityAuthenticationHeaders(ctx, s.accountRepo, s.agentIdentityWS, &s.agentIdentityTaskMu, credentialAccount)
 		if authErr != nil {
-			return s.sendErrorAndEnd(c, "Failed to build Agent Identity authentication")
+			return s.sendErrorAndEnd(c, "Failed to build Agent Identity authentication: "+authErr.Error())
 		}
 		for key, values := range authHeaders {
 			for _, value := range values {
@@ -2311,7 +2297,7 @@ func (s *AccountTestService) testOpenAICompactConnection(c *gin.Context, account
 		// 与真实转发一致：使用该账号的 Codex TUI 身份，账号级自定义 UA 经 ForceCodexCLI
 		// 策略过滤后作为管理员显式配置传入（同普通 OAuth 连接测试）。
 		if err := enforceCodexIdentityHeadersForAccountContext(req.Context(), req.Header, credentialAccount, codexAccountIdentityOverrideUA(credentialAccount)); err != nil {
-			return s.sendErrorAndEnd(c, "Codex identity policy unavailable")
+			return s.sendErrorAndEnd(c, "Codex identity policy unavailable: "+err.Error())
 		}
 	}
 	probeSessionID := compactProbeSessionID(account.ID)
@@ -2993,7 +2979,7 @@ func (s *AccountTestService) testOpenAIImageOAuth(c *gin.Context, ctx context.Co
 	if credentialAccount.IsOpenAIAgentIdentity() {
 		authHeaders, authErr := buildAgentIdentityAuthenticationHeaders(ctx, s.accountRepo, s.agentIdentityWS, &s.agentIdentityTaskMu, credentialAccount)
 		if authErr != nil {
-			return s.sendErrorAndEnd(c, "Failed to build Agent Identity authentication")
+			return s.sendErrorAndEnd(c, "Failed to build Agent Identity authentication: "+authErr.Error())
 		}
 		for key, values := range authHeaders {
 			for _, value := range values {
@@ -3008,7 +2994,7 @@ func (s *AccountTestService) testOpenAIImageOAuth(c *gin.Context, ctx context.Co
 	req.Header.Set("OpenAI-Beta", "responses=experimental")
 	canonical, identityErr := resolveCodexOutboundIdentityForAccountContext(req.Context(), credentialAccount, codexAccountIdentityOverrideUA(credentialAccount))
 	if identityErr != nil {
-		return s.sendErrorAndEnd(c, "Codex identity policy unavailable")
+		return s.sendErrorAndEnd(c, "Codex identity policy unavailable: "+identityErr.Error())
 	}
 	req.Header.Set("originator", canonical.originator)
 	req.Header.Set("User-Agent", canonical.userAgent)
@@ -3016,7 +3002,7 @@ func (s *AccountTestService) testOpenAIImageOAuth(c *gin.Context, ctx context.Co
 	// 与真实转发一致（同普通 OAuth 连接测试）：使用该账号的 Codex TUI 身份，账号级自定义 UA
 	// 经 ForceCodexCLI 策略过滤后作为管理员显式配置传入。
 	if err := enforceCodexIdentityHeadersForAccountContext(req.Context(), req.Header, credentialAccount, codexAccountIdentityOverrideUA(credentialAccount)); err != nil {
-		return s.sendErrorAndEnd(c, "Codex identity policy unavailable")
+		return s.sendErrorAndEnd(c, "Codex identity policy unavailable: "+err.Error())
 	}
 
 	proxyURL := ""
@@ -3040,11 +3026,7 @@ func (s *AccountTestService) testOpenAIImageOAuth(c *gin.Context, ctx context.Co
 	if resp.StatusCode >= 400 {
 		body, _ := io.ReadAll(io.LimitReader(resp.Body, 2<<20))
 		body = redactAgentIdentitySensitiveBodyForAccount(ctx, s.accountRepo, credentialAccount, body)
-		message := strings.TrimSpace(extractUpstreamErrorMessage(body))
-		if message == "" {
-			message = fmt.Sprintf("Responses API returned %d", resp.StatusCode)
-		}
-		return s.sendErrorAndEnd(c, message)
+		return s.sendErrorAndEnd(c, fmt.Sprintf("Responses API returned %d: %s", resp.StatusCode, strings.TrimSpace(string(body))))
 	}
 
 	body, err := io.ReadAll(resp.Body)
@@ -3058,11 +3040,19 @@ func (s *AccountTestService) testOpenAIImageOAuth(c *gin.Context, ctx context.Co
 		return s.sendErrorAndEnd(c, fmt.Sprintf("Failed to parse image response: %s", err.Error()))
 	}
 	if len(results) == 0 {
+		// The upstream error frame is reported as sent, not only its message.
+		if frame := accountTestImageErrorFrame(body); frame != "" {
+			return s.sendErrorAndEnd(c, "Responses API stream error: "+frame)
+		}
 		if upstreamErr := extractOpenAIImagesUpstreamError(body); upstreamErr != nil {
 			return s.sendErrorAndEnd(c, upstreamErr.clientMessage())
 		}
 		if textErr := openAIImagesTextFallbackError(body); textErr != nil {
-			return s.sendErrorAndEnd(c, textErr.clientMessage())
+			message := textErr.clientMessage()
+			if modelText := extractOpenAIImagesModelText(body); modelText != "" && modelText != message {
+				message += "\nModel text: " + modelText
+			}
+			return s.sendErrorAndEnd(c, message)
 		}
 		return s.sendErrorAndEnd(c, "No images returned from responses API")
 	}
@@ -3162,6 +3152,37 @@ func (s *AccountTestService) testOpenAIImageOAuthDirect(c *gin.Context, ctx cont
 	}
 	s.sendEvent(c, TestEvent{Type: "test_complete", Success: true})
 	return nil
+}
+
+// accountTestImageErrorFrame returns the first upstream error, failed or
+// incomplete event of an image stream exactly as it was sent.
+func accountTestImageErrorFrame(body []byte) string {
+	var frame string
+	forEachOpenAISSEDataPayload(string(body), func(payload []byte) {
+		if frame != "" || !gjson.ValidBytes(payload) {
+			return
+		}
+		switch gjson.GetBytes(payload, "type").String() {
+		case "error", "response.failed", "response.incomplete":
+			frame = strings.TrimSpace(string(payload))
+		}
+	})
+	return frame
+}
+
+// accountTestWireHeaders reports the request headers a Codex connection test
+// sent upstream, values verbatim (identity headers, ticket and cookies
+// included). The Authorization header is the account credential itself and
+// stays behind the account credential view.
+func accountTestWireHeaders(header http.Header) map[string]string {
+	out := make(map[string]string, len(header))
+	for name, values := range header {
+		if strings.EqualFold(name, "Authorization") {
+			continue
+		}
+		out[name] = strings.Join(values, ", ")
+	}
+	return out
 }
 
 // sendErrorAndEnd sends an error event and ends the stream

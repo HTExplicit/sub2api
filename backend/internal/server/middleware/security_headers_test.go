@@ -380,6 +380,12 @@ func TestEnhanceCSPPolicy(t *testing.T) {
 		assert.Equal(t, 1, countDirectiveValue(enhanced, "worker-src", TencentCaptchaWorkerSource))
 	})
 
+	t.Run("default_policy_allows_the_misans_font_service", func(t *testing.T) {
+		// The console theme loads MiSans from Xiaomi's official font service (stylesheet + font files).
+		assert.Equal(t, 1, countDirectiveValue(config.DefaultCSPPolicy, "style-src", "https://font.sec.miui.com"))
+		assert.Equal(t, 1, countDirectiveValue(config.DefaultCSPPolicy, "font-src", "https://cdn-file.hyperos.mi.com"))
+	})
+
 	t.Run("default_policy_already_carries_tencent_captcha_domains", func(t *testing.T) {
 		// 默认策略与中间件强制注入表必须同形，否则 config.example.yaml 会误导自建用户
 		for _, required := range requiredCSPDirectiveValues {

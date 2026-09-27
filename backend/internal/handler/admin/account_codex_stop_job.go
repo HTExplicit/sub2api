@@ -3,6 +3,7 @@ package admin
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"strconv"
 
 	"github.com/Wei-Shaw/sub2api/internal/pkg/response"
@@ -22,8 +23,8 @@ func (h *AccountHandler) BatchStopCodexTicketRenewal(c *gin.Context) {
 
 func (h *AccountHandler) submitCodexTicketStop(c *gin.Context, single bool) {
 	var req codexTicketHarvestRequest
-	if c.ShouldBindJSON(&req) != nil {
-		response.BadRequest(c, "请求格式不正确")
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.BadRequest(c, "请求格式不正确："+err.Error())
 		return
 	}
 	if single {
@@ -51,12 +52,12 @@ func (h *AccountHandler) submitCodexTicketStop(c *gin.Context, single bool) {
 		return
 	}
 	if len(accounts) != len(req.AccountIDs) {
-		response.BadRequest(c, "所选账号已发生变化")
+		response.BadRequest(c, fmt.Sprintf("所选账号已发生变化：请求 %d 个，找到 %d 个", len(req.AccountIDs), len(accounts)))
 		return
 	}
 	for _, account := range accounts {
 		if account.Platform != service.PlatformOpenAI || (account.Type != service.AccountTypeOAuth && account.Type != service.AccountTypeSetupToken) || account.IsShadow() {
-			response.BadRequest(c, "全部所选账号必须支持 Codex 路由续期")
+			response.BadRequest(c, fmt.Sprintf("全部所选账号必须支持 Codex 路由续期：账号 %d（%s）是 %s/%s，影子账号=%t", account.ID, account.Name, account.Platform, account.Type, account.IsShadow()))
 			return
 		}
 	}
@@ -76,23 +77,36 @@ func (h *AccountHandler) executeCodexTicketStop(ctx context.Context, raw json.Ra
 	var metadata struct {
 		Model string `json:"model_id"`
 	}
-	if json.Unmarshal(raw, &req) != nil || json.Unmarshal(item.Metadata, &metadata) != nil || metadata.Model == "" {
-		return accountJobFailed(item.ID, "payload_invalid")
+	if err := json.Unmarshal(raw, &req); err != nil {
+		return codexTicketJobFailure(item.ID, "payload_invalid", "decode the job payload: "+err.Error(), nil, false)
+	}
+	if err := json.Unmarshal(item.Metadata, &metadata); err != nil {
+		return codexTicketJobFailure(item.ID, "payload_invalid", "decode the item metadata: "+err.Error(), nil, false)
+	}
+	if metadata.Model == "" {
+		return codexTicketJobFailure(item.ID, "payload_invalid", "the item metadata has no model_id", nil, false)
 	}
 	id, ok := accountJobTarget(item)
-	if !ok || h.codexTicketGateway == nil {
-		return accountJobFailed(item.ID, "target_missing")
+	if !ok {
+		return codexTicketJobFailure(item.ID, "target_missing", "the job item has no target account", map[string]any{"model_id": metadata.Model}, false)
+	}
+	details := map[string]any{"account_id": id, "model_id": metadata.Model}
+	if h.codexTicketGateway == nil {
+		return codexTicketJobFailure(item.ID, "ticket_plugin_unavailable", "the Codex runtime gateway is not configured", details, false)
 	}
 	account, err := h.adminService.GetAccount(ctx, id)
-	if err != nil || account == nil || account.Platform != service.PlatformOpenAI || (account.Type != service.AccountTypeOAuth && account.Type != service.AccountTypeSetupToken) || account.IsShadow() {
-		return accountJobFailed(item.ID, "account_ineligible")
+	switch {
+	case err != nil:
+		return codexTicketJobFailure(item.ID, "account_ineligible", fmt.Sprintf("read account %d: %v", id, err), details, false)
+	case account == nil:
+		return codexTicketJobFailure(item.ID, "account_ineligible", fmt.Sprintf("account %d not found", id), details, false)
+	case account.Platform != service.PlatformOpenAI || (account.Type != service.AccountTypeOAuth && account.Type != service.AccountTypeSetupToken) || account.IsShadow():
+		return codexTicketJobFailure(item.ID, "account_ineligible", fmt.Sprintf("account %d is %s/%s (shadow=%t); only OpenAI OAuth/setup-token accounts renew Codex routes", id, account.Platform, account.Type, account.IsShadow()), details, false)
 	}
 	if err := h.codexTicketGateway.StopCodexTicketRenewal(ctx, id, []string{metadata.Model}); err != nil {
-		failure := accountJobFailed(item.ID, "stop_failed")
-		if ctx.Err() != nil {
-			failure.Status = service.AccountJobItemStatusCanceled
-		}
-		return failure
+		details["error"] = err.Error()
+		return codexTicketJobFailure(item.ID, "stop_failed", err.Error(), details, ctx.Err() != nil)
 	}
-	return accountJobSucceeded(item.ID, map[string]any{"account_id": id, "model_id": metadata.Model})
+	details["code"], details["message"] = "ticket_stopped", service.CodexTicketFailure("ticket_stopped").Message
+	return accountJobSucceeded(item.ID, details)
 }

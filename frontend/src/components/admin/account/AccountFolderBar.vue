@@ -78,8 +78,8 @@
             v-for="item in navigationItems"
             :key="item.value || 'all'"
             type="button"
-            class="flex min-h-10 shrink-0 items-center justify-between gap-2 rounded-md px-3 text-left text-sm transition-colors"
-            :class="activeFolder === item.value ? 'font-semibold text-primary-700 dark:text-primary-300 border-b-2 border-primary-500' : 'text-gray-600 hover:bg-gray-100 dark:text-dark-300 dark:hover:bg-dark-800'"
+            class="flex min-h-8 shrink-0 items-center justify-between gap-2 rounded-lg px-2 text-left text-sm transition-colors"
+            :class="activeFolder === item.value ? 'bg-primary-50 font-medium text-primary-700 dark:bg-primary-900/20 dark:text-primary-300' : 'text-gray-600 hover:bg-gray-100 dark:text-dark-300 dark:hover:bg-dark-700'"
             data-test="desktop-taxonomy-option"
             @click="emit('select', item.value)"
           >

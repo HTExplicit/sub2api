@@ -181,18 +181,18 @@
 
     <!-- OpenAI Codex accounts: ticket status; usage querying remains OAuth-only. -->
     <template v-else-if="account.platform === 'openai' && (account.type === 'oauth' || account.type === 'setup-token')">
-      <div v-if="codexTurnTickets.length" class="mb-1 space-y-0.5">
+      <div v-if="codexTurnTickets.length" class="mb-1 max-w-[15rem] space-y-0.5">
         <div
           v-for="ticket in codexTurnTickets"
           :key="ticket.model"
-          class="flex items-center gap-1 text-[10px] leading-4"
+          class="flex flex-wrap items-center gap-x-1 whitespace-normal break-words text-[10px] leading-4"
         >
           <span class="truncate font-medium text-gray-500 dark:text-gray-400" :title="ticket.model">{{ shortCodexTicketModel(ticket.model) }}</span>
           <span v-if="ticket.ready" class="text-emerald-600 dark:text-emerald-400">{{ formatCodexTicketRemaining(ticket.remaining_seconds) }}</span>
           <span v-else-if="ticket.blocked" class="text-amber-600 dark:text-amber-400">{{ t('admin.accounts.openai.codexTurnTicketPaused') }}</span>
           <span v-else class="text-gray-500">{{ t('admin.accounts.openai.codexTurnTicketMissing') }}</span>
           <span :title="[ticket.last_result?.message, ticket.last_attempt_at, ticket.next_attempt_at].filter(Boolean).join(' · ')">{{ t('admin.accounts.tickets.states.' + (ticket.renewal_state || 'idle')) }}</span>
-          <span v-if="ticket.last_result && !ticket.last_result.success" class="text-red-600" :title="ticket.last_result.message">{{ ticket.last_result.http_status ? 'HTTP ' + ticket.last_result.http_status : ticket.last_result.message }} {{ ticket.last_result.observed_length || '' }}</span>
+          <span v-if="ticket.last_result && !ticket.last_result.success" class="text-red-600" :title="codexTicketResultTitle(ticket.last_result)">{{ ticket.last_result.http_status ? 'HTTP ' + ticket.last_result.http_status : ticket.last_result.message || ticket.last_result.code }} {{ ticket.last_result.observed_length || '' }}</span>
           <time v-if="ticket.next_attempt_at" :datetime="ticket.next_attempt_at" :title="t('admin.accounts.tickets.next')">{{ new Date(ticket.next_attempt_at).toLocaleTimeString() }}</time>
         </div>
       </div>
@@ -585,7 +585,7 @@
             />
           </svg>
           <span
-            class="pointer-events-none absolute left-0 top-full z-50 mt-1 w-80 whitespace-normal break-words rounded bg-gray-900 px-3 py-2 text-xs leading-relaxed text-white opacity-0 shadow-lg transition-opacity group-hover:opacity-100 dark:bg-gray-700"
+            class="theme-dark-surface pointer-events-none absolute left-0 top-full z-50 mt-1 w-80 whitespace-normal break-words rounded bg-gray-900 px-3 py-2 text-xs leading-relaxed text-white opacity-0 shadow-lg transition-opacity group-hover:opacity-100 dark:bg-gray-700"
           >
             <div class="font-semibold mb-1">{{ t('admin.accounts.gemini.quotaPolicy.title') }}</div>
             <div class="mb-2 text-gray-300">{{ t('admin.accounts.gemini.quotaPolicy.note') }}</div>
@@ -1042,6 +1042,12 @@ function formatCodexTicketRemaining(seconds: number) {
   const m = Math.floor(total / 60)
   const s = total % 60
   return `${m}m${String(s).padStart(2, '0')}s`
+}
+
+// Inline shows the code or short sentence; the title carries the full record:
+// code, HTTP status, returned model, catalog sentence and the raw upstream text.
+function codexTicketResultTitle(result: { code: string; message?: string; error?: string; http_status?: number; response_model?: string }) {
+  return [result.code, result.http_status ? `HTTP ${result.http_status}` : '', result.response_model, result.message, result.error].filter(Boolean).join(' · ')
 }
 
 function quotaWindowLabel(minutes: number): string {

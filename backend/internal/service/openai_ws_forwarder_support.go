@@ -166,9 +166,9 @@ func (s *OpenAIGatewayService) performOpenAIWSGeneratePrewarm(
 				return newOpenAIModelNotSupportedFailoverError(lease.HandshakeHeaders(), message)
 			}
 			if canFallback {
-				return wrapOpenAIWSFallback("prewarm_"+fallbackReason, errors.New(errMsg))
+				return wrapOpenAIWSFallback("prewarm_"+fallbackReason, newOpenAIWSUpstreamEventError(errMsg, message))
 			}
-			return wrapOpenAIWSFallback("prewarm_error_event", errors.New(errMsg))
+			return wrapOpenAIWSFallback("prewarm_error_event", newOpenAIWSUpstreamEventError(errMsg, message))
 		}
 		if eventType == "response.failed" && account.IsOpenAICompatible() && isOpenAIModelNotSupportedPayload(message) {
 			prewarmModel, _ := reqBody["model"].(string)

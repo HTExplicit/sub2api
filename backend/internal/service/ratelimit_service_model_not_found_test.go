@@ -14,10 +14,11 @@ import (
 )
 
 type modelNotFoundRateLimitCall struct {
-	accountID int64
-	scope     string
-	resetAt   time.Time
-	reason    string
+	accountID       int64
+	scope           string
+	resetAt         time.Time
+	reason          string
+	upstreamMessage string
 }
 
 type modelNotFoundAccountRepoStub struct {
@@ -40,6 +41,9 @@ func (r *modelNotFoundAccountRepoStub) SetModelRateLimit(ctx context.Context, id
 	}
 	if len(reason) > 0 {
 		call.reason = reason[0]
+	}
+	if len(reason) > 1 {
+		call.upstreamMessage = reason[1]
 	}
 	r.modelRateLimitCalls = append(r.modelRateLimitCalls, call)
 	return r.modelRateLimitErr
@@ -66,6 +70,7 @@ func TestRateLimitService_HandleUpstreamError_ModelNotFoundUsesModelRateLimit(t 
 	require.Equal(t, account.ID, call.accountID)
 	require.Equal(t, "gpt-5.4", call.scope)
 	require.Equal(t, upstreamModelNotFoundReason, call.reason)
+	require.Equal(t, "model not found", call.upstreamMessage)
 	require.WithinDuration(t, time.Now().Add(upstreamModelNotFoundCooldown), call.resetAt, 5*time.Second)
 }
 

@@ -502,12 +502,15 @@ func (s *OpenAIGatewayService) handleOpenAIAccountUpstreamError(ctx context.Cont
 		case http.StatusUnauthorized, http.StatusForbidden, http.StatusTooManyRequests:
 			// Authentication and quota responses are handled exclusively by the
 			// request failover state: no same-account replay, runtime cooldown, then
-			// switch. Do not persist legacy schedulable/error state here.
+			// switch. Do not persist legacy schedulable/error state here; only the
+			// upstream's own error text is kept in a non-scheduling field.
+			s.recordOpenAILastUpstreamError(ctx, account, statusCode, responseBody)
 			return false
 		}
 	}
 	if isOpenAIOAuthAccount(account) && (statusCode == http.StatusUnauthorized || statusCode == http.StatusForbidden) &&
 		strings.EqualFold(strings.TrimSpace(extractUpstreamErrorMessage(responseBody)), "credential or quota failure") {
+		s.recordOpenAILastUpstreamError(ctx, account, statusCode, responseBody)
 		return false
 	}
 	stateCtx, cancel := openAIAccountStateContext(ctx)

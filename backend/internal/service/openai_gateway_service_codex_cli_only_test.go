@@ -493,18 +493,21 @@ func TestOpenAIGatewayService_Forward_RecordsSafeInstructionsRequiredDiagnostic(
 	require.True(t, ok)
 	require.Len(t, events, 1)
 	require.Equal(t, "request_rejected", events[0].Kind)
-	require.Equal(t, OpenAIRequestRejectedClientMessage, events[0].Message)
+	// The client terminal stays fixed; Ops keeps the upstream's own message.
+	require.Equal(t, "Missing required parameter: 'instructions'", events[0].Message)
 	require.Equal(t, http.StatusBadRequest, events[0].UpstreamStatusCode)
 	encoded, diagnostic := continuationDiagnosticTestEncoded(t, events[0].ContinuationDiagnostic)
 	require.Equal(t, "request_validation", diagnostic.Get("classification").String())
 	require.Equal(t, "invalid_request_error", diagnostic.Get("upstream_error.error_type.value").String())
 	require.Equal(t, "missing_required_parameter", diagnostic.Get("upstream_error.error_code.value").String())
 	require.Equal(t, "instructions", diagnostic.Get("upstream_error.error_param.value").String())
-	require.False(t, diagnostic.Get("upstream_error.message.value").Exists())
-	require.NotContains(t, encoded, "Missing required parameter")
-	require.NotContains(t, encoded, "secret-token")
+	require.Equal(t, "Missing required parameter: 'instructions'", diagnostic.Get("upstream_error.message.value").String())
+	require.Equal(t, "pc-forward", diagnostic.Get("incoming.prompt_cache.value").String())
+	require.NotContains(t, encoded, "secret-token", "fields outside the diagnostic projection are not copied")
 
-	require.False(t, logSink.ContainsMessageAtLevel("OpenAI 上游返回 Instructions are required，已记录请求详情用于排查", "warn"))
+	// Same server log as upstream v0.2.8 for an instructions-required rejection.
+	require.True(t, logSink.ContainsMessageAtLevel("OpenAI 上游返回 Instructions are required，已记录请求详情用于排查", "warn"))
+	require.True(t, logSink.ContainsFieldValue("request_model", "gpt-5.1-codex"))
 	require.False(t, logSink.ContainsField("request_body_preview"))
 }
 

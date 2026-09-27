@@ -90,7 +90,8 @@ func TestAccountConnectionStreamContract(t *testing.T) {
 				require.Equal(t, err.Error(), errorText, "the event carries the same text as the returned failure")
 			}
 			if tc.name == "responses_failed_verbatim" {
-				require.Equal(t, "You have no credits remaining.", errorText)
+				// The whole upstream error object is reported, led by its message.
+				require.Equal(t, `You have no credits remaining. {"code":"credit_balance_exhausted","message":"You have no credits remaining."}`, errorText)
 			}
 		})
 	}

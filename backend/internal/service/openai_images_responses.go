@@ -45,7 +45,18 @@ type OpenAIImagesUpstreamError struct {
 	// with words instead of an image"), not the account — see
 	// shouldCoolOpenAIImagesToolForError.
 	SynthesizedFromModelText bool
+	// ModelText is the model's complete plain-text answer behind an error
+	// inferred from it. Message keeps the bounded client text; Ops and the
+	// administrator's connection test see ModelText.
+	ModelText string
 }
+
+// openAIImagesModelTextClientLimit is the window of model text that is
+// classified and returned to the client; administrators get the full text.
+const openAIImagesModelTextClientLimit = 600
+
+// openAIImagesModelTextOpsLimit bounds the streamed model text kept for Ops.
+const openAIImagesModelTextOpsLimit = 64 << 10
 
 func (e *OpenAIImagesUpstreamError) Error() string {
 	if e == nil {
@@ -86,6 +97,17 @@ func (e *OpenAIImagesUpstreamError) clientErrorType() string {
 		return trimmed
 	}
 	return "upstream_error"
+}
+
+// opsMessage is what administrators see for this error: the model's complete
+// words when the error was inferred from them, otherwise the client message.
+func (e *OpenAIImagesUpstreamError) opsMessage() string {
+	if e != nil {
+		if text := strings.TrimSpace(e.ModelText); text != "" {
+			return sanitizeUpstreamErrorMessage(text)
+		}
+	}
+	return e.clientMessage()
 }
 
 func (e *OpenAIImagesUpstreamError) clientMessage() string {
@@ -685,13 +707,9 @@ func extractOpenAIImagesModelText(body []byte) string {
 			}
 		}
 	})
-	refusal := strings.TrimSpace(b.String())
-	// 截断过长文本，避免把整段模型输出塞进错误响应。
-	const maxRefusal = 600
-	if len(refusal) > maxRefusal {
-		refusal = refusal[:maxRefusal]
-	}
-	return refusal
+	// The complete text: callers that answer the client bound it themselves
+	// (openAIImagesTextFallbackErrorForWindow); Ops and connection tests keep it.
+	return strings.TrimSpace(b.String())
 }
 
 func isOpenAIImagesContentPolicyRefusal(text string) bool {
@@ -708,10 +726,19 @@ func isOpenAIImagesContentPolicyRefusal(text string) bool {
 	return false
 }
 
+// openAIImagesModelTextClientWindow cuts model text to the byte window the
+// client answer has always used; callers trim it afterwards, as before.
+func openAIImagesModelTextClientWindow(text string) string {
+	if len(text) > openAIImagesModelTextClientLimit {
+		return text[:openAIImagesModelTextClientLimit]
+	}
+	return text
+}
+
 // extractOpenAIImagesModelRefusal returns only text with an explicit safety or
 // moderation signal. Plain prompt suggestions are capability failures instead.
 func extractOpenAIImagesModelRefusal(body []byte) string {
-	text := extractOpenAIImagesModelText(body)
+	text := openAIImagesModelTextClientWindow(extractOpenAIImagesModelText(body))
 	if !isOpenAIImagesContentPolicyRefusal(text) {
 		return ""
 	}
@@ -719,20 +746,26 @@ func extractOpenAIImagesModelRefusal(body []byte) string {
 }
 
 func openAIImagesTextFallbackError(body []byte) *OpenAIImagesUpstreamError {
-	return openAIImagesTextFallbackErrorForText(extractOpenAIImagesModelText(body))
+	modelText := extractOpenAIImagesModelText(body)
+	return openAIImagesTextFallbackErrorForWindow(openAIImagesModelTextClientWindow(modelText), modelText)
 }
 
-func openAIImagesTextFallbackErrorForText(text string) *OpenAIImagesUpstreamError {
-	text = strings.TrimSpace(text)
+// openAIImagesTextFallbackErrorForWindow classifies and answers the client from
+// window exactly as the gateway always has; modelText is the complete text
+// kept in ModelText for administrators.
+func openAIImagesTextFallbackErrorForWindow(window, modelText string) *OpenAIImagesUpstreamError {
+	text := strings.TrimSpace(window)
 	if text == "" {
 		return nil
 	}
+	modelText = strings.TrimSpace(modelText)
 	if isOpenAIImagesContentPolicyRefusal(text) {
 		return &OpenAIImagesUpstreamError{
 			StatusCode: http.StatusBadRequest,
 			ErrorType:  "image_generation_user_error",
 			Code:       "content_policy_violation",
 			Message:    sanitizeUpstreamErrorMessage(text),
+			ModelText:  modelText,
 		}
 	}
 	return &OpenAIImagesUpstreamError{
@@ -744,6 +777,7 @@ func openAIImagesTextFallbackErrorForText(text string) *OpenAIImagesUpstreamErro
 		// good enough to fail this turn over to another account, not evidence that
 		// this account's image tool is down for the next 30 minutes.
 		SynthesizedFromModelText: true,
+		ModelText:                modelText,
 	}
 }
 
@@ -779,11 +813,10 @@ func summarizeOpenAIImagesNoOutputBody(body []byte) string {
 	if incompleteReason != "" {
 		fmt.Fprintf(&b, " incomplete_reason=%s", incompleteReason)
 	}
-	// 附 body 截断片段（脱敏后），上限 1KB，避免日志膨胀。
+	// The body itself, up to what Ops stores for an upstream detail.
 	snippet := strings.TrimSpace(string(body))
-	const maxSnippet = 1024
-	if len(snippet) > maxSnippet {
-		snippet = snippet[:maxSnippet] + "...(truncated)"
+	if len(snippet) > opsMaxStoredErrorBodyBytes {
+		snippet = truncateString(snippet, opsMaxStoredErrorBodyBytes) + "...(truncated)"
 	}
 	if snippet != "" {
 		fmt.Fprintf(&b, " body=%s", snippet)
@@ -1364,7 +1397,7 @@ func (s *OpenAIGatewayService) handleOpenAIImagesOAuthNonStreamingResponse(
 			return OpenAIUsage{}, 0, nil, upstreamErr
 		}
 		if textFallbackErr := openAIImagesTextFallbackError(body); textFallbackErr != nil {
-			setOpsUpstreamError(c, textFallbackErr.clientStatusCode(), textFallbackErr.clientMessage(), summarizeOpenAIImagesNoOutputBody(body))
+			setOpsUpstreamError(c, textFallbackErr.clientStatusCode(), textFallbackErr.opsMessage(), summarizeOpenAIImagesNoOutputBody(body))
 			if !IsOpenAIImagesRetryableUpstreamError(textFallbackErr) {
 				writeOpenAIImagesUpstreamErrorResponse(c, textFallbackErr)
 			}
@@ -1427,12 +1460,15 @@ func (s *OpenAIGatewayService) handleOpenAIImagesOAuthStreamingResponse(
 	pendingResults := make([]openAIResponsesImageResult, 0, 1)
 	pendingSeen := make(map[string]struct{})
 	streamMeta := openAIResponsesImageResult{Model: strings.TrimSpace(fallbackModel)}
+	// fallbackText keeps the streamed model text for Ops. The client answer
+	// uses its first openAIImagesModelTextClientLimit bytes, the exact text the
+	// gateway accumulated before.
 	var fallbackText strings.Builder
 	appendFallbackText := func(text string) {
-		if text == "" || fallbackText.Len() >= 600 {
+		if text == "" || fallbackText.Len() >= openAIImagesModelTextOpsLimit {
 			return
 		}
-		remaining := 600 - fallbackText.Len()
+		remaining := openAIImagesModelTextOpsLimit - fallbackText.Len()
 		if len(text) > remaining {
 			text = text[:remaining]
 		}
@@ -1531,13 +1567,14 @@ func (s *OpenAIGatewayService) handleOpenAIImagesOAuthStreamingResponse(
 			}
 			reconcileOpenAIResponsesImageResultSizes(finalResults, nil)
 			if len(finalResults) == 0 {
-				textFallbackErr := openAIImagesTextFallbackErrorForText(fallbackText.String())
+				streamedText := fallbackText.String()
+				textFallbackErr := openAIImagesTextFallbackErrorForWindow(openAIImagesModelTextClientWindow(streamedText), streamedText)
 				if textFallbackErr == nil {
 					textFallbackErr = openAIImagesTextFallbackError(dataBytes)
 				}
 				if textFallbackErr != nil {
 					retryable := IsOpenAIImagesRetryableUpstreamError(textFallbackErr)
-					setOpsUpstreamError(c, textFallbackErr.clientStatusCode(), textFallbackErr.clientMessage(), summarizeOpenAIImagesNoOutputBody(dataBytes))
+					setOpsUpstreamError(c, textFallbackErr.clientStatusCode(), textFallbackErr.opsMessage(), summarizeOpenAIImagesNoOutputBody(dataBytes))
 					if !retryable && !clientDisconnected {
 						s.tryWriteOpenAIImagesStreamEvent(c, flusher, &clientDisconnected, &lastDownstreamWriteAt, "error", buildOpenAIImagesStreamErrorBodyFromUpstream(textFallbackErr))
 					}
@@ -1868,7 +1905,7 @@ func (s *OpenAIGatewayService) forwardOpenAIImagesOAuth(
 	resp, err := s.doOpenAICodexUpstream(upstreamReq, account, proxyURL)
 	SetOpsLatencyMs(c, OpsUpstreamLatencyMsKey, time.Since(upstreamStart).Milliseconds())
 	if err != nil {
-		return nil, s.handleOpenAIUpstreamTransportError(upstreamCtx, c, account, err, false)
+		return nil, s.handleOpenAIImagesUpstreamTransportError(upstreamCtx, c, account, err, upstreamReq.URL.String())
 	}
 	if resp.StatusCode >= 400 {
 		respBody := s.readUpstreamErrorBody(resp)

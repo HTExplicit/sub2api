@@ -3,7 +3,7 @@ package service
 import (
 	"context"
 	"encoding/json"
-	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"slices"
@@ -14,6 +14,25 @@ import (
 	extensionv1 "github.com/Wei-Shaw/sub2api/internal/nativeapi"
 	"golang.org/x/net/http/httpguts"
 )
+
+// NativeCodexResultError carries a result code returned by the native Codex
+// runtime (routing_stale, ticket_missing, ...) and the runtime's own reason.
+// It still matches ErrNativeCodexRuntimeUnavailable with errors.Is.
+type NativeCodexResultError struct {
+	Operation string
+	Code      string
+	Message   string
+}
+
+func (e *NativeCodexResultError) Error() string {
+	text := fmt.Sprintf("native Codex %s returned %s (%s)", e.Operation, e.Code, CodexTicketFailure(e.Code).Message)
+	if e.Message != "" {
+		text += ": " + e.Message
+	}
+	return text
+}
+
+func (e *NativeCodexResultError) Unwrap() error { return ErrNativeCodexRuntimeUnavailable }
 
 func (r *NativeCodexRuntime) ApplyRequestHeaders(ctx context.Context, account *Account, model string, headers http.Header) error {
 	if account == nil || headers == nil || !account.IsOpenAIOAuthLike() {
@@ -28,11 +47,16 @@ func (r *NativeCodexRuntime) ApplyRequestHeaders(ctx context.Context, account *A
 		return err
 	}
 	var changes extensionv1.CodexRoutingInjection
-	if result.Code != "" || json.Unmarshal(result.Payload, &changes) != nil {
-		return ErrNativeCodexRuntimeUnavailable
+	if result.Code != "" {
+		return &NativeCodexResultError{Operation: "inject", Code: result.Code, Message: result.Message}
 	}
-	if changes.Qualification != nil && !changes.Qualification.Valid(time.Now(), account.ID, CodexTicketAccountIdentity(account), model) {
-		return ErrNativeCodexRuntimeUnavailable
+	if err := json.Unmarshal(result.Payload, &changes); err != nil {
+		return fmt.Errorf("%w: decode the inject result: %v", ErrNativeCodexRuntimeUnavailable, err)
+	}
+	if changes.Qualification != nil {
+		if problem := changes.Qualification.Problem(time.Now(), account.ID, CodexTicketAccountIdentity(account), model); problem != "" {
+			return fmt.Errorf("%w: inject returned an unusable route qualification: %s", ErrNativeCodexRuntimeUnavailable, problem)
+		}
 	}
 	projected, seen := headers.Clone(), map[string]bool{}
 	for name, value := range changes.Headers {
@@ -43,7 +67,7 @@ func (r *NativeCodexRuntime) ApplyRequestHeaders(ctx context.Context, account *A
 			blocked = true
 		}
 		if blocked || seen[lower] || !httpguts.ValidHeaderFieldName(name) || !httpguts.ValidHeaderFieldValue(value) {
-			return errors.New("invalid native Codex request header")
+			return fmt.Errorf("invalid native Codex request header %q (blocked=%t, duplicate=%t)", name, blocked, seen[lower])
 		}
 		seen[lower] = true
 		projected.Set(name, value)

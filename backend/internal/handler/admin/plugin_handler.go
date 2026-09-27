@@ -26,10 +26,30 @@ const pluginUISessionTTL = 30 * time.Minute
 // PluginHandler 提供插件安装、生命周期、配置和隔离 UI 资源接口。
 type PluginHandler struct {
 	manager *service.PluginManager
+	retired *service.NativeFeatureBootstrap
 }
 
 func NewPluginHandler(manager *service.PluginManager) *PluginHandler {
 	return &PluginHandler{manager: manager}
+}
+
+// SetRetiredPlugins attaches the read-only view of retired first-party
+// installations, which the managed plugin list never contains.
+func (h *PluginHandler) SetRetiredPlugins(retired *service.NativeFeatureBootstrap) {
+	h.retired = retired
+}
+
+// ListRetired returns the retired first-party installations, their retirement
+// receipt and decrypted saved configuration. It is read-only.
+// GET /api/v1/admin/plugins/retired
+func (h *PluginHandler) ListRetired(c *gin.Context) {
+	c.Header("Cache-Control", "private, no-store")
+	view, err := h.retired.RetiredPlugins(c.Request.Context())
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	response.Success(c, view)
 }
 
 func (h *PluginHandler) List(c *gin.Context) {

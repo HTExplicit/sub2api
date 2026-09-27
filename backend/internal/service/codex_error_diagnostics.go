@@ -1,40 +1,58 @@
 package service
 
 import (
-	"context"
 	"encoding/json"
 )
 
-// CodexErrorDiagnostic contains only host-sanitized structural facts. Request
-// bodies, headers, error messages, URLs and account names never enter the UI.
+// CodexErrorDiagnostic projects one persisted upstream attempt that carries a
+// continuation diagnostic, together with that attempt's own context. The
+// administrator sees every stored record, including the bounded original values
+// kept inside the diagnostic.
 type CodexErrorDiagnostic struct {
-	AccountID  int64                         `json:"account_id"`
-	Attempt    int                           `json:"attempt"`
-	Diagnostic *OpenAIContinuationDiagnostic `json:"diagnostic"`
+	AccountID          int64                         `json:"account_id"`
+	AccountName        string                        `json:"account_name,omitempty"`
+	Platform           string                        `json:"platform,omitempty"`
+	Attempt            int                           `json:"attempt"`
+	Kind               string                        `json:"kind,omitempty"`
+	UpstreamStatusCode int                           `json:"upstream_status_code,omitempty"`
+	UpstreamRequestID  string                        `json:"upstream_request_id,omitempty"`
+	Message            string                        `json:"message,omitempty"`
+	AtUnixMs           int64                         `json:"at_unix_ms,omitempty"`
+	Diagnostic         *OpenAIContinuationDiagnostic `json:"diagnostic"`
 }
 
-func ProjectCodexErrorDiagnostics(ctx context.Context, detail *OpsErrorLogDetail, readAccount func(context.Context, int64) (*Account, error)) []CodexErrorDiagnostic {
+// ProjectCodexErrorDiagnostics returns every stored attempt diagnostic of one
+// Ops error. The stored upstream_errors document is already bounded by the Ops
+// queue limits, so no further count or account-state filter applies.
+func ProjectCodexErrorDiagnostics(detail *OpsErrorLogDetail) []CodexErrorDiagnostic {
 	result := make([]CodexErrorDiagnostic, 0)
-	if detail == nil || readAccount == nil || len(detail.UpstreamErrors) > 4<<20 {
+	if detail == nil {
 		return result
 	}
 	var events []OpsUpstreamErrorEvent
-	if json.Unmarshal([]byte(detail.UpstreamErrors), &events) != nil || len(events) > 128 {
+	if json.Unmarshal([]byte(detail.UpstreamErrors), &events) != nil {
 		return result
 	}
 	for index, event := range events {
-		if event.AccountID <= 0 || event.ContinuationDiagnostic == nil {
+		if event.ContinuationDiagnostic == nil {
 			continue
 		}
-		// Scope comes from the persisted event and current account, never the UI
-		// payload. Deleted accounts remain visible in ordinary host history only.
-		account, err := readAccount(ctx, event.AccountID)
-		if err != nil || account == nil || account.ID != event.AccountID || account.Platform != PlatformOpenAI {
+		diagnostic := sanitizeOpenAIContinuationDiagnostic(event.ContinuationDiagnostic)
+		if diagnostic == nil {
 			continue
 		}
-		if safe := sanitizeOpenAIContinuationDiagnostic(event.ContinuationDiagnostic); safe != nil {
-			result = append(result, CodexErrorDiagnostic{event.AccountID, index + 1, safe})
-		}
+		result = append(result, CodexErrorDiagnostic{
+			AccountID:          event.AccountID,
+			AccountName:        event.AccountName,
+			Platform:           event.Platform,
+			Attempt:            index + 1,
+			Kind:               event.Kind,
+			UpstreamStatusCode: event.UpstreamStatusCode,
+			UpstreamRequestID:  event.UpstreamRequestID,
+			Message:            event.Message,
+			AtUnixMs:           event.AtUnixMs,
+			Diagnostic:         diagnostic,
+		})
 	}
 	return result
 }

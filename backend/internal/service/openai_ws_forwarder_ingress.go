@@ -557,6 +557,13 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 				logOpenAIWSModeInfo("refusal_recovery_buffer_limit account_id=%d transport=websocket", account.ID)
 			},
 		)
+		refusalOutput.SetRewriteObserver(func(evidence openAIRefusalEvidence) {
+			recordOpenAIRefusalRecovery(ctx, c, account, "websocket", true, false, openAIRefusalActionRewritten, evidence)
+		})
+		// Bridge turns write through this output, which may hold or replace a
+		// frame; failures are marked when the client actually receives them.
+		refusalOutput.SetDeliveryObserver(func(payload []byte) { markOpenAIWSDeliveredFailure(c, payload) })
+		c.Set(openAIWSDeliveryMarksFailuresKey, true)
 		writeClientMessage = func(message []byte) error {
 			return refusalOutput.Write(ctx, coderws.MessageText, message)
 		}
@@ -854,6 +861,20 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 			logOpenAIWSModeInfo("ingress_replay_buffer_limit account_id=%d transport=websocket", account.ID)
 		},
 	)
+	refusalOutput.SetRewriteObserver(func(evidence openAIRefusalEvidence) {
+		recordOpenAIRefusalRecovery(ctx, c, account, "websocket", true, false, openAIRefusalActionRewritten, evidence)
+	})
+	// Upstream v0.2.8 marks every error/response.failed event the client
+	// receives. Frames may be held for the replay decision, so they are marked
+	// on delivery, with the upstream payload behind a capacity-shed rewrite.
+	capacityShedOriginals := make(map[string][]byte)
+	refusalOutput.SetDeliveryObserver(func(payload []byte) {
+		if original, ok := capacityShedOriginals[string(payload)]; ok {
+			delete(capacityShedOriginals, string(payload))
+			payload = original
+		}
+		markOpenAIWSDeliveredFailure(c, payload)
+	})
 	writeClientMessage = func(message []byte) error {
 		return refusalOutput.Write(ctx, coderws.MessageText, message)
 	}
@@ -1185,7 +1206,7 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 			rawEventType, _, _ := parseOpenAIWSEventEnvelope(rawUpstreamMessage)
 			if rawEventType == "error" || rawEventType == "response.failed" {
 				if failoverErr, ok := s.openAIBudgetExceededTerminalFailover(
-					ctx, account, lease.HandshakeHeaders(), rawUpstreamMessage,
+					ctx, c, account, lease.HandshakeHeaders(), rawUpstreamMessage, true, turn == 1 && !downstreamOutputStarted(),
 				); ok {
 					lease.MarkBroken()
 					replaySafe := turn == 1 && !downstreamOutputStarted()
@@ -1344,6 +1365,7 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 					_ = s.handleOpenAIAccountUpstreamError(ctx, account, http.StatusBadRequest, nil, upstreamMessage, canonicalModel)
 					if !downstreamOutputStarted() {
 						lease.MarkBroken()
+						s.recordOpenAIWSModelNotSupportedAttempt(c, account, lease.HandshakeHeaders(), upstreamMessage)
 						return nil, newOpenAIModelNotSupportedFailoverError(lease.HandshakeHeaders(), upstreamMessage)
 					}
 				}
@@ -1392,6 +1414,7 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 					_ = s.handleOpenAIAccountUpstreamError(ctx, account, http.StatusBadRequest, nil, upstreamMessage, canonicalModel)
 					if !downstreamOutputStarted() {
 						lease.MarkBroken()
+						s.recordOpenAIWSModelNotSupportedAttempt(c, account, lease.HandshakeHeaders(), upstreamMessage)
 						return nil, newOpenAIModelNotSupportedFailoverError(lease.HandshakeHeaders(), upstreamMessage)
 					}
 				}
@@ -1432,6 +1455,10 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 				if eventType == "error" || eventType == "response.failed" {
 					if rewritten, changed := sanitizeOpenAICapacityShedErrorCodeForClient(clientMessage); changed {
 						clientMessage = rewritten
+						if len(capacityShedOriginals) >= 16 {
+							clear(capacityShedOriginals)
+						}
+						capacityShedOriginals[string(clientMessage)] = append([]byte(nil), upstreamMessage...)
 					}
 				}
 				if err := writeClientMessage(clientMessage); err != nil {

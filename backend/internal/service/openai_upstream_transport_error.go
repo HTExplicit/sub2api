@@ -71,6 +71,12 @@ func classifyUpstreamTransportError(err error) upstreamTransportErrorClass {
 	if err == nil {
 		return upstreamTransportErrorClass{}
 	}
+	// A Codex route refusal is never a proxy or network fault. Its text names
+	// the concrete reason, which can quote an earlier network error, so it must
+	// not reach the markers below; it stays transient as it always was.
+	if errors.Is(err, errCodexRoutingUnavailable) || errors.Is(err, ErrOpenAICodexTicketUnavailable) {
+		return upstreamTransportErrorClass{}
+	}
 
 	// — Typed checks (preferred) ——————————————————————————————————————————————
 	if errors.Is(err, syscall.ECONNREFUSED) ||

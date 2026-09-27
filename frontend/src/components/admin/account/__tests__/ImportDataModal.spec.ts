@@ -73,6 +73,7 @@ describe('ImportDataModal', () => {
       uniform_settings: {},
     })
     expect(wrapper.find('[data-test="import-preview"]').exists()).toBe(true)
+    expect(wrapper.get('[data-test="import-preview-name"]').text()).toBe('Account A')
     await wrapper.get('#account-import-job-form').trigger('submit')
     await flushPromises()
 

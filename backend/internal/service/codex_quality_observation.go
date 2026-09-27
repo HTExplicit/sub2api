@@ -3,12 +3,14 @@ package service
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"io"
 	"net/http"
 	"slices"
 	"strings"
 	"sync"
 	"time"
+	"unicode/utf8"
 
 	extensionv1 "github.com/Wei-Shaw/sub2api/internal/nativeapi"
 	"github.com/klauspost/compress/zstd"
@@ -17,7 +19,7 @@ import (
 
 func codexQualityWireFields(req *http.Request) (string, string, error) {
 	if req == nil {
-		return "", "", ErrCodexQualityUnavailable
+		return "", "", codexQualityUnavailable("no outbound request")
 	}
 	// Reasoning recovery deliberately clears GetBody to prevent transparent POST
 	// replay. Inspect the final encoded body without restoring that capability.
@@ -30,11 +32,11 @@ func codexQualityWireFields(req *http.Request) (string, string, error) {
 			if body != nil {
 				_ = body.Close()
 			}
-			return "", "", ErrCodexQualityUnavailable
+			return "", "", codexQualityUnavailable("copy the outbound body: %v", err)
 		}
 	}
 	if body == nil {
-		return "", "", ErrCodexQualityUnavailable
+		return "", "", codexQualityUnavailable("the outbound request has no body")
 	}
 	wire, readErr := io.ReadAll(io.LimitReader(body, (2<<20)+1))
 	closeErr := body.Close()
@@ -44,7 +46,13 @@ func codexQualityWireFields(req *http.Request) (string, string, error) {
 			// unread suffix may become a later request after a failed snapshot.
 			req.Body = io.NopCloser(codexQualityRejectedWireBody{})
 		}
-		return "", "", ErrCodexQualityUnavailable
+		switch {
+		case readErr != nil:
+			return "", "", codexQualityUnavailable("read the outbound body: %v", readErr)
+		case closeErr != nil:
+			return "", "", codexQualityUnavailable("close the outbound body: %v", closeErr)
+		}
+		return "", "", codexQualityUnavailable("the outbound body exceeds 2 MiB")
 	}
 	if !independent {
 		req.Body = io.NopCloser(bytes.NewReader(wire))
@@ -53,14 +61,19 @@ func codexQualityWireFields(req *http.Request) (string, string, error) {
 	if strings.EqualFold(req.Header.Get("Content-Encoding"), "zstd") {
 		decoder, err := zstd.NewReader(reader, zstd.WithDecoderMaxMemory(8<<20), zstd.WithDecoderConcurrency(1))
 		if err != nil {
-			return "", "", ErrCodexQualityUnavailable
+			return "", "", codexQualityUnavailable("zstd decoder: %v", err)
 		}
 		defer decoder.Close()
 		reader = decoder
 	}
 	raw, err := io.ReadAll(io.LimitReader(reader, (1<<20)+1))
-	if err != nil || len(raw) > 1<<20 || !gjson.ValidBytes(raw) {
-		return "", "", ErrCodexQualityUnavailable
+	switch {
+	case err != nil:
+		return "", "", codexQualityUnavailable("decode the outbound body: %v", err)
+	case len(raw) > 1<<20:
+		return "", "", codexQualityUnavailable("the decoded outbound body exceeds 1 MiB")
+	case !gjson.ValidBytes(raw):
+		return "", "", codexQualityUnavailable("the outbound body is not valid JSON")
 	}
 	return gjson.GetBytes(raw, "model").String(), gjson.GetBytes(raw, "reasoning.effort").String(), nil
 }
@@ -77,7 +90,7 @@ func reserveCodexQualityAcquisition(req *http.Request, accountID int64) error {
 		return nil
 	}
 	if e.accountID != accountID || e.stage != "acquire" {
-		return ErrCodexQualityUnavailable
+		return codexQualityUnavailable("acquisition for account %d does not match the %s stage of account %d", accountID, e.stage, e.accountID)
 	}
 	run, err := e.current(req.Context())
 	if err != nil {
@@ -98,7 +111,7 @@ func reserveCodexQualitySend(req *http.Request, account *Account, q *extensionv1
 		return nil
 	}
 	if account == nil || account.ID != e.accountID {
-		return ErrCodexQualityUnavailable
+		return codexQualityUnavailable("the outbound account is not account %d of the quality run", e.accountID)
 	}
 	run, err := e.current(req.Context())
 	if err != nil {
@@ -108,13 +121,21 @@ func reserveCodexQualitySend(req *http.Request, account *Account, q *extensionv1
 		return err
 	}
 	model, effort, err := codexQualityWireFields(req)
-	if err != nil || model != codexQualityModel || effort != codexQualityEffort {
-		return ErrCodexQualityUnavailable
+	if err != nil {
+		return err
+	}
+	if model != codexQualityModel || effort != codexQualityEffort {
+		return codexQualityUnavailable("the outbound body asks for model %q effort %q; a quality diagnosis sends %s with %s", model, effort, codexQualityModel, codexQualityEffort)
 	}
 	if e.stage == "business" {
 		current, err := e.runtime.qualification(req.Context(), run)
-		if err != nil || q == nil || current.Bundle.Key != q.Bundle.Key || current.Bundle.Revision != q.Bundle.Revision {
-			return ErrCodexQualityUnavailable
+		switch {
+		case err != nil:
+			return err
+		case q == nil:
+			return codexQualityUnavailable("the business request carries no route qualification")
+		case current.Bundle.Key != q.Bundle.Key || current.Bundle.Revision != q.Bundle.Revision:
+			return codexQualityUnavailable("the route changed to bundle %s revision %d while the request used %s revision %d", current.Bundle.Key, current.Bundle.Revision, q.Bundle.Key, q.Bundle.Revision)
 		}
 	}
 	e.requestModel, e.effort, e.qualification = model, effort, q
@@ -190,10 +211,16 @@ func observeCodexQualityResponse(ctx context.Context, response *http.Response, e
 	a := e.attempt()
 	if err != nil || response == nil {
 		a.State, a.ErrorCode = "unknown", "transport"
+		if err != nil {
+			a.ErrorMessage = err.Error()
+		} else {
+			a.ErrorMessage = "the upstream returned no response"
+		}
 		finishCodexQualityAttempt(e.runtime.ctx(ctx), e.runtime.store, e.runID, a)
 		return
 	}
 	a.HTTPStatus = response.StatusCode
+	a.RequestID, a.CFRay = response.Header.Get("x-request-id"), response.Header.Get("cf-ray")
 	observedAt := time.Now().UTC()
 	deleted := false
 	if e.stage == "business" && q != nil {
@@ -235,29 +262,34 @@ func observeCodexQualityResponse(ctx context.Context, response *http.Response, e
 	response.Body = observer
 }
 
-func qualitySafeModel(model string) string {
+// codexQualityDistinctModels bounds how many distinct declared models one
+// attempt keeps; codexQualityModelNameLimit bounds one declared name.
+const (
+	codexQualityDistinctModels = 32
+	codexQualityModelNameLimit = 256
+)
+
+// qualityRecordedModel keeps the upstream model declaration verbatim (only
+// surrounding whitespace is trimmed); detecting a replaced model needs the name.
+// A name over the limit is cut on a rune boundary and marked with its length.
+func qualityRecordedModel(model string) string {
 	model = strings.TrimSpace(model)
-	if model == "" {
-		return ""
+	if len(model) <= codexQualityModelNameLimit {
+		return model
 	}
-	if len(model) > 128 || !strings.HasPrefix(model, "gpt-") {
-		return "other"
+	cut := codexQualityModelNameLimit
+	for cut > 0 && !utf8.RuneStart(model[cut]) {
+		cut--
 	}
-	for _, r := range model {
-		if r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' || strings.ContainsRune("._-", r) {
-			continue
-		}
-		return "other"
-	}
-	return model
+	return fmt.Sprintf("%s…(truncated, %d bytes)", model[:cut], len(model))
 }
 
 func recordCodexQualityHeaderModel(attempt *CodexQualityAttempt, value string) {
-	model := qualitySafeModel(value)
+	model := qualityRecordedModel(value)
 	if model == "" {
 		return
 	}
-	if !slices.Contains(attempt.HeaderModels, model) && len(attempt.HeaderModels) < 8 {
+	if !slices.Contains(attempt.HeaderModels, model) && len(attempt.HeaderModels) < codexQualityDistinctModels {
 		attempt.HeaderModels = append(attempt.HeaderModels, model)
 	}
 	if len(attempt.HeaderModels) == 1 {
@@ -285,6 +317,7 @@ func (s *OpenAIGatewayService) newCodexQualityObservedBody(response *http.Respon
 
 type codexQualityObservedBody struct {
 	io.ReadCloser
+	detail                                string
 	sse, sniff, failed, oversized         bool
 	pending                               []byte
 	scanFrom, maxEventBytes               int
@@ -317,6 +350,7 @@ func (b *codexQualityObservedBody) feed(raw []byte) {
 		b.readBytes += int64(len(raw))
 		if b.readBytes > b.maxReadBytes {
 			b.oversized, b.failed, b.pending = true, true, nil
+			b.detail = fmt.Sprintf("the response exceeded the %d-byte observation limit", b.maxReadBytes)
 			return
 		}
 	}
@@ -345,6 +379,7 @@ func (b *codexQualityObservedBody) feed(raw []byte) {
 			}
 			if int64(i) > limit {
 				b.oversized, b.failed, b.pending = true, true, nil
+				b.detail = fmt.Sprintf("an SSE event of %d bytes exceeded the %d-byte limit", i, limit)
 				return
 			}
 			var data [][]byte
@@ -360,8 +395,20 @@ func (b *codexQualityObservedBody) feed(raw []byte) {
 		b.scanFrom = max(0, len(b.pending)-2)
 	}
 	if int64(len(b.pending)) > limit {
+		b.detail = fmt.Sprintf("an unterminated event of %d bytes exceeded the %d-byte limit", len(b.pending), limit)
 		b.oversized, b.failed, b.pending = true, true, nil
 	}
+}
+
+// recordUpstream keeps the first upstream failure: its error object and the
+// failing event or body (bounded).
+func (b *codexQualityObservedBody) recordUpstream(found codexUpstreamError, raw []byte) {
+	a := &b.attempt
+	if a.UpstreamBody != "" || a.UpstreamErrorType != "" || a.UpstreamErrorCode != "" || a.UpstreamErrorMessage != "" {
+		return
+	}
+	a.UpstreamErrorType, a.UpstreamErrorCode, a.UpstreamErrorMessage, a.UpstreamErrorParam = found.Type, found.Code, found.Message, found.Param
+	a.UpstreamBody = string(boundedCodexUpstreamBody(raw))
 }
 
 func (b *codexQualityObservedBody) event(raw []byte) {
@@ -391,8 +438,8 @@ func (b *codexQualityObservedBody) event(raw []byte) {
 	if !r.Exists() {
 		r = root
 	}
-	model := qualitySafeModel(r.Get("model").String())
-	if model != "" && !slices.Contains(b.attempt.ResponseModels, model) && len(b.attempt.ResponseModels) < 8 {
+	model := qualityRecordedModel(r.Get("model").String())
+	if model != "" && !slices.Contains(b.attempt.ResponseModels, model) && len(b.attempt.ResponseModels) < codexQualityDistinctModels {
 		b.attempt.ResponseModels = append(b.attempt.ResponseModels, model)
 	}
 	if kind == "response.created" && model != "" {
@@ -401,6 +448,17 @@ func (b *codexQualityObservedBody) event(raw []byte) {
 	if kind == "error" || kind == "response.failed" || kind == "response.incomplete" || (root.Get("error").Exists() && root.Get("error").Type != gjson.Null) {
 		b.failed = true
 		b.attempt.ErrorCode = "upstream_error"
+		found := codexUpstreamErrorObject(root.Get("error"))
+		if found.empty() {
+			found = codexUpstreamErrorObject(r.Get("error"))
+		}
+		if found.empty() && kind == "error" {
+			found = codexUpstreamError{Code: codexJSONText(root.Get("code")), Message: codexJSONText(root.Get("message")), Param: codexJSONText(root.Get("param"))}
+		}
+		if found.empty() && kind == "response.incomplete" {
+			found = codexUpstreamError{Type: "incomplete", Code: codexJSONText(r.Get("incomplete_details.reason"))}
+		}
+		b.recordUpstream(found, raw)
 	}
 	if kind == "response.completed" || (root.Get("object").String() == "response" && r.Get("status").String() == "completed") {
 		if model != "" {
@@ -425,6 +483,10 @@ func (b *codexQualityObservedBody) complete(err error) {
 		b.mu.Lock()
 		if !b.sse && !b.oversized {
 			b.event(b.pending)
+			if b.attempt.HTTPStatus >= 400 && len(b.pending) > 0 {
+				// Non-streaming error bodies may carry {"detail":...} or plain text.
+				b.recordUpstream(codexUpstreamErrorFromBody(b.pending), b.pending)
+			}
 		}
 		b.attempt.Completed = b.attempt.Completed && !b.failed && b.attempt.HTTPStatus == http.StatusOK
 		b.attempt.State = "unknown"
@@ -432,10 +494,15 @@ func (b *codexQualityObservedBody) complete(err error) {
 			b.attempt.State = "complete"
 		} else if b.failed || b.attempt.HTTPStatus >= 400 {
 			b.attempt.State, b.attempt.ErrorCode = "error", "upstream_error"
+			if b.attempt.ErrorMessage == "" {
+				b.attempt.ErrorMessage = b.detail
+			}
 		} else if err != nil && err != io.EOF {
 			b.attempt.ErrorCode = "stream_error"
+			b.attempt.ErrorMessage = err.Error()
 		} else {
 			b.attempt.ErrorCode = "incomplete"
+			b.attempt.ErrorMessage = "the response ended without a completed terminal event"
 		}
 		b.done, b.pending = true, nil
 		attempt := b.attempt

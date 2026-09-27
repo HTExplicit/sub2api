@@ -10,7 +10,10 @@ import (
 
 type codexIdentityBodyKey struct{}
 
+// Raw values are shown to administrators next to the stable digests.
 type CodexIdentityFieldObservation struct {
+	HeaderValue  string `json:"header_value,omitempty"`
+	BodyValue    string `json:"body_value,omitempty"`
 	HeaderDigest string `json:"header_digest,omitempty"`
 	BodyDigest   string `json:"body_digest,omitempty"`
 	Consistency  string `json:"consistency"`
@@ -53,7 +56,7 @@ func codexIdentityFieldObservations(headers http.Header, body codexIdentityBodyO
 	for key, raw := range values {
 		header := strings.TrimSpace(raw)
 		value := body.Fields[key]
-		observation := CodexIdentityFieldObservation{Consistency: "uninspected"}
+		observation := CodexIdentityFieldObservation{Consistency: "uninspected", HeaderValue: header, BodyValue: value}
 		if header != "" {
 			observation.HeaderDigest = codexRoutingDigest(header)[:16]
 		}

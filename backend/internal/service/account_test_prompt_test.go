@@ -104,6 +104,7 @@ func TestAccountTestPromptOAuthFinalTicketUsesMappedModel(t *testing.T) {
 	cfg := &config.Config{Gateway: config.GatewayConfig{OpenAICodexTicket: config.OpenAICodexTicketConfig{Enabled: true, FailClosed: true}, OpenAICodexRequestZstd: true}}
 	a := ticketTestAccount(41)
 	a.Status = StatusActive
+	a.Credentials["access_token"] = "account-test-access-token-canary"
 	a.Credentials["model_mapping"] = map[string]any{"alias": "gpt-5.6-sol"}
 	a.Credentials["header_override_enabled"] = true
 	a.Credentials["header_overrides"] = map[string]any{openAICodexTurnStateHeader: fakeCodexTicketState(312)}
@@ -160,8 +161,23 @@ func TestAccountTestPromptOAuthFinalTicketUsesMappedModel(t *testing.T) {
 	body := zstdDecodeForTest(t, raw)
 	require.Equal(t, "gpt-5.6-sol", gjson.GetBytes(body, "model").String())
 	require.Equal(t, prompt, gjson.GetBytes(body, "input.0.content.0.text").String())
-	require.NotContains(t, rec.Body.String(), "verified-route")
+	// The test output reports the routing cookie exactly as it went on the wire.
+	require.Contains(t, rec.Body.String(), `"Cookie":"__cflb=verified-route"`)
 	require.NotContains(t, rec.Body.String(), fakeCodexTicketState(292))
+	// The reported wire headers leave out Authorization: the access token went
+	// on the wire but never appears in the test output.
+	require.Equal(t, "Bearer account-test-access-token-canary", req.Header.Get("Authorization"))
+	require.NotContains(t, rec.Body.String(), "account-test-access-token-canary")
+	var wireHeaders map[string]string
+	for _, line := range strings.Split(rec.Body.String(), "\n") {
+		if payload, ok := strings.CutPrefix(line, "data: "); ok && gjson.Get(payload, "text").String() == "Codex wire headers" {
+			require.NoError(t, json.Unmarshal([]byte(gjson.Get(payload, "data").Raw), &wireHeaders))
+		}
+	}
+	require.NotEmpty(t, wireHeaders)
+	for name := range wireHeaders {
+		require.False(t, strings.EqualFold(name, "Authorization"), "Authorization is never reported")
+	}
 	require.Equal(t, 1, strings.Count(rec.Body.String(), "Final Codex ticket"), "the leased wire is reported once")
 	c, rec = newTestContext()
 	qualification = nil // Legacy Extra still has a ticket; only the plugin qualification may admit the model.

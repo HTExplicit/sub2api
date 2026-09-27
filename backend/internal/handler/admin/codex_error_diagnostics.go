@@ -9,12 +9,12 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// ErrorDiagnostics is installed behind the existing administrator middleware
-// and never exposes the underlying log document.
+// CodexErrorDiagnostics is installed behind the existing administrator
+// middleware and returns every continuation diagnostic stored on the error.
 func (h *AccountHandler) CodexErrorDiagnostics(ops *OpsHandler) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		c.Header("Cache-Control", "private, no-store")
-		if h == nil || h.adminService == nil || ops == nil || ops.opsService == nil {
+		if h == nil || ops == nil || ops.opsService == nil {
 			response.Error(c, http.StatusServiceUnavailable, "Diagnostics unavailable")
 			return
 		}
@@ -28,6 +28,6 @@ func (h *AccountHandler) CodexErrorDiagnostics(ops *OpsHandler) gin.HandlerFunc 
 			response.ErrorFrom(c, err)
 			return
 		}
-		response.Success(c, service.ProjectCodexErrorDiagnostics(c.Request.Context(), detail, h.adminService.GetAccount))
+		response.Success(c, service.ProjectCodexErrorDiagnostics(detail))
 	}
 }

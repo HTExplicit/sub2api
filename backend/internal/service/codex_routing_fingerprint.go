@@ -5,6 +5,7 @@ import (
 	"crypto/tls"
 	_ "embed"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"strconv"
 	"strings"
@@ -70,6 +71,30 @@ func codexRoutingTurnID(c *gin.Context) string {
 	return turn
 }
 
+// CodexWireCookie is one cookie of the final outbound request, exactly as sent.
+type CodexWireCookie struct {
+	Name    string `json:"name"`
+	Value   string `json:"value"`
+	Routing bool   `json:"routing"`
+}
+
+// codexWireCookies splits the Cookie headers as sent, without dropping pairs
+// that the stricter net/http parser would reject.
+func codexWireCookies(headers http.Header) []CodexWireCookie {
+	cookies := []CodexWireCookie{}
+	for _, line := range headers.Values("Cookie") {
+		for _, part := range strings.Split(line, ";") {
+			part = strings.TrimSpace(part)
+			if part == "" {
+				continue
+			}
+			name, value, _ := strings.Cut(part, "=")
+			cookies = append(cookies, CodexWireCookie{Name: name, Value: value, Routing: isCodexRoutingCookie(name)})
+		}
+	}
+	return cookies
+}
+
 type CodexWireFingerprint struct {
 	IdentityFields      map[string]CodexIdentityFieldObservation `json:"identity_fields"`
 	Ingress             string                                   `json:"ingress"`
@@ -90,6 +115,9 @@ type CodexWireFingerprint struct {
 	RouteHash           string                                   `json:"route_hash"`
 	RouteEvidence       string                                   `json:"route_evidence"`
 	ConnectionEvidence  string                                   `json:"connection_evidence"`
+	ConnectionLeaseID   string                                   `json:"connection_lease_id,omitempty"`
+	AccountProxyID      int64                                    `json:"account_proxy_id,omitempty"`
+	Cookies             []CodexWireCookie                        `json:"cookies"`
 	CookieNames         []string                                 `json:"cookie_names"`
 	CookieVersions      map[string]string                        `json:"cookie_versions"`
 	SessionPresent      bool                                     `json:"session_present"`
@@ -97,19 +125,46 @@ type CodexWireFingerprint struct {
 	WindowPresent       bool                                     `json:"window_present"`
 	StatePresent        bool                                     `json:"state_present"`
 	StateLength         int                                      `json:"state_length"`
+	State               string                                   `json:"state,omitempty"`
 	WebSocketExtensions string                                   `json:"websocket_extensions,omitempty"`
 }
 
+// CodexRoutingModelStatus shows the stored routing record of one model as is,
+// including a record written for a previous credential owner.
 type CodexRoutingModelStatus struct {
-	Model           string                               `json:"model"`
-	Phase           string                               `json:"phase"`
-	Enrolled        bool                                 `json:"enrolled"`
-	Failures        int                                  `json:"failed_cycles"`
-	Qualified       bool                                 `json:"qualified"`
-	VerifiedAt      *time.Time                           `json:"verified_at,omitempty"`
-	ExpiresAt       *time.Time                           `json:"expires_at,omitempty"`
-	NextAt          *time.Time                           `json:"next_attempt_at,omitempty"`
-	LastObservation *extensionv1.CodexRoutingObservation `json:"last_observation,omitempty"`
+	Model               string                                 `json:"model"`
+	Phase               string                                 `json:"phase"`
+	Enrolled            bool                                   `json:"enrolled"`
+	Failures            int                                    `json:"failed_cycles"`
+	Qualified           bool                                   `json:"qualified"`
+	VerifiedAt          *time.Time                             `json:"verified_at,omitempty"`
+	ExpiresAt           *time.Time                             `json:"expires_at,omitempty"`
+	NextAt              *time.Time                             `json:"next_attempt_at,omitempty"`
+	LastObservation     *extensionv1.CodexRoutingObservation   `json:"last_observation,omitempty"`
+	Schema              int                                    `json:"schema,omitempty"`
+	StateRevision       int64                                  `json:"state_revision,omitempty"`
+	StateError          string                                 `json:"state_error,omitempty"`
+	RecordedIdentity    string                                 `json:"recorded_identity,omitempty"`
+	IdentityMatches     bool                                   `json:"identity_matches"`
+	LastAttemptAt       *time.Time                             `json:"last_attempt_at,omitempty"`
+	OperationID         string                                 `json:"operation_id,omitempty"`
+	ManualWasEnrolled   bool                                   `json:"manual_was_enrolled"`
+	LastCode            string                                 `json:"last_code,omitempty"`
+	RevokedAt           *time.Time                             `json:"revoked_at,omitempty"`
+	RevocationReason    string                                 `json:"revocation_reason,omitempty"`
+	Qualification       *extensionv1.CodexRoutingQualification `json:"qualification,omitempty"`
+	RouteMatchesCurrent bool                                   `json:"route_matches_current"`
+}
+
+// CodexFingerprintProxy identifies the account proxy that enters RouteHash.
+type CodexFingerprintProxy struct {
+	ID       int64  `json:"id"`
+	Name     string `json:"name,omitempty"`
+	Protocol string `json:"protocol,omitempty"`
+	Host     string `json:"host,omitempty"`
+	Port     int    `json:"port,omitempty"`
+	Username string `json:"username,omitempty"`
+	Status   string `json:"status,omitempty"`
 }
 
 type CodexFingerprintView struct {
@@ -118,11 +173,18 @@ type CodexFingerprintView struct {
 	AccountID           int64                           `json:"account_id"`
 	Configured          codexIdentitySnapshot           `json:"configured"`
 	Observed            *CodexWireFingerprint           `json:"observed,omitempty"`
+	ObservedError       string                          `json:"observed_error,omitempty"`
 	ReferenceCommit     string                          `json:"reference_commit"`
 	ReferenceSource     string                          `json:"reference_source"`
 	Alignment           string                          `json:"alignment"`
 	CookieMaxAgeSeconds int                             `json:"cookie_max_age_seconds"`
 	RefreshLeadSeconds  int                             `json:"refresh_lead_seconds"`
+	RoutingEnabled      bool                            `json:"routing_enabled"`
+	FailClosed          bool                            `json:"fail_closed"`
+	CurrentScope        *extensionv1.CodexRoutingScope  `json:"current_scope,omitempty"`
+	ScopeError          string                          `json:"scope_error,omitempty"`
+	AccountProxy        *CodexFingerprintProxy          `json:"account_proxy,omitempty"`
+	HarvestProxyURL     string                          `json:"harvest_proxy_url,omitempty"`
 	Models              []CodexRoutingModelStatus       `json:"models"`
 }
 
@@ -139,6 +201,9 @@ func (s *OpenAIGatewayService) observeCodexWire(ctx context.Context, account *Ac
 	value := CodexWireFingerprint{ObservedAt: time.Now().UTC(), Source: "final_outbound", Transport: "http", UserAgent: request.Header.Get("User-Agent"), Originator: request.Header.Get("originator"), Version: request.Header.Get("version"), HTTPProtocol: response.Proto, RequestEncoding: request.Header.Get("Content-Encoding"), TLSImplementation: "go-crypto-tls", JA3: "unknown", CookieNames: []string{}, SessionPresent: extractClientSessionID(request.Header) != "", ThreadPresent: request.Header.Get("thread-id") != "", WindowPresent: request.Header.Get("x-codex-window-id") != "", StatePresent: request.Header.Get(openAICodexTurnStateHeader) != "", StateLength: len(request.Header.Get(openAICodexTurnStateHeader))}
 	value.Ingress = "http"
 	value.CookieVersions = map[string]string{}
+	value.Cookies = codexWireCookies(request.Header)
+	value.State = request.Header.Get(openAICodexTurnStateHeader)
+	value.AccountProxyID = qualityProxyID(account)
 	body, carried := request.Context().Value(codexIdentityBodyKey{}).(codexIdentityBodyObservation)
 	if !carried {
 		// Only a rewritten (zstd) wire copy carries a pre-encoding observation;
@@ -157,6 +222,7 @@ func (s *OpenAIGatewayService) observeCodexWire(ctx context.Context, account *Ac
 	if qualification != nil {
 		value.ProfileHash, value.RouteHash, value.RouteEvidence = qualification.Scope.ProfileHash, qualification.Scope.RouteHash, qualification.Scope.RouteEvidence
 		value.ConnectionEvidence = codexRoutingDigest(qualification.Scope.ConnectionLeaseID)[:16]
+		value.ConnectionLeaseID = qualification.Scope.ConnectionLeaseID
 		value.Transport = qualification.Scope.Transport
 	}
 	if value.Transport == "ws" {
@@ -183,52 +249,88 @@ func (s *OpenAIGatewayService) observeCodexWire(ctx context.Context, account *Ac
 // CodexFingerprint is read-only: opening an account never refreshes OAuth,
 // acquires cookies, pings a proxy, or sends a model request.
 func (s *OpenAIGatewayService) CodexFingerprint(ctx context.Context, id int64) (*CodexFingerprintView, error) {
+	if s.nativeCodexRuntime == nil {
+		return nil, codexRoutingUnavailable("native Codex runtime is not configured")
+	}
 	a, err := s.accountRepo.GetByID(ctx, id)
-	if err != nil || !isOpenAICodexTicketAccount(a) || s.nativeCodexRuntime == nil {
-		return nil, errCodexRoutingUnavailable
+	switch {
+	case err != nil:
+		return nil, codexRoutingUnavailable("read account %d: %v", id, err)
+	case !isOpenAICodexTicketAccount(a):
+		return nil, codexRoutingUnavailable("account %d is not an OpenAI OAuth/setup-token Codex account", id)
 	}
 	installation := s.nativeCodexRuntime.metadata()
 	store := s.nativeCodexRuntime.repo
 	ok := store != nil
 	if installation == nil || !ok {
-		return nil, errCodexRoutingUnavailable
+		return nil, codexRoutingUnavailable("native Codex runtime is not loaded")
 	}
-	view := &CodexFingerprintView{AccountID: id, Configured: resolveCodexIdentitySnapshotContext(ctx, a, a, codexAccountIdentityOverrideUA(a)), ReferenceCommit: "4b664e0ef0397f82e68c60088a90fcd035deb796", ReferenceSource: "official_source", Alignment: "application_fields_checked_tls_capture_unknown", CookieMaxAgeSeconds: 120, RefreshLeadSeconds: 20, Models: []CodexRoutingModelStatus{}}
+	cfg := s.openAICodexTicketConfig()
+	view := &CodexFingerprintView{AccountID: id, Configured: resolveCodexIdentitySnapshotContext(ctx, a, a, codexAccountIdentityOverrideUA(a)), ReferenceCommit: "4b664e0ef0397f82e68c60088a90fcd035deb796", ReferenceSource: "official_source", Alignment: "application_fields_checked_tls_capture_unknown", CookieMaxAgeSeconds: 120, RefreshLeadSeconds: 20, RoutingEnabled: cfg.Enabled, FailClosed: cfg.FailClosed, HarvestProxyURL: cfg.HarvestProxyURL, Models: []CodexRoutingModelStatus{}}
 	currentScope, scopeErr := s.PrepareCodexRoutingScope(ctx, id, "http")
+	if scopeErr != nil {
+		view.ScopeError = scopeErr.Error()
+	} else {
+		view.CurrentScope = &currentScope
+	}
+	if a.ProxyID != nil {
+		proxy := &CodexFingerprintProxy{ID: *a.ProxyID}
+		if a.Proxy != nil {
+			proxy.Name, proxy.Protocol, proxy.Host, proxy.Port, proxy.Username, proxy.Status = a.Proxy.Name, a.Proxy.Protocol, a.Proxy.Host, a.Proxy.Port, a.Proxy.Username, a.Proxy.Status
+		}
+		view.AccountProxy = proxy
+	}
 	wire, err := store.ReadExtensionState(ctx, NativeCodexPluginKey, extensionv1.StateRequest{Namespace: codexRoutingPrivateNamespace, Key: "wire." + strconv.FormatInt(id, 10)})
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("read the last outbound observation of account %d: %w", id, err)
 	}
 	if wire.Found {
 		var observation CodexWireFingerprint
-		if json.Unmarshal(wire.Value, &observation) == nil {
+		if err := json.Unmarshal(wire.Value, &observation); err != nil {
+			view.ObservedError = "decode the last outbound observation: " + err.Error()
+		} else {
 			view.Observed = &observation
 		}
 	}
-	for _, model := range s.openAICodexTicketConfig().Models {
+	for _, model := range cfg.Models {
 		status := CodexRoutingModelStatus{Model: model, Phase: "idle"}
 		record, readErr := store.ReadExtensionState(ctx, NativeCodexPluginKey, extensionv1.StateRequest{Namespace: "tickets", Key: strconv.FormatInt(id, 10) + "." + codexRoutingDigest(model)})
 		if readErr != nil {
-			return nil, readErr
+			return nil, fmt.Errorf("read the routing record of %s: %w", model, readErr)
 		}
 		if record.Found {
 			var state struct {
-				Schema        int                                    `json:"schema"`
-				Identity      string                                 `json:"identity"`
-				Phase         string                                 `json:"phase"`
-				Enrolled      bool                                   `json:"enrolled"`
-				Failures      int                                    `json:"failures"`
-				ExpiresAt     *time.Time                             `json:"expires_at"`
-				NextAt        *time.Time                             `json:"next_attempt_at"`
-				Qualification *extensionv1.CodexRoutingQualification `json:"qualification"`
-				Observation   *extensionv1.CodexRoutingObservation   `json:"observation"`
+				Schema            int                                    `json:"schema"`
+				Identity          string                                 `json:"identity"`
+				Phase             string                                 `json:"phase"`
+				Enrolled          bool                                   `json:"enrolled"`
+				Failures          int                                    `json:"failures"`
+				ExpiresAt         *time.Time                             `json:"expires_at"`
+				NextAt            *time.Time                             `json:"next_attempt_at"`
+				LastAttemptAt     *time.Time                             `json:"last_attempt_at"`
+				OperationID       string                                 `json:"operation_id"`
+				ManualWasEnrolled bool                                   `json:"manual_was_enrolled"`
+				LastCode          string                                 `json:"last_code"`
+				RevokedAt         *time.Time                             `json:"revoked_at"`
+				RevocationReason  string                                 `json:"revocation_reason"`
+				Qualification     *extensionv1.CodexRoutingQualification `json:"qualification"`
+				Observation       *extensionv1.CodexRoutingObservation   `json:"observation"`
 			}
-			if json.Unmarshal(record.Value, &state) == nil && state.Identity == CodexTicketAccountIdentity(a) {
+			status.StateRevision = record.Revision
+			if err := json.Unmarshal(record.Value, &state); err != nil {
+				status.StateError = err.Error()
+			} else {
+				status.RecordedIdentity, status.IdentityMatches, status.Schema = state.Identity, state.Identity == CodexTicketAccountIdentity(a), state.Schema
 				status.Phase, status.Enrolled, status.Failures, status.ExpiresAt, status.NextAt, status.LastObservation = state.Phase, state.Enrolled, state.Failures, state.ExpiresAt, state.NextAt, state.Observation
-				status.Qualified = scopeErr == nil && state.Schema == extensionv1.CodexRoutingSchema && state.Qualification.Valid(time.Now(), id, state.Identity, model) && state.Qualification.Scope.SameOwner(currentScope)
-				if state.Qualification != nil && state.Qualification.Model == model && !state.Qualification.VerifiedAt.IsZero() {
-					verified := state.Qualification.VerifiedAt
-					status.VerifiedAt = &verified
+				status.LastAttemptAt, status.OperationID, status.ManualWasEnrolled, status.LastCode, status.Qualification = state.LastAttemptAt, state.OperationID, state.ManualWasEnrolled, state.LastCode, state.Qualification
+				status.RevokedAt, status.RevocationReason = state.RevokedAt, state.RevocationReason
+				status.Qualified = status.IdentityMatches && scopeErr == nil && state.Schema == extensionv1.CodexRoutingSchema && state.Qualification.Valid(time.Now(), id, state.Identity, model) && state.Qualification.Scope.SameOwner(currentScope)
+				if state.Qualification != nil {
+					status.RouteMatchesCurrent = scopeErr == nil && state.Qualification.Scope.RouteHash == currentScope.RouteHash
+					if state.Qualification.Model == model && !state.Qualification.VerifiedAt.IsZero() {
+						verified := state.Qualification.VerifiedAt
+						status.VerifiedAt = &verified
+					}
 				}
 				if state.Schema < extensionv1.CodexRoutingSchema && (state.Phase == "ready" || state.Phase == "retry") {
 					status.Phase = "needs_cookie_verification"

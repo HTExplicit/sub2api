@@ -356,6 +356,9 @@ func TestOpenAIReasoningRecoveryForwardSSEAndBufferedPreserveFailedAttemptUsage(
 						recorded = true
 						require.Contains(t, entry.Detail, `"input_tokens":3`)
 						require.Contains(t, entry.Detail, `"output_tokens":2`)
+						// The rejected upstream payload itself, not only its hash.
+						require.Contains(t, gjson.Get(entry.Detail, "payload").String(), `"invalid_encrypted_content"`)
+						require.NotEmpty(t, gjson.Get(entry.Detail, "payload_sha256").String())
 					}
 				}
 				require.True(t, recorded)

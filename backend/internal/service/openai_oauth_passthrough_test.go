@@ -1554,17 +1554,21 @@ func TestOpenAIGatewayService_APIKeyPassthrough_RebuildsUpstreamErrors(t *testin
 				require.Equal(t, "request_rejected", opsEvents[0].Kind)
 				require.True(t, opsEvents[0].Passthrough)
 				require.Equal(t, tt.statusCode, opsEvents[0].UpstreamStatusCode)
-				require.Equal(t, OpenAIRequestRejectedClientMessage, opsEvents[0].Message)
+				// The client never sees the upstream text; the administrator's
+				// Ops record keeps it.
+				require.Equal(t, sanitizeUpstreamErrorMessage(extractUpstreamErrorMessage([]byte(tt.responseBody))), opsEvents[0].Message)
 				encoded, diagnostic := continuationDiagnosticTestEncoded(t, opsEvents[0].ContinuationDiagnostic)
 				if tt.contentType == "application/json" {
 					require.Equal(t, "request_validation", diagnostic.Get("classification").String())
+					require.Equal(t, "secret-upstream.example invalid parameter", diagnostic.Get("upstream_error.message.value").String())
+					require.Equal(t, "upstream_secret_code", diagnostic.Get("upstream_error.error_code.value").String())
+					require.Equal(t, "private_field", diagnostic.Get("upstream_error.error_param.value").String())
 				} else {
 					require.Equal(t, "unclassified_bad_request", diagnostic.Get("classification").String())
+					require.Equal(t, tt.responseBody, diagnostic.Get("upstream_error.message.value").String())
 				}
-				require.NotContains(t, encoded, "secret-upstream.example")
+				// Only the error fields are projected into the diagnostic.
 				require.NotContains(t, encoded, "sk-upstream-secret")
-				require.NotContains(t, encoded, "upstream_secret_code")
-				require.NotContains(t, encoded, "private_field")
 				return
 			}
 			require.Equal(t, tt.wantStatus, rec.Code)
@@ -2206,7 +2210,8 @@ func TestOpenAIGatewayService_OpenAIPassthrough_ContinuationErrorsStopBeforeAcco
 			require.NotEmpty(t, events)
 			require.Equal(t, "continuation_state", events[len(events)-1].Kind)
 			require.True(t, events[len(events)-1].Passthrough)
-			require.Equal(t, OpenAIContinuationStateUnavailableClientMessage, events[len(events)-1].Message)
+			require.Equal(t, openAIOpsUpstreamErrorMessage([]byte(tt.responseBody)), events[len(events)-1].Message)
+			require.NotEmpty(t, events[len(events)-1].Message, "Ops keeps the upstream text, not the client sentence")
 		})
 	}
 }

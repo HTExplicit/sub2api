@@ -12,6 +12,14 @@
         <input v-model="compression" data-test="codex-compression" type="checkbox" />
         {{ text('压缩 Codex Responses 请求体', 'Compress Codex Responses requests') }}
       </label>
+      <dl v-if="config" data-test="codex-runtime-facts" class="grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-1 text-sm">
+        <dt class="text-muted">{{ text('无有效路由时暂停调度（fail_closed）', 'Pause models without a verified route (fail_closed)') }}</dt>
+        <dd>{{ config.fail_closed === undefined ? '—' : config.fail_closed ? text('是', 'Yes') : text('否', 'No') }}</dd>
+        <dt class="text-muted">{{ text('路由模型（models）', 'Routing models (models)') }}</dt>
+        <dd class="break-all font-mono">{{ (config.models || []).join(', ') || '—' }}</dd>
+        <dt class="text-muted">{{ text('路由配置版本（routing_schema）', 'Routing schema (routing_schema)') }}</dt>
+        <dd>{{ config.routing_schema ?? '—' }}</dd>
+      </dl>
       <label class="block space-y-2">
         <span>{{ text('采集代理', 'Acquisition proxy') }}</span>
         <textarea ref="proxyInput" v-model="address" data-test="codex-proxy" class="input" rows="4" autocomplete="off" spellcheck="false" />
@@ -34,7 +42,7 @@
         <label v-for="(candidate, index) in parsed.candidates" :key="candidate.selection_id" class="flex items-start gap-2 text-sm">
           <input v-model="selection" type="radio" name="codex-proxy-selection" :value="candidate.selection_id" :disabled="busy" />
           <span>{{ index + 1 }}. {{ candidate.protocol }} · {{ candidate.host }} · {{ candidate.port }}
-            <span v-if="candidate.username_masked"> · {{ text('用户名', 'Username') }} {{ candidate.username_masked }}</span>
+            <span v-if="candidate.username || candidate.username_masked"> · {{ text('用户名', 'Username') }} {{ candidate.username || candidate.username_masked }}</span>
             · {{ text('来源行', 'Source line') }} {{ candidate.source_line }}, {{ text('列', 'column') }} {{ candidate.source_column }} · {{ candidate.format }}</span>
         </label>
       </fieldset>
@@ -50,8 +58,27 @@
         <p>{{ proxyResult.network_reachable && ['proxy_reachable', 'target_http_status'].includes(proxyResult.code)
           ? text(`代理链路已连接，目标返回 HTTP ${proxyResult.http_status}；本次未发送账号凭据。`, `Proxy connected; target returned HTTP ${proxyResult.http_status}. No account credential was sent.`)
           : text('代理连接或证书验证失败。', 'Proxy connection or certificate verification failed.') }}</p>
-        <p v-for="stage in proxyResult.stages || []" :key="stage.name">{{ stage.name }}: {{ stage.success ? '✓' : '✗' }} {{ stage.message || '' }}</p>
-        <p v-if="proxyResult.certificate_fingerprint">{{ text('证书指纹', 'Certificate fingerprint') }}: {{ proxyResult.certificate_fingerprint }}</p>
+        <p data-test="codex-proxy-code">{{ text('结果代码', 'Result code') }}: <span class="font-mono">{{ proxyResult.code }}</span><span v-if="proxyResult.message"> · {{ proxyResult.message }}</span></p>
+        <p v-if="proxyResult.failure_detail" data-test="codex-proxy-failure" class="break-all font-mono text-red-600">{{ text('错误原文', 'Original error') }}: {{ proxyResult.failure_detail }}</p>
+        <p v-if="proxyResult.protocol_suggestion">{{ proxyResult.protocol_suggestion }}</p>
+        <ol data-test="codex-proxy-stages" class="space-y-1">
+          <li v-for="(stage, index) in proxyResult.stages || []" :key="index" class="break-all">
+            {{ stage.name }}: {{ stage.success ? '✓' : '✗' }} {{ stage.duration_ms }} ms <span v-if="stage.message" class="font-mono">{{ stage.message }}</span>
+          </li>
+        </ol>
+        <p v-if="proxyResult.certificate_trust">{{ text('证书信任', 'Certificate trust') }}: {{ proxyResult.certificate_trust }}</p>
+        <p v-if="proxyResult.certificate_fingerprint" class="break-all">{{ text('证书指纹', 'Certificate fingerprint') }}: <span class="font-mono">{{ proxyResult.certificate_fingerprint }}</span></p>
+        <p v-if="proxyResult.certificate_error" data-test="codex-proxy-certificate-error" class="break-all text-red-600">{{ text('证书验证错误', 'Certificate verification error') }}: {{ proxyResult.certificate_error }}</p>
+        <dl v-for="(certificate, index) in proxyResult.certificates || []" :key="`${certificate.server_name}-${certificate.sha256}-${index}`" data-test="codex-proxy-certificate" class="grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-0.5 border-t border-line pt-2 text-xs">
+          <dt class="text-muted">{{ text('服务器名', 'Server name') }}</dt><dd class="break-all">{{ certificate.server_name || '—' }}</dd>
+          <dt class="text-muted">{{ text('主题', 'Subject') }}</dt><dd class="break-all">{{ certificate.subject }}</dd>
+          <dt class="text-muted">{{ text('签发者', 'Issuer') }}</dt><dd class="break-all">{{ certificate.issuer }}</dd>
+          <dt class="text-muted">{{ text('有效期', 'Validity') }}</dt><dd>{{ certificate.not_before }} — {{ certificate.not_after }}</dd>
+          <dt class="text-muted">DNS</dt><dd class="break-all">{{ (certificate.dns_names || []).join(', ') || '—' }}</dd>
+          <dt class="text-muted">{{ text('序列号', 'Serial number') }}</dt><dd class="break-all font-mono">{{ certificate.serial_number || '—' }}</dd>
+          <dt class="text-muted">SHA-256</dt><dd class="break-all font-mono">{{ certificate.sha256 }}</dd>
+          <dt class="text-muted">SPKI SHA-256</dt><dd class="break-all font-mono">{{ certificate.spki_sha256 }}</dd>
+        </dl>
       </template>
     </div>
     <TotpStepUpDialog :controller="stepUp" />

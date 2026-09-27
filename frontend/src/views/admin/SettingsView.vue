@@ -2067,6 +2067,21 @@
                 v-if="captchaMasterEnabled"
                 class="border-t border-gray-100 pt-4 dark:border-dark-700"
               >
+                <p
+                  v-if="enabledCaptchaProviders.length > 1"
+                  role="alert"
+                  data-testid="captcha-multiple-providers"
+                  class="mb-4 border-l-2 border-amber-500 bg-amber-50 px-3 py-2 text-sm text-amber-800 dark:bg-amber-900/20 dark:text-amber-200"
+                >
+                  {{
+                    t("admin.settings.captcha.multipleEnabled", {
+                      providers: enabledCaptchaProviders
+                        .map((provider) => t(captchaProviderLabelKeys[provider]))
+                        .join(", "),
+                    })
+                  }}
+                </p>
+
                 <!-- Provider Selector -->
                 <div class="mb-6">
                   <label
@@ -5378,6 +5393,33 @@
                 <p class="mt-1.5 text-xs text-gray-500 dark:text-gray-400">
                   {{ t("admin.settings.gatewayForwarding.openaiTTFTModeHint") }}
                 </p>
+              </div>
+
+              <!-- Retired OpenAI API-key switches: stored values, read-only, no runtime effect -->
+              <div
+                v-if="deprecatedSettingRows.length"
+                class="rounded-lg border border-dashed border-gray-300 px-4 py-3 dark:border-dark-600"
+                data-testid="deprecated-settings"
+              >
+                <div class="text-sm font-medium text-gray-700 dark:text-gray-300">
+                  {{ t("admin.settings.deprecatedSettings.title") }}
+                </div>
+                <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                  {{ t("admin.settings.deprecatedSettings.hint") }}
+                </p>
+                <dl class="mt-3 space-y-2 text-sm">
+                  <div
+                    v-for="row in deprecatedSettingRows"
+                    :key="row.key"
+                    class="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-0.5"
+                  >
+                    <dt class="min-w-0">
+                      <span class="text-gray-700 dark:text-gray-300">{{ row.label }}</span>
+                      <code class="ml-2 break-all text-xs text-gray-500 dark:text-gray-400">{{ row.key }}</code>
+                    </dt>
+                    <dd class="font-medium text-gray-900 dark:text-white">{{ row.value }}</dd>
+                  </div>
+                </dl>
               </div>
 
               <!-- Fingerprint Unification -->
@@ -9110,7 +9152,7 @@
 import ImageToolsSettingsPanel from '@/components/admin/ImageToolsSettingsPanel.vue'
 import ObservabilitySettingsPanel from '@/components/admin/ObservabilitySettingsPanel.vue'
 import OfficialModelCatalogPanel from '@/components/admin/OfficialModelCatalogPanel.vue'
-import { ref, reactive, computed, onMounted, watch } from "vue";
+import { ref, reactive, computed, onMounted, watch, nextTick } from "vue";
 import { useI18n } from "vue-i18n";
 import { adminAPI } from "@/api";
 import {
@@ -9295,6 +9337,24 @@ const { copyToClipboard } = useClipboard();
 
 const loading = ref(true);
 const loadFailed = ref(false);
+// GET /admin/settings echoes the retired switches read-only; they are shown, never saved.
+const deprecatedSettings = ref<Record<string, unknown>>({});
+const deprecatedSettingRows = computed(() =>
+  Object.entries(deprecatedSettings.value).map(([key, value]) => {
+    const labelKey = `admin.settings.deprecatedSettings.labels.${key}`;
+    const label = t(labelKey);
+    return {
+      key,
+      label: label === labelKey ? key : label,
+      value:
+        value === true
+          ? t("admin.settings.deprecatedSettings.on")
+          : value === false
+            ? t("admin.settings.deprecatedSettings.off")
+            : JSON.stringify(value),
+    };
+  }),
+);
 const saving = ref(false);
 const testingSmtp = ref(false);
 const sendingTestEmail = ref(false);
@@ -10341,6 +10401,24 @@ const tencentCaptchaLinks = computed(() =>
       },
 );
 
+const captchaProviderLabelKeys: Record<CaptchaProviderSelection, string> = {
+  turnstile: "admin.settings.captcha.providerTurnstile",
+  tencent: "admin.settings.captcha.providerTencent",
+  aliyun: "admin.settings.captcha.providerAliyun",
+};
+
+// Providers enabled in the saved settings. Loading never switches any of them
+// off: several enabled providers are listed with a warning instead.
+const enabledCaptchaProviders = computed<CaptchaProviderSelection[]>(() =>
+  (["turnstile", "tencent", "aliyun"] as const).filter((provider) =>
+    provider === "turnstile"
+      ? form.turnstile_enabled
+      : provider === "tencent"
+        ? form.tencent_captcha_enabled
+        : form.aliyun_captcha_enabled,
+  ),
+);
+
 function syncCaptchaProviderSelection(): void {
   let selected: CaptchaProviderSelection | null = null;
   if (form.tencent_captcha_enabled) {
@@ -10352,7 +10430,6 @@ function syncCaptchaProviderSelection(): void {
   }
   if (selected) {
     captchaProviderSelection.value = selected;
-    applyCaptchaSelection(selected);
   }
 }
 
@@ -11267,6 +11344,7 @@ async function loadSettings() {
   loadFailed.value = false;
   try {
     const settings = await adminAPI.settings.getSettings();
+    deprecatedSettings.value = settings.deprecated_settings ?? {};
     settings.payment_load_balance_strategy =
       settings.payment_load_balance_strategy || "round-robin";
     // Only assign non-null values from backend (null means unconfigured, keep defaults)
@@ -11535,7 +11613,35 @@ const siteBillingModeHint = computed(() =>
   t(`admin.settings.features.siteBillingMode.hints.${SITE_BILLING_MODE_I18N_KEYS[siteBillingMode.value]}`),
 );
 
+// The server accepts at most one enabled captcha provider. Saving stays
+// blocked while several are enabled and leads the administrator to the
+// captcha section, where selecting a provider keeps only that one.
+function blockSaveForMultipleCaptchaProviders(): boolean {
+  if (enabledCaptchaProviders.value.length <= 1) {
+    return false;
+  }
+  appStore.showError(
+    t("admin.settings.captcha.multipleEnabledSaveBlocked", {
+      providers: enabledCaptchaProviders.value
+        .map((provider) => t(captchaProviderLabelKeys[provider]))
+        .join(", "),
+      tab: t("admin.settings.tabs.security"),
+      section: t("admin.settings.captcha.title"),
+    }),
+  );
+  activeTab.value = "security";
+  void nextTick(() => {
+    document
+      .querySelector<HTMLElement>('[data-testid="captcha-multiple-providers"]')
+      ?.scrollIntoView?.({ block: "center" });
+  });
+  return true;
+}
+
 async function saveSettings() {
+  if (blockSaveForMultipleCaptchaProviders()) {
+    return;
+  }
   saving.value = true;
   try {
     if (!commitOpenAIRefusalKeywordDraft()) {

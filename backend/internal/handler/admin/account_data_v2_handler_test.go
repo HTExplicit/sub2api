@@ -536,3 +536,34 @@ func TestImportDataAllowsPartialSuccessWithPerItemResults(t *testing.T) {
 	require.Equal(t, "failed", result.Items[1].Action)
 	require.Contains(t, result.Items[1].Error, "synthetic create failure")
 }
+
+// The preview explains each rejected entry with its own facts: the concrete
+// validation error and every existing account an ambiguous identity matched.
+func TestPreviewDataImportKeepsRejectReasons(t *testing.T) {
+	svc := newDataV2AdminService()
+	svc.accounts = []service.Account{
+		{ID: 11, Name: "First", Platform: service.PlatformOpenAI, Type: service.AccountTypeOAuth,
+			Credentials: map[string]any{"chatgpt_account_id": "workspace-1", "chatgpt_user_id": "user-1"}, Status: service.StatusActive},
+		{ID: 12, Name: "Second", Platform: service.PlatformOpenAI, Type: service.AccountTypeOAuth,
+			Credentials: map[string]any{"chatgpt_account_id": "workspace-1", "chatgpt_user_id": "user-1"}, Status: service.StatusActive},
+	}
+	invalid := testDataAccount("Invalid", "workspace-9", "user-9", "invalid@example.com")
+	invalid["tags"] = []any{" "}
+	raw, err := json.Marshal(map[string]any{"data": map[string]any{
+		"type": dataType, "version": dataVersion, "proxies": []any{},
+		"accounts": []any{testDataAccount("Ambiguous", "workspace-1", "user-1", "dup@example.com"), invalid},
+	}})
+	require.NoError(t, err)
+	var req DataImportRequest
+	require.NoError(t, json.Unmarshal(raw, &req))
+
+	preview, _, err := NewAccountHandler(svc, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil).previewDataImport(context.Background(), req)
+	require.NoError(t, err)
+	require.Len(t, preview.Items, 2)
+	require.Equal(t, "Ambiguous", preview.Items[0].Name)
+	require.Equal(t, dataImportCodeIdentityConflict, preview.Items[0].Code)
+	require.Equal(t, []int64{11, 12}, preview.Items[0].MatchedAccountIDs)
+	require.Equal(t, "account identity matches multiple existing accounts: 11, 12", preview.Items[0].Message)
+	require.Equal(t, dataImportCodePayloadInvalid, preview.Items[1].Code)
+	require.Equal(t, "tag: name must contain between 1 and 100 characters", preview.Items[1].Message)
+}

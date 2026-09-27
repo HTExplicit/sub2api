@@ -448,7 +448,7 @@ retryUpstream:
 			return nil, NewOpenAIContinuationStateUnavailableError(resp.StatusCode, resp.Header, probeBody)
 		}
 		if failoverErr, ok := s.handleOpenAIBudgetExceededHTTPFailover(
-			ctx, account, resp.StatusCode, resp.Header, probeBody,
+			ctx, c, account, resp.StatusCode, resp.Header, probeBody,
 		); ok {
 			return nil, failoverErr
 		}
@@ -471,19 +471,10 @@ retryUpstream:
 			// health.  Classify them before agent recovery, failover, response
 			// commitment, or any scheduler/rate-limit side effect.
 			redactedBody := s.redactAgentIdentitySensitiveBody(ctx, account, probeBody)
-			appendOpsUpstreamError(c, OpsUpstreamErrorEvent{
-				Platform:           account.Platform,
-				AccountID:          account.ID,
-				AccountName:        account.Name,
-				UpstreamStatusCode: resp.StatusCode,
-				UpstreamRequestID:  resp.Header.Get("x-request-id"),
-				Passthrough:        true,
-				Kind:               "continuation_state",
-				Message:            OpenAIContinuationStateUnavailableClientMessage,
-				ContinuationDiagnostic: buildOpenAIContinuationDiagnostic(
-					c, diagnosticIncomingBody, upstreamReq, body, probeBody, string(continuationStateError),
-				),
-			})
+			s.recordOpenAIRequestTerminalUpstreamError(ctx, c, account, resp.StatusCode, resp.Header, body, redactedBody,
+				"continuation_state", true,
+				buildOpenAIContinuationDiagnostic(c, diagnosticIncomingBody, upstreamReq, body, redactedBody, string(continuationStateError)),
+			)
 			return nil, NewOpenAIContinuationStateUnavailableError(resp.StatusCode, resp.Header, redactedBody)
 		}
 		if !agentTaskRecoveryTried && s.isAgentIdentityAccount(ctx, account) && isAgentIdentityTaskInvalidHTTPResponse(resp.StatusCode, probeBody) {
@@ -496,19 +487,11 @@ retryUpstream:
 		}
 
 		if classification := classifyOpenAIRequestRejection(resp.StatusCode, upstreamMsg, probeBody); classification != "" {
-			appendOpsUpstreamError(c, OpsUpstreamErrorEvent{
-				Platform:           account.Platform,
-				AccountID:          account.ID,
-				AccountName:        account.Name,
-				UpstreamStatusCode: resp.StatusCode,
-				UpstreamRequestID:  resp.Header.Get("x-request-id"),
-				Passthrough:        true,
-				Kind:               "request_rejected",
-				Message:            OpenAIRequestRejectedClientMessage,
-				ContinuationDiagnostic: buildOpenAIContinuationDiagnostic(
-					c, diagnosticIncomingBody, upstreamReq, body, probeBody, classification,
-				),
-			})
+			redactedBody := s.redactAgentIdentitySensitiveBody(ctx, account, probeBody)
+			s.recordOpenAIRequestTerminalUpstreamError(ctx, c, account, resp.StatusCode, resp.Header, body, redactedBody,
+				"request_rejected", true,
+				buildOpenAIContinuationDiagnostic(c, diagnosticIncomingBody, upstreamReq, body, redactedBody, classification),
+			)
 			return nil, NewOpenAIRequestRejectedError(resp.StatusCode, resp.Header)
 		}
 
@@ -2287,7 +2270,7 @@ func (s *OpenAIGatewayService) handleStreamingResponsePassthrough(
 					pendingErrorEventHeader = false
 					continue
 				}
-				if failoverErr, ok := s.openAIBudgetExceededHTTPResponseTerminalFailover(ctx, account, resp.StatusCode, resp.Header, rawDataBytes); ok {
+				if failoverErr, ok := s.openAIBudgetExceededHTTPResponseTerminalFailover(ctx, c, account, resp.StatusCode, resp.Header, rawDataBytes); ok {
 					// Classification must happen on the untouched event, before error
 					// rules, namespace restoration or the client stream see it. The
 					// handler can switch accounts while pendingLines are still
@@ -2542,6 +2525,7 @@ func (s *OpenAIGatewayService) handleStreamingResponsePassthrough(
 				continue
 			case openAIRefusalStreamReplace:
 				if openAIRefusalShouldPromptRetry(c, refusalRuntime) {
+					recordOpenAIRefusalRecovery(ctx, c, account, "sse", false, refusalEarlyEmitted, openAIRefusalActionPromptRetry, refusalStream.evidence())
 					return resultWithUsage(), NewOpenAIRefusalRecoveryFailoverError(resp.Header)
 				}
 				pendingLines = pendingLines[:0]
@@ -2559,7 +2543,7 @@ func (s *OpenAIGatewayService) handleStreamingResponsePassthrough(
 					firstTokenMs = &ms
 				}
 				s.clearOpenAIProxyStreamDisconnect(account, ctx)
-				logger.FromContext(ctx).Info("openai.refusal_recovery_rewritten", zap.String("transport", "sse"), zap.Bool("early", refusalEarlyEmitted))
+				recordOpenAIRefusalRecovery(ctx, c, account, "sse", false, refusalEarlyEmitted, openAIRefusalActionRewritten, refusalStream.evidence())
 				return resultWithUsage(), nil
 			case openAIRefusalStreamHold:
 				lineStartsClientOutput = false
@@ -2703,10 +2687,10 @@ func (s *OpenAIGatewayService) handleNonStreamingResponsePassthrough(
 		observer.ObserveOpenAI(body, strings.TrimSpace(gjson.GetBytes(body, "type").String()))
 	}
 	if account != nil {
-		failoverErr, budgetExceeded := s.openAIBudgetExceededHTTPResponseTerminalFailover(ctx, account, resp.StatusCode, resp.Header, body)
+		failoverErr, budgetExceeded := s.openAIBudgetExceededHTTPResponseTerminalFailover(ctx, c, account, resp.StatusCode, resp.Header, body)
 		forEachOpenAISSEDataPayload(string(body), func(payload []byte) {
 			if !budgetExceeded {
-				failoverErr, budgetExceeded = s.openAIBudgetExceededHTTPResponseTerminalFailover(ctx, account, resp.StatusCode, resp.Header, payload)
+				failoverErr, budgetExceeded = s.openAIBudgetExceededHTTPResponseTerminalFailover(ctx, c, account, resp.StatusCode, resp.Header, payload)
 			}
 		})
 		if budgetExceeded {
@@ -2719,6 +2703,7 @@ func (s *OpenAIGatewayService) handleNonStreamingResponsePassthrough(
 			model = canonicalOpenAIAccountSchedulingModel(account, originalModel)
 		}
 		_ = s.handleOpenAIAccountUpstreamError(ctx, account, http.StatusBadRequest, resp.Header, body, model)
+		s.recordOpenAIModelNotSupportedAttempt(c, account, resp.Header, body, true)
 		return nil, newOpenAIModelNotSupportedFailoverError(resp.Header, body)
 	}
 	body = restoreSystemPromptEcho(c, body)
@@ -2774,14 +2759,15 @@ func (s *OpenAIGatewayService) handleNonStreamingResponsePassthrough(
 	if !cyberHit && isOpenAIRefusalRecoveryResponsesRequest(c) {
 		runtime := s.openAIRefusalRecoveryRuntime(ctx)
 		if runtime.RewriteEnabled() {
-			if rewritten, matched, _, rewriteErr := RewriteOpenAIResponsesJSON(body, runtime.Matcher); rewriteErr != nil {
+			if rewritten, matched, evidence, rewriteErr := rewriteOpenAIResponsesJSONWithEvidence(body, runtime.Matcher); rewriteErr != nil {
 				logger.FromContext(ctx).Warn("openai.refusal_recovery_rewrite_failed", zap.String("transport", "http"), zap.Error(rewriteErr))
 			} else if matched {
 				if openAIRefusalShouldPromptRetry(c, runtime) {
+					recordOpenAIRefusalRecovery(ctx, c, account, "http", false, false, openAIRefusalActionPromptRetry, evidence)
 					return nil, NewOpenAIRefusalRecoveryFailoverError(resp.Header)
 				}
 				body = rewritten
-				logger.FromContext(ctx).Info("openai.refusal_recovery_rewritten", zap.String("transport", "http"))
+				recordOpenAIRefusalRecovery(ctx, c, account, "http", false, false, openAIRefusalActionRewritten, evidence)
 			}
 		}
 	}
@@ -2867,14 +2853,15 @@ func (s *OpenAIGatewayService) handlePassthroughSSEToJSON(resp *http.Response, c
 		if !cyberHit && isOpenAIRefusalRecoveryResponsesRequest(c) {
 			runtime := s.openAIRefusalRecoveryRuntime(c.Request.Context())
 			if runtime.RewriteEnabled() {
-				if rewritten, matched, _, rewriteErr := RewriteOpenAIResponsesJSON(body, runtime.Matcher); rewriteErr != nil {
+				if rewritten, matched, evidence, rewriteErr := rewriteOpenAIResponsesJSONWithEvidence(body, runtime.Matcher); rewriteErr != nil {
 					logger.FromContext(c.Request.Context()).Warn("openai.refusal_recovery_rewrite_failed", zap.String("transport", "http_sse_to_json"), zap.Error(rewriteErr))
 				} else if matched {
 					if openAIRefusalShouldPromptRetry(c, runtime) {
+						recordOpenAIRefusalRecovery(c.Request.Context(), c, account, "http_sse_to_json", false, false, openAIRefusalActionPromptRetry, evidence)
 						return nil, NewOpenAIRefusalRecoveryFailoverError(resp.Header)
 					}
 					body = rewritten
-					logger.FromContext(c.Request.Context()).Info("openai.refusal_recovery_rewritten", zap.String("transport", "http_sse_to_json"))
+					recordOpenAIRefusalRecovery(c.Request.Context(), c, account, "http_sse_to_json", false, false, openAIRefusalActionRewritten, evidence)
 				}
 			}
 		}

@@ -2,6 +2,7 @@ package handler
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -563,6 +564,121 @@ func TestOpsErrorLoggerMiddleware_StreamFailureKeepsTerminalSemanticsAndAttemptS
 	require.Equal(t, http.StatusBadGateway, *job.entry.UpstreamStatusCode, "client semantic status must not replace the recorded upstream HTTP status")
 	require.NotNil(t, job.entry.UpstreamErrorMessage)
 	require.Equal(t, "input exceeds the context window", *job.entry.UpstreamErrorMessage)
+}
+
+// A terminal carrying a gateway sentence is not the upstream's text: the
+// recorded upstream message stays while error_message is the client sentence.
+func TestOpsErrorLoggerMiddleware_StreamFailureGatewaySentenceKeepsUpstreamMessage(t *testing.T) {
+	setupOpsErrorLogTestQueue(t, 2)
+	gin.SetMode(gin.TestMode)
+
+	ops := service.NewOpsService(nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	router := gin.New()
+	router.Use(OpsErrorLoggerMiddleware(ops))
+	router.POST("/v1/responses", func(c *gin.Context) {
+		service.SetOpsUpstreamError(c, http.StatusBadRequest, "Previous response with id 'resp_1' not found.", "")
+		c.Status(http.StatusOK)
+		_, _ = c.Writer.WriteString("event: response.failed\n")
+		_, _ = c.Writer.WriteString(`data: {"type":"response.failed","response":{"error":{"type":"invalid_request_error","code":"continuation_state_unavailable","message":"` + service.OpenAIContinuationStateUnavailableClientMessage + `"}}}`)
+		_, _ = c.Writer.WriteString("\n\n")
+	})
+
+	recorder := httptest.NewRecorder()
+	router.ServeHTTP(recorder, httptest.NewRequest(http.MethodPost, "/v1/responses", nil))
+
+	require.Equal(t, int64(1), OpsErrorLogQueueLength())
+	job := <-opsErrorLogQueue
+	require.Equal(t, service.OpenAIContinuationStateUnavailableClientMessage, job.entry.ErrorMessage)
+	require.NotNil(t, job.entry.UpstreamErrorMessage)
+	require.Equal(t, "Previous response with id 'resp_1' not found.", *job.entry.UpstreamErrorMessage)
+}
+
+// A local rejection keeps the client's sentence in error_message; the reason
+// sits in upstream_error_detail, which the user error view never returns.
+func TestOpsErrorLoggerMiddleware_LocalErrorDetailStaysAdminOnly(t *testing.T) {
+	setupOpsErrorLogTestQueue(t, 2)
+	gin.SetMode(gin.TestMode)
+
+	const reason = "quality run r1 belongs to API key 7 of user 8 in group 9"
+	ops := service.NewOpsService(nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	router := gin.New()
+	router.Use(OpsErrorLoggerMiddleware(ops))
+	router.POST("/v1/responses", func(c *gin.Context) {
+		setOpsLocalErrorDetail(c, reason)
+		c.JSON(http.StatusConflict, gin.H{"error": gin.H{"type": "codex_quality_unavailable", "message": "Codex quality run unavailable"}})
+	})
+
+	recorder := httptest.NewRecorder()
+	router.ServeHTTP(recorder, httptest.NewRequest(http.MethodPost, "/v1/responses", nil))
+
+	require.JSONEq(t, `{"error":{"type":"codex_quality_unavailable","message":"Codex quality run unavailable"}}`, recorder.Body.String())
+	require.Equal(t, int64(1), OpsErrorLogQueueLength())
+	job := <-opsErrorLogQueue
+	require.Equal(t, "Codex quality run unavailable", job.entry.ErrorMessage)
+	require.NotEqual(t, "upstream", job.entry.ErrorPhase)
+	require.Nil(t, job.entry.UpstreamErrorMessage)
+	require.NotNil(t, job.entry.UpstreamErrorDetail)
+	require.Equal(t, "local: "+reason, *job.entry.UpstreamErrorDetail)
+
+	stored := &service.OpsErrorLogDetail{
+		OpsErrorLog: service.OpsErrorLog{
+			Phase:      job.entry.ErrorPhase,
+			Type:       job.entry.ErrorType,
+			StatusCode: job.entry.StatusCode,
+			Message:    job.entry.ErrorMessage,
+		},
+		ErrorBody:           job.entry.ErrorBody,
+		UpstreamErrorDetail: *job.entry.UpstreamErrorDetail,
+	}
+	userView, err := json.Marshal(service.ToUserErrorRequestDetail(stored))
+	require.NoError(t, err)
+	require.NotContains(t, string(userView), "API key 7")
+	require.Contains(t, string(userView), "Codex quality run unavailable")
+}
+
+// A refusal the gateway rewrote or retried away is evidence, not an upstream
+// error: a request that succeeds leaves no Ops row, and a request that
+// finally fails carries the evidence without turning it into its upstream
+// message.
+func TestOpsErrorLoggerMiddleware_RefusalEvidenceOnlyOnFailedRequests(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	evidence := []*service.OpsUpstreamErrorEvent{{
+		Kind:    "refusal_recovery",
+		Reason:  "rewritten",
+		Message: `upstream refusal matched keyword "I cannot" (rewritten, transport=http)`,
+		Detail:  "I cannot help with that request.",
+	}}
+	for _, tc := range []struct {
+		name   string
+		status int
+		rows   int64
+	}{{"rewritten_success", http.StatusOK, 0}, {"retries_exhausted", http.StatusBadGateway, 1}} {
+		t.Run(tc.name, func(t *testing.T) {
+			setupOpsErrorLogTestQueue(t, 2)
+			ops := service.NewOpsService(nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+			router := gin.New()
+			router.Use(OpsErrorLoggerMiddleware(ops))
+			router.POST("/v1/responses", func(c *gin.Context) {
+				c.Set(service.OpsRefusalRecoveryEventsKey, evidence)
+				if tc.status >= http.StatusBadRequest {
+					c.JSON(tc.status, gin.H{"error": gin.H{"type": "upstream_error", "message": "Temporary upstream failure"}})
+					return
+				}
+				c.JSON(http.StatusOK, gin.H{"id": "resp_1", "status": "completed"})
+			})
+
+			router.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodPost, "/v1/responses", nil))
+
+			require.Equal(t, tc.rows, OpsErrorLogQueueLength())
+			if tc.rows == 0 {
+				return
+			}
+			job := <-opsErrorLogQueue
+			require.Nil(t, job.entry.UpstreamErrorMessage)
+			require.NotNil(t, job.entry.UpstreamErrorsJSON)
+			require.Contains(t, *job.entry.UpstreamErrorsJSON, `"kind":"refusal_recovery"`)
+		})
+	}
 }
 
 func TestOpsErrorLoggerMiddleware_PrefersContextRequestID(t *testing.T) {

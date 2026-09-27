@@ -2,11 +2,135 @@ package service
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"errors"
 	"fmt"
+	"log/slog"
+	"strings"
 	"sync"
 	"time"
 )
+
+// ImageStudioRequestOrigin is the client address and User-Agent of the request
+// that submitted or retried an Image Studio job.
+type ImageStudioRequestOrigin struct {
+	ClientIP  string
+	UserAgent string
+}
+
+type imageStudioRequestOriginKey struct{}
+
+// WithImageStudioRequestOrigin records the submitting client for Create/Retry.
+func WithImageStudioRequestOrigin(ctx context.Context, origin ImageStudioRequestOrigin) context.Context {
+	return context.WithValue(ctx, imageStudioRequestOriginKey{}, origin)
+}
+
+func imageStudioRequestOriginFromContext(ctx context.Context) ImageStudioRequestOrigin {
+	if ctx == nil {
+		return ImageStudioRequestOrigin{}
+	}
+	origin, _ := ctx.Value(imageStudioRequestOriginKey{}).(ImageStudioRequestOrigin)
+	return origin
+}
+
+// ImageStudioRequestOriginFromContext returns the Image Studio submitter that
+// an in-process gateway request carries for its usage and Ops records. The
+// gateway request itself carries no client headers, because the images
+// handler forwards request headers to API-key upstreams.
+func ImageStudioRequestOriginFromContext(ctx context.Context) (ImageStudioRequestOrigin, bool) {
+	origin := imageStudioRequestOriginFromContext(ctx)
+	return origin, strings.TrimSpace(origin.ClientIP) != "" || strings.TrimSpace(origin.UserAgent) != ""
+}
+
+// ImageStudioClientRequestIDPrefix starts the client request ID of every Image
+// Studio gateway request. It marks the Ops rows that stay admin-only.
+const ImageStudioClientRequestIDPrefix = "image-studio-"
+
+// imageStudioClientRequestIDMaxLen keeps "client:"+ID, the usage billing
+// dedupe key, within the 64-character request ID columns.
+const imageStudioClientRequestIDMaxLen = 57
+
+// NewImageStudioClientRequestID returns the client request ID of one gateway
+// attempt of a job item. It ties Ops and usage rows to the item and is the
+// usage billing dedupe key, so every attempt gets its own random suffix: a
+// retried or re-run item is billed again instead of being deduplicated.
+func NewImageStudioClientRequestID(jobID, itemID int64) string {
+	var nonce [6]byte
+	_, _ = rand.Read(nonce[:])
+	id := fmt.Sprintf("%sjob-%d-item-%d-%s", ImageStudioClientRequestIDPrefix, jobID, itemID, hex.EncodeToString(nonce[:]))
+	if len(id) > imageStudioClientRequestIDMaxLen {
+		var wide [16]byte
+		_, _ = rand.Read(wide[:])
+		id = ImageStudioClientRequestIDPrefix + hex.EncodeToString(wide[:])
+	}
+	return id
+}
+
+// imageStudioLogLimit bounds the error text an Image Studio failure writes to
+// the server log; a response body can be an entire image.
+const imageStudioLogLimit = 4 << 10
+
+// ImageStudioLogText returns at most the first 4 KiB of a text for the server
+// log, noting how long the full text was.
+func ImageStudioLogText(text string) string {
+	if len(text) <= imageStudioLogLimit {
+		return strings.ToValidUTF8(text, "\uFFFD")
+	}
+	return strings.ToValidUTF8(text[:imageStudioLogLimit], "\uFFFD") + fmt.Sprintf("...<%d bytes in total>", len(text))
+}
+
+// imageStudioOrigins keeps the submitting client of recent jobs in memory, so
+// the gateway request of a job item carries the real client IP and User-Agent
+// into usage and Ops records. Without a database column it does not survive a
+// restart, and a job processed by another instance falls back to no origin.
+type imageStudioOrigins struct {
+	mu      sync.Mutex
+	entries map[int64]imageStudioOriginEntry
+}
+
+type imageStudioOriginEntry struct {
+	origin ImageStudioRequestOrigin
+	at     time.Time
+}
+
+func (o *imageStudioOrigins) remember(jobID int64, origin ImageStudioRequestOrigin, now time.Time) {
+	if o == nil || jobID <= 0 || (origin.ClientIP == "" && origin.UserAgent == "") {
+		return
+	}
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	if o.entries == nil {
+		o.entries = make(map[int64]imageStudioOriginEntry)
+	}
+	for id, entry := range o.entries {
+		if now.Sub(entry.at) > ImageStudioFileRetention {
+			delete(o.entries, id)
+		}
+	}
+	o.entries[jobID] = imageStudioOriginEntry{origin: origin, at: now}
+}
+
+func (o *imageStudioOrigins) lookup(jobID int64) ImageStudioRequestOrigin {
+	if o == nil {
+		return ImageStudioRequestOrigin{}
+	}
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	return o.entries[jobID].origin
+}
+
+// ImageStudioGatewayError keeps the HTTP status and body the image gateway
+// returned for a failed Image Studio request. The server log and the Ops error
+// record keep them; the job item shows its user-facing message.
+type ImageStudioGatewayError struct {
+	StatusCode int
+	Body       string
+}
+
+func (e *ImageStudioGatewayError) Error() string {
+	return fmt.Sprintf("image gateway returned %d: %s", e.StatusCode, e.Body)
+}
 
 type ImageStudioRuntimeOptions struct {
 	Workers         int
@@ -164,7 +288,7 @@ func (r *ImageStudioRuntime) processClaim(ctx context.Context, claim *ImageStudi
 		r.failClaim(ctx, job.ID, claim.Item.ID, err)
 		return
 	}
-	request := ImageStudioExecutionRequest{Job: job, Item: claim.Item, APIKey: key}
+	request := ImageStudioExecutionRequest{Job: job, Item: claim.Item, APIKey: key, Origin: r.studio.origins.lookup(job.ID)}
 	for _, artifact := range claim.Inputs {
 		data, readErr := r.store.Read(artifact.StorageKey)
 		if readErr != nil {
@@ -204,6 +328,11 @@ func (r *ImageStudioRuntime) processClaim(ctx context.Context, claim *ImageStudi
 
 func (r *ImageStudioRuntime) failClaim(ctx context.Context, jobID, itemID int64, err error) {
 	code, message := imageStudioSafeExecutionError(ctx, err)
+	if err != nil {
+		// The job item keeps its user-facing message; administrators get the
+		// original error (for a gateway failure its status and body) here.
+		slog.Warn("image_studio.item_failed", "job_id", jobID, "item_id", itemID, "code", code, "error", ImageStudioLogText(err.Error()))
+	}
 	finishCtx := context.WithoutCancel(ctx)
 	if completeErr := r.repo.CompleteFailure(finishCtx, itemID, code, message); completeErr != nil {
 		return

@@ -252,7 +252,9 @@ export default {
         provider: 'Provider',
         providerTurnstile: 'Cloudflare Turnstile',
         providerTencent: 'Tencent Captcha',
-        providerAliyun: 'Aliyun Captcha 2.0'
+        providerAliyun: 'Aliyun Captcha 2.0',
+        multipleEnabled: 'The saved settings enable several captcha providers: {providers}. The server accepts only one, so settings cannot be saved until you select a provider here; selecting one keeps only that provider.',
+        multipleEnabledSaveBlocked: 'Settings were not saved: several captcha providers are enabled ({providers}). Select one provider under {tab} > {section}, then save again.'
       },
       tencentCaptcha: {
         title: 'Tencent Captcha',
@@ -534,12 +536,35 @@ export default {
         title: 'Model catalog and capacity references',
         description: 'References support capacity planning. Account overrides and live upstream declarations retain their existing precedence.',
         search: 'Search model or provider',
-        count: '{count} matches; showing the first {shown}.',
+        count: '{count} matches.',
         context: 'Context',
         maxOutput: 'Max output',
         subscriptionMaximum: 'Subscription reference maximum',
         verified: 'Verified',
-        loadFailed: 'Failed to load the model catalog'
+        loadFailed: 'Failed to load the model catalog',
+        aliases: 'Aliases',
+        contextWindow: 'Context window',
+        maxContextWindow: 'Max context window',
+        maxInputTokens: 'Max input',
+        capacityBasis: 'Capacity basis',
+        observedAt: 'Observed at',
+        conditions: 'Conditions',
+        normalizationBasis: 'Normalization basis',
+        originalText: 'Original text',
+        matchHosts: 'Only for upstream hosts',
+        matchAccountModes: 'Only for account modes',
+        reference: 'Reference catalog',
+        sources: 'Sources'
+      },
+      deprecatedSettings: {
+        title: 'Deprecated settings (read-only, no effect)',
+        hint: 'These switches are retired: saving keeps the stored values, but nothing reads them at runtime. Shown here as stored.',
+        on: 'On',
+        off: 'Off',
+        labels: {
+          openai_apikey_alpha_search_responses_bridge_enabled: 'OpenAI API-key accounts: Alpha Search via the Responses bridge',
+          openai_apikey_prompt_cache_key_normalization_enabled: 'OpenAI API-key accounts: prompt_cache_key normalization'
+        }
       },
       gatewayForwarding: {
         title: 'Request Forwarding',

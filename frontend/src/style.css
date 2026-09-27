@@ -784,9 +784,13 @@
  *
  * The recipes above are upstream's. While <html> carries `flat-theme`, the
  * blocks below restate them in the console language (styles/flat-theme.css
- * tokens): 32px controls, 6/8/12px radii, hairlines inside pages, shadows
- * only on popovers and dialogs, ink primary actions. `:where()` keeps the
- * upstream specificity, so page utilities (px-3, w-full, ...) still win.
+ * tokens): shadcn-neutral light, Linear-layered dark, indigo accent; 32px
+ * controls (36px fields and buttons inside dialogs), 8/10/12px radii, a 1px
+ * shadow on cards and outline controls, an inner highlight on solid buttons,
+ * a 3px focus ring. `:where()` keeps the upstream specificity so page
+ * utilities (px-3, w-full, ...) still win; the few blocks that restyle
+ * upstream markup built only from utilities (app frame, switches,
+ * checkboxes, pagination, row menu, KPI tiles) use plain selectors and say so.
  * ========================================================================== */
 @layer base {
   :where(.flat-theme) body {
@@ -795,15 +799,123 @@
   }
 
   .flat-theme ::selection {
-    background-color: rgb(var(--ui-ink) / 0.14);
+    background-color: rgb(var(--ui-primary) / 0.2);
     color: inherit;
+  }
+
+  /* keyboard focus that no recipe restyles: an accent outline instead of the UA ring */
+  :where(.flat-theme) :focus-visible {
+    outline: 2px solid rgb(var(--ui-primary) / 0.6);
+    outline-offset: 1px;
+  }
+
+  /* Checkbox and radio: 16px, >= 3:1 outline, indigo when on. Hidden or overlay inputs
+     (sr-only, opacity-0, hidden) keep their upstream behaviour. */
+  .flat-theme input:is([type='checkbox'], [type='radio']):not(.sr-only, .opacity-0, .hidden) {
+    appearance: none;
+    -webkit-appearance: none;
+    width: 1rem;
+    height: 1rem;
+    flex-shrink: 0;
+    border: 1px solid rgb(var(--ui-control-line));
+    border-radius: 4px;
+    background-color: rgb(var(--ui-surface));
+    background-position: center;
+    background-repeat: no-repeat;
+    box-shadow: var(--ui-shadow-xs);
+    color: rgb(var(--ui-primary));
+    cursor: pointer;
+    vertical-align: middle;
+    transition: background-color 120ms, border-color 120ms, box-shadow 120ms;
+  }
+
+  .flat-theme input[type='radio']:not(.sr-only, .opacity-0, .hidden) {
+    border-radius: 9999px;
+  }
+
+  .flat-theme input:is([type='checkbox'], [type='radio']):not(.sr-only, .opacity-0, .hidden):hover:not(:disabled) {
+    border-color: rgb(var(--ui-ink) / 0.55);
+  }
+
+  .flat-theme input[type='checkbox']:not(.sr-only, .opacity-0, .hidden):is(:checked, :indeterminate),
+  .flat-theme input[type='radio']:not(.sr-only, .opacity-0, .hidden):checked {
+    border-color: rgb(var(--ui-primary));
+    background-color: rgb(var(--ui-primary));
+    box-shadow: inset 0 1px 0 0 rgb(255 255 255 / 0.14), var(--ui-shadow-xs);
+  }
+
+  .flat-theme input[type='checkbox']:not(.sr-only, .opacity-0, .hidden):checked {
+    background-image: url("data:image/svg+xml,%3csvg viewBox='0 0 16 16' fill='none' xmlns='http://www.w3.org/2000/svg'%3e%3cpath d='M4 8.25l2.6 2.6L12 5.4' stroke='white' stroke-width='1.9' stroke-linecap='round' stroke-linejoin='round'/%3e%3c/svg%3e");
+  }
+
+  .flat-theme input[type='checkbox']:not(.sr-only, .opacity-0, .hidden):indeterminate {
+    background-image: url("data:image/svg+xml,%3csvg viewBox='0 0 16 16' fill='none' xmlns='http://www.w3.org/2000/svg'%3e%3cpath d='M4.5 8h7' stroke='white' stroke-width='1.9' stroke-linecap='round'/%3e%3c/svg%3e");
+  }
+
+  .flat-theme input[type='radio']:not(.sr-only, .opacity-0, .hidden):checked {
+    background-image: radial-gradient(circle, #fff 0 2.5px, transparent 3px);
+  }
+
+  /* a transparent outline (not none) stays visible as the system focus colour in forced-colors mode */
+  .flat-theme input:is([type='checkbox'], [type='radio']):not(.sr-only, .opacity-0, .hidden):focus-visible {
+    outline: 2px solid transparent;
+    outline-offset: 1px;
+    box-shadow: var(--ui-focus-ring);
+  }
+
+  .flat-theme input:is([type='checkbox'], [type='radio']):not(.sr-only, .opacity-0, .hidden):disabled {
+    cursor: not-allowed;
+    opacity: 0.5;
+  }
+
+  /* Forced-colors mode (Windows high contrast): the drawn box and check marks are background colours
+     and images, which the browser removes, so the native controls come back. */
+  @media (forced-colors: active) {
+    .flat-theme input:is([type='checkbox'], [type='radio']):not(.sr-only, .opacity-0, .hidden) {
+      appearance: auto;
+      -webkit-appearance: auto;
+      background-image: none;
+    }
   }
 }
 
 @layer components {
+  /* ---- app frame (upstream markup: AppLayout main column, marked .app-main) ----
+     Desktop: the column is an inset panel on the canvas, like shadcn's inset sidebar layout and
+     Linear's app frame. The sidebar sits on the canvas without its own border. */
+  :where(.flat-theme) .app-main {
+    --ui-frame-inset: 0px;
+    --ui-frame-offset: 0px;
+  }
+
+  @media (min-width: 1024px) {
+    .flat-theme .app-main {
+      --ui-frame-inset: 0.5rem;
+      --ui-frame-offset: calc(2 * var(--ui-frame-inset) + 2px);
+      margin-top: var(--ui-frame-inset);
+      margin-right: var(--ui-frame-inset);
+      margin-bottom: var(--ui-frame-inset);
+      min-height: calc(100vh - var(--ui-frame-offset));
+      border: 1px solid rgb(var(--ui-line));
+      border-radius: var(--ui-radius-xl);
+      background-color: rgb(var(--ui-panel));
+      box-shadow: var(--ui-shadow-panel);
+    }
+
+    .flat-theme .app-main > header {
+      border-top-left-radius: calc(var(--ui-radius-xl) - 1px);
+      border-top-right-radius: calc(var(--ui-radius-xl) - 1px);
+    }
+  }
+
+  :where(.flat-theme) .app-main > header {
+    border-color: rgb(var(--ui-line));
+    background-color: rgb(var(--ui-panel));
+  }
+
   /* ---- buttons ---- */
   :where(.flat-theme) .btn {
-    min-height: 2rem;
+    min-height: var(--ui-control-h);
     gap: 0.375rem;
     border: 1px solid transparent;
     border-radius: var(--ui-radius-md);
@@ -813,9 +925,14 @@
     font-weight: 500;
     white-space: nowrap;
     box-shadow: none;
-    transition-property: color, background-color, border-color, opacity;
-    transition-duration: 150ms;
+    transition-property: color, background-color, border-color, box-shadow, opacity;
+    transition-duration: 120ms;
     transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+  }
+
+  :where(.flat-theme) .btn > svg {
+    width: 1rem;
+    height: 1rem;
   }
 
   :where(.flat-theme) .btn:focus {
@@ -823,10 +940,11 @@
   }
 
   :where(.flat-theme) .btn:focus-visible {
+    outline: none;
     --tw-ring-offset-width: 0px;
     --tw-ring-offset-shadow: 0 0 #0000;
-    --tw-ring-shadow: 0 0 0 3px rgb(var(--ui-ink) / 0.18);
-    box-shadow: var(--tw-ring-shadow);
+    --tw-ring-shadow: var(--ui-focus-ring);
+    box-shadow: var(--ui-focus-ring);
   }
 
   :where(.flat-theme) .btn:active:not(:disabled) {
@@ -834,31 +952,49 @@
   }
 
   :where(.flat-theme) .btn-primary {
-    background-image: none;
+    border-color: rgb(var(--ui-primary-active));
     background-color: rgb(var(--ui-primary));
-    border-color: rgb(var(--ui-primary));
+    /* depth comes from the inner top highlight and a slightly deeper bottom edge, never from a
+       lighter top, so the label keeps >= 4.5:1 on every pixel */
+    background-image: linear-gradient(to bottom, rgb(0 0 0 / 0) 45%, rgb(0 0 0 / 0.07));
     color: rgb(var(--ui-on-primary));
     --theme-on-fill: var(--ui-on-primary);
+    box-shadow: var(--ui-shadow-primary);
+  }
+
+  :where(.flat-theme.dark) .btn-primary {
+    border-color: rgb(var(--ui-primary));
   }
 
   :where(.flat-theme) .btn-primary:hover:not(:disabled) {
-    box-shadow: none;
     background-color: rgb(var(--ui-primary-hover));
-    border-color: rgb(var(--ui-primary-hover));
+    box-shadow: var(--ui-shadow-primary);
+  }
+
+  :where(.flat-theme) .btn-primary:active:not(:disabled) {
+    background-color: rgb(var(--ui-primary-active));
+    background-image: none;
+    box-shadow: inset 0 1px 2px 0 rgb(0 0 0 / 0.18);
+  }
+
+  :where(.flat-theme) .btn-primary:focus-visible {
+    box-shadow: var(--ui-shadow-primary), var(--ui-focus-ring);
   }
 
   :where(.flat-theme) .btn-secondary {
+    border-color: rgb(var(--ui-line));
     background-color: rgb(var(--ui-surface));
-    border-color: rgb(var(--ui-line-strong));
     color: rgb(var(--ui-ink));
+    box-shadow: var(--ui-shadow-xs), var(--ui-highlight);
   }
 
   :where(.flat-theme) .btn-secondary:hover:not(:disabled) {
+    border-color: rgb(var(--ui-line));
     background-color: rgb(var(--ui-hover));
-    border-color: rgb(var(--ui-line-strong));
   }
 
   :where(.flat-theme) .btn-ghost {
+    border-color: transparent;
     background-color: transparent;
     color: rgb(var(--ui-muted));
   }
@@ -871,49 +1007,49 @@
   :where(.flat-theme) .btn-danger,
   :where(.flat-theme) .btn-success,
   :where(.flat-theme) .btn-warning {
-    background-image: none;
+    background-image: linear-gradient(to bottom, rgb(0 0 0 / 0) 45%, rgb(0 0 0 / 0.07));
     color: #fff;
+    box-shadow: inset 0 1px 0 0 rgb(255 255 255 / 0.14), var(--ui-shadow-xs);
   }
 
   :where(.flat-theme) .btn-danger {
     background-color: rgb(var(--theme-color-danger-600));
-    border-color: rgb(var(--theme-color-danger-600));
+    border-color: rgb(var(--theme-color-danger-700));
   }
 
   :where(.flat-theme) .btn-danger:hover:not(:disabled) {
-    box-shadow: none;
     background-color: rgb(var(--theme-color-danger-700));
-    border-color: rgb(var(--theme-color-danger-700));
   }
 
   :where(.flat-theme) .btn-success {
     background-color: rgb(var(--theme-color-success-600));
-    border-color: rgb(var(--theme-color-success-600));
+    border-color: rgb(var(--theme-color-success-700));
   }
 
   :where(.flat-theme) .btn-success:hover:not(:disabled) {
-    box-shadow: none;
     background-color: rgb(var(--theme-color-success-700));
-    border-color: rgb(var(--theme-color-success-700));
   }
 
   :where(.flat-theme) .btn-warning {
     background-color: rgb(var(--theme-color-warning-600));
-    border-color: rgb(var(--theme-color-warning-600));
+    border-color: rgb(var(--theme-color-warning-700));
   }
 
   :where(.flat-theme) .btn-warning:hover:not(:disabled) {
-    box-shadow: none;
     background-color: rgb(var(--theme-color-warning-700));
-    border-color: rgb(var(--theme-color-warning-700));
   }
 
   :where(.flat-theme) .btn-sm {
     min-height: 1.75rem;
-    border-radius: var(--ui-radius-md);
+    border-radius: var(--ui-radius-sm);
     padding: 0.1875rem 0.625rem;
     font-size: 0.75rem;
     line-height: 1.25rem;
+  }
+
+  :where(.flat-theme) .btn-sm > svg {
+    width: 0.875rem;
+    height: 0.875rem;
   }
 
   :where(.flat-theme) .btn-md {
@@ -923,32 +1059,49 @@
   }
 
   :where(.flat-theme) .btn-lg {
-    min-height: 2.25rem;
+    min-height: var(--ui-field-h);
     border-radius: var(--ui-radius-md);
     padding: 0.4375rem 1rem;
     font-size: 0.875rem;
   }
 
   :where(.flat-theme) .btn-icon {
-    min-height: 2rem;
-    min-width: 2rem;
+    min-height: var(--ui-control-h);
+    min-width: var(--ui-control-h);
     border-radius: var(--ui-radius-md);
     padding: 0.4375rem;
   }
 
+  /* bare icon buttons (upstream class name without a recipe of its own) */
+  :where(.flat-theme) .icon-button {
+    display: inline-flex;
+    height: var(--ui-control-h);
+    width: var(--ui-control-h);
+    align-items: center;
+    justify-content: center;
+    border-radius: var(--ui-radius-md);
+    color: rgb(var(--ui-muted));
+    transition: background-color 120ms, color 120ms;
+  }
+
+  :where(.flat-theme) .icon-button:hover {
+    background-color: rgb(var(--ui-hover));
+    color: rgb(var(--ui-ink));
+  }
+
   /* ---- form controls ---- */
   :where(.flat-theme) .input {
-    min-height: 2rem;
+    min-height: var(--ui-control-h);
     border-radius: var(--ui-radius-md);
-    border-color: rgb(var(--ui-line-strong));
+    border-color: rgb(var(--ui-line));
     background-color: rgb(var(--ui-surface));
     padding: 0.3125rem 0.625rem;
     font-size: 0.8125rem;
     line-height: 1.25rem;
     color: rgb(var(--ui-ink));
-    box-shadow: none;
+    box-shadow: var(--ui-shadow-xs);
     transition-property: color, background-color, border-color, box-shadow;
-    transition-duration: 150ms;
+    transition-duration: 120ms;
   }
 
   :where(.flat-theme) .input::placeholder {
@@ -956,20 +1109,39 @@
   }
 
   :where(.flat-theme) .input:hover:not(:disabled):not(:focus) {
-    border-color: rgb(var(--ui-line-focus));
+    border-color: rgb(var(--ui-line-strong));
   }
 
   :where(.flat-theme) .input:focus {
-    border-color: rgb(var(--ui-ink) / 0.4);
+    border-color: rgb(var(--ui-primary));
     --tw-ring-offset-width: 0px;
     --tw-ring-offset-shadow: 0 0 #0000;
-    --tw-ring-shadow: 0 0 0 3px rgb(var(--ui-ink) / 0.06);
-    box-shadow: var(--tw-ring-shadow);
+    --tw-ring-shadow: var(--ui-focus-ring);
+    box-shadow: var(--ui-shadow-xs), var(--ui-focus-ring);
   }
 
   :where(.flat-theme) .input:disabled {
     background-color: rgb(var(--ui-subtle));
     color: rgb(var(--ui-muted));
+    box-shadow: none;
+  }
+
+  /* native selects: one chevron glyph for every select instead of the platform arrow */
+  :where(.flat-theme) select.input {
+    height: var(--ui-control-h);
+    appearance: none;
+    -webkit-appearance: none;
+    padding-top: 0;
+    padding-bottom: 0;
+    padding-right: 2rem;
+    background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none'%3e%3cpath d='M4.5 6.25L8 9.75l3.5-3.5' stroke='%23707070' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3e%3c/svg%3e");
+    background-position: right 0.5rem center;
+    background-repeat: no-repeat;
+    background-size: 1rem;
+  }
+
+  :where(.flat-theme.dark) select.input {
+    background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none'%3e%3cpath d='M4.5 6.25L8 9.75l3.5-3.5' stroke='%239398a1' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3e%3c/svg%3e");
   }
 
   :where(.flat-theme) .input-error,
@@ -979,13 +1151,14 @@
 
   :where(.flat-theme) .input-error:focus {
     border-color: rgb(var(--ui-danger));
-    --tw-ring-shadow: 0 0 0 3px rgb(var(--ui-danger) / 0.14);
+    --tw-ring-shadow: 0 0 0 3px rgb(var(--ui-danger) / 0.16);
+    box-shadow: var(--ui-shadow-xs), 0 0 0 3px rgb(var(--ui-danger) / 0.16);
   }
 
   :where(.flat-theme) .input-label {
     margin-bottom: 0.375rem;
     font-size: 0.8125rem;
-    line-height: 1.125rem;
+    line-height: 1.25rem;
     font-weight: 500;
     color: rgb(var(--ui-ink));
   }
@@ -1000,6 +1173,56 @@
     font-size: 0.75rem;
     line-height: 1.125rem;
     color: rgb(var(--ui-danger));
+  }
+
+  /* shared Select trigger / dropdown (scoped styles in Select.vue): radius, depth, menu items */
+  html.flat-theme .select-trigger {
+    border-radius: var(--ui-radius-md);
+    box-shadow: var(--ui-shadow-xs), var(--ui-highlight);
+  }
+
+  html.flat-theme .select-trigger:hover:not(.select-trigger-disabled) {
+    border-color: rgb(var(--ui-line-strong));
+  }
+
+  html.flat-theme .select-trigger-open {
+    border-color: rgb(var(--ui-primary));
+    box-shadow: var(--ui-shadow-xs), var(--ui-focus-ring);
+  }
+
+  html.flat-theme .select-trigger .select-icon > svg {
+    width: 1rem;
+    height: 1rem;
+  }
+
+  html.flat-theme .select-dropdown-portal {
+    border: 1px solid rgb(var(--ui-line));
+    border-radius: var(--ui-radius-lg);
+    background-color: rgb(var(--ui-raised));
+    box-shadow: var(--ui-shadow-popover);
+  }
+
+  html.flat-theme .select-dropdown-portal .select-options {
+    padding: 0.25rem;
+  }
+
+  html.flat-theme .select-dropdown-portal .select-option {
+    min-height: 2rem;
+    border-radius: var(--ui-radius-sm);
+    padding: 0.375rem 0.5rem;
+    font-size: 0.8125rem;
+    color: rgb(var(--ui-ink));
+  }
+
+  html.flat-theme .select-dropdown-portal .select-option:hover,
+  html.flat-theme .select-dropdown-portal .select-option-focused {
+    background-color: rgb(var(--ui-hover));
+  }
+
+  html.flat-theme .select-dropdown-portal .select-option-selected {
+    background-color: rgb(var(--ui-primary-soft));
+    color: rgb(var(--ui-primary-ink));
+    font-weight: 500;
   }
 
   /* ---- surfaces ---- */
@@ -1017,50 +1240,52 @@
   :where(.flat-theme) .card,
   :where(.flat-theme) .card-glass {
     border: 1px solid rgb(var(--ui-line));
-    border-radius: var(--ui-radius-lg);
-    transition-property: border-color;
+    border-radius: var(--ui-radius-xl);
+    box-shadow: var(--ui-shadow-card), var(--ui-highlight);
+    transition-property: border-color, box-shadow;
     transition-duration: 150ms;
   }
 
   :where(.flat-theme) .card-hover:hover {
     transform: none;
-    box-shadow: none;
+    box-shadow: var(--ui-shadow-card), var(--ui-highlight);
     border-color: rgb(var(--ui-line-strong));
   }
 
   :where(.flat-theme) .card-header,
   :where(.flat-theme) .card-footer {
     border-color: rgb(var(--ui-line));
-    padding: 0.75rem 1rem;
+    padding: 0.875rem 1.25rem;
   }
 
   :where(.flat-theme) .card-body {
-    padding: 1rem;
+    padding: 1.25rem;
   }
 
   /* ---- KPI tiles ---- */
   :where(.flat-theme) .stat-card {
     align-items: center;
     gap: 0.75rem;
-    padding: 0.75rem 0.875rem;
+    padding: 1rem;
+    background-image: var(--ui-card-tint);
   }
 
   :where(.flat-theme) .stat-icon {
-    height: 2rem;
-    width: 2rem;
+    height: 2.25rem;
+    width: 2.25rem;
     flex-shrink: 0;
     border-radius: var(--ui-radius-md);
     font-size: 1rem;
   }
 
   :where(.flat-theme) .stat-icon > svg {
-    height: 1rem;
-    width: 1rem;
+    height: 1.125rem;
+    width: 1.125rem;
   }
 
   :where(.flat-theme) .stat-icon-primary {
-    background-color: rgb(var(--ui-subtle));
-    color: rgb(var(--ui-ink));
+    background-color: rgb(var(--ui-primary-soft));
+    color: rgb(var(--ui-primary-ink));
   }
 
   :where(.flat-theme) .stat-icon-success {
@@ -1079,22 +1304,19 @@
   }
 
   :where(.flat-theme) .stat-value {
-    font-size: 1.125rem;
-    line-height: 1.5rem;
+    font-size: 1.375rem;
+    line-height: 1.75rem;
     font-weight: 600;
     font-variant-numeric: tabular-nums;
-    letter-spacing: -0.01em;
+    letter-spacing: -0.02em;
     color: rgb(var(--ui-ink));
   }
 
   :where(.flat-theme) .stat-label,
   :where(.flat-theme) .ui-label {
-    font-family: var(--ui-font-mono);
-    font-size: 0.6875rem;
+    font-size: 0.75rem;
     line-height: 1rem;
     font-weight: 500;
-    text-transform: uppercase;
-    letter-spacing: 0.06em;
     color: rgb(var(--ui-muted));
   }
 
@@ -1111,11 +1333,46 @@
     color: rgb(var(--ui-danger));
   }
 
+  /* Dashboard KPI tiles (upstream markup: .grid > .card.p-4 > icon tile + label/value/meta):
+     the shadcn section-card treatment — a faint accent wash, a quiet icon tile and a tabular
+     figure as the largest text on the card.
+     Utility classes are matched as [class~="..."] so Tailwind's @apply does not copy these rules
+     into every `@apply grid|card|p-4|rounded-lg ...` site (see the selection block below). */
+  .flat-theme [class~="grid"] > [class~="card"][class~="p-4"]:has(> [class~="flex"] > div[class~="rounded-lg"][class~="p-2"]:first-child > svg:only-child) {
+    background-image: var(--ui-card-tint);
+  }
+
+  .flat-theme [class~="grid"] > [class~="card"][class~="p-4"] > [class~="flex"] > div[class~="rounded-lg"][class~="p-2"]:first-child:has(> svg:only-child) {
+    display: flex;
+    height: 2.25rem;
+    width: 2.25rem;
+    flex-shrink: 0;
+    align-items: center;
+    justify-content: center;
+    border-radius: var(--ui-radius-md);
+    padding: 0;
+    box-shadow: inset 0 0 0 1px rgb(var(--ui-ink) / 0.04);
+  }
+
+  .flat-theme [class~="grid"] > [class~="card"][class~="p-4"] > [class~="flex"] > div[class~="rounded-lg"][class~="p-2"]:first-child > svg:only-child {
+    width: 1.125rem;
+    height: 1.125rem;
+  }
+
+  .flat-theme [class~="grid"] > [class~="card"][class~="p-4"] p[class~="text-xl"] {
+    font-size: 1.375rem;
+    line-height: 1.75rem;
+    font-weight: 600;
+    letter-spacing: -0.02em;
+    font-variant-numeric: tabular-nums;
+  }
+
   /* ---- tables ---- */
   :where(.flat-theme) .table-container {
     border-color: rgb(var(--ui-line));
-    border-radius: var(--ui-radius-lg);
+    border-radius: var(--ui-radius-xl);
     background-color: rgb(var(--ui-surface));
+    box-shadow: var(--ui-shadow-card);
   }
 
   :where(.flat-theme) .table {
@@ -1124,21 +1381,18 @@
   }
 
   :where(.flat-theme) .table th {
-    background-color: rgb(var(--ui-surface));
+    background-color: rgb(var(--ui-sunk));
     border-bottom: 1px solid rgb(var(--ui-line));
-    padding: 0.5rem 0.75rem;
-    font-family: var(--ui-font-mono);
-    font-size: 0.6875rem;
-    line-height: 1rem;
+    padding: 0.5625rem 0.75rem;
+    font-size: 0.75rem;
+    line-height: 1.25rem;
     font-weight: 500;
-    text-transform: uppercase;
-    letter-spacing: 0.06em;
-    color: rgb(var(--ui-faint));
+    color: rgb(var(--ui-muted));
   }
 
   :where(.flat-theme) .table td {
     border-color: rgb(var(--ui-line));
-    padding: 0.5rem 0.75rem;
+    padding: 0.625rem 0.75rem;
     color: rgb(var(--ui-ink));
   }
 
@@ -1146,62 +1400,80 @@
     background-color: rgb(var(--ui-sunk));
   }
 
-  /* DataTable header labels: monospace for Latin, tabular figures in the body */
-  :where(.flat-theme) .table-header th {
-    font-family: var(--ui-font-mono);
-    letter-spacing: 0.04em;
+  /* DataTable (sticky header cells carry their own background in DataTable.vue) */
+  html.flat-theme .table-wrapper .table-header .sticky-header-cell {
+    height: 2.5rem;
+    background-color: rgb(var(--ui-sunk));
+    font-family: var(--ui-font);
+    font-size: 0.75rem;
+    line-height: 1rem;
+    font-weight: 500;
+    letter-spacing: 0;
+    text-transform: none;
+    color: rgb(var(--ui-muted));
+  }
+
+  html.flat-theme.dark .table-wrapper .table-header .sticky-header-cell {
+    background-color: rgb(var(--ui-surface));
   }
 
   :where(.flat-theme) .table-body {
     font-variant-numeric: tabular-nums;
   }
 
+  html.flat-theme .table-wrapper tbody input[type='checkbox'],
+  html.flat-theme .table-wrapper thead input[type='checkbox'] {
+    width: 1rem;
+    height: 1rem;
+  }
+
   /* ---- badges ---- */
   :where(.flat-theme) .badge {
-    gap: 0.25rem;
+    min-height: 1.25rem;
+    gap: 0.3125rem;
+    border: 1px solid transparent;
     border-radius: 9999px;
-    padding: 0.0625rem 0.5rem;
-    font-size: 0.6875rem;
+    padding: 0 0.5rem;
+    font-size: 0.75rem;
     line-height: 1.125rem;
     font-weight: 500;
+    white-space: nowrap;
   }
 
   :where(.flat-theme) .badge-primary {
-    background-color: rgb(var(--ui-subtle));
-    color: rgb(var(--ui-ink));
+    border-color: rgb(var(--ui-primary) / 0.22);
+    background-color: rgb(var(--ui-primary-soft));
+    color: rgb(var(--ui-primary-ink));
   }
 
   :where(.flat-theme) .badge-gray {
-    background-color: rgb(var(--ui-subtle));
+    border-color: rgb(var(--ui-line));
+    background-color: rgb(var(--ui-surface));
     color: rgb(var(--ui-muted));
   }
 
   :where(.flat-theme) .badge-success {
+    border-color: rgb(var(--ui-success) / 0.2);
     background-color: rgb(var(--ui-success-soft));
-    color: rgb(var(--theme-color-success-700));
+    color: rgb(var(--ui-success));
   }
 
   :where(.flat-theme) .badge-warning {
+    border-color: rgb(var(--ui-warning) / 0.22);
     background-color: rgb(var(--ui-warning-soft));
     color: rgb(var(--ui-warning));
   }
 
   :where(.flat-theme) .badge-danger {
+    border-color: rgb(var(--ui-danger) / 0.2);
     background-color: rgb(var(--ui-danger-soft));
-    color: rgb(var(--theme-color-danger-600));
+    color: rgb(var(--ui-danger));
   }
 
   :where(.flat-theme) .badge-purple {
+    border-color: rgb(var(--ui-purple) / 0.2);
     background-color: rgb(var(--ui-purple-soft));
     color: rgb(var(--ui-purple));
-  }
-
-  :where(.flat-theme.dark) .badge-success {
-    color: rgb(var(--ui-success));
-  }
-
-  :where(.flat-theme.dark) .badge-danger {
-    color: rgb(var(--ui-danger));
   }
 
   /* ---- popovers, menus, dialogs ---- */
@@ -1209,14 +1481,16 @@
   :where(.flat-theme) .ui-popover {
     border: 1px solid rgb(var(--ui-line));
     border-radius: var(--ui-radius-lg);
-    background-color: rgb(var(--ui-surface));
+    background-color: rgb(var(--ui-raised));
     padding: 0.25rem;
     box-shadow: var(--ui-shadow-popover);
   }
 
   :where(.flat-theme) .dropdown-item {
+    min-height: 2rem;
+    gap: 0.5rem;
     border-radius: var(--ui-radius-sm);
-    padding: 0.375rem 0.625rem;
+    padding: 0.375rem 0.5rem;
     font-size: 0.8125rem;
     line-height: 1.25rem;
     color: rgb(var(--ui-ink));
@@ -1224,6 +1498,50 @@
 
   :where(.flat-theme) .dropdown-item:hover {
     background-color: rgb(var(--ui-hover));
+  }
+
+  /* Account row menu (upstream markup: .action-menu-content > fieldset > button): menu surface,
+     32px items, monochrome 16px icons, destructive items keep their colour. */
+  html.flat-theme .action-menu-content {
+    border: 1px solid rgb(var(--ui-line));
+    border-radius: var(--ui-radius-lg);
+    background-color: rgb(var(--ui-raised));
+    padding: 0.25rem;
+    box-shadow: var(--ui-shadow-popover);
+  }
+
+  html.flat-theme .action-menu-content fieldset {
+    padding: 0;
+  }
+
+  html.flat-theme .action-menu-content fieldset button {
+    min-height: 2rem;
+    gap: 0.625rem;
+    border-radius: var(--ui-radius-sm);
+    padding: 0.375rem 0.625rem;
+    font-size: 0.8125rem;
+    line-height: 1.25rem;
+    color: rgb(var(--ui-ink));
+  }
+
+  html.flat-theme .action-menu-content fieldset button:hover {
+    background-color: rgb(var(--ui-hover));
+  }
+
+  html.flat-theme .action-menu-content fieldset button > svg {
+    width: 1rem;
+    height: 1rem;
+    color: rgb(var(--ui-muted));
+  }
+
+  html.flat-theme .action-menu-content fieldset button:is([class*='text-red'], [class*='text-rose']),
+  html.flat-theme .action-menu-content fieldset button:is([class*='text-red'], [class*='text-rose']) > svg {
+    color: rgb(var(--ui-danger));
+  }
+
+  html.flat-theme .action-menu-content fieldset > div {
+    margin: 0.25rem -0.25rem;
+    border-color: rgb(var(--ui-line));
   }
 
   :where(.flat-theme) .modal-overlay,
@@ -1237,12 +1555,13 @@
   :where(.flat-theme) .dialog-container {
     border: 1px solid rgb(var(--ui-line));
     border-radius: var(--ui-radius-xl);
-    background-color: rgb(var(--ui-surface));
+    background-color: rgb(var(--ui-raised));
     box-shadow: var(--ui-shadow-overlay);
   }
 
   :where(.flat-theme) .modal-header,
   :where(.flat-theme) .dialog-header {
+    min-height: 3.5rem;
     border-color: rgb(var(--ui-line));
     padding: 0.875rem 1.25rem;
   }
@@ -1251,32 +1570,74 @@
     font-size: 0.9375rem;
     line-height: 1.375rem;
     font-weight: 600;
+    letter-spacing: -0.01em;
+    color: rgb(var(--ui-ink));
+  }
+
+  /* BaseDialog close button (upstream utilities) as a 32px ghost icon button */
+  html.flat-theme .modal-header > button:last-child {
+    margin-right: -0.375rem;
+    border-radius: var(--ui-radius-md);
+    padding: 0.375rem;
+    color: rgb(var(--ui-muted));
+  }
+
+  html.flat-theme .modal-header > button:last-child:hover {
+    background-color: rgb(var(--ui-hover));
     color: rgb(var(--ui-ink));
   }
 
   :where(.flat-theme) .modal-body,
   :where(.flat-theme) .dialog-body {
-    padding: 1rem 1.25rem;
+    padding: 1.25rem;
   }
 
   :where(.flat-theme) .modal-footer,
   :where(.flat-theme) .dialog-footer {
     gap: 0.5rem;
     border-color: rgb(var(--ui-line));
-    background-color: rgb(var(--ui-surface));
+    border-bottom-left-radius: calc(var(--ui-radius-xl) - 1px);
+    border-bottom-right-radius: calc(var(--ui-radius-xl) - 1px);
+    background-color: rgb(var(--ui-sunk));
     padding: 0.75rem 1.25rem;
+  }
+
+  :where(.flat-theme.dark) :is(.modal-footer, .dialog-footer) {
+    background-color: rgb(var(--ui-surface));
+  }
+
+  /* dialogs are a comfortable 36px form: fields and footer actions */
+  html.flat-theme .modal-body .input:not(textarea),
+  html.flat-theme .modal-body .select-trigger {
+    min-height: var(--ui-field-h);
+  }
+
+  html.flat-theme .modal-body .input:not(textarea):not(select) {
+    padding-top: 0.5rem;
+    padding-bottom: 0.5rem;
+  }
+
+  html.flat-theme .modal-body select.input {
+    height: var(--ui-field-h);
+  }
+
+  html.flat-theme .modal-footer .btn:not(.btn-sm) {
+    min-height: var(--ui-field-h);
+    padding-left: 0.875rem;
+    padding-right: 0.875rem;
   }
 
   :where(.flat-theme) .toast {
     border: 1px solid rgb(var(--ui-line));
     border-radius: var(--ui-radius-lg);
+    background-color: rgb(var(--ui-raised));
     box-shadow: var(--ui-shadow-popover);
   }
 
   /* ---- navigation ---- */
   :where(.flat-theme) .sidebar {
+    border-color: transparent;
     background-color: rgb(var(--ui-canvas));
-    border-color: rgb(var(--ui-line));
   }
 
   :where(.flat-theme) .sidebar-header {
@@ -1284,6 +1645,21 @@
     border-color: transparent;
     padding-left: 1.25rem;
     padding-right: 1.25rem;
+  }
+
+  html.flat-theme .sidebar-brand-title {
+    font-size: 0.9375rem;
+    line-height: 1.25rem;
+    font-weight: 600;
+    letter-spacing: -0.01em;
+  }
+
+  /* version badge under the brand: an identifier, so monospace (only the badge button itself, not the
+     buttons inside its dropdown) */
+  html.flat-theme .sidebar-brand > div > button {
+    font-family: var(--ui-font-mono);
+    font-size: 0.6875rem;
+    line-height: 1rem;
   }
 
   :where(.flat-theme) .sidebar-nav {
@@ -1299,21 +1675,49 @@
     font-size: 0.8125rem;
     line-height: 1.25rem;
     font-weight: 400;
+    color: rgb(var(--ui-ink) / 0.86);
+    transition-property: color, background-color, box-shadow;
+    transition-duration: 120ms;
+  }
+
+  html.flat-theme .sidebar-link > svg,
+  html.flat-theme .sidebar-link > .sidebar-svg-icon,
+  html.flat-theme .sidebar-link .sidebar-svg-icon svg {
+    width: 1rem;
+    height: 1rem;
     color: rgb(var(--ui-muted));
-    transition-property: color, background-color;
-    transition-duration: 150ms;
   }
 
   :where(.flat-theme) .sidebar-link:hover {
-    background-color: rgb(var(--ui-hover));
+    background-color: rgb(var(--ui-ink) / 0.045);
     color: rgb(var(--ui-ink));
+  }
+
+  :where(.flat-theme.dark) .sidebar-link:hover {
+    background-color: rgb(255 255 255 / 0.045);
   }
 
   :where(.flat-theme) .sidebar-link-active,
   :where(.flat-theme) .sidebar-link-active:hover {
-    background-color: rgb(var(--ui-ink) / 0.06);
-    color: rgb(var(--ui-ink));
+    background-color: rgb(var(--ui-primary) / 0.1);
+    color: rgb(var(--ui-primary-ink));
     font-weight: 500;
+  }
+
+  :where(.flat-theme.dark) .sidebar-link-active,
+  :where(.flat-theme.dark) .sidebar-link-active:hover {
+    background-color: rgb(var(--ui-primary) / 0.16);
+    color: rgb(var(--ui-ink));
+  }
+
+  html.flat-theme .sidebar-link-active > svg,
+  html.flat-theme .sidebar-link-active > .sidebar-svg-icon {
+    color: rgb(var(--ui-primary));
+  }
+
+  html.flat-theme.dark .sidebar-link-active > svg,
+  html.flat-theme.dark .sidebar-link-active > .sidebar-svg-icon {
+    color: rgb(var(--ui-primary-ink));
   }
 
   :where(.flat-theme) .sidebar-section {
@@ -1322,11 +1726,12 @@
 
   :where(.flat-theme) .sidebar-section-title {
     margin-bottom: 0.25rem;
-    font-family: var(--ui-font-mono);
-    font-size: 0.6875rem;
+    font-size: 0.75rem;
+    line-height: 1rem;
     font-weight: 500;
-    letter-spacing: 0.06em;
-    color: rgb(var(--ui-faint));
+    letter-spacing: 0;
+    text-transform: none;
+    color: rgb(var(--ui-muted));
   }
 
   :where(.flat-theme) .page-header {
@@ -1379,23 +1784,24 @@
     background-color: rgb(var(--ui-line));
   }
 
-  /* segmented control: hairline frame, ink active segment */
+  /* segmented control: muted track, raised active segment (shadcn tabs / Radix segmented) */
   :where(.flat-theme) .tabs {
     gap: 0.125rem;
-    border: 1px solid rgb(var(--ui-line));
-    border-radius: var(--ui-radius-md);
-    background-color: rgb(var(--ui-surface));
-    padding: 0.125rem;
+    border: 0;
+    border-radius: var(--ui-radius-lg);
+    background-color: rgb(var(--ui-subtle));
+    padding: 0.1875rem;
   }
 
   :where(.flat-theme) .tab {
     border-radius: var(--ui-radius-sm);
-    padding: 0.25rem 0.625rem;
+    padding: 0.1875rem 0.625rem;
     font-size: 0.8125rem;
     line-height: 1.25rem;
+    font-weight: 500;
     color: rgb(var(--ui-muted));
-    transition-property: color, background-color;
-    transition-duration: 150ms;
+    transition-property: color, background-color, box-shadow;
+    transition-duration: 120ms;
   }
 
   :where(.flat-theme) .tab:hover {
@@ -1404,9 +1810,15 @@
 
   :where(.flat-theme) .tab-active,
   :where(.flat-theme) .tab-active:hover {
-    background-color: rgb(var(--ui-primary));
-    color: rgb(var(--ui-on-primary));
-    box-shadow: none;
+    background-color: rgb(var(--ui-surface));
+    color: rgb(var(--ui-ink));
+    box-shadow: 0 1px 2px 0 rgb(0 0 0 / 0.08), 0 0 0 1px rgb(0 0 0 / 0.04);
+  }
+
+  :where(.flat-theme.dark) .tab-active,
+  :where(.flat-theme.dark) .tab-active:hover {
+    background-color: rgb(var(--ui-hover));
+    box-shadow: inset 0 1px 0 0 rgb(255 255 255 / 0.05), 0 1px 2px 0 rgb(0 0 0 / 0.4);
   }
 
   :where(.flat-theme) .progress {
@@ -1420,7 +1832,7 @@
   }
 
   :where(.flat-theme) .switch {
-    background-color: rgb(var(--ui-line-strong));
+    background-color: rgb(var(--ui-control-line));
   }
 
   :where(.flat-theme) .switch-active {
@@ -1428,11 +1840,619 @@
   }
 
   :where(.flat-theme) .switch-thumb {
-    box-shadow: none;
+    box-shadow: 0 1px 2px 0 rgb(0 0 0 / 0.2);
   }
 
   :where(.flat-theme) .switch-active .switch-thumb {
     background-color: rgb(var(--ui-on-primary));
+  }
+
+  /* Switches (upstream markup: button.inline-flex.rounded-full.h-5.w-9 / .h-6.w-11 with a knob
+     span; Toggle.vue and ~75 inline copies): the off track keeps >= 3:1 against the page and the
+     knob, the on track is the accent. [class~="..."] hooks: see the KPI tile note. */
+  html.flat-theme button[class~="rounded-full"]:is([class~="h-5"][class~="w-9"], [class~="h-6"][class~="w-11"]):is([class~="bg-gray-200"], [class~="bg-gray-300"]) {
+    background-color: rgb(var(--ui-control-line));
+  }
+
+  html.flat-theme button[class~="rounded-full"]:is([class~="h-5"][class~="w-9"], [class~="h-6"][class~="w-11"]):is([class~="bg-primary-500"], [class~="bg-primary-600"]) {
+    background-color: rgb(var(--ui-primary));
+    box-shadow: inset 0 1px 2px 0 rgb(0 0 0 / 0.12);
+  }
+
+  html.flat-theme button[class~="rounded-full"]:is([class~="h-5"][class~="w-9"], [class~="h-6"][class~="w-11"]) > span[class~="rounded-full"] {
+    box-shadow: 0 1px 2px 0 rgb(0 0 0 / 0.22), 0 0 0 0.5px rgb(0 0 0 / 0.04);
+  }
+
+  html.flat-theme button[class~="rounded-full"]:is([class~="h-5"][class~="w-9"], [class~="h-6"][class~="w-11"]):focus-visible {
+    --tw-ring-offset-width: 0px;
+    --tw-ring-shadow: var(--ui-focus-ring);
+    box-shadow: var(--ui-focus-ring);
+  }
+
+  /* Pagination (upstream markup: nav[aria-label=Pagination] > button, a joined group) */
+  html.flat-theme nav[aria-label='Pagination'] {
+    border-radius: var(--ui-radius-md);
+    box-shadow: var(--ui-shadow-xs);
+  }
+
+  html.flat-theme nav[aria-label='Pagination'] > button {
+    height: var(--ui-control-h);
+    min-width: var(--ui-control-h);
+    justify-content: center;
+    border-color: rgb(var(--ui-line));
+    background-color: rgb(var(--ui-surface));
+    padding: 0 0.625rem;
+    font-size: 0.8125rem;
+    font-weight: 500;
+    font-variant-numeric: tabular-nums;
+    color: rgb(var(--ui-ink));
+  }
+
+  html.flat-theme nav[aria-label='Pagination'] > button:first-child {
+    border-top-left-radius: var(--ui-radius-md);
+    border-bottom-left-radius: var(--ui-radius-md);
+    color: rgb(var(--ui-muted));
+  }
+
+  html.flat-theme nav[aria-label='Pagination'] > button:last-child {
+    border-top-right-radius: var(--ui-radius-md);
+    border-bottom-right-radius: var(--ui-radius-md);
+    color: rgb(var(--ui-muted));
+  }
+
+  html.flat-theme nav[aria-label='Pagination'] > button > svg {
+    width: 1rem;
+    height: 1rem;
+  }
+
+  html.flat-theme nav[aria-label='Pagination'] > button:hover:not(:disabled) {
+    background-color: rgb(var(--ui-hover));
+  }
+
+  html.flat-theme nav[aria-label='Pagination'] > button[aria-current='page'] {
+    border-color: rgb(var(--ui-primary) / 0.5);
+    background-color: rgb(var(--ui-primary-soft));
+    color: rgb(var(--ui-primary-ink));
+  }
+
+  /* ---- selection: one style for "selected option card" and "active segment" ---- */
+
+  /* These hooks match upstream utility classes with [class~="..."] instead of .class on purpose:
+     inside @layer, Tailwind v3 copies every rule whose selector names a class into each
+     `@apply <that class>` site (bg-white, shadow-sm, p-1, text-*-600 ... are applied hundreds of
+     times), which multiplied this block into ~470 rules / ~93 KB. Attribute selectors keep the
+     same specificity and are not @apply candidates. */
+
+  /* Account create/edit option cards (upstream markup: button.rounded-lg.border-2.p-3 with a
+     per-platform `border-<hue>-500 bg-<hue>-50` when selected, hooked by the forms' ids): the
+     selected card is the accent border (+1px ring) on the soft accent fill; the icon tile inside
+     keeps its brand colour. 1px border + 1px extra padding keeps the card size. */
+  html.flat-theme :is(#create-account-form, #edit-account-form) button[class~="rounded-lg"][class~="border-2"][class~="p-3"] {
+    border-width: 1px;
+    padding: calc(0.75rem + 1px);
+    border-color: rgb(var(--ui-line));
+    box-shadow: var(--ui-shadow-xs);
+    transition-property: border-color, background-color, box-shadow;
+    transition-duration: 120ms;
+  }
+
+  html.flat-theme.dark :is(#create-account-form, #edit-account-form) button[class~="rounded-lg"][class~="border-2"][class~="p-3"] {
+    border-color: rgb(var(--ui-line-strong));
+  }
+
+  html.flat-theme :is(#create-account-form, #edit-account-form) button[class~="rounded-lg"][class~="border-2"][class~="p-3"][class~="border-gray-200"]:hover:not(:disabled) {
+    border-color: rgb(var(--ui-control-line));
+  }
+
+  html.flat-theme :is(#create-account-form, #edit-account-form) button[class~="rounded-lg"][class~="border-2"][class~="p-3"]:not([class~="border-gray-200"]) {
+    border-color: rgb(var(--ui-primary));
+    background-color: rgb(var(--ui-primary-soft));
+    box-shadow: 0 0 0 1px rgb(var(--ui-primary)), var(--ui-shadow-xs);
+  }
+
+  /* Segmented pickers (upstream markup: a .bg-gray-100 / .bg-gray-50 track with .p-1 / .p-0.5 whose
+     active button is .bg-white.shadow-sm): the active segment is a raised block with an ink label
+     at 500, whatever accent colour upstream gave the option. A platform glyph inside the active
+     segment keeps its brand colour. */
+  html.flat-theme :is([class~="bg-gray-100"], [class~="bg-gray-50"]):is([class~="p-1"], [class~="p-0.5"]) > button[class~="bg-white"][class~="shadow-sm"] {
+    color: rgb(var(--ui-ink));
+    font-weight: 500;
+    box-shadow: 0 1px 2px 0 rgb(0 0 0 / 0.08), 0 0 0 1px rgb(0 0 0 / 0.04);
+  }
+
+  html.flat-theme.dark :is([class~="bg-gray-100"], [class~="bg-gray-50"]):is([class~="p-1"], [class~="p-0.5"]) > button[class~="bg-white"][class~="shadow-sm"] {
+    background-color: rgb(var(--theme-color-dark-600));
+    box-shadow: inset 0 1px 0 0 rgb(255 255 255 / 0.06), 0 1px 2px 0 rgb(0 0 0 / 0.4);
+  }
+
+  html.flat-theme :is([class~="bg-gray-100"], [class~="bg-gray-50"]):is([class~="p-1"], [class~="p-0.5"]) > button[class~="bg-white"][class~="shadow-sm"] > svg {
+    color: rgb(var(--ui-choice-brand, var(--ui-ink)));
+  }
+
+  html.flat-theme :is([class~="bg-gray-100"], [class~="bg-gray-50"]):is([class~="p-1"], [class~="p-0.5"]) > button[class~="bg-white"][class~="shadow-sm"]:is([class~="text-orange-600"], [class~="text-amber-600"], [class~="text-amber-700"]) {
+    --ui-choice-brand: var(--theme-color-warning-600);
+  }
+
+  html.flat-theme :is([class~="bg-gray-100"], [class~="bg-gray-50"]):is([class~="p-1"], [class~="p-0.5"]) > button[class~="bg-white"][class~="shadow-sm"]:is([class~="text-green-600"], [class~="text-emerald-600"], [class~="text-teal-600"]) {
+    --ui-choice-brand: var(--theme-color-success-600);
+  }
+
+  html.flat-theme :is([class~="bg-gray-100"], [class~="bg-gray-50"]):is([class~="p-1"], [class~="p-0.5"]) > button[class~="bg-white"][class~="shadow-sm"]:is([class~="text-blue-600"], [class~="text-sky-600"], [class~="text-indigo-600"], [class~="text-cyan-600"]) {
+    --ui-choice-brand: var(--theme-color-info-600);
+  }
+
+  html.flat-theme :is([class~="bg-gray-100"], [class~="bg-gray-50"]):is([class~="p-1"], [class~="p-0.5"]) > button[class~="bg-white"][class~="shadow-sm"]:is([class~="text-purple-600"], [class~="text-violet-600"], [class~="text-pink-600"], [class~="text-fuchsia-600"]) {
+    --ui-choice-brand: var(--theme-color-purple-600);
+  }
+
+  html.flat-theme :is([class~="bg-gray-100"], [class~="bg-gray-50"]):is([class~="p-1"], [class~="p-0.5"]) > button[class~="bg-white"][class~="shadow-sm"]:is([class~="text-rose-600"], [class~="text-red-600"]) {
+    --ui-choice-brand: var(--theme-color-danger-600);
+  }
+
+  html.flat-theme.dark :is([class~="bg-gray-100"], [class~="bg-gray-50"]):is([class~="p-1"], [class~="p-0.5"]) > button[class~="bg-white"][class~="shadow-sm"]:is([class~="text-orange-600"], [class~="text-amber-600"], [class~="text-amber-700"]) {
+    --ui-choice-brand: var(--theme-text-warning-400);
+  }
+
+  html.flat-theme.dark :is([class~="bg-gray-100"], [class~="bg-gray-50"]):is([class~="p-1"], [class~="p-0.5"]) > button[class~="bg-white"][class~="shadow-sm"]:is([class~="text-green-600"], [class~="text-emerald-600"], [class~="text-teal-600"]) {
+    --ui-choice-brand: var(--theme-text-success-400);
+  }
+
+  html.flat-theme.dark :is([class~="bg-gray-100"], [class~="bg-gray-50"]):is([class~="p-1"], [class~="p-0.5"]) > button[class~="bg-white"][class~="shadow-sm"]:is([class~="text-blue-600"], [class~="text-sky-600"], [class~="text-indigo-600"], [class~="text-cyan-600"]) {
+    --ui-choice-brand: var(--theme-text-info-400);
+  }
+
+  html.flat-theme.dark :is([class~="bg-gray-100"], [class~="bg-gray-50"]):is([class~="p-1"], [class~="p-0.5"]) > button[class~="bg-white"][class~="shadow-sm"]:is([class~="text-purple-600"], [class~="text-violet-600"], [class~="text-pink-600"], [class~="text-fuchsia-600"]) {
+    --ui-choice-brand: var(--theme-text-purple-400);
+  }
+
+  html.flat-theme.dark :is([class~="bg-gray-100"], [class~="bg-gray-50"]):is([class~="p-1"], [class~="p-0.5"]) > button[class~="bg-white"][class~="shadow-sm"]:is([class~="text-rose-600"], [class~="text-red-600"]) {
+    --ui-choice-brand: var(--theme-text-danger-400);
+  }
+
+  /* User Redeem balance card (RedeemView: a bg-gradient-to-br from-primary-500 to-primary-600 px-6
+     py-8 banner with white / primary-100 text): the soft accent fill with ink figures instead of a
+     solid accent block. Light: ink 17.5:1, muted 5.2:1 on #EFF0FA; dark: 14.6:1 and 5.4:1 on #202335. */
+  html.flat-theme [class~="bg-gradient-to-br"][class~="from-primary-500"][class~="px-6"][class~="py-8"] {
+    background-image: none;
+    background-color: rgb(var(--ui-primary-soft));
+  }
+
+  html.flat-theme [class~="bg-gradient-to-br"][class~="from-primary-500"][class~="px-6"][class~="py-8"] [class~="text-white"] {
+    color: rgb(var(--ui-ink));
+  }
+
+  html.flat-theme [class~="bg-gradient-to-br"][class~="from-primary-500"][class~="px-6"][class~="py-8"] [class~="text-primary-100"] {
+    color: rgb(var(--ui-muted));
+  }
+
+  html.flat-theme [class~="bg-gradient-to-br"][class~="from-primary-500"][class~="px-6"][class~="py-8"] > [class~="bg-white/20"] {
+    background-color: rgb(var(--ui-surface));
+    box-shadow: 0 0 0 1px rgb(var(--ui-primary) / 0.16), var(--ui-shadow-xs);
+  }
+
+  html.flat-theme.dark [class~="bg-gradient-to-br"][class~="from-primary-500"][class~="px-6"][class~="py-8"] > [class~="bg-white/20"] {
+    background-color: rgb(var(--ui-primary) / 0.16);
+    box-shadow: inset 0 0 0 1px rgb(var(--ui-primary) / 0.24);
+  }
+
+  html.flat-theme [class~="bg-gradient-to-br"][class~="from-primary-500"][class~="px-6"][class~="py-8"] > [class~="bg-white/20"] > [class~="text-white"] {
+    color: rgb(var(--ui-primary-ink));
+  }
+
+  /* Settings tabs: SettingsView's scoped CSS hard-codes a green (#168a49) active underline; next to
+     the indigo label and icon it reads as a second accent, so it follows the accent. */
+  html.flat-theme .settings-tab-active::after {
+    background: rgb(var(--ui-primary));
+  }
+
+  /* Settings tab bar shell: a sunk strip with a hairline (light) and the panel colour with an 8%
+     white line (dark), replacing SettingsView's white-on-white shell and its hard-coded navy
+     (`.dark .settings-tabs-shell { background: rgb(15 23 42 / .86) }`). */
+  html.flat-theme .settings-tabs-shell {
+    border-radius: var(--ui-radius-xl);
+    border-color: rgb(var(--ui-line));
+    background-color: rgb(var(--ui-sunk));
+  }
+
+  html.flat-theme.dark .settings-tabs-shell {
+    border-color: rgb(255 255 255 / 0.08);
+    background-color: rgb(var(--ui-panel));
+  }
+
+  /* Onboarding tour: the primary action follows the accent (styles/onboarding.css:200 hard-codes a
+     green #168a49 with !important, so this needs !important as well). */
+  html.flat-theme .theme-tour-popover .driver-popover-next-btn {
+    background-color: rgb(var(--ui-primary)) !important;
+    color: rgb(var(--ui-on-primary)) !important;
+  }
+
+  html.flat-theme .theme-tour-popover .driver-popover-next-btn:hover {
+    background-color: rgb(var(--ui-primary-hover)) !important;
+  }
+
+  /* Ops monitor realtime window picker (OpsDashboardHeader: div.flex-wrap.gap-1 >
+     button.rounded.text-[9px], selected = bg-blue-500 text-white): the segmented treatment of the
+     other pickers — subtle track, the selected window as a raised block with ink text. */
+  html.flat-theme div[class~="flex-wrap"][class~="gap-1"]:has(> button[class~="rounded"][class~="text-[9px]"]) {
+    gap: 0.125rem;
+    border-radius: var(--ui-radius-md);
+    background-color: rgb(var(--theme-color-gray-100));
+    padding: 0.125rem;
+  }
+
+  html.flat-theme.dark div[class~="flex-wrap"][class~="gap-1"]:has(> button[class~="rounded"][class~="text-[9px]"]) {
+    background-color: rgb(var(--theme-color-dark-700));
+  }
+
+  html.flat-theme button[class~="rounded"][class~="text-[9px]"][class~="font-bold"] {
+    border-radius: var(--ui-radius-sm);
+    background-color: transparent;
+    color: rgb(var(--ui-muted));
+  }
+
+  html.flat-theme button[class~="rounded"][class~="text-[9px]"][class~="font-bold"]:hover {
+    color: rgb(var(--ui-ink));
+  }
+
+  html.flat-theme button[class~="rounded"][class~="text-[9px]"][class~="font-bold"][class~="bg-blue-500"] {
+    background-color: rgb(var(--ui-surface));
+    color: rgb(var(--ui-ink));
+    box-shadow: 0 1px 2px 0 rgb(0 0 0 / 0.08), 0 0 0 1px rgb(0 0 0 / 0.04);
+  }
+
+  html.flat-theme.dark button[class~="rounded"][class~="text-[9px]"][class~="font-bold"][class~="bg-blue-500"] {
+    background-color: rgb(var(--theme-color-dark-600));
+    box-shadow: inset 0 1px 0 0 rgb(255 255 255 / 0.06), 0 1px 2px 0 rgb(0 0 0 / 0.4);
+  }
+
+  /* Either/or button groups (account create / edit / bulk edit: model whitelist vs mapping and the RPM
+     strategy, button.flex-1.rounded-lg.py-2.text-sm.transition-all; API key expiry presets,
+     button.rounded-lg.px-3.py-1.5.text-sm.transition-colors): upstream draws separate grey and
+     tinted buttons. Drawn as one segmented control, like the platform picker: subtle track, raised
+     selected segment with ink text. The multi-select error-code chips (same classes plus
+     font-medium) are left alone. */
+  html.flat-theme div[class~="flex"][class~="gap-2"]:has(> :is(button[class~="flex-1"][class~="py-2"][class~="transition-all"], button[class~="px-3"][class~="py-1.5"][class~="transition-colors"]:not([class~="font-medium"]))[class~="rounded-lg"][class~="text-sm"]:is([class~="bg-gray-100"], [class~="bg-primary-100"], [class~="bg-purple-100"])) {
+    gap: 0.125rem;
+    border-radius: var(--ui-radius-lg);
+    background-color: rgb(var(--theme-color-gray-100));
+    padding: 0.1875rem;
+  }
+
+  html.flat-theme div[class~="flex"][class~="gap-2"]:has(> button[class~="px-3"][class~="py-1.5"][class~="transition-colors"]:not([class~="font-medium"])[class~="rounded-lg"][class~="text-sm"]:is([class~="bg-gray-100"], [class~="bg-primary-100"])) {
+    width: fit-content;
+    max-width: 100%;
+  }
+
+  html.flat-theme.dark div[class~="flex"][class~="gap-2"]:has(> :is(button[class~="flex-1"][class~="py-2"][class~="transition-all"], button[class~="px-3"][class~="py-1.5"][class~="transition-colors"]:not([class~="font-medium"]))[class~="rounded-lg"][class~="text-sm"]:is([class~="bg-gray-100"], [class~="bg-primary-100"], [class~="bg-purple-100"])) {
+    background-color: rgb(var(--theme-color-dark-700));
+  }
+
+  html.flat-theme :is(button[class~="flex-1"][class~="py-2"][class~="transition-all"], button[class~="px-3"][class~="py-1.5"][class~="transition-colors"]:not([class~="font-medium"]))[class~="rounded-lg"][class~="text-sm"][class~="bg-gray-100"] {
+    border-radius: var(--ui-radius-md);
+    background-color: transparent;
+    color: rgb(var(--ui-muted));
+    box-shadow: none;
+  }
+
+  html.flat-theme :is(button[class~="flex-1"][class~="py-2"][class~="transition-all"], button[class~="px-3"][class~="py-1.5"][class~="transition-colors"]:not([class~="font-medium"]))[class~="rounded-lg"][class~="text-sm"][class~="bg-gray-100"]:hover {
+    color: rgb(var(--ui-ink));
+  }
+
+  html.flat-theme :is(button[class~="flex-1"][class~="py-2"][class~="transition-all"], button[class~="px-3"][class~="py-1.5"][class~="transition-colors"]:not([class~="font-medium"]))[class~="rounded-lg"][class~="text-sm"]:is([class~="bg-primary-100"], [class~="bg-purple-100"]) {
+    border-radius: var(--ui-radius-md);
+    background-color: rgb(var(--ui-surface));
+    color: rgb(var(--ui-ink));
+    font-weight: 500;
+    box-shadow: 0 1px 2px 0 rgb(0 0 0 / 0.08), 0 0 0 1px rgb(0 0 0 / 0.04);
+  }
+
+  html.flat-theme.dark :is(button[class~="flex-1"][class~="py-2"][class~="transition-all"], button[class~="px-3"][class~="py-1.5"][class~="transition-colors"]:not([class~="font-medium"]))[class~="rounded-lg"][class~="text-sm"]:is([class~="bg-primary-100"], [class~="bg-purple-100"]) {
+    background-color: rgb(var(--theme-color-dark-600));
+    box-shadow: inset 0 1px 0 0 rgb(255 255 255 / 0.06), 0 1px 2px 0 rgb(0 0 0 / 0.4);
+  }
+
+  /* RPM strategy hints sit at opacity-70 (about 3.3:1); shown as muted text at full opacity (>= 4.8:1). */
+  html.flat-theme button[class~="flex-1"][class~="py-2"][class~="transition-all"][class~="rounded-lg"][class~="text-sm"] [class~="opacity-70"] {
+    opacity: 1;
+    color: rgb(var(--ui-muted));
+  }
+
+  /* Text fields with no placeholder, while empty (utils/flatTheme.ts gives them a blank " "
+     placeholder so :placeholder-shown means "empty"), and every native date / time field: nothing
+     inside the box says what it is, so the border identifies the field (WCAG 1.4.11) and takes the
+     3:1 control line of checkboxes and radios. Filled fields, fields with a visible placeholder and
+     the focus / error / disabled states keep their own borders. */
+  :where(.flat-theme) .input:is([placeholder=" "]:placeholder-shown, [placeholder=""]:placeholder-shown, [type="date"], [type="datetime-local"], [type="time"], [type="month"], [type="week"]):not(select):not(textarea):not(:focus):not(:disabled):not(.input-error) {
+    border-color: rgb(var(--ui-control-line));
+  }
+
+  /* Distribution tables (model / group / endpoint distribution charts and the user dashboard: a
+     div.max-h-48.min-w-0.flex-1.overflow-auto > table next to the doughnut): header labels stay on
+     one line and, when the columns do not fit, the box scrolls sideways with a visible thin
+     scrollbar instead of looking clipped. */
+  html.flat-theme [class~="max-h-48"][class~="min-w-0"][class~="flex-1"][class~="overflow-auto"] > table > thead th {
+    white-space: nowrap;
+  }
+
+  html.flat-theme [class~="max-h-48"][class~="min-w-0"][class~="flex-1"][class~="overflow-auto"]:has(> table) {
+    scrollbar-width: thin;
+    scrollbar-color: rgb(var(--ui-line-strong)) transparent;
+  }
+
+  html.flat-theme [class~="max-h-48"][class~="min-w-0"][class~="flex-1"][class~="overflow-auto"]:has(> table)::-webkit-scrollbar-thumb {
+    background-color: rgb(var(--ui-line-strong));
+  }
+
+  /* Chart card titles next to segmented pickers do not wrap (「模型分 / 布」 on phones); the picker
+     group wraps instead. */
+  html.flat-theme [class~="card"] > div[class~="mb-4"][class~="justify-between"]:has(> div [class~="rounded-lg"]:is([class~="bg-gray-50"], [class~="bg-gray-100"]):is([class~="p-0.5"], [class~="p-1"])) > h3 {
+    flex-shrink: 0;
+    white-space: nowrap;
+  }
+
+  /* Groups table platform cell (GroupsView: span.rounded-full.gap-1.5.px-2.5.py-0.5 with a hue fill
+     per platform): the outlined neutral chip of PlatformTypeBadge's platform segment. */
+  html.flat-theme span[class~="rounded-full"][class~="gap-1.5"][class~="px-2.5"][class~="py-0.5"][class~="text-xs"][class~="font-medium"] {
+    @apply gap-1 rounded-md bg-white px-2 py-1 text-gray-900 ring-1 ring-gray-200 dark:bg-dark-800 dark:text-gray-100 dark:ring-dark-600;
+  }
+
+  /* ---- round 4: table fitting, icon-only row actions, native date fields, onboarding copy ---- */
+
+  /* Timestamps on two lines (date / time): the cell text becomes an inline block exactly as wide as its
+     longest part, so it always breaks at the space and never inside the date or the time. Only in the
+     tables the user picked: each carries a data-table attribute on its DataTable (it lands on
+     .table-wrapper), and cells are found by DataTable's data-column, so hiding columns in 列设置 does not
+     switch the layout off. 账号管理「最近使用」 shows a relative time (「2天前」), which has no date / time
+     parts, so it is left alone. */
+  html.flat-theme .table-wrapper[data-table="proxies"] td[data-column="created_at"] > span,
+  html.flat-theme .table-wrapper[data-table="keys"] td[data-column="created_at"] > span,
+  html.flat-theme .table-wrapper[data-table="users"] td:is([data-column="created_at"], [data-column="last_used_at"], [data-column="last_active_at"]) > span,
+  html.flat-theme .table-wrapper[data-table="usage"] td[data-column="created_at"] > span,
+  html.flat-theme .table-wrapper[data-table="accounts"] td[data-column="created_at"] > span,
+  html.flat-theme .table-wrapper[data-table="proxies"] td[data-column="expiry"] > div > span:first-child {
+    display: inline-block;
+    width: min-content;
+    white-space: normal;
+  }
+
+  /* 账号管理「过期时间」 reads 「2026-10-25 08:00」, and a line may break after a hyphen, so min-content
+     would split the date. A width that holds the date keeps it whole and moves the time to line two. */
+  html.flat-theme .table-wrapper[data-table="accounts"] td[data-column="expires_at"] > div > span:first-child {
+    display: inline-block;
+    max-width: 10ch;
+    white-space: normal;
+  }
+
+  /* IP管理: names break only at a space or a hyphen ("美国原生-" / "超高质量") and stay on one line when they
+     have no separator; the location breaks only at the spaces around 「·」. keep-all keeps every Chinese
+     word together; min-width: min-content lets a part longer than the limit widen the column instead of
+     running into the next one. */
+  html.flat-theme .table-wrapper[data-table="proxies"] td[data-column="name"] > span {
+    display: inline-block;
+    min-width: min-content;
+    max-width: 7.5em;
+    white-space: normal;
+    word-break: keep-all;
+  }
+
+  html.flat-theme .table-wrapper[data-table="proxies"] td[data-column="location"] span[class~="text-sm"] {
+    min-width: min-content;
+    max-width: 5em;
+    white-space: normal;
+    word-break: keep-all;
+  }
+
+  /* API 密钥: the group cell always puts the badge on the first line and 「选择分组 ⌄」 on the second (a
+     two-column grid whose first item spans the row), so the parts never split unpredictably and the
+     column is only as wide as the wider of the two lines. */
+  html.flat-theme .table-wrapper[data-table="keys"] td[data-column="group"] button {
+    display: grid;
+    grid-template-columns: max-content max-content;
+    justify-content: start;
+    align-items: center;
+    column-gap: 0.25rem;
+    row-gap: 0.25rem;
+  }
+
+  html.flat-theme .table-wrapper[data-table="keys"] td[data-column="group"] button > :first-child {
+    grid-column: 1 / -1;
+    justify-self: start;
+  }
+
+  /* 用户管理: 「充值」 sits under the amount. */
+  html.flat-theme .table-wrapper[data-table="users"] td[data-column="balance"] > div {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.125rem;
+  }
+
+  html.flat-theme .table-wrapper[data-table="users"] td[data-column="balance"] > div > button {
+    margin-left: -0.5rem;
+  }
+
+  /* Icon-only row actions (IP管理, API 密钥, 分组管理), only with a mouse or trackpad (hover + fine
+     pointer): touch screens keep the visible labels. The label stays in the button for screen readers
+     (visually hidden) and is shown as a tooltip on hover and on keyboard focus, to the left of the
+     button and vertically centred on it, so the sticky table header (DataTable.vue .table-header,
+     z-index 200 above the table body) never covers it. The hovered cell is lifted above the other rows'
+     sticky action cells. With the console theme off the buttons keep their visible labels. */
+  html.flat-theme .table-wrapper:is([data-table="proxies"], [data-table="keys"], [data-table="groups"]) td[data-column="actions"]:is(:hover, :focus-within) {
+    z-index: 30;
+  }
+
+  html.flat-theme .table-wrapper:is([data-table="proxies"], [data-table="keys"], [data-table="groups"]) td[data-column="actions"] button[class~="flex-col"] {
+    position: relative;
+  }
+
+  html.flat-theme .table-wrapper:is([data-table="proxies"], [data-table="keys"], [data-table="groups"]) td[data-column="actions"] button[class~="flex-col"]:focus-visible {
+    outline: 2px solid rgb(var(--ui-primary));
+    outline-offset: 1px;
+  }
+
+  @media (hover: hover) and (pointer: fine) {
+    html.flat-theme .table-wrapper:is([data-table="proxies"], [data-table="keys"], [data-table="groups"]) td[data-column="actions"] button[class~="flex-col"] > span[class~="text-xs"] {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      margin: -1px;
+      padding: 0;
+      overflow: hidden;
+      clip: rect(0 0 0 0);
+      white-space: nowrap;
+      border: 0;
+    }
+
+    html.flat-theme .table-wrapper:is([data-table="proxies"], [data-table="keys"], [data-table="groups"]) td[data-column="actions"] button[class~="flex-col"]:is(:hover, :focus-visible) > span[class~="text-xs"] {
+      top: 50%;
+      right: calc(100% + 0.375rem);
+      z-index: 1;
+      width: auto;
+      height: auto;
+      margin: 0;
+      padding: 0.25rem 0.5rem;
+      overflow: visible;
+      clip: auto;
+      transform: translateY(-50%);
+      border-radius: var(--ui-radius-sm);
+      background-color: rgb(var(--ui-ink));
+      color: rgb(var(--ui-surface));
+      font-size: 0.75rem;
+      line-height: 1rem;
+      font-weight: 500;
+      box-shadow: var(--ui-shadow-popover);
+      pointer-events: none;
+    }
+
+    html.flat-theme.dark .table-wrapper:is([data-table="proxies"], [data-table="keys"], [data-table="groups"]) td[data-column="actions"] button[class~="flex-col"]:is(:hover, :focus-visible) > span[class~="text-xs"] {
+      background-color: rgb(var(--theme-color-dark-600));
+      color: rgb(var(--ui-ink));
+      box-shadow: inset 0 0 0 1px rgb(255 255 255 / 0.08), var(--ui-shadow-popover);
+    }
+  }
+
+  /* 「用户消息限速」 three-way picker (account create / edit / bulk edit: div.flex.space-x-2 >
+     button.px-3.py-1.5.text-sm.rounded-md.border.transition-colors, selected = bg-primary-600): the
+     segmented control of the either/or groups. */
+  html.flat-theme div[class~="flex"][class~="space-x-2"]:has(> button[class~="rounded-md"][class~="border"][class~="px-3"][class~="py-1.5"][class~="text-sm"][class~="transition-colors"]:not([class~="inline-flex"])) {
+    width: fit-content;
+    max-width: 100%;
+    gap: 0.125rem;
+    border-radius: var(--ui-radius-lg);
+    background-color: rgb(var(--theme-color-gray-100));
+    padding: 0.1875rem;
+  }
+
+  html.flat-theme.dark div[class~="flex"][class~="space-x-2"]:has(> button[class~="rounded-md"][class~="border"][class~="px-3"][class~="py-1.5"][class~="text-sm"][class~="transition-colors"]:not([class~="inline-flex"])) {
+    background-color: rgb(var(--theme-color-dark-700));
+  }
+
+  html.flat-theme div[class~="flex"][class~="space-x-2"]:has(> button[class~="rounded-md"][class~="border"][class~="px-3"][class~="py-1.5"][class~="text-sm"][class~="transition-colors"]:not([class~="inline-flex"])) > button[class~="rounded-md"][class~="border"][class~="px-3"][class~="py-1.5"][class~="text-sm"][class~="transition-colors"]:not([class~="inline-flex"]) {
+    margin-left: 0;
+    margin-right: 0;
+    border-color: transparent;
+    border-radius: var(--ui-radius-md);
+    background-color: transparent;
+    color: rgb(var(--ui-muted));
+    box-shadow: none;
+  }
+
+  html.flat-theme div[class~="flex"][class~="space-x-2"]:has(> button[class~="rounded-md"][class~="border"][class~="px-3"][class~="py-1.5"][class~="text-sm"][class~="transition-colors"]:not([class~="inline-flex"])) > button[class~="rounded-md"][class~="border"][class~="px-3"][class~="py-1.5"][class~="text-sm"][class~="transition-colors"]:not([class~="inline-flex"]):hover {
+    background-color: transparent;
+    color: rgb(var(--ui-ink));
+  }
+
+  html.flat-theme div[class~="flex"][class~="space-x-2"]:has(> button[class~="rounded-md"][class~="border"][class~="px-3"][class~="py-1.5"][class~="text-sm"][class~="transition-colors"]:not([class~="inline-flex"])) > button[class~="rounded-md"][class~="border"][class~="px-3"][class~="py-1.5"][class~="text-sm"][class~="transition-colors"]:not([class~="inline-flex"])[class~="bg-primary-600"] {
+    background-color: rgb(var(--ui-surface));
+    color: rgb(var(--ui-ink));
+    font-weight: 500;
+    box-shadow: 0 1px 2px 0 rgb(0 0 0 / 0.08), 0 0 0 1px rgb(0 0 0 / 0.04);
+  }
+
+  html.flat-theme.dark div[class~="flex"][class~="space-x-2"]:has(> button[class~="rounded-md"][class~="border"][class~="px-3"][class~="py-1.5"][class~="text-sm"][class~="transition-colors"]:not([class~="inline-flex"])) > button[class~="rounded-md"][class~="border"][class~="px-3"][class~="py-1.5"][class~="text-sm"][class~="transition-colors"]:not([class~="inline-flex"])[class~="bg-primary-600"] {
+    background-color: rgb(var(--theme-color-dark-600));
+    box-shadow: inset 0 1px 0 0 rgb(255 255 255 / 0.06), 0 1px 2px 0 rgb(0 0 0 / 0.4);
+  }
+
+  /* Native date / time fields (all 36, with or without the .input class): the 3:1 control line, ink
+     tabular figures, the console's calendar / clock glyph in the muted colour instead of the browser's,
+     and color-scheme following the mode so the browser's own picker opens dark in dark mode. The field
+     itself stays native. */
+  html.flat-theme input:is([type="date"], [type="datetime-local"], [type="time"], [type="month"]):not(:focus):not(:disabled):not(.input-error) {
+    border-color: rgb(var(--ui-control-line));
+  }
+
+  html.flat-theme input:is([type="date"], [type="datetime-local"], [type="time"], [type="month"]) {
+    color-scheme: light;
+    color: rgb(var(--ui-ink));
+    font-variant-numeric: tabular-nums;
+  }
+
+  html.flat-theme.dark input:is([type="date"], [type="datetime-local"], [type="time"], [type="month"]) {
+    color-scheme: dark;
+  }
+
+  html.flat-theme input:is([type="date"], [type="datetime-local"], [type="time"], [type="month"])::-webkit-datetime-edit-fields-wrapper {
+    padding: 0;
+  }
+
+  html.flat-theme input:is([type="date"], [type="datetime-local"], [type="time"], [type="month"])::-webkit-calendar-picker-indicator {
+    width: 1rem;
+    height: 1rem;
+    margin-left: 0.375rem;
+    padding: 0;
+    cursor: pointer;
+    opacity: 1;
+    filter: none;
+    color: transparent;
+    background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23707070' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 012.25-2.25h13.5A2.25 2.25 0 0121 7.5v11.25m-18 0A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75m-18 0v-7.5A2.25 2.25 0 015.25 9h13.5A2.25 2.25 0 0121 11.25v7.5'/%3E%3C/svg%3E") center / 1rem no-repeat;
+  }
+
+  html.flat-theme.dark input:is([type="date"], [type="datetime-local"], [type="time"], [type="month"])::-webkit-calendar-picker-indicator {
+    filter: none;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%239398a1' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 012.25-2.25h13.5A2.25 2.25 0 0121 7.5v11.25m-18 0A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75m-18 0v-7.5A2.25 2.25 0 015.25 9h13.5A2.25 2.25 0 0121 11.25v7.5'/%3E%3C/svg%3E");
+  }
+
+  html.flat-theme input[type="time"]::-webkit-calendar-picker-indicator {
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23707070' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M12 6v6h4.5m4.5 0a9 9 0 11-18 0 9 9 0 0118 0z'/%3E%3C/svg%3E");
+  }
+
+  html.flat-theme.dark input[type="time"]::-webkit-calendar-picker-indicator {
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%239398a1' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M12 6v6h4.5m4.5 0a9 9 0 11-18 0 9 9 0 0118 0z'/%3E%3C/svg%3E");
+  }
+
+  /* Onboarding tour copy: the emphasis lines are green (#10b981) inline styles in the i18n HTML
+     (i18n/locales/zh/misc.ts, en/misc.ts); in the console theme they use the accent text colour.
+     The close button 「×」 is text, so it takes the muted text colour (>= 4.5:1). */
+  html.flat-theme .theme-tour-popover [style*="#10b981" i] {
+    color: rgb(var(--ui-primary-ink)) !important;
+  }
+
+  html.flat-theme .theme-tour-popover .driver-popover-close-btn {
+    color: rgb(var(--ui-muted)) !important;
+  }
+
+  html.flat-theme .theme-tour-popover .driver-popover-close-btn:hover {
+    color: rgb(var(--ui-ink)) !important;
+  }
+
+  /* ---- round 5: header wrap (用户管理), buttons under the text (IP管理) ---- */
+
+  /* 用户管理: the time-column headers wrap after four characters (「最后活跃」 / 「时间」; English wraps at
+     the space), so the columns are only as wide as the two-line date / time below them. */
+  html.flat-theme .table-wrapper[data-table="users"] th:is([data-column="last_active_at"], [data-column="last_used_at"], [data-column="created_at"]) > div > span:first-child {
+    max-width: 4.5em;
+  }
+
+  /* IP管理: the copy button sits under the address, the show-password button under the user name and
+     password, so both columns are only as wide as their text. */
+  html.flat-theme .table-wrapper[data-table="proxies"] td:is([data-column="address"], [data-column="auth"]) > div {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.125rem;
+  }
+
+  html.flat-theme .table-wrapper[data-table="proxies"] td[data-column="auth"] > div > button {
+    margin-left: 0;
   }
 
   :where(.flat-theme) .code {
@@ -1477,16 +2497,12 @@
 
   :where(.flat-theme) .table th:is(.dark *) {
     background-color: rgb(var(--ui-surface));
-    color: rgb(var(--ui-faint));
-  }
-
-  :where(.flat-theme) .dialog-footer:is(.dark *) {
-    background-color: rgb(var(--ui-surface));
+    color: rgb(var(--ui-muted));
   }
 
   :where(.flat-theme) .sidebar:is(.dark *) {
     background-color: rgb(var(--ui-canvas));
-    border-color: rgb(var(--ui-line));
+    border-color: transparent;
   }
 
   :where(.flat-theme) .sidebar-header:is(.dark *) {
@@ -1494,12 +2510,23 @@
   }
 
   :where(.flat-theme) .tab-active:is(.dark *) {
-    background-color: rgb(var(--ui-primary));
-    color: rgb(var(--ui-on-primary));
+    background-color: rgb(var(--ui-hover));
+    color: rgb(var(--ui-ink));
   }
 
   :where(.flat-theme) .input:is(.dark *)::placeholder {
     color: rgb(var(--ui-faint));
+  }
+
+  :where(.flat-theme) .app-main > header:is(.dark *) {
+    border-color: rgb(var(--ui-line));
+    background-color: rgb(var(--ui-panel));
+  }
+
+  :where(.flat-theme) .sidebar-link-active:is(.dark *),
+  :where(.flat-theme) .sidebar-link-active:hover:is(.dark *) {
+    background-color: rgb(var(--ui-primary) / 0.16);
+    color: rgb(var(--ui-ink));
   }
 }
 
@@ -1508,6 +2535,10 @@
     background-color: rgb(var(--ui-surface));
     -webkit-backdrop-filter: none;
     backdrop-filter: none;
+  }
+
+  :where(.flat-theme) .app-main > header.glass {
+    background-color: rgb(var(--ui-panel));
   }
 
   /* monospace identifiers and tabular numerals */

@@ -3,6 +3,8 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"github.com/Wei-Shaw/sub2api/internal/config"
 	"github.com/coder/websocket"
 	"io"
@@ -81,6 +83,9 @@ type routingHostDirectoryFixture struct {
 	account  extensionv1.Account
 	scope    extensionv1.CodexRoutingScope
 	response string
+	status   int
+	headers  http.Header
+	probeErr error
 	requests int
 	onSend   func()
 }
@@ -138,6 +143,9 @@ func (d *routingHostDirectoryFixture) ExecuteCodexRoutingProbe(_ context.Context
 	}
 	headers := http.Header{"Content-Type": []string{"text/event-stream"}, "Set-Cookie": []string{"__cflb=synthetic-route; Path=/; Secure; Max-Age=100", "__oailb=synthetic-lb; Path=/; Secure; Max-Age=100"}}
 	scope := d.scope
+	if d.probeErr != nil {
+		return nil, scope, d.probeErr
+	}
 	if q.Stage == "verify" {
 		if cookies == "" {
 			return nil, scope, errCodexRoutingUnavailable
@@ -145,7 +153,14 @@ func (d *routingHostDirectoryFixture) ExecuteCodexRoutingProbe(_ context.Context
 		scope.ConnectionLeaseID = "actual-connection"
 		scope.RouteEvidence = "connection"
 	}
-	return &http.Response{StatusCode: 200, Header: headers, Body: io.NopCloser(strings.NewReader(d.response))}, scope, nil
+	status := http.StatusOK
+	if d.status != 0 {
+		status = d.status
+	}
+	for name, values := range d.headers {
+		headers[name] = values
+	}
+	return &http.Response{StatusCode: status, Header: headers, Body: io.NopCloser(strings.NewReader(d.response))}, scope, nil
 }
 
 func routingHostFixture() (*nativeCodexHost, *routingHostDirectoryFixture, *routingMemoryStore) {
@@ -220,8 +235,6 @@ func TestCodexRoutingHostSeparatesCandidateQualifiedAndPrivateMaterial(t *testin
 		raw, _ := json.Marshal(query)
 		result, err := host.Call(context.Background(), extensionv1.HostInvocation{Operation: extensionv1.HostCodexRoutingProbe, Payload: raw})
 		require.NoError(t, err)
-		require.NotContains(t, string(result.Payload), "synthetic-route")
-		require.NotContains(t, string(result.Payload), "synthetic-lb")
 		var value extensionv1.CodexRoutingProbeResult
 		require.NoError(t, json.Unmarshal(result.Payload, &value))
 		return value
@@ -230,6 +243,9 @@ func TestCodexRoutingHostSeparatesCandidateQualifiedAndPrivateMaterial(t *testin
 	candidate := call(query)
 	require.True(t, candidate.Valid)
 	require.Empty(t, candidate.Scope.ConnectionLeaseID)
+	// Administrators see every upstream response header as sent, Set-Cookie
+	// included; the bundle records themselves stay in the private namespace.
+	require.Contains(t, candidate.Observation.ResponseHeaders, extensionv1.CodexRoutingHeader{Name: "Set-Cookie", Value: "__cflb=synthetic-route; Path=/; Secure; Max-Age=100"})
 	query.Stage, query.Bundle = "verify", candidate.Bundle
 	verified := call(query)
 	require.True(t, verified.Valid)
@@ -273,6 +289,65 @@ func TestCodexRoutingHostRejectsMismatchedModelAndChangedOwner(t *testing.T) {
 			require.False(t, verified.Valid)
 			require.Nil(t, verified.Bundle)
 		}
+	}
+}
+
+func TestCodexRoutingProbeKeepsUpstreamErrorAndTransportCause(t *testing.T) {
+	probe := func(configure func(*routingHostDirectoryFixture)) extensionv1.CodexRoutingObservation {
+		host, directory, _ := routingHostFixture()
+		configure(directory)
+		raw, _ := json.Marshal(extensionv1.CodexRoutingQuery{AccountID: 7, Model: "gpt-6-astra", Transport: "http", OperationID: "one", Stage: "acquire"})
+		result, err := host.Call(context.Background(), extensionv1.HostInvocation{Operation: extensionv1.HostCodexRoutingProbe, Payload: raw})
+		require.NoError(t, err)
+		var value extensionv1.CodexRoutingProbeResult
+		require.NoError(t, json.Unmarshal(result.Payload, &value))
+		return value.Observation
+	}
+	body := `{"error":{"type":"rate_limit","code":"rate_limit_exceeded","message":"Rate limit reached for gpt-6-astra"}}`
+	large := strings.Repeat("v", extensionv1.CodexRoutingHeaderLimit)
+	rejected := probe(func(d *routingHostDirectoryFixture) {
+		d.status, d.response = http.StatusTooManyRequests, body
+		d.headers = http.Header{"X-Request-Id": []string{"req_fixture"}, "Cf-Ray": []string{"ray-fixture"}, "X-Codex-Turn-State": []string{"raw-state-value"}, "X-Large": []string{large}}
+	})
+	require.Equal(t, "raw-state-value", rejected.State)
+	require.Equal(t, len("raw-state-value"), rejected.StateLength)
+	require.Contains(t, rejected.ResponseHeaders, extensionv1.CodexRoutingHeader{Name: "X-Codex-Turn-State", Value: "raw-state-value"})
+	require.Contains(t, rejected.ResponseHeaders, extensionv1.CodexRoutingHeader{Name: "Set-Cookie", Value: "__oailb=synthetic-lb; Path=/; Secure; Max-Age=100"})
+	require.Equal(t, []string{"X-Large"}, rejected.ResponseHeadersOmitted, "a value over the 4 KiB bound is named, never cut")
+	require.Equal(t, "routing_upstream", rejected.Code)
+	require.Equal(t, http.StatusTooManyRequests, rejected.HTTPStatus)
+	require.Equal(t, "rate_limit", rejected.UpstreamErrorType)
+	require.Equal(t, "rate_limit_exceeded", rejected.UpstreamErrorCode)
+	require.Equal(t, "Rate limit reached for gpt-6-astra", rejected.UpstreamErrorMessage)
+	require.Equal(t, body, rejected.UpstreamBody)
+	require.Equal(t, "req_fixture", rejected.RequestID)
+	require.Equal(t, "ray-fixture", rejected.CFRay)
+	failed := probe(func(d *routingHostDirectoryFixture) {
+		d.response = "data: {\"type\":\"response.failed\",\"response\":{\"id\":\"resp_fixture\",\"status\":\"failed\",\"model\":\"gpt-6-astra\",\"instructions\":\"private instructions\",\"tools\":[{\"name\":\"private_tool\"}],\"output\":[{\"text\":\"private output\"}],\"error\":{\"code\":\"server_is_overloaded\",\"message\":\"Our servers are overloaded\"}}}\n\n"
+	})
+	require.Equal(t, "routing_capacity", failed.Code)
+	require.Equal(t, "server_is_overloaded", failed.UpstreamErrorCode)
+	require.Equal(t, "Our servers are overloaded", failed.UpstreamErrorMessage)
+	require.JSONEq(t, `{"type":"response.failed","response":{"id":"resp_fixture","status":"failed","model":"gpt-6-astra","error":{"code":"server_is_overloaded","message":"Our servers are overloaded"}}}`, failed.UpstreamBody, "the failing event keeps only its error and response identity")
+	transport := probe(func(d *routingHostDirectoryFixture) {
+		d.probeErr = errors.New("proxyconnect tcp: dial tcp 192.0.2.1:8080: connect: connection refused")
+	})
+	require.Equal(t, "routing_transport", transport.Code)
+	require.Contains(t, transport.Error, "connection refused")
+	token := probe(func(d *routingHostDirectoryFixture) {
+		d.probeErr = fmt.Errorf("%w: refresh token revoked", errCodexRoutingToken)
+	})
+	require.Equal(t, "ticket_token", token.Code)
+	require.Contains(t, token.Error, "refresh token revoked")
+}
+
+func TestCodexRoutingRefusalIsNeverAPersistentTransportFault(t *testing.T) {
+	for _, reason := range []string{"dial tcp 192.0.2.1:5432: connect: connection refused", "lookup proxy.example: no such host", "username/password authentication failed"} {
+		require.True(t, classifyUpstreamTransportError(errors.New(reason)).Persistent, "control: the same text from a real transport error is durable")
+		require.False(t, classifyUpstreamTransportError(codexRoutingUnavailable("read bundle bundle.live: %s", reason)).Persistent)
+		refusal := fmt.Errorf("%w: %w", ErrOpenAICodexTicketUnavailable, &NativeCodexResultError{Operation: "inject", Code: "ticket_missing", Message: reason})
+		require.False(t, classifyUpstreamTransportError(refusal).Persistent)
+		require.Contains(t, refusal.Error(), reason, "Ops keeps the full reason")
 	}
 }
 

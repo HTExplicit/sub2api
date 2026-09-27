@@ -105,7 +105,13 @@ func (m *Module) harvest(ctx, epoch context.Context, host HostCaller, cfg Config
 	observation := extensionv1.CodexRoutingObservation{Stage: "configuration", Code: "routing_unavailable", RequestedModel: req.Model, ObservedAt: now}
 	var scope extensionv1.CodexRoutingScope
 	var qualified *extensionv1.CodexRoutingQualification
-	if scopeErr := hostCall(ctx, host, extensionv1.HostCodexRoutingScope, extensionv1.CodexRoutingQuery{AccountID: account.ID, Transport: "http"}, &scope); scopeErr == nil && scope.Identity == account.Identity {
+	scopeErr := hostCall(ctx, host, extensionv1.HostCodexRoutingScope, extensionv1.CodexRoutingQuery{AccountID: account.ID, Transport: "http"}, &scope)
+	switch {
+	case scopeErr != nil:
+		observation.Error = "routing scope: " + scopeErr.Error()
+	case scope.Identity != account.Identity:
+		observation.Error = fmt.Sprintf("routing scope identity %s does not match account identity %s", scope.Identity, account.Identity)
+	default:
 		query := extensionv1.CodexRoutingQuery{AccountID: account.ID, Model: req.Model, Transport: "http", Stage: "acquire", OperationID: req.OperationID, Scope: &scope}
 		var candidate extensionv1.CodexRoutingProbeResult
 		if err := hostCall(ctx, host, extensionv1.HostCodexRoutingProbe, query, &candidate); err == nil {
@@ -121,27 +127,47 @@ func (m *Module) harvest(ctx, epoch context.Context, host HostCaller, cfg Config
 					}
 				} else {
 					observation.Code = "routing_transport"
+					observation.Error = "verify: " + err.Error()
 				}
 			}
 		} else {
 			observation.Code = "routing_transport"
+			observation.Error = "acquire: " + err.Error()
 		}
 	}
 	finish, stop := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
 	defer stop()
 	var current extensionv1.Account
 	if err := hostCall(finish, host, extensionv1.HostAccountRead, extensionv1.AccountQuery{AccountID: account.ID}, &current); err != nil || current.Identity != account.Identity {
-		return Outcome{Code: "ticket_stale"}, nil
+		stale := observation
+		if err != nil {
+			stale.Error = appendObservationError(stale.Error, "re-read account: "+err.Error())
+		} else {
+			stale.Error = appendObservationError(stale.Error, fmt.Sprintf("account identity changed from %s to %s during the operation", account.Identity, current.Identity))
+		}
+		return Outcome{Code: "ticket_stale", Observation: &stale}, nil
 	}
 	if ctx.Err() != nil || epoch.Err() != nil {
 		qualified = nil
 		observation.Code = "ticket_canceled"
+		if ctx.Err() != nil {
+			observation.Error = appendObservationError(observation.Error, "operation: "+ctx.Err().Error())
+		} else {
+			observation.Error = appendObservationError(observation.Error, "runtime stopped or reconfigured: "+epoch.Err().Error())
+		}
 	}
 	state.completeRouting(time.Now().UTC(), qualified, observation)
 	if _, err := writeState(finish, host, account.ID, req.Model, state, revision); err != nil {
 		return Outcome{Code: "ticket_persist"}, err
 	}
 	return Outcome{Success: qualified != nil, Code: observation.Code, HTTPStatus: observation.HTTPStatus, ObservedLength: observation.StateLength, ExpiresAt: state.ExpiresAt, Observation: &observation}, nil
+}
+
+func appendObservationError(existing, next string) string {
+	if existing == "" {
+		return next
+	}
+	return existing + "; " + next
 }
 
 func (m *Module) migrateRoutingStates(ctx context.Context, host HostCaller, cfg Config) {

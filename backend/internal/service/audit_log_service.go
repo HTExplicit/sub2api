@@ -138,16 +138,7 @@ func (s *AuditLogService) runWriter() {
 		if len(batch) == 0 {
 			return
 		}
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		inserted, err := s.repo.BatchInsert(ctx, batch)
-		cancel()
-		if err != nil {
-			atomic.AddUint64(&s.writeFailed, uint64(len(batch)))
-			_, _ = fmt.Fprintf(os.Stderr, "time=%s level=WARN msg=\"audit log flush failed\" err=%v batch=%d\n",
-				time.Now().Format(time.RFC3339Nano), err, len(batch))
-		} else {
-			atomic.AddUint64(&s.writtenCount, uint64(inserted))
-		}
+		s.writeBatch(batch)
 		batch = batch[:0]
 	}
 
@@ -181,6 +172,35 @@ func (s *AuditLogService) runWriter() {
 		case <-ticker.C:
 			flush()
 		}
+	}
+}
+
+// writeBatch stores one batch. One row the database rejects fails the whole
+// batch insert, so the rows are then inserted one by one: the other records
+// are kept and only the rejected rows are counted as failed.
+func (s *AuditLogService) writeBatch(batch []*AuditLog) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	inserted, err := s.repo.BatchInsert(ctx, batch)
+	cancel()
+	if err == nil {
+		atomic.AddUint64(&s.writtenCount, uint64(inserted))
+		return
+	}
+	_, _ = fmt.Fprintf(os.Stderr, "time=%s level=WARN msg=\"audit log batch insert failed; inserting rows one by one\" err=%v batch=%d\n",
+		time.Now().Format(time.RFC3339Nano), err, len(batch))
+	rowsCtx, cancelRows := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancelRows()
+	for _, entry := range batch {
+		if entry == nil {
+			continue
+		}
+		if rowErr := s.repo.Insert(rowsCtx, entry); rowErr != nil {
+			atomic.AddUint64(&s.writeFailed, 1)
+			_, _ = fmt.Fprintf(os.Stderr, "time=%s level=WARN msg=\"audit log insert failed\" err=%v action=%s\n",
+				time.Now().Format(time.RFC3339Nano), rowErr, entry.Action)
+			continue
+		}
+		atomic.AddUint64(&s.writtenCount, 1)
 	}
 }
 

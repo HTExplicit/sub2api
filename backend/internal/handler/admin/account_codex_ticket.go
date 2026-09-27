@@ -63,8 +63,8 @@ func (h *AccountHandler) BatchHarvestCodexTickets(c *gin.Context) {
 
 func (h *AccountHandler) submitCodexTicketHarvest(c *gin.Context, single bool) {
 	var req codexTicketHarvestRequest
-	if c.ShouldBindJSON(&req) != nil {
-		response.BadRequest(c, "请求格式不正确")
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.BadRequest(c, "请求格式不正确："+err.Error())
 		return
 	}
 	if single {
@@ -108,8 +108,8 @@ func (h *AccountHandler) StopCodexTicketRenewal(c *gin.Context) {
 		return
 	}
 	var req codexTicketHarvestRequest
-	if c.ShouldBindJSON(&req) != nil {
-		response.BadRequest(c, "请求格式不正确")
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.BadRequest(c, "请求格式不正确："+err.Error())
 		return
 	}
 	models, err := h.ticketModels(req.Models)
@@ -118,10 +118,59 @@ func (h *AccountHandler) StopCodexTicketRenewal(c *gin.Context) {
 		return
 	}
 	if err = h.codexTicketGateway.StopCodexTicketRenewal(c.Request.Context(), id, models); err != nil {
-		response.InternalError(c, "停止续期失败")
+		response.InternalError(c, "停止续期失败："+err.Error())
 		return
 	}
 	response.Success(c, gin.H{"stopped": true})
+}
+
+// codexTicketJobFailure builds a failed item directly: ErrorCode keeps the
+// result code and ErrorMessage the verbatim error text (shared job contract).
+func codexTicketJobFailure(itemID int64, code, message string, metadata map[string]any, canceled bool) service.AccountJobExecutionResult {
+	if metadata == nil {
+		metadata = map[string]any{}
+	}
+	if _, exists := metadata["message"]; !exists {
+		metadata["message"] = message
+	}
+	raw, _ := json.Marshal(metadata)
+	result := service.AccountJobExecutionResult{ItemID: itemID, Status: service.AccountJobItemStatusFailed, Metadata: raw, ErrorCode: code, ErrorMessage: message}
+	if canceled {
+		result.Status = service.AccountJobItemStatusCanceled
+	}
+	return result
+}
+
+// codexTicketJobMetadata keeps the complete harvest outcome. message and facts
+// stay at the top level, where the operation views render them; the upstream
+// body, STATE and response headers are stored once, in those facts.
+func codexTicketJobMetadata(accountID int64, model string, result service.CodexTicketResult) map[string]any {
+	stored := result
+	stored.Facts = nil
+	if result.Observation != nil {
+		observation := *result.Observation
+		observation.UpstreamBody, observation.State, observation.ResponseHeaders, observation.ResponseHeadersOmitted = "", "", nil, nil
+		stored.Observation = &observation
+	}
+	message := result.Message
+	if detail := result.Detail(); detail != "" && detail != message {
+		if message == "" {
+			message = detail
+		} else {
+			message += "：" + detail
+		}
+	}
+	metadata := map[string]any{"account_id": accountID, "model_id": model, "code": result.Code, "message": message, "facts": result.Facts, "ticket_result": stored}
+	if result.HTTPStatus > 0 {
+		metadata["http_status"] = result.HTTPStatus
+	}
+	if result.ResponseModel != "" {
+		metadata["response_model"] = result.ResponseModel
+	}
+	if detail := result.Detail(); detail != "" {
+		metadata["error"] = detail
+	}
+	return metadata
 }
 
 func (h *AccountHandler) executeCodexTicketHarvest(ctx context.Context, job *service.AccountJob, raw json.RawMessage, item service.AccountJobItem) service.AccountJobExecutionResult {
@@ -129,22 +178,30 @@ func (h *AccountHandler) executeCodexTicketHarvest(ctx context.Context, job *ser
 	var meta struct {
 		Model string `json:"model_id"`
 	}
-	if json.Unmarshal(raw, &req) != nil || json.Unmarshal(item.Metadata, &meta) != nil || meta.Model == "" {
-		return accountJobFailed(item.ID, "payload_invalid")
+	if err := json.Unmarshal(raw, &req); err != nil {
+		return codexTicketJobFailure(item.ID, "payload_invalid", "decode the job payload: "+err.Error(), nil, false)
+	}
+	if err := json.Unmarshal(item.Metadata, &meta); err != nil {
+		return codexTicketJobFailure(item.ID, "payload_invalid", "decode the item metadata: "+err.Error(), nil, false)
+	}
+	if meta.Model == "" {
+		return codexTicketJobFailure(item.ID, "payload_invalid", "the item metadata has no model_id", nil, false)
 	}
 	id, ok := accountJobTarget(item)
-	if !ok || h.codexTicketGateway == nil {
-		return accountJobFailed(item.ID, "target_missing")
+	if !ok {
+		return codexTicketJobFailure(item.ID, "target_missing", "the job item has no target account", map[string]any{"model_id": meta.Model}, false)
+	}
+	if h.codexTicketGateway == nil {
+		return codexTicketJobFailure(item.ID, "ticket_plugin_unavailable", "the Codex runtime gateway is not configured", map[string]any{"account_id": id, "model_id": meta.Model}, false)
 	}
 	result := h.codexTicketGateway.HarvestCodexTicket(ctx, id, meta.Model, fmt.Sprintf("job:%d:item:%d", job.ID, item.ID), job.ID, req.Force)
-	metadata := map[string]any{"account_id": id, "model_id": meta.Model, "ticket_result": result}
+	metadata := codexTicketJobMetadata(id, meta.Model, result)
 	if result.Success {
 		return accountJobSucceeded(item.ID, metadata)
 	}
-	failure := accountJobFailed(item.ID, result.Code)
-	failure.Metadata, _ = json.Marshal(metadata)
-	if ctx.Err() != nil {
-		failure.Status = service.AccountJobItemStatusCanceled
+	message := result.Detail()
+	if message == "" {
+		message = result.Message
 	}
-	return failure
+	return codexTicketJobFailure(item.ID, result.Code, message, metadata, ctx.Err() != nil)
 }

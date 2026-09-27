@@ -98,6 +98,7 @@
 
       <template #table>
         <DataTable
+          data-table="keys"
           :columns="columns"
           :data="apiKeys"
           :loading="loading"

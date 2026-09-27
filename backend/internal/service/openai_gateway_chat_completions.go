@@ -907,7 +907,7 @@ func (s *OpenAIGatewayService) handleChatStreamingResponse(
 			recovery := openAIChatReasoningRecoveryFromContext(c)
 			if recovery == nil || !recovery.RecoveryAttempt() {
 				if failoverErr, ok := s.openAIBudgetExceededHTTPResponseTerminalFailover(
-					c.Request.Context(), account, resp.StatusCode, resp.Header, rawPayloadBytes,
+					c.Request.Context(), c, account, resp.StatusCode, resp.Header, rawPayloadBytes,
 				); ok {
 					if parsedUsage, parsed := extractOpenAIUsageFromJSONBytes(rawPayloadBytes); parsed {
 						usage = parsedUsage

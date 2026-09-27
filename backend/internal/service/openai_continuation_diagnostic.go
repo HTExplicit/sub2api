@@ -8,7 +8,6 @@ import (
 	"hash"
 	"io"
 	"net/http"
-	"regexp"
 	"strings"
 	"unicode/utf8"
 
@@ -19,11 +18,21 @@ import (
 const (
 	openAIContinuationDiagnosticBodyLimit = 8 << 20
 	openAIContinuationDiagnosticItemLimit = 1024
-	openAIContinuationDiagnosticJSONLimit = 6 << 10
+	// The serialized diagnostic stays inside the per-attempt Ops budget. When a
+	// document is too large its plaintext values are truncated, never dropped.
+	openAIContinuationDiagnosticJSONLimit = 16 << 10
+
+	// Per-field bounds for the original value kept next to each fingerprint.
+	openAIContinuationDiagnosticIDValueLimit           = 512
+	openAIContinuationDiagnosticInstructionsValueLimit = 4 << 10
+	openAIContinuationDiagnosticMessageValueLimit      = 2 << 10
+	openAIContinuationDiagnosticCodeValueLimit         = 256
+	openAIContinuationDiagnosticParamValueLimit        = 512
 )
 
 // The diagnostic is an observation of an existing failed attempt. It is not
-// a retry signal or a request replay record, and contains no arbitrary text.
+// a retry signal or a request replay record. Administrators see the bounded
+// original values next to their complete-value fingerprints.
 type OpenAIContinuationDiagnostic struct {
 	Version        int                              `json:"version"`
 	Classification string                           `json:"classification"`
@@ -40,12 +49,16 @@ type openAIContinuationRecoveryShape struct {
 	NotAttemptedReason string `json:"not_attempted_reason,omitempty"`
 }
 
+// Bytes, Characters and SHA256 always describe the complete original value.
+// Value is that original (JSON text for non-string values), cut to the field's
+// byte bound; Truncated marks a partial value.
 type openAIContinuationFingerprint struct {
 	Kind       string `json:"kind"`
 	Bytes      int    `json:"bytes"`
 	Characters int    `json:"characters"`
 	SHA256     string `json:"sha256,omitempty"`
 	Value      string `json:"value,omitempty"`
+	Truncated  bool   `json:"truncated,omitempty"`
 }
 
 type openAIContinuationErrorShape struct {
@@ -147,7 +160,7 @@ func continuationDiagnosticWireBody(req *http.Request, fallback []byte) ([]byte,
 	return body, "actual_request", len(body) > openAIContinuationDiagnosticBodyLimit
 }
 
-func continuationDiagnosticFingerprint(value gjson.Result) openAIContinuationFingerprint {
+func continuationDiagnosticFingerprint(value gjson.Result, valueLimit int) openAIContinuationFingerprint {
 	if !value.Exists() {
 		return openAIContinuationFingerprint{Kind: "missing"}
 	}
@@ -169,7 +182,24 @@ func continuationDiagnosticFingerprint(value gjson.Result) openAIContinuationFin
 		}
 	}
 	digest := sha256.Sum256([]byte(raw))
-	return openAIContinuationFingerprint{Kind: kind, Bytes: len(raw), Characters: utf8.RuneCountInString(raw), SHA256: hex.EncodeToString(digest[:])}
+	fingerprint := openAIContinuationFingerprint{Kind: kind, Bytes: len(raw), Characters: utf8.RuneCountInString(raw), SHA256: hex.EncodeToString(digest[:])}
+	if kind != "null" {
+		fingerprint.Value, fingerprint.Truncated = continuationDiagnosticBoundValue(raw, valueLimit)
+	}
+	return fingerprint
+}
+
+// continuationDiagnosticBoundValue keeps a valid UTF-8 prefix of at most limit
+// bytes and reports whether anything was cut.
+func continuationDiagnosticBoundValue(value string, limit int) (string, bool) {
+	value = strings.ToValidUTF8(value, "�")
+	if limit <= 0 {
+		return "", value != ""
+	}
+	if len(value) <= limit {
+		return strings.Clone(value), false
+	}
+	return strings.Clone(truncateString(value, limit)), true
 }
 
 func continuationDiagnosticHeader(headers http.Header, name string) openAIContinuationFingerprint {
@@ -177,7 +207,7 @@ func continuationDiagnosticHeader(headers http.Header, name string) openAIContin
 	if len(values) == 0 {
 		return openAIContinuationFingerprint{Kind: "missing"}
 	}
-	return continuationDiagnosticFingerprint(gjson.Result{Type: gjson.String, Str: values[0]})
+	return continuationDiagnosticFingerprint(gjson.Result{Type: gjson.String, Str: values[0]}, openAIContinuationDiagnosticIDValueLimit)
 }
 
 func continuationDiagnosticRequest(body []byte, headers http.Header, source string) openAIContinuationRequestShape {
@@ -192,10 +222,10 @@ func continuationDiagnosticRequest(body []byte, headers http.Header, source stri
 		return shape
 	}
 	fields := gjson.GetManyBytes(body, "prompt_cache_key", "instructions", "previous_response_id", "client_metadata.session_id", "input")
-	shape.PromptCache = continuationDiagnosticFingerprint(fields[0])
-	shape.Instructions = continuationDiagnosticFingerprint(fields[1])
-	shape.PreviousResponse = continuationDiagnosticFingerprint(fields[2])
-	shape.ClientMetadataSession = continuationDiagnosticFingerprint(fields[3])
+	shape.PromptCache = continuationDiagnosticFingerprint(fields[0], openAIContinuationDiagnosticIDValueLimit)
+	shape.Instructions = continuationDiagnosticFingerprint(fields[1], openAIContinuationDiagnosticInstructionsValueLimit)
+	shape.PreviousResponse = continuationDiagnosticFingerprint(fields[2], openAIContinuationDiagnosticIDValueLimit)
+	shape.ClientMetadataSession = continuationDiagnosticFingerprint(fields[3], openAIContinuationDiagnosticIDValueLimit)
 	shape.History = continuationDiagnosticHistory(fields[4])
 	return shape
 }
@@ -286,18 +316,6 @@ func continuationDiagnosticHistory(input gjson.Result) openAIContinuationHistory
 	return shape
 }
 
-var continuationDiagnosticParam = regexp.MustCompile(`^(?:model|instructions|prompt_cache_key|previous_response_id|store|stream|input|tools|reasoning(?:\.(?:effort|mode|context))?|(?:input|tools)(?:\[[0-9]{1,6}\]|\.[0-9]{1,6})(?:\.(?:id|call_id|type|role|content|encrypted_content|name|namespace|arguments|output|function)(?:\.(?:name|arguments))?)?)$`)
-
-func continuationDiagnosticKnownError(value string) string {
-	switch value {
-	case "invalid_request_error", "invalid_argument", "bad_request", "upstream_error", "server_error", "validation_error", "invalid_request", "BadRequest",
-		"previous_response_not_found", "invalid_encrypted_content", "thinking_signature_invalid", "model_not_found", "unsupported_parameter", "unknown_parameter", "invalid_value", "missing_required_parameter", "context_length_exceeded", "400":
-		return strings.Clone(value)
-	default:
-		return ""
-	}
-}
-
 var continuationDiagnosticHints = []string{
 	"previous_response_not_found", "previous response not found", "invalid_encrypted_content", "encrypted content could not be verified",
 	"thinking_signature_invalid", "unknown parameter", "unsupported", "missing", "function_call_output", "call_id", "instructions", "prompt_cache_key",
@@ -323,17 +341,10 @@ func continuationDiagnosticError(body []byte) openAIContinuationErrorShape {
 		message = root
 	}
 	shape := openAIContinuationErrorShape{
-		ErrorType: continuationDiagnosticFingerprint(typ), ErrorCode: continuationDiagnosticFingerprint(code),
-		ErrorParam: continuationDiagnosticFingerprint(param), Message: continuationDiagnosticFingerprint(message),
-	}
-	if typ.Type == gjson.String {
-		shape.ErrorType.Value = continuationDiagnosticKnownError(typ.String())
-	}
-	if code.Type == gjson.String {
-		shape.ErrorCode.Value = continuationDiagnosticKnownError(code.String())
-	}
-	if param.Type == gjson.String && len(param.String()) <= 96 && continuationDiagnosticParam.MatchString(param.String()) {
-		shape.ErrorParam.Value = strings.Clone(param.String())
+		ErrorType:  continuationDiagnosticFingerprint(typ, openAIContinuationDiagnosticCodeValueLimit),
+		ErrorCode:  continuationDiagnosticFingerprint(code, openAIContinuationDiagnosticCodeValueLimit),
+		ErrorParam: continuationDiagnosticFingerprint(param, openAIContinuationDiagnosticParamValueLimit),
+		Message:    continuationDiagnosticFingerprint(message, openAIContinuationDiagnosticMessageValueLimit),
 	}
 	if message.Type == gjson.String {
 		lower := strings.ToLower(message.String())
@@ -357,16 +368,38 @@ func continuationDiagnosticClassification(value string) string {
 	}
 }
 
-// Queue-bound validation is independent of best-effort text redaction. No
-// producer can smuggle arbitrary strings through this typed metadata field.
+// sanitizeOpenAIContinuationDiagnostic normalizes the structural enums and
+// bounds every retained original value. A document that is still larger than
+// the Ops budget keeps all fingerprints, lengths and counters and has its
+// values shortened further; it is never discarded.
 func sanitizeOpenAIContinuationDiagnostic(in *OpenAIContinuationDiagnostic) *OpenAIContinuationDiagnostic {
 	if in == nil {
 		return nil
 	}
+	var out *OpenAIContinuationDiagnostic
+	for divisor := 1; divisor <= 64; divisor *= 2 {
+		out = sanitizeOpenAIContinuationDiagnosticValues(in, divisor)
+		if encoded, err := json.Marshal(out); err == nil && len(encoded) <= openAIContinuationDiagnosticJSONLimit {
+			return out
+		}
+	}
+	// The fixed structure alone always fits; values are the only variable part.
+	return sanitizeOpenAIContinuationDiagnosticValues(in, 0)
+}
+
+// sanitizeOpenAIContinuationDiagnosticValues divides every per-field value
+// bound by divisor; divisor 0 keeps no plaintext values.
+func sanitizeOpenAIContinuationDiagnosticValues(in *OpenAIContinuationDiagnostic, divisor int) *OpenAIContinuationDiagnostic {
 	out := *in
 	out.Version = 1
 	out.Classification = continuationDiagnosticClassification(in.Classification)
-	cleanFingerprint := func(f openAIContinuationFingerprint) openAIContinuationFingerprint {
+	bound := func(limit int) int {
+		if divisor <= 0 {
+			return 0
+		}
+		return limit / divisor
+	}
+	cleanFingerprint := func(f openAIContinuationFingerprint, limit int) openAIContinuationFingerprint {
 		switch f.Kind {
 		case "missing", "null", "string", "number", "boolean", "array", "object", "uninspected":
 		default:
@@ -379,7 +412,8 @@ func sanitizeOpenAIContinuationDiagnostic(in *OpenAIContinuationDiagnostic) *Ope
 			f.Characters = 0
 		}
 		f.SHA256 = continuationDiagnosticSafeHash(f.SHA256)
-		f.Value = ""
+		value, cut := continuationDiagnosticBoundValue(f.Value, bound(limit))
+		f.Value, f.Truncated = value, f.Truncated || cut
 		return f
 	}
 	cleanRequest := func(r openAIContinuationRequestShape) openAIContinuationRequestShape {
@@ -391,8 +425,12 @@ func sanitizeOpenAIContinuationDiagnostic(in *OpenAIContinuationDiagnostic) *Ope
 		if r.BodyBytes < 0 {
 			r.BodyBytes = 0
 		}
-		r.PromptCache, r.Instructions, r.PreviousResponse = cleanFingerprint(r.PromptCache), cleanFingerprint(r.Instructions), cleanFingerprint(r.PreviousResponse)
-		r.Session, r.Conversation, r.ClientMetadataSession = cleanFingerprint(r.Session), cleanFingerprint(r.Conversation), cleanFingerprint(r.ClientMetadataSession)
+		r.PromptCache = cleanFingerprint(r.PromptCache, openAIContinuationDiagnosticIDValueLimit)
+		r.Instructions = cleanFingerprint(r.Instructions, openAIContinuationDiagnosticInstructionsValueLimit)
+		r.PreviousResponse = cleanFingerprint(r.PreviousResponse, openAIContinuationDiagnosticIDValueLimit)
+		r.Session = cleanFingerprint(r.Session, openAIContinuationDiagnosticIDValueLimit)
+		r.Conversation = cleanFingerprint(r.Conversation, openAIContinuationDiagnosticIDValueLimit)
+		r.ClientMetadataSession = cleanFingerprint(r.ClientMetadataSession, openAIContinuationDiagnosticIDValueLimit)
 		r.History.CallIDsSHA256 = continuationDiagnosticSafeHash(r.History.CallIDsSHA256)
 		r.History.OutputIDsSHA256 = continuationDiagnosticSafeHash(r.History.OutputIDsSHA256)
 		r.History.EncryptedSHA256 = continuationDiagnosticSafeHash(r.History.EncryptedSHA256)
@@ -419,14 +457,10 @@ func sanitizeOpenAIContinuationDiagnostic(in *OpenAIContinuationDiagnostic) *Ope
 		}
 		out.Recovery = &recovery
 	}
-	out.UpstreamError.ErrorType, out.UpstreamError.ErrorCode = cleanFingerprint(in.UpstreamError.ErrorType), cleanFingerprint(in.UpstreamError.ErrorCode)
-	out.UpstreamError.ErrorType.Value = continuationDiagnosticKnownError(in.UpstreamError.ErrorType.Value)
-	out.UpstreamError.ErrorCode.Value = continuationDiagnosticKnownError(in.UpstreamError.ErrorCode.Value)
-	out.UpstreamError.ErrorParam, out.UpstreamError.Message = cleanFingerprint(in.UpstreamError.ErrorParam), cleanFingerprint(in.UpstreamError.Message)
-	param := in.UpstreamError.ErrorParam.Value
-	if len(param) <= 96 && continuationDiagnosticParam.MatchString(param) {
-		out.UpstreamError.ErrorParam.Value = strings.Clone(param)
-	}
+	out.UpstreamError.ErrorType = cleanFingerprint(in.UpstreamError.ErrorType, openAIContinuationDiagnosticCodeValueLimit)
+	out.UpstreamError.ErrorCode = cleanFingerprint(in.UpstreamError.ErrorCode, openAIContinuationDiagnosticCodeValueLimit)
+	out.UpstreamError.ErrorParam = cleanFingerprint(in.UpstreamError.ErrorParam, openAIContinuationDiagnosticParamValueLimit)
+	out.UpstreamError.Message = cleanFingerprint(in.UpstreamError.Message, openAIContinuationDiagnosticMessageValueLimit)
 	out.UpstreamError.Hints = nil
 	for _, allowed := range continuationDiagnosticHints {
 		for _, hint := range in.UpstreamError.Hints {
@@ -435,10 +469,6 @@ func sanitizeOpenAIContinuationDiagnostic(in *OpenAIContinuationDiagnostic) *Ope
 				break
 			}
 		}
-	}
-	encoded, err := json.Marshal(out)
-	if err != nil || len(encoded) > openAIContinuationDiagnosticJSONLimit {
-		return nil
 	}
 	return &out
 }

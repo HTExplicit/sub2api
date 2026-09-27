@@ -57,24 +57,29 @@ func consumeCodexValidationBudget(ctx context.Context, store NativeCodexStateSto
 		return nil
 	}
 	if validation.AccountID != query.AccountID || validation.Model != query.Model || validation.Transport != query.Transport || !slices.Contains(codexValidationModels, query.Model) {
-		return errCodexRoutingUnavailable
+		return codexRoutingUnavailable("validation %s is bound to account %d %s/%s, probe asked for account %d %s/%s", validation.ID, validation.AccountID, validation.Model, validation.Transport, query.AccountID, query.Model, query.Transport)
 	}
 	stage := query.Model + ":" + query.Transport + ":" + query.Stage
 	if query.Transport == "ws" && query.Stage != "verify" {
-		return errCodexRoutingUnavailable
+		return codexRoutingUnavailable("WebSocket validation only has a verify stage, not %q", query.Stage)
 	}
 	key := "validation." + validation.ID
 	for range 3 {
 		previous, err := store.ReadExtensionState(ctx, plugin, extensionv1.StateRequest{Namespace: codexRoutingPrivateNamespace, Key: key})
 		if err != nil {
-			return errCodexRoutingUnavailable
+			return codexRoutingUnavailable("read validation budget %s: %v", validation.ID, err)
 		}
 		budget := codexValidationBudget{AccountID: query.AccountID, Stages: map[string]bool{}}
 		if previous.Found && (json.Unmarshal(previous.Value, &budget) != nil || budget.AccountID != query.AccountID || budget.Stages == nil) {
-			return errCodexRoutingUnavailable
+			return codexRoutingUnavailable("validation budget %s belongs to account %d or is invalid: %s", validation.ID, budget.AccountID, string(previous.Value))
 		}
-		if budget.Used >= 7 || budget.Stages[stage] || (query.Transport == "ws" && budget.Stages["ws-spent"]) {
-			return errCodexRoutingUnavailable
+		switch {
+		case budget.Used >= 7:
+			return codexRoutingUnavailable("validation %s already used %d of 7 upstream calls", validation.ID, budget.Used)
+		case budget.Stages[stage]:
+			return codexRoutingUnavailable("validation %s already spent stage %s", validation.ID, stage)
+		case query.Transport == "ws" && budget.Stages["ws-spent"]:
+			return codexRoutingUnavailable("validation %s already spent its WebSocket stage", validation.ID)
 		}
 		budget.Used++
 		budget.Stages[stage] = true
@@ -84,32 +89,44 @@ func consumeCodexValidationBudget(ctx context.Context, store NativeCodexStateSto
 		raw, _ := json.Marshal(budget)
 		next, err := store.CompareSwapExtensionState(ctx, plugin, extensionv1.StateRequest{Namespace: codexRoutingPrivateNamespace, Key: key, ExpectedRevision: previous.Revision, Value: raw})
 		if err != nil {
-			return errCodexRoutingUnavailable
+			return codexRoutingUnavailable("save validation budget %s: %v", validation.ID, err)
 		}
 		if next.Applied {
 			return nil
 		}
 	}
-	return errCodexRoutingUnavailable
+	return codexRoutingUnavailable("validation budget %s kept changing concurrently", validation.ID)
 }
 
 func (s *OpenAIGatewayService) ValidateCodexRouting(ctx context.Context, id int64, request CodexRoutingValidationRequest) (*CodexRoutingValidationResult, error) {
-	if uuid.Validate(request.ValidationID) != nil || !slices.Contains(codexValidationModels, request.Model) || (request.Transport != "http" && request.Transport != "ws") || s.nativeCodexRuntime == nil {
-		return nil, errCodexRoutingUnavailable
+	if err := uuid.Validate(request.ValidationID); err != nil {
+		return nil, codexRoutingUnavailable("validation_id %q is not a UUID: %v", request.ValidationID, err)
+	}
+	if !slices.Contains(codexValidationModels, request.Model) {
+		return nil, codexRoutingUnavailable("model %q is not one of %v", request.Model, codexValidationModels)
+	}
+	if request.Transport != "http" && request.Transport != "ws" {
+		return nil, codexRoutingUnavailable("transport must be http or ws, got %q", request.Transport)
+	}
+	if s.nativeCodexRuntime == nil {
+		return nil, codexRoutingUnavailable("native Codex runtime is not configured")
 	}
 	account, err := s.accountRepo.GetByID(ctx, id)
-	if err != nil || !isOpenAICodexTicketAccount(account) {
-		return nil, errCodexRoutingUnavailable
+	switch {
+	case err != nil:
+		return nil, codexRoutingUnavailable("read account %d: %v", id, err)
+	case !isOpenAICodexTicketAccount(account):
+		return nil, codexRoutingUnavailable("account %d is not an OpenAI OAuth/setup-token Codex account", id)
 	}
 	installation := s.nativeCodexRuntime.metadata()
 	store := s.nativeCodexRuntime.repo
 	ok := store != nil
 	if installation == nil || !ok {
-		return nil, errCodexRoutingUnavailable
+		return nil, codexRoutingUnavailable("native Codex runtime is not loaded")
 	}
 	snapshot := s.nativeCodexRuntime.current()
 	if snapshot == nil {
-		return nil, errCodexRoutingUnavailable
+		return nil, codexRoutingUnavailable("native Codex runtime snapshot is not loaded")
 	}
 
 	ctx = WithNativeCodexExecution(ctx, installation)
@@ -118,8 +135,11 @@ func (s *OpenAIGatewayService) ValidateCodexRouting(ctx context.Context, id int6
 	defer cancel()
 	lease := extensionv1.LeaseRequest{Namespace: "routing-account", Key: fmt.Sprint(id), Owner: uuid.NewString(), TTLSeconds: 75}
 	locked, err := store.AcquireExtensionLease(ctx, NativeCodexPluginKey, lease)
-	if err != nil || !locked.Acquired {
-		return nil, ErrCodexTicketBusy
+	if err != nil {
+		return nil, fmt.Errorf("%w: acquire account routing lease: %v", ErrCodexTicketBusy, err)
+	}
+	if !locked.Acquired {
+		return nil, fmt.Errorf("%w: another routing operation holds account %d", ErrCodexTicketBusy, id)
 	}
 	lease.Generation = locked.Generation
 	defer func() {
@@ -132,8 +152,14 @@ func (s *OpenAIGatewayService) ValidateCodexRouting(ctx context.Context, id int6
 		raw, _ := json.Marshal(query)
 		response, err := snapshot.host.Call(ctx, extensionv1.HostInvocation{Operation: extensionv1.HostCodexRoutingProbe, Payload: raw})
 		var value extensionv1.CodexRoutingProbeResult
-		if err != nil || response.Code != "" || json.Unmarshal(response.Payload, &value) != nil {
-			return value, errCodexRoutingUnavailable
+		switch {
+		case err != nil:
+			return value, fmt.Errorf("%s probe: %w", query.Stage, err)
+		case response.Code != "":
+			return value, codexRoutingUnavailable("%s probe returned code %s: %s", query.Stage, response.Code, response.Message)
+		}
+		if err := json.Unmarshal(response.Payload, &value); err != nil {
+			return value, codexRoutingUnavailable("decode %s probe result: %v", query.Stage, err)
 		}
 		result.Observations = append(result.Observations, value.Observation)
 		return value, nil
@@ -146,8 +172,14 @@ func (s *OpenAIGatewayService) ValidateCodexRouting(ctx context.Context, id int6
 		acquired, err = call(query)
 	} else {
 		previous, readErr := store.ReadExtensionState(ctx, NativeCodexPluginKey, extensionv1.StateRequest{Namespace: codexRoutingPrivateNamespace, Key: storedKey})
-		if readErr != nil || !previous.Found || json.Unmarshal(previous.Value, &acquired) != nil {
-			return nil, errCodexRoutingUnavailable
+		switch {
+		case readErr != nil:
+			return nil, codexRoutingUnavailable("read the HTTP validation result of %s: %v", request.ValidationID, readErr)
+		case !previous.Found:
+			return nil, codexRoutingUnavailable("WebSocket validation needs a successful HTTP validation of model %s with the same validation_id first", request.Model)
+		}
+		if err := json.Unmarshal(previous.Value, &acquired); err != nil {
+			return nil, codexRoutingUnavailable("decode the HTTP validation result of %s: %v", request.ValidationID, err)
 		}
 	}
 	if err == nil && acquired.Valid && acquired.Bundle != nil {
@@ -156,12 +188,14 @@ func (s *OpenAIGatewayService) ValidateCodexRouting(ctx context.Context, id int6
 		verified, err = call(query)
 		result.Success = err == nil && verified.Valid
 		if result.Success && request.Transport == "http" {
-			raw, _ := json.Marshal(verified)
+			stored := verified
+			stored.Observation = codexRoutingPrivateObservation(stored.Observation)
+			raw, _ := json.Marshal(stored)
 			_, _ = store.CompareSwapExtensionState(ctx, NativeCodexPluginKey, extensionv1.StateRequest{Namespace: codexRoutingPrivateNamespace, Key: storedKey, Value: raw})
 		}
 	}
 	if err != nil {
-		result.Observations = append(result.Observations, extensionv1.CodexRoutingObservation{Stage: query.Stage, Code: "routing_validation_unavailable", RequestedModel: request.Model, Transport: request.Transport, ObservedAt: time.Now().UTC()})
+		result.Observations = append(result.Observations, extensionv1.CodexRoutingObservation{Stage: query.Stage, Code: "routing_validation_unavailable", RequestedModel: request.Model, Transport: request.Transport, ObservedAt: time.Now().UTC(), Error: err.Error()})
 	}
 	budgetRecord, readErr := store.ReadExtensionState(context.WithoutCancel(ctx), NativeCodexPluginKey, extensionv1.StateRequest{Namespace: codexRoutingPrivateNamespace, Key: "validation." + request.ValidationID})
 	if readErr == nil {

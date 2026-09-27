@@ -29,9 +29,11 @@ func TestCodexProxyParseIsPureAndSelectionErrorsAreShared(t *testing.T) {
 	parsed := call(h.ParseCodexTicketProxy, map[string]string{"proxy_url": input, "protocol": "https"})
 	require.Equal(t, http.StatusOK, parsed.Code)
 	require.Equal(t, "no-store", parsed.Header().Get("Cache-Control"))
-	for _, value := range []string{"fixture-user", "fixture-password", "other-password", "http://"} {
+	for _, value := range []string{"fixture-password", "other-password", "http://"} {
 		require.NotContains(t, parsed.Body.String(), value)
 	}
+	// Candidates show the username so records differing only by it stay distinguishable.
+	require.Contains(t, parsed.Body.String(), `"username":"fixture-user"`)
 	var envelope struct {
 		Data proxytransport.ParseResult `json:"data"`
 	}

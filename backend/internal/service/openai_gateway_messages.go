@@ -1056,7 +1056,7 @@ func (s *OpenAIGatewayService) handleAnthropicStreamingResponse(
 		rawEventType := strings.TrimSpace(gjson.GetBytes(rawPayloadBytes, "type").String())
 		if rawEventType == "response.failed" || rawEventType == "error" {
 			if failoverErr, ok := s.openAIBudgetExceededHTTPResponseTerminalFailover(
-				c.Request.Context(), account, resp.StatusCode, resp.Header, rawPayloadBytes,
+				c.Request.Context(), c, account, resp.StatusCode, resp.Header, rawPayloadBytes,
 			); ok {
 				if parsedUsage, parsed := extractOpenAIUsageFromJSONBytes(rawPayloadBytes); parsed {
 					usage = parsedUsage

@@ -614,7 +614,11 @@ func (s *OpenAIGatewayService) proxyOpenAIWSHTTPBridgeTurn(
 			return nil, s.handleOpenAIUpstreamTransportError(ctx, c, account, err, true)
 		}
 		safeErr := sanitizeUpstreamErrorMessage(err.Error())
-		_ = writeClientMessage(buildOpenAIWSHTTPBridgeErrorEvent(http.StatusBadGateway, "Upstream request failed"))
+		recordOpenAIWSBridgeTransportError(c, account, safeErr)
+		clientError := buildOpenAIWSHTTPBridgeErrorEvent(http.StatusBadGateway, "Upstream request failed")
+		if writeErr := writeClientMessage(clientError); writeErr == nil && !openAIWSDeliveryMarksFailures(c) {
+			markOpenAIWSDeliveredFailure(c, clientError)
+		}
 		return nil, fmt.Errorf("upstream http bridge request failed: %s", safeErr)
 	}
 	rejectedFieldRetryState := newOpenAIResponsesRejectedFieldRetryState(body)
@@ -677,7 +681,10 @@ func (s *OpenAIGatewayService) proxyOpenAIWSHTTPBridgeTurn(
 			canonicalModel := canonicalOpenAIAccountSchedulingModel(account, originalModel)
 			s.handleOpenAIAccountUpstreamError(ctx, account, resp.StatusCode, resp.Header, respBody, canonicalModel)
 		}
-		_ = writeClientMessage(buildOpenAIWSHTTPBridgeErrorEvent(resp.StatusCode, upstreamMsg))
+		clientError := buildOpenAIWSHTTPBridgeErrorEvent(resp.StatusCode, upstreamMsg)
+		if writeErr := writeClientMessage(clientError); writeErr == nil && !openAIWSDeliveryMarksFailures(c) {
+			markOpenAIWSDeliveredFailure(c, clientError)
+		}
 		return nil, fmt.Errorf("upstream http bridge error: status=%d message=%s", resp.StatusCode, upstreamMsg)
 	}
 	defer func() { _ = resp.Body.Close() }()
@@ -787,7 +794,8 @@ func (s *OpenAIGatewayService) proxyOpenAIWSHTTPBridgeTurn(
 			}
 			wroteDownstream = true
 		}
-		markOpenAIWSClientVisibleFailure(c, "response.failed", clientMessage)
+		// A cyber-policy block keeps only its dedicated row.
+		markOpenAIWSDeliveredFailure(c, clientMessage)
 		return nil
 	}
 
@@ -832,7 +840,8 @@ func (s *OpenAIGatewayService) proxyOpenAIWSHTTPBridgeTurn(
 		budgetExceeded := false
 		var budgetFailoverErr *UpstreamFailoverError
 		if rawEventType == "error" || rawEventType == "response.failed" {
-			budgetFailoverErr, budgetExceeded = s.openAIBudgetExceededTerminalFailover(ctx, account, resp.Header, rawUpstreamMessage)
+			budgetFailoverErr, budgetExceeded = s.openAIBudgetExceededTerminalFailover(ctx, c, account, resp.Header, rawUpstreamMessage, false,
+				turn == 1 && !wroteDownstream && !semanticOutputStarted)
 		}
 		if budgetExceeded {
 			if turn == 1 && !wroteDownstream && !semanticOutputStarted {
@@ -1012,7 +1021,7 @@ func (s *OpenAIGatewayService) proxyOpenAIWSHTTPBridgeTurn(
 					pendingClientMessageBytes = 0
 				}
 				messages = append(messages, clientMessage)
-				for _, message := range messages {
+				for index, message := range messages {
 					if err := writeClientMessage(message); err != nil {
 						if isOpenAIWSClientDisconnectError(err) {
 							clientDisconnected = true
@@ -1034,6 +1043,17 @@ func (s *OpenAIGatewayService) proxyOpenAIWSHTTPBridgeTurn(
 					}
 					if !isKeepalive {
 						wroteDownstream = true
+					}
+					// Mark failures the client received, staged frames included
+					// when they are flushed; the current frame is marked with the
+					// upstream payload, as upstream v0.2.8 does. A refusal output
+					// marks on its own delivery instead.
+					if !openAIWSDeliveryMarksFailures(c) {
+						delivered := message
+						if index == len(messages)-1 {
+							delivered = upstreamMessage
+						}
+						markOpenAIWSDeliveredFailure(c, delivered)
 					}
 				}
 			}

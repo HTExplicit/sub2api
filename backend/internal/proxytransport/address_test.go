@@ -90,10 +90,14 @@ func TestProxyCandidatesAmbiguityDedupeSelectionAndRedaction(t *testing.T) {
 		t.Fatal("dedupe must include complete credentials and effective endpoint")
 	}
 	encoded, _ := json.Marshal(parsed)
-	for _, secret := range []string{"fixture-user", "fixture-password", "different-password", "http://"} {
+	for _, secret := range []string{"fixture-password", "different-password", "http://"} {
 		if strings.Contains(string(encoded), secret) {
-			t.Fatal("candidate serialization leaked credential material")
+			t.Fatal("candidate serialization leaked a password or the full address")
 		}
+	}
+	// Administrators see the username so candidates that differ only by it stay distinguishable.
+	if parsed.Candidates[0].Username != "fixture-user" || !strings.Contains(string(encoded), `"username":"fixture-user"`) {
+		t.Fatalf("candidate username is not shown: %s", encoded)
 	}
 	preserved, err := Resolve(raw, "socks5", parsed.Candidates[0].SelectionID)
 	if err != nil || preserved != strings.Split(raw, "\n")[0] {

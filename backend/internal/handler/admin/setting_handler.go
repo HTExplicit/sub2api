@@ -123,8 +123,11 @@ func (h *SettingHandler) GetImageToolsSettings(c *gin.Context) {
 func (h *SettingHandler) UpdateImageToolsSettings(c *gin.Context) {
 	var req extensionv1.ImageToolsConfig
 	raw, err := c.GetRawData()
-	if err != nil || service.DecodeSwitchSettings(raw, &req, "studio_enabled") != nil {
-		response.BadRequest(c, "Invalid image tools settings")
+	if err == nil {
+		err = service.DecodeSwitchSettings(raw, &req, "studio_enabled")
+	}
+	if err != nil {
+		response.BadRequest(c, "Invalid image tools settings: "+err.Error())
 		return
 	}
 	if err := h.settingService.UpdateImageToolsConfig(c.Request.Context(), req); err != nil {
@@ -147,8 +150,11 @@ func (h *SettingHandler) GetObservabilitySettings(c *gin.Context) {
 func (h *SettingHandler) UpdateObservabilitySettings(c *gin.Context) {
 	req := extensionv1.AdminObservabilityConfig{TelemetryEnabled: true, ThemeEnabled: true}
 	raw, err := c.GetRawData()
-	if err != nil || service.DecodeSwitchSettings(raw, &req, "telemetry_enabled", "theme_enabled") != nil {
-		response.BadRequest(c, "Invalid observability settings")
+	if err == nil {
+		err = service.DecodeSwitchSettings(raw, &req, "telemetry_enabled", "theme_enabled")
+	}
+	if err != nil {
+		response.BadRequest(c, "Invalid observability settings: "+err.Error())
 		return
 	}
 	if err := h.settingService.UpdateAdminObservabilityConfig(c.Request.Context(), req); err != nil {
@@ -479,7 +485,14 @@ func (h *SettingHandler) GetSettings(c *gin.Context) {
 		payload.DefaultPlatformQuotas = platformQuotas
 	}
 
-	response.Success(c, systemSettingsResponseData(payload, authSourceDefaults))
+	data := systemSettingsResponseData(payload, authSourceDefaults)
+	// Deprecated compatibility values are preserved on save but have no public
+	// write field or runtime effect; they are echoed read-only.
+	data["deprecated_settings"] = map[string]any{
+		service.SettingKeyOpenAIAPIKeyAlphaSearchResponsesBridgeEnabled:  settings.OpenAIAPIKeyAlphaSearchResponsesBridgeEnabled,
+		service.SettingKeyOpenAIAPIKeyPromptCacheKeyNormalizationEnabled: settings.OpenAIAPIKeyPromptCacheKeyNormalizationEnabled,
+	}
+	response.Success(c, data)
 }
 
 // openaiFastPolicySettingsToDTO converts service -> dto for OpenAI fast policy.

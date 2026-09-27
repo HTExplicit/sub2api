@@ -1,6 +1,7 @@
 package repository
 
 import (
+	"bytes"
 	"context"
 	"database/sql"
 	"encoding/json"
@@ -48,6 +49,10 @@ const accountJobSelectColumns = `id, created_by, kind, idempotency_key, request_
 
 const accountJobItemSelectColumns = `id, job_id, ordinal, action, target_account_id, status, metadata,
 	error_code, error_message, started_at, finished_at, created_at, updated_at`
+
+// accountJobResultKeysField is the item metadata key that lists the keys a
+// completed result added to the seed metadata.
+const accountJobResultKeysField = "result_keys"
 
 type accountJobScanner interface{ Scan(...any) error }
 
@@ -181,8 +186,11 @@ func (r *accountJobRepository) Create(ctx context.Context, params service.Create
 	return job, false, nil
 }
 
+// normalizeRepositoryJobMetadata returns a jsonb object for a metadata write;
+// values are kept, only text jsonb rejects becomes U+FFFD.
 func normalizeRepositoryJobMetadata(raw json.RawMessage) json.RawMessage {
-	if len(raw) == 0 || string(raw) == "null" {
+	raw = service.StorableAccountJobMetadata(raw)
+	if len(bytes.TrimSpace(raw)) == 0 || string(bytes.TrimSpace(raw)) == "null" {
 		return json.RawMessage(`{}`)
 	}
 	return raw
@@ -438,11 +446,20 @@ func (r *accountJobRepository) CompleteItems(ctx context.Context, jobID int64, r
 			status = service.AccountJobItemStatusFailed
 		}
 		metadata := normalizeRepositoryJobMetadata(result.Metadata)
+		// result_keys lists the keys this result added to the seed metadata, so a
+		// retry is seeded with the original keys only (FailedItemSeeds).
 		updated, updateErr := tx.ExecContext(ctx, `UPDATE admin_account_job_items
-			SET status=$3, metadata=metadata || $4::jsonb, error_code=NULLIF($5,''), error_message=NULLIF($6,''),
+			SET status=$3,
+			    metadata=metadata || $4::jsonb || COALESCE((
+			        SELECT jsonb_build_object('`+accountJobResultKeysField+`', jsonb_agg(result_key ORDER BY result_key))
+			        FROM jsonb_object_keys($4::jsonb) AS result_key
+			        WHERE NOT (admin_account_job_items.metadata ? result_key)
+			        HAVING COUNT(*) > 0), '{}'::jsonb),
+			    error_code=NULLIF($5,''), error_message=NULLIF($6,''),
 			    finished_at=NOW(), updated_at=NOW()
 			WHERE job_id=$1 AND id=$2 AND status='running'`,
-			jobID, result.ItemID, status, string(metadata), result.ErrorCode, result.ErrorMessage)
+			jobID, result.ItemID, status, string(metadata),
+			service.StorableAccountJobText(result.ErrorCode), service.StorableAccountJobText(result.ErrorMessage))
 		if updateErr != nil {
 			return updateErr
 		}
@@ -487,6 +504,7 @@ func refreshAccountJobCounts(ctx context.Context, tx *sql.Tx, jobID int64) error
 }
 
 func (r *accountJobRepository) Finish(ctx context.Context, jobID int64, errorCode, errorMessage string) (*service.AccountJob, error) {
+	errorCode, errorMessage = service.StorableAccountJobText(errorCode), service.StorableAccountJobText(errorMessage)
 	tx, err := r.db.BeginTx(ctx, nil)
 	if err != nil {
 		return nil, err
@@ -591,7 +609,13 @@ func (r *accountJobRepository) FailedItemSeeds(ctx context.Context, jobID, creat
 	if err != nil {
 		return nil, nil, "", time.Time{}, err
 	}
-	rows, err := r.db.QueryContext(ctx, `SELECT ordinal, action, target_account_id, metadata
+	// A retry is seeded with the original item keys; keys a previous result
+	// added (warnings, matched ids, proxy errors, account id, action, ...) are
+	// results of that attempt, not input of the next one.
+	rows, err := r.db.QueryContext(ctx, `SELECT ordinal, action, target_account_id,
+			(metadata - '`+accountJobResultKeysField+`') - ARRAY(SELECT jsonb_array_elements_text(
+				CASE WHEN jsonb_typeof(metadata->'`+accountJobResultKeysField+`')='array'
+				THEN metadata->'`+accountJobResultKeysField+`' ELSE '[]'::jsonb END))
 		FROM admin_account_job_items WHERE job_id=$1 AND status='failed' ORDER BY ordinal`, jobID)
 	if err != nil {
 		return nil, nil, "", time.Time{}, err

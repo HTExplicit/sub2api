@@ -2428,15 +2428,20 @@
           {{ t('admin.accounts.openai.codexTurnTicketDesc') }}
         </p>
         <div class="mt-3 space-y-1.5">
-          <div v-for="ticket in codexTurnTickets" :key="ticket.model" class="flex items-center justify-between text-sm">
-            <span class="font-medium">{{ ticket.model }}</span>
-            <span v-if="ticket.ready" class="text-emerald-600 dark:text-emerald-400">
-              {{ t('admin.accounts.openai.codexTurnTicketReady', { time: formatCodexTicketRemaining(ticket.remaining_seconds) }) }}
-            </span>
-            <span v-else-if="ticket.blocked" class="text-amber-600 dark:text-amber-400">
-              {{ t('admin.accounts.openai.codexTurnTicketPaused') }}
-            </span>
-            <span v-else class="text-gray-500">{{ t('admin.accounts.openai.codexTurnTicketMissing') }}</span>
+          <div v-for="ticket in codexTurnTickets" :key="ticket.model" class="text-sm">
+            <div class="flex items-center justify-between">
+              <span class="font-medium">{{ ticket.model }}</span>
+              <span v-if="ticket.ready" class="text-emerald-600 dark:text-emerald-400">
+                {{ t('admin.accounts.openai.codexTurnTicketReady', { time: formatCodexTicketRemaining(ticket.remaining_seconds) }) }}
+              </span>
+              <span v-else-if="ticket.blocked" class="text-amber-600 dark:text-amber-400">
+                {{ t('admin.accounts.openai.codexTurnTicketPaused') }}
+              </span>
+              <span v-else class="text-gray-500">{{ t('admin.accounts.openai.codexTurnTicketMissing') }}</span>
+            </div>
+            <p v-if="ticket.last_result" data-testid="edit-codex-ticket-last-result" class="mt-0.5 break-all text-xs" :class="ticket.last_result.success ? 'text-gray-500 dark:text-gray-400' : 'text-red-600 dark:text-red-400'">
+              {{ [ticket.last_result.code, ticket.last_result.http_status ? `HTTP ${ticket.last_result.http_status}` : '', ticket.last_result.response_model, ticket.last_result.message, ticket.last_result.error, ticket.last_attempt_at].filter(Boolean).join(' · ') }}
+            </p>
           </div>
         </div>
       </div>

@@ -166,6 +166,7 @@ describe('AccountTestModal', () => {
     global.fetch = vi.fn().mockResolvedValue(
       createStreamResponse([
         'data: {"type":"test_start","model":"grok-4.3"}\n',
+        'data: {"type":"status","text":"wire headers","data":{"session_id":"sent-session"}}\n',
         'data: {"type":"content","text":"ok"}\n',
         'data: {"type":"test_complete","success":true}\n'
       ])
@@ -195,6 +196,8 @@ describe('AccountTestModal', () => {
       prompt: '',
       mode: 'text'
     })
+    // Status data (what the test sent) is rendered, not only the status text.
+    expect(wrapper.text()).toContain('"session_id": "sent-session"')
   })
 
   it('OpenAI Compact 探测会携带 compact 测试模式', async () => {

@@ -1,7 +1,9 @@
 package service
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"strings"
 	"testing"
 )
@@ -196,5 +198,35 @@ func TestParseAuditLogRetentionDays(t *testing.T) {
 		if got := parseAuditLogRetentionDays(in); got != want {
 			t.Fatalf("parseAuditLogRetentionDays(%q) = %d, want %d", in, got, want)
 		}
+	}
+}
+
+type auditRowFallbackRepository struct {
+	AuditLogRepository
+	inserted []string
+}
+
+func (r *auditRowFallbackRepository) BatchInsert(context.Context, []*AuditLog) (int64, error) {
+	return 0, errors.New("invalid byte sequence for encoding \"UTF8\": 0x00")
+}
+
+func (r *auditRowFallbackRepository) Insert(_ context.Context, entry *AuditLog) error {
+	if entry.Action == "rejected" {
+		return errors.New("invalid byte sequence for encoding \"UTF8\": 0x00")
+	}
+	r.inserted = append(r.inserted, entry.Action)
+	return nil
+}
+
+// One row the database rejects must not drop the rest of its batch.
+func TestAuditLogWriteBatchFallsBackToRowInserts(t *testing.T) {
+	repo := &auditRowFallbackRepository{}
+	s := &AuditLogService{repo: repo}
+	s.writeBatch([]*AuditLog{{Action: "first"}, {Action: "rejected"}, {Action: "last"}})
+	if strings.Join(repo.inserted, ",") != "first,last" {
+		t.Fatalf("inserted rows = %v, want first,last", repo.inserted)
+	}
+	if s.writtenCount != 2 || s.writeFailed != 1 {
+		t.Fatalf("written=%d failed=%d, want 2 and 1", s.writtenCount, s.writeFailed)
 	}
 }

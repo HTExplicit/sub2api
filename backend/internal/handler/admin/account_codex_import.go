@@ -118,7 +118,7 @@ type codexAccountIndex struct {
 func (h *AccountHandler) ImportCodexSession(c *gin.Context) {
 	var req CodexSessionImportRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		response.BadRequest(c, "Invalid Codex session import request")
+		response.BadRequest(c, "Invalid Codex session import request: "+err.Error())
 		return
 	}
 	if err := service.ValidateOpenAIReasoningPolicyExtra(req.Extra); err != nil {
@@ -127,7 +127,7 @@ func (h *AccountHandler) ImportCodexSession(c *gin.Context) {
 	}
 	entries, err := parseCodexSessionImportEntries(req)
 	if err != nil {
-		response.BadRequest(c, "Invalid Codex session import content")
+		response.BadRequest(c, "Invalid Codex session import content: "+err.Error())
 		return
 	}
 	if len(entries) == 0 {

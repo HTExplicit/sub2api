@@ -166,7 +166,8 @@ func TestRateLimitService_HandleUpstreamError_ModelNotSupportedUsesModelCooldown
 	require.True(t, handled)
 	require.Len(t, repo.modelRateLimitCalls, 1)
 	require.Equal(t, "openai/gpt-5.6-luna", repo.modelRateLimitCalls[0].scope)
-	require.Equal(t, string(openAIModelNotSupportedReason), repo.modelRateLimitCalls[0].reason)
+	require.Equal(t, string(openAIModelNotSupportedReason), repo.modelRateLimitCalls[0].reason, "the reason code stays the exact value availability matching reads")
+	require.Equal(t, "Model 'gpt-5.6-luna' is temporarily not supported. Please choose another model from GET /v1/models.", repo.modelRateLimitCalls[0].upstreamMessage)
 	require.WithinDuration(t, time.Now().Add(upstreamModelNotSupportedCooldown), repo.modelRateLimitCalls[0].resetAt, 5*time.Second)
 }
 

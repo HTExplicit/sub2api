@@ -321,8 +321,9 @@ func ProvideAccountJobRuntime(jobs *service.AccountJobService, accountHandler *a
 	return runtime, nil
 }
 
-func ProvidePluginHandler(manager *service.PluginManager) *admin.PluginHandler {
+func ProvidePluginHandler(manager *service.PluginManager, retired *service.NativeFeatureBootstrap) *admin.PluginHandler {
 	handler := admin.NewPluginHandler(manager)
+	handler.SetRetiredPlugins(retired)
 	return handler
 }
 

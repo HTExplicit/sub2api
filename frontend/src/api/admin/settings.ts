@@ -788,6 +788,9 @@ export interface SystemSettings {
 
   // Allow user view error requests
   allow_user_view_error_requests: boolean;
+
+  // Retired switches, echoed read-only by GET (never written): setting key -> stored value
+  deprecated_settings?: Record<string, unknown>;
 }
 
 export interface UpdateSettingsRequest {

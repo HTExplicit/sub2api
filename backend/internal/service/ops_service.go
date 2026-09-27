@@ -590,11 +590,9 @@ func sanitizeOpsUpstreamErrors(entry *OpsInsertErrorLogInput) error {
 		// Only boundOpsUpstreamErrors may stamp this; never trust caller input.
 		out.DroppedEarlierAttempts = 0
 		keepBody := i >= firstEventWithBody
-		if keepBody {
-			out.ContinuationDiagnostic = sanitizeOpenAIContinuationDiagnostic(ev.ContinuationDiagnostic)
-		} else {
-			out.ContinuationDiagnostic = nil
-		}
+		// Continuation diagnostics are self-bounded and stay on every retained
+		// attempt; boundOpsUpstreamErrors still enforces the entry byte budget.
+		out.ContinuationDiagnostic = sanitizeOpenAIContinuationDiagnostic(ev.ContinuationDiagnostic)
 		urlMaxLen, messageMaxLen := 2048, 2048
 		if !keepBody {
 			urlMaxLen, messageMaxLen = opsUpstreamErrorsOlderURLMaxLen, opsUpstreamErrorsOlderMessageMaxLen
@@ -730,6 +728,9 @@ func (s *OpsService) ListUserErrorRequests(ctx context.Context, userID int64, fi
 	//（error_phase='upstream' 但 status<400,最终成功返回）记录对用户不可见——符合预期。
 	filter.Phase = ""
 	filter.IncludeRecoveredUpstream = false
+	// Image Studio gateway rows keep the upstream response for administrators;
+	// the Image Studio job itself shows the user its message.
+	filter.ExcludeClientRequestIDPrefix = ImageStudioClientRequestIDPrefix
 
 	list, err := s.opsRepo.ListErrorLogs(ctx, filter)
 	if err != nil {
@@ -789,7 +790,7 @@ func (s *OpsService) GetUserErrorRequestDetail(ctx context.Context, userID, id i
 	}
 	// 归属只能由通过鉴权时写入的 user_id 确定。
 	ownedDirectly := detail.UserID != nil && *detail.UserID == userID
-	if !ownedDirectly {
+	if !ownedDirectly || strings.HasPrefix(detail.ClientRequestID, ImageStudioClientRequestIDPrefix) {
 		return nil, infraerrors.NotFound("OPS_ERROR_NOT_FOUND", "ops error log not found")
 	}
 	return ToUserErrorRequestDetail(detail), nil

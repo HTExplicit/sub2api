@@ -2329,7 +2329,7 @@ func (s *RateLimitService) HandleOpenAIImageRateLimit(ctx context.Context, accou
 	}
 
 	resetAt := openAIImageRateLimitResetAt(headers, responseBody)
-	if err := s.accountRepo.SetModelRateLimit(ctx, account.ID, openAIImageGenerationRateLimitKey, resetAt, openAIImageRateLimitReason); err != nil {
+	if err := s.accountRepo.SetModelRateLimit(ctx, account.ID, openAIImageGenerationRateLimitKey, resetAt, openAIImageRateLimitReason, modelRateLimitUpstreamMessage(responseBody)); err != nil {
 		slog.Warn("openai_image_rate_limit_set_model_rate_limit_failed", "account_id", account.ID, "scope", openAIImageGenerationRateLimitKey, "error", err)
 		return true
 	}
@@ -2367,7 +2367,7 @@ func (s *RateLimitService) HandleOpenAICodexSparkRateLimit(ctx context.Context, 
 		reset := now.Add(cooldown)
 		resetAt = &reset
 	}
-	if err := s.accountRepo.SetModelRateLimit(ctx, account.ID, modelKey, *resetAt, openAICodexSparkRateLimitReason); err != nil {
+	if err := s.accountRepo.SetModelRateLimit(ctx, account.ID, modelKey, *resetAt, openAICodexSparkRateLimitReason, modelRateLimitUpstreamMessage(responseBody)); err != nil {
 		slog.Warn("openai_codex_spark_model_rate_limit_set_failed", "account_id", account.ID, "model", modelKey, "error", err)
 	}
 	slog.Info("openai_codex_spark_model_rate_limited", "account_id", account.ID, "model", modelKey, "reset_at", *resetAt)
@@ -2390,7 +2390,7 @@ func (s *RateLimitService) HandleOpenAIImageCapabilityLoss(ctx context.Context, 
 	}
 
 	resetAt := time.Now().Add(openAIImageCapabilityLossCooldown)
-	if err := s.accountRepo.SetModelRateLimit(ctx, account.ID, openAIImageGenerationRateLimitKey, resetAt, openAIImageCapabilityLossReason); err != nil {
+	if err := s.accountRepo.SetModelRateLimit(ctx, account.ID, openAIImageGenerationRateLimitKey, resetAt, openAIImageCapabilityLossReason, modelRateLimitUpstreamMessage(responseBody)); err != nil {
 		slog.Warn("openai_image_capability_loss_set_model_rate_limit_failed", "account_id", account.ID, "scope", openAIImageGenerationRateLimitKey, "error", err)
 		return true
 	}
@@ -2499,6 +2499,21 @@ const upstreamCodexPlanGatedModelReason = "upstream_400_codex_plan_gated_model"
 const tempUnschedBodyMaxBytes = 64 << 10
 const tempUnschedMessageMaxBytes = 2048
 
+// ModelRateLimitUpstreamMessageKey stores the upstream's own error text in a
+// model_rate_limits entry next to its reason code. SetModelRateLimit takes it
+// as the second reason value. Administrators read it; reason matching and
+// client classification only ever read "reason".
+const ModelRateLimitUpstreamMessageKey = "upstream_message"
+
+// modelRateLimitUpstreamMessage is the upstream error text kept with a model
+// cooldown: the extracted message, or the bounded body when it carries none.
+func modelRateLimitUpstreamMessage(body []byte) string {
+	if message := openAIOpsUpstreamErrorMessage(body); message != "" {
+		return truncateString(message, tempUnschedMessageMaxBytes)
+	}
+	return strings.TrimSpace(sanitizeUpstreamErrorMessage(truncateString(strings.TrimSpace(string(body)), tempUnschedMessageMaxBytes)))
+}
+
 // HandleUpstreamModelNotFound marks the requested model as temporarily
 // unavailable on the account when the upstream deterministically reports it
 // cannot serve that model: a 404 model-not-found, or the Codex 400 rejecting a
@@ -2537,11 +2552,17 @@ func (s *RateLimitService) HandleUpstreamModelNotFound(ctx context.Context, acco
 		return true
 	}
 	resetAt := time.Now().Add(cooldown)
-	if err := s.accountRepo.SetModelRateLimit(ctx, account.ID, modelKey, resetAt, reason); err != nil {
+	// The persisted reason stays the exact code the availability diagnosis
+	// matches on; the upstream's own words are stored (upstream_message) and
+	// logged next to it.
+	if err := s.accountRepo.SetModelRateLimit(ctx, account.ID, modelKey, resetAt, reason, modelRateLimitUpstreamMessage(responseBody)); err != nil {
 		slog.Warn("upstream_model_not_found_set_model_rate_limit_failed", "account_id", account.ID, "model", modelKey, "reason", reason, "error", err)
 		return true
 	}
-	slog.Info("upstream_model_not_found_model_rate_limited", "account_id", account.ID, "model", modelKey, "reason", reason, "reset_at", resetAt)
+	slog.Info("upstream_model_not_found_model_rate_limited", "account_id", account.ID, "model", modelKey, "reason", reason, "reset_at", resetAt,
+		"upstream_status", statusCode,
+		"upstream_message", extractOpenAISSEErrorMessage(responseBody),
+		"upstream_body", truncateString(string(responseBody), tempUnschedMessageMaxBytes))
 	return true
 }
 

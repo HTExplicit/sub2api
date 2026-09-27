@@ -197,15 +197,26 @@ type AccountProjection struct {
 	Observations []AccountObservation   `json:"observations,omitempty"`
 }
 
+// AccountObservationMessageLimit bounds Message because the projection is
+// copied into the scheduler snapshot of every account. The complete text stays
+// in the domain state (Codex: fingerprint panel and job results).
+const AccountObservationMessageLimit = 1024
+
+// AccountObservationModelLimit bounds ResponseModel like other model names.
+const AccountObservationModelLimit = 256
+
 type AccountObservation struct {
-	Key       string     `json:"key"`
-	Kind      string     `json:"kind"`
-	State     string     `json:"state"`
-	ExpiresAt *time.Time `json:"expires_at,omitempty"`
-	NextAt    *time.Time `json:"next_at,omitempty"`
-	CheckedAt *time.Time `json:"checked_at,omitempty"`
-	Code      string     `json:"code,omitempty"`
-	Count     int        `json:"count,omitempty"`
+	Key           string     `json:"key"`
+	Kind          string     `json:"kind"`
+	State         string     `json:"state"`
+	ExpiresAt     *time.Time `json:"expires_at,omitempty"`
+	NextAt        *time.Time `json:"next_at,omitempty"`
+	CheckedAt     *time.Time `json:"checked_at,omitempty"`
+	Code          string     `json:"code,omitempty"`
+	Count         int        `json:"count,omitempty"`
+	HTTPStatus    int        `json:"http_status,omitempty"`
+	ResponseModel string     `json:"response_model,omitempty"`
+	Message       string     `json:"message,omitempty"`
 }
 
 // Invocation carries one declared capability and a domain operation. The host

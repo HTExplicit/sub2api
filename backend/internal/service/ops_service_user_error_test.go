@@ -66,6 +66,10 @@ func TestListUserErrorRequests_ForcesScopeAndRedacts(t *testing.T) {
 	if stub.gotFilter.APIKeyID == nil || *stub.gotFilter.APIKeyID != kid {
 		t.Fatalf("APIKeyID should be preserved, got %v", stub.gotFilter.APIKeyID)
 	}
+	// Image Studio gateway rows stay admin-only.
+	if stub.gotFilter.ExcludeClientRequestIDPrefix != ImageStudioClientRequestIDPrefix {
+		t.Fatalf("Image Studio rows not excluded: %q", stub.gotFilter.ExcludeClientRequestIDPrefix)
+	}
 	// 调用方传入的 filter 不应被原地篡改（验证 shallow copy 隔离生效）
 	if in.View != "errors" || in.UserID != nil || in.Phase != "upstream" {
 		t.Fatalf("caller filter was mutated: View=%q UserID=%v Phase=%q", in.View, in.UserID, in.Phase)
@@ -161,5 +165,19 @@ func TestGetUserErrorRequestDetail_InvalidID(t *testing.T) {
 	_, err = svc.GetUserErrorRequestDetail(context.Background(), 1, -5)
 	if err == nil {
 		t.Fatal("expected error for id=-5")
+	}
+}
+
+// An Image Studio gateway row keeps the upstream response for administrators;
+// its owner does not get it from the error-request detail endpoint.
+func TestGetUserErrorRequestDetail_HidesImageStudioRows(t *testing.T) {
+	owner := int64(5)
+	stub := &stubOpsRepoForUserErr{detailToReturn: &OpsErrorLogDetail{OpsErrorLog: OpsErrorLog{
+		ID: 9, UserID: &owner, StatusCode: 502, ClientRequestID: ImageStudioClientRequestIDPrefix + "job-1-item-2-0a1b2c3d4e5f",
+	}}}
+	svc := &OpsService{opsRepo: stub}
+	got, err := svc.GetUserErrorRequestDetail(context.Background(), owner, 9)
+	if got != nil || !infraerrors.IsNotFound(err) {
+		t.Fatalf("expected NotFound for an Image Studio row, got %+v, %v", got, err)
 	}
 }

@@ -601,9 +601,20 @@ func (s *adminServiceImpl) tryAccrueAffiliateRebateForAdminRecharge(ctx context.
 	}
 }
 
+// apiKeyAdminLister lists one user's keys for administrators, internal
+// release-acceptance keys included (marked by their purpose). The user's own
+// key list keeps using ListByUserID, which excludes them.
+type apiKeyAdminLister interface {
+	ListByUserIDForAdmin(ctx context.Context, userID int64, params pagination.PaginationParams, filters APIKeyListFilters) ([]APIKey, *pagination.PaginationResult, error)
+}
+
 func (s *adminServiceImpl) GetUserAPIKeys(ctx context.Context, userID int64, page, pageSize int, sortBy, sortOrder string) ([]APIKey, int64, error) {
 	params := pagination.PaginationParams{Page: page, PageSize: pageSize, SortBy: sortBy, SortOrder: sortOrder}
-	keys, result, err := s.apiKeyRepo.ListByUserID(ctx, userID, params, APIKeyListFilters{})
+	list := s.apiKeyRepo.ListByUserID
+	if lister, ok := s.apiKeyRepo.(apiKeyAdminLister); ok {
+		list = lister.ListByUserIDForAdmin
+	}
+	keys, result, err := list(ctx, userID, params, APIKeyListFilters{})
 	if err != nil {
 		return nil, 0, err
 	}

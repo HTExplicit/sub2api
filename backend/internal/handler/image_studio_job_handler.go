@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/Wei-Shaw/sub2api/internal/pkg/ip"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/response"
 	middleware2 "github.com/Wei-Shaw/sub2api/internal/server/middleware"
 	"github.com/Wei-Shaw/sub2api/internal/service"
@@ -88,7 +89,7 @@ func (h *ImageStudioJobHandler) Create(c *gin.Context) {
 		imageStudioJobError(c, err)
 		return
 	}
-	job, err := h.studio.Create(c.Request.Context(), userID, service.ImageStudioCreateInput{
+	job, err := h.studio.Create(imageStudioRequestContext(c), userID, service.ImageStudioCreateInput{
 		APIKeyID: apiKeyID,
 		Mode:     service.ImageStudioMode(c.PostForm("mode")),
 		Model:    c.PostForm("model"),
@@ -180,12 +181,20 @@ func (h *ImageStudioJobHandler) Retry(c *gin.Context) {
 		imageStudioJobError(c, err)
 		return
 	}
-	job, err := h.studio.Retry(c.Request.Context(), userID, jobID)
+	job, err := h.studio.Retry(imageStudioRequestContext(c), userID, jobID)
 	if err != nil {
 		imageStudioJobError(c, err)
 		return
 	}
 	response.Accepted(c, job)
+}
+
+// imageStudioRequestContext records the submitting client so the job's
+// gateway requests carry its real IP address and User-Agent.
+func imageStudioRequestContext(c *gin.Context) context.Context {
+	return service.WithImageStudioRequestOrigin(c.Request.Context(), service.ImageStudioRequestOrigin{
+		ClientIP: ip.GetClientIP(c), UserAgent: c.GetHeader("User-Agent"),
+	})
 }
 
 func (h *ImageStudioJobHandler) Artifact(c *gin.Context) {

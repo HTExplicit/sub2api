@@ -34,7 +34,13 @@ func TestCodexQualityObservationClassifiesStreamFailures(t *testing.T) {
 			require.Equal(t, test.code, observation.Code)
 			encoded, err := json.Marshal(observation)
 			require.NoError(t, err)
-			require.NotContains(t, string(encoded), "private upstream text")
+			// Classification uses explicit codes only, but the upstream's own text
+			// and the failing event are kept for administrators.
+			if strings.Contains(test.payload, "private upstream text") {
+				require.Contains(t, observation.UpstreamErrorMessage, "private upstream text")
+				require.JSONEq(t, test.payload, observation.UpstreamBody, "the failure summary keeps the event type and error object")
+				require.Contains(t, string(encoded), "private upstream text")
+			}
 		})
 	}
 	var cancelled extensionv1.CodexRoutingObservation

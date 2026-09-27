@@ -3,6 +3,7 @@ package middleware
 import (
 	"bytes"
 	"io"
+	"strconv"
 	"strings"
 	"time"
 
@@ -150,26 +151,27 @@ var auditActionOverrides = map[string]string{
 // auditBodyOmittedRoutes 请求体几乎整体由凭证构成的路由（如整块粘贴 auth JSON 的导入接口）。
 // 这类 body 的凭证内嵌在普通字符串值里，键级脱敏无法覆盖，整体不入库。
 var auditBodyOmittedRoutes = map[string]struct{}{
-	"POST /api/v1/auth/passkey/login/finish":                      {},
-	"POST /api/v1/user/passkeys/register/finish":                  {},
-	"POST /api/v1/admin/accounts/import/codex-session":            {},
-	"PUT /api/v1/admin/accounts/:id/ollama-cloud-usage/session":   {},
-	"PUT /api/v1/admin/prompt-audit/config":                       {},
-	"POST /api/v1/admin/prompt-audit/endpoints/probe":             {},
+	"POST /api/v1/auth/passkey/login/finish":                    {},
+	"POST /api/v1/user/passkeys/register/finish":                {},
+	"POST /api/v1/admin/accounts/import/codex-session":          {},
+	"PUT /api/v1/admin/accounts/:id/ollama-cloud-usage/session": {},
+	"PUT /api/v1/admin/prompt-audit/config":                     {},
+	"POST /api/v1/admin/prompt-audit/endpoints/probe":           {},
+	"DELETE /api/v1/admin/prompt-audit/events/:id":              {},
+	"POST /api/v1/admin/prompt-audit/events/batch-delete":       {},
+	"POST /api/v1/admin/prompt-audit/events/delete-preview":     {},
+	"POST /api/v1/admin/prompt-audit/events/delete-by-filter":   {},
+}
+
+// auditVerbatimBodyRoutes store the request body exactly as received, up to
+// the capture limit, without key-level redaction: administrators review the
+// full system prompt library and the Codex proxy and runtime settings they
+// submitted, proxy credentials included.
+var auditVerbatimBodyRoutes = map[string]struct{}{
+	"PUT /api/v1/admin/system-prompts":                            {},
 	"POST /api/v1/admin/settings/openai-codex-ticket/proxy-parse": {},
 	"POST /api/v1/admin/settings/openai-codex-ticket/proxy-test":  {},
 	"PUT /api/v1/admin/settings/codex-runtime":                    {},
-	"DELETE /api/v1/admin/prompt-audit/events/:id":                {},
-	"POST /api/v1/admin/prompt-audit/events/batch-delete":         {},
-	"POST /api/v1/admin/prompt-audit/events/delete-preview":       {},
-	"POST /api/v1/admin/prompt-audit/events/delete-by-filter":     {},
-}
-
-// System prompt bodies are business-sensitive and may be much larger than
-// ordinary admin payloads. They are omitted entirely; the handler attaches
-// only allowlisted flags.
-var auditPromptBodyOmittedRoutes = map[string]struct{}{
-	"PUT /api/v1/admin/system-prompts": {},
 }
 
 // NewAuditLogMiddleware 创建审计中间件。
@@ -203,9 +205,7 @@ func NewAuditLogMiddleware(auditService *service.AuditLogService) AuditLogMiddle
 		// 只读取脱敏解析上限内的字节，超出部分与已读部分拼接回填，
 		// 避免大体积导入请求被完整复制进内存两次。
 		var bodyRedacted string
-		if _, omit := auditPromptBodyOmittedRoutes[routeKey]; omit {
-			bodyRedacted = "<system prompt body omitted>"
-		} else if _, omit := auditBodyOmittedRoutes[routeKey]; omit {
+		if _, omit := auditBodyOmittedRoutes[routeKey]; omit {
 			bodyRedacted = "<credential-bearing body omitted>"
 		} else if c.Request.Body != nil && c.Request.Method != "GET" {
 			orig := c.Request.Body
@@ -215,7 +215,11 @@ func NewAuditLogMiddleware(auditService *service.AuditLogService) AuditLogMiddle
 					Reader: io.MultiReader(bytes.NewReader(raw), orig),
 					closer: orig,
 				}
-				bodyRedacted = service.RedactAuditBody(raw, c.GetHeader("Content-Type"))
+				if _, verbatim := auditVerbatimBodyRoutes[routeKey]; verbatim {
+					bodyRedacted = auditVerbatimBody(raw)
+				} else {
+					bodyRedacted = service.RedactAuditBody(raw, c.GetHeader("Content-Type"))
+				}
 			}
 		}
 
@@ -309,6 +313,21 @@ func NewAuditLogMiddleware(auditService *service.AuditLogService) AuditLogMiddle
 
 		auditService.Record(entry)
 	})
+}
+
+// auditVerbatimBody keeps a captured body as received. A body beyond the
+// capture limit keeps its first AuditRequestBodyCaptureLimit bytes and says so.
+// Invalid UTF-8 and NUL characters, which a text column rejects, become U+FFFD.
+func auditVerbatimBody(raw []byte) string {
+	if len(raw) > service.AuditRequestBodyCaptureLimit {
+		return auditStorableText(raw[:service.AuditRequestBodyCaptureLimit]) +
+			"...<truncated: body exceeds " + strconv.Itoa(service.AuditRequestBodyCaptureLimit) + " bytes>"
+	}
+	return auditStorableText(raw)
+}
+
+func auditStorableText(raw []byte) string {
+	return strings.ReplaceAll(strings.ToValidUTF8(string(raw), "\uFFFD"), "\x00", "\uFFFD")
 }
 
 // restoredBody 把审计中间件按上限读出的前缀与未读完的原始 body 拼接回填，

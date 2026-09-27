@@ -16,6 +16,7 @@ import (
 	"net/url"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -133,11 +134,23 @@ func TestProxyPreflightAndHarvestUseSamePinnedTransport(t *testing.T) {
 	}))
 	t.Cleanup(proxy.Close)
 	address, _ := url.Parse(proxy.URL)
-	address.User = url.UserPassword("test", "test")
 	host := &memoryHost{state: make(map[string]extensionv1.StateResult), lease: make(map[string]int64)}
 	clientAPI := testHostClient(t, host)
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
+	// A rejected CONNECT keeps its original status and error text per stage.
+	_, rejected, err := prepareProxy(ctx, clientAPI, address.String(), true)
+	if err == nil || rejected == nil || rejected.Code != "ticket_proxy_auth" || !strings.Contains(rejected.FailureDetail, "Proxy Authentication Required") {
+		t.Fatalf("CONNECT 407 lost its original cause: %v %+v", err, rejected)
+	}
+	connectStage := false
+	for _, stage := range rejected.Stages {
+		connectStage = connectStage || stage.Name == "connect" && !stage.Success && strings.Contains(stage.Message, "407")
+	}
+	if !connectStage {
+		t.Fatalf("CONNECT stage lost its status: %+v", rejected.Stages)
+	}
+	address.User = url.UserPassword("test", "test")
 	client, result, err := prepareProxy(ctx, clientAPI, address.String(), true)
 	if err != nil {
 		t.Fatal(err)
@@ -145,6 +158,9 @@ func TestProxyPreflightAndHarvestUseSamePinnedTransport(t *testing.T) {
 	defer client.CloseIdleConnections()
 	if result.Success || !result.NetworkReachable || result.HTTPStatus != 405 || result.CertificateTrust != "proxy_certificate_pinned" {
 		t.Fatalf("preflight confused transport success with inference success: %+v", result)
+	}
+	if len(result.Certificates) == 0 || !strings.Contains(result.Certificates[0].Subject, "chatgpt.com") || result.Certificates[0].NotAfter.IsZero() || result.Certificates[0].SPKISHA256 != result.CertificateFingerprint {
+		t.Fatalf("certificate facts missing: %+v", result.Certificates)
 	}
 	request, err := http.NewRequestWithContext(ctx, http.MethodPost, "https://chatgpt.com/backend-api/codex/responses", strings.NewReader(`{"model":"synthetic-model"}`))
 	if err != nil {
@@ -166,5 +182,54 @@ func TestProxyPreflightAndHarvestUseSamePinnedTransport(t *testing.T) {
 	}
 	if authorization[0] != "" || authorization[1] != "" || authorization[2] != "Bearer synthetic-oauth" {
 		t.Fatal("OAuth credential appeared in a preflight")
+	}
+}
+
+func TestProxyPinnedRetestFailureKeepsItsCode(t *testing.T) {
+	first, _ := syntheticCertificate(t, "chatgpt.com", false)
+	rotated, _ := syntheticCertificate(t, "chatgpt.com", false)
+	var handshakes atomic.Int32
+	target := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusMethodNotAllowed) }))
+	target.TLS = &tls.Config{MinVersion: tls.VersionTLS12, GetCertificate: func(*tls.ClientHelloInfo) (*tls.Certificate, error) {
+		if handshakes.Add(1) == 1 {
+			return &first, nil
+		}
+		return &rotated, nil
+	}}
+	target.StartTLS()
+	t.Cleanup(target.Close)
+	proxy := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		hijacker, ok := w.(http.Hijacker)
+		if r.Method != http.MethodConnect || !ok {
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		upstream, err := net.Dial("tcp", target.Listener.Addr().String())
+		if err != nil {
+			w.WriteHeader(http.StatusBadGateway)
+			return
+		}
+		client, _, err := hijacker.Hijack()
+		if err != nil {
+			_ = upstream.Close()
+			return
+		}
+		_, _ = io.WriteString(client, "HTTP/1.1 200 Connection Established\r\n\r\n")
+		go func() {
+			defer func() { _ = client.Close() }()
+			defer func() { _ = upstream.Close() }()
+			go func() { _, _ = io.Copy(upstream, client) }()
+			_, _ = io.Copy(client, upstream)
+		}()
+	}))
+	t.Cleanup(proxy.Close)
+	host := &memoryHost{state: make(map[string]extensionv1.StateResult), lease: make(map[string]int64)}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	// The first connection learns the certificate; the pinned re-test sees a
+	// rotated one and must report pinned_connection_failed with its cause.
+	_, result, err := prepareProxy(ctx, testHostClient(t, host), proxy.URL, true)
+	if err == nil || result == nil || result.Code != "pinned_connection_failed" || result.FailureDetail == "" || result.CertificateError == "" {
+		t.Fatalf("pinned re-test failure lost its code: %v %+v", err, result)
 	}
 }

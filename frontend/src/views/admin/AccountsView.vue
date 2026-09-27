@@ -231,6 +231,7 @@
         <DataTable
           v-if="viewMode === 'table'"
           ref="dataTableRef"
+          data-table="accounts"
           :columns="cols"
           :data="accounts"
           :loading="loading"
@@ -302,6 +303,7 @@
           <template #cell-status="{ row }">
             <div class="flex items-center gap-1.5" @click.stop>
               <AccountStatusIndicator :account="row" @show-temp-unsched="handleShowTempUnsched" />
+              <AccountLastUpstreamError :account="row" />
               <button @click.stop="handleToggleSchedulable(row)" :disabled="togglingSchedulable === row.id" class="relative inline-flex h-5 w-9 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 dark:focus:ring-offset-dark-800" :class="[row.schedulable ? 'bg-primary-500 hover:bg-primary-600' : 'bg-gray-200 hover:bg-gray-300 dark:bg-dark-600 dark:hover:bg-dark-500']" :title="row.schedulable ? t('admin.accounts.schedulableEnabled') : t('admin.accounts.schedulableDisabled')">
                 <span class="pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out" :class="[row.schedulable ? 'translate-x-4' : 'translate-x-0']" />
               </button>
@@ -330,13 +332,12 @@
                   {{ row.management_folder?.name || t('admin.accounts.folderUncategorized') }}
                 </span>
                 <span
-                  v-for="tag in (row.tags || []).slice(0, 2)"
+                  v-for="tag in row.tags || []"
                   :key="tag.id"
                   class="rounded bg-gray-100 px-1.5 py-0.5 text-[10px] text-gray-600 dark:bg-dark-700 dark:text-gray-300"
                 >
                   {{ tag.name }}
                 </span>
-                <span v-if="(row.tags || []).length > 2" class="text-[10px] text-gray-400">+{{ row.tags.length - 2 }}</span>
               </div>
               <div class="truncate text-xs text-gray-500 dark:text-dark-300">
                 <span class="mr-1 text-[10px] font-medium uppercase text-gray-400">{{ t('admin.accounts.routing') }}</span>{{ accountRouteSummary(row) }}
@@ -668,6 +669,7 @@ import AccountCardGrid from '@/components/admin/account/AccountCardGrid.vue'
 import AccountCompactList from '@/components/admin/account/AccountCompactList.vue'
 import AccountConsoleFilters from '@/components/admin/account/AccountConsoleFilters.vue'
 import AccountDetailsDrawer from '@/components/admin/account/AccountDetailsDrawer.vue'
+import AccountLastUpstreamError from '@/components/admin/account/AccountLastUpstreamError.vue'
 import AccountFolderBar from '@/components/admin/account/AccountFolderBar.vue'
 import AccountTaxonomyManager from '@/components/admin/account/AccountTaxonomyManager.vue'
 import AccountBulkTaxonomyModal, { type AccountBulkTaxonomyTarget } from '@/components/admin/account/AccountBulkTaxonomyModal.vue'
@@ -906,16 +908,12 @@ const accountToolsDropdownStyle = computed(() => ({
   width: `${accountToolsDropdownPosition.width}px`
 }))
 const hiddenColumns = reactive<Set<string>>(new Set())
-const DEFAULT_HIDDEN_COLUMNS = [
-  'id', 'capacity', 'schedulable', 'today_stats', 'groups', 'proxy', 'notes', 'priority',
-  'scheduler_score', 'rate_multiplier', 'upstream_billing_rate', 'last_used_at', 'created_at', 'expires_at'
-]
+const DEFAULT_HIDDEN_COLUMNS = ['today_stats', 'proxy', 'notes', 'scheduler_score', 'rate_multiplier']
 const HIDDEN_COLUMNS_KEY = 'account-hidden-columns'
-// Keep the historical compact-default migration separate from later column-specific migrations.
+// A saved column layout is applied exactly as saved. Only a layout saved under an older version is
+// replaced once by the defaults above (earlier builds merged their own hidden columns into it).
 const HIDDEN_COLUMNS_VERSION_KEY = 'account-hidden-columns-version'
-const HIDDEN_COLUMNS_CURRENT_VERSION = 'cockpit-console-defaults-v1'
-const USAGE_COLUMN_VERSION_KEY = 'account-usage-column-version'
-const USAGE_COLUMN_CURRENT_VERSION = 'usage-visible-v1'
+const HIDDEN_COLUMNS_CURRENT_VERSION = 'upstream-defaults-v1'
 
 // Sorting settings
 const ACCOUNT_SORT_STORAGE_KEY = 'account-table-sort'
@@ -1233,37 +1231,25 @@ const formatSchedulerScoreGroup = (score: AccountSchedulerGroupScore): string =>
 const loadSavedColumns = () => {
   try {
     const saved = localStorage.getItem(HIDDEN_COLUMNS_KEY)
-    if (saved) {
+    if (saved && localStorage.getItem(HIDDEN_COLUMNS_VERSION_KEY) === HIDDEN_COLUMNS_CURRENT_VERSION) {
       const parsed = JSON.parse(saved) as string[]
       parsed.forEach(key => {
         hiddenColumns.add(key)
       })
-      // Preserve the original scheduler-score opt-in migration for pre-Cockpit preferences.
-      if (localStorage.getItem(HIDDEN_COLUMNS_VERSION_KEY) !== HIDDEN_COLUMNS_CURRENT_VERSION) {
-        DEFAULT_HIDDEN_COLUMNS.forEach(key => hiddenColumns.add(key))
-        localStorage.setItem(HIDDEN_COLUMNS_KEY, JSON.stringify([...hiddenColumns]))
-        localStorage.setItem(HIDDEN_COLUMNS_VERSION_KEY, HIDDEN_COLUMNS_CURRENT_VERSION)
-      }
-      // Only restore usage visibility; every other saved column choice remains untouched.
-      if (localStorage.getItem(USAGE_COLUMN_VERSION_KEY) !== USAGE_COLUMN_CURRENT_VERSION) {
-        hiddenColumns.delete('usage')
-        localStorage.setItem(HIDDEN_COLUMNS_KEY, JSON.stringify([...hiddenColumns]))
-        localStorage.setItem(USAGE_COLUMN_VERSION_KEY, USAGE_COLUMN_CURRENT_VERSION)
-      }
-    } else {
-      DEFAULT_HIDDEN_COLUMNS.forEach(key => {
-        hiddenColumns.add(key)
-      })
-      hiddenColumns.delete('usage')
-      localStorage.setItem(HIDDEN_COLUMNS_VERSION_KEY, HIDDEN_COLUMNS_CURRENT_VERSION)
-      localStorage.setItem(USAGE_COLUMN_VERSION_KEY, USAGE_COLUMN_CURRENT_VERSION)
+      return
     }
-  } catch (e) {
-    console.error('Failed to load saved columns:', e)
+    // No layout yet, or one saved under an older version: start from the defaults once.
     DEFAULT_HIDDEN_COLUMNS.forEach(key => {
       hiddenColumns.add(key)
     })
-    hiddenColumns.delete('usage')
+    localStorage.setItem(HIDDEN_COLUMNS_KEY, JSON.stringify([...hiddenColumns]))
+    localStorage.setItem(HIDDEN_COLUMNS_VERSION_KEY, HIDDEN_COLUMNS_CURRENT_VERSION)
+  } catch (e) {
+    console.error('Failed to load saved columns:', e)
+    hiddenColumns.clear()
+    DEFAULT_HIDDEN_COLUMNS.forEach(key => {
+      hiddenColumns.add(key)
+    })
   }
 }
 
@@ -1271,7 +1257,6 @@ const saveColumnsToStorage = () => {
   try {
     localStorage.setItem(HIDDEN_COLUMNS_KEY, JSON.stringify([...hiddenColumns]))
     localStorage.setItem(HIDDEN_COLUMNS_VERSION_KEY, HIDDEN_COLUMNS_CURRENT_VERSION)
-    localStorage.setItem(USAGE_COLUMN_VERSION_KEY, USAGE_COLUMN_CURRENT_VERSION)
   } catch (e) {
     console.error('Failed to save columns:', e)
   }

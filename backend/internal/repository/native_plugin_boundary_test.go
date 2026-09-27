@@ -61,6 +61,9 @@ func TestNativePluginBoundaryProtectsRetiredRecordsAndAllowsThirdParties(t *test
 	require.NoError(t, err)
 	require.Len(t, list, 1)
 	require.EqualValues(t, 100, list[0].ID)
+	retired, err := r.RetiredPluginInstallations(ctx)
+	require.NoError(t, err)
+	require.Len(t, retired, len(service.FirstPartyNativePluginKeys), "the read-only view lists exactly the rows the managed list hides")
 	for id, p := range base.rows {
 		if id == 100 {
 			continue
