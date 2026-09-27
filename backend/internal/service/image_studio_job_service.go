@@ -42,6 +42,7 @@ type ImageStudioService struct {
 	accounts AccountRepository
 	store    ImageStudioFileStorage
 	now      func() time.Time
+	origins  imageStudioOrigins
 }
 
 func NewImageStudioService(
@@ -158,6 +159,7 @@ func (s *ImageStudioService) Create(
 		removeSaved()
 		return nil, err
 	}
+	s.origins.remember(job.ID, imageStudioRequestOriginFromContext(ctx), now)
 	return job, nil
 }
 
@@ -197,7 +199,9 @@ func (s *ImageStudioService) Retry(ctx context.Context, userID, jobID int64) (*I
 			return nil, newImageStudioError(503, "studio_unavailable", "Image Studio is unavailable")
 		}
 	}
-	return s.repo.Retry(ctx, userID, jobID, s.now())
+	now := s.now()
+	s.origins.remember(jobID, imageStudioRequestOriginFromContext(ctx), now)
+	return s.repo.Retry(ctx, userID, jobID, now)
 }
 
 func (s *ImageStudioService) OpenArtifact(ctx context.Context, userID, jobID, artifactID int64) (*ImageStudioArtifactDownload, error) {

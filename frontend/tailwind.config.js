@@ -8,10 +8,10 @@
  *
  * Colour roles: neutral families (gray/slate/zinc/neutral/stone, dark) resolve per utility
  * (fill, line, text) because upstream uses one shade for several roles; hue families fold into
- * five semantic families (danger, warning, info, success, purple); `primary` is the ink action
- * colour. Solid primary fills export `--theme-on-fill`, which `text-white` and `bg-white` read, so
- * white text or knobs on a primary fill follow the fill in dark mode (near-white fill, near-black
- * foreground).
+ * five semantic families (danger, warning, info, success, purple) with a separate text role;
+ * `primary` is the accent (indigo in the console theme). Solid primary fills export
+ * `--theme-on-fill`, which `text-white` and `bg-white` read, so white text or knobs on a primary
+ * fill always use the theme's on-primary colour.
  */
 import defaultColors from 'tailwindcss/colors'
 import plugin from 'tailwindcss/plugin'
@@ -75,8 +75,13 @@ function neutralColors(role) {
 const hueColors = Object.fromEntries(
   Object.entries(HUE_FAMILIES).map(([name, family]) => [name, palette(defaultColors[name], family)])
 )
+// Text role for hue families: `text-red-500` can read darker (light) or lighter (dark) than the
+// `bg-red-500` fill without changing fills.
+const hueTextColors = Object.fromEntries(
+  Object.entries(HUE_FAMILIES).map(([name, family]) => [name, rolePalette(defaultColors[name], family, 'text')])
+)
 
-// Focus rings (ring-primary-400..700) use a neutral focus colour; soft rings keep the ramp.
+// Focus rings (ring-primary-400..700) use the theme focus colour; soft rings keep the ramp.
 const primaryRing = Object.fromEntries(
   ['400', '500', '600', '700'].map((s) => [
     s,
@@ -122,6 +127,7 @@ export default {
       },
       textColor: {
         ...neutralColors('text'),
+        ...hueTextColors,
         primary: rolePalette(UPSTREAM_PRIMARY, 'primary', 'text'),
         white: rgbVar('--theme-on-fill', '255 255 255')
       },

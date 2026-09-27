@@ -55,6 +55,27 @@ export default {
     fileRequired: '请选择 .s2plugin 文件',
     bridgeRejected: '插件 UI 消息校验失败',
     onlyOpenAI: '按声明能力提供独立功能',
-    noAccountCoupling: '安装与启用分开管理，停用不会删除已有数据。'
+    noAccountCoupling: '安装与启用分开管理，停用不会删除已有数据。',
+    retired: {
+      title: '已退役的一方插件（只读）',
+      description: '这些安装已由宿主内置功能取代，不在上方的可管理列表中。这里只读显示安装记录、保存的配置（已解密）和退役回执。',
+      empty: '没有已退役的一方插件记录',
+      loadFailed: '已退役插件加载失败',
+      key: '插件标识',
+      state: '当前状态',
+      lastError: '最后错误',
+      installedAt: '安装时间',
+      enabledAt: '启用时间',
+      updatedAt: '更新时间',
+      signature: '包签名',
+      binarySHA256: '二进制 SHA-256',
+      paths: '文件路径',
+      bindings: '能力绑定',
+      config: '保存的配置',
+      configError: '配置无法解密',
+      manifest: '插件清单',
+      receipt: '退役回执',
+      retiredAt: '退役时间'
+    }
   }
 }

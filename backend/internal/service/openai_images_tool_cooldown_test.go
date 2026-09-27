@@ -175,3 +175,9 @@ func TestOpenAIImagesTextFallback_RemainsRetryableAndThusCascades(t *testing.T) 
 	require.True(t, IsOpenAIImagesRetryableUpstreamError(err),
 		"文字兜底判据是可重试的——正因如此，写账号冷却会沿号池级联")
 }
+
+// openAIImagesTextFallbackErrorForText classifies text that is both the client
+// window and the complete model text.
+func openAIImagesTextFallbackErrorForText(text string) *OpenAIImagesUpstreamError {
+	return openAIImagesTextFallbackErrorForWindow(text, text)
+}

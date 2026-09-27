@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -417,4 +418,83 @@ func TestAccountJobRetryRequiresKeyAndReplaysFailedItems(t *testing.T) {
 func TestAccountJobMetadataRejectsCredentialFields(t *testing.T) {
 	require.NoError(t, ValidateAccountJobMetadata(json.RawMessage(`{"account_id":7,"action":"updated"}`)))
 	require.ErrorIs(t, ValidateAccountJobMetadata(json.RawMessage(`{"api_key":"secret"}`)), ErrAccountJobInvalidMetadata)
+}
+
+type accountJobResultExecutor struct {
+	results map[int64]AccountJobExecutionResult
+	errs    map[int64]error
+}
+
+func (e accountJobResultExecutor) ExecuteAccountJob(_ context.Context, _ *AccountJob, _ json.RawMessage, items []AccountJobItem) ([]AccountJobExecutionResult, error) {
+	if err := e.errs[items[0].ID]; err != nil {
+		return nil, err
+	}
+	return []AccountJobExecutionResult{e.results[items[0].ID]}, nil
+}
+
+// Item results keep the executor's code, verbatim error text and metadata; a
+// success is never turned into a failure because of its metadata keys.
+func TestAccountJobRuntimeStoresItemResultsVerbatim(t *testing.T) {
+	runtime := NewAccountJobRuntime(nil, accountJobResultExecutor{
+		results: map[int64]AccountJobExecutionResult{
+			1: {ItemID: 1, Status: AccountJobItemStatusFailed, ErrorCode: "delete_failed", ErrorMessage: "pq: account 7 is still referenced"},
+			2: {ItemID: 2, Status: AccountJobItemStatusSucceeded, Metadata: json.RawMessage(`{"cookie_names":["__cflb"],"proxy_password":"kept"}`)},
+			3: {ItemID: 3, Status: AccountJobItemStatusFailed, ErrorCode: "routing_capacity"},
+		},
+		errs: map[int64]error{4: errors.New("executor exploded")},
+	})
+	job := &AccountJob{ID: 1, Kind: AccountJobKindBatchDelete}
+
+	failed := runtime.executeItem(context.Background(), job, nil, AccountJobItem{ID: 1})
+	require.Equal(t, "delete_failed", failed.ErrorCode)
+	require.Equal(t, "pq: account 7 is still referenced", failed.ErrorMessage)
+
+	succeeded := runtime.executeItem(context.Background(), job, nil, AccountJobItem{ID: 2})
+	require.Equal(t, AccountJobItemStatusSucceeded, succeeded.Status)
+	require.JSONEq(t, `{"cookie_names":["__cflb"],"proxy_password":"kept"}`, string(succeeded.Metadata))
+
+	routing := runtime.executeItem(context.Background(), job, nil, AccountJobItem{ID: 3})
+	require.Equal(t, "routing_capacity", routing.ErrorCode)
+	require.Equal(t, "上游容量不足或流内限流，未完成路由验证", routing.ErrorMessage)
+
+	errored := runtime.executeItem(context.Background(), job, nil, AccountJobItem{ID: 4})
+	require.Equal(t, AccountJobItemStatusFailed, errored.Status)
+	require.Equal(t, AccountJobCodeExecutionFailed, errored.ErrorCode)
+	require.Equal(t, "executor exploded", errored.ErrorMessage)
+}
+
+type accountJobFinishFailingRepo struct {
+	*accountJobTestRepo
+	failures int
+	messages []string
+}
+
+func (r *accountJobFinishFailingRepo) Finish(_ context.Context, _ int64, _, message string) (*AccountJob, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.messages = append(r.messages, message)
+	if len(r.messages) <= r.failures {
+		return nil, errors.New("finish write failed")
+	}
+	return nil, nil
+}
+
+// A failed finish write is retried with a shortened storable message, and the
+// cleanup loop keeps retrying it, so a job never stays running because its
+// result could not be written.
+func TestAccountJobRuntimeRetriesFailedFinishWithStorableMessage(t *testing.T) {
+	repo := &accountJobFinishFailingRepo{accountJobTestRepo: newAccountJobTestRepo(), failures: accountJobFinishAttempts}
+	runtime := NewAccountJobRuntime(NewAccountJobService(repo, accountJobTestCipher{}), nil)
+	runtime.ctx, runtime.finishRetryDelay = context.Background(), time.Millisecond
+	message := strings.Repeat("x", 600) + "\xff\x00"
+	runtime.finish(1, AccountJobCodeCancelCheckFailed, message)
+	require.Len(t, repo.messages, accountJobFinishAttempts)
+	require.Equal(t, message, repo.messages[0])
+	require.Equal(t, strings.Repeat("x", 500)+"...", repo.messages[1])
+	require.Contains(t, runtime.unfinished, int64(1))
+
+	runtime.retryUnfinished()
+	require.Len(t, repo.messages, accountJobFinishAttempts+1)
+	require.Equal(t, strings.Repeat("x", 500)+"...", repo.messages[accountJobFinishAttempts])
+	require.Empty(t, runtime.unfinished)
 }

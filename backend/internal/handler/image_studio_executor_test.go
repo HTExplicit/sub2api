@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/Wei-Shaw/sub2api/internal/pkg/ctxkey"
 	middleware2 "github.com/Wei-Shaw/sub2api/internal/server/middleware"
 	"github.com/Wei-Shaw/sub2api/internal/service"
 	"github.com/gin-gonic/gin"
@@ -90,17 +91,35 @@ func TestImageStudioGatewayExecutorUsesNativeNOneForEdit(t *testing.T) {
 	require.Equal(t, "image/png", result.ContentType)
 }
 
-func TestImageStudioGatewayExecutorDoesNotExposeUpstreamErrorBody(t *testing.T) {
+// A failed generation keeps the gateway status and body for administrators
+// (server log and Ops). The submitter's IP and User-Agent reach the usage and
+// Ops rows from the context; the request headers, which the images handler
+// forwards upstream, do not carry them.
+func TestImageStudioGatewayExecutorKeepsGatewayStatusBodyAndOrigin(t *testing.T) {
 	enableImageStudioPolicy(t)
 	executor := newImageStudioGatewayExecutorForTest(imageStudioImagesInvokerFunc(func(c *gin.Context) {
-		c.JSON(http.StatusBadGateway, gin.H{"error": gin.H{"message": "private upstream body"}})
+		require.Empty(t, c.GetHeader("User-Agent"))
+		require.NotEqual(t, "203.0.113.9", c.ClientIP())
+		entry := &service.OpsInsertErrorLogInput{UserAgent: c.GetHeader("User-Agent")}
+		applyImageStudioOpsOrigin(c, entry)
+		require.Equal(t, "studio-browser/1.0", entry.UserAgent)
+		require.NotNil(t, entry.ClientIP)
+		require.Equal(t, "203.0.113.9", *entry.ClientIP)
+		snapshot := &openAIUsageSnapshot{}
+		applyImageStudioUsageOrigin(c, snapshot)
+		require.Equal(t, "studio-browser/1.0", snapshot.userAgent)
+		require.Equal(t, "203.0.113.9", snapshot.ipAddress)
+		c.JSON(http.StatusBadGateway, gin.H{"error": gin.H{"message": "upstream said no"}})
 	}), nil)
 	_, err := executor.Execute(context.Background(), service.ImageStudioExecutionRequest{
 		Job:    service.ImageStudioJob{UserID: 11, Mode: service.ImageStudioModeGenerate, Model: service.ImageStudioModelGPTImage2, Prompt: "draw"},
 		APIKey: imageStudioExecutorAPIKey(),
+		Origin: service.ImageStudioRequestOrigin{ClientIP: "203.0.113.9", UserAgent: "studio-browser/1.0"},
 	})
-	require.Error(t, err)
-	require.NotContains(t, err.Error(), "private upstream body")
+	var gatewayErr *service.ImageStudioGatewayError
+	require.ErrorAs(t, err, &gatewayErr)
+	require.Equal(t, http.StatusBadGateway, gatewayErr.StatusCode)
+	require.JSONEq(t, `{"error":{"message":"upstream said no"}}`, gatewayErr.Body)
 }
 
 type imageStudioSubscriptionFinderStub struct {
@@ -128,4 +147,45 @@ func TestImageStudioGatewayExecutorPreservesSubscriptionBillingContext(t *testin
 		APIKey: key,
 	})
 	require.NoError(t, err)
+}
+
+// The client request ID is the usage billing dedupe key ("client:"+ID), so two
+// executions of the same job item must not share it.
+func TestImageStudioGatewayExecutorUsesNewBillingIDPerAttempt(t *testing.T) {
+	enableImageStudioPolicy(t)
+	var ids []string
+	executor := newImageStudioGatewayExecutorForTest(imageStudioImagesInvokerFunc(func(c *gin.Context) {
+		id, _ := c.Request.Context().Value(ctxkey.ClientRequestID).(string)
+		ids = append(ids, id)
+		c.JSON(http.StatusOK, gin.H{"data": []gin.H{{"b64_json": base64.StdEncoding.EncodeToString(imageStudioExecutorPNG())}}})
+	}), nil)
+	request := service.ImageStudioExecutionRequest{
+		Job:    service.ImageStudioJob{ID: 41, UserID: 11, Mode: service.ImageStudioModeGenerate, Model: service.ImageStudioModelGPTImage2, Prompt: "draw"},
+		Item:   service.ImageStudioItem{ID: 7},
+		APIKey: imageStudioExecutorAPIKey(),
+	}
+	for range 2 {
+		_, err := executor.Execute(context.Background(), request)
+		require.NoError(t, err)
+	}
+	require.Len(t, ids, 2)
+	require.NotEqual(t, ids[0], ids[1])
+	for _, id := range ids {
+		require.True(t, strings.HasPrefix(id, service.ImageStudioClientRequestIDPrefix+"job-41-item-7-"), id)
+		require.LessOrEqual(t, len("client:"+id), 64)
+	}
+}
+
+// Decode failures name the concrete reason; a response that is not an image
+// result is quoted only up to 4 KiB.
+func TestDecodeImageStudioGatewayResponseReportsConcreteReasons(t *testing.T) {
+	_, err := decodeImageStudioGatewayResponse([]byte("<html>" + strings.Repeat("x", 64<<10)))
+	require.ErrorContains(t, err, "not JSON")
+	require.Less(t, len(err.Error()), 5<<10)
+
+	_, err = decodeImageStudioGatewayResponse([]byte(`{"data":[{"b64_json":"not base64!"}]}`))
+	require.ErrorContains(t, err, "not valid base64")
+
+	_, err = decodeImageStudioGatewayResponse([]byte(`{"data":[{"b64_json":"` + base64.StdEncoding.EncodeToString([]byte("GIF89a-fixture")) + `"}]}`))
+	require.ErrorContains(t, err, "not a PNG, JPEG or WebP image")
 }

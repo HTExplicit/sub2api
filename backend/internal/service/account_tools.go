@@ -29,7 +29,8 @@ func accountToolsOperationScoped(ctx context.Context, accountID int64, operation
 	defer cancel()
 	result, err := invokeAccountTools(call, extensionv1.Invocation{Capability: extensionv1.CapabilityAdmin, Operation: operation, AccountID: accountID, Payload: raw})
 	if err != nil {
-		return infraerrors.New(503, "ACCOUNT_TOOLS_UNAVAILABLE", "account tools are unavailable")
+		// Administrators see why the operation failed (for example a timeout).
+		return infraerrors.New(503, "ACCOUNT_TOOLS_UNAVAILABLE", "account tools are unavailable: "+err.Error()).WithCause(err)
 	}
 	if result.Code != "" {
 		status := result.HTTPStatus

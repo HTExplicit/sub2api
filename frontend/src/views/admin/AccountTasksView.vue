@@ -86,6 +86,7 @@ import Icon from '@/components/icons/Icon.vue'
 import { useAccountJobsStore } from '@/stores/accountJobs'
 import { useAppStore } from '@/stores/app'
 import type { AccountJobStatus } from '@/api/admin/accountJobs'
+import { extractApiErrorMessage } from '@/utils/apiError'
 
 const { t } = useI18n()
 const store = useAccountJobsStore()
@@ -152,8 +153,8 @@ async function loadPage(page: number): Promise<void> {
       kind: kind.value,
       status: status.value,
     })
-  } catch {
-    appStore.showError(t('admin.accountTasks.loadFailed'))
+  } catch (error) {
+    appStore.showError(`${t('admin.accountTasks.loadFailed')}: ${extractApiErrorMessage(error, t('common.unknownError'))}`)
   }
 }
 

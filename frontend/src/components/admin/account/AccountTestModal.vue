@@ -177,7 +177,7 @@
       <div class="group relative">
         <div
           ref="terminalRef"
-          class="max-h-[240px] min-h-[120px] overflow-y-auto rounded-xl border border-gray-700 bg-gray-900 p-4 font-mono text-sm dark:border-gray-800 dark:bg-black"
+          class="theme-dark-surface max-h-[240px] min-h-[120px] overflow-y-auto rounded-xl border border-gray-700 bg-gray-900 p-4 font-mono text-sm dark:border-gray-800 dark:bg-black"
         >
           <!-- Status Line -->
           <div v-if="status === 'idle'" class="flex items-center gap-2 text-gray-500">
@@ -209,10 +209,10 @@
           </div>
           <div
             v-else-if="status === 'error'"
-            class="mt-3 flex items-center gap-2 border-t border-gray-700 pt-3 text-red-400"
+            class="mt-3 flex items-start gap-2 border-t border-gray-700 pt-3 text-red-400"
           >
-            <Icon name="x" size="sm" :stroke-width="2" />
-            <span>{{ errorMessage }}</span>
+            <Icon name="x" size="sm" :stroke-width="2" class="mt-0.5 shrink-0" />
+            <span class="min-w-0 whitespace-pre-wrap break-words" data-test="test-error">{{ errorMessage }}</span>
           </div>
         </div>
 
@@ -337,9 +337,9 @@
             !canStartTest
               ? 'cursor-not-allowed bg-primary-400 text-white'
               : status === 'success'
-                ? 'bg-green-500 text-white hover:bg-green-600'
+                ? 'bg-green-700 text-white hover:bg-green-800'
                 : status === 'error'
-                  ? 'bg-orange-500 text-white hover:bg-orange-600'
+                  ? 'bg-orange-700 text-white hover:bg-orange-800'
                   : 'bg-primary-500 text-white hover:bg-primary-600'
           ]"
         >
@@ -978,6 +978,7 @@ const startTest = async () => {
 const handleEvent = (event: {
   type: string
   text?: string
+  data?: unknown
   model?: string
   success?: boolean
   output_limited?: boolean
@@ -1057,6 +1058,11 @@ const handleEvent = (event: {
     case 'status':
       if (event.text) {
         addLine(event.text, 'text-cyan-300')
+      }
+      // Status data is what the test actually sent (Codex ticket, identity and
+      // wire headers); it is shown in full.
+      if (event.data !== undefined && event.data !== null) {
+        addLine(typeof event.data === 'string' ? event.data : JSON.stringify(event.data, null, 2), 'whitespace-pre-wrap break-all text-xs text-cyan-200/80')
       }
       break
 

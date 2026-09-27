@@ -681,8 +681,14 @@ func TestBuildSchedulerMetadataAccount_KeepsModelRateLimits(t *testing.T) {
 				"antigravity:gemini": map[string]any{
 					"rate_limit_reset_at": "2026-05-30T10:10:00Z",
 				},
+				"gpt-5.6-luna": map[string]any{
+					"rate_limit_reset_at":                    "2026-05-30T10:10:00Z",
+					"reason":                                 "upstream_400_model_not_supported",
+					service.ModelRateLimitUpstreamMessageKey: "Model 'gpt-5.6-luna' is temporarily not supported.",
+				},
 			},
-			"unused_large_field": "drop-me",
+			service.OpenAILastUpstreamErrorExtraKey: map[string]any{"status": 429, "message": "slow down"},
+			"unused_large_field":                    "drop-me",
 		},
 	}
 
@@ -693,6 +699,14 @@ func TestBuildSchedulerMetadataAccount_KeepsModelRateLimits(t *testing.T) {
 	require.Contains(t, limits, "gemini-3-flash")
 	require.Contains(t, limits, "antigravity:gemini")
 	require.Nil(t, got.Extra["unused_large_field"])
+	// Administrator-only text stays out of the scheduler snapshot.
+	require.NotContains(t, got.Extra, service.OpenAILastUpstreamErrorExtraKey)
+	luna, ok := limits["gpt-5.6-luna"].(map[string]any)
+	require.True(t, ok)
+	require.Equal(t, "upstream_400_model_not_supported", luna["reason"])
+	require.NotContains(t, luna, service.ModelRateLimitUpstreamMessageKey)
+	source := account.Extra["model_rate_limits"].(map[string]any)["gpt-5.6-luna"].(map[string]any)
+	require.Contains(t, source, service.ModelRateLimitUpstreamMessageKey, "the account's own map is not modified")
 }
 
 func TestBuildSchedulerMetadataAccount_KeepsSparkShadowRoutingIdentity(t *testing.T) {

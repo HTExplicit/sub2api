@@ -199,7 +199,7 @@ describe('admin AccountsView usage windows hint', () => {
 
   it('renders the upstream billing trust warning next to the declared-rate column', async () => {
     localStorage.setItem('account-hidden-columns', JSON.stringify([]))
-    localStorage.setItem('account-hidden-columns-version', 'cockpit-console-defaults-v1')
+    localStorage.setItem('account-hidden-columns-version', 'upstream-defaults-v1')
     const wrapper = mountView()
     await flushPromises()
 

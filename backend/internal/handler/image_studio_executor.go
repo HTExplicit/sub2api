@@ -13,8 +13,10 @@ import (
 	"net/textproto"
 	"strconv"
 	"strings"
+	"sync"
 
 	extensionv1 "github.com/Wei-Shaw/sub2api/internal/nativeapi"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/ctxkey"
 	middleware2 "github.com/Wei-Shaw/sub2api/internal/server/middleware"
 	"github.com/Wei-Shaw/sub2api/internal/service"
 	"github.com/gin-gonic/gin"
@@ -31,14 +33,92 @@ type imageStudioSubscriptionFinder interface {
 type ImageStudioGatewayExecutor struct {
 	images        imageStudioImagesInvoker
 	subscriptions imageStudioSubscriptionFinder
+	ops           *service.OpsService
+
+	routerOnce sync.Once
+	router     *gin.Engine
 }
 
-func NewImageStudioGatewayExecutor(images imageStudioImagesInvoker, subscriptions *service.SubscriptionService) *ImageStudioGatewayExecutor {
-	return &ImageStudioGatewayExecutor{images: images, subscriptions: subscriptions}
+func NewImageStudioGatewayExecutor(images imageStudioImagesInvoker, subscriptions *service.SubscriptionService, ops *service.OpsService) *ImageStudioGatewayExecutor {
+	return &ImageStudioGatewayExecutor{images: images, subscriptions: subscriptions, ops: ops}
 }
 
 func newImageStudioGatewayExecutorForTest(images imageStudioImagesInvoker, subscriptions imageStudioSubscriptionFinder) *ImageStudioGatewayExecutor {
 	return &ImageStudioGatewayExecutor{images: images, subscriptions: subscriptions}
+}
+
+// imageStudioGatewayCall carries one job item's authentication into the shared
+// in-process router.
+type imageStudioGatewayCall struct {
+	apiKey       *service.APIKey
+	subscription *service.UserSubscription
+}
+
+type imageStudioGatewayCallKey struct{}
+
+// gatewayRouter runs Image Studio requests through the Ops error logger in
+// front of the images handler, as the public /v1/images routes do, so failed
+// generations leave an Ops error record.
+func (e *ImageStudioGatewayExecutor) gatewayRouter() *gin.Engine {
+	e.routerOnce.Do(func() {
+		router := gin.New()
+		router.Any("/*endpoint", OpsErrorLoggerMiddleware(e.ops), imageStudioGatewayAuth, e.images.Images)
+		e.router = router
+	})
+	return e.router
+}
+
+// applyImageStudioUsageOrigin records the Image Studio submitter's address and
+// User-Agent on the usage row of an in-process gateway request.
+func applyImageStudioUsageOrigin(c *gin.Context, snapshot *openAIUsageSnapshot) {
+	if c == nil || c.Request == nil || snapshot == nil {
+		return
+	}
+	origin, ok := service.ImageStudioRequestOriginFromContext(c.Request.Context())
+	if !ok {
+		return
+	}
+	if userAgent := strings.TrimSpace(origin.UserAgent); userAgent != "" {
+		snapshot.userAgent = userAgent
+	}
+	if clientIP := strings.TrimSpace(origin.ClientIP); clientIP != "" {
+		snapshot.ipAddress = clientIP
+	}
+}
+
+// applyImageStudioOpsOrigin records the Image Studio submitter's address and
+// User-Agent on the Ops row of an in-process gateway request.
+func applyImageStudioOpsOrigin(c *gin.Context, entry *service.OpsInsertErrorLogInput) {
+	if c == nil || c.Request == nil || entry == nil {
+		return
+	}
+	origin, ok := service.ImageStudioRequestOriginFromContext(c.Request.Context())
+	if !ok {
+		return
+	}
+	if userAgent := strings.TrimSpace(origin.UserAgent); userAgent != "" {
+		entry.UserAgent = userAgent
+	}
+	if clientIP := strings.TrimSpace(origin.ClientIP); clientIP != "" {
+		entry.ClientIP = &clientIP
+	}
+}
+
+func imageStudioGatewayAuth(c *gin.Context) {
+	call, _ := c.Request.Context().Value(imageStudioGatewayCallKey{}).(*imageStudioGatewayCall)
+	if call == nil || call.apiKey == nil || call.apiKey.User == nil {
+		c.AbortWithStatus(http.StatusServiceUnavailable)
+		return
+	}
+	c.Set(string(middleware2.ContextKeyAPIKey), call.apiKey)
+	c.Set(string(middleware2.ContextKeyUser), middleware2.AuthSubject{
+		UserID: call.apiKey.UserID, Concurrency: call.apiKey.User.Concurrency,
+	})
+	c.Set(string(middleware2.ContextKeyUserRole), call.apiKey.User.Role)
+	if call.subscription != nil {
+		c.Set(string(middleware2.ContextKeySubscription), call.subscription)
+	}
+	c.Next()
 }
 
 func (e *ImageStudioGatewayExecutor) Execute(ctx context.Context, request service.ImageStudioExecutionRequest) (*service.ImageStudioExecutionResult, error) {
@@ -53,29 +133,34 @@ func (e *ImageStudioGatewayExecutor) Execute(ctx context.Context, request servic
 	if err != nil {
 		return nil, err
 	}
-	httpRequest := httptest.NewRequest(http.MethodPost, path, body).WithContext(ctx)
-	httpRequest.Header.Set("Content-Type", contentType)
-	recorder := httptest.NewRecorder()
-	c, _ := gin.CreateTestContext(recorder)
-	c.Request = httpRequest
-	c.Set(string(middleware2.ContextKeyAPIKey), request.APIKey)
-	c.Set(string(middleware2.ContextKeyUser), middleware2.AuthSubject{
-		UserID: request.APIKey.UserID, Concurrency: request.APIKey.User.Concurrency,
-	})
-	c.Set(string(middleware2.ContextKeyUserRole), request.APIKey.User.Role)
+	call := &imageStudioGatewayCall{apiKey: request.APIKey}
 	if request.APIKey.Group != nil && request.APIKey.Group.IsSubscriptionType() {
 		if e.subscriptions == nil {
 			return nil, errors.New("image subscription is unavailable")
 		}
 		subscription, lookupErr := e.subscriptions.GetActiveSubscription(ctx, request.APIKey.UserID, request.APIKey.Group.ID)
-		if lookupErr != nil || subscription == nil {
+		if lookupErr != nil {
+			return nil, fmt.Errorf("image subscription is unavailable: %w", lookupErr)
+		}
+		if subscription == nil {
 			return nil, errors.New("image subscription is unavailable")
 		}
-		c.Set(string(middleware2.ContextKeySubscription), subscription)
+		call.subscription = subscription
 	}
-	e.images.Images(c)
+	// The correlation ID ties Ops and usage rows to this attempt of the job
+	// item; it is also the usage billing dedupe key, so it is new per attempt.
+	ctx = context.WithValue(ctx, ctxkey.ClientRequestID, service.NewImageStudioClientRequestID(request.Job.ID, request.Item.ID))
+	ctx = context.WithValue(ctx, imageStudioGatewayCallKey{}, call)
+	// The job's submitter is recorded on usage and Ops rows from the context.
+	// It is not put on the request: the images handler forwards request
+	// headers such as User-Agent to API-key upstreams.
+	ctx = service.WithImageStudioRequestOrigin(ctx, request.Origin)
+	httpRequest := httptest.NewRequest(http.MethodPost, path, body).WithContext(ctx)
+	httpRequest.Header.Set("Content-Type", contentType)
+	recorder := httptest.NewRecorder()
+	e.gatewayRouter().ServeHTTP(recorder, httpRequest)
 	if recorder.Code != http.StatusOK {
-		return nil, errors.New("image gateway request failed")
+		return nil, &service.ImageStudioGatewayError{StatusCode: recorder.Code, Body: recorder.Body.String()}
 	}
 	return decodeImageStudioGatewayResponse(recorder.Body.Bytes())
 }
@@ -150,20 +235,26 @@ func decodeImageStudioGatewayResponse(body []byte) (*service.ImageStudioExecutio
 			RevisedPrompt string `json:"revised_prompt"`
 		} `json:"data"`
 	}
-	if err := json.Unmarshal(body, &payload); err != nil || len(payload.Data) != 1 || payload.Data[0].B64JSON == "" {
-		return nil, errors.New("image gateway returned an invalid result")
+	if err := json.Unmarshal(body, &payload); err != nil {
+		return nil, fmt.Errorf("image gateway returned a result that is not JSON: %w; response: %s", err, service.ImageStudioLogText(string(body)))
+	}
+	if len(payload.Data) != 1 || payload.Data[0].B64JSON == "" {
+		return nil, fmt.Errorf("image gateway returned %d images instead of one base64 image; response: %s", len(payload.Data), service.ImageStudioLogText(string(body)))
 	}
 	encoded := payload.Data[0].B64JSON
-	if base64.StdEncoding.DecodedLen(len(encoded)) > service.ImageStudioMaxImageBytes {
-		return nil, errors.New("image gateway returned an oversized result")
+	if size := base64.StdEncoding.DecodedLen(len(encoded)); size > service.ImageStudioMaxImageBytes {
+		return nil, fmt.Errorf("image gateway returned an oversized image: about %d bytes, the limit is %d", size, service.ImageStudioMaxImageBytes)
 	}
 	data, err := base64.StdEncoding.DecodeString(encoded)
-	if err != nil || len(data) > service.ImageStudioMaxImageBytes {
-		return nil, errors.New("image gateway returned an invalid result")
+	if err != nil {
+		return nil, fmt.Errorf("image gateway returned an image that is not valid base64: %w", err)
+	}
+	if len(data) > service.ImageStudioMaxImageBytes {
+		return nil, fmt.Errorf("image gateway returned an oversized image: %d bytes, the limit is %d", len(data), service.ImageStudioMaxImageBytes)
 	}
 	contentType := imageStudioContentType(data)
 	if contentType == "" {
-		return nil, errors.New("image gateway returned an invalid image")
+		return nil, fmt.Errorf("image gateway returned %d bytes that are not a PNG, JPEG or WebP image (first bytes %x)", len(data), data[:min(len(data), 12)])
 	}
 	return &service.ImageStudioExecutionResult{
 		Data: data, ContentType: contentType, RevisedPrompt: strings.TrimSpace(payload.Data[0].RevisedPrompt),

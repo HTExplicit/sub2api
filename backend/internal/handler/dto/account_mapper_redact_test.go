@@ -95,7 +95,9 @@ func TestAccountFromServiceShallow_RedactsOllamaCloudManagedExtra(t *testing.T) 
 	require.Contains(t, src.Extra, service.OllamaCloudUsageSessionExtraKey)
 }
 
-func TestAccountFromServiceShallow_RedactsCodexTurnTicketState(t *testing.T) {
+// Administrators see the stored Codex ticket keys, including legacy ticket
+// state and the retired account-level harvest proxy URL.
+func TestAccountFromServiceShallow_KeepsCodexTurnTicketState(t *testing.T) {
 	blob := "gAAAAA" + strings.Repeat("B", 286)
 	src := &service.Account{
 		ID: 41, Platform: service.PlatformOpenAI, Type: service.AccountTypeOAuth,
@@ -112,13 +114,11 @@ func TestAccountFromServiceShallow_RedactsCodexTurnTicketState(t *testing.T) {
 		},
 	}
 	got := AccountFromServiceShallow(src)
-	require.NotContains(t, got.Extra, "codex_turn_ticket:gpt-6-astra")
+	require.Contains(t, got.Extra, "codex_turn_ticket:gpt-6-astra")
+	require.Equal(t, "http://user:legacy-proxy-secret@proxy.example.com:8080", got.Extra["codex_harvest_proxy_url"])
 	raw, err := json.Marshal(got)
 	require.NoError(t, err)
-	require.NotContains(t, string(raw), blob)
-	require.NotContains(t, string(raw), "legacy-proxy-secret")
-	require.NotContains(t, got.Extra, "codex_harvest_proxy_url")
-	require.Contains(t, src.Extra, "codex_harvest_proxy_url")
+	require.Contains(t, string(raw), blob)
 }
 
 func TestAccountFromServiceShallow_NilCredentialsOmitsStatus(t *testing.T) {

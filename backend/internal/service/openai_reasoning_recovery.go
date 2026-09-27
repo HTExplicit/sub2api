@@ -25,6 +25,17 @@ import (
 const openAIReasoningRecoveryContextKey = "openai_reasoning_recovery_state"
 const openAIReasoningRecoveryHeader = "X-Sub2API-Reasoning-Recovery"
 
+// The reasoning_recovery Ops detail is bounded by its encoded size: the Ops
+// queue keeps at most OpsErrorLogQueueBodyMaxBytes per detail and shrinks a
+// larger JSON detail to fields it does not know, which would lose everything.
+// The upstream message and payload start at these caps and are halved until
+// the encoded detail fits; action, items, usage and payload_sha256 always stay.
+const (
+	openAIReasoningRecoveryDetailEncodedLimit = 6 << 10
+	openAIReasoningRecoveryMessageDetailLimit = 1 << 10
+	openAIReasoningRecoveryPayloadDetailLimit = 4 << 10
+)
+
 // openAIReasoningRecoveryState owns the single, explicitly lossy retry for an
 // HTTP Responses request. It never re-enters a protocol converter or scheduler.
 // original is immutable; wire is the exact payload of the latest sent attempt.
@@ -61,6 +72,9 @@ type openAIReasoningRecoveryState struct {
 	diagnosticStopReason     string
 	failureObservedBytes     int
 	failureTerminalForwarded bool
+	// redactPayload applies the upstream Agent Identity credential redaction
+	// before an upstream payload is recorded for administrators.
+	redactPayload func([]byte) []byte
 }
 
 func (s *OpenAIGatewayService) newOpenAIReasoningRecoveryState(ctx context.Context, c *gin.Context, account *Account, token string) *openAIReasoningRecoveryState {
@@ -75,6 +89,7 @@ func (s *OpenAIGatewayService) newOpenAIReasoningRecoveryState(ctx context.Conte
 		policyUnavailable: policyErr != nil,
 		store:             s.openAIReasoningStateStore(), budget: openAIReasoningCacheBudgetForRequest(c),
 	}
+	r.redactPayload = func(payload []byte) []byte { return s.redactAgentIdentitySensitiveBody(ctx, account, payload) }
 	if c != nil {
 		c.Set(openAIReasoningRecoveryContextKey, r)
 	}
@@ -792,8 +807,14 @@ func (r *openAIReasoningRecoveryState) record(action string, status int, code st
 	}
 	detail := map[string]any{"action": action, "items": count, "usage_status": "unavailable"}
 	usage := openAIReasoningUsageEvidence(payload)
+	recordedPayload := payload
+	if r.redactPayload != nil && len(payload) > 0 {
+		recordedPayload = r.redactPayload(payload)
+	}
+	upstreamMessage := ""
 	if len(payload) > 0 {
 		detail["payload_sha256"] = openAIReasoningDigest(payload)
+		upstreamMessage = extractOpenAISSEErrorMessage(recordedPayload)
 	}
 	if len(usage) == 0 && action == "retry_without_encrypted_content" {
 		usage = r.attemptUsage
@@ -805,7 +826,7 @@ func (r *openAIReasoningRecoveryState) record(action string, status int, code st
 		detail["usage_status"] = "available"
 		detail["usage"] = usage
 	}
-	encoded, _ := json.Marshal(detail)
+	encoded := encodeOpenAIReasoningRecoveryDetail(detail, upstreamMessage, recordedPayload)
 	logger.FromContext(r.ctx).Info("openai.reasoning_recovery",
 		zap.Int64("account_id", r.account.ID), zap.String("action", action),
 		zap.String("code", code), zap.Int("upstream_status", status),
@@ -816,8 +837,55 @@ func (r *openAIReasoningRecoveryState) record(action string, status int, code st
 		Kind: "reasoning_recovery", Stage: "inference", Scope: "request", Reason: code,
 		UpstreamStatusCode: status, Message: action, Detail: string(encoded),
 		UpstreamRequestID:      r.responseHeaders.Get("x-request-id"),
-		ContinuationDiagnostic: r.diagnosticForRecordedAttempt(action, payload),
+		ContinuationDiagnostic: r.diagnosticForRecordedAttempt(action, recordedPayload),
 	})
+}
+
+// encodeOpenAIReasoningRecoveryDetail adds the upstream message and the rejected
+// payload to the essential detail, halving their bounds until the encoded
+// detail fits openAIReasoningRecoveryDetailEncodedLimit.
+func encodeOpenAIReasoningRecoveryDetail(detail map[string]any, upstreamMessage string, payload []byte) []byte {
+	essential, _ := json.Marshal(detail)
+	if upstreamMessage == "" && len(payload) == 0 {
+		return essential
+	}
+	messageLimit, payloadLimit := openAIReasoningRecoveryMessageDetailLimit, openAIReasoningRecoveryPayloadDetailLimit
+	for messageLimit > 0 || payloadLimit > 0 {
+		candidate := make(map[string]any, len(detail)+5)
+		for key, value := range detail {
+			candidate[key] = value
+		}
+		if upstreamMessage != "" && messageLimit > 0 {
+			text, truncated := continuationDiagnosticBoundValue(upstreamMessage, messageLimit)
+			candidate["upstream_message"] = text
+			if truncated {
+				candidate["upstream_message_truncated"] = true
+			}
+		}
+		if len(payload) > 0 {
+			if payloadLimit > 0 {
+				text, truncated := continuationDiagnosticBoundValue(string(payload), payloadLimit)
+				candidate["payload"] = text
+				if truncated {
+					candidate["payload_truncated"] = true
+				}
+			} else {
+				candidate["payload_truncated"] = true
+			}
+			candidate["payload_bytes"] = len(payload)
+		}
+		if encoded, err := json.Marshal(candidate); err == nil && len(encoded) <= openAIReasoningRecoveryDetailEncodedLimit {
+			return encoded
+		}
+		messageLimit, payloadLimit = messageLimit/2, payloadLimit/2
+		if messageLimit < 64 {
+			messageLimit = 0
+		}
+		if payloadLimit < 64 {
+			payloadLimit = 0
+		}
+	}
+	return essential
 }
 
 func (r *openAIReasoningRecoveryState) diagnosticForRecordedAttempt(action string, payload []byte) *OpenAIContinuationDiagnostic {

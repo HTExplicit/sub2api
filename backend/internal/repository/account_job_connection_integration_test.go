@@ -53,7 +53,8 @@ func TestAccountJobStoppedRetryAndMonitorFailure(t *testing.T) {
 	_, seeds, _, _, err := repo.FailedItemSeeds(ctx, job.ID, user.ID)
 	require.NoError(t, err)
 	require.Len(t, seeds, 1)
-	require.Contains(t, string(seeds[0].Metadata), `"account_id": 7`)
+	// The failed item was seeded with {}; account_id came from its result.
+	require.JSONEq(t, `{}`, string(seeds[0].Metadata))
 	jobs := service.NewAccountJobService(repo, nil)
 	view, err := jobs.Get(ctx, job.ID)
 	require.NoError(t, err)
@@ -76,4 +77,66 @@ func TestAccountJobStoppedRetryAndMonitorFailure(t *testing.T) {
 	view, err = jobs.Get(ctx, job.ID)
 	require.NoError(t, err)
 	require.False(t, view.RetryEligible)
+}
+
+// Error text longer than 512 characters, invalid UTF-8 and NUL characters are
+// stored (as U+FFFD where PostgreSQL rejects them), and a retry is seeded with
+// the original item keys only.
+func TestAccountJobStoresLongErrorTextAndRetriesSeedKeys(t *testing.T) {
+	ctx := context.Background()
+	user := mustCreateUser(t, testEntClient(t), &service.User{Email: "job-error-text-" + uuid.NewString() + "@example.com", PasswordHash: "fixture"})
+	repo := &accountJobRepository{db: integrationDB}
+	var jobID int64
+	t.Cleanup(func() {
+		_, _ = integrationDB.ExecContext(ctx, "DELETE FROM admin_account_jobs WHERE id=$1", jobID)
+		_, _ = integrationDB.ExecContext(ctx, "DELETE FROM users WHERE id=$1", user.ID)
+	})
+	target := int64(7)
+	job, _, err := repo.Create(ctx, service.CreateAccountJobParams{
+		CreatedBy: user.ID, Kind: service.AccountJobKindCodexTicketHarvest, IdempotencyKey: uuid.NewString(),
+		RequestHash: strings.Repeat("c", 64), PayloadCipher: "encrypted-fixture", PayloadExpires: time.Now().Add(time.Hour),
+		Metadata: json.RawMessage(`{"label":"a\u0000b"}`),
+		Items: []service.AccountJobItemSeed{
+			{Ordinal: 1, TargetAccountID: &target, Metadata: json.RawMessage(`{"account_id":7,"model_id":"gpt-6"}`)},
+			{Ordinal: 2, TargetAccountID: &target, Metadata: json.RawMessage(`{"account_id":7,"model_id":"gpt-6-mini"}`)},
+		},
+		Attempt: 1,
+	})
+	require.NoError(t, err)
+	jobID = job.ID
+	require.JSONEq(t, `{"label":"a\uFFFDb"}`, string(job.Metadata))
+	_, err = integrationDB.ExecContext(ctx, "UPDATE admin_account_jobs SET status='running' WHERE id=$1", job.ID)
+	require.NoError(t, err)
+	items, err := repo.ReservePendingItems(ctx, job.ID, 100)
+	require.NoError(t, err)
+	require.Len(t, items, 2)
+
+	raw := strings.Repeat("x", 998) + "\xff\x00"
+	want := strings.Repeat("x", 998) + "\uFFFD\uFFFD"
+	metadata := json.RawMessage("{\"account_id\":7,\"model_id\":\"gpt-6\",\"body\":\"a\\u0000b\",\"proxy_errors\":[\"bad \xff byte\"],\"warnings\":[\"w\"]}")
+	require.NoError(t, repo.CompleteItems(ctx, job.ID, []service.AccountJobExecutionResult{{
+		ItemID: items[0].ID, Status: service.AccountJobItemStatusFailed, ErrorCode: "ticket_upstream_error", ErrorMessage: raw, Metadata: metadata,
+	}}))
+	finished, err := repo.Finish(ctx, job.ID, service.AccountJobCodeCancelCheckFailed, raw)
+	require.NoError(t, err)
+	require.Equal(t, service.AccountJobStatusFailed, finished.Status)
+	require.Equal(t, want, finished.ErrorMessage)
+
+	stored, err := repo.ListItems(ctx, job.ID, "", 1, 10)
+	require.NoError(t, err)
+	require.Len(t, stored.Items, 2)
+	require.Equal(t, "ticket_upstream_error", stored.Items[0].ErrorCode)
+	require.Equal(t, want, stored.Items[0].ErrorMessage)
+	var got map[string]any
+	require.NoError(t, json.Unmarshal(stored.Items[0].Metadata, &got))
+	require.Equal(t, "a\uFFFDb", got["body"])
+	require.Equal(t, []any{"bad \uFFFD byte"}, got["proxy_errors"])
+	require.Equal(t, []any{"body", "proxy_errors", "warnings"}, got["result_keys"])
+	require.Equal(t, want, stored.Items[1].ErrorMessage, "remaining items keep the job error text")
+
+	_, seeds, _, _, err := repo.FailedItemSeeds(ctx, job.ID, user.ID)
+	require.NoError(t, err)
+	require.Len(t, seeds, 2)
+	require.JSONEq(t, `{"account_id":7,"model_id":"gpt-6"}`, string(seeds[0].Metadata))
+	require.JSONEq(t, `{"account_id":7,"model_id":"gpt-6-mini"}`, string(seeds[1].Metadata))
 }

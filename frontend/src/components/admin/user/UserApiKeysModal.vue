@@ -13,7 +13,8 @@
         <div v-for="key in apiKeys" :key="key.id" class="rounded-xl border border-gray-200 bg-white p-4 dark:border-dark-600 dark:bg-dark-800">
           <div class="flex items-start justify-between">
             <div class="min-w-0 flex-1">
-              <div class="mb-1 flex items-center gap-2"><span class="font-medium text-gray-900 dark:text-white">{{ key.name }}</span><span :class="['badge text-xs', key.status === 'active' ? 'badge-success' : 'badge-danger']">{{ key.status }}</span></div>
+              <div class="mb-1 flex flex-wrap items-center gap-2"><span class="font-medium text-gray-900 dark:text-white">{{ key.name }}</span><span :class="['badge text-xs', key.status === 'active' ? 'badge-success' : 'badge-danger']">{{ key.status }}</span><span v-if="isInternalKey(key)" class="badge badge-warning text-xs" data-test="api-key-purpose">{{ t('admin.users.apiKeyPurposeReadOnly', { purpose: key.purpose }) }}</span></div>
+              <p v-if="isInternalKey(key) && key.lease_id" class="break-all font-mono text-xs text-gray-500">{{ t('admin.users.apiKeyLease', { lease: key.lease_id }) }}</p>
               <p class="truncate font-mono text-sm text-gray-500">{{ key.key.substring(0, 20) }}...{{ key.key.substring(key.key.length - 8) }}</p>
             </div>
           </div>
@@ -23,8 +24,8 @@
               <button
                 :ref="(el) => setGroupButtonRef(key.id, el)"
                 @click="openGroupSelector(key)"
-                class="-mx-1 -my-0.5 flex cursor-pointer items-center gap-1 rounded-md px-1 py-0.5 transition-colors hover:bg-gray-100 dark:hover:bg-dark-700"
-                :disabled="updatingKeyIds.has(key.id)"
+                class="-mx-1 -my-0.5 flex cursor-pointer items-center gap-1 rounded-md px-1 py-0.5 transition-colors hover:bg-gray-100 disabled:cursor-default disabled:hover:bg-transparent dark:hover:bg-dark-700"
+                :disabled="updatingKeyIds.has(key.id) || isInternalKey(key)"
               >
                 <GroupBadge
                   v-if="key.group_id && key.group"
@@ -121,7 +122,11 @@ const emit = defineEmits(['close'])
 const { t } = useI18n()
 const appStore = useAppStore()
 
-const apiKeys = ref<ApiKey[]>([])
+// Internal keys (such as release-acceptance leases) carry their purpose and
+// are listed read-only; ordinary user keys omit purpose.
+type AdminApiKey = ApiKey & { purpose?: string; lease_id?: string }
+const isInternalKey = (key: AdminApiKey) => !!key.purpose && key.purpose !== 'user'
+const apiKeys = ref<AdminApiKey[]>([])
 const allGroups = ref<AdminGroup[]>([])
 const loading = ref(false)
 let requestVersion = 0
@@ -183,7 +188,8 @@ const loadGroups = async () => {
 const DROPDOWN_HEIGHT = 272 // max-h-64 = 16rem = 256px + padding
 const DROPDOWN_GAP = 4
 
-const openGroupSelector = (key: ApiKey) => {
+const openGroupSelector = (key: AdminApiKey) => {
+  if (isInternalKey(key)) return
   if (groupSelectorKeyId.value === key.id) {
     closeGroupSelector()
   } else {

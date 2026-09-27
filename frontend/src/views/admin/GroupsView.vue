@@ -116,6 +116,7 @@
 
       <template #table>
         <DataTable
+          data-table="groups"
           :columns="columns"
           :data="groups"
           :loading="loading"
@@ -668,7 +669,7 @@
                 class="pointer-events-none absolute bottom-full left-0 z-50 mb-2 w-72 opacity-0 transition-all duration-200 group-hover:pointer-events-auto group-hover:opacity-100"
               >
                 <div
-                  class="rounded-lg bg-gray-900 p-3 text-white shadow-lg dark:bg-gray-800"
+                  class="theme-dark-surface rounded-lg bg-gray-900 p-3 text-white shadow-lg dark:bg-gray-800"
                 >
                   <p class="mb-2 text-xs font-medium">
                     {{ t("admin.groups.exclusiveTooltip.title") }}
@@ -2215,6 +2216,51 @@
             data-tour="group-form-multiplier"
           />
         </div>
+        <!-- Retired profit control: the stored legacy values, read-only (writes are rejected, no effect) -->
+        <div
+          class="rounded-lg border border-dashed border-gray-300 px-4 py-3 dark:border-dark-600"
+          data-testid="group-retired-profit-control"
+        >
+          <div class="text-sm font-medium text-gray-700 dark:text-gray-300">
+            {{ t("admin.groups.retiredProfitControl.title") }}
+          </div>
+          <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+            {{ t("admin.groups.retiredProfitControl.hint") }}
+          </p>
+          <dl class="mt-3 grid grid-cols-1 gap-2 text-sm sm:grid-cols-3">
+            <div>
+              <dt class="text-xs text-gray-500 dark:text-gray-400">
+                {{ t("admin.groups.retiredProfitControl.enabled") }}
+                <code class="ml-1">profit_control_enabled</code>
+              </dt>
+              <dd class="mt-0.5 font-medium text-gray-900 dark:text-white">
+                {{
+                  editingGroup.profit_control_enabled
+                    ? t("admin.groups.retiredProfitControl.on")
+                    : t("admin.groups.retiredProfitControl.off")
+                }}
+              </dd>
+            </div>
+            <div>
+              <dt class="text-xs text-gray-500 dark:text-gray-400">
+                {{ t("admin.groups.retiredProfitControl.minMargin") }}
+                <code class="ml-1">profit_min_margin</code>
+              </dt>
+              <dd class="mt-0.5 font-mono text-gray-900 dark:text-white">
+                {{ editingGroup.profit_min_margin }}
+              </dd>
+            </div>
+            <div>
+              <dt class="text-xs text-gray-500 dark:text-gray-400">
+                {{ t("admin.groups.retiredProfitControl.safetyBuffer") }}
+                <code class="ml-1">profit_safety_buffer</code>
+              </dt>
+              <dd class="mt-0.5 font-mono text-gray-900 dark:text-white">
+                {{ editingGroup.profit_safety_buffer }}
+              </dd>
+            </div>
+          </dl>
+        </div>
         <div>
           <label class="input-label">{{ t("admin.groups.form.rpmLimit") }}</label>
           <input
@@ -2254,7 +2300,7 @@
                 class="pointer-events-none absolute bottom-full left-0 z-50 mb-2 w-72 opacity-0 transition-all duration-200 group-hover:pointer-events-auto group-hover:opacity-100"
               >
                 <div
-                  class="rounded-lg bg-gray-900 p-3 text-white shadow-lg dark:bg-gray-800"
+                  class="theme-dark-surface rounded-lg bg-gray-900 p-3 text-white shadow-lg dark:bg-gray-800"
                 >
                   <p class="mb-2 text-xs font-medium">
                     {{ t("admin.groups.exclusiveTooltip.title") }}

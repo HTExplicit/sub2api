@@ -57,6 +57,14 @@ func TestCodexQualityManualStopRequiredBeforeCreateRenewAndSend(t *testing.T) {
 	require.False(t, account.Schedulable, "the eligibility copy must not enable the persisted account")
 	run, revision, err := readCodexQualityRun(ctx, store, request.RunID)
 	require.NoError(t, err)
+	// Any administrator reads the run; only its creator closes or renews it.
+	view, err := s.ReadCodexQualityRun(ctx, key.UserID+1, account.ID, request.RunID)
+	require.NoError(t, err)
+	require.Equal(t, key.UserID, view.ActorID)
+	_, err = s.CloseCodexQualityRun(ctx, key.UserID+1, account.ID, request.RunID)
+	require.ErrorContains(t, err, "only its creator can close it")
+	_, err = s.RenewCodexQualityRoute(ctx, key.UserID+1, account.ID, request.RunID, uuid.NewString(), lookup)
+	require.ErrorContains(t, err, "only its creator can renew")
 
 	// Simulate an administrator turning ordinary scheduling back on while the
 	// existing diagnostic run and its downstream grant remain unexpired.

@@ -227,7 +227,7 @@ describe('OpenAIQuotaResetCell — 外审 F6:影子禁用重置', () => {
     })
     const wrapper = mount(OpenAIQuotaResetCell, { props: { account } })
 
-    expect(wrapper.text()).toContain('admin.accounts.openaiQuotaReset.count1')
+    expect(wrapper.text()).toContain('admin.accounts.openaiQuotaReset.count 1')
     expect(wrapper.text()).not.toContain('+1')
     expect(resetButton(wrapper).attributes('disabled')).toBeUndefined()
     wrapper.unmount()
@@ -309,7 +309,7 @@ describe('OpenAIQuotaResetCell — 外审 F6:影子禁用重置', () => {
     await wrapper.findAll('button')[0].trigger('click')
     await flushPromises()
 
-    expect(wrapper.text()).toContain('admin.accounts.openaiQuotaReset.count2')
+    expect(wrapper.text()).toContain('admin.accounts.openaiQuotaReset.count 2')
     expect(wrapper.text()).toContain('admin.accounts.openaiQuotaReset.refreshCachePersistFailed')
     expect(resetButton(wrapper).attributes('disabled')).toBeUndefined()
     wrapper.unmount()
@@ -393,7 +393,7 @@ describe('OpenAIQuotaResetCell — 外审 F6:影子禁用重置', () => {
 
     expect(refreshOpenAIQuota).not.toHaveBeenCalled()
     // 次数未知(隐藏)但仍展示已持久化的到期明细,重置入口保持禁用直到重新查询。
-    expect(wrapper.text()).not.toContain('admin.accounts.openaiQuotaReset.count1')
+    expect(wrapper.text()).not.toContain('admin.accounts.openaiQuotaReset.count 1')
     expect(wrapper.text()).toContain('admin.accounts.openaiQuotaReset.expiresAt:')
     expect(wrapper.text()).toContain('admin.accounts.openaiQuotaReset.resetCacheRefreshFailed')
     expect(resetButton(wrapper).attributes('disabled')).toBeDefined()

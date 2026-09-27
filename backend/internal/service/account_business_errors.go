@@ -58,8 +58,8 @@ var accountBusinessMessageCatalog = map[string]accountBusinessMessage{
 	"import_failed":                   {message: "account import failed", failure: true},
 }
 
-// AccountBusinessMessage returns a fixed, credential-safe business message.
-// Callers must not fall back to raw errors when the code is unknown.
+// AccountBusinessMessage returns the catalog sentence for a code. The sentence
+// only describes a result that has no underlying error text of its own.
 func AccountBusinessMessage(code string) (string, bool) {
 	if strings.HasPrefix(code, "ticket_") {
 		r := CodexTicketFailure(code)
@@ -71,17 +71,34 @@ func AccountBusinessMessage(code string) (string, bool) {
 	return entry.message, ok
 }
 
-// NormalizeAccountBusinessFailure admits only catalog entries that are safe
-// failure results. Preview success codes are deliberately rejected here.
-func NormalizeAccountBusinessFailure(code string) (string, string) {
+// AccountJobFailure returns the code and message stored for a failed account
+// job item or job. The reported code is kept as is (execution_failed when it is
+// empty) and a non-empty message is the verbatim underlying error text, which
+// is never replaced. Only a failure without underlying text gets the catalog
+// sentence of its code, or the generic item sentence for codes without one.
+func AccountJobFailure(code, message string) (string, string) {
 	code = strings.TrimSpace(code)
-	if strings.HasPrefix(code, "ticket_") {
-		r := CodexTicketFailure(code)
-		return r.Code, r.Message
+	if code == "" {
+		code = AccountJobCodeExecutionFailed
+	}
+	if strings.TrimSpace(message) != "" {
+		return code, message
+	}
+	if strings.HasPrefix(code, "ticket_") || strings.HasPrefix(code, "routing_") {
+		if r := CodexTicketFailure(code); r.Code == code {
+			return code, r.Message
+		}
 	}
 	if entry, ok := accountBusinessMessageCatalog[code]; ok && entry.failure {
 		return code, entry.message
 	}
-	fallback := accountBusinessMessageCatalog[AccountJobCodeExecutionFailed]
-	return AccountJobCodeExecutionFailed, fallback.message
+	return code, accountBusinessMessageCatalog[AccountJobCodeExecutionFailed].message
+}
+
+// NormalizeAccountBusinessFailure returns the code and sentence of a failure
+// without underlying error text. Every reported code is kept, including
+// routing_* and unknown ticket_* codes; only an empty code becomes
+// execution_failed.
+func NormalizeAccountBusinessFailure(code string) (string, string) {
+	return AccountJobFailure(code, "")
 }

@@ -20,7 +20,9 @@ type nativePluginBoundary struct {
 }
 
 func ProvidePluginRepository(db *sql.DB, bootstrap *service.NativeFeatureBootstrap) service.PluginRepository {
-	return newNativePluginBoundary(NewPluginRepository(db), bootstrap)
+	boundary := newNativePluginBoundary(NewPluginRepository(db), bootstrap)
+	bootstrap.SetRetiredPluginSource(boundary)
+	return boundary
 }
 
 func newNativePluginBoundary(base service.PluginRepository, bootstrap *service.NativeFeatureBootstrap) *nativePluginBoundary {
@@ -50,6 +52,22 @@ func (r *nativePluginBoundary) List(ctx context.Context) ([]*service.PluginInsta
 		}
 	}
 	return visible, nil
+}
+
+// RetiredPluginInstallations returns exactly the rows List hides: the retired
+// first-party installations, for the read-only admin view.
+func (r *nativePluginBoundary) RetiredPluginInstallations(ctx context.Context) ([]*service.PluginInstallation, error) {
+	all, err := r.PluginRepository.List(ctx)
+	if err != nil {
+		return nil, err
+	}
+	retired := make([]*service.PluginInstallation, 0, len(r.keys))
+	for _, plugin := range all {
+		if plugin != nil && (r.keys[plugin.PluginKey] || r.ids[plugin.ID]) {
+			retired = append(retired, plugin)
+		}
+	}
+	return retired, nil
 }
 
 func (r *nativePluginBoundary) GetByID(ctx context.Context, id int64) (*service.PluginInstallation, error) {

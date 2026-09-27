@@ -76,12 +76,15 @@ func TestRoutingStaleHostReferenceWithdrawsOnlyItsQualification(t *testing.T) {
 	module.config.Enabled = true
 	raw, _ = json.Marshal(extensionv1.SchedulingRequest{Account: account, Model: "gpt-6-astra", Now: now})
 	result, err := module.Invoke(context.Background(), extensionv1.Invocation{Capability: extensionv1.CapabilityRequest, Operation: "inject", Payload: raw})
-	if err != nil || result.Code != "routing_stale" {
-		t.Fatal("stale bundle was accepted")
+	if err != nil || result.Code != "routing_stale" || result.Message == "" {
+		t.Fatalf("stale bundle was accepted or lost its reason: %+v %v", result, err)
 	}
 	var state State
 	if json.Unmarshal(host.state[stateKey(7, "gpt-6-astra")].Value, &state) != nil || state.Qualification != nil || state.Phase != "needs_cookie_verification" || !state.Enrolled || state.Failures != 0 {
 		t.Fatal("stale reference did not withdraw exactly the old qualification")
+	}
+	if state.RevocationReason != result.Message || state.RevokedAt == nil || state.Observation != nil {
+		t.Fatalf("withdrawal must be recorded apart from the last real observation: %+v", state)
 	}
 }
 

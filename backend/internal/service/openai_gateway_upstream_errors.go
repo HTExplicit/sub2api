@@ -464,8 +464,9 @@ func openAIContinuationStateErrorFromFailedEvent(statusCode int, responseHeaders
 }
 
 // A residual HTTP 400 is a rejected request, not evidence that its history is
-// permanently unavailable. Keep the original upstream details in bounded Ops
-// diagnostics only; the client receives a stable, non-sensitive terminal.
+// permanently unavailable. Ops records the upstream message, the bounded body
+// and the diagnostic at the rejection site; the client receives a stable
+// terminal.
 const OpenAIRequestRejectedCode = "upstream_request_rejected"
 const OpenAIRequestRejectedClientMessage = "The upstream rejected this request. Check the request parameters before trying again."
 const openAIRequestRejectedReason = GatewayFailureReason("openai_request_rejected")
@@ -524,7 +525,9 @@ func classifyOpenAIRequestRejection(statusCode int, upstreamMsg string, upstream
 }
 
 // NewOpenAIRequestRejectedError stops the current request without retrying or
-// changing selected-account health. It deliberately carries no upstream body.
+// changing selected-account health. It carries no upstream body: the caller
+// has already recorded the upstream text for Ops, and nothing downstream may
+// render it to the client.
 func NewOpenAIRequestRejectedError(
 	statusCode int,
 	responseHeaders http.Header,
@@ -695,7 +698,7 @@ func (s *OpenAIGatewayService) handleErrorResponse(
 	requestedModel ...string,
 ) (*OpenAIForwardResult, error) {
 	body := s.readUpstreamErrorBody(resp)
-	if failoverErr, ok := s.handleOpenAIBudgetExceededHTTPFailover(ctx, account, resp.StatusCode, resp.Header, body); ok {
+	if failoverErr, ok := s.handleOpenAIBudgetExceededHTTPFailover(ctx, c, account, resp.StatusCode, resp.Header, body); ok {
 		return nil, failoverErr
 	}
 	body = s.redactAgentIdentitySensitiveBody(ctx, account, body)
@@ -945,7 +948,7 @@ func (s *OpenAIGatewayService) handleCompatErrorResponse(
 ) (*OpenAIForwardResult, error) {
 	body := s.readUpstreamErrorBody(resp)
 	if failoverErr, ok := s.handleOpenAIBudgetExceededHTTPFailover(
-		c.Request.Context(), account, resp.StatusCode, resp.Header, body,
+		c.Request.Context(), c, account, resp.StatusCode, resp.Header, body,
 	); ok {
 		return nil, failoverErr
 	}

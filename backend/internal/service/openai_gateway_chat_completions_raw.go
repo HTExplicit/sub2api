@@ -315,6 +315,7 @@ func (s *OpenAIGatewayService) streamRawChatCompletions(
 	clientOutputStarted := false
 	semanticOutputReady := false
 	var protocolErr error
+	upstreamErrorChunkRecorded := false
 	pendingLines := make([]string, 0, 8)
 	refusalDetector := newOpenAIChatSilentRefusalDetector(requestBodyLen)
 	var terminal openAIRawStreamTerminalState
@@ -370,9 +371,12 @@ func (s *OpenAIGatewayService) streamRawChatCompletions(
 				break
 			}
 			if trimmedPayload != "[DONE]" {
-				chunk, err := s.decodeCCStreamChunk(c, account, resp.Header, trimmedPayload)
+				chunk, err := s.decodeCCStreamChunk(c, account, resp.Header, trimmedPayload, openAIStreamClientOutputStarted(c, clientOutputStarted))
 				if err != nil {
 					protocolErr = err
+					// decodeCCStreamChunk already recorded an upstream error
+					// chunk with its own message and payload.
+					upstreamErrorChunkRecorded = ccStreamPayloadIsErrorEnvelope(trimmedPayload)
 					break
 				}
 				if terminal.err != nil {
@@ -466,7 +470,9 @@ func (s *OpenAIGatewayService) streamRawChatCompletions(
 		)
 		if !clientOutputStarted {
 			if protocolErr != nil {
-				recordOpenAIRawStreamTruncation(c, account, requestID, cause, "failover")
+				if !upstreamErrorChunkRecorded {
+					recordOpenAIRawStreamTruncation(c, account, requestID, cause, "failover")
+				}
 				return nil, protocolErr
 			}
 			// 响应头尚未提交：可以透明换号重试，客户端不会看到半截流。
@@ -474,7 +480,9 @@ func (s *OpenAIGatewayService) streamRawChatCompletions(
 		}
 		// 已写出语义字节：无法再 failover，改为带类型的上游错误。handler 会据此
 		// 补发 SSE error 帧并把本次请求计入 SLA 失败。
-		recordOpenAIRawStreamTruncation(c, account, requestID, cause, "http_error")
+		if !upstreamErrorChunkRecorded {
+			recordOpenAIRawStreamTruncation(c, account, requestID, cause, "http_error")
+		}
 		if protocolErr != nil {
 			// The original error can be a pre-output failover candidate. Never
 			// expose it through errors.As once semantic output has been sent.

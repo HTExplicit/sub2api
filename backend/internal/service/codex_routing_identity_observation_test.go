@@ -25,6 +25,10 @@ func TestCodexRoutingIdentityObservationsAreBoundedAndRedacted(t *testing.T) {
 	require.Equal(t, "missing", fields["turn"].Consistency)
 	require.Len(t, fields["session"].HeaderDigest, 16)
 	require.NotEqual(t, "same-session", fields["session"].HeaderDigest)
+	// Raw identifiers are shown next to the digests.
+	require.Equal(t, "same-session", fields["session"].HeaderValue)
+	require.Equal(t, "different-thread", fields["thread"].HeaderValue)
+	require.Equal(t, "body-thread", fields["thread"].BodyValue)
 	request.GetBody = nil
 	fields = codexIdentityFieldObservations(request.Header, inspectCodexIdentityBody(request))
 	require.Equal(t, "uninspected", fields["session"].Consistency)

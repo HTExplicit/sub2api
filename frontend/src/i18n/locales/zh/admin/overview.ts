@@ -606,6 +606,8 @@ export default {
       apiKeys: 'API密钥',
       userApiKeys: '用户 API 密钥',
       noApiKeys: '此用户暂无 API 密钥',
+      apiKeyPurposeReadOnly: '内部用途：{purpose}（只读）',
+      apiKeyLease: '租约：{lease}',
       group: '分组',
       none: '无',
       groupChangedSuccess: '分组修改成功',
@@ -1253,6 +1255,15 @@ export default {
         hint: '开启后，此分组的 OpenAI 请求会强制写入 service_tier=priority；全局 Fast/Flex 策略仍可过滤或拦截。保存后新请求立即生效，已建立的 WebSocket 会话需重连。',
         free: '免费 Fast',
         freeHint: '该分组的 Fast 请求仍使用 priority 档位，但客户实际费用按同一请求的 Standard 价格计算。'
+      },
+      retiredProfitControl: {
+        title: '利润控制（已退役，只读，不生效）',
+        hint: '利润控制功能已经下线，这些是库里保存的旧值，不能修改，也不会影响计费或调度。',
+        enabled: '启用状态',
+        minMargin: '最低利润率',
+        safetyBuffer: '安全余量',
+        on: '开启',
+        off: '关闭'
       },
       invalidRequestFallback: {
         title: '无效请求兜底分组',

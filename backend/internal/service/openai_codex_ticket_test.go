@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Wei-Shaw/sub2api/internal/codexruntime/tickets"
 	"github.com/Wei-Shaw/sub2api/internal/config"
 	extensionv1 "github.com/Wei-Shaw/sub2api/internal/nativeapi"
 	"github.com/stretchr/testify/require"
@@ -73,7 +74,28 @@ func TestCodexTicketNativePolicyFailureDoesNotFallBack(t *testing.T) {
 	})
 	service := &OpenAIGatewayService{nativeCodexRuntime: manager}
 	require.ErrorIs(t, service.applyOpenAICodexTicket(context.Background(), ticketTestAccount(41), "gpt-6-astra", http.Header{}), ErrOpenAICodexTicketUnavailable)
+	// A runtime refusal keeps its own result code and reason.
+	service.nativeCodexRuntime = nativeTicketTestRuntime(t, config.OpenAICodexTicketConfig{Enabled: true, FailClosed: true}, func(extensionv1.Invocation) (extensionv1.Result, error) {
+		return extensionv1.Result{Code: "ticket_missing", Message: "no route qualification is recorded (routing phase stopped; last result routing_upstream)"}, nil
+	})
+	err := service.applyOpenAICodexTicket(context.Background(), ticketTestAccount(41), "gpt-6-astra", http.Header{})
+	require.ErrorIs(t, err, ErrOpenAICodexTicketUnavailable)
+	require.ErrorIs(t, err, ErrNativeCodexRuntimeUnavailable)
+	var refusal *NativeCodexResultError
+	require.ErrorAs(t, err, &refusal)
+	require.Equal(t, "ticket_missing", refusal.Code)
+	require.Contains(t, err.Error(), "last result routing_upstream")
 }
+func TestCodexTicketInvokeFailureUsesTheJobContext(t *testing.T) {
+	running := context.Background()
+	canceled, cancel := context.WithCancel(context.Background())
+	cancel()
+	require.Equal(t, "ticket_plugin_unavailable", codexTicketInvokeFailure(running, tickets.ErrStopping).Code, "a runtime reload is not a job cancellation")
+	require.Equal(t, "ticket_plugin_unavailable", codexTicketInvokeFailure(running, context.Canceled).Code)
+	require.Equal(t, "ticket_canceled", codexTicketInvokeFailure(canceled, context.Canceled).Code)
+	require.Equal(t, "ticket_timeout", codexTicketInvokeFailure(running, context.DeadlineExceeded).Code)
+}
+
 func TestOpenAICodexTicketStatusesUsesSanitizedProjection(t *testing.T) {
 	account := ticketTestAccount(41)
 	now := time.Now()
@@ -88,6 +110,26 @@ func TestOpenAICodexTicketStatusesUsesSanitizedProjection(t *testing.T) {
 	require.True(t, OpenAICodexTicketStatuses(account, cfg, now)[0].Blocked)
 	cfg.Enabled = false
 	require.Empty(t, OpenAICodexTicketStatuses(account, cfg, now))
+	// With the switch off, recorded history stays visible with its real code,
+	// HTTP status, response model and original message; nothing is ready or blocked.
+	account = ticketTestAccount(41)
+	setTicketTestProjection(account, "gpt-6-astra", now.Add(time.Hour))
+	plugins, ok := account.Extra[NativeCodexAccountProjectionKey].(map[string]any)
+	require.True(t, ok)
+	projection, ok := plugins[codexRuntimePluginKey].(map[string]any)
+	require.True(t, ok)
+	projection["observations"] = map[string]any{"gpt-6-astra": map[string]any{"key": "gpt-6-astra", "kind": "codex_routing", "state": "retry", "code": "routing_persist", "http_status": 503, "response_model": "gpt-6-luna", "message": "save cookie clock: database is locked"}}
+	statuses = OpenAICodexTicketStatuses(account, cfg, now)
+	require.Len(t, statuses, 1)
+	require.False(t, statuses[0].Ready)
+	require.False(t, statuses[0].Blocked)
+	require.Equal(t, "retry", statuses[0].RenewalState)
+	require.NotNil(t, statuses[0].LastResult)
+	require.Equal(t, "routing_persist", statuses[0].LastResult.Code, "a code outside the old catalog is not rewritten")
+	require.Equal(t, 503, statuses[0].LastResult.HTTPStatus)
+	require.Equal(t, "gpt-6-luna", statuses[0].LastResult.ResponseModel)
+	require.Equal(t, CodexTicketFailure("routing_persist").Message, statuses[0].LastResult.Message, "the short catalog sentence")
+	require.Equal(t, "save cookie clock: database is locked", statuses[0].LastResult.Error, "the raw text")
 }
 func TestExtractOpenAICodexTicketModel(t *testing.T) {
 	require.Equal(t, "gpt-6-astra", extractOpenAICodexTicketModel([]byte(`{"model":" gpt-6-astra "}`)))

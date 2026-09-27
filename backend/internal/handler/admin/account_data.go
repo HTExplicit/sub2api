@@ -140,6 +140,8 @@ type DataImportItemResult struct {
 	Code      string   `json:"code,omitempty"`
 	Message   string   `json:"message,omitempty"`
 	Error     string   `json:"error,omitempty"`
+	// MatchedAccountIDs lists the existing accounts an entry's identity matched.
+	MatchedAccountIDs []int64 `json:"matched_account_ids,omitempty"`
 }
 
 type DataImportPreviewResult struct {
@@ -284,7 +286,7 @@ func (h *AccountHandler) ExportData(c *gin.Context) {
 			Platform:           acc.Platform,
 			Type:               acc.Type,
 			Credentials:        acc.Credentials,
-			Extra:              service.RedactOpenAICodexTicketExtra(acc.Extra),
+			Extra:              acc.Extra,
 			ProxyKey:           proxyKey,
 			Concurrency:        acc.Concurrency,
 			Priority:           acc.Priority,
@@ -327,7 +329,7 @@ func (h *AccountHandler) ImportData(c *gin.Context) {
 func (h *AccountHandler) PreviewImportData(c *gin.Context) {
 	var req DataImportRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		response.BadRequest(c, "Invalid request")
+		response.BadRequest(c, "Invalid request: "+err.Error())
 		return
 	}
 	if len(req.Data.Accounts) == 0 {

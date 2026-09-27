@@ -1,14 +1,18 @@
 package service
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"log/slog"
 	"strings"
 	"sync"
 	"time"
+	"unicode/utf8"
 )
 
 const (
@@ -416,10 +420,21 @@ type AccountJobRuntime struct {
 	stopOnce        sync.Once
 	wg              sync.WaitGroup
 	concurrentSlots chan struct{}
+
+	finishRetryDelay time.Duration
+	unfinishedMu     sync.Mutex
+	unfinished       map[int64]accountJobFinishResult
+}
+
+// accountJobFinishResult is a job result whose Finish write failed; the
+// cleanup loop keeps writing it while the runtime runs.
+type accountJobFinishResult struct {
+	code    string
+	message string
 }
 
 func NewAccountJobRuntime(jobs *AccountJobService, executor AccountJobExecutor) *AccountJobRuntime {
-	return &AccountJobRuntime{jobs: jobs, executor: executor, concurrentSlots: make(chan struct{}, 5)}
+	return &AccountJobRuntime{jobs: jobs, executor: executor, concurrentSlots: make(chan struct{}, 5), finishRetryDelay: 500 * time.Millisecond}
 }
 
 func (r *AccountJobRuntime) Start(parent context.Context) error {
@@ -473,25 +488,106 @@ func (r *AccountJobRuntime) runOne() bool {
 		return false
 	}
 	code, message := r.execute(job)
-	finishCtx, cancel := context.WithTimeout(context.WithoutCancel(r.ctx), 10*time.Second)
-	defer cancel()
-	_, _ = r.jobs.repo.Finish(finishCtx, job.ID, code, message)
+	r.finish(job.ID, code, message)
 	return true
+}
+
+const (
+	accountJobFinishAttempts      = 3
+	accountJobFallbackMessageRune = 500
+)
+
+// finish stores the job result. A failed write is logged and retried with a
+// shortened storable copy of the message, so the text of a result can never
+// keep a job running. A result that still cannot be written is retried by the
+// cleanup loop while the runtime runs; after a restart the job is marked
+// interrupted.
+func (r *AccountJobRuntime) finish(jobID int64, code, message string) {
+	delay := r.finishRetryDelay
+	for attempt := 1; ; attempt++ {
+		if r.tryFinish(jobID, code, message, attempt) {
+			return
+		}
+		message = accountJobFallbackMessage(message)
+		if attempt >= accountJobFinishAttempts || r.ctx.Err() != nil {
+			r.unfinishedMu.Lock()
+			if r.unfinished == nil {
+				r.unfinished = make(map[int64]accountJobFinishResult)
+			}
+			r.unfinished[jobID] = accountJobFinishResult{code: code, message: message}
+			r.unfinishedMu.Unlock()
+			return
+		}
+		timer := time.NewTimer(delay)
+		select {
+		case <-timer.C:
+		case <-r.ctx.Done():
+			timer.Stop()
+		}
+		delay *= 2
+	}
+}
+
+func (r *AccountJobRuntime) tryFinish(jobID int64, code, message string, attempt int) bool {
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(r.ctx), 10*time.Second)
+	defer cancel()
+	_, err := r.jobs.repo.Finish(ctx, jobID, code, message)
+	if err == nil || errors.Is(err, ErrAccountJobNotFound) {
+		return true
+	}
+	slog.Error("account_job.finish_failed", "job_id", jobID, "attempt", attempt, "error_code", code, "error", err.Error())
+	return false
+}
+
+// retryUnfinished writes the results whose Finish failed earlier.
+func (r *AccountJobRuntime) retryUnfinished() {
+	r.unfinishedMu.Lock()
+	pending := make(map[int64]accountJobFinishResult, len(r.unfinished))
+	for jobID, result := range r.unfinished {
+		pending[jobID] = result
+	}
+	r.unfinishedMu.Unlock()
+	for jobID, result := range pending {
+		if r.tryFinish(jobID, result.code, result.message, 0) {
+			r.unfinishedMu.Lock()
+			delete(r.unfinished, jobID)
+			r.unfinishedMu.Unlock()
+		}
+	}
+}
+
+// accountJobFallbackMessage keeps the start of a message in a form that any
+// error_message column accepts.
+func accountJobFallbackMessage(message string) string {
+	message = StorableAccountJobText(message)
+	if utf8.RuneCountInString(message) <= accountJobFallbackMessageRune {
+		return message
+	}
+	runes := []rune(message)
+	return string(runes[:accountJobFallbackMessageRune]) + "..."
 }
 
 func (r *AccountJobRuntime) execute(job *AccountJob) (string, string) {
 	ciphertext, expires, err := r.jobs.repo.Payload(r.ctx, job.ID)
-	if err != nil || ciphertext == "" || time.Now().UTC().After(expires) {
-		return normalizeAccountJobFailure("payload_expired")
+	switch {
+	case err != nil:
+		return accountJobRuntimeFailure(AccountJobCodePayloadExpired, err)
+	case ciphertext == "":
+		return accountJobRuntimeFailure(AccountJobCodePayloadExpired, nil)
+	case time.Now().UTC().After(expires):
+		return accountJobRuntimeFailure(AccountJobCodePayloadExpired, fmt.Errorf("account job payload expired at %s", expires.UTC().Format(time.RFC3339)))
 	}
 	plaintext, err := r.jobs.encryptor.Decrypt(ciphertext)
-	if err != nil || !json.Valid([]byte(plaintext)) {
-		return normalizeAccountJobFailure("payload_unavailable")
+	if err == nil && !json.Valid([]byte(plaintext)) {
+		err = errors.New("decrypted account job payload is not valid JSON")
+	}
+	if err != nil {
+		return accountJobRuntimeFailure(AccountJobCodePayloadUnavailable, err)
 	}
 	payload := json.RawMessage(plaintext)
 	canceled, cancelErr := r.jobs.repo.CancelRequested(r.ctx, job.ID)
 	if cancelErr != nil {
-		return normalizeAccountJobFailure("cancel_check_failed")
+		return accountJobRuntimeFailure(AccountJobCodeCancelCheckFailed, cancelErr)
 	}
 	if canceled {
 		return "", ""
@@ -501,7 +597,7 @@ func (r *AccountJobRuntime) execute(job *AccountJob) (string, string) {
 	if preparer, ok := r.executor.(AccountJobPreparingExecutor); ok {
 		preparedCtx, preparedCleanup, prepareErr := preparer.PrepareAccountJob(r.ctx, job, payload)
 		if prepareErr != nil {
-			return normalizeAccountJobFailure("preparation_failed")
+			return accountJobRuntimeFailure("preparation_failed", prepareErr)
 		}
 		if preparedCtx != nil {
 			executionCtx = preparedCtx
@@ -521,14 +617,14 @@ func (r *AccountJobRuntime) execute(job *AccountJob) (string, string) {
 		}
 		canceled, cancelErr := r.jobs.repo.CancelRequested(r.ctx, job.ID)
 		if cancelErr != nil {
-			return normalizeAccountJobFailure("cancel_check_failed")
+			return accountJobRuntimeFailure(AccountJobCodeCancelCheckFailed, cancelErr)
 		}
 		if canceled {
 			return "", ""
 		}
 		items, reserveErr := r.jobs.repo.ReservePendingItems(r.ctx, job.ID, AccountJobBatchSize)
 		if reserveErr != nil {
-			return normalizeAccountJobFailure("item_reservation_failed")
+			return accountJobRuntimeFailure(AccountJobCodeReservationFailed, reserveErr)
 		}
 		if len(items) == 0 {
 			return "", ""
@@ -539,7 +635,7 @@ func (r *AccountJobRuntime) execute(job *AccountJob) (string, string) {
 			}
 			canceled, cancelErr = r.jobs.repo.CancelRequested(r.ctx, job.ID)
 			if cancelErr != nil {
-				return normalizeAccountJobFailure("cancel_check_failed")
+				return accountJobRuntimeFailure(AccountJobCodeCancelCheckFailed, cancelErr)
 			}
 			if canceled {
 				remaining := make([]AccountJobExecutionResult, 0, len(items)-index)
@@ -551,7 +647,7 @@ func (r *AccountJobRuntime) execute(job *AccountJob) (string, string) {
 			}
 			result := r.executeItem(executionCtx, job, payload, item)
 			if completeErr := r.jobs.repo.CompleteItems(r.ctx, job.ID, []AccountJobExecutionResult{result}); completeErr != nil {
-				return normalizeAccountJobFailure("item_completion_failed")
+				return accountJobRuntimeFailure(AccountJobCodeCompletionFailed, completeErr)
 			}
 		}
 	}
@@ -573,6 +669,7 @@ func (r *AccountJobRuntime) cleanupWorker() {
 }
 
 func (r *AccountJobRuntime) cleanup(now time.Time) {
+	r.retryUnfinished()
 	ctx, cancel := context.WithTimeout(r.ctx, 30*time.Second)
 	defer cancel()
 	_ = r.jobs.repo.ExpirePayloads(ctx, now)
@@ -585,10 +682,14 @@ func (r *AccountJobRuntime) cleanup(now time.Time) {
 func (r *AccountJobRuntime) executeConcurrently(parent context.Context, job *AccountJob, payload json.RawMessage) (string, string) {
 	ctx, cancel := context.WithCancel(parent)
 	defer cancel()
-	failures := make(chan string, 1)
-	fail := func(code string) {
+	type runtimeFailure struct {
+		code string
+		err  error
+	}
+	failures := make(chan runtimeFailure, 1)
+	fail := func(code string, err error) {
 		select {
-		case failures <- code:
+		case failures <- runtimeFailure{code: code, err: err}:
 		default:
 		}
 		cancel()
@@ -606,7 +707,7 @@ func (r *AccountJobRuntime) executeConcurrently(parent context.Context, job *Acc
 				requested, err := r.jobs.repo.CancelRequested(ctx, job.ID)
 				if err != nil {
 					if ctx.Err() == nil {
-						fail("cancel_check_failed")
+						fail(AccountJobCodeCancelCheckFailed, err)
 					}
 					return
 				}
@@ -622,7 +723,7 @@ func (r *AccountJobRuntime) executeConcurrently(parent context.Context, job *Acc
 		items, err := r.jobs.repo.ReservePendingItems(ctx, job.ID, AccountJobBatchSize)
 		if err != nil {
 			if ctx.Err() == nil {
-				fail("item_reservation_failed")
+				fail(AccountJobCodeReservationFailed, err)
 			}
 			break
 		}
@@ -650,7 +751,7 @@ func (r *AccountJobRuntime) executeConcurrently(parent context.Context, job *Acc
 					case <-ctx.Done():
 					}
 					if err := r.jobs.repo.CompleteItems(r.ctx, job.ID, []AccountJobExecutionResult{result}); err != nil {
-						fail("item_completion_failed")
+						fail(AccountJobCodeCompletionFailed, err)
 						return
 					}
 				}
@@ -661,32 +762,119 @@ func (r *AccountJobRuntime) executeConcurrently(parent context.Context, job *Acc
 	cancel()
 	<-monitorDone
 	select {
-	case code := <-failures:
-		return normalizeAccountJobFailure(code)
+	case failure := <-failures:
+		return accountJobRuntimeFailure(failure.code, failure.err)
 	default:
 		return "", ""
 	}
 }
 
+// executeItem stores what the executor reported. A failed item keeps its code
+// and verbatim error text (the catalog sentence only fills a missing message),
+// metadata is stored as returned, and a reported status is never flipped.
 func (r *AccountJobRuntime) executeItem(ctx context.Context, job *AccountJob, payload json.RawMessage, item AccountJobItem) AccountJobExecutionResult {
-	result := AccountJobExecutionResult{ItemID: item.ID, Status: AccountJobItemStatusFailed,
-		ErrorCode: "execution_failed", ErrorMessage: "account job item failed"}
-	if r.executor != nil {
+	result := AccountJobExecutionResult{ItemID: item.ID, Status: AccountJobItemStatusFailed, ErrorCode: AccountJobCodeExecutionFailed}
+	if r.executor == nil {
+		result.ErrorMessage = "account job executor is unavailable"
+	} else {
 		results, err := r.executor.ExecuteAccountJob(ctx, job, payload, []AccountJobItem{item})
-		if err == nil && len(results) == 1 && results[0].ItemID == item.ID {
+		switch {
+		case err != nil:
+			result.ErrorMessage = err.Error()
+		case len(results) != 1 || results[0].ItemID != item.ID:
+			result.ErrorMessage = fmt.Sprintf("account job executor returned %d results for item %d", len(results), item.ID)
+		default:
 			result = results[0]
 		}
 	}
-	if err := ValidateAccountJobMetadata(result.Metadata); err != nil {
-		result = AccountJobExecutionResult{ItemID: item.ID, Status: AccountJobItemStatusFailed,
-			ErrorCode: "result_redacted", ErrorMessage: "account job result was rejected"}
-	}
-	if result.Status == AccountJobItemStatusFailed {
-		result.ErrorCode, result.ErrorMessage = normalizeAccountJobFailure(result.ErrorCode)
-	} else {
-		result.ErrorCode, result.ErrorMessage = "", ""
+	result.Metadata = StorableAccountJobMetadata(result.Metadata)
+	switch result.Status {
+	case AccountJobItemStatusSucceeded, AccountJobItemStatusCanceled:
+	case AccountJobItemStatusFailed:
+		result.ErrorCode, result.ErrorMessage = AccountJobFailure(result.ErrorCode, result.ErrorMessage)
+	default:
+		if strings.TrimSpace(result.ErrorMessage) == "" {
+			result.ErrorMessage = fmt.Sprintf("account job executor returned item status %q", result.Status)
+		}
+		result.Status = AccountJobItemStatusFailed
+		result.ErrorCode, result.ErrorMessage = AccountJobFailure(result.ErrorCode, result.ErrorMessage)
 	}
 	return result
+}
+
+// StorableAccountJobText returns text that a PostgreSQL text column accepts:
+// invalid UTF-8 and NUL characters become U+FFFD, everything else is kept.
+func StorableAccountJobText(text string) string {
+	if utf8.ValidString(text) && !strings.ContainsRune(text, 0) {
+		return text
+	}
+	return strings.ReplaceAll(strings.ToValidUTF8(text, "\uFFFD"), "\x00", "\uFFFD")
+}
+
+// StorableAccountJobMetadata keeps executor metadata and returns it in a form
+// the jsonb columns accept. Values stay as reported; only invalid UTF-8, NUL
+// characters (jsonb rejects \u0000) and unpaired surrogates become U+FFFD.
+// Bytes that are not JSON are kept as text under metadata_raw, and a JSON
+// value that is not an object under metadata_value.
+func StorableAccountJobMetadata(raw json.RawMessage) json.RawMessage {
+	trimmed := bytes.TrimSpace(raw)
+	if len(trimmed) == 0 || string(trimmed) == "null" {
+		return raw
+	}
+	if !json.Valid(trimmed) {
+		wrapped, _ := json.Marshal(map[string]string{"metadata_raw": StorableAccountJobText(string(raw))})
+		return wrapped
+	}
+	if trimmed[0] == '{' && utf8.Valid(trimmed) && bytes.IndexByte(trimmed, 0) < 0 && !bytes.Contains(trimmed, []byte(`\u`)) {
+		return raw
+	}
+	decoder := json.NewDecoder(bytes.NewReader(trimmed))
+	decoder.UseNumber()
+	var value any
+	if err := decoder.Decode(&value); err != nil {
+		wrapped, _ := json.Marshal(map[string]string{"metadata_raw": StorableAccountJobText(string(raw))})
+		return wrapped
+	}
+	value = storableAccountJobValue(value)
+	if _, ok := value.(map[string]any); !ok {
+		value = map[string]any{"metadata_value": value}
+	}
+	encoded, err := json.Marshal(value)
+	if err != nil {
+		wrapped, _ := json.Marshal(map[string]string{"metadata_raw": StorableAccountJobText(string(raw))})
+		return wrapped
+	}
+	return encoded
+}
+
+func storableAccountJobValue(value any) any {
+	switch typed := value.(type) {
+	case string:
+		return StorableAccountJobText(typed)
+	case []any:
+		for index := range typed {
+			typed[index] = storableAccountJobValue(typed[index])
+		}
+		return typed
+	case map[string]any:
+		out := make(map[string]any, len(typed))
+		for key, item := range typed {
+			out[StorableAccountJobText(key)] = storableAccountJobValue(item)
+		}
+		return out
+	default:
+		return value
+	}
+}
+
+// accountJobRuntimeFailure keeps the underlying error text of a job-level
+// failure; the catalog sentence is used only when there is none.
+func accountJobRuntimeFailure(code string, err error) (string, string) {
+	message := ""
+	if err != nil {
+		message = err.Error()
+	}
+	return AccountJobFailure(code, message)
 }
 
 func validAccountJobKind(kind string) bool {
@@ -748,10 +936,8 @@ func normalizeAccountJobMetadata(raw json.RawMessage) json.RawMessage {
 	return append(json.RawMessage(nil), raw...)
 }
 
+// NormalizeAccountJobFailure keeps code and supplies the catalog sentence for
+// a failure without underlying error text; see AccountJobFailure.
 func NormalizeAccountJobFailure(code string) (string, string) {
 	return NormalizeAccountBusinessFailure(code)
-}
-
-func normalizeAccountJobFailure(code string) (string, string) {
-	return NormalizeAccountJobFailure(code)
 }

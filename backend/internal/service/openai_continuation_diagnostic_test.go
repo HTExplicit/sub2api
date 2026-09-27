@@ -53,7 +53,7 @@ func continuationDiagnosticTestEncoded(t *testing.T, diagnostic *OpenAIContinuat
 		t.Fatal("diagnostic is missing")
 	}
 	encoded := continuationDiagnosticTestJSON(t, diagnostic)
-	if len(encoded) > 6*1024 {
+	if len(encoded) > openAIContinuationDiagnosticJSONLimit {
 		t.Fatalf("diagnostic exceeds its fixed serialization budget: %d bytes", len(encoded))
 	}
 	root := gjson.ParseBytes(encoded)
@@ -72,14 +72,17 @@ func continuationDiagnosticTestNoPlaintext(t *testing.T, encoded string, values 
 	}
 }
 
-func TestOpenAIContinuationDiagnosticPrivacy(t *testing.T) {
-	t.Run("known_enums_and_protocol_param_only", func(t *testing.T) {
-		const message = "encrypted content could not be verified: private-upstream-message-69317"
+// Administrators see the upstream error fields verbatim (bounded) next to the
+// fingerprints of the complete values. This replaces the earlier contract that
+// kept only known enum values and hashes.
+func TestOpenAIContinuationDiagnosticRetainsBoundedErrorValues(t *testing.T) {
+	t.Run("original_error_fields", func(t *testing.T) {
+		const message = "encrypted content could not be verified: upstream-message-69317"
 		upstream := continuationDiagnosticTestJSON(t, map[string]any{
 			"error": map[string]any{
 				"type": "invalid_request_error", "code": "invalid_encrypted_content",
 				"param": "input[12].encrypted_content", "message": message,
-				"debug": map[string]any{"credentials": "unlisted-debug-secret-49217"},
+				"debug": map[string]any{"credentials": "unlisted-debug-field-49217"},
 			},
 		})
 		body := []byte(`{"input":[]}`)
@@ -90,71 +93,55 @@ func TestOpenAIContinuationDiagnosticPrivacy(t *testing.T) {
 			"upstream_error.error_type.value":  "invalid_request_error",
 			"upstream_error.error_code.value":  "invalid_encrypted_content",
 			"upstream_error.error_param.value": "input[12].encrypted_content",
+			"upstream_error.message.value":     message,
 			"upstream_error.message.sha256":    continuationDiagnosticTestDigest(message),
 		} {
 			if root.Get(path).String() != expected {
 				t.Errorf("diagnostic contract mismatch at %s", path)
 			}
 		}
-		if root.Get("upstream_error.message.value").Exists() {
-			t.Fatal("upstream message must never have a plaintext value")
-		}
-		continuationDiagnosticTestNoPlaintext(t, encoded, "private-upstream-message-69317", "unlisted-debug-secret-49217")
+		// Only the error fields are projected; the complete body stays in the
+		// attempt's upstream detail.
+		continuationDiagnosticTestNoPlaintext(t, encoded, "unlisted-debug-field-49217")
 	})
 
-	t.Run("namespace_param_whitelist", func(t *testing.T) {
-		for _, tc := range []struct {
-			param   string
-			allowed bool
-		}{
-			{"input[11].namespace", true},
-			{"input.11.namespace", true},
-			{"tools[0].namespace", true},
-			{"input[11].namespace.private-field-51937", false},
-			{"input[11].namespace?token=private-token-71359", false},
-		} {
-			t.Run(tc.param, func(t *testing.T) {
+	t.Run("every_param_is_kept", func(t *testing.T) {
+		for _, param := range []string{"input[11].namespace", "input.11.namespace", "tools[0].namespace", "input[11].namespace.custom-field-51937", "input[11].namespace?token=query-71359"} {
+			t.Run(param, func(t *testing.T) {
 				body := []byte(`{"input":[]}`)
 				upstream := continuationDiagnosticTestJSON(t, map[string]any{"error": map[string]any{
-					"type": "invalid_request_error", "param": tc.param,
-					"message": "Missing namespace: private-upstream-message-31957",
+					"type": "invalid_request_error", "param": param,
+					"message": "Missing namespace: upstream-message-31957",
 				}})
 				diagnostic := buildOpenAIContinuationDiagnostic(continuationDiagnosticTestContext(body), body, nil, body, upstream, "request_validation")
 				for _, candidate := range []*OpenAIContinuationDiagnostic{diagnostic, sanitizeOpenAIContinuationDiagnostic(diagnostic)} {
-					encoded, root := continuationDiagnosticTestEncoded(t, candidate)
-					param := root.Get("upstream_error.error_param")
-					if param.Get("sha256").String() != continuationDiagnosticTestDigest(tc.param) {
-						t.Fatal("namespace parameter must retain its complete fingerprint")
+					_, root := continuationDiagnosticTestEncoded(t, candidate)
+					value := root.Get("upstream_error.error_param")
+					if value.Get("sha256").String() != continuationDiagnosticTestDigest(param) || value.Get("value").String() != param {
+						t.Fatal("the upstream param must keep its value and complete fingerprint")
 					}
-					if tc.allowed {
-						if param.Get("value").String() != tc.param {
-							t.Fatal("safe indexed namespace parameter was lost")
-						}
-					} else {
-						if param.Get("value").Exists() {
-							t.Fatal("non-protocol namespace suffix retained a plaintext value")
-						}
-						continuationDiagnosticTestNoPlaintext(t, encoded, tc.param)
+					if root.Get("upstream_error.message.value").String() != "Missing namespace: upstream-message-31957" {
+						t.Fatal("the upstream message must be kept")
 					}
-					continuationDiagnosticTestNoPlaintext(t, encoded, "private-upstream-message-31957")
 				}
 			})
 		}
 	})
 
 	t.Run("non_json", func(t *testing.T) {
-		const message = "unknown parameter: prompt_cache_key; private-non-json-secret-71241"
+		const message = "unknown parameter: prompt_cache_key; upstream-non-json-71241"
 		body := []byte(`{"input":[]}`)
 		diagnostic := buildOpenAIContinuationDiagnostic(continuationDiagnosticTestContext(body), body, nil, body, []byte(message), "unclassified")
-		encoded, root := continuationDiagnosticTestEncoded(t, diagnostic)
+		_, root := continuationDiagnosticTestEncoded(t, diagnostic)
 		if root.Get("upstream_error.message.sha256").String() != continuationDiagnosticTestDigest(message) ||
 			root.Get("upstream_error.message.bytes").Int() != int64(len(message)) ||
-			root.Get("upstream_error.message.characters").Int() != int64(utf8.RuneCountInString(message)) {
-			t.Fatal("non-JSON upstream error must retain complete message fingerprint and lengths")
+			root.Get("upstream_error.message.characters").Int() != int64(utf8.RuneCountInString(message)) ||
+			root.Get("upstream_error.message.value").String() != message {
+			t.Fatal("a non-JSON upstream error must keep its text, complete fingerprint and lengths")
 		}
-		for _, field := range []string{"error_type", "error_code", "error_param", "message"} {
+		for _, field := range []string{"error_type", "error_code", "error_param"} {
 			if root.Get("upstream_error." + field + ".value").Exists() {
-				t.Errorf("non-JSON upstream %s must not contain a plaintext value", field)
+				t.Errorf("a non-JSON upstream error has no structured %s value", field)
 			}
 		}
 		hints := make(map[string]bool)
@@ -165,47 +152,55 @@ func TestOpenAIContinuationDiagnosticPrivacy(t *testing.T) {
 		if !hints["unknown parameter"] || !hints["prompt_cache_key"] {
 			t.Fatal("non-JSON upstream error lost the fixed diagnostic hint categories")
 		}
-		continuationDiagnosticTestNoPlaintext(t, encoded, message, "private-non-json-secret-71241")
 	})
 
 	for _, tc := range []struct {
 		name  string
 		value any
 	}{
-		{"api_key", "sk-privatecredential481735"},
-		{"unknown_identifier", "private_credential_identifier_58493"},
-		{"bearer", "Bearer private-bearer-material-59314"},
-		{"email", "diagnostic-private-481735@example.invalid"},
-		{"url", "https://example.invalid/error?access_token=private-query-59317"},
-		{"crlf", "private-first-line-51973\r\nAuthorization: Bearer private-second-line-71935"},
+		{"api_key", "sk-credential481735"},
+		{"unknown_identifier", "credential_identifier_58493"},
+		{"bearer", "Bearer bearer-material-59314"},
+		{"email", "diagnostic-481735@example.invalid"},
+		{"url", "https://example.invalid/error?access_token=query-59317"},
+		{"crlf", "first-line-51973\r\nAuthorization: Bearer second-line-71935"},
 		{"overlong_unicode", strings.Repeat("私密字段", 4096)},
-		{"object", map[string]any{"unexpected": "private-object-value-59317"}},
-		{"array", []any{"private-array-value-59317"}},
+		{"object", map[string]any{"unexpected": "object-value-59317"}},
+		{"array", []any{"array-value-59317"}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			upstream := continuationDiagnosticTestJSON(t, map[string]any{"error": map[string]any{
 				"type": tc.value, "code": tc.value, "param": tc.value, "message": tc.value,
 			}})
 			body := []byte(`{"input":[]}`)
-			diagnostic := buildOpenAIContinuationDiagnostic(continuationDiagnosticTestContext(body), body, nil, body, upstream, "private-untrusted-classification-59317")
-			encoded, root := continuationDiagnosticTestEncoded(t, diagnostic)
+			diagnostic := buildOpenAIContinuationDiagnostic(continuationDiagnosticTestContext(body), body, nil, body, upstream, "untrusted-classification-59317")
+			_, root := continuationDiagnosticTestEncoded(t, diagnostic)
 			if root.Get("classification").String() != "unclassified" {
-				t.Fatal("untrusted classification must become a fixed fallback")
+				t.Fatal("an unknown classification must become the fixed fallback")
 			}
-			for _, field := range []string{"error_type", "error_code", "error_param", "message"} {
-				if root.Get("upstream_error." + field + ".value").Exists() {
-					t.Errorf("unknown upstream %s retained a plaintext value", field)
+			value, ok := tc.value.(string)
+			if !ok {
+				if root.Get("upstream_error.error_code.value").String() != string(continuationDiagnosticTestJSON(t, tc.value)) {
+					t.Fatal("a non-string error field must keep its JSON text")
 				}
+				return
 			}
-			continuationDiagnosticTestNoPlaintext(t, encoded, "private-untrusted-classification-59317", "private-object-value-59317", "private-array-value-59317")
-			if value, ok := tc.value.(string); ok {
-				continuationDiagnosticTestNoPlaintext(t, encoded, value)
-				if root.Get("upstream_error.error_code.bytes").Int() != int64(len(value)) ||
-					root.Get("upstream_error.error_code.characters").Int() != int64(utf8.RuneCountInString(value)) {
-					t.Fatal("unknown string length evidence was lost")
+			if root.Get("upstream_error.error_code.bytes").Int() != int64(len(value)) ||
+				root.Get("upstream_error.error_code.characters").Int() != int64(utf8.RuneCountInString(value)) ||
+				root.Get("upstream_error.error_code.sha256").String() != continuationDiagnosticTestDigest(value) {
+				t.Fatal("fingerprint and lengths must describe the complete original value")
+			}
+			for field, limit := range map[string]int{"error_code": openAIContinuationDiagnosticCodeValueLimit, "message": openAIContinuationDiagnosticMessageValueLimit} {
+				kept := root.Get("upstream_error." + field + ".value").String()
+				truncated := root.Get("upstream_error." + field + ".truncated").Bool()
+				if len(value) <= limit {
+					if kept != value || truncated {
+						t.Fatalf("%s must be kept verbatim", field)
+					}
+					continue
 				}
-				if root.Get("upstream_error.error_code.sha256").String() != continuationDiagnosticTestDigest(value) {
-					t.Fatal("unknown string fingerprint must cover its complete original value")
+				if !truncated || kept == "" || len(kept) > limit || !strings.HasPrefix(value, kept) || !utf8.ValidString(kept) {
+					t.Fatalf("%s over its bound must keep a marked, valid prefix", field)
 				}
 			}
 		})
@@ -277,6 +272,18 @@ func TestOpenAIContinuationDiagnosticStructure(t *testing.T) {
 		"wire.previous_response.sha256": continuationDiagnosticTestDigest(previous),
 		"incoming.session.sha256":       continuationDiagnosticTestDigest(incomingSession),
 		"wire.session.sha256":           continuationDiagnosticTestDigest(wireSession),
+		// The bounded original values sit next to their fingerprints.
+		"incoming.prompt_cache.value":     sourceKey,
+		"wire.prompt_cache.value":         wireKey,
+		"incoming.instructions.value":     sourceInstructions,
+		"wire.instructions.value":         wireInstructions,
+		"wire.previous_response.value":    previous,
+		"incoming.session.value":          incomingSession,
+		"wire.session.value":              wireSession,
+		"incoming.conversation.value":     "private-incoming-conversation-71359",
+		"wire.conversation.value":         "private-wire-conversation-73915",
+		"upstream_error.message.value":    "private-failure-message-71359",
+		"incoming.previous_response.kind": "string",
 	} {
 		if root.Get(path).String() != expected {
 			t.Errorf("diagnostic contract mismatch at %s", path)
@@ -304,12 +311,13 @@ func TestOpenAIContinuationDiagnosticStructure(t *testing.T) {
 			t.Errorf("history fingerprint %s is missing or not fixed-size", field)
 		}
 	}
-	continuationDiagnosticTestNoPlaintext(t, encoded, sourceKey, wireKey, sourceInstructions, wireInstructions,
-		previous, incomingSession, wireSession, encrypted, compacted, output,
+	// History content and request headers other than session/conversation are
+	// summarized by counts and set fingerprints only.
+	continuationDiagnosticTestNoPlaintext(t, encoded, encrypted, compacted, output,
 		"private-authentication-53197", "private-user-content-719357", "private-reference-719357",
 		"call-private-paired-51397", "call-private-unpaired-71395", "call-private-orphan-15397",
 		"private-function-57391", "private-arguments-19357", "private-unknown-item-type-59137",
-		"private-unknown-content-71359", "private-failure-message-71359")
+		"private-unknown-content-71359")
 	if !bytes.Equal(incoming, incomingBefore) || !bytes.Equal(wire, wireBefore) || !bytes.Equal(prepared, preparedBefore) ||
 		!reflect.DeepEqual(c.Request.Header, incomingHeaders) || !reflect.DeepEqual(req.Header, upstreamHeaders) ||
 		liveBody.reads != 0 || liveBody.closed {
@@ -397,7 +405,34 @@ func TestOpenAIContinuationDiagnosticResourceBounds(t *testing.T) {
 		if liveBody.reads != 0 || liveBody.closed {
 			t.Fatal("clone failure must not fall back to consuming the live request body")
 		}
-		continuationDiagnosticTestNoPlaintext(t, encoded, "private-live-body-cache-57319", "private-clone-error-with-credential-71935")
+		// The entry snapshot keeps its value; the unreadable wire has none, and
+		// the clone error is not request evidence.
+		if root.Get("incoming.prompt_cache.value").String() != "private-live-body-cache-57319" || root.Get("wire.prompt_cache.value").Exists() {
+			t.Fatal("only the inspected entry body can supply values")
+		}
+		continuationDiagnosticTestNoPlaintext(t, encoded, "private-clone-error-with-credential-71935")
+	})
+
+	t.Run("oversized_values_are_truncated_not_dropped", func(t *testing.T) {
+		instructions := strings.Repeat("instruction-text-", 64<<10)
+		key := strings.Repeat("k", 64<<10)
+		body := continuationDiagnosticTestJSON(t, map[string]any{"instructions": instructions, "prompt_cache_key": key, "previous_response_id": key, "input": []any{}})
+		upstream := continuationDiagnosticTestJSON(t, map[string]any{"error": map[string]any{"message": strings.Repeat("<message>", 64<<10), "code": key}})
+		c := continuationDiagnosticTestContext(body)
+		c.Request.Header.Set("session_id", key)
+		c.Request.Header.Set("conversation_id", key)
+		diagnostic := buildOpenAIContinuationDiagnostic(c, body, nil, body, upstream, "request_validation")
+		_, root := continuationDiagnosticTestEncoded(t, diagnostic)
+		value := root.Get("incoming.instructions")
+		if value.Get("sha256").String() != continuationDiagnosticTestDigest(instructions) || value.Get("bytes").Int() != int64(len(instructions)) {
+			t.Fatal("the fingerprint must still describe the complete instructions")
+		}
+		if !value.Get("truncated").Bool() || value.Get("value").String() == "" || !strings.HasPrefix(instructions, value.Get("value").String()) {
+			t.Fatal("oversized instructions must keep a marked prefix instead of disappearing")
+		}
+		if !root.Get("upstream_error.message.truncated").Bool() || root.Get("upstream_error.message.value").String() == "" {
+			t.Fatal("an oversized upstream message must keep a marked prefix")
+		}
 	})
 }
 
@@ -428,25 +463,25 @@ func TestOpenAIContinuationDiagnosticOpsQueueRoundTrip(t *testing.T) {
 	if len(events) != total {
 		t.Fatal("diagnostics unexpectedly changed the retained event count")
 	}
-	for i, event := range events {
-		if i < total-opsUpstreamErrorsBodyWindow {
-			if event.ContinuationDiagnostic != nil {
-				t.Fatal("old attempts retained diagnostic payloads outside the body window")
-			}
-			continue
-		}
+	// Every retained attempt keeps its diagnostic, including attempts older
+	// than the body window; the entry byte budget still bounds the array.
+	for _, event := range events {
 		_, after := continuationDiagnosticTestEncoded(t, event.ContinuationDiagnostic)
 		for _, path := range []string{
 			"classification", "wire.prompt_cache.sha256", "incoming.prompt_cache.sha256",
 			"wire.instructions.sha256", "upstream_error.error_code.value", "upstream_error.error_param.value",
+			"wire.prompt_cache.value", "wire.instructions.value", "upstream_error.message.value",
 		} {
 			if !before.Get(path).Exists() || after.Get(path).String() != before.Get(path).String() {
 				t.Errorf("diagnostic field %s was lost in the Ops storage roundtrip", path)
 			}
 		}
 	}
-	continuationDiagnosticTestNoPlaintext(t, *entry.UpstreamErrorsJSON,
-		"private-queue-cache-57319", "private-queue-instructions-73519", "private-queue-message-57319")
+	for _, value := range []string{"private-queue-cache-57319", "private-queue-instructions-73519", "private-queue-message-57319"} {
+		if !strings.Contains(*entry.UpstreamErrorsJSON, value) {
+			t.Fatal("stored diagnostics must keep the bounded original values")
+		}
+	}
 	_, stillOriginal := continuationDiagnosticTestEncoded(t, diagnostic)
 	if stillOriginal.Raw != before.Raw {
 		t.Fatal("queue sanitization modified the shared source diagnostic")
@@ -504,8 +539,11 @@ func TestOpenAIContinuationDiagnosticRequestRejectionOpsQueueRoundTrip(t *testin
 					t.Errorf("diagnostic field %s changed in request-rejection queue roundtrip", path)
 				}
 			}
-			continuationDiagnosticTestNoPlaintext(t, *entry.UpstreamErrorsJSON,
-				"private-rejection-cache-57319", "private-rejection-instructions-73519", "private-rejection-message-57319")
+			for _, value := range []string{"private-rejection-cache-57319", "private-rejection-instructions-73519", "private-rejection-message-57319"} {
+				if !strings.Contains(*entry.UpstreamErrorsJSON, value) {
+					t.Fatal("stored diagnostics must keep the bounded original values")
+				}
+			}
 			stillOriginal, _ := continuationDiagnosticTestEncoded(t, diagnostic)
 			if stillOriginal != before {
 				t.Fatal("queue sanitization changed the shared source diagnostic")

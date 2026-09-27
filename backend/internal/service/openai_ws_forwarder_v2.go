@@ -615,6 +615,9 @@ func (s *OpenAIGatewayService) forwardOpenAIWSV2WithScope(
 				logOpenAIWSModeInfo("refusal_recovery_buffer_limit account_id=%d transport=ws_to_sse", account.ID)
 			},
 		)
+		refusalOutput.SetRewriteObserver(func(evidence openAIRefusalEvidence) {
+			recordOpenAIRefusalRecovery(ctx, c, account, "ws_to_sse", true, false, openAIRefusalActionRewritten, evidence)
+		})
 	}
 
 	// Keep per-read timeouts unchanged for connected clients. Once a client
@@ -712,7 +715,7 @@ readLoop:
 		rawEventType, _, _ := parseOpenAIWSEventEnvelope(rawUpstreamMessage)
 		if rawEventType == "error" || rawEventType == "response.failed" {
 			if failoverErr, ok := s.openAIBudgetExceededTerminalFailover(
-				ctx, account, lease.HandshakeHeaders(), rawUpstreamMessage,
+				ctx, c, account, lease.HandshakeHeaders(), rawUpstreamMessage, true, !wroteDownstream,
 			); ok {
 				lease.MarkBroken()
 				bufferedStreamEvents = bufferedStreamEvents[:0]
@@ -803,7 +806,13 @@ readLoop:
 				if refusalOutput != nil {
 					refusalOutput.DropTurn()
 				}
-				return nil, wrapOpenAIWSFallback(string(continuationKind), errors.New("upstream continuation state rejected"))
+				// Keep the rejected event for Ops; the caller still returns the
+				// fixed continuation terminal to the client.
+				failedMessage := extractOpenAISSEErrorMessage(message)
+				if failedMessage == "" {
+					failedMessage = "upstream continuation state rejected"
+				}
+				return nil, wrapOpenAIWSFallback(string(continuationKind), newOpenAIWSUpstreamEventError(failedMessage, message))
 			}
 			if !wroteDownstream && account.IsOpenAICompatible() && isOpenAIModelNotSupportedPayload(message) {
 				// This is an account/model capability response carried over an
@@ -919,7 +928,7 @@ readLoop:
 				return nil, newOpenAIModelNotSupportedFailoverError(lease.HandshakeHeaders(), message)
 			}
 			if !wroteDownstream && canFallback {
-				return nil, wrapOpenAIWSFallback(fallbackReason, errors.New(errMsg))
+				return nil, wrapOpenAIWSFallback(fallbackReason, newOpenAIWSUpstreamEventError(errMsg, message))
 			}
 			statusCode := openAIWSErrorHTTPStatusFromRaw(errCodeRaw, errTypeRaw)
 			setOpsUpstreamError(c, statusCode, errMsg, "")
@@ -1021,12 +1030,12 @@ readLoop:
 		}
 		finalResponse = s.correctToolCallsInResponseBody(finalResponse)
 		if refusalRuntime.RewriteEnabled() {
-			rewritten, matched, _, rewriteErr := RewriteOpenAIResponsesJSON(finalResponse, refusalRuntime.Matcher)
+			rewritten, matched, evidence, rewriteErr := rewriteOpenAIResponsesJSONWithEvidence(finalResponse, refusalRuntime.Matcher)
 			if rewriteErr != nil {
 				logger.FromContext(ctx).Warn("openai.refusal_recovery_rewrite_failed", zap.String("transport", "upstream_websocket"), zap.Error(rewriteErr))
 			} else if matched {
 				finalResponse = rewritten
-				logger.FromContext(ctx).Info("openai.refusal_recovery_rewritten", zap.String("transport", "upstream_websocket"))
+				recordOpenAIRefusalRecovery(ctx, c, account, "upstream_websocket", true, false, openAIRefusalActionRewritten, evidence)
 			}
 		}
 		populateOpenAIUsageFromResponseJSON(finalResponse, usage)

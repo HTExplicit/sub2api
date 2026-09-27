@@ -1180,7 +1180,12 @@ describe("admin SettingsView payment visible method controls", () => {
     );
   });
 
-  it("normalizes legacy multi-provider captcha state before saving", async () => {
+  // Several enabled providers are shown with a warning; loading and saving
+  // never switch the others off behind the administrator's back.
+  // The server rejects more than one enabled captcha provider: loading keeps
+  // every saved provider and warns, and saving stays blocked (pointing to the
+  // captcha section) until the administrator selects one provider.
+  it("keeps every enabled captcha provider, warns and blocks saving until one is selected", async () => {
     getSettings.mockResolvedValueOnce({
       ...baseSettingsResponse,
       turnstile_enabled: true,
@@ -1197,6 +1202,22 @@ describe("admin SettingsView payment visible method controls", () => {
     await openSecurityTab(wrapper);
 
     expect(wrapper.text()).toContain("admin.settings.tencentCaptcha.appId");
+    expect(wrapper.get('[data-testid="captcha-multiple-providers"]').text()).toContain(
+      "admin.settings.captcha.multipleEnabled",
+    );
+    await wrapper.find("form").trigger("submit.prevent");
+    await flushPromises();
+
+    expect(updateSettings).not.toHaveBeenCalled();
+    expect(showError).toHaveBeenCalledWith("admin.settings.captcha.multipleEnabledSaveBlocked");
+    expect(wrapper.find('[data-testid="captcha-multiple-providers"]').exists()).toBe(true);
+
+    const tencent = wrapper
+      .findAll("button")
+      .find((node) => node.text().includes("admin.settings.captcha.providerTencent"));
+    expect(tencent).toBeDefined();
+    await tencent?.trigger("click");
+    expect(wrapper.find('[data-testid="captcha-multiple-providers"]').exists()).toBe(false);
     await wrapper.find("form").trigger("submit.prevent");
     await flushPromises();
 

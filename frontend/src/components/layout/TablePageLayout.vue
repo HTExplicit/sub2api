@@ -53,7 +53,8 @@ onUnmounted(() => {
 /* 桌面端：Flexbox 布局 */
 .table-page-layout {
   @apply flex flex-col gap-4;
-  height: calc(100vh - 56px - 4rem); /* 减去 header(h-14) + lg:p-8 的上下padding */
+  /* 减去 header(h-14) + lg:p-8 的上下padding，以及控制台主题桌面端内嵌面板的上下外边距 */
+  height: calc(100vh - 56px - 4rem - var(--ui-frame-offset, 0px));
 }
 
 .layout-section-fixed {
@@ -67,6 +68,7 @@ onUnmounted(() => {
 /* 表格滚动容器 - 增强版表体滚动方案 */
 .table-scroll-container {
   @apply flex flex-col overflow-hidden h-full bg-white dark:bg-dark-800 rounded-xl border border-gray-200 dark:border-dark-700 shadow-sm;
+  border-radius: var(--theme-radius-2xl, 0.75rem); /* console theme: card radius; upstream: rounded-xl */
 }
 
 .table-scroll-container :deep(.table-wrapper) {

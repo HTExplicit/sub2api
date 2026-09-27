@@ -628,7 +628,8 @@ export interface Group {
 export interface AdminGroup extends Group {
   force_openai_fast: boolean
   free_openai_fast: boolean
-  // Deprecated read-only compatibility fields. The server always returns 0/false.
+  // Deprecated read-only compatibility fields: model_pricing is always empty; the profit_* values are the
+  // stored legacy values (retired: writes are rejected and nothing reads them at runtime).
   model_pricing: import('@/api/admin/channels').ChannelModelPricing[]
   profit_control_enabled: boolean
   profit_min_margin: number
@@ -1260,7 +1261,8 @@ export interface Account {
   opencode_go_usage?: OpenCodeGoUsageState
   // Extra fields including Codex usage, OpenAI compact capability, and model-level rate limits.
   extra?: (CodexUsageSnapshot & OpenAICompactState & {
-    model_rate_limits?: Record<string, { rate_limited_at: string; rate_limit_reset_at: string }>
+    // reason: the stored reason code; upstream_message: the upstream's own error text (both optional)
+    model_rate_limits?: Record<string, { rate_limited_at: string; rate_limit_reset_at: string; reason?: string; upstream_message?: string }>
     antigravity_credits_overages?: Record<string, { activated_at: string; active_until: string }>
     upstream_billing_probe_enabled?: boolean
     upstream_billing_rate_sync_enabled?: boolean

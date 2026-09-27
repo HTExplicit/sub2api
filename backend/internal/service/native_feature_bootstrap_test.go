@@ -1,6 +1,7 @@
 package service
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"testing"
@@ -97,4 +98,27 @@ func TestNativeFeatureBootstrapPreservesEffectiveConfiguration(t *testing.T) {
 	require.NotContains(t, err.Error(), "sensitive ciphertext")
 	require.Error(t, ValidateNativeFeatureSetting(SettingKeyImageToolsConfig, []byte(`{"studio_enabled":"false"}`)))
 	require.Error(t, ValidateNativeFeatureSetting(SettingKeyImageToolsConfig, nil))
+}
+
+type retiredPluginSourceStub []*PluginInstallation
+
+func (s retiredPluginSourceStub) RetiredPluginInstallations(context.Context) ([]*PluginInstallation, error) {
+	return s, nil
+}
+
+func TestNativeFeatureBootstrapListsRetiredPluginsWithDecryptedConfig(t *testing.T) {
+	snapshot := &NativeRetirementSnapshot{Version: 1, Completed: true, Plugins: map[string]NativeRetirementPlugin{
+		"codexrip.image-tools": {ID: 3, Key: "codexrip.image-tools", State: "enabled"},
+	}}
+	bootstrap := &NativeFeatureBootstrap{Snapshot: snapshot, encryptor: retirementTestEncryptor{}}
+	bootstrap.SetRetiredPluginSource(retiredPluginSourceStub{{
+		ID: 3, PluginKey: "codexrip.image-tools", State: "disabled", LastError: "stopped by retirement",
+		ConfigEncrypted: `{"studio_enabled":true,"api_key":"saved-secret"}`,
+	}})
+	view, err := bootstrap.RetiredPlugins(context.Background())
+	require.NoError(t, err)
+	require.Same(t, snapshot, view.Receipt)
+	require.Len(t, view.Installations, 1)
+	require.Equal(t, "stopped by retirement", view.Installations[0].LastError)
+	require.JSONEq(t, `{"studio_enabled":true,"api_key":"saved-secret"}`, string(view.Installations[0].Config))
 }

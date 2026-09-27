@@ -10,12 +10,19 @@ import accountJobsAPI, {
 import { useAppStore } from '@/stores/app'
 import { i18n } from '@/i18n'
 import { clearAccountOperationKeys } from '@/api/accountOperationIdempotency'
+import { extractApiErrorMessage } from '@/utils/apiError'
 
 const POLL_INTERVAL_MS = 3_000
 const TERMINAL_STATUSES = new Set(['succeeded', 'partially_succeeded', 'failed', 'canceled'])
 
 export function isTerminalAccountJob(job: AccountJob): boolean {
   return TERMINAL_STATUSES.has(job.status)
+}
+
+// Load failures keep the API's own error text after the fixed label.
+function showLoadFailure(error: unknown): void {
+  const label = String(i18n.global.t('admin.accountTasks.loadFailed'))
+  useAppStore().showError(`${label}: ${extractApiErrorMessage(error, String(i18n.global.t('common.unknownError')))}`)
 }
 
 export const useAccountJobsStore = defineStore('accountJobs', () => {
@@ -263,8 +270,8 @@ export const useAccountJobsStore = defineStore('accountJobs', () => {
     drawerOpen.value = true
     try {
       await loadCurrent(jobID, params)
-    } catch {
-      useAppStore().showError(String(i18n.global.t('admin.accountTasks.loadFailed')))
+    } catch (error) {
+      showLoadFailure(error)
     }
   }
 
@@ -315,8 +322,8 @@ export const useAccountJobsStore = defineStore('accountJobs', () => {
         loadRecent(),
         jobID === null ? Promise.resolve() : loadCurrent(jobID),
       ])
-    } catch {
-      useAppStore().showError(String(i18n.global.t('admin.accountTasks.loadFailed')))
+    } catch (error) {
+      showLoadFailure(error)
     }
   }
 
@@ -374,7 +381,7 @@ export const useAccountJobsStore = defineStore('accountJobs', () => {
   async function openDrawer(): Promise<void> {
     historyOpen.value = true
     try { await loadRecent({ page: 1, kind: '', status: '' }) }
-    catch { useAppStore().showError(String(i18n.global.t('admin.accountTasks.loadFailed'))) }
+    catch (error) { showLoadFailure(error) }
   }
 
   async function cancelJob(jobID: number): Promise<AccountJob> {

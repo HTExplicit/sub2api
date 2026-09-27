@@ -71,6 +71,21 @@ describe('account operation presentation', () => {
     expect(api.mergeDuplicates).toHaveBeenCalledWith({ survivor_account_id: 7, loser_account_ids: [8], confirmation_hash: 'opaque-confirmation-token' })
     expect(store.currentJob?.id).toBe(52)
   })
+  it('shows the full item name with both its model and label, without retry bookkeeping', async () => {
+    const store = useAccountJobsStore()
+    store.track({ ...base, kind: 'codex_ticket_harvest', status: 'failed', processed_count: 2, failed_count: 1 })
+    const name = 'codex-account-with-a-very-long-name-that-must-wrap@example.test'
+    store.items = [{ id: 102, job_id: 51, ordinal: 1, status: 'failed', metadata: { name, model_id: 'gpt-6-astra', label: 'Primary route', warnings: ['proxy slow'], result_keys: ['warnings'] }, created_at: base.created_at, updated_at: base.updated_at }]
+    const wrapper = mount(AccountTaskDrawer, options); wrappers.push(wrapper); await flushPromises()
+    const itemName = wrapper.get('[data-test="item-name"]')
+    expect(itemName.text()).toBe(name)
+    expect(itemName.classes()).not.toContain('truncate')
+    expect(wrapper.text()).toContain('gpt-6-astra')
+    expect(wrapper.text()).toContain('Primary route')
+    const metadata = wrapper.get('[data-test="item-metadata"]').text()
+    expect(metadata).toContain('proxy slow')
+    expect(metadata).not.toContain('result_keys')
+  })
   it('keeps expired retry failures actionable without claiming success', async () => {
     const store = useAccountJobsStore(); store.track({ ...base, status: 'failed', failed_count: 2, retry_eligible: true })
     const wrapper = mount(AccountTaskDrawer, options); wrappers.push(wrapper); await flushPromises()

@@ -15,6 +15,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode/utf8"
 
 	"github.com/Wei-Shaw/sub2api/internal/codexruntime/profile"
 	"github.com/Wei-Shaw/sub2api/internal/codexruntime/recovery"
@@ -32,6 +33,10 @@ type Config struct {
 	Models           []string `json:"models"`
 	RequestZstd      bool     `json:"request_zstd"`
 }
+
+// ErrStopping is returned while the module stops or applies a new
+// configuration. It wraps context.Canceled for callers that treat it so.
+var ErrStopping = fmt.Errorf("codex runtime is stopping or reloading: %w", context.Canceled)
 
 type HostCaller interface {
 	Call(context.Context, extensionv1.HostInvocation) (extensionv1.Result, error)
@@ -62,21 +67,36 @@ func (m *Module) SetHost(host HostCaller) { m.mu.Lock(); defer m.mu.Unlock(); m.
 func (m *Module) ValidateConfig(_ context.Context, raw json.RawMessage) (json.RawMessage, error) {
 	cfg := Config{RoutingSchema: 2, FailClosed: true, Models: []string{"gpt-6-astra", "gpt-6-sol", "gpt-6-luna"}, RequestZstd: true}
 	var fields map[string]json.RawMessage
-	if json.Unmarshal(raw, &fields) != nil || fields == nil || json.Unmarshal(raw, &cfg) != nil {
-		return nil, errors.New("invalid codex runtime configuration")
+	if err := json.Unmarshal(raw, &fields); err != nil {
+		return nil, fmt.Errorf("invalid codex runtime configuration: %w", err)
 	}
+	if fields == nil {
+		return nil, errors.New("invalid codex runtime configuration: expected a JSON object")
+	}
+	if err := json.Unmarshal(raw, &cfg); err != nil {
+		return nil, fmt.Errorf("invalid codex runtime configuration: %w", err)
+	}
+	var nullKeys, unknownKeys []string
 	for key, value := range fields {
 		switch key {
 		case "enabled", "fail_closed", "proxy_url", "proxy_protocol", "proxy_selection_id", "models", "request_zstd", "routing_schema":
 			if bytes.Equal(bytes.TrimSpace(value), []byte("null")) {
-				return nil, errors.New("null codex runtime setting")
+				nullKeys = append(nullKeys, key)
 			}
 		default:
-			return nil, errors.New("unknown codex runtime setting")
+			unknownKeys = append(unknownKeys, key)
 		}
 	}
+	if len(unknownKeys) > 0 {
+		slices.Sort(unknownKeys)
+		return nil, fmt.Errorf("unknown codex runtime setting: %s", strings.Join(unknownKeys, ", "))
+	}
+	if len(nullKeys) > 0 {
+		slices.Sort(nullKeys)
+		return nil, fmt.Errorf("null codex runtime setting: %s", strings.Join(nullKeys, ", "))
+	}
 	if cfg.RoutingSchema < 0 || cfg.RoutingSchema > 2 {
-		return nil, errors.New("unsupported routing schema")
+		return nil, fmt.Errorf("unsupported routing schema %d (supported: 0, 1, 2)", cfg.RoutingSchema)
 	}
 	_, schemaPresent := fields["routing_schema"]
 	if (!schemaPresent || cfg.RoutingSchema < 2) && len(cfg.Models) == 2 && slices.Contains(cfg.Models, "gpt-6-astra") && slices.Contains(cfg.Models, "gpt-5.6-sol") {
@@ -84,15 +104,15 @@ func (m *Module) ValidateConfig(_ context.Context, raw json.RawMessage) (json.Ra
 	}
 	cfg.RoutingSchema = 2
 	if len(cfg.Models) == 0 || len(cfg.Models) > 32 {
-		return nil, errors.New("ticket model list required")
+		return nil, fmt.Errorf("ticket model list must contain 1 to 32 models (got %d)", len(cfg.Models))
 	}
 	seen := make(map[string]bool, len(cfg.Models))
 	for _, model := range cfg.Models {
 		if strings.TrimSpace(model) != model || model == "" || len(model) > 256 {
-			return nil, errors.New("invalid ticket model")
+			return nil, fmt.Errorf("invalid ticket model %q: a model must be 1 to 256 bytes without leading or trailing spaces", model)
 		}
 		if seen[model] {
-			return nil, errors.New("duplicate ticket model")
+			return nil, fmt.Errorf("duplicate ticket model %q", model)
 		}
 		seen[model] = true
 	}
@@ -289,7 +309,7 @@ func (m *Module) Invoke(ctx context.Context, in extensionv1.Invocation) (extensi
 	m.mu.Lock()
 	if !m.accepting {
 		m.mu.Unlock()
-		return extensionv1.Result{}, context.Canceled
+		return extensionv1.Result{}, ErrStopping
 	}
 	host, cfg, epoch, work := m.host, m.config, m.epoch, m.work
 	work.Add(1)
@@ -340,8 +360,8 @@ func (m *Module) Invoke(ctx context.Context, in extensionv1.Invocation) (extensi
 			Protocol         string `json:"protocol"`
 			ProxySelectionID string `json:"proxy_selection_id"`
 		}
-		if json.Unmarshal(in.Payload, &req) != nil {
-			return extensionv1.Result{}, errors.New("invalid proxy test")
+		if err := json.Unmarshal(in.Payload, &req); err != nil {
+			return extensionv1.Result{}, fmt.Errorf("invalid proxy test: %w", err)
 		}
 		testCtx, testCancel := context.WithTimeout(ctx, 25*time.Second)
 		defer testCancel()
@@ -355,6 +375,10 @@ func (m *Module) Invoke(ctx context.Context, in extensionv1.Invocation) (extensi
 		}
 		if result == nil {
 			return extensionv1.Result{}, testErr
+		}
+		if testErr != nil && result.FailureDetail == "" {
+			// The result is returned instead of the error; keep its original text.
+			result.FailureDetail = testErr.Error()
 		}
 		value = result
 	case in.Capability == extensionv1.CapabilityScheduling && in.Operation == "admit":
@@ -388,21 +412,32 @@ func (m *Module) Invoke(ctx context.Context, in extensionv1.Invocation) (extensi
 				var checked extensionv1.CodexRoutingProbeResult
 				q := state.Qualification
 				if checkErr := hostCall(ctx, host, extensionv1.HostCodexRoutingCheck, extensionv1.CodexRoutingQuery{AccountID: req.Account.ID, Model: req.Model, Transport: q.Scope.Transport, Bundle: &q.Bundle, Scope: &q.Scope}, &checked); checkErr != nil || !checked.Valid {
+					reason := checked.Observation.Code
+					if checked.Observation.Error != "" {
+						reason += ": " + checked.Observation.Error
+					}
+					if checkErr != nil {
+						reason = "routing check: " + checkErr.Error()
+					}
+					if reason == "" {
+						reason = "the host routing check rejected the recorded qualification"
+					}
 					if state.Phase != "manual_running" && state.Phase != "pre_running" && state.Phase != "post_running" {
+						now := time.Now().UTC()
 						state.Qualification, state.ExpiresAt = nil, nil
 						state.LastCode = "routing_stale"
+						state.RevokedAt, state.RevocationReason = &now, reason
 						if state.Phase != "stopped" && state.Enrolled {
 							state.Phase = "needs_cookie_verification"
-							now := time.Now().UTC()
 							state.NextAt = &now
 						}
 						_, _ = writeState(ctx, host, req.Account.ID, req.Model, state, revision)
 					}
-					return extensionv1.Result{Code: "routing_stale"}, nil
+					return extensionv1.Result{Code: "routing_stale", Message: reason}, nil
 				}
 				injection.Qualification = q
 			} else if cfg.FailClosed {
-				return extensionv1.Result{Code: "ticket_missing"}, nil
+				return extensionv1.Result{Code: "ticket_missing", Message: missingQualificationReason(state, req)}, nil
 			}
 		}
 		value = injection
@@ -488,6 +523,12 @@ func writeState(ctx context.Context, host HostCaller, id int64, model string, st
 		observation := extensionv1.AccountObservation{Key: model, Kind: "codex_routing", State: state.Phase, ExpiresAt: state.ExpiresAt, NextAt: state.NextAt, CheckedAt: state.LastAttemptAt, Code: state.LastCode}
 		if state.Observation != nil {
 			observation.Count = state.Observation.StateLength
+			observation.HTTPStatus = state.Observation.HTTPStatus
+			observation.ResponseModel = truncateUTF8(state.Observation.ResponseModel, extensionv1.AccountObservationModelLimit)
+			observation.Message = truncateUTF8(state.Observation.Summary(), extensionv1.AccountObservationMessageLimit)
+		}
+		if state.RevocationReason != "" && state.LastCode == "routing_stale" {
+			observation.Message = truncateUTF8(state.RevocationReason, extensionv1.AccountObservationMessageLimit)
 		}
 		request.Projection = &extensionv1.AccountProjection{AccountID: id, Identity: state.Identity, Scheduling: []extensionv1.SchedulingConstraint{constraint}, Observations: []extensionv1.AccountObservation{observation}}
 	}
@@ -496,6 +537,43 @@ func writeState(ctx context.Context, host HostCaller, id int64, model string, st
 		err = errors.New("ticket_state_changed")
 	}
 	return result.Revision, err
+}
+
+// missingQualificationReason explains a ticket_missing refusal with the
+// routing phase, the last result code and that result's original text.
+func missingQualificationReason(state State, req extensionv1.SchedulingRequest) string {
+	reason := state.Qualification.Problem(req.Now, req.Account.ID, req.Account.Identity, req.Model)
+	var context []string
+	if state.Phase != "" {
+		context = append(context, "routing phase "+state.Phase)
+	}
+	if state.LastCode != "" {
+		context = append(context, "last result "+state.LastCode)
+	}
+	if state.RevocationReason != "" {
+		context = append(context, "revoked: "+state.RevocationReason)
+	}
+	if state.Observation != nil {
+		if summary := state.Observation.Summary(); summary != "" {
+			context = append(context, summary)
+		}
+	}
+	if len(context) > 0 {
+		reason += " (" + strings.Join(context, "; ") + ")"
+	}
+	return reason
+}
+
+// truncateUTF8 keeps at most limit bytes without splitting a UTF-8 sequence.
+func truncateUTF8(text string, limit int) string {
+	if len(text) <= limit {
+		return text
+	}
+	cut := limit
+	for cut > 0 && !utf8.RuneStart(text[cut]) {
+		cut--
+	}
+	return text[:cut]
 }
 
 func newSessionID() string {

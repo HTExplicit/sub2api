@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"strconv"
 	"strings"
 
@@ -44,7 +45,7 @@ func (h *AccountHandler) executeAccountJobItem(ctx context.Context, kind string,
 			return accountJobFailed(item.ID, "target_missing")
 		}
 		if err := h.adminService.DeleteAccount(ctx, id); err != nil {
-			return accountJobFailed(item.ID, "delete_failed")
+			return accountJobFailedWithError(item.ID, "delete_failed", err)
 		}
 		return accountJobSucceeded(item.ID, map[string]any{"account_id": id})
 
@@ -55,7 +56,7 @@ func (h *AccountHandler) executeAccountJobItem(ctx context.Context, kind string,
 		}
 		account, err := h.adminService.ClearAccountError(ctx, id)
 		if err != nil {
-			return accountJobFailed(item.ID, "clear_error_failed")
+			return accountJobFailedWithError(item.ID, "clear_error_failed", err)
 		}
 		if h.tokenCacheInvalidator != nil && account != nil && account.IsOAuth() {
 			_ = h.tokenCacheInvalidator.InvalidateToken(ctx, account)
@@ -69,23 +70,26 @@ func (h *AccountHandler) executeAccountJobItem(ctx context.Context, kind string,
 		}
 		account, err := h.adminService.GetAccount(ctx, id)
 		if err != nil {
-			return accountJobFailed(item.ID, "account_not_found")
+			return accountJobFailedWithError(item.ID, "account_not_found", err)
 		}
 		_, warning, err := h.refreshSingleAccount(ctx, account)
 		if err != nil {
-			return accountJobFailed(item.ID, "refresh_failed")
+			return accountJobFailedWithError(item.ID, "refresh_failed", err)
 		}
 		return accountJobSucceeded(item.ID, map[string]any{"account_id": id, "warning": warning})
 
 	case service.AccountJobKindBatchCreate:
 		var payload batchCreateJobPayload
-		if json.Unmarshal(raw, &payload) != nil || item.Ordinal <= 0 || item.Ordinal > len(payload.Accounts) {
-			return accountJobFailed(item.ID, "payload_invalid")
+		if err := json.Unmarshal(raw, &payload); err != nil {
+			return accountJobFailedWithError(item.ID, "payload_invalid", err)
+		}
+		if item.Ordinal <= 0 || item.Ordinal > len(payload.Accounts) {
+			return accountJobFailedWithError(item.ID, "payload_invalid", accountJobOrdinalError(item.Ordinal, len(payload.Accounts)))
 		}
 		request := payload.Accounts[item.Ordinal-1]
 		created, err := h.createAccountJobAccount(ctx, request)
 		if err != nil {
-			return accountJobFailed(item.ID, "create_failed")
+			return withAccountJobMetadata(accountJobFailedWithError(item.ID, "create_failed", err), map[string]any{"name": request.Name})
 		}
 		h.scheduleOpenAIResponsesProbe(created)
 		h.scheduleGrokImportProbe(created)
@@ -94,11 +98,14 @@ func (h *AccountHandler) executeAccountJobItem(ctx context.Context, kind string,
 	case service.AccountJobKindBatchUpdateCredentials:
 		var req BatchUpdateCredentialsRequest
 		id, ok := accountJobTarget(item)
-		if json.Unmarshal(raw, &req) != nil || !ok {
-			return accountJobFailed(item.ID, "payload_invalid")
+		if err := json.Unmarshal(raw, &req); err != nil {
+			return accountJobFailedWithError(item.ID, "payload_invalid", err)
+		}
+		if !ok {
+			return accountJobFailedWithError(item.ID, "payload_invalid", errAccountJobTargetMissing)
 		}
 		if _, err := h.adminService.GetAccount(ctx, id); err != nil {
-			return accountJobFailed(item.ID, "account_not_found")
+			return accountJobFailedWithError(item.ID, "account_not_found", err)
 		}
 		updateCredentials := func(mutationCtx context.Context) (*service.Account, error) {
 			current, getErr := h.adminService.GetAccount(mutationCtx, id)
@@ -110,7 +117,7 @@ func (h *AccountHandler) executeAccountJobItem(ctx context.Context, kind string,
 			return h.adminService.UpdateAccount(mutationCtx, id, &service.UpdateAccountInput{Credentials: credentials})
 		}
 		if _, err := updateCredentials(ctx); err != nil {
-			return accountJobFailed(item.ID, "credentials_update_failed")
+			return accountJobFailedWithError(item.ID, "credentials_update_failed", err)
 		}
 		return accountJobSucceeded(item.ID, map[string]any{"account_id": id})
 
@@ -140,6 +147,12 @@ func accountJobTarget(item service.AccountJobItem) (int64, bool) {
 		returnValue = *item.TargetAccountID
 	}
 	return returnValue, returnValue > 0
+}
+
+var errAccountJobTargetMissing = errors.New("account job item has no target account")
+
+func accountJobOrdinalError(ordinal, count int) error {
+	return fmt.Errorf("account job item ordinal %d is outside the %d submitted entries", ordinal, count)
 }
 
 func cloneAccountJobMap(input map[string]any) map[string]any {
@@ -178,8 +191,8 @@ func (h *AccountHandler) createAccountJobAccount(ctx context.Context, item Creat
 
 func (h *AccountHandler) executeBulkUpdateJob(ctx context.Context, raw json.RawMessage, item service.AccountJobItem) service.AccountJobExecutionResult {
 	var req BulkUpdateAccountsRequest
-	if json.Unmarshal(raw, &req) != nil {
-		return accountJobFailed(item.ID, "payload_invalid")
+	if err := json.Unmarshal(raw, &req); err != nil {
+		return accountJobFailedWithError(item.ID, "payload_invalid", err)
 	}
 	id, ok := accountJobTarget(item)
 	if !ok {
@@ -191,9 +204,11 @@ func (h *AccountHandler) executeBulkUpdateJob(ctx context.Context, raw json.RawM
 	req.Filters = nil
 	succeeded := 0
 	failed := 0
+	var failures []error
 	for _, id := range req.AccountIDs {
 		if _, getErr := h.adminService.GetAccount(ctx, id); getErr != nil {
 			failed++
+			failures = append(failures, getErr)
 			continue
 		}
 		apply := func(mutationCtx context.Context) (*service.Account, error) {
@@ -208,12 +223,13 @@ func (h *AccountHandler) executeBulkUpdateJob(ctx context.Context, raw json.RawM
 		}
 		if _, err := apply(ctx); err != nil {
 			failed++
+			failures = append(failures, err)
 			continue
 		}
 		succeeded++
 	}
 	if failed > 0 {
-		return accountJobFailed(item.ID, "bulk_update_failed")
+		return accountJobFailedWithError(item.ID, "bulk_update_failed", errors.Join(failures...))
 	}
 	metadata := map[string]any{"success": succeeded, "failed": failed}
 	if id, ok := accountJobTarget(item); ok {
@@ -283,8 +299,8 @@ func (h *AccountHandler) resolveAccountJobTargetIDs(
 
 func (h *AccountHandler) executeBulkTaxonomyJob(ctx context.Context, raw json.RawMessage, item service.AccountJobItem) service.AccountJobExecutionResult {
 	var req bulkAccountTaxonomyRequest
-	if json.Unmarshal(raw, &req) != nil {
-		return accountJobFailed(item.ID, "payload_invalid")
+	if err := json.Unmarshal(raw, &req); err != nil {
+		return accountJobFailedWithError(item.ID, "payload_invalid", err)
 	}
 	id, ok := accountJobTarget(item)
 	if !ok {
@@ -294,12 +310,12 @@ func (h *AccountHandler) executeBulkTaxonomyJob(ctx context.Context, raw json.Ra
 
 	console, err := h.accountTaxonomyMutationService()
 	if err != nil {
-		return accountJobFailed(item.ID, "taxonomy_unavailable")
+		return accountJobFailedWithError(item.ID, "taxonomy_unavailable", err)
 	}
 	updated := 0
 	for _, id := range ids {
 		if _, getErr := h.adminService.GetAccount(ctx, id); getErr != nil {
-			return accountJobFailed(item.ID, "taxonomy_update_failed")
+			return accountJobFailedWithError(item.ID, "taxonomy_update_failed", getErr)
 		}
 		apply := func(mutationCtx context.Context) (*service.Account, error) {
 			result, updateErr := console.BulkUpdateAccountTaxonomy(mutationCtx, service.BulkAccountTaxonomyInput{
@@ -315,7 +331,7 @@ func (h *AccountHandler) executeBulkTaxonomyJob(ctx context.Context, raw json.Ra
 			return h.adminService.GetAccount(mutationCtx, id)
 		}
 		if _, err := apply(ctx); err != nil {
-			return accountJobFailed(item.ID, "taxonomy_update_failed")
+			return accountJobFailedWithError(item.ID, "taxonomy_update_failed", err)
 		}
 		updated++
 	}
@@ -324,20 +340,20 @@ func (h *AccountHandler) executeBulkTaxonomyJob(ctx context.Context, raw json.Ra
 
 func (h *AccountHandler) executeRefreshTierJob(ctx context.Context, raw json.RawMessage, item service.AccountJobItem) service.AccountJobExecutionResult {
 	var req BatchRefreshTierRequest
-	if json.Unmarshal(raw, &req) != nil {
-		return accountJobFailed(item.ID, "payload_invalid")
+	if err := json.Unmarshal(raw, &req); err != nil {
+		return accountJobFailedWithError(item.ID, "payload_invalid", err)
 	}
 	var accounts []*service.Account
 	if id, ok := accountJobTarget(item); ok {
 		account, err := h.adminService.GetAccount(ctx, id)
 		if err != nil {
-			return accountJobFailed(item.ID, "account_not_found")
+			return accountJobFailedWithError(item.ID, "account_not_found", err)
 		}
 		accounts = []*service.Account{account}
 	} else {
 		all, _, err := h.adminService.ListAccounts(ctx, 1, 10000, service.PlatformGemini, service.AccountTypeOAuth, "", "", 0, "", "name", "asc")
 		if err != nil {
-			return accountJobFailed(item.ID, "account_list_failed")
+			return accountJobFailedWithError(item.ID, "account_list_failed", err)
 		}
 		for index := range all {
 			accounts = append(accounts, &all[index])
@@ -350,10 +366,10 @@ func (h *AccountHandler) executeRefreshTierJob(ctx context.Context, raw json.Raw
 		}
 		_, extra, credentials, err := h.geminiOAuthService.RefreshAccountGoogleOneTier(ctx, account)
 		if err != nil {
-			return accountJobFailed(item.ID, "refresh_tier_failed")
+			return accountJobFailedWithError(item.ID, "refresh_tier_failed", fmt.Errorf("account %d: %w", account.ID, err))
 		}
 		if _, err = h.adminService.UpdateAccount(ctx, account.ID, &service.UpdateAccountInput{Credentials: credentials, Extra: extra}); err != nil {
-			return accountJobFailed(item.ID, "refresh_tier_update_failed")
+			return accountJobFailedWithError(item.ID, "refresh_tier_update_failed", fmt.Errorf("account %d: %w", account.ID, err))
 		}
 		updated++
 	}
@@ -365,36 +381,53 @@ func (h *AccountHandler) executeDataImportJob(ctx context.Context, raw json.RawM
 	preparedState, prepared := dataImportJobStateFromContext(ctx)
 	if prepared {
 		req = preparedState.request
-	} else if json.Unmarshal(raw, &req) != nil || validateDataHeader(req.Data) != nil {
-		return accountJobFailed(item.ID, "payload_invalid")
+	} else {
+		if err := json.Unmarshal(raw, &req); err != nil {
+			return accountJobFailedWithError(item.ID, "payload_invalid", err)
+		}
+		if err := validateDataHeader(req.Data); err != nil {
+			return accountJobFailedWithError(item.ID, "payload_invalid", err)
+		}
 	}
 	if item.Ordinal <= 0 || item.Ordinal > len(req.Data.Accounts) {
-		return accountJobFailed(item.ID, "payload_invalid")
+		return accountJobFailedWithError(item.ID, "payload_invalid", accountJobOrdinalError(item.Ordinal, len(req.Data.Accounts)))
 	}
 	originalIndex := item.Ordinal - 1
+	// Every result names its source entry. Proxy import problems belong to the
+	// whole file, so the first entry carries them.
+	metadata := map[string]any{"source_index": originalIndex, "name": req.Data.Accounts[originalIndex].Name}
+	if prepared && originalIndex == 0 && len(preparedState.proxyErrors) > 0 {
+		metadata["proxy_errors"] = preparedState.proxyErrors
+	}
+	failed := func(code string, err error) service.AccountJobExecutionResult {
+		return withAccountJobMetadata(accountJobFailedWithError(item.ID, code, err), metadata)
+	}
 	var decisions []dataImportDecision
 	if prepared {
 		decisions = preparedState.decisions
 	} else {
 		_, currentDecisions, decisionErr := h.previewDataImport(ctx, req)
 		if decisionErr != nil {
-			return accountJobFailed(item.ID, dataImportCodeExecutionFailed)
+			return failed(dataImportCodeExecutionFailed, decisionErr)
 		}
 		decisions = currentDecisions
 	}
 	if originalIndex >= len(decisions) {
-		return accountJobFailed(item.ID, dataImportCodeExecutionFailed)
+		return failed(dataImportCodeExecutionFailed, fmt.Errorf("data import decision %d is unavailable (%d decisions)", originalIndex, len(decisions)))
 	}
 	decision := decisions[originalIndex]
 	if prepared {
 		var decisionErr error
 		decision, decisionErr = preparedState.currentDecision(originalIndex)
 		if decisionErr != nil {
-			return accountJobFailed(item.ID, dataImportCodeExecutionFailed)
+			return failed(dataImportCodeExecutionFailed, decisionErr)
 		}
 	}
+	if len(decision.MatchedAccountIDs) > 0 {
+		metadata["matched_account_ids"] = decision.MatchedAccountIDs
+	}
 	if decision.rejected() {
-		return accountJobFailed(item.ID, decision.Code)
+		return failed(decision.Code, errors.New(decision.Message))
 	}
 	if !prepared {
 		req.Data.Accounts = []DataAccount{decision.Account}
@@ -410,12 +443,12 @@ func (h *AccountHandler) executeDataImportJob(ctx context.Context, raw json.RawM
 		}
 		if importErr != nil || result.AccountFailed > 0 || len(result.Items) != 1 || result.Items[0].AccountID == nil {
 			if importErr == nil {
-				importErr = errors.New("data import item failed")
+				importErr = dataImportItemResultError(result)
 			}
 			return nil, result, importErr
 		}
 		if len(result.Items[0].Warnings) > 0 {
-			return imported, result, errors.New("data import item completed with an incomplete mutation")
+			return imported, result, fmt.Errorf("data import item completed with an incomplete mutation: %s", strings.Join(result.Items[0].Warnings, "; "))
 		}
 		if imported != nil {
 			return imported, result, nil
@@ -430,44 +463,120 @@ func (h *AccountHandler) executeDataImportJob(ctx context.Context, raw json.RawM
 		preparedState.recordCommittedAccount(importedAccount)
 		h.scheduleGrokImportProbe(importedAccount)
 	}
-	if err != nil || result.AccountFailed > 0 {
-		return accountJobFailed(item.ID, dataImportCodeExecutionFailed)
+	if !prepared && originalIndex == 0 {
+		if proxyErrors := dataImportProxyErrors(result.Errors); len(proxyErrors) > 0 {
+			metadata["proxy_errors"] = proxyErrors
+		}
 	}
-	metadata := map[string]any{"source_index": originalIndex}
 	if len(result.Items) == 1 {
 		metadata["action"] = result.Items[0].Action
 		if result.Items[0].AccountID != nil {
 			metadata["account_id"] = *result.Items[0].AccountID
 		}
+		if len(result.Items[0].Warnings) > 0 {
+			metadata["warnings"] = result.Items[0].Warnings
+		}
+	}
+	if err != nil || result.AccountFailed > 0 {
+		if err == nil {
+			err = dataImportItemResultError(result)
+		}
+		return failed(dataImportCodeExecutionFailed, err)
 	}
 	return accountJobSucceeded(item.ID, metadata)
 }
 
-func (h *AccountHandler) executeCodexImportJob(ctx context.Context, raw json.RawMessage, item service.AccountJobItem) service.AccountJobExecutionResult {
-	var req CodexSessionImportRequest
-	if json.Unmarshal(raw, &req) != nil {
-		return accountJobFailed(item.ID, "payload_invalid")
+// dataImportItemResultError returns the recorded reason of a failed import
+// result instead of a generic sentence.
+func dataImportItemResultError(result DataImportResult) error {
+	if len(result.Items) == 1 && strings.TrimSpace(result.Items[0].Error) != "" {
+		return errors.New(result.Items[0].Error)
 	}
-	if err := service.ValidateOpenAILongContextBillingExtra(service.PlatformOpenAI, req.Extra); err != nil {
-		return accountJobFailed(item.ID, "payload_invalid")
-	}
-	if err := service.ValidateOpenAIReasoningPolicyExtra(req.Extra); err != nil {
-		return accountJobFailed(item.ID, "payload_invalid")
-	}
-	entries, err := parseCodexSessionImportEntries(req)
-	if err != nil || item.Ordinal <= 0 || item.Ordinal > len(entries) {
-		return accountJobFailed(item.ID, "payload_invalid")
-	}
-	result, err := h.importCodexSessions(ctx, req, []codexImportEntry{entries[item.Ordinal-1]})
-	if err != nil || result.Failed > 0 {
-		return accountJobFailed(item.ID, "import_failed")
-	}
-	metadata := map[string]any{"source_index": entries[item.Ordinal-1].Index}
-	if len(result.Items) == 1 {
-		metadata["action"] = result.Items[0].Action
-		if result.Items[0].AccountID > 0 {
-			metadata["account_id"] = result.Items[0].AccountID
+	messages := make([]string, 0, len(result.Errors))
+	for _, item := range result.Errors {
+		if item.Kind == "account" && strings.TrimSpace(item.Message) != "" {
+			messages = append(messages, item.Message)
 		}
 	}
+	if len(messages) > 0 {
+		return errors.New(strings.Join(messages, "; "))
+	}
+	return fmt.Errorf("data import returned %d item results without an account", len(result.Items))
+}
+
+func dataImportProxyErrors(errs []DataImportError) []DataImportError {
+	proxies := make([]DataImportError, 0, len(errs))
+	for _, item := range errs {
+		if item.Kind == "proxy" {
+			proxies = append(proxies, item)
+		}
+	}
+	return proxies
+}
+
+func (h *AccountHandler) executeCodexImportJob(ctx context.Context, raw json.RawMessage, item service.AccountJobItem) service.AccountJobExecutionResult {
+	var req CodexSessionImportRequest
+	if err := json.Unmarshal(raw, &req); err != nil {
+		return accountJobFailedWithError(item.ID, "payload_invalid", err)
+	}
+	if err := service.ValidateOpenAILongContextBillingExtra(service.PlatformOpenAI, req.Extra); err != nil {
+		return accountJobFailedWithError(item.ID, "payload_invalid", err)
+	}
+	if err := service.ValidateOpenAIReasoningPolicyExtra(req.Extra); err != nil {
+		return accountJobFailedWithError(item.ID, "payload_invalid", err)
+	}
+	entries, err := parseCodexSessionImportEntries(req)
+	if err != nil {
+		return accountJobFailedWithError(item.ID, "payload_invalid", err)
+	}
+	if item.Ordinal <= 0 || item.Ordinal > len(entries) {
+		return accountJobFailedWithError(item.ID, "payload_invalid", accountJobOrdinalError(item.Ordinal, len(entries)))
+	}
+	entry := entries[item.Ordinal-1]
+	result, err := h.importCodexSessions(ctx, req, []codexImportEntry{entry})
+	metadata := map[string]any{"source_index": entry.Index}
+	if len(result.Items) == 1 {
+		imported := result.Items[0]
+		metadata["action"] = imported.Action
+		if imported.AccountID > 0 {
+			metadata["account_id"] = imported.AccountID
+		}
+		if imported.Name != "" {
+			metadata["name"] = imported.Name
+		}
+		if imported.Message != "" && imported.Action != "failed" {
+			metadata["message"] = imported.Message
+		}
+	}
+	if len(result.Warnings) > 0 {
+		warnings := make([]string, 0, len(result.Warnings))
+		for _, warning := range result.Warnings {
+			warnings = append(warnings, warning.Message)
+		}
+		metadata["warnings"] = warnings
+	}
+	if err == nil && result.Failed > 0 {
+		err = codexImportResultError(result)
+	}
+	if err != nil {
+		return withAccountJobMetadata(accountJobFailedWithError(item.ID, "import_failed", err), metadata)
+	}
 	return accountJobSucceeded(item.ID, metadata)
+}
+
+// codexImportResultError returns the recorded reason of a failed Codex entry.
+func codexImportResultError(result CodexSessionImportResult) error {
+	if len(result.Items) == 1 && strings.TrimSpace(result.Items[0].Message) != "" {
+		return errors.New(result.Items[0].Message)
+	}
+	messages := make([]string, 0, len(result.Errors))
+	for _, item := range result.Errors {
+		if strings.TrimSpace(item.Message) != "" {
+			messages = append(messages, item.Message)
+		}
+	}
+	if len(messages) > 0 {
+		return errors.New(strings.Join(messages, "; "))
+	}
+	return fmt.Errorf("codex import reported %d failed entries", result.Failed)
 }

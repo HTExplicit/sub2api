@@ -696,7 +696,7 @@ func (s *OpenAIGatewayService) forwardOpenAIImagesAPIKey(
 	resp, err := s.httpUpstream.Do(upstreamReq, proxyURL, account.ID, account.Concurrency)
 	SetOpsLatencyMs(c, OpsUpstreamLatencyMsKey, time.Since(upstreamStart).Milliseconds())
 	if err != nil {
-		return nil, s.handleOpenAIUpstreamTransportError(upstreamCtx, c, account, err, false)
+		return nil, s.handleOpenAIImagesUpstreamTransportError(upstreamCtx, c, account, err, upstreamReq.URL.String())
 	}
 	if resp.StatusCode >= 400 {
 		respBody := s.readUpstreamErrorBody(resp)
@@ -1814,4 +1814,34 @@ func dedupeStrings(values []string) []string {
 		out = append(out, value)
 	}
 	return out
+}
+
+// handleOpenAIImagesUpstreamTransportError restores the upstream_url that
+// v0.2.8 recorded on image transport failures; the shared transport helper
+// records the attempt but does not know the endpoint.
+func (s *OpenAIGatewayService) handleOpenAIImagesUpstreamTransportError(ctx context.Context, c *gin.Context, account *Account, err error, upstreamURL string) error {
+	recordedBefore := openAIOpsUpstreamErrorCount(c)
+	transportErr := s.handleOpenAIUpstreamTransportError(ctx, c, account, err, false)
+	if c != nil {
+		if value, ok := c.Get(OpsUpstreamErrorsKey); ok {
+			if events, ok := value.([]*OpsUpstreamErrorEvent); ok && len(events) > recordedBefore {
+				if last := events[len(events)-1]; last != nil && last.UpstreamURL == "" {
+					last.UpstreamURL = safeUpstreamURL(upstreamURL)
+				}
+			}
+		}
+	}
+	return transportErr
+}
+
+func openAIOpsUpstreamErrorCount(c *gin.Context) int {
+	if c == nil {
+		return 0
+	}
+	if value, ok := c.Get(OpsUpstreamErrorsKey); ok {
+		if events, ok := value.([]*OpsUpstreamErrorEvent); ok {
+			return len(events)
+		}
+	}
+	return 0
 }

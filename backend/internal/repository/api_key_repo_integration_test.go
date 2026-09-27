@@ -86,7 +86,7 @@ func (s *APIKeyRepoSuite) TestGetByKey_NotFound() {
 	s.Require().Error(err, "expected error for non-existent key")
 }
 
-func (s *APIKeyRepoSuite) TestReleaseAcceptanceKeyIsHiddenButAuthenticates() {
+func (s *APIKeyRepoSuite) TestReleaseAcceptanceKeyIsAdminListedReadOnlyAndAuthenticates() {
 	user := s.mustCreateUser("release-acceptance-key@test.com")
 	group := s.mustCreateGroup("g-release-acceptance")
 	leaseID := "accept-0123456789abcdef0123456789abcdef0123456789abcdef"
@@ -114,8 +114,30 @@ func (s *APIKeyRepoSuite) TestReleaseAcceptanceKeyIsHiddenButAuthenticates() {
 		service.APIKeyListFilters{},
 	)
 	s.Require().NoError(err)
+	// The owner's own key list never shows the internal key.
 	s.Require().Empty(listed)
 	s.Require().Zero(result.Total)
+
+	// Administrators see it with its purpose; it stays read-only because
+	// lookups used by mutations (GetByID above) do not return it.
+	adminListed, adminResult, err := s.repo.ListByUserIDForAdmin(
+		s.ctx,
+		user.ID,
+		pagination.PaginationParams{Page: 1, PageSize: 20},
+		service.APIKeyListFilters{},
+	)
+	s.Require().NoError(err)
+	s.Require().Len(adminListed, 1)
+	s.Require().EqualValues(1, adminResult.Total)
+	s.Require().Equal(service.APIKeyPurposeReleaseAcceptance, adminListed[0].Purpose)
+	s.Require().Equal(leaseID, *adminListed[0].LeaseID)
+	grouped, groupResult, err := s.repo.ListByGroupID(s.ctx, group.ID, pagination.PaginationParams{Page: 1, PageSize: 20})
+	s.Require().NoError(err)
+	s.Require().Len(grouped, 1)
+	s.Require().EqualValues(1, groupResult.Total)
+	searched, err := s.repo.SearchAPIKeys(s.ctx, user.ID, "Release acceptance", 10)
+	s.Require().NoError(err)
+	s.Require().Len(searched, 1)
 
 	authenticated, err := s.repo.GetByKeyForAuth(s.ctx, key.Key)
 	s.Require().NoError(err)

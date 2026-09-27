@@ -275,6 +275,7 @@
       <!-- Users Table -->
       <template #table>
         <DataTable
+          data-table="users"
           :columns="columns"
           :data="sortedUsers"
           :loading="loading"

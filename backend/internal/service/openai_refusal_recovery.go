@@ -10,7 +10,9 @@ import (
 	"unicode"
 	"unicode/utf8"
 
+	"github.com/Wei-Shaw/sub2api/internal/pkg/logger"
 	"github.com/gin-gonic/gin"
+	"go.uber.org/zap"
 	"golang.org/x/text/unicode/norm"
 )
 
@@ -209,6 +211,68 @@ func leadingOpenAIRefusalParagraphs(value string, limit int) string {
 		runes = runes[:maxOpenAIRefusalParagraphRunes]
 	}
 	return string(runes)
+}
+
+// openAIRefusalEvidence is the configured keyword that matched and the leading
+// original upstream text the matcher inspected, bounded by the matcher's own
+// maxOpenAIRefusalParagraphRunes window.
+type openAIRefusalEvidence struct {
+	Keyword string
+	Text    string
+}
+
+func newOpenAIRefusalEvidence(keyword, visibleText string) openAIRefusalEvidence {
+	return openAIRefusalEvidence{Keyword: keyword, Text: leadingOpenAIRefusalParagraphs(visibleText, maxOpenAIRefusalScanParagraphs)}
+}
+
+const (
+	openAIRefusalActionRewritten   = "rewritten"
+	openAIRefusalActionPromptRetry = "prompt_retry"
+)
+
+// recordOpenAIRefusalRecovery logs the refusal behind a rewrite or a prompt
+// retry: the matched keyword and the original text. A handled refusal is not
+// an upstream error, so it never enters the upstream error context; HTTP
+// requests keep it as evidence that Ops attaches only when the request finally
+// fails. The client keeps receiving the configured replacement or the retry
+// terminal.
+func recordOpenAIRefusalRecovery(ctx context.Context, c *gin.Context, account *Account, transport string, webSocket bool, early bool, action string, evidence openAIRefusalEvidence) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	fields := []zap.Field{
+		zap.String("transport", transport),
+		zap.Bool("early", early),
+		zap.String("keyword", evidence.Keyword),
+		zap.String("refusal_text", evidence.Text),
+	}
+	if account != nil {
+		fields = append(fields, zap.Int64("account_id", account.ID))
+	}
+	logEvent := "openai.refusal_recovery_rewritten"
+	if action == openAIRefusalActionPromptRetry {
+		logEvent = "openai.refusal_recovery_prompt_retry"
+	}
+	logger.FromContext(ctx).Info(logEvent, fields...)
+	// A WebSocket connection carries many turns; its refusals stay in the log.
+	if c == nil || webSocket {
+		return
+	}
+	proxyID, proxyName := opsUpstreamProxyAttribution(account)
+	event := OpsUpstreamErrorEvent{
+		ProxyID:   proxyID,
+		ProxyName: proxyName,
+		Kind:      "refusal_recovery",
+		Stage:     string(GatewayFailureStageInference),
+		Scope:     string(GatewayFailureScopeRequest),
+		Reason:    action,
+		Message:   fmt.Sprintf("upstream refusal matched keyword %q (%s, transport=%s)", evidence.Keyword, action, transport),
+		Detail:    evidence.Text,
+	}
+	if account != nil {
+		event.Platform, event.AccountID, event.AccountName = account.Platform, account.ID, account.Name
+	}
+	appendOpsRefusalRecoveryEvent(c, event)
 }
 
 func NewOpenAIRefusalRecoveryFailoverError(upstreamHeaders http.Header) *UpstreamFailoverError {

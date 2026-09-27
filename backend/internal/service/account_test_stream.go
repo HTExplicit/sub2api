@@ -32,20 +32,23 @@ func accountTestTerminal(format string, args ...any) error {
 	return accountTestTerminalError(fmt.Sprintf(format, args...))
 }
 
-// accountTestUpstreamError returns the upstream's own error message, or the raw
-// JSON it sent when there is no message field.
+// accountTestUpstreamError returns the upstream's error exactly as sent: a
+// plain string as is, and an error object as its full JSON (type, code, param
+// and every other field), led by its message when it has one.
 func accountTestUpstreamError(value any) string {
-	switch typed := value.(type) {
-	case string:
-		if strings.TrimSpace(typed) != "" {
-			return typed
-		}
-	case map[string]any:
-		if message, _ := typed["message"].(string); strings.TrimSpace(message) != "" {
-			return message
-		}
+	if typed, ok := value.(string); ok && strings.TrimSpace(typed) != "" {
+		return typed
 	}
 	raw, _ := json.Marshal(value)
+	if typed, ok := value.(map[string]any); ok {
+		message, _ := typed["message"].(string)
+		if strings.TrimSpace(message) != "" {
+			if len(typed) == 1 {
+				return message
+			}
+			return message + " " + string(raw)
+		}
+	}
 	return string(raw)
 }
 
@@ -327,7 +330,7 @@ func parseAccountConnectionStream(protocol string, body io.Reader, allowMedia bo
 		}
 		var data map[string]any
 		if json.Unmarshal([]byte(raw), &data) != nil {
-			return false, fmt.Errorf("%w: %s", ErrAccountTestProtocol, truncateUTF8(raw, 200))
+			return false, fmt.Errorf("%w: %s", ErrAccountTestProtocol, raw)
 		}
 		for _, observer := range observe {
 			observer(data)

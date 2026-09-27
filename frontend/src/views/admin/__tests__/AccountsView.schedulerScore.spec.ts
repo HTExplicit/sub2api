@@ -240,7 +240,7 @@ describe('admin AccountsView scheduler score column', () => {
 
   it('requests scheduler scores when the migrated column settings explicitly show the column', async () => {
     localStorage.setItem('account-hidden-columns', JSON.stringify(['today_stats']))
-    localStorage.setItem('account-hidden-columns-version', 'cockpit-console-defaults-v1')
+    localStorage.setItem('account-hidden-columns-version', 'upstream-defaults-v1')
 
     mountView()
     await flushPromises()

@@ -79,6 +79,6 @@ describe('OpsErrorDetailModal', () => {
     expect(wrapper.text()).toContain('429')
     expect(wrapper.findAll('pre')).toHaveLength(2)
     expect(wrapper.text()).not.toContain('admin.ops.errorDetail.payloads.upstream_detail')
-    expect(wrapper.findComponent({ name: 'ExtensionWidget' }).props('context')).toEqual({ error_id: 1 })
+    expect(wrapper.findComponent({ name: 'CodexContinuationDiagnostics' }).props('errorId')).toBe(1)
   })
 })

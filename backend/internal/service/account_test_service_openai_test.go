@@ -174,7 +174,7 @@ func TestAccountTestService_Budget429PutsAccountIntoError(t *testing.T) {
 	require.Error(t, err)
 	require.Len(t, upstream.bodies, 1, "a manual connection test must issue only its requested call")
 	require.Equal(t, 1, repo.setErrorCalls)
-	require.Equal(t, "ExceededBudget: key over budget. Spend=3.05, Budget=3.0", repo.lastErrorMsg, "the account keeps the upstream message")
+	require.Equal(t, "ExceededBudget: key over budget. Spend=3.05, Budget=3.0 (type=budget_exceeded, code=429)", repo.lastErrorMsg, "the account keeps the upstream message with its error type and code")
 }
 
 func TestAccountTestService_EmptyModelKeepsOpenAIDefault(t *testing.T) {

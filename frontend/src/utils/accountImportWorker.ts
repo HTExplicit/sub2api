@@ -11,10 +11,10 @@ export function readAccountImportFiles(files: File[], signal: AbortSignal): Prom
     signal.addEventListener('abort', abort, { once: true })
     worker.onmessage = (event) => {
       cleanup()
-      if (event.data.error) reject(new AccountImportParseError(event.data.error.code, event.data.error.fileIndex))
+      if (event.data.error) reject(new AccountImportParseError(event.data.error.code, event.data.error.fileIndex, event.data.error.detail))
       else resolve(event.data.payload)
     }
-    worker.onerror = () => { cleanup(); reject(new AccountImportParseError('parse', 0)) }
+    worker.onerror = (event) => { cleanup(); reject(new AccountImportParseError('parse', 0, event.message || '')) }
     worker.postMessage(files)
   })
 }

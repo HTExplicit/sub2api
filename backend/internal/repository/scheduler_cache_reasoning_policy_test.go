@@ -10,6 +10,16 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func TestSchedulerCacheCodexProjectionDropsAdministratorText(t *testing.T) {
+	observation := map[string]any{"key": "gpt-6-astra", "kind": "codex_routing", "state": "retry", "code": "routing_upstream", "http_status": float64(429), "message": "Rate limit reached", "response_model": "gpt-6-luna"}
+	projection := map[string]any{"identity": "owner", "scheduling": map[string]any{}, "observations": map[string]any{"gpt-6-astra": observation}}
+	source := map[string]any{service.NativeCodexAccountProjectionKey: map[string]any{"codexrip.codex-runtime": projection}}
+	filtered := filterSchedulerExtra(source)
+	copied := filtered[service.NativeCodexAccountProjectionKey].(map[string]any)["codexrip.codex-runtime"].(map[string]any)["observations"].(map[string]any)["gpt-6-astra"].(map[string]any)
+	require.Equal(t, map[string]any{"key": "gpt-6-astra", "kind": "codex_routing", "state": "retry", "code": "routing_upstream", "http_status": float64(429)}, copied)
+	require.Equal(t, "Rate limit reached", observation["message"], "the persistent account extra is not rewritten")
+}
+
 func TestSchedulerCacheReasoningPolicyProjectionPreservesMissingAndBooleanSemantics(t *testing.T) {
 	keys := []string{service.OpenAIChatReasoningReplayEnabledExtraKey, service.OpenAIReasoningSignatureRecoveryEnabledExtraKey}
 	for _, source := range []map[string]any{nil, {}, {"unrelated": true}, {"quota_limit": nil}} {

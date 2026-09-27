@@ -28,6 +28,11 @@ type openAIRefusalRecoveryWSOutput struct {
 	buffered        []openAIRefusalRecoveryWSFrame
 	write           openAIRefusalRecoveryWSWriteFunc
 	onBufferLimit   func()
+	// onRewritten receives the matched keyword and original text of each
+	// replaced refusal; onDelivered receives every text frame the client
+	// actually received, including held frames when they are flushed.
+	onRewritten func(openAIRefusalEvidence)
+	onDelivered func([]byte)
 }
 
 type openAIRefusalRecoveryWSFrameConn struct {
@@ -109,6 +114,7 @@ func (o *openAIRefusalRecoveryWSOutput) Write(ctx context.Context, messageType c
 			}
 			return err
 		case openAIRefusalStreamReplace:
+			evidence := o.state.evidence()
 			o.dropTurnBuffer()
 			var replacementFrames [][]byte
 			forEachOpenAISSEDataPayload(string(replacementSSE), func(data []byte) {
@@ -120,6 +126,9 @@ func (o *openAIRefusalRecoveryWSOutput) Write(ctx context.Context, messageType c
 				}
 			}
 			o.resetTurn()
+			if o.onRewritten != nil {
+				o.onRewritten(evidence)
+			}
 			return nil
 		}
 	}
@@ -138,6 +147,21 @@ func (o *openAIRefusalRecoveryWSOutput) Write(ctx context.Context, messageType c
 	return err
 }
 
+// SetRewriteObserver receives the matched keyword and original text whenever a
+// refusal is replaced on this connection.
+func (o *openAIRefusalRecoveryWSOutput) SetRewriteObserver(observer func(openAIRefusalEvidence)) {
+	if o != nil {
+		o.onRewritten = observer
+	}
+}
+
+// SetDeliveryObserver receives each text frame after the client received it.
+func (o *openAIRefusalRecoveryWSOutput) SetDeliveryObserver(observer func([]byte)) {
+	if o != nil {
+		o.onDelivered = observer
+	}
+}
+
 func (o *openAIRefusalRecoveryWSOutput) writeDirect(ctx context.Context, messageType coderws.MessageType, payload []byte) error {
 	if err := o.write(ctx, messageType, payload); err != nil {
 		return err
@@ -147,6 +171,9 @@ func (o *openAIRefusalRecoveryWSOutput) writeDirect(ctx context.Context, message
 		eventType := strings.TrimSpace(gjson.GetBytes(payload, "type").String())
 		if openAIRefusalRecoveryWSSemanticEvent(eventType, payload) {
 			o.semanticWrite = true
+		}
+		if o.onDelivered != nil {
+			o.onDelivered(payload)
 		}
 	}
 	return nil

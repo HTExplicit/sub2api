@@ -45,6 +45,15 @@ func (r *apiKeyRepository) userVisibleQuery() *dbent.APIKeyQuery {
 	return r.activeQuery().Where(apikey.PurposeEQ(service.APIKeyPurposeUser))
 }
 
+// listedQuery serves the key lists only administrators read: a user's keys in
+// the admin console (ListByUserIDForAdmin), group keys and the usage search.
+// It includes internal release-acceptance keys, which carry their purpose in
+// the response. The owner's own key list and lookups used by mutations keep
+// userVisibleQuery, so those keys never reach the user side and stay read-only.
+func (r *apiKeyRepository) listedQuery() *dbent.APIKeyQuery {
+	return r.activeQuery()
+}
+
 func (r *apiKeyRepository) Create(ctx context.Context, key *service.APIKey) error {
 	builder := r.client.APIKey.Create().
 		SetUserID(key.UserID).
@@ -443,8 +452,12 @@ func (r *apiKeyRepository) deleteWithTombstone(ctx context.Context, exec *dbent.
 	return nil
 }
 
-func (r *apiKeyRepository) apiKeyListByUserIDQuery(userID int64, filters service.APIKeyListFilters) *dbent.APIKeyQuery {
-	q := r.userVisibleQuery().Where(apikey.UserIDEQ(userID))
+func (r *apiKeyRepository) apiKeyListByUserIDQuery(userID int64, filters service.APIKeyListFilters, includeInternal bool) *dbent.APIKeyQuery {
+	q := r.userVisibleQuery()
+	if includeInternal {
+		q = r.listedQuery()
+	}
+	q = q.Where(apikey.UserIDEQ(userID))
 
 	if filters.Search != "" {
 		q = q.Where(apikey.Or(
@@ -467,7 +480,17 @@ func (r *apiKeyRepository) apiKeyListByUserIDQuery(userID int64, filters service
 }
 
 func (r *apiKeyRepository) ListByUserID(ctx context.Context, userID int64, params pagination.PaginationParams, filters service.APIKeyListFilters) ([]service.APIKey, *pagination.PaginationResult, error) {
-	q := r.apiKeyListByUserIDQuery(userID, filters)
+	return r.listByUserID(ctx, userID, params, filters, false)
+}
+
+// ListByUserIDForAdmin is the administrator's view of one user's keys: it also
+// lists internal release-acceptance keys, marked by their purpose.
+func (r *apiKeyRepository) ListByUserIDForAdmin(ctx context.Context, userID int64, params pagination.PaginationParams, filters service.APIKeyListFilters) ([]service.APIKey, *pagination.PaginationResult, error) {
+	return r.listByUserID(ctx, userID, params, filters, true)
+}
+
+func (r *apiKeyRepository) listByUserID(ctx context.Context, userID int64, params pagination.PaginationParams, filters service.APIKeyListFilters, includeInternal bool) ([]service.APIKey, *pagination.PaginationResult, error) {
+	q := r.apiKeyListByUserIDQuery(userID, filters, includeInternal)
 
 	total, err := q.Count(ctx)
 	if err != nil {
@@ -499,7 +522,7 @@ func (r *apiKeyRepository) ListByUserID(ctx context.Context, userID int64, param
 }
 
 func (r *apiKeyRepository) ListAllByUserID(ctx context.Context, userID int64, filters service.APIKeyListFilters) ([]service.APIKey, error) {
-	keys, err := r.apiKeyListByUserIDQuery(userID, filters).
+	keys, err := r.apiKeyListByUserIDQuery(userID, filters, false).
 		WithGroup().
 		Order(dbent.Asc(apikey.FieldID)).
 		All(ctx)
@@ -636,7 +659,7 @@ func (r *apiKeyRepository) ExistsByKey(ctx context.Context, key string) (bool, e
 }
 
 func (r *apiKeyRepository) ListByGroupID(ctx context.Context, groupID int64, params pagination.PaginationParams) ([]service.APIKey, *pagination.PaginationResult, error) {
-	q := r.userVisibleQuery().Where(apikey.GroupIDEQ(groupID))
+	q := r.listedQuery().Where(apikey.GroupIDEQ(groupID))
 
 	total, err := q.Count(ctx)
 	if err != nil {
@@ -702,7 +725,7 @@ func apiKeyListOrder(params pagination.PaginationParams) []func(*entsql.Selector
 
 // SearchAPIKeys searches API keys by user ID and/or keyword (name)
 func (r *apiKeyRepository) SearchAPIKeys(ctx context.Context, userID int64, keyword string, limit int) ([]service.APIKey, error) {
-	q := r.userVisibleQuery()
+	q := r.listedQuery()
 	if userID > 0 {
 		q = q.Where(apikey.UserIDEQ(userID))
 	}

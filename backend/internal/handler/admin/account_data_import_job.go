@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 
 	"github.com/Wei-Shaw/sub2api/internal/service"
 )
@@ -46,6 +47,8 @@ type dataImportJobState struct {
 	taxonomy             *dataImportTaxonomyResolver
 	skipDefaultGroupBind bool
 	identityIndex        *dataIdentityIndex
+	// proxyErrors keeps what went wrong while importing the file's proxies.
+	proxyErrors []DataImportError
 }
 
 func dataImportJobStateFromContext(ctx context.Context) (*dataImportJobState, bool) {
@@ -68,8 +71,11 @@ func (h *AccountHandler) PrepareAccountJob(
 		return ctx, func() {}, nil
 	}
 	var req DataImportRequest
-	if json.Unmarshal(raw, &req) != nil || validateDataHeader(req.Data) != nil {
-		return ctx, nil, errors.New("invalid data import job payload")
+	if err := json.Unmarshal(raw, &req); err != nil {
+		return ctx, nil, fmt.Errorf("invalid data import job payload: %w", err)
+	}
+	if err := validateDataHeader(req.Data); err != nil {
+		return ctx, nil, fmt.Errorf("invalid data import job payload: %w", err)
 	}
 	if err := validateDataImportRequest(req); err != nil {
 		return ctx, nil, err
@@ -143,6 +149,7 @@ func (h *AccountHandler) PrepareAccountJob(
 		taxonomy:             taxonomy,
 		skipDefaultGroupBind: skipDefaultGroupBind,
 		identityIndex:        identityIndex,
+		proxyErrors:          dataImportProxyErrors(proxyResult.Errors),
 	}
 	preparedCtx := context.WithValue(ctx, dataImportReferenceCacheContextKey{}, referenceCache)
 	preparedCtx = context.WithValue(preparedCtx, dataImportJobStateContextKey{}, state)
@@ -153,6 +160,7 @@ func (h *AccountHandler) PrepareAccountJob(
 		state.identityIndex = nil
 		state.groups = nil
 		state.taxonomy = nil
+		state.proxyErrors = nil
 		referenceCache.groupIDs = nil
 		referenceCache.proxyIDs = nil
 	}
@@ -170,6 +178,10 @@ func (s *dataImportJobState) currentDecision(index int) (dataImportDecision, err
 	matches := s.identityIndex.Find(dataAccountIdentityKeys(
 		decision.Account.Platform, decision.Account.Credentials, decision.Account.Extra,
 	))
+	decision.MatchedAccountIDs = nil
+	for _, match := range matches {
+		decision.MatchedAccountIDs = append(decision.MatchedAccountIDs, match.AccountID)
+	}
 	switch len(matches) {
 	case 0:
 		decision.Action = dataImportActionCreate
@@ -184,7 +196,7 @@ func (s *dataImportJobState) currentDecision(index int) (dataImportDecision, err
 		rejectDataImportDecision(&decision, dataImportCodeIdentityConflict)
 		return decision, nil
 	}
-	decision.Message = dataImportMessage(decision.Code)
+	decision.Message = dataImportDecisionMessage(decision)
 	return decision, nil
 }
 
@@ -253,8 +265,11 @@ func (s *dataImportJobState) executeOne(
 		err = errors.New("data import action is invalid")
 	}
 	if err != nil || account == nil {
+		if err == nil {
+			err = errors.New("data import did not return an account")
+		}
 		itemResult.Code = dataImportCodeExecutionFailed
-		itemResult.Message = dataImportMessage(dataImportCodeExecutionFailed)
+		itemResult.Message = err.Error()
 		itemResult.Error = itemResult.Message
 		result.AccountFailed = 1
 		result.Items = append(result.Items, itemResult)

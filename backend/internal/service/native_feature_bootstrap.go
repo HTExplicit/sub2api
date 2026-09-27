@@ -55,6 +55,9 @@ type NativeFeatureBootstrapRepository interface {
 // retirement must commit before a native feature or the plugin manager starts.
 type NativeFeatureBootstrap struct {
 	Snapshot *NativeRetirementSnapshot
+
+	encryptor SecretEncryptor
+	retired   RetiredPluginSource
 }
 
 func ProvideNativeFeatureBootstrap(repo NativeFeatureBootstrapRepository, encryptor SecretEncryptor) (*NativeFeatureBootstrap, error) {
@@ -66,7 +69,103 @@ func ProvideNativeFeatureBootstrap(repo NativeFeatureBootstrapRepository, encryp
 	if err != nil {
 		return nil, fmt.Errorf("initialize native features: %w", err)
 	}
-	return &NativeFeatureBootstrap{Snapshot: snapshot}, nil
+	return &NativeFeatureBootstrap{Snapshot: snapshot, encryptor: encryptor}, nil
+}
+
+// RetiredPluginSource reads the retired first-party installation rows. They
+// stay outside the plugin manager, whose reconciliation would clean them up.
+type RetiredPluginSource interface {
+	RetiredPluginInstallations(context.Context) ([]*PluginInstallation, error)
+}
+
+// SetRetiredPluginSource is called by the plugin repository boundary.
+func (b *NativeFeatureBootstrap) SetRetiredPluginSource(source RetiredPluginSource) {
+	if b != nil {
+		b.retired = source
+	}
+}
+
+// RetiredPluginInstallation is the read-only admin view of one retired
+// first-party installation row with its decrypted saved configuration.
+type RetiredPluginInstallation struct {
+	ID              int64           `json:"id"`
+	PluginKey       string          `json:"plugin_key"`
+	Name            string          `json:"name"`
+	Version         string          `json:"version"`
+	Description     string          `json:"description"`
+	Author          string          `json:"author"`
+	Manifest        PluginManifest  `json:"manifest"`
+	ArtifactPath    string          `json:"artifact_path"`
+	InstallPath     string          `json:"install_path"`
+	BinaryPath      string          `json:"binary_path"`
+	BinarySHA256    string          `json:"binary_sha256"`
+	SignatureStatus string          `json:"signature_status"`
+	State           string          `json:"state"`
+	LastError       string          `json:"last_error"`
+	InstalledBy     *int64          `json:"installed_by"`
+	InstalledAt     time.Time       `json:"installed_at"`
+	EnabledAt       *time.Time      `json:"enabled_at"`
+	UpdatedAt       time.Time       `json:"updated_at"`
+	Bindings        []PluginBinding `json:"bindings"`
+	Config          json.RawMessage `json:"config,omitempty"`
+	ConfigText      string          `json:"config_text,omitempty"`
+	ConfigError     string          `json:"config_error,omitempty"`
+}
+
+// RetiredPluginsView pairs the retirement receipt with the current rows.
+type RetiredPluginsView struct {
+	Receipt       *NativeRetirementSnapshot   `json:"receipt"`
+	Installations []RetiredPluginInstallation `json:"installations"`
+}
+
+// RetiredPlugins lists the retired first-party installations read-only, with
+// their saved configuration decrypted as the plugin configuration API did.
+func (b *NativeFeatureBootstrap) RetiredPlugins(ctx context.Context) (*RetiredPluginsView, error) {
+	view := &RetiredPluginsView{Installations: []RetiredPluginInstallation{}}
+	if b == nil {
+		return view, nil
+	}
+	view.Receipt = b.Snapshot
+	if b.retired == nil {
+		return view, nil
+	}
+	rows, err := b.retired.RetiredPluginInstallations(ctx)
+	if err != nil {
+		return nil, err
+	}
+	for _, row := range rows {
+		if row == nil {
+			continue
+		}
+		item := RetiredPluginInstallation{
+			ID: row.ID, PluginKey: row.PluginKey, Name: row.Name, Version: row.Version,
+			Description: row.Description, Author: row.Author, Manifest: row.Manifest,
+			ArtifactPath: row.ArtifactPath, InstallPath: row.InstallPath, BinaryPath: row.BinaryPath,
+			BinarySHA256: row.BinarySHA256, SignatureStatus: row.SignatureStatus, State: row.State,
+			LastError: row.LastError, InstalledBy: row.InstalledBy, InstalledAt: row.InstalledAt,
+			EnabledAt: row.EnabledAt, UpdatedAt: row.UpdatedAt, Bindings: row.Bindings,
+		}
+		if item.Bindings == nil {
+			item.Bindings = []PluginBinding{}
+		}
+		switch {
+		case row.ConfigEncrypted == "":
+		case b.encryptor == nil:
+			item.ConfigError = "configuration decryptor is unavailable"
+		default:
+			plain, decryptErr := b.encryptor.Decrypt(row.ConfigEncrypted)
+			switch {
+			case decryptErr != nil:
+				item.ConfigError = decryptErr.Error()
+			case json.Valid([]byte(plain)):
+				item.Config = json.RawMessage(plain)
+			default:
+				item.ConfigText = plain
+			}
+		}
+		view.Installations = append(view.Installations, item)
+	}
+	return view, nil
 }
 
 func nativeFeatureSettings(plugin NativeRetirementPlugin, encryptor SecretEncryptor) (map[string]json.RawMessage, error) {

@@ -34,6 +34,8 @@ type openAIRefusalStreamState struct {
 	completedMessage []byte
 	responseID       string
 	messageID        string
+	// matchedEvidence is what the matcher decided on, kept for Ops and logs.
+	matchedEvidence openAIRefusalEvidence
 }
 
 func newOpenAIRefusalStreamState(matcher *OpenAIRefusalMatcher) *openAIRefusalStreamState {
@@ -42,6 +44,15 @@ func newOpenAIRefusalStreamState(matcher *OpenAIRefusalMatcher) *openAIRefusalSt
 
 func newOpenAIRefusalStreamStateWithEarlyEmission(matcher *OpenAIRefusalMatcher, eligible bool) *openAIRefusalStreamState {
 	return &openAIRefusalStreamState{matcher: matcher, earlyEligible: eligible}
+}
+
+// evidence returns the keyword and original leading text behind the latest
+// refusal match on this stream.
+func (s *openAIRefusalStreamState) evidence() openAIRefusalEvidence {
+	if s == nil {
+		return openAIRefusalEvidence{}
+	}
+	return s.matchedEvidence
 }
 
 func (s *openAIRefusalStreamState) reserveLine(line string) bool {
@@ -75,8 +86,9 @@ func (s *openAIRefusalStreamState) observe(eventType string, payload []byte) (op
 	switch eventType {
 	case "response.output_text.delta", "response.refusal.delta":
 		_, _ = s.visibleText.WriteString(gjson.GetBytes(payload, "delta").String())
-		if matched, _ := s.matcher.MatchLeadingParagraphs(s.visibleText.String()); matched {
+		if matched, keyword := s.matcher.MatchLeadingParagraphs(s.visibleText.String()); matched {
 			s.matched = true
+			s.matchedEvidence = newOpenAIRefusalEvidence(keyword, s.visibleText.String())
 			return s.startEarlyReplacement()
 		}
 		if openAIRefusalScanWindowComplete(s.visibleText.String()) || utf8.RuneCountInString(s.visibleText.String()) >= maxOpenAIRefusalParagraphRunes {
@@ -93,8 +105,9 @@ func (s *openAIRefusalStreamState) observe(eventType string, payload []byte) (op
 			s.visibleText.Reset()
 			_, _ = s.visibleText.WriteString(text)
 		}
-		if matched, _ := s.matcher.MatchLeadingParagraphs(s.visibleText.String()); matched {
+		if matched, keyword := s.matcher.MatchLeadingParagraphs(s.visibleText.String()); matched {
 			s.matched = true
+			s.matchedEvidence = newOpenAIRefusalEvidence(keyword, s.visibleText.String())
 			return s.startEarlyReplacement()
 		}
 		s.passthrough = true
@@ -109,7 +122,7 @@ func (s *openAIRefusalStreamState) observe(eventType string, payload []byte) (op
 		if err != nil {
 			return openAIRefusalStreamHold, nil, err
 		}
-		rewritten, matched, _, err := RewriteOpenAIResponsesJSON(responseJSON, s.matcher)
+		rewritten, matched, evidence, err := rewriteOpenAIResponsesJSONWithEvidence(responseJSON, s.matcher)
 		if err != nil {
 			return openAIRefusalStreamHold, nil, err
 		}
@@ -117,6 +130,7 @@ func (s *openAIRefusalStreamState) observe(eventType string, payload []byte) (op
 			s.passthrough = true
 			return openAIRefusalStreamPass, nil, nil
 		}
+		s.matchedEvidence = evidence
 		stream, err := buildOpenAIRefusalReplacementSSE(payload, rewritten, s.matcher.Replacement())
 		if err != nil {
 			return openAIRefusalStreamHold, nil, err
@@ -223,12 +237,15 @@ func (s *openAIRefusalStreamState) completeEarlyReplacement(payload []byte) (ope
 	if err != nil {
 		return openAIRefusalStreamHold, nil, err
 	}
-	rewritten, matched, _, err := RewriteOpenAIResponsesJSON(responseJSON, s.matcher)
+	rewritten, matched, evidence, err := rewriteOpenAIResponsesJSONWithEvidence(responseJSON, s.matcher)
 	if err != nil {
 		return openAIRefusalStreamHold, nil, err
 	}
 	if !matched {
 		return openAIRefusalStreamHold, nil, errors.New("early replacement terminal response is not text-only refusal output")
+	}
+	if s.matchedEvidence.Keyword == "" {
+		s.matchedEvidence = evidence
 	}
 	tail, err := buildOpenAIRefusalReplacementTerminalSSE(
 		payload,

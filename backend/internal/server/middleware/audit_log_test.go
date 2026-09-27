@@ -3,7 +3,6 @@ package middleware
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -149,14 +148,16 @@ func TestPromptAuditMutationAuditRoutesHaveStableActionsAndOmitBodies(t *testing
 	}
 }
 
-func TestSystemPromptAuditRoutesHaveStableActionsAndOmitPromptBodies(t *testing.T) {
+func TestSystemPromptAuditRoutesHaveStableActionsAndKeepPromptBodies(t *testing.T) {
 	require.Equal(t, "admin.system_prompts.read", auditSensitiveReads["GET /api/v1/admin/system-prompts"])
 	require.Equal(t, "admin.system_prompts.update", auditActionOverrides["PUT /api/v1/admin/system-prompts"])
 	require.Equal(t, "admin.system_prompts.bindings.update", auditActionOverrides["PUT /api/v1/admin/system-prompts/bindings"])
-	require.Contains(t, auditPromptBodyOmittedRoutes, "PUT /api/v1/admin/system-prompts")
+	require.Contains(t, auditVerbatimBodyRoutes, "PUT /api/v1/admin/system-prompts")
 }
 
-func TestSystemPromptConfigAuditOmitsPromptBodies(t *testing.T) {
+// Administrators review what a system prompt save changed, so the audit row
+// keeps the submitted body verbatim. Extra fields remain the allowlisted flags.
+func TestSystemPromptConfigAuditStoresPromptBodiesVerbatim(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	repository := &auditCaptureRepository{}
 	auditService := service.NewAuditLogService(repository, nil)
@@ -194,14 +195,11 @@ func TestSystemPromptConfigAuditOmitsPromptBodies(t *testing.T) {
 	repository.mu.Unlock()
 	require.Len(t, logs, 1)
 	require.Equal(t, "admin.system_prompts.update", logs[0].Action)
-	require.Equal(t, "<system prompt body omitted>", logs[0].RequestBody)
+	require.Equal(t, payload, logs[0].RequestBody)
 	require.Equal(t, true, logs[0].Extra["enabled"])
 	for _, field := range []string{"body", "contents"} {
 		require.NotContains(t, logs[0].Extra, field)
 	}
-	encoded, err := json.Marshal(logs[0])
-	require.NoError(t, err)
-	require.NotContains(t, string(encoded), "audit-canary")
 }
 
 func TestPasskeyLoginAuditUsesCanonicalLoginActionAndOmitsCredentialBody(t *testing.T) {
@@ -210,7 +208,9 @@ func TestPasskeyLoginAuditUsesCanonicalLoginActionAndOmitsCredentialBody(t *test
 	require.Contains(t, auditBodyOmittedRoutes, route)
 }
 
-func TestCodexProxyDraftRoutesOmitCredentialBearingAuditBodies(t *testing.T) {
+// The Codex proxy draft and runtime saves are audited as submitted, proxy
+// credentials included, so administrators can see which proxy was entered.
+func TestCodexProxyDraftRoutesStoreAuditBodiesVerbatim(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	for _, route := range []struct{ method, path string }{
 		{http.MethodPost, "/api/v1/admin/settings/openai-codex-ticket/proxy-parse"},
@@ -240,10 +240,7 @@ func TestCodexProxyDraftRoutesOmitCredentialBearingAuditBodies(t *testing.T) {
 			logs := append([]*service.AuditLog(nil), repository.logs...)
 			repository.mu.Unlock()
 			require.Len(t, logs, 1)
-			require.Equal(t, "<credential-bearing body omitted>", logs[0].RequestBody)
-			encoded, err := json.Marshal(logs[0])
-			require.NoError(t, err)
-			require.NotContains(t, string(encoded), "audit-canary")
+			require.Equal(t, body, logs[0].RequestBody)
 		})
 	}
 }
@@ -283,4 +280,10 @@ func TestOllamaCloudUsageSessionRouteOmitsAuditBody(t *testing.T) {
 	require.Len(t, logs, 1)
 	require.Equal(t, "<credential-bearing body omitted>", logs[0].RequestBody)
 	require.NotContains(t, logs[0].RequestBody, "audit-canary")
+}
+
+// Text columns reject NUL characters and invalid UTF-8; the stored body keeps
+// every other byte of the request.
+func TestAuditVerbatimBodyReplacesNULAndInvalidUTF8(t *testing.T) {
+	require.Equal(t, "{\"a\":\"x\uFFFDy\uFFFD\"}", auditVerbatimBody([]byte("{\"a\":\"x\x00y\xff\"}")))
 }

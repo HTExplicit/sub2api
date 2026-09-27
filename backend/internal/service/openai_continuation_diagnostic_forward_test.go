@@ -125,6 +125,8 @@ func TestOpenAIContinuationDiagnosticForwardPreservesTerminalBehavior(t *testing
 				Body: io.NopCloser(strings.NewReader(tt.upstreamError)),
 			}}
 			cfg := &config.Config{}
+			cfg.Gateway.LogUpstreamErrorBody = true
+			cfg.Gateway.LogUpstreamErrorBodyMaxBytes = 2048
 			svc := &OpenAIGatewayService{
 				cfg:              cfg,
 				httpUpstream:     upstream,
@@ -150,6 +152,9 @@ func TestOpenAIContinuationDiagnosticForwardPreservesTerminalBehavior(t *testing
 			var terminal *UpstreamFailoverError
 			require.ErrorAs(t, err, &terminal)
 			expectedMessage, expectedKind := OpenAIContinuationStateUnavailableClientMessage, "continuation_state"
+			// Ops keeps the upstream's own message and bounded body; only the
+			// client terminal is fixed.
+			expectedOpsMessage := gjson.Get(tt.upstreamError, "error.message").String()
 			if tt.requestRejected {
 				expectedMessage, expectedKind = OpenAIRequestRejectedClientMessage, "request_rejected"
 				require.True(t, terminal.IsOpenAIRequestRejected())
@@ -186,8 +191,14 @@ func TestOpenAIContinuationDiagnosticForwardPreservesTerminalBehavior(t *testing
 			require.Equal(t, expectedKind, event.Kind)
 			require.Equal(t, tt.passthrough, event.Passthrough)
 			require.Equal(t, tt.status, event.UpstreamStatusCode)
-			require.Equal(t, expectedMessage, event.Message)
-			require.Empty(t, event.Detail, "diagnostics must not change passthrough-rule keyword input")
+			require.Equal(t, expectedOpsMessage, event.Message)
+			require.Equal(t, tt.upstreamError, event.Detail)
+			if tt.passthrough {
+				require.Equal(t, tt.upstreamError, event.UpstreamResponseBody)
+			}
+			require.Equal(t, "direct/no_proxy", event.ProxyName)
+			topMessage, _ := c.Get(OpsUpstreamErrorMessageKey)
+			require.Equal(t, expectedOpsMessage, topMessage, "the top-level upstream message is never the client sentence")
 			require.NotNil(t, event.ContinuationDiagnostic)
 			diagnostic := event.ContinuationDiagnostic
 			require.Equal(t, tt.classification, diagnostic.Classification)
@@ -205,7 +216,9 @@ func TestOpenAIContinuationDiagnosticForwardPreservesTerminalBehavior(t *testing
 			encoded, encodeErr := json.Marshal(event)
 			require.NoError(t, encodeErr)
 			require.True(t, gjson.GetBytes(encoded, "continuation_diagnostic").IsObject())
-			require.NotContains(t, string(encoded), "private-validation-message-51937")
+			if tt.upstreamError == missingNamespace {
+				require.Contains(t, string(encoded), "private-validation-message-51937")
+			}
 		})
 	}
 }

@@ -189,7 +189,7 @@ func preserveCodexCookieFirstSeen(ctx context.Context, store NativeCodexStateSto
 		}
 		if record.Found {
 			if json.Unmarshal(record.Value, &seen) != nil || seen.First.IsZero() {
-				return errCodexRoutingUnavailable
+				return codexRoutingUnavailable("first-seen record of cookie %s is invalid: %s", change.Cookie.Name, string(record.Value))
 			}
 		} else {
 			seen.First = change.Cookie.FirstSeen
@@ -202,7 +202,7 @@ func preserveCodexCookieFirstSeen(ctx context.Context, store NativeCodexStateSto
 				return err
 			}
 			if !saved.Applied && (json.Unmarshal(saved.Value, &seen) != nil || seen.First.IsZero()) {
-				return errCodexRoutingUnavailable
+				return codexRoutingUnavailable("concurrent first-seen record of cookie %s is invalid: %s", change.Cookie.Name, string(saved.Value))
 			}
 		}
 		change.Cookie.FirstSeen = seen.First

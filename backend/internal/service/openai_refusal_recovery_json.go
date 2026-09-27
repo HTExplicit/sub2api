@@ -25,12 +25,20 @@ type openAIResponsesRewriteContentItem struct {
 }
 
 func RewriteOpenAIResponsesJSON(body []byte, matcher *OpenAIRefusalMatcher) ([]byte, bool, string, error) {
+	rewritten, matched, evidence, err := rewriteOpenAIResponsesJSONWithEvidence(body, matcher)
+	return rewritten, matched, evidence.Keyword, err
+}
+
+// rewriteOpenAIResponsesJSONWithEvidence also returns the leading original text
+// the matcher inspected, so the rewrite can be audited by administrators.
+func rewriteOpenAIResponsesJSONWithEvidence(body []byte, matcher *OpenAIRefusalMatcher) ([]byte, bool, openAIRefusalEvidence, error) {
+	var none openAIRefusalEvidence
 	var envelope openAIResponsesRewriteEnvelope
 	if err := json.Unmarshal(body, &envelope); err != nil {
-		return nil, false, "", err
+		return nil, false, none, err
 	}
 	if envelope.Status != "completed" || len(envelope.Output) == 0 {
-		return body, false, "", nil
+		return body, false, none, nil
 	}
 
 	var visibleText strings.Builder
@@ -40,7 +48,7 @@ func RewriteOpenAIResponsesJSON(body []byte, matcher *OpenAIRefusalMatcher) ([]b
 			continue
 		}
 		if output.Type != "message" || output.Role != "assistant" || len(output.Content) == 0 {
-			return body, false, "", nil
+			return body, false, none, nil
 		}
 		if firstMessageID == "" {
 			firstMessageID = output.ID
@@ -52,22 +60,23 @@ func RewriteOpenAIResponsesJSON(body []byte, matcher *OpenAIRefusalMatcher) ([]b
 			case "refusal":
 				_, _ = visibleText.WriteString(content.Refusal)
 			default:
-				return body, false, "", nil
+				return body, false, none, nil
 			}
 		}
 	}
 	if firstMessageID == "" {
-		return body, false, "", nil
+		return body, false, none, nil
 	}
 
 	matched, keyword := matcher.MatchLeadingParagraphs(visibleText.String())
 	if !matched {
-		return body, false, "", nil
+		return body, false, none, nil
 	}
+	evidence := newOpenAIRefusalEvidence(keyword, visibleText.String())
 
 	var raw map[string]json.RawMessage
 	if err := json.Unmarshal(body, &raw); err != nil {
-		return nil, false, "", err
+		return nil, false, none, err
 	}
 	replacementOutput := []openAIResponsesRewriteOutputItem{{
 		ID:     firstMessageID,
@@ -81,13 +90,13 @@ func RewriteOpenAIResponsesJSON(body []byte, matcher *OpenAIRefusalMatcher) ([]b
 	}}
 	encodedOutput, err := json.Marshal(replacementOutput)
 	if err != nil {
-		return nil, false, "", err
+		return nil, false, none, err
 	}
 	raw["output"] = encodedOutput
 	raw["status"] = json.RawMessage(`"completed"`)
 	rewritten, err := json.Marshal(raw)
 	if err != nil {
-		return nil, false, "", err
+		return nil, false, none, err
 	}
-	return rewritten, true, keyword, nil
+	return rewritten, true, evidence, nil
 }

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"slices"
@@ -31,20 +32,30 @@ func (s *OpenAIGatewayService) codexRoutingApplies(account *Account, model strin
 func (m *NativeCodexRuntime) codexRoutingQualification(ctx context.Context, account *Account, model string) (*extensionv1.CodexRoutingQualification, *NativeCodexMetadata, error) {
 	installation := m.metadata()
 	if installation == nil {
-		return nil, nil, errCodexRoutingUnavailable
+		return nil, nil, codexRoutingUnavailable("native Codex runtime is not loaded")
 	}
 	raw, _ := json.Marshal(extensionv1.SchedulingRequest{Account: *extensionAccount(account), Model: model, Now: time.Now().UTC()})
 	result, err := m.Invoke(ctx, account.Platform, account.Type, extensionv1.Invocation{Capability: extensionv1.CapabilityRequest, Operation: "inject", AccountID: account.ID, Payload: raw})
+	switch {
+	case err != nil:
+		return nil, installation, codexRoutingUnavailable("inject: %v", err)
+	case result.Code != "":
+		// The runtime's result code and reason stay inspectable (errors.As).
+		return nil, installation, fmt.Errorf("%w: %w", errCodexRoutingUnavailable, &NativeCodexResultError{Operation: "inject", Code: result.Code, Message: result.Message})
+	}
 	var injection extensionv1.CodexRoutingInjection
-	if err != nil || result.Code != "" || json.Unmarshal(result.Payload, &injection) != nil || !injection.Qualification.Valid(time.Now(), account.ID, CodexTicketAccountIdentity(account), model) {
-		return nil, installation, errCodexRoutingUnavailable
+	if err := json.Unmarshal(result.Payload, &injection); err != nil {
+		return nil, installation, codexRoutingUnavailable("decode the inject result: %v", err)
+	}
+	if problem := injection.Qualification.Problem(time.Now(), account.ID, CodexTicketAccountIdentity(account), model); problem != "" {
+		return nil, installation, codexRoutingUnavailable("%s", problem)
 	}
 	return injection.Qualification, installation, nil
 }
 
 func (s *OpenAIGatewayService) prepareQualifiedCodexRequest(request *http.Request, account *Account, model string) (*http.Request, *extensionv1.CodexRoutingQualification, *NativeCodexMetadata, error) {
 	if request.URL == nil || request.URL.Scheme != "https" || request.URL.Hostname() != "chatgpt.com" || (request.URL.Path != "/backend-api/codex/responses" && request.URL.Path != "/backend-api/codex/responses/compact") {
-		return request, nil, nil, errCodexRoutingUnavailable
+		return request, nil, nil, codexRoutingUnavailable("a verified route only serves https://chatgpt.com/backend-api/codex/responses[/compact], not %v", request.URL)
 	}
 	var q *extensionv1.CodexRoutingQualification
 	var installation *NativeCodexMetadata
@@ -58,17 +69,29 @@ func (s *OpenAIGatewayService) prepareQualifiedCodexRequest(request *http.Reques
 		return request, nil, installation, err
 	}
 	scope, err := s.PrepareCodexRoutingScope(request.Context(), account.ID, "http")
-	if err != nil || !q.Scope.SameOwner(scope) || q.Scope.Transport != "http" || q.Scope.ConnectionLeaseID == "" {
-		return request, q, installation, errCodexRoutingUnavailable
+	switch {
+	case err != nil:
+		return request, q, installation, codexRoutingUnavailable("routing scope: %v", err)
+	case !q.Scope.SameOwner(scope):
+		return request, q, installation, codexRoutingUnavailable("route qualification %s", codexRoutingScopeChange(q.Scope, scope))
+	case q.Scope.Transport != "http" || q.Scope.ConnectionLeaseID == "":
+		return request, q, installation, codexRoutingUnavailable("route qualification is bound to transport %q connection %q; an HTTP connection lease is required", q.Scope.Transport, q.Scope.ConnectionLeaseID)
 	}
 	store := s.nativeCodexRuntime.repo
 	bundle, err := readCodexRoutingBundle(request.Context(), store, NativeCodexPluginKey, q.Bundle, scope, true)
-	if err != nil || bundle.Model != model || bundle.Scope.ConnectionLeaseID != q.Scope.ConnectionLeaseID || bundle.Scope.Transport != q.Scope.Transport || q.ExpiresAt.After(bundle.ExpiresAt) {
-		return request, q, installation, errCodexRoutingUnavailable
+	switch {
+	case err != nil:
+		return request, q, installation, err
+	case bundle.Model != model:
+		return request, q, installation, codexRoutingUnavailable("route bundle %s is for model %q, not %q", q.Bundle.Key, bundle.Model, model)
+	case bundle.Scope.ConnectionLeaseID != q.Scope.ConnectionLeaseID || bundle.Scope.Transport != q.Scope.Transport:
+		return request, q, installation, codexRoutingUnavailable("route bundle %s is bound to %s connection %q, the qualification to %s connection %q", q.Bundle.Key, bundle.Scope.Transport, bundle.Scope.ConnectionLeaseID, q.Scope.Transport, q.Scope.ConnectionLeaseID)
+	case q.ExpiresAt.After(bundle.ExpiresAt):
+		return request, q, installation, codexRoutingUnavailable("route qualification (until %s) outlives bundle %s (until %s)", q.ExpiresAt.UTC().Format(time.RFC3339), q.Bundle.Key, bundle.ExpiresAt.UTC().Format(time.RFC3339))
 	}
 	cookies, _ := codexRoutingCookieHeader(bundle.Cookies, time.Now())
 	if cookies == "" {
-		return request, q, installation, errCodexRoutingUnavailable
+		return request, q, installation, codexRoutingUnavailable("route bundle %s has no live routing cookie left (%d stored)", q.Bundle.Key, len(bundle.Cookies))
 	}
 	wire := request.Clone(request.Context())
 	wire.Header.Set("Cookie", cookies)
@@ -102,7 +125,7 @@ func (s *OpenAIGatewayService) doQualifiedCodexUpstream(request *http.Request, a
 	}()
 	transport, ok := s.httpUpstream.(CodexConnectionLeaseUpstream)
 	if !ok {
-		return nil, true, errCodexRoutingUnavailable
+		return nil, true, codexRoutingUnavailable("the upstream transport cannot hold a verified connection lease")
 	}
 	start := time.Now()
 	if err := reserveCodexQualitySend(wire, account, q); err != nil {
@@ -117,7 +140,7 @@ func (s *OpenAIGatewayService) doQualifiedCodexUpstream(request *http.Request, a
 		return response, true, err
 	}
 	if err != nil {
-		s.publishCodexRoutingObservation(request.Context(), account, installation, q, extensionv1.CodexRoutingObservation{Code: "routing_connection_expired", Stage: "business", RequestedModel: model, ObservedAt: time.Now().UTC(), Transport: "http", CookieSent: false}, nil)
+		s.publishCodexRoutingObservation(request.Context(), account, installation, q, extensionv1.CodexRoutingObservation{Code: "routing_connection_expired", Stage: "business", RequestedModel: model, ObservedAt: time.Now().UTC(), Transport: "http", CookieSent: false, Error: err.Error()}, nil)
 		return nil, true, err
 	}
 	if observer := codexWireObserverFromContext(wire.Context()); observer != nil {
@@ -125,7 +148,7 @@ func (s *OpenAIGatewayService) doQualifiedCodexUpstream(request *http.Request, a
 	}
 	observeCodexInfrastructureCookies(q.Scope, response.Header, q.ExpiresAt)
 	s.observeCodexWire(request.Context(), account, wire, response, q)
-	observation := extensionv1.CodexRoutingObservation{Stage: "business", Code: "routing_incomplete", HTTPStatus: response.StatusCode, RequestedModel: model, StateLength: len(response.Header.Get(openAICodexTurnStateHeader)), ObservedAt: time.Now().UTC(), Transport: "http", CookieSent: true}
+	observation := extensionv1.CodexRoutingObservation{Stage: "business", Code: "routing_incomplete", HTTPStatus: response.StatusCode, RequestedModel: model, StateLength: len(response.Header.Get(openAICodexTurnStateHeader)), ObservedAt: time.Now().UTC(), Transport: "http", CookieSent: true, RequestID: response.Header.Get("x-request-id"), CFRay: response.Header.Get("cf-ray")}
 	deleted := s.recordCodexRoutingDeletions(request.Context(), installation, q, response.Header, observation.ObservedAt)
 	if wire.URL.Path == "/backend-api/codex/responses/compact" {
 		// Compaction is not a model completion and cannot renew qualification.
@@ -148,6 +171,9 @@ func (s *OpenAIGatewayService) doQualifiedCodexUpstream(request *http.Request, a
 		observation.ModelMatched = observation.Completed && !completion.Mismatch && completion.Model == model
 		observation.DurationMS = time.Since(start).Milliseconds()
 		observation.Code = completion.observationCode(model, response.StatusCode)
+		if observation.Code != "routing_verified" {
+			completion.apply(&observation, response.StatusCode)
+		}
 		if deleted {
 			observation.Code = "routing_cookie_deleted"
 		}
@@ -340,7 +366,7 @@ func (s *OpenAIGatewayService) refreshObservedCodexCookies(ctx context.Context, 
 	}
 	// A refreshed Cookie cannot extend a connection lease. A new connection
 	// always needs a new complete validation even if cookies remain live.
-	bundle.Cookies, bundle.ClockRevision, bundle.Observation = clock.selected(bundle.Cookies, changes, time.Now()), saved.Revision, observation
+	bundle.Cookies, bundle.ClockRevision, bundle.Observation = clock.selected(bundle.Cookies, changes, time.Now()), saved.Revision, codexRoutingPrivateObservation(observation)
 	_, expiry := codexRoutingCookieHeader(bundle.Cookies, time.Now())
 	if expiry.IsZero() {
 		return nil

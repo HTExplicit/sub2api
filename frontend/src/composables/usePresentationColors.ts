@@ -1,4 +1,83 @@
 import { onBeforeUnmount, onMounted, shallowRef } from 'vue'
+import { Chart, type ScriptableContext } from 'chart.js'
+
+// Console theme: canvas text uses the UI font stack (Geist + MiSans) instead of Chart.js'
+// Helvetica/Arial default, lines are 2px and doughnuts are rings. Resting point markers are dropped
+// except where a value would otherwise be invisible or hard to place: a series with at most three
+// values, and a value with no neighbour on either side (a single point, or one between two gaps).
+// Chart.js' own defaults are saved before the first change and restored when the theme is switched
+// off at runtime. Charts re-resolve these defaults on the update that follows the next color read.
+const SPARSE_SERIES_MAX_POINTS = 3
+type ChartDefaultsSnapshot = {
+  fontFamily: typeof Chart.defaults.font.family
+  lineBorderWidth: typeof Chart.defaults.elements.line.borderWidth
+  pointRadius: typeof Chart.defaults.elements.point.radius
+  pointHoverRadius: typeof Chart.defaults.elements.point.hoverRadius
+  doughnutCutout: typeof Chart.overrides.doughnut.cutout
+  // cutout normally lives in the doughnut dataset defaults, not in the overrides: restore by deleting
+  doughnutCutoutOwn: boolean
+}
+let upstreamChartDefaults: ChartDefaultsSnapshot | null = null
+const valueCounts = new WeakMap<object, { length: number; count: number }>()
+
+function hasChartValue(value: unknown): boolean {
+  if (value === null || value === undefined) return false
+  if (typeof value === 'number') return Number.isFinite(value)
+  if (Array.isArray(value)) return value.length > 1 && hasChartValue(value[1])
+  if (typeof value === 'object' && 'y' in (value as Record<string, unknown>)) return hasChartValue((value as { y: unknown }).y)
+  return true
+}
+
+function countChartValues(data: unknown[]): number {
+  const cached = valueCounts.get(data)
+  if (cached && cached.length === data.length) return cached.count
+  const count = data.reduce<number>((total, value) => total + (hasChartValue(value) ? 1 : 0), 0)
+  valueCounts.set(data, { length: data.length, count })
+  return count
+}
+
+function restingPointRadius(): number {
+  const radius = upstreamChartDefaults?.pointRadius
+  return typeof radius === 'number' && radius > 0 ? radius : 3
+}
+
+function consolePointRadius(ctx: ScriptableContext<'line'>): number {
+  const data = (ctx.dataset?.data ?? []) as unknown[]
+  if (countChartValues(data) <= SPARSE_SERIES_MAX_POINTS) return restingPointRadius()
+  const index = ctx.dataIndex
+  if (typeof index !== 'number') return 0
+  return !hasChartValue(data[index - 1]) && !hasChartValue(data[index + 1]) ? restingPointRadius() : 0
+}
+
+function applyConsoleChartDefaults(styles: CSSStyleDeclaration) {
+  if (!upstreamChartDefaults) {
+    upstreamChartDefaults = {
+      fontFamily: Chart.defaults.font.family,
+      lineBorderWidth: Chart.defaults.elements.line.borderWidth,
+      pointRadius: Chart.defaults.elements.point.radius,
+      pointHoverRadius: Chart.defaults.elements.point.hoverRadius,
+      doughnutCutout: Chart.overrides.doughnut.cutout,
+      doughnutCutoutOwn: Object.prototype.hasOwnProperty.call(Chart.overrides.doughnut, 'cutout')
+    }
+  }
+  const font = styles.getPropertyValue('--ui-font').trim()
+  if (font) Chart.defaults.font.family = font
+  Chart.defaults.elements.line.borderWidth = 2
+  Chart.defaults.elements.point.radius = consolePointRadius as unknown as typeof Chart.defaults.elements.point.radius
+  Chart.defaults.elements.point.hoverRadius = 4
+  Chart.overrides.doughnut.cutout = '68%'
+}
+
+function restoreUpstreamChartDefaults() {
+  if (!upstreamChartDefaults) return
+  Chart.defaults.font.family = upstreamChartDefaults.fontFamily
+  Chart.defaults.elements.line.borderWidth = upstreamChartDefaults.lineBorderWidth
+  Chart.defaults.elements.point.radius = upstreamChartDefaults.pointRadius
+  Chart.defaults.elements.point.hoverRadius = upstreamChartDefaults.pointHoverRadius
+  if (upstreamChartDefaults.doughnutCutoutOwn) Chart.overrides.doughnut.cutout = upstreamChartDefaults.doughnutCutout
+  else delete (Chart.overrides.doughnut as unknown as Record<string, unknown>).cutout
+  upstreamChartDefaults = null
+}
 
 // Canvas consumers need resolved colors. CSS custom properties keep optional
 // presentation policy outside their data, chart and billing logic.
@@ -26,6 +105,8 @@ export function usePresentationColors() {
     queued = false
     if (!active) return
     const root = document.documentElement, styles = getComputedStyle(root), dark = root.classList.contains('dark')
+    if (root.classList.contains('flat-theme')) applyConsoleChartDefaults(styles)
+    else restoreUpstreamChartDefaults()
     const isColor = (value: string) => !!value && typeof CSS !== 'undefined' && CSS.supports('color', value)
     const next = { ...colors.value }
     for (const key of Object.keys(defaults) as Array<keyof typeof defaults>) {

@@ -151,4 +151,21 @@ describe('292 proxy draft and candidate isolation', () => {
     expect(() => pendingAction!()).toThrow('common.operationFailed')
     expect(testProxy).toHaveBeenCalledTimes(1)
   })
+
+  it('shows the original failure, every stage, certificate facts, the username and runtime settings', async () => {
+    parseProxy.mockResolvedValue({ candidates: [{ selection_id: 'one', protocol: 'http', host: 'proxy.example', port: 8080, username: 'sticky-session-7', username_masked: '***', source_line: 1, source_column: 1, format: 'uri' }], issues: [], selection_id: 'one', selection_required: false })
+    testProxy.mockResolvedValue({ success: false, network_reachable: false, protocol: 'http', code: 'ticket_proxy_auth', message: 'proxy auth failed', failure_detail: 'Head "https://chatgpt.com/backend-api/codex/responses": Proxy Authentication Required',
+      stages: [{ name: 'tcp', success: true, duration_ms: 12, message: 'tcp 192.0.2.1:8080' }, { name: 'connect', success: false, duration_ms: 20, message: 'HTTP 407 Proxy Authentication Required' }],
+      certificate_error: 'x509: certificate signed by unknown authority',
+      certificates: [{ server_name: 'chatgpt.com', subject: 'CN=chatgpt.com', issuer: 'CN=Inspecting Proxy CA', not_before: '2026-01-01T00:00:00Z', not_after: '2027-01-01T00:00:00Z', dns_names: ['chatgpt.com'], sha256: 'a'.repeat(64), spki_sha256: 'b'.repeat(64) }] })
+    const wrapper = await settings()
+    expect(wrapper.get('[data-test="codex-runtime-facts"]').text()).toContain('retained')
+    await wrapper.get('[data-test="codex-parse-proxy"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.get('[data-test="codex-proxy-candidates"]').text()).toContain('sticky-session-7')
+    await wrapper.get('[data-test="codex-test-proxy"]').trigger('click')
+    await flushPromises()
+    const status = wrapper.get('[role="status"]').text()
+    for (const value of ['ticket_proxy_auth', 'proxy auth failed', 'Proxy Authentication Required', 'HTTP 407', 'tcp 192.0.2.1:8080', 'CN=Inspecting Proxy CA', 'x509: certificate signed by unknown authority', 'b'.repeat(64)]) expect(status).toContain(value)
+  })
 })

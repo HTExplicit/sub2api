@@ -6,7 +6,7 @@
       </h3>
       <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">{{ t('admin.settings.observability.description') }}</p>
     </div>
-    <p v-if="loadError" class="text-sm text-red-600 dark:text-red-400">{{ t('admin.settings.observability.loadFailed') }}</p>
+    <p v-if="loadError" class="whitespace-pre-wrap break-words text-sm text-red-600 dark:text-red-400">{{ t('admin.settings.observability.loadFailed') }}: {{ loadError }}</p>
     <template v-else-if="form">
       <label class="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
         <input v-model="form.telemetry_enabled" type="checkbox" data-testid="observability-telemetry" />
@@ -20,7 +20,7 @@
         <button type="button" class="btn btn-secondary" :disabled="saving" data-testid="observability-save" @click="save">
           {{ t('admin.settings.observability.save') }}
         </button>
-        <span v-if="status" class="text-sm text-gray-500 dark:text-gray-400" role="status">{{ status }}</span>
+        <span v-if="status" class="whitespace-pre-wrap break-words text-sm text-gray-500 dark:text-gray-400" role="status">{{ status }}</span>
       </div>
     </template>
     <TotpStepUpDialog :controller="stepUp" />
@@ -35,12 +35,13 @@ import { useAppStore } from '@/stores'
 import { applyFlatTheme } from '@/utils/flatTheme'
 import { useStepUp, isStepUpCancelled } from '@/composables/useStepUp'
 import TotpStepUpDialog from '@/components/auth/TotpStepUpDialog.vue'
+import { extractApiErrorMessage } from '@/utils/apiError'
 
 const { t } = useI18n()
 const appStore = useAppStore()
 const stepUp = useStepUp()
 const form = ref<ObservabilitySettings | null>(null)
-const loadError = ref(false)
+const loadError = ref('')
 const saving = ref(false)
 const status = ref('')
 
@@ -55,7 +56,7 @@ async function save() {
     status.value = t('admin.settings.observability.saved')
     void appStore.fetchPublicSettings(true)
   } catch (error) {
-    if (!isStepUpCancelled(error)) status.value = t('admin.settings.observability.saveFailed')
+    if (!isStepUpCancelled(error)) status.value = `${t('admin.settings.observability.saveFailed')}: ${extractApiErrorMessage(error, t('common.unknownError'))}`
   } finally {
     saving.value = false
   }
@@ -64,8 +65,8 @@ async function save() {
 onMounted(async () => {
   try {
     form.value = await getObservabilitySettings()
-  } catch {
-    loadError.value = true
+  } catch (error) {
+    loadError.value = extractApiErrorMessage(error, t('common.unknownError'))
   }
 })
 </script>

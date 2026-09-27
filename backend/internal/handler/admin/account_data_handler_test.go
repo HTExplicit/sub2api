@@ -328,7 +328,8 @@ func TestImportDataReusesProxyAndSkipsDefaultGroup(t *testing.T) {
 	require.True(t, adminSvc.createdAccounts[0].SkipDefaultGroupBind)
 }
 
-func TestExportDataExcludesCodexTicketMaterial(t *testing.T) {
+// The backup keeps every stored extra key, Codex ticket material included.
+func TestExportDataKeepsCodexTicketMaterial(t *testing.T) {
 	router, adminSvc := setupAccountDataRouter()
 	extra := map[string]any{
 		"codex_turn_ticket:gpt-6-astra": map[string]any{"state": "private-ticket-blob", "length": 292},
@@ -342,10 +343,9 @@ func TestExportDataExcludesCodexTicketMaterial(t *testing.T) {
 	var resp dataResponse
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &resp))
 	require.Len(t, resp.Data.Accounts, 1)
-	require.Equal(t, map[string]any{"ordinary": "retained"}, resp.Data.Accounts[0].Extra)
+	require.Equal(t, "retained", resp.Data.Accounts[0].Extra["ordinary"])
+	require.Equal(t, "http://user:legacy-proxy-secret@proxy.example.com:8080", resp.Data.Accounts[0].Extra["codex_harvest_proxy_url"])
+	require.Contains(t, resp.Data.Accounts[0].Extra, "codex_turn_ticket:gpt-6-astra")
 	require.Equal(t, "backup-token", resp.Data.Accounts[0].Credentials["access_token"])
-	require.NotContains(t, rec.Body.String(), "private-ticket-blob")
-	require.NotContains(t, rec.Body.String(), "legacy-proxy-secret")
-	require.Contains(t, extra, "codex_turn_ticket:gpt-6-astra")
-	require.Contains(t, extra, "codex_harvest_proxy_url")
+	require.Contains(t, rec.Body.String(), "private-ticket-blob")
 }

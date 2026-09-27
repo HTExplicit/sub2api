@@ -252,7 +252,9 @@ export default {
         provider: '验证服务商',
         providerTurnstile: 'Cloudflare Turnstile',
         providerTencent: '腾讯天御验证码',
-        providerAliyun: '阿里云验证码 2.0'
+        providerAliyun: '阿里云验证码 2.0',
+        multipleEnabled: '已保存的设置同时启用了多个验证服务商：{providers}。服务端只接受一个，在此选择一个服务商之前无法保存设置；点击某个服务商会只保留它。',
+        multipleEnabledSaveBlocked: '设置未保存：同时启用了多个验证服务商（{providers}）。请先在「{tab}」页的「{section}」中选择一个服务商，再保存。'
       },
       tencentCaptcha: {
         title: '腾讯天御验证码',
@@ -527,12 +529,35 @@ export default {
         title: '模型目录与容量参考',
         description: '参考数据用于容量规划；账号自定义值与实时上游声明继续按既有优先级处理。',
         search: '搜索模型或供应商',
-        count: '{count} 项匹配，显示前 {shown} 项。',
+        count: '共 {count} 项匹配。',
         context: '上下文',
         maxOutput: '最大输出',
         subscriptionMaximum: '订阅参考最大窗口',
         verified: '核对日期',
-        loadFailed: '模型目录加载失败'
+        loadFailed: '模型目录加载失败',
+        aliases: '别名',
+        contextWindow: '上下文窗口',
+        maxContextWindow: '最大上下文窗口',
+        maxInputTokens: '最大输入',
+        capacityBasis: '容量口径',
+        observedAt: '观测时间',
+        conditions: '适用条件',
+        normalizationBasis: '换算依据',
+        originalText: '原文',
+        matchHosts: '限定上游主机',
+        matchAccountModes: '限定账号模式',
+        reference: '参考目录',
+        sources: '来源'
+      },
+      deprecatedSettings: {
+        title: '已弃用设置（只读，不生效）',
+        hint: '这些开关已停用：保存设置时保留库里的原值，运行时不再读取。这里只显示当前存储的值。',
+        on: '开启',
+        off: '关闭',
+        labels: {
+          openai_apikey_alpha_search_responses_bridge_enabled: 'OpenAI API Key 账号：Alpha Search 走 Responses 桥接',
+          openai_apikey_prompt_cache_key_normalization_enabled: 'OpenAI API Key 账号：prompt_cache_key 归一化'
+        }
       },
       gatewayForwarding: {
         title: '请求转发行为',

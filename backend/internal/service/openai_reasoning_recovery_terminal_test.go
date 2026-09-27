@@ -166,8 +166,14 @@ func TestOpenAIReasoningRecoveryTerminalsPreserveClassificationAndDiagnostic(t *
 					}
 					encoded, encodeErr := json.Marshal(diagnostic)
 					require.NoError(t, encodeErr)
-					for _, secret := range []string{"opaque-old", "visible summary", "private-signature-detail-8162", "private-validation-detail-7514", "source-token"} {
+					// The administrator's diagnostic keeps the upstream message of
+					// the final rejection; request history stays summarized, and the
+					// returned error never carries upstream text.
+					require.Equal(t, gjson.Get(payload, "message").String(), diagnostic.UpstreamError.Message.Value)
+					for _, secret := range []string{"opaque-old", "visible summary", "source-token"} {
 						require.NotContains(t, string(encoded), secret)
+					}
+					for _, secret := range []string{"opaque-old", "visible summary", "private-signature-detail-8162", "private-validation-detail-7514", "source-token"} {
 						require.NotContains(t, err.Error(), secret)
 					}
 				})

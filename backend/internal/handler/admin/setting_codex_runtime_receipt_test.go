@@ -73,11 +73,17 @@ func TestNativeCodexConfigurationHTTPReceiptUnavailableIsOpaque(t *testing.T) {
 			}
 			require.Equal(t, http.StatusServiceUnavailable, recorder.Code)
 			require.Equal(t, "no-store", recorder.Header().Get("Cache-Control"))
-			require.JSONEq(t, `{"code":503,"message":"Codex runtime is unavailable"}`, recorder.Body.String())
+			// The administrator sees the original cause; a partial snapshot and its
+			// receipt headers are still never returned.
+			cause := "native Codex runtime unavailable"
+			if name != "missing_runtime" {
+				cause = "synthetic-private-database-detail"
+			}
+			require.JSONEq(t, `{"code":503,"message":"Codex runtime is unavailable: `+cause+`"}`, recorder.Body.String())
 			for _, header := range [...]string{nativeCodexHostingModeHeader, nativeCodexConfigVersionHeader, nativeCodexConfigSHA256Header, nativeCodexRuntimeGenerationHeader} {
 				require.Empty(t, recorder.Header().Values(header), "unavailable reads must not expose a receipt")
 			}
-			require.NotContains(t, recorder.Body.String(), "synthetic-private")
+			require.NotContains(t, recorder.Body.String(), "synthetic-private-config")
 		})
 	}
 }

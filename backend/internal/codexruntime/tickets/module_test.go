@@ -39,6 +39,12 @@ func TestInvalidConfigurationCannotStopCurrentTicketEpoch(t *testing.T) {
 			t.Fatalf("invalid configuration changed ticket execution: %s", raw)
 		}
 	}
+	// The rejection names the concrete key or model.
+	for raw, want := range map[string]string{`{"extra":true}`: "unknown codex runtime setting: extra", `{"enabled":null}`: "null codex runtime setting: enabled", `{"models":["one","one"]}`: `duplicate ticket model "one"`} {
+		if _, err := module.ValidateConfig(context.Background(), []byte(raw)); err == nil || !strings.Contains(err.Error(), want) {
+			t.Fatalf("configuration %s rejected without %q: %v", raw, want, err)
+		}
+	}
 }
 
 func TestTransportSettingDoesNotDependOnTicketAcquisitionSwitch(t *testing.T) {

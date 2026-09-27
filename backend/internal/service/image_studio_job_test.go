@@ -3,6 +3,8 @@
 package service
 
 import (
+	"context"
+	"fmt"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -108,4 +110,13 @@ func TestResolveImageStudioTerminalStatusPreservesPartialAndCanceledResults(t *t
 			require.Equal(t, tt.want, ResolveImageStudioTerminalStatus(tt.cancelRequested, tt.counts))
 		})
 	}
+}
+
+// A gateway failure keeps its status and body for administrators (server log
+// and Ops); the job item shows the generic user-facing message.
+func TestImageStudioGatewayErrorShowsGenericUserMessage(t *testing.T) {
+	err := fmt.Errorf("generate: %w", &ImageStudioGatewayError{StatusCode: 502, Body: `{"error":{"message":"upstream account 7 was banned"}}`})
+	code, message := imageStudioSafeExecutionError(context.Background(), err)
+	require.Equal(t, "generation_failed", code)
+	require.Equal(t, "Image generation failed", message)
 }

@@ -126,6 +126,7 @@ var duplicateAccountDiscardedExtraKeys = map[string]struct{}{
 	"quota_daily_reset_at":  {},
 	"quota_weekly_reset_at": {},
 	// Provider observations, capability probes, and transient scheduling state.
+	OpenAILastUpstreamErrorExtraKey:          {},
 	"model_rate_limits":                      {},
 	"session_window_utilization":             {},
 	"passive_usage_7d_utilization":           {},

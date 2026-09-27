@@ -816,9 +816,15 @@ func TestProxyOpenAIWSHTTPBridgeTurnTransportErrorFailoverSafety(t *testing.T) {
 				require.False(t, errors.As(err, &failoverErr))
 			}
 			require.Len(t, writes, tt.wantWrites)
+			// A delivered error event is a client-visible failure (upstream
+			// v0.2.8); a hidden failover is not.
+			streamErr, marked := GetOpsStreamError(c)
+			require.Equal(t, tt.wantWrites > 0, marked)
 			if tt.wantWrites > 0 {
 				require.Equal(t, "error", gjson.GetBytes(writes[0], "type").String())
 				require.Equal(t, int64(http.StatusBadGateway), gjson.GetBytes(writes[0], "status").Int())
+				require.True(t, streamErr.CountTowardsSLA)
+				require.Equal(t, http.StatusBadGateway, streamErr.IntendedStatus)
 			}
 		})
 	}
@@ -873,6 +879,12 @@ func TestProxyOpenAIWSHTTPBridgeTurnHTTPStatusFailoverSafety(t *testing.T) {
 				require.False(t, errors.As(err, &failoverErr))
 			}
 			require.Len(t, writes, tt.wantWrites)
+			streamErr, marked := GetOpsStreamError(c)
+			require.Equal(t, tt.wantWrites > 0, marked)
+			if tt.wantWrites > 0 {
+				require.Equal(t, "temporary upstream failure", streamErr.Message)
+				require.Equal(t, tt.status, streamErr.IntendedStatus)
+			}
 		})
 	}
 }
@@ -1052,7 +1064,7 @@ func TestProxyOpenAIWSHTTPBridgeTurnBudgetExceededWriteOrdering(t *testing.T) {
 				require.NotContains(t, string(written), "sensitive upstream detail")
 			}
 			require.Equal(t, 1, repo.setErrorCalls, "a budget terminal puts the account into the error state")
-			require.Equal(t, "sensitive upstream detail", repo.lastErrorMsg, "the account keeps the upstream message")
+			require.Equal(t, "sensitive upstream detail (type=budget_exceeded, code=429)", repo.lastErrorMsg, "the account keeps the upstream message with its type and code")
 		})
 	}
 }

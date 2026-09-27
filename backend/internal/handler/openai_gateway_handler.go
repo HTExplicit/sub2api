@@ -473,6 +473,10 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 		return
 	}
 	if err := h.gatewayService.AdmitCodexQualityRequest(c, apiKey, body, h.apiKeyService.GetByID); err != nil {
+		// The reason names users, groups, API keys and proxies, so the client
+		// keeps the fixed sentence; the server log and the Ops record carry it.
+		reqLog.Warn("openai.codex_quality_admission_rejected", zap.Error(err))
+		setOpsLocalErrorDetail(c, err.Error())
 		h.errorResponse(c, http.StatusConflict, "codex_quality_unavailable", "Codex quality run unavailable")
 		return
 	}
@@ -3893,7 +3897,9 @@ func (h *OpenAIGatewayHandler) handleConcurrencyError(c *gin.Context, err error,
 
 func (h *OpenAIGatewayHandler) handleOpenAINoAccountError(c *gin.Context, classification noAccountErrorClassification, streamStarted bool) {
 	if classification.ErrType == service.OpenAIModelNotSupportedCode {
-		service.SetOpsUpstreamError(c, http.StatusBadRequest, classification.Message, "")
+		// No upstream was called for this request; record why instead of the
+		// client sentence. The status keeps the existing upstream attribution.
+		service.SetOpsUpstreamError(c, http.StatusBadRequest, service.OpenAIModelNotSupportedNoAccountOpsMessage, "")
 		h.handleStreamingAwareErrorWithCode(
 			c,
 			classification.Status,
@@ -3943,7 +3949,9 @@ func (h *OpenAIGatewayHandler) handleFailoverExhausted(c *gin.Context, failoverE
 		if upstreamStatus <= 0 {
 			upstreamStatus = http.StatusBadRequest
 		}
-		service.SetOpsUpstreamError(c, upstreamStatus, service.OpenAIRequestRejectedClientMessage, "")
+		// The attempt event already carries the upstream text; never replace it
+		// with the client sentence.
+		service.SetOpsUpstreamError(c, upstreamStatus, service.OpenAIFailoverUpstreamMessage(failoverErr), "")
 		// Record the semantic failure before the renderer can commit SSE HTTP
 		// 200 or add its non-SLA fallback mark. This branch must precede the
 		// generic ClientErrorCode JSON path, including pre-first-byte failures.
@@ -3979,7 +3987,7 @@ func (h *OpenAIGatewayHandler) handleFailoverExhausted(c *gin.Context, failoverE
 		return
 	}
 	if failoverErr.IsOpenAIModelNotSupported() {
-		service.SetOpsUpstreamError(c, http.StatusBadRequest, service.OpenAIModelNotSupportedClientMessage, "")
+		service.SetOpsUpstreamError(c, http.StatusBadRequest, service.OpenAIFailoverUpstreamMessage(failoverErr), "")
 		h.handleStreamingAwareErrorWithCode(
 			c,
 			http.StatusBadRequest,
@@ -4000,11 +4008,13 @@ func (h *OpenAIGatewayHandler) handleFailoverExhausted(c *gin.Context, failoverE
 		if message == "" {
 			message = service.OpenAIContinuationStateUnavailableClientMessage
 		}
+		// An in-band response.failed arrives on HTTP 200; that transport status
+		// is not the upstream's error status.
 		upstreamStatus := failoverErr.StatusCode
-		if upstreamStatus <= 0 {
+		if upstreamStatus < http.StatusBadRequest {
 			upstreamStatus = statusCode
 		}
-		service.SetOpsUpstreamError(c, upstreamStatus, message, "")
+		service.SetOpsUpstreamError(c, upstreamStatus, service.OpenAIFailoverUpstreamMessage(failoverErr), "")
 		errType := "invalid_request_error"
 		if statusCode >= http.StatusInternalServerError {
 			errType = "server_error"
@@ -4041,7 +4051,9 @@ func (h *OpenAIGatewayHandler) handleFailoverExhausted(c *gin.Context, failoverE
 		return
 	}
 	if failoverErr.IsOpenAIRefusalRecovery() {
-		service.SetOpsUpstreamError(c, http.StatusServiceUnavailable, failoverErr.ClientMessage, "")
+		// The refusal attempts carry their matched keyword and original text;
+		// the client sentence is not upstream evidence.
+		service.SetOpsUpstreamError(c, http.StatusServiceUnavailable, "", "")
 		if failoverErr.IsOpenAICyberFailover() {
 			h.handleStreamingAwareErrorWithDetails(
 				c,
@@ -4536,7 +4548,7 @@ func wsSelectionModelNotSupported(
 }
 
 func closeOpenAIWSModelNotSupported(c *gin.Context, conn *coderws.Conn) {
-	service.SetOpsUpstreamError(c, http.StatusBadRequest, service.OpenAIModelNotSupportedClientMessage, "")
+	service.SetOpsUpstreamError(c, http.StatusBadRequest, service.OpenAIModelNotSupportedNoAccountOpsMessage, "")
 	service.MarkOpsStreamFailure(c, service.OpenAIModelNotSupportedCode, service.OpenAIModelNotSupportedCode, service.OpenAIModelNotSupportedClientMessage, http.StatusBadRequest)
 	writeCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	if conn != nil {
@@ -4561,10 +4573,17 @@ func closeOpenAIWSFailoverExhausted(c *gin.Context, conn *coderws.Conn, failover
 			errorType = service.OpenAIModelNotSupportedCode
 			errorCode = service.OpenAIModelNotSupportedCode
 			message = service.OpenAIModelNotSupportedClientMessage
+			// The client receives the fixed terminal; Ops keeps the upstream text.
+			service.SetOpsUpstreamError(c, failoverErr.StatusCode, service.OpenAIFailoverUpstreamMessage(failoverErr), "")
 		case failoverErr.IsOpenAIContinuationStateUnavailable():
 			intendedStatus = http.StatusBadRequest
 			errorType = "invalid_request_error"
 			message = service.OpenAIContinuationStateUnavailableClientMessage
+			upstreamStatus := failoverErr.StatusCode
+			if upstreamStatus < http.StatusBadRequest {
+				upstreamStatus = intendedStatus
+			}
+			service.SetOpsUpstreamError(c, upstreamStatus, service.OpenAIFailoverUpstreamMessage(failoverErr), "")
 		case failoverErr.Stage == service.GatewayFailureStageAccountAuth:
 			intendedStatus = http.StatusServiceUnavailable
 			errorType = "api_error"

@@ -104,6 +104,9 @@ func TestTicketAdmissionAndInjectionShareIdentityValidityAndScope(t *testing.T) 
 			qualification := &extensionv1.CodexRoutingQualification{Scope: testRoutingScope(account), Model: "gpt-6-astra", VerifiedAt: now, ExpiresAt: now.Add(time.Minute), Bundle: extensionv1.CodexRoutingBundleRef{Key: "bundle.test", Revision: 1, ExpiresAt: now.Add(time.Minute)}}
 			request := extensionv1.SchedulingRequest{Account: account, Model: qualification.Model, Now: now}
 			tc.change(qualification, &request)
+			if valid, problem := qualification.Valid(now, account.ID, account.Identity, "gpt-6-astra"), qualification.Problem(now, account.ID, account.Identity, "gpt-6-astra"); valid != (problem == "") {
+				t.Fatalf("Problem %q disagrees with Valid %t", problem, valid)
+			}
 			rawState, _ := json.Marshal(State{Schema: 2, Identity: account.Identity, Qualification: qualification})
 			host := &memoryHost{account: account, state: map[string]extensionv1.StateResult{stateKey(account.ID, "gpt-6-astra"): {Found: true, Value: rawState}}}
 			module := NewModule()
@@ -127,6 +130,9 @@ func TestTicketAdmissionAndInjectionShareIdentityValidityAndScope(t *testing.T) 
 			}
 			if (injection.Code == "") != tc.allow {
 				t.Fatalf("injection disagrees with admission: %+v", injection)
+			}
+			if injection.Code == "ticket_missing" && !strings.HasPrefix(injection.Message, "the route qualification") {
+				t.Fatalf("ticket_missing lost its concrete reason: %+v", injection)
 			}
 			if strings.Contains(string(injection.Payload), "routing_qualification") != tc.inject || strings.Contains(string(injection.Payload), "x-codex-turn-state") {
 				t.Fatal("unexpected opaque-state injection or missing qualification reference")

@@ -46,4 +46,15 @@ func TestRoutingOutcomeKeepsFailureCategories(t *testing.T) {
 			t.Fatalf("failure category was lost: %s", raw)
 		}
 	}
+	// Unknown codes keep their name; the original error and upstream facts are shown.
+	observation := &extensionv1.CodexRoutingObservation{Code: "routing_new_case", Error: "dial tcp 192.0.2.1:8080: connect: connection refused", UpstreamErrorCode: "rate_limit_exceeded", UpstreamErrorMessage: "Rate limit reached", RequestID: "req_fixture", CFRay: "ray-fixture", UpstreamBody: `{"error":{"code":"rate_limit_exceeded"}}`}
+	raw, err := json.Marshal(Outcome{Code: "routing_new_case", HTTPStatus: 429, Observation: observation})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"未归类的结果代码：routing_new_case", "connection refused", "rate_limit_exceeded", "Rate limit reached", "req_fixture", "ray-fixture", `\"code\":\"rate_limit_exceeded\"`} {
+		if !strings.Contains(string(raw), want) {
+			t.Fatalf("outcome lost %q: %s", want, raw)
+		}
+	}
 }

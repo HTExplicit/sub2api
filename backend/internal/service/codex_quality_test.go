@@ -116,6 +116,17 @@ func TestCodexQualityRawObserverDoesNotRewriteOrInventUsage(t *testing.T) {
 	require.Nil(t, final.InputTokens)
 	require.NotNil(t, final.OutputTokens)
 	require.Zero(t, *final.OutputTokens)
+	require.Equal(t, strings.Repeat("m", 256)+"…(truncated, 300 bytes)", qualityRecordedModel(strings.Repeat("m", 300)), "one declared name is bounded and marked")
+	failedEvent := `{"type":"response.failed","response":{"model":"o-internal/Model X","error":{"code":"server_error","message":"upstream said no"}}}`
+	var failed CodexQualityAttempt
+	odd := &codexQualityObservedBody{ReadCloser: io.NopCloser(strings.NewReader("data: " + failedEvent + "\n\n")), sse: true, attempt: CodexQualityAttempt{HTTPStatus: 200}, finish: func(a CodexQualityAttempt) { failed = a }}
+	_, err = io.ReadAll(odd)
+	require.NoError(t, err)
+	require.Equal(t, []string{"o-internal/Model X"}, failed.ResponseModels, "declared models are recorded verbatim")
+	require.Equal(t, "upstream_error", failed.ErrorCode)
+	require.Equal(t, "server_error", failed.UpstreamErrorCode)
+	require.Equal(t, "upstream said no", failed.UpstreamErrorMessage)
+	require.Equal(t, failedEvent, failed.UpstreamBody)
 }
 
 func TestCodexQualityPrivateKeysAndHeaderScope(t *testing.T) {

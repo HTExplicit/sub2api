@@ -40,6 +40,6 @@ type OfficialModelContextCapacity struct {
 	NormalizationBasis string                         `json:"normalization_basis,omitempty"`
 	Conditions         string                         `json:"conditions,omitempty"`
 	Reference          *ModelContextCapacityReference `json:"reference,omitempty"`
-	MatchHosts         []string                       `json:"-"`
-	MatchAccountModes  []string                       `json:"-"`
+	MatchHosts         []string                       `json:"match_hosts,omitempty"`
+	MatchAccountModes  []string                       `json:"match_account_modes,omitempty"`
 }

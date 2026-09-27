@@ -217,7 +217,7 @@ describe('account data import job', () => {
       await selectFiles(wrapper, [jsonFile('broken.json', '{')])
 
       expect(showError).toHaveBeenCalledTimes(1)
-      expect(showError).toHaveBeenCalledWith('admin.accounts.dataImportParseFailedFile')
+      expect(showError).toHaveBeenCalledWith(expect.stringMatching(/^admin\.accounts\.dataImportParseFailedFile: \S/))
       expect(wrapper.find('[data-test="import-preview"]').exists()).toBe(false)
       expect(wrapper.get('[data-test="submit-import-job"]').attributes('disabled')).toBeDefined()
       await wrapper.get('#account-import-job-form').trigger('submit')
@@ -267,7 +267,8 @@ describe('account data import job', () => {
 
     await selectFiles(wrapper, [jsonFile('broken.json', '{')])
 
-    expect(showError).toHaveBeenCalledWith('admin.accounts.dataImportParseFailedFile')
+    // The JSON.parse error text follows the label.
+    expect(showError).toHaveBeenCalledWith(expect.stringMatching(/^admin\.accounts\.dataImportParseFailedFile: \S/))
     expect(importData).not.toHaveBeenCalled()
     expect(wrapper.get('[data-test="submit-import-job"]').attributes('disabled')).toBeDefined()
   })
@@ -277,7 +278,7 @@ describe('account data import job', () => {
 
     await selectFiles(wrapper, [jsonFile('random.json', { name: 'not-an-export' })])
 
-    expect(showError).toHaveBeenCalledWith('admin.accounts.dataImportInvalidFile')
+    expect(showError).toHaveBeenCalledWith('admin.accounts.dataImportInvalidFile: accounts must be an array')
     expect(importData).not.toHaveBeenCalled()
   })
 

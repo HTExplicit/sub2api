@@ -1267,6 +1267,11 @@ func (s *OpenAIGatewayService) proxyResponsesWebSocketV2PassthroughAttempt(
 				logOpenAIWSV2Passthrough("refusal_recovery_buffer_limit account_id=%d transport=websocket", account.ID)
 			},
 		)
+		refusalOutput.SetRewriteObserver(func(evidence openAIRefusalEvidence) {
+			recordOpenAIRefusalRecovery(ctx, c, account, "websocket", true, false, openAIRefusalActionRewritten, evidence)
+		})
+		// The output may hold or replace frames; mark failures on delivery.
+		refusalOutput.SetDeliveryObserver(func(payload []byte) { markOpenAIWSDeliveredFailure(c, payload) })
 		relayClientConn = &openAIRefusalRecoveryWSFrameConn{inner: policyClientConn, output: refusalOutput}
 	}
 	upstreamFirstMessageSent := false
@@ -1389,6 +1394,11 @@ func (s *OpenAIGatewayService) proxyResponsesWebSocketV2PassthroughAttempt(
 				}
 			},
 			AfterClientWrite: func(msgType coderws.MessageType, payload []byte, writeErr error) {
+				// Upstream v0.2.8 marks delivered error/response.failed frames.
+				// With refusal recovery the output marks them on delivery.
+				if msgType == coderws.MessageText && writeErr == nil && refusalOutput == nil {
+					markOpenAIWSDeliveredFailure(c, payload)
+				}
 				if msgType == coderws.MessageText && openAIWSPassthroughIsTerminalOutput(payload) {
 					turnLifecycle.finishTerminalWrite(writeErr == nil, clientFrameConn.markTurnCompleted)
 				}
@@ -1418,7 +1428,8 @@ func (s *OpenAIGatewayService) proxyResponsesWebSocketV2PassthroughAttempt(
 				}
 				if eventType == "error" || eventType == "response.failed" {
 					if failoverErr, ok := s.openAIBudgetExceededTerminalFailover(
-						ctx, account, handshakeHeaders, payload,
+						ctx, c, account, handshakeHeaders, payload, true,
+						completedTurns.Load() == 0 && (refusalOutput == nil || !refusalOutput.SemanticOutputStarted()),
 					); ok {
 						replaySafe := completedTurns.Load() == 0 && (refusalOutput == nil || !refusalOutput.SemanticOutputStarted())
 						if refusalOutput != nil {
@@ -1456,6 +1467,7 @@ func (s *OpenAIGatewayService) proxyResponsesWebSocketV2PassthroughAttempt(
 						model = canonicalOpenAIAccountSchedulingModel(account, requestModel)
 					}
 					_ = s.handleOpenAIAccountUpstreamError(ctx, account, http.StatusBadRequest, nil, payload, model)
+					s.recordOpenAIWSModelNotSupportedAttempt(c, account, handshakeHeaders, payload)
 					return failoverErr
 				}
 				if (eventType == "error" || eventType == "response.failed") && markOpenAIWSV2PassthroughCyberPolicy(c, payload) {

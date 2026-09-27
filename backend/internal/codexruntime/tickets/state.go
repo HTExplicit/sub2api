@@ -27,6 +27,10 @@ type State struct {
 	ManualWasEnrolled bool                                   `json:"manual_was_enrolled,omitempty"`
 	LastCode          string                                 `json:"last_code,omitempty"`
 	LastAttemptAt     *time.Time                             `json:"last_attempt_at,omitempty"`
+	// A host check that withdrew the qualification records its reason here;
+	// Observation keeps the last real upstream observation.
+	RevokedAt        *time.Time `json:"revoked_at,omitempty"`
+	RevocationReason string     `json:"revocation_reason,omitempty"`
 	// Opaque only so every legacy representation can be discarded without
 	// interpreting its length, timestamps or account-plan-specific format.
 	Ticket json.RawMessage `json:"ticket,omitempty"`
@@ -70,6 +74,7 @@ func (s *State) beginRouting(now time.Time, manual bool) error {
 func (s *State) completeRouting(now time.Time, q *extensionv1.CodexRoutingQualification, observation extensionv1.CodexRoutingObservation) {
 	manual := s.Phase == "manual_running"
 	s.Observation, s.LastCode = &observation, observation.Code
+	s.RevokedAt, s.RevocationReason = nil, ""
 	if q != nil {
 		s.Qualification, s.ExpiresAt = q, &q.ExpiresAt
 		s.Enrolled, s.Failures, s.Phase = true, 0, "ready"

@@ -2,9 +2,18 @@
    admin_observability_config theme switch (public setting flat_theme_enabled); without the class
    every variable below is undefined and tailwind.config.js falls back to the upstream values.
 
-   Visual language: platform console (neutral canvas, white surfaces, 1px hairlines inside pages,
-   4/6/8px radii, shadows only on popovers/menus/dialogs, ink primary actions, green only for
-   success). Fonts: Geist + Geist Mono (Latin subset, self-hosted); CJK falls back to system fonts. */
+   Visual language:
+   - light: shadcn/ui neutral (white surfaces on a #fafafa frame, #e5e5e5 hairlines, 8-12px radii,
+     near-flat cards with a 1px shadow);
+   - dark: Linear (layered cool-gray panels on a near-black base, ~8% white hairlines, four-step text
+     hierarchy);
+   - accent: Linear indigo #5e6ad2 in both modes (primary actions, active navigation, focus, switches,
+     pagination);
+   - controls: Radix Themes / Vercel Geist texture (32px controls, 1px shadow, inner highlight on
+     solid buttons, 3px focus ring).
+   Fonts: Geist for Latin and digits, Geist Mono for identifiers, MiSans (Regular + Medium) for
+   Chinese. MiSans is not shipped: utils/flatTheme.ts loads it from Xiaomi's official font service while
+   the console theme is on; when that service is unreachable the stack falls back to the system fonts. */
 
 /* Geist / Geist Mono 1.7.2 (npm `geist`, SIL OFL 1.1, see assets/fonts/geist/OFL.txt),
    variable weight 100-900, subset to the Latin range below. */
@@ -29,123 +38,154 @@
 }
 
 /* ------------------------------------------------------------------ role tokens */
+/* Surfaces, from back to front: canvas (frame + sidebar) < panel (the inset main column) <
+   surface (cards, tables, controls) < raised (menus, popovers, dialogs). */
 :root.flat-theme {
   --ui-canvas: 250 250 250;
+  --ui-panel: 255 255 255;
   --ui-surface: 255 255 255;
   --ui-subtle: 245 245 245;
-  --ui-sunk: 247 247 247;
-  --ui-raised: 245 245 245;
-  --ui-hover: 239 239 239;
-  --ui-line: 237 237 237;
-  --ui-line-strong: 224 224 224;
-  --ui-line-focus: 189 189 189;
+  --ui-sunk: 250 250 250;
+  --ui-raised: 255 255 255;
+  --ui-hover: 245 245 245;
+  --ui-line: 229 229 229;
+  --ui-line-strong: 212 212 212;
+  --ui-line-focus: 163 163 163;
+  /* boundary of controls identified only by their outline (checkbox, radio, switch): >= 3:1 */
+  --ui-control-line: 138 138 138;
   --ui-ink: 10 10 10;
-  --ui-muted: 115 115 115;
-  --ui-faint: 163 163 163;
-  --ui-primary: 10 10 10;
-  --ui-primary-hover: 38 38 38;
+  --ui-muted: 100 100 100;
+  --ui-faint: 112 112 112;
+  --ui-primary: 94 106 210;
+  --ui-primary-hover: 85 97 201;
+  --ui-primary-active: 75 86 189;
+  --ui-primary-soft: 239 240 250;
+  --ui-primary-ink: 79 90 197;
   --ui-on-primary: 255 255 255;
-  --ui-success: 34 160 80;
-  --ui-success-soft: 240 253 244;
-  --ui-danger: 220 60 60;
-  --ui-danger-soft: 254 242 242;
-  --ui-warning: 180 83 9;
-  --ui-warning-soft: 255 249 234;
-  --ui-info: 29 78 216;
-  --ui-info-soft: 239 246 255;
-  --ui-purple: 120 80 200;
-  --ui-purple-soft: 250 245 255;
-  --ui-link: #0a0a0a;
-  --ui-radius-sm: 4px;
-  --ui-radius-md: 6px;
-  --ui-radius-lg: 8px;
+  --ui-success: 26 127 71;
+  --ui-success-soft: 236 247 240;
+  --ui-danger: 206 44 49;
+  --ui-danger-soft: 253 240 240;
+  --ui-warning: 163 82 0;
+  --ui-warning-soft: 255 245 227;
+  --ui-info: 26 102 206;
+  --ui-info-soft: 237 245 254;
+  --ui-purple: 118 80 196;
+  --ui-purple-soft: 245 241 253;
+  --ui-link: #4f5ac5;
+  --ui-radius-sm: 6px;
+  --ui-radius-md: 8px;
+  --ui-radius-lg: 10px;
   --ui-radius-xl: 12px;
-  --ui-shadow-popover: 0 6px 20px rgb(20 20 18 / 0.08), 0 0 0 1px rgb(20 20 18 / 0.02);
-  --ui-shadow-overlay: 0 18px 50px rgb(20 20 18 / 0.14);
-  --ui-scrim: 10 10 10 / 0.2;
-  --ui-font: 'Geist', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', 'Noto Sans CJK SC', 'Noto Sans SC',
-    system-ui, -apple-system, 'Segoe UI', sans-serif;
-  --ui-font-mono: 'Geist Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, 'PingFang SC', 'Microsoft YaHei',
+  --ui-control-h: 2rem;
+  --ui-field-h: 2.25rem;
+  --ui-shadow-xs: 0 1px 2px 0 rgb(0 0 0 / 0.05);
+  --ui-shadow-card: 0 1px 2px 0 rgb(0 0 0 / 0.04);
+  --ui-shadow-panel: 0 1px 2px 0 rgb(0 0 0 / 0.04), 0 1px 3px 0 rgb(0 0 0 / 0.03);
+  --ui-shadow-primary: inset 0 1px 0 0 rgb(255 255 255 / 0.16), 0 1px 2px 0 rgb(30 36 110 / 0.22);
+  --ui-highlight: inset 0 0 0 0 transparent;
+  --ui-card-tint: linear-gradient(to top, rgb(var(--ui-primary) / 0.045), rgb(var(--ui-primary) / 0) 72%);
+  --ui-focus-ring: 0 0 0 3px rgb(var(--ui-primary) / 0.22);
+  --ui-shadow-popover: 0 0 0 1px rgb(0 0 0 / 0.02), 0 4px 8px -2px rgb(0 0 0 / 0.08), 0 12px 28px -6px rgb(0 0 0 / 0.12);
+  --ui-shadow-overlay: 0 0 0 1px rgb(0 0 0 / 0.03), 0 16px 32px -8px rgb(0 0 0 / 0.16), 0 32px 64px -16px rgb(0 0 0 / 0.14);
+  --ui-scrim: 10 10 10 / 0.36;
+  --ui-font: 'Geist', 'MiSans', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei UI', 'Microsoft YaHei',
+    'Noto Sans SC', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --ui-font-mono: 'Geist Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, 'MiSans', 'Microsoft YaHei UI',
     monospace;
   --theme-chart-text: #525252;
-  --theme-chart-grid: #ededed;
-  --theme-chart-axis: #737373;
+  --theme-chart-grid: #ebebeb;
+  --theme-chart-axis: #646464;
   --theme-chart-axis-grid: #f5f5f5;
   --theme-chart-tooltip: #ffffff;
   --theme-chart-title: #0a0a0a;
   --theme-chart-body: #525252;
   --theme-chart-gray: #a3a3a3;
-  --theme-chart-series-1: #525252;
-  --theme-chart-series-2: #168a49;
-  --theme-chart-series-3: #6d5ad8;
-  --theme-chart-series-4: #e8870b;
-  --theme-chart-series-5: #1ba3a3;
-  --theme-chart-series-6: #dc3c3c;
-  --theme-chart-series-7: #a3a3a3;
-  --theme-chart-series-8: #2f6fdb;
-  --theme-chart-series-9: #d4d4d4;
-  --theme-chart-series-10: #c07ad6;
-  --theme-chart-series-11: #0e7490;
-  --theme-chart-series-12: #737373;
+  /* same slots as the upstream palette (blue, emerald, amber, red, violet, pink, teal, orange,
+     indigo, lime, cyan, purple) with the accent first */
+  --theme-chart-series-1: #5e6ad2;
+  --theme-chart-series-2: #2a9d6f;
+  --theme-chart-series-3: #c97a10;
+  --theme-chart-series-4: #e5484d;
+  --theme-chart-series-5: #8e6ce0;
+  --theme-chart-series-6: #d6598a;
+  --theme-chart-series-7: #1a9c98;
+  --theme-chart-series-8: #e0703a;
+  --theme-chart-series-9: #3f8ceb;
+  --theme-chart-series-10: #6f9a24;
+  --theme-chart-series-11: #1799c0;
+  --theme-chart-series-12: #8a8f98;
   --theme-scrollbar-thumb: #d4d4d4;
   --theme-scrollbar-hover: #a3a3a3;
   --theme-text-sm: 0.8125rem;
   --theme-text-sm-leading: 1.25rem;
-  accent-color: rgb(var(--ui-ink));
+  accent-color: rgb(var(--ui-primary));
+  /* MiSans ships 400 and 500 only: bold CJK uses the Medium face instead of a smeared synthetic bold */
+  font-synthesis-weight: none;
 }
 
 :root.flat-theme.dark {
-  --ui-canvas: 15 15 15;
-  --ui-surface: 26 26 26;
-  --ui-subtle: 35 35 35;
-  --ui-sunk: 20 20 20;
-  --ui-raised: 35 35 35;
-  --ui-hover: 42 42 42;
-  --ui-line: 51 51 51;
-  --ui-line-strong: 77 77 77;
-  --ui-line-focus: 115 115 115;
-  --ui-ink: 242 242 242;
-  --ui-muted: 179 179 179;
-  --ui-faint: 140 140 140;
-  --ui-primary: 242 242 242;
-  --ui-primary-hover: 212 212 212;
-  --ui-on-primary: 10 10 10;
-  --ui-success: 74 222 128;
-  --ui-success-soft: 35 61 44;
-  --ui-danger: 248 113 113;
-  --ui-danger-soft: 66 42 42;
-  --ui-warning: 251 191 36;
-  --ui-warning-soft: 66 56 28;
-  --ui-info: 147 197 253;
-  --ui-info-soft: 48 57 67;
-  --ui-purple: 196 181 253;
-  --ui-purple-soft: 57 54 67;
-  --ui-link: #f2f2f2;
-  --ui-shadow-popover: 0 6px 20px rgb(0 0 0 / 0.55);
-  --ui-shadow-overlay: 0 18px 50px rgb(0 0 0 / 0.65);
+  --ui-canvas: 8 9 10;
+  --ui-panel: 15 16 17;
+  --ui-surface: 20 21 23;
+  --ui-subtle: 28 29 32;
+  --ui-sunk: 15 16 17;
+  --ui-raised: 26 27 30;
+  --ui-hover: 31 32 35;
+  --ui-line: 35 36 39;
+  --ui-line-strong: 47 48 52;
+  --ui-line-focus: 72 74 80;
+  --ui-control-line: 107 111 119;
+  --ui-ink: 247 248 248;
+  --ui-muted: 147 152 161;
+  --ui-faint: 128 133 141;
+  --ui-primary-hover: 85 97 201;
+  --ui-primary-active: 75 86 189;
+  --ui-primary-soft: 32 35 53;
+  --ui-primary-ink: 141 149 242;
+  --ui-success: 76 183 130;
+  --ui-success-soft: 21 38 30;
+  --ui-danger: 240 122 122;
+  --ui-danger-soft: 43 24 26;
+  --ui-warning: 240 180 80;
+  --ui-warning-soft: 42 34 20;
+  --ui-info: 107 168 245;
+  --ui-info-soft: 20 32 48;
+  --ui-purple: 182 156 246;
+  --ui-purple-soft: 34 28 51;
+  --ui-link: #8d95f2;
+  --ui-shadow-xs: 0 1px 2px 0 rgb(0 0 0 / 0.35);
+  --ui-shadow-card: 0 1px 2px 0 rgb(0 0 0 / 0.3);
+  --ui-shadow-panel: 0 0 0 1px rgb(0 0 0 / 0.35), 0 8px 24px -8px rgb(0 0 0 / 0.6);
+  --ui-shadow-primary: inset 0 1px 0 0 rgb(255 255 255 / 0.14), 0 0 0 1px rgb(0 0 0 / 0.25), 0 1px 2px 0 rgb(0 0 0 / 0.4);
+  --ui-highlight: inset 0 1px 0 0 rgb(255 255 255 / 0.035);
+  --ui-card-tint: linear-gradient(to bottom, rgb(255 255 255 / 0.018), rgb(255 255 255 / 0) 60%);
+  --ui-focus-ring: 0 0 0 3px rgb(var(--ui-primary) / 0.38);
+  --ui-shadow-popover: 0 0 0 1px rgb(0 0 0 / 0.3), 0 4px 10px -2px rgb(0 0 0 / 0.45), 0 16px 36px -8px rgb(0 0 0 / 0.6);
+  --ui-shadow-overlay: 0 0 0 1px rgb(0 0 0 / 0.35), 0 24px 64px -12px rgb(0 0 0 / 0.7);
   --ui-scrim: 0 0 0 / 0.6;
-  --theme-chart-text: #d4d4d4;
-  --theme-chart-grid: #333333;
-  --theme-chart-axis: #a3a3a3;
-  --theme-chart-axis-grid: #262626;
-  --theme-chart-tooltip: #1a1a1a;
-  --theme-chart-title: #f2f2f2;
-  --theme-chart-body: #b3b3b3;
-  --theme-chart-gray: #737373;
-  --theme-chart-series-1: #a3a3a3;
-  --theme-chart-series-2: #4ade80;
-  --theme-chart-series-3: #a78bfa;
-  --theme-chart-series-4: #fbbf24;
-  --theme-chart-series-5: #5eead4;
-  --theme-chart-series-6: #f87171;
-  --theme-chart-series-7: #d4d4d4;
-  --theme-chart-series-8: #93c5fd;
-  --theme-chart-series-9: #737373;
-  --theme-chart-series-10: #e879f9;
-  --theme-chart-series-11: #22d3ee;
-  --theme-chart-series-12: #525252;
-  --theme-scrollbar-thumb: #404040;
-  --theme-scrollbar-hover: #737373;
+  --theme-chart-text: #c4c9d1;
+  --theme-chart-grid: #232427;
+  --theme-chart-axis: #9398a1;
+  --theme-chart-axis-grid: #1c1d20;
+  --theme-chart-tooltip: #1a1b1e;
+  --theme-chart-title: #f7f8f8;
+  --theme-chart-body: #c4c9d1;
+  --theme-chart-gray: #62666d;
+  --theme-chart-series-1: #7c86e6;
+  --theme-chart-series-2: #4cb782;
+  --theme-chart-series-3: #f0a24f;
+  --theme-chart-series-4: #f07a7a;
+  --theme-chart-series-5: #a48cf0;
+  --theme-chart-series-6: #e8799c;
+  --theme-chart-series-7: #3dbfb8;
+  --theme-chart-series-8: #f08a5d;
+  --theme-chart-series-9: #6ba8f5;
+  --theme-chart-series-10: #a3c75a;
+  --theme-chart-series-11: #4cc3e3;
+  --theme-chart-series-12: #9398a1;
+  --theme-scrollbar-thumb: #2f3034;
+  --theme-scrollbar-hover: #52555b;
 }
 
 /* ------------------------------------------------------------------ Tailwind palettes */
@@ -164,159 +204,246 @@
   --theme-color-gray-950: 10 10 10;
   /* lines: hairline, strong, focus */
   --theme-line-gray-100: 237 237 237;
-  --theme-line-gray-200: 237 237 237;
-  --theme-line-gray-300: 224 224 224;
-  --theme-line-gray-400: 189 189 189;
+  --theme-line-gray-200: 229 229 229;
+  --theme-line-gray-300: 229 229 229;
+  --theme-line-gray-400: 212 212 212;
+  /* text: every shade that upstream uses for secondary text reads at >= 4.5:1 on #f5f5f5 */
+  --theme-text-gray-400: 112 112 112;
+  --theme-text-gray-500: 100 100 100;
 
-  /* dark-mode palette (upstream `dark-*`): fills, then lines and text where the role differs */
-  --theme-color-dark-50: 250 250 250;
-  --theme-color-dark-100: 245 245 245;
-  --theme-color-dark-200: 229 229 229;
-  --theme-color-dark-300: 212 212 212;
-  --theme-color-dark-400: 163 163 163;
-  --theme-color-dark-500: 82 82 82;
-  --theme-color-dark-600: 51 51 51;
-  --theme-color-dark-700: 38 38 38;
-  --theme-color-dark-800: 26 26 26;
-  --theme-color-dark-900: 20 20 20;
-  --theme-color-dark-950: 15 15 15;
-  --theme-line-dark-400: 115 115 115;
-  --theme-line-dark-500: 92 92 92;
-  --theme-line-dark-600: 71 71 71;
-  --theme-line-dark-700: 51 51 51;
-  --theme-line-dark-800: 38 38 38;
-  --theme-line-dark-900: 31 31 31;
-  --theme-line-dark-950: 20 20 20;
-  --theme-text-dark-300: 194 194 194;
-  --theme-text-dark-500: 140 140 140;
-  --theme-text-dark-600: 107 107 107;
-  --theme-text-dark-700: 82 82 82;
-  --theme-text-dark-800: 64 64 64;
-  --theme-text-dark-900: 38 38 38;
-  --theme-text-dark-950: 26 26 26;
+  /* dark-mode palette (upstream `dark-*`): Linear's cool grays; fills, then lines and text */
+  --theme-color-dark-50: 247 248 248;
+  --theme-color-dark-100: 226 228 231;
+  --theme-color-dark-200: 208 214 224;
+  --theme-color-dark-300: 138 143 152;
+  --theme-color-dark-400: 107 111 119;
+  --theme-color-dark-500: 58 60 65;
+  --theme-color-dark-600: 42 43 47;
+  --theme-color-dark-700: 31 32 35;
+  --theme-color-dark-800: 20 21 23;
+  --theme-color-dark-900: 15 16 17;
+  --theme-color-dark-950: 8 9 10;
+  --theme-line-dark-400: 82 85 91;
+  --theme-line-dark-500: 59 61 66;
+  --theme-line-dark-600: 47 48 52;
+  --theme-line-dark-700: 35 36 39;
+  --theme-line-dark-800: 30 31 34;
+  --theme-line-dark-900: 26 27 30;
+  --theme-line-dark-950: 20 21 23;
+  --theme-text-dark-100: 247 248 248;
+  --theme-text-dark-200: 226 228 231;
+  --theme-text-dark-300: 196 201 209;
+  --theme-text-dark-400: 147 152 161;
+  --theme-text-dark-500: 128 133 141;
+  --theme-text-dark-600: 107 111 119;
+  --theme-text-dark-700: 82 85 91;
+  --theme-text-dark-800: 58 60 65;
+  --theme-text-dark-900: 31 32 35;
+  --theme-text-dark-950: 20 21 23;
 
-  /* primary = ink actions */
-  --theme-color-primary-50: 245 245 245;
-  --theme-color-primary-100: 237 237 237;
-  --theme-color-primary-200: 224 224 224;
-  --theme-color-primary-300: 189 189 189;
-  --theme-color-primary-400: 115 115 115;
-  --theme-color-primary-500: 10 10 10;
-  --theme-color-primary-600: 31 31 31;
-  --theme-color-primary-700: 51 51 51;
-  --theme-color-primary-800: 38 38 38;
-  --theme-color-primary-900: 23 23 23;
-  --theme-color-primary-950: 10 10 10;
-  --theme-ring-primary: 115 115 115;
+  /* primary = indigo actions */
+  --theme-color-primary-50: 244 245 253;
+  --theme-color-primary-100: 234 236 251;
+  --theme-color-primary-200: 215 219 247;
+  --theme-color-primary-300: 184 190 240;
+  --theme-color-primary-400: 140 149 228;
+  --theme-color-primary-500: 94 106 210;
+  --theme-color-primary-600: 85 97 201;
+  --theme-color-primary-700: 75 86 189;
+  --theme-color-primary-800: 63 72 163;
+  --theme-color-primary-900: 52 59 133;
+  --theme-color-primary-950: 32 36 79;
+  /* indigo text keeps >= 4.5:1 on white and on the indigo tints */
+  --theme-text-primary-400: 94 106 210;
+  --theme-text-primary-500: 85 97 201;
+  --theme-text-primary-600: 79 90 197;
+  --theme-text-primary-700: 67 77 181;
+  --theme-text-primary-800: 58 68 166;
+  --theme-text-primary-900: 51 59 143;
+  --theme-ring-primary: 94 106 210;
 
   /* semantic families: red/rose -> danger, amber/yellow/orange -> warning,
      blue/sky/indigo/cyan -> info, green/emerald/teal/lime -> success,
      purple/violet/fuchsia/pink -> purple */
-  --theme-color-danger-50: 254 242 242;
-  --theme-color-danger-100: 253 228 228;
-  --theme-color-danger-200: 248 202 202;
+  --theme-color-danger-50: 253 243 243;
+  --theme-color-danger-100: 252 231 231;
+  --theme-color-danger-200: 249 207 207;
   --theme-color-danger-300: 243 169 169;
-  --theme-color-danger-400: 248 113 113;
-  --theme-color-danger-500: 220 60 60;
-  --theme-color-danger-600: 201 52 52;
-  --theme-color-danger-700: 176 46 46;
-  --theme-color-danger-800: 143 39 39;
-  --theme-color-danger-900: 107 32 32;
-  --theme-color-danger-950: 61 18 18;
-  --theme-color-warning-50: 255 249 234;
-  --theme-color-warning-100: 254 243 199;
-  --theme-color-warning-200: 253 230 138;
-  --theme-color-warning-300: 252 211 77;
-  --theme-color-warning-400: 251 191 36;
-  --theme-color-warning-500: 217 119 6;
-  --theme-color-warning-600: 180 83 9;
-  --theme-color-warning-700: 146 64 14;
-  --theme-color-warning-800: 120 53 15;
-  --theme-color-warning-900: 92 42 11;
-  --theme-color-warning-950: 69 26 3;
-  --theme-color-info-50: 239 246 255;
-  --theme-color-info-100: 219 234 254;
-  --theme-color-info-200: 191 219 254;
-  --theme-color-info-300: 147 197 253;
-  --theme-color-info-400: 96 165 250;
-  --theme-color-info-500: 59 130 246;
-  --theme-color-info-600: 37 99 235;
-  --theme-color-info-700: 29 78 216;
-  --theme-color-info-800: 30 64 175;
-  --theme-color-info-900: 30 58 138;
-  --theme-color-info-950: 23 37 84;
-  --theme-color-success-50: 240 253 244;
-  --theme-color-success-100: 220 252 231;
-  --theme-color-success-200: 187 247 208;
-  --theme-color-success-300: 134 239 172;
-  --theme-color-success-400: 74 222 128;
-  --theme-color-success-500: 34 160 80;
-  --theme-color-success-600: 28 138 68;
-  --theme-color-success-700: 23 115 57;
-  --theme-color-success-800: 20 92 47;
-  --theme-color-success-900: 18 74 40;
-  --theme-color-success-950: 7 43 22;
-  --theme-color-purple-50: 250 245 255;
-  --theme-color-purple-100: 243 232 255;
-  --theme-color-purple-200: 233 213 255;
-  --theme-color-purple-300: 196 181 253;
-  --theme-color-purple-400: 167 139 250;
-  --theme-color-purple-500: 139 92 246;
-  --theme-color-purple-600: 120 80 200;
+  --theme-color-danger-400: 236 110 113;
+  --theme-color-danger-500: 229 72 77;
+  --theme-color-danger-600: 206 44 49;
+  --theme-color-danger-700: 177 36 41;
+  --theme-color-danger-800: 143 31 35;
+  --theme-color-danger-900: 107 27 30;
+  --theme-color-danger-950: 61 16 18;
+  --theme-color-warning-50: 255 248 235;
+  --theme-color-warning-100: 255 239 204;
+  --theme-color-warning-200: 255 222 153;
+  --theme-color-warning-300: 250 196 92;
+  --theme-color-warning-400: 240 165 50;
+  --theme-color-warning-500: 224 128 22;
+  --theme-color-warning-600: 186 95 6;
+  --theme-color-warning-700: 153 74 7;
+  --theme-color-warning-800: 120 58 12;
+  --theme-color-warning-900: 92 45 12;
+  --theme-color-warning-950: 60 28 6;
+  --theme-color-info-50: 240 246 254;
+  --theme-color-info-100: 222 236 253;
+  --theme-color-info-200: 192 219 251;
+  --theme-color-info-300: 148 193 247;
+  --theme-color-info-400: 96 160 240;
+  --theme-color-info-500: 50 124 226;
+  --theme-color-info-600: 26 102 206;
+  --theme-color-info-700: 20 84 176;
+  --theme-color-info-800: 22 68 140;
+  --theme-color-info-900: 22 55 108;
+  --theme-color-info-950: 15 34 70;
+  --theme-color-success-50: 238 248 242;
+  --theme-color-success-100: 216 241 225;
+  --theme-color-success-200: 180 228 196;
+  --theme-color-success-300: 130 208 157;
+  --theme-color-success-400: 76 183 130;
+  --theme-color-success-500: 41 151 91;
+  --theme-color-success-600: 30 132 77;
+  --theme-color-success-700: 26 111 65;
+  --theme-color-success-800: 23 88 53;
+  --theme-color-success-900: 20 70 43;
+  --theme-color-success-950: 9 41 24;
+  --theme-color-purple-50: 247 244 254;
+  --theme-color-purple-100: 238 232 252;
+  --theme-color-purple-200: 221 210 249;
+  --theme-color-purple-300: 196 176 244;
+  --theme-color-purple-400: 166 136 236;
+  --theme-color-purple-500: 138 100 222;
+  --theme-color-purple-600: 118 80 196;
   --theme-color-purple-700: 99 64 168;
   --theme-color-purple-800: 79 51 134;
   --theme-color-purple-900: 63 42 107;
   --theme-color-purple-950: 36 22 64;
+  /* text role of the hue families (fills above stay vivid): >= 4.5:1 on white and #f5f5f5 */
+  --theme-text-danger-400: 206 44 49;
+  --theme-text-danger-500: 206 44 49;
+  --theme-text-danger-600: 184 38 43;
+  --theme-text-danger-700: 165 31 36;
+  --theme-text-success-400: 26 127 71;
+  --theme-text-success-500: 26 127 71;
+  --theme-text-success-600: 22 107 60;
+  --theme-text-success-700: 20 92 52;
+  --theme-text-warning-400: 163 82 0;
+  --theme-text-warning-500: 163 82 0;
+  --theme-text-warning-600: 138 69 0;
+  --theme-text-warning-700: 115 58 0;
+  --theme-text-info-400: 26 102 206;
+  --theme-text-info-500: 26 102 206;
+  --theme-text-info-600: 20 89 184;
+  --theme-text-info-700: 17 76 158;
+  --theme-text-purple-400: 118 80 196;
+  --theme-text-purple-500: 118 80 196;
+  --theme-text-purple-600: 106 69 181;
+  --theme-text-purple-700: 91 58 156;
 }
 
 :root.flat-theme.dark {
-  /* faint text reads at 5:1 on dark surfaces */
-  --theme-text-gray-500: 140 140 140;
-  /* near-white primary fills with near-black text (see --theme-on-fill) */
-  --theme-color-primary-50: 38 38 38;
-  --theme-color-primary-100: 46 46 46;
-  --theme-color-primary-200: 212 212 212;
-  --theme-color-primary-300: 229 229 229;
-  --theme-color-primary-400: 242 242 242;
-  --theme-color-primary-500: 242 242 242;
-  --theme-color-primary-600: 229 229 229;
-  --theme-color-primary-700: 212 212 212;
-  --theme-color-primary-800: 82 82 82;
-  --theme-color-primary-900: 115 115 115;
-  --theme-color-primary-950: 64 64 64;
-  /* primary text on dark surfaces stays light at every shade */
-  --theme-text-primary-50: 250 250 250;
-  --theme-text-primary-100: 242 242 242;
-  --theme-text-primary-800: 212 212 212;
-  --theme-text-primary-900: 229 229 229;
-  --theme-text-primary-950: 242 242 242;
-  --theme-ring-primary: 163 163 163;
+  /* Upstream pairs light text shades (100-500) with `dark:`; the plain 600-900 shades appear only
+     where a template has no dark variant, so they resolve to readable light grays here. */
+  --theme-text-gray-100: 247 248 248;
+  --theme-text-gray-200: 226 228 231;
+  --theme-text-gray-300: 208 214 224;
+  --theme-text-gray-600: 160 165 173;
+  --theme-text-gray-700: 196 201 209;
+  --theme-text-gray-800: 226 228 231;
+  --theme-text-gray-900: 247 248 248;
+  --theme-text-gray-950: 247 248 248;
+  --theme-line-gray-100: 30 31 34;
+  --theme-line-gray-200: 35 36 39;
+  --theme-line-gray-300: 47 48 52;
+  --theme-line-gray-400: 59 61 66;
+  /* indigo stays the fill; tints are dark indigo, text is the light indigo */
+  --theme-color-primary-50: 27 30 48;
+  --theme-color-primary-100: 32 35 53;
+  --theme-color-primary-200: 43 47 74;
+  --theme-color-primary-300: 59 65 112;
+  --theme-color-primary-400: 124 133 230;
+  --theme-color-primary-900: 61 70 150;
+  --theme-color-primary-950: 30 33 60;
+  --theme-text-primary-50: 244 245 253;
+  --theme-text-primary-100: 234 236 251;
+  --theme-text-primary-200: 215 219 247;
+  --theme-text-primary-900: 215 219 247;
+  --theme-text-primary-950: 234 236 251;
+  --theme-ring-primary: 124 133 230;
+}
+
+/* Secondary gray, indigo and hue text on a dark surface: the whole dark theme and, in the light theme,
+   boxes that stay dark there too (terminal output, dark tooltips and code blocks), marked
+   `theme-dark-surface`; only for boxes without light surfaces inside. Every shade upstream uses on
+   them (with or without `dark:`) reads >= 4.5:1. */
+:root.flat-theme.dark,
+:root.flat-theme .theme-dark-surface {
+  --theme-text-gray-400: 147 152 161;
+  --theme-text-gray-500: 147 152 161;
+  --theme-text-primary-300: 180 185 248;
+  --theme-text-primary-400: 141 149 242;
+  --theme-text-primary-500: 141 149 242;
+  --theme-text-primary-600: 141 149 242;
+  --theme-text-primary-700: 168 174 247;
+  --theme-text-primary-800: 196 200 250;
+  --theme-text-danger-300: 245 154 154;
+  --theme-text-danger-400: 240 138 138;
+  --theme-text-danger-500: 240 122 122;
+  --theme-text-danger-600: 240 122 122;
+  --theme-text-danger-700: 245 154 154;
+  --theme-text-danger-800: 249 186 186;
+  --theme-text-success-300: 111 208 160;
+  --theme-text-success-400: 92 201 143;
+  --theme-text-success-500: 76 183 130;
+  --theme-text-success-600: 76 183 130;
+  --theme-text-success-700: 111 208 160;
+  --theme-text-success-800: 150 222 186;
+  --theme-text-warning-300: 245 185 92;
+  --theme-text-warning-400: 245 185 92;
+  --theme-text-warning-500: 240 180 80;
+  --theme-text-warning-600: 240 180 80;
+  --theme-text-warning-700: 245 185 92;
+  --theme-text-warning-800: 248 206 140;
+  --theme-text-info-300: 156 198 249;
+  --theme-text-info-400: 125 180 247;
+  --theme-text-info-500: 107 168 245;
+  --theme-text-info-600: 107 168 245;
+  --theme-text-info-700: 125 180 247;
+  --theme-text-info-800: 156 198 249;
+  --theme-text-purple-300: 205 185 249;
+  --theme-text-purple-400: 190 166 247;
+  --theme-text-purple-500: 182 156 246;
+  --theme-text-purple-600: 182 156 246;
+  --theme-text-purple-700: 190 166 247;
+  --theme-text-purple-800: 205 185 249;
 }
 
 /* ------------------------------------------------------------------ shape, depth, motion */
 :root.flat-theme {
   --theme-radius-sm: 4px;
-  --theme-radius-default: 4px;
+  --theme-radius-default: 5px;
   --theme-radius-md: 6px;
   --theme-radius-lg: 8px;
-  --theme-radius-xl: 8px;
+  --theme-radius-xl: 10px;
   --theme-radius-2xl: 12px;
-  --theme-radius-3xl: 12px;
-  --theme-radius-4xl: 12px;
-  /* page content is separated by hairlines; only popovers, menus and dialogs float */
-  --theme-shadow-sm: none;
-  --theme-shadow-default: none;
-  --theme-shadow-md: none;
+  --theme-radius-3xl: 14px;
+  --theme-radius-4xl: 16px;
+  /* cards and outline controls carry a 1px shadow (shadcn shadow-xs); popovers, menus and dialogs float */
+  --theme-shadow-sm: var(--ui-shadow-xs);
+  --theme-shadow-default: var(--ui-shadow-xs);
+  --theme-shadow-md: var(--ui-shadow-xs);
   --theme-shadow-lg: var(--ui-shadow-popover);
   --theme-shadow-xl: var(--ui-shadow-popover);
   --theme-shadow-2xl: var(--ui-shadow-overlay);
   --theme-shadow-inner: none;
-  --theme-shadow-glass: 0 0 0 1px rgb(var(--ui-line));
-  --theme-shadow-glass-sm: 0 0 0 1px rgb(var(--ui-line));
+  --theme-shadow-glass: var(--ui-shadow-card);
+  --theme-shadow-glass-sm: var(--ui-shadow-card);
   --theme-shadow-glow: none;
   --theme-shadow-glow-lg: none;
-  --theme-shadow-card: none;
-  --theme-shadow-card-hover: none;
+  --theme-shadow-card: var(--ui-shadow-card);
+  --theme-shadow-card-hover: var(--ui-shadow-card);
   --theme-shadow-inner-glow: none;
   --theme-shadow-outline: 0 0 0 1px rgb(var(--ui-line));
   --theme-background-gradient-radial: none;

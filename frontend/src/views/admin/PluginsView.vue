@@ -284,6 +284,8 @@
         </article>
       </div>
 
+      <RetiredPluginsPanel />
+
       <BaseDialog
         :show="configPlugin !== null"
         :title="
@@ -345,6 +347,7 @@ import AppLayout from "@/components/layout/AppLayout.vue";
 import BaseDialog from "@/components/common/BaseDialog.vue";
 import Icon from "@/components/icons/Icon.vue";
 import TotpStepUpDialog from "@/components/auth/TotpStepUpDialog.vue";
+import RetiredPluginsPanel from "@/components/admin/RetiredPluginsPanel.vue";
 import {
   isStepUpBlocked,
   isStepUpCancelled,

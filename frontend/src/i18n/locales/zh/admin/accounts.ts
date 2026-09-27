@@ -120,6 +120,7 @@ export default {accounts: {
       dataImportPreviewSummary: '新建 {create}，更新 {update}，拒绝 {reject}',
       dataImportPreviewItems: '预览明细',
       dataImportPreviewAction: '动作',
+      dataImportMatchedAccounts: '匹配的现有账号：{ids}',
       dataImportPreviewRequired: '提交任务前请先生成导入预览。',
       dataImportStalePreview: '预览已过期或数据发生变化，请重新生成预览。',
       importUniformSettings: '统一设置',
@@ -579,12 +580,21 @@ export default {accounts: {
         upstreamQuotaExhausted: '上游额度已耗尽',
         quotaResetUnknown: '恢复时间未知，等待上游额度更新',
         modelRateLimitedUntil: '{model} 限流至 {time}',
+        modelCooldownReason: '原因码：{reason}',
+        modelCooldownUpstreamMessage: '上游原文：',
         modelCreditOveragesUntil: '{model} 正在使用 AI Credits，至 {time}',
         creditsExhausted: '积分已用尽',
         creditsExhaustedUntil: 'AI Credits 已用尽，预计 {time} 恢复',
         overloadedUntil: '负载过重，重置时间：{time}',
         viewTempUnschedDetails: '查看临时不可调度详情',
         tempUnschedulableUntil: '预计 {time} 恢复'
+      },
+      lastUpstreamError: {
+        title: '最近一次上游错误',
+        chip: '上游 {status}',
+        chipNoStatus: '上游错误',
+        note: '上游返回的原文，只做记录，不影响调度。',
+        source: '来源：{source}'
       },
       tempUnschedulable: {
         title: '临时不可调度',

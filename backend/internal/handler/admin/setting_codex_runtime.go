@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"strconv"
 
@@ -34,7 +35,7 @@ func writeNativeCodexConfiguration(c *gin.Context, read func(context.Context) (j
 	}
 	raw, metadata, err := read(c.Request.Context())
 	if err != nil {
-		response.Error(c, 503, "Codex runtime is unavailable")
+		response.Error(c, 503, "Codex runtime is unavailable: "+err.Error())
 		return
 	}
 	c.Header(nativeCodexHostingModeHeader, "native")
@@ -47,8 +48,12 @@ func writeNativeCodexConfiguration(c *gin.Context, read func(context.Context) (j
 func (h *SettingHandler) UpdateNativeCodexConfiguration(c *gin.Context) {
 	c.Header("Cache-Control", "no-store")
 	var raw json.RawMessage
-	if c.ShouldBindJSON(&raw) != nil || len(raw) > 1<<20 {
-		response.BadRequest(c, "Invalid Codex routing configuration")
+	if err := c.ShouldBindJSON(&raw); err != nil {
+		response.BadRequest(c, "Invalid Codex routing configuration: "+err.Error())
+		return
+	}
+	if len(raw) > 1<<20 {
+		response.BadRequest(c, fmt.Sprintf("Invalid Codex routing configuration: %d bytes exceed the 1 MiB limit", len(raw)))
 		return
 	}
 	normalized, err := service.NormalizeNativeCodexConfig(c.Request.Context(), raw)
@@ -56,7 +61,7 @@ func (h *SettingHandler) UpdateNativeCodexConfiguration(c *gin.Context) {
 		if writeCodexProxySelectionError(c, err) {
 			return
 		}
-		response.BadRequest(c, "Invalid Codex routing configuration")
+		response.BadRequest(c, "Invalid Codex routing configuration: "+err.Error())
 		return
 	}
 	if h.codexTicketGateway == nil {
@@ -65,9 +70,9 @@ func (h *SettingHandler) UpdateNativeCodexConfiguration(c *gin.Context) {
 	}
 	if err := h.codexTicketGateway.UpdateNativeCodexConfiguration(c.Request.Context(), normalized, h.nativeCodexConfigEncryptor); err != nil {
 		if errors.Is(err, service.ErrNativeCodexRuntimeChanged) {
-			response.Error(c, 409, "Codex runtime configuration changed; reload and retry")
+			response.Error(c, 409, "Codex runtime configuration changed; reload and retry: "+err.Error())
 		} else {
-			response.Error(c, 503, "Codex runtime configuration could not be applied")
+			response.Error(c, 503, "Codex runtime configuration could not be applied: "+err.Error())
 		}
 		return
 	}
