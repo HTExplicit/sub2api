@@ -27,6 +27,9 @@ html.flat-theme {
   --ctl-glyph: var(--ui-control-line);
   /* switch: the track when off (the reference's ink at 20 % is 1.6:1) and the knob */
   --ctl-switch-off: var(--ui-control-line);
+  /* on = the accent, as the reference's rendered route switches (green; mint in dark, where the knob is the dark
+     surface); an ink track made a column of switches the heaviest thing on a table page */
+  --ctl-switch-on: var(--ui-primary);
   --ctl-knob: var(--ui-surface);
   /* segmented control: frame, inset, segment metrics (REF-CONSOLE §8.5) */
   --ctl-seg-frame: var(--ui-line);
@@ -354,10 +357,20 @@ html.flat-theme .date-picker-apply.date-picker-apply:hover {
   color: rgb(var(--ui-on-ink));
 }
 
+/* 4.4 Toolbar density (integration review): a toolbar row holds one control height. The table pages' fixed rows
+   (actions, filters, pagination) and a horizontal row that holds a .btn (the dashboards' time-range bar) draw their
+   fields and their Select / DateRangePicker triggers at the 30px of the search field, the filter pills and the
+   buttons (the reference's /models filter row); a 34px trigger beside a 30px search or button reads as a misaligned
+   row. Labelled form fields elsewhere keep the reference's 34px field. */
+html.flat-theme :is(.table-page-layout > .layout-section-fixed, [class~="flex"][class~="items-center"]:not([class~="flex-col"]):has(> .btn)) :is(.select-trigger.select-trigger, .date-picker-trigger.date-picker-trigger, input.input:not([type="checkbox"], [type="radio"]), select.input) {
+  padding-top: 0.265625rem;
+  padding-bottom: 0.265625rem;
+}
+
 /* ================================================================== 5 · switches */
 
-/* The reference settings Toggle (REF-CONSOLE §8.4): 34 x 20, a 16px knob 2px in, on = ink (near-white in dark),
-   150ms. Off = the 3:1 form-control line (the reference's ink at 20 % is 1.6:1 on the surface). Toggle.vue and its
+/* The reference settings Toggle (REF-CONSOLE §8.4): 34 x 20, a 16px knob 2px in, 150ms; on = the accent of its
+   rendered route switches (--ctl-switch-on). Off = the 3:1 form-control line (the reference's ink at 20 % is 1.6:1 on the surface). Toggle.vue and its
    inline copies are a rounded-full button with a 2px transparent edge (h-6 w-11, h-5 w-9; h-4 w-7 keeps its 28 x 16
    size) holding a knob span; on = bg-primary-500 / -600. */
 html.flat-theme button[class~="rounded-full"][class~="border-2"][class~="border-transparent"]:is([class~="h-6"][class~="w-11"], [class~="h-5"][class~="w-9"], [class~="h-4"][class~="w-7"]) {
@@ -374,7 +387,7 @@ html.flat-theme button[class~="rounded-full"][class~="border-2"][class~="border-
 }
 
 html.flat-theme button[class~="rounded-full"][class~="border-2"][class~="border-transparent"]:is([class~="h-6"][class~="w-11"], [class~="h-5"][class~="w-9"], [class~="h-4"][class~="w-7"]):is([class~="bg-primary-500"], [class~="bg-primary-600"]) {
-  background-color: rgb(var(--ui-ink));
+  background-color: rgb(var(--ctl-switch-on));
 }
 
 html.flat-theme button[class~="rounded-full"][class~="border-2"][class~="border-transparent"]:is([class~="h-6"][class~="w-11"], [class~="h-5"][class~="w-9"], [class~="h-4"][class~="w-7"]) > span[class~="rounded-full"] {
@@ -428,7 +441,7 @@ html.flat-theme input[type="checkbox"][class~="peer"] + div[class~="peer"][class
 }
 
 html.flat-theme input[type="checkbox"][class~="peer"]:checked + div[class~="peer"][class~="rounded-full"]:is([class~="w-9"], [class~="w-11"]) {
-  background-color: rgb(var(--ui-ink));
+  background-color: rgb(var(--ctl-switch-on));
 }
 
 html.flat-theme input[type="checkbox"][class~="peer"]:checked + div[class~="peer"][class~="rounded-full"]:is([class~="w-9"], [class~="w-11"])::after {

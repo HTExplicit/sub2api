@@ -1,1 +1,8 @@
 /* Console theme · page group: dashboards and usage records (owner: the dashboard and usage page agent, wave 2; html.flat-theme selectors narrowed to the page root). */
+
+/* Integration review (preview decision D2): a platform card's total spend is a value, not a state. Ink at 600 (the
+   reference's spend figures) instead of upstream's purple; the mono figure stays. */
+html.flat-theme [data-testid="platform-card"] span[class~="text-purple-600"] {
+  font-weight: 600;
+  color: rgb(var(--ui-ink));
+}

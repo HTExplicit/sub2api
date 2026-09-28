@@ -770,6 +770,21 @@ html.flat-theme [data-ui~="bulk-bar"] > div:first-child > span:not([class~="text
   color: rgb(var(--ui-faint));
 }
 
+/* The tray's actions: the reference tray carries a single emphasised action, so the bar's many filled buttons
+   (enable / pause / edit / update …) become the default button (surface, control outline, ink text); destructive
+   actions keep the danger outline of .btn-danger. */
+html.flat-theme [data-ui~="bulk-bar"] .btn:is(.btn-primary, .btn-success, .btn-warning, .btn-info) {
+  border-color: rgb(var(--ui-line-strong));
+  background-color: rgb(var(--ui-surface));
+  background-image: none;
+  color: rgb(var(--ui-ink));
+  box-shadow: none;
+}
+
+html.flat-theme [data-ui~="bulk-bar"] .btn:is(.btn-primary, .btn-success, .btn-warning, .btn-info):hover:not(:disabled) {
+  background-color: rgb(var(--ui-subtle));
+}
+
 /* ================================================================== 6 · badges, status, identity */
 
 /* .badge*: the reference's pills (REF §8.8: capsule, Geist Mono uppercase, .025em, 6 / 1 inset, soft semantic
@@ -1022,6 +1037,9 @@ html.flat-theme [class~="grid"] > [class~="card"][class~="p-4"]:has(> div[class~
   display: flex;
   flex-direction: column;
   justify-content: flex-start;
+  /* integration review: the usage records tiles are themselves an items-center flex row; in the column the text
+     would sit centred, not on the tile's left edge like every other KPI */
+  align-items: stretch;
   gap: 0;
   min-height: 76px;
   padding: 8px 12px;
@@ -1093,7 +1111,7 @@ html.flat-theme [class~="grid"] > [class~="card"][class~="p-4"] div[class~="roun
   font-weight: 500;
 }
 
-html.flat-theme [class~="grid"] > [class~="card"][class~="p-4"] div[class~="rounded-lg"][class~="p-2"]:first-child + div > p[class~="text-green-600"]:not(:first-child) {
+html.flat-theme [class~="grid"] > [class~="card"][class~="p-4"] div[class~="rounded-lg"][class~="p-2"]:first-child + div > p[class~="text-green-600"]:not(:first-child):not([class~="text-xl"]) {
   color: rgb(var(--ui-success));
 }
 

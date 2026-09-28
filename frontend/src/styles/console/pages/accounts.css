@@ -436,6 +436,17 @@ html.flat-theme .table-wrapper[data-table="accounts"] td[data-column="name"] > d
   color: rgb(var(--ui-muted));
 }
 
+/* Integration review: a name that links to the account's homepage sits in HelpTooltip's root, which keeps its own
+   ml-1 (the template's -ml-1 loses to it) and whose link carries font-medium: the linked and the plain names start on
+   the same edge at the same 600 weight. The dotted underline (the link's cue) stays. */
+html.flat-theme .table-wrapper[data-table="accounts"] td[data-column="name"] > div > [data-ui="help-tooltip"]:first-child {
+  margin-left: 0;
+}
+
+html.flat-theme .table-wrapper[data-table="accounts"] td[data-column="name"] > div > [data-ui="help-tooltip"]:first-child > a {
+  font-weight: 600;
+}
+
 /* Platform / type: the identity chips and the compact-mode line side by side, in at most 18rem (so the status and
    scheduling columns after it keep their place): an account whose chips need more (OAuth with plan and privacy, a
    subscription expiry) moves the compact-mode line, then the later chip groups, to a second line. An API-key

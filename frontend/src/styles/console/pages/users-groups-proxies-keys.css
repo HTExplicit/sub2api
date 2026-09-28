@@ -1,1 +1,25 @@
 /* Console theme · page group: users, groups, proxies and API keys (owner: the users, groups, proxies and keys page agent, wave 2; html.flat-theme selectors narrowed to the page root). */
+
+/* Integration review (preview decisions D2 / D3): a user's letter avatar is identity, not a state. Drawn as the
+   reference's letter tile (REF-CONSOLE §8.8: a small square, the control line, the subtle fill, Geist Mono 600 in
+   ink-soft) instead of upstream's accent-tinted 32px circle; the letter stays. */
+html.flat-theme .table-wrapper td[data-column="email"] > div > div[class~="rounded-full"][class~="bg-primary-100"] {
+  flex: none;
+  width: 1.5rem;
+  height: 1.5rem;
+  border: 1px solid rgb(var(--ui-line-strong));
+  border-radius: var(--ui-radius-sm);
+  background-color: rgb(var(--ui-subtle));
+}
+
+html.flat-theme .table-wrapper td[data-column="email"] > div > div[class~="rounded-full"][class~="bg-primary-100"] > span {
+  font: 600 11px/1 var(--ui-font-mono);
+  color: rgb(var(--ui-ink-soft));
+}
+
+/* Integration review: the proxy copy-format menu (IP management, address cell) sets each format on one line where it
+   fits. Upstream's 360px cap broke a copyable proxy URL after "bp-" or inside the address; 34rem holds a SOCKS5 URL
+   with credentials, and the value still wraps anywhere as the fallback. */
+html.flat-theme .table-wrapper td [role="menu"][class~="max-w-[360px]"] {
+  max-width: min(34rem, calc(100vw - 2rem));
+}

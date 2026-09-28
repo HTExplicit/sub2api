@@ -161,10 +161,13 @@
 }
 
 /* Chinese has no capitals and 10px CJK is hard to read: labels in the Chinese interface are 11px
-   (ui-el MAPPING §2.8). i18n keeps <html lang> on the active locale. */
+   (ui-el MAPPING §2.8). i18n keeps <html lang> on the active locale. The reference's 0.12em tracking is a Latin
+   capitals device; on full-width CJK glyphs it reads as spaced-out characters ("管 理 分 类"), so the Chinese interface
+   tracks its labels at 0.04em (picked by eye against 0.02-0.06; the English interface keeps 0.12em). */
 :root.flat-theme:lang(zh) {
   --ui-label-size: 11px;
   --ui-label-leading: 16px;
+  --ui-label-tracking: 0.04em;
 }
 
 /* ------------------------------------------------------------------ roles (dark) */

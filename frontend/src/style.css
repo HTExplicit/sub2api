@@ -1159,4 +1159,16 @@
     border-color: rgb(var(--ui-line));
     background-color: rgb(var(--ui-surface));
   }
+
+  /* ---------------------------------------------------------------- code
+   * (integration review) Inline code and values set as code (API keys,
+   * proxy addresses) are the reference's value chip (REF-CONSOLE §8.7 prompt
+   * chip, §8.15): Geist Mono in ink-soft on the subtle fill, radius 4. The
+   * accent is not a code colour (preview decision D2). */
+  :where(.flat-theme) .code,
+  :where(.flat-theme) .code:is(.dark *) {
+    border-radius: var(--ui-radius-sm);
+    background-color: rgb(var(--ui-subtle));
+    color: rgb(var(--ui-ink-soft));
+  }
 }

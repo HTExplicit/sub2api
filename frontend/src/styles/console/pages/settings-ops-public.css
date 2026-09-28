@@ -29,11 +29,23 @@ html.flat-theme {
      label above and its placeholder inside (the console fields' rule: A2 recipe + behaviour B3.2, which still draws
      the 3:1 form-control line on an empty field without a visible placeholder); focus draws the accent edge. */
   --pub-field-line: var(--ui-line);
+  /* Tracking of the mono captions: the reference's values for Latin capitals (field labels 0.12em; "OR" and the text
+     buttons 0.15em; small meta lines 0.06-0.08em). Captions that carry interface text take the CJK label tracking in
+     the Chinese interface (tokens.css), where the Latin values read as spaced-out characters. Captions that carry the
+     site's own name, subtitle or the fixed English copyright keep their literal values. */
+  --pub-track-label: 0.12em;
+  --pub-track-caps: 0.15em;
+  --pub-track-meta: 0.08em;
+  --pub-track-hint: 0.06em;
 }
 
 html.flat-theme:lang(zh) {
   --pub-mono-size: 11px;
   --pub-mono-leading: 16px;
+  --pub-track-label: var(--ui-label-tracking);
+  --pub-track-caps: var(--ui-label-tracking);
+  --pub-track-meta: var(--ui-label-tracking);
+  --pub-track-hint: var(--ui-label-tracking);
 }
 
 html.flat-theme.dark {
@@ -132,7 +144,7 @@ html.flat-theme [data-ui="auth-column"] > [class~="card-glass"] {
 html.flat-theme [data-ui="auth-column"] > div[class~="mt-6"] {
   margin-top: 22px;
   font: 400 var(--pub-mono-size) / var(--pub-mono-leading) var(--ui-font-mono);
-  letter-spacing: 0.15em;
+  letter-spacing: var(--pub-track-caps);
   text-transform: uppercase;
   color: rgb(var(--ui-muted));
 }
@@ -210,7 +222,7 @@ html.flat-theme [data-ui="auth-column"] label.input-label {
   display: block;
   margin-bottom: 8px;
   font: 600 var(--pub-mono-size) / var(--pub-mono-leading) var(--ui-font-mono);
-  letter-spacing: 0.12em;
+  letter-spacing: var(--pub-track-label);
   text-transform: uppercase;
   text-align: left;
   color: rgb(var(--pub-label));
@@ -219,7 +231,7 @@ html.flat-theme [data-ui="auth-column"] label.input-label {
 html.flat-theme [data-ui="auth-column"] label.input-label > span {
   margin-left: 6px;
   font-weight: 400;
-  letter-spacing: 0.06em;
+  letter-spacing: var(--pub-track-hint);
   color: rgb(var(--ui-muted));
 }
 
@@ -443,7 +455,7 @@ html.flat-theme [data-ui="auth-column"] div[class~="h-px"][class~="flex-1"] {
 
 html.flat-theme [data-ui="auth-column"] div[class~="h-px"][class~="flex-1"] + span {
   font: 600 11px/16.5px var(--ui-font-mono);
-  letter-spacing: 0.15em;
+  letter-spacing: var(--pub-track-caps);
   text-transform: uppercase;
   color: rgb(var(--ui-muted));
 }
@@ -468,7 +480,7 @@ html.flat-theme [data-ui="auth-column"] > div[class~="mt-6"] > button {
   gap: 6px;
   margin-left: 0;
   font: 400 var(--pub-mono-size) / var(--pub-mono-leading) var(--ui-font-mono);
-  letter-spacing: 0.15em;
+  letter-spacing: var(--pub-track-caps);
   text-transform: uppercase;
   text-decoration: none;
   color: rgb(var(--ui-muted));
@@ -822,7 +834,7 @@ html.flat-theme body > div[class~="z-[140]"] > div > div[class~="max-h-[58vh]"] 
 
 html.flat-theme body > div[class~="z-[140]"] > div > div[class~="max-h-[58vh]"] > div:first-child > p {
   font: 500 var(--pub-mono-size) / var(--pub-mono-leading) var(--ui-font-mono);
-  letter-spacing: 0.12em;
+  letter-spacing: var(--pub-track-label);
   text-transform: uppercase;
   color: rgb(var(--ui-label));
 }
@@ -1315,7 +1327,7 @@ html.flat-theme [data-ui="home"] > main > div > div:nth-child(2) > div > svg {
 
 html.flat-theme [data-ui="home"] > main > div > div:nth-child(2) > div > span {
   font: 500 11px/16px var(--ui-font-mono);
-  letter-spacing: 0.06em;
+  letter-spacing: var(--pub-track-hint);
   text-transform: uppercase;
   color: rgb(var(--ui-ink-soft));
 }
@@ -1658,7 +1670,7 @@ html.flat-theme [data-ui="legal"] > main > article > div:first-child > div > spa
 
 html.flat-theme [data-ui="legal"] > main > article > div:first-child p:first-child {
   font: 400 12px/18px var(--ui-font-mono);
-  letter-spacing: 0.08em;
+  letter-spacing: var(--pub-track-meta);
   text-transform: uppercase;
   color: rgb(var(--ui-muted));
 }
