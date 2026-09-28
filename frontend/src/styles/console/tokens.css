@@ -1,0 +1,627 @@
+/* Console theme · tokens (owner: the base agent; other agents request changes through the coordinator).
+ *
+ * The console theme applies while <html> carries `flat-theme` (public setting flat_theme_enabled). Everything
+ * here is declared under :root.flat-theme, so with the class absent every variable is undefined and
+ * tailwind.config.js, styles/theme.css and the components fall back to their upstream values.
+ *
+ * Source: the Experiential Labs product console (platform.experientiallabs.ai), measured 2026-09-28
+ * (artifacts/tmp/ui-el/ref/console/REF-CONSOLE.md §3-§5, §11, §13; tokens.json). Where the reference falls below
+ * our floor (text >= 4.5:1 on every neutral fill it sits on, form-control boundaries >= 3:1), the value is the
+ * nearest one that meets it (REF-CONSOLE §13; ui-el/wave0/tokens_calc.py); each such token says so. Ramps are
+ * interpolated between the measured anchors (ui-el/wave0/ramps.py).
+ *
+ * Formats: colours consumed through rgb(var(--x) / <alpha>) are RGB channels ("r g b"); --ui-link is a colour;
+ * shadows, fonts, sizes and motion are full values. The reference draws dark lines, hovers and soft fills as
+ * white or colour at an alpha; here they are composited over the dark surface (#1a1a1a), where they are drawn. */
+
+/* ------------------------------------------------------------------ fonts */
+/* Geist 1.800 and Geist Mono 1.700 (npm `geist` 1.7.2, SIL OFL 1.1: assets/fonts/geist/OFL.txt), variable
+   weight 100-900, Latin subset; the reference serves the same outlines (REF-CONSOLE §4). Downloaded only while a
+   rule uses the family, i.e. while the theme is on. Chinese uses MiSans, loaded at runtime from Xiaomi's font
+   service by utils/flatTheme.ts. */
+@font-face {
+  font-family: 'Geist';
+  src: url('../../assets/fonts/geist/Geist-Variable.latin.woff2') format('woff2');
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308,
+    U+0329, U+2000-206F, U+20AC, U+2122, U+2190-2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
+@font-face {
+  font-family: 'Geist Mono';
+  src: url('../../assets/fonts/geist/GeistMono-Variable.latin.woff2') format('woff2');
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308,
+    U+0329, U+2000-206F, U+20AC, U+2122, U+2190-2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
+/* The reference's metric-matched stand-ins (the local Arial sized to Geist's metrics) cover the Latin text while
+   the files load, so nothing reflows when they arrive and the text never flashes in MiSans' own Latin glyphs.
+   Same range as the fonts: a glyph Geist does not have skips them. */
+@font-face {
+  font-family: 'Geist Fallback';
+  src: local('Arial');
+  ascent-override: 95.94%;
+  descent-override: 28.16%;
+  line-gap-override: 0%;
+  size-adjust: 104.76%;
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308,
+    U+0329, U+2000-206F, U+20AC, U+2122, U+2190-2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
+@font-face {
+  font-family: 'Geist Mono Fallback';
+  src: local('Arial');
+  ascent-override: 74.67%;
+  descent-override: 21.92%;
+  line-gap-override: 0%;
+  size-adjust: 134.59%;
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308,
+    U+0329, U+2000-206F, U+20AC, U+2122, U+2190-2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
+/* ------------------------------------------------------------------ roles (light) */
+:root.flat-theme {
+  /* surfaces: canvas = page and sidebar (--background), surface = cards, tables, controls, menus, dialogs;
+     subtle = grouped fills and chips; sunk = wells; raised = popovers (the reference draws them on surface) */
+  --ui-canvas: 250 250 250;
+  --ui-surface: 255 255 255;
+  --ui-subtle: 245 245 245;
+  --ui-sunk: 247 247 247;
+  --ui-raised: 255 255 255;
+  --ui-hover: 239 239 239;
+  --ui-active: 241 241 241;
+  /* Two line tiers. --ui-line: every structural line (card edges, row separators, the sidebar edge, toolbar
+     rules). --ui-line-strong: the reference's control outline (buttons, filter pills, tooltips), which a label
+     identifies anyway. --ui-control-line: the outline of form controls (inputs, selects, date fields,
+     checkboxes); the reference's #e0e0e0 is 1.32:1, #8e8e8e is the nearest grey at >= 3:1 on the surface, the
+     canvas and the grouped fill (REF-CONSOLE §13 gives #949494 for white, #919191 for the canvas).
+     --ui-line-focus: the reference's hover / focus outline of native selects. */
+  --ui-line: 237 237 237;
+  --ui-line-strong: 224 224 224;
+  --ui-line-focus: 189 189 189;
+  --ui-control-line: 142 142 142;
+  /* Text. ink-soft = ink at 66 % (values, filter pills, tooltip descriptions), composited over white.
+     muted (#737373) and muted-2 (#a3a3a3, placeholders and captions: --ui-faint) read 4.35:1 / 2.31:1 on the
+     grouped fill and 4.12:1 / 2.19:1 on hover; #6c6c6c is the nearest grey at >= 4.5:1 on every neutral fill.
+     --ui-label is the mono label's grey (ink-faint #8a8a8a, 3.45:1): #737373 holds 4.5:1 on the surfaces labels
+     sit on (white 4.74, canvas 4.54, the group-row tint #f9f9f9 4.50; REF-CONSOLE §13). */
+  --ui-ink: 10 10 10;
+  --ui-ink-soft: 93 93 93;
+  --ui-on-ink: 255 255 255;
+  --ui-muted: 108 108 108;
+  --ui-faint: 108 108 108;
+  --ui-label: 115 115 115;
+  /* Accent (the green #168a49 carries white at 4.41:1). The fill is #168848 (white 4.52:1, REF-CONSOLE §13);
+     accent text and links are #147c42, the nearest at >= 4.5:1 on every neutral fill and on the soft fill.
+     Primary actions and the segmented thumb are ink with --ui-on-ink, not the accent (REF-CONSOLE §8.3, §8.5). */
+  --ui-primary: 22 136 72;
+  --ui-primary-hover: 20 124 66;
+  --ui-primary-soft: 234 250 240;
+  --ui-on-primary: 255 255 255;
+  --ui-link: #147c42;
+  --ui-focus: 22 136 72;
+  /* Status colours (text-safe). success #22a050 (3.38:1), danger #dc3c3c (4.42:1) and warning #b45309 (4.37:1
+     on hover) move to the nearest value at >= 4.5:1 on every neutral fill; info and purple already pass.
+     The soft fills are the reference's. */
+  --ui-success: 27 125 62;
+  --ui-success-soft: 240 253 244;
+  --ui-danger: 200 55 55;
+  --ui-danger-soft: 254 242 242;
+  --ui-warning: 176 81 9;
+  --ui-warning-soft: 255 249 234;
+  --ui-info: 29 78 216;
+  --ui-info-soft: 239 246 255;
+  --ui-purple: 120 80 200;
+  --ui-purple-soft: 250 245 255;
+  /* shape: 4 chips, logo squares, checkboxes; 6 buttons, inputs, nav items, KPI tiles, tooltips; 8 cards,
+     tables, menus, dialogs, the segmented frame; 12 the sign-in logo square */
+  --ui-radius-sm: 4px;
+  --ui-radius-md: 6px;
+  --ui-radius-lg: 8px;
+  --ui-radius-xl: 12px;
+  /* depth: none inside the page; popovers and overlays float */
+  --ui-shadow-popover: 0 6px 20px rgb(20 20 18 / 0.08);
+  --ui-shadow-overlay: 0 18px 50px rgb(20 20 18 / 0.14);
+  --ui-scrim: 10 10 10 / 0.2;
+  /* metrics: small controls (buttons, search, filter pills, segments), native selects, medium buttons; the
+     sticky header height keyboard focus must clear (upstream h-16 until the shell settles it) */
+  --ui-control-h: 30px;
+  --ui-select-h: 34px;
+  --ui-control-h-md: 38px;
+  --ui-header-h: 4rem;
+  /* motion: colour, background, border and opacity 150ms; the segmented thumb 200ms and the sidebar width
+     160ms, both ease-out; no press scale, no hover lift */
+  --ui-ease: cubic-bezier(0.4, 0, 0.2, 1);
+  --ui-ease-out: cubic-bezier(0, 0, 0.2, 1);
+  --ui-duration: 150ms;
+  --ui-duration-slide: 200ms;
+  --ui-duration-sidebar: 160ms;
+  /* type: Geist for Latin and figures, MiSans for Chinese (400 / 500 / 600 match Geist's stroke weights) */
+  --ui-font: 'Geist', 'Geist Fallback', 'MiSans', 'PingFang SC', 'Microsoft YaHei UI', 'Microsoft YaHei', system-ui,
+    -apple-system, sans-serif;
+  --ui-font-mono: 'Geist Mono', 'Geist Mono Fallback', 'MiSans', ui-monospace, monospace;
+  /* The mono label (.mono-label: table headers, KPI labels, group rows, section titles, field labels):
+     Geist Mono 10/15, 0.12em, uppercase, --ui-label; table headers use weight 500. */
+  --ui-label-size: 10px;
+  --ui-label-leading: 15px;
+  --ui-label-tracking: 0.12em;
+  --ui-label-weight: 400;
+  --ui-label-font: var(--ui-label-weight) var(--ui-label-size) / var(--ui-label-leading) var(--ui-font-mono);
+  /* Tailwind text-sm: the reference's 13px body text on its 19.5px line */
+  --theme-text-sm: 0.8125rem;
+  --theme-text-sm-leading: 1.21875rem;
+  accent-color: rgb(var(--ui-primary));
+  /* a weight MiSans is not loaded in is never smeared into a synthetic bold */
+  font-synthesis-weight: none;
+}
+
+/* Chinese has no capitals and 10px CJK is hard to read: labels in the Chinese interface are 11px
+   (ui-el MAPPING §2.8). i18n keeps <html lang> on the active locale. */
+:root.flat-theme:lang(zh) {
+  --ui-label-size: 11px;
+  --ui-label-leading: 16px;
+}
+
+/* ------------------------------------------------------------------ roles (dark) */
+:root.flat-theme.dark {
+  --ui-canvas: 15 15 15;
+  --ui-surface: 26 26 26;
+  --ui-subtle: 35 35 35;
+  --ui-sunk: 20 20 20;
+  --ui-raised: 26 26 26;
+  /* white at 7 / 11 % */
+  --ui-hover: 42 42 42;
+  --ui-active: 51 51 51;
+  /* white at 14 / 24 / 42 %; the form-control line is the nearest grey at >= 3:1 on the canvas, the surface and
+     the grouped fill (white 24 % is 2.19:1; REF-CONSOLE §13 gives white 33-34 %) */
+  --ui-line: 58 58 58;
+  --ui-line-strong: 81 81 81;
+  --ui-line-focus: 122 122 122;
+  --ui-control-line: 109 109 109;
+  --ui-ink: 242 242 242;
+  --ui-ink-soft: 169 169 169;
+  --ui-on-ink: 10 10 10;
+  --ui-muted: 179 179 179;
+  /* muted-2 #8c8c8c reads 4.27:1 on hover; #919191 is the nearest at >= 4.5:1 */
+  --ui-faint: 145 145 145;
+  --ui-label: 156 156 156;
+  /* the mint accent with ink on it; soft = mint at 16 % */
+  --ui-primary: 182 247 200;
+  --ui-primary-hover: 166 225 183;
+  --ui-primary-soft: 51 62 54;
+  --ui-on-primary: 10 10 10;
+  --ui-link: #b6f7c8;
+  --ui-focus: 182 247 200;
+  /* status colours; soft = the colour at 18 % */
+  --ui-success: 74 222 128;
+  --ui-success-soft: 35 61 44;
+  --ui-danger: 248 113 113;
+  --ui-danger-soft: 66 42 42;
+  --ui-warning: 251 191 36;
+  --ui-warning-soft: 67 56 28;
+  --ui-info: 147 197 253;
+  --ui-info-soft: 48 57 67;
+  --ui-purple: 196 181 253;
+  --ui-purple-soft: 57 54 67;
+  --ui-shadow-popover: 0 6px 20px rgb(0 0 0 / 0.55);
+  --ui-shadow-overlay: 0 18px 50px rgb(0 0 0 / 0.65);
+  --ui-scrim: 0 0 0 / 0.6;
+}
+
+/* ------------------------------------------------------------------ Tailwind neutrals */
+/* gray / slate / zinc / neutral / stone / accent share the gray variables (tailwind.config.js); each shade has
+   a fill, a line and a text role. The dark-* family is upstream's dark-mode palette. */
+:root.flat-theme {
+  /* the reference's grey ladder at the light end, Tailwind neutral in between, ink at 950 */
+  --theme-color-gray-50: 250 250 250;
+  --theme-color-gray-100: 245 245 245;
+  --theme-color-gray-200: 237 237 237;
+  --theme-color-gray-300: 224 224 224;
+  --theme-color-gray-400: 163 163 163;
+  --theme-color-gray-500: 115 115 115;
+  --theme-color-gray-600: 82 82 82;
+  --theme-color-gray-700: 64 64 64;
+  --theme-color-gray-800: 38 38 38;
+  --theme-color-gray-900: 23 23 23;
+  --theme-color-gray-950: 10 10 10;
+  /* borders: upstream's card (100) and default (200) borders are the structural line, 300 the control outline,
+     400 the focus outline */
+  --theme-line-gray-100: 237 237 237;
+  --theme-line-gray-200: 237 237 237;
+  --theme-line-gray-300: 224 224 224;
+  --theme-line-gray-400: 189 189 189;
+  /* text: every shade upstream uses for secondary text meets 4.5:1 on the neutral fills; 300 stays the
+     reference's decorative muted-2 (upstream's own use: dividers, idle sort arrows) */
+  --theme-text-gray-300: 163 163 163;
+  --theme-text-gray-400: 108 108 108;
+  --theme-text-gray-500: 108 108 108;
+  --theme-text-gray-600: 82 82 82;
+  --theme-text-gray-700: 64 64 64;
+  --theme-text-gray-800: 38 38 38;
+  --theme-text-gray-900: 10 10 10;
+  --theme-text-gray-950: 10 10 10;
+
+  /* dark-*: 950 canvas, 900 well, 800 surface, 700 grouped fill; the light end is text on dark */
+  --theme-color-dark-50: 242 242 242;
+  --theme-color-dark-100: 229 229 229;
+  --theme-color-dark-200: 212 212 212;
+  --theme-color-dark-300: 179 179 179;
+  --theme-color-dark-400: 156 156 156;
+  --theme-color-dark-500: 92 92 92;
+  --theme-color-dark-600: 61 61 61;
+  --theme-color-dark-700: 35 35 35;
+  --theme-color-dark-800: 26 26 26;
+  --theme-color-dark-900: 20 20 20;
+  --theme-color-dark-950: 15 15 15;
+  --theme-line-dark-400: 122 122 122;
+  --theme-line-dark-500: 102 102 102;
+  --theme-line-dark-600: 81 81 81;
+  --theme-line-dark-700: 58 58 58;
+  --theme-line-dark-800: 42 42 42;
+  --theme-line-dark-900: 35 35 35;
+  --theme-line-dark-950: 26 26 26;
+  /* muted, ink-faint and the compliant muted-2 */
+  --theme-text-dark-100: 242 242 242;
+  --theme-text-dark-200: 229 229 229;
+  --theme-text-dark-300: 179 179 179;
+  --theme-text-dark-400: 156 156 156;
+  --theme-text-dark-500: 145 145 145;
+  --theme-text-dark-600: 122 122 122;
+}
+
+/* Dark mode: upstream pairs the light text shades (100-500) with dark:, and the plain 600-900 shades appear
+   where a template has no dark variant, so every text shade is a readable light grey; lines are the white
+   alphas composited over the surface. */
+:root.flat-theme.dark {
+  --theme-text-gray-600: 179 179 179;
+  --theme-text-gray-700: 212 212 212;
+  --theme-text-gray-800: 229 229 229;
+  --theme-text-gray-900: 242 242 242;
+  --theme-text-gray-950: 242 242 242;
+  --theme-line-gray-100: 42 42 42;
+  --theme-line-gray-200: 58 58 58;
+  --theme-line-gray-300: 81 81 81;
+  --theme-line-gray-400: 122 122 122;
+}
+
+/* Secondary text on a dark surface: the whole dark theme and, in the light theme, the boxes that stay dark
+   there too (terminal output, dark tooltips, code panes), which the templates mark `theme-dark-surface`. */
+:root.flat-theme.dark,
+:root.flat-theme .theme-dark-surface {
+  --theme-text-gray-100: 242 242 242;
+  --theme-text-gray-200: 229 229 229;
+  --theme-text-gray-300: 212 212 212;
+  --theme-text-gray-400: 179 179 179;
+  --theme-text-gray-500: 145 145 145;
+}
+
+/* ------------------------------------------------------------------ Tailwind accent and status families */
+/* primary is the accent; the hue families fold into the five status families (tailwind.config.js). One fill
+   ramp per family (500 carries white text at >= 4.5:1); the text roles are the text-safe colour. */
+:root.flat-theme {
+  --theme-color-primary-50: 234 250 240;
+  --theme-color-primary-100: 211 236 219;
+  --theme-color-primary-200: 177 216 188;
+  --theme-color-primary-300: 129 188 146;
+  --theme-color-primary-400: 22 138 73;
+  --theme-color-primary-500: 22 136 72;
+  --theme-color-primary-600: 20 124 66;
+  --theme-color-primary-700: 16 103 54;
+  --theme-color-primary-800: 12 83 43;
+  --theme-color-primary-900: 8 64 32;
+  --theme-color-primary-950: 5 46 22;
+  --theme-text-primary-400: 20 124 66;
+  --theme-text-primary-500: 20 124 66;
+  --theme-text-primary-600: 20 124 66;
+  --theme-ring-primary: 22 136 72;
+
+  --theme-color-success-50: 240 253 244;
+  --theme-color-success-100: 218 242 224;
+  --theme-color-success-200: 185 225 194;
+  --theme-color-success-300: 139 202 153;
+  --theme-color-success-400: 34 160 80;
+  --theme-color-success-500: 27 125 62;
+  --theme-color-success-600: 22 108 54;
+  --theme-color-success-700: 17 92 45;
+  --theme-color-success-800: 13 76 37;
+  --theme-color-success-900: 8 61 30;
+  --theme-color-success-950: 5 46 22;
+  --theme-text-success-400: 27 125 62;
+  --theme-text-success-500: 27 125 62;
+  --theme-text-success-600: 27 125 62;
+
+  --theme-color-danger-50: 254 242 242;
+  --theme-color-danger-100: 253 222 220;
+  --theme-color-danger-200: 250 192 187;
+  --theme-color-danger-300: 243 149 141;
+  --theme-color-danger-400: 220 60 60;
+  --theme-color-danger-500: 200 55 55;
+  --theme-color-danger-600: 172 45 45;
+  --theme-color-danger-700: 145 36 36;
+  --theme-color-danger-800: 118 27 27;
+  --theme-color-danger-900: 93 18 18;
+  --theme-color-danger-950: 69 10 10;
+  --theme-text-danger-400: 200 55 55;
+  --theme-text-danger-500: 200 55 55;
+  --theme-text-danger-600: 200 55 55;
+
+  --theme-color-warning-50: 255 249 234;
+  --theme-color-warning-100: 252 234 211;
+  --theme-color-warning-200: 246 211 177;
+  --theme-color-warning-300: 237 179 129;
+  --theme-color-warning-400: 217 119 6;
+  --theme-color-warning-500: 176 81 9;
+  --theme-color-warning-600: 153 69 8;
+  --theme-color-warning-700: 131 58 6;
+  --theme-color-warning-800: 110 47 5;
+  --theme-color-warning-900: 89 36 4;
+  --theme-color-warning-950: 69 26 3;
+  --theme-text-warning-400: 176 81 9;
+  --theme-text-warning-500: 176 81 9;
+  --theme-text-warning-600: 176 81 9;
+
+  --theme-color-info-50: 239 246 255;
+  --theme-color-info-100: 217 230 253;
+  --theme-color-info-200: 183 206 249;
+  --theme-color-info-300: 140 174 242;
+  --theme-color-info-400: 89 133 232;
+  --theme-color-info-500: 29 78 216;
+  --theme-color-info-600: 29 70 188;
+  --theme-color-info-700: 28 62 161;
+  --theme-color-info-800: 27 53 134;
+  --theme-color-info-900: 25 45 109;
+  --theme-color-info-950: 23 37 84;
+  --theme-text-info-400: 29 78 216;
+  --theme-text-info-500: 29 78 216;
+  --theme-text-info-600: 29 78 216;
+
+  --theme-color-purple-50: 250 245 255;
+  --theme-color-purple-100: 236 229 251;
+  --theme-color-purple-200: 215 204 244;
+  --theme-color-purple-300: 188 172 233;
+  --theme-color-purple-400: 156 131 219;
+  --theme-color-purple-500: 120 80 200;
+  --theme-color-purple-600: 104 67 179;
+  --theme-color-purple-700: 89 54 159;
+  --theme-color-purple-800: 74 42 139;
+  --theme-color-purple-900: 60 29 120;
+  --theme-color-purple-950: 46 16 101;
+  --theme-text-purple-400: 120 80 200;
+  --theme-text-purple-500: 120 80 200;
+  --theme-text-purple-600: 120 80 200;
+
+  /* Components that read a family variable directly (utils/platformColors.ts accent(), KeyUsageView's rings)
+     name the upstream hue; the folded ones resolve to the family they fold into. */
+  --theme-color-pink-500: var(--theme-color-purple-500);
+  --theme-color-teal-500: var(--theme-color-success-500);
+  --theme-color-indigo-300: var(--theme-color-info-300);
+  --theme-color-indigo-500: var(--theme-color-info-500);
+  --theme-text-indigo-600: var(--theme-text-info-600);
+}
+
+/* Dark mode: the accent fills are mint with ink on them (--theme-on-fill), its tints are mint over the surface
+   (8 / 16 / 24 / 32 %); the deep 800-950 shades stay (upstream's dark: tints use them at low opacity). */
+:root.flat-theme.dark {
+  --theme-color-primary-50: 38 43 40;
+  --theme-color-primary-100: 51 62 54;
+  --theme-color-primary-200: 63 79 68;
+  --theme-color-primary-300: 76 97 82;
+  --theme-color-primary-400: 204 249 216;
+  --theme-color-primary-500: 182 247 200;
+  --theme-color-primary-600: 166 225 183;
+  --theme-color-primary-700: 151 203 165;
+  --theme-ring-primary: 182 247 200;
+}
+
+/* Status and accent text on a dark surface (see the gray block above): the reference's dark colours with
+   lighter steps around them. */
+:root.flat-theme.dark,
+:root.flat-theme .theme-dark-surface {
+  --theme-text-primary-50: 234 250 240;
+  --theme-text-primary-100: 217 251 226;
+  --theme-text-primary-200: 199 249 212;
+  --theme-text-primary-300: 182 247 200;
+  --theme-text-primary-400: 182 247 200;
+  --theme-text-primary-500: 182 247 200;
+  --theme-text-primary-600: 182 247 200;
+  --theme-text-primary-700: 199 249 212;
+  --theme-text-primary-800: 217 251 226;
+  --theme-text-primary-900: 234 250 240;
+  --theme-text-primary-950: 234 250 240;
+  --theme-text-success-100: 220 252 231;
+  --theme-text-success-200: 187 247 208;
+  --theme-text-success-300: 134 239 172;
+  --theme-text-success-400: 74 222 128;
+  --theme-text-success-500: 74 222 128;
+  --theme-text-success-600: 74 222 128;
+  --theme-text-success-700: 134 239 172;
+  --theme-text-success-800: 187 247 208;
+  --theme-text-danger-100: 254 226 226;
+  --theme-text-danger-200: 254 202 202;
+  --theme-text-danger-300: 252 165 165;
+  --theme-text-danger-400: 248 113 113;
+  --theme-text-danger-500: 248 113 113;
+  --theme-text-danger-600: 248 113 113;
+  --theme-text-danger-700: 252 165 165;
+  --theme-text-danger-800: 254 202 202;
+  --theme-text-warning-100: 254 243 199;
+  --theme-text-warning-200: 253 230 138;
+  --theme-text-warning-300: 252 211 77;
+  --theme-text-warning-400: 251 191 36;
+  --theme-text-warning-500: 251 191 36;
+  --theme-text-warning-600: 251 191 36;
+  --theme-text-warning-700: 252 211 77;
+  --theme-text-warning-800: 253 230 138;
+  --theme-text-info-100: 239 246 255;
+  --theme-text-info-200: 219 234 254;
+  --theme-text-info-300: 191 219 254;
+  --theme-text-info-400: 147 197 253;
+  --theme-text-info-500: 147 197 253;
+  --theme-text-info-600: 147 197 253;
+  --theme-text-info-700: 191 219 254;
+  --theme-text-info-800: 219 234 254;
+  --theme-text-purple-100: 237 233 254;
+  --theme-text-purple-200: 221 214 254;
+  --theme-text-purple-300: 221 214 254;
+  --theme-text-purple-400: 196 181 253;
+  --theme-text-purple-500: 196 181 253;
+  --theme-text-purple-600: 196 181 253;
+  --theme-text-purple-700: 221 214 254;
+  --theme-text-purple-800: 237 233 254;
+}
+
+/* ------------------------------------------------------------------ shape, depth, motion */
+:root.flat-theme {
+  /* upstream's radii onto the reference's three: controls (xl: buttons, inputs, dropdowns; lg, md) 6px, cards
+     and dialogs (2xl, 3xl) 8px, chips (DEFAULT, sm) 4px */
+  --theme-radius-sm: 4px;
+  --theme-radius-default: 4px;
+  --theme-radius-md: 6px;
+  --theme-radius-lg: 6px;
+  --theme-radius-xl: 6px;
+  --theme-radius-2xl: 8px;
+  --theme-radius-3xl: 8px;
+  --theme-radius-4xl: 8px;
+  /* the page is drawn with lines: in-page shadows are none; menus and popovers (lg, xl) and dialogs (2xl) float */
+  --theme-shadow-sm: none;
+  --theme-shadow-default: none;
+  --theme-shadow-md: none;
+  --theme-shadow-lg: var(--ui-shadow-popover);
+  --theme-shadow-xl: var(--ui-shadow-popover);
+  --theme-shadow-2xl: var(--ui-shadow-overlay);
+  --theme-shadow-inner: none;
+  --theme-shadow-glass: none;
+  --theme-shadow-glass-sm: none;
+  --theme-shadow-glow: none;
+  --theme-shadow-glow-lg: none;
+  --theme-shadow-card: none;
+  --theme-shadow-card-hover: none;
+  --theme-shadow-inner-glow: none;
+  --theme-shadow-outline: 0 0 0 1px rgb(var(--ui-line));
+  /* the reference has no decorative gradients; a named primary gradient is the solid accent */
+  --theme-background-gradient-radial: none;
+  --theme-background-gradient-primary: linear-gradient(rgb(var(--ui-primary)), rgb(var(--ui-primary)));
+  --theme-background-gradient-dark: none;
+  --theme-background-gradient-glass: none;
+  --theme-background-mesh-gradient: none;
+  /* nothing grows on hover */
+  --theme-scale-105: 1;
+  --theme-scale-110: 1;
+  --theme-scale-125: 1;
+  --theme-scale-150: 1;
+  /* entrances: the reference's reveal (200ms ease-out, 4px travel) for every upstream entrance; no glow pulse */
+  --theme-animation-fade-in: consoleFadeIn var(--ui-duration-slide) var(--ui-ease-out);
+  --theme-animation-slide-up: consoleSlideUp var(--ui-duration-slide) var(--ui-ease-out);
+  --theme-animation-slide-down: consoleSlideDown var(--ui-duration-slide) var(--ui-ease-out);
+  --theme-animation-slide-in-right: consoleSlideInRight var(--ui-duration-slide) var(--ui-ease-out);
+  --theme-animation-scale-in: consoleScaleIn var(--ui-duration-slide) var(--ui-ease-out);
+  --theme-animation-glow: none;
+}
+
+/* Upstream's decorative gradients render as their start colour. The stops belong to each element, so the
+   variables are declared on every element (declared on :root they would resolve --tw-gradient-from there).
+   An element that encodes data in both ends sets its own value inline (UsageTable's latency bar). */
+:root.flat-theme *,
+:root.flat-theme ::before,
+:root.flat-theme ::after {
+  --theme-background-gradient-to-t: linear-gradient(var(--tw-gradient-from), var(--tw-gradient-from));
+  --theme-background-gradient-to-tr: linear-gradient(var(--tw-gradient-from), var(--tw-gradient-from));
+  --theme-background-gradient-to-r: linear-gradient(var(--tw-gradient-from), var(--tw-gradient-from));
+  --theme-background-gradient-to-br: linear-gradient(var(--tw-gradient-from), var(--tw-gradient-from));
+  --theme-background-gradient-to-b: linear-gradient(var(--tw-gradient-from), var(--tw-gradient-from));
+  --theme-background-gradient-to-bl: linear-gradient(var(--tw-gradient-from), var(--tw-gradient-from));
+  --theme-background-gradient-to-l: linear-gradient(var(--tw-gradient-from), var(--tw-gradient-from));
+  --theme-background-gradient-to-tl: linear-gradient(var(--tw-gradient-from), var(--tw-gradient-from));
+}
+
+/* ------------------------------------------------------------------ charts and scrollbars */
+/* Read by composables/usePresentationColors.ts (REF-CONSOLE §8.14): grid = the structural line, axis text =
+   muted; categorical series 1-12 (#rrggbb, consumers append a hex alpha) = the usage-by-model bar (ink, accent,
+   indigo, amber, cyan) followed by the usage series; "other" = #9ca3af; status marks for charts drawn with
+   upstream hue literals. The distribution charts list every value in a table beside the chart, so the series
+   are not the only carrier of the data. */
+:root.flat-theme {
+  --theme-chart-text: #5d5d5d;
+  --theme-chart-grid: #ededed;
+  --theme-chart-axis: #6c6c6c;
+  --theme-chart-axis-grid: #f5f5f5;
+  --theme-chart-tooltip: #ffffff;
+  --theme-chart-title: #0a0a0a;
+  --theme-chart-body: #6c6c6c;
+  --theme-chart-gray: #9ca3af;
+  --theme-chart-series-1: #0a0a0a;
+  --theme-chart-series-2: #168848;
+  --theme-chart-series-3: #6366f1;
+  --theme-chart-series-4: #d97706;
+  --theme-chart-series-5: #0891b2;
+  --theme-chart-series-6: #3975d8;
+  --theme-chart-series-7: #62cc49;
+  --theme-chart-series-8: #c32517;
+  --theme-chart-series-9: #e481fb;
+  --theme-chart-series-10: #0f714a;
+  --theme-chart-series-11: #81237c;
+  --theme-chart-series-12: #26a7ad;
+  --theme-chart-info: #1d4ed8;
+  --theme-chart-success: #22a050;
+  --theme-chart-warning: #d97706;
+  --theme-chart-danger: #dc3c3c;
+  --theme-chart-purple: #7850c8;
+  --theme-scrollbar-thumb: #d4d4d4;
+  --theme-scrollbar-hover: #a3a3a3;
+}
+
+:root.flat-theme.dark {
+  --theme-chart-text: #a9a9a9;
+  --theme-chart-grid: #3a3a3a;
+  --theme-chart-axis: #b3b3b3;
+  --theme-chart-axis-grid: #232323;
+  --theme-chart-tooltip: #1a1a1a;
+  --theme-chart-title: #f2f2f2;
+  --theme-chart-body: #b3b3b3;
+  --theme-chart-series-1: #f2f2f2;
+  --theme-chart-series-2: #b6f7c8;
+  --theme-chart-series-6: #1f5bbc;
+  --theme-chart-series-7: #44af27;
+  --theme-chart-series-8: #be1e10;
+  --theme-chart-series-9: #c664dc;
+  --theme-chart-series-10: #12724b;
+  --theme-chart-series-11: #91338c;
+  --theme-chart-info: #93c5fd;
+  --theme-chart-success: #4ade80;
+  --theme-chart-warning: #fbbf24;
+  --theme-chart-danger: #f87171;
+  --theme-chart-purple: #c4b5fd;
+  --theme-scrollbar-thumb: #3d3d3d;
+  --theme-scrollbar-hover: #5c5c5c;
+}
+
+/* ------------------------------------------------------------------ keyframes */
+@keyframes consoleFadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes consoleSlideUp {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes consoleSlideDown {
+  from { opacity: 0; transform: translateY(-4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes consoleSlideInRight {
+  from { opacity: 0; transform: translateX(4px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+
+@keyframes consoleScaleIn {
+  from { opacity: 0; transform: scale(0.98); }
+  to { opacity: 1; transform: scale(1); }
+}

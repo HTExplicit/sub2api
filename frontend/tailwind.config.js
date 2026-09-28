@@ -2,17 +2,17 @@
  * Tailwind mapping for the console theme.
  *
  * Every palette, radius, shadow, gradient, blur and motion value resolves through a CSS variable
- * whose fallback is the upstream (v0.2.8) value. styles/flat-theme.css defines those variables
+ * whose fallback is the upstream (v0.2.8) value. styles/console/tokens.css defines those variables
  * while <html> carries `flat-theme` (public setting flat_theme_enabled), so upstream class names
  * render the console look and switching the setting off restores the upstream look.
  *
- * Colour roles: neutral families (gray/slate/zinc/neutral/stone, dark) resolve per utility
- * (fill, line, text) because upstream uses one shade for several roles; hue families fold into
- * eight families named after Apple's system colours (danger = red, warning = orange, info = blue,
- * success = green, teal, indigo, purple, pink) with a separate text role; `primary` is the accent
- * (Apple blue in the console theme). Solid primary fills export
- * `--theme-on-fill`, which `text-white` and `bg-white` read, so white text or knobs on a primary
- * fill always use the theme's on-primary colour.
+ * Colour roles: neutral families (gray/slate/zinc/neutral/stone, accent, dark) resolve per utility
+ * (fill, line, text) because upstream uses one shade for several roles. Hue families fold into the
+ * five status families of the console (danger, warning, info, success, purple), each with a fill
+ * and a text role, so upstream's hues render as the console's restrained status colours; a hue that
+ * needs its own identity again gets its own row in HUE_FAMILIES and its own variables in the tokens.
+ * `primary` is the console accent. Solid primary fills export `--theme-on-fill`, which `text-white`
+ * and `bg-white` read, so white text or knobs on a primary fill always use the on-accent colour.
  */
 import defaultColors from 'tailwindcss/colors'
 import plugin from 'tailwindcss/plugin'
@@ -33,13 +33,10 @@ const UPSTREAM_SLATE = {
 const NEUTRAL_FAMILIES = { gray: 'gray', slate: 'gray', zinc: 'gray', neutral: 'gray', stone: 'gray' }
 const HUE_FAMILIES = {
   red: 'danger', rose: 'danger',
-  amber: 'warning', yellow: 'warning', orange: 'warning',
-  blue: 'info',
-  green: 'success', emerald: 'success', lime: 'success',
-  teal: 'teal', cyan: 'teal', sky: 'teal',
-  indigo: 'indigo',
-  purple: 'purple', violet: 'purple', fuchsia: 'purple',
-  pink: 'pink'
+  orange: 'warning', amber: 'warning', yellow: 'warning',
+  blue: 'info', sky: 'info', cyan: 'info', indigo: 'info',
+  green: 'success', emerald: 'success', teal: 'success', lime: 'success',
+  purple: 'purple', violet: 'purple', fuchsia: 'purple', pink: 'purple'
 }
 
 function channels(hex) {

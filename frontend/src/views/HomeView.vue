@@ -16,7 +16,7 @@
   <div
     v-else-if="compactHomeEnabled"
     data-testid="compact-home"
-    class="public-texture relative flex min-h-screen flex-col bg-canvas text-gray-900 dark:bg-dark-950 dark:text-white"
+    class="flex min-h-screen flex-col bg-gray-50 text-gray-900 dark:bg-dark-950 dark:text-white"
   >
     <header class="border-b border-gray-200 px-4 py-4 sm:px-6 dark:border-dark-800">
       <nav class="mx-auto flex max-w-5xl flex-wrap items-center justify-between gap-3 sm:gap-4">
@@ -93,10 +93,29 @@
   <!-- Default Home Page -->
   <div
     v-else
-    class="public-texture relative flex min-h-screen flex-col overflow-hidden bg-canvas dark:bg-dark-950"
+    class="relative flex min-h-screen flex-col overflow-hidden bg-gradient-to-br from-gray-50 via-primary-50/30 to-gray-100 dark:from-dark-950 dark:via-dark-900 dark:to-dark-950"
   >
+    <!-- Background Decorations -->
+    <div class="pointer-events-none absolute inset-0 overflow-hidden">
+      <div
+        class="absolute -right-40 -top-40 h-96 w-96 rounded-full bg-primary-400/20 blur-3xl"
+      ></div>
+      <div
+        class="absolute -bottom-40 -left-40 h-96 w-96 rounded-full bg-primary-500/15 blur-3xl"
+      ></div>
+      <div
+        class="absolute left-1/3 top-1/4 h-72 w-72 rounded-full bg-primary-300/10 blur-3xl"
+      ></div>
+      <div
+        class="absolute bottom-1/4 right-1/4 h-64 w-64 rounded-full bg-primary-400/10 blur-3xl"
+      ></div>
+      <div
+        class="absolute inset-0 bg-[linear-gradient(rgba(20,184,166,0.03)_1px,transparent_1px),linear-gradient(90deg,rgba(20,184,166,0.03)_1px,transparent_1px)] bg-[size:64px_64px]"
+      ></div>
+    </div>
+
     <!-- Header -->
-    <header class="relative z-20 border-b border-line px-6 py-4">
+    <header class="relative z-20 px-6 py-4">
       <nav class="mx-auto flex max-w-6xl items-center justify-between">
         <!-- Logo -->
         <div class="flex items-center">
@@ -281,7 +300,7 @@
             class="group rounded-2xl border border-gray-200/50 bg-white/60 p-6 backdrop-blur-sm transition-all duration-300 hover:shadow-xl hover:shadow-primary-500/10 dark:border-dark-700/50 dark:bg-dark-800/60"
           >
             <div
-              class="mb-4 flex h-12 w-12 items-center justify-center rounded-xl bg-surface text-ink border border-line"
+              class="mb-4 flex h-12 w-12 items-center justify-center rounded-xl bg-gradient-to-br from-blue-500 to-blue-600 shadow-lg shadow-blue-500/30 transition-transform group-hover:scale-110"
             >
               <Icon name="server" size="lg" class="text-white" />
             </div>
@@ -298,10 +317,10 @@
             class="group rounded-2xl border border-gray-200/50 bg-white/60 p-6 backdrop-blur-sm transition-all duration-300 hover:shadow-xl hover:shadow-primary-500/10 dark:border-dark-700/50 dark:bg-dark-800/60"
           >
             <div
-              class="mb-4 flex h-12 w-12 items-center justify-center rounded-xl bg-surface text-ink border border-line"
+              class="mb-4 flex h-12 w-12 items-center justify-center rounded-xl bg-gradient-to-br from-primary-500 to-primary-600 shadow-lg shadow-primary-500/30 transition-transform group-hover:scale-110"
             >
               <svg
-                class="h-6 w-6 text-primary-600 dark:text-primary-400"
+                class="h-6 w-6 text-white"
                 fill="none"
                 viewBox="0 0 24 24"
                 stroke="currentColor"
@@ -327,10 +346,10 @@
             class="group rounded-2xl border border-gray-200/50 bg-white/60 p-6 backdrop-blur-sm transition-all duration-300 hover:shadow-xl hover:shadow-primary-500/10 dark:border-dark-700/50 dark:bg-dark-800/60"
           >
             <div
-              class="mb-4 flex h-12 w-12 items-center justify-center rounded-xl bg-surface text-ink border border-line"
+              class="mb-4 flex h-12 w-12 items-center justify-center rounded-xl bg-gradient-to-br from-purple-500 to-purple-600 shadow-lg shadow-purple-500/30 transition-transform group-hover:scale-110"
             >
               <svg
-                class="h-6 w-6 text-primary-600 dark:text-primary-400"
+                class="h-6 w-6 text-white"
                 fill="none"
                 viewBox="0 0 24 24"
                 stroke="currentColor"
@@ -428,7 +447,7 @@
             class="flex items-center gap-2 rounded-xl border border-gray-200/50 bg-white/40 px-5 py-3 opacity-60 backdrop-blur-sm dark:border-dark-700/50 dark:bg-dark-800/40"
           >
             <div
-              class="flex h-8 w-8 items-center justify-center rounded-lg bg-gray-500"
+              class="flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-to-br from-gray-500 to-gray-600"
             >
               <span class="text-xs font-bold text-white">+</span>
             </div>
@@ -570,19 +589,20 @@ onMounted(() => {
 
 /* Terminal Window */
 .terminal-window {
-  width: min(420px, calc(100vw - 3rem));
-  background: rgb(var(--ui-surface));
-  border: 1px solid rgb(var(--ui-line));
-  color: rgb(var(--ui-ink));
+  width: 420px;
+  background: linear-gradient(145deg, #1e293b 0%, #0f172a 100%);
   border-radius: 14px;
-  box-shadow: none;
+  box-shadow:
+    0 25px 50px -12px rgba(0, 0, 0, 0.4),
+    0 0 0 1px rgba(255, 255, 255, 0.1),
+    inset 0 1px 0 rgba(255, 255, 255, 0.1);
   overflow: hidden;
-  transform: none;
+  transform: perspective(1000px) rotateX(2deg) rotateY(-2deg);
   transition: transform 0.3s ease;
 }
 
 .terminal-window:hover {
-  transform: none;
+  transform: perspective(1000px) rotateX(0deg) rotateY(0deg) translateY(-4px);
 }
 
 /* Terminal Header */
@@ -590,8 +610,8 @@ onMounted(() => {
   display: flex;
   align-items: center;
   padding: 12px 16px;
-  background: rgb(var(--ui-raised));
-  border-bottom: 1px solid rgb(var(--ui-line));
+  background: rgba(30, 41, 59, 0.8);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
 }
 
 .terminal-buttons {
@@ -620,14 +640,14 @@ onMounted(() => {
   text-align: center;
   font-size: 12px;
   font-family: ui-monospace, monospace;
-  color: rgb(var(--ui-muted));
+  color: #64748b;
   margin-right: 52px;
 }
 
 /* Terminal Body */
 .terminal-body {
   padding: 20px 24px;
-  font-family: ui-monospace, monospace;
+  font-family: ui-monospace, 'Fira Code', monospace;
   font-size: 14px;
   line-height: 2;
 }
@@ -638,20 +658,20 @@ onMounted(() => {
   gap: 8px;
   flex-wrap: wrap;
   opacity: 0;
-  animation: line-appear 0.15s ease forwards;
+  animation: line-appear 0.5s ease forwards;
 }
 
 .line-1 {
-  animation-delay: 0s;
+  animation-delay: 0.3s;
 }
 .line-2 {
-  animation-delay: 0.1s;
+  animation-delay: 1s;
 }
 .line-3 {
-  animation-delay: 0.15s;
+  animation-delay: 1.8s;
 }
 .line-4 {
-  animation-delay: 0.2s;
+  animation-delay: 2.5s;
 }
 
 @keyframes line-appear {
@@ -666,31 +686,31 @@ onMounted(() => {
 }
 
 .code-prompt {
-  color: var(--ui-link);
+  color: #22c55e;
   font-weight: bold;
 }
 .code-cmd {
-  color: rgb(var(--ui-ink));
+  color: #38bdf8;
 }
 .code-flag {
-  color: rgb(var(--ui-muted));
+  color: #a78bfa;
 }
 .code-url {
-  color: var(--ui-link);
+  color: #14b8a6;
 }
 .code-comment {
-  color: rgb(var(--ui-muted));
+  color: #64748b;
   font-style: italic;
 }
 .code-success {
-  color: var(--ui-link);
+  color: #22c55e;
   background: rgba(34, 197, 94, 0.15);
   padding: 2px 8px;
   border-radius: 4px;
   font-weight: 600;
 }
 .code-response {
-  color: rgb(var(--ui-ink));
+  color: #fbbf24;
 }
 
 /* Blinking Cursor */
@@ -715,6 +735,10 @@ onMounted(() => {
 
 /* Dark mode adjustments */
 :deep(.dark) .terminal-window {
-  box-shadow: none;
+  box-shadow:
+    0 25px 50px -12px rgba(0, 0, 0, 0.6),
+    0 0 0 1px rgba(20, 184, 166, 0.2),
+    0 0 40px rgba(20, 184, 166, 0.1),
+    inset 0 1px 0 rgba(255, 255, 255, 0.1);
 }
 </style>

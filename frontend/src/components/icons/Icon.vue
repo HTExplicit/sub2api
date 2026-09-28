@@ -1,5 +1,6 @@
 <template>
   <svg
+    v-if="!lucideGlyph"
     :class="sizeClass"
     fill="none"
     viewBox="0 0 24 24"
@@ -8,10 +9,24 @@
   >
     <path stroke-linecap="round" stroke-linejoin="round" :d="iconPath" />
   </svg>
+  <svg
+    v-else
+    :class="[sizeClass, 'lucide', `lucide-${lucideGlyph.name}`]"
+    fill="none"
+    viewBox="0 0 24 24"
+    stroke="currentColor"
+    :stroke-width="lucideStrokeWidth(strokeWidth)"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+  >
+    <LucideShapes :nodes="lucideGlyph.nodes" />
+  </svg>
 </template>
 
 <script setup lang="ts">
 import { computed } from 'vue'
+import { flatThemeActive } from '@/utils/flatTheme'
+import { LucideShapes, lucideIcons, lucideStrokeWidth, type LucideGlyph } from './lucide'
 
 const props = withDefaults(defineProps<{
   name: keyof typeof icons
@@ -136,6 +151,10 @@ const icons = {
 } as const
 
 const iconPath = computed(() => icons[props.name])
+
+// Console theme (utils/flatTheme.ts): the Lucide glyph for the same name (./lucide.ts); theme off keeps the path above.
+const lucide: Record<keyof typeof icons, LucideGlyph> = lucideIcons
+const lucideGlyph = computed(() => (flatThemeActive.value ? lucide[props.name] : undefined))
 
 const sizeClass = computed(() => ({
   xs: 'h-3 w-3',

@@ -7,7 +7,18 @@ import { useAppStore } from '@/stores/app'
 import { updateFavicon } from '@/utils/branding'
 import { isIOSDevice } from '@/utils/device'
 import './style.css'
-import './styles/flat-theme.css'
+// Console theme (html.flat-theme), plain CSS after the Tailwind output, in cascade order: tokens, the frozen
+// behaviour layer, then the look by area and by page group.
+import './styles/console/tokens.css'
+import './styles/console/behaviour.css'
+import './styles/console/shell.css'
+import './styles/console/controls.css'
+import './styles/console/data.css'
+import './styles/console/overlays.css'
+import './styles/console/pages/accounts.css'
+import './styles/console/pages/dashboard-usage.css'
+import './styles/console/pages/users-groups-proxies-keys.css'
+import './styles/console/pages/settings-ops-public.css'
 import { applyFlatTheme } from '@/utils/flatTheme'
 
 function initIOSViewportZoomFix() {
