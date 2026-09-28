@@ -239,7 +239,7 @@
      reference's decorative muted-2 (upstream's own use: dividers, idle sort arrows) */
   --theme-text-gray-300: 163 163 163;
   --theme-text-gray-400: 108 108 108;
-  --theme-text-gray-500: 108 108 108;
+  --theme-text-gray-500: 105 105 105; /* >= 4.5:1 on gray-200 fills (4.68) */
   --theme-text-gray-600: 82 82 82;
   --theme-text-gray-700: 64 64 64;
   --theme-text-gray-800: 38 38 38;
@@ -297,7 +297,7 @@
   --theme-text-gray-200: 229 229 229;
   --theme-text-gray-300: 212 212 212;
   --theme-text-gray-400: 179 179 179;
-  --theme-text-gray-500: 145 145 145;
+  --theme-text-gray-500: 168 168 168; /* >= 4.5:1 on dark-600 fills (upstream pairs text-gray-500 with them) */
 }
 
 /* ------------------------------------------------------------------ Tailwind accent and status families */

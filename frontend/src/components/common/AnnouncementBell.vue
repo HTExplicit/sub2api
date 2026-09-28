@@ -2,6 +2,7 @@
   <div>
     <!-- 铃铛按钮 -->
     <button
+      data-ui="announcement-bell"
       @click="openModal"
       class="relative flex h-9 w-9 items-center justify-center rounded-lg text-gray-600 transition-all hover:bg-gray-100 hover:scale-105 dark:text-gray-400 dark:hover:bg-dark-800"
       :class="{ 'text-blue-600 dark:text-blue-400': unreadCount > 0 }"
@@ -27,6 +28,7 @@
           @click="closeModal"
         >
           <div
+            data-ui="announcement-list"
             class="w-full max-w-[620px] overflow-hidden rounded-3xl bg-white shadow-2xl ring-1 ring-black/5 dark:bg-dark-800 dark:ring-white/10"
             @click.stop
           >
@@ -187,6 +189,7 @@
           @click="closeDetail"
         >
           <div
+            data-ui="announcement-detail"
             class="w-full max-w-[780px] overflow-hidden rounded-3xl bg-white shadow-2xl ring-1 ring-black/5 dark:bg-dark-800 dark:ring-white/10"
             @click.stop
           >

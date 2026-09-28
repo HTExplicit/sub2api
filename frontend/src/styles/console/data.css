@@ -1,1 +1,1334 @@
-/* Console theme · data: DataTable, TablePageLayout and plain tables, pagination, bulk bars, row actions, badges, platform marks, KPI, empty and loading states (owner: the data agent; html.flat-theme selectors, tokens from tokens.css, new data-ui hooks registered here). */
+/* Console theme · data: DataTable, TablePageLayout and plain tables, pagination, bulk bars, row actions, badges, platform marks, KPI, empty and loading states (owner: the data agent; html.flat-theme selectors, tokens from tokens.css, new data-ui hooks registered here).
+ *
+ * Source: the Experiential Labs console, measured 2026-09-28 (ui-el/ref/console/REF-CONSOLE.md §5, §6, §8.7, §8.8,
+ * §8.13, §8.14, §10; crops table-head, data-row, group-row, kpi-card, chart-card, usage-card). Where the reference
+ * is below our floor the value is the compliant one from tokens.css (labels --ui-label, faint text --ui-faint, form
+ * lines --ui-control-line) and the rule says so.
+ *
+ * Specificity: every rule starts with html.flat-theme (theme off = upstream). DataTable's scoped styles reach 0,4,2
+ * (`.dark tbody tr:hover .sticky-col[data-v]`), TablePageLayout's 0,4,0 (mobile mode) and the unscoped scrollbar
+ * block uses !important: the rules that restate those carry at least one more class. Recipe classes (.badge*,
+ * .stat-*, .empty-state*, .skeleton, .progress*) are restated here at 0,2,1 with look properties only (coordinator,
+ * 2026-09-28): page font-size utilities on badges yield to the badge size, layout utilities are untouched.
+ *
+ * New data-ui hooks (one attribute each, no other template change):
+ *   data-ui="pagination"      components/common/Pagination.vue      root
+ *   data-ui="status-badge"    components/common/StatusBadge.vue     root
+ *   data-ui="platform-badge"  components/common/PlatformTypeBadge.vue root
+ *   data-ui="group-badge"     components/common/GroupBadge.vue      root
+ *   data-ui="skeleton"        components/common/Skeleton.vue        root
+ * Hooks used from other owners: data-ui~="bulk-bar" (AccountBulkActionsBar, the accounts agent), data-table and
+ * data-column (DataTable), aria-sort on sortable headers. */
+
+/* ================================================================== 0 · custom properties */
+
+html.flat-theme {
+  /* table metrics (REF §8.7): 40px header, cells inset 10 / 12, first and last column 16 */
+  --ui-table-cell-y: 10px;
+  --ui-table-cell-x: 12px;
+  --ui-table-edge-x: 16px;
+  /* width of DataTable's own selection column (checkbox + insets); the second sticky column starts after it */
+  --ui-table-select-w: 44px;
+  /* badges and status pills: Geist Mono uppercase (the reference's 9.5px pills read 10px here; 11px in the
+     Chinese interface, like the mono label) */
+  --ui-badge-size: 10px;
+  --ui-badge-leading: 16px;
+  /* data chips in cells (the reference's tool / prompt chips, Geist Mono 10-10.5px) */
+  --ui-chip-size: 10.5px;
+  /* table scrollbars stay visible (sideways scrolling must be discoverable, as the reference's Windows
+     scrollbars are); the thumb is the reference's #8b8b8b grey at >= 3:1 on the surface */
+  --ui-scroll-thumb: 142 142 142;
+  --ui-scroll-thumb-hover: 108 108 108;
+  /* uptime and quota marks (REF §3.2 --uptime-*): soft bar fills, and the text colour of each state */
+  --ui-uptime-good: 167 224 189;
+  --ui-uptime-good-ink: 47 125 79;
+  --ui-uptime-warn: 246 213 138;
+  --ui-uptime-warn-ink: 128 84 8;
+  --ui-uptime-bad: 243 169 169;
+  --ui-uptime-bad-ink: 185 74 74;
+  /* status dots (REF §8.8: success #22a050, warning, danger, idle = muted-2) */
+  --ui-dot-ok: 34 160 80;
+  --ui-dot-warn: 217 119 6;
+  --ui-dot-bad: 220 60 60;
+  --ui-dot-idle: 163 163 163;
+  /* the bulk bar floats only where its owner places it over content */
+  --ui-bulk-bar-shadow: none;
+  /* Time-series chart palette (read by composables/usePresentationColors.ts as `trend`): the reference's usage
+     series (REF §8.14 --usage-series-*) in the hue order of upstream's series (blue, emerald, amber, red, violet,
+     pink, teal, orange, indigo, lime, cyan, purple), so a chart that picks a series by index keeps its hue. Lines
+     need >= 3:1 on the surface: where the reference's value is lighter (#62cc49 2.05:1, #e481fb 2.38, #26a7ad
+     2.91, #44af27 2.84) the nearest reference or deepened value is used. */
+  --ui-chart-trend-1: #3975d8;
+  --ui-chart-trend-2: #0f714a;
+  --ui-chart-trend-3: #a77e33;
+  --ui-chart-trend-4: #c32517;
+  --ui-chart-trend-5: #81237c;
+  --ui-chart-trend-6: #c664dc;
+  --ui-chart-trend-7: #1f9197;
+  --ui-chart-trend-8: #d97706;
+  --ui-chart-trend-9: #6366f1;
+  --ui-chart-trend-10: #3f9f24;
+  --ui-chart-trend-11: #0891b2;
+  --ui-chart-trend-12: #7850c8;
+}
+
+html.flat-theme:lang(zh) {
+  --ui-badge-size: 11px;
+  --ui-chip-size: 11px;
+}
+
+html.flat-theme.dark {
+  --ui-scroll-thumb: 122 122 122;
+  --ui-scroll-thumb-hover: 156 156 156;
+  /* the reference's dark fills are the colour at 42 % over the surface */
+  --ui-uptime-good: 46 108 69;
+  --ui-uptime-good-ink: 134 239 172;
+  --ui-uptime-warn: 120 95 30;
+  --ui-uptime-warn-ink: 252 211 77;
+  --ui-uptime-bad: 119 63 63;
+  --ui-uptime-bad-ink: 252 165 165;
+  --ui-dot-ok: 74 222 128;
+  --ui-dot-warn: 251 191 36;
+  --ui-dot-bad: 248 113 113;
+  --ui-dot-idle: 140 140 140;
+  /* the reference's dark series where they hold 3:1 on #1a1a1a; blue and red are lighter (#1f5bbc 2.72, #be1e10
+     2.80), violet is the reference's dark pink (#91338c 2.53) */
+  --ui-chart-trend-1: #3975d8;
+  --ui-chart-trend-2: #44af27;
+  --ui-chart-trend-3: #9e7528;
+  --ui-chart-trend-4: #e2503f;
+  --ui-chart-trend-5: #c664dc;
+  --ui-chart-trend-6: #e481fb;
+  --ui-chart-trend-7: #26a7ad;
+  --ui-chart-trend-8: #d97706;
+  --ui-chart-trend-9: #6366f1;
+  --ui-chart-trend-10: #62cc49;
+  --ui-chart-trend-11: #0891b2;
+  --ui-chart-trend-12: #a78bfa;
+}
+
+/* ================================================================== 1 · DataTable (desktop and, theme on, phones) */
+
+/* The card around the table is the layout's (section 2); the wrapper scrolls both ways. */
+html.flat-theme .table-wrapper > table:has(> tbody.table-body) {
+  border-collapse: collapse;
+  font-size: 13px;
+  line-height: 19.5px;
+}
+
+/* the line between header and body is drawn by the sticky header cells (inset shadow), so it stays under the
+   header while the body scrolls; the collapsed border of the first body row is dropped */
+html.flat-theme .table-wrapper > table > tbody.table-body {
+  border-top-width: 0;
+  /* upstream's dark body is dark-900, a step below the sticky cells and the card */
+  background-color: rgb(var(--ui-surface));
+}
+
+/* Header: 40px, the mono label (REF §8.7: Geist Mono 10/15, .12em, uppercase, 500, ink-faint -> --ui-label),
+   surface fill, 1px structural line underneath. th sits on the 13px / 19.5px strut, as the reference's does. */
+html.flat-theme .table-wrapper .table-header .sticky-header-cell {
+  padding: var(--ui-table-cell-y) var(--ui-table-cell-x);
+  border-bottom-width: 0;
+  background-color: rgb(var(--ui-surface));
+  box-shadow: inset 0 -1px 0 rgb(var(--ui-line));
+  color: rgb(var(--ui-label));
+  font-family: var(--ui-font-mono);
+  font-size: var(--ui-label-size);
+  font-weight: 500;
+  line-height: 19.5px;
+  letter-spacing: var(--ui-label-tracking);
+  text-transform: uppercase;
+  white-space: nowrap;
+  vertical-align: middle;
+  transition: color var(--ui-duration) var(--ui-ease);
+}
+
+html.flat-theme .table-wrapper .table-header .sticky-header-cell:first-child {
+  padding-left: var(--ui-table-edge-x);
+}
+
+html.flat-theme .table-wrapper .table-header .sticky-header-cell:last-child {
+  padding-right: var(--ui-table-edge-x);
+}
+
+/* the reference's header has no hover fill; the label darkens a step on a sortable column (the reference means
+   to, its .mono-label overrides it) */
+html.flat-theme .table-wrapper .table-header .sticky-header-cell[aria-sort]:hover {
+  background-color: rgb(var(--ui-surface));
+  color: rgb(var(--ui-ink-soft));
+}
+
+/* header slot content (labels with a help icon) keeps the label's line */
+html.flat-theme .table-wrapper .table-header .sticky-header-cell > div {
+  min-height: 19.5px;
+}
+
+/* Sort: upstream's idle double triangle is not drawn; the sorted column carries the reference's arrow (Lucide
+   arrow-up / arrow-down, 11px, stroke 2, in the label's colour). The box keeps its place, so sorting never
+   shifts a column. */
+html.flat-theme .table-wrapper .table-header .sticky-header-cell[aria-sort] > div > span[aria-hidden="true"] {
+  width: 11px;
+  height: 11px;
+  flex: 0 0 11px;
+}
+
+html.flat-theme .table-wrapper .table-header .sticky-header-cell[aria-sort] > div > span[aria-hidden="true"] > svg {
+  display: none;
+}
+
+html.flat-theme .table-wrapper .table-header .sticky-header-cell:is([aria-sort="ascending"], [aria-sort="descending"]) > div > span[aria-hidden="true"]::before {
+  content: '';
+  width: 11px;
+  height: 11px;
+  background-color: currentColor;
+  -webkit-mask: var(--ui-sort-arrow) center / 11px 11px no-repeat;
+  mask: var(--ui-sort-arrow) center / 11px 11px no-repeat;
+}
+
+html.flat-theme .table-wrapper .table-header .sticky-header-cell[aria-sort="ascending"] {
+  --ui-sort-arrow: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m5 12 7-7 7 7'/%3E%3Cpath d='M12 19V5'/%3E%3C/svg%3E");
+}
+
+html.flat-theme .table-wrapper .table-header .sticky-header-cell[aria-sort="descending"] {
+  --ui-sort-arrow: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M12 5v14'/%3E%3Cpath d='m19 12-7 7-7-7'/%3E%3C/svg%3E");
+}
+
+/* Body cells: single line, inset 10 / 12 (16 at the edges), vertically centred; rows are divided by one 1px
+   structural line (tbody's divide-y plus the cells' own bottom line, both --ui-line). */
+html.flat-theme .table-wrapper > table > tbody.table-body > tr > td {
+  /* rows are at least the reference's 42px (its request rows; the catalog's 45 come from 24px logo squares) */
+  height: 42px;
+  padding: var(--ui-table-cell-y) var(--ui-table-cell-x);
+  border-bottom-color: rgb(var(--ui-line));
+  vertical-align: middle;
+}
+
+html.flat-theme .table-wrapper > table > tbody.table-body > tr > td:first-child {
+  padding-left: var(--ui-table-edge-x);
+}
+
+html.flat-theme .table-wrapper > table > tbody.table-body > tr > td:last-child {
+  padding-right: var(--ui-table-edge-x);
+}
+
+html.flat-theme .table-wrapper > table > tbody.table-body > tr + tr {
+  border-top-color: rgb(var(--ui-line));
+}
+
+/* numbers: right-aligned columns (column.class text-right) use tabular figures; mono cells already are */
+html.flat-theme .table-wrapper > table:has(> tbody.table-body) :is(th, td)[class~="text-right"] {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Figures in Geist Mono (REF §8.7: numeric cells Mono 12 / 13, tabular): the columns every table names the same way
+   for a count, an amount, a price, a rate, an id or a duration. Text in the same cell (a unit, a 「充值」 button) takes
+   MiSans / Geist through the mono stack's fallbacks. Alignment stays the column's. */
+html.flat-theme .table-wrapper > table > tbody.table-body > tr > td:is([data-column="id"], [data-column="user_id"], [data-column="group_id"], [data-column="requests"], [data-column="tokens"], [data-column="total_tokens"], [data-column="input_tokens"], [data-column="output_tokens"], [data-column="cache_tokens"], [data-column="cost"], [data-column="actual_cost"], [data-column="balance"], [data-column="balance_after"], [data-column="amount"], [data-column="pay_amount"], [data-column="order_amount"], [data-column="price"], [data-column="rebate_amount"], [data-column="total_rebate"], [data-column="bonus_amount"], [data-column="concurrency"], [data-column="current_concurrency"], [data-column="priority"], [data-column="rate_multiplier"], [data-column="sort_order"], [data-column="latency_ms"], [data-column="status_code"], [data-column="account_count"], [data-column="group_count"], [data-column="validity_days"]) {
+  font-family: var(--ui-font-mono);
+  font-size: 12.5px;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Small data chips inside cells (upstream's `inline-flex rounded px-2 py-0.5 text-xs` spans: group, request type,
+   billing mode, tags, cache marks): the reference's tool / prompt chip shape (REF §8.8: 4px radius, 6 / 1 inset,
+   Geist Mono 10.5px); each keeps its colour family (the status families of tokens.css). */
+html.flat-theme .table-wrapper > table > tbody.table-body > tr > td span:is([class~="inline-flex"], [class~="inline-block"])[class~="rounded"]:is([class~="px-1"], [class~="px-1.5"], [class~="px-2"]):is([class~="py-0.5"], [class~="py-px"]):is([class~="text-xs"], [class~="text-[10px]"], [class~="text-[11px]"]) {
+  padding: 1px 6px;
+  border-radius: var(--ui-radius-sm);
+  font-family: var(--ui-font-mono);
+  font-size: var(--ui-chip-size);
+  font-weight: 500;
+  line-height: 16px;
+  letter-spacing: 0.01em;
+}
+
+/* Rows: hover and keyboard focus inside a data row = --ui-hover (REF §8.7; upstream's gray-50 is the canvas colour
+   and its dark hover equals the surface). Clickable rows only change the fill, as the reference's do; the empty and
+   loading rows (no data-row-id) do not react. */
+html.flat-theme .table-wrapper .table-body > tr {
+  transition: background-color var(--ui-duration) var(--ui-ease);
+}
+
+html.flat-theme .table-wrapper .table-body > tr[data-row-id]:is(:hover, :focus-within) {
+  background-color: rgb(var(--ui-hover));
+}
+
+/* Selected rows (DataTable's own selection, or a checked box in a `select` column): the accent's soft fill, which
+   the reference uses for every selected or active fill; hover keeps it and darkens a step. */
+html.flat-theme .table-wrapper .table-body > tr:is([class~="bg-primary-50/40"], :has(> td[data-column="select"] input[type="checkbox"]:checked)) {
+  background-color: rgb(var(--ui-primary-soft));
+}
+
+html.flat-theme .table-wrapper .table-body > tr:is([class~="bg-primary-50/40"], :has(> td[data-column="select"] input[type="checkbox"]:checked)):hover {
+  background-color: color-mix(in srgb, rgb(var(--ui-primary-soft)) 100%, rgb(var(--ui-ink)) 4%);
+}
+
+/* Sticky columns: upstream paints them white / slate (#111827, #1f2937 on hover) whatever the row shows; here they
+   take the row's own fill, and the edge against the scrolled columns is the reference's 1px line instead of a
+   shadow. */
+html.flat-theme .table-wrapper .table-body .sticky-col {
+  background-color: rgb(var(--ui-surface));
+  transition: background-color var(--ui-duration) var(--ui-ease);
+}
+
+html.flat-theme .table-wrapper .table-body > tr[data-row-id]:is(:hover, :focus-within) > .sticky-col {
+  background-color: rgb(var(--ui-hover));
+}
+
+html.flat-theme .table-wrapper .table-body > tr:is([class~="bg-primary-50/40"], :has(> td[data-column="select"] input[type="checkbox"]:checked)) > .sticky-col {
+  background-color: rgb(var(--ui-primary-soft));
+}
+
+html.flat-theme .table-wrapper .table-body > tr:is([class~="bg-primary-50/40"], :has(> td[data-column="select"] input[type="checkbox"]:checked)):hover > .sticky-col {
+  background-color: color-mix(in srgb, rgb(var(--ui-primary-soft)) 100%, rgb(var(--ui-ink)) 4%);
+}
+
+html.flat-theme .table-wrapper.is-scrollable .sticky-col-left::after,
+html.flat-theme .table-wrapper.is-scrollable .sticky-col-left-second::after {
+  width: 1px;
+  background: rgb(var(--ui-line));
+}
+
+html.flat-theme .table-wrapper.is-scrollable .sticky-col-right::before {
+  width: 1px;
+  background: rgb(var(--ui-line));
+}
+
+/* DataTable's own selection column and a `select` column: fixed width, so the second sticky column starts where
+   the first one ends. */
+html.flat-theme .table-wrapper {
+  --select-col-width: var(--ui-table-select-w);
+}
+
+html.flat-theme .table-wrapper :is(th, td)[data-column="select"],
+html.flat-theme .table-wrapper .table-header > tr > th[class~="w-11"]:first-child,
+html.flat-theme .table-wrapper .table-body > tr > td[class~="w-11"]:first-child {
+  box-sizing: border-box;
+  width: var(--ui-table-select-w);
+  min-width: var(--ui-table-select-w);
+  max-width: var(--ui-table-select-w);
+  padding-right: 0;
+  text-align: left;
+}
+
+/* Empty: the reference's dashed frame (REF §8.7: cell inset 32 / 16, dashed --ui-line-strong, 8px radius, 240px
+   tall; title 14/500 ink-soft). Upstream's inbox glyph stays, at the reference's icon size. */
+html.flat-theme .table-wrapper .table-body > tr > td[colspan]:only-child:not([style]) {
+  padding: 32px var(--ui-table-edge-x);
+}
+
+html.flat-theme .table-wrapper .table-body > tr > td[colspan]:only-child:not([style]) > div[class~="flex-col"] {
+  display: grid;
+  place-items: center;
+  align-content: center;
+  gap: 8px;
+  min-height: 240px;
+  border: 1px dashed rgb(var(--ui-line-strong));
+  border-radius: var(--ui-radius-lg);
+}
+
+html.flat-theme .table-wrapper .table-body > tr > td[colspan]:only-child:not([style]) > div[class~="flex-col"] > svg {
+  width: 20px;
+  height: 20px;
+  margin: 0;
+  color: rgb(var(--ui-faint));
+}
+
+html.flat-theme .table-wrapper .table-body > tr > td[colspan]:only-child:not([style]) > div[class~="flex-col"] > p {
+  color: rgb(var(--ui-ink-soft));
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 20px;
+}
+
+/* the EmptyState component in the empty slot carries its own frame (section 9); the cell only insets it */
+html.flat-theme .table-wrapper .table-body > tr > td[colspan]:only-child:not([style]) > .empty-state {
+  min-height: 240px;
+}
+
+/* Scrollbars: upstream forces 12px scrollbars with !important; here a 10px track with a 6px round thumb, always
+   visible, no track fill (REF §8.19: the table keeps scrollbar-gutter: stable). */
+html.flat-theme .table-wrapper::-webkit-scrollbar {
+  width: 10px !important;
+  height: 10px !important;
+}
+
+html.flat-theme .table-wrapper::-webkit-scrollbar-track {
+  margin: 0 !important;
+  border-radius: 0 !important;
+  background-color: transparent !important;
+}
+
+html.flat-theme .table-wrapper::-webkit-scrollbar-thumb {
+  border: 2px solid transparent !important;
+  border-radius: 999px !important;
+  background-color: rgb(var(--ui-scroll-thumb)) !important;
+  background-clip: padding-box !important;
+}
+
+html.flat-theme .table-wrapper::-webkit-scrollbar-thumb:hover {
+  background-color: rgb(var(--ui-scroll-thumb-hover)) !important;
+}
+
+html.flat-theme .table-wrapper::-webkit-scrollbar-corner {
+  background-color: transparent;
+}
+
+@supports (-moz-appearance: none) {
+  html.flat-theme .table-wrapper {
+    scrollbar-width: thin !important;
+    scrollbar-color: rgb(var(--ui-scroll-thumb)) transparent !important;
+  }
+}
+
+/* Loading rows: the reference's shimmer (section 9) on DataTable's placeholder blocks. */
+html.flat-theme .table-wrapper .table-body > tr > td > div[class~="animate-pulse"] {
+  animation: none;
+}
+
+/* ------------------------------------------------------------------ phones: a table, not cards (D9) */
+/* DataTable renders its table below 768px while the theme is on (DataTable.vue); the wrapper scrolls sideways
+   inside its card, as the reference's tables do on a phone. Rows stay single-line; the edge insets are 12. The
+   sticky name and action columns would leave no room for the columns between them on a 390px screen, so every
+   column scrolls (the page, not the wrapper, scrolls vertically there, so the header does not stick either). */
+@media (max-width: 767.98px) {
+  html.flat-theme .table-wrapper .sticky-col {
+    position: static;
+  }
+
+  html.flat-theme .table-wrapper.is-scrollable :is(.sticky-col-left, .sticky-col-left-second)::after,
+  html.flat-theme .table-wrapper.is-scrollable .sticky-col-right::before {
+    display: none;
+  }
+
+  html.flat-theme .table-wrapper > table > tbody.table-body > tr > td:first-child,
+  html.flat-theme .table-wrapper .table-header .sticky-header-cell:first-child {
+    padding-left: 12px;
+  }
+
+  html.flat-theme .table-wrapper > table > tbody.table-body > tr > td:last-child,
+  html.flat-theme .table-wrapper .table-header .sticky-header-cell:last-child {
+    padding-right: 12px;
+  }
+}
+
+/* ================================================================== 2 · TablePageLayout */
+
+/* sections 12px apart (REF §6 gap-3; the shell's gap token when it defines one); the height is the shell's */
+html.flat-theme .table-page-layout {
+  row-gap: var(--ui-shell-gap, 12px);
+}
+
+/* the card: 8px, 1px structural line, surface, no shadow (REF §8.7 container) */
+html.flat-theme .table-page-layout .table-scroll-container {
+  border: 1px solid rgb(var(--ui-line));
+  border-radius: var(--ui-radius-lg);
+  background-color: rgb(var(--ui-surface));
+  box-shadow: none;
+}
+
+/* upstream's translucent blurred thead: the sticky cells paint the header */
+html.flat-theme .table-page-layout .table-scroll-container thead {
+  background-color: transparent;
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+
+/* the layout's scoped th / td insets and colours (px-5 py-4 text-sm) yield to the table language; tables that are
+   not DataTables get the same density */
+html.flat-theme .table-page-layout .table-scroll-container :is(th, td) {
+  border-bottom-color: rgb(var(--ui-line));
+}
+
+/* below 1024px upstream drops the frame (it expected cards there); a table keeps its card. The corners are clipped
+   without making the card a scroll container (overflow: clip), so sticky content inside it (a selection tray) still
+   sticks to the viewport. */
+html.flat-theme .table-page-layout.mobile-mode .table-scroll-container {
+  overflow: clip;
+  border: 1px solid rgb(var(--ui-line));
+  background-color: rgb(var(--ui-surface));
+}
+
+/* Pagination below a framed table is the card's footer (the reference's list ends inside its card on a 1px line,
+   REF §8.7 pagination): the card loses its bottom radius and the pagination section closes the frame. */
+html.flat-theme .table-page-layout > .layout-section-scrollable:has(> .table-scroll-container):has(+ .layout-section-fixed > [data-ui="pagination"]) > .table-scroll-container {
+  border-bottom-width: 0;
+  border-bottom-left-radius: 0;
+  border-bottom-right-radius: 0;
+}
+
+html.flat-theme .table-page-layout > .layout-section-scrollable:has(> .table-scroll-container) + .layout-section-fixed:has(> [data-ui="pagination"]) {
+  margin-top: calc(-1 * var(--ui-shell-gap, 12px));
+}
+
+html.flat-theme .table-page-layout > .layout-section-scrollable:has(> .table-scroll-container) + .layout-section-fixed > [data-ui="pagination"] {
+  border: 1px solid rgb(var(--ui-line));
+  border-radius: 0 0 var(--ui-radius-lg) var(--ui-radius-lg);
+}
+
+/* ================================================================== 3 · plain tables */
+
+/* Upstream's hand-built tables with a grey header band (thead.bg-gray-50: ops, rankings, dialogs): the header reads
+   as the console's (mono label on the surface, 1px line underneath), the band and upstream's own insets stay out
+   of it. */
+html.flat-theme table > thead[class~="bg-gray-50"] {
+  background-color: transparent;
+}
+
+/* the header draws the line under itself (it may stick), so the body's own top line is dropped; a white body is the
+   surface in dark mode too (upstream: dark-900, a step below the card) */
+html.flat-theme table > thead[class~="bg-gray-50"] + tbody {
+  border-top-width: 0;
+}
+
+html.flat-theme table > thead[class~="bg-gray-50"] + tbody[class~="bg-white"] {
+  background-color: rgb(var(--ui-surface));
+}
+
+html.flat-theme table > thead[class~="bg-gray-50"] > tr > th {
+  background-color: rgb(var(--ui-surface));
+  box-shadow: inset 0 -1px 0 rgb(var(--ui-line));
+  color: rgb(var(--ui-label));
+  font-family: var(--ui-font-mono);
+  font-size: var(--ui-label-size);
+  font-weight: 500;
+  letter-spacing: var(--ui-label-tracking);
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+/* Distribution tables beside the charts (model / group / endpoint distribution, the spending ranking, the user
+   dashboard): the reference's usage table (REF §8.7 "/logs usage table", crop usage-card): 12px, header Geist
+   10/600 uppercase .025em, rows 35px with 1px lines, names ink 500, figures tabular, the spend in ink, the other
+   costs muted. Each row carries the colour key of its slice, as the reference's rows carry their bar colour. */
+html.flat-theme [class~="max-h-48"][class~="overflow-auto"] > table[class~="text-xs"] {
+  font-size: 12px;
+  line-height: 18px;
+  font-variant-numeric: tabular-nums;
+}
+
+html.flat-theme [class~="max-h-48"][class~="overflow-auto"] > table[class~="text-xs"] > thead > tr > th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  padding: 0 8px 8px;
+  background-color: rgb(var(--ui-surface));
+  box-shadow: inset 0 -1px 0 rgb(var(--ui-line));
+  color: rgb(var(--ui-muted));
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 15px;
+  letter-spacing: 0.025em;
+  text-transform: uppercase;
+  vertical-align: bottom;
+}
+
+html.flat-theme [class~="max-h-48"][class~="overflow-auto"] > table[class~="text-xs"] > tbody > tr > td {
+  padding: 8px;
+  border-color: rgb(var(--ui-line));
+}
+
+html.flat-theme [class~="max-h-48"][class~="overflow-auto"] > table[class~="text-xs"] > :is(thead, tbody) > tr > :first-child {
+  padding-left: 0;
+}
+
+html.flat-theme [class~="max-h-48"][class~="overflow-auto"] > table[class~="text-xs"] > :is(thead, tbody) > tr > :last-child {
+  padding-right: 0;
+}
+
+html.flat-theme [class~="max-h-48"][class~="overflow-auto"] > table[class~="text-xs"] > tbody > tr {
+  border-color: rgb(var(--ui-line));
+}
+
+html.flat-theme [class~="max-h-48"][class~="overflow-auto"] > table[class~="text-xs"] > tbody > tr[class~="cursor-pointer"]:hover {
+  background-color: rgb(var(--ui-hover));
+}
+
+/* names: ink 500 (upstream draws the expandable ones as blue links; the chevron already says they open) */
+html.flat-theme [class~="max-h-48"][class~="overflow-auto"] > table[class~="text-xs"] > tbody > tr > td:first-child:not([colspan]) {
+  color: rgb(var(--ui-ink));
+  font-weight: 500;
+}
+
+html.flat-theme [class~="max-h-48"][class~="overflow-auto"] > table[class~="text-xs"] > tbody > tr > td:first-child:not([colspan]) svg {
+  color: rgb(var(--ui-label));
+}
+
+/* figures: requests and tokens muted, the actual spend ink, the account cost and the standard price muted (the
+   title attributes still name them) */
+html.flat-theme [class~="max-h-48"][class~="overflow-auto"] > table[class~="text-xs"] > tbody > tr > td[class~="text-right"] {
+  color: rgb(var(--ui-muted));
+}
+
+html.flat-theme [class~="max-h-48"][class~="overflow-auto"] > table[class~="text-xs"] > tbody > tr > td[class~="text-right"]:is([class~="text-green-600"]) {
+  color: rgb(var(--ui-ink));
+}
+
+html.flat-theme [class~="max-h-48"][class~="overflow-auto"] > table[class~="text-xs"] > tbody > tr > td[class~="text-right"]:nth-child(3) {
+  font-family: var(--ui-font-mono);
+}
+
+/* the colour key: an 8px square with 2px corners (REF §8.14 legend and usage rows) in the slice's colour; slices
+   follow the table's order (series 1-12), the ranking's remainder row is the "other" grey */
+html.flat-theme [class~="max-h-48"][class~="overflow-auto"] > table[class~="text-xs"] > tbody > tr > td:first-child:not([colspan])::before {
+  content: '';
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  margin-right: 8px;
+  border-radius: 2px;
+  background-color: var(--ui-row-key, transparent);
+  vertical-align: 0;
+}
+
+html.flat-theme [class~="max-h-48"][class~="overflow-auto"] > table[class~="text-xs"] > tbody > tr > td:first-child:not([colspan]):has(> span[class~="inline-flex"], > div[class~="flex"])::before {
+  display: none;
+}
+
+html.flat-theme [class~="max-h-48"][class~="overflow-auto"] > table[class~="text-xs"] > tbody > tr > td:first-child:not([colspan]) > :is(span[class~="inline-flex"], div[class~="flex"])::before {
+  content: '';
+  flex: 0 0 8px;
+  width: 8px;
+  height: 8px;
+  margin-right: 4px;
+  border-radius: 2px;
+  background-color: var(--ui-row-key, transparent);
+}
+
+html.flat-theme [class~="max-h-48"][class~="overflow-auto"] > table[class~="text-xs"] > tbody > tr:nth-child(1 of :not(:has(> td[colspan]))) { --ui-row-key: var(--theme-chart-series-1); }
+html.flat-theme [class~="max-h-48"][class~="overflow-auto"] > table[class~="text-xs"] > tbody > tr:nth-child(2 of :not(:has(> td[colspan]))) { --ui-row-key: var(--theme-chart-series-2); }
+html.flat-theme [class~="max-h-48"][class~="overflow-auto"] > table[class~="text-xs"] > tbody > tr:nth-child(3 of :not(:has(> td[colspan]))) { --ui-row-key: var(--theme-chart-series-3); }
+html.flat-theme [class~="max-h-48"][class~="overflow-auto"] > table[class~="text-xs"] > tbody > tr:nth-child(4 of :not(:has(> td[colspan]))) { --ui-row-key: var(--theme-chart-series-4); }
+html.flat-theme [class~="max-h-48"][class~="overflow-auto"] > table[class~="text-xs"] > tbody > tr:nth-child(5 of :not(:has(> td[colspan]))) { --ui-row-key: var(--theme-chart-series-5); }
+html.flat-theme [class~="max-h-48"][class~="overflow-auto"] > table[class~="text-xs"] > tbody > tr:nth-child(6 of :not(:has(> td[colspan]))) { --ui-row-key: var(--theme-chart-series-6); }
+html.flat-theme [class~="max-h-48"][class~="overflow-auto"] > table[class~="text-xs"] > tbody > tr:nth-child(7 of :not(:has(> td[colspan]))) { --ui-row-key: var(--theme-chart-series-7); }
+html.flat-theme [class~="max-h-48"][class~="overflow-auto"] > table[class~="text-xs"] > tbody > tr:nth-child(8 of :not(:has(> td[colspan]))) { --ui-row-key: var(--theme-chart-series-8); }
+html.flat-theme [class~="max-h-48"][class~="overflow-auto"] > table[class~="text-xs"] > tbody > tr:nth-child(9 of :not(:has(> td[colspan]))) { --ui-row-key: var(--theme-chart-series-9); }
+html.flat-theme [class~="max-h-48"][class~="overflow-auto"] > table[class~="text-xs"] > tbody > tr:nth-child(10 of :not(:has(> td[colspan]))) { --ui-row-key: var(--theme-chart-series-10); }
+html.flat-theme [class~="max-h-48"][class~="overflow-auto"] > table[class~="text-xs"] > tbody > tr:nth-child(11 of :not(:has(> td[colspan]))) { --ui-row-key: var(--theme-chart-series-11); }
+html.flat-theme [class~="max-h-48"][class~="overflow-auto"] > table[class~="text-xs"] > tbody > tr:nth-child(12 of :not(:has(> td[colspan]))) { --ui-row-key: var(--theme-chart-series-12); }
+
+/* the user dashboard's doughnut takes series 1-6, 11 and 10 for its eight slices (UserDashboardCharts.vue) */
+html.flat-theme [class~="card"][class~="relative"][class~="overflow-hidden"] [class~="max-h-48"][class~="overflow-auto"] > table[class~="text-xs"] > tbody > tr:nth-child(7 of :not(:has(> td[colspan]))) { --ui-row-key: var(--theme-chart-series-11); }
+html.flat-theme [class~="card"][class~="relative"][class~="overflow-hidden"] [class~="max-h-48"][class~="overflow-auto"] > table[class~="text-xs"] > tbody > tr:nth-child(8 of :not(:has(> td[colspan]))) { --ui-row-key: var(--theme-chart-series-10); }
+html.flat-theme [class~="card"][class~="relative"][class~="overflow-hidden"] [class~="max-h-48"][class~="overflow-auto"] > table[class~="text-xs"] > tbody > tr:nth-child(n + 9 of :not(:has(> td[colspan]))) { --ui-row-key: transparent; }
+
+/* the spending ranking's remainder row ("others", upstream's grey band) is the grey slice */
+html.flat-theme [class~="max-h-48"][class~="overflow-auto"] > table[class~="text-xs"] > tbody > tr[class~="bg-gray-50/70"] {
+  --ui-row-key: var(--theme-chart-gray);
+  background-color: color-mix(in srgb, rgb(var(--ui-subtle)) 60%, transparent);
+}
+
+/* Grouped rows (REF §8.7 group row: the surface-subtle band at 60 %): a model's per-user breakdown opens as a
+   band under its row, indented, rows 29px, figures muted. */
+html.flat-theme [class~="max-h-48"][class~="overflow-auto"] > table[class~="text-xs"] > tbody > tr > td[colspan] > div[class~="bg-gray-50/50"] {
+  background-color: color-mix(in srgb, rgb(var(--ui-subtle)) 60%, transparent);
+}
+
+html.flat-theme [class~="max-h-48"][class~="overflow-auto"] > table[class~="text-xs"] > tbody > tr > td[colspan] > div > table > tbody > tr {
+  border-color: rgb(var(--ui-line));
+}
+
+html.flat-theme [class~="max-h-48"][class~="overflow-auto"] > table[class~="text-xs"] > tbody > tr > td[colspan] > div > table > tbody > tr > td {
+  padding: 5px 8px;
+  color: rgb(var(--ui-muted));
+  font-size: 11.5px;
+}
+
+html.flat-theme [class~="max-h-48"][class~="overflow-auto"] > table[class~="text-xs"] > tbody > tr > td[colspan] > div > table > tbody > tr > td:first-child {
+  padding-left: 24px;
+  color: rgb(var(--ui-ink-soft));
+}
+
+/* ================================================================== 4 · pagination */
+
+/* The reference ends a list with a 1px line and a quiet row (REF §8.7); our pagination keeps its controls in that
+   language: 12px muted counts with mono figures, page buttons 30px ghost with mono numbers, the current page as the
+   ink thumb of a segmented control (REF §8.5), arrows as 28px icon buttons. */
+html.flat-theme [data-ui="pagination"] {
+  gap: 12px;
+  min-height: 44px;
+  padding: 5px 12px 5px 16px;
+  border-top: 1px solid rgb(var(--ui-line));
+  background-color: rgb(var(--ui-surface));
+}
+
+html.flat-theme [data-ui="pagination"] p,
+html.flat-theme [data-ui="pagination"] span[class~="text-sm"] {
+  color: rgb(var(--ui-muted));
+  font-size: 12px;
+  line-height: 18px;
+}
+
+html.flat-theme [data-ui="pagination"] p > span[class~="font-medium"] {
+  color: rgb(var(--ui-ink-soft));
+  font-family: var(--ui-font-mono);
+  font-weight: 500;
+}
+
+html.flat-theme [data-ui="pagination"] nav[aria-label="Pagination"] {
+  gap: 2px;
+  border-radius: 0;
+  box-shadow: none;
+}
+
+html.flat-theme [data-ui="pagination"] nav[aria-label="Pagination"] > button {
+  justify-content: center;
+  min-width: 30px;
+  height: 30px;
+  margin: 0;
+  padding: 0 8px;
+  border: 0;
+  border-radius: var(--ui-radius-md);
+  background-color: transparent;
+  color: rgb(var(--ui-muted));
+  font-family: var(--ui-font-mono);
+  font-size: 12px;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  transition: background-color var(--ui-duration) var(--ui-ease), color var(--ui-duration) var(--ui-ease);
+}
+
+html.flat-theme [data-ui="pagination"] nav[aria-label="Pagination"] > button:first-child,
+html.flat-theme [data-ui="pagination"] nav[aria-label="Pagination"] > button:last-child {
+  width: 30px;
+  padding: 0;
+}
+
+html.flat-theme [data-ui="pagination"] nav[aria-label="Pagination"] > button > svg {
+  width: 15px;
+  height: 15px;
+}
+
+html.flat-theme [data-ui="pagination"] nav[aria-label="Pagination"] > button:not(:disabled):hover {
+  background-color: rgb(var(--ui-hover));
+  color: rgb(var(--ui-ink));
+}
+
+html.flat-theme [data-ui="pagination"] nav[aria-label="Pagination"] > button[aria-current="page"],
+html.flat-theme [data-ui="pagination"] nav[aria-label="Pagination"] > button[aria-current="page"]:hover {
+  background-color: rgb(var(--ui-ink));
+  color: rgb(var(--ui-on-ink));
+}
+
+html.flat-theme [data-ui="pagination"] nav[aria-label="Pagination"] > button:disabled {
+  opacity: 0.55;
+}
+
+html.flat-theme [data-ui="pagination"] nav[aria-label="Pagination"] > button:disabled:not(:first-child):not(:last-child) {
+  opacity: 1;
+  color: rgb(var(--ui-faint));
+}
+
+/* phones: previous / next are the reference's secondary buttons (30px, control outline, surface, 13/600) */
+html.flat-theme [data-ui="pagination"] > div:first-child > button {
+  min-height: 30px;
+  padding: 0 12px;
+  border-color: rgb(var(--ui-line-strong));
+  border-radius: var(--ui-radius-md);
+  background-color: rgb(var(--ui-surface));
+  color: rgb(var(--ui-ink));
+  font-size: 13px;
+  font-weight: 600;
+}
+
+html.flat-theme [data-ui="pagination"] > div:first-child > button:disabled {
+  opacity: 0.55;
+}
+
+/* ================================================================== 5 · bulk bar (visual language; placement is the page's) */
+
+/* The reference's selection tray (REF §8.12): surface, 1px structural line, 8px radius, 8 / 16 inset; the count
+   12.5px ink-soft, the selection links 12.5/600 in the accent, dots muted. It floats (popover shadow) only where
+   its owner sets --ui-bulk-bar-shadow. */
+html.flat-theme [data-ui~="bulk-bar"] {
+  border: 1px solid rgb(var(--ui-line));
+  border-radius: var(--ui-radius-lg);
+  background-color: rgb(var(--ui-surface));
+  box-shadow: var(--ui-bulk-bar-shadow);
+  padding: 8px 12px 8px 16px;
+}
+
+html.flat-theme [data-ui~="bulk-bar"] > div:first-child > span[class~="text-sm"] {
+  color: rgb(var(--ui-ink-soft));
+  font-size: 12.5px;
+  font-weight: 500;
+}
+
+html.flat-theme [data-ui~="bulk-bar"] > div:first-child > button[class~="text-xs"] {
+  color: var(--ui-link);
+  font-size: 12.5px;
+  font-weight: 600;
+}
+
+html.flat-theme [data-ui~="bulk-bar"] > div:first-child > button[class~="text-xs"]:hover:not(:disabled) {
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+html.flat-theme [data-ui~="bulk-bar"] > div:first-child > span:not([class~="text-sm"]) {
+  color: rgb(var(--ui-faint));
+}
+
+/* ================================================================== 6 · badges, status, identity */
+
+/* .badge*: the reference's pills (REF §8.8: capsule, Geist Mono uppercase, .025em, 6 / 1 inset, soft semantic
+   fills: FREE = accent-soft, ZDR = subtle, DEMO DATA = purple-soft). */
+html.flat-theme .badge {
+  gap: 4px;
+  padding: 1px 7px;
+  border-radius: 9999px;
+  font-family: var(--ui-font-mono);
+  font-size: var(--ui-badge-size);
+  font-weight: 500;
+  line-height: var(--ui-badge-leading);
+  letter-spacing: 0.025em;
+  text-transform: uppercase;
+}
+
+html.flat-theme .badge-primary {
+  background-color: rgb(var(--ui-primary-soft));
+  color: var(--ui-link);
+}
+
+html.flat-theme .badge-success {
+  background-color: rgb(var(--ui-success-soft));
+  color: rgb(var(--ui-success));
+}
+
+html.flat-theme .badge-warning {
+  background-color: rgb(var(--ui-warning-soft));
+  color: rgb(var(--ui-warning));
+}
+
+html.flat-theme .badge-danger {
+  background-color: rgb(var(--ui-danger-soft));
+  color: rgb(var(--ui-danger));
+}
+
+html.flat-theme .badge-gray {
+  background-color: rgb(var(--ui-subtle));
+  color: rgb(var(--ui-muted));
+}
+
+html.flat-theme .badge-purple {
+  background-color: rgb(var(--ui-purple-soft));
+  color: rgb(var(--ui-purple));
+}
+
+/* StatusBadge: the reference's status dot (REF §8.8: 6px dot, 12px ink-soft label, 6px apart) */
+html.flat-theme [data-ui="status-badge"] {
+  gap: 6px;
+}
+
+html.flat-theme [data-ui="status-badge"] > span:first-child {
+  width: 6px;
+  height: 6px;
+  background-color: rgb(var(--ui-dot-idle));
+}
+
+html.flat-theme [data-ui="status-badge"] > span:first-child[class~="bg-green-500"] {
+  background-color: rgb(var(--ui-dot-ok));
+}
+
+html.flat-theme [data-ui="status-badge"] > span:first-child[class~="bg-yellow-500"] {
+  background-color: rgb(var(--ui-dot-warn));
+}
+
+html.flat-theme [data-ui="status-badge"] > span:first-child[class~="bg-red-500"] {
+  background-color: rgb(var(--ui-dot-bad));
+}
+
+html.flat-theme [data-ui="status-badge"] > span:last-child {
+  color: rgb(var(--ui-ink-soft));
+  font-size: 12px;
+  line-height: 18px;
+}
+
+/* PlatformTypeBadge (D3): identity without a hue per platform, on one line (D5 single-line rows). First the
+   reference's provider chip (REF §8.8: 4px radius, 1px control outline, Geist Mono 10px uppercase .025em, ink-soft,
+   monochrome logo) holding the platform and, after a 1px divider, the credential type; then the plan as a neutral
+   chip and the privacy state as a soft status chip; last the expiry in mono. */
+html.flat-theme [data-ui="platform-badge"] {
+  flex-direction: row;
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: 4px;
+  font-family: var(--ui-font-mono);
+  font-size: 10px;
+  font-weight: 500;
+  line-height: 16px;
+  letter-spacing: 0.025em;
+  white-space: nowrap;
+}
+
+html.flat-theme [data-ui="platform-badge"] > div[class~="inline-flex"] {
+  flex: 0 0 auto;
+  border: 1px solid rgb(var(--ui-line-strong));
+  border-radius: var(--ui-radius-sm);
+  background-color: rgb(var(--ui-surface));
+}
+
+html.flat-theme [data-ui="platform-badge"] > div[class~="inline-flex"] > span {
+  gap: 5px;
+  padding: 1px 6px;
+  background-color: transparent;
+  color: rgb(var(--ui-ink-soft));
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+html.flat-theme [data-ui="platform-badge"] > div[class~="inline-flex"] > span + span {
+  border-left: 1px solid rgb(var(--ui-line));
+  color: rgb(var(--ui-muted));
+}
+
+html.flat-theme [data-ui="platform-badge"] > div[class~="inline-flex"] > span svg {
+  width: 11px;
+  height: 11px;
+}
+
+/* the plan chip: neutral (subtle fill, muted); an abnormal subscription stays a danger chip */
+html.flat-theme [data-ui="platform-badge"] > div[class~="inline-flex"]:nth-child(2) {
+  border-color: transparent;
+  background-color: rgb(var(--ui-subtle));
+}
+
+html.flat-theme [data-ui="platform-badge"] > div[class~="inline-flex"]:nth-child(2) > span:first-child:not([title]) {
+  color: rgb(var(--ui-muted));
+}
+
+html.flat-theme [data-ui="platform-badge"] > div[class~="inline-flex"]:nth-child(2) > span:first-child[class~="bg-red-100"] {
+  background-color: rgb(var(--ui-danger-soft));
+  color: rgb(var(--ui-danger));
+}
+
+/* the privacy state is a status: private = success, Cloudflare-blocked = warning, failed = danger (soft fills) */
+html.flat-theme [data-ui="platform-badge"] > div[class~="inline-flex"]:nth-child(2) > span[title] {
+  border-left: 0;
+}
+
+html.flat-theme [data-ui="platform-badge"] > div[class~="inline-flex"]:nth-child(2) > span[title][class~="bg-green-100"] {
+  background-color: rgb(var(--ui-success-soft));
+  color: rgb(var(--ui-success));
+}
+
+html.flat-theme [data-ui="platform-badge"] > div[class~="inline-flex"]:nth-child(2) > span[title][class~="bg-yellow-100"] {
+  background-color: rgb(var(--ui-warning-soft));
+  color: rgb(var(--ui-warning));
+}
+
+html.flat-theme [data-ui="platform-badge"] > div[class~="inline-flex"]:nth-child(2) > span[title][class~="bg-red-100"] {
+  background-color: rgb(var(--ui-danger-soft));
+  color: rgb(var(--ui-danger));
+}
+
+html.flat-theme [data-ui="platform-badge"] > div:last-child:not(:first-child):not([class~="inline-flex"]) {
+  padding-left: 1px;
+  color: rgb(var(--ui-faint));
+  font-size: 10.5px;
+  letter-spacing: 0;
+}
+
+/* GroupBadge (D3): a neutral chip (1px control outline, surface, 4px radius, 12px ink-soft, monochrome logo); the
+   multiplier a mono sub-chip on the subtle fill; the subscription's days left keep their warning / danger fills. */
+html.flat-theme [data-ui="group-badge"] {
+  gap: 5px;
+  padding: 1px 3px 1px 6px;
+  border: 1px solid rgb(var(--ui-line-strong));
+  border-radius: var(--ui-radius-sm);
+  background-color: rgb(var(--ui-surface));
+  color: rgb(var(--ui-ink-soft));
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 18px;
+}
+
+html.flat-theme [data-ui="group-badge"] > svg {
+  width: 12px;
+  height: 12px;
+}
+
+html.flat-theme [data-ui="group-badge"] > span:not(:first-of-type) {
+  padding: 0 4px;
+  border-radius: 3px;
+  background-color: rgb(var(--ui-subtle));
+  color: rgb(var(--ui-muted));
+  font-family: var(--ui-font-mono);
+  font-size: 10.5px;
+  font-weight: 500;
+  line-height: 16px;
+}
+
+html.flat-theme [data-ui="group-badge"] > span:not(:first-of-type) [class~="font-bold"] {
+  color: rgb(var(--ui-ink));
+  font-weight: 600;
+}
+
+html.flat-theme [data-ui="group-badge"] > span:not(:first-of-type) [class~="line-through"] {
+  opacity: 1;
+  color: rgb(var(--ui-faint));
+}
+
+html.flat-theme [data-ui="group-badge"] > span:not(:first-of-type):is([class~="bg-red-200/80"]) {
+  background-color: rgb(var(--ui-danger-soft));
+  color: rgb(var(--ui-danger));
+}
+
+html.flat-theme [data-ui="group-badge"] > span:not(:first-of-type):is([class~="bg-amber-200/80"], [class~="bg-amber-100"]) {
+  background-color: rgb(var(--ui-warning-soft));
+  color: rgb(var(--ui-warning));
+}
+
+/* Model marks (ModelIcon): the vendors' brand colours become the monochrome ink-soft logo of the reference's model
+   cells; a model without a mark shows the reference's letter square (REF §8.8: 1px control outline, subtle fill,
+   Geist Mono 600 ink-soft). */
+html.flat-theme .model-icon {
+  color: rgb(var(--ui-ink-soft));
+}
+
+html.flat-theme .model-icon > path {
+  fill: currentColor;
+}
+
+html.flat-theme .model-icon-fallback {
+  box-sizing: border-box;
+  border: 1px solid rgb(var(--ui-line-strong));
+  border-radius: var(--ui-radius-sm);
+  background: rgb(var(--ui-subtle));
+  color: rgb(var(--ui-ink-soft));
+  font-family: var(--ui-font-mono);
+  font-weight: 600;
+  text-transform: uppercase;
+}
+
+/* ================================================================== 7 · KPI cards (D7) */
+
+/* Upstream's KPI tiles (admin and user dashboards, usage records, orders: a .card.p-4 in a grid whose first content
+   is a coloured icon tile) take the reference's StatTile (REF §8.13): 1px structural line, 6px radius, surface,
+   8 / 12 inset, the mono label, the value 15/600 tabular ink, the detail 11px muted, 76px; no icon tile; 10px
+   apart. */
+html.flat-theme [class~="grid"]:has(> [class~="card"][class~="p-4"] > div[class~="rounded-lg"][class~="p-2"]:first-child, > [class~="card"][class~="p-4"] > [class~="flex"]:first-child > div[class~="rounded-lg"][class~="p-2"]:first-child) {
+  gap: 10px;
+}
+
+/* two KPI rows in a row (the admin dashboard) read as one grid: 10px apart, not the page's 24 */
+html.flat-theme [class~="grid"]:has(> [class~="card"][class~="p-4"] > [class~="flex"]:first-child > div[class~="rounded-lg"][class~="p-2"]:first-child) + [class~="grid"]:has(> [class~="card"][class~="p-4"] > [class~="flex"]:first-child > div[class~="rounded-lg"][class~="p-2"]:first-child) {
+  margin-top: 10px;
+}
+
+html.flat-theme [class~="grid"] > [class~="card"][class~="p-4"]:has(> div[class~="rounded-lg"][class~="p-2"]:first-child, > [class~="flex"]:first-child > div[class~="rounded-lg"][class~="p-2"]:first-child) {
+  --ui-kpi-accent: var(--ui-ink);
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-start;
+  gap: 0;
+  min-height: 76px;
+  padding: 8px 12px;
+  border: 1px solid rgb(var(--ui-line));
+  border-radius: var(--ui-radius-md);
+  background-color: rgb(var(--ui-surface));
+  box-shadow: none;
+}
+
+html.flat-theme [class~="grid"] > [class~="card"][class~="p-4"] > [class~="flex"]:first-child:has(> div[class~="rounded-lg"][class~="p-2"]:first-child) {
+  display: block;
+}
+
+html.flat-theme [class~="grid"] > [class~="card"][class~="p-4"] div[class~="rounded-lg"][class~="p-2"]:first-child:is(:has(> svg), :has(> [class~="icon"]), :not(:has(*))) {
+  display: none;
+}
+
+/* the text column: label, value, detail, 2px apart */
+html.flat-theme [class~="grid"] > [class~="card"][class~="p-4"] div[class~="rounded-lg"][class~="p-2"]:first-child + div {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+html.flat-theme [class~="grid"] > [class~="card"][class~="p-4"] div[class~="rounded-lg"][class~="p-2"]:first-child + div > p:first-child {
+  color: rgb(var(--ui-label));
+  font-family: var(--ui-font-mono);
+  font-size: var(--ui-label-size);
+  font-weight: 400;
+  line-height: var(--ui-label-leading);
+  letter-spacing: var(--ui-label-tracking);
+  text-transform: uppercase;
+}
+
+html.flat-theme [class~="grid"] > [class~="card"][class~="p-4"] div[class~="rounded-lg"][class~="p-2"]:first-child + div p[class~="text-xl"] {
+  color: rgb(var(--ui-kpi-accent));
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 22.5px;
+  font-variant-numeric: tabular-nums;
+}
+
+/* a value upstream colours for decoration (the new-users count, the balance, the usage cost) is ink (D4) */
+html.flat-theme [class~="grid"] > [class~="card"][class~="p-4"] div[class~="rounded-lg"][class~="p-2"]:first-child + div p[class~="text-xl"] > span:first-child:not([class~="text-sm"]) {
+  color: inherit;
+}
+
+html.flat-theme [class~="grid"] > [class~="card"][class~="p-4"] div[class~="rounded-lg"][class~="p-2"]:first-child + div p[class~="text-xl"] > span[class~="text-sm"] {
+  color: rgb(var(--ui-muted));
+  font-size: 12px;
+  font-weight: 400;
+}
+
+/* the detail line(s): 11px muted; the cost triples keep their order, weight marks the actual cost (the titles name
+   each figure); status words keep their status colour */
+html.flat-theme [class~="grid"] > [class~="card"][class~="p-4"] div[class~="rounded-lg"][class~="p-2"]:first-child + div > :is(p, div):not(:first-child):not(:has(> p[class~="text-xl"])):not([class~="text-xl"]) {
+  color: rgb(var(--ui-muted));
+  font-size: 11px;
+  line-height: 16.5px;
+}
+
+html.flat-theme [class~="grid"] > [class~="card"][class~="p-4"] div[class~="rounded-lg"][class~="p-2"]:first-child + div > p:not(:first-child):not([class~="text-xl"]) :is([class~="text-green-600"], [class~="text-orange-500"], [class~="text-gray-400"], [class~="text-purple-600"]) {
+  color: rgb(var(--ui-muted));
+}
+
+html.flat-theme [class~="grid"] > [class~="card"][class~="p-4"] div[class~="rounded-lg"][class~="p-2"]:first-child + div > p:not(:first-child):not([class~="text-xl"]) > [class~="text-green-600"][title]:first-child {
+  color: rgb(var(--ui-ink-soft));
+  font-weight: 500;
+}
+
+html.flat-theme [class~="grid"] > [class~="card"][class~="p-4"] div[class~="rounded-lg"][class~="p-2"]:first-child + div > p[class~="text-green-600"]:not(:first-child) {
+  color: rgb(var(--ui-success));
+}
+
+html.flat-theme [class~="grid"] > [class~="card"][class~="p-4"] div[class~="rounded-lg"][class~="p-2"]:first-child + div > p:not(:first-child) > span[class~="text-green-600"]:not([title]) {
+  color: rgb(var(--ui-success));
+}
+
+html.flat-theme [class~="grid"] > [class~="card"][class~="p-4"] div[class~="rounded-lg"][class~="p-2"]:first-child + div > p:not(:first-child) > span[class~="text-red-500"] {
+  color: rgb(var(--ui-danger));
+}
+
+/* the performance tile's RPM / TPM lines: value 15/600 then the unit, TPM as the detail */
+html.flat-theme [class~="grid"] > [class~="card"][class~="p-4"] div[class~="rounded-lg"][class~="p-2"]:first-child + div > div[class~="items-baseline"] {
+  gap: 4px;
+}
+
+html.flat-theme [class~="grid"] > [class~="card"][class~="p-4"] div[class~="rounded-lg"][class~="p-2"]:first-child + div > div[class~="items-baseline"] > span {
+  color: rgb(var(--ui-muted));
+  font-family: var(--ui-font-mono);
+  font-size: 10px;
+  line-height: 16px;
+  letter-spacing: 0.025em;
+}
+
+html.flat-theme [class~="grid"] > [class~="card"][class~="p-4"] div[class~="rounded-lg"][class~="p-2"]:first-child + div > div[class~="items-baseline"] > p[class~="text-sm"] {
+  color: rgb(var(--ui-ink-soft));
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 16.5px;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Danger variant (REF §8.13, crop kpi-card-danger): a tile whose detail reports errors is the whole-card alert,
+   danger border and soft fill, the value in the danger colour. */
+html.flat-theme [class~="grid"] > [class~="card"][class~="p-4"]:has(div[class~="rounded-lg"][class~="p-2"]:first-child + div > p:not(:first-child) > span[class~="text-red-500"]) {
+  --ui-kpi-accent: var(--ui-danger);
+  border-color: rgb(var(--ui-danger));
+  background-color: rgb(var(--ui-danger-soft));
+}
+
+html.flat-theme [class~="grid"] > [class~="card"][class~="p-4"]:has(div[class~="rounded-lg"][class~="p-2"]:first-child + div > p:not(:first-child) > span[class~="text-red-500"]) div[class~="rounded-lg"][class~="p-2"]:first-child + div > p:first-child {
+  color: rgb(var(--ui-muted));
+}
+
+/* Quick actions (admin and user dashboards, D4): upstream tints each tile and its hover by hue; they take the
+   reference's option card (REF §8.11 dialog option card: 8px radius, 1px structural line, the subtle fill at 60 %,
+   hover = control outline; a 28px neutral icon square with a 1px line; title 13/600 ink, description 12.5 muted). */
+html.flat-theme button[class~="group"][class~="flex"][class~="items-center"][class~="bg-gray-50"]:is([class~="p-3"], [class~="p-4"]):has(> :first-child[class~="flex-shrink-0"]:is([class~="rounded-lg"], [class~="rounded-xl"])) {
+  gap: 12px;
+  padding: 12px;
+  border: 1px solid rgb(var(--ui-line));
+  border-radius: var(--ui-radius-lg);
+  background-color: color-mix(in srgb, rgb(var(--ui-subtle)) 60%, rgb(var(--ui-surface)));
+  transition: border-color var(--ui-duration) var(--ui-ease);
+}
+
+html.flat-theme button[class~="group"][class~="flex"][class~="items-center"][class~="bg-gray-50"]:is([class~="p-3"], [class~="p-4"]):has(> :first-child[class~="flex-shrink-0"]:is([class~="rounded-lg"], [class~="rounded-xl"])):hover {
+  border-color: rgb(var(--ui-line-strong));
+  background-color: color-mix(in srgb, rgb(var(--ui-subtle)) 60%, rgb(var(--ui-surface)));
+}
+
+html.flat-theme button[class~="group"][class~="flex"][class~="items-center"][class~="bg-gray-50"]:is([class~="p-3"], [class~="p-4"]) > :first-child[class~="flex-shrink-0"]:is([class~="rounded-lg"], [class~="rounded-xl"]) {
+  width: 28px;
+  height: 28px;
+  border: 1px solid rgb(var(--ui-line));
+  border-radius: var(--ui-radius-md);
+  background-color: color-mix(in srgb, rgb(var(--ui-ink)) 3%, rgb(var(--ui-surface)));
+  color: rgb(var(--ui-ink-soft));
+  transform: none;
+}
+
+html.flat-theme button[class~="group"][class~="flex"][class~="items-center"][class~="bg-gray-50"]:is([class~="p-3"], [class~="p-4"]) > :first-child[class~="flex-shrink-0"] svg {
+  width: 15px;
+  height: 15px;
+  color: rgb(var(--ui-ink-soft));
+}
+
+html.flat-theme button[class~="group"][class~="flex"][class~="items-center"][class~="bg-gray-50"]:is([class~="p-3"], [class~="p-4"]) > :nth-child(2) > :first-child {
+  color: rgb(var(--ui-ink));
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 19.5px;
+}
+
+html.flat-theme button[class~="group"][class~="flex"][class~="items-center"][class~="bg-gray-50"]:is([class~="p-3"], [class~="p-4"]) > :nth-child(2) > :nth-child(2) {
+  color: rgb(var(--ui-muted));
+  font-size: 12.5px;
+  line-height: 1.5;
+}
+
+html.flat-theme button[class~="group"][class~="flex"][class~="items-center"][class~="bg-gray-50"]:is([class~="p-3"], [class~="p-4"]) > svg:last-child {
+  width: 13px;
+  height: 13px;
+  color: rgb(var(--ui-faint));
+  transition: color var(--ui-duration) var(--ui-ease);
+}
+
+html.flat-theme button[class~="group"][class~="flex"][class~="items-center"][class~="bg-gray-50"]:is([class~="p-3"], [class~="p-4"]):hover > svg:last-child {
+  color: rgb(var(--ui-ink));
+}
+
+/* StatCard (.stat-*) in the same language */
+html.flat-theme .stat-card {
+  gap: 0;
+  min-height: 76px;
+  padding: 8px 12px;
+  border: 1px solid rgb(var(--ui-line));
+  border-radius: var(--ui-radius-md);
+  background-color: rgb(var(--ui-surface));
+  box-shadow: none;
+}
+
+html.flat-theme .stat-card > .stat-icon {
+  display: none;
+}
+
+html.flat-theme .stat-label {
+  color: rgb(var(--ui-label));
+  font-family: var(--ui-font-mono);
+  font-size: var(--ui-label-size);
+  line-height: var(--ui-label-leading);
+  letter-spacing: var(--ui-label-tracking);
+  text-transform: uppercase;
+}
+
+html.flat-theme .stat-value {
+  color: rgb(var(--ui-ink));
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 22.5px;
+  font-variant-numeric: tabular-nums;
+}
+
+html.flat-theme .stat-trend {
+  font-size: 11px;
+  font-weight: 500;
+}
+
+html.flat-theme .stat-trend-up {
+  color: rgb(var(--ui-success));
+}
+
+html.flat-theme .stat-trend-down {
+  color: rgb(var(--ui-danger));
+}
+
+/* ================================================================== 8 · progress and uptime bars */
+
+/* Bars (quota windows, capacity, progress): the reference's capsule track on the subtle fill (REF §8.14 usage bar,
+   §8.7 uptime), no gradient; the fill keeps its status colour. */
+html.flat-theme .progress,
+html.flat-theme div[class~="rounded-full"]:is([class~="h-1"], [class~="h-1.5"], [class~="h-2"]):is([class~="bg-gray-200"], [class~="bg-gray-100"]):not([class~="animate-pulse"]) {
+  background-color: rgb(var(--ui-subtle));
+}
+
+html.flat-theme .progress-bar {
+  background: rgb(var(--ui-ink));
+}
+
+/* ================================================================== 9 · empty and loading states */
+
+/* EmptyState: the reference's empty panel (REF §8.7: dashed control outline, 8px radius, title 14/500 ink-soft,
+   description 13px muted at 1.625); the icon tile is the reference's 28px neutral square (dialog option cards). */
+html.flat-theme .empty-state {
+  gap: 0;
+  padding: 32px 16px;
+  border: 1px dashed rgb(var(--ui-line-strong));
+  border-radius: var(--ui-radius-lg);
+}
+
+html.flat-theme .empty-state > div:first-child {
+  width: 28px;
+  height: 28px;
+  margin-bottom: 12px;
+  border: 1px solid rgb(var(--ui-line));
+  border-radius: var(--ui-radius-md);
+  background-color: rgb(var(--ui-subtle));
+}
+
+html.flat-theme .empty-state-icon {
+  width: 15px;
+  height: 15px;
+  margin: 0;
+  color: rgb(var(--ui-muted));
+}
+
+html.flat-theme .empty-state-title {
+  margin-bottom: 4px;
+  color: rgb(var(--ui-ink-soft));
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 20px;
+}
+
+html.flat-theme .empty-state-description {
+  color: rgb(var(--ui-muted));
+  font-size: 13px;
+  line-height: 1.625;
+}
+
+html.flat-theme .empty-state-description:empty {
+  display: none;
+}
+
+/* Skeletons: the reference's shimmer (REF §8.7: surface-subtle -> ink 6 % -> surface-subtle, 400 % wide, 1.4s),
+   on the .skeleton recipe, Skeleton.vue and upstream's pulsing grey placeholder blocks. Reduced motion stops it
+   (styles/theme.css). */
+html.flat-theme :is(.skeleton, [data-ui="skeleton"], [class~="animate-pulse"][class~="bg-gray-200"], [class~="animate-pulse"] > [class~="bg-gray-200"]:empty) {
+  background-color: rgb(var(--ui-subtle));
+  background-image: linear-gradient(90deg, rgb(var(--ui-subtle)) 0%, color-mix(in srgb, rgb(var(--ui-ink)) 6%, rgb(var(--ui-subtle))) 50%, rgb(var(--ui-subtle)) 100%);
+  background-size: 400% 100%;
+  animation: consoleDataShimmer 1.4s ease-in-out infinite;
+}
+
+@keyframes consoleDataShimmer {
+  from { background-position: 100% 0; }
+  to { background-position: 0 0; }
+}
+
+/* ================================================================== 10 · chart cards */
+
+/* Cards holding a chart (REF §8.14 Spend over time: 14px inset, the title as a mono label). A chart card is known by
+   its canvas or by the fixed-height chart area it keeps while loading or empty (h-48 / h-64), so the title does not
+   change with the data. */
+html.flat-theme [class~="card"][class~="p-4"]:has(canvas, > div[class~="h-48"], > div[class~="h-64"], > div > div[class~="h-48"]) {
+  padding: 14px;
+}
+
+html.flat-theme [class~="card"][class~="p-4"]:has(canvas, > div[class~="h-48"], > div[class~="h-64"], > div > div[class~="h-48"]) > h3[class~="text-sm"][class~="font-semibold"],
+html.flat-theme [class~="card"][class~="p-4"]:has(canvas, > div[class~="h-48"], > div[class~="h-64"], > div > div[class~="h-48"]) > div:first-child > h3[class~="text-sm"][class~="font-semibold"] {
+  color: rgb(var(--ui-label));
+  font-family: var(--ui-font-mono);
+  font-size: var(--ui-label-size);
+  font-weight: 400;
+  line-height: var(--ui-label-leading);
+  letter-spacing: var(--ui-label-tracking);
+  text-transform: uppercase;
+}

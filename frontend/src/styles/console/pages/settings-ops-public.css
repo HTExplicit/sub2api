@@ -1,1 +1,2359 @@
 /* Console theme · page group: settings, ops and the public pages (owner: the settings, ops and public page agent, wave 2; html.flat-theme selectors narrowed to the page root). */
+
+/* public: sign-in, sign-up and password pages (AuthLayout), home, legal documents, 404 and key usage.
+ * Owner: wave 1 A6. Source: the reference console's /signin (artifacts/tmp/ui-el/ref/public/REF-PUBLIC.md §1) for
+ * the auth pages; the marketing site's structure (§2: top bar, hairline lattice, plain page) drawn with the console
+ * tokens and Geist for home, legal, 404 and key usage. No brand element, logo or copy of theirs.
+ *
+ * Template hooks (upstream templates otherwise unchanged):
+ *   components/layout/AuthLayout.vue:2      data-ui="auth-layout" (page root)
+ *   components/layout/AuthLayout.vue:26,70  <AuthPixelGrid /> and its import (fork component, the pixel-grid
+ *                                           background; renders nothing while the theme is off)
+ *   components/layout/AuthLayout.vue:29     data-ui="auth-column" (the content column)
+ *   views/HomeView.vue:97                   data-ui="home" (default home root; the compact preset keeps upstream's
+ *                                           data-testid="compact-home")
+ *   views/public/LegalDocumentView.vue:2    data-ui="legal"
+ *   views/NotFoundView.vue:4                data-ui="not-found"
+ *   views/KeyUsageView.vue:2                data-ui="key-usage"
+ * Everything else is reached through upstream classes ([class~="…"]); the 2FA dialog is the sibling LoginView
+ * renders after AuthLayout, the agreement dialog is the body-level z-[140] layer (unique to LoginAgreementPrompt). */
+
+html.flat-theme {
+  /* the reference's small mono text: field labels and text buttons 10/15 (Chinese 11/16, as the mono label) */
+  --pub-mono-size: 10px;
+  --pub-mono-leading: 15px;
+  /* Text on the sign-in background. The pixel grid can sit behind it (its faintest step is #f8f8f8), where the
+     mono-label grey #737373 reads 4.47:1; muted #6c6c6c reads 4.84:1 there. Dark: the label grey holds (6.5:1). */
+  --pub-label: var(--ui-muted);
+  /* The outline of the sign-in fields: the reference's structural line (#ededed). Each field is identified by its
+     label above and its placeholder inside (the console fields' rule: A2 recipe + behaviour B3.2, which still draws
+     the 3:1 form-control line on an empty field without a visible placeholder); focus draws the accent edge. */
+  --pub-field-line: var(--ui-line);
+}
+
+html.flat-theme:lang(zh) {
+  --pub-mono-size: 11px;
+  --pub-mono-leading: 16px;
+}
+
+html.flat-theme.dark {
+  --pub-label: var(--ui-label);
+}
+
+/* ------------------------------------------------------------------ auth · page and background */
+html.flat-theme [data-ui="auth-layout"] {
+  padding: clamp(24px, 6vh, 48px) 0;
+  background-color: rgb(var(--ui-canvas));
+  color: rgb(var(--ui-ink));
+}
+
+html.flat-theme [data-ui="auth-layout"] > div[class~="bg-gradient-to-br"] {
+  background: rgb(var(--ui-canvas));
+}
+
+html.flat-theme [data-ui="auth-layout"] > .ui-decor {
+  display: none;
+}
+
+/* The pixel grid (components/layout/AuthPixelGrid.vue): ink squares at 40 % over the canvas. */
+html.flat-theme [data-ui="auth-layout"] > .auth-pixel-grid {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+  opacity: 0.4;
+  color: rgb(var(--ui-ink));
+}
+
+html.flat-theme [data-ui="auth-layout"] > .auth-pixel-grid > canvas {
+  display: block;
+}
+
+/* the reference's 400px column with 24px sides (352px of content), no card */
+html.flat-theme [data-ui="auth-column"] {
+  max-width: 400px;
+  padding: 0 24px;
+}
+
+/* brand: a 44px ink tile (radius 12) with the site logo, then the site name as a mono wordmark; the site subtitle
+   sits under them as a mono caption */
+html.flat-theme [data-ui="auth-column"] > div[class~="mb-8"] {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  align-items: center;
+  column-gap: 12px;
+  margin-bottom: 24px;
+}
+
+html.flat-theme [data-ui="auth-column"] > div[class~="mb-8"] > div {
+  flex: none;
+  width: 44px;
+  height: 44px;
+  margin: 0;
+  border-radius: var(--ui-radius-xl);
+  background-color: rgb(var(--ui-ink));
+  box-shadow: none;
+}
+
+html.flat-theme [data-ui="auth-column"] > div[class~="mb-8"] > h1[class~="text-gradient"] {
+  min-width: 0;
+  margin: 0;
+  overflow-wrap: anywhere;
+  font: 600 15px/22.5px var(--ui-font-mono);
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  text-align: left;
+  color: rgb(var(--ui-muted));
+  -webkit-text-fill-color: currentColor;
+  background: none;
+}
+
+html.flat-theme [data-ui="auth-column"] > div[class~="mb-8"] > p {
+  flex-basis: 100%;
+  margin-top: 12px;
+  font: 400 var(--pub-mono-size) / var(--pub-mono-leading) var(--ui-font-mono);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: rgb(var(--ui-muted));
+}
+
+html.flat-theme [data-ui="auth-column"] > [class~="card-glass"] {
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: none;
+  box-shadow: none;
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+
+/* below the column: the mode link row (register / sign-in) and the copyright line */
+html.flat-theme [data-ui="auth-column"] > div[class~="mt-6"] {
+  margin-top: 22px;
+  font: 400 var(--pub-mono-size) / var(--pub-mono-leading) var(--ui-font-mono);
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  color: rgb(var(--ui-muted));
+}
+
+html.flat-theme [data-ui="auth-column"] > div[class~="mt-6"] p {
+  color: rgb(var(--ui-muted));
+}
+
+html.flat-theme [data-ui="auth-column"] > div[class~="mt-6"] :is(a, button) {
+  margin-left: 4px;
+  font-weight: 600;
+  color: rgb(var(--ui-ink));
+  text-decoration: none;
+  transition: color var(--ui-duration) var(--ui-ease);
+}
+
+html.flat-theme [data-ui="auth-column"] > div[class~="mt-6"] :is(a, button):hover {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+html.flat-theme [data-ui="auth-column"] > div[class~="mt-8"] {
+  margin-top: 40px;
+  font: 400 var(--pub-mono-size) / var(--pub-mono-leading) var(--ui-font-mono);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: rgb(var(--ui-muted));
+}
+
+/* ------------------------------------------------------------------ auth · title and rhythm */
+html.flat-theme [data-ui="auth-column"] [class~="card-glass"] > [class~="space-y-6"] > div[class~="text-center"]:first-child > h2 {
+  font: 600 28px/42px var(--ui-font);
+  letter-spacing: -0.025em;
+  color: rgb(var(--ui-ink));
+}
+
+html.flat-theme [data-ui="auth-column"] [class~="card-glass"] > [class~="space-y-6"] > div[class~="text-center"]:first-child > p {
+  margin-top: 2px;
+  font: 400 14px/20px var(--ui-font);
+  color: rgb(var(--ui-muted));
+}
+
+html.flat-theme [data-ui="auth-column"] [class~="card-glass"] > [class~="space-y-6"] > div[class~="text-center"]:first-child > p > span {
+  font-weight: 500;
+  color: rgb(var(--ui-ink));
+}
+
+/* header -> content 40px (the reference's mb-10) */
+html.flat-theme [data-ui="auth-column"] [class~="card-glass"] > [class~="space-y-6"] > :not([hidden]) ~ :not([hidden]) {
+  margin-top: 40px;
+}
+
+/* fields 16px apart; the primary button 40px below the last field (the reference's collapsed captcha slot + mt-2) */
+html.flat-theme [data-ui="auth-column"] form[class~="space-y-5"] > :not([hidden]) ~ :not([hidden]) {
+  margin-top: 16px;
+}
+
+html.flat-theme [data-ui="auth-column"] form[class~="space-y-5"] > button[type="submit"]:not([hidden]) {
+  margin-top: 40px;
+}
+
+/* the third-party block: "OR" divider 24px below the primary button, buttons 24px below the divider, 12px apart */
+html.flat-theme [data-ui="auth-column"] form[class~="space-y-5"] > div[class~="space-y-3"]:not([hidden]),
+html.flat-theme [data-ui="auth-column"] [class~="space-y-6"] > :not([hidden]) ~ div[class~="space-y-3"]:not([hidden]) {
+  margin-top: 24px;
+  padding-top: 0;
+}
+
+html.flat-theme [data-ui="auth-column"] div[class~="space-y-3"] > div[class~="gap-3"]:first-child + :not([hidden]) {
+  margin-top: 24px;
+}
+
+/* ------------------------------------------------------------------ auth · fields */
+html.flat-theme [data-ui="auth-column"] label.input-label {
+  display: block;
+  margin-bottom: 8px;
+  font: 600 var(--pub-mono-size) / var(--pub-mono-leading) var(--ui-font-mono);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  text-align: left;
+  color: rgb(var(--pub-label));
+}
+
+html.flat-theme [data-ui="auth-column"] label.input-label > span {
+  margin-left: 6px;
+  font-weight: 400;
+  letter-spacing: 0.06em;
+  color: rgb(var(--ui-muted));
+}
+
+html.flat-theme [data-ui="auth-column"] .input {
+  height: 42px;
+  padding: 10px 14px;
+  border: 1px solid rgb(var(--pub-field-line));
+  border-radius: var(--ui-radius-md);
+  background-color: rgb(var(--ui-canvas));
+  color: rgb(var(--ui-ink));
+  font: 400 14px/20px var(--ui-font);
+  letter-spacing: normal;
+  box-shadow: none;
+  transition: border-color var(--ui-duration) var(--ui-ease), box-shadow var(--ui-duration) var(--ui-ease);
+}
+
+html.flat-theme [data-ui="auth-column"] .input::placeholder {
+  color: rgb(var(--ui-faint));
+  opacity: 1;
+}
+
+/* focus: the console's accent edge (2px: the border plus a 1px inset; controls.css 3.1), where the reference only
+   darkens the hairline (1.26:1) */
+html.flat-theme [data-ui="auth-column"] .input:focus {
+  border-color: rgb(var(--ui-focus));
+  outline: 2px solid transparent;
+  outline-offset: 2px;
+  box-shadow: inset 0 0 0 1px rgb(var(--ui-focus));
+}
+
+html.flat-theme [data-ui="auth-column"] .input:disabled {
+  background-color: rgb(var(--ui-subtle));
+  color: rgb(var(--ui-muted));
+  cursor: not-allowed;
+}
+
+html.flat-theme [data-ui="auth-column"] .input:is(.input-error, [class~="border-red-500"]) {
+  border-color: rgb(var(--ui-danger));
+}
+
+html.flat-theme [data-ui="auth-column"] .input:is(.input-error, [class~="border-red-500"]):focus {
+  border-color: rgb(var(--ui-danger));
+  box-shadow: inset 0 0 0 1px rgb(var(--ui-danger));
+}
+
+html.flat-theme [data-ui="auth-column"] .input[class~="border-green-500"] {
+  border-color: rgb(var(--ui-success));
+}
+
+html.flat-theme [data-ui="auth-column"] .input[class~="border-green-500"]:focus {
+  border-color: rgb(var(--ui-success));
+  box-shadow: inset 0 0 0 1px rgb(var(--ui-success));
+}
+
+/* room for the show-password toggle and the code-check marks inside the field */
+html.flat-theme [data-ui="auth-column"] .input:is([class~="pr-11"], [class~="pr-10"]) {
+  padding-right: 44px;
+}
+
+/* the leading glyphs (mail, lock, key, gift) are decoration; the reference's fields carry none */
+html.flat-theme [data-ui="auth-column"] div[class~="relative"] > div[class~="pointer-events-none"][class~="left-0"] {
+  display: none;
+}
+
+/* the check marks and the spinner of the invitation / promo code fields */
+html.flat-theme [data-ui="auth-column"] div[class~="relative"] > div[class~="right-0"][class~="pr-3.5"] svg {
+  width: 16px;
+  height: 16px;
+}
+
+/* show / hide password: a 36px target inside the field, the reference's 15px eye */
+html.flat-theme [data-ui="auth-column"] div[class~="relative"] > button[class~="absolute"][class~="right-0"] {
+  top: 3px;
+  right: 3px;
+  bottom: auto;
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  justify-content: center;
+  border-radius: var(--ui-radius-md);
+  color: rgb(var(--ui-muted));
+  transition: color var(--ui-duration) var(--ui-ease);
+}
+
+html.flat-theme [data-ui="auth-column"] div[class~="relative"] > button[class~="absolute"][class~="right-0"]:hover {
+  color: rgb(var(--ui-ink));
+}
+
+html.flat-theme [data-ui="auth-column"] div[class~="relative"] > button[class~="absolute"][class~="right-0"]:focus-visible {
+  outline: 2px solid rgb(var(--ui-focus));
+  outline-offset: -2px;
+}
+
+html.flat-theme [data-ui="auth-column"] div[class~="relative"] > button[class~="absolute"][class~="right-0"] svg {
+  width: 15px;
+  height: 15px;
+}
+
+/* hints under a field (password rule, code hint) */
+html.flat-theme [data-ui="auth-column"] .input-hint {
+  margin-top: 6px;
+  font: 400 12px/18px var(--ui-font);
+  text-align: left;
+  color: rgb(var(--ui-muted));
+}
+
+/* the verification code: mono digits in the standard 42px field */
+html.flat-theme [data-ui="auth-column"] input#code.input {
+  font: 500 15px/20px var(--ui-font-mono);
+  letter-spacing: 0.3em;
+  text-align: left;
+}
+
+/* ------------------------------------------------------------------ auth · buttons */
+/* primary: the reference's 50px ink pill (hover ink 85 %, disabled 50 %); its leading glyph is dropped, the loading
+   spinner stays */
+html.flat-theme [data-ui="auth-column"] :is(button, a).btn.btn-primary {
+  display: flex;
+  width: 100%;
+  height: 50px;
+  padding: 14px 24px;
+  gap: 8px;
+  border: 1px solid transparent;
+  border-radius: 9999px;
+  background: rgb(var(--ui-ink));
+  color: rgb(var(--ui-on-ink));
+  font: 600 14px/20px var(--ui-font);
+  letter-spacing: -0.025em;
+  box-shadow: none;
+  transform: none;
+  transition: background-color var(--ui-duration) var(--ui-ease), opacity var(--ui-duration) var(--ui-ease);
+}
+
+html.flat-theme [data-ui="auth-column"] :is(button, a).btn.btn-primary:hover:not(:disabled) {
+  background: rgb(var(--ui-ink) / 0.85);
+}
+
+html.flat-theme [data-ui="auth-column"] :is(button, a).btn.btn-primary:disabled {
+  opacity: 0.5;
+}
+
+html.flat-theme [data-ui="auth-column"] :is(button, a).btn.btn-primary > svg.lucide {
+  display: none;
+}
+
+html.flat-theme [data-ui="auth-column"] :is(button, a).btn.btn-primary > svg[class~="animate-spin"] {
+  width: 14px;
+  height: 14px;
+  margin: 0;
+  color: currentColor;
+}
+
+/* secondary (third-party sign-in, passkey, 2FA cancel): 42px, control outline, surface, 14/600, 18px marks; hover
+   darkens the outline (ink 25 %) */
+html.flat-theme [data-ui="auth-column"] .btn.btn-secondary {
+  height: 42px;
+  min-height: 42px;
+  padding: 10px 16px;
+  gap: 12px;
+  border: 1px solid rgb(var(--ui-line-strong));
+  border-radius: var(--ui-radius-md);
+  background: rgb(var(--ui-surface));
+  color: rgb(var(--ui-ink));
+  font: 600 14px/20px var(--ui-font);
+  box-shadow: none;
+  transform: none;
+  transition: border-color var(--ui-duration) var(--ui-ease), background-color var(--ui-duration) var(--ui-ease);
+}
+
+html.flat-theme [data-ui="auth-column"] .btn.btn-secondary:hover:not(:disabled) {
+  border-color: rgb(var(--ui-ink) / 0.25);
+  background: rgb(var(--ui-surface));
+}
+
+html.flat-theme [data-ui="auth-column"] .btn.btn-secondary > span {
+  font-weight: 600;
+}
+
+html.flat-theme [data-ui="auth-column"] .btn.btn-secondary > svg {
+  width: 18px;
+  height: 18px;
+  margin: 0;
+}
+
+html.flat-theme [data-ui="auth-column"] .btn.btn-secondary > svg.lucide {
+  width: 16px;
+  height: 16px;
+}
+
+/* the LinuxDo mark carries its 20px size inline: drawn at 18px */
+html.flat-theme [data-ui="auth-column"] .btn.btn-secondary > svg.icon {
+  margin: 0;
+  transform: scale(0.9);
+}
+
+/* GitHub / Google side by side upstream: stacked full width as in the reference */
+html.flat-theme [data-ui="auth-column"] div[class~="grid"][class~="gap-3"] {
+  grid-template-columns: minmax(0, 1fr);
+  gap: 12px;
+}
+
+html.flat-theme [data-ui="auth-column"] :is(.btn, a, button):focus {
+  box-shadow: none;
+}
+
+/* keyboard focus: the console's 2px accent outline 2px out (controls.css 1; the reference's native ring disappears
+   on its own ink button) */
+html.flat-theme [data-ui="auth-column"] :is(.btn, a, button):focus-visible {
+  outline: 2px solid rgb(var(--ui-focus));
+  outline-offset: 2px;
+}
+
+html.flat-theme [data-ui="auth-column"] .btn:active {
+  transform: none;
+}
+
+/* "OR": hairlines and the mono word between them */
+html.flat-theme [data-ui="auth-column"] div[class~="h-px"][class~="flex-1"] {
+  background-color: rgb(var(--ui-line));
+}
+
+html.flat-theme [data-ui="auth-column"] div[class~="h-px"][class~="flex-1"] + span {
+  font: 600 11px/16.5px var(--ui-font-mono);
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  color: rgb(var(--ui-muted));
+}
+
+/* text buttons: forgot password, back to sign-in, request a new link, resend code, back to sign-up (mono,
+   uppercase, muted; ink on hover) */
+html.flat-theme [data-ui="auth-column"] div[class~="mt-1"][class~="justify-between"] {
+  margin-top: 10px;
+}
+
+/* no forgot-password link (password reset off, backend mode): the empty row takes no room */
+html.flat-theme [data-ui="auth-column"] div[class~="mt-1"][class~="justify-between"]:not(:has(a)) {
+  display: none;
+}
+
+html.flat-theme [data-ui="auth-column"] div[class~="mt-1"][class~="justify-between"] > a,
+html.flat-theme [data-ui="auth-column"] [class~="card-glass"] a[class~="inline-flex"][class~="text-primary-600"],
+html.flat-theme [data-ui="auth-column"] [class~="card-glass"] form > div[class~="text-center"] > button,
+html.flat-theme [data-ui="auth-column"] > div[class~="mt-6"] > button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: 0;
+  font: 400 var(--pub-mono-size) / var(--pub-mono-leading) var(--ui-font-mono);
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  text-decoration: none;
+  color: rgb(var(--ui-muted));
+  transition: color var(--ui-duration) var(--ui-ease);
+}
+
+html.flat-theme [data-ui="auth-column"] div[class~="mt-1"][class~="justify-between"] > a:hover,
+html.flat-theme [data-ui="auth-column"] [class~="card-glass"] a[class~="inline-flex"][class~="text-primary-600"]:hover,
+html.flat-theme [data-ui="auth-column"] [class~="card-glass"] form > div[class~="text-center"] > button:hover:not(:disabled),
+html.flat-theme [data-ui="auth-column"] > div[class~="mt-6"] > button:hover {
+  color: rgb(var(--ui-ink));
+  text-decoration: none;
+}
+
+html.flat-theme [data-ui="auth-column"] [class~="card-glass"] a[class~="inline-flex"][class~="text-primary-600"] svg,
+html.flat-theme [data-ui="auth-column"] > div[class~="mt-6"] > button svg {
+  width: 13px;
+  height: 13px;
+}
+
+/* ------------------------------------------------------------------ auth · notices and states */
+/* agreement, checkbox mode: native 14px box in the accent, 12.5px line, document links in ink, underlined */
+html.flat-theme [data-ui="auth-column"] #login-agreement-consent {
+  width: 14px;
+  height: 14px;
+  margin-top: 2px;
+}
+
+html.flat-theme [data-ui="auth-column"] #login-agreement-consent + div > p {
+  font: 400 12.5px/18px var(--ui-font);
+  color: rgb(var(--ui-muted));
+}
+
+html.flat-theme [data-ui="auth-column"] #login-agreement-consent + div label {
+  color: rgb(var(--ui-ink-soft));
+}
+
+html.flat-theme [data-ui="auth-column"] #login-agreement-consent + div a {
+  font-weight: 500;
+  color: rgb(var(--ui-ink));
+  text-decoration: underline;
+  text-decoration-color: rgb(var(--ui-line-focus));
+  text-underline-offset: 3px;
+  transition: text-decoration-color var(--ui-duration) var(--ui-ease);
+}
+
+html.flat-theme [data-ui="auth-column"] #login-agreement-consent + div a:hover {
+  text-decoration-color: currentColor;
+}
+
+/* agreement not accepted yet (modal mode): the reference's notice box (subtle fill, hairline, 13px ink) with a
+   small default button */
+html.flat-theme [data-ui="auth-column"] div[class~="border-primary-100"][class~="p-3"] {
+  padding: 10px 12px 10px 16px;
+  border: 1px solid rgb(var(--ui-line));
+  border-radius: var(--ui-radius-md);
+  background: rgb(var(--ui-subtle));
+  color: rgb(var(--ui-ink));
+  font-size: 13px;
+  line-height: 19.5px;
+}
+
+html.flat-theme [data-ui="auth-column"] div[class~="border-primary-100"][class~="p-3"] p[class~="font-medium"] {
+  font-weight: 600;
+}
+
+html.flat-theme [data-ui="auth-column"] div[class~="border-primary-100"][class~="p-3"] p[class~="mt-1"] {
+  margin-top: 2px;
+  color: rgb(var(--ui-muted));
+}
+
+html.flat-theme [data-ui="auth-column"] div[class~="border-primary-100"][class~="p-3"] svg {
+  width: 15px;
+  height: 15px;
+  margin-top: 2px;
+  color: rgb(var(--ui-ink-soft));
+}
+
+html.flat-theme [data-ui="auth-column"] div[class~="border-primary-100"][class~="p-3"] button {
+  height: 28px;
+  padding: 0 10px;
+  border: 1px solid rgb(var(--ui-line-strong));
+  border-radius: var(--ui-radius-md);
+  background: rgb(var(--ui-surface));
+  color: rgb(var(--ui-ink));
+  font: 600 12px/18px var(--ui-font);
+  transition: border-color var(--ui-duration) var(--ui-ease);
+}
+
+html.flat-theme [data-ui="auth-column"] div[class~="border-primary-100"][class~="p-3"] button:hover {
+  border-color: rgb(var(--ui-ink) / 0.25);
+  background: rgb(var(--ui-surface));
+}
+
+/* sign-up closed, session expired: the notice box in the warning colours */
+html.flat-theme [data-ui="auth-column"] div[class~="border-amber-200"][class~="p-4"] {
+  padding: 10px 16px;
+  border: 1px solid rgb(var(--ui-warning) / 0.3);
+  border-radius: var(--ui-radius-md);
+  background: rgb(var(--ui-warning-soft));
+  font-size: 13px;
+  line-height: 19.5px;
+}
+
+html.flat-theme [data-ui="auth-column"] div[class~="border-amber-200"][class~="p-4"] :is(p, div[class~="text-sm"]) {
+  font-size: 13px;
+  line-height: 19.5px;
+  color: rgb(var(--ui-warning));
+}
+
+html.flat-theme [data-ui="auth-column"] div[class~="border-amber-200"][class~="p-4"] svg {
+  width: 15px;
+  height: 15px;
+  margin-top: 2px;
+  color: rgb(var(--ui-warning));
+}
+
+/* code sent (email verification) and the inline code checks: the notice box in the success colours */
+html.flat-theme [data-ui="auth-column"] div[class~="border-green-200"][class~="p-4"],
+html.flat-theme [data-ui="auth-column"] div[class~="bg-green-50"][class~="px-3"][class~="py-2"] {
+  padding: 10px 16px;
+  border: 1px solid rgb(var(--ui-success) / 0.25);
+  border-radius: var(--ui-radius-md);
+  background: rgb(var(--ui-success-soft));
+  font-size: 13px;
+  line-height: 19.5px;
+}
+
+html.flat-theme [data-ui="auth-column"] div[class~="border-green-200"][class~="p-4"] p,
+html.flat-theme [data-ui="auth-column"] div[class~="bg-green-50"][class~="px-3"][class~="py-2"] span {
+  font-size: 13px;
+  line-height: 19.5px;
+  color: rgb(var(--ui-success));
+}
+
+html.flat-theme [data-ui="auth-column"] div:is([class~="border-green-200"][class~="p-4"], [class~="bg-green-50"][class~="px-3"]) svg {
+  width: 15px;
+  height: 15px;
+  color: rgb(var(--ui-success));
+}
+
+/* result states (reset link sent, password reset, link invalid): a compact status box - the status colour on the
+   glyph and the outline, the text in ink and muted */
+html.flat-theme [data-ui="auth-column"] div[class~="rounded-xl"][class~="p-6"]:is([class~="bg-green-50"], [class~="bg-amber-50"]) {
+  padding: 20px 20px 18px;
+  border-radius: var(--ui-radius-lg);
+}
+
+html.flat-theme [data-ui="auth-column"] div[class~="rounded-xl"][class~="p-6"][class~="bg-green-50"] {
+  border-color: rgb(var(--ui-success) / 0.25);
+  background: rgb(var(--ui-success-soft));
+}
+
+html.flat-theme [data-ui="auth-column"] div[class~="rounded-xl"][class~="p-6"][class~="bg-amber-50"] {
+  border-color: rgb(var(--ui-warning) / 0.3);
+  background: rgb(var(--ui-warning-soft));
+}
+
+html.flat-theme [data-ui="auth-column"] div[class~="rounded-xl"][class~="p-6"] > div {
+  gap: 12px;
+}
+
+html.flat-theme [data-ui="auth-column"] div[class~="rounded-xl"][class~="p-6"] div[class~="rounded-full"] {
+  width: 36px;
+  height: 36px;
+  background: rgb(var(--ui-surface));
+  box-shadow: 0 0 0 1px rgb(var(--ui-line));
+}
+
+html.flat-theme [data-ui="auth-column"] div[class~="rounded-xl"][class~="p-6"] div[class~="rounded-full"] svg {
+  width: 17px;
+  height: 17px;
+}
+
+html.flat-theme [data-ui="auth-column"] div[class~="rounded-xl"][class~="p-6"][class~="bg-green-50"] div[class~="rounded-full"] svg {
+  color: rgb(var(--ui-success));
+}
+
+html.flat-theme [data-ui="auth-column"] div[class~="rounded-xl"][class~="p-6"][class~="bg-amber-50"] div[class~="rounded-full"] svg {
+  color: rgb(var(--ui-warning));
+}
+
+html.flat-theme [data-ui="auth-column"] div[class~="rounded-xl"][class~="p-6"] h3 {
+  font: 600 15px/22px var(--ui-font);
+  color: rgb(var(--ui-ink));
+}
+
+html.flat-theme [data-ui="auth-column"] div[class~="rounded-xl"][class~="p-6"] h3 + p {
+  margin-top: 4px;
+  font: 400 13px/19.5px var(--ui-font);
+  color: rgb(var(--ui-muted));
+}
+
+/* ------------------------------------------------------------------ auth · 2FA dialog (LoginView's sibling) */
+html.flat-theme [data-ui="auth-layout"] ~ div[class~="fixed"][class~="inset-0"][class~="z-50"] > div > div[class~="fixed"][class~="inset-0"] {
+  background: rgb(var(--ui-scrim));
+}
+
+html.flat-theme [data-ui="auth-layout"] ~ div[class~="fixed"][class~="z-50"] div[class~="relative"][class~="max-w-md"] {
+  max-width: 400px;
+  padding: 28px;
+  border: 1px solid rgb(var(--ui-line));
+  border-radius: var(--ui-radius-lg);
+  background: rgb(var(--ui-surface));
+  box-shadow: var(--ui-shadow-overlay);
+}
+
+html.flat-theme [data-ui="auth-layout"] ~ div[class~="fixed"][class~="z-50"] div[class~="max-w-md"] > div[class~="mb-6"][class~="text-center"] {
+  margin-bottom: 24px;
+}
+
+html.flat-theme [data-ui="auth-layout"] ~ div[class~="fixed"][class~="z-50"] div[class~="max-w-md"] div[class~="rounded-full"][class~="h-12"] {
+  width: 36px;
+  height: 36px;
+  border: 1px solid rgb(var(--ui-line));
+  border-radius: var(--ui-radius-md);
+  background: rgb(var(--ui-subtle));
+}
+
+html.flat-theme [data-ui="auth-layout"] ~ div[class~="fixed"][class~="z-50"] div[class~="max-w-md"] div[class~="rounded-full"][class~="h-12"] svg {
+  width: 17px;
+  height: 17px;
+  color: rgb(var(--ui-ink-soft));
+}
+
+html.flat-theme [data-ui="auth-layout"] ~ div[class~="fixed"][class~="z-50"] div[class~="max-w-md"] h3 {
+  margin-top: 16px;
+  font: 600 19px/26px var(--ui-font);
+  letter-spacing: -0.025em;
+  color: rgb(var(--ui-ink));
+}
+
+html.flat-theme [data-ui="auth-layout"] ~ div[class~="fixed"][class~="z-50"] div[class~="max-w-md"] h3 + p {
+  margin-top: 6px;
+  font: 400 13px/19.5px var(--ui-font);
+  color: rgb(var(--ui-muted));
+}
+
+html.flat-theme [data-ui="auth-layout"] ~ div[class~="fixed"][class~="z-50"] div[class~="max-w-md"] h3 + p + p {
+  margin-top: 4px;
+  font: 500 12.5px/18px var(--ui-font-mono);
+  color: rgb(var(--ui-ink));
+}
+
+html.flat-theme [data-ui="auth-layout"] ~ div[class~="fixed"][class~="z-50"] div[class~="max-w-md"] input[maxlength="1"] {
+  width: 42px;
+  height: 46px;
+  border: 1px solid rgb(var(--ui-control-line));
+  border-radius: var(--ui-radius-md);
+  background: rgb(var(--ui-canvas));
+  color: rgb(var(--ui-ink));
+  font: 500 18px/24px var(--ui-font-mono);
+  box-shadow: none;
+  transition: border-color var(--ui-duration) var(--ui-ease), box-shadow var(--ui-duration) var(--ui-ease);
+}
+
+html.flat-theme [data-ui="auth-layout"] ~ div[class~="fixed"][class~="z-50"] div[class~="max-w-md"] input[maxlength="1"]:focus {
+  border-color: rgb(var(--ui-focus));
+  outline: 2px solid transparent;
+  outline-offset: 2px;
+  box-shadow: inset 0 0 0 1px rgb(var(--ui-focus));
+}
+
+html.flat-theme [data-ui="auth-layout"] ~ div[class~="fixed"][class~="z-50"] div[class~="max-w-md"] .btn.btn-secondary {
+  height: 42px;
+  padding: 10px 16px;
+  border: 1px solid rgb(var(--ui-line-strong));
+  border-radius: var(--ui-radius-md);
+  background: rgb(var(--ui-surface));
+  color: rgb(var(--ui-ink));
+  font: 600 14px/20px var(--ui-font);
+  box-shadow: none;
+  transform: none;
+}
+
+html.flat-theme [data-ui="auth-layout"] ~ div[class~="fixed"][class~="z-50"] div[class~="max-w-md"] .btn.btn-secondary:hover:not(:disabled) {
+  border-color: rgb(var(--ui-ink) / 0.25);
+  background: rgb(var(--ui-surface));
+}
+
+html.flat-theme [data-ui="auth-layout"] ~ div[class~="fixed"][class~="z-50"] div[class~="max-w-md"] .btn.btn-secondary:focus-visible {
+  outline: 2px solid rgb(var(--ui-focus));
+  outline-offset: 2px;
+  box-shadow: none;
+}
+
+/* ------------------------------------------------------------------ auth · agreement dialog (body-level layer) */
+html.flat-theme body > div[class~="z-[140]"] {
+  background: rgb(var(--ui-scrim));
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+
+html.flat-theme body > div[class~="z-[140]"] > div {
+  max-width: 560px;
+  border: 1px solid rgb(var(--ui-line));
+  border-radius: var(--ui-radius-lg);
+  background: rgb(var(--ui-surface));
+  box-shadow: var(--ui-shadow-overlay);
+}
+
+html.flat-theme body > div[class~="z-[140]"] > div > div:first-child {
+  padding: 18px 20px 16px;
+  border-bottom: 1px solid rgb(var(--ui-line));
+  background: rgb(var(--ui-surface));
+}
+
+html.flat-theme body > div[class~="z-[140]"] > div > div:first-child > div {
+  gap: 14px;
+}
+
+html.flat-theme body > div[class~="z-[140]"] > div > div:first-child span[class~="h-12"] {
+  width: 36px;
+  height: 36px;
+  border: 1px solid rgb(var(--ui-line));
+  border-radius: var(--ui-radius-md);
+  background: rgb(var(--ui-subtle));
+  color: rgb(var(--ui-ink-soft));
+  box-shadow: none;
+}
+
+html.flat-theme body > div[class~="z-[140]"] > div > div:first-child span[class~="h-12"] svg {
+  width: 17px;
+  height: 17px;
+}
+
+html.flat-theme body > div[class~="z-[140]"] h2 {
+  font: 600 17px/25.5px var(--ui-font);
+  letter-spacing: -0.025em;
+  color: rgb(var(--ui-ink));
+}
+
+html.flat-theme body > div[class~="z-[140]"] h2 + span {
+  padding: 1px 6px;
+  border-radius: var(--ui-radius-sm);
+  background: rgb(var(--ui-subtle));
+  color: rgb(var(--ui-muted));
+  font: 400 10.5px/15.75px var(--ui-font-mono);
+  letter-spacing: 0.025em;
+}
+
+html.flat-theme body > div[class~="z-[140]"] > div > div:first-child p {
+  margin-top: 4px;
+  font: 400 13px/19.5px var(--ui-font);
+  color: rgb(var(--ui-muted));
+}
+
+html.flat-theme body > div[class~="z-[140]"] > div > div[class~="max-h-[58vh]"] {
+  padding: 16px 20px 20px;
+}
+
+html.flat-theme body > div[class~="z-[140]"] > div > div[class~="max-h-[58vh]"] > div:first-child > p {
+  font: 500 var(--pub-mono-size) / var(--pub-mono-leading) var(--ui-font-mono);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: rgb(var(--ui-label));
+}
+
+html.flat-theme body > div[class~="z-[140]"] a[class~="min-h-[72px]"] {
+  min-height: 56px;
+  gap: 10px;
+  padding: 12px 14px;
+  border: 1px solid rgb(var(--ui-line));
+  border-radius: var(--ui-radius-lg);
+  background: rgb(var(--ui-subtle) / 0.6);
+  box-shadow: none;
+  transform: none;
+  transition: border-color var(--ui-duration) var(--ui-ease), background-color var(--ui-duration) var(--ui-ease);
+}
+
+html.flat-theme body > div[class~="z-[140]"] a[class~="min-h-[72px]"]:hover {
+  border-color: rgb(var(--ui-line-strong));
+  background: rgb(var(--ui-subtle) / 0.6);
+  box-shadow: none;
+  transform: none;
+}
+
+html.flat-theme body > div[class~="z-[140]"] a[class~="min-h-[72px]"] > span:first-child {
+  width: 28px;
+  height: 28px;
+  border: 1px solid rgb(var(--ui-line));
+  border-radius: var(--ui-radius-md);
+  background: rgb(var(--ui-ink) / 0.03);
+  color: rgb(var(--ui-ink-soft));
+  box-shadow: none;
+}
+
+html.flat-theme body > div[class~="z-[140]"] a[class~="min-h-[72px]"] > span:first-child svg {
+  width: 14px;
+  height: 14px;
+}
+
+html.flat-theme body > div[class~="z-[140]"] a[class~="min-h-[72px]"] > span:nth-child(2) > span {
+  font: 600 13px/19.5px var(--ui-font);
+  color: rgb(var(--ui-ink));
+}
+
+html.flat-theme body > div[class~="z-[140]"] a[class~="min-h-[72px]"] > span:last-child {
+  width: 24px;
+  height: 24px;
+  color: rgb(var(--ui-muted));
+  background: none;
+}
+
+html.flat-theme body > div[class~="z-[140]"] a[class~="min-h-[72px]"]:hover > span:last-child {
+  color: rgb(var(--ui-ink));
+  background: none;
+}
+
+html.flat-theme body > div[class~="z-[140]"] a[class~="min-h-[72px]"] > span:last-child svg {
+  width: 13px;
+  height: 13px;
+}
+
+html.flat-theme body > div[class~="z-[140]"] > div > div:last-child {
+  padding: 12px 20px;
+  border-top: 1px solid rgb(var(--ui-line));
+  background: rgb(var(--ui-surface));
+}
+
+html.flat-theme body > div[class~="z-[140]"] > div > div:last-child button {
+  height: 38px;
+  padding: 0 16px;
+  border-radius: var(--ui-radius-md);
+  font: 600 14px/20px var(--ui-font);
+  box-shadow: none;
+  transition: background-color var(--ui-duration) var(--ui-ease), border-color var(--ui-duration) var(--ui-ease);
+}
+
+html.flat-theme body > div[class~="z-[140]"] > div > div:last-child button:first-child {
+  border: 1px solid rgb(var(--ui-line-strong));
+  background: rgb(var(--ui-surface));
+  color: rgb(var(--ui-ink));
+}
+
+html.flat-theme body > div[class~="z-[140]"] > div > div:last-child button:first-child:hover {
+  border-color: rgb(var(--ui-ink) / 0.25);
+  background: rgb(var(--ui-surface));
+}
+
+html.flat-theme body > div[class~="z-[140]"] > div > div:last-child button:last-child {
+  border: 1px solid rgb(var(--ui-ink));
+  background: rgb(var(--ui-ink));
+  color: rgb(var(--ui-on-ink));
+}
+
+html.flat-theme body > div[class~="z-[140]"] > div > div:last-child button:last-child:hover {
+  background: rgb(var(--ui-ink) / 0.85);
+}
+
+html.flat-theme body > div[class~="z-[140]"] :is(a, button):focus-visible {
+  outline: 2px solid rgb(var(--ui-focus));
+  outline-offset: 2px;
+}
+
+/* ------------------------------------------------------------------ public pages · shared structure */
+/* Home, legal documents and key usage share the marketing site's top bar (sticky, 64px, a hairline under it, the
+   canvas at 92 % with a 10px blur), its 1240px content width with a clamp(16px, 3vw, 32px) gutter and its footer
+   (a hairline, mono labels); drawn with the console tokens and Geist. */
+html.flat-theme :is([data-ui="home"], [data-ui="legal"], [data-ui="key-usage"], [data-ui="not-found"]) {
+  --pub-gutter: clamp(16px, 3vw, 32px);
+  --pub-width: 1240px;
+  background: rgb(var(--ui-canvas));
+  color: rgb(var(--ui-ink));
+}
+
+html.flat-theme :is([data-ui="home"], [data-ui="legal"], [data-ui="key-usage"]) > header {
+  position: sticky;
+  top: 0;
+  z-index: 30;
+  padding: 0;
+  border-bottom: 1px solid rgb(var(--ui-line));
+  background: rgb(var(--ui-canvas) / 0.92);
+  -webkit-backdrop-filter: blur(10px);
+  backdrop-filter: blur(10px);
+}
+
+html.flat-theme :is([data-ui="home"], [data-ui="legal"], [data-ui="key-usage"]) > header > :is(nav, div) {
+  max-width: var(--pub-width);
+  height: 64px;
+  margin: 0 auto;
+  padding: 0 var(--pub-gutter);
+  gap: 12px;
+}
+
+/* brand: the site logo at 32px (radius 8) and, where the page prints it, the site name as a mono wordmark */
+html.flat-theme :is([data-ui="home"], [data-ui="key-usage"]) > header > nav > :first-child div[class~="h-10"],
+html.flat-theme [data-ui="legal"] > header > div > a > span[class~="h-10"] {
+  width: 32px;
+  height: 32px;
+  border-radius: var(--ui-radius-lg);
+  background: transparent;
+  box-shadow: none;
+}
+
+html.flat-theme [data-ui="key-usage"] > header > nav > a,
+html.flat-theme [data-ui="legal"] > header > div > a:first-child {
+  gap: 10px;
+}
+
+html.flat-theme [data-ui="key-usage"] > header > nav > a > span,
+html.flat-theme [data-ui="legal"] > header > div > a:first-child > span:not([class~="h-10"]) {
+  font: 500 13px/20px var(--ui-font-mono);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: rgb(var(--ui-ink));
+}
+
+/* header actions: ghost icon buttons (32px, radius 6, muted -> ink on a subtle fill), the language switch */
+html.flat-theme :is([data-ui="home"], [data-ui="key-usage"]) > header > nav > div:last-child {
+  gap: 4px;
+}
+
+html.flat-theme :is([data-ui="home"], [data-ui="key-usage"]) > header > nav > div:last-child > :is(a, button)[class~="p-2"] {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 32px;
+  height: 32px;
+  padding: 0 8px;
+  gap: 6px;
+  border-radius: var(--ui-radius-md);
+  color: rgb(var(--ui-muted));
+  font: 500 13px/20px var(--ui-font);
+  transition: color var(--ui-duration) var(--ui-ease), background-color var(--ui-duration) var(--ui-ease);
+}
+
+html.flat-theme :is([data-ui="home"], [data-ui="key-usage"]) > header > nav > div:last-child > :is(a, button)[class~="p-2"]:hover {
+  background: rgb(var(--ui-subtle));
+  color: rgb(var(--ui-ink));
+}
+
+html.flat-theme :is([data-ui="home"], [data-ui="key-usage"]) > header > nav > div:last-child > :is(a, button)[class~="p-2"] svg {
+  width: 16px;
+  height: 16px;
+}
+
+html.flat-theme :is([data-ui="home"], [data-ui="key-usage"]) > header > nav > div:last-child > div[class~="relative"] > button {
+  height: 32px;
+  padding: 0 8px;
+  gap: 6px;
+  border-radius: var(--ui-radius-md);
+  color: rgb(var(--ui-muted));
+  font: 500 12.5px/18px var(--ui-font-mono);
+  letter-spacing: 0.04em;
+  transition: color var(--ui-duration) var(--ui-ease), background-color var(--ui-duration) var(--ui-ease);
+}
+
+html.flat-theme :is([data-ui="home"], [data-ui="key-usage"]) > header > nav > div:last-child > div[class~="relative"] > button:hover {
+  background: rgb(var(--ui-subtle));
+  color: rgb(var(--ui-ink));
+}
+
+html.flat-theme :is([data-ui="home"], [data-ui="key-usage"]) > header > nav > div:last-child > div[class~="relative"] > button > span[class~="text-base"] {
+  font-size: 12.5px;
+}
+
+/* sign in / console: the console's small ink button (30px, radius 6, 13 / 600) */
+html.flat-theme [data-ui="home"] > header > nav > div:last-child > a[class~="bg-gray-900"],
+html.flat-theme [data-ui="legal"] > header > div > a[class~="bg-primary-600"] {
+  display: inline-flex;
+  align-items: center;
+  height: 30px;
+  margin-left: 6px;
+  padding: 0 12px;
+  gap: 8px;
+  border: 1px solid rgb(var(--ui-ink));
+  border-radius: var(--ui-radius-md);
+  background: rgb(var(--ui-ink));
+  color: rgb(var(--ui-on-ink));
+  font: 600 13px/19.5px var(--ui-font);
+  box-shadow: none;
+  transition: background-color var(--ui-duration) var(--ui-ease);
+}
+
+html.flat-theme [data-ui="home"] > header > nav > div:last-child > a[class~="bg-gray-900"]:hover,
+html.flat-theme [data-ui="legal"] > header > div > a[class~="bg-primary-600"]:hover {
+  background: rgb(var(--ui-ink) / 0.85);
+}
+
+html.flat-theme [data-ui="home"] > header > nav > div:last-child > a[class~="bg-gray-900"] > span:not([class~="rounded-full"]) {
+  font-size: 13px;
+  line-height: 19.5px;
+  font-weight: 600;
+  color: rgb(var(--ui-on-ink));
+}
+
+/* the signed-in initial: a quiet disc on the ink button */
+html.flat-theme [data-ui="home"] > header > nav > div:last-child > a[class~="bg-gray-900"] > span[class~="rounded-full"] {
+  width: 18px;
+  height: 18px;
+  background: rgb(var(--ui-on-ink) / 0.18);
+  color: rgb(var(--ui-on-ink));
+  font: 600 10px/18px var(--ui-font-mono);
+}
+
+html.flat-theme [data-ui="home"] > header > nav > div:last-child > a[class~="bg-gray-900"] > svg {
+  width: 12px;
+  height: 12px;
+  color: rgb(var(--ui-on-ink) / 0.7);
+}
+
+html.flat-theme :is([data-ui="home"], [data-ui="legal"], [data-ui="key-usage"], [data-ui="not-found"]) :is(a, button):focus-visible {
+  outline: 2px solid rgb(var(--ui-focus));
+  outline-offset: 2px;
+}
+
+/* footer: a hairline, the copyright as a mono label on the left, links on the right */
+html.flat-theme :is([data-ui="home"], [data-ui="key-usage"]) > footer {
+  padding: 0;
+  border-top: 1px solid rgb(var(--ui-line));
+}
+
+html.flat-theme :is([data-ui="home"], [data-ui="key-usage"]) > footer > div {
+  max-width: var(--pub-width);
+  margin: 0 auto;
+  padding: 24px var(--pub-gutter);
+  justify-content: space-between;
+  gap: 12px 24px;
+}
+
+html.flat-theme :is([data-ui="home"], [data-ui="key-usage"]) > footer p {
+  font: 400 12px/18px var(--ui-font-mono);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: rgb(var(--ui-muted));
+}
+
+html.flat-theme :is([data-ui="home"], [data-ui="key-usage"]) > footer a {
+  font: 400 13px/20px var(--ui-font);
+  color: rgb(var(--ui-muted));
+  transition: color var(--ui-duration) var(--ui-ease);
+}
+
+html.flat-theme :is([data-ui="home"], [data-ui="key-usage"]) > footer a:hover {
+  color: rgb(var(--ui-ink));
+}
+
+/* ------------------------------------------------------------------ home */
+/* the marketing site's page: two hairline rails at the content edges, sections split by full-width hairlines, the
+   feature cards as a hairline lattice between the rails; no gradients, orbs or glows. overflow: clip keeps the
+   sticky bar working (overflow: hidden would make the page its own scroller). */
+html.flat-theme [data-ui="home"] {
+  overflow: clip;
+}
+
+html.flat-theme [data-ui="home"] > div:first-child[class~="pointer-events-none"] {
+  display: none;
+}
+
+html.flat-theme :is([data-ui="legal"], [data-ui="key-usage"]) {
+  position: relative;
+}
+
+@media (min-width: 901px) {
+  html.flat-theme :is([data-ui="home"], [data-ui="legal"], [data-ui="key-usage"])::before {
+    content: "";
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: 50%;
+    z-index: 0;
+    width: min(var(--pub-width), calc(100% - 16px));
+    transform: translateX(-50%);
+    border-inline: 1px solid rgb(var(--ui-line));
+    pointer-events: none;
+  }
+}
+
+html.flat-theme [data-ui="home"] > main {
+  padding: 0;
+}
+
+html.flat-theme [data-ui="home"] > main > div {
+  max-width: var(--pub-width);
+}
+
+/* hero: the site name at 56 / 500, the subtitle as the lead, one ink call to action; the terminal on the right */
+html.flat-theme [data-ui="home"] > main > div > div:first-child {
+  margin-bottom: 0;
+  padding: clamp(72px, 10vh, 112px) var(--pub-gutter) 40px;
+  gap: 48px;
+}
+
+html.flat-theme [data-ui="home"] > main > div > div:first-child h1 {
+  margin-bottom: 20px;
+  font: 500 clamp(40px, 4.4vw, 56px) / 1.05 var(--ui-font);
+  letter-spacing: -0.035em;
+  color: rgb(var(--ui-ink));
+}
+
+html.flat-theme [data-ui="home"] > main > div > div:first-child h1 + p {
+  max-width: 34rem;
+  margin-bottom: 32px;
+  font: 400 16px/25px var(--ui-font);
+  color: rgb(var(--ui-muted));
+}
+
+@media (max-width: 1023px) {
+  html.flat-theme [data-ui="home"] > main > div > div:first-child h1 + p {
+    margin-inline: auto;
+  }
+}
+
+html.flat-theme [data-ui="home"] > main > div > div:first-child .btn.btn-primary {
+  height: 44px;
+  padding: 0 20px;
+  gap: 10px;
+  border: 1px solid rgb(var(--ui-ink));
+  border-radius: var(--ui-radius-md);
+  background: rgb(var(--ui-ink));
+  color: rgb(var(--ui-on-ink));
+  font: 600 14px/20px var(--ui-font);
+  box-shadow: none;
+  transform: none;
+  transition: background-color var(--ui-duration) var(--ui-ease);
+}
+
+html.flat-theme [data-ui="home"] > main > div > div:first-child .btn.btn-primary:hover {
+  background: rgb(var(--ui-ink) / 0.85);
+}
+
+html.flat-theme [data-ui="home"] > main > div > div:first-child .btn.btn-primary svg {
+  width: 15px;
+  height: 15px;
+  margin: 0;
+}
+
+/* the terminal: a console code block (surface, hairline, radius 8, a subtle tab bar with a mono label), code in
+   Geist Mono 12.5 in the reference's syntax roles; no tilt, glow or traffic-light colours */
+html.flat-theme [data-ui="home"] .terminal-window {
+  border: 1px solid rgb(var(--ui-line));
+  border-radius: var(--ui-radius-lg);
+  background: rgb(var(--ui-surface));
+  box-shadow: none;
+  transform: none;
+}
+
+html.flat-theme [data-ui="home"] .terminal-window:hover {
+  transform: none;
+}
+
+html.flat-theme [data-ui="home"] .terminal-header {
+  height: 38px;
+  padding: 0 14px;
+  border-bottom: 1px solid rgb(var(--ui-line));
+  background: rgb(var(--ui-subtle));
+}
+
+html.flat-theme [data-ui="home"] .terminal-buttons {
+  gap: 6px;
+}
+
+html.flat-theme [data-ui="home"] .terminal-buttons span {
+  width: 8px;
+  height: 8px;
+  background: rgb(var(--ui-line-strong));
+}
+
+/* the tab bar is the grouped fill (#f5f5f5), where the label grey reads 4.35:1: muted (4.74:1) */
+html.flat-theme [data-ui="home"] .terminal-title {
+  margin-right: 38px;
+  font: 400 var(--ui-label-size) / var(--ui-label-leading) var(--ui-font-mono);
+  letter-spacing: var(--ui-label-tracking);
+  text-transform: uppercase;
+  color: rgb(var(--ui-muted));
+}
+
+html.flat-theme [data-ui="home"] .terminal-body {
+  padding: 18px 20px 20px;
+  font: 400 12.5px/24px var(--ui-font-mono);
+  color: rgb(var(--ui-ink));
+}
+
+html.flat-theme [data-ui="home"] .code-prompt {
+  font-weight: 400;
+  color: rgb(var(--ui-muted));
+}
+
+html.flat-theme [data-ui="home"] .code-cmd {
+  font-weight: 500;
+  color: rgb(var(--ui-ink));
+}
+
+html.flat-theme [data-ui="home"] .code-flag {
+  color: rgb(var(--ui-purple));
+}
+
+html.flat-theme [data-ui="home"] .code-url,
+html.flat-theme [data-ui="home"] .code-response {
+  color: var(--ui-link);
+}
+
+html.flat-theme [data-ui="home"] .code-comment {
+  font-style: italic;
+  color: rgb(var(--ui-faint));
+}
+
+html.flat-theme [data-ui="home"] .code-success {
+  padding: 1px 6px;
+  border-radius: var(--ui-radius-sm);
+  background: rgb(var(--ui-success-soft));
+  color: rgb(var(--ui-success));
+  font: 600 11px/16px var(--ui-font-mono);
+  letter-spacing: 0.025em;
+}
+
+html.flat-theme [data-ui="home"] .cursor {
+  width: 7px;
+  height: 15px;
+  background: rgb(var(--ui-ink));
+}
+
+/* the three highlights under the hero: mono chips on the content edge */
+html.flat-theme [data-ui="home"] > main > div > div:nth-child(2) {
+  margin-bottom: 0;
+  padding: 0 var(--pub-gutter) clamp(56px, 9vh, 88px);
+  gap: 8px;
+}
+
+@media (min-width: 1024px) {
+  html.flat-theme [data-ui="home"] > main > div > div:nth-child(2) {
+    justify-content: flex-start;
+  }
+}
+
+html.flat-theme [data-ui="home"] > main > div > div:nth-child(2) > div {
+  height: 30px;
+  padding: 0 12px 0 10px;
+  gap: 8px;
+  border: 1px solid rgb(var(--ui-line-strong));
+  border-radius: var(--ui-radius-md);
+  background: rgb(var(--ui-surface));
+  box-shadow: none;
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+
+html.flat-theme [data-ui="home"] > main > div > div:nth-child(2) > div > svg {
+  width: 14px;
+  height: 14px;
+  color: rgb(var(--ui-muted));
+}
+
+html.flat-theme [data-ui="home"] > main > div > div:nth-child(2) > div > span {
+  font: 500 11px/16px var(--ui-font-mono);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: rgb(var(--ui-ink-soft));
+}
+
+/* features: a hairline lattice between the rails (full-width hairlines above and below), 32px cells, a neutral
+   32px glyph tile, 20 / 500 titles, 14 / 22 muted text */
+html.flat-theme [data-ui="home"] > main > div > div[class~="md:grid-cols-3"] {
+  position: relative;
+  gap: 0;
+  margin-bottom: 0;
+  border-block: 1px solid rgb(var(--ui-line));
+}
+
+html.flat-theme [data-ui="home"] > main > div > div[class~="md:grid-cols-3"]::before,
+html.flat-theme [data-ui="home"] > main > div > div[class~="md:grid-cols-3"]::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  width: 100vw;
+  height: 1px;
+  transform: translateX(-50%);
+  background: rgb(var(--ui-line));
+  pointer-events: none;
+}
+
+html.flat-theme [data-ui="home"] > main > div > div[class~="md:grid-cols-3"]::before {
+  top: -1px;
+}
+
+html.flat-theme [data-ui="home"] > main > div > div[class~="md:grid-cols-3"]::after {
+  bottom: -1px;
+}
+
+html.flat-theme [data-ui="home"] > main > div > div[class~="md:grid-cols-3"] > div {
+  min-height: 244px;
+  padding: 32px var(--pub-gutter) 36px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+
+html.flat-theme [data-ui="home"] > main > div > div[class~="md:grid-cols-3"] > div + div {
+  border-top: 1px solid rgb(var(--ui-line));
+}
+
+@media (min-width: 768px) {
+  html.flat-theme [data-ui="home"] > main > div > div[class~="md:grid-cols-3"] > div {
+    padding: 32px;
+  }
+
+  html.flat-theme [data-ui="home"] > main > div > div[class~="md:grid-cols-3"] > div + div {
+    border-top: 0;
+    border-left: 1px solid rgb(var(--ui-line));
+  }
+}
+
+html.flat-theme [data-ui="home"] > main > div > div[class~="md:grid-cols-3"] > div:hover {
+  box-shadow: none;
+}
+
+html.flat-theme [data-ui="home"] > main > div > div[class~="md:grid-cols-3"] > div > div:first-child {
+  width: 32px;
+  height: 32px;
+  margin-bottom: 48px;
+  border: 1px solid rgb(var(--ui-line));
+  border-radius: var(--ui-radius-md);
+  background: rgb(var(--ui-surface));
+  box-shadow: none;
+  transform: none;
+}
+
+html.flat-theme [data-ui="home"] > main > div > div[class~="md:grid-cols-3"] > div > div:first-child svg {
+  width: 16px;
+  height: 16px;
+  color: rgb(var(--ui-ink-soft));
+}
+
+html.flat-theme [data-ui="home"] > main > div > div[class~="md:grid-cols-3"] h3 {
+  margin-bottom: 10px;
+  font: 500 20px/26px var(--ui-font);
+  letter-spacing: -0.02em;
+  color: rgb(var(--ui-ink));
+}
+
+html.flat-theme [data-ui="home"] > main > div > div[class~="md:grid-cols-3"] h3 + p {
+  max-width: 30rem;
+  font: 400 14px/22px var(--ui-font);
+  color: rgb(var(--ui-muted));
+}
+
+/* supported models: a section head on the content edge (36 / 500), provider chips with a neutral letter tile */
+html.flat-theme [data-ui="home"] > main > div > div[class~="mb-8"][class~="text-center"] {
+  margin-bottom: 0;
+  padding: clamp(72px, 10vh, 112px) var(--pub-gutter) 32px;
+  text-align: left;
+}
+
+html.flat-theme [data-ui="home"] > main > div > div[class~="mb-8"][class~="text-center"] h2 {
+  margin-bottom: 12px;
+  font: 500 clamp(28px, 2.6vw, 36px) / 1.15 var(--ui-font);
+  letter-spacing: -0.025em;
+  color: rgb(var(--ui-ink));
+}
+
+html.flat-theme [data-ui="home"] > main > div > div[class~="mb-8"][class~="text-center"] p {
+  font: 400 15px/24px var(--ui-font);
+  color: rgb(var(--ui-muted));
+}
+
+html.flat-theme [data-ui="home"] > main > div > div[class~="mb-16"] {
+  justify-content: flex-start;
+  margin-bottom: 0;
+  padding: 0 var(--pub-gutter) clamp(72px, 10vh, 112px);
+  gap: 8px;
+}
+
+html.flat-theme [data-ui="home"] > main > div > div[class~="mb-16"] > div {
+  height: 44px;
+  padding: 0 12px 0 9px;
+  gap: 10px;
+  border: 1px solid rgb(var(--ui-line));
+  border-radius: var(--ui-radius-md);
+  background: rgb(var(--ui-surface));
+  box-shadow: none;
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+
+html.flat-theme [data-ui="home"] > main > div > div[class~="mb-16"] > div[class~="opacity-60"] {
+  border-style: dashed;
+  border-color: rgb(var(--ui-line-strong));
+  background: transparent;
+}
+
+html.flat-theme [data-ui="home"] > main > div > div[class~="mb-16"] > div > div {
+  width: 26px;
+  height: 26px;
+  border: 1px solid rgb(var(--ui-line-strong));
+  border-radius: var(--ui-radius-sm);
+  background: rgb(var(--ui-subtle));
+}
+
+html.flat-theme [data-ui="home"] > main > div > div[class~="mb-16"] > div > div > span {
+  font: 600 11px/16px var(--ui-font-mono);
+  color: rgb(var(--ui-ink-soft));
+}
+
+html.flat-theme [data-ui="home"] > main > div > div[class~="mb-16"] > div > span:not([class~="rounded"]) {
+  font: 500 13px/19.5px var(--ui-font);
+  color: rgb(var(--ui-ink));
+}
+
+/* supported = a positive state (the accent-soft pill), coming soon = neutral */
+html.flat-theme [data-ui="home"] > main > div > div[class~="mb-16"] > div > span[class~="rounded"] {
+  padding: 1px 6px;
+  border-radius: 9999px;
+  background: rgb(var(--ui-primary-soft));
+  color: var(--ui-link);
+  font: 500 9.5px/14.25px var(--ui-font-mono);
+  letter-spacing: 0.025em;
+  text-transform: uppercase;
+}
+
+html.flat-theme [data-ui="home"] > main > div > div[class~="mb-16"] > div > span[class~="rounded"][class~="bg-gray-100"] {
+  background: rgb(var(--ui-subtle));
+  color: rgb(var(--ui-muted));
+}
+
+html.flat-theme [data-ui="home"] > footer {
+  position: relative;
+}
+
+html.flat-theme [data-ui="home"] > footer::before {
+  content: "";
+  position: absolute;
+  top: -1px;
+  left: 50%;
+  width: 100vw;
+  height: 1px;
+  transform: translateX(-50%);
+  background: rgb(var(--ui-line));
+}
+
+/* ------------------------------------------------------------------ home · compact preset (upstream data-testid) */
+/* the same top bar and footer; the centred block with the site logo, a 48 / 500 name, the subtitle and one ink
+   call to action */
+html.flat-theme [data-testid="compact-home"] {
+  background: rgb(var(--ui-canvas));
+  color: rgb(var(--ui-ink));
+}
+
+html.flat-theme [data-testid="compact-home"] > header {
+  position: sticky;
+  top: 0;
+  z-index: 30;
+  padding: 0;
+  border-bottom: 1px solid rgb(var(--ui-line));
+  background: rgb(var(--ui-canvas) / 0.92);
+  -webkit-backdrop-filter: blur(10px);
+  backdrop-filter: blur(10px);
+}
+
+html.flat-theme [data-testid="compact-home"] > header > nav {
+  max-width: 1240px;
+  min-height: 64px;
+  padding: 12px clamp(16px, 3vw, 32px);
+}
+
+html.flat-theme [data-testid="compact-home"] > header > nav > div:first-child {
+  gap: 10px;
+}
+
+html.flat-theme [data-testid="compact-home"] > header > nav > div:first-child > img {
+  width: 32px;
+  height: 32px;
+  border-radius: var(--ui-radius-lg);
+}
+
+html.flat-theme [data-testid="compact-home"] > header > nav > div:first-child > span {
+  font: 500 13px/20px var(--ui-font-mono);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: rgb(var(--ui-ink));
+}
+
+html.flat-theme [data-testid="compact-home"] > header > nav > div:last-child {
+  gap: 4px;
+}
+
+html.flat-theme [data-testid="compact-home"] > header > nav > div:last-child > :is(a, button)[class~="h-10"] {
+  min-width: 32px;
+  height: 32px;
+  padding: 0 8px;
+  border-radius: var(--ui-radius-md);
+  color: rgb(var(--ui-muted));
+  font: 500 13px/20px var(--ui-font);
+  transition: color var(--ui-duration) var(--ui-ease), background-color var(--ui-duration) var(--ui-ease);
+}
+
+html.flat-theme [data-testid="compact-home"] > header > nav > div:last-child > :is(a, button)[class~="h-10"]:hover {
+  background: rgb(var(--ui-subtle));
+  color: rgb(var(--ui-ink));
+}
+
+html.flat-theme [data-testid="compact-home"] > header > nav > div:last-child > :is(a, button)[class~="h-10"] svg {
+  width: 16px;
+  height: 16px;
+}
+
+html.flat-theme [data-testid="compact-home"] > header > nav > div:last-child > div[class~="relative"] > button {
+  height: 32px;
+  padding: 0 8px;
+  border-radius: var(--ui-radius-md);
+  color: rgb(var(--ui-muted));
+  font: 500 12.5px/18px var(--ui-font-mono);
+}
+
+html.flat-theme [data-testid="compact-home"] > header > nav > div:last-child > div[class~="relative"] > button:hover {
+  background: rgb(var(--ui-subtle));
+  color: rgb(var(--ui-ink));
+}
+
+html.flat-theme [data-testid="compact-home"] :is(header a[class~="bg-gray-900"], main a[class~="bg-primary-600"]) {
+  min-height: 0;
+  height: 30px;
+  padding: 0 12px;
+  border: 1px solid rgb(var(--ui-ink));
+  border-radius: var(--ui-radius-md);
+  background: rgb(var(--ui-ink));
+  color: rgb(var(--ui-on-ink));
+  font: 600 13px/19.5px var(--ui-font);
+  transition: background-color var(--ui-duration) var(--ui-ease);
+}
+
+html.flat-theme [data-testid="compact-home"] main a[class~="bg-primary-600"] {
+  height: 44px;
+  margin-top: 32px;
+  padding: 0 20px;
+  font-size: 14px;
+  line-height: 20px;
+}
+
+html.flat-theme [data-testid="compact-home"] :is(header a[class~="bg-gray-900"], main a[class~="bg-primary-600"]):hover {
+  background: rgb(var(--ui-ink) / 0.85);
+}
+
+html.flat-theme [data-testid="compact-home"] > main > div > img {
+  width: 48px;
+  height: 48px;
+  margin-bottom: 28px;
+  border-radius: var(--ui-radius-xl);
+}
+
+html.flat-theme [data-testid="compact-home"] > main h1 {
+  font: 500 clamp(36px, 4vw, 48px) / 1.1 var(--ui-font);
+  letter-spacing: -0.03em;
+  color: rgb(var(--ui-ink));
+}
+
+html.flat-theme [data-testid="compact-home"] > main h1 + p {
+  margin-top: 16px;
+  font: 400 16px/25px var(--ui-font);
+  color: rgb(var(--ui-muted));
+}
+
+html.flat-theme [data-testid="compact-home"] > footer {
+  padding: 20px clamp(16px, 3vw, 32px);
+  border-top: 1px solid rgb(var(--ui-line));
+  font: 400 12px/18px var(--ui-font-mono);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: rgb(var(--ui-muted));
+}
+
+html.flat-theme [data-testid="compact-home"] :is(a, button):focus-visible {
+  outline: 2px solid rgb(var(--ui-focus));
+  outline-offset: 2px;
+}
+
+/* ------------------------------------------------------------------ legal documents */
+/* the marketing site's plain page: a 760px column, a mono kicker (the document type), a 44 / 500 title, a mono meta
+   line, 14.5 / 1.75 body text; the type's glyph tile is decoration and goes */
+html.flat-theme [data-ui="legal"] > main {
+  max-width: calc(760px + 2 * var(--pub-gutter));
+  padding: clamp(48px, 9vh, 96px) var(--pub-gutter) clamp(72px, 10vh, 112px);
+}
+
+html.flat-theme [data-ui="legal"] > main > article > div:first-child {
+  margin-bottom: 32px;
+  padding-bottom: 0;
+  border-bottom: 0;
+}
+
+html.flat-theme [data-ui="legal"] > main > article > div:first-child > div > span:first-child {
+  display: none;
+}
+
+html.flat-theme [data-ui="legal"] > main > article > div:first-child p:first-child {
+  font: 400 12px/18px var(--ui-font-mono);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: rgb(var(--ui-muted));
+}
+
+html.flat-theme [data-ui="legal"] > main > article > div:first-child h1 {
+  margin-top: 14px;
+  font: 500 clamp(30px, 3.4vw, 44px) / 1.1 var(--ui-font);
+  letter-spacing: -0.03em;
+  color: rgb(var(--ui-ink));
+}
+
+html.flat-theme [data-ui="legal"] > main > article > div:first-child h1 + p {
+  margin-top: 16px;
+  font: 400 13px/20px var(--ui-font-mono);
+  color: rgb(var(--ui-muted));
+}
+
+html.flat-theme [data-ui="legal"] .legal-document-content {
+  font: 400 14.5px/1.75 var(--ui-font);
+  color: rgb(var(--ui-muted));
+}
+
+html.flat-theme [data-ui="legal"] .legal-document-content :is(p, li) {
+  color: rgb(var(--ui-muted));
+}
+
+html.flat-theme [data-ui="legal"] .legal-document-content p {
+  margin-bottom: 16px;
+}
+
+html.flat-theme [data-ui="legal"] .legal-document-content strong {
+  font-weight: 500;
+  color: rgb(var(--ui-ink));
+}
+
+html.flat-theme [data-ui="legal"] .legal-document-content h1 {
+  margin: 8px 0 20px;
+  padding-bottom: 0;
+  border-bottom: 0;
+  font: 500 24px/32px var(--ui-font);
+  letter-spacing: -0.02em;
+  color: rgb(var(--ui-ink));
+}
+
+html.flat-theme [data-ui="legal"] .legal-document-content h2 {
+  margin: 40px 0 12px;
+  font: 600 17px/25.5px var(--ui-font);
+  letter-spacing: -0.025em;
+  color: rgb(var(--ui-ink));
+}
+
+html.flat-theme [data-ui="legal"] .legal-document-content :is(h3, h4) {
+  margin: 28px 0 8px;
+  font: 600 14.5px/22px var(--ui-font);
+  color: rgb(var(--ui-ink));
+}
+
+html.flat-theme [data-ui="legal"] .legal-document-content a {
+  color: rgb(var(--ui-ink));
+  text-decoration: underline;
+  text-decoration-color: var(--ui-link);
+  text-underline-offset: 3px;
+  overflow-wrap: anywhere;
+  transition: color var(--ui-duration) var(--ui-ease);
+}
+
+html.flat-theme [data-ui="legal"] .legal-document-content a:hover {
+  color: var(--ui-link);
+}
+
+html.flat-theme [data-ui="legal"] .legal-document-content :is(ul, ol) {
+  margin-bottom: 16px;
+  padding-left: 20px;
+}
+
+html.flat-theme [data-ui="legal"] .legal-document-content li {
+  margin-bottom: 10px;
+}
+
+html.flat-theme [data-ui="legal"] .legal-document-content li::marker {
+  color: rgb(var(--ui-faint));
+}
+
+html.flat-theme [data-ui="legal"] .legal-document-content blockquote {
+  margin: 20px 0;
+  padding-left: 14px;
+  border-left: 2px solid rgb(var(--ui-line-strong));
+  color: rgb(var(--ui-muted));
+}
+
+html.flat-theme [data-ui="legal"] .legal-document-content code {
+  padding: 0;
+  border-radius: 0;
+  background: none;
+  font: 400 12.5px/1.6 var(--ui-font-mono);
+  color: rgb(var(--ui-ink));
+}
+
+html.flat-theme [data-ui="legal"] .legal-document-content pre {
+  margin: 16px 0;
+  padding: 16px;
+  border: 1px solid rgb(var(--ui-line));
+  border-radius: var(--ui-radius-lg);
+  background: rgb(var(--ui-surface));
+  color: rgb(var(--ui-ink));
+  font: 400 12.5px/1.625 var(--ui-font-mono);
+}
+
+html.flat-theme [data-ui="legal"] .legal-document-content table {
+  margin: 16px 0;
+  border: 1px solid rgb(var(--ui-line));
+  border-radius: var(--ui-radius-lg);
+  font-size: 12.5px;
+}
+
+html.flat-theme [data-ui="legal"] .legal-document-content th {
+  padding: 8px 12px;
+  border: 0;
+  border-bottom: 1px solid rgb(var(--ui-line));
+  background: rgb(var(--ui-subtle));
+  font-weight: 500;
+  color: rgb(var(--ui-muted));
+}
+
+html.flat-theme [data-ui="legal"] .legal-document-content td {
+  padding: 8px 12px;
+  border: 0;
+  border-bottom: 1px solid rgb(var(--ui-line));
+  color: rgb(var(--ui-muted));
+}
+
+html.flat-theme [data-ui="legal"] .legal-document-content hr {
+  margin: 32px 0;
+  border-color: rgb(var(--ui-line));
+}
+
+/* no text yet / unknown document / load error: the console's empty state (dashed control outline, radius 8) and
+   notice boxes */
+html.flat-theme [data-ui="legal"] article > div[class~="border-dashed"] {
+  display: grid;
+  min-height: 200px;
+  place-items: center;
+  border: 1px dashed rgb(var(--ui-line-strong));
+  border-radius: var(--ui-radius-lg);
+  background: transparent;
+  font: 400 13px/19.5px var(--ui-font);
+  color: rgb(var(--ui-muted));
+}
+
+html.flat-theme [data-ui="legal"] > main > section {
+  padding: 16px 20px;
+  border-radius: var(--ui-radius-lg);
+}
+
+html.flat-theme [data-ui="legal"] > main > section h1 {
+  font: 600 15px/22px var(--ui-font);
+}
+
+html.flat-theme [data-ui="legal"] > main > section p {
+  font: 400 13px/19.5px var(--ui-font);
+}
+
+html.flat-theme [data-ui="legal"] > main > section span[class~="h-10"] {
+  width: 32px;
+  height: 32px;
+  border: 1px solid rgb(var(--ui-line));
+  border-radius: var(--ui-radius-md);
+  background: rgb(var(--ui-subtle));
+  color: rgb(var(--ui-ink-soft));
+}
+
+html.flat-theme [data-ui="legal"] > main > div > div[class~="animate-spin"] {
+  width: 20px;
+  height: 20px;
+  border: 2px solid rgb(var(--ui-ink));
+  border-top-color: transparent;
+}
+
+/* ------------------------------------------------------------------ 404 */
+/* the marketing site's 404: a plain left-aligned column (a mono kicker "404", a 44 / 500 title, one muted line, the
+   actions), no bar or footer; the giant watermark, the glowing tile and the orbs go */
+html.flat-theme [data-ui="not-found"] {
+  padding: clamp(48px, 10vh, 120px) var(--pub-gutter);
+}
+
+html.flat-theme [data-ui="not-found"] > div:first-child[class~="pointer-events-none"] {
+  display: none;
+}
+
+html.flat-theme [data-ui="not-found"] > div[class~="z-10"] {
+  max-width: 720px;
+  text-align: left;
+}
+
+html.flat-theme [data-ui="not-found"] > div[class~="z-10"] > div:first-child {
+  margin-bottom: 18px;
+}
+
+html.flat-theme [data-ui="not-found"] > div[class~="z-10"] > div:first-child > div {
+  display: block;
+}
+
+html.flat-theme [data-ui="not-found"] > div[class~="z-10"] > div:first-child span {
+  font: 400 12px/18px var(--ui-font-mono);
+  letter-spacing: 0.08em;
+  color: rgb(var(--ui-muted));
+}
+
+html.flat-theme [data-ui="not-found"] > div[class~="z-10"] > div:first-child div[class~="absolute"] {
+  display: none;
+}
+
+html.flat-theme [data-ui="not-found"] > div[class~="z-10"] > div:nth-child(2) {
+  margin-bottom: 32px;
+}
+
+html.flat-theme [data-ui="not-found"] h1 {
+  margin-bottom: 16px;
+  font: 500 clamp(30px, 3.4vw, 44px) / 1.1 var(--ui-font);
+  letter-spacing: -0.03em;
+  color: rgb(var(--ui-ink));
+}
+
+html.flat-theme [data-ui="not-found"] h1 + p {
+  font: 400 15px/24px var(--ui-font);
+  color: rgb(var(--ui-muted));
+}
+
+html.flat-theme [data-ui="not-found"] > div[class~="z-10"] > div:nth-child(3) {
+  justify-content: flex-start;
+  gap: 10px;
+}
+
+html.flat-theme [data-ui="not-found"] .btn {
+  height: 38px;
+  padding: 0 16px;
+  gap: 8px;
+  border-radius: var(--ui-radius-md);
+  font: 600 14px/20px var(--ui-font);
+  box-shadow: none;
+  transform: none;
+  transition: background-color var(--ui-duration) var(--ui-ease), border-color var(--ui-duration) var(--ui-ease);
+}
+
+html.flat-theme [data-ui="not-found"] .btn.btn-secondary {
+  border: 1px solid rgb(var(--ui-line-strong));
+  background: rgb(var(--ui-surface));
+  color: rgb(var(--ui-ink));
+}
+
+html.flat-theme [data-ui="not-found"] .btn.btn-secondary:hover {
+  border-color: rgb(var(--ui-ink) / 0.25);
+  background: rgb(var(--ui-surface));
+}
+
+html.flat-theme [data-ui="not-found"] .btn.btn-primary {
+  border: 1px solid rgb(var(--ui-ink));
+  background: rgb(var(--ui-ink));
+  color: rgb(var(--ui-on-ink));
+}
+
+html.flat-theme [data-ui="not-found"] .btn.btn-primary:hover {
+  background: rgb(var(--ui-ink) / 0.85);
+}
+
+html.flat-theme [data-ui="not-found"] .btn svg {
+  width: 15px;
+  height: 15px;
+  margin: 0;
+}
+
+html.flat-theme [data-ui="not-found"] .btn.btn-secondary svg {
+  color: rgb(var(--ui-muted));
+}
+
+html.flat-theme [data-ui="not-found"] > div[class~="z-10"] > p:last-child {
+  margin-top: 28px;
+  font: 400 13px/19.5px var(--ui-font);
+  color: rgb(var(--ui-muted));
+}
+
+html.flat-theme [data-ui="not-found"] > div[class~="z-10"] > p:last-child a {
+  color: rgb(var(--ui-ink));
+  text-decoration: underline;
+  text-decoration-color: var(--ui-link);
+  text-underline-offset: 3px;
+}
+
+/* ------------------------------------------------------------------ key usage */
+/* the console's language on a public page: a centred 40 / 500 title, one 42px field with its ink button, KPI-style
+   cards (hairline, radius 8, mono labels), hairline tables with mono numbers; ring strokes in the ink */
+html.flat-theme [data-ui="key-usage"] > main {
+  padding: clamp(56px, 9vh, 96px) var(--pub-gutter) clamp(72px, 10vh, 112px);
+}
+
+html.flat-theme [data-ui="key-usage"] > main > div:first-child {
+  margin-bottom: 40px;
+}
+
+html.flat-theme [data-ui="key-usage"] > main > div:first-child h1 {
+  margin-bottom: 12px;
+  font: 500 clamp(30px, 3.4vw, 40px) / 1.15 var(--ui-font);
+  letter-spacing: -0.03em;
+  color: rgb(var(--ui-ink));
+}
+
+html.flat-theme [data-ui="key-usage"] > main > div:first-child p {
+  font: 400 15px/24px var(--ui-font);
+  color: rgb(var(--ui-muted));
+}
+
+html.flat-theme [data-ui="key-usage"] > main > div:nth-child(2) {
+  margin-bottom: 48px;
+}
+
+html.flat-theme [data-ui="key-usage"] > main > div:nth-child(2) > div:first-child {
+  gap: 8px;
+}
+
+html.flat-theme [data-ui="key-usage"] > main > div:nth-child(2) > div:first-child > div > div[class~="absolute"] {
+  display: none;
+}
+
+html.flat-theme [data-ui="key-usage"] input.input-ring {
+  height: 42px;
+  padding: 10px 44px 10px 14px;
+  border: 1px solid rgb(var(--ui-line-strong));
+  border-radius: var(--ui-radius-md);
+  background: rgb(var(--ui-surface));
+  color: rgb(var(--ui-ink));
+  font: 400 13px/20px var(--ui-font-mono);
+  transition: border-color var(--ui-duration) var(--ui-ease), box-shadow var(--ui-duration) var(--ui-ease);
+}
+
+html.flat-theme [data-ui="key-usage"] input.input-ring::placeholder {
+  color: rgb(var(--ui-faint));
+}
+
+html.flat-theme [data-ui="key-usage"] input.input-ring:focus {
+  border-color: rgb(var(--ui-focus));
+  outline: 2px solid transparent;
+  outline-offset: 2px;
+  box-shadow: inset 0 0 0 1px rgb(var(--ui-focus));
+}
+
+html.flat-theme [data-ui="key-usage"] > main > div:nth-child(2) > div:first-child > div > button {
+  right: 3px;
+  display: inline-flex;
+  width: 36px;
+  height: 36px;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--ui-radius-md);
+  color: rgb(var(--ui-muted));
+}
+
+html.flat-theme [data-ui="key-usage"] > main > div:nth-child(2) > div:first-child > div > button:hover {
+  color: rgb(var(--ui-ink));
+}
+
+html.flat-theme [data-ui="key-usage"] > main > div:nth-child(2) > div:first-child > div > button svg {
+  width: 16px;
+  height: 16px;
+}
+
+/* 查询: the console's ink button at the field's height */
+html.flat-theme [data-ui="key-usage"] > main > div:nth-child(2) > div:first-child > button {
+  height: 42px;
+  padding: 0 18px;
+  gap: 8px;
+  border: 1px solid rgb(var(--ui-ink));
+  border-radius: var(--ui-radius-md);
+  background: rgb(var(--ui-ink));
+  color: rgb(var(--ui-on-ink));
+  font: 600 14px/20px var(--ui-font);
+  transform: none;
+  transition: background-color var(--ui-duration) var(--ui-ease), opacity var(--ui-duration) var(--ui-ease);
+}
+
+html.flat-theme [data-ui="key-usage"] > main > div:nth-child(2) > div:first-child > button:hover:not(:disabled) {
+  background: rgb(var(--ui-ink) / 0.85);
+}
+
+html.flat-theme [data-ui="key-usage"] > main > div:nth-child(2) > div:first-child > button:disabled {
+  opacity: 0.5;
+}
+
+html.flat-theme [data-ui="key-usage"] > main > div:nth-child(2) > div:first-child > button svg {
+  width: 14px;
+  height: 14px;
+}
+
+html.flat-theme [data-ui="key-usage"] > main > div:nth-child(2) > p {
+  margin-top: 12px;
+  font: 400 12px/18px var(--ui-font);
+  color: rgb(var(--ui-muted));
+}
+
+/* the range picker after a query: a mono label, 28px range buttons (the current one in the ink) */
+html.flat-theme [data-ui="key-usage"] > main > div:nth-child(2) > div[class~="mt-4"] > div {
+  gap: 6px;
+}
+
+html.flat-theme [data-ui="key-usage"] > main > div:nth-child(2) > div[class~="mt-4"] > div > span {
+  margin-right: 4px;
+  font: 400 var(--ui-label-size) / var(--ui-label-leading) var(--ui-font-mono);
+  letter-spacing: var(--ui-label-tracking);
+  text-transform: uppercase;
+  color: rgb(var(--ui-label));
+}
+
+html.flat-theme [data-ui="key-usage"] > main > div:nth-child(2) > div[class~="mt-4"] button {
+  height: 28px;
+  padding: 0 10px;
+  border: 1px solid rgb(var(--ui-line-strong));
+  border-radius: var(--ui-radius-md);
+  background: rgb(var(--ui-surface));
+  color: rgb(var(--ui-ink-soft));
+  font: 600 12.5px/18px var(--ui-font);
+  transition: border-color var(--ui-duration) var(--ui-ease), color var(--ui-duration) var(--ui-ease);
+}
+
+html.flat-theme [data-ui="key-usage"] > main > div:nth-child(2) > div[class~="mt-4"] button:hover {
+  border-color: rgb(var(--ui-ink) / 0.25);
+  color: rgb(var(--ui-ink));
+}
+
+html.flat-theme [data-ui="key-usage"] > main > div:nth-child(2) > div[class~="mt-4"] button[class~="bg-primary-500"] {
+  border-color: rgb(var(--ui-ink));
+  background: rgb(var(--ui-ink));
+  color: rgb(var(--ui-on-ink));
+}
+
+html.flat-theme [data-ui="key-usage"] > main > div:nth-child(2) > div[class~="mt-4"] input.input-ring {
+  height: 28px;
+  padding: 0 8px;
+  font: 400 12.5px/18px var(--ui-font-mono);
+}
+
+/* results */
+html.flat-theme [data-ui="key-usage"] > main > div:nth-child(3) > div[class~="space-y-6"] > :not([hidden]) ~ :not([hidden]) {
+  margin-top: 12px;
+}
+
+html.flat-theme [data-ui="key-usage"] .fade-up {
+  animation-name: consoleSlideUp;
+  animation-duration: var(--ui-duration-slide);
+  animation-timing-function: var(--ui-ease-out);
+}
+
+html.flat-theme [data-ui="key-usage"] div[class~="inline-flex"][class~="rounded-full"][class~="px-5"] {
+  height: 30px;
+  padding: 0 12px;
+  gap: 8px;
+  border: 1px solid rgb(var(--ui-line-strong));
+  background: rgb(var(--ui-surface));
+  box-shadow: none;
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+
+html.flat-theme [data-ui="key-usage"] div[class~="inline-flex"][class~="rounded-full"][class~="px-5"] > span:first-child {
+  width: 6px;
+  height: 6px;
+  animation: none;
+}
+
+html.flat-theme [data-ui="key-usage"] div[class~="inline-flex"][class~="rounded-full"][class~="px-5"] > span:nth-child(2) {
+  font: 600 12.5px/18px var(--ui-font);
+  color: rgb(var(--ui-ink));
+}
+
+html.flat-theme [data-ui="key-usage"] div[class~="inline-flex"][class~="rounded-full"][class~="px-5"] > span:nth-child(n + 3) {
+  font: 400 12.5px/18px var(--ui-font);
+  color: rgb(var(--ui-muted));
+}
+
+/* cards: surface, hairline, radius 8, no blur, lift or shadow */
+html.flat-theme [data-ui="key-usage"] main div[class~="rounded-2xl"] {
+  border: 1px solid rgb(var(--ui-line));
+  border-radius: var(--ui-radius-lg);
+  background: rgb(var(--ui-surface));
+  box-shadow: none;
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+
+html.flat-theme [data-ui="key-usage"] main div[class~="rounded-2xl"][class~="p-8"] {
+  padding: 16px 20px 24px;
+}
+
+html.flat-theme [data-ui="key-usage"] main div[class~="rounded-2xl"]:hover {
+  box-shadow: none;
+}
+
+/* card titles: the mono label */
+html.flat-theme [data-ui="key-usage"] main div[class~="rounded-2xl"] h3 {
+  font: 500 var(--ui-label-size) / var(--ui-label-leading) var(--ui-font-mono);
+  letter-spacing: var(--ui-label-tracking);
+  text-transform: uppercase;
+  color: rgb(var(--ui-label));
+}
+
+html.flat-theme [data-ui="key-usage"] main div[class~="rounded-2xl"][class~="p-8"] > div:first-child {
+  margin-bottom: 16px;
+}
+
+html.flat-theme [data-ui="key-usage"] main div[class~="rounded-2xl"][class~="p-8"] > div:first-child > svg {
+  width: 14px;
+  height: 14px;
+  color: rgb(var(--ui-faint));
+}
+
+/* rings: the track in the grouped fill, the progress in the ink (the ring colours were decoration: each ring has
+   its title); the figures in the ring in mono */
+html.flat-theme [data-ui="key-usage"] main svg[class~="w-44"] > circle:first-child {
+  stroke: rgb(var(--ui-subtle));
+}
+
+html.flat-theme [data-ui="key-usage"] main svg[class~="w-44"] > circle {
+  stroke-width: 6;
+}
+
+html.flat-theme [data-ui="key-usage"] main svg[class~="w-44"] > circle.progress-ring {
+  stroke: rgb(var(--ui-ink));
+}
+
+/* the figures inside take the ring colour of their family inline (rgb(var(--theme-text-<family>-600))): the family
+   variables resolve to the ink here */
+html.flat-theme [data-ui="key-usage"] main svg[class~="w-44"] + div {
+  --theme-text-primary-600: var(--ui-ink);
+  --theme-text-indigo-600: var(--ui-ink);
+  --theme-text-success-600: var(--ui-ink);
+  --theme-text-warning-600: var(--ui-ink);
+}
+
+html.flat-theme [data-ui="key-usage"] main svg[class~="w-44"] + div > span[class~="text-3xl"] {
+  font: 600 30px/36px var(--ui-font);
+  letter-spacing: -0.02em;
+  color: rgb(var(--ui-ink));
+}
+
+html.flat-theme [data-ui="key-usage"] main svg[class~="w-44"] + div > span[class~="text-2xl"] {
+  font: 600 22px/28px var(--ui-font-mono);
+  letter-spacing: -0.01em;
+}
+
+html.flat-theme [data-ui="key-usage"] main svg[class~="w-44"] + div > span[class~="text-xs"] {
+  font: 400 var(--ui-label-size) / var(--ui-label-leading) var(--ui-font-mono);
+  letter-spacing: var(--ui-label-tracking);
+  text-transform: uppercase;
+  color: rgb(var(--ui-label));
+}
+
+html.flat-theme [data-ui="key-usage"] main svg[class~="w-44"] + div > span[class~="text-sm"] {
+  font: 600 13px/19.5px var(--ui-font-mono);
+}
+
+html.flat-theme [data-ui="key-usage"] main svg[class~="w-44"] + div > p {
+  font: 400 11px/16.5px var(--ui-font-mono);
+  color: rgb(var(--ui-muted));
+}
+
+/* card heads with a hairline under them; detail rows: a neutral 26px glyph tile, a 13px label, the mono value
+   (status colours kept) */
+html.flat-theme [data-ui="key-usage"] main div[class~="rounded-2xl"] > div[class~="px-8"][class~="py-5"] {
+  padding: 12px 20px;
+  border-bottom: 1px solid rgb(var(--ui-line));
+}
+
+html.flat-theme [data-ui="key-usage"] main div[class~="divide-y"] > div {
+  padding: 11px 20px;
+  border-color: rgb(var(--ui-line));
+}
+
+html.flat-theme [data-ui="key-usage"] main div[class~="divide-y"] > div > div > div[class~="w-8"] {
+  width: 26px;
+  height: 26px;
+  border: 1px solid rgb(var(--ui-line));
+  border-radius: var(--ui-radius-md);
+  background: rgb(var(--ui-subtle));
+}
+
+html.flat-theme [data-ui="key-usage"] main div[class~="divide-y"] > div > div > div[class~="w-8"] > svg {
+  width: 13px;
+  height: 13px;
+  color: rgb(var(--ui-ink-soft));
+}
+
+html.flat-theme [data-ui="key-usage"] main div[class~="divide-y"] > div > div > span {
+  font: 400 13px/19.5px var(--ui-font);
+  color: rgb(var(--ui-ink-soft));
+}
+
+html.flat-theme [data-ui="key-usage"] main div[class~="divide-y"] > div > span {
+  font: 600 13px/19.5px var(--ui-font-mono);
+}
+
+/* token totals: already a hairline lattice upstream; mono labels and figures */
+html.flat-theme [data-ui="key-usage"] main div[class~="gap-px"] {
+  background: rgb(var(--ui-line));
+}
+
+html.flat-theme [data-ui="key-usage"] main div[class~="gap-px"] > div {
+  padding: 12px 20px;
+  background: rgb(var(--ui-surface));
+}
+
+html.flat-theme [data-ui="key-usage"] main div[class~="gap-px"] > div > div:first-child {
+  margin-bottom: 4px;
+  font: 400 var(--ui-label-size) / var(--ui-label-leading) var(--ui-font-mono);
+  letter-spacing: var(--ui-label-tracking);
+  text-transform: uppercase;
+  color: rgb(var(--ui-label));
+}
+
+html.flat-theme [data-ui="key-usage"] main div[class~="gap-px"] > div > div:last-child {
+  font: 600 15px/22.5px var(--ui-font-mono);
+  color: rgb(var(--ui-ink));
+}
+
+/* the 7 / 30 / 90-day switch: the console's segmented control (hairline frame, ink thumb) */
+html.flat-theme [data-ui="key-usage"] main div[class~="inline-flex"][class~="rounded-lg"][class~="p-0.5"] {
+  padding: 2px;
+  border: 1px solid rgb(var(--ui-line));
+  border-radius: var(--ui-radius-lg);
+  background: rgb(var(--ui-surface));
+}
+
+html.flat-theme [data-ui="key-usage"] main div[class~="inline-flex"][class~="rounded-lg"][class~="p-0.5"] > button {
+  padding: 5px 12px;
+  border-radius: var(--ui-radius-md);
+  color: rgb(var(--ui-muted));
+  font: 600 12.5px/18px var(--ui-font);
+  transition: color var(--ui-duration-slide) var(--ui-ease-out), background-color var(--ui-duration-slide) var(--ui-ease-out);
+}
+
+html.flat-theme [data-ui="key-usage"] main div[class~="inline-flex"][class~="rounded-lg"][class~="p-0.5"] > button:hover {
+  background: transparent;
+  color: rgb(var(--ui-ink));
+}
+
+html.flat-theme [data-ui="key-usage"] main div[class~="inline-flex"][class~="rounded-lg"][class~="p-0.5"] > button[class~="bg-primary-500"] {
+  background: rgb(var(--ui-ink));
+  color: rgb(var(--ui-on-ink));
+}
+
+/* tables: mono labels in the head, 12.5px mono cells, hairline rows */
+html.flat-theme [data-ui="key-usage"] main table thead tr {
+  border-color: rgb(var(--ui-line));
+  background: rgb(var(--ui-surface));
+}
+
+html.flat-theme [data-ui="key-usage"] main table th {
+  padding: 12px;
+  font: 500 var(--ui-label-size) / var(--ui-label-leading) var(--ui-font-mono);
+  letter-spacing: var(--ui-label-tracking);
+  text-transform: uppercase;
+  color: rgb(var(--ui-label));
+  white-space: nowrap;
+}
+
+html.flat-theme [data-ui="key-usage"] main table td {
+  padding: 10px 12px;
+  font: 400 12.5px/19.5px var(--ui-font-mono);
+  color: rgb(var(--ui-ink-soft));
+}
+
+html.flat-theme [data-ui="key-usage"] main table :is(th, td):first-child {
+  padding-left: 20px;
+}
+
+html.flat-theme [data-ui="key-usage"] main table :is(th, td):last-child {
+  padding-right: 20px;
+}
+
+html.flat-theme [data-ui="key-usage"] main table td:is(:first-child, :last-child) {
+  color: rgb(var(--ui-ink));
+}
+
+html.flat-theme [data-ui="key-usage"] main table tbody tr {
+  border-color: rgb(var(--ui-line));
+}
+
+html.flat-theme [data-ui="key-usage"] main div[class~="rounded-2xl"] > div[class~="px-8"][class~="py-8"] {
+  padding: 32px 20px;
+  font: 400 13px/19.5px var(--ui-font);
+  color: rgb(var(--ui-muted));
+}
+
+/* loading: the console skeleton (the grouped fill with a faint ink sheen) */
+html.flat-theme [data-ui="key-usage"] .skeleton {
+  border-radius: var(--ui-radius-md);
+  background: linear-gradient(90deg, rgb(var(--ui-subtle)) 25%, rgb(var(--ui-ink) / 0.06) 50%, rgb(var(--ui-subtle)) 75%);
+  background-size: 400% 100%;
+}
+
+/* end public */

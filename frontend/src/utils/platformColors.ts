@@ -99,7 +99,7 @@ const ACCENT: Record<Platform, string> = {
   opencode_go: accent('warning', '245 158 11'), // amber-500 #f59e0b
   composite: accent('teal', '6 182 212'), // cyan-500 #06b6d4
 }
-const ACCENT_DEFAULT = accent('primary', '20 184 166') // primary-500 (teal #14b8a6; Apple blue under the theme)
+const ACCENT_DEFAULT = accent('primary', '20 184 166') // primary-500 (teal #14b8a6; the console accent under the theme)
 
 // ── Accent bar (gradient) ───────────────────────────────────────────
 const ACCENT_BAR: Record<Platform, string> = {

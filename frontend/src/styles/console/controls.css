@@ -1,1 +1,774 @@
-/* Console theme · controls built from utilities: filter pills, segmented controls, switch copies, option cards, native dates, Select / DatePicker scoped classes (owner: the controls agent; html.flat-theme selectors, tokens from tokens.css, new data-ui hooks registered here). */
+/* Console theme · controls (owner: the controls agent). Plain CSS, loaded after the Tailwind output: every selector
+ * starts with html.flat-theme, so the theme switched off renders upstream, and its specificity (>= 0,2,1) outranks the
+ * page utilities, upstream's dark: forms and the lazily loaded scoped styles it has to restyle.
+ *
+ * Source: the Experiential Labs console, measured 2026-09-28 (artifacts/tmp/ui-el/ref/console/REF-CONSOLE.md §5,
+ * §8.3-§8.6, §8.18, §11, §13). The recipes (.btn*, .input*, .tabs / .tab, .switch*) are restated at the end of
+ * style.css; this file draws what the recipes cannot reach:
+ *   1. focus of every control           5. switches (Toggle.vue, its inline copies, the peer switches)
+ *   2. icons inside controls            6. checkboxes and radios
+ *   3. fields: focus, error, search,    7. segmented controls built from utilities, the settings tab strip,
+ *      native dates, utility labels        underline tabs
+ *   4. Select.vue / DateRangePicker     8. option cards, filter pills
+ *      triggers, the picker's controls  9. links
+ *
+ * Contract with the other console files: an element that carries a data-ui attribute belongs to whoever added it;
+ * the utility-pattern hooks here skip it (:not([data-ui])). data-ui hooks defined here, for anyone to use:
+ *   data-ui="seg"          a segmented control (its buttons are the segments; the current one carries
+ *                          aria-pressed / aria-selected / aria-checked="true" or data-active)
+ *   data-ui="filter-pill"  a filter trigger ("Provider v"); data-ui="filter-count" on its count badge marks it active
+ * Template lines touched for this file: none (the hooks below are upstream class names, data-test / data-testid
+ * attributes and Lucide classes that Icon.vue already renders).
+ * Custom properties: --ctl-* below (not tokens; tokens.css belongs to the coordinator). */
+
+html.flat-theme {
+  /* glyphs inside controls (search, chevrons, calendar): the reference's muted-2 #a3a3a3 is 2.5:1 on the surface;
+     the 3:1 form-control line keeps them as light as a glyph can be */
+  --ctl-glyph: var(--ui-control-line);
+  /* switch: the track when off (the reference's ink at 20 % is 1.6:1) and the knob */
+  --ctl-switch-off: var(--ui-control-line);
+  --ctl-knob: var(--ui-surface);
+  /* segmented control: frame, inset, segment metrics (REF-CONSOLE §8.5) */
+  --ctl-seg-frame: var(--ui-line);
+  --ctl-seg-inset: 2px;
+  --ctl-seg-pad-y: 0.375rem;
+  --ctl-seg-pad-x: 0.875rem;
+}
+
+html.flat-theme.dark {
+  /* the reference's dark muted-2 #8c8c8c (5.2:1 on the surface) */
+  --ctl-glyph: 140 140 140;
+  /* the reference Toggle's knob is the page ground */
+  --ctl-knob: var(--ui-canvas);
+}
+
+/* ================================================================== 1 · focus */
+
+/* Keyboard focus draws a 2px accent outline 2px out (REF-CONSOLE §13 / REF-PUBLIC §1.7: the reference's native ring
+   is invisible on its own ink button). A pointer focus draws nothing: upstream's :focus rings are removed. Fields
+   (inputs, select triggers) take an accent edge instead (§3, §4). */
+html.flat-theme :is(.btn, .btn-ghost, .btn-icon, .tab, .settings-tab, .channel-tab, .date-picker-preset, .date-picker-apply,
+    [data-testid="usage-detail-tab"], [data-ui~="filter-pill"], [data-ui~="seg"] > button):focus {
+  box-shadow: none;
+}
+
+html.flat-theme :is(.btn, .btn-ghost, .btn-icon, .tab, .settings-tab, .channel-tab, .date-picker-preset, .date-picker-apply,
+    [data-testid="usage-detail-tab"], [data-ui~="filter-pill"], [data-ui~="seg"] > button):focus-visible {
+  outline: 2px solid rgb(var(--ui-focus));
+  outline-offset: 2px;
+  box-shadow: none;
+}
+
+/* ================================================================== 2 · icons inside controls */
+
+/* The reference sets 14px glyphs in its 30px buttons (13px in the 26px size, 16px in the 38px one); payment buttons
+   keep their brand marks. Spinners follow (the reference's loading ring is 14px). */
+html.flat-theme :is(.btn, .btn-icon):not(.btn-stripe, .btn-airwallex, .btn-alipay, .btn-wxpay) svg {
+  width: 0.875rem;
+  height: 0.875rem;
+  flex-shrink: 0;
+}
+
+/* the button's 8px gap is the only space between a glyph and its label (upstream also puts mr-* / ml-* on the
+   glyphs, doubling it) */
+html.flat-theme .btn > svg {
+  margin-inline: 0;
+}
+
+html.flat-theme .btn.btn-sm svg {
+  width: 0.8125rem;
+  height: 0.8125rem;
+}
+
+html.flat-theme .btn.btn-lg svg {
+  width: 1rem;
+  height: 1rem;
+}
+
+/* ================================================================== 3 · fields */
+
+/* 3.1 Focus: an accent edge 2px wide (the 1px border plus a 1px inset), no halo; the transparent outline keeps a
+   ring in forced-colours mode. Error fields take the danger colour for both. */
+html.flat-theme .input:focus {
+  border-color: rgb(var(--ui-focus));
+  outline: 2px solid transparent;
+  outline-offset: 2px;
+  box-shadow: inset 0 0 0 1px rgb(var(--ui-focus));
+}
+
+html.flat-theme .input.input-error:not(:focus) {
+  box-shadow: none;
+}
+
+html.flat-theme .input.input-error:focus {
+  border-color: rgb(var(--ui-danger));
+  box-shadow: inset 0 0 0 1px rgb(var(--ui-danger));
+}
+
+/* 3.2 Search fields: SearchInput.vue and the inline pattern (an absolute Lucide search glyph beside an .input inside
+   a relative wrapper) are the reference's 30px search (REF-CONSOLE §8.4): 4.25px + the 19.5px line + 1px edges,
+   32px left inset, the 13px glyph 10px in. */
+html.flat-theme :is(div, label, form)[class~="relative"]:has(> svg.lucide-search, > div > svg.lucide-search) > input.input {
+  padding-top: 0.265625rem;
+  padding-bottom: 0.265625rem;
+  padding-left: 2rem;
+}
+
+html.flat-theme :is(div, label, form)[class~="relative"] > svg.lucide-search[class~="absolute"] {
+  left: 0.625rem;
+  width: 0.8125rem;
+  height: 0.8125rem;
+  color: rgb(var(--ctl-glyph));
+}
+
+html.flat-theme :is(div, label, form)[class~="relative"] > div[class~="absolute"]:has(> svg.lucide-search) {
+  padding-left: 0.625rem;
+}
+
+html.flat-theme :is(div, label, form)[class~="relative"] > div[class~="absolute"] > svg.lucide-search {
+  width: 0.8125rem;
+  height: 0.8125rem;
+  color: rgb(var(--ctl-glyph));
+}
+
+/* 3.3 Native date / time fields: the picker glyph at 60 %, full on hover (the field's outline is behaviour.css B3.2) */
+html.flat-theme input:is([type="date"], [type="datetime-local"], [type="time"], [type="month"], [type="week"])::-webkit-calendar-picker-indicator {
+  cursor: pointer;
+  opacity: 0.6;
+  transition: opacity var(--ui-duration) var(--ui-ease);
+}
+
+html.flat-theme input:is([type="date"], [type="datetime-local"], [type="time"], [type="month"], [type="week"]):hover::-webkit-calendar-picker-indicator {
+  opacity: 1;
+}
+
+/* 3.4 The large section titles written with the label recipe (`input-label mb-0 text-base font-semibold`, the
+   account dialogs' quota group) stay titles: sans, sentence case, ink. */
+html.flat-theme .input-label[class~="text-base"] {
+  font-family: var(--ui-font);
+  letter-spacing: normal;
+  text-transform: none;
+  color: rgb(var(--ui-ink));
+}
+
+/* 3.5 Field labels written with utilities instead of the recipe (a block, font-medium, text-sm / text-xs label with
+   a mb-1 / mb-1.5 / mb-2 gap above its field: 系统设置 and other forms) read as the label recipe too, so a form has one
+   label language. Labels that wrap their own control are left alone. */
+html.flat-theme label[class~="block"][class~="font-medium"]:is([class~="text-sm"], [class~="text-xs"]):is([class~="mb-1"], [class~="mb-1.5"], [class~="mb-2"]):not(:has(input, select, textarea, button)) {
+  margin-bottom: 0.5rem;
+  font-family: var(--ui-font-mono);
+  font-size: var(--ui-label-size);
+  line-height: var(--ui-label-leading);
+  font-weight: 600;
+  letter-spacing: var(--ui-label-tracking);
+  text-transform: uppercase;
+  color: rgb(var(--ui-label));
+}
+
+/* ================================================================== 4 · select and date-range triggers */
+
+/* 4.1 Select.vue's trigger is the reference's house-select (REF-CONSOLE §8.4): 34px, 10px in (9px before the
+   chevron), 13px / 600 ink, radius 6, the control outline; the focus line on hover and while open; an accent edge on
+   keyboard focus; the 12px chevron. The doubled class outranks the scoped rules and their dark: forms
+   (.dark .select-trigger[data-v]:hover is 0,4,0). */
+html.flat-theme .select-trigger.select-trigger {
+  gap: 0.375rem;
+  border-radius: var(--ui-radius-md);
+  border-color: rgb(var(--ui-line-strong));
+  background-color: rgb(var(--ui-surface));
+  padding: 0.390625rem 0.5625rem 0.390625rem 0.625rem;
+  font-size: 0.8125rem;
+  line-height: 1.21875rem;
+  font-weight: 600;
+  color: rgb(var(--ui-ink));
+  box-shadow: none;
+  transition-property: color, border-color, box-shadow;
+  transition-duration: var(--ui-duration);
+  transition-timing-function: var(--ui-ease);
+}
+
+html.flat-theme .select-trigger.select-trigger:focus {
+  border-color: rgb(var(--ui-line-strong));
+  outline: 2px solid transparent;
+  outline-offset: 2px;
+  box-shadow: none;
+}
+
+html.flat-theme .select-trigger.select-trigger:hover,
+html.flat-theme .select-trigger.select-trigger.select-trigger-open {
+  border-color: rgb(var(--ui-line-focus));
+}
+
+html.flat-theme .select-trigger.select-trigger:focus-visible {
+  border-color: rgb(var(--ui-focus));
+  box-shadow: inset 0 0 0 1px rgb(var(--ui-focus));
+}
+
+html.flat-theme .select-trigger.select-trigger.select-trigger-error {
+  border-color: rgb(var(--ui-danger));
+}
+
+html.flat-theme .select-trigger.select-trigger.select-trigger-error:focus-visible {
+  box-shadow: inset 0 0 0 1px rgb(var(--ui-danger));
+}
+
+html.flat-theme .select-trigger.select-trigger.select-trigger-disabled {
+  cursor: not-allowed;
+  border-color: rgb(var(--ui-line-strong));
+  background-color: rgb(var(--ui-surface));
+  opacity: 0.55;
+}
+
+html.flat-theme .select-trigger .select-icon,
+html.flat-theme .select-trigger .select-clear {
+  display: inline-flex;
+  color: rgb(var(--ctl-glyph));
+}
+
+html.flat-theme .select-trigger .select-clear:hover {
+  color: rgb(var(--ui-ink));
+}
+
+html.flat-theme .select-trigger :is(.select-icon, .select-clear) > svg {
+  width: 0.75rem;
+  height: 0.75rem;
+}
+
+/* 4.2 DateRangePicker's trigger: the same field (a 14px calendar glyph, the value at 600, the 12px chevron). */
+html.flat-theme .date-picker-trigger.date-picker-trigger {
+  gap: 0.375rem;
+  border-radius: var(--ui-radius-md);
+  border-color: rgb(var(--ui-line-strong));
+  background-color: rgb(var(--ui-surface));
+  padding: 0.390625rem 0.5625rem 0.390625rem 0.625rem;
+  font-size: 0.8125rem;
+  line-height: 1.21875rem;
+  color: rgb(var(--ui-ink));
+  box-shadow: none;
+  transition-property: color, border-color, box-shadow;
+  transition-duration: var(--ui-duration);
+  transition-timing-function: var(--ui-ease);
+}
+
+html.flat-theme .date-picker-trigger.date-picker-trigger:focus {
+  border-color: rgb(var(--ui-line-strong));
+  outline: 2px solid transparent;
+  outline-offset: 2px;
+  box-shadow: none;
+}
+
+html.flat-theme .date-picker-trigger.date-picker-trigger:hover,
+html.flat-theme .date-picker-trigger.date-picker-trigger.date-picker-trigger-open {
+  border-color: rgb(var(--ui-line-focus));
+}
+
+html.flat-theme .date-picker-trigger.date-picker-trigger:focus-visible {
+  border-color: rgb(var(--ui-focus));
+  box-shadow: inset 0 0 0 1px rgb(var(--ui-focus));
+}
+
+html.flat-theme .date-picker-trigger .date-picker-value {
+  font-weight: 600;
+}
+
+html.flat-theme .date-picker-trigger :is(.date-picker-icon, .date-picker-chevron) {
+  display: inline-flex;
+  color: rgb(var(--ctl-glyph));
+}
+
+html.flat-theme .date-picker-trigger .date-picker-icon > svg {
+  width: 0.875rem;
+  height: 0.875rem;
+}
+
+html.flat-theme .date-picker-trigger .date-picker-chevron > svg {
+  width: 0.75rem;
+  height: 0.75rem;
+}
+
+/* 4.3 Inside the picker (the panel itself is overlays.css'): presets as quiet 30px choices, the current one on the
+   accent tint (the reference's selected filter); mono field labels; 30px date fields; the apply button is the ink
+   primary. */
+html.flat-theme .date-picker-preset.date-picker-preset {
+  border-radius: var(--ui-radius-md);
+  padding: 0.3125rem 0.625rem;
+  font-size: 0.78125rem;
+  line-height: 1.171875rem;
+  font-weight: 500;
+  color: rgb(var(--ui-muted));
+  transition-property: color, background-color;
+  transition-duration: var(--ui-duration);
+  transition-timing-function: var(--ui-ease);
+}
+
+html.flat-theme .date-picker-preset.date-picker-preset:hover {
+  background-color: rgb(var(--ui-subtle));
+  color: rgb(var(--ui-ink));
+}
+
+html.flat-theme .date-picker-preset.date-picker-preset.date-picker-preset-active {
+  background-color: rgb(var(--ui-primary-soft));
+  color: var(--ui-link);
+  font-weight: 600;
+}
+
+html.flat-theme .date-picker-label.date-picker-label {
+  margin-bottom: 0.375rem;
+  font-family: var(--ui-font-mono);
+  font-size: var(--ui-label-size);
+  line-height: var(--ui-label-leading);
+  font-weight: 600;
+  letter-spacing: var(--ui-label-tracking);
+  text-transform: uppercase;
+  color: rgb(var(--ui-label));
+}
+
+html.flat-theme .date-picker-input.date-picker-input {
+  border-radius: var(--ui-radius-md);
+  border-color: rgb(var(--ui-line-strong));
+  background-color: rgb(var(--ui-surface));
+  padding: 0.265625rem 0.5rem;
+  font-size: 0.8125rem;
+  line-height: 1.21875rem;
+  color: rgb(var(--ui-ink));
+  box-shadow: none;
+}
+
+html.flat-theme .date-picker-input.date-picker-input:focus {
+  border-color: rgb(var(--ui-focus));
+  outline: 2px solid transparent;
+  outline-offset: 2px;
+  box-shadow: inset 0 0 0 1px rgb(var(--ui-focus));
+}
+
+html.flat-theme .date-picker-apply.date-picker-apply,
+html.flat-theme .date-picker-apply.date-picker-apply:hover {
+  min-height: var(--ui-control-h);
+  border: 1px solid rgb(var(--ui-ink));
+  border-radius: var(--ui-radius-md);
+  background-color: rgb(var(--ui-ink));
+  padding: 0.265625rem 0.75rem;
+  font-size: 0.8125rem;
+  line-height: 1.21875rem;
+  font-weight: 600;
+  color: rgb(var(--ui-on-ink));
+}
+
+/* ================================================================== 5 · switches */
+
+/* The reference settings Toggle (REF-CONSOLE §8.4): 34 x 20, a 16px knob 2px in, on = ink (near-white in dark),
+   150ms. Off = the 3:1 form-control line (the reference's ink at 20 % is 1.6:1 on the surface). Toggle.vue and its
+   inline copies are a rounded-full button with a 2px transparent edge (h-6 w-11, h-5 w-9; h-4 w-7 keeps its 28 x 16
+   size) holding a knob span; on = bg-primary-500 / -600. */
+html.flat-theme button[class~="rounded-full"][class~="border-2"][class~="border-transparent"]:is([class~="h-6"][class~="w-11"], [class~="h-5"][class~="w-9"], [class~="h-4"][class~="w-7"]) {
+  background-color: rgb(var(--ctl-switch-off));
+  box-shadow: none;
+  transition-property: background-color, opacity;
+  transition-duration: var(--ui-duration);
+  transition-timing-function: var(--ui-ease);
+}
+
+html.flat-theme button[class~="rounded-full"][class~="border-2"][class~="border-transparent"]:is([class~="h-6"][class~="w-11"], [class~="h-5"][class~="w-9"]) {
+  height: 1.25rem;
+  width: 2.125rem;
+}
+
+html.flat-theme button[class~="rounded-full"][class~="border-2"][class~="border-transparent"]:is([class~="h-6"][class~="w-11"], [class~="h-5"][class~="w-9"], [class~="h-4"][class~="w-7"]):is([class~="bg-primary-500"], [class~="bg-primary-600"]) {
+  background-color: rgb(var(--ui-ink));
+}
+
+html.flat-theme button[class~="rounded-full"][class~="border-2"][class~="border-transparent"]:is([class~="h-6"][class~="w-11"], [class~="h-5"][class~="w-9"], [class~="h-4"][class~="w-7"]) > span[class~="rounded-full"] {
+  background-color: rgb(var(--ctl-knob));
+  box-shadow: none;
+  transition-property: transform;
+  transition-duration: var(--ui-duration);
+  transition-timing-function: var(--ui-ease);
+}
+
+html.flat-theme button[class~="rounded-full"][class~="border-2"][class~="border-transparent"]:is([class~="h-6"][class~="w-11"], [class~="h-5"][class~="w-9"]) > span[class~="rounded-full"] {
+  height: 1rem;
+  width: 1rem;
+}
+
+html.flat-theme button[class~="rounded-full"][class~="border-2"][class~="border-transparent"]:is([class~="h-6"][class~="w-11"], [class~="h-5"][class~="w-9"]) > span[class~="rounded-full"]:is([class~="translate-x-5"], [class~="translate-x-4"]) {
+  --tw-translate-x: 0.875rem;
+}
+
+html.flat-theme button[class~="rounded-full"][class~="border-2"][class~="border-transparent"]:is([class~="h-6"][class~="w-11"], [class~="h-5"][class~="w-9"], [class~="h-4"][class~="w-7"]):disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+html.flat-theme button[class~="rounded-full"][class~="border-2"][class~="border-transparent"]:is([class~="h-6"][class~="w-11"], [class~="h-5"][class~="w-9"], [class~="h-4"][class~="w-7"]):focus {
+  box-shadow: none;
+}
+
+html.flat-theme button[class~="rounded-full"][class~="border-2"][class~="border-transparent"]:is([class~="h-6"][class~="w-11"], [class~="h-5"][class~="w-9"], [class~="h-4"][class~="w-7"]):focus-visible {
+  outline: 2px solid rgb(var(--ui-focus));
+  outline-offset: 2px;
+}
+
+/* The peer switches (a visually hidden checkbox followed by a track whose ::after is the knob). */
+html.flat-theme input[type="checkbox"][class~="peer"] + div[class~="peer"][class~="rounded-full"]:is([class~="w-9"], [class~="w-11"]) {
+  height: 1.25rem;
+  width: 2.125rem;
+  background-color: rgb(var(--ctl-switch-off));
+  box-shadow: none;
+  transition: background-color var(--ui-duration) var(--ui-ease);
+}
+
+html.flat-theme input[type="checkbox"][class~="peer"] + div[class~="peer"][class~="rounded-full"]:is([class~="w-9"], [class~="w-11"])::after {
+  top: 2px;
+  left: 2px;
+  height: 1rem;
+  width: 1rem;
+  border-width: 0;
+  background-color: rgb(var(--ctl-knob));
+  transition: transform var(--ui-duration) var(--ui-ease);
+}
+
+html.flat-theme input[type="checkbox"][class~="peer"]:checked + div[class~="peer"][class~="rounded-full"]:is([class~="w-9"], [class~="w-11"]) {
+  background-color: rgb(var(--ui-ink));
+}
+
+html.flat-theme input[type="checkbox"][class~="peer"]:checked + div[class~="peer"][class~="rounded-full"]:is([class~="w-9"], [class~="w-11"])::after {
+  --tw-translate-x: 0.875rem;
+}
+
+html.flat-theme input[type="checkbox"][class~="peer"]:focus-visible + div[class~="peer"][class~="rounded-full"]:is([class~="w-9"], [class~="w-11"]) {
+  outline: 2px solid rgb(var(--ui-focus));
+  outline-offset: 2px;
+  box-shadow: none;
+}
+
+/* ================================================================== 6 · checkboxes and radios */
+
+/* Native controls with the accent (accent-color is set on the root in tokens.css), as the reference does; 14px on
+   desktop like its row checkboxes (the 16px upstream size stays below 901px, where the reference grows them to 20).
+   Upstream's focus:ring utilities are replaced by the accent outline. */
+@media (min-width: 901px) {
+  html.flat-theme input:is([type="checkbox"], [type="radio"])[class~="h-4"][class~="w-4"] {
+    width: 0.875rem;
+    height: 0.875rem;
+  }
+}
+
+html.flat-theme input:is([type="checkbox"], [type="radio"]):focus {
+  box-shadow: none;
+}
+
+html.flat-theme input:is([type="checkbox"], [type="radio"]):focus-visible {
+  outline: 2px solid rgb(var(--ui-focus));
+  outline-offset: 2px;
+}
+
+/* ================================================================== 7 · segmented controls and tabs */
+
+/* 7.1 Segmented controls built from utilities (upstream's pattern: a gray-100 / gray-50 box with a 4px or 2px inset
+   whose children are all buttons, the current one bg-white with a shadow) become the reference's SlidingTabs
+   (REF-CONSOLE §8.5): a 1px structural frame on the surface, radius 8, a 2px inset, no gaps; segments 14 x 6px,
+   12.5px / 600, muted, ink on hover; the current segment is ink with on-ink text (near-white with ink text in dark),
+   fading in 200ms (upstream has no thumb to slide). The platform hues of the account dialogs' segments go with it
+   (monochrome identity, D3). data-ui="seg" opts a fork component into the same look. */
+html.flat-theme :is(div, nav):is([class~="bg-gray-100"], [class~="bg-gray-50"]):is([class~="p-1"], [class~="p-0.5"]):is([class~="rounded-md"], [class~="rounded-lg"], [class~="rounded-xl"]):has(> button):not(:has(> :not(button))):not([data-ui]),
+html.flat-theme [data-ui~="seg"] {
+  gap: 0;
+  border: 1px solid rgb(var(--ctl-seg-frame));
+  border-radius: var(--ui-radius-lg);
+  background-color: rgb(var(--ui-surface));
+  padding: var(--ctl-seg-inset);
+  box-shadow: none;
+}
+
+html.flat-theme :is(div, nav):is([class~="bg-gray-100"], [class~="bg-gray-50"]):is([class~="p-1"], [class~="p-0.5"]):is([class~="rounded-md"], [class~="rounded-lg"], [class~="rounded-xl"]):has(> button):not(:has(> :not(button))):not([data-ui]) > button,
+html.flat-theme [data-ui~="seg"] > button {
+  margin: 0;
+  border-radius: var(--ui-radius-md);
+  background-color: transparent;
+  padding: var(--ctl-seg-pad-y) var(--ctl-seg-pad-x);
+  font-size: 0.78125rem;
+  line-height: 1.171875rem;
+  font-weight: 600;
+  color: rgb(var(--ui-muted));
+  box-shadow: none;
+  transition-property: color, background-color;
+  transition-duration: var(--ui-duration-slide);
+  transition-timing-function: var(--ui-ease-out);
+}
+
+html.flat-theme :is(div, nav):is([class~="bg-gray-100"], [class~="bg-gray-50"]):is([class~="p-1"], [class~="p-0.5"]):is([class~="rounded-md"], [class~="rounded-lg"], [class~="rounded-xl"]):has(> button):not(:has(> :not(button))):not([data-ui]) > button:hover,
+html.flat-theme [data-ui~="seg"] > button:hover {
+  color: rgb(var(--ui-ink));
+}
+
+html.flat-theme :is(div, nav):is([class~="bg-gray-100"], [class~="bg-gray-50"]):is([class~="p-1"], [class~="p-0.5"]):is([class~="rounded-md"], [class~="rounded-lg"], [class~="rounded-xl"]):has(> button):not(:has(> :not(button))):not([data-ui]) > button:is([class~="bg-white"], [aria-pressed="true"], [aria-checked="true"], [aria-selected="true"]),
+html.flat-theme [data-ui~="seg"] > button:is([aria-pressed="true"], [aria-checked="true"], [aria-selected="true"], [data-active]:not([data-active="false"])) {
+  background-color: rgb(var(--ui-ink));
+  color: rgb(var(--ui-on-ink));
+}
+
+html.flat-theme :is(div, nav):is([class~="bg-gray-100"], [class~="bg-gray-50"]):is([class~="p-1"], [class~="p-0.5"]):is([class~="rounded-md"], [class~="rounded-lg"], [class~="rounded-xl"]):has(> button):not(:has(> :not(button))):not([data-ui]) > button svg,
+html.flat-theme [data-ui~="seg"] > button svg {
+  width: 0.875rem;
+  height: 0.875rem;
+  flex-shrink: 0;
+}
+
+html.flat-theme :is(div, nav):is([class~="bg-gray-100"], [class~="bg-gray-50"]):is([class~="p-1"], [class~="p-0.5"]):is([class~="rounded-md"], [class~="rounded-lg"], [class~="rounded-xl"]):has(> button):not(:has(> :not(button))):not([data-ui]) > button:focus-visible {
+  outline: 2px solid rgb(var(--ui-focus));
+  outline-offset: 2px;
+}
+
+/* Up to 900px the reference keeps button and segment labels on one line (max-[900px]:whitespace-nowrap); the rows
+   wrap around whole controls instead ("Zhipu / GLM" no longer breaks inside its segment). */
+@media (max-width: 900px) {
+  html.flat-theme .btn,
+  html.flat-theme .tab,
+  html.flat-theme :is(div, nav):is([class~="bg-gray-100"], [class~="bg-gray-50"]):is([class~="p-1"], [class~="p-0.5"]):is([class~="rounded-md"], [class~="rounded-lg"], [class~="rounded-xl"]):has(> button):not(:has(> :not(button))):not([data-ui]) > button,
+  html.flat-theme [data-ui~="seg"] > button {
+    white-space: nowrap;
+  }
+}
+
+/* 7.2 The settings tab strip (SettingsView .settings-tabs-*, scoped) is the same segmented control, as wide as its
+   tabs (the reference's w-fit), 14px icons, no glow, gradient or underline. The strip keeps sticking under the
+   header; its band is the page ground at 90 % with the reference's one blur (the docs header, 8px), so content
+   never shows through. */
+html.flat-theme .settings-tabs-shell.settings-tabs-shell {
+  top: calc(var(--ui-header-h) + 0.75rem);
+  margin-inline: 0;
+  border: 0;
+  border-radius: 0;
+  background: rgb(var(--ui-canvas) / 0.9);
+  padding: 0;
+  box-shadow: none;
+  -webkit-backdrop-filter: blur(8px);
+  backdrop-filter: blur(8px);
+}
+
+html.flat-theme .settings-tabs.settings-tabs {
+  display: inline-flex;
+  width: max-content;
+  min-width: 0;
+  gap: 0;
+  border: 1px solid rgb(var(--ctl-seg-frame));
+  border-radius: var(--ui-radius-lg);
+  background-color: rgb(var(--ui-surface));
+  padding: var(--ctl-seg-inset);
+}
+
+html.flat-theme .settings-tab.settings-tab {
+  flex: none;
+  min-width: 0;
+  height: auto;
+  gap: 0.375rem;
+  overflow: visible;
+  border: 0;
+  border-radius: var(--ui-radius-md);
+  background: transparent;
+  padding: var(--ctl-seg-pad-y) var(--ctl-seg-pad-x);
+  font-size: 0.78125rem;
+  line-height: 1.171875rem;
+  font-weight: 600;
+  color: rgb(var(--ui-muted));
+  box-shadow: none;
+  transition-property: color, background-color;
+  transition-duration: var(--ui-duration-slide);
+  transition-timing-function: var(--ui-ease-out);
+}
+
+html.flat-theme .settings-tab.settings-tab::before,
+html.flat-theme .settings-tab.settings-tab::after {
+  display: none;
+}
+
+html.flat-theme .settings-tab.settings-tab:hover {
+  color: rgb(var(--ui-ink));
+}
+
+html.flat-theme .settings-tab.settings-tab.settings-tab-active {
+  background-color: rgb(var(--ui-ink));
+  color: rgb(var(--ui-on-ink));
+}
+
+html.flat-theme .settings-tab .settings-tab-icon.settings-tab-icon {
+  height: auto;
+  width: auto;
+  border-radius: 0;
+  background: none;
+  color: inherit;
+}
+
+html.flat-theme .settings-tab .settings-tab-icon > svg {
+  width: 0.875rem;
+  height: 0.875rem;
+}
+
+html.flat-theme .settings-tab .settings-tab-label.settings-tab-label {
+  line-height: inherit;
+}
+
+/* 7.3 Underline tabs (使用记录's detail tabs, the channel dialog's tabs) take the reference's CodeTabs underline
+   (REF-CONSOLE §8.15): a 2px accent rule under the current tab, its text ink; the others muted, ink on hover, no
+   rule; 8 x 10px like its tabs, 12.5px / 600, 14px glyphs. Platform hues on the channel tabs go (monochrome
+   identity, D3). */
+html.flat-theme :is([data-testid="usage-detail-tab"], .channel-tab.channel-tab) {
+  gap: 0.375rem;
+  padding: 0.5rem 0.625rem;
+  font-size: 0.78125rem;
+  line-height: 1.171875rem;
+  font-weight: 600;
+  color: rgb(var(--ui-muted));
+  transition-property: color, border-color;
+  transition-duration: var(--ui-duration);
+  transition-timing-function: var(--ui-ease);
+}
+
+html.flat-theme :is([data-testid="usage-detail-tab"]:not([class~="border-primary-500"]), .channel-tab.channel-tab-inactive) {
+  border-color: transparent;
+}
+
+html.flat-theme :is([data-testid="usage-detail-tab"]:not([class~="border-primary-500"]), .channel-tab.channel-tab-inactive):hover {
+  border-color: transparent;
+  color: rgb(var(--ui-ink));
+}
+
+html.flat-theme :is([data-testid="usage-detail-tab"][class~="border-primary-500"], .channel-tab.channel-tab-active) {
+  border-color: rgb(var(--ui-focus));
+  color: rgb(var(--ui-ink));
+}
+
+html.flat-theme .channel-tab.channel-tab > * {
+  color: inherit;
+}
+
+html.flat-theme :is([data-testid="usage-detail-tab"], .channel-tab.channel-tab) svg {
+  width: 0.875rem;
+  height: 0.875rem;
+}
+
+/* ================================================================== 8 · option cards, filter pills */
+
+/* 8.1 Option cards (the account dialogs' type / method choices: a rounded-lg border-2 p-3 text-left button led by an
+   h-8 w-8 glyph tile) take the reference's dialog option card (REF-CONSOLE §8.11): radius 8, the structural line, the
+   grouped fill at 60 %, the control outline on hover; a 28px tile with a 1px line and ink at 3 %. The chosen card is
+   drawn like the segmented thumb: an ink edge 2px wide on the surface, its tile ink with on-ink glyph (upstream's
+   per-platform hues go: monochrome identity, D3). */
+html.flat-theme button[class~="rounded-lg"][class~="border-2"][class~="p-3"][class~="text-left"]:has(> div:first-child[class~="h-8"][class~="w-8"]) {
+  gap: 0.75rem;
+  border-width: 1px;
+  border-color: rgb(var(--ui-line));
+  border-radius: var(--ui-radius-lg);
+  background-color: rgb(var(--ui-subtle) / 0.6);
+  box-shadow: none;
+  transition-property: border-color, background-color, box-shadow;
+  transition-duration: var(--ui-duration);
+  transition-timing-function: var(--ui-ease);
+}
+
+html.flat-theme button[class~="rounded-lg"][class~="border-2"][class~="p-3"][class~="text-left"][class~="border-gray-200"]:has(> div:first-child[class~="h-8"][class~="w-8"]):hover {
+  border-color: rgb(var(--ui-line-strong));
+}
+
+html.flat-theme button[class~="rounded-lg"][class~="border-2"][class~="p-3"][class~="text-left"]:not([class~="border-gray-200"]):has(> div:first-child[class~="h-8"][class~="w-8"]) {
+  border-color: rgb(var(--ui-ink));
+  background-color: rgb(var(--ui-surface));
+  box-shadow: inset 0 0 0 1px rgb(var(--ui-ink));
+}
+
+html.flat-theme button[class~="rounded-lg"][class~="border-2"][class~="p-3"][class~="text-left"]:has(> div:first-child[class~="h-8"][class~="w-8"]) > div:first-child {
+  height: 1.75rem;
+  width: 1.75rem;
+  border: 1px solid rgb(var(--ui-line));
+  border-radius: var(--ui-radius-md);
+  background-color: rgb(var(--ui-ink) / 0.03);
+  color: rgb(var(--ui-ink) / 0.7);
+}
+
+html.flat-theme button[class~="rounded-lg"][class~="border-2"][class~="p-3"][class~="text-left"]:not([class~="border-gray-200"]):has(> div:first-child[class~="h-8"][class~="w-8"]) > div:first-child {
+  border-color: rgb(var(--ui-ink));
+  background-color: rgb(var(--ui-ink));
+  color: rgb(var(--ui-on-ink));
+}
+
+html.flat-theme button[class~="rounded-lg"][class~="border-2"][class~="p-3"][class~="text-left"]:has(> div:first-child[class~="h-8"][class~="w-8"]) > div:first-child svg {
+  width: 0.875rem;
+  height: 0.875rem;
+}
+
+html.flat-theme button[class~="rounded-lg"][class~="border-2"][class~="p-3"][class~="text-left"]:has(> div:first-child[class~="h-8"][class~="w-8"]) > div:last-child > span:first-child {
+  font-size: 0.8125rem;
+  line-height: 1.21875rem;
+  font-weight: 600;
+  color: rgb(var(--ui-ink));
+}
+
+html.flat-theme button[class~="rounded-lg"][class~="border-2"][class~="p-3"][class~="text-left"]:has(> div:first-child[class~="h-8"][class~="w-8"]) > div:last-child > span:last-child:not(:first-child) {
+  font-size: 0.75rem;
+  line-height: 1.125rem;
+  color: rgb(var(--ui-muted));
+}
+
+/* 8.2 Filter pills (data-ui="filter-pill"; the reference's FilterMenu trigger, REF-CONSOLE §8.6): 30px, 10px in, gap 6,
+   radius 6, the control outline on the surface, 12.5px / 600 ink-soft, ink on hover, a 12px chevron. With a
+   data-ui="filter-count" badge inside it is active: the accent at 40 % as its edge, the accent tint, accent text and a
+   Geist Mono 10.5px count. */
+html.flat-theme [data-ui~="filter-pill"] {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  min-height: var(--ui-control-h);
+  height: auto;
+  border: 1px solid rgb(var(--ui-line-strong));
+  border-radius: var(--ui-radius-md);
+  background-color: rgb(var(--ui-surface));
+  padding: 0 0.625rem;
+  font-size: 0.78125rem;
+  line-height: 1.171875rem;
+  font-weight: 600;
+  color: rgb(var(--ui-ink-soft));
+  box-shadow: none;
+  transition-property: color, background-color, border-color;
+  transition-duration: var(--ui-duration);
+  transition-timing-function: var(--ui-ease);
+}
+
+html.flat-theme [data-ui~="filter-pill"]:hover {
+  background-color: rgb(var(--ui-surface));
+  color: rgb(var(--ui-ink));
+}
+
+html.flat-theme [data-ui~="filter-pill"]:has([data-ui~="filter-count"]),
+html.flat-theme [data-ui~="filter-pill"]:has([data-ui~="filter-count"]):hover {
+  border-color: rgb(var(--ui-primary) / 0.4);
+  background-color: rgb(var(--ui-primary-soft));
+  color: var(--ui-link);
+}
+
+html.flat-theme [data-ui~="filter-pill"] [data-ui~="filter-count"] {
+  min-width: 0;
+  border-radius: 0;
+  background: none;
+  padding: 0;
+  font-family: var(--ui-font-mono);
+  font-size: 0.65625rem;
+  line-height: 1rem;
+  font-weight: 400;
+  color: inherit;
+}
+
+html.flat-theme [data-ui~="filter-pill"] svg {
+  width: 0.75rem;
+  height: 0.75rem;
+  flex-shrink: 0;
+  color: currentColor;
+}
+
+/* ================================================================== 9 · links */
+
+/* Links keep their colours from the tokens (accent text #147c42 / mint, D2); an underline sits 2px under the text
+   and is 1px thick, as the reference draws its links. */
+html.flat-theme :is(a, button)[class*="underline"] {
+  text-decoration-thickness: 1px;
+  text-underline-offset: 2px;
+}

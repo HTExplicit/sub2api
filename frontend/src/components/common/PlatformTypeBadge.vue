@@ -1,5 +1,5 @@
 <template>
-  <div class="inline-flex flex-col gap-0.5 text-xs font-medium">
+  <div class="inline-flex flex-col gap-0.5 text-xs font-medium" data-ui="platform-badge">
     <!-- Row 1: Platform + Type -->
     <div class="inline-flex items-center overflow-hidden rounded-md">
       <span :class="['inline-flex items-center gap-1 px-2 py-1', platformClass]">

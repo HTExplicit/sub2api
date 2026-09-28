@@ -104,6 +104,7 @@ onBeforeUnmount(() => {
 <template>
   <div
     ref="trigger"
+    data-ui="help-tooltip"
     class="group relative ml-1 inline-flex items-center align-middle"
     @mouseenter="onEnter"
     @mouseleave="onLeave"

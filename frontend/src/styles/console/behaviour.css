@@ -55,13 +55,18 @@ html.flat-theme [class~="card"] > div[class~="mb-4"][class~="justify-between"]:h
   }
 }
 
+/* Preview decision D5 (Experiential Labs density): accounts, users, API keys and IP management use single-line rows
+   that scroll sideways, like the reference; the usage records table keeps its two-line cells. The two-line layouts
+   the owner approved in rounds 4-5 (B1.4 outside usage, B1.5-B1.10) stay available behind `ui-cells-two-line` on
+   <html>, which nothing sets by default; the owner's answer decides whether they come back or go. */
 /* B1.4 Timestamps on two lines (date / time; approved round 4): the cell text becomes a block as wide as its
    longer part, so it breaks at the space and never inside the date or the time. Only in the tables chosen;
    cells are found by data-column, so hiding columns does not switch it off. 账号管理「最近使用」 is relative
    (「2天前」) and stays one line. */
-html.flat-theme .table-wrapper:is([data-table="proxies"], [data-table="keys"], [data-table="usage"], [data-table="accounts"]) td[data-column="created_at"] > span,
-html.flat-theme .table-wrapper[data-table="users"] td:is([data-column="created_at"], [data-column="last_used_at"], [data-column="last_active_at"]) > span,
-html.flat-theme .table-wrapper[data-table="proxies"] td[data-column="expiry"] > div > span:first-child {
+html.flat-theme .table-wrapper[data-table="usage"] td[data-column="created_at"] > span,
+html.flat-theme.ui-cells-two-line .table-wrapper:is([data-table="proxies"], [data-table="keys"], [data-table="accounts"]) td[data-column="created_at"] > span,
+html.flat-theme.ui-cells-two-line .table-wrapper[data-table="users"] td:is([data-column="created_at"], [data-column="last_used_at"], [data-column="last_active_at"]) > span,
+html.flat-theme.ui-cells-two-line .table-wrapper[data-table="proxies"] td[data-column="expiry"] > div > span:first-child {
   display: inline-block;
   width: min-content;
   white-space: normal;
@@ -69,7 +74,7 @@ html.flat-theme .table-wrapper[data-table="proxies"] td[data-column="expiry"] > 
 
 /* B1.5 账号管理「过期时间」 (「2026-10-25 08:00」): a line may break after a hyphen, so min-content would split the
    date; a width that holds the date keeps it whole and moves the time to line two. */
-html.flat-theme .table-wrapper[data-table="accounts"] td[data-column="expires_at"] > div > span:first-child {
+html.flat-theme.ui-cells-two-line .table-wrapper[data-table="accounts"] td[data-column="expires_at"] > div > span:first-child {
   display: inline-block;
   max-width: 10ch;
   white-space: normal;
@@ -78,7 +83,7 @@ html.flat-theme .table-wrapper[data-table="accounts"] td[data-column="expires_at
 /* B1.6 IP管理 names break only at a space or a hyphen (「美国原生- / 超高质量」) and stay whole without one; the
    location breaks only at the spaces around 「·」 (approved round 4). keep-all keeps Chinese words together;
    min-content lets a longer part widen the column instead of running into the next one. */
-html.flat-theme .table-wrapper[data-table="proxies"] td[data-column="name"] > span {
+html.flat-theme.ui-cells-two-line .table-wrapper[data-table="proxies"] td[data-column="name"] > span {
   display: inline-block;
   min-width: min-content;
   max-width: 7.5em;
@@ -86,7 +91,7 @@ html.flat-theme .table-wrapper[data-table="proxies"] td[data-column="name"] > sp
   word-break: keep-all;
 }
 
-html.flat-theme .table-wrapper[data-table="proxies"] td[data-column="location"] span[class~="text-sm"] {
+html.flat-theme.ui-cells-two-line .table-wrapper[data-table="proxies"] td[data-column="location"] span[class~="text-sm"] {
   min-width: min-content;
   max-width: 5em;
   white-space: normal;
@@ -95,7 +100,7 @@ html.flat-theme .table-wrapper[data-table="proxies"] td[data-column="location"] 
 
 /* B1.7 API 密钥 group cell: the badge always on line one and 「选择分组 ⌄」 on line two (approved round 4), so the
    parts never split unpredictably and the column is as wide as the wider line. */
-html.flat-theme .table-wrapper[data-table="keys"] td[data-column="group"] button {
+html.flat-theme.ui-cells-two-line .table-wrapper[data-table="keys"] td[data-column="group"] button {
   display: grid;
   grid-template-columns: max-content max-content;
   justify-content: start;
@@ -103,38 +108,38 @@ html.flat-theme .table-wrapper[data-table="keys"] td[data-column="group"] button
   gap: 0.25rem;
 }
 
-html.flat-theme .table-wrapper[data-table="keys"] td[data-column="group"] button > :first-child {
+html.flat-theme.ui-cells-two-line .table-wrapper[data-table="keys"] td[data-column="group"] button > :first-child {
   grid-column: 1 / -1;
   justify-self: start;
 }
 
 /* B1.8 用户管理: 「充值」 under the amount (approved round 4); the button's own inset is pulled back so its label
    lines up with the amount. */
-html.flat-theme .table-wrapper[data-table="users"] td[data-column="balance"] > div {
+html.flat-theme.ui-cells-two-line .table-wrapper[data-table="users"] td[data-column="balance"] > div {
   flex-direction: column;
   align-items: flex-start;
   gap: 0.125rem;
 }
 
-html.flat-theme .table-wrapper[data-table="users"] td[data-column="balance"] > div > button {
+html.flat-theme.ui-cells-two-line .table-wrapper[data-table="users"] td[data-column="balance"] > div > button {
   margin-left: -0.5rem;
 }
 
 /* B1.9 用户管理 time headers wrap after four characters (「最后活跃 / 时间」; English at the space), so the columns
    are only as wide as the two-line timestamps below them (approved round 5). */
-html.flat-theme .table-wrapper[data-table="users"] th:is([data-column="last_active_at"], [data-column="last_used_at"], [data-column="created_at"]) > div > span:first-child {
+html.flat-theme.ui-cells-two-line .table-wrapper[data-table="users"] th:is([data-column="last_active_at"], [data-column="last_used_at"], [data-column="created_at"]) > div > span:first-child {
   max-width: 4.5em;
 }
 
 /* B1.10 IP管理: the copy button under the address and the show-password button under the credentials, so both
    columns are as wide as their text (approved round 5). */
-html.flat-theme .table-wrapper[data-table="proxies"] td:is([data-column="address"], [data-column="auth"]) > div {
+html.flat-theme.ui-cells-two-line .table-wrapper[data-table="proxies"] td:is([data-column="address"], [data-column="auth"]) > div {
   flex-direction: column;
   align-items: flex-start;
   gap: 0.125rem;
 }
 
-html.flat-theme .table-wrapper[data-table="proxies"] td[data-column="auth"] > div > button {
+html.flat-theme.ui-cells-two-line .table-wrapper[data-table="proxies"] td[data-column="auth"] > div > button {
   margin-left: 0;
 }
 

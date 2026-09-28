@@ -1,1 +1,752 @@
-/* Console theme · app shell: sidebar, header, page header, mobile shell, auth layout, public pages (owner: the shell agent; html.flat-theme selectors, tokens from tokens.css, new data-ui hooks registered here). */
+/* Console theme · app shell (owner: A1 shell): the frame and canvas, the sidebar, the header row, page gutters and
+ * the shell's vertical rhythm, the mobile bar and drawer, decorative layers. Public pages live in
+ * pages/settings-ops-public.css.
+ *
+ * Source: the Experiential Labs product console (ui-el ref/console/REF-CONSOLE.md §7.1, §7.4, §8.1, §8.2, §12, §13;
+ * styles.json jobs models / logs / m-models). The reference has no top bar; our AppHeader keeps its DOM and reads as
+ * the first row of the content column (ui-el WAVE1 D1, D12): no fill, no border, not sticky on desktop; on phones it
+ * is the reference's 47px sticky bar. Colours are role tokens (tokens.css); where the reference falls below our floor
+ * the value is the nearest compliant one and says so.
+ *
+ * Every selector starts with html.flat-theme (theme off = upstream). Specificity is >= 0,2,1 so the rules beat the
+ * recipes (.sidebar*, .glass, .btn-*), the page utilities and upstream's dark: variants; the sidebar's scoped styles
+ * (0,2,0 / 0,3,1) are beaten where it matters with an extra .sidebar.
+ *
+ * Hooks: existing ones (.app-main, .sidebar*, upstream classes) plus, in AppHeader.vue, data-ui="header-locale" (:54),
+ * "header-subscription" (:57), "header-balance" (:62), "header-user" (:110); AnnouncementBell.vue carries
+ * data-ui="announcement-bell" (added by the overlays agent; its button's look is here, its dialog is overlays.css). */
+
+/* ================================================================== metrics */
+/* Read by the table-page height below and by the data agent (TablePageLayout's row-gap). Desktop (>= 1024px, the
+   breakpoint the templates switch at): the header row takes layout space but does not stick. Phones and tablets: the
+   header is the 47px sticky bar. REF §7.1: content px clamp(1rem,3vw,1.75rem) = 28, py clamp(1.25rem,4vh,1.875rem) =
+   30 at 1440x900; sidebar clamp(13rem,20vw,15rem) = 240, collapsed clamp(3.5rem,8vw,4rem) = 64; blocks 12 apart. */
+html.flat-theme {
+  --ui-shell-sidebar-w: clamp(13rem, 20vw, 15rem);
+  --ui-shell-rail-w: clamp(3.5rem, 8vw, 4rem);
+  --ui-shell-pad-x: clamp(1rem, 3vw, 1.75rem);
+  --ui-shell-pad-y: clamp(1.25rem, 4vh, 1.875rem);
+  --ui-shell-row: 30px;
+  --ui-shell-gap: 12px;
+  --ui-shell-bar-h: 47px;
+  /* the header block's rendered height, the content's top and bottom padding */
+  --ui-shell-header-h: calc(var(--ui-shell-pad-y) + var(--ui-shell-row));
+  --ui-shell-pad-top: var(--ui-shell-gap);
+  --ui-shell-pad-bottom: var(--ui-shell-pad-y);
+  /* Sidebar text and icons are ink at an alpha (REF §8.1: text 50 %, icons 30 %). On the canvas, the hover fill and
+     the active tint the reference's 3.68:1 / 2.03:1 need 58 % (4.69-4.83:1) and 46 % (3.18-3.24:1); REF §13's 56 % /
+     44 % pass on the canvas only (shell_calc.py). Dark: the reference's 50 % passes, icons need 36 % (3.08:1). */
+  --ui-shell-nav-fg: 0.58;
+  --ui-shell-nav-icon: 0.46;
+}
+
+html.flat-theme.dark {
+  --ui-shell-nav-fg: 0.5;
+  --ui-shell-nav-icon: 0.36;
+}
+
+/* --ui-header-h (tokens.css) is the sticky header keyboard focus must clear (behaviour.css B3.4): nothing sticks on
+   desktop. :root keeps the specificity above tokens.css' :root.flat-theme. */
+html.flat-theme:root {
+  --ui-header-h: 0px;
+}
+
+@media (max-width: 1023.98px) {
+  html.flat-theme {
+    --ui-shell-header-h: var(--ui-shell-bar-h);
+    --ui-shell-pad-top: var(--ui-shell-pad-y);
+  }
+
+  html.flat-theme:root {
+    --ui-header-h: var(--ui-shell-bar-h);
+  }
+}
+
+/* ================================================================== frame */
+/* The reference draws nothing behind the page: no mesh, no orbs, no gradient washes (REF §10 item 15). */
+html.flat-theme .ui-decor,
+html.flat-theme div[class~="bg-mesh-gradient"][class~="fixed"] {
+  display: none;
+}
+
+/* Route changes: upstream's 3px accent sweep becomes a 2px ink sweep (loading is not an accent role, WAVE1 D2). */
+html.flat-theme .navigation-progress {
+  height: 2px;
+}
+
+html.flat-theme .navigation-progress > .navigation-progress-bar {
+  background: linear-gradient(90deg, transparent 0%, rgb(var(--ui-ink) / 0.55) 30%, rgb(var(--ui-ink) / 0.55) 70%, transparent 100%);
+}
+
+html.flat-theme .app-main {
+  transition: margin-left var(--ui-duration-sidebar) var(--ui-ease-out);
+}
+
+@media (min-width: 1024px) {
+  html.flat-theme .app-main {
+    margin-left: var(--ui-shell-sidebar-w);
+  }
+
+  html.flat-theme .app-main[class~="lg:ml-[72px]"] {
+    margin-left: var(--ui-shell-rail-w);
+  }
+}
+
+/* Content gutter: 28 / 30 at 1440x900 (REF §7.1); on desktop the header row above holds the top padding, so the
+   content starts one block gap (12) under it. */
+html.flat-theme .app-main > main {
+  padding: var(--ui-shell-pad-top) var(--ui-shell-pad-x) var(--ui-shell-pad-bottom);
+}
+
+/* Page rhythm: a full-width page's top-level blocks sit 12px apart like the reference's (/logs: header row, toolbar,
+   KPI row, cards). Centred narrow pages (mx-auto max-w-*) keep their spacing for their page group. */
+html.flat-theme .app-main > main > :is([class~="space-y-6"], [class~="space-y-5"], [class~="space-y-4"]):not([class~="mx-auto"]) > :not([hidden]) ~ :not([hidden]) {
+  margin-top: var(--ui-shell-gap);
+}
+
+/* Full-height table pages end one content padding above the viewport's bottom edge (/models: the table card ends at
+   900 - 30). Upstream subtracts its 64px header and lg:p-8 from 100vh; vh (not dvh) as upstream, so a phone's
+   collapsing address bar never resizes the page while it scrolls. The data agent owns everything inside the layout. */
+html.flat-theme .table-page-layout,
+html.flat-theme .custom-page-layout {
+  height: calc(100vh - var(--ui-shell-header-h) - var(--ui-shell-pad-top) - var(--ui-shell-pad-bottom));
+}
+
+/* ================================================================== sidebar (REF §7.1, §8.1) */
+/* Same fill as the canvas, a 1px structural line on the right, no shadow. Width and padding follow the reference's
+   clamps and slide in 160ms ease-out. */
+html.flat-theme .sidebar {
+  width: var(--ui-shell-sidebar-w);
+  padding: clamp(1rem, 3vh, 1.25rem) clamp(0.75rem, 1.5vw, 1rem);
+  border-right: 1px solid rgb(var(--ui-line));
+  background-color: rgb(var(--ui-canvas));
+  box-shadow: none;
+  transition-property: width, padding, transform;
+  transition-duration: var(--ui-duration-sidebar);
+  transition-timing-function: var(--ui-ease-out);
+}
+
+html.flat-theme .sidebar[class~="w-[72px]"] {
+  width: var(--ui-shell-rail-w);
+  padding-left: clamp(0.5rem, 1.5vw, 0.75rem);
+  padding-right: clamp(0.5rem, 1.5vw, 0.75rem);
+}
+
+/* Brand: the 20px mark 8px in from the edge (x = 24), then the site name 13/600 and, under it, the version in mono
+   (the reference's row is a mark and a word; ours also carries the version, so the lockup is two lines). */
+html.flat-theme .sidebar .sidebar-header {
+  height: auto;
+  min-height: 30px;
+  padding: 0 0 12px 8px;
+  gap: 8px;
+  border-bottom: 0;
+}
+
+html.flat-theme .sidebar .sidebar-header.sidebar-header-collapsed {
+  justify-content: center;
+  padding-left: 0;
+  padding-right: 0;
+}
+
+html.flat-theme .sidebar .sidebar-logo {
+  flex: 0 0 20px;
+  width: 20px;
+  min-width: 20px;
+  height: 20px;
+  border-radius: var(--ui-radius-sm);
+  box-shadow: none;
+}
+
+html.flat-theme .sidebar .sidebar-brand {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+
+html.flat-theme .sidebar .sidebar-brand-title,
+html.flat-theme .sidebar .sidebar-brand-title:hover {
+  font: 600 13px/16px var(--ui-font);
+  color: rgb(var(--ui-ink));
+}
+
+/* VersionBadge: the admin button and the plain text for users, as mono meta (REF §5: Mono 10.5 captions). The
+   update notice keeps its dot and turns the text to the warning colour. Its panel is a popover (tokens). */
+html.flat-theme .sidebar .sidebar-brand > .relative {
+  display: flex;
+  min-width: 0;
+}
+
+html.flat-theme .sidebar .sidebar-brand > .relative > :is(button, span) {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  max-width: 100%;
+  padding: 0;
+  border-radius: var(--ui-radius-sm);
+  background: transparent;
+  font: 400 10.5px/14px var(--ui-font-mono);
+  color: rgb(var(--ui-faint));
+  transition: color var(--ui-duration) var(--ui-ease);
+}
+
+html.flat-theme .sidebar .sidebar-brand > .relative > button:hover {
+  background: transparent;
+  color: rgb(var(--ui-ink));
+}
+
+html.flat-theme .sidebar .sidebar-brand > .relative > button[class~="bg-amber-100"] {
+  color: rgb(var(--ui-warning));
+}
+
+html.flat-theme .sidebar .sidebar-brand > .relative > button span {
+  font-weight: inherit;
+}
+
+html.flat-theme .sidebar .sidebar-brand > .relative > button > span[class~="h-2"] {
+  width: 6px;
+  height: 6px;
+}
+
+html.flat-theme .sidebar .sidebar-brand > .relative > button > span[class~="h-2"] > span {
+  width: 6px;
+  height: 6px;
+}
+
+/* Navigation: flush with the brand (x = 16, first item at y = 64 like the reference); a 4px inner margin keeps focus
+   rings clear of the scroll box's clip. Our list is longer than the reference's two items: when it scrolls, its last
+   16px fade out above the bottom rule instead of cutting a row in half (the reference fades its scrolling docs strip
+   the same way, REF §7.4); the 12px end padding keeps the last row clear of the fade. */
+html.flat-theme .sidebar .sidebar-nav {
+  margin: 0 -4px;
+  padding: 2px 4px 12px;
+  -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - 16px), transparent);
+  mask-image: linear-gradient(to bottom, #000 calc(100% - 16px), transparent);
+}
+
+html.flat-theme .sidebar .sidebar-section {
+  margin-bottom: 24px;
+}
+
+html.flat-theme .sidebar .sidebar-section:last-child {
+  margin-bottom: 0;
+}
+
+/* Section titles are the mono label (docs navigation groups: 8px above the first item, flush with the item box). */
+html.flat-theme .sidebar .sidebar-section-title {
+  min-height: var(--ui-label-leading);
+  margin: 0 0 8px;
+  padding: 0;
+  font: var(--ui-label-font);
+  letter-spacing: var(--ui-label-tracking);
+  text-transform: uppercase;
+  color: rgb(var(--ui-label));
+}
+
+html.flat-theme .sidebar .sidebar-section-title::after {
+  left: 10px;
+  right: 10px;
+  background: rgb(var(--ui-line));
+}
+
+/* Items: min 32px (13px on a 19.5px line + 7px above and below = 33.5), 10px inset, 6px radius, 8px from the 15px
+   icon to the label, 1px apart. Text and icon are ink at the nav alphas; hover lays ink at 2 % and lifts the text to
+   70 %; the current item only gets the accent at 8 % (REF §8.1: its text and icon keep their colour). Focus is the
+   browser's ring, as on the reference. */
+html.flat-theme .sidebar .sidebar-link {
+  gap: 8px;
+  min-height: 32px;
+  margin-bottom: 1px;
+  padding: 7px 10px;
+  border-radius: var(--ui-radius-md);
+  background-color: transparent;
+  font: 400 13px/19.5px var(--ui-font);
+  color: rgb(var(--ui-ink) / var(--ui-shell-nav-fg));
+  transition:
+    color var(--ui-duration) var(--ui-ease),
+    background-color var(--ui-duration) var(--ui-ease);
+}
+
+html.flat-theme .sidebar .sidebar-link:hover {
+  background-color: rgb(var(--ui-ink) / 0.02);
+  color: rgb(var(--ui-ink) / 0.7);
+}
+
+html.flat-theme .sidebar .sidebar-link.sidebar-link-active,
+html.flat-theme .sidebar .sidebar-link.sidebar-link-active:hover {
+  background-color: rgb(var(--ui-primary) / 0.08);
+  color: rgb(var(--ui-ink) / var(--ui-shell-nav-fg));
+}
+
+html.flat-theme .sidebar .sidebar-link > :is(svg, .sidebar-svg-icon) {
+  flex: 0 0 15px;
+  width: 15px;
+  height: 15px;
+  color: rgb(var(--ui-ink) / var(--ui-shell-nav-icon));
+}
+
+html.flat-theme .sidebar .sidebar-svg-icon svg {
+  width: 15px;
+  height: 15px;
+}
+
+/* a group's chevron sits at the row's end in the icon colour */
+html.flat-theme .sidebar .sidebar-label-flex > svg {
+  width: 13px;
+  height: 13px;
+  color: rgb(var(--ui-ink) / var(--ui-shell-nav-icon));
+}
+
+/* A group's children hang from a 1px guide under the parent's icon. */
+html.flat-theme .sidebar .sidebar-section > div[class~="border-l"] {
+  margin: 1px 0 4px 17px;
+  padding-left: 8px;
+  border-left-color: rgb(var(--ui-line));
+}
+
+html.flat-theme .sidebar .sidebar-section > div[class~="border-l"] > .sidebar-link {
+  min-height: 30px;
+  padding-top: 5px;
+  padding-bottom: 5px;
+}
+
+/* Collapsed rail (64px): 35 x 32 icon items centred (REF §8.1). The folded label (already aria-hidden) gives up its
+   line box too, so the item is the reference's 32px rather than 33.5. */
+html.flat-theme .sidebar .sidebar-link.sidebar-link-collapsed {
+  justify-content: center;
+  gap: 0;
+  width: 35px;
+  min-height: 32px;
+  margin-left: auto;
+  margin-right: auto;
+  padding: 7px 10px;
+}
+
+html.flat-theme .sidebar .sidebar-link.sidebar-link-collapsed > .sidebar-label-collapsed {
+  height: 0;
+}
+
+/* Bottom: a 1px rule, 12px, then the theme switch as a row with the collapse control at its end: the reference's
+   panel-left glyph, 28 x 28, ink 30 % -> 60 % on hover with no fill (REF §8.1; 46 % here for 3:1). The collapse
+   label stays for screen readers. */
+html.flat-theme .sidebar > div[class~="mt-auto"] {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 12px 0 0;
+  border-top: 1px solid rgb(var(--ui-line));
+}
+
+html.flat-theme .sidebar > div[class~="mt-auto"] > button.sidebar-link:first-child {
+  flex: 1 1 auto;
+  width: auto;
+  margin: 0;
+}
+
+html.flat-theme .sidebar > div[class~="mt-auto"] > button.sidebar-link:last-child:not(:first-child) {
+  flex: 0 0 28px;
+  justify-content: center;
+  width: 28px;
+  min-height: 28px;
+  height: 28px;
+  margin: 0;
+  padding: 0;
+  gap: 0;
+  color: rgb(var(--ui-ink) / var(--ui-shell-nav-icon));
+}
+
+html.flat-theme .sidebar > div[class~="mt-auto"] > button.sidebar-link:last-child:not(:first-child):hover {
+  background-color: transparent;
+  color: rgb(var(--ui-ink) / 0.6);
+}
+
+html.flat-theme .sidebar > div[class~="mt-auto"] > button.sidebar-link:last-child:not(:first-child) > svg {
+  color: inherit;
+}
+
+html.flat-theme .sidebar > div[class~="mt-auto"] > button.sidebar-link:last-child:not(:first-child) > .sidebar-label {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+html.flat-theme .sidebar[class~="w-[72px]"] > div[class~="mt-auto"] {
+  flex-direction: column;
+  gap: 4px;
+}
+
+html.flat-theme .sidebar[class~="w-[72px]"] > div[class~="mt-auto"] > button.sidebar-link:first-child {
+  flex: 0 0 auto;
+  width: 35px;
+}
+
+/* Phones and tablets: the drawer floats over the page on the overlay scrim. The scrim sits above the sticky bar
+   (upstream stacks both at z-30, so the bar stayed undimmed beside the open drawer) and under the drawer (z-40). */
+html.flat-theme .sidebar ~ div[class~="bg-black/50"] {
+  z-index: 35;
+  background-color: rgb(var(--ui-scrim));
+}
+
+@media (max-width: 1023.98px) {
+  html.flat-theme .sidebar:not([class~="w-[72px]"]) {
+    width: 15rem;
+  }
+
+  html.flat-theme .sidebar:not([class~="-translate-x-full"]) {
+    box-shadow: var(--ui-shadow-overlay);
+  }
+}
+
+/* ================================================================== header row (WAVE1 D1, D12) */
+/* Phones and tablets first: the reference's 47px sticky bar (REF §7.4: 6 / 8 inset, canvas fill, 1px line under
+   it; 32-34px controls). */
+html.flat-theme .app-main > header {
+  padding: 6px 8px;
+  border-bottom: 1px solid rgb(var(--ui-line));
+  background-color: rgb(var(--ui-canvas));
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+  box-shadow: none;
+}
+
+html.flat-theme .app-main > header > div {
+  height: 34px;
+  gap: 8px;
+  padding: 0;
+}
+
+html.flat-theme .app-main > header > div > div:last-child {
+  gap: 4px;
+}
+
+@media (max-width: 1023.98px) {
+  html.flat-theme .app-main > header > div > div:first-child > button[class~="btn-icon"] {
+    display: inline-grid;
+    place-items: center;
+    width: 35px;
+    height: 32px;
+    padding: 0;
+    border-radius: var(--ui-radius-md);
+    background: transparent;
+    color: rgb(var(--ui-muted));
+  }
+
+  html.flat-theme .app-main > header > div > div:first-child > button[class~="btn-icon"]:hover {
+    background-color: rgb(var(--ui-subtle));
+    color: rgb(var(--ui-ink));
+  }
+
+  html.flat-theme .app-main > header > div > div:first-child > button[class~="btn-icon"] svg {
+    width: 15px;
+    height: 15px;
+  }
+}
+
+/* Desktop: the first row of the content column, 30px tall at the content gutter (/logs: y = 30), no fill, no line,
+   no blur, not sticky. */
+@media (min-width: 1024px) {
+  html.flat-theme .app-main > header {
+    position: static;
+    padding: var(--ui-shell-pad-y) var(--ui-shell-pad-x) 0;
+    border-bottom: 0;
+    background-color: transparent;
+  }
+
+  html.flat-theme .app-main > header > div {
+    height: var(--ui-shell-row);
+    gap: 16px;
+  }
+
+  html.flat-theme .app-main > header > div > div:first-child {
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+
+  html.flat-theme .app-main > header > div > div:last-child {
+    flex: 0 0 auto;
+    gap: 10px;
+  }
+
+  /* Title · description on one line: the page title 20/28 600 (REF §8.2), the description 13px muted on the same
+     baseline after a faint dot; a description too long for the row ends in an ellipsis. */
+  html.flat-theme .app-main > header div:has(> h1) {
+    display: flex;
+    align-items: baseline;
+    min-width: 0;
+  }
+}
+
+html.flat-theme .app-main > header h1 {
+  flex: 0 0 auto;
+  font: 600 20px/28px var(--ui-font);
+  letter-spacing: 0;
+  white-space: nowrap;
+  color: rgb(var(--ui-ink));
+}
+
+html.flat-theme .app-main > header h1 + p {
+  min-width: 0;
+  overflow: hidden;
+  font: 400 13px/19.5px var(--ui-font);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  color: rgb(var(--ui-muted));
+}
+
+html.flat-theme .app-main > header h1 + p::before {
+  content: '\00b7';
+  margin: 0 8px 0 10px;
+  color: rgb(var(--ui-faint));
+}
+
+/* ------------------------------------------------------------------ header controls: ghost and outlined, 30px */
+/* The bell: a ghost icon button (REF §8.3 icon buttons: muted -> ink on the subtle fill); unread keeps the red dot,
+   6px like the reference's status dots, and the glyph turns ink instead of blue. Its dialog is overlays.css'. */
+html.flat-theme .app-main > header :is(button[data-ui="announcement-bell"], [data-ui="announcement-bell"] > button) {
+  display: inline-grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border-radius: var(--ui-radius-md);
+  background-color: transparent;
+  color: rgb(var(--ui-muted));
+  transform: none;
+  transition:
+    color var(--ui-duration) var(--ui-ease),
+    background-color var(--ui-duration) var(--ui-ease);
+}
+
+html.flat-theme .app-main > header :is(button[data-ui="announcement-bell"], [data-ui="announcement-bell"] > button):hover {
+  background-color: rgb(var(--ui-subtle));
+  color: rgb(var(--ui-ink));
+}
+
+html.flat-theme .app-main > header :is(button[data-ui="announcement-bell"], [data-ui="announcement-bell"] > button)[class~="text-blue-600"] {
+  color: rgb(var(--ui-ink));
+}
+
+html.flat-theme .app-main > header :is(button[data-ui="announcement-bell"], [data-ui="announcement-bell"] > button) > svg {
+  width: 15px;
+  height: 15px;
+}
+
+html.flat-theme .app-main > header :is(button[data-ui="announcement-bell"], [data-ui="announcement-bell"] > button) > span[class~="absolute"] {
+  top: 6px;
+  right: 6px;
+  width: 6px;
+  height: 6px;
+}
+
+html.flat-theme .app-main > header :is(button[data-ui="announcement-bell"], [data-ui="announcement-bell"] > button) > span[class~="absolute"] > span {
+  width: 6px;
+  height: 6px;
+}
+
+/* Docs and model plaza: ghost text links (the reference's header links: 12.5/500 muted -> ink) with a 13px glyph. */
+html.flat-theme .app-main > header > div > div:last-child > a {
+  align-items: center;
+  gap: 6px;
+  height: 30px;
+  padding: 0 8px;
+  border-radius: var(--ui-radius-md);
+  background-color: transparent;
+  font: 500 12.5px/18.75px var(--ui-font);
+  color: rgb(var(--ui-muted));
+  transition:
+    color var(--ui-duration) var(--ui-ease),
+    background-color var(--ui-duration) var(--ui-ease);
+}
+
+html.flat-theme .app-main > header > div > div:last-child > a:hover {
+  background-color: rgb(var(--ui-subtle));
+  color: rgb(var(--ui-ink));
+}
+
+html.flat-theme .app-main > header > div > div:last-child > a > svg {
+  width: 13px;
+  height: 13px;
+}
+
+/* The language switch is a dropdown trigger: the reference's filter pill (REF §8.6: 30px, 10px inset, 6px gap, 1px
+   control outline, surface fill, 12.5/600 ink-soft -> ink, 12px chevron). Its menu is overlays.css'. */
+html.flat-theme .app-main > header [data-ui="header-locale"] > button {
+  gap: 6px;
+  height: 30px;
+  padding: 0 10px;
+  border: 1px solid rgb(var(--ui-line-strong));
+  border-radius: var(--ui-radius-md);
+  background-color: rgb(var(--ui-surface));
+  font: 600 12.5px/18.75px var(--ui-font);
+  color: rgb(var(--ui-ink-soft));
+  transition: color var(--ui-duration) var(--ui-ease);
+}
+
+html.flat-theme .app-main > header [data-ui="header-locale"] > button:hover {
+  background-color: rgb(var(--ui-surface));
+  color: rgb(var(--ui-ink));
+}
+
+html.flat-theme .app-main > header [data-ui="header-locale"] > button > span[class~="text-base"] {
+  font-size: 13px;
+  line-height: 1;
+}
+
+html.flat-theme .app-main > header [data-ui="header-locale"] > button > svg {
+  width: 12px;
+  height: 12px;
+  color: inherit;
+}
+
+/* Subscriptions: the same outlined 30px control; the dots keep their state colours, the count is mono. */
+html.flat-theme .app-main > header [data-ui="header-subscription"] > button {
+  gap: 6px;
+  height: 30px;
+  padding: 0 10px;
+  border: 1px solid rgb(var(--ui-line-strong));
+  border-radius: var(--ui-radius-md);
+  background-color: rgb(var(--ui-surface));
+  color: rgb(var(--ui-ink-soft));
+}
+
+html.flat-theme .app-main > header [data-ui="header-subscription"] > button:hover {
+  background-color: rgb(var(--ui-surface));
+  color: rgb(var(--ui-ink));
+}
+
+html.flat-theme .app-main > header [data-ui="header-subscription"] > button > svg {
+  width: 13px;
+  height: 13px;
+  color: rgb(var(--ui-muted));
+}
+
+html.flat-theme .app-main > header [data-ui="header-subscription"] > button div[class~="h-2"][class~="w-2"] {
+  width: 6px;
+  height: 6px;
+}
+
+html.flat-theme .app-main > header [data-ui="header-subscription"] > button span[class~="text-xs"] {
+  font: 500 11px/16.5px var(--ui-font-mono);
+  font-variant-numeric: tabular-nums;
+  color: inherit;
+}
+
+/* Balance: a mono chip (WAVE1 D1, D4: neutral, no tint): wallet glyph, the amount in Geist Mono tabular, the frozen
+   amount as a warning pill; the hover card is the reference's figure breakdown (REF §8.9: 6px radius, control outline,
+   surface, 12 / 8 inset, 12px rows with mono tabular values). */
+html.flat-theme .app-main > header [data-ui="header-balance"] {
+  align-items: center;
+  gap: 6px;
+  height: 30px;
+  padding: 0 10px;
+  border: 1px solid rgb(var(--ui-line-strong));
+  border-radius: var(--ui-radius-md);
+  background-color: rgb(var(--ui-surface));
+}
+
+html.flat-theme .app-main > header [data-ui="header-balance"] > svg {
+  width: 13px;
+  height: 13px;
+  color: rgb(var(--ui-muted));
+}
+
+html.flat-theme .app-main > header [data-ui="header-balance"] > span[class~="text-sm"] {
+  font: 500 12.5px/18.75px var(--ui-font-mono);
+  font-variant-numeric: tabular-nums;
+  color: rgb(var(--ui-ink));
+}
+
+html.flat-theme .app-main > header [data-ui="header-balance"] > span[class~="rounded-full"] {
+  padding: 1px 6px;
+  border-radius: 9999px;
+  background-color: rgb(var(--ui-warning-soft));
+  font: 500 10.5px/15.75px var(--ui-font-mono);
+  font-variant-numeric: tabular-nums;
+  color: rgb(var(--ui-warning));
+}
+
+html.flat-theme .app-main > header [data-ui="header-balance"] > div[class~="absolute"] {
+  min-width: 224px;
+  margin-top: 6px;
+  padding: 8px 12px;
+  border: 1px solid rgb(var(--ui-line-strong));
+  border-radius: var(--ui-radius-md);
+  background-color: rgb(var(--ui-surface));
+  box-shadow: var(--ui-shadow-popover);
+  font: 400 12px/18px var(--ui-font);
+}
+
+html.flat-theme .app-main > header [data-ui="header-balance"] > div[class~="absolute"] span {
+  color: rgb(var(--ui-ink));
+}
+
+html.flat-theme .app-main > header [data-ui="header-balance"] > div[class~="absolute"] span:last-child {
+  font-family: var(--ui-font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+html.flat-theme .app-main > header [data-ui="header-balance"] > div[class~="absolute"] span:last-child[class~="text-amber-700"] {
+  color: rgb(var(--ui-warning));
+}
+
+html.flat-theme .app-main > header [data-ui="header-balance"] > div[class~="absolute"] > div[class~="border-t"] {
+  border-top-color: rgb(var(--ui-line));
+}
+
+/* The account menu trigger: the reference's account row (the sidebar "Log in": a 20px ring, 13/500, ink 70 % -> ink,
+   ink 2 % on hover), with the name and role on one line. The menu is overlays.css'. */
+html.flat-theme .app-main > header [data-ui="header-user"] > button {
+  gap: 8px;
+  height: 30px;
+  padding: 0 8px 0 5px;
+  border-radius: var(--ui-radius-md);
+  background-color: transparent;
+  color: rgb(var(--ui-ink) / 0.7);
+  transition:
+    color var(--ui-duration) var(--ui-ease),
+    background-color var(--ui-duration) var(--ui-ease);
+}
+
+html.flat-theme .app-main > header [data-ui="header-user"] > button:hover {
+  background-color: rgb(var(--ui-ink) / 0.02);
+  color: rgb(var(--ui-ink));
+}
+
+html.flat-theme .app-main > header [data-ui="header-user"] > button > div:first-child {
+  width: 20px;
+  height: 20px;
+  border: 1px solid rgb(var(--ui-line-strong));
+  border-radius: 9999px;
+  background: rgb(var(--ui-surface));
+  box-shadow: none;
+  font: 600 9px/1 var(--ui-font-mono);
+  color: rgb(var(--ui-ink-soft));
+}
+
+@media (min-width: 768px) {
+  html.flat-theme .app-main > header [data-ui="header-user"] > button > div:nth-child(2) {
+    display: flex;
+    align-items: baseline;
+    gap: 6px;
+  }
+}
+
+html.flat-theme .app-main > header [data-ui="header-user"] > button > div:nth-child(2) > div:first-child {
+  font: 500 13px/19.5px var(--ui-font);
+  color: inherit;
+}
+
+html.flat-theme .app-main > header [data-ui="header-user"] > button > div:nth-child(2) > div:last-child {
+  font: 400 12px/18px var(--ui-font);
+  color: rgb(var(--ui-muted));
+}
+
+html.flat-theme .app-main > header [data-ui="header-user"] > button > svg {
+  width: 12px;
+  height: 12px;
+  color: inherit;
+}

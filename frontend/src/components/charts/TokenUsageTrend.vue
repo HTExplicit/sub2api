@@ -60,11 +60,11 @@ const presentation = usePresentationColors()
 const chartColors = computed(() => ({
   text: presentation.value.text,
   grid: presentation.value.grid,
-  input: presentation.value.series[0],
-  output: presentation.value.series[1],
-  cacheCreation: presentation.value.series[2],
-  cacheRead: presentation.value.series[10],
-  cacheHitRate: presentation.value.series[4]
+  input: presentation.value.trend[0],
+  output: presentation.value.trend[1],
+  cacheCreation: presentation.value.trend[2],
+  cacheRead: presentation.value.trend[10],
+  cacheHitRate: presentation.value.trend[4]
 }))
 
 const chartData = computed(() => {

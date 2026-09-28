@@ -86,7 +86,7 @@ const modelData = computed(() => !props.models?.length ? null : {
   labels: props.models.map((m: ModelStat) => m.model),
   datasets: [{
     data: props.models.map((m: ModelStat) => m.total_tokens),
-    // upstream's 8 colours are series 1-6, 11 (cyan) and 10 (lime); the Apple series under the console theme
+    // upstream's 8 colours are series 1-6, 11 (cyan) and 10 (lime); the console's categorical series under the theme
     backgroundColor: [0, 1, 2, 3, 4, 5, 10, 9].map((index) => presentation.value.series[index])
   }]
 })
