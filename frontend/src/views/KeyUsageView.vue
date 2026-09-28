@@ -206,14 +206,14 @@
                     />
                     <defs>
                       <linearGradient :id="`ring-grad-${i}`" x1="0%" y1="0%" x2="100%" y2="100%">
-                        <stop offset="0%" :stop-color="RING_GRADIENTS[i % 4].from"/>
-                        <stop offset="100%" :stop-color="RING_GRADIENTS[i % 4].to"/>
+                        <stop offset="0%" :style="{ stopColor: RING_GRADIENTS[i % 4].from }"/>
+                        <stop offset="100%" :style="{ stopColor: RING_GRADIENTS[i % 4].to }"/>
                       </linearGradient>
                     </defs>
                   </svg>
                   <div class="absolute inset-0 flex flex-col items-center justify-center">
                     <template v-if="ring.isBalance">
-                      <span class="text-2xl font-bold tabular-nums" :style="{ color: RING_GRADIENTS[i % 4].from }">
+                      <span class="text-2xl font-bold tabular-nums" :style="{ color: RING_GRADIENTS[i % 4].text }">
                         {{ ring.amount }}
                       </span>
                     </template>
@@ -224,7 +224,7 @@
                       <span class="text-xs text-gray-500 dark:text-dark-400 mt-0.5">{{ t('keyUsage.used') }}</span>
                       <span
                         class="text-sm font-semibold mt-1 tabular-nums"
-                        :style="{ color: RING_GRADIENTS[i % 4].from }"
+                        :style="{ color: RING_GRADIENTS[i % 4].text }"
                       >{{ ring.amount }}</span>
                       <p v-if="ring.resetAt && formatResetTime(ring.resetAt)" class="text-xs text-gray-400 dark:text-gray-500 mt-0.5 tabular-nums">
                         ⟳ {{ formatResetTime(ring.resetAt) }}
@@ -528,11 +528,14 @@ function setDailyUsageDays(days: 7 | 30 | 90) {
 // ==================== Ring Animation ====================
 
 const CIRCUMFERENCE = 2 * Math.PI * 68
+// Upstream's ring colours (#14B8A6 -> #5EEAD4, #6366F1 -> #A5B4FC, #10B981 -> #6EE7B7, #F59E0B -> #FCD34D; the first ring
+// is upstream's primary teal) as fallbacks of the console theme's colours; the amount inside a ring takes the
+// family's readable text shade under the theme.
 const RING_GRADIENTS = [
-  { from: '#168a49', to: '#5eead4' },
-  { from: '#6366F1', to: '#A5B4FC' },
-  { from: '#10B981', to: '#6EE7B7' },
-  { from: '#F59E0B', to: '#FCD34D' },
+  { from: 'rgb(var(--theme-color-primary-500, 20 184 166))', to: 'rgb(var(--theme-color-info-400, 94 234 212))', text: 'rgb(var(--theme-text-primary-600, 20 184 166))' },
+  { from: 'rgb(var(--theme-color-indigo-500, 99 102 241))', to: 'rgb(var(--theme-color-indigo-300, 165 180 252))', text: 'rgb(var(--theme-text-indigo-600, 99 102 241))' },
+  { from: 'rgb(var(--theme-color-success-500, 16 185 129))', to: 'rgb(var(--theme-color-success-300, 110 231 183))', text: 'rgb(var(--theme-text-success-600, 16 185 129))' },
+  { from: 'rgb(var(--theme-color-warning-500, 245 158 11))', to: 'rgb(var(--theme-color-warning-300, 252 211 77))', text: 'rgb(var(--theme-text-warning-600, 245 158 11))' },
 ]
 
 const ringAnimated = ref(false)
@@ -949,9 +952,9 @@ onUnmounted(() => {
   transition: box-shadow 0.2s ease, border-color 0.2s ease;
 }
 .input-ring:focus {
+  box-shadow: 0 0 0 3px rgba(20, 184, 166, 0.2);
   border-color: #14b8a6;
-  outline: 2px solid rgba(22, 138, 73, 0.2);
-  outline-offset: 1px;
+  outline: none;
 }
 
 /* Ring animation */
@@ -962,17 +965,19 @@ onUnmounted(() => {
 }
 
 /* Skeleton loading */
-@keyframes pulse-opacity-kv {
-  0%, 100% { opacity: 0.72; }
-  50% { opacity: 1; }
+@keyframes shimmer-kv {
+  0%   { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
 }
 .skeleton {
-  background: rgb(var(--ui-surface));
-  animation: pulse-opacity-kv 1.8s ease-in-out infinite;
+  background: linear-gradient(90deg, #e5e7eb 25%, #f3f4f6 50%, #e5e7eb 75%);
+  background-size: 200% 100%;
+  animation: shimmer-kv 1.8s ease-in-out infinite;
   border-radius: 8px;
 }
 :global(.dark) .skeleton {
-  background: rgb(var(--ui-raised));
+  background: linear-gradient(90deg, #334155 25%, #1e293b 50%, #334155 75%);
+  background-size: 200% 100%;
 }
 
 /* Fade up animation */
@@ -990,8 +995,8 @@ onUnmounted(() => {
 
 /* Pulse dot */
 @keyframes pulse-dot-kv {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.6; }
+  0%, 100% { opacity: 1; box-shadow: 0 0 0 0 currentColor; }
+  50% { opacity: 0.6; box-shadow: 0 0 8px 2px currentColor; }
 }
 .pulse-dot {
   animation: pulse-dot-kv 2s ease-in-out infinite;

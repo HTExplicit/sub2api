@@ -126,7 +126,7 @@
                 @click="enableBreakdown && toggleBreakdown('model', model.model)"
               >
                 <td
-                  class="max-w-[100px] truncate py-1.5 font-medium"
+                  class="py-1.5 font-medium [overflow-wrap:anywhere]"
                   :class="enableBreakdown ? 'text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300' : 'text-gray-900 dark:text-white'"
                   :title="model.model"
                 >
@@ -212,7 +212,7 @@
                     {{ item.isOther ? 'Σ' : `#${index + 1}` }}
                   </span>
                   <span
-                    class="block max-w-[140px] truncate font-medium text-gray-900 dark:text-white"
+                    class="block min-w-0 font-medium text-gray-900 [overflow-wrap:anywhere] dark:text-white"
                     :title="getRankingRowLabel(item)"
                   >
                     {{ getRankingRowLabel(item) }}

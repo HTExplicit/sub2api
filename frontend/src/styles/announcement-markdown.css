@@ -63,7 +63,7 @@
 }
 
 .markdown-body pre {
-  @apply my-5 overflow-x-auto rounded-none border border-gray-200 bg-gray-50 p-5 dark:border-dark-600 dark:bg-dark-900;
+  @apply my-5 overflow-x-auto rounded-xl border border-gray-200 bg-gray-50 p-5 dark:border-dark-600 dark:bg-dark-900/50;
 }
 
 .markdown-body pre code {
@@ -93,15 +93,15 @@
 }
 
 .markdown-body th {
-  @apply bg-blue-50 font-semibold text-gray-900 dark:bg-blue-900/20 dark:text-white;
+  @apply bg-gradient-to-br from-blue-50 to-indigo-50 font-semibold text-gray-900 dark:from-blue-900/20 dark:to-indigo-900/10 dark:text-white;
 }
 
 .markdown-body tbody tr {
-  @apply transition-colors hover:bg-gray-50 dark:hover:bg-dark-700;
+  @apply transition-colors hover:bg-gray-50 dark:hover:bg-dark-700/30;
 }
 
 .markdown-body img {
-  @apply my-5 max-w-full rounded-none border border-gray-200 dark:border-dark-600;
+  @apply my-5 max-w-full rounded-xl border border-gray-200 shadow-md dark:border-dark-600;
 }
 
 .markdown-body strong {

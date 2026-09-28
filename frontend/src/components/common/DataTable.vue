@@ -1044,9 +1044,9 @@ tbody tr:hover .sticky-col {
   top: 0;
   right: 0;
   bottom: 0;
-  width: 1px;
+  width: 10px;
   transform: translateX(100%);
-  background: rgb(var(--ui-line));
+  background: linear-gradient(to right, rgba(0, 0, 0, 0.08), transparent);
   pointer-events: none;
 }
 
@@ -1057,9 +1057,9 @@ tbody tr:hover .sticky-col {
   top: 0;
   right: 0;
   bottom: 0;
-  width: 1px;
+  width: 10px;
   transform: translateX(100%);
-  background: rgb(var(--ui-line));
+  background: linear-gradient(to right, rgba(0, 0, 0, 0.08), transparent);
   pointer-events: none;
 }
 
@@ -1070,20 +1070,20 @@ tbody tr:hover .sticky-col {
   top: 0;
   left: 0;
   bottom: 0;
-  width: 1px;
+  width: 10px;
   transform: translateX(-100%);
-  background: rgb(var(--ui-line));
+  background: linear-gradient(to left, rgba(0, 0, 0, 0.08), transparent);
   pointer-events: none;
 }
 
 /* 暗色模式阴影 */
 .dark .is-scrollable .sticky-col-left::after,
 .dark .is-scrollable .sticky-col-left-second::after {
-  background: rgb(var(--ui-line));
+  background: linear-gradient(to right, rgba(0, 0, 0, 0.2), transparent);
 }
 
 .dark .is-scrollable .sticky-col-right::before {
-  background: rgb(var(--ui-line));
+  background: linear-gradient(to left, rgba(0, 0, 0, 0.2), transparent);
 }
 </style>
 

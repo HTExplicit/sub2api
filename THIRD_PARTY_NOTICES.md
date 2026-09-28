@@ -38,6 +38,10 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
-## Geist
+## Inter
 
-The frontend includes the Geist and Geist Mono variable fonts by Vercel, taken from the npm package [`geist` 1.7.2](https://www.npmjs.com/package/geist) and subset to the Latin range with fontTools (no other glyph changes). The fonts are distributed under the SIL Open Font License 1.1, included at `frontend/src/assets/fonts/geist/OFL.txt`.
+The frontend includes the Inter 4.001 variable font (weights 100-900) by The Inter Project Authors (https://github.com/rsms/inter), the Latin subset file `files/inter-latin-wght-normal.woff2` of the npm package [`@fontsource-variable/inter` 5.3.0](https://www.npmjs.com/package/@fontsource-variable/inter) with no glyph changes. The font is distributed under the SIL Open Font License 1.1, included at `frontend/src/assets/fonts/inter/OFL.txt`.
+
+## Geist Mono
+
+The frontend includes the Geist Mono variable font by Vercel, taken from the npm package [`geist` 1.7.2](https://www.npmjs.com/package/geist) and subset to the Latin range with fontTools (no other glyph changes). The font is distributed under the SIL Open Font License 1.1, included at `frontend/src/assets/fonts/geist/OFL.txt`.

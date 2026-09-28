@@ -136,28 +136,45 @@
           <template #cell-address="{ row }">
             <div class="flex items-center gap-1.5">
               <code class="code text-xs">{{ row.host }}:{{ row.port }}</code>
-              <div class="relative">
+              <div class="relative inline-flex items-center">
                 <button
                   type="button"
                   class="rounded p-0.5 text-gray-400 hover:text-primary-600 dark:hover:text-primary-400"
                   :title="t('admin.proxies.copyProxyUrl')"
+                  :aria-label="t('admin.proxies.copyProxyUrl')"
                   @click.stop="copyProxyUrl(row)"
                   @contextmenu.prevent="toggleCopyMenu(row.id)"
                 >
                   <Icon name="copy" size="sm" />
                 </button>
-                <!-- 右键展开格式选择菜单 -->
+                <button
+                  type="button"
+                  class="rounded p-0.5 text-gray-400 hover:text-primary-600 dark:hover:text-primary-400"
+                  :title="t('admin.proxies.copyFormats')"
+                  :aria-label="t('admin.proxies.copyFormats')"
+                  aria-haspopup="menu"
+                  :aria-expanded="copyMenuProxyId === row.id"
+                  data-test="proxy-copy-formats"
+                  @click.stop="toggleCopyMenu(row.id)"
+                >
+                  <Icon name="chevronDown" size="xs" />
+                </button>
+                <!-- 复制格式菜单：点下拉箭头或右键复制图标展开 -->
                 <div
                   v-if="copyMenuProxyId === row.id"
-                  class="absolute left-0 top-full z-50 mt-1 w-auto min-w-[180px] rounded-lg border border-gray-200 bg-white py-1 shadow-lg dark:border-dark-500 dark:bg-dark-700"
+                  role="menu"
+                  class="absolute left-0 top-full z-50 mt-1 w-max min-w-[220px] max-w-[360px] whitespace-normal rounded-lg border border-gray-200 bg-white py-1 shadow-lg dark:border-dark-500 dark:bg-dark-700"
                 >
                   <button
                     v-for="fmt in getCopyFormats(row)"
-                    :key="fmt.label"
-                    class="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs hover:bg-gray-100 dark:hover:bg-dark-600"
+                    :key="fmt.key"
+                    type="button"
+                    role="menuitem"
+                    class="flex w-full flex-col items-start gap-0.5 px-3 py-1.5 text-left text-xs hover:bg-gray-100 dark:hover:bg-dark-600"
                     @click.stop="copyFormat(fmt.value)"
                   >
-                    <span class="truncate font-mono text-gray-600 dark:text-gray-300">{{ fmt.label }}</span>
+                    <span class="text-[11px] text-gray-500 dark:text-gray-400">{{ fmt.name }}</span>
+                    <span class="font-mono text-gray-700 [overflow-wrap:anywhere] dark:text-gray-200">{{ fmt.value }}</span>
                   </button>
                 </div>
               </div>
@@ -2046,15 +2063,23 @@ function buildProxyUrl(row: any): string {
 
 function getCopyFormats(row: any) {
   const hasAuth = row.username || row.password
-  const fullUrl = buildProxyUrl(row)
+  const hostPort = `${row.host}:${row.port}`
   const formats = [
-    { label: fullUrl, value: fullUrl },
+    { key: 'url', name: t('admin.proxies.copyFormatStandard'), value: buildProxyUrl(row) },
   ]
   if (hasAuth) {
-    const withoutProtocol = fullUrl.replace(/^[^:]+:\/\//, '')
-    formats.push({ label: withoutProtocol, value: withoutProtocol })
+    formats.push({
+      key: 'host-port-user-pass',
+      name: t('admin.proxies.copyFormatHostPortUserPass'),
+      value: `${hostPort}:${row.username || ''}:${row.password || ''}`,
+    })
+    formats.push({
+      key: 'user-pass-host',
+      name: t('admin.proxies.copyFormatUserPassHost'),
+      value: `${buildAuthPart(row)}${hostPort}`,
+    })
   }
-  formats.push({ label: `${row.host}:${row.port}`, value: `${row.host}:${row.port}` })
+  formats.push({ key: 'host-port', name: t('admin.proxies.copyFormatHostPort'), value: hostPort })
   return formats
 }
 

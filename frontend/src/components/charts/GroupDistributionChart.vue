@@ -57,7 +57,7 @@
                 @click="enableBreakdown && group.group_id > 0 && toggleBreakdown('group', group.group_id)"
               >
                 <td
-                  class="max-w-[100px] truncate py-1.5 font-medium"
+                  class="py-1.5 font-medium [overflow-wrap:anywhere]"
                   :class="enableBreakdown && group.group_id > 0 ? 'text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300' : 'text-gray-900 dark:text-white'"
                   :title="group.group_name || String(group.group_id)"
                 >

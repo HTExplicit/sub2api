@@ -46,10 +46,12 @@ watch(
 
 const presentation = usePresentationColors()
 const colors = computed(() => ({
-  blue: '#3b82f6',
-  blueAlpha: '#3b82f620',
-  green: '#10b981',
-  greenAlpha: '#10b98120',
+  blue: presentation.value.tone('#3b82f6'),
+  blueAlpha: presentation.value.tone('#3b82f620'),
+  green: presentation.value.tone('#10b981'),
+  greenAlpha: presentation.value.tone('#10b98120'),
+  // the TPS axis labels are drawn in the series colour: its readable text shade under the console theme
+  greenText: presentation.value.toneText('#10b981'),
   grid: presentation.value.axisGrid,
   text: presentation.value.axis
 }))
@@ -151,7 +153,7 @@ const options = computed(() => {
         display: true,
         position: 'right' as const,
         grid: { display: false },
-        ticks: { color: c.green, font: { size: 10 } }
+        ticks: { color: c.greenText, font: { size: 10 } }
       }
     }
   }

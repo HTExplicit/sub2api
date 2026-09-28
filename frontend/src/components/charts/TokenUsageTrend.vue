@@ -193,7 +193,8 @@ const lineOptions = computed(() => ({
         drawOnChartArea: false
       },
       ticks: {
-        color: chartColors.value.cacheHitRate,
+        // the hit-rate axis labels are drawn in the series colour: its readable text shade under the console theme
+        color: presentation.value.toneText('#8b5cf6'),
         font: {
           size: 10
         },
