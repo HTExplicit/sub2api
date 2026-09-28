@@ -171,7 +171,10 @@ func TestBuildCodexModelsManifestForGroupUsesSyncedNonCapacityMetadataAndRegistr
 			},
 		},
 	}
-	account.Extra[UpstreamModelMetadataExtraKey].(map[string]any)["source_identity"] = UpstreamModelMetadataSourceIdentity(&account)
+	stored := account.GetUpstreamModelMetadataSnapshot()
+	require.NotNil(t, stored)
+	stored.SourceIdentity = UpstreamModelMetadataSourceIdentity(&account)
+	account.SetUpstreamModelMetadataSnapshot(*stored)
 	svc := &GatewayService{accountRepo: codexModelsVisibilityAccountRepo{byGroup: map[int64][]Account{
 		groupID: {account},
 	}}, compositeResolver: NewCompositeRouteResolver(&groupCapacityRouteRepo{})}

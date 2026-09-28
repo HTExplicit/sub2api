@@ -54,9 +54,11 @@ func TestCapacityIdentityDoesNotRemapRealTargetTwice(t *testing.T) {
 
 func TestCapacityIdentitySnapshotUsesRecognizedSpellingOnly(t *testing.T) {
 	account := newGroupCapacityAccount(1, nil, nil)
-	account.Extra[UpstreamModelMetadataExtraKey] = observedCapacityExtra(map[string]UpstreamModelMetadata{
+	snapshot := observedCapacityExtra(map[string]UpstreamModelMetadata{
 		"gpt-5.6-sol-high": {ContextWindow: 650001}, "vendor/gpt-5.6-sol-high": {ContextWindow: 450001},
 	})
+	snapshot.SourceIdentity = UpstreamModelMetadataSourceIdentity(&account)
+	account.SetUpstreamModelMetadataSnapshot(snapshot)
 	values, _, _ := accountCapacityObservations(&account)
 	require.Equal(t, int64(650001), values["gpt-5.6-sol"].ContextWindow)
 	require.Equal(t, int64(450001), values["vendor/gpt-5.6-sol-high"].ContextWindow)

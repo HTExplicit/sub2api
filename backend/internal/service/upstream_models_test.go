@@ -553,9 +553,10 @@ func TestSyncUpstreamModelCatalogUsesConfiguredModelsWhenListEndpointUnsupported
 		},
 	}
 
-	account.SetUpstreamModelMetadataSnapshot(UpstreamModelMetadataSnapshot{Models: map[string]UpstreamModelMetadata{
-		"old-live-model": {ID: "old-live-model", ContextWindow: 256000},
-	}})
+	account.SetUpstreamModelMetadataSnapshot(UpstreamModelMetadataSnapshot{Source: ModelContextSourceUpstream,
+		SourceIdentity: UpstreamModelMetadataSourceIdentity(account), Models: map[string]UpstreamModelMetadata{
+			"old-live-model": {ID: "old-live-model", ContextWindow: 256000, CapacitySource: ModelContextSourceUpstream},
+		}})
 	catalog, err := svc.SyncUpstreamModelCatalog(context.Background(), account)
 	require.NoError(t, err)
 	require.Contains(t, account.GetUpstreamModelMetadataSnapshot().Models, "old-live-model", "an unavailable model-list endpoint is not evidence of removal")
@@ -1150,14 +1151,15 @@ func TestSyncUpstreamModelCatalogAstraPartialRefreshPreservesKnownCapabilities(t
 		Credentials: map[string]any{"api_key": "test", "base_url": "https://api.openai.com/v1",
 			"model_mapping": map[string]any{"public-model": "mapped-only"}},
 	}
-	old := UpstreamModelMetadata{ID: "still-listed", ContextWindow: 256000}
-	account.SetUpstreamModelMetadataSnapshot(UpstreamModelMetadataSnapshot{Models: map[string]UpstreamModelMetadata{
-		"still-listed": old, "removed": {ID: "removed", ContextWindow: 128000},
-		"gpt-6-astra": {ID: "gpt-6-astra", CodexToolCapabilities: map[string]json.RawMessage{
-			"supports_search_tool": json.RawMessage("true"), "apply_patch_tool_type": json.RawMessage(`"freeform"`),
-			"comp_hash": json.RawMessage(`"3000"`),
-		}},
-	}})
+	old := UpstreamModelMetadata{ID: "still-listed", ContextWindow: 256000, CapacitySource: ModelContextSourceRegistry}
+	account.SetUpstreamModelMetadataSnapshot(UpstreamModelMetadataSnapshot{Source: "models.dev",
+		SourceIdentity: UpstreamModelMetadataSourceIdentity(account), Models: map[string]UpstreamModelMetadata{
+			"still-listed": old, "removed": {ID: "removed", ContextWindow: 128000},
+			"gpt-6-astra": {ID: "gpt-6-astra", CodexToolCapabilities: map[string]json.RawMessage{
+				"supports_search_tool": json.RawMessage("true"), "apply_patch_tool_type": json.RawMessage(`"freeform"`),
+				"comp_hash": json.RawMessage(`"3000"`),
+			}},
+		}})
 
 	catalog, err := svc.SyncUpstreamModelCatalog(context.Background(), account)
 	require.NoError(t, err)
