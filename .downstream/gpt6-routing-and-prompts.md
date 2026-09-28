@@ -8,17 +8,17 @@
 
 同步返回的 `model_list_source` 单独标明型号名单来自实时上游还是配置回退，与能力补充来源分开；只有实时目录可用来确认账号当时公布了哪些型号。Anthropic（`limit=1000`、`after_id`/`has_more`）与 Gemini（`pageSize=1000`、`nextPageToken`）目录按页取全。
 
-容量对所有主机使用同一优先级：自定义覆盖 > 本账号上游声明 > 参考目录 > models.dev 参考 > 未知。声明与 models.dev 参考存放在账号 `extra.upstream_model_metadata` 的模型条目中（`context_window`、`max_context_window`、`max_input_tokens`、`max_output_tokens`、`source: upstream|registry`、`observed_at`），旧的 `upstream_model_context_capacities` 已由迁移 258 并入。`context_window` 是默认工作窗口，`max_context_window` 是真实最大值。分组对外容量取能服务该模型的全部 `active` 账号（含 OAuth）的最小值；未知容量不写入 `/v1/models`，Codex 清单保留上游描述模板；图像、视频和音频模型不带文本容量。
+容量对所有主机使用同一优先级：自定义覆盖 > 适用官方 API 规格 > 来源身份匹配的本账号上游声明 > models.dev 参考 > 未知。官方记录一旦胜出，缺失的独立输入/输出字段保持未知，不从中转或 Codex 订阅观测补齐。声明与 models.dev 参考存放在账号 `extra.upstream_model_metadata` 的模型条目中（`context_window`、`max_context_window`、`max_input_tokens`、`max_output_tokens`、`source: upstream|registry`、`observed_at`），旧的 `upstream_model_context_capacities` 已由迁移 258 并入；快照另存规范化 `source_identity`，缺失或不匹配的旧观测只供管理员诊断。有效窗口使用 `max_context_window`，否则 `context_window`，再否则独立输入限制。分组对外容量取能服务该模型的全部 `active` 账号（含 OAuth）的最小值；未知容量不写入 `/v1/models`，Codex 清单保留真实上游字段，无证据的本地生成条目不伪造容量；图像、视频和音频模型不带文本容量。
 
 `active` 的 API Key 账号每 24 小时分批重新同步（失败退避），创建或修改凭据后立即同步；OAuth 账号不轮询，Codex 清单经过网关时记录其声明。手动同步保留。
 
 | 来源 | GPT-6 Sol / Luna 上下文 | 输出与推理 |
 | --- | --- | --- |
-| 官方 API 文档 | 1,050,000（不作容量参考） | 最大输出 128,000；none、low、medium、high、xhigh、max |
-| 参考目录（Codex 订阅值，适用于所有账号类型） | 默认 272,000，最大 872,000 | 默认 medium；Sol 支持客户端 Ultra 委派，Luna 最高 Max |
-| 账号上游或中转声明 | 按实际声明，优先于参考目录 | 实时能力优先于旧快照和默认值 |
+| 官方 API 文档 | 1,050,000（有适用条目时作为有效容量） | 最大输出 128,000；none、low、medium、high、xhigh、max |
+| Codex 订阅或账号上游声明 | 仅在官方 API 规格缺失时作为完整来源 | 默认与最大值按来源原样保留；不覆盖已适用的官方 API 记录 |
+| models.dev | 仅在官方 API 与来源绑定的上游声明均缺失时使用 | 缺失字段不从其他低优先级来源拼接 |
 
-参考目录的其他 GPT 值同样取 Codex 订阅值：gpt-5.5 为 272,000/272,000，gpt-5.4 默认 272,000、最大 1,000,000，gpt-5.4-mini 与 gpt-5.2 为 272,000，gpt-5.6-* 为 272,000/872,000；Codex 目录中没有的型号保留 API 规格。只收录官方文档列出的日期快照别名；Qwen 参考只适用于百炼（dashscope）主机。
+GPT 参考目录按官方 API 规格维护：GPT-5.5/GPT-5.4/GPT-5.6/GPT-6 为 1,050,000，GPT-5.4-mini/GPT-5.2/Daybreak Red 为 400,000，最大输出按官方条目记录。只收录官方文档列出的日期快照别名；Qwen 参考只适用于百炼（dashscope）主机。
 
 API Key 使用完整 Responses。OAuth 目录保留实际 Lite 与上下文字段。Ultra 不作为原生 API reasoning effort 发送。Cindy 库存不因 OpenAI 发布新模型而扩大。
 

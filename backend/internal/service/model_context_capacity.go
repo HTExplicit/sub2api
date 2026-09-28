@@ -19,8 +19,8 @@ const (
 )
 
 // Capacity evidence, highest priority first. The order is the same for every
-// account and host: an admin override, what this account's own upstream
-// declared, the release-pinned reference catalog, then the models.dev
+// account and host: an admin override, the applicable official API
+// specification, this account's own upstream declaration, then the models.dev
 // registry. There is no default: an unknown capacity is never advertised.
 const (
 	ModelContextSourceCustom   = "custom"
@@ -67,8 +67,10 @@ type AccountModelContextCapacityRow struct {
 	UpstreamModelIDs       []string                      `json:"upstream_model_ids,omitempty"`
 	Editable               bool                          `json:"editable"`
 	Upstream               *ModelContextCapacity         `json:"upstream,omitempty"`
+	UpstreamEvidenceStatus string                        `json:"upstream_evidence_status,omitempty"`
 	Official               *OfficialModelContextCapacity `json:"official,omitempty"`
 	Registry               *ModelContextCapacity         `json:"registry,omitempty"`
+	RegistryEvidenceStatus string                        `json:"registry_evidence_status,omitempty"`
 	CustomContextWindow    *int64                        `json:"custom_context_window,omitempty"`
 	AutomaticContextWindow int64                         `json:"automatic_context_window"`
 	AutomaticSource        string                        `json:"automatic_source"`
@@ -90,29 +92,68 @@ type modelContextEvidence struct {
 	capacity ModelContextCapacity
 }
 
-// resolveModelContextEvidence takes the planning window (context_window as the
-// default working window, max_context_window as the real maximum) from the
-// highest-priority evidence that states one. Independent input/output limits
-// keep the first compatible declaration in the same priority order; they are
-// never synthesized from the context window.
+// resolveModelContextEvidence selects one complete automatic evidence record,
+// then overlays an optional custom window. Once an automatic source wins, its
+// independent limits stay together: a lower-priority source must not silently
+// fill an omitted field. In particular, a custom window does not erase an
+// official output limit or fabricate one from a relay declaration.
 func resolveModelContextEvidence(items []modelContextEvidence) ResolvedModelContextCapacity {
+	automatic := resolveAutomaticModelContextEvidence(items)
+	var custom *ModelContextCapacity
 	for _, item := range items {
-		planning, ok := modelContextPlanningCapacity(item.capacity)
-		if !ok {
-			continue
-		}
-		result := ResolvedModelContextCapacity{ModelContextCapacity: planning, Source: item.source}
-		compatible := func(limit func(ModelContextCapacity) int64) int64 {
-			for _, candidate := range items {
-				if value := limit(sanitizeModelContextCapacity(candidate.capacity)); value > 0 && value <= result.ContextWindow {
-					return value
-				}
+		if item.source == ModelContextSourceCustom {
+			value := sanitizeModelContextCapacity(item.capacity)
+			if _, ok := modelContextPlanningCapacity(value); ok {
+				custom = &value
+				break
 			}
-			return 0
 		}
-		result.MaxInputTokens = compatible(func(value ModelContextCapacity) int64 { return value.MaxInputTokens })
-		result.MaxOutputTokens = compatible(func(value ModelContextCapacity) int64 { return value.MaxOutputTokens })
-		return result
+	}
+	if custom == nil {
+		return automatic
+	}
+	customPlanning, ok := modelContextPlanningCapacity(*custom)
+	if !ok {
+		return automatic
+	}
+	// An admin override changes only the planning window. Independent limits
+	// belong to the selected automatic source and are retained only when they
+	// remain compatible with the overridden window; omitted official fields
+	// stay omitted.
+	result := ResolvedModelContextCapacity{
+		ModelContextCapacity: ModelContextCapacity{
+			ContextWindow: customPlanning.ContextWindow, MaxContextWindow: customPlanning.ContextWindow,
+			CapacityBasis: ModelContextCapacityBasisTotal,
+		},
+		Source: ModelContextSourceCustom,
+	}
+	if automatic.Source != "" {
+		result.MaxInputTokens = compatibleModelContextLimit(automatic.MaxInputTokens, result.ContextWindow)
+		result.MaxOutputTokens = compatibleModelContextLimit(automatic.MaxOutputTokens, result.ContextWindow)
+		result.ObservedAt = automatic.ObservedAt
+	}
+	return result
+}
+
+func compatibleModelContextLimit(value, contextWindow int64) int64 {
+	if validModelContextTokens(value) && value <= contextWindow {
+		return value
+	}
+	return 0
+}
+
+func resolveAutomaticModelContextEvidence(items []modelContextEvidence) ResolvedModelContextCapacity {
+	// Resolve by source even if a caller assembles evidence in another order.
+	for _, source := range [...]string{ModelContextSourceOfficial, ModelContextSourceUpstream, ModelContextSourceRegistry} {
+		for _, item := range items {
+			if item.source != source {
+				continue
+			}
+			planning, ok := modelContextPlanningCapacity(item.capacity)
+			if ok {
+				return ResolvedModelContextCapacity{ModelContextCapacity: planning, Source: item.source}
+			}
+		}
 	}
 	return unknownModelContextCapacity("no_capacity_evidence")
 }
@@ -120,24 +161,20 @@ func resolveModelContextEvidence(items []modelContextEvidence) ResolvedModelCont
 func modelContextPlanningCapacity(raw ModelContextCapacity) (ModelContextCapacity, bool) {
 	value := sanitizeModelContextCapacity(raw)
 	switch {
-	case value.ContextWindow > 0:
-		value.CapacityBasis = ModelContextCapacityBasisTotal
-	case value.MaxInputTokens > 0:
-		value.ContextWindow = value.MaxInputTokens
-		value.CapacityBasis = ModelContextCapacityBasisInput
 	case value.MaxContextWindow > 0:
+		// The externally usable planning window is the proven maximum. A
+		// smaller context_window is a product default, not an upper bound.
 		value.ContextWindow = value.MaxContextWindow
 		value.CapacityBasis = ModelContextCapacityBasisMaximum
+	case value.ContextWindow > 0:
+		value.CapacityBasis = ModelContextCapacityBasisTotal
+		value.MaxContextWindow = value.ContextWindow
+	case value.MaxInputTokens > 0:
+		value.ContextWindow = value.MaxInputTokens
+		value.MaxContextWindow = value.MaxInputTokens
+		value.CapacityBasis = ModelContextCapacityBasisInput
 	default:
 		return ModelContextCapacity{}, false
-	}
-	// A declared maximum below the default window caps it: a client never
-	// plans beyond the real maximum.
-	if value.MaxContextWindow > 0 && value.MaxContextWindow < value.ContextWindow {
-		value.ContextWindow = value.MaxContextWindow
-	}
-	if value.MaxContextWindow < value.ContextWindow {
-		value.MaxContextWindow = value.ContextWindow
 	}
 	return value, true
 }
@@ -293,11 +330,11 @@ func (evidence *accountModelCapacityEvidence) resolve(modelID string, useCustom 
 			ContextWindow: value, MaxContextWindow: value, CapacityBasis: ModelContextCapacityBasisTotal,
 		}})
 	}
-	if value, ok := evidence.upstream[modelID]; ok {
-		items = append(items, modelContextEvidence{ModelContextSourceUpstream, value})
-	}
 	if official := LookupOfficialModelContextCapacity(account, modelID); official != nil {
 		items = append(items, modelContextEvidence{ModelContextSourceOfficial, official.ModelContextCapacity})
+	}
+	if value, ok := evidence.upstream[modelID]; ok {
+		items = append(items, modelContextEvidence{ModelContextSourceUpstream, value})
 	}
 	if value, ok := evidence.registry[modelID]; ok {
 		items = append(items, modelContextEvidence{ModelContextSourceRegistry, value})
@@ -416,7 +453,17 @@ func BuildAccountModelContextCapacityRows(account *Account, modelIDs []string) [
 		}
 	}
 	evidence := newAccountModelCapacityEvidence(account)
-	for _, values := range []map[string]ModelContextCapacity{evidence.upstream, evidence.registry} {
+	// Historical or foreign-endpoint observations remain visible to admins,
+	// but only identity-bound evidence above may influence the resolved value.
+	rawUpstream, rawRegistry, _ := accountRawCapacityObservations(account)
+	upstreamEvidenceStatus := "unbound"
+	if snapshot := account.GetUpstreamModelMetadataSnapshot(); snapshot != nil && snapshot.SourceIdentity != "" {
+		upstreamEvidenceStatus = "source_mismatch"
+		if upstreamModelMetadataSourceMatches(account, snapshot) {
+			upstreamEvidenceStatus = "current"
+		}
+	}
+	for _, values := range []map[string]ModelContextCapacity{rawUpstream, rawRegistry} {
 		for modelID := range values {
 			add(modelID)
 		}
@@ -439,11 +486,13 @@ func BuildAccountModelContextCapacityRows(account *Account, modelIDs []string) [
 		if len(aliases[modelID])+len(variants[modelID]) > 0 {
 			row.Aliases = dedupeAndSortModelIDs(append(aliases[modelID], variants[modelID]...))
 		}
-		if value, ok := evidence.upstream[modelID]; ok {
+		if value, ok := rawUpstream[modelID]; ok {
 			row.Upstream = &value
+			row.UpstreamEvidenceStatus = upstreamEvidenceStatus
 		}
-		if value, ok := evidence.registry[modelID]; ok {
+		if value, ok := rawRegistry[modelID]; ok {
 			row.Registry = &value
+			row.RegistryEvidenceStatus = upstreamEvidenceStatus
 		}
 		row.Official = LookupOfficialModelContextCapacity(account, modelID)
 		if value, ok := evidence.overrides[modelID]; ok {

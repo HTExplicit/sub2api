@@ -15,19 +15,19 @@ func TestModelContextCapacitySelectedGPTReferenceAndExactVariants(t *testing.T) 
 		window    int64
 		canonical string
 	}{
-		{"gpt-6-astra", 272000, "gpt-6-astra"},
-		{"team/region/GPT-6", 272000, "gpt-6-astra"},
-		{"vendor/gpt-5.6", 272000, "gpt-5.6-sol"},
-		{"vendor/gpt-5.6-terra-high", 272000, "gpt-5.6-terra"},
-		{"gpt-5.6-luna", 272000, "gpt-5.6-luna"},
-		{"gpt-daybreak-blue-latest", 272000, "gpt-daybreak-blue-latest"},
-		{"gpt-daybreak-red-latest", 372000, "gpt-daybreak-red-latest"},
-		{"vendor/gpt-5.4", 272000, "gpt-5.4"},
-		{"gpt-5.4-2026-03-05", 272000, "gpt-5.4"},
+		{"gpt-6-astra", 1050000, "gpt-6-astra"},
+		{"team/region/GPT-6", 1050000, "gpt-6-astra"},
+		{"vendor/gpt-5.6", 1050000, "gpt-5.6-sol"},
+		{"vendor/gpt-5.6-terra-high", 1050000, "gpt-5.6-terra"},
+		{"gpt-5.6-luna", 1050000, "gpt-5.6-luna"},
+		{"gpt-daybreak-blue-latest", 1050000, "gpt-daybreak-blue-latest"},
+		{"gpt-daybreak-red-latest", 400000, "gpt-daybreak-red-latest"},
+		{"vendor/gpt-5.4", 1050000, "gpt-5.4"},
+		{"gpt-5.4-2026-03-05", 1050000, "gpt-5.4"},
 		{"gpt-5.2-pro-2025-12-11", 400000, "gpt-5.2-pro"},
-		{"gpt-5.5", 272000, "gpt-5.5"},
-		{"vendor/GPT5.4mini", 272000, "gpt-5.4-mini"},
-		{"gpt-5.2", 272000, "gpt-5.2"},
+		{"gpt-5.5", 1050000, "gpt-5.5"},
+		{"vendor/GPT5.4mini", 400000, "gpt-5.4-mini"},
+		{"gpt-5.2", 400000, "gpt-5.2"},
 		{"vendor/gpt-5.3-codex", 400000, "gpt-5.3-codex"},
 		{"vendor/claude-sonnet-4-6", 1000000, "claude-sonnet-4-6"},
 		{"anthropic/claude-opus-4.6", 1000000, "claude-opus-4-6"},
@@ -52,17 +52,17 @@ func TestModelContextCapacitySelectedGPTReferenceAndExactVariants(t *testing.T) 
 		})
 	}
 	ref := LookupOfficialModelContextCapacity(account, "gpt-6")
-	require.Equal(t, int64(272000), ref.ContextWindow)
-	require.Equal(t, int64(872000), ref.MaxContextWindow, "the API-key reference is the Codex subscription maximum")
+	require.Equal(t, int64(1050000), ref.ContextWindow)
+	require.Zero(t, ref.MaxContextWindow, "the API spec only declares a total window")
 	require.Equal(t, int64(272000), ref.Reference.ContextWindow)
 	require.Equal(t, int64(872000), ref.Reference.MaxContextWindow)
-	require.Equal(t, "codex_subscription", ref.Product)
-	require.Contains(t, ref.Conditions, "Codex")
+	require.Equal(t, "api", ref.Product)
+	require.Contains(t, ref.Conditions, "API")
 	ref.Reference.ContextWindow = 1
 	require.Equal(t, int64(272000), LookupOfficialModelContextCapacity(account, "gpt-6").Reference.ContextWindow, "returned evidence must not mutate the release catalog")
 	mini := LookupOfficialModelContextCapacity(account, "gpt-5.4-mini")
-	require.Equal(t, "codex_subscription", mini.Product)
-	require.Zero(t, mini.MaxOutputTokens, "the subscription reference does not publish an independent output hard limit")
+	require.Equal(t, "api", mini.Product)
+	require.Equal(t, int64(128000), mini.MaxOutputTokens, "the API spec publishes an independent output hard limit")
 }
 
 func TestModelContextCapacityReferenceMatchingKeepsRawKeys(t *testing.T) {
@@ -70,6 +70,9 @@ func TestModelContextCapacityReferenceMatchingKeepsRawKeys(t *testing.T) {
 	account.Extra[UpstreamModelMetadataExtraKey] = observedCapacityExtra(map[string]UpstreamModelMetadata{
 		"team/gpt-5.4": {ContextWindow: 256000}, "team/unknown": {ContextWindow: 258000},
 	})
+	snapshot := account.GetUpstreamModelMetadataSnapshot()
+	snapshot.SourceIdentity = UpstreamModelMetadataSourceIdentity(&account)
+	account.SetUpstreamModelMetadataSnapshot(*snapshot)
 	before, err := json.Marshal(account)
 	require.NoError(t, err)
 	rows := BuildAccountModelContextCapacityRows(&account, []string{"team/gpt-5.4"})
@@ -83,7 +86,7 @@ func TestModelContextCapacityReferenceMatchingKeepsRawKeys(t *testing.T) {
 	require.Equal(t, []string{"public"}, matched.Aliases)
 	require.Equal(t, "gpt-5.4", matched.Official.ModelID)
 	require.Equal(t, int64(258000), matched.EffectiveContextWindow)
-	require.Equal(t, int64(256000), matched.AutomaticContextWindow, "the account's own declaration outranks the reference catalog")
+	require.Equal(t, int64(1050000), matched.AutomaticContextWindow, "the official API specification outranks the account declaration")
 	require.Equal(t, "custom", matched.EffectiveSource)
 	upstream := ResolveAccountModelContextCapacity(&account, "team/unknown")
 	require.Equal(t, int64(258000), upstream.ContextWindow)
@@ -94,7 +97,7 @@ func TestModelContextCapacityReferenceMatchingKeepsRawKeys(t *testing.T) {
 	overrides, ok := account.Extra[ModelContextOverridesExtraKey].(map[string]int64)
 	require.True(t, ok)
 	delete(overrides, "team/gpt-5.4")
-	require.Equal(t, int64(256000), ResolveAccountModelContextCapacity(&account, "team/gpt-5.4").ContextWindow, "clearing raw override must not borrow the bare-ID override")
+	require.Equal(t, int64(1050000), ResolveAccountModelContextCapacity(&account, "team/gpt-5.4").ContextWindow, "clearing raw override must not borrow the bare-ID override")
 }
 
 func TestModelContextCapacityReferenceCandidateMinimumAndWireIdentity(t *testing.T) {
@@ -115,7 +118,7 @@ func TestModelContextCapacityReferenceCandidateMinimumAndWireIdentity(t *testing
 	require.Equal(t, "gpt-6", envelope.Data[0]["id"])
 	require.Equal(t, "Keep label", envelope.Data[0]["display_name"])
 	require.Equal(t, true, envelope.Data[0]["sentinel"])
-	require.Equal(t, float64(272000), envelope.Data[0]["context_window"])
-	require.Equal(t, float64(1000000), envelope.Data[0]["max_context_window"], "a GPT-looking public alias must not identify the unknown actual target")
+	require.Equal(t, float64(1050000), envelope.Data[0]["context_window"])
+	require.Equal(t, float64(1050000), envelope.Data[0]["max_context_window"], "a GPT-looking public alias must not identify the unknown actual target")
 	require.NotContains(t, string(body), "context_window", "projection must not mutate the input cache body")
 }

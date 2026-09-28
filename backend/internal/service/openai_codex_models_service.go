@@ -330,12 +330,6 @@ func openAIConfiguredCodexModelIDsForGroup(accounts []Account, group *Group) []s
 const (
 	configuredCodexModelPriority       = 50
 	configuredCodexCustomDescription   = "Custom model routed through Sub2API."
-	configuredCodexFallbackContext     = 272_000
-	configuredCodexDeepSeekV4Context   = 1_000_000
-	configuredCodexGrokContext         = 500_000
-	configuredCodexGrokBuildContext    = 256_000
-	configuredCodexGPT56MaxContext     = 872_000
-	configuredCodexGPT6AstraContext    = 1_050_000
 	configuredCodexToolOutputMaxTokens = 10_000
 )
 
@@ -401,11 +395,11 @@ type configuredCodexModelDescriptor struct {
 	TruncationPolicy                  configuredCodexTruncationPolicy `json:"truncation_policy"`
 	SupportsImageDetailOriginal       bool                            `json:"supports_image_detail_original"`
 	SupportsParallelToolCalls         bool                            `json:"supports_parallel_tool_calls"`
-	ContextWindow                     int64                           `json:"context_window"`
-	MaxContextWindow                  int64                           `json:"max_context_window"`
+	ContextWindow                     int64                           `json:"context_window,omitempty"`
+	MaxContextWindow                  int64                           `json:"max_context_window,omitempty"`
 	AutoCompactTokenLimit             any                             `json:"auto_compact_token_limit"`
 	CompHash                          any                             `json:"comp_hash"`
-	EffectiveContextWindowPercent     int64                           `json:"effective_context_window_percent"`
+	EffectiveContextWindowPercent     int64                           `json:"effective_context_window_percent,omitempty"`
 	ExperimentalSupportedTools        []string                        `json:"experimental_supported_tools"`
 	InputModalities                   []string                        `json:"input_modalities"`
 	SupportsSearchTool                bool                            `json:"supports_search_tool"`
@@ -446,9 +440,6 @@ func newConfiguredCodexModelDescriptor(modelID string) configuredCodexModelDescr
 		DefaultReasoningSummary:           "auto",
 		WebSearchToolType:                 "text",
 		TruncationPolicy:                  configuredCodexTruncationPolicy{Mode: "bytes", Limit: configuredCodexToolOutputMaxTokens},
-		ContextWindow:                     configuredCodexFallbackContext,
-		MaxContextWindow:                  configuredCodexFallbackContext,
-		EffectiveContextWindowPercent:     95,
 		ExperimentalSupportedTools:        []string{},
 		InputModalities:                   []string{"text"},
 	}
@@ -464,16 +455,12 @@ func newConfiguredCodexModelDescriptor(modelID string) configuredCodexModelDescr
 			{Effort: "max", Description: "Maximum reasoning depth for complex tasks"},
 		}
 		descriptor.SupportsParallelToolCalls = true
-		descriptor.ContextWindow = configuredCodexDeepSeekV4Context
-		descriptor.MaxContextWindow = configuredCodexDeepSeekV4Context
 	}
 
 	if isGrokCodexModel(modelID) {
 		descriptor.DisplayName = grokCodexDisplayName(modelID)
 		descriptor.Description = "Grok coding and reasoning model routed through Sub2API."
 		descriptor.SupportsParallelToolCalls = true
-		descriptor.ContextWindow = grokCodexContextWindow(modelID)
-		descriptor.MaxContextWindow = descriptor.ContextWindow
 		if grokCodexSupportsReasoningEffort(modelID) {
 			defaultReasoningLevel := "high"
 			descriptor.DefaultReasoningLevel = &defaultReasoningLevel
@@ -482,10 +469,6 @@ func newConfiguredCodexModelDescriptor(modelID string) configuredCodexModelDescr
 	}
 
 	if isClaudeCodexModel(modelID) {
-		if claude.IsOpus55(modelID) {
-			descriptor.ContextWindow = 1_000_000
-			descriptor.MaxContextWindow = 1_000_000
-		}
 		descriptor.DisplayName = claudeCodexDisplayName(modelID)
 		descriptor.Description = "Claude coding and reasoning model routed through Sub2API."
 		descriptor.SupportsParallelToolCalls = true
@@ -510,11 +493,6 @@ func newConfiguredCodexModelDescriptor(modelID string) configuredCodexModelDescr
 			descriptor.SupportedReasoningLevels = configuredCodexGPTReasoningLevels(modelID)
 			descriptor.DefaultReasoningSummary = "none"
 			descriptor.TruncationPolicy = configuredCodexTruncationPolicy{Mode: "tokens", Limit: configuredCodexToolOutputMaxTokens}
-			// GPT-6 Sol/Luna retain the existing 5.6 Codex window as an offline
-			// compatibility template; live account metadata remains authoritative.
-			if isOpenAIGPT56Model(modelID) || openai.IsGPT6SolOrLunaModelSpelling(modelID) {
-				descriptor.MaxContextWindow = configuredCodexGPT56MaxContext
-			}
 			if isOpenAIGPT6SolOrLunaModel(modelID) {
 				descriptor.MultiAgentVersion = "v2"
 				descriptor.MinimalClientVersion = openai.GPT6CodexMinimumClientVersion
@@ -532,8 +510,6 @@ func newConfiguredCodexModelDescriptor(modelID string) configuredCodexModelDescr
 				multiAgentEffort := "xhigh"
 				descriptor.MultiAgentReasoningEffort = &multiAgentEffort
 				descriptor.MultiAgentVersion = "v2"
-				descriptor.ContextWindow = configuredCodexGPT6AstraContext
-				descriptor.MaxContextWindow = configuredCodexGPT6AstraContext
 			}
 		}
 		if SupportsVerbosity(modelID) {
@@ -805,14 +781,6 @@ func grokDefaultDisplayName(modelID string) string {
 		}
 	}
 	return ""
-}
-
-func grokCodexContextWindow(modelID string) int64 {
-	normalized := strings.ToLower(xai.StripGrokProviderPrefix(strings.TrimSpace(modelID)))
-	if strings.HasPrefix(normalized, "grok-build") {
-		return configuredCodexGrokBuildContext
-	}
-	return configuredCodexGrokContext
 }
 
 func isClaudeCodexModel(modelID string) bool {
@@ -1282,7 +1250,7 @@ func accountCodexModelSupportsImageInput(account *Account, upstreamModel string)
 	}
 	switch account.Platform {
 	case PlatformOpenAI, PlatformDeepseek, PlatformOpenCodeGo:
-		if metadata, ok := account.GetUpstreamModelMetadata(upstreamModel); ok {
+		if metadata, ok := account.CurrentUpstreamModelMetadata(upstreamModel); ok {
 			if modalities := normalizeCodexInputModalities(metadata.InputModalities); len(modalities) > 0 {
 				// Official GPT-6 Astra metadata briefly shipped with a stale
 				// text-only modality list. Keep explicit provider metadata
@@ -2248,7 +2216,7 @@ func convertOpenAIModelListToCodexManifestForAccount(body []byte, account *Accou
 			if encoded, err := json.Marshal(entry); err == nil && json.Unmarshal(encoded, &rawEntry) == nil {
 				metadata = upstreamMetadataFromCapabilityEntry(id, rawEntry)
 			}
-			if snapshot, exists := account.GetUpstreamModelMetadata(capabilityModel); exists {
+			if snapshot, exists := account.CurrentUpstreamModelMetadata(capabilityModel); exists {
 				metadata, _ = mergeUpstreamModelMetadata(metadata, snapshot)
 			}
 			metadata, _ = mergeUpstreamModelMetadata(metadata, defaults)
@@ -2325,7 +2293,7 @@ func (s *OpenAIGatewayService) CompleteAPIKeyCodexModelsManifestForClient(manife
 }
 
 func applySyncedAPIKeyCodexModelMetadata(body []byte, account *Account, overwriteLocalDefaults bool) ([]byte, error) {
-	snapshot := account.GetUpstreamModelMetadataSnapshot()
+	snapshot := upstreamMetadataForSource(account, UpstreamModelMetadataSourceIdentity(account))
 	if snapshot == nil || len(snapshot.Models) == 0 {
 		return body, nil
 	}

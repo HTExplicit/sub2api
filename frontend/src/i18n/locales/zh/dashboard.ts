@@ -255,6 +255,10 @@ export default {
       opencode: {
         title: 'OpenCode 配置示例',
         subtitle: 'opencode.json',
+        catalogTitle: '已解析的模型容量（可选）',
+        catalogDescription: '获取网关解析后的模型目录后，才会写入精确的上下文和输出限制。获取失败时保持未知，不填入容量。',
+        catalogLoading: '正在获取已解析目录…',
+        catalogError: '无法获取已解析目录，配置未加入容量限制。',
         hint: '配置文件路径：~/.config/opencode/opencode.json（或 opencode.jsonc），不存在需手动创建。可使用默认 provider（openai/anthropic/google）或自定义 provider_id。API Key 支持直接配置或通过客户端 /connect 命令配置。示例仅供参考，模型与选项可按需调整。'
       }
     },

@@ -36,6 +36,13 @@ func (r *upstreamModelMetadataRepoStub) UpdateExtra(_ context.Context, id int64,
 	return r.err
 }
 
+func (r *upstreamModelMetadataRepoStub) UpdateExtraIfRevision(ctx context.Context, id int64, _ time.Time, updates map[string]any) (bool, error) {
+	if err := r.UpdateExtra(ctx, id, updates); err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
 func upstreamModelSyncTestConfig() *config.Config {
 	return &config.Config{
 		Security: config.SecurityConfig{

@@ -24,7 +24,7 @@ export default {accounts: {
       importSessionFilter: 'Imported accounts ({count})',
       contextCapacity: {
         title: 'Model context capacities',
-        description: 'Priority: custom > this account\'s upstream declaration > reference catalog > models.dev reference; without any of them the capacity is unknown and is not advertised. Shared aliases use the same real upstream model setting; this does not change routing or increase upstream limits.',
+        description: 'Priority: custom > applicable official API specification > this account\'s valid upstream declaration > models.dev registry; without any of them the capacity is unknown and is not advertised. Shared aliases use the same real upstream model setting; this does not change routing or increase upstream limits.',
         units: 'Decimal input: 258K = 258000, 1.05M = 1050000 tokens. Values retain every token.',
         saveBeforeSync: 'Save this account\'s endpoint, product or credential changes before syncing upstream models.',
         syncSuccess: 'Synced capacity information for {count} model(s); the whitelist and mappings were not changed.',
@@ -34,6 +34,11 @@ export default {accounts: {
         effective: 'Adopted capacity',
         exactTokens: '{value} tokens',
         upstream: 'Upstream declaration',
+        upstreamEvidence: {
+          current: 'Observation matches this account\'s current upstream identity.',
+          unbound: 'Observation has no bound upstream identity; shown for diagnosis and ignored when resolving capacity.',
+          source_mismatch: 'Observation belongs to a different upstream identity; shown for diagnosis and ignored when resolving capacity.'
+        },
         official: 'Official specification',
         custom: 'Custom capacity',
         edit: 'Edit context capacity for {model}',
@@ -61,7 +66,7 @@ export default {accounts: {
         sources: {
           custom: 'Custom',
           upstream: 'Upstream',
-          official: 'Reference',
+          official: 'Official API',
           registry: 'models.dev',
           invalid: 'Invalid draft'
         },

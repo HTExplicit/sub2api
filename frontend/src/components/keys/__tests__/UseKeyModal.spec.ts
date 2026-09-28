@@ -170,7 +170,7 @@ describe('UseKeyModal', () => {
       apiKey: 'sk-grok-test'
     })
     expect(parsed.provider.grok.models['grok-4.5']).toBeDefined()
-    expect(parsed.provider.grok.models['grok-4.5'].limit.context).toBe(500000)
+    expect(parsed.provider.grok.models['grok-4.5'].limit).toBeUndefined()
     expect(parsed.provider.grok.models['grok-build-0.1']).toBeDefined()
     expect(parsed.provider.grok.models['grok-4.20-multi-agent-0309']).toBeDefined()
     expect(parsed.provider.grok.models['grok-composer-2.5-fast']).toBeDefined()
@@ -675,19 +675,87 @@ describe('UseKeyModal', () => {
     }
     expect(models['gpt-5.6'].name).toBe('GPT-5.6 (Sol)')
     expect(models['gpt-6-sol'].variants).toHaveProperty('none')
-    expect(models['gpt-6-luna'].limit).toEqual({ context: 1050000, output: 128000 })
+    expect(models['gpt-6-luna'].limit).toBeUndefined()
     expect(models['gpt-6']).toEqual({
       name: 'GPT-6 (Astra)',
-      limit: { context: 1050000, output: 128000 },
       options: { store: false },
       variants: { low: {}, medium: {}, high: {}, xhigh: {}, max: {} }
     })
     expect(models['gpt-6-astra']).toEqual({
       name: 'GPT-6 Astra',
-      limit: { context: 1050000, output: 128000 },
       options: { store: false },
       variants: { low: {}, medium: {}, high: {}, xhigh: {}, max: {} }
     })
+  })
+
+  it('uses exact resolved manifest capacity in OpenCode and leaves unmatched models unknown', async () => {
+    const manifest = {
+      models: [
+        {
+          slug: 'gpt-5.6',
+          context_window: 272000,
+          max_context_window: 872000,
+          max_output_tokens: 64000,
+          context_capacity_source: 'official'
+        },
+        {
+          slug: 'gpt-6',
+          context_window: 200000,
+          max_output_tokens: 64000
+        },
+        {
+          slug: 'gpt-5.4',
+          context_window: 1050000,
+          context_capacity_source: 'official'
+        },
+        {
+          slug: 'gpt-5.2',
+          context_window: 400000,
+          max_context_window: 258000,
+          max_input_tokens: 256000,
+          max_output_tokens: 64000,
+          context_capacity_source: 'custom'
+        }
+      ]
+    }
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => manifest
+    }))
+    const wrapper = mount(UseKeyModal, {
+      props: {
+        show: true,
+        apiKey: 'sk-test',
+        baseUrl: 'https://example.com/v1',
+        platform: 'openai'
+      },
+      global: {
+        stubs: {
+          BaseDialog: {
+            template: '<div><slot /><slot name="footer" /></div>'
+          },
+          Icon: {
+            template: '<span />'
+          }
+        }
+      }
+    })
+
+    const opencodeTab = wrapper.findAll('button').find((button) =>
+      button.text().includes('keys.useKeyModal.cliTabs.opencode')
+    )
+    expect(opencodeTab).toBeDefined()
+    await opencodeTab!.trigger('click')
+    await flushPromises()
+    await nextTick()
+
+    const parsed = JSON.parse(wrapper.find('pre code').text())
+    expect(parsed.provider.openai.models['gpt-5.6'].limit).toEqual({ context: 872000, output: 64000 })
+    expect(parsed.provider.openai.models['gpt-6'].limit).toBeUndefined()
+    expect(parsed.provider.openai.models['gpt-5.4'].limit).toBeUndefined()
+    expect(parsed.provider.openai.models['gpt-5.2'].limit).toEqual({ context: 258000, input: 256000, output: 64000 })
+    expect(parsed.provider.openai.models['gpt-5.6'].variants).toHaveProperty('max')
   })
 
   it('exports Opus 5.5 only on the Anthropic provider with adaptive defaults', async () => {
@@ -700,7 +768,7 @@ describe('UseKeyModal', () => {
     await tab!.trigger('click')
     await nextTick()
     const model = JSON.parse(wrapper.find('pre code').text()).provider.anthropic.models['claude-opus-5-5']
-    expect(model.limit).toEqual({ context: 1000000, output: 128000 })
+    expect(model.limit).toBeUndefined()
     expect(model.options).toEqual({ thinking: { type: 'adaptive' }, effort: 'medium' })
     expect(model.variants.xhigh.effort).toBe('xhigh')
     expect(model.variants).not.toHaveProperty('none')
@@ -744,11 +812,11 @@ describe('UseKeyModal', () => {
     const fable = parsed.provider['antigravity-claude'].models['claude-fable-5']
 
     expect(fable51.name).toBe('Claude Fable 5.1')
-    expect(fable51.limit).toEqual({ context: 1000000, output: 128000 })
+    expect(fable51.limit).toBeUndefined()
     expect(fable51.options.thinking).toEqual({ type: 'adaptive' })
     expect(fable51.options.thinking).not.toHaveProperty('budgetTokens')
     expect(fable.name).toBe('Claude Fable 5')
-    expect(fable.limit).toEqual({ context: 1000000, output: 128000 })
+    expect(fable.limit).toBeUndefined()
     expect(fable.options.thinking).toEqual({ type: 'adaptive' })
     expect(fable.options.thinking).not.toHaveProperty('budgetTokens')
   })
@@ -848,9 +916,11 @@ describe('UseKeyModal', () => {
     const windowsConfig = wrapper.findAll('pre code')
       .map((code) => code.text())
       .find((content) => content.includes('[model_providers.sub2api]'))
-    expect(windowsConfig).toContain(
-      'model_catalog_json = "%userprofile%\\\\.codex\\\\codex-models.json"'
-    )
+    // Codex does not expand %userprofile% in config.toml; it only expands ~/.
+    expect(windowsConfig).toContain('model_catalog_json = "~/.codex/codex-models.json"')
+    expect(windowsConfig).not.toContain('%userprofile%')
+    expect(wrapper.get('[data-testid="codex-model-catalog"]').text())
+      .toContain('%userprofile%\\.codex\\codex-models.json')
   })
 
   it.each(['anthropic', 'gemini', 'antigravity', 'kimi', 'zhipu', 'minimax'] as const)(

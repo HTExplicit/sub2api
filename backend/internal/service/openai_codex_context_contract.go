@@ -9,10 +9,10 @@ import (
 
 const (
 	// This deterministic self-test reports policy, not production model limits.
-	OfficialCodexContextContractSuccessLine = "CODEX_CONTEXT_CONTRACT|version=3|valid=true|priority=custom,upstream,official,registry|unknown=unchanged|aggregate=group_minimum|sentinel=preserved"
+	OfficialCodexContextContractSuccessLine = "CODEX_CONTEXT_CONTRACT|version=4|valid=true|priority=custom,official,upstream,registry|unknown=unchanged|aggregate=group_minimum|sentinel=preserved"
 	OfficialCodexContextContractFailureLine = "CODEX_CONTEXT_CONTRACT|valid=false|reason=contract-mismatch"
 	OfficialCodexContextInvalidArgsLine     = "CODEX_CONTEXT_CONTRACT|valid=false|reason=invalid-arguments"
-	officialCodexContextContractSentinel    = "codex-context-contract-v3"
+	officialCodexContextContractSentinel    = "codex-context-contract-v4"
 )
 
 type officialCodexContextContractEnvelope struct {
@@ -24,6 +24,8 @@ type officialCodexContextContractModel struct {
 	Slug              string          `json:"slug"`
 	ContextWindow     *int64          `json:"context_window"`
 	MaxContextWindow  *int64          `json:"max_context_window"`
+	MaxInputTokens    *int64          `json:"max_input_tokens"`
+	MaxOutputTokens   *int64          `json:"max_output_tokens"`
 	AutoCompactLimit  json.RawMessage `json:"auto_compact_token_limit"`
 	Source            string          `json:"context_capacity_source"`
 	Reason            string          `json:"context_capacity_reason"`
@@ -47,9 +49,9 @@ func VerifyOfficialCodexContextContract() (string, error) {
 
 func buildOfficialCodexContextContractFixture() ([]byte, error) {
 	custom := modelContextEvidence{ModelContextSourceCustom, ModelContextCapacity{ContextWindow: 512000, MaxContextWindow: 512000}}
-	upstream := modelContextEvidence{ModelContextSourceUpstream, ModelContextCapacity{ContextWindow: 64000, MaxContextWindow: 128000}}
+	upstream := modelContextEvidence{ModelContextSourceUpstream, ModelContextCapacity{ContextWindow: 64000, MaxContextWindow: 128000, MaxInputTokens: 64000, MaxOutputTokens: 8192}}
 	official := modelContextEvidence{ModelContextSourceOfficial, ModelContextCapacity{ContextWindow: 272000, MaxContextWindow: 872000}}
-	registry := modelContextEvidence{ModelContextSourceRegistry, ModelContextCapacity{ContextWindow: 400000}}
+	registry := modelContextEvidence{ModelContextSourceRegistry, ModelContextCapacity{ContextWindow: 400000, MaxOutputTokens: 100000}}
 	relay := modelContextEvidence{ModelContextSourceUpstream, ModelContextCapacity{ContextWindow: 1050000}}
 	cases := []struct {
 		slug     string
@@ -57,12 +59,12 @@ func buildOfficialCodexContextContractFixture() ([]byte, error) {
 		compact  int64
 	}{
 		{"fixture-custom", resolveModelContextEvidence([]modelContextEvidence{custom, upstream, official, registry}), 9999999},
-		{"fixture-upstream", resolveModelContextEvidence([]modelContextEvidence{upstream, official, registry}), 50000},
-		{"fixture-official", resolveModelContextEvidence([]modelContextEvidence{official, registry}), 9999999},
+		{"fixture-upstream", resolveModelContextEvidence([]modelContextEvidence{upstream, registry}), 50000},
+		{"fixture-official", resolveModelContextEvidence([]modelContextEvidence{upstream, registry, official}), 9999999},
 		{"fixture-registry", resolveModelContextEvidence([]modelContextEvidence{registry}), 9999999},
 		{"fixture-unknown", resolveModelContextEvidence(nil), 666666},
 		{"fixture-group", minimumModelContextCapacity([]ResolvedModelContextCapacity{
-			resolveModelContextEvidence([]modelContextEvidence{relay, official}),
+			resolveModelContextEvidence([]modelContextEvidence{relay}),
 			resolveModelContextEvidence([]modelContextEvidence{official}),
 		}), 9999999},
 	}
@@ -72,6 +74,8 @@ func buildOfficialCodexContextContractFixture() ([]byte, error) {
 			"slug":                     json.RawMessage(fmt.Sprintf("%q", test.slug)),
 			"context_window":           json.RawMessage("777000"),
 			"max_context_window":       json.RawMessage("888000"),
+			"max_input_tokens":         json.RawMessage("123000"),
+			"max_output_tokens":        json.RawMessage("456000"),
 			"auto_compact_token_limit": json.RawMessage(fmt.Sprintf("%d", test.compact)),
 			"contract_sentinel":        json.RawMessage(fmt.Sprintf("%q", officialCodexContextContractSentinel)),
 			"unknown_capability":       json.RawMessage(`{"keep":true}`),
@@ -95,11 +99,11 @@ func verifyNormalizedOfficialCodexContextContract(body []byte) error {
 		contextWindow, maxWindow      int64
 	}{
 		{"fixture-custom", "custom", "", "null", 512000, 512000},
-		{"fixture-upstream", "upstream", "", "50000", 64000, 128000},
-		{"fixture-official", "official", "", "null", 272000, 872000},
+		{"fixture-upstream", "upstream", "", "50000", 128000, 128000},
+		{"fixture-official", "official", "", "null", 872000, 872000},
 		{"fixture-registry", "registry", "", "null", 400000, 400000},
 		{"fixture-unknown", "", "", "666666", 777000, 888000},
-		{"fixture-group", "official", "group_minimum", "null", 272000, 872000},
+		{"fixture-group", "official", "group_minimum", "null", 872000, 872000},
 	}
 	if len(envelope.Models) != len(checks) {
 		return errors.New("model fixture count changed")
@@ -118,6 +122,9 @@ func verifyNormalizedOfficialCodexContextContract(body []byte) error {
 			model.Source != check.source || model.Reason != check.reason ||
 			!bytes.Equal(bytes.TrimSpace(model.AutoCompactLimit), []byte(check.compact)) {
 			return fmt.Errorf("model %q policy mismatch", check.slug)
+		}
+		if (check.source == ModelContextSourceOfficial || check.source == ModelContextSourceCustom) && (model.MaxInputTokens != nil || model.MaxOutputTokens != nil) {
+			return fmt.Errorf("model %q borrowed independent limits from another source", check.slug)
 		}
 		if model.ContractSentinel != officialCodexContextContractSentinel ||
 			!bytes.Equal(bytes.TrimSpace(model.UnknownCapability), []byte(`{"keep":true}`)) {

@@ -64,6 +64,9 @@ func splitOpenAICompatReasoningModel(model string) (normalizedModel string, reas
 // distinct max level may retain max; native parameter normalization is not a
 // capability check.
 func openAICompatAnthropicReasoningEffort(req *apicompat.AnthropicRequest, upstreamModel, convertedEffort string) string {
+	if convertedEffort == "none" {
+		return convertedEffort
+	}
 	if req == nil || req.OutputConfig == nil || !strings.EqualFold(strings.TrimSpace(req.OutputConfig.Effort), "max") {
 		return convertedEffort
 	}

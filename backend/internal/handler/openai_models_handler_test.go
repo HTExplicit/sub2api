@@ -239,6 +239,12 @@ func TestPinnedModelsAllowlistExpandsWildcardsForBothRepresentations(t *testing.
 			accounts[0].Credentials["model_mapping"] = map[string]any{
 				"public-a": "gpt-5.5", "public-b": "gpt-5.5", "blocked": "gpt-5.5",
 			}
+			accounts[0].SetUpstreamModelMetadataSnapshot(service.UpstreamModelMetadataSnapshot{
+				Source: "upstream", SourceIdentity: service.UpstreamModelMetadataSourceIdentity(&accounts[0]),
+				Models: map[string]service.UpstreamModelMetadata{
+					"gpt-5.5": {ID: "gpt-5.5", ContextWindow: 272000, MaxContextWindow: 872000, MaxOutputTokens: 64000},
+				},
+			})
 			body := `{"data":[{"id":"gpt-5.5","owned_by":"provider"}]}`
 			if codex {
 				body = `{"models":[{"slug":"gpt-5.5","context_window":424242}]}`
@@ -249,7 +255,10 @@ func TestPinnedModelsAllowlistExpandsWildcardsForBothRepresentations(t *testing.
 				ModelAllowlist:            service.GroupModelAllowlist{Enabled: true, Models: []string{"public-b", "public-*"}},
 				CodexModelsManifestConfig: service.GroupCodexModelsManifestConfig{Enabled: true, AccountIDs: []int64{1}}}
 			wantCapacity := service.ResolveAccountModelContextCapacity(&accounts[0], "gpt-5.5")
-			require.Equal(t, "official", wantCapacity.Source, "without a persisted upstream declaration the public aliases use the real upstream's reference capacity")
+			require.Equal(t, "official", wantCapacity.Source, "the real upstream target uses its official API capacity even with a current smaller observation")
+			require.EqualValues(t, 1050000, wantCapacity.ContextWindow)
+			require.EqualValues(t, 1050000, wantCapacity.MaxContextWindow)
+			require.EqualValues(t, 128000, wantCapacity.MaxOutputTokens)
 			if codex {
 				recorder := performPinnedCodexModelsRequest(t, h, group, "")
 				require.Equal(t, http.StatusOK, recorder.Code, recorder.Body.String())

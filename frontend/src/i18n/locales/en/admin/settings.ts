@@ -534,7 +534,7 @@ export default {
       },
       officialModelCatalog: {
         title: 'Model catalog and capacity references',
-        description: 'References support capacity planning. Account overrides and live upstream declarations retain their existing precedence.',
+        description: 'Capacity priority: account override > applicable official API specification > valid upstream declaration > models.dev registry. Values missing from the selected source remain unknown.',
         search: 'Search model or provider',
         count: '{count} matches.',
         context: 'Context',

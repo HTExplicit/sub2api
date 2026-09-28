@@ -330,7 +330,7 @@ func TestDeepseekAllCostEntrypointsAndProRetention(t *testing.T) {
 				require.NoError(t, err)
 				require.InDelta(t, want, viaRequest.TotalCost, 1e-12)
 			}
-			stats := tryModelFilePricing(bs, model.name, tokens, "", at)
+			stats := tryModelFilePricing(bs, model.name, tokens, "", at, true)
 			require.NotNil(t, stats)
 			require.InDelta(t, want, *stats, 1e-12)
 		}

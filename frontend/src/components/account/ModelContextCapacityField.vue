@@ -119,10 +119,28 @@ const detailsTitle = computed(() => {
   const row = boundRow.value
   const details = [t(`${key}.effective`), `${formattedValue.value} · ${sourceLabel.value}`]
   if (preview.value.value) details.push(t(`${key}.exactTokens`, { value: preview.value.value }))
-  const declaredContext = row?.upstream?.context_window || row?.upstream?.max_input_tokens || 0
-  const declaredMaximum = row?.upstream?.max_context_window || 0
-  const upstream = declaredMaximum >= declaredContext ? declaredMaximum : declaredContext
-  if (upstream && preview.value.value && preview.value.value > upstream) details.push(t(`${key}.exceedsUpstream`))
+  const upstream = row?.upstream?.max_context_window || row?.upstream?.context_window || row?.upstream?.max_input_tokens || 0
+  if (row?.upstream) {
+    details.push(t(`${key}.upstream`))
+    for (const field of ['context_window', 'max_context_window', 'max_input_tokens', 'max_output_tokens'] as const) {
+      const value = row.upstream[field]
+      if (value) details.push(`${t(`${key}.${field}`)}: ${formatContextCapacity(value)} (${value})`)
+    }
+    if (row.upstream.observed_at) details.push(`${t(`${key}.observedAt`)}: ${row.upstream.observed_at}`)
+    if (row.upstream_evidence_status) details.push(t(`${key}.upstreamEvidence.${row.upstream_evidence_status}`))
+  }
+  if (row?.registry) {
+    details.push(t(`${key}.sources.registry`))
+    for (const field of ['context_window', 'max_context_window', 'max_input_tokens', 'max_output_tokens'] as const) {
+      const value = row.registry[field]
+      if (value) details.push(`${t(`${key}.${field}`)}: ${formatContextCapacity(value)} (${value})`)
+    }
+    if (row.registry.observed_at) details.push(`${t(`${key}.observedAt`)}: ${row.registry.observed_at}`)
+    if (row.registry_evidence_status) details.push(t(`${key}.upstreamEvidence.${row.registry_evidence_status}`))
+  }
+  if ((!row?.upstream_evidence_status || row.upstream_evidence_status === 'current') && upstream && preview.value.value && preview.value.value > upstream) {
+    details.push(t(`${key}.exceedsUpstream`))
+  }
   if (row?.official) {
     const official = row.official
     const product = ['api', 'codex_subscription'].includes(official.product)

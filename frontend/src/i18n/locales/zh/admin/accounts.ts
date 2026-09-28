@@ -24,7 +24,7 @@ export default {accounts: {
       importSessionFilter: '本次导入（{count}）',
       contextCapacity: {
         title: '模型上下文容量',
-        description: '优先级：自定义 > 本账号上游声明 > 参考目录 > models.dev 参考；都没有时为未知，不对外宣告容量。同一真实上游模型的公开别名共用设置；不改变路由，也不会扩大上游限制。',
+        description: '优先级：自定义 > 适用的官方 API 规格 > 本账号有效上游声明 > models.dev 目录；都没有时为未知，不对外宣告容量。同一真实上游模型的公开别名共用设置；不改变路由，也不会扩大上游限制。',
         units: '输入采用十进制：258K = 258000、1.05M = 1050000 tokens。显示和保存均保留精确值。',
         saveBeforeSync: '请先保存此账号的端点、产品或凭据变更，再同步上游模型。',
         syncSuccess: '已同步 {count} 个模型的容量信息，未更改白名单或映射。',
@@ -34,6 +34,11 @@ export default {accounts: {
         effective: '最终采用容量',
         exactTokens: '{value} tokens',
         upstream: '上游返回',
+        upstreamEvidence: {
+          current: '观测与此账号当前上游身份一致。',
+          unbound: '观测未绑定上游身份，仅保留诊断展示，不参与容量解析。',
+          source_mismatch: '观测来自不同上游身份，仅保留诊断展示，不参与容量解析。'
+        },
         official: '官方规格',
         custom: '自定义容量',
         edit: '编辑 {model} 的上下文容量',
@@ -61,7 +66,7 @@ export default {accounts: {
         sources: {
           custom: '自定义',
           upstream: '上游',
-          official: '参考目录',
+          official: '官方 API',
           registry: 'models.dev',
           invalid: '草稿无效'
         },
