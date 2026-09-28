@@ -328,7 +328,7 @@ function formatSmartMessage(msg: string): string {
       if (obj?.error?.message) return String(obj.error.message)
       if (obj?.message) return String(obj.message)
       if (obj?.detail) return String(obj.detail)
-      if (typeof obj === 'object') return JSON.stringify(obj).substring(0, 150)
+      if (typeof obj === 'object') return JSON.stringify(obj)
     } catch {
       // ignore parse error
     }
@@ -338,6 +338,8 @@ function formatSmartMessage(msg: string): string {
   if (msg.includes('connection refused')) return t('admin.ops.errorLog.commonErrors.connectionRefused')
   if (msg.toLowerCase().includes('rate limit')) return t('admin.ops.errorLog.commonErrors.rateLimit')
 
-  return msg.length > 200 ? msg.substring(0, 200) + '...' : msg
+  // never cut here: the error detail dialog does not repeat this message when upstream details exist; the cell
+  // truncates (upstream look, full text in its title) or wraps (console theme) on its own
+  return msg
 }
 </script>

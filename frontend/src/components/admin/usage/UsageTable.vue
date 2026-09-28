@@ -315,6 +315,7 @@
   <Teleport to="body">
     <div
       v-if="tokenTooltipVisible"
+      ref="tokenTooltipRef"
       class="fixed z-[9999] pointer-events-none -translate-y-1/2"
       :style="{
         left: tokenTooltipPosition.x + 'px',
@@ -390,7 +391,7 @@
             <span class="font-semibold text-blue-400">{{ ((tokenTooltipData?.input_tokens || 0) + (tokenTooltipData?.output_tokens || 0) + (tokenTooltipData?.cache_creation_tokens || 0) + (tokenTooltipData?.cache_read_tokens || 0)).toLocaleString() }}</span>
           </div>
         </div>
-        <div class="absolute right-full top-1/2 h-0 w-0 -translate-y-1/2 border-b-[6px] border-r-[6px] border-t-[6px] border-b-transparent border-r-gray-900 border-t-transparent dark:border-r-gray-800"></div>
+        <div class="absolute right-full top-1/2 h-0 w-0 -translate-y-1/2 border-b-[6px] border-r-[6px] border-t-[6px] border-b-transparent border-r-gray-900 border-t-transparent dark:border-r-gray-800" :style="tooltipArrowStyle(tokenTooltipPosition)"></div>
       </div>
     </div>
   </Teleport>
@@ -399,6 +400,7 @@
   <Teleport to="body">
     <div
       v-if="tooltipVisible"
+      ref="tooltipRef"
       class="fixed z-[9999] pointer-events-none -translate-y-1/2"
       :style="{
         left: tooltipPosition.x + 'px',
@@ -527,14 +529,14 @@
             </div>
           </template>
         </div>
-        <div class="absolute right-full top-1/2 h-0 w-0 -translate-y-1/2 border-b-[6px] border-r-[6px] border-t-[6px] border-b-transparent border-r-gray-900 border-t-transparent dark:border-r-gray-800"></div>
+        <div class="absolute right-full top-1/2 h-0 w-0 -translate-y-1/2 border-b-[6px] border-r-[6px] border-t-[6px] border-b-transparent border-r-gray-900 border-t-transparent dark:border-r-gray-800" :style="tooltipArrowStyle(tooltipPosition)"></div>
       </div>
     </div>
   </Teleport>
 </template>
 
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, nextTick, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useAppStore } from '@/stores/app'
 import { formatDateTime, formatReasoningEffort, reasoningEffortValuesEqual } from '@/utils/format'
@@ -690,15 +692,54 @@ const copyRequestId = (requestId: string) => copyIdentifier(requestId, t('admin.
 const copyUpstreamRequestId = (upstreamRequestId: string) =>
   copyIdentifier(upstreamRequestId, t('admin.usage.upstreamRequestIdCopied'))
 
+// Tooltip placement: right of the trigger; on its left when the popover would run past the right edge of the
+// viewport (clamped to the margin when neither side fits), and moved up or down to stay on screen, the arrow still
+// pointing at the trigger. Measured once the popover has rendered, so every value stays readable.
+type TooltipPosition = { x: number; y: number; flip: boolean; arrowY: number | null; arrow: boolean }
+const TOOLTIP_GAP = 8
+const VIEWPORT_MARGIN = 8
+const initialTooltipPosition = (trigger: DOMRect): TooltipPosition =>
+  ({ x: trigger.right + TOOLTIP_GAP, y: trigger.top + trigger.height / 2, flip: false, arrowY: null, arrow: true })
+
+const placeTooltip = (trigger: DOMRect, el: HTMLElement | null, position: TooltipPosition) => {
+  if (!el) return
+  const { width, height } = el.getBoundingClientRect()
+  const viewportWidth = document.documentElement.clientWidth
+  const viewportHeight = document.documentElement.clientHeight
+  const right = trigger.right + TOOLTIP_GAP
+  const left = trigger.left - TOOLTIP_GAP - width
+  const fitsRight = right + width <= viewportWidth - VIEWPORT_MARGIN
+  const fitsLeft = left >= VIEWPORT_MARGIN
+  position.flip = !fitsRight && fitsLeft
+  position.arrow = fitsRight || fitsLeft
+  position.x = fitsRight ? right : fitsLeft ? left : Math.max(VIEWPORT_MARGIN, viewportWidth - VIEWPORT_MARGIN - width)
+  // the box is centred on y (-translate-y-1/2)
+  const anchorY = trigger.top + trigger.height / 2
+  const half = height / 2
+  position.y = Math.max(VIEWPORT_MARGIN + half, Math.min(anchorY, viewportHeight - VIEWPORT_MARGIN - half))
+  position.arrowY = position.y === anchorY ? null : Math.max(10, Math.min(height - 10, anchorY - position.y + half))
+}
+
+// the arrow moves to the right edge (mirrored) when the popover sits left of its trigger
+const tooltipArrowStyle = (position: TooltipPosition) => ({
+  ...(position.arrowY === null ? {} : { top: `${position.arrowY}px` }),
+  ...(position.flip ? { left: '100%', right: 'auto', scale: '-1 1' } : {}),
+  ...(position.arrow ? {} : { display: 'none' })
+})
+
 // Tooltip state - cost
 const tooltipVisible = ref(false)
-const tooltipPosition = ref({ x: 0, y: 0 })
+const tooltipPosition = ref<TooltipPosition>({ x: 0, y: 0, flip: false, arrowY: null, arrow: true })
 const tooltipData = ref<AdminUsageLog | null>(null)
+const tooltipRef = ref<HTMLElement | null>(null)
+let tooltipShowCount = 0
 
 // Tooltip state - token
 const tokenTooltipVisible = ref(false)
-const tokenTooltipPosition = ref({ x: 0, y: 0 })
+const tokenTooltipPosition = ref<TooltipPosition>({ x: 0, y: 0, flip: false, arrowY: null, arrow: true })
 const tokenTooltipData = ref<AdminUsageLog | null>(null)
+const tokenTooltipRef = ref<HTMLElement | null>(null)
+let tokenTooltipShowCount = 0
 
 const getRequestTypeLabel = (row: AdminUsageLog): string => {
   const requestType = resolveUsageRequestType(row)
@@ -737,13 +778,15 @@ const formatDuration = (ms: number | null | undefined): string => {
 }
 
 // Cost tooltip functions
-const showTooltip = (event: MouseEvent, row: AdminUsageLog) => {
+const showTooltip = async (event: MouseEvent, row: AdminUsageLog) => {
   const target = event.currentTarget as HTMLElement
   const rect = target.getBoundingClientRect()
+  const shown = ++tooltipShowCount
   tooltipData.value = row
-  tooltipPosition.value.x = rect.right + 8
-  tooltipPosition.value.y = rect.top + rect.height / 2
+  tooltipPosition.value = initialTooltipPosition(rect)
   tooltipVisible.value = true
+  await nextTick()
+  if (shown === tooltipShowCount && tooltipVisible.value) placeTooltip(rect, tooltipRef.value, tooltipPosition.value)
 }
 
 const hideTooltip = () => {
@@ -752,13 +795,15 @@ const hideTooltip = () => {
 }
 
 // Token tooltip functions
-const showTokenTooltip = (event: MouseEvent, row: AdminUsageLog) => {
+const showTokenTooltip = async (event: MouseEvent, row: AdminUsageLog) => {
   const target = event.currentTarget as HTMLElement
   const rect = target.getBoundingClientRect()
+  const shown = ++tokenTooltipShowCount
   tokenTooltipData.value = row
-  tokenTooltipPosition.value.x = rect.right + 8
-  tokenTooltipPosition.value.y = rect.top + rect.height / 2
+  tokenTooltipPosition.value = initialTooltipPosition(rect)
   tokenTooltipVisible.value = true
+  await nextTick()
+  if (shown === tokenTooltipShowCount && tokenTooltipVisible.value) placeTooltip(rect, tokenTooltipRef.value, tokenTooltipPosition.value)
 }
 
 const hideTokenTooltip = () => {

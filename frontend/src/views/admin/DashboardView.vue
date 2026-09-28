@@ -539,20 +539,8 @@ const userTrendChartData = computed(() => {
   })
 
   const sortedDates = Array.from(allDates).sort()
-  const colors = [
-    '#3b82f6',
-    '#10b981',
-    '#f59e0b',
-    '#ef4444',
-    '#8b5cf6',
-    '#ec4899',
-    '#168a49',
-    '#f97316',
-    '#6366f1',
-    '#84cc16',
-    '#06b6d4',
-    '#a855f7'
-  ]
+  // upstream's 12 series colours (the composable's defaults); the Apple series under the console theme
+  const colors = presentation.value.series
 
   const datasets = Array.from(userGroups.values()).map((group, idx) => ({
     label: group.name,

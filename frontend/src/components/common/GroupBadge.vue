@@ -33,7 +33,6 @@ import type { SubscriptionType, GroupPlatform } from '@/types'
 import { useAppStore } from '@/stores/app'
 import { formatPeakRateWindow, serverTimezoneLabel } from '@/utils/peak-rate'
 import PlatformIcon from './PlatformIcon.vue'
-import { flatThemeActive } from '@/utils/flatTheme'
 
 interface Props {
   name: string
@@ -148,10 +147,7 @@ const labelClass = computed(() => {
     }
   }
 
-  // 正常状态或无天数：根据平台显示主题色(控制台主题下平台靠图标区分,色相只表示状态)
-  if (flatThemeActive.value) {
-    return `${base} bg-white/60 text-gray-700 dark:bg-white/10 dark:text-gray-200`
-  }
+  // 正常状态或无天数：根据平台显示主题色
   if (props.platform === 'anthropic') {
     return `${base} bg-orange-200/60 text-orange-800 dark:bg-orange-800/40 dark:text-orange-300`
   }
@@ -191,11 +187,6 @@ const peakRateClass = computed(() => {
 
 // Badge color based on platform and subscription type
 const badgeClass = computed(() => {
-  if (flatThemeActive.value) {
-    return isSubscription.value
-      ? 'bg-gray-200/70 text-gray-800 dark:bg-dark-600 dark:text-gray-100'
-      : 'bg-gray-100 text-gray-700 dark:bg-dark-700 dark:text-gray-200'
-  }
   if (props.platform === 'anthropic') {
     // Claude: orange theme
     return isSubscription.value

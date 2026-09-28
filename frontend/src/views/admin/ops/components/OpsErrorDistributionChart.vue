@@ -24,11 +24,18 @@ const { t } = useI18n()
 
 const presentation = usePresentationColors()
 const colors = computed(() => ({
-  blue: '#3b82f6',
-  red: '#ef4444',
-  orange: '#f59e0b',
+  blue: presentation.value.tone('#3b82f6'),
+  red: presentation.value.tone('#ef4444'),
+  orange: presentation.value.tone('#f59e0b'),
   gray: presentation.value.gray,
   text: presentation.value.axis
+}))
+// the top reason is written in its category colour: the readable text shade under the console theme
+const textColors = computed(() => ({
+  blue: presentation.value.toneText('#3b82f6'),
+  red: presentation.value.toneText('#ef4444'),
+  orange: presentation.value.toneText('#f59e0b'),
+  gray: presentation.value.toneText('#9ca3af')
 }))
 
 const totalSlaErrors = computed(() =>
@@ -47,6 +54,7 @@ interface ErrorCategory {
   label: string
   count: number
   color: string
+  textColor: string
 }
 
 const categories = computed<ErrorCategory[]>(() => {
@@ -69,10 +77,10 @@ const categories = computed<ErrorCategory[]>(() => {
   }
 
   const out: ErrorCategory[] = []
-  if (upstream > 0) out.push({ label: t('admin.ops.upstream'), count: upstream, color: colors.value.orange })
-  if (client > 0) out.push({ label: t('admin.ops.client'), count: client, color: colors.value.blue })
-  if (system > 0) out.push({ label: t('admin.ops.system'), count: system, color: colors.value.red })
-  if (other > 0) out.push({ label: t('admin.ops.other'), count: other, color: colors.value.gray })
+  if (upstream > 0) out.push({ label: t('admin.ops.upstream'), count: upstream, color: colors.value.orange, textColor: textColors.value.orange })
+  if (client > 0) out.push({ label: t('admin.ops.client'), count: client, color: colors.value.blue, textColor: textColors.value.blue })
+  if (system > 0) out.push({ label: t('admin.ops.system'), count: system, color: colors.value.red, textColor: textColors.value.red })
+  if (other > 0) out.push({ label: t('admin.ops.other'), count: other, color: colors.value.gray, textColor: textColors.value.gray })
   return out
 })
 
@@ -142,7 +150,7 @@ const options = computed(() => ({
         </div>
         <div class="mt-4 flex flex-col items-center gap-2">
           <div v-if="topReason" class="text-xs font-bold text-gray-900 dark:text-white">
-            {{ t('admin.ops.top') }}: <span :style="{ color: topReason.color }">{{ topReason.label }}</span>
+            {{ t('admin.ops.top') }}: <span :style="{ color: topReason.textColor }">{{ topReason.label }}</span>
           </div>
           <div class="flex flex-wrap justify-center gap-3">
             <div v-for="item in categories" :key="item.label" class="flex items-center gap-1.5 text-xs">

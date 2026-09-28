@@ -21,7 +21,7 @@ const { t } = useI18n()
 
 const presentation = usePresentationColors()
 const colors = computed(() => ({
-  blue: '#3b82f6',
+  blue: presentation.value.tone('#3b82f6'),
   grid: presentation.value.axisGrid,
   text: presentation.value.axis
 }))

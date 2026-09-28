@@ -112,12 +112,14 @@ actual model-quality diagnostics remain separately budgeted and coordinated.
 
 `observability.theme_enabled` (public `flat_theme_enabled`, default on) toggles
 `html.flat-theme`; switching it off restores the upstream look. The console look
-lives only in the central layer: `frontend/src/styles/flat-theme.css` (tokens and
-Geist/Geist Mono Latin subsets; CJK uses system fonts), `frontend/tailwind.config.js`
-(every palette, radius, shadow and gradient resolves through a CSS variable whose
-fallback is the upstream value; hue families fold into danger/warning/info/success/
-purple; `primary` is ink), `frontend/src/style.css` (upstream recipes plus a
-`:where(.flat-theme)` console block) and the shared components and layout. Page
+lives only in the central layer: `frontend/src/styles/flat-theme.css` (tokens, the
+Inter and Geist Mono Latin subsets; Chinese uses MiSans loaded at runtime from
+Xiaomi's font service by `utils/flatTheme.ts`, falling back to system fonts),
+`frontend/tailwind.config.js` (every palette, radius, shadow and gradient resolves
+through a CSS variable whose fallback is the upstream value; `primary` is Apple blue
+and the hue families map to Apple system colours), `frontend/src/style.css`
+(upstream recipes plus a `flat-theme` console block: colour only where upstream has
+colour, Liquid Glass only on chrome) and the shared components and layout. Page
 files keep upstream class strings; after upstream merges, re-run the ops-repo
 de-sweep (`artifacts/tmp/admin-rework/ui/desweep/desweep.py`) instead of restyling
 pages.

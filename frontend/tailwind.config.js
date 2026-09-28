@@ -8,8 +8,9 @@
  *
  * Colour roles: neutral families (gray/slate/zinc/neutral/stone, dark) resolve per utility
  * (fill, line, text) because upstream uses one shade for several roles; hue families fold into
- * five semantic families (danger, warning, info, success, purple) with a separate text role;
- * `primary` is the accent (indigo in the console theme). Solid primary fills export
+ * eight families named after Apple's system colours (danger = red, warning = orange, info = blue,
+ * success = green, teal, indigo, purple, pink) with a separate text role; `primary` is the accent
+ * (Apple blue in the console theme). Solid primary fills export
  * `--theme-on-fill`, which `text-white` and `bg-white` read, so white text or knobs on a primary
  * fill always use the theme's on-primary colour.
  */
@@ -33,9 +34,12 @@ const NEUTRAL_FAMILIES = { gray: 'gray', slate: 'gray', zinc: 'gray', neutral: '
 const HUE_FAMILIES = {
   red: 'danger', rose: 'danger',
   amber: 'warning', yellow: 'warning', orange: 'warning',
-  blue: 'info', sky: 'info', indigo: 'info', cyan: 'info',
-  green: 'success', emerald: 'success', teal: 'success', lime: 'success',
-  purple: 'purple', violet: 'purple', fuchsia: 'purple', pink: 'purple'
+  blue: 'info',
+  green: 'success', emerald: 'success', lime: 'success',
+  teal: 'teal', cyan: 'teal', sky: 'teal',
+  indigo: 'indigo',
+  purple: 'purple', violet: 'purple', fuchsia: 'purple',
+  pink: 'pink'
 }
 
 function channels(hex) {

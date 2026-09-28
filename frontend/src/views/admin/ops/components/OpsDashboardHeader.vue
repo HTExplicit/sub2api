@@ -442,9 +442,9 @@ const healthScoreColor = computed(() => {
   if (isSystemIdle.value) return presentation.value.gray
   const score = healthScoreValue.value
   if (score == null) return presentation.value.gray
-  if (score >= 90) return '#10b981' // green
-  if (score >= 60) return '#f59e0b' // yellow
-  return '#ef4444' // red
+  if (score >= 90) return presentation.value.success // green
+  if (score >= 60) return presentation.value.warning // yellow
+  return presentation.value.danger // red
 })
 
 const healthScoreClass = computed(() => {
@@ -1187,7 +1187,7 @@ function handleToolbarRefresh() {
                   <path
                     d="M0 16 Q 20 16, 40 16 T 80 16 T 120 10 T 160 22 T 200 16 T 240 16 T 280 16"
                     fill="none"
-                    stroke="#3b82f6"
+                    :stroke="presentation.info"
                     stroke-width="2"
                     vector-effect="non-scaling-stroke"
                   >

@@ -1,6 +1,6 @@
 <template>
   <div
-    class="flex min-h-screen items-center justify-center bg-gray-50 p-4 dark:bg-dark-900"
+    class="flex min-h-screen items-center justify-center bg-gradient-to-br from-gray-50 to-gray-100 p-4 dark:from-dark-900 dark:to-dark-800"
   >
     <div class="w-full max-w-2xl">
       <!-- Logo & Title -->

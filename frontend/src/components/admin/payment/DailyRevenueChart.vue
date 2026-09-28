@@ -19,6 +19,7 @@
 </template>
 
 <script setup lang="ts">
+import { usePresentationColors } from '@/composables/usePresentationColors'
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import {
@@ -38,6 +39,7 @@ import type { DailyPaymentStats } from '@/types/payment'
 ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Tooltip, Legend, Filler)
 
 const { t } = useI18n()
+const presentation = usePresentationColors()
 
 const props = defineProps<{
   data: DailyPaymentStats[]
@@ -58,7 +60,7 @@ const chartData = computed(() => {
     labels: props.data.map(d => d.date),
     datasets: [
       ...currencies.map((currency, index) => {
-        const [borderColor, backgroundColor] = colors[index % colors.length]
+        const [borderColor, backgroundColor] = colors[index % colors.length].map(presentation.value.tone)
         return {
           label: `${currency} ${t('payment.admin.revenue')}`,
           data: props.data.map(day => day.amount[currency] || 0),
@@ -73,8 +75,8 @@ const chartData = computed(() => {
       {
         label: t('payment.admin.orderCount'),
         data: props.data.map(d => d.count),
-        borderColor: 'rgb(16, 185, 129)',
-        backgroundColor: 'rgba(16, 185, 129, 0.1)',
+        borderColor: presentation.value.tone('rgb(16, 185, 129)'),
+        backgroundColor: presentation.value.tone('rgba(16, 185, 129, 0.1)'),
         fill: false,
         tension: 0.3,
         pointRadius: 3,

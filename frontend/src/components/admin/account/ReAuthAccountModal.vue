@@ -22,7 +22,7 @@
                   : isAntigravity
                     ? 'from-purple-500 to-purple-600'
                     : isGrok
-                      ? 'bg-zinc-700 '
+                      ? 'from-zinc-700 to-zinc-900'
                       : 'from-orange-500 to-orange-600'
             ]"
           >

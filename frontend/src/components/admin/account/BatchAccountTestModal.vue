@@ -91,6 +91,7 @@ import BaseDialog from '@/components/common/BaseDialog.vue'
 import { adminAPI } from '@/api/admin'
 import type { Account } from '@/types'
 import type { BatchTestAccountEvent } from '@/api/admin/accounts'
+import { extractApiErrorMessage } from '@/utils/apiError'
 
 type KnownAccount = Pick<Account, 'id' | 'name' | 'platform'>
 const props = defineProps<{ show: boolean; accountIds: number[]; accounts: KnownAccount[] }>()
@@ -184,7 +185,7 @@ const loadModels = async () => {
       row.supportedModels = (await adminAPI.accounts.getAvailableModels(row.id)).map(model => model.id)
       if (row.status === 'checking') row.status = 'ready'
     } catch (error) {
-      if (row.status === 'checking') { row.status = 'skipped'; row.error = String(error) }
+      if (row.status === 'checking') { row.status = 'skipped'; row.error = extractApiErrorMessage(error, t('common.unknownError')) }
     }
   }
   await Promise.all(Array.from({ length: Math.min(CATALOG_CONCURRENCY, queue.length) }, async () => {

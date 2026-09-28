@@ -37,10 +37,10 @@ const { t } = useI18n()
 
 const presentation = usePresentationColors()
 const colors = computed(() => ({
-  red: '#ef4444',
-  redAlpha: '#ef444420',
-  purple: '#8b5cf6',
-  purpleAlpha: '#8b5cf620',
+  red: presentation.value.tone('#ef4444'),
+  redAlpha: presentation.value.tone('#ef444420'),
+  purple: presentation.value.tone('#8b5cf6'),
+  purpleAlpha: presentation.value.tone('#8b5cf620'),
   gray: presentation.value.gray,
   grid: presentation.value.axisGrid,
   text: presentation.value.axis

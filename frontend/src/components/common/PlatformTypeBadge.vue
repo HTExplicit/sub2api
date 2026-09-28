@@ -1,7 +1,7 @@
 <template>
   <div class="inline-flex flex-col gap-0.5 text-xs font-medium">
     <!-- Row 1: Platform + Type -->
-    <div :class="['inline-flex items-center overflow-hidden rounded-md', flatThemeActive && NEUTRAL_ROW]">
+    <div class="inline-flex items-center overflow-hidden rounded-md">
       <span :class="['inline-flex items-center gap-1 px-2 py-1', platformClass]">
         <PlatformIcon :platform="platform" size="xs" />
         <span>{{ platformLabel }}</span>
@@ -31,7 +31,7 @@
       </span>
     </div>
     <!-- Row 2: Plan type + Privacy mode (only if either exists) -->
-    <div v-if="planLabel || privacyBadge" :class="['inline-flex items-center overflow-hidden rounded-md', flatThemeActive && NEUTRAL_ROW]">
+    <div v-if="planLabel || privacyBadge" class="inline-flex items-center overflow-hidden rounded-md">
       <span v-if="planLabel" :class="['inline-flex items-center gap-1 px-1.5 py-1', planBadgeClass]">
         <GrokFreeIcon
           v-if="isGrokFreePlan"
@@ -70,7 +70,6 @@ import { useI18n } from 'vue-i18n'
 import type { AccountPlatform, AccountType } from '@/types'
 import { platformLabel as sharedPlatformLabel } from '@/utils/platformColors'
 import { isOpenAIBusinessPlanType, normalizePlanType, openAIPlanTypeLabel } from '@/utils/planType'
-import { flatThemeActive } from '@/utils/flatTheme'
 import GrokFreeIcon from './GrokFreeIcon.vue'
 import PlatformIcon from './PlatformIcon.vue'
 import Icon from '@/components/icons/Icon.vue'
@@ -176,14 +175,7 @@ const planIconName = computed<'bolt' | null>(() => {
   return null
 })
 
-// Console theme: platform and plan are told apart by logo and label, not hue (hue = status).
-// One outlined, segmented chip: the row carries the ring, segments are split by a hairline.
-const NEUTRAL_PLATFORM = 'bg-white text-gray-900 dark:bg-dark-800 dark:text-gray-100'
-const NEUTRAL_TYPE = 'border-l border-gray-200 bg-gray-50 text-gray-600 dark:border-dark-600 dark:bg-dark-700 dark:text-dark-300'
-const NEUTRAL_ROW = 'self-start ring-1 ring-gray-200 dark:ring-dark-600'
-
 const platformClass = computed(() => {
-  if (flatThemeActive.value) return NEUTRAL_PLATFORM
   if (props.platform === 'anthropic') {
     return 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400'
   }
@@ -212,7 +204,6 @@ const platformClass = computed(() => {
 })
 
 const typeClass = computed(() => {
-  if (flatThemeActive.value) return NEUTRAL_TYPE
   if (props.platform === 'anthropic') {
     return 'bg-orange-100 text-orange-600 dark:bg-orange-900/30 dark:text-orange-400'
   }
@@ -252,7 +243,6 @@ const planBadgeClass = computed(() => {
   ) {
     return 'bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-300'
   }
-  if (flatThemeActive.value) return NEUTRAL_PLATFORM
   if (props.platform === 'grok' && normalizedPlanType.value) {
     // Heavy / SuperGrok Heavy → purple
     if (normalizedPlanType.value.includes('heavy')) {
