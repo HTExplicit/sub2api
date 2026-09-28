@@ -1,6 +1,6 @@
 <template>
   <AppLayout>
-    <TablePageLayout>
+    <TablePageLayout data-ui="redeem-page mgmt-page">
       <template #filters>
         <div class="flex flex-wrap items-center gap-3">
           <!-- Left: Search + Filters -->
@@ -115,6 +115,7 @@
 
           <template #cell-type="{ value }">
             <span
+              data-ui="category-chip"
               :class="[
                 'badge',
                 value === 'balance'
@@ -567,7 +568,7 @@
             </button>
           </div>
           <!-- Content -->
-          <div class="p-5">
+          <div data-ui="redeem-result-body" class="p-5">
             <div class="relative">
               <textarea
                 readonly

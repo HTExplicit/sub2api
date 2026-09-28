@@ -543,6 +543,28 @@ html.flat-theme :is(div, nav):is([class~="bg-gray-100"], [class~="bg-gray-50"]):
   }
 }
 
+/* BEGIN S platform segments */
+/* 7.1a The account dialog's platform choice (owner decision 2 and the .11 approval "platform icons keep their brand
+   colours"): an unchosen segment draws its platform glyph in the platform's identity colour (tokens.css identity
+   hues: >= 4.5:1 on the surface, so >= 3:1 as a glyph, both themes); the chosen segment stays the ink thumb with an
+   on-ink glyph (7.1). The ten segments are known by their place (CreateAccountModal's two rows, the first one marked
+   data-tour="account-form-platform"); labels stay muted. (wave 2, reported by the accounts agent) */
+html.flat-theme [data-tour="account-form-platform"] > button:nth-child(1) { --ctl-seg-glyph: var(--ui-id-orange); }
+html.flat-theme [data-tour="account-form-platform"] > button:nth-child(2) { --ctl-seg-glyph: var(--ui-id-green); }
+html.flat-theme [data-tour="account-form-platform"] > button:nth-child(3) { --ctl-seg-glyph: var(--ui-id-blue); }
+html.flat-theme [data-tour="account-form-platform"] > button:nth-child(4) { --ctl-seg-glyph: var(--ui-id-purple); }
+html.flat-theme [data-tour="account-form-platform"] > button:nth-child(5) { --ctl-seg-glyph: var(--ui-id-zinc); }
+html.flat-theme [data-tour="account-form-platform"] + div > button:nth-child(1) { --ctl-seg-glyph: var(--ui-id-pink); }
+html.flat-theme [data-tour="account-form-platform"] + div > button:nth-child(2) { --ctl-seg-glyph: var(--ui-id-indigo); }
+html.flat-theme [data-tour="account-form-platform"] + div > button:nth-child(3) { --ctl-seg-glyph: var(--ui-id-teal); }
+html.flat-theme [data-tour="account-form-platform"] + div > button:nth-child(4) { --ctl-seg-glyph: var(--ui-id-rose); }
+html.flat-theme [data-tour="account-form-platform"] + div > button:nth-child(5) { --ctl-seg-glyph: var(--ui-id-amber); }
+
+html.flat-theme :is([data-tour="account-form-platform"], [data-tour="account-form-platform"] + div) > button:not([class~="bg-white"]) > svg {
+  color: rgb(var(--ctl-seg-glyph, var(--ui-muted)));
+}
+/* END S platform segments */
+
 /* 7.2 The settings tab strip (SettingsView .settings-tabs-*, scoped) is the same segmented control, as wide as its
    tabs (the reference's w-fit), 14px icons, no glow, gradient or underline. The strip keeps sticking under the
    header; its band is the page ground at 90 % with the reference's one blur (the docs header, 8px), so content
@@ -785,3 +807,69 @@ html.flat-theme :is(a, button)[class*="underline"] {
   text-decoration-thickness: 1px;
   text-underline-offset: 2px;
 }
+
+/* BEGIN S utility buttons */
+/* ================================================================== 10 · utility-built buttons (wave 2) */
+
+/* 10.1 A solid accent button built from utilities (bg-primary-500 / -600 / -700 with white text: the chosen segment
+   of a hand-made choice, a save / add / apply button) is the reference's primary: ink with on-ink text (near-white
+   with ink text in dark), like .btn-primary and the segmented thumb (REF §8.3, §8.5). Switches (no white text),
+   checkbox squares and check badges (spans), steppers (divs) and the .btn recipe are not buttons of this kind; the
+   public pages keep their own rules. Kept at 0,3,1 (the page files refine; the account forms' 9.6 agrees).
+   (wave 2, reported by the accounts agent) */
+html.flat-theme :where(:is(button, a):is([class~="bg-primary-500"], [class~="bg-primary-600"], [class~="bg-primary-700"])[class~="text-white"]:not(.btn):not(:is([data-ui="home"], [data-ui="key-usage"], [data-ui="legal"], [data-ui="not-found"], [data-ui="auth-layout"], [data-testid="compact-home"], body > div[class~="z-[140]"]) *))[class][class] {
+  --theme-on-fill: var(--ui-on-ink);
+  border-color: rgb(var(--ui-ink));
+  background-color: rgb(var(--ui-ink));
+  background-image: none;
+  color: rgb(var(--ui-on-ink));
+  box-shadow: none;
+}
+
+/* 10.2 ModelWhitelistSelector (account create / edit / bulk edit, risk control): the quick actions are the default
+   button (the blue and emerald outlines were decoration), clearing every model keeps the destructive outline, and
+   「填入」 beside the custom model field is the default button at the field's 34px. (wave 2, reported by the accounts
+   agent) */
+html.flat-theme :is([data-testid="fill-related-models"], [data-testid="sync-upstream-models"], [data-testid="fill-related-models"] ~ button[class~="border-red-200"], div:has(> button[data-testid="fill-related-models"]) + div button[class~="bg-primary-50"]) {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: var(--ui-control-h);
+  padding: 0 0.75rem;
+  border: 1px solid rgb(var(--ui-line-strong));
+  border-radius: var(--ui-radius-md);
+  background-color: rgb(var(--ui-surface));
+  color: rgb(var(--ui-ink));
+  font-size: 0.8125rem;
+  line-height: 1.21875rem;
+  font-weight: 600;
+  transition-property: color, background-color, border-color;
+  transition-duration: var(--ui-duration);
+  transition-timing-function: var(--ui-ease);
+}
+
+html.flat-theme :is([data-testid="fill-related-models"], [data-testid="sync-upstream-models"], div:has(> button[data-testid="fill-related-models"]) + div button[class~="bg-primary-50"]):not(:disabled):hover {
+  background-color: rgb(var(--ui-subtle));
+  color: rgb(var(--ui-ink));
+}
+
+html.flat-theme [data-testid="fill-related-models"] ~ button[class~="border-red-200"][class~="border-red-200"] {
+  border-color: rgb(var(--ui-danger) / 0.3);
+  color: rgb(var(--ui-danger));
+}
+
+html.flat-theme [data-testid="fill-related-models"] ~ button[class~="border-red-200"][class~="border-red-200"]:hover {
+  border-color: rgb(var(--ui-danger) / 0.5);
+  background-color: rgb(var(--ui-danger-soft));
+  color: rgb(var(--ui-danger));
+}
+
+html.flat-theme div:has(> button[data-testid="fill-related-models"]) + div button[class~="bg-primary-50"] {
+  min-height: var(--ui-select-h);
+}
+
+html.flat-theme :is([data-testid="fill-related-models"], [data-testid="sync-upstream-models"], [data-testid="fill-related-models"] ~ button[class~="border-red-200"], div:has(> button[data-testid="fill-related-models"]) + div button[class~="bg-primary-50"]):focus-visible {
+  outline: 2px solid rgb(var(--ui-focus));
+  outline-offset: 2px;
+}
+/* END S utility buttons */

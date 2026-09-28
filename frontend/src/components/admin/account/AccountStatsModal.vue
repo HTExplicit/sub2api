@@ -5,7 +5,7 @@
     width="extra-wide"
     @close="handleClose"
   >
-    <div class="space-y-6">
+    <div class="space-y-6" data-ui="account-stats">
       <!-- Account Info Header -->
       <div
         v-if="account"

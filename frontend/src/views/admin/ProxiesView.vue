@@ -1,6 +1,6 @@
 <template>
   <AppLayout>
-    <TablePageLayout>
+    <TablePageLayout data-ui="proxies-page mgmt-page">
       <template #filters>
         <div class="flex flex-wrap items-center gap-3">
           <!-- Left: Search + Filters -->
@@ -126,6 +126,7 @@
           <template #cell-protocol="{ value }">
             <span
               v-if="value"
+              data-ui="category-chip"
               :class="['badge', value.startsWith('socks5') ? 'badge-primary' : 'badge-gray']"
             >
               {{ value.toUpperCase() }}
@@ -393,6 +394,7 @@
     >
       <!-- Tab Switch -->
       <div
+        data-ui="proxy-create-tabs"
         class="mb-6 flex items-center justify-between gap-3 border-b border-gray-200 dark:border-dark-600"
       >
         <div class="flex min-w-0 shrink-0">

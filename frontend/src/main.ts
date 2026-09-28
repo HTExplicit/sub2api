@@ -19,6 +19,8 @@ import './styles/console/pages/accounts.css'
 import './styles/console/pages/dashboard-usage.css'
 import './styles/console/pages/users-groups-proxies-keys.css'
 import './styles/console/pages/settings-ops-public.css'
+import './styles/console/pages/ops-channels.css'
+import './styles/console/pages/user.css'
 import { applyFlatTheme } from '@/utils/flatTheme'
 
 function initIOSViewportZoomFix() {

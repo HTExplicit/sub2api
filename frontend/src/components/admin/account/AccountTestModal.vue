@@ -5,7 +5,7 @@
     width="normal"
     @close="handleClose"
   >
-    <div class="space-y-4">
+    <div class="space-y-4" data-ui="account-test">
       <!-- Account Info Card -->
       <div
         v-if="account"

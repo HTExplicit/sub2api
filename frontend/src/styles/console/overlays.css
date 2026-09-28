@@ -614,7 +614,7 @@ html.flat-theme [role="tooltip"].theme-dark-surface > button[class~="absolute"]:
 
 /* 2.6 Icon-only row actions (behaviour B2.1 places the label left of the button): the bubble's look, 12/16 500 ink. */
 @media (hover: hover) and (pointer: fine) {
-  html.flat-theme:is(.flat-theme) .table-wrapper:is([data-table="proxies"], [data-table="keys"], [data-table="groups"], [data-table="accounts"]) td[data-column="actions"] button[class~="flex-col"]:is(:hover, :focus-visible) > span[class~="text-xs"] {
+  html.flat-theme:is(.flat-theme) :is(.table-wrapper:is([data-table="proxies"], [data-table="keys"], [data-table="groups"], [data-table="accounts"], [data-table="users"]), :is([data-ui~="subscriptions-page"], [data-ui~="redeem-page"]) .table-wrapper) td[data-column="actions"] button[class~="flex-col"]:is(:hover, :focus-visible) > span[class~="text-xs"] {
     padding: 6px 10px;
     border: 1px solid rgb(var(--ui-line-strong));
     border-radius: var(--ui-radius-md);
@@ -1734,3 +1734,14 @@ html.flat-theme .driver-active-element {
   outline-offset: 2px !important;
   border-radius: var(--ui-radius-md) !important;
 }
+
+/* BEGIN S scrim margin */
+/* An in-page dialog built from utilities (a fixed, inset-0 scrim rendered in place, not teleported) that is a child of
+   a space-y-* stack inherits the stack's top margin: the scrim moved down and left a band of the page undimmed
+   (系统设置 · 功能开关 「+ 添加专属用户」: scrim at y = 12). A fixed overlay takes no stack margin. The doubled classes
+   (0,7,2) outrank Tailwind's space-y (0,3,0) and the page files' stack rhythm rules (0,5,2), which load later.
+   (wave 2, reported by the settings agent) */
+html.flat-theme [class*="space-y-"] > div[class~="fixed"][class~="fixed"][class~="inset-0"][class~="inset-0"]:not([hidden]) {
+  margin-top: 0;
+}
+/* END S scrim margin */

@@ -1,6 +1,6 @@
 <template>
   <AppLayout>
-    <TablePageLayout>
+    <TablePageLayout data-ui="groups-page mgmt-page">
       <template #filters>
         <div
           class="flex flex-col justify-between gap-4 lg:flex-row lg:items-start"
@@ -139,6 +139,7 @@
 
           <template #cell-platform="{ value }">
             <span
+              data-ui="platform-chip"
               :class="[
                 'inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-medium',
                 value === 'anthropic'
@@ -171,6 +172,7 @@
             <div class="space-y-1">
               <!-- Type Badge -->
               <span
+                data-ui="category-chip"
                 :class="[
                   'inline-block rounded-full px-2 py-0.5 text-xs font-medium',
                   row.subscription_type === 'subscription'
@@ -269,7 +271,7 @@
           </template>
 
           <template #cell-is_exclusive="{ value }">
-            <span :class="['badge', value ? 'badge-primary' : 'badge-gray']">
+            <span data-ui="category-chip" :class="['badge', value ? 'badge-primary' : 'badge-gray']">
               {{
                 value ? t("admin.groups.exclusive") : t("admin.groups.public")
               }}
@@ -3763,6 +3765,7 @@
               </div>
               <div class="text-xs text-gray-500 dark:text-gray-400">
                 <span
+                  data-ui="platform-chip"
                   :class="[
                     'inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium',
                     group.platform === 'anthropic'

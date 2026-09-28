@@ -2369,3 +2369,1254 @@ html.flat-theme [data-ui="key-usage"] .skeleton {
 }
 
 /* end public */
+
+/* settings: 系统设置 (every tab, its sub-panels and dialogs), 系统提示词 (the library and the per-account binding
+ * views), Codex 路由设置 and 插件管理. Owner: wave 2 P3 (the settings page agent).
+ *
+ * Source: the reference console's settings language (artifacts/tmp/ui-el/ref/console/REF-CONSOLE.md §5, §8.3-§8.5,
+ * §8.11, §8.16 and its public recipes: Modal, ConnectModal, DemoBanner, PromoField, TopUpModal, Toggle, AddChoice)
+ * and its docs pages for long-form text (ref-docs-*: callouts, tables, code). A long form reads as the reference's
+ * panels: section cards (the surface, 1px structural line, radius 8) with a header strip (14 / 20 title, 12.5px
+ * muted description, 14 x 18 inset like its Modal) and a 16 x 18 body; mono field labels (controls.css), 34px
+ * fields, 12px help text; switch rows with a 13 / 600 title and a 12px description beside a right-aligned switch,
+ * hairlines between rows; nested groups as the reference's route cards; notices as its callouts. Colour stays for
+ * states only (warning / info notices, errors, the accent on links, focus and switches that are on; WAVE2 decision 2).
+ *
+ * Template hooks (one attribute each, upstream markup otherwise unchanged):
+ *   views/admin/SettingsView.vue:3                    data-ui="settings"       (page root)
+ *   views/admin/SystemPromptsView.vue:3               data-ui="system-prompts" (page root, fork view)
+ *   components/admin/codex/CodexRuntimeSettings.vue:2 data-ui="codex-runtime"  (page root, fork component)
+ *   views/admin/PluginsView.vue:3                     data-ui="plugins"        (page root)
+ *   views/admin/BackupView.vue:291                    data-ui="r2-guide"       (the R2 guide dialog's outer layer)
+ * Existing hooks used: .settings-tabs-* (SettingsView), #provider-form (PaymentProviderDialog), data-testid
+ * "official-model-catalog*", "image-tools-settings", "observability-settings", "backup-schedule", "retired-plugins",
+ * data-test="account-system-prompt-binding" (the per-account binding in the accounts dialogs).
+ * Selectors start with html.flat-theme and one of those roots; the theme switched off renders upstream. */
+
+/* ================================================================== settings · 0 metrics */
+html.flat-theme :is([data-ui~="settings"], [data-ui~="system-prompts"], [data-ui~="codex-runtime"], [data-ui~="plugins"]) {
+  /* the reference Modal's header (px 18, py 14) and body (px 18, py 16) insets */
+  --set-px: 1.125rem;
+  --set-head-py: 0.875rem;
+  --set-body-py: 1rem;
+  /* the space between the fields and rows of a card, and a row's half gap around its hairline */
+  --set-gap: 1rem;
+  --set-row: 0.875rem;
+  /* text that carries no size of its own (a bare label, a status line) is the console's 13 / 19.5 body text, not the
+     document's 16px */
+  font-size: 0.8125rem;
+  line-height: 1.21875rem;
+}
+
+/* ================================================================== settings · 1 page rhythm, tab strip */
+
+/* 1.1 The form's blocks (the tab strip, the visible panels, the save row) and the cards of a panel sit one block gap
+   (12px) apart, the reference's /logs rhythm; upstream spaces them 24. */
+html.flat-theme [data-ui~="settings"] > form > :not([hidden]) ~ :not([hidden]),
+html.flat-theme [data-ui~="settings"] > form > [class~="space-y-6"] > :not([hidden]) ~ :not([hidden]),
+html.flat-theme [data-ui~="settings"] > form > div:not([class]) > [class~="space-y-6"] > :not([hidden]) ~ :not([hidden]) {
+  margin-top: var(--ui-shell-gap);
+}
+
+/* The centred narrow pages (settings max-w-6xl, the prompt library max-w-5xl) start at the content gutter like every
+   console page of the reference, under the header row's title; their maximum width stays (long forms keep a readable
+   measure; the space on the right of a wide screen is canvas). */
+html.flat-theme :is([data-ui~="settings"], [data-ui~="system-prompts"])[class~="mx-auto"] {
+  margin-inline: 0;
+}
+
+html.flat-theme [data-ui~="system-prompts"][class~="px-1"] {
+  padding-inline: 0;
+}
+
+/* 1.2 The tab strip keeps sticking (upstream function) 12px under the header's line (--ui-header-h: 0 on desktop, where
+   the header scrolls away; the 47px bar below 1024). The band behind it (the canvas at 90 % with the reference's one
+   blur, controls.css 7.2) reaches one block gap above and below the strip, so a stuck strip has calm canvas around it
+   and nothing shows through the 12px above it. In flow the bands only cover canvas. */
+html.flat-theme [data-ui~="settings"] .settings-tabs-shell.settings-tabs-shell::before,
+html.flat-theme [data-ui~="settings"] .settings-tabs-shell.settings-tabs-shell::after {
+  position: absolute;
+  inset-inline: 0;
+  height: var(--ui-shell-gap);
+  background: rgb(var(--ui-canvas) / 0.9);
+  -webkit-backdrop-filter: blur(8px);
+  backdrop-filter: blur(8px);
+  content: "";
+  pointer-events: none;
+}
+
+html.flat-theme [data-ui~="settings"] .settings-tabs-shell.settings-tabs-shell::before {
+  bottom: 100%;
+}
+
+html.flat-theme [data-ui~="settings"] .settings-tabs-shell.settings-tabs-shell::after {
+  top: 100%;
+}
+
+/* ================================================================== settings · 2 section cards */
+
+/* 2.1 Header strip: the reference Modal / panel header (px 18, py 14, the structural line under it); title 14 / 20
+   600 ink, description 12.5 / 18.75 muted two pixels under it. Upstream: 24px insets, an 18px title. */
+html.flat-theme [data-ui~="settings"] .card > div:first-child[class~="border-b"]:is([class~="px-6"], [class~="px-4"]) {
+  gap: 0.75rem;
+  padding: var(--set-head-py) var(--set-px);
+}
+
+html.flat-theme [data-ui~="settings"] .card > div:first-child[class~="border-b"] :is(h2, h3) {
+  gap: 0.5rem;
+  font-size: 0.875rem;
+  line-height: 1.25rem;
+  font-weight: 600;
+  letter-spacing: 0;
+  color: rgb(var(--ui-ink));
+}
+
+html.flat-theme [data-ui~="settings"] .card > div:first-child[class~="border-b"] :is(h2 + p, h3 + p, h2 + div, div > p) {
+  margin-top: 0.125rem;
+  font-size: 0.78125rem;
+  line-height: 1.171875rem;
+  color: rgb(var(--ui-muted));
+}
+
+/* a glyph beside a card title is a neutral mark, not a hue (decision 2) */
+html.flat-theme [data-ui~="settings"] .card > div:first-child[class~="border-b"] :is(h2 svg, div:has(> h2) > svg) {
+  width: 0.9375rem;
+  height: 0.9375rem;
+  color: rgb(var(--ui-ink-soft));
+}
+
+/* 2.2 Body: 16 x 18, and one rhythm for every field, row and group in it (upstream mixes 16, 20 and 24). */
+html.flat-theme [data-ui~="settings"] .card > div:is([class~="p-6"], [class~="px-6"]):not([class~="border-b"]),
+html.flat-theme [data-ui~="settings"] .card > div:first-child[class~="border-b"] ~ div[class~="p-4"] {
+  padding: var(--set-body-py) var(--set-px) calc(var(--set-body-py) + 0.125rem);
+}
+
+html.flat-theme [data-ui~="settings"] .card > div:is([class~="p-6"], [class~="px-6"]):not([class~="border-b"]):is([class~="space-y-6"], [class~="space-y-5"], [class~="space-y-4"]) > :not([hidden]) ~ :not([hidden]) {
+  margin-top: var(--set-gap);
+}
+
+/* ================================================================== settings · 3 rows, titles, labels, help */
+
+/* 3.1 Switch rows: a title and its description on the left, the switch on the right, 16px apart at least (upstream
+   has no gap: a long description ran into the switch). Title 13 / 19.5 600 ink (the reference's card and option titles;
+   upstream's bare label is 16px), description 12 / 18 muted. */
+html.flat-theme [data-ui~="settings"] div[class~="flex"][class~="justify-between"]:has(> button[role="switch"], > button[class~="rounded-full"][class~="border-2"], > label > input[class~="peer"]) {
+  gap: 1rem;
+}
+
+html.flat-theme [data-ui~="settings"] div[class~="flex"][class~="justify-between"]:has(> button[role="switch"], > button[class~="rounded-full"][class~="border-2"], > label > input[class~="peer"]) > div:first-child {
+  min-width: 0;
+}
+
+html.flat-theme [data-ui~="settings"] div[class~="flex"][class~="justify-between"]:has(> button[role="switch"], > button[class~="rounded-full"][class~="border-2"], > label > input[class~="peer"]) > div:first-child > :is(label, span, h3, h4, p):first-child:not([class~="font-mono"]),
+html.flat-theme [data-ui~="settings"] div[class~="flex"][class~="justify-between"]:has(> button[role="switch"], > button[class~="rounded-full"][class~="border-2"], > label > input[class~="peer"]) > :is(label, span, h3, h4):first-child:not([class~="font-mono"]) {
+  font-family: var(--ui-font);
+  font-size: 0.8125rem;
+  line-height: 1.21875rem;
+  font-weight: 600;
+  letter-spacing: 0;
+  text-transform: none;
+  color: rgb(var(--ui-ink));
+}
+
+html.flat-theme [data-ui~="settings"] div[class~="flex"][class~="justify-between"]:has(> button[role="switch"], > button[class~="rounded-full"][class~="border-2"], > label > input[class~="peer"]) > div:first-child > p:not(:first-child) {
+  margin-top: 0.125rem;
+  font-size: 0.75rem;
+  line-height: 1.125rem;
+}
+
+html.flat-theme [data-ui~="settings"] div[class~="flex"][class~="justify-between"]:has(> button[role="switch"], > button[class~="rounded-full"][class~="border-2"], > label > input[class~="peer"]) > div:first-child > p:not(:first-child):is([class~="text-gray-500"], [class~="text-gray-400"], [class~="text-gray-600"]) {
+  color: rgb(var(--ui-muted));
+}
+
+/* 3.2 Titles inside a card: the bare row labels (label.font-medium, 16px upstream) and the sub-section headings of any
+   size are the reference's 13 / 600 ink card title; dialogs drawn inside the page keep theirs. A label followed by its
+   description (not by a field) is such a title too. */
+html.flat-theme [data-ui~="settings"] .card label[class~="text-sm"][class~="font-medium"]:not([class~="block"]):has(+ p) {
+  font-weight: 600;
+  color: rgb(var(--ui-ink));
+}
+
+html.flat-theme [data-ui~="settings"] .card label[class~="text-sm"][class~="font-medium"]:not([class~="block"]) + p:is([class~="text-sm"], [class~="text-xs"]) {
+  margin-top: 0.125rem;
+  font-size: 0.75rem;
+  line-height: 1.125rem;
+}
+
+html.flat-theme [data-ui~="settings"] .card :where(label[class~="font-medium"][class~="text-gray-900"], h3, h4):not(:where([class~="font-mono"], [class~="fixed"] *, .modal-content *)) {
+  font-family: var(--ui-font);
+  font-size: 0.8125rem;
+  line-height: 1.21875rem;
+  font-weight: 600;
+  letter-spacing: 0;
+  text-transform: none;
+  color: rgb(var(--ui-ink));
+}
+
+/* 3.3 A title's description (the paragraph right after it, 13 or 12px upstream) is 12 / 18 muted, 2px under it. */
+html.flat-theme [data-ui~="settings"] .card :where(label[class~="font-medium"][class~="text-gray-900"], h3, h4):not(:where([class~="fixed"] *, .modal-content *)) + p:where([class~="text-sm"], [class~="text-xs"]) {
+  margin-top: 0.125rem;
+  font-size: 0.75rem;
+  line-height: 1.125rem;
+  color: rgb(var(--ui-muted));
+}
+
+/* 3.4 Field labels. The recipe and the block utility labels are the mono label already (controls.css 3.5, style.css
+   .input-label); the inline ones that sit right before their field (label[for] + input.mt-2, the grok / TTFT /
+   retired-switch fields, the small grey labels of the search provider and the backup list) join them, so a form has
+   one label language. */
+html.flat-theme [data-ui~="settings"] label[class~="text-sm"][class~="font-medium"]:not([class~="block"]):has(+ :is(input, select, textarea, div)),
+html.flat-theme [data-ui~="settings"] label[class~="text-xs"]:is([class~="text-gray-500"], [class~="text-gray-600"]):has(+ :is(input, select, textarea, div)) {
+  display: block;
+  font-family: var(--ui-font-mono);
+  font-size: var(--ui-label-size);
+  line-height: var(--ui-label-leading);
+  font-weight: 600;
+  letter-spacing: var(--ui-label-tracking);
+  text-transform: uppercase;
+  color: rgb(var(--ui-label));
+}
+
+/* 3.5 Help text under a field: 12 / 18 muted, 6px under it (upstream mt-1 / mt-1.5 mix). */
+html.flat-theme [data-ui~="settings"] :is(input, select, textarea, .relative, [class~="flex"]) + p[class~="text-xs"]:is([class~="text-gray-500"], [class~="text-gray-400"]) {
+  margin-top: 0.375rem;
+  line-height: 1.125rem;
+}
+
+/* 3.6 Hairline rows and sub-sections: the structural line with one row gap (14px) on each side of it; upstream
+   pads 16 or 20 under a line that sits 16-24 below the previous row. */
+html.flat-theme [data-ui~="settings"] .card > div:is([class~="p-6"], [class~="px-6"]):not([class~="border-b"]) > [class~="border-t"]:is([class~="pt-4"], [class~="pt-5"], [class~="pt-6"]) {
+  padding-top: var(--set-row);
+}
+
+html.flat-theme [data-ui~="settings"] .card > div:is([class~="p-6"], [class~="px-6"]):not([class~="border-b"]):is([class~="space-y-6"], [class~="space-y-5"], [class~="space-y-4"]) > [class~="border-t"]:is([class~="pt-4"], [class~="pt-5"], [class~="pt-6"]):not(:first-child) {
+  margin-top: var(--set-row);
+}
+
+/* ================================================================== settings · 4 groups, notices, chips, buttons */
+
+/* 4.1 Grouped cards inside a card (a login source, a Beta policy, a menu item, a document): the reference's route
+   card, the surface with the structural line, radius 8, a 14px inset (upstream 16). Coloured boxes are notices (4.2). */
+html.flat-theme [data-ui~="settings"] .card div:is([class~="rounded-lg"], [class~="rounded-xl"])[class~="border"]:is([class~="p-4"], [class~="p-5"]):not([class*="bg-amber"], [class*="bg-green"], [class*="bg-sky"], [class*="bg-blue"], [class*="bg-red"], [class*="bg-primary"], [class~="border-dashed"]) {
+  border-color: rgb(var(--ui-line));
+  border-radius: var(--ui-radius-lg);
+  padding: 0.875rem;
+}
+
+/* a group drawn on the grouped fill keeps it (the reference's option card: the subtle fill at 60 %) */
+html.flat-theme [data-ui~="settings"] .card div[class~="rounded-lg"][class~="border"][class~="bg-gray-50"]:is([class~="p-4"], [class~="p-5"]) {
+  background-color: rgb(var(--ui-subtle) / 0.6);
+}
+
+/* one-line bordered rows (an OAuth source, a provider line): 10 x 14 */
+html.flat-theme [data-ui~="settings"] .card div[class~="rounded"][class~="border"][class~="px-4"][class~="py-3"]:not([class~="border-dashed"]) {
+  border-color: rgb(var(--ui-line));
+  border-radius: var(--ui-radius-md);
+  padding: 0.625rem 0.875rem;
+}
+
+/* 4.2 Notices: the reference's callout (radius 6, 12 x 14, 13px with a relaxed line) in the colour of its state
+   (warning, success, danger): the soft fill and the state colour at 30 % as the edge, in dark too (the soft tokens
+   are the state at 18 %, not upstream's translucent 900 shades). Their text keeps the state colour upstream gives it
+   (the warning is the message). A notice that holds a switch row stays a row. Blue / sky info boxes are not a state:
+   they are the shared neutral callout (data.css §11, decision 2). */
+html.flat-theme [data-ui~="settings"] :is(div, p)[class~="border"]:is([class~="bg-amber-50"], [class~="bg-yellow-50"], [class~="bg-orange-50"]) {
+  border-color: rgb(var(--ui-warning) / 0.3);
+  border-radius: var(--ui-radius-md);
+  background-color: rgb(var(--ui-warning-soft));
+  padding: 0.75rem 0.875rem;
+  line-height: 1.3125rem;
+}
+
+html.flat-theme [data-ui~="settings"] :is(div, p)[class~="border"]:is([class~="bg-green-50"], [class~="bg-emerald-50"]) {
+  border-color: rgb(var(--ui-success) / 0.3);
+  border-radius: var(--ui-radius-md);
+  background-color: rgb(var(--ui-success-soft));
+  padding: 0.75rem 0.875rem;
+}
+
+html.flat-theme [data-ui~="settings"] :is(div, p)[class~="border"]:is([class~="bg-red-50"], [class~="bg-rose-50"]) {
+  border-color: rgb(var(--ui-danger) / 0.3);
+  border-radius: var(--ui-radius-md);
+  background-color: rgb(var(--ui-danger-soft));
+  padding: 0.75rem 0.875rem;
+}
+
+/* the left-rule note becomes the same notice (the reference draws no side rules) */
+html.flat-theme [data-ui~="settings"] div[class~="border-l-2"][class~="bg-amber-50"] {
+  border: 1px solid rgb(var(--ui-warning) / 0.3);
+}
+
+/* a notice's glyph sits on its first line */
+html.flat-theme [data-ui~="settings"] :is(div, p)[class~="border"][class*="bg-amber-50"] svg {
+  width: 0.9375rem;
+  height: 0.9375rem;
+}
+
+/* 4.3 Dashed "add" buttons (add an endpoint, a menu item, a rule): a quiet 34px outline in the control line, dashed,
+   radius 6, 12.5 / 600 muted, ink on hover; not the accent (the reference adds with a default button). */
+html.flat-theme [data-ui~="settings"] button[class~="border-dashed"] {
+  min-height: var(--ui-select-h);
+  gap: 0.375rem;
+  border-width: 1px;
+  border-color: rgb(var(--ui-line-strong));
+  border-radius: var(--ui-radius-md);
+  padding: 0.3125rem 0.75rem;
+  font-size: 0.78125rem;
+  line-height: 1.171875rem;
+  font-weight: 600;
+  color: rgb(var(--ui-muted));
+  transition-property: color, border-color, background-color;
+  transition-duration: var(--ui-duration);
+  transition-timing-function: var(--ui-ease);
+}
+
+html.flat-theme [data-ui~="settings"] button[class~="border-dashed"]:hover {
+  border-color: rgb(var(--ui-line-focus));
+  background-color: rgb(var(--ui-subtle) / 0.6);
+  color: rgb(var(--ui-ink));
+}
+
+html.flat-theme [data-ui~="settings"] button[class~="border-dashed"] svg {
+  width: 0.875rem;
+  height: 0.875rem;
+}
+
+/* dashed empty boxes ("no rule yet") are the reference's empty state: dashed control outline, radius 8, 12.5px muted */
+html.flat-theme [data-ui~="settings"] div[class~="border-dashed"] {
+  border-width: 1px;
+  border-color: rgb(var(--ui-line-strong));
+  border-radius: var(--ui-radius-lg);
+  font-size: 0.78125rem;
+  line-height: 1.171875rem;
+  color: rgb(var(--ui-muted));
+}
+
+/* 4.4 Remove-item glyph buttons (a red trash can at rest upstream): the reference's 28px icon button, muted at rest,
+   the danger colour on hover and focus (the accounts table's delete glyph does the same). */
+html.flat-theme [data-ui~="settings"] button[class~="text-red-400"]:is([class~="p-1"], [class~="p-2"]) {
+  display: inline-grid;
+  place-items: center;
+  width: 1.75rem;
+  height: 1.75rem;
+  border-radius: var(--ui-radius-md);
+  padding: 0;
+  color: rgb(var(--ui-muted));
+  transition-property: color, background-color;
+  transition-duration: var(--ui-duration);
+  transition-timing-function: var(--ui-ease);
+}
+
+html.flat-theme [data-ui~="settings"] button[class~="text-red-400"]:is([class~="p-1"], [class~="p-2"]):is(:hover, :focus-visible) {
+  background-color: rgb(var(--ui-danger-soft));
+  color: rgb(var(--ui-danger));
+}
+
+html.flat-theme [data-ui~="settings"] button[class~="text-red-400"]:is([class~="p-1"], [class~="p-2"]) svg {
+  width: 0.9375rem;
+  height: 0.9375rem;
+}
+
+/* 4.5 Quick-fill chips (model patterns): the reference's value chip, Geist Mono 11 ink-soft, the control outline,
+   radius 4; ink on hover (upstream turns them green). */
+html.flat-theme [data-ui~="settings"] button[class~="rounded"][class~="border"][class~="px-2"][class~="py-0.5"][class~="text-xs"] {
+  border-color: rgb(var(--ui-line-strong));
+  border-radius: var(--ui-radius-sm);
+  background-color: rgb(var(--ui-surface));
+  padding: 0.0625rem 0.375rem;
+  font-family: var(--ui-font-mono);
+  font-size: 0.6875rem;
+  line-height: 1.125rem;
+  color: rgb(var(--ui-ink-soft));
+}
+
+html.flat-theme [data-ui~="settings"] button[class~="rounded"][class~="border"][class~="px-2"][class~="py-0.5"][class~="text-xs"]:hover {
+  border-color: rgb(var(--ui-line-focus));
+  background-color: rgb(var(--ui-surface));
+  color: rgb(var(--ui-ink));
+}
+
+/* 4.6 Values set as code inside a card (callback URLs, the admin key): Geist Mono 12 ink-soft on the grouped fill,
+   radius 4 (the reference's value chip). */
+html.flat-theme [data-ui~="settings"] .card code[class~="rounded"]:is([class~="bg-gray-50"], [class~="bg-gray-100"]) {
+  border-radius: var(--ui-radius-sm);
+  background-color: rgb(var(--ui-subtle));
+  font-size: 0.75rem;
+  line-height: 1.125rem;
+  color: rgb(var(--ui-ink-soft));
+}
+
+/* 4.7 Header-less tables in a card (the platform quota matrix, the source overrides): the reference's table header,
+   the mono label at 500 with the structural line under it; 8px between rows. */
+html.flat-theme [data-ui~="settings"] .card table > thead:not([class~="bg-gray-50"]) > tr > th {
+  font-family: var(--ui-font-mono);
+  font-size: var(--ui-label-size);
+  line-height: var(--ui-label-leading);
+  font-weight: 500;
+  letter-spacing: var(--ui-label-tracking);
+  text-transform: uppercase;
+  color: rgb(var(--ui-label));
+}
+
+/* the matrix rows set their name beside 32px fields: centred on the field, not on its top edge */
+html.flat-theme [data-ui~="settings"] .card table tr[class~="align-top"]:has(> td > input) > td {
+  vertical-align: middle;
+}
+
+/* ================================================================== settings · 5 panels inside a card */
+
+/* 5.1 The Codex card stacks three fork panels (Image Studio, observation, the model catalogue) and the client rules:
+   one hairline between them, as between the rows of a card. */
+html.flat-theme [data-ui~="settings"] .card > div[class~="p-6"] > :is([data-testid="image-tools-settings"], [data-testid="observability-settings"], [data-testid="official-model-catalog"]) + * {
+  margin-top: var(--set-row);
+  border-top: 1px solid rgb(var(--ui-line));
+  padding-top: var(--set-row);
+}
+
+/* their checkbox options: 13px ink beside the 14px box, 8px apart */
+html.flat-theme [data-ui~="settings"] :is([data-testid="image-tools-settings"], [data-testid="observability-settings"]) > label {
+  gap: 0.5rem;
+  font-size: 0.8125rem;
+  line-height: 1.21875rem;
+  color: rgb(var(--ui-ink));
+}
+
+html.flat-theme [data-ui~="settings"] :is([data-testid="image-tools-settings"], [data-testid="observability-settings"]) > :not([hidden]) ~ :not([hidden]) {
+  margin-top: 0.625rem;
+}
+
+/* 5.2 The model catalogue reads as the reference's docs reference list: a bordered scroll box (radius 8, 14px in),
+   one entry per hairline; the model id in Geist Mono 12.5 / 600 ink, the provider / product in mono 11 muted; the
+   facts as a two-column definition list, 12 / 18, labels muted, values ink-soft; the count as the reference's mono
+   meta line. Every field stays shown. */
+html.flat-theme [data-ui~="settings"] [data-testid="official-model-catalog-list"] {
+  border-color: rgb(var(--ui-line));
+  border-radius: var(--ui-radius-lg);
+  padding-inline: 0.875rem;
+}
+
+html.flat-theme [data-ui~="settings"] [data-testid="official-model-catalog-entry"] {
+  padding-block: 0.625rem 0.75rem;
+}
+
+html.flat-theme [data-ui~="settings"] [data-testid="official-model-catalog-entry"] > p:first-child {
+  font-family: var(--ui-font-mono);
+  font-size: 0.78125rem;
+  line-height: 1.171875rem;
+  font-weight: 600;
+  color: rgb(var(--ui-ink));
+}
+
+html.flat-theme [data-ui~="settings"] [data-testid="official-model-catalog-entry"] > p:nth-child(2) {
+  font-family: var(--ui-font-mono);
+  font-size: 0.6875rem;
+  line-height: 1.03125rem;
+  color: rgb(var(--ui-muted));
+}
+
+html.flat-theme [data-ui~="settings"] [data-testid="official-model-catalog-entry"] > dl {
+  margin-top: 0.5rem;
+  column-gap: 1rem;
+  row-gap: 0.125rem;
+  font-size: 0.75rem;
+  line-height: 1.125rem;
+}
+
+html.flat-theme [data-ui~="settings"] [data-testid="official-model-catalog-entry"] > dl > dt {
+  color: rgb(var(--ui-muted));
+}
+
+html.flat-theme [data-ui~="settings"] [data-testid="official-model-catalog-entry"] > dl > dd {
+  color: rgb(var(--ui-ink-soft));
+}
+
+html.flat-theme [data-ui~="settings"] [data-testid="official-model-catalog"] > p[class~="text-xs"] {
+  font-family: var(--ui-font-mono);
+  font-size: 0.6875rem;
+  line-height: 1.03125rem;
+  color: rgb(var(--ui-label));
+}
+
+/* ================================================================== settings · 6 tab specifics */
+
+/* 6.1 数据备份 (BackupView's cards are p-6 boxes with a title block): the same section card as the other tabs, the
+   title block drawn as its header strip (the 14 x 18 inset and the line under it), the body 16 x 18. */
+html.flat-theme [data-ui~="settings"] .card[class~="p-6"] {
+  padding: var(--set-body-py) var(--set-px) calc(var(--set-body-py) + 0.125rem);
+}
+
+html.flat-theme [data-ui~="settings"] .card[class~="p-6"] > div:first-child[class~="mb-4"] {
+  margin: calc(var(--set-body-py) * -1) calc(var(--set-px) * -1) var(--set-body-py);
+  border-bottom: 1px solid rgb(var(--ui-line));
+  padding: var(--set-head-py) var(--set-px);
+}
+
+html.flat-theme [data-ui~="settings"] .card[class~="p-6"] > div:first-child[class~="mb-4"] h3 {
+  font-size: 0.875rem;
+  line-height: 1.25rem;
+}
+
+html.flat-theme [data-ui~="settings"] .card[class~="p-6"] > div:first-child[class~="mb-4"] h3 + p {
+  font-size: 0.78125rem;
+  line-height: 1.171875rem;
+}
+
+/* the backup list: the reference's table header (mono label, the line under it), 42px rows, figures in Geist Mono */
+html.flat-theme [data-ui~="settings"] .card[class~="p-6"] table > thead > tr {
+  border-color: rgb(var(--ui-line));
+}
+
+html.flat-theme [data-ui~="settings"] .card[class~="p-6"] table > thead > tr > th {
+  padding-block: 0.625rem;
+  font-family: var(--ui-font-mono);
+  font-size: var(--ui-label-size);
+  line-height: var(--ui-label-leading);
+  font-weight: 500;
+  letter-spacing: var(--ui-label-tracking);
+  color: rgb(var(--ui-label));
+}
+
+html.flat-theme [data-ui~="settings"] .card[class~="p-6"] table > tbody > tr {
+  border-color: rgb(var(--ui-line));
+}
+
+/* the retention summary is a grouped note (the reference's option card fill), not a grey slab */
+html.flat-theme [data-ui~="settings"] [data-testid="backup-schedule"] > div[class~="rounded-lg"][class~="bg-gray-50"] {
+  border: 1px solid rgb(var(--ui-line));
+  border-radius: var(--ui-radius-md);
+  background-color: rgb(var(--ui-subtle) / 0.6);
+  padding: 0.625rem 0.875rem;
+  font-size: 0.78125rem;
+  line-height: 1.171875rem;
+  color: rgb(var(--ui-ink-soft));
+}
+
+html.flat-theme [data-ui~="settings"] [data-testid="backup-schedule"] > div[class~="rounded-lg"][class~="bg-gray-50"] > p:first-child {
+  font-weight: 600;
+  color: rgb(var(--ui-ink));
+}
+
+/* 6.2 邮件设置 · the template editor (EmailTemplateEditor.vue, inside the page). The selected event's summary is a
+   description, not a state: the shared neutral callout (data.css §11 gives its line, fill and text; here only its
+   radius and inset), its category and delivery chips neutral (upstream tints it with the accent and colours the
+   delivery kind). The HTML body is set as the reference's code
+   (Geist Mono 12.5 on a 1.625 line). Placeholders are value chips: the structural outline, Geist Mono 11, ink on
+   hover (not green). The live preview panel's header is a panel header (10 x 14, 13 / 600 title). */
+html.flat-theme [data-ui~="settings"] .card div[class~="rounded-lg"][class~="border"][class~="border-primary-100"] {
+  border-radius: var(--ui-radius-lg);
+  padding: 0.75rem 0.875rem;
+}
+
+html.flat-theme [data-ui~="settings"] .card div[class~="border-primary-100"] > div:first-child > div {
+  font-size: 0.8125rem;
+  line-height: 1.21875rem;
+}
+
+html.flat-theme [data-ui~="settings"] .card div[class~="border-primary-100"] > div:first-child > span[class~="rounded-full"] {
+  border: 1px solid rgb(var(--ui-line-strong));
+  background-color: rgb(var(--ui-surface));
+  padding: 0.0625rem 0.5rem;
+  font-size: 0.6875rem;
+  line-height: 1.03125rem;
+  font-weight: 500;
+  color: rgb(var(--ui-ink-soft));
+  box-shadow: none;
+}
+
+html.flat-theme [data-ui~="settings"] .card div[class~="border-primary-100"] > p {
+  font-size: 0.78125rem;
+  line-height: 1.25rem;
+}
+
+html.flat-theme [data-ui~="settings"] .card textarea#email-template-html {
+  font-size: 0.78125rem;
+  line-height: 1.625;
+}
+
+html.flat-theme [data-ui~="settings"] .card button[class~="rounded-full"][class~="font-mono"][class~="px-3"] {
+  border-color: rgb(var(--ui-line-strong));
+  background-color: rgb(var(--ui-surface));
+  padding: 0.125rem 0.625rem;
+  font-size: 0.6875rem;
+  line-height: 1.03125rem;
+  color: rgb(var(--ui-ink-soft));
+  transition-property: color, border-color;
+  transition-duration: var(--ui-duration);
+  transition-timing-function: var(--ui-ease);
+}
+
+html.flat-theme [data-ui~="settings"] .card button[class~="rounded-full"][class~="font-mono"][class~="px-3"]:hover {
+  border-color: rgb(var(--ui-line-focus));
+  color: rgb(var(--ui-ink));
+}
+
+html.flat-theme [data-ui~="settings"] .card div[class~="rounded-lg"][class~="border"]:not([class*="bg-amber"]) > div:first-child[class~="border-b"][class~="px-4"][class~="py-3"] {
+  padding: 0.625rem 0.875rem;
+}
+
+/* ================================================================== 7 · page heads of the fork pages and plugins */
+
+/* 7.1 The page's own heading repeats the header row's title word for word (系统提示词 in Chinese — its route title is
+   not translated —, Codex 路由设置, 插件管理). From 1024px, where the header row shows the title, it is kept for
+   assistive technology only; below that the header hides its title and the page heading stays. */
+@media (min-width: 1024px) {
+  html.flat-theme:lang(zh) [data-ui~="system-prompts"] > header h1,
+  html.flat-theme [data-ui~="codex-runtime"] > h2:first-child,
+  html.flat-theme [data-ui~="plugins"] > section:first-child h2 {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+}
+
+/* 7.2 The intro under the title: the reference's page intro (13px on a relaxed line, muted, 780px at most). */
+html.flat-theme [data-ui~="system-prompts"] > header p,
+html.flat-theme [data-ui~="codex-runtime"] > h2:first-child + p,
+html.flat-theme [data-ui~="plugins"] > section:first-child > div:first-child > p {
+  max-width: 48.75rem;
+  font-size: 0.8125rem;
+  line-height: 1.625;
+  color: rgb(var(--ui-muted));
+}
+
+/* (the shell's page rhythm, 0,6,2, spaces main's direct children; the doubled root attribute outranks it) */
+@media (min-width: 1024px) {
+  html.flat-theme [data-ui~="codex-runtime"][data-ui~="codex-runtime"] > h2:first-child:not([hidden]) + p:not([hidden]) {
+    margin-top: 0;
+  }
+}
+
+/* the page title where it stays (below 1024px, or an untranslated route title): the reference's 20 / 28 page title */
+html.flat-theme :is([data-ui~="system-prompts"] > header h1, [data-ui~="codex-runtime"] > h2:first-child, [data-ui~="plugins"] > section:first-child h2) {
+  font-size: 1.25rem;
+  line-height: 1.75rem;
+  font-weight: 600;
+  color: rgb(var(--ui-ink));
+}
+
+/* ================================================================== 8 · 系统提示词 (SystemPromptsView, fork) */
+
+/* 8.1 Rhythm: the head, the switch section and the library sit one block gap apart (the reference's 12). The head
+   is an intro line with its actions, no rule under it; each section is a section card (surface, structural line,
+   radius 8, 16 x 18). */
+html.flat-theme [data-ui~="system-prompts"] > :not([hidden]) ~ :not([hidden]) {
+  margin-top: var(--ui-shell-gap);
+}
+
+html.flat-theme [data-ui~="system-prompts"] > header {
+  align-items: flex-end;
+  border-bottom: 0;
+  padding-bottom: 0;
+}
+
+html.flat-theme [data-ui~="system-prompts"] > section {
+  border: 1px solid rgb(var(--ui-line));
+  border-radius: var(--ui-radius-lg);
+  background-color: rgb(var(--ui-surface));
+  padding: var(--set-body-py) var(--set-px) calc(var(--set-body-py) + 0.125rem);
+}
+
+/* 8.2 The switch line (switch, title, hint on one row) and the default prompt: title 13 / 600 ink, hint 12 muted;
+   the field label is the mono label; the usage line in ink-soft with its figures tabular; the notes 12 muted. */
+html.flat-theme [data-ui~="system-prompts"] > section:first-of-type > label:first-child > span[class~="font-medium"] {
+  font-weight: 600;
+  color: rgb(var(--ui-ink));
+}
+
+html.flat-theme [data-ui~="system-prompts"] > section:first-of-type > label:first-child > span[class~="text-xs"] {
+  font-size: 0.75rem;
+  line-height: 1.125rem;
+  color: rgb(var(--ui-muted));
+}
+
+html.flat-theme [data-ui~="system-prompts"] label > span[class~="block"]:first-child {
+  margin-bottom: 0.5rem;
+  font-family: var(--ui-font-mono);
+  font-size: var(--ui-label-size);
+  line-height: var(--ui-label-leading);
+  font-weight: 600;
+  letter-spacing: var(--ui-label-tracking);
+  text-transform: uppercase;
+  color: rgb(var(--ui-label));
+}
+
+html.flat-theme [data-ui~="system-prompts"] label[class~="space-y-1"] > :not([hidden]) ~ :not([hidden]) {
+  margin-top: 0;
+}
+
+html.flat-theme [data-ui~="system-prompts"] label > span[class~="text-xs"]:last-child {
+  margin-top: 0.375rem;
+  font-size: 0.75rem;
+  line-height: 1.125rem;
+  color: rgb(var(--ui-muted));
+}
+
+html.flat-theme [data-ui~="system-prompts"] [data-test="system-prompts-usage"] {
+  font-variant-numeric: tabular-nums;
+  color: rgb(var(--ui-ink-soft));
+}
+
+html.flat-theme [data-ui~="system-prompts"] > section > p[class~="text-xs"] {
+  font-size: 0.75rem;
+  line-height: 1.125rem;
+}
+
+/* 8.3 The library card: its title row is the card's header strip (14 x 18, the line under it, 14 / 600 title, the
+   add button at the right); each prompt is a row under a hairline; the body is the reference's code (Geist Mono
+   12.5 on a 1.625 line); the byte count and the users in the mono meta line. */
+html.flat-theme [data-ui~="system-prompts"] > section:last-of-type > div:first-child {
+  margin: calc(var(--set-body-py) * -1) calc(var(--set-px) * -1) 0;
+  border-bottom: 1px solid rgb(var(--ui-line));
+  padding: 0.625rem var(--set-px);
+}
+
+html.flat-theme [data-ui~="system-prompts"] > section:last-of-type > div:first-child > h2 {
+  font-size: 0.875rem;
+  line-height: 1.25rem;
+  font-weight: 600;
+  color: rgb(var(--ui-ink));
+}
+
+html.flat-theme [data-ui~="system-prompts"] > section:last-of-type > article {
+  border-color: rgb(var(--ui-line));
+  padding-top: var(--set-body-py);
+}
+
+html.flat-theme [data-ui~="system-prompts"] > section:last-of-type > div:first-child + article {
+  border-top-width: 0;
+}
+
+html.flat-theme [data-ui~="system-prompts"] > section:last-of-type > :not([hidden]) ~ :not([hidden]) {
+  margin-top: var(--set-gap);
+}
+
+/* a prompt's field row: the remove button stands as tall as the 34px fields beside it */
+html.flat-theme [data-ui~="system-prompts"] article > div[class~="items-end"] > .btn {
+  min-height: var(--ui-select-h);
+}
+
+html.flat-theme [data-ui~="system-prompts"] article textarea.input {
+  font-size: 0.78125rem;
+  line-height: 1.625;
+}
+
+html.flat-theme [data-ui~="system-prompts"] article > p[class~="text-xs"] {
+  gap: 0.25rem 1rem;
+  font-family: var(--ui-font-mono);
+  font-size: 0.6875rem;
+  line-height: 1.03125rem;
+  font-variant-numeric: tabular-nums;
+  color: rgb(var(--ui-label));
+}
+
+html.flat-theme [data-ui~="system-prompts"] article > p[class~="text-xs"] > [class~="text-red-600"] {
+  color: rgb(var(--ui-danger));
+}
+
+/* ================================================================== 8b · the per-account binding (accounts dialogs) */
+
+/* AccountSystemPromptBinding.vue, inside the account row menu's dialog, the bulk dialog and the account edit dialog:
+   the same field language (mono labels over 34px selects, 12px muted notes), the effect line in ink-soft. */
+html.flat-theme [data-test="account-system-prompt-binding"] label > span[class~="block"]:first-child {
+  margin-bottom: 0.5rem;
+  font-family: var(--ui-font-mono);
+  font-size: var(--ui-label-size);
+  line-height: var(--ui-label-leading);
+  font-weight: 600;
+  letter-spacing: var(--ui-label-tracking);
+  text-transform: uppercase;
+  color: rgb(var(--ui-label));
+}
+
+html.flat-theme [data-test="account-system-prompt-binding"] label[class~="space-y-1"] > :not([hidden]) ~ :not([hidden]) {
+  margin-top: 0;
+}
+
+html.flat-theme [data-test="account-system-prompt-binding"] > p[class~="text-xs"] {
+  font-size: 0.75rem;
+  line-height: 1.125rem;
+  color: rgb(var(--ui-muted));
+}
+
+html.flat-theme [data-test="account-system-prompt-binding"] > [data-test="system-prompt-binding-effect"] {
+  color: rgb(var(--ui-ink-soft));
+}
+
+/* with its apply button (the row-menu and bulk dialogs) the row holds one control height: the button stands as tall
+   as the 34px select beside it (the reference's PromoField: a 34px field and a 34px apply button) */
+html.flat-theme [data-test="account-system-prompt-binding"] > div[class~="items-end"] > .btn {
+  min-height: var(--ui-select-h);
+}
+
+html.flat-theme [data-test="account-system-prompt-binding"] > h3 {
+  font-size: 0.8125rem;
+  line-height: 1.21875rem;
+  font-weight: 600;
+  color: rgb(var(--ui-ink));
+}
+
+/* ================================================================== 9 · Codex 路由设置 (CodexRuntimeSettings, fork) */
+
+/* 9.1 The form is one section card (surface, structural line, radius 8, 16 x 18); its fields follow the settings
+   language: the two switches as 13px options beside their 14px boxes, the runtime facts as a two-column definition
+   list on the grouped fill (labels muted, values ink, identifiers in Geist Mono), mono field labels, the proxy in
+   Geist Mono, 12px notes, the actions as one row. */
+html.flat-theme [data-ui~="codex-runtime"] > :not([hidden]) ~ :not([hidden]) {
+  margin-top: var(--ui-shell-gap);
+}
+
+html.flat-theme [data-ui~="codex-runtime"] > fieldset {
+  border: 1px solid rgb(var(--ui-line));
+  border-radius: var(--ui-radius-lg);
+  background-color: rgb(var(--ui-surface));
+  padding: var(--set-body-py) var(--set-px) calc(var(--set-body-py) + 0.125rem);
+}
+
+html.flat-theme [data-ui~="codex-runtime"] > fieldset > label[class~="flex"] {
+  gap: 0.5rem;
+  color: rgb(var(--ui-ink));
+}
+
+html.flat-theme [data-ui~="codex-runtime"] > fieldset > label[class~="flex"] + label[class~="flex"] {
+  margin-top: 0.625rem;
+}
+
+html.flat-theme [data-ui~="codex-runtime"] [data-test="codex-runtime-facts"] {
+  column-gap: 1.25rem;
+  row-gap: 0.25rem;
+  border: 1px solid rgb(var(--ui-line));
+  border-radius: var(--ui-radius-md);
+  background-color: rgb(var(--ui-subtle) / 0.6);
+  padding: 0.625rem 0.875rem;
+  font-size: 0.78125rem;
+  line-height: 1.171875rem;
+}
+
+html.flat-theme [data-ui~="codex-runtime"] [data-test="codex-runtime-facts"] > dt {
+  color: rgb(var(--ui-muted));
+}
+
+html.flat-theme [data-ui~="codex-runtime"] [data-test="codex-runtime-facts"] > dd {
+  color: rgb(var(--ui-ink));
+}
+
+html.flat-theme [data-ui~="codex-runtime"] [data-test="codex-runtime-facts"] > dd[class~="font-mono"] {
+  font-size: 0.75rem;
+}
+
+/* on a phone the long labels left the values a sliver (the model list broke every few letters): each value under
+   its label */
+@media (max-width: 639.98px) {
+  html.flat-theme [data-ui~="codex-runtime"] [data-test="codex-runtime-facts"] {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  html.flat-theme [data-ui~="codex-runtime"] [data-test="codex-runtime-facts"] > dd:not(:last-child) {
+    margin-bottom: 0.375rem;
+  }
+}
+
+html.flat-theme [data-ui~="codex-runtime"] fieldset label > span:first-child:not(:only-child) {
+  display: block;
+  margin-bottom: 0.5rem;
+  font-family: var(--ui-font-mono);
+  font-size: var(--ui-label-size);
+  line-height: var(--ui-label-leading);
+  font-weight: 600;
+  letter-spacing: var(--ui-label-tracking);
+  text-transform: uppercase;
+  color: rgb(var(--ui-label));
+}
+
+html.flat-theme [data-ui~="codex-runtime"] fieldset label[class~="space-y-2"] > :not([hidden]) ~ :not([hidden]) {
+  margin-top: 0;
+}
+
+html.flat-theme [data-ui~="codex-runtime"] [data-test="codex-proxy"] {
+  font-family: var(--ui-font-mono);
+  font-size: 0.78125rem;
+  line-height: 1.625;
+}
+
+html.flat-theme [data-ui~="codex-runtime"] > fieldset > div[class~="flex"][class~="items-end"] {
+  gap: 0.5rem;
+}
+
+/* one control height per row (controls.css 4.4): the protocol select sits beside 30px buttons */
+html.flat-theme [data-ui~="codex-runtime"] > fieldset > div[class~="flex"][class~="items-end"] select.input {
+  padding-top: 0.265625rem;
+  padding-bottom: 0.265625rem;
+}
+
+html.flat-theme [data-ui~="codex-runtime"] > fieldset > p[class~="text-sm"] {
+  font-size: 0.75rem;
+  line-height: 1.125rem;
+}
+
+/* the candidates and the issue list: a grouped box (radius 6) with a mono legend; issues in the danger colour */
+html.flat-theme [data-ui~="codex-runtime"] [data-test="codex-proxy-candidates"] {
+  border-color: rgb(var(--ui-line));
+  border-radius: var(--ui-radius-md);
+  padding: 0.625rem 0.875rem 0.75rem;
+}
+
+html.flat-theme [data-ui~="codex-runtime"] [data-test="codex-proxy-candidates"] > legend {
+  padding-inline: 0.25rem;
+  font-family: var(--ui-font-mono);
+  font-size: var(--ui-label-size);
+  line-height: var(--ui-label-leading);
+  font-weight: 600;
+  letter-spacing: var(--ui-label-tracking);
+  text-transform: uppercase;
+  color: rgb(var(--ui-label));
+}
+
+html.flat-theme [data-ui~="codex-runtime"] [data-test="codex-proxy-issues"] {
+  font-size: 0.78125rem;
+  line-height: 1.171875rem;
+  color: rgb(var(--ui-danger));
+}
+
+/* 9.2 The result of a check or save (role=status under the form): a section card of its own, 12 x 14; codes,
+   fingerprints and the stages in Geist Mono; the certificates as definition lists under hairlines. */
+html.flat-theme [data-ui~="codex-runtime"] > [role="status"] {
+  border-color: rgb(var(--ui-line));
+  border-radius: var(--ui-radius-lg);
+  background-color: rgb(var(--ui-surface));
+  padding: 0.75rem 0.875rem;
+  line-height: 1.25rem;
+}
+
+html.flat-theme [data-ui~="codex-runtime"] > [role="status"][class~="text-red-600"] {
+  border-color: rgb(var(--ui-danger) / 0.3);
+  background-color: rgb(var(--ui-danger-soft));
+  color: rgb(var(--ui-danger));
+}
+
+html.flat-theme [data-ui~="codex-runtime"] [data-test="codex-proxy-stages"],
+html.flat-theme [data-ui~="codex-runtime"] [data-test="codex-proxy-certificate"] {
+  font-size: 0.75rem;
+  line-height: 1.125rem;
+}
+
+html.flat-theme [data-ui~="codex-runtime"] [data-test="codex-proxy-certificate"] {
+  border-color: rgb(var(--ui-line));
+}
+
+html.flat-theme [data-ui~="codex-runtime"] [data-test="codex-proxy-certificate"] > dt {
+  color: rgb(var(--ui-muted));
+}
+
+/* ================================================================== 10 · 插件管理 (PluginsView) and retired plugins */
+
+/* 10.1 Rhythm and head: blocks one block gap apart; the head's rule goes (the reference draws no page rule), its
+   capability chips are the reference's neutral chips (the grouped fill, radius 4, 12px ink-soft). */
+html.flat-theme [data-ui~="plugins"] > :not([hidden]) ~ :not([hidden]) {
+  margin-top: var(--ui-shell-gap);
+}
+
+html.flat-theme [data-ui~="plugins"] > section:first-child {
+  border-bottom: 0;
+  padding-bottom: 0;
+}
+
+html.flat-theme [data-ui~="plugins"] > section:first-child > div:first-child > div:last-child > span {
+  border-radius: var(--ui-radius-sm);
+  background-color: rgb(var(--ui-subtle));
+  padding: 0.125rem 0.5rem;
+  font-size: 0.75rem;
+  line-height: 1.125rem;
+  color: rgb(var(--ui-ink-soft));
+}
+
+html.flat-theme [data-ui~="plugins"] > p[class~="text-xs"] {
+  font-size: 0.75rem;
+  line-height: 1.125rem;
+  color: rgb(var(--ui-muted));
+}
+
+/* 10.2 The runtime notice is the shared neutral callout (data.css §11); the empty state is the reference's dashed
+   panel (radius 8, the control outline, a 14 / 500 title, 13px muted text, a neutral glyph). */
+html.flat-theme [data-ui~="plugins"] > div[class~="border-dashed"] {
+  border-color: rgb(var(--ui-line-strong));
+  border-radius: var(--ui-radius-lg);
+}
+
+html.flat-theme [data-ui~="plugins"] > div[class~="border-dashed"] > svg {
+  width: 1.25rem;
+  height: 1.25rem;
+  color: rgb(var(--ui-ink-soft));
+}
+
+html.flat-theme [data-ui~="plugins"] > div[class~="border-dashed"] > p:first-of-type {
+  font-size: 0.875rem;
+  line-height: 1.25rem;
+  font-weight: 500;
+  color: rgb(var(--ui-ink-soft));
+}
+
+html.flat-theme [data-ui~="plugins"] > div[class~="border-dashed"] > p:last-of-type {
+  font-size: 0.8125rem;
+  line-height: 1.625;
+  color: rgb(var(--ui-muted));
+}
+
+/* 10.3 Plugin cards (installed and retired): section cards; the head is the header strip (14 x 18, the line under
+   it) with the name 14 / 600, the version in Geist Mono 11 muted, the id and state as small chips; the facts as a
+   two-column definition list (12 / 18, labels muted, values ink-soft, identifiers in Geist Mono); section labels
+   are the mono label; JSON is the reference's snippet (the page ground, radius 6, Geist Mono 11.5 on 1.6). */
+html.flat-theme :is([data-ui~="plugins"], [data-testid="retired-plugins"]) article.card > div:first-child[class~="border-b"] {
+  padding: var(--set-head-py) var(--set-px);
+}
+
+html.flat-theme :is([data-ui~="plugins"], [data-testid="retired-plugins"]) article.card h3 {
+  font-size: 0.875rem;
+  line-height: 1.25rem;
+  font-weight: 600;
+  color: rgb(var(--ui-ink));
+}
+
+html.flat-theme :is([data-ui~="plugins"], [data-testid="retired-plugins"]) article.card h3 ~ span[class~="font-mono"] {
+  font-size: 0.6875rem;
+  line-height: 1.03125rem;
+  color: rgb(var(--ui-muted));
+}
+
+html.flat-theme :is([data-ui~="plugins"], [data-testid="retired-plugins"]) article.card h3 ~ span[class~="rounded"] {
+  border-radius: var(--ui-radius-sm);
+  padding: 0.0625rem 0.375rem;
+  font-family: var(--ui-font-mono);
+  font-size: 0.6875rem;
+  line-height: 1.03125rem;
+}
+
+html.flat-theme :is([data-ui~="plugins"], [data-testid="retired-plugins"]) article.card > div:first-child p {
+  font-size: 0.78125rem;
+  line-height: 1.171875rem;
+}
+
+html.flat-theme :is([data-ui~="plugins"], [data-testid="retired-plugins"]) article.card > :is(dl, div):not(:first-child)[class~="p-5"] {
+  padding: var(--set-body-py) var(--set-px);
+}
+
+html.flat-theme :is([data-ui~="plugins"], [data-testid="retired-plugins"]) article.card dl {
+  column-gap: 1rem;
+  row-gap: 0.25rem;
+  font-size: 0.75rem;
+  line-height: 1.125rem;
+}
+
+html.flat-theme :is([data-ui~="plugins"], [data-testid="retired-plugins"]) article.card dl > dt {
+  color: rgb(var(--ui-muted));
+}
+
+html.flat-theme :is([data-ui~="plugins"], [data-testid="retired-plugins"]) article.card dl > dd:not([class~="text-red-600"]) {
+  color: rgb(var(--ui-ink-soft));
+}
+
+html.flat-theme :is([data-ui~="plugins"], [data-testid="retired-plugins"]) :is(article.card, [data-testid="retired-plugins-receipt"]) p[class~="uppercase"][class~="text-xs"] {
+  font-family: var(--ui-font-mono);
+  font-size: var(--ui-label-size);
+  line-height: var(--ui-label-leading);
+  font-weight: 600;
+  letter-spacing: var(--ui-label-tracking);
+  color: rgb(var(--ui-label));
+}
+
+html.flat-theme :is([data-ui~="plugins"], [data-testid="retired-plugins"]) :is(article.card, [data-testid="retired-plugins-receipt"]) pre {
+  margin-top: 0.5rem;
+  border-radius: var(--ui-radius-md);
+  background-color: rgb(var(--ui-canvas));
+  padding: 0.75rem;
+  font-size: 0.71875rem;
+  line-height: 1.6;
+  color: rgb(var(--ui-ink-soft));
+}
+
+/* the retired section's title: a section title (14 / 600) with its description, no rule (the cards carry lines) */
+html.flat-theme [data-testid="retired-plugins"] > div:first-child {
+  border-bottom: 0;
+  padding-bottom: 0;
+}
+
+html.flat-theme [data-testid="retired-plugins"] > div:first-child > h2 {
+  font-size: 0.875rem;
+  line-height: 1.25rem;
+  font-weight: 600;
+  color: rgb(var(--ui-ink));
+}
+
+html.flat-theme [data-testid="retired-plugins"] > div:first-child > p {
+  margin-top: 0.125rem;
+  font-size: 0.78125rem;
+  line-height: 1.171875rem;
+  color: rgb(var(--ui-muted));
+}
+
+html.flat-theme :is([data-ui~="plugins"], [data-testid="retired-plugins"]) > [class~="grid"] {
+  gap: var(--ui-shell-gap);
+}
+
+html.flat-theme [data-testid="retired-plugins"] > :not([hidden]) ~ :not([hidden]) {
+  margin-top: var(--ui-shell-gap);
+}
+
+html.flat-theme [data-testid="retired-plugins-receipt"] {
+  padding: var(--set-body-py) var(--set-px);
+}
+
+/* ================================================================== 11 · option chips, the payment provider dialog */
+
+/* Multi-choice chips (the enabled payment providers, the provider dialog's payment mode and methods: rounded-lg border
+   px-2.5 py-1 text-xs buttons; the chosen ones a solid accent block upstream): the reference's filter pill, 26px,
+   radius 6, the control outline, 12px / 500 ink-soft; chosen = its active state (the accent at 40 % as the edge, the
+   accent tint, accent text), not a solid green block (decision 2: the accent marks, it does not fill). */
+html.flat-theme :is([data-ui~="settings"], #provider-form) button[class~="rounded-lg"][class~="border"][class~="px-2.5"][class~="py-1"][class~="text-xs"] {
+  min-height: 1.625rem;
+  border-color: rgb(var(--ui-line-strong));
+  border-radius: var(--ui-radius-md);
+  background-color: rgb(var(--ui-surface));
+  padding: 0.1875rem 0.625rem;
+  font-size: 0.75rem;
+  line-height: 1.125rem;
+  font-weight: 500;
+  color: rgb(var(--ui-ink-soft));
+  box-shadow: none;
+  transition-property: color, background-color, border-color;
+  transition-duration: var(--ui-duration);
+  transition-timing-function: var(--ui-ease);
+}
+
+html.flat-theme :is([data-ui~="settings"], #provider-form) button[class~="rounded-lg"][class~="border"][class~="px-2.5"][class~="py-1"][class~="text-xs"]:hover {
+  border-color: rgb(var(--ui-line-focus));
+  background-color: rgb(var(--ui-surface));
+  color: rgb(var(--ui-ink));
+}
+
+html.flat-theme :is([data-ui~="settings"], #provider-form) button[class~="rounded-lg"][class~="border"][class~="px-2.5"][class~="py-1"][class~="text-xs"][class~="bg-primary-500"],
+html.flat-theme :is([data-ui~="settings"], #provider-form) button[class~="rounded-lg"][class~="border"][class~="px-2.5"][class~="py-1"][class~="text-xs"][class~="bg-primary-500"]:hover {
+  border-color: rgb(var(--ui-primary) / 0.4);
+  background-color: rgb(var(--ui-primary-soft));
+  color: var(--ui-link);
+}
+
+/* the dialog's groups and headings follow the settings form: the custom-method group is a route card; headings 13 /
+   600 ink; the inline group captions (payment mode, methods) are the mono label */
+html.flat-theme #provider-form div[class~="rounded-lg"][class~="border"][class~="p-3"] {
+  border-color: rgb(var(--ui-line));
+  border-radius: var(--ui-radius-lg);
+  padding: 0.75rem 0.875rem;
+}
+
+html.flat-theme #provider-form :is(h4, h5) {
+  font-size: 0.8125rem;
+  line-height: 1.21875rem;
+  font-weight: 600;
+  color: rgb(var(--ui-ink));
+}
+
+html.flat-theme #provider-form > div[class~="flex-wrap"] > div > span[class~="text-xs"] {
+  font-family: var(--ui-font-mono);
+  font-size: var(--ui-label-size);
+  line-height: var(--ui-label-leading);
+  font-weight: 600;
+  letter-spacing: var(--ui-label-tracking);
+  text-transform: uppercase;
+  color: rgb(var(--ui-label));
+}
+
+/* ================================================================== 12 · the Cloudflare R2 guide (BackupView dialog) */
+
+/* A how-to in a dialog reads as the reference's docs page: 13px text on a relaxed line; the step titles 13 / 600 ink;
+   the step numbers a neutral mark (a 22px circle with the control outline, Geist Mono 11 ink-soft; upstream tints them
+   with the accent, decision 2); code and the settings table as its code and docs table (Geist Mono, the structural
+   line, the grouped fill on the key column); the Secret warning keeps its state; the free-tier line is a neutral
+   callout. Hook: BackupView.vue:291 data-ui="r2-guide" (the dialog's outer layer; the panel keeps the overlays'
+   utility-dialog look). */
+html.flat-theme [data-ui~="r2-guide"] :is(p, li) {
+  font-size: 0.8125rem;
+  line-height: 1.625;
+}
+
+html.flat-theme [data-ui~="r2-guide"] h3 {
+  font-size: 0.8125rem;
+  line-height: 1.375rem;
+  font-weight: 600;
+  color: rgb(var(--ui-ink));
+}
+
+html.flat-theme [data-ui~="r2-guide"] h3 > span[class~="rounded-full"] {
+  width: 1.375rem;
+  height: 1.375rem;
+  border: 1px solid rgb(var(--ui-line-strong));
+  background-color: rgb(var(--ui-surface));
+  font-family: var(--ui-font-mono);
+  font-size: 0.6875rem;
+  font-weight: 600;
+  color: rgb(var(--ui-ink-soft));
+}
+
+html.flat-theme [data-ui~="r2-guide"] ol {
+  color: rgb(var(--ui-muted));
+}
+
+html.flat-theme [data-ui~="r2-guide"] code {
+  font-family: var(--ui-font-mono);
+  font-size: 0.75rem;
+}
+
+html.flat-theme [data-ui~="r2-guide"] code[class~="block"] {
+  border: 1px solid rgb(var(--ui-line));
+  border-radius: var(--ui-radius-md);
+  background-color: rgb(var(--ui-canvas));
+  padding: 0.5rem 0.75rem;
+  color: rgb(var(--ui-ink));
+}
+
+html.flat-theme [data-ui~="r2-guide"] div[class~="rounded-lg"][class~="border"]:has(> table) {
+  border-color: rgb(var(--ui-line));
+  border-radius: var(--ui-radius-lg);
+}
+
+html.flat-theme [data-ui~="r2-guide"] table {
+  font-size: 0.78125rem;
+  line-height: 1.25rem;
+}
+
+html.flat-theme [data-ui~="r2-guide"] table tr {
+  border-color: rgb(var(--ui-line));
+}
+
+html.flat-theme [data-ui~="r2-guide"] table td:first-child {
+  background-color: rgb(var(--ui-subtle) / 0.6);
+  font-weight: 500;
+  color: rgb(var(--ui-ink-soft));
+}
+
+html.flat-theme [data-ui~="r2-guide"] table td:last-child code {
+  color: rgb(var(--ui-ink));
+}
+
+html.flat-theme [data-ui~="r2-guide"] div[class~="rounded-lg"][class~="bg-amber-50"] {
+  border: 1px solid rgb(var(--ui-warning) / 0.3);
+  border-radius: var(--ui-radius-md);
+  background-color: rgb(var(--ui-warning-soft));
+  padding: 0.625rem 0.875rem;
+  font-size: 0.78125rem;
+  line-height: 1.25rem;
+}
+
+html.flat-theme [data-ui~="r2-guide"] div[class~="rounded-lg"][class~="bg-green-50"] {
+  border: 1px solid rgb(var(--ui-line));
+  border-radius: var(--ui-radius-md);
+  background-color: rgb(var(--ui-surface));
+  padding: 0.75rem 0.875rem;
+  font-size: 0.8125rem;
+  line-height: 1.625;
+  color: rgb(var(--ui-muted));
+}
+
+/* end settings */

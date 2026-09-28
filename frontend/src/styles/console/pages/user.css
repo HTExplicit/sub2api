@@ -1,0 +1,1646 @@
+/* Console theme · page group: the user-side pages (dashboard, keys, usage, redeem, profile, subscriptions, purchase, orders, affiliate, available channels, model plaza, custom pages) and the mobile layouts of every page (owner: the user-side and mobile page agent, wave 2; html.flat-theme selectors narrowed to the page root). */
+/*
+ * Source: the Experiential Labs console (ui-el/ref/console/REF-CONSOLE.md, frames ref-models / ref-logs /
+ * ref-model-detail at 1440 and 390). The reference has no signed-in user pages, so these are drawn with its
+ * vocabulary: the content column anchored to the gutter (§7.1), cards (8px, 1px structural line, surface), the
+ * StatTile and the detail stat block (§8.13), the docs callout and lists (§8.16), the snippet and CodeTabs (§8.15),
+ * the dialog option card (§8.11), the filter pill (§8.6), list rows on 1px lines (the benchmarks card).
+ * Owner decision 2 (2026-09-29): colour only for status, the accent and platform identity (data.css §6.4 hooks);
+ * balances, KPI tiles, icon tiles and decorative numbers are neutral.
+ *
+ * Hooks added for this file (one data-ui attribute each, no other template change):
+ *   data-ui="user-redeem"              views/user/RedeemView.vue:3                    page root
+ *   data-ui="user-affiliate"           views/user/AffiliateView.vue:3                 page root
+ *   data-ui="user-subscriptions"       views/user/SubscriptionsView.vue:3             page root
+ *   data-ui="user-purchase"            views/user/PaymentView.vue:3                   page root
+ *   data-ui="user-orders"              views/user/UserOrdersView.vue:3                page root
+ *   data-ui="user-available-channels"  views/user/AvailableChannelsView.vue:3         TablePageLayout root
+ *   data-ui="model-plaza"              views/ModelPlazaView.vue:8                     standalone page root
+ *   data-ui="use-key"                  components/keys/UseKeyModal.vue:8              dialog body
+ *   data-ui="user-batch-image"         views/user/BatchImageGuideView.vue:3           TablePageLayout root
+ * Identity hooks (data.css §6.4 contract, decision 2): data-ui="platform-chip" on KeysView.vue:515 (the create
+ * dialog's provider tiles), PaymentView.vue:107 and :207, SubscriptionsView.vue:45, SubscriptionPlanCard.vue:34,
+ * PlazaModelPricingTable.vue:82, ProfileIdentityBindingsSection.vue:33 (the sign-in providers' letter squares);
+ * data-ui="platform-text" on the platform marks PaymentView.vue:203, SubscriptionsView.vue:39,
+ * SubscriptionPlanCard.vue:11.
+ * Existing hooks used: data-table="keys", #key-form, the profile's data-testid, .custom-page-layout, data-testid
+ * on the image studio, data-ui="pagination" / "empty-state" recipes of data.css. */
+
+/* ================================================================== 1 · page frame */
+
+/* The narrow user pages (redeem 42rem, purchase 56rem, profile 950px) sit on the content gutter under the header
+   row's title, as every reference page does (REF §7.1: the content column has no centring), and keep their width.
+   Their blocks follow the console's page rhythm (12px, the shell's gap). */
+html.flat-theme :is([data-ui="user-redeem"], [data-ui="user-purchase"], [data-testid="profile-shell"]) {
+  margin-left: 0;
+  margin-right: 0;
+}
+
+html.flat-theme :is([data-ui="user-redeem"], [data-ui="user-purchase"], [data-testid="profile-shell"]) > :not([hidden]) ~ :not([hidden]),
+html.flat-theme [data-testid="profile-shell"] [class~="space-y-6"] > :not([hidden]) ~ :not([hidden]) {
+  margin-top: var(--ui-shell-gap, 12px);
+}
+
+/* Cards on these pages: the reference's panel inset (16px, REF §6 p-4) instead of upstream's 24; a header bar is
+   12 / 16 on the structural line with the title 14 / 600 (the reference's modal and card titles) and its note
+   12.5px muted. */
+html.flat-theme :is([data-ui="user-redeem"], [data-ui="user-affiliate"], [data-ui="user-purchase"], [data-testid="profile-shell"]) .card:is([class~="p-6"], [class~="p-5"]),
+html.flat-theme :is([data-ui="user-redeem"], [data-testid="profile-shell"]) .card > div:is([class~="p-6"], [class~="px-6"][class~="py-6"]) {
+  padding: 16px;
+}
+
+html.flat-theme :is([data-ui="user-redeem"], [data-testid="profile-shell"]) .card > div[class~="border-b"][class~="px-6"][class~="py-4"] {
+  padding: 12px 16px;
+  border-bottom-color: rgb(var(--ui-line));
+}
+
+html.flat-theme :is([data-ui="user-redeem"], [data-testid="profile-shell"]) .card > div[class~="border-b"][class~="px-6"] :is(h2, h3),
+html.flat-theme :is([data-ui="user-affiliate"], [data-testid="profile-shell"]) .card :is(h2, h3):is([class~="text-lg"], [class~="text-base"]) {
+  color: rgb(var(--ui-ink));
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 20px;
+}
+
+html.flat-theme :is([data-ui="user-redeem"], [data-testid="profile-shell"]) .card > div[class~="border-b"][class~="px-6"] :is(h2, h3) + p,
+html.flat-theme :is([data-ui="user-affiliate"], [data-testid="profile-shell"]) .card :is(h2, h3):is([class~="text-lg"], [class~="text-base"]) + p {
+  margin-top: 2px;
+  color: rgb(var(--ui-muted));
+  font-size: 12.5px;
+  line-height: 18.75px;
+}
+
+/* ================================================================== 2 · API keys (/keys) */
+
+/* 2.0 One toolbar row (REF §7.1 /models: the search and the filters on the left, the actions at the row's right end;
+   the management pages do the same). Upstream gives the page two slots, the actions above the filters; from 1024px
+   the layout puts them side by side on the first row and the table card under them. Keyboard order stays upstream's
+   (actions, then filters); below 1024px the slots stack as upstream. */
+@media (min-width: 1024px) {
+  html.flat-theme .table-page-layout:has(> .layout-section-scrollable .table-wrapper[data-table="keys"]):has(> .layout-section-fixed + .layout-section-fixed + .layout-section-scrollable) {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-rows: auto minmax(0, 1fr) auto;
+    column-gap: 12px;
+  }
+
+  html.flat-theme .table-page-layout:has(> .layout-section-scrollable .table-wrapper[data-table="keys"]) > .layout-section-fixed:first-child:has(+ .layout-section-fixed) {
+    grid-column: 2;
+    grid-row: 1;
+    align-self: start;
+  }
+
+  html.flat-theme .table-page-layout:has(> .layout-section-scrollable .table-wrapper[data-table="keys"]) > .layout-section-fixed:first-child + .layout-section-fixed {
+    grid-column: 1;
+    grid-row: 1;
+    min-width: 0;
+  }
+
+  html.flat-theme .table-page-layout:has(> .layout-section-scrollable .table-wrapper[data-table="keys"]) > :is(.layout-section-scrollable, .layout-section-scrollable ~ .layout-section-fixed) {
+    grid-column: 1 / -1;
+  }
+}
+
+/* 2.1 Table cells: money in Geist Mono tabular like every figure of the reference (§10.6). */
+html.flat-theme .table-wrapper[data-table="keys"] td[data-column="usage"] span[class~="font-medium"] {
+  font-family: var(--ui-font-mono);
+  font-size: 12.5px;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+}
+
+/* the labels (今日 / 近30天) in ink-soft, the reference's colour for a row's secondary figures: muted sits at 4.5:1
+   on a hovered row, too close to the floor for a 12px label */
+html.flat-theme .table-wrapper[data-table="keys"] td[data-column="usage"] span[class~="text-gray-500"] {
+  color: rgb(var(--ui-ink-soft));
+  font-size: 12px;
+}
+
+/* the live-concurrency count: the reference's cell chip (4px, Mono), a running count keeps its success tint */
+html.flat-theme .table-wrapper[data-table="keys"] td[data-column="current_concurrency"] > span {
+  min-width: 28px;
+  height: 22px;
+  padding: 0 6px;
+  border-radius: var(--ui-radius-sm);
+  font-family: var(--ui-font-mono);
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 20px;
+}
+
+/* 2.2 The selection row above the table (keys chosen for bulk edit): the reference tray's count, 12.5px ink-soft. */
+html.flat-theme .table-page-layout:has(.table-wrapper[data-table="keys"]) > .layout-section-fixed div[class~="flex-wrap"][class~="text-sm"]:has(> [data-test="bulk-edit-keys"]) > span {
+  color: rgb(var(--ui-ink-soft));
+  font-size: 12.5px;
+}
+
+/* 2.25 The group picker (the group cell's popover, teleported to the body; its frame and rows are the console's menus,
+   overlays.css): its search row is the ModelPicker's, as Select's (overlays 1.6): 36px on the structural line, the
+   glyph 14px faint, the field without a box of its own, 13px ink, the placeholder faint (upstream's placeholder-gray-400
+   reads the grey fill ramp: 2.4:1 light, 3.3:1 dark); a keyboard focus draws the row's line in the accent. */
+html.flat-theme div[class~="fixed"][class~="z-[100000020]"] > div[class~="border-b"]:first-child {
+  padding: 0 10px;
+  border-bottom-color: rgb(var(--ui-line));
+  transition: box-shadow var(--ui-duration) var(--ui-ease);
+}
+
+html.flat-theme div[class~="fixed"][class~="z-[100000020]"] > div[class~="border-b"]:first-child:has(input:focus-visible) {
+  box-shadow: inset 0 -2px 0 rgb(var(--ui-focus));
+}
+
+html.flat-theme div[class~="fixed"][class~="z-[100000020]"] > div[class~="border-b"]:first-child svg {
+  left: 0;
+  width: 14px;
+  height: 14px;
+  color: rgb(var(--ui-faint));
+}
+
+html.flat-theme div[class~="fixed"][class~="z-[100000020]"] > div[class~="border-b"]:first-child input {
+  min-height: 36px;
+  padding: 0 0 0 22px;
+  border: 0;
+  border-radius: 0;
+  background-color: transparent;
+  box-shadow: none;
+  color: rgb(var(--ui-ink));
+  font-size: 13px;
+}
+
+html.flat-theme div[class~="fixed"][class~="z-[100000020]"] > div[class~="border-b"]:first-child input::placeholder {
+  color: rgb(var(--ui-faint));
+}
+
+/* 2.3 Create / edit dialog (#key-form). Provider choice: the reference's dialog option card (REF §8.11: 8px, the
+   structural line, the grouped fill at 60 %, the control outline on hover); the chosen card gets the console's ink
+   edge (2px, like the segmented thumb and the account dialogs' option cards) and an ink check. The provider tiles are
+   platform identity (decision 2, data.css platform-chip): the reference's 24px logo square, 4px, 1px line. */
+html.flat-theme #key-form fieldset[data-tour="key-form-provider"] label > input[type="radio"] + span {
+  gap: 8px;
+  padding: 12px 8px;
+  border: 1px solid rgb(var(--ui-line));
+  border-radius: var(--ui-radius-lg);
+  background-color: rgb(var(--ui-subtle) / 0.6);
+  box-shadow: none;
+  transition-property: border-color, background-color, box-shadow;
+  transition-duration: var(--ui-duration);
+  transition-timing-function: var(--ui-ease);
+}
+
+html.flat-theme #key-form fieldset[data-tour="key-form-provider"] label:hover > input[type="radio"]:not(:disabled):not(:checked) + span {
+  border-color: rgb(var(--ui-line-strong));
+}
+
+html.flat-theme #key-form fieldset[data-tour="key-form-provider"] label > input[type="radio"]:checked + span {
+  border-color: rgb(var(--ui-ink));
+  background-color: rgb(var(--ui-surface));
+  box-shadow: inset 0 0 0 1px rgb(var(--ui-ink));
+}
+
+html.flat-theme #key-form fieldset[data-tour="key-form-provider"] label > input[type="radio"]:focus-visible + span {
+  outline: 2px solid rgb(var(--ui-focus));
+  outline-offset: 2px;
+}
+
+html.flat-theme #key-form fieldset[data-tour="key-form-provider"] label > input[type="radio"] + span > span[class~="text-sm"] {
+  color: rgb(var(--ui-ink));
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 19.5px;
+}
+
+html.flat-theme #key-form fieldset[data-tour="key-form-provider"] [data-ui~="platform-chip"] {
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border-radius: var(--ui-radius-sm);
+}
+
+html.flat-theme #key-form fieldset[data-tour="key-form-provider"] label > span[class~="absolute"][class~="rounded-full"] {
+  top: 6px;
+  right: 6px;
+  background-color: rgb(var(--ui-ink));
+  color: rgb(var(--ui-on-ink));
+}
+
+html.flat-theme #key-form fieldset[data-tour="key-form-provider"] > p {
+  color: rgb(var(--ui-muted));
+  font-size: 12px;
+  line-height: 18px;
+}
+
+/* Expiry presets (7 / 30 / 90 days, custom date): the reference's filter pills (§8.6: 30px, the control outline,
+   12.5 / 600 ink-soft; chosen = accent 40 % edge on the accent-soft fill, accent text). */
+html.flat-theme #key-form div[class~="flex-wrap"][class~="gap-2"] > button[type="button"][class~="rounded-lg"][class~="px-3"][class~="py-1.5"] {
+  min-height: var(--ui-control-h);
+  padding: 0 10px;
+  border: 1px solid rgb(var(--ui-line-strong));
+  border-radius: var(--ui-radius-md);
+  background-color: rgb(var(--ui-surface));
+  color: rgb(var(--ui-ink-soft));
+  font-size: 12.5px;
+  font-weight: 600;
+  line-height: 18.75px;
+  transition-property: color, background-color, border-color;
+  transition-duration: var(--ui-duration);
+  transition-timing-function: var(--ui-ease);
+}
+
+html.flat-theme #key-form div[class~="flex-wrap"][class~="gap-2"] > button[type="button"][class~="rounded-lg"][class~="px-3"][class~="py-1.5"]:hover {
+  color: rgb(var(--ui-ink));
+}
+
+html.flat-theme #key-form div[class~="flex-wrap"][class~="gap-2"] > button[type="button"][class~="rounded-lg"][class~="px-3"][class~="py-1.5"][class~="bg-primary-100"] {
+  border-color: rgb(var(--ui-primary) / 0.4);
+  background-color: rgb(var(--ui-primary-soft));
+  color: var(--ui-link);
+}
+
+/* read-outs in the edit dialog (quota and window usage): a subtle well with Mono figures */
+html.flat-theme #key-form div[class~="rounded-lg"][class~="bg-gray-100"][class~="px-3"][class~="py-2"] {
+  border: 1px solid rgb(var(--ui-line));
+  border-radius: var(--ui-radius-md);
+  background-color: rgb(var(--ui-subtle) / 0.6);
+  font-family: var(--ui-font-mono);
+  font-size: 12.5px;
+  font-variant-numeric: tabular-nums;
+}
+
+/* 2.4 Use-key dialog (data-ui="use-key"). Client and shell tabs: the reference's CodeTabs underline (§8.15), as the
+   console's other underline tabs (controls.css 7.3): 8 / 10, 12.5 / 600, muted, ink on hover; the current one ink
+   over a 2px accent rule. On a phone the strip scrolls without a bar and fades out on the right (the reference's
+   mobile tab strip: a 2.5rem mask). */
+html.flat-theme [data-ui="use-key"] > div[class~="overflow-x-auto"][class~="border-b"] {
+  border-bottom-color: rgb(var(--ui-line));
+  scrollbar-width: none;
+}
+
+html.flat-theme [data-ui="use-key"] > div[class~="overflow-x-auto"][class~="border-b"]::-webkit-scrollbar {
+  display: none;
+}
+
+html.flat-theme [data-ui="use-key"] > div[class~="overflow-x-auto"][class~="border-b"] > nav {
+  gap: 4px;
+}
+
+html.flat-theme [data-ui="use-key"] > div[class~="overflow-x-auto"][class~="border-b"] > nav > button {
+  padding: 8px 10px;
+  border-bottom-color: transparent;
+  color: rgb(var(--ui-muted));
+  font-size: 12.5px;
+  font-weight: 600;
+  line-height: 18.75px;
+  transition-property: color, border-color;
+  transition-duration: var(--ui-duration);
+  transition-timing-function: var(--ui-ease);
+}
+
+html.flat-theme [data-ui="use-key"] > div[class~="overflow-x-auto"][class~="border-b"] > nav > button:hover {
+  border-bottom-color: transparent;
+  color: rgb(var(--ui-ink));
+}
+
+html.flat-theme [data-ui="use-key"] > div[class~="overflow-x-auto"][class~="border-b"] > nav > button[class~="border-primary-500"] {
+  border-bottom-color: rgb(var(--ui-focus));
+  color: rgb(var(--ui-ink));
+}
+
+html.flat-theme [data-ui="use-key"] > div[class~="overflow-x-auto"][class~="border-b"] > nav > button svg {
+  width: 14px;
+  height: 14px;
+}
+
+@media (max-width: 767.98px) {
+  html.flat-theme [data-ui="use-key"] > div[class~="overflow-x-auto"][class~="border-b"] {
+    -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 2.5rem), transparent);
+    mask-image: linear-gradient(to right, #000 calc(100% - 2.5rem), transparent);
+  }
+}
+
+/* Config files: the reference's code block with its tab bar (§8.15 CodeTabs: 8px, the structural line, the surface;
+   the bar on the grouped fill with the file in Mono 11 and a quiet Copy that turns accent once copied; code Mono
+   12.5 / 1.625 ink). The syntax takes the reference's roles: keyword purple, string accent, operator muted, comment
+   faint (upright: the comments are Chinese, and an oblique CJK face is synthesised), names ink. Upstream drew a dark
+   terminal here; the account test terminal stays dark. */
+html.flat-theme [data-ui="use-key"] div[class~="theme-dark-surface"][class~="bg-gray-900"] {
+  border: 1px solid rgb(var(--ui-line));
+  border-radius: var(--ui-radius-lg);
+  background-color: rgb(var(--ui-surface));
+}
+
+html.flat-theme [data-ui="use-key"] div[class~="theme-dark-surface"][class~="bg-gray-900"] > div:first-child {
+  min-height: 36px;
+  padding: 4px 6px 4px 12px;
+  border-bottom-color: rgb(var(--ui-line));
+  background-color: rgb(var(--ui-subtle));
+}
+
+html.flat-theme [data-ui="use-key"] div[class~="theme-dark-surface"][class~="bg-gray-900"] > div:first-child > span {
+  color: rgb(var(--ui-muted));
+  font-family: var(--ui-font-mono);
+  font-size: 11px;
+  line-height: 16.5px;
+}
+
+html.flat-theme [data-ui="use-key"] div[class~="theme-dark-surface"][class~="bg-gray-900"] > div:first-child > button {
+  gap: 6px;
+  padding: 4px 8px;
+  border-radius: var(--ui-radius-md);
+  background-color: transparent;
+  color: rgb(var(--ui-muted));
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 16.5px;
+  transition-property: color, background-color;
+  transition-duration: var(--ui-duration);
+  transition-timing-function: var(--ui-ease);
+}
+
+html.flat-theme [data-ui="use-key"] div[class~="theme-dark-surface"][class~="bg-gray-900"] > div:first-child > button:hover {
+  background-color: rgb(var(--ui-hover));
+  color: rgb(var(--ui-ink));
+}
+
+html.flat-theme [data-ui="use-key"] div[class~="theme-dark-surface"][class~="bg-gray-900"] > div:first-child > button[class~="text-green-400"] {
+  background-color: transparent;
+  color: var(--ui-link);
+}
+
+html.flat-theme [data-ui="use-key"] div[class~="theme-dark-surface"][class~="bg-gray-900"] > div:first-child > button svg {
+  width: 13px;
+  height: 13px;
+}
+
+html.flat-theme [data-ui="use-key"] div[class~="theme-dark-surface"][class~="bg-gray-900"] > pre {
+  padding: 14px 16px;
+  color: rgb(var(--ui-ink));
+  font-family: var(--ui-font-mono);
+  font-size: 12.5px;
+  line-height: 20.3125px;
+}
+
+html.flat-theme [data-ui="use-key"] div[class~="theme-dark-surface"][class~="bg-gray-900"] > pre span[class~="text-emerald-300"] {
+  color: rgb(var(--ui-purple));
+}
+
+html.flat-theme [data-ui="use-key"] div[class~="theme-dark-surface"][class~="bg-gray-900"] > pre span[class~="text-sky-200"] {
+  color: rgb(var(--ui-ink));
+}
+
+html.flat-theme [data-ui="use-key"] div[class~="theme-dark-surface"][class~="bg-gray-900"] > pre span[class~="text-slate-400"] {
+  color: rgb(var(--ui-muted));
+}
+
+html.flat-theme [data-ui="use-key"] div[class~="theme-dark-surface"][class~="bg-gray-900"] > pre span[class~="text-amber-200"] {
+  color: var(--ui-link);
+}
+
+html.flat-theme [data-ui="use-key"] div[class~="theme-dark-surface"][class~="bg-gray-900"] > pre span[class~="text-slate-500"] {
+  color: rgb(var(--ui-faint));
+}
+
+/* notes: the platform note is the console's neutral callout (data.css §11: the line, the subtle ground, ink-soft
+   words, the glyph muted); here only the reference's docs-callout geometry (§8.16: 6px, 12 / 14, 13px at 1.625, a
+   15px glyph). The missing-group warning keeps its warning colours in the same shape. */
+html.flat-theme [data-ui="use-key"] > div[class~="bg-blue-50"] {
+  gap: 10px;
+  padding: 12px 14px;
+  border-radius: var(--ui-radius-md);
+}
+
+html.flat-theme [data-ui="use-key"] > div[class~="bg-blue-50"] > svg {
+  width: 15px;
+  height: 15px;
+  margin-top: 3px;
+}
+
+html.flat-theme [data-ui="use-key"] > div[class~="bg-blue-50"] > p {
+  font-size: 13px;
+  line-height: 21px;
+}
+
+html.flat-theme [data-ui="use-key"] > div[class~="bg-yellow-50"] {
+  padding: 12px 14px;
+  border-color: rgb(var(--ui-warning) / 0.4);
+  border-radius: var(--ui-radius-md);
+  background-color: rgb(var(--ui-warning-soft));
+}
+
+html.flat-theme [data-ui="use-key"] [data-testid="codex-model-catalog"] {
+  border-color: rgb(var(--ui-line));
+  border-radius: var(--ui-radius-lg);
+  background-color: rgb(var(--ui-subtle) / 0.6);
+}
+
+/* ================================================================== 3 · redeem (/redeem) */
+
+/* 3.1 The balance: the reference's stat block (§8.13 detail page: the mono label over a Mono value), neutral
+   (decision 2: the balance card is not identity). Upstream's green gradient and its icon tile go; the value is
+   the page's figure (Geist Mono 26 / 600) and the concurrency its note. */
+html.flat-theme [data-ui="user-redeem"] > .card:first-child > div[class~="bg-gradient-to-br"] {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  padding: 14px 16px 16px;
+  background-color: transparent;
+  background-image: none;
+  text-align: left;
+}
+
+html.flat-theme [data-ui="user-redeem"] > .card:first-child > div[class~="bg-gradient-to-br"] > div:first-child {
+  display: none;
+}
+
+html.flat-theme [data-ui="user-redeem"] > .card:first-child > div[class~="bg-gradient-to-br"] > p:first-of-type {
+  color: rgb(var(--ui-label));
+  font: var(--ui-label-font);
+  letter-spacing: var(--ui-label-tracking);
+  text-transform: uppercase;
+}
+
+html.flat-theme [data-ui="user-redeem"] > .card:first-child > div[class~="bg-gradient-to-br"] > p[class~="text-4xl"] {
+  max-width: 100%;
+  margin-top: 6px;
+  color: rgb(var(--ui-ink));
+  font: 600 26px/34px var(--ui-font-mono);
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+
+html.flat-theme [data-ui="user-redeem"] > .card:first-child > div[class~="bg-gradient-to-br"] > p:last-child {
+  margin-top: 4px;
+  color: rgb(var(--ui-muted));
+  font-size: 12px;
+  line-height: 18px;
+}
+
+/* 3.2 The code field: the reference's 38px field (md) with the gift glyph 15px faint, the button md ink */
+html.flat-theme [data-ui="user-redeem"] #code {
+  min-height: var(--ui-control-h-md, 38px);
+  padding-top: 0;
+  padding-bottom: 0;
+  padding-left: 36px;
+  font-size: 14px;
+  line-height: 20px;
+}
+
+html.flat-theme [data-ui="user-redeem"] #code ~ *,
+html.flat-theme [data-ui="user-redeem"] div[class~="relative"]:has(> #code) > div[class~="pointer-events-none"] {
+  padding-left: 12px;
+}
+
+html.flat-theme [data-ui="user-redeem"] div[class~="relative"]:has(> #code) > div[class~="pointer-events-none"] svg {
+  width: 15px;
+  height: 15px;
+  color: rgb(var(--ui-faint));
+}
+
+html.flat-theme [data-ui="user-redeem"] form button[type="submit"][class~="w-full"] {
+  min-height: var(--ui-control-h-md, 38px);
+  padding-top: 0;
+  padding-bottom: 0;
+  font-size: 14px;
+  line-height: 20px;
+}
+
+/* 3.3 About codes, the support contact: the console's neutral callout (data.css §11 gives the line, the subtle ground,
+   the ink-soft words, the neutral glyph square); this file keeps the reference's docs-callout geometry (§8.16: 6px,
+   12 / 14, 13px at 1.625, list markers faint, a 28px glyph square) and the contact as a Mono value chip. */
+html.flat-theme :is([data-ui="user-redeem"], [data-testid="profile-shell"]) > .card[class~="bg-primary-50"] {
+  border-radius: var(--ui-radius-md);
+}
+
+html.flat-theme [data-ui="user-redeem"] > .card[class~="bg-primary-50"] > div[class~="p-6"] {
+  padding: 12px 14px;
+}
+
+html.flat-theme [data-ui="user-redeem"] > .card[class~="bg-primary-50"] > div > div[class~="items-start"] {
+  gap: 10px;
+}
+
+html.flat-theme [data-ui="user-redeem"] > .card[class~="bg-primary-50"] div[class~="h-10"][class~="w-10"] {
+  width: 28px;
+  height: 28px;
+  border-radius: var(--ui-radius-md);
+}
+
+html.flat-theme [data-ui="user-redeem"] > .card[class~="bg-primary-50"] div[class~="h-10"][class~="w-10"] svg {
+  width: 15px;
+  height: 15px;
+}
+
+html.flat-theme [data-ui="user-redeem"] > .card[class~="bg-primary-50"] h3 {
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 21px;
+}
+
+html.flat-theme [data-ui="user-redeem"] > .card[class~="bg-primary-50"] ul {
+  margin-top: 2px;
+  padding-left: 18px;
+  font-size: 13px;
+  line-height: 21px;
+  list-style-position: outside;
+}
+
+html.flat-theme [data-ui="user-redeem"] > .card[class~="bg-primary-50"] ul > li::marker {
+  color: rgb(var(--ui-faint));
+}
+
+html.flat-theme [data-ui="user-redeem"] > .card[class~="bg-primary-50"] ul > :not([hidden]) ~ :not([hidden]) {
+  margin-top: 4px;
+}
+
+html.flat-theme [data-ui="user-redeem"] > .card[class~="bg-primary-50"] ul span[class~="rounded-md"] {
+  padding: 0 6px;
+  border: 1px solid rgb(var(--ui-line));
+  border-radius: var(--ui-radius-sm);
+  background-color: rgb(var(--ui-surface));
+  color: rgb(var(--ui-ink));
+  font: 500 11.5px/18px var(--ui-font-mono);
+}
+
+/* 3.4 Recent activity: the reference's list inside a card (the benchmarks card: rows on 1px lines, the name 13px
+   ink, the meta muted, the figure Mono 13 / 600 on the right). Type tiles are the neutral 28px square; a balance
+   change keeps its sign colour (credit success, debit danger), the other types are ink (decision 2). */
+html.flat-theme [data-ui="user-redeem"] > .card:last-child > div[class~="p-6"] {
+  padding: 4px 16px 14px;
+}
+
+html.flat-theme [data-ui="user-redeem"] > .card:last-child div[class~="space-y-3"] > :not([hidden]) ~ :not([hidden]) {
+  margin-top: 0;
+}
+
+html.flat-theme [data-ui="user-redeem"] > .card:last-child div[class~="space-y-3"] > div[class~="rounded-xl"][class~="bg-gray-50"] {
+  gap: 12px;
+  padding: 10px 0;
+  border-bottom: 1px solid rgb(var(--ui-line));
+  border-radius: 0;
+  background-color: transparent;
+}
+
+html.flat-theme [data-ui="user-redeem"] > .card:last-child div[class~="space-y-3"] > div[class~="rounded-xl"][class~="bg-gray-50"] > div:first-child {
+  gap: 12px;
+  min-width: 0;
+}
+
+html.flat-theme [data-ui="user-redeem"] > .card:last-child div[class~="space-y-3"] > div > div:first-child > div[class~="h-10"][class~="w-10"] {
+  width: 28px;
+  height: 28px;
+  flex-shrink: 0;
+  border: 1px solid rgb(var(--ui-line));
+  border-radius: var(--ui-radius-md);
+  background-color: rgb(var(--ui-ink) / 0.03);
+}
+
+html.flat-theme [data-ui="user-redeem"] > .card:last-child div[class~="space-y-3"] > div > div:first-child > div[class~="h-10"][class~="w-10"] svg {
+  width: 14px;
+  height: 14px;
+  color: rgb(var(--ui-ink-soft));
+}
+
+html.flat-theme [data-ui="user-redeem"] > .card:last-child div[class~="space-y-3"] > div > div:first-child p[class~="font-medium"] {
+  color: rgb(var(--ui-ink));
+  font-size: 13px;
+  line-height: 19.5px;
+}
+
+html.flat-theme [data-ui="user-redeem"] > .card:last-child div[class~="space-y-3"] > div > div:first-child p[class~="text-xs"] {
+  color: rgb(var(--ui-muted));
+  font-size: 12px;
+  line-height: 18px;
+}
+
+html.flat-theme [data-ui="user-redeem"] > .card:last-child div[class~="space-y-3"] > div > div[class~="text-right"] > p:first-child {
+  font-family: var(--ui-font-mono);
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 19.5px;
+  font-variant-numeric: tabular-nums;
+}
+
+html.flat-theme [data-ui="user-redeem"] > .card:last-child div[class~="space-y-3"] > div > div[class~="text-right"] > p:first-child:is([class~="text-purple-600"], [class~="text-blue-600"], [class~="text-orange-600"]) {
+  color: rgb(var(--ui-ink));
+}
+
+html.flat-theme [data-ui="user-redeem"] > .card:last-child div[class~="space-y-3"] > div > div[class~="text-right"] > p:not(:first-child) {
+  color: rgb(var(--ui-faint));
+  font-size: 11px;
+  line-height: 16.5px;
+}
+
+html.flat-theme [data-ui="user-redeem"] > .card:last-child div[class~="space-y-3"] > div > div[class~="text-right"] > p[class~="font-mono"] {
+  font-family: var(--ui-font-mono);
+}
+
+/* the list's pager: the count on the left 12px muted, the per-page field and the two buttons together on the
+   right at the console's 30px (the reference's pagination grammar, data.css) instead of spread across the card */
+html.flat-theme [data-ui="user-redeem"] > .card:last-child div[class~="mt-4"][class~="justify-between"][class~="text-sm"] {
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 12px;
+  color: rgb(var(--ui-muted));
+  font-size: 12px;
+}
+
+html.flat-theme [data-ui="user-redeem"] > .card:last-child div[class~="mt-4"][class~="justify-between"][class~="text-sm"] > span:first-child {
+  margin-right: auto;
+}
+
+html.flat-theme [data-ui="user-redeem"] > .card:last-child div[class~="mt-4"][class~="justify-between"][class~="text-sm"] > button.btn {
+  min-height: var(--ui-control-h);
+}
+
+html.flat-theme [data-ui="user-redeem"] > .card:last-child div[class~="mt-4"][class~="justify-between"][class~="text-sm"] > label {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+html.flat-theme [data-ui="user-redeem"] > .card:last-child div[class~="mt-4"][class~="justify-between"][class~="text-sm"] select.input {
+  min-height: var(--ui-control-h);
+  padding-top: 0;
+  padding-bottom: 0;
+  font-family: var(--ui-font-mono);
+  font-size: 12.5px;
+}
+
+/* 3.5 After a redeem: the success and failure panels keep their status colours in the callout shape (6px, 12 / 14,
+   the icon without its tile). */
+html.flat-theme [data-ui="user-redeem"] > .card:is([class~="bg-emerald-50"], [class~="bg-red-50"]) {
+  border-radius: var(--ui-radius-md);
+}
+
+html.flat-theme [data-ui="user-redeem"] > .card:is([class~="bg-emerald-50"], [class~="bg-red-50"]) > div[class~="p-6"] {
+  padding: 12px 14px;
+}
+
+html.flat-theme [data-ui="user-redeem"] > .card:is([class~="bg-emerald-50"], [class~="bg-red-50"]) div[class~="h-10"][class~="w-10"] {
+  width: auto;
+  height: 21px;
+  background-color: transparent;
+}
+
+html.flat-theme [data-ui="user-redeem"] > .card:is([class~="bg-emerald-50"], [class~="bg-red-50"]) div[class~="h-10"][class~="w-10"] svg {
+  width: 15px;
+  height: 15px;
+}
+
+/* ================================================================== 4 · profile (/profile) */
+
+/* 4.1 The overview: the reference's detail-page head (§7.1 detail: a title row, then the stat blocks on the
+   canvas, 20px apart) instead of upstream's tinted hero card. The avatar is the reference's letter square (§8.8:
+   the control line, the grouped fill, Geist Mono 600 ink-soft) at 48px; the name is the page title 20 / 600; the
+   role chip is a category (neutral), the status keeps its colour; the figures are detail stat blocks (8px, 1px
+   line, 12 / 16, the mono label, Mono 15 / 600), as wide as their content like the reference's. */
+html.flat-theme [data-testid="profile-overview-hero"] {
+  overflow: visible;
+  border: 0;
+  border-radius: 0;
+  background-color: transparent;
+  background-image: none;
+  box-shadow: none;
+}
+
+html.flat-theme [data-testid="profile-overview-hero"] > div {
+  padding: 0;
+}
+
+/* the head is a grid: the avatar beside the name block (the reference's title row: the logo beside the title), the
+   stat blocks under both from the left edge, as the reference's stat row sits under its title */
+html.flat-theme [data-testid="profile-overview-hero"] > div > div {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  column-gap: 14px;
+  row-gap: 16px;
+}
+
+html.flat-theme [data-testid="profile-overview-hero"] > div > div > div:last-child {
+  display: contents;
+}
+
+html.flat-theme [data-testid="profile-overview-hero"] > div > div > div:last-child > div:last-child {
+  grid-column: 1 / -1;
+  margin-top: 0;
+}
+
+html.flat-theme [data-testid="profile-overview-hero"] > div > div > div[class~="h-20"][class~="w-20"],
+html.flat-theme [data-testid="profile-basics-panel"] div[class~="h-16"][class~="w-16"][class~="rounded-2xl"] {
+  width: 48px;
+  height: 48px;
+  border: 1px solid rgb(var(--ui-line-strong));
+  border-radius: var(--ui-radius-lg);
+  background-color: rgb(var(--ui-subtle));
+  background-image: none;
+  box-shadow: none;
+  color: rgb(var(--ui-ink-soft));
+  font: 600 18px/1 var(--ui-font-mono);
+}
+
+html.flat-theme [data-testid="profile-overview-hero"] > div > div > div:last-child > div:first-child > :not([hidden]) ~ :not([hidden]) {
+  margin-top: 4px;
+}
+
+html.flat-theme [data-testid="profile-overview-hero"] h2[class~="text-2xl"] {
+  color: rgb(var(--ui-ink));
+  font-size: 20px;
+  font-weight: 600;
+  line-height: 28px;
+}
+
+html.flat-theme [data-testid="profile-overview-hero"] .badge.badge-primary {
+  background-color: rgb(var(--ui-subtle));
+  color: rgb(var(--ui-ink-soft));
+}
+
+html.flat-theme [data-testid="profile-overview-hero"] p[class~="truncate"][class~="text-sm"] {
+  color: rgb(var(--ui-muted));
+  font-size: 13px;
+  line-height: 19.5px;
+}
+
+html.flat-theme [data-testid="profile-overview-hero"] span[class~="rounded-full"][class~="ring-1"] {
+  padding: 1px 8px;
+  border: 1px solid rgb(var(--ui-line));
+  border-radius: var(--ui-radius-sm);
+  background-color: rgb(var(--ui-surface));
+  box-shadow: none;
+  color: rgb(var(--ui-ink-soft));
+}
+
+html.flat-theme [data-testid="profile-overview-hero"] div[class~="grid"]:has(> [data-testid^="profile-overview-metric-"]) {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+html.flat-theme [data-testid^="profile-overview-metric-"] {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 130px;
+  padding: 12px 16px;
+  border: 1px solid rgb(var(--ui-line));
+  border-radius: var(--ui-radius-lg);
+  background-color: rgb(var(--ui-surface));
+  box-shadow: none;
+}
+
+html.flat-theme [data-testid^="profile-overview-metric-"] > p:first-child {
+  color: rgb(var(--ui-label));
+  font: var(--ui-label-font);
+  letter-spacing: var(--ui-label-tracking);
+  text-transform: uppercase;
+}
+
+html.flat-theme [data-testid^="profile-overview-metric-"] > p:last-child {
+  margin-top: 0;
+  color: rgb(var(--ui-ink));
+  font: 600 15px/22.5px var(--ui-font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+/* 4.2 Panels: the basics and the sign-in bindings are cards (16px); their inner blocks are the reference's option
+   card surfaces (8px, the structural line, the grouped fill at 60 %, 16px). */
+html.flat-theme [data-testid="profile-shell"] section.card:is([data-testid="profile-basics-panel"], [data-testid="profile-auth-bindings-panel"], [data-testid^="profile-side"]) {
+  padding: 16px;
+  border-color: rgb(var(--ui-line));
+  background-color: rgb(var(--ui-surface));
+}
+
+html.flat-theme [data-testid="profile-basics-panel"] > div[class~="mb-5"] {
+  margin-bottom: 12px;
+}
+
+html.flat-theme [data-testid="profile-basics-panel"] > div[class~="grid"] {
+  gap: 12px;
+}
+
+html.flat-theme [data-testid="profile-basics-panel"] > div[class~="grid"] > div[class~="rounded-3xl"] {
+  padding: 16px;
+  border-color: rgb(var(--ui-line));
+  border-radius: var(--ui-radius-lg);
+  background-color: rgb(var(--ui-subtle) / 0.6);
+}
+
+html.flat-theme [data-testid="profile-basics-panel"] > div[class~="grid"] > div[class~="rounded-3xl"] p[class~="text-sm"][class~="font-semibold"] {
+  color: rgb(var(--ui-ink));
+  font-size: 13px;
+  line-height: 19.5px;
+}
+
+/* sign-in bindings: rows on the surface (8px, 1px line, 12 / 14); a provider's letter square is identity (the shared
+   platform-chip hook: the provider's own hue at >= 4.5:1 on its fill; upstream's folded warning tint on LinuxDo was
+   4.43), the e-mail square has no hue and falls back to the neutral chip; the square is 32px at 6px, the letter
+   Geist Mono 12 / 600 */
+html.flat-theme [data-testid="profile-auth-bindings-panel"] div[class~="rounded-2xl"][class~="border"][class~="p-4"] {
+  padding: 12px 14px;
+  border-color: rgb(var(--ui-line));
+  border-radius: var(--ui-radius-lg);
+  background-color: rgb(var(--ui-surface));
+  box-shadow: none;
+}
+
+html.flat-theme [data-testid="profile-auth-bindings-panel"] div[class~="h-11"][class~="w-11"][class~="rounded-2xl"] {
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border-radius: var(--ui-radius-md);
+  font: 600 12px/1 var(--ui-font-mono);
+  letter-spacing: 0;
+}
+
+html.flat-theme [data-testid="profile-auth-bindings-panel"] div[class~="h-11"][class~="w-11"][class~="rounded-2xl"] svg {
+  width: 15px;
+  height: 15px;
+}
+
+html.flat-theme [data-testid="profile-auth-bindings-panel"] div[class~="rounded-2xl"][class~="border"][class~="p-4"] h3 {
+  color: rgb(var(--ui-ink));
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 19.5px;
+}
+
+html.flat-theme [data-testid="profile-auth-bindings-panel"] div[class~="rounded-2xl"][class~="border"][class~="p-4"] :is(p, div)[class~="text-sm"] {
+  font-size: 12.5px;
+  line-height: 18.75px;
+}
+
+html.flat-theme [data-testid="profile-auth-bindings-panel"] div[class~="rounded-2xl"][class~="border"][class~="p-4"] div[class~="space-y-3"] > :not([hidden]) ~ :not([hidden]) {
+  margin-top: 6px;
+}
+
+/* the side notes (tips with a link glyph): the reference's docs card link rows (6px, 1px line, 10 / 14) */
+html.flat-theme [data-testid="profile-shell"] section.card div[class~="rounded-2xl"][class~="bg-gray-50/80"][class~="px-4"] {
+  padding: 10px 14px;
+  border-color: rgb(var(--ui-line));
+  border-radius: var(--ui-radius-md);
+  background-color: rgb(var(--ui-surface));
+  color: rgb(var(--ui-muted));
+  font-size: 12.5px;
+}
+
+/* 4.3 Support contact: the console's neutral callout (data.css §11) at the docs-callout geometry, the chat glyph in a
+   32px square, the contact in Mono */
+html.flat-theme [data-testid="profile-shell"] > .card[class~="bg-primary-50"] {
+  padding: 12px 14px;
+}
+
+html.flat-theme [data-testid="profile-shell"] > .card[class~="bg-primary-50"] > div {
+  gap: 10px;
+}
+
+html.flat-theme [data-testid="profile-shell"] > .card[class~="bg-primary-50"] > div > div:first-child {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border-radius: var(--ui-radius-md);
+}
+
+html.flat-theme [data-testid="profile-shell"] > .card[class~="bg-primary-50"] > div > div:first-child svg {
+  width: 16px;
+  height: 16px;
+}
+
+html.flat-theme [data-testid="profile-shell"] > .card[class~="bg-primary-50"] h3 {
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 19.5px;
+}
+
+html.flat-theme [data-testid="profile-shell"] > .card[class~="bg-primary-50"] h3 + p {
+  font: 500 12.5px/18.75px var(--ui-font-mono);
+}
+
+/* 4.4 Two-factor and passkeys: the state glyph sits in the reference's neutral 32px square (6px, 1px line); an
+   enabled factor keeps its success tint; the passkey rows' key glyph is ink-soft; the empty list is the reference's
+   dashed panel. */
+html.flat-theme [data-testid="profile-shell"] > .card div[class~="flex-shrink-0"][class~="rounded-full"][class~="p-3"] {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: 1px solid rgb(var(--ui-line));
+  border-radius: var(--ui-radius-md);
+}
+
+html.flat-theme [data-testid="profile-shell"] > .card div[class~="flex-shrink-0"][class~="rounded-full"][class~="p-3"][class~="bg-gray-100"] {
+  background-color: rgb(var(--ui-ink) / 0.03);
+}
+
+html.flat-theme [data-testid="profile-shell"] > .card div[class~="flex-shrink-0"][class~="rounded-full"][class~="p-3"] > svg {
+  width: 16px;
+  height: 16px;
+}
+
+html.flat-theme [data-testid="profile-shell"] > .card div[class~="flex-shrink-0"][class~="rounded-full"][class~="p-3"][class~="bg-gray-100"] > svg {
+  color: rgb(var(--ui-ink-soft));
+}
+
+html.flat-theme [data-testid="profile-shell"] > .card div[class~="flex-shrink-0"][class~="rounded-full"][class~="p-3"] + div > p[class~="font-medium"] {
+  color: rgb(var(--ui-ink));
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 19.5px;
+}
+
+html.flat-theme [data-testid="profile-shell"] > .card div[class~="flex-shrink-0"][class~="rounded-full"][class~="p-3"] + div > p[class~="text-sm"] {
+  font-size: 12.5px;
+  line-height: 18.75px;
+}
+
+html.flat-theme [data-testid="profile-shell"] > .card div[class~="rounded-lg"][class~="border-dashed"] {
+  border-color: rgb(var(--ui-line-strong));
+  border-radius: var(--ui-radius-lg);
+  color: rgb(var(--ui-muted));
+  font-size: 13px;
+}
+
+html.flat-theme [data-testid="profile-shell"] > .card svg[class~="text-primary-500"] {
+  color: rgb(var(--ui-ink-soft));
+}
+
+html.flat-theme [data-testid="profile-shell"] > .card form[class~="rounded-lg"][class~="border"] {
+  border-color: rgb(var(--ui-line));
+  border-radius: var(--ui-radius-lg);
+  background-color: rgb(var(--ui-subtle) / 0.6);
+}
+
+/* ================================================================== 5 · affiliate (/affiliate) */
+
+/* 5.1 The four figures: the reference's StatTile (§8.13 /logs: 1px line, 6px, surface, 8 / 12, the mono label, the
+   value 15 / 600 tabular ink, the note 11px muted, 76px; tiles 10px apart). The rebate rate's glyph and the green
+   figures are decoration (decision 2): neutral; a frozen amount keeps its warning colour. */
+html.flat-theme [data-ui="user-affiliate"] > div[class~="grid"]:has(> .card[class~="p-5"]) {
+  gap: 10px;
+}
+
+html.flat-theme [data-ui="user-affiliate"] > div[class~="grid"] > .card[class~="p-5"] {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-height: 76px;
+  padding: 8px 12px;
+  border-color: rgb(var(--ui-line));
+  border-radius: var(--ui-radius-md);
+  background-color: rgb(var(--ui-surface));
+}
+
+html.flat-theme [data-ui="user-affiliate"] > div[class~="grid"] > .card[class~="p-5"] > p:first-child {
+  gap: 0;
+  color: rgb(var(--ui-label));
+  font: var(--ui-label-font);
+  letter-spacing: var(--ui-label-tracking);
+  text-transform: uppercase;
+}
+
+html.flat-theme [data-ui="user-affiliate"] > div[class~="grid"] > .card[class~="p-5"] > p:first-child > svg {
+  display: none;
+}
+
+html.flat-theme [data-ui="user-affiliate"] > div[class~="grid"] > .card[class~="p-5"] > p[class~="text-2xl"] {
+  margin-top: 0;
+  color: rgb(var(--ui-ink));
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 22.5px;
+  font-variant-numeric: tabular-nums;
+}
+
+html.flat-theme [data-ui="user-affiliate"] > div[class~="grid"] > .card[class~="p-5"] > p[class~="text-2xl"] > span {
+  margin-left: 2px;
+  color: rgb(var(--ui-muted));
+  font-size: 12px;
+  font-weight: 400;
+}
+
+html.flat-theme [data-ui="user-affiliate"] > div[class~="grid"] > .card[class~="p-5"] > p[class~="text-xs"] {
+  margin-top: 0;
+  color: rgb(var(--ui-muted));
+  font-size: 11px;
+  line-height: 16.5px;
+}
+
+html.flat-theme [data-ui="user-affiliate"] > div[class~="grid"] > .card[class~="p-5"] > p[class~="text-xs"][class~="text-amber-600"] {
+  color: rgb(var(--ui-warning));
+}
+
+/* 5.2 Invite code and link: mono labels over the reference's snippet well (§8.15 snippet: 6px, the canvas, Mono
+   12.5), the copy buttons as they are; the how-to is the neutral docs callout. */
+html.flat-theme [data-ui="user-affiliate"] > .card div[class~="space-y-2"] > p[class~="text-sm"][class~="font-medium"] {
+  color: rgb(var(--ui-label));
+  font: var(--ui-label-font);
+  letter-spacing: var(--ui-label-tracking);
+  text-transform: uppercase;
+}
+
+html.flat-theme [data-ui="user-affiliate"] > .card div[class~="space-y-2"] > div[class~="rounded-xl"][class~="border"] {
+  min-height: 42px;
+  padding: 5px 5px 5px 12px;
+  border-color: rgb(var(--ui-line));
+  border-radius: var(--ui-radius-md);
+  background-color: rgb(var(--ui-canvas));
+}
+
+html.flat-theme [data-ui="user-affiliate"] > .card div[class~="space-y-2"] > div[class~="rounded-xl"][class~="border"] > code {
+  color: rgb(var(--ui-ink));
+  font-family: var(--ui-font-mono);
+  font-size: 12.5px;
+  line-height: 20px;
+}
+
+html.flat-theme [data-ui="user-affiliate"] > .card div[class~="space-y-2"] > div[class~="rounded-xl"][class~="border"] > code[class~="font-semibold"] {
+  font-weight: 600;
+  letter-spacing: 0.04em;
+}
+
+html.flat-theme [data-ui="user-affiliate"] > .card div[class~="space-y-2"] > div[class~="rounded-xl"][class~="border"] > code:not([class~="font-semibold"]) {
+  color: rgb(var(--ui-ink-soft));
+}
+
+html.flat-theme [data-ui="user-affiliate"] > .card > div[class~="mt-5"][class~="grid"] {
+  margin-top: 14px;
+  gap: 12px;
+}
+
+/* the how-to: the console's neutral callout (data.css §11) at the docs-callout geometry */
+html.flat-theme [data-ui="user-affiliate"] > .card > div[class~="rounded-xl"][class~="bg-primary-50"] {
+  margin-top: 14px;
+  padding: 12px 14px;
+  border-radius: var(--ui-radius-md);
+}
+
+html.flat-theme [data-ui="user-affiliate"] > .card > div[class~="rounded-xl"][class~="bg-primary-50"] > p {
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 21px;
+}
+
+html.flat-theme [data-ui="user-affiliate"] > .card > div[class~="rounded-xl"][class~="bg-primary-50"] > ul {
+  margin-top: 2px;
+  font-size: 13px;
+  line-height: 21px;
+}
+
+html.flat-theme [data-ui="user-affiliate"] > .card > div[class~="rounded-xl"][class~="bg-primary-50"] > ul > :not([hidden]) ~ :not([hidden]) {
+  margin-top: 2px;
+}
+
+/* 5.3 Transfer: a warning note keeps its colour at the reference's note size; the invitees' empty list is the
+   reference's dashed panel; the rebate figures in the list are Mono ink (decision 2). */
+html.flat-theme [data-ui="user-affiliate"] > .card > p[class~="text-amber-600"] {
+  margin-top: 8px;
+  color: rgb(var(--ui-warning));
+  font-size: 12.5px;
+  line-height: 18.75px;
+}
+
+html.flat-theme [data-ui="user-affiliate"] > .card > div[class~="border-dashed"] {
+  margin-top: 12px;
+  padding: 32px 16px;
+  border-color: rgb(var(--ui-line-strong));
+  border-radius: var(--ui-radius-lg);
+  color: rgb(var(--ui-muted));
+  font-size: 13px;
+}
+
+html.flat-theme [data-ui="user-affiliate"] > .card table thead tr {
+  border-bottom-color: rgb(var(--ui-line));
+}
+
+html.flat-theme [data-ui="user-affiliate"] > .card table thead th {
+  padding: 10px 12px;
+  color: rgb(var(--ui-label));
+  font: var(--ui-label-font);
+  letter-spacing: var(--ui-label-tracking);
+  text-transform: uppercase;
+}
+
+html.flat-theme [data-ui="user-affiliate"] > .card table tbody tr {
+  border-bottom-color: rgb(var(--ui-line));
+}
+
+html.flat-theme [data-ui="user-affiliate"] > .card table tbody td[class~="text-emerald-600"] {
+  color: rgb(var(--ui-ink));
+  font-family: var(--ui-font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ================================================================== 6 · purchase, orders, subscriptions */
+
+/* 6.1 Purchase: the recharge / subscription switch is the reference's segmented control as wide as its content
+   (§8.5, SlidingTabs is inline-flex); the account card reads label, name, balance with the balance neutral. */
+html.flat-theme [data-ui="user-purchase"] > div[class~="rounded-xl"][class~="bg-gray-100"][class~="p-1"]:first-child {
+  width: fit-content;
+  max-width: 100%;
+}
+
+html.flat-theme [data-ui="user-purchase"] > div[class~="rounded-xl"][class~="bg-gray-100"][class~="p-1"]:first-child > button {
+  flex: none;
+  min-width: 6.5rem;
+}
+
+html.flat-theme [data-ui="user-purchase"] > .card[class~="p-5"] > p[class~="text-xs"]:first-child {
+  color: rgb(var(--ui-label));
+  font: var(--ui-label-font);
+  letter-spacing: var(--ui-label-tracking);
+  text-transform: uppercase;
+}
+
+html.flat-theme [data-ui="user-purchase"] > .card[class~="p-5"] > p[class~="text-base"] {
+  margin-top: 4px;
+  color: rgb(var(--ui-ink));
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 22.5px;
+}
+
+html.flat-theme [data-ui="user-purchase"] > .card[class~="p-5"] > p[class~="text-green-600"] {
+  color: rgb(var(--ui-muted));
+  font-size: 12.5px;
+  font-weight: 400;
+  line-height: 18.75px;
+  font-variant-numeric: tabular-nums;
+}
+
+html.flat-theme [data-ui="user-purchase"] > .card[class~="py-16"] {
+  padding: 32px 16px;
+}
+
+html.flat-theme [data-ui="user-purchase"] > .card[class~="py-16"] > :is(p, svg) {
+  color: rgb(var(--ui-muted));
+  font-size: 13px;
+}
+
+/* the confirm step (a chosen plan): the price and the rate are figures, ink Mono (decision 2: a figure is not
+   identity; the plan's platform chip keeps its colour); the totals' pay figure ink too */
+html.flat-theme [data-ui="user-purchase"] > .card span[class~="text-3xl"][class~="font-bold"],
+html.flat-theme [data-ui="user-purchase"] > .card span[class~="text-lg"][class~="font-bold"] {
+  color: rgb(var(--ui-ink));
+  font-family: var(--ui-font-mono);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+/* the active subscriptions under the plans: rows on the surface, the platform mark is identity (platform-text) */
+html.flat-theme [data-ui="user-purchase"] div[class~="rounded-xl"][class~="border"][class~="px-3"][class~="py-2"]:has(> [data-ui~="platform-text"]) {
+  border-color: rgb(var(--ui-line));
+  border-radius: var(--ui-radius-lg);
+}
+
+html.flat-theme [data-ui="user-purchase"] [data-ui~="platform-text"][class~="rounded-full"],
+html.flat-theme [data-ui="user-subscriptions"] [data-ui~="platform-text"][class~="rounded-full"] {
+  background-color: currentColor;
+  background-image: none;
+}
+
+/* the plan cards (SubscriptionPlanCard): the reference's card (8px, the structural line, no lift or shadow), the
+   platform rule on top 2px in the platform colour, the price a Mono figure, subscribe = the positive CTA (accent) */
+html.flat-theme [data-ui="user-purchase"] div:has(> [data-ui~="platform-text"][class~="h-1.5"]) {
+  border-color: rgb(var(--ui-line));
+  border-radius: var(--ui-radius-lg);
+  box-shadow: none;
+  transform: none;
+}
+
+html.flat-theme [data-ui="user-purchase"] [data-ui~="platform-text"][class~="h-1.5"] {
+  height: 2px;
+  background-color: currentColor;
+  background-image: none;
+}
+
+html.flat-theme [data-ui="user-purchase"] div:has(> [data-ui~="platform-text"][class~="h-1.5"]) span[class~="text-2xl"][class~="font-extrabold"] {
+  color: rgb(var(--ui-ink));
+  font: 600 22px/28px var(--ui-font-mono);
+  letter-spacing: -0.02em;
+}
+
+html.flat-theme [data-ui="user-purchase"] div:has(> [data-ui~="platform-text"][class~="h-1.5"]) > div > button[type="button"][class~="w-full"] {
+  min-height: var(--ui-control-h-md, 38px);
+  border: 1px solid rgb(var(--ui-primary));
+  border-radius: var(--ui-radius-md);
+  background-color: rgb(var(--ui-primary));
+  background-image: none;
+  color: rgb(var(--ui-on-primary));
+  box-shadow: none;
+  transform: none;
+}
+
+/* 6.2 Orders: the filter row loses its card (the reference's toolbars are rows, MAPPING B2); the table is the
+   reference's table card (8px, 1px line, surface) with the pagination as its footer. */
+html.flat-theme [data-ui="user-orders"] > .card[class~="p-4"]:first-child {
+  padding: 0;
+  border: 0;
+  background-color: transparent;
+}
+
+html.flat-theme [data-ui="user-orders"] > .card[class~="p-4"]:first-child .select-trigger.select-trigger {
+  padding-top: 0.265625rem;
+  padding-bottom: 0.265625rem;
+}
+
+html.flat-theme [data-ui="user-orders"] > .table-wrapper {
+  border: 1px solid rgb(var(--ui-line));
+  border-radius: var(--ui-radius-lg);
+  background-color: rgb(var(--ui-surface));
+}
+
+html.flat-theme [data-ui="user-orders"] > .table-wrapper:has(+ [data-ui="pagination"]) {
+  border-bottom-width: 0;
+  border-bottom-left-radius: 0;
+  border-bottom-right-radius: 0;
+}
+
+html.flat-theme [data-ui="user-orders"] > .table-wrapper + [data-ui="pagination"] {
+  margin-top: 0;
+  border: 1px solid rgb(var(--ui-line));
+  border-radius: 0 0 var(--ui-radius-lg) var(--ui-radius-lg);
+}
+
+/* 6.3 My subscriptions: the empty page is the reference's empty panel (dashed control outline, 8px, the 28px
+   neutral glyph square, title 14 / 500 ink-soft, note 13px muted), like the console's other empty states. */
+html.flat-theme [data-ui="user-subscriptions"] > .card[class~="p-12"] {
+  padding: 40px 16px;
+  border: 1px dashed rgb(var(--ui-line-strong));
+  border-radius: var(--ui-radius-lg);
+  background-color: transparent;
+}
+
+html.flat-theme [data-ui="user-subscriptions"] > .card[class~="p-12"] > div:first-child {
+  width: 28px;
+  height: 28px;
+  margin-bottom: 12px;
+  border: 1px solid rgb(var(--ui-line));
+  border-radius: var(--ui-radius-md);
+  background-color: rgb(var(--ui-subtle));
+}
+
+html.flat-theme [data-ui="user-subscriptions"] > .card[class~="p-12"] > div:first-child svg {
+  width: 15px;
+  height: 15px;
+  color: rgb(var(--ui-muted));
+}
+
+html.flat-theme [data-ui="user-subscriptions"] > .card[class~="p-12"] > h3 {
+  margin-bottom: 4px;
+  color: rgb(var(--ui-ink-soft));
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 20px;
+}
+
+html.flat-theme [data-ui="user-subscriptions"] > .card[class~="p-12"] > p {
+  color: rgb(var(--ui-muted));
+  font-size: 13px;
+  line-height: 1.625;
+}
+
+/* the subscription cards (one per plan held): the reference's card, the platform chip and dot are identity, the
+   renew button is the positive CTA (accent), the progress bars keep their status fills on the subtle track */
+html.flat-theme [data-ui="user-subscriptions"] > div[class~="grid"] > div[class~="rounded-2xl"][class~="border"] {
+  border-color: rgb(var(--ui-line));
+  border-radius: var(--ui-radius-lg);
+}
+
+html.flat-theme [data-ui="user-subscriptions"] > div[class~="grid"] > div > div:first-child > div:last-child > button {
+  min-height: 26px;
+  border: 1px solid rgb(var(--ui-primary));
+  border-radius: var(--ui-radius-md);
+  background-color: rgb(var(--ui-primary));
+  color: rgb(var(--ui-on-primary));
+}
+
+html.flat-theme [data-ui="user-subscriptions"] > div[class~="grid"] div[class~="bg-gradient-to-r"][class~="from-emerald-50"] {
+  border: 1px solid rgb(var(--ui-line));
+  border-radius: var(--ui-radius-lg);
+  background-color: rgb(var(--ui-subtle) / 0.6);
+  background-image: none;
+}
+
+html.flat-theme [data-ui="user-subscriptions"] > div[class~="grid"] div[class~="bg-gradient-to-r"][class~="from-emerald-50"] :is(span, p) {
+  color: rgb(var(--ui-ink-soft));
+}
+
+/* ================================================================== 7 · available channels, custom pages, image tools, model plaza */
+
+/* 7.1 Custom pages: the frame is the reference's card; the open-in-new-window button sits in the card's corner */
+html.flat-theme .custom-page-layout > .card {
+  border-color: rgb(var(--ui-line));
+  border-radius: var(--ui-radius-lg);
+}
+
+/* 7.2 Image studio: the form is a card (8px, 1px line, 16px); the mode switch is the segmented control; the
+   in-page title repeats the header row's title and description on a desktop, so it steps back there (the header row
+   hides on phones, where the page's own title stays). */
+html.flat-theme [data-testid="image-studio-layout"] > form {
+  padding: 16px;
+  border-color: rgb(var(--ui-line));
+  border-radius: var(--ui-radius-lg);
+  background-color: rgb(var(--ui-surface));
+}
+
+@media (min-width: 1024px) {
+  html.flat-theme div:has(> [data-testid="image-studio-layout"]) > header > div:first-child:has(> h1) {
+    display: none;
+  }
+
+  html.flat-theme div:has(> [data-testid="image-studio-layout"]) > header:not(:has(> button)) {
+    display: none;
+  }
+
+  html.flat-theme div:has(> [data-testid="image-studio-layout"]) > header:has(> button) {
+    justify-content: flex-end;
+  }
+
+  html.flat-theme div:has(> [data-testid="image-studio-layout"]) > header:not(:has(> button)) + [data-testid="image-studio-layout"] {
+    margin-top: 0;
+  }
+}
+
+/* the form's fields sit in a display:contents fieldset, so the form's 20px rhythm never reached them (upstream draws
+   them touching); they take the console's field rhythm, 16px */
+html.flat-theme [data-testid="image-studio-layout"] > form > fieldset[class~="contents"] > :not([hidden]) ~ :not([hidden]) {
+  margin-top: 16px;
+}
+
+/* 7.3 Model plaza (standalone, data-ui="model-plaza"): the public pages' top bar (settings-ops-public.css: sticky
+   64px, a hairline, the canvas at 92 % with a 10px blur; the logo 32px, the site name as a Mono wordmark; the
+   console's small ink button); the title is the reference's docs H1 (28 / 600, -0.025em) over a 14px muted lead;
+   the load error keeps its danger colours in the callout shape. */
+html.flat-theme [data-ui="model-plaza"] {
+  background-color: rgb(var(--ui-canvas));
+}
+
+html.flat-theme [data-ui="model-plaza"] > header {
+  border-bottom: 1px solid rgb(var(--ui-line));
+  background-color: rgb(var(--ui-canvas) / 0.92);
+  -webkit-backdrop-filter: blur(10px);
+  backdrop-filter: blur(10px);
+  box-shadow: none;
+}
+
+html.flat-theme [data-ui="model-plaza"] > header > div {
+  height: 64px;
+  padding-top: 0;
+  padding-bottom: 0;
+}
+
+html.flat-theme [data-ui="model-plaza"] > header > div > div:first-child {
+  gap: 10px;
+}
+
+html.flat-theme [data-ui="model-plaza"] > header > div > div:first-child > span[class~="h-9"] {
+  width: 32px;
+  height: 32px;
+  border-radius: var(--ui-radius-lg);
+  background-color: transparent;
+  box-shadow: none;
+}
+
+html.flat-theme [data-ui="model-plaza"] > header > div > div:first-child > span[class~="truncate"] {
+  color: rgb(var(--ui-ink));
+  font: 500 13px/20px var(--ui-font-mono);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+html.flat-theme [data-ui="model-plaza"] > header > div > a {
+  height: 30px;
+  padding: 0 12px;
+  border: 1px solid rgb(var(--ui-ink));
+  border-radius: var(--ui-radius-md);
+  background-color: rgb(var(--ui-ink));
+  background-image: none;
+  color: rgb(var(--ui-on-ink));
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 19.5px;
+  box-shadow: none;
+  transform: none;
+}
+
+html.flat-theme [data-ui="model-plaza"] > header > div > a:hover {
+  background-color: rgb(var(--ui-ink) / 0.85);
+  box-shadow: none;
+}
+
+html.flat-theme [data-ui="model-plaza"] > main {
+  padding-top: 32px;
+}
+
+@media (min-width: 640px) {
+  /* the page column lines up with the bar's (both 24px in from the 80rem column) */
+  html.flat-theme [data-ui="model-plaza"] > main {
+    padding-right: 24px;
+    padding-left: 24px;
+  }
+}
+
+html.flat-theme [data-ui="model-plaza"] > main > div > div:first-child > h1 {
+  color: rgb(var(--ui-ink));
+  font-size: 28px;
+  font-weight: 600;
+  line-height: 42px;
+  letter-spacing: -0.025em;
+}
+
+html.flat-theme [data-ui="model-plaza"] > main > div > div:first-child > h1 + p {
+  margin-top: 4px;
+  color: rgb(var(--ui-muted));
+  font-size: 14px;
+  line-height: 22.75px;
+}
+
+html.flat-theme [data-ui="model-plaza"] div[class~="rounded-2xl"][class~="border-red-200"][class~="bg-red-50"] {
+  padding: 14px 16px;
+  border-color: rgb(var(--ui-danger) / 0.4);
+  border-radius: var(--ui-radius-md);
+  background-color: rgb(var(--ui-danger-soft));
+  color: rgb(var(--ui-danger));
+  font-size: 13px;
+}
+
+/* 7.5 Available channels (a plain table, not DataTable): the header is the reference's table header (40px, the mono
+   label, the structural line under it, no band), the empty and loading states the console's (a 20px faint glyph,
+   the title 14 / 500 ink-soft, 48px of air). */
+html.flat-theme [data-ui="user-available-channels"] .table-wrapper > table > thead > tr {
+  border-bottom-color: rgb(var(--ui-line));
+  background-color: transparent;
+}
+
+html.flat-theme [data-ui="user-available-channels"] .table-wrapper > table > thead > tr > th {
+  height: 40px;
+  padding: 10px 12px;
+  color: rgb(var(--ui-label));
+  font: var(--ui-label-font);
+  letter-spacing: var(--ui-label-tracking);
+  text-transform: uppercase;
+  text-align: left;
+}
+
+html.flat-theme [data-ui="user-available-channels"] .table-wrapper > table > thead > tr > th:first-child {
+  padding-left: 16px;
+}
+
+html.flat-theme [data-ui="user-available-channels"] .table-wrapper > table > tbody > tr > td[colspan],
+html.flat-theme [data-ui="user-available-channels"] [data-testid="mobile-channels"] > :is([data-testid="mobile-empty"], [data-testid="mobile-loading"]) {
+  padding: 48px 16px;
+}
+
+html.flat-theme [data-ui="user-available-channels"] :is(.table-wrapper > table > tbody > tr > td[colspan], [data-testid="mobile-empty"], [data-testid="mobile-loading"]) > svg {
+  width: 20px;
+  height: 20px;
+  margin-bottom: 10px;
+  color: rgb(var(--ui-faint));
+}
+
+html.flat-theme [data-ui="user-available-channels"] :is(.table-wrapper > table > tbody > tr > td[colspan], [data-testid="mobile-empty"]) > p {
+  color: rgb(var(--ui-ink-soft));
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 20px;
+}
+
+/* 7.6 Loading on these pages: the console's quiet spinner (20px, the control line with an ink arc, as the
+   announcement list and the legal pages draw theirs) instead of upstream's accent ring; an svg spinner is ink-soft. */
+html.flat-theme :is([data-ui="user-affiliate"], [data-ui="user-subscriptions"], [data-ui="user-purchase"], [data-ui="model-plaza"], .custom-page-layout, [data-testid="profile-shell"]) div[class~="animate-spin"][class~="rounded-full"] {
+  width: 20px;
+  height: 20px;
+  border-width: 2px;
+  border-style: solid;
+  border-color: rgb(var(--ui-line-strong));
+  border-top-color: rgb(var(--ui-ink));
+}
+
+html.flat-theme [data-ui="user-redeem"] svg[class~="animate-spin"][class~="text-primary-500"] {
+  width: 20px;
+  height: 20px;
+  color: rgb(var(--ui-ink-soft));
+}
+
+/* 7.7 Channel status V2 (/monitor), the first-upgrade backfill banner (role="status": the 30-day window filling in,
+   a percentage and a bar, gone once covered). It is a state, but the state of a running job, not of a channel: the
+   reference's status chip gives "running" the neutral tone (surface-subtle, ink-faint; colour is kept for outcomes:
+   passed, failed, rate-limited, complete). So it takes the console's neutral callout ground, the title ink, the note
+   ink-soft, the percentage Mono, and an ink bar on the structural line; the channels' own health keeps its colours.
+   (The coordinator asked this file to decide; the page's other rules are the ops and channels agent's.) */
+html.flat-theme [data-ui="monitor-v2"] div[role="status"][class~="bg-blue-50/90"] {
+  border-bottom-color: rgb(var(--ui-line));
+  background-color: rgb(var(--ui-subtle));
+}
+
+html.flat-theme [data-ui="monitor-v2"] div[role="status"][class~="bg-blue-50/90"] p[class~="font-semibold"] {
+  color: rgb(var(--ui-ink));
+  font-size: 13px;
+  line-height: 19.5px;
+}
+
+html.flat-theme [data-ui="monitor-v2"] div[role="status"][class~="bg-blue-50/90"] p[class~="text-xs"] {
+  color: rgb(var(--ui-ink-soft));
+}
+
+html.flat-theme [data-ui="monitor-v2"] div[role="status"][class~="bg-blue-50/90"] span[class~="tabular-nums"] {
+  color: rgb(var(--ui-ink-soft));
+  font-family: var(--ui-font-mono);
+}
+
+html.flat-theme [data-ui="monitor-v2"] div[role="status"][class~="bg-blue-50/90"] div[role="progressbar"] {
+  background-color: rgb(var(--ui-line));
+}
+
+html.flat-theme [data-ui="monitor-v2"] div[role="status"][class~="bg-blue-50/90"] div[role="progressbar"] > div {
+  background-color: rgb(var(--ui-ink));
+}
+
+/* 7.8 My orders keeps its table outside TablePageLayout, so the console's rule for an empty table wider than its card
+   (data.css, the table pages' scroll box as an inline-size container, the panel sticky at the box's width) is
+   restated for it: on a phone the empty panel stays whole in the card instead of centring on the whole table. */
+html.flat-theme [data-ui="user-orders"] > .table-wrapper {
+  container-type: inline-size;
+}
+
+html.flat-theme [data-ui="user-orders"] > .table-wrapper .table-body > tr > td[colspan]:only-child > * {
+  position: sticky;
+  left: 16px;
+  box-sizing: border-box;
+  width: calc(100cqw - 32px);
+}
+
+/* ================================================================== 8 · phones and tablets (every page's layout below the
+   desktop; the shell's 47px bar, the drawer, the tables' sideways scroll and the dialog frame are the shared files') */
+
+@media (max-width: 639.98px) {
+  /* 8.1 Management toolbars (users, subscriptions, redeem codes, promo codes, announcements; the management page agent
+     leaves phones to this file): upstream's search is a flex-1 item with a zero basis beside fixed-width selects and
+     buttons, so on a phone it shrank to a few characters ("邮箱/用", "搜索"). It takes the row, like the reference's
+     phone toolbar (ref-models-390: the search spans the row, the controls wrap under it). */
+  html.flat-theme [data-ui~="mgmt-page"] > .layout-section-fixed:first-child > div:first-child > div[class~="flex-1"]:is(:has(> input.input), :has(> div > input.input)) {
+    flex: 1 1 100%;
+  }
+
+  /* 8.2 Affiliate: the four figures two to a row (the reference's phone KPIs, REF §7.4: grid-cols-2) */
+  html.flat-theme [data-ui="user-affiliate"] > div[class~="grid"]:has(> .card[class~="p-5"]) {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  /* 8.2b Profile: the stat blocks two to a row (the reference's phone detail page: grid-cols-2) */
+  html.flat-theme [data-testid="profile-overview-hero"] div[class~="grid"]:has(> [data-testid^="profile-overview-metric-"]) {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  html.flat-theme [data-testid^="profile-overview-metric-"] {
+    min-width: 0;
+  }
+
+  html.flat-theme [data-testid^="profile-overview-metric-"] > p:last-child {
+    overflow-wrap: anywhere;
+  }
+
+  /* the balance is the long figure: it takes the row, the other two share the next */
+  html.flat-theme [data-testid="profile-overview-metric-balance"] {
+    grid-column: 1 / -1;
+  }
+
+  /* 8.3 Redeem: the balance a size down so a long figure keeps one line on a phone; the activity pager puts the count
+     on its own line and the page controls together under it */
+  html.flat-theme [data-ui="user-redeem"] > .card:last-child div[class~="mt-4"][class~="justify-between"][class~="text-sm"] > span:first-child {
+    flex-basis: 100%;
+  }
+
+  html.flat-theme [data-ui="user-redeem"] > .card:first-child > div[class~="bg-gradient-to-br"] > p[class~="text-4xl"] {
+    font-size: 22px;
+    line-height: 30px;
+  }
+}
+
+@media (max-width: 1023.98px) {
+  /* 8.3b Available channels: the refresh button beside the search (one toolbar row, as the reference's phone toolbar
+     keeps a field and its buttons together) instead of alone on a second row */
+  html.flat-theme [data-ui="user-available-channels"] > .layout-section-fixed > div[class~="flex-col"][class~="lg:flex-row"] {
+    flex-direction: row;
+    align-items: center;
+    gap: 8px;
+  }
+
+  html.flat-theme [data-ui="user-available-channels"] > .layout-section-fixed > div[class~="flex-col"][class~="lg:flex-row"] > div:last-child {
+    width: auto;
+  }
+
+  /* 8.4 Operation log (the ops agent's page) in upstream's table mode below 1024px: the table may shrink to the screen
+     (min-width 100 %) while the operator and action cells may wrap anywhere (behaviour B1.12, never cut), so the two
+     columns fell to one or two characters a line ("ad / min. / us"). They keep a readable measure and the table
+     scrolls sideways instead (D9). */
+  html.flat-theme .table-page-layout.mobile-mode .table-wrapper td[data-column="actor"] > div[class~="min-w-0"][class~="max-w-[220px]"] {
+    min-width: 9rem;
+  }
+
+  html.flat-theme .table-page-layout.mobile-mode .table-wrapper td[data-column="action"] > div[class~="min-w-0"][class~="max-w-xs"] {
+    min-width: 13rem;
+  }
+}

@@ -137,6 +137,7 @@
             type="button"
             class="rounded-lg border-2 px-3 py-2 text-sm font-medium transition-colors"
             :class="providerPickerClass(opt.value, form.provider === opt.value)"
+            data-ui="platform-text"
             @click="form.provider = opt.value"
           >
             {{ opt.label }}

@@ -82,24 +82,26 @@ const BORDER_STRONG: Record<Platform, string> = {
 const BORDER_STRONG_DEFAULT = 'border-gray-300 dark:border-dark-600'
 
 // ── Accent (single raw color per platform; consumers derive washes/tints
-//    from it via CSS color-mix, e.g. plaza paid-price zone). The console
-//    theme's colour of the platform's hue family (as its badges) when the
-//    theme is on; the upstream Tailwind 500 otherwise ──
-const accent = (family: string, channels: string) => `rgb(var(--theme-color-${family}-500, ${channels}))`
+//    from it via CSS color-mix, e.g. plaza paid-price zone). With the console
+//    theme on, the platform's own identity hue (styles/console/tokens.css
+//    --ui-id-<hue>-accent: a shade that carries white text as a fill and mixes
+//    into readable text in both themes); with it off (the token is undefined)
+//    the upstream Tailwind 500. An unknown platform is neutral under the theme. ──
+const accent = (hue: string, channels: string) => `rgb(var(--ui-id-${hue}-accent, ${channels}))`
 const ACCENT: Record<Platform, string> = {
-  anthropic: accent('warning', '249 115 22'), // orange-500 #f97316
-  openai: accent('success', '34 197 94'), // green-500 #22c55e
+  anthropic: accent('orange', '249 115 22'), // orange-500 #f97316
+  openai: accent('green', '34 197 94'), // green-500 #22c55e
   antigravity: accent('purple', '168 85 247'), // purple-500 #a855f7
-  gemini: accent('info', '59 130 246'), // blue-500 #3b82f6
-  grok: accent('gray', '113 113 122'), // zinc-500 #71717a
+  gemini: accent('blue', '59 130 246'), // blue-500 #3b82f6
+  grok: accent('zinc', '113 113 122'), // zinc-500 #71717a
   kimi: accent('pink', '236 72 153'), // pink-500 #ec4899
   zhipu: accent('indigo', '99 102 241'), // indigo-500 #6366f1
   deepseek: accent('teal', '20 184 166'), // teal-500 #14b8a6
-  minimax: accent('danger', '244 63 94'), // rose-500 #f43f5e
-  opencode_go: accent('warning', '245 158 11'), // amber-500 #f59e0b
-  composite: accent('teal', '6 182 212'), // cyan-500 #06b6d4
+  minimax: accent('rose', '244 63 94'), // rose-500 #f43f5e
+  opencode_go: accent('amber', '245 158 11'), // amber-500 #f59e0b
+  composite: accent('cyan', '6 182 212'), // cyan-500 #06b6d4
 }
-const ACCENT_DEFAULT = accent('primary', '20 184 166') // primary-500 (teal #14b8a6; the console accent under the theme)
+const ACCENT_DEFAULT = accent('zinc', '20 184 166') // primary-500 (teal #14b8a6) upstream; neutral zinc under the theme
 
 // ── Accent bar (gradient) ───────────────────────────────────────────
 const ACCENT_BAR: Record<Platform, string> = {

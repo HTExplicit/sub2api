@@ -9,6 +9,7 @@
       <span
         class="w-9 h-9 rounded-xl ring-1 ring-black/5 dark:ring-white/10 grid place-items-center flex-shrink-0"
         :class="[providerGradient(item.provider), providerTintClass]"
+        data-ui="platform-text"
       >
         <ProviderIcon :provider="item.provider" :size="20" />
       </span>
@@ -20,6 +21,7 @@
           <span
             class="inline-flex items-center rounded-md px-1.5 py-0.5 text-[10px] font-medium flex-shrink-0"
             :class="providerBadgeClass(item.provider)"
+            data-ui="platform-chip"
           >
             {{ providerLabel(item.provider) }}
           </span>
@@ -30,6 +32,7 @@
           <span
             v-if="item.group_name"
             class="inline-flex items-center rounded-md px-1.5 py-0.5 text-[10px] font-medium bg-gray-100 text-gray-600 dark:bg-dark-700 dark:text-gray-300 flex-shrink-0"
+            data-ui="category-chip"
           >
             {{ item.group_name }}
           </span>

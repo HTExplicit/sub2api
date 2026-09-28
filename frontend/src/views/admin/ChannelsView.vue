@@ -1,6 +1,6 @@
 <template>
   <AppLayout>
-    <TablePageLayout>
+    <TablePageLayout data-ui="channels-page">
       <template #filters>
         <div class="flex flex-col justify-between gap-4 lg:flex-row lg:items-start">
           <!-- Left: Search + Filters -->
@@ -166,8 +166,8 @@
             class="channel-tab group"
             :class="activeTab === section.platform ? 'channel-tab-active' : 'channel-tab-inactive'"
           >
-            <PlatformIcon :platform="section.platform" size="xs" :class="platformTextClass(section.platform)" />
-            <span :class="platformTextClass(section.platform)">{{ t('admin.groups.platforms.' + section.platform, section.platform) }}</span>
+            <PlatformIcon :platform="section.platform" size="xs" :class="platformTextClass(section.platform)" data-ui="platform-text" />
+            <span :class="platformTextClass(section.platform)" data-ui="platform-text">{{ t('admin.groups.platforms.' + section.platform, section.platform) }}</span>
           </button>
         </div>
 
@@ -246,8 +246,8 @@
                     class="h-3.5 w-3.5 rounded border-gray-300 text-primary-600 focus:ring-primary-500"
                     @change="togglePlatform(p)"
                   />
-                  <PlatformIcon :platform="p" size="xs" :class="platformTextClass(p)" />
-                  <span :class="platformTextClass(p)">{{ t('admin.groups.platforms.' + p, p) }}</span>
+                  <PlatformIcon :platform="p" size="xs" :class="platformTextClass(p)" data-ui="platform-text" />
+                  <span :class="platformTextClass(p)" data-ui="platform-text">{{ t('admin.groups.platforms.' + p, p) }}</span>
                 </label>
               </div>
             </div>
@@ -310,9 +310,10 @@
                       class="h-3 w-3 rounded border-gray-300 text-primary-600 focus:ring-primary-500"
                       @change="toggleGroupInSection(sIdx, group.id)"
                     />
-                    <span :class="['font-medium', platformTextClass(group.platform)]">{{ group.name }}</span>
+                    <span :class="['font-medium', platformTextClass(group.platform)]" data-ui="platform-text">{{ group.name }}</span>
                     <span
                       :class="['rounded-full px-1 py-0 text-[10px]', platformBadgeLightClass(group.platform)]"
+                      data-ui="platform-chip"
                     >{{ group.rate_multiplier }}x</span>
                     <span class="text-[10px] text-gray-400">{{ group.account_count || 0 }}</span>
                     <span
@@ -394,6 +395,7 @@
                     type="text"
                     class="input flex-1 text-xs"
                     :class="platformTextClass(section.platform)"
+                    data-ui="platform-text"
                     :placeholder="t('admin.channels.form.mappingSource', 'Source model')"
                     @change="renameMappingKey(sIdx, srcModel, ($event.target as HTMLInputElement).value)"
                   />
@@ -403,6 +405,7 @@
                     type="text"
                     class="input flex-1 text-xs"
                     :class="platformTextClass(section.platform)"
+                    data-ui="platform-text"
                     :placeholder="t('admin.channels.form.mappingTarget', 'Target model')"
                     @input="section.model_mapping[srcModel] = ($event.target as HTMLInputElement).value"
                   />
@@ -506,7 +509,7 @@
                         : 'border-gray-200 hover:bg-gray-50 dark:border-dark-600 dark:hover:bg-dark-700'"
                     >
                       <input type="checkbox" :checked="rule.group_ids.includes(gid)" class="h-3 w-3 rounded border-gray-300 text-primary-600 focus:ring-primary-500" @change="rule.group_ids.includes(gid) ? rule.group_ids.splice(rule.group_ids.indexOf(gid), 1) : rule.group_ids.push(gid)" />
-                      <span :class="['font-medium', platformTextClass(section.platform)]">{{ getGroupNameById(gid) }}</span>
+                      <span :class="['font-medium', platformTextClass(section.platform)]" data-ui="platform-text">{{ getGroupNameById(gid) }}</span>
                     </label>
                   </div>
                   <p v-if="section.group_ids.length === 0" class="mt-1 text-xs text-gray-400">
@@ -523,7 +526,7 @@
                       :key="accountId"
                       class="inline-flex items-center gap-1 rounded-md border border-primary-300 bg-primary-50 px-2 py-0.5 text-xs dark:border-primary-700 dark:bg-primary-900/20"
                     >
-                      <span :class="['font-medium', platformTextClass(section.platform)]">{{ getRuleAccountLabel(accountId) }}</span>
+                      <span :class="['font-medium', platformTextClass(section.platform)]" data-ui="platform-text">{{ getRuleAccountLabel(accountId) }}</span>
                       <button type="button" @click="removeRuleAccount(rule, accountId)" class="text-gray-400 hover:text-red-500">
                         <Icon name="x" size="xs" />
                       </button>

@@ -1,0 +1,3777 @@
+/* Console theme · page group: ops monitoring, channels (pricing, monitor, channel status), audit logs, affiliates, orders, risk control and prompt audit (owner: the ops and channels page agent, wave 2; html.flat-theme selectors narrowed to the page root).
+ *
+ * Reference counterpart: the Experiential Labs console's /logs (REF-CONSOLE §7.1 rhythm, §8.4-§8.7 toolbar controls and
+ * tables, §8.8 chips, §8.13 KPI tiles, §8.14 chart cards; crops logs-toolbar, kpi-row, kpi-card(-danger), chart-card,
+ * history-card / -head / -row, usage-card, uptime-good / -bad). Colour follows the owner's decision 2 (2026-09-29):
+ * status and semantic states, the accent (links, positive CTAs, switches on) and platform identity keep their colour;
+ * KPI tiles, category chips, decorative icons and decorative figures are neutral.
+ *
+ * Page roots and dialog bodies (data-ui hooks, one attribute each, no other template change):
+ *   data-ui="ops-dashboard"      views/admin/ops/OpsDashboard.vue                      the page body (also fullscreen)
+ *   the ops dialogs' bodies §4; the table pages' roots §5; /monitor §6; orders §7; risk control §8; prompt audit §9
+ *   (each section's head lists its hooks and files). Identity / category opt-ins (data.css §6.4) sit on the elements
+ *   upstream colours by platform or category: ChannelsView.vue, ChannelMonitorView.vue (§5), MonitorFormDialog.vue and
+ *   MonitorTemplateManagerDialog.vue's provider choices (§5.7), MonitorCard.vue (§6), AdminPaymentPlansView.vue and
+ *   PlanEditDialog.vue (§7), OpsErrorLogTable.vue's type and group chips (category-chip, §4.3; the list is also
+ *   使用记录's 错误请求 tab).
+ * Shared components (Select, buttons, DataTable, badges, pagination, menus, tooltips, dialogs) keep the shared files'
+ * look; the rules here restyle what upstream draws with utilities on these pages and place things. */
+
+/* ================================================================== 1 · ops monitoring: rhythm */
+
+/* The page's blocks sit 12px apart (the reference's gap-3; upstream's space-y-6 and gap-6 were 24). */
+html.flat-theme [data-ui~="ops-dashboard"][class~="space-y-6"] > :not([hidden]) ~ :not([hidden]) {
+  margin-top: var(--ui-shell-gap, 12px);
+}
+
+html.flat-theme [data-ui~="ops-dashboard"] > div[class~="grid"][class~="gap-6"] {
+  gap: var(--ui-shell-gap, 12px);
+}
+
+html.flat-theme [data-ui~="ops-dashboard"][class~="pb-12"] {
+  padding-bottom: 0;
+}
+
+/* fullscreen: the page is its own frame (no shell): the shell's gutters, and the canvas behind it */
+html.flat-theme [data-ui~="ops-dashboard"][class~="p-4"] {
+  padding: clamp(1.25rem, 4vh, 1.875rem) clamp(1rem, 3vw, 1.75rem);
+}
+
+/* ================================================================== 2 · ops monitoring: the header (toolbar, KPI) */
+
+/* Upstream frames the toolbar, the health / realtime panel, the six metric cards and the six system cards in one big
+   card. The reference's /logs page has no such frame: a toolbar row on the canvas (its controls, 8px under a 1px
+   structural line), a row of KPI tiles, then the cards (REF §7.1, crops logs-toolbar, kpi-row). */
+html.flat-theme [data-ui~="ops-dashboard"] > div[class~="rounded-3xl"]:has(h1) {
+  gap: var(--ui-shell-gap, 12px);
+  padding: 0;
+  border-radius: 0;
+  background-color: transparent;
+  box-shadow: none;
+}
+
+/* 2.1 toolbar row */
+html.flat-theme [data-ui~="ops-dashboard"] > div[class~="rounded-3xl"]:has(h1) > div:first-child {
+  gap: 8px 12px;
+  padding-bottom: 12px;
+  border-bottom-color: rgb(var(--ui-line));
+}
+
+/* The page title is the header row's (AppHeader: 「运维监控 · 运维监控与排障」, shown from 1024px); there the page's own h1
+   stays for screen readers only. Fullscreen has no header row: its title is the page title (REF §5: 20/600). */
+@media (min-width: 1024px) {
+  html.flat-theme [data-ui~="ops-dashboard"]:not([class~="p-4"]) > div[class~="rounded-3xl"]:has(h1) > div:first-child > div > h1 {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    margin: -1px;
+    padding: 0;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+    border: 0;
+  }
+}
+
+/* below 1024px the header row shows no title: the page's own title is the card title (13/600) */
+html.flat-theme [data-ui~="ops-dashboard"]:not([class~="p-4"]) > div[class~="rounded-3xl"]:has(h1) > div:first-child > div > h1 {
+  gap: 0;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 19.5px;
+  color: rgb(var(--ui-ink));
+}
+
+html.flat-theme [data-ui~="ops-dashboard"][class~="p-4"] > div[class~="rounded-3xl"]:has(h1) > div:first-child > div > h1 {
+  gap: 0;
+  font-size: 20px;
+  font-weight: 600;
+  line-height: 28px;
+  color: rgb(var(--ui-ink));
+}
+
+html.flat-theme [data-ui~="ops-dashboard"] > div[class~="rounded-3xl"]:has(h1) > div:first-child > div > h1 > svg {
+  display: none;
+}
+
+/* the status line: the reference's meta (Mono 11, faint), the ready dot a 6px status dot */
+html.flat-theme [data-ui~="ops-dashboard"] > div[class~="rounded-3xl"]:has(h1) > div:first-child > div > div[class~="mt-1"] {
+  margin-top: 0;
+  gap: 8px;
+  font-family: var(--ui-font-mono);
+  font-size: 11px;
+  line-height: 16.5px;
+  font-variant-numeric: tabular-nums;
+  color: rgb(var(--ui-muted));
+}
+
+html.flat-theme [data-ui~="ops-dashboard"] > div[class~="rounded-3xl"]:has(h1) > div:first-child > div > div[class~="mt-1"] > span[class~="flex"] {
+  gap: 6px;
+  font-family: var(--ui-font);
+  font-size: 12px;
+  color: rgb(var(--ui-ink-soft));
+}
+
+html.flat-theme [data-ui~="ops-dashboard"] > div[class~="rounded-3xl"]:has(h1) > div:first-child > div > div[class~="mt-1"] > span[class~="flex"] > span,
+html.flat-theme [data-ui~="ops-dashboard"] > div[class~="rounded-3xl"]:has(h1) > div:first-child > div > div[class~="mt-1"] > span[class~="flex"] > span > span {
+  width: 6px;
+  height: 6px;
+}
+
+html.flat-theme [data-ui~="ops-dashboard"] > div[class~="rounded-3xl"]:has(h1) > div:first-child > div > div[class~="mt-1"] > span[class~="flex"] > span > span[class~="bg-green-500"] {
+  background-color: rgb(var(--ui-dot-ok));
+}
+
+html.flat-theme [data-ui~="ops-dashboard"] > div[class~="rounded-3xl"]:has(h1) > div:first-child > div > div[class~="mt-1"] > span[class~="flex"] > span > span[class~="bg-gray-400"] {
+  background-color: rgb(var(--ui-dot-idle));
+}
+
+/* the controls: one 30px row (the table pages' toolbar density), 8px apart */
+html.flat-theme [data-ui~="ops-dashboard"] > div[class~="rounded-3xl"]:has(h1) > div:first-child > div:last-child {
+  gap: 8px;
+}
+
+html.flat-theme [data-ui~="ops-dashboard"] > div[class~="rounded-3xl"]:has(h1) > div:first-child > div:last-child .select-trigger.select-trigger {
+  padding-top: 0.265625rem;
+  padding-bottom: 0.265625rem;
+}
+
+html.flat-theme [data-ui~="ops-dashboard"] > div[class~="rounded-3xl"]:has(h1) > div:first-child > div:last-child > div[class~="w-[1px]"] {
+  margin: 0 4px;
+  background-color: rgb(var(--ui-line));
+}
+
+/* refresh, alert rules, settings, fullscreen: the reference's default button (surface, control outline, ink 13/600,
+   radius 6), icon-only ones square; no hue */
+html.flat-theme [data-ui~="ops-dashboard"] > div[class~="rounded-3xl"]:has(h1) > div:first-child > div:last-child > button {
+  gap: 6px;
+  height: var(--ui-control-h);
+  min-width: var(--ui-control-h);
+  padding: 0 12px;
+  border: 1px solid rgb(var(--ui-line-strong));
+  border-radius: var(--ui-radius-md);
+  background-color: rgb(var(--ui-surface));
+  color: rgb(var(--ui-ink));
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 19.5px;
+  transition: color var(--ui-duration) var(--ui-ease), border-color var(--ui-duration) var(--ui-ease), background-color var(--ui-duration) var(--ui-ease);
+}
+
+html.flat-theme [data-ui~="ops-dashboard"] > div[class~="rounded-3xl"]:has(h1) > div:first-child > div:last-child > button[class~="w-8"] {
+  width: var(--ui-control-h);
+  padding: 0;
+  color: rgb(var(--ui-ink-soft));
+}
+
+html.flat-theme [data-ui~="ops-dashboard"] > div[class~="rounded-3xl"]:has(h1) > div:first-child > div:last-child > button:hover:not(:disabled) {
+  border-color: rgb(var(--ui-line-focus));
+  background-color: rgb(var(--ui-surface));
+  color: rgb(var(--ui-ink));
+}
+
+html.flat-theme [data-ui~="ops-dashboard"] > div[class~="rounded-3xl"]:has(h1) > div:first-child > div:last-child > button:disabled {
+  opacity: 0.55;
+}
+
+html.flat-theme [data-ui~="ops-dashboard"] > div[class~="rounded-3xl"]:has(h1) > div:first-child > div:last-child > button > svg {
+  width: 14px;
+  height: 14px;
+}
+
+/* 2.2 the KPI area: the health / realtime panel and the six metric tiles, 10px apart (REF §8.13 grid gap) */
+html.flat-theme [data-ui~="ops-dashboard"] > div[class~="rounded-3xl"]:has(h1) > div[class~="grid"][class~="lg:grid-cols-12"] {
+  gap: 10px;
+}
+
+html.flat-theme [data-ui~="ops-dashboard"] > div[class~="rounded-3xl"]:has(h1) > div[class~="grid"][class~="lg:grid-cols-12"] > div:last-child {
+  gap: 10px;
+}
+
+/* The health / realtime panel is a card of its own (surface, 1px structural line, radius 8, 14px in). */
+html.flat-theme [data-ui~="ops-dashboard"] > div[class~="rounded-3xl"]:has(h1) > div[class~="grid"][class~="lg:grid-cols-12"] > div:first-child {
+  padding: 14px;
+  border: 1px solid rgb(var(--ui-line));
+  border-radius: var(--ui-radius-lg);
+  background-color: rgb(var(--ui-surface));
+}
+
+html.flat-theme [data-ui~="ops-dashboard"] > div[class~="rounded-3xl"]:has(h1) > div[class~="grid"][class~="lg:grid-cols-12"] > div:first-child > div {
+  gap: 16px;
+}
+
+/* health: the gauge keeps its status colour (it is the status); the score is a figure (600, tabular), its caption the
+   mono label; hovering opens the diagnosis */
+html.flat-theme [data-ui~="ops-dashboard"] > div[class~="rounded-3xl"]:has(h1) > div[class~="grid"] > div:first-child > div > div[class~="group"] {
+  padding-top: 4px;
+  padding-bottom: 4px;
+  border-radius: var(--ui-radius-md);
+  border-color: rgb(var(--ui-line));
+  transition: background-color var(--ui-duration) var(--ui-ease);
+}
+
+html.flat-theme [data-ui~="ops-dashboard"] > div[class~="rounded-3xl"]:has(h1) > div[class~="grid"] > div:first-child > div > div[class~="group"]:hover {
+  background-color: rgb(var(--ui-subtle));
+}
+
+html.flat-theme [data-ui~="ops-dashboard"] > div[class~="rounded-3xl"]:has(h1) > div[class~="grid"] > div:first-child > div > div[class~="group"] circle[class~="text-gray-200"] {
+  color: rgb(var(--ui-subtle));
+}
+
+html.flat-theme [data-ui~="ops-dashboard"] > div[class~="rounded-3xl"]:has(h1) > div[class~="grid"] > div:first-child > div > div[class~="group"] > div[class~="relative"] > div[class~="absolute"] > span:first-child {
+  font-weight: 600;
+  font-size: 24px;
+  line-height: 30px;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.01em;
+}
+
+html.flat-theme [data-ui~="ops-dashboard"][class~="p-4"] > div[class~="rounded-3xl"]:has(h1) > div[class~="grid"] > div:first-child > div > div[class~="group"] > div[class~="relative"] > div[class~="absolute"] > span:first-child {
+  font-size: 36px;
+  line-height: 42px;
+}
+
+html.flat-theme [data-ui~="ops-dashboard"] > div[class~="rounded-3xl"]:has(h1) > div[class~="grid"] > div:first-child > div > div[class~="group"] > div[class~="relative"] > div[class~="absolute"] > span:last-child,
+html.flat-theme [data-ui~="ops-dashboard"] > div[class~="rounded-3xl"]:has(h1) > div[class~="grid"] > div:first-child > div > div[class~="group"] > div[class~="mt-4"] > div:first-child {
+  font-family: var(--ui-font-mono);
+  font-size: var(--ui-label-size);
+  font-weight: 400;
+  line-height: var(--ui-label-leading);
+  letter-spacing: var(--ui-label-tracking);
+  text-transform: uppercase;
+  color: rgb(var(--ui-label));
+}
+
+/* hovered (the diagnosis opens) the panel takes the grouped fill; the two captions go muted there in light (the label
+   grey is 4.35:1 on that fill, the muted grey 4.8:1; dark keeps the label grey, 5.7:1) */
+html.flat-theme:not(.dark) [data-ui~="ops-dashboard"] > div[class~="rounded-3xl"]:has(h1) > div[class~="grid"] > div:first-child > div > div[class~="group"]:hover > div[class~="relative"] > div[class~="absolute"] > span:last-child,
+html.flat-theme:not(.dark) [data-ui~="ops-dashboard"] > div[class~="rounded-3xl"]:has(h1) > div[class~="grid"] > div:first-child > div > div[class~="group"]:hover > div[class~="mt-4"] > div:first-child {
+  color: rgb(var(--ui-muted));
+}
+
+html.flat-theme [data-ui~="ops-dashboard"] > div[class~="rounded-3xl"]:has(h1) > div[class~="grid"] > div:first-child > div > div[class~="group"] > div[class~="mt-4"] {
+  margin-top: 10px;
+}
+
+html.flat-theme [data-ui~="ops-dashboard"] > div[class~="rounded-3xl"]:has(h1) > div[class~="grid"] > div:first-child > div > div[class~="group"] > div[class~="mt-4"] > div:last-child {
+  margin-top: 2px;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 18px;
+}
+
+/* the diagnosis popover: the reference's detail popover (radius 6, control outline, surface, the popover shadow,
+   12 / 12 in); its status glyphs keep their colours, the rest is ink and muted */
+html.flat-theme [data-ui~="ops-dashboard"] > div[class~="rounded-3xl"]:has(h1) > div[class~="grid"] > div:first-child > div > div[class~="group"] > div[class~="absolute"] > div {
+  padding: 12px;
+  border: 1px solid rgb(var(--ui-line-strong));
+  border-radius: var(--ui-radius-md);
+  background-color: rgb(var(--ui-surface));
+  box-shadow: var(--ui-shadow-popover);
+}
+
+html.flat-theme [data-ui~="ops-dashboard"] > div[class~="rounded-3xl"]:has(h1) > div[class~="grid"] > div:first-child > div > div[class~="group"] > div[class~="absolute"] > div > h4 {
+  margin-bottom: 10px;
+  padding-bottom: 8px;
+  border-color: rgb(var(--ui-line));
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 19.5px;
+  color: rgb(var(--ui-ink));
+}
+
+html.flat-theme [data-ui~="ops-dashboard"] > div[class~="rounded-3xl"]:has(h1) > div[class~="grid"] > div:first-child > div > div[class~="group"] > div[class~="absolute"] > div > h4 > svg {
+  color: rgb(var(--ui-ink-soft));
+}
+
+html.flat-theme [data-ui~="ops-dashboard"] > div[class~="rounded-3xl"]:has(h1) > div[class~="grid"] > div:first-child > div > div[class~="group"] > div[class~="absolute"] > div > div > div > div:last-child > div:first-child {
+  font-weight: 500;
+  color: rgb(var(--ui-ink));
+}
+
+html.flat-theme [data-ui~="ops-dashboard"] > div[class~="rounded-3xl"]:has(h1) > div[class~="grid"] > div:first-child > div > div[class~="group"] > div[class~="absolute"] > div > div > div > div:last-child > div:nth-child(2) {
+  font-size: 11px;
+  color: rgb(var(--ui-muted));
+}
+
+html.flat-theme [data-ui~="ops-dashboard"] > div[class~="rounded-3xl"]:has(h1) > div[class~="grid"] > div:first-child > div > div[class~="group"] > div[class~="absolute"] > div > div > div > div:last-child > div[class~="text-blue-600"] {
+  font-size: 11px;
+  color: rgb(var(--ui-ink-soft));
+}
+
+html.flat-theme [data-ui~="ops-dashboard"] > div[class~="rounded-3xl"]:has(h1) > div[class~="grid"] > div:first-child > div > div[class~="group"] > div[class~="absolute"] > div > div[class~="mt-3"] {
+  border-color: rgb(var(--ui-line));
+  font-size: 11px;
+  color: rgb(var(--ui-faint));
+}
+
+/* realtime: the title a mono label (the decorative ping and the animated pulse line go: they carry no data), the window
+   choice a small segmented control, the current QPS / TPS figures 20/600, peak and average 13/600, units Mono 10 */
+html.flat-theme [data-ui~="ops-dashboard"] > div[class~="rounded-3xl"]:has(h1) > div[class~="grid"] > div:first-child > div > div:last-child > div:first-child {
+  margin-bottom: 10px;
+}
+
+html.flat-theme [data-ui~="ops-dashboard"] > div[class~="rounded-3xl"]:has(h1) > div[class~="grid"] > div:first-child > div > div:last-child > div:first-child > div:first-child > div[class~="h-3"],
+html.flat-theme [data-ui~="ops-dashboard"] > div[class~="rounded-3xl"]:has(h1) > div[class~="grid"] > div:first-child > div > div:last-child > div:last-child > div[class~="h-8"] {
+  display: none;
+}
+
+html.flat-theme [data-ui~="ops-dashboard"] > div[class~="rounded-3xl"]:has(h1) > div[class~="grid"] > div:first-child > div > div:last-child > div:first-child > div:first-child {
+  gap: 0;
+}
+
+html.flat-theme [data-ui~="ops-dashboard"] > div[class~="rounded-3xl"]:has(h1) > div[class~="grid"] > div:first-child > div > div:last-child > div:first-child h3,
+html.flat-theme [data-ui~="ops-dashboard"] > div[class~="rounded-3xl"]:has(h1) > div[class~="grid"] > div:first-child > div > div:last-child > div:last-child div[class~="uppercase"][class~="font-bold"] {
+  font-family: var(--ui-font-mono);
+  font-size: var(--ui-label-size);
+  font-weight: 400;
+  line-height: var(--ui-label-leading);
+  letter-spacing: var(--ui-label-tracking);
+  text-transform: uppercase;
+  color: rgb(var(--ui-label));
+}
+
+html.flat-theme [data-ui~="ops-dashboard"] > div[class~="rounded-3xl"]:has(h1) > div[class~="grid"] > div:first-child > div > div:last-child > div:first-child > div:last-child {
+  gap: 0;
+  padding: 2px;
+  border: 1px solid rgb(var(--ui-line));
+  border-radius: var(--ui-radius-md);
+  background-color: rgb(var(--ui-surface));
+}
+
+html.flat-theme [data-ui~="ops-dashboard"] > div[class~="rounded-3xl"]:has(h1) > div[class~="grid"] > div:first-child > div > div:last-child > div:first-child > div:last-child > button {
+  padding: 2px 8px;
+  border-radius: var(--ui-radius-sm);
+  background-color: transparent;
+  color: rgb(var(--ui-muted));
+  font-family: var(--ui-font-mono);
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 16px;
+  transition: color var(--ui-duration-slide) var(--ui-ease-out), background-color var(--ui-duration-slide) var(--ui-ease-out);
+}
+
+html.flat-theme [data-ui~="ops-dashboard"] > div[class~="rounded-3xl"]:has(h1) > div[class~="grid"] > div:first-child > div > div:last-child > div:first-child > div:last-child > button:hover {
+  color: rgb(var(--ui-ink));
+}
+
+html.flat-theme [data-ui~="ops-dashboard"] > div[class~="rounded-3xl"]:has(h1) > div[class~="grid"] > div:first-child > div > div:last-child > div:first-child > div:last-child > button[class~="bg-blue-500"] {
+  background-color: rgb(var(--ui-ink));
+  color: rgb(var(--ui-on-ink));
+}
+
+html.flat-theme [data-ui~="ops-dashboard"] > div[class~="rounded-3xl"]:has(h1) > div[class~="grid"] > div:first-child > div > div:last-child > div:last-child span[class~="font-black"] {
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: rgb(var(--ui-ink));
+}
+
+html.flat-theme [data-ui~="ops-dashboard"]:not([class~="p-4"]) > div[class~="rounded-3xl"]:has(h1) > div[class~="grid"] > div:first-child > div > div:last-child > div:last-child > div:first-child span[class~="font-black"] {
+  font-size: 20px;
+  line-height: 28px;
+}
+
+html.flat-theme [data-ui~="ops-dashboard"] > div[class~="rounded-3xl"]:has(h1) > div[class~="grid"] > div:first-child > div > div:last-child > div:last-child > div:first-child span[class~="font-bold"],
+html.flat-theme [data-ui~="ops-dashboard"] > div[class~="rounded-3xl"]:has(h1) > div[class~="grid"] > div:first-child > div > div:last-child > div:last-child > div[class~="grid"] span[class~="text-xs"] {
+  font-family: var(--ui-font-mono);
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.025em;
+  color: rgb(var(--ui-muted));
+}
+
+html.flat-theme [data-ui~="ops-dashboard"] > div[class~="rounded-3xl"]:has(h1) > div[class~="grid"] > div:first-child > div > div:last-child > div:last-child > div[class~="grid"] > div > div:last-child {
+  margin-top: 2px;
+  font-size: 13px;
+  line-height: 19.5px;
+}
+
+/* 2.3 the six metric tiles: the reference's StatTile (REF §8.13: surface, 1px structural line, radius 6, 8 / 12 in; the
+   mono label, the figure 15/600 tabular, the detail rows 12px with Mono figures). A value upstream colours green only
+   because it is inside its threshold is ink (the reference colours a figure only when something is wrong); warning
+   and critical keep their colour, and a critical tile is the reference's alert tile (danger line and soft fill). */
+html.flat-theme [data-ui~="ops-dashboard"] > div[class~="rounded-3xl"]:has(h1) > div[class~="grid"] > div:last-child > div[class~="rounded-2xl"] {
+  display: flex;
+  flex-direction: column;
+  padding: 8px 12px 10px;
+  border: 1px solid rgb(var(--ui-line));
+  border-radius: var(--ui-radius-md);
+  background-color: rgb(var(--ui-surface));
+}
+
+html.flat-theme [data-ui~="ops-dashboard"] > div[class~="rounded-3xl"]:has(h1) > div[class~="grid"] > div:last-child > div[class~="rounded-2xl"] > div:first-child {
+  min-height: 18px;
+}
+
+html.flat-theme [data-ui~="ops-dashboard"] > div[class~="rounded-3xl"]:has(h1) > div[class~="grid"] > div:last-child > div[class~="rounded-2xl"] > div:first-child > div > span:first-child,
+html.flat-theme [data-ui~="ops-dashboard"] > div[class~="rounded-3xl"]:has(h1) > div[class~="border-t"] > div > div > div:first-child div[class~="uppercase"] {
+  font-family: var(--ui-font-mono);
+  font-size: var(--ui-label-size);
+  font-weight: 400;
+  line-height: var(--ui-label-leading);
+  letter-spacing: var(--ui-label-tracking);
+  text-transform: uppercase;
+  color: rgb(var(--ui-label));
+}
+
+/* the SLA tile's threshold dot: the reference's 6px status dot */
+html.flat-theme [data-ui~="ops-dashboard"] > div[class~="rounded-3xl"]:has(h1) > div[class~="grid"] > div:last-child > div[class~="rounded-2xl"] > div:first-child > div > span[class~="h-1.5"] {
+  width: 6px;
+  height: 6px;
+}
+
+html.flat-theme [data-ui~="ops-dashboard"] > div[class~="rounded-3xl"]:has(h1) > div[class~="grid"] > div:last-child > div[class~="rounded-2xl"] > div:first-child > div > span[class~="bg-green-500"] {
+  background-color: rgb(var(--ui-dot-ok));
+}
+
+html.flat-theme [data-ui~="ops-dashboard"] > div[class~="rounded-3xl"]:has(h1) > div[class~="grid"] > div:last-child > div[class~="rounded-2xl"] > div:first-child > div > span[class~="bg-yellow-500"] {
+  background-color: rgb(var(--ui-dot-warn));
+}
+
+html.flat-theme [data-ui~="ops-dashboard"] > div[class~="rounded-3xl"]:has(h1) > div[class~="grid"] > div:last-child > div[class~="rounded-2xl"] > div:first-child > div > span[class~="bg-red-500"] {
+  background-color: rgb(var(--ui-dot-bad));
+}
+
+/* 「明细」: a link (the accent text, underline on hover), not a blue label */
+html.flat-theme [data-ui~="ops-dashboard"] > div[class~="rounded-3xl"]:has(h1) button[class~="text-[10px]"][class~="text-blue-500"] {
+  font-size: 11.5px;
+  font-weight: 500;
+  line-height: 16px;
+  color: var(--ui-link);
+  text-underline-offset: 2px;
+  text-decoration-thickness: 1px;
+}
+
+/* the tile's figure: 15/600 tabular; fullscreen 22 (the wall display) */
+html.flat-theme [data-ui~="ops-dashboard"] > div[class~="rounded-3xl"]:has(h1) > div[class~="grid"] > div:last-child > div[class~="rounded-2xl"] :is(div[class~="text-3xl"]) {
+  margin-top: 2px;
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 22.5px;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0;
+}
+
+html.flat-theme [data-ui~="ops-dashboard"][class~="p-4"] > div[class~="rounded-3xl"]:has(h1) > div[class~="grid"] > div:last-child > div[class~="rounded-2xl"] :is(div[class~="text-3xl"]) {
+  font-size: 22px;
+  line-height: 30px;
+}
+
+html.flat-theme [data-ui~="ops-dashboard"] > div[class~="rounded-3xl"]:has(h1) > div[class~="grid"] > div:last-child > div[class~="rounded-2xl"] > div[class~="items-baseline"] {
+  margin-top: 2px;
+  gap: 4px;
+}
+
+html.flat-theme [data-ui~="ops-dashboard"] > div[class~="rounded-3xl"]:has(h1) > div[class~="grid"] > div:last-child > div[class~="rounded-2xl"] > div[class~="items-baseline"] > div[class~="text-3xl"] {
+  margin-top: 0;
+}
+
+html.flat-theme [data-ui~="ops-dashboard"] > div[class~="rounded-3xl"]:has(h1) > div[class~="grid"] > div:last-child > div[class~="rounded-2xl"] > div[class~="items-baseline"] > span {
+  font-family: var(--ui-font-mono);
+  font-size: 10.5px;
+  font-weight: 400;
+  color: rgb(var(--ui-muted));
+}
+
+/* the detail rows: label 12px muted, figure Mono 12 ink-soft (REF §8.9 breakdown rows), 2px apart */
+html.flat-theme [data-ui~="ops-dashboard"] > div[class~="rounded-3xl"]:has(h1) > div[class~="grid"] > div:last-child > div[class~="rounded-2xl"] > div:is([class~="space-y-2"], [class~="space-y-1"], [class~="grid"], [class~="mt-3"]):not([class~="h-2"]) {
+  margin-top: 6px;
+  font-size: 12px;
+  line-height: 18px;
+}
+
+html.flat-theme [data-ui~="ops-dashboard"] > div[class~="rounded-3xl"]:has(h1) > div[class~="grid"] > div:last-child > div[class~="rounded-2xl"] > div[class~="space-y-2"] > :not([hidden]) ~ :not([hidden]),
+html.flat-theme [data-ui~="ops-dashboard"] > div[class~="rounded-3xl"]:has(h1) > div[class~="grid"] > div:last-child > div[class~="rounded-2xl"] > div[class~="space-y-1"] > :not([hidden]) ~ :not([hidden]) {
+  margin-top: 2px;
+}
+
+html.flat-theme [data-ui~="ops-dashboard"] > div[class~="rounded-3xl"]:has(h1) > div[class~="grid"] > div:last-child > div[class~="rounded-2xl"] > div[class~="grid"] {
+  row-gap: 2px;
+}
+
+html.flat-theme [data-ui~="ops-dashboard"] > div[class~="rounded-3xl"]:has(h1) > div[class~="grid"] > div:last-child > div[class~="rounded-2xl"] > div > div > span[class~="text-gray-500"] {
+  color: rgb(var(--ui-muted));
+}
+
+html.flat-theme [data-ui~="ops-dashboard"] > div[class~="rounded-3xl"]:has(h1) > div[class~="grid"] > div:last-child > div[class~="rounded-2xl"] > div > div > span[class~="font-bold"] {
+  font-family: var(--ui-font-mono);
+  font-size: 12px;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+}
+
+html.flat-theme [data-ui~="ops-dashboard"] > div[class~="rounded-3xl"]:has(h1) > div[class~="grid"] > div:last-child > div[class~="rounded-2xl"] > div > div > span[class~="font-bold"][class~="text-gray-900"] {
+  color: rgb(var(--ui-ink-soft));
+}
+
+html.flat-theme [data-ui~="ops-dashboard"] > div[class~="rounded-3xl"]:has(h1) > div[class~="grid"] > div:last-child > div[class~="rounded-2xl"] > div > div > span[class~="text-gray-400"] {
+  font-family: var(--ui-font-mono);
+  font-size: 10.5px;
+  color: rgb(var(--ui-muted));
+}
+
+/* the SLA bar: the reference's usage bar (a capsule on the grouped fill; the fill keeps its status colour) */
+html.flat-theme [data-ui~="ops-dashboard"] > div[class~="rounded-3xl"]:has(h1) > div[class~="grid"] > div:last-child > div[class~="rounded-2xl"] > div[class~="h-2"] {
+  height: 6px;
+  margin-top: 8px;
+  background-color: rgb(var(--ui-subtle));
+}
+
+html.flat-theme [data-ui~="ops-dashboard"] > div[class~="rounded-3xl"]:has(h1) > div[class~="grid"] > div:last-child > div[class~="rounded-2xl"] > div[class~="h-2"] + div[class~="mt-3"] {
+  margin-top: 6px;
+}
+
+/* status colours of the figures: inside the threshold = ink; warning and critical keep theirs */
+html.flat-theme [data-ui~="ops-dashboard"] > div[class~="rounded-3xl"]:has(h1) :is(div, span)[class~="text-green-600"],
+html.flat-theme [data-ui~="ops-dashboard"] > div[class~="rounded-3xl"]:has(h1) :is(div, span)[class~="text-emerald-600"] {
+  color: rgb(var(--ui-ink));
+}
+
+html.flat-theme [data-ui~="ops-dashboard"] > div[class~="rounded-3xl"]:has(h1) > div[class~="grid"] > div:last-child > div[class~="rounded-2xl"] > div > div > span[class~="text-green-600"] {
+  color: rgb(var(--ui-ink-soft));
+}
+
+html.flat-theme [data-ui~="ops-dashboard"] > div[class~="rounded-3xl"]:has(h1) :is(div, span)[class~="text-yellow-600"] {
+  color: rgb(var(--ui-warning));
+}
+
+html.flat-theme [data-ui~="ops-dashboard"] > div[class~="rounded-3xl"]:has(h1) :is(div, span):is([class~="text-red-600"], [class~="text-rose-600"]) {
+  color: rgb(var(--ui-danger));
+}
+
+/* the alert tiles: critical = the reference's danger KPI (REF §8.13 crop kpi-card-danger: the danger line, the soft
+   fill, the figure in danger); warning the same in the warning colour; the label steps to muted on the tint */
+html.flat-theme [data-ui~="ops-dashboard"] > div[class~="rounded-3xl"]:has(h1) > div[class~="grid"] > div:last-child > div[class~="rounded-2xl"]:has(> div[class~="text-3xl"][class~="text-red-600"], > div[class~="items-baseline"] > div[class~="text-3xl"][class~="text-red-600"]),
+html.flat-theme [data-ui~="ops-dashboard"] > div[class~="rounded-3xl"]:has(h1) > div[class~="border-t"] > div > div:has(> div[class~="text-lg"][class~="text-rose-600"]) {
+  border-color: rgb(var(--ui-danger));
+  background-color: rgb(var(--ui-danger-soft));
+}
+
+html.flat-theme [data-ui~="ops-dashboard"] > div[class~="rounded-3xl"]:has(h1) > div[class~="grid"] > div:last-child > div[class~="rounded-2xl"]:has(> div[class~="text-3xl"][class~="text-yellow-600"], > div[class~="items-baseline"] > div[class~="text-3xl"][class~="text-yellow-600"]),
+html.flat-theme [data-ui~="ops-dashboard"] > div[class~="rounded-3xl"]:has(h1) > div[class~="border-t"] > div > div:has(> div[class~="text-lg"][class~="text-yellow-600"]) {
+  border-color: rgb(var(--ui-warning));
+  background-color: rgb(var(--ui-warning-soft));
+}
+
+html.flat-theme [data-ui~="ops-dashboard"] > div[class~="rounded-3xl"]:has(h1) > div[class~="grid"] > div:last-child > div[class~="rounded-2xl"]:has(> div[class~="text-3xl"]:is([class~="text-red-600"], [class~="text-yellow-600"]), > div[class~="items-baseline"] > div[class~="text-3xl"]:is([class~="text-red-600"], [class~="text-yellow-600"])) > div:first-child > div > span:first-child,
+html.flat-theme [data-ui~="ops-dashboard"] > div[class~="rounded-3xl"]:has(h1) > div[class~="border-t"] > div > div:has(> div[class~="text-lg"]:is([class~="text-rose-600"], [class~="text-yellow-600"])) > div:first-child div[class~="uppercase"] {
+  color: rgb(var(--ui-muted));
+}
+
+/* 2.4 the system tiles (CPU, memory, database, Redis, goroutines, jobs): a KPI row of their own, 10px apart, each the
+   reference's StatTile (label, figure 15/600, the detail 11px muted with Mono figures) */
+html.flat-theme [data-ui~="ops-dashboard"] > div[class~="rounded-3xl"]:has(h1) > div[class~="border-t"] {
+  margin-top: 0;
+  padding-top: 0;
+  border-top-width: 0;
+}
+
+html.flat-theme [data-ui~="ops-dashboard"] > div[class~="rounded-3xl"]:has(h1) > div[class~="border-t"] > div[class~="grid"] {
+  gap: 10px;
+}
+
+html.flat-theme [data-ui~="ops-dashboard"] > div[class~="rounded-3xl"]:has(h1) > div[class~="border-t"] > div[class~="grid"] > div {
+  display: flex;
+  flex-direction: column;
+  min-height: 76px;
+  padding: 8px 12px;
+  border: 1px solid rgb(var(--ui-line));
+  border-radius: var(--ui-radius-md);
+  background-color: rgb(var(--ui-surface));
+}
+
+html.flat-theme [data-ui~="ops-dashboard"] > div[class~="rounded-3xl"]:has(h1) > div[class~="border-t"] > div[class~="grid"] > div > div[class~="text-lg"] {
+  margin-top: 2px;
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 22.5px;
+  font-variant-numeric: tabular-nums;
+}
+
+html.flat-theme [data-ui~="ops-dashboard"][class~="p-4"] > div[class~="rounded-3xl"]:has(h1) > div[class~="border-t"] > div[class~="grid"] > div > div[class~="text-lg"] {
+  font-size: 20px;
+  line-height: 28px;
+}
+
+html.flat-theme [data-ui~="ops-dashboard"] > div[class~="rounded-3xl"]:has(h1) > div[class~="border-t"] > div[class~="grid"] > div > div[class~="text-[10px]"] {
+  margin-top: 2px;
+  font-size: 11px;
+  line-height: 16.5px;
+  color: rgb(var(--ui-muted));
+}
+
+html.flat-theme [data-ui~="ops-dashboard"] > div[class~="rounded-3xl"]:has(h1) > div[class~="border-t"] > div[class~="grid"] > div > div[class~="text-[10px]"] span[class~="font-mono"] {
+  color: rgb(var(--ui-ink-soft));
+}
+
+/* ================================================================== 3 · ops monitoring: cards */
+
+/* 3.1 Every card on the page (concurrency, the five charts, alert events, OpenAI token stats, system logs): the
+   reference's card (REF §8.7 / §8.14: surface, 1px structural line, radius 8, no shadow, 14px in). */
+html.flat-theme [data-ui~="ops-dashboard"] div[class~="rounded-3xl"][class~="ring-1"]:not(:has(h1)),
+html.flat-theme [data-ui~="ops-dashboard"] > section:is([class~="rounded-2xl"], [class~="card"]),
+html.flat-theme [data-ui~="ops-dashboard"] > div > section[class~="card"] {
+  padding: 14px;
+  border: 1px solid rgb(var(--ui-line));
+  border-radius: var(--ui-radius-lg);
+  background-color: rgb(var(--ui-surface));
+  box-shadow: none;
+}
+
+/* the card head: 12px above the body, controls 26px */
+html.flat-theme [data-ui~="ops-dashboard"] div[class~="rounded-3xl"][class~="ring-1"]:not(:has(h1)) > div[class~="mb-4"]:first-child,
+html.flat-theme [data-ui~="ops-dashboard"] > section:is([class~="rounded-2xl"], [class~="card"]) > div[class~="mb-4"]:first-child,
+html.flat-theme [data-ui~="ops-dashboard"] > div > section[class~="card"] > div[class~="mb-4"]:first-child {
+  min-height: 26px;
+  margin-bottom: 12px;
+}
+
+/* titles: a chart card's title is the mono label (REF §8.14 "SPEND OVER TIME"); a list or table card's title is the
+   reference's card title 13/600 ink with its description 12px muted ("Request history"). The coloured glyph before a
+   title is decoration and goes; the help icon stays. */
+html.flat-theme [data-ui~="ops-dashboard"] div[class~="rounded-3xl"][class~="ring-1"]:not(:has(h1)) h3 > svg:first-child {
+  display: none;
+}
+
+html.flat-theme [data-ui~="ops-dashboard"] div[class~="rounded-3xl"][class~="ring-1"]:not(:has(h1)):has(canvas, > div > div > [class~="animate-pulse"], > div[class~="min-h-0"] > div > .empty-state, > div[class~="relative"] > div > .empty-state) h3 {
+  gap: 0;
+  font-family: var(--ui-font-mono);
+  font-size: var(--ui-label-size);
+  font-weight: 400;
+  line-height: var(--ui-label-leading);
+  letter-spacing: var(--ui-label-tracking);
+  text-transform: uppercase;
+  color: rgb(var(--ui-label));
+}
+
+html.flat-theme [data-ui~="ops-dashboard"] div[class~="rounded-3xl"][class~="ring-1"]:not(:has(h1)):not(:has(canvas, > div > div > [class~="animate-pulse"], > div[class~="min-h-0"] > div > .empty-state, > div[class~="relative"] > div > .empty-state)) h3,
+html.flat-theme [data-ui~="ops-dashboard"] section:is([class~="rounded-2xl"], [class~="card"]) h3 {
+  gap: 0;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 19.5px;
+  color: rgb(var(--ui-ink));
+}
+
+html.flat-theme [data-ui~="ops-dashboard"] :is(div[class~="rounded-3xl"][class~="ring-1"]:not(:has(h1)), section:is([class~="rounded-2xl"], [class~="card"])) > div:first-child > div > p[class~="text-xs"] {
+  margin-top: 2px;
+  font-size: 12px;
+  line-height: 18px;
+  color: rgb(var(--ui-muted));
+}
+
+/* the head's small buttons (明细 / 重置 / 下载 / 请求错误 / 上游错误, the concurrency view toggle and refresh, the alert
+   refresh): the reference's default button at the small size (26px, radius 6, control outline, surface, 12/600,
+   ink-soft, ink on hover) */
+html.flat-theme [data-ui~="ops-dashboard"] div[class~="rounded-3xl"][class~="ring-1"]:not(:has(h1)) > div:first-child button:is([class~="border-gray-200"], [class~="bg-gray-100"], [class~="bg-blue-100"]) {
+  gap: 6px;
+  min-width: 26px;
+  height: 26px;
+  padding: 0 10px;
+  border: 1px solid rgb(var(--ui-line-strong));
+  border-radius: var(--ui-radius-md);
+  background-color: rgb(var(--ui-surface));
+  color: rgb(var(--ui-ink-soft));
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 18px;
+  transition: color var(--ui-duration) var(--ui-ease), border-color var(--ui-duration) var(--ui-ease), background-color var(--ui-duration) var(--ui-ease);
+}
+
+html.flat-theme [data-ui~="ops-dashboard"] div[class~="rounded-3xl"][class~="ring-1"]:not(:has(h1)) > div:first-child button:is([class~="border-gray-200"], [class~="bg-gray-100"], [class~="bg-blue-100"]):hover:not(:disabled) {
+  border-color: rgb(var(--ui-line-focus));
+  background-color: rgb(var(--ui-surface));
+  color: rgb(var(--ui-ink));
+}
+
+html.flat-theme [data-ui~="ops-dashboard"] div[class~="rounded-3xl"][class~="ring-1"]:not(:has(h1)) > div:first-child button:is([class~="border-gray-200"], [class~="bg-gray-100"], [class~="bg-blue-100"]):disabled {
+  opacity: 0.55;
+}
+
+/* a pressed toggle (the concurrency card's per-user view) is the reference's active filter: accent line at 40 %, the
+   accent tint, accent glyph */
+html.flat-theme [data-ui~="ops-dashboard"] div[class~="rounded-3xl"][class~="ring-1"]:not(:has(h1)) > div:first-child button[class~="bg-blue-100"] {
+  border-color: rgb(var(--ui-primary) / 0.4);
+  background-color: rgb(var(--ui-primary-soft));
+  color: var(--ui-link);
+}
+
+/* the concurrency card's two glyph-only buttons (px-2 py-1, no label) are square */
+html.flat-theme [data-ui~="ops-dashboard"] div[class~="rounded-3xl"][class~="ring-1"]:not(:has(h1)) > div:first-child button:is([class~="bg-gray-100"], [class~="bg-blue-100"])[class~="px-2"][class~="py-1"] {
+  width: 26px;
+  padding: 0;
+}
+
+html.flat-theme [data-ui~="ops-dashboard"] div[class~="rounded-3xl"][class~="ring-1"]:not(:has(h1)) > div:first-child button > svg {
+  width: 13px;
+  height: 13px;
+}
+
+/* chart legends in HTML (the throughput head): the reference's legend (REF §8.14: 8px squares with 2px corners, 11px) */
+html.flat-theme [data-ui~="ops-dashboard"] [data-testid="throughput-chart-toolbar"] {
+  gap: 8px;
+  font-size: 11px;
+  line-height: 16.5px;
+  color: rgb(var(--ui-muted));
+}
+
+html.flat-theme [data-ui~="ops-dashboard"] [data-testid="throughput-chart-toolbar"] > span > span[class~="rounded-full"] {
+  width: 8px;
+  height: 8px;
+  border-radius: 2px;
+}
+
+/* the throughput drilldown chips (a platform or a group and its request count): the reference's provider chip shape
+   (radius 4, the control outline, Geist Mono 10.5 uppercase ink-soft, the count faint) */
+html.flat-theme [data-ui~="ops-dashboard"] div[class~="rounded-3xl"][class~="ring-1"]:not(:has(h1)) > div[class~="mb-3"][class~="flex-wrap"] {
+  gap: 6px;
+  margin-bottom: 10px;
+}
+
+html.flat-theme [data-ui~="ops-dashboard"] div[class~="rounded-3xl"][class~="ring-1"]:not(:has(h1)) > div[class~="mb-3"][class~="flex-wrap"] > button {
+  gap: 6px;
+  padding: 2px 7px;
+  border: 1px solid rgb(var(--ui-line-strong));
+  border-radius: var(--ui-radius-sm);
+  background-color: rgb(var(--ui-surface));
+  color: rgb(var(--ui-ink-soft));
+  font-family: var(--ui-font-mono);
+  font-size: 10.5px;
+  font-weight: 500;
+  line-height: 16px;
+  letter-spacing: 0.025em;
+  transition: color var(--ui-duration) var(--ui-ease), border-color var(--ui-duration) var(--ui-ease);
+}
+
+html.flat-theme [data-ui~="ops-dashboard"] div[class~="rounded-3xl"][class~="ring-1"]:not(:has(h1)) > div[class~="mb-3"][class~="flex-wrap"] > button:hover {
+  border-color: rgb(var(--ui-line-focus));
+  background-color: rgb(var(--ui-surface));
+  color: rgb(var(--ui-ink));
+}
+
+html.flat-theme [data-ui~="ops-dashboard"] div[class~="rounded-3xl"][class~="ring-1"]:not(:has(h1)) > div[class~="mb-3"][class~="flex-wrap"] > button > span:last-child {
+  color: rgb(var(--ui-faint));
+}
+
+/* the error distribution's summary under the doughnut: 「最高: 上游」 ink-soft with the slice's own colour kept on the
+   value, the legend as the reference's (8px squares, 11px muted) */
+html.flat-theme [data-ui~="ops-dashboard"] div[class~="rounded-3xl"][class~="ring-1"]:not(:has(h1)) div[class~="mt-4"][class~="flex-col"][class~="items-center"] {
+  margin-top: 10px;
+  gap: 6px;
+}
+
+html.flat-theme [data-ui~="ops-dashboard"] div[class~="rounded-3xl"][class~="ring-1"]:not(:has(h1)) div[class~="mt-4"][class~="flex-col"][class~="items-center"] > div[class~="font-bold"] {
+  font-size: 12px;
+  font-weight: 500;
+  color: rgb(var(--ui-ink-soft));
+}
+
+html.flat-theme [data-ui~="ops-dashboard"] div[class~="rounded-3xl"][class~="ring-1"]:not(:has(h1)) div[class~="mt-4"][class~="flex-col"][class~="items-center"] > div[class~="flex-wrap"] {
+  gap: 12px;
+}
+
+html.flat-theme [data-ui~="ops-dashboard"] div[class~="rounded-3xl"][class~="ring-1"]:not(:has(h1)) div[class~="mt-4"][class~="flex-col"][class~="items-center"] > div[class~="flex-wrap"] > div {
+  gap: 6px;
+  font-size: 11px;
+  line-height: 16.5px;
+}
+
+html.flat-theme [data-ui~="ops-dashboard"] div[class~="rounded-3xl"][class~="ring-1"]:not(:has(h1)) div[class~="mt-4"][class~="flex-col"][class~="items-center"] > div[class~="flex-wrap"] > div > span:first-child {
+  width: 8px;
+  height: 8px;
+  border-radius: 2px;
+}
+
+html.flat-theme [data-ui~="ops-dashboard"] div[class~="rounded-3xl"][class~="ring-1"]:not(:has(h1)) div[class~="mt-4"][class~="flex-col"][class~="items-center"] > div[class~="flex-wrap"] > div > span:last-child {
+  color: rgb(var(--ui-muted));
+  font-variant-numeric: tabular-nums;
+}
+
+/* loading text in a chart's place: the reference's quiet 12px muted line (no pulse) */
+html.flat-theme [data-ui~="ops-dashboard"] div[class~="rounded-3xl"][class~="ring-1"]:not(:has(h1)) div[class~="animate-pulse"][class~="text-sm"] {
+  animation: none;
+  font-size: 12px;
+  color: rgb(var(--ui-muted));
+}
+
+/* 3.2 Concurrency / queue: the list sits flush in the card like the reference's tables (no inner frame; a group band
+   for the dimension and its count, then rows divided by 1px lines); each row: name 12/600, the used / total figure
+   Mono ink-soft, the load share Mono (normal ink-soft; the load colours stay on the bar and from 50 % up), the 6px bar
+   on the grouped fill, the account and queue chips as the reference's small status chips. The band's label and count
+   are muted, not the label grey: on the band's fill the label grey is 4.50:1, the muted grey 5.0:1. */
+html.flat-theme [data-ui~="ops-dashboard"] div[class~="rounded-3xl"][class~="ring-1"]:not(:has(h1)) > div[class~="rounded-xl"][class~="border"]:has(> div[class~="bg-gray-50"]) {
+  margin: 0 -14px -14px;
+  border-width: 1px 0 0;
+  border-color: rgb(var(--ui-line));
+  border-radius: 0 0 var(--ui-radius-lg) var(--ui-radius-lg);
+}
+
+html.flat-theme [data-ui~="ops-dashboard"] div[class~="rounded-3xl"][class~="ring-1"]:not(:has(h1)) > div[class~="rounded-xl"][class~="border"] > div[class~="bg-gray-50"]:first-child {
+  padding: 6px 16px;
+  border-color: rgb(var(--ui-line));
+  background-color: color-mix(in srgb, rgb(var(--ui-subtle)) 60%, rgb(var(--ui-surface)));
+}
+
+html.flat-theme [data-ui~="ops-dashboard"] div[class~="rounded-3xl"][class~="ring-1"]:not(:has(h1)) > div[class~="rounded-xl"][class~="border"] > div[class~="bg-gray-50"]:first-child > span:first-child {
+  font-family: var(--ui-font-mono);
+  font-size: var(--ui-label-size);
+  font-weight: 400;
+  line-height: var(--ui-label-leading);
+  letter-spacing: var(--ui-label-tracking);
+  color: rgb(var(--ui-muted));
+}
+
+html.flat-theme [data-ui~="ops-dashboard"] div[class~="rounded-3xl"][class~="ring-1"]:not(:has(h1)) > div[class~="rounded-xl"][class~="border"] > div[class~="bg-gray-50"]:first-child > span:last-child {
+  font-family: var(--ui-font-mono);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  color: rgb(var(--ui-muted));
+}
+
+html.flat-theme [data-ui~="ops-dashboard"] div[class~="rounded-3xl"][class~="ring-1"]:not(:has(h1)) > div[class~="rounded-xl"][class~="border"] > div[class~="custom-scrollbar"] {
+  padding: 0;
+}
+
+html.flat-theme [data-ui~="ops-dashboard"] div[class~="rounded-3xl"][class~="ring-1"]:not(:has(h1)) > div[class~="rounded-xl"][class~="border"] > div[class~="custom-scrollbar"] > :not([hidden]) ~ :not([hidden]) {
+  margin-top: 0;
+}
+
+html.flat-theme [data-ui~="ops-dashboard"] div[class~="rounded-3xl"][class~="ring-1"]:not(:has(h1)) > div[class~="rounded-xl"][class~="border"] > div[class~="custom-scrollbar"] > div {
+  padding: 9px 16px 10px;
+  border-bottom: 1px solid rgb(var(--ui-line));
+  border-radius: 0;
+  background-color: transparent;
+}
+
+html.flat-theme [data-ui~="ops-dashboard"] div[class~="rounded-3xl"][class~="ring-1"]:not(:has(h1)) > div[class~="rounded-xl"][class~="border"] > div[class~="custom-scrollbar"] > div > div:first-child {
+  margin-bottom: 6px;
+}
+
+html.flat-theme [data-ui~="ops-dashboard"] div[class~="rounded-3xl"][class~="ring-1"]:not(:has(h1)) > div[class~="rounded-xl"][class~="border"] > div[class~="custom-scrollbar"] :is(span, div)[class~="text-[11px]"][class~="font-bold"]:not([class~="font-mono"]) {
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 18px;
+  color: rgb(var(--ui-ink));
+}
+
+html.flat-theme [data-ui~="ops-dashboard"] div[class~="rounded-3xl"][class~="ring-1"]:not(:has(h1)) > div[class~="rounded-xl"][class~="border"] > div[class~="custom-scrollbar"] span[class~="font-mono"] {
+  font-size: 11.5px;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  color: rgb(var(--ui-ink-soft));
+}
+
+html.flat-theme [data-ui~="ops-dashboard"] div[class~="rounded-3xl"][class~="ring-1"]:not(:has(h1)) > div[class~="rounded-xl"][class~="border"] > div[class~="custom-scrollbar"] > div > div:first-child > div:last-child > span[class~="font-bold"]:not([class~="font-mono"]) {
+  font-family: var(--ui-font-mono);
+  font-size: 11.5px;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+}
+
+html.flat-theme [data-ui~="ops-dashboard"] div[class~="rounded-3xl"][class~="ring-1"]:not(:has(h1)) > div[class~="rounded-xl"][class~="border"] > div[class~="custom-scrollbar"] > div > div:first-child > div:last-child > span[class~="text-green-600"] {
+  color: rgb(var(--ui-ink-soft));
+}
+
+html.flat-theme [data-ui~="ops-dashboard"] div[class~="rounded-3xl"][class~="ring-1"]:not(:has(h1)) > div[class~="rounded-xl"][class~="border"] > div[class~="custom-scrollbar"] > div > div:first-child > div:last-child > span:is([class~="text-yellow-600"], [class~="text-orange-600"]) {
+  color: rgb(var(--ui-warning));
+}
+
+html.flat-theme [data-ui~="ops-dashboard"] div[class~="rounded-3xl"][class~="ring-1"]:not(:has(h1)) > div[class~="rounded-xl"][class~="border"] > div[class~="custom-scrollbar"] > div > div:first-child > div:last-child > span[class~="text-red-600"] {
+  color: rgb(var(--ui-danger));
+}
+
+/* the row's bar: 6px on the grouped fill; the fill keeps the load colour (green / yellow / orange / red) */
+html.flat-theme [data-ui~="ops-dashboard"] div[class~="rounded-3xl"][class~="ring-1"]:not(:has(h1)) > div[class~="rounded-xl"][class~="border"] > div[class~="custom-scrollbar"] > div > div[class~="h-1.5"] {
+  background-color: rgb(var(--ui-subtle));
+}
+
+/* the account line under the bar: 11px, the available count ink 600 (a figure, not a status), the share muted */
+html.flat-theme [data-ui~="ops-dashboard"] div[class~="rounded-3xl"][class~="ring-1"]:not(:has(h1)) > div[class~="rounded-xl"][class~="border"] > div[class~="custom-scrollbar"] > div > div[class~="flex-wrap"] {
+  gap: 4px 10px;
+  font-size: 11px;
+  line-height: 16.5px;
+}
+
+html.flat-theme [data-ui~="ops-dashboard"] div[class~="rounded-3xl"][class~="ring-1"]:not(:has(h1)) > div[class~="rounded-xl"][class~="border"] > div[class~="custom-scrollbar"] > div > div[class~="flex-wrap"] > div > svg {
+  width: 12px;
+  height: 12px;
+  color: rgb(var(--ui-faint));
+}
+
+html.flat-theme [data-ui~="ops-dashboard"] div[class~="rounded-3xl"][class~="ring-1"]:not(:has(h1)) > div[class~="rounded-xl"][class~="border"] > div[class~="custom-scrollbar"] > div > div[class~="flex-wrap"] > div > span {
+  font-family: var(--ui-font-mono);
+  font-variant-numeric: tabular-nums;
+  color: rgb(var(--ui-muted));
+}
+
+html.flat-theme [data-ui~="ops-dashboard"] div[class~="rounded-3xl"][class~="ring-1"]:not(:has(h1)) > div[class~="rounded-xl"][class~="border"] > div[class~="custom-scrollbar"] > div > div[class~="flex-wrap"] > div > span > span[class~="text-green-600"] {
+  font-weight: 600;
+  color: rgb(var(--ui-ink));
+}
+
+/* the small status chips in the rows (rate limited = warning, errors = danger, queued = the reference's backlog tone,
+   available / cooling down): the reference's Chip (capsule, Geist Mono, soft status fill) */
+html.flat-theme [data-ui~="ops-dashboard"] div[class~="rounded-3xl"][class~="ring-1"]:not(:has(h1)) > div[class~="rounded-xl"][class~="border"] > div[class~="custom-scrollbar"] span:is([class~="bg-amber-100"], [class~="bg-red-100"], [class~="bg-purple-100"], [class~="bg-green-100"], [class~="bg-gray-100"]) {
+  padding: 0 6px;
+  border-radius: 9999px;
+  font-family: var(--ui-font-mono);
+  font-size: var(--ui-badge-size, 10px);
+  font-weight: 500;
+  line-height: 16px;
+  letter-spacing: 0.01em;
+}
+
+html.flat-theme [data-ui~="ops-dashboard"] div[class~="rounded-3xl"][class~="ring-1"]:not(:has(h1)) > div[class~="rounded-xl"][class~="border"] > div[class~="custom-scrollbar"] span[class~="bg-amber-100"] {
+  background-color: rgb(var(--ui-warning-soft));
+  color: rgb(var(--ui-warning));
+}
+
+html.flat-theme [data-ui~="ops-dashboard"] div[class~="rounded-3xl"][class~="ring-1"]:not(:has(h1)) > div[class~="rounded-xl"][class~="border"] > div[class~="custom-scrollbar"] span[class~="bg-red-100"] {
+  background-color: rgb(var(--ui-danger-soft));
+  color: rgb(var(--ui-danger));
+}
+
+html.flat-theme [data-ui~="ops-dashboard"] div[class~="rounded-3xl"][class~="ring-1"]:not(:has(h1)) > div[class~="rounded-xl"][class~="border"] > div[class~="custom-scrollbar"] span[class~="bg-purple-100"] {
+  background-color: rgb(var(--ui-purple-soft));
+  color: rgb(var(--ui-purple));
+}
+
+html.flat-theme [data-ui~="ops-dashboard"] div[class~="rounded-3xl"][class~="ring-1"]:not(:has(h1)) > div[class~="rounded-xl"][class~="border"] > div[class~="custom-scrollbar"] span[class~="bg-green-100"] {
+  background-color: rgb(var(--ui-success-soft));
+  color: rgb(var(--ui-success));
+}
+
+html.flat-theme [data-ui~="ops-dashboard"] div[class~="rounded-3xl"][class~="ring-1"]:not(:has(h1)) > div[class~="rounded-xl"][class~="border"] > div[class~="custom-scrollbar"] span[class~="bg-gray-100"] {
+  background-color: rgb(var(--ui-subtle));
+  color: rgb(var(--ui-muted));
+}
+
+/* the empty and disabled states of the list */
+html.flat-theme [data-ui~="ops-dashboard"] div[class~="rounded-3xl"][class~="ring-1"]:not(:has(h1)) > div[class~="border-dashed"] {
+  border-color: rgb(var(--ui-line-strong));
+  border-radius: var(--ui-radius-lg);
+  font-size: 13px;
+  color: rgb(var(--ui-muted));
+}
+
+html.flat-theme [data-ui~="ops-dashboard"] div[class~="rounded-3xl"][class~="ring-1"]:not(:has(h1)) > div[class~="rounded-xl"][class~="border"] > div[class~="flex-1"][class~="items-center"] {
+  font-size: 13px;
+  color: rgb(var(--ui-muted));
+}
+
+/* an error line inside a card (upstream: a red-50 box) = the reference's danger notice (radius 6, soft fill, 12px) */
+html.flat-theme [data-ui~="ops-dashboard"] :is(div[class~="rounded-3xl"][class~="ring-1"]:not(:has(h1)), section) > div[class~="bg-red-50"] {
+  border: 1px solid rgb(var(--ui-danger) / 0.3);
+  border-radius: var(--ui-radius-md);
+  background-color: rgb(var(--ui-danger-soft));
+  color: rgb(var(--ui-danger));
+  font-size: 12px;
+}
+
+/* 3.3 Hand-built tables on the page and in its dialogs (alert events and their history, system logs, OpenAI token
+   stats, request details, alert rules): the reference's table (REF §8.7): the mono label header on the surface with a
+   1px line under it (thead.bg-gray-50 is data.css' rule; the white-headed ones are drawn the same here), cells 10 / 12
+   (16 at the edges), 13px text, rows divided by 1px lines, hover = --ui-hover where the row opens something. DataTables
+   (the error lists) keep data.css. */
+html.flat-theme :is([data-ui~="ops-dashboard"], [data-ui~="ops-dialog"], [data-ui~="risk-page"], [data-ui~="risk-settings"], [data-ui~="prompt-audit-page"]) table:not(:has(> tbody.table-body)) > thead > tr > th {
+  padding: 10px 12px;
+  background-color: rgb(var(--ui-surface));
+  box-shadow: inset 0 -1px 0 rgb(var(--ui-line));
+  color: rgb(var(--ui-label));
+  font-family: var(--ui-font-mono);
+  font-size: var(--ui-label-size);
+  font-weight: 500;
+  line-height: 19.5px;
+  letter-spacing: var(--ui-label-tracking);
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+html.flat-theme :is([data-ui~="ops-dashboard"], [data-ui~="ops-dialog"], [data-ui~="risk-page"], [data-ui~="risk-settings"], [data-ui~="prompt-audit-page"]) table:not(:has(> tbody.table-body)) > thead {
+  border-bottom-width: 0;
+  background-color: rgb(var(--ui-surface));
+}
+
+html.flat-theme :is([data-ui~="ops-dashboard"], [data-ui~="ops-dialog"], [data-ui~="risk-page"], [data-ui~="risk-settings"], [data-ui~="prompt-audit-page"]) table:not(:has(> tbody.table-body)) > thead + tbody {
+  border-top-width: 0;
+}
+
+html.flat-theme :is([data-ui~="ops-dashboard"], [data-ui~="ops-dialog"], [data-ui~="risk-page"], [data-ui~="risk-settings"], [data-ui~="prompt-audit-page"]) table:not(:has(> tbody.table-body)) > tbody {
+  background-color: rgb(var(--ui-surface));
+}
+
+html.flat-theme :is([data-ui~="ops-dashboard"], [data-ui~="ops-dialog"], [data-ui~="risk-page"], [data-ui~="risk-settings"], [data-ui~="prompt-audit-page"]) table:not(:has(> tbody.table-body)) > tbody > tr {
+  border-color: rgb(var(--ui-line));
+  transition: background-color var(--ui-duration) var(--ui-ease);
+}
+
+html.flat-theme :is([data-ui~="ops-dashboard"], [data-ui~="ops-dialog"], [data-ui~="risk-page"], [data-ui~="risk-settings"], [data-ui~="prompt-audit-page"]) table:not(:has(> tbody.table-body)) > tbody > tr > td {
+  padding: 10px 12px;
+  font-size: 13px;
+  line-height: 19.5px;
+  vertical-align: middle;
+}
+
+html.flat-theme :is([data-ui~="ops-dashboard"], [data-ui~="ops-dialog"], [data-ui~="risk-page"], [data-ui~="risk-settings"], [data-ui~="prompt-audit-page"]) table:not(:has(> tbody.table-body)) > :is(thead, tbody) > tr > :first-child {
+  padding-left: 16px;
+}
+
+html.flat-theme :is([data-ui~="ops-dashboard"], [data-ui~="ops-dialog"], [data-ui~="risk-page"], [data-ui~="risk-settings"], [data-ui~="prompt-audit-page"]) table:not(:has(> tbody.table-body)) > :is(thead, tbody) > tr > :last-child {
+  padding-right: 16px;
+}
+
+html.flat-theme :is([data-ui~="ops-dashboard"], [data-ui~="ops-dialog"], [data-ui~="risk-page"], [data-ui~="risk-settings"], [data-ui~="prompt-audit-page"]) table:not(:has(> tbody.table-body)) > tbody > tr:is([class~="hover:bg-gray-50"], [class~="cursor-pointer"]):hover {
+  background-color: rgb(var(--ui-hover));
+}
+
+/* the cells' own text sizes (text-xs, 11px) read as the reference's: 13px for text, Mono 12 for times, ids and figures,
+   12px muted for the second line */
+html.flat-theme :is([data-ui~="ops-dashboard"], [data-ui~="ops-dialog"], [data-ui~="risk-page"], [data-ui~="risk-settings"], [data-ui~="prompt-audit-page"]) table:not(:has(> tbody.table-body)) > tbody > tr > td[class~="text-xs"] {
+  font-size: 13px;
+}
+
+html.flat-theme :is([data-ui~="ops-dashboard"], [data-ui~="ops-dialog"], [data-ui~="risk-page"], [data-ui~="risk-settings"], [data-ui~="prompt-audit-page"]) table:not(:has(> tbody.table-body)) > tbody > tr > td[class~="whitespace-nowrap"][class~="text-xs"]:first-child,
+html.flat-theme :is([data-ui~="ops-dashboard"], [data-ui~="ops-dialog"], [data-ui~="risk-page"], [data-ui~="risk-settings"], [data-ui~="prompt-audit-page"]) table:not(:has(> tbody.table-body)) > tbody > tr > td span[class~="font-mono"] {
+  font-family: var(--ui-font-mono);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+html.flat-theme :is([data-ui~="ops-dashboard"], [data-ui~="ops-dialog"], [data-ui~="risk-page"], [data-ui~="risk-settings"], [data-ui~="prompt-audit-page"]) table:not(:has(> tbody.table-body)) > tbody > tr > td :is(div, span)[class~="text-[11px]"] {
+  font-size: 12px;
+  line-height: 18px;
+}
+
+html.flat-theme :is([data-ui~="ops-dashboard"], [data-ui~="ops-dialog"], [data-ui~="risk-page"], [data-ui~="risk-settings"], [data-ui~="prompt-audit-page"]) table:not(:has(> tbody.table-body)) > tbody > tr > td :is(div)[class~="text-[10px]"] {
+  font-family: var(--ui-font-mono);
+  font-size: 11px;
+  line-height: 16.5px;
+  color: rgb(var(--ui-faint));
+}
+
+html.flat-theme :is([data-ui~="ops-dashboard"], [data-ui~="ops-dialog"], [data-ui~="risk-page"], [data-ui~="risk-settings"], [data-ui~="prompt-audit-page"]) table:not(:has(> tbody.table-body)) > tbody > tr > td :is(div, span)[class~="font-bold"]:not([class~="rounded-full"]):not([class~="rounded-md"]) {
+  font-weight: 600;
+}
+
+/* 3.4 Status chips of these pages (alert severity P0-P3 and state, log level, request kind, sink counters): the
+   reference's Chip (REF §8.8: a capsule, Geist Mono uppercase, a soft status fill, no ring); tones: critical / error /
+   failed = danger, warning / warn / P1 = warning, info / P2 = info, resolved / success = success, the rest neutral. */
+html.flat-theme :is([data-ui~="ops-dashboard"], [data-ui~="ops-dialog"], [data-ui~="risk-page"], [data-ui~="risk-settings"], [data-ui~="prompt-audit-page"]) span[class~="rounded-full"]:is([class~="text-[10px]"], [class~="text-xs"], [class~="font-semibold"]):is([class*="bg-red-"], [class*="bg-amber-"], [class*="bg-orange-"], [class*="bg-yellow-"], [class*="bg-blue-"], [class*="bg-green-"], [class*="bg-gray-"], [class*="bg-slate-"]):not([class~="h-1.5"], [class~="h-2"]) {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 7px;
+  border-radius: 9999px;
+  box-shadow: none;
+  font-family: var(--ui-font-mono);
+  font-size: var(--ui-badge-size, 10px);
+  font-weight: 500;
+  line-height: var(--ui-badge-leading, 16px);
+  letter-spacing: 0.025em;
+  text-transform: uppercase;
+}
+
+html.flat-theme :is([data-ui~="ops-dashboard"], [data-ui~="ops-dialog"], [data-ui~="risk-page"], [data-ui~="risk-settings"], [data-ui~="prompt-audit-page"]) span[class~="rounded-full"]:is([class*="bg-red-"]):not([class~="h-1.5"], [class~="h-2"]) {
+  background-color: rgb(var(--ui-danger-soft));
+  color: rgb(var(--ui-danger));
+}
+
+html.flat-theme :is([data-ui~="ops-dashboard"], [data-ui~="ops-dialog"], [data-ui~="risk-page"], [data-ui~="risk-settings"], [data-ui~="prompt-audit-page"]) span[class~="rounded-full"]:is([class*="bg-amber-"], [class*="bg-orange-"], [class*="bg-yellow-"]):not([class~="h-1.5"], [class~="h-2"]) {
+  background-color: rgb(var(--ui-warning-soft));
+  color: rgb(var(--ui-warning));
+}
+
+html.flat-theme :is([data-ui~="ops-dashboard"], [data-ui~="ops-dialog"], [data-ui~="risk-page"], [data-ui~="risk-settings"], [data-ui~="prompt-audit-page"]) span[class~="rounded-full"]:is([class*="bg-blue-"]):not([class~="h-1.5"], [class~="h-2"], [class~="h-3"]) {
+  background-color: rgb(var(--ui-info-soft));
+  color: rgb(var(--ui-info));
+}
+
+html.flat-theme :is([data-ui~="ops-dashboard"], [data-ui~="ops-dialog"], [data-ui~="risk-page"], [data-ui~="risk-settings"], [data-ui~="prompt-audit-page"]) span[class~="rounded-full"]:is([class*="bg-green-"]):not([class~="h-1.5"], [class~="h-2"]) {
+  background-color: rgb(var(--ui-success-soft));
+  color: rgb(var(--ui-success));
+}
+
+html.flat-theme :is([data-ui~="ops-dashboard"], [data-ui~="ops-dialog"], [data-ui~="risk-page"], [data-ui~="risk-settings"], [data-ui~="prompt-audit-page"]) span[class~="rounded-full"]:is([class*="bg-gray-"], [class*="bg-slate-"]):not([class~="h-1.5"], [class~="h-2"]) {
+  background-color: rgb(var(--ui-subtle));
+  color: rgb(var(--ui-muted));
+}
+
+/* 3.5 Alert events: the card's head holds 30px controls (four Selects and refresh, the table pages' toolbar density);
+   the events table sits flush in the card (REF §8.7 history card: the head inset, then the table from edge to edge on
+   a 1px line), 600px of it scrolls. */
+html.flat-theme [data-ui~="ops-dashboard"] div[class~="rounded-3xl"][class~="ring-1"]:not(:has(h1)) > div:first-child:has(.select-trigger) .select-trigger.select-trigger {
+  padding-top: 0.265625rem;
+  padding-bottom: 0.265625rem;
+}
+
+html.flat-theme [data-ui~="ops-dashboard"] div[class~="rounded-3xl"][class~="ring-1"]:not(:has(h1)) > div:first-child:has(.select-trigger) > div:last-child {
+  gap: 8px;
+}
+
+html.flat-theme [data-ui~="ops-dashboard"] div[class~="rounded-3xl"][class~="ring-1"]:not(:has(h1)) > div:first-child:has(.select-trigger) > div:last-child > button {
+  height: var(--ui-control-h);
+  padding: 0 12px;
+  font-size: 13px;
+  line-height: 19.5px;
+}
+
+html.flat-theme [data-ui~="ops-dashboard"] div[class~="rounded-3xl"][class~="ring-1"]:not(:has(h1)) > div[class~="overflow-hidden"][class~="rounded-xl"][class~="border"] {
+  margin: 0 -14px -14px;
+  border-width: 1px 0 0;
+  border-color: rgb(var(--ui-line));
+  border-radius: 0 0 var(--ui-radius-lg) var(--ui-radius-lg);
+}
+
+/* the title cell keeps its two lines: the title 13/600 ink, the rule text 12px muted */
+html.flat-theme [data-ui~="ops-dashboard"] div[class~="rounded-3xl"][class~="ring-1"]:not(:has(h1)) table > tbody > tr > td[class~="min-w-[260px]"] > div:first-child {
+  font-size: 13px;
+  line-height: 19.5px;
+  color: rgb(var(--ui-ink));
+}
+
+html.flat-theme [data-ui~="ops-dashboard"] div[class~="rounded-3xl"][class~="ring-1"]:not(:has(h1)) table > tbody > tr > td[class~="min-w-[260px]"] > div:last-child:not(:first-child) {
+  color: rgb(var(--ui-muted));
+}
+
+/* the e-mail column: the state glyph keeps success / muted, the word 12px ink-soft */
+html.flat-theme [data-ui~="ops-dashboard"] div[class~="rounded-3xl"][class~="ring-1"]:not(:has(h1)) table > tbody > tr > td[class~="text-right"] span[class~="text-[11px]"] {
+  font-size: 12px;
+  font-weight: 500;
+  color: rgb(var(--ui-ink-soft));
+}
+
+/* the list's end marker and loading line */
+html.flat-theme [data-ui~="ops-dashboard"] div[class~="rounded-3xl"][class~="ring-1"]:not(:has(h1)) div[class~="max-h-[600px]"] > div:last-child:is([class~="py-3"]) {
+  border-top: 1px solid rgb(var(--ui-line));
+  font-size: 12px;
+  color: rgb(var(--ui-muted));
+}
+
+/* 3.6 System logs: the same card; the sink counters are the reference's small chips (radius 4, Mono 11); the runtime
+   configuration is a grouped panel (1px line, radius 8, the grouped fill); every field label (they wrap their
+   controls) is the mono label above its 34px field; the log table sits flush like the events. */
+html.flat-theme [data-ui~="ops-dashboard"] > section[class~="rounded-2xl"] > div:first-child > div:last-child {
+  gap: 6px;
+}
+
+html.flat-theme [data-ui~="ops-dashboard"] > section[class~="rounded-2xl"] > div:first-child > div:last-child > span[class~="rounded-md"] {
+  padding: 1px 7px;
+  border-radius: var(--ui-radius-sm);
+  font-family: var(--ui-font-mono);
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 18px;
+  font-variant-numeric: tabular-nums;
+}
+
+html.flat-theme [data-ui~="ops-dashboard"] > section[class~="rounded-2xl"] > div:first-child > div:last-child > span[class~="bg-gray-100"] {
+  border: 1px solid rgb(var(--ui-line));
+  background-color: rgb(var(--ui-subtle));
+  color: rgb(var(--ui-ink-soft));
+}
+
+html.flat-theme [data-ui~="ops-dashboard"] > section[class~="rounded-2xl"] > div:first-child > div:last-child > span[class~="bg-amber-100"] {
+  border: 1px solid rgb(var(--ui-warning) / 0.25);
+  background-color: rgb(var(--ui-warning-soft));
+  color: rgb(var(--ui-warning));
+}
+
+html.flat-theme [data-ui~="ops-dashboard"] > section[class~="rounded-2xl"] > div:first-child > div:last-child > span[class~="bg-red-100"] {
+  border: 1px solid rgb(var(--ui-danger) / 0.25);
+  background-color: rgb(var(--ui-danger-soft));
+  color: rgb(var(--ui-danger));
+}
+
+html.flat-theme [data-ui~="ops-dashboard"] > section[class~="rounded-2xl"] > div[class~="rounded-xl"][class~="bg-gray-50"] {
+  margin-bottom: 12px;
+  padding: 12px 14px 14px;
+  border-color: rgb(var(--ui-line));
+  border-radius: var(--ui-radius-lg);
+  background-color: color-mix(in srgb, rgb(var(--ui-subtle)) 60%, rgb(var(--ui-surface)));
+}
+
+html.flat-theme [data-ui~="ops-dashboard"] > section[class~="rounded-2xl"] > div[class~="rounded-xl"][class~="bg-gray-50"] > div:first-child {
+  margin-bottom: 10px;
+}
+
+html.flat-theme [data-ui~="ops-dashboard"] > section[class~="rounded-2xl"] > div[class~="rounded-xl"][class~="bg-gray-50"] > div:first-child > div:first-child {
+  font-family: var(--ui-font-mono);
+  font-size: var(--ui-label-size);
+  font-weight: 400;
+  line-height: var(--ui-label-leading);
+  letter-spacing: var(--ui-label-tracking);
+  text-transform: uppercase;
+  color: rgb(var(--ui-label));
+}
+
+html.flat-theme [data-ui~="ops-dashboard"] > section[class~="rounded-2xl"] > div[class~="rounded-xl"][class~="bg-gray-50"] > p {
+  margin-top: 8px;
+  font-size: 12px;
+  line-height: 18px;
+  color: rgb(var(--ui-muted));
+}
+
+html.flat-theme [data-ui~="ops-dashboard"] > section[class~="rounded-2xl"] > div[class~="rounded-xl"][class~="bg-gray-50"] > p[class~="text-red-600"] {
+  color: rgb(var(--ui-danger));
+}
+
+/* the wrapping labels: the text is the mono label; the control and the hint under it keep their own type */
+html.flat-theme [data-ui~="ops-dashboard"] > section[class~="rounded-2xl"] div[class~="grid"] > label[class~="text-xs"]:not([class~="inline-flex"]) {
+  display: block;
+  font-family: var(--ui-font-mono);
+  font-size: var(--ui-label-size);
+  font-weight: 400;
+  line-height: var(--ui-label-leading);
+  letter-spacing: var(--ui-label-tracking);
+  text-transform: uppercase;
+  color: rgb(var(--ui-label));
+}
+
+html.flat-theme [data-ui~="ops-dashboard"] > section[class~="rounded-2xl"] div[class~="grid"] > label[class~="text-xs"]:not([class~="inline-flex"]) > * {
+  margin-top: 6px;
+  font-family: var(--ui-font);
+  letter-spacing: normal;
+  text-transform: none;
+}
+
+html.flat-theme [data-ui~="ops-dashboard"] > section[class~="rounded-2xl"] div[class~="grid"] > label[class~="text-xs"]:not([class~="inline-flex"]) > span[class~="block"] {
+  font-size: 12px;
+  line-height: 18px;
+  color: rgb(var(--ui-muted));
+}
+
+/* the switches of the runtime configuration: 12px ink-soft beside the box */
+html.flat-theme [data-ui~="ops-dashboard"] > section[class~="rounded-2xl"] label[class~="inline-flex"][class~="text-xs"] {
+  gap: 6px;
+  font-size: 12px;
+  line-height: 18px;
+  color: rgb(var(--ui-ink-soft));
+}
+
+html.flat-theme [data-ui~="ops-dashboard"] > section[class~="rounded-2xl"] > div[class~="grid"][class~="mb-4"] {
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+html.flat-theme [data-ui~="ops-dashboard"] > section[class~="rounded-2xl"] > div[class~="mb-3"][class~="flex-wrap"] {
+  gap: 8px;
+  margin-bottom: 14px;
+}
+
+/* the log table: flush in the card; time and host in Mono 12, the detail in Mono 12 ink-soft (log lines are machine
+   text, as the reference's labels and ids are Mono); rows top-aligned (a detail may wrap) */
+html.flat-theme [data-ui~="ops-dashboard"] > section[class~="rounded-2xl"] > div[class~="overflow-hidden"][class~="rounded-xl"][class~="border"] {
+  margin: 0 -14px -14px;
+  border-width: 1px 0 0;
+  border-color: rgb(var(--ui-line));
+  border-radius: 0 0 var(--ui-radius-lg) var(--ui-radius-lg);
+}
+
+html.flat-theme [data-ui~="ops-dashboard"] > section[class~="rounded-2xl"] table > tbody > tr > td {
+  vertical-align: top;
+}
+
+/* a detail breaks at its spaces first (upstream break-all split words mid-way); a long token still breaks anywhere */
+html.flat-theme [data-ui~="ops-dashboard"] > section[class~="rounded-2xl"] table > tbody > tr > td[class~="break-all"] {
+  word-break: normal;
+  overflow-wrap: anywhere;
+}
+
+html.flat-theme [data-ui~="ops-dashboard"] > section[class~="rounded-2xl"] table > tbody > tr > td:is(:nth-child(1), :nth-child(2), :nth-child(4)) {
+  font-family: var(--ui-font-mono);
+  font-size: 12px;
+  line-height: 19.5px;
+  font-variant-numeric: tabular-nums;
+  color: rgb(var(--ui-ink-soft));
+}
+
+html.flat-theme [data-ui~="ops-dashboard"] > section[class~="rounded-2xl"] table > tbody > tr > td:nth-child(1) {
+  color: rgb(var(--ui-muted));
+  white-space: nowrap;
+}
+
+html.flat-theme [data-ui~="ops-dashboard"] > section[class~="rounded-2xl"] table > thead > tr > th:is([class~="w-[170px]"]) {
+  width: 176px;
+}
+
+html.flat-theme [data-ui~="ops-dashboard"] > section[class~="rounded-2xl"] > div[class~="overflow-hidden"] > div[class~="text-center"] {
+  font-size: 13px;
+  color: rgb(var(--ui-muted));
+}
+
+/* 3.7 OpenAI token stats (shown when the dashboard setting is on): the same card and flush table; figures Mono */
+html.flat-theme [data-ui~="ops-dashboard"] section[class~="card"] > div[class~="space-y-3"] > div[class~="overflow-hidden"][class~="rounded-xl"] {
+  margin: 0 -14px;
+  border-width: 1px 0;
+  border-color: rgb(var(--ui-line));
+  border-radius: 0;
+}
+
+html.flat-theme [data-ui~="ops-dashboard"] section[class~="card"] > div[class~="space-y-3"] > div[class~="overflow-hidden"] table > thead[class~="bg-white"] > tr {
+  border-bottom-width: 0;
+}
+
+html.flat-theme [data-ui~="ops-dashboard"] section[class~="card"] > div[class~="space-y-3"] > div[class~="overflow-hidden"] table > tbody > tr > td:not(:first-child) {
+  font-family: var(--ui-font-mono);
+  font-size: 12.5px;
+  font-variant-numeric: tabular-nums;
+  color: rgb(var(--ui-ink-soft));
+}
+
+html.flat-theme [data-ui~="ops-dashboard"] section[class~="card"] > div[class~="space-y-3"] > div[class~="overflow-hidden"] table > tbody > tr > td:first-child {
+  font-weight: 500;
+  color: rgb(var(--ui-ink));
+}
+
+html.flat-theme [data-ui~="ops-dashboard"] section[class~="card"] > div[class~="space-y-3"] > div:last-child[class~="text-xs"] {
+  font-family: var(--ui-font-mono);
+  font-size: 11px;
+  color: rgb(var(--ui-label));
+}
+
+html.flat-theme [data-ui~="ops-dashboard"] section[class~="card"] > div:first-child > div:last-child > span[class~="text-xs"] {
+  font-family: var(--ui-font-mono);
+  font-size: 11px;
+  color: rgb(var(--ui-label));
+}
+
+html.flat-theme [data-ui~="ops-dashboard"] section[class~="card"] > div:first-child > div:last-child .select-trigger.select-trigger {
+  padding-top: 0.265625rem;
+  padding-bottom: 0.265625rem;
+}
+
+/* ================================================================== 4 · ops monitoring: dialogs */
+
+/* Dialog bodies (hooks, one attribute each):
+     data-ui="ops-dialog ops-error-list"        OpsErrorDetailsModal.vue      request / upstream error lists
+     data-ui="ops-dialog ops-error-detail"      OpsErrorDetailModal.vue       one error (also opened from 使用记录)
+     data-ui="ops-dialog ops-request-details"   OpsRequestDetailsModal.vue    request details
+     data-ui="ops-dialog ops-settings"          OpsSettingsDialog.vue         the settings sheet
+     data-ui="ops-dialog ops-alert-rules"       OpsAlertRulesCard.vue         alert rules (inside its dialog)
+     data-ui="ops-dialog ops-alert-rule-editor" OpsAlertRulesCard.vue         create / edit a rule
+     data-ui="ops-dialog ops-alert-event"       OpsAlertEventsCard.vue        one alert event
+     data-ui="ops-dialog ops-jobs"              OpsDashboardHeader.vue        background jobs
+     data-ui="ops-dialog ops-custom-range"      OpsDashboardHeader.vue        custom time range
+   The dialog frame, header and footer are overlays.css'; the rules here draw the bodies in the reference's language
+   (REF §8.11 Modal body; panels = the grouped fill with a 1px line; labels = the mono label; figures Mono). */
+
+/* 4.1 Panels that upstream fills with gray-50 (rounded-xl / rounded-2xl): the reference's grouped panel (1px structural
+   line, radius 8, the grouped fill at 60 %, 12 / 14 in); section titles 13/600 ink, small uppercase captions the mono
+   label. */
+html.flat-theme [data-ui~="ops-dialog"] :is(div, details)[class~="bg-gray-50"]:is([class~="rounded-xl"], [class~="rounded-2xl"]):not([class~="p-4"][class~="dark:bg-dark-900"]:only-child) {
+  border: 1px solid rgb(var(--ui-line));
+  border-radius: var(--ui-radius-lg);
+  background-color: color-mix(in srgb, rgb(var(--ui-subtle)) 60%, rgb(var(--ui-surface)));
+}
+
+html.flat-theme [data-ui~="ops-dialog"] :is(div, details)[class~="bg-gray-50"][class~="rounded-2xl"][class~="p-4"],
+html.flat-theme [data-ui~="ops-dialog"] div[class~="bg-gray-50"][class~="rounded-xl"][class~="p-6"] {
+  padding: 12px 14px 14px;
+}
+
+html.flat-theme [data-ui~="ops-dialog"] :is(h3, h4)[class~="uppercase"][class~="tracking-wider"],
+html.flat-theme [data-ui~="ops-dialog"] div[class~="text-xs"][class~="font-bold"][class~="uppercase"][class~="tracking-wider"] {
+  font-family: var(--ui-font-mono);
+  font-size: var(--ui-label-size);
+  font-weight: 400;
+  line-height: var(--ui-label-leading);
+  letter-spacing: var(--ui-label-tracking);
+  text-transform: uppercase;
+  color: rgb(var(--ui-label));
+}
+
+html.flat-theme [data-ui~="ops-dialog"] h4[class~="text-sm"][class~="font-semibold"],
+html.flat-theme [data-ui~="ops-dialog"] summary[class~="text-sm"][class~="font-semibold"] {
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 19.5px;
+  color: rgb(var(--ui-ink));
+}
+
+/* the key-value tiles (error detail summary, alert event times): the reference's detail stat block (REF §8.13: surface,
+   1px line, radius 6, 8 / 12 in, the mono label, the value 13px ink, Mono where upstream sets it) */
+html.flat-theme [data-ui~="ops-dialog"] div[class~="grid"] > div[class~="rounded-xl"][class~="bg-gray-50"][class~="p-4"] {
+  padding: 8px 12px 10px;
+  border: 1px solid rgb(var(--ui-line));
+  border-radius: var(--ui-radius-md);
+  background-color: rgb(var(--ui-surface));
+}
+
+html.flat-theme [data-ui~="ops-dialog"] div[class~="grid"]:has(> div[class~="rounded-xl"][class~="bg-gray-50"][class~="p-4"]) {
+  gap: 10px;
+}
+
+html.flat-theme [data-ui~="ops-dialog"] div[class~="grid"] > div[class~="rounded-xl"][class~="bg-gray-50"][class~="p-4"] > div:nth-child(2) {
+  margin-top: 4px;
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 19.5px;
+  color: rgb(var(--ui-ink));
+}
+
+html.flat-theme [data-ui~="ops-dialog"] div[class~="grid"] > div[class~="rounded-xl"][class~="bg-gray-50"][class~="p-4"] > div:nth-child(2)[class~="font-mono"],
+html.flat-theme [data-ui~="ops-dialog"] div[class~="grid"] > div[class~="rounded-xl"][class~="bg-gray-50"][class~="p-4"] > div:nth-child(2) span[class~="font-mono"] {
+  font-size: 12.5px;
+}
+
+html.flat-theme [data-ui~="ops-dialog"] div[class~="grid"] > div[class~="rounded-xl"][class~="bg-gray-50"][class~="p-4"] > div:nth-child(2) span[class~="text-primary-600"] {
+  color: rgb(var(--ui-ink));
+}
+
+/* status codes in the tiles: the reference's chip (capsule, Geist Mono, soft status fill, no ring / shadow) */
+html.flat-theme [data-ui~="ops-dialog"] span[class~="rounded-lg"][class~="font-black"][class~="ring-1"] {
+  padding: 1px 8px;
+  border-radius: 9999px;
+  box-shadow: none;
+  font-family: var(--ui-font-mono);
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 18px;
+}
+
+/* 4.2 the error detail: 16px between blocks; the root cause is the reference's warning notice (REF §8.16: the warning
+   line and soft fill, radius 6); the payloads are code blocks (REF §8.15: radius 8, 1px line, surface, Mono 12 at
+   1.6); the correlated upstream errors are cards on the panel */
+html.flat-theme [data-ui~="ops-error-detail"] {
+  padding: 0;
+}
+
+html.flat-theme [data-ui~="ops-error-detail"][class~="space-y-6"] > :not([hidden]) ~ :not([hidden]) {
+  margin-top: 16px;
+}
+
+html.flat-theme [data-ui~="ops-error-detail"] > div[class~="bg-amber-50"] {
+  padding: 12px 14px;
+  border: 1px solid rgb(var(--ui-warning));
+  border-radius: var(--ui-radius-md);
+  background-color: rgb(var(--ui-warning-soft));
+}
+
+/* (both hooks: over 4.1's mono-label rule for uppercase headings, which upstream's h3 here also carries) */
+html.flat-theme [data-ui~="ops-dialog"][data-ui~="ops-error-detail"] > div[class~="bg-amber-50"] > h3 {
+  font-family: var(--ui-font);
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 18px;
+  letter-spacing: 0;
+  text-transform: none;
+  color: rgb(var(--ui-warning));
+}
+
+html.flat-theme [data-ui~="ops-error-detail"] > div[class~="bg-amber-50"] > div {
+  margin-top: 6px;
+  font-size: 13px;
+  font-weight: 400;
+  line-height: 1.625;
+  color: rgb(var(--ui-ink));
+}
+
+html.flat-theme [data-ui~="ops-error-detail"] pre {
+  padding: 12px 14px;
+  border: 1px solid rgb(var(--ui-line));
+  border-radius: var(--ui-radius-lg);
+  background-color: rgb(var(--ui-surface));
+  color: rgb(var(--ui-ink));
+  font-family: var(--ui-font-mono);
+  font-size: 12px;
+  line-height: 1.625;
+}
+
+html.flat-theme [data-ui~="ops-error-detail"] > div > div[class~="mt-4"][class~="space-y-3"] > div[class~="rounded-xl"][class~="border"] {
+  padding: 12px 14px;
+  border-color: rgb(var(--ui-line));
+  border-radius: var(--ui-radius-md);
+}
+
+html.flat-theme [data-ui~="ops-error-detail"] div[class~="text-xs"][class~="font-black"] {
+  font-family: var(--ui-font-mono);
+  font-weight: 600;
+  color: rgb(var(--ui-ink));
+}
+
+html.flat-theme [data-ui~="ops-error-detail"] span[class~="rounded-md"][class~="font-mono"][class~="bg-gray-100"] {
+  padding: 1px 6px;
+  border: 1px solid rgb(var(--ui-line));
+  border-radius: var(--ui-radius-sm);
+  background-color: rgb(var(--ui-subtle));
+  color: rgb(var(--ui-ink-soft));
+  font-weight: 500;
+}
+
+html.flat-theme [data-ui~="ops-error-detail"] button[class~="text-primary-700"] {
+  border-radius: var(--ui-radius-sm);
+  color: var(--ui-link);
+  font-size: 11.5px;
+  font-weight: 500;
+}
+
+html.flat-theme [data-ui~="ops-error-detail"] button[class~="text-primary-700"]:hover:not(:disabled) {
+  background-color: rgb(var(--ui-subtle));
+}
+
+/* the Codex continuation section: its title a card title (13/600), its records the grouped panel */
+html.flat-theme [data-ui~="ops-error-detail"] > section > h2 {
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 19.5px;
+  color: rgb(var(--ui-ink));
+}
+
+html.flat-theme [data-ui~="ops-error-detail"] > section > div[data-test="codex-diagnostic-record"] {
+  border-radius: var(--ui-radius-lg);
+  background-color: color-mix(in srgb, rgb(var(--ui-subtle)) 60%, rgb(var(--ui-surface)));
+  font-size: 13px;
+}
+
+html.flat-theme [data-ui~="ops-error-detail"] > section > div[data-test="codex-diagnostic-record"] th {
+  font-family: var(--ui-font-mono);
+  font-size: var(--ui-label-size);
+  letter-spacing: var(--ui-label-tracking);
+  text-transform: uppercase;
+  color: rgb(var(--ui-label));
+}
+
+/* 4.3 the error lists: filters in one 30px row under a 1px line (the search the reference's search field: control
+   outline, surface, 13px, the 13px glyph 10px in; the Selects and reset 30px); the count a mono meta line */
+html.flat-theme [data-ui~="ops-error-list"] > div:first-child {
+  margin-bottom: 12px;
+  padding-bottom: 12px;
+  border-color: rgb(var(--ui-line));
+}
+
+html.flat-theme [data-ui~="ops-error-list"] > div:first-child > div[class~="grid"] {
+  gap: 8px;
+}
+
+html.flat-theme [data-ui~="ops-error-list"] > div:first-child input[type="text"] {
+  height: var(--ui-control-h);
+  padding: 0 10px 0 32px;
+  border: 1px solid rgb(var(--ui-line-strong));
+  border-radius: var(--ui-radius-md);
+  background-color: rgb(var(--ui-surface));
+  box-shadow: none;
+  color: rgb(var(--ui-ink));
+  font-size: 13px;
+  font-weight: 400;
+  line-height: 19.5px;
+}
+
+html.flat-theme [data-ui~="ops-error-list"] > div:first-child input[type="text"]:focus {
+  border-color: rgb(var(--ui-focus));
+  outline: 2px solid transparent;
+  box-shadow: inset 0 0 0 1px rgb(var(--ui-focus));
+}
+
+html.flat-theme [data-ui~="ops-error-list"] > div:first-child input[type="text"] + * {
+  display: none;
+}
+
+html.flat-theme [data-ui~="ops-error-list"] > div:first-child div[class~="absolute"] {
+  padding-left: 10px;
+}
+
+html.flat-theme [data-ui~="ops-error-list"] > div:first-child div[class~="absolute"] > svg {
+  width: 13px;
+  height: 13px;
+  color: rgb(var(--ctl-glyph, var(--ui-control-line)));
+}
+
+html.flat-theme [data-ui~="ops-error-list"] > div:first-child .select-trigger.select-trigger {
+  padding-top: 0.265625rem;
+  padding-bottom: 0.265625rem;
+  font-size: 13px;
+}
+
+html.flat-theme [data-ui~="ops-error-list"] > div:first-child button[class~="bg-gray-100"] {
+  height: var(--ui-control-h);
+  padding: 0 12px;
+  border: 1px solid rgb(var(--ui-line-strong));
+  border-radius: var(--ui-radius-md);
+  background-color: rgb(var(--ui-surface));
+  color: rgb(var(--ui-ink));
+  font-size: 13px;
+  font-weight: 600;
+}
+
+html.flat-theme [data-ui~="ops-error-list"] > div:first-child button[class~="bg-gray-100"]:hover {
+  border-color: rgb(var(--ui-line-focus));
+  background-color: rgb(var(--ui-surface));
+}
+
+html.flat-theme [data-ui~="ops-error-list"] > div:last-child > div[class~="mb-2"] {
+  margin-bottom: 8px;
+  font-family: var(--ui-font-mono);
+  font-size: 11px;
+  line-height: 16.5px;
+  font-variant-numeric: tabular-nums;
+  color: rgb(var(--ui-label));
+}
+
+/* the list's cells: time Mono; the type and group chips are categories (data.css' category-chip hook, added to
+   OpsErrorLogTable.vue: the reference's neutral chip); the detail action a 28px icon button */
+html.flat-theme [data-ui~="ops-error-list"] .table-wrapper td[data-column="created_at"] > span {
+  font-family: var(--ui-font-mono);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  color: rgb(var(--ui-muted));
+}
+
+html.flat-theme [data-ui~="ops-error-list"] .table-wrapper td[data-column="actions"] > button {
+  width: 28px;
+  height: 28px;
+  display: inline-grid;
+  place-items: center;
+  padding: 0;
+  border-radius: var(--ui-radius-md);
+  color: rgb(var(--ui-muted));
+}
+
+html.flat-theme [data-ui~="ops-error-list"] .table-wrapper td[data-column="actions"] > button:hover {
+  background-color: rgb(var(--ui-subtle));
+  color: rgb(var(--ui-ink));
+}
+
+html.flat-theme [data-ui~="ops-error-list"] .table-wrapper td[data-column="actions"] > button > svg {
+  width: 15px;
+  height: 15px;
+}
+
+/* 4.4 request details: the range a mono meta line; the table in a 1px frame (radius 8); the id copy the reference's
+   snippet copy button (Mono 10.5, control outline, radius 6); 「查看错误」 the destructive small button (danger text,
+   danger line at 30 %, surface; the soft fill on hover); the empty state the dashed frame */
+html.flat-theme [data-ui~="ops-request-details"] > div:first-child {
+  margin-bottom: 12px;
+}
+
+html.flat-theme [data-ui~="ops-request-details"] > div:first-child > div[class~="text-xs"] {
+  font-family: var(--ui-font-mono);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  color: rgb(var(--ui-label));
+}
+
+html.flat-theme [data-ui~="ops-request-details"] div[class~="rounded-xl"][class~="border"]:not([class~="border-dashed"]) {
+  border-color: rgb(var(--ui-line));
+  border-radius: var(--ui-radius-lg);
+}
+
+html.flat-theme [data-ui~="ops-request-details"] table > tbody > tr > td:nth-child(3) {
+  font-family: var(--ui-font-mono);
+  font-size: 11.5px;
+  letter-spacing: 0.025em;
+  color: rgb(var(--ui-ink-soft));
+}
+
+html.flat-theme [data-ui~="ops-request-details"] table > tbody > tr > td:nth-child(4) {
+  color: rgb(var(--ui-ink));
+}
+
+html.flat-theme [data-ui~="ops-request-details"] table > tbody > tr > td:is(:nth-child(5), :nth-child(6)) {
+  font-family: var(--ui-font-mono);
+  font-size: 12.5px;
+  font-variant-numeric: tabular-nums;
+}
+
+html.flat-theme [data-ui~="ops-request-details"] :is(td, div) span[class~="font-mono"][class~="text-[11px]"] {
+  font-size: 12px;
+  color: rgb(var(--ui-ink-soft));
+}
+
+html.flat-theme [data-ui~="ops-dialog"] button[class~="bg-gray-100"][class~="text-[10px]"][class~="font-bold"] {
+  padding: 2px 7px;
+  border: 1px solid rgb(var(--ui-line-strong));
+  border-radius: var(--ui-radius-md);
+  background-color: rgb(var(--ui-surface));
+  color: rgb(var(--ui-ink-soft));
+  font-family: var(--ui-font-mono);
+  font-size: 10.5px;
+  font-weight: 500;
+  line-height: 16px;
+  transition: color var(--ui-duration) var(--ui-ease), border-color var(--ui-duration) var(--ui-ease);
+}
+
+html.flat-theme [data-ui~="ops-dialog"] button[class~="bg-gray-100"][class~="text-[10px]"][class~="font-bold"]:hover {
+  border-color: rgb(var(--ui-line-focus));
+  background-color: rgb(var(--ui-surface));
+  color: rgb(var(--ui-ink));
+}
+
+html.flat-theme [data-ui~="ops-dialog"] button[class~="bg-red-50"][class~="text-red-600"] {
+  min-height: 26px;
+  padding: 0 10px;
+  border: 1px solid rgb(var(--ui-danger) / 0.3);
+  border-radius: var(--ui-radius-md);
+  background-color: rgb(var(--ui-surface));
+  color: rgb(var(--ui-danger));
+  font-size: 12px;
+  font-weight: 600;
+  transition: background-color var(--ui-duration) var(--ui-ease), border-color var(--ui-duration) var(--ui-ease);
+}
+
+html.flat-theme [data-ui~="ops-dialog"] button[class~="bg-red-50"][class~="text-red-600"]:hover {
+  border-color: rgb(var(--ui-danger) / 0.5);
+  background-color: rgb(var(--ui-danger-soft));
+}
+
+html.flat-theme [data-ui~="ops-dialog"] div[class~="rounded-xl"][class~="border-dashed"] {
+  border-color: rgb(var(--ui-line-strong));
+  border-radius: var(--ui-radius-lg);
+}
+
+html.flat-theme [data-ui~="ops-dialog"] svg[class~="animate-spin"][class~="text-blue-500"] {
+  color: rgb(var(--ui-ink-soft));
+}
+
+/* 4.5 settings: sections are the grouped panel; the toggle rows' labels 13px (upstream's bare labels were 16px);
+   recipients the reference's neutral chip (an address is a value, not a category or a state); the validation notice
+   the warning notice */
+html.flat-theme [data-ui~="ops-settings"][class~="space-y-6"] > :not([hidden]) ~ :not([hidden]) {
+  margin-top: 12px;
+}
+
+html.flat-theme [data-ui~="ops-settings"] label[class~="font-medium"]:not([class~="input-label"]):not([class~="text-sm"]) {
+  font-size: 13px;
+  line-height: 19.5px;
+  color: rgb(var(--ui-ink));
+}
+
+html.flat-theme [data-ui~="ops-settings"] label[class~="text-sm"][class~="font-medium"]:not([class~="block"]) {
+  font-size: 13px;
+  color: rgb(var(--ui-ink));
+}
+
+html.flat-theme [data-ui~="ops-settings"] h5[class~="text-xs"][class~="font-semibold"] {
+  font-family: var(--ui-font-mono);
+  font-size: var(--ui-label-size);
+  font-weight: 400;
+  line-height: var(--ui-label-leading);
+  letter-spacing: var(--ui-label-tracking);
+  text-transform: uppercase;
+  color: rgb(var(--ui-label));
+}
+
+html.flat-theme [data-ui~="ops-settings"] p[class~="text-xs"] {
+  font-size: 12px;
+  line-height: 18px;
+  color: rgb(var(--ui-muted));
+}
+
+html.flat-theme [data-ui~="ops-settings"] span[class~="rounded-full"][class~="bg-blue-100"] {
+  gap: 6px;
+  padding: 1px 4px 1px 8px;
+  border: 1px solid rgb(var(--ui-line-strong));
+  border-radius: var(--ui-radius-sm);
+  background-color: rgb(var(--ui-surface));
+  color: rgb(var(--ui-ink-soft));
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 18px;
+}
+
+html.flat-theme [data-ui~="ops-settings"] span[class~="rounded-full"][class~="bg-blue-100"] > button {
+  display: inline-grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  border-radius: var(--ui-radius-sm);
+  color: rgb(var(--ui-muted));
+}
+
+html.flat-theme [data-ui~="ops-settings"] span[class~="rounded-full"][class~="bg-blue-100"] > button:hover {
+  background-color: rgb(var(--ui-subtle));
+  color: rgb(var(--ui-ink));
+}
+
+html.flat-theme [data-ui~="ops-dialog"] div[class~="border-amber-200"][class~="bg-amber-50"] {
+  border-color: rgb(var(--ui-warning));
+  border-radius: var(--ui-radius-md);
+  background-color: rgb(var(--ui-warning-soft));
+  color: rgb(var(--ui-ink));
+  font-size: 12.5px;
+}
+
+html.flat-theme [data-ui~="ops-dialog"] div[class~="border-amber-200"][class~="bg-amber-50"] > div:first-child {
+  font-weight: 600;
+  color: rgb(var(--ui-warning));
+}
+
+html.flat-theme [data-ui~="ops-settings"] details > summary {
+  padding: 12px 14px;
+  list-style-position: inside;
+}
+
+html.flat-theme [data-ui~="ops-settings"] details > div {
+  padding: 0 14px 14px;
+}
+
+/* 4.6 alert rules (the card is the dialog's body: no frame of its own) and the rule editor */
+html.flat-theme [data-ui~="ops-alert-rules"] {
+  padding: 0;
+  border-radius: 0;
+  background-color: transparent;
+  box-shadow: none;
+}
+
+html.flat-theme [data-ui~="ops-alert-rules"] > div:first-child {
+  margin-bottom: 12px;
+}
+
+html.flat-theme [data-ui~="ops-alert-rules"] > div:first-child h3 {
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 19.5px;
+  color: rgb(var(--ui-ink));
+}
+
+html.flat-theme [data-ui~="ops-alert-rules"] > div:first-child p {
+  margin-top: 2px;
+  font-size: 12px;
+  line-height: 18px;
+  color: rgb(var(--ui-muted));
+}
+
+html.flat-theme [data-ui~="ops-alert-rules"] > div:first-child > div:last-child {
+  gap: 8px;
+}
+
+html.flat-theme [data-ui~="ops-alert-rules"] > div:first-child > div:last-child > button[class~="bg-gray-100"],
+html.flat-theme [data-ui~="ops-alert-event"] ~ * button[class~="bg-gray-100"] {
+  min-height: 26px;
+  padding: 0 10px;
+  border: 1px solid rgb(var(--ui-line-strong));
+  border-radius: var(--ui-radius-md);
+  background-color: rgb(var(--ui-surface));
+  color: rgb(var(--ui-ink));
+  font-size: 12px;
+  font-weight: 600;
+}
+
+html.flat-theme [data-ui~="ops-alert-rules"] > div:first-child > div:last-child > button[class~="bg-gray-100"]:hover:not(:disabled) {
+  border-color: rgb(var(--ui-line-focus));
+  background-color: rgb(var(--ui-surface));
+}
+
+html.flat-theme [data-ui~="ops-alert-rules"] > div[class~="rounded-xl"][class~="border"] {
+  border-color: rgb(var(--ui-line));
+  border-radius: var(--ui-radius-lg);
+}
+
+html.flat-theme [data-ui~="ops-alert-rules"] table > tbody > tr > td:first-child > div:first-child {
+  font-size: 13px;
+  font-weight: 600;
+  color: rgb(var(--ui-ink));
+}
+
+html.flat-theme [data-ui~="ops-alert-rules"] table > tbody > tr > td:first-child > div[class~="text-[11px]"] {
+  color: rgb(var(--ui-muted));
+}
+
+html.flat-theme [data-ui~="ops-alert-rules"] table > tbody > tr > td:nth-child(2) {
+  font-family: var(--ui-font-mono);
+  font-size: 12px;
+  color: rgb(var(--ui-ink-soft));
+}
+
+html.flat-theme [data-ui~="ops-alert-rules"] table > tbody > tr > td:nth-child(3) {
+  font-family: var(--ui-font-mono);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+html.flat-theme [data-ui~="ops-alert-rules"] table > tbody > tr > td:last-child {
+  white-space: nowrap;
+}
+
+html.flat-theme [data-ui~="ops-alert-rule-editor"] > div[class~="bg-red-50"] {
+  padding: 12px 14px;
+  border: 1px solid rgb(var(--ui-danger) / 0.3);
+  border-radius: var(--ui-radius-md);
+  background-color: rgb(var(--ui-danger-soft));
+  color: rgb(var(--ui-danger));
+  font-size: 12.5px;
+}
+
+html.flat-theme [data-ui~="ops-alert-rule-editor"] div[class~="rounded-xl"][class~="bg-gray-50"][class~="px-4"] {
+  padding: 10px 14px;
+  border: 1px solid rgb(var(--ui-line));
+  border-radius: var(--ui-radius-md);
+  background-color: color-mix(in srgb, rgb(var(--ui-subtle)) 60%, rgb(var(--ui-surface)));
+}
+
+html.flat-theme [data-ui~="ops-alert-rule-editor"] div[class~="rounded-xl"][class~="bg-gray-50"][class~="px-4"] > span {
+  font-size: 13px;
+  font-weight: 500;
+  color: rgb(var(--ui-ink));
+}
+
+/* 4.7 one alert event: the head panel (chips, title, description, the silence control in a 1px frame and the manual
+   resolve), the time / rule / dimension tiles, the rule and log links as small default buttons, the history table */
+html.flat-theme [data-ui~="ops-alert-event"][class~="space-y-5"] > :not([hidden]) ~ :not([hidden]) {
+  margin-top: 12px;
+}
+
+html.flat-theme [data-ui~="ops-alert-event"] > div:first-child > div > div:first-child > div[class~="text-sm"] {
+  font-size: 13px;
+  font-weight: 600;
+  color: rgb(var(--ui-ink));
+}
+
+html.flat-theme [data-ui~="ops-alert-event"] div[class~="ring-1"][class~="bg-white"][class~="rounded-lg"] {
+  padding: 2px 2px 2px 8px;
+  border: 1px solid rgb(var(--ui-line-strong));
+  border-radius: var(--ui-radius-md);
+  box-shadow: none;
+}
+
+html.flat-theme [data-ui~="ops-alert-event"] div[class~="ring-1"][class~="bg-white"][class~="rounded-lg"] > span {
+  font-family: var(--ui-font-mono);
+  font-size: var(--ui-label-size);
+  font-weight: 400;
+  letter-spacing: var(--ui-label-tracking);
+  color: rgb(var(--ui-label));
+}
+
+html.flat-theme [data-ui~="ops-alert-event"] a[class~="ring-1"][class~="rounded-md"] {
+  min-height: 24px;
+  padding: 0 8px;
+  border: 1px solid rgb(var(--ui-line-strong));
+  border-radius: var(--ui-radius-md);
+  box-shadow: none;
+  color: rgb(var(--ui-ink));
+  font-size: 12px;
+  font-weight: 600;
+}
+
+html.flat-theme [data-ui~="ops-alert-event"] a[class~="ring-1"][class~="rounded-md"]:hover {
+  border-color: rgb(var(--ui-line-focus));
+  background-color: rgb(var(--ui-surface));
+}
+
+html.flat-theme [data-ui~="ops-alert-event"] > div[class~="rounded-xl"][class~="border"][class~="bg-white"] {
+  padding: 12px 14px 14px;
+  border-color: rgb(var(--ui-line));
+  border-radius: var(--ui-radius-lg);
+}
+
+html.flat-theme [data-ui~="ops-alert-event"] > div[class~="rounded-xl"][class~="border"][class~="bg-white"] > div:first-child > div > div:first-child {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+html.flat-theme [data-ui~="ops-alert-event"] div[class~="rounded-lg"][class~="border"][class~="overflow-hidden"] {
+  border-color: rgb(var(--ui-line));
+  border-radius: var(--ui-radius-md);
+}
+
+html.flat-theme [data-ui~="ops-alert-event"] div[class~="rounded-lg"][class~="border"][class~="overflow-hidden"] td {
+  font-family: var(--ui-font-mono);
+  font-size: 12px;
+}
+
+/* 4.8 background jobs: each job a card on the dialog (1px line, radius 8, 12 / 14 in); the name 13/600, times Mono */
+html.flat-theme [data-ui~="ops-jobs"][class~="space-y-3"] > :not([hidden]) ~ :not([hidden]) {
+  margin-top: 8px;
+}
+
+html.flat-theme [data-ui~="ops-jobs"] > div {
+  padding: 12px 14px;
+  border-color: rgb(var(--ui-line));
+  border-radius: var(--ui-radius-lg);
+}
+
+html.flat-theme [data-ui~="ops-jobs"] > div > div:first-child > div:first-child {
+  font-family: var(--ui-font-mono);
+  font-size: 12.5px;
+  font-weight: 600;
+  color: rgb(var(--ui-ink));
+}
+
+html.flat-theme [data-ui~="ops-jobs"] > div > div:first-child > div:last-child {
+  font-family: var(--ui-font-mono);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  color: rgb(var(--ui-muted));
+}
+
+html.flat-theme [data-ui~="ops-jobs"] > div > div[class~="grid"] {
+  font-size: 12px;
+  color: rgb(var(--ui-muted));
+}
+
+html.flat-theme [data-ui~="ops-jobs"] > div > div[class~="grid"] span[class~="font-mono"] {
+  margin-left: 4px;
+  color: rgb(var(--ui-ink-soft));
+}
+
+html.flat-theme [data-ui~="ops-jobs"] > div > div[class~="bg-rose-50"] {
+  border: 1px solid rgb(var(--ui-danger) / 0.3);
+  border-radius: var(--ui-radius-md);
+  background-color: rgb(var(--ui-danger-soft));
+  color: rgb(var(--ui-danger));
+}
+
+/* 4.9 custom range: the fields 34px with the form-control line (radius 6, accent edge on focus); cancel = the default
+   button, confirm = the ink primary button (REF §8.3) */
+html.flat-theme [data-ui~="ops-custom-range"] input[type="datetime-local"] {
+  min-height: var(--ui-select-h);
+  padding: 6px 10px;
+  border-radius: var(--ui-radius-md);
+  box-shadow: none;
+  font-size: 13px;
+}
+
+html.flat-theme [data-ui~="ops-custom-range"] input[type="datetime-local"]:focus {
+  border-color: rgb(var(--ui-focus));
+  outline: 2px solid transparent;
+  box-shadow: inset 0 0 0 1px rgb(var(--ui-focus));
+}
+
+html.flat-theme [data-ui~="ops-custom-range"] > div:last-child {
+  gap: 8px;
+}
+
+html.flat-theme [data-ui~="ops-custom-range"] > div:last-child > button {
+  min-height: var(--ui-control-h);
+  padding: 0 12px;
+  border: 1px solid rgb(var(--ui-line-strong));
+  border-radius: var(--ui-radius-md);
+  background-color: rgb(var(--ui-surface));
+  color: rgb(var(--ui-ink));
+  font-size: 13px;
+  font-weight: 600;
+}
+
+html.flat-theme [data-ui~="ops-custom-range"] > div:last-child > button[class~="bg-blue-500"] {
+  border-color: rgb(var(--ui-ink));
+  background-color: rgb(var(--ui-ink));
+  color: rgb(var(--ui-on-ink));
+}
+
+html.flat-theme [data-ui~="ops-custom-range"] > div:last-child > button:focus-visible {
+  outline: 2px solid rgb(var(--ui-focus));
+  outline-offset: 2px;
+}
+
+/* ================================================================== 5 · table pages: channels, channel monitor, audit logs, affiliates */
+
+/* Page roots (hooks, one attribute each):
+     data-ui="channels-page"          views/admin/ChannelsView.vue              TablePageLayout (渠道定价)
+     data-ui="channel-monitor-page"   views/admin/ChannelMonitorView.vue        page body (渠道监控)
+     data-ui="audit-page"             views/admin/AuditLogView.vue              TablePageLayout (操作日志)
+     data-ui="audit-detail"           views/admin/AuditLogView.vue              the detail dialog's body
+     data-ui="affiliate-page"         views/admin/affiliates/AdminAffiliateRecordsTable.vue  TablePageLayout (邀请 / 返利 / 提取)
+   Identity and category opt-ins (data.css §6.4): ChannelsView.vue — the platform tabs, the platform choices, group names,
+   rule groups and accounts, the model-mapping fields (data-ui="platform-text"), a group's rate pill
+   (data-ui="platform-chip"); ChannelMonitorView.vue — the provider chip (platform-chip), the check mode (category-chip). */
+
+/* 5.1 Row actions drawn as a glyph over a caption (flex-col, 67px rows): the reference's ghost text button on one line
+   (REF §8.3 ghost: 28px, 8px in, 12.5/600 ink-soft, the grouped fill and ink on hover), so rows keep the reference's 42px;
+   a destructive action takes the danger colour on hover. The caption stays visible (touch and mouse alike). */
+html.flat-theme :is([data-ui~="channels-page"], [data-ui~="channel-monitor-page"]) .table-wrapper td[data-column="actions"] > div {
+  gap: 2px;
+}
+
+html.flat-theme :is([data-ui~="channels-page"], [data-ui~="channel-monitor-page"]) .table-wrapper td[data-column="actions"] button[class~="flex-col"] {
+  flex-direction: row;
+  gap: 5px;
+  height: 28px;
+  padding: 0 8px;
+  border-radius: var(--ui-radius-md);
+  color: rgb(var(--ui-ink-soft));
+  transition: color var(--ui-duration) var(--ui-ease), background-color var(--ui-duration) var(--ui-ease);
+}
+
+html.flat-theme :is([data-ui~="channels-page"], [data-ui~="channel-monitor-page"]) .table-wrapper td[data-column="actions"] button[class~="flex-col"] > span {
+  font-size: 12.5px;
+  font-weight: 600;
+  line-height: 18px;
+  white-space: nowrap;
+}
+
+html.flat-theme :is([data-ui~="channels-page"], [data-ui~="channel-monitor-page"]) .table-wrapper td[data-column="actions"] button[class~="flex-col"] > svg {
+  width: 14px;
+  height: 14px;
+}
+
+html.flat-theme :is([data-ui~="channels-page"], [data-ui~="channel-monitor-page"]) .table-wrapper td[data-column="actions"] button[class~="flex-col"]:hover:not(:disabled) {
+  background-color: rgb(var(--ui-subtle));
+  color: rgb(var(--ui-ink));
+}
+
+html.flat-theme :is([data-ui~="channels-page"], [data-ui~="channel-monitor-page"]) .table-wrapper td[data-column="actions"] button[class~="flex-col"][class~="hover:bg-red-50"]:hover:not(:disabled) {
+  background-color: rgb(var(--ui-danger-soft));
+  color: rgb(var(--ui-danger));
+}
+
+html.flat-theme :is([data-ui~="channels-page"], [data-ui~="channel-monitor-page"]) .table-wrapper td[data-column="actions"] button[class~="flex-col"]:disabled {
+  opacity: 0.55;
+}
+
+/* 5.2 渠道定价: the channel name 13/600 ink, the description muted; the dialog's platform tabs keep the platform logo's
+   colour (identity, decision 2) while the tab label follows the tab state (controls.css underline tabs) */
+html.flat-theme [data-ui~="channels-page"] .table-wrapper td[data-column="name"] > span {
+  font-weight: 600;
+}
+
+html.flat-theme [data-ui~="channels-page"] .table-wrapper td[data-column="description"] > span {
+  font-size: 13px;
+  color: rgb(var(--ui-muted));
+}
+
+html.flat-theme .modal-content .channel-dialog-body .channel-tab.channel-tab > svg[data-ui~="platform-text"] {
+  color: rgb(var(--pf-text, var(--ui-ink-soft)));
+}
+
+/* the dialog's choice chips (platforms, groups, rule groups): the reference's filter chip (radius 6, the control outline,
+   surface); chosen = the accent tint and its 40 % line (the reference's selected filter); a group already bound to another
+   channel is dimmed by upstream's opacity */
+html.flat-theme .modal-content .channel-dialog-body label[class~="inline-flex"][class~="cursor-pointer"][class~="rounded-md"][class~="border"] {
+  border-color: rgb(var(--ui-line-strong));
+  border-radius: var(--ui-radius-md);
+  background-color: rgb(var(--ui-surface));
+  transition: border-color var(--ui-duration) var(--ui-ease), background-color var(--ui-duration) var(--ui-ease);
+}
+
+html.flat-theme .modal-content .channel-dialog-body label[class~="inline-flex"][class~="cursor-pointer"][class~="rounded-md"][class~="border"]:hover {
+  border-color: rgb(var(--ui-line-focus));
+  background-color: rgb(var(--ui-surface));
+}
+
+html.flat-theme .modal-content .channel-dialog-body label[class~="inline-flex"][class~="cursor-pointer"][class~="rounded-md"][class~="border"][class~="bg-primary-50"] {
+  border-color: rgb(var(--ui-primary) / 0.4);
+  background-color: rgb(var(--ui-primary-soft));
+}
+
+/* the group box: a well (1px line, radius 8, the grouped fill); counts Mono faint */
+html.flat-theme .modal-content .channel-dialog-body div[class~="max-h-40"][class~="overflow-auto"][class~="rounded-lg"] {
+  border-color: rgb(var(--ui-line));
+  border-radius: var(--ui-radius-lg);
+  background-color: color-mix(in srgb, rgb(var(--ui-subtle)) 60%, rgb(var(--ui-surface)));
+}
+
+html.flat-theme .modal-content .channel-dialog-body div[class~="max-h-40"] label > span[class~="text-[10px]"][class~="text-gray-400"] {
+  font-family: var(--ui-font-mono);
+  font-variant-numeric: tabular-nums;
+  color: rgb(var(--ui-faint));
+}
+
+/* the empty lists (no mapping / pricing rules): the reference's dashed frame */
+html.flat-theme .modal-content .channel-dialog-body div[class~="border-dashed"][class~="rounded"] {
+  padding: 10px;
+  border-color: rgb(var(--ui-line-strong));
+  border-radius: var(--ui-radius-md);
+  font-size: 12px;
+  color: rgb(var(--ui-muted));
+}
+
+/* the account-stats rules: cards on the dialog (1px line, radius 8) */
+html.flat-theme .modal-content .channel-dialog-body div[class~="rounded-lg"][class~="border"][class~="p-4"][class~="space-y-3"] {
+  border-color: rgb(var(--ui-line));
+  border-radius: var(--ui-radius-lg);
+}
+
+/* 5.3 渠道监控 (admin): the page head as the reference's page title block (no card: title 20/600, the description 13px
+   muted, the V2 / V1 switch the segmented control); the table as the other table pages. The monitor name 13/600; the
+   7-day availability and latency figures Mono. */
+html.flat-theme [data-ui~="channel-monitor-page"][class~="space-y-6"] > :not([hidden]) ~ :not([hidden]) {
+  margin-top: var(--ui-shell-gap, 12px);
+}
+
+html.flat-theme [data-ui~="channel-monitor-page"] > header.page-header {
+  padding: 0 0 12px;
+  border-radius: 0;
+  border-bottom: 1px solid rgb(var(--ui-line));
+  background-color: transparent;
+  box-shadow: none;
+}
+
+html.flat-theme [data-ui~="channel-monitor-page"] > header.page-header > h1 {
+  gap: 0;
+  font-size: 20px;
+  font-weight: 600;
+  line-height: 28px;
+  color: rgb(var(--ui-ink));
+}
+
+html.flat-theme [data-ui~="channel-monitor-page"] > header.page-header > h1 > span:first-child {
+  display: none;
+}
+
+html.flat-theme [data-ui~="channel-monitor-page"] > header.page-header > p.page-description {
+  margin-top: 2px;
+  font-size: 13px;
+  line-height: 19.5px;
+  color: rgb(var(--ui-muted));
+}
+
+html.flat-theme [data-ui~="channel-monitor-page"] > header.page-header > div[class~="border-t"] {
+  margin-top: 12px;
+  padding-top: 0;
+  border-top-width: 0;
+}
+
+html.flat-theme [data-ui~="channel-monitor-page"] .table-wrapper td[data-column="name"] span[class~="font-medium"] {
+  font-weight: 600;
+}
+
+html.flat-theme [data-ui~="channel-monitor-page"] .table-wrapper td:is([data-column="availability_7d"], [data-column="latency"]) > span {
+  font-family: var(--ui-font-mono);
+  font-size: 12.5px;
+  font-variant-numeric: tabular-nums;
+  color: rgb(var(--ui-ink-soft));
+}
+
+/* 5.4 操作日志: the filters become the table pages' toolbar (no card): each labelled field is the reference's filter
+   trigger holding its label as the mono label (the labelled field pills of 使用记录, dashboard-usage.css §3), 30px,
+   8px apart, the actions at the row's end */
+html.flat-theme [data-ui~="audit-page"] > .layout-section-fixed > .card[class~="p-4"] {
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background-color: transparent;
+  box-shadow: none;
+}
+
+html.flat-theme [data-ui~="audit-page"] > .layout-section-fixed > .card > div {
+  align-items: center;
+  gap: 8px;
+}
+
+/* the field group is flattened into the row, so the actions take the space left on its last line */
+html.flat-theme [data-ui~="audit-page"] > .layout-section-fixed > .card > div > div:first-child {
+  display: contents;
+}
+
+html.flat-theme [data-ui~="audit-page"] > .layout-section-fixed > .card > div > div:first-child > div {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  min-height: var(--ui-control-h);
+  padding-left: 10px;
+  border: 1px solid rgb(var(--ui-line-strong));
+  border-radius: var(--ui-radius-md);
+  background-color: rgb(var(--ui-surface));
+  transition: border-color var(--ui-duration) var(--ui-ease), box-shadow var(--ui-duration) var(--ui-ease);
+}
+
+html.flat-theme [data-ui~="audit-page"] > .layout-section-fixed > .card > div > div:first-child > div > label.input-label {
+  flex: none;
+  margin: 0;
+  font-family: var(--ui-font-mono);
+  font-size: var(--ui-label-size);
+  font-weight: 400;
+  line-height: var(--ui-label-leading);
+  letter-spacing: var(--ui-label-tracking);
+  text-transform: uppercase;
+  white-space: nowrap;
+  color: rgb(var(--ui-label));
+}
+
+html.flat-theme [data-ui~="audit-page"] > .layout-section-fixed > .card > div > div:first-child > div > :is(div, input):not(label) {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+/* (.input doubled: the pill's own line is the field's outline, over behaviour B3.2's empty-field line) */
+html.flat-theme [data-ui~="audit-page"] > .layout-section-fixed > .card > div > div:first-child > div input.input.input {
+  height: calc(var(--ui-control-h) - 2px);
+  min-height: 0;
+  padding: 0 10px 0 0;
+  border-color: transparent;
+  border-radius: 0 var(--ui-radius-md) var(--ui-radius-md) 0;
+  background-color: transparent;
+  box-shadow: none;
+  font-size: 13px;
+  line-height: 19.5px;
+}
+
+/* the keyword field's glyph: its label names it, the glyph goes */
+html.flat-theme [data-ui~="audit-page"] > .layout-section-fixed > .card > div > div:first-child > div > div[class~="relative"] > svg {
+  display: none;
+}
+
+html.flat-theme [data-ui~="audit-page"] > .layout-section-fixed > .card > div > div:first-child > div .select-trigger.select-trigger {
+  width: 100%;
+  min-height: 0;
+  height: calc(var(--ui-control-h) - 2px);
+  padding: 0 9px 0 0;
+  border-color: transparent;
+  border-radius: 0 var(--ui-radius-md) var(--ui-radius-md) 0;
+  background-color: transparent;
+  box-shadow: none;
+}
+
+html.flat-theme [data-ui~="audit-page"] > .layout-section-fixed > .card > div > div:first-child > div:is(:hover, :has(.select-trigger-open)) {
+  border-color: rgb(var(--ui-line-focus));
+}
+
+html.flat-theme [data-ui~="audit-page"] > .layout-section-fixed > .card > div > div:first-child > div:has(input:focus, .select-trigger:focus-visible) {
+  border-color: rgb(var(--ui-focus));
+  box-shadow: inset 0 0 0 1px rgb(var(--ui-focus));
+}
+
+html.flat-theme [data-ui~="audit-page"] > .layout-section-fixed > .card > div > div:first-child > div :is(input.input.input:focus, .select-trigger.select-trigger:focus-visible) {
+  border-color: transparent;
+  outline: 2px solid transparent;
+  box-shadow: none;
+}
+
+html.flat-theme [data-ui~="audit-page"] > .layout-section-fixed > .card > div > div:last-child {
+  width: auto;
+  margin-left: auto;
+  gap: 8px;
+}
+
+/* the log table: the time Mono muted; the operator (e-mail 13/500 ink, role and sign-in 12px muted); the action Mono
+   12.5 ink over its method and path Mono 11.5 muted; the result the reference's status chip (capsule, Mono, soft fill,
+   the 6px dot) */
+html.flat-theme [data-ui~="audit-page"] .table-wrapper td[data-column="created_at"] > span {
+  font-family: var(--ui-font-mono);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  color: rgb(var(--ui-muted));
+}
+
+html.flat-theme [data-ui~="audit-page"] .table-wrapper td[data-column="actor"] > div > div:first-child {
+  font-weight: 500;
+  color: rgb(var(--ui-ink));
+}
+
+html.flat-theme [data-ui~="audit-page"] .table-wrapper td[data-column="actor"] > div > div:last-child,
+html.flat-theme [data-ui~="audit-page"] .table-wrapper td[data-column="action"] > div > div:last-child {
+  font-size: 12px;
+  line-height: 18px;
+  color: rgb(var(--ui-muted));
+}
+
+html.flat-theme [data-ui~="audit-page"] .table-wrapper td[data-column="action"] > div > div:first-child {
+  font-size: 12.5px;
+  color: rgb(var(--ui-ink));
+}
+
+html.flat-theme [data-ui~="audit-page"] .table-wrapper td[data-column="action"] > div > div:last-child {
+  font-size: 11.5px;
+}
+
+html.flat-theme :is([data-ui~="audit-page"], [data-ui~="audit-detail"]) span[class~="rounded-full"][class~="gap-1.5"][class~="font-semibold"] {
+  gap: 6px;
+  padding: 1px 8px;
+  font-family: var(--ui-font-mono);
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 18px;
+  font-variant-numeric: tabular-nums;
+}
+
+html.flat-theme :is([data-ui~="audit-page"], [data-ui~="audit-detail"]) span[class~="rounded-full"][class~="gap-1.5"][class~="bg-green-100"] {
+  background-color: rgb(var(--ui-success-soft));
+  color: rgb(var(--ui-success));
+}
+
+html.flat-theme :is([data-ui~="audit-page"], [data-ui~="audit-detail"]) span[class~="rounded-full"][class~="gap-1.5"][class~="bg-amber-100"] {
+  background-color: rgb(var(--ui-warning-soft));
+  color: rgb(var(--ui-warning));
+}
+
+html.flat-theme :is([data-ui~="audit-page"], [data-ui~="audit-detail"]) span[class~="rounded-full"][class~="gap-1.5"][class~="bg-red-100"] {
+  background-color: rgb(var(--ui-danger-soft));
+  color: rgb(var(--ui-danger));
+}
+
+html.flat-theme :is([data-ui~="audit-page"], [data-ui~="audit-detail"]) span[class~="rounded-full"][class~="gap-1.5"] > span[class~="h-1.5"] {
+  width: 6px;
+  height: 6px;
+}
+
+html.flat-theme :is([data-ui~="audit-page"], [data-ui~="audit-detail"]) span[class~="rounded-full"][class~="gap-1.5"] > span[class~="bg-green-500"] {
+  background-color: rgb(var(--ui-dot-ok));
+}
+
+html.flat-theme :is([data-ui~="audit-page"], [data-ui~="audit-detail"]) span[class~="rounded-full"][class~="gap-1.5"] > span[class~="bg-amber-500"] {
+  background-color: rgb(var(--ui-dot-warn));
+}
+
+html.flat-theme :is([data-ui~="audit-page"], [data-ui~="audit-detail"]) span[class~="rounded-full"][class~="gap-1.5"] > span[class~="bg-red-500"] {
+  background-color: rgb(var(--ui-dot-bad));
+}
+
+html.flat-theme [data-ui~="audit-page"] .table-wrapper td[data-column="actions"] > button {
+  gap: 5px;
+  font-size: 12.5px;
+  font-weight: 500;
+  color: var(--ui-link);
+}
+
+html.flat-theme [data-ui~="audit-page"] .table-wrapper td[data-column="actions"] > button:hover {
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+/* the empty state inside the table: the dashed frame (data.css) with the page's glyph muted */
+html.flat-theme [data-ui~="audit-page"] .table-wrapper td[colspan] > div[class~="flex-col"] > svg {
+  width: 20px;
+  height: 20px;
+  margin: 0;
+  color: rgb(var(--ui-faint));
+}
+
+/* 5.5 the audit detail dialog: the head panel (the grouped panel; the status chip, the action Mono 14/600 ink; the method
+   a Mono chip beside the path in a 1px field; the meta 12px muted with Mono ids), the operator / sign-in / IP tiles, the
+   User-Agent and bodies as code blocks, their captions the mono label */
+html.flat-theme [data-ui~="audit-detail"][class~="space-y-5"] > :not([hidden]) ~ :not([hidden]) {
+  margin-top: 12px;
+}
+
+html.flat-theme [data-ui~="audit-detail"] > div[class~="rounded-2xl"]:first-child {
+  padding: 14px;
+  border-color: rgb(var(--ui-line));
+  border-radius: var(--ui-radius-lg);
+  background-color: color-mix(in srgb, rgb(var(--ui-subtle)) 60%, rgb(var(--ui-surface)));
+}
+
+html.flat-theme [data-ui~="audit-detail"] > div[class~="rounded-2xl"]:first-child > div:first-child > span[class~="font-mono"] {
+  font-size: 14px;
+  line-height: 20px;
+}
+
+html.flat-theme [data-ui~="audit-detail"] > div[class~="rounded-2xl"]:first-child > div[class~="ring-1"] {
+  margin-top: 10px;
+  border: 1px solid rgb(var(--ui-line));
+  border-radius: var(--ui-radius-md);
+  box-shadow: none;
+}
+
+html.flat-theme [data-ui~="audit-detail"] > div[class~="rounded-2xl"]:first-child > div[class~="ring-1"] > span:first-child {
+  border: 1px solid rgb(var(--ui-line));
+  border-radius: var(--ui-radius-sm);
+  background-color: rgb(var(--ui-subtle));
+  color: rgb(var(--ui-ink-soft));
+  font-weight: 600;
+}
+
+html.flat-theme [data-ui~="audit-detail"] > div[class~="rounded-2xl"]:first-child > div:last-child {
+  margin-top: 10px;
+  font-size: 12px;
+  color: rgb(var(--ui-muted));
+}
+
+html.flat-theme [data-ui~="audit-detail"] > div[class~="grid"] {
+  gap: 10px;
+}
+
+html.flat-theme [data-ui~="audit-detail"] > div[class~="grid"] > div[class~="rounded-xl"][class~="bg-gray-50"] {
+  padding: 8px 12px 10px;
+  border: 1px solid rgb(var(--ui-line));
+  border-radius: var(--ui-radius-md);
+  background-color: rgb(var(--ui-surface));
+}
+
+html.flat-theme [data-ui~="audit-detail"] :is(div, h4)[class~="text-xs"][class~="font-bold"][class~="uppercase"] {
+  font-family: var(--ui-font-mono);
+  font-size: var(--ui-label-size);
+  font-weight: 400;
+  line-height: var(--ui-label-leading);
+  letter-spacing: var(--ui-label-tracking);
+  text-transform: uppercase;
+  color: rgb(var(--ui-label));
+}
+
+html.flat-theme [data-ui~="audit-detail"] > div[class~="grid"] > div > div:nth-child(2) {
+  margin-top: 4px;
+  font-size: 13px;
+  line-height: 19.5px;
+}
+
+html.flat-theme [data-ui~="audit-detail"] > section > :is(div, pre)[class~="rounded-xl"][class~="bg-gray-50"] {
+  padding: 12px 14px;
+  border: 1px solid rgb(var(--ui-line));
+  border-radius: var(--ui-radius-lg);
+  background-color: rgb(var(--ui-surface));
+  color: rgb(var(--ui-ink));
+  font-size: 12px;
+  line-height: 1.625;
+}
+
+/* 5.6 邀请 / 返利 / 提取: a toolbar row (search, two date fields, refresh, the offline withdraw entry at its end); the
+   records use DataTable (data.css). Order numbers and codes Mono. */
+html.flat-theme [data-ui~="affiliate-page"] > .layout-section-fixed > div {
+  gap: 8px;
+}
+
+html.flat-theme [data-ui~="affiliate-page"] .table-wrapper td[data-column="order"] > div > div:last-child {
+  font-family: var(--ui-font-mono);
+  font-size: 11.5px;
+  color: rgb(var(--ui-muted));
+}
+
+/* 5.7 渠道监控's dialogs (MonitorFormDialog: #channel-monitor-form; MonitorTemplateManagerDialog): the choice buttons
+   (check mode, API mode, provider) are the reference's dialog option cards (REF §8.11: radius 8, the structural line, the
+   grouped fill at 60 %, the control outline on hover); the chosen one is drawn like the segmented thumb's edge (2px ink,
+   as controls.css' option cards); a provider's logo keeps its platform colour (identity, data-ui="platform-text"), the
+   labels are ink. The OpenAI API-mode group is a grouped panel, not an info box. */
+html.flat-theme #channel-monitor-form button[aria-pressed],
+html.flat-theme .modal-content div[class~="grid"] > button[data-ui~="platform-text"][class~="border-2"] {
+  border-width: 1px;
+  border-color: rgb(var(--ui-line));
+  border-radius: var(--ui-radius-lg);
+  background-color: rgb(var(--ui-subtle) / 0.6);
+  box-shadow: none;
+  color: rgb(var(--ui-ink));
+  transition: border-color var(--ui-duration) var(--ui-ease), background-color var(--ui-duration) var(--ui-ease), box-shadow var(--ui-duration) var(--ui-ease);
+}
+
+html.flat-theme #channel-monitor-form button[aria-pressed]:hover:not(:disabled),
+html.flat-theme .modal-content div[class~="grid"] > button[data-ui~="platform-text"][class~="border-2"]:hover {
+  border-color: rgb(var(--ui-line-strong));
+}
+
+html.flat-theme #channel-monitor-form button[aria-pressed="true"],
+html.flat-theme .modal-content div[class~="grid"] > button[data-ui~="platform-text"][class~="border-2"]:not([aria-pressed]):not([class~="bg-white"]) {
+  border-color: rgb(var(--ui-ink));
+  background-color: rgb(var(--ui-surface));
+  box-shadow: inset 0 0 0 1px rgb(var(--ui-ink));
+}
+
+html.flat-theme #channel-monitor-form button[aria-pressed] > span:first-child {
+  font-size: 13px;
+  font-weight: 600;
+  color: rgb(var(--ui-ink));
+}
+
+html.flat-theme #channel-monitor-form button[aria-pressed] > span:last-child:not(:first-child) {
+  font-size: 12px;
+  line-height: 18px;
+  color: rgb(var(--ui-muted));
+}
+
+html.flat-theme :is(#channel-monitor-form, .modal-content) button[data-ui~="platform-text"][class~="border-2"] > svg {
+  color: rgb(var(--pf-text, var(--ui-ink-soft)));
+}
+
+html.flat-theme :is(#channel-monitor-form, .modal-content) div[class~="rounded-lg"][class~="border-blue-100"][class~="bg-blue-50/50"] {
+  border-color: rgb(var(--ui-line));
+  border-radius: var(--ui-radius-lg);
+  background-color: color-mix(in srgb, rgb(var(--ui-subtle)) 60%, rgb(var(--ui-surface)));
+}
+
+/* ================================================================== 6 · channel status (/monitor, v1 and v2) */
+
+/* Hooks (one attribute each): data-ui="monitor-hero" components/user/monitor/MonitorHero.vue (root), data-ui="monitor-grid"
+   components/user/monitor/MonitorCardGrid.vue (root), data-ui="monitor-detail" components/user/MonitorDetailDialog.vue (the
+   table's wrapper), data-ui="monitor-v2" views/user/ChannelStatusV2View.vue (root). Identity: MonitorCard.vue's logo tile
+   (data-ui="platform-text") and provider chip (platform-chip); the group chip is a category (category-chip).
+   Reference: the /models uptime column (REF §8.7: a 3px capsule per sample, the Mono figure in the state's ink) and the
+   /logs toolbar and KPI tiles. */
+
+/* 6.1 the toolbar row: window (segmented, controls.css), the overall state as the reference's status chip, refresh and
+   auto-refresh as the default button, 30px */
+html.flat-theme [data-ui~="monitor-hero"] {
+  padding: 0 0 12px;
+}
+
+html.flat-theme [data-ui~="monitor-hero"] > div {
+  gap: 8px;
+}
+
+html.flat-theme [data-ui~="monitor-hero"] > div > span[class~="rounded-full"] {
+  padding: 1px 8px;
+  font-family: var(--ui-font-mono);
+  font-size: var(--ui-badge-size, 10px);
+  font-weight: 500;
+  line-height: 18px;
+  letter-spacing: 0.06em;
+}
+
+html.flat-theme [data-ui~="monitor-hero"] > div > span[class~="rounded-full"] > span[class~="w-1.5"] {
+  width: 6px;
+  height: 6px;
+  margin-right: 6px;
+}
+
+html.flat-theme [data-ui~="monitor-hero"] > div > button[class~="h-8"] {
+  width: var(--ui-control-h);
+  height: var(--ui-control-h);
+  border: 1px solid rgb(var(--ui-line-strong));
+  border-radius: var(--ui-radius-md);
+  background-color: rgb(var(--ui-surface));
+  color: rgb(var(--ui-ink-soft));
+}
+
+html.flat-theme [data-ui~="monitor-hero"] > div > button[class~="h-8"]:hover:not(:disabled) {
+  border-color: rgb(var(--ui-line-focus));
+  background-color: rgb(var(--ui-surface));
+  color: rgb(var(--ui-ink));
+}
+
+html.flat-theme [data-ui~="monitor-hero"] > div > button[class~="h-8"] svg {
+  width: 14px;
+  height: 14px;
+}
+
+/* 6.2 the monitor cards: the reference's card (surface, 1px structural line, radius 8, 14 / 16 in, no blur, no lift) in a
+   12px grid; the head = the provider's logo square (REF §8.8: 28px, 1px line, radius 6, the logo in its platform colour),
+   the name 13/600, the provider chip (identity), the model Mono 11.5 muted, the group chip (neutral); the state the
+   reference's status chip */
+html.flat-theme [data-ui~="monitor-grid"] > div[class~="grid"] {
+  gap: var(--ui-shell-gap, 12px);
+}
+
+html.flat-theme [data-ui~="monitor-grid"] > div[class~="grid"] > :is(button, div)[class~="rounded-2xl"] {
+  min-height: 0;
+  padding: 14px 16px 12px;
+  border: 1px solid rgb(var(--ui-line));
+  border-radius: var(--ui-radius-lg);
+  background-color: rgb(var(--ui-surface));
+  box-shadow: none;
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+  transform: none;
+  transition: border-color var(--ui-duration) var(--ui-ease);
+}
+
+html.flat-theme [data-ui~="monitor-grid"] > div[class~="grid"] > button[class~="rounded-2xl"]:hover {
+  border-color: rgb(var(--ui-line-strong));
+  box-shadow: none;
+  transform: none;
+}
+
+html.flat-theme [data-ui~="monitor-grid"] > div[class~="grid"] > button[class~="rounded-2xl"]:focus-visible {
+  outline: 2px solid rgb(var(--ui-focus));
+  outline-offset: 2px;
+}
+
+html.flat-theme [data-ui~="monitor-grid"] > div[class~="grid"] > button > div:first-child {
+  gap: 10px;
+}
+
+html.flat-theme [data-ui~="monitor-grid"] > div[class~="grid"] > button > div:first-child > span[data-ui~="platform-text"] {
+  width: 28px;
+  height: 28px;
+  border: 1px solid rgb(var(--ui-line));
+  border-radius: var(--ui-radius-md);
+  background: rgb(var(--ui-surface));
+  box-shadow: none;
+}
+
+html.flat-theme [data-ui~="monitor-grid"] > div[class~="grid"] > button > div:first-child > span[data-ui~="platform-text"] svg {
+  width: 16px;
+  height: 16px;
+}
+
+html.flat-theme [data-ui~="monitor-grid"] > div[class~="grid"] > button > div:first-child > div > div:first-child {
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 19.5px;
+  color: rgb(var(--ui-ink));
+}
+
+html.flat-theme [data-ui~="monitor-grid"] > div[class~="grid"] > button > div:first-child > div > div:last-child {
+  margin-top: 2px;
+  gap: 6px;
+}
+
+html.flat-theme [data-ui~="monitor-grid"] > div[class~="grid"] > button > div:first-child > div > div:last-child > span[class~="font-mono"] {
+  font-size: 11.5px;
+  color: rgb(var(--ui-muted));
+}
+
+html.flat-theme [data-ui~="monitor-grid"] > div[class~="grid"] > button > div:first-child > span[class~="rounded-full"],
+html.flat-theme [data-ui~="monitor-detail"] td span[class~="rounded-full"] {
+  padding: 1px 7px;
+  font-family: var(--ui-font-mono);
+  font-size: var(--ui-badge-size, 10px);
+  font-weight: 500;
+  line-height: var(--ui-badge-leading, 16px);
+  letter-spacing: 0.025em;
+  text-transform: uppercase;
+}
+
+/* the two figures (dialog latency, endpoint ping): the reference's StatTile in small (1px line, radius 6, 8 / 10 in; the
+   mono label with its 12px glyph; the figure Geist Mono 15/600 tabular, the unit Mono 10.5 muted) */
+html.flat-theme [data-ui~="monitor-grid"] > div[class~="grid"] > button > div[class~="grid-cols-2"] {
+  margin-top: 12px;
+  gap: 8px;
+}
+
+html.flat-theme [data-ui~="monitor-grid"] > div[class~="grid"] > button > div[class~="grid-cols-2"] > div {
+  padding: 8px 10px;
+  border-color: rgb(var(--ui-line));
+  border-radius: var(--ui-radius-md);
+  background-color: rgb(var(--ui-surface));
+}
+
+html.flat-theme [data-ui~="monitor-grid"] > div[class~="grid"] > button > div[class~="grid-cols-2"] > div > div:first-child {
+  gap: 5px;
+  font-family: var(--ui-font-mono);
+  font-size: var(--ui-label-size);
+  font-weight: 400;
+  line-height: var(--ui-label-leading);
+  letter-spacing: var(--ui-label-tracking);
+  color: rgb(var(--ui-label));
+}
+
+html.flat-theme [data-ui~="monitor-grid"] > div[class~="grid"] > button > div[class~="grid-cols-2"] > div > div:last-child {
+  margin-top: 2px;
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 22.5px;
+  color: rgb(var(--ui-ink));
+}
+
+html.flat-theme [data-ui~="monitor-grid"] > div[class~="grid"] > button > div[class~="grid-cols-2"] > div > div:last-child > span {
+  margin-left: 2px;
+  font-size: 10.5px;
+  font-weight: 400;
+  color: rgb(var(--ui-muted));
+}
+
+html.flat-theme [data-ui~="monitor-grid"] > div[class~="grid"] > button > div[class~="border-t"],
+html.flat-theme [data-ui~="monitor-grid"] > div[class~="grid"] > button > div[class~="mt-4"][class~="pt-3"] {
+  border-color: rgb(var(--ui-line));
+}
+
+html.flat-theme [data-ui~="monitor-grid"] > div[class~="grid"] > button > div[class~="mt-4"][class~="border-t"]:not([class~="pt-3"]) {
+  margin-top: 12px;
+}
+
+/* availability: the label the mono label; the figure 22/600 tabular, keeping upstream's red-to-green hue for the value
+   (inline hsl(h 72% 42%), h = 1.2 x percent), darkened in light and lifted to pastel in dark (the reference's uptime
+   inks: light and deep on white, pastel on dark), so every hue from 0 % to 100 % reads >= 4.5:1 on the card (worst:
+   4.8:1 yellow at 50 % on white, 6.9:1 red at 0 % on the dark surface; upstream's own colour is 3.9:1 / 2.4:1 there).
+   Filters work on the rendered sRGB, so the ratio is a property of the hue, not of the data. */
+html.flat-theme [data-ui~="monitor-grid"] > div[class~="grid"] > button > div[class~="mt-3"][class~="items-end"] {
+  margin-top: 10px;
+  align-items: baseline;
+}
+
+html.flat-theme [data-ui~="monitor-grid"] > div[class~="grid"] > button > div[class~="mt-3"][class~="items-end"] > div:first-child {
+  font-family: var(--ui-font-mono);
+  font-size: var(--ui-label-size);
+  line-height: var(--ui-label-leading);
+  letter-spacing: var(--ui-label-tracking);
+  color: rgb(var(--ui-label));
+}
+
+html.flat-theme [data-ui~="monitor-grid"] > div[class~="grid"] > button > div[class~="mt-3"][class~="items-end"] > div:last-child > span:first-child {
+  font-size: 22px;
+  font-weight: 600;
+  line-height: 28px;
+  letter-spacing: -0.01em;
+  filter: brightness(0.64);
+}
+
+html.flat-theme [data-ui~="monitor-grid"] > div[class~="grid"] > button > div[class~="mt-3"][class~="items-end"] > div:last-child > span:last-child {
+  font-size: 13px;
+  font-weight: 600;
+  filter: brightness(0.64);
+}
+
+html.flat-theme.dark [data-ui~="monitor-grid"] > div[class~="grid"] > button > div[class~="mt-3"][class~="items-end"] > div:last-child > span {
+  filter: contrast(0.5) brightness(1.6);
+}
+
+html.flat-theme [data-ui~="monitor-grid"] > div[class~="grid"] > button > div[class~="mt-3"][class~="items-end"] + div[class~="text-right"] {
+  font-family: var(--ui-font-mono);
+  font-size: 11px;
+  color: rgb(var(--ui-muted));
+}
+
+/* the 60-sample history: the reference's uptime bars (REF §8.7: capsules 3px wide, 2px apart, bottom-aligned); upstream's
+   height code stays (full = up, 65 % = degraded, 35 % = failed, 15 % = not tested) and the fills are the status dots'
+   colours (>= 3:1 on the card, the reference's pastel uptime fills are 1.5:1); captions Mono 10, faint */
+html.flat-theme [data-ui~="monitor-grid"] > div[class~="grid"] > button > div[class~="mt-4"][class~="pt-3"] {
+  margin-top: 12px;
+  padding-top: 10px;
+}
+
+html.flat-theme [data-ui~="monitor-grid"] > div[class~="grid"] > button > div[class~="mt-4"][class~="pt-3"] > div:first-child {
+  margin-bottom: 8px;
+  font-family: var(--ui-font-mono);
+  font-size: var(--ui-label-size);
+  font-weight: 400;
+  line-height: var(--ui-label-leading);
+  letter-spacing: var(--ui-label-tracking);
+  color: rgb(var(--ui-label));
+}
+
+html.flat-theme [data-ui~="monitor-grid"] > div[class~="grid"] > button > div[class~="mt-4"][class~="pt-3"] > div[class~="h-5"] {
+  height: 18px;
+}
+
+html.flat-theme [data-ui~="monitor-grid"] > div[class~="grid"] > button > div[class~="mt-4"][class~="pt-3"] > div[class~="h-5"] > div {
+  border-radius: 9999px;
+  background-color: rgb(var(--ui-dot-idle));
+}
+
+html.flat-theme [data-ui~="monitor-grid"] > div[class~="grid"] > button > div[class~="mt-4"][class~="pt-3"] > div[class~="h-5"] > div[class~="bg-emerald-500"] {
+  background-color: rgb(var(--ui-dot-ok));
+}
+
+html.flat-theme [data-ui~="monitor-grid"] > div[class~="grid"] > button > div[class~="mt-4"][class~="pt-3"] > div[class~="h-5"] > div[class~="bg-amber-500"] {
+  background-color: rgb(var(--ui-dot-warn));
+}
+
+html.flat-theme [data-ui~="monitor-grid"] > div[class~="grid"] > button > div[class~="mt-4"][class~="pt-3"] > div[class~="h-5"] > div[class~="bg-red-500"] {
+  background-color: rgb(var(--ui-dot-bad));
+}
+
+html.flat-theme [data-ui~="monitor-grid"] > div[class~="grid"] > button > div[class~="mt-4"][class~="pt-3"] > div[class~="h-5"] > div[class~="bg-gray-300"] {
+  background-color: rgb(var(--ui-line-strong));
+}
+
+html.flat-theme [data-ui~="monitor-grid"] > div[class~="grid"] > button > div[class~="mt-4"][class~="pt-3"] > div:last-child {
+  margin-top: 4px;
+  font-family: var(--ui-font-mono);
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  color: rgb(var(--ui-label));
+}
+
+/* the paused (maintenance) strip: the dashed frame */
+html.flat-theme [data-ui~="monitor-grid"] > div[class~="grid"] > button > div[class~="mt-4"][class~="pt-3"] > div[class~="border-dashed"] {
+  height: 18px;
+  border-color: rgb(var(--ui-line-strong));
+  border-radius: var(--ui-radius-sm);
+  font-family: var(--ui-font-mono);
+  color: rgb(var(--ui-label));
+}
+
+/* loading placeholders: the reference's card with shimmer blocks (data.css skeleton) */
+html.flat-theme [data-ui~="monitor-grid"] > div[class~="grid"] > div[class~="animate-pulse"] {
+  animation: none;
+}
+
+/* the model detail table: the reference's table in the dialog (mono header, 13px cells, Mono figures) */
+html.flat-theme [data-ui~="monitor-detail"] table > thead {
+  border-color: rgb(var(--ui-line));
+}
+
+html.flat-theme [data-ui~="monitor-detail"] table > thead > tr > th {
+  padding: 10px 12px 10px 0;
+  font-family: var(--ui-font-mono);
+  font-size: var(--ui-label-size);
+  font-weight: 500;
+  line-height: 19.5px;
+  letter-spacing: var(--ui-label-tracking);
+  color: rgb(var(--ui-label));
+  white-space: nowrap;
+}
+
+html.flat-theme [data-ui~="monitor-detail"] table > tbody > tr {
+  border-color: rgb(var(--ui-line));
+}
+
+html.flat-theme [data-ui~="monitor-detail"] table > tbody > tr > td {
+  padding: 10px 12px 10px 0;
+  font-size: 13px;
+  line-height: 19.5px;
+}
+
+html.flat-theme [data-ui~="monitor-detail"] table > tbody > tr > td:not(:first-child):not(:nth-child(2)) {
+  font-family: var(--ui-font-mono);
+  font-size: 12.5px;
+  font-variant-numeric: tabular-nums;
+  color: rgb(var(--ui-ink-soft));
+}
+
+/* 6.3 channel status v2 (the pulse matrix view; production runs v1, frames with sample data are labelled sample).
+   Upstream draws every block as an elevated card (!rounded-3xl, ring-1 at 5 %); here the reference's card: the ring takes
+   the structural line, no shadow. Upstream's !-important paddings are restated with !important where the reference's
+   insets differ (the only way past them). */
+html.flat-theme [data-ui~="monitor-v2"][class~="space-y-6"] > :not([hidden]) ~ :not([hidden]) {
+  margin-top: var(--ui-shell-gap, 12px);
+}
+
+html.flat-theme [data-ui~="monitor-v2"][class~="pb-12"] {
+  padding-bottom: 0;
+}
+
+html.flat-theme [data-ui~="monitor-v2"] :is(section, div)[class~="ring-1"] {
+  --tw-ring-color: rgb(var(--ui-line));
+  box-shadow: 0 0 0 1px rgb(var(--ui-line));
+}
+
+/* the sticky head card: title 13/600 (the decorative glyph tile goes), the update line Mono 11, refresh the 30px default
+   button; the toolbar row 10 / 16 in, 8px apart */
+html.flat-theme [data-ui~="monitor-v2"] > section:first-child > header.page-header {
+  padding: 12px 16px;
+  border-color: rgb(var(--ui-line));
+}
+
+html.flat-theme [data-ui~="monitor-v2"] > section:first-child > header.page-header h1 {
+  gap: 0;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 19.5px;
+  color: rgb(var(--ui-ink));
+}
+
+html.flat-theme [data-ui~="monitor-v2"] > section:first-child > header.page-header h1 > span:first-child {
+  display: none;
+}
+
+html.flat-theme [data-ui~="monitor-v2"] > section:first-child > header.page-header .page-description {
+  margin-top: 2px;
+  gap: 8px;
+  font-family: var(--ui-font-mono);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  color: rgb(var(--ui-muted));
+}
+
+html.flat-theme [data-ui~="monitor-v2"] > section:first-child > header.page-header .page-description > span[class~="relative"],
+html.flat-theme [data-ui~="monitor-v2"] > section:first-child > header.page-header .page-description > span[class~="relative"] > span {
+  width: 6px;
+  height: 6px;
+}
+
+html.flat-theme [data-ui~="monitor-v2"] > section:first-child > header.page-header .page-description > span > span[class~="bg-green-500"] {
+  background-color: rgb(var(--ui-dot-ok));
+}
+
+html.flat-theme [data-ui~="monitor-v2"] > section:first-child > header.page-header > button {
+  width: var(--ui-control-h);
+  height: var(--ui-control-h);
+  border: 1px solid rgb(var(--ui-line-strong));
+  border-radius: var(--ui-radius-md);
+  background-color: rgb(var(--ui-surface));
+  color: rgb(var(--ui-ink-soft));
+}
+
+html.flat-theme [data-ui~="monitor-v2"] > section:first-child > header.page-header > button:hover:not(:disabled) {
+  border-color: rgb(var(--ui-line-focus));
+  background-color: rgb(var(--ui-surface));
+  color: rgb(var(--ui-ink));
+}
+
+html.flat-theme [data-ui~="monitor-v2"] > section:first-child > .monitor-toolbar {
+  gap: 8px;
+  padding: 10px 16px;
+}
+
+/* the KPI tiles (MetricCell .stat-card): the reference's StatTile (1px line via the ring, radius 6, 8 / 12 in, 76px);
+   the state dot 6px in the status colours */
+html.flat-theme [data-ui~="monitor-v2"] > section[class~="grid"] {
+  gap: 10px;
+}
+
+html.flat-theme [data-ui~="monitor-v2"] > section[class~="grid"] > .stat-card {
+  min-height: 76px !important;
+  padding: 8px 12px !important;
+  gap: 8px;
+  border-radius: var(--ui-radius-md) !important;
+}
+
+html.flat-theme [data-ui~="monitor-v2"] > section[class~="grid"] > .stat-card > div[class~="rounded-full"] {
+  width: 6px;
+  height: 6px;
+  margin-top: 5px;
+}
+
+html.flat-theme [data-ui~="monitor-v2"] > section[class~="grid"] > .stat-card > div > :is(small, div)[class~="text-[11px]"] {
+  margin-top: 2px;
+  font-size: 11px;
+  color: rgb(var(--ui-muted));
+}
+
+/* 6.4 the pulse matrix (RelayPulseMatrix): the card 14px in; the title 13/600 (glyph goes), the bucket chip and the
+   reset button 26px; the matrix sits on the card (no inner well), its header the mono label, rows divided by 1px lines,
+   summary figures Mono 12; each bucket a capsule like the reference's uptime bars, coloured by health in the reference's
+   uptime palette (good / warn / bad with the steps between; no traffic = the grouped fill) */
+html.flat-theme [data-ui~="monitor-v2"] section[class~="card"]:has(.matrix-table) {
+  padding: 14px !important;
+  border-radius: var(--ui-radius-lg) !important;
+}
+
+html.flat-theme [data-ui~="monitor-v2"] section[class~="card"]:has(.matrix-table) h2 {
+  gap: 0;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 19.5px;
+  color: rgb(var(--ui-ink));
+}
+
+html.flat-theme [data-ui~="monitor-v2"] section[class~="card"]:has(.matrix-table) h2 > span:first-child {
+  display: none;
+}
+
+html.flat-theme [data-ui~="monitor-v2"] section[class~="card"]:has(.matrix-table) h2 + p {
+  margin-top: 2px;
+  font-size: 12px;
+  color: rgb(var(--ui-muted));
+}
+
+html.flat-theme [data-ui~="monitor-v2"] section[class~="card"]:has(.matrix-table) .card-header button[class~="border-gray-200"] {
+  height: 26px;
+  padding: 0 10px;
+  border-color: rgb(var(--ui-line-strong));
+  border-radius: var(--ui-radius-md);
+  background-color: rgb(var(--ui-surface));
+  color: rgb(var(--ui-ink-soft));
+  font-size: 12px;
+  font-weight: 600;
+}
+
+html.flat-theme [data-ui~="monitor-v2"] .matrix-scroll {
+  padding: 0;
+  border-radius: 0;
+  background-color: transparent;
+}
+
+html.flat-theme [data-ui~="monitor-v2"] .matrix-header {
+  border-bottom: 1px solid rgb(var(--ui-line));
+  background-color: rgb(var(--ui-surface));
+  color: rgb(var(--ui-label));
+  font-family: var(--ui-font-mono);
+  font-size: var(--ui-label-size);
+  font-weight: 500;
+  letter-spacing: var(--ui-label-tracking);
+}
+
+html.flat-theme [data-ui~="monitor-v2"] .matrix-row:not(.matrix-header) {
+  border-color: rgb(var(--ui-line));
+}
+
+html.flat-theme [data-ui~="monitor-v2"] .matrix-row .dimension-cell,
+html.flat-theme [data-ui~="monitor-v2"] .matrix-row .summary-value {
+  background-color: rgb(var(--ui-surface));
+}
+
+html.flat-theme [data-ui~="monitor-v2"] .matrix-row .dimension-cell > strong {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: rgb(var(--ui-ink));
+}
+
+html.flat-theme [data-ui~="monitor-v2"] .matrix-row .summary-value {
+  font-family: var(--ui-font-mono);
+  font-size: 12px;
+  font-weight: 400;
+  color: rgb(var(--ui-ink-soft));
+}
+
+html.flat-theme [data-ui~="monitor-v2"] .pulse-track .pulse-cell {
+  border-radius: 9999px;
+}
+
+html.flat-theme [data-ui~="monitor-v2"] :is(.pulse-cell, .status-dot).health-score10,
+html.flat-theme [data-ui~="monitor-v2"] :is(.pulse-cell, .status-dot).health-score9,
+html.flat-theme [data-ui~="monitor-v2"] :is(.pulse-cell, .status-dot).health-healthy {
+  background: rgb(var(--ui-uptime-good));
+}
+
+html.flat-theme [data-ui~="monitor-v2"] :is(.pulse-cell, .status-dot):is(.health-score8, .health-score7) {
+  background: color-mix(in srgb, rgb(var(--ui-uptime-good)) 55%, rgb(var(--ui-uptime-warn)));
+}
+
+html.flat-theme [data-ui~="monitor-v2"] :is(.pulse-cell, .status-dot):is(.health-score6, .health-score5, .health-warning) {
+  background: rgb(var(--ui-uptime-warn));
+}
+
+html.flat-theme [data-ui~="monitor-v2"] :is(.pulse-cell, .status-dot):is(.health-score4, .health-score3) {
+  background: color-mix(in srgb, rgb(var(--ui-uptime-warn)) 45%, rgb(var(--ui-uptime-bad)));
+}
+
+html.flat-theme [data-ui~="monitor-v2"] :is(.pulse-cell, .status-dot):is(.health-score2, .health-score1, .health-score0, .health-critical) {
+  background: rgb(var(--ui-uptime-bad));
+}
+
+html.flat-theme [data-ui~="monitor-v2"] .pulse-cell.health-unknown {
+  background: rgb(var(--ui-subtle));
+}
+
+/* the row and legend dots: the reference's 6px status dot in the status colours (a dot must read on its own: >= 3:1) */
+html.flat-theme [data-ui~="monitor-v2"] .status-dot {
+  width: 6px;
+  height: 6px;
+}
+
+html.flat-theme [data-ui~="monitor-v2"] .status-dot:is(.health-score10, .health-score9, .health-score8, .health-healthy) {
+  background: rgb(var(--ui-dot-ok));
+}
+
+html.flat-theme [data-ui~="monitor-v2"] .status-dot:is(.health-score7, .health-score6, .health-score5, .health-warning) {
+  background: rgb(var(--ui-dot-warn));
+}
+
+html.flat-theme [data-ui~="monitor-v2"] .status-dot:is(.health-score4, .health-score3, .health-score2, .health-score1, .health-score0, .health-critical) {
+  background: rgb(var(--ui-dot-bad));
+}
+
+html.flat-theme [data-ui~="monitor-v2"] .status-dot.health-unknown {
+  background: rgb(var(--ui-dot-idle));
+}
+
+/* the score legend: the same palette as the cells, a 6px capsule; its words 11px muted */
+html.flat-theme [data-ui~="monitor-v2"] .score-legend {
+  height: 6px;
+  background: linear-gradient(90deg, rgb(var(--ui-uptime-bad)) 0%, color-mix(in srgb, rgb(var(--ui-uptime-warn)) 45%, rgb(var(--ui-uptime-bad))) 30%, rgb(var(--ui-uptime-warn)) 50%, color-mix(in srgb, rgb(var(--ui-uptime-good)) 55%, rgb(var(--ui-uptime-warn))) 70%, rgb(var(--ui-uptime-good)) 100%);
+}
+
+html.flat-theme [data-ui~="monitor-v2"] section[class~="card"]:has(.matrix-table) .card-body > div:last-child {
+  margin-top: 12px;
+}
+
+html.flat-theme [data-ui~="monitor-v2"] section[class~="card"]:has(.matrix-table) .card-body > div:last-child :is(div, span)[class~="text-[11px]"] {
+  font-size: 11px;
+  color: rgb(var(--ui-muted));
+}
+
+/* the floating cell tooltip (teleported to the body, upstream's scoped styles): the reference's detail popover (radius
+   6, control outline, surface, popover shadow); upstream's 11px lines in ink-soft, the title ink 600 (classes doubled:
+   over upstream's scoped dark rules, .dark .matrix-floating-tooltip[data-v-*] at 0,3,0) */
+html.flat-theme .matrix-floating-tooltip.matrix-floating-tooltip {
+  border-color: rgb(var(--ui-line-strong));
+  border-radius: var(--ui-radius-md);
+  background: rgb(var(--ui-surface));
+  box-shadow: var(--ui-shadow-popover);
+}
+
+html.flat-theme .matrix-floating-tooltip .matrix-floating-tooltip-line.matrix-floating-tooltip-line {
+  color: rgb(var(--ui-ink-soft));
+}
+
+html.flat-theme .matrix-floating-tooltip .matrix-floating-tooltip-title.matrix-floating-tooltip-title {
+  font-weight: 600;
+  color: rgb(var(--ui-ink));
+}
+
+/* 6.5 the detail tabs card (models / error reasons / users): the ring line, the head 12 / 16 in; the tables the
+   reference's (mono header on the surface, 13px cells, 1px lines, Mono figures); error reasons as rows on the grouped
+   fill with a danger bar (no gradient) */
+html.flat-theme [data-ui~="monitor-v2"] > section[class~="card"]:last-child > div:first-child {
+  padding: 12px 16px 0;
+  border-color: rgb(var(--ui-line));
+}
+
+html.flat-theme [data-ui~="monitor-v2"] > section[class~="card"]:last-child > div:last-child {
+  padding: 0 0 4px;
+}
+
+html.flat-theme [data-ui~="monitor-v2"] .monitor-table > thead > tr > th {
+  padding: 10px 12px;
+  background-color: rgb(var(--ui-surface));
+  box-shadow: inset 0 -1px 0 rgb(var(--ui-line));
+  color: rgb(var(--ui-label));
+  font-family: var(--ui-font-mono);
+  font-size: var(--ui-label-size);
+  font-weight: 500;
+  line-height: 19.5px;
+  letter-spacing: var(--ui-label-tracking);
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+html.flat-theme [data-ui~="monitor-v2"] .monitor-table > tbody > tr > td {
+  padding: 8px 12px;
+  border-color: rgb(var(--ui-line));
+  font-size: 13px;
+  line-height: 19.5px;
+  font-variant-numeric: tabular-nums;
+}
+
+html.flat-theme [data-ui~="monitor-v2"] .monitor-table > :is(thead, tbody) > tr > :first-child {
+  padding-left: 16px;
+}
+
+html.flat-theme [data-ui~="monitor-v2"] .monitor-table > tbody > tr > td > small,
+html.flat-theme [data-ui~="monitor-v2"] .monitor-table > tbody > tr > td span[class~="text-xs"][class~="block"] {
+  font-size: 11.5px;
+  color: rgb(var(--ui-muted));
+}
+
+html.flat-theme [data-ui~="monitor-v2"] .monitor-table > tbody > tr[class~="cursor-pointer"]:hover {
+  background-color: rgb(var(--ui-hover));
+}
+
+html.flat-theme [data-ui~="monitor-v2"] > section[class~="card"]:last-child div[class~="rounded-2xl"][class~="bg-gray-50"] {
+  margin: 0 16px;
+  padding: 10px 14px;
+  border: 1px solid rgb(var(--ui-line));
+  border-radius: var(--ui-radius-md);
+  background-color: color-mix(in srgb, rgb(var(--ui-subtle)) 60%, rgb(var(--ui-surface)));
+}
+
+html.flat-theme [data-ui~="monitor-v2"] > section[class~="card"]:last-child div[class~="rounded-2xl"][class~="bg-gray-50"] i[class~="bg-gradient-to-r"] {
+  background: rgb(var(--ui-danger));
+}
+
+html.flat-theme [data-ui~="monitor-v2"] > section[class~="card"]:last-child div[class~="rounded-2xl"][class~="bg-gray-50"] small {
+  font-family: var(--ui-font-mono);
+  font-size: 11.5px;
+}
+
+/* ================================================================== 7 · orders (payment dashboard, orders, plans) */
+
+/* Roots (hooks): data-ui="payment-dashboard" views/admin/orders/AdminPaymentDashboardView.vue, data-ui="orders-page"
+   AdminOrdersView.vue, data-ui="plans-page" AdminPaymentPlansView.vue (their root divs); identity opt-ins: the plan name
+   and PlanEditDialog.vue's group options (data-ui="platform-text"). Payment is off in production: these pages render with
+   the public setting flipped in the browser only. KPI tiles are data.css' StatTile; the payment methods' brand dots stay
+   (identity). */
+html.flat-theme :is([data-ui~="payment-dashboard"], [data-ui~="orders-page"], [data-ui~="plans-page"]):is([class~="space-y-6"], [class~="space-y-4"]) > :not([hidden]) ~ :not([hidden]) {
+  margin-top: var(--ui-shell-gap, 12px);
+}
+
+html.flat-theme [data-ui~="payment-dashboard"] div[class~="grid"][class~="gap-6"] {
+  gap: var(--ui-shell-gap, 12px);
+}
+
+/* the 7 / 30 / 90-day choice: the reference's segmented control (frame 1px line, radius 8, 2px in; the current segment
+   the ink thumb) */
+html.flat-theme [data-ui~="payment-dashboard"] > div:first-child div[class~="rounded-lg"][class~="border"]:has(> button) {
+  gap: 0;
+  padding: 2px;
+  border-color: rgb(var(--ui-line));
+  border-radius: var(--ui-radius-lg);
+  background-color: rgb(var(--ui-surface));
+}
+
+html.flat-theme [data-ui~="payment-dashboard"] > div:first-child div[class~="rounded-lg"][class~="border"] > button {
+  padding: 5px 12px;
+  border-radius: var(--ui-radius-md);
+  color: rgb(var(--ui-muted));
+  font-size: 12.5px;
+  font-weight: 600;
+  line-height: 18.75px;
+  transition: color var(--ui-duration-slide) var(--ui-ease-out), background-color var(--ui-duration-slide) var(--ui-ease-out);
+}
+
+html.flat-theme [data-ui~="payment-dashboard"] > div:first-child div[class~="rounded-lg"][class~="border"] > button:hover {
+  background-color: transparent;
+  color: rgb(var(--ui-ink));
+}
+
+html.flat-theme [data-ui~="payment-dashboard"] > div:first-child div[class~="rounded-lg"][class~="border"] > button[class~="bg-primary-600"] {
+  background-color: rgb(var(--ui-ink));
+  color: rgb(var(--ui-on-ink));
+}
+
+html.flat-theme [data-ui~="payment-dashboard"] > div:first-child > div {
+  gap: 8px;
+}
+
+/* the distribution and top-users cards: 14px in, the title 13/600; the ranks' medal tints are decoration: a neutral
+   Mono rank square (radius 4, the grouped fill) */
+html.flat-theme [data-ui~="payment-dashboard"] div[class~="grid"] > .card[class~="p-4"]:not(:has(canvas)) {
+  padding: 14px;
+}
+
+html.flat-theme [data-ui~="payment-dashboard"] div[class~="grid"] > .card[class~="p-4"]:not(:has(canvas)) > h3 {
+  margin-bottom: 12px;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 19.5px;
+}
+
+html.flat-theme [data-ui~="payment-dashboard"] div[class~="grid"] > .card[class~="p-4"] span[class~="rounded-full"][class~="h-6"][class~="w-6"] {
+  width: 22px;
+  height: 22px;
+  border: 1px solid rgb(var(--ui-line));
+  border-radius: var(--ui-radius-sm);
+  background-color: rgb(var(--ui-subtle));
+  color: rgb(var(--ui-ink-soft));
+  font-family: var(--ui-font-mono);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+html.flat-theme [data-ui~="payment-dashboard"] div[class~="grid"] > .card[class~="p-4"] div[class~="rounded-lg"][class~="hover:bg-gray-50"]:hover {
+  background-color: rgb(var(--ui-hover));
+}
+
+html.flat-theme [data-ui~="payment-dashboard"] div[class~="grid"] > .card[class~="p-4"] :is(div, span)[class~="text-right"] > span[class~="font-medium"],
+html.flat-theme [data-ui~="payment-dashboard"] div[class~="grid"] > .card[class~="p-4"] div[class~="justify-between"] > span[class~="font-medium"]:last-child {
+  font-family: var(--ui-font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+html.flat-theme [data-ui~="payment-dashboard"] div[class~="grid"] > .card[class~="p-4"] div[class~="h-32"] {
+  font-size: 13px;
+  color: rgb(var(--ui-muted));
+}
+
+/* the orders filters: the table pages' toolbar row (no card), 30px controls, 8px apart */
+html.flat-theme [data-ui~="orders-page"] > .card[class~="p-4"]:first-child {
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background-color: transparent;
+  box-shadow: none;
+}
+
+html.flat-theme [data-ui~="orders-page"] > .card[class~="p-4"]:first-child > div {
+  gap: 8px;
+}
+
+html.flat-theme [data-ui~="orders-page"] > .card[class~="p-4"]:first-child :is(.select-trigger.select-trigger, input.input) {
+  padding-top: 0.265625rem;
+  padding-bottom: 0.265625rem;
+}
+
+/* the order rows' actions: the reference's ghost text button (28px, 8px in, 12.5/600); each keeps its colour family
+   (view neutral, cancel warning, refund danger, retry info, approve purple: states of the order) */
+html.flat-theme [data-ui~="orders-page"] .table-wrapper td[data-column="actions"] button[class~="rounded-md"][class~="px-2"] {
+  height: 28px;
+  padding: 0 8px;
+  border-radius: var(--ui-radius-md);
+  font-size: 12.5px;
+  font-weight: 600;
+}
+
+html.flat-theme [data-ui~="orders-page"] .table-wrapper td[data-column="actions"] button[class~="rounded-md"][class~="text-gray-600"] {
+  color: rgb(var(--ui-ink-soft));
+}
+
+html.flat-theme [data-ui~="orders-page"] .table-wrapper td[data-column="actions"] button[class~="rounded-md"][class~="text-gray-600"]:hover {
+  background-color: rgb(var(--ui-subtle));
+  color: rgb(var(--ui-ink));
+}
+
+/* plans: the row actions as the other table pages (one line), the price Mono; the for-sale switch is controls.css' */
+html.flat-theme [data-ui~="plans-page"] .table-wrapper td[data-column="actions"] > div {
+  gap: 2px;
+}
+
+html.flat-theme [data-ui~="plans-page"] .table-wrapper td[data-column="actions"] button[class~="flex-col"] {
+  flex-direction: row;
+  gap: 5px;
+  height: 28px;
+  padding: 0 8px;
+  border-radius: var(--ui-radius-md);
+  color: rgb(var(--ui-ink-soft));
+}
+
+html.flat-theme [data-ui~="plans-page"] .table-wrapper td[data-column="actions"] button[class~="flex-col"] > span {
+  font-size: 12.5px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+html.flat-theme [data-ui~="plans-page"] .table-wrapper td[data-column="actions"] button[class~="flex-col"] > svg {
+  width: 14px;
+  height: 14px;
+}
+
+html.flat-theme [data-ui~="plans-page"] .table-wrapper td[data-column="actions"] button[class~="flex-col"]:hover {
+  background-color: rgb(var(--ui-subtle));
+  color: rgb(var(--ui-ink));
+}
+
+html.flat-theme [data-ui~="plans-page"] .table-wrapper td[data-column="actions"] button[class~="flex-col"][class~="hover:bg-red-50"]:hover {
+  background-color: rgb(var(--ui-danger-soft));
+  color: rgb(var(--ui-danger));
+}
+
+html.flat-theme [data-ui~="plans-page"] .table-wrapper td[data-column="price"] > div > span:first-child {
+  font-family: var(--ui-font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ================================================================== 8 · 风控中心 (risk control) */
+
+/* Root: data-ui="risk-page" views/admin/RiskControlView.vue; the settings dialog's body data-ui="risk-settings". Risk
+   control is off in production: the page renders with the public setting flipped in the browser only. */
+html.flat-theme [data-ui~="risk-page"][class~="space-y-6"] > :not([hidden]) ~ :not([hidden]) {
+  margin-top: var(--ui-shell-gap, 12px);
+}
+
+html.flat-theme [data-ui~="risk-page"] div[class~="grid"]:is([class~="gap-6"], [class~="gap-3"]) {
+  gap: var(--ui-shell-gap, 12px);
+}
+
+/* the page head: the reference's page title block (20/600, the description 13px muted), actions 30px */
+html.flat-theme [data-ui~="risk-page"] > div:first-child > div:first-child h1 {
+  font-size: 20px;
+  font-weight: 600;
+  line-height: 28px;
+}
+
+html.flat-theme [data-ui~="risk-page"] > div:first-child > div:first-child p {
+  margin-top: 2px;
+  font-size: 13px;
+  color: rgb(var(--ui-muted));
+}
+
+html.flat-theme [data-ui~="risk-page"] > p[data-test="active-audit-engine"] {
+  font-family: var(--ui-font-mono);
+  font-size: 11.5px;
+  color: rgb(var(--ui-muted));
+}
+
+/* the four overview tiles: the reference's StatTile (1px line, radius 6, 8 / 12 in; the coloured glyph tile goes (D4);
+   the label the mono label, the value 15/600, its note 11px muted, the state chip keeps its status tone) */
+html.flat-theme [data-ui~="risk-page"] > div[class~="grid"] > div[class~="rounded-lg"][class~="border"][class~="shadow-sm"] {
+  min-height: 76px;
+  padding: 8px 12px;
+  border-color: rgb(var(--ui-line));
+  border-radius: var(--ui-radius-md);
+  box-shadow: none;
+}
+
+html.flat-theme [data-ui~="risk-page"] > div[class~="grid"] > div[class~="rounded-lg"][class~="border"][class~="shadow-sm"] > div > div[class~="h-9"] {
+  display: none;
+}
+
+html.flat-theme [data-ui~="risk-page"] > div[class~="grid"] > div[class~="rounded-lg"][class~="border"][class~="shadow-sm"] p[class~="text-xs"][class~="font-medium"] {
+  font-family: var(--ui-font-mono);
+  font-size: var(--ui-label-size);
+  font-weight: 400;
+  line-height: var(--ui-label-leading);
+  letter-spacing: var(--ui-label-tracking);
+  text-transform: uppercase;
+  color: rgb(var(--ui-label));
+}
+
+html.flat-theme [data-ui~="risk-page"] > div[class~="grid"] > div[class~="rounded-lg"][class~="border"][class~="shadow-sm"] p[class~="text-xl"] {
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 22.5px;
+}
+
+html.flat-theme [data-ui~="risk-page"] > div[class~="grid"] > div[class~="rounded-lg"][class~="border"][class~="shadow-sm"] p[class~="text-xl"] + p {
+  font-size: 11px;
+  color: rgb(var(--ui-muted));
+}
+
+/* the runtime cards: the reference's card (the head 12 / 16 in over a 1px line, the title 13/600 and its description
+   12px muted, the body 14 / 16 in) */
+html.flat-theme [data-ui~="risk-page"] .card > div[class~="border-b"][class~="px-6"][class~="py-4"] {
+  gap: 10px;
+  padding: 12px 16px;
+  border-color: rgb(var(--ui-line));
+}
+
+html.flat-theme [data-ui~="risk-page"] .card > div[class~="border-b"] h2 {
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 19.5px;
+}
+
+html.flat-theme [data-ui~="risk-page"] .card > div[class~="border-b"] h2 + p {
+  margin-top: 2px;
+  font-size: 12px;
+  color: rgb(var(--ui-muted));
+}
+
+html.flat-theme [data-ui~="risk-page"] .card > div[class~="p-6"] {
+  padding: 14px 16px 16px;
+}
+
+html.flat-theme [data-ui~="risk-page"] .card > div[class~="grid"][class~="p-6"] {
+  gap: 14px;
+  padding: 14px 16px 16px;
+}
+
+/* the metric tiles (pre-block sync, worker counts): neutral StatTiles (the tints per metric are decoration); values 15/600
+   tabular in ink, labels the mono label */
+html.flat-theme [data-ui~="risk-page"] [data-test="pre-block-metric-grid"] {
+  gap: 10px;
+}
+
+html.flat-theme [data-ui~="risk-page"] [data-test="pre-block-metric-grid"] > div,
+html.flat-theme [data-ui~="risk-page"] .card div[class~="grid"][class~="grid-cols-2"][class~="gap-3"] > div[class~="rounded-lg"][class~="p-4"] {
+  padding: 8px 12px;
+  border: 1px solid rgb(var(--ui-line));
+  border-radius: var(--ui-radius-md);
+  background-color: rgb(var(--ui-surface));
+}
+
+html.flat-theme [data-ui~="risk-page"] [data-test="pre-block-metric-grid"] > div > p:first-child,
+html.flat-theme [data-ui~="risk-page"] .card div[class~="grid"][class~="grid-cols-2"][class~="gap-3"] > div[class~="rounded-lg"][class~="p-4"] > p:first-child {
+  font-family: var(--ui-font-mono);
+  font-size: var(--ui-label-size);
+  line-height: var(--ui-label-leading);
+  letter-spacing: var(--ui-label-tracking);
+  color: rgb(var(--ui-label));
+}
+
+html.flat-theme [data-ui~="risk-page"] [data-test="pre-block-metric-grid"] > div > p:nth-child(2),
+html.flat-theme [data-ui~="risk-page"] .card div[class~="grid"][class~="grid-cols-2"][class~="gap-3"] > div[class~="rounded-lg"][class~="p-4"] > p:nth-child(2) {
+  margin-top: 2px;
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 22.5px;
+  font-variant-numeric: tabular-nums;
+  color: rgb(var(--ui-ink));
+}
+
+html.flat-theme [data-ui~="risk-page"] [data-test="pre-block-metric-grid"] > div > p:nth-child(3) {
+  font-size: 11px;
+  color: rgb(var(--ui-muted));
+}
+
+/* the API-key load list and its empty line: rows on the grouped fill (radius 6); key figures Mono; the load bar the
+   capsule on the grouped fill in ink */
+html.flat-theme [data-ui~="risk-page"] [data-test="pre-block-api-key-load-list"] > div,
+html.flat-theme [data-ui~="risk-page"] [data-test="pre-block-api-key-load-card"] p[class~="rounded-lg"][class~="bg-gray-50"] {
+  border: 1px solid rgb(var(--ui-line));
+  border-radius: var(--ui-radius-md);
+  background-color: color-mix(in srgb, rgb(var(--ui-subtle)) 60%, rgb(var(--ui-surface)));
+  font-size: 13px;
+}
+
+html.flat-theme [data-ui~="risk-page"] [data-test="pre-block-api-key-load-list"] p[class~="text-sky-700"] {
+  color: rgb(var(--ui-ink));
+}
+
+html.flat-theme [data-ui~="risk-page"] [data-test="pre-block-api-key-load-list"] div[class~="bg-sky-500"],
+html.flat-theme [data-ui~="risk-page"] .card div[class~="h-2"] > div[class~="bg-primary-500"] {
+  background-color: rgb(var(--ui-ink));
+}
+
+html.flat-theme [data-ui~="risk-page"] .card div[class~="rounded-lg"][class~="border"][class~="p-4"] {
+  border-color: rgb(var(--ui-line));
+  border-radius: var(--ui-radius-lg);
+}
+
+/* the records card: the model-filter line a grouped strip (radius 6), its models Mono chips; filters 30px */
+html.flat-theme [data-ui~="risk-page"] .card div[class~="rounded-lg"][class~="border"][class~="bg-gray-50"][class~="px-3"] {
+  border-color: rgb(var(--ui-line));
+  border-radius: var(--ui-radius-md);
+  background-color: color-mix(in srgb, rgb(var(--ui-subtle)) 60%, rgb(var(--ui-surface)));
+}
+
+html.flat-theme [data-ui~="risk-page"] .card span[class~="rounded-md"][class~="bg-white"][class~="shadow-sm"] {
+  border: 1px solid rgb(var(--ui-line));
+  border-radius: var(--ui-radius-sm);
+  box-shadow: none;
+  font-size: 11px;
+}
+
+html.flat-theme [data-ui~="risk-page"] .card > div[class~="border-b"] :is(.select-trigger.select-trigger, input.input) {
+  padding-top: 0.265625rem;
+  padding-bottom: 0.265625rem;
+}
+
+/* the result chip (block / flag / pass …): the reference's status chip shape, its tone kept */
+html.flat-theme [data-ui~="risk-page"] table > tbody > tr > td > span[class~="rounded-md"][class~="px-2"][class~="py-1"] {
+  padding: 1px 7px;
+  border-radius: 9999px;
+  font-family: var(--ui-font-mono);
+  font-size: var(--ui-badge-size, 10px);
+  font-weight: 500;
+  line-height: 16px;
+  letter-spacing: 0.025em;
+}
+
+/* the settings dialog: its tab strip is the segmented control; panels the grouped panel */
+html.flat-theme [data-ui~="risk-settings"] > div:first-child {
+  gap: 0;
+  width: max-content;
+  max-width: 100%;
+  padding: 2px;
+  border: 1px solid rgb(var(--ui-line));
+  border-radius: var(--ui-radius-lg);
+  background-color: rgb(var(--ui-surface));
+}
+
+html.flat-theme [data-ui~="risk-settings"] > div:first-child > button {
+  padding: 6px 14px;
+  border-radius: var(--ui-radius-md);
+  color: rgb(var(--ui-muted));
+  font-size: 12.5px;
+  font-weight: 600;
+  line-height: 18.75px;
+  transition: color var(--ui-duration-slide) var(--ui-ease-out), background-color var(--ui-duration-slide) var(--ui-ease-out);
+}
+
+html.flat-theme [data-ui~="risk-settings"] > div:first-child > button:hover {
+  background-color: transparent;
+  color: rgb(var(--ui-ink));
+}
+
+html.flat-theme [data-ui~="risk-settings"] > div:first-child > button[class~="bg-primary-50"] {
+  background-color: rgb(var(--ui-ink));
+  color: rgb(var(--ui-on-ink));
+}
+
+html.flat-theme [data-ui~="risk-settings"] div:is([class~="rounded-lg"], [class~="rounded-xl"])[class~="border"][class~="border-gray-100"] {
+  border-color: rgb(var(--ui-line));
+  border-radius: var(--ui-radius-lg);
+  box-shadow: none;
+}
+
+html.flat-theme [data-ui~="risk-settings"] div[class~="rounded-xl"][class~="border"] > div[class~="bg-gray-50"][class~="border-b"] {
+  padding: 12px 14px;
+  border-color: rgb(var(--ui-line));
+  background-color: color-mix(in srgb, rgb(var(--ui-subtle)) 60%, rgb(var(--ui-surface)));
+}
+
+html.flat-theme [data-ui~="risk-settings"] span[class~="h-10"][class~="w-10"][class~="bg-primary-50"] {
+  display: none;
+}
+
+/* 8.1 风控中心 settings: the API-key write mode is a segmented control (frame, 2px in; 「增量添加」 the ink thumb,
+   「覆盖保存」 keeps the warning fill: it replaces the saved keys) */
+html.flat-theme [data-ui~="risk-settings"] div[class~="inline-flex"][class~="rounded-lg"][class~="bg-white"][class~="p-1"]:has(> button) {
+  padding: 2px;
+  border: 1px solid rgb(var(--ui-line));
+  border-radius: var(--ui-radius-lg);
+  box-shadow: none;
+}
+
+html.flat-theme [data-ui~="risk-settings"] div[class~="inline-flex"][class~="rounded-lg"][class~="bg-white"][class~="p-1"] > button {
+  padding: 5px 12px;
+  border-radius: var(--ui-radius-md);
+  box-shadow: none;
+  font-size: 12.5px;
+  font-weight: 600;
+}
+
+html.flat-theme [data-ui~="risk-settings"] div[class~="inline-flex"][class~="rounded-lg"][class~="bg-white"][class~="p-1"] > button[class~="bg-primary-500"] {
+  background-color: rgb(var(--ui-ink));
+  color: rgb(var(--ui-on-ink));
+}
+
+html.flat-theme [data-ui~="risk-settings"] div[class~="inline-flex"][class~="rounded-lg"][class~="bg-white"][class~="p-1"] > button:not([class~="bg-primary-500"]):not([class~="bg-amber-500"]) {
+  color: rgb(var(--ui-muted));
+}
+
+html.flat-theme [data-ui~="risk-settings"] div[class~="inline-flex"][class~="rounded-lg"][class~="bg-white"][class~="p-1"] > button:not([class~="bg-primary-500"]):not([class~="bg-amber-500"]):hover {
+  background-color: transparent;
+  color: rgb(var(--ui-ink));
+}
+
+/* ================================================================== 9 · 提示词审计 (prompt audit) */
+
+/* Root: data-ui="prompt-audit-page" features/prompt-audit/PromptAuditView.vue (risk control's feature flag, flipped in
+   the browser only). The page head: the eyebrow is the mono label (not the accent), the title 20/600, the description
+   13px muted; the workspace card 16px in; each section's title 13/600 with its description 13px muted; tiles and wells
+   the reference's (1px line, radius 6 / 8); the save bar a surface band on a 1px line, no shadow. */
+html.flat-theme [data-ui~="prompt-audit-page"] > header {
+  margin-bottom: 12px;
+}
+
+html.flat-theme [data-ui~="prompt-audit-page"] > header p[class~="uppercase"] {
+  font-family: var(--ui-font-mono);
+  font-size: var(--ui-label-size);
+  font-weight: 400;
+  line-height: var(--ui-label-leading);
+  letter-spacing: var(--ui-label-tracking);
+  color: rgb(var(--ui-label));
+}
+
+html.flat-theme [data-ui~="prompt-audit-page"] > header h1 {
+  margin-top: 4px;
+  font-size: 20px;
+  font-weight: 600;
+  line-height: 28px;
+  letter-spacing: 0;
+}
+
+html.flat-theme [data-ui~="prompt-audit-page"] > header h1 + p {
+  margin-top: 2px;
+  font-size: 13px;
+}
+
+html.flat-theme [data-ui~="prompt-audit-page"] > header > div:last-child {
+  font-family: var(--ui-font-mono);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
+html.flat-theme [data-ui~="prompt-audit-page"] > main.card {
+  padding-left: 16px;
+  padding-right: 16px;
+}
+
+html.flat-theme [data-ui~="prompt-audit-page"] section > div:first-child h2,
+html.flat-theme [data-ui~="prompt-audit-page"] section > div:first-child > div > h2 {
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 19.5px;
+}
+
+html.flat-theme [data-ui~="prompt-audit-page"] section[class~="py-6"] {
+  padding-top: 16px;
+  padding-bottom: 16px;
+  border-color: rgb(var(--ui-line));
+}
+
+html.flat-theme [data-ui~="prompt-audit-page"] dl > div[class~="rounded-xl"][class~="border"] {
+  padding: 8px 12px;
+  border-color: rgb(var(--ui-line));
+  border-radius: var(--ui-radius-md);
+  background-color: rgb(var(--ui-surface));
+}
+
+html.flat-theme [data-ui~="prompt-audit-page"] dl > div[class~="rounded-xl"][class~="border"] > dt {
+  font-family: var(--ui-font-mono);
+  font-size: var(--ui-label-size);
+  line-height: var(--ui-label-leading);
+  letter-spacing: var(--ui-label-tracking);
+  color: rgb(var(--ui-label));
+}
+
+html.flat-theme [data-ui~="prompt-audit-page"] section div:is([class~="rounded-xl"], [class~="rounded-lg"])[class~="border"]:not([class~="border-dashed"]) {
+  border-color: rgb(var(--ui-line));
+}
+
+html.flat-theme [data-ui~="prompt-audit-page"] section div[class~="rounded-xl"][class~="border"] {
+  border-radius: var(--ui-radius-lg);
+}
+
+html.flat-theme [data-ui~="prompt-audit-page"] section div[class~="rounded-lg"][class~="bg-gray-50"] {
+  border-radius: var(--ui-radius-md);
+  background-color: color-mix(in srgb, rgb(var(--ui-subtle)) 60%, rgb(var(--ui-surface)));
+}
+
+html.flat-theme [data-ui~="prompt-audit-page"] section div[class~="rounded-lg"][class~="bg-gray-50"] > p:nth-child(2) {
+  font-family: var(--ui-font-mono);
+}
+
+html.flat-theme [data-ui~="prompt-audit-page"] section div[class~="border-dashed"] {
+  border-color: rgb(var(--ui-line-strong));
+  border-radius: var(--ui-radius-lg);
+  color: rgb(var(--ui-muted));
+}
+
+/* the endpoint list: the header row the mono label; rows hover the reference's fill (no accent edge); the limit chips Mono */
+html.flat-theme [data-ui~="prompt-audit-page"] section div[class~="xl:grid"][class~="uppercase"] {
+  border-left-width: 0;
+  background-color: rgb(var(--ui-surface));
+  color: rgb(var(--ui-label));
+  font-family: var(--ui-font-mono);
+  font-size: var(--ui-label-size);
+  font-weight: 500;
+  letter-spacing: var(--ui-label-tracking);
+}
+
+html.flat-theme [data-ui~="prompt-audit-page"] section article[class~="group"] {
+  border-left-width: 0;
+}
+
+html.flat-theme [data-ui~="prompt-audit-page"] section article[class~="group"]:hover {
+  background-color: rgb(var(--ui-hover));
+}
+
+html.flat-theme [data-ui~="prompt-audit-page"] section span[class~="rounded-md"][class~="bg-gray-100"][class~="tabular-nums"] {
+  border: 1px solid rgb(var(--ui-line));
+  border-radius: var(--ui-radius-sm);
+  background-color: rgb(var(--ui-subtle));
+  color: rgb(var(--ui-ink-soft));
+  font-family: var(--ui-font-mono);
+  font-size: 11px;
+}
+
+/* the events' filters: wrapping labels with the label text as the mono label above the 34px control */
+html.flat-theme [data-ui~="prompt-audit-page"] form[class~="grid"] > label[class~="text-xs"] > span:first-child {
+  font-family: var(--ui-font-mono);
+  font-size: var(--ui-label-size);
+  line-height: var(--ui-label-leading);
+  letter-spacing: var(--ui-label-tracking);
+  text-transform: uppercase;
+  color: rgb(var(--ui-label));
+}
+
+html.flat-theme [data-ui~="prompt-audit-page"] div[class~="overflow-x-auto"][class~="rounded-xl"][class~="border"] {
+  border-color: rgb(var(--ui-line));
+  border-radius: var(--ui-radius-lg);
+}
+
+/* the save bar (config tab): a surface band on the structural line, the reference's quiet footer (no drop shadow) */
+html.flat-theme [data-ui~="prompt-audit-page"] + div[class~="sticky"][class~="bottom-0"] {
+  border-color: rgb(var(--ui-line));
+  background-color: rgb(var(--ui-surface));
+  box-shadow: none;
+}

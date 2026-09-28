@@ -512,6 +512,7 @@
                   <span
                     v-for="platform in KEY_GROUP_PROVIDER_ICONS[provider.value]"
                     :key="platform"
+                    data-ui="platform-chip"
                     class="flex h-6 w-6 shrink-0 items-center justify-center rounded-md"
                     :class="platformBadgeLightClass(platform)"
                   >

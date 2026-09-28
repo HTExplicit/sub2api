@@ -445,6 +445,34 @@ html.flat-theme .app-main > header > div > div:last-child {
     width: 15px;
     height: 15px;
   }
+
+  /* The page title after the menu button (coordinator decision, wave 2: the owner prefers more information on a
+     phone): one line, 14 / 600 ink, an ellipsis when it does not fit; the description stays hidden. The title takes
+     what the controls leave; the controls keep their size. */
+  html.flat-theme .app-main > header > div > div:first-child {
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+
+  html.flat-theme .app-main > header > div > div:last-child {
+    flex: 0 0 auto;
+  }
+
+  html.flat-theme .app-main > header > div > div:first-child > div[class~="hidden"]:has(> h1) {
+    display: block;
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+
+  html.flat-theme .app-main > header > div > div:first-child > div[class~="hidden"] > h1 {
+    overflow: hidden;
+    font: 600 14px/20px var(--ui-font);
+    text-overflow: ellipsis;
+  }
+
+  html.flat-theme .app-main > header > div > div:first-child > div[class~="hidden"] > h1 + p {
+    display: none;
+  }
 }
 
 /* Desktop: the first row of the content column, 30px tall at the content gutter (/logs: y = 30), no fill, no line,

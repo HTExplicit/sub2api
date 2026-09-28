@@ -217,7 +217,7 @@ watch(
 
 <template>
   <BaseDialog :show="show" :title="modalTitle" width="full" @close="close">
-    <div class="flex h-full min-h-0 flex-col">
+    <div class="flex h-full min-h-0 flex-col" data-ui="ops-dialog ops-error-list">
       <!-- Filters -->
       <div class="mb-4 flex-shrink-0 border-b border-gray-200 pb-4 dark:border-dark-700">
         <div class="grid grid-cols-2 gap-2 md:grid-cols-8">

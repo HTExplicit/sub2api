@@ -478,6 +478,144 @@
   --theme-text-purple-800: 237 233 254;
 }
 
+/* ------------------------------------------------------------------ identity hues (owner decision 2, wave 2)
+   Platform identity keeps upstream's platform colours: every Tailwind hue upstream gives a platform, a group or a plan
+   (PlatformTypeBadge, GroupBadge, the group pickers' rate pills) gets its own text colour (>= 4.5:1 on its fill, on the
+   surface and on the row hover; the logo glyph inherits it, so >= 3:1), a soft fill and a 1px line, in the reference's
+   chip. Upstream's shades: fill = the 50/100 midpoint (zinc 100), line = the 500 at 32 %, text = the 700 (orange a
+   touch deeper for the hover row, amber and green the 800); dark: fill = the 500 at 14 % and line at 40 % over the
+   surface, text = the 300. Only the identity rules in data.css §6 read them; every other upstream hue keeps folding
+   into the status families above (decision 2: colour only for identity, status and the accent). */
+:root.flat-theme {
+  --ui-id-orange: 190 64 13;
+  --ui-id-orange-soft: 255 242 225;
+  --ui-id-orange-line: 253 210 180;
+  --ui-id-amber: 146 64 14;
+  --ui-id-amber-soft: 254 247 217;
+  --ui-id-amber-line: 252 224 177;
+  --ui-id-emerald: 4 120 87;
+  --ui-id-emerald-soft: 222 252 237;
+  --ui-id-emerald-line: 179 233 215;
+  --ui-id-green: 22 101 52;
+  --ui-id-green-soft: 230 252 238;
+  --ui-id-green-line: 184 236 203;
+  --ui-id-teal: 15 118 110;
+  --ui-id-teal-soft: 222 252 246;
+  --ui-id-teal-line: 180 232 227;
+  --ui-id-cyan: 14 116 144;
+  --ui-id-cyan-soft: 222 252 254;
+  --ui-id-cyan-line: 175 232 241;
+  --ui-id-sky: 3 105 161;
+  --ui-id-sky-soft: 232 246 254;
+  --ui-id-sky-line: 178 226 248;
+  --ui-id-blue: 29 78 216;
+  --ui-id-blue-soft: 229 240 254;
+  --ui-id-blue-line: 192 215 252;
+  --ui-id-indigo: 67 56 202;
+  --ui-id-indigo-soft: 231 236 255;
+  --ui-id-indigo-line: 205 206 251;
+  --ui-id-violet: 109 40 217;
+  --ui-id-violet-soft: 241 238 254;
+  --ui-id-violet-line: 218 203 252;
+  --ui-id-purple: 126 34 206;
+  --ui-id-purple-soft: 246 238 255;
+  --ui-id-purple-line: 227 201 252;
+  --ui-id-fuchsia: 162 28 175;
+  --ui-id-fuchsia-soft: 252 238 255;
+  --ui-id-fuchsia-line: 243 196 250;
+  --ui-id-pink: 190 24 93;
+  --ui-id-pink-soft: 252 236 246;
+  --ui-id-pink-line: 249 196 222;
+  --ui-id-rose: 190 18 60;
+  --ui-id-rose-soft: 255 234 236;
+  --ui-id-rose-line: 251 194 203;
+  --ui-id-zinc: 63 63 70;
+  --ui-id-zinc-soft: 244 244 245;
+  --ui-id-zinc-line: 212 212 216;
+  /* one colour per platform for the consumers that derive their own tints, text and fills from it
+     (platformColors.ts platformAccentColor: the model plaza's chips and paid-price zone). It must carry white
+     text as a fill and turn into >= 4.5:1 text when mixed with black (light) or white (dark), so it is the text
+     shade in light and a 600-level shade in dark. */
+  --ui-id-orange-accent: 190 64 13;
+  --ui-id-amber-accent: 146 64 14;
+  --ui-id-emerald-accent: 4 120 87;
+  --ui-id-green-accent: 22 101 52;
+  --ui-id-teal-accent: 15 118 110;
+  --ui-id-cyan-accent: 14 116 144;
+  --ui-id-sky-accent: 3 105 161;
+  --ui-id-blue-accent: 29 78 216;
+  --ui-id-indigo-accent: 67 56 202;
+  --ui-id-violet-accent: 109 40 217;
+  --ui-id-purple-accent: 126 34 206;
+  --ui-id-fuchsia-accent: 162 28 175;
+  --ui-id-pink-accent: 190 24 93;
+  --ui-id-rose-accent: 190 18 60;
+  --ui-id-zinc-accent: 63 63 70;
+}
+
+:root.flat-theme.dark {
+  --ui-id-orange: 253 186 116;
+  --ui-id-orange-soft: 57 38 25;
+  --ui-id-orange-line: 115 62 24;
+  --ui-id-amber: 252 211 77;
+  --ui-id-amber-soft: 57 44 24;
+  --ui-id-amber-line: 114 79 20;
+  --ui-id-emerald: 110 231 183;
+  --ui-id-emerald-soft: 25 48 40;
+  --ui-id-emerald-line: 22 90 67;
+  --ui-id-green: 134 239 172;
+  --ui-id-green-soft: 27 50 36;
+  --ui-id-green-line: 29 94 53;
+  --ui-id-teal: 94 234 212;
+  --ui-id-teal-soft: 25 48 46;
+  --ui-id-teal-line: 24 89 82;
+  --ui-id-cyan: 103 232 249;
+  --ui-id-cyan-soft: 23 48 52;
+  --ui-id-cyan-line: 18 88 100;
+  --ui-id-sky: 125 211 252;
+  --ui-id-sky-soft: 24 45 55;
+  --ui-id-sky-line: 21 82 109;
+  --ui-id-blue: 147 197 253;
+  --ui-id-blue-soft: 31 41 57;
+  --ui-id-blue-line: 39 68 114;
+  --ui-id-indigo: 165 180 252;
+  --ui-id-indigo-soft: 36 37 56;
+  --ui-id-indigo-line: 55 56 112;
+  --ui-id-violet: 196 181 253;
+  --ui-id-violet-soft: 42 35 57;
+  --ui-id-violet-line: 71 52 114;
+  --ui-id-purple: 216 180 254;
+  --ui-id-purple-soft: 46 34 57;
+  --ui-id-purple-line: 83 50 114;
+  --ui-id-fuchsia: 240 171 252;
+  --ui-id-fuchsia-soft: 53 32 56;
+  --ui-id-fuchsia-line: 102 44 111;
+  --ui-id-pink: 249 168 212;
+  --ui-id-pink-soft: 55 32 44;
+  --ui-id-pink-line: 110 44 77;
+  --ui-id-rose: 253 164 175;
+  --ui-id-rose-soft: 57 31 36;
+  --ui-id-rose-line: 113 41 53;
+  --ui-id-zinc: 212 212 216;
+  --ui-id-zinc-soft: 39 39 42;
+  --ui-id-zinc-line: 82 82 91;
+  --ui-id-orange-accent: 202 70 12;
+  --ui-id-amber-accent: 182 85 9;
+  --ui-id-emerald-accent: 4 129 92;
+  --ui-id-green-accent: 21 130 62;
+  --ui-id-teal-accent: 14 126 116;
+  --ui-id-cyan-accent: 13 122 151;
+  --ui-id-sky-accent: 2 118 180;
+  --ui-id-blue-accent: 40 104 237;
+  --ui-id-indigo-accent: 93 92 237;
+  --ui-id-violet-accent: 132 77 242;
+  --ui-id-purple-accent: 154 63 239;
+  --ui-id-fuchsia-accent: 192 38 211;
+  --ui-id-pink-accent: 216 38 116;
+  --ui-id-rose-accent: 226 31 73;
+  --ui-id-zinc-accent: 110 110 119;
+}
+
 /* ------------------------------------------------------------------ shape, depth, motion */
 :root.flat-theme {
   /* upstream's radii onto the reference's three: controls (xl: buttons, inputs, dropdowns; lg, md) 6px, cards

@@ -1,6 +1,6 @@
 <template>
   <AppLayout>
-    <div class="mx-auto max-w-6xl space-y-6">
+    <div class="mx-auto max-w-6xl space-y-6" data-ui="settings">
       <!-- Loading State -->
       <div v-if="loading" class="flex items-center justify-center py-12">
         <div

@@ -1548,7 +1548,7 @@ function handleToolbarRefresh() {
       <div v-if="!jobHeartbeats.length" class="text-sm text-gray-500 dark:text-gray-400">
         {{ t('admin.ops.noData') }}
       </div>
-      <div v-else class="space-y-3">
+      <div v-else class="space-y-3" data-ui="ops-dialog ops-jobs">
         <div
           v-for="hb in jobHeartbeats"
           :key="hb.job_name"
@@ -1586,7 +1586,7 @@ function handleToolbarRefresh() {
 
     <!-- Custom Time Range Dialog -->
     <BaseDialog :show="showCustomTimeRangeDialog" :title="t('admin.ops.timeRange.custom')" width="narrow" @close="handleCustomTimeRangeCancel">
-      <div class="space-y-4">
+      <div class="space-y-4" data-ui="ops-dialog ops-custom-range">
         <div>
           <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
             {{ t('admin.ops.customTimeRange.startTime') }}

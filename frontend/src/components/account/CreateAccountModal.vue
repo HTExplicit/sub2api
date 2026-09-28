@@ -6,7 +6,7 @@
     @close="handleClose"
   >
     <!-- Step Indicator for OAuth accounts -->
-    <div v-if="isOAuthFlow" class="mb-6 flex items-center justify-center">
+    <div v-if="isOAuthFlow" class="mb-6 flex items-center justify-center" data-ui="account-create-steps">
       <div class="flex items-center space-x-4">
         <div class="flex items-center">
           <div

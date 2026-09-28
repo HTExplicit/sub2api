@@ -6,8 +6,8 @@ import type { Plugin } from 'chart.js'
 // the Experiential Labs console's charts (ui-el REF-CONSOLE §8.14): the UI font at 11px, axis labels in the muted
 // text colour, one 1px structural gridline per value step and none across the categories, no axis lines or tick
 // marks, three value steps, level labels (the ones that do not fit are skipped); 1.5px lines without dots (a dot on
-// hover), a thinner ring; legends with 8px squares (2px corners) in the series' solid colour and the faint text
-// colour; tooltips as the reference's popover (surface, 1px line, 6px radius, 12 / 10 inset, 11px, the popover
+// hover), a thinner ring; legends under the plot at its left edge, with 8px squares (2px corners) in the series'
+// solid colour and the faint text colour; tooltips as the reference's popover (surface, 1px line, 6px radius, 12 / 10 inset, 11px, the popover
 // shadow, no caret, solid colour keys). A chart's own options still win over these defaults.
 // Every default changed is saved first and restored when the theme is switched off at runtime. Charts re-resolve the
 // defaults on the update that follows the next colour read.
@@ -109,6 +109,34 @@ const consoleTooltipShadow: Plugin = {
 }
 let tooltipShadowRegistered = false
 
+// Legends sit under the plot, at its left edge (REF-CONSOLE §8.14: the /logs chart's legend). Upstream's line charts
+// ask for position 'top' in their own options, which win over the defaults, so while the console charts are on this
+// plugin moves every shown legend to bottom / start before the layout pass (the legend plugin may have configured
+// its box earlier in the same update, so the box is moved too). The chart's own choice is kept on the chart and put
+// back on the first update after the theme is switched off.
+type LegendPlacement = { position: unknown; align: unknown }
+type LegendOptionsLike = { display?: unknown; position?: unknown; align?: unknown }
+const consoleLegendPlacement: Plugin = {
+  id: 'consoleLegendPlacement',
+  beforeUpdate(chart) {
+    const legend = (chart.options.plugins as unknown as { legend?: LegendOptionsLike } | undefined)?.legend
+    if (!legend) return
+    const holder = chart as unknown as { $consoleLegendPlacement?: LegendPlacement; legend?: { position?: unknown } }
+    if (consoleCharts && legend.display !== false) {
+      if (!holder.$consoleLegendPlacement) holder.$consoleLegendPlacement = { position: legend.position, align: legend.align }
+      legend.position = 'bottom'
+      legend.align = 'start'
+      if (holder.legend) holder.legend.position = 'bottom'
+    } else if (!consoleCharts && holder.$consoleLegendPlacement) {
+      const own = holder.$consoleLegendPlacement
+      legend.position = own.position
+      legend.align = own.align
+      if (holder.legend) holder.legend.position = own.position
+      delete holder.$consoleLegendPlacement
+    }
+  }
+}
+
 function applyConsoleChartDefaults(styles: CSSStyleDeclaration, dark: boolean) {
   const token = (name: string) => styles.getPropertyValue(name).trim()
   const rgb = (name: string, fallback: string) => {
@@ -182,7 +210,7 @@ function applyConsoleChartDefaults(styles: CSSStyleDeclaration, dark: boolean) {
   savedDefaults = saved
   tooltipShadowColor = dark ? 'rgba(0, 0, 0, 0.55)' : 'rgba(20, 20, 18, 0.08)'
   if (!tooltipShadowRegistered) {
-    Chart.register(consoleTooltipShadow)
+    Chart.register(consoleTooltipShadow, consoleLegendPlacement)
     tooltipShadowRegistered = true
   }
   consoleCharts = true

@@ -17,6 +17,9 @@
  *   data-ui="platform-badge"  components/common/PlatformTypeBadge.vue root
  *   data-ui="group-badge"     components/common/GroupBadge.vue      root
  *   data-ui="skeleton"        components/common/Skeleton.vue        root
+ * Opt-in hooks for page owners (wave 2, §6.4): data-ui~="platform-chip" / "platform-text" (an element upstream colours
+ * by platform with Tailwind hue classes keeps that platform colour, decision 2) and data-ui~="category-chip" (a
+ * category label drawn as the reference's neutral chip: request type, billing mode, protocol, role ...).
  * Hooks used from other owners: data-ui~="bulk-bar" (AccountBulkActionsBar, the accounts agent), data-table and
  * data-column (DataTable), aria-sort on sortable headers. */
 
@@ -53,6 +56,19 @@ html.flat-theme {
   --ui-dot-idle: 163 163 163;
   /* the bulk bar floats only where its owner places it over content */
   --ui-bulk-bar-shadow: none;
+  /* Table header labels (wave 2, the management agent's decision): the muted grey instead of the label grey, so a
+     header under an open menu's popover shadow (#f6f6f6-#f8f8f8 behind it) still reads 4.5:1 (#737373 fell to
+     4.39); 5.25 on the surface. Dark keeps the label grey (6.3 on the surface). Only table headers; the other mono
+     labels keep --ui-label. */
+  --ui-table-head: var(--ui-muted);
+  /* Badge text (light): each status text a step deeper than the status token, so a badge under a popover shadow
+     (up to 6 % of the shadow colour over its soft fill) keeps 4.5:1 (the ACTIVE success badge fell to 4.45, the
+     danger badge to 4.41). Dark reads the status tokens (>= 6:1). */
+  --ui-badge-success: 26 122 61;
+  --ui-badge-danger: 190 52 52;
+  --ui-badge-warning: 172 79 9;
+  --ui-badge-link: 19 120 64;
+  --ui-badge-muted: 104 104 104;
   /* Time-series chart palette (read by composables/usePresentationColors.ts as `trend`): the reference's usage
      series (REF §8.14 --usage-series-*) in the hue order of upstream's series (blue, emerald, amber, red, violet,
      pink, teal, orange, indigo, lime, cyan, purple), so a chart that picks a series by index keeps its hue. Lines
@@ -78,6 +94,15 @@ html.flat-theme:lang(zh) {
 }
 
 html.flat-theme.dark {
+  --ui-table-head: var(--ui-label);
+  /* danger text on the dark selected fill: the danger red 70 % toward ink (#f69898), 5.24:1 on the selected fill and
+     4.70 on its hover (#f87171 is 4.03 / 3.62; the 75 % mix, 4.98, falls to 4.47 on the hover) */
+  --ui-selected-danger: 246 152 152;
+  --ui-badge-success: var(--ui-success);
+  --ui-badge-danger: var(--ui-danger);
+  --ui-badge-warning: var(--ui-warning);
+  --ui-badge-link: 182 247 200;
+  --ui-badge-muted: var(--ui-muted);
   --ui-scroll-thumb: 122 122 122;
   --ui-scroll-thumb-hover: 156 156 156;
   /* the reference's dark fills are the colour at 42 % over the surface */
@@ -131,7 +156,7 @@ html.flat-theme .table-wrapper .table-header .sticky-header-cell {
   border-bottom-width: 0;
   background-color: rgb(var(--ui-surface));
   box-shadow: inset 0 -1px 0 rgb(var(--ui-line));
-  color: rgb(var(--ui-label));
+  color: rgb(var(--ui-table-head));
   font-family: var(--ui-font-mono);
   font-size: var(--ui-label-size);
   font-weight: 500;
@@ -231,8 +256,9 @@ html.flat-theme .table-wrapper > table > tbody.table-body > tr > td:is([data-col
 
 /* Small data chips inside cells (upstream's `inline-flex rounded px-2 py-0.5 text-xs` spans: group, request type,
    billing mode, tags, cache marks): the reference's tool / prompt chip shape (REF §8.8: 4px radius, 6 / 1 inset,
-   Geist Mono 10.5px); each keeps its colour family (the status families of tokens.css). */
-html.flat-theme .table-wrapper > table > tbody.table-body > tr > td span:is([class~="inline-flex"], [class~="inline-block"])[class~="rounded"]:is([class~="px-1"], [class~="px-1.5"], [class~="px-2"]):is([class~="py-0.5"], [class~="py-px"]):is([class~="text-xs"], [class~="text-[10px]"], [class~="text-[11px]"]) {
+   Geist Mono 10.5px); each keeps its colour family (the status families of tokens.css). A chip that carries a
+   data-ui hook (platform-chip, category-chip, a page owner's) is its owner's. */
+html.flat-theme .table-wrapper > table > tbody.table-body > tr > td span:not([data-ui]):is([class~="inline-flex"], [class~="inline-block"])[class~="rounded"]:is([class~="px-1"], [class~="px-1.5"], [class~="px-2"]):is([class~="py-0.5"], [class~="py-px"]):is([class~="text-xs"], [class~="text-[10px]"], [class~="text-[11px]"]) {
   padding: 1px 6px;
   border-radius: var(--ui-radius-sm);
   font-family: var(--ui-font-mono);
@@ -261,6 +287,21 @@ html.flat-theme .table-wrapper .table-body > tr:is([class~="bg-primary-50/40"], 
 
 html.flat-theme .table-wrapper .table-body > tr:is([class~="bg-primary-50/40"], :has(> td[data-column="select"] input[type="checkbox"]:checked)):hover {
   background-color: color-mix(in srgb, rgb(var(--ui-primary-soft)) 100%, rgb(var(--ui-ink)) 4%);
+}
+
+/* On the dark selected fill (#333e36) upstream's secondary greys fall short (text-gray-400 / dark:text-dark-500
+   #919191 3.54:1, text-gray-500 / dark:text-dark-400 #9c9c9c 4.06:1): in a selected row they take the muted grey
+   (#b3b3b3, 5.39:1; 5.1 on the selected hover). Light is unchanged. Every selectable table. (wave 2, reported by
+   the management and user-side agents) */
+html.flat-theme.dark .table-wrapper .table-body > tr:is([class~="bg-primary-50/40"], :has(> td[data-column="select"] input[type="checkbox"]:checked)) :is([class~="text-gray-400"], [class~="text-gray-500"], [class~="dark:text-dark-400"], [class~="dark:text-dark-500"]) {
+  color: rgb(var(--ui-muted));
+}
+
+/* and the danger red of a failure note in a selected row (the accounts usage tickets' 「…检查失败」): #f87171 is 4.03:1 on
+   the selected fill; the lighter red keeps it a failure and readable (batch 7, reported by the accounts agent).
+   Amber (6.68) and the light theme's red (4.79) hold as they are. */
+html.flat-theme.dark .table-wrapper .table-body > tr:is([class~="bg-primary-50/40"], :has(> td[data-column="select"] input[type="checkbox"]:checked)) :is([class~="text-red-500"], [class~="text-red-600"], [class~="dark:text-red-400"]) {
+  color: rgb(var(--ui-selected-danger));
 }
 
 /* Sticky columns: upstream paints them white / slate (#111827, #1f2937 on hover) whatever the row shows; here they
@@ -488,7 +529,7 @@ html.flat-theme table > thead[class~="bg-gray-50"] + tbody[class~="bg-white"] {
 html.flat-theme table > thead[class~="bg-gray-50"] > tr > th {
   background-color: rgb(var(--ui-surface));
   box-shadow: inset 0 -1px 0 rgb(var(--ui-line));
-  color: rgb(var(--ui-label));
+  color: rgb(var(--ui-table-head));
   font-family: var(--ui-font-mono);
   font-size: var(--ui-label-size);
   font-weight: 500;
@@ -803,27 +844,27 @@ html.flat-theme .badge {
 
 html.flat-theme .badge-primary {
   background-color: rgb(var(--ui-primary-soft));
-  color: var(--ui-link);
+  color: rgb(var(--ui-badge-link));
 }
 
 html.flat-theme .badge-success {
   background-color: rgb(var(--ui-success-soft));
-  color: rgb(var(--ui-success));
+  color: rgb(var(--ui-badge-success));
 }
 
 html.flat-theme .badge-warning {
   background-color: rgb(var(--ui-warning-soft));
-  color: rgb(var(--ui-warning));
+  color: rgb(var(--ui-badge-warning));
 }
 
 html.flat-theme .badge-danger {
   background-color: rgb(var(--ui-danger-soft));
-  color: rgb(var(--ui-danger));
+  color: rgb(var(--ui-badge-danger));
 }
 
 html.flat-theme .badge-gray {
   background-color: rgb(var(--ui-subtle));
-  color: rgb(var(--ui-muted));
+  color: rgb(var(--ui-badge-muted));
 }
 
 html.flat-theme .badge-purple {
@@ -860,10 +901,215 @@ html.flat-theme [data-ui="status-badge"] > span:last-child {
   line-height: 18px;
 }
 
-/* PlatformTypeBadge (D3): identity without a hue per platform, on one line (D5 single-line rows). First the
-   reference's provider chip (REF §8.8: 4px radius, 1px control outline, Geist Mono 10px uppercase .025em, ink-soft,
-   monochrome logo) holding the platform and, after a 1px divider, the credential type; then the plan as a neutral
-   chip and the privacy state as a soft status chip; last the expiry in mono. */
+/* Identity (owner decision 2, wave 2): platforms, groups and plans keep upstream's platform colours, drawn as the
+   reference's chips (REF §8.8 provider chip: 4px radius, 1px line, Geist Mono 10px uppercase .025em, the logo in the
+   chip's colour). A chip's colour is the Tailwind hue upstream gives it (the class names in the component:
+   bg-orange-100, text-emerald-700 ...); that hue's tokens (tokens.css "identity hues": text >= 4.5:1 on the fill, the
+   surface and the row hover; a soft fill; a 1px line) are set on each hue carrier as --pf-text / --pf-soft /
+   --pf-line / --pf-sub, and the chip rules read them with a neutral fallback, so a chip without a known hue (a free
+   plan, an unknown platform) stays the reference's neutral chip. Status stays status: the privacy state, an abnormal
+   plan, a subscription's days left and the peak-rate window keep the status colours.
+   Contract for page owners: an element that upstream colours by platform with Tailwind hue classes can opt in with
+   data-ui~="platform-chip" (line, fill, text) or data-ui~="platform-text" (text and glyph only).
+   Hooks: data-ui="platform-badge", data-ui="group-badge"; GroupOptionItem's rate pill is reached through the badge's
+   own class (.groupOptionItemBadge), no template change. */
+html.flat-theme [data-ui="platform-badge"] > div[class~="inline-flex"] > span:not([title])[class*="-orange-"],
+html.flat-theme [data-ui="group-badge"][class*="-orange-"],
+html.flat-theme [data-ui="group-badge"] > span[class*="-orange-"],
+html.flat-theme [data-ui~="platform-chip"][class*="-orange-"],
+html.flat-theme [data-ui~="platform-text"][class*="-orange-"],
+html.flat-theme div:has(> div > .groupOptionItemBadge) > div:last-child > div > span[class~="rounded-full"]:first-child[class*="-orange-"],
+html.flat-theme [data-ui="platform-badge"] > div[class~="inline-flex"]:first-child:has(> span:first-child[class*="-orange-"]) {
+  --pf-text: var(--ui-id-orange);
+  --pf-soft: var(--ui-id-orange-soft);
+  --pf-line: var(--ui-id-orange-line);
+  --pf-sub: var(--ui-surface);
+}
+
+html.flat-theme [data-ui="platform-badge"] > div[class~="inline-flex"] > span:not([title])[class*="-amber-"],
+html.flat-theme [data-ui="group-badge"][class*="-amber-"],
+html.flat-theme [data-ui="group-badge"] > span[class*="-amber-"],
+html.flat-theme [data-ui~="platform-chip"][class*="-amber-"],
+html.flat-theme [data-ui~="platform-text"][class*="-amber-"],
+html.flat-theme div:has(> div > .groupOptionItemBadge) > div:last-child > div > span[class~="rounded-full"]:first-child[class*="-amber-"],
+html.flat-theme [data-ui="platform-badge"] > div[class~="inline-flex"]:first-child:has(> span:first-child[class*="-amber-"]) {
+  --pf-text: var(--ui-id-amber);
+  --pf-soft: var(--ui-id-amber-soft);
+  --pf-line: var(--ui-id-amber-line);
+  --pf-sub: var(--ui-surface);
+}
+
+html.flat-theme [data-ui="platform-badge"] > div[class~="inline-flex"] > span:not([title])[class*="-emerald-"],
+html.flat-theme [data-ui="group-badge"][class*="-emerald-"],
+html.flat-theme [data-ui="group-badge"] > span[class*="-emerald-"],
+html.flat-theme [data-ui~="platform-chip"][class*="-emerald-"],
+html.flat-theme [data-ui~="platform-text"][class*="-emerald-"],
+html.flat-theme div:has(> div > .groupOptionItemBadge) > div:last-child > div > span[class~="rounded-full"]:first-child[class*="-emerald-"],
+html.flat-theme [data-ui="platform-badge"] > div[class~="inline-flex"]:first-child:has(> span:first-child[class*="-emerald-"]) {
+  --pf-text: var(--ui-id-emerald);
+  --pf-soft: var(--ui-id-emerald-soft);
+  --pf-line: var(--ui-id-emerald-line);
+  --pf-sub: var(--ui-surface);
+}
+
+html.flat-theme [data-ui="platform-badge"] > div[class~="inline-flex"] > span:not([title])[class*="-green-"],
+html.flat-theme [data-ui="group-badge"][class*="-green-"],
+html.flat-theme [data-ui="group-badge"] > span[class*="-green-"],
+html.flat-theme [data-ui~="platform-chip"][class*="-green-"],
+html.flat-theme [data-ui~="platform-text"][class*="-green-"],
+html.flat-theme div:has(> div > .groupOptionItemBadge) > div:last-child > div > span[class~="rounded-full"]:first-child[class*="-green-"],
+html.flat-theme [data-ui="platform-badge"] > div[class~="inline-flex"]:first-child:has(> span:first-child[class*="-green-"]) {
+  --pf-text: var(--ui-id-green);
+  --pf-soft: var(--ui-id-green-soft);
+  --pf-line: var(--ui-id-green-line);
+  --pf-sub: var(--ui-surface);
+}
+
+html.flat-theme [data-ui="platform-badge"] > div[class~="inline-flex"] > span:not([title])[class*="-teal-"],
+html.flat-theme [data-ui="group-badge"][class*="-teal-"],
+html.flat-theme [data-ui="group-badge"] > span[class*="-teal-"],
+html.flat-theme [data-ui~="platform-chip"][class*="-teal-"],
+html.flat-theme [data-ui~="platform-text"][class*="-teal-"],
+html.flat-theme div:has(> div > .groupOptionItemBadge) > div:last-child > div > span[class~="rounded-full"]:first-child[class*="-teal-"],
+html.flat-theme [data-ui="platform-badge"] > div[class~="inline-flex"]:first-child:has(> span:first-child[class*="-teal-"]) {
+  --pf-text: var(--ui-id-teal);
+  --pf-soft: var(--ui-id-teal-soft);
+  --pf-line: var(--ui-id-teal-line);
+  --pf-sub: var(--ui-surface);
+}
+
+html.flat-theme [data-ui="platform-badge"] > div[class~="inline-flex"] > span:not([title])[class*="-cyan-"],
+html.flat-theme [data-ui="group-badge"][class*="-cyan-"],
+html.flat-theme [data-ui="group-badge"] > span[class*="-cyan-"],
+html.flat-theme [data-ui~="platform-chip"][class*="-cyan-"],
+html.flat-theme [data-ui~="platform-text"][class*="-cyan-"],
+html.flat-theme div:has(> div > .groupOptionItemBadge) > div:last-child > div > span[class~="rounded-full"]:first-child[class*="-cyan-"],
+html.flat-theme [data-ui="platform-badge"] > div[class~="inline-flex"]:first-child:has(> span:first-child[class*="-cyan-"]) {
+  --pf-text: var(--ui-id-cyan);
+  --pf-soft: var(--ui-id-cyan-soft);
+  --pf-line: var(--ui-id-cyan-line);
+  --pf-sub: var(--ui-surface);
+}
+
+html.flat-theme [data-ui="platform-badge"] > div[class~="inline-flex"] > span:not([title])[class*="-sky-"],
+html.flat-theme [data-ui="group-badge"][class*="-sky-"],
+html.flat-theme [data-ui="group-badge"] > span[class*="-sky-"],
+html.flat-theme [data-ui~="platform-chip"][class*="-sky-"],
+html.flat-theme [data-ui~="platform-text"][class*="-sky-"],
+html.flat-theme div:has(> div > .groupOptionItemBadge) > div:last-child > div > span[class~="rounded-full"]:first-child[class*="-sky-"],
+html.flat-theme [data-ui="platform-badge"] > div[class~="inline-flex"]:first-child:has(> span:first-child[class*="-sky-"]) {
+  --pf-text: var(--ui-id-sky);
+  --pf-soft: var(--ui-id-sky-soft);
+  --pf-line: var(--ui-id-sky-line);
+  --pf-sub: var(--ui-surface);
+}
+
+html.flat-theme [data-ui="platform-badge"] > div[class~="inline-flex"] > span:not([title])[class*="-blue-"],
+html.flat-theme [data-ui="group-badge"][class*="-blue-"],
+html.flat-theme [data-ui="group-badge"] > span[class*="-blue-"],
+html.flat-theme [data-ui~="platform-chip"][class*="-blue-"],
+html.flat-theme [data-ui~="platform-text"][class*="-blue-"],
+html.flat-theme div:has(> div > .groupOptionItemBadge) > div:last-child > div > span[class~="rounded-full"]:first-child[class*="-blue-"],
+html.flat-theme [data-ui="platform-badge"] > div[class~="inline-flex"]:first-child:has(> span:first-child[class*="-blue-"]) {
+  --pf-text: var(--ui-id-blue);
+  --pf-soft: var(--ui-id-blue-soft);
+  --pf-line: var(--ui-id-blue-line);
+  --pf-sub: var(--ui-surface);
+}
+
+html.flat-theme [data-ui="platform-badge"] > div[class~="inline-flex"] > span:not([title])[class*="-indigo-"],
+html.flat-theme [data-ui="group-badge"][class*="-indigo-"],
+html.flat-theme [data-ui="group-badge"] > span[class*="-indigo-"],
+html.flat-theme [data-ui~="platform-chip"][class*="-indigo-"],
+html.flat-theme [data-ui~="platform-text"][class*="-indigo-"],
+html.flat-theme div:has(> div > .groupOptionItemBadge) > div:last-child > div > span[class~="rounded-full"]:first-child[class*="-indigo-"],
+html.flat-theme [data-ui="platform-badge"] > div[class~="inline-flex"]:first-child:has(> span:first-child[class*="-indigo-"]) {
+  --pf-text: var(--ui-id-indigo);
+  --pf-soft: var(--ui-id-indigo-soft);
+  --pf-line: var(--ui-id-indigo-line);
+  --pf-sub: var(--ui-surface);
+}
+
+html.flat-theme [data-ui="platform-badge"] > div[class~="inline-flex"] > span:not([title])[class*="-violet-"],
+html.flat-theme [data-ui="group-badge"][class*="-violet-"],
+html.flat-theme [data-ui="group-badge"] > span[class*="-violet-"],
+html.flat-theme [data-ui~="platform-chip"][class*="-violet-"],
+html.flat-theme [data-ui~="platform-text"][class*="-violet-"],
+html.flat-theme div:has(> div > .groupOptionItemBadge) > div:last-child > div > span[class~="rounded-full"]:first-child[class*="-violet-"],
+html.flat-theme [data-ui="platform-badge"] > div[class~="inline-flex"]:first-child:has(> span:first-child[class*="-violet-"]) {
+  --pf-text: var(--ui-id-violet);
+  --pf-soft: var(--ui-id-violet-soft);
+  --pf-line: var(--ui-id-violet-line);
+  --pf-sub: var(--ui-surface);
+}
+
+html.flat-theme [data-ui="platform-badge"] > div[class~="inline-flex"] > span:not([title])[class*="-purple-"],
+html.flat-theme [data-ui="group-badge"][class*="-purple-"],
+html.flat-theme [data-ui="group-badge"] > span[class*="-purple-"],
+html.flat-theme [data-ui~="platform-chip"][class*="-purple-"],
+html.flat-theme [data-ui~="platform-text"][class*="-purple-"],
+html.flat-theme div:has(> div > .groupOptionItemBadge) > div:last-child > div > span[class~="rounded-full"]:first-child[class*="-purple-"],
+html.flat-theme [data-ui="platform-badge"] > div[class~="inline-flex"]:first-child:has(> span:first-child[class*="-purple-"]) {
+  --pf-text: var(--ui-id-purple);
+  --pf-soft: var(--ui-id-purple-soft);
+  --pf-line: var(--ui-id-purple-line);
+  --pf-sub: var(--ui-surface);
+}
+
+html.flat-theme [data-ui="platform-badge"] > div[class~="inline-flex"] > span:not([title])[class*="-fuchsia-"],
+html.flat-theme [data-ui="group-badge"][class*="-fuchsia-"],
+html.flat-theme [data-ui="group-badge"] > span[class*="-fuchsia-"],
+html.flat-theme [data-ui~="platform-chip"][class*="-fuchsia-"],
+html.flat-theme [data-ui~="platform-text"][class*="-fuchsia-"],
+html.flat-theme div:has(> div > .groupOptionItemBadge) > div:last-child > div > span[class~="rounded-full"]:first-child[class*="-fuchsia-"],
+html.flat-theme [data-ui="platform-badge"] > div[class~="inline-flex"]:first-child:has(> span:first-child[class*="-fuchsia-"]) {
+  --pf-text: var(--ui-id-fuchsia);
+  --pf-soft: var(--ui-id-fuchsia-soft);
+  --pf-line: var(--ui-id-fuchsia-line);
+  --pf-sub: var(--ui-surface);
+}
+
+html.flat-theme [data-ui="platform-badge"] > div[class~="inline-flex"] > span:not([title])[class*="-pink-"],
+html.flat-theme [data-ui="group-badge"][class*="-pink-"],
+html.flat-theme [data-ui="group-badge"] > span[class*="-pink-"],
+html.flat-theme [data-ui~="platform-chip"][class*="-pink-"],
+html.flat-theme [data-ui~="platform-text"][class*="-pink-"],
+html.flat-theme div:has(> div > .groupOptionItemBadge) > div:last-child > div > span[class~="rounded-full"]:first-child[class*="-pink-"],
+html.flat-theme [data-ui="platform-badge"] > div[class~="inline-flex"]:first-child:has(> span:first-child[class*="-pink-"]) {
+  --pf-text: var(--ui-id-pink);
+  --pf-soft: var(--ui-id-pink-soft);
+  --pf-line: var(--ui-id-pink-line);
+  --pf-sub: var(--ui-surface);
+}
+
+html.flat-theme [data-ui="platform-badge"] > div[class~="inline-flex"] > span:not([title])[class*="-rose-"],
+html.flat-theme [data-ui="group-badge"][class*="-rose-"],
+html.flat-theme [data-ui="group-badge"] > span[class*="-rose-"],
+html.flat-theme [data-ui~="platform-chip"][class*="-rose-"],
+html.flat-theme [data-ui~="platform-text"][class*="-rose-"],
+html.flat-theme div:has(> div > .groupOptionItemBadge) > div:last-child > div > span[class~="rounded-full"]:first-child[class*="-rose-"],
+html.flat-theme [data-ui="platform-badge"] > div[class~="inline-flex"]:first-child:has(> span:first-child[class*="-rose-"]) {
+  --pf-text: var(--ui-id-rose);
+  --pf-soft: var(--ui-id-rose-soft);
+  --pf-line: var(--ui-id-rose-line);
+  --pf-sub: var(--ui-surface);
+}
+
+html.flat-theme [data-ui="platform-badge"] > div[class~="inline-flex"] > span:not([title])[class*="-zinc-"],
+html.flat-theme [data-ui="group-badge"][class*="-zinc-"],
+html.flat-theme [data-ui="group-badge"] > span[class*="-zinc-"],
+html.flat-theme [data-ui~="platform-chip"][class*="-zinc-"],
+html.flat-theme [data-ui~="platform-text"][class*="-zinc-"],
+html.flat-theme div:has(> div > .groupOptionItemBadge) > div:last-child > div > span[class~="rounded-full"]:first-child[class*="-zinc-"],
+html.flat-theme [data-ui="platform-badge"] > div[class~="inline-flex"]:first-child:has(> span:first-child[class*="-zinc-"]) {
+  --pf-text: var(--ui-id-zinc);
+  --pf-soft: var(--ui-id-zinc-soft);
+  --pf-line: var(--ui-id-zinc-line);
+  --pf-sub: var(--ui-surface);
+}
+
+/* 6.1 PlatformTypeBadge, on one line (D5): the platform | type chip, then the plan chip and the privacy chip (each its
+   own chip: plan and privacy are different kinds), then the expiry in mono. */
 html.flat-theme [data-ui="platform-badge"] {
   flex-direction: row;
   flex-wrap: nowrap;
@@ -877,25 +1123,24 @@ html.flat-theme [data-ui="platform-badge"] {
   white-space: nowrap;
 }
 
-html.flat-theme [data-ui="platform-badge"] > div[class~="inline-flex"] {
+html.flat-theme [data-ui="platform-badge"] > div[class~="inline-flex"]:first-child {
   flex: 0 0 auto;
-  border: 1px solid rgb(var(--ui-line-strong));
+  border: 1px solid rgb(var(--pf-line, var(--ui-line-strong)));
   border-radius: var(--ui-radius-sm);
-  background-color: rgb(var(--ui-surface));
+  background-color: rgb(var(--pf-soft, var(--ui-surface)));
 }
 
 html.flat-theme [data-ui="platform-badge"] > div[class~="inline-flex"] > span {
   gap: 5px;
   padding: 1px 6px;
   background-color: transparent;
-  color: rgb(var(--ui-ink-soft));
+  color: rgb(var(--pf-text, var(--ui-ink-soft)));
   text-transform: uppercase;
   white-space: nowrap;
 }
 
-html.flat-theme [data-ui="platform-badge"] > div[class~="inline-flex"] > span + span {
-  border-left: 1px solid rgb(var(--ui-line));
-  color: rgb(var(--ui-muted));
+html.flat-theme [data-ui="platform-badge"] > div[class~="inline-flex"]:first-child > span + span {
+  border-left: 1px solid rgb(var(--pf-line, var(--ui-line)));
 }
 
 html.flat-theme [data-ui="platform-badge"] > div[class~="inline-flex"] > span svg {
@@ -903,39 +1148,42 @@ html.flat-theme [data-ui="platform-badge"] > div[class~="inline-flex"] > span sv
   height: 11px;
 }
 
-/* the plan chip: neutral (subtle fill, muted); an abnormal subscription stays a danger chip */
 html.flat-theme [data-ui="platform-badge"] > div[class~="inline-flex"]:nth-child(2) {
-  border-color: transparent;
-  background-color: rgb(var(--ui-subtle));
+  flex: 0 0 auto;
+  gap: 4px;
+  overflow: visible;
+  border: 0;
+  border-radius: 0;
+  background-color: transparent;
 }
 
-html.flat-theme [data-ui="platform-badge"] > div[class~="inline-flex"]:nth-child(2) > span:first-child:not([title]) {
-  color: rgb(var(--ui-muted));
+/* the plan: its upstream hue (Plus sky, Team / Business indigo, Pro violet, SuperGrok cyan, Heavy purple, other Grok
+   tiers amber); a free plan is the neutral chip (subtle fill, muted text) */
+html.flat-theme [data-ui="platform-badge"] > div[class~="inline-flex"]:nth-child(2) > span {
+  border: 1px solid rgb(var(--pf-line, var(--ui-line)));
+  border-radius: var(--ui-radius-sm);
+  background-color: rgb(var(--pf-soft, var(--ui-subtle)));
+  color: rgb(var(--pf-text, var(--ui-muted)));
 }
 
-html.flat-theme [data-ui="platform-badge"] > div[class~="inline-flex"]:nth-child(2) > span:first-child[class~="bg-red-100"] {
+/* an abnormal subscription is a danger state; the privacy chip is a status (private = success, Cloudflare-blocked =
+   warning, failed = danger) */
+html.flat-theme [data-ui="platform-badge"] > div[class~="inline-flex"]:nth-child(2) > span[class~="bg-red-100"] {
+  border-color: rgb(var(--ui-danger) / 0.3);
   background-color: rgb(var(--ui-danger-soft));
   color: rgb(var(--ui-danger));
 }
 
-/* the privacy state is a status: private = success, Cloudflare-blocked = warning, failed = danger (soft fills) */
-html.flat-theme [data-ui="platform-badge"] > div[class~="inline-flex"]:nth-child(2) > span[title] {
-  border-left: 0;
-}
-
 html.flat-theme [data-ui="platform-badge"] > div[class~="inline-flex"]:nth-child(2) > span[title][class~="bg-green-100"] {
+  border-color: rgb(var(--ui-success) / 0.3);
   background-color: rgb(var(--ui-success-soft));
   color: rgb(var(--ui-success));
 }
 
 html.flat-theme [data-ui="platform-badge"] > div[class~="inline-flex"]:nth-child(2) > span[title][class~="bg-yellow-100"] {
+  border-color: rgb(var(--ui-warning) / 0.3);
   background-color: rgb(var(--ui-warning-soft));
   color: rgb(var(--ui-warning));
-}
-
-html.flat-theme [data-ui="platform-badge"] > div[class~="inline-flex"]:nth-child(2) > span[title][class~="bg-red-100"] {
-  background-color: rgb(var(--ui-danger-soft));
-  color: rgb(var(--ui-danger));
 }
 
 html.flat-theme [data-ui="platform-badge"] > div:last-child:not(:first-child):not([class~="inline-flex"]) {
@@ -945,15 +1193,16 @@ html.flat-theme [data-ui="platform-badge"] > div:last-child:not(:first-child):no
   letter-spacing: 0;
 }
 
-/* GroupBadge (D3): a neutral chip (1px control outline, surface, 4px radius, 12px ink-soft, monochrome logo); the
-   multiplier a mono sub-chip on the subtle fill; the subscription's days left keep their warning / danger fills. */
+/* 6.2 GroupBadge (group cells, group pickers): the platform's chip (upstream gives standard and subscription groups
+   their own shade of the platform's hue), 4px radius, 12px name, the logo in the chip's colour; the multiplier a mono
+   sub-chip on a lighter patch; a subscription's days left and the peak window keep their warning / danger fills. */
 html.flat-theme [data-ui="group-badge"] {
   gap: 5px;
   padding: 1px 3px 1px 6px;
-  border: 1px solid rgb(var(--ui-line-strong));
+  border: 1px solid rgb(var(--pf-line, var(--ui-line-strong)));
   border-radius: var(--ui-radius-sm);
-  background-color: rgb(var(--ui-surface));
-  color: rgb(var(--ui-ink-soft));
+  background-color: rgb(var(--pf-soft, var(--ui-surface)));
+  color: rgb(var(--pf-text, var(--ui-ink-soft)));
   font-size: 12px;
   font-weight: 500;
   line-height: 18px;
@@ -967,8 +1216,8 @@ html.flat-theme [data-ui="group-badge"] > svg {
 html.flat-theme [data-ui="group-badge"] > span:not(:first-of-type) {
   padding: 0 4px;
   border-radius: 3px;
-  background-color: rgb(var(--ui-subtle));
-  color: rgb(var(--ui-muted));
+  background-color: rgb(var(--pf-sub, var(--ui-subtle)) / 0.72);
+  color: rgb(var(--pf-text, var(--ui-muted)));
   font-family: var(--ui-font-mono);
   font-size: 10.5px;
   font-weight: 500;
@@ -976,7 +1225,7 @@ html.flat-theme [data-ui="group-badge"] > span:not(:first-of-type) {
 }
 
 html.flat-theme [data-ui="group-badge"] > span:not(:first-of-type) [class~="font-bold"] {
-  color: rgb(var(--ui-ink));
+  color: rgb(var(--pf-text, var(--ui-ink)));
   font-weight: 600;
 }
 
@@ -995,16 +1244,83 @@ html.flat-theme [data-ui="group-badge"] > span:not(:first-of-type):is([class~="b
   color: rgb(var(--ui-warning));
 }
 
-/* Model marks (ModelIcon): the vendors' brand colours become the monochrome ink-soft logo of the reference's model
-   cells; a model without a mark shows the reference's letter square (REF §8.8: 1px control outline, subtle fill,
-   Geist Mono 600 ink-soft). */
+/* 6.3 Group pickers: GroupOptionItem's rate pill is the platform's chip in the reference's pill form (Geist Mono, 1px
+   line); its peak-window pill stays the warning chip. GroupSelector rows hold GroupBadge (6.2). */
+html.flat-theme div:has(> div > .groupOptionItemBadge) > div:last-child > div > span[class~="rounded-full"] {
+  padding: 1px 8px;
+  border: 1px solid rgb(var(--pf-line, var(--ui-line)));
+  background-color: rgb(var(--pf-soft, var(--ui-subtle)));
+  color: rgb(var(--pf-text, var(--ui-ink-soft)));
+  font-family: var(--ui-font-mono);
+  font-size: 10.5px;
+  font-weight: 500;
+  line-height: 16px;
+}
+
+html.flat-theme div:has(> div > .groupOptionItemBadge) > div:last-child > div > span[class~="rounded-full"]:not(:first-child) {
+  border-color: rgb(var(--ui-warning) / 0.3);
+  background-color: rgb(var(--ui-warning-soft));
+  color: rgb(var(--ui-warning));
+}
+
+/* 6.4 Opt-in identity for page owners (the contract above) */
+html.flat-theme [data-ui~="platform-chip"] {
+  gap: 5px;
+  padding: 1px 6px;
+  border: 1px solid rgb(var(--pf-line, var(--ui-line-strong)));
+  border-radius: var(--ui-radius-sm);
+  background-color: rgb(var(--pf-soft, var(--ui-surface)));
+  color: rgb(var(--pf-text, var(--ui-ink-soft)));
+  font: 500 10px/16px var(--ui-font-mono);
+  letter-spacing: 0.025em;
+  text-transform: uppercase;
+}
+
+html.flat-theme [data-ui~="platform-text"] {
+  color: rgb(var(--pf-text, var(--ui-ink-soft)));
+}
+
+/* a category (request type, billing mode, protocol, role ...) is not identity and not status (decision 2): the
+   reference's neutral chip, whatever hue upstream gave it */
+html.flat-theme [data-ui~="category-chip"] {
+  padding: 1px 6px;
+  border: 1px solid rgb(var(--ui-line));
+  border-radius: var(--ui-radius-sm);
+  background-color: rgb(var(--ui-subtle));
+  color: rgb(var(--ui-ink-soft));
+  font: 500 var(--ui-chip-size) / 16px var(--ui-font-mono);
+  letter-spacing: 0.01em;
+}
+
+/* 6.5 Model marks (ModelIcon): the vendors' brand colours (each path's fill attribute), as upstream. A brand colour
+   below the 3:1 floor for a glyph on the console's row surfaces (light: surface, hover #efefef, selected accent-soft;
+   dark: surface, hover, selected) moves along its own hue until it passes; black and near-black marks turn to ink
+   in dark. A model without a mark shows the reference's neutral letter square. */
 html.flat-theme .model-icon {
   color: rgb(var(--ui-ink-soft));
 }
 
-html.flat-theme .model-icon > path {
-  fill: currentColor;
-}
+html.flat-theme .model-icon > path[fill="#D97706" i] { fill: #ca6f06; }
+html.flat-theme .model-icon > path[fill="#22B8CD" i] { fill: #1b95a6; }
+html.flat-theme .model-icon > path[fill="#23B7E5" i] { fill: #1691b8; }
+html.flat-theme .model-icon > path[fill="#F38020" i] { fill: #d7680c; }
+html.flat-theme .model-icon > path[fill="#F7D046" i] { fill: #a58207; }
+
+html.flat-theme.dark .model-icon > path:is([fill="#000000" i], [fill="#16191E" i]) { fill: rgb(var(--ui-ink)); }
+html.flat-theme.dark .model-icon > path[fill="#003425" i] { fill: #009a6e; }
+html.flat-theme.dark .model-icon > path[fill="#39594D" i] { fill: #5e937f; }
+html.flat-theme.dark .model-icon > path[fill="#0053E0" i] { fill: #3a83ff; }
+html.flat-theme.dark .model-icon > path[fill="#0070F0" i] { fill: #1c86ff; }
+html.flat-theme.dark .model-icon > path[fill="#0668E1" i] { fill: #2886f9; }
+html.flat-theme.dark .model-icon > path[fill="#1677FF" i] { fill: #2d84ff; }
+html.flat-theme.dark .model-icon > path[fill="#167ADF" i] { fill: #2a89ea; }
+html.flat-theme.dark .model-icon > path[fill="#1C64F2" i] { fill: #4a83f5; }
+html.flat-theme.dark .model-icon > path[fill="#3859FF" i] { fill: #637dff; }
+html.flat-theme.dark .model-icon > path[fill="#4D6BFE" i] { fill: #647efe; }
+html.flat-theme.dark .model-icon > path[fill="#5436F5" i] { fill: #8a75f8; }
+html.flat-theme.dark .model-icon > path[fill="#615EFF" i] { fill: #7a78ff; }
+html.flat-theme.dark .model-icon > path[fill="#6566F1" i] { fill: #7a7bf3; }
+html.flat-theme.dark .model-icon > path[fill="#F23F5D" i] { fill: #f24663; }
 
 html.flat-theme .model-icon-fallback {
   box-sizing: border-box;
@@ -1316,6 +1632,24 @@ html.flat-theme .empty-state-description:empty {
   display: none;
 }
 
+/* An empty table wider than its card (many columns, or a phone): upstream centres the empty panel on the whole
+   table width, so half of it sat outside the card (every list at 390, some at 1440). The table pages' scroll box
+   is an inline-size container and the panel sticks 16px in from its visible left edge at the box's width, so it
+   stays whole and centred in the card while the header scrolls. The scroll box takes its width from the page (it
+   never sizes to its table), the table's own width, the sticky header and the fixed columns are unchanged, and
+   the virtual-scroll spacer rows (colspan cells without children) are not touched. (wave 2, reported by the
+   user-side agent) */
+html.flat-theme .table-page-layout .table-wrapper {
+  container-type: inline-size;
+}
+
+html.flat-theme .table-page-layout .table-wrapper .table-body > tr > td[colspan]:only-child > * {
+  position: sticky;
+  left: 16px;
+  box-sizing: border-box;
+  width: calc(100cqw - 32px);
+}
+
 /* Skeletons: the reference's shimmer (REF §8.7: surface-subtle -> ink 6 % -> surface-subtle, 400 % wide, 1.4s),
    on the .skeleton recipe, Skeleton.vue and upstream's pulsing grey placeholder blocks. Reduced motion stops it
    (styles/theme.css). */
@@ -1350,3 +1684,63 @@ html.flat-theme [class~="card"][class~="p-4"]:has(canvas, > div[class~="h-48"], 
   letter-spacing: var(--ui-label-tracking);
   text-transform: uppercase;
 }
+
+/* BEGIN S callouts */
+/* ================================================================== 11 · callouts (wave 2, reported by the accounts agent) */
+
+/* Info boxes that upstream tints with the accent or a hue (bg-<hue>-50, sometimes at 50-90 %: primary, blue, sky,
+   purple, indigo, teal, violet, cyan) become the reference's neutral callout (REF §8.16: a 1px structural line, the
+   text in ink-soft; the fill the subtle ground here, so a box inside a dialog still reads as a box). Warning (amber),
+   error (red) and success (green / emerald) boxes are states and keep their colours. Reach: a div with such a fill
+   that is a box (rounded, bordered or a card) with an inset; never a data-ui element, a selected option (a ring, or a
+   -300..-700 border of the hue), a picked-value chip (a direct x button), the public pages, a button or a link.
+   Static reach 2026-09-29 (_tools/callout_reach.py): 50 boxes; skipped 14 (selected cards, the drag-over drop zone,
+   strips without a box, the header balance, the OAuth flow panel, the picked-user chips, the login agreement).
+   Specificity is kept at 0,3,1 (the conditions sit in :where()) so the page files, loaded later, can refine. */
+html.flat-theme :where(div:is([class~="bg-primary-50"], [class~="bg-primary-50/50"], [class~="bg-primary-50/60"], [class~="bg-primary-50/70"], [class~="bg-primary-50/80"], [class~="bg-primary-50/90"], [class~="bg-blue-50"], [class~="bg-blue-50/50"], [class~="bg-blue-50/60"], [class~="bg-blue-50/70"], [class~="bg-blue-50/80"], [class~="bg-blue-50/90"], [class~="bg-sky-50"], [class~="bg-sky-50/50"], [class~="bg-sky-50/60"], [class~="bg-sky-50/70"], [class~="bg-sky-50/80"], [class~="bg-sky-50/90"], [class~="bg-purple-50"], [class~="bg-purple-50/50"], [class~="bg-purple-50/60"], [class~="bg-purple-50/70"], [class~="bg-purple-50/80"], [class~="bg-purple-50/90"], [class~="bg-indigo-50"], [class~="bg-indigo-50/50"], [class~="bg-indigo-50/60"], [class~="bg-indigo-50/70"], [class~="bg-indigo-50/80"], [class~="bg-indigo-50/90"], [class~="bg-teal-50"], [class~="bg-teal-50/50"], [class~="bg-teal-50/60"], [class~="bg-teal-50/70"], [class~="bg-teal-50/80"], [class~="bg-teal-50/90"], [class~="bg-violet-50"], [class~="bg-violet-50/50"], [class~="bg-violet-50/60"], [class~="bg-violet-50/70"], [class~="bg-violet-50/80"], [class~="bg-violet-50/90"], [class~="bg-cyan-50"], [class~="bg-cyan-50/50"], [class~="bg-cyan-50/60"], [class~="bg-cyan-50/70"], [class~="bg-cyan-50/80"], [class~="bg-cyan-50/90"]):is([class*="rounded"]:not([class~="rounded-full"]), [class~="border"], [class~="card"]):is([class~="p-2"], [class~="p-3"], [class~="p-4"], [class~="p-5"], [class~="p-6"], [class~="py-2"], [class~="py-2.5"], [class~="py-3"], [class~="py-4"], [class~="card"]):not([data-ui], [class*="ring-"], [class~="border-primary-300"], [class~="border-primary-400"], [class~="border-primary-500"], [class~="border-primary-600"], [class~="border-primary-700"], [class~="border-blue-300"], [class~="border-blue-400"], [class~="border-blue-500"], [class~="border-blue-600"], [class~="border-blue-700"], [class~="border-sky-300"], [class~="border-sky-400"], [class~="border-sky-500"], [class~="border-sky-600"], [class~="border-sky-700"], [class~="border-purple-300"], [class~="border-purple-400"], [class~="border-purple-500"], [class~="border-purple-600"], [class~="border-purple-700"], [class~="border-indigo-300"], [class~="border-indigo-400"], [class~="border-indigo-500"], [class~="border-indigo-600"], [class~="border-indigo-700"], [class~="border-teal-300"], [class~="border-teal-400"], [class~="border-teal-500"], [class~="border-teal-600"], [class~="border-teal-700"], [class~="border-violet-300"], [class~="border-violet-400"], [class~="border-violet-500"], [class~="border-violet-600"], [class~="border-violet-700"], [class~="border-cyan-300"], [class~="border-cyan-400"], [class~="border-cyan-500"], [class~="border-cyan-600"], [class~="border-cyan-700"], :has(> button[class~="text-lg"][class~="leading-none"])):not(:is([data-ui="home"], [data-ui="key-usage"], [data-ui="legal"], [data-ui="not-found"], [data-ui="auth-layout"], [data-testid="compact-home"], body > div[class~="z-[140]"]) *))[class][class] {
+  border: 1px solid rgb(var(--ui-line));
+  background-color: rgb(var(--ui-subtle));
+  background-image: none;
+  box-shadow: none;
+  color: rgb(var(--ui-ink-soft));
+}
+
+/* a box upstream draws without a radius (the plugins page's runtime notice) takes the reference callout's 6px; boxes
+   with their own rounded-* and cards (their 8px) keep theirs (batch 6, reported by the settings agent) */
+html.flat-theme :where(div:is([class~="bg-primary-50"], [class~="bg-primary-50/50"], [class~="bg-primary-50/60"], [class~="bg-primary-50/70"], [class~="bg-primary-50/80"], [class~="bg-primary-50/90"], [class~="bg-blue-50"], [class~="bg-blue-50/50"], [class~="bg-blue-50/60"], [class~="bg-blue-50/70"], [class~="bg-blue-50/80"], [class~="bg-blue-50/90"], [class~="bg-sky-50"], [class~="bg-sky-50/50"], [class~="bg-sky-50/60"], [class~="bg-sky-50/70"], [class~="bg-sky-50/80"], [class~="bg-sky-50/90"], [class~="bg-purple-50"], [class~="bg-purple-50/50"], [class~="bg-purple-50/60"], [class~="bg-purple-50/70"], [class~="bg-purple-50/80"], [class~="bg-purple-50/90"], [class~="bg-indigo-50"], [class~="bg-indigo-50/50"], [class~="bg-indigo-50/60"], [class~="bg-indigo-50/70"], [class~="bg-indigo-50/80"], [class~="bg-indigo-50/90"], [class~="bg-teal-50"], [class~="bg-teal-50/50"], [class~="bg-teal-50/60"], [class~="bg-teal-50/70"], [class~="bg-teal-50/80"], [class~="bg-teal-50/90"], [class~="bg-violet-50"], [class~="bg-violet-50/50"], [class~="bg-violet-50/60"], [class~="bg-violet-50/70"], [class~="bg-violet-50/80"], [class~="bg-violet-50/90"], [class~="bg-cyan-50"], [class~="bg-cyan-50/50"], [class~="bg-cyan-50/60"], [class~="bg-cyan-50/70"], [class~="bg-cyan-50/80"], [class~="bg-cyan-50/90"]):is([class*="rounded"]:not([class~="rounded-full"]), [class~="border"], [class~="card"]):is([class~="p-2"], [class~="p-3"], [class~="p-4"], [class~="p-5"], [class~="p-6"], [class~="py-2"], [class~="py-2.5"], [class~="py-3"], [class~="py-4"], [class~="card"]):not([data-ui], [class*="ring-"], [class~="border-primary-300"], [class~="border-primary-400"], [class~="border-primary-500"], [class~="border-primary-600"], [class~="border-primary-700"], [class~="border-blue-300"], [class~="border-blue-400"], [class~="border-blue-500"], [class~="border-blue-600"], [class~="border-blue-700"], [class~="border-sky-300"], [class~="border-sky-400"], [class~="border-sky-500"], [class~="border-sky-600"], [class~="border-sky-700"], [class~="border-purple-300"], [class~="border-purple-400"], [class~="border-purple-500"], [class~="border-purple-600"], [class~="border-purple-700"], [class~="border-indigo-300"], [class~="border-indigo-400"], [class~="border-indigo-500"], [class~="border-indigo-600"], [class~="border-indigo-700"], [class~="border-teal-300"], [class~="border-teal-400"], [class~="border-teal-500"], [class~="border-teal-600"], [class~="border-teal-700"], [class~="border-violet-300"], [class~="border-violet-400"], [class~="border-violet-500"], [class~="border-violet-600"], [class~="border-violet-700"], [class~="border-cyan-300"], [class~="border-cyan-400"], [class~="border-cyan-500"], [class~="border-cyan-600"], [class~="border-cyan-700"], :has(> button[class~="text-lg"][class~="leading-none"])):not(:is([data-ui="home"], [data-ui="key-usage"], [data-ui="legal"], [data-ui="not-found"], [data-ui="auth-layout"], [data-testid="compact-home"], body > div[class~="z-[140]"]) *)):not([class*="rounded"], [class~="card"])[class][class] {
+  border-radius: var(--ui-radius-md);
+}
+
+/* a form inside a callout (the scheduled test's new plan): the mono field labels take the muted grey, which holds
+   4.5:1 on the subtle ground (the label grey #737373 reads 4.35 there); dark keeps its label grey (5.7) */
+html.flat-theme:not(.dark) :where(div:is([class~="bg-primary-50"], [class~="bg-primary-50/50"], [class~="bg-primary-50/60"], [class~="bg-primary-50/70"], [class~="bg-primary-50/80"], [class~="bg-primary-50/90"], [class~="bg-blue-50"], [class~="bg-blue-50/50"], [class~="bg-blue-50/60"], [class~="bg-blue-50/70"], [class~="bg-blue-50/80"], [class~="bg-blue-50/90"], [class~="bg-sky-50"], [class~="bg-sky-50/50"], [class~="bg-sky-50/60"], [class~="bg-sky-50/70"], [class~="bg-sky-50/80"], [class~="bg-sky-50/90"], [class~="bg-purple-50"], [class~="bg-purple-50/50"], [class~="bg-purple-50/60"], [class~="bg-purple-50/70"], [class~="bg-purple-50/80"], [class~="bg-purple-50/90"], [class~="bg-indigo-50"], [class~="bg-indigo-50/50"], [class~="bg-indigo-50/60"], [class~="bg-indigo-50/70"], [class~="bg-indigo-50/80"], [class~="bg-indigo-50/90"], [class~="bg-teal-50"], [class~="bg-teal-50/50"], [class~="bg-teal-50/60"], [class~="bg-teal-50/70"], [class~="bg-teal-50/80"], [class~="bg-teal-50/90"], [class~="bg-violet-50"], [class~="bg-violet-50/50"], [class~="bg-violet-50/60"], [class~="bg-violet-50/70"], [class~="bg-violet-50/80"], [class~="bg-violet-50/90"], [class~="bg-cyan-50"], [class~="bg-cyan-50/50"], [class~="bg-cyan-50/60"], [class~="bg-cyan-50/70"], [class~="bg-cyan-50/80"], [class~="bg-cyan-50/90"]):is([class*="rounded"]:not([class~="rounded-full"]), [class~="border"], [class~="card"]):is([class~="p-2"], [class~="p-3"], [class~="p-4"], [class~="p-5"], [class~="p-6"], [class~="py-2"], [class~="py-2.5"], [class~="py-3"], [class~="py-4"], [class~="card"]):not([data-ui], [class*="ring-"], [class~="border-primary-300"], [class~="border-primary-400"], [class~="border-primary-500"], [class~="border-primary-600"], [class~="border-primary-700"], [class~="border-blue-300"], [class~="border-blue-400"], [class~="border-blue-500"], [class~="border-blue-600"], [class~="border-blue-700"], [class~="border-sky-300"], [class~="border-sky-400"], [class~="border-sky-500"], [class~="border-sky-600"], [class~="border-sky-700"], [class~="border-purple-300"], [class~="border-purple-400"], [class~="border-purple-500"], [class~="border-purple-600"], [class~="border-purple-700"], [class~="border-indigo-300"], [class~="border-indigo-400"], [class~="border-indigo-500"], [class~="border-indigo-600"], [class~="border-indigo-700"], [class~="border-teal-300"], [class~="border-teal-400"], [class~="border-teal-500"], [class~="border-teal-600"], [class~="border-teal-700"], [class~="border-violet-300"], [class~="border-violet-400"], [class~="border-violet-500"], [class~="border-violet-600"], [class~="border-violet-700"], [class~="border-cyan-300"], [class~="border-cyan-400"], [class~="border-cyan-500"], [class~="border-cyan-600"], [class~="border-cyan-700"], :has(> button[class~="text-lg"][class~="leading-none"])):not(:is([data-ui="home"], [data-ui="key-usage"], [data-ui="legal"], [data-ui="not-found"], [data-ui="auth-layout"], [data-testid="compact-home"], body > div[class~="z-[140]"]) *))[class][class] {
+  --ui-label: var(--ui-muted);
+}
+
+/* the box's words: body text ink-soft, its title and bold words ink; links and buttons inside keep their own colours */
+html.flat-theme :where(div:is([class~="bg-primary-50"], [class~="bg-primary-50/50"], [class~="bg-primary-50/60"], [class~="bg-primary-50/70"], [class~="bg-primary-50/80"], [class~="bg-primary-50/90"], [class~="bg-blue-50"], [class~="bg-blue-50/50"], [class~="bg-blue-50/60"], [class~="bg-blue-50/70"], [class~="bg-blue-50/80"], [class~="bg-blue-50/90"], [class~="bg-sky-50"], [class~="bg-sky-50/50"], [class~="bg-sky-50/60"], [class~="bg-sky-50/70"], [class~="bg-sky-50/80"], [class~="bg-sky-50/90"], [class~="bg-purple-50"], [class~="bg-purple-50/50"], [class~="bg-purple-50/60"], [class~="bg-purple-50/70"], [class~="bg-purple-50/80"], [class~="bg-purple-50/90"], [class~="bg-indigo-50"], [class~="bg-indigo-50/50"], [class~="bg-indigo-50/60"], [class~="bg-indigo-50/70"], [class~="bg-indigo-50/80"], [class~="bg-indigo-50/90"], [class~="bg-teal-50"], [class~="bg-teal-50/50"], [class~="bg-teal-50/60"], [class~="bg-teal-50/70"], [class~="bg-teal-50/80"], [class~="bg-teal-50/90"], [class~="bg-violet-50"], [class~="bg-violet-50/50"], [class~="bg-violet-50/60"], [class~="bg-violet-50/70"], [class~="bg-violet-50/80"], [class~="bg-violet-50/90"], [class~="bg-cyan-50"], [class~="bg-cyan-50/50"], [class~="bg-cyan-50/60"], [class~="bg-cyan-50/70"], [class~="bg-cyan-50/80"], [class~="bg-cyan-50/90"]):is([class*="rounded"]:not([class~="rounded-full"]), [class~="border"], [class~="card"]):is([class~="p-2"], [class~="p-3"], [class~="p-4"], [class~="p-5"], [class~="p-6"], [class~="py-2"], [class~="py-2.5"], [class~="py-3"], [class~="py-4"], [class~="card"]):not([data-ui], [class*="ring-"], [class~="border-primary-300"], [class~="border-primary-400"], [class~="border-primary-500"], [class~="border-primary-600"], [class~="border-primary-700"], [class~="border-blue-300"], [class~="border-blue-400"], [class~="border-blue-500"], [class~="border-blue-600"], [class~="border-blue-700"], [class~="border-sky-300"], [class~="border-sky-400"], [class~="border-sky-500"], [class~="border-sky-600"], [class~="border-sky-700"], [class~="border-purple-300"], [class~="border-purple-400"], [class~="border-purple-500"], [class~="border-purple-600"], [class~="border-purple-700"], [class~="border-indigo-300"], [class~="border-indigo-400"], [class~="border-indigo-500"], [class~="border-indigo-600"], [class~="border-indigo-700"], [class~="border-teal-300"], [class~="border-teal-400"], [class~="border-teal-500"], [class~="border-teal-600"], [class~="border-teal-700"], [class~="border-violet-300"], [class~="border-violet-400"], [class~="border-violet-500"], [class~="border-violet-600"], [class~="border-violet-700"], [class~="border-cyan-300"], [class~="border-cyan-400"], [class~="border-cyan-500"], [class~="border-cyan-600"], [class~="border-cyan-700"], :has(> button[class~="text-lg"][class~="leading-none"])):not(:is([data-ui="home"], [data-ui="key-usage"], [data-ui="legal"], [data-ui="not-found"], [data-ui="auth-layout"], [data-testid="compact-home"], body > div[class~="z-[140]"]) *)) :where(:is([class*="text-primary-"], [class*="text-blue-"], [class*="text-sky-"], [class*="text-purple-"], [class*="text-indigo-"], [class*="text-teal-"], [class*="text-violet-"], [class*="text-cyan-"]):not(a, button, a *, button *, code))[class][class] {
+  color: rgb(var(--ui-ink-soft));
+}
+
+html.flat-theme :where(div:is([class~="bg-primary-50"], [class~="bg-primary-50/50"], [class~="bg-primary-50/60"], [class~="bg-primary-50/70"], [class~="bg-primary-50/80"], [class~="bg-primary-50/90"], [class~="bg-blue-50"], [class~="bg-blue-50/50"], [class~="bg-blue-50/60"], [class~="bg-blue-50/70"], [class~="bg-blue-50/80"], [class~="bg-blue-50/90"], [class~="bg-sky-50"], [class~="bg-sky-50/50"], [class~="bg-sky-50/60"], [class~="bg-sky-50/70"], [class~="bg-sky-50/80"], [class~="bg-sky-50/90"], [class~="bg-purple-50"], [class~="bg-purple-50/50"], [class~="bg-purple-50/60"], [class~="bg-purple-50/70"], [class~="bg-purple-50/80"], [class~="bg-purple-50/90"], [class~="bg-indigo-50"], [class~="bg-indigo-50/50"], [class~="bg-indigo-50/60"], [class~="bg-indigo-50/70"], [class~="bg-indigo-50/80"], [class~="bg-indigo-50/90"], [class~="bg-teal-50"], [class~="bg-teal-50/50"], [class~="bg-teal-50/60"], [class~="bg-teal-50/70"], [class~="bg-teal-50/80"], [class~="bg-teal-50/90"], [class~="bg-violet-50"], [class~="bg-violet-50/50"], [class~="bg-violet-50/60"], [class~="bg-violet-50/70"], [class~="bg-violet-50/80"], [class~="bg-violet-50/90"], [class~="bg-cyan-50"], [class~="bg-cyan-50/50"], [class~="bg-cyan-50/60"], [class~="bg-cyan-50/70"], [class~="bg-cyan-50/80"], [class~="bg-cyan-50/90"]):is([class*="rounded"]:not([class~="rounded-full"]), [class~="border"], [class~="card"]):is([class~="p-2"], [class~="p-3"], [class~="p-4"], [class~="p-5"], [class~="p-6"], [class~="py-2"], [class~="py-2.5"], [class~="py-3"], [class~="py-4"], [class~="card"]):not([data-ui], [class*="ring-"], [class~="border-primary-300"], [class~="border-primary-400"], [class~="border-primary-500"], [class~="border-primary-600"], [class~="border-primary-700"], [class~="border-blue-300"], [class~="border-blue-400"], [class~="border-blue-500"], [class~="border-blue-600"], [class~="border-blue-700"], [class~="border-sky-300"], [class~="border-sky-400"], [class~="border-sky-500"], [class~="border-sky-600"], [class~="border-sky-700"], [class~="border-purple-300"], [class~="border-purple-400"], [class~="border-purple-500"], [class~="border-purple-600"], [class~="border-purple-700"], [class~="border-indigo-300"], [class~="border-indigo-400"], [class~="border-indigo-500"], [class~="border-indigo-600"], [class~="border-indigo-700"], [class~="border-teal-300"], [class~="border-teal-400"], [class~="border-teal-500"], [class~="border-teal-600"], [class~="border-teal-700"], [class~="border-violet-300"], [class~="border-violet-400"], [class~="border-violet-500"], [class~="border-violet-600"], [class~="border-violet-700"], [class~="border-cyan-300"], [class~="border-cyan-400"], [class~="border-cyan-500"], [class~="border-cyan-600"], [class~="border-cyan-700"], :has(> button[class~="text-lg"][class~="leading-none"])):not(:is([data-ui="home"], [data-ui="key-usage"], [data-ui="legal"], [data-ui="not-found"], [data-ui="auth-layout"], [data-testid="compact-home"], body > div[class~="z-[140]"]) *)) :where(:is([class~="font-medium"], [class~="font-semibold"], [class~="font-bold"], strong, h3, h4):not(a, button, a *, button *))[class][class],
+html.flat-theme :where(div:is([class~="bg-primary-50"], [class~="bg-primary-50/50"], [class~="bg-primary-50/60"], [class~="bg-primary-50/70"], [class~="bg-primary-50/80"], [class~="bg-primary-50/90"], [class~="bg-blue-50"], [class~="bg-blue-50/50"], [class~="bg-blue-50/60"], [class~="bg-blue-50/70"], [class~="bg-blue-50/80"], [class~="bg-blue-50/90"], [class~="bg-sky-50"], [class~="bg-sky-50/50"], [class~="bg-sky-50/60"], [class~="bg-sky-50/70"], [class~="bg-sky-50/80"], [class~="bg-sky-50/90"], [class~="bg-purple-50"], [class~="bg-purple-50/50"], [class~="bg-purple-50/60"], [class~="bg-purple-50/70"], [class~="bg-purple-50/80"], [class~="bg-purple-50/90"], [class~="bg-indigo-50"], [class~="bg-indigo-50/50"], [class~="bg-indigo-50/60"], [class~="bg-indigo-50/70"], [class~="bg-indigo-50/80"], [class~="bg-indigo-50/90"], [class~="bg-teal-50"], [class~="bg-teal-50/50"], [class~="bg-teal-50/60"], [class~="bg-teal-50/70"], [class~="bg-teal-50/80"], [class~="bg-teal-50/90"], [class~="bg-violet-50"], [class~="bg-violet-50/50"], [class~="bg-violet-50/60"], [class~="bg-violet-50/70"], [class~="bg-violet-50/80"], [class~="bg-violet-50/90"], [class~="bg-cyan-50"], [class~="bg-cyan-50/50"], [class~="bg-cyan-50/60"], [class~="bg-cyan-50/70"], [class~="bg-cyan-50/80"], [class~="bg-cyan-50/90"]):is([class*="rounded"]:not([class~="rounded-full"]), [class~="border"], [class~="card"]):is([class~="p-2"], [class~="p-3"], [class~="p-4"], [class~="p-5"], [class~="p-6"], [class~="py-2"], [class~="py-2.5"], [class~="py-3"], [class~="py-4"], [class~="card"]):not([data-ui], [class*="ring-"], [class~="border-primary-300"], [class~="border-primary-400"], [class~="border-primary-500"], [class~="border-primary-600"], [class~="border-primary-700"], [class~="border-blue-300"], [class~="border-blue-400"], [class~="border-blue-500"], [class~="border-blue-600"], [class~="border-blue-700"], [class~="border-sky-300"], [class~="border-sky-400"], [class~="border-sky-500"], [class~="border-sky-600"], [class~="border-sky-700"], [class~="border-purple-300"], [class~="border-purple-400"], [class~="border-purple-500"], [class~="border-purple-600"], [class~="border-purple-700"], [class~="border-indigo-300"], [class~="border-indigo-400"], [class~="border-indigo-500"], [class~="border-indigo-600"], [class~="border-indigo-700"], [class~="border-teal-300"], [class~="border-teal-400"], [class~="border-teal-500"], [class~="border-teal-600"], [class~="border-teal-700"], [class~="border-violet-300"], [class~="border-violet-400"], [class~="border-violet-500"], [class~="border-violet-600"], [class~="border-violet-700"], [class~="border-cyan-300"], [class~="border-cyan-400"], [class~="border-cyan-500"], [class~="border-cyan-600"], [class~="border-cyan-700"], :has(> button[class~="text-lg"][class~="leading-none"])):not(:is([data-ui="home"], [data-ui="key-usage"], [data-ui="legal"], [data-ui="not-found"], [data-ui="auth-layout"], [data-testid="compact-home"], body > div[class~="z-[140]"]) *)) :where(:is(strong, h3, h4):not(a, button, a *, button *)) {
+  color: rgb(var(--ui-ink));
+}
+
+/* faded secondary lines (opacity-70 / -80) would fall under 4.5:1 on the subtle ground: full opacity, muted */
+html.flat-theme :where(div:is([class~="bg-primary-50"], [class~="bg-primary-50/50"], [class~="bg-primary-50/60"], [class~="bg-primary-50/70"], [class~="bg-primary-50/80"], [class~="bg-primary-50/90"], [class~="bg-blue-50"], [class~="bg-blue-50/50"], [class~="bg-blue-50/60"], [class~="bg-blue-50/70"], [class~="bg-blue-50/80"], [class~="bg-blue-50/90"], [class~="bg-sky-50"], [class~="bg-sky-50/50"], [class~="bg-sky-50/60"], [class~="bg-sky-50/70"], [class~="bg-sky-50/80"], [class~="bg-sky-50/90"], [class~="bg-purple-50"], [class~="bg-purple-50/50"], [class~="bg-purple-50/60"], [class~="bg-purple-50/70"], [class~="bg-purple-50/80"], [class~="bg-purple-50/90"], [class~="bg-indigo-50"], [class~="bg-indigo-50/50"], [class~="bg-indigo-50/60"], [class~="bg-indigo-50/70"], [class~="bg-indigo-50/80"], [class~="bg-indigo-50/90"], [class~="bg-teal-50"], [class~="bg-teal-50/50"], [class~="bg-teal-50/60"], [class~="bg-teal-50/70"], [class~="bg-teal-50/80"], [class~="bg-teal-50/90"], [class~="bg-violet-50"], [class~="bg-violet-50/50"], [class~="bg-violet-50/60"], [class~="bg-violet-50/70"], [class~="bg-violet-50/80"], [class~="bg-violet-50/90"], [class~="bg-cyan-50"], [class~="bg-cyan-50/50"], [class~="bg-cyan-50/60"], [class~="bg-cyan-50/70"], [class~="bg-cyan-50/80"], [class~="bg-cyan-50/90"]):is([class*="rounded"]:not([class~="rounded-full"]), [class~="border"], [class~="card"]):is([class~="p-2"], [class~="p-3"], [class~="p-4"], [class~="p-5"], [class~="p-6"], [class~="py-2"], [class~="py-2.5"], [class~="py-3"], [class~="py-4"], [class~="card"]):not([data-ui], [class*="ring-"], [class~="border-primary-300"], [class~="border-primary-400"], [class~="border-primary-500"], [class~="border-primary-600"], [class~="border-primary-700"], [class~="border-blue-300"], [class~="border-blue-400"], [class~="border-blue-500"], [class~="border-blue-600"], [class~="border-blue-700"], [class~="border-sky-300"], [class~="border-sky-400"], [class~="border-sky-500"], [class~="border-sky-600"], [class~="border-sky-700"], [class~="border-purple-300"], [class~="border-purple-400"], [class~="border-purple-500"], [class~="border-purple-600"], [class~="border-purple-700"], [class~="border-indigo-300"], [class~="border-indigo-400"], [class~="border-indigo-500"], [class~="border-indigo-600"], [class~="border-indigo-700"], [class~="border-teal-300"], [class~="border-teal-400"], [class~="border-teal-500"], [class~="border-teal-600"], [class~="border-teal-700"], [class~="border-violet-300"], [class~="border-violet-400"], [class~="border-violet-500"], [class~="border-violet-600"], [class~="border-violet-700"], [class~="border-cyan-300"], [class~="border-cyan-400"], [class~="border-cyan-500"], [class~="border-cyan-600"], [class~="border-cyan-700"], :has(> button[class~="text-lg"][class~="leading-none"])):not(:is([data-ui="home"], [data-ui="key-usage"], [data-ui="legal"], [data-ui="not-found"], [data-ui="auth-layout"], [data-testid="compact-home"], body > div[class~="z-[140]"]) *)) :where(:is([class~="opacity-70"], [class~="opacity-75"], [class~="opacity-80"], [class~="opacity-90"]))[class][class] {
+  opacity: 1;
+  color: rgb(var(--ui-muted));
+}
+
+/* glyphs muted; an icon tile on a tinted ground becomes the reference's neutral square (surface, 1px line) */
+html.flat-theme :where(div:is([class~="bg-primary-50"], [class~="bg-primary-50/50"], [class~="bg-primary-50/60"], [class~="bg-primary-50/70"], [class~="bg-primary-50/80"], [class~="bg-primary-50/90"], [class~="bg-blue-50"], [class~="bg-blue-50/50"], [class~="bg-blue-50/60"], [class~="bg-blue-50/70"], [class~="bg-blue-50/80"], [class~="bg-blue-50/90"], [class~="bg-sky-50"], [class~="bg-sky-50/50"], [class~="bg-sky-50/60"], [class~="bg-sky-50/70"], [class~="bg-sky-50/80"], [class~="bg-sky-50/90"], [class~="bg-purple-50"], [class~="bg-purple-50/50"], [class~="bg-purple-50/60"], [class~="bg-purple-50/70"], [class~="bg-purple-50/80"], [class~="bg-purple-50/90"], [class~="bg-indigo-50"], [class~="bg-indigo-50/50"], [class~="bg-indigo-50/60"], [class~="bg-indigo-50/70"], [class~="bg-indigo-50/80"], [class~="bg-indigo-50/90"], [class~="bg-teal-50"], [class~="bg-teal-50/50"], [class~="bg-teal-50/60"], [class~="bg-teal-50/70"], [class~="bg-teal-50/80"], [class~="bg-teal-50/90"], [class~="bg-violet-50"], [class~="bg-violet-50/50"], [class~="bg-violet-50/60"], [class~="bg-violet-50/70"], [class~="bg-violet-50/80"], [class~="bg-violet-50/90"], [class~="bg-cyan-50"], [class~="bg-cyan-50/50"], [class~="bg-cyan-50/60"], [class~="bg-cyan-50/70"], [class~="bg-cyan-50/80"], [class~="bg-cyan-50/90"]):is([class*="rounded"]:not([class~="rounded-full"]), [class~="border"], [class~="card"]):is([class~="p-2"], [class~="p-3"], [class~="p-4"], [class~="p-5"], [class~="p-6"], [class~="py-2"], [class~="py-2.5"], [class~="py-3"], [class~="py-4"], [class~="card"]):not([data-ui], [class*="ring-"], [class~="border-primary-300"], [class~="border-primary-400"], [class~="border-primary-500"], [class~="border-primary-600"], [class~="border-primary-700"], [class~="border-blue-300"], [class~="border-blue-400"], [class~="border-blue-500"], [class~="border-blue-600"], [class~="border-blue-700"], [class~="border-sky-300"], [class~="border-sky-400"], [class~="border-sky-500"], [class~="border-sky-600"], [class~="border-sky-700"], [class~="border-purple-300"], [class~="border-purple-400"], [class~="border-purple-500"], [class~="border-purple-600"], [class~="border-purple-700"], [class~="border-indigo-300"], [class~="border-indigo-400"], [class~="border-indigo-500"], [class~="border-indigo-600"], [class~="border-indigo-700"], [class~="border-teal-300"], [class~="border-teal-400"], [class~="border-teal-500"], [class~="border-teal-600"], [class~="border-teal-700"], [class~="border-violet-300"], [class~="border-violet-400"], [class~="border-violet-500"], [class~="border-violet-600"], [class~="border-violet-700"], [class~="border-cyan-300"], [class~="border-cyan-400"], [class~="border-cyan-500"], [class~="border-cyan-600"], [class~="border-cyan-700"], :has(> button[class~="text-lg"][class~="leading-none"])):not(:is([data-ui="home"], [data-ui="key-usage"], [data-ui="legal"], [data-ui="not-found"], [data-ui="auth-layout"], [data-testid="compact-home"], body > div[class~="z-[140]"]) *)) :where(svg:is([class*="text-primary-"], [class*="text-blue-"], [class*="text-sky-"], [class*="text-purple-"], [class*="text-indigo-"], [class*="text-teal-"], [class*="text-violet-"], [class*="text-cyan-"]))[class][class] {
+  color: rgb(var(--ui-muted));
+}
+
+html.flat-theme :where(div:is([class~="bg-primary-50"], [class~="bg-primary-50/50"], [class~="bg-primary-50/60"], [class~="bg-primary-50/70"], [class~="bg-primary-50/80"], [class~="bg-primary-50/90"], [class~="bg-blue-50"], [class~="bg-blue-50/50"], [class~="bg-blue-50/60"], [class~="bg-blue-50/70"], [class~="bg-blue-50/80"], [class~="bg-blue-50/90"], [class~="bg-sky-50"], [class~="bg-sky-50/50"], [class~="bg-sky-50/60"], [class~="bg-sky-50/70"], [class~="bg-sky-50/80"], [class~="bg-sky-50/90"], [class~="bg-purple-50"], [class~="bg-purple-50/50"], [class~="bg-purple-50/60"], [class~="bg-purple-50/70"], [class~="bg-purple-50/80"], [class~="bg-purple-50/90"], [class~="bg-indigo-50"], [class~="bg-indigo-50/50"], [class~="bg-indigo-50/60"], [class~="bg-indigo-50/70"], [class~="bg-indigo-50/80"], [class~="bg-indigo-50/90"], [class~="bg-teal-50"], [class~="bg-teal-50/50"], [class~="bg-teal-50/60"], [class~="bg-teal-50/70"], [class~="bg-teal-50/80"], [class~="bg-teal-50/90"], [class~="bg-violet-50"], [class~="bg-violet-50/50"], [class~="bg-violet-50/60"], [class~="bg-violet-50/70"], [class~="bg-violet-50/80"], [class~="bg-violet-50/90"], [class~="bg-cyan-50"], [class~="bg-cyan-50/50"], [class~="bg-cyan-50/60"], [class~="bg-cyan-50/70"], [class~="bg-cyan-50/80"], [class~="bg-cyan-50/90"]):is([class*="rounded"]:not([class~="rounded-full"]), [class~="border"], [class~="card"]):is([class~="p-2"], [class~="p-3"], [class~="p-4"], [class~="p-5"], [class~="p-6"], [class~="py-2"], [class~="py-2.5"], [class~="py-3"], [class~="py-4"], [class~="card"]):not([data-ui], [class*="ring-"], [class~="border-primary-300"], [class~="border-primary-400"], [class~="border-primary-500"], [class~="border-primary-600"], [class~="border-primary-700"], [class~="border-blue-300"], [class~="border-blue-400"], [class~="border-blue-500"], [class~="border-blue-600"], [class~="border-blue-700"], [class~="border-sky-300"], [class~="border-sky-400"], [class~="border-sky-500"], [class~="border-sky-600"], [class~="border-sky-700"], [class~="border-purple-300"], [class~="border-purple-400"], [class~="border-purple-500"], [class~="border-purple-600"], [class~="border-purple-700"], [class~="border-indigo-300"], [class~="border-indigo-400"], [class~="border-indigo-500"], [class~="border-indigo-600"], [class~="border-indigo-700"], [class~="border-teal-300"], [class~="border-teal-400"], [class~="border-teal-500"], [class~="border-teal-600"], [class~="border-teal-700"], [class~="border-violet-300"], [class~="border-violet-400"], [class~="border-violet-500"], [class~="border-violet-600"], [class~="border-violet-700"], [class~="border-cyan-300"], [class~="border-cyan-400"], [class~="border-cyan-500"], [class~="border-cyan-600"], [class~="border-cyan-700"], :has(> button[class~="text-lg"][class~="leading-none"])):not(:is([data-ui="home"], [data-ui="key-usage"], [data-ui="legal"], [data-ui="not-found"], [data-ui="auth-layout"], [data-testid="compact-home"], body > div[class~="z-[140]"]) *)) :where(div[class*="rounded"]:is([class~="bg-primary-100"], [class~="bg-blue-100"], [class~="bg-sky-100"], [class~="bg-purple-100"], [class~="bg-indigo-100"], [class~="bg-teal-100"], [class~="bg-violet-100"], [class~="bg-cyan-100"], [class~="bg-white"]))[class][class] {
+  background-color: rgb(var(--ui-surface));
+  box-shadow: inset 0 0 0 1px rgb(var(--ui-line));
+  color: rgb(var(--ui-muted));
+}
+/* END S callouts */

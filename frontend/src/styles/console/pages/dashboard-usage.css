@@ -1,8 +1,771 @@
-/* Console theme · page group: dashboards and usage records (owner: the dashboard and usage page agent, wave 2; html.flat-theme selectors narrowed to the page root). */
+/* Console theme · page group: dashboards and usage records (owner: the dashboard and usage page agent, wave 2; html.flat-theme selectors narrowed to the page root).
+ *
+ * Pages: 管理控制台 (/admin/dashboard), 使用记录 (/admin/usage: 用量明细 / 错误请求 / 用户排行, the filters, the cleanup
+ * dialog's filters), 仪表盘 (/dashboard) and 使用记录 (/usage). Reference counterpart: the Experiential Labs console's /logs
+ * (REF-CONSOLE §7.1 vertical rhythm, §8.4-§8.7 toolbar controls and tables, §8.12-§8.14 KPI and chart cards; crops
+ * logs-toolbar, kpi-row, chart-card, usage-card, history-card / -header / -head / -row). Colour follows the owner's
+ * decision 2 (2026-09-29): status and semantic states and the accent (links) keep their colour; category chips and
+ * decorative figures are neutral.
+ *
+ * Page roots (data-ui hooks, one attribute each, no other template change):
+ *   data-ui="admin-dashboard"   views/admin/DashboardView.vue      root
+ *   data-ui="admin-usage"       views/admin/UsageView.vue          root
+ *   data-ui="user-dashboard"    views/user/DashboardView.vue       root
+ *   data-ui="user-usage"        views/user/UsageView.vue           root
+ *   data-ui="usage-filters"     components/admin/usage/UsageFilters.vue root (the page's filter strip and the cleanup
+ *                               dialog's copy of it)
+ * Shared components (KPI tiles, chart cards, DataTable, badges, pagination, menus, tooltips) keep the shared files' look;
+ * the rules here only place them and restate what is specific to these pages. */
 
-/* Integration review (preview decision D2): a platform card's total spend is a value, not a state. Ink at 600 (the
-   reference's spend figures) instead of upstream's purple; the mono figure stays. */
-html.flat-theme [data-testid="platform-card"] span[class~="text-purple-600"] {
+/* ================================================================== 1 · rhythm */
+
+/* Blocks inside the page sections and the chart rows sit 12px apart, the reference's gap-3 (the shell already spaces the
+   page's top-level blocks so); upstream's nested space-y-6 / space-y-4 and gap-6 were 24 / 16. */
+html.flat-theme :is([data-ui="admin-dashboard"], [data-ui="admin-usage"], [data-ui="user-dashboard"], [data-ui="user-usage"]) :is([class~="space-y-6"], [class~="space-y-4"]) > :not([hidden]) ~ :not([hidden]) {
+  margin-top: var(--ui-shell-gap, 12px);
+}
+
+html.flat-theme :is([data-ui="admin-dashboard"], [data-ui="admin-usage"], [data-ui="user-dashboard"], [data-ui="user-usage"]) [class~="grid"][class~="gap-6"] {
+  gap: var(--ui-shell-gap, 12px);
+}
+
+/* ================================================================== 2 · the time-range bar: a toolbar row */
+
+/* Upstream frames 「时间范围 / 刷新 / 粒度」 in a card. The reference's /logs toolbar is a row on the canvas: its controls,
+   8px apart, 8px above and below, a 1px structural line underneath (REF §7.1 "py-2 + 底线", crop logs-toolbar). */
+html.flat-theme :is([data-ui="admin-dashboard"], [data-ui="admin-usage"], [data-ui="user-dashboard"], [data-ui="user-usage"]) .card[class~="p-4"]:has(> div > div > [class~="relative"] > .date-picker-trigger) {
+  padding: 8px 0;
+  border: 0;
+  border-bottom: 1px solid rgb(var(--ui-line));
+  border-radius: 0;
+  background-color: transparent;
+  box-shadow: none;
+}
+
+html.flat-theme :is([data-ui="admin-dashboard"], [data-ui="admin-usage"], [data-ui="user-dashboard"], [data-ui="user-usage"]) .card[class~="p-4"]:has(> div > div > [class~="relative"] > .date-picker-trigger) > div {
+  gap: 8px;
+}
+
+/* ================================================================== 3 · labelled field pills */
+
+/* Every filter keeps its label, inside its control: the reference's filter trigger ("Price 1 ⌄", REF §8.6: 30px, radius
+   6, the control outline on the surface) holding the field label as its mono label (REF §5 .mono-label, --ui-label)
+   and then the value, so a filter row is one line of 30px controls instead of labels stacked over 34px fields.
+   The pills: the time range and the granularity, the admin filter strip (UsageFilters), the user usage filters. */
+html.flat-theme :is([data-ui="admin-dashboard"], [data-ui="admin-usage"], [data-ui="user-dashboard"], [data-ui="user-usage"]) .card[class~="p-4"]:has(> div > div > [class~="relative"] > .date-picker-trigger) > div > div[class~="items-center"][class~="gap-2"],
+html.flat-theme [data-ui="usage-filters"] > div > div[class~="flex-1"] > div,
+html.flat-theme [data-ui="user-usage"] > .card[class~="p-6"] > div > div[class~="flex-1"] > div {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  min-height: var(--ui-control-h);
+  padding-left: 10px;
+  border: 1px solid rgb(var(--ui-line-strong));
+  border-radius: var(--ui-radius-md);
+  background-color: rgb(var(--ui-surface));
+  transition: border-color var(--ui-duration) var(--ui-ease), box-shadow var(--ui-duration) var(--ui-ease);
+}
+
+/* the label: the mono label at the KPI labels' weight, on one line */
+html.flat-theme :is([data-ui="admin-dashboard"], [data-ui="admin-usage"], [data-ui="user-dashboard"], [data-ui="user-usage"]) .card[class~="p-4"]:has(> div > div > [class~="relative"] > .date-picker-trigger) > div > div[class~="items-center"][class~="gap-2"] > span:first-child,
+html.flat-theme [data-ui="usage-filters"] > div > div[class~="flex-1"] > div > label,
+html.flat-theme [data-ui="user-usage"] > .card[class~="p-6"] > div > div[class~="flex-1"] > div > label {
+  flex: none;
+  margin: 0;
+  font-family: var(--ui-font-mono);
+  font-size: var(--ui-label-size);
+  line-height: var(--ui-label-leading);
+  font-weight: 400;
+  letter-spacing: var(--ui-label-tracking);
+  text-transform: uppercase;
+  white-space: nowrap;
+  color: rgb(var(--ui-label));
+}
+
+/* the value: the Select / DateRangePicker trigger or the search field, drawn inside the pill (28px, no edge of its own) */
+html.flat-theme :is([data-ui="admin-dashboard"], [data-ui="admin-usage"], [data-ui="user-dashboard"], [data-ui="user-usage"]) .card[class~="p-4"]:has(> div > div > [class~="relative"] > .date-picker-trigger) > div > div[class~="items-center"][class~="gap-2"] > div,
+html.flat-theme [data-ui="usage-filters"] > div > div[class~="flex-1"] > div > div[class~="relative"]:has(> .select-trigger),
+html.flat-theme [data-ui="user-usage"] > .card[class~="p-6"] > div > div[class~="flex-1"] > div > div[class~="relative"] {
+  flex: 1 1 auto;
+  width: auto;
+  min-width: 0;
+}
+
+html.flat-theme :is([data-ui="admin-dashboard"], [data-ui="admin-usage"], [data-ui="user-dashboard"], [data-ui="user-usage"]) .card[class~="p-4"]:has(> div > div > [class~="relative"] > .date-picker-trigger) > div > div[class~="items-center"][class~="gap-2"] :is(.select-trigger.select-trigger, .date-picker-trigger.date-picker-trigger),
+html.flat-theme [data-ui="usage-filters"] > div > div[class~="flex-1"] > div .select-trigger.select-trigger,
+html.flat-theme [data-ui="user-usage"] > .card[class~="p-6"] > div > div[class~="flex-1"] > div .select-trigger.select-trigger {
+  width: 100%;
+  min-height: 0;
+  height: calc(var(--ui-control-h) - 2px);
+  padding: 0 9px 0 0;
+  border-color: transparent;
+  border-radius: 0 var(--ui-radius-md) var(--ui-radius-md) 0;
+  background-color: transparent;
+  box-shadow: none;
+}
+
+html.flat-theme [data-ui="usage-filters"] > div > div[class~="flex-1"] > div > input.input {
+  flex: 1 1 auto;
+  width: 11rem;
+  min-width: 0;
+  height: calc(var(--ui-control-h) - 2px);
+  padding: 0 26px 0 0;
+  border-color: transparent;
+  border-radius: 0 var(--ui-radius-md) var(--ui-radius-md) 0;
+  background-color: transparent;
+  box-shadow: none;
+  font-size: 13px;
+  line-height: 19.5px;
+}
+
+/* states: hover and an open menu take the focus line (the reference's house-select); keyboard focus on a trigger and any
+   focus in a text field take the accent edge 2px wide (the fields' focus, controls.css 3.1) */
+html.flat-theme :is([data-ui="admin-dashboard"], [data-ui="admin-usage"], [data-ui="user-dashboard"], [data-ui="user-usage"]) .card[class~="p-4"]:has(> div > div > [class~="relative"] > .date-picker-trigger) > div > div[class~="items-center"][class~="gap-2"]:is(:hover, :has(.select-trigger-open, .date-picker-trigger-open)),
+html.flat-theme [data-ui="usage-filters"] > div > div[class~="flex-1"] > div:is(:hover, :has(.select-trigger-open)),
+html.flat-theme [data-ui="user-usage"] > .card[class~="p-6"] > div > div[class~="flex-1"] > div:is(:hover, :has(.select-trigger-open)) {
+  border-color: rgb(var(--ui-line-focus));
+}
+
+html.flat-theme :is([data-ui="admin-dashboard"], [data-ui="admin-usage"], [data-ui="user-dashboard"], [data-ui="user-usage"]) .card[class~="p-4"]:has(> div > div > [class~="relative"] > .date-picker-trigger) > div > div[class~="items-center"][class~="gap-2"]:has(> div > :is(.select-trigger, .date-picker-trigger):focus-visible),
+html.flat-theme [data-ui="usage-filters"] > div > div[class~="flex-1"] > div:has(> input:focus, > div > .select-trigger:focus-visible),
+html.flat-theme [data-ui="user-usage"] > .card[class~="p-6"] > div > div[class~="flex-1"] > div:has(> div > .select-trigger:focus-visible) {
+  border-color: rgb(var(--ui-focus));
+  box-shadow: inset 0 0 0 1px rgb(var(--ui-focus));
+}
+
+html.flat-theme :is([data-ui="admin-dashboard"], [data-ui="admin-usage"], [data-ui="user-dashboard"], [data-ui="user-usage"]) .card[class~="p-4"]:has(> div > div > [class~="relative"] > .date-picker-trigger) > div > div[class~="items-center"][class~="gap-2"] :is(.select-trigger, .date-picker-trigger):focus-visible,
+html.flat-theme [data-ui="usage-filters"] > div > div[class~="flex-1"] > div :is(.select-trigger, input):focus,
+html.flat-theme [data-ui="user-usage"] > .card[class~="p-6"] > div > div[class~="flex-1"] > div .select-trigger:focus-visible {
+  border-color: transparent;
+  outline: 2px solid transparent;
+  box-shadow: none;
+}
+
+/* the clear button of a search filter (✕): centred in the pill, a 20px target */
+html.flat-theme [data-ui="usage-filters"] > div > div[class~="flex-1"] > div > button[aria-label] {
+  top: 50%;
+  right: 4px;
+  display: grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  border-radius: var(--ui-radius-sm);
+  font-size: 11px;
+  line-height: 1;
+  color: rgb(var(--ui-muted));
+  translate: 0 -50%;
+  transition: color var(--ui-duration) var(--ui-ease), background-color var(--ui-duration) var(--ui-ease);
+}
+
+html.flat-theme [data-ui="usage-filters"] > div > div[class~="flex-1"] > div > button[aria-label]:hover {
+  background-color: rgb(var(--ui-subtle));
+  color: rgb(var(--ui-ink));
+}
+
+/* ================================================================== 4 · filter rows */
+
+/* The admin filter strip (UsageFilters) and the user filters: one wrapping row of pills with the actions at its end,
+   8px apart; the filter group is flattened into the row so the actions take the space left on the last line instead of
+   a column of their own. */
+html.flat-theme [data-ui="usage-filters"] > div,
+html.flat-theme [data-ui="user-usage"] > .card[class~="p-6"] > div {
+  justify-content: flex-start;
+  align-items: center;
+  gap: 8px;
+}
+
+html.flat-theme [data-ui="usage-filters"] > div > div[class~="flex-1"],
+html.flat-theme [data-ui="user-usage"] > .card[class~="p-6"] > div > div[class~="flex-1"] {
+  display: contents;
+}
+
+html.flat-theme [data-ui="usage-filters"] > div > div[class~="justify-end"],
+html.flat-theme [data-ui="user-usage"] > .card[class~="p-6"] > div > div[class~="justify-end"] {
+  margin-left: auto;
+  gap: 8px;
+}
+
+/* the strip inside the records card: the reference's tool strip under the card head (10 / 16, 1px line under it) */
+html.flat-theme [data-ui="usage-filters"]:not([class~="card"]) {
+  padding: 10px 16px;
+  border-bottom-color: rgb(var(--ui-line));
+}
+
+/* the cleanup dialog carries the same filters as a plain section of its body, not a card inside the dialog */
+html.flat-theme [data-ui="usage-filters"][class~="card"] {
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background-color: transparent;
+  box-shadow: none;
+}
+
+/* the user usage filters: a toolbar row on the canvas above the records (the reference's /logs toolbar); the tab strip
+   under it draws the line, so the row has none of its own */
+html.flat-theme [data-ui="user-usage"] > .card[class~="p-6"] {
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background-color: transparent;
+  box-shadow: none;
+}
+
+/* ================================================================== 5 · the search filters' result lists */
+
+/* The lists under the user / API key / account search pills are overlays.css' utility menus (panel and rows). In the
+   pill row their anchor is the pill, not a field under a label: they open 4px under the pill, flush with its left edge,
+   at least as wide as the pill and as wide as the longest name needs (names are never cut, behaviour.css B1.12). */
+html.flat-theme [data-ui="usage-filters"] > div > div[class~="flex-1"] > div > div[class~="absolute"] {
+  top: calc(100% + 4px);
+  left: -1px;
+  width: max-content;
+  min-width: calc(100% + 2px);
+  max-width: min(28rem, calc(100vw - 2rem));
+  margin-top: 0;
+}
+
+/* a result's id: Geist Mono in the faint text, after the name */
+html.flat-theme [data-ui="usage-filters"] > div > div[class~="flex-1"] > div > div[class~="absolute"] > button > span:last-child:not(:first-child) {
+  font-family: var(--ui-font-mono);
+  font-size: 11px;
+  color: rgb(var(--ui-faint));
+}
+
+/* ================================================================== 6 · 管理控制台: quick actions */
+
+/* The quick-action card becomes one row (MAPPING §4.5: about 44px): its title as the mono label, then each action as
+   a one-line option card (the reference's dialog option card, REF §8.11: radius 8, 1px structural line, the subtle fill
+   at 60 %, the control outline on hover; a 26px neutral icon square) with its title and description side by side and
+   the chevron. Nothing is dropped; the description wraps under the title only where the row is too narrow. */
+html.flat-theme [data-ui="admin-dashboard"] > .card[class~="p-4"]:has(> [class~="grid"] > button[class~="group"]) {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  column-gap: 16px;
+  row-gap: 8px;
+  padding: 7px 7px 7px 14px;
+}
+
+html.flat-theme [data-ui="admin-dashboard"] > .card[class~="p-4"]:has(> [class~="grid"] > button[class~="group"]) > div:first-child {
+  margin: 0;
+}
+
+html.flat-theme [data-ui="admin-dashboard"] > .card[class~="p-4"]:has(> [class~="grid"] > button[class~="group"]) > div:first-child > h2 {
+  font-family: var(--ui-font-mono);
+  font-size: var(--ui-label-size);
+  line-height: var(--ui-label-leading);
+  font-weight: 400;
+  letter-spacing: var(--ui-label-tracking);
+  text-transform: uppercase;
+  white-space: nowrap;
+  color: rgb(var(--ui-label));
+}
+
+html.flat-theme [data-ui="admin-dashboard"] > .card[class~="p-4"]:has(> [class~="grid"] > button[class~="group"]) > [class~="grid"] {
+  display: flex;
+  flex: 1 1 auto;
+  flex-wrap: wrap;
+  gap: 8px;
+  min-width: 0;
+}
+
+html.flat-theme [data-ui="admin-dashboard"] > .card[class~="p-4"] > [class~="grid"] > button[class~="group"][class~="flex"][class~="items-center"][class~="bg-gray-50"][class~="p-3"] {
+  flex: 0 1 auto;
+  gap: 10px;
+  min-width: 0;
+  padding: 4px 10px 4px 4px;
+}
+
+html.flat-theme [data-ui="admin-dashboard"] > .card[class~="p-4"] > [class~="grid"] > button[class~="group"][class~="flex"][class~="items-center"][class~="bg-gray-50"][class~="p-3"] > :first-child[class~="flex-shrink-0"] {
+  width: 26px;
+  height: 26px;
+}
+
+html.flat-theme [data-ui="admin-dashboard"] > .card[class~="p-4"] > [class~="grid"] > button[class~="group"][class~="flex"][class~="items-center"][class~="bg-gray-50"][class~="p-3"] > span:nth-child(2) {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  column-gap: 8px;
+}
+
+/* ================================================================== 7 · chart cards of these pages */
+
+/* The user dashboard's model card dims itself while loading with upstream's frosted veil: the reference has one blur only
+   (its docs header), so the veil is the surface at 60 % without it. */
+html.flat-theme [data-ui="user-dashboard"] .card[class~="relative"][class~="overflow-hidden"] > div[class~="absolute"][class~="inset-0"] {
+  background-color: rgb(var(--ui-surface) / 0.6);
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+
+/* ================================================================== 8 · 使用记录 (管理): the records card */
+
+/* The card's head: the tab row (controls.css 7.3 underline tabs) set 6px in, so the first tab's text lines up with the
+   table's 16px edge; the strip under it is section 4's. */
+html.flat-theme [data-ui="admin-usage"] > .card:has(> div > button[data-testid="usage-detail-tab"]) > div:first-child {
+  padding: 0 6px;
+  border-bottom-color: rgb(var(--ui-line));
+}
+
+/* The IP-location bar above a table (UsageTable's own, IpGeoBatchToolbar in the error list): 6 / 16, the count 12px
+   muted, the batch action a link-weight accent text button (REF §8.12 tray links: 12.5 / 600, underline on hover). */
+html.flat-theme :is([data-ui="admin-usage"], [data-ui="user-usage"]) div[class~="justify-end"][class~="border-b"]:is(:has(+ div[class~="overflow-auto"] > .table-wrapper), :has(+ .table-wrapper)) {
+  gap: 12px;
+  padding: 6px 16px;
+  border-bottom-color: rgb(var(--ui-line));
+}
+
+html.flat-theme :is([data-ui="admin-usage"], [data-ui="user-usage"]) div[class~="justify-end"][class~="border-b"]:is(:has(+ div[class~="overflow-auto"] > .table-wrapper), :has(+ .table-wrapper)) > span {
+  font-size: 12px;
+  line-height: 18px;
+  color: rgb(var(--ui-muted));
+}
+
+html.flat-theme :is([data-ui="admin-usage"], [data-ui="user-usage"]) div[class~="justify-end"][class~="border-b"]:is(:has(+ div[class~="overflow-auto"] > .table-wrapper), :has(+ .table-wrapper)) > button {
+  padding: 2px 0;
+  border-radius: var(--ui-radius-sm);
+  background-color: transparent;
+  font-size: 12.5px;
+  line-height: 18.75px;
+  font-weight: 600;
+  color: var(--ui-link);
+}
+
+html.flat-theme :is([data-ui="admin-usage"], [data-ui="user-usage"]) div[class~="justify-end"][class~="border-b"]:is(:has(+ div[class~="overflow-auto"] > .table-wrapper), :has(+ .table-wrapper)) > button:hover:not(:disabled) {
+  background-color: transparent;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+/* ================================================================== 9 · the usage records table */
+
+/* Category chips (decision 2): the group, the request type, native compaction, the billing mode and the cache-TTL chips
+   (1h in the cell, 5m / 1h in the token card) carry data.css' data-ui~="category-chip" (the reference's neutral chip).
+   One request type is a state, not a category: a request stopped by the upstream's security policy (「安全策略」,
+   upstream's red chip) keeps the danger chip, on both records tables. The long-context x2, the overridden cache TTL (R),
+   the model audit line and a deleted user keep their status colours (no hook). */
+html.flat-theme :is(.table-wrapper[data-table="usage"], [data-ui="user-usage"] .table-wrapper) [data-ui~="category-chip"][class~="bg-red-100"] {
+  border-color: rgb(var(--ui-danger) / 0.3);
+  background-color: rgb(var(--ui-danger-soft));
+  color: rgb(var(--ui-danger));
+}
+
+html.flat-theme :is(.table-wrapper[data-table="usage"], [data-ui="user-usage"] .table-wrapper, div[class~="fixed"][class~="pointer-events-none"]) [data-ui~="category-chip"] {
+  box-shadow: none;
+}
+
+/* Texture of the cells (REF §8.7 /logs request table: the model 13/500 ink, ids and paths Geist Mono): the requested
+   model at the row's 13px (the mapping chain under it stays 12px muted), the user id after the e-mail and the endpoint
+   paths in Geist Mono; the 「入站 / 上游」 labels stay sans. Same on the error lists of both pages. */
+html.flat-theme .table-wrapper[data-table="usage"] td[data-column="model"] :is(span, div)[class~="font-medium"][class~="text-gray-900"] {
+  font-size: 13px;
+  line-height: 19.5px;
+}
+
+html.flat-theme :is(.table-wrapper[data-table="usage"], [data-ui="admin-usage"] .table-wrapper) td[data-column="user"] > div > span:last-child {
+  font-family: var(--ui-font-mono);
+  font-size: 12px;
+}
+
+html.flat-theme :is(.table-wrapper[data-table="usage"], [data-ui="admin-usage"] .table-wrapper, [data-ui="user-usage"] .table-wrapper) td[data-column="endpoint"] div > span[class~="ml-1"] {
+  font-family: var(--ui-font-mono);
+  font-size: 11.5px;
+  color: rgb(var(--ui-ink-soft));
+}
+
+/* Figures: token counts, cache and image tokens, the billed cost are ink (their glyphs say which is which); the glyphs
+   themselves the faint grey; the account's billed cost muted. */
+html.flat-theme .table-wrapper[data-table="usage"] td[data-column="tokens"] :is([class~="text-sky-600"], [class~="text-amber-600"], [class~="text-fuchsia-600"], [class~="text-pink-600"]),
+html.flat-theme .table-wrapper[data-table="usage"] td[data-column="cost"] span[class~="text-green-600"] {
+  color: rgb(var(--ui-ink));
+}
+
+html.flat-theme .table-wrapper[data-table="usage"] td[data-column="tokens"] svg:is([class~="text-emerald-500"], [class~="text-violet-500"], [class~="text-sky-500"], [class~="text-amber-500"], [class~="text-fuchsia-500"], [class~="text-pink-500"], [class~="text-indigo-500"]) {
+  color: rgb(var(--ui-faint));
+}
+
+html.flat-theme .table-wrapper[data-table="usage"] td[data-column="cost"] div[class~="text-orange-500"] {
+  color: rgb(var(--ui-muted));
+}
+
+/* The token and cost breakdown cards (UsageTable's two portals; the frame is overlays.css 2.3): the billed amounts and
+   the total are figures, so ink at 600 instead of green / blue (decision 2), like the billed cost in the row; the
+   overridden-TTL line keeps its status colour. */
+html.flat-theme div[class~="fixed"][class~="pointer-events-none"] > .theme-dark-surface [class~="justify-between"] > span:last-child:is([class~="text-green-400"], [class~="text-blue-400"]) {
+  color: rgb(var(--ui-ink));
+  font-weight: 600;
+}
+
+/* the detail triggers (token and cost breakdowns): the reference's cursor-help info glyph, faint -> ink, no tinted disc */
+html.flat-theme .table-wrapper[data-table="usage"] td:is([data-column="tokens"], [data-column="cost"]) div[class~="group"][class~="relative"] > div[class~="rounded-full"] {
+  background-color: transparent;
+  color: rgb(var(--ui-faint));
+  transition: color var(--ui-duration) var(--ui-ease);
+}
+
+html.flat-theme .table-wrapper[data-table="usage"] td:is([data-column="tokens"], [data-column="cost"]) div[class~="group"][class~="relative"] > div[class~="rounded-full"] > svg {
+  width: 14px;
+  height: 14px;
+  color: inherit;
+}
+
+html.flat-theme .table-wrapper[data-table="usage"] td:is([data-column="tokens"], [data-column="cost"]) div[class~="group"][class~="relative"]:hover > div[class~="rounded-full"] {
+  background-color: transparent;
+  color: rgb(var(--ui-ink));
+}
+
+/* ================================================================== 10 · 使用记录 (管理): 用户排行 */
+
+/* UserTokenRanking: its bar (6 / 16, the explanation and the count 12px muted, the Top-N select at the toolbar's 30px)
+   and its table in the reference's table language (data.css section 3 gives the mono header): cells 10 / 12 (16 at the
+   edges), 42px rows, hover fill; figures Geist Mono ink-soft, the total and the cost ink (decision 2: the cost is not
+   green); the top three ranks a neutral disc, the sorted column's label a step darker with its arrow (not the accent). */
+html.flat-theme [data-ui="admin-usage"] div:has(> div[class~="border-b"] + div[class~="overflow-x-auto"] > table) > div[class~="border-b"] {
+  padding: 6px 16px;
+  border-bottom-color: rgb(var(--ui-line));
+}
+
+html.flat-theme [data-ui="admin-usage"] div:has(> div[class~="border-b"] + div[class~="overflow-x-auto"] > table) > div[class~="border-b"] :is(p, span)[class~="text-xs"] {
+  font-size: 12px;
+  line-height: 18px;
+  color: rgb(var(--ui-muted));
+}
+
+html.flat-theme [data-ui="admin-usage"] div:has(> div[class~="border-b"] + div[class~="overflow-x-auto"] > table) > div[class~="border-b"] .select-trigger.select-trigger {
+  padding-top: 0.265625rem;
+  padding-bottom: 0.265625rem;
+}
+
+html.flat-theme [data-ui="admin-usage"] div[class~="overflow-x-auto"] > table > thead[class~="bg-gray-50"] > tr > th {
+  height: 40px;
+  padding: 10px 12px;
+}
+
+html.flat-theme [data-ui="admin-usage"] div[class~="overflow-x-auto"] > table > thead[class~="bg-gray-50"] > tr > th:hover {
+  background-color: rgb(var(--ui-surface));
+  color: rgb(var(--ui-ink-soft));
+}
+
+html.flat-theme [data-ui="admin-usage"] div[class~="overflow-x-auto"] > table > thead[class~="bg-gray-50"] > tr > th[class~="text-primary-600"] {
+  color: rgb(var(--ui-ink-soft));
+}
+
+html.flat-theme [data-ui="admin-usage"] div[class~="overflow-x-auto"] > table:has(> thead[class~="bg-gray-50"]) > tbody,
+html.flat-theme [data-ui="admin-usage"] div[class~="overflow-x-auto"] > table:has(> thead[class~="bg-gray-50"]) > tbody > tr {
+  border-color: rgb(var(--ui-line));
+}
+
+html.flat-theme [data-ui="admin-usage"] div[class~="overflow-x-auto"] > table:has(> thead[class~="bg-gray-50"]) > tbody > tr {
+  transition: background-color var(--ui-duration) var(--ui-ease);
+}
+
+html.flat-theme [data-ui="admin-usage"] div[class~="overflow-x-auto"] > table:has(> thead[class~="bg-gray-50"]) > tbody > tr[class~="cursor-pointer"]:hover {
+  background-color: rgb(var(--ui-hover));
+}
+
+html.flat-theme [data-ui="admin-usage"] div[class~="overflow-x-auto"] > table:has(> thead[class~="bg-gray-50"]) > tbody > tr > td {
+  height: 42px;
+  padding: 10px 12px;
+}
+
+html.flat-theme [data-ui="admin-usage"] div[class~="overflow-x-auto"] > table:has(> thead[class~="bg-gray-50"]) > :is(thead, tbody) > tr > :first-child {
+  padding-left: 16px;
+}
+
+html.flat-theme [data-ui="admin-usage"] div[class~="overflow-x-auto"] > table:has(> thead[class~="bg-gray-50"]) > :is(thead, tbody) > tr > :last-child {
+  padding-right: 16px;
+}
+
+html.flat-theme [data-ui="admin-usage"] div[class~="overflow-x-auto"] > table:has(> thead[class~="bg-gray-50"]) > tbody > tr > td[class~="text-right"] {
+  font-family: var(--ui-font-mono);
+  font-size: 12.5px;
+  font-variant-numeric: tabular-nums;
+  color: rgb(var(--ui-ink-soft));
+}
+
+html.flat-theme [data-ui="admin-usage"] div[class~="overflow-x-auto"] > table:has(> thead[class~="bg-gray-50"]) > tbody > tr > td[class~="text-right"]:is([class~="font-medium"], [class~="text-green-600"]) {
+  font-weight: 500;
+  color: rgb(var(--ui-ink));
+}
+
+html.flat-theme [data-ui="admin-usage"] div[class~="overflow-x-auto"] > table:has(> thead[class~="bg-gray-50"]) > tbody > tr > td[class~="font-medium"]:not([class~="text-right"]) {
+  font-size: 13px;
+  color: rgb(var(--ui-ink));
+}
+
+html.flat-theme [data-ui="admin-usage"] div[class~="overflow-x-auto"] > table:has(> thead[class~="bg-gray-50"]) > tbody > tr > td[class~="font-medium"]:not([class~="text-right"]) > span {
+  font-family: var(--ui-font-mono);
+  font-size: 12px;
+  color: rgb(var(--ui-muted));
+}
+
+html.flat-theme [data-ui="admin-usage"] div[class~="overflow-x-auto"] > table:has(> thead[class~="bg-gray-50"]) > tbody > tr > td:first-child > span {
+  font-family: var(--ui-font-mono);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  color: rgb(var(--ui-muted));
+}
+
+html.flat-theme [data-ui="admin-usage"] div[class~="overflow-x-auto"] > table:has(> thead[class~="bg-gray-50"]) > tbody > tr > td:first-child > span[class~="rounded-full"] {
+  width: 22px;
+  height: 22px;
+  background-color: rgb(var(--ui-subtle));
+  font-size: 11px;
   font-weight: 600;
   color: rgb(var(--ui-ink));
+}
+
+/* ================================================================== 11 · 使用记录 (管理): 错误请求 */
+
+/* OpsErrorLogTable in the records card: its error type and group chips carry data.css' category chip (hooks added by the
+   ops page group); the status code and the severity keep their status colours. The detail button is an icon button,
+   muted -> ink (not the accent). */
+html.flat-theme [data-ui="admin-usage"] .table-wrapper:not([data-table]) td[data-column="actions"] > button {
+  color: rgb(var(--ui-muted));
+}
+
+html.flat-theme [data-ui="admin-usage"] .table-wrapper:not([data-table]) td[data-column="actions"] > button:hover {
+  background-color: rgb(var(--ui-subtle));
+  color: rgb(var(--ui-ink));
+}
+
+/* ================================================================== 12 · 仪表盘 (用户) */
+
+/* 按平台拆分: the reference's detail stat blocks (REF §8.13: radius 8, 1px structural line, surface, 12 / 14 inset); the
+   section title the mono label with its count in Geist Mono at the right (REF §10.19); a platform's name 13/600, its
+   total spend ink 600 (a value, not a state: decision 2); the rows' figures Geist Mono; the quota title the mono label;
+   the bars keep their status colours (data.css section 8). */
+html.flat-theme [data-ui="user-dashboard"] .card[class~="p-4"]:has([data-testid="platform-card"]) {
+  padding: 14px;
+}
+
+html.flat-theme [data-ui="user-dashboard"] .card[class~="p-4"]:has([data-testid="platform-card"]) > div:first-child > h3 {
+  font-family: var(--ui-font-mono);
+  font-size: var(--ui-label-size);
+  line-height: var(--ui-label-leading);
+  font-weight: 400;
+  letter-spacing: var(--ui-label-tracking);
+  text-transform: uppercase;
+  color: rgb(var(--ui-label));
+}
+
+html.flat-theme [data-ui="user-dashboard"] .card[class~="p-4"]:has([data-testid="platform-card"]) > div:first-child > span {
+  font-family: var(--ui-font-mono);
+  font-size: 11px;
+  line-height: 16.5px;
+  color: rgb(var(--ui-muted));
+}
+
+html.flat-theme [data-ui="user-dashboard"] .card[class~="p-4"]:has([data-testid="platform-card"]) > [class~="grid"] {
+  gap: 10px;
+}
+
+html.flat-theme [data-ui="user-dashboard"] [data-testid="platform-card"] {
+  padding: 12px 14px;
+  border-color: rgb(var(--ui-line));
+  border-radius: var(--ui-radius-lg);
+  background-color: rgb(var(--ui-surface));
+}
+
+html.flat-theme [data-ui="user-dashboard"] [data-testid="platform-card"][class~="border-dashed"] {
+  border-color: rgb(var(--ui-line-strong));
+  background-color: color-mix(in srgb, rgb(var(--ui-subtle)) 60%, rgb(var(--ui-surface)));
+}
+
+html.flat-theme [data-ui="user-dashboard"] [data-testid="platform-card"] > div:first-child > span:first-child {
+  font-size: 13px;
+  line-height: 19.5px;
+}
+
+/* the total spend: ink at 600 (the reference's spend figures) instead of upstream's purple; the mono figure stays */
+html.flat-theme [data-ui="user-dashboard"] [data-testid="platform-card"] span[class~="text-purple-600"] {
+  font-size: 13px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: rgb(var(--ui-ink));
+}
+
+html.flat-theme [data-ui="user-dashboard"] [data-testid="platform-card"] > div:nth-child(2) span[class~="font-mono"] {
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+html.flat-theme [data-ui="user-dashboard"] [data-testid="platform-card"] p[class~="uppercase"][class~="text-[10px]"] {
+  font-family: var(--ui-font-mono);
+  font-size: var(--ui-label-size);
+  line-height: var(--ui-label-leading);
+  letter-spacing: var(--ui-label-tracking);
+  color: rgb(var(--ui-label));
+}
+
+html.flat-theme [data-ui="user-dashboard"] [data-testid="platform-card"] > div[class~="border-t"] {
+  border-color: rgb(var(--ui-line));
+}
+
+/* 最近使用 and 快捷操作 (the bottom row): card heads as the reference's card head (REF §5: 13/600 ink, 12 / 16, a 1px line
+   under it). The recent requests are the reference's request rows (REF §8.7 /logs request table: rows divided by 1px
+   lines, hover fill, the model 13/500 ink, the time 12px muted, figures Geist Mono): no grey tiles; the model glyph sits
+   in a 28px neutral square instead of the accent tint; the billed cost ink (decision 2), the standard price muted; the
+   「查看全部」 link keeps the accent (a link). */
+html.flat-theme [data-ui="user-dashboard"] [class~="lg:grid-cols-3"] .card > div[class~="border-b"]:first-child {
+  padding: 12px 16px;
+  border-color: rgb(var(--ui-line));
+}
+
+html.flat-theme [data-ui="user-dashboard"] [class~="lg:grid-cols-3"] .card > div[class~="border-b"]:first-child > h2 {
+  font-size: 13px;
+  line-height: 19.5px;
+  font-weight: 600;
+}
+
+html.flat-theme [data-ui="user-dashboard"] [class~="lg:col-span-2"] .card > div[class~="p-6"] {
+  padding: 0;
+}
+
+html.flat-theme [data-ui="user-dashboard"] [class~="lg:col-span-2"] .card > div[class~="p-6"] > div:is([class~="py-12"], [class~="py-8"]) {
+  padding: 32px 16px;
+}
+
+html.flat-theme [data-ui="user-dashboard"] [class~="lg:col-span-2"] .card > div[class~="p-6"] > div[class~="space-y-3"] > :not([hidden]) ~ :not([hidden]) {
+  margin-top: 0;
+}
+
+html.flat-theme [data-ui="user-dashboard"] [class~="lg:col-span-2"] .card > div[class~="p-6"] > div[class~="space-y-3"] > div[class~="rounded-xl"] {
+  gap: 16px;
+  padding: 10px 16px;
+  border-bottom: 1px solid rgb(var(--ui-line));
+  border-radius: 0;
+  background-color: transparent;
+  transition: background-color var(--ui-duration) var(--ui-ease);
+}
+
+html.flat-theme [data-ui="user-dashboard"] [class~="lg:col-span-2"] .card > div[class~="p-6"] > div[class~="space-y-3"] > div[class~="rounded-xl"]:hover {
+  background-color: rgb(var(--ui-hover));
+}
+
+html.flat-theme [data-ui="user-dashboard"] [class~="lg:col-span-2"] .card > div[class~="p-6"] > div[class~="space-y-3"] > div[class~="rounded-xl"] > div:first-child {
+  gap: 12px;
+}
+
+html.flat-theme [data-ui="user-dashboard"] [class~="lg:col-span-2"] .card > div[class~="p-6"] > div[class~="space-y-3"] > div[class~="rounded-xl"] > div:first-child > div[class~="rounded-xl"] {
+  flex: none;
+  width: 28px;
+  height: 28px;
+  border: 1px solid rgb(var(--ui-line));
+  border-radius: var(--ui-radius-md);
+  background-color: color-mix(in srgb, rgb(var(--ui-ink)) 3%, rgb(var(--ui-surface)));
+  color: rgb(var(--ui-ink-soft));
+}
+
+html.flat-theme [data-ui="user-dashboard"] [class~="lg:col-span-2"] .card > div[class~="p-6"] > div[class~="space-y-3"] > div[class~="rounded-xl"] > div:first-child > div[class~="rounded-xl"] > svg {
+  width: 15px;
+  height: 15px;
+  color: inherit;
+}
+
+html.flat-theme [data-ui="user-dashboard"] [class~="lg:col-span-2"] .card > div[class~="p-6"] > div[class~="space-y-3"] > div[class~="rounded-xl"] > div:first-child p:first-child {
+  font-size: 13px;
+  line-height: 19.5px;
+  font-weight: 500;
+  color: rgb(var(--ui-ink));
+}
+
+html.flat-theme [data-ui="user-dashboard"] [class~="lg:col-span-2"] .card > div[class~="p-6"] > div[class~="space-y-3"] > div[class~="rounded-xl"] > div:first-child p:last-child {
+  font-size: 12px;
+  line-height: 18px;
+  color: rgb(var(--ui-muted));
+}
+
+html.flat-theme [data-ui="user-dashboard"] [class~="lg:col-span-2"] .card > div[class~="p-6"] > div[class~="space-y-3"] > div[class~="rounded-xl"] > div:last-child > p {
+  font-family: var(--ui-font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+html.flat-theme [data-ui="user-dashboard"] [class~="lg:col-span-2"] .card > div[class~="p-6"] > div[class~="space-y-3"] > div[class~="rounded-xl"] > div:last-child > p:first-child {
+  font-size: 12.5px;
+  line-height: 18.75px;
+  font-weight: 500;
+}
+
+html.flat-theme [data-ui="user-dashboard"] [class~="lg:col-span-2"] .card > div[class~="p-6"] > div[class~="space-y-3"] > div[class~="rounded-xl"] > div:last-child > p:first-child > span[class~="text-green-600"] {
+  color: rgb(var(--ui-ink));
+}
+
+html.flat-theme [data-ui="user-dashboard"] [class~="lg:col-span-2"] .card > div[class~="p-6"] > div[class~="space-y-3"] > div[class~="rounded-xl"] > div:last-child > p:first-child > span:not([class~="text-green-600"]) {
+  color: rgb(var(--ui-muted));
+}
+
+html.flat-theme [data-ui="user-dashboard"] [class~="lg:col-span-2"] .card > div[class~="p-6"] > div[class~="space-y-3"] > div[class~="rounded-xl"] > div:last-child > p:last-child {
+  font-size: 11.5px;
+  line-height: 17px;
+  color: rgb(var(--ui-muted));
+}
+
+html.flat-theme [data-ui="user-dashboard"] [class~="lg:col-span-2"] .card > div[class~="p-6"] > div[class~="space-y-3"] > a {
+  padding: 10px 16px;
+  font-size: 12.5px;
+  line-height: 18.75px;
+  font-weight: 600;
+  color: var(--ui-link);
+}
+
+html.flat-theme [data-ui="user-dashboard"] [class~="lg:col-span-2"] .card > div[class~="p-6"] > div[class~="space-y-3"] > a:hover {
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+/* 快捷操作 (user): the options stacked 8px apart in a 12px inset (their look is data.css' option card) */
+html.flat-theme [data-ui="user-dashboard"] [class~="lg:col-span-1"] .card > div[class~="space-y-3"] {
+  padding: 12px;
+}
+
+html.flat-theme [data-ui="user-dashboard"] [class~="lg:col-span-1"] .card > div[class~="space-y-3"] > :not([hidden]) ~ :not([hidden]) {
+  margin-top: 8px;
+}
+
+/* ================================================================== 13 · 使用记录 (用户): tabs, table card, pagination */
+
+/* 用量明细 / 错误请求: upstream's .tab buttons over a 1px line read as the reference's underline tabs (CodeTabs, REF §8.15:
+   the current tab ink with a 2px accent rule; the others muted, ink on hover), as on the admin records card. */
+html.flat-theme [data-ui="user-usage"] > div[class~="border-b"]:has(> button.tab) {
+  gap: 0;
+  border-color: rgb(var(--ui-line));
+}
+
+html.flat-theme [data-ui="user-usage"] > div[class~="border-b"]:has(> button.tab) > button.tab {
+  margin-bottom: -1px;
+  padding: 0.5rem 0.625rem;
+  border-bottom: 2px solid transparent;
+  border-radius: 0;
+  background-color: transparent;
+  color: rgb(var(--ui-muted));
+}
+
+html.flat-theme [data-ui="user-usage"] > div[class~="border-b"]:has(> button.tab) > button.tab:hover {
+  background-color: transparent;
+  color: rgb(var(--ui-ink));
+}
+
+html.flat-theme [data-ui="user-usage"] > div[class~="border-b"]:has(> button.tab) > button.tab.tab-active {
+  border-bottom-color: rgb(var(--ui-focus));
+  background-color: transparent;
+  color: rgb(var(--ui-ink));
+}
+
+/* The pagination under the records card is the card's footer (as data.css joins them on the table pages): the card
+   loses its bottom corners, the pagination takes the card's edge and the bottom corners. */
+html.flat-theme [data-ui="user-usage"] > .card:has(+ [data-ui="pagination"]):has(.table-wrapper[data-table="usage"]),
+html.flat-theme [data-ui="user-usage"] .card:has(> .table-wrapper):has(+ div > [data-ui="pagination"]) {
+  border-bottom-left-radius: 0;
+  border-bottom-right-radius: 0;
+}
+
+html.flat-theme [data-ui="user-usage"] > .card:has(.table-wrapper[data-table="usage"]) + [data-ui="pagination"]:not([hidden]),
+html.flat-theme [data-ui="user-usage"] .card:has(> .table-wrapper) + div > [data-ui="pagination"] {
+  margin-top: 0;
+  border: 1px solid rgb(var(--ui-line));
+  border-top-width: 0;
+  border-radius: 0 0 var(--ui-radius-lg) var(--ui-radius-lg);
 }
