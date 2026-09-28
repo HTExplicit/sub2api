@@ -368,9 +368,9 @@ func modelContextSourceRank(source string) int {
 	switch source {
 	case ModelContextSourceCustom:
 		return 0
-	case ModelContextSourceUpstream:
-		return 1
 	case ModelContextSourceOfficial:
+		return 1
+	case ModelContextSourceUpstream:
 		return 2
 	default:
 		return 3
@@ -379,7 +379,7 @@ func modelContextSourceRank(source string) int {
 
 // minimumModelContextCapacity takes the smallest known value of every limit so
 // that no candidate is promised a window it cannot hold. The answer carries the
-// source of the smallest default window.
+// source of the smallest effective maximum window.
 func minimumModelContextCapacity(candidates []ResolvedModelContextCapacity) ResolvedModelContextCapacity {
 	result := candidates[0]
 	minimum := func(current, value int64) int64 {

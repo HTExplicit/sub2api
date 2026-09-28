@@ -172,12 +172,20 @@ func TestGroupModelCapacityOAuthParticipatesAndQueryFailure(t *testing.T) {
 		Extra: map[string]any{UpstreamModelMetadataExtraKey: observedCapacityExtra(map[string]UpstreamModelMetadata{
 			"gpt-6-sol": {ContextWindow: 272000, MaxContextWindow: 872000},
 		})}}
+	snapshot := oauth.GetUpstreamModelMetadataSnapshot()
+	snapshot.SourceIdentity = UpstreamModelMetadataSourceIdentity(&oauth)
+	oauth.SetUpstreamModelMetadataSnapshot(*snapshot)
 	catalog := newGroupModelCapacityCatalog([]Account{ordinary, oauth}, true, nil, true, nil, nil)
 	capacity := catalog.resolve(context.Background(), PlatformOpenAI, "alias")
-	require.Equal(t, int64(272000), capacity.ContextWindow, "an OAuth candidate bounds the group with its observed Codex window")
+	require.Equal(t, int64(700000), capacity.ContextWindow, "the group minimum uses the official API capacity for the OAuth target")
 	require.Equal(t, int64(700000), capacity.MaxContextWindow)
-	require.Equal(t, "upstream", capacity.Source)
+	require.Equal(t, "custom", capacity.Source)
 	require.Equal(t, "group_minimum", capacity.Reason)
+	ordinary.Extra[ModelContextOverridesExtraKey] = map[string]int64{"native-model": 1200000}
+	catalog = newGroupModelCapacityCatalog([]Account{ordinary, oauth}, true, nil, true, nil, nil)
+	capacity = catalog.resolve(context.Background(), PlatformOpenAI, "alias")
+	require.Equal(t, int64(1050000), capacity.ContextWindow, "the OAuth candidate still bounds the pool when its official maximum is smaller")
+	require.Equal(t, "official", capacity.Source)
 	repo := &groupCapacityAccountRepo{err: errors.New("database unavailable")}
 	catalog = loadGroupModelCapacityCatalog(context.Background(), repo, nil, nil, nil, nil, PlatformOpenAI)
 	capacity = catalog.resolve(context.Background(), PlatformOpenAI, "gpt-6-astra")
@@ -190,9 +198,14 @@ func TestGroupModelCapacityAggregatesDistinctMaxInputOutputConservatively(t *tes
 	second := newGroupCapacityAccount(2, nil, nil)
 	first.Extra[UpstreamModelMetadataExtraKey] = observedCapacityExtra(map[string]UpstreamModelMetadata{"unlisted": {ContextWindow: 400000, MaxContextWindow: 900000, MaxInputTokens: 390000, MaxOutputTokens: 64000}})
 	second.Extra[UpstreamModelMetadataExtraKey] = observedCapacityExtra(map[string]UpstreamModelMetadata{"unlisted": {ContextWindow: 500000, MaxContextWindow: 700000, MaxOutputTokens: 32000}})
+	for _, account := range []*Account{&first, &second} {
+		snapshot := account.GetUpstreamModelMetadataSnapshot()
+		snapshot.SourceIdentity = UpstreamModelMetadataSourceIdentity(account)
+		account.SetUpstreamModelMetadataSnapshot(*snapshot)
+	}
 	catalog := newGroupModelCapacityCatalog([]Account{first, second}, true, nil, true, nil, nil)
 	capacity := catalog.resolve(context.Background(), PlatformOpenAI, "unlisted")
-	require.Equal(t, int64(400000), capacity.ContextWindow)
+	require.Equal(t, int64(700000), capacity.ContextWindow, "the group takes the minimum of each target's effective maximum")
 	require.Equal(t, int64(700000), capacity.MaxContextWindow)
 	require.Equal(t, int64(390000), capacity.MaxInputTokens, "a peer without an input limit is bounded by its larger window")
 	require.Equal(t, int64(32000), capacity.MaxOutputTokens)

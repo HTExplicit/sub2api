@@ -175,7 +175,7 @@ func newCodexCatalogMappedAccount(
 			ContextWindow:            1_000_000,
 		}
 	}
-	account.SetUpstreamModelMetadataSnapshot(UpstreamModelMetadataSnapshot{Source: "upstream", Models: models})
+	account.SetUpstreamModelMetadataSnapshot(UpstreamModelMetadataSnapshot{Source: "upstream", SourceIdentity: UpstreamModelMetadataSourceIdentity(&account), Models: models})
 	return account
 }
 
@@ -270,8 +270,8 @@ func TestNewConfiguredCodexModelDescriptorUsesProviderMetadataAndSafeFallback(t 
 
 	deepSeek := newConfiguredCodexModelDescriptor("deepseek-v4-pro")
 	require.Equal(t, "DeepSeek V4 Pro", deepSeek.DisplayName)
-	require.Equal(t, int64(1_000_000), deepSeek.ContextWindow)
-	require.Equal(t, int64(1_000_000), deepSeek.MaxContextWindow)
+	require.Zero(t, deepSeek.ContextWindow, "synthetic descriptors must not invent a context window")
+	require.Zero(t, deepSeek.MaxContextWindow, "synthetic descriptors must not invent a maximum context window")
 	require.NotNil(t, deepSeek.DefaultReasoningLevel)
 	require.Equal(t, "high", *deepSeek.DefaultReasoningLevel)
 	require.Equal(t, []configuredCodexReasoningLevel{
@@ -284,8 +284,8 @@ func TestNewConfiguredCodexModelDescriptorUsesProviderMetadataAndSafeFallback(t 
 
 	grok := newConfiguredCodexModelDescriptor("grok-4.6")
 	require.Equal(t, "Grok 4.6", grok.DisplayName)
-	require.Equal(t, int64(500_000), grok.ContextWindow)
-	require.Equal(t, int64(500_000), grok.MaxContextWindow)
+	require.Zero(t, grok.ContextWindow, "synthetic descriptors must not invent a context window")
+	require.Zero(t, grok.MaxContextWindow, "synthetic descriptors must not invent a maximum context window")
 	require.NotNil(t, grok.DefaultReasoningLevel)
 	require.Equal(t, "high", *grok.DefaultReasoningLevel)
 	require.Equal(t, []string{"low", "medium", "high", "xhigh"}, effortsFromConfiguredCodexLevels(grok.SupportedReasoningLevels))
@@ -343,7 +343,8 @@ func TestNewConfiguredCodexModelDescriptorUsesProviderMetadataAndSafeFallback(t 
 	require.True(t, gpt56.SupportsParallelToolCalls)
 	require.True(t, gpt56.SupportVerbosity)
 	require.Equal(t, []string{"text"}, gpt56.InputModalities)
-	require.Equal(t, int64(872_000), gpt56.MaxContextWindow)
+	require.Zero(t, gpt56.ContextWindow, "GPT capacity is resolved from account evidence")
+	require.Zero(t, gpt56.MaxContextWindow, "GPT capacity is resolved from account evidence")
 	require.Equal(t, configuredCodexTruncationPolicy{Mode: "tokens", Limit: 10_000}, gpt56.TruncationPolicy)
 	require.NotNil(t, gpt56.DefaultVerbosity)
 	require.Equal(t, "low", *gpt56.DefaultVerbosity)
@@ -374,15 +375,15 @@ func TestNewConfiguredCodexModelDescriptorUsesProviderMetadataAndSafeFallback(t 
 	require.True(t, isOpenAICodexReasoningGPTModel("openai/gpt-6-astra"))
 	require.True(t, isOpenAIGPT6AstraModel("gpt-6-astra-2026-09-01"))
 	require.False(t, isOpenAIGPT6AstraModel("gpt-6-other"))
-	require.Equal(t, int64(1_050_000), gpt6Astra.ContextWindow)
-	require.Equal(t, int64(1_050_000), gpt6Astra.MaxContextWindow)
+	require.Zero(t, gpt6Astra.ContextWindow, "GPT capacity is resolved from account evidence")
+	require.Zero(t, gpt6Astra.MaxContextWindow, "GPT capacity is resolved from account evidence")
 	gpt6 := newConfiguredCodexModelDescriptor("gpt-6")
 	require.Equal(t, "GPT-6 (Astra)", gpt6.DisplayName)
 	require.True(t, strings.HasPrefix(strings.TrimSpace(gpt6.ModelMessages.InstructionsTemplate), "You are Codex, an agent based on GPT-6."))
 	require.Equal(t, []string{"low", "medium", "high", "xhigh", "max", "ultra"}, effortsFromConfiguredCodexLevels(gpt6.SupportedReasoningLevels))
 	require.NotNil(t, gpt6.MultiAgentReasoningEffort)
 	require.Equal(t, "xhigh", *gpt6.MultiAgentReasoningEffort)
-	require.Equal(t, int64(1_050_000), gpt6.ContextWindow)
+	require.Zero(t, gpt6.ContextWindow, "GPT capacity is resolved from account evidence")
 
 	gpt55 := newConfiguredCodexModelDescriptor("gpt-5.5")
 	require.Equal(t, "GPT-5.5", gpt55.DisplayName)
@@ -408,7 +409,7 @@ func TestNewConfiguredCodexModelDescriptorUsesProviderMetadataAndSafeFallback(t 
 
 	custom := newConfiguredCodexModelDescriptor("company-coding-model")
 	require.Equal(t, "company-coding-model", custom.DisplayName)
-	require.Equal(t, int64(272_000), custom.ContextWindow)
+	require.Zero(t, custom.ContextWindow, "unknown custom models must not receive a fabricated capacity")
 	require.NotNil(t, custom.DefaultReasoningLevel)
 	require.Equal(t, "none", *custom.DefaultReasoningLevel)
 	require.Equal(t, []configuredCodexReasoningLevel{
@@ -1237,7 +1238,7 @@ func TestBuildGroupConfiguredCodexModelsManifestUsesAdministratorConfiguration(t
 			},
 		},
 	}
-	arkAccount.SetUpstreamModelMetadataSnapshot(UpstreamModelMetadataSnapshot{Models: map[string]UpstreamModelMetadata{
+	arkAccount.SetUpstreamModelMetadataSnapshot(UpstreamModelMetadataSnapshot{SourceIdentity: UpstreamModelMetadataSourceIdentity(&arkAccount), Models: map[string]UpstreamModelMetadata{
 		"glm-5.3": {
 			ID:                       "glm-5.3",
 			DisplayName:              "GLM 5.3",
@@ -1321,6 +1322,8 @@ func TestBuildGroupConfiguredCodexModelsManifestUsesResolvedTargetsForOrdinaryGP
 	}
 	for _, slug := range []string{"gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna"} {
 		require.NotContains(t, bySlug[slug], "context_capacity_source", "public GPT aliases must not identify unknown upstream targets")
+		require.NotContains(t, bySlug[slug], "context_window", "a provider template cannot establish the unknown target's capacity")
+		require.NotContains(t, bySlug[slug], "max_context_window")
 		require.Nil(t, bySlug[slug]["auto_compact_token_limit"])
 	}
 	notModified, configured, err := svc.BuildGroupConfiguredCodexModelsManifest(
@@ -1333,6 +1336,75 @@ func TestBuildGroupConfiguredCodexModelsManifestUsesResolvedTargetsForOrdinaryGP
 	require.True(t, notModified.NotModified)
 	require.Empty(t, notModified.Body)
 	require.Equal(t, manifest.ETag, notModified.ETag)
+}
+
+func TestConfiguredCodexManifestCapacityComesFromResolver(t *testing.T) {
+	t.Parallel()
+
+	const groupID int64 = 789
+	const publicModel = "gpt-5.6-sol"
+	for _, test := range []struct {
+		name       string
+		target     string
+		override   int64
+		wantOutput int64
+	}{
+		{name: "unknown", target: "unknown-provider-model"},
+		{name: "unknown with custom", target: "unknown-provider-model", override: 640000},
+		{name: "known with custom", target: "gpt-5.5", override: 640000, wantOutput: 128000},
+	} {
+		for _, path := range []string{"configured", "generic", "merged", "converted"} {
+			t.Run(test.name+"/"+path, func(t *testing.T) {
+				account := newCodexModelsAPIKeyTestAccount("https://provider.example/v1")
+				account.Credentials["model_mapping"] = map[string]any{publicModel: test.target}
+				if test.override > 0 {
+					account.Extra = map[string]any{ModelContextOverridesExtraKey: map[string]int64{test.target: test.override}}
+				}
+				repo := codexModelsVisibilityAccountRepo{byGroup: map[int64][]Account{groupID: {*account}}}
+				svc := &OpenAIGatewayService{accountRepo: repo}
+				group := &Group{ID: groupID, Platform: PlatformOpenAI}
+				var body []byte
+				switch path {
+				case "configured":
+					manifest, configured, err := svc.BuildGroupConfiguredCodexModelsManifest(context.Background(), group, "")
+					require.NoError(t, err)
+					require.True(t, configured)
+					body = manifest.Body
+				case "generic":
+					var err error
+					body, err = (&GatewayService{accountRepo: repo}).BuildCodexModelsManifestForGroup(context.Background(), group, "", []string{publicModel})
+					require.NoError(t, err)
+				case "merged", "converted":
+					manifest := &OpenAIModelsResponse{Body: []byte(`{"models":[]}`)}
+					if path == "converted" {
+						manifest.Body = convertOpenAIModelListToCodexManifestForAccount([]byte(`{"data":[{"id":"`+publicModel+`"}]}`), account)
+						require.NoError(t, svc.CompleteAPIKeyCodexModelsManifestForClient(manifest, account))
+					}
+					require.NoError(t, svc.MergeGroupConfiguredCodexModels(context.Background(), group, manifest, ""))
+					body = manifest.Body
+				}
+				models := decodeCodexManifestModels(t, body)
+				require.Len(t, models, 1)
+				model := models[0]
+				require.Equal(t, publicModel, model["slug"])
+				require.NotContains(t, model, "max_input_tokens", "no independent input limit was declared")
+				if test.override == 0 {
+					require.NotContains(t, model, "context_window")
+					require.NotContains(t, model, "max_context_window")
+					require.NotContains(t, model, "context_capacity_source")
+				} else {
+					require.EqualValues(t, test.override, model["context_window"])
+					require.EqualValues(t, test.override, model["max_context_window"])
+					require.Equal(t, ModelContextSourceCustom, model["context_capacity_source"])
+				}
+				if test.wantOutput == 0 {
+					require.NotContains(t, model, "max_output_tokens")
+				} else {
+					require.EqualValues(t, test.wantOutput, model["max_output_tokens"])
+				}
+			})
+		}
+	}
 }
 
 func TestMergeGroupConfiguredCodexModelsAppliesReferenceCapacityAfterFinalMerge(t *testing.T) {
@@ -1363,8 +1435,9 @@ func TestMergeGroupConfiguredCodexModelsAppliesReferenceCapacityAfterFinalMerge(
 		bySlug[slug] = model
 	}
 	for _, slug := range []string{"gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna"} {
-		require.EqualValues(t, 272_000, bySlug[slug]["context_window"], "GPT references are the Codex subscription values for API keys too")
-		require.EqualValues(t, 872_000, bySlug[slug]["max_context_window"])
+		require.EqualValues(t, 1_050_000, bySlug[slug]["context_window"], "official API specifications supersede Codex subscription declarations")
+		require.EqualValues(t, 1_050_000, bySlug[slug]["max_context_window"])
+		require.EqualValues(t, 128_000, bySlug[slug]["max_output_tokens"])
 		require.Equal(t, "official", bySlug[slug]["context_capacity_source"])
 		require.Nil(t, bySlug[slug]["auto_compact_token_limit"], "final projection must not invent a fixed 900K compaction threshold")
 	}
@@ -1509,8 +1582,8 @@ func TestBuildGroupConfiguredCodexModelsManifestIgnoresPersistentlyDisabledMappe
 	require.Equal(t, "my-coder", models[0]["slug"])
 	require.Equal(t, []string{"low", "medium", "high", "xhigh"}, effortsFromManifestModel(t, models[0]))
 	require.Equal(t, []any{"text", "image"}, models[0]["input_modalities"])
-	require.EqualValues(t, 272_000, models[0]["context_window"], "an unschedulable active account still bounds capacity; only capability intersection skips it")
-	require.Equal(t, "upstream", models[0]["context_capacity_source"])
+	require.EqualValues(t, 1_000_000, models[0]["context_window"], "an unschedulable active account still bounds capacity using its official specification; only capability intersection skips it")
+	require.Equal(t, "official", models[0]["context_capacity_source"])
 }
 
 // Scenario: 没有管理员模型配置时保留现有上游发现路径。
@@ -2142,7 +2215,7 @@ func TestFetchCodexModelsManifestAPIKeyConvertsStandardOpenAIModelList(t *testin
 	for _, model := range completeModels {
 		require.NotEmpty(t, model.DisplayName)
 		require.NotEmpty(t, model.ModelMessages.InstructionsTemplate)
-		require.Positive(t, model.ContextWindow)
+		require.Zero(t, model.ContextWindow, "a converted descriptor without upstream capacity must omit it")
 	}
 	officialModels := decodeCodexManifestModels(t, manifest.Body)
 	require.Len(t, officialModels, 2)
@@ -3220,7 +3293,7 @@ func TestCompleteAPIKeyCodexModelsManifestForClientFillsMissingProviderFieldsWit
 
 	reasoning := true
 	account := newCodexModelsAPIKeyTestAccount("https://upstream.example/v1")
-	account.SetUpstreamModelMetadataSnapshot(UpstreamModelMetadataSnapshot{Models: map[string]UpstreamModelMetadata{
+	account.SetUpstreamModelMetadataSnapshot(UpstreamModelMetadataSnapshot{SourceIdentity: UpstreamModelMetadataSourceIdentity(account), Models: map[string]UpstreamModelMetadata{
 		"provider-model": {
 			ID: "provider-model", DisplayName: "Synced Display", Description: "Synced description",
 			Reasoning: &reasoning, DefaultReasoningLevel: "ultra",
@@ -3334,7 +3407,7 @@ func TestCompleteAPIKeyCodexModelsManifestForClientUsesCurrentSnapshotForCachedN
 	reasoning := true
 	account := newCodexModelsAPIKeyTestAccount("https://upstream.example/v1")
 	setSnapshot := func(displayName string, contextWindow int64) {
-		account.SetUpstreamModelMetadataSnapshot(UpstreamModelMetadataSnapshot{Models: map[string]UpstreamModelMetadata{
+		account.SetUpstreamModelMetadataSnapshot(UpstreamModelMetadataSnapshot{SourceIdentity: UpstreamModelMetadataSourceIdentity(account), Models: map[string]UpstreamModelMetadata{
 			"provider-reasoner": {
 				ID: "provider-reasoner", DisplayName: displayName,
 				Reasoning: &reasoning, DefaultReasoningLevel: "ultra",
@@ -3436,14 +3509,14 @@ func TestCompleteAPIKeyCodexModelsManifestForClientDoesNotApplyLegacyFixedSolCon
 		require.True(t, ok)
 		bySlug[slug] = model
 	}
-	require.EqualValues(t, 272_000, bySlug["gpt-5.6-sol"]["context_window"])
-	require.EqualValues(t, 872_000, bySlug["gpt-5.6-sol"]["max_context_window"])
+	require.NotContains(t, bySlug["gpt-5.6-sol"], "context_window")
+	require.NotContains(t, bySlug["gpt-5.6-sol"], "max_context_window")
 	require.Nil(t, bySlug["gpt-5.6-sol"]["auto_compact_token_limit"])
-	require.EqualValues(t, 272_000, bySlug["gpt-5.6-terra"]["context_window"])
-	require.EqualValues(t, 872_000, bySlug["gpt-5.6-terra"]["max_context_window"])
+	require.NotContains(t, bySlug["gpt-5.6-terra"], "context_window")
+	require.NotContains(t, bySlug["gpt-5.6-terra"], "max_context_window")
 	require.Nil(t, bySlug["gpt-5.6-terra"]["auto_compact_token_limit"])
-	require.EqualValues(t, 272_000, bySlug["gpt-5.6-luna"]["context_window"])
-	require.EqualValues(t, 872_000, bySlug["gpt-5.6-luna"]["max_context_window"])
+	require.NotContains(t, bySlug["gpt-5.6-luna"], "context_window")
+	require.NotContains(t, bySlug["gpt-5.6-luna"], "max_context_window")
 	require.Nil(t, bySlug["gpt-5.6-luna"]["auto_compact_token_limit"])
 }
 
@@ -3455,7 +3528,7 @@ func TestCompleteAPIKeyCodexModelsManifestForClientUsesSyncedMetadataForConverte
 	const groupID int64 = 84
 	reasoning := true
 	account := newCodexModelsAPIKeyTestAccount("https://upstream.example/v1")
-	account.SetUpstreamModelMetadataSnapshot(UpstreamModelMetadataSnapshot{Models: map[string]UpstreamModelMetadata{
+	account.SetUpstreamModelMetadataSnapshot(UpstreamModelMetadataSnapshot{SourceIdentity: UpstreamModelMetadataSourceIdentity(account), Models: map[string]UpstreamModelMetadata{
 		"future-reasoner": {
 			ID: "future-reasoner", DisplayName: "Future Reasoner", Description: "Synced upstream capability",
 			Reasoning: &reasoning, DefaultReasoningLevel: "ultra",
@@ -3565,8 +3638,8 @@ func TestConvertOpenAIModelListToCompleteCodexManifest(t *testing.T) {
 	requireCompleteConfiguredCodexModel(t, models[1], "deepseek-v4-pro")
 	require.Equal(t, "DeepSeek V4 Flash", models[0]["display_name"])
 	require.Equal(t, "DeepSeek V4 Pro", models[1]["display_name"])
-	require.EqualValues(t, 1_000_000, models[0]["context_window"])
-	require.EqualValues(t, 1_000_000, models[1]["context_window"])
+	require.NotContains(t, models[0], "context_window")
+	require.NotContains(t, models[1], "context_window")
 }
 
 func TestFetchCodexModelsManifestAPIKeyCacheSurvivesClientMutation(t *testing.T) {

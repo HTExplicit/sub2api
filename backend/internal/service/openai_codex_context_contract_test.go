@@ -12,7 +12,8 @@ func TestModelContextCapacityContractUsesRuntimePolicyAndProjection(t *testing.T
 	line, err := VerifyOfficialCodexContextContract()
 	require.NoError(t, err)
 	require.Equal(t, OfficialCodexContextContractSuccessLine, line)
-	require.Contains(t, line, "version=3")
+	require.Contains(t, line, "version=4")
+	require.Contains(t, line, "priority=custom,official,upstream,registry")
 	require.NotContains(t, line, "default_context=")
 }
 
@@ -28,6 +29,7 @@ func TestModelContextCapacityContractFailsClosed(t *testing.T) {
 		{"unsafe compact threshold", strings.Replace(valid, `"auto_compact_token_limit":null`, `"auto_compact_token_limit":9999999`, 1)},
 		{"unknown capacity invented", strings.Replace(valid, `"context_window":777000`, `"context_window":200000`, 1)},
 		{"group minimum lost", strings.Replace(valid, `"context_capacity_reason":"group_minimum"`, `"context_capacity_reason":"other"`, 1)},
+		{"borrowed official output limit", strings.Replace(valid, `"slug":"fixture-official"`, `"slug":"fixture-official","max_output_tokens":8192`, 1)},
 		{"sentinel changed", strings.Replace(valid, officialCodexContextContractSentinel, "changed", 1)},
 		{"unknown capability changed", strings.Replace(valid, `"keep":true`, `"keep":false`, 1)},
 	}

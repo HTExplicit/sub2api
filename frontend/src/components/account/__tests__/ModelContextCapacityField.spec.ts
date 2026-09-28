@@ -63,6 +63,29 @@ describe('ModelContextCapacityField', () => {
     expect(wrapper.get('button').attributes('title')).not.toContain('exceedsUpstream')
   })
 
+  it('keeps an unbound upstream observation visible for diagnosis without treating it as current', () => {
+    const wrapper = mountField(capacityRow({
+      upstream_evidence_status: 'source_mismatch',
+      effective_context_window: 400_000,
+      effective_source: 'official'
+    }))
+    const title = wrapper.get('button').attributes('title')
+    expect(title).toContain('contextCapacity.upstreamEvidence.source_mismatch')
+    expect(title).toContain('contextCapacity.context_window')
+    expect(title).not.toContain('exceedsUpstream')
+  })
+
+  it('keeps an unbound registry observation visible for diagnosis without treating it as current', () => {
+    const wrapper = mountField(capacityRow({
+      registry: { context_window: 700_000, observed_at: '2026-09-08T00:00:00Z' },
+      registry_evidence_status: 'unbound'
+    }))
+    const title = wrapper.get('button').attributes('title')
+    expect(title).toContain('contextCapacity.sources.registry')
+    expect(title).toContain('contextCapacity.upstreamEvidence.unbound')
+    expect(title).toContain('700000')
+  })
+
   it('shows compact capacity and its source without hover or another panel', () => {
     const wrapper = mountField()
     expect(wrapper.get('[data-testid="context-capacity-value"]').text()).toBe('[400K]')

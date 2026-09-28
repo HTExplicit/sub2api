@@ -50,9 +50,10 @@ type UpstreamModelMetadata struct {
 }
 
 type UpstreamModelMetadataSnapshot struct {
-	Source   string                           `json:"source"`
-	SyncedAt string                           `json:"synced_at"`
-	Models   map[string]UpstreamModelMetadata `json:"models"`
+	Source         string                           `json:"source"`
+	SourceIdentity string                           `json:"source_identity,omitempty"`
+	SyncedAt       string                           `json:"synced_at"`
+	Models         map[string]UpstreamModelMetadata `json:"models"`
 }
 
 type UpstreamModelCatalog struct {
@@ -140,6 +141,21 @@ func (a *Account) GetUpstreamModelMetadata(modelID string) (UpstreamModelMetadat
 	return metadata, ok
 }
 
+// CurrentUpstreamModelMetadata preserves capabilities while withholding
+// upstream limits from an unbound or old-endpoint snapshot. Raw getters remain
+// available for admin diagnostics and serialization.
+func (a *Account) CurrentUpstreamModelMetadata(modelID string) (UpstreamModelMetadata, bool) {
+	snapshot := a.GetUpstreamModelMetadataSnapshot()
+	if snapshot == nil {
+		return UpstreamModelMetadata{}, false
+	}
+	metadata, ok := snapshot.Models[strings.TrimSpace(modelID)]
+	if !upstreamModelMetadataSourceMatches(a, snapshot) {
+		metadata = withUpstreamModelCapacity(metadata, UpstreamModelMetadata{})
+	}
+	return metadata, ok
+}
+
 // UpstreamModelSyncErrorKind classifies model sync failures for safe HTTP mapping.
 type UpstreamModelSyncErrorKind string
 
@@ -222,6 +238,8 @@ func (s *AccountTestService) FetchUpstreamSupportedModels(ctx context.Context, a
 // listed model that no longer declares one falls back to the registry or to
 // nothing, never to an older value from a possibly different endpoint.
 func (s *AccountTestService) SyncUpstreamModelCatalog(ctx context.Context, account *Account) (*UpstreamModelCatalog, error) {
+	sourceIdentity := UpstreamModelMetadataSourceIdentity(account)
+	syncedAt := time.Now().UTC().Format(time.RFC3339Nano)
 	models, body, err := s.fetchUpstreamModelList(ctx, account)
 	liveListAvailable := err == nil
 	if err != nil {
@@ -238,7 +256,6 @@ func (s *AccountTestService) SyncUpstreamModelCatalog(ctx context.Context, accou
 			"model_count", len(models),
 		)
 	}
-	syncedAt := time.Now().UTC().Format(time.RFC3339)
 	catalog := &UpstreamModelCatalog{Models: models, Metadata: make(map[string]UpstreamModelMetadata)}
 	catalog.ModelListSource = "upstream"
 	if !liveListAvailable {
@@ -284,7 +301,34 @@ func (s *AccountTestService) SyncUpstreamModelCatalog(ctx context.Context, accou
 		}
 	}
 
-	previous := account.GetUpstreamModelMetadataSnapshot()
+	persistedCapabilities := len(completeUpstreamModelMetadataSubset(capabilityIDs, catalog.Metadata)) > 0
+	if _, err := persistUpstreamModelMetadataSnapshot(ctx, s.accountRepo, account, sourceIdentity, func(current *Account) UpstreamModelMetadataSnapshot {
+		return buildUpstreamModelCatalogSnapshot(current, sourceIdentity, source, syncedAt, capabilityIDs, catalog.Metadata, liveListAvailable)
+	}); err != nil {
+		return nil, newUpstreamModelSyncInternalError("Failed to save upstream model metadata", err)
+	}
+
+	if upstreamCatalogNeedsRegistry(capabilityIDs, catalog.Metadata) {
+		if persistedCapabilities {
+			catalog.Warnings = append(catalog.Warnings, UpstreamModelSyncWarning{
+				Code:    UpstreamModelMetadataPartialCode,
+				Message: "Some model capabilities were saved; remaining models are still incomplete.",
+			})
+		} else {
+			catalog.Warnings = append(catalog.Warnings, UpstreamModelSyncWarning{
+				Code:    UpstreamModelMetadataIncompleteCode,
+				Message: "Model IDs were synced, but capability metadata is incomplete.",
+			})
+		}
+	}
+	catalog.CapacityRows = BuildAccountModelContextCapacityRows(account, models)
+	return catalog, nil
+}
+
+// buildUpstreamModelCatalogSnapshot merges only source-bound upstream values.
+// Registry entries retain their provenance when a legacy snapshot is replaced.
+func buildUpstreamModelCatalogSnapshot(account *Account, sourceIdentity, source, syncedAt string, capabilityIDs []string, metadata map[string]UpstreamModelMetadata, liveListAvailable bool) UpstreamModelMetadataSnapshot {
+	previous := upstreamMetadataForSource(account, sourceIdentity)
 	if previous != nil {
 		// Retained entries keep their own provenance, whatever enrichment summary
 		// the rewritten snapshot carries.
@@ -296,8 +340,7 @@ func (s *AccountTestService) SyncUpstreamModelCatalog(ctx context.Context, accou
 			}
 		}
 	}
-	completeMetadata := completeUpstreamModelMetadataSubset(capabilityIDs, catalog.Metadata)
-	persistedCapabilities := len(completeMetadata) > 0
+	completeMetadata := completeUpstreamModelMetadataSubset(capabilityIDs, metadata)
 	if completeMetadata == nil {
 		completeMetadata = make(map[string]UpstreamModelMetadata)
 	}
@@ -330,7 +373,7 @@ func (s *AccountTestService) SyncUpstreamModelCatalog(ctx context.Context, accou
 	// one. Without one, only a declaration the live upstream list withdrew is
 	// dropped; registry references survive a partial or failed registry refresh.
 	for _, modelID := range capabilityIDs {
-		declared, ok := catalog.Metadata[modelID]
+		declared, ok := metadata[modelID]
 		if !ok || !upstreamModelMetadataHasCapacity(declared) {
 			kept, exists := completeMetadata[modelID]
 			if _, keptSource := upstreamMetadataCapacity(source, kept); !exists || !liveListAvailable || keptSource != ModelContextSourceUpstream {
@@ -348,31 +391,93 @@ func (s *AccountTestService) SyncUpstreamModelCatalog(ctx context.Context, accou
 			delete(completeMetadata, modelID)
 		}
 	}
-	snapshot := UpstreamModelMetadataSnapshot{Source: source, SyncedAt: syncedAt, Models: completeMetadata}
-	if account != nil {
-		account.SetUpstreamModelMetadataSnapshot(snapshot)
-		if account.ID > 0 && s.accountRepo != nil {
-			if err := s.accountRepo.UpdateExtra(ctx, account.ID, map[string]any{UpstreamModelMetadataExtraKey: snapshot}); err != nil {
-				return nil, newUpstreamModelSyncInternalError("Failed to save upstream model metadata", err)
-			}
-		}
-	}
+	return UpstreamModelMetadataSnapshot{Source: source, SourceIdentity: sourceIdentity, SyncedAt: syncedAt, Models: completeMetadata}
+}
 
-	if upstreamCatalogNeedsRegistry(capabilityIDs, catalog.Metadata) {
-		if persistedCapabilities {
-			catalog.Warnings = append(catalog.Warnings, UpstreamModelSyncWarning{
-				Code:    UpstreamModelMetadataPartialCode,
-				Message: "Some model capabilities were saved; remaining models are still incomplete.",
-			})
+// upstreamMetadataForSource returns a copy suitable for rebinding. Old capacity
+// evidence is never promoted to a new identity; capability fields are retained.
+func upstreamMetadataForSource(account *Account, sourceIdentity string) *UpstreamModelMetadataSnapshot {
+	previous := account.GetUpstreamModelMetadataSnapshot()
+	if previous == nil {
+		return nil
+	}
+	sameSource := previous.SourceIdentity != "" && previous.SourceIdentity == sourceIdentity
+	for id, entry := range previous.Models {
+		_, source := upstreamMetadataCapacity(previous.Source, entry)
+		if !sameSource {
+			// A source change invalidates every capacity value, including a
+			// registry-enriched value observed under the old endpoint. Capability
+			// fields remain useful; the raw snapshot remains available for audit.
+			entry = withUpstreamModelCapacity(entry, UpstreamModelMetadata{})
 		} else {
-			catalog.Warnings = append(catalog.Warnings, UpstreamModelSyncWarning{
-				Code:    UpstreamModelMetadataIncompleteCode,
-				Message: "Model IDs were synced, but capability metadata is incomplete.",
-			})
+			entry.CapacitySource = source
+		}
+		if upstreamModelMetadataIsUseful(entry) {
+			previous.Models[id] = entry
+		} else {
+			delete(previous.Models, id)
 		}
 	}
-	catalog.CapacityRows = BuildAccountModelContextCapacityRows(account, models)
-	return catalog, nil
+	return previous
+}
+
+var errUpstreamModelMetadataSuperseded = errors.New("upstream model metadata observation superseded by an account or catalog edit")
+
+// Both catalog refresh and gateway observations use the production repository's
+// existing CAS capability. Preview accounts do not perform a persistent write.
+func persistUpstreamModelMetadataSnapshot(ctx context.Context, repo AccountRepository, account *Account, sourceIdentity string, build func(*Account) UpstreamModelMetadataSnapshot) (bool, error) {
+	if account == nil {
+		return false, newUpstreamModelSyncConfigError("Account is required", nil)
+	}
+	if sourceIdentity == "" || UpstreamModelMetadataSourceIdentity(account) != sourceIdentity {
+		return false, errUpstreamModelMetadataSuperseded
+	}
+	if account.ID <= 0 || repo == nil {
+		account.SetUpstreamModelMetadataSnapshot(build(account))
+		return true, nil
+	}
+	writer, ok := repo.(accountExtraRevisionWriter)
+	if !ok {
+		return false, errors.New("account repository does not support revision-fenced model metadata writes")
+	}
+	current := account
+	// Compare the complete stored value, including an empty catalog. The
+	// convenient decoded getter intentionally returns nil for zero models.
+	baseline, err := json.Marshal(account.Extra[UpstreamModelMetadataExtraKey])
+	if err != nil {
+		return false, err
+	}
+	for attempt := 0; attempt < 2; attempt++ {
+		snapshot := build(current)
+		applied, err := writer.UpdateExtraIfRevision(ctx, account.ID, current.UpdatedAt, map[string]any{UpstreamModelMetadataExtraKey: snapshot})
+		if err != nil {
+			return false, err
+		}
+		if applied {
+			account.SetUpstreamModelMetadataSnapshot(snapshot)
+			return true, nil
+		}
+		if attempt == 1 {
+			break
+		}
+		current, err = repo.GetByID(ctx, account.ID)
+		if err != nil {
+			return false, err
+		}
+		// Retry only an unrelated account edit. If either the endpoint or its
+		// stored catalog changed, a late response cannot prove it is newer.
+		// Discard it instead of resurrecting withdrawn models or limits.
+		if current == nil || UpstreamModelMetadataSourceIdentity(current) != sourceIdentity ||
+			!sameUpstreamModelMetadataSnapshot(baseline, current.Extra[UpstreamModelMetadataExtraKey]) {
+			return false, errUpstreamModelMetadataSuperseded
+		}
+	}
+	return false, errUpstreamModelMetadataSuperseded
+}
+
+func sameUpstreamModelMetadataSnapshot(baseline []byte, current any) bool {
+	value, err := json.Marshal(current)
+	return err == nil && string(baseline) == string(value)
 }
 
 // applyUpstreamModelCapacityDeclarations replaces the capacity of every model

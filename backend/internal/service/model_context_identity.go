@@ -1,9 +1,94 @@
 package service
 
 import (
-	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
+	"net"
+	"net/url"
 	"strings"
+
+	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/openai_compat"
 )
+
+// UpstreamModelMetadataSourceIdentity binds observations to the provider and
+// endpoint contract that produced them. Credentials, proxies and public model
+// aliases are deliberately absent: changing those does not change the source.
+func UpstreamModelMetadataSourceIdentity(account *Account) string {
+	if account == nil {
+		return ""
+	}
+	identity := struct {
+		Platform, Type, Mode, Protocol, CatalogBase, AnthropicBase string
+		ResponsesMode, ResponsesSupport                            string
+		ProtocolBases                                              map[string]string
+	}{
+		Platform:      strings.ToLower(strings.TrimSpace(account.Platform)),
+		Type:          strings.ToLower(strings.TrimSpace(account.Type)),
+		Mode:          strings.ToLower(strings.TrimSpace(account.GetCredential("account_mode"))),
+		Protocol:      account.GetAPIProtocol(),
+		CatalogBase:   normalizeCapacitySourceURL(upstreamModelRegistryBaseURL(account)),
+		AnthropicBase: normalizeCapacitySourceURL(account.GetAnthropicProtocolBaseURL()),
+	}
+	if account.IsOpenAI() {
+		identity.ResponsesMode = string(openai_compat.NormalizeResponsesSupportMode(account.GetExtraString(openai_compat.ExtraKeyResponsesMode)))
+		switch openai_compat.ResolveResponsesSupport(account.Extra) {
+		case openai_compat.ResponsesSupportYes:
+			identity.ResponsesSupport = "yes"
+		case openai_compat.ResponsesSupportNo:
+			identity.ResponsesSupport = "no"
+		default:
+			identity.ResponsesSupport = "unknown"
+		}
+	}
+	if account.IsOpenAIOAuth() {
+		identity.CatalogBase = normalizeCapacitySourceURL(chatgptCodexModelsURL)
+	}
+	if account.IsAnthropic() && account.IsOAuth() {
+		identity.CatalogBase = "https://api.anthropic.com"
+	}
+	if account.IsMultiProtocolAPIKey() {
+		identity.ProtocolBases = make(map[string]string)
+		for _, protocol := range []string{APIProtocolChatCompletions, APIProtocolResponses, APIProtocolAnthropic} {
+			identity.ProtocolBases[protocol] = normalizeCapacitySourceURL(account.GetCNProtocolBaseURL(protocol))
+		}
+	}
+	body, _ := json.Marshal(identity)
+	digest := sha256.Sum256(body)
+	return "v1:" + hex.EncodeToString(digest[:])
+}
+
+func normalizeCapacitySourceURL(raw string) string {
+	raw = strings.TrimSpace(raw)
+	parsed, err := url.Parse(raw)
+	if err != nil || parsed.Host == "" {
+		return strings.TrimRight(raw, "/")
+	}
+	parsed.Scheme = strings.ToLower(parsed.Scheme)
+	host, port := strings.ToLower(parsed.Hostname()), parsed.Port()
+	if (parsed.Scheme == "https" && port == "443") || (parsed.Scheme == "http" && port == "80") {
+		port = ""
+	}
+	parsed.Host = host
+	if port != "" {
+		parsed.Host = net.JoinHostPort(host, port)
+	} else if strings.Contains(host, ":") {
+		parsed.Host = "[" + host + "]"
+	}
+	parsed.User, parsed.Fragment, parsed.RawFragment = nil, "", ""
+	// url.Parse keeps an escaped path in RawPath. Preserve it so a reserved
+	// slash (%2F) cannot become the same identity as a path separator.
+	if parsed.RawPath == "" {
+		parsed.Path = strings.TrimRight(parsed.Path, "/")
+	}
+	parsed.RawQuery = parsed.Query().Encode()
+	return parsed.String()
+}
+
+func upstreamModelMetadataSourceMatches(account *Account, snapshot *UpstreamModelMetadataSnapshot) bool {
+	return snapshot != nil && snapshot.SourceIdentity != "" && snapshot.SourceIdentity == UpstreamModelMetadataSourceIdentity(account)
+}
 
 // Input is an upstream target, never a public routing alias. In particular,
 // A -> B and B -> C must not cause a second mapping when resolving A's capacity.
@@ -63,6 +148,16 @@ func resolveCapacityOverrides(account *Account) (map[string]int64, map[string]bo
 // over alias spellings; two alias spellings with different limits are a
 // conflict, not a choice.
 func accountCapacityObservations(account *Account) (upstream, registry map[string]ModelContextCapacity, conflicts map[string]bool) {
+	return accountCapacityObservationsWithSourceCheck(account, true)
+}
+
+// Raw observations remain available to administrators after an endpoint edit
+// or when a legacy snapshot has no source binding. They are not current evidence.
+func accountRawCapacityObservations(account *Account) (upstream, registry map[string]ModelContextCapacity, conflicts map[string]bool) {
+	return accountCapacityObservationsWithSourceCheck(account, false)
+}
+
+func accountCapacityObservationsWithSourceCheck(account *Account, checkSource bool) (upstream, registry map[string]ModelContextCapacity, conflicts map[string]bool) {
 	upstream = make(map[string]ModelContextCapacity)
 	registry = make(map[string]ModelContextCapacity)
 	conflicts = make(map[string]bool)
@@ -70,6 +165,7 @@ func accountCapacityObservations(account *Account) (upstream, registry map[strin
 	if snapshot == nil {
 		return upstream, registry, conflicts
 	}
+	usableSource := !checkSource || upstreamModelMetadataSourceMatches(account, snapshot)
 	valuesFor := func(source string) map[string]ModelContextCapacity {
 		if source == ModelContextSourceRegistry {
 			return registry
@@ -79,6 +175,9 @@ func accountCapacityObservations(account *Account) (upstream, registry map[strin
 	exact := make(map[string]bool)
 	for id, entry := range snapshot.Models {
 		capacity, source := upstreamMetadataCapacity(snapshot.Source, entry)
+		if !usableSource {
+			continue
+		}
 		if source == "" || !validModelContextID(id) || capacityCanonicalUpstreamID(account, id) != id {
 			continue
 		}
@@ -87,6 +186,9 @@ func accountCapacityObservations(account *Account) (upstream, registry map[strin
 	}
 	for id, entry := range snapshot.Models {
 		capacity, source := upstreamMetadataCapacity(snapshot.Source, entry)
+		if !usableSource {
+			continue
+		}
 		target := capacityCanonicalUpstreamID(account, id)
 		if source == "" || !validModelContextID(id) || target == id || exact[source+"\x00"+target] {
 			continue

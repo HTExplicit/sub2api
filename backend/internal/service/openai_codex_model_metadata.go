@@ -49,7 +49,7 @@ func accountCodexToolCapabilities(account *Account, modelID string) map[string]j
 	if account == nil {
 		return capabilities
 	}
-	if metadata, ok := account.GetUpstreamModelMetadata(modelID); ok {
+	if metadata, ok := account.CurrentUpstreamModelMetadata(modelID); ok {
 		applyCodexToolCapabilities(capabilities, metadata.CodexToolCapabilities, true)
 	}
 	if defaults, ok := gpt6APIModelMetadata(account, modelID); ok {
@@ -194,7 +194,7 @@ func groupCodexModelMetadata(
 		if strings.TrimSpace(lookupModel) != modelID {
 			publicAlias = true
 		}
-		metadata, ok := account.GetUpstreamModelMetadata(lookupModel)
+		metadata, ok := account.CurrentUpstreamModelMetadata(lookupModel)
 		if defaults, known := gpt6AccountModelMetadata(account, lookupModel); known {
 			metadata, _ = mergeUpstreamModelMetadata(metadata, defaults)
 			ok = true

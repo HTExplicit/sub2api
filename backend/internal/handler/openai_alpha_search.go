@@ -228,6 +228,11 @@ func (h *OpenAIGatewayHandler) AlphaSearch(c *gin.Context) {
 
 		var failoverErr *service.UpstreamFailoverError
 		if !errors.As(err, &failoverErr) {
+			if failoverClientGone(c) {
+				h.gatewayService.ReleaseOpenAIRuntimeBreakerProbeForSelection(selection)
+				reqLog.Info("openai_alpha_search.forward_aborted_client_disconnected", zap.Int64("account_id", account.ID), zap.Error(err))
+				return
+			}
 			h.gatewayService.ReportOpenAIAccountScheduleResultForSelection(selection, account.ID, account.GetMappedModel(requestedModel), false, nil)
 			if c.Writer.Size() == writerSizeBeforeForward {
 				h.errorResponse(c, http.StatusBadGateway, "upstream_error", "Upstream request failed")

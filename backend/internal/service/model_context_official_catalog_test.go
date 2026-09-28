@@ -32,15 +32,15 @@ func TestOfficialModelCatalogSnapshotCannotMutateActiveReferences(t *testing.T) 
 	}
 }
 
-func TestOfficialModelCatalogGPT6UsesCodexSubscriptionValues(t *testing.T) {
+func TestOfficialModelCatalogGPT6UsesAPIValuesAndRetainsProductReference(t *testing.T) {
 	for _, model := range []string{"gpt-6-sol", "gpt-6-luna"} {
 		query := officialCatalogQuery{Candidates: []string{model}, Platform: "openai", Scheme: "https", Host: "api.openai.com"}
 		entry := lookupOfficialModelCatalog(query)
 		if entry == nil {
 			t.Fatalf("%s: reference unavailable", model)
 		}
-		if entry.Product != "codex_subscription" || entry.ContextWindow != 272000 || entry.MaxContextWindow != 872000 || entry.MaxInputTokens != 0 || len(entry.Aliases) != 0 {
-			t.Fatalf("%s: incorrect subscription capacity or invented alias: %+v", model, entry)
+		if entry.Product != "api" || entry.ContextWindow != 1050000 || entry.MaxContextWindow != 0 || entry.MaxInputTokens != 0 || entry.MaxOutputTokens != 128000 || len(entry.Aliases) != 0 {
+			t.Fatalf("%s: incorrect API capacity or invented alias: %+v", model, entry)
 		}
 		ref := entry.Reference
 		if ref == nil || ref.ContextWindow != 272000 || ref.MaxContextWindow != 872000 || ref.SourceURL != GPT6ContextCapacityReferenceSource || ref.Release != GPT6ContextCapacityReferenceCommit {

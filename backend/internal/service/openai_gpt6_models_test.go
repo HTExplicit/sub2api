@@ -43,8 +43,8 @@ func TestGPT6CodexReferenceAndAPICatalogDefaults(t *testing.T) {
 		Credentials: map[string]any{"base_url": "https://api.openai.com"}}
 	for _, model := range []string{"gpt-6-sol", "gpt-6-luna"} {
 		descriptor := newConfiguredCodexModelDescriptor(model)
-		require.EqualValues(t, 272000, descriptor.ContextWindow)
-		require.EqualValues(t, 872000, descriptor.MaxContextWindow)
+		require.Zero(t, descriptor.ContextWindow, "a synthetic descriptor must not invent a context window")
+		require.Zero(t, descriptor.MaxContextWindow, "a synthetic descriptor must not invent a maximum context window")
 		require.Nil(t, descriptor.AutoCompactTokenLimit)
 		require.Nil(t, descriptor.MultiAgentReasoningEffort)
 		require.Equal(t, "v2", descriptor.MultiAgentVersion)
@@ -61,8 +61,8 @@ func TestGPT6CodexReferenceAndAPICatalogDefaults(t *testing.T) {
 		require.Equal(t, "priority", descriptor.ServiceTiers[0].ID)
 
 		body := convertOpenAIModelListToCodexManifestForAccount([]byte(`{"data":[{"id":"`+model+`"}]}`), account)
-		require.EqualValues(t, 272000, gjson.GetBytes(body, "models.0.context_window").Int(), "API defaults carry capabilities, not a capacity")
-		require.EqualValues(t, 872000, gjson.GetBytes(body, "models.0.max_context_window").Int())
+		require.False(t, gjson.GetBytes(body, "models.0.context_window").Exists(), "API defaults carry capabilities, not a capacity")
+		require.False(t, gjson.GetBytes(body, "models.0.max_context_window").Exists())
 		require.Equal(t, "medium", gjson.GetBytes(body, "models.0.default_reasoning_level").String())
 		models := decodeCodexManifestModels(t, body)
 		require.Equal(t, openai.GPT6APIReasoningEfforts(), effortsFromManifestModel(t, models[0]))
@@ -70,14 +70,14 @@ func TestGPT6CodexReferenceAndAPICatalogDefaults(t *testing.T) {
 	}
 }
 
-func TestGPT6CapacityUsesSubscriptionReferenceBelowObservations(t *testing.T) {
+func TestGPT6CapacityUsesOfficialAPIReferenceAboveObservations(t *testing.T) {
 	for _, model := range []string{"gpt-6-sol", "gpt-6-luna"} {
 		t.Run(model, func(t *testing.T) {
 			api := &Account{Platform: PlatformOpenAI, Type: AccountTypeAPIKey, Credentials: map[string]any{"base_url": "https://api.openai.com"}}
 			reference := LookupOfficialModelContextCapacity(api, "openai/"+model)
 			require.NotNil(t, reference)
-			require.EqualValues(t, 272000, reference.ContextWindow)
-			require.EqualValues(t, 872000, reference.MaxContextWindow)
+			require.EqualValues(t, 1050000, reference.ContextWindow)
+			require.Zero(t, reference.MaxContextWindow, "the API specification only declares a total window")
 			require.EqualValues(t, 128000, reference.MaxOutputTokens)
 			require.Zero(t, reference.MaxInputTokens)
 			require.Equal(t, openai.GPT6CodexReferenceSource, reference.Reference.SourceURL)
@@ -87,32 +87,36 @@ func TestGPT6CapacityUsesSubscriptionReferenceBelowObservations(t *testing.T) {
 			}}
 			for _, baseURL := range []string{"https://api.openai.com", "https://relay.example.test/v1"} {
 				api.Credentials["base_url"] = baseURL
+				declared.SourceIdentity = UpstreamModelMetadataSourceIdentity(api)
 				api.Extra = map[string]any{UpstreamModelMetadataExtraKey: declared}
 				observed := ResolveAccountModelContextCapacity(api, model)
-				require.EqualValues(t, 200000, observed.ContextWindow, "the account's own declaration wins on every host")
-				require.EqualValues(t, 64000, observed.MaxOutputTokens)
-				require.Equal(t, "upstream", observed.Source)
+				require.EqualValues(t, 1050000, observed.ContextWindow, "the official API specification wins on every host")
+				require.EqualValues(t, 1050000, observed.MaxContextWindow)
+				require.EqualValues(t, 128000, observed.MaxOutputTokens)
+				require.Equal(t, "official", observed.Source)
 			}
 			api.Extra[ModelContextOverridesExtraKey] = map[string]int64{model: 512000}
 			require.EqualValues(t, 512000, ResolveAccountModelContextCapacity(api, model).ContextWindow)
 
 			oauth := &Account{Platform: PlatformOpenAI, Type: AccountTypeOAuth}
 			fallback := ResolveAccountModelContextCapacity(oauth, model)
-			require.Equal(t, "official", fallback.Source, "an OAuth account participates through the reference catalog")
-			require.EqualValues(t, 272000, fallback.ContextWindow)
-			require.EqualValues(t, 872000, fallback.MaxContextWindow)
+			require.Equal(t, "official", fallback.Source, "an OAuth account participates through the API catalog")
+			require.EqualValues(t, 1050000, fallback.ContextWindow)
+			require.EqualValues(t, 1050000, fallback.MaxContextWindow)
 			rows := BuildAccountModelContextCapacityRows(oauth, []string{model})
 			require.Len(t, rows, 1)
 			require.True(t, rows[0].Editable)
 			require.NotNil(t, rows[0].Official.Reference)
-			oauth.SetUpstreamModelMetadataSnapshot(UpstreamModelMetadataSnapshot{Source: "upstream", Models: map[string]UpstreamModelMetadata{
+			snapshot := UpstreamModelMetadataSnapshot{Source: "upstream", Models: map[string]UpstreamModelMetadata{
 				model: {ID: model, ContextWindow: 300000, MaxContextWindow: 900000, MaxOutputTokens: 48000},
-			}})
+			}}
+			snapshot.SourceIdentity = UpstreamModelMetadataSourceIdentity(oauth)
+			oauth.SetUpstreamModelMetadataSnapshot(snapshot)
 			observed := ResolveAccountModelContextCapacity(oauth, model)
-			require.EqualValues(t, 300000, observed.ContextWindow)
-			require.EqualValues(t, 900000, observed.MaxContextWindow)
-			require.EqualValues(t, 48000, observed.MaxOutputTokens)
-			require.Equal(t, "upstream", observed.Source)
+			require.EqualValues(t, 1050000, observed.ContextWindow)
+			require.EqualValues(t, 1050000, observed.MaxContextWindow)
+			require.EqualValues(t, 128000, observed.MaxOutputTokens)
+			require.Equal(t, "official", observed.Source)
 		})
 	}
 }
@@ -140,7 +144,7 @@ func TestGPT6APIKeyLiteAndNativeReasoning(t *testing.T) {
 func TestGPT6ProviderMetadataOverridesAPIDefaults(t *testing.T) {
 	account := &Account{Platform: PlatformOpenAI, Type: AccountTypeAPIKey, Credentials: map[string]any{"base_url": "https://relay.example.test"}}
 	reasoning := true
-	account.SetUpstreamModelMetadataSnapshot(UpstreamModelMetadataSnapshot{Source: "upstream", Models: map[string]UpstreamModelMetadata{
+	account.SetUpstreamModelMetadataSnapshot(UpstreamModelMetadataSnapshot{Source: "upstream", SourceIdentity: UpstreamModelMetadataSourceIdentity(account), Models: map[string]UpstreamModelMetadata{
 		"gpt-6-sol": {ID: "gpt-6-sol", Reasoning: &reasoning, DefaultReasoningLevel: "max", SupportedReasoningLevels: []string{"high", "max"}, InputModalities: []string{"text", "image"}, ContextWindow: 100000},
 	}})
 	body := []byte(`{"data":[{"id":"gpt-6-sol","reasoning":false,"input_modalities":["text"],"context_window":64000,"max_output_tokens":8000,"auto_compact_token_limit":50000,"supports_search_tool":false}]}`)
@@ -158,11 +162,11 @@ func TestGPT6ProviderMetadataOverridesAPIDefaults(t *testing.T) {
 	require.Equal(t, false, model["supports_search_tool"])
 }
 
-func TestGPT6ConfiguredOAuthCatalogUsesObservedCapacity(t *testing.T) {
+func TestGPT6ConfiguredOAuthCatalogUsesOfficialAPICapacity(t *testing.T) {
 	const groupID int64 = 764
 	account := Account{ID: 25, Platform: PlatformOpenAI, Type: AccountTypeOAuth, Status: StatusActive,
 		Credentials: map[string]any{"model_mapping": map[string]any{"gpt-6-sol": "gpt-6-sol"}}}
-	account.SetUpstreamModelMetadataSnapshot(UpstreamModelMetadataSnapshot{Source: "upstream", Models: map[string]UpstreamModelMetadata{
+	account.SetUpstreamModelMetadataSnapshot(UpstreamModelMetadataSnapshot{Source: "upstream", SourceIdentity: UpstreamModelMetadataSourceIdentity(&account), Models: map[string]UpstreamModelMetadata{
 		"gpt-6-sol": {ID: "gpt-6-sol", ContextWindow: 320000, MaxContextWindow: 940000, CapacitySource: ModelContextSourceUpstream},
 	}})
 	svc := &OpenAIGatewayService{accountRepo: codexModelsVisibilityAccountRepo{byGroup: map[int64][]Account{groupID: {account}}}}
@@ -171,8 +175,9 @@ func TestGPT6ConfiguredOAuthCatalogUsesObservedCapacity(t *testing.T) {
 	require.True(t, configured)
 	model := decodeCodexManifestModels(t, manifest.Body)[0]
 	require.Equal(t, "gpt-6-sol", model["slug"])
-	require.EqualValues(t, 320000, model["context_window"])
-	require.EqualValues(t, 940000, model["max_context_window"])
+	require.EqualValues(t, 1050000, model["context_window"])
+	require.EqualValues(t, 1050000, model["max_context_window"])
+	require.Equal(t, "official", model["context_capacity_source"])
 	require.Nil(t, model["auto_compact_token_limit"])
 	require.Equal(t, true, model["use_responses_lite"])
 }

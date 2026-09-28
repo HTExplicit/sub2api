@@ -99,9 +99,18 @@ func classifyUpstreamTransportError(err error) upstreamTransportErrorClass {
 	return upstreamTransportErrorClass{}
 }
 
+// isClientCanceledTransportError reports whether a transport-level failure was
+// caused by the client disconnecting: the request context itself is canceled
+// and the round-trip aborted with context.Canceled. Such a failure says nothing
+// about the upstream, so it is not recorded as an Ops upstream error event.
+func isClientCanceledTransportError(ctx context.Context, err error) bool {
+	return errors.Is(err, context.Canceled) && ctx != nil && errors.Is(ctx.Err(), context.Canceled)
+}
+
 // handleOpenAIUpstreamTransportError handles a transport-level upstream failure
 // (Do/DoWithTLS returned a non-HTTP error: proxy/DNS/TCP/TLS). It:
-//  1. records the failure in Ops error logs (status 0, kind=request_error);
+//  1. records the failure in Ops error logs (status 0, kind=request_error),
+//     except for client disconnects and scoped Codex quality requests;
 //  2. restores immediate durable cooldowns for persistent faults only on the
 //     marked ordinary HTTP path; other paths keep downstream classification;
 //  3. returns *UpstreamFailoverError for the handler's applicable retry policy,
@@ -112,7 +121,7 @@ func classifyUpstreamTransportError(err error) upstreamTransportErrorClass {
 //
 // passthrough tags the Ops error event for the OpenAI passthrough forward path.
 func (s *OpenAIGatewayService) handleOpenAIUpstreamTransportError(ctx context.Context, c *gin.Context, account *Account, err error, passthrough bool) error {
-	if IsCodexQualityRequest(ctx) {
+	if IsCodexQualityRequest(ctx) || isClientCanceledTransportError(ctx, err) {
 		return err
 	}
 	safeErr := sanitizeUpstreamErrorMessage(err.Error())

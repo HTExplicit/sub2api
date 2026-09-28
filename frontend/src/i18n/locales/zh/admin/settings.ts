@@ -527,7 +527,7 @@ export default {
       },
       officialModelCatalog: {
         title: '模型目录与容量参考',
-        description: '参考数据用于容量规划；账号自定义值与实时上游声明继续按既有优先级处理。',
+        description: '容量优先级：账号自定义 > 适用的官方 API 规格 > 有效上游声明 > models.dev 目录。选中来源未声明的字段保持未知。',
         search: '搜索模型或供应商',
         count: '共 {count} 项匹配。',
         context: '上下文',

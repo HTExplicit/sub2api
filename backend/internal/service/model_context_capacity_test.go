@@ -7,67 +7,158 @@ import (
 )
 
 func TestModelContextCapacityPriorityAndDistinctLimits(t *testing.T) {
-	registry := ModelContextCapacity{ContextWindow: 2000000, MaxOutputTokens: 100000}
-	upstream := ModelContextCapacity{ContextWindow: 128000, MaxContextWindow: 256000, MaxInputTokens: 120000, MaxOutputTokens: 8000}
-	accountFor := func(baseURL string, custom map[string]int64, observed, registryValue *ModelContextCapacity) *Account {
-		models := make(map[string]UpstreamModelMetadata)
-		if observed != nil {
-			models["gpt-5.5"] = UpstreamModelMetadata{ID: "gpt-5.5", ContextWindow: observed.ContextWindow, MaxContextWindow: observed.MaxContextWindow,
-				MaxInputTokens: observed.MaxInputTokens, MaxOutputTokens: observed.MaxOutputTokens, CapacitySource: ModelContextSourceUpstream}
-		}
-		if registryValue != nil {
-			models["gpt-5.5-unlisted"] = UpstreamModelMetadata{ID: "gpt-5.5-unlisted", ContextWindow: registryValue.ContextWindow,
-				MaxOutputTokens: registryValue.MaxOutputTokens, CapacitySource: ModelContextSourceRegistry}
-		}
-		return &Account{Platform: PlatformOpenAI, Type: AccountTypeAPIKey, Credentials: map[string]any{"base_url": baseURL}, Extra: map[string]any{
-			ModelContextOverridesExtraKey: custom,
-			UpstreamModelMetadataExtraKey: UpstreamModelMetadataSnapshot{Source: "models.dev", Models: models},
-		}}
-	}
-	// The same order applies on the vendor's host and on a relay.
-	for _, baseURL := range []string{"https://api.openai.com/v1", "https://relay.example/v1"} {
-		cases := []struct {
-			name, model, source string
-			account             *Account
-			window, maximum     int64
-			output              int64
-		}{
-			{"custom over upstream", "gpt-5.5", "custom", accountFor(baseURL, map[string]int64{"gpt-5.5": 768000}, &upstream, nil), 768000, 768000, 8000},
-			{"upstream over catalog", "gpt-5.5", "upstream", accountFor(baseURL, nil, &upstream, nil), 128000, 256000, 8000},
-			{"catalog is the Codex subscription window", "gpt-5.5", "official", accountFor(baseURL, nil, nil, nil), 272000, 272000, 0},
-			{"catalog default and real maximum stay distinct", "gpt-5.4", "official", accountFor(baseURL, nil, nil, nil), 272000, 1000000, 0},
-			{"registry below catalog", "gpt-5.5-unlisted", "registry", accountFor(baseURL, nil, nil, &registry), 2000000, 2000000, 100000},
-			{"unknown is not invented", "never-seen", "", accountFor(baseURL, nil, nil, nil), 0, 0, 0},
-		}
-		for _, test := range cases {
-			t.Run(baseURL+"/"+test.name, func(t *testing.T) {
-				got := ResolveAccountModelContextCapacity(test.account, test.model)
-				if got.Source != test.source || got.ContextWindow != test.window || got.MaxContextWindow != test.maximum || got.MaxOutputTokens != test.output {
-					t.Fatalf("unexpected resolution: %+v", got)
+	for _, accountType := range []string{AccountTypeAPIKey, AccountTypeOAuth} {
+		for _, baseURL := range []string{"https://api.openai.com/v1", "https://relay.example/v1"} {
+			t.Run(accountType+"/"+baseURL, func(t *testing.T) {
+				account := &Account{Platform: PlatformOpenAI, Type: accountType, Credentials: map[string]any{"base_url": baseURL}}
+				account.SetUpstreamModelMetadataSnapshot(UpstreamModelMetadataSnapshot{
+					Source: "upstream", SourceIdentity: UpstreamModelMetadataSourceIdentity(account), Models: map[string]UpstreamModelMetadata{
+						"gpt-5.5":        {ContextWindow: 272000, MaxContextWindow: 872000, MaxInputTokens: 200000, MaxOutputTokens: 8000},
+						"custom-model":   {ContextWindow: 272000, MaxContextWindow: 872000, MaxInputTokens: 200000, MaxOutputTokens: 8000},
+						"registry-model": {ContextWindow: 2000000, MaxOutputTokens: 100000, CapacitySource: ModelContextSourceRegistry},
+					},
+				})
+				for _, test := range []struct {
+					model, source         string
+					window, input, output int64
+				}{
+					{"gpt-5.5", ModelContextSourceOfficial, 1050000, 0, 128000},
+					{"gpt-5.4", ModelContextSourceOfficial, 1050000, 0, 128000},
+					{"gpt-5.4-mini", ModelContextSourceOfficial, 400000, 0, 128000},
+					{"custom-model", ModelContextSourceUpstream, 872000, 200000, 8000},
+					{"registry-model", ModelContextSourceRegistry, 2000000, 0, 100000},
+					{"never-seen", "", 0, 0, 0},
+				} {
+					got := ResolveAccountModelContextCapacity(account, test.model)
+					if got.Source != test.source || got.ContextWindow != test.window || got.MaxContextWindow != test.window || got.MaxInputTokens != test.input || got.MaxOutputTokens != test.output {
+						t.Fatalf("%s: unexpected resolution: %+v", test.model, got)
+					}
+				}
+				account.Extra[ModelContextOverridesExtraKey] = map[string]int64{"gpt-5.5": 768000}
+				got := ResolveAccountModelContextCapacity(account, "gpt-5.5")
+				if got.Source != ModelContextSourceCustom || got.ContextWindow != 768000 || got.MaxInputTokens != 0 || got.MaxOutputTokens != 128000 {
+					t.Fatalf("custom override borrowed unrelated limits: %+v", got)
+				}
+				delete(account.Extra, ModelContextOverridesExtraKey)
+				got = ResolveAccountModelContextCapacity(account, "gpt-5.5")
+				if got.Source != ModelContextSourceOfficial || got.ContextWindow != 1050000 {
+					t.Fatalf("clearing an override did not restore the API specification: %+v", got)
 				}
 			})
 		}
 	}
-	inputOnly := resolveModelContextEvidence([]modelContextEvidence{
-		{ModelContextSourceUpstream, ModelContextCapacity{MaxInputTokens: 1048576, MaxOutputTokens: 65536}},
-		{ModelContextSourceOfficial, upstream},
-	})
-	if inputOnly.ContextWindow != 1048576 || inputOnly.CapacityBasis != "input_limit" || inputOnly.Source != "upstream" || inputOnly.MaxOutputTokens != 65536 {
-		t.Fatalf("input budget was misrepresented or lost to lower evidence: %+v", inputOnly)
+}
+
+func TestModelContextCapacityEvidenceDoesNotMixSources(t *testing.T) {
+	for _, test := range []struct {
+		name                  string
+		items                 []modelContextEvidence
+		source, basis         string
+		window, input, output int64
+	}{
+		{"official selected independent of evidence order", []modelContextEvidence{
+			{ModelContextSourceUpstream, ModelContextCapacity{ContextWindow: 200000, MaxInputTokens: 100000, MaxOutputTokens: 8192}},
+			{ModelContextSourceRegistry, ModelContextCapacity{ContextWindow: 600000, MaxOutputTokens: 32768}},
+			{ModelContextSourceOfficial, ModelContextCapacity{ContextWindow: 400000}},
+		}, ModelContextSourceOfficial, ModelContextCapacityBasisTotal, 400000, 0, 0},
+		{"maximum before default and input", []modelContextEvidence{
+			{ModelContextSourceUpstream, ModelContextCapacity{ContextWindow: 272000, MaxContextWindow: 872000, MaxInputTokens: 250000, MaxOutputTokens: 128000}},
+		}, ModelContextSourceUpstream, ModelContextCapacityBasisMaximum, 872000, 250000, 128000},
+		{"explicit smaller maximum honored", []modelContextEvidence{
+			{ModelContextSourceUpstream, ModelContextCapacity{ContextWindow: 872000, MaxContextWindow: 272000, MaxOutputTokens: 128000}},
+		}, ModelContextSourceUpstream, ModelContextCapacityBasisMaximum, 272000, 0, 128000},
+		{"input only stays input only", []modelContextEvidence{
+			{ModelContextSourceUpstream, ModelContextCapacity{MaxInputTokens: 1048576, MaxOutputTokens: 65536}},
+			{ModelContextSourceRegistry, ModelContextCapacity{ContextWindow: 2000000}},
+		}, ModelContextSourceUpstream, ModelContextCapacityBasisInput, 1048576, 1048576, 65536},
+		{"output alone cannot fill lower priority record", []modelContextEvidence{
+			{ModelContextSourceUpstream, ModelContextCapacity{MaxOutputTokens: 8192}},
+			{ModelContextSourceRegistry, ModelContextCapacity{ContextWindow: 400000}},
+		}, ModelContextSourceRegistry, ModelContextCapacityBasisTotal, 400000, 0, 0},
+		{"bad context preserves independent valid input", []modelContextEvidence{
+			{ModelContextSourceUpstream, ModelContextCapacity{ContextWindow: -1, MaxContextWindow: MaxSafeModelContextTokens + 1, MaxInputTokens: 100000, MaxOutputTokens: 8192}},
+		}, ModelContextSourceUpstream, ModelContextCapacityBasisInput, 100000, 100000, 8192},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			got := resolveModelContextEvidence(test.items)
+			if got.Source != test.source || got.CapacityBasis != test.basis || got.ContextWindow != test.window || got.MaxContextWindow != test.window || got.MaxInputTokens != test.input || got.MaxOutputTokens != test.output {
+				t.Fatalf("unexpected complete evidence result: %+v", got)
+			}
+		})
 	}
-	outputOnly := resolveModelContextEvidence([]modelContextEvidence{
-		{ModelContextSourceUpstream, ModelContextCapacity{MaxOutputTokens: 8192}},
-		{ModelContextSourceOfficial, ModelContextCapacity{ContextWindow: 400000}},
-	})
-	if outputOnly.Source != "official" || outputOnly.ContextWindow != 400000 || outputOnly.MaxOutputTokens != 8192 {
-		t.Fatalf("an output limit alone is not a window but keeps its evidence: %+v", outputOnly)
+}
+
+func TestModelContextCapacityCustomOverrideOverlaysOneAutomaticRecord(t *testing.T) {
+	tests := []struct {
+		name                           string
+		items                          []modelContextEvidence
+		window, maximum, input, output int64
+		source                         string
+	}{
+		{
+			name: "official output is preserved",
+			items: []modelContextEvidence{
+				{ModelContextSourceCustom, ModelContextCapacity{ContextWindow: 768000, MaxContextWindow: 768000}},
+				{ModelContextSourceOfficial, ModelContextCapacity{ContextWindow: 1050000, MaxOutputTokens: 128000}},
+			},
+			window: 768000, maximum: 768000, output: 128000, source: ModelContextSourceCustom,
+		},
+		{
+			name: "official missing output stays missing",
+			items: []modelContextEvidence{
+				{ModelContextSourceCustom, ModelContextCapacity{ContextWindow: 512000, MaxContextWindow: 512000}},
+				{ModelContextSourceOfficial, ModelContextCapacity{ContextWindow: 400000}},
+				{ModelContextSourceUpstream, ModelContextCapacity{ContextWindow: 400000, MaxOutputTokens: 32000}},
+			},
+			window: 512000, maximum: 512000, source: ModelContextSourceCustom,
+		},
+		{
+			name: "unknown automatic evidence",
+			items: []modelContextEvidence{
+				{ModelContextSourceCustom, ModelContextCapacity{ContextWindow: 256000, MaxContextWindow: 256000}},
+			},
+			window: 256000, maximum: 256000, source: ModelContextSourceCustom,
+		},
+		{
+			name: "independent limit above override is omitted",
+			items: []modelContextEvidence{
+				{ModelContextSourceCustom, ModelContextCapacity{ContextWindow: 32000, MaxContextWindow: 32000}},
+				{ModelContextSourceOfficial, ModelContextCapacity{ContextWindow: 1050000, MaxInputTokens: 64000, MaxOutputTokens: 128000}},
+			},
+			window: 32000, maximum: 32000, source: ModelContextSourceCustom,
+		},
 	}
-	smallCustom := resolveModelContextEvidence([]modelContextEvidence{
-		{ModelContextSourceCustom, ModelContextCapacity{ContextWindow: 100000, MaxContextWindow: 100000}},
-		{ModelContextSourceUpstream, ModelContextCapacity{MaxInputTokens: 500000, MaxOutputTokens: 8192}},
-	})
-	if smallCustom.MaxInputTokens != 0 || smallCustom.MaxOutputTokens != 8192 {
-		t.Fatalf("incompatible independent limits were clamped or not safely omitted: %+v", smallCustom)
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			got := resolveModelContextEvidence(test.items)
+			if got.Source != test.source || got.ContextWindow != test.window || got.MaxContextWindow != test.maximum || got.MaxInputTokens != test.input || got.MaxOutputTokens != test.output {
+				t.Fatalf("custom overlay mismatch: %+v", got)
+			}
+		})
+	}
+}
+
+func TestModelContextCapacityOfficialPolicyAppliesToOtherVendors(t *testing.T) {
+	for _, test := range []struct {
+		platform, model string
+		window          int64
+	}{
+		{PlatformAnthropic, "claude-opus-4-6", 1000000},
+		{PlatformGemini, "gemini-3.8-flash", 1048576},
+		{PlatformOpenAI, "deepseek-v4-pro", 1000000},
+		{PlatformOpenAI, "MiniMax-M3", 1000000},
+	} {
+		t.Run(test.model, func(t *testing.T) {
+			account := &Account{Platform: test.platform, Type: AccountTypeAPIKey, Credentials: map[string]any{"base_url": "https://relay.example/v1"}}
+			account.SetUpstreamModelMetadataSnapshot(UpstreamModelMetadataSnapshot{Source: "upstream", SourceIdentity: UpstreamModelMetadataSourceIdentity(account), Models: map[string]UpstreamModelMetadata{test.model: {ContextWindow: 16000, MaxInputTokens: 15000, MaxOutputTokens: 8000}}})
+			got := ResolveAccountModelContextCapacity(account, test.model)
+			if got.Source != ModelContextSourceOfficial || got.ContextWindow != test.window {
+				t.Fatalf("official API policy did not apply across vendors: %+v", got)
+			}
+			if test.model == "MiniMax-M3" && (got.MaxInputTokens != 0 || got.MaxOutputTokens != 0) {
+				t.Fatalf("unknown official limits filled from relay: %+v", got)
+			}
+		})
 	}
 }
 
@@ -172,13 +263,16 @@ func TestModelContextCapacityRowsUseTrueTargetsAndPreserveSources(t *testing.T) 
 			}},
 		},
 	}
+	snapshot := account.GetUpstreamModelMetadataSnapshot()
+	snapshot.SourceIdentity = UpstreamModelMetadataSourceIdentity(account)
+	account.SetUpstreamModelMetadataSnapshot(*snapshot)
 	rows := BuildAccountModelContextCapacityRows(account, []string{"registry-only"})
 	byID := make(map[string]AccountModelContextCapacityRow)
 	for _, row := range rows {
 		byID[row.UpstreamModelID] = row
 	}
 	row := byID["real"]
-	if row.Upstream == nil || row.Upstream.ContextWindow != 100000 || row.Upstream.ObservedAt != "2026-09-06T01:00:00Z" || row.EffectiveContextWindow != 600000 || row.AutomaticContextWindow != 100000 || !row.Editable {
+	if row.Upstream == nil || row.Upstream.ContextWindow != 100000 || row.Upstream.ObservedAt != "2026-09-06T01:00:00Z" || row.UpstreamEvidenceStatus != "current" || row.EffectiveContextWindow != 600000 || row.AutomaticContextWindow != 100000 || !row.Editable {
 		t.Fatalf("raw/custom/automatic provenance lost: %+v", row)
 	}
 	if !reflect.DeepEqual(row.Aliases, []string{"public-one", "public-two"}) {
@@ -219,5 +313,51 @@ func TestModelContextCapacityOfficialKimiCodingNeedsProductIdentity(t *testing.T
 				t.Fatal("unknown Kimi Coding tier was given the open-platform 1M window")
 			}
 		})
+	}
+}
+
+func TestModelContextCapacityRowsDescribeIgnoredUpstreamEvidence(t *testing.T) {
+	for _, status := range []string{"current", "unbound", "source_mismatch"} {
+		t.Run(status, func(t *testing.T) {
+			account := &Account{Platform: PlatformOpenAI, Type: AccountTypeAPIKey, Credentials: map[string]any{"base_url": "https://relay.example/v1"}}
+			snapshot := UpstreamModelMetadataSnapshot{Source: ModelContextSourceUpstream, Models: map[string]UpstreamModelMetadata{
+				"unknown-upstream-model": {ContextWindow: 272000, MaxContextWindow: 872000},
+			}}
+			switch status {
+			case "current":
+				snapshot.SourceIdentity = UpstreamModelMetadataSourceIdentity(account)
+			case "source_mismatch":
+				prior := *account
+				prior.Credentials = map[string]any{"base_url": "https://prior.example/v1"}
+				snapshot.SourceIdentity = UpstreamModelMetadataSourceIdentity(&prior)
+			}
+			account.SetUpstreamModelMetadataSnapshot(snapshot)
+			rows := BuildAccountModelContextCapacityRows(account, nil)
+			if len(rows) != 1 || rows[0].Upstream == nil || rows[0].Upstream.ContextWindow != 272000 || rows[0].Upstream.MaxContextWindow != 872000 || rows[0].UpstreamEvidenceStatus != status {
+				t.Fatalf("raw evidence lost or incorrectly labelled: %+v", rows)
+			}
+			row := rows[0]
+			if status == "current" {
+				if row.AutomaticContextWindow != 872000 || row.AutomaticSource != ModelContextSourceUpstream {
+					t.Fatalf("current evidence not selected: %+v", row)
+				}
+			} else if row.AutomaticContextWindow != 0 || row.AutomaticSource != "" {
+				t.Fatalf("ignored upstream evidence was applied: %+v", row)
+			}
+		})
+	}
+}
+
+func TestModelContextCapacityRowsRetainIgnoredRegistryEvidence(t *testing.T) {
+	account := &Account{Platform: PlatformOpenAI, Type: AccountTypeAPIKey, Credentials: map[string]any{"base_url": "https://relay.example/v1"}}
+	account.SetUpstreamModelMetadataSnapshot(UpstreamModelMetadataSnapshot{Source: ModelContextSourceRegistry, Models: map[string]UpstreamModelMetadata{
+		"legacy-registry-model": {ContextWindow: 700000, CapacitySource: ModelContextSourceRegistry},
+	}})
+	rows := BuildAccountModelContextCapacityRows(account, nil)
+	if len(rows) != 1 || rows[0].Registry == nil || rows[0].Registry.ContextWindow != 700000 || rows[0].RegistryEvidenceStatus != "unbound" {
+		t.Fatalf("legacy registry evidence was not retained as diagnostic data: %+v", rows)
+	}
+	if rows[0].AutomaticContextWindow != 0 || rows[0].EffectiveContextWindow != 0 {
+		t.Fatalf("unbound registry evidence was applied: %+v", rows[0])
 	}
 }

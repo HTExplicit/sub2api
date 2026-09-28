@@ -251,6 +251,10 @@ export default {
       opencode: {
         title: 'OpenCode Example',
         subtitle: 'opencode.json',
+        catalogTitle: 'Resolved model capacity (optional)',
+        catalogDescription: 'Fetch the gateway-resolved model catalog to include exact context and output limits. Without a successful fetch, limits stay unknown.',
+        catalogLoading: 'Fetching resolved catalog…',
+        catalogError: 'The resolved catalog could not be fetched; no capacity limits were added.',
         hint: 'Config path: ~/.config/opencode/opencode.json (or opencode.jsonc), create if not exists. Use default providers (openai/anthropic/google) or custom provider_id. API Key can be configured directly or via /connect command. This is an example, adjust models and options as needed.',
       },
     },

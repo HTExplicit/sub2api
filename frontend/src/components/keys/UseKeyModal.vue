@@ -180,17 +180,17 @@
           <div class="flex flex-col gap-3 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
             <div class="min-w-0">
               <h3 class="text-sm font-medium text-gray-900 dark:text-white">
-                {{ t('keys.useKeyModal.codexModelCatalog.title') }}
+                {{ t(activeClientTab === 'opencode' ? 'keys.useKeyModal.opencode.catalogTitle' : 'keys.useKeyModal.codexModelCatalog.title') }}
               </h3>
               <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
-                {{ t('keys.useKeyModal.codexModelCatalog.description') }}
+                {{ t(activeClientTab === 'opencode' ? 'keys.useKeyModal.opencode.catalogDescription' : 'keys.useKeyModal.codexModelCatalog.description') }}
               </p>
-              <p class="mt-1 truncate font-mono text-xs text-gray-700 dark:text-gray-300">
+              <p v-if="activeClientTab !== 'opencode'" class="mt-1 truncate font-mono text-xs text-gray-700 dark:text-gray-300">
                 {{ codexModelCatalogPath }}
               </p>
             </div>
             <button
-              v-if="codexModelManifestState === 'ready'"
+              v-if="codexModelManifestState === 'ready' && activeClientTab !== 'opencode'"
               type="button"
               class="btn btn-primary min-h-9 flex-shrink-0 px-3 text-xs"
               @click="downloadCodexModelManifest"
@@ -212,7 +212,9 @@
                 class="mr-1.5"
                 :class="codexModelManifestState === 'loading' ? 'animate-spin' : ''"
               />
-              {{ codexModelManifestState === 'error'
+              {{ codexModelManifestState === 'loading'
+                ? t('keys.useKeyModal.opencode.catalogLoading')
+                : codexModelManifestState === 'error'
                 ? t('keys.useKeyModal.codexModelCatalog.retry')
                 : t('keys.useKeyModal.codexModelCatalog.fetch') }}
             </button>
@@ -227,7 +229,7 @@
             v-else-if="codexModelManifestState === 'error'"
             class="border-t border-red-200 px-4 py-2 text-xs text-red-700 dark:border-red-900 dark:text-red-300"
           >
-            {{ t('keys.useKeyModal.codexModelCatalog.errorDescription') }}
+            {{ t(activeClientTab === 'opencode' ? 'keys.useKeyModal.opencode.catalogError' : 'keys.useKeyModal.codexModelCatalog.errorDescription') }}
           </p>
         </section>
 
@@ -255,7 +257,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, h, watch, type Component } from 'vue'
+import { ref, computed, h, onBeforeUnmount, watch, type Component } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { saveAs } from 'file-saver'
 import BaseDialog from '@/components/common/BaseDialog.vue'
@@ -316,7 +318,8 @@ let codexModelManifestRequestID = 0
 const showCodexModelCatalog = computed(() =>
   props.show &&
   (activeClientTab.value === 'codex' ||
-    (props.platform === 'openai' && activeClientTab.value === 'codex-ws'))
+    (props.platform === 'openai' && activeClientTab.value === 'codex-ws') ||
+    activeClientTab.value === 'opencode')
 )
 
 const codexModelCatalogPath = computed(() => {
@@ -324,6 +327,10 @@ const codexModelCatalogPath = computed(() => {
   const configDir = isWindows ? '%userprofile%\\.codex' : '~/.codex'
   return joinConfigPath(configDir, 'codex-models.json', isWindows)
 })
+
+// Codex expands a leading ~/ on every platform but not %userprofile%, which it
+// resolves relative to the config directory, so config.toml always uses ~/.
+const CODEX_MODEL_CATALOG_CONFIG_PATH = '~/.codex/codex-models.json'
 
 const codexManifestContext = computed(() => {
   if (!showCodexModelCatalog.value) return ''
@@ -360,11 +367,16 @@ watch(() => props.show, (show) => {
   }
 })
 
-watch(codexManifestContext, (context, previousContext) => {
+watch([codexManifestContext, activeClientTab], ([context], [previousContext]) => {
   if (context !== previousContext) {
     resetCodexModelManifest()
   }
+  if (activeClientTab.value === 'opencode' && context && codexModelManifestState.value === 'idle') {
+    void loadCodexModelManifest()
+  }
 })
+
+onBeforeUnmount(resetCodexModelManifest)
 
 // Reset shell tab when client changes
 watch(activeClientTab, () => {
@@ -633,6 +645,8 @@ async function loadCodexModelManifest() {
   const requestID = ++codexModelManifestRequestID
   codexModelManifestController = controller
   codexModelManifestState.value = 'loading'
+  codexModelManifestContent.value = ''
+  codexModelManifestModelCount.value = 0
 
   try {
     const result = await fetchCodexModelsManifest(props.baseUrl, props.apiKey, controller.signal)
@@ -674,6 +688,43 @@ function codexReasoningEffortTomlLine(modelSlug: string): string {
   return formatCodexReasoningEffortTomlLine(
     selectCodexConfigReasoningEffort(findCodexCatalogModel(codexModelManifestContent.value, modelSlug))
   )
+}
+
+function positiveCapacity(value: unknown): number | undefined {
+  if (typeof value !== 'number' || !Number.isSafeInteger(value) || value <= 0) return undefined
+  return value
+}
+
+/**
+ * Add capacity only when the gateway's resolved manifest actually declares it.
+ * OpenCode model profiles intentionally contain no local capacity facts: a
+ * missing/failed manifest must remain an unknown limit rather than falling
+ * back to a stale hard-coded value. Matching is exact by slug; aliases are
+ * not guessed in the client.
+ */
+function applyCodexManifestCapacity(models: Record<string, any>): Record<string, any> {
+  const manifestModels = parseCodexCatalogModels(codexModelManifestContent.value)
+  if (!manifestModels.length) return models
+  const bySlug = new Map(manifestModels.map(model => [model.slug, model]))
+  for (const [slug, model] of Object.entries(models)) {
+    const manifest = bySlug.get(slug)
+    if (!manifest) continue
+    // The endpoint may preserve upstream descriptor fields for diagnostics.
+    // Only a resolver-tagged row is safe to export as an OpenCode limit.
+    if (!['custom', 'official', 'upstream', 'registry'].includes(String(manifest.context_capacity_source ?? ''))) continue
+    const context = positiveCapacity(manifest.max_context_window)
+      ?? positiveCapacity(manifest.context_window)
+      ?? positiveCapacity(manifest.max_input_tokens)
+    const output = positiveCapacity(manifest.max_output_tokens)
+    // OpenCode's schema requires both context and output in a limit object.
+    // A manifest that proves only one side must therefore remain unbounded in
+    // this config; dropping the partial value is safer than inventing a mate.
+    if (context === undefined || output === undefined) continue
+    model.limit = { context, output }
+    const input = positiveCapacity(manifest.max_input_tokens)
+    if (input !== undefined) model.limit.input = input
+  }
+  return models
 }
 
 const escapeHtml = (value: string) => value
@@ -952,7 +1003,7 @@ function generateOpenAIFiles(baseUrl: string, apiKey: string): FileConfig[] {
 model = "${model}"
 review_model = "${model}"
 ${reasoningEffortLine}disable_response_storage = true
-model_catalog_json = "${escapeTomlBasicString(codexModelCatalogPath.value)}"
+model_catalog_json = "${CODEX_MODEL_CATALOG_CONFIG_PATH}"
 network_access = "enabled"
 windows_wsl_setup_acknowledged = true
 
@@ -1185,7 +1236,7 @@ function generateGrokCodexFiles(baseUrl: string, apiKey: string): FileConfig[] {
 
 model_provider = "sub2api"
 model = "${model}"
-model_catalog_json = "${escapeTomlBasicString(codexModelCatalogPath.value)}"
+model_catalog_json = "${CODEX_MODEL_CATALOG_CONFIG_PATH}"
 # Optional:
 # review_model = "${model}"
 # model_reasoning_effort = "medium"
@@ -1266,7 +1317,7 @@ model_provider = "sub2api"
 model = "${model}"
 review_model = "${model}"
 disable_response_storage = true
-model_catalog_json = "${escapeTomlBasicString(codexModelCatalogPath.value)}"
+model_catalog_json = "${CODEX_MODEL_CATALOG_CONFIG_PATH}"
 
 [model_providers.sub2api]
 name = "Sub2API ${label}"
@@ -1301,7 +1352,7 @@ function generateOpenAIWsFiles(baseUrl: string, apiKey: string): FileConfig[] {
 model = "${model}"
 review_model = "${model}"
 ${reasoningEffortLine}disable_response_storage = true
-model_catalog_json = "${escapeTomlBasicString(codexModelCatalogPath.value)}"
+model_catalog_json = "${CODEX_MODEL_CATALOG_CONFIG_PATH}"
 network_access = "enabled"
 windows_wsl_setup_acknowledged = true
 
@@ -1331,10 +1382,6 @@ function generateOpenCodeConfig(platform: string, baseUrl: string, apiKey: strin
   const openaiModels = {
     'gpt-6': {
       name: 'GPT-6 (Astra)',
-      limit: {
-        context: 1050000,
-        output: 128000
-      },
       options: {
         store: false
       },
@@ -1348,10 +1395,6 @@ function generateOpenCodeConfig(platform: string, baseUrl: string, apiKey: strin
     },
     'gpt-6-astra': {
       name: 'GPT-6 Astra',
-      limit: {
-        context: 1050000,
-        output: 128000
-      },
       options: {
         store: false
       },
@@ -1365,10 +1408,6 @@ function generateOpenCodeConfig(platform: string, baseUrl: string, apiKey: strin
     },
     'gpt-5.2': {
       name: 'GPT-5.2',
-      limit: {
-        context: 272000,
-        output: 128000
-      },
       options: {
         store: false
       },
@@ -1381,10 +1420,6 @@ function generateOpenCodeConfig(platform: string, baseUrl: string, apiKey: strin
     },
     'gpt-5.6': {
       name: 'GPT-5.6 (Sol)',
-      limit: {
-        context: 1050000,
-        output: 128000
-      },
       options: {
         store: false
       },
@@ -1398,10 +1433,6 @@ function generateOpenCodeConfig(platform: string, baseUrl: string, apiKey: strin
     },
     'gpt-6-sol': {
       name: 'GPT-6 Sol',
-      limit: {
-        context: 1050000,
-        output: 128000
-      },
       options: {
         store: false
       },
@@ -1416,10 +1447,6 @@ function generateOpenCodeConfig(platform: string, baseUrl: string, apiKey: strin
     },
     'gpt-5.6-sol': {
       name: 'GPT-5.6 Sol',
-      limit: {
-        context: 1050000,
-        output: 128000
-      },
       options: {
         store: false
       },
@@ -1433,10 +1460,6 @@ function generateOpenCodeConfig(platform: string, baseUrl: string, apiKey: strin
     },
     'gpt-5.6-terra': {
       name: 'GPT-5.6 Terra',
-      limit: {
-        context: 1050000,
-        output: 128000
-      },
       options: {
         store: false
       },
@@ -1450,10 +1473,6 @@ function generateOpenCodeConfig(platform: string, baseUrl: string, apiKey: strin
     },
     'gpt-6-luna': {
       name: 'GPT-6 Luna',
-      limit: {
-        context: 1050000,
-        output: 128000
-      },
       options: {
         store: false
       },
@@ -1468,10 +1487,6 @@ function generateOpenCodeConfig(platform: string, baseUrl: string, apiKey: strin
     },
     'gpt-5.6-luna': {
       name: 'GPT-5.6 Luna',
-      limit: {
-        context: 1050000,
-        output: 128000
-      },
       options: {
         store: false
       },
@@ -1485,10 +1500,6 @@ function generateOpenCodeConfig(platform: string, baseUrl: string, apiKey: strin
     },
     'gpt-5.5': {
       name: 'GPT-5.5',
-      limit: {
-        context: 272000,
-        output: 128000
-      },
       options: {
         store: false
       },
@@ -1501,10 +1512,6 @@ function generateOpenCodeConfig(platform: string, baseUrl: string, apiKey: strin
     },
     'gpt-5.4': {
       name: 'GPT-5.4',
-      limit: {
-        context: 1000000,
-        output: 128000
-      },
       options: {
         store: false
       },
@@ -1517,10 +1524,6 @@ function generateOpenCodeConfig(platform: string, baseUrl: string, apiKey: strin
     },
     'gpt-5.4-mini': {
       name: 'GPT-5.4 Mini',
-      limit: {
-        context: 272000,
-        output: 128000
-      },
       options: {
         store: false
       },
@@ -1533,10 +1536,6 @@ function generateOpenCodeConfig(platform: string, baseUrl: string, apiKey: strin
     },
     'gpt-5.3-codex-spark': {
       name: 'GPT-5.3 Codex Spark',
-      limit: {
-        context: 128000,
-        output: 32000
-      },
       options: {
         store: false
       },
@@ -1549,10 +1548,6 @@ function generateOpenCodeConfig(platform: string, baseUrl: string, apiKey: strin
     },
     'codex-mini-latest': {
       name: 'Codex Mini',
-      limit: {
-        context: 200000,
-        output: 100000
-      },
       options: {
         store: false
       },
@@ -1566,10 +1561,6 @@ function generateOpenCodeConfig(platform: string, baseUrl: string, apiKey: strin
   const geminiModels = {
     'gemini-2.0-flash': {
       name: 'Gemini 2.0 Flash',
-      limit: {
-        context: 1048576,
-        output: 8192
-      },
       modalities: {
         input: ['text', 'image', 'pdf'],
         output: ['text']
@@ -1577,10 +1568,6 @@ function generateOpenCodeConfig(platform: string, baseUrl: string, apiKey: strin
     },
     'gemini-2.5-flash': {
       name: 'Gemini 2.5 Flash',
-      limit: {
-        context: 1048576,
-        output: 65536
-      },
       modalities: {
         input: ['text', 'image', 'pdf'],
         output: ['text']
@@ -1588,10 +1575,6 @@ function generateOpenCodeConfig(platform: string, baseUrl: string, apiKey: strin
     },
     'gemini-2.5-pro': {
       name: 'Gemini 2.5 Pro',
-      limit: {
-        context: 1048576,
-        output: 65536
-      },
       modalities: {
         input: ['text', 'image', 'pdf'],
         output: ['text']
@@ -1605,10 +1588,6 @@ function generateOpenCodeConfig(platform: string, baseUrl: string, apiKey: strin
     },
     'gemini-3.5-flash': {
       name: 'Gemini 3.5 Flash',
-      limit: {
-        context: 1048576,
-        output: 65536
-      },
       modalities: {
         input: ['text', 'image', 'pdf'],
         output: ['text']
@@ -1616,10 +1595,6 @@ function generateOpenCodeConfig(platform: string, baseUrl: string, apiKey: strin
     },
     'gemini-3-flash-preview': {
       name: 'Gemini 3 Flash Preview',
-      limit: {
-        context: 1048576,
-        output: 65536
-      },
       modalities: {
         input: ['text', 'image', 'pdf'],
         output: ['text']
@@ -1627,10 +1602,6 @@ function generateOpenCodeConfig(platform: string, baseUrl: string, apiKey: strin
     },
     'gemini-3-pro-preview': {
       name: 'Gemini 3 Pro Preview',
-      limit: {
-        context: 1048576,
-        output: 65536
-      },
       modalities: {
         input: ['text', 'image', 'pdf'],
         output: ['text']
@@ -1644,10 +1615,6 @@ function generateOpenCodeConfig(platform: string, baseUrl: string, apiKey: strin
     },
     'gemini-3.1-pro-preview': {
       name: 'Gemini 3.1 Pro Preview',
-      limit: {
-        context: 1048576,
-        output: 65536
-      },
       modalities: {
         input: ['text', 'image', 'pdf'],
         output: ['text']
@@ -1664,10 +1631,6 @@ function generateOpenCodeConfig(platform: string, baseUrl: string, apiKey: strin
   const antigravityGeminiModels = {
     'gemini-2.5-flash': {
       name: 'Gemini 2.5 Flash',
-      limit: {
-        context: 1048576,
-        output: 65536
-      },
       modalities: {
         input: ['text', 'image', 'pdf'],
         output: ['text']
@@ -1681,10 +1644,6 @@ function generateOpenCodeConfig(platform: string, baseUrl: string, apiKey: strin
     },
     'gemini-2.5-flash-lite': {
       name: 'Gemini 2.5 Flash Lite',
-      limit: {
-        context: 1048576,
-        output: 65536
-      },
       modalities: {
         input: ['text', 'image', 'pdf'],
         output: ['text']
@@ -1698,10 +1657,6 @@ function generateOpenCodeConfig(platform: string, baseUrl: string, apiKey: strin
     },
     'gemini-2.5-flash-thinking': {
       name: 'Gemini 2.5 Flash (Thinking)',
-      limit: {
-        context: 1048576,
-        output: 65536
-      },
       modalities: {
         input: ['text', 'image', 'pdf'],
         output: ['text']
@@ -1715,10 +1670,6 @@ function generateOpenCodeConfig(platform: string, baseUrl: string, apiKey: strin
     },
     'gemini-3-flash': {
       name: 'Gemini 3 Flash',
-      limit: {
-        context: 1048576,
-        output: 65536
-      },
       modalities: {
         input: ['text', 'image', 'pdf'],
         output: ['text']
@@ -1732,10 +1683,6 @@ function generateOpenCodeConfig(platform: string, baseUrl: string, apiKey: strin
     },
     'gemini-3.1-pro-low': {
       name: 'Gemini 3.1 Pro Low',
-      limit: {
-        context: 1048576,
-        output: 65536
-      },
       modalities: {
         input: ['text', 'image', 'pdf'],
         output: ['text']
@@ -1749,10 +1696,6 @@ function generateOpenCodeConfig(platform: string, baseUrl: string, apiKey: strin
     },
     'gemini-3.1-pro-high': {
       name: 'Gemini 3.1 Pro High',
-      limit: {
-        context: 1048576,
-        output: 65536
-      },
       modalities: {
         input: ['text', 'image', 'pdf'],
         output: ['text']
@@ -1766,10 +1709,6 @@ function generateOpenCodeConfig(platform: string, baseUrl: string, apiKey: strin
     },
     'gemini-2.5-flash-image': {
       name: 'Gemini 2.5 Flash Image',
-      limit: {
-        context: 1048576,
-        output: 65536
-      },
       modalities: {
         input: ['text', 'image'],
         output: ['image']
@@ -1783,10 +1722,6 @@ function generateOpenCodeConfig(platform: string, baseUrl: string, apiKey: strin
     },
     'gemini-3.1-flash-image': {
       name: 'Gemini 3.1 Flash Image',
-      limit: {
-        context: 1048576,
-        output: 65536
-      },
       modalities: {
         input: ['text', 'image'],
         output: ['image']
@@ -1802,10 +1737,6 @@ function generateOpenCodeConfig(platform: string, baseUrl: string, apiKey: strin
   const claudeModels = {
     'claude-fable-5-1': {
       name: 'Claude Fable 5.1',
-      limit: {
-        context: 1000000,
-        output: 128000
-      },
       modalities: {
         input: ['text', 'image', 'pdf'],
         output: ['text']
@@ -1818,10 +1749,6 @@ function generateOpenCodeConfig(platform: string, baseUrl: string, apiKey: strin
     },
     'claude-fable-5': {
       name: 'Claude Fable 5',
-      limit: {
-        context: 1000000,
-        output: 128000
-      },
       modalities: {
         input: ['text', 'image', 'pdf'],
         output: ['text']
@@ -1834,10 +1761,6 @@ function generateOpenCodeConfig(platform: string, baseUrl: string, apiKey: strin
     },
     'claude-opus-4-6-thinking': {
       name: 'Claude 4.6 Opus (Thinking)',
-      limit: {
-        context: 1000000,
-        output: 128000
-      },
       modalities: {
         input: ['text', 'image', 'pdf'],
         output: ['text']
@@ -1851,10 +1774,6 @@ function generateOpenCodeConfig(platform: string, baseUrl: string, apiKey: strin
     },
     'claude-sonnet-4-6': {
       name: 'Claude 4.6 Sonnet',
-      limit: {
-        context: 1000000,
-        output: 128000
-      },
       modalities: {
         input: ['text', 'image', 'pdf'],
         output: ['text']
@@ -1872,23 +1791,18 @@ function generateOpenCodeConfig(platform: string, baseUrl: string, apiKey: strin
   const grokModels = {
     'grok-4.5': {
       name: 'Grok 4.5',
-      limit: { context: 500000, output: 64000 }
     },
     'grok-build-0.1': {
       name: 'Grok Build 0.1',
-      limit: { context: 256000, output: 64000 }
     },
     'grok-4.20-multi-agent-0309': {
       name: 'Grok 4.20 Multi Agent (text / web_search)',
-      limit: { context: 1000000, output: 64000 }
     },
     'grok-4.3': {
       name: 'Grok 4.3',
-      limit: { context: 1000000, output: 64000 }
     },
     'grok-composer-2.5-fast': {
       name: 'Grok Composer 2.5 Fast',
-      limit: { context: 500000, output: 64000 }
     }
   }
 
@@ -1900,7 +1814,6 @@ function generateOpenCodeConfig(platform: string, baseUrl: string, apiKey: strin
     provider[platform].models = {
       'claude-opus-5-5': {
         name: 'Claude Opus 5.5',
-        limit: { context: 1000000, output: 128000 },
         modalities: { input: ['text', 'image', 'pdf'], output: ['text'] },
         options: { thinking: { type: 'adaptive' }, effort: 'medium' },
         variants: {
@@ -1928,6 +1841,8 @@ function generateOpenCodeConfig(platform: string, baseUrl: string, apiKey: strin
     provider[platform].name = 'Grok via Sub2API'
     provider[platform].models = grokModels
   }
+
+  provider[platform].models = applyCodexManifestCapacity(provider[platform].models ?? {})
 
   const agent =
     platform === 'openai'

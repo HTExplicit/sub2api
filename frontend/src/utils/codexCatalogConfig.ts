@@ -6,6 +6,14 @@ export interface CodexCatalogModel {
   slug: string
   default_reasoning_level?: unknown
   supported_reasoning_levels?: CodexCatalogReasoningLevel[]
+  // Capacity fields are copied from the gateway's resolved Codex manifest.
+  // Keep them untrusted until the caller validates positive finite numbers;
+  // a malformed or missing field must never become a guessed client limit.
+  context_window?: unknown
+  max_context_window?: unknown
+  max_input_tokens?: unknown
+  max_output_tokens?: unknown
+  context_capacity_source?: unknown
 }
 
 function trimEffort(value: unknown): string {

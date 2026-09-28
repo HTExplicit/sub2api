@@ -20,7 +20,7 @@ func TestAstraUltraCatalogPreservesWorkflowMetadata(t *testing.T) {
 	account := Account{Platform: PlatformOpenAI, Type: AccountTypeAPIKey, Credentials: map[string]any{
 		"base_url": "https://relay.example/v1", "model_mapping": map[string]any{"public-astra": "gpt-6-astra"},
 	}}
-	account.SetUpstreamModelMetadataSnapshot(UpstreamModelMetadataSnapshot{Models: metadata})
+	account.SetUpstreamModelMetadataSnapshot(UpstreamModelMetadataSnapshot{SourceIdentity: UpstreamModelMetadataSourceIdentity(&account), Models: metadata})
 	body, err := buildCodexModelsManifestForAccounts(PlatformOpenAI, []string{"public-astra"}, []Account{account}, nil, nil, true)
 	require.NoError(t, err)
 	model := decodeCodexManifestModels(t, body)[0]
@@ -94,7 +94,7 @@ func TestAstraCodexToolCapabilitiesUseAccountScopeAndSharedDeclarations(t *testi
 			}
 		})
 	}
-	custom.SetUpstreamModelMetadataSnapshot(UpstreamModelMetadataSnapshot{Models: map[string]UpstreamModelMetadata{
+	custom.SetUpstreamModelMetadataSnapshot(UpstreamModelMetadataSnapshot{SourceIdentity: UpstreamModelMetadataSourceIdentity(&custom), Models: map[string]UpstreamModelMetadata{
 		"gpt-6-astra": {CodexToolCapabilities: map[string]json.RawMessage{
 			"supports_search_tool": json.RawMessage("true"), "apply_patch_tool_type": json.RawMessage("null"),
 			"comp_hash": json.RawMessage(`"3000"`), "tool_mode": json.RawMessage("null"), "use_responses_lite": json.RawMessage("false"),
@@ -111,7 +111,7 @@ func TestAstraCodexToolCapabilitiesUseAccountScopeAndSharedDeclarations(t *testi
 func TestAstraCodexToolCapabilitiesPreserveLiveNullAndFalse(t *testing.T) {
 	account := &Account{Platform: PlatformOpenAI, Type: AccountTypeAPIKey,
 		Credentials: map[string]any{"base_url": "https://api.openai.com/v1"}}
-	account.SetUpstreamModelMetadataSnapshot(UpstreamModelMetadataSnapshot{Models: map[string]UpstreamModelMetadata{
+	account.SetUpstreamModelMetadataSnapshot(UpstreamModelMetadataSnapshot{SourceIdentity: UpstreamModelMetadataSourceIdentity(account), Models: map[string]UpstreamModelMetadata{
 		"gpt-6-astra": {CodexToolCapabilities: map[string]json.RawMessage{
 			"supports_search_tool": json.RawMessage("true"), "apply_patch_tool_type": json.RawMessage(`"freeform"`),
 			"comp_hash": json.RawMessage(`"3000"`), "tool_mode": json.RawMessage(`"code_mode_only"`),
@@ -171,6 +171,10 @@ func TestBuildCodexModelsManifestForGroupUsesSyncedNonCapacityMetadataAndRegistr
 			},
 		},
 	}
+	stored := account.GetUpstreamModelMetadataSnapshot()
+	require.NotNil(t, stored)
+	stored.SourceIdentity = UpstreamModelMetadataSourceIdentity(&account)
+	account.SetUpstreamModelMetadataSnapshot(*stored)
 	svc := &GatewayService{accountRepo: codexModelsVisibilityAccountRepo{byGroup: map[int64][]Account{
 		groupID: {account},
 	}}, compositeResolver: NewCompositeRouteResolver(&groupCapacityRouteRepo{})}
@@ -236,7 +240,7 @@ func TestBuildCodexModelsManifestForGroupMergesOpenCodeGoSyncedMetadata(t *testi
 			"model_mapping": map[string]any{publicModel: upstreamModel},
 		},
 	}
-	account.SetUpstreamModelMetadataSnapshot(UpstreamModelMetadataSnapshot{Models: map[string]UpstreamModelMetadata{
+	account.SetUpstreamModelMetadataSnapshot(UpstreamModelMetadataSnapshot{SourceIdentity: UpstreamModelMetadataSourceIdentity(&account), Models: map[string]UpstreamModelMetadata{
 		upstreamModel: {
 			ID:                       upstreamModel,
 			Reasoning:                &reasoning,
@@ -279,7 +283,7 @@ func TestBuildCodexModelsManifestForGroupUsesNoneForExplicitNonReasoningMetadata
 			"model_mapping": map[string]any{"company-coding-model": "company-coding-model"},
 		},
 	}
-	account.SetUpstreamModelMetadataSnapshot(UpstreamModelMetadataSnapshot{Models: map[string]UpstreamModelMetadata{
+	account.SetUpstreamModelMetadataSnapshot(UpstreamModelMetadataSnapshot{SourceIdentity: UpstreamModelMetadataSourceIdentity(&account), Models: map[string]UpstreamModelMetadata{
 		"company-coding-model": {
 			ID: "company-coding-model", Reasoning: &reasoning,
 			InputModalities: []string{"text"}, ContextWindow: 64_000,
@@ -390,7 +394,7 @@ func TestBuildCodexModelsManifestForGroupIntersectsSyncedAccountMetadata(t *test
 				"model_mapping": map[string]any{"shared-model": "shared-model"},
 			},
 		}
-		account.SetUpstreamModelMetadataSnapshot(UpstreamModelMetadataSnapshot{Models: map[string]UpstreamModelMetadata{
+		account.SetUpstreamModelMetadataSnapshot(UpstreamModelMetadataSnapshot{SourceIdentity: UpstreamModelMetadataSourceIdentity(&account), Models: map[string]UpstreamModelMetadata{
 			"shared-model": {
 				ID: "shared-model", Reasoning: &reasoning,
 				SupportedReasoningLevels: levels,
@@ -435,7 +439,7 @@ func TestBuildCodexModelsManifestForGroupIntersectsDifferentMappedTargetsWithout
 				"model_mapping": map[string]any{"my-coder": target},
 			},
 		}
-		account.SetUpstreamModelMetadataSnapshot(UpstreamModelMetadataSnapshot{Models: map[string]UpstreamModelMetadata{
+		account.SetUpstreamModelMetadataSnapshot(UpstreamModelMetadataSnapshot{SourceIdentity: UpstreamModelMetadataSourceIdentity(&account), Models: map[string]UpstreamModelMetadata{
 			target: {
 				ID: target, DisplayName: displayName, Description: description, Reasoning: &reasoning,
 				SupportedReasoningLevels: levels,
@@ -480,8 +484,8 @@ func TestBuildCodexModelsManifestForGroupIntersectsDifferentMappedTargetsWithout
 		require.Equal(t, "Custom model routed through Sub2API.", models[0]["description"])
 		require.Equal(t, []string{"low", "medium", "high"}, effortsFromManifestModel(t, models[0]))
 		require.Equal(t, []any{"text"}, models[0]["input_modalities"])
-		require.EqualValues(t, 272_000, models[0]["context_window"], "each account's own declaration wins before the group minimum")
-		require.Equal(t, "upstream", models[0]["context_capacity_source"])
+		require.EqualValues(t, 1_000_000, models[0]["context_window"], "resolve each real target from its official API specification before taking the group minimum")
+		require.Equal(t, "official", models[0]["context_capacity_source"])
 	}
 }
 
@@ -568,8 +572,8 @@ func TestBuildCodexModelsManifestForGroupIgnoresPersistentlyDisabledMappedAccoun
 	models := decodeCodexManifestModels(t, body)
 	require.Len(t, models, 1)
 	require.Equal(t, []any{"text", "image"}, models[0]["input_modalities"])
-	require.EqualValues(t, 272_000, models[0]["context_window"], "an unschedulable active account still bounds capacity; only capability intersection skips it")
-	require.Equal(t, "upstream", models[0]["context_capacity_source"])
+	require.EqualValues(t, 1_000_000, models[0]["context_window"], "an unschedulable active account still bounds capacity using its official specification; only capability intersection skips it")
+	require.Equal(t, "official", models[0]["context_capacity_source"])
 }
 
 func TestBuildCodexModelsManifestForGroupKeepsNonCapacityFallbackWhenAvailabilityLookupFails(t *testing.T) {
@@ -614,7 +618,7 @@ func TestBuildCodexModelsManifestForGroupKeepsCrossPlatformAliasAmbiguityClosed(
 			ID: id, Platform: platform, Type: AccountTypeAPIKey,
 			Credentials: map[string]any{"model_mapping": map[string]any{"shared-alias": target}},
 		}
-		account.SetUpstreamModelMetadataSnapshot(UpstreamModelMetadataSnapshot{Models: map[string]UpstreamModelMetadata{
+		account.SetUpstreamModelMetadataSnapshot(UpstreamModelMetadataSnapshot{SourceIdentity: UpstreamModelMetadataSourceIdentity(&account), Models: map[string]UpstreamModelMetadata{
 			target: {
 				ID: target, DisplayName: target, Reasoning: &reasoning,
 				SupportedReasoningLevels: []string{"low", "high"},
@@ -656,7 +660,7 @@ func TestBuildCodexModelsManifestForGroupDoesNotAdvertiseNoneWhenAccountReasonin
 				"model_mapping": map[string]any{"shared-model": "shared-model"},
 			},
 		}
-		account.SetUpstreamModelMetadataSnapshot(UpstreamModelMetadataSnapshot{Models: map[string]UpstreamModelMetadata{
+		account.SetUpstreamModelMetadataSnapshot(UpstreamModelMetadataSnapshot{SourceIdentity: UpstreamModelMetadataSourceIdentity(&account), Models: map[string]UpstreamModelMetadata{
 			"shared-model": metadata,
 		}})
 		return account
@@ -690,7 +694,7 @@ func TestAstraCodexToolCapabilitiesFollowAPIKeyAlias(t *testing.T) {
 	account := &Account{Platform: PlatformOpenAI, Type: AccountTypeAPIKey, Credentials: map[string]any{
 		"base_url": "https://relay.example/v1", "model_mapping": map[string]any{"my-astra": "gpt-6-astra"},
 	}}
-	account.SetUpstreamModelMetadataSnapshot(UpstreamModelMetadataSnapshot{Models: map[string]UpstreamModelMetadata{
+	account.SetUpstreamModelMetadataSnapshot(UpstreamModelMetadataSnapshot{SourceIdentity: UpstreamModelMetadataSourceIdentity(account), Models: map[string]UpstreamModelMetadata{
 		"gpt-6-astra": {CodexToolCapabilities: map[string]json.RawMessage{
 			"supports_search_tool": json.RawMessage("true"), "apply_patch_tool_type": json.RawMessage(`"freeform"`),
 			"use_responses_lite": json.RawMessage("false"),
@@ -715,7 +719,7 @@ func TestAstraCodexToolCapabilitiesKeepAPIKeyResponsesLiteGuard(t *testing.T) {
 	account := Account{Platform: PlatformOpenAI, Type: AccountTypeAPIKey, Credentials: map[string]any{
 		"base_url": "https://relay.example/v1", "model_mapping": map[string]any{"my-astra": "gpt-6-astra"},
 	}}
-	account.SetUpstreamModelMetadataSnapshot(UpstreamModelMetadataSnapshot{Models: map[string]UpstreamModelMetadata{
+	account.SetUpstreamModelMetadataSnapshot(UpstreamModelMetadataSnapshot{SourceIdentity: UpstreamModelMetadataSourceIdentity(&account), Models: map[string]UpstreamModelMetadata{
 		"gpt-6-astra": {CodexToolCapabilities: map[string]json.RawMessage{"use_responses_lite": json.RawMessage("true")}},
 	}})
 	body, err := buildCodexModelsManifestForAccounts(PlatformOpenAI, []string{"my-astra"}, []Account{account}, nil, nil, true)

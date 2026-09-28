@@ -217,8 +217,8 @@ func TestOfficialModelContextCapacityCatalogVerifiedRepresentativeValues(t *test
 		modelID                         string
 		contextWindow, maxInput, maxOut int64
 	}{
-		{"gpt-6-astra", 272000, 0, 128000},
-		{"gpt-5.4-mini", 272000, 0, 0},
+		{"gpt-6-astra", 1050000, 0, 128000},
+		{"gpt-5.4-mini", 400000, 0, 128000},
 		{"gpt-4.1", 1047576, 0, 32768},
 		{"claude-sonnet-4-5-20250929", 200000, 0, 64000},
 		{"deepseek-v4-pro", 1000000, 0, 384000},

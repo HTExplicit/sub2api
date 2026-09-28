@@ -248,18 +248,35 @@ func recordUpstreamModelCapacityObservations(ctx context.Context, repo AccountRe
 		return
 	}
 	now := time.Now().UTC()
+	identity := UpstreamModelMetadataSourceIdentity(account)
 	digestBody, _ := json.Marshal(observed)
-	digest := string(digestBody)
+	digest := identity + "\x00" + string(digestBody)
+	_, changed := buildUpstreamCapacityObservationSnapshot(account, identity, observed, now)
 	if value, ok := upstreamCapacityObservationMarks.Load(account.ID); ok {
-		if mark, ok := value.(upstreamCapacityObservationMark); ok && mark.digest == digest && now.Sub(mark.at) < upstreamCapacityObservationMaxAge {
+		if mark, ok := value.(upstreamCapacityObservationMark); ok && mark.digest == digest && !changed && now.Sub(mark.at) < upstreamCapacityObservationMaxAge {
 			return
 		}
 	}
-	snapshot := account.GetUpstreamModelMetadataSnapshot()
-	if snapshot == nil {
-		snapshot = &UpstreamModelMetadataSnapshot{Source: "upstream", Models: make(map[string]UpstreamModelMetadata)}
+	if changed {
+		applied, err := persistUpstreamModelMetadataSnapshot(ctx, repo, account, identity, func(current *Account) UpstreamModelMetadataSnapshot {
+			snapshot, _ := buildUpstreamCapacityObservationSnapshot(current, identity, observed, now)
+			return snapshot
+		})
+		if err != nil || !applied {
+			slog.Warn("upstream_capacity_observation_save_failed", "account_id", account.ID, "error", err)
+			return
+		}
 	}
-	stamp := now.Format(time.RFC3339)
+	upstreamCapacityObservationMarks.Store(account.ID, upstreamCapacityObservationMark{digest: digest, at: now})
+}
+
+func buildUpstreamCapacityObservationSnapshot(account *Account, identity string, observed map[string]ModelContextCapacity, now time.Time) (UpstreamModelMetadataSnapshot, bool) {
+	snapshot := upstreamMetadataForSource(account, identity)
+	if snapshot == nil {
+		snapshot = &UpstreamModelMetadataSnapshot{Source: ModelContextSourceUpstream, Models: make(map[string]UpstreamModelMetadata)}
+	}
+	snapshot.SourceIdentity = identity
+	stamp := now.Format(time.RFC3339Nano)
 	changed := false
 	for modelID, capacity := range observed {
 		declared := upstreamCapacityDeclaration(capacity, stamp)
@@ -267,7 +284,7 @@ func recordUpstreamModelCapacityObservations(ctx context.Context, repo AccountRe
 		if exists && entry.CapacitySource == ModelContextSourceUpstream && entry.ContextWindow == declared.ContextWindow &&
 			entry.MaxContextWindow == declared.MaxContextWindow && entry.MaxInputTokens == declared.MaxInputTokens &&
 			entry.MaxOutputTokens == declared.MaxOutputTokens {
-			if observedAt, parseErr := time.Parse(time.RFC3339, entry.ObservedAt); parseErr == nil && now.Sub(observedAt) < upstreamCapacityObservationMaxAge {
+			if observedAt, parseErr := time.Parse(time.RFC3339Nano, entry.ObservedAt); parseErr == nil && now.Sub(observedAt) < upstreamCapacityObservationMaxAge {
 				continue
 			}
 		}
@@ -278,13 +295,7 @@ func recordUpstreamModelCapacityObservations(ctx context.Context, repo AccountRe
 		changed = true
 	}
 	if changed {
-		if snapshot.SyncedAt == "" {
-			snapshot.SyncedAt = stamp
-		}
-		if err := repo.UpdateExtra(ctx, account.ID, map[string]any{UpstreamModelMetadataExtraKey: *snapshot}); err != nil {
-			slog.Warn("upstream_capacity_observation_save_failed", "account_id", account.ID, "error", err)
-			return
-		}
+		snapshot.SyncedAt = stamp
 	}
-	upstreamCapacityObservationMarks.Store(account.ID, upstreamCapacityObservationMark{digest: digest, at: now})
+	return *snapshot, changed
 }
