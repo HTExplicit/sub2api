@@ -11,7 +11,7 @@
       {{ emptyText }}
     </div>
 
-    <div v-else class="space-y-6 p-6">
+    <div v-else class="space-y-6 p-6" data-ui="ops-dialog ops-error-detail">
       <!-- Summary -->
       <div class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <div class="rounded-xl bg-gray-50 p-4 dark:bg-dark-900">

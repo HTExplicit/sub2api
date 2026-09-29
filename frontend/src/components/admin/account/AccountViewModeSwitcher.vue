@@ -3,6 +3,7 @@
     class="inline-flex h-8 items-center gap-0.5 rounded-lg bg-gray-100 p-0.5 dark:bg-dark-700"
     role="group"
     :aria-label="t('admin.accounts.viewModeLabel')"
+    data-ui="account-view-switcher"
   >
     <button
       v-for="option in options"

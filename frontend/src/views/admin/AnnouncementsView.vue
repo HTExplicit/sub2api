@@ -1,6 +1,6 @@
 <template>
   <AppLayout>
-    <TablePageLayout>
+    <TablePageLayout data-ui="announcements-page mgmt-page">
       <template #filters>
         <div class="flex flex-wrap items-center gap-3">
           <!-- Left: Search + Filters -->
@@ -78,6 +78,7 @@
 
           <template #cell-notify_mode="{ row }">
             <span
+              data-ui="category-chip"
               :class="[
                 'badge',
                 row.notify_mode === 'popup'

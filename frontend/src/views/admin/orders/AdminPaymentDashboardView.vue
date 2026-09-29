@@ -1,6 +1,6 @@
 <template>
   <AppLayout>
-    <div class="space-y-6">
+    <div class="space-y-6" data-ui="payment-dashboard">
       <!-- Header with Day Switcher -->
       <div class="flex items-center justify-end">
         <div class="flex items-center gap-2">

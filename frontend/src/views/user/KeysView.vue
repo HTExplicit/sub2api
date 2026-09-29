@@ -1,6 +1,6 @@
 <template>
   <AppLayout>
-    <TablePageLayout>
+    <TablePageLayout data-ui="user-keys">
       <template #filters>
         <div class="flex flex-col gap-3">
           <div class="flex flex-wrap items-center gap-3">
@@ -512,6 +512,7 @@
                   <span
                     v-for="platform in KEY_GROUP_PROVIDER_ICONS[provider.value]"
                     :key="platform"
+                    data-ui="platform-chip"
                     class="flex h-6 w-6 shrink-0 items-center justify-center rounded-md"
                     :class="platformBadgeLightClass(platform)"
                   >
@@ -1142,7 +1143,7 @@
         }"
       >
         <!-- Search box -->
-        <div class="border-b border-gray-100 p-2 dark:border-dark-700">
+        <div data-ui="key-group-search" class="border-b border-gray-100 p-2 dark:border-dark-700">
           <div class="relative">
             <svg class="absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
               <path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />

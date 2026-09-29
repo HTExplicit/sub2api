@@ -1,6 +1,6 @@
 <template>
   <header class="glass sticky top-0 z-30 border-b border-gray-200/50 dark:border-dark-700/50">
-    <div class="flex h-14 items-center justify-between gap-2 px-2 sm:px-4 md:px-6">
+    <div class="flex h-16 items-center justify-between gap-2 px-2 sm:px-4 md:px-6">
       <!-- Left: Mobile Menu Toggle + Page Title -->
       <div class="flex shrink-0 items-center gap-2 sm:gap-4">
         <button
@@ -11,8 +11,8 @@
           <Icon name="menu" size="md" />
         </button>
 
-        <div class="hidden lg:block">
-          <h1 class="text-base font-semibold text-gray-900 dark:text-white">
+        <div class="hidden lg:block" data-ui="header-title">
+          <h1 class="text-lg font-semibold text-gray-900 dark:text-white">
             {{ pageTitle }}
           </h1>
           <p v-if="pageDescription" class="text-xs text-gray-500 dark:text-dark-400">
@@ -25,7 +25,6 @@
       <div class="flex min-w-0 items-center gap-1 sm:gap-3">
         <!-- Announcement Bell -->
         <AnnouncementBell v-if="user" />
-
 
         <!-- Docs Link -->
         <a
@@ -52,17 +51,20 @@
         </router-link>
 
         <!-- Language Switcher -->
-        <LocaleSwitcher />
+        <LocaleSwitcher data-ui="header-locale" />
 
         <!-- Subscription Progress (for users with active subscriptions; not mounted at all when the feature is off) -->
-        <SubscriptionProgressMini v-if="user && subscriptionFeatureEnabled" />
+        <SubscriptionProgressMini v-if="user && subscriptionFeatureEnabled" data-ui="header-subscription" />
 
         <!-- Balance Display -->
         <div
           v-if="user"
+          data-ui="header-balance"
           class="group relative hidden items-center gap-2 rounded-xl bg-primary-50 px-3 py-1.5 dark:bg-primary-900/20 sm:flex"
         >
+          <Icon v-if="flatThemeActive" name="banknotes" size="sm" />
           <svg
+            v-else
             class="h-4 w-4 text-primary-600 dark:text-primary-400"
             fill="none"
             viewBox="0 0 24 24"
@@ -105,7 +107,7 @@
         </div>
 
         <!-- User Dropdown -->
-        <div v-if="user" class="relative" ref="dropdownRef">
+        <div v-if="user" class="relative" ref="dropdownRef" data-ui="header-user">
           <button
             @click="toggleDropdown"
             class="flex items-center gap-2 rounded-xl p-1.5 transition-colors hover:bg-gray-100 dark:hover:bg-dark-800"
@@ -192,7 +194,9 @@
                 class="border-t border-gray-100 px-4 py-2.5 dark:border-dark-700"
               >
                 <div class="flex items-center gap-2 text-xs text-gray-500 dark:text-gray-400">
+                  <Icon v-if="flatThemeActive" name="chatBubbles" size="sm" class="flex-shrink-0" />
                   <svg
+                    v-else
                     class="h-3.5 w-3.5 flex-shrink-0"
                     fill="none"
                     viewBox="0 0 24 24"
@@ -214,7 +218,8 @@
 
               <div v-if="showOnboardingButton" class="border-t border-gray-100 py-1 dark:border-dark-700">
                 <button @click="handleReplayGuide" class="dropdown-item w-full">
-                  <svg class="h-4 w-4" fill="currentColor" viewBox="0 0 24 24">
+                  <Icon v-if="flatThemeActive" name="questionCircle" size="sm" />
+                  <svg v-else class="h-4 w-4" fill="currentColor" viewBox="0 0 24 24">
                     <path
                       d="M12 2a10 10 0 100 20 10 10 0 000-20zm0 14a1 1 0 110 2 1 1 0 010-2zm1.07-7.75c0-.6-.49-1.25-1.32-1.25-.7 0-1.22.4-1.43 1.02a1 1 0 11-1.9-.62A3.41 3.41 0 0111.8 5c2.02 0 3.25 1.4 3.25 2.9 0 2-1.83 2.55-2.43 3.12-.43.4-.47.75-.47 1.23a1 1 0 01-2 0c0-1 .16-1.82 1.1-2.7.69-.64 1.82-1.05 1.82-2.06z"
                     />
@@ -228,7 +233,9 @@
                   @click="handleLogout"
                   class="dropdown-item w-full text-red-600 hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-900/20"
                 >
+                  <Icon v-if="flatThemeActive" name="logout" size="sm" />
                   <svg
+                    v-else
                     class="h-4 w-4"
                     fill="none"
                     viewBox="0 0 24 24"
@@ -264,6 +271,7 @@ import LocaleSwitcher from '@/components/common/LocaleSwitcher.vue'
 import SubscriptionProgressMini from '@/components/common/SubscriptionProgressMini.vue'
 import AnnouncementBell from '@/components/common/AnnouncementBell.vue'
 import Icon from '@/components/icons/Icon.vue'
+import { flatThemeActive } from '@/utils/flatTheme'
 import { sanitizeUrl } from '@/utils/url'
 import { FeatureFlags, isFeatureFlagEnabled } from '@/utils/featureFlags'
 import { resolveRouteMetaKeys } from '@/router/title'

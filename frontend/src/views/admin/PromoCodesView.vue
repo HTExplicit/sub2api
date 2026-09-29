@@ -1,6 +1,6 @@
 <template>
   <AppLayout>
-    <TablePageLayout>
+    <TablePageLayout data-ui="promo-page mgmt-page">
       <template #filters>
         <div class="flex flex-wrap items-center gap-3">
           <!-- Left: Search + Filters -->
@@ -326,7 +326,7 @@
       <div v-else-if="usages.length === 0" class="py-8 text-center text-gray-500 dark:text-gray-400">
         {{ t('admin.promo.noUsages') }}
       </div>
-      <div v-else class="space-y-3">
+      <div v-else data-ui="promo-usages" class="space-y-3">
         <div
           v-for="usage in usages"
           :key="usage.id"

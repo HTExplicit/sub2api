@@ -1,0 +1,454 @@
+/* Console theme · behaviour layer (owner: the base agent; frozen after wave 0, changes go through the coordinator).
+ *
+ * Functional fixes that hold whatever the console looks like: nothing is truncated or clipped (values wrap or
+ * the table scrolls), tips and popovers open where they can be read, controls and placeholders stay
+ * identifiable, figures never spill. Each rule names its fix (B1-B6 as in ui-el MAPPING §1.6).
+ *
+ * Rules for this file:
+ * - every selector starts with html.flat-theme (theme off = upstream); specificity >= 0,2,1 so it beats page
+ *   utilities, the lazily loaded scoped styles and upstream's dark: variants (B3.1 is the one exception);
+ * - layout, overflow, position and visibility properties only; a colour only as a role token
+ *   (rgb(var(--ui-*))) where the fix is legibility itself; no radii, shadows or fonts: the look of anything
+ *   touched here belongs to the other console files, which load after this one.
+ *
+ * Hooks used (all existing, none added): data-table on DataTable's root (.table-wrapper: accounts, groups,
+ * proxies, users, keys, usage), data-column on its th / td, data-index on its rows, .table-body,
+ * .table-page-layout, .modal-body, .compact-select, .usage-filter-dropdown, .action-menu-content,
+ * .theme-tour-popover, .terminal-window, #channel-monitor-form and the data-test / data-testid attributes named
+ * below; everything else is upstream's own class names. */
+
+/* ================================================================== B1 · wrap or scroll, never cut */
+
+/* B1.1 Distribution tables (model / group / endpoint distribution, the user dashboard: a max-h-48 box beside
+   the doughnut). Header labels stay on one line; when the columns do not fit, the box scrolls sideways and
+   shows its scrollbar (upstream hides scrollbars until hover, so the table looked clipped). The name column
+   keeps room for a whole short name and wraps long ones instead of shrinking to a letter per line. */
+html.flat-theme [class~="max-h-48"][class~="min-w-0"][class~="flex-1"][class~="overflow-auto"] > table > thead th {
+  white-space: nowrap;
+}
+
+/* Perf pass: the box is hooked ([data-ui~="dist-table"], the three distribution charts and the user dashboard's
+   chart); the :has() stays in the subject with a child argument. The repeated [data-ui] keeps the original 0,5,2
+   (the hook plus the four class tokens it replaced), so the cascade outcome is unchanged. */
+html.flat-theme [data-ui~="dist-table"][data-ui][data-ui][data-ui]:has(> table) {
+  scrollbar-width: thin;
+  scrollbar-color: rgb(var(--ui-line-focus)) transparent;
+}
+
+html.flat-theme [data-ui~="dist-table"][data-ui][data-ui][data-ui]:has(> table)::-webkit-scrollbar-thumb {
+  background-color: rgb(var(--ui-line-focus));
+}
+
+html.flat-theme [class~="max-h-48"][class~="min-w-0"][class~="flex-1"][class~="overflow-auto"] > table > tbody > tr > td:first-child:not([colspan]) {
+  min-width: 8rem;
+}
+
+/* B1.2 Chart card titles beside a segmented picker never break (「模型分 / 布」 on phones): the picker group
+   wraps instead. Perf pass: the rule is driven by a flag the header itself carries (:has() stays in the subject,
+   child argument) and read by the h3 through a container style query, so nothing selects "after" the :has(). */
+html.flat-theme [data-ui="dist-head"]:has(> div [class~="rounded-lg"]:is([class~="bg-gray-50"], [class~="bg-gray-100"]):is([class~="p-0.5"], [class~="p-1"])) {
+  --uif-disthead: 1;
+}
+
+@container style(--uif-disthead: 1) {
+  html.flat-theme [data-ui="dist-head"][data-ui] > h3:not(uipad) {
+    flex-shrink: 0;
+    white-space: nowrap;
+  }
+}
+
+/* B1.3 Chart rows holding a distribution card: from 1024 to 1535px each card takes the full width, so the
+   ring, every column and the full names fit; from 1536px they sit side by side again. Perf pass: the page roots
+   that hold such a row are hooked already (admin/user dashboard and usage), and the :has() stays in the subject. */
+@media (min-width: 1024px) and (max-width: 1535.98px) {
+  html.flat-theme :is([data-ui="admin-dashboard"], [data-ui="admin-usage"], [data-ui="user-dashboard"], [data-ui="user-usage"]) [class~="grid"][class~="gap-6"][class~="lg:grid-cols-2"]:has(> [class~="card"]:first-child [data-ui~="dist-table"] > table) {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/* Owner decision (2026-09-29, after the Experiential Labs preview): the two-line cell layouts approved in rounds 4-5
+   stay (B1.4-B1.10); the usage records table keeps its two-line cells too. */
+/* B1.4 Timestamps on two lines (date / time; approved round 4): the cell text becomes a block as wide as its
+   longer part, so it breaks at the space and never inside the date or the time. Only in the tables chosen;
+   cells are found by data-column, so hiding columns does not switch it off. 账号管理「最近使用」 is relative
+   (「2天前」) and stays one line. */
+html.flat-theme .table-wrapper[data-table="usage"] td[data-column="created_at"] > span,
+html.flat-theme .table-wrapper:is([data-table="proxies"], [data-table="keys"], [data-table="accounts"]) td[data-column="created_at"] > span,
+html.flat-theme .table-wrapper[data-table="users"] td:is([data-column="created_at"], [data-column="last_used_at"], [data-column="last_active_at"]) > span,
+html.flat-theme .table-wrapper[data-table="proxies"] td[data-column="expiry"] > div > span:first-child {
+  display: inline-block;
+  width: min-content;
+  white-space: normal;
+}
+
+/* B1.5 账号管理「过期时间」 (「2026-10-25 08:00」): a line may break after a hyphen, so min-content would split the
+   date; a width that holds the date keeps it whole and moves the time to line two. */
+html.flat-theme .table-wrapper[data-table="accounts"] td[data-column="expires_at"] > div > span:first-child {
+  display: inline-block;
+  max-width: 10ch;
+  white-space: normal;
+}
+
+/* B1.6 IP管理 names break only at a space or a hyphen (「美国原生- / 超高质量」) and stay whole without one; the
+   location breaks only at the spaces around 「·」 (approved round 4). keep-all keeps Chinese words together;
+   min-content lets a longer part widen the column instead of running into the next one. */
+html.flat-theme .table-wrapper[data-table="proxies"] td[data-column="name"] > span {
+  display: inline-block;
+  min-width: min-content;
+  max-width: 7.5em;
+  white-space: normal;
+  word-break: keep-all;
+}
+
+html.flat-theme .table-wrapper[data-table="proxies"] td[data-column="location"] span[class~="text-sm"] {
+  min-width: min-content;
+  max-width: 5em;
+  white-space: normal;
+  word-break: keep-all;
+}
+
+/* B1.7 API 密钥 group cell: the badge always on line one and 「选择分组 ⌄」 on line two (approved round 4), so the
+   parts never split unpredictably and the column is as wide as the wider line. */
+html.flat-theme .table-wrapper[data-table="keys"] td[data-column="group"] button {
+  display: grid;
+  grid-template-columns: max-content max-content;
+  justify-content: start;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+html.flat-theme .table-wrapper[data-table="keys"] td[data-column="group"] button > :first-child {
+  grid-column: 1 / -1;
+  justify-self: start;
+}
+
+/* B1.8 用户管理: 「充值」 under the amount (approved round 4); the button's own inset is pulled back so its label
+   lines up with the amount. */
+html.flat-theme .table-wrapper[data-table="users"] td[data-column="balance"] > div {
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.125rem;
+}
+
+html.flat-theme .table-wrapper[data-table="users"] td[data-column="balance"] > div > button {
+  margin-left: -0.5rem;
+}
+
+/* B1.9 用户管理 time headers wrap after four characters (「最后活跃 / 时间」; English at the space), so the columns
+   are only as wide as the two-line timestamps below them (approved round 5). The console's header row is
+   nowrap (data.css), so the label opts back into wrapping, on the mono label's own line height. */
+html.flat-theme .table-wrapper[data-table="users"] th:is([data-column="last_active_at"], [data-column="last_used_at"], [data-column="created_at"]) > div > span:first-child {
+  max-width: 4.5em;
+  white-space: normal;
+  line-height: var(--ui-label-leading);
+}
+
+/* B1.10 IP管理: the copy button under the address and the show-password button under the credentials, so both
+   columns are as wide as their text (approved round 5). */
+html.flat-theme .table-wrapper[data-table="proxies"] td:is([data-column="address"], [data-column="auth"]) > div {
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.125rem;
+}
+
+html.flat-theme .table-wrapper[data-table="proxies"] td[data-column="auth"] > div > button {
+  margin-left: 0;
+}
+
+/* B1.11 Group pickers (GroupSelector rows: account forms, announcement targeting, key dialogs): the group badge
+   keeps its own width instead of stretching into a bar, the account count sits at the right edge. Perf pass: the
+   rows are hooked ([data-ui="group-pick-row"], GroupSelector.vue); the two child selectors need no :has(). */
+html.flat-theme [data-ui="group-pick-row"] > span[class~="inline-flex"][class~="rounded-md"][class~="min-w-0"][class~="flex-1"] {
+  flex: 0 1 auto;
+}
+
+html.flat-theme [data-ui="group-pick-row"] > span[class~="inline-flex"][class~="rounded-md"][class~="min-w-0"][class~="flex-1"] + span[class~="shrink-0"] {
+  margin-left: auto;
+}
+
+/* B1.12 Values upstream cuts with an ellipsis (the full text only in a hover title) wrap inside their column:
+   - 使用记录: request ID, upstream request ID, User-Agent;
+   - 运维监控: system-log host; concurrency rows' user name and e-mail; request details and error lists (model,
+     request ID, message, User-Agent); alert titles; background job names;
+   - 使用记录 filter results and 用户排行 e-mails; 操作日志 operator, action, method + path; 邀请返利 e-mails,
+     user names and order numbers. */
+html.flat-theme .table-wrapper[data-table="usage"] td:is([data-column="request_id"], [data-column="upstream_request_id"]) span[class~="truncate"],
+html.flat-theme .table-wrapper[data-table="usage"] td[data-column="user_agent"] > span[class~="truncate"],
+html.flat-theme [data-ui~="ops-dashboard"] section[class~="rounded-2xl"] td > span[class~="block"][class~="truncate"],
+html.flat-theme [data-ui~="ops-dashboard"] :is(span, div)[class~="truncate"]:is([class~="text-[11px]"], [class~="text-[10px]"]):is([class~="font-bold"], [class~="text-gray-400"]),
+html.flat-theme td[class~="max-w-[240px]"][class~="truncate"][class~="px-4"][class~="py-3"],
+html.flat-theme span[class~="max-w-[220px]"][class~="truncate"][class~="font-mono"][class~="text-[11px]"],
+html.flat-theme span[class~="min-w-0"][class~="flex-1"][class~="truncate"][class~="font-mono"][class~="text-[11px]"],
+html.flat-theme :is([data-ui~="ops-error-list"], [data-ui~="usage-records"]) .table-wrapper:not([data-table="usage"]) td:is([data-column="message"], [data-column="user_agent"]) > span[class~="block"][class~="truncate"],
+html.flat-theme div[class~="truncate"][class~="max-w-[360px]"][class~="font-semibold"],
+html.flat-theme .modal-body div[class~="rounded-xl"][class~="p-4"] > div > div[class~="truncate"][class~="text-sm"][class~="font-semibold"],
+html.flat-theme .usage-filter-dropdown > div[class~="absolute"] > button > span[class~="truncate"],
+html.flat-theme td[class~="max-w-[260px]"][class~="truncate"][class~="font-medium"],
+html.flat-theme td[data-column="actor"] > div[class~="min-w-0"][class~="max-w-[220px]"] > div[class~="truncate"],
+html.flat-theme td[data-column="action"] > div[class~="min-w-0"][class~="max-w-xs"] > div[class~="truncate"],
+html.flat-theme .table-wrapper :is(div, button)[class~="max-w-56"][class~="truncate"] {
+  overflow: visible;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+/* (运维监控 concurrency rows: the name and the e-mail may shrink and wrap as a pair; the request ID may use the wide
+   sheet's free width and stays on one line where it fits). Perf pass: the :has() stays in the subject of the row it
+   styles (the row is the element that wraps), scoped under the page's own hook. */
+html.flat-theme [data-ui~="ops-dashboard"][data-ui] div[class~="min-w-0"][class~="flex-1"][class~="items-center"][class~="gap-1.5"]:has(> span[class~="truncate"][class~="text-[11px]"]) {
+  flex-wrap: wrap;
+  row-gap: 0;
+}
+
+html.flat-theme [data-ui~="ops-dashboard"] :is(span, div)[class~="truncate"]:is([class~="text-[11px]"], [class~="text-[10px]"]):is([class~="font-bold"], [class~="text-gray-400"]) {
+  min-width: 0;
+  flex-shrink: 1;
+}
+
+html.flat-theme span[class~="max-w-[220px]"][class~="truncate"][class~="font-mono"][class~="text-[11px]"] {
+  max-width: none;
+}
+
+/* B1.13 兑换码「生成兑换码」: each 「兑换码过期」 choice stays on one line (「永不过期」 broke inside its column). */
+html.flat-theme div[class~="grid"][class~="grid-cols-2"][class~="sm:grid-cols-5"] > button[class~="rounded-lg"][class~="border"][class~="px-3"][class~="py-2"] {
+  white-space: nowrap;
+}
+
+/* ================================================================== B2 · tips and popovers where they can be read */
+
+/* B2.1 Icon-only row actions (IP管理, API 密钥, 分组管理; approved round 4; 用户管理, 订阅管理, 兑换码 added in wave 2 at the
+   management agent's request), only with a mouse or trackpad: touch
+   keeps the visible labels. The label stays in the button for screen readers and shows as a tip on hover and
+   keyboard focus, left of the button and centred on it, so the sticky header (z-index 200) never covers it;
+   the hovered cell rises above the other rows' sticky action cells. The tip's look (edge, radius, shadow) is
+   overlays.css'; surface and ink here only keep it legible. */
+html.flat-theme :is(.table-wrapper:is([data-table="proxies"], [data-table="keys"], [data-table="groups"], [data-table="users"]), :is([data-ui~="subscriptions-page"], [data-ui~="redeem-page"]) .table-wrapper) td[data-column="actions"]:is(:hover, :focus-within) {
+  z-index: 30;
+}
+
+html.flat-theme :is(.table-wrapper:is([data-table="proxies"], [data-table="keys"], [data-table="groups"], [data-table="users"]), :is([data-ui~="subscriptions-page"], [data-ui~="redeem-page"]) .table-wrapper) td[data-column="actions"] button[class~="flex-col"] {
+  position: relative;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  html.flat-theme :is(.table-wrapper:is([data-table="proxies"], [data-table="keys"], [data-table="groups"], [data-table="users"]), :is([data-ui~="subscriptions-page"], [data-ui~="redeem-page"]) .table-wrapper) td[data-column="actions"] button[class~="flex-col"] > span[class~="text-xs"] {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    margin: -1px;
+    padding: 0;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+    border: 0;
+  }
+
+  html.flat-theme :is(.table-wrapper:is([data-table="proxies"], [data-table="keys"], [data-table="groups"], [data-table="users"]), :is([data-ui~="subscriptions-page"], [data-ui~="redeem-page"]) .table-wrapper) td[data-column="actions"] button[class~="flex-col"]:is(:hover, :focus-visible) > span[class~="text-xs"] {
+    top: 50%;
+    right: calc(100% + 0.375rem);
+    z-index: 1;
+    width: auto;
+    height: auto;
+    margin: 0;
+    padding: 0.25rem 0.5rem;
+    overflow: visible;
+    clip: auto;
+    transform: translateY(-50%);
+    pointer-events: none;
+    background-color: rgb(var(--ui-surface));
+    color: rgb(var(--ui-ink));
+  }
+}
+
+/* B2.2 A tip that opens upwards from a cell of the first two rows would run under the sticky header, which
+   stacks above the whole body: those tips open downwards, and the arrow that pointed down to the cell is
+   hidden. */
+html.flat-theme .table-wrapper .table-body > tr:is([data-index="0"], [data-index="1"]) :is(div, span)[class~="absolute"][class~="bottom-full"]:is([class~="bg-gray-900"], [class~="bg-gray-800"])[class~="text-white"] {
+  top: 100%;
+  bottom: auto;
+  margin-top: 0.5rem;
+  margin-bottom: 0;
+}
+
+html.flat-theme .table-wrapper .table-body > tr:is([data-index="0"], [data-index="1"]) :is(div, span)[class~="absolute"][class~="bottom-full"]:is([class~="bg-gray-900"], [class~="bg-gray-800"])[class~="text-white"] > [class~="absolute"][class~="top-full"] {
+  display: none;
+}
+
+/* B2.3 用户管理「余额」: in the first row the 「点击查看充值记录」 hint opens to the right of the amount (without its
+   arrow), clear of the header and of 「充值」 below; in the second row the two-line rows leave room above, so it
+   keeps opening upwards (both more specific than B2.2). */
+html.flat-theme .table-wrapper[data-table="users"] .table-body > tr[data-index="0"] td[data-column="balance"] div[class~="group"] > div[class~="bottom-full"][class~="text-white"] {
+  top: 50%;
+  bottom: auto;
+  left: calc(100% + 0.375rem);
+  margin-top: 0;
+  margin-bottom: 0;
+  --tw-translate-x: 0px;
+  --tw-translate-y: -50%;
+}
+
+html.flat-theme .table-wrapper[data-table="users"] .table-body > tr[data-index="0"] td[data-column="balance"] div[class~="group"] > div[class~="bottom-full"][class~="text-white"] > div[class~="top-full"] {
+  display: none;
+}
+
+html.flat-theme .table-wrapper[data-table="users"] .table-body > tr[data-index="1"] td[data-column="balance"] div[class~="group"] > div[class~="bottom-full"][class~="text-white"] {
+  top: auto;
+  bottom: 100%;
+  margin-top: 0;
+  margin-bottom: 0.375rem;
+}
+
+/* B2.4 账号表「状态」 error tip: a long upstream error ran past the table's right edge and bottom and was cut. It
+   opens leftwards from the ? icon, over the usage column, and a long message scrolls inside 12rem, so the whole
+   text stays readable (the details drawer shows it too). Card and compact views keep upstream's placement. */
+html.flat-theme .table-wrapper[data-table="accounts"] td[data-column="status"] div[class~="group/error"] > div[class~="absolute"][class~="top-full"] {
+  left: auto;
+  right: 0;
+  max-height: 12rem;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+/* ================================================================== B3 · identifiable controls, readable hints */
+
+/* B3.1 Placeholders of fields without the .input recipe fall back to Tailwind's gray-400 fill (2.5:1): they take
+   the readable faint text. The one deliberate exception to the specificity floor: it matches preflight's
+   `input::placeholder` (0,0,2) and wins by order, while the recipes' and pages' placeholder: utilities still
+   win over it. */
+:where(html.flat-theme) :is(input, textarea)::placeholder {
+  color: rgb(var(--ui-faint));
+  opacity: 1;
+}
+
+/* B3.2 A field that is empty with no visible placeholder (utils/flatTheme.ts gives unlabelled .input fields a
+   blank " " placeholder, so :placeholder-shown means empty), every native date / time field and every text area
+   without a visible placeholder: nothing inside the box says what it is, so its outline is the 3:1 form-control
+   line (WCAG 1.4.11). Focus, error and disabled states keep their own look. */
+html.flat-theme .input:is([placeholder=" "]:placeholder-shown, [placeholder=""]:placeholder-shown):not(select):not(textarea):not(:focus):not(:disabled):not(.input-error),
+html.flat-theme input:is([type="date"], [type="datetime-local"], [type="time"], [type="month"], [type="week"]):not(:focus):not(:disabled):not(.input-error),
+html.flat-theme textarea[class~="input"]:is(:not([placeholder]), [placeholder=""], [placeholder=" "]):not(:focus):not(:disabled):not(.input-error) {
+  border-color: rgb(var(--ui-control-line));
+}
+
+/* B3.3 Native date / time pickers open in the page's scheme (dark in dark mode), wherever the field sits. */
+html.flat-theme input:is([type="date"], [type="datetime-local"], [type="time"], [type="month"], [type="week"]) {
+  color-scheme: light;
+}
+
+html.flat-theme.dark input:is([type="date"], [type="datetime-local"], [type="time"], [type="month"], [type="week"]) {
+  color-scheme: dark;
+}
+
+/* B3.4 Keyboard focus that scrolls into view is never hidden under the sticky header. */
+html.flat-theme {
+  scroll-padding-top: calc(var(--ui-header-h) + 0.5rem);
+}
+
+/* B3.5 Hints dimmed with opacity fall below 4.5:1: full opacity, the element's own text colour. RPM strategy
+   hints (account forms, opacity-70), the model cooldown countdown in 账号状态 (opacity-70), the check-mode and
+   API-mode hints of the channel-monitor forms (opacity-80), and the home page's 「更多 · 即将推出」 row
+   (opacity-60). */
+html.flat-theme button[class~="flex-1"][class~="py-2"][class~="transition-all"][class~="rounded-lg"][class~="text-sm"] [class~="opacity-70"],
+html.flat-theme [data-testid="model-status-trigger"] span[class~="opacity-70"],
+html.flat-theme button[class~="rounded-lg"][class~="border-2"][class~="text-left"] > span[class~="opacity-80"],
+html.flat-theme div[class~="rounded-xl"][class~="bg-white/40"][class~="opacity-60"] {
+  opacity: 1;
+}
+
+/* B3.6 Onboarding tour: the emphasis lines are inline #10b981 in the i18n HTML (2.5:1) and the close 「×」 is
+   #9ca3af text (2.5:1); both take readable role colours (driver.js styles need !important). */
+html.flat-theme .theme-tour-popover :is([style*="color: #10b981" i], [style*="color:#10b981" i]) {
+  color: rgb(var(--ui-success)) !important;
+}
+
+html.flat-theme .theme-tour-popover .driver-popover-close-btn {
+  color: rgb(var(--ui-muted)) !important;
+}
+
+/* B3.7 Reduced motion: no press scale on buttons and no hover lift on cards (styles/theme.css already stops the
+   transitions and animations). */
+@media (prefers-reduced-motion: reduce) {
+  html.flat-theme :is(.btn:active, .card-hover:hover) {
+    transform: none;
+  }
+}
+
+/* ================================================================== B4 · figures never spill */
+
+/* B4.1 KPI cards (upstream: .grid > .card.p-4 with a tile and a text column): the text column may shrink and a
+   figure too long for the card wraps inside it ($999,999,875,767.73) instead of painting under the next card.
+   Perf pass: the tile's next sibling is the text column, so no :has() is needed; the repeated [class]s keep the
+   original 0,8,2. */
+html.flat-theme [class~="grid"] > [class~="card"][class~="p-4"] > [class~="flex"] > div[class~="rounded-lg"][class~="p-2"]:first-child + :nth-child(2),
+html.flat-theme [class~="grid"] > [class~="card"][class~="p-4"][class~="flex"] > div[class~="rounded-lg"][class~="p-2"]:first-child + :nth-child(2) {
+  min-width: 0;
+}
+
+html.flat-theme [class~="grid"] > [class~="card"][class~="p-4"] p[class~="text-xl"] {
+  overflow-wrap: anywhere;
+}
+
+/* B4.2 Phones: the tile sits above the text, so the figure and the line under it use the card's full width
+   (「524.27M」, 「802 启用 8 错误」 are never cut or broken). */
+@media (max-width: 639.98px) {
+  html.flat-theme [class~="grid"] > [class~="card"][class~="p-4"] > [class~="flex"]:has(> div[class~="rounded-lg"][class~="p-2"]:first-child),
+  html.flat-theme [class~="grid"] > [class~="card"][class~="p-4"][class~="flex"]:has(> div[class~="rounded-lg"][class~="p-2"]:first-child) {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+}
+
+/* B4.3 用户仪表盘「今日消费」 and 「总计」: the standard price after the figure wraps as one piece, so its slash
+   leads the second line instead of dangling. Perf pass: the page root carries the hook already, so the :has() that
+   asked "does this page hold the quick-action buttons" (a `main` anchor: every text node under it in one
+   invalidation set) is gone; the quick actions live only on the user dashboard, whose rows this rule is for. */
+html.flat-theme [data-ui="user-dashboard"][data-ui] [class~="grid"] > [class~="card"][class~="p-4"] :is(p[class~="text-xl"] > span[class~="text-sm"], p[class~="text-xs"] > span[class~="text-gray-400"]) {
+  display: inline-block;
+}
+
+/* B4.4 Key 用量查询: a balance too long for the 176px ring wraps inside it on balanced lines instead of running
+   over the stroke. */
+html.flat-theme div[class~="relative"][class~="flex"][class~="min-h-screen"][class~="flex-col"][class~="bg-gray-50"] > main svg[class~="w-44"] + div > span[class~="text-2xl"] {
+  max-width: 8.5rem;
+  word-break: break-all;
+  text-wrap: balance;
+  text-align: center;
+}
+
+/* B4.5 首页: the terminal illustration (420px upstream) fits a phone instead of being cut at the right edge. */
+html.flat-theme .terminal-window {
+  width: min(420px, calc(100vw - 3rem));
+}
+
+/* ================================================================== B6 · other behaviour */
+
+/* B6.1 运维监控 metric tiles: the 「明细」 links never break into a vertical 「明 / 细」 (the tile label wraps
+   instead), and 「ms (P99)」 moves under a long figure as one unit. */
+html.flat-theme [data-ui~="ops-dashboard"] button[class~="text-[10px]"][class~="font-bold"][class~="text-blue-500"] {
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
+html.flat-theme [data-ui~="ops-dashboard"][data-ui] div[class~="items-baseline"][class~="gap-2"]:has(> div[class~="text-3xl"]) {
+  flex-wrap: wrap;
+}
+
+/* Perf pass: the trailing `> span` rule is named from the figure that sits beside the label (`+ span`), so nothing
+   follows a :has() any more (this keeps 「ms (P99)」 from wrapping between 「ms」 and 「(P99)」). */
+html.flat-theme [data-ui~="ops-dashboard"][data-ui] div[class~="items-baseline"][class~="gap-2"] > div[class~="text-3xl"] + span {
+  white-space: nowrap;
+}
+
+/* B6.2 运维监控 请求错误 / 上游错误 lists (OpsErrorDetailsModal; .compact-select exists only there): the search
+   takes the spare eighth column, so 「搜索 request_id / client_request_id / message」 is read whole. */
+@media (min-width: 768px) {
+  html.flat-theme .modal-body div[class~="md:grid-cols-8"] > div[class~="col-span-2"][class~="compact-select"]:first-child {
+    grid-column: span 3 / span 3;
+  }
+}
+
+/* B6.3 账号行菜单: the two Codex route items have no glyph; their labels line up with the labels of the items
+   that have one (inset = item padding + glyph + gap; the menu recipe may set --ui-menu-text-inset). */
+html.flat-theme .action-menu-content fieldset button:is([data-test="codex-harvest"], [data-test="codex-stop"]) {
+  padding-left: var(--ui-menu-text-inset, 2.5rem);
+}

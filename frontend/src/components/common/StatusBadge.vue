@@ -1,5 +1,5 @@
 <template>
-  <div class="flex items-center gap-1.5">
+  <div class="flex items-center gap-1.5" data-ui="status-badge">
     <span
       :class="[
         'inline-block h-2 w-2 rounded-full',

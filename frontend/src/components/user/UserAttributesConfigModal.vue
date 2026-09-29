@@ -1,6 +1,6 @@
 <template>
   <BaseDialog :show="show" :title="t('admin.users.attributes.title')" width="wide" @close="emit('close')">
-    <div class="space-y-4">
+    <div data-ui="user-attributes-config" class="space-y-4">
       <!-- Header with Add Button -->
       <div class="flex items-center justify-between">
         <p class="text-sm text-gray-500 dark:text-dark-400">

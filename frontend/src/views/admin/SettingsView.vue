@@ -1,6 +1,6 @@
 <template>
   <AppLayout>
-    <div class="mx-auto max-w-6xl space-y-6">
+    <div class="mx-auto max-w-6xl space-y-6" data-ui="settings">
       <!-- Loading State -->
       <div v-if="loading" class="flex items-center justify-center py-12">
         <div
@@ -227,7 +227,7 @@
               </div>
 
               <template v-else>
-                <div class="flex items-center justify-between">
+                <div class="flex items-center justify-between" data-ui="setting-row">
                   <div>
                     <label class="font-medium text-gray-900 dark:text-white">{{
                       t("admin.settings.overloadCooldown.enabled")
@@ -328,7 +328,7 @@
               </div>
 
               <template v-else>
-                <div class="flex items-center justify-between">
+                <div class="flex items-center justify-between" data-ui="setting-row">
                   <div>
                     <label class="font-medium text-gray-900 dark:text-white">{{
                       t("admin.settings.rateLimit429Cooldown.enabled")
@@ -437,7 +437,7 @@
 
               <template v-else>
                 <!-- Enable Stream Timeout -->
-                <div class="flex items-center justify-between">
+                <div class="flex items-center justify-between" data-ui="setting-row">
                   <div>
                     <label class="font-medium text-gray-900 dark:text-white">{{
                       t("admin.settings.streamTimeout.enabled")
@@ -617,7 +617,7 @@
 
               <template v-else>
                 <!-- Master Toggle -->
-                <div class="flex items-center justify-between">
+                <div class="flex items-center justify-between" data-ui="setting-row">
                   <div>
                     <label class="font-medium text-gray-900 dark:text-white">{{
                       t("admin.settings.rectifier.enabled")
@@ -635,7 +635,7 @@
                   class="space-y-4 border-t border-gray-100 pt-4 dark:border-dark-700"
                 >
                   <!-- Thinking Signature Rectifier -->
-                  <div class="flex items-center justify-between">
+                  <div class="flex items-center justify-between" data-ui="setting-row">
                     <div>
                       <label
                         class="text-sm font-medium text-gray-700 dark:text-gray-300"
@@ -655,7 +655,7 @@
                   </div>
 
                   <!-- Thinking Budget Rectifier -->
-                  <div class="flex items-center justify-between">
+                  <div class="flex items-center justify-between" data-ui="setting-row">
                     <div>
                       <label
                         class="text-sm font-medium text-gray-700 dark:text-gray-300"
@@ -671,7 +671,7 @@
                   </div>
 
                   <!-- API Key Signature Rectifier -->
-                  <div class="flex items-center justify-between">
+                  <div class="flex items-center justify-between" data-ui="setting-row">
                     <div>
                       <label
                         class="text-sm font-medium text-gray-700 dark:text-gray-300"
@@ -1437,7 +1437,7 @@
             </div>
             <div class="space-y-5 p-6">
               <!-- Enable Registration -->
-              <div class="flex items-center justify-between">
+              <div class="flex items-center justify-between" data-ui="setting-row">
                 <div>
                   <label class="font-medium text-gray-900 dark:text-white">{{
                     t("admin.settings.registration.enableRegistration")
@@ -1454,6 +1454,7 @@
               <!-- Email Verification -->
               <div
                 class="flex items-center justify-between border-t border-gray-100 pt-4 dark:border-dark-700"
+                data-ui="setting-row"
               >
                 <div>
                   <label class="font-medium text-gray-900 dark:text-white">{{
@@ -1538,6 +1539,7 @@
               <!-- Email Domain Quota -->
               <div
                 class="flex items-center justify-between border-t border-gray-100 pt-4 dark:border-dark-700"
+                data-ui="setting-row"
               >
                 <div>
                   <label class="font-medium text-gray-900 dark:text-white">{{
@@ -1555,6 +1557,7 @@
               <!-- Promo Code -->
               <div
                 class="flex items-center justify-between border-t border-gray-100 pt-4 dark:border-dark-700"
+                data-ui="setting-row"
               >
                 <div>
                   <label class="font-medium text-gray-900 dark:text-white">{{
@@ -1570,6 +1573,7 @@
               <!-- Invitation Code -->
               <div
                 class="flex items-center justify-between border-t border-gray-100 pt-4 dark:border-dark-700"
+                data-ui="setting-row"
               >
                 <div>
                   <label class="font-medium text-gray-900 dark:text-white">{{
@@ -1585,6 +1589,7 @@
               <div
                 v-if="form.email_verify_enabled"
                 class="flex items-center justify-between border-t border-gray-100 pt-4 dark:border-dark-700"
+                data-ui="setting-row"
               >
                 <div>
                   <label class="font-medium text-gray-900 dark:text-white">{{
@@ -1622,6 +1627,7 @@
               <!-- TOTP 2FA -->
               <div
                 class="flex items-center justify-between border-t border-gray-100 pt-4 dark:border-dark-700"
+                data-ui="setting-row"
               >
                 <div>
                   <label class="font-medium text-gray-900 dark:text-white">{{
@@ -1649,7 +1655,7 @@
                 class="border-t border-gray-100 pt-4 dark:border-dark-700"
                 data-testid="passkey-settings"
               >
-                <div class="flex items-start justify-between gap-4">
+                <div class="flex items-start justify-between gap-4" data-ui="setting-row">
                   <div>
                     <label class="font-medium text-gray-900 dark:text-white">{{
                       t("admin.settings.security.passkey")
@@ -1706,6 +1712,7 @@
               <!-- 敏感操作 step-up 2FA -->
               <div
                 class="flex items-center justify-between border-t border-gray-100 pt-4 dark:border-dark-700"
+                data-ui="setting-row"
               >
                 <div>
                   <label class="font-medium text-gray-900 dark:text-white">{{
@@ -1721,6 +1728,7 @@
               <!-- 会话 IP/UA 绑定 -->
               <div
                 class="flex items-center justify-between border-t border-gray-100 pt-4 dark:border-dark-700"
+                data-ui="setting-row"
               >
                 <div>
                   <label class="font-medium text-gray-900 dark:text-white">{{
@@ -1768,7 +1776,7 @@
               </p>
             </div>
             <div class="space-y-5 p-6">
-              <div class="flex items-center justify-between gap-4">
+              <div class="flex items-center justify-between gap-4" data-ui="setting-row">
                 <div>
                   <label class="font-medium text-gray-900 dark:text-white">
                     {{ t("admin.settings.apiKeyAcl.trustForwardedIp") }}
@@ -1889,7 +1897,7 @@
                   </div>
                 </div>
 
-                <div class="flex items-center justify-between">
+                <div class="flex items-center justify-between" data-ui="setting-row">
                   <div>
                     <label class="font-medium text-gray-900 dark:text-white">{{
                       t("admin.settings.panelRateLimit.enabled")
@@ -1979,6 +1987,7 @@
 
                   <div
                     class="flex items-center justify-between border-t border-gray-100 pt-4 dark:border-dark-700"
+                    data-ui="setting-row"
                   >
                     <div>
                       <label class="font-medium text-gray-900 dark:text-white">{{
@@ -2047,7 +2056,7 @@
             </div>
             <div class="space-y-5 p-6">
               <!-- Enable Captcha -->
-              <div class="flex items-center justify-between">
+              <div class="flex items-center justify-between" data-ui="setting-row">
                 <div>
                   <label class="font-medium text-gray-900 dark:text-white">{{
                     t("admin.settings.captcha.enable")
@@ -2465,7 +2474,7 @@
               </p>
             </div>
             <div class="space-y-5 p-6">
-              <div class="flex items-center justify-between">
+              <div class="flex items-center justify-between" data-ui="setting-row">
                 <div>
                   <label class="font-medium text-gray-900 dark:text-white">{{
                     t("admin.settings.linuxdo.enable")
@@ -2590,7 +2599,7 @@
             <div class="space-y-6 p-6">
               <div class="grid grid-cols-1 gap-6 xl:grid-cols-2">
                 <div class="rounded-lg border border-gray-200 p-4 dark:border-dark-700">
-                  <div class="flex items-start justify-between gap-4">
+                  <div class="flex items-start justify-between gap-4" data-ui="setting-row">
                     <div>
                       <h3 class="font-medium text-gray-900 dark:text-white">
                         GitHub
@@ -2700,7 +2709,7 @@
                 </div>
 
                 <div class="rounded-lg border border-gray-200 p-4 dark:border-dark-700">
-                  <div class="flex items-start justify-between gap-4">
+                  <div class="flex items-start justify-between gap-4" data-ui="setting-row">
                     <div>
                       <h3 class="font-medium text-gray-900 dark:text-white">
                         Google
@@ -2809,7 +2818,7 @@
               </p>
             </div>
             <div class="space-y-5 p-6">
-              <div class="flex items-center justify-between">
+              <div class="flex items-center justify-between" data-ui="setting-row">
                 <div>
                   <label class="font-medium text-gray-900 dark:text-white">{{
                     t("admin.settings.wechatConnect.enabledLabel")
@@ -2832,7 +2841,7 @@
                   <div
                     class="rounded-lg border border-gray-200 p-4 dark:border-dark-700"
                   >
-                    <div class="flex items-start justify-between gap-4">
+                    <div class="flex items-start justify-between gap-4" data-ui="setting-row">
                       <div>
                         <h3 class="font-medium text-gray-900 dark:text-white">
                           {{ localText("PC 应用", "PC App") }}
@@ -2905,7 +2914,7 @@
                   <div
                     class="rounded-lg border border-gray-200 p-4 dark:border-dark-700"
                   >
-                    <div class="flex items-start justify-between gap-4">
+                    <div class="flex items-start justify-between gap-4" data-ui="setting-row">
                       <div>
                         <h3 class="font-medium text-gray-900 dark:text-white">
                           {{ localText("公众号", "Official Account") }}
@@ -2983,7 +2992,7 @@
                   <div
                     class="rounded-lg border border-gray-200 p-4 dark:border-dark-700"
                   >
-                    <div class="flex items-start justify-between gap-4">
+                    <div class="flex items-start justify-between gap-4" data-ui="setting-row">
                       <div>
                         <h3 class="font-medium text-gray-900 dark:text-white">
                           {{ localText("移动应用", "Mobile App") }}
@@ -3151,7 +3160,7 @@
               </p>
             </div>
             <div class="space-y-5 p-6">
-              <div class="flex items-center justify-between">
+              <div class="flex items-center justify-between" data-ui="setting-row">
                 <div>
                   <label class="font-medium text-gray-900 dark:text-white">{{
                     t("admin.settings.dingtalk.enable")
@@ -3273,6 +3282,7 @@
                   <div
                     v-if="form.dingtalk_connect_corp_restriction_policy === 'internal_only'"
                     class="flex items-center justify-between pt-4 border-t border-gray-100 dark:border-dark-700"
+                    data-ui="setting-row"
                   >
                     <div>
                       <label class="font-medium text-gray-900 dark:text-white">{{
@@ -3290,7 +3300,7 @@
                     v-if="form.dingtalk_connect_corp_restriction_policy === 'internal_only'"
                     class="pt-4 border-t border-gray-100 dark:border-dark-700 space-y-2"
                   >
-                    <div class="flex items-center justify-between">
+                    <div class="flex items-center justify-between" data-ui="setting-row">
                       <div>
                         <label class="font-medium text-gray-900 dark:text-white">{{
                           t("admin.settings.dingtalk.syncDisplayName")
@@ -3333,7 +3343,7 @@
                     v-if="form.dingtalk_connect_corp_restriction_policy === 'internal_only'"
                     class="pt-4 border-t border-gray-100 dark:border-dark-700 space-y-2"
                   >
-                    <div class="flex items-center justify-between">
+                    <div class="flex items-center justify-between" data-ui="setting-row">
                       <div>
                         <label class="font-medium text-gray-900 dark:text-white">{{
                           t("admin.settings.dingtalk.syncCorpEmail")
@@ -3379,7 +3389,7 @@
                     v-if="form.dingtalk_connect_corp_restriction_policy === 'internal_only'"
                     class="pt-4 border-t border-gray-100 dark:border-dark-700 space-y-2"
                   >
-                    <div class="flex items-center justify-between">
+                    <div class="flex items-center justify-between" data-ui="setting-row">
                       <div>
                         <label class="font-medium text-gray-900 dark:text-white">{{
                           t("admin.settings.dingtalk.syncDept")
@@ -3439,7 +3449,7 @@
               </p>
             </div>
             <div class="space-y-5 p-6">
-              <div class="flex items-center justify-between">
+              <div class="flex items-center justify-between" data-ui="setting-row">
                 <div>
                   <label class="font-medium text-gray-900 dark:text-white">{{
                     t("admin.settings.oidc.enable")
@@ -3742,6 +3752,7 @@
                 <div class="grid grid-cols-1 gap-6 lg:grid-cols-3">
                   <div
                     class="flex items-center justify-between rounded border border-gray-200 px-4 py-3 dark:border-dark-700"
+                    data-ui="setting-row"
                   >
                     <div>
                       <label class="font-medium text-gray-900 dark:text-white">
@@ -3756,6 +3767,7 @@
 
                   <div
                     class="flex items-center justify-between rounded border border-gray-200 px-4 py-3 dark:border-dark-700"
+                    data-ui="setting-row"
                   >
                     <div>
                       <label class="font-medium text-gray-900 dark:text-white">
@@ -3770,6 +3782,7 @@
 
                   <div
                     class="flex items-center justify-between rounded border border-gray-200 px-4 py-3 dark:border-dark-700"
+                    data-ui="setting-row"
                   >
                     <div>
                       <label class="font-medium text-gray-900 dark:text-white">
@@ -4070,7 +4083,7 @@
                       </tr>
                     </thead>
                     <tbody class="space-y-2">
-                      <tr v-for="p in platformQuotaPlatforms" :key="p" class="align-top">
+                      <tr v-for="p in platformQuotaPlatforms" :key="p" class="align-top" data-ui="quota-row">
                         <td class="pr-4 py-1">
                           <span class="font-mono text-xs text-gray-700 dark:text-gray-300">{{ p }}</span>
                         </td>
@@ -4127,6 +4140,7 @@
             <div class="space-y-6 p-6">
               <div
                 class="flex items-center justify-between rounded border border-gray-200 px-4 py-3 dark:border-dark-700"
+                data-ui="setting-row"
               >
                 <div>
                   <label class="font-medium text-gray-900 dark:text-white">
@@ -4145,7 +4159,7 @@
                   :key="authSource.source"
                   class="rounded-xl border border-gray-200 p-4 dark:border-dark-700"
                 >
-                  <div class="flex items-center justify-between gap-4">
+                  <div class="flex items-center justify-between gap-4" data-ui="setting-row">
                     <div>
                       <div class="font-medium text-gray-900 dark:text-white">
                         {{ authSource.title }}
@@ -4209,6 +4223,7 @@
 
                     <div
                       class="flex items-center justify-between rounded border border-gray-200 px-4 py-3 dark:border-dark-700"
+                      data-ui="setting-row"
                     >
                       <div>
                         <label
@@ -4405,7 +4420,7 @@
                             </tr>
                           </thead>
                           <tbody>
-                            <tr v-for="p in platformQuotaPlatforms" :key="`${authSource.source}-pq-${p}`" class="align-top">
+                            <tr v-for="p in platformQuotaPlatforms" :key="`${authSource.source}-pq-${p}`" class="align-top" data-ui="quota-row">
                               <td class="pr-4 py-1">
                                 <span class="font-mono text-xs text-gray-700 dark:text-gray-300">{{ p }}</span>
                               </td>
@@ -4614,7 +4629,7 @@
                   </p>
                 </div>
 
-                <div class="flex items-center justify-between">
+                <div class="flex items-center justify-between" data-ui="setting-row">
                   <div class="pr-4">
                     <label
                       class="block text-sm font-medium text-gray-700 dark:text-gray-300"
@@ -4782,7 +4797,7 @@
               </div>
 
               <template v-else>
-                <div class="flex items-center justify-between gap-4">
+                <div class="flex items-center justify-between gap-4" data-ui="setting-row">
                   <div>
                     <label class="font-medium text-gray-900 dark:text-white">
                       {{ t("admin.settings.upstreamBillingProbe.enabled") }}
@@ -4860,7 +4875,7 @@
                 {{ t("common.loading") }}
               </div>
               <template v-else>
-                <div class="flex items-center justify-between gap-4">
+                <div class="flex items-center justify-between gap-4" data-ui="setting-row">
                   <div>
                     <label class="font-medium text-gray-900 dark:text-white">
                       {{ t("admin.settings.ollamaCloudUsage.enabled") }}
@@ -4944,7 +4959,7 @@
                 {{ t("common.loading") }}
               </div>
               <template v-else>
-                <div class="flex items-center justify-between gap-4">
+                <div class="flex items-center justify-between gap-4" data-ui="setting-row">
                   <div>
                     <label class="font-medium text-gray-900 dark:text-white">
                       {{ t("admin.settings.opencodeGoUsage.enabled") }}
@@ -5025,7 +5040,7 @@
               </p>
             </div>
             <div class="space-y-5 p-6">
-              <div class="flex items-center justify-between">
+              <div class="flex items-center justify-between" data-ui="setting-row">
                 <div>
                   <label
                     class="text-sm font-medium text-gray-700 dark:text-gray-300"
@@ -5114,6 +5129,7 @@
               <div
                 v-if="!form.openai_advanced_scheduler_enabled"
                 class="flex items-center justify-between border-t border-gray-100 pt-5 dark:border-dark-700"
+                data-ui="setting-row"
               >
                 <div>
                   <label
@@ -5164,7 +5180,7 @@
                 </div>
               </div>
 
-              <div class="flex items-center justify-between border-t border-gray-100 pt-5 dark:border-dark-700">
+              <div class="flex items-center justify-between border-t border-gray-100 pt-5 dark:border-dark-700" data-ui="setting-row">
                 <div>
                   <label
                     class="text-sm font-medium text-gray-700 dark:text-gray-300"
@@ -5186,6 +5202,7 @@
               <div
                 v-if="form.openai_advanced_scheduler_enabled"
                 class="flex items-center justify-between border-t border-gray-100 pt-5 dark:border-dark-700"
+                data-ui="setting-row"
               >
                 <div>
                   <label
@@ -5205,6 +5222,7 @@
               <div
                 v-if="form.openai_advanced_scheduler_enabled"
                 class="flex items-center justify-between border-t border-gray-100 pt-5 dark:border-dark-700"
+                data-ui="setting-row"
               >
                 <div>
                   <label
@@ -5330,7 +5348,7 @@
                     {{ t("admin.settings.gatewayForwarding.grokDefaultTextModelHint") }}
                   </p>
                 </div>
-                <div class="flex items-center justify-between gap-5 md:min-w-72">
+                <div class="flex items-center justify-between gap-5 md:min-w-72" data-ui="setting-row">
                   <div>
                     <label class="text-sm font-medium text-gray-700 dark:text-gray-300">
                       {{ t("admin.settings.gatewayForwarding.grokCrossClientMap") }}
@@ -5423,7 +5441,7 @@
               </div>
 
               <!-- Fingerprint Unification -->
-              <div class="flex items-center justify-between">
+              <div class="flex items-center justify-between" data-ui="setting-row">
                 <div>
                   <label
                     class="text-sm font-medium text-gray-700 dark:text-gray-300"
@@ -5446,7 +5464,7 @@
               </div>
 
               <!-- Metadata Passthrough -->
-              <div class="flex items-center justify-between">
+              <div class="flex items-center justify-between" data-ui="setting-row">
                 <div>
                   <label
                     class="text-sm font-medium text-gray-700 dark:text-gray-300"
@@ -5467,7 +5485,7 @@
               </div>
 
               <!-- CCH Signing -->
-              <div class="flex items-center justify-between">
+              <div class="flex items-center justify-between" data-ui="setting-row">
                 <div>
                   <label
                     class="text-sm font-medium text-gray-700 dark:text-gray-300"
@@ -5482,7 +5500,7 @@
               </div>
 
               <!-- Claude OAuth System Prompt Injection -->
-              <div class="flex items-center justify-between">
+              <div class="flex items-center justify-between" data-ui="setting-row">
                 <div>
                   <label
                     class="text-sm font-medium text-gray-700 dark:text-gray-300"
@@ -5658,7 +5676,7 @@
                       <div
                         class="mt-3 grid gap-3 md:grid-cols-[minmax(0,1fr)_160px]"
                       >
-                        <div class="flex items-center justify-between gap-4">
+                        <div class="flex items-center justify-between gap-4" data-ui="setting-row">
                           <div>
                             <label
                               class="text-xs font-medium text-gray-600 dark:text-gray-300"
@@ -5713,7 +5731,7 @@
               </div>
 
               <!-- Anthropic Cache TTL 1h Injection -->
-              <div class="flex items-center justify-between">
+              <div class="flex items-center justify-between" data-ui="setting-row">
                 <div>
                   <label
                     class="text-sm font-medium text-gray-700 dark:text-gray-300"
@@ -5738,7 +5756,7 @@
               </div>
 
               <!-- messages cache_control 改写 -->
-              <div class="flex items-center justify-between">
+              <div class="flex items-center justify-between" data-ui="setting-row">
                 <div>
                   <label
                     class="text-sm font-medium text-gray-700 dark:text-gray-300"
@@ -5761,7 +5779,7 @@
               </div>
 
               <!-- 客户端 dateline 归一化（仅 Anthropic OAuth/SetupToken） -->
-              <div class="flex items-center justify-between">
+              <div class="flex items-center justify-between" data-ui="setting-row">
                 <div>
                   <label
                     class="text-sm font-medium text-gray-700 dark:text-gray-300"
@@ -5877,7 +5895,7 @@
               </div>
 
               <!-- Codex 版本号自动同步 -->
-              <div class="flex items-center justify-between">
+              <div class="flex items-center justify-between" data-ui="setting-row">
                 <div>
                   <label
                     class="text-sm font-medium text-gray-700 dark:text-gray-300"
@@ -5936,7 +5954,7 @@
               </div>
 
               <!-- Claude Code 版本号自动同步 -->
-              <div class="flex items-center justify-between">
+              <div class="flex items-center justify-between" data-ui="setting-row">
                 <div>
                   <label
                     class="text-sm font-medium text-gray-700 dark:text-gray-300"
@@ -5981,7 +5999,7 @@
             </div>
             <div class="space-y-5 p-6">
               <!-- Global Toggle -->
-              <div class="flex items-center justify-between">
+              <div class="flex items-center justify-between" data-ui="setting-row">
                 <div>
                   <label
                     class="text-sm font-medium text-gray-700 dark:text-gray-300"
@@ -6452,6 +6470,7 @@
               <!-- Backend Mode -->
               <div
                 class="flex items-center justify-between rounded-lg border border-amber-200 bg-amber-50 p-4 dark:border-amber-800 dark:bg-amber-900/20"
+                data-ui="setting-row"
               >
                 <div>
                   <h3 class="text-sm font-medium text-gray-900 dark:text-white">
@@ -6774,7 +6793,7 @@
               </div>
 
               <!-- Compact Home Page -->
-              <div class="flex items-center justify-between border-t border-gray-100 pt-4 dark:border-dark-700">
+              <div class="flex items-center justify-between border-t border-gray-100 pt-4 dark:border-dark-700" data-ui="setting-row">
                 <div>
                   <label class="font-medium text-gray-900 dark:text-white">{{
                     t("admin.settings.site.compactHome")
@@ -6789,6 +6808,7 @@
               <!-- Hide CCS Import Button -->
               <div
                 class="flex items-center justify-between border-t border-gray-100 pt-4 dark:border-dark-700"
+                data-ui="setting-row"
               >
                 <div>
                   <label class="font-medium text-gray-900 dark:text-white">{{
@@ -7231,7 +7251,7 @@
             </p>
           </div>
           <div class="space-y-5 p-6">
-            <div class="flex items-center justify-between">
+            <div class="flex items-center justify-between" data-ui="setting-row">
               <div>
                 <label class="text-sm font-medium text-gray-700 dark:text-gray-300">
                   {{ t('admin.settings.features.channelMonitor.enabled') }}
@@ -7304,7 +7324,7 @@
               </div>
 
               <div v-if="form.channel_monitor_mode === 'v2'" class="space-y-4">
-                <div class="flex items-start justify-between gap-4">
+                <div class="flex items-start justify-between gap-4" data-ui="setting-row">
                   <div class="min-w-0">
                     <p class="text-sm font-medium text-gray-900 dark:text-white">
                       {{ t('admin.settings.features.channelMonitor.hideThroughput') }}
@@ -7315,7 +7335,7 @@
                   </div>
                   <Toggle v-model="form.channel_monitor_hide_throughput" />
                 </div>
-                <div class="flex items-start justify-between gap-4">
+                <div class="flex items-start justify-between gap-4" data-ui="setting-row">
                   <div class="min-w-0">
                     <p class="text-sm font-medium text-gray-900 dark:text-white">
                       {{ t('admin.settings.features.channelMonitor.hideUserRanking') }}
@@ -7328,7 +7348,7 @@
                 </div>
               </div>
 
-              <div v-if="form.channel_monitor_mode === 'v1'" class="flex items-start justify-between gap-4">
+              <div v-if="form.channel_monitor_mode === 'v1'" class="flex items-start justify-between gap-4" data-ui="setting-row">
                 <div class="min-w-0">
                   <p class="text-sm font-medium text-gray-900 dark:text-white">
                     {{ t('admin.settings.features.channelMonitor.showQuota') }}
@@ -7362,7 +7382,7 @@
             </p>
           </div>
           <div class="space-y-5 p-6">
-            <div class="flex items-center justify-between">
+            <div class="flex items-center justify-between" data-ui="setting-row">
               <div>
                 <label class="text-sm font-medium text-gray-700 dark:text-gray-300">
                   {{ t('admin.settings.features.availableChannels.enabled') }}
@@ -7386,7 +7406,7 @@
             </p>
           </div>
           <div class="space-y-5 p-6">
-            <div class="flex items-center justify-between">
+            <div class="flex items-center justify-between" data-ui="setting-row">
               <div>
                 <label class="text-sm font-medium text-gray-700 dark:text-gray-300">
                   {{ t('admin.settings.features.modelPlaza.enabled') }}
@@ -7398,7 +7418,7 @@
               <Toggle v-model="form.model_plaza_enabled" />
             </div>
 
-            <div v-if="form.model_plaza_enabled" class="flex items-center justify-between">
+            <div v-if="form.model_plaza_enabled" class="flex items-center justify-between" data-ui="setting-row">
               <div>
                 <label class="text-sm font-medium text-gray-700 dark:text-gray-300">
                   {{ t('admin.settings.features.modelPlaza.requireAuth') }}
@@ -7466,7 +7486,7 @@
             </p>
           </div>
           <div class="space-y-5 p-6">
-            <div class="flex items-center justify-between gap-4">
+            <div class="flex items-center justify-between gap-4" data-ui="setting-row">
               <div>
                 <label class="text-sm font-medium text-gray-700 dark:text-gray-300">
                   {{ t('admin.settings.features.pluginManagement.enabled') }}
@@ -7499,7 +7519,7 @@
             </p>
           </div>
           <div class="space-y-5 p-6">
-            <div class="flex items-center justify-between">
+            <div class="flex items-center justify-between" data-ui="setting-row">
               <div>
                 <label class="text-sm font-medium text-gray-700 dark:text-gray-300">
                   {{ t('admin.settings.features.riskControl.enabled') }}
@@ -7523,7 +7543,7 @@
               </p>
             </div>
 
-            <div class="flex items-center justify-between">
+            <div class="flex items-center justify-between" data-ui="setting-row">
               <div>
                 <label class="text-sm font-medium text-gray-700 dark:text-gray-300">
                   {{ t('admin.settings.features.riskControl.cyberSessionBlock') }}
@@ -7549,7 +7569,7 @@
             </div>
 
             <div class="space-y-5 border-t border-gray-100 pt-5 dark:border-dark-700">
-              <div class="flex items-center justify-between gap-4">
+              <div class="flex items-center justify-between gap-4" data-ui="setting-row">
                 <div class="min-w-0">
                   <label class="text-sm font-medium text-gray-700 dark:text-gray-300">
                     {{ t('admin.settings.features.riskControl.refusalRecovery.cyberFailover') }}
@@ -7572,7 +7592,7 @@
                 {{ t('admin.settings.features.riskControl.refusalRecovery.cyberConflict') }}
               </div>
 
-              <div class="flex items-center justify-between gap-4 border-t border-gray-100 pt-5 dark:border-dark-700">
+              <div class="flex items-center justify-between gap-4 border-t border-gray-100 pt-5 dark:border-dark-700" data-ui="setting-row">
                 <div class="min-w-0">
                   <label class="text-sm font-medium text-gray-700 dark:text-gray-300">
                     {{ t('admin.settings.features.riskControl.refusalRecovery.enabled') }}
@@ -7600,7 +7620,7 @@
                   </p>
                 </div>
 
-                <div class="flex items-center justify-between gap-4">
+                <div class="flex items-center justify-between gap-4" data-ui="setting-row">
                   <div class="min-w-0">
                     <label class="text-sm font-medium text-gray-700 dark:text-gray-300">
                       {{ t('admin.settings.features.riskControl.refusalRecovery.rewrite') }}
@@ -7705,7 +7725,7 @@
             </p>
           </div>
           <div class="space-y-5 p-6">
-            <div class="flex items-center justify-between">
+            <div class="flex items-center justify-between" data-ui="setting-row">
               <div>
                 <label class="text-sm font-medium text-gray-700 dark:text-gray-300">
                   {{ t('admin.settings.features.affiliate.enabled') }}
@@ -7718,7 +7738,7 @@
             </div>
 
             <div v-if="form.affiliate_enabled" class="space-y-6">
-              <div class="flex items-center justify-between">
+              <div class="flex items-center justify-between" data-ui="setting-row">
                 <div>
                   <label class="text-sm font-medium text-gray-700 dark:text-gray-300">
                     {{ t('admin.settings.features.affiliate.adminRechargeRebate') }}
@@ -7953,6 +7973,7 @@
                 <!-- Chip showing the picked user; clicking it re-opens the search -->
                 <div
                   v-if="affiliateModal.selectedUser"
+                  data-ui="picked-chip"
                   class="flex items-center justify-between rounded-md border border-primary-200 bg-primary-50 px-3 py-2 dark:border-primary-700/50 dark:bg-primary-900/20"
                 >
                   <div class="text-sm">
@@ -8146,7 +8167,7 @@
             </div>
             <div class="space-y-4 p-6">
               <!-- Enable toggle -->
-              <div class="flex items-center justify-between">
+              <div class="flex items-center justify-between" data-ui="setting-row">
                 <div>
                   <label class="font-medium text-gray-900 dark:text-white">{{
                     t("admin.settings.payment.enabled")
@@ -8832,6 +8853,7 @@
               <!-- Use TLS Toggle -->
               <div
                 class="flex items-center justify-between border-t border-gray-100 pt-4 dark:border-dark-700"
+                data-ui="setting-row"
               >
                 <div>
                   <label class="font-medium text-gray-900 dark:text-white">{{
@@ -8926,7 +8948,7 @@
               </p>
             </div>
             <div class="px-6 py-6">
-              <div class="flex items-center justify-between gap-4">
+              <div class="flex items-center justify-between gap-4" data-ui="setting-row">
                 <div>
                   <label
                     class="mb-0 block text-sm font-medium text-gray-700 dark:text-gray-300"
@@ -8957,7 +8979,7 @@
               </p>
             </div>
             <div class="px-6 py-6 space-y-4">
-              <div class="flex items-center justify-between">
+              <div class="flex items-center justify-between" data-ui="setting-row">
                 <label
                   class="mb-0 block text-sm font-medium text-gray-700 dark:text-gray-300"
                   >{{ t("admin.settings.balanceNotify.enabled") }}</label
@@ -9017,7 +9039,7 @@
               </p>
             </div>
             <div class="px-6 py-6 space-y-4">
-              <div class="flex items-center justify-between">
+              <div class="flex items-center justify-between" data-ui="setting-row">
                 <label
                   class="mb-0 block text-sm font-medium text-gray-700 dark:text-gray-300"
                   >{{ t("admin.settings.quotaNotify.enabled") }}</label

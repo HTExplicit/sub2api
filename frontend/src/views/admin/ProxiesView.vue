@@ -1,6 +1,6 @@
 <template>
   <AppLayout>
-    <TablePageLayout>
+    <TablePageLayout data-ui="proxies-page mgmt-page">
       <template #filters>
         <div class="flex flex-wrap items-center gap-3">
           <!-- Left: Search + Filters -->
@@ -94,6 +94,7 @@
           :columns="columns"
           :data="proxies"
           :loading="loading"
+          :selected-keys="selectedProxyKeys"
           :server-side-sort="true"
           default-sort-key="id"
           default-sort-order="desc"
@@ -126,6 +127,7 @@
           <template #cell-protocol="{ value }">
             <span
               v-if="value"
+              data-ui="category-chip"
               :class="['badge', value.startsWith('socks5') ? 'badge-primary' : 'badge-gray']"
             >
               {{ value.toUpperCase() }}
@@ -393,6 +395,7 @@
     >
       <!-- Tab Switch -->
       <div
+        data-ui="proxy-create-tabs"
         class="mb-6 flex items-center justify-between gap-3 border-b border-gray-200 dark:border-dark-600"
       >
         <div class="flex min-w-0 shrink-0">
@@ -565,7 +568,7 @@
         </div>
 
         <!-- Parse Result -->
-        <div v-if="batchParseResult.total > 0" class="rounded-lg bg-gray-50 p-4 dark:bg-dark-700">
+        <div v-if="batchParseResult.total > 0" data-ui="proxy-parse-result" class="rounded-lg bg-gray-50 p-4 dark:bg-dark-700">
             <div class="flex items-center gap-4 text-sm">
               <div class="flex items-center gap-1.5">
               <Icon name="checkCircle" size="sm" :stroke-width="2" class="text-primary-500" />
@@ -865,7 +868,7 @@
       @close="closeQualityReportDialog"
     >
       <div v-if="qualityReport" class="space-y-4">
-        <div class="rounded-lg border border-gray-200 bg-gray-50 p-4 dark:border-dark-600 dark:bg-dark-700">
+        <div data-ui="proxy-quality-summary" class="rounded-lg border border-gray-200 bg-gray-50 p-4 dark:border-dark-600 dark:bg-dark-700">
           <div class="flex items-center justify-between gap-4">
             <div>
               <div class="text-sm text-gray-500 dark:text-gray-400">
@@ -1094,6 +1097,7 @@ const batchQualityChecking = ref(false)
 const proxyTableRef = ref<HTMLElement | null>(null)
 const {
   selectedSet: selectedProxyIds,
+  selectedIds: selectedProxyKeys,
   selectedCount,
   allVisibleSelected,
   isSelected,

@@ -1,6 +1,6 @@
 <template>
   <AppLayout>
-    <div class="space-y-4">
+    <div class="space-y-4" data-ui="plans-page">
       <!-- Actions -->
       <div class="flex items-center justify-end gap-2">
         <button @click="loadPlans" :disabled="plansLoading" class="btn btn-secondary" :title="t('common.refresh')">
@@ -12,7 +12,7 @@
       <!-- Plans Table -->
       <DataTable :columns="planColumns" :data="plans" :loading="plansLoading">
         <template #cell-name="{ value, row }">
-          <span class="text-sm font-medium" :class="getPlanNameClass(row.group_id)">{{ value }}</span>
+          <span class="text-sm font-medium" :class="getPlanNameClass(row.group_id)" data-ui="platform-text">{{ value }}</span>
         </template>
         <template #cell-group_id="{ value }">
           <span v-if="isGroupMissing(value)" class="text-sm">

@@ -83,6 +83,7 @@
           <div class="mt-2 grid grid-cols-1 gap-3 sm:grid-cols-2">
             <button
               type="button"
+              data-ui="option-card"
               @click="editOpenCodeAccountMode = 'zen'"
               :class="[
                 'flex items-center gap-3 rounded-lg border-2 p-3 text-left transition-all',
@@ -106,6 +107,7 @@
             </button>
             <button
               type="button"
+              data-ui="option-card"
               @click="editOpenCodeAccountMode = 'go'"
               :class="[
                 'flex items-center gap-3 rounded-lg border-2 p-3 text-left transition-all',

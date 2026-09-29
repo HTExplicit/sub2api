@@ -91,11 +91,11 @@ describe('StripePaymentInline amount contrast', () => {
 
   it('keeps the solid fill independent of the flat theme gradient token, even when the gradient is disabled', async () => {
     const header = await amountHeader()
-    const theme = postcss.parse(readFileSync(resolve(__dirname, '../../../styles/flat-theme.css'), 'utf8'))
+    const theme = postcss.parse(readFileSync(resolve(__dirname, '../../../styles/console/tokens.css'), 'utf8'))
     const headerElement = header.element as HTMLElement
     let flatGradient = ''
     theme.walkDecls('--theme-background-gradient-to-br', declaration => { flatGradient = declaration.value })
-    expect(flatGradient).toBe('linear-gradient(to right, var(--tw-gradient-from), var(--tw-gradient-from))')
+    expect(flatGradient).toBe('linear-gradient(var(--tw-gradient-from), var(--tw-gradient-from))')
     // No local gradient-token override: the shipped flat theme keeps ownership.
     expect(headerElement.style.getPropertyValue('--theme-background-gradient-to-br')).toBe('')
     const declarations = declarationsFor(header.element)

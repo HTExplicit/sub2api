@@ -1,6 +1,6 @@
 <template>
-  <div class="card p-4">
-    <div class="mb-4 flex items-center justify-between gap-3">
+  <div class="card p-4" data-ui="chart-card">
+    <div data-ui="dist-head" class="mb-4 flex items-center justify-between gap-3">
       <h3 class="text-sm font-semibold text-gray-900 dark:text-white">
         {{ t('admin.dashboard.groupDistribution') }}
       </h3>
@@ -37,7 +37,7 @@
       <div class="h-48 w-48 shrink-0">
         <Doughnut :data="chartData" :options="doughnutOptions" />
       </div>
-      <div class="max-h-48 w-full min-w-0 flex-1 overflow-auto">
+      <div data-ui="dist-table" class="max-h-48 w-full min-w-0 flex-1 overflow-auto">
         <table class="w-full text-xs">
           <thead>
             <tr class="text-gray-500 dark:text-gray-400">
@@ -52,6 +52,7 @@
           <tbody>
             <template v-for="group in displayGroupStats" :key="group.group_id">
               <tr
+                data-ui="dist-row"
                 class="border-t border-gray-100 transition-colors dark:border-dark-700"
                 :class="enableBreakdown && group.group_id > 0 ? 'cursor-pointer hover:bg-gray-50 dark:hover:bg-dark-700/40' : ''"
                 @click="enableBreakdown && group.group_id > 0 && toggleBreakdown('group', group.group_id)"
@@ -84,7 +85,7 @@
                 </td>
               </tr>
               <!-- User breakdown sub-rows -->
-              <tr v-if="expandedKey === `group-${group.group_id}`">
+              <tr v-if="expandedKey === `group-${group.group_id}`" data-ui="dist-group">
                 <td :colspan="distributionColspan" class="p-0">
                   <UserBreakdownSubTable
                     :items="breakdownItems"

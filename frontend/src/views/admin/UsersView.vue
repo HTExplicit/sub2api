@@ -1,6 +1,6 @@
 <template>
   <AppLayout>
-    <TablePageLayout>
+    <TablePageLayout data-ui="users-page mgmt-page">
       <!-- Single Row: Search, Filters, and Actions -->
       <template #filters>
         <div class="flex flex-wrap items-center gap-3">
@@ -338,7 +338,7 @@
           </template>
 
           <template #cell-role="{ value }">
-            <span :class="['badge', value === 'admin' ? 'badge-purple' : 'badge-gray']">
+            <span data-ui="category-chip" :class="['badge', value === 'admin' ? 'badge-purple' : 'badge-gray']">
               {{ t('admin.users.roles.' + value) }}
             </span>
           </template>

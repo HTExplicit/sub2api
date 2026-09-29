@@ -1,6 +1,6 @@
 <template>
   <AppLayout>
-    <TablePageLayout>
+    <TablePageLayout data-ui="audit-page">
       <!-- Filters -->
       <template #filters>
         <div class="card p-4 sm:p-6">
@@ -174,7 +174,7 @@
         </div>
       </div>
 
-      <div v-else-if="detail" class="space-y-5 py-2">
+      <div v-else-if="detail" class="space-y-5 py-2" data-ui="audit-detail">
         <!-- Hero: action + result at a glance -->
         <div class="rounded-2xl border border-gray-200 bg-gray-50/60 p-5 dark:border-dark-700 dark:bg-dark-900/60">
           <div class="flex flex-wrap items-center gap-3">

@@ -43,6 +43,7 @@
             :aria-pressed="form.provider === opt.value"
             class="flex items-center justify-center gap-2 rounded-lg border-2 px-3 py-2.5 text-sm font-medium transition-colors"
             :class="providerPickerClass(opt.value, form.provider === opt.value)"
+            data-ui="platform-text"
             @click="selectProvider(opt.value)"
           >
             <ProviderIcon :provider="opt.value" :size="18" />

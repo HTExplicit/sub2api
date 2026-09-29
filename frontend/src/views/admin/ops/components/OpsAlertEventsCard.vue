@@ -562,7 +562,7 @@ const empty = computed(() => events.value.length === 0 && !loading.value)
         {{ t('admin.ops.alertEvents.detail.empty') }}
       </div>
 
-      <div v-else class="space-y-5">
+      <div v-else class="space-y-5" data-ui="ops-dialog ops-alert-event">
         <div class="rounded-xl bg-gray-50 p-4 dark:bg-dark-900">
           <div class="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
             <div>

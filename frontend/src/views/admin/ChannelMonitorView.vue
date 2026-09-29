@@ -1,6 +1,6 @@
 <template>
   <AppLayout>
-    <div class="w-full min-w-0 space-y-6 pb-8">
+    <div class="w-full min-w-0 space-y-6 pb-8" data-ui="channel-monitor-page">
       <header
         class="page-header mb-0 rounded-3xl bg-white p-5 shadow-sm ring-1 ring-gray-900/5 dark:bg-dark-800 dark:ring-dark-700 sm:p-6"
       >
@@ -75,11 +75,11 @@
           </template>
 
           <template #cell-provider="{ row }">
-            <span class="inline-flex items-center rounded-md px-2 py-0.5 text-xs font-medium" :class="providerBadgeClass(row.provider)">
+            <span class="inline-flex items-center rounded-md px-2 py-0.5 text-xs font-medium" :class="providerBadgeClass(row.provider)" data-ui="platform-chip">
               {{ providerLabel(row.provider) }}
             </span>
             <!-- 三种检测模式并列展示，quota 系配额数据源与纯探活一眼可分 -->
-            <span class="ml-1 inline-flex items-center rounded-md px-2 py-0.5 text-xs font-medium" :class="checkModeBadgeClass(row.check_mode)">
+            <span class="ml-1 inline-flex items-center rounded-md px-2 py-0.5 text-xs font-medium" :class="checkModeBadgeClass(row.check_mode)" data-ui="category-chip">
               {{ checkModeLabel(row.check_mode) }}
             </span>
           </template>

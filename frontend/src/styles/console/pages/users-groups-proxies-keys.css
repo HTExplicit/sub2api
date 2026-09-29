@@ -1,0 +1,1909 @@
+/* Console theme · page group: management tables (owner: the management-tables page agent, P2, wave 2). Users (and every
+ * user dialog), groups, IP management (proxies), the admin API keys dialog, subscriptions, redeem codes, promo codes and
+ * announcements. Plain CSS after the area files; every selector starts with html.flat-theme (theme off = upstream) and is
+ * narrowed to a page root or to a dialog of these pages, so nothing here reaches another page.
+ *
+ * Source: the Experiential Labs console /models catalogue and its toolbar, the Add-model Modal (ui-el
+ * ref/console/REF-CONSOLE.md §6, §7.1, §8.3-§8.8, §8.11, §10; frames ref-models-default-1440-*, ref-models-add-model-1440-*,
+ * crops history-row, prompt-chip-btn, dialog-add-model, dialog-option-card, letter-avatar). Values are tokens.css' roles; where
+ * the reference falls below our floor the compliant token is used (REF-CONSOLE §13).
+ *
+ * Shared looks are not restated: buttons, fields and filter pills (style.css recipe block, controls.css), menus, tips and the
+ * dialog frame (overlays.css), tables, pagination, badges, identity and category chips (data.css §1-§6, including the
+ * data-ui~="platform-chip" / "category-chip" contract), the header and the gutter (shell.css), the approved two-line cells
+ * (behaviour.css B1.4-B1.10) and the icon-only actions of groups and proxies (behaviour.css B2.1, overlays.css 2.6).
+ *
+ * Owner decisions applied here (WAVE2, 2026-09-29): platform identity keeps its platform colours; a category (role, billing
+ * type, exclusive / public, protocol, code type, notify mode) is the neutral chip; colour otherwise only for status and the
+ * accent (links, positive CTAs, selection); decorative number colours and tinted identity cards are neutral.
+ *
+ * Page roots (data-ui on each view's <TablePageLayout>, one attribute each; "mgmt-page" is the group's shared token):
+ *   users-page, groups-page, proxies-page, subscriptions-page, redeem-page, promo-page, announcements-page.
+ * Dialogs are found by their own ids (#create-user-form, #balance-form, #create-proxy-form ...) or by the data-ui hook on
+ * their first content element (listed in the dialog sections below). */
+
+/* ================================================================== 1 · toolbar (the /models toolbar row) */
+
+/* One row where it fits (REF §7.1: search, then the controls, the actions at the right end), items 8px apart and 12px
+   between wrapped rows; the filters are as wide as their value, like the reference's filter pills, so every toolbar of the
+   group fits one row at 1440 (IP management's seven actions included). Below 640px the toolbar's layout is the phone
+   agent's (user.css), so every layout rule here starts at 640px. */
+@media (min-width: 640px) {
+  html.flat-theme [data-ui~="mgmt-page"] > .layout-section-fixed:first-child > div:first-child {
+    column-gap: 8px;
+    row-gap: 12px;
+  }
+
+  /* where the actions wrap (IP management below about 1400px, redeem codes on a tablet) the search and the filters stay
+     on the first row, level with the first row of actions, instead of centring between the action rows; the wrapped
+     actions keep to the right end (their group's own justify-end). The groups toolbar has no flex-wrap: a column below
+     1024px, upstream's lg:items-start (the same first-row start) from there. */
+  html.flat-theme [data-ui~="mgmt-page"] > .layout-section-fixed:first-child > div:first-child[class~="flex-wrap"] {
+    align-items: flex-start;
+  }
+
+  html.flat-theme [data-ui~="mgmt-page"] > .layout-section-fixed:first-child > div:first-child > div[class~="flex"]:not(.relative) {
+    gap: 8px;
+  }
+
+  /* the reference's search field: 288px from 640px (REF §8.4) */
+  html.flat-theme [data-ui~="mgmt-page"] > .layout-section-fixed:first-child :is(div[class~="sm:w-64"], div[class~="sm:max-w-64"]):has(> input.input) {
+    width: 288px;
+    max-width: 288px;
+    flex: 0 1 288px;
+  }
+
+  /* filters: a Select as wide as its value (the dropdown keeps its own 200px minimum) */
+  html.flat-theme [data-ui~="mgmt-page"] > .layout-section-fixed:first-child div[class~="relative"]:has(> button.select-trigger),
+  html.flat-theme [data-ui~="mgmt-page"] > .layout-section-fixed:first-child div:is([class~="sm:w-32"], [class~="sm:w-36"], [class~="sm:w-40"], [class~="sm:w-44"], [class~="sm:w-48"]):has(> div > button.select-trigger) {
+    width: auto;
+    flex: none;
+  }
+}
+
+@media (min-width: 768px) {
+  html.flat-theme [data-ui~="mgmt-page"] > .layout-section-fixed:first-child div[class~="md:w-64"]:has(> input.input) {
+    width: 288px;
+    flex: 0 1 288px;
+  }
+}
+
+/* The three search fields upstream draws without a glyph (redeem codes, promo codes, announcements: a bare .input in a
+   flex-1 sm:max-w-64 box) are the reference search the other six pages have (controls.css 3.2): the 13px Lucide search
+   glyph (stroke 1.8, as Icon.vue draws it) 10px in and centred, in --ctl-glyph through a mask so it follows the theme,
+   the text from 32px. At every width, like the other pages' template glyph (the phone layout stays user.css'). */
+html.flat-theme :is([data-ui~="redeem-page"], [data-ui~="promo-page"], [data-ui~="announcements-page"]) > .layout-section-fixed:first-child > div:first-child > div[class~="sm:max-w-64"]:has(> input.input) {
+  position: relative;
+}
+
+html.flat-theme :is([data-ui~="redeem-page"], [data-ui~="promo-page"], [data-ui~="announcements-page"]) > .layout-section-fixed:first-child > div:first-child > div[class~="sm:max-w-64"]:has(> input.input)::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 0.625rem;
+  width: 0.8125rem;
+  height: 0.8125rem;
+  transform: translateY(-50%);
+  background-color: rgb(var(--ctl-glyph));
+  -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='11' cy='11' r='8'/%3E%3Cpath d='m21 21-4.3-4.3'/%3E%3C/svg%3E") center / 100% 100% no-repeat;
+  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='11' cy='11' r='8'/%3E%3Cpath d='m21 21-4.3-4.3'/%3E%3C/svg%3E") center / 100% 100% no-repeat;
+  pointer-events: none;
+}
+
+html.flat-theme :is([data-ui~="redeem-page"], [data-ui~="promo-page"], [data-ui~="announcements-page"]) > .layout-section-fixed:first-child > div:first-child > div[class~="sm:max-w-64"] > input.input {
+  padding-left: 2rem;
+}
+
+/* Icon-only buttons (refresh, the subscription guide) are the reference's square: 30 x 30 (REF §8.3 icon buttons). They
+   are found by their glyph: a button whose label is a bare text node also has the glyph as its only element child (one
+   :has() with a child argument on a button under the page root; `button` keeps the specificity of the former pair). */
+@media (min-width: 640px) {
+  html.flat-theme [data-ui~="mgmt-page"] > .layout-section-fixed:first-child button.btn:has(> svg:only-child:is(.lucide-rotate-cw, .lucide-circle-help)) {
+    width: var(--ui-control-h);
+    min-width: var(--ui-control-h);
+    padding-left: 0;
+    padding-right: 0;
+    justify-content: center;
+  }
+}
+
+/* ================================================================== 2 · row actions (every table of the group) */
+
+/* The reference's icon button (REF §8.3: 28px, radius 6, muted; the subtle fill and ink on hover), 15px glyphs; a delete
+   or revoke action turns danger on hover, a disable / reset action warning (upstream's red / orange hovers are semantic;
+   its blue, green, purple, cyan and primary hovers are decoration and read as ink). With a mouse or trackpad the label is
+   kept for screen readers and shows as a tip left of the button on hover and keyboard focus (behaviour B2.1 and overlays
+   2.6 for groups, proxies, users, subscriptions and redeem codes); touch keeps the label beside its glyph, one line, so a
+   row never grows for its actions. Announcements and promo codes already have glyph-only buttons with titles. */
+html.flat-theme [data-ui~="mgmt-page"] .table-wrapper td[data-column="actions"] > div {
+  gap: 2px;
+}
+
+html.flat-theme [data-ui~="mgmt-page"] .table-wrapper td[data-column="actions"] > div > * + * {
+  margin-left: 0;
+}
+
+html.flat-theme [data-ui~="mgmt-page"] .table-wrapper td[data-column="actions"] button[class~="flex-col"] {
+  position: relative;
+  flex-direction: row;
+  justify-content: center;
+  gap: 4px;
+  min-width: 28px;
+  min-height: 28px;
+  margin-block: -2px;
+  padding: 0 6px;
+  border-radius: var(--ui-radius-md);
+  background-color: transparent;
+  color: rgb(var(--ui-muted));
+  transition: color var(--ui-duration) var(--ui-ease), background-color var(--ui-duration) var(--ui-ease);
+}
+
+html.flat-theme [data-ui~="mgmt-page"] .table-wrapper td[data-column="actions"] button[class~="flex-col"]:not(:disabled):is(:hover, [class~="bg-gray-100"]) {
+  background-color: rgb(var(--ui-subtle));
+  color: rgb(var(--ui-ink));
+}
+
+html.flat-theme [data-ui~="mgmt-page"] .table-wrapper td[data-column="actions"] button[class~="flex-col"][class*="hover:text-red-"]:not(:disabled):hover {
+  background-color: rgb(var(--ui-danger-soft));
+  color: rgb(var(--ui-danger));
+}
+
+html.flat-theme [data-ui~="mgmt-page"] .table-wrapper td[data-column="actions"] button[class~="flex-col"][class*="hover:text-orange-"]:not(:disabled):hover {
+  background-color: rgb(var(--ui-warning-soft));
+  color: rgb(var(--ui-warning));
+}
+
+html.flat-theme [data-ui~="mgmt-page"] .table-wrapper td[data-column="actions"] button[class~="flex-col"]:focus-visible {
+  outline: 2px solid rgb(var(--ui-focus));
+  outline-offset: 2px;
+}
+
+html.flat-theme [data-ui~="mgmt-page"] .table-wrapper td[data-column="actions"] button[class~="flex-col"]:disabled {
+  opacity: 0.55;
+}
+
+html.flat-theme [data-ui~="mgmt-page"] .table-wrapper td[data-column="actions"] button[class~="flex-col"] > svg {
+  width: 15px;
+  height: 15px;
+  flex-shrink: 0;
+}
+
+html.flat-theme [data-ui~="mgmt-page"] .table-wrapper td[data-column="actions"] button[class~="flex-col"] > span[class~="text-xs"] {
+  font-size: 12px;
+  line-height: 18px;
+  white-space: nowrap;
+}
+
+/* with a mouse or trackpad the labelled buttons are the 28px square (the label is the tip: behaviour B2.1 hides and places
+   it, overlays.css 2.6 draws it, for every table of this group) */
+@media (hover: hover) and (pointer: fine) {
+  html.flat-theme [data-ui~="mgmt-page"] .table-wrapper td[data-column="actions"] button[class~="flex-col"]:has(> span[class~="text-xs"]) {
+    width: 28px;
+    padding: 0;
+  }
+}
+
+/* Glyph-only buttons with a title (announcements, promo codes): the same 28px icon button. */
+html.flat-theme :is([data-ui~="announcements-page"], [data-ui~="promo-page"]) .table-wrapper td[data-column="actions"] button[class~="flex-col"] {
+  width: 28px;
+  padding: 0;
+}
+
+/* ================================================================== 3 · shared cell parts */
+
+/* Names: the reference's first-column name, 13 / 600 ink (REF §5 模型名). */
+html.flat-theme :is([data-ui~="users-page"] td[data-column="email"] > div > span, [data-ui~="groups-page"] td[data-column="name"] > span, [data-ui~="proxies-page"] td[data-column="name"] > span, [data-ui~="announcements-page"] td[data-column="title"] > div > div:first-child > span) {
+  font-weight: 600;
+  color: rgb(var(--ui-ink));
+}
+
+/* A user's letter avatar is identity, not a state: the reference's letter tile (REF §8.8: a small square, the control
+   line, the subtle fill, Geist Mono 600 in ink-soft) instead of upstream's accent-tinted circle; the letter stays. Users
+   table (email) and subscriptions table (user). */
+html.flat-theme :is([data-ui~="users-page"] td[data-column="email"], [data-ui~="subscriptions-page"] td[data-column="user"]) > div > div[class~="rounded-full"][class~="bg-primary-100"] {
+  flex: none;
+  width: 1.5rem;
+  height: 1.5rem;
+  border: 1px solid rgb(var(--ui-line-strong));
+  border-radius: var(--ui-radius-sm);
+  background-color: rgb(var(--ui-subtle));
+}
+
+html.flat-theme :is([data-ui~="users-page"] td[data-column="email"], [data-ui~="subscriptions-page"] td[data-column="user"]) > div > div[class~="rounded-full"][class~="bg-primary-100"] > span {
+  font: 600 11px/1 var(--ui-font-mono);
+  color: rgb(var(--ui-ink-soft));
+}
+
+/* Status as the reference's status dot (REF §8.8: 6px dot, 12px ink-soft label, 6px apart; StatusBadge's look), for the
+   hand-built dot of the users table. */
+html.flat-theme [data-ui~="users-page"] td[data-column="status"] > div {
+  gap: 6px;
+}
+
+html.flat-theme [data-ui~="users-page"] td[data-column="status"] > div > span:first-child {
+  width: 6px;
+  height: 6px;
+  background-color: rgb(var(--ui-dot-idle));
+}
+
+html.flat-theme [data-ui~="users-page"] td[data-column="status"] > div > span:first-child[class~="bg-green-500"] {
+  background-color: rgb(var(--ui-dot-ok));
+}
+
+html.flat-theme [data-ui~="users-page"] td[data-column="status"] > div > span:first-child[class~="bg-red-500"] {
+  background-color: rgb(var(--ui-dot-bad));
+}
+
+html.flat-theme [data-ui~="users-page"] td[data-column="status"] > div > span:last-child {
+  color: rgb(var(--ui-ink-soft));
+  font-size: 12px;
+  line-height: 18px;
+}
+
+/* Figures in Geist Mono tabular (REF §8.7 numeric cells), for the columns data.css does not name. */
+html.flat-theme :is([data-ui~="redeem-page"] td[data-column="value"] > span, [data-ui~="promo-page"] td[data-column="usage"] > span, [data-ui~="groups-page"] td[data-column="usage"] span[class~="font-medium"], [data-ui~="groups-page"] td[data-column="account_count"] span[class~="font-medium"], [data-ui~="groups-page"] td[data-column="billing_type"] span:is([class*="text-emerald-"], [class*="text-amber-"], [class*="text-red-"], [class~="text-gray-400"], [class~="text-gray-600"]):not([data-ui])) {
+  font-family: var(--ui-font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+html.flat-theme :is([data-ui~="redeem-page"] td[data-column="value"] > span, [data-ui~="promo-page"] td[data-column="usage"] > span) {
+  font-size: 12.5px;
+}
+
+/* Copy buttons beside a code (redeem codes, promo codes, proxy addresses): a quiet glyph, faint to ink on hover; the
+   copied check keeps the success colour. */
+html.flat-theme :is([data-ui~="redeem-page"], [data-ui~="promo-page"]) td[data-column="code"] > div > button:not([class~="text-green-500"]),
+html.flat-theme [data-ui~="proxies-page"] td:is([data-column="address"], [data-column="auth"]) button {
+  color: rgb(var(--ui-faint));
+  transition: color var(--ui-duration) var(--ui-ease);
+}
+
+html.flat-theme :is([data-ui~="redeem-page"], [data-ui~="promo-page"]) td[data-column="code"] > div > button:not([class~="text-green-500"]):hover,
+html.flat-theme [data-ui~="proxies-page"] td:is([data-column="address"], [data-column="auth"]) button:hover {
+  color: rgb(var(--ui-ink));
+}
+
+html.flat-theme :is([data-ui~="redeem-page"], [data-ui~="promo-page"]) td[data-column="code"] > div > button[class~="text-green-500"] {
+  color: rgb(var(--ui-success));
+}
+
+html.flat-theme :is([data-ui~="redeem-page"], [data-ui~="promo-page"]) td[data-column="code"] > div > button svg {
+  width: 14px;
+  height: 14px;
+}
+
+/* codes themselves: Geist Mono 12.5 ink (REF §8.7 model id column) */
+html.flat-theme :is([data-ui~="redeem-page"], [data-ui~="promo-page"]) td[data-column="code"] code {
+  font-size: 12.5px;
+  color: rgb(var(--ui-ink));
+}
+
+/* ================================================================== 4 · users table */
+
+/* Balance: the amount is a link to the balance history (the dashed underline in the control line, ink on hover); 「充值」
+   under it (B1.8) is the reference's link, the accent text at 12px, underlined on hover (upstream's hover fill goes). */
+html.flat-theme [data-ui~="users-page"] td[data-column="balance"] div[class~="group"] > button {
+  color: rgb(var(--ui-ink));
+  font-weight: 500;
+  text-decoration-color: rgb(var(--ui-line-focus));
+  text-underline-offset: 3px;
+}
+
+html.flat-theme [data-ui~="users-page"] td[data-column="balance"] div[class~="group"] > button:hover {
+  color: rgb(var(--ui-ink));
+  text-decoration-color: currentColor;
+}
+
+html.flat-theme [data-ui~="users-page"] td[data-column="balance"] > div > button {
+  padding-top: 0;
+  padding-bottom: 0;
+  background-color: transparent;
+  color: var(--ui-link);
+  font-size: 12px;
+  line-height: 18px;
+  font-weight: 500;
+}
+
+html.flat-theme [data-ui~="users-page"] td[data-column="balance"] > div > button:hover {
+  background-color: transparent;
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 2px;
+}
+
+/* Groups (optional column): exclusive / public are categories, so the shield, globe and count are neutral. */
+html.flat-theme [data-ui~="users-page"] td[data-column="groups"] svg {
+  color: rgb(var(--ui-faint));
+}
+
+html.flat-theme [data-ui~="users-page"] td[data-column="groups"] span[class~="font-medium"] {
+  color: rgb(var(--ui-ink));
+  font-family: var(--ui-font-mono);
+}
+
+/* 「无订阅」 (optional subscriptions column): the reference's neutral value chip (4px radius, subtle fill, muted). */
+html.flat-theme [data-ui~="users-page"] td[data-column="subscriptions"] > span[class~="rounded-md"] {
+  gap: 4px;
+  padding: 1px 6px;
+  border-radius: var(--ui-radius-sm);
+  background-color: rgb(var(--ui-subtle));
+  color: rgb(var(--ui-muted));
+  font-size: 11px;
+  line-height: 16px;
+}
+
+html.flat-theme [data-ui~="users-page"] td[data-column="subscriptions"] > span[class~="rounded-md"] > svg {
+  width: 12px;
+  height: 12px;
+}
+
+/* ================================================================== 5 · groups table */
+
+/* Billing type: the category chip (data.css) and, for a subscription group, its limits in 12px muted lines. */
+html.flat-theme [data-ui~="groups-page"] td[data-column="billing_type"] > div > div {
+  color: rgb(var(--ui-muted));
+  font-size: 12px;
+  line-height: 16px;
+}
+
+/* Accounts: 「可用 / 限流 / 总量」 as label + figure lines (12px, the figure Geist Mono ink; the rate-limited figure keeps the
+   warning colour); upstream's grey 「个账号」 boxes are plain unit text (a unit is not a chip). */
+html.flat-theme [data-ui~="groups-page"] td[data-column="account_count"] > div {
+  font-size: 12px;
+  line-height: 16px;
+}
+
+html.flat-theme [data-ui~="groups-page"] td[data-column="account_count"] > div > div > span:first-child {
+  color: rgb(var(--ui-muted));
+}
+
+html.flat-theme [data-ui~="groups-page"] td[data-column="account_count"] > div > div > span[class~="font-medium"]:not([class*="text-amber-"]) {
+  color: rgb(var(--ui-ink));
+}
+
+html.flat-theme [data-ui~="groups-page"] td[data-column="account_count"] > div > div > span[class~="font-medium"][class*="text-amber-"] {
+  color: rgb(var(--ui-warning));
+}
+
+html.flat-theme [data-ui~="groups-page"] td[data-column="account_count"] > div > div > span[class~="inline-flex"] {
+  margin-left: 4px;
+  padding: 0;
+  border-radius: 0;
+  background-color: transparent;
+  color: rgb(var(--ui-muted));
+  font-weight: 400;
+}
+
+/* Usage: 「今日 / 昨日 / 累计」 lines, 12 / 16 (the reference's fine print keeps these stacked figures as tight as
+   upstream's, so the row does not grow); the label muted, the figure Geist Mono ink-soft. */
+html.flat-theme [data-ui~="groups-page"] td[data-column="usage"] > div > div {
+  font-size: 12px;
+  line-height: 16px;
+}
+
+html.flat-theme [data-ui~="groups-page"] td[data-column="usage"] > div > div > span:first-child {
+  color: rgb(var(--ui-muted));
+}
+
+html.flat-theme [data-ui~="groups-page"] td[data-column="usage"] span[class~="font-medium"] {
+  color: rgb(var(--ui-ink-soft));
+}
+
+/* ================================================================== 6 · IP management (proxies) table */
+
+/* Address: the value chip (style.css .code) at the reference's Mono 12; the copy and format glyphs under it (B1.10). */
+html.flat-theme [data-ui~="proxies-page"] td[data-column="address"] code {
+  padding: 1px 6px;
+  font-size: 12px;
+  line-height: 18px;
+}
+
+/* Credentials: the user name in ink-soft, the masked password in Geist Mono muted. */
+html.flat-theme [data-ui~="proxies-page"] td[data-column="auth"] > div > div > span:first-child:not([class~="font-mono"]) {
+  color: rgb(var(--ui-ink-soft));
+}
+
+html.flat-theme [data-ui~="proxies-page"] td[data-column="auth"] span[class~="font-mono"] {
+  color: rgb(var(--ui-muted));
+}
+
+/* Accounts using the proxy: the reference's prompt chip (REF §8.7 /logs: a chip button, Geist Mono on the subtle fill,
+   radius 4, 2 / 6 inset, ink on hover); the zero count is the same chip, not a button. The count is a figure, not a
+   status: no accent. */
+html.flat-theme [data-ui~="proxies-page"] td[data-column="account_count"] > :is(button, span)[class~="inline-flex"] {
+  padding: 2px 6px;
+  border-radius: var(--ui-radius-sm);
+  background-color: rgb(var(--ui-subtle));
+  color: rgb(var(--ui-ink-soft));
+  font-family: var(--ui-font-mono);
+  font-size: 11px;
+  line-height: 16px;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  transition: color var(--ui-duration) var(--ui-ease), background-color var(--ui-duration) var(--ui-ease);
+}
+
+html.flat-theme [data-ui~="proxies-page"] td[data-column="account_count"] > span[class~="inline-flex"] {
+  color: rgb(var(--ui-muted));
+}
+
+html.flat-theme [data-ui~="proxies-page"] td[data-column="account_count"] > button[class~="inline-flex"]:hover {
+  background-color: rgb(var(--ui-hover));
+  color: rgb(var(--ui-ink));
+}
+
+/* Latency and quality: the status chips at their own width (upstream's column stretched them into bars) and the latency
+   in the reference's lowercase unit (「711ms」, REF §10.6). */
+html.flat-theme [data-ui~="proxies-page"] td[data-column="latency"] > div {
+  align-items: flex-start;
+}
+
+html.flat-theme [data-ui~="proxies-page"] td[data-column="latency"] > div > span.badge {
+  text-transform: none;
+  font-variant-numeric: tabular-nums;
+}
+
+html.flat-theme [data-ui~="proxies-page"] td[data-column="latency"] > div > div {
+  gap: 6px;
+  color: rgb(var(--ui-muted));
+  font-size: 12px;
+  line-height: 18px;
+}
+
+/* Expiry and created: 12px, the date ink-soft, 「剩余 N 天」 muted unless it is a warning / danger chip. */
+html.flat-theme [data-ui~="proxies-page"] td[data-column="expiry"] > div > span:first-child,
+html.flat-theme [data-ui~="proxies-page"] td[data-column="created_at"] > span {
+  color: rgb(var(--ui-ink-soft));
+  font-variant-numeric: tabular-nums;
+}
+
+html.flat-theme [data-ui~="proxies-page"] td[data-column="expiry"] > div > span[class~="text-gray-500"],
+html.flat-theme [data-ui~="proxies-page"] td[data-column="expiry"] > span {
+  color: rgb(var(--ui-muted));
+}
+
+/* The copy-format menu (address cell) sets each format on one line where it fits. Upstream's 360px cap broke a copyable
+   proxy URL after "bp-" or inside the address; 34rem holds a SOCKS5 URL with credentials, and the value still wraps
+   anywhere as the fallback. The rows' names are the mono label, the values Geist Mono ink-soft. */
+html.flat-theme [data-ui~="proxies-page"] .table-wrapper td [role="menu"][class~="max-w-[360px]"] {
+  max-width: min(34rem, calc(100vw - 2rem));
+}
+
+html.flat-theme [data-ui~="proxies-page"] td[data-column="address"] [role="menu"] > button > span:first-child {
+  color: rgb(var(--ui-muted));
+  font-size: 11px;
+  line-height: 16px;
+}
+
+html.flat-theme [data-ui~="proxies-page"] td[data-column="address"] [role="menu"] > button > span:last-child {
+  color: rgb(var(--ui-ink-soft));
+  font-size: 12px;
+  line-height: 18px;
+}
+
+html.flat-theme [data-ui~="proxies-page"] td[data-column="address"] [role="menu"] > button:hover > span:last-child {
+  color: rgb(var(--ui-ink));
+}
+
+/* ================================================================== 7 · subscriptions table */
+
+/* Usage: a label, the reference's usage bar (8px capsule on the subtle track, REF §8.14; the fill keeps its status
+   colour), the amounts in Geist Mono; the reset line muted (upstream's blue is decoration). Unlimited is the neutral
+   chip (the gradient goes). */
+html.flat-theme [data-ui~="subscriptions-page"] td[data-column="usage"] :is(.usage-label, .usage-amount) {
+  color: rgb(var(--ui-muted));
+  font-size: 12px;
+}
+
+html.flat-theme [data-ui~="subscriptions-page"] td[data-column="usage"] .usage-amount {
+  color: rgb(var(--ui-ink-soft));
+  font-family: var(--ui-font-mono);
+}
+
+html.flat-theme [data-ui~="subscriptions-page"] td[data-column="usage"] .usage-row div[class~="h-1.5"][class~="flex-1"] {
+  height: 6px;
+  background-color: rgb(var(--ui-subtle));
+}
+
+html.flat-theme [data-ui~="subscriptions-page"] td[data-column="usage"] .reset-info {
+  color: rgb(var(--ui-muted));
+  font-size: 11px;
+}
+
+html.flat-theme [data-ui~="subscriptions-page"] td[data-column="usage"] div[class~="bg-gradient-to-r"] {
+  display: inline-flex;
+  gap: 6px;
+  padding: 2px 8px;
+  border: 1px solid rgb(var(--ui-line));
+  border-radius: var(--ui-radius-sm);
+  background: rgb(var(--ui-subtle));
+}
+
+html.flat-theme [data-ui~="subscriptions-page"] td[data-column="usage"] div[class~="bg-gradient-to-r"] > span {
+  color: rgb(var(--ui-ink-soft));
+  font-size: 12px;
+  line-height: 18px;
+}
+
+html.flat-theme [data-ui~="subscriptions-page"] td[data-column="user"] a {
+  font-weight: 600;
+  color: rgb(var(--ui-ink));
+}
+
+/* Selection bar (above the table while rows are selected): the reference's tray language, neutral (REF §8.12: surface,
+   1px line, radius 8, 8 / 16 inset; the count ink-soft 12.5), not upstream's accent-tinted box. */
+html.flat-theme [data-ui~="subscriptions-page"] [data-test="subscription-bulk-actions"] {
+  padding: 8px 12px 8px 16px;
+  border: 1px solid rgb(var(--ui-line));
+  border-radius: var(--ui-radius-lg);
+  background-color: rgb(var(--ui-surface));
+}
+
+html.flat-theme [data-ui~="subscriptions-page"] [data-test="subscription-bulk-actions"] > div > span:first-child {
+  color: rgb(var(--ui-ink-soft));
+  font-size: 12.5px;
+  font-weight: 500;
+}
+
+html.flat-theme [data-ui~="subscriptions-page"] [data-test="subscription-bulk-actions"] > p {
+  color: rgb(var(--ui-muted));
+}
+
+/* ================================================================== 7b · redeem codes: the selection strip */
+
+/* While codes are selected upstream puts an accent-tinted box above the pagination. It becomes a strip of the table card
+   between the rows and the pagination footer (the reference's compare tray takes the space under the list, REF §8.12):
+   the card's 1px sides, the surface, 8 / 16 inset; the count 12.5 ink-soft, 「清空选择」 the accent link, the batch
+   action the default button (decision: a tray's actions are neutral). */
+html.flat-theme [data-ui~="redeem-page"] > .layout-section-fixed:last-child > div[class~="bg-primary-50"]:first-child {
+  margin: 0;
+  padding: 7px 12px 7px 16px;
+  border: 1px solid rgb(var(--ui-line));
+  border-bottom-width: 0;
+  border-radius: 0;
+  background-color: rgb(var(--ui-surface));
+}
+
+html.flat-theme [data-ui~="redeem-page"] > .layout-section-fixed:last-child > div[class~="bg-primary-50"]:first-child > span {
+  color: rgb(var(--ui-ink-soft));
+  font-size: 12.5px;
+  line-height: 18.75px;
+  font-weight: 500;
+}
+
+html.flat-theme [data-ui~="redeem-page"] > .layout-section-fixed:last-child > div[class~="bg-primary-50"]:first-child > div > button:not(.btn) {
+  color: var(--ui-link);
+  font-size: 12.5px;
+  font-weight: 600;
+}
+
+html.flat-theme [data-ui~="redeem-page"] > .layout-section-fixed:last-child > div[class~="bg-primary-50"]:first-child > div > button:not(.btn):hover {
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+html.flat-theme [data-ui~="redeem-page"] > .layout-section-fixed:last-child > div[class~="bg-primary-50"]:first-child > div > .btn.btn-primary {
+  border-color: rgb(var(--ui-line-strong));
+  background-color: rgb(var(--ui-surface));
+  color: rgb(var(--ui-ink));
+}
+
+html.flat-theme [data-ui~="redeem-page"] > .layout-section-fixed:last-child > div[class~="bg-primary-50"]:first-child > div > .btn.btn-primary:hover {
+  background-color: rgb(var(--ui-subtle));
+}
+
+/* ================================================================== 8 · announcements table */
+
+/* Title and its meta line (「#3 · 2026/09/04 21:41:44」 in 12px muted, figures in Geist Mono); the time window as label +
+   value lines (the label muted, the value ink-soft). */
+html.flat-theme [data-ui~="announcements-page"] td[data-column="title"] > div > div:last-child {
+  color: rgb(var(--ui-muted));
+  font-family: var(--ui-font-mono);
+  font-size: 11px;
+  line-height: 16.5px;
+}
+
+html.flat-theme [data-ui~="announcements-page"] td[data-column="timeRange"] > div {
+  color: rgb(var(--ui-ink-soft));
+}
+
+html.flat-theme [data-ui~="announcements-page"] td[data-column="timeRange"] span[class~="font-medium"] {
+  color: rgb(var(--ui-muted));
+  font-weight: 400;
+}
+
+/* ================================================================== 9 · dialogs: shared parts */
+
+/* The dialog frame (scrim, panel, header, close, footer) is overlays.css' reference Modal; here the content these pages put
+   in it, in the Modal's texture (REF §8.11 Add-model: 16 / 18 body, option cards on the grouped fill, 28px icon squares,
+   13/600 titles, 12.5 muted text). Dialog hooks (data-ui on the first content element, one attribute each):
+   UserApiKeysModal user-api-keys, UserAllowedGroupsModal user-allowed-groups, UserBalanceHistoryModal user-balance-history,
+   UserPlatformQuotaModal user-platform-quota, GroupReplaceModal group-replace, UserAttributesConfigModal
+   user-attributes-config, GroupRateMultipliersModal group-rate-multipliers, GroupRPMOverridesModal group-rpm-overrides,
+   AnnouncementReadStatusDialog announcement-read-status, AnnouncementTargetingEditor announcement-targeting, the proxy
+   dialog's tab strip proxy-create-tabs, the redeem result's body redeem-result-body, the subscription guide's title
+   subscription-guide-title; and, so that no rule needs a :has() anchor above what it styles (PERF, 2026-09-29), the
+   redeem result's header redeem-result-head, the generate-codes form redeem-generate-form, quick add's parse result
+   proxy-parse-result, the quality report's summary proxy-quality-summary and each row of the group sort dialog
+   group-sort-row. The others are found by their form ids. :has() stays only in the subject compound, on an anchor under
+   a page root, a hook or an id, with a child argument. */
+
+/* 9.1 The user card at the top of the user dialogs (deposit / refund, balance history, API keys, allowed groups): the
+   reference's option card (1px line, radius 8, the grouped fill at 60 %, 12 / 14 inset), its avatar the 28px icon square
+   holding the letter (Geist Mono 600, ink-soft), the e-mail 13/600 ink, the second line 12px muted. Upstream's tinted
+   circle and gradient banner are decoration (decision 2). */
+html.flat-theme :is(#balance-form, [data-ui="user-api-keys"], [data-ui="user-balance-history"], [data-ui="user-allowed-groups"]) > div:first-child {
+  gap: 12px;
+  padding: 12px 14px;
+  border: 1px solid rgb(var(--ui-line));
+  border-radius: var(--ui-radius-lg);
+  background: color-mix(in srgb, rgb(var(--ui-subtle)) 60%, rgb(var(--ui-surface)));
+}
+
+html.flat-theme :is(#balance-form, [data-ui="user-api-keys"], [data-ui="user-balance-history"], [data-ui="user-allowed-groups"]) > div:first-child div[class~="rounded-full"]:is([class~="bg-primary-100"], [class~="bg-white"]):is([class~="h-10"], [class~="h-14"]) {
+  flex: none;
+  width: 28px;
+  height: 28px;
+  border: 1px solid rgb(var(--ui-line));
+  border-radius: var(--ui-radius-md);
+  background-color: color-mix(in srgb, rgb(var(--ui-ink)) 3%, rgb(var(--ui-surface)));
+  box-shadow: none;
+}
+
+html.flat-theme :is(#balance-form, [data-ui="user-api-keys"], [data-ui="user-balance-history"], [data-ui="user-allowed-groups"]) > div:first-child div[class~="rounded-full"]:is([class~="bg-primary-100"], [class~="bg-white"]):is([class~="h-10"], [class~="h-14"]) > span {
+  color: rgb(var(--ui-ink-soft));
+  font: 600 12px/1 var(--ui-font-mono);
+}
+
+html.flat-theme :is(#balance-form, [data-ui="user-api-keys"], [data-ui="user-balance-history"], [data-ui="user-allowed-groups"]) > div:first-child :is(p[class~="font-medium"], p[class~="font-semibold"]):first-child {
+  color: rgb(var(--ui-ink));
+  font-size: 13px;
+  line-height: 19.5px;
+  font-weight: 600;
+}
+
+html.flat-theme :is(#balance-form, [data-ui="user-api-keys"], [data-ui="user-allowed-groups"]) > div:first-child p:is([class~="text-sm"], [class~="mt-1"]):not(:first-child) {
+  margin-top: 0;
+  color: rgb(var(--ui-muted));
+  font-size: 12px;
+  line-height: 18px;
+}
+
+/* 9.2 Option rows (allowed groups, the group replacement's choices): the reference's option card (1px line, radius 8,
+   12 / 14 inset, the control line on hover); a chosen row is the selection of the tables (the accent at 40 % as its edge,
+   the accent tint), as the accounts cards. Upstream's 2px borders, shadow and green / purple tints go. */
+html.flat-theme [data-ui="user-allowed-groups"] div[class~="grid"] > div[class~="border-2"],
+html.flat-theme [data-ui="group-replace"] label[class~="border-2"] {
+  padding: 12px 14px;
+  border-width: 1px;
+  border-color: rgb(var(--ui-line));
+  border-radius: var(--ui-radius-lg);
+  background-color: rgb(var(--ui-surface));
+  box-shadow: none;
+  transition: border-color var(--ui-duration) var(--ui-ease), background-color var(--ui-duration) var(--ui-ease);
+}
+
+html.flat-theme [data-ui="user-allowed-groups"] div[class~="grid"] > div[class~="border-2"][class~="border-gray-200"]:hover,
+html.flat-theme [data-ui="group-replace"] label[class~="border-2"][class~="border-gray-200"]:hover {
+  border-color: rgb(var(--ui-line-strong));
+}
+
+html.flat-theme [data-ui="user-allowed-groups"] div[class~="grid"] > div[class~="border-2"]:is([class~="border-primary-400"], [class~="border-green-200"]),
+html.flat-theme [data-ui="group-replace"] label[class~="border-2"][class~="border-primary-400"] {
+  border-color: rgb(var(--ui-primary) / 0.4);
+  background-color: rgb(var(--ui-primary-soft));
+}
+
+/* the rows' check squares and radio dots: the reference's 14px choice square (radius 4, the form-control line; the accent
+   fill and a white check when chosen) and a 14px round radio */
+html.flat-theme [data-ui="user-allowed-groups"] label > input[type="checkbox"][class~="sr-only"] + div,
+html.flat-theme [data-ui="user-allowed-groups"] div[class~="flex-shrink-0"] > div[class~="rounded-md"][class~="border-2"],
+html.flat-theme [data-ui="user-allowed-groups"] div[class~="flex-shrink-0"] > input[type="checkbox"] {
+  width: 14px;
+  height: 14px;
+  border-width: 1px;
+  border-color: rgb(var(--ui-control-line));
+  border-radius: var(--ui-radius-sm);
+}
+
+html.flat-theme [data-ui="user-allowed-groups"] label > input[type="checkbox"][class~="sr-only"]:checked + div,
+html.flat-theme [data-ui="user-allowed-groups"] div[class~="flex-shrink-0"] > div[class~="rounded-md"][class~="border-2"][class~="bg-green-500"] {
+  border-color: rgb(var(--ui-primary));
+  background-color: rgb(var(--ui-primary));
+}
+
+html.flat-theme [data-ui="user-allowed-groups"] label > input[type="checkbox"][class~="sr-only"] + div > svg,
+html.flat-theme [data-ui="user-allowed-groups"] div[class~="flex-shrink-0"] > div[class~="rounded-md"][class~="border-2"] > svg {
+  color: rgb(var(--ui-on-primary));
+}
+
+html.flat-theme [data-ui="user-allowed-groups"] label > input[type="checkbox"][class~="sr-only"]:focus-visible + div {
+  outline: 2px solid rgb(var(--ui-focus));
+  outline-offset: 2px;
+}
+
+html.flat-theme [data-ui="user-allowed-groups"] label[class~="h-6"][class~="w-6"] {
+  width: 16px;
+  height: 16px;
+}
+
+html.flat-theme [data-ui="group-replace"] label[class~="border-2"] > div[class~="rounded-full"][class~="border-2"] {
+  width: 14px;
+  height: 14px;
+  border-width: 1px;
+  border-color: rgb(var(--ui-control-line));
+}
+
+html.flat-theme [data-ui="group-replace"] label[class~="border-2"] > div[class~="rounded-full"][class~="border-2"][class~="bg-primary-500"] {
+  border-color: rgb(var(--ui-primary));
+  background-color: rgb(var(--ui-primary));
+}
+
+html.flat-theme [data-ui="group-replace"] label[class~="border-2"] > div[class~="rounded-full"] > div {
+  width: 6px;
+  height: 6px;
+  background-color: rgb(var(--ui-on-primary));
+}
+
+html.flat-theme [data-ui="group-replace"] label[class~="border-2"]:has(> input:focus-visible) {
+  outline: 2px solid rgb(var(--ui-focus));
+  outline-offset: 2px;
+}
+
+/* 9.3 Section titles inside these dialogs: the reference's card title (13/600 ink), counts in Geist Mono 11 muted; the
+   coloured bullet in front of a section (exclusive purple, public green) is a category, drawn neutral. */
+html.flat-theme [data-ui="user-allowed-groups"] h4,
+html.flat-theme :is([data-ui="group-rate-multipliers"], [data-ui="group-rpm-overrides"]) h4 {
+  color: rgb(var(--ui-ink));
+  font-size: 13px;
+  line-height: 19.5px;
+  font-weight: 600;
+}
+
+html.flat-theme [data-ui="user-allowed-groups"] h4 + span {
+  color: rgb(var(--ui-muted));
+  font-family: var(--ui-font-mono);
+  font-size: 11px;
+}
+
+html.flat-theme [data-ui="user-allowed-groups"] div[class~="rounded-full"][class~="h-1.5"][class~="w-1.5"] {
+  background-color: rgb(var(--ui-faint));
+}
+
+/* 9.4 Numeric fields that upstream draws with their own utilities (the allowed groups' rate, the per-user rate and RPM
+   rows): the reference's field at the row's compact height (30px), radius 6, the 3:1 form-control line, 13px Geist Mono
+   figures; focus = the accent edge 2px wide (controls.css §3.1). */
+html.flat-theme [data-ui="user-allowed-groups"] input[type="number"][class~="hide-spinner"],
+html.flat-theme :is([data-ui="group-rate-multipliers"], [data-ui="group-rpm-overrides"]) td input[type="number"] {
+  height: var(--ui-control-h);
+  padding: 0 10px;
+  border: 1px solid rgb(var(--ui-control-line));
+  border-radius: var(--ui-radius-md);
+  background-color: rgb(var(--ui-surface));
+  color: rgb(var(--ui-ink));
+  font-family: var(--ui-font-mono);
+  font-size: 13px;
+  font-weight: 500;
+  box-shadow: none;
+}
+
+html.flat-theme [data-ui="user-allowed-groups"] input[type="number"][class~="hide-spinner"]:focus,
+html.flat-theme :is([data-ui="group-rate-multipliers"], [data-ui="group-rpm-overrides"]) td input[type="number"]:focus {
+  border-color: rgb(var(--ui-focus));
+  outline: 2px solid transparent;
+  box-shadow: inset 0 0 0 1px rgb(var(--ui-focus));
+}
+
+/* 9.5 Tables inside these dialogs (platform quotas, per-user rates and RPM): the reference's table header (the mono label,
+   1px line under it, no band) and hairline rows. */
+html.flat-theme [data-ui="user-platform-quota"] table > thead > tr > th,
+html.flat-theme :is([data-ui="group-rate-multipliers"], [data-ui="group-rpm-overrides"]) table > thead > tr > th {
+  background-color: rgb(var(--ui-surface));
+  box-shadow: inset 0 -1px 0 rgb(var(--ui-line));
+  color: rgb(var(--ui-label));
+  font-family: var(--ui-font-mono);
+  font-size: var(--ui-label-size);
+  line-height: var(--ui-label-leading);
+  font-weight: 500;
+  letter-spacing: var(--ui-label-tracking);
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+html.flat-theme :is([data-ui="group-rate-multipliers"], [data-ui="group-rpm-overrides"]) table > thead > tr {
+  border-bottom-width: 0;
+  background-color: rgb(var(--ui-surface));
+}
+
+html.flat-theme [data-ui="user-platform-quota"] table > thead > tr {
+  border-bottom-width: 0;
+}
+
+html.flat-theme :is([data-ui="user-platform-quota"], [data-ui="group-rate-multipliers"], [data-ui="group-rpm-overrides"]) table > tbody > tr {
+  border-color: rgb(var(--ui-line));
+}
+
+html.flat-theme :is([data-ui="group-rate-multipliers"], [data-ui="group-rpm-overrides"]) table > tbody > tr:hover {
+  background-color: rgb(var(--ui-hover));
+}
+
+/* 9.6 Call-outs: the reference's docs call-out (radius 6, 1px line, 10 / 14 inset, 13px): neutral for information (the
+   new balance, the subscription guide's tip, the invitation-code hint), the warning pair for a warning. */
+html.flat-theme #balance-form > div[class~="border-blue-200"],
+html.flat-theme [data-ui="subscription-guide-title"] ~ div[class~="bg-blue-50"],
+html.flat-theme form[data-ui="redeem-generate-form"] > div[class~="bg-blue-50"][class~="p-3"] {
+  padding: 10px 14px;
+  border: 1px solid rgb(var(--ui-line));
+  border-radius: var(--ui-radius-md);
+  background-color: color-mix(in srgb, rgb(var(--ui-subtle)) 60%, rgb(var(--ui-surface)));
+  color: rgb(var(--ui-ink-soft));
+}
+
+html.flat-theme form[data-ui="redeem-generate-form"] > div[class~="bg-blue-50"][class~="p-3"] > p {
+  color: rgb(var(--ui-ink-soft));
+}
+
+html.flat-theme #balance-form > div[class~="border-blue-200"] span[class~="font-bold"] {
+  color: rgb(var(--ui-ink));
+  font-family: var(--ui-font-mono);
+  font-weight: 600;
+}
+
+html.flat-theme [data-ui="user-platform-quota"] > div[class~="border-amber-200"] {
+  padding: 10px 14px;
+  border-color: rgb(var(--ui-warning) / 0.3);
+  border-radius: var(--ui-radius-md);
+  background-color: rgb(var(--ui-warning-soft));
+  color: rgb(var(--ui-warning));
+  font-size: 13px;
+}
+
+/* 9.7 A positive CTA is the accent button (the deposit's confirm; decision 2): upstream's emerald fill becomes the accent
+   with on-accent text (white on #168848, ink on the mint). The footer's submit names its form (form="balance-form"). */
+html.flat-theme .modal-footer button.btn[form="balance-form"][class~="bg-emerald-600"] {
+  border-color: rgb(var(--ui-primary));
+  background-color: rgb(var(--ui-primary));
+  color: rgb(var(--ui-on-primary));
+}
+
+html.flat-theme .modal-footer button.btn[form="balance-form"][class~="bg-emerald-600"]:not(:disabled):hover {
+  border-color: rgb(var(--ui-primary-hover));
+  background-color: rgb(var(--ui-primary-hover));
+}
+
+/* the amount field's 「$」 prefix: muted, in the field's own figures */
+html.flat-theme #balance-form div[class~="relative"] > div[class~="absolute"][class~="left-3"] {
+  color: rgb(var(--ui-muted));
+  font-family: var(--ui-font-mono);
+  font-size: 13px;
+}
+
+/* ================================================================== 10 · user dialogs */
+
+/* 10.1 Balance history: the user card's second line (notes, total recharged) in 12px muted with the total in Geist Mono
+   ink (upstream's emerald is decoration); the current balance 15/600 Mono (the reference's statistic figure) under its
+   mono label. */
+html.flat-theme [data-ui="user-balance-history"] > div:first-child > div + div {
+  border-color: rgb(var(--ui-line));
+}
+
+html.flat-theme [data-ui="user-balance-history"] > div:first-child span[class~="font-semibold"][class*="text-emerald-"] {
+  color: rgb(var(--ui-ink));
+  font-family: var(--ui-font-mono);
+  font-weight: 500;
+}
+
+html.flat-theme [data-ui="user-balance-history"] > div:first-child p[class~="text-xl"] {
+  color: rgb(var(--ui-ink));
+  font-family: var(--ui-font-mono);
+  font-size: 15px;
+  line-height: 22.5px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+html.flat-theme [data-ui="user-balance-history"] > div:first-child div[class~="text-right"] > p:first-child {
+  /* the mono label on the card's grouped fill: the muted grey keeps a margin over 4.5:1 there (the label grey is 4.50) */
+  color: rgb(var(--ui-muted));
+  font: var(--ui-label-font);
+  letter-spacing: var(--ui-label-tracking);
+  text-transform: uppercase;
+}
+
+/* the username beside the e-mail: a neutral value chip, not the accent tint */
+html.flat-theme [data-ui="user-balance-history"] > div:first-child span[class~="bg-primary-50"] {
+  padding: 1px 6px;
+  border-radius: var(--ui-radius-sm);
+  background-color: rgb(var(--ui-subtle));
+  color: rgb(var(--ui-ink-soft));
+  font-family: var(--ui-font-mono);
+  font-size: 11px;
+  line-height: 16px;
+}
+
+/* the filter row's deposit / refund buttons are the default button (REF §8.3: 30px, radius 6, the control outline, 13/600
+   ink); their + / − glyphs keep the distinction in ink-soft */
+html.flat-theme [data-ui="user-balance-history"] > div:nth-child(2) > button {
+  min-height: var(--ui-control-h);
+  padding: 0 12px;
+  border-color: rgb(var(--ui-line-strong));
+  border-radius: var(--ui-radius-md);
+  background-color: rgb(var(--ui-surface));
+  color: rgb(var(--ui-ink));
+  font-size: 13px;
+  line-height: 19.5px;
+  font-weight: 600;
+}
+
+html.flat-theme [data-ui="user-balance-history"] > div:nth-child(2) > button:hover {
+  background-color: rgb(var(--ui-surface));
+  border-color: rgb(var(--ui-line-focus));
+}
+
+html.flat-theme [data-ui="user-balance-history"] > div:nth-child(2) > button > svg {
+  width: 14px;
+  height: 14px;
+  color: rgb(var(--ui-ink-soft));
+}
+
+/* history entries: rows of the reference's list (1px line, radius 8, 12 / 14 inset), the type glyph in the 28px neutral
+   square (the per-type tints are decoration), the title 13/500 ink, notes 12 muted, the time Geist Mono 11 muted; the
+   figure Geist Mono 13/600, a credit in the success colour and a debit in danger (their meaning), other kinds ink. */
+html.flat-theme [data-ui="user-balance-history"] div[class~="overflow-y-auto"] > div[class~="border"] {
+  padding: 12px 14px;
+  border-color: rgb(var(--ui-line));
+  border-radius: var(--ui-radius-lg);
+}
+
+html.flat-theme [data-ui="user-balance-history"] div[class~="overflow-y-auto"] > div[class~="border"] div[class~="h-9"][class~="w-9"] {
+  width: 28px;
+  height: 28px;
+  border: 1px solid rgb(var(--ui-line));
+  border-radius: var(--ui-radius-md);
+  background-color: color-mix(in srgb, rgb(var(--ui-ink)) 3%, rgb(var(--ui-surface)));
+}
+
+html.flat-theme [data-ui="user-balance-history"] div[class~="overflow-y-auto"] > div[class~="border"] div[class~="h-9"][class~="w-9"] > svg {
+  width: 14px;
+  height: 14px;
+  color: rgb(var(--ui-ink-soft));
+}
+
+html.flat-theme [data-ui="user-balance-history"] div[class~="overflow-y-auto"] > div[class~="border"] p[class~="font-medium"] {
+  color: rgb(var(--ui-ink));
+  font-size: 13px;
+  font-weight: 500;
+}
+
+html.flat-theme [data-ui="user-balance-history"] div[class~="overflow-y-auto"] > div[class~="border"] div:not([class~="text-right"]) > p[class~="text-gray-400"] {
+  color: rgb(var(--ui-muted));
+  font-family: var(--ui-font-mono);
+  font-size: 11px;
+}
+
+html.flat-theme [data-ui="user-balance-history"] div[class~="overflow-y-auto"] > div[class~="border"] div[class~="text-right"] > p:first-child {
+  color: rgb(var(--ui-ink));
+  font-family: var(--ui-font-mono);
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+
+html.flat-theme [data-ui="user-balance-history"] div[class~="overflow-y-auto"] > div[class~="border"] div[class~="text-right"] > p:first-child[class*="text-emerald-"] {
+  color: rgb(var(--ui-success));
+}
+
+html.flat-theme [data-ui="user-balance-history"] div[class~="overflow-y-auto"] > div[class~="border"] div[class~="text-right"] > p:first-child[class*="text-red-"] {
+  color: rgb(var(--ui-danger));
+}
+
+html.flat-theme [data-ui="user-balance-history"] div[class~="overflow-y-auto"] > div[class~="border"] div[class~="text-right"] > p + p {
+  color: rgb(var(--ui-muted));
+  font-size: 11px;
+}
+
+/* 10.2 API keys: each key a row of the reference's list (1px line, radius 8, 12 / 14 inset); the name 13/600 ink, the key
+   in Geist Mono 12.5 muted, the meta line 12px muted; the group button the reference's quiet trigger (the subtle fill on
+   hover), its chevron faint. The group picker's panel and rows are overlays.css' menu, its chips data.css' identity. */
+html.flat-theme [data-ui="user-api-keys"] > div[class~="overflow-y-auto"] > div[class~="border"] {
+  padding: 12px 14px;
+  border-color: rgb(var(--ui-line));
+  border-radius: var(--ui-radius-lg);
+}
+
+html.flat-theme [data-ui="user-api-keys"] > div[class~="overflow-y-auto"] > div[class~="border"] span[class~="font-medium"]:first-child {
+  color: rgb(var(--ui-ink));
+  font-size: 13px;
+  font-weight: 600;
+}
+
+html.flat-theme [data-ui="user-api-keys"] > div[class~="overflow-y-auto"] > div[class~="border"] p[class~="font-mono"] {
+  color: rgb(var(--ui-muted));
+  font-size: 12.5px;
+  line-height: 19px;
+}
+
+html.flat-theme [data-ui="user-api-keys"] > div[class~="overflow-y-auto"] > div[class~="border"] > div[class~="mt-3"] {
+  margin-top: 8px;
+  column-gap: 16px;
+  color: rgb(var(--ui-muted));
+  font-size: 12px;
+  line-height: 18px;
+}
+
+html.flat-theme [data-ui="user-api-keys"] > div[class~="overflow-y-auto"] > div[class~="border"] > div[class~="mt-3"] button {
+  border-radius: var(--ui-radius-sm);
+  transition: background-color var(--ui-duration) var(--ui-ease);
+}
+
+html.flat-theme [data-ui="user-api-keys"] > div[class~="overflow-y-auto"] > div[class~="border"] > div[class~="mt-3"] button:not(:disabled):hover {
+  background-color: rgb(var(--ui-subtle));
+}
+
+html.flat-theme [data-ui="user-api-keys"] > div[class~="overflow-y-auto"] > div[class~="border"] > div[class~="mt-3"] button > svg:last-child {
+  color: rgb(var(--ui-faint));
+}
+
+html.flat-theme [data-ui="user-api-keys"] > div[class~="overflow-y-auto"] > div[class~="border"] > div[class~="mt-3"] button:focus-visible {
+  outline: 2px solid rgb(var(--ui-focus));
+  outline-offset: 2px;
+}
+
+/* 10.3 Allowed groups: each row's name 13/600, the platform line 12px muted (upstream shows the platform without a hue,
+   so it stays neutral), the 「专属」 mark a category chip, the custom-rate label 12px muted. */
+html.flat-theme [data-ui="user-allowed-groups"] div[class~="grid"] > div span[class~="text-base"] {
+  color: rgb(var(--ui-ink));
+  font-size: 13px;
+  line-height: 19.5px;
+  font-weight: 600;
+}
+
+html.flat-theme [data-ui="user-allowed-groups"] div[class~="grid"] > div span[class~="rounded-full"][class~="bg-purple-100"] {
+  padding: 1px 6px;
+  border: 1px solid rgb(var(--ui-line));
+  border-radius: var(--ui-radius-sm);
+  background-color: rgb(var(--ui-subtle));
+  color: rgb(var(--ui-ink-soft));
+  font: 500 var(--ui-chip-size) / 16px var(--ui-font-mono);
+}
+
+html.flat-theme [data-ui="user-allowed-groups"] div[class~="grid"] > div div[class~="mt-1.5"] {
+  margin-top: 2px;
+  column-gap: 8px;
+  color: rgb(var(--ui-muted));
+  font-size: 12px;
+  line-height: 18px;
+}
+
+html.flat-theme [data-ui="user-allowed-groups"] div[class~="grid"] > div div[class~="mt-1.5"] span[class~="font-medium"] {
+  color: rgb(var(--ui-ink-soft));
+  font-family: var(--ui-font-mono);
+}
+
+html.flat-theme [data-ui="user-allowed-groups"] div[class~="grid"] > div label[class~="text-sm"] {
+  color: rgb(var(--ui-muted));
+  font-size: 12px;
+  font-weight: 500;
+}
+
+html.flat-theme [data-ui="user-allowed-groups"] > div + div > div > p[class~="text-xs"] {
+  color: rgb(var(--ui-muted));
+}
+
+/* 10.4 Platform quotas: platform names Geist Mono 12.5 ink, the fields at the row height (30px), the reset glyph faint to
+   ink, usage Geist Mono 12 muted. */
+html.flat-theme [data-ui="user-platform-quota"] table td {
+  vertical-align: middle;
+}
+
+html.flat-theme [data-ui="user-platform-quota"] table td[class~="font-mono"] {
+  color: rgb(var(--ui-ink));
+  font-size: 12.5px;
+}
+
+html.flat-theme [data-ui="user-platform-quota"] table td input.input {
+  padding-top: 0.265625rem;
+  padding-bottom: 0.265625rem;
+}
+
+html.flat-theme [data-ui="user-platform-quota"] table td button {
+  display: inline-grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  border-radius: var(--ui-radius-sm);
+  color: rgb(var(--ui-faint));
+  transition: color var(--ui-duration) var(--ui-ease), background-color var(--ui-duration) var(--ui-ease);
+}
+
+html.flat-theme [data-ui="user-platform-quota"] table td button:not(:disabled):hover {
+  background-color: rgb(var(--ui-subtle));
+  color: rgb(var(--ui-ink));
+}
+
+html.flat-theme [data-ui="user-platform-quota"] table td:last-child {
+  color: rgb(var(--ui-muted));
+  font-family: var(--ui-font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+html.flat-theme [data-ui="user-platform-quota"] > p {
+  color: rgb(var(--ui-muted));
+  font-size: 13px;
+}
+
+/* 10.5 Group replacement: the current group in a neutral card (its shield is the exclusive category, neutral), the arrow
+   faint, the chosen target 13/600 ink; each choice's platform in Geist Mono 11 muted. */
+html.flat-theme [data-ui="group-replace"] > div[class~="rounded-lg"][class~="bg-gray-50"] {
+  padding: 10px 14px;
+  border-color: rgb(var(--ui-line));
+  border-radius: var(--ui-radius-lg);
+  background: color-mix(in srgb, rgb(var(--ui-subtle)) 60%, rgb(var(--ui-surface)));
+}
+
+html.flat-theme [data-ui="group-replace"] > div[class~="rounded-lg"][class~="bg-gray-50"] svg {
+  width: 14px;
+  height: 14px;
+  color: rgb(var(--ui-faint));
+}
+
+html.flat-theme [data-ui="group-replace"] > div[class~="rounded-lg"][class~="bg-gray-50"] span[class~="font-medium"] {
+  color: rgb(var(--ui-ink));
+  font-weight: 600;
+}
+
+html.flat-theme [data-ui="group-replace"] label[class~="border-2"] span[class~="font-medium"] {
+  color: rgb(var(--ui-ink));
+  font-size: 13px;
+  font-weight: 600;
+}
+
+html.flat-theme [data-ui="group-replace"] label[class~="border-2"] span[class~="text-xs"] {
+  color: rgb(var(--ui-muted));
+  font-family: var(--ui-font-mono);
+  font-size: 11px;
+}
+
+html.flat-theme [data-ui="group-replace"] > p {
+  color: rgb(var(--ui-muted));
+  font-size: 13px;
+  line-height: 20px;
+}
+
+/* 10.6 User attributes: rows of the reference's list; the key a Geist Mono value chip; the empty state the reference's
+   dashed panel with its glyph at 20px (REF §8.7 empty state). */
+html.flat-theme [data-ui="user-attributes-config"] > div[class~="overflow-y-auto"] > div[class~="border"] {
+  padding: 10px 12px;
+  border-color: rgb(var(--ui-line));
+  border-radius: var(--ui-radius-lg);
+}
+
+html.flat-theme [data-ui="user-attributes-config"] span[class~="font-mono"][class~="bg-gray-100"] {
+  padding: 1px 6px;
+  border-radius: var(--ui-radius-sm);
+  background-color: rgb(var(--ui-subtle));
+  color: rgb(var(--ui-ink-soft));
+  font-size: 11px;
+}
+
+html.flat-theme [data-ui="user-attributes-config"] > div[class~="py-12"][class~="text-center"] {
+  display: grid;
+  place-items: center;
+  align-content: center;
+  gap: 4px;
+  min-height: 200px;
+  padding: 32px 16px;
+  border: 1px dashed rgb(var(--ui-line-strong));
+  border-radius: var(--ui-radius-lg);
+}
+
+html.flat-theme [data-ui="user-attributes-config"] > div[class~="py-12"][class~="text-center"] > svg {
+  width: 20px;
+  height: 20px;
+  margin-bottom: 4px;
+  color: rgb(var(--ui-faint));
+  stroke-width: 1.8;
+}
+
+html.flat-theme [data-ui="user-attributes-config"] > div[class~="py-12"][class~="text-center"] > p:first-of-type {
+  margin-top: 0;
+  color: rgb(var(--ui-ink-soft));
+  font-size: 14px;
+  line-height: 20px;
+  font-weight: 500;
+}
+
+html.flat-theme [data-ui="user-attributes-config"] > div[class~="py-12"][class~="text-center"] > p + p {
+  color: rgb(var(--ui-muted));
+  font-size: 13px;
+}
+
+html.flat-theme [data-ui="user-attributes-config"] > div:first-child > p {
+  color: rgb(var(--ui-muted));
+  font-size: 13px;
+}
+
+/* ================================================================== 11 · group dialogs */
+
+/* 11.1 Create / edit: the field labels upstream writes without the label recipe (「从分组复制账号」, 「专属分组」 … with their
+   help glyph) read as the form's other labels (the mono label); the help glyph is the faint info glyph (overlays 2.5).
+   The groups picked to copy accounts from are the reference's removable value chips (as the accounts filter chips). */
+html.flat-theme :is(#create-group-form, #edit-group-form) div[class~="mb-1.5"][class~="flex"][class~="items-center"] > label[class~="text-sm"][class~="font-medium"] {
+  color: rgb(var(--ui-label));
+  font-family: var(--ui-font-mono);
+  font-size: var(--ui-label-size);
+  line-height: var(--ui-label-leading);
+  font-weight: 600;
+  letter-spacing: var(--ui-label-tracking);
+  text-transform: uppercase;
+}
+
+html.flat-theme :is(#create-group-form, #edit-group-form) div[class~="group"][class~="relative"][class~="inline-flex"] > svg[class~="cursor-help"] {
+  width: 14px;
+  height: 14px;
+  color: rgb(var(--ui-faint));
+}
+
+html.flat-theme :is(#create-group-form, #edit-group-form) div[class~="group"][class~="relative"][class~="inline-flex"]:hover > svg[class~="cursor-help"] {
+  color: rgb(var(--ui-muted));
+}
+
+html.flat-theme :is(#create-group-form, #edit-group-form, [data-testid="codex-manifest-selected-tags"]) span[class~="rounded-full"][class~="bg-primary-100"] {
+  gap: 4px;
+  padding: 1px 4px 1px 8px;
+  border: 1px solid rgb(var(--ui-line));
+  border-radius: var(--ui-radius-sm);
+  background-color: rgb(var(--ui-subtle));
+  color: rgb(var(--ui-ink-soft));
+  font-size: 12px;
+  line-height: 20px;
+}
+
+html.flat-theme :is(#create-group-form, #edit-group-form, [data-testid="codex-manifest-selected-tags"]) span[class~="rounded-full"][class~="bg-primary-100"] > button {
+  display: inline-grid;
+  place-items: center;
+  width: 16px;
+  height: 16px;
+  margin-left: 0;
+  border-radius: 3px;
+  color: rgb(var(--ui-muted));
+}
+
+html.flat-theme :is(#create-group-form, #edit-group-form, [data-testid="codex-manifest-selected-tags"]) span[class~="rounded-full"][class~="bg-primary-100"] > button:hover {
+  background-color: rgb(var(--ui-hover));
+  color: rgb(var(--ui-ink));
+}
+
+/* the form's section titles (web search pricing, OpenAI Fast, Live, messages dispatch, image pricing, model allowlist ...):
+   one size, the reference's card title 13/600 ink (upstream mixes 14 and 16px, 500 and 600) */
+html.flat-theme :is(#create-group-form, #edit-group-form) div[class~="border-t"] > h4[class~="font-medium"],
+html.flat-theme :is(#create-group-form, #edit-group-form) div[class~="border-t"] > label[class~="block"][class~="mb-2"][class~="font-medium"]:not(.input-label),
+html.flat-theme :is(#create-group-form, #edit-group-form) div[class~="border-t"][data-testid$="model-allowlist"] > div:first-child > div:first-child > label[class~="text-sm"] {
+  color: rgb(var(--ui-ink));
+  font-size: 13px;
+  line-height: 19.5px;
+  font-weight: 600;
+}
+
+/* the exclusive / public switch's state word beside it: 13px ink-soft (upstream muted grey) */
+html.flat-theme :is(#create-group-form, #edit-group-form) div[class~="flex"][class~="items-center"][class~="gap-3"] > button[class~="rounded-full"][class~="border-2"] + span {
+  color: rgb(var(--ui-ink-soft));
+  font-size: 13px;
+}
+
+/* 11.2 Per-user rates and RPM: the group strip a neutral card (1px line, radius 8, the grouped fill), the platform in its
+   own colour (data.css platform-text), separators faint; the add box the option card; the status pills the reference's
+   status chips. */
+html.flat-theme :is([data-ui="group-rate-multipliers"], [data-ui="group-rpm-overrides"]) > div:first-child {
+  column-gap: 10px;
+  padding: 8px 14px;
+  border: 1px solid rgb(var(--ui-line));
+  border-radius: var(--ui-radius-lg);
+  background: color-mix(in srgb, rgb(var(--ui-subtle)) 60%, rgb(var(--ui-surface)));
+  font-size: 13px;
+}
+
+html.flat-theme :is([data-ui="group-rate-multipliers"], [data-ui="group-rpm-overrides"]) > div:first-child > span[class~="text-gray-400"] {
+  color: rgb(var(--ui-line-strong));
+}
+
+html.flat-theme :is([data-ui="group-rate-multipliers"], [data-ui="group-rpm-overrides"]) > div:first-child > span[data-ui~="platform-text"] {
+  font-weight: 500;
+}
+
+html.flat-theme :is([data-ui="group-rate-multipliers"], [data-ui="group-rpm-overrides"]) > div:first-child > span[data-ui~="platform-text"] > svg {
+  width: 14px;
+  height: 14px;
+}
+
+html.flat-theme :is([data-ui="group-rate-multipliers"], [data-ui="group-rpm-overrides"]) > div:first-child > span:last-child {
+  color: rgb(var(--ui-muted));
+  font-family: var(--ui-font-mono);
+  font-size: 12px;
+}
+
+html.flat-theme :is([data-ui="group-rate-multipliers"], [data-ui="group-rpm-overrides"]) > div:nth-child(2)[class~="border"] {
+  padding: 12px 14px;
+  border-color: rgb(var(--ui-line));
+  border-radius: var(--ui-radius-lg);
+}
+
+html.flat-theme :is([data-ui="group-rate-multipliers"], [data-ui="group-rpm-overrides"]) table span[class~="rounded-full"]:is([class~="bg-green-100"], [class~="bg-gray-100"]) {
+  padding: 1px 7px;
+  font-family: var(--ui-font-mono);
+  font-size: 10.5px;
+  line-height: 16px;
+  font-weight: 500;
+  letter-spacing: 0.025em;
+  text-transform: uppercase;
+}
+
+html.flat-theme :is([data-ui="group-rate-multipliers"], [data-ui="group-rpm-overrides"]) div[class~="overflow-hidden"][class~="rounded-lg"][class~="border"] {
+  border-color: rgb(var(--ui-line));
+  border-radius: var(--ui-radius-lg);
+}
+
+/* the dialogs' own close button is a variant-less .btn (text only): the reference's default button (control outline,
+   surface, ink), as every other dialog's secondary action */
+html.flat-theme :is([data-ui="group-rate-multipliers"], [data-ui="group-rpm-overrides"]) button.btn:not([class*="btn-primary"], [class*="btn-secondary"], [class*="btn-danger"], [class*="btn-ghost"], [class*="btn-success"]) {
+  border-color: rgb(var(--ui-line-strong));
+  background-color: rgb(var(--ui-surface));
+  color: rgb(var(--ui-ink));
+}
+
+/* 11.3 Sort order: each group a draggable row of the reference's list (1px line, radius 8, no lift shadow), its handle faint,
+   the id Geist Mono 11 muted; the platform chip is the identity chip (data.css). The row carries the hook group-sort-row
+   (GroupsView's sort dialog); `div >` keeps the specificity the former :has() gave. */
+html.flat-theme .modal-body div > div[data-ui="group-sort-row"][class~="cursor-grab"][class~="rounded-lg"][class~="border"] {
+  padding: 10px 12px;
+  border-color: rgb(var(--ui-line));
+  border-radius: var(--ui-radius-lg);
+  background-color: rgb(var(--ui-surface));
+  box-shadow: none;
+}
+
+html.flat-theme .modal-body div > div[data-ui="group-sort-row"][class~="cursor-grab"][class~="rounded-lg"][class~="border"]:hover {
+  border-color: rgb(var(--ui-line-strong));
+}
+
+html.flat-theme .modal-body div > div[data-ui="group-sort-row"][class~="cursor-grab"][class~="rounded-lg"][class~="border"] > div:first-child {
+  color: rgb(var(--ui-faint));
+}
+
+html.flat-theme .modal-body div > div[data-ui="group-sort-row"][class~="cursor-grab"][class~="rounded-lg"][class~="border"] > div:last-child {
+  color: rgb(var(--ui-muted));
+  font-family: var(--ui-font-mono);
+  font-size: 11px;
+}
+
+html.flat-theme .modal-body div > div[data-ui="group-sort-row"][class~="cursor-grab"][class~="rounded-lg"][class~="border"] div[class~="font-medium"] {
+  color: rgb(var(--ui-ink));
+  font-size: 13px;
+  font-weight: 600;
+}
+
+/* 11.4 OpenAI Messages dispatch (create / edit, 「允许 /v1/messages 调度」 on): the family-mapping card and the exact-override
+   card are one kind of card, the reference's (1px structural line, radius 8, no shadow; a header band on the grouped fill
+   at 60 % over the line, the title 13/600 ink, the hint 12px muted). Upstream tints the exact-override card with the
+   accent (primary-50 band, primary dot, title, hint and border) only to set it apart from the family card, whose band is
+   grey with a blue dot: that is decoration, not a state (nothing succeeded, nothing is selected), so both are neutral and
+   their titles tell them apart (decision 2). The mapping rows are the list rows (no lift shadow), the empty state and the
+   add button the reference's dashed frame; 「添加精确映射」 stays the accent link. */
+html.flat-theme :is(#create-group-form, #edit-group-form) div[class~="relative"][class~="overflow-hidden"][class~="rounded-xl"][class~="border"]:has(> div[class~="border-b"][class~="px-4"][class~="py-3"]:first-child) {
+  border-color: rgb(var(--ui-line));
+  border-radius: var(--ui-radius-lg);
+  background-color: rgb(var(--ui-surface));
+  box-shadow: none;
+}
+
+html.flat-theme :is(#create-group-form, #edit-group-form) div[class~="relative"][class~="overflow-hidden"][class~="rounded-xl"][class~="border"] > div[class~="border-b"][class~="px-4"][class~="py-3"]:first-child {
+  padding: 10px 14px;
+  border-color: rgb(var(--ui-line));
+  background-color: color-mix(in srgb, rgb(var(--ui-subtle)) 60%, rgb(var(--ui-surface)));
+}
+
+html.flat-theme :is(#create-group-form, #edit-group-form) div[class~="relative"][class~="overflow-hidden"][class~="rounded-xl"][class~="border"] > div[class~="border-b"]:first-child div[class~="h-2"][class~="w-2"][class~="rounded-full"] {
+  width: 6px;
+  height: 6px;
+  background-color: rgb(var(--ui-faint));
+}
+
+html.flat-theme :is(#create-group-form, #edit-group-form) div[class~="relative"][class~="overflow-hidden"][class~="rounded-xl"][class~="border"] > div[class~="border-b"]:first-child label {
+  color: rgb(var(--ui-ink));
+  font-size: 13px;
+  line-height: 19.5px;
+  font-weight: 600;
+}
+
+html.flat-theme :is(#create-group-form, #edit-group-form) div[class~="relative"][class~="overflow-hidden"][class~="rounded-xl"][class~="border"] > div[class~="border-b"]:first-child p {
+  color: rgb(var(--ui-muted));
+  font-size: 12px;
+  line-height: 18px;
+}
+
+html.flat-theme :is(#create-group-form, #edit-group-form) div[class~="relative"][class~="overflow-hidden"][class~="rounded-xl"][class~="border"] > div[class~="p-4"] {
+  background-color: rgb(var(--ui-surface));
+}
+
+html.flat-theme :is(#create-group-form, #edit-group-form) div[class~="relative"][class~="overflow-hidden"][class~="rounded-xl"][class~="border"] div[class~="border-dashed"][class~="border-primary-200"] {
+  padding: 12px 14px;
+  border-width: 1px;
+  border-color: rgb(var(--ui-line-strong));
+  border-radius: var(--ui-radius-lg);
+  background-color: rgb(var(--ui-surface));
+  color: rgb(var(--ui-muted));
+  font-size: 13px;
+}
+
+html.flat-theme :is(#create-group-form, #edit-group-form) div[class~="relative"][class~="overflow-hidden"][class~="rounded-xl"][class~="border"] div[class~="group"][class~="rounded-xl"][class~="border"][class~="p-4"] {
+  padding: 12px 14px;
+  border-color: rgb(var(--ui-line));
+  border-radius: var(--ui-radius-lg);
+  background-color: rgb(var(--ui-surface));
+  box-shadow: none;
+}
+
+html.flat-theme :is(#create-group-form, #edit-group-form) div[class~="relative"][class~="overflow-hidden"][class~="rounded-xl"][class~="border"] div[class~="group"][class~="rounded-xl"][class~="border"][class~="p-4"]:hover {
+  border-color: rgb(var(--ui-line-strong));
+  box-shadow: none;
+}
+
+html.flat-theme :is(#create-group-form, #edit-group-form) div[class~="relative"][class~="overflow-hidden"][class~="rounded-xl"][class~="border"] div[class~="group"] input.input {
+  background-color: rgb(var(--ui-surface));
+}
+
+html.flat-theme :is(#create-group-form, #edit-group-form) div[class~="relative"][class~="overflow-hidden"][class~="rounded-xl"][class~="border"] div[class~="group"] div[class~="text-primary-300"] {
+  color: rgb(var(--ui-faint));
+}
+
+html.flat-theme :is(#create-group-form, #edit-group-form) div[class~="relative"][class~="overflow-hidden"][class~="rounded-xl"][class~="border"] button[class~="w-full"][class~="border-dashed"] {
+  border-width: 1px;
+  border-color: rgb(var(--ui-line-strong));
+  border-radius: var(--ui-radius-lg);
+  background-color: rgb(var(--ui-surface));
+  color: rgb(var(--ui-muted));
+}
+
+html.flat-theme :is(#create-group-form, #edit-group-form) div[class~="relative"][class~="overflow-hidden"][class~="rounded-xl"][class~="border"] button[class~="w-full"][class~="border-dashed"]:hover {
+  border-color: rgb(var(--ui-line-focus));
+  background-color: rgb(var(--ui-surface));
+  color: rgb(var(--ui-ink));
+}
+
+/* ================================================================== 12 · IP management dialogs */
+
+/* 12.1 Standard / quick add: the reference's code tabs (REF §8.15: a 2px accent rule under the current tab, its text ink;
+   the others muted, ink on hover; 8 / 10 inset, 12.5 / 600, 14px glyphs), on the structural line. */
+html.flat-theme [data-ui="proxy-create-tabs"] {
+  margin-bottom: 16px;
+  border-color: rgb(var(--ui-line));
+}
+
+html.flat-theme [data-ui="proxy-create-tabs"] > div:first-child > button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 10px;
+  border-bottom-color: transparent;
+  color: rgb(var(--ui-muted));
+  font-size: 12.5px;
+  line-height: 18.75px;
+  font-weight: 600;
+  transition: color var(--ui-duration) var(--ui-ease), border-color var(--ui-duration) var(--ui-ease);
+}
+
+html.flat-theme [data-ui="proxy-create-tabs"] > div:first-child > button:hover {
+  color: rgb(var(--ui-ink));
+}
+
+html.flat-theme [data-ui="proxy-create-tabs"] > div:first-child > button[class~="border-primary-500"] {
+  border-bottom-color: rgb(var(--ui-focus));
+  color: rgb(var(--ui-ink));
+}
+
+html.flat-theme [data-ui="proxy-create-tabs"] > div:first-child > button > svg {
+  width: 14px;
+  height: 14px;
+  margin: 0;
+}
+
+html.flat-theme [data-ui="proxy-create-tabs"] > div:first-child > button:focus-visible {
+  outline: 2px solid rgb(var(--ui-focus));
+  outline-offset: -2px;
+}
+
+/* 12.2 Expiry presets (7 / 30 / 90 / 180 days): one control, the reference's segmented choice (REF §8.5: the structural
+   frame, 2px inset, 12.5 / 600 segments, the matching preset the ink thumb), as its 24 hours / 7 days / 30 days. */
+html.flat-theme :is(#create-proxy-form, #edit-proxy-form) div[class~="mb-2"][class~="flex-wrap"]:has(> button.btn-sm) {
+  display: inline-flex;
+  gap: 0;
+  margin-bottom: 8px;
+  padding: 2px;
+  border: 1px solid rgb(var(--ui-line));
+  border-radius: var(--ui-radius-lg);
+  background-color: rgb(var(--ui-surface));
+}
+
+html.flat-theme :is(#create-proxy-form, #edit-proxy-form) div[class~="mb-2"][class~="flex-wrap"] > button.btn-sm {
+  min-height: 0;
+  padding: 6px 14px;
+  border-color: transparent;
+  border-radius: var(--ui-radius-md);
+  background-color: transparent;
+  color: rgb(var(--ui-muted));
+  font-size: 12.5px;
+  line-height: 18.75px;
+  font-weight: 600;
+  transition: color var(--ui-duration-slide) var(--ui-ease-out), background-color var(--ui-duration-slide) var(--ui-ease-out);
+}
+
+html.flat-theme :is(#create-proxy-form, #edit-proxy-form) div[class~="mb-2"][class~="flex-wrap"] > button.btn-sm:hover {
+  background-color: transparent;
+  color: rgb(var(--ui-ink));
+}
+
+html.flat-theme :is(#create-proxy-form, #edit-proxy-form) div[class~="mb-2"][class~="flex-wrap"] > button.btn-sm.btn-primary,
+html.flat-theme :is(#create-proxy-form, #edit-proxy-form) div[class~="mb-2"][class~="flex-wrap"] > button.btn-sm.btn-primary:hover {
+  border-color: rgb(var(--ui-ink));
+  background-color: rgb(var(--ui-ink));
+  color: rgb(var(--ui-on-ink));
+}
+
+/* 12.3 Quick add's parse result and the quality report's summary: neutral cards (1px line, the grouped fill), the report's
+   score 15/600 Geist Mono (the reference's statistic figure); its table is data.css' plain table. Hooks (ProxiesView):
+   proxy-parse-result, proxy-quality-summary. */
+html.flat-theme .modal-body div[data-ui="proxy-parse-result"][class~="rounded-lg"][class~="bg-gray-50"][class~="p-4"] {
+  padding: 10px 14px;
+  border: 1px solid rgb(var(--ui-line));
+  border-radius: var(--ui-radius-md);
+  background: color-mix(in srgb, rgb(var(--ui-subtle)) 60%, rgb(var(--ui-surface)));
+}
+
+html.flat-theme .modal-body > div > div[data-ui="proxy-quality-summary"][class~="rounded-lg"][class~="border"][class~="bg-gray-50"][class~="p-4"] {
+  padding: 12px 14px;
+  border-color: rgb(var(--ui-line));
+  border-radius: var(--ui-radius-lg);
+  background: color-mix(in srgb, rgb(var(--ui-subtle)) 60%, rgb(var(--ui-surface)));
+}
+
+html.flat-theme .modal-body > div > div[data-ui="proxy-quality-summary"][class~="rounded-lg"][class~="border"][class~="bg-gray-50"][class~="p-4"] div[class~="text-2xl"][class~="font-semibold"] {
+  font-family: var(--ui-font-mono);
+  font-size: 15px;
+  line-height: 22.5px;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ================================================================== 13 · subscription, redeem, promo and announcement dialogs */
+
+/* 13.1 Adjust subscription: the facts card neutral (1px line, radius 8, the grouped fill), 13px muted with ink values. */
+html.flat-theme #extend-subscription-form > div:first-child {
+  padding: 12px 14px;
+  border: 1px solid rgb(var(--ui-line));
+  border-radius: var(--ui-radius-lg);
+  background: color-mix(in srgb, rgb(var(--ui-subtle)) 60%, rgb(var(--ui-surface)));
+}
+
+html.flat-theme #extend-subscription-form > div:first-child > p {
+  color: rgb(var(--ui-muted));
+  font-size: 13px;
+}
+
+html.flat-theme #extend-subscription-form > div:first-child span[class~="font-medium"] {
+  color: rgb(var(--ui-ink));
+  font-variant-numeric: tabular-nums;
+}
+
+/* the users picked for a batch assignment: neutral rows (the grouped fill, radius 6) */
+html.flat-theme #assign-subscription-form [data-test="assign-users"] li {
+  border-radius: var(--ui-radius-md);
+  background-color: rgb(var(--ui-subtle));
+  font-size: 13px;
+}
+
+/* 13.2 The subscription guide: steps numbered in the reference's letter square (20px, radius 4, 1px line, the grouped fill,
+   Geist Mono 600 ink-soft), not accent circles; lists in the docs' 13px muted; the steps' table keeps its label column on
+   the grouped fill. */
+html.flat-theme [data-ui="subscription-guide-title"] ~ div h3 > span[class~="rounded-full"][class~="bg-primary-100"] {
+  width: 20px;
+  height: 20px;
+  border: 1px solid rgb(var(--ui-line-strong));
+  border-radius: var(--ui-radius-sm);
+  background-color: rgb(var(--ui-subtle));
+  color: rgb(var(--ui-ink-soft));
+  font-family: var(--ui-font-mono);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+html.flat-theme [data-ui="subscription-guide-title"] + p {
+  color: rgb(var(--ui-muted));
+  font-size: 13px;
+}
+
+html.flat-theme [data-ui="subscription-guide-title"] ~ div ol {
+  color: rgb(var(--ui-muted));
+  font-size: 13px;
+  line-height: 1.625;
+}
+
+html.flat-theme [data-ui="subscription-guide-title"] ~ div ol > li::marker {
+  color: rgb(var(--ui-faint));
+}
+
+html.flat-theme [data-ui="subscription-guide-title"] ~ div div[class~="overflow-hidden"][class~="rounded-lg"][class~="border"] {
+  border-color: rgb(var(--ui-line));
+  border-radius: var(--ui-radius-lg);
+}
+
+html.flat-theme [data-ui="subscription-guide-title"] ~ div div[class~="overflow-hidden"] td[class~="bg-gray-50"] {
+  background-color: color-mix(in srgb, rgb(var(--ui-subtle)) 60%, rgb(var(--ui-surface)));
+  color: rgb(var(--ui-ink));
+}
+
+/* 13.3 Generate codes: the code-expiry choices are one control, the reference's segmented choice (the structural frame,
+   2px inset, 12.5 / 600 segments, the chosen one the ink thumb) instead of accent-tinted boxes. The frame is the grid of
+   the generate form (hook redeem-generate-form, RedeemView); the repeated attributes keep the former :has() specificity. */
+html.flat-theme form[data-ui="redeem-generate-form"] > div > div[class~="grid"][class~="grid-cols-2"][class~="sm:grid-cols-5"][class~="grid-cols-2"][class~="sm:grid-cols-5"] {
+  gap: 0;
+  padding: 2px;
+  border: 1px solid rgb(var(--ui-line));
+  border-radius: var(--ui-radius-lg);
+  background-color: rgb(var(--ui-surface));
+}
+
+html.flat-theme div[class~="grid"][class~="grid-cols-2"][class~="sm:grid-cols-5"] > button[class~="rounded-lg"][class~="border"][class~="px-3"][class~="py-2"] {
+  padding: 6px 10px;
+  border-color: transparent;
+  border-radius: var(--ui-radius-md);
+  background-color: transparent;
+  color: rgb(var(--ui-muted));
+  font-size: 12.5px;
+  line-height: 18.75px;
+  font-weight: 600;
+  transition: color var(--ui-duration-slide) var(--ui-ease-out), background-color var(--ui-duration-slide) var(--ui-ease-out);
+}
+
+html.flat-theme div[class~="grid"][class~="grid-cols-2"][class~="sm:grid-cols-5"] > button[class~="rounded-lg"][class~="border"][class~="px-3"][class~="py-2"]:hover {
+  background-color: transparent;
+  color: rgb(var(--ui-ink));
+}
+
+html.flat-theme div[class~="grid"][class~="grid-cols-2"][class~="sm:grid-cols-5"] > button[class~="rounded-lg"][class~="border"][class~="px-3"][class~="py-2"][class~="border-primary-500"] {
+  border-color: rgb(var(--ui-ink));
+  background-color: rgb(var(--ui-ink));
+  color: rgb(var(--ui-on-ink));
+}
+
+html.flat-theme div[class~="grid"][class~="grid-cols-2"][class~="sm:grid-cols-5"] > button[class~="rounded-lg"][class~="border"][class~="px-3"][class~="py-2"]:focus-visible {
+  outline: 2px solid rgb(var(--ui-focus));
+  outline-offset: 2px;
+}
+
+/* 13.4 Generated codes: the header is the dialog header (14 / 18 inset on the structural line, title 14/600, the count
+   12px muted), its success mark the 28px square in the success pair (a status), the close the 28px bordered button; the
+   codes the reference's snippet (Geist Mono 12.5 on the canvas, radius 6, 12 inset); the footer the dialog footer. Hooks
+   (RedeemView): redeem-result-head on the header, redeem-result-body on the body; the footer is the body's next sibling.
+   `div > …:first-child` / `div > … + div:last-child` keep the specificity of the former :has() anchor. */
+html.flat-theme div > div[data-ui="redeem-result-head"]:first-child {
+  padding: var(--ui-dialog-head-y, 14px) var(--ui-dialog-x, 18px);
+  border-color: rgb(var(--ui-line));
+}
+
+html.flat-theme div > div[data-ui="redeem-result-head"]:first-child div[class~="rounded-full"][class~="h-10"] {
+  width: 28px;
+  height: 28px;
+  border: 1px solid rgb(var(--ui-success) / 0.3);
+  border-radius: var(--ui-radius-md);
+  background-color: rgb(var(--ui-success-soft));
+}
+
+html.flat-theme div > div[data-ui="redeem-result-head"]:first-child div[class~="rounded-full"][class~="h-10"] > svg {
+  width: 15px;
+  height: 15px;
+  color: rgb(var(--ui-success));
+}
+
+html.flat-theme div > div[data-ui="redeem-result-head"]:first-child h2 {
+  color: rgb(var(--ui-ink));
+  font-size: 14px;
+  line-height: 20px;
+  font-weight: 600;
+}
+
+html.flat-theme div > div[data-ui="redeem-result-head"]:first-child h2 + p {
+  color: rgb(var(--ui-muted));
+  font-size: 12px;
+  line-height: 18px;
+}
+
+html.flat-theme div > div[data-ui="redeem-result-head"]:first-child > button {
+  display: inline-grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 1px solid rgb(var(--ui-line));
+  border-radius: var(--ui-radius-md);
+  background-color: rgb(var(--ui-surface));
+  color: rgb(var(--ui-muted));
+}
+
+html.flat-theme div > div[data-ui="redeem-result-head"]:first-child > button:hover {
+  background-color: rgb(var(--ui-surface));
+  color: rgb(var(--ui-ink));
+}
+
+html.flat-theme div > div[data-ui="redeem-result-head"]:first-child > button svg {
+  width: 15px;
+  height: 15px;
+}
+
+html.flat-theme [data-ui="redeem-result-body"] {
+  padding: var(--ui-dialog-body-y, 16px) var(--ui-dialog-x, 18px);
+}
+
+html.flat-theme [data-ui="redeem-result-body"] textarea {
+  padding: 12px;
+  border-color: rgb(var(--ui-line));
+  border-radius: var(--ui-radius-md);
+  background-color: rgb(var(--ui-canvas));
+  color: rgb(var(--ui-ink));
+  font-size: 12.5px;
+  line-height: 1.625;
+}
+
+html.flat-theme div > [data-ui="redeem-result-body"] + div:last-child {
+  padding: var(--ui-dialog-foot-y, 12px) var(--ui-dialog-x, 18px);
+  border-color: rgb(var(--ui-line));
+  border-radius: 0 0 var(--ui-radius-lg) var(--ui-radius-lg);
+  background-color: rgb(var(--ui-surface));
+}
+
+/* 13.5 Announcement targeting: the card is the reference's option card (1px line, radius 8, the grouped fill at 60 %); 「所有
+   用户 / 按条件」 is an either / or, drawn as the reference's segmented choice (the radios stay in the page for keyboards and
+   screen readers, visually hidden; the chosen label is the ink thumb; keyboard focus rings the segment); the condition
+   groups are cards on the surface without shadow; 「OR」 / 「AND」 counts in Geist Mono. */
+html.flat-theme [data-ui="announcement-targeting"] {
+  padding: 14px;
+  border-color: rgb(var(--ui-line));
+  border-radius: var(--ui-radius-lg);
+  background: color-mix(in srgb, rgb(var(--ui-subtle)) 60%, rgb(var(--ui-surface)));
+}
+
+html.flat-theme [data-ui="announcement-targeting"] > div:first-child > div:first-child > div:first-child {
+  color: rgb(var(--ui-ink));
+  font-size: 13px;
+  font-weight: 600;
+}
+
+html.flat-theme [data-ui="announcement-targeting"] > div:first-child > div:first-child > div + div {
+  margin-top: 2px;
+  color: rgb(var(--ui-muted));
+  font-size: 12px;
+}
+
+html.flat-theme [data-ui="announcement-targeting"] > div:first-child > div:last-child:has(> label > input[type="radio"]) {
+  display: inline-flex;
+  gap: 0;
+  padding: 2px;
+  border: 1px solid rgb(var(--ui-line));
+  border-radius: var(--ui-radius-lg);
+  background-color: rgb(var(--ui-surface));
+}
+
+html.flat-theme [data-ui="announcement-targeting"] > div:first-child > div:last-child > label:has(> input[type="radio"]) {
+  position: relative;
+  gap: 0;
+  padding: 6px 14px;
+  border-radius: var(--ui-radius-md);
+  color: rgb(var(--ui-muted));
+  font-size: 12.5px;
+  line-height: 18.75px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: color var(--ui-duration-slide) var(--ui-ease-out), background-color var(--ui-duration-slide) var(--ui-ease-out);
+}
+
+html.flat-theme [data-ui="announcement-targeting"] > div:first-child > div:last-child > label:has(> input[type="radio"]):hover {
+  color: rgb(var(--ui-ink));
+}
+
+html.flat-theme [data-ui="announcement-targeting"] > div:first-child > div:last-child > label:has(> input[type="radio"]:checked) {
+  background-color: rgb(var(--ui-ink));
+  color: rgb(var(--ui-on-ink));
+}
+
+html.flat-theme [data-ui="announcement-targeting"] > div:first-child > div:last-child > label > input[type="radio"] {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  opacity: 0;
+}
+
+html.flat-theme [data-ui="announcement-targeting"] > div:first-child > div:last-child > label:has(> input[type="radio"]:focus-visible) {
+  outline: 2px solid rgb(var(--ui-focus));
+  outline-offset: 2px;
+}
+
+html.flat-theme [data-ui="announcement-targeting"] div[class~="rounded-2xl"][class~="bg-white"] {
+  padding: 12px 14px;
+  border-color: rgb(var(--ui-line));
+  border-radius: var(--ui-radius-lg);
+  background-color: rgb(var(--ui-surface));
+  box-shadow: none;
+}
+
+html.flat-theme [data-ui="announcement-targeting"] div[class~="rounded-xl"][class~="bg-gray-50"][class~="p-3"] {
+  border-color: rgb(var(--ui-line));
+  border-radius: var(--ui-radius-md);
+  background: color-mix(in srgb, rgb(var(--ui-subtle)) 60%, rgb(var(--ui-surface)));
+}
+
+/* field labels inside the card sit on its grouped fill: the muted grey (the label grey is 4.50:1 there) */
+html.flat-theme [data-ui="announcement-targeting"] .input-label {
+  color: rgb(var(--ui-muted));
+}
+
+html.flat-theme [data-ui="announcement-targeting"] div[class~="text-sm"][class~="font-medium"] > span[class~="text-xs"] {
+  font-family: var(--ui-font-mono);
+  font-size: 11px;
+}
+
+html.flat-theme [data-ui="announcement-targeting"] div[class~="border-dashed"] {
+  border-color: rgb(var(--ui-line-strong));
+  border-radius: var(--ui-radius-lg);
+  color: rgb(var(--ui-muted));
+  font-size: 13px;
+}
+
+/* 13.6 Promo codes: a label's 「(留空自动生成)」-style hint reads as part of the label, at its size, in the muted grey. */
+html.flat-theme :is(#create-promo-form, #edit-promo-form) .input-label > span[class~="text-xs"] {
+  color: rgb(var(--ui-muted));
+  font-size: inherit;
+  font-weight: 400;
+  letter-spacing: normal;
+}
+
+/* 13.6b Promo code usages: rows of the reference's list (1px line, radius 8, 10 / 12 inset); the user glyph in the 28px neutral
+   square (upstream's green circle is decoration), the e-mail 13/500 ink, the time Geist Mono 11 muted; the credited amount
+   keeps the success colour (a credit), in Geist Mono. Hook: data-ui="promo-usages" on the list. */
+html.flat-theme [data-ui="promo-usages"] > div[class~="border"] {
+  padding: 10px 12px;
+  border-color: rgb(var(--ui-line));
+  border-radius: var(--ui-radius-lg);
+}
+
+html.flat-theme [data-ui="promo-usages"] > div[class~="border"] div[class~="rounded-full"][class~="h-8"] {
+  width: 28px;
+  height: 28px;
+  border: 1px solid rgb(var(--ui-line));
+  border-radius: var(--ui-radius-md);
+  background-color: color-mix(in srgb, rgb(var(--ui-ink)) 3%, rgb(var(--ui-surface)));
+}
+
+html.flat-theme [data-ui="promo-usages"] > div[class~="border"] div[class~="rounded-full"][class~="h-8"] > svg {
+  width: 14px;
+  height: 14px;
+  color: rgb(var(--ui-ink-soft));
+}
+
+html.flat-theme [data-ui="promo-usages"] > div[class~="border"] p[class~="text-xs"] {
+  color: rgb(var(--ui-muted));
+  font-family: var(--ui-font-mono);
+  font-size: 11px;
+}
+
+html.flat-theme [data-ui="promo-usages"] > div[class~="border"] div[class~="text-right"] > span {
+  color: rgb(var(--ui-success));
+  font-family: var(--ui-font-mono);
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+
+/* 13.7 Read status: e-mails 13/500 ink (data.css draws the table). */
+html.flat-theme [data-ui="announcement-read-status"] td[data-column="email"] > span {
+  font-weight: 500;
+}

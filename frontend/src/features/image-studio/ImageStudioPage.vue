@@ -1,5 +1,5 @@
 <template>
-    <div class="mx-auto w-full max-w-[1500px] space-y-6">
+    <div data-ui="image-studio" class="mx-auto w-full max-w-[1500px] space-y-6">
       <header class="flex flex-wrap items-end justify-between gap-3">
         <div>
           <h1 class="text-2xl font-semibold text-gray-950 dark:text-white">{{ t('imageStudio.title') }}</h1>

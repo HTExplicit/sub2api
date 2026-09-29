@@ -1,6 +1,6 @@
 <template>
-  <div class="card p-4">
-    <div class="mb-4 flex items-center justify-between gap-3">
+  <div class="card p-4" data-ui="chart-card">
+    <div data-ui="dist-head" class="mb-4 flex items-center justify-between gap-3">
       <h3 class="text-sm font-semibold text-gray-900 dark:text-white">
         {{ !enableRankingView || activeView === 'model_distribution'
           ? t('admin.dashboard.modelDistribution')
@@ -106,7 +106,7 @@
       <div class="h-48 w-48 shrink-0">
         <Doughnut :data="chartData" :options="doughnutOptions" />
       </div>
-      <div class="max-h-48 w-full min-w-0 flex-1 overflow-auto">
+      <div data-ui="dist-table" class="max-h-48 w-full min-w-0 flex-1 overflow-auto">
         <table class="w-full text-xs">
           <thead>
             <tr class="text-gray-500 dark:text-gray-400">
@@ -121,6 +121,7 @@
           <tbody>
             <template v-for="model in displayModelStats" :key="model.model">
               <tr
+                data-ui="dist-row"
                 class="border-t border-gray-100 transition-colors dark:border-dark-700"
                 :class="enableBreakdown ? 'cursor-pointer hover:bg-gray-50 dark:hover:bg-dark-700/40' : ''"
                 @click="enableBreakdown && toggleBreakdown('model', model.model)"
@@ -152,7 +153,7 @@
                   ${{ formatCost(model.cost) }}
                 </td>
               </tr>
-              <tr v-if="expandedKey === `model-${model.model}`">
+              <tr v-if="expandedKey === `model-${model.model}`" data-ui="dist-group">
                 <td :colspan="distributionColspan" class="p-0">
                   <UserBreakdownSubTable
                     :items="breakdownItems"
@@ -186,7 +187,7 @@
       <div class="h-48 w-48 shrink-0">
         <Doughnut :data="rankingChartData" :options="rankingDoughnutOptions" />
       </div>
-      <div class="max-h-48 w-full min-w-0 flex-1 overflow-auto">
+      <div data-ui="dist-table" class="max-h-48 w-full min-w-0 flex-1 overflow-auto">
         <table class="w-full text-xs">
           <thead>
             <tr class="text-gray-500 dark:text-gray-400">
@@ -200,6 +201,7 @@
             <tr
               v-for="(item, index) in rankingDisplayItems"
               :key="item.isOther ? 'others' : `${item.user_id}-${index}`"
+              data-ui="dist-row"
               class="border-t border-gray-100 transition-colors dark:border-dark-700"
               :class="item.isOther
                 ? 'bg-gray-50/70 dark:bg-dark-700/20'

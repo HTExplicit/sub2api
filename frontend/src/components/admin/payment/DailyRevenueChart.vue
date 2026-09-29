@@ -1,5 +1,5 @@
 <template>
-  <div class="card p-4">
+  <div class="card p-4" data-ui="chart-card">
     <h3 class="mb-4 text-sm font-semibold text-gray-900 dark:text-white">
       {{ t('payment.admin.dailyRevenue') }}
     </h3>

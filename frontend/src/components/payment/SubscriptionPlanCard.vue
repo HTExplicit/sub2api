@@ -1,5 +1,6 @@
 <template>
   <div
+    data-ui="plan-card"
     :class="[
       'group relative flex flex-col overflow-hidden rounded-2xl border transition-all',
       'hover:shadow-xl hover:-translate-y-0.5',
@@ -8,7 +9,7 @@
     ]"
   >
     <!-- Colored top accent bar -->
-    <div :class="['h-1.5', accentClass]" />
+    <div data-ui="platform-text" :class="['h-1.5', accentClass]" />
 
     <div class="flex flex-1 flex-col p-4">
       <!-- Header: name + badge + price -->
@@ -31,7 +32,7 @@
             <span v-if="plan.currency" class="text-xs font-medium text-gray-400 dark:text-dark-500">{{ plan.currency }}</span>
           </div>
           <div class="flex items-center justify-end gap-1">
-            <span :class="['inline-flex shrink-0 rounded-full px-2 py-0.5 text-[11px] font-medium', badgeLightClass]">
+            <span data-ui="platform-chip" :class="['inline-flex shrink-0 rounded-full px-2 py-0.5 text-[11px] font-medium', badgeLightClass]">
               {{ pLabel }}
             </span>
             <span class="text-[11px] text-gray-400 dark:text-dark-500">/ {{ validitySuffix }}</span>

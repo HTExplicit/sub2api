@@ -861,7 +861,7 @@ function handleToolbarRefresh() {
 </script>
 
 <template>
-  <div :class="['flex flex-col gap-4 rounded-3xl bg-white shadow-sm ring-1 ring-gray-900/5 dark:bg-dark-800 dark:ring-dark-700', props.fullscreen ? 'p-8' : 'p-6']">
+  <div :class="['flex flex-col gap-4 rounded-3xl bg-white shadow-sm ring-1 ring-gray-900/5 dark:bg-dark-800 dark:ring-dark-700', props.fullscreen ? 'p-8' : 'p-6']" data-ui="ops-header">
     <!-- Top Toolbar -->
     <div class="flex flex-wrap items-center justify-between gap-4 border-b border-gray-100 pb-4 dark:border-dark-700">
       <div>
@@ -1548,7 +1548,7 @@ function handleToolbarRefresh() {
       <div v-if="!jobHeartbeats.length" class="text-sm text-gray-500 dark:text-gray-400">
         {{ t('admin.ops.noData') }}
       </div>
-      <div v-else class="space-y-3">
+      <div v-else class="space-y-3" data-ui="ops-dialog ops-jobs">
         <div
           v-for="hb in jobHeartbeats"
           :key="hb.job_name"
@@ -1586,7 +1586,7 @@ function handleToolbarRefresh() {
 
     <!-- Custom Time Range Dialog -->
     <BaseDialog :show="showCustomTimeRangeDialog" :title="t('admin.ops.timeRange.custom')" width="narrow" @close="handleCustomTimeRangeCancel">
-      <div class="space-y-4">
+      <div class="space-y-4" data-ui="ops-dialog ops-custom-range">
         <div>
           <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
             {{ t('admin.ops.customTimeRange.startTime') }}

@@ -1,0 +1,1831 @@
+/* Console theme · overlays: menus, tooltips, dialogs, drawers, toasts, driver.js, announcement markdown (owner: the overlays agent; html.flat-theme selectors, tokens from tokens.css, new data-ui hooks registered here).
+ *
+ * Source: the Experiential Labs console, measured 2026-09-28 (ui-el/ref/console/REF-CONSOLE.md; styles.json jobs
+ * models / logs / docs and componentRecipesFromPublicJs). Measured: FilterMenu (§8.6), the tooltip bubble and the
+ * metric breakdown (§8.9), the Add-model Modal, the login modal and panel (§8.11), the compare tray (§8.12), motion
+ * (§11). Derived in the reference's language (it has no instance): toasts, drawers, dialog footers, the tour and the
+ * announcement panels; each rule says so.
+ *
+ * - Every selector starts with html.flat-theme (theme off = upstream). Specificity >= 0,2,1: this file loads after the
+ *   utilities, but lazily loaded scoped styles (Select, ProxySelector, AccountsView, DateRangePicker) and the global
+ *   CSS components import (onboarding.css, announcement-markdown.css) come later still, so their selectors are
+ *   out-specified, never out-ordered. driver.js needs !important.
+ * - Widths, positions, z-indexes, max-heights, visibility and opacity of anything that opens on hover stay upstream's
+ *   (behaviour.css and the templates own them).
+ * - Shadows only here: menus, lists and tooltips float at --ui-shadow-popover, dialogs, drawers and the tour at
+ *   --ui-shadow-overlay (the page itself has none).
+ *
+ * Hooks this file adds (template lines, nothing else changed in those templates):
+ *   components/common/AnnouncementBell.vue   data-ui="announcement-bell" (the header button, styled by shell.css),
+ *                                            data-ui="announcement-list", data-ui="announcement-detail" (the panels)
+ *   components/common/AnnouncementPopup.vue  data-ui="announcement-popup" (the panel)
+ *   components/common/ConfirmDialog.vue      data-ui="confirm-cancel", data-ui="confirm-ok" (its two utility buttons)
+ *   components/common/HelpTooltip.vue        data-ui="help-tooltip" (the trigger root)
+ *   components/common/LocaleSwitcher.vue     data-ui="menu", data-ui="menu-item"
+ *   components/common/Toast.vue              data-ui="toast-stack", data-ui="toast"
+ * Shared menu hooks for other owners' templates (the accounts filters, folder menu and bulk menu use them):
+ *   data-ui="menu" (panel), data-ui="menu-item" (row; data-tone="danger", aria-selected / aria-checked / data-selected),
+ *   data-ui="menu-label", data-ui="menu-separator", data-ui="menu-check".
+ * Existing hooks and upstream classes read: .modal-*, .dropdown / .dropdown-item, .select-dropdown-portal and its
+ * .select-* parts, .select-dropdown (ProxySelector), .date-picker-dropdown (panel only; its parts are controls.css'),
+ * .action-menu-content, .account-tools-menu-item / -icon, .theme-dark-surface, role="tooltip", info-popover ids,
+ * data-test="account-details-drawer", data-test="operation-dock", .markdown-body, .theme-tour-popover / .driver-*. */
+
+/* ================================================================== 0 · local tokens */
+html.flat-theme {
+  /* menus and lists (FilterMenu, measured): 4px panel inset, 6/12 rows, 12.5/18.75 text, 14px glyphs, 8px gap */
+  --ui-menu-inset: 4px;
+  --ui-menu-row-y: 6px;
+  --ui-menu-row-x: 12px;
+  --ui-menu-text: 12.5px;
+  --ui-menu-leading: 18.75px;
+  --ui-menu-glyph: 14px;
+  /* B6.3 (behaviour.css): a label without a glyph lines up with the labels that have one: 12 + 14 + 8 */
+  --ui-menu-text-inset: 34px;
+  /* dialogs (Modal, measured): 18px sides, 14px header, 16px body; the footer's 12px is derived */
+  --ui-dialog-x: 18px;
+  --ui-dialog-head-y: 14px;
+  --ui-dialog-body-y: 16px;
+  --ui-dialog-foot-y: 12px;
+  /* the panel curve of the reference's dialog and sign-in panel (450ms) */
+  --ui-ease-panel: cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+/* ================================================================== 1 · menus and dropdown lists */
+
+/* 1.1 Panels. FilterMenu: surface, 1px structural line, radius 8, 4px inset, popover shadow; the dark theme draws them
+   on the dark surface too. Covered: the .dropdown recipe (user menu, channel-monitor filters), Select's list, the
+   proxy picker, the date picker's panel (its parts are controls.css'), the row "more" menus (.action-menu-content),
+   the shared data-ui="menu" hook, and upstream's utility-built menus and popover cards (absolute / fixed, white,
+   shadow-lg / xl: column settings, filter and sort menus, the accounts toolbar menus, group pickers, auto-refresh,
+   language, version and subscription cards, search result lists). Each group is written for both themes because the
+   lazily loaded scoped styles restate their dark fill at 0,3,0. */
+html.flat-theme :is(.dropdown, .select-dropdown-portal, .select-dropdown, .date-picker-dropdown, .action-menu-content, [data-ui="menu"]),
+html.flat-theme.dark :is(.dropdown, .select-dropdown-portal, .select-dropdown, .date-picker-dropdown, .action-menu-content, [data-ui="menu"]),
+html.flat-theme :is(div, nav, ul)[class~="bg-white"]:is([class~="absolute"], [class~="fixed"]):is([class~="shadow-lg"], [class~="shadow-xl"]):not([class~="inset-0"], [class~="inset-y-0"], [class~="pointer-events-none"]) {
+  border-radius: var(--ui-radius-lg);
+  border-color: rgb(var(--ui-line));
+  background-color: rgb(var(--ui-surface));
+  box-shadow: var(--ui-shadow-popover);
+}
+
+/* panels drawn with a ring instead of a border keep their box size: the line becomes a 1px spread */
+html.flat-theme .action-menu-content,
+html.flat-theme div[class~="fixed"][class~="bg-white"][class~="ring-1"]:is([class~="shadow-lg"], [class~="shadow-xl"]) {
+  box-shadow: 0 0 0 1px rgb(var(--ui-line)), var(--ui-shadow-popover);
+}
+
+html.flat-theme [data-ui="menu"] {
+  border: 1px solid rgb(var(--ui-line));
+  padding-top: var(--ui-menu-inset);
+  padding-bottom: var(--ui-menu-inset);
+}
+
+/* reveal (REF §11: 200ms ease-out, 4px travel) instead of upstream's scale-in / 8px slide */
+html.flat-theme .dropdown {
+  animation: consoleSlideDown var(--ui-duration-slide) var(--ui-ease-out);
+}
+
+html.flat-theme :is(.select-dropdown-enter-active, .select-dropdown-leave-active, .date-picker-dropdown-enter-active, .date-picker-dropdown-leave-active) {
+  transition: opacity var(--ui-duration-slide) var(--ui-ease-out), transform var(--ui-duration-slide) var(--ui-ease-out);
+}
+
+html.flat-theme :is(.select-dropdown-leave-active, .date-picker-dropdown-leave-active) {
+  transition-duration: var(--ui-duration);
+}
+
+html.flat-theme :is(.select-dropdown-enter-from, .select-dropdown-leave-to, .date-picker-dropdown-enter-from, .date-picker-dropdown-leave-to) {
+  opacity: 0;
+  transform: translateY(-4px);
+}
+
+/* 1.2 Rows. FilterMenu option: 6/12, 12.5/18.75, ink-soft, 8px gap, hover = subtle fill (text unchanged), 150ms. The
+   same row serves command menus (row "more", user menu), lists (Select, proxy picker) and upstream's utility menus
+   (their full-width buttons). The named rows share one :is() group (0,3,1), so every state below is written on it. */
+html.flat-theme :is(.dropdown-item, .select-dropdown-portal .select-option, .select-dropdown .select-option, .action-menu-content :is(button, a), [data-ui="menu-item"], .account-tools-menu-item),
+html.flat-theme :is(div, nav, ul)[class~="bg-white"]:is([class~="absolute"], [class~="fixed"]):is([class~="shadow-lg"], [class~="shadow-xl"]) :is(button, a)[class~="w-full"]:is([class~="flex"], [class~="text-left"]):not(.btn) {
+  gap: 8px;
+  padding: var(--ui-menu-row-y) var(--ui-menu-row-x);
+  font-size: var(--ui-menu-text);
+  line-height: var(--ui-menu-leading);
+  transition: color var(--ui-duration) var(--ui-ease), background-color var(--ui-duration) var(--ui-ease);
+}
+
+/* inset rows (upstream's p-1.5 / p-2 panels with rounded items) keep the ModelPicker's 4px corners */
+html.flat-theme :is(div, nav, ul)[class~="bg-white"]:is([class~="absolute"], [class~="fixed"]):is([class~="shadow-lg"], [class~="shadow-xl"]) :is(button, a)[class~="w-full"]:is([class~="rounded-md"], [class~="rounded-lg"], [class~="rounded"]):not(.btn),
+html.flat-theme .account-tools-menu-item {
+  border-radius: var(--ui-radius-sm);
+}
+
+/* neutral text: the rows' own greys and the decorative hues upstream gives single commands (re-authorise blue, refresh
+   purple, privacy emerald, ...); a selected row and a danger row keep their meaning (below) */
+html.flat-theme :is(.dropdown-item, .select-dropdown-portal .select-option, .select-dropdown .select-option, .action-menu-content :is(button, a), [data-ui="menu-item"], .account-tools-menu-item):not(.select-option-selected, [aria-selected="true"], [aria-checked="true"], [aria-current="true"], [aria-current="page"], [data-selected="true"], [class~="bg-primary-50"], [class*="text-primary-"], [class*="text-red-"], [data-tone="danger"]),
+html.flat-theme :is(div, nav, ul)[class~="bg-white"]:is([class~="absolute"], [class~="fixed"]):is([class~="shadow-lg"], [class~="shadow-xl"]) :is(button, a)[class~="w-full"]:is([class~="text-gray-700"], [class~="text-gray-600"], [class~="text-gray-800"], [class~="text-gray-900"]):not(.btn, [class~="bg-primary-50"], [class*="text-primary-"]) {
+  color: rgb(var(--ui-ink-soft));
+}
+
+/* selected: ink text (FilterMenu), no tint (upstream tints it primary-50) */
+html.flat-theme :is(.dropdown-item, .select-dropdown-portal .select-option, .select-dropdown .select-option, .action-menu-content :is(button, a), [data-ui="menu-item"], .account-tools-menu-item):is(.select-option-selected, [aria-selected="true"], [aria-checked="true"], [aria-current="true"], [aria-current="page"], [data-selected="true"], [class~="bg-primary-50"], [class*="text-primary-"]),
+html.flat-theme :is(div, nav, ul)[class~="bg-white"]:is([class~="absolute"], [class~="fixed"]):is([class~="shadow-lg"], [class~="shadow-xl"]) :is(button, a)[class~="w-full"]:is([class~="bg-primary-50"], [class*="text-primary-"]):not(.btn) {
+  background-color: transparent;
+  color: rgb(var(--ui-ink));
+}
+
+/* a row's label span painted grey by its template follows the row (ink-soft, ink when selected) */
+html.flat-theme [data-ui="menu-item"] > span[class*="text-gray-"]:not([data-ui]),
+html.flat-theme.dark [data-ui="menu-item"] > span[class*="text-gray-"]:not([data-ui]) {
+  color: inherit;
+}
+
+/* hover and keyboard focus: the subtle fill (REF §8.18: list rows show focus with their fill). The fill alone is
+   1.09:1 on the surface, so keyboard focus also draws the 2px focus ring inside the row, and the list's active option
+   (keyboard or pointer) turns its text to ink: the accessibility floor, not the reference. */
+html.flat-theme :is(.dropdown-item, .select-dropdown-portal .select-option, .select-dropdown .select-option, .action-menu-content :is(button, a), [data-ui="menu-item"], .account-tools-menu-item):not(:disabled, .select-option-group, .select-option-disabled, [aria-disabled="true"]):hover,
+html.flat-theme :is(.dropdown-item, .select-dropdown-portal .select-option, .select-dropdown .select-option, .action-menu-content :is(button, a), [data-ui="menu-item"], .account-tools-menu-item):not(.select-option-group, .select-option-disabled):is(:focus-visible, .select-option-focused),
+html.flat-theme.dark :is(.dropdown-item, .select-dropdown-portal .select-option, .select-dropdown .select-option, .action-menu-content :is(button, a), [data-ui="menu-item"], .account-tools-menu-item):not(:disabled, .select-option-group, .select-option-disabled, [aria-disabled="true"]):hover,
+html.flat-theme.dark :is(.dropdown-item, .select-dropdown-portal .select-option, .select-dropdown .select-option, .action-menu-content :is(button, a), [data-ui="menu-item"], .account-tools-menu-item):not(.select-option-group, .select-option-disabled):is(:focus-visible, .select-option-focused),
+html.flat-theme :is(div, nav, ul)[class~="bg-white"]:is([class~="absolute"], [class~="fixed"]):is([class~="shadow-lg"], [class~="shadow-xl"]) :is(button, a)[class~="w-full"]:is([class~="flex"], [class~="text-left"]):not(.btn, :disabled):is(:hover, :focus-visible) {
+  background-color: rgb(var(--ui-subtle));
+}
+
+html.flat-theme :is(.dropdown-item, .select-dropdown-portal .select-option, .select-dropdown .select-option, .action-menu-content :is(button, a), [data-ui="menu-item"], .account-tools-menu-item):focus-visible,
+html.flat-theme :is(div, nav, ul)[class~="bg-white"]:is([class~="absolute"], [class~="fixed"]):is([class~="shadow-lg"], [class~="shadow-xl"]) :is(button, a)[class~="w-full"]:is([class~="flex"], [class~="text-left"]):not(.btn):focus-visible {
+  outline: 2px solid rgb(var(--ui-focus));
+  outline-offset: -2px;
+}
+
+html.flat-theme :is(.select-dropdown-portal, .select-dropdown) .select-option-focused:not(.select-option-group, .select-option-disabled) {
+  color: rgb(var(--ui-ink));
+}
+
+/* danger rows (log out, delete): danger text and glyph, danger-soft on hover */
+html.flat-theme :is(.dropdown-item, .select-dropdown-portal .select-option, .select-dropdown .select-option, .action-menu-content :is(button, a), [data-ui="menu-item"], .account-tools-menu-item):is([class*="text-red-"], [data-tone="danger"]) {
+  color: rgb(var(--ui-danger));
+}
+
+html.flat-theme :is(.dropdown-item, .select-dropdown-portal .select-option, .select-dropdown .select-option, .action-menu-content :is(button, a), [data-ui="menu-item"], .account-tools-menu-item):is([class*="text-red-"], [data-tone="danger"]):not(:disabled):is(:hover, :focus-visible),
+html.flat-theme.dark :is(.dropdown-item, .select-dropdown-portal .select-option, .select-dropdown .select-option, .action-menu-content :is(button, a), [data-ui="menu-item"], .account-tools-menu-item):is([class*="text-red-"], [data-tone="danger"]):not(:disabled):is(:hover, :focus-visible) {
+  background-color: rgb(var(--ui-danger-soft));
+}
+
+/* disabled rows (the row "more" menu dims its whole fieldset itself) */
+html.flat-theme :is(.dropdown-item, [data-ui="menu-item"]):is(:disabled, [aria-disabled="true"]),
+html.flat-theme :is(.select-dropdown-portal, .select-dropdown) .select-option-disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+/* rows upstream builds as clickable divs (the users table's group replacement menu) */
+html.flat-theme :is(div, nav, ul)[class~="bg-white"]:is([class~="absolute"], [class~="fixed"]):is([class~="shadow-lg"], [class~="shadow-xl"]) > div[class~="cursor-pointer"][class~="flex"] {
+  gap: 8px;
+  padding: var(--ui-menu-row-y) var(--ui-menu-row-x);
+  font-size: var(--ui-menu-text);
+  line-height: var(--ui-menu-leading);
+  color: rgb(var(--ui-ink-soft));
+}
+
+html.flat-theme :is(div, nav, ul)[class~="bg-white"]:is([class~="absolute"], [class~="fixed"]):is([class~="shadow-lg"], [class~="shadow-xl"]) > div[class~="cursor-pointer"][class~="flex"]:hover,
+html.flat-theme.dark :is(div, nav, ul)[class~="bg-white"]:is([class~="absolute"], [class~="fixed"]):is([class~="shadow-lg"], [class~="shadow-xl"]) > div[class~="cursor-pointer"][class~="flex"]:hover {
+  background-color: rgb(var(--ui-subtle));
+  color: rgb(var(--ui-ink));
+}
+
+/* 1.3 Glyphs: 14px, drawn in the row's colour (upstream's decorative icon hues fold into it; a danger row's glyph is
+   danger). A check mark on the current choice is the accent. */
+html.flat-theme :is(.dropdown-item, .select-dropdown-portal .select-option, .select-dropdown .select-option, .action-menu-content :is(button, a), [data-ui="menu-item"], .account-tools-menu-item) > svg,
+html.flat-theme :is(div, nav, ul)[class~="bg-white"]:is([class~="absolute"], [class~="fixed"]):is([class~="shadow-lg"], [class~="shadow-xl"]) :is(button, a)[class~="w-full"]:not(.btn) > svg {
+  width: var(--ui-menu-glyph);
+  height: var(--ui-menu-glyph);
+  flex-shrink: 0;
+}
+
+html.flat-theme :is(.dropdown-item, .select-dropdown-portal .select-option, .select-dropdown .select-option, .action-menu-content :is(button, a), [data-ui="menu-item"], .account-tools-menu-item) svg:not([class*="text-primary-"]) {
+  color: inherit;
+}
+
+html.flat-theme :is(.dropdown, .select-dropdown-portal, .select-dropdown, .action-menu-content, [data-ui="menu"], .account-tools-menu-item) svg[class*="text-primary-"],
+html.flat-theme :is(div, nav, ul)[class~="bg-white"]:is([class~="absolute"], [class~="fixed"]):is([class~="shadow-lg"], [class~="shadow-xl"]) :is(button, a)[class~="w-full"] svg[class*="text-primary-"] {
+  color: var(--ui-link);
+}
+
+/* 1.4 Group labels: the mono label (Geist Mono 10, 0.12em, uppercase, --ui-label; 11px in Chinese) at 8/12/4, as the
+   ModelPicker's group rows; separators are the structural line with 4px around. */
+html.flat-theme [data-ui="menu-label"],
+html.flat-theme :is(.select-dropdown-portal, .select-dropdown) .select-option-group:not(.dropdown-item),
+html.flat-theme :is(div, nav, ul)[class~="bg-white"]:is([class~="absolute"], [class~="fixed"]):is([class~="shadow-lg"], [class~="shadow-xl"]) :is(div, span, p)[class~="uppercase"]:is([class~="text-xs"], [class~="text-[10px]"], [class~="text-[11px]"]):not(button *) {
+  font: var(--ui-label-font);
+  letter-spacing: var(--ui-label-tracking);
+  text-transform: uppercase;
+  color: rgb(var(--ui-label));
+}
+
+html.flat-theme [data-ui="menu-label"],
+html.flat-theme :is(.select-dropdown-portal, .select-dropdown) .select-option-group:not(.dropdown-item),
+html.flat-theme.dark :is(.select-dropdown-portal, .select-dropdown) .select-option-group:not(.dropdown-item) {
+  padding: 8px var(--ui-menu-row-x) 4px;
+  background-color: transparent;
+}
+
+/* the channel-monitor filter's "all" row carries both .select-option-group and .dropdown-item: it is a command */
+html.flat-theme .select-dropdown-portal .dropdown-item.select-option-group {
+  font-weight: 500;
+  color: rgb(var(--ui-ink));
+  border-color: rgb(var(--ui-line));
+}
+
+html.flat-theme [data-ui="menu-separator"] {
+  height: 0;
+  margin: 4px 0;
+  border: 0;
+  border-top: 1px solid rgb(var(--ui-line));
+}
+
+/* 1.5 The 14px choice square (FilterMenu): radius 4, the control outline; accent fill and a 10px check when chosen */
+html.flat-theme [data-ui="menu-check"] {
+  display: inline-grid;
+  place-items: center;
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+  border: 1px solid rgb(var(--ui-control-line));
+  border-radius: var(--ui-radius-sm);
+  background-color: transparent;
+  color: rgb(var(--ui-on-primary));
+}
+
+html.flat-theme [data-ui="menu-check"] svg {
+  width: 10px;
+  height: 10px;
+  stroke-width: 2.5;
+}
+
+html.flat-theme :is([aria-selected="true"], [aria-checked="true"], [data-selected="true"]) > [data-ui="menu-check"],
+html.flat-theme [data-ui="menu-check"][data-checked="true"] {
+  border-color: rgb(var(--ui-primary));
+  background-color: rgb(var(--ui-primary));
+}
+
+/* 1.6 Select's list (the ModelPicker frame: a search row, then the list): a 36px search row on the structural line,
+   13px input, 14px faint glyph; a 4px list inset; a 12px muted empty state. */
+html.flat-theme .select-dropdown-portal .select-search,
+html.flat-theme .select-dropdown .select-header,
+html.flat-theme.dark .select-dropdown-portal .select-search,
+html.flat-theme.dark .select-dropdown .select-header {
+  gap: 8px;
+  min-height: 36px;
+  padding: 0 10px;
+  border-color: rgb(var(--ui-line));
+}
+
+html.flat-theme :is(.select-dropdown-portal .select-search, .select-dropdown .select-search) > svg {
+  width: var(--ui-menu-glyph);
+  height: var(--ui-menu-glyph);
+  color: rgb(var(--ui-faint));
+}
+
+html.flat-theme :is(.select-dropdown-portal, .select-dropdown) .select-search-input,
+html.flat-theme.dark :is(.select-dropdown-portal, .select-dropdown) .select-search-input {
+  min-height: 36px;
+  font-size: 13px;
+  color: rgb(var(--ui-ink));
+}
+
+html.flat-theme :is(.select-dropdown-portal, .select-dropdown) .select-search-input::placeholder,
+html.flat-theme.dark :is(.select-dropdown-portal, .select-dropdown) .select-search-input::placeholder {
+  color: rgb(var(--ui-faint));
+}
+
+html.flat-theme :is(.select-dropdown-portal, .select-dropdown) .select-options {
+  padding-top: var(--ui-menu-inset);
+  padding-bottom: var(--ui-menu-inset);
+}
+
+html.flat-theme :is(.select-dropdown-portal, .select-dropdown) .select-empty,
+html.flat-theme.dark :is(.select-dropdown-portal, .select-dropdown) .select-empty {
+  padding: 16px 10px;
+  font-size: 12px;
+  line-height: 18px;
+  color: rgb(var(--ui-muted));
+}
+
+/* the proxy picker's batch-test glyph button: a 28px ghost icon button, muted -> ink (no emerald) */
+html.flat-theme .select-dropdown .batch-test-btn,
+html.flat-theme.dark .select-dropdown .batch-test-btn {
+  display: inline-grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border-radius: var(--ui-radius-md);
+  color: rgb(var(--ui-muted));
+}
+
+html.flat-theme .select-dropdown .batch-test-btn:not(:disabled):hover,
+html.flat-theme.dark .select-dropdown .batch-test-btn:not(:disabled):hover {
+  background-color: rgb(var(--ui-subtle));
+  color: rgb(var(--ui-ink));
+}
+
+html.flat-theme .select-dropdown .batch-test-btn svg {
+  width: var(--ui-menu-glyph);
+  height: var(--ui-menu-glyph);
+}
+
+/* 1.7 The accounts toolbar menus (更多操作 / 自动刷新): group titles are the section label, glyph tiles are the
+   reference's 24px monochrome logo squares (1px line, radius 4, ink-soft glyph; decisions D3 / D4, no hue per action). */
+html.flat-theme .account-tools-menu-icon,
+html.flat-theme.dark .account-tools-menu-icon {
+  width: 24px;
+  height: 24px;
+  border: 1px solid rgb(var(--ui-line));
+  border-radius: var(--ui-radius-sm);
+  background-color: rgb(var(--ui-surface));
+  color: rgb(var(--ui-ink-soft));
+}
+
+html.flat-theme .account-tools-menu-item .account-tools-menu-icon svg {
+  width: 13px;
+  height: 13px;
+}
+
+/* Perf pass: the panel is hooked ([data-ui="account-tools-panel"], AccountsView.vue) and the :has() sits in the
+   subject with a sibling argument (the group-title row is the container whose next siblings are items). */
+html.flat-theme [data-ui="account-tools-panel"] > div[class~="px-2"][class~="py-2"]:has(~ .account-tools-menu-item) {
+  padding: 8px var(--ui-menu-row-x) 4px;
+}
+
+/* 1.8 The user menu's identity block, the mobile balance and the contact row */
+html.flat-theme .dropdown > div[class~="border-b"]:first-child {
+  padding: 10px var(--ui-menu-row-x);
+}
+
+html.flat-theme .dropdown > div[class~="border-b"]:first-child > :first-child,
+html.flat-theme.dark .dropdown > div[class~="border-b"]:first-child > :first-child {
+  font-size: 13px;
+  line-height: 19.5px;
+  font-weight: 600;
+  color: rgb(var(--ui-ink));
+}
+
+html.flat-theme .dropdown > div[class~="border-b"]:first-child > :nth-child(2),
+html.flat-theme.dark .dropdown > div[class~="border-b"]:first-child > :nth-child(2) {
+  font-size: 12px;
+  line-height: 18px;
+  color: rgb(var(--ui-muted));
+}
+
+html.flat-theme .dropdown > div:is([class~="border-t"], [class~="border-b"]),
+html.flat-theme.dark .dropdown > div:is([class~="border-t"], [class~="border-b"]) {
+  border-color: rgb(var(--ui-line));
+}
+
+html.flat-theme .dropdown > div[class~="py-1"] {
+  padding-top: var(--ui-menu-inset);
+  padding-bottom: var(--ui-menu-inset);
+}
+
+html.flat-theme .dropdown > div[class~="border-t"][class~="px-4"],
+html.flat-theme .dropdown > div[class~="border-b"][class~="px-4"]:not(:first-child) {
+  padding: 8px var(--ui-menu-row-x);
+}
+
+html.flat-theme .dropdown > div[class~="border-t"][class~="px-4"] > div,
+html.flat-theme.dark .dropdown > div[class~="border-t"][class~="px-4"] > div {
+  gap: 8px;
+  font-size: 12px;
+  line-height: 18px;
+  color: rgb(var(--ui-muted));
+}
+
+html.flat-theme .dropdown > div[class~="border-t"][class~="px-4"] > div > svg {
+  width: var(--ui-menu-glyph);
+  height: var(--ui-menu-glyph);
+}
+
+html.flat-theme .dropdown > div[class~="border-t"][class~="px-4"] > div > span:last-child,
+html.flat-theme.dark .dropdown > div[class~="border-t"][class~="px-4"] > div > span:last-child {
+  font-family: var(--ui-font-mono);
+  font-weight: 400;
+  color: rgb(var(--ui-ink-soft));
+}
+
+/* ================================================================== 2 · tooltips and detail popovers */
+
+/* 2.1 Upstream draws its tips as dark boxes; the reference's are light: surface, 1px control outline (line-strong),
+   radius 6, popover shadow (tooltip bubble §8.9; the metric breakdown uses the same frame at 12/8 inset). In the dark
+   theme they are the dark surface with the same outline. Covered: HelpTooltip, InfoPopover, the usage table's cost
+   and token cards, the hover tips of the accounts / users / groups / account-form templates. Opening, placement and
+   hover logic are untouched. */
+html.flat-theme :is([role="tooltip"].theme-dark-surface, .theme-dark-surface[id^="info-popover-"], div[class~="fixed"][class~="pointer-events-none"] > .theme-dark-surface),
+html.flat-theme :is(div, span)[class~="text-white"]:is([class~="bg-gray-900"], [class~="bg-gray-800"]):is([class~="absolute"], [class~="fixed"], [class~="shadow-lg"], [class~="shadow-xl"]):not(button, a) {
+  border: 1px solid rgb(var(--ui-line-strong));
+  border-radius: var(--ui-radius-md);
+  background-color: rgb(var(--ui-surface));
+  box-shadow: var(--ui-shadow-popover);
+  color: rgb(var(--ui-ink-soft));
+  font-size: 12px;
+  line-height: 18px;
+  /* the text shades upstream chose for a dark ground, resolved for the light surface; white text is ink */
+  --theme-on-fill: var(--ui-ink);
+  --theme-text-gray-100: var(--ui-ink);
+  --theme-text-gray-200: var(--ui-ink);
+  --theme-text-gray-300: var(--ui-ink-soft);
+  --theme-text-gray-400: var(--ui-muted);
+  --theme-text-gray-500: var(--ui-muted);
+  --theme-line-gray-600: var(--ui-line);
+  --theme-line-gray-700: var(--ui-line);
+  --theme-line-gray-800: var(--ui-line);
+  --theme-text-primary-100: 20 124 66;
+  --theme-text-primary-200: 20 124 66;
+  --theme-text-primary-300: 20 124 66;
+  --theme-text-primary-400: 20 124 66;
+  --theme-text-primary-500: 20 124 66;
+  --theme-text-primary-600: 20 124 66;
+  --theme-text-primary-700: 20 124 66;
+  --theme-text-success-100: var(--ui-success);
+  --theme-text-success-200: var(--ui-success);
+  --theme-text-success-300: var(--ui-success);
+  --theme-text-success-400: var(--ui-success);
+  --theme-text-success-500: var(--ui-success);
+  --theme-text-success-600: var(--ui-success);
+  --theme-text-success-700: var(--ui-success);
+  --theme-text-danger-100: var(--ui-danger);
+  --theme-text-danger-200: var(--ui-danger);
+  --theme-text-danger-300: var(--ui-danger);
+  --theme-text-danger-400: var(--ui-danger);
+  --theme-text-danger-500: var(--ui-danger);
+  --theme-text-danger-600: var(--ui-danger);
+  --theme-text-danger-700: var(--ui-danger);
+  --theme-text-warning-100: var(--ui-warning);
+  --theme-text-warning-200: var(--ui-warning);
+  --theme-text-warning-300: var(--ui-warning);
+  --theme-text-warning-400: var(--ui-warning);
+  --theme-text-warning-500: var(--ui-warning);
+  --theme-text-warning-600: var(--ui-warning);
+  --theme-text-warning-700: var(--ui-warning);
+  /* prices, tiers and rates were tinted sky / violet / fuchsia / cyan / blue on the dark box: in the reference a figure
+     is ink (decision D2, no decorative colour) */
+  --theme-text-info-100: var(--ui-ink);
+  --theme-text-info-200: var(--ui-ink);
+  --theme-text-info-300: var(--ui-ink);
+  --theme-text-info-400: var(--ui-ink);
+  --theme-text-info-500: var(--ui-ink);
+  --theme-text-info-600: var(--ui-ink);
+  --theme-text-info-700: var(--ui-ink);
+  --theme-text-purple-100: var(--ui-ink);
+  --theme-text-purple-200: var(--ui-ink);
+  --theme-text-purple-300: var(--ui-ink);
+  --theme-text-purple-400: var(--ui-ink);
+  --theme-text-purple-500: var(--ui-ink);
+  --theme-text-purple-600: var(--ui-ink);
+  --theme-text-purple-700: var(--ui-ink);
+}
+
+/* the dark theme: the dark surface and outline; the variables above resolve to the dark roles by themselves, except
+   the accent text, which is the mint there */
+html.flat-theme.dark :is([role="tooltip"].theme-dark-surface, .theme-dark-surface[id^="info-popover-"], div[class~="fixed"][class~="pointer-events-none"] > .theme-dark-surface),
+html.flat-theme.dark :is(div, span)[class~="text-white"]:is([class~="bg-gray-900"], [class~="bg-gray-800"]):is([class~="absolute"], [class~="fixed"], [class~="shadow-lg"], [class~="shadow-xl"]):not(button, a) {
+  border-color: rgb(var(--ui-line-strong));
+  background-color: rgb(var(--ui-surface));
+  --theme-text-primary-100: 182 247 200;
+  --theme-text-primary-200: 182 247 200;
+  --theme-text-primary-300: 182 247 200;
+  --theme-text-primary-400: 182 247 200;
+  --theme-text-primary-500: 182 247 200;
+  --theme-text-primary-600: 182 247 200;
+  --theme-text-primary-700: 182 247 200;
+}
+
+/* 2.2 Insets: the bubble's 6/10 for one-line tips, the breakdown's 8/12 for paragraphs and cards (p-3 boxes). */
+html.flat-theme :is(div, span)[class~="text-white"]:is([class~="bg-gray-900"], [class~="bg-gray-800"]):is([class~="absolute"], [class~="fixed"]):not(button, a) {
+  padding: 6px 10px;
+}
+
+html.flat-theme :is([role="tooltip"].theme-dark-surface, .theme-dark-surface[id^="info-popover-"], div[class~="fixed"][class~="pointer-events-none"] > .theme-dark-surface, div[class~="text-white"][class~="bg-gray-900"][class~="p-3"]),
+html.flat-theme :is(div, span)[class~="text-white"]:is([class~="bg-gray-900"], [class~="bg-gray-800"]):is([class~="absolute"], [class~="fixed"]):is([class~="w-72"], [class~="w-80"], [class~="w-56"], [class~="min-w-[200px]"], [class~="min-w-[220px]"]):not(button, a) {
+  padding: 8px 12px;
+}
+
+/* titles and emphasis inside a tip are ink (the bubble's 12/16 500 title) */
+html.flat-theme :is([role="tooltip"].theme-dark-surface, .theme-dark-surface[id^="info-popover-"]) :is(strong, b, [class~="font-semibold"], [class~="font-medium"], [class~="font-bold"]) {
+  color: rgb(var(--ui-ink));
+  font-weight: 500;
+}
+
+/* 2.3 Breakdown cards (the usage table's cost and token details): the reference's MetricFigure rows, label left,
+   figure right in Geist Mono tabular ink; the card's section title is its 11px uppercase divider label. */
+html.flat-theme div[class~="fixed"][class~="pointer-events-none"] > .theme-dark-surface {
+  padding: 8px 12px;
+}
+
+html.flat-theme div[class~="fixed"][class~="pointer-events-none"] > .theme-dark-surface [class~="justify-between"] > span:last-child {
+  font-family: var(--ui-font-mono);
+  font-variant-numeric: tabular-nums;
+  font-weight: 400;
+}
+
+html.flat-theme div[class~="fixed"][class~="pointer-events-none"] > .theme-dark-surface [class~="justify-between"] > span:first-child {
+  color: rgb(var(--ui-ink-soft));
+}
+
+html.flat-theme div[class~="fixed"][class~="pointer-events-none"] > .theme-dark-surface div[class~="font-semibold"][class~="mb-1"] {
+  margin-bottom: 4px;
+  font-size: 11px;
+  line-height: 16.5px;
+  font-weight: 500;
+  letter-spacing: 0.025em;
+  text-transform: uppercase;
+  color: rgb(var(--ui-muted));
+}
+
+html.flat-theme div[class~="fixed"][class~="pointer-events-none"] > .theme-dark-surface :is([class~="border-t"], [class~="border-b"]) {
+  border-color: rgb(var(--ui-line));
+}
+
+/* 2.4 Arrows: the bubble's 7px square rotated 45° on the outline colour (left -4px). Rotated squares keep their
+   corner; border triangles become that square too (a triangle cannot carry an edge line). */
+html.flat-theme :is([role="tooltip"].theme-dark-surface, div[class~="text-white"][class~="bg-gray-900"][class~="p-3"]) > div[class~="absolute"][class~="rotate-45"] {
+  width: 7px;
+  height: 7px;
+  bottom: -4px;
+  border: 0 solid rgb(var(--ui-line-strong));
+  border-right-width: 1px;
+  border-bottom-width: 1px;
+  background-color: rgb(var(--ui-surface));
+}
+
+/* the usage cards' left-pointing arrow (mirrored by the template when the card opens to the left) */
+html.flat-theme div[class~="fixed"][class~="pointer-events-none"] > .theme-dark-surface > div[class~="absolute"][class~="right-full"] {
+  width: 7px;
+  height: 7px;
+  margin-right: -4px;
+  margin-left: -4px;
+  border: 0 solid rgb(var(--ui-line-strong));
+  border-left-width: 1px;
+  border-bottom-width: 1px;
+  background-color: rgb(var(--ui-surface));
+  --tw-rotate: 45deg;
+}
+
+/* hover tips with a border triangle above (pointing up) or below (pointing down) */
+html.flat-theme :is(div, span)[class~="text-white"]:is([class~="bg-gray-900"], [class~="bg-gray-800"]):is([class~="absolute"], [class~="fixed"]) > div[class~="absolute"][class~="border-transparent"][class~="bottom-full"] {
+  width: 7px;
+  height: 7px;
+  margin-bottom: -4px;
+  border: 0 solid rgb(var(--ui-line-strong));
+  border-top-width: 1px;
+  border-left-width: 1px;
+  background-color: rgb(var(--ui-surface));
+  transform: translate(var(--tw-translate-x), var(--tw-translate-y)) rotate(45deg);
+}
+
+html.flat-theme :is(div, span)[class~="text-white"]:is([class~="bg-gray-900"], [class~="bg-gray-800"]):is([class~="absolute"], [class~="fixed"]) > div[class~="absolute"][class~="border-transparent"][class~="top-full"] {
+  width: 7px;
+  height: 7px;
+  margin-top: -4px;
+  border: 0 solid rgb(var(--ui-line-strong));
+  border-right-width: 1px;
+  border-bottom-width: 1px;
+  background-color: rgb(var(--ui-surface));
+  transform: translate(var(--tw-translate-x), var(--tw-translate-y)) rotate(45deg);
+}
+
+/* 2.5 HelpTooltip's trigger: a 14px info glyph, faint -> muted (the reference's cursor-help info icon; no accent) */
+html.flat-theme [data-ui="help-tooltip"] > svg {
+  width: 14px;
+  height: 14px;
+  stroke-width: 1.8;
+  color: rgb(var(--ui-faint));
+}
+
+html.flat-theme [data-ui="help-tooltip"]:hover > svg,
+html.flat-theme.dark [data-ui="help-tooltip"]:hover > svg {
+  color: rgb(var(--ui-muted));
+}
+
+/* HelpTooltip's close glyph (click mode) */
+html.flat-theme [role="tooltip"].theme-dark-surface > button[class~="absolute"] {
+  color: rgb(var(--ui-muted));
+  border-radius: var(--ui-radius-sm);
+}
+
+html.flat-theme [role="tooltip"].theme-dark-surface > button[class~="absolute"]:hover {
+  background-color: rgb(var(--ui-subtle));
+  color: rgb(var(--ui-ink));
+}
+
+/* 2.6 Icon-only row actions (behaviour B2.1 places the label left of the button): the bubble's look, 12/16 500 ink. */
+@media (hover: hover) and (pointer: fine) {
+  html.flat-theme:is(.flat-theme) :is(.table-wrapper:is([data-table="proxies"], [data-table="keys"], [data-table="groups"], [data-table="accounts"], [data-table="users"]), :is([data-ui~="subscriptions-page"], [data-ui~="redeem-page"]) .table-wrapper) td[data-column="actions"] button[class~="flex-col"]:is(:hover, :focus-visible) > span[class~="text-xs"] {
+    padding: 6px 10px;
+    border: 1px solid rgb(var(--ui-line-strong));
+    border-radius: var(--ui-radius-md);
+    background-color: rgb(var(--ui-surface));
+    box-shadow: var(--ui-shadow-popover);
+    color: rgb(var(--ui-ink));
+    font-size: 12px;
+    line-height: 16px;
+    font-weight: 500;
+  }
+}
+
+/* 2.7 White hover cards (the usage KPI explanations, the supported-model card; the header balance card is the shell's):
+   the breakdown frame, radius 6, control outline, 12/8 inset, 12px. */
+html.flat-theme :is(div, span)[class~="pointer-events-none"][class~="bg-white"]:is([class~="absolute"], [class~="fixed"]):is([class~="shadow-lg"], [class~="shadow-xl"]):not([data-ui="header-balance"] > *) {
+  border: 1px solid rgb(var(--ui-line-strong));
+  border-radius: var(--ui-radius-md);
+  background-color: rgb(var(--ui-surface));
+  box-shadow: var(--ui-shadow-popover);
+  font-size: 12px;
+  line-height: 18px;
+}
+
+html.flat-theme :is(div, span)[class~="pointer-events-none"][class~="bg-white"]:is([class~="absolute"], [class~="fixed"]):is([class~="shadow-lg"], [class~="shadow-xl"])[class~="p-3"]:not([data-ui="header-balance"] > *) {
+  padding: 8px 12px;
+}
+
+/* ================================================================== 3 · dialogs */
+
+/* 3.1 Scrim: --scrim (ink 20% / black 60%), no blur (Modal, login modal, docs search; measured). Covers BaseDialog and
+   upstream's utility-built dialogs and drawers; image lightboxes (a scrim holding an <img>) and the mobile sidebar's
+   overlay (the shell's) keep theirs. */
+html.flat-theme .modal-overlay,
+html.flat-theme div[class~="fixed"][class~="inset-0"]:is([class~="bg-black/35"], [class~="bg-black/40"], [class~="bg-black/50"], [class~="bg-black/60"], [class~="bg-black/70"], [class~="bg-gray-950/60"], [class~="bg-gray-900/50"], [class~="bg-gray-900/60"]):not([class~="lg:hidden"], :has(> img)) {
+  background-color: rgb(var(--ui-scrim));
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+
+/* the Modal's scrim inset: 16px, 24px from 640px (upstream 8 / 16) */
+html.flat-theme .modal-overlay {
+  padding: 16px;
+}
+
+@media (min-width: 640px) {
+  html.flat-theme .modal-overlay {
+    padding: 24px;
+  }
+}
+
+/* 3.2 Panel: surface, 1px structural line, radius 8, overlay shadow (Modal, measured). */
+html.flat-theme .modal-content {
+  border: 1px solid rgb(var(--ui-line));
+  border-radius: var(--ui-radius-lg);
+  background-color: rgb(var(--ui-surface));
+  box-shadow: var(--ui-shadow-overlay);
+}
+
+/* upstream's utility-built dialogs: the panel directly in (or one wrapper inside) the fixed scrim layer */
+html.flat-theme div[class~="fixed"][class~="inset-0"] > :is(div, section)[class~="bg-white"]:is([class~="shadow-xl"], [class~="shadow-2xl"]):not([data-ui]),
+html.flat-theme div[class~="fixed"][class~="inset-0"] > div[class~="min-h-full"] > div[class~="bg-white"]:is([class~="shadow-xl"], [class~="shadow-2xl"]) {
+  border: 1px solid rgb(var(--ui-line));
+  border-radius: var(--ui-radius-lg);
+  background-color: rgb(var(--ui-surface));
+  box-shadow: var(--ui-shadow-overlay);
+}
+
+/* 3.3 Header: 14/18 inset on the structural line, 8px gap; title 14/20 600 ink (Modal h2). Titles wrap instead of
+   being cut (nothing hidden). */
+html.flat-theme .modal-header {
+  gap: 8px;
+  padding: var(--ui-dialog-head-y) var(--ui-dialog-x);
+  border-bottom: 1px solid rgb(var(--ui-line));
+}
+
+html.flat-theme .modal-title {
+  min-width: 0;
+  margin: 0;
+  font-size: 14px;
+  line-height: 20px;
+  font-weight: 600;
+  letter-spacing: 0;
+  color: rgb(var(--ui-ink));
+}
+
+/* 3.4 Close: 28px, 1px structural line, surface, radius 6, muted -> ink, a 15px x at 1.8 (Modal close, measured). */
+html.flat-theme .modal-header > button:last-child {
+  display: inline-grid;
+  place-items: center;
+  flex-shrink: 0;
+  width: 28px;
+  height: 28px;
+  margin: 0;
+  padding: 0;
+  border: 1px solid rgb(var(--ui-line));
+  border-radius: var(--ui-radius-md);
+  background-color: rgb(var(--ui-surface));
+  color: rgb(var(--ui-muted));
+  box-shadow: none;
+  transition: color var(--ui-duration) var(--ui-ease);
+}
+
+html.flat-theme .modal-header > button:last-child:hover,
+html.flat-theme.dark .modal-header > button:last-child:hover {
+  background-color: rgb(var(--ui-surface));
+  color: rgb(var(--ui-ink));
+}
+
+html.flat-theme .modal-header > button:last-child svg {
+  width: 15px;
+  height: 15px;
+}
+
+html.flat-theme :is(.modal-header > button:last-child, [data-test="account-details-drawer"] > header .icon-button, [data-ui^="announcement-"] button):focus-visible {
+  outline: 2px solid rgb(var(--ui-focus));
+  outline-offset: 2px;
+  box-shadow: none;
+}
+
+/* 3.5 Body 16/18; footer (derived: the reference's modals end without one) 12/18 on the structural line, 8px gap, no
+   tint; its buttons are the .btn recipes (controls). */
+html.flat-theme .modal-body {
+  padding: var(--ui-dialog-body-y) var(--ui-dialog-x);
+}
+
+html.flat-theme .modal-footer {
+  gap: 8px;
+  padding: var(--ui-dialog-foot-y) var(--ui-dialog-x);
+  border-top: 1px solid rgb(var(--ui-line));
+  background-color: rgb(var(--ui-surface));
+}
+
+/* a footer slot whose button row brings upstream's own top inset (the 分组 dialogs' pt-4) sat 16px low in a 71px
+   footer: the row is the footer's content, 55px with the buttons centred like every Modal's (final review V1-16) */
+html.flat-theme .modal-footer > div[class~="flex"]:only-child:is([class~="pt-2"], [class~="pt-3"], [class~="pt-4"]) {
+  padding-top: 0;
+}
+
+/* 3.6 The confirm dialog: message 13/21 ink-soft; its two utility buttons restated as the .btn recipes (controls'
+   values: 30px, 0 12px, 13/19.5 600, radius 6, 1px edge; cancel = default, confirm = primary ink, a danger confirm
+   = destructive). */
+html.flat-theme .modal-content:has([data-ui="confirm-ok"]) {
+  --uif-confirm: 1;
+}
+
+@container style(--uif-confirm: 1) {
+  html.flat-theme .modal-content .modal-body > div > p:first-child:not([data-uipad]) {
+    font-size: 13px;
+    line-height: 21px;
+    color: rgb(var(--ui-ink-soft));
+  }
+}
+
+html.flat-theme :is([data-ui="confirm-cancel"], [data-ui="confirm-ok"]) {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: var(--ui-control-h);
+  padding: 0 12px;
+  border: 1px solid rgb(var(--ui-line-strong));
+  border-radius: var(--ui-radius-md);
+  background-color: rgb(var(--ui-surface));
+  color: rgb(var(--ui-ink));
+  font-size: 13px;
+  line-height: 19.5px;
+  font-weight: 600;
+  box-shadow: none;
+  --tw-ring-shadow: 0 0 #0000;
+  --tw-ring-offset-shadow: 0 0 #0000;
+}
+
+html.flat-theme [data-ui="confirm-cancel"]:hover,
+html.flat-theme.dark [data-ui="confirm-cancel"]:hover {
+  background-color: rgb(var(--ui-surface));
+}
+
+html.flat-theme [data-ui="confirm-ok"],
+html.flat-theme [data-ui="confirm-ok"]:hover,
+html.flat-theme.dark [data-ui="confirm-ok"]:hover {
+  border-color: rgb(var(--ui-ink));
+  background-color: rgb(var(--ui-ink));
+  color: rgb(var(--ui-on-ink));
+}
+
+html.flat-theme [data-ui="confirm-ok"][class~="bg-red-600"],
+html.flat-theme.dark [data-ui="confirm-ok"][class~="bg-red-600"] {
+  border-color: rgb(var(--ui-danger) / 0.3);
+  background-color: rgb(var(--ui-surface));
+  color: rgb(var(--ui-danger));
+  transition: color var(--ui-duration) var(--ui-ease), background-color var(--ui-duration) var(--ui-ease), border-color var(--ui-duration) var(--ui-ease);
+}
+
+html.flat-theme [data-ui="confirm-ok"][class~="bg-red-600"]:hover,
+html.flat-theme.dark [data-ui="confirm-ok"][class~="bg-red-600"]:hover {
+  border-color: rgb(var(--ui-danger) / 0.5);
+  background-color: rgb(var(--ui-danger-soft));
+}
+
+html.flat-theme :is([data-ui="confirm-cancel"], [data-ui="confirm-ok"]):focus {
+  box-shadow: none;
+}
+
+html.flat-theme :is([data-ui="confirm-cancel"], [data-ui="confirm-ok"]):focus-visible {
+  outline: 2px solid rgb(var(--ui-focus));
+  outline-offset: 2px;
+}
+
+html.flat-theme :is([data-ui="confirm-cancel"], [data-ui="confirm-ok"]):disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+/* 3.7 Utility-built dialogs without a header strip (TOTP, passkey, payment renewal; the ones led by an h2 take the
+   Modal's parts, 3.7b): the reference's padded panel (ReadScope, login modal): title 17/600 tight ink, close 28px
+   ghost glyph button (muted -> ink on the subtle fill). */
+html.flat-theme div[class~="fixed"][class~="inset-0"] :is(div, section)[class~="bg-white"]:is([class~="shadow-xl"], [class~="shadow-2xl"]):not([data-ui]) > :is(h2, h3):is([class~="text-lg"], [class~="text-xl"]),
+html.flat-theme div[class~="fixed"][class~="inset-0"] :is(div, section)[class~="bg-white"]:is([class~="shadow-xl"], [class~="shadow-2xl"]):not([data-ui]) > div:first-child > :is(h2, h3):is([class~="text-lg"], [class~="text-xl"]) {
+  font-size: 17px;
+  line-height: 25.5px;
+  font-weight: 600;
+  letter-spacing: -0.025em;
+  color: rgb(var(--ui-ink));
+}
+
+html.flat-theme div[class~="fixed"][class~="inset-0"] :is(div, section)[class~="bg-white"]:is([class~="shadow-xl"], [class~="shadow-2xl"]):not([data-ui]) > button[class~="absolute"][class~="top-4"] {
+  display: inline-grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border-radius: var(--ui-radius-md);
+  color: rgb(var(--ui-muted));
+  transition: color var(--ui-duration) var(--ui-ease), background-color var(--ui-duration) var(--ui-ease);
+}
+
+html.flat-theme div[class~="fixed"][class~="inset-0"] :is(div, section)[class~="bg-white"]:is([class~="shadow-xl"], [class~="shadow-2xl"]):not([data-ui]) > button[class~="absolute"][class~="top-4"]:hover,
+html.flat-theme.dark div[class~="fixed"][class~="inset-0"] :is(div, section)[class~="bg-white"]:is([class~="shadow-xl"], [class~="shadow-2xl"]):not([data-ui]) > button[class~="absolute"][class~="top-4"]:hover {
+  background-color: rgb(var(--ui-subtle));
+  color: rgb(var(--ui-ink));
+}
+
+html.flat-theme div[class~="fixed"][class~="inset-0"] :is(div, section)[class~="bg-white"]:is([class~="shadow-xl"], [class~="shadow-2xl"]):not([data-ui]) > button[class~="absolute"][class~="top-4"] svg {
+  width: 15px;
+  height: 15px;
+}
+
+/* 3.7b Utility-built dialogs led by an h2 (兑换码 生成 / 批量修改, 订阅 使用指南, 备份 R2 教程 / 分卷下载) are drawn as the
+   Modal, in the numbers of the settings page's inline dialogs (settings-ops-public.css 10b): body 16 x 18; the title
+   as the header strip, 14 / 20 600 ink at 14 x 18 on the structural line, on the Modal's 28px row (57px); a close
+   button the Modal's 28px framed close in that strip; the closing button row as the footer strip, 12 x 18 on the
+   structural line, its small close button at the control height (55px, the Modal's footer). The h3- and icon-led ones
+   (TOTP, passkey, payment renewal, the settings page's) keep 3.7 / 10b. (final review V1-01)
+   Perf pass: the panel carries --uif-h2dlg / --uif-h2close (:has() in the subject only); its parts are styled
+   under @container style() on those flags, the :has() argument's specificity kept by :not(uipad...) (never matches). */
+html.flat-theme div[class~="fixed"][class~="inset-0"] > :is(div, section)[class~="bg-white"][class~="p-6"]:is([class~="shadow-xl"], [class~="shadow-2xl"]):not([data-ui]):has(> h2) {
+  --uif-h2dlg: 1;
+  padding: var(--ui-dialog-body-y) var(--ui-dialog-x);
+}
+
+html.flat-theme div[class~="fixed"][class~="inset-0"] > :is(div, section)[class~="bg-white"][class~="p-6"]:is([class~="shadow-xl"], [class~="shadow-2xl"]):not([data-ui]):has(> button[class~="absolute"][class~="right-4"][class~="top-4"]) {
+  --uif-h2close: 1;
+}
+
+@container style(--uif-h2dlg: 1) {
+  html.flat-theme div[class~="fixed"][class~="inset-0"] > :is(div, section)[class~="bg-white"][class~="p-6"]:is([class~="shadow-xl"], [class~="shadow-2xl"]):not([data-ui]) > h2:not(uipad) {
+    display: flex;
+    align-items: center;
+    min-height: calc(28px + 2 * var(--ui-dialog-head-y) + 1px);
+    margin: calc(-1 * var(--ui-dialog-body-y)) calc(-1 * var(--ui-dialog-x)) var(--ui-dialog-body-y);
+    border-bottom: 1px solid rgb(var(--ui-line));
+    padding: var(--ui-dialog-head-y) var(--ui-dialog-x);
+    font-size: 0.875rem;
+    line-height: 1.25rem;
+    font-weight: 600;
+    letter-spacing: 0;
+    color: rgb(var(--ui-ink));
+  }
+
+  html.flat-theme div[class~="fixed"][class~="inset-0"] > :is(div, section)[class~="bg-white"][class~="p-6"]:is([class~="shadow-xl"], [class~="shadow-2xl"]):not([data-ui]) > button[class~="absolute"][class~="right-4"][class~="top-4"]:not(uipad) {
+    top: var(--ui-dialog-head-y);
+    right: var(--ui-dialog-x);
+    border: 1px solid rgb(var(--ui-line));
+    background-color: rgb(var(--ui-surface));
+  }
+
+  html.flat-theme div[class~="fixed"][class~="inset-0"] > :is(div, section)[class~="bg-white"][class~="p-6"]:is([class~="shadow-xl"], [class~="shadow-2xl"]):not([data-ui]) > button[class~="absolute"][class~="right-4"][class~="top-4"]:not(uipad):hover {
+    background-color: rgb(var(--ui-surface));
+    color: rgb(var(--ui-ink));
+  }
+
+  html.flat-theme div[class~="fixed"][class~="inset-0"] > :is(div, section)[class~="bg-white"][class~="p-6"]:is([class~="shadow-xl"], [class~="shadow-2xl"]):not([data-ui]) > button[class~="absolute"][class~="right-4"][class~="top-4"]:not(uipad):focus-visible {
+    outline: 2px solid rgb(var(--ui-focus));
+    outline-offset: 2px;
+  }
+
+  html.flat-theme div[class~="fixed"][class~="inset-0"] > :is(div, section)[class~="bg-white"][class~="p-6"]:is([class~="shadow-xl"], [class~="shadow-2xl"]):not([data-ui]) > form > div[class~="justify-end"]:last-child:not(uipad),
+  html.flat-theme div[class~="fixed"][class~="inset-0"] > :is(div, section)[class~="bg-white"][class~="p-6"]:is([class~="shadow-xl"], [class~="shadow-2xl"]):not([data-ui]) > div:is([class~="justify-end"], [class~="text-right"]):last-child:not(uipad) {
+    margin: var(--ui-dialog-body-y) calc(-1 * var(--ui-dialog-x)) calc(-1 * var(--ui-dialog-body-y));
+    border-top: 1px solid rgb(var(--ui-line));
+    padding: var(--ui-dialog-foot-y) var(--ui-dialog-x);
+  }
+
+  html.flat-theme div[class~="fixed"][class~="inset-0"] > :is(div, section)[class~="bg-white"][class~="p-6"]:is([class~="shadow-xl"], [class~="shadow-2xl"]):not([data-ui]) > div[class~="text-right"]:last-child > .btn-sm:not(uipad) {
+    min-height: var(--ui-control-h);
+    padding: 0.265625rem 0.75rem;
+    font-size: 0.8125rem;
+    line-height: 1.21875rem;
+  }
+}
+
+@container style(--uif-h2dlg: 1) and style(--uif-h2close: 1) {
+  html.flat-theme div[class~="fixed"][class~="inset-0"] > :is(div, section)[class~="bg-white"][class~="p-6"]:is([class~="shadow-xl"], [class~="shadow-2xl"]):not([data-ui]) > h2:not(uipad[data-uipad][data-uipad][data-uipad]):not(uipad) {
+    padding-right: calc(var(--ui-dialog-x) + 36px);
+  }
+}
+
+/* 3.8 Motion: the scrim fades in 200ms; the panel settles on the reference's 450ms panel curve from 98% with a 160ms
+   fade; leaving is a 150ms fade (REF §11; reduced motion: theme.css stops all of it). */
+html.flat-theme .modal-enter-active {
+  transition: opacity var(--ui-duration-slide) var(--ui-ease-out);
+}
+
+html.flat-theme .modal-leave-active {
+  transition: opacity var(--ui-duration) ease-in;
+}
+
+html.flat-theme .modal-enter-active .modal-content {
+  transition: transform 450ms var(--ui-ease-panel), opacity 160ms var(--ui-ease-out);
+}
+
+html.flat-theme .modal-leave-active .modal-content {
+  transition: opacity var(--ui-duration) ease-in;
+}
+
+html.flat-theme :is(.modal-enter-from, .modal-leave-to) .modal-content {
+  transform: translateY(4px) scale(0.98);
+  opacity: 0;
+}
+
+html.flat-theme .modal-leave-to .modal-content {
+  transform: none;
+}
+
+/* ================================================================== 4 · drawers (derived: the reference has none) */
+
+/* 4.1 The account details drawer's shell (its content is the accounts page's): the dark theme's surface, a 1px
+   structural edge, the overlay shadow; the header is the dialog's (14/18, 14/20 600 title, mono id, 28px bordered
+   buttons). */
+html.flat-theme [data-test="account-details-drawer"] {
+  border-left: 1px solid rgb(var(--ui-line));
+  background-color: rgb(var(--ui-surface));
+  box-shadow: var(--ui-shadow-overlay);
+}
+
+html.flat-theme [data-test="account-details-drawer"] > header {
+  align-items: center;
+  gap: 8px;
+  padding: var(--ui-dialog-head-y) var(--ui-dialog-x);
+  border-bottom: 1px solid rgb(var(--ui-line));
+}
+
+html.flat-theme [data-test="account-details-drawer"] > header h2 {
+  font-size: 14px;
+  line-height: 20px;
+  font-weight: 600;
+  color: rgb(var(--ui-ink));
+}
+
+html.flat-theme [data-test="account-details-drawer"] > header h2 + span {
+  font-family: var(--ui-font-mono);
+  font-size: 11px;
+  line-height: 16.5px;
+  color: rgb(var(--ui-faint));
+}
+
+html.flat-theme [data-test="account-details-drawer"] > header p {
+  margin-top: 2px;
+  font-size: 12px;
+  line-height: 18px;
+  color: rgb(var(--ui-muted));
+}
+
+html.flat-theme [data-test="account-details-drawer"] > header .icon-button {
+  display: inline-grid;
+  place-items: center;
+  flex-shrink: 0;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 1px solid rgb(var(--ui-line));
+  border-radius: var(--ui-radius-md);
+  background-color: rgb(var(--ui-surface));
+  color: rgb(var(--ui-muted));
+  transition: color var(--ui-duration) var(--ui-ease);
+}
+
+html.flat-theme [data-test="account-details-drawer"] > header .icon-button:hover {
+  color: rgb(var(--ui-ink));
+}
+
+html.flat-theme [data-test="account-details-drawer"] > header .icon-button svg {
+  width: 15px;
+  height: 15px;
+}
+
+/* 4.2 The account-task dock (bottom right): the compare tray's floating bar (radius 8, surface, 1px line, popover
+   shadow). */
+html.flat-theme [data-test="operation-dock"] {
+  overflow: hidden;
+  border-color: rgb(var(--ui-line));
+  border-radius: var(--ui-radius-lg);
+  background-color: rgb(var(--ui-surface));
+  box-shadow: var(--ui-shadow-popover);
+}
+
+/* ================================================================== 5 · toasts (derived: the reference has none) */
+
+/* 5.1 A toast is the compare tray's floating surface: 1px structural line all round (no coloured edge), radius 8,
+   popover shadow; 12/14 inset; a 15px status glyph in the status text colour (the only colour); message 13/19.5
+   ink-soft (ink when it stands alone), title 13/600 ink; a 24px ghost close; the auto-dismiss timer stays, as a 2px
+   hairline in the control-outline grey. It arrives with the reference's reveal (200ms, 4px), not a slide from the
+   edge. */
+html.flat-theme [data-ui="toast"] {
+  border: 1px solid rgb(var(--ui-line));
+  border-radius: var(--ui-radius-lg);
+  background-color: rgb(var(--ui-surface));
+  box-shadow: var(--ui-shadow-popover);
+}
+
+html.flat-theme [data-ui="toast"] > div:first-child {
+  padding: 12px 12px 12px 14px;
+}
+
+html.flat-theme [data-ui="toast"] > div:first-child > div {
+  gap: 10px;
+}
+
+html.flat-theme [data-ui="toast"] > div:first-child > div > div:first-child {
+  margin-top: 2px;
+}
+
+html.flat-theme [data-ui="toast"] > div:first-child > div > div:first-child > svg {
+  width: 15px;
+  height: 15px;
+}
+
+html.flat-theme [data-ui="toast"] p {
+  font-size: 13px;
+  line-height: 19.5px;
+}
+
+html.flat-theme [data-ui="toast"] p[class~="font-semibold"] {
+  font-weight: 600;
+  color: rgb(var(--ui-ink));
+}
+
+html.flat-theme [data-ui="toast"] p:not([class~="font-semibold"]) {
+  color: rgb(var(--ui-ink-soft));
+}
+
+html.flat-theme [data-ui="toast"] p:only-child {
+  color: rgb(var(--ui-ink));
+}
+
+html.flat-theme [data-ui="toast"] > div:first-child > div > button:last-child {
+  display: inline-grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  margin: -2px -2px -2px 0;
+  padding: 0;
+  border-radius: var(--ui-radius-md);
+  color: rgb(var(--ui-muted));
+}
+
+html.flat-theme [data-ui="toast"] > div:first-child > div > button:last-child:hover,
+html.flat-theme.dark [data-ui="toast"] > div:first-child > div > button:last-child:hover {
+  background-color: rgb(var(--ui-subtle));
+  color: rgb(var(--ui-ink));
+}
+
+html.flat-theme [data-ui="toast"] > div:first-child > div > button:last-child svg {
+  width: 14px;
+  height: 14px;
+}
+
+html.flat-theme [data-ui="toast"] > div:first-child + div {
+  height: 2px;
+  background-color: transparent;
+}
+
+html.flat-theme [data-ui="toast"] .toast-progress {
+  background-color: rgb(var(--ui-line-strong));
+}
+
+html.flat-theme [data-ui="toast-stack"] > [data-ui="toast"] + [data-ui="toast"] {
+  margin-top: 8px;
+}
+
+html.flat-theme [data-ui="toast-stack"] > [data-ui="toast"]:is([class~="translate-x-full"]) {
+  --tw-translate-x: 0px;
+  --tw-translate-y: -4px;
+}
+
+html.flat-theme [data-ui="toast-stack"] > [data-ui="toast"]:is([class~="duration-300"], [class~="duration-200"]) {
+  transition-duration: var(--ui-duration-slide);
+  transition-timing-function: var(--ui-ease-out);
+}
+
+/* ================================================================== 6 · announcements (bell list, detail, popup) */
+
+/* 6.1 The three announcement panels read as the reference's Modal: ink scrim (3.1), surface panel, 1px line, radius 8,
+   overlay shadow; the gradient header, decorative blobs and glowing tiles go (decision D4: no decorative colour). */
+html.flat-theme :is([data-ui="announcement-list"], [data-ui="announcement-detail"], [data-ui="announcement-popup"]) {
+  border: 1px solid rgb(var(--ui-line));
+  border-radius: var(--ui-radius-lg);
+  background-color: rgb(var(--ui-surface));
+  box-shadow: var(--ui-shadow-overlay);
+  --tw-ring-shadow: 0 0 #0000;
+}
+
+html.flat-theme :is([data-ui="announcement-list"], [data-ui="announcement-detail"], [data-ui="announcement-popup"]) .ui-decor {
+  display: none;
+}
+
+/* header strip: surface, 14/18 (list) or 18/18 (detail, popup), structural line */
+html.flat-theme :is([data-ui="announcement-list"], [data-ui="announcement-detail"], [data-ui="announcement-popup"]) > div:first-child {
+  padding: var(--ui-dialog-head-y) var(--ui-dialog-x);
+  border-bottom: 1px solid rgb(var(--ui-line));
+  background: rgb(var(--ui-surface));
+}
+
+html.flat-theme :is([data-ui="announcement-detail"], [data-ui="announcement-popup"]) > div:first-child {
+  padding-top: 18px;
+  padding-bottom: 16px;
+}
+
+/* the glowing gradient tiles -> the reference's 28px icon square (1px line, ink 3% fill, ink 60% glyph) */
+html.flat-theme :is([data-ui="announcement-list"], [data-ui="announcement-detail"], [data-ui="announcement-popup"]) > div:first-child :is(div)[class~="rounded-lg"][class~="bg-gradient-to-br"],
+html.flat-theme :is([data-ui="announcement-list"], [data-ui="announcement-detail"], [data-ui="announcement-popup"]) > div:first-child :is(div)[class~="rounded-xl"][class~="bg-gradient-to-br"] {
+  width: 28px;
+  height: 28px;
+  border: 1px solid rgb(var(--ui-line));
+  border-radius: var(--ui-radius-md);
+  background: rgb(var(--ui-ink) / 0.03);
+  color: rgb(var(--ui-ink) / 0.6);
+  box-shadow: none;
+}
+
+html.flat-theme :is([data-ui="announcement-list"], [data-ui="announcement-detail"], [data-ui="announcement-popup"]) > div:first-child :is(div)[class~="bg-gradient-to-br"] svg {
+  width: 15px;
+  height: 15px;
+}
+
+/* titles: the list header 14/600 (Modal), the announcement itself 17/600 tight (panel title) */
+html.flat-theme [data-ui="announcement-list"] > div:first-child h2 {
+  font-size: 14px;
+  line-height: 20px;
+  font-weight: 600;
+  color: rgb(var(--ui-ink));
+}
+
+html.flat-theme :is([data-ui="announcement-detail"], [data-ui="announcement-popup"]) > div:first-child h2 {
+  margin-bottom: 6px;
+  font-size: 17px;
+  line-height: 25.5px;
+  font-weight: 600;
+  letter-spacing: -0.025em;
+  color: rgb(var(--ui-ink));
+}
+
+html.flat-theme :is([data-ui="announcement-list"], [data-ui="announcement-detail"], [data-ui="announcement-popup"]) > div:first-child :is(p, time, div[class~="text-sm"]) {
+  font-size: 12px;
+  line-height: 18px;
+  color: rgb(var(--ui-muted));
+}
+
+html.flat-theme [data-ui="announcement-list"] > div:first-child p > span,
+html.flat-theme.dark [data-ui="announcement-list"] > div:first-child p > span {
+  font-weight: 500;
+  color: rgb(var(--ui-ink));
+}
+
+html.flat-theme :is([data-ui="announcement-detail"], [data-ui="announcement-popup"]) > div:first-child svg[class~="h-4"] {
+  width: 13px;
+  height: 13px;
+}
+
+/* chips: "unread" and the category label become the reference's small mono pills; pulsing rings stop (the text says
+   it) */
+html.flat-theme :is([data-ui="announcement-list"], [data-ui="announcement-detail"], [data-ui="announcement-popup"]) span:is([class~="bg-gradient-to-r"], [class~="bg-blue-100"]) {
+  gap: 5px;
+  padding: 1px 6px;
+  border-radius: 9999px;
+  background: rgb(var(--ui-primary-soft));
+  color: var(--ui-link);
+  font-family: var(--ui-font-mono);
+  font-size: 10.5px;
+  line-height: 15.75px;
+  font-weight: 500;
+  letter-spacing: 0.025em;
+  box-shadow: none;
+}
+
+html.flat-theme :is([data-ui="announcement-list"], [data-ui="announcement-detail"], [data-ui="announcement-popup"]) span[class~="bg-blue-100"]:not(:has(> span)) {
+  background: rgb(var(--ui-subtle));
+  color: rgb(var(--ui-muted));
+}
+
+html.flat-theme :is([data-ui="announcement-list"], [data-ui="announcement-detail"], [data-ui="announcement-popup"]) span:is([class~="bg-gradient-to-r"], [class~="bg-blue-100"]) > span[class~="relative"] {
+  width: 6px;
+  height: 6px;
+}
+
+html.flat-theme :is([data-ui="announcement-list"], [data-ui="announcement-detail"], [data-ui="announcement-popup"]) span:is([class~="bg-gradient-to-r"], [class~="bg-blue-100"]) > span[class~="relative"] > span {
+  width: 6px;
+  height: 6px;
+  background: currentColor;
+}
+
+html.flat-theme :is([data-ui="announcement-list"], [data-ui="announcement-detail"], [data-ui="announcement-popup"]) [class~="animate-ping"] {
+  display: none;
+}
+
+/* header buttons: close = the Modal's 28px bordered close; "mark all read" = the default button */
+html.flat-theme :is([data-ui="announcement-list"], [data-ui="announcement-detail"]) > div:first-child button:last-child {
+  display: inline-grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 1px solid rgb(var(--ui-line));
+  border-radius: var(--ui-radius-md);
+  background: rgb(var(--ui-surface));
+  color: rgb(var(--ui-muted));
+  box-shadow: none;
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+  transition: color var(--ui-duration) var(--ui-ease);
+}
+
+html.flat-theme :is([data-ui="announcement-list"], [data-ui="announcement-detail"]) > div:first-child button:last-child:hover,
+html.flat-theme.dark :is([data-ui="announcement-list"], [data-ui="announcement-detail"]) > div:first-child button:last-child:hover {
+  background: rgb(var(--ui-surface));
+  color: rgb(var(--ui-ink));
+}
+
+html.flat-theme :is([data-ui="announcement-list"], [data-ui="announcement-detail"]) > div:first-child button:last-child svg {
+  width: 15px;
+  height: 15px;
+}
+
+html.flat-theme [data-ui="announcement-list"] > div:first-child button:not(:last-child) {
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--ui-control-h);
+  padding: 0 12px;
+  border: 1px solid rgb(var(--ui-line-strong));
+  border-radius: var(--ui-radius-md);
+  background: rgb(var(--ui-surface));
+  color: rgb(var(--ui-ink));
+  font-size: 13px;
+  line-height: 19.5px;
+  font-weight: 600;
+  box-shadow: none;
+}
+
+/* list rows: a 1px structural separator, 12/18 inset, hover = the table row hover; the unread bar and glowing tile
+   give way to an accent status dot tile */
+html.flat-theme [data-ui="announcement-list"] > div:nth-child(2) > div > div[class~="group"] {
+  gap: 12px;
+  min-height: 0 !important;
+  padding: 12px var(--ui-dialog-x);
+  border-color: rgb(var(--ui-line));
+  background: transparent;
+  cursor: pointer;
+}
+
+html.flat-theme [data-ui="announcement-list"] > div:nth-child(2) > div > div[class~="group"]:hover,
+html.flat-theme.dark [data-ui="announcement-list"] > div:nth-child(2) > div > div[class~="group"]:hover {
+  background: rgb(var(--ui-hover));
+}
+
+html.flat-theme [data-ui="announcement-list"] > div:nth-child(2) > div > div[class~="group"] > div[class~="absolute"] {
+  display: none;
+}
+
+html.flat-theme [data-ui="announcement-list"] > div:nth-child(2) > div > div[class~="group"] > div:first-child {
+  width: 28px;
+  height: 28px;
+}
+
+html.flat-theme [data-ui="announcement-list"] > div:nth-child(2) > div > div[class~="group"] > div:first-child > div {
+  width: 28px;
+  height: 28px;
+  border: 1px solid rgb(var(--ui-line));
+  border-radius: var(--ui-radius-md);
+  background: rgb(var(--ui-ink) / 0.03);
+  color: rgb(var(--ui-ink) / 0.6);
+  box-shadow: none;
+}
+
+html.flat-theme [data-ui="announcement-list"] > div:nth-child(2) > div > div[class~="group"] > div:first-child > div[class~="bg-gradient-to-br"] {
+  border-color: rgb(var(--ui-primary) / 0.4);
+  background: rgb(var(--ui-primary-soft));
+  color: var(--ui-link);
+}
+
+html.flat-theme [data-ui="announcement-list"] > div:nth-child(2) > div > div[class~="group"] > div:first-child svg {
+  width: 15px;
+  height: 15px;
+}
+
+html.flat-theme [data-ui="announcement-list"] > div:nth-child(2) > div > div[class~="group"] h3 {
+  font-size: 13px;
+  line-height: 19.5px;
+  font-weight: 500;
+  color: rgb(var(--ui-ink));
+}
+
+html.flat-theme [data-ui="announcement-list"] > div:nth-child(2) > div > div[class~="group"] time {
+  font-family: var(--ui-font-mono);
+  font-size: 11px;
+  line-height: 16.5px;
+  color: rgb(var(--ui-faint));
+}
+
+html.flat-theme [data-ui="announcement-list"] > div:nth-child(2) > div > div[class~="group"] > div:nth-child(2) > div:last-child svg {
+  width: 14px;
+  height: 14px;
+  color: rgb(var(--ui-faint));
+}
+
+/* the empty and loading states: the reference's empty state (14/500 ink-soft, 13 muted), neutral glyph */
+html.flat-theme [data-ui="announcement-list"] > div:nth-child(2) > div[class~="flex-col"] > div[class~="relative"] > div:first-child {
+  width: 40px;
+  height: 40px;
+  border: 1px solid rgb(var(--ui-line));
+  border-radius: var(--ui-radius-lg);
+  background: rgb(var(--ui-subtle));
+}
+
+html.flat-theme [data-ui="announcement-list"] > div:nth-child(2) > div[class~="flex-col"] > div[class~="relative"] > div:first-child svg {
+  width: 18px;
+  height: 18px;
+}
+
+html.flat-theme [data-ui="announcement-list"] > div:nth-child(2) > div[class~="flex-col"] > div[class~="relative"] > div:last-child {
+  display: none;
+}
+
+html.flat-theme [data-ui="announcement-list"] > div:nth-child(2) > div[class~="flex-col"] > p:first-of-type {
+  font-size: 14px;
+  font-weight: 500;
+  color: rgb(var(--ui-ink-soft));
+}
+
+html.flat-theme [data-ui="announcement-list"] > div:nth-child(2) > div[class~="flex-col"] > p + p {
+  font-size: 13px;
+  color: rgb(var(--ui-muted));
+}
+
+html.flat-theme [data-ui="announcement-list"] div[class~="animate-spin"][class~="rounded-full"] {
+  width: 20px;
+  height: 20px;
+  border-width: 2px;
+  border-color: rgb(var(--ui-line-strong));
+  border-top-color: rgb(var(--ui-ink));
+}
+
+html.flat-theme [data-ui="announcement-list"] div[class~="animate-pulse"][class~="rounded-full"] {
+  display: none;
+}
+
+/* body: the reference's docs article column; the gradient rule beside the text goes */
+html.flat-theme :is([data-ui="announcement-detail"], [data-ui="announcement-popup"]) > div:nth-child(2) {
+  padding: 20px var(--ui-dialog-x) 24px;
+  background: rgb(var(--ui-surface));
+}
+
+html.flat-theme :is([data-ui="announcement-detail"], [data-ui="announcement-popup"]) > div:nth-child(2) > div > div[class~="absolute"] {
+  display: none;
+}
+
+html.flat-theme :is([data-ui="announcement-detail"], [data-ui="announcement-popup"]) > div:nth-child(2) > div > div[class~="pl-6"] {
+  padding-left: 0;
+}
+
+/* footer: the dialog footer (12/18, structural line, no tint); close = default button, "mark read" = primary ink */
+html.flat-theme :is([data-ui="announcement-detail"], [data-ui="announcement-popup"]) > div:last-child {
+  padding: var(--ui-dialog-foot-y) var(--ui-dialog-x);
+  border-top: 1px solid rgb(var(--ui-line));
+  background: rgb(var(--ui-surface));
+}
+
+html.flat-theme :is([data-ui="announcement-detail"], [data-ui="announcement-popup"]) > div:last-child div[class~="text-xs"] {
+  font-size: 12px;
+  color: rgb(var(--ui-muted));
+}
+
+html.flat-theme :is([data-ui="announcement-detail"], [data-ui="announcement-popup"]) > div:last-child div[class~="text-xs"] svg {
+  width: 13px;
+  height: 13px;
+}
+
+html.flat-theme :is([data-ui="announcement-detail"], [data-ui="announcement-popup"]) > div:last-child button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: var(--ui-control-h);
+  padding: 0 12px;
+  border: 1px solid rgb(var(--ui-line-strong));
+  border-radius: var(--ui-radius-md);
+  background: rgb(var(--ui-surface));
+  color: rgb(var(--ui-ink));
+  font-size: 13px;
+  line-height: 19.5px;
+  font-weight: 600;
+  box-shadow: none;
+  transform: none;
+}
+
+html.flat-theme :is([data-ui="announcement-detail"], [data-ui="announcement-popup"]) > div:last-child button:hover,
+html.flat-theme.dark :is([data-ui="announcement-detail"], [data-ui="announcement-popup"]) > div:last-child button:hover {
+  background: rgb(var(--ui-surface));
+  box-shadow: none;
+}
+
+html.flat-theme :is([data-ui="announcement-detail"], [data-ui="announcement-popup"]) > div:last-child button:is([class~="bg-gradient-to-r"]),
+html.flat-theme :is([data-ui="announcement-detail"], [data-ui="announcement-popup"]) > div:last-child button:is([class~="bg-gradient-to-r"]):hover {
+  border-color: rgb(var(--ui-ink));
+  background: rgb(var(--ui-ink));
+  color: rgb(var(--ui-on-ink));
+}
+
+html.flat-theme :is([data-ui="announcement-detail"], [data-ui="announcement-popup"]) > div:last-child button svg {
+  width: 14px;
+  height: 14px;
+}
+
+/* 6.2 Markdown inside announcements: the reference's docs article (REF §8.16): 13.5/1.625 muted text, 17/600 H2 on 40 /
+   12, links ink underlined (offset 2), strong 500 ink, disc lists at 20px with muted markers, mono 12.5 code without a
+   fill, code blocks and tables on the card frame (radius 8, 1px line), a neutral call-out for quotes, no shadows. */
+html.flat-theme .markdown-body {
+  font-size: 13.5px;
+  line-height: 1.625;
+  color: rgb(var(--ui-muted));
+}
+
+html.flat-theme .markdown-body :is(h1, h2, h3, h4) {
+  margin: 28px 0 10px;
+  padding: 0;
+  border: 0;
+  color: rgb(var(--ui-ink));
+  font-weight: 600;
+  letter-spacing: -0.025em;
+}
+
+html.flat-theme .markdown-body > :is(h1, h2, h3, h4):first-child {
+  margin-top: 0;
+}
+
+html.flat-theme .markdown-body h1 {
+  font-size: 20px;
+  line-height: 28px;
+}
+
+html.flat-theme .markdown-body h2 {
+  font-size: 17px;
+  line-height: 25.5px;
+}
+
+html.flat-theme .markdown-body h3 {
+  font-size: 15px;
+  line-height: 22.5px;
+  letter-spacing: 0;
+}
+
+html.flat-theme .markdown-body h4 {
+  font-size: 13.5px;
+  line-height: 21px;
+  letter-spacing: 0;
+}
+
+html.flat-theme .markdown-body p {
+  margin: 0 0 16px;
+  line-height: 1.625;
+}
+
+html.flat-theme .markdown-body a {
+  font-weight: 400;
+  color: rgb(var(--ui-ink));
+  text-decoration: underline;
+  text-decoration-color: rgb(var(--ui-line-focus));
+  text-decoration-thickness: 1px;
+  text-underline-offset: 2px;
+}
+
+html.flat-theme .markdown-body a:hover {
+  text-decoration-color: currentColor;
+}
+
+html.flat-theme .markdown-body :is(ul, ol) {
+  margin: 0 0 16px;
+  padding-left: 20px;
+}
+
+html.flat-theme .markdown-body :is(ul, ol) > li + li {
+  margin-top: 6px;
+}
+
+html.flat-theme .markdown-body li {
+  padding-left: 2px;
+  line-height: 1.625;
+}
+
+html.flat-theme .markdown-body li::marker {
+  color: rgb(var(--ui-faint));
+}
+
+html.flat-theme .markdown-body strong {
+  font-weight: 500;
+  color: rgb(var(--ui-ink));
+}
+
+html.flat-theme .markdown-body em {
+  color: inherit;
+}
+
+html.flat-theme .markdown-body code {
+  padding: 0;
+  border-radius: 0;
+  background: none;
+  font-family: var(--ui-font-mono);
+  font-size: 12.5px;
+  color: rgb(var(--ui-ink));
+}
+
+html.flat-theme .markdown-body pre {
+  margin: 16px 0;
+  padding: 16px;
+  border: 1px solid rgb(var(--ui-line));
+  border-radius: var(--ui-radius-lg);
+  background: rgb(var(--ui-surface));
+}
+
+html.flat-theme .markdown-body pre code {
+  font-size: 12.5px;
+  line-height: 1.625;
+  color: rgb(var(--ui-ink));
+}
+
+html.flat-theme .markdown-body blockquote {
+  margin: 16px 0;
+  padding: 12px 14px;
+  border: 1px solid rgb(var(--ui-line));
+  border-radius: var(--ui-radius-md);
+  background: rgb(var(--ui-surface));
+  font-size: 13px;
+  font-style: normal;
+  color: rgb(var(--ui-muted));
+}
+
+html.flat-theme .markdown-body blockquote::before {
+  content: none;
+}
+
+html.flat-theme .markdown-body blockquote > :last-child {
+  margin-bottom: 0;
+}
+
+html.flat-theme .markdown-body hr {
+  margin: 24px 0;
+  border: 0;
+  border-top: 1px solid rgb(var(--ui-line));
+}
+
+html.flat-theme .markdown-body table {
+  margin: 16px 0;
+  border: 1px solid rgb(var(--ui-line));
+  border-radius: var(--ui-radius-lg);
+  border-collapse: separate;
+  border-spacing: 0;
+  font-size: 12.5px;
+}
+
+html.flat-theme .markdown-body :is(th, td) {
+  padding: 8px 12px;
+  border: 0;
+  border-bottom: 1px solid rgb(var(--ui-line));
+  vertical-align: top;
+  line-height: 1.625;
+}
+
+html.flat-theme .markdown-body tr:last-child td {
+  border-bottom: 0;
+}
+
+html.flat-theme .markdown-body th {
+  background: rgb(var(--ui-subtle));
+  font-weight: 500;
+  color: rgb(var(--ui-faint));
+}
+
+html.flat-theme .markdown-body thead th:first-child {
+  border-top-left-radius: 7px;
+}
+
+html.flat-theme .markdown-body thead th:last-child {
+  border-top-right-radius: 7px;
+}
+
+html.flat-theme .markdown-body tbody tr:hover,
+html.flat-theme.dark .markdown-body tbody tr:hover {
+  background: transparent;
+}
+
+html.flat-theme .markdown-body img {
+  margin: 16px 0;
+  border: 1px solid rgb(var(--ui-line));
+  border-radius: var(--ui-radius-lg);
+  box-shadow: none;
+}
+
+/* ================================================================== 7 · the onboarding tour (driver.js) */
+
+/* 7.1 The popover is a panel: surface, 1px line, radius 8, overlay shadow (the sign-in panel's frame, derived); title
+   17/600 tight ink; text the docs paragraph (13.5/1.625 muted); footer the dialog footer (12/18, structural line, no
+   tint); progress and key hints in Geist Mono; next = primary ink, back = default, skip = ghost; close = 28px ghost.
+   The page dims with the dialog scrim; the highlighted element carries the reference's accent ring (34%). */
+html.flat-theme .driver-popover.theme-tour-popover {
+  border: 1px solid rgb(var(--ui-line)) !important;
+  border-radius: var(--ui-radius-lg) !important;
+  background-color: rgb(var(--ui-surface)) !important;
+  box-shadow: var(--ui-shadow-overlay) !important;
+  color: rgb(var(--ui-ink)) !important;
+  font-family: var(--ui-font) !important;
+}
+
+html.flat-theme.dark .driver-popover.theme-tour-popover {
+  border-color: rgb(var(--ui-line)) !important;
+  background-color: rgb(var(--ui-surface)) !important;
+  color: rgb(var(--ui-ink)) !important;
+}
+
+html.flat-theme .theme-tour-popover .driver-popover-title {
+  padding: 18px var(--ui-dialog-x) 8px !important;
+}
+
+html.flat-theme .theme-tour-popover :is(.driver-popover-title, .driver-popover-title-text),
+html.flat-theme.dark .theme-tour-popover :is(.driver-popover-title, .driver-popover-title-text) {
+  font-family: var(--ui-font) !important;
+  font-size: 17px !important;
+  line-height: 25.5px !important;
+  font-weight: 600 !important;
+  letter-spacing: -0.025em !important;
+  color: rgb(var(--ui-ink)) !important;
+}
+
+html.flat-theme .theme-tour-popover .driver-popover-description,
+html.flat-theme.dark .theme-tour-popover .driver-popover-description {
+  padding: 0 var(--ui-dialog-x) 18px !important;
+  font-size: 13.5px !important;
+  line-height: 1.625 !important;
+  color: rgb(var(--ui-muted)) !important;
+}
+
+html.flat-theme .theme-tour-popover .driver-popover-description :is(strong, b) {
+  font-weight: 500;
+  color: rgb(var(--ui-ink));
+}
+
+html.flat-theme .theme-tour-popover .driver-popover-footer,
+html.flat-theme.dark .theme-tour-popover .driver-popover-footer {
+  padding: var(--ui-dialog-foot-y) var(--ui-dialog-x) !important;
+  border-top: 1px solid rgb(var(--ui-line)) !important;
+  background-color: rgb(var(--ui-surface)) !important;
+}
+
+html.flat-theme .theme-tour-popover .driver-popover-progress-text,
+html.flat-theme.dark .theme-tour-popover .driver-popover-progress-text {
+  font-family: var(--ui-font-mono) !important;
+  font-size: 11px !important;
+  font-weight: 400 !important;
+  font-variant-numeric: tabular-nums;
+  color: rgb(var(--ui-label)) !important;
+}
+
+html.flat-theme .theme-tour-popover .footer-shortcuts,
+html.flat-theme.dark .theme-tour-popover .footer-shortcuts {
+  border-left-color: rgb(var(--ui-line)) !important;
+}
+
+html.flat-theme .theme-tour-popover .shortcut-item,
+html.flat-theme.dark .theme-tour-popover .shortcut-item {
+  font-size: 12px !important;
+  color: rgb(var(--ui-muted)) !important;
+}
+
+html.flat-theme .theme-tour-popover .shortcut-item kbd,
+html.flat-theme.dark .theme-tour-popover .shortcut-item kbd {
+  min-width: 18px !important;
+  padding: 0 4px !important;
+  border: 1px solid rgb(var(--ui-line)) !important;
+  border-radius: var(--ui-radius-sm) !important;
+  background-color: rgb(var(--ui-subtle)) !important;
+  box-shadow: none !important;
+  font-family: var(--ui-font-mono) !important;
+  font-size: 10px !important;
+  font-weight: 400 !important;
+  line-height: 16px !important;
+  color: rgb(var(--ui-faint)) !important;
+}
+
+html.flat-theme .theme-tour-popover .driver-popover-footer button,
+html.flat-theme.dark .theme-tour-popover .driver-popover-footer button {
+  min-height: var(--ui-control-h) !important;
+  padding: 0 12px !important;
+  border: 1px solid rgb(var(--ui-line-strong)) !important;
+  border-radius: var(--ui-radius-md) !important;
+  background-color: rgb(var(--ui-surface)) !important;
+  color: rgb(var(--ui-ink)) !important;
+  box-shadow: none !important;
+  font-family: var(--ui-font) !important;
+  font-size: 13px !important;
+  font-weight: 600 !important;
+  line-height: 19.5px !important;
+  transition: color var(--ui-duration) var(--ui-ease), background-color var(--ui-duration) var(--ui-ease), border-color var(--ui-duration) var(--ui-ease) !important;
+}
+
+html.flat-theme .theme-tour-popover .driver-popover-footer :is(.driver-popover-next-btn, .driver-popover-done-btn),
+html.flat-theme.dark .theme-tour-popover .driver-popover-footer :is(.driver-popover-next-btn, .driver-popover-done-btn),
+html.flat-theme .theme-tour-popover .driver-popover-footer :is(.driver-popover-next-btn, .driver-popover-done-btn):hover,
+html.flat-theme.dark .theme-tour-popover .driver-popover-footer :is(.driver-popover-next-btn, .driver-popover-done-btn):hover {
+  border-color: rgb(var(--ui-ink)) !important;
+  background-color: rgb(var(--ui-ink)) !important;
+  color: rgb(var(--ui-on-ink)) !important;
+}
+
+html.flat-theme .theme-tour-popover .driver-popover-footer :is(button:not(.driver-popover-next-btn, .driver-popover-done-btn, .driver-popover-prev-btn)),
+html.flat-theme.dark .theme-tour-popover .driver-popover-footer :is(button:not(.driver-popover-next-btn, .driver-popover-done-btn, .driver-popover-prev-btn)) {
+  border-color: transparent !important;
+  background-color: transparent !important;
+  color: rgb(var(--ui-muted)) !important;
+}
+
+html.flat-theme .theme-tour-popover .driver-popover-footer :is(button:not(.driver-popover-next-btn, .driver-popover-done-btn, .driver-popover-prev-btn)):hover,
+html.flat-theme.dark .theme-tour-popover .driver-popover-footer :is(button:not(.driver-popover-next-btn, .driver-popover-done-btn, .driver-popover-prev-btn)):hover {
+  background-color: rgb(var(--ui-subtle)) !important;
+  color: rgb(var(--ui-ink)) !important;
+}
+
+html.flat-theme .theme-tour-popover .driver-popover-footer button:focus-visible {
+  outline: 2px solid rgb(var(--ui-focus)) !important;
+  outline-offset: 2px !important;
+}
+
+html.flat-theme .theme-tour-popover .driver-popover-close-btn,
+html.flat-theme.dark .theme-tour-popover .driver-popover-close-btn {
+  top: 16px !important;
+  right: 14px !important;
+  width: 28px !important;
+  height: 28px !important;
+  border-radius: var(--ui-radius-md) !important;
+  font-size: 18px !important;
+  color: rgb(var(--ui-muted)) !important;
+}
+
+html.flat-theme .theme-tour-popover .driver-popover-close-btn:hover,
+html.flat-theme.dark .theme-tour-popover .driver-popover-close-btn:hover {
+  background-color: rgb(var(--ui-subtle)) !important;
+  color: rgb(var(--ui-ink)) !important;
+}
+
+html.flat-theme .driver-popover-arrow-side-left.driver-popover-arrow { border-left-color: rgb(var(--ui-surface)) !important; }
+html.flat-theme .driver-popover-arrow-side-right.driver-popover-arrow { border-right-color: rgb(var(--ui-surface)) !important; }
+html.flat-theme .driver-popover-arrow-side-top.driver-popover-arrow { border-top-color: rgb(var(--ui-surface)) !important; }
+html.flat-theme .driver-popover-arrow-side-bottom.driver-popover-arrow { border-bottom-color: rgb(var(--ui-surface)) !important; }
+
+html.flat-theme.dark .driver-popover-arrow-side-left.driver-popover-arrow { border-left-color: rgb(var(--ui-surface)) !important; }
+html.flat-theme.dark .driver-popover-arrow-side-right.driver-popover-arrow { border-right-color: rgb(var(--ui-surface)) !important; }
+html.flat-theme.dark .driver-popover-arrow-side-top.driver-popover-arrow { border-top-color: rgb(var(--ui-surface)) !important; }
+html.flat-theme.dark .driver-popover-arrow-side-bottom.driver-popover-arrow { border-bottom-color: rgb(var(--ui-surface)) !important; }
+
+html.flat-theme .driver-overlay path {
+  fill: rgb(10 10 10) !important;
+  opacity: 0.2 !important;
+}
+
+html.flat-theme.dark .driver-overlay path {
+  fill: rgb(0 0 0) !important;
+  opacity: 0.6 !important;
+}
+
+html.flat-theme .driver-active-element {
+  outline: 3px solid rgb(var(--ui-primary) / 0.34) !important;
+  outline-offset: 2px !important;
+  border-radius: var(--ui-radius-md) !important;
+}
+
+/* BEGIN S scrim margin */
+/* An in-page dialog built from utilities (a fixed, inset-0 scrim rendered in place, not teleported) that is a child of
+   a space-y-* stack inherits the stack's top margin: the scrim moved down and left a band of the page undimmed
+   (系统设置 · 功能开关 「+ 添加专属用户」: scrim at y = 12). A fixed overlay takes no stack margin. The doubled classes
+   (0,7,2) outrank Tailwind's space-y (0,3,0) and the page files' stack rhythm rules (0,5,2), which load later.
+   (wave 2, reported by the settings agent) */
+html.flat-theme [class*="space-y-"] > div[class~="fixed"][class~="fixed"][class~="inset-0"][class~="inset-0"]:not([hidden]) {
+  margin-top: 0;
+}
+/* END S scrim margin */
