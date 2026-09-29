@@ -27,7 +27,7 @@ Four high-impact areas were escalated to the owner before any code was written; 
 ## Conflict resolutions
 
 - `backend/cmd/server/wire_gen.go`: arguments follow the fork's provider signatures plus the new `compositeRouteResolver` and `claudeResetCreditService` providers.
-- `backend/internal/handler/openai_gateway_handler.go` (10 hunks): kept the fork's scheduler reporting, selective failure reporting and refusal-recovery cyber input handling; adopted upstream composite route resolution, the log-only cyber gate, the synchronous session-block write before the asynchronous record, and the body-aware blocked-session lookup. `wsRouteModel` (upstream) and `wsRoutingModel`/`wsForwardModel` (fork) coexist: routing data used for scheduler calls is the resolved upstream model.
+- `backend/internal/handler/openai_gateway_handler.go` (10 hunks): kept the fork's scheduler reporting, selective failure reporting and refusal-recovery cyber input handling; adopted upstream composite route resolution, the log-only cyber gate, the synchronous session-block write before the asynchronous record, and the body-aware blocked-session lookup. `wsRouteModel` (upstream) and `wsRoutingModel`/`wsForwardModel` (fork) coexist: routing data used for scheduler calls is the resolved upstream model (`wsRoutingModel = wsForwardModel`, identical to the old value outside composite groups). The fork's older asynchronous session-block write was removed, so allowlisted (log-only) users never get transcript blocks, as upstream intends.
 - Settings union: `CyberPolicyUserAllowlist` was added alongside the fork's existing refusal and alpha-search keys in `settings_view.go`, `setting_parse.go`, `dto/settings.go`, `domain_constants.go` and `setting_handler_update.go`.
 - `AccountUsageCell.vue`: adopted upstream's single stable `ClaudeResetCreditsCell` instance that survives the usage response, while keeping the fork's empty-usage text and always-available Grok quota probe.
 - `EditAccountModal.vue`, `ModelWhitelistSelector.spec.ts`, `UseKeyModal.vue`: the fork's capacity-sync props were merged with upstream's `model-mappings` prop.
@@ -38,6 +38,7 @@ Four high-impact areas were escalated to the owner before any code was written; 
 - `pnpm run typecheck` passes.
 - `pnpm run check:i18n` passes.
 - 174 focused frontend specs pass, covering every conflicted frontend file plus the new upstream `ClaudeResetCreditsCell` spec.
+- `go test -tags=unit ./internal/handler/` passes, including upstream's composite WebSocket alias and cyber allowlist tests. The shared WebSocket harness counts rejected-turn upstream frames with the fork's `frameCount`.
 - Not run: production migration rehearsal, real model calls, deploy, or canary. Source integration does not claim a successful deployment or model-quality acceptance.
 
 ## Release target

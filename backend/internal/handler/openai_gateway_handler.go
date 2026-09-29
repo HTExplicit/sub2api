@@ -2721,8 +2721,10 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 		return mapping
 	}
 	channelMappingWS := resolveWSChannelMapping(wsRouteModel)
-	wsRoutingModel = openAIChannelForwardModel(channelMappingWS, reqModel)
 	wsForwardModel := openAIChannelForwardModel(channelMappingWS, wsRouteModel)
+	// Composite aliases schedule on the resolved upstream model (upstream v0.2.10);
+	// every other group has wsRouteModel == reqModel, so this keeps the old value.
+	wsRoutingModel = wsForwardModel
 
 	var currentUserRelease func()
 	var currentAccountRelease func()
@@ -5160,9 +5162,6 @@ func (h *OpenAIGatewayHandler) recordCyberPolicyIfMarked(c *gin.Context, apiKey 
 				UpstreamInTok:   mark.UpstreamInTok,
 				UpstreamOutTok:  mark.UpstreamOutTok,
 			})
-		}
-		if gwSvc != nil && len(blockPlan.keys) > 0 {
-			gwSvc.MarkCyberSessionBlocked(ctx, blockPlan.scopeKey, blockPlan.keys)
 		}
 		if forwardErrored && gwSvc != nil {
 			gwSvc.RecordCyberPolicyUsageLog(ctx, service.CyberPolicyUsageInput{
