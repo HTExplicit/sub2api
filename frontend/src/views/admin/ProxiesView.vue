@@ -94,6 +94,7 @@
           :columns="columns"
           :data="proxies"
           :loading="loading"
+          :selected-keys="selectedProxyKeys"
           :server-side-sort="true"
           default-sort-key="id"
           default-sort-order="desc"
@@ -1096,6 +1097,7 @@ const batchQualityChecking = ref(false)
 const proxyTableRef = ref<HTMLElement | null>(null)
 const {
   selectedSet: selectedProxyIds,
+  selectedIds: selectedProxyKeys,
   selectedCount,
   allVisibleSelected,
   isSelected,

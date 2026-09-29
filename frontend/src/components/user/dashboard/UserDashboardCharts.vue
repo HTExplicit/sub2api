@@ -22,7 +22,7 @@
     <!-- Charts Grid -->
     <div class="grid grid-cols-1 gap-6 lg:grid-cols-2">
       <!-- Model Distribution Chart -->
-      <div class="card relative overflow-hidden p-4">
+      <div class="card relative overflow-hidden p-4" data-ui="chart-card">
         <div v-if="loading" class="absolute inset-0 z-10 flex items-center justify-center bg-white/50 backdrop-blur-sm dark:bg-dark-800/50">
           <LoadingSpinner size="md" />
         </div>
@@ -32,7 +32,7 @@
             <Doughnut v-if="modelData" :data="modelData" :options="doughnutOptions" />
             <div v-else class="flex h-full items-center justify-center text-sm text-gray-500 dark:text-gray-400">{{ t('dashboard.noDataAvailable') }}</div>
           </div>
-          <div class="max-h-48 w-full min-w-0 flex-1 overflow-auto">
+          <div data-ui="dist-table" class="max-h-48 w-full min-w-0 flex-1 overflow-auto">
             <table class="w-full text-xs">
               <thead>
                 <tr class="text-gray-500 dark:text-gray-400">
@@ -44,7 +44,7 @@
                 </tr>
               </thead>
               <tbody>
-                <tr v-for="model in models" :key="model.model" class="border-t border-gray-100 dark:border-dark-700">
+                <tr v-for="model in models" :key="model.model" data-ui="dist-row" class="border-t border-gray-100 dark:border-dark-700">
                   <td class="py-1.5 font-medium text-gray-900 [overflow-wrap:anywhere] dark:text-white" :title="model.model">{{ model.model }}</td>
                   <td class="py-1.5 text-right text-gray-600 dark:text-gray-400">{{ formatNumber(model.requests) }}</td>
                   <td class="py-1.5 text-right text-gray-600 dark:text-gray-400">{{ formatTokens(model.total_tokens) }}</td>

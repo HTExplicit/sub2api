@@ -116,13 +116,14 @@ html.flat-theme .custom-page-layout {
    column under the header instead of subtracting a fixed header height. With the one-line header it ends where the
    calc above ends it (900 - 30). */
 @media (min-width: 1024px) {
-  html.flat-theme .app-main:has(> main > :is(.table-page-layout, .custom-page-layout)) {
+  /* Perf pass: the wrapper is hooked ([data-ui="app-shell"], AppLayout.vue) instead of asking `:has(> main > ...)` on
+     .app-main, a body-level anchor whose whole subtree sat in one invalidation set. */
+  html.flat-theme [data-ui~="app-shell"] .app-main {
     display: flex;
     flex-direction: column;
     height: 100vh;
   }
 
-  /* :has() in the subject only (perf pass: a non-subject :has() re-styles the anchor's whole subtree) */
   html.flat-theme .app-main > main:has(> :is(.table-page-layout, .custom-page-layout)):not(uipad) {
     display: flex;
     flex: 1 1 0;
@@ -483,7 +484,10 @@ html.flat-theme .app-main > header > div > div:last-child {
     flex: 0 0 auto;
   }
 
-  html.flat-theme .app-main > header > div > div:first-child > div[class~="hidden"]:has(> h1) {
+  /* Perf pass: the h1 is always there (AppHeader renders the title), so the `:has(> h1)` test on the wrapper was
+     redundant; the wrapper is named by the h1 it holds (`div:has(> h1)` removal — see the desktop rule below) and
+     the once-hidden title now displays. */
+  html.flat-theme .app-main > header > div > div:first-child > div[class~="hidden"][data-ui~="header-title"] {
     display: block;
     flex: 1 1 auto;
     min-width: 0;
@@ -531,8 +535,9 @@ html.flat-theme .app-main > header > div > div:last-child {
 
   /* Title · description: the page title 20/28 600 (REF §8.2), the description 13px muted on the same baseline
      after a faint dot. A description longer than the row wraps, its lines under its first word (nothing is cut; the
-     ellipsis hid the end of 操作日志's and 提示词审计's notes). */
-  html.flat-theme .app-main > header div:has(> h1) {
+     ellipsis hid the end of 操作日志's and 提示词审计's notes). Perf pass: the wrapper is hooked
+     ([data-ui="header-title"], AppHeader.vue) instead of found by `div:has(> h1)` on a bare div. */
+  html.flat-theme .app-main > header [data-ui~="header-title"] {
     display: flex;
     align-items: baseline;
     min-width: 0;

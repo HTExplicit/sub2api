@@ -237,6 +237,7 @@
         <div class="mt-2 grid grid-cols-2 gap-3 sm:grid-cols-4" data-tour="account-form-type">
           <button
             type="button"
+            data-ui="option-card"
             @click="accountCategory = 'oauth-based'"
             :class="[
               'flex items-center gap-3 rounded-lg border-2 p-3 text-left transition-all',
@@ -267,6 +268,7 @@
 
           <button
             type="button"
+            data-ui="option-card"
             @click="accountCategory = 'apikey'"
             :class="[
               'flex items-center gap-3 rounded-lg border-2 p-3 text-left transition-all',
@@ -297,6 +299,7 @@
 
           <button
             type="button"
+            data-ui="option-card"
             @click="accountCategory = 'bedrock'"
             :class="[
               'flex items-center gap-3 rounded-lg border-2 p-3 text-left transition-all',
@@ -327,6 +330,7 @@
 
           <button
             type="button"
+            data-ui="option-card"
             @click="accountCategory = 'service_account'"
             :class="[
               'flex items-center gap-3 rounded-lg border-2 p-3 text-left transition-all',
@@ -367,6 +371,7 @@
         <div class="mt-2 grid grid-cols-2 gap-3" data-tour="account-form-type">
           <button
             type="button"
+            data-ui="option-card"
             @click="accountCategory = 'oauth-based'"
             :class="[
               'flex items-center gap-3 rounded-lg border-2 p-3 text-left transition-all',
@@ -393,6 +398,7 @@
 
           <button
             type="button"
+            data-ui="option-card"
             @click="accountCategory = 'apikey'"
             :class="[
               'flex items-center gap-3 rounded-lg border-2 p-3 text-left transition-all',
@@ -426,6 +432,7 @@
         <div class="mt-2 grid grid-cols-1 gap-3 sm:grid-cols-2" data-tour="account-form-type">
           <button
             type="button"
+            data-ui="option-card"
             @click="accountCategory = 'oauth-based'"
             :class="[
               'flex items-center gap-3 rounded-lg border-2 p-3 text-left transition-all',
@@ -454,6 +461,7 @@
             type="button"
             data-testid="grok-account-type-api-key"
             @click="accountCategory = 'apikey'"
+            data-ui="option-card"
             :class="[
               'flex items-center gap-3 rounded-lg border-2 p-3 text-left transition-all',
               accountCategory === 'apikey'
@@ -486,6 +494,7 @@
           <button
             type="button"
             @click="openCodeAccountMode = 'zen'"
+            data-ui="option-card"
             :class="[
               'flex items-center gap-3 rounded-lg border-2 p-3 text-left transition-all',
               openCodeAccountMode === 'zen'
@@ -509,6 +518,7 @@
           <button
             type="button"
             @click="openCodeAccountMode = 'go'"
+            data-ui="option-card"
             :class="[
               'flex items-center gap-3 rounded-lg border-2 p-3 text-left transition-all',
               openCodeAccountMode === 'go'
@@ -540,6 +550,7 @@
           <button
             type="button"
             @click="accountMode = 'payg'"
+            data-ui="option-card"
             :class="[
               'flex items-center gap-3 rounded-lg border-2 p-3 text-left transition-all',
               accountMode === 'payg'
@@ -567,6 +578,7 @@
             v-if="form.platform !== 'deepseek'"
             type="button"
             @click="accountMode = 'coding'"
+            data-ui="option-card"
             :class="[
               'flex items-center gap-3 rounded-lg border-2 p-3 text-left transition-all',
               accountMode === 'coding'
@@ -601,6 +613,7 @@
             :key="opt.value"
             type="button"
             @click="apiProtocol = opt.value"
+            data-ui="option-card"
             :class="[
               'flex items-center gap-3 rounded-lg border-2 p-3 text-left transition-all',
               apiProtocol === opt.value
@@ -674,6 +687,7 @@
         <div class="mt-2 grid grid-cols-3 gap-3" data-tour="account-form-type">
           <button
             type="button"
+            data-ui="option-card"
             @click="accountCategory = 'oauth-based'"
             :class="[
               'flex items-center gap-3 rounded-lg border-2 p-3 text-left transition-all',
@@ -704,6 +718,7 @@
 
           <button
             type="button"
+            data-ui="option-card"
             @click="accountCategory = 'apikey'"
             :class="[
               'flex items-center gap-3 rounded-lg border-2 p-3 text-left transition-all',
@@ -746,6 +761,7 @@
 
           <button
             type="button"
+            data-ui="option-card"
             @click="accountCategory = 'service_account'"
             :class="[
               'flex items-center gap-3 rounded-lg border-2 p-3 text-left transition-all',
@@ -807,6 +823,7 @@
             <button
               type="button"
               @click="handleSelectGeminiOAuthType('google_one')"
+              data-ui="option-card"
               :class="[
                 'flex items-center gap-3 rounded-lg border-2 p-3 text-left transition-all',
                 geminiOAuthType === 'google_one'
@@ -850,6 +867,7 @@
             <button
               type="button"
               @click="handleSelectGeminiOAuthType('code_assist')"
+              data-ui="option-card"
               :class="[
                 'flex items-center gap-3 rounded-lg border-2 p-3 text-left transition-all',
                 geminiOAuthType === 'code_assist'
@@ -1046,6 +1064,7 @@
           <button
             type="button"
             @click="antigravityAccountType = 'oauth'"
+            data-ui="option-card"
             :class="[
               'flex items-center gap-3 rounded-lg border-2 p-3 text-left transition-all',
               antigravityAccountType === 'oauth'
@@ -1072,6 +1091,7 @@
           <button
             type="button"
             @click="antigravityAccountType = 'upstream'"
+            data-ui="option-card"
             :class="[
               'flex items-center gap-3 rounded-lg border-2 p-3 text-left transition-all',
               antigravityAccountType === 'upstream'

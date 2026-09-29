@@ -787,15 +787,22 @@ html.flat-theme [data-ui="user-usage"] > div[class~="border-b"] > button.tab.tab
 }
 
 /* The pagination under the records card is the card's footer (as data.css joins them on the table pages): the card
-   loses its bottom corners, the pagination takes the card's edge and the bottom corners. */
-html.flat-theme [data-ui="user-usage"] > .card[data-ui~="records-card"]:has(+ [data-ui="pagination"]),
-html.flat-theme [data-ui="user-usage"] .card[data-ui~="records-card"]:has(+ div > [data-ui="pagination"]) {
+   loses its bottom corners, the pagination takes the card's edge and the bottom corners — on BOTH tabs of the user page
+   (用量明细 and 错误请求: the error card carries the same hook, and the baseline join claims it too). The hook alone is
+   not enough for the margin: the pages' own `.space-y-6 > * ~ *` (0,5,1, dashboard-usage.css:36) carries the 12px
+   rhythm, so the margin rule has to keep the old `:has(> .table-wrapper) + div` weight — the extra attribute keeps
+   0,7,1 / 0,6,2 as it was (perf pass: the doubled attribute is deliberate, never matches twice). PERF.md: no `:has()`
+   in a non-subject position, so where the old rule put one above what it styled, the card's own
+   `[class~="overflow-hidden"]` (the records card is the only `.card` that has it and holds a table; the error card has
+   it too) carries the same weight the `:has(> .table-wrapper)` anchor did. */
+html.flat-theme [data-ui="user-usage"] > .card[class~="overflow-hidden"]:has(+ [data-ui="pagination"]),
+html.flat-theme [data-ui="user-usage"] .card[class~="overflow-hidden"]:has(+ div > [data-ui="pagination"]) {
   border-bottom-left-radius: 0;
   border-bottom-right-radius: 0;
 }
 
-html.flat-theme [data-ui="user-usage"] > .card[data-ui~="records-card"] + [data-ui="pagination"]:not([hidden]),
-html.flat-theme [data-ui="user-usage"] .card[data-ui~="records-card"] + div > [data-ui="pagination"] {
+html.flat-theme [data-ui="user-usage"] > .card[data-ui~="records-card"][data-ui~="records-card"] + [data-ui="pagination"]:not([hidden]),
+html.flat-theme [data-ui="user-usage"] .card[data-ui~="records-card"][data-ui~="records-card"] + div > [data-ui="pagination"] {
   margin-top: 0;
   border: 1px solid rgb(var(--ui-line));
   border-top-width: 0;

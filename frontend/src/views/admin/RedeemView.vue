@@ -60,6 +60,7 @@
           :columns="columns"
           :data="codes"
           :loading="loading"
+          :selected-keys="selectedCodeKeys"
           :server-side-sort="true"
           default-sort-key="id"
           default-sort-order="desc"
@@ -804,6 +805,7 @@ const copiedCode = ref<string | null>(null)
 
 const {
   selectedSet: selectedCodeIds,
+  selectedIds: selectedCodeKeys,
   selectedCount,
   allVisibleSelected,
   select,

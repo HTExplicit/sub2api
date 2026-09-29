@@ -11,7 +11,7 @@
           <Icon name="menu" size="md" />
         </button>
 
-        <div class="hidden lg:block">
+        <div class="hidden lg:block" data-ui="header-title">
           <h1 class="text-lg font-semibold text-gray-900 dark:text-white">
             {{ pageTitle }}
           </h1>

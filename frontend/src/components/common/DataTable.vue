@@ -48,6 +48,7 @@
       <div
         v-for="(row, index) in sortedData"
         :key="resolveRowKey(row, index)"
+        :data-ui="isRowSelected(row, index) ? 'row-selected' : undefined"
         class="rounded-lg border border-gray-200 bg-white p-4 dark:border-dark-700 dark:bg-dark-900"
         :class="{
           'cursor-pointer': clickableRows,
@@ -99,7 +100,7 @@
       'is-scrollable': isScrollable
     }"
   >
-    <table class="w-full min-w-max divide-y divide-gray-200 dark:divide-dark-700">
+    <table data-ui="data-table" class="w-full min-w-max divide-y divide-gray-200 dark:divide-dark-700">
       <thead class="table-header bg-gray-50 dark:bg-dark-800">
         <tr>
           <th
@@ -214,6 +215,7 @@
             :data-row-id="resolveRowKey(item.row, item.index)"
             :data-index="item.index"
             :ref="item.measure ? measureElement : undefined"
+            :data-ui="isRowSelected(item.row, item.index) ? 'row-selected' : undefined"
             class="hover:bg-gray-50 dark:hover:bg-dark-800"
             :class="{
               'cursor-pointer': clickableRows,

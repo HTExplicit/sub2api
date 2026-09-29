@@ -93,6 +93,7 @@
                 <Teleport to="body">
                   <div
                     v-if="showAccountToolsDropdown"
+                    data-ui="account-tools-panel"
                     class="fixed z-[9999] origin-top-right overflow-hidden rounded-lg border border-gray-200 bg-white shadow-xl dark:border-dark-700 dark:bg-dark-800"
                     :style="accountToolsDropdownStyle"
                     @click.stop
@@ -274,6 +275,7 @@
           :data="accounts"
           :loading="loading"
           row-key="id"
+          :selected-keys="selIds"
           :server-side-sort="true"
           @sort="handleSort"
           default-sort-key="name"

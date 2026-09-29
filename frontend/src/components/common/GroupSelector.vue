@@ -27,6 +27,7 @@
       <label
         v-for="group in filteredGroups"
         :key="group.id"
+        data-ui="group-pick-row"
         class="flex cursor-pointer items-center gap-2 rounded px-2 py-1.5 transition-colors hover:bg-white dark:hover:bg-dark-700"
         :title="group.rate_multiplier == null ? group.name : t('admin.groups.rateAndAccounts', { rate: group.rate_multiplier, count: group.account_count || 0 })"
       >

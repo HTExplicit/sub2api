@@ -27,12 +27,15 @@ html.flat-theme [class~="max-h-48"][class~="min-w-0"][class~="flex-1"][class~="o
   white-space: nowrap;
 }
 
-html.flat-theme [class~="max-h-48"][class~="min-w-0"][class~="flex-1"][class~="overflow-auto"]:has(> table) {
+/* Perf pass: the box is hooked ([data-ui~="dist-table"], the three distribution charts and the user dashboard's
+   chart); the :has() stays in the subject with a child argument. The repeated [data-ui] keeps the original 0,5,2
+   (the hook plus the four class tokens it replaced), so the cascade outcome is unchanged. */
+html.flat-theme [data-ui~="dist-table"][data-ui][data-ui][data-ui]:has(> table) {
   scrollbar-width: thin;
   scrollbar-color: rgb(var(--ui-line-focus)) transparent;
 }
 
-html.flat-theme [class~="max-h-48"][class~="min-w-0"][class~="flex-1"][class~="overflow-auto"]:has(> table)::-webkit-scrollbar-thumb {
+html.flat-theme [data-ui~="dist-table"][data-ui][data-ui][data-ui]:has(> table)::-webkit-scrollbar-thumb {
   background-color: rgb(var(--ui-line-focus));
 }
 
@@ -41,16 +44,24 @@ html.flat-theme [class~="max-h-48"][class~="min-w-0"][class~="flex-1"][class~="o
 }
 
 /* B1.2 Chart card titles beside a segmented picker never break (「模型分 / 布」 on phones): the picker group
-   wraps instead. */
-html.flat-theme [class~="card"] > div[class~="mb-4"][class~="justify-between"]:has(> div [class~="rounded-lg"]:is([class~="bg-gray-50"], [class~="bg-gray-100"]):is([class~="p-0.5"], [class~="p-1"])) > h3 {
-  flex-shrink: 0;
-  white-space: nowrap;
+   wraps instead. Perf pass: the rule is driven by a flag the header itself carries (:has() stays in the subject,
+   child argument) and read by the h3 through a container style query, so nothing selects "after" the :has(). */
+html.flat-theme [data-ui="dist-head"]:has(> div [class~="rounded-lg"]:is([class~="bg-gray-50"], [class~="bg-gray-100"]):is([class~="p-0.5"], [class~="p-1"])) {
+  --uif-disthead: 1;
+}
+
+@container style(--uif-disthead: 1) {
+  html.flat-theme [data-ui="dist-head"][data-ui] > h3:not(uipad) {
+    flex-shrink: 0;
+    white-space: nowrap;
+  }
 }
 
 /* B1.3 Chart rows holding a distribution card: from 1024 to 1535px each card takes the full width, so the
-   ring, every column and the full names fit; from 1536px they sit side by side again. */
+   ring, every column and the full names fit; from 1536px they sit side by side again. Perf pass: the page roots
+   that hold such a row are hooked already (admin/user dashboard and usage), and the :has() stays in the subject. */
 @media (min-width: 1024px) and (max-width: 1535.98px) {
-  html.flat-theme [class~="grid"][class~="gap-6"][class~="lg:grid-cols-2"]:has(> [class~="card"]:first-child [class~="max-h-48"][class~="overflow-auto"] > table) {
+  html.flat-theme :is([data-ui="admin-dashboard"], [data-ui="admin-usage"], [data-ui="user-dashboard"], [data-ui="user-usage"]) [class~="grid"][class~="gap-6"][class~="lg:grid-cols-2"]:has(> [class~="card"]:first-child [data-ui~="dist-table"] > table) {
     grid-template-columns: minmax(0, 1fr);
   }
 }
@@ -145,12 +156,13 @@ html.flat-theme .table-wrapper[data-table="proxies"] td[data-column="auth"] > di
 }
 
 /* B1.11 Group pickers (GroupSelector rows: account forms, announcement targeting, key dialogs): the group badge
-   keeps its own width instead of stretching into a bar, the account count sits at the right edge. */
-html.flat-theme label[class~="cursor-pointer"]:has(> input[type="checkbox"]) > span[class~="inline-flex"][class~="rounded-md"][class~="min-w-0"][class~="flex-1"] {
+   keeps its own width instead of stretching into a bar, the account count sits at the right edge. Perf pass: the
+   rows are hooked ([data-ui="group-pick-row"], GroupSelector.vue); the two child selectors need no :has(). */
+html.flat-theme [data-ui="group-pick-row"] > span[class~="inline-flex"][class~="rounded-md"][class~="min-w-0"][class~="flex-1"] {
   flex: 0 1 auto;
 }
 
-html.flat-theme label[class~="cursor-pointer"]:has(> input[type="checkbox"]) > span[class~="inline-flex"][class~="rounded-md"][class~="min-w-0"][class~="flex-1"] + span[class~="shrink-0"] {
+html.flat-theme [data-ui="group-pick-row"] > span[class~="inline-flex"][class~="rounded-md"][class~="min-w-0"][class~="flex-1"] + span[class~="shrink-0"] {
   margin-left: auto;
 }
 
@@ -162,12 +174,12 @@ html.flat-theme label[class~="cursor-pointer"]:has(> input[type="checkbox"]) > s
      user names and order numbers. */
 html.flat-theme .table-wrapper[data-table="usage"] td:is([data-column="request_id"], [data-column="upstream_request_id"]) span[class~="truncate"],
 html.flat-theme .table-wrapper[data-table="usage"] td[data-column="user_agent"] > span[class~="truncate"],
-html.flat-theme div[class~="pb-12"]:has([data-testid="throughput-chart-header"]) section[class~="rounded-2xl"] td > span[class~="block"][class~="truncate"],
-html.flat-theme div[class~="pb-12"]:has([data-testid="throughput-chart-header"]) :is(span, div)[class~="truncate"]:is([class~="text-[11px]"], [class~="text-[10px]"]):is([class~="font-bold"], [class~="text-gray-400"]),
+html.flat-theme [data-ui~="ops-dashboard"] section[class~="rounded-2xl"] td > span[class~="block"][class~="truncate"],
+html.flat-theme [data-ui~="ops-dashboard"] :is(span, div)[class~="truncate"]:is([class~="text-[11px]"], [class~="text-[10px]"]):is([class~="font-bold"], [class~="text-gray-400"]),
 html.flat-theme td[class~="max-w-[240px]"][class~="truncate"][class~="px-4"][class~="py-3"],
 html.flat-theme span[class~="max-w-[220px]"][class~="truncate"][class~="font-mono"][class~="text-[11px]"],
 html.flat-theme span[class~="min-w-0"][class~="flex-1"][class~="truncate"][class~="font-mono"][class~="text-[11px]"],
-html.flat-theme :is(.modal-body:has(.compact-select), [class~="card"]:has(> div > button[data-testid="usage-detail-tab"])) .table-wrapper:not([data-table="usage"]) td:is([data-column="message"], [data-column="user_agent"]) > span[class~="block"][class~="truncate"],
+html.flat-theme :is([data-ui~="ops-error-list"], [data-ui~="usage-records"]) .table-wrapper:not([data-table="usage"]) td:is([data-column="message"], [data-column="user_agent"]) > span[class~="block"][class~="truncate"],
 html.flat-theme div[class~="truncate"][class~="max-w-[360px]"][class~="font-semibold"],
 html.flat-theme .modal-body div[class~="rounded-xl"][class~="p-4"] > div > div[class~="truncate"][class~="text-sm"][class~="font-semibold"],
 html.flat-theme .usage-filter-dropdown > div[class~="absolute"] > button > span[class~="truncate"],
@@ -180,14 +192,15 @@ html.flat-theme .table-wrapper :is(div, button)[class~="max-w-56"][class~="trunc
   overflow-wrap: anywhere;
 }
 
-/* (运维监控 concurrency rows: the name and the e-mail may shrink and wrap as a pair; the request ID may use
-   the wide sheet's free width and stays on one line where it fits) */
-html.flat-theme div[class~="pb-12"]:has([data-testid="throughput-chart-header"]) div[class~="min-w-0"][class~="flex-1"][class~="items-center"][class~="gap-1.5"]:has(> span[class~="truncate"][class~="text-[11px]"]) {
+/* (运维监控 concurrency rows: the name and the e-mail may shrink and wrap as a pair; the request ID may use the wide
+   sheet's free width and stays on one line where it fits). Perf pass: the :has() stays in the subject of the row it
+   styles (the row is the element that wraps), scoped under the page's own hook. */
+html.flat-theme [data-ui~="ops-dashboard"][data-ui] div[class~="min-w-0"][class~="flex-1"][class~="items-center"][class~="gap-1.5"]:has(> span[class~="truncate"][class~="text-[11px]"]) {
   flex-wrap: wrap;
   row-gap: 0;
 }
 
-html.flat-theme div[class~="pb-12"]:has([data-testid="throughput-chart-header"]) :is(span, div)[class~="truncate"]:is([class~="text-[11px]"], [class~="text-[10px]"]):is([class~="font-bold"], [class~="text-gray-400"]) {
+html.flat-theme [data-ui~="ops-dashboard"] :is(span, div)[class~="truncate"]:is([class~="text-[11px]"], [class~="text-[10px]"]):is([class~="font-bold"], [class~="text-gray-400"]) {
   min-width: 0;
   flex-shrink: 1;
 }
@@ -363,9 +376,11 @@ html.flat-theme .theme-tour-popover .driver-popover-close-btn {
 /* ================================================================== B4 · figures never spill */
 
 /* B4.1 KPI cards (upstream: .grid > .card.p-4 with a tile and a text column): the text column may shrink and a
-   figure too long for the card wraps inside it ($999,999,875,767.73) instead of painting under the next card. */
-html.flat-theme [class~="grid"] > [class~="card"][class~="p-4"] > [class~="flex"]:has(> div[class~="rounded-lg"][class~="p-2"]:first-child) > :nth-child(2),
-html.flat-theme [class~="grid"] > [class~="card"][class~="p-4"][class~="flex"]:has(> div[class~="rounded-lg"][class~="p-2"]:first-child) > :nth-child(2) {
+   figure too long for the card wraps inside it ($999,999,875,767.73) instead of painting under the next card.
+   Perf pass: the tile's next sibling is the text column, so no :has() is needed; the repeated [class]s keep the
+   original 0,8,2. */
+html.flat-theme [class~="grid"] > [class~="card"][class~="p-4"] > [class~="flex"] > div[class~="rounded-lg"][class~="p-2"]:first-child + :nth-child(2),
+html.flat-theme [class~="grid"] > [class~="card"][class~="p-4"][class~="flex"] > div[class~="rounded-lg"][class~="p-2"]:first-child + :nth-child(2) {
   min-width: 0;
 }
 
@@ -384,8 +399,10 @@ html.flat-theme [class~="grid"] > [class~="card"][class~="p-4"] p[class~="text-x
 }
 
 /* B4.3 用户仪表盘「今日消费」 and 「总计」: the standard price after the figure wraps as one piece, so its slash
-   leads the second line instead of dangling. */
-html.flat-theme main:has(button[class~="group"][class~="rounded-xl"][class~="bg-gray-50"][class~="p-4"]) [class~="grid"] > [class~="card"][class~="p-4"] :is(p[class~="text-xl"] > span[class~="text-sm"], p[class~="text-xs"] > span[class~="text-gray-400"]) {
+   leads the second line instead of dangling. Perf pass: the page root carries the hook already, so the :has() that
+   asked "does this page hold the quick-action buttons" (a `main` anchor: every text node under it in one
+   invalidation set) is gone; the quick actions live only on the user dashboard, whose rows this rule is for. */
+html.flat-theme [data-ui="user-dashboard"][data-ui] [class~="grid"] > [class~="card"][class~="p-4"] :is(p[class~="text-xl"] > span[class~="text-sm"], p[class~="text-xs"] > span[class~="text-gray-400"]) {
   display: inline-block;
 }
 
@@ -407,16 +424,18 @@ html.flat-theme .terminal-window {
 
 /* B6.1 运维监控 metric tiles: the 「明细」 links never break into a vertical 「明 / 细」 (the tile label wraps
    instead), and 「ms (P99)」 moves under a long figure as one unit. */
-html.flat-theme div[class~="pb-12"]:has([data-testid="throughput-chart-header"]) button[class~="text-[10px]"][class~="font-bold"][class~="text-blue-500"] {
+html.flat-theme [data-ui~="ops-dashboard"] button[class~="text-[10px]"][class~="font-bold"][class~="text-blue-500"] {
   flex-shrink: 0;
   white-space: nowrap;
 }
 
-html.flat-theme div[class~="pb-12"]:has([data-testid="throughput-chart-header"]) div[class~="items-baseline"][class~="gap-2"]:has(> div[class~="text-3xl"]) {
+html.flat-theme [data-ui~="ops-dashboard"][data-ui] div[class~="items-baseline"][class~="gap-2"]:has(> div[class~="text-3xl"]) {
   flex-wrap: wrap;
 }
 
-html.flat-theme div[class~="pb-12"]:has([data-testid="throughput-chart-header"]) div[class~="items-baseline"][class~="gap-2"]:has(> div[class~="text-3xl"]) > span {
+/* Perf pass: the trailing `> span` rule is named from the figure that sits beside the label (`+ span`), so nothing
+   follows a :has() any more (this keeps 「ms (P99)」 from wrapping between 「ms」 and 「(P99)」). */
+html.flat-theme [data-ui~="ops-dashboard"][data-ui] div[class~="items-baseline"][class~="gap-2"] > div[class~="text-3xl"] + span {
   white-space: nowrap;
 }
 

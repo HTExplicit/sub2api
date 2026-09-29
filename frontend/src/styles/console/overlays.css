@@ -348,7 +348,9 @@ html.flat-theme .account-tools-menu-item .account-tools-menu-icon svg {
   height: 13px;
 }
 
-html.flat-theme div[class~="fixed"] > div > div[class~="px-2"][class~="py-2"]:has(~ .account-tools-menu-item):not(uipad) {
+/* Perf pass: the panel is hooked ([data-ui="account-tools-panel"], AccountsView.vue) and the :has() sits in the
+   subject with a sibling argument (the group-title row is the container whose next siblings are items). */
+html.flat-theme [data-ui="account-tools-panel"] > div[class~="px-2"][class~="py-2"]:has(~ .account-tools-menu-item) {
   padding: 8px var(--ui-menu-row-x) 4px;
 }
 

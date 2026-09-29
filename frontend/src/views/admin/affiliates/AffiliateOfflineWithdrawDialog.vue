@@ -11,6 +11,7 @@
         <div
           v-if="selectedUser"
           class="flex items-center justify-between gap-3 rounded-md border border-primary-200 bg-primary-50 px-3 py-2 dark:border-primary-700/50 dark:bg-primary-900/20"
+          data-ui="picked-chip"
           data-test="withdraw-selected-user"
         >
           <div class="min-w-0 truncate text-sm">
