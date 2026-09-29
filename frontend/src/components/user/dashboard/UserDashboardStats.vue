@@ -2,7 +2,7 @@
   <!-- Row 1: Core Stats -->
   <div class="grid grid-cols-2 gap-4 lg:grid-cols-4" data-ui="kpi-grid">
     <!-- Balance -->
-    <div v-if="!isSimple" class="card p-4" data-ui="kpi-tile">
+    <div v-if="!isSimple" class="card p-4" data-ui="kpi-tile balance-tile">
       <div class="flex items-center gap-3">
         <div class="rounded-lg bg-emerald-100 p-2 dark:bg-emerald-900/30">
           <svg class="h-5 w-5 text-emerald-600 dark:text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -105,7 +105,7 @@
         </div>
         <div class="flex-1">
           <p class="text-xs font-medium text-gray-500 dark:text-gray-400">{{ t('dashboard.performance') }}</p>
-          <div class="flex items-baseline gap-2">
+          <div class="flex items-baseline gap-2" data-ui="kpi-value">
             <p class="text-xl font-bold text-gray-900 dark:text-white">{{ formatTokens(stats?.rpm || 0) }}</p>
             <span class="text-xs text-gray-500 dark:text-gray-400">RPM</span>
           </div>

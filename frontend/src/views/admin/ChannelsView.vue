@@ -5,7 +5,7 @@
         <div class="flex flex-col justify-between gap-4 lg:flex-row lg:items-start">
           <!-- Left: Search + Filters -->
           <div class="flex flex-1 flex-wrap items-center gap-3">
-            <div class="relative w-full sm:w-64">
+            <div data-ui="search-box" class="relative w-full sm:w-64">
               <Icon
                 name="search"
                 size="md"
@@ -385,7 +385,7 @@
                 {{ t('admin.channels.form.noMappingRules', 'No mapping rules. Click "Add" to create one.') }}
               </div>
               <div v-else class="space-y-1">
-                <div
+                <div data-ui="dense-dlg"
                   v-for="(_, srcModel) in section.model_mapping"
                   :key="srcModel"
                   class="flex items-center gap-2"

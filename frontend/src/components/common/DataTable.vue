@@ -48,7 +48,6 @@
       <div
         v-for="(row, index) in sortedData"
         :key="resolveRowKey(row, index)"
-        :data-ui="isRowSelected(row, index) ? 'row-selected' : undefined"
         class="rounded-lg border border-gray-200 bg-white p-4 dark:border-dark-700 dark:bg-dark-900"
         :class="{
           'cursor-pointer': clickableRows,
@@ -215,7 +214,6 @@
             :data-row-id="resolveRowKey(item.row, item.index)"
             :data-index="item.index"
             :ref="item.measure ? measureElement : undefined"
-            :data-ui="isRowSelected(item.row, item.index) ? 'row-selected' : undefined"
             class="hover:bg-gray-50 dark:hover:bg-dark-800"
             :class="{
               'cursor-pointer': clickableRows,
@@ -393,9 +391,15 @@ const attachDesktopTableTracking = () => {
   checkScrollable()
   checkActionsColumnWidth()
   if (tableWrapperRef.value && typeof ResizeObserver !== 'undefined') {
-    resizeObserver = new ResizeObserver(() => {
+    // 操作列探测只取决于宽度；仅高度变化（如选择托盘展开）时跳过，避免在包裹层上连续切换两次类名、整表重算样式
+    let lastObservedWidth: number | undefined
+    resizeObserver = new ResizeObserver((entries) => {
       checkScrollable()
-      checkActionsColumnWidth()
+      const width = entries?.[0]?.contentRect.width
+      if (width === undefined || width !== lastObservedWidth) {
+        lastObservedWidth = width
+        checkActionsColumnWidth()
+      }
     })
     resizeObserver.observe(tableWrapperRef.value)
   } else {

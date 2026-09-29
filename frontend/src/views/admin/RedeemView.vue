@@ -14,12 +14,14 @@
             />
           </div>
           <Select
+            data-ui="toolbar-select"
             v-model="filters.type"
             :options="filterTypeOptions"
             class="w-36"
             @change="loadCodes"
           />
           <Select
+            data-ui="toolbar-select"
             v-model="filters.status"
             :options="filterStatusOptions"
             class="w-36"
@@ -33,6 +35,7 @@
               :disabled="loading"
               class="btn btn-secondary"
               :title="t('common.refresh')"
+              data-ui="toolbar-icon"
             >
               <Icon name="refresh" size="md" :class="loading ? 'animate-spin' : ''" />
             </button>
@@ -60,7 +63,6 @@
           :columns="columns"
           :data="codes"
           :loading="loading"
-          :selected-keys="selectedCodeKeys"
           :server-side-sort="true"
           default-sort-key="id"
           default-sort-order="desc"
@@ -276,7 +278,7 @@
 
     <!-- Generate Codes Dialog -->
     <Teleport to="body">
-      <div v-if="showGenerateDialog" class="fixed inset-0 z-50 flex items-center justify-center">
+      <div data-ui="h2-dlg" v-if="showGenerateDialog" class="fixed inset-0 z-50 flex items-center justify-center">
         <div class="fixed inset-0 bg-black/50" @click="showGenerateDialog = false"></div>
         <div
           class="relative z-10 w-full max-w-md rounded-xl bg-white p-6 shadow-xl dark:bg-dark-800"
@@ -413,7 +415,7 @@
 
     <!-- Batch Update Dialog -->
     <Teleport to="body">
-      <div
+      <div data-ui="h2-dlg"
         v-if="showBatchUpdateDialog"
         class="fixed inset-0 z-50 flex items-center justify-center p-4"
       >
@@ -805,7 +807,6 @@ const copiedCode = ref<string | null>(null)
 
 const {
   selectedSet: selectedCodeIds,
-  selectedIds: selectedCodeKeys,
   selectedCount,
   allVisibleSelected,
   select,

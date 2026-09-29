@@ -2,7 +2,7 @@
   <div class="space-y-6">
     <!-- Date Range Filter -->
     <div class="card p-4" data-ui="time-bar">
-      <div class="flex flex-wrap items-center gap-4">
+      <div data-ui="dense-btn" class="flex flex-wrap items-center gap-4">
         <div class="flex items-center gap-2" data-ui="range-pill">
           <span class="text-sm font-medium text-gray-700 dark:text-gray-300">{{ t('dashboard.timeRange') }}:</span>
           <DateRangePicker :start-date="startDate" :end-date="endDate" @update:startDate="$emit('update:startDate', $event)" @update:endDate="$emit('update:endDate', $event)" @change="$emit('dateRangeChange', $event)" />

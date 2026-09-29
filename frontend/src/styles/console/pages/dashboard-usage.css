@@ -24,8 +24,13 @@
  *   data-ui="platform-breakdown" the 按平台拆分 card of components/user/dashboard/UserDashboardStats.vue
  *   data-ui="records-card"      the table card of components/admin/usage/UsageTable.vue and
  *                               components/user/UserErrorRequestsTable.vue
- * Performance (ui-el PERF.md): no :has() in a non-subject position; the :has() left are in the subject compound of a
- * hooked anchor, with child / sibling arguments (the open and focus states of the pills, the pagination join).
+ * Performance (ui-el PERF.md): every data-ui hook here is static (never bound to data). The relational pseudo-class
+ * (has()) is left only for states that live in another component or in data: a Select's or the DateRangePicker's open
+ * menu, their keyboard focus and a search field's focus inside a pill (section 3), and whether the error list's
+ * pagination is rendered (section 7). Those sit in the subject compound of a hooked element (range-pill, select-anchor,
+ * records-card) or of the search box's own class, with child / sibling arguments. Every rewritten selector keeps the weight it replaced: a hook that has to
+ * weigh nothing is wrapped in :where(), missing weight is added by a pad that never filters anything (:not(uipad) =
+ * 0,0,1, :not([data-uipad]) = 0,1,0).
  * Shared components (KPI tiles, chart cards, DataTable, badges, pagination, menus, tooltips) keep the shared files' look;
  * the rules here only place them and restate what is specific to these pages. */
 
@@ -45,7 +50,7 @@ html.flat-theme :is([data-ui="admin-dashboard"], [data-ui="admin-usage"], [data-
 
 /* Upstream frames 「时间范围 / 刷新 / 粒度」 in a card. The reference's /logs toolbar is a row on the canvas: its controls,
    8px apart, 8px above and below, a 1px structural line underneath (REF §7.1 "py-2 + 底线", crop logs-toolbar). */
-html.flat-theme :is([data-ui="admin-dashboard"], [data-ui="admin-usage"], [data-ui="user-dashboard"], [data-ui="user-usage"]) .card[class~="p-4"][data-ui~="time-bar"] {
+html.flat-theme :is([data-ui="admin-dashboard"], [data-ui="admin-usage"], [data-ui="user-dashboard"], [data-ui="user-usage"]) .card[class~="p-4"][data-ui~="time-bar"]:not(uipad[data-uipad]):not(uipad) {
   padding: 8px 0;
   border: 0;
   border-bottom: 1px solid rgb(var(--ui-line));
@@ -54,7 +59,7 @@ html.flat-theme :is([data-ui="admin-dashboard"], [data-ui="admin-usage"], [data-
   box-shadow: none;
 }
 
-html.flat-theme :is([data-ui="admin-dashboard"], [data-ui="admin-usage"], [data-ui="user-dashboard"], [data-ui="user-usage"]) .card[class~="p-4"][data-ui~="time-bar"] > div {
+html.flat-theme :is([data-ui="admin-dashboard"], [data-ui="admin-usage"], [data-ui="user-dashboard"], [data-ui="user-usage"]) .card[class~="p-4"][data-ui~="time-bar"]:not(uipad[data-uipad]):not(uipad) > div {
   gap: 8px;
 }
 
@@ -64,7 +69,7 @@ html.flat-theme :is([data-ui="admin-dashboard"], [data-ui="admin-usage"], [data-
    6, the control outline on the surface) holding the field label as its mono label (REF §5 .mono-label, --ui-label)
    and then the value, so a filter row is one line of 30px controls instead of labels stacked over 34px fields.
    The pills: the time range and the granularity, the admin filter strip (UsageFilters), the user usage filters. */
-html.flat-theme :is([data-ui="admin-dashboard"], [data-ui="admin-usage"], [data-ui="user-dashboard"], [data-ui="user-usage"]) .card[class~="p-4"][data-ui~="time-bar"] > div > div[class~="items-center"][class~="gap-2"],
+html.flat-theme :is([data-ui="admin-dashboard"], [data-ui="admin-usage"], [data-ui="user-dashboard"], [data-ui="user-usage"]) .card[class~="p-4"][data-ui~="time-bar"]:not(uipad[data-uipad]):not(uipad) > div > div[class~="items-center"][class~="gap-2"],
 html.flat-theme [data-ui="usage-filters"] > div > div[class~="flex-1"] > div,
 html.flat-theme [data-ui="user-usage"] > .card[class~="p-6"] > div > div[class~="flex-1"] > div {
   position: relative;
@@ -81,7 +86,7 @@ html.flat-theme [data-ui="user-usage"] > .card[class~="p-6"] > div > div[class~=
 }
 
 /* the label: the mono label at the KPI labels' weight, on one line */
-html.flat-theme :is([data-ui="admin-dashboard"], [data-ui="admin-usage"], [data-ui="user-dashboard"], [data-ui="user-usage"]) .card[class~="p-4"][data-ui~="time-bar"] > div > div[class~="items-center"][class~="gap-2"] > span:first-child,
+html.flat-theme :is([data-ui="admin-dashboard"], [data-ui="admin-usage"], [data-ui="user-dashboard"], [data-ui="user-usage"]) .card[class~="p-4"][data-ui~="time-bar"]:not(uipad[data-uipad]):not(uipad) > div > div[class~="items-center"][class~="gap-2"] > span:first-child,
 html.flat-theme [data-ui="usage-filters"] > div > div[class~="flex-1"] > div > label,
 html.flat-theme [data-ui="user-usage"] > .card[class~="p-6"] > div > div[class~="flex-1"] > div > label {
   flex: none;
@@ -97,15 +102,15 @@ html.flat-theme [data-ui="user-usage"] > .card[class~="p-6"] > div > div[class~=
 }
 
 /* the value: the Select / DateRangePicker trigger or the search field, drawn inside the pill (28px, no edge of its own) */
-html.flat-theme :is([data-ui="admin-dashboard"], [data-ui="admin-usage"], [data-ui="user-dashboard"], [data-ui="user-usage"]) .card[class~="p-4"][data-ui~="time-bar"] > div > div[class~="items-center"][class~="gap-2"] > div,
-html.flat-theme [data-ui="usage-filters"] > div > div[class~="flex-1"] > [data-ui~="select-anchor"] > div[class~="relative"],
+html.flat-theme :is([data-ui="admin-dashboard"], [data-ui="admin-usage"], [data-ui="user-dashboard"], [data-ui="user-usage"]) .card[class~="p-4"][data-ui~="time-bar"]:not(uipad[data-uipad]):not(uipad) > div > div[class~="items-center"][class~="gap-2"] > div,
+html.flat-theme [data-ui="usage-filters"] > div > div[class~="flex-1"] > div[data-ui~="select-anchor"] > div[class~="relative"],
 html.flat-theme [data-ui="user-usage"] > .card[class~="p-6"] > div > div[class~="flex-1"] > div > div[class~="relative"] {
   flex: 1 1 auto;
   width: auto;
   min-width: 0;
 }
 
-html.flat-theme :is([data-ui="admin-dashboard"], [data-ui="admin-usage"], [data-ui="user-dashboard"], [data-ui="user-usage"]) .card[class~="p-4"][data-ui~="time-bar"] > div > div[class~="items-center"][class~="gap-2"] :is(.select-trigger.select-trigger, .date-picker-trigger.date-picker-trigger),
+html.flat-theme :is([data-ui="admin-dashboard"], [data-ui="admin-usage"], [data-ui="user-dashboard"], [data-ui="user-usage"]) .card[class~="p-4"][data-ui~="time-bar"]:not(uipad[data-uipad]):not(uipad) > div > div[class~="items-center"][class~="gap-2"] :is(.select-trigger.select-trigger, .date-picker-trigger.date-picker-trigger),
 html.flat-theme [data-ui="usage-filters"] > div > div[class~="flex-1"] > div .select-trigger.select-trigger,
 html.flat-theme [data-ui="user-usage"] > .card[class~="p-6"] > div > div[class~="flex-1"] > div .select-trigger.select-trigger {
   width: 100%;
@@ -133,27 +138,30 @@ html.flat-theme [data-ui="usage-filters"] > div > div[class~="flex-1"] > div > i
 }
 
 /* states: hover and an open menu take the focus line (the reference's house-select); keyboard focus on a trigger and any
-   focus in a text field take the accent edge 2px wide (the fields' focus, controls.css 3.1) */
-html.flat-theme :is([data-ui="admin-dashboard"], [data-ui="admin-usage"], [data-ui="user-dashboard"], [data-ui="user-usage"]) .card[class~="p-4"][data-ui~="time-bar"] > div > div[class~="items-center"][class~="gap-2"]:hover,
-html.flat-theme :is([data-ui="admin-dashboard"], [data-ui="admin-usage"], [data-ui="user-dashboard"], [data-ui="user-usage"]) .card[class~="p-4"][data-ui~="time-bar"] > div > [data-ui~="range-pill"]:has(> div > .date-picker-trigger-open),
-html.flat-theme :is([data-ui="admin-dashboard"], [data-ui="admin-usage"], [data-ui="user-dashboard"], [data-ui="user-usage"]) .card[class~="p-4"][data-ui~="time-bar"] > div > [data-ui~="select-anchor"]:has(> div > div > .select-trigger-open),
+   focus in a text field take the accent edge 2px wide (the fields' focus, controls.css 3.1). The time bar's accent edge
+   is the range pill's only (its picker's trigger; the granularity pill's Select sits one box deeper and its keyboard
+   focus never took the edge in the approved build). An open menu and a focus inside a pill are states of the Select /
+   DateRangePicker components, which no template condition here carries: these stay relational, on the hooked pill,
+   with child arguments. */
+html.flat-theme :is([data-ui="admin-dashboard"], [data-ui="admin-usage"], [data-ui="user-dashboard"], [data-ui="user-usage"]) .card[class~="p-4"][data-ui~="time-bar"]:not(uipad[data-uipad]):not(uipad) > div > div[class~="items-center"][class~="gap-2"]:hover,
+html.flat-theme :is([data-ui="admin-dashboard"], [data-ui="admin-usage"], [data-ui="user-dashboard"], [data-ui="user-usage"]) .card[class~="p-4"][data-ui~="time-bar"]:not(uipad[data-uipad]):not(uipad) > div > div:where([class~="items-center"][class~="gap-2"])[data-ui~="range-pill"]:not([data-uipad]):has(> * > .date-picker-trigger-open),
+html.flat-theme :is([data-ui="admin-dashboard"], [data-ui="admin-usage"], [data-ui="user-dashboard"], [data-ui="user-usage"]) .card[class~="p-4"][data-ui~="time-bar"]:not(uipad[data-uipad]):not(uipad) > div > div:where([class~="items-center"][class~="gap-2"])[data-ui~="select-anchor"]:not([data-uipad]):has(> * > * > .select-trigger-open),
 html.flat-theme [data-ui="usage-filters"] > div > div[class~="flex-1"] > div:hover,
-html.flat-theme [data-ui="usage-filters"] > div > div[class~="flex-1"] > [data-ui~="select-anchor"]:has(> div > .select-trigger-open),
+html.flat-theme [data-ui="usage-filters"] > div > div:where([class~="flex-1"]) > div[data-ui~="select-anchor"]:has(> * > .select-trigger-open),
 html.flat-theme [data-ui="user-usage"] > .card[class~="p-6"] > div > div[class~="flex-1"] > div:hover,
-html.flat-theme [data-ui="user-usage"] > .card[class~="p-6"] > div > div[class~="flex-1"] > [data-ui~="select-anchor"]:has(> div > .select-trigger-open) {
+html.flat-theme [data-ui="user-usage"] > .card[class~="p-6"] > div > div:where([class~="flex-1"]) > div[data-ui~="select-anchor"]:has(> * > .select-trigger-open) {
   border-color: rgb(var(--ui-line-focus));
 }
 
-html.flat-theme :is([data-ui="admin-dashboard"], [data-ui="admin-usage"], [data-ui="user-dashboard"], [data-ui="user-usage"]) .card[class~="p-4"][data-ui~="time-bar"] > div > [data-ui~="range-pill"]:has(> div > .date-picker-trigger:focus-visible),
-html.flat-theme :is([data-ui="admin-dashboard"], [data-ui="admin-usage"], [data-ui="user-dashboard"], [data-ui="user-usage"]) .card[class~="p-4"][data-ui~="time-bar"] > div > [data-ui~="select-anchor"]:has(> div > div > .select-trigger:focus-visible),
-html.flat-theme [data-ui="usage-filters"] > div > div[class~="flex-1"] > .usage-filter-dropdown:has(> input:focus),
-html.flat-theme [data-ui="usage-filters"] > div > div[class~="flex-1"] > [data-ui~="select-anchor"]:has(> div > .select-trigger:focus-visible),
-html.flat-theme [data-ui="user-usage"] > .card[class~="p-6"] > div > div[class~="flex-1"] > [data-ui~="select-anchor"]:has(> div > .select-trigger:focus-visible) {
+html.flat-theme :is([data-ui="admin-dashboard"], [data-ui="admin-usage"], [data-ui="user-dashboard"], [data-ui="user-usage"]) .card[class~="p-4"][data-ui~="time-bar"]:not(uipad[data-uipad]):not(uipad) > div > div:where([class~="items-center"][class~="gap-2"])[data-ui~="range-pill"]:not(uipad[data-uipad]):has(> * > .date-picker-trigger:focus-visible),
+html.flat-theme [data-ui="usage-filters"] > div > div[class~="flex-1"] > div.usage-filter-dropdown:has(> input:focus),
+html.flat-theme [data-ui="usage-filters"] > div > div:where([class~="flex-1"]) > div[data-ui~="select-anchor"]:has(> div > .select-trigger:focus-visible),
+html.flat-theme [data-ui="user-usage"] > .card[class~="p-6"] > div > div:where([class~="flex-1"]) > div[data-ui~="select-anchor"]:has(> div > .select-trigger:focus-visible) {
   border-color: rgb(var(--ui-focus));
   box-shadow: inset 0 0 0 1px rgb(var(--ui-focus));
 }
 
-html.flat-theme :is([data-ui="admin-dashboard"], [data-ui="admin-usage"], [data-ui="user-dashboard"], [data-ui="user-usage"]) .card[class~="p-4"][data-ui~="time-bar"] > div > div[class~="items-center"][class~="gap-2"] :is(.select-trigger, .date-picker-trigger):focus-visible,
+html.flat-theme :is([data-ui="admin-dashboard"], [data-ui="admin-usage"], [data-ui="user-dashboard"], [data-ui="user-usage"]) .card[class~="p-4"][data-ui~="time-bar"]:not(uipad[data-uipad]):not(uipad) > div > div[class~="items-center"][class~="gap-2"] :is(.select-trigger, .date-picker-trigger):focus-visible,
 html.flat-theme [data-ui="usage-filters"] > div > div[class~="flex-1"] > div :is(.select-trigger, input):focus,
 html.flat-theme [data-ui="user-usage"] > .card[class~="p-6"] > div > div[class~="flex-1"] > div .select-trigger:focus-visible {
   border-color: transparent;
@@ -186,11 +194,11 @@ html.flat-theme [data-ui="usage-filters"] > div > div[class~="flex-1"] > div > b
    edge): the time range's panel takes the pill as its positioning box (the picker's own wrapper steps aside), flush
    with the pill's outer left edge and 4px under it (final review V1-02). The Select lists anchor to the pill through
    data-ui~="select-anchor" (components/common/Select.vue, theme on only). */
-html.flat-theme :is([data-ui="admin-dashboard"], [data-ui="admin-usage"], [data-ui="user-dashboard"], [data-ui="user-usage"]) .card[class~="p-4"][data-ui~="time-bar"] > div > [data-ui~="range-pill"] > div[class~="relative"] {
+html.flat-theme :is([data-ui="admin-dashboard"], [data-ui="admin-usage"], [data-ui="user-dashboard"], [data-ui="user-usage"]) .card[class~="p-4"][data-ui~="time-bar"]:not(uipad[data-uipad]):not(uipad) > div > div[class~="items-center"][class~="gap-2"][data-ui~="range-pill"] > div[class~="relative"] {
   position: static;
 }
 
-html.flat-theme :is([data-ui="admin-dashboard"], [data-ui="admin-usage"], [data-ui="user-dashboard"], [data-ui="user-usage"]) .card[class~="p-4"][data-ui~="time-bar"] > div > [data-ui~="range-pill"] > div[class~="relative"] > .date-picker-dropdown {
+html.flat-theme :is([data-ui="admin-dashboard"], [data-ui="admin-usage"], [data-ui="user-dashboard"], [data-ui="user-usage"]) .card[class~="p-4"][data-ui~="time-bar"]:not(uipad[data-uipad]):not(uipad) > div > div[class~="items-center"][class~="gap-2"][data-ui~="range-pill"] > div[class~="relative"] > .date-picker-dropdown {
   top: calc(100% + 5px);
   left: -1px;
   margin-top: 0;
@@ -271,7 +279,7 @@ html.flat-theme [data-ui="usage-filters"] > div > div[class~="flex-1"] > div > d
    a one-line option card (the reference's dialog option card, REF §8.11: radius 8, 1px structural line, the subtle fill
    at 60 %, the control outline on hover; a 26px neutral icon square) with its title and description side by side and
    the chevron. Nothing is dropped; the description wraps under the title only where the row is too narrow. */
-html.flat-theme [data-ui="admin-dashboard"] > .card[class~="p-4"] {
+html.flat-theme [data-ui="admin-dashboard"] > .card[class~="p-4"]:not(uipad[data-uipad][data-uipad]) {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
@@ -280,11 +288,11 @@ html.flat-theme [data-ui="admin-dashboard"] > .card[class~="p-4"] {
   padding: 7px 7px 7px 14px;
 }
 
-html.flat-theme [data-ui="admin-dashboard"] > .card[class~="p-4"] > div:first-child {
+html.flat-theme [data-ui="admin-dashboard"] > .card[class~="p-4"]:not(uipad[data-uipad][data-uipad]) > div:first-child {
   margin: 0;
 }
 
-html.flat-theme [data-ui="admin-dashboard"] > .card[class~="p-4"] > div:first-child > h2 {
+html.flat-theme [data-ui="admin-dashboard"] > .card[class~="p-4"]:not(uipad[data-uipad][data-uipad]) > div:first-child > h2 {
   font-family: var(--ui-font-mono);
   font-size: var(--ui-label-size);
   line-height: var(--ui-label-leading);
@@ -295,7 +303,7 @@ html.flat-theme [data-ui="admin-dashboard"] > .card[class~="p-4"] > div:first-ch
   color: rgb(var(--ui-label));
 }
 
-html.flat-theme [data-ui="admin-dashboard"] > .card[class~="p-4"] > [class~="grid"] {
+html.flat-theme [data-ui="admin-dashboard"] > .card[class~="p-4"]:not(uipad[data-uipad][data-uipad]) > [class~="grid"] {
   display: flex;
   flex: 1 1 auto;
   flex-wrap: wrap;
@@ -336,26 +344,26 @@ html.flat-theme [data-ui="user-dashboard"] .card[class~="relative"][class~="over
 
 /* The card's head: the tab row (controls.css 7.3 underline tabs) set 6px in, so the first tab's text lines up with the
    table's 16px edge; the strip under it is section 4's. */
-html.flat-theme [data-ui="admin-usage"] > .card[data-ui~="usage-records"] > div:first-child {
+html.flat-theme [data-ui="admin-usage"] > .card[data-ui~="usage-records"]:not(uipad):not(uipad) > div:first-child {
   padding: 0 6px;
   border-bottom-color: rgb(var(--ui-line));
 }
 
 /* The IP-location bar above a table (UsageTable's own, IpGeoBatchToolbar in the error list): 6 / 16, the count 12px
    muted, the batch action a link-weight accent text button (REF §8.12 tray links: 12.5 / 600, underline on hover). */
-html.flat-theme :is([data-ui="admin-usage"], [data-ui="user-usage"]) div[class~="justify-end"][class~="border-b"] {
+html.flat-theme :is([data-ui="admin-usage"], [data-ui="user-usage"]) div[class~="justify-end"][class~="border-b"]:not(uipad[data-uipad][data-uipad]) {
   gap: 12px;
   padding: 6px 16px;
   border-bottom-color: rgb(var(--ui-line));
 }
 
-html.flat-theme :is([data-ui="admin-usage"], [data-ui="user-usage"]) div[class~="justify-end"][class~="border-b"] > span {
+html.flat-theme :is([data-ui="admin-usage"], [data-ui="user-usage"]) div[class~="justify-end"][class~="border-b"]:not(uipad[data-uipad][data-uipad]) > span {
   font-size: 12px;
   line-height: 18px;
   color: rgb(var(--ui-muted));
 }
 
-html.flat-theme :is([data-ui="admin-usage"], [data-ui="user-usage"]) div[class~="justify-end"][class~="border-b"] > button {
+html.flat-theme :is([data-ui="admin-usage"], [data-ui="user-usage"]) div[class~="justify-end"][class~="border-b"]:not(uipad[data-uipad][data-uipad]) > button {
   padding: 2px 0;
   border-radius: var(--ui-radius-sm);
   background-color: transparent;
@@ -365,7 +373,7 @@ html.flat-theme :is([data-ui="admin-usage"], [data-ui="user-usage"]) div[class~=
   color: var(--ui-link);
 }
 
-html.flat-theme :is([data-ui="admin-usage"], [data-ui="user-usage"]) div[class~="justify-end"][class~="border-b"] > button:hover:not(:disabled) {
+html.flat-theme :is([data-ui="admin-usage"], [data-ui="user-usage"]) div[class~="justify-end"][class~="border-b"]:not(uipad[data-uipad][data-uipad]) > button:hover:not(:disabled) {
   background-color: transparent;
   text-decoration: underline;
   text-underline-offset: 2px;
@@ -454,18 +462,18 @@ html.flat-theme .table-wrapper[data-table="usage"] td:is([data-column="tokens"],
    and its table in the reference's table language (data.css section 3 gives the mono header): cells 10 / 12 (16 at the
    edges), 42px rows, hover fill; figures Geist Mono ink-soft, the total and the cost ink (decision 2: the cost is not
    green); the top three ranks a neutral disc, the sorted column's label a step darker with its arrow (not the accent). */
-html.flat-theme [data-ui="admin-usage"] div[data-ui~="token-ranking"] > div[class~="border-b"] {
+html.flat-theme [data-ui="admin-usage"] div[data-ui~="token-ranking"]:not(uipad[data-uipad]):not(uipad):not(uipad) > div[class~="border-b"] {
   padding: 6px 16px;
   border-bottom-color: rgb(var(--ui-line));
 }
 
-html.flat-theme [data-ui="admin-usage"] div[data-ui~="token-ranking"] > div[class~="border-b"] :is(p, span)[class~="text-xs"] {
+html.flat-theme [data-ui="admin-usage"] div[data-ui~="token-ranking"]:not(uipad[data-uipad]):not(uipad):not(uipad) > div[class~="border-b"] :is(p, span)[class~="text-xs"] {
   font-size: 12px;
   line-height: 18px;
   color: rgb(var(--ui-muted));
 }
 
-html.flat-theme [data-ui="admin-usage"] div[data-ui~="token-ranking"] > div[class~="border-b"] .select-trigger.select-trigger {
+html.flat-theme [data-ui="admin-usage"] div[data-ui~="token-ranking"]:not(uipad[data-uipad]):not(uipad):not(uipad) > div[class~="border-b"] .select-trigger.select-trigger {
   padding-top: 0.265625rem;
   padding-bottom: 0.265625rem;
 }
@@ -761,12 +769,12 @@ html.flat-theme [data-ui="user-dashboard"] [class~="lg:col-span-1"] .card > div[
 
 /* 用量明细 / 错误请求: upstream's .tab buttons over a 1px line read as the reference's underline tabs (CodeTabs, REF §8.15:
    the current tab ink with a 2px accent rule; the others muted, ink on hover), as on the admin records card. */
-html.flat-theme [data-ui="user-usage"] > div[class~="border-b"] {
+html.flat-theme [data-ui="user-usage"] > div[class~="border-b"]:not(uipad[data-uipad]) {
   gap: 0;
   border-color: rgb(var(--ui-line));
 }
 
-html.flat-theme [data-ui="user-usage"] > div[class~="border-b"] > button.tab {
+html.flat-theme [data-ui="user-usage"] > div[class~="border-b"]:not(uipad[data-uipad]) > button.tab {
   margin-bottom: -1px;
   padding: 0.5rem 0.625rem;
   border-bottom: 2px solid transparent;
@@ -775,34 +783,32 @@ html.flat-theme [data-ui="user-usage"] > div[class~="border-b"] > button.tab {
   color: rgb(var(--ui-muted));
 }
 
-html.flat-theme [data-ui="user-usage"] > div[class~="border-b"] > button.tab:hover {
+html.flat-theme [data-ui="user-usage"] > div[class~="border-b"]:not(uipad[data-uipad]) > button.tab:hover {
   background-color: transparent;
   color: rgb(var(--ui-ink));
 }
 
-html.flat-theme [data-ui="user-usage"] > div[class~="border-b"] > button.tab.tab-active {
+html.flat-theme [data-ui="user-usage"] > div[class~="border-b"]:not(uipad[data-uipad]) > button.tab.tab-active {
   border-bottom-color: rgb(var(--ui-focus));
   background-color: transparent;
   color: rgb(var(--ui-ink));
 }
 
 /* The pagination under the records card is the card's footer (as data.css joins them on the table pages): the card
-   loses its bottom corners, the pagination takes the card's edge and the bottom corners — on BOTH tabs of the user page
-   (用量明细 and 错误请求: the error card carries the same hook, and the baseline join claims it too). The hook alone is
-   not enough for the margin: the pages' own `.space-y-6 > * ~ *` (0,5,1, dashboard-usage.css:36) carries the 12px
-   rhythm, so the margin rule has to keep the old `:has(> .table-wrapper) + div` weight — the extra attribute keeps
-   0,7,1 / 0,6,2 as it was (perf pass: the doubled attribute is deliberate, never matches twice). PERF.md: no `:has()`
-   in a non-subject position, so where the old rule put one above what it styled, the card's own
-   `[class~="overflow-hidden"]` (the records card is the only `.card` that has it and holds a table; the error card has
-   it too) carries the same weight the `:has(> .table-wrapper)` anchor did. */
-html.flat-theme [data-ui="user-usage"] > .card[class~="overflow-hidden"]:has(+ [data-ui="pagination"]),
-html.flat-theme [data-ui="user-usage"] .card[class~="overflow-hidden"]:has(+ div > [data-ui="pagination"]) {
+   loses its bottom corners, the pagination takes the card's edge and the bottom corners, on both tabs of the user page.
+   用量明细: the records card (UsageTable, records-card) is followed by nothing but its pagination (v-if total > 0), so
+   :not(:last-child) is "the pagination follows". 错误请求: the card sits in UserErrorRequestsTable with the pagination
+   (v-if total > 0) in the next box, so the hooked card tests that sibling (subject position). The weights are
+   the approved ones (0,6,1 / 0,5,2 for the corners, 0,7,1 / 0,5,2 for the pagination's edge: above the pages' 12px
+   rhythm, 0,5,1). */
+html.flat-theme [data-ui="user-usage"] > .card[data-ui~="records-card"]:not(:last-child):not([data-uipad]),
+html.flat-theme [data-ui="user-usage"] .card[data-ui~="records-card"]:has(+ div > [data-ui="pagination"]) {
   border-bottom-left-radius: 0;
   border-bottom-right-radius: 0;
 }
 
 html.flat-theme [data-ui="user-usage"] > .card[data-ui~="records-card"][data-ui~="records-card"] + [data-ui="pagination"]:not([hidden]),
-html.flat-theme [data-ui="user-usage"] .card[data-ui~="records-card"][data-ui~="records-card"] + div > [data-ui="pagination"] {
+html.flat-theme [data-ui="user-usage"] .card[data-ui~="records-card"] + div > [data-ui="pagination"] {
   margin-top: 0;
   border: 1px solid rgb(var(--ui-line));
   border-top-width: 0;

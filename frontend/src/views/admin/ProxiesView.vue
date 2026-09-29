@@ -4,7 +4,7 @@
       <template #filters>
         <div class="flex flex-wrap items-center gap-3">
           <!-- Left: Search + Filters -->
-          <div class="relative w-full sm:w-64">
+          <div data-ui="search-box" class="relative w-full sm:w-64">
             <Icon
               name="search"
               size="md"
@@ -21,6 +21,7 @@
 
           <div class="w-full sm:w-40">
             <Select
+              data-ui="toolbar-select"
               v-model="filters.protocol"
               :options="protocolOptions"
               :placeholder="t('admin.proxies.allProtocols')"
@@ -29,6 +30,7 @@
           </div>
           <div class="w-full sm:w-36">
             <Select
+              data-ui="toolbar-select"
               v-model="filters.status"
               :options="statusOptions"
               :placeholder="t('admin.proxies.allStatus')"
@@ -43,6 +45,7 @@
               :disabled="loading"
               class="btn btn-secondary"
               :title="t('common.refresh')"
+              data-ui="toolbar-icon"
             >
               <Icon name="refresh" size="md" :class="loading ? 'animate-spin' : ''" />
             </button>
@@ -94,7 +97,6 @@
           :columns="columns"
           :data="proxies"
           :loading="loading"
-          :selected-keys="selectedProxyKeys"
           :server-side-sort="true"
           default-sort-key="id"
           default-sort-order="desc"
@@ -1097,7 +1099,6 @@ const batchQualityChecking = ref(false)
 const proxyTableRef = ref<HTMLElement | null>(null)
 const {
   selectedSet: selectedProxyIds,
-  selectedIds: selectedProxyKeys,
   selectedCount,
   allVisibleSelected,
   isSelected,

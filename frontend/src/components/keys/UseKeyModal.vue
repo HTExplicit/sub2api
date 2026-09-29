@@ -64,7 +64,7 @@
               {{ t('keys.useKeyModal.openai.authModeDescription') }}
             </p>
           </div>
-          <div
+          <div data-ui="seg-box"
             class="grid grid-cols-2 gap-1 rounded-lg bg-gray-100 p-1 dark:bg-dark-700"
             role="radiogroup"
             :aria-label="t('keys.useKeyModal.openai.authModeTitle')"

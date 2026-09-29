@@ -186,7 +186,7 @@
               {{ t('admin.backup.operations.description') }}
             </p>
           </div>
-          <div class="flex flex-wrap items-center gap-2">
+          <div data-ui="dense-btn" class="flex flex-wrap items-center gap-2">
             <div class="flex items-center gap-1">
               <label class="text-xs text-gray-600 dark:text-gray-400">{{ t('admin.backup.operations.expireDays') }}</label>
               <input v-model.number="manualExpireDays" type="number" min="0" class="input w-20 text-xs" />
@@ -288,7 +288,7 @@
     <!-- Cloudflare R2 Setup Guide Modal -->
     <teleport to="body">
       <transition name="modal">
-        <div v-if="showR2Guide" class="fixed inset-0 z-50 flex items-center justify-center p-4" data-ui="r2-guide" @mousedown.self="showR2Guide = false">
+        <div v-if="showR2Guide" class="fixed inset-0 z-50 flex items-center justify-center p-4" data-ui="r2-guide h2-dlg h2-dlg-close" @mousedown.self="showR2Guide = false">
           <div class="fixed inset-0 bg-black/50" @click="showR2Guide = false"></div>
           <div class="relative max-h-[85vh] w-full max-w-2xl overflow-y-auto rounded-xl bg-white p-6 shadow-2xl dark:bg-dark-800">
             <button type="button" class="absolute right-4 top-4 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200" @click="showR2Guide = false">
@@ -371,7 +371,7 @@
     <!-- 分卷下载链接 -->
     <teleport to="body">
       <transition name="modal">
-        <div
+        <div data-ui="h2-dlg h2-dlg-close"
           v-if="downloadPartsModalOpen"
           class="fixed inset-0 z-50 flex items-center justify-center p-4"
           @mousedown.self="closeDownloadParts"

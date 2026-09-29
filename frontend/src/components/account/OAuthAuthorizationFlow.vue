@@ -732,7 +732,7 @@
                   {{ loading ? t('admin.accounts.oauth.generating') : oauthGenerateAuthUrl }}
                 </button>
                 <div v-else class="space-y-3">
-                  <div class="flex items-center gap-2">
+                  <div data-ui="dense-btn dense-dlg" class="flex items-center gap-2">
                     <input
                       :value="authUrl"
                       readonly

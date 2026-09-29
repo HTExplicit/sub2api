@@ -48,7 +48,7 @@
       </div>
 
       <!-- Type filter + Action buttons -->
-      <div class="flex items-center gap-3">
+      <div data-ui="dense-dlg-if" class="flex items-center gap-3">
         <Select
           v-model="typeFilter"
           :options="typeOptions"

@@ -348,7 +348,7 @@
               class="mb-3 space-y-2"
               data-testid="editable-model-mappings"
             >
-              <div
+              <div data-ui="dense-dlg"
                 v-for="(mapping, index) in modelMappings"
                 :key="getModelMappingKey(mapping)"
                 class="flex items-center gap-2"
@@ -557,7 +557,7 @@
             </div>
 
             <!-- Manual input -->
-            <div class="flex items-center gap-2">
+            <div data-ui="dense-btn dense-dlg" class="flex items-center gap-2">
               <input
                 v-model.number="customErrorCodeInput"
                 type="number"
@@ -828,7 +828,7 @@
             </div>
 
             <div v-if="modelMappings.length > 0" class="mb-3 space-y-2">
-              <div
+              <div data-ui="dense-dlg"
                 v-for="(mapping, index) in modelMappings"
                 :key="'oauth-' + getModelMappingKey(mapping)"
                 class="flex items-center gap-2"
@@ -1068,7 +1068,7 @@
 
             <!-- Model Mapping List -->
             <div v-if="modelMappings.length > 0" class="mb-3 space-y-2">
-              <div
+              <div data-ui="dense-dlg"
                 v-for="(mapping, index) in modelMappings"
                 :key="getModelMappingKey(mapping)"
                 class="flex items-center gap-2"
@@ -1281,7 +1281,7 @@
 
           <!-- Mapping Mode -->
           <div v-else class="space-y-3">
-            <div v-for="(mapping, index) in modelMappings" :key="getModelMappingKey(mapping)" class="flex items-center gap-2">
+            <div data-ui="dense-dlg" v-for="(mapping, index) in modelMappings" :key="getModelMappingKey(mapping)" class="flex items-center gap-2">
               <input v-model="mapping.from" type="text" class="input flex-1" :placeholder="t('admin.accounts.fromModel')" />
               <span class="text-gray-400">→</span>
               <input v-model="mapping.to" type="text" class="input flex-1" :placeholder="t('admin.accounts.toModel')" />
@@ -1423,7 +1423,7 @@
               :key="getAntigravityModelMappingKey(mapping)"
               class="space-y-1"
             >
-              <div class="flex items-center gap-2">
+              <div data-ui="dense-dlg" class="flex items-center gap-2">
                 <input
                   v-model="mapping.from"
                   type="text"
@@ -2513,7 +2513,7 @@
           <label class="input-label">{{ t('admin.accounts.openai.compactModelMapping') }}</label>
           <p class="input-hint">{{ t('admin.accounts.openai.compactModelMappingDesc') }}</p>
           <div v-if="openAICompactModelMappings.length > 0" class="mb-3 space-y-2">
-            <div
+            <div data-ui="dense-dlg"
               v-for="(mapping, index) in openAICompactModelMappings"
               :key="getOpenAICompactModelMappingKey(mapping)"
               class="flex items-center gap-2"

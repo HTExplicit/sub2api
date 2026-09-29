@@ -12,7 +12,7 @@
     </div>
     <p class="input-hint mb-2">{{ t('admin.accounts.opencodeGo.protocolRules.hint') }}</p>
     <div v-if="rows.length > 0" class="mb-2 space-y-2">
-      <div
+      <div data-ui="dense-dlg"
         v-for="(row, index) in rows"
         :key="getRowKey(row)"
         class="flex items-center gap-2"

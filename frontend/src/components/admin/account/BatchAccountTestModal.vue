@@ -1,7 +1,7 @@
 <template>
   <BaseDialog :show="show" :title="t('admin.accounts.batchTest.title')" width="extra-wide" @close="handleClose">
     <div class="space-y-4">
-      <div class="flex flex-wrap items-end gap-3">
+      <div data-ui="dense-dlg" class="flex flex-wrap items-end gap-3">
         <label class="min-w-64 flex-1">
           <span class="mb-1 block text-sm font-medium text-gray-700 dark:text-gray-200">{{ t('admin.accounts.batchTest.model') }}</span>
           <select v-model="selectedModel" class="input w-full" data-testid="batch-test-model" :disabled="running">

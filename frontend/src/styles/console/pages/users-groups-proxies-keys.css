@@ -20,7 +20,19 @@
  * Page roots (data-ui on each view's <TablePageLayout>, one attribute each; "mgmt-page" is the group's shared token):
  *   users-page, groups-page, proxies-page, subscriptions-page, redeem-page, promo-page, announcements-page.
  * Dialogs are found by their own ids (#create-user-form, #balance-form, #create-proxy-form ...) or by the data-ui hook on
- * their first content element (listed in the dialog sections below). */
+ * their first content element (listed in the dialog sections below).
+ * Toolbar hooks (perf pass, static): data-ui="toolbar-select" on every Select of the seven toolbars (UsersView.vue 28,
+ * 42, 56, 70, 108; GroupsView.vue 25, 33, 41; ProxiesView.vue 24, 33; SubscriptionsView.vue 70, 79, 88; RedeemView.vue
+ * 17, 24; PromoCodesView.vue 17; AnnouncementsView.vue 17: Select's root takes the attribute) and data-ui="toolbar-icon"
+ * on the icon-only buttons (UsersView.vue 141, GroupsView.vue 60, ProxiesView.vue 48, SubscriptionsView.vue 104 and
+ * 163 (the guide), RedeemView.vue 38, PromoCodesView.vue 31, AnnouncementsView.vue 31).
+ * Performance (PERF.md): every data-ui hook here is static (never bound to data). The relational pseudo-class (has())
+ * is left only for the states of the two visually hidden radio groups (9.2 group replace: keyboard focus; 13.5
+ * targeting: the chosen radio and keyboard focus), which live on the input inside the label; those sit in the subject
+ * compound of a statically hooked label with a child argument. Everything else picked by what it contains carries a
+ * static hook or is found by its own classes, or the tested child is always there (said at the rule). Rewritten selectors keep the weight they replaced: a hook that has to weigh nothing is wrapped in :where(),
+ * missing weight is added by a pad that never filters anything (:not(uipad) = 0,0,1, :not([data-uipad]) = 0,1,0,
+ * :not(#uipad) = 1,0,0). */
 
 /* ================================================================== 1 · toolbar (the /models toolbar row) */
 
@@ -46,23 +58,26 @@
     gap: 8px;
   }
 
-  /* the reference's search field: 288px from 640px (REF §8.4) */
-  html.flat-theme [data-ui~="mgmt-page"] > .layout-section-fixed:first-child :is(div[class~="sm:w-64"], div[class~="sm:max-w-64"]):has(> input.input) {
+  /* the reference's search field: 288px from 640px (REF §8.4); on these toolbars the sm:w-64 / sm:max-w-64 / md:w-64
+     boxes are the search boxes (each holds its input directly) */
+  html.flat-theme [data-ui~="mgmt-page"] > .layout-section-fixed:first-child :is(div[class~="sm:w-64"], div[class~="sm:max-w-64"]):not(uipad[data-uipad]) {
     width: 288px;
     max-width: 288px;
     flex: 0 1 288px;
   }
 
-  /* filters: a Select as wide as its value (the dropdown keeps its own 200px minimum) */
-  html.flat-theme [data-ui~="mgmt-page"] > .layout-section-fixed:first-child div[class~="relative"]:has(> button.select-trigger),
-  html.flat-theme [data-ui~="mgmt-page"] > .layout-section-fixed:first-child div:is([class~="sm:w-32"], [class~="sm:w-36"], [class~="sm:w-40"], [class~="sm:w-44"], [class~="sm:w-48"]):has(> div > button.select-trigger) {
+  /* filters: a Select as wide as its value (the dropdown keeps its own 200px minimum): the Select (toolbar-select) and
+     the box that holds one (the sm:w-* boxes of users, IP management and subscriptions; the users page's attribute
+     filter box, relative, holds a field or a nested box and is left alone) */
+  html.flat-theme [data-ui~="mgmt-page"] > .layout-section-fixed:first-child div[data-ui~="toolbar-select"][class~="relative"]:not(uipad),
+  html.flat-theme [data-ui~="mgmt-page"] > .layout-section-fixed:first-child div:is([class~="sm:w-32"], [class~="sm:w-36"], [class~="sm:w-40"], [class~="sm:w-44"], [class~="sm:w-48"]):not([class~="relative"]):not(uipad):not(uipad) {
     width: auto;
     flex: none;
   }
 }
 
 @media (min-width: 768px) {
-  html.flat-theme [data-ui~="mgmt-page"] > .layout-section-fixed:first-child div[class~="md:w-64"]:has(> input.input) {
+  html.flat-theme [data-ui~="mgmt-page"] > .layout-section-fixed:first-child div[class~="md:w-64"]:not(uipad[data-uipad]) {
     width: 288px;
     flex: 0 1 288px;
   }
@@ -72,11 +87,11 @@
    flex-1 sm:max-w-64 box) are the reference search the other six pages have (controls.css 3.2): the 13px Lucide search
    glyph (stroke 1.8, as Icon.vue draws it) 10px in and centred, in --ctl-glyph through a mask so it follows the theme,
    the text from 32px. At every width, like the other pages' template glyph (the phone layout stays user.css'). */
-html.flat-theme :is([data-ui~="redeem-page"], [data-ui~="promo-page"], [data-ui~="announcements-page"]) > .layout-section-fixed:first-child > div:first-child > div[class~="sm:max-w-64"]:has(> input.input) {
+html.flat-theme :is([data-ui~="redeem-page"], [data-ui~="promo-page"], [data-ui~="announcements-page"]) > .layout-section-fixed:first-child > div:first-child > div[class~="sm:max-w-64"]:not(uipad[data-uipad]) {
   position: relative;
 }
 
-html.flat-theme :is([data-ui~="redeem-page"], [data-ui~="promo-page"], [data-ui~="announcements-page"]) > .layout-section-fixed:first-child > div:first-child > div[class~="sm:max-w-64"]:has(> input.input)::after {
+html.flat-theme :is([data-ui~="redeem-page"], [data-ui~="promo-page"], [data-ui~="announcements-page"]) > .layout-section-fixed:first-child > div:first-child > div[class~="sm:max-w-64"]:not(uipad[data-uipad])::after {
   content: '';
   position: absolute;
   top: 50%;
@@ -95,10 +110,10 @@ html.flat-theme :is([data-ui~="redeem-page"], [data-ui~="promo-page"], [data-ui~
 }
 
 /* Icon-only buttons (refresh, the subscription guide) are the reference's square: 30 x 30 (REF §8.3 icon buttons). They
-   are found by their glyph: a button whose label is a bare text node also has the glyph as its only element child (one
-   :has() with a child argument on a button under the page root; `button` keeps the specificity of the former pair). */
+   carry data-ui="toolbar-icon" (the seven refresh buttons, SubscriptionsView's guide); the pad keeps the former glyph
+   test's weight (0,3,2). */
 @media (min-width: 640px) {
-  html.flat-theme [data-ui~="mgmt-page"] > .layout-section-fixed:first-child button.btn:has(> svg:only-child:is(.lucide-rotate-cw, .lucide-circle-help)) {
+  html.flat-theme [data-ui~="mgmt-page"] > .layout-section-fixed:first-child button.btn[data-ui~="toolbar-icon"]:not(uipad[data-uipad]) {
     width: var(--ui-control-h);
     min-width: var(--ui-control-h);
     padding-left: 0;
@@ -175,9 +190,10 @@ html.flat-theme [data-ui~="mgmt-page"] .table-wrapper td[data-column="actions"] 
 }
 
 /* with a mouse or trackpad the labelled buttons are the 28px square (the label is the tip: behaviour B2.1 hides and places
-   it, overlays.css 2.6 draws it, for every table of this group) */
+   it, overlays.css 2.6 draws it, for every table of this group); every row action of users, groups, IP management,
+   subscriptions and redeem codes has its label span, promo codes and announcements have glyph-only ones (below) */
 @media (hover: hover) and (pointer: fine) {
-  html.flat-theme [data-ui~="mgmt-page"] .table-wrapper td[data-column="actions"] button[class~="flex-col"]:has(> span[class~="text-xs"]) {
+  html.flat-theme [data-ui~="mgmt-page"]:where(:not([data-ui~="announcements-page"]):not([data-ui~="promo-page"])) .table-wrapper td[data-column="actions"] button[class~="flex-col"]:not(uipad[data-uipad]) {
     width: 28px;
     padding: 0;
   }
@@ -623,11 +639,11 @@ html.flat-theme [data-ui~="announcements-page"] td[data-column="timeRange"] span
    user-attributes-config, GroupRateMultipliersModal group-rate-multipliers, GroupRPMOverridesModal group-rpm-overrides,
    AnnouncementReadStatusDialog announcement-read-status, AnnouncementTargetingEditor announcement-targeting, the proxy
    dialog's tab strip proxy-create-tabs, the redeem result's body redeem-result-body, the subscription guide's title
-   subscription-guide-title; and, so that no rule needs a :has() anchor above what it styles (PERF, 2026-09-29), the
-   redeem result's header redeem-result-head, the generate-codes form redeem-generate-form, quick add's parse result
-   proxy-parse-result, the quality report's summary proxy-quality-summary and each row of the group sort dialog
-   group-sort-row. The others are found by their form ids. :has() stays only in the subject compound, on an anchor under
-   a page root, a hook or an id, with a child argument. */
+   subscription-guide-title; and, so that no rule has to find them by their content (PERF, 2026-09-29), the redeem
+   result's header redeem-result-head, the generate-codes form redeem-generate-form, quick add's parse result
+   proxy-parse-result, the quality report's summary proxy-quality-summary, each row of the group sort dialog
+   group-sort-row, each choice of group replace replace-option (GroupReplaceModal.vue) and the two targeting choices
+   targeting-option (AnnouncementTargetingEditor.vue). The others are found by their form ids. */
 
 /* 9.1 The user card at the top of the user dialogs (deposit / refund, balance history, API keys, allowed groups): the
    reference's option card (1px line, radius 8, the grouped fill at 60 %, 12 / 14 inset), its avatar the 28px icon square
@@ -746,7 +762,7 @@ html.flat-theme [data-ui="group-replace"] label[class~="border-2"] > div[class~=
   background-color: rgb(var(--ui-on-primary));
 }
 
-html.flat-theme [data-ui="group-replace"] label[class~="border-2"]:has(> input:focus-visible) {
+html.flat-theme [data-ui="group-replace"] label[data-ui~="replace-option"]:where([class~="border-2"]):has(> input:focus-visible) {
   outline: 2px solid rgb(var(--ui-focus));
   outline-offset: 2px;
 }
@@ -832,7 +848,7 @@ html.flat-theme :is([data-ui="group-rate-multipliers"], [data-ui="group-rpm-over
    new balance, the subscription guide's tip, the invitation-code hint), the warning pair for a warning. */
 html.flat-theme #balance-form > div[class~="border-blue-200"],
 html.flat-theme [data-ui="subscription-guide-title"] ~ div[class~="bg-blue-50"],
-html.flat-theme form[data-ui="redeem-generate-form"] > div[class~="bg-blue-50"][class~="p-3"] {
+html.flat-theme form[data-ui="redeem-generate-form"]:not(uipad):not(uipad) > div[class~="bg-blue-50"][class~="p-3"] {
   padding: 10px 14px;
   border: 1px solid rgb(var(--ui-line));
   border-radius: var(--ui-radius-md);
@@ -840,7 +856,7 @@ html.flat-theme form[data-ui="redeem-generate-form"] > div[class~="bg-blue-50"][
   color: rgb(var(--ui-ink-soft));
 }
 
-html.flat-theme form[data-ui="redeem-generate-form"] > div[class~="bg-blue-50"][class~="p-3"] > p {
+html.flat-theme form[data-ui="redeem-generate-form"]:not(uipad):not(uipad) > div[class~="bg-blue-50"][class~="p-3"] > p {
   color: rgb(var(--ui-ink-soft));
 }
 
@@ -861,13 +877,13 @@ html.flat-theme [data-ui="user-platform-quota"] > div[class~="border-amber-200"]
 
 /* 9.7 A positive CTA is the accent button (the deposit's confirm; decision 2): upstream's emerald fill becomes the accent
    with on-accent text (white on #168848, ink on the mint). The footer's submit names its form (form="balance-form"). */
-html.flat-theme .modal-footer button.btn[form="balance-form"][class~="bg-emerald-600"] {
+html.flat-theme .modal-footer button.btn[form="balance-form"][class~="bg-emerald-600"]:not(#uipad) {
   border-color: rgb(var(--ui-primary));
   background-color: rgb(var(--ui-primary));
   color: rgb(var(--ui-on-primary));
 }
 
-html.flat-theme .modal-footer button.btn[form="balance-form"][class~="bg-emerald-600"]:not(:disabled):hover {
+html.flat-theme .modal-footer button.btn[form="balance-form"][class~="bg-emerald-600"]:not(#uipad):not(:disabled):hover {
   border-color: rgb(var(--ui-primary-hover));
   background-color: rgb(var(--ui-primary-hover));
 }
@@ -1353,7 +1369,7 @@ html.flat-theme :is([data-ui="group-rate-multipliers"], [data-ui="group-rpm-over
 
 /* 11.3 Sort order: each group a draggable row of the reference's list (1px line, radius 8, no lift shadow), its handle faint,
    the id Geist Mono 11 muted; the platform chip is the identity chip (data.css). The row carries the hook group-sort-row
-   (GroupsView's sort dialog); `div >` keeps the specificity the former :has() gave. */
+   (GroupsView's sort dialog); `div >` keeps the weight of the former platform-chip test. */
 html.flat-theme .modal-body div > div[data-ui="group-sort-row"][class~="cursor-grab"][class~="rounded-lg"][class~="border"] {
   padding: 10px 12px;
   border-color: rgb(var(--ui-line));
@@ -1388,8 +1404,9 @@ html.flat-theme .modal-body div > div[data-ui="group-sort-row"][class~="cursor-g
    accent (primary-50 band, primary dot, title, hint and border) only to set it apart from the family card, whose band is
    grey with a blue dot: that is decoration, not a state (nothing succeeded, nothing is selected), so both are neutral and
    their titles tell them apart (decision 2). The mapping rows are the list rows (no lift shadow), the empty state and the
-   add button the reference's dashed frame; 「添加精确映射」 stays the accent link. */
-html.flat-theme :is(#create-group-form, #edit-group-form) div[class~="relative"][class~="overflow-hidden"][class~="rounded-xl"][class~="border"]:has(> div[class~="border-b"][class~="px-4"][class~="py-3"]:first-child) {
+   add button the reference's dashed frame; 「添加精确映射」 stays the accent link. The two cards are the forms' only
+   relative overflow-hidden rounded-xl bordered boxes, and each starts with its header band. */
+html.flat-theme :is(#create-group-form, #edit-group-form) div[class~="relative"][class~="overflow-hidden"][class~="rounded-xl"][class~="border"]:not(uipad[data-uipad][data-uipad][data-uipad][data-uipad]) {
   border-color: rgb(var(--ui-line));
   border-radius: var(--ui-radius-lg);
   background-color: rgb(var(--ui-surface));
@@ -1514,7 +1531,7 @@ html.flat-theme [data-ui="proxy-create-tabs"] > div:first-child > button:focus-v
 
 /* 12.2 Expiry presets (7 / 30 / 90 / 180 days): one control, the reference's segmented choice (REF §8.5: the structural
    frame, 2px inset, 12.5 / 600 segments, the matching preset the ink thumb), as its 24 hours / 7 days / 30 days. */
-html.flat-theme :is(#create-proxy-form, #edit-proxy-form) div[class~="mb-2"][class~="flex-wrap"]:has(> button.btn-sm) {
+html.flat-theme :is(#create-proxy-form, #edit-proxy-form) div[class~="mb-2"][class~="flex-wrap"]:not(uipad[data-uipad]) {
   display: inline-flex;
   gap: 0;
   margin-bottom: 8px;
@@ -1552,21 +1569,21 @@ html.flat-theme :is(#create-proxy-form, #edit-proxy-form) div[class~="mb-2"][cla
 /* 12.3 Quick add's parse result and the quality report's summary: neutral cards (1px line, the grouped fill), the report's
    score 15/600 Geist Mono (the reference's statistic figure); its table is data.css' plain table. Hooks (ProxiesView):
    proxy-parse-result, proxy-quality-summary. */
-html.flat-theme .modal-body div[data-ui="proxy-parse-result"][class~="rounded-lg"][class~="bg-gray-50"][class~="p-4"] {
+html.flat-theme .modal-body div[data-ui="proxy-parse-result"][class~="rounded-lg"][class~="bg-gray-50"][class~="p-4"]:not(uipad[data-uipad]):not(uipad):not(uipad) {
   padding: 10px 14px;
   border: 1px solid rgb(var(--ui-line));
   border-radius: var(--ui-radius-md);
   background: color-mix(in srgb, rgb(var(--ui-subtle)) 60%, rgb(var(--ui-surface)));
 }
 
-html.flat-theme .modal-body > div > div[data-ui="proxy-quality-summary"][class~="rounded-lg"][class~="border"][class~="bg-gray-50"][class~="p-4"] {
+html.flat-theme .modal-body > div > div[data-ui="proxy-quality-summary"][class~="rounded-lg"][class~="border"][class~="bg-gray-50"][class~="p-4"]:not(uipad[data-uipad]):not(uipad):not(uipad) {
   padding: 12px 14px;
   border-color: rgb(var(--ui-line));
   border-radius: var(--ui-radius-lg);
   background: color-mix(in srgb, rgb(var(--ui-subtle)) 60%, rgb(var(--ui-surface)));
 }
 
-html.flat-theme .modal-body > div > div[data-ui="proxy-quality-summary"][class~="rounded-lg"][class~="border"][class~="bg-gray-50"][class~="p-4"] div[class~="text-2xl"][class~="font-semibold"] {
+html.flat-theme .modal-body > div > div[data-ui="proxy-quality-summary"][class~="rounded-lg"][class~="border"][class~="bg-gray-50"][class~="p-4"]:not(uipad):not(uipad) div[class~="text-2xl"][class~="font-semibold"] {
   font-family: var(--ui-font-mono);
   font-size: 15px;
   line-height: 22.5px;
@@ -1642,8 +1659,8 @@ html.flat-theme [data-ui="subscription-guide-title"] ~ div div[class~="overflow-
 
 /* 13.3 Generate codes: the code-expiry choices are one control, the reference's segmented choice (the structural frame,
    2px inset, 12.5 / 600 segments, the chosen one the ink thumb) instead of accent-tinted boxes. The frame is the grid of
-   the generate form (hook redeem-generate-form, RedeemView); the repeated attributes keep the former :has() specificity. */
-html.flat-theme form[data-ui="redeem-generate-form"] > div > div[class~="grid"][class~="grid-cols-2"][class~="sm:grid-cols-5"][class~="grid-cols-2"][class~="sm:grid-cols-5"] {
+   the generate form (hook redeem-generate-form, RedeemView); the pad keeps the former button test's weight (0,8,3). */
+html.flat-theme form[data-ui="redeem-generate-form"] > :where(div) > div[class~="grid"][class~="grid-cols-2"][class~="sm:grid-cols-5"]:not([data-uipad][data-uipad][data-uipad]) {
   gap: 0;
   padding: 2px;
   border: 1px solid rgb(var(--ui-line));
@@ -1683,7 +1700,7 @@ html.flat-theme div[class~="grid"][class~="grid-cols-2"][class~="sm:grid-cols-5"
    12px muted), its success mark the 28px square in the success pair (a status), the close the 28px bordered button; the
    codes the reference's snippet (Geist Mono 12.5 on the canvas, radius 6, 12 inset); the footer the dialog footer. Hooks
    (RedeemView): redeem-result-head on the header, redeem-result-body on the body; the footer is the body's next sibling.
-   `div > …:first-child` / `div > … + div:last-child` keep the specificity of the former :has() anchor. */
+   `div > …:first-child` / `div > … + div:last-child` keep the weight of the former anchor. */
 html.flat-theme div > div[data-ui="redeem-result-head"]:first-child {
   padding: var(--ui-dialog-head-y, 14px) var(--ui-dialog-x, 18px);
   border-color: rgb(var(--ui-line));
@@ -1782,7 +1799,7 @@ html.flat-theme [data-ui="announcement-targeting"] > div:first-child > div:first
   font-size: 12px;
 }
 
-html.flat-theme [data-ui="announcement-targeting"] > div:first-child > div:last-child:has(> label > input[type="radio"]) {
+html.flat-theme [data-ui="announcement-targeting"] > div:first-child > div:last-child:not(uipad[data-uipad]):not(uipad) {
   display: inline-flex;
   gap: 0;
   padding: 2px;
@@ -1791,7 +1808,7 @@ html.flat-theme [data-ui="announcement-targeting"] > div:first-child > div:last-
   background-color: rgb(var(--ui-surface));
 }
 
-html.flat-theme [data-ui="announcement-targeting"] > div:first-child > div:last-child > label:has(> input[type="radio"]) {
+html.flat-theme [data-ui="announcement-targeting"] > div:first-child > div:last-child > label:not(uipad[data-uipad]) {
   position: relative;
   gap: 0;
   padding: 6px 14px;
@@ -1804,11 +1821,11 @@ html.flat-theme [data-ui="announcement-targeting"] > div:first-child > div:last-
   transition: color var(--ui-duration-slide) var(--ui-ease-out), background-color var(--ui-duration-slide) var(--ui-ease-out);
 }
 
-html.flat-theme [data-ui="announcement-targeting"] > div:first-child > div:last-child > label:has(> input[type="radio"]):hover {
+html.flat-theme [data-ui="announcement-targeting"] > div:first-child > div:last-child > label:not(uipad[data-uipad]):hover {
   color: rgb(var(--ui-ink));
 }
 
-html.flat-theme [data-ui="announcement-targeting"] > div:first-child > div:last-child > label:has(> input[type="radio"]:checked) {
+html.flat-theme [data-ui="announcement-targeting"] > div:first-child > div:last-child > label:where([data-ui~="targeting-option"]):has(> input[type="radio"]:checked) {
   background-color: rgb(var(--ui-ink));
   color: rgb(var(--ui-on-ink));
 }
@@ -1823,7 +1840,7 @@ html.flat-theme [data-ui="announcement-targeting"] > div:first-child > div:last-
   opacity: 0;
 }
 
-html.flat-theme [data-ui="announcement-targeting"] > div:first-child > div:last-child > label:has(> input[type="radio"]:focus-visible) {
+html.flat-theme [data-ui="announcement-targeting"] > div:first-child > div:last-child > label[data-ui~="targeting-option"]:has(> input:focus-visible) {
   outline: 2px solid rgb(var(--ui-focus));
   outline-offset: 2px;
 }

@@ -4,7 +4,7 @@
       <h3 class="text-sm font-semibold text-gray-900 dark:text-white">
         {{ t('admin.dashboard.groupDistribution') }}
       </h3>
-      <div
+      <div data-ui="seg-box"
         v-if="showMetricToggle"
         class="inline-flex rounded-lg border border-gray-200 bg-gray-50 p-0.5 dark:border-dark-700 dark:bg-dark-800"
       >
@@ -58,6 +58,7 @@
                 @click="enableBreakdown && group.group_id > 0 && toggleBreakdown('group', group.group_id)"
               >
                 <td
+                  data-ui="dist-name"
                   class="py-1.5 font-medium [overflow-wrap:anywhere]"
                   :class="enableBreakdown && group.group_id > 0 ? 'text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300' : 'text-gray-900 dark:text-white'"
                   :title="group.group_name || String(group.group_id)"

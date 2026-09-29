@@ -69,7 +69,7 @@
             </p>
           </div>
 
-          <div class="grid grid-cols-2 rounded-lg bg-gray-100 p-1 dark:bg-dark-800" role="group">
+          <div data-ui="seg-box" class="grid grid-cols-2 rounded-lg bg-gray-100 p-1 dark:bg-dark-800" role="group">
             <button
               type="button"
               class="h-9 rounded-md px-3 text-sm font-medium transition-colors"

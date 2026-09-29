@@ -143,7 +143,7 @@
       <!-- Options (for select/multi_select) -->
       <div v-if="form.type === 'select' || form.type === 'multi_select'" class="space-y-2">
         <label class="input-label">{{ t('admin.users.attributes.options') }}</label>
-        <div v-for="(option, index) in form.options" :key="getOptionKey(option)" class="flex items-center gap-2">
+        <div data-ui="dense-dlg" v-for="(option, index) in form.options" :key="getOptionKey(option)" class="flex items-center gap-2">
           <input
             v-model="option.value"
             type="text"

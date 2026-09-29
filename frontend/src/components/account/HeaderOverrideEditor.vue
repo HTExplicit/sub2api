@@ -1,6 +1,6 @@
 <template>
   <div v-if="rows.length > 0" class="space-y-2">
-    <div
+    <div data-ui="dense-dlg"
       v-for="(row, index) in rows"
       :key="getHeaderOverrideRowKey(row)"
       class="flex items-center gap-2"

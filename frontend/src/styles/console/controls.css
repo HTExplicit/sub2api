@@ -17,8 +17,11 @@
  *   data-ui="seg"          a segmented control (its buttons are the segments; the current one carries
  *                          aria-pressed / aria-selected / aria-checked="true" or data-active)
  *   data-ui="filter-pill"  a filter trigger ("Provider v"); data-ui="filter-count" on its count badge marks it active
- * Template lines touched for this file: none (the hooks below are upstream class names, data-test / data-testid
- * attributes and Lucide classes that Icon.vue already renders).
+ * Template hooks added for this file (perf pass, 2026-09-30; data-ui only): search-glyph (SearchInput.vue),
+ * dense-btn / dense-btn-if / dense-dlg / dense-dlg-if (the toolbar and dialog rows of 4.4 / 4.4b), seg-box (the
+ * utility-built segmented boxes of 7.1), option-card (the account dialogs' option cards, 8.1), model-add
+ * (ModelWhitelistSelector's add button, 10.2). The other hooks are upstream class names, data-test / data-testid
+ * attributes and Lucide classes that Icon.vue already renders.
  * Custom properties: --ctl-* below (not tokens; tokens.css belongs to the coordinator). */
 
 html.flat-theme {
@@ -111,28 +114,29 @@ html.flat-theme .input.input-error:focus {
 /* 3.2 Search fields: SearchInput.vue and the inline pattern (an absolute Lucide search glyph beside an .input inside
    a relative wrapper) are the reference's 30px search (REF-CONSOLE §8.4): 4.25px + the 19.5px line + 1px edges,
    32px left inset, the 13px glyph 10px in.
-   Perf pass: the wrapper keeps the anchor, but the :has() argument is the glyph box ONLY (`> div > svg.lucide-search`),
-   which is the one feature Blink needs; the glyph's own box is not an anchor, so no descendant of the wrapper ends up
-   in a merged invalidation set. Measured as cheap on the accounts page (controls.css at 90 ms before, below). */
-html.flat-theme :is(div, label, form)[class~="relative"]:has(> div > svg.lucide-search) > input.input,
-html.flat-theme :is(div, label, form)[class~="relative"] > svg.lucide-search[class~="absolute"] + input.input {
+   Perf pass: the 12 inline search wrappers are hooked [data-ui~="search-box"]; SearchInput.vue hooks its field
+   [data-ui~="search-field"] and its glyph box [data-ui~="search-glyph"] (not its root: a caller's data-ui, e.g. the
+   accounts filters' "account-search", replaces a root's own). So neither the field nor the glyph box is found by a
+   has-test or a sibling combinator; the repeated [data-ui] and :not(uipad) keep the original 0,4,5 / 0,4,4. */
+html.flat-theme :is(div, label, form)[data-ui~="search-box"][data-ui] > input.input:not(uipad):not(uipad),
+html.flat-theme :is(div, label, form).relative > input.input[data-ui~="search-field"]:not(uipad):not(uipad) {
   padding-top: 0.265625rem;
   padding-bottom: 0.265625rem;
   padding-left: 2rem;
 }
 
-html.flat-theme :is(div, label, form)[class~="relative"] > svg.lucide-search[class~="absolute"] {
+html.flat-theme :is(div, label, form).relative > svg.lucide-search.absolute {
   left: 0.625rem;
   width: 0.8125rem;
   height: 0.8125rem;
   color: rgb(var(--ctl-glyph));
 }
 
-html.flat-theme :is(div, label, form)[class~="relative"] > div[class~="absolute"]:has(> svg.lucide-search) {
+html.flat-theme :is(div, label, form).relative > div.absolute[data-ui~="search-glyph"]:not(uipad) {
   padding-left: 0.625rem;
 }
 
-html.flat-theme :is(div, label, form)[class~="relative"] > div[class~="absolute"] > svg.lucide-search {
+html.flat-theme :is(div, label, form).relative > div.absolute > svg.lucide-search {
   width: 0.8125rem;
   height: 0.8125rem;
   color: rgb(var(--ctl-glyph));
@@ -151,7 +155,7 @@ html.flat-theme input:is([type="date"], [type="datetime-local"], [type="time"], 
 
 /* 3.4 The large section titles written with the label recipe (`input-label mb-0 text-base font-semibold`, the
    account dialogs' quota group) stay titles: sans, sentence case, ink. */
-html.flat-theme .input-label[class~="text-base"] {
+html.flat-theme .input-label.text-base {
   font-family: var(--ui-font);
   letter-spacing: normal;
   text-transform: none;
@@ -160,8 +164,10 @@ html.flat-theme .input-label[class~="text-base"] {
 
 /* 3.5 Field labels written with utilities instead of the recipe (a block, font-medium, text-sm / text-xs label with
    a mb-1 / mb-1.5 / mb-2 gap above its field: 系统设置 and other forms) read as the label recipe too, so a form has one
-   label language. Labels that wrap their own control are left alone. */
-html.flat-theme label[class~="block"][class~="font-medium"]:is([class~="text-sm"], [class~="text-xs"]):is([class~="mb-1"], [class~="mb-1.5"], [class~="mb-2"]):not(:has(input, select, textarea, button)) {
+   label language. Labels that wrap their own control are left alone (perf pass: none of the 166 labels of this shape
+   in the templates wraps a control, so the old "holds no input / select / textarea / button" test is gone;
+   :not(uipad) keeps the original 0,5,3). */
+html.flat-theme label.block.font-medium:is(.text-sm, .text-xs):is(.mb-1, .mb-1\.5, .mb-2):not(uipad) {
   margin-bottom: 0.5rem;
   font-family: var(--ui-font-mono);
   font-size: var(--ui-label-size);
@@ -374,39 +380,43 @@ html.flat-theme input:is([type="date"], [type="datetime-local"], [type="time"], 
    fields and their Select / DateRangePicker triggers at the 30px of the search field, the filter pills and the
    buttons (the reference's /models filter row); a 34px trigger beside a 30px search or button reads as a misaligned
    row. Labelled form fields elsewhere keep the reference's 34px field.
-   Perf pass: the table pages' fixed rows and the dashboards' toolbar card are named by their own hook, without any
-   `:has()`; the "row that holds a .btn" case keeps its `:has()`, but the anchor carries the flag itself (:has() in the
-   subject, child argument only) and the fields are drawn through a container style query, so no descendant of a
-   matched row sits in a `:has()` invalidation set. The custom property inherits, so the fields see the flag wherever
-   they sit inside the row. */
-html.flat-theme :is(.table-page-layout > .layout-section-fixed, [data-ui~="time-bar"][data-ui][data-ui]) :is(.select-trigger.select-trigger, .date-picker-trigger.date-picker-trigger, input.input:not([type="checkbox"], [type="radio"]), select.input) {
+   Perf pass: every template row of that shape (flex items-center, not flex-col, a .btn child, a field inside) is
+   hooked [data-ui~="dense-btn"] (19 rows, see the header); the repeated [data-ui] keep the original 0,7,2. */
+html.flat-theme :is(.table-page-layout > .layout-section-fixed, [data-ui~="dense-btn"][data-ui][data-ui][data-ui]) :is(.select-trigger.select-trigger, .date-picker-trigger.date-picker-trigger, input.input:not([type="checkbox"], [type="radio"]), select.input) {
   padding-top: 0.265625rem;
   padding-bottom: 0.265625rem;
 }
 
-@container style(--ctl-dense-row: 1) {
-  html.flat-theme :is(.select-trigger.select-trigger, .date-picker-trigger.date-picker-trigger, input.input:not([type="checkbox"], [type="radio"]), select.input):not(uipad) {
+/* the one row whose .btn is conditional (系统设置 affiliate search; v-if on the button) keeps a has-test, on its own
+   hooked element, in the subject compound, with a child argument; the fields read its flag through a container style
+   query (no selector follows the has-test). */
+html.flat-theme [data-ui~="dense-btn-if"]:has(> .btn) {
+  --ctl-dense-btn: 1;
+}
+
+@container style(--ctl-dense-btn: 1) {
+  html.flat-theme [data-ui~="dense-btn-if"][data-ui][data-ui][data-ui] :is(.select-trigger.select-trigger, .date-picker-trigger.date-picker-trigger, input.input:not([type="checkbox"], [type="radio"]), select.input) {
     padding-top: 0.265625rem;
     padding-bottom: 0.265625rem;
   }
 }
 
-/* the rows that ask for the dense row: a horizontal row holding a .btn (the dashboards' toolbar), and the dialogs'
-   rows (4.4b). The table pages' fixed rows keep the rule above (their own hook), so they are not doubled here. */
-html.flat-theme [class~="flex"][class~="items-center"]:not([class~="flex-col"]):has(> .btn) {
-  --ctl-dense-row: 1;
-}
-
 /* 4.4b The same in a dialog: a row that holds a button (余额记录's type filter beside 充值 / 退款, the 专属倍率 / 专属 RPM add
    rows, bottom-aligned) draws its fields at the button's 30px (final review V1-10)
-   Perf pass: the row carries the flag (its own :has() stays in the subject with a child argument) and the fields
-   read it through the same container style query as 4.4. */
-html.flat-theme .modal-body [class~="flex"]:is([class~="items-center"], [class~="items-end"]):not([class~="flex-col"]):has(> button) {
-  --ctl-dense-row: 1;
+   Perf pass: the rows of that shape that render inside a dialog body (flex items-center / items-end, not flex-col, a
+   <button> child, a field inside) are hooked [data-ui~="dense-dlg"] (36 rows); the two whose buttons are conditional
+   carry the flag as above ([data-ui~="dense-dlg-if"]). The repeated [data-ui] and :not(uipad) keep 0,7,3. */
+html.flat-theme .modal-body [data-ui~="dense-dlg"][data-ui][data-ui]:not(uipad) :is(.select-trigger.select-trigger, .date-picker-trigger.date-picker-trigger, input.input:not([type="checkbox"], [type="radio"]), select.input) {
+  padding-top: 0.265625rem;
+  padding-bottom: 0.265625rem;
 }
 
-@container style(--ctl-dense-row: 1) {
-  html.flat-theme .modal-body :is(.select-trigger.select-trigger, .date-picker-trigger.date-picker-trigger, input.input:not([type="checkbox"], [type="radio"]), select.input):not(uipad) {
+html.flat-theme [data-ui~="dense-dlg-if"]:has(> button) {
+  --ctl-dense-dlg: 1;
+}
+
+@container style(--ctl-dense-dlg: 1) {
+  html.flat-theme .modal-body [data-ui~="dense-dlg-if"][data-ui][data-ui]:not(uipad) :is(.select-trigger.select-trigger, .date-picker-trigger.date-picker-trigger, input.input:not([type="checkbox"], [type="radio"]), select.input) {
     padding-top: 0.265625rem;
     padding-bottom: 0.265625rem;
   }
@@ -418,7 +428,7 @@ html.flat-theme .modal-body [class~="flex"]:is([class~="items-center"], [class~=
    rendered route switches (--ctl-switch-on). Off = the 3:1 form-control line (the reference's ink at 20 % is 1.6:1 on the surface). Toggle.vue and its
    inline copies are a rounded-full button with a 2px transparent edge (h-6 w-11, h-5 w-9; h-4 w-7 keeps its 28 x 16
    size) holding a knob span; on = bg-primary-500 / -600. */
-html.flat-theme button[class~="rounded-full"][class~="border-2"][class~="border-transparent"]:is([class~="h-6"][class~="w-11"], [class~="h-5"][class~="w-9"], [class~="h-4"][class~="w-7"]) {
+html.flat-theme button.rounded-full.border-2.border-transparent:is(.h-6.w-11, .h-5.w-9, .h-4.w-7) {
   background-color: rgb(var(--ctl-switch-off));
   box-shadow: none;
   transition-property: background-color, opacity;
@@ -426,16 +436,16 @@ html.flat-theme button[class~="rounded-full"][class~="border-2"][class~="border-
   transition-timing-function: var(--ui-ease);
 }
 
-html.flat-theme button[class~="rounded-full"][class~="border-2"][class~="border-transparent"]:is([class~="h-6"][class~="w-11"], [class~="h-5"][class~="w-9"]) {
+html.flat-theme button.rounded-full.border-2.border-transparent:is(.h-6.w-11, .h-5.w-9) {
   height: 1.25rem;
   width: 2.125rem;
 }
 
-html.flat-theme button[class~="rounded-full"][class~="border-2"][class~="border-transparent"]:is([class~="h-6"][class~="w-11"], [class~="h-5"][class~="w-9"], [class~="h-4"][class~="w-7"]):is([class~="bg-primary-500"], [class~="bg-primary-600"]) {
+html.flat-theme button.rounded-full.border-2.border-transparent:is(.h-6.w-11, .h-5.w-9, .h-4.w-7):is(.bg-primary-500, .bg-primary-600) {
   background-color: rgb(var(--ctl-switch-on));
 }
 
-html.flat-theme button[class~="rounded-full"][class~="border-2"][class~="border-transparent"]:is([class~="h-6"][class~="w-11"], [class~="h-5"][class~="w-9"], [class~="h-4"][class~="w-7"]) > span[class~="rounded-full"] {
+html.flat-theme button.rounded-full.border-2.border-transparent:is(.h-6.w-11, .h-5.w-9, .h-4.w-7) > span.rounded-full {
   background-color: rgb(var(--ctl-knob));
   box-shadow: none;
   transition-property: transform;
@@ -443,31 +453,31 @@ html.flat-theme button[class~="rounded-full"][class~="border-2"][class~="border-
   transition-timing-function: var(--ui-ease);
 }
 
-html.flat-theme button[class~="rounded-full"][class~="border-2"][class~="border-transparent"]:is([class~="h-6"][class~="w-11"], [class~="h-5"][class~="w-9"]) > span[class~="rounded-full"] {
+html.flat-theme button.rounded-full.border-2.border-transparent:is(.h-6.w-11, .h-5.w-9) > span.rounded-full {
   height: 1rem;
   width: 1rem;
 }
 
-html.flat-theme button[class~="rounded-full"][class~="border-2"][class~="border-transparent"]:is([class~="h-6"][class~="w-11"], [class~="h-5"][class~="w-9"]) > span[class~="rounded-full"]:is([class~="translate-x-5"], [class~="translate-x-4"]) {
+html.flat-theme button.rounded-full.border-2.border-transparent:is(.h-6.w-11, .h-5.w-9) > span.rounded-full:is(.translate-x-5, .translate-x-4) {
   --tw-translate-x: 0.875rem;
 }
 
-html.flat-theme button[class~="rounded-full"][class~="border-2"][class~="border-transparent"]:is([class~="h-6"][class~="w-11"], [class~="h-5"][class~="w-9"], [class~="h-4"][class~="w-7"]):disabled {
+html.flat-theme button.rounded-full.border-2.border-transparent:is(.h-6.w-11, .h-5.w-9, .h-4.w-7):disabled {
   cursor: not-allowed;
   opacity: 0.55;
 }
 
-html.flat-theme button[class~="rounded-full"][class~="border-2"][class~="border-transparent"]:is([class~="h-6"][class~="w-11"], [class~="h-5"][class~="w-9"], [class~="h-4"][class~="w-7"]):focus {
+html.flat-theme button.rounded-full.border-2.border-transparent:is(.h-6.w-11, .h-5.w-9, .h-4.w-7):focus {
   box-shadow: none;
 }
 
-html.flat-theme button[class~="rounded-full"][class~="border-2"][class~="border-transparent"]:is([class~="h-6"][class~="w-11"], [class~="h-5"][class~="w-9"], [class~="h-4"][class~="w-7"]):focus-visible {
+html.flat-theme button.rounded-full.border-2.border-transparent:is(.h-6.w-11, .h-5.w-9, .h-4.w-7):focus-visible {
   outline: 2px solid rgb(var(--ui-focus));
   outline-offset: 2px;
 }
 
 /* The peer switches (a visually hidden checkbox followed by a track whose ::after is the knob). */
-html.flat-theme input[type="checkbox"][class~="peer"] + div[class~="peer"][class~="rounded-full"]:is([class~="w-9"], [class~="w-11"]) {
+html.flat-theme input[type="checkbox"].peer + div.peer.rounded-full:is(.w-9, .w-11) {
   height: 1.25rem;
   width: 2.125rem;
   background-color: rgb(var(--ctl-switch-off));
@@ -475,7 +485,7 @@ html.flat-theme input[type="checkbox"][class~="peer"] + div[class~="peer"][class
   transition: background-color var(--ui-duration) var(--ui-ease);
 }
 
-html.flat-theme input[type="checkbox"][class~="peer"] + div[class~="peer"][class~="rounded-full"]:is([class~="w-9"], [class~="w-11"])::after {
+html.flat-theme input[type="checkbox"].peer + div.peer.rounded-full:is(.w-9, .w-11)::after {
   top: 2px;
   left: 2px;
   height: 1rem;
@@ -485,15 +495,15 @@ html.flat-theme input[type="checkbox"][class~="peer"] + div[class~="peer"][class
   transition: transform var(--ui-duration) var(--ui-ease);
 }
 
-html.flat-theme input[type="checkbox"][class~="peer"]:checked + div[class~="peer"][class~="rounded-full"]:is([class~="w-9"], [class~="w-11"]) {
+html.flat-theme input[type="checkbox"].peer:checked + div.peer.rounded-full:is(.w-9, .w-11) {
   background-color: rgb(var(--ctl-switch-on));
 }
 
-html.flat-theme input[type="checkbox"][class~="peer"]:checked + div[class~="peer"][class~="rounded-full"]:is([class~="w-9"], [class~="w-11"])::after {
+html.flat-theme input[type="checkbox"].peer:checked + div.peer.rounded-full:is(.w-9, .w-11)::after {
   --tw-translate-x: 0.875rem;
 }
 
-html.flat-theme input[type="checkbox"][class~="peer"]:focus-visible + div[class~="peer"][class~="rounded-full"]:is([class~="w-9"], [class~="w-11"]) {
+html.flat-theme input[type="checkbox"].peer:focus-visible + div.peer.rounded-full:is(.w-9, .w-11) {
   outline: 2px solid rgb(var(--ui-focus));
   outline-offset: 2px;
   box-shadow: none;
@@ -505,7 +515,7 @@ html.flat-theme input[type="checkbox"][class~="peer"]:focus-visible + div[class~
    desktop like its row checkboxes (the 16px upstream size stays below 901px, where the reference grows them to 20).
    Upstream's focus:ring utilities are replaced by the accent outline. */
 @media (min-width: 901px) {
-  html.flat-theme input:is([type="checkbox"], [type="radio"])[class~="h-4"][class~="w-4"] {
+  html.flat-theme input:is([type="checkbox"], [type="radio"]).h-4.w-4 {
     width: 0.875rem;
     height: 0.875rem;
   }
@@ -527,8 +537,12 @@ html.flat-theme input:is([type="checkbox"], [type="radio"]):focus-visible {
    (REF-CONSOLE §8.5): a 1px structural frame on the surface, radius 8, a 2px inset, no gaps; segments 14 x 6px,
    12.5px / 600, muted, ink on hover; the current segment is ink with on-ink text (near-white with ink text in dark),
    fading in 200ms (upstream has no thumb to slide). The platform hues of the account dialogs' segments go with it
-   (monochrome identity, D3). data-ui="seg" opts a fork component into the same look. */
-html.flat-theme :is(div, nav):is([class~="bg-gray-100"], [class~="bg-gray-50"]):is([class~="p-1"], [class~="p-0.5"]):is([class~="rounded-md"], [class~="rounded-lg"], [class~="rounded-xl"]):has(> button):not(:has(> :not(button))):not([data-ui]),
+   (monochrome identity, D3). data-ui="seg" opts a fork component into the same look.
+   Perf pass: the utility-built boxes (a gray-100 / gray-50 box with a 4px or 2px inset whose children are all buttons,
+   no data-ui of their own) are hooked [data-ui~="seg-box"] in their templates (19 boxes) instead of being found by a
+   "children are all buttons" test; the repeated [data-ui] and :not(uipad) keep the original 0,4,3 of that compound
+   (the upstream thumb is still found by its bg-white class, unlike data-ui="seg"). */
+html.flat-theme :is(div, nav)[data-ui~="seg-box"][data-ui][data-ui][data-ui]:not(uipad):not(uipad),
 html.flat-theme [data-ui~="seg"] {
   gap: 0;
   border: 1px solid rgb(var(--ctl-seg-frame));
@@ -538,7 +552,7 @@ html.flat-theme [data-ui~="seg"] {
   box-shadow: none;
 }
 
-html.flat-theme :is(div, nav):is([class~="bg-gray-100"], [class~="bg-gray-50"]):is([class~="p-1"], [class~="p-0.5"]):is([class~="rounded-md"], [class~="rounded-lg"], [class~="rounded-xl"]):has(> button):not(:has(> :not(button))):not([data-ui]) > button,
+html.flat-theme :is(div, nav)[data-ui~="seg-box"][data-ui][data-ui][data-ui]:not(uipad):not(uipad) > button,
 html.flat-theme [data-ui~="seg"] > button {
   margin: 0;
   border-radius: var(--ui-radius-md);
@@ -554,25 +568,25 @@ html.flat-theme [data-ui~="seg"] > button {
   transition-timing-function: var(--ui-ease-out);
 }
 
-html.flat-theme :is(div, nav):is([class~="bg-gray-100"], [class~="bg-gray-50"]):is([class~="p-1"], [class~="p-0.5"]):is([class~="rounded-md"], [class~="rounded-lg"], [class~="rounded-xl"]):has(> button):not(:has(> :not(button))):not([data-ui]) > button:hover,
+html.flat-theme :is(div, nav)[data-ui~="seg-box"][data-ui][data-ui][data-ui]:not(uipad):not(uipad) > button:hover,
 html.flat-theme [data-ui~="seg"] > button:hover {
   color: rgb(var(--ui-ink));
 }
 
-html.flat-theme :is(div, nav):is([class~="bg-gray-100"], [class~="bg-gray-50"]):is([class~="p-1"], [class~="p-0.5"]):is([class~="rounded-md"], [class~="rounded-lg"], [class~="rounded-xl"]):has(> button):not(:has(> :not(button))):not([data-ui]) > button:is([class~="bg-white"], [aria-pressed="true"], [aria-checked="true"], [aria-selected="true"]),
+html.flat-theme :is(div, nav)[data-ui~="seg-box"][data-ui][data-ui][data-ui]:not(uipad):not(uipad) > button:is(.bg-white, [aria-pressed="true"], [aria-checked="true"], [aria-selected="true"]),
 html.flat-theme [data-ui~="seg"] > button:is([aria-pressed="true"], [aria-checked="true"], [aria-selected="true"], [data-active]:not([data-active="false"])) {
   background-color: rgb(var(--ui-ink));
   color: rgb(var(--ui-on-ink));
 }
 
-html.flat-theme :is(div, nav):is([class~="bg-gray-100"], [class~="bg-gray-50"]):is([class~="p-1"], [class~="p-0.5"]):is([class~="rounded-md"], [class~="rounded-lg"], [class~="rounded-xl"]):has(> button):not(:has(> :not(button))):not([data-ui]) > button svg,
+html.flat-theme :is(div, nav)[data-ui~="seg-box"][data-ui][data-ui][data-ui]:not(uipad):not(uipad) > button svg,
 html.flat-theme [data-ui~="seg"] > button svg {
   width: 0.875rem;
   height: 0.875rem;
   flex-shrink: 0;
 }
 
-html.flat-theme :is(div, nav):is([class~="bg-gray-100"], [class~="bg-gray-50"]):is([class~="p-1"], [class~="p-0.5"]):is([class~="rounded-md"], [class~="rounded-lg"], [class~="rounded-xl"]):has(> button):not(:has(> :not(button))):not([data-ui]) > button:focus-visible {
+html.flat-theme :is(div, nav)[data-ui~="seg-box"][data-ui][data-ui][data-ui]:not(uipad):not(uipad) > button:focus-visible {
   outline: 2px solid rgb(var(--ui-focus));
   outline-offset: 2px;
 }
@@ -582,7 +596,7 @@ html.flat-theme :is(div, nav):is([class~="bg-gray-100"], [class~="bg-gray-50"]):
 @media (max-width: 900px) {
   html.flat-theme .btn,
   html.flat-theme .tab,
-  html.flat-theme :is(div, nav):is([class~="bg-gray-100"], [class~="bg-gray-50"]):is([class~="p-1"], [class~="p-0.5"]):is([class~="rounded-md"], [class~="rounded-lg"], [class~="rounded-xl"]):has(> button):not(:has(> :not(button))):not([data-ui]) > button,
+  html.flat-theme :is(div, nav)[data-ui~="seg-box"][data-ui][data-ui][data-ui]:not(uipad):not(uipad) > button,
   html.flat-theme [data-ui~="seg"] > button {
     white-space: nowrap;
   }
@@ -605,7 +619,7 @@ html.flat-theme [data-tour="account-form-platform"] + div > button:nth-child(3) 
 html.flat-theme [data-tour="account-form-platform"] + div > button:nth-child(4) { --ctl-seg-glyph: var(--ui-id-rose); }
 html.flat-theme [data-tour="account-form-platform"] + div > button:nth-child(5) { --ctl-seg-glyph: var(--ui-id-amber); }
 
-html.flat-theme :is([data-tour="account-form-platform"], [data-tour="account-form-platform"] + div) > button:not([class~="bg-white"]) > svg {
+html.flat-theme :is([data-tour="account-form-platform"], [data-tour="account-form-platform"] + div) > button:not(.bg-white) > svg {
   color: rgb(var(--ctl-seg-glyph, var(--ui-muted)));
 }
 /* END S platform segments */
@@ -710,16 +724,16 @@ html.flat-theme :is([data-testid="usage-detail-tab"], .channel-tab.channel-tab) 
   transition-timing-function: var(--ui-ease);
 }
 
-html.flat-theme :is([data-testid="usage-detail-tab"]:not([class~="border-primary-500"]), .channel-tab.channel-tab-inactive) {
+html.flat-theme :is([data-testid="usage-detail-tab"]:not(.border-primary-500), .channel-tab.channel-tab-inactive) {
   border-color: transparent;
 }
 
-html.flat-theme :is([data-testid="usage-detail-tab"]:not([class~="border-primary-500"]), .channel-tab.channel-tab-inactive):hover {
+html.flat-theme :is([data-testid="usage-detail-tab"]:not(.border-primary-500), .channel-tab.channel-tab-inactive):hover {
   border-color: transparent;
   color: rgb(var(--ui-ink));
 }
 
-html.flat-theme :is([data-testid="usage-detail-tab"][class~="border-primary-500"], .channel-tab.channel-tab-active) {
+html.flat-theme :is([data-testid="usage-detail-tab"].border-primary-500, .channel-tab.channel-tab-active) {
   border-color: rgb(var(--ui-focus));
   color: rgb(var(--ui-ink));
 }
@@ -740,10 +754,11 @@ html.flat-theme :is([data-testid="usage-detail-tab"], .channel-tab.channel-tab) 
    grouped fill at 60 %, the control outline on hover; a 28px tile with a 1px line and ink at 3 %. The chosen card is
    drawn like the segmented thumb: an ink edge 2px wide on the surface, its tile ink with on-ink glyph (upstream's
    per-platform hues go: monochrome identity, D3).
-   Perf pass: the cards are hooked (data-ui="option-card", CreateAccountModal.vue and EditAccountModal.vue: the 22
-   buttons that carry the class pair), so no `:has()` on a bare button decides whether a card is a card. The repeated
-   [data-ui]s keep each rule's original specificity (0,8,3 / 0,10,3 / 0,9,3 / 0,9,4). */
-html.flat-theme [data-ui="option-card"][data-ui][data-ui][data-ui][data-ui][data-ui][data-ui] {
+   Perf pass: the cards are hooked (data-ui="option-card", CreateAccountModal.vue and EditAccountModal.vue: the 23
+   buttons of that shape), so no has-test on a bare button decides whether a card is a card. The repeated [data-ui]
+   and :not(uipad) keep each rule's original specificity (0,8,3 / 0,10,3 / 0,9,3 / 0,9,4 / 0,10,4 / 0,9,5 / 0,10,5 /
+   0,11,5). */
+html.flat-theme button[data-ui~="option-card"][data-ui][data-ui][data-ui][data-ui][data-ui][data-ui]:not(uipad) {
   gap: 0.75rem;
   border-width: 1px;
   border-color: rgb(var(--ui-line));
@@ -755,17 +770,17 @@ html.flat-theme [data-ui="option-card"][data-ui][data-ui][data-ui][data-ui][data
   transition-timing-function: var(--ui-ease);
 }
 
-html.flat-theme [data-ui="option-card"][class~="border-gray-200"][data-ui][data-ui][data-ui][data-ui][data-ui][data-ui][data-ui][data-ui]:hover {
+html.flat-theme button[data-ui~="option-card"].border-gray-200[data-ui][data-ui][data-ui][data-ui][data-ui][data-ui]:not(uipad):hover {
   border-color: rgb(var(--ui-line-strong));
 }
 
-html.flat-theme [data-ui="option-card"]:not([class~="border-gray-200"])[data-ui][data-ui][data-ui][data-ui][data-ui][data-ui][data-ui] {
+html.flat-theme button[data-ui~="option-card"]:not(.border-gray-200)[data-ui][data-ui][data-ui][data-ui][data-ui][data-ui]:not(uipad) {
   border-color: rgb(var(--ui-ink));
   background-color: rgb(var(--ui-surface));
   box-shadow: inset 0 0 0 1px rgb(var(--ui-ink));
 }
 
-html.flat-theme [data-ui="option-card"][data-ui][data-ui][data-ui][data-ui][data-ui][data-ui][data-ui] > div:first-child {
+html.flat-theme button[data-ui~="option-card"][data-ui][data-ui][data-ui][data-ui][data-ui][data-ui]:not(uipad) > div:first-child {
   height: 1.75rem;
   width: 1.75rem;
   border: 1px solid rgb(var(--ui-line));
@@ -774,25 +789,25 @@ html.flat-theme [data-ui="option-card"][data-ui][data-ui][data-ui][data-ui][data
   color: rgb(var(--ui-ink) / 0.7);
 }
 
-html.flat-theme [data-ui="option-card"]:not([class~="border-gray-200"])[data-ui][data-ui][data-ui][data-ui][data-ui][data-ui][data-ui] > div:first-child {
+html.flat-theme button[data-ui~="option-card"]:not(.border-gray-200)[data-ui][data-ui][data-ui][data-ui][data-ui][data-ui]:not(uipad) > div:first-child {
   border-color: rgb(var(--ui-ink));
   background-color: rgb(var(--ui-ink));
   color: rgb(var(--ui-on-ink));
 }
 
-html.flat-theme [data-ui="option-card"][data-ui][data-ui][data-ui][data-ui][data-ui][data-ui][data-ui] > div:first-child svg {
+html.flat-theme button[data-ui~="option-card"][data-ui][data-ui][data-ui][data-ui][data-ui][data-ui]:not(uipad) > div:first-child svg {
   width: 0.875rem;
   height: 0.875rem;
 }
 
-html.flat-theme [data-ui="option-card"][data-ui][data-ui][data-ui][data-ui][data-ui][data-ui][data-ui] > div:last-child > span:first-child {
+html.flat-theme button[data-ui~="option-card"][data-ui][data-ui][data-ui][data-ui][data-ui][data-ui]:not(uipad) > div:last-child > span:first-child {
   font-size: 0.8125rem;
   line-height: 1.21875rem;
   font-weight: 600;
   color: rgb(var(--ui-ink));
 }
 
-html.flat-theme [data-ui="option-card"][data-ui][data-ui][data-ui][data-ui][data-ui][data-ui][data-ui] > div:last-child > span:last-child:not(:first-child) {
+html.flat-theme button[data-ui~="option-card"][data-ui][data-ui][data-ui][data-ui][data-ui][data-ui]:not(uipad) > div:last-child > span:last-child:not(:first-child) {
   font-size: 0.75rem;
   line-height: 1.125rem;
   color: rgb(var(--ui-muted));
@@ -801,7 +816,9 @@ html.flat-theme [data-ui="option-card"][data-ui][data-ui][data-ui][data-ui][data
 /* 8.2 Filter pills (data-ui="filter-pill"; the reference's FilterMenu trigger, REF-CONSOLE §8.6): 30px, 10px in, gap 6,
    radius 6, the control outline on the surface, 12.5px / 600 ink-soft, ink on hover, a 12px chevron. With a
    data-ui="filter-count" badge inside it is active: the accent at 40 % as its edge, the accent tint, accent text and a
-   Geist Mono 10.5px count. */
+   Geist Mono 10.5px count. (Perf pass, kept has-test: the badge is rendered only while a filter value is selected,
+   so the pill's own look depends on runtime content; the test sits in the subject compound of the hooked pill with a
+   child argument, the badge being the pill's direct child.) */
 html.flat-theme [data-ui~="filter-pill"] {
   display: inline-flex;
   align-items: center;
@@ -827,8 +844,8 @@ html.flat-theme [data-ui~="filter-pill"]:hover {
   color: rgb(var(--ui-ink));
 }
 
-html.flat-theme [data-ui~="filter-pill"]:has([data-ui~="filter-count"]),
-html.flat-theme [data-ui~="filter-pill"]:has([data-ui~="filter-count"]):hover {
+html.flat-theme [data-ui~="filter-pill"]:has(> [data-ui~="filter-count"]),
+html.flat-theme [data-ui~="filter-pill"]:has(> [data-ui~="filter-count"]):hover {
   border-color: rgb(var(--ui-primary) / 0.4);
   background-color: rgb(var(--ui-primary-soft));
   color: var(--ui-link);
@@ -871,7 +888,7 @@ html.flat-theme :is(a, button)[class*="underline"] {
    checkbox squares and check badges (spans), steppers (divs) and the .btn recipe are not buttons of this kind; the
    public pages keep their own rules. Kept at 0,3,1 (the page files refine; the account forms' 9.6 agrees).
    (wave 2, reported by the accounts agent) */
-html.flat-theme :where(:is(button, a):is([class~="bg-primary-500"], [class~="bg-primary-600"], [class~="bg-primary-700"])[class~="text-white"]:not(.btn):not(:is([data-ui="home"], [data-ui="key-usage"], [data-ui="legal"], [data-ui="not-found"], [data-ui="auth-layout"], [data-testid="compact-home"], body > div[class~="z-[140]"]) *))[class][class] {
+html.flat-theme :where(:is(button, a):is(.bg-primary-500, .bg-primary-600, .bg-primary-700).text-white:not(.btn):not(:is([data-ui="home"], [data-ui="key-usage"], [data-ui="legal"], [data-ui="not-found"], [data-ui="auth-layout"], [data-testid="compact-home"], body > div.z-\[140\]) *))[class][class] {
   --theme-on-fill: var(--ui-on-ink);
   border-color: rgb(var(--ui-ink));
   background-color: rgb(var(--ui-ink));
@@ -883,8 +900,9 @@ html.flat-theme :where(:is(button, a):is([class~="bg-primary-500"], [class~="bg-
 /* 10.2 ModelWhitelistSelector (account create / edit / bulk edit, risk control): the quick actions are the default
    button (the blue and emerald outlines were decoration), clearing every model keeps the destructive outline, and
    「填入」 beside the custom model field is the default button at the field's 34px. (wave 2, reported by the accounts
-   agent) */
-html.flat-theme :is([data-testid="fill-related-models"], [data-testid="sync-upstream-models"], [data-testid="fill-related-models"] ~ button[class~="border-red-200"], input.input ~ button[class~="bg-primary-50"]) {
+   agent; perf pass: 「填入」 is hooked [data-ui="model-add"] in ModelWhitelistSelector.vue; the repeated [data-ui] and
+   :not(uipad) keep the original 0,2,4 of that alternative, so every :is() below keeps its specificity) */
+html.flat-theme :is([data-testid="fill-related-models"], [data-testid="sync-upstream-models"], [data-testid="fill-related-models"] ~ button.border-red-200, button[data-ui~="model-add"][data-ui]:not(uipad):not(uipad):not(uipad)) {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -902,27 +920,27 @@ html.flat-theme :is([data-testid="fill-related-models"], [data-testid="sync-upst
   transition-timing-function: var(--ui-ease);
 }
 
-html.flat-theme :is([data-testid="fill-related-models"], [data-testid="sync-upstream-models"], input.input ~ button[class~="bg-primary-50"]):not(:disabled):hover {
+html.flat-theme :is([data-testid="fill-related-models"], [data-testid="sync-upstream-models"], button[data-ui~="model-add"][data-ui]:not(uipad):not(uipad):not(uipad)):not(:disabled):hover {
   background-color: rgb(var(--ui-subtle));
   color: rgb(var(--ui-ink));
 }
 
-html.flat-theme [data-testid="fill-related-models"] ~ button[class~="border-red-200"][class~="border-red-200"] {
+html.flat-theme [data-testid="fill-related-models"] ~ button.border-red-200.border-red-200 {
   border-color: rgb(var(--ui-danger) / 0.3);
   color: rgb(var(--ui-danger));
 }
 
-html.flat-theme [data-testid="fill-related-models"] ~ button[class~="border-red-200"][class~="border-red-200"]:hover {
+html.flat-theme [data-testid="fill-related-models"] ~ button.border-red-200.border-red-200:hover {
   border-color: rgb(var(--ui-danger) / 0.5);
   background-color: rgb(var(--ui-danger-soft));
   color: rgb(var(--ui-danger));
 }
 
-html.flat-theme input.input ~ button[class~="bg-primary-50"] {
+html.flat-theme button[data-ui~="model-add"][data-ui]:not(uipad):not(uipad):not(uipad) {
   min-height: var(--ui-select-h);
 }
 
-html.flat-theme :is([data-testid="fill-related-models"], [data-testid="sync-upstream-models"], [data-testid="fill-related-models"] ~ button[class~="border-red-200"], input.input ~ button[class~="bg-primary-50"]):focus-visible {
+html.flat-theme :is([data-testid="fill-related-models"], [data-testid="sync-upstream-models"], [data-testid="fill-related-models"] ~ button.border-red-200, button[data-ui~="model-add"][data-ui]:not(uipad):not(uipad):not(uipad)):focus-visible {
   outline: 2px solid rgb(var(--ui-focus));
   outline-offset: 2px;
 }

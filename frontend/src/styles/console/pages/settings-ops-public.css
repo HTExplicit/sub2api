@@ -2490,9 +2490,12 @@ html.flat-theme [data-ui~="settings"] .card > div:first-child[class~="border-b"]
   color: rgb(var(--ui-ink-soft));
 }
 
-/* 2.2 Body: 16 x 18, and one rhythm for every field, row and group in it (upstream mixes 16, 20 and 24). */
+/* 2.2 Body: 16 x 18, and one rhythm for every field, row and group in it (upstream mixes 16, 20 and 24). The p-4 body
+   after a header (PaymentProviderList.vue, the only one) is found by its position, not by a sibling combinator keyed on
+   the header's class attribute (that re-styled every following sibling on any class change: coordinator, 2026-09-30);
+   the pad keeps the former weight (0,6,3). */
 html.flat-theme [data-ui~="settings"] .card > div:is([class~="p-6"], [class~="px-6"]):not([class~="border-b"]),
-html.flat-theme [data-ui~="settings"] .card > div:first-child[class~="border-b"] ~ div[class~="p-4"] {
+html.flat-theme [data-ui~="settings"] .card > div[class~="p-4"]:not(:first-child):not(uipad[data-uipad]) {
   padding: var(--set-body-py) var(--set-px) calc(var(--set-body-py) + 0.125rem);
 }
 

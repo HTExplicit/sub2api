@@ -7,7 +7,7 @@
           <!-- Left: Search + Active Filters -->
           <div class="flex flex-1 flex-wrap items-center gap-3">
             <!-- Search Box -->
-            <div class="relative w-full md:w-64">
+            <div data-ui="search-box" class="relative w-full md:w-64">
               <Icon
                 name="search"
                 size="md"
@@ -25,6 +25,7 @@
             <!-- Role Filter (visible when enabled) -->
             <div v-if="visibleFilters.has('role')" class="w-full sm:w-32">
               <Select
+                data-ui="toolbar-select"
                 v-model="filters.role"
                 :options="[
                   { value: '', label: t('admin.users.allRoles') },
@@ -38,6 +39,7 @@
             <!-- Status Filter (visible when enabled) -->
             <div v-if="visibleFilters.has('status')" class="w-full sm:w-32">
               <Select
+                data-ui="toolbar-select"
                 v-model="filters.status"
                 :options="[
                   { value: '', label: t('admin.users.allStatus') },
@@ -51,6 +53,7 @@
             <!-- Group Filter (visible when enabled) -->
             <div v-if="visibleFilters.has('group')" class="w-full sm:w-44">
               <Select
+                data-ui="toolbar-select"
                 v-model="filters.group"
                 :options="groupFilterOptions"
                 searchable
@@ -64,6 +67,7 @@
             <!-- API Key Group Filter (visible when enabled) -->
             <div v-if="visibleFilters.has('apiKeyGroup')" class="w-full sm:w-44">
               <Select
+                data-ui="toolbar-select"
                 v-model="filters.apiKeyGroup"
                 :options="apiKeyGroupFilterOptions"
                 searchable
@@ -101,6 +105,7 @@
                 <template v-else-if="['select', 'multi_select'].includes(getAttributeDefinition(Number(attrId))?.type || '')">
                   <div class="w-full">
                     <Select
+                      data-ui="toolbar-select"
                       :model-value="value"
                       :options="[
                         { value: '', label: getAttributeDefinitionName(Number(attrId)) },
@@ -133,6 +138,7 @@
                 :disabled="loading"
                 class="btn btn-secondary px-2 md:px-3"
                 :title="t('common.refresh')"
+                data-ui="toolbar-icon"
               >
                 <Icon name="refresh" size="md" :class="loading ? 'animate-spin' : ''" />
               </button>

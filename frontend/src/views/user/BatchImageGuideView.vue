@@ -79,7 +79,6 @@
           :columns="columns"
           :data="visibleBatchJobs"
           :loading="loadingKeys || loadingJobs"
-          :selected-keys="selectedJobKeys"
           :expandable-actions="false"
           row-key="id"
         >
@@ -911,7 +910,6 @@ const selectedBatchApiKeyId = ref(0)
 const items = ref<BatchImageDetailItem[]>([])
 const batchJobs = ref<BatchImageJobRow[]>([])
 const selectedJobIds = ref(new Set<string>())
-const selectedJobKeys = computed(() => Array.from(selectedJobIds.value))
 const expandedParentIds = ref(new Set<string>())
 const promptRows = ref<PromptRow[]>([])
 const promptDraft = ref('')

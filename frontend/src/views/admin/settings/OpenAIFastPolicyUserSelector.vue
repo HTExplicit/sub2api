@@ -28,7 +28,7 @@
       </span>
     </div>
 
-    <div class="relative">
+    <div data-ui="search-box" class="relative">
       <Icon
         name="search"
         size="sm"

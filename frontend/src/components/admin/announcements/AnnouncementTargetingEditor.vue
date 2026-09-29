@@ -11,7 +11,7 @@
       </div>
 
       <div class="flex items-center gap-3">
-        <label class="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
+        <label class="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300" data-ui="targeting-option">
           <input
             type="radio"
             name="announcement-targeting-mode"
@@ -22,7 +22,7 @@
           />
           {{ t('admin.announcements.form.targetingAll') }}
         </label>
-        <label class="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
+        <label class="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300" data-ui="targeting-option">
           <input
             type="radio"
             name="announcement-targeting-mode"

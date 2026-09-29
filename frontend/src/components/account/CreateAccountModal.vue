@@ -70,7 +70,7 @@
       <!-- Platform Selection - Segmented Control Style -->
       <div>
         <label class="input-label">{{ t('admin.accounts.platform') }}</label>
-        <div class="mt-2 flex flex-wrap rounded-lg bg-gray-100 p-1 dark:bg-dark-700" data-tour="account-form-platform">
+        <div data-ui="seg-box" class="mt-2 flex flex-wrap rounded-lg bg-gray-100 p-1 dark:bg-dark-700" data-tour="account-form-platform">
           <button
             type="button"
             @click="form.platform = 'anthropic'"
@@ -162,7 +162,7 @@
           </button>
         </div>
         <!-- Multi-protocol API-key providers: Kimi / Zhipu GLM / DeepSeek / OpenCode -->
-        <div class="mt-2 flex flex-wrap rounded-lg bg-gray-100 p-1 dark:bg-dark-700">
+        <div data-ui="seg-box" class="mt-2 flex flex-wrap rounded-lg bg-gray-100 p-1 dark:bg-dark-700">
           <button
             type="button"
             @click="selectCNPlatform('kimi')"
@@ -947,7 +947,7 @@
 
           <!-- Custom OAuth Client (Advanced) -->
           <div v-if="showAdvancedOAuth" class="mt-3 group relative">
-            <button
+            <button data-ui="option-card"
               type="button"
               :disabled="!geminiAIStudioOAuthEnabled"
               @click="handleSelectGeminiOAuthType('ai_studio')"
@@ -1278,7 +1278,7 @@
               :key="getAntigravityModelMappingKey(mapping)"
               class="space-y-1"
             >
-              <div class="flex items-center gap-2">
+              <div data-ui="dense-dlg" class="flex items-center gap-2">
                 <input
                   v-model="mapping.from"
                   type="text"
@@ -1597,7 +1597,7 @@
 
             <!-- Model Mapping List -->
             <div v-if="modelMappings.length > 0" class="mb-3 space-y-2">
-              <div
+              <div data-ui="dense-dlg"
                 v-for="(mapping, index) in modelMappings"
                 :key="getModelMappingKey(mapping)"
                 class="flex items-center gap-2"
@@ -1806,7 +1806,7 @@
             </div>
 
             <!-- Manual input -->
-            <div class="flex items-center gap-2">
+            <div data-ui="dense-btn dense-dlg" class="flex items-center gap-2">
               <input
                 v-model.number="customErrorCodeInput"
                 type="number"
@@ -2074,7 +2074,7 @@
 
           <!-- Mapping Mode -->
           <div v-else class="space-y-3">
-            <div v-for="(mapping, index) in modelMappings" :key="getModelMappingKey(mapping)" class="flex items-center gap-2">
+            <div data-ui="dense-dlg" v-for="(mapping, index) in modelMappings" :key="getModelMappingKey(mapping)" class="flex items-center gap-2">
               <input v-model="mapping.from" type="text" class="input flex-1" :placeholder="t('admin.accounts.fromModel')" />
               <span class="text-gray-400">→</span>
               <input v-model="mapping.to" type="text" class="input flex-1" :placeholder="t('admin.accounts.toModel')" />
@@ -2437,7 +2437,7 @@
             </div>
 
             <div v-if="modelMappings.length > 0" class="mb-3 space-y-2">
-              <div
+              <div data-ui="dense-dlg"
                 v-for="(mapping, index) in modelMappings"
                 :key="'oauth-' + getModelMappingKey(mapping)"
                 class="flex items-center gap-2"
@@ -3421,7 +3421,7 @@
           <label class="input-label">{{ t('admin.accounts.openai.compactModelMapping') }}</label>
           <p class="input-hint">{{ t('admin.accounts.openai.compactModelMappingDesc') }}</p>
           <div v-if="openAICompactModelMappings.length > 0" class="mb-3 space-y-2">
-            <div
+            <div data-ui="dense-dlg"
               v-for="(mapping, index) in openAICompactModelMappings"
               :key="getOpenAICompactModelMappingKey(mapping)"
               class="flex items-center gap-2"

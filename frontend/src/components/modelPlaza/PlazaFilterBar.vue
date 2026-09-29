@@ -84,7 +84,7 @@
       <span class="w-10 shrink-0 pt-2 text-xs font-semibold uppercase tracking-wider text-gray-400 dark:text-dark-500">
         {{ t('modelPlaza.filters.modelLabel') }}
       </span>
-      <div class="relative w-full sm:w-72">
+      <div data-ui="search-box" class="relative w-full sm:w-72">
         <Icon
           name="search"
           size="sm"
