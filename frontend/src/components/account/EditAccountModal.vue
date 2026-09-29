@@ -306,6 +306,7 @@
                 :sync-source-key="capacitySyncSourceKey"
                 @capacity-validity="setCapacityFieldValidity('selector', $event)"
                 v-model="allowedModels"
+                :model-mappings="modelMappings"
                 :platform="account?.platform || 'anthropic'"
                 :account-id="account?.id"
                 :synced-models="capacitySyncedModels"
@@ -803,7 +804,7 @@
           <!-- Whitelist Mode -->
           <div v-if="modelRestrictionMode === 'whitelist'">
             <ModelWhitelistSelector
-              v-model="allowedModels" :platform="account?.platform || 'anthropic'" :account-id="account?.id" :synced-models="capacitySyncedModels" @upstream-synced="acceptCapacitySync"
+              v-model="allowedModels" :model-mappings="modelMappings" :platform="account?.platform || 'anthropic'" :account-id="account?.id" :synced-models="capacitySyncedModels" @upstream-synced="acceptCapacitySync"
               v-model:capacity-drafts="capacityDrafts"
               :capacity-rows="capacityRows"
               :sync-source-key="capacitySyncSourceKey"
@@ -1029,7 +1030,7 @@
           <!-- Whitelist Mode -->
           <div v-if="modelRestrictionMode === 'whitelist'">
             <ModelWhitelistSelector
-              v-model="allowedModels" :platform="account?.platform || 'anthropic'" :account-id="account?.id" :synced-models="capacitySyncedModels" @upstream-synced="acceptCapacitySync"
+              v-model="allowedModels" :model-mappings="modelMappings" :platform="account?.platform || 'anthropic'" :account-id="account?.id" :synced-models="capacitySyncedModels" @upstream-synced="acceptCapacitySync"
               v-model:capacity-drafts="capacityDrafts"
               :capacity-rows="capacityRows"
               :sync-source-key="capacitySyncSourceKey"
@@ -1265,7 +1266,7 @@
           <!-- Whitelist Mode -->
           <div v-if="modelRestrictionMode === 'whitelist'">
             <ModelWhitelistSelector
-              v-model="allowedModels" platform="anthropic"
+              v-model="allowedModels" :model-mappings="modelMappings" platform="anthropic"
               v-model:capacity-drafts="capacityDrafts"
               :capacity-rows="capacityRows"
               :sync-source-key="capacitySyncSourceKey"

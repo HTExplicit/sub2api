@@ -111,12 +111,12 @@ func TestAnthropicChatCallersSurfaceProtocolFailure(t *testing.T) {
 				var err error
 				if native {
 					var result *OpenAIForwardResult
-					result, err = (&OpenAIGatewayService{}).handleCCStreamingFromNativeAnthropic(resp, c, "fixture", "fixture", "fixture", nil, time.Now(), true)
+					result, err = (&OpenAIGatewayService{}).handleCCStreamingFromNativeAnthropic(resp, c, "fixture", "fixture", "fixture", nil, time.Now())
 					require.NotNil(t, result)
 					input, output = result.Usage.InputTokens, result.Usage.OutputTokens
 				} else {
 					var result *ForwardResult
-					result, err = (&GatewayService{}).handleCCStreamingFromAnthropic(resp, c, "fixture", "fixture", nil, time.Now(), true)
+					result, err = (&GatewayService{}).handleCCStreamingFromAnthropic(resp, c, "fixture", "fixture", nil, time.Now())
 					require.NotNil(t, result)
 					input, output = result.Usage.InputTokens, result.Usage.OutputTokens
 				}
@@ -166,7 +166,7 @@ func TestNativeAnthropicChatProtocolGuardPreservesDisconnectDrain(t *testing.T) 
 	c, _ := gin.CreateTestContext(rec)
 	c.Request = httptest.NewRequest(http.MethodPost, "/v1/chat/completions", nil)
 	c.Writer = &antigravityFailingWriter{ResponseWriter: c.Writer, failAfter: 2}
-	result, err := (&OpenAIGatewayService{}).handleCCStreamingFromNativeAnthropic(resp, c, "fixture", "fixture", "fixture", nil, time.Now(), true)
+	result, err := (&OpenAIGatewayService{}).handleCCStreamingFromNativeAnthropic(resp, c, "fixture", "fixture", "fixture", nil, time.Now())
 	require.NoError(t, err, "an intentionally unconverted tail is not evidence of upstream corruption")
 	require.NotNil(t, result)
 	require.True(t, result.ClientDisconnect)

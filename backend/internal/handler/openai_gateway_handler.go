@@ -35,6 +35,7 @@ import (
 
 // OpenAIGatewayHandler handles OpenAI API gateway requests
 type OpenAIGatewayHandler struct {
+	compositeResolver             *service.CompositeRouteResolver
 	gatewayService                *service.OpenAIGatewayService
 	nativeAnthropicGatewayService *service.GatewayService
 	billingCacheService           *service.BillingCacheService
@@ -2627,7 +2628,7 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 		return
 	}
 	// 分组级模型白名单：首帧校验客户端模型，不通过则关闭连接并标记运维原因。
-	// 必须在 ensureCompositeTargetPlatform（合成路由改写）之前执行。
+	// 必须在合成路由解析和上游模型映射之前执行。
 	// 与 HTTP 准入一致：帧内重复 model 键/大小写变体可能被上游按末值绑定，
 	// 全部候选值逐一校验，任一未命中即拒绝。
 	if blocked := blockedModelAllowlistCandidate(apiKey.Group, requestmodel.FromBodyCandidates("", "application/json", firstMessage)); blocked != "" {
@@ -2638,6 +2639,21 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 	}
 	wsRoutingModel := reqModel
 	ensureCompositeTargetPlatform(c, apiKey, reqModel)
+	// Keep the client model in the frame for admission, response identity and usage.
+	// Apply the resolved upstream model through MapRequestModel on every turn.
+	wsRouteModel := reqModel
+	if apiKey.Group != nil && apiKey.Group.Platform == service.PlatformComposite {
+		decision, resolveErr := h.compositeResolver.Resolve(c.Request.Context(), apiKey.Group.ID, reqModel, service.CompositeRouteEndpointResponses)
+		if resolveErr != nil {
+			reqLog.Error("openai.websocket_composite_route_failed", zap.Error(resolveErr))
+			closeOpenAIClientWS(wsConn, coderws.StatusInternalError, "Failed to resolve composite model route")
+			return
+		}
+		if decision.Matched {
+			c.Request = c.Request.WithContext(service.WithCompositeRouteDecision(c.Request.Context(), decision))
+			wsRouteModel = decision.UpstreamModel
+		}
+	}
 	ctx = c.Request.Context()
 	if apiKey.Group != nil && apiKey.Group.Platform == service.PlatformComposite {
 		platform, ok := service.ResolvedTargetPlatformFromContext(ctx)
@@ -2672,10 +2688,11 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 		closeOpenAIClientWS(wsConn, coderws.StatusPolicyViolation, service.ImageGenerationPermissionMessage())
 		return
 	}
-	// F5a: 握手层会话屏蔽检查。WS 握手无 body，显式标识仅来自握手 header
-	// （session_id / conversation_id）；无标识则放行，连接内仍有本地 flag 兜底。
-	cyberBlockKey := service.CyberSessionBlockKey(apiKey.ID, c, nil)
-	if cyberBlockKey != "" && h.gatewayService.IsCyberSessionBlocked(c.Request.Context(), cyberBlockKey) {
+
+	// The first response.create frame is available here, so explicit IDs are
+	// checked directly and body-derived sessions use the coarse scope gate.
+	cyberBlockKey := h.findBlockedCyberSessionForAPIKey(c, apiKey, firstMessage)
+	if cyberBlockKey != "" {
 		writeCyberSessionBlockedWSError(c.Request.Context(), wsConn)
 		closeOpenAIClientWS(wsConn, coderws.StatusPolicyViolation, "session blocked by cyber-security policy")
 		h.enqueueCyberSessionBlockedOpsEntry(c, apiKey, reqModel, cyberBlockKey)
@@ -2703,8 +2720,11 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 		mapping, _ := h.gatewayService.ResolveChannelMappingAndRestrict(ctx, apiKey.GroupID, model)
 		return mapping
 	}
-	channelMappingWS := resolveWSChannelMapping(reqModel)
-	wsRoutingModel = openAIChannelForwardModel(channelMappingWS, reqModel)
+	channelMappingWS := resolveWSChannelMapping(wsRouteModel)
+	wsForwardModel := openAIChannelForwardModel(channelMappingWS, wsRouteModel)
+	// Composite aliases schedule on the resolved upstream model (upstream v0.2.10);
+	// every other group has wsRouteModel == reqModel, so this keeps the old value.
+	wsRoutingModel = wsForwardModel
 
 	var currentUserRelease func()
 	var currentAccountRelease func()
@@ -2829,7 +2849,7 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 			return false
 		}
 		if failoverErr.ShouldReportAccountScheduleFailure() {
-			h.gatewayService.ReportOpenAIAccountScheduleResultForSelection(selection, account.ID, account.GetMappedModel(wsRoutingModel), false, nil)
+			h.gatewayService.ReportOpenAIAccountScheduleResultForSelection(selection, account.ID, account.GetMappedModel(wsForwardModel), false, nil)
 		} else {
 			h.gatewayService.ReleaseOpenAIRuntimeBreakerProbeForSelection(selection)
 		}
@@ -3103,8 +3123,8 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 				// 连接级 cyber session gate 也在 BeforeRequest 先执行，使 native 与
 				// passthrough ingress 都能在 BeforeTurn 及上游写入前无副作用地拒绝。
 				// BeforeTurn 中保留同一检查作为防御式兜底。
-				if cyberBlockedThisConn {
-					return newOpenAIWSLocalTurnCloseError(coderws.StatusPolicyViolation, cyberSessionBlockedClientMsg, nil)
+				if cyberBlockedThisConn && !h.cyberPolicyLogOnly(c, apiKey) {
+					return service.NewOpenAIWSClientCloseError(coderws.StatusPolicyViolation, cyberSessionBlockedClientMsg, nil)
 				}
 				if turn == 1 {
 					return nil
@@ -3141,7 +3161,17 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 				if model == "" {
 					model = reqModel
 				}
-				mapping := resolveWSChannelMapping(model)
+				setOpsRequestContext(c, model, true)
+				routeModel := model
+				if apiKey.Group != nil && apiKey.Group.Platform == service.PlatformComposite {
+					// The account, target platform and route context are connection-scoped.
+					// A different public model needs a new connection and fresh resolution.
+					if model != reqModel {
+						return "", newOpenAIWSUnsupportedModelSwitchError(model)
+					}
+					routeModel = wsRouteModel
+				}
+				mapping := resolveWSChannelMapping(routeModel)
 				mappedModelUnchanged := false
 				if previous := turnChannelMapping.Load(); previous != nil && previous.turn < turn {
 					mappedModelUnchanged = strings.TrimSpace(previous.mapping.MappedModel) == strings.TrimSpace(mapping.MappedModel)
@@ -3154,8 +3184,8 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 			},
 			BeforeTurn: func(turn int) error {
 				// turn==1 的会话屏蔽已由握手层检查覆盖；连接内 flag 只拦截后续 turn。
-				if cyberBlockedThisConn {
-					return newOpenAIWSLocalTurnCloseError(coderws.StatusPolicyViolation, cyberSessionBlockedClientMsg, nil)
+				if cyberBlockedThisConn && !h.cyberPolicyLogOnly(c, apiKey) {
+					return service.NewOpenAIWSClientCloseError(coderws.StatusPolicyViolation, cyberSessionBlockedClientMsg, nil)
 				}
 				// 长连接跨峰谷/倍率刷新防护：每个 turn 按当前时刻重装门并复核
 				// 当前账号，越线即要求客户端重连重选（连接绑定单一上游账号，
@@ -3245,10 +3275,27 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 				} else if len(cyberBlockBody) == 0 {
 					turnCyberBlockInput = cyberBlockKey
 				}
+				cyberMarked := service.GetOpsCyberPolicy(c) != nil
+				cyberLogOnly := h.cyberPolicyLogOnly(c, apiKey)
 				h.recordCyberPolicyIfMarked(c, apiKey, account, subscription, turnRequestedModel, turnErr != nil, turnCyberBlockInput, turnUsageFields, requestPayloadHash)
 				if !recoveryAttempt {
 					cyberBlockedThisConn, cyberBlockPendingAfterFailover = advanceOpenAIWSCyberBlockState(
-						cyberBlockedThisConn, cyberBlockPendingAfterFailover, service.GetOpsCyberPolicy(c) != nil, turnErr,
+						cyberBlockedThisConn, cyberBlockPendingAfterFailover, cyberMarked && !cyberLogOnly, turnErr,
+					)
+				}
+				if turnErr != nil {
+					if result == nil || result.ImageCount <= 0 {
+						return
+					}
+					// cyber 命中时该 turn 的用量已由 recordCyberPolicyIfMarked(forwardErrored=true)
+					// 按真实 token 记录，这里不再走下方 RecordUsage，避免对同一 turn 双写/双扣费。
+					if cyberMarked {
+						return
+					}
+					reqLog.Warn("openai.websocket_partial_error_with_image_result",
+						zap.Int64("account_id", account.ID),
+						zap.Int("image_count", result.ImageCount),
+						zap.Error(turnErr),
 					)
 				}
 				if turnErr != nil {
@@ -3332,7 +3379,7 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 					)
 				} else {
 					if shouldReportOpenAIWSProxyAccountFailure(err) {
-						h.gatewayService.ReportOpenAIAccountScheduleResultForSelection(selection, account.ID, account.GetMappedModel(wsRoutingModel), false, nil)
+						h.gatewayService.ReportOpenAIAccountScheduleResultForSelection(selection, account.ID, account.GetMappedModel(wsForwardModel), false, nil)
 					}
 					reqLog.Warn("openai.websocket_proxy_closed",
 						zap.Int64("account_id", account.ID),
@@ -3404,7 +3451,7 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 			}
 
 			if shouldReportOpenAIWSProxyAccountFailure(err) {
-				h.gatewayService.ReportOpenAIAccountScheduleResultForSelection(selection, account.ID, account.GetMappedModel(wsRoutingModel), false, nil)
+				h.gatewayService.ReportOpenAIAccountScheduleResultForSelection(selection, account.ID, account.GetMappedModel(wsForwardModel), false, nil)
 			}
 			closeStatus, closeReason := summarizeWSCloseErrorForLog(err)
 			proxyFailedFields := []zap.Field{
@@ -4877,7 +4924,7 @@ func (h *OpenAIGatewayHandler) rejectIfCyberSessionBlocked(c *gin.Context, apiKe
 	if enabled, _ := h.gatewayService.CyberSessionBlockRuntime(c.Request.Context()); !enabled {
 		return false
 	}
-	key := service.CyberSessionBlockKey(apiKey.ID, c, body)
+	key := h.findBlockedCyberSessionForAPIKey(c, apiKey, body)
 	if key == "" {
 		return false
 	}
@@ -4967,6 +5014,18 @@ func buildCyberSessionBlockWritePlan(apiKeyID int64, c *gin.Context, body []byte
 		plan.scopeKey = cyberSessionScopeKey(apiKeyID, c)
 	}
 	return plan
+}
+
+func findBlockedCyberSessionKey(ctx context.Context, gatewayService *service.OpenAIGatewayService, apiKeyID int64, c *gin.Context, body []byte) string {
+	if gatewayService == nil {
+		return ""
+	}
+	clientIP, userAgent := "", ""
+	if c != nil {
+		clientIP = strings.TrimSpace(ip.GetClientIP(c))
+		userAgent = c.GetHeader("User-Agent")
+	}
+	return gatewayService.FindCyberSessionBlockedForRequest(ctx, apiKeyID, c, body, clientIP, userAgent)
 }
 
 func cyberSessionScopeKey(apiKeyID int64, c *gin.Context) string {
@@ -5074,11 +5133,20 @@ func (h *OpenAIGatewayHandler) recordCyberPolicyIfMarked(c *gin.Context, apiKey 
 		ClientIP:        clientIPStr,
 		CreatedAt:       time.Now(),
 	}
+	cyberLogOnly := h.cyberPolicyLogOnly(c, apiKey)
+	// 上游在落库前就同步写入会话屏蔽，避免进程退出丢失；这里复用上面已构建的
+	// blockPlan（我们的入参是 any，无法直接沿用上游的 []byte 形态）。
+	if gwSvc != nil && apiKey != nil && !cyberLogOnly && len(blockPlan.keys) > 0 {
+		blockCtx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
+		gwSvc.MarkCyberSessionBlocked(blockCtx, blockPlan.scopeKey, blockPlan.keys)
+		cancel()
+	}
 	go func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
 		if cmSvc != nil {
 			cmSvc.RecordCyberPolicyEvent(ctx, service.CyberPolicyRecordInput{
+				LogOnly:         cyberLogOnly,
 				RequestID:       requestID,
 				UserID:          userID,
 				UserEmail:       userEmail,
@@ -5094,9 +5162,6 @@ func (h *OpenAIGatewayHandler) recordCyberPolicyIfMarked(c *gin.Context, apiKey 
 				UpstreamInTok:   mark.UpstreamInTok,
 				UpstreamOutTok:  mark.UpstreamOutTok,
 			})
-		}
-		if gwSvc != nil && len(blockPlan.keys) > 0 {
-			gwSvc.MarkCyberSessionBlocked(ctx, blockPlan.scopeKey, blockPlan.keys)
 		}
 		if forwardErrored && gwSvc != nil {
 			gwSvc.RecordCyberPolicyUsageLog(ctx, service.CyberPolicyUsageInput{
