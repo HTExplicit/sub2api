@@ -2483,7 +2483,7 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 		OpenAIRefusalKeywords:        append([]string(nil), updatedSettings.OpenAIRefusalKeywords...),
 		OpenAIRefusalReplacement:     updatedSettings.OpenAIRefusalReplacement,
 		AccountSchedulingThresholds:  updatedSettings.AccountSchedulingThresholds,
-		AllowUserViewErrorRequests:   updatedSettings.AllowUserViewErrorRequests,	}
+		AllowUserViewErrorRequests:   updatedSettings.AllowUserViewErrorRequests}
 	if fastPolicy, err := h.settingService.GetOpenAIFastPolicySettings(c.Request.Context()); err != nil {
 		slog.Error("openai_fast_policy_settings_get_failed", "error", err)
 	} else if fastPolicy != nil {
