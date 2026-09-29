@@ -169,6 +169,7 @@ type SystemSettings struct {
 	DefaultBalance                                 float64
 	RiskControlEnabled                             bool
 	CyberSessionBlockEnabled                       bool
+	CyberPolicyUserAllowlist                       string
 	CyberSessionBlockTTLSeconds                    int
 	OpenAIRefusalRecoveryEnabled                   bool
 	OpenAICyberFailoverEnabled                     bool
@@ -185,7 +186,6 @@ type SystemSettings struct {
 	AdminRechargeRebateEnabled                     bool
 	DefaultUserRPMLimit                            int
 	DefaultSubscriptions                           []DefaultSubscriptionSetting
-
 	// Model fallback configuration
 	EnableModelFallback      bool   `json:"enable_model_fallback"`
 	FallbackModelAnthropic   string `json:"fallback_model_anthropic"`

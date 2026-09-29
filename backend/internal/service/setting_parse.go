@@ -220,6 +220,7 @@ func (s *SettingService) InitializeDefaultSettings(ctx context.Context) error {
 
 		// cyber 会话屏蔽（默认关闭，TTL 默认 3600s）
 		SettingKeyCyberSessionBlockEnabled:                       "false",
+		SettingKeyCyberPolicyUserAllowlist:                       "",
 		SettingKeyCyberSessionBlockTTLSeconds:                    "3600",
 		SettingKeyOpenAIRefusalRecoveryEnabled:                   "false",
 		SettingKeyOpenAICyberFailoverEnabled:                     "false",
@@ -228,7 +229,6 @@ func (s *SettingService) InitializeDefaultSettings(ctx context.Context) error {
 		SettingKeyOpenAIRefusalRewriteEnabled:                    "false",
 		SettingKeyOpenAIRefusalKeywords:                          defaultOpenAIRefusalKeywordsJSON,
 		SettingKeyOpenAIRefusalReplacement:                       "",
-
 		// Claude Code version check (default: empty = disabled)
 		SettingKeyMinClaudeCodeVersion: "",
 		SettingKeyMaxClaudeCodeVersion: "",
@@ -850,6 +850,7 @@ func (s *SettingService) parseSettings(settings map[string]string) *SystemSettin
 
 	// cyber 会话屏蔽（默认关闭，TTL 默认 3600s）
 	result.CyberSessionBlockEnabled = settings[SettingKeyCyberSessionBlockEnabled] == "true"
+	result.CyberPolicyUserAllowlist = settings[SettingKeyCyberPolicyUserAllowlist]
 	if v, err := strconv.Atoi(strings.TrimSpace(settings[SettingKeyCyberSessionBlockTTLSeconds])); err == nil && v > 0 {
 		result.CyberSessionBlockTTLSeconds = v
 	} else {
