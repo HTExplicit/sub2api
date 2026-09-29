@@ -592,6 +592,12 @@ html.flat-theme .table-wrapper[data-table="accounts"] td[data-column="actions"] 
   height: 15px;
 }
 
+/* (the glyphs are upstream's inline Heroicons at a 1.5 stroke, AccountsView.vue's actions cell; every other table's row
+   icons are Lucide at 1.8: the same stroke here, the glyphs unchanged. Final review V1-14.) */
+html.flat-theme .table-wrapper[data-table="accounts"] td[data-column="actions"] button[class~="flex-col"] > svg[stroke-width="1.5"] {
+  stroke-width: 1.8;
+}
+
 /* touch: the visible label beside its glyph (one line, so the row stays 45px) */
 html.flat-theme .table-wrapper[data-table="accounts"] td[data-column="actions"] button[class~="flex-col"] {
   flex-direction: row;
@@ -859,6 +865,30 @@ html.flat-theme [data-test="account-details-drawer"] > header + div section labe
   height: 14px;
 }
 
+/* The scheduling state beside the status badge (the chip row at the top of the drawer, AccountDetailsDrawer.vue): the
+   status chip it sits next to (data.css 6 .badge: a capsule, Geist Mono at the badge size, 500, .025em, 1 / 7 inset;
+   on = the success pill, off = the grey pill), not a 4px Geist 12 rectangle. Final review V1-13. */
+html.flat-theme [data-test="account-details-drawer"] > header + div > section:first-child > div:first-child > span[class~="rounded"][class~="px-2"][class~="py-0.5"][class~="text-xs"] {
+  padding: 1px 7px;
+  border-radius: 9999px;
+  font-family: var(--ui-font-mono);
+  font-size: var(--ui-badge-size);
+  font-weight: 500;
+  line-height: var(--ui-badge-leading);
+  letter-spacing: 0.025em;
+  text-transform: uppercase;
+}
+
+html.flat-theme [data-test="account-details-drawer"] > header + div > section:first-child > div:first-child > span[class~="rounded"][class~="px-2"][class~="py-0.5"][class~="text-xs"][class~="bg-emerald-50"] {
+  background-color: rgb(var(--ui-success-soft));
+  color: rgb(var(--ui-badge-success));
+}
+
+html.flat-theme [data-test="account-details-drawer"] > header + div > section:first-child > div:first-child > span[class~="rounded"][class~="px-2"][class~="py-0.5"][class~="text-xs"][class~="bg-gray-100"] {
+  background-color: rgb(var(--ui-subtle));
+  color: rgb(var(--ui-badge-muted));
+}
+
 /* Usage actions (the drawer, the cards; the table's cell is read-only): querying the quota, the reset, the points,
    the referral count and invite, the local refresh are the reference's small ghost buttons (ink-soft; the subtle fill
    and ink on hover) instead of a hue each (decision 2: colour is for status); the verification link takes the link
@@ -1076,12 +1106,58 @@ html.flat-theme [data-ui="account-create-steps"] div[class~="h-0.5"] {
   background-color: rgb(var(--ui-line-strong));
 }
 
-/* 9.6 Choices inside the account forms (create, edit, bulk edit). The paired choices (model whitelist / mapping, the
-   RPM strategy) are option cards like the account type cards above them (controls.css 8.1): the grouped fill inside
-   the structural line, the chosen one an ink edge 2px wide on the surface; upstream's accent and purple tints go.
-   The user-message limit's three modes are a segmented choice at the reference's 30px: the chosen one ink (REF §8.5;
-   controls.css 10.1 draws it), the others the secondary button. */
-html.flat-theme :is(#create-account-form, #edit-account-form, #bulk-edit-account-form) button[class~="flex-1"][class~="rounded-lg"]:is([class~="bg-gray-100"], [class~="bg-primary-100"], [class~="bg-purple-100"]) {
+/* 9.6 Choices inside the account forms (create, edit, bulk edit); upstream's accent and purple tints go.
+   - A two-way switch whose choices are labels only (the model whitelist / mapping, the bulk form's RPM strategy) is the
+     reference's segmented control (REF §8.5, controls.css 7.1: the structural frame on the surface, radius 8, the 2px
+     inset; segments 14 x 6 at 12.5 / 600, muted, ink on hover, the chosen one ink), like the same switch in the other
+     dialogs (the announcement's 「所有用户 / 按条件」). Final review V1-15.
+   - A pair whose choices carry a description line (the create and edit forms' RPM strategy) is an option card like the
+     account type cards above it (controls.css 8.1): the grouped fill inside the structural line, the chosen one an ink
+     edge 2px wide on the surface.
+   - The user-message limit's three modes are a segmented choice at the reference's 30px: the chosen one ink (REF §8.5;
+     controls.css 10.1 draws it), the others the secondary button. */
+html.flat-theme :is(#create-account-form, #edit-account-form, #bulk-edit-account-form) div[class~="flex"][class~="gap-2"]:has(> button[class~="flex-1"][class~="rounded-lg"]):not(:has(> button div[class~="text-[10px]"])) {
+  width: fit-content;
+  max-width: 100%;
+  gap: 0;
+  padding: var(--ctl-seg-inset);
+  border: 1px solid rgb(var(--ctl-seg-frame));
+  border-radius: var(--ui-radius-lg);
+  background-color: rgb(var(--ui-surface));
+}
+
+html.flat-theme :is(#create-account-form, #edit-account-form, #bulk-edit-account-form) button[class~="flex-1"][class~="rounded-lg"]:is([class~="bg-gray-100"], [class~="bg-primary-100"], [class~="bg-purple-100"]):not(:has(div[class~="text-[10px]"])) {
+  flex: none;
+  margin: 0;
+  border-radius: var(--ui-radius-md);
+  background-color: transparent;
+  box-shadow: none;
+  padding: var(--ctl-seg-pad-y) var(--ctl-seg-pad-x);
+  font-size: 0.78125rem;
+  line-height: 1.171875rem;
+  font-weight: 600;
+  white-space: nowrap;
+  color: rgb(var(--ui-muted));
+  transition-property: color, background-color;
+  transition-duration: var(--ui-duration-slide);
+  transition-timing-function: var(--ui-ease-out);
+}
+
+html.flat-theme :is(#create-account-form, #edit-account-form, #bulk-edit-account-form) button[class~="flex-1"][class~="rounded-lg"][class~="bg-gray-100"]:not(:has(div[class~="text-[10px]"])):hover {
+  color: rgb(var(--ui-ink));
+}
+
+html.flat-theme :is(#create-account-form, #edit-account-form, #bulk-edit-account-form) button[class~="flex-1"][class~="rounded-lg"]:is([class~="bg-primary-100"], [class~="bg-purple-100"]):not(:has(div[class~="text-[10px]"])) {
+  background-color: rgb(var(--ui-ink));
+  color: rgb(var(--ui-on-ink));
+}
+
+html.flat-theme :is(#create-account-form, #edit-account-form, #bulk-edit-account-form) button[class~="flex-1"][class~="rounded-lg"]:is([class~="bg-gray-100"], [class~="bg-primary-100"], [class~="bg-purple-100"]):not(:has(div[class~="text-[10px]"])) > svg {
+  width: 0.875rem;
+  height: 0.875rem;
+}
+
+html.flat-theme :is(#create-account-form, #edit-account-form, #bulk-edit-account-form) button[class~="flex-1"][class~="rounded-lg"]:is([class~="bg-gray-100"], [class~="bg-primary-100"], [class~="bg-purple-100"]):has(div[class~="text-[10px]"]) {
   border-radius: var(--ui-radius-lg);
   background-color: rgb(var(--ui-subtle) / 0.6);
   box-shadow: inset 0 0 0 1px rgb(var(--ui-line));
@@ -1094,15 +1170,20 @@ html.flat-theme :is(#create-account-form, #edit-account-form, #bulk-edit-account
   transition-timing-function: var(--ui-ease);
 }
 
-html.flat-theme :is(#create-account-form, #edit-account-form, #bulk-edit-account-form) button[class~="flex-1"][class~="rounded-lg"][class~="bg-gray-100"]:hover {
+html.flat-theme :is(#create-account-form, #edit-account-form, #bulk-edit-account-form) button[class~="flex-1"][class~="rounded-lg"][class~="bg-gray-100"]:has(div[class~="text-[10px]"]):hover {
   box-shadow: inset 0 0 0 1px rgb(var(--ui-line-strong));
   color: rgb(var(--ui-ink));
 }
 
-html.flat-theme :is(#create-account-form, #edit-account-form, #bulk-edit-account-form) button[class~="flex-1"][class~="rounded-lg"]:is([class~="bg-primary-100"], [class~="bg-purple-100"]) {
+html.flat-theme :is(#create-account-form, #edit-account-form, #bulk-edit-account-form) button[class~="flex-1"][class~="rounded-lg"]:is([class~="bg-primary-100"], [class~="bg-purple-100"]):has(div[class~="text-[10px]"]) {
   background-color: rgb(var(--ui-surface));
   box-shadow: inset 0 0 0 2px rgb(var(--ui-ink));
   color: rgb(var(--ui-ink));
+}
+
+html.flat-theme :is(#create-account-form, #edit-account-form, #bulk-edit-account-form) button[class~="flex-1"][class~="rounded-lg"]:is([class~="bg-gray-100"], [class~="bg-primary-100"], [class~="bg-purple-100"]):focus-visible {
+  outline: 2px solid rgb(var(--ui-focus));
+  outline-offset: 2px;
 }
 
 /* (the strategy's hint line: upstream's 10px at 70 % opacity becomes 11px muted) */

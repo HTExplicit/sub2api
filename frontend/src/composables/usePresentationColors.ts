@@ -355,6 +355,12 @@ export function usePresentationColors() {
     if (changed) colors.value = withPalette(next, marks, inks)
   }
   const schedule = () => { if (active && !queued) { queued = true; queueMicrotask(read) } }
+  // The first read runs in setup: a chart in this component's template (vue-chartjs builds it in its own onMounted,
+  // which runs before this component's) is then created with the console defaults instead of Chart.js' own.
+  if (typeof document !== 'undefined') {
+    active = true
+    read()
+  }
   onMounted(() => {
     active = true
     read()

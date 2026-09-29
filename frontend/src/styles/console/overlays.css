@@ -747,6 +747,12 @@ html.flat-theme .modal-footer {
   background-color: rgb(var(--ui-surface));
 }
 
+/* a footer slot whose button row brings upstream's own top inset (the 分组 dialogs' pt-4) sat 16px low in a 71px
+   footer: the row is the footer's content, 55px with the buttons centred like every Modal's (final review V1-16) */
+html.flat-theme .modal-footer > div[class~="flex"]:only-child:is([class~="pt-2"], [class~="pt-3"], [class~="pt-4"]) {
+  padding-top: 0;
+}
+
 /* 3.6 The confirm dialog: message 13/21 ink-soft; its two utility buttons restated as the .btn recipes (controls'
    values: 30px, 0 12px, 13/19.5 600, radius 6, 1px edge; cancel = default, confirm = primary ink, a danger confirm
    = destructive). */
@@ -816,9 +822,9 @@ html.flat-theme :is([data-ui="confirm-cancel"], [data-ui="confirm-ok"]):disabled
   cursor: not-allowed;
 }
 
-/* 3.7 Utility-built dialogs without a header strip (TOTP, passkey, backup / redeem / subscription guides, payment
-   renewal): the reference's padded panel (ReadScope, login modal): title 17/600 tight ink, close 28px ghost glyph
-   button (muted -> ink on the subtle fill). */
+/* 3.7 Utility-built dialogs without a header strip (TOTP, passkey, payment renewal; the ones led by an h2 take the
+   Modal's parts, 3.7b): the reference's padded panel (ReadScope, login modal): title 17/600 tight ink, close 28px
+   ghost glyph button (muted -> ink on the subtle fill). */
 html.flat-theme div[class~="fixed"][class~="inset-0"] :is(div, section)[class~="bg-white"]:is([class~="shadow-xl"], [class~="shadow-2xl"]):not([data-ui]) > :is(h2, h3):is([class~="text-lg"], [class~="text-xl"]),
 html.flat-theme div[class~="fixed"][class~="inset-0"] :is(div, section)[class~="bg-white"]:is([class~="shadow-xl"], [class~="shadow-2xl"]):not([data-ui]) > div:first-child > :is(h2, h3):is([class~="text-lg"], [class~="text-xl"]) {
   font-size: 17px;
@@ -848,6 +854,65 @@ html.flat-theme.dark div[class~="fixed"][class~="inset-0"] :is(div, section)[cla
 html.flat-theme div[class~="fixed"][class~="inset-0"] :is(div, section)[class~="bg-white"]:is([class~="shadow-xl"], [class~="shadow-2xl"]):not([data-ui]) > button[class~="absolute"][class~="top-4"] svg {
   width: 15px;
   height: 15px;
+}
+
+/* 3.7b Utility-built dialogs led by an h2 (兑换码 生成 / 批量修改, 订阅 使用指南, 备份 R2 教程 / 分卷下载) are drawn as the
+   Modal, in the numbers of the settings page's inline dialogs (settings-ops-public.css 10b): body 16 x 18; the title
+   as the header strip, 14 / 20 600 ink at 14 x 18 on the structural line, on the Modal's 28px row (57px); a close
+   button the Modal's 28px framed close in that strip; the closing button row as the footer strip, 12 x 18 on the
+   structural line, its small close button at the control height (55px, the Modal's footer). The h3- and icon-led ones
+   (TOTP, passkey, payment renewal, the settings page's) keep 3.7 / 10b. (final review V1-01) */
+html.flat-theme div[class~="fixed"][class~="inset-0"] > :is(div, section)[class~="bg-white"][class~="p-6"]:is([class~="shadow-xl"], [class~="shadow-2xl"]):not([data-ui]):has(> h2) {
+  padding: var(--ui-dialog-body-y) var(--ui-dialog-x);
+}
+
+html.flat-theme div[class~="fixed"][class~="inset-0"] > :is(div, section)[class~="bg-white"][class~="p-6"]:is([class~="shadow-xl"], [class~="shadow-2xl"]):not([data-ui]):has(> h2) > h2 {
+  display: flex;
+  align-items: center;
+  min-height: calc(28px + 2 * var(--ui-dialog-head-y) + 1px);
+  margin: calc(-1 * var(--ui-dialog-body-y)) calc(-1 * var(--ui-dialog-x)) var(--ui-dialog-body-y);
+  border-bottom: 1px solid rgb(var(--ui-line));
+  padding: var(--ui-dialog-head-y) var(--ui-dialog-x);
+  font-size: 0.875rem;
+  line-height: 1.25rem;
+  font-weight: 600;
+  letter-spacing: 0;
+  color: rgb(var(--ui-ink));
+}
+
+html.flat-theme div[class~="fixed"][class~="inset-0"] > :is(div, section)[class~="bg-white"][class~="p-6"]:is([class~="shadow-xl"], [class~="shadow-2xl"]):not([data-ui]):has(> h2):has(> button[class~="absolute"][class~="right-4"][class~="top-4"]) > h2 {
+  padding-right: calc(var(--ui-dialog-x) + 36px);
+}
+
+html.flat-theme div[class~="fixed"][class~="inset-0"] > :is(div, section)[class~="bg-white"][class~="p-6"]:is([class~="shadow-xl"], [class~="shadow-2xl"]):not([data-ui]):has(> h2) > button[class~="absolute"][class~="right-4"][class~="top-4"] {
+  top: var(--ui-dialog-head-y);
+  right: var(--ui-dialog-x);
+  border: 1px solid rgb(var(--ui-line));
+  background-color: rgb(var(--ui-surface));
+}
+
+html.flat-theme div[class~="fixed"][class~="inset-0"] > :is(div, section)[class~="bg-white"][class~="p-6"]:is([class~="shadow-xl"], [class~="shadow-2xl"]):not([data-ui]):has(> h2) > button[class~="absolute"][class~="right-4"][class~="top-4"]:hover {
+  background-color: rgb(var(--ui-surface));
+  color: rgb(var(--ui-ink));
+}
+
+html.flat-theme div[class~="fixed"][class~="inset-0"] > :is(div, section)[class~="bg-white"][class~="p-6"]:is([class~="shadow-xl"], [class~="shadow-2xl"]):not([data-ui]):has(> h2) > button[class~="absolute"][class~="right-4"][class~="top-4"]:focus-visible {
+  outline: 2px solid rgb(var(--ui-focus));
+  outline-offset: 2px;
+}
+
+html.flat-theme div[class~="fixed"][class~="inset-0"] > :is(div, section)[class~="bg-white"][class~="p-6"]:is([class~="shadow-xl"], [class~="shadow-2xl"]):not([data-ui]):has(> h2) > form > div[class~="justify-end"]:last-child,
+html.flat-theme div[class~="fixed"][class~="inset-0"] > :is(div, section)[class~="bg-white"][class~="p-6"]:is([class~="shadow-xl"], [class~="shadow-2xl"]):not([data-ui]):has(> h2) > div:is([class~="justify-end"], [class~="text-right"]):last-child {
+  margin: var(--ui-dialog-body-y) calc(-1 * var(--ui-dialog-x)) calc(-1 * var(--ui-dialog-body-y));
+  border-top: 1px solid rgb(var(--ui-line));
+  padding: var(--ui-dialog-foot-y) var(--ui-dialog-x);
+}
+
+html.flat-theme div[class~="fixed"][class~="inset-0"] > :is(div, section)[class~="bg-white"][class~="p-6"]:is([class~="shadow-xl"], [class~="shadow-2xl"]):not([data-ui]):has(> h2) > div[class~="text-right"]:last-child > .btn-sm {
+  min-height: var(--ui-control-h);
+  padding: 0.265625rem 0.75rem;
+  font-size: 0.8125rem;
+  line-height: 1.21875rem;
 }
 
 /* 3.8 Motion: the scrim fades in 200ms; the panel settles on the reference's 450ms panel curve from 98% with a 160ms

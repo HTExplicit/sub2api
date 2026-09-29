@@ -798,6 +798,9 @@
  * - Every selector starts with `:where(.flat-theme)`, so the theme switched
  *   off renders upstream. Upstream's `dark:` variants are restated with the
  *   same specificity: `:where(.flat-theme) .btn-secondary:is(.dark *)`.
+ *   A dark restatement carries colours only (color, background, border
+ *   colour, shadow): at 0,2,0 it beats page utilities (`input pl-7`) in dark
+ *   only, so box, type and motion stay in the selector without `.dark`.
  * - Values come from styles/console/tokens.css. Everything that is not a
  *   recipe restatement lives in styles/console/*.css (plain CSS, no @layer).
  * - Overlay recipes (.modal-*, .dropdown*, .toast*, .dialog-*) are restated in
@@ -983,8 +986,7 @@
    * outline. Its focus (an accent edge) is drawn in controls.css. The empty
    * field without a placeholder takes the 3:1 form-control line in
    * behaviour.css (B3.2). */
-  :where(.flat-theme) .input,
-  :where(.flat-theme) .input:is(.dark *) {
+  :where(.flat-theme) .input {
     border-radius: var(--ui-radius-md);
     border-color: rgb(var(--ui-line-strong));
     background-color: rgb(var(--ui-surface));
@@ -998,15 +1000,29 @@
     transition-timing-function: var(--ui-ease);
   }
 
-  :where(.flat-theme) .input::placeholder,
-  :where(.flat-theme) .input:is(.dark *)::placeholder {
+  :where(.flat-theme) .input:is(.dark *) {
+    border-color: rgb(var(--ui-line-strong));
+    background-color: rgb(var(--ui-surface));
+    color: rgb(var(--ui-ink));
+    box-shadow: none;
+  }
+
+  :where(.flat-theme) .input::placeholder {
     color: rgb(var(--ui-faint));
     opacity: 1;
   }
 
-  :where(.flat-theme) .input:disabled,
-  :where(.flat-theme) .input:disabled:is(.dark *) {
+  :where(.flat-theme) .input:is(.dark *)::placeholder {
+    color: rgb(var(--ui-faint));
+  }
+
+  :where(.flat-theme) .input:disabled {
     cursor: not-allowed;
+    background-color: rgb(var(--ui-subtle));
+    color: rgb(var(--ui-muted));
+  }
+
+  :where(.flat-theme) .input:disabled:is(.dark *) {
     background-color: rgb(var(--ui-subtle));
     color: rgb(var(--ui-muted));
   }
@@ -1018,8 +1034,7 @@
 
   /* the native select is the reference's house-select: 13px / 600 values, a
      12px chevron 9px from the right edge, the focus line on hover */
-  :where(.flat-theme) select.input:not([multiple]):not([size]),
-  :where(.flat-theme) select.input:not([multiple]):not([size]):is(.dark *) {
+  :where(.flat-theme) select.input:not([multiple]):not([size]) {
     appearance: none;
     cursor: pointer;
     background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%238e8e8e' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
@@ -1048,8 +1063,7 @@
 
   /* the field label is the reference's mono label (the sign-in field label:
      Geist Mono 10/15, 600, 0.12em, uppercase; 11/16 in the Chinese interface) */
-  :where(.flat-theme) .input-label,
-  :where(.flat-theme) .input-label:is(.dark *) {
+  :where(.flat-theme) .input-label {
     margin-bottom: 0.5rem;
     font-family: var(--ui-font-mono);
     font-size: var(--ui-label-size);
@@ -1060,11 +1074,18 @@
     color: rgb(var(--ui-label));
   }
 
-  :where(.flat-theme) .input-hint,
-  :where(.flat-theme) .input-hint:is(.dark *) {
+  :where(.flat-theme) .input-label:is(.dark *) {
+    color: rgb(var(--ui-label));
+  }
+
+  :where(.flat-theme) .input-hint {
     margin-top: 0.375rem;
     font-size: 0.75rem;
     line-height: 1.125rem;
+    color: rgb(var(--ui-muted));
+  }
+
+  :where(.flat-theme) .input-hint:is(.dark *) {
     color: rgb(var(--ui-muted));
   }
 
@@ -1080,8 +1101,7 @@
    * a 1px structural frame on the surface, radius 8, 2px inset; segments
    * 14px / 6px, 12.5px / 600, muted, ink on hover; the current one is ink
    * with on-ink text, fading in 200ms (upstream has no thumb to slide). */
-  :where(.flat-theme) .tabs,
-  :where(.flat-theme) .tabs:is(.dark *) {
+  :where(.flat-theme) .tabs {
     gap: 0;
     border: 1px solid rgb(var(--ui-line));
     border-radius: var(--ui-radius-lg);
@@ -1089,8 +1109,12 @@
     padding: 2px;
   }
 
-  :where(.flat-theme) .tab,
-  :where(.flat-theme) .tab:is(.dark *) {
+  :where(.flat-theme) .tabs:is(.dark *) {
+    border-color: rgb(var(--ui-line));
+    background-color: rgb(var(--ui-surface));
+  }
+
+  :where(.flat-theme) .tab {
     border-radius: var(--ui-radius-md);
     padding: 0.375rem 0.875rem;
     font-size: 0.78125rem;
@@ -1100,6 +1124,10 @@
     transition-property: color, background-color;
     transition-duration: var(--ui-duration-slide);
     transition-timing-function: var(--ui-ease-out);
+  }
+
+  :where(.flat-theme) .tab:is(.dark *) {
+    color: rgb(var(--ui-muted));
   }
 
   :where(.flat-theme) .tab:hover,
@@ -1119,12 +1147,15 @@
   /* ---------------------------------------------------------------- switch
    * The reference settings Toggle: 34 x 20, a 16px knob 2px in. On = ink.
    * Off = the 3:1 form-control line (the reference's ink at 20 % is 1.6:1). */
-  :where(.flat-theme) .switch,
-  :where(.flat-theme) .switch:is(.dark *) {
+  :where(.flat-theme) .switch {
     height: 1.25rem;
     width: 2.125rem;
     background-color: rgb(var(--ui-control-line));
     transition-duration: var(--ui-duration);
+  }
+
+  :where(.flat-theme) .switch:is(.dark *) {
+    background-color: rgb(var(--ui-control-line));
   }
 
   :where(.flat-theme) .switch-active,
@@ -1165,9 +1196,13 @@
    * proxy addresses) are the reference's value chip (REF-CONSOLE §8.7 prompt
    * chip, §8.15): Geist Mono in ink-soft on the subtle fill, radius 4. The
    * accent is not a code colour (preview decision D2). */
-  :where(.flat-theme) .code,
-  :where(.flat-theme) .code:is(.dark *) {
+  :where(.flat-theme) .code {
     border-radius: var(--ui-radius-sm);
+    background-color: rgb(var(--ui-subtle));
+    color: rgb(var(--ui-ink-soft));
+  }
+
+  :where(.flat-theme) .code:is(.dark *) {
     background-color: rgb(var(--ui-subtle));
     color: rgb(var(--ui-ink-soft));
   }

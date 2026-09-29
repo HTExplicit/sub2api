@@ -282,7 +282,7 @@
               <button @click="loadDashboardStats" :disabled="chartsLoading" class="btn btn-secondary">
                 {{ t('common.refresh') }}
               </button>
-              <div class="ml-auto flex items-center gap-2">
+              <div class="ml-auto flex items-center gap-2" data-ui="select-anchor">
                 <span class="text-sm font-medium text-gray-700 dark:text-gray-300"
                   >{{ t('admin.dashboard.granularity') }}:</span
                 >

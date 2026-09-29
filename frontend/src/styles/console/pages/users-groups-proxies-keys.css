@@ -26,12 +26,20 @@
 
 /* One row where it fits (REF §7.1: search, then the controls, the actions at the right end), items 8px apart and 12px
    between wrapped rows; the filters are as wide as their value, like the reference's filter pills, so every toolbar of the
-   group fits one row at 1440 (IP management's seven actions included). Below 640px the toolbar is the phone agent's
-   (user.css), so every toolbar rule here starts at 640px. */
+   group fits one row at 1440 (IP management's seven actions included). Below 640px the toolbar's layout is the phone
+   agent's (user.css), so every layout rule here starts at 640px. */
 @media (min-width: 640px) {
   html.flat-theme [data-ui~="mgmt-page"] > .layout-section-fixed:first-child > div:first-child {
     column-gap: 8px;
     row-gap: 12px;
+  }
+
+  /* where the actions wrap (IP management below about 1400px, redeem codes on a tablet) the search and the filters stay
+     on the first row, level with the first row of actions, instead of centring between the action rows; the wrapped
+     actions keep to the right end (their group's own justify-end). The groups toolbar has no flex-wrap: a column below
+     1024px, upstream's lg:items-start (the same first-row start) from there. */
+  html.flat-theme [data-ui~="mgmt-page"] > .layout-section-fixed:first-child > div:first-child[class~="flex-wrap"] {
+    align-items: flex-start;
   }
 
   html.flat-theme [data-ui~="mgmt-page"] > .layout-section-fixed:first-child > div:first-child > div[class~="flex"]:not(.relative) {
@@ -60,12 +68,30 @@
   }
 }
 
-/* The groups toolbar is a column below 1024px and a row above it (lg:flex-row): its two halves take one row there and the
-   actions sit at the right end. */
-@media (min-width: 1024px) {
-  html.flat-theme [data-ui~="groups-page"] > .layout-section-fixed:first-child > div:first-child {
-    align-items: center;
-  }
+/* The three search fields upstream draws without a glyph (redeem codes, promo codes, announcements: a bare .input in a
+   flex-1 sm:max-w-64 box) are the reference search the other six pages have (controls.css 3.2): the 13px Lucide search
+   glyph (stroke 1.8, as Icon.vue draws it) 10px in and centred, in --ctl-glyph through a mask so it follows the theme,
+   the text from 32px. At every width, like the other pages' template glyph (the phone layout stays user.css'). */
+html.flat-theme :is([data-ui~="redeem-page"], [data-ui~="promo-page"], [data-ui~="announcements-page"]) > .layout-section-fixed:first-child > div:first-child > div[class~="sm:max-w-64"]:has(> input.input) {
+  position: relative;
+}
+
+html.flat-theme :is([data-ui~="redeem-page"], [data-ui~="promo-page"], [data-ui~="announcements-page"]) > .layout-section-fixed:first-child > div:first-child > div[class~="sm:max-w-64"]:has(> input.input)::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 0.625rem;
+  width: 0.8125rem;
+  height: 0.8125rem;
+  transform: translateY(-50%);
+  background-color: rgb(var(--ctl-glyph));
+  -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='11' cy='11' r='8'/%3E%3Cpath d='m21 21-4.3-4.3'/%3E%3C/svg%3E") center / 100% 100% no-repeat;
+  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='11' cy='11' r='8'/%3E%3Cpath d='m21 21-4.3-4.3'/%3E%3C/svg%3E") center / 100% 100% no-repeat;
+  pointer-events: none;
+}
+
+html.flat-theme :is([data-ui~="redeem-page"], [data-ui~="promo-page"], [data-ui~="announcements-page"]) > .layout-section-fixed:first-child > div:first-child > div[class~="sm:max-w-64"] > input.input {
+  padding-left: 2rem;
 }
 
 /* Icon-only buttons (refresh, the subscription guide) are the reference's square: 30 x 30 (REF §8.3 icon buttons). They

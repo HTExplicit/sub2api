@@ -112,6 +112,30 @@ html.flat-theme .custom-page-layout {
   height: calc(100vh - var(--ui-shell-header-h) - var(--ui-shell-pad-top) - var(--ui-shell-pad-bottom));
 }
 
+/* Desktop: the header row grows when a page description wraps (header row, below), so a full-height page fills the
+   column under the header instead of subtracting a fixed header height. With the one-line header it ends where the
+   calc above ends it (900 - 30). */
+@media (min-width: 1024px) {
+  html.flat-theme .app-main:has(> main > :is(.table-page-layout, .custom-page-layout)) {
+    display: flex;
+    flex-direction: column;
+    height: 100vh;
+  }
+
+  html.flat-theme .app-main:has(> main > :is(.table-page-layout, .custom-page-layout)) > main {
+    display: flex;
+    flex: 1 1 0;
+    flex-direction: column;
+    min-height: 0;
+  }
+
+  html.flat-theme .app-main > main > :is(.table-page-layout, .custom-page-layout) {
+    flex: 1 1 0;
+    height: auto;
+    min-height: 0;
+  }
+}
+
 /* ================================================================== sidebar (REF §7.1, §8.1) */
 /* Same fill as the canvas, a 1px structural line on the right, no shadow. Width and padding follow the reference's
    clamps and slide in 160ms ease-out. */
@@ -476,7 +500,8 @@ html.flat-theme .app-main > header > div > div:last-child {
 }
 
 /* Desktop: the first row of the content column, 30px tall at the content gutter (/logs: y = 30), no fill, no line,
-   no blur, not sticky. */
+   no blur, not sticky. A description that does not fit wraps and the row grows with it; the controls keep to the
+   row's top, beside the title line (the 28px title line 1px down, where the 30px row centred it). */
 @media (min-width: 1024px) {
   html.flat-theme .app-main > header {
     position: static;
@@ -486,13 +511,16 @@ html.flat-theme .app-main > header > div > div:last-child {
   }
 
   html.flat-theme .app-main > header > div {
-    height: var(--ui-shell-row);
+    height: auto;
+    min-height: var(--ui-shell-row);
+    align-items: flex-start;
     gap: 16px;
   }
 
   html.flat-theme .app-main > header > div > div:first-child {
     flex: 1 1 auto;
     min-width: 0;
+    margin-top: calc((var(--ui-shell-row) - 28px) / 2);
   }
 
   html.flat-theme .app-main > header > div > div:last-child {
@@ -500,8 +528,9 @@ html.flat-theme .app-main > header > div > div:last-child {
     gap: 10px;
   }
 
-  /* Title · description on one line: the page title 20/28 600 (REF §8.2), the description 13px muted on the same
-     baseline after a faint dot; a description too long for the row ends in an ellipsis. */
+  /* Title · description: the page title 20/28 600 (REF §8.2), the description 13px muted on the same baseline
+     after a faint dot. A description longer than the row wraps, its lines under its first word (nothing is cut; the
+     ellipsis hid the end of 操作日志's and 提示词审计's notes). */
   html.flat-theme .app-main > header div:has(> h1) {
     display: flex;
     align-items: baseline;
@@ -518,16 +547,17 @@ html.flat-theme .app-main > header h1 {
 }
 
 html.flat-theme .app-main > header h1 + p {
+  display: flex;
+  align-items: baseline;
   min-width: 0;
-  overflow: hidden;
   font: 400 13px/19.5px var(--ui-font);
-  white-space: nowrap;
-  text-overflow: ellipsis;
+  overflow-wrap: anywhere;
   color: rgb(var(--ui-muted));
 }
 
 html.flat-theme .app-main > header h1 + p::before {
   content: '\00b7';
+  flex: none;
   margin: 0 8px 0 10px;
   color: rgb(var(--ui-faint));
 }

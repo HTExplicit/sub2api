@@ -2376,7 +2376,7 @@ html.flat-theme [data-ui="key-usage"] .skeleton {
  * Source: the reference console's settings language (artifacts/tmp/ui-el/ref/console/REF-CONSOLE.md §5, §8.3-§8.5,
  * §8.11, §8.16 and its public recipes: Modal, ConnectModal, DemoBanner, PromoField, TopUpModal, Toggle, AddChoice)
  * and its docs pages for long-form text (ref-docs-*: callouts, tables, code). A long form reads as the reference's
- * panels: section cards (the surface, 1px structural line, radius 8) with a header strip (14 / 20 title, 12.5px
+ * panels: section cards (the surface, 1px structural line, radius 8) with a header strip (13 / 19.5 title, 12.5px
  * muted description, 14 x 18 inset like its Modal) and a 16 x 18 body; mono field labels (controls.css), 34px
  * fields, 12px help text; switch rows with a 13 / 600 title and a 12px description beside a right-aligned switch,
  * hairlines between rows; nested groups as the reference's route cards; notices as its callouts. Colour stays for
@@ -2455,8 +2455,9 @@ html.flat-theme [data-ui~="settings"] .settings-tabs-shell.settings-tabs-shell::
 
 /* ================================================================== settings · 2 section cards */
 
-/* 2.1 Header strip: the reference Modal / panel header (px 18, py 14, the structural line under it); title 14 / 20
-   600 ink, description 12.5 / 18.75 muted two pixels under it. Upstream: 24px insets, an 18px title. */
+/* 2.1 Header strip: the reference Modal / panel header (px 18, py 14, the structural line under it); title 13 / 19.5
+   600 ink (the reference's page card titles, "Usage", "Request history"; 14 / 600 is its dialog title), description
+   12.5 / 18.75 muted two pixels under it. Upstream: 24px insets, an 18px title. */
 html.flat-theme [data-ui~="settings"] .card > div:first-child[class~="border-b"]:is([class~="px-6"], [class~="px-4"]) {
   gap: 0.75rem;
   padding: var(--set-head-py) var(--set-px);
@@ -2464,8 +2465,8 @@ html.flat-theme [data-ui~="settings"] .card > div:first-child[class~="border-b"]
 
 html.flat-theme [data-ui~="settings"] .card > div:first-child[class~="border-b"] :is(h2, h3) {
   gap: 0.5rem;
-  font-size: 0.875rem;
-  line-height: 1.25rem;
+  font-size: 0.8125rem;
+  line-height: 1.21875rem;
   font-weight: 600;
   letter-spacing: 0;
   color: rgb(var(--ui-ink));
@@ -2852,8 +2853,8 @@ html.flat-theme [data-ui~="settings"] .card[class~="p-6"] > div:first-child[clas
 }
 
 html.flat-theme [data-ui~="settings"] .card[class~="p-6"] > div:first-child[class~="mb-4"] h3 {
-  font-size: 0.875rem;
-  line-height: 1.25rem;
+  font-size: 0.8125rem;
+  line-height: 1.21875rem;
 }
 
 html.flat-theme [data-ui~="settings"] .card[class~="p-6"] > div:first-child[class~="mb-4"] h3 + p {
@@ -2954,15 +2955,53 @@ html.flat-theme [data-ui~="settings"] .card div[class~="rounded-lg"][class~="bor
   padding: 0.625rem 0.875rem;
 }
 
+/* 6.3 Empty lists (the exclusive users of 邀请返利 in 功能开关, the backup records in 数据备份: a table whose only row is one
+   colspan cell with a line of text): the shared empty state (data.css §9, the reference's "Nothing matches"; the same
+   drawing as the ops and risk pages' empty tables): a panel 16px inside the table, the dashed control outline,
+   radius 8, 120px, the message 14 / 500 ink-soft in its middle. The list's box is an inline-size container, so a
+   table wider than its box (the backup list's 800px on a narrow screen) keeps the panel and the message on the
+   visible width; the cell's right padding (a share of the table's width) takes the overflow. */
+html.flat-theme [data-ui~="settings"] .card div[class~="overflow-x-auto"]:has(> table > tbody > tr:only-child > td[colspan]:only-child) {
+  container-type: inline-size;
+}
+
+html.flat-theme [data-ui~="settings"] .card div[class~="overflow-x-auto"] > table > tbody > tr:only-child > td[colspan]:only-child {
+  position: relative;
+  height: 152px;
+  padding: 16px calc(100% - 100cqw + 32px) 16px 32px;
+  border-bottom-width: 0;
+  vertical-align: middle;
+  text-align: center;
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 20px;
+  color: rgb(var(--ui-ink-soft));
+  white-space: normal;
+}
+
+html.flat-theme [data-ui~="settings"] .card div[class~="overflow-x-auto"] > table > tbody > tr:only-child > td[colspan]:only-child::after {
+  position: absolute;
+  top: 16px;
+  bottom: 16px;
+  left: 16px;
+  width: calc(100cqw - 32px);
+  border: 1px dashed rgb(var(--ui-line-strong));
+  border-radius: var(--ui-radius-lg);
+  content: "";
+  pointer-events: none;
+}
+
 /* ================================================================== 7 · page heads of the fork pages and plugins */
 
 /* 7.1 The page's own heading repeats the header row's title word for word (系统提示词 in Chinese — its route title is
-   not translated —, Codex 路由设置, 插件管理). From 1024px, where the header row shows the title, it is kept for
-   assistive technology only; below that the header hides its title and the page heading stays. */
+   not translated —, Codex 路由设置, 插件管理), and the plugins intro repeats the header's description word for word.
+   From 1024px, where the header row shows both, they are kept for assistive technology only; below that the header
+   hides its title and description and the page's own stay. */
 @media (min-width: 1024px) {
   html.flat-theme:lang(zh) [data-ui~="system-prompts"] > header h1,
   html.flat-theme [data-ui~="codex-runtime"] > h2:first-child,
-  html.flat-theme [data-ui~="plugins"] > section:first-child h2 {
+  html.flat-theme [data-ui~="plugins"] > section:first-child h2,
+  html.flat-theme [data-ui~="plugins"] > section:first-child > div:first-child > p {
     position: absolute;
     width: 1px;
     height: 1px;
@@ -2972,7 +3011,8 @@ html.flat-theme [data-ui~="settings"] .card div[class~="rounded-lg"][class~="bor
   }
 }
 
-/* 7.2 The intro under the title: the reference's page intro (13px on a relaxed line, muted, 780px at most). */
+/* 7.2 The intro under the title: the reference's page intro (13px on a relaxed line, muted, 780px at most); a
+   wrapped intro keeps more than one character on its last line (the Codex intro ended on a lone 「证。」). */
 html.flat-theme [data-ui~="system-prompts"] > header p,
 html.flat-theme [data-ui~="codex-runtime"] > h2:first-child + p,
 html.flat-theme [data-ui~="plugins"] > section:first-child > div:first-child > p {
@@ -2980,11 +3020,17 @@ html.flat-theme [data-ui~="plugins"] > section:first-child > div:first-child > p
   font-size: 0.8125rem;
   line-height: 1.625;
   color: rgb(var(--ui-muted));
+  text-wrap: pretty;
 }
 
 /* (the shell's page rhythm, 0,6,2, spaces main's direct children; the doubled root attribute outranks it) */
 @media (min-width: 1024px) {
   html.flat-theme [data-ui~="codex-runtime"][data-ui~="codex-runtime"] > h2:first-child:not([hidden]) + p:not([hidden]) {
+    margin-top: 0;
+  }
+
+  /* with the title and the intro read-only for assistive technology, the capability chips open the plugins head */
+  html.flat-theme [data-ui~="plugins"] > section:first-child > div:first-child > p + div {
     margin-top: 0;
   }
 }
@@ -3064,7 +3110,7 @@ html.flat-theme [data-ui~="system-prompts"] > section > p[class~="text-xs"] {
   line-height: 1.125rem;
 }
 
-/* 8.3 The library card: its title row is the card's header strip (14 x 18, the line under it, 14 / 600 title, the
+/* 8.3 The library card: its title row is the card's header strip (14 x 18, the line under it, 13 / 600 title, the
    add button at the right); each prompt is a row under a hairline; the body is the reference's code (Geist Mono
    12.5 on a 1.625 line); the byte count and the users in the mono meta line. */
 html.flat-theme [data-ui~="system-prompts"] > section:last-of-type > div:first-child {
@@ -3074,8 +3120,8 @@ html.flat-theme [data-ui~="system-prompts"] > section:last-of-type > div:first-c
 }
 
 html.flat-theme [data-ui~="system-prompts"] > section:last-of-type > div:first-child > h2 {
-  font-size: 0.875rem;
-  line-height: 1.25rem;
+  font-size: 0.8125rem;
+  line-height: 1.21875rem;
   font-weight: 600;
   color: rgb(var(--ui-ink));
 }
@@ -3365,7 +3411,7 @@ html.flat-theme [data-ui~="plugins"] > div[class~="border-dashed"] > p:last-of-t
 }
 
 /* 10.3 Plugin cards (installed and retired): section cards; the head is the header strip (14 x 18, the line under
-   it) with the name 14 / 600, the version in Geist Mono 11 muted, the id and state as small chips; the facts as a
+   it) with the name 13 / 600, the version in Geist Mono 11 muted, the id and state as small chips; the facts as a
    two-column definition list (12 / 18, labels muted, values ink-soft, identifiers in Geist Mono); section labels
    are the mono label; JSON is the reference's snippet (the page ground, radius 6, Geist Mono 11.5 on 1.6). */
 html.flat-theme :is([data-ui~="plugins"], [data-testid="retired-plugins"]) article.card > div:first-child[class~="border-b"] {
@@ -3373,8 +3419,8 @@ html.flat-theme :is([data-ui~="plugins"], [data-testid="retired-plugins"]) artic
 }
 
 html.flat-theme :is([data-ui~="plugins"], [data-testid="retired-plugins"]) article.card h3 {
-  font-size: 0.875rem;
-  line-height: 1.25rem;
+  font-size: 0.8125rem;
+  line-height: 1.21875rem;
   font-weight: 600;
   color: rgb(var(--ui-ink));
 }
@@ -3436,15 +3482,16 @@ html.flat-theme :is([data-ui~="plugins"], [data-testid="retired-plugins"]) :is(a
   color: rgb(var(--ui-ink-soft));
 }
 
-/* the retired section's title: a section title (14 / 600) with its description, no rule (the cards carry lines) */
+/* the retired section's title: a section title (13 / 600, as the card titles) with its description, no rule (the
+   cards carry lines) */
 html.flat-theme [data-testid="retired-plugins"] > div:first-child {
   border-bottom: 0;
   padding-bottom: 0;
 }
 
 html.flat-theme [data-testid="retired-plugins"] > div:first-child > h2 {
-  font-size: 0.875rem;
-  line-height: 1.25rem;
+  font-size: 0.8125rem;
+  line-height: 1.21875rem;
   font-weight: 600;
   color: rgb(var(--ui-ink));
 }
@@ -3466,6 +3513,38 @@ html.flat-theme [data-testid="retired-plugins"] > :not([hidden]) ~ :not([hidden]
 
 html.flat-theme [data-testid="retired-plugins-receipt"] {
   padding: var(--set-body-py) var(--set-px);
+}
+
+/* ================================================================== 10b · the dialogs drawn inside the settings page */
+
+/* The affiliate add / edit and batch-rate dialogs and the web search test dialog are built from utilities inside the
+   page (no BaseDialog): drawn as the reference Modal like every other console dialog — the title as its header strip
+   (14 / 20 600 ink, 14 x 18, the structural line under it; 57px like the Modal header whose 28px close button sets
+   its height, the title centred in it), the body 16 x 18, the button row as the footer strip (12 x 18, the line above
+   it). They have no close button (upstream structure; cancel / close stay in the footer). */
+html.flat-theme [data-ui~="settings"] div[class~="fixed"][class~="inset-0"] > div[class~="bg-white"][class~="p-6"]:is([class~="shadow-xl"], [class~="shadow-2xl"]) {
+  padding: var(--ui-dialog-body-y) var(--ui-dialog-x);
+}
+
+html.flat-theme [data-ui~="settings"] div[class~="fixed"][class~="inset-0"] > div[class~="bg-white"][class~="p-6"]:is([class~="shadow-xl"], [class~="shadow-2xl"]) > h3:first-child {
+  display: flex;
+  align-items: center;
+  box-sizing: border-box;
+  min-height: 57px;
+  margin: calc(var(--ui-dialog-body-y) * -1) calc(var(--ui-dialog-x) * -1) var(--ui-dialog-body-y);
+  border-bottom: 1px solid rgb(var(--ui-line));
+  padding: var(--ui-dialog-head-y) var(--ui-dialog-x);
+  font-size: 0.875rem;
+  line-height: 1.25rem;
+  font-weight: 600;
+  letter-spacing: 0;
+  color: rgb(var(--ui-ink));
+}
+
+html.flat-theme [data-ui~="settings"] div[class~="fixed"][class~="inset-0"] > div[class~="bg-white"][class~="p-6"]:is([class~="shadow-xl"], [class~="shadow-2xl"]) > div:last-child[class~="flex"]:is([class~="mt-6"], [class~="mt-4"]):has(.btn) {
+  margin: var(--ui-dialog-body-y) calc(var(--ui-dialog-x) * -1) calc(var(--ui-dialog-body-y) * -1);
+  border-top: 1px solid rgb(var(--ui-line));
+  padding: var(--ui-dialog-foot-y) var(--ui-dialog-x);
 }
 
 /* ================================================================== 11 · option chips, the payment provider dialog */

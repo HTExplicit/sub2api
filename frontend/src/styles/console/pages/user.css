@@ -45,7 +45,7 @@ html.flat-theme [data-testid="profile-shell"] [class~="space-y-6"] > :not([hidde
    12 / 16 on the structural line with the title 14 / 600 (the reference's modal and card titles) and its note
    12.5px muted. */
 html.flat-theme :is([data-ui="user-redeem"], [data-ui="user-affiliate"], [data-ui="user-purchase"], [data-testid="profile-shell"]) .card:is([class~="p-6"], [class~="p-5"]),
-html.flat-theme :is([data-ui="user-redeem"], [data-testid="profile-shell"]) .card > div:is([class~="p-6"], [class~="px-6"][class~="py-6"]) {
+html.flat-theme :is([data-ui="user-redeem"], [data-testid="profile-shell"]) .card:not([data-testid="profile-overview-hero"]) > div:is([class~="p-6"], [class~="px-6"][class~="py-6"]) {
   padding: 16px;
 }
 
@@ -1334,9 +1334,10 @@ html.flat-theme .custom-page-layout > .card {
   border-radius: var(--ui-radius-lg);
 }
 
-/* 7.2 Image studio: the form is a card (8px, 1px line, 16px); the mode switch is the segmented control; the
-   in-page title repeats the header row's title and description on a desktop, so it steps back there (the header row
-   hides on phones, where the page's own title stays). */
+/* 7.2 Image studio: the form is a card (8px, 1px line, 16px); the mode switch is the segmented control. The page's
+   own h1 repeats the title the header prints at every width (the desktop header row; below 1024px the 47px bar,
+   shell.css), so it is kept for assistive technology only; the intro under it repeats the header row's description
+   on a desktop only (the phone bar shows the title alone), so it steps back there. */
 html.flat-theme [data-testid="image-studio-layout"] > form {
   padding: 16px;
   border-color: rgb(var(--ui-line));
@@ -1344,13 +1345,23 @@ html.flat-theme [data-testid="image-studio-layout"] > form {
   background-color: rgb(var(--ui-surface));
 }
 
-@media (min-width: 1024px) {
-  html.flat-theme div:has(> [data-testid="image-studio-layout"]) > header > div:first-child:has(> h1) {
-    display: none;
-  }
+html.flat-theme div:has(> [data-testid="image-studio-layout"]) > header > div:first-child > h1 {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
 
-  html.flat-theme div:has(> [data-testid="image-studio-layout"]) > header:not(:has(> button)) {
-    display: none;
+@media (min-width: 1024px) {
+  html.flat-theme div:has(> [data-testid="image-studio-layout"]) > header > div:first-child > p {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
   }
 
   html.flat-theme div:has(> [data-testid="image-studio-layout"]) > header:has(> button) {
@@ -1465,9 +1476,10 @@ html.flat-theme [data-ui="model-plaza"] div[class~="rounded-2xl"][class~="border
   font-size: 13px;
 }
 
-/* 7.5 Available channels (a plain table, not DataTable): the header is the reference's table header (40px, the mono
-   label, the structural line under it, no band), the empty and loading states the console's (a 20px faint glyph,
-   the title 14 / 500 ink-soft, 48px of air). */
+/* 7.5 Available channels (a plain table, not DataTable): the header is the console's table header (data.css: 40px,
+   Geist Mono 500 at the label size on a 19.5px line, the table-head grey, the surface under it, the structural
+   line; REF §8.7), the empty and loading states the console's (a 20px faint glyph, the title 14 / 500 ink-soft,
+   48px of air). */
 html.flat-theme [data-ui="user-available-channels"] .table-wrapper > table > thead > tr {
   border-bottom-color: rgb(var(--ui-line));
   background-color: transparent;
@@ -1476,8 +1488,9 @@ html.flat-theme [data-ui="user-available-channels"] .table-wrapper > table > the
 html.flat-theme [data-ui="user-available-channels"] .table-wrapper > table > thead > tr > th {
   height: 40px;
   padding: 10px 12px;
-  color: rgb(var(--ui-label));
-  font: var(--ui-label-font);
+  background-color: rgb(var(--ui-surface));
+  color: rgb(var(--ui-table-head));
+  font: 500 var(--ui-label-size) / 19.5px var(--ui-font-mono);
   letter-spacing: var(--ui-label-tracking);
   text-transform: uppercase;
   text-align: left;
@@ -1583,6 +1596,17 @@ html.flat-theme [data-ui="user-orders"] > .table-wrapper .table-body > tr > td[c
     flex: 1 1 100%;
   }
 
+  /* the same squeezed search on 订单管理 (the ops agent's page root, orders-page: the filter card's first row) */
+  html.flat-theme [data-ui~="orders-page"] > .card:first-child > div > div[class~="flex-1"]:has(> input.input) {
+    flex: 1 1 100%;
+  }
+
+  /* 用户管理: with the search on its own row the actions wrapped to the start of the next one; they keep to the row's
+     end like every other management toolbar's */
+  html.flat-theme .table-page-layout[data-ui~="users-page"] > .layout-section-fixed:first-child > div > div[class~="justify-end"] {
+    margin-left: auto;
+  }
+
   /* 8.2 Affiliate: the four figures two to a row (the reference's phone KPIs, REF §7.4: grid-cols-2) */
   html.flat-theme [data-ui="user-affiliate"] > div[class~="grid"]:has(> .card[class~="p-5"]) {
     grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -1607,6 +1631,12 @@ html.flat-theme [data-ui="user-orders"] > .table-wrapper .table-body > tr > td[c
     grid-column: 1 / -1;
   }
 
+  /* the user dashboard's balance tile likewise takes the row (in a half-width tile the grouped figure broke inside
+     its digits: "…212.4 / 3") */
+  html.flat-theme [data-ui="user-dashboard"] [class~="grid"] > .card[class~="p-4"]:has(p[class~="text-emerald-600"]) {
+    grid-column: 1 / -1;
+  }
+
   /* 8.3 Redeem: the balance a size down so a long figure keeps one line on a phone; the activity pager puts the count
      on its own line and the page controls together under it */
   html.flat-theme [data-ui="user-redeem"] > .card:last-child div[class~="mt-4"][class~="justify-between"][class~="text-sm"] > span:first-child {
@@ -1620,6 +1650,31 @@ html.flat-theme [data-ui="user-orders"] > .table-wrapper .table-body > tr > td[c
 }
 
 @media (max-width: 1023.98px) {
+  /* 8.0 Below 1024px the 47px bar prints the page title (shell.css), so a page's own heading that repeats it word for
+     word is kept for assistive technology only, as the pages already do from 1024px: 系统提示词 (its route title is
+     Chinese), Codex 路由设置, 插件管理, 风控中心, 提示词审计, 渠道监控 (the image studio: 7.2). The intros under them
+     stay. */
+  html.flat-theme:lang(zh) [data-ui~="system-prompts"] > header h1,
+  html.flat-theme [data-ui~="codex-runtime"] > h2:first-child,
+  html.flat-theme [data-ui~="plugins"] > section:first-child h2,
+  html.flat-theme [data-ui~="risk-page"] h1[class~="text-2xl"],
+  html.flat-theme [data-ui~="prompt-audit-page"] h1[class~="text-2xl"],
+  html.flat-theme [data-ui~="channel-monitor-page"] h1.page-title {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+
+  /* 8.0b API keys: the search and the filters above the actions, as on every other toolbar at this width and on the
+     reference's /models phone toolbar (the desktop already sets them on one row, 2.0); the keyboard order stays
+     upstream's */
+  html.flat-theme .table-page-layout:has(> .layout-section-scrollable .table-wrapper[data-table="keys"]) > .layout-section-fixed:first-child + .layout-section-fixed {
+    order: -1;
+  }
+
   /* 8.3b Available channels: the refresh button beside the search (one toolbar row, as the reference's phone toolbar
      keeps a field and its buttons together) instead of alone on a second row */
   html.flat-theme [data-ui="user-available-channels"] > .layout-section-fixed > div[class~="flex-col"][class~="lg:flex-row"] {
@@ -1635,12 +1690,13 @@ html.flat-theme [data-ui="user-orders"] > .table-wrapper .table-body > tr > td[c
   /* 8.4 Operation log (the ops agent's page) in upstream's table mode below 1024px: the table may shrink to the screen
      (min-width 100 %) while the operator and action cells may wrap anywhere (behaviour B1.12, never cut), so the two
      columns fell to one or two characters a line ("ad / min. / us"). They keep a readable measure and the table
-     scrolls sideways instead (D9). */
+     scrolls sideways instead (D9); the action column holds the long action ids whole ("admin.backups.s3_config.read"
+     broke before its last letter at 13rem). */
   html.flat-theme .table-page-layout.mobile-mode .table-wrapper td[data-column="actor"] > div[class~="min-w-0"][class~="max-w-[220px]"] {
     min-width: 9rem;
   }
 
   html.flat-theme .table-page-layout.mobile-mode .table-wrapper td[data-column="action"] > div[class~="min-w-0"][class~="max-w-xs"] {
-    min-width: 13rem;
+    min-width: 16rem;
   }
 }

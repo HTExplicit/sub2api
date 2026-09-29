@@ -346,10 +346,17 @@ const handleOptionMouseEnter = (option: any, index: number) => {
   focusedIndex.value = index
 }
 
+// Console theme (html.flat-theme) only: a labelled filter pill that draws this select inside itself carries
+// data-ui~="select-anchor", and the list opens under the pill (its left edge, at least its width). Theme off: the
+// select's own root, as upstream.
+const dropdownAnchor = (container: HTMLElement): HTMLElement =>
+  (document.documentElement.classList.contains('flat-theme') &&
+    container.closest<HTMLElement>('[data-ui~="select-anchor"]')) || container
+
 // Update trigger rect periodically while open to follow scroll/resize
 const updateTriggerRect = () => {
   if (containerRef.value) {
-    triggerRect.value = containerRef.value.getBoundingClientRect()
+    triggerRect.value = dropdownAnchor(containerRef.value).getBoundingClientRect()
   }
 }
 

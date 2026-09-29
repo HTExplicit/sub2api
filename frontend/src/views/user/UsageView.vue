@@ -14,7 +14,7 @@
                 @change="onDateRangeChange"
               />
             </div>
-            <div class="ml-auto flex items-center gap-2">
+            <div class="ml-auto flex items-center gap-2" data-ui="select-anchor">
               <span class="text-sm font-medium text-gray-700 dark:text-gray-300">{{ t('admin.dashboard.granularity') }}:</span>
               <div class="w-28">
                 <Select v-model="granularity" :options="granularityOptions" @change="loadChartData" />
@@ -69,11 +69,11 @@
       <div class="card p-6">
         <div class="flex flex-wrap items-end justify-between gap-4">
           <div v-if="activeTab === 'errors'" class="flex flex-1 flex-wrap items-end gap-4">
-            <div class="w-full sm:w-auto sm:min-w-[220px]">
+            <div data-ui="select-anchor" class="w-full sm:w-auto sm:min-w-[220px]">
               <label class="input-label">{{ t('usage.errors.keyName') }}</label>
               <Select v-model="errorFilter.api_key_id" :options="errorKeyOptions" @change="applyErrorFilters" />
             </div>
-            <div class="w-full sm:w-auto sm:min-w-[220px]">
+            <div data-ui="select-anchor" class="w-full sm:w-auto sm:min-w-[220px]">
               <label class="input-label">{{ t('usage.errors.model') }}</label>
               <Select
                 v-model="errorFilter.model"
@@ -85,41 +85,41 @@
                 @change="applyErrorFilters"
               />
             </div>
-            <div class="w-full sm:w-auto sm:min-w-[200px]">
+            <div data-ui="select-anchor" class="w-full sm:w-auto sm:min-w-[200px]">
               <label class="input-label">{{ t('usage.errors.category') }}</label>
               <Select v-model="errorFilter.category" :options="errorCategoryOptions" @change="applyErrorFilters" />
             </div>
-            <div class="w-full sm:w-auto sm:min-w-[180px]">
+            <div data-ui="select-anchor" class="w-full sm:w-auto sm:min-w-[180px]">
               <label class="input-label">{{ t('usage.errors.status') }}</label>
               <Select v-model="errorFilter.status_code" :options="errorStatusOptions" @change="applyErrorFilters" />
             </div>
           </div>
           <div v-else class="flex flex-1 flex-wrap items-end gap-4">
-            <div class="w-full sm:w-auto sm:min-w-[220px]">
+            <div data-ui="select-anchor" class="w-full sm:w-auto sm:min-w-[220px]">
               <label class="input-label">{{ t('usage.apiKeyFilter') }}</label>
               <Select v-model="filters.api_key_id" :options="apiKeyOptions" @change="applyFilters" />
             </div>
-            <div class="w-full sm:w-auto sm:min-w-[220px]">
+            <div data-ui="select-anchor" class="w-full sm:w-auto sm:min-w-[220px]">
               <label class="input-label">{{ t('usage.model') }}</label>
               <Select v-model="filters.model" :options="modelOptions" searchable @change="applyFilters" />
             </div>
-            <div class="w-full sm:w-auto sm:min-w-[200px]">
+            <div data-ui="select-anchor" class="w-full sm:w-auto sm:min-w-[200px]">
               <label class="input-label">{{ t('admin.usage.group') }}</label>
               <Select v-model="filters.group_id" :options="groupOptions" searchable @change="applyFilters" />
             </div>
-            <div class="w-full sm:w-auto sm:min-w-[180px]">
+            <div data-ui="select-anchor" class="w-full sm:w-auto sm:min-w-[180px]">
               <label class="input-label">{{ t('usage.type') }}</label>
               <Select v-model="filters.request_type" :options="requestTypeOptions" @change="applyFilters" />
             </div>
-            <div class="w-full sm:w-auto sm:min-w-[180px]">
+            <div data-ui="select-anchor" class="w-full sm:w-auto sm:min-w-[180px]">
               <label class="input-label">{{ t('usage.compactionFilter') }}</label>
               <Select v-model="filters.native_compaction_v2" :options="compactionOptions" @change="applyFilters" />
             </div>
-            <div v-if="subscriptionFeatureEnabled" class="w-full sm:w-auto sm:min-w-[200px]">
+            <div v-if="subscriptionFeatureEnabled" data-ui="select-anchor" class="w-full sm:w-auto sm:min-w-[200px]">
               <label class="input-label">{{ t('admin.usage.billingType') }}</label>
               <Select v-model="filters.billing_type" :options="billingTypeOptions" @change="applyFilters" />
             </div>
-            <div class="w-full sm:w-auto sm:min-w-[200px]">
+            <div data-ui="select-anchor" class="w-full sm:w-auto sm:min-w-[200px]">
               <label class="input-label">{{ t('admin.usage.billingMode') }}</label>
               <Select v-model="filters.billing_mode" :options="billingModeOptions" @change="applyFilters" />
             </div>

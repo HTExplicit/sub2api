@@ -330,9 +330,16 @@ html.flat-theme .table-wrapper.is-scrollable .sticky-col-left-second::after {
   background: rgb(var(--ui-line));
 }
 
+/* the sticky actions column keeps its 1px line and gains a 12px soft edge (ink at 5 %; at 7 % 链接失败 fell to 4.49:1),
+   so a value cut at rest reads as running on under the column (IP 管理 有效期 read "2026/10/2") (final review V1-12) */
 html.flat-theme .table-wrapper.is-scrollable .sticky-col-right::before {
-  width: 1px;
-  background: rgb(var(--ui-line));
+  width: 12px;
+  background: linear-gradient(to left, rgb(var(--ui-ink) / 0.05), rgb(var(--ui-ink) / 0));
+  box-shadow: inset -1px 0 0 rgb(var(--ui-line));
+}
+
+html.flat-theme.dark .table-wrapper.is-scrollable .sticky-col-right::before {
+  background: linear-gradient(to left, rgb(0 0 0 / 0.35), rgb(0 0 0 / 0));
 }
 
 /* DataTable's own selection column and a `select` column: fixed width, so the second sticky column starts where
@@ -352,10 +359,20 @@ html.flat-theme .table-wrapper .table-body > tr > td[class~="w-11"]:first-child 
   text-align: left;
 }
 
+/* the select column's lone checkbox (DataTable's own column: 用户; a page's `select` column: 兑换码, IP, 订阅) sat
+   inline on the text baseline, 3px above the row's centre; as a block the cell's vertical-align centres it, the left
+   inset unchanged (the accounts table's label wrapper is centred already) (final review V1-09) */
+html.flat-theme .table-wrapper :is(.table-header > tr > th, .table-body > tr > td):is([class~="w-11"]:first-child, [data-column="select"]) > input[type="checkbox"]:only-child {
+  display: block;
+  margin: 0;
+}
+
 /* Empty: the reference's dashed frame (REF §8.7: cell inset 32 / 16, dashed --ui-line-strong, 8px radius, 240px
-   tall; title 14/500 ink-soft). Upstream's inbox glyph stays, at the reference's icon size. */
+   tall; title 14/500 ink-soft), with no row line under it (the reference's last:border-b-0; final review V1-11).
+   Upstream's inbox glyph stays, at the reference's icon size. */
 html.flat-theme .table-wrapper .table-body > tr > td[colspan]:only-child:not([style]) {
   padding: 32px var(--ui-table-edge-x);
+  border-bottom-width: 0;
 }
 
 html.flat-theme .table-wrapper .table-body > tr > td[colspan]:only-child:not([style]) > div[class~="flex-col"] {
@@ -507,6 +524,12 @@ html.flat-theme .table-page-layout > .layout-section-scrollable:has(> .table-scr
   border-radius: 0 0 var(--ui-radius-lg) var(--ui-radius-lg);
 }
 
+/* below unframed content (the accounts card view) the pagination is a bar of its own (final review V1-07) */
+html.flat-theme .table-page-layout > .layout-section-scrollable:has(> .table-scroll-container-unframed) + .layout-section-fixed > [data-ui="pagination"] {
+  border: 1px solid rgb(var(--ui-line));
+  border-radius: var(--ui-radius-lg);
+}
+
 /* ================================================================== 3 · plain tables */
 
 /* Upstream's hand-built tables with a grey header band (thead.bg-gray-50: ops, rankings, dialogs): the header reads
@@ -516,9 +539,10 @@ html.flat-theme table > thead[class~="bg-gray-50"] {
   background-color: transparent;
 }
 
-/* the header draws the line under itself (it may stick), so the body's own top line is dropped; a white body is the
-   surface in dark mode too (upstream: dark-900, a step below the card) */
-html.flat-theme table > thead[class~="bg-gray-50"] + tbody {
+/* the header draws the line under itself (it may stick), so the body's own top line is dropped, also where the table
+   divides its sections (divide-y, 0,3,0: the user ranking's 2px) (final review V1-08); a white body is the surface
+   in dark mode too (upstream: dark-900, a step below the card) */
+html.flat-theme table > thead[class~="bg-gray-50"] + tbody:not([hidden]) {
   border-top-width: 0;
 }
 
@@ -562,6 +586,12 @@ html.flat-theme [class~="max-h-48"][class~="overflow-auto"] > table[class~="text
   letter-spacing: 0.025em;
   text-transform: uppercase;
   vertical-align: bottom;
+}
+
+/* the sticky header draws the line under itself, so the first row's own top line (upstream's border-t on every row)
+   goes: one 1px line under the header, as under every other table's (final review V1-08) */
+html.flat-theme [class~="max-h-48"][class~="overflow-auto"] > table[class~="text-xs"] > tbody > tr:first-child {
+  border-top-width: 0;
 }
 
 html.flat-theme [class~="max-h-48"][class~="overflow-auto"] > table[class~="text-xs"] > tbody > tr > td {

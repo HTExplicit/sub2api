@@ -14,7 +14,7 @@
                 @change="onDateRangeChange"
               />
             </div>
-            <div class="ml-auto flex items-center gap-2">
+            <div class="ml-auto flex items-center gap-2" data-ui="select-anchor">
               <span class="text-sm font-medium text-gray-700 dark:text-gray-300">{{ t('admin.dashboard.granularity') }}:</span>
               <div class="w-28">
                 <Select v-model="granularity" :options="granularityOptions" @change="loadChartData" />

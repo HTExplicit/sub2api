@@ -357,12 +357,27 @@ html.flat-theme .date-picker-apply.date-picker-apply:hover {
   color: rgb(var(--ui-on-ink));
 }
 
+/* 4.3b Native date and time fields (date, datetime-local, time, month, week) keep the control heights: Chromium pads
+   their inner field row 1px top and bottom, so they stood 2px taller than the text field beside them (32 in a 30px
+   toolbar row, 36 among 34px form fields; the ops custom range 35.5 over its 34px minimum). (final review V2-07) */
+html.flat-theme input:is([type="date"], [type="datetime-local"], [type="time"], [type="month"], [type="week"])::-webkit-datetime-edit-fields-wrapper {
+  padding-top: 0;
+  padding-bottom: 0;
+}
+
 /* 4.4 Toolbar density (integration review): a toolbar row holds one control height. The table pages' fixed rows
    (actions, filters, pagination) and a horizontal row that holds a .btn (the dashboards' time-range bar) draw their
    fields and their Select / DateRangePicker triggers at the 30px of the search field, the filter pills and the
    buttons (the reference's /models filter row); a 34px trigger beside a 30px search or button reads as a misaligned
    row. Labelled form fields elsewhere keep the reference's 34px field. */
 html.flat-theme :is(.table-page-layout > .layout-section-fixed, [class~="flex"][class~="items-center"]:not([class~="flex-col"]):has(> .btn)) :is(.select-trigger.select-trigger, .date-picker-trigger.date-picker-trigger, input.input:not([type="checkbox"], [type="radio"]), select.input) {
+  padding-top: 0.265625rem;
+  padding-bottom: 0.265625rem;
+}
+
+/* 4.4b The same in a dialog: a row that holds a button (余额记录's type filter beside 充值 / 退款, the 专属倍率 / 专属 RPM add
+   rows, bottom-aligned) draws its fields at the button's 30px (final review V1-10) */
+html.flat-theme .modal-body [class~="flex"]:is([class~="items-center"], [class~="items-end"]):not([class~="flex-col"]):has(> button) :is(.select-trigger.select-trigger, .date-picker-trigger.date-picker-trigger, input.input:not([type="checkbox"], [type="radio"]), select.input) {
   padding-top: 0.265625rem;
   padding-bottom: 0.265625rem;
 }
@@ -631,6 +646,12 @@ html.flat-theme .settings-tab .settings-tab-icon.settings-tab-icon {
   width: auto;
   border-radius: 0;
   background: none;
+  color: inherit;
+}
+
+/* hovered or keyboard-focused, the icon still follows the tab's text: the view's scoped dark hover colour (gray-200,
+   0,5,0) left it #e5e5e5 on the current tab's #f2f2f2 fill, 1.13:1 (final review V2-24) */
+html.flat-theme .settings-tab.settings-tab:is(:hover, :focus-visible) .settings-tab-icon.settings-tab-icon.settings-tab-icon {
   color: inherit;
 }
 

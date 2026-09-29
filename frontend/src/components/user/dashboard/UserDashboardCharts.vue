@@ -10,7 +10,7 @@
         <button @click="$emit('refresh')" :disabled="loading" class="btn btn-secondary">
           {{ t('common.refresh') }}
         </button>
-        <div class="ml-auto flex items-center gap-2">
+        <div class="ml-auto flex items-center gap-2" data-ui="select-anchor">
           <span class="text-sm font-medium text-gray-700 dark:text-gray-300">{{ t('dashboard.granularity') }}:</span>
           <div class="w-28">
             <Select :model-value="granularity" :options="[{value:'day', label:t('dashboard.day')}, {value:'hour', label:t('dashboard.hour')}]" @update:model-value="$emit('update:granularity', $event)" @change="$emit('granularityChange')" />

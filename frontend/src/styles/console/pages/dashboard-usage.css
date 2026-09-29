@@ -164,6 +164,20 @@ html.flat-theme [data-ui="usage-filters"] > div > div[class~="flex-1"] > div > b
   color: rgb(var(--ui-ink));
 }
 
+/* The menus open from the pill, as the reference's FilterMenu opens from its trigger (REF §8.6: 4px under it, its left
+   edge): the time range's panel takes the pill as its positioning box (the picker's own wrapper steps aside), flush
+   with the pill's outer left edge and 4px under it (final review V1-02). The Select lists anchor to the pill through
+   data-ui~="select-anchor" (components/common/Select.vue, theme on only). */
+html.flat-theme :is([data-ui="admin-dashboard"], [data-ui="admin-usage"], [data-ui="user-dashboard"], [data-ui="user-usage"]) .card[class~="p-4"]:has(> div > div > [class~="relative"] > .date-picker-trigger) > div > div[class~="items-center"][class~="gap-2"] > div[class~="relative"]:has(> .date-picker-trigger) {
+  position: static;
+}
+
+html.flat-theme :is([data-ui="admin-dashboard"], [data-ui="admin-usage"], [data-ui="user-dashboard"], [data-ui="user-usage"]) .card[class~="p-4"]:has(> div > div > [class~="relative"] > .date-picker-trigger) > div > div[class~="items-center"][class~="gap-2"] > div[class~="relative"]:has(> .date-picker-trigger) > .date-picker-dropdown {
+  top: calc(100% + 5px);
+  left: -1px;
+  margin-top: 0;
+}
+
 /* ================================================================== 4 · filter rows */
 
 /* The admin filter strip (UsageFilters) and the user filters: one wrapping row of pills with the actions at its end,
