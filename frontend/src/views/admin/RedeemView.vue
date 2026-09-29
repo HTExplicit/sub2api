@@ -283,7 +283,7 @@
           <h2 class="mb-4 text-lg font-semibold text-gray-900 dark:text-white">
             {{ t('admin.redeem.generateCodesTitle') }}
           </h2>
-          <form @submit.prevent="handleGenerateCodes" class="space-y-4">
+          <form data-ui="redeem-generate-form" @submit.prevent="handleGenerateCodes" class="space-y-4">
             <div>
               <label class="input-label">{{ t('admin.redeem.codeType') }}</label>
               <Select v-model="generateForm.type" :options="typeOptions" />
@@ -531,6 +531,7 @@
         <div class="relative z-10 w-full max-w-lg rounded-xl bg-white shadow-xl dark:bg-dark-800">
           <!-- Header -->
           <div
+            data-ui="redeem-result-head"
             class="flex items-center justify-between border-b border-gray-200 px-5 py-4 dark:border-dark-600"
           >
             <div class="flex items-center gap-3">

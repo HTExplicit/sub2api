@@ -18,13 +18,20 @@
  *   data-ui="model-plaza"              views/ModelPlazaView.vue:8                     standalone page root
  *   data-ui="use-key"                  components/keys/UseKeyModal.vue:8              dialog body
  *   data-ui="user-batch-image"         views/user/BatchImageGuideView.vue:3           TablePageLayout root
+ *   data-ui="user-keys"                views/user/KeysView.vue:3                      TablePageLayout root
+ *   data-ui="key-group-search"         views/user/KeysView.vue:1145                   the group picker's search row
+ *   data-ui="plan-card"                components/payment/SubscriptionPlanCard.vue:3  plan card root
+ *   data-ui="image-studio"             features/image-studio/ImageStudioPage.vue:2    page root
  * Identity hooks (data.css §6.4 contract, decision 2): data-ui="platform-chip" on KeysView.vue:515 (the create
  * dialog's provider tiles), PaymentView.vue:107 and :207, SubscriptionsView.vue:45, SubscriptionPlanCard.vue:34,
  * PlazaModelPricingTable.vue:82, ProfileIdentityBindingsSection.vue:33 (the sign-in providers' letter squares);
  * data-ui="platform-text" on the platform marks PaymentView.vue:203, SubscriptionsView.vue:39,
  * SubscriptionPlanCard.vue:11.
  * Existing hooks used: data-table="keys", #key-form, the profile's data-testid, .custom-page-layout, data-testid
- * on the image studio, data-ui="pagination" / "empty-state" recipes of data.css. */
+ * on the image studio, data-ui="pagination" / "empty-state" recipes of data.css.
+ * Performance (PERF.md, before v0.2.9-codexrip.3): no :has() in a non-subject position (it re-styles the anchor's
+ * whole subtree on every change); the few :has() left sit in the subject compound under a hooked root with a child or
+ * sibling argument. */
 
 /* ================================================================== 1 · page frame */
 
@@ -45,7 +52,7 @@ html.flat-theme [data-testid="profile-shell"] [class~="space-y-6"] > :not([hidde
    12 / 16 on the structural line with the title 14 / 600 (the reference's modal and card titles) and its note
    12.5px muted. */
 html.flat-theme :is([data-ui="user-redeem"], [data-ui="user-affiliate"], [data-ui="user-purchase"], [data-testid="profile-shell"]) .card:is([class~="p-6"], [class~="p-5"]),
-html.flat-theme :is([data-ui="user-redeem"], [data-testid="profile-shell"]) .card:not([data-testid="profile-overview-hero"]) > div:is([class~="p-6"], [class~="px-6"][class~="py-6"]) {
+html.flat-theme :is([data-ui="user-redeem"], [data-testid="profile-shell"]) .card:where(:not([data-testid="profile-overview-hero"])) > div:is([class~="p-6"], [class~="px-6"][class~="py-6"]) {
   padding: 16px;
 }
 
@@ -77,26 +84,26 @@ html.flat-theme :is([data-ui="user-affiliate"], [data-testid="profile-shell"]) .
    the layout puts them side by side on the first row and the table card under them. Keyboard order stays upstream's
    (actions, then filters); below 1024px the slots stack as upstream. */
 @media (min-width: 1024px) {
-  html.flat-theme .table-page-layout:has(> .layout-section-scrollable .table-wrapper[data-table="keys"]):has(> .layout-section-fixed + .layout-section-fixed + .layout-section-scrollable) {
+  html.flat-theme .table-page-layout[data-ui~="user-keys"] {
     display: grid;
     grid-template-columns: minmax(0, 1fr) auto;
     grid-template-rows: auto minmax(0, 1fr) auto;
     column-gap: 12px;
   }
 
-  html.flat-theme .table-page-layout:has(> .layout-section-scrollable .table-wrapper[data-table="keys"]) > .layout-section-fixed:first-child:has(+ .layout-section-fixed) {
+  html.flat-theme .table-page-layout[data-ui~="user-keys"] > .layout-section-fixed:first-child {
     grid-column: 2;
     grid-row: 1;
     align-self: start;
   }
 
-  html.flat-theme .table-page-layout:has(> .layout-section-scrollable .table-wrapper[data-table="keys"]) > .layout-section-fixed:first-child + .layout-section-fixed {
+  html.flat-theme .table-page-layout[data-ui~="user-keys"] > .layout-section-fixed:first-child + .layout-section-fixed {
     grid-column: 1;
     grid-row: 1;
     min-width: 0;
   }
 
-  html.flat-theme .table-page-layout:has(> .layout-section-scrollable .table-wrapper[data-table="keys"]) > :is(.layout-section-scrollable, .layout-section-scrollable ~ .layout-section-fixed) {
+  html.flat-theme .table-page-layout[data-ui~="user-keys"] > :is(.layout-section-scrollable, .layout-section-scrollable ~ .layout-section-fixed) {
     grid-column: 1 / -1;
   }
 }
@@ -129,7 +136,7 @@ html.flat-theme .table-wrapper[data-table="keys"] td[data-column="current_concur
 }
 
 /* 2.2 The selection row above the table (keys chosen for bulk edit): the reference tray's count, 12.5px ink-soft. */
-html.flat-theme .table-page-layout:has(.table-wrapper[data-table="keys"]) > .layout-section-fixed div[class~="flex-wrap"][class~="text-sm"]:has(> [data-test="bulk-edit-keys"]) > span {
+html.flat-theme .table-page-layout[data-ui~="user-keys"] > .layout-section-fixed div[class~="flex-wrap"][class~="text-sm"] > span:first-child {
   color: rgb(var(--ui-ink-soft));
   font-size: 12.5px;
 }
@@ -144,7 +151,7 @@ html.flat-theme div[class~="fixed"][class~="z-[100000020]"] > div[class~="border
   transition: box-shadow var(--ui-duration) var(--ui-ease);
 }
 
-html.flat-theme div[class~="fixed"][class~="z-[100000020]"] > div[class~="border-b"]:first-child:has(input:focus-visible) {
+html.flat-theme [data-ui="key-group-search"]:has(> div > input:focus-visible) {
   box-shadow: inset 0 -2px 0 rgb(var(--ui-focus));
 }
 
@@ -485,11 +492,11 @@ html.flat-theme [data-ui="user-redeem"] #code {
 }
 
 html.flat-theme [data-ui="user-redeem"] #code ~ *,
-html.flat-theme [data-ui="user-redeem"] div[class~="relative"]:has(> #code) > div[class~="pointer-events-none"] {
+html.flat-theme [data-ui="user-redeem"] div[class~="relative"] > div[class~="pointer-events-none"] {
   padding-left: 12px;
 }
 
-html.flat-theme [data-ui="user-redeem"] div[class~="relative"]:has(> #code) > div[class~="pointer-events-none"] svg {
+html.flat-theme [data-ui="user-redeem"] div[class~="relative"] > div[class~="pointer-events-none"] svg {
   width: 15px;
   height: 15px;
   color: rgb(var(--ui-faint));
@@ -769,7 +776,7 @@ html.flat-theme [data-testid="profile-overview-hero"] span[class~="rounded-full"
   color: rgb(var(--ui-ink-soft));
 }
 
-html.flat-theme [data-testid="profile-overview-hero"] div[class~="grid"]:has(> [data-testid^="profile-overview-metric-"]) {
+html.flat-theme [data-testid="profile-overview-hero"] div[class~="grid"] {
   display: flex;
   flex-wrap: wrap;
   gap: 10px;
@@ -976,7 +983,7 @@ html.flat-theme [data-testid="profile-shell"] > .card form[class~="rounded-lg"][
 /* 5.1 The four figures: the reference's StatTile (§8.13 /logs: 1px line, 6px, surface, 8 / 12, the mono label, the
    value 15 / 600 tabular ink, the note 11px muted, 76px; tiles 10px apart). The rebate rate's glyph and the green
    figures are decoration (decision 2): neutral; a frozen amount keeps its warning colour. */
-html.flat-theme [data-ui="user-affiliate"] > div[class~="grid"]:has(> .card[class~="p-5"]) {
+html.flat-theme [data-ui="user-affiliate"] > div[class~="grid"] {
   gap: 10px;
 }
 
@@ -1201,7 +1208,7 @@ html.flat-theme [data-ui="user-subscriptions"] [data-ui~="platform-text"][class~
 
 /* the plan cards (SubscriptionPlanCard): the reference's card (8px, the structural line, no lift or shadow), the
    platform rule on top 2px in the platform colour, the price a Mono figure, subscribe = the positive CTA (accent) */
-html.flat-theme [data-ui="user-purchase"] div:has(> [data-ui~="platform-text"][class~="h-1.5"]) {
+html.flat-theme [data-ui="user-purchase"] [data-ui~="plan-card"] {
   border-color: rgb(var(--ui-line));
   border-radius: var(--ui-radius-lg);
   box-shadow: none;
@@ -1214,13 +1221,13 @@ html.flat-theme [data-ui="user-purchase"] [data-ui~="platform-text"][class~="h-1
   background-image: none;
 }
 
-html.flat-theme [data-ui="user-purchase"] div:has(> [data-ui~="platform-text"][class~="h-1.5"]) span[class~="text-2xl"][class~="font-extrabold"] {
+html.flat-theme [data-ui="user-purchase"] [data-ui~="plan-card"] span[class~="text-2xl"][class~="font-extrabold"] {
   color: rgb(var(--ui-ink));
   font: 600 22px/28px var(--ui-font-mono);
   letter-spacing: -0.02em;
 }
 
-html.flat-theme [data-ui="user-purchase"] div:has(> [data-ui~="platform-text"][class~="h-1.5"]) > div > button[type="button"][class~="w-full"] {
+html.flat-theme [data-ui="user-purchase"] [data-ui~="plan-card"] > div > button[type="button"][class~="w-full"] {
   min-height: var(--ui-control-h-md, 38px);
   border: 1px solid rgb(var(--ui-primary));
   border-radius: var(--ui-radius-md);
@@ -1345,7 +1352,7 @@ html.flat-theme [data-testid="image-studio-layout"] > form {
   background-color: rgb(var(--ui-surface));
 }
 
-html.flat-theme div:has(> [data-testid="image-studio-layout"]) > header > div:first-child > h1 {
+html.flat-theme [data-ui="image-studio"] > header > div:first-child > h1 {
   position: absolute;
   width: 1px;
   height: 1px;
@@ -1355,7 +1362,7 @@ html.flat-theme div:has(> [data-testid="image-studio-layout"]) > header > div:fi
 }
 
 @media (min-width: 1024px) {
-  html.flat-theme div:has(> [data-testid="image-studio-layout"]) > header > div:first-child > p {
+  html.flat-theme [data-ui="image-studio"] > header > div:first-child > p {
     position: absolute;
     width: 1px;
     height: 1px;
@@ -1364,12 +1371,18 @@ html.flat-theme div:has(> [data-testid="image-studio-layout"]) > header > div:fi
     white-space: nowrap;
   }
 
-  html.flat-theme div:has(> [data-testid="image-studio-layout"]) > header:has(> button) {
+  html.flat-theme [data-ui="image-studio"] > header:has(> button) {
     justify-content: flex-end;
   }
 
-  html.flat-theme div:has(> [data-testid="image-studio-layout"]) > header:not(:has(> button)) + [data-testid="image-studio-layout"] {
+  /* the header's words are hidden, so the page's 24px step after it moves onto its button (a header without one has no
+     height and the layout starts the page) */
+  html.flat-theme [data-ui="image-studio"] > [data-testid="image-studio-layout"] {
     margin-top: 0;
+  }
+
+  html.flat-theme [data-ui="image-studio"] > header > button {
+    margin-bottom: 1.5rem;
   }
 }
 
@@ -1592,7 +1605,7 @@ html.flat-theme [data-ui="user-orders"] > .table-wrapper .table-body > tr > td[c
      leaves phones to this file): upstream's search is a flex-1 item with a zero basis beside fixed-width selects and
      buttons, so on a phone it shrank to a few characters ("邮箱/用", "搜索"). It takes the row, like the reference's
      phone toolbar (ref-models-390: the search spans the row, the controls wrap under it). */
-  html.flat-theme [data-ui~="mgmt-page"] > .layout-section-fixed:first-child > div:first-child > div[class~="flex-1"]:is(:has(> input.input), :has(> div > input.input)) {
+  html.flat-theme [data-ui~="mgmt-page"] > .layout-section-fixed:first-child > div:first-child > div[class~="flex-1"]:has(> input.input, > div > input.input) {
     flex: 1 1 100%;
   }
 
@@ -1608,12 +1621,12 @@ html.flat-theme [data-ui="user-orders"] > .table-wrapper .table-body > tr > td[c
   }
 
   /* 8.2 Affiliate: the four figures two to a row (the reference's phone KPIs, REF §7.4: grid-cols-2) */
-  html.flat-theme [data-ui="user-affiliate"] > div[class~="grid"]:has(> .card[class~="p-5"]) {
+  html.flat-theme [data-ui="user-affiliate"] > div[class~="grid"] {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   /* 8.2b Profile: the stat blocks two to a row (the reference's phone detail page: grid-cols-2) */
-  html.flat-theme [data-testid="profile-overview-hero"] div[class~="grid"]:has(> [data-testid^="profile-overview-metric-"]) {
+  html.flat-theme [data-testid="profile-overview-hero"] div[class~="grid"] {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
@@ -1633,7 +1646,7 @@ html.flat-theme [data-ui="user-orders"] > .table-wrapper .table-body > tr > td[c
 
   /* the user dashboard's balance tile likewise takes the row (in a half-width tile the grouped figure broke inside
      its digits: "…212.4 / 3") */
-  html.flat-theme [data-ui="user-dashboard"] [class~="grid"] > .card[class~="p-4"]:has(p[class~="text-emerald-600"]) {
+  html.flat-theme [data-ui="user-dashboard"] [class~="grid"] > .card[class~="p-4"]:has(> div > div > p[class~="text-emerald-600"]) {
     grid-column: 1 / -1;
   }
 
@@ -1668,10 +1681,17 @@ html.flat-theme [data-ui="user-orders"] > .table-wrapper .table-body > tr > td[c
     white-space: nowrap;
   }
 
+  /* the block after a hidden heading starts the page (Codex 路由设置's intro kept the page rhythm's 12px, 渠道监控's
+     description its 2px); from 1024px the pages clear the same margins */
+  html.flat-theme [data-ui~="codex-runtime"][data-ui~="codex-runtime"] > h2:first-child:not([hidden]) + p:not([hidden]),
+  html.flat-theme [data-ui~="channel-monitor-page"][data-ui~="channel-monitor-page"] > header.page-header > h1 + p.page-description {
+    margin-top: 0;
+  }
+
   /* 8.0b API keys: the search and the filters above the actions, as on every other toolbar at this width and on the
      reference's /models phone toolbar (the desktop already sets them on one row, 2.0); the keyboard order stays
      upstream's */
-  html.flat-theme .table-page-layout:has(> .layout-section-scrollable .table-wrapper[data-table="keys"]) > .layout-section-fixed:first-child + .layout-section-fixed {
+  html.flat-theme .table-page-layout[data-ui~="user-keys"] > .layout-section-fixed:first-child + .layout-section-fixed {
     order: -1;
   }
 

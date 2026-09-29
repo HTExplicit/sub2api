@@ -8,6 +8,9 @@
  *
  * Page roots and dialog bodies (data-ui hooks, one attribute each, no other template change):
  *   data-ui="ops-dashboard"      views/admin/ops/OpsDashboard.vue                      the page body (also fullscreen)
+ *   data-ui="ops-header"         views/admin/ops/components/OpsDashboardHeader.vue     the header card (toolbar, KPI)
+ *   data-ui="ops-chart"          the five chart cards' roots (OpsSwitchRateTrendChart, OpsThroughputTrendChart,
+ *                                OpsLatencyChart, OpsErrorDistributionChart, OpsErrorTrendChart)
  *   the ops dialogs' bodies §4; the table pages' roots §5; /monitor §6; orders §7; risk control §8; prompt audit §9
  *   (each section's head lists its hooks and files). Identity / category opt-ins (data.css §6.4) sit on the elements
  *   upstream colours by platform or category: ChannelsView.vue, ChannelMonitorView.vue (§5), MonitorFormDialog.vue and
@@ -15,7 +18,12 @@
  *   PlanEditDialog.vue (§7), OpsErrorLogTable.vue's type and group chips (category-chip, §4.3; the list is also
  *   使用记录's 错误请求 tab).
  * Shared components (Select, buttons, DataTable, badges, pagination, menus, tooltips, dialogs) keep the shared files'
- * look; the rules here restyle what upstream draws with utilities on these pages and place things. */
+ * look; the rules here restyle what upstream draws with utilities on these pages and place things.
+ *
+ * Re-style cost (PERF.md): no :has() outside a selector's subject compound. Where a rule would style the descendants
+ * of an element picked by :has(), that element carries a hook (above and in each section's head) or the state is
+ * passed down as a custom property; the :has() left sit in the subject compound of an anchor under a hooked root,
+ * with child arguments. */
 
 /* ================================================================== 1 · ops monitoring: rhythm */
 
@@ -42,7 +50,7 @@ html.flat-theme [data-ui~="ops-dashboard"][class~="p-4"] {
 /* Upstream frames the toolbar, the health / realtime panel, the six metric cards and the six system cards in one big
    card. The reference's /logs page has no such frame: a toolbar row on the canvas (its controls, 8px under a 1px
    structural line), a row of KPI tiles, then the cards (REF §7.1, crops logs-toolbar, kpi-row). */
-html.flat-theme [data-ui~="ops-dashboard"] > div[class~="rounded-3xl"]:has(h1) {
+html.flat-theme [data-ui~="ops-dashboard"] > div[class~="rounded-3xl"][data-ui~="ops-header"] {
   gap: var(--ui-shell-gap, 12px);
   padding: 0;
   border-radius: 0;
@@ -51,7 +59,7 @@ html.flat-theme [data-ui~="ops-dashboard"] > div[class~="rounded-3xl"]:has(h1) {
 }
 
 /* 2.1 toolbar row */
-html.flat-theme [data-ui~="ops-dashboard"] > div[class~="rounded-3xl"]:has(h1) > div:first-child {
+html.flat-theme [data-ui~="ops-dashboard"] > div[class~="rounded-3xl"][data-ui~="ops-header"] > div:first-child {
   gap: 8px 12px;
   padding-bottom: 12px;
   border-bottom-color: rgb(var(--ui-line));
@@ -60,7 +68,7 @@ html.flat-theme [data-ui~="ops-dashboard"] > div[class~="rounded-3xl"]:has(h1) >
 /* The page title is the header row's (AppHeader: 「运维监控 · 运维监控与排障」, shown from 1024px); there the page's own h1
    stays for screen readers only. Fullscreen has no header row: its title is the page title (REF §5: 20/600). */
 @media (min-width: 1024px) {
-  html.flat-theme [data-ui~="ops-dashboard"]:not([class~="p-4"]) > div[class~="rounded-3xl"]:has(h1) > div:first-child > div > h1 {
+  html.flat-theme [data-ui~="ops-dashboard"]:not([class~="p-4"]) > div[class~="rounded-3xl"][data-ui~="ops-header"] > div:first-child > div > h1 {
     position: absolute;
     width: 1px;
     height: 1px;
@@ -74,7 +82,7 @@ html.flat-theme [data-ui~="ops-dashboard"] > div[class~="rounded-3xl"]:has(h1) >
 }
 
 /* below 1024px the header row shows no title: the page's own title is the card title (13/600) */
-html.flat-theme [data-ui~="ops-dashboard"]:not([class~="p-4"]) > div[class~="rounded-3xl"]:has(h1) > div:first-child > div > h1 {
+html.flat-theme [data-ui~="ops-dashboard"]:not([class~="p-4"]) > div[class~="rounded-3xl"][data-ui~="ops-header"] > div:first-child > div > h1 {
   gap: 0;
   font-size: 13px;
   font-weight: 600;
@@ -82,7 +90,7 @@ html.flat-theme [data-ui~="ops-dashboard"]:not([class~="p-4"]) > div[class~="rou
   color: rgb(var(--ui-ink));
 }
 
-html.flat-theme [data-ui~="ops-dashboard"][class~="p-4"] > div[class~="rounded-3xl"]:has(h1) > div:first-child > div > h1 {
+html.flat-theme [data-ui~="ops-dashboard"][class~="p-4"] > div[class~="rounded-3xl"][data-ui~="ops-header"] > div:first-child > div > h1 {
   gap: 0;
   font-size: 20px;
   font-weight: 600;
@@ -90,12 +98,12 @@ html.flat-theme [data-ui~="ops-dashboard"][class~="p-4"] > div[class~="rounded-3
   color: rgb(var(--ui-ink));
 }
 
-html.flat-theme [data-ui~="ops-dashboard"] > div[class~="rounded-3xl"]:has(h1) > div:first-child > div > h1 > svg {
+html.flat-theme [data-ui~="ops-dashboard"] > div[class~="rounded-3xl"][data-ui~="ops-header"] > div:first-child > div > h1 > svg {
   display: none;
 }
 
 /* the status line: the reference's meta (Mono 11, faint), the ready dot a 6px status dot */
-html.flat-theme [data-ui~="ops-dashboard"] > div[class~="rounded-3xl"]:has(h1) > div:first-child > div > div[class~="mt-1"] {
+html.flat-theme [data-ui~="ops-dashboard"] > div[class~="rounded-3xl"][data-ui~="ops-header"] > div:first-child > div > div[class~="mt-1"] {
   margin-top: 0;
   gap: 8px;
   font-family: var(--ui-font-mono);
@@ -105,45 +113,45 @@ html.flat-theme [data-ui~="ops-dashboard"] > div[class~="rounded-3xl"]:has(h1) >
   color: rgb(var(--ui-muted));
 }
 
-html.flat-theme [data-ui~="ops-dashboard"] > div[class~="rounded-3xl"]:has(h1) > div:first-child > div > div[class~="mt-1"] > span[class~="flex"] {
+html.flat-theme [data-ui~="ops-dashboard"] > div[class~="rounded-3xl"][data-ui~="ops-header"] > div:first-child > div > div[class~="mt-1"] > span[class~="flex"] {
   gap: 6px;
   font-family: var(--ui-font);
   font-size: 12px;
   color: rgb(var(--ui-ink-soft));
 }
 
-html.flat-theme [data-ui~="ops-dashboard"] > div[class~="rounded-3xl"]:has(h1) > div:first-child > div > div[class~="mt-1"] > span[class~="flex"] > span,
-html.flat-theme [data-ui~="ops-dashboard"] > div[class~="rounded-3xl"]:has(h1) > div:first-child > div > div[class~="mt-1"] > span[class~="flex"] > span > span {
+html.flat-theme [data-ui~="ops-dashboard"] > div[class~="rounded-3xl"][data-ui~="ops-header"] > div:first-child > div > div[class~="mt-1"] > span[class~="flex"] > span,
+html.flat-theme [data-ui~="ops-dashboard"] > div[class~="rounded-3xl"][data-ui~="ops-header"] > div:first-child > div > div[class~="mt-1"] > span[class~="flex"] > span > span {
   width: 6px;
   height: 6px;
 }
 
-html.flat-theme [data-ui~="ops-dashboard"] > div[class~="rounded-3xl"]:has(h1) > div:first-child > div > div[class~="mt-1"] > span[class~="flex"] > span > span[class~="bg-green-500"] {
+html.flat-theme [data-ui~="ops-dashboard"] > div[class~="rounded-3xl"][data-ui~="ops-header"] > div:first-child > div > div[class~="mt-1"] > span[class~="flex"] > span > span[class~="bg-green-500"] {
   background-color: rgb(var(--ui-dot-ok));
 }
 
-html.flat-theme [data-ui~="ops-dashboard"] > div[class~="rounded-3xl"]:has(h1) > div:first-child > div > div[class~="mt-1"] > span[class~="flex"] > span > span[class~="bg-gray-400"] {
+html.flat-theme [data-ui~="ops-dashboard"] > div[class~="rounded-3xl"][data-ui~="ops-header"] > div:first-child > div > div[class~="mt-1"] > span[class~="flex"] > span > span[class~="bg-gray-400"] {
   background-color: rgb(var(--ui-dot-idle));
 }
 
 /* the controls: one 30px row (the table pages' toolbar density), 8px apart */
-html.flat-theme [data-ui~="ops-dashboard"] > div[class~="rounded-3xl"]:has(h1) > div:first-child > div:last-child {
+html.flat-theme [data-ui~="ops-dashboard"] > div[class~="rounded-3xl"][data-ui~="ops-header"] > div:first-child > div:last-child {
   gap: 8px;
 }
 
-html.flat-theme [data-ui~="ops-dashboard"] > div[class~="rounded-3xl"]:has(h1) > div:first-child > div:last-child .select-trigger.select-trigger {
+html.flat-theme [data-ui~="ops-dashboard"] > div[class~="rounded-3xl"][data-ui~="ops-header"] > div:first-child > div:last-child .select-trigger.select-trigger {
   padding-top: 0.265625rem;
   padding-bottom: 0.265625rem;
 }
 
-html.flat-theme [data-ui~="ops-dashboard"] > div[class~="rounded-3xl"]:has(h1) > div:first-child > div:last-child > div[class~="w-[1px]"] {
+html.flat-theme [data-ui~="ops-dashboard"] > div[class~="rounded-3xl"][data-ui~="ops-header"] > div:first-child > div:last-child > div[class~="w-[1px]"] {
   margin: 0 4px;
   background-color: rgb(var(--ui-line));
 }
 
 /* refresh, alert rules, settings, fullscreen: the reference's default button (surface, control outline, ink 13/600,
    radius 6), icon-only ones square; no hue */
-html.flat-theme [data-ui~="ops-dashboard"] > div[class~="rounded-3xl"]:has(h1) > div:first-child > div:last-child > button {
+html.flat-theme [data-ui~="ops-dashboard"] > div[class~="rounded-3xl"][data-ui~="ops-header"] > div:first-child > div:last-child > button {
   gap: 6px;
   height: var(--ui-control-h);
   min-width: var(--ui-control-h);
@@ -158,45 +166,45 @@ html.flat-theme [data-ui~="ops-dashboard"] > div[class~="rounded-3xl"]:has(h1) >
   transition: color var(--ui-duration) var(--ui-ease), border-color var(--ui-duration) var(--ui-ease), background-color var(--ui-duration) var(--ui-ease);
 }
 
-html.flat-theme [data-ui~="ops-dashboard"] > div[class~="rounded-3xl"]:has(h1) > div:first-child > div:last-child > button[class~="w-8"] {
+html.flat-theme [data-ui~="ops-dashboard"] > div[class~="rounded-3xl"][data-ui~="ops-header"] > div:first-child > div:last-child > button[class~="w-8"] {
   width: var(--ui-control-h);
   padding: 0;
   color: rgb(var(--ui-ink-soft));
 }
 
-html.flat-theme [data-ui~="ops-dashboard"] > div[class~="rounded-3xl"]:has(h1) > div:first-child > div:last-child > button:hover:not(:disabled) {
+html.flat-theme [data-ui~="ops-dashboard"] > div[class~="rounded-3xl"][data-ui~="ops-header"] > div:first-child > div:last-child > button:hover:not(:disabled) {
   border-color: rgb(var(--ui-line-focus));
   background-color: rgb(var(--ui-surface));
   color: rgb(var(--ui-ink));
 }
 
-html.flat-theme [data-ui~="ops-dashboard"] > div[class~="rounded-3xl"]:has(h1) > div:first-child > div:last-child > button:disabled {
+html.flat-theme [data-ui~="ops-dashboard"] > div[class~="rounded-3xl"][data-ui~="ops-header"] > div:first-child > div:last-child > button:disabled {
   opacity: 0.55;
 }
 
-html.flat-theme [data-ui~="ops-dashboard"] > div[class~="rounded-3xl"]:has(h1) > div:first-child > div:last-child > button > svg {
+html.flat-theme [data-ui~="ops-dashboard"] > div[class~="rounded-3xl"][data-ui~="ops-header"] > div:first-child > div:last-child > button > svg {
   width: 14px;
   height: 14px;
 }
 
 /* 2.2 the KPI area: the health / realtime panel and the six metric tiles, 10px apart (REF §8.13 grid gap) */
-html.flat-theme [data-ui~="ops-dashboard"] > div[class~="rounded-3xl"]:has(h1) > div[class~="grid"][class~="lg:grid-cols-12"] {
+html.flat-theme [data-ui~="ops-dashboard"] > div[class~="rounded-3xl"][data-ui~="ops-header"] > div[class~="grid"][class~="lg:grid-cols-12"] {
   gap: 10px;
 }
 
-html.flat-theme [data-ui~="ops-dashboard"] > div[class~="rounded-3xl"]:has(h1) > div[class~="grid"][class~="lg:grid-cols-12"] > div:last-child {
+html.flat-theme [data-ui~="ops-dashboard"] > div[class~="rounded-3xl"][data-ui~="ops-header"] > div[class~="grid"][class~="lg:grid-cols-12"] > div:last-child {
   gap: 10px;
 }
 
 /* The health / realtime panel is a card of its own (surface, 1px structural line, radius 8, 14px in). */
-html.flat-theme [data-ui~="ops-dashboard"] > div[class~="rounded-3xl"]:has(h1) > div[class~="grid"][class~="lg:grid-cols-12"] > div:first-child {
+html.flat-theme [data-ui~="ops-dashboard"] > div[class~="rounded-3xl"][data-ui~="ops-header"] > div[class~="grid"][class~="lg:grid-cols-12"] > div:first-child {
   padding: 14px;
   border: 1px solid rgb(var(--ui-line));
   border-radius: var(--ui-radius-lg);
   background-color: rgb(var(--ui-surface));
 }
 
-html.flat-theme [data-ui~="ops-dashboard"] > div[class~="rounded-3xl"]:has(h1) > div[class~="grid"][class~="lg:grid-cols-12"] > div:first-child > div {
+html.flat-theme [data-ui~="ops-dashboard"] > div[class~="rounded-3xl"][data-ui~="ops-header"] > div[class~="grid"][class~="lg:grid-cols-12"] > div:first-child > div {
   gap: 16px;
 }
 
@@ -204,22 +212,22 @@ html.flat-theme [data-ui~="ops-dashboard"] > div[class~="rounded-3xl"]:has(h1) >
    the window's segmented control on one line (228px). From 1280 the gauge column is as wide as the gauge and the rest
    goes to the realtime block; from 1024 to 1279 (a 300-400px panel) the two stack, the gauge above. */
 @media (min-width: 1280px) {
-  html.flat-theme [data-ui~="ops-dashboard"] > div[class~="rounded-3xl"]:has(h1) > div[class~="grid"][class~="lg:grid-cols-12"] > div:first-child > div[class~="grid"] {
+  html.flat-theme [data-ui~="ops-dashboard"] > div[class~="rounded-3xl"][data-ui~="ops-header"] > div[class~="grid"][class~="lg:grid-cols-12"] > div:first-child > div[class~="grid"] {
     grid-template-columns: auto minmax(0, 1fr);
   }
 
-  html.flat-theme [data-ui~="ops-dashboard"] > div[class~="rounded-3xl"]:has(h1) > div[class~="grid"][class~="lg:grid-cols-12"] > div:first-child > div[class~="grid"] > div[class~="group"] {
+  html.flat-theme [data-ui~="ops-dashboard"] > div[class~="rounded-3xl"][data-ui~="ops-header"] > div[class~="grid"][class~="lg:grid-cols-12"] > div:first-child > div[class~="grid"] > div[class~="group"] {
     padding-right: 16px;
     padding-left: 8px;
   }
 }
 
 @media (min-width: 1024px) and (max-width: 1279.98px) {
-  html.flat-theme [data-ui~="ops-dashboard"] > div[class~="rounded-3xl"]:has(h1) > div[class~="grid"][class~="lg:grid-cols-12"] > div:first-child > div[class~="grid"] {
+  html.flat-theme [data-ui~="ops-dashboard"] > div[class~="rounded-3xl"][data-ui~="ops-header"] > div[class~="grid"][class~="lg:grid-cols-12"] > div:first-child > div[class~="grid"] {
     grid-template-columns: minmax(0, 1fr);
   }
 
-  html.flat-theme [data-ui~="ops-dashboard"] > div[class~="rounded-3xl"]:has(h1) > div[class~="grid"][class~="lg:grid-cols-12"] > div:first-child > div[class~="grid"] > div[class~="group"] {
+  html.flat-theme [data-ui~="ops-dashboard"] > div[class~="rounded-3xl"][data-ui~="ops-header"] > div[class~="grid"][class~="lg:grid-cols-12"] > div:first-child > div[class~="grid"] > div[class~="group"] {
     padding-right: 0;
     border-right-width: 0;
   }
@@ -227,7 +235,7 @@ html.flat-theme [data-ui~="ops-dashboard"] > div[class~="rounded-3xl"]:has(h1) >
 
 /* health: the gauge keeps its status colour (it is the status); the score is a figure (600, tabular), its caption the
    mono label; hovering opens the diagnosis */
-html.flat-theme [data-ui~="ops-dashboard"] > div[class~="rounded-3xl"]:has(h1) > div[class~="grid"] > div:first-child > div > div[class~="group"] {
+html.flat-theme [data-ui~="ops-dashboard"] > div[class~="rounded-3xl"][data-ui~="ops-header"] > div[class~="grid"] > div:first-child > div > div[class~="group"] {
   padding-top: 4px;
   padding-bottom: 4px;
   border-radius: var(--ui-radius-md);
@@ -235,15 +243,15 @@ html.flat-theme [data-ui~="ops-dashboard"] > div[class~="rounded-3xl"]:has(h1) >
   transition: background-color var(--ui-duration) var(--ui-ease);
 }
 
-html.flat-theme [data-ui~="ops-dashboard"] > div[class~="rounded-3xl"]:has(h1) > div[class~="grid"] > div:first-child > div > div[class~="group"]:hover {
+html.flat-theme [data-ui~="ops-dashboard"] > div[class~="rounded-3xl"][data-ui~="ops-header"] > div[class~="grid"] > div:first-child > div > div[class~="group"]:hover {
   background-color: rgb(var(--ui-subtle));
 }
 
-html.flat-theme [data-ui~="ops-dashboard"] > div[class~="rounded-3xl"]:has(h1) > div[class~="grid"] > div:first-child > div > div[class~="group"] circle[class~="text-gray-200"] {
+html.flat-theme [data-ui~="ops-dashboard"] > div[class~="rounded-3xl"][data-ui~="ops-header"] > div[class~="grid"] > div:first-child > div > div[class~="group"] circle[class~="text-gray-200"] {
   color: rgb(var(--ui-subtle));
 }
 
-html.flat-theme [data-ui~="ops-dashboard"] > div[class~="rounded-3xl"]:has(h1) > div[class~="grid"] > div:first-child > div > div[class~="group"] > div[class~="relative"] > div[class~="absolute"] > span:first-child {
+html.flat-theme [data-ui~="ops-dashboard"] > div[class~="rounded-3xl"][data-ui~="ops-header"] > div[class~="grid"] > div:first-child > div > div[class~="group"] > div[class~="relative"] > div[class~="absolute"] > span:first-child {
   font-weight: 600;
   font-size: 24px;
   line-height: 30px;
@@ -251,13 +259,13 @@ html.flat-theme [data-ui~="ops-dashboard"] > div[class~="rounded-3xl"]:has(h1) >
   letter-spacing: -0.01em;
 }
 
-html.flat-theme [data-ui~="ops-dashboard"][class~="p-4"] > div[class~="rounded-3xl"]:has(h1) > div[class~="grid"] > div:first-child > div > div[class~="group"] > div[class~="relative"] > div[class~="absolute"] > span:first-child {
+html.flat-theme [data-ui~="ops-dashboard"][class~="p-4"] > div[class~="rounded-3xl"][data-ui~="ops-header"] > div[class~="grid"] > div:first-child > div > div[class~="group"] > div[class~="relative"] > div[class~="absolute"] > span:first-child {
   font-size: 36px;
   line-height: 42px;
 }
 
-html.flat-theme [data-ui~="ops-dashboard"] > div[class~="rounded-3xl"]:has(h1) > div[class~="grid"] > div:first-child > div > div[class~="group"] > div[class~="relative"] > div[class~="absolute"] > span:last-child,
-html.flat-theme [data-ui~="ops-dashboard"] > div[class~="rounded-3xl"]:has(h1) > div[class~="grid"] > div:first-child > div > div[class~="group"] > div[class~="mt-4"] > div:first-child {
+html.flat-theme [data-ui~="ops-dashboard"] > div[class~="rounded-3xl"][data-ui~="ops-header"] > div[class~="grid"] > div:first-child > div > div[class~="group"] > div[class~="relative"] > div[class~="absolute"] > span:last-child,
+html.flat-theme [data-ui~="ops-dashboard"] > div[class~="rounded-3xl"][data-ui~="ops-header"] > div[class~="grid"] > div:first-child > div > div[class~="group"] > div[class~="mt-4"] > div:first-child {
   font-family: var(--ui-font-mono);
   font-size: var(--ui-label-size);
   font-weight: 400;
@@ -269,16 +277,16 @@ html.flat-theme [data-ui~="ops-dashboard"] > div[class~="rounded-3xl"]:has(h1) >
 
 /* hovered (the diagnosis opens) the panel takes the grouped fill; the two captions go muted there in light (the label
    grey is 4.35:1 on that fill, the muted grey 4.8:1; dark keeps the label grey, 5.7:1) */
-html.flat-theme:not(.dark) [data-ui~="ops-dashboard"] > div[class~="rounded-3xl"]:has(h1) > div[class~="grid"] > div:first-child > div > div[class~="group"]:hover > div[class~="relative"] > div[class~="absolute"] > span:last-child,
-html.flat-theme:not(.dark) [data-ui~="ops-dashboard"] > div[class~="rounded-3xl"]:has(h1) > div[class~="grid"] > div:first-child > div > div[class~="group"]:hover > div[class~="mt-4"] > div:first-child {
+html.flat-theme:not(.dark) [data-ui~="ops-dashboard"] > div[class~="rounded-3xl"][data-ui~="ops-header"] > div[class~="grid"] > div:first-child > div > div[class~="group"]:hover > div[class~="relative"] > div[class~="absolute"] > span:last-child,
+html.flat-theme:not(.dark) [data-ui~="ops-dashboard"] > div[class~="rounded-3xl"][data-ui~="ops-header"] > div[class~="grid"] > div:first-child > div > div[class~="group"]:hover > div[class~="mt-4"] > div:first-child {
   color: rgb(var(--ui-muted));
 }
 
-html.flat-theme [data-ui~="ops-dashboard"] > div[class~="rounded-3xl"]:has(h1) > div[class~="grid"] > div:first-child > div > div[class~="group"] > div[class~="mt-4"] {
+html.flat-theme [data-ui~="ops-dashboard"] > div[class~="rounded-3xl"][data-ui~="ops-header"] > div[class~="grid"] > div:first-child > div > div[class~="group"] > div[class~="mt-4"] {
   margin-top: 10px;
 }
 
-html.flat-theme [data-ui~="ops-dashboard"] > div[class~="rounded-3xl"]:has(h1) > div[class~="grid"] > div:first-child > div > div[class~="group"] > div[class~="mt-4"] > div:last-child {
+html.flat-theme [data-ui~="ops-dashboard"] > div[class~="rounded-3xl"][data-ui~="ops-header"] > div[class~="grid"] > div:first-child > div > div[class~="group"] > div[class~="mt-4"] > div:last-child {
   margin-top: 2px;
   font-size: 12px;
   font-weight: 600;
@@ -287,7 +295,7 @@ html.flat-theme [data-ui~="ops-dashboard"] > div[class~="rounded-3xl"]:has(h1) >
 
 /* the diagnosis popover: the reference's detail popover (radius 6, control outline, surface, the popover shadow,
    12 / 12 in); its status glyphs keep their colours, the rest is ink and muted */
-html.flat-theme [data-ui~="ops-dashboard"] > div[class~="rounded-3xl"]:has(h1) > div[class~="grid"] > div:first-child > div > div[class~="group"] > div[class~="absolute"] > div {
+html.flat-theme [data-ui~="ops-dashboard"] > div[class~="rounded-3xl"][data-ui~="ops-header"] > div[class~="grid"] > div:first-child > div > div[class~="group"] > div[class~="absolute"] > div {
   padding: 12px;
   border: 1px solid rgb(var(--ui-line-strong));
   border-radius: var(--ui-radius-md);
@@ -295,7 +303,7 @@ html.flat-theme [data-ui~="ops-dashboard"] > div[class~="rounded-3xl"]:has(h1) >
   box-shadow: var(--ui-shadow-popover);
 }
 
-html.flat-theme [data-ui~="ops-dashboard"] > div[class~="rounded-3xl"]:has(h1) > div[class~="grid"] > div:first-child > div > div[class~="group"] > div[class~="absolute"] > div > h4 {
+html.flat-theme [data-ui~="ops-dashboard"] > div[class~="rounded-3xl"][data-ui~="ops-header"] > div[class~="grid"] > div:first-child > div > div[class~="group"] > div[class~="absolute"] > div > h4 {
   margin-bottom: 10px;
   padding-bottom: 8px;
   border-color: rgb(var(--ui-line));
@@ -305,26 +313,26 @@ html.flat-theme [data-ui~="ops-dashboard"] > div[class~="rounded-3xl"]:has(h1) >
   color: rgb(var(--ui-ink));
 }
 
-html.flat-theme [data-ui~="ops-dashboard"] > div[class~="rounded-3xl"]:has(h1) > div[class~="grid"] > div:first-child > div > div[class~="group"] > div[class~="absolute"] > div > h4 > svg {
+html.flat-theme [data-ui~="ops-dashboard"] > div[class~="rounded-3xl"][data-ui~="ops-header"] > div[class~="grid"] > div:first-child > div > div[class~="group"] > div[class~="absolute"] > div > h4 > svg {
   color: rgb(var(--ui-ink-soft));
 }
 
-html.flat-theme [data-ui~="ops-dashboard"] > div[class~="rounded-3xl"]:has(h1) > div[class~="grid"] > div:first-child > div > div[class~="group"] > div[class~="absolute"] > div > div > div > div:last-child > div:first-child {
+html.flat-theme [data-ui~="ops-dashboard"] > div[class~="rounded-3xl"][data-ui~="ops-header"] > div[class~="grid"] > div:first-child > div > div[class~="group"] > div[class~="absolute"] > div > div > div > div:last-child > div:first-child {
   font-weight: 500;
   color: rgb(var(--ui-ink));
 }
 
-html.flat-theme [data-ui~="ops-dashboard"] > div[class~="rounded-3xl"]:has(h1) > div[class~="grid"] > div:first-child > div > div[class~="group"] > div[class~="absolute"] > div > div > div > div:last-child > div:nth-child(2) {
+html.flat-theme [data-ui~="ops-dashboard"] > div[class~="rounded-3xl"][data-ui~="ops-header"] > div[class~="grid"] > div:first-child > div > div[class~="group"] > div[class~="absolute"] > div > div > div > div:last-child > div:nth-child(2) {
   font-size: 11px;
   color: rgb(var(--ui-muted));
 }
 
-html.flat-theme [data-ui~="ops-dashboard"] > div[class~="rounded-3xl"]:has(h1) > div[class~="grid"] > div:first-child > div > div[class~="group"] > div[class~="absolute"] > div > div > div > div:last-child > div[class~="text-blue-600"] {
+html.flat-theme [data-ui~="ops-dashboard"] > div[class~="rounded-3xl"][data-ui~="ops-header"] > div[class~="grid"] > div:first-child > div > div[class~="group"] > div[class~="absolute"] > div > div > div > div:last-child > div[class~="text-blue-600"] {
   font-size: 11px;
   color: rgb(var(--ui-ink-soft));
 }
 
-html.flat-theme [data-ui~="ops-dashboard"] > div[class~="rounded-3xl"]:has(h1) > div[class~="grid"] > div:first-child > div > div[class~="group"] > div[class~="absolute"] > div > div[class~="mt-3"] {
+html.flat-theme [data-ui~="ops-dashboard"] > div[class~="rounded-3xl"][data-ui~="ops-header"] > div[class~="grid"] > div:first-child > div > div[class~="group"] > div[class~="absolute"] > div > div[class~="mt-3"] {
   border-color: rgb(var(--ui-line));
   font-size: 11px;
   color: rgb(var(--ui-faint));
@@ -333,21 +341,21 @@ html.flat-theme [data-ui~="ops-dashboard"] > div[class~="rounded-3xl"]:has(h1) >
 /* realtime: the title a mono label (the decorative ping and the animated pulse line go: they carry no data), the window
    choice the reference's time segmented control (REF §8.5, crop segmented-time: controls.css 7.1's frame and segment
    metrics, on one line), the current QPS / TPS figures 20/600, peak and average 13/600, units Mono 10 */
-html.flat-theme [data-ui~="ops-dashboard"] > div[class~="rounded-3xl"]:has(h1) > div[class~="grid"] > div:first-child > div > div:last-child > div:first-child {
+html.flat-theme [data-ui~="ops-dashboard"] > div[class~="rounded-3xl"][data-ui~="ops-header"] > div[class~="grid"] > div:first-child > div > div:last-child > div:first-child {
   margin-bottom: 10px;
 }
 
-html.flat-theme [data-ui~="ops-dashboard"] > div[class~="rounded-3xl"]:has(h1) > div[class~="grid"] > div:first-child > div > div:last-child > div:first-child > div:first-child > div[class~="h-3"],
-html.flat-theme [data-ui~="ops-dashboard"] > div[class~="rounded-3xl"]:has(h1) > div[class~="grid"] > div:first-child > div > div:last-child > div:last-child > div[class~="h-8"] {
+html.flat-theme [data-ui~="ops-dashboard"] > div[class~="rounded-3xl"][data-ui~="ops-header"] > div[class~="grid"] > div:first-child > div > div:last-child > div:first-child > div:first-child > div[class~="h-3"],
+html.flat-theme [data-ui~="ops-dashboard"] > div[class~="rounded-3xl"][data-ui~="ops-header"] > div[class~="grid"] > div:first-child > div > div:last-child > div:last-child > div[class~="h-8"] {
   display: none;
 }
 
-html.flat-theme [data-ui~="ops-dashboard"] > div[class~="rounded-3xl"]:has(h1) > div[class~="grid"] > div:first-child > div > div:last-child > div:first-child > div:first-child {
+html.flat-theme [data-ui~="ops-dashboard"] > div[class~="rounded-3xl"][data-ui~="ops-header"] > div[class~="grid"] > div:first-child > div > div:last-child > div:first-child > div:first-child {
   gap: 0;
 }
 
-html.flat-theme [data-ui~="ops-dashboard"] > div[class~="rounded-3xl"]:has(h1) > div[class~="grid"] > div:first-child > div > div:last-child > div:first-child h3,
-html.flat-theme [data-ui~="ops-dashboard"] > div[class~="rounded-3xl"]:has(h1) > div[class~="grid"] > div:first-child > div > div:last-child > div:last-child div[class~="uppercase"][class~="font-bold"] {
+html.flat-theme [data-ui~="ops-dashboard"] > div[class~="rounded-3xl"][data-ui~="ops-header"] > div[class~="grid"] > div:first-child > div > div:last-child > div:first-child h3,
+html.flat-theme [data-ui~="ops-dashboard"] > div[class~="rounded-3xl"][data-ui~="ops-header"] > div[class~="grid"] > div:first-child > div > div:last-child > div:last-child div[class~="uppercase"][class~="font-bold"] {
   font-family: var(--ui-font-mono);
   font-size: var(--ui-label-size);
   font-weight: 400;
@@ -357,7 +365,7 @@ html.flat-theme [data-ui~="ops-dashboard"] > div[class~="rounded-3xl"]:has(h1) >
   color: rgb(var(--ui-label));
 }
 
-html.flat-theme [data-ui~="ops-dashboard"] > div[class~="rounded-3xl"]:has(h1) > div[class~="grid"] > div:first-child > div > div:last-child > div:first-child > div:last-child {
+html.flat-theme [data-ui~="ops-dashboard"] > div[class~="rounded-3xl"][data-ui~="ops-header"] > div[class~="grid"] > div:first-child > div > div:last-child > div:first-child > div:last-child {
   flex-wrap: nowrap;
   gap: 0;
   padding: var(--ctl-seg-inset);
@@ -366,7 +374,7 @@ html.flat-theme [data-ui~="ops-dashboard"] > div[class~="rounded-3xl"]:has(h1) >
   background-color: rgb(var(--ui-surface));
 }
 
-html.flat-theme [data-ui~="ops-dashboard"] > div[class~="rounded-3xl"]:has(h1) > div[class~="grid"] > div:first-child > div > div:last-child > div:first-child > div:last-child > button {
+html.flat-theme [data-ui~="ops-dashboard"] > div[class~="rounded-3xl"][data-ui~="ops-header"] > div[class~="grid"] > div:first-child > div > div:last-child > div:first-child > div:last-child > button {
   padding: var(--ctl-seg-pad-y) var(--ctl-seg-pad-x);
   border-radius: var(--ui-radius-md);
   background-color: transparent;
@@ -379,28 +387,28 @@ html.flat-theme [data-ui~="ops-dashboard"] > div[class~="rounded-3xl"]:has(h1) >
   transition: color var(--ui-duration-slide) var(--ui-ease-out), background-color var(--ui-duration-slide) var(--ui-ease-out);
 }
 
-html.flat-theme [data-ui~="ops-dashboard"] > div[class~="rounded-3xl"]:has(h1) > div[class~="grid"] > div:first-child > div > div:last-child > div:first-child > div:last-child > button:hover {
+html.flat-theme [data-ui~="ops-dashboard"] > div[class~="rounded-3xl"][data-ui~="ops-header"] > div[class~="grid"] > div:first-child > div > div:last-child > div:first-child > div:last-child > button:hover {
   color: rgb(var(--ui-ink));
 }
 
-html.flat-theme [data-ui~="ops-dashboard"] > div[class~="rounded-3xl"]:has(h1) > div[class~="grid"] > div:first-child > div > div:last-child > div:first-child > div:last-child > button[class~="bg-blue-500"] {
+html.flat-theme [data-ui~="ops-dashboard"] > div[class~="rounded-3xl"][data-ui~="ops-header"] > div[class~="grid"] > div:first-child > div > div:last-child > div:first-child > div:last-child > button[class~="bg-blue-500"] {
   background-color: rgb(var(--ui-ink));
   color: rgb(var(--ui-on-ink));
 }
 
-html.flat-theme [data-ui~="ops-dashboard"] > div[class~="rounded-3xl"]:has(h1) > div[class~="grid"] > div:first-child > div > div:last-child > div:last-child span[class~="font-black"] {
+html.flat-theme [data-ui~="ops-dashboard"] > div[class~="rounded-3xl"][data-ui~="ops-header"] > div[class~="grid"] > div:first-child > div > div:last-child > div:last-child span[class~="font-black"] {
   font-weight: 600;
   font-variant-numeric: tabular-nums;
   color: rgb(var(--ui-ink));
 }
 
-html.flat-theme [data-ui~="ops-dashboard"]:not([class~="p-4"]) > div[class~="rounded-3xl"]:has(h1) > div[class~="grid"] > div:first-child > div > div:last-child > div:last-child > div:first-child span[class~="font-black"] {
+html.flat-theme [data-ui~="ops-dashboard"]:not([class~="p-4"]) > div[class~="rounded-3xl"][data-ui~="ops-header"] > div[class~="grid"] > div:first-child > div > div:last-child > div:last-child > div:first-child span[class~="font-black"] {
   font-size: 20px;
   line-height: 28px;
 }
 
-html.flat-theme [data-ui~="ops-dashboard"] > div[class~="rounded-3xl"]:has(h1) > div[class~="grid"] > div:first-child > div > div:last-child > div:last-child > div:first-child span[class~="font-bold"],
-html.flat-theme [data-ui~="ops-dashboard"] > div[class~="rounded-3xl"]:has(h1) > div[class~="grid"] > div:first-child > div > div:last-child > div:last-child > div[class~="grid"] span[class~="text-xs"] {
+html.flat-theme [data-ui~="ops-dashboard"] > div[class~="rounded-3xl"][data-ui~="ops-header"] > div[class~="grid"] > div:first-child > div > div:last-child > div:last-child > div:first-child span[class~="font-bold"],
+html.flat-theme [data-ui~="ops-dashboard"] > div[class~="rounded-3xl"][data-ui~="ops-header"] > div[class~="grid"] > div:first-child > div > div:last-child > div:last-child > div[class~="grid"] span[class~="text-xs"] {
   font-family: var(--ui-font-mono);
   font-size: 10px;
   font-weight: 500;
@@ -408,7 +416,7 @@ html.flat-theme [data-ui~="ops-dashboard"] > div[class~="rounded-3xl"]:has(h1) >
   color: rgb(var(--ui-muted));
 }
 
-html.flat-theme [data-ui~="ops-dashboard"] > div[class~="rounded-3xl"]:has(h1) > div[class~="grid"] > div:first-child > div > div:last-child > div:last-child > div[class~="grid"] > div > div:last-child {
+html.flat-theme [data-ui~="ops-dashboard"] > div[class~="rounded-3xl"][data-ui~="ops-header"] > div[class~="grid"] > div:first-child > div > div:last-child > div:last-child > div[class~="grid"] > div > div:last-child {
   margin-top: 2px;
   font-size: 13px;
   line-height: 19.5px;
@@ -418,7 +426,7 @@ html.flat-theme [data-ui~="ops-dashboard"] > div[class~="rounded-3xl"]:has(h1) >
    mono label, the figure 15/600 tabular, the detail rows 12px with Mono figures). A value upstream colours green only
    because it is inside its threshold is ink (the reference colours a figure only when something is wrong); warning
    and critical keep their colour, and a critical tile is the reference's alert tile (danger line and soft fill). */
-html.flat-theme [data-ui~="ops-dashboard"] > div[class~="rounded-3xl"]:has(h1) > div[class~="grid"] > div:last-child > div[class~="rounded-2xl"] {
+html.flat-theme [data-ui~="ops-dashboard"] > div[class~="rounded-3xl"][data-ui~="ops-header"] > div[class~="grid"] > div:last-child > div[class~="rounded-2xl"] {
   display: flex;
   flex-direction: column;
   padding: 8px 12px 10px;
@@ -427,41 +435,41 @@ html.flat-theme [data-ui~="ops-dashboard"] > div[class~="rounded-3xl"]:has(h1) >
   background-color: rgb(var(--ui-surface));
 }
 
-html.flat-theme [data-ui~="ops-dashboard"] > div[class~="rounded-3xl"]:has(h1) > div[class~="grid"] > div:last-child > div[class~="rounded-2xl"] > div:first-child {
+html.flat-theme [data-ui~="ops-dashboard"] > div[class~="rounded-3xl"][data-ui~="ops-header"] > div[class~="grid"] > div:last-child > div[class~="rounded-2xl"] > div:first-child {
   min-height: 18px;
 }
 
-html.flat-theme [data-ui~="ops-dashboard"] > div[class~="rounded-3xl"]:has(h1) > div[class~="grid"] > div:last-child > div[class~="rounded-2xl"] > div:first-child > div > span:first-child,
-html.flat-theme [data-ui~="ops-dashboard"] > div[class~="rounded-3xl"]:has(h1) > div[class~="border-t"] > div > div > div:first-child div[class~="uppercase"] {
+html.flat-theme [data-ui~="ops-dashboard"] > div[class~="rounded-3xl"][data-ui~="ops-header"] > div[class~="grid"] > div:last-child > div[class~="rounded-2xl"] > div:first-child > div > span:first-child,
+html.flat-theme [data-ui~="ops-dashboard"] > div[class~="rounded-3xl"][data-ui~="ops-header"] > div[class~="border-t"] > div > div > div:first-child div[class~="uppercase"] {
   font-family: var(--ui-font-mono);
   font-size: var(--ui-label-size);
   font-weight: 400;
   line-height: var(--ui-label-leading);
   letter-spacing: var(--ui-label-tracking);
   text-transform: uppercase;
-  color: rgb(var(--ui-label));
+  color: rgb(var(--ops-tile-label, var(--ui-label)));
 }
 
 /* the SLA tile's threshold dot: the reference's 6px status dot */
-html.flat-theme [data-ui~="ops-dashboard"] > div[class~="rounded-3xl"]:has(h1) > div[class~="grid"] > div:last-child > div[class~="rounded-2xl"] > div:first-child > div > span[class~="h-1.5"] {
+html.flat-theme [data-ui~="ops-dashboard"] > div[class~="rounded-3xl"][data-ui~="ops-header"] > div[class~="grid"] > div:last-child > div[class~="rounded-2xl"] > div:first-child > div > span[class~="h-1.5"] {
   width: 6px;
   height: 6px;
 }
 
-html.flat-theme [data-ui~="ops-dashboard"] > div[class~="rounded-3xl"]:has(h1) > div[class~="grid"] > div:last-child > div[class~="rounded-2xl"] > div:first-child > div > span[class~="bg-green-500"] {
+html.flat-theme [data-ui~="ops-dashboard"] > div[class~="rounded-3xl"][data-ui~="ops-header"] > div[class~="grid"] > div:last-child > div[class~="rounded-2xl"] > div:first-child > div > span[class~="bg-green-500"] {
   background-color: rgb(var(--ui-dot-ok));
 }
 
-html.flat-theme [data-ui~="ops-dashboard"] > div[class~="rounded-3xl"]:has(h1) > div[class~="grid"] > div:last-child > div[class~="rounded-2xl"] > div:first-child > div > span[class~="bg-yellow-500"] {
+html.flat-theme [data-ui~="ops-dashboard"] > div[class~="rounded-3xl"][data-ui~="ops-header"] > div[class~="grid"] > div:last-child > div[class~="rounded-2xl"] > div:first-child > div > span[class~="bg-yellow-500"] {
   background-color: rgb(var(--ui-dot-warn));
 }
 
-html.flat-theme [data-ui~="ops-dashboard"] > div[class~="rounded-3xl"]:has(h1) > div[class~="grid"] > div:last-child > div[class~="rounded-2xl"] > div:first-child > div > span[class~="bg-red-500"] {
+html.flat-theme [data-ui~="ops-dashboard"] > div[class~="rounded-3xl"][data-ui~="ops-header"] > div[class~="grid"] > div:last-child > div[class~="rounded-2xl"] > div:first-child > div > span[class~="bg-red-500"] {
   background-color: rgb(var(--ui-dot-bad));
 }
 
 /* 「明细」: a link (the accent text, underline on hover), not a blue label */
-html.flat-theme [data-ui~="ops-dashboard"] > div[class~="rounded-3xl"]:has(h1) button[class~="text-[10px]"][class~="text-blue-500"] {
+html.flat-theme [data-ui~="ops-dashboard"] > div[class~="rounded-3xl"][data-ui~="ops-header"] button[class~="text-[10px]"][class~="text-blue-500"] {
   font-size: 11.5px;
   font-weight: 500;
   line-height: 16px;
@@ -471,7 +479,7 @@ html.flat-theme [data-ui~="ops-dashboard"] > div[class~="rounded-3xl"]:has(h1) b
 }
 
 /* the tile's figure: 15/600 tabular; fullscreen 22 (the wall display) */
-html.flat-theme [data-ui~="ops-dashboard"] > div[class~="rounded-3xl"]:has(h1) > div[class~="grid"] > div:last-child > div[class~="rounded-2xl"] :is(div[class~="text-3xl"]) {
+html.flat-theme [data-ui~="ops-dashboard"] > div[class~="rounded-3xl"][data-ui~="ops-header"] > div[class~="grid"] > div:last-child > div[class~="rounded-2xl"] :is(div[class~="text-3xl"]) {
   margin-top: 2px;
   font-size: 15px;
   font-weight: 600;
@@ -480,21 +488,21 @@ html.flat-theme [data-ui~="ops-dashboard"] > div[class~="rounded-3xl"]:has(h1) >
   letter-spacing: 0;
 }
 
-html.flat-theme [data-ui~="ops-dashboard"][class~="p-4"] > div[class~="rounded-3xl"]:has(h1) > div[class~="grid"] > div:last-child > div[class~="rounded-2xl"] :is(div[class~="text-3xl"]) {
+html.flat-theme [data-ui~="ops-dashboard"][class~="p-4"] > div[class~="rounded-3xl"][data-ui~="ops-header"] > div[class~="grid"] > div:last-child > div[class~="rounded-2xl"] :is(div[class~="text-3xl"]) {
   font-size: 22px;
   line-height: 30px;
 }
 
-html.flat-theme [data-ui~="ops-dashboard"] > div[class~="rounded-3xl"]:has(h1) > div[class~="grid"] > div:last-child > div[class~="rounded-2xl"] > div[class~="items-baseline"] {
+html.flat-theme [data-ui~="ops-dashboard"] > div[class~="rounded-3xl"][data-ui~="ops-header"] > div[class~="grid"] > div:last-child > div[class~="rounded-2xl"] > div[class~="items-baseline"] {
   margin-top: 2px;
   gap: 4px;
 }
 
-html.flat-theme [data-ui~="ops-dashboard"] > div[class~="rounded-3xl"]:has(h1) > div[class~="grid"] > div:last-child > div[class~="rounded-2xl"] > div[class~="items-baseline"] > div[class~="text-3xl"] {
+html.flat-theme [data-ui~="ops-dashboard"] > div[class~="rounded-3xl"][data-ui~="ops-header"] > div[class~="grid"] > div:last-child > div[class~="rounded-2xl"] > div[class~="items-baseline"] > div[class~="text-3xl"] {
   margin-top: 0;
 }
 
-html.flat-theme [data-ui~="ops-dashboard"] > div[class~="rounded-3xl"]:has(h1) > div[class~="grid"] > div:last-child > div[class~="rounded-2xl"] > div[class~="items-baseline"] > span {
+html.flat-theme [data-ui~="ops-dashboard"] > div[class~="rounded-3xl"][data-ui~="ops-header"] > div[class~="grid"] > div:last-child > div[class~="rounded-2xl"] > div[class~="items-baseline"] > span {
   font-family: var(--ui-font-mono);
   font-size: 10.5px;
   font-weight: 400;
@@ -502,103 +510,101 @@ html.flat-theme [data-ui~="ops-dashboard"] > div[class~="rounded-3xl"]:has(h1) >
 }
 
 /* the detail rows: label 12px muted, figure Mono 12 ink-soft (REF §8.9 breakdown rows), 2px apart */
-html.flat-theme [data-ui~="ops-dashboard"] > div[class~="rounded-3xl"]:has(h1) > div[class~="grid"] > div:last-child > div[class~="rounded-2xl"] > div:is([class~="space-y-2"], [class~="space-y-1"], [class~="grid"], [class~="mt-3"]):not([class~="h-2"]) {
+html.flat-theme [data-ui~="ops-dashboard"] > div[class~="rounded-3xl"][data-ui~="ops-header"] > div[class~="grid"] > div:last-child > div[class~="rounded-2xl"] > div:is([class~="space-y-2"], [class~="space-y-1"], [class~="grid"], [class~="mt-3"]):not([class~="h-2"]) {
   margin-top: 6px;
   font-size: 12px;
   line-height: 18px;
 }
 
-html.flat-theme [data-ui~="ops-dashboard"] > div[class~="rounded-3xl"]:has(h1) > div[class~="grid"] > div:last-child > div[class~="rounded-2xl"] > div[class~="space-y-2"] > :not([hidden]) ~ :not([hidden]),
-html.flat-theme [data-ui~="ops-dashboard"] > div[class~="rounded-3xl"]:has(h1) > div[class~="grid"] > div:last-child > div[class~="rounded-2xl"] > div[class~="space-y-1"] > :not([hidden]) ~ :not([hidden]) {
+html.flat-theme [data-ui~="ops-dashboard"] > div[class~="rounded-3xl"][data-ui~="ops-header"] > div[class~="grid"] > div:last-child > div[class~="rounded-2xl"] > div[class~="space-y-2"] > :not([hidden]) ~ :not([hidden]),
+html.flat-theme [data-ui~="ops-dashboard"] > div[class~="rounded-3xl"][data-ui~="ops-header"] > div[class~="grid"] > div:last-child > div[class~="rounded-2xl"] > div[class~="space-y-1"] > :not([hidden]) ~ :not([hidden]) {
   margin-top: 2px;
 }
 
-html.flat-theme [data-ui~="ops-dashboard"] > div[class~="rounded-3xl"]:has(h1) > div[class~="grid"] > div:last-child > div[class~="rounded-2xl"] > div[class~="grid"] {
+html.flat-theme [data-ui~="ops-dashboard"] > div[class~="rounded-3xl"][data-ui~="ops-header"] > div[class~="grid"] > div:last-child > div[class~="rounded-2xl"] > div[class~="grid"] {
   row-gap: 2px;
 }
 
-html.flat-theme [data-ui~="ops-dashboard"] > div[class~="rounded-3xl"]:has(h1) > div[class~="grid"] > div:last-child > div[class~="rounded-2xl"] > div > div > span[class~="text-gray-500"] {
+html.flat-theme [data-ui~="ops-dashboard"] > div[class~="rounded-3xl"][data-ui~="ops-header"] > div[class~="grid"] > div:last-child > div[class~="rounded-2xl"] > div > div > span[class~="text-gray-500"] {
   color: rgb(var(--ui-muted));
 }
 
-html.flat-theme [data-ui~="ops-dashboard"] > div[class~="rounded-3xl"]:has(h1) > div[class~="grid"] > div:last-child > div[class~="rounded-2xl"] > div > div > span[class~="font-bold"] {
+html.flat-theme [data-ui~="ops-dashboard"] > div[class~="rounded-3xl"][data-ui~="ops-header"] > div[class~="grid"] > div:last-child > div[class~="rounded-2xl"] > div > div > span[class~="font-bold"] {
   font-family: var(--ui-font-mono);
   font-size: 12px;
   font-weight: 500;
   font-variant-numeric: tabular-nums;
 }
 
-html.flat-theme [data-ui~="ops-dashboard"] > div[class~="rounded-3xl"]:has(h1) > div[class~="grid"] > div:last-child > div[class~="rounded-2xl"] > div > div > span[class~="font-bold"][class~="text-gray-900"] {
+html.flat-theme [data-ui~="ops-dashboard"] > div[class~="rounded-3xl"][data-ui~="ops-header"] > div[class~="grid"] > div:last-child > div[class~="rounded-2xl"] > div > div > span[class~="font-bold"][class~="text-gray-900"] {
   color: rgb(var(--ui-ink-soft));
 }
 
-html.flat-theme [data-ui~="ops-dashboard"] > div[class~="rounded-3xl"]:has(h1) > div[class~="grid"] > div:last-child > div[class~="rounded-2xl"] > div > div > span[class~="text-gray-400"] {
+html.flat-theme [data-ui~="ops-dashboard"] > div[class~="rounded-3xl"][data-ui~="ops-header"] > div[class~="grid"] > div:last-child > div[class~="rounded-2xl"] > div > div > span[class~="text-gray-400"] {
   font-family: var(--ui-font-mono);
   font-size: 10.5px;
   color: rgb(var(--ui-muted));
 }
 
 /* the SLA bar: the reference's usage bar (a capsule on the grouped fill; the fill keeps its status colour) */
-html.flat-theme [data-ui~="ops-dashboard"] > div[class~="rounded-3xl"]:has(h1) > div[class~="grid"] > div:last-child > div[class~="rounded-2xl"] > div[class~="h-2"] {
+html.flat-theme [data-ui~="ops-dashboard"] > div[class~="rounded-3xl"][data-ui~="ops-header"] > div[class~="grid"] > div:last-child > div[class~="rounded-2xl"] > div[class~="h-2"] {
   height: 6px;
   margin-top: 8px;
   background-color: rgb(var(--ui-subtle));
 }
 
-html.flat-theme [data-ui~="ops-dashboard"] > div[class~="rounded-3xl"]:has(h1) > div[class~="grid"] > div:last-child > div[class~="rounded-2xl"] > div[class~="h-2"] + div[class~="mt-3"] {
+html.flat-theme [data-ui~="ops-dashboard"] > div[class~="rounded-3xl"][data-ui~="ops-header"] > div[class~="grid"] > div:last-child > div[class~="rounded-2xl"] > div[class~="h-2"] + div[class~="mt-3"] {
   margin-top: 6px;
 }
 
 /* status colours of the figures: inside the threshold = ink; warning and critical keep theirs */
-html.flat-theme [data-ui~="ops-dashboard"] > div[class~="rounded-3xl"]:has(h1) :is(div, span)[class~="text-green-600"],
-html.flat-theme [data-ui~="ops-dashboard"] > div[class~="rounded-3xl"]:has(h1) :is(div, span)[class~="text-emerald-600"] {
+html.flat-theme [data-ui~="ops-dashboard"] > div[class~="rounded-3xl"][data-ui~="ops-header"] :is(div, span)[class~="text-green-600"],
+html.flat-theme [data-ui~="ops-dashboard"] > div[class~="rounded-3xl"][data-ui~="ops-header"] :is(div, span)[class~="text-emerald-600"] {
   color: rgb(var(--ui-ink));
 }
 
-html.flat-theme [data-ui~="ops-dashboard"] > div[class~="rounded-3xl"]:has(h1) > div[class~="grid"] > div:last-child > div[class~="rounded-2xl"] > div > div > span[class~="text-green-600"] {
+html.flat-theme [data-ui~="ops-dashboard"] > div[class~="rounded-3xl"][data-ui~="ops-header"] > div[class~="grid"] > div:last-child > div[class~="rounded-2xl"] > div > div > span[class~="text-green-600"] {
   color: rgb(var(--ui-ink-soft));
 }
 
-html.flat-theme [data-ui~="ops-dashboard"] > div[class~="rounded-3xl"]:has(h1) :is(div, span)[class~="text-yellow-600"] {
+html.flat-theme [data-ui~="ops-dashboard"] > div[class~="rounded-3xl"][data-ui~="ops-header"] :is(div, span)[class~="text-yellow-600"] {
   color: rgb(var(--ui-warning));
 }
 
-html.flat-theme [data-ui~="ops-dashboard"] > div[class~="rounded-3xl"]:has(h1) :is(div, span):is([class~="text-red-600"], [class~="text-rose-600"]) {
+html.flat-theme [data-ui~="ops-dashboard"] > div[class~="rounded-3xl"][data-ui~="ops-header"] :is(div, span):is([class~="text-red-600"], [class~="text-rose-600"]) {
   color: rgb(var(--ui-danger));
 }
 
 /* the alert tiles: critical = the reference's danger KPI (REF §8.13 crop kpi-card-danger: the danger line, the soft
-   fill, the figure in danger); warning the same in the warning colour; the label steps to muted on the tint */
-html.flat-theme [data-ui~="ops-dashboard"] > div[class~="rounded-3xl"]:has(h1) > div[class~="grid"] > div:last-child > div[class~="rounded-2xl"]:has(> div[class~="text-3xl"][class~="text-red-600"], > div[class~="items-baseline"] > div[class~="text-3xl"][class~="text-red-600"]),
-html.flat-theme [data-ui~="ops-dashboard"] > div[class~="rounded-3xl"]:has(h1) > div[class~="border-t"] > div > div:has(> div[class~="text-lg"][class~="text-rose-600"]) {
+   fill, the figure in danger); warning the same in the warning colour; the label steps to muted on the tint (the tile
+   sets --ops-tile-label, the label rule above reads it: no :has() over the label's ancestors) */
+html.flat-theme [data-ui~="ops-dashboard"] > div[class~="rounded-3xl"][data-ui~="ops-header"] > div[class~="grid"] > div:last-child > div[class~="rounded-2xl"]:has(> div[class~="text-3xl"][class~="text-red-600"], > div[class~="items-baseline"] > div[class~="text-3xl"][class~="text-red-600"]),
+html.flat-theme [data-ui~="ops-dashboard"] > div[class~="rounded-3xl"][data-ui~="ops-header"] > div[class~="border-t"] > div > div:has(> div[class~="text-lg"][class~="text-rose-600"]) {
   border-color: rgb(var(--ui-danger));
   background-color: rgb(var(--ui-danger-soft));
+  --ops-tile-label: var(--ui-muted);
 }
 
-html.flat-theme [data-ui~="ops-dashboard"] > div[class~="rounded-3xl"]:has(h1) > div[class~="grid"] > div:last-child > div[class~="rounded-2xl"]:has(> div[class~="text-3xl"][class~="text-yellow-600"], > div[class~="items-baseline"] > div[class~="text-3xl"][class~="text-yellow-600"]),
-html.flat-theme [data-ui~="ops-dashboard"] > div[class~="rounded-3xl"]:has(h1) > div[class~="border-t"] > div > div:has(> div[class~="text-lg"][class~="text-yellow-600"]) {
+html.flat-theme [data-ui~="ops-dashboard"] > div[class~="rounded-3xl"][data-ui~="ops-header"] > div[class~="grid"] > div:last-child > div[class~="rounded-2xl"]:has(> div[class~="text-3xl"][class~="text-yellow-600"], > div[class~="items-baseline"] > div[class~="text-3xl"][class~="text-yellow-600"]),
+html.flat-theme [data-ui~="ops-dashboard"] > div[class~="rounded-3xl"][data-ui~="ops-header"] > div[class~="border-t"] > div > div:has(> div[class~="text-lg"][class~="text-yellow-600"]) {
   border-color: rgb(var(--ui-warning));
   background-color: rgb(var(--ui-warning-soft));
-}
-
-html.flat-theme [data-ui~="ops-dashboard"] > div[class~="rounded-3xl"]:has(h1) > div[class~="grid"] > div:last-child > div[class~="rounded-2xl"]:has(> div[class~="text-3xl"]:is([class~="text-red-600"], [class~="text-yellow-600"]), > div[class~="items-baseline"] > div[class~="text-3xl"]:is([class~="text-red-600"], [class~="text-yellow-600"])) > div:first-child > div > span:first-child,
-html.flat-theme [data-ui~="ops-dashboard"] > div[class~="rounded-3xl"]:has(h1) > div[class~="border-t"] > div > div:has(> div[class~="text-lg"]:is([class~="text-rose-600"], [class~="text-yellow-600"])) > div:first-child div[class~="uppercase"] {
-  color: rgb(var(--ui-muted));
+  --ops-tile-label: var(--ui-muted);
 }
 
 /* 2.4 the system tiles (CPU, memory, database, Redis, goroutines, jobs): a KPI row of their own, 10px apart, each the
    reference's StatTile (label, figure 15/600, the detail 11px muted with Mono figures) */
-html.flat-theme [data-ui~="ops-dashboard"] > div[class~="rounded-3xl"]:has(h1) > div[class~="border-t"] {
+html.flat-theme [data-ui~="ops-dashboard"] > div[class~="rounded-3xl"][data-ui~="ops-header"] > div[class~="border-t"] {
   margin-top: 0;
   padding-top: 0;
   border-top-width: 0;
 }
 
-html.flat-theme [data-ui~="ops-dashboard"] > div[class~="rounded-3xl"]:has(h1) > div[class~="border-t"] > div[class~="grid"] {
+html.flat-theme [data-ui~="ops-dashboard"] > div[class~="rounded-3xl"][data-ui~="ops-header"] > div[class~="border-t"] > div[class~="grid"] {
   gap: 10px;
 }
 
-html.flat-theme [data-ui~="ops-dashboard"] > div[class~="rounded-3xl"]:has(h1) > div[class~="border-t"] > div[class~="grid"] > div {
+html.flat-theme [data-ui~="ops-dashboard"] > div[class~="rounded-3xl"][data-ui~="ops-header"] > div[class~="border-t"] > div[class~="grid"] > div {
   display: flex;
   flex-direction: column;
   min-height: 76px;
@@ -608,7 +614,7 @@ html.flat-theme [data-ui~="ops-dashboard"] > div[class~="rounded-3xl"]:has(h1) >
   background-color: rgb(var(--ui-surface));
 }
 
-html.flat-theme [data-ui~="ops-dashboard"] > div[class~="rounded-3xl"]:has(h1) > div[class~="border-t"] > div[class~="grid"] > div > div[class~="text-lg"] {
+html.flat-theme [data-ui~="ops-dashboard"] > div[class~="rounded-3xl"][data-ui~="ops-header"] > div[class~="border-t"] > div[class~="grid"] > div > div[class~="text-lg"] {
   margin-top: 2px;
   font-size: 15px;
   font-weight: 600;
@@ -616,27 +622,29 @@ html.flat-theme [data-ui~="ops-dashboard"] > div[class~="rounded-3xl"]:has(h1) >
   font-variant-numeric: tabular-nums;
 }
 
-html.flat-theme [data-ui~="ops-dashboard"][class~="p-4"] > div[class~="rounded-3xl"]:has(h1) > div[class~="border-t"] > div[class~="grid"] > div > div[class~="text-lg"] {
+html.flat-theme [data-ui~="ops-dashboard"][class~="p-4"] > div[class~="rounded-3xl"][data-ui~="ops-header"] > div[class~="border-t"] > div[class~="grid"] > div > div[class~="text-lg"] {
   font-size: 20px;
   line-height: 28px;
 }
 
-html.flat-theme [data-ui~="ops-dashboard"] > div[class~="rounded-3xl"]:has(h1) > div[class~="border-t"] > div[class~="grid"] > div > div[class~="text-[10px]"] {
+html.flat-theme [data-ui~="ops-dashboard"] > div[class~="rounded-3xl"][data-ui~="ops-header"] > div[class~="border-t"] > div[class~="grid"] > div > div[class~="text-[10px]"] {
   margin-top: 2px;
   font-size: 11px;
   line-height: 16.5px;
   color: rgb(var(--ui-muted));
 }
 
-html.flat-theme [data-ui~="ops-dashboard"] > div[class~="rounded-3xl"]:has(h1) > div[class~="border-t"] > div[class~="grid"] > div > div[class~="text-[10px]"] span[class~="font-mono"] {
+html.flat-theme [data-ui~="ops-dashboard"] > div[class~="rounded-3xl"][data-ui~="ops-header"] > div[class~="border-t"] > div[class~="grid"] > div > div[class~="text-[10px]"] span[class~="font-mono"] {
   color: rgb(var(--ui-ink-soft));
 }
 
 /* ================================================================== 3 · ops monitoring: cards */
 
 /* 3.1 Every card on the page (concurrency, the five charts, alert events, OpenAI token stats, system logs): the
-   reference's card (REF §8.7 / §8.14: surface, 1px structural line, radius 8, no shadow, 14px in). */
-html.flat-theme [data-ui~="ops-dashboard"] div[class~="rounded-3xl"][class~="ring-1"]:not(:has(h1)),
+   reference's card (REF §8.7 / §8.14: surface, 1px structural line, radius 8, no shadow, 14px in). The rounded-3xl
+   ring-1 cards are every such card but the header (data-ui="ops-header"); the chart cards carry data-ui="ops-chart";
+   the alert events card is the only one that is a direct child of the page. */
+html.flat-theme [data-ui~="ops-dashboard"] div[class~="rounded-3xl"][class~="ring-1"]:not([data-ui~="ops-header"]),
 html.flat-theme [data-ui~="ops-dashboard"] > section:is([class~="rounded-2xl"], [class~="card"]),
 html.flat-theme [data-ui~="ops-dashboard"] > div > section[class~="card"] {
   padding: 14px;
@@ -647,7 +655,7 @@ html.flat-theme [data-ui~="ops-dashboard"] > div > section[class~="card"] {
 }
 
 /* the card head: 12px above the body, controls 26px */
-html.flat-theme [data-ui~="ops-dashboard"] div[class~="rounded-3xl"][class~="ring-1"]:not(:has(h1)) > div[class~="mb-4"]:first-child,
+html.flat-theme [data-ui~="ops-dashboard"] div[class~="rounded-3xl"][class~="ring-1"]:not([data-ui~="ops-header"]) > div[class~="mb-4"]:first-child,
 html.flat-theme [data-ui~="ops-dashboard"] > section:is([class~="rounded-2xl"], [class~="card"]) > div[class~="mb-4"]:first-child,
 html.flat-theme [data-ui~="ops-dashboard"] > div > section[class~="card"] > div[class~="mb-4"]:first-child {
   min-height: 26px;
@@ -657,11 +665,11 @@ html.flat-theme [data-ui~="ops-dashboard"] > div > section[class~="card"] > div[
 /* titles: a chart card's title is the mono label (REF §8.14 "SPEND OVER TIME"); a list or table card's title is the
    reference's card title 13/600 ink with its description 12px muted ("Request history"). The coloured glyph before a
    title is decoration and goes; the help icon stays. */
-html.flat-theme [data-ui~="ops-dashboard"] div[class~="rounded-3xl"][class~="ring-1"]:not(:has(h1)) h3 > svg:first-child {
+html.flat-theme [data-ui~="ops-dashboard"] div[class~="rounded-3xl"][class~="ring-1"]:not([data-ui~="ops-header"]) h3 > svg:first-child {
   display: none;
 }
 
-html.flat-theme [data-ui~="ops-dashboard"] div[class~="rounded-3xl"][class~="ring-1"]:not(:has(h1)):has(canvas, > div > div > [class~="animate-pulse"], > div[class~="min-h-0"] > div > .empty-state, > div[class~="relative"] > div > .empty-state) h3 {
+html.flat-theme [data-ui~="ops-dashboard"] div[class~="rounded-3xl"][class~="ring-1"]:not([data-ui~="ops-header"])[data-ui~="ops-chart"] h3 {
   gap: 0;
   font-family: var(--ui-font-mono);
   font-size: var(--ui-label-size);
@@ -672,7 +680,7 @@ html.flat-theme [data-ui~="ops-dashboard"] div[class~="rounded-3xl"][class~="rin
   color: rgb(var(--ui-label));
 }
 
-html.flat-theme [data-ui~="ops-dashboard"] div[class~="rounded-3xl"][class~="ring-1"]:not(:has(h1)):not(:has(canvas, > div > div > [class~="animate-pulse"], > div[class~="min-h-0"] > div > .empty-state, > div[class~="relative"] > div > .empty-state)) h3,
+html.flat-theme [data-ui~="ops-dashboard"] div[class~="rounded-3xl"][class~="ring-1"]:not([data-ui~="ops-header"]):not([data-ui~="ops-chart"]) h3,
 html.flat-theme [data-ui~="ops-dashboard"] section:is([class~="rounded-2xl"], [class~="card"]) h3 {
   gap: 0;
   font-size: 13px;
@@ -681,7 +689,7 @@ html.flat-theme [data-ui~="ops-dashboard"] section:is([class~="rounded-2xl"], [c
   color: rgb(var(--ui-ink));
 }
 
-html.flat-theme [data-ui~="ops-dashboard"] :is(div[class~="rounded-3xl"][class~="ring-1"]:not(:has(h1)), section:is([class~="rounded-2xl"], [class~="card"])) > div:first-child > div > p[class~="text-xs"] {
+html.flat-theme [data-ui~="ops-dashboard"] :is(div[class~="rounded-3xl"][class~="ring-1"]:not([data-ui~="ops-header"]), section:is([class~="rounded-2xl"], [class~="card"])) > div:first-child > div > p[class~="text-xs"] {
   margin-top: 2px;
   font-size: 12px;
   line-height: 18px;
@@ -691,7 +699,7 @@ html.flat-theme [data-ui~="ops-dashboard"] :is(div[class~="rounded-3xl"][class~=
 /* the head's small buttons (明细 / 重置 / 下载 / 请求错误 / 上游错误, the concurrency view toggle and refresh, the alert
    refresh): the reference's default button at the small size (26px, radius 6, control outline, surface, 12/600,
    ink-soft, ink on hover) */
-html.flat-theme [data-ui~="ops-dashboard"] div[class~="rounded-3xl"][class~="ring-1"]:not(:has(h1)) > div:first-child button:is([class~="border-gray-200"], [class~="bg-gray-100"], [class~="bg-blue-100"]) {
+html.flat-theme [data-ui~="ops-dashboard"] div[class~="rounded-3xl"][class~="ring-1"]:not([data-ui~="ops-header"]) > div:first-child button:is([class~="border-gray-200"], [class~="bg-gray-100"], [class~="bg-blue-100"]) {
   gap: 6px;
   min-width: 26px;
   height: 26px;
@@ -706,31 +714,31 @@ html.flat-theme [data-ui~="ops-dashboard"] div[class~="rounded-3xl"][class~="rin
   transition: color var(--ui-duration) var(--ui-ease), border-color var(--ui-duration) var(--ui-ease), background-color var(--ui-duration) var(--ui-ease);
 }
 
-html.flat-theme [data-ui~="ops-dashboard"] div[class~="rounded-3xl"][class~="ring-1"]:not(:has(h1)) > div:first-child button:is([class~="border-gray-200"], [class~="bg-gray-100"], [class~="bg-blue-100"]):hover:not(:disabled) {
+html.flat-theme [data-ui~="ops-dashboard"] div[class~="rounded-3xl"][class~="ring-1"]:not([data-ui~="ops-header"]) > div:first-child button:is([class~="border-gray-200"], [class~="bg-gray-100"], [class~="bg-blue-100"]):hover:not(:disabled) {
   border-color: rgb(var(--ui-line-focus));
   background-color: rgb(var(--ui-surface));
   color: rgb(var(--ui-ink));
 }
 
-html.flat-theme [data-ui~="ops-dashboard"] div[class~="rounded-3xl"][class~="ring-1"]:not(:has(h1)) > div:first-child button:is([class~="border-gray-200"], [class~="bg-gray-100"], [class~="bg-blue-100"]):disabled {
+html.flat-theme [data-ui~="ops-dashboard"] div[class~="rounded-3xl"][class~="ring-1"]:not([data-ui~="ops-header"]) > div:first-child button:is([class~="border-gray-200"], [class~="bg-gray-100"], [class~="bg-blue-100"]):disabled {
   opacity: 0.55;
 }
 
 /* a pressed toggle (the concurrency card's per-user view) is the reference's active filter: accent line at 40 %, the
    accent tint, accent glyph */
-html.flat-theme [data-ui~="ops-dashboard"] div[class~="rounded-3xl"][class~="ring-1"]:not(:has(h1)) > div:first-child button[class~="bg-blue-100"] {
+html.flat-theme [data-ui~="ops-dashboard"] div[class~="rounded-3xl"][class~="ring-1"]:not([data-ui~="ops-header"]) > div:first-child button[class~="bg-blue-100"] {
   border-color: rgb(var(--ui-primary) / 0.4);
   background-color: rgb(var(--ui-primary-soft));
   color: var(--ui-link);
 }
 
 /* the concurrency card's two glyph-only buttons (px-2 py-1, no label) are square */
-html.flat-theme [data-ui~="ops-dashboard"] div[class~="rounded-3xl"][class~="ring-1"]:not(:has(h1)) > div:first-child button:is([class~="bg-gray-100"], [class~="bg-blue-100"])[class~="px-2"][class~="py-1"] {
+html.flat-theme [data-ui~="ops-dashboard"] div[class~="rounded-3xl"][class~="ring-1"]:not([data-ui~="ops-header"]) > div:first-child button:is([class~="bg-gray-100"], [class~="bg-blue-100"])[class~="px-2"][class~="py-1"] {
   width: 26px;
   padding: 0;
 }
 
-html.flat-theme [data-ui~="ops-dashboard"] div[class~="rounded-3xl"][class~="ring-1"]:not(:has(h1)) > div:first-child button > svg {
+html.flat-theme [data-ui~="ops-dashboard"] div[class~="rounded-3xl"][class~="ring-1"]:not([data-ui~="ops-header"]) > div:first-child button > svg {
   width: 13px;
   height: 13px;
 }
@@ -751,12 +759,12 @@ html.flat-theme [data-ui~="ops-dashboard"] [data-testid="throughput-chart-toolba
 
 /* the throughput drilldown chips (a platform or a group and its request count): the reference's provider chip shape
    (radius 4, the control outline, Geist Mono 10.5 uppercase ink-soft, the count faint) */
-html.flat-theme [data-ui~="ops-dashboard"] div[class~="rounded-3xl"][class~="ring-1"]:not(:has(h1)) > div[class~="mb-3"][class~="flex-wrap"] {
+html.flat-theme [data-ui~="ops-dashboard"] div[class~="rounded-3xl"][class~="ring-1"]:not([data-ui~="ops-header"]) > div[class~="mb-3"][class~="flex-wrap"] {
   gap: 6px;
   margin-bottom: 10px;
 }
 
-html.flat-theme [data-ui~="ops-dashboard"] div[class~="rounded-3xl"][class~="ring-1"]:not(:has(h1)) > div[class~="mb-3"][class~="flex-wrap"] > button {
+html.flat-theme [data-ui~="ops-dashboard"] div[class~="rounded-3xl"][class~="ring-1"]:not([data-ui~="ops-header"]) > div[class~="mb-3"][class~="flex-wrap"] > button {
   gap: 6px;
   padding: 2px 7px;
   border: 1px solid rgb(var(--ui-line-strong));
@@ -771,52 +779,52 @@ html.flat-theme [data-ui~="ops-dashboard"] div[class~="rounded-3xl"][class~="rin
   transition: color var(--ui-duration) var(--ui-ease), border-color var(--ui-duration) var(--ui-ease);
 }
 
-html.flat-theme [data-ui~="ops-dashboard"] div[class~="rounded-3xl"][class~="ring-1"]:not(:has(h1)) > div[class~="mb-3"][class~="flex-wrap"] > button:hover {
+html.flat-theme [data-ui~="ops-dashboard"] div[class~="rounded-3xl"][class~="ring-1"]:not([data-ui~="ops-header"]) > div[class~="mb-3"][class~="flex-wrap"] > button:hover {
   border-color: rgb(var(--ui-line-focus));
   background-color: rgb(var(--ui-surface));
   color: rgb(var(--ui-ink));
 }
 
-html.flat-theme [data-ui~="ops-dashboard"] div[class~="rounded-3xl"][class~="ring-1"]:not(:has(h1)) > div[class~="mb-3"][class~="flex-wrap"] > button > span:last-child {
+html.flat-theme [data-ui~="ops-dashboard"] div[class~="rounded-3xl"][class~="ring-1"]:not([data-ui~="ops-header"]) > div[class~="mb-3"][class~="flex-wrap"] > button > span:last-child {
   color: rgb(var(--ui-faint));
 }
 
 /* the error distribution's summary under the doughnut: 「最高: 上游」 ink-soft with the slice's own colour kept on the
    value, the legend as the reference's (8px squares, 11px muted) */
-html.flat-theme [data-ui~="ops-dashboard"] div[class~="rounded-3xl"][class~="ring-1"]:not(:has(h1)) div[class~="mt-4"][class~="flex-col"][class~="items-center"] {
+html.flat-theme [data-ui~="ops-dashboard"] div[class~="rounded-3xl"][class~="ring-1"]:not([data-ui~="ops-header"]) div[class~="mt-4"][class~="flex-col"][class~="items-center"] {
   margin-top: 10px;
   gap: 6px;
 }
 
-html.flat-theme [data-ui~="ops-dashboard"] div[class~="rounded-3xl"][class~="ring-1"]:not(:has(h1)) div[class~="mt-4"][class~="flex-col"][class~="items-center"] > div[class~="font-bold"] {
+html.flat-theme [data-ui~="ops-dashboard"] div[class~="rounded-3xl"][class~="ring-1"]:not([data-ui~="ops-header"]) div[class~="mt-4"][class~="flex-col"][class~="items-center"] > div[class~="font-bold"] {
   font-size: 12px;
   font-weight: 500;
   color: rgb(var(--ui-ink-soft));
 }
 
-html.flat-theme [data-ui~="ops-dashboard"] div[class~="rounded-3xl"][class~="ring-1"]:not(:has(h1)) div[class~="mt-4"][class~="flex-col"][class~="items-center"] > div[class~="flex-wrap"] {
+html.flat-theme [data-ui~="ops-dashboard"] div[class~="rounded-3xl"][class~="ring-1"]:not([data-ui~="ops-header"]) div[class~="mt-4"][class~="flex-col"][class~="items-center"] > div[class~="flex-wrap"] {
   gap: 12px;
 }
 
-html.flat-theme [data-ui~="ops-dashboard"] div[class~="rounded-3xl"][class~="ring-1"]:not(:has(h1)) div[class~="mt-4"][class~="flex-col"][class~="items-center"] > div[class~="flex-wrap"] > div {
+html.flat-theme [data-ui~="ops-dashboard"] div[class~="rounded-3xl"][class~="ring-1"]:not([data-ui~="ops-header"]) div[class~="mt-4"][class~="flex-col"][class~="items-center"] > div[class~="flex-wrap"] > div {
   gap: 6px;
   font-size: 11px;
   line-height: 16.5px;
 }
 
-html.flat-theme [data-ui~="ops-dashboard"] div[class~="rounded-3xl"][class~="ring-1"]:not(:has(h1)) div[class~="mt-4"][class~="flex-col"][class~="items-center"] > div[class~="flex-wrap"] > div > span:first-child {
+html.flat-theme [data-ui~="ops-dashboard"] div[class~="rounded-3xl"][class~="ring-1"]:not([data-ui~="ops-header"]) div[class~="mt-4"][class~="flex-col"][class~="items-center"] > div[class~="flex-wrap"] > div > span:first-child {
   width: 8px;
   height: 8px;
   border-radius: 2px;
 }
 
-html.flat-theme [data-ui~="ops-dashboard"] div[class~="rounded-3xl"][class~="ring-1"]:not(:has(h1)) div[class~="mt-4"][class~="flex-col"][class~="items-center"] > div[class~="flex-wrap"] > div > span:last-child {
+html.flat-theme [data-ui~="ops-dashboard"] div[class~="rounded-3xl"][class~="ring-1"]:not([data-ui~="ops-header"]) div[class~="mt-4"][class~="flex-col"][class~="items-center"] > div[class~="flex-wrap"] > div > span:last-child {
   color: rgb(var(--ui-muted));
   font-variant-numeric: tabular-nums;
 }
 
 /* loading text in a chart's place: the reference's quiet 12px muted line (no pulse) */
-html.flat-theme [data-ui~="ops-dashboard"] div[class~="rounded-3xl"][class~="ring-1"]:not(:has(h1)) div[class~="animate-pulse"][class~="text-sm"] {
+html.flat-theme [data-ui~="ops-dashboard"] div[class~="rounded-3xl"][class~="ring-1"]:not([data-ui~="ops-header"]) div[class~="animate-pulse"][class~="text-sm"] {
   animation: none;
   font-size: 12px;
   color: rgb(var(--ui-muted));
@@ -827,20 +835,20 @@ html.flat-theme [data-ui~="ops-dashboard"] div[class~="rounded-3xl"][class~="rin
    Mono ink-soft, the load share Mono (normal ink-soft; the load colours stay on the bar and from 50 % up), the 6px bar
    on the grouped fill, the account and queue chips as the reference's small status chips. The band's label and count
    are muted, not the label grey: on the band's fill the label grey is 4.50:1, the muted grey 5.0:1. */
-html.flat-theme [data-ui~="ops-dashboard"] div[class~="rounded-3xl"][class~="ring-1"]:not(:has(h1)) > div[class~="rounded-xl"][class~="border"]:has(> div[class~="bg-gray-50"]) {
+html.flat-theme [data-ui~="ops-dashboard"] div[class~="rounded-3xl"][class~="ring-1"]:not([data-ui~="ops-header"]) > div[class~="rounded-xl"][class~="border"]:has(> div[class~="bg-gray-50"]) {
   margin: 0 -14px -14px;
   border-width: 1px 0 0;
   border-color: rgb(var(--ui-line));
   border-radius: 0 0 var(--ui-radius-lg) var(--ui-radius-lg);
 }
 
-html.flat-theme [data-ui~="ops-dashboard"] div[class~="rounded-3xl"][class~="ring-1"]:not(:has(h1)) > div[class~="rounded-xl"][class~="border"] > div[class~="bg-gray-50"]:first-child {
+html.flat-theme [data-ui~="ops-dashboard"] div[class~="rounded-3xl"][class~="ring-1"]:not([data-ui~="ops-header"]) > div[class~="rounded-xl"][class~="border"] > div[class~="bg-gray-50"]:first-child {
   padding: 6px 16px;
   border-color: rgb(var(--ui-line));
   background-color: color-mix(in srgb, rgb(var(--ui-subtle)) 60%, rgb(var(--ui-surface)));
 }
 
-html.flat-theme [data-ui~="ops-dashboard"] div[class~="rounded-3xl"][class~="ring-1"]:not(:has(h1)) > div[class~="rounded-xl"][class~="border"] > div[class~="bg-gray-50"]:first-child > span:first-child {
+html.flat-theme [data-ui~="ops-dashboard"] div[class~="rounded-3xl"][class~="ring-1"]:not([data-ui~="ops-header"]) > div[class~="rounded-xl"][class~="border"] > div[class~="bg-gray-50"]:first-child > span:first-child {
   font-family: var(--ui-font-mono);
   font-size: var(--ui-label-size);
   font-weight: 400;
@@ -849,97 +857,97 @@ html.flat-theme [data-ui~="ops-dashboard"] div[class~="rounded-3xl"][class~="rin
   color: rgb(var(--ui-muted));
 }
 
-html.flat-theme [data-ui~="ops-dashboard"] div[class~="rounded-3xl"][class~="ring-1"]:not(:has(h1)) > div[class~="rounded-xl"][class~="border"] > div[class~="bg-gray-50"]:first-child > span:last-child {
+html.flat-theme [data-ui~="ops-dashboard"] div[class~="rounded-3xl"][class~="ring-1"]:not([data-ui~="ops-header"]) > div[class~="rounded-xl"][class~="border"] > div[class~="bg-gray-50"]:first-child > span:last-child {
   font-family: var(--ui-font-mono);
   font-size: 11px;
   font-variant-numeric: tabular-nums;
   color: rgb(var(--ui-muted));
 }
 
-html.flat-theme [data-ui~="ops-dashboard"] div[class~="rounded-3xl"][class~="ring-1"]:not(:has(h1)) > div[class~="rounded-xl"][class~="border"] > div[class~="custom-scrollbar"] {
+html.flat-theme [data-ui~="ops-dashboard"] div[class~="rounded-3xl"][class~="ring-1"]:not([data-ui~="ops-header"]) > div[class~="rounded-xl"][class~="border"] > div[class~="custom-scrollbar"] {
   padding: 0;
 }
 
-html.flat-theme [data-ui~="ops-dashboard"] div[class~="rounded-3xl"][class~="ring-1"]:not(:has(h1)) > div[class~="rounded-xl"][class~="border"] > div[class~="custom-scrollbar"] > :not([hidden]) ~ :not([hidden]) {
+html.flat-theme [data-ui~="ops-dashboard"] div[class~="rounded-3xl"][class~="ring-1"]:not([data-ui~="ops-header"]) > div[class~="rounded-xl"][class~="border"] > div[class~="custom-scrollbar"] > :not([hidden]) ~ :not([hidden]) {
   margin-top: 0;
 }
 
-html.flat-theme [data-ui~="ops-dashboard"] div[class~="rounded-3xl"][class~="ring-1"]:not(:has(h1)) > div[class~="rounded-xl"][class~="border"] > div[class~="custom-scrollbar"] > div {
+html.flat-theme [data-ui~="ops-dashboard"] div[class~="rounded-3xl"][class~="ring-1"]:not([data-ui~="ops-header"]) > div[class~="rounded-xl"][class~="border"] > div[class~="custom-scrollbar"] > div {
   padding: 9px 16px 10px;
   border-bottom: 1px solid rgb(var(--ui-line));
   border-radius: 0;
   background-color: transparent;
 }
 
-html.flat-theme [data-ui~="ops-dashboard"] div[class~="rounded-3xl"][class~="ring-1"]:not(:has(h1)) > div[class~="rounded-xl"][class~="border"] > div[class~="custom-scrollbar"] > div > div:first-child {
+html.flat-theme [data-ui~="ops-dashboard"] div[class~="rounded-3xl"][class~="ring-1"]:not([data-ui~="ops-header"]) > div[class~="rounded-xl"][class~="border"] > div[class~="custom-scrollbar"] > div > div:first-child {
   margin-bottom: 6px;
 }
 
-html.flat-theme [data-ui~="ops-dashboard"] div[class~="rounded-3xl"][class~="ring-1"]:not(:has(h1)) > div[class~="rounded-xl"][class~="border"] > div[class~="custom-scrollbar"] :is(span, div)[class~="text-[11px]"][class~="font-bold"]:not([class~="font-mono"]) {
+html.flat-theme [data-ui~="ops-dashboard"] div[class~="rounded-3xl"][class~="ring-1"]:not([data-ui~="ops-header"]) > div[class~="rounded-xl"][class~="border"] > div[class~="custom-scrollbar"] :is(span, div)[class~="text-[11px]"][class~="font-bold"]:not([class~="font-mono"]) {
   font-size: 12px;
   font-weight: 600;
   line-height: 18px;
   color: rgb(var(--ui-ink));
 }
 
-html.flat-theme [data-ui~="ops-dashboard"] div[class~="rounded-3xl"][class~="ring-1"]:not(:has(h1)) > div[class~="rounded-xl"][class~="border"] > div[class~="custom-scrollbar"] span[class~="font-mono"] {
+html.flat-theme [data-ui~="ops-dashboard"] div[class~="rounded-3xl"][class~="ring-1"]:not([data-ui~="ops-header"]) > div[class~="rounded-xl"][class~="border"] > div[class~="custom-scrollbar"] span[class~="font-mono"] {
   font-size: 11.5px;
   font-weight: 500;
   font-variant-numeric: tabular-nums;
   color: rgb(var(--ui-ink-soft));
 }
 
-html.flat-theme [data-ui~="ops-dashboard"] div[class~="rounded-3xl"][class~="ring-1"]:not(:has(h1)) > div[class~="rounded-xl"][class~="border"] > div[class~="custom-scrollbar"] > div > div:first-child > div:last-child > span[class~="font-bold"]:not([class~="font-mono"]) {
+html.flat-theme [data-ui~="ops-dashboard"] div[class~="rounded-3xl"][class~="ring-1"]:not([data-ui~="ops-header"]) > div[class~="rounded-xl"][class~="border"] > div[class~="custom-scrollbar"] > div > div:first-child > div:last-child > span[class~="font-bold"]:not([class~="font-mono"]) {
   font-family: var(--ui-font-mono);
   font-size: 11.5px;
   font-weight: 500;
   font-variant-numeric: tabular-nums;
 }
 
-html.flat-theme [data-ui~="ops-dashboard"] div[class~="rounded-3xl"][class~="ring-1"]:not(:has(h1)) > div[class~="rounded-xl"][class~="border"] > div[class~="custom-scrollbar"] > div > div:first-child > div:last-child > span[class~="text-green-600"] {
+html.flat-theme [data-ui~="ops-dashboard"] div[class~="rounded-3xl"][class~="ring-1"]:not([data-ui~="ops-header"]) > div[class~="rounded-xl"][class~="border"] > div[class~="custom-scrollbar"] > div > div:first-child > div:last-child > span[class~="text-green-600"] {
   color: rgb(var(--ui-ink-soft));
 }
 
-html.flat-theme [data-ui~="ops-dashboard"] div[class~="rounded-3xl"][class~="ring-1"]:not(:has(h1)) > div[class~="rounded-xl"][class~="border"] > div[class~="custom-scrollbar"] > div > div:first-child > div:last-child > span:is([class~="text-yellow-600"], [class~="text-orange-600"]) {
+html.flat-theme [data-ui~="ops-dashboard"] div[class~="rounded-3xl"][class~="ring-1"]:not([data-ui~="ops-header"]) > div[class~="rounded-xl"][class~="border"] > div[class~="custom-scrollbar"] > div > div:first-child > div:last-child > span:is([class~="text-yellow-600"], [class~="text-orange-600"]) {
   color: rgb(var(--ui-warning));
 }
 
-html.flat-theme [data-ui~="ops-dashboard"] div[class~="rounded-3xl"][class~="ring-1"]:not(:has(h1)) > div[class~="rounded-xl"][class~="border"] > div[class~="custom-scrollbar"] > div > div:first-child > div:last-child > span[class~="text-red-600"] {
+html.flat-theme [data-ui~="ops-dashboard"] div[class~="rounded-3xl"][class~="ring-1"]:not([data-ui~="ops-header"]) > div[class~="rounded-xl"][class~="border"] > div[class~="custom-scrollbar"] > div > div:first-child > div:last-child > span[class~="text-red-600"] {
   color: rgb(var(--ui-danger));
 }
 
 /* the row's bar: 6px on the grouped fill; the fill keeps the load colour (green / yellow / orange / red) */
-html.flat-theme [data-ui~="ops-dashboard"] div[class~="rounded-3xl"][class~="ring-1"]:not(:has(h1)) > div[class~="rounded-xl"][class~="border"] > div[class~="custom-scrollbar"] > div > div[class~="h-1.5"] {
+html.flat-theme [data-ui~="ops-dashboard"] div[class~="rounded-3xl"][class~="ring-1"]:not([data-ui~="ops-header"]) > div[class~="rounded-xl"][class~="border"] > div[class~="custom-scrollbar"] > div > div[class~="h-1.5"] {
   background-color: rgb(var(--ui-subtle));
 }
 
 /* the account line under the bar: 11px, the available count ink 600 (a figure, not a status), the share muted */
-html.flat-theme [data-ui~="ops-dashboard"] div[class~="rounded-3xl"][class~="ring-1"]:not(:has(h1)) > div[class~="rounded-xl"][class~="border"] > div[class~="custom-scrollbar"] > div > div[class~="flex-wrap"] {
+html.flat-theme [data-ui~="ops-dashboard"] div[class~="rounded-3xl"][class~="ring-1"]:not([data-ui~="ops-header"]) > div[class~="rounded-xl"][class~="border"] > div[class~="custom-scrollbar"] > div > div[class~="flex-wrap"] {
   gap: 4px 10px;
   font-size: 11px;
   line-height: 16.5px;
 }
 
-html.flat-theme [data-ui~="ops-dashboard"] div[class~="rounded-3xl"][class~="ring-1"]:not(:has(h1)) > div[class~="rounded-xl"][class~="border"] > div[class~="custom-scrollbar"] > div > div[class~="flex-wrap"] > div > svg {
+html.flat-theme [data-ui~="ops-dashboard"] div[class~="rounded-3xl"][class~="ring-1"]:not([data-ui~="ops-header"]) > div[class~="rounded-xl"][class~="border"] > div[class~="custom-scrollbar"] > div > div[class~="flex-wrap"] > div > svg {
   width: 12px;
   height: 12px;
   color: rgb(var(--ui-faint));
 }
 
-html.flat-theme [data-ui~="ops-dashboard"] div[class~="rounded-3xl"][class~="ring-1"]:not(:has(h1)) > div[class~="rounded-xl"][class~="border"] > div[class~="custom-scrollbar"] > div > div[class~="flex-wrap"] > div > span {
+html.flat-theme [data-ui~="ops-dashboard"] div[class~="rounded-3xl"][class~="ring-1"]:not([data-ui~="ops-header"]) > div[class~="rounded-xl"][class~="border"] > div[class~="custom-scrollbar"] > div > div[class~="flex-wrap"] > div > span {
   font-family: var(--ui-font-mono);
   font-variant-numeric: tabular-nums;
   color: rgb(var(--ui-muted));
 }
 
-html.flat-theme [data-ui~="ops-dashboard"] div[class~="rounded-3xl"][class~="ring-1"]:not(:has(h1)) > div[class~="rounded-xl"][class~="border"] > div[class~="custom-scrollbar"] > div > div[class~="flex-wrap"] > div > span > span[class~="text-green-600"] {
+html.flat-theme [data-ui~="ops-dashboard"] div[class~="rounded-3xl"][class~="ring-1"]:not([data-ui~="ops-header"]) > div[class~="rounded-xl"][class~="border"] > div[class~="custom-scrollbar"] > div > div[class~="flex-wrap"] > div > span > span[class~="text-green-600"] {
   font-weight: 600;
   color: rgb(var(--ui-ink));
 }
 
 /* the small status chips in the rows (rate limited = warning, errors = danger, queued = the reference's backlog tone,
    available / cooling down): the reference's Chip (capsule, Geist Mono, soft status fill) */
-html.flat-theme [data-ui~="ops-dashboard"] div[class~="rounded-3xl"][class~="ring-1"]:not(:has(h1)) > div[class~="rounded-xl"][class~="border"] > div[class~="custom-scrollbar"] span:is([class~="bg-amber-100"], [class~="bg-red-100"], [class~="bg-purple-100"], [class~="bg-green-100"], [class~="bg-gray-100"]) {
+html.flat-theme [data-ui~="ops-dashboard"] div[class~="rounded-3xl"][class~="ring-1"]:not([data-ui~="ops-header"]) > div[class~="rounded-xl"][class~="border"] > div[class~="custom-scrollbar"] span:is([class~="bg-amber-100"], [class~="bg-red-100"], [class~="bg-purple-100"], [class~="bg-green-100"], [class~="bg-gray-100"]) {
   padding: 0 6px;
   border-radius: 9999px;
   font-family: var(--ui-font-mono);
@@ -949,46 +957,46 @@ html.flat-theme [data-ui~="ops-dashboard"] div[class~="rounded-3xl"][class~="rin
   letter-spacing: 0.01em;
 }
 
-html.flat-theme [data-ui~="ops-dashboard"] div[class~="rounded-3xl"][class~="ring-1"]:not(:has(h1)) > div[class~="rounded-xl"][class~="border"] > div[class~="custom-scrollbar"] span[class~="bg-amber-100"] {
+html.flat-theme [data-ui~="ops-dashboard"] div[class~="rounded-3xl"][class~="ring-1"]:not([data-ui~="ops-header"]) > div[class~="rounded-xl"][class~="border"] > div[class~="custom-scrollbar"] span[class~="bg-amber-100"] {
   background-color: rgb(var(--ui-warning-soft));
   color: rgb(var(--ui-warning));
 }
 
-html.flat-theme [data-ui~="ops-dashboard"] div[class~="rounded-3xl"][class~="ring-1"]:not(:has(h1)) > div[class~="rounded-xl"][class~="border"] > div[class~="custom-scrollbar"] span[class~="bg-red-100"] {
+html.flat-theme [data-ui~="ops-dashboard"] div[class~="rounded-3xl"][class~="ring-1"]:not([data-ui~="ops-header"]) > div[class~="rounded-xl"][class~="border"] > div[class~="custom-scrollbar"] span[class~="bg-red-100"] {
   background-color: rgb(var(--ui-danger-soft));
   color: rgb(var(--ui-danger));
 }
 
-html.flat-theme [data-ui~="ops-dashboard"] div[class~="rounded-3xl"][class~="ring-1"]:not(:has(h1)) > div[class~="rounded-xl"][class~="border"] > div[class~="custom-scrollbar"] span[class~="bg-purple-100"] {
+html.flat-theme [data-ui~="ops-dashboard"] div[class~="rounded-3xl"][class~="ring-1"]:not([data-ui~="ops-header"]) > div[class~="rounded-xl"][class~="border"] > div[class~="custom-scrollbar"] span[class~="bg-purple-100"] {
   background-color: rgb(var(--ui-purple-soft));
   color: rgb(var(--ui-purple));
 }
 
-html.flat-theme [data-ui~="ops-dashboard"] div[class~="rounded-3xl"][class~="ring-1"]:not(:has(h1)) > div[class~="rounded-xl"][class~="border"] > div[class~="custom-scrollbar"] span[class~="bg-green-100"] {
+html.flat-theme [data-ui~="ops-dashboard"] div[class~="rounded-3xl"][class~="ring-1"]:not([data-ui~="ops-header"]) > div[class~="rounded-xl"][class~="border"] > div[class~="custom-scrollbar"] span[class~="bg-green-100"] {
   background-color: rgb(var(--ui-success-soft));
   color: rgb(var(--ui-success));
 }
 
-html.flat-theme [data-ui~="ops-dashboard"] div[class~="rounded-3xl"][class~="ring-1"]:not(:has(h1)) > div[class~="rounded-xl"][class~="border"] > div[class~="custom-scrollbar"] span[class~="bg-gray-100"] {
+html.flat-theme [data-ui~="ops-dashboard"] div[class~="rounded-3xl"][class~="ring-1"]:not([data-ui~="ops-header"]) > div[class~="rounded-xl"][class~="border"] > div[class~="custom-scrollbar"] span[class~="bg-gray-100"] {
   background-color: rgb(var(--ui-subtle));
   color: rgb(var(--ui-muted));
 }
 
 /* the empty and disabled states of the list */
-html.flat-theme [data-ui~="ops-dashboard"] div[class~="rounded-3xl"][class~="ring-1"]:not(:has(h1)) > div[class~="border-dashed"] {
+html.flat-theme [data-ui~="ops-dashboard"] div[class~="rounded-3xl"][class~="ring-1"]:not([data-ui~="ops-header"]) > div[class~="border-dashed"] {
   border-color: rgb(var(--ui-line-strong));
   border-radius: var(--ui-radius-lg);
   font-size: 13px;
   color: rgb(var(--ui-muted));
 }
 
-html.flat-theme [data-ui~="ops-dashboard"] div[class~="rounded-3xl"][class~="ring-1"]:not(:has(h1)) > div[class~="rounded-xl"][class~="border"] > div[class~="flex-1"][class~="items-center"] {
+html.flat-theme [data-ui~="ops-dashboard"] div[class~="rounded-3xl"][class~="ring-1"]:not([data-ui~="ops-header"]) > div[class~="rounded-xl"][class~="border"] > div[class~="flex-1"][class~="items-center"] {
   font-size: 13px;
   color: rgb(var(--ui-muted));
 }
 
 /* an error line inside a card (upstream: a red-50 box) = the reference's danger notice (radius 6, soft fill, 12px) */
-html.flat-theme [data-ui~="ops-dashboard"] :is(div[class~="rounded-3xl"][class~="ring-1"]:not(:has(h1)), section) > div[class~="bg-red-50"] {
+html.flat-theme [data-ui~="ops-dashboard"] :is(div[class~="rounded-3xl"][class~="ring-1"]:not([data-ui~="ops-header"]), section) > div[class~="bg-red-50"] {
   border: 1px solid rgb(var(--ui-danger) / 0.3);
   border-radius: var(--ui-radius-md);
   background-color: rgb(var(--ui-danger-soft));
@@ -1002,7 +1010,7 @@ html.flat-theme [data-ui~="ops-dashboard"] :is(div[class~="rounded-3xl"][class~=
    ones are drawn the same here), cells 10 / 12
    (16 at the edges), 13px text, rows divided by 1px lines, hover = --ui-hover where the row opens something. DataTables
    (the error lists) keep data.css. */
-html.flat-theme :is([data-ui~="ops-dashboard"], [data-ui~="ops-dialog"], [data-ui~="risk-page"], [data-ui~="risk-settings"], [data-ui~="prompt-audit-page"]) table:not(:has(> tbody.table-body)) > thead > tr > th {
+html.flat-theme :is([data-ui~="ops-dashboard"], [data-ui~="ops-dialog"], [data-ui~="risk-page"], [data-ui~="risk-settings"], [data-ui~="prompt-audit-page"]) table:not(.table-wrapper > table) > thead > tr > th {
   padding: 10px 12px;
   background-color: rgb(var(--ui-surface));
   box-shadow: inset 0 -1px 0 rgb(var(--ui-line));
@@ -1016,69 +1024,69 @@ html.flat-theme :is([data-ui~="ops-dashboard"], [data-ui~="ops-dialog"], [data-u
   white-space: nowrap;
 }
 
-html.flat-theme :is([data-ui~="ops-dashboard"], [data-ui~="ops-dialog"], [data-ui~="risk-page"], [data-ui~="risk-settings"], [data-ui~="prompt-audit-page"]) table:not(:has(> tbody.table-body)) > thead {
+html.flat-theme :is([data-ui~="ops-dashboard"], [data-ui~="ops-dialog"], [data-ui~="risk-page"], [data-ui~="risk-settings"], [data-ui~="prompt-audit-page"]) table:not(.table-wrapper > table) > thead {
   border-bottom-width: 0;
   background-color: rgb(var(--ui-surface));
 }
 
-html.flat-theme :is([data-ui~="ops-dashboard"], [data-ui~="ops-dialog"], [data-ui~="risk-page"], [data-ui~="risk-settings"], [data-ui~="prompt-audit-page"]) table:not(:has(> tbody.table-body)) > thead + tbody {
+html.flat-theme :is([data-ui~="ops-dashboard"], [data-ui~="ops-dialog"], [data-ui~="risk-page"], [data-ui~="risk-settings"], [data-ui~="prompt-audit-page"]) table:not(.table-wrapper > table) > thead + tbody {
   border-top-width: 0;
 }
 
-html.flat-theme :is([data-ui~="ops-dashboard"], [data-ui~="ops-dialog"], [data-ui~="risk-page"], [data-ui~="risk-settings"], [data-ui~="prompt-audit-page"]) table:not(:has(> tbody.table-body)) > tbody {
+html.flat-theme :is([data-ui~="ops-dashboard"], [data-ui~="ops-dialog"], [data-ui~="risk-page"], [data-ui~="risk-settings"], [data-ui~="prompt-audit-page"]) table:not(.table-wrapper > table) > tbody {
   background-color: rgb(var(--ui-surface));
 }
 
-html.flat-theme :is([data-ui~="ops-dashboard"], [data-ui~="ops-dialog"], [data-ui~="risk-page"], [data-ui~="risk-settings"], [data-ui~="prompt-audit-page"]) table:not(:has(> tbody.table-body)) > tbody > tr {
+html.flat-theme :is([data-ui~="ops-dashboard"], [data-ui~="ops-dialog"], [data-ui~="risk-page"], [data-ui~="risk-settings"], [data-ui~="prompt-audit-page"]) table:not(.table-wrapper > table) > tbody > tr {
   border-color: rgb(var(--ui-line));
   transition: background-color var(--ui-duration) var(--ui-ease);
 }
 
-html.flat-theme :is([data-ui~="ops-dashboard"], [data-ui~="ops-dialog"], [data-ui~="risk-page"], [data-ui~="risk-settings"], [data-ui~="prompt-audit-page"]) table:not(:has(> tbody.table-body)) > tbody > tr > td {
+html.flat-theme :is([data-ui~="ops-dashboard"], [data-ui~="ops-dialog"], [data-ui~="risk-page"], [data-ui~="risk-settings"], [data-ui~="prompt-audit-page"]) table:not(.table-wrapper > table) > tbody > tr > td {
   padding: 10px 12px;
   font-size: 13px;
   line-height: 19.5px;
   vertical-align: middle;
 }
 
-html.flat-theme :is([data-ui~="ops-dashboard"], [data-ui~="ops-dialog"], [data-ui~="risk-page"], [data-ui~="risk-settings"], [data-ui~="prompt-audit-page"]) table:not(:has(> tbody.table-body)) > :is(thead, tbody) > tr > :first-child {
+html.flat-theme :is([data-ui~="ops-dashboard"], [data-ui~="ops-dialog"], [data-ui~="risk-page"], [data-ui~="risk-settings"], [data-ui~="prompt-audit-page"]) table:not(.table-wrapper > table) > :is(thead, tbody) > tr > :first-child {
   padding-left: 16px;
 }
 
-html.flat-theme :is([data-ui~="ops-dashboard"], [data-ui~="ops-dialog"], [data-ui~="risk-page"], [data-ui~="risk-settings"], [data-ui~="prompt-audit-page"]) table:not(:has(> tbody.table-body)) > :is(thead, tbody) > tr > :last-child {
+html.flat-theme :is([data-ui~="ops-dashboard"], [data-ui~="ops-dialog"], [data-ui~="risk-page"], [data-ui~="risk-settings"], [data-ui~="prompt-audit-page"]) table:not(.table-wrapper > table) > :is(thead, tbody) > tr > :last-child {
   padding-right: 16px;
 }
 
-html.flat-theme :is([data-ui~="ops-dashboard"], [data-ui~="ops-dialog"], [data-ui~="risk-page"], [data-ui~="risk-settings"], [data-ui~="prompt-audit-page"]) table:not(:has(> tbody.table-body)) > tbody > tr:is([class~="hover:bg-gray-50"], [class~="cursor-pointer"]):hover {
+html.flat-theme :is([data-ui~="ops-dashboard"], [data-ui~="ops-dialog"], [data-ui~="risk-page"], [data-ui~="risk-settings"], [data-ui~="prompt-audit-page"]) table:not(.table-wrapper > table) > tbody > tr:is([class~="hover:bg-gray-50"], [class~="cursor-pointer"]):hover {
   background-color: rgb(var(--ui-hover));
 }
 
 /* the cells' own text sizes (text-xs, 11px) read as the reference's: 13px for text, Mono 12 for times, ids and figures,
    12px muted for the second line */
-html.flat-theme :is([data-ui~="ops-dashboard"], [data-ui~="ops-dialog"], [data-ui~="risk-page"], [data-ui~="risk-settings"], [data-ui~="prompt-audit-page"]) table:not(:has(> tbody.table-body)) > tbody > tr > td[class~="text-xs"] {
+html.flat-theme :is([data-ui~="ops-dashboard"], [data-ui~="ops-dialog"], [data-ui~="risk-page"], [data-ui~="risk-settings"], [data-ui~="prompt-audit-page"]) table:not(.table-wrapper > table) > tbody > tr > td[class~="text-xs"] {
   font-size: 13px;
 }
 
-html.flat-theme :is([data-ui~="ops-dashboard"], [data-ui~="ops-dialog"], [data-ui~="risk-page"], [data-ui~="risk-settings"], [data-ui~="prompt-audit-page"]) table:not(:has(> tbody.table-body)) > tbody > tr > td[class~="whitespace-nowrap"][class~="text-xs"]:first-child,
-html.flat-theme :is([data-ui~="ops-dashboard"], [data-ui~="ops-dialog"], [data-ui~="risk-page"], [data-ui~="risk-settings"], [data-ui~="prompt-audit-page"]) table:not(:has(> tbody.table-body)) > tbody > tr > td span[class~="font-mono"] {
+html.flat-theme :is([data-ui~="ops-dashboard"], [data-ui~="ops-dialog"], [data-ui~="risk-page"], [data-ui~="risk-settings"], [data-ui~="prompt-audit-page"]) table:not(.table-wrapper > table) > tbody > tr > td[class~="whitespace-nowrap"][class~="text-xs"]:first-child,
+html.flat-theme :is([data-ui~="ops-dashboard"], [data-ui~="ops-dialog"], [data-ui~="risk-page"], [data-ui~="risk-settings"], [data-ui~="prompt-audit-page"]) table:not(.table-wrapper > table) > tbody > tr > td span[class~="font-mono"] {
   font-family: var(--ui-font-mono);
   font-size: 12px;
   font-variant-numeric: tabular-nums;
 }
 
-html.flat-theme :is([data-ui~="ops-dashboard"], [data-ui~="ops-dialog"], [data-ui~="risk-page"], [data-ui~="risk-settings"], [data-ui~="prompt-audit-page"]) table:not(:has(> tbody.table-body)) > tbody > tr > td :is(div, span)[class~="text-[11px]"] {
+html.flat-theme :is([data-ui~="ops-dashboard"], [data-ui~="ops-dialog"], [data-ui~="risk-page"], [data-ui~="risk-settings"], [data-ui~="prompt-audit-page"]) table:not(.table-wrapper > table) > tbody > tr > td :is(div, span)[class~="text-[11px]"] {
   font-size: 12px;
   line-height: 18px;
 }
 
-html.flat-theme :is([data-ui~="ops-dashboard"], [data-ui~="ops-dialog"], [data-ui~="risk-page"], [data-ui~="risk-settings"], [data-ui~="prompt-audit-page"]) table:not(:has(> tbody.table-body)) > tbody > tr > td :is(div)[class~="text-[10px]"] {
+html.flat-theme :is([data-ui~="ops-dashboard"], [data-ui~="ops-dialog"], [data-ui~="risk-page"], [data-ui~="risk-settings"], [data-ui~="prompt-audit-page"]) table:not(.table-wrapper > table) > tbody > tr > td :is(div)[class~="text-[10px]"] {
   font-family: var(--ui-font-mono);
   font-size: 11px;
   line-height: 16.5px;
   color: rgb(var(--ui-faint));
 }
 
-html.flat-theme :is([data-ui~="ops-dashboard"], [data-ui~="ops-dialog"], [data-ui~="risk-page"], [data-ui~="risk-settings"], [data-ui~="prompt-audit-page"]) table:not(:has(> tbody.table-body)) > tbody > tr > td :is(div, span)[class~="font-bold"]:not([class~="rounded-full"]):not([class~="rounded-md"]) {
+html.flat-theme :is([data-ui~="ops-dashboard"], [data-ui~="ops-dialog"], [data-ui~="risk-page"], [data-ui~="risk-settings"], [data-ui~="prompt-audit-page"]) table:not(.table-wrapper > table) > tbody > tr > td :is(div, span)[class~="font-bold"]:not([class~="rounded-full"]):not([class~="rounded-md"]) {
   font-weight: 600;
 }
 
@@ -1091,7 +1099,7 @@ html.flat-theme :is([data-ui~="prompt-audit-page"], [data-ui~="risk-page"]) div[
   container-type: inline-size;
 }
 
-html.flat-theme :is([data-ui~="prompt-audit-page"], [data-ui~="risk-page"]) div[class~="overflow-x-auto"] > table:not(:has(> tbody.table-body)) > tbody > tr:only-child > td[colspan]:only-child:not([aria-busy]) {
+html.flat-theme :is([data-ui~="prompt-audit-page"], [data-ui~="risk-page"]) div[class~="overflow-x-auto"] > table:not(.table-wrapper > table) > tbody > tr:only-child > td[colspan]:only-child:not([aria-busy]) {
   position: relative;
   height: 152px;
   padding: 16px calc(100% - 100cqw + 32px) 16px 32px;
@@ -1105,7 +1113,7 @@ html.flat-theme :is([data-ui~="prompt-audit-page"], [data-ui~="risk-page"]) div[
   white-space: normal;
 }
 
-html.flat-theme :is([data-ui~="prompt-audit-page"], [data-ui~="risk-page"]) div[class~="overflow-x-auto"] > table:not(:has(> tbody.table-body)) > tbody > tr:only-child > td[colspan]:only-child:not([aria-busy])::after {
+html.flat-theme :is([data-ui~="prompt-audit-page"], [data-ui~="risk-page"]) div[class~="overflow-x-auto"] > table:not(.table-wrapper > table) > tbody > tr:only-child > td[colspan]:only-child:not([aria-busy])::after {
   content: "";
   position: absolute;
   top: 16px;
@@ -1162,23 +1170,23 @@ html.flat-theme :is([data-ui~="ops-dashboard"], [data-ui~="ops-dialog"], [data-u
 /* 3.5 Alert events: the card's head holds 30px controls (four Selects and refresh, the table pages' toolbar density);
    the events table sits flush in the card (REF §8.7 history card: the head inset, then the table from edge to edge on
    a 1px line), 600px of it scrolls. */
-html.flat-theme [data-ui~="ops-dashboard"] div[class~="rounded-3xl"][class~="ring-1"]:not(:has(h1)) > div:first-child:has(.select-trigger) .select-trigger.select-trigger {
+html.flat-theme [data-ui~="ops-dashboard"] > div[class~="rounded-3xl"][class~="ring-1"]:not([data-ui~="ops-header"]) > div[class~="mb-4"]:first-child .select-trigger.select-trigger {
   padding-top: 0.265625rem;
   padding-bottom: 0.265625rem;
 }
 
-html.flat-theme [data-ui~="ops-dashboard"] div[class~="rounded-3xl"][class~="ring-1"]:not(:has(h1)) > div:first-child:has(.select-trigger) > div:last-child {
+html.flat-theme [data-ui~="ops-dashboard"] > div[class~="rounded-3xl"][class~="ring-1"]:not([data-ui~="ops-header"]) > div[class~="mb-4"]:first-child > div:last-child {
   gap: 8px;
 }
 
-html.flat-theme [data-ui~="ops-dashboard"] div[class~="rounded-3xl"][class~="ring-1"]:not(:has(h1)) > div:first-child:has(.select-trigger) > div:last-child > button {
+html.flat-theme [data-ui~="ops-dashboard"] > div[class~="rounded-3xl"][class~="ring-1"]:not([data-ui~="ops-header"]) > div[class~="mb-4"]:first-child > div:last-child > button {
   height: var(--ui-control-h);
   padding: 0 12px;
   font-size: 13px;
   line-height: 19.5px;
 }
 
-html.flat-theme [data-ui~="ops-dashboard"] div[class~="rounded-3xl"][class~="ring-1"]:not(:has(h1)) > div[class~="overflow-hidden"][class~="rounded-xl"][class~="border"] {
+html.flat-theme [data-ui~="ops-dashboard"] div[class~="rounded-3xl"][class~="ring-1"]:not([data-ui~="ops-header"]) > div[class~="overflow-hidden"][class~="rounded-xl"][class~="border"] {
   margin: 0 -14px -14px;
   border-width: 1px 0 0;
   border-color: rgb(var(--ui-line));
@@ -1186,25 +1194,25 @@ html.flat-theme [data-ui~="ops-dashboard"] div[class~="rounded-3xl"][class~="rin
 }
 
 /* the title cell keeps its two lines: the title 13/600 ink, the rule text 12px muted */
-html.flat-theme [data-ui~="ops-dashboard"] div[class~="rounded-3xl"][class~="ring-1"]:not(:has(h1)) table > tbody > tr > td[class~="min-w-[260px]"] > div:first-child {
+html.flat-theme [data-ui~="ops-dashboard"] div[class~="rounded-3xl"][class~="ring-1"]:not([data-ui~="ops-header"]) table > tbody > tr > td[class~="min-w-[260px]"] > div:first-child {
   font-size: 13px;
   line-height: 19.5px;
   color: rgb(var(--ui-ink));
 }
 
-html.flat-theme [data-ui~="ops-dashboard"] div[class~="rounded-3xl"][class~="ring-1"]:not(:has(h1)) table > tbody > tr > td[class~="min-w-[260px]"] > div:last-child:not(:first-child) {
+html.flat-theme [data-ui~="ops-dashboard"] div[class~="rounded-3xl"][class~="ring-1"]:not([data-ui~="ops-header"]) table > tbody > tr > td[class~="min-w-[260px]"] > div:last-child:not(:first-child) {
   color: rgb(var(--ui-muted));
 }
 
 /* the e-mail column: the state glyph keeps success / muted, the word 12px ink-soft */
-html.flat-theme [data-ui~="ops-dashboard"] div[class~="rounded-3xl"][class~="ring-1"]:not(:has(h1)) table > tbody > tr > td[class~="text-right"] span[class~="text-[11px]"] {
+html.flat-theme [data-ui~="ops-dashboard"] div[class~="rounded-3xl"][class~="ring-1"]:not([data-ui~="ops-header"]) table > tbody > tr > td[class~="text-right"] span[class~="text-[11px]"] {
   font-size: 12px;
   font-weight: 500;
   color: rgb(var(--ui-ink-soft));
 }
 
 /* the list's end marker and loading line */
-html.flat-theme [data-ui~="ops-dashboard"] div[class~="rounded-3xl"][class~="ring-1"]:not(:has(h1)) div[class~="max-h-[600px]"] > div:last-child:is([class~="py-3"]) {
+html.flat-theme [data-ui~="ops-dashboard"] div[class~="rounded-3xl"][class~="ring-1"]:not([data-ui~="ops-header"]) div[class~="max-h-[600px]"] > div:last-child:is([class~="py-3"]) {
   border-top: 1px solid rgb(var(--ui-line));
   font-size: 12px;
   color: rgb(var(--ui-muted));
@@ -2489,11 +2497,11 @@ html.flat-theme [data-ui~="audit-page"] > .layout-section-fixed > .card > div > 
   box-shadow: none;
 }
 
-html.flat-theme [data-ui~="audit-page"] > .layout-section-fixed > .card > div > div:first-child > div:is(:hover, :has(.select-trigger-open)) {
+html.flat-theme [data-ui~="audit-page"] > .layout-section-fixed > .card > div > div:first-child > div:is(:hover, :has(> div > .select-trigger-open)) {
   border-color: rgb(var(--ui-line-focus));
 }
 
-html.flat-theme [data-ui~="audit-page"] > .layout-section-fixed > .card > div > div:first-child > div:has(input:focus, .select-trigger:focus-visible) {
+html.flat-theme [data-ui~="audit-page"] > .layout-section-fixed > .card > div > div:first-child > div:has(> input:focus, > div > input:focus, > div > .select-trigger:focus-visible) {
   border-color: rgb(var(--ui-focus));
   box-shadow: inset 0 0 0 1px rgb(var(--ui-focus));
 }
@@ -2742,12 +2750,13 @@ html.flat-theme :is(#channel-monitor-form, .modal-content) div[class~="rounded-l
   background-color: color-mix(in srgb, rgb(var(--ui-subtle)) 60%, rgb(var(--ui-surface)));
 }
 
-/* 5.8 请求模板管理 (MonitorTemplateManagerDialog; its provider tablist is the only flex-wrap gap-1 tablist): the provider
+/* 5.8 请求模板管理 (MonitorTemplateManagerDialog; hooks: data-ui="template-tabs" on the tab strip, data-ui="template-list"
+   on the template list; its provider tablist is the only flex-wrap gap-1 tablist): the provider
    tabs are the shared underline tabs (controls.css 7.3, the channel dialog's: 8 x 10, 12.5 / 600, muted, ink on
    hover; the current one ink over the 2px accent rule), their counts the small Mono count; a template's mode and API
    mode are categories (decision 2): the reference's neutral chip (data.css category-chip), whatever hue upstream gave
    them (merge amber, replace purple, Responses blue, Chat Completions green). */
-html.flat-theme .modal-content div[class~="mb-4"][class~="border-b"]:has(> div[role="tablist"][class~="flex-wrap"][class~="gap-1"]) {
+html.flat-theme .modal-content div[class~="mb-4"][class~="border-b"][data-ui~="template-tabs"] {
   border-color: rgb(var(--ui-line));
 }
 
@@ -2782,7 +2791,7 @@ html.flat-theme .modal-content div[role="tablist"][class~="flex"][class~="flex-w
   line-height: 16px;
 }
 
-html.flat-theme .modal-content:has(div[role="tablist"][class~="flex"][class~="flex-wrap"][class~="gap-1"]) div[class~="items-center"][class~="gap-2"] > span[class~="inline-flex"][class~="rounded-md"][class~="px-1.5"][class~="py-0.5"][class~="text-xs"] {
+html.flat-theme .modal-content [data-ui~="template-list"] div[class~="items-center"][class~="gap-2"] > span[class~="inline-flex"][class~="rounded-md"][class~="px-1.5"][class~="py-0.5"][class~="text-xs"] {
   padding: 1px 6px;
   border: 1px solid rgb(var(--ui-line));
   border-radius: var(--ui-radius-sm);
@@ -2796,7 +2805,8 @@ html.flat-theme .modal-content:has(div[role="tablist"][class~="flex"][class~="fl
 
 /* Hooks (one attribute each): data-ui="monitor-hero" components/user/monitor/MonitorHero.vue (root), data-ui="monitor-grid"
    components/user/monitor/MonitorCardGrid.vue (root), data-ui="monitor-detail" components/user/MonitorDetailDialog.vue (the
-   table's wrapper), data-ui="monitor-v2" views/user/ChannelStatusV2View.vue (root). Identity: MonitorCard.vue's logo tile
+   table's wrapper), data-ui="monitor-v2" views/user/ChannelStatusV2View.vue (root), data-ui="monitor-matrix"
+   features/channel-monitor-v2/RelayPulseMatrix.vue (its card). Identity: MonitorCard.vue's logo tile
    (data-ui="platform-text") and provider chip (platform-chip); the group chip is a category (category-chip).
    Reference: the /models uptime column (REF §8.7: a 3px capsule per sample, the Mono figure in the state's ink) and the
    /logs toolbar and KPI tiles. */
@@ -3243,12 +3253,12 @@ html.flat-theme [data-ui~="monitor-v2"] > section[class~="grid"] > .stat-card > 
    reset button 26px; the matrix sits on the card (no inner well), its header the mono label, rows divided by 1px lines,
    summary figures Mono 12; each bucket a capsule like the reference's uptime bars, coloured by health in the reference's
    uptime palette (good / warn / bad with the steps between; no traffic = the grouped fill) */
-html.flat-theme [data-ui~="monitor-v2"] section[class~="card"]:has(.matrix-table) {
+html.flat-theme [data-ui~="monitor-v2"] section[class~="card"][data-ui~="monitor-matrix"] {
   padding: 14px !important;
   border-radius: var(--ui-radius-lg) !important;
 }
 
-html.flat-theme [data-ui~="monitor-v2"] section[class~="card"]:has(.matrix-table) h2 {
+html.flat-theme [data-ui~="monitor-v2"] section[class~="card"][data-ui~="monitor-matrix"] h2 {
   gap: 0;
   font-size: 13px;
   font-weight: 600;
@@ -3256,17 +3266,17 @@ html.flat-theme [data-ui~="monitor-v2"] section[class~="card"]:has(.matrix-table
   color: rgb(var(--ui-ink));
 }
 
-html.flat-theme [data-ui~="monitor-v2"] section[class~="card"]:has(.matrix-table) h2 > span:first-child {
+html.flat-theme [data-ui~="monitor-v2"] section[class~="card"][data-ui~="monitor-matrix"] h2 > span:first-child {
   display: none;
 }
 
-html.flat-theme [data-ui~="monitor-v2"] section[class~="card"]:has(.matrix-table) h2 + p {
+html.flat-theme [data-ui~="monitor-v2"] section[class~="card"][data-ui~="monitor-matrix"] h2 + p {
   margin-top: 2px;
   font-size: 12px;
   color: rgb(var(--ui-muted));
 }
 
-html.flat-theme [data-ui~="monitor-v2"] section[class~="card"]:has(.matrix-table) .card-header button[class~="border-gray-200"] {
+html.flat-theme [data-ui~="monitor-v2"] section[class~="card"][data-ui~="monitor-matrix"] .card-header button[class~="border-gray-200"] {
   height: 26px;
   padding: 0 10px;
   border-color: rgb(var(--ui-line-strong));
@@ -3373,11 +3383,11 @@ html.flat-theme [data-ui~="monitor-v2"] .score-legend {
   background: linear-gradient(90deg, rgb(var(--ui-uptime-bad)) 0%, color-mix(in srgb, rgb(var(--ui-uptime-warn)) 45%, rgb(var(--ui-uptime-bad))) 30%, rgb(var(--ui-uptime-warn)) 50%, color-mix(in srgb, rgb(var(--ui-uptime-good)) 55%, rgb(var(--ui-uptime-warn))) 70%, rgb(var(--ui-uptime-good)) 100%);
 }
 
-html.flat-theme [data-ui~="monitor-v2"] section[class~="card"]:has(.matrix-table) .card-body > div:last-child {
+html.flat-theme [data-ui~="monitor-v2"] section[class~="card"][data-ui~="monitor-matrix"] .card-body > div:last-child {
   margin-top: 12px;
 }
 
-html.flat-theme [data-ui~="monitor-v2"] section[class~="card"]:has(.matrix-table) .card-body > div:last-child :is(div, span)[class~="text-[11px]"] {
+html.flat-theme [data-ui~="monitor-v2"] section[class~="card"][data-ui~="monitor-matrix"] .card-body > div:last-child :is(div, span)[class~="text-[11px]"] {
   font-size: 11px;
   color: rgb(var(--ui-muted));
 }
@@ -3525,11 +3535,11 @@ html.flat-theme [data-ui~="payment-dashboard"] > div:first-child > div {
 
 /* the distribution and top-users cards: 14px in, the title 13/600; the ranks' medal tints are decoration: a neutral
    Mono rank square (radius 4, the grouped fill) */
-html.flat-theme [data-ui~="payment-dashboard"] div[class~="grid"] > .card[class~="p-4"]:not(:has(canvas)) {
+html.flat-theme [data-ui~="payment-dashboard"] div[class~="grid"] > div.card[class~="p-4"] {
   padding: 14px;
 }
 
-html.flat-theme [data-ui~="payment-dashboard"] div[class~="grid"] > .card[class~="p-4"]:not(:has(canvas)) > h3 {
+html.flat-theme [data-ui~="payment-dashboard"] div[class~="grid"] > div.card[class~="p-4"] > h3 {
   margin-bottom: 12px;
   font-size: 13px;
   font-weight: 600;

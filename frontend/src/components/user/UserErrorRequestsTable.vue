@@ -1,6 +1,6 @@
 <template>
   <div class="flex min-h-0 flex-1 flex-col">
-    <div class="card flex min-h-0 flex-1 flex-col overflow-hidden">
+    <div class="card flex min-h-0 flex-1 flex-col overflow-hidden" data-ui="records-card">
       <IpGeoBatchToolbar :ips="rows.map((r) => r.client_ip)" @failed="emit('ipGeoBatchFailed')" />
 
       <DataTable

@@ -95,9 +95,10 @@ html.flat-theme :is([data-ui~="redeem-page"], [data-ui~="promo-page"], [data-ui~
 }
 
 /* Icon-only buttons (refresh, the subscription guide) are the reference's square: 30 x 30 (REF §8.3 icon buttons). They
-   are found by their glyph: a button whose label is a bare text node also has the glyph as its only element child. */
+   are found by their glyph: a button whose label is a bare text node also has the glyph as its only element child (one
+   :has() with a child argument on a button under the page root; `button` keeps the specificity of the former pair). */
 @media (min-width: 640px) {
-  html.flat-theme [data-ui~="mgmt-page"] > .layout-section-fixed:first-child .btn:has(> svg:only-child):has(> svg:is(.lucide-rotate-cw, .lucide-circle-help)) {
+  html.flat-theme [data-ui~="mgmt-page"] > .layout-section-fixed:first-child button.btn:has(> svg:only-child:is(.lucide-rotate-cw, .lucide-circle-help)) {
     width: var(--ui-control-h);
     min-width: var(--ui-control-h);
     padding-left: 0;
@@ -622,7 +623,11 @@ html.flat-theme [data-ui~="announcements-page"] td[data-column="timeRange"] span
    user-attributes-config, GroupRateMultipliersModal group-rate-multipliers, GroupRPMOverridesModal group-rpm-overrides,
    AnnouncementReadStatusDialog announcement-read-status, AnnouncementTargetingEditor announcement-targeting, the proxy
    dialog's tab strip proxy-create-tabs, the redeem result's body redeem-result-body, the subscription guide's title
-   subscription-guide-title. The others are found by their form ids. */
+   subscription-guide-title; and, so that no rule needs a :has() anchor above what it styles (PERF, 2026-09-29), the
+   redeem result's header redeem-result-head, the generate-codes form redeem-generate-form, quick add's parse result
+   proxy-parse-result, the quality report's summary proxy-quality-summary and each row of the group sort dialog
+   group-sort-row. The others are found by their form ids. :has() stays only in the subject compound, on an anchor under
+   a page root, a hook or an id, with a child argument. */
 
 /* 9.1 The user card at the top of the user dialogs (deposit / refund, balance history, API keys, allowed groups): the
    reference's option card (1px line, radius 8, the grouped fill at 60 %, 12 / 14 inset), its avatar the 28px icon square
@@ -827,7 +832,7 @@ html.flat-theme :is([data-ui="group-rate-multipliers"], [data-ui="group-rpm-over
    new balance, the subscription guide's tip, the invitation-code hint), the warning pair for a warning. */
 html.flat-theme #balance-form > div[class~="border-blue-200"],
 html.flat-theme [data-ui="subscription-guide-title"] ~ div[class~="bg-blue-50"],
-html.flat-theme form:has(> div > div[class~="sm:grid-cols-5"]) > div[class~="bg-blue-50"][class~="p-3"] {
+html.flat-theme form[data-ui="redeem-generate-form"] > div[class~="bg-blue-50"][class~="p-3"] {
   padding: 10px 14px;
   border: 1px solid rgb(var(--ui-line));
   border-radius: var(--ui-radius-md);
@@ -835,7 +840,7 @@ html.flat-theme form:has(> div > div[class~="sm:grid-cols-5"]) > div[class~="bg-
   color: rgb(var(--ui-ink-soft));
 }
 
-html.flat-theme form:has(> div > div[class~="sm:grid-cols-5"]) > div[class~="bg-blue-50"][class~="p-3"] > p {
+html.flat-theme form[data-ui="redeem-generate-form"] > div[class~="bg-blue-50"][class~="p-3"] > p {
   color: rgb(var(--ui-ink-soft));
 }
 
@@ -855,14 +860,14 @@ html.flat-theme [data-ui="user-platform-quota"] > div[class~="border-amber-200"]
 }
 
 /* 9.7 A positive CTA is the accent button (the deposit's confirm; decision 2): upstream's emerald fill becomes the accent
-   with on-accent text (white on #168848, ink on the mint). */
-html.flat-theme .modal-content:has(#balance-form) .modal-footer button.btn[class~="bg-emerald-600"] {
+   with on-accent text (white on #168848, ink on the mint). The footer's submit names its form (form="balance-form"). */
+html.flat-theme .modal-footer button.btn[form="balance-form"][class~="bg-emerald-600"] {
   border-color: rgb(var(--ui-primary));
   background-color: rgb(var(--ui-primary));
   color: rgb(var(--ui-on-primary));
 }
 
-html.flat-theme .modal-content:has(#balance-form) .modal-footer button.btn[class~="bg-emerald-600"]:not(:disabled):hover {
+html.flat-theme .modal-footer button.btn[form="balance-form"][class~="bg-emerald-600"]:not(:disabled):hover {
   border-color: rgb(var(--ui-primary-hover));
   background-color: rgb(var(--ui-primary-hover));
 }
@@ -1347,8 +1352,9 @@ html.flat-theme :is([data-ui="group-rate-multipliers"], [data-ui="group-rpm-over
 }
 
 /* 11.3 Sort order: each group a draggable row of the reference's list (1px line, radius 8, no lift shadow), its handle faint,
-   the id Geist Mono 11 muted; the platform chip is the identity chip (data.css). */
-html.flat-theme .modal-body div[class~="cursor-grab"][class~="rounded-lg"][class~="border"]:has(span[data-ui~="platform-chip"]) {
+   the id Geist Mono 11 muted; the platform chip is the identity chip (data.css). The row carries the hook group-sort-row
+   (GroupsView's sort dialog); `div >` keeps the specificity the former :has() gave. */
+html.flat-theme .modal-body div > div[data-ui="group-sort-row"][class~="cursor-grab"][class~="rounded-lg"][class~="border"] {
   padding: 10px 12px;
   border-color: rgb(var(--ui-line));
   border-radius: var(--ui-radius-lg);
@@ -1356,21 +1362,21 @@ html.flat-theme .modal-body div[class~="cursor-grab"][class~="rounded-lg"][class
   box-shadow: none;
 }
 
-html.flat-theme .modal-body div[class~="cursor-grab"][class~="rounded-lg"][class~="border"]:has(span[data-ui~="platform-chip"]):hover {
+html.flat-theme .modal-body div > div[data-ui="group-sort-row"][class~="cursor-grab"][class~="rounded-lg"][class~="border"]:hover {
   border-color: rgb(var(--ui-line-strong));
 }
 
-html.flat-theme .modal-body div[class~="cursor-grab"][class~="rounded-lg"][class~="border"]:has(span[data-ui~="platform-chip"]) > div:first-child {
+html.flat-theme .modal-body div > div[data-ui="group-sort-row"][class~="cursor-grab"][class~="rounded-lg"][class~="border"] > div:first-child {
   color: rgb(var(--ui-faint));
 }
 
-html.flat-theme .modal-body div[class~="cursor-grab"][class~="rounded-lg"][class~="border"]:has(span[data-ui~="platform-chip"]) > div:last-child {
+html.flat-theme .modal-body div > div[data-ui="group-sort-row"][class~="cursor-grab"][class~="rounded-lg"][class~="border"] > div:last-child {
   color: rgb(var(--ui-muted));
   font-family: var(--ui-font-mono);
   font-size: 11px;
 }
 
-html.flat-theme .modal-body div[class~="cursor-grab"][class~="rounded-lg"][class~="border"]:has(span[data-ui~="platform-chip"]) div[class~="font-medium"] {
+html.flat-theme .modal-body div > div[data-ui="group-sort-row"][class~="cursor-grab"][class~="rounded-lg"][class~="border"] div[class~="font-medium"] {
   color: rgb(var(--ui-ink));
   font-size: 13px;
   font-weight: 600;
@@ -1544,22 +1550,23 @@ html.flat-theme :is(#create-proxy-form, #edit-proxy-form) div[class~="mb-2"][cla
 }
 
 /* 12.3 Quick add's parse result and the quality report's summary: neutral cards (1px line, the grouped fill), the report's
-   score 15/600 Geist Mono (the reference's statistic figure); its table is data.css' plain table. */
-html.flat-theme .modal-content:has([data-ui="proxy-create-tabs"]) .modal-body div[class~="rounded-lg"][class~="bg-gray-50"][class~="p-4"]:has(> div > div > svg) {
+   score 15/600 Geist Mono (the reference's statistic figure); its table is data.css' plain table. Hooks (ProxiesView):
+   proxy-parse-result, proxy-quality-summary. */
+html.flat-theme .modal-body div[data-ui="proxy-parse-result"][class~="rounded-lg"][class~="bg-gray-50"][class~="p-4"] {
   padding: 10px 14px;
   border: 1px solid rgb(var(--ui-line));
   border-radius: var(--ui-radius-md);
   background: color-mix(in srgb, rgb(var(--ui-subtle)) 60%, rgb(var(--ui-surface)));
 }
 
-html.flat-theme .modal-body > div > div[class~="rounded-lg"][class~="border"][class~="bg-gray-50"][class~="p-4"]:has(div[class~="text-2xl"]):has(+ div[class~="max-h-80"] > table) {
+html.flat-theme .modal-body > div > div[data-ui="proxy-quality-summary"][class~="rounded-lg"][class~="border"][class~="bg-gray-50"][class~="p-4"] {
   padding: 12px 14px;
   border-color: rgb(var(--ui-line));
   border-radius: var(--ui-radius-lg);
   background: color-mix(in srgb, rgb(var(--ui-subtle)) 60%, rgb(var(--ui-surface)));
 }
 
-html.flat-theme .modal-body > div > div[class~="rounded-lg"][class~="border"][class~="bg-gray-50"][class~="p-4"]:has(+ div[class~="max-h-80"] > table) div[class~="text-2xl"][class~="font-semibold"] {
+html.flat-theme .modal-body > div > div[data-ui="proxy-quality-summary"][class~="rounded-lg"][class~="border"][class~="bg-gray-50"][class~="p-4"] div[class~="text-2xl"][class~="font-semibold"] {
   font-family: var(--ui-font-mono);
   font-size: 15px;
   line-height: 22.5px;
@@ -1634,8 +1641,9 @@ html.flat-theme [data-ui="subscription-guide-title"] ~ div div[class~="overflow-
 }
 
 /* 13.3 Generate codes: the code-expiry choices are one control, the reference's segmented choice (the structural frame,
-   2px inset, 12.5 / 600 segments, the chosen one the ink thumb) instead of accent-tinted boxes. */
-html.flat-theme div[class~="grid"][class~="grid-cols-2"][class~="sm:grid-cols-5"]:has(> button[class~="rounded-lg"][class~="border"][class~="px-3"][class~="py-2"]) {
+   2px inset, 12.5 / 600 segments, the chosen one the ink thumb) instead of accent-tinted boxes. The frame is the grid of
+   the generate form (hook redeem-generate-form, RedeemView); the repeated attributes keep the former :has() specificity. */
+html.flat-theme form[data-ui="redeem-generate-form"] > div > div[class~="grid"][class~="grid-cols-2"][class~="sm:grid-cols-5"][class~="grid-cols-2"][class~="sm:grid-cols-5"] {
   gap: 0;
   padding: 2px;
   border: 1px solid rgb(var(--ui-line));
@@ -1673,13 +1681,15 @@ html.flat-theme div[class~="grid"][class~="grid-cols-2"][class~="sm:grid-cols-5"
 
 /* 13.4 Generated codes: the header is the dialog header (14 / 18 inset on the structural line, title 14/600, the count
    12px muted), its success mark the 28px square in the success pair (a status), the close the 28px bordered button; the
-   codes the reference's snippet (Geist Mono 12.5 on the canvas, radius 6, 12 inset); the footer the dialog footer. */
-html.flat-theme div:has(> [data-ui="redeem-result-body"]) > div:first-child {
+   codes the reference's snippet (Geist Mono 12.5 on the canvas, radius 6, 12 inset); the footer the dialog footer. Hooks
+   (RedeemView): redeem-result-head on the header, redeem-result-body on the body; the footer is the body's next sibling.
+   `div > …:first-child` / `div > … + div:last-child` keep the specificity of the former :has() anchor. */
+html.flat-theme div > div[data-ui="redeem-result-head"]:first-child {
   padding: var(--ui-dialog-head-y, 14px) var(--ui-dialog-x, 18px);
   border-color: rgb(var(--ui-line));
 }
 
-html.flat-theme div:has(> [data-ui="redeem-result-body"]) > div:first-child div[class~="rounded-full"][class~="h-10"] {
+html.flat-theme div > div[data-ui="redeem-result-head"]:first-child div[class~="rounded-full"][class~="h-10"] {
   width: 28px;
   height: 28px;
   border: 1px solid rgb(var(--ui-success) / 0.3);
@@ -1687,26 +1697,26 @@ html.flat-theme div:has(> [data-ui="redeem-result-body"]) > div:first-child div[
   background-color: rgb(var(--ui-success-soft));
 }
 
-html.flat-theme div:has(> [data-ui="redeem-result-body"]) > div:first-child div[class~="rounded-full"][class~="h-10"] > svg {
+html.flat-theme div > div[data-ui="redeem-result-head"]:first-child div[class~="rounded-full"][class~="h-10"] > svg {
   width: 15px;
   height: 15px;
   color: rgb(var(--ui-success));
 }
 
-html.flat-theme div:has(> [data-ui="redeem-result-body"]) > div:first-child h2 {
+html.flat-theme div > div[data-ui="redeem-result-head"]:first-child h2 {
   color: rgb(var(--ui-ink));
   font-size: 14px;
   line-height: 20px;
   font-weight: 600;
 }
 
-html.flat-theme div:has(> [data-ui="redeem-result-body"]) > div:first-child h2 + p {
+html.flat-theme div > div[data-ui="redeem-result-head"]:first-child h2 + p {
   color: rgb(var(--ui-muted));
   font-size: 12px;
   line-height: 18px;
 }
 
-html.flat-theme div:has(> [data-ui="redeem-result-body"]) > div:first-child > button {
+html.flat-theme div > div[data-ui="redeem-result-head"]:first-child > button {
   display: inline-grid;
   place-items: center;
   width: 28px;
@@ -1718,12 +1728,12 @@ html.flat-theme div:has(> [data-ui="redeem-result-body"]) > div:first-child > bu
   color: rgb(var(--ui-muted));
 }
 
-html.flat-theme div:has(> [data-ui="redeem-result-body"]) > div:first-child > button:hover {
+html.flat-theme div > div[data-ui="redeem-result-head"]:first-child > button:hover {
   background-color: rgb(var(--ui-surface));
   color: rgb(var(--ui-ink));
 }
 
-html.flat-theme div:has(> [data-ui="redeem-result-body"]) > div:first-child > button svg {
+html.flat-theme div > div[data-ui="redeem-result-head"]:first-child > button svg {
   width: 15px;
   height: 15px;
 }
@@ -1742,7 +1752,7 @@ html.flat-theme [data-ui="redeem-result-body"] textarea {
   line-height: 1.625;
 }
 
-html.flat-theme div:has(> [data-ui="redeem-result-body"]) > div:last-child {
+html.flat-theme div > [data-ui="redeem-result-body"] + div:last-child {
   padding: var(--ui-dialog-foot-y, 12px) var(--ui-dialog-x, 18px);
   border-color: rgb(var(--ui-line));
   border-radius: 0 0 var(--ui-radius-lg) var(--ui-radius-lg);

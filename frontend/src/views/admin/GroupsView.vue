@@ -3754,6 +3754,7 @@
           <div
             v-for="group in sortableGroups"
             :key="group.id"
+            data-ui="group-sort-row"
             class="flex cursor-grab items-center gap-3 rounded-lg border border-gray-200 bg-white p-3 transition-shadow hover:shadow-md active:cursor-grabbing dark:border-dark-600 dark:bg-dark-700"
           >
             <div class="text-gray-400">

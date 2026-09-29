@@ -267,9 +267,9 @@
         <!-- Charts Section -->
         <div class="space-y-6">
           <!-- Date Range Filter -->
-          <div class="card p-4">
+          <div class="card p-4" data-ui="time-bar">
             <div class="flex flex-wrap items-center gap-4">
-              <div class="flex items-center gap-2">
+              <div class="flex items-center gap-2" data-ui="range-pill">
                 <span class="text-sm font-medium text-gray-700 dark:text-gray-300"
                   >{{ t('admin.dashboard.timeRange') }}:</span
                 >

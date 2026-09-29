@@ -348,7 +348,7 @@ html.flat-theme .account-tools-menu-item .account-tools-menu-icon svg {
   height: 13px;
 }
 
-html.flat-theme div[class~="fixed"]:has(> div > .account-tools-menu-item) > div > div[class~="px-2"][class~="py-2"] {
+html.flat-theme div[class~="fixed"] > div > div[class~="px-2"][class~="py-2"]:has(~ .account-tools-menu-item):not(uipad) {
   padding: 8px var(--ui-menu-row-x) 4px;
 }
 
@@ -756,10 +756,16 @@ html.flat-theme .modal-footer > div[class~="flex"]:only-child:is([class~="pt-2"]
 /* 3.6 The confirm dialog: message 13/21 ink-soft; its two utility buttons restated as the .btn recipes (controls'
    values: 30px, 0 12px, 13/19.5 600, radius 6, 1px edge; cancel = default, confirm = primary ink, a danger confirm
    = destructive). */
-html.flat-theme .modal-content:has([data-ui="confirm-ok"]) .modal-body > div > p:first-child {
-  font-size: 13px;
-  line-height: 21px;
-  color: rgb(var(--ui-ink-soft));
+html.flat-theme .modal-content:has([data-ui="confirm-ok"]) {
+  --uif-confirm: 1;
+}
+
+@container style(--uif-confirm: 1) {
+  html.flat-theme .modal-content .modal-body > div > p:first-child:not([data-uipad]) {
+    font-size: 13px;
+    line-height: 21px;
+    color: rgb(var(--ui-ink-soft));
+  }
 }
 
 html.flat-theme :is([data-ui="confirm-cancel"], [data-ui="confirm-ok"]) {
@@ -861,58 +867,69 @@ html.flat-theme div[class~="fixed"][class~="inset-0"] :is(div, section)[class~="
    as the header strip, 14 / 20 600 ink at 14 x 18 on the structural line, on the Modal's 28px row (57px); a close
    button the Modal's 28px framed close in that strip; the closing button row as the footer strip, 12 x 18 on the
    structural line, its small close button at the control height (55px, the Modal's footer). The h3- and icon-led ones
-   (TOTP, passkey, payment renewal, the settings page's) keep 3.7 / 10b. (final review V1-01) */
+   (TOTP, passkey, payment renewal, the settings page's) keep 3.7 / 10b. (final review V1-01)
+   Perf pass: the panel carries --uif-h2dlg / --uif-h2close (:has() in the subject only); its parts are styled
+   under @container style() on those flags, the :has() argument's specificity kept by :not(uipad...) (never matches). */
 html.flat-theme div[class~="fixed"][class~="inset-0"] > :is(div, section)[class~="bg-white"][class~="p-6"]:is([class~="shadow-xl"], [class~="shadow-2xl"]):not([data-ui]):has(> h2) {
+  --uif-h2dlg: 1;
   padding: var(--ui-dialog-body-y) var(--ui-dialog-x);
 }
 
-html.flat-theme div[class~="fixed"][class~="inset-0"] > :is(div, section)[class~="bg-white"][class~="p-6"]:is([class~="shadow-xl"], [class~="shadow-2xl"]):not([data-ui]):has(> h2) > h2 {
-  display: flex;
-  align-items: center;
-  min-height: calc(28px + 2 * var(--ui-dialog-head-y) + 1px);
-  margin: calc(-1 * var(--ui-dialog-body-y)) calc(-1 * var(--ui-dialog-x)) var(--ui-dialog-body-y);
-  border-bottom: 1px solid rgb(var(--ui-line));
-  padding: var(--ui-dialog-head-y) var(--ui-dialog-x);
-  font-size: 0.875rem;
-  line-height: 1.25rem;
-  font-weight: 600;
-  letter-spacing: 0;
-  color: rgb(var(--ui-ink));
+html.flat-theme div[class~="fixed"][class~="inset-0"] > :is(div, section)[class~="bg-white"][class~="p-6"]:is([class~="shadow-xl"], [class~="shadow-2xl"]):not([data-ui]):has(> button[class~="absolute"][class~="right-4"][class~="top-4"]) {
+  --uif-h2close: 1;
 }
 
-html.flat-theme div[class~="fixed"][class~="inset-0"] > :is(div, section)[class~="bg-white"][class~="p-6"]:is([class~="shadow-xl"], [class~="shadow-2xl"]):not([data-ui]):has(> h2):has(> button[class~="absolute"][class~="right-4"][class~="top-4"]) > h2 {
-  padding-right: calc(var(--ui-dialog-x) + 36px);
+@container style(--uif-h2dlg: 1) {
+  html.flat-theme div[class~="fixed"][class~="inset-0"] > :is(div, section)[class~="bg-white"][class~="p-6"]:is([class~="shadow-xl"], [class~="shadow-2xl"]):not([data-ui]) > h2:not(uipad) {
+    display: flex;
+    align-items: center;
+    min-height: calc(28px + 2 * var(--ui-dialog-head-y) + 1px);
+    margin: calc(-1 * var(--ui-dialog-body-y)) calc(-1 * var(--ui-dialog-x)) var(--ui-dialog-body-y);
+    border-bottom: 1px solid rgb(var(--ui-line));
+    padding: var(--ui-dialog-head-y) var(--ui-dialog-x);
+    font-size: 0.875rem;
+    line-height: 1.25rem;
+    font-weight: 600;
+    letter-spacing: 0;
+    color: rgb(var(--ui-ink));
+  }
+
+  html.flat-theme div[class~="fixed"][class~="inset-0"] > :is(div, section)[class~="bg-white"][class~="p-6"]:is([class~="shadow-xl"], [class~="shadow-2xl"]):not([data-ui]) > button[class~="absolute"][class~="right-4"][class~="top-4"]:not(uipad) {
+    top: var(--ui-dialog-head-y);
+    right: var(--ui-dialog-x);
+    border: 1px solid rgb(var(--ui-line));
+    background-color: rgb(var(--ui-surface));
+  }
+
+  html.flat-theme div[class~="fixed"][class~="inset-0"] > :is(div, section)[class~="bg-white"][class~="p-6"]:is([class~="shadow-xl"], [class~="shadow-2xl"]):not([data-ui]) > button[class~="absolute"][class~="right-4"][class~="top-4"]:not(uipad):hover {
+    background-color: rgb(var(--ui-surface));
+    color: rgb(var(--ui-ink));
+  }
+
+  html.flat-theme div[class~="fixed"][class~="inset-0"] > :is(div, section)[class~="bg-white"][class~="p-6"]:is([class~="shadow-xl"], [class~="shadow-2xl"]):not([data-ui]) > button[class~="absolute"][class~="right-4"][class~="top-4"]:not(uipad):focus-visible {
+    outline: 2px solid rgb(var(--ui-focus));
+    outline-offset: 2px;
+  }
+
+  html.flat-theme div[class~="fixed"][class~="inset-0"] > :is(div, section)[class~="bg-white"][class~="p-6"]:is([class~="shadow-xl"], [class~="shadow-2xl"]):not([data-ui]) > form > div[class~="justify-end"]:last-child:not(uipad),
+  html.flat-theme div[class~="fixed"][class~="inset-0"] > :is(div, section)[class~="bg-white"][class~="p-6"]:is([class~="shadow-xl"], [class~="shadow-2xl"]):not([data-ui]) > div:is([class~="justify-end"], [class~="text-right"]):last-child:not(uipad) {
+    margin: var(--ui-dialog-body-y) calc(-1 * var(--ui-dialog-x)) calc(-1 * var(--ui-dialog-body-y));
+    border-top: 1px solid rgb(var(--ui-line));
+    padding: var(--ui-dialog-foot-y) var(--ui-dialog-x);
+  }
+
+  html.flat-theme div[class~="fixed"][class~="inset-0"] > :is(div, section)[class~="bg-white"][class~="p-6"]:is([class~="shadow-xl"], [class~="shadow-2xl"]):not([data-ui]) > div[class~="text-right"]:last-child > .btn-sm:not(uipad) {
+    min-height: var(--ui-control-h);
+    padding: 0.265625rem 0.75rem;
+    font-size: 0.8125rem;
+    line-height: 1.21875rem;
+  }
 }
 
-html.flat-theme div[class~="fixed"][class~="inset-0"] > :is(div, section)[class~="bg-white"][class~="p-6"]:is([class~="shadow-xl"], [class~="shadow-2xl"]):not([data-ui]):has(> h2) > button[class~="absolute"][class~="right-4"][class~="top-4"] {
-  top: var(--ui-dialog-head-y);
-  right: var(--ui-dialog-x);
-  border: 1px solid rgb(var(--ui-line));
-  background-color: rgb(var(--ui-surface));
-}
-
-html.flat-theme div[class~="fixed"][class~="inset-0"] > :is(div, section)[class~="bg-white"][class~="p-6"]:is([class~="shadow-xl"], [class~="shadow-2xl"]):not([data-ui]):has(> h2) > button[class~="absolute"][class~="right-4"][class~="top-4"]:hover {
-  background-color: rgb(var(--ui-surface));
-  color: rgb(var(--ui-ink));
-}
-
-html.flat-theme div[class~="fixed"][class~="inset-0"] > :is(div, section)[class~="bg-white"][class~="p-6"]:is([class~="shadow-xl"], [class~="shadow-2xl"]):not([data-ui]):has(> h2) > button[class~="absolute"][class~="right-4"][class~="top-4"]:focus-visible {
-  outline: 2px solid rgb(var(--ui-focus));
-  outline-offset: 2px;
-}
-
-html.flat-theme div[class~="fixed"][class~="inset-0"] > :is(div, section)[class~="bg-white"][class~="p-6"]:is([class~="shadow-xl"], [class~="shadow-2xl"]):not([data-ui]):has(> h2) > form > div[class~="justify-end"]:last-child,
-html.flat-theme div[class~="fixed"][class~="inset-0"] > :is(div, section)[class~="bg-white"][class~="p-6"]:is([class~="shadow-xl"], [class~="shadow-2xl"]):not([data-ui]):has(> h2) > div:is([class~="justify-end"], [class~="text-right"]):last-child {
-  margin: var(--ui-dialog-body-y) calc(-1 * var(--ui-dialog-x)) calc(-1 * var(--ui-dialog-body-y));
-  border-top: 1px solid rgb(var(--ui-line));
-  padding: var(--ui-dialog-foot-y) var(--ui-dialog-x);
-}
-
-html.flat-theme div[class~="fixed"][class~="inset-0"] > :is(div, section)[class~="bg-white"][class~="p-6"]:is([class~="shadow-xl"], [class~="shadow-2xl"]):not([data-ui]):has(> h2) > div[class~="text-right"]:last-child > .btn-sm {
-  min-height: var(--ui-control-h);
-  padding: 0.265625rem 0.75rem;
-  font-size: 0.8125rem;
-  line-height: 1.21875rem;
+@container style(--uif-h2dlg: 1) and style(--uif-h2close: 1) {
+  html.flat-theme div[class~="fixed"][class~="inset-0"] > :is(div, section)[class~="bg-white"][class~="p-6"]:is([class~="shadow-xl"], [class~="shadow-2xl"]):not([data-ui]) > h2:not(uipad[data-uipad][data-uipad][data-uipad]):not(uipad) {
+    padding-right: calc(var(--ui-dialog-x) + 36px);
+  }
 }
 
 /* 3.8 Motion: the scrim fades in 200ms; the panel settles on the reference's 450ms panel curve from 98% with a 160ms

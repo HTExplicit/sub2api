@@ -4,9 +4,9 @@
       <UsageStatsCards :stats="usageStats" :show-account-cost="false" :strike-standard-cost="true" />
 
       <div class="space-y-4">
-        <div class="card p-4">
+        <div class="card p-4" data-ui="time-bar">
           <div class="flex flex-wrap items-center gap-4">
-            <div class="flex items-center gap-2">
+            <div class="flex items-center gap-2" data-ui="range-pill">
               <span class="text-sm font-medium text-gray-700 dark:text-gray-300">{{ t('admin.dashboard.timeRange') }}:</span>
               <DateRangePicker
                 v-model:start-date="startDate"

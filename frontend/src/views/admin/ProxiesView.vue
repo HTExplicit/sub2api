@@ -567,7 +567,7 @@
         </div>
 
         <!-- Parse Result -->
-        <div v-if="batchParseResult.total > 0" class="rounded-lg bg-gray-50 p-4 dark:bg-dark-700">
+        <div v-if="batchParseResult.total > 0" data-ui="proxy-parse-result" class="rounded-lg bg-gray-50 p-4 dark:bg-dark-700">
             <div class="flex items-center gap-4 text-sm">
               <div class="flex items-center gap-1.5">
               <Icon name="checkCircle" size="sm" :stroke-width="2" class="text-primary-500" />
@@ -867,7 +867,7 @@
       @close="closeQualityReportDialog"
     >
       <div v-if="qualityReport" class="space-y-4">
-        <div class="rounded-lg border border-gray-200 bg-gray-50 p-4 dark:border-dark-600 dark:bg-dark-700">
+        <div data-ui="proxy-quality-summary" class="rounded-lg border border-gray-200 bg-gray-50 p-4 dark:border-dark-600 dark:bg-dark-700">
           <div class="flex items-center justify-between gap-4">
             <div>
               <div class="text-sm text-gray-500 dark:text-gray-400">

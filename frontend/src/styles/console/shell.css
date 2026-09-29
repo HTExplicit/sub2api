@@ -122,7 +122,8 @@ html.flat-theme .custom-page-layout {
     height: 100vh;
   }
 
-  html.flat-theme .app-main:has(> main > :is(.table-page-layout, .custom-page-layout)) > main {
+  /* :has() in the subject only (perf pass: a non-subject :has() re-styles the anchor's whole subtree) */
+  html.flat-theme .app-main > main:has(> :is(.table-page-layout, .custom-page-layout)):not(uipad) {
     display: flex;
     flex: 1 1 0;
     flex-direction: column;

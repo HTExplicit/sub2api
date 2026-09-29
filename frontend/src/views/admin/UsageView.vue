@@ -4,9 +4,9 @@
       <UsageStatsCards :stats="usageStats" />
       <!-- Charts Section -->
       <div class="space-y-4">
-        <div class="card p-4">
+        <div class="card p-4" data-ui="time-bar">
           <div class="flex flex-wrap items-center gap-4">
-            <div class="flex items-center gap-2">
+            <div class="flex items-center gap-2" data-ui="range-pill">
               <span class="text-sm font-medium text-gray-700 dark:text-gray-300">{{ t('admin.dashboard.timeRange') }}:</span>
               <DateRangePicker
                 v-model:start-date="startDate"
@@ -65,7 +65,7 @@
         </div>
       </div>
       <!-- 明细区：tab 栏 + 筛选 + 内容收进同一张卡片，消除割裂感 -->
-      <div class="card">
+      <div class="card" data-ui="usage-records">
         <div class="flex flex-wrap items-center border-b border-gray-200 px-2 dark:border-dark-700 sm:px-4">
           <button
             v-for="tab in detailTabs"

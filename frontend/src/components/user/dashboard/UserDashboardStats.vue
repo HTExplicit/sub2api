@@ -133,7 +133,7 @@
   </div>
 
   <!-- Row 3: Per-platform breakdown -->
-  <div v-if="!isSimple && platformCards.length > 0" class="card p-4">
+  <div v-if="!isSimple && platformCards.length > 0" class="card p-4" data-ui="platform-breakdown">
     <div class="mb-3 flex items-center justify-between">
       <h3 class="text-sm font-semibold text-gray-900 dark:text-white">{{ t('dashboard.platformBreakdown') }}</h3>
       <span class="text-xs text-gray-500 dark:text-gray-400">
