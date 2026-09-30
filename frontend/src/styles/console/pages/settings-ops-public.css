@@ -88,8 +88,8 @@ html.flat-theme [data-ui="auth-column"] {
   padding: 0 24px;
 }
 
-/* brand: a 44px ink tile (radius 12) with the site logo, then the site name as a mono wordmark; the site subtitle
-   sits under them as a mono caption */
+/* brand: a 44px accent tile (radius 12; palette C marks) with the site logo, then the site name as a mono wordmark;
+   the site subtitle sits under them as a mono caption */
 html.flat-theme [data-ui="auth-column"] > div[class~="mb-8"] {
   display: flex;
   flex-wrap: wrap;
@@ -105,7 +105,7 @@ html.flat-theme [data-ui="auth-column"] > div[class~="mb-8"] > div {
   height: 44px;
   margin: 0;
   border-radius: var(--ui-radius-xl);
-  background-color: rgb(var(--ui-ink));
+  background-color: rgb(var(--ui-primary));
   box-shadow: none;
 }
 
@@ -347,8 +347,8 @@ html.flat-theme [data-ui="auth-column"] input#code.input {
 }
 
 /* ------------------------------------------------------------------ auth · buttons */
-/* primary: the reference's 50px ink pill (hover ink 85 %, disabled 50 %); its leading glyph is dropped, the loading
-   spinner stays */
+/* primary: the reference's 50px pill in the solid role (palette C: the accent with white text, the deeper step on
+   hover, disabled 50 %); its leading glyph is dropped, the loading spinner stays */
 html.flat-theme [data-ui="auth-column"] :is(button, a).btn.btn-primary {
   display: flex;
   width: 100%;
@@ -357,8 +357,8 @@ html.flat-theme [data-ui="auth-column"] :is(button, a).btn.btn-primary {
   gap: 8px;
   border: 1px solid transparent;
   border-radius: 9999px;
-  background: rgb(var(--ui-ink));
-  color: rgb(var(--ui-on-ink));
+  background: rgb(var(--ui-solid));
+  color: rgb(var(--ui-on-solid));
   font: 600 14px/20px var(--ui-font);
   letter-spacing: -0.025em;
   box-shadow: none;
@@ -367,7 +367,7 @@ html.flat-theme [data-ui="auth-column"] :is(button, a).btn.btn-primary {
 }
 
 html.flat-theme [data-ui="auth-column"] :is(button, a).btn.btn-primary:hover:not(:disabled) {
-  background: rgb(var(--ui-ink) / 0.85);
+  background: rgb(var(--ui-solid-hover));
 }
 
 html.flat-theme [data-ui="auth-column"] :is(button, a).btn.btn-primary:disabled {
@@ -925,13 +925,14 @@ html.flat-theme body > :where(#overlay-root) > div[class~="z-[140]"] > div > div
 }
 
 html.flat-theme body > :where(#overlay-root) > div[class~="z-[140]"] > div > div:last-child button:last-child {
-  border: 1px solid rgb(var(--ui-ink));
-  background: rgb(var(--ui-ink));
-  color: rgb(var(--ui-on-ink));
+  border: 1px solid rgb(var(--ui-solid-edge));
+  background: rgb(var(--ui-solid));
+  color: rgb(var(--ui-on-solid));
 }
 
 html.flat-theme body > :where(#overlay-root) > div[class~="z-[140]"] > div > div:last-child button:last-child:hover {
-  background: rgb(var(--ui-ink) / 0.85);
+  border-color: rgb(var(--ui-solid-edge-hover));
+  background: rgb(var(--ui-solid-hover));
 }
 
 html.flat-theme body > :where(#overlay-root) > div[class~="z-[140]"] :is(a, button):focus-visible {
@@ -1041,7 +1042,7 @@ html.flat-theme :is([data-ui="home"], [data-ui="key-usage"]) > header > nav > di
   font-size: 12.5px;
 }
 
-/* sign in / console: the console's small ink button (30px, radius 6, 13 / 600) */
+/* sign in / console: the console's small solid primary (30px, radius 6, 13 / 600; palette C) */
 html.flat-theme [data-ui="home"] > header > nav > div:last-child > a[class~="bg-gray-900"],
 html.flat-theme [data-ui="legal"] > header > div > a[class~="bg-primary-600"] {
   display: inline-flex;
@@ -1050,10 +1051,10 @@ html.flat-theme [data-ui="legal"] > header > div > a[class~="bg-primary-600"] {
   margin-left: 6px;
   padding: 0 12px;
   gap: 8px;
-  border: 1px solid rgb(var(--ui-ink));
+  border: 1px solid rgb(var(--ui-solid-edge));
   border-radius: var(--ui-radius-md);
-  background: rgb(var(--ui-ink));
-  color: rgb(var(--ui-on-ink));
+  background: rgb(var(--ui-solid));
+  color: rgb(var(--ui-on-solid));
   font: 600 13px/19.5px var(--ui-font);
   box-shadow: none;
   transition: background-color var(--ui-duration) var(--ui-ease);
@@ -1061,29 +1062,30 @@ html.flat-theme [data-ui="legal"] > header > div > a[class~="bg-primary-600"] {
 
 html.flat-theme [data-ui="home"] > header > nav > div:last-child > a[class~="bg-gray-900"]:hover,
 html.flat-theme [data-ui="legal"] > header > div > a[class~="bg-primary-600"]:hover {
-  background: rgb(var(--ui-ink) / 0.85);
+  border-color: rgb(var(--ui-solid-edge-hover));
+  background: rgb(var(--ui-solid-hover));
 }
 
 html.flat-theme [data-ui="home"] > header > nav > div:last-child > a[class~="bg-gray-900"] > span:not([class~="rounded-full"]) {
   font-size: 13px;
   line-height: 19.5px;
   font-weight: 600;
-  color: rgb(var(--ui-on-ink));
+  color: rgb(var(--ui-on-solid));
 }
 
-/* the signed-in initial: a quiet disc on the ink button */
+/* the signed-in initial: a quiet disc on the solid button */
 html.flat-theme [data-ui="home"] > header > nav > div:last-child > a[class~="bg-gray-900"] > span[class~="rounded-full"] {
   width: 18px;
   height: 18px;
-  background: rgb(var(--ui-on-ink) / 0.18);
-  color: rgb(var(--ui-on-ink));
+  background: rgb(var(--ui-on-solid) / 0.18);
+  color: rgb(var(--ui-on-solid));
   font: 600 10px/18px var(--ui-font-mono);
 }
 
 html.flat-theme [data-ui="home"] > header > nav > div:last-child > a[class~="bg-gray-900"] > svg {
   width: 12px;
   height: 12px;
-  color: rgb(var(--ui-on-ink) / 0.7);
+  color: rgb(var(--ui-on-solid) / 0.7);
 }
 
 html.flat-theme :is([data-ui="home"], [data-ui="legal"], [data-ui="key-usage"], [data-ui="not-found"]) :is(a, button):focus-visible {
@@ -1192,10 +1194,10 @@ html.flat-theme [data-ui="home"] > main > div > div:first-child .btn.btn-primary
   height: 44px;
   padding: 0 20px;
   gap: 10px;
-  border: 1px solid rgb(var(--ui-ink));
+  border: 1px solid rgb(var(--ui-solid-edge));
   border-radius: var(--ui-radius-md);
-  background: rgb(var(--ui-ink));
-  color: rgb(var(--ui-on-ink));
+  background: rgb(var(--ui-solid));
+  color: rgb(var(--ui-on-solid));
   font: 600 14px/20px var(--ui-font);
   box-shadow: none;
   transform: none;
@@ -1203,7 +1205,8 @@ html.flat-theme [data-ui="home"] > main > div > div:first-child .btn.btn-primary
 }
 
 html.flat-theme [data-ui="home"] > main > div > div:first-child .btn.btn-primary:hover {
-  background: rgb(var(--ui-ink) / 0.85);
+  border-color: rgb(var(--ui-solid-edge-hover));
+  background: rgb(var(--ui-solid-hover));
 }
 
 html.flat-theme [data-ui="home"] > main > div > div:first-child .btn.btn-primary svg {
@@ -1600,10 +1603,10 @@ html.flat-theme [data-testid="compact-home"] :is(header a[class~="bg-gray-900"],
   min-height: 0;
   height: 30px;
   padding: 0 12px;
-  border: 1px solid rgb(var(--ui-ink));
+  border: 1px solid rgb(var(--ui-solid-edge));
   border-radius: var(--ui-radius-md);
-  background: rgb(var(--ui-ink));
-  color: rgb(var(--ui-on-ink));
+  background: rgb(var(--ui-solid));
+  color: rgb(var(--ui-on-solid));
   font: 600 13px/19.5px var(--ui-font);
   transition: background-color var(--ui-duration) var(--ui-ease);
 }
@@ -1617,7 +1620,8 @@ html.flat-theme [data-testid="compact-home"] main a[class~="bg-primary-600"] {
 }
 
 html.flat-theme [data-testid="compact-home"] :is(header a[class~="bg-gray-900"], main a[class~="bg-primary-600"]):hover {
-  background: rgb(var(--ui-ink) / 0.85);
+  border-color: rgb(var(--ui-solid-edge-hover));
+  background: rgb(var(--ui-solid-hover));
 }
 
 html.flat-theme [data-testid="compact-home"] > main > div > img {
@@ -1930,13 +1934,14 @@ html.flat-theme [data-ui="not-found"] .btn.btn-secondary:hover {
 }
 
 html.flat-theme [data-ui="not-found"] .btn.btn-primary {
-  border: 1px solid rgb(var(--ui-ink));
-  background: rgb(var(--ui-ink));
-  color: rgb(var(--ui-on-ink));
+  border: 1px solid rgb(var(--ui-solid-edge));
+  background: rgb(var(--ui-solid));
+  color: rgb(var(--ui-on-solid));
 }
 
 html.flat-theme [data-ui="not-found"] .btn.btn-primary:hover {
-  background: rgb(var(--ui-ink) / 0.85);
+  border-color: rgb(var(--ui-solid-edge-hover));
+  background: rgb(var(--ui-solid-hover));
 }
 
 html.flat-theme [data-ui="not-found"] .btn svg {
@@ -1963,8 +1968,9 @@ html.flat-theme [data-ui="not-found"] > div[class~="z-10"] > p:last-child a {
 }
 
 /* ------------------------------------------------------------------ key usage */
-/* the console's language on a public page: a centred 40 / 500 title, one 42px field with its ink button, KPI-style
-   cards (hairline, radius 8, mono labels), hairline tables with mono numbers; ring strokes in the ink */
+/* the console's language on a public page: a centred 40 / 500 title, one 42px field with its solid button, KPI-style
+   cards (hairline, radius 8, mono labels), hairline tables with mono numbers; ring strokes in the accent (palette C
+   marks) */
 html.flat-theme [data-ui="key-usage"] > main {
   padding: clamp(56px, 9vh, 96px) var(--pub-gutter) clamp(72px, 10vh, 112px);
 }
@@ -2039,22 +2045,23 @@ html.flat-theme [data-ui="key-usage"] > main > div:nth-child(2) > div:first-chil
   height: 16px;
 }
 
-/* 查询: the console's ink button at the field's height */
+/* 查询: the console's solid primary at the field's height */
 html.flat-theme [data-ui="key-usage"] > main > div:nth-child(2) > div:first-child > button {
   height: 42px;
   padding: 0 18px;
   gap: 8px;
-  border: 1px solid rgb(var(--ui-ink));
+  border: 1px solid rgb(var(--ui-solid-edge));
   border-radius: var(--ui-radius-md);
-  background: rgb(var(--ui-ink));
-  color: rgb(var(--ui-on-ink));
+  background: rgb(var(--ui-solid));
+  color: rgb(var(--ui-on-solid));
   font: 600 14px/20px var(--ui-font);
   transform: none;
   transition: background-color var(--ui-duration) var(--ui-ease), opacity var(--ui-duration) var(--ui-ease);
 }
 
 html.flat-theme [data-ui="key-usage"] > main > div:nth-child(2) > div:first-child > button:hover:not(:disabled) {
-  background: rgb(var(--ui-ink) / 0.85);
+  border-color: rgb(var(--ui-solid-edge-hover));
+  background: rgb(var(--ui-solid-hover));
 }
 
 html.flat-theme [data-ui="key-usage"] > main > div:nth-child(2) > div:first-child > button:disabled {
@@ -2072,7 +2079,8 @@ html.flat-theme [data-ui="key-usage"] > main > div:nth-child(2) > p {
   color: rgb(var(--ui-muted));
 }
 
-/* the range picker after a query: a mono label, 28px range buttons (the current one in the ink) */
+/* the range picker after a query: a mono label, 28px range buttons (the current one a chosen option: the accent
+   tint, accent text and the accent edge, palette C) */
 html.flat-theme [data-ui="key-usage"] > main > div:nth-child(2) > div[class~="mt-4"] > div {
   gap: 6px;
 }
@@ -2102,9 +2110,9 @@ html.flat-theme [data-ui="key-usage"] > main > div:nth-child(2) > div[class~="mt
 }
 
 html.flat-theme [data-ui="key-usage"] > main > div:nth-child(2) > div[class~="mt-4"] button[class~="bg-primary-500"] {
-  border-color: rgb(var(--ui-ink));
-  background: rgb(var(--ui-ink));
-  color: rgb(var(--ui-on-ink));
+  border-color: var(--ui-choice-edge);
+  background: rgb(var(--ui-primary-soft));
+  color: var(--ui-link);
 }
 
 html.flat-theme [data-ui="key-usage"] > main > div:nth-child(2) > div[class~="mt-4"] input.input-ring {
@@ -2187,8 +2195,8 @@ html.flat-theme [data-ui="key-usage"] main div[class~="rounded-2xl"][class~="p-8
   color: rgb(var(--ui-faint));
 }
 
-/* rings: the track in the grouped fill, the progress in the ink (the ring colours were decoration: each ring has
-   its title); the figures in the ring in mono */
+/* rings: the track in the grouped fill, the progress in the accent (palette C marks; the ring colours were
+   decoration: each ring has its title); the figures in the ring in mono */
 html.flat-theme [data-ui="key-usage"] main svg[class~="w-44"] > circle:first-child {
   stroke: rgb(var(--ui-subtle));
 }
@@ -2198,7 +2206,7 @@ html.flat-theme [data-ui="key-usage"] main svg[class~="w-44"] > circle {
 }
 
 html.flat-theme [data-ui="key-usage"] main svg[class~="w-44"] > circle.progress-ring {
-  stroke: rgb(var(--ui-ink));
+  stroke: rgb(var(--ui-primary));
 }
 
 /* the figures inside take the ring colour of their family inline (rgb(var(--theme-text-<family>-600))): the family
@@ -2295,19 +2303,19 @@ html.flat-theme [data-ui="key-usage"] main div[class~="gap-px"] > div > div:last
   color: rgb(var(--ui-ink));
 }
 
-/* the 7 / 30 / 90-day switch: the console's segmented control (hairline frame, ink thumb) */
+/* the 7 / 30 / 90-day switch: the console's segmented control (the grey track, the raised pill) */
 html.flat-theme [data-ui="key-usage"] main div[class~="inline-flex"][class~="rounded-lg"][class~="p-0.5"] {
   padding: 2px;
-  border: 1px solid rgb(var(--ui-line));
+  border: 1px solid rgb(var(--ui-track));
   border-radius: var(--ui-radius-lg);
-  background: rgb(var(--ui-surface));
+  background: rgb(var(--ui-track));
 }
 
 html.flat-theme [data-ui="key-usage"] main div[class~="inline-flex"][class~="rounded-lg"][class~="p-0.5"] > button {
   padding: 5px 12px;
   border-radius: var(--ui-radius-md);
   color: rgb(var(--ui-muted));
-  font: 600 12.5px/18px var(--ui-font);
+  font: 500 12.5px/18px var(--ui-font);
   transition: color var(--ui-duration-slide) var(--ui-ease-out), background-color var(--ui-duration-slide) var(--ui-ease-out);
 }
 
@@ -2317,8 +2325,10 @@ html.flat-theme [data-ui="key-usage"] main div[class~="inline-flex"][class~="rou
 }
 
 html.flat-theme [data-ui="key-usage"] main div[class~="inline-flex"][class~="rounded-lg"][class~="p-0.5"] > button[class~="bg-primary-500"] {
-  background: rgb(var(--ui-ink));
-  color: rgb(var(--ui-on-ink));
+  background: rgb(var(--ui-thumb));
+  color: rgb(var(--ui-ink));
+  font-weight: 600;
+  box-shadow: var(--ui-thumb-shadow);
 }
 
 /* tables: mono labels in the head, 12.5px mono cells, hairline rows */

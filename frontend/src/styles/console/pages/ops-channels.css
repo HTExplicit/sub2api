@@ -382,7 +382,7 @@ html.flat-theme div[data-ui~="ops-dashboard"] > div[class~="rounded-3xl"]:where(
   padding: var(--ctl-seg-inset);
   border: 1px solid rgb(var(--ctl-seg-frame));
   border-radius: var(--ui-radius-lg);
-  background-color: rgb(var(--ui-surface));
+  background-color: rgb(var(--ui-track));
 }
 
 html.flat-theme div[data-ui~="ops-dashboard"] > div[class~="rounded-3xl"]:where([data-ui~="ops-header"]) > div[class~="grid"] > div:first-child > div > div:last-child > div:first-child > div:last-child > button {
@@ -392,7 +392,7 @@ html.flat-theme div[data-ui~="ops-dashboard"] > div[class~="rounded-3xl"]:where(
   color: rgb(var(--ui-muted));
   font-family: var(--ui-font);
   font-size: 0.78125rem;
-  font-weight: 600;
+  font-weight: 500;
   line-height: 1.171875rem;
   white-space: nowrap;
   transition: color var(--ui-duration-slide) var(--ui-ease-out), background-color var(--ui-duration-slide) var(--ui-ease-out);
@@ -403,8 +403,10 @@ html.flat-theme div[data-ui~="ops-dashboard"] > div[class~="rounded-3xl"]:where(
 }
 
 html.flat-theme div[data-ui~="ops-dashboard"] > div[class~="rounded-3xl"]:where([data-ui~="ops-header"]) > div[class~="grid"] > div:first-child > div > div:last-child > div:first-child > div:last-child > button[class~="bg-blue-500"] {
-  background-color: rgb(var(--ui-ink));
-  color: rgb(var(--ui-on-ink));
+  background-color: rgb(var(--ui-thumb));
+  color: rgb(var(--ui-ink));
+  font-weight: 600;
+  box-shadow: var(--ui-thumb-shadow);
 }
 
 html.flat-theme div[data-ui~="ops-dashboard"] > div[class~="rounded-3xl"]:where([data-ui~="ops-header"]) > div[class~="grid"] > div:first-child > div > div:last-child > div:last-child span[class~="font-black"] {
@@ -2099,7 +2101,7 @@ html.flat-theme [data-ui~="ops-jobs"] > div > div[class~="bg-rose-50"] {
 }
 
 /* 4.9 custom range: the fields 34px with the form-control line (radius 6, accent edge on focus); cancel = the default
-   button, confirm = the ink primary button (REF §8.3) */
+   button, confirm = the solid primary button (REF §8.3; palette C) */
 html.flat-theme [data-ui~="ops-custom-range"] input[type="datetime-local"] {
   min-height: var(--ui-select-h);
   padding: 6px 10px;
@@ -2130,9 +2132,9 @@ html.flat-theme [data-ui~="ops-custom-range"] > div:last-child > button {
 }
 
 html.flat-theme [data-ui~="ops-custom-range"] > div:last-child > button[class~="bg-blue-500"] {
-  border-color: rgb(var(--ui-ink));
-  background-color: rgb(var(--ui-ink));
-  color: rgb(var(--ui-on-ink));
+  border-color: rgb(var(--ui-solid-edge));
+  background-color: rgb(var(--ui-solid));
+  color: rgb(var(--ui-on-solid));
 }
 
 html.flat-theme [data-ui~="ops-custom-range"] > div:last-child > button:focus-visible {
@@ -2719,8 +2721,8 @@ html.flat-theme [data-ui~="affiliate-page"] .table-wrapper td[data-column="order
 
 /* 5.7 渠道监控's dialogs (MonitorFormDialog: #channel-monitor-form; MonitorTemplateManagerDialog): the choice buttons
    (check mode, API mode, provider) are the reference's dialog option cards (REF §8.11: radius 8, the structural line, the
-   grouped fill at 60 %, the control outline on hover); the chosen one is drawn like the segmented thumb's edge (2px ink,
-   as controls.css' option cards); a provider's logo keeps its platform colour (identity, data-ui="platform-text"), the
+   grouped fill at 60 %, the control outline on hover); the chosen one carries the accent edge 2px wide (palette C, as
+   controls.css' option cards); a provider's logo keeps its platform colour (identity, data-ui="platform-text"), the
    labels are ink. The OpenAI API-mode group is a grouped panel, not an info box. */
 html.flat-theme #channel-monitor-form button[aria-pressed],
 html.flat-theme .modal-content div[class~="grid"] > button[data-ui~="platform-text"][class~="border-2"] {
@@ -2740,9 +2742,9 @@ html.flat-theme .modal-content div[class~="grid"] > button[data-ui~="platform-te
 
 html.flat-theme #channel-monitor-form button[aria-pressed="true"],
 html.flat-theme .modal-content div[class~="grid"] > button[data-ui~="platform-text"][class~="border-2"]:not([aria-pressed]):not([class~="bg-white"]) {
-  border-color: rgb(var(--ui-ink));
+  border-color: rgb(var(--ui-primary));
   background-color: rgb(var(--ui-surface));
-  box-shadow: inset 0 0 0 1px rgb(var(--ui-ink));
+  box-shadow: inset 0 0 0 1px rgb(var(--ui-primary));
 }
 
 html.flat-theme #channel-monitor-form button[aria-pressed] > span:first-child {
@@ -3516,14 +3518,14 @@ html.flat-theme [data-ui~="payment-dashboard"] div[class~="grid"][class~="gap-6"
   gap: var(--ui-shell-gap, 12px);
 }
 
-/* the 7 / 30 / 90-day choice: the reference's segmented control (controls.css 7.1's frame and segment metrics; the
-   current segment the ink thumb); the head row's only bordered box, its buttons a constant list */
+/* the 7 / 30 / 90-day choice: the reference's segmented control (controls.css 7.1's track and segment metrics; the
+   current segment the raised pill); the head row's only bordered box, its buttons a constant list */
 html.flat-theme [data-ui~="payment-dashboard"] > div:first-child div[class~="rounded-lg"][class~="border"]:not(uipad) {
   gap: 0;
   padding: var(--ctl-seg-inset);
   border-color: rgb(var(--ctl-seg-frame));
   border-radius: var(--ui-radius-lg);
-  background-color: rgb(var(--ui-surface));
+  background-color: rgb(var(--ui-track));
 }
 
 html.flat-theme [data-ui~="payment-dashboard"] > div:first-child div[class~="rounded-lg"][class~="border"] > button {
@@ -3531,7 +3533,7 @@ html.flat-theme [data-ui~="payment-dashboard"] > div:first-child div[class~="rou
   border-radius: var(--ui-radius-md);
   color: rgb(var(--ui-muted));
   font-size: 0.78125rem;
-  font-weight: 600;
+  font-weight: 500;
   line-height: 1.171875rem;
   transition: color var(--ui-duration-slide) var(--ui-ease-out), background-color var(--ui-duration-slide) var(--ui-ease-out);
 }
@@ -3542,8 +3544,10 @@ html.flat-theme [data-ui~="payment-dashboard"] > div:first-child div[class~="rou
 }
 
 html.flat-theme [data-ui~="payment-dashboard"] > div:first-child div[class~="rounded-lg"][class~="border"] > button[class~="bg-primary-600"] {
-  background-color: rgb(var(--ui-ink));
-  color: rgb(var(--ui-on-ink));
+  background-color: rgb(var(--ui-thumb));
+  color: rgb(var(--ui-ink));
+  font-weight: 600;
+  box-shadow: var(--ui-thumb-shadow);
 }
 
 html.flat-theme [data-ui~="payment-dashboard"] > div:first-child > div {
@@ -3855,7 +3859,7 @@ html.flat-theme [data-ui~="risk-page"] [data-test="pre-block-api-key-load-list"]
 
 html.flat-theme [data-ui~="risk-page"] [data-test="pre-block-api-key-load-list"] div[class~="bg-sky-500"],
 html.flat-theme [data-ui~="risk-page"] .card div[class~="h-2"] > div[class~="bg-primary-500"] {
-  background-color: rgb(var(--ui-ink));
+  background-color: rgb(var(--ui-primary));
 }
 
 html.flat-theme [data-ui~="risk-page"] .card div[class~="rounded-lg"][class~="border"][class~="p-4"] {
@@ -3899,9 +3903,9 @@ html.flat-theme [data-ui~="risk-settings"] > div:first-child {
   width: max-content;
   max-width: 100%;
   padding: 2px;
-  border: 1px solid rgb(var(--ui-line));
+  border: 1px solid rgb(var(--ui-track));
   border-radius: var(--ui-radius-lg);
-  background-color: rgb(var(--ui-surface));
+  background-color: rgb(var(--ui-track));
 }
 
 html.flat-theme [data-ui~="risk-settings"] > div:first-child > button {
@@ -3909,7 +3913,7 @@ html.flat-theme [data-ui~="risk-settings"] > div:first-child > button {
   border-radius: var(--ui-radius-md);
   color: rgb(var(--ui-muted));
   font-size: 12.5px;
-  font-weight: 600;
+  font-weight: 500;
   line-height: 18.75px;
   transition: color var(--ui-duration-slide) var(--ui-ease-out), background-color var(--ui-duration-slide) var(--ui-ease-out);
 }
@@ -3920,8 +3924,10 @@ html.flat-theme [data-ui~="risk-settings"] > div:first-child > button:hover {
 }
 
 html.flat-theme [data-ui~="risk-settings"] > div:first-child > button[class~="bg-primary-50"] {
-  background-color: rgb(var(--ui-ink));
-  color: rgb(var(--ui-on-ink));
+  background-color: rgb(var(--ui-thumb));
+  color: rgb(var(--ui-ink));
+  font-weight: 600;
+  box-shadow: var(--ui-thumb-shadow);
 }
 
 html.flat-theme [data-ui~="risk-settings"] div:is([class~="rounded-lg"], [class~="rounded-xl"])[class~="border"][class~="border-gray-100"] {
@@ -3967,12 +3973,13 @@ html.flat-theme [data-ui~="risk-settings"] div[class~="border-dashed"][class~="m
   color: rgb(var(--ui-muted));
 }
 
-/* 8.1 风控中心 settings: the API-key write mode is a segmented control (controls.css 7.1's frame and segment metrics;
-   「增量添加」 the ink thumb, 「覆盖保存」 keeps the warning fill: it replaces the saved keys) */
+/* 8.1 风控中心 settings: the API-key write mode is a segmented control (controls.css 7.1's track and segment metrics;
+   「增量添加」 the raised pill, 「覆盖保存」 keeps the warning fill: it replaces the saved keys) */
 html.flat-theme [data-ui~="risk-settings"] div[class~="inline-flex"][class~="rounded-lg"][class~="bg-white"][class~="p-1"]:not(uipad) {
   padding: var(--ctl-seg-inset);
   border: 1px solid rgb(var(--ctl-seg-frame));
   border-radius: var(--ui-radius-lg);
+  background-color: rgb(var(--ui-track));
   box-shadow: none;
 }
 
@@ -3981,13 +3988,15 @@ html.flat-theme [data-ui~="risk-settings"] div[class~="inline-flex"][class~="rou
   border-radius: var(--ui-radius-md);
   box-shadow: none;
   font-size: 0.78125rem;
-  font-weight: 600;
+  font-weight: 500;
   line-height: 1.171875rem;
 }
 
 html.flat-theme [data-ui~="risk-settings"] div[class~="inline-flex"][class~="rounded-lg"][class~="bg-white"][class~="p-1"] > button[class~="bg-primary-500"] {
-  background-color: rgb(var(--ui-ink));
-  color: rgb(var(--ui-on-ink));
+  background-color: rgb(var(--ui-thumb));
+  color: rgb(var(--ui-ink));
+  font-weight: 600;
+  box-shadow: var(--ui-thumb-shadow);
 }
 
 html.flat-theme [data-ui~="risk-settings"] div[class~="inline-flex"][class~="rounded-lg"][class~="bg-white"][class~="p-1"] > button:not([class~="bg-primary-500"]):not([class~="bg-amber-500"]) {

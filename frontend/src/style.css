@@ -811,9 +811,10 @@
 @layer components {
   /* ---------------------------------------------------------------- buttons
    * The reference Button (REF-CONSOLE §8.3): our .btn is its `sm` size (30px,
-   * 12px inset, 13px / 600, radius 6, gap 8). No shadow, no press scale,
-   * disabled at .55. Default (.btn-secondary) and primary have no hover
-   * state (measured); ghost and destructive fade in 150ms. */
+   * 12px inset, 13px, radius 6, gap 8) at 500 (palette C: controls and values
+   * at 500). No shadow, no press scale, disabled at .55. Default
+   * (.btn-secondary) has no hover state (measured); primary deepens, ghost and
+   * destructive fade in 150ms. */
   :where(.flat-theme) .btn {
     gap: 0.5rem;
     min-height: var(--ui-control-h);
@@ -822,7 +823,7 @@
     padding: 0.265625rem 0.75rem;
     font-size: 0.8125rem;
     line-height: 1.21875rem;
-    font-weight: 600;
+    font-weight: 500;
     letter-spacing: normal;
     transition-property: color, background-color, border-color, opacity;
     transition-duration: var(--ui-duration);
@@ -842,17 +843,24 @@
     opacity: 0.55;
   }
 
-  /* primary = ink with on-ink text (near-white with ink text in dark) */
+  /* primary = the solid role (tokens.css --ui-solid: the text-safe accent with
+     white text; a deeper step on hover; the dark theme's lighter 1px edge) */
   :where(.flat-theme) .btn-primary,
   :where(.flat-theme) .btn-primary:is(.dark *),
   :where(.flat-theme) .btn-primary:hover,
   :where(.flat-theme) .btn-primary:hover:is(.dark *) {
-    --theme-on-fill: var(--ui-on-ink);
-    border-color: rgb(var(--ui-ink));
-    background-color: rgb(var(--ui-ink));
+    --theme-on-fill: var(--ui-on-solid);
+    border-color: rgb(var(--ui-solid-edge));
+    background-color: rgb(var(--ui-solid));
     background-image: none;
-    color: rgb(var(--ui-on-ink));
+    color: rgb(var(--ui-on-solid));
     box-shadow: none;
+  }
+
+  :where(.flat-theme) .btn-primary:hover:not(:disabled),
+  :where(.flat-theme) .btn-primary:hover:not(:disabled):is(.dark *) {
+    border-color: rgb(var(--ui-solid-edge-hover));
+    background-color: rgb(var(--ui-solid-hover));
   }
 
   /* default = surface, the control outline, ink text */
@@ -1063,13 +1071,14 @@
   }
 
   /* the field label is the reference's mono label (the sign-in field label:
-     Geist Mono 10/15, 600, 0.12em, uppercase; 11/16 in the Chinese interface) */
+     Geist Mono 10/15, 0.12em, uppercase; 11/16 in the Chinese interface) at
+     500 (palette C: labels calm down; 11px CJK stays readable at 500) */
   :where(.flat-theme) .input-label {
     margin-bottom: 0.5rem;
     font-family: var(--ui-font-mono);
     font-size: var(--ui-label-size);
     line-height: var(--ui-label-leading);
-    font-weight: 600;
+    font-weight: 500;
     letter-spacing: var(--ui-label-tracking);
     text-transform: uppercase;
     color: rgb(var(--ui-label));
@@ -1098,21 +1107,23 @@
   }
 
   /* ---------------------------------------------------------------- tabs
-   * .tabs / .tab are the reference's segmented control (SlidingTabs, §8.5):
-   * a 1px structural frame on the surface, radius 8, 2px inset; segments
-   * 14px / 6px, 12.5px / 600, muted, ink on hover; the current one is ink
-   * with on-ink text, fading in 200ms (upstream has no thumb to slide). */
+   * .tabs / .tab are the reference's segmented control (SlidingTabs, §8.5)
+   * in palette C: a grey track (its 1px frame the track colour), radius 8,
+   * 2px inset; segments 14px / 6px, 12.5px / 500, muted, ink on hover; the
+   * current one is the raised pill (--ui-thumb, a soft shadow and a 1px
+   * inset ring) with its label ink at 600, fading in 200ms (upstream has no
+   * thumb to slide). */
   :where(.flat-theme) .tabs {
     gap: 0;
-    border: 1px solid rgb(var(--ui-line));
+    border: 1px solid rgb(var(--ui-track));
     border-radius: var(--ui-radius-lg);
-    background-color: rgb(var(--ui-surface));
+    background-color: rgb(var(--ui-track));
     padding: 2px;
   }
 
   :where(.flat-theme) .tabs:is(.dark *) {
-    border-color: rgb(var(--ui-line));
-    background-color: rgb(var(--ui-surface));
+    border-color: rgb(var(--ui-track));
+    background-color: rgb(var(--ui-track));
   }
 
   :where(.flat-theme) .tab {
@@ -1120,7 +1131,7 @@
     padding: 0.375rem 0.875rem;
     font-size: 0.78125rem;
     line-height: 1.171875rem;
-    font-weight: 600;
+    font-weight: 500;
     color: rgb(var(--ui-muted));
     transition-property: color, background-color;
     transition-duration: var(--ui-duration-slide);
@@ -1140,14 +1151,16 @@
   :where(.flat-theme) .tab-active:is(.dark *),
   :where(.flat-theme) .tab-active:hover,
   :where(.flat-theme) .tab-active:hover:is(.dark *) {
-    background-color: rgb(var(--ui-ink));
-    color: rgb(var(--ui-on-ink));
-    box-shadow: none;
+    background-color: rgb(var(--ui-thumb));
+    color: rgb(var(--ui-ink));
+    font-weight: 600;
+    box-shadow: var(--ui-thumb-shadow);
   }
 
   /* ---------------------------------------------------------------- switch
-   * The reference settings Toggle: 34 x 20, a 16px knob 2px in. On = ink.
-   * Off = the 3:1 form-control line (the reference's ink at 20 % is 1.6:1). */
+   * The reference settings Toggle: 34 x 20, a 16px knob 2px in. On = the
+   * accent (palette C, like the Toggle switches in controls.css). Off = the
+   * 3:1 form-control line (the reference's ink at 20 % is 1.6:1). */
   :where(.flat-theme) .switch {
     height: 1.25rem;
     width: 2.125rem;
@@ -1161,7 +1174,7 @@
 
   :where(.flat-theme) .switch-active,
   :where(.flat-theme) .switch-active:is(.dark *) {
-    background-color: rgb(var(--ui-ink));
+    background-color: rgb(var(--ui-primary));
   }
 
   :where(.flat-theme) .switch-thumb {
@@ -1183,8 +1196,8 @@
   }
 
   /* ---------------------------------------------------------------- card
-   * (for the data agent) In dark the card is the reference's surface
-   * (#1a1a1a on the #0f0f0f canvas) with its structural line (white 14 %),
+   * (for the data agent) In dark the card is the surface (palette C's
+   * #212125 on the #1a1a1d canvas) with its structural line (#3a3a41),
    * not upstream's dark-800 / dark-700 at 50 %; the light values already
    * come from the tokens. */
   :where(.flat-theme) .card:is(.dark *) {

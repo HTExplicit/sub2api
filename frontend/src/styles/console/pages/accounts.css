@@ -238,10 +238,10 @@ html.flat-theme [data-ui="account-folder-empty"] {
 
 /* ================================================================== 3 · view switcher (row 1) */
 
-/* The reference's SlidingTabs (REF §8.5): the structural line on the surface, radius 8, a 2px inset; an ink thumb
-   (near-white in dark) slides 200ms ease-out to the chosen segment, whose glyph turns on-ink; the others are muted,
-   ink on hover. The segments are the fork's icon buttons (title and aria-label name them): 34 x 30.75, a 14px glyph;
-   the frame is the reference's 36.75px. */
+/* The reference's SlidingTabs (REF §8.5) in palette C: the grey track, radius 8, a 2px inset; the raised pill
+   (tokens.css --ui-thumb: a soft shadow and a 1px inset ring) slides 200ms ease-out to the chosen segment, whose glyph
+   is the ink; the others are muted, ink on hover. The segments are the fork's icon buttons (title and aria-label name
+   them): 34 x 30.75, a 14px glyph; the frame is the reference's 36.75px. */
 html.flat-theme [data-ui="account-view-switcher"] {
   position: relative;
   isolation: isolate;
@@ -249,7 +249,7 @@ html.flat-theme [data-ui="account-view-switcher"] {
   height: auto;
   border: 1px solid rgb(var(--ctl-seg-frame, var(--ui-line)));
   border-radius: var(--ui-radius-lg);
-  background-color: rgb(var(--ui-surface));
+  background-color: rgb(var(--ui-track));
   padding: var(--ctl-seg-inset, 2px);
 }
 
@@ -262,7 +262,8 @@ html.flat-theme [data-ui="account-view-switcher"]::before {
   left: var(--ctl-seg-inset, 2px);
   width: var(--accounts-seg-w);
   border-radius: var(--ui-radius-md);
-  background-color: rgb(var(--ui-ink));
+  background-color: rgb(var(--ui-thumb));
+  box-shadow: var(--ui-thumb-shadow);
   transition: transform var(--ui-duration-slide) var(--ui-ease-out);
 }
 
@@ -296,7 +297,7 @@ html.flat-theme [data-ui="account-view-switcher"] > button:hover {
 html.flat-theme [data-ui="account-view-switcher"] > button[aria-pressed="true"],
 html.flat-theme [data-ui="account-view-switcher"] > button[aria-pressed="true"]:hover {
   background-color: transparent;
-  color: rgb(var(--ui-on-ink));
+  color: rgb(var(--ui-ink));
   box-shadow: none;
 }
 
@@ -435,7 +436,7 @@ html.flat-theme .table-wrapper[data-table="accounts"] td[data-column="name"] > d
 html.flat-theme .table-wrapper[data-table="accounts"] td[data-column="name"] > div > :first-child {
   flex: 0 1 auto;
   min-width: 0;
-  font-weight: 600;
+  font-weight: 500;
 }
 
 html.flat-theme .table-wrapper[data-table="accounts"] td[data-column="name"] > div > span + span {
@@ -448,13 +449,13 @@ html.flat-theme .table-wrapper[data-table="accounts"] td[data-column="name"] > d
 
 /* Integration review: a name that links to the account's homepage sits in HelpTooltip's root, which keeps its own
    ml-1 (the template's -ml-1 loses to it) and whose link carries font-medium: the linked and the plain names start on
-   the same edge at the same 600 weight. The dotted underline (the link's cue) stays. */
+   the same edge at the same 500 weight (palette C: 600 -> 500). The dotted underline (the link's cue) stays. */
 html.flat-theme .table-wrapper[data-table="accounts"] td[data-column="name"] > div > [data-ui="help-tooltip"]:first-child {
   margin-left: 0;
 }
 
 html.flat-theme .table-wrapper[data-table="accounts"] td[data-column="name"] > div > [data-ui="help-tooltip"]:first-child > a {
-  font-weight: 600;
+  font-weight: 500;
 }
 
 /* Platform / type: the identity chips (in their platform colours, data.css 6.1; nothing here recolours them) and the
@@ -1028,8 +1029,8 @@ html.flat-theme [data-ui="account-stats"] > div[class~="grid"] > div[class~="car
 
 /* 9.4 OAuth authorisation (the create dialog's second step, re-authorisation): upstream's blue panel is the
    reference's grouped panel: the subtle fill inside the structural line, a neutral icon square, ink titles and
-   ink-soft text, the numbered steps on surface cards with ink discs, a count as a neutral chip, links in the link
-   colour. The amber notice and the red error keep their status colours. */
+   ink-soft text, the numbered steps on surface cards with accent discs (palette C marks), a count as a neutral chip,
+   links in the link colour. The amber notice and the red error keep their status colours. */
 html.flat-theme [data-ui="account-oauth-flow"] {
   border-color: rgb(var(--ui-line));
   border-radius: var(--ui-radius-lg);
@@ -1083,8 +1084,8 @@ html.flat-theme [data-ui="account-oauth-flow"] div[class~="border-blue-300"] {
 }
 
 html.flat-theme [data-ui="account-oauth-flow"] div[class~="rounded-full"][class~="bg-blue-600"] {
-  background-color: rgb(var(--ui-ink));
-  color: rgb(var(--ui-on-ink));
+  background-color: rgb(var(--ui-primary));
+  color: rgb(var(--ui-on-primary));
 }
 
 html.flat-theme [data-ui="account-oauth-flow"] span[class~="rounded-full"][class~="bg-blue-500"] {
@@ -1108,14 +1109,14 @@ html.flat-theme [data-ui="account-create-steps"] div[class~="h-0.5"] {
 
 /* 9.6 Choices inside the account forms (create, edit, bulk edit); upstream's accent and purple tints go.
    - A two-way switch whose choices are labels only (the model whitelist / mapping, the bulk form's RPM strategy) is the
-     reference's segmented control (REF §8.5, controls.css 7.1: the structural frame on the surface, radius 8, the 2px
-     inset; segments 14 x 6 at 12.5 / 600, muted, ink on hover, the chosen one ink), like the same switch in the other
-     dialogs (the announcement's 「所有用户 / 按条件」). Final review V1-15.
+     reference's segmented control (REF §8.5, controls.css 7.1: the grey track, radius 8, the 2px inset; segments
+     14 x 6 at 12.5 / 500, muted, ink on hover, the chosen one the raised pill at 600), like the same switch in the
+     other dialogs (the announcement's 「所有用户 / 按条件」). Final review V1-15.
    - A pair whose choices carry a description line (the create and edit forms' RPM strategy) is an option card like the
-     account type cards above it (controls.css 8.1): the grouped fill inside the structural line, the chosen one an ink
-     edge 2px wide on the surface.
-   - The user-message limit's three modes are a segmented choice at the reference's 30px: the chosen one ink (REF §8.5;
-     controls.css 10.1 draws it), the others the secondary button. */
+     account type cards above it (controls.css 8.1): the grouped fill inside the structural line, the chosen one an
+     accent edge 2px wide on the surface.
+   - The user-message limit's three modes are a segmented choice at the reference's 30px: the chosen one the solid
+     primary (REF §8.5; controls.css 10.1 draws it), the others the secondary button. */
 html.flat-theme :is(#create-account-form, #edit-account-form, #bulk-edit-account-form) div[class~="flex"][class~="gap-2"]:has(> button[class~="flex-1"][class~="rounded-lg"]):not(:has(> button div[class~="text-[10px]"])) {
   width: fit-content;
   max-width: 100%;
@@ -1123,7 +1124,7 @@ html.flat-theme :is(#create-account-form, #edit-account-form, #bulk-edit-account
   padding: var(--ctl-seg-inset);
   border: 1px solid rgb(var(--ctl-seg-frame));
   border-radius: var(--ui-radius-lg);
-  background-color: rgb(var(--ui-surface));
+  background-color: rgb(var(--ui-track));
 }
 
 html.flat-theme :is(#create-account-form, #edit-account-form, #bulk-edit-account-form) button[class~="flex-1"][class~="rounded-lg"]:is([class~="bg-gray-100"], [class~="bg-primary-100"], [class~="bg-purple-100"]):not(:has(div[class~="text-[10px]"])) {
@@ -1135,7 +1136,7 @@ html.flat-theme :is(#create-account-form, #edit-account-form, #bulk-edit-account
   padding: var(--ctl-seg-pad-y) var(--ctl-seg-pad-x);
   font-size: 0.78125rem;
   line-height: 1.171875rem;
-  font-weight: 600;
+  font-weight: 500;
   white-space: nowrap;
   color: rgb(var(--ui-muted));
   transition-property: color, background-color;
@@ -1148,8 +1149,10 @@ html.flat-theme :is(#create-account-form, #edit-account-form, #bulk-edit-account
 }
 
 html.flat-theme :is(#create-account-form, #edit-account-form, #bulk-edit-account-form) button[class~="flex-1"][class~="rounded-lg"]:is([class~="bg-primary-100"], [class~="bg-purple-100"]):not(:has(div[class~="text-[10px]"])) {
-  background-color: rgb(var(--ui-ink));
-  color: rgb(var(--ui-on-ink));
+  background-color: rgb(var(--ui-thumb));
+  color: rgb(var(--ui-ink));
+  font-weight: 600;
+  box-shadow: var(--ui-thumb-shadow);
 }
 
 html.flat-theme :is(#create-account-form, #edit-account-form, #bulk-edit-account-form) button[class~="flex-1"][class~="rounded-lg"]:is([class~="bg-gray-100"], [class~="bg-primary-100"], [class~="bg-purple-100"]):not(:has(div[class~="text-[10px]"])) > svg {
@@ -1177,7 +1180,7 @@ html.flat-theme :is(#create-account-form, #edit-account-form, #bulk-edit-account
 
 html.flat-theme :is(#create-account-form, #edit-account-form, #bulk-edit-account-form) button[class~="flex-1"][class~="rounded-lg"]:is([class~="bg-primary-100"], [class~="bg-purple-100"]):has(div[class~="text-[10px]"]) {
   background-color: rgb(var(--ui-surface));
-  box-shadow: inset 0 0 0 2px rgb(var(--ui-ink));
+  box-shadow: inset 0 0 0 2px rgb(var(--ui-primary));
   color: rgb(var(--ui-ink));
 }
 
@@ -1288,8 +1291,8 @@ html.flat-theme :is(#create-account-form, #edit-account-form, #bulk-edit-account
 /* 9.12 The edit dialog's Codex image-generation panel (OpenAI accounts): the sky box (its inset sits on the children,
    so data.css 11's callout rule does not reach it) is the same neutral callout: the structural line, the subtle
    ground, no shadow; its tile the neutral square, its text ink-soft; the mode strip the surface; the chosen mode an
-   option card (the ink edge 2px wide, controls.css 8.1) with an ink check disc instead of the mode's hue. The badge
-   beside the title keeps its status colour (enabled / disabled / blocked). */
+   option card (the accent edge 2px wide, controls.css 8.1) with an accent check disc instead of the mode's hue. The
+   badge beside the title keeps its status colour (enabled / disabled / blocked). */
 html.flat-theme #edit-account-form div[class~="overflow-hidden"][class~="rounded-lg"][class~="bg-sky-50/60"] {
   border-color: rgb(var(--ui-line));
   background-color: rgb(var(--ui-subtle));
@@ -1322,9 +1325,9 @@ html.flat-theme #edit-account-form div[class~="bg-sky-50/60"] > div:last-child b
 }
 
 html.flat-theme #edit-account-form div[class~="bg-sky-50/60"] > div:last-child button:not([class~="border-transparent"]) {
-  border-color: rgb(var(--ui-ink));
+  border-color: rgb(var(--ui-primary));
   background-color: rgb(var(--ui-surface));
-  box-shadow: inset 0 0 0 1px rgb(var(--ui-ink));
+  box-shadow: inset 0 0 0 1px rgb(var(--ui-primary));
   color: rgb(var(--ui-ink));
 }
 
@@ -1333,9 +1336,9 @@ html.flat-theme #edit-account-form div[class~="bg-sky-50/60"] > div:last-child b
 }
 
 html.flat-theme #edit-account-form div[class~="bg-sky-50/60"] > div:last-child button > span[class~="rounded-full"]:not([class~="border-gray-300"]) {
-  border-color: rgb(var(--ui-ink));
-  background-color: rgb(var(--ui-ink));
-  color: rgb(var(--ui-on-ink));
+  border-color: rgb(var(--ui-primary));
+  background-color: rgb(var(--ui-primary));
+  color: rgb(var(--ui-on-primary));
 }
 
 /* ================================================================== 8 · phones */
