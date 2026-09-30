@@ -1,13 +1,26 @@
 import { mount } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import type { Ref } from 'vue'
 
 import DataTable from '../DataTable.vue'
+import type { Column } from '../types'
+import { flatThemeActive } from '@/utils/flatTheme'
 
 vi.mock('vue-i18n', () => ({
   useI18n: () => ({
     t: (key: string) => key
   })
 }))
+
+// the console theme switch, off unless a test turns it on (stacked cells are the theme's layout)
+vi.mock('@/utils/flatTheme', async () => {
+  const { ref } = await import('vue')
+  return { flatThemeActive: ref(false) }
+})
+const setConsoleTheme = (on: boolean) => {
+  const theme = flatThemeActive as unknown as Ref<boolean>
+  theme.value = on
+}
 
 const stubDesktopMatchMedia = () => {
   Object.defineProperty(window, 'matchMedia', {
@@ -44,6 +57,7 @@ const stubMobileMatchMedia = () => {
 describe('DataTable', () => {
   beforeEach(() => {
     stubDesktopMatchMedia()
+    setConsoleTheme(false)
     localStorage.clear()
   })
 
@@ -356,5 +370,140 @@ describe('DataTable', () => {
     await wrapper.get('[data-test="select-all-mobile"]').setValue(true)
 
     expect(wrapper.emitted('update:selectedKeys')?.at(-1)?.[0]).toEqual([99, 1, 2])
+  })
+
+  describe('stacked cells', () => {
+    const stackedColumns = (extra: Partial<Column> = {}): Column[] => [
+      {
+        key: 'name',
+        label: 'Name',
+        sortable: true,
+        stack: [
+          { key: 'id', label: 'ID', sortable: true },
+          { key: 'notes', label: 'Notes', cellLabel: true }
+        ],
+        ...extra
+      },
+      { key: 'status', label: 'Status' }
+    ]
+    const rows = [{ id: 7, name: 'Alpha', notes: 'first', status: 'ok' }]
+
+    // matchMedia whose (min-width: Npx) queries match from the given width up; resize() crosses breakpoints
+    const stubViewport = (width: number) => {
+      const queries: Array<{ matches: boolean; min: number; listeners: Array<() => void> }> = []
+      const minOf = (query: string) => Number(/min-width:\s*(\d+)px/.exec(query)?.[1] ?? 0)
+      Object.defineProperty(window, 'matchMedia', {
+        writable: true,
+        value: vi.fn().mockImplementation((query: string) => {
+          const entry = { min: minOf(query), matches: width >= minOf(query), listeners: [] as Array<() => void> }
+          queries.push(entry)
+          return {
+            get matches() {
+              return entry.matches
+            },
+            media: query,
+            onchange: null,
+            addEventListener: (_type: string, fn: () => void) => entry.listeners.push(fn),
+            removeEventListener: vi.fn(),
+            addListener: (fn: () => void) => entry.listeners.push(fn),
+            removeListener: vi.fn(),
+            dispatchEvent: vi.fn()
+          }
+        })
+      })
+      return {
+        resize(next: number) {
+          for (const entry of queries) {
+            const matches = next >= entry.min
+            if (matches === entry.matches) continue
+            entry.matches = matches
+            entry.listeners.forEach((fn) => fn())
+          }
+        }
+      }
+    }
+
+    it('draws the parts as lines of the host cell, each with its own header label and sort', async () => {
+      setConsoleTheme(true)
+      const wrapper = mount(DataTable, {
+        props: { columns: stackedColumns(), data: rows, serverSideSort: true },
+        slots: { 'cell-id': '<template #cell-id="{ row }"><span data-test="id-cell">#{{ row.id }}</span></template>' }
+      })
+      await wrapper.vm.$nextTick()
+
+      expect(wrapper.findAll('thead th').map((th) => th.attributes('data-column'))).toEqual(['name', 'status'])
+      const head = wrapper.get('th[data-column="name"]')
+      expect(head.attributes('data-stack')).toBe('')
+      // a sortable part: its label sorts on a click, its button (keyboard) names the part and the order
+      const idSub = head.get('div[data-ui="th-sub"][data-line="id"]')
+      expect(idSub.attributes('data-sort')).toBe('none')
+      const idSort = idSub.get('button[data-ui="th-sub-sort"]')
+      expect(idSort.attributes('aria-label')).toBe('common.sortByColumn')
+      expect(idSort.attributes('aria-sort')).toBeUndefined()
+      const notesSub = head.get('div[data-ui="th-sub"][data-line="notes"]')
+      expect(notesSub.text()).toBe('Notes')
+      expect(notesSub.attributes('data-sort')).toBeUndefined()
+      expect(notesSub.find('button').exists()).toBe(false)
+
+      const cell = wrapper.get('td[data-column="name"]')
+      expect(cell.text()).toContain('Alpha')
+      const lines = cell.findAll('[data-ui="cell-lines"] > [data-ui="cell-line"]')
+      expect(lines.map((line) => line.attributes('data-line'))).toEqual(['id', 'notes'])
+      expect(lines[0].get('[data-test="id-cell"]').text()).toBe('#7')
+      expect(lines[1].get('[data-ui="cell-line-label"]').text()).toBe('Notes')
+      expect(lines[1].get('[data-ui="cell-line-value"]').text()).toBe('first')
+
+      await idSort.trigger('click')
+      expect(wrapper.emitted('sort')).toEqual([['id', 'asc']])
+      expect(idSub.attributes('data-sort')).toBe('ascending')
+      expect(idSort.attributes('aria-label')).toBe('common.sortByColumnAscending')
+      expect(head.attributes('aria-sort')).toBe('none')
+
+      await idSub.get('span').trigger('click')
+      expect(wrapper.emitted('sort')).toEqual([['id', 'asc'], ['id', 'desc']])
+      expect(idSub.attributes('data-sort')).toBe('descending')
+      await notesSub.trigger('click')
+      expect(wrapper.emitted('sort')).toHaveLength(2)
+    })
+
+    it('draws every part as a column of its own from stackBelow up and without the console theme', async () => {
+      setConsoleTheme(true)
+      const viewport = stubViewport(1440)
+      const wrapper = mount(DataTable, {
+        props: { columns: stackedColumns({ stackBelow: 1800 }), data: rows }
+      })
+      await wrapper.vm.$nextTick()
+      const keys = () => wrapper.findAll('thead th').map((th) => th.attributes('data-column'))
+      expect(keys()).toEqual(['name', 'status'])
+
+      viewport.resize(1920)
+      await wrapper.vm.$nextTick()
+      expect(keys()).toEqual(['name', 'id', 'notes', 'status'])
+      expect(wrapper.find('[data-ui="cell-lines"]').exists()).toBe(false)
+
+      viewport.resize(1280)
+      await wrapper.vm.$nextTick()
+      expect(keys()).toEqual(['name', 'status'])
+
+      setConsoleTheme(false)
+      await wrapper.vm.$nextTick()
+      expect(keys()).toEqual(['name', 'id', 'notes', 'status'])
+    })
+
+    it('keeps a hidden host for its parts without its own content or sort', async () => {
+      setConsoleTheme(true)
+      const wrapper = mount(DataTable, {
+        props: { columns: stackedColumns({ hostHidden: true, sortable: false }), data: rows }
+      })
+      await wrapper.vm.$nextTick()
+
+      const head = wrapper.get('th[data-column="name"]')
+      expect(head.attributes('aria-sort')).toBeUndefined()
+      expect(head.text()).not.toContain('Name')
+      const cell = wrapper.get('td[data-column="name"]')
+      expect(cell.text()).not.toContain('Alpha')
+      expect(cell.get('[data-ui="cell-lines"]').attributes('data-host-line')).toBe('')
+      expect(cell.findAll('[data-ui="cell-line"]')).toHaveLength(2)
+    })
   })
 })

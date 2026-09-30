@@ -118,51 +118,108 @@
             />
           </th>
           <th
-            v-for="(column, index) in columns"
+            v-for="(column, index) in displayColumns"
             :key="column.key"
             :data-column="column.key"
+            :data-stack="column.stack?.length ? '' : undefined"
             scope="col"
-            :aria-sort="column.sortable ? getColumnAriaSort(column.key) : undefined"
+            :aria-sort="isHostSortable(column) ? getColumnAriaSort(column.key) : undefined"
             :class="[
               'sticky-header-cell py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-dark-400',
               getAdaptivePaddingClass(),
-              { 'cursor-pointer hover:bg-gray-100 dark:hover:bg-dark-700': column.sortable },
+              { 'cursor-pointer hover:bg-gray-100 dark:hover:bg-dark-700': isHostSortable(column) },
               getStickyColumnClass(column, index),
               column.class
             ]"
-            @click="column.sortable && handleSort(column.key)"
+            @click="isHostSortable(column) && handleSort(column.key)"
           >
             <div :class="['flex items-center space-x-1', getHeaderContentAlignmentClass(column)]">
-              <slot
-                :name="`header-${column.key}`"
-                :column="column"
-                :sort-key="sortKey"
-                :sort-order="sortOrder"
-              >
-                <span>{{ column.label }}</span>
-              </slot>
-              <span
-                v-if="column.sortable"
-                class="inline-flex h-5 w-4 flex-col items-center justify-center"
-                aria-hidden="true"
-              >
-                <svg
-                  class="h-2.5 w-2.5"
-                  :class="getSortIndicatorClass(column.key, 'asc')"
-                  fill="currentColor"
-                  viewBox="0 0 10 10"
+              <template v-if="!column.hostHidden">
+                <slot
+                  :name="`header-${column.key}`"
+                  :column="column"
+                  :sort-key="sortKey"
+                  :sort-order="sortOrder"
                 >
-                  <path d="M5 2L1.5 6.5h7L5 2z" />
-                </svg>
-                <svg
-                  class="-mt-0.5 h-2.5 w-2.5"
-                  :class="getSortIndicatorClass(column.key, 'desc')"
-                  fill="currentColor"
-                  viewBox="0 0 10 10"
+                  <span>{{ column.label }}</span>
+                </slot>
+                <span
+                  v-if="column.sortable"
+                  class="inline-flex h-5 w-4 flex-col items-center justify-center"
+                  aria-hidden="true"
                 >
-                  <path d="M5 8L1.5 3.5h7L5 8z" />
-                </svg>
-              </span>
+                  <svg
+                    class="h-2.5 w-2.5"
+                    :class="getSortIndicatorClass(column.key, 'asc')"
+                    fill="currentColor"
+                    viewBox="0 0 10 10"
+                  >
+                    <path d="M5 2L1.5 6.5h7L5 2z" />
+                  </svg>
+                  <svg
+                    class="-mt-0.5 h-2.5 w-2.5"
+                    :class="getSortIndicatorClass(column.key, 'desc')"
+                    fill="currentColor"
+                    viewBox="0 0 10 10"
+                  >
+                    <path d="M5 8L1.5 3.5h7L5 8z" />
+                  </svg>
+                </span>
+              </template>
+              <!-- Stacked parts: one label each under the host's, in cell order. A sortable part sorts by its own key on a
+                   click anywhere on its label, or with its sort button (keyboard: the button names the part and the
+                   current order; data-sort draws the arrow). -->
+              <div
+                v-if="column.stack?.length"
+                data-ui="th-subs"
+                :data-inline="column.stackLayout === 'inline' ? '' : undefined"
+                @click.stop
+              >
+                <div
+                  v-for="(part, partIndex) in column.stack"
+                  :key="part.key"
+                  data-ui="th-sub"
+                  :data-line="part.key"
+                  :data-sep="partIndex > 0 ? '' : undefined"
+                  :data-sort="part.sortable ? getColumnAriaSort(part.key) : undefined"
+                  @click="part.sortable && handleSort(part.key)"
+                >
+                  <slot
+                    :name="`header-${part.key}`"
+                    :column="part"
+                    :sort-key="sortKey"
+                    :sort-order="sortOrder"
+                  >
+                    <span>{{ part.label }}</span>
+                  </slot>
+                  <button
+                    v-if="part.sortable"
+                    type="button"
+                    data-ui="th-sub-sort"
+                    class="inline-flex h-5 w-4 flex-col items-center justify-center"
+                    :aria-label="getStackPartSortLabel(part)"
+                  >
+                    <svg
+                      class="h-2.5 w-2.5"
+                      :class="getSortIndicatorClass(part.key, 'asc')"
+                      fill="currentColor"
+                      viewBox="0 0 10 10"
+                      aria-hidden="true"
+                    >
+                      <path d="M5 2L1.5 6.5h7L5 2z" />
+                    </svg>
+                    <svg
+                      class="-mt-0.5 h-2.5 w-2.5"
+                      :class="getSortIndicatorClass(part.key, 'desc')"
+                      fill="currentColor"
+                      viewBox="0 0 10 10"
+                      aria-hidden="true"
+                    >
+                      <path d="M5 8L1.5 3.5h7L5 8z" />
+                    </svg>
+                  </button>
+                </div>
+              </div>
             </div>
           </th>
         </tr>
@@ -173,7 +230,7 @@
           <td v-if="selectable" class="w-11 min-w-11 px-3 py-4">
             <div class="mx-auto h-4 w-4 animate-pulse rounded bg-gray-200 dark:bg-dark-700"></div>
           </td>
-          <td v-for="column in columns" :key="column.key" :class="['whitespace-nowrap py-4', getAdaptivePaddingClass()]">
+          <td v-for="column in displayColumns" :key="column.key" :class="['whitespace-nowrap py-4', getAdaptivePaddingClass()]">
             <div class="animate-pulse">
               <div class="h-4 w-3/4 rounded bg-gray-200 dark:bg-dark-700"></div>
             </div>
@@ -233,9 +290,10 @@
               />
             </td>
             <td
-              v-for="(column, colIndex) in columns"
+              v-for="(column, colIndex) in displayColumns"
               :key="column.key"
               :data-column="column.key"
+              :data-stack="column.stack?.length ? '' : undefined"
               :class="[
                 'whitespace-nowrap py-4 text-sm text-gray-900 dark:text-gray-100',
                 getAdaptivePaddingClass(),
@@ -243,7 +301,8 @@
                 column.class
               ]"
             >
-              <slot :name="`cell-${column.key}`"
+              <slot v-if="!column.stack?.length || (!column.hostHidden && !column.cellLabel)"
+                    :name="`cell-${column.key}`"
                     :row="item.row"
                     :value="item.row[column.key]"
                     :expanded="actionsExpanded">
@@ -251,6 +310,41 @@
                    ? column.formatter(item.row[column.key], item.row)
                    : item.row[column.key] }}
               </slot>
+              <!-- Stacked parts: each part's own cell slot on a line of its own, in column order. data-host-line: nothing
+                   is drawn above the lines (the host's content is their first, labelled line, or the host is hidden). -->
+              <div
+                v-if="column.stack?.length"
+                data-ui="cell-lines"
+                :data-inline="column.stackLayout === 'inline' ? '' : undefined"
+                :data-host-line="column.cellLabel || column.hostHidden ? '' : undefined"
+              >
+                <div v-if="column.cellLabel && !column.hostHidden" data-ui="cell-line" :data-line="column.key">
+                  <span data-ui="cell-line-label">{{ column.cellLabel }}</span>
+                  <div data-ui="cell-line-value">
+                    <slot :name="`cell-${column.key}`"
+                          :row="item.row"
+                          :value="item.row[column.key]"
+                          :expanded="actionsExpanded">
+                      {{ column.formatter
+                         ? column.formatter(item.row[column.key], item.row)
+                         : item.row[column.key] }}
+                    </slot>
+                  </div>
+                </div>
+                <div v-for="part in column.stack" :key="part.key" data-ui="cell-line" :data-line="part.key">
+                  <span v-if="part.cellLabel" data-ui="cell-line-label">{{ part.cellLabel === true ? part.label : part.cellLabel }}</span>
+                  <div data-ui="cell-line-value">
+                    <slot :name="`cell-${part.key}`"
+                          :row="item.row"
+                          :value="item.row[part.key]"
+                          :expanded="actionsExpanded">
+                      {{ part.formatter
+                         ? part.formatter(item.row[part.key], item.row)
+                         : item.row[part.key] }}
+                    </slot>
+                  </div>
+                </div>
+              </div>
             </td>
           </tr>
           <tr v-if="virtualPaddingBottom > 0" aria-hidden="true">
@@ -265,10 +359,11 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref, onMounted, onUnmounted, watch, nextTick } from 'vue'
+import { computed, ref, shallowRef, onMounted, onUnmounted, watch, nextTick } from 'vue'
 import { useVirtualizer, observeElementRect as observeElementRectDefault } from '@tanstack/vue-virtual'
 import { useI18n } from 'vue-i18n'
-import type { Column } from './types'
+import type { Column, StackPart } from './types'
+import { flattenStackedColumns, inColumnOrder } from './columnStack'
 import Icon from '@/components/icons/Icon.vue'
 import { flatThemeActive } from '@/utils/flatTheme'
 
@@ -511,7 +606,8 @@ const collator = new Intl.Collator(undefined, {
 
 const getSortableKeys = () => {
   const keys = new Set<string>()
-  for (const col of props.columns) {
+  // stacked parts keep their own sort (and a persisted sort on them stays valid)
+  for (const col of allColumnsFlat.value) {
     if (col.sortable) keys.add(col.key)
   }
   return keys
@@ -575,6 +671,14 @@ const getSortIndicatorClass = (key: string, order: 'asc' | 'desc') => {
 const getColumnAriaSort = (key: string) => {
   if (sortKey.value !== key) return 'none'
   return sortOrder.value === 'asc' ? 'ascending' : 'descending'
+}
+
+// A stacked part's sort button (aria-sort belongs to a column header, so the order is in the button's name)
+const getStackPartSortLabel = (part: StackPart) => {
+  const order = getColumnAriaSort(part.key)
+  if (order === 'ascending') return t('common.sortByColumnAscending', { column: part.label })
+  if (order === 'descending') return t('common.sortByColumnDescending', { column: part.label })
+  return t('common.sortByColumn', { column: part.label })
 }
 
 const getHeaderContentAlignmentClass = (column: Column) => {
@@ -645,9 +749,96 @@ const resolveStableRowKey = (row: any): string | number | undefined => {
 
 const resolveRowKey = (row: any, index: number) => resolveStableRowKey(row) ?? index
 
-const dataColumns = computed(() => props.columns.filter((column) => column.key !== 'actions'))
+// --- Stacked cells (Column.stack) ---
+// A column that carries stacked parts draws them as lines of its cell. That layout is the console theme's: without the
+// theme, and from a column's stackBelow width up, every part is a column of its own again (upstream's table). One
+// media query per stackBelow width; the widths the viewport has reached are kept in a set that changes only when a
+// breakpoint is crossed.
+const stackWidthsKey = computed(() => {
+  const widths = new Set<number>()
+  for (const column of props.columns) {
+    if (column.stack?.length && column.stackBelow) widths.add(column.stackBelow)
+  }
+  return [...widths].sort((a, b) => a - b).join(',')
+})
+const stackWidthsReached = shallowRef<ReadonlySet<number>>(new Set())
+let stackWidthQueries: Array<{ width: number; query: MediaQueryList }> = []
+
+const readStackWidths = () => {
+  const reached = new Set<number>()
+  for (const { width, query } of stackWidthQueries) {
+    if (query.matches) reached.add(width)
+  }
+  stackWidthsReached.value = reached
+}
+
+const detachStackWidthQueries = () => {
+  for (const { query } of stackWidthQueries) {
+    if (typeof query.removeEventListener === 'function') {
+      query.removeEventListener('change', readStackWidths)
+    } else {
+      query.removeListener(readStackWidths)
+    }
+  }
+  stackWidthQueries = []
+}
+
+watch(
+  stackWidthsKey,
+  (key) => {
+    detachStackWidthQueries()
+    if (key && typeof window !== 'undefined' && typeof window.matchMedia === 'function') {
+      stackWidthQueries = key.split(',').map((width) => ({
+        width: Number(width),
+        query: window.matchMedia(`(min-width: ${width}px)`)
+      }))
+      for (const { query } of stackWidthQueries) {
+        if (typeof query.addEventListener === 'function') {
+          query.addEventListener('change', readStackWidths)
+        } else {
+          query.addListener(readStackWidths)
+        }
+      }
+    }
+    readStackWidths()
+  },
+  { immediate: true }
+)
+
+onUnmounted(detachStackWidthQueries)
+
+const isStackedNow = (column: Column) =>
+  flatThemeActive.value &&
+  !!column.stack?.length &&
+  (!column.stackBelow || !stackWidthsReached.value.has(column.stackBelow))
+
+// The columns drawn: stacked hosts carry their parts; everything else is one column per key, in upstream's order.
+const displayColumns = computed<Column[]>(() => {
+  const result: Column[] = []
+  for (const column of props.columns) {
+    if (isStackedNow(column)) {
+      result.push(column)
+    } else {
+      result.push(...flattenStackedColumns([column]))
+    }
+  }
+  return inColumnOrder(result)
+})
+// Every column, parts in place (the cards on phones, the sortable keys).
+const allColumnsFlat = computed(() => flattenStackedColumns(props.columns))
+
+// A hidden host keeps only its parts' lines: no label, no sort of its own.
+const isHostSortable = (column: Column) => !!column.sortable && !column.hostHidden
+
+const dataColumns = computed(() => allColumnsFlat.value.filter((column) => column.key !== 'actions'))
 const columnsSignature = computed(() =>
-  props.columns.map((column) => `${column.key}:${column.sortable ? '1' : '0'}`).join('|')
+  displayColumns.value
+    .map((column) => {
+      const own = `${column.key}:${isHostSortable(column) ? '1' : '0'}`
+      if (!column.stack?.length) return own
+      return `${own}[${column.stack.map((part) => `${part.key}:${part.sortable ? '1' : '0'}`).join(',')}]`
+    })
+    .join('|')
 )
 
 watch(
@@ -715,7 +906,7 @@ const sortedData = computed(() => {
     .map(item => item.row)
 })
 
-const tableColumnCount = computed(() => props.columns.length + (props.selectable ? 1 : 0))
+const tableColumnCount = computed(() => displayColumns.value.length + (props.selectable ? 1 : 0))
 const selectedKeySet = computed(() => new Set(props.selectedKeys))
 const visibleRowKeys = computed(() =>
   (sortedData.value ?? []).map((row, index) => resolveRowKey(row, index))
@@ -856,11 +1047,11 @@ const renderRows = computed<Array<{ index: number; row: any; measure: boolean }>
 })
 
 const hasActionsColumn = computed(() => {
-  return props.columns.some(column => column.key === 'actions')
+  return allColumnsFlat.value.some(column => column.key === 'actions')
 })
 
 const hasSelectColumn = computed(() => {
-  return props.columns.length > 0 && props.columns[0].key === 'select'
+  return displayColumns.value.length > 0 && displayColumns.value[0].key === 'select'
 })
 
 // 生成固定列的 CSS 类
@@ -893,7 +1084,7 @@ const getStickyColumnClass = (column: Column, index: number) => {
 
 // 根据列数自适应调整内边距
 const getAdaptivePaddingClass = () => {
-  const columnCount = props.columns.length
+  const columnCount = displayColumns.value.length
 
   // 列数越多，内边距越小
   if (columnCount >= 10) {

@@ -260,6 +260,10 @@ export default {accounts: {
         lastUsed: '最近使用',
         createdAt: '创建时间',
         expiresAt: '过期时间',
+        // line labels of the stacked time cell (the full names are in its header)
+        lastUsedShort: '最近',
+        createdAtShort: '创建',
+        expiresAtShort: '过期',
         actions: '操作'
       },
       schedulerScore: {

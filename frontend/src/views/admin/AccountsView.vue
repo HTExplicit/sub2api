@@ -315,17 +315,17 @@
                     :title="String(value)"
                     @click.stop
                   >
-                    {{ value }}
+                    <template v-for="(part, i) in nameParts(value)" :key="i"><wbr v-if="i" />{{ part }}</template>
                   </a>
                 </template>
               </HelpTooltip>
-              <span v-else :title="String(value)" class="block max-w-full truncate font-medium text-gray-900 dark:text-white">{{ value }}</span>
+              <span v-else :title="String(value)" class="block max-w-full truncate font-medium text-gray-900 dark:text-white"><template v-for="(part, i) in nameParts(value)" :key="i"><wbr v-if="i" />{{ part }}</template></span>
               <span
                 v-if="accountDisplayEmail(row)"
                 class="max-w-full truncate text-xs text-gray-500 dark:text-gray-400"
                 :title="accountDisplayEmail(row) + (row.parent_chatgpt_account_id ? ' · ' + row.parent_chatgpt_account_id : '')"
               >
-                {{ accountDisplayEmail(row) }}
+                <template v-for="(part, i) in nameParts(accountDisplayEmail(row))" :key="i"><wbr v-if="i" />{{ part }}</template>
               </span>
             </div>
           </template>
@@ -716,12 +716,14 @@ import TotpStepUpDialog from '@/components/auth/TotpStepUpDialog.vue'
 import AppLayout from '@/components/layout/AppLayout.vue'
 import TablePageLayout from '@/components/layout/TablePageLayout.vue'
 import DataTable from '@/components/common/DataTable.vue'
+import { stackColumns, type ColumnStackSpec } from '@/components/common/columnStack'
 import HelpTooltip from '@/components/common/HelpTooltip.vue'
 import Pagination from '@/components/common/Pagination.vue'
 import ConfirmDialog from '@/components/common/ConfirmDialog.vue'
 import BaseDialog from '@/components/common/BaseDialog.vue'
 import Toggle from '@/components/common/Toggle.vue'
 import { CreateAccountModal, EditAccountModal, BulkEditAccountModal, SyncFromCrsModal, TempUnschedStatusModal } from '@/components/account'
+import { nameWrapParts } from '@/utils/softWrap'
 import AccountTableActions from '@/components/admin/account/AccountTableActions.vue'
 import AccountBulkActionsBar from '@/components/admin/account/AccountBulkActionsBar.vue'
 // Console theme (ui-el D6): a two-row toolbar with the classification menu and a bulk menu in it; the bulk bar
@@ -2138,6 +2140,11 @@ function accountDisplayEmail(row: any): string {
   return row.extra?.email_address || row.extra?.email || row.credentials?.email || row.parent_email || ''
 }
 
+// Console theme: a name or e-mail in parts with a <wbr> between them (breaks at a word, never inside one); without the
+// theme it is one text, as upstream draws it.
+const nameParts = (value: unknown): string[] =>
+  flatThemeActive.value ? nameWrapParts(value) : [value == null ? '' : String(value)]
+
 const accountRouteSummary = (account: Account) => {
   const groups = accountGroupsForRow(account).map(group => group.name).filter(Boolean)
   const proxy = account.proxy?.name || t('admin.accounts.directConnection')
@@ -2194,10 +2201,36 @@ const toggleableColumns = computed(() =>
   allColumns.value.filter(col => col.key !== 'select' && col.key !== 'name' && col.key !== 'actions')
 )
 
+// The table's columns (console theme: related columns are lines of one cell, so a row reads without sideways
+// scrolling; DataTable draws them as columns of their own without the theme). The five default-hidden columns join
+// the cell nearest in meaning. Hiding a column in the settings removes its line; a hidden host keeps its parts' lines.
+const accountColumnStacks = computed<Record<string, ColumnStackSpec>>(() => ({
+  name: { parts: ['id', { key: 'notes', cellLabel: true }] },
+  platform_type: { parts: ['capacity'] },
+  status: { parts: ['schedulable'] },
+  taxonomy_route: { parts: [{ key: 'groups', cellLabel: true }, { key: 'proxy', cellLabel: true }] },
+  usage: { parts: [{ key: 'today_stats', cellLabel: true }] },
+  priority: {
+    cellLabel: true,
+    parts: [
+      { key: 'scheduler_score', cellLabel: true },
+      { key: 'rate_multiplier', cellLabel: true },
+      { key: 'upstream_billing_rate', cellLabel: true }
+    ]
+  },
+  last_used_at: {
+    cellLabel: t('admin.accounts.columns.lastUsedShort'),
+    parts: [
+      { key: 'created_at', cellLabel: t('admin.accounts.columns.createdAtShort') },
+      { key: 'expires_at', cellLabel: t('admin.accounts.columns.expiresAtShort') }
+    ]
+  }
+}))
+
 // Filtered columns based on visibility
 const cols = computed(() =>
-  allColumns.value.filter(col =>
-    col.key === 'select' || col.key === 'name' || col.key === 'actions' || !hiddenColumns.has(col.key)
+  stackColumns(allColumns.value, accountColumnStacks.value, key =>
+    key === 'select' || key === 'name' || key === 'actions' || !hiddenColumns.has(key)
   )
 )
 

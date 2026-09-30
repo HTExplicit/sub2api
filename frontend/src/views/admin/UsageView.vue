@@ -195,6 +195,7 @@ import { resolveUsageRequestType, requestTypeToLegacyStream } from '@/utils/usag
 import AppLayout from '@/components/layout/AppLayout.vue'; import Pagination from '@/components/common/Pagination.vue'; import Select from '@/components/common/Select.vue'; import DateRangePicker from '@/components/common/DateRangePicker.vue'
 import UsageStatsCards from '@/components/admin/usage/UsageStatsCards.vue'; import UsageFilters from '@/components/admin/usage/UsageFilters.vue'
 import UsageTable from '@/components/admin/usage/UsageTable.vue'; import UsageExportProgress from '@/components/admin/usage/UsageExportProgress.vue'
+import { stackColumns, type ColumnStackSpec } from '@/components/common/columnStack'
 import UserTokenRanking from '@/components/admin/usage/UserTokenRanking.vue'
 import UsageCleanupDialog from '@/components/admin/usage/UsageCleanupDialog.vue'
 import UserBalanceHistoryModal from '@/components/admin/user/UserBalanceHistoryModal.vue'
@@ -663,9 +664,18 @@ const toggleableColumns = computed(() =>
   allColumns.value.filter(col => !ALWAYS_VISIBLE.includes(col.key))
 )
 
+// Below 1800px (console theme) related columns share a cell, so a record reads without sideways scrolling: the key and
+// account under the user, reasoning effort and endpoint under the model, the request type and billing mode beside the
+// group on one chip line. From 1800px up (and without the theme) DataTable draws them as columns of their own.
+const USAGE_COLUMN_STACKS: Record<string, ColumnStackSpec> = {
+  user: { below: 1800, parts: [{ key: 'api_key', cellLabel: true }, { key: 'account', cellLabel: true }] },
+  model: { below: 1800, parts: [{ key: 'reasoning_effort', cellLabel: true }, 'endpoint'] },
+  group: { below: 1800, layout: 'inline', parts: ['stream', 'billing_mode'] }
+}
+
 const visibleColumns = computed(() =>
-  allColumns.value.filter(col =>
-    ALWAYS_VISIBLE.includes(col.key) || !hiddenColumns.has(col.key)
+  stackColumns(allColumns.value, USAGE_COLUMN_STACKS, key =>
+    ALWAYS_VISIBLE.includes(key) || !hiddenColumns.has(key)
   )
 )
 

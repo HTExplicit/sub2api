@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import { createMemoryHistory, createRouter } from 'vue-router'
 import AccountsView from '../AccountsView.vue'
+import { flattenStackedColumns } from '@/components/common/columnStack'
 import modelDisplayContract from '../../../../../backend/internal/service/testdata/account_available_models_contract.json'
 
 const {
@@ -127,16 +128,19 @@ const ViewModeStub = {
   `
 }
 
+// the view passes stacked columns (a host carries its parts): data-columns is the flat upstream list DataTable draws
+// as columns, data-hosts the stacked cells of the console theme
 const DataTableStub = {
   props: ['data', 'columns'],
   emits: ['row-click'],
   methods: {
     columnClass(key: string) {
       return this.columns.find((column: { key: string }) => column.key === key)?.class || ''
-    }
+    },
+    flat: flattenStackedColumns
   },
   template: `
-    <div data-test="view-table" :data-columns="columns.map(column => column.key).join(',')" :data-name-class="columnClass('name')">
+    <div data-test="view-table" :data-columns="flat(columns).map(column => column.key).join(',')" :data-hosts="columns.map(column => column.key).join(',')" :data-name-class="columnClass('name')">
       <div v-for="row in data" :key="row.id">
         <button data-test="open-row" @click="$emit('row-click', row)">{{ row.name }}</button>
         <slot name="cell-select" :row="row" />
@@ -320,6 +324,11 @@ describe('admin AccountsView Cockpit console', () => {
     expect(wrapper.get('[data-test="view-table"]').attributes('data-columns')).toBe(
       'select,name,id,platform_type,capacity,status,schedulable,taxonomy_route,groups,usage,priority,' +
         'upstream_billing_rate,last_used_at,created_at,expires_at,actions'
+    )
+    // console theme: related columns are lines of one cell (名称 + 账号ID, 平台/类型 + 容量, 状态 + 调度, 管理分类/请求路由 +
+    // 路由分组, 优先级 + 上游声明倍率, 最近使用 + 创建时间 + 过期时间)
+    expect(wrapper.get('[data-test="view-table"]').attributes('data-hosts')).toBe(
+      'select,name,platform_type,status,taxonomy_route,usage,priority,last_used_at,actions'
     )
   })
 

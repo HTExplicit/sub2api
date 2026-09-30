@@ -46,10 +46,10 @@
 
         <template #cell-model="{ row }">
           <div v-if="hasModelMapping(row)" class="space-y-0.5 text-xs">
-            <div class="break-all font-medium text-gray-900 dark:text-white">{{ row.requested_model }}</div>
-            <div class="break-all text-gray-500 dark:text-gray-400"><span class="mr-0.5">↳</span>{{ row.upstream_model }}</div>
+            <div class="break-all font-medium text-gray-900 dark:text-white"><template v-for="(part, j) in modelParts(row.requested_model)" :key="j"><wbr v-if="j" /><span data-ui="model-part">{{ part }}</span></template></div>
+            <div class="break-all text-gray-500 dark:text-gray-400"><span class="mr-0.5">↳</span><template v-for="(part, j) in modelParts(row.upstream_model)" :key="j"><wbr v-if="j" /><span data-ui="model-part">{{ part }}</span></template></div>
           </div>
-          <span v-else-if="displayModel(row)" class="text-sm font-medium text-gray-900 dark:text-white">{{ displayModel(row) }}</span>
+          <span v-else-if="displayModel(row)" class="text-sm font-medium text-gray-900 dark:text-white"><template v-for="(part, j) in modelParts(displayModel(row))" :key="j"><wbr v-if="j" /><span data-ui="model-part">{{ part }}</span></template></span>
           <span v-else class="text-sm text-gray-400 dark:text-gray-500">-</span>
         </template>
 
@@ -189,9 +189,18 @@ import IpGeoCell from '@/components/common/IpGeoCell.vue'
 import IpGeoBatchToolbar from '@/components/common/IpGeoBatchToolbar.vue'
 import type { OpsErrorLog } from '@/api/admin/ops'
 import type { Column } from '@/components/common/types'
+import { stackColumns, type ColumnStackSpec } from '@/components/common/columnStack'
 import { getSeverityClass, formatDateTime } from '../utils/opsFormatters'
 import { mapErrorCategory } from '@/utils/errorCategory'
+import { modelWrapParts } from '@/utils/softWrap'
+import { flatThemeActive } from '@/utils/flatTheme'
 import { mapErrorSortKey, statusCodeBadgeClass } from '@/utils/errorBadges'
+
+// Console theme: a model id breaks only between the parts of modelWrapParts (after a slash; an outlier part also after
+// its hyphens), each part drawn whole (tables.css, data-ui="model-part"); without the theme it is one plain part, as
+// upstream draws it.
+const modelParts = (value: unknown): string[] =>
+  flatThemeActive.value ? modelWrapParts(value) : [value == null ? '' : String(value)]
 
 const { t } = useI18n()
 
@@ -215,18 +224,31 @@ const allColumns = computed<Column[]>(() => [
   { key: 'actions', label: t('admin.ops.errorLog.action') },
 ])
 
+// Below 1800px (console theme) related columns share a cell, so an error reads without sideways scrolling: the key and
+// account under the user, model and endpoint under the platform, the type and category beside the group on one chip
+// line. From 1800px up (and without the theme) DataTable draws them as columns of their own. The 运维监控 dialog
+// (summaryFirst) is at most 1240px wide at any viewport, narrower than the page's table where it still stacks, so it
+// stacks at every width.
+const errorColumnStacks = computed<Record<string, ColumnStackSpec>>(() => {
+  const below = props.summaryFirst ? undefined : 1800
+  return {
+    user: { below, parts: [{ key: 'api_key', cellLabel: true }, { key: 'account', cellLabel: true }] },
+    platform: { below, parts: ['model', 'endpoint'] },
+    group: { below, layout: 'inline', parts: ['type', 'category'] },
+  }
+})
+
 // 传入 visibleColumnKeys 时按其过滤(列设置);未传则全量(Ops 弹窗等使用方)
 const columns = computed<Column[]>(() => {
-  const visibleColumns = props.visibleColumnKeys
-    ? allColumns.value.filter((c) => props.visibleColumnKeys!.includes(c.key))
+  const ordered = props.summaryFirst
+    ? [
+        ...allColumns.value.filter((c) => c.key === 'created_at'),
+        ...allColumns.value.filter((c) => c.key === 'message'),
+        ...allColumns.value.filter((c) => c.key !== 'created_at' && c.key !== 'message'),
+      ]
     : allColumns.value
-  if (!props.summaryFirst) return visibleColumns
-
-  return [
-    ...visibleColumns.filter((c) => c.key === 'created_at'),
-    ...visibleColumns.filter((c) => c.key === 'message'),
-    ...visibleColumns.filter((c) => c.key !== 'created_at' && c.key !== 'message'),
-  ]
+  const visibleKeys = props.visibleColumnKeys
+  return stackColumns(ordered, errorColumnStacks.value, (key) => !visibleKeys || visibleKeys.includes(key))
 })
 
 function isUpstreamRow(log: OpsErrorLog): boolean {

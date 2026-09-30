@@ -15,7 +15,7 @@
         @rowClick="(row) => openDetail(row.id)"
       >
         <template #cell-model="{ row }">
-          <span v-if="row.model" class="text-sm font-medium text-gray-900 dark:text-white">{{ row.model }}</span>
+          <span v-if="row.model" class="text-sm font-medium text-gray-900 dark:text-white"><template v-for="(part, j) in modelParts(row.model)" :key="j"><wbr v-if="j" /><span data-ui="model-part">{{ part }}</span></template></span>
           <span v-else class="text-sm text-gray-400 dark:text-gray-500">-</span>
         </template>
 
@@ -130,6 +130,8 @@ import UserErrorDetailModal from '@/components/user/UserErrorDetailModal.vue'
 import IpGeoCell from '@/components/common/IpGeoCell.vue'
 import IpGeoBatchToolbar from '@/components/common/IpGeoBatchToolbar.vue'
 import { formatDateTime } from '@/utils/format'
+import { modelWrapParts } from '@/utils/softWrap'
+import { flatThemeActive } from '@/utils/flatTheme'
 import {
   mapErrorSortKey,
   numericRequestTypeKind,
@@ -139,6 +141,13 @@ import {
 } from '@/utils/errorBadges'
 import type { UserErrorRequest } from '@/types'
 import type { Column } from '@/components/common/types'
+import { stackColumns, type ColumnStackSpec } from '@/components/common/columnStack'
+
+// Console theme: a model id breaks only between the parts of modelWrapParts (after a slash; an outlier part also after
+// its hyphens), each part drawn whole (tables.css, data-ui="model-part"); without the theme it is one plain part, as
+// upstream draws it.
+const modelParts = (value: unknown): string[] =>
+  flatThemeActive.value ? modelWrapParts(value) : [value == null ? '' : String(value)]
 
 const props = defineProps<{
   rows: UserErrorRequest[]
@@ -180,11 +189,17 @@ const allColumns = computed<Column[]>(() => [
   { key: 'user_agent', label: t('usage.userAgent') },
 ])
 
-const columns = computed<Column[]>(() =>
-  props.visibleColumnKeys
-    ? allColumns.value.filter((c) => props.visibleColumnKeys!.includes(c.key))
-    : allColumns.value
-)
+// Below 1400px (console theme) related columns share a cell: the endpoint under the model, the type, platform and
+// category beside the group on one chip line. From 1400px up (and without the theme) DataTable draws them as columns.
+const ERROR_COLUMN_STACKS: Record<string, ColumnStackSpec> = {
+  model: { below: 1400, parts: ['endpoint'] },
+  group: { below: 1400, layout: 'inline', parts: ['type', 'platform', 'category'] },
+}
+
+const columns = computed<Column[]>(() => {
+  const visibleKeys = props.visibleColumnKeys
+  return stackColumns(allColumns.value, ERROR_COLUMN_STACKS, (key) => !visibleKeys || visibleKeys.includes(key))
+})
 
 function requestTypeBadge(row: UserErrorRequest): { label: string; className: string } | null {
   const kind = numericRequestTypeKind(row.request_type, row.stream)

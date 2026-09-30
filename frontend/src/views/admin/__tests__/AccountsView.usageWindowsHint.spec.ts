@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 
 import AccountsView from '../AccountsView.vue'
+import type { Column } from '@/components/common/types'
 
 vi.mock('@/stores/accountJobs', () => ({
   useAccountJobsStore: () => ({ track: vi.fn(), reviewDuplicates: vi.fn() })
@@ -70,12 +71,13 @@ vi.mock('vue-i18n', async () => {
   }
 })
 
-// Render the per-column header slots so we can assert the usage-window header hint.
+// Render the per-column header slots so we can assert the usage-window header hint (a stacked column's parts have
+// header slots of their own, as in DataTable).
 const DataTableStub = {
   props: ['columns', 'data'],
   template: `
     <div data-test="data-table">
-      <template v-for="column in columns" :key="column.key">
+      <template v-for="column in columns.flatMap((c) => [c, ...(c.stack || [])])" :key="column.key">
         <div v-if="column.key === 'usage'" data-test="usage-header">
           <slot :name="'header-' + column.key" :column="column" />
         </div>
@@ -209,8 +211,10 @@ describe('admin AccountsView usage windows hint', () => {
     expect(wrapper.findAll('[data-test="usage-windows-hint"]').some(node =>
       node.text() === 'admin.accounts.upstreamBilling.trustWarning'
     )).toBe(true)
-    const columns = wrapper.getComponent(DataTableStub).props('columns') as Array<{ key: string; sortable: boolean }>
-    expect(columns.find(column => column.key === 'upstream_billing_rate')?.sortable).toBe(true)
+    // the declared rate is a sortable line of the priority column (stacked cells)
+    const columns = wrapper.getComponent(DataTableStub).props('columns') as Column[]
+    const priority = columns.find(column => column.key === 'priority')
+    expect(priority?.stack?.find(part => part.key === 'upstream_billing_rate')?.sortable).toBe(true)
   })
 
   it('shows account multipliers with enough precision to match declared rates', async () => {

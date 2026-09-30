@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 
 import AccountsView from '../AccountsView.vue'
+import { flattenStackedColumns } from '@/components/common/columnStack'
 
 vi.mock('@/stores/accountJobs', () => ({
   useAccountJobsStore: () => ({ track: vi.fn(), reviewDuplicates: vi.fn() })
@@ -85,11 +86,13 @@ vi.mock('vue-i18n', async () => {
   }
 })
 
+// the view passes stacked columns (a host carries its parts); read them as the flat upstream list DataTable draws
 const DataTableStub = {
   props: ['columns', 'data'],
+  methods: { flat: flattenStackedColumns },
   template: `
     <div data-test="data-table">
-      <span v-for="column in columns" :key="column.key" data-test="column-key">{{ column.key }}</span>
+      <span v-for="column in flat(columns)" :key="column.key" data-test="column-key">{{ column.key }}</span>
       <div v-for="row in data" :key="row.id">
         <div data-test="select-row"><slot name="cell-select" :row="row" /></div>
         <slot name="cell-created_at" :value="row.created_at" :row="row" />

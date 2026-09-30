@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 
 import AccountsView from '../AccountsView.vue'
+import type { Column } from '@/components/common/types'
 
 const { listAccounts } = vi.hoisted(() => ({
   listAccounts: vi.fn()
@@ -154,7 +155,13 @@ describe('admin AccountsView priority column preferences', () => {
     const wrapper = mountView()
     await flushPromises()
 
-    expect(wrapper.find('[data-column="priority"]').exists()).toBe(false)
+    // Stacked cells: the priority column also carries the scheduler-score, account-rate and declared-rate lines, so
+    // hiding priority removes only its own line (and its sort); the column stays while those parts are visible.
+    const columns = wrapper.getComponent(DataTableStub).props('columns') as Column[]
+    const priority = columns.find(column => column.key === 'priority')
+    expect(priority).toMatchObject({ hostHidden: true, sortable: false })
+    expect(priority?.stack?.map(part => part.key)).toEqual(['scheduler_score', 'rate_multiplier', 'upstream_billing_rate'])
+    expect(wrapper.get('[data-column="priority"]').text()).toBe('fixed')
     expect(JSON.parse(localStorage.getItem('account-hidden-columns') || '[]')).toEqual([
       'priority',
       'today_stats'

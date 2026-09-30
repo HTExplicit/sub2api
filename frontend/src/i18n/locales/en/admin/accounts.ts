@@ -420,6 +420,10 @@ export default {accounts: {
         lastUsed: 'Last Used',
         createdAt: 'Created',
         expiresAt: 'Expires At',
+        // line labels of the stacked time cell (the full names are in its header)
+        lastUsedShort: 'Last',
+        createdAtShort: 'Created',
+        expiresAtShort: 'Expires',
         actions: 'Actions'
       },
       schedulerScore: {

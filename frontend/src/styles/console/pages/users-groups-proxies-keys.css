@@ -426,6 +426,7 @@ html.flat-theme [data-ui~="proxies-page"] td[data-column="auth"] span[class~="fo
 /* Accounts using the proxy: the reference's prompt chip (REF §8.7 /logs: a chip button, Geist Mono on the subtle fill,
    radius 4, 2 / 6 inset, ink on hover); the zero count is the same chip, not a button. The count is a figure, not a
    status: no accent. */
+html.flat-theme [data-ui~="proxies-page"] [data-ui="cell-line"][data-line="account_count"] > [data-ui="cell-line-value"] > :is(button, span)[class~="inline-flex"],
 html.flat-theme [data-ui~="proxies-page"] td[data-column="account_count"] > :is(button, span)[class~="inline-flex"] {
   padding: 2px 6px;
   border-radius: var(--ui-radius-sm);
@@ -440,10 +441,12 @@ html.flat-theme [data-ui~="proxies-page"] td[data-column="account_count"] > :is(
   transition: color var(--ui-duration) var(--ui-ease), background-color var(--ui-duration) var(--ui-ease);
 }
 
+html.flat-theme [data-ui~="proxies-page"] [data-ui="cell-line"][data-line="account_count"] > [data-ui="cell-line-value"] > span[class~="inline-flex"],
 html.flat-theme [data-ui~="proxies-page"] td[data-column="account_count"] > span[class~="inline-flex"] {
   color: rgb(var(--ui-muted));
 }
 
+html.flat-theme [data-ui~="proxies-page"] [data-ui="cell-line"][data-line="account_count"] > [data-ui="cell-line-value"] > button[class~="inline-flex"]:hover,
 html.flat-theme [data-ui~="proxies-page"] td[data-column="account_count"] > button[class~="inline-flex"]:hover {
   background-color: rgb(var(--ui-hover));
   color: rgb(var(--ui-ink));
@@ -468,6 +471,7 @@ html.flat-theme [data-ui~="proxies-page"] td[data-column="latency"] > div > div 
 }
 
 /* Expiry and created: 12px, the date ink-soft, 「剩余 N 天」 muted unless it is a warning / danger chip. */
+html.flat-theme [data-ui~="proxies-page"] [data-ui="cell-line"][data-line="created_at"] > [data-ui="cell-line-value"] > span,
 html.flat-theme [data-ui~="proxies-page"] td[data-column="expiry"] > div > span:first-child,
 html.flat-theme [data-ui~="proxies-page"] td[data-column="created_at"] > span {
   color: rgb(var(--ui-ink-soft));

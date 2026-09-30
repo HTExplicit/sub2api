@@ -399,7 +399,7 @@ html.flat-theme :is(.table-wrapper[data-table="usage"], [data-ui="user-usage"] .
 /* Texture of the cells (REF §8.7 /logs request table: the model 13/500 ink, ids and paths Geist Mono): the requested
    model at the row's 13px (the mapping chain under it stays 12px muted), the user id after the e-mail and the endpoint
    paths in Geist Mono; the 「入站 / 上游」 labels stay sans. Same on the error lists of both pages. */
-html.flat-theme .table-wrapper[data-table="usage"] td[data-column="model"] :is(span, div)[class~="font-medium"][class~="text-gray-900"] {
+html.flat-theme .table-wrapper[data-table="usage"] td[data-column="model"] > :where(:not([data-ui="cell-lines"])) :is(span, div)[class~="font-medium"][class~="text-gray-900"] {
   font-size: 13px;
   line-height: 19.5px;
 }
@@ -409,6 +409,7 @@ html.flat-theme :is(.table-wrapper[data-table="usage"], [data-ui="admin-usage"] 
   font-size: 12px;
 }
 
+html.flat-theme :is(.table-wrapper[data-table="usage"], [data-ui="admin-usage"] .table-wrapper, [data-ui="user-usage"] .table-wrapper) [data-ui="cell-line"][data-line="endpoint"] div > span[class~="ml-1"],
 html.flat-theme :is(.table-wrapper[data-table="usage"], [data-ui="admin-usage"] .table-wrapper, [data-ui="user-usage"] .table-wrapper) td[data-column="endpoint"] div > span[class~="ml-1"] {
   font-family: var(--ui-font-mono);
   font-size: 11.5px;
