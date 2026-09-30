@@ -5,7 +5,7 @@
     width="wide"
     @close="emit('close')"
   >
-    <div class="space-y-4">
+    <div data-ui="use-key" class="space-y-4">
       <!-- No Group Assigned Warning -->
       <div v-if="!platform" class="flex items-start gap-3 p-4 rounded-lg bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800">
         <svg class="w-5 h-5 text-yellow-500 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5">
@@ -64,7 +64,7 @@
               {{ t('keys.useKeyModal.openai.authModeDescription') }}
             </p>
           </div>
-          <div
+          <div data-ui="seg-box"
             class="grid grid-cols-2 gap-1 rounded-lg bg-gray-100 p-1 dark:bg-dark-700"
             role="radiogroup"
             :aria-label="t('keys.useKeyModal.openai.authModeTitle')"

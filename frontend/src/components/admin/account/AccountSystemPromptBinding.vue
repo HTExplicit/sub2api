@@ -4,7 +4,7 @@
     <p class="text-xs text-muted">{{ t('admin.systemPrompts.binding.description') }}</p>
     <p v-if="accountIds.length > 1" class="text-xs text-muted">{{ t('admin.systemPrompts.binding.bulkHint', { count: accountIds.length }) }}</p>
     <p v-if="error" role="alert" class="text-sm text-red-600">{{ error }}</p>
-    <div class="flex flex-wrap items-end gap-3">
+    <div data-ui="dense-dlg-if" class="flex flex-wrap items-end gap-3">
       <label class="space-y-1">
         <span class="block text-sm">{{ t('admin.systemPrompts.binding.mode') }}</span>
         <select v-model="mode" class="input" data-test="system-prompt-binding-mode" :disabled="busy">

@@ -1,6 +1,6 @@
 <template>
   <BaseDialog :show="show" :title="t('admin.users.balanceHistoryTitle')" width="wide" :close-on-click-outside="true" :z-index="40" @close="$emit('close')">
-    <div v-if="user" class="space-y-4">
+    <div v-if="user" data-ui="user-balance-history" class="space-y-4">
       <!-- User header: two-row layout with full user info -->
       <div class="rounded-xl bg-gray-50 p-4 dark:bg-dark-700">
         <!-- Row 1: avatar + email/username/created_at (left) + current balance (right) -->
@@ -48,7 +48,7 @@
       </div>
 
       <!-- Type filter + Action buttons -->
-      <div class="flex items-center gap-3">
+      <div data-ui="dense-dlg-if" class="flex items-center gap-3">
         <Select
           v-model="typeFilter"
           :options="typeOptions"

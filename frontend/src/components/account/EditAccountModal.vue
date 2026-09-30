@@ -83,6 +83,7 @@
           <div class="mt-2 grid grid-cols-1 gap-3 sm:grid-cols-2">
             <button
               type="button"
+              data-ui="option-card"
               @click="editOpenCodeAccountMode = 'zen'"
               :class="[
                 'flex items-center gap-3 rounded-lg border-2 p-3 text-left transition-all',
@@ -106,6 +107,7 @@
             </button>
             <button
               type="button"
+              data-ui="option-card"
               @click="editOpenCodeAccountMode = 'go'"
               :class="[
                 'flex items-center gap-3 rounded-lg border-2 p-3 text-left transition-all',
@@ -347,7 +349,7 @@
               class="mb-3 space-y-2"
               data-testid="editable-model-mappings"
             >
-              <div
+              <div data-ui="dense-dlg"
                 v-for="(mapping, index) in modelMappings"
                 :key="getModelMappingKey(mapping)"
                 class="flex items-center gap-2"
@@ -556,7 +558,7 @@
             </div>
 
             <!-- Manual input -->
-            <div class="flex items-center gap-2">
+            <div data-ui="dense-btn dense-dlg" class="flex items-center gap-2">
               <input
                 v-model.number="customErrorCodeInput"
                 type="number"
@@ -827,7 +829,7 @@
             </div>
 
             <div v-if="modelMappings.length > 0" class="mb-3 space-y-2">
-              <div
+              <div data-ui="dense-dlg"
                 v-for="(mapping, index) in modelMappings"
                 :key="'oauth-' + getModelMappingKey(mapping)"
                 class="flex items-center gap-2"
@@ -1067,7 +1069,7 @@
 
             <!-- Model Mapping List -->
             <div v-if="modelMappings.length > 0" class="mb-3 space-y-2">
-              <div
+              <div data-ui="dense-dlg"
                 v-for="(mapping, index) in modelMappings"
                 :key="getModelMappingKey(mapping)"
                 class="flex items-center gap-2"
@@ -1280,7 +1282,7 @@
 
           <!-- Mapping Mode -->
           <div v-else class="space-y-3">
-            <div v-for="(mapping, index) in modelMappings" :key="getModelMappingKey(mapping)" class="flex items-center gap-2">
+            <div data-ui="dense-dlg" v-for="(mapping, index) in modelMappings" :key="getModelMappingKey(mapping)" class="flex items-center gap-2">
               <input v-model="mapping.from" type="text" class="input flex-1" :placeholder="t('admin.accounts.fromModel')" />
               <span class="text-gray-400">→</span>
               <input v-model="mapping.to" type="text" class="input flex-1" :placeholder="t('admin.accounts.toModel')" />
@@ -1422,7 +1424,7 @@
               :key="getAntigravityModelMappingKey(mapping)"
               class="space-y-1"
             >
-              <div class="flex items-center gap-2">
+              <div data-ui="dense-dlg" class="flex items-center gap-2">
                 <input
                   v-model="mapping.from"
                   type="text"
@@ -2512,7 +2514,7 @@
           <label class="input-label">{{ t('admin.accounts.openai.compactModelMapping') }}</label>
           <p class="input-hint">{{ t('admin.accounts.openai.compactModelMappingDesc') }}</p>
           <div v-if="openAICompactModelMappings.length > 0" class="mb-3 space-y-2">
-            <div
+            <div data-ui="dense-dlg"
               v-for="(mapping, index) in openAICompactModelMappings"
               :key="getOpenAICompactModelMappingKey(mapping)"
               class="flex items-center gap-2"

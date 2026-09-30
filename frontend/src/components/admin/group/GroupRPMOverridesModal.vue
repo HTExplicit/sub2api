@@ -1,9 +1,9 @@
 <template>
   <BaseDialog :show="show" :title="t('admin.groups.rpmOverridesTitle')" width="wide" @close="handleClose">
-    <div v-if="group" class="space-y-4">
+    <div v-if="group" data-ui="group-rpm-overrides" class="space-y-4">
       <!-- 分组信息 -->
       <div class="flex flex-wrap items-center gap-3 rounded-lg bg-gray-50 px-4 py-2.5 text-sm dark:bg-dark-700">
-        <span class="inline-flex items-center gap-1.5" :class="platformColorClass">
+        <span data-ui="platform-text" class="inline-flex items-center gap-1.5" :class="platformColorClass">
           <PlatformIcon :platform="group.platform" size="sm" />
           {{ t('admin.groups.platforms.' + group.platform) }}
         </span>
@@ -20,7 +20,7 @@
         <h4 class="mb-2 text-sm font-medium text-gray-700 dark:text-gray-300">
           {{ t('admin.groups.addUserRpm') }}
         </h4>
-        <div class="flex items-end gap-2">
+        <div data-ui="dense-dlg" class="flex items-end gap-2">
           <div class="relative flex-1">
             <input
               v-model="searchQuery"

@@ -1,6 +1,6 @@
 <template>
   <AppLayout>
-    <div class="space-y-4">
+    <div class="space-y-4" data-ui="orders-page">
       <!-- Filters -->
       <div class="card p-4">
         <div class="flex flex-wrap items-center gap-3">

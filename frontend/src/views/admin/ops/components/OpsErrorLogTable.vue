@@ -22,7 +22,7 @@
         </template>
 
         <template #cell-type="{ row }">
-          <span class="inline-flex items-center rounded px-2 py-0.5 text-xs font-medium" :class="getTypeBadge(row).className">
+          <span class="inline-flex items-center rounded px-2 py-0.5 text-xs font-medium" :class="getTypeBadge(row).className" data-ui="category-chip">
             {{ getTypeBadge(row).label }}
           </span>
         </template>
@@ -58,6 +58,7 @@
             v-if="row.group_id"
             class="inline-flex items-center rounded px-2 py-0.5 text-xs font-medium bg-indigo-100 text-indigo-800 dark:bg-indigo-900 dark:text-indigo-200"
             :title="t('admin.ops.errorLog.id') + ' ' + row.group_id"
+            data-ui="category-chip"
           >
             {{ row.group_name || '#' + row.group_id }}
           </span>

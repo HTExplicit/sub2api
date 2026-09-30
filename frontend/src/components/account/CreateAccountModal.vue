@@ -6,7 +6,7 @@
     @close="handleClose"
   >
     <!-- Step Indicator for OAuth accounts -->
-    <div v-if="isOAuthFlow" class="mb-6 flex items-center justify-center">
+    <div v-if="isOAuthFlow" class="mb-6 flex items-center justify-center" data-ui="account-create-steps">
       <div class="flex items-center space-x-4">
         <div class="flex items-center">
           <div
@@ -70,7 +70,7 @@
       <!-- Platform Selection - Segmented Control Style -->
       <div>
         <label class="input-label">{{ t('admin.accounts.platform') }}</label>
-        <div class="mt-2 flex flex-wrap rounded-lg bg-gray-100 p-1 dark:bg-dark-700" data-tour="account-form-platform">
+        <div data-ui="seg-box" class="mt-2 flex flex-wrap rounded-lg bg-gray-100 p-1 dark:bg-dark-700" data-tour="account-form-platform">
           <button
             type="button"
             @click="form.platform = 'anthropic'"
@@ -162,7 +162,7 @@
           </button>
         </div>
         <!-- Multi-protocol API-key providers: Kimi / Zhipu GLM / DeepSeek / OpenCode -->
-        <div class="mt-2 flex flex-wrap rounded-lg bg-gray-100 p-1 dark:bg-dark-700">
+        <div data-ui="seg-box" class="mt-2 flex flex-wrap rounded-lg bg-gray-100 p-1 dark:bg-dark-700">
           <button
             type="button"
             @click="selectCNPlatform('kimi')"
@@ -237,6 +237,7 @@
         <div class="mt-2 grid grid-cols-2 gap-3 sm:grid-cols-4" data-tour="account-form-type">
           <button
             type="button"
+            data-ui="option-card"
             @click="accountCategory = 'oauth-based'"
             :class="[
               'flex items-center gap-3 rounded-lg border-2 p-3 text-left transition-all',
@@ -267,6 +268,7 @@
 
           <button
             type="button"
+            data-ui="option-card"
             @click="accountCategory = 'apikey'"
             :class="[
               'flex items-center gap-3 rounded-lg border-2 p-3 text-left transition-all',
@@ -297,6 +299,7 @@
 
           <button
             type="button"
+            data-ui="option-card"
             @click="accountCategory = 'bedrock'"
             :class="[
               'flex items-center gap-3 rounded-lg border-2 p-3 text-left transition-all',
@@ -327,6 +330,7 @@
 
           <button
             type="button"
+            data-ui="option-card"
             @click="accountCategory = 'service_account'"
             :class="[
               'flex items-center gap-3 rounded-lg border-2 p-3 text-left transition-all',
@@ -367,6 +371,7 @@
         <div class="mt-2 grid grid-cols-2 gap-3" data-tour="account-form-type">
           <button
             type="button"
+            data-ui="option-card"
             @click="accountCategory = 'oauth-based'"
             :class="[
               'flex items-center gap-3 rounded-lg border-2 p-3 text-left transition-all',
@@ -393,6 +398,7 @@
 
           <button
             type="button"
+            data-ui="option-card"
             @click="accountCategory = 'apikey'"
             :class="[
               'flex items-center gap-3 rounded-lg border-2 p-3 text-left transition-all',
@@ -426,6 +432,7 @@
         <div class="mt-2 grid grid-cols-1 gap-3 sm:grid-cols-2" data-tour="account-form-type">
           <button
             type="button"
+            data-ui="option-card"
             @click="accountCategory = 'oauth-based'"
             :class="[
               'flex items-center gap-3 rounded-lg border-2 p-3 text-left transition-all',
@@ -454,6 +461,7 @@
             type="button"
             data-testid="grok-account-type-api-key"
             @click="accountCategory = 'apikey'"
+            data-ui="option-card"
             :class="[
               'flex items-center gap-3 rounded-lg border-2 p-3 text-left transition-all',
               accountCategory === 'apikey'
@@ -486,6 +494,7 @@
           <button
             type="button"
             @click="openCodeAccountMode = 'zen'"
+            data-ui="option-card"
             :class="[
               'flex items-center gap-3 rounded-lg border-2 p-3 text-left transition-all',
               openCodeAccountMode === 'zen'
@@ -509,6 +518,7 @@
           <button
             type="button"
             @click="openCodeAccountMode = 'go'"
+            data-ui="option-card"
             :class="[
               'flex items-center gap-3 rounded-lg border-2 p-3 text-left transition-all',
               openCodeAccountMode === 'go'
@@ -540,6 +550,7 @@
           <button
             type="button"
             @click="accountMode = 'payg'"
+            data-ui="option-card"
             :class="[
               'flex items-center gap-3 rounded-lg border-2 p-3 text-left transition-all',
               accountMode === 'payg'
@@ -567,6 +578,7 @@
             v-if="form.platform !== 'deepseek'"
             type="button"
             @click="accountMode = 'coding'"
+            data-ui="option-card"
             :class="[
               'flex items-center gap-3 rounded-lg border-2 p-3 text-left transition-all',
               accountMode === 'coding'
@@ -601,6 +613,7 @@
             :key="opt.value"
             type="button"
             @click="apiProtocol = opt.value"
+            data-ui="option-card"
             :class="[
               'flex items-center gap-3 rounded-lg border-2 p-3 text-left transition-all',
               apiProtocol === opt.value
@@ -674,6 +687,7 @@
         <div class="mt-2 grid grid-cols-3 gap-3" data-tour="account-form-type">
           <button
             type="button"
+            data-ui="option-card"
             @click="accountCategory = 'oauth-based'"
             :class="[
               'flex items-center gap-3 rounded-lg border-2 p-3 text-left transition-all',
@@ -704,6 +718,7 @@
 
           <button
             type="button"
+            data-ui="option-card"
             @click="accountCategory = 'apikey'"
             :class="[
               'flex items-center gap-3 rounded-lg border-2 p-3 text-left transition-all',
@@ -746,6 +761,7 @@
 
           <button
             type="button"
+            data-ui="option-card"
             @click="accountCategory = 'service_account'"
             :class="[
               'flex items-center gap-3 rounded-lg border-2 p-3 text-left transition-all',
@@ -807,6 +823,7 @@
             <button
               type="button"
               @click="handleSelectGeminiOAuthType('google_one')"
+              data-ui="option-card"
               :class="[
                 'flex items-center gap-3 rounded-lg border-2 p-3 text-left transition-all',
                 geminiOAuthType === 'google_one'
@@ -850,6 +867,7 @@
             <button
               type="button"
               @click="handleSelectGeminiOAuthType('code_assist')"
+              data-ui="option-card"
               :class="[
                 'flex items-center gap-3 rounded-lg border-2 p-3 text-left transition-all',
                 geminiOAuthType === 'code_assist'
@@ -929,7 +947,7 @@
 
           <!-- Custom OAuth Client (Advanced) -->
           <div v-if="showAdvancedOAuth" class="mt-3 group relative">
-            <button
+            <button data-ui="option-card"
               type="button"
               :disabled="!geminiAIStudioOAuthEnabled"
               @click="handleSelectGeminiOAuthType('ai_studio')"
@@ -1046,6 +1064,7 @@
           <button
             type="button"
             @click="antigravityAccountType = 'oauth'"
+            data-ui="option-card"
             :class="[
               'flex items-center gap-3 rounded-lg border-2 p-3 text-left transition-all',
               antigravityAccountType === 'oauth'
@@ -1072,6 +1091,7 @@
           <button
             type="button"
             @click="antigravityAccountType = 'upstream'"
+            data-ui="option-card"
             :class="[
               'flex items-center gap-3 rounded-lg border-2 p-3 text-left transition-all',
               antigravityAccountType === 'upstream'
@@ -1258,7 +1278,7 @@
               :key="getAntigravityModelMappingKey(mapping)"
               class="space-y-1"
             >
-              <div class="flex items-center gap-2">
+              <div data-ui="dense-dlg" class="flex items-center gap-2">
                 <input
                   v-model="mapping.from"
                   type="text"
@@ -1578,7 +1598,7 @@
 
             <!-- Model Mapping List -->
             <div v-if="modelMappings.length > 0" class="mb-3 space-y-2">
-              <div
+              <div data-ui="dense-dlg"
                 v-for="(mapping, index) in modelMappings"
                 :key="getModelMappingKey(mapping)"
                 class="flex items-center gap-2"
@@ -1787,7 +1807,7 @@
             </div>
 
             <!-- Manual input -->
-            <div class="flex items-center gap-2">
+            <div data-ui="dense-btn dense-dlg" class="flex items-center gap-2">
               <input
                 v-model.number="customErrorCodeInput"
                 type="number"
@@ -2056,7 +2076,7 @@
 
           <!-- Mapping Mode -->
           <div v-else class="space-y-3">
-            <div v-for="(mapping, index) in modelMappings" :key="getModelMappingKey(mapping)" class="flex items-center gap-2">
+            <div data-ui="dense-dlg" v-for="(mapping, index) in modelMappings" :key="getModelMappingKey(mapping)" class="flex items-center gap-2">
               <input v-model="mapping.from" type="text" class="input flex-1" :placeholder="t('admin.accounts.fromModel')" />
               <span class="text-gray-400">→</span>
               <input v-model="mapping.to" type="text" class="input flex-1" :placeholder="t('admin.accounts.toModel')" />
@@ -2420,7 +2440,7 @@
             </div>
 
             <div v-if="modelMappings.length > 0" class="mb-3 space-y-2">
-              <div
+              <div data-ui="dense-dlg"
                 v-for="(mapping, index) in modelMappings"
                 :key="'oauth-' + getModelMappingKey(mapping)"
                 class="flex items-center gap-2"
@@ -3404,7 +3424,7 @@
           <label class="input-label">{{ t('admin.accounts.openai.compactModelMapping') }}</label>
           <p class="input-hint">{{ t('admin.accounts.openai.compactModelMappingDesc') }}</p>
           <div v-if="openAICompactModelMappings.length > 0" class="mb-3 space-y-2">
-            <div
+            <div data-ui="dense-dlg"
               v-for="(mapping, index) in openAICompactModelMappings"
               :key="getOpenAICompactModelMappingKey(mapping)"
               class="flex items-center gap-2"

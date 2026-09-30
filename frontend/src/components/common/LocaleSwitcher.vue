@@ -19,11 +19,13 @@
     <transition name="dropdown">
       <div
         v-if="isOpen"
+        data-ui="menu"
         class="absolute right-0 z-50 mt-1 w-32 overflow-hidden rounded-lg border border-gray-200 bg-white shadow-lg dark:border-dark-700 dark:bg-dark-800"
       >
         <button
           v-for="locale in availableLocales"
           :key="locale.code"
+          data-ui="menu-item"
           :disabled="switching"
           @click="selectLocale(locale.code)"
           class="flex w-full items-center gap-2 px-3 py-2 text-sm text-gray-700 transition-colors hover:bg-gray-100 dark:text-gray-200 dark:hover:bg-dark-700"

@@ -1,6 +1,6 @@
 <template>
   <AppLayout>
-    <div class="space-y-6 pb-12">
+    <div class="space-y-6 pb-12" data-ui="monitor-v2">
       <!-- Ops-style elevated shell: title toolbar + filters (mirrors OpsDashboardHeader) -->
       <section
         class="card sticky top-0 z-20 !rounded-3xl !border-0 p-0 shadow-sm ring-1 ring-gray-900/5 backdrop-blur-sm dark:!bg-dark-800 dark:ring-dark-700 supports-[backdrop-filter]:bg-white/95 dark:supports-[backdrop-filter]:bg-dark-800/95"
@@ -90,7 +90,7 @@
         </div>
 
         <!-- Single compact toolbar row: range · filters · view controls -->
-        <div class="monitor-toolbar flex flex-nowrap items-center gap-1.5 overflow-x-auto px-4 py-3 sm:gap-2 sm:px-5">
+        <div data-ui="dense-btn" class="monitor-toolbar flex flex-nowrap items-center gap-1.5 overflow-x-auto px-4 py-3 sm:gap-2 sm:px-5">
           <div
             class="tabs inline-flex shrink-0"
             role="group"

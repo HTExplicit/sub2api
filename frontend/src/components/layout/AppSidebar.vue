@@ -241,6 +241,7 @@ import { sanitizeUrl } from '@/utils/url'
 import { FeatureFlags, makeSidebarFlag } from '@/utils/featureFlags'
 import { resolveSiteBillingMode } from '@/utils/siteBillingMode'
 import { useBatchImageAccess } from '@/composables/useBatchImageAccess'
+import { flatThemeActive } from '@/utils/flatTheme'
 
 interface NavItem {
   path: string
@@ -741,6 +742,22 @@ const ChevronDownIcon = {
         })
       ]
     )
+}
+
+// Console theme (utils/flatTheme.ts): while it is on, the inline icons above draw their Lucide glyph through
+// Icon.vue (ui-el icons/ICONS.md §5); with it off they render the upstream SVGs above, unchanged.
+const consoleThemeIcons: Array<[typeof DashboardIcon, InstanceType<typeof Icon>['$props']['name']]> = [
+  [DashboardIcon, 'dashboard'], [KeyIcon, 'key'], [BatchImageIcon, 'camera'], [ChartIcon, 'chart'],
+  [GiftIcon, 'gift'], [UserIcon, 'user'], [UsersIcon, 'users'], [FolderIcon, 'folder'], [ChannelIcon, 'layers'],
+  [CreditCardIcon, 'creditCard'], [RechargeSubscriptionIcon, 'coins'], [GlobeIcon, 'globe'], [ServerIcon, 'server'],
+  [BellIcon, 'bell'], [TicketIcon, 'ticket'], [CogIcon, 'cog'], [DocumentIcon, 'document'], [SunIcon, 'sun'],
+  [MoonIcon, 'moon'], [ChevronDoubleLeftIcon, 'chevronDoubleLeft'], [ChevronDoubleRightIcon, 'chevronDoubleRight'],
+  [OrderIcon, 'clipboardList'], [OrderListIcon, 'receipt'], [SignalIcon, 'signal'], [ShieldIcon, 'shield'],
+  [PriceTagIcon, 'tag'], [ChevronDownIcon, 'chevronDown']
+]
+for (const [icon, name] of consoleThemeIcons) {
+  const upstream = icon.render
+  icon.render = () => (flatThemeActive.value ? h(Icon, { name }) : upstream())
 }
 
 // Public-settings flags go through the registry in utils/featureFlags.ts,

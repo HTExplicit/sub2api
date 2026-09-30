@@ -4,7 +4,7 @@
     <div>
       <label class="input-label">{{ t('admin.channelMonitor.advanced.headers') }}</label>
       <div class="space-y-1.5">
-        <div
+        <div data-ui="dense-dlg"
           v-for="(row, i) in headerRows"
           :key="i"
           class="flex items-center gap-2"

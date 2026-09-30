@@ -1,5 +1,5 @@
 <template>
-  <div>
+  <div data-ui="monitor-grid">
     <div
       v-if="loading && items.length === 0"
       class="grid gap-5 grid-cols-1 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4"

@@ -315,9 +315,10 @@ describe('admin AccountsView Cockpit console', () => {
     const wrapper = mountView()
     await flushPromises()
     // upstream defaults: only today_stats, proxy, notes, scheduler_score and rate_multiplier are hidden;
-    // the scheduling switch sits right after the status column, as upstream orders them
+    // the columns follow upstream v0.2.9's order (capacity, status and the scheduling switch before groups and
+    // usage), with the fork's classification / route column right after the scheduling switch
     expect(wrapper.get('[data-test="view-table"]').attributes('data-columns')).toBe(
-      'select,name,id,platform_type,usage,status,schedulable,taxonomy_route,capacity,groups,priority,' +
+      'select,name,id,platform_type,capacity,status,schedulable,taxonomy_route,groups,usage,priority,' +
         'upstream_billing_rate,last_used_at,created_at,expires_at,actions'
     )
   })

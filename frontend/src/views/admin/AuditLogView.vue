@@ -1,15 +1,15 @@
 <template>
   <AppLayout>
-    <TablePageLayout>
+    <TablePageLayout data-ui="audit-page">
       <!-- Filters -->
       <template #filters>
         <div class="card p-4 sm:p-6">
           <div class="flex flex-wrap items-end justify-between gap-4">
             <!-- Left: filter fields -->
             <div class="flex flex-1 flex-wrap items-end gap-4">
-              <div class="w-full sm:w-auto sm:min-w-[240px]">
+              <div data-ui="audit-filter" class="w-full sm:w-auto sm:min-w-[240px]">
                 <label class="input-label">{{ t('admin.audit.filters.q') }}</label>
-                <div class="relative">
+                <div data-ui="search-box" class="relative">
                   <Icon
                     name="search"
                     size="md"
@@ -25,37 +25,37 @@
                 </div>
               </div>
 
-              <div class="w-full sm:w-auto sm:min-w-[200px]">
+              <div data-ui="audit-filter" class="w-full sm:w-auto sm:min-w-[200px]">
                 <label class="input-label">{{ t('admin.audit.filters.actorEmail') }}</label>
                 <input v-model.trim="filters.actor_email" type="text" class="input" @keyup.enter="search" />
               </div>
 
-              <div class="w-full sm:w-auto sm:min-w-[180px]">
+              <div data-ui="audit-filter" class="w-full sm:w-auto sm:min-w-[180px]">
                 <label class="input-label">{{ t('admin.audit.filters.action') }}</label>
                 <input v-model.trim="filters.action" type="text" class="input" @keyup.enter="search" />
               </div>
 
-              <div class="w-full sm:w-auto sm:min-w-[160px]">
+              <div data-ui="audit-filter" class="w-full sm:w-auto sm:min-w-[160px]">
                 <label class="input-label">{{ t('admin.audit.filters.clientIp') }}</label>
                 <input v-model.trim="filters.client_ip" type="text" class="input" @keyup.enter="search" />
               </div>
 
-              <div class="w-full sm:w-auto sm:min-w-[140px]">
+              <div data-ui="audit-filter" class="w-full sm:w-auto sm:min-w-[140px]">
                 <label class="input-label">{{ t('admin.audit.filters.method') }}</label>
                 <Select v-model="filters.method" :options="methodOptions" @change="search" />
               </div>
 
-              <div class="w-full sm:w-auto sm:min-w-[170px]">
+              <div data-ui="audit-filter" class="w-full sm:w-auto sm:min-w-[170px]">
                 <label class="input-label">{{ t('admin.audit.filters.authMethod') }}</label>
                 <Select v-model="filters.auth_method" :options="authMethodOptions" @change="search" />
               </div>
 
-              <div class="w-full sm:w-auto sm:min-w-[140px]">
+              <div data-ui="audit-filter" class="w-full sm:w-auto sm:min-w-[140px]">
                 <label class="input-label">{{ t('admin.audit.filters.result') }}</label>
                 <Select v-model="filters.success" :options="resultOptions" @change="search" />
               </div>
 
-              <div class="w-full sm:w-auto sm:min-w-[170px]">
+              <div data-ui="audit-filter" class="w-full sm:w-auto sm:min-w-[170px]">
                 <label class="input-label">{{ t('admin.dashboard.timeRange') }}</label>
                 <Select
                   :model-value="timeRange"
@@ -174,7 +174,7 @@
         </div>
       </div>
 
-      <div v-else-if="detail" class="space-y-5 py-2">
+      <div v-else-if="detail" class="space-y-5 py-2" data-ui="audit-detail">
         <!-- Hero: action + result at a glance -->
         <div class="rounded-2xl border border-gray-200 bg-gray-50/60 p-5 dark:border-dark-700 dark:bg-dark-900/60">
           <div class="flex flex-wrap items-center gap-3">

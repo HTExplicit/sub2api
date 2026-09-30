@@ -30,6 +30,7 @@
         <div class="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
           <div class="flex min-w-0 flex-1 items-start gap-4">
             <div
+              data-ui="platform-chip"
               :class="providerIconClass(item.provider)"
               class="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl text-sm font-semibold"
             >

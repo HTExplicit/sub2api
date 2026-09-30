@@ -562,7 +562,7 @@ const empty = computed(() => events.value.length === 0 && !loading.value)
         {{ t('admin.ops.alertEvents.detail.empty') }}
       </div>
 
-      <div v-else class="space-y-5">
+      <div v-else class="space-y-5" data-ui="ops-dialog ops-alert-event">
         <div class="rounded-xl bg-gray-50 p-4 dark:bg-dark-900">
           <div class="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
             <div>
@@ -583,7 +583,7 @@ const empty = computed(() => events.value.length === 0 && !loading.value)
             </div>
 
             <div class="flex flex-wrap gap-2">
-              <div class="flex items-center gap-2 rounded-lg bg-white px-2 py-1 ring-1 ring-gray-200 dark:bg-dark-800 dark:ring-dark-700">
+              <div data-ui="dense-btn dense-dlg" class="flex items-center gap-2 rounded-lg bg-white px-2 py-1 ring-1 ring-gray-200 dark:bg-dark-800 dark:ring-dark-700">
                 <span class="text-[11px] font-bold text-gray-600 dark:text-gray-300">{{ t('admin.ops.alertEvents.detail.silence') }}</span>
                 <Select
                   :model-value="silenceDuration"
@@ -605,7 +605,7 @@ const empty = computed(() => events.value.length === 0 && !loading.value)
           </div>
         </div>
 
-          <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          <div data-ui="ops-kv-grid" class="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <div class="rounded-xl bg-gray-50 p-4 dark:bg-dark-900">
               <div class="text-xs font-bold uppercase tracking-wider text-gray-400">{{ t('admin.ops.alertEvents.detail.firedAt') }}</div>
               <div class="mt-1 text-sm font-medium text-gray-900 dark:text-white">{{ formatDateTime(selected.fired_at || selected.created_at) }}</div>

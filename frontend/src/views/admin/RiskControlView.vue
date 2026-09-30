@@ -1,6 +1,6 @@
 <template>
   <AppLayout>
-    <div class="space-y-6">
+    <div class="space-y-6" data-ui="risk-page">
       <div v-if="loading" class="flex items-center justify-center py-16">
         <div class="h-8 w-8 animate-spin rounded-full border-b-2 border-primary-600"></div>
       </div>
@@ -280,7 +280,7 @@
             </div>
           </div>
 
-          <div class="overflow-x-auto">
+          <div class="overflow-x-auto" data-ui="log-table">
             <table class="min-w-full divide-y divide-gray-200 dark:divide-dark-700">
               <thead class="bg-gray-50 dark:bg-dark-800">
                 <tr>
@@ -380,7 +380,7 @@
       </template>
 
       <BaseDialog :show="settingsOpen" :title="t('admin.riskControl.settingsTitle')" width="extra-wide" @close="settingsOpen = false">
-        <div class="space-y-6">
+        <div class="space-y-6" data-ui="risk-settings">
           <div class="flex gap-2 overflow-x-auto border-b border-gray-100 pb-3 dark:border-dark-700">
             <button
               v-for="tab in settingsTabs"
@@ -724,7 +724,7 @@
                 <h3 class="text-base font-semibold text-gray-900 dark:text-white">{{ t('admin.riskControl.groupScope') }}</h3>
                 <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">{{ t('admin.riskControl.groupScopeHint') }}</p>
               </div>
-              <div class="inline-flex rounded-lg bg-gray-100 p-1 dark:bg-dark-700">
+              <div data-ui="seg-box" class="inline-flex rounded-lg bg-gray-100 p-1 dark:bg-dark-700">
                 <button
                   type="button"
                   class="rounded-md px-3 py-1.5 text-sm font-medium transition-colors"
@@ -745,7 +745,7 @@
             </div>
 
             <div v-if="!configForm.all_groups" class="space-y-4">
-              <div class="relative">
+              <div data-ui="search-box" class="relative">
                 <Icon name="search" size="sm" class="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
                 <input v-model.trim="groupSearch" type="search" class="input pl-9" :placeholder="t('admin.riskControl.searchGroups')" />
               </div>

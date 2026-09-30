@@ -1,5 +1,64 @@
 <template>
-  <div class="min-w-0 border-b border-line bg-surface/70">
+  <div v-if="variant === 'menu'" ref="mobileMenuRef" class="relative shrink-0" data-ui="account-folder-menu">
+    <button
+      ref="mobileTriggerRef"
+      type="button"
+      class="inline-flex max-w-full items-center gap-1.5"
+      aria-haspopup="listbox"
+      :aria-expanded="mobileOpen"
+      :aria-label="`${t('admin.accounts.managementClassification')} ${activeLabel} ${formatCount(activeCount)}`"
+      :title="t('admin.accounts.managementClassification')"
+      :data-active="activeFolder ? 'true' : undefined"
+      data-ui="filter-pill"
+      data-test="account-folder-menu"
+      @click="mobileOpen = !mobileOpen"
+      @keydown.down.prevent="openMobileOptions('first')"
+      @keydown.up.prevent="openMobileOptions('last')"
+      @keydown.esc.prevent="closeMobileMenu"
+    >
+      <span class="truncate">{{ activeLabel }}</span>
+      <span data-ui="account-folder-count">{{ formatCount(activeCount) }}</span>
+      <Icon name="chevronDown" size="xs" />
+    </button>
+    <div
+      v-if="mobileOpen"
+      class="absolute left-0 top-full z-50 mt-1 max-h-[min(60vh,420px)] min-w-[13rem] max-w-xs overflow-y-auto"
+      role="listbox"
+      :aria-label="t('admin.accounts.managementClassification')"
+      data-ui="menu"
+      @keydown="handleMobileMenuKeydown"
+    >
+      <button v-if="error" type="button" class="flex w-full items-center text-left" data-ui="menu-item" data-tone="danger" @click="emit('retry')">
+        <span class="min-w-0 flex-1">{{ t('admin.accounts.facetsLoadFailed') }}</span>
+        <span class="shrink-0 font-semibold">{{ t('common.retry') }}</span>
+      </button>
+      <div v-else-if="loading" class="space-y-1 px-3 py-1.5" aria-live="polite" data-ui="account-folder-loading">
+        <div v-for="index in 3" :key="index" class="h-5 animate-pulse" />
+      </div>
+      <template v-else>
+        <button
+          v-for="item in navigationItems"
+          :key="item.value || 'all'"
+          type="button"
+          role="option"
+          :aria-selected="activeFolder === item.value"
+          class="flex w-full items-center text-left"
+          data-ui="menu-item"
+          @click="selectMobile(item.value)"
+        >
+          <span class="min-w-0 flex-1 truncate">{{ item.label }}</span>
+          <span class="shrink-0" data-ui="account-folder-count">{{ formatCount(item.count) }}</span>
+        </button>
+        <span v-if="folders.length === 0" class="block px-3 py-1.5" data-ui="account-folder-empty">{{ t('admin.accounts.noFolders') }}</span>
+      </template>
+      <div data-ui="menu-separator" />
+      <button type="button" class="flex w-full items-center text-left" data-ui="menu-item" data-test="account-folder-manage" @click="manageMobile">
+        <Icon name="cog" size="sm" />
+        <span>{{ t('admin.accounts.manageTaxonomy') }}</span>
+      </button>
+    </div>
+  </div>
+  <div v-else class="min-w-0 border-b border-line bg-surface/70">
     <div class="relative border-b border-gray-200 p-3 dark:border-dark-700 lg:hidden" ref="mobileMenuRef">
       <button
         ref="mobileTriggerRef"
@@ -103,14 +162,17 @@ import { useI18n } from 'vue-i18n'
 import Icon from '@/components/icons/Icon.vue'
 import type { AccountManagementFolder } from '@/types'
 
-const props = defineProps<{
+const props = withDefaults(defineProps<{
   folders: AccountManagementFolder[]
   activeFolder: string
   total?: number
   uncategorizedCount?: number
   loading?: boolean
   error?: boolean
-}>()
+  // 'menu': the console theme's toolbar control, one pill (active classification + its count) that opens every
+  // classification with its count and the manage entry; 'bar': the strip above the list (theme off).
+  variant?: 'bar' | 'menu'
+}>(), { variant: 'bar' })
 
 const emit = defineEmits<{
   select: [value: string]
@@ -132,7 +194,9 @@ const navigationItems = computed(() => [
   { value: 'uncategorized', label: t('admin.accounts.folderUncategorized'), count: safeCount(props.uncategorizedCount) },
   ...props.folders.map((folder) => ({ value: String(folder.id), label: folder.name || '-', count: safeCount(folder.account_count) }))
 ])
-const activeLabel = computed(() => navigationItems.value.find((item) => item.value === props.activeFolder)?.label || t('admin.accounts.allAccounts'))
+const activeItem = computed(() => navigationItems.value.find((item) => item.value === props.activeFolder))
+const activeLabel = computed(() => activeItem.value?.label || t('admin.accounts.allAccounts'))
+const activeCount = computed(() => (activeItem.value ? activeItem.value.count : safeCount(props.total)))
 const mobileOptions = () => Array.from(mobileMenuRef.value?.querySelectorAll<HTMLButtonElement>('[role="option"]') || [])
 const openMobileOptions = async (position: 'first' | 'last') => {
   mobileOpen.value = true

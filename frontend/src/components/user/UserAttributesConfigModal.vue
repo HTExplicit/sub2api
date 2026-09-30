@@ -1,6 +1,6 @@
 <template>
   <BaseDialog :show="show" :title="t('admin.users.attributes.title')" width="wide" @close="emit('close')">
-    <div class="space-y-4">
+    <div data-ui="user-attributes-config" class="space-y-4">
       <!-- Header with Add Button -->
       <div class="flex items-center justify-between">
         <p class="text-sm text-gray-500 dark:text-dark-400">
@@ -143,7 +143,7 @@
       <!-- Options (for select/multi_select) -->
       <div v-if="form.type === 'select' || form.type === 'multi_select'" class="space-y-2">
         <label class="input-label">{{ t('admin.users.attributes.options') }}</label>
-        <div v-for="(option, index) in form.options" :key="getOptionKey(option)" class="flex items-center gap-2">
+        <div data-ui="dense-dlg" v-for="(option, index) in form.options" :key="getOptionKey(option)" class="flex items-center gap-2">
           <input
             v-model="option.value"
             type="text"

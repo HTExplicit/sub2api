@@ -1,5 +1,5 @@
 <template>
-  <div class="relative flex min-h-screen items-center justify-center overflow-hidden p-4">
+  <div class="relative flex min-h-screen items-center justify-center overflow-hidden p-4" data-ui="auth-layout">
     <!-- Background -->
     <div
       class="absolute inset-0 bg-gradient-to-br from-gray-50 via-primary-50/30 to-gray-100 dark:from-dark-950 dark:via-dark-900 dark:to-dark-950"
@@ -23,9 +23,10 @@
         class="absolute inset-0 bg-[linear-gradient(rgba(20,184,166,0.03)_1px,transparent_1px),linear-gradient(90deg,rgba(20,184,166,0.03)_1px,transparent_1px)] bg-[size:64px_64px]"
       ></div>
     </div>
+    <AuthPixelGrid />
 
     <!-- Content Container -->
-    <div class="relative z-10 w-full max-w-md">
+    <div class="relative z-10 w-full max-w-md" data-ui="auth-column">
       <!-- Logo/Brand -->
       <div class="mb-8 text-center">
         <!-- Custom Logo or Default Logo -->
@@ -66,6 +67,7 @@
 import { computed, onMounted } from 'vue'
 import { useAppStore } from '@/stores'
 import { sanitizeUrl } from '@/utils/url'
+import AuthPixelGrid from './AuthPixelGrid.vue'
 
 const appStore = useAppStore()
 

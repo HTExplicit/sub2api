@@ -5,7 +5,7 @@
     width="extra-wide"
     @close="handleClose"
   >
-    <div class="space-y-4">
+    <div data-ui="announcement-read-status" class="space-y-4">
       <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div class="flex-1">
           <input

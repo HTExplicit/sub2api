@@ -1,6 +1,6 @@
 /* Role tokens shared by the component recipes, shared components and the few fork-only
    semantic utilities (bg-surface, text-muted, border-line, ...). These defaults reproduce the
-   upstream (v0.2.8) look; styles/flat-theme.css overrides them while <html> carries the
+   upstream (v0.2.8) look; styles/console/tokens.css overrides them while <html> carries the
    flat-theme class (public setting flat_theme_enabled). Colour values are RGB channels so the
    Tailwind opacity modifiers keep working. */
 :root {
@@ -10,15 +10,22 @@
   --ui-sunk: 249 250 251;
   --ui-raised: 243 244 246;
   --ui-hover: 243 244 246;
+  --ui-active: 229 231 235;
   --ui-line: 229 231 235;
   --ui-line-strong: 209 213 219;
   --ui-line-focus: 156 163 175;
+  --ui-control-line: 209 213 219;
   --ui-ink: 17 24 39;
+  --ui-ink-soft: 55 65 81;
+  --ui-on-ink: 255 255 255;
   --ui-muted: 107 114 128;
   --ui-faint: 156 163 175;
+  --ui-label: 107 114 128;
   --ui-primary: 20 184 166;
   --ui-primary-hover: 13 148 136;
+  --ui-primary-soft: 240 253 250;
   --ui-on-primary: 255 255 255;
+  --ui-focus: 20 184 166;
   --ui-success: 16 185 129;
   --ui-success-soft: 236 253 245;
   --ui-danger: 239 68 68;
@@ -65,12 +72,19 @@
   --ui-sunk: 15 23 42;
   --ui-raised: 51 65 85;
   --ui-hover: 51 65 85;
+  --ui-active: 71 85 105;
   --ui-line: 51 65 85;
   --ui-line-strong: 71 85 105;
   --ui-line-focus: 100 116 139;
+  --ui-control-line: 71 85 105;
   --ui-ink: 243 244 246;
+  --ui-ink-soft: 209 213 219;
+  --ui-on-ink: 17 24 39;
   --ui-muted: 148 163 184;
   --ui-faint: 100 116 139;
+  --ui-label: 148 163 184;
+  --ui-primary-soft: 27 52 64;
+  --ui-focus: 45 212 191;
   --ui-success-soft: 6 78 59;
   --ui-danger-soft: 127 29 29;
   --ui-warning-soft: 120 53 15;

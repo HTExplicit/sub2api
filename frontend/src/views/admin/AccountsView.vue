@@ -3,15 +3,21 @@
     <div v-if="immediateAccountActions.size" role="status" class="mb-3 flex items-center gap-2 text-xs text-muted"><Icon name="refresh" size="sm" class="animate-spin" />{{ t('common.processing') }}</div>
     <TablePageLayout :content-framed="viewMode !== 'cards'">
       <template #filters>
-        <div class="flex flex-wrap-reverse items-start justify-between gap-3">
+        <div :class="flatThemeActive ? undefined : 'flex flex-wrap-reverse items-start justify-between gap-3'" :data-ui="flatThemeActive ? 'accounts-toolbar' : undefined">
           <AccountConsoleFilters
+            v-if="!flatThemeActive"
             v-model="consoleFilters"
             :facets="facets"
             :groups="groups"
             @change="handleConsoleFiltersChanged"
           />
+          <template v-else>
+            <AccountConsoleFilters v-model="consoleFilters" part="search" :facets="facets" :groups="groups" @change="handleConsoleFiltersChanged" />
+            <AccountViewModeSwitcher v-model="viewMode" />
+          </template>
           <AccountTableActions
             :loading="loading"
+            data-ui="accounts-actions"
             @refresh="handleManualRefresh"
             @create="showCreate = true"
           >
@@ -24,7 +30,7 @@
                   @update:model-value="handleAPIKeyRevealToggle"
                 />
               </label>
-              <AccountViewModeSwitcher v-model="viewMode" />
+              <AccountViewModeSwitcher v-if="!flatThemeActive" v-model="viewMode" />
 
               <!-- Auto Refresh Dropdown -->
               <div class="relative" ref="autoRefreshDropdownRef">
@@ -87,6 +93,7 @@
                 <Teleport to="body">
                   <div
                     v-if="showAccountToolsDropdown"
+                    data-ui="account-tools-panel"
                     class="fixed z-[9999] origin-top-right overflow-hidden rounded-lg border border-gray-200 bg-white shadow-xl dark:border-dark-700 dark:bg-dark-800"
                     :style="accountToolsDropdownStyle"
                     @click.stop
@@ -170,7 +177,37 @@
                 </Teleport>
               </div>
             </template>
+            <template v-if="flatThemeActive" #beforeCreate>
+              <AccountBulkMenu
+                :total-results="pagination.total"
+                :selected-count="selIds.length"
+                :selecting-all="selectingAllResults"
+                :all-results-selected="allResultsSelected"
+                @select-all-results="handleSelectAllResults"
+                @edit-filtered="openBulkEditFiltered"
+                @taxonomy-filtered="openBulkTaxonomyFiltered"
+              />
+            </template>
           </AccountTableActions>
+          <AccountConsoleFilters v-if="flatThemeActive" v-model="consoleFilters" part="filters" :facets="facets" :groups="groups" @change="handleConsoleFiltersChanged">
+            <template #leading>
+              <AccountFolderBar
+                variant="menu"
+                :folders="facetFolders"
+                :active-folder="activeFolder"
+                :total="folderNavigationTotal"
+                :uncategorized-count="folderNavigationUncategorized"
+                :loading="facetsLoading"
+                :error="Boolean(facetsError)"
+                @select="handleFolderSelect"
+                @manage="showTaxonomyManager = true"
+                @retry="loadFacets"
+              />
+            </template>
+            <template #summary>
+              <span data-ui="accounts-count">{{ t('admin.accounts.accountCount', { count: pagination.total.toLocaleString() }) }}</span>
+            </template>
+          </AccountConsoleFilters>
         </div>
         <div
           v-if="hasPendingListSync"
@@ -188,6 +225,7 @@
       <template #table>
         <div class="flex h-full min-h-0 min-w-0 flex-1 flex-col">
         <AccountFolderBar
+          v-if="!flatThemeActive"
           :folders="facetFolders"
           :active-folder="activeFolder"
           :total="folderNavigationTotal"
@@ -198,14 +236,15 @@
           @manage="showTaxonomyManager = true"
           @retry="loadFacets"
         />
-        <div class="flex min-h-0 min-w-0 flex-1 flex-col p-3 sm:p-4">
-        <div v-if="completedImportJobIDs.length" class="mb-2 flex items-center gap-2 text-xs text-gray-600 dark:text-gray-300">
+        <div class="flex min-h-0 min-w-0 flex-1 flex-col p-3 sm:p-4" data-ui="accounts-list">
+        <div v-if="completedImportJobIDs.length" class="mb-2 flex items-center gap-2 text-xs text-gray-600 dark:text-gray-300" data-ui="accounts-import-results">
           <button type="button" data-test="select-imported-results" class="btn btn-secondary btn-sm" :disabled="selectingImportedResults" @click="selectImportedResults()">
             {{ t(importResultSelectionFailed ? 'admin.accounts.retryImportSelection' : 'admin.accounts.selectImportedResults') }}
           </button>
           <span>#{{ completedImportJobIDs.join(', #') }}</span>
         </div>
         <AccountBulkActionsBar
+          v-if="!flatThemeActive"
           :selected-ids="selIds"
           :selected-accounts="selectedAccounts"
           :total-results="pagination.total"
@@ -525,6 +564,30 @@
           @show-temp-unsched="handleShowTempUnsched"
         />
         </div>
+        <div v-if="flatThemeActive" v-show="selIds.length > 0 || selectingAllResults" data-ui="accounts-bulk-tray">
+          <AccountBulkActionsBar
+            :selected-ids="selIds"
+            :selected-accounts="selectedAccounts"
+            :total-results="pagination.total"
+            :selecting-all="selectingAllResults"
+            :all-results-selected="allResultsSelected"
+            @delete="handleBulkDelete"
+            @reset-status="handleBulkResetStatus"
+            @refresh-token="handleBulkRefreshToken"
+            @refresh-tier="handleBulkRefreshTier"
+            @duplicate-review="handleDuplicateReview"
+            @probe-upstream-billing="handleBulkProbeUpstreamBilling"
+            @test-connection="openBatchTest"
+            @edit-selected="openBulkEditSelected"
+            @edit-filtered="openBulkEditFiltered"
+            @taxonomy-selected="openBulkTaxonomySelected"
+            @taxonomy-filtered="openBulkTaxonomyFiltered"
+            @clear="clearSelection"
+            @select-page="selectPage"
+            @select-all-results="handleSelectAllResults"
+            @toggle-schedulable="handleBulkToggleSchedulable"
+          />
+        </div>
         </div>
         </div>
       </template>
@@ -661,6 +724,10 @@ import Toggle from '@/components/common/Toggle.vue'
 import { CreateAccountModal, EditAccountModal, BulkEditAccountModal, SyncFromCrsModal, TempUnschedStatusModal } from '@/components/account'
 import AccountTableActions from '@/components/admin/account/AccountTableActions.vue'
 import AccountBulkActionsBar from '@/components/admin/account/AccountBulkActionsBar.vue'
+// Console theme (ui-el D6): a two-row toolbar with the classification menu and a bulk menu in it; the bulk bar
+// only while accounts are selected, below the list. With the theme off the page keeps its existing layout.
+import AccountBulkMenu from '@/components/admin/account/AccountBulkMenu.vue'
+import { flatThemeActive } from '@/utils/flatTheme'
 import AccountActionMenu from '@/components/admin/account/AccountActionMenu.vue'
 import AccountCardGrid from '@/components/admin/account/AccountCardGrid.vue'
 import AccountCompactList from '@/components/admin/account/AccountCompactList.vue'
@@ -2089,25 +2156,24 @@ function accountHomepageUrl(row: Account): string {
   return baseUrl ? new URL(baseUrl).origin : ''
 }
 
-// All available columns
+// All available columns, in upstream v0.2.9's order; the fork's classification / route column follows the
+// scheduling switch.
 const allColumns = computed(() => {
   const c = [
     { key: 'select', label: '', sortable: false },
     { key: 'name', label: t('admin.accounts.columns.name'), sortable: true, class: 'w-44 min-w-44 max-w-44' },
     { key: 'id', label: t('admin.accounts.columns.id'), sortable: true },
     { key: 'platform_type', label: t('admin.accounts.columns.platformType'), sortable: false },
-    { key: 'usage', label: t('admin.accounts.columns.usage'), sortable: false },
-    { key: 'status', label: t('admin.accounts.columns.status'), sortable: true },
-    { key: 'schedulable', label: t('admin.accounts.columns.schedulable'), sortable: true }
-  ]
-  c.push(
-    { key: 'taxonomy_route', label: t('admin.accounts.columns.classificationRoute'), sortable: false },
     { key: 'capacity', label: t('admin.accounts.columns.capacity'), sortable: false },
+    { key: 'status', label: t('admin.accounts.columns.status'), sortable: true },
+    { key: 'schedulable', label: t('admin.accounts.columns.schedulable'), sortable: true },
+    { key: 'taxonomy_route', label: t('admin.accounts.columns.classificationRoute'), sortable: false },
     { key: 'today_stats', label: t('admin.accounts.columns.todayStats'), sortable: false }
-  )
+  ]
   if (!authStore.isSimpleMode) {
     c.push({ key: 'groups', label: t('admin.accounts.columns.groups'), sortable: false })
   }
+  c.push({ key: 'usage', label: t('admin.accounts.columns.usage'), sortable: false })
   c.push(
     { key: 'proxy', label: t('admin.accounts.columns.proxy'), sortable: false },
     { key: 'priority', label: t('admin.accounts.columns.priority'), sortable: true },

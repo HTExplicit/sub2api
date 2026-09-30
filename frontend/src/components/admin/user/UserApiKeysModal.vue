@@ -1,6 +1,6 @@
 <template>
   <BaseDialog :show="show" :title="t('admin.users.userApiKeys')" width="wide" @close="handleClose">
-    <div v-if="user" class="space-y-4">
+    <div v-if="user" data-ui="user-api-keys" class="space-y-4">
       <div class="flex items-center gap-3 rounded-xl bg-gray-50 p-4 dark:bg-dark-700">
         <div class="flex h-10 w-10 items-center justify-center rounded-full bg-primary-100 dark:bg-primary-900/30">
           <span class="text-lg font-medium text-primary-700 dark:text-primary-300">{{ user.email.charAt(0).toUpperCase() }}</span>

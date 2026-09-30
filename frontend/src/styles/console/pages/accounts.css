@@ -1,0 +1,1380 @@
+/* Console theme · page group: accounts (owner: the accounts page agent, A5). Plain CSS after the area files; every
+ * selector starts with html.flat-theme (theme off = upstream) and is narrowed to an accounts hook, so nothing here
+ * reaches another page. Specificity >= 0,2,1: it beats the page utilities, upstream's dark: forms and the scoped
+ * styles of the account components.
+ *
+ * Source: the Experiential Labs console /models page (ui-el ref/console/REF-CONSOLE.md §7.1, §7.4, §7.5, §8.5-§8.9,
+ * §8.12; frames ref-models-default-1440-*, ref-models-selected-1440-*, crops toolbar-row1 / filter-row(-active) /
+ * segmented / compare-tray). Values are the tokens of tokens.css; where the reference falls below our floor the
+ * compliant token is used (REF-CONSOLE §13).
+ *
+ * What this page composes (WAVE1 D6): a two-row toolbar like /models — row 1: search, view switcher, the actions
+ * (refresh, operation history, show API key, auto refresh, more, the bulk menu, add account); row 2: the
+ * classification menu, the filter pills, the route-group select, the active filter chips and the result count. The
+ * bulk bar shows only while accounts are selected, as a tray under the list. Shared looks come from the area files
+ * and are not restated here: buttons, inputs, the switch and the filter pills (style.css recipe block and
+ * controls.css, data-ui="filter-pill"), menus (overlays.css, data-ui="menu" / "menu-item" / "menu-separator"),
+ * tables, badges and the bulk bar's look (data.css, data-ui~="bulk-bar"), the header and the page gutter (shell.css).
+ *
+ * Hooks (data-ui) added for this file — every template line touched is listed in wave1/A5/REPORT.md:
+ *   views/admin/AccountsView.vue          accounts-toolbar, accounts-actions, accounts-count, accounts-list,
+ *                                         accounts-import-results, accounts-bulk-tray
+ *   admin/account/AccountConsoleFilters   account-search, account-filters, filter-pill + filter-count (controls.css
+ *                                         recipe), menu / menu-item (overlays.css recipe), account-filter-option-count,
+ *                                         account-filters-clear
+ *   admin/account/AccountFolderBar        account-folder-menu (variant="menu"), account-folder-count,
+ *                                         account-folder-loading, account-folder-empty
+ *   admin/account/AccountBulkMenu (new)   account-bulk-menu
+ *   admin/account/AccountBulkActionsBar   bulk-bar account-bulk-bar
+ *   admin/account/AccountViewModeSwitcher account-view-switcher
+ * Wave 2 (dialogs, section 9; one attribute each):
+ *   admin/account/AccountStatsModal       account-stats         admin/account/AccountTestModal  account-test
+ *   account/OAuthAuthorizationFlow        account-oauth-flow    account/CreateAccountModal      account-create-steps
+ * Card grid, compact list, the drawer's content, the account forms (#create-account-form, #edit-account-form,
+ * #bulk-edit-account-form) and the taxonomy manager rows are reached through their existing ids and data-test
+ * attributes. The system prompt binding inside the account dialogs is P3's (settings-ops-public.css). */
+
+html.flat-theme {
+  /* the view switcher's segment: 14px glyph, 10px either side; the frame and inset are controls.css' */
+  --accounts-seg-w: 34px;
+}
+
+/* ================================================================== 1 · toolbar (two rows) */
+
+/* One wrapping line of items, 8px apart like /models' toolbar items and 12px between the rows (REF §6, §7.1). The
+   actions container dissolves into the line, so on a narrow screen its buttons wrap one by one after the view
+   switcher (the reference's 390px toolbar), and the filters part always starts row 2. */
+html.flat-theme [data-ui="accounts-toolbar"] {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  column-gap: 8px;
+  row-gap: 12px;
+}
+
+html.flat-theme [data-ui="accounts-toolbar"] > [data-ui="accounts-actions"] {
+  display: contents;
+}
+
+/* Row 1: the search is the reference's (288 wide from 640px, and it gives way first). Its basis is the smallest
+   width, so row 1 breaks only when even that does not fit (at 1280 the actions leave it about 155px; the reference's
+   minimum is 176), and it grows back to 288 before the free space goes to the gap in front of the actions. */
+html.flat-theme [data-ui="accounts-toolbar"] > [data-ui="account-search"] {
+  flex: 1 1 150px;
+  width: auto;
+  min-width: 150px;
+  max-width: 288px;
+}
+
+html.flat-theme [data-ui="accounts-toolbar"] > [data-ui="account-view-switcher"] {
+  flex: none;
+}
+
+/* The actions sit at the right end of row 1: the first of them (refresh) takes the free space before it. */
+html.flat-theme [data-ui="accounts-actions"] > :first-child {
+  margin-left: auto;
+}
+
+/* Refresh is an icon button: a 30px square. */
+html.flat-theme [data-ui="accounts-actions"] > button.btn:first-child {
+  width: var(--ui-control-h);
+  padding-left: 0;
+  padding-right: 0;
+}
+
+/* Glyphs in the toolbar buttons keep only the button's 8px gap (upstream adds margins for its wider buttons). */
+html.flat-theme [data-ui="accounts-actions"] .btn > svg {
+  margin: 0;
+}
+
+/* 「显示 API Key」 reads like the reference's toolbar checkbox label (12px muted, 6px from the control). */
+html.flat-theme [data-ui="accounts-actions"] > label {
+  gap: 6px;
+  font-size: 12px;
+  line-height: 18px;
+  color: rgb(var(--ui-muted));
+}
+
+/* Row 2: the classification menu, the filter pills, the group select and the active chips on one wrapping line,
+   6px apart (REF §8.6), the result count at its right end. */
+html.flat-theme [data-ui="accounts-toolbar"] > [data-ui="account-filters"] {
+  flex: 1 0 100%;
+  gap: 6px;
+}
+
+/* The route-group select stands among 30px pills: the recipe's house select at the pill height. */
+html.flat-theme [data-ui="account-filters"] select.input {
+  height: var(--ui-control-h);
+  min-height: var(--ui-control-h);
+  padding-top: 0;
+  padding-bottom: 0;
+}
+
+/* Active filter values: removable chips (the reference's value chip: 4px radius, the structural line, subtle fill,
+   12px ink-soft; ink on hover). */
+html.flat-theme [data-ui="account-filters"] [data-test^="account-filter-chip-"] {
+  gap: 4px;
+  height: 24px;
+  max-width: 16rem;
+  border: 1px solid rgb(var(--ui-line));
+  border-radius: var(--ui-radius-sm);
+  background-color: rgb(var(--ui-subtle));
+  padding: 0 6px 0 8px;
+  font-size: 12px;
+  line-height: 18px;
+  color: rgb(var(--ui-ink-soft));
+  transition: color var(--ui-duration) var(--ui-ease), border-color var(--ui-duration) var(--ui-ease);
+}
+
+html.flat-theme [data-ui="account-filters"] [data-test^="account-filter-chip-"]:hover {
+  border-color: rgb(var(--ui-line-strong));
+  background-color: rgb(var(--ui-subtle));
+  color: rgb(var(--ui-ink));
+}
+
+html.flat-theme [data-ui="account-filters"] [data-test^="account-filter-chip-"] svg {
+  width: 12px;
+  height: 12px;
+  flex-shrink: 0;
+}
+
+/* 「清除」 all filters: the reference's ghost 「✕ Clear」 (30px, 8px in, 12.5px / 600 muted, ink on hover). */
+html.flat-theme [data-ui="account-filters-clear"] {
+  min-height: var(--ui-control-h);
+  border-radius: var(--ui-radius-md);
+  padding: 0 8px;
+  font-size: 12.5px;
+  line-height: 18.75px;
+  font-weight: 600;
+  color: rgb(var(--ui-muted));
+  transition: color var(--ui-duration) var(--ui-ease), background-color var(--ui-duration) var(--ui-ease);
+}
+
+html.flat-theme [data-ui="account-filters-clear"]:hover {
+  background-color: rgb(var(--ui-subtle));
+  color: rgb(var(--ui-ink));
+}
+
+/* The result count: 「1,081 models」 in Geist Mono 11 at the right end (REF §8.6), the mono label's grey. */
+html.flat-theme [data-ui="accounts-count"] {
+  margin-left: auto;
+  padding-left: 8px;
+  font-family: var(--ui-font-mono);
+  font-size: 11px;
+  line-height: 16.5px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  color: rgb(var(--ui-label));
+}
+
+/* Filter menus (AccountConsoleFilters): the panel and the options are overlays.css' menu; here only the option
+   parts: the list scrolls without upstream's inset, 14px native checkboxes (REF §8.4), counts in Mono 11. */
+html.flat-theme [data-ui="account-filters"] [data-ui="menu"] > div:first-child {
+  padding: 0;
+}
+
+html.flat-theme [data-ui="account-filters"] [data-ui="menu"] > div + div {
+  margin-top: 4px;
+  border-top: 1px solid rgb(var(--ui-line));
+  padding: 4px 0 0;
+}
+
+html.flat-theme [data-ui="account-filters"] [data-ui="menu-item"] > input[type="checkbox"] {
+  width: 14px;
+  height: 14px;
+  margin: 0;
+  flex-shrink: 0;
+}
+
+/* (counts sit on the rows' hover fill, where the label grey falls to 4.35:1: they take the muted grey) */
+html.flat-theme :is([data-ui="account-filter-option-count"], [data-ui="account-folder-menu"] [data-ui="menu"] [data-ui="account-folder-count"]) {
+  font-family: var(--ui-font-mono);
+  font-size: 11px;
+  line-height: 16.5px;
+  font-variant-numeric: tabular-nums;
+  color: rgb(var(--ui-muted));
+}
+
+/* ================================================================== 2 · classification menu (row 2, first) */
+
+/* The strip above the list became a filter pill that names the active classification and its count; the menu lists
+   every classification with its count and the manage entry. Default state: an idle pill; another classification
+   chosen: the pill's active state (the reference's 「Price 1」 look). */
+html.flat-theme [data-ui="account-folder-menu"] > [data-ui~="filter-pill"] {
+  max-width: 18rem;
+}
+
+html.flat-theme [data-ui="account-folder-menu"] > [data-ui~="filter-pill"] > [data-ui="account-folder-count"] {
+  flex-shrink: 0;
+  font-family: var(--ui-font-mono);
+  font-size: 10.5px;
+  line-height: 16px;
+  font-weight: 400;
+  font-variant-numeric: tabular-nums;
+  color: rgb(var(--ui-label));
+}
+
+html.flat-theme [data-ui="account-folder-menu"] > [data-ui~="filter-pill"][data-active="true"],
+html.flat-theme [data-ui="account-folder-menu"] > [data-ui~="filter-pill"][data-active="true"]:hover {
+  border-color: rgb(var(--ui-primary) / 0.4);
+  background-color: rgb(var(--ui-primary-soft));
+  color: var(--ui-link);
+}
+
+html.flat-theme [data-ui="account-folder-menu"] > [data-ui~="filter-pill"][data-active="true"] > [data-ui="account-folder-count"] {
+  color: inherit;
+}
+
+html.flat-theme [data-ui="account-folder-loading"] > div {
+  border-radius: var(--ui-radius-sm);
+  background-color: rgb(var(--ui-subtle));
+}
+
+html.flat-theme [data-ui="account-folder-empty"] {
+  font-size: 12px;
+  line-height: 18px;
+  color: rgb(var(--ui-muted));
+}
+
+/* ================================================================== 3 · view switcher (row 1) */
+
+/* The reference's SlidingTabs (REF §8.5): the structural line on the surface, radius 8, a 2px inset; an ink thumb
+   (near-white in dark) slides 200ms ease-out to the chosen segment, whose glyph turns on-ink; the others are muted,
+   ink on hover. The segments are the fork's icon buttons (title and aria-label name them): 34 x 30.75, a 14px glyph;
+   the frame is the reference's 36.75px. */
+html.flat-theme [data-ui="account-view-switcher"] {
+  position: relative;
+  isolation: isolate;
+  gap: 0;
+  height: auto;
+  border: 1px solid rgb(var(--ctl-seg-frame, var(--ui-line)));
+  border-radius: var(--ui-radius-lg);
+  background-color: rgb(var(--ui-surface));
+  padding: var(--ctl-seg-inset, 2px);
+}
+
+html.flat-theme [data-ui="account-view-switcher"]::before {
+  content: '';
+  position: absolute;
+  z-index: -1;
+  top: var(--ctl-seg-inset, 2px);
+  bottom: var(--ctl-seg-inset, 2px);
+  left: var(--ctl-seg-inset, 2px);
+  width: var(--accounts-seg-w);
+  border-radius: var(--ui-radius-md);
+  background-color: rgb(var(--ui-ink));
+  transition: transform var(--ui-duration-slide) var(--ui-ease-out);
+}
+
+html.flat-theme [data-ui="account-view-switcher"]:has(> button:nth-child(2)[aria-pressed="true"])::before {
+  transform: translateX(var(--accounts-seg-w));
+}
+
+html.flat-theme [data-ui="account-view-switcher"]:has(> button:nth-child(3)[aria-pressed="true"])::before {
+  transform: translateX(calc(2 * var(--accounts-seg-w)));
+}
+
+html.flat-theme [data-ui="account-view-switcher"]:not(:has(> button[aria-pressed="true"]))::before {
+  opacity: 0;
+}
+
+html.flat-theme [data-ui="account-view-switcher"] > button {
+  width: var(--accounts-seg-w);
+  height: 30.75px;
+  border-radius: var(--ui-radius-md);
+  background-color: transparent;
+  color: rgb(var(--ui-muted));
+  box-shadow: none;
+  transition: color var(--ui-duration-slide) var(--ui-ease-out);
+}
+
+html.flat-theme [data-ui="account-view-switcher"] > button:hover {
+  background-color: transparent;
+  color: rgb(var(--ui-ink));
+}
+
+html.flat-theme [data-ui="account-view-switcher"] > button[aria-pressed="true"],
+html.flat-theme [data-ui="account-view-switcher"] > button[aria-pressed="true"]:hover {
+  background-color: transparent;
+  color: rgb(var(--ui-on-ink));
+  box-shadow: none;
+}
+
+html.flat-theme [data-ui="account-view-switcher"] > button:focus-visible {
+  outline: 2px solid rgb(var(--ui-focus));
+  outline-offset: 2px;
+}
+
+html.flat-theme [data-ui="account-view-switcher"] > button svg {
+  width: 14px;
+  height: 14px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html.flat-theme [data-ui="account-view-switcher"]::before,
+  html.flat-theme [data-ui="account-view-switcher"] > button {
+    transition: none;
+  }
+}
+
+/* ================================================================== 4 · the list and the bulk tray */
+
+/* The table is the card (REF §8.7): no inset around the list. */
+html.flat-theme [data-ui="accounts-list"] {
+  padding: 0;
+}
+
+/* 「选中本次导入结果」: a line at the top of the card, above the table header. */
+html.flat-theme [data-ui="accounts-import-results"] {
+  margin: 0;
+  gap: 8px;
+  border-bottom: 1px solid rgb(var(--ui-line));
+  padding: 8px 16px;
+  font-size: 12px;
+  line-height: 18px;
+  color: rgb(var(--ui-muted));
+}
+
+/* The bulk bar appears only while accounts are selected or 「全选所有结果」 is running (v-show on this wrapper keeps its
+   dialogs mounted), as the reference's compare tray (REF §8.12): under the list, centred, 12px off the bottom edge, floating
+   (the popover shadow), taking layout space so the rows above never move. On a phone the list scrolls with the page:
+   the tray sticks to the viewport's bottom edge while the list is in view. The bar's own look is data.css'. */
+html.flat-theme [data-ui="accounts-bulk-tray"] {
+  position: sticky;
+  bottom: 12px;
+  z-index: 20;
+  display: flex;
+  justify-content: center;
+  padding: 8px 12px 12px;
+  pointer-events: none;
+  --ui-bulk-bar-shadow: var(--ui-shadow-popover);
+}
+
+html.flat-theme [data-ui="accounts-bulk-tray"] > [data-ui~="bulk-bar"] {
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 16px;
+  width: fit-content;
+  max-width: 100%;
+  margin: 0;
+  pointer-events: auto;
+}
+
+/* The selection summary (count, select page, select all results, clear) stays on one line; the actions wrap
+   beside it, right-aligned. */
+html.flat-theme [data-ui="accounts-bulk-tray"] > [data-ui~="bulk-bar"] > div:first-child {
+  flex: 0 0 auto;
+  flex-wrap: nowrap;
+  white-space: nowrap;
+}
+
+html.flat-theme [data-ui="accounts-bulk-tray"] > [data-ui~="bulk-bar"] > div:last-child {
+  flex: 1 1 0;
+  min-width: min(100%, 20rem);
+  justify-content: flex-end;
+  gap: 6px;
+}
+
+/* ================================================================== 5 · table columns */
+
+/* data.css draws every table (header, rows, lines, hover, sticky cells); here only what the accounts columns put in
+   their cells. Short cells hold one line (a row of them is 45px, REF §7.5); the two-line layouts the owner approved
+   in rounds 4-5 stay (owner decision 3, 2026-09-29): the created and expiry times on two lines (behaviour.css B1.4,
+   B1.5) and the usage column at 15rem with its route-ticket text wrapping and the capacity chip under it, as the
+   template draws them. Nothing is cut: long single-line values end in an ellipsis with the full text in their title
+   (and in the details drawer), and the table scrolls sideways for the columns after the scheduling switch. */
+
+/* Selection: a 14px checkbox (REF §8.4) whose 32px hit area overhangs the cell padding: it takes 24px in a row
+   (24 + 2 x 10 + the line = the reference's 45px row) and 20px in the header (the 40px header). */
+html.flat-theme .table-wrapper[data-table="accounts"] :is(th, td)[data-column="select"] label {
+  width: 32px;
+  min-width: 32px;
+  height: 32px;
+  min-height: 32px;
+  margin: -4px;
+  border-radius: var(--ui-radius-sm);
+}
+
+html.flat-theme .table-wrapper[data-table="accounts"] th[data-column="select"] label {
+  margin: -6px -4px;
+}
+
+html.flat-theme .table-wrapper[data-table="accounts"] :is(th, td)[data-column="select"] label:hover {
+  background-color: transparent;
+}
+
+html.flat-theme .table-wrapper[data-table="accounts"] :is(th, td)[data-column="select"] input[type="checkbox"] {
+  width: 14px;
+  height: 14px;
+}
+
+/* Name: the account name (13 / 600 ink, REF's model name) and its e-mail (12px muted) on one line, each ending in an
+   ellipsis with its title. The columns follow upstream's order (select, name, id, platform / type, capacity, status,
+   scheduling, ...), and status and the scheduling switch must be in view without scrolling: the name column takes
+   what is left of the content width once select 44 + id 79 + platform 312 (18rem cap, below, + its padding) +
+   capacity 87 + status 64 + scheduling 64 + the sticky actions 127 are placed (the content is the viewport less the
+   240px sidebar and 2 x 28 gutters; 12px spare), between 12rem and 16rem: 16rem at 1440, about 12rem at 1280.
+   Below 1440 the platform column gives up to 48px of its cap (15rem at 1280) and a status with a second line stays
+   within 6rem (both below), so a page holding a temporarily unschedulable or rate-limited account still shows the
+   scheduling switch at 1280. */
+html.flat-theme .table-wrapper[data-table="accounts"] :is(th, td)[data-column="name"] {
+  width: clamp(12rem, calc(100vw - 1086px), 16rem);
+  min-width: clamp(12rem, calc(100vw - 1086px), 16rem);
+  max-width: clamp(12rem, calc(100vw - 1086px), 16rem);
+}
+
+html.flat-theme .table-wrapper[data-table="accounts"] td[data-column="name"] > div {
+  flex-direction: row;
+  align-items: baseline;
+  gap: 8px;
+  width: 100%;
+}
+
+html.flat-theme .table-wrapper[data-table="accounts"] td[data-column="name"] > div > :first-child {
+  flex: 0 1 auto;
+  min-width: 0;
+  font-weight: 600;
+}
+
+html.flat-theme .table-wrapper[data-table="accounts"] td[data-column="name"] > div > span + span {
+  flex: 1 1 0;
+  min-width: 3em;
+  font-size: 12px;
+  line-height: 18px;
+  color: rgb(var(--ui-muted));
+}
+
+/* Integration review: a name that links to the account's homepage sits in HelpTooltip's root, which keeps its own
+   ml-1 (the template's -ml-1 loses to it) and whose link carries font-medium: the linked and the plain names start on
+   the same edge at the same 600 weight. The dotted underline (the link's cue) stays. */
+html.flat-theme .table-wrapper[data-table="accounts"] td[data-column="name"] > div > [data-ui="help-tooltip"]:first-child {
+  margin-left: 0;
+}
+
+html.flat-theme .table-wrapper[data-table="accounts"] td[data-column="name"] > div > [data-ui="help-tooltip"]:first-child > a {
+  font-weight: 600;
+}
+
+/* Platform / type: the identity chips (in their platform colours, data.css 6.1; nothing here recolours them) and the
+   compact-mode line side by side, in at most 18rem at 1440 and 15rem at 1280 (so the status and scheduling columns
+   after it keep their place): an account whose chips need more (OAuth with plan and privacy, a subscription expiry)
+   moves the compact-mode line, then the later chip groups, to a further line. An API-key account (chips 115 +
+   compact line 88) stays on one line at either cap. */
+html.flat-theme .table-wrapper[data-table="accounts"] td[data-column="platform_type"] > div {
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
+  /* as wide as its content up to the cap, so a table that may shrink its columns (TablePageLayout's mobile mode
+     drops min-width: max-content) does not fold a one-line cell */
+  width: max-content;
+  max-width: clamp(15rem, calc(100vw - 1152px), 18rem);
+}
+
+html.flat-theme .table-wrapper[data-table="accounts"] td[data-column="platform_type"] [data-ui="platform-badge"] {
+  flex-wrap: wrap;
+  row-gap: 4px;
+}
+
+html.flat-theme .table-wrapper[data-table="accounts"] td[data-column="platform_type"] > div > div:last-child {
+  white-space: nowrap;
+}
+
+/* Status: the line under a badge (a temporarily unschedulable account's expected recovery time, a rate limit's or an
+   overload's countdown, a quota's resume time) holds at most 6rem, centred under the badge, so a date and time
+   break into date / time (decision 3's two-line times; 「预计 2026/09/29」 is 89px at 11px, a countdown up to 92px)
+   instead of widening the column by half its width. */
+html.flat-theme .table-wrapper[data-table="accounts"] td[data-column="status"] div[class~="flex-col"][class~="items-center"] > span:not([class~="badge"]) {
+  max-width: 6rem;
+  white-space: normal;
+  text-align: center;
+}
+
+/* Classification / route: the two labelled values on one line; the labels are mono labels. */
+html.flat-theme .table-wrapper[data-table="accounts"] td[data-column="taxonomy_route"] > div {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  max-width: 34rem;
+}
+
+html.flat-theme .table-wrapper[data-table="accounts"] td[data-column="taxonomy_route"] > div > * {
+  margin-top: 0;
+}
+
+html.flat-theme .table-wrapper[data-table="accounts"] td[data-column="taxonomy_route"] > div > div:first-child {
+  flex: none;
+  flex-wrap: nowrap;
+}
+
+html.flat-theme .table-wrapper[data-table="accounts"] td[data-column="taxonomy_route"] > div > div:last-child {
+  min-width: 0;
+  max-width: 18rem;
+}
+
+/* (in a hovered or selected row the label grey falls to 4.12 / 4.43:1: labels inside rows take the muted grey) */
+html.flat-theme .table-wrapper[data-table="accounts"] td[data-column="taxonomy_route"] span[class~="uppercase"][class~="text-[10px]"] {
+  font: var(--ui-label-font);
+  letter-spacing: var(--ui-label-tracking);
+  color: rgb(var(--ui-muted));
+}
+
+/* Routing groups: up to four badges and 「+N」 (its popover lists all) on one line. */
+html.flat-theme .table-wrapper[data-table="accounts"] td[data-column="groups"] > div {
+  max-width: none;
+}
+
+html.flat-theme .table-wrapper[data-table="accounts"] td[data-column="groups"] > div > div:first-child {
+  flex-wrap: nowrap;
+  max-height: none;
+}
+
+/* Capacity, proxy, today's stats: their stacked parts side by side (the expiry cell keeps its approved stack:
+   the two-line date, then the expired / auto-pause badges). */
+html.flat-theme .table-wrapper[data-table="accounts"] td:is([data-column="capacity"], [data-column="proxy"]) > div {
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+}
+
+html.flat-theme .table-wrapper[data-table="accounts"] td[data-column="today_stats"] > div > div {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+html.flat-theme .table-wrapper[data-table="accounts"] td[data-column="today_stats"] > div > div > * {
+  margin-top: 0;
+}
+
+/* Row actions: 28px icon buttons (REF §8.3: muted, the subtle fill and ink on hover; delete turns danger), 15px
+   glyphs. With a mouse or trackpad the label is kept for screen readers and shows as a tip left of the button on
+   hover and keyboard focus (the behaviour of B2.1 for the other tables); touch keeps the visible labels. */
+html.flat-theme .table-wrapper[data-table="accounts"] td[data-column="actions"]:is(:hover, :focus-within) {
+  z-index: 30;
+}
+
+html.flat-theme .table-wrapper[data-table="accounts"] td[data-column="actions"] > div {
+  gap: 2px;
+}
+
+html.flat-theme .table-wrapper[data-table="accounts"] td[data-column="actions"] button[class~="flex-col"] {
+  position: relative;
+  min-width: 28px;
+  min-height: 28px;
+  margin-block: -2px;
+  justify-content: center;
+  border-radius: var(--ui-radius-md);
+  padding: 0 6px;
+  color: rgb(var(--ui-muted));
+  transition: color var(--ui-duration) var(--ui-ease), background-color var(--ui-duration) var(--ui-ease);
+}
+
+html.flat-theme .table-wrapper[data-table="accounts"] td[data-column="actions"] button[class~="flex-col"]:hover {
+  background-color: rgb(var(--ui-subtle));
+  color: rgb(var(--ui-ink));
+}
+
+html.flat-theme .table-wrapper[data-table="accounts"] td[data-column="actions"] button[class~="flex-col"][class~="hover:text-red-600"]:hover {
+  background-color: rgb(var(--ui-danger-soft));
+  color: rgb(var(--ui-danger));
+}
+
+html.flat-theme .table-wrapper[data-table="accounts"] td[data-column="actions"] button[class~="flex-col"]:focus-visible {
+  outline: 2px solid rgb(var(--ui-focus));
+  outline-offset: 2px;
+}
+
+html.flat-theme .table-wrapper[data-table="accounts"] td[data-column="actions"] button[class~="flex-col"] > svg {
+  width: 15px;
+  height: 15px;
+}
+
+/* (the glyphs are upstream's inline Heroicons at a 1.5 stroke, AccountsView.vue's actions cell; every other table's row
+   icons are Lucide at 1.8: the same stroke here, the glyphs unchanged. Final review V1-14.) */
+html.flat-theme .table-wrapper[data-table="accounts"] td[data-column="actions"] button[class~="flex-col"] > svg[stroke-width="1.5"] {
+  stroke-width: 1.8;
+}
+
+/* touch: the visible label beside its glyph (one line, so the row stays 45px) */
+html.flat-theme .table-wrapper[data-table="accounts"] td[data-column="actions"] button[class~="flex-col"] {
+  flex-direction: row;
+  gap: 4px;
+}
+
+html.flat-theme .table-wrapper[data-table="accounts"] td[data-column="actions"] button[class~="flex-col"] > span[class~="text-xs"] {
+  font-size: 12px;
+  line-height: 18px;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  html.flat-theme .table-wrapper[data-table="accounts"] td[data-column="actions"] button[class~="flex-col"] {
+    width: 28px;
+    padding: 0;
+  }
+
+  html.flat-theme .table-wrapper[data-table="accounts"] td[data-column="actions"] button[class~="flex-col"] > span[class~="text-xs"] {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    margin: -1px;
+    padding: 0;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+    border: 0;
+  }
+
+  /* the tip: placed left of the button and centred on it, no delay; its bubble look (REF §8.9) is overlays.css' */
+  html.flat-theme .table-wrapper[data-table="accounts"] td[data-column="actions"] button[class~="flex-col"]:is(:hover, :focus-visible) > span[class~="text-xs"] {
+    top: 50%;
+    right: calc(100% + 6px);
+    z-index: 1;
+    width: auto;
+    height: auto;
+    margin: 0;
+    overflow: visible;
+    clip: auto;
+    transform: translateY(-50%);
+    pointer-events: none;
+  }
+}
+
+/* ================================================================== 6 · card grid and compact list */
+
+/* Shared parts of the two other views: the 14px checkbox with its 32px hit area (as in the table), the account id
+   in Geist Mono 11 (the reference's meta text), the mono labels, and the icon buttons (REF §8.3: 28px, radius 6,
+   muted; the subtle fill and ink on hover). */
+html.flat-theme :is([data-test="account-card-grid"], [data-test="account-compact-list"]) label:has(> input[type="checkbox"]) {
+  width: 32px;
+  min-width: 32px;
+  height: 32px;
+  min-height: 32px;
+  margin: -4px;
+  border-radius: var(--ui-radius-sm);
+}
+
+html.flat-theme :is([data-test="account-card-grid"], [data-test="account-compact-list"]) label:has(> input[type="checkbox"]):hover {
+  background-color: transparent;
+}
+
+html.flat-theme :is([data-test="account-card-grid"], [data-test="account-compact-list"]) label > input[type="checkbox"] {
+  width: 14px;
+  height: 14px;
+}
+
+/* (ids and labels sit on hovered and selected fills too: the muted grey keeps 4.5:1 there) */
+html.flat-theme :is([data-test="account-card-grid"], [data-test="account-compact-list"]) span[class~="font-mono"][class~="text-[10px]"] {
+  font-size: 11px;
+  line-height: 16.5px;
+  color: rgb(var(--ui-muted));
+}
+
+html.flat-theme :is([data-test="account-card-grid"], [data-test="account-compact-list"]) :is(div, span)[class~="uppercase"][class~="text-[10px]"] {
+  font: var(--ui-label-font);
+  letter-spacing: var(--ui-label-tracking);
+  color: rgb(var(--ui-muted));
+}
+
+html.flat-theme :is([data-test="account-card-grid"], [data-test="account-compact-list"]) .icon-button {
+  display: inline-grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: var(--ui-radius-md);
+  color: rgb(var(--ui-muted));
+  transition: color var(--ui-duration) var(--ui-ease), background-color var(--ui-duration) var(--ui-ease);
+}
+
+html.flat-theme :is([data-test="account-card-grid"], [data-test="account-compact-list"]) .icon-button:hover {
+  background-color: rgb(var(--ui-subtle));
+  color: rgb(var(--ui-ink));
+}
+
+html.flat-theme :is([data-test="account-card-grid"], [data-test="account-compact-list"]) .icon-button:focus-visible {
+  outline: 2px solid rgb(var(--ui-focus));
+  outline-offset: 2px;
+}
+
+html.flat-theme :is([data-test="account-card-grid"], [data-test="account-compact-list"]) .icon-button svg {
+  width: 15px;
+  height: 15px;
+}
+
+/* Empty: the reference's empty state (a dashed 1px control-outline box, 240px, the message 14 / 500 ink-soft). */
+html.flat-theme :is([data-test="account-card-grid"], [data-test="account-compact-list"]) > div[class~="min-h-52"] {
+  min-height: 240px;
+  margin: 16px;
+  border: 1px dashed rgb(var(--ui-line-strong));
+  border-radius: var(--ui-radius-lg);
+  color: rgb(var(--ui-ink-soft));
+}
+
+html.flat-theme :is([data-test="account-card-grid"], [data-test="account-compact-list"]) > div[class~="min-h-52"] > span {
+  font-size: 14px;
+  line-height: 20px;
+  font-weight: 500;
+}
+
+/* Cards: the reference's card (surface, the structural line, radius 8, 14px inset); hover shows the control outline
+   (REF §8.11 option cards), no tint and no lift; a selected card keeps a visible state: the accent at 40 % as its
+   edge and the accent tint (the selection colour of the table rows). */
+html.flat-theme [data-test="account-card-grid"] article {
+  border: 1px solid rgb(var(--ui-line));
+  border-radius: var(--ui-radius-lg);
+  background-color: rgb(var(--ui-surface));
+  padding: 14px;
+  transition: border-color var(--ui-duration) var(--ui-ease), background-color var(--ui-duration) var(--ui-ease);
+}
+
+html.flat-theme [data-test="account-card-grid"] article:hover {
+  border-color: rgb(var(--ui-line-strong));
+  background-color: rgb(var(--ui-surface));
+}
+
+html.flat-theme [data-test="account-card-grid"] article[class~="border-l-primary-500"],
+html.flat-theme [data-test="account-card-grid"] article[class~="border-l-primary-500"]:hover {
+  border-color: rgb(var(--ui-primary) / 0.4);
+  border-left-width: 1px;
+  background-color: rgb(var(--ui-primary-soft));
+}
+
+html.flat-theme [data-test="account-card-grid"] article > div:is([data-test="account-card-usage"], [data-test="account-card-taxonomy"]) {
+  border-top-color: rgb(var(--ui-line));
+}
+
+html.flat-theme [data-test="account-card-grid"] > div[class~="grid"] > div[class~="animate-pulse"] {
+  border-color: rgb(var(--ui-line));
+  border-radius: var(--ui-radius-lg);
+  background-color: rgb(var(--ui-subtle));
+}
+
+/* Compact list: rows like the table's (the structural line between rows, the hover fill, 10 x 16 cells); a selected
+   row takes the table's selection tint instead of upstream's accent edge. */
+html.flat-theme [data-test="account-compact-list"] > div[class~="grid"] {
+  border-bottom-color: rgb(var(--ui-line));
+  padding: 10px 16px;
+  transition: background-color var(--ui-duration) var(--ui-ease);
+}
+
+html.flat-theme [data-test="account-compact-list"] > div[class~="grid"]:hover {
+  background-color: rgb(var(--ui-hover));
+}
+
+html.flat-theme [data-test="account-compact-list"] > div[class~="grid"][class~="border-l-primary-500"],
+html.flat-theme [data-test="account-compact-list"] > div[class~="grid"][class~="border-l-primary-500"]:hover {
+  border-left-width: 0;
+  background-color: rgb(var(--ui-primary-soft));
+}
+
+html.flat-theme [data-test="account-compact-list"] > div[class~="space-y-px"] > div {
+  border-bottom-color: rgb(var(--ui-line));
+  background-color: rgb(var(--ui-subtle));
+}
+
+/* The identity chips are one row (data.css); in the list's narrow column they wrap instead of running into the usage
+   column. */
+html.flat-theme [data-test="account-compact-list"] [data-ui="platform-badge"] {
+  flex-wrap: wrap;
+}
+
+/* The classification column in two lines, each label beside its values (upstream stacks label, status and folder,
+   then label, groups and proxy on four or five lines). */
+@media (min-width: 1024px) {
+  html.flat-theme [data-test="account-compact-list"] > div[class~="grid"] > div[class~="lg:block"]:has(> div[class~="truncate"]) {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    align-items: center;
+    column-gap: 8px;
+    row-gap: 4px;
+  }
+
+  html.flat-theme [data-test="account-compact-list"] > div[class~="grid"] > div[class~="lg:block"] > div[class~="truncate"] {
+    grid-column: 1 / -1;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+    margin-top: 0;
+  }
+
+  html.flat-theme [data-test="account-compact-list"] > div[class~="grid"] > div[class~="lg:block"] > div[class~="truncate"] > span:first-child {
+    flex-shrink: 0;
+    margin-right: 0;
+  }
+
+  html.flat-theme [data-test="account-compact-list"] > div[class~="grid"] > div[class~="lg:block"] > div[class~="truncate"] > span:last-child {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+}
+
+/* ================================================================== 7 · details drawer: the content
+   (the drawer's frame, header and buttons are overlays.css') */
+
+html.flat-theme [data-test="account-details-drawer"] > header + div > section,
+html.flat-theme [data-test="account-details-drawer"] > header + div > [data-test="codex-fingerprint-panel"] {
+  border-color: rgb(var(--ui-line));
+  padding: 16px var(--ui-dialog-x, 18px);
+}
+
+/* Section titles: the mono label (REF §5: section and field labels). */
+html.flat-theme [data-test="account-details-drawer"] > header + div > section > h3,
+html.flat-theme [data-test="account-details-drawer"] > header + div > section > div:first-child > h3 {
+  font: var(--ui-label-font);
+  letter-spacing: var(--ui-label-tracking);
+  text-transform: uppercase;
+  color: rgb(var(--ui-label));
+}
+
+/* Definition lists: the label muted, the value ink; figures stay Geist Mono tabular. */
+html.flat-theme [data-test="account-details-drawer"] > header + div dl > dt {
+  color: rgb(var(--ui-muted));
+}
+
+html.flat-theme [data-test="account-details-drawer"] > header + div dl > dd {
+  color: rgb(var(--ui-ink));
+  font-variant-numeric: tabular-nums;
+}
+
+html.flat-theme [data-test="account-details-drawer"] > header + div :is(div, dd)[class~="font-mono"] {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Inner separators and the tag choices of the classification editor (a chip with its 14px checkbox). */
+html.flat-theme [data-test="account-details-drawer"] > header + div :is(div, section)[class~="border-t"] {
+  border-top-color: rgb(var(--ui-line));
+}
+
+html.flat-theme [data-test="account-details-drawer"] > header + div section label[class~="border"]:has(> input[type="checkbox"]) {
+  gap: 6px;
+  border-color: rgb(var(--ui-line));
+  border-radius: var(--ui-radius-md);
+  background-color: rgb(var(--ui-surface));
+  padding: 4px 8px;
+  font-size: 12.5px;
+  line-height: 18.75px;
+  color: rgb(var(--ui-ink-soft));
+}
+
+html.flat-theme [data-test="account-details-drawer"] > header + div section label > input[type="checkbox"] {
+  width: 14px;
+  height: 14px;
+}
+
+/* The scheduling state beside the status badge (the chip row at the top of the drawer, AccountDetailsDrawer.vue): the
+   status chip it sits next to (data.css 6 .badge: a capsule, Geist Mono at the badge size, 500, .025em, 1 / 7 inset;
+   on = the success pill, off = the grey pill), not a 4px Geist 12 rectangle. Final review V1-13. */
+html.flat-theme [data-test="account-details-drawer"] > header + div > section:first-child > div:first-child > span[class~="rounded"][class~="px-2"][class~="py-0.5"][class~="text-xs"] {
+  padding: 1px 7px;
+  border-radius: 9999px;
+  font-family: var(--ui-font-mono);
+  font-size: var(--ui-badge-size);
+  font-weight: 500;
+  line-height: var(--ui-badge-leading);
+  letter-spacing: 0.025em;
+  text-transform: uppercase;
+}
+
+html.flat-theme [data-test="account-details-drawer"] > header + div > section:first-child > div:first-child > span[class~="rounded"][class~="px-2"][class~="py-0.5"][class~="text-xs"][class~="bg-emerald-50"] {
+  background-color: rgb(var(--ui-success-soft));
+  color: rgb(var(--ui-badge-success));
+}
+
+html.flat-theme [data-test="account-details-drawer"] > header + div > section:first-child > div:first-child > span[class~="rounded"][class~="px-2"][class~="py-0.5"][class~="text-xs"][class~="bg-gray-100"] {
+  background-color: rgb(var(--ui-subtle));
+  color: rgb(var(--ui-badge-muted));
+}
+
+/* Usage actions (the drawer, the cards; the table's cell is read-only): querying the quota, the reset, the points,
+   the referral count and invite, the local refresh are the reference's small ghost buttons (ink-soft; the subtle fill
+   and ink on hover) instead of a hue each (decision 2: colour is for status); the verification link takes the link
+   colour. Status notes beside them (limits, errors, the cache warning) and plan / tier chips keep their colours. */
+html.flat-theme :is([data-test="account-details-drawer"], [data-test="account-card-grid"], [data-test="account-compact-list"], .table-wrapper[data-table="accounts"]) button[class~="rounded"][class~="px-1.5"][class~="py-0.5"][class~="text-[10px]"]:is([class~="text-blue-600"], [class~="text-orange-600"], [class~="text-emerald-700"], [class~="text-violet-600"]) {
+  color: rgb(var(--ui-ink-soft));
+  transition: color var(--ui-duration) var(--ui-ease), background-color var(--ui-duration) var(--ui-ease);
+}
+
+html.flat-theme :is([data-test="account-details-drawer"], [data-test="account-card-grid"], [data-test="account-compact-list"], .table-wrapper[data-table="accounts"]) button[class~="rounded"][class~="px-1.5"][class~="py-0.5"][class~="text-[10px]"]:is([class~="text-blue-600"], [class~="text-orange-600"], [class~="text-emerald-700"], [class~="text-violet-600"]):not(:disabled):hover {
+  background-color: rgb(var(--ui-subtle));
+  color: rgb(var(--ui-ink));
+}
+
+html.flat-theme :is([data-test="account-details-drawer"], [data-test="account-card-grid"], [data-test="account-compact-list"], .table-wrapper[data-table="accounts"]) a[class~="text-[10px]"][class~="text-blue-600"] {
+  color: var(--ui-link);
+}
+
+/* ================================================================== 9 · dialogs
+   Owner decision 2: colour only for status and the accent's roles (links, positive actions, switches on, the current
+   step); platform identity keeps its colours (the re-authorisation tile, the identity chips); decorative tints, tiles
+   and number colours are neutral. Shared looks (dialog frame, buttons, fields, option cards, chart cards) are the area
+   files'; here only what the account dialogs draw themselves. */
+
+/* 9.1 The account card at the top of the connection test and the usage statistics: upstream's accent tile is the
+   reference's neutral icon square (28px, 1px line, radius 6, a 15px muted glyph: the empty state's and the option
+   cards' tile, data.css 9); the statistics card's accent gradient becomes the grouped fill. The status pill keeps its
+   status colour. */
+html.flat-theme :is([data-ui="account-test"], [data-ui="account-stats"]) > div:first-child {
+  border-color: rgb(var(--ui-line));
+  border-radius: var(--ui-radius-lg);
+}
+
+html.flat-theme [data-ui="account-stats"] > div:first-child[class~="bg-gradient-to-r"] {
+  background-image: none;
+  background-color: rgb(var(--ui-subtle));
+}
+
+html.flat-theme :is([data-ui="account-test"], [data-ui="account-stats"]) > div:first-child > div:first-child > div[class~="bg-gradient-to-br"] {
+  width: 28px;
+  height: 28px;
+  flex: none;
+  border: 1px solid rgb(var(--ui-line));
+  border-radius: var(--ui-radius-md);
+  background-image: none;
+  background-color: rgb(var(--ui-surface));
+}
+
+html.flat-theme :is([data-ui="account-test"], [data-ui="account-stats"]) > div:first-child > div:first-child > div[class~="bg-gradient-to-br"] > svg {
+  width: 15px;
+  height: 15px;
+  color: rgb(var(--ui-muted));
+}
+
+/* 9.2 Usage statistics, the four headline figures: the reference's KPI card (REF §8.13, the dashboards' StatTile in
+   data.css 7): surface, 1px structural line, radius 6, 8 / 12 inset, the mono label, the value 15 / 600 tabular ink,
+   the detail 11px muted; no tint and no icon tile. */
+html.flat-theme [data-ui="account-stats"] > div[class~="grid"] > div[class~="card"][class~="bg-gradient-to-br"] {
+  min-height: 76px;
+  padding: 8px 12px;
+  border-color: rgb(var(--ui-line));
+  border-radius: var(--ui-radius-md);
+  background-image: none;
+  background-color: rgb(var(--ui-surface));
+  box-shadow: none;
+}
+
+html.flat-theme [data-ui="account-stats"] > div[class~="grid"]:has(> div[class~="card"][class~="bg-gradient-to-br"]) {
+  gap: 10px;
+}
+
+html.flat-theme [data-ui="account-stats"] > div[class~="grid"] > div[class~="card"][class~="bg-gradient-to-br"] > div:first-child {
+  margin-bottom: 2px;
+}
+
+html.flat-theme [data-ui="account-stats"] > div[class~="grid"] > div[class~="card"][class~="bg-gradient-to-br"] > div:first-child > span {
+  font: var(--ui-label-font);
+  letter-spacing: var(--ui-label-tracking);
+  text-transform: uppercase;
+  color: rgb(var(--ui-label));
+}
+
+html.flat-theme [data-ui="account-stats"] > div[class~="grid"] > div[class~="card"][class~="bg-gradient-to-br"] > div:first-child > div[class~="rounded-lg"] {
+  display: none;
+}
+
+html.flat-theme [data-ui="account-stats"] > div[class~="grid"] > div[class~="card"][class~="bg-gradient-to-br"] > p[class~="text-2xl"] {
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 22.5px;
+  font-variant-numeric: tabular-nums;
+  color: rgb(var(--ui-ink));
+}
+
+html.flat-theme [data-ui="account-stats"] > div[class~="grid"] > div[class~="card"][class~="bg-gradient-to-br"] > p:not([class~="text-2xl"]),
+html.flat-theme [data-ui="account-stats"] > div[class~="grid"] > div[class~="card"][class~="bg-gradient-to-br"] > p:not([class~="text-2xl"]) > span {
+  margin-top: 0;
+  font-size: 11px;
+  line-height: 16.5px;
+  color: rgb(var(--ui-muted));
+}
+
+/* 9.3 Usage statistics, the six detail cards (today, highest cost day, highest request day, tokens, performance,
+   recent activity): the title is the mono section label (REF §5) without its tinted tile, the rows are label (12px
+   muted) and value (13 / 600 tabular ink); the two values upstream colours for decoration are ink. */
+html.flat-theme [data-ui="account-stats"] > div[class~="grid"] > div[class~="card"]:not([class~="bg-gradient-to-br"]) {
+  padding: 14px;
+}
+
+html.flat-theme [data-ui="account-stats"] > div[class~="grid"] > div[class~="card"]:not([class~="bg-gradient-to-br"]) > div[class~="mb-3"]:first-child {
+  margin-bottom: 10px;
+}
+
+html.flat-theme [data-ui="account-stats"] > div[class~="grid"] > div[class~="card"]:not([class~="bg-gradient-to-br"]) > div[class~="mb-3"]:first-child > div[class~="rounded-lg"] {
+  display: none;
+}
+
+html.flat-theme [data-ui="account-stats"] > div[class~="grid"] > div[class~="card"]:not([class~="bg-gradient-to-br"]) > div[class~="mb-3"]:first-child > span {
+  font: var(--ui-label-font);
+  letter-spacing: var(--ui-label-tracking);
+  text-transform: uppercase;
+  color: rgb(var(--ui-label));
+}
+
+html.flat-theme [data-ui="account-stats"] > div[class~="grid"] > div[class~="card"]:not([class~="bg-gradient-to-br"]) > div[class~="space-y-2"] > div > span:first-child {
+  font-size: 12px;
+  line-height: 18px;
+  color: rgb(var(--ui-muted));
+}
+
+html.flat-theme [data-ui="account-stats"] > div[class~="grid"] > div[class~="card"]:not([class~="bg-gradient-to-br"]) > div[class~="space-y-2"] > div > span:last-child {
+  font-size: 13px;
+  line-height: 19.5px;
+  font-variant-numeric: tabular-nums;
+  color: rgb(var(--ui-ink));
+}
+
+/* 9.4 OAuth authorisation (the create dialog's second step, re-authorisation): upstream's blue panel is the
+   reference's grouped panel: the subtle fill inside the structural line, a neutral icon square, ink titles and
+   ink-soft text, the numbered steps on surface cards with ink discs, a count as a neutral chip, links in the link
+   colour. The amber notice and the red error keep their status colours. */
+html.flat-theme [data-ui="account-oauth-flow"] {
+  border-color: rgb(var(--ui-line));
+  border-radius: var(--ui-radius-lg);
+  background-color: rgb(var(--ui-subtle));
+}
+
+/* (its mono field labels take the muted grey, which holds 4.5:1 on the subtle ground: the label grey reads 4.35 there
+   in light, as in data.css 11's callouts; dark keeps its label grey) */
+html.flat-theme:not(.dark) [data-ui="account-oauth-flow"] {
+  --ui-label: var(--ui-muted);
+}
+
+html.flat-theme [data-ui="account-oauth-flow"] > div > div[class~="bg-blue-500"]:first-child {
+  width: 28px;
+  height: 28px;
+  border: 1px solid rgb(var(--ui-line));
+  border-radius: var(--ui-radius-md);
+  background-color: rgb(var(--ui-surface));
+}
+
+html.flat-theme [data-ui="account-oauth-flow"] > div > div[class~="bg-blue-500"]:first-child > svg {
+  width: 15px;
+  height: 15px;
+  color: rgb(var(--ui-muted));
+}
+
+html.flat-theme [data-ui="account-oauth-flow"] :is(p, span, label, li, h5)[class*="text-blue-"] {
+  color: rgb(var(--ui-ink-soft));
+}
+
+html.flat-theme [data-ui="account-oauth-flow"] :is(h4, p[class~="font-medium"], label > span[class~="text-sm"])[class*="text-blue-"] {
+  color: rgb(var(--ui-ink));
+}
+
+html.flat-theme [data-ui="account-oauth-flow"] svg[class*="text-blue-"] {
+  color: rgb(var(--ui-muted));
+}
+
+html.flat-theme [data-ui="account-oauth-flow"] :is(a, button)[class*="text-blue-"] {
+  color: var(--ui-link);
+}
+
+html.flat-theme [data-ui="account-oauth-flow"] :is(a, button)[class*="text-blue-"]:hover {
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+html.flat-theme [data-ui="account-oauth-flow"] div[class~="border-blue-300"] {
+  border-color: rgb(var(--ui-line));
+  background-color: rgb(var(--ui-surface));
+}
+
+html.flat-theme [data-ui="account-oauth-flow"] div[class~="rounded-full"][class~="bg-blue-600"] {
+  background-color: rgb(var(--ui-ink));
+  color: rgb(var(--ui-on-ink));
+}
+
+html.flat-theme [data-ui="account-oauth-flow"] span[class~="rounded-full"][class~="bg-blue-500"] {
+  background-color: rgb(var(--ui-subtle));
+  box-shadow: inset 0 0 0 1px rgb(var(--ui-line));
+  color: rgb(var(--ui-ink-soft));
+}
+
+/* 9.5 The create dialog's steps: the current and done steps keep the accent disc (the approved preview); a step to
+   come is the neutral disc (the subtle fill, a 1px line, ink-soft figures: upstream's grey on grey read 4.49:1 light
+   and 3.45:1 dark); the connector is the control outline. */
+html.flat-theme [data-ui="account-create-steps"] div[class~="rounded-full"][class~="bg-gray-200"] {
+  background-color: rgb(var(--ui-subtle));
+  box-shadow: inset 0 0 0 1px rgb(var(--ui-line-strong));
+  color: rgb(var(--ui-ink-soft));
+}
+
+html.flat-theme [data-ui="account-create-steps"] div[class~="h-0.5"] {
+  background-color: rgb(var(--ui-line-strong));
+}
+
+/* 9.6 Choices inside the account forms (create, edit, bulk edit); upstream's accent and purple tints go.
+   - A two-way switch whose choices are labels only (the model whitelist / mapping, the bulk form's RPM strategy) is the
+     reference's segmented control (REF §8.5, controls.css 7.1: the structural frame on the surface, radius 8, the 2px
+     inset; segments 14 x 6 at 12.5 / 600, muted, ink on hover, the chosen one ink), like the same switch in the other
+     dialogs (the announcement's 「所有用户 / 按条件」). Final review V1-15.
+   - A pair whose choices carry a description line (the create and edit forms' RPM strategy) is an option card like the
+     account type cards above it (controls.css 8.1): the grouped fill inside the structural line, the chosen one an ink
+     edge 2px wide on the surface.
+   - The user-message limit's three modes are a segmented choice at the reference's 30px: the chosen one ink (REF §8.5;
+     controls.css 10.1 draws it), the others the secondary button. */
+html.flat-theme :is(#create-account-form, #edit-account-form, #bulk-edit-account-form) div[class~="flex"][class~="gap-2"]:has(> button[class~="flex-1"][class~="rounded-lg"]):not(:has(> button div[class~="text-[10px]"])) {
+  width: fit-content;
+  max-width: 100%;
+  gap: 0;
+  padding: var(--ctl-seg-inset);
+  border: 1px solid rgb(var(--ctl-seg-frame));
+  border-radius: var(--ui-radius-lg);
+  background-color: rgb(var(--ui-surface));
+}
+
+html.flat-theme :is(#create-account-form, #edit-account-form, #bulk-edit-account-form) button[class~="flex-1"][class~="rounded-lg"]:is([class~="bg-gray-100"], [class~="bg-primary-100"], [class~="bg-purple-100"]):not(:has(div[class~="text-[10px]"])) {
+  flex: none;
+  margin: 0;
+  border-radius: var(--ui-radius-md);
+  background-color: transparent;
+  box-shadow: none;
+  padding: var(--ctl-seg-pad-y) var(--ctl-seg-pad-x);
+  font-size: 0.78125rem;
+  line-height: 1.171875rem;
+  font-weight: 600;
+  white-space: nowrap;
+  color: rgb(var(--ui-muted));
+  transition-property: color, background-color;
+  transition-duration: var(--ui-duration-slide);
+  transition-timing-function: var(--ui-ease-out);
+}
+
+html.flat-theme :is(#create-account-form, #edit-account-form, #bulk-edit-account-form) button[class~="flex-1"][class~="rounded-lg"][class~="bg-gray-100"]:not(:has(div[class~="text-[10px]"])):hover {
+  color: rgb(var(--ui-ink));
+}
+
+html.flat-theme :is(#create-account-form, #edit-account-form, #bulk-edit-account-form) button[class~="flex-1"][class~="rounded-lg"]:is([class~="bg-primary-100"], [class~="bg-purple-100"]):not(:has(div[class~="text-[10px]"])) {
+  background-color: rgb(var(--ui-ink));
+  color: rgb(var(--ui-on-ink));
+}
+
+html.flat-theme :is(#create-account-form, #edit-account-form, #bulk-edit-account-form) button[class~="flex-1"][class~="rounded-lg"]:is([class~="bg-gray-100"], [class~="bg-primary-100"], [class~="bg-purple-100"]):not(:has(div[class~="text-[10px]"])) > svg {
+  width: 0.875rem;
+  height: 0.875rem;
+}
+
+html.flat-theme :is(#create-account-form, #edit-account-form, #bulk-edit-account-form) button[class~="flex-1"][class~="rounded-lg"]:is([class~="bg-gray-100"], [class~="bg-primary-100"], [class~="bg-purple-100"]):has(div[class~="text-[10px]"]) {
+  border-radius: var(--ui-radius-lg);
+  background-color: rgb(var(--ui-subtle) / 0.6);
+  box-shadow: inset 0 0 0 1px rgb(var(--ui-line));
+  font-size: 0.8125rem;
+  line-height: 1.21875rem;
+  font-weight: 600;
+  color: rgb(var(--ui-ink-soft));
+  transition-property: color, background-color, box-shadow;
+  transition-duration: var(--ui-duration);
+  transition-timing-function: var(--ui-ease);
+}
+
+html.flat-theme :is(#create-account-form, #edit-account-form, #bulk-edit-account-form) button[class~="flex-1"][class~="rounded-lg"][class~="bg-gray-100"]:has(div[class~="text-[10px]"]):hover {
+  box-shadow: inset 0 0 0 1px rgb(var(--ui-line-strong));
+  color: rgb(var(--ui-ink));
+}
+
+html.flat-theme :is(#create-account-form, #edit-account-form, #bulk-edit-account-form) button[class~="flex-1"][class~="rounded-lg"]:is([class~="bg-primary-100"], [class~="bg-purple-100"]):has(div[class~="text-[10px]"]) {
+  background-color: rgb(var(--ui-surface));
+  box-shadow: inset 0 0 0 2px rgb(var(--ui-ink));
+  color: rgb(var(--ui-ink));
+}
+
+html.flat-theme :is(#create-account-form, #edit-account-form, #bulk-edit-account-form) button[class~="flex-1"][class~="rounded-lg"]:is([class~="bg-gray-100"], [class~="bg-primary-100"], [class~="bg-purple-100"]):focus-visible {
+  outline: 2px solid rgb(var(--ui-focus));
+  outline-offset: 2px;
+}
+
+/* (the strategy's hint line: upstream's 10px at 70 % opacity becomes 11px muted) */
+html.flat-theme :is(#create-account-form, #edit-account-form, #bulk-edit-account-form) button[class~="flex-1"][class~="rounded-lg"] div[class~="text-[10px]"][class~="opacity-70"] {
+  font-size: 11px;
+  line-height: 16.5px;
+  font-weight: 400;
+  opacity: 1;
+  color: rgb(var(--ui-muted));
+}
+
+html.flat-theme :is(#create-account-form, #edit-account-form, #bulk-edit-account-form) button[class~="px-3"][class~="py-1.5"][class~="rounded-md"][class~="border"] {
+  min-height: var(--ui-control-h);
+  padding: 0 0.75rem;
+  border-radius: var(--ui-radius-md);
+  font-size: 0.8125rem;
+  line-height: 1.21875rem;
+  font-weight: 600;
+}
+
+/* (the chosen mode's ink is controls.css 10.1's, shared by every utility-built choice; the others are drawn here) */
+html.flat-theme :is(#create-account-form, #edit-account-form, #bulk-edit-account-form) button[class~="px-3"][class~="py-1.5"][class~="rounded-md"][class~="border"]:not([class~="bg-primary-600"]) {
+  border-color: rgb(var(--ui-line-strong));
+  background-color: rgb(var(--ui-surface));
+  color: rgb(var(--ui-ink-soft));
+}
+
+html.flat-theme :is(#create-account-form, #edit-account-form, #bulk-edit-account-form) button[class~="px-3"][class~="py-1.5"][class~="rounded-md"][class~="border"]:not([class~="bg-primary-600"]):hover {
+  background-color: rgb(var(--ui-subtle));
+  color: rgb(var(--ui-ink));
+}
+
+/* 9.7 (the system prompt binding, bulk and per account, is P3's: settings-ops-public.css styles its hook) */
+
+/* 9.8 Folders and tags manager: the row actions are the table's icon buttons (28px, muted; the subtle fill and ink on
+   hover; delete turns danger on hover instead of standing red in every row). */
+html.flat-theme [data-test^="taxonomy-item-"] .icon-button {
+  display: inline-grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: var(--ui-radius-md);
+  color: rgb(var(--ui-muted));
+  transition: color var(--ui-duration) var(--ui-ease), background-color var(--ui-duration) var(--ui-ease);
+}
+
+html.flat-theme [data-test^="taxonomy-item-"] .icon-button:not(:disabled):hover {
+  background-color: rgb(var(--ui-subtle));
+  color: rgb(var(--ui-ink));
+}
+
+html.flat-theme [data-test^="taxonomy-item-"] [data-test="taxonomy-delete"]:not(:disabled):hover {
+  background-color: rgb(var(--ui-danger-soft));
+  color: rgb(var(--ui-danger));
+}
+
+html.flat-theme [data-test^="taxonomy-item-"] .icon-button:focus-visible {
+  outline: 2px solid rgb(var(--ui-focus));
+  outline-offset: 2px;
+}
+
+html.flat-theme [data-test^="taxonomy-item-"] .icon-button svg {
+  width: 15px;
+  height: 15px;
+}
+
+/* 9.9 The row “more” menu: the two Codex route commands (CodexAccountActions, menu variant) have no glyph; their
+   labels line up with the glyphed rows' labels: indented by the 14px glyph and its 8px gap (overlays.css 1.2; an
+   indent, since the menu rows' padding comes from a stronger shared selector). */
+html.flat-theme .action-menu-content button:is([data-test="codex-harvest"], [data-test="codex-stop"]) {
+  text-indent: calc(var(--ui-menu-glyph) + 8px);
+}
+
+/* 9.10 Model mapping presets in the account forms (「+ Sonnet 4.5」, 「+ Claude→Sonnet」 ...): a hue per model family goes
+   (decision 2: colour is for status, the accent's roles and platform identity; these are add actions); each is the
+   secondary chip: surface, the control outline, ink-soft 12 / 500, the subtle fill and ink on hover. */
+html.flat-theme :is(#create-account-form, #edit-account-form, #bulk-edit-account-form) button[class~="rounded-lg"][class~="px-3"][class~="py-1"][class~="text-xs"][class~="transition-colors"][class*="hover:bg-"] {
+  border-radius: var(--ui-radius-md);
+  background-color: rgb(var(--ui-surface));
+  box-shadow: inset 0 0 0 1px rgb(var(--ui-line-strong));
+  font-weight: 500;
+  color: rgb(var(--ui-ink-soft));
+}
+
+html.flat-theme :is(#create-account-form, #edit-account-form, #bulk-edit-account-form) button[class~="rounded-lg"][class~="px-3"][class~="py-1"][class~="text-xs"][class~="transition-colors"][class*="hover:bg-"]:hover {
+  background-color: rgb(var(--ui-subtle));
+  color: rgb(var(--ui-ink));
+}
+
+/* 9.11 Remove buttons of the mapping and rule rows in the account forms: muted, turning danger on hover (the table's
+   row delete), instead of standing red in every row. */
+html.flat-theme :is(#create-account-form, #edit-account-form, #bulk-edit-account-form) button[class~="text-red-500"][class*="hover:text-red-"] {
+  color: rgb(var(--ui-muted));
+  transition: color var(--ui-duration) var(--ui-ease), background-color var(--ui-duration) var(--ui-ease);
+}
+
+html.flat-theme :is(#create-account-form, #edit-account-form, #bulk-edit-account-form) button[class~="text-red-500"][class*="hover:text-red-"]:not(:disabled):hover {
+  background-color: rgb(var(--ui-danger-soft));
+  color: rgb(var(--ui-danger));
+}
+
+/* 9.12 The edit dialog's Codex image-generation panel (OpenAI accounts): the sky box (its inset sits on the children,
+   so data.css 11's callout rule does not reach it) is the same neutral callout: the structural line, the subtle
+   ground, no shadow; its tile the neutral square, its text ink-soft; the mode strip the surface; the chosen mode an
+   option card (the ink edge 2px wide, controls.css 8.1) with an ink check disc instead of the mode's hue. The badge
+   beside the title keeps its status colour (enabled / disabled / blocked). */
+html.flat-theme #edit-account-form div[class~="overflow-hidden"][class~="rounded-lg"][class~="bg-sky-50/60"] {
+  border-color: rgb(var(--ui-line));
+  background-color: rgb(var(--ui-subtle));
+  box-shadow: none;
+}
+
+html.flat-theme #edit-account-form div[class~="bg-sky-50/60"] > div:first-child > div[class~="rounded-md"]:first-child {
+  background-color: rgb(var(--ui-surface));
+  box-shadow: inset 0 0 0 1px rgb(var(--ui-line));
+  color: rgb(var(--ui-muted));
+}
+
+html.flat-theme #edit-account-form div[class~="bg-sky-50/60"] > div:first-child p[class~="text-slate-600"] {
+  color: rgb(var(--ui-ink-soft));
+}
+
+html.flat-theme #edit-account-form div[class~="bg-sky-50/60"] > div:last-child {
+  border-top-color: rgb(var(--ui-line));
+  background-color: rgb(var(--ui-surface));
+}
+
+html.flat-theme #edit-account-form div[class~="bg-sky-50/60"] > div:last-child button {
+  color: rgb(var(--ui-ink-soft));
+}
+
+html.flat-theme #edit-account-form div[class~="bg-sky-50/60"] > div:last-child button[class~="border-transparent"]:hover {
+  border-color: rgb(var(--ui-line-strong));
+  background-color: rgb(var(--ui-subtle));
+  color: rgb(var(--ui-ink));
+}
+
+html.flat-theme #edit-account-form div[class~="bg-sky-50/60"] > div:last-child button:not([class~="border-transparent"]) {
+  border-color: rgb(var(--ui-ink));
+  background-color: rgb(var(--ui-surface));
+  box-shadow: inset 0 0 0 1px rgb(var(--ui-ink));
+  color: rgb(var(--ui-ink));
+}
+
+html.flat-theme #edit-account-form div[class~="bg-sky-50/60"] > div:last-child button span[class~="text-slate-500"] {
+  color: rgb(var(--ui-muted));
+}
+
+html.flat-theme #edit-account-form div[class~="bg-sky-50/60"] > div:last-child button > span[class~="rounded-full"]:not([class~="border-gray-300"]) {
+  border-color: rgb(var(--ui-ink));
+  background-color: rgb(var(--ui-ink));
+  color: rgb(var(--ui-on-ink));
+}
+
+/* ================================================================== 8 · phones */
+@media (max-width: 639.98px) {
+  /* The reference's 390px toolbar: the search takes the whole first row. */
+  html.flat-theme [data-ui="accounts-toolbar"] > [data-ui="account-search"] {
+    flex: 1 1 100%;
+    min-width: 0;
+    max-width: none;
+  }
+
+  /* The tray on a phone: the summary wraps on its own line and the actions stay one row that scrolls sideways, so
+     the tray keeps to about two lines at the bottom edge instead of covering a quarter of the screen. */
+  html.flat-theme [data-ui="accounts-bulk-tray"] {
+    padding-inline: 8px;
+  }
+
+  html.flat-theme [data-ui="accounts-bulk-tray"] > [data-ui~="bulk-bar"] {
+    flex-direction: column;
+    flex-wrap: nowrap;
+    align-items: stretch;
+    width: 100%;
+  }
+
+  html.flat-theme [data-ui="accounts-bulk-tray"] > [data-ui~="bulk-bar"] > div:first-child {
+    flex-wrap: wrap;
+    white-space: normal;
+  }
+
+  html.flat-theme [data-ui="accounts-bulk-tray"] > [data-ui~="bulk-bar"] > div:last-child {
+    flex: none;
+    flex-wrap: nowrap;
+    justify-content: flex-start;
+    min-width: 0;
+    overflow-x: auto;
+    scrollbar-width: thin;
+  }
+
+  html.flat-theme [data-ui="accounts-bulk-tray"] > [data-ui~="bulk-bar"] > div:last-child > * {
+    flex-shrink: 0;
+  }
+}

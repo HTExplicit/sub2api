@@ -1,5 +1,5 @@
 <template>
-  <section class="space-y-4" aria-live="polite">
+  <section class="space-y-4" aria-live="polite" data-ui="codex-runtime">
     <h2 class="text-xl font-semibold text-ink">{{ text('Codex 路由设置', 'Codex route settings') }}</h2>
     <p class="text-sm text-muted">{{ text('路由材料有效、响应完整、模型声明一致是不同证据。STATE 长度仅供观测，不能证明账号套餐或模型质量；本页操作不包含质量验证。', 'Valid routing material, a complete response and a matching model declaration are separate observations. STATE length proves neither account plan nor model quality; operations on this page do not test quality.') }}</p>
     <p v-if="loading" class="text-sm text-muted">{{ t('common.loading') }}</p>

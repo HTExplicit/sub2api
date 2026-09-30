@@ -1,6 +1,6 @@
 <template>
   <AppLayout>
-    <TablePageLayout>
+    <TablePageLayout data-ui="redeem-page mgmt-page">
       <template #filters>
         <div class="flex flex-wrap items-center gap-3">
           <!-- Left: Search + Filters -->
@@ -14,12 +14,14 @@
             />
           </div>
           <Select
+            data-ui="toolbar-select"
             v-model="filters.type"
             :options="filterTypeOptions"
             class="w-36"
             @change="loadCodes"
           />
           <Select
+            data-ui="toolbar-select"
             v-model="filters.status"
             :options="filterStatusOptions"
             class="w-36"
@@ -33,6 +35,7 @@
               :disabled="loading"
               class="btn btn-secondary"
               :title="t('common.refresh')"
+              data-ui="toolbar-icon"
             >
               <Icon name="refresh" size="md" :class="loading ? 'animate-spin' : ''" />
             </button>
@@ -115,6 +118,7 @@
 
           <template #cell-type="{ value }">
             <span
+              data-ui="category-chip"
               :class="[
                 'badge',
                 value === 'balance'
@@ -274,7 +278,7 @@
 
     <!-- Generate Codes Dialog -->
     <Teleport to="body">
-      <div v-if="showGenerateDialog" class="fixed inset-0 z-50 flex items-center justify-center">
+      <div data-ui="h2-dlg" v-if="showGenerateDialog" class="fixed inset-0 z-50 flex items-center justify-center">
         <div class="fixed inset-0 bg-black/50" @click="showGenerateDialog = false"></div>
         <div
           class="relative z-10 w-full max-w-md rounded-xl bg-white p-6 shadow-xl dark:bg-dark-800"
@@ -282,7 +286,7 @@
           <h2 class="mb-4 text-lg font-semibold text-gray-900 dark:text-white">
             {{ t('admin.redeem.generateCodesTitle') }}
           </h2>
-          <form @submit.prevent="handleGenerateCodes" class="space-y-4">
+          <form data-ui="redeem-generate-form" @submit.prevent="handleGenerateCodes" class="space-y-4">
             <div>
               <label class="input-label">{{ t('admin.redeem.codeType') }}</label>
               <Select v-model="generateForm.type" :options="typeOptions" />
@@ -411,7 +415,7 @@
 
     <!-- Batch Update Dialog -->
     <Teleport to="body">
-      <div
+      <div data-ui="h2-dlg"
         v-if="showBatchUpdateDialog"
         class="fixed inset-0 z-50 flex items-center justify-center p-4"
       >
@@ -530,6 +534,7 @@
         <div class="relative z-10 w-full max-w-lg rounded-xl bg-white shadow-xl dark:bg-dark-800">
           <!-- Header -->
           <div
+            data-ui="redeem-result-head"
             class="flex items-center justify-between border-b border-gray-200 px-5 py-4 dark:border-dark-600"
           >
             <div class="flex items-center gap-3">
@@ -567,7 +572,7 @@
             </button>
           </div>
           <!-- Content -->
-          <div class="p-5">
+          <div data-ui="redeem-result-body" class="p-5">
             <div class="relative">
               <textarea
                 readonly

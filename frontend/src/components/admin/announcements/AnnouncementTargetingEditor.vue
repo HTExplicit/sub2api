@@ -1,5 +1,5 @@
 <template>
-  <div class="rounded-2xl border border-gray-200 bg-gray-50 p-4 dark:border-dark-700 dark:bg-dark-800/50">
+  <div data-ui="announcement-targeting" class="rounded-2xl border border-gray-200 bg-gray-50 p-4 dark:border-dark-700 dark:bg-dark-800/50">
     <div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
       <div>
         <div class="text-sm font-medium text-gray-900 dark:text-white">
@@ -11,7 +11,7 @@
       </div>
 
       <div class="flex items-center gap-3">
-        <label class="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
+        <label class="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300" data-ui="targeting-option">
           <input
             type="radio"
             name="announcement-targeting-mode"
@@ -22,7 +22,7 @@
           />
           {{ t('admin.announcements.form.targetingAll') }}
         </label>
-        <label class="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
+        <label class="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300" data-ui="targeting-option">
           <input
             type="radio"
             name="announcement-targeting-mode"

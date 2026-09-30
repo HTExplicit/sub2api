@@ -237,7 +237,7 @@ async function saveAllSettings() {
       {{ t('common.loading') }}
     </div>
 
-    <div v-else-if="runtimeSettings && emailConfig && advancedSettings" class="space-y-6">
+    <div v-else-if="runtimeSettings && emailConfig && advancedSettings" class="space-y-6" data-ui="ops-dialog ops-settings">
       <!-- 验证错误 -->
       <div v-if="!validation.valid" class="rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800 dark:border-amber-900/50 dark:bg-amber-900/20 dark:text-amber-200">
         <div class="font-bold">{{ t('admin.ops.settings.validation.title') }}</div>

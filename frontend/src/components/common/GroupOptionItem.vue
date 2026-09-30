@@ -1,5 +1,5 @@
 <template>
-  <div class="flex min-w-0 flex-1 items-start justify-between gap-3">
+  <div data-ui="group-option" class="flex min-w-0 flex-1 items-start justify-between gap-3">
     <!-- Left: name + description -->
     <div
       class="flex min-w-0 flex-1 flex-col items-start"

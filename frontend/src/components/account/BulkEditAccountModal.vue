@@ -386,7 +386,7 @@
 
               <!-- Model Mapping List -->
               <div v-if="modelMappings.length > 0" class="mb-3 space-y-2">
-                <div
+                <div data-ui="dense-dlg"
                   v-for="(mapping, index) in modelMappings"
                   :key="index"
                   class="flex items-center gap-2"
@@ -522,7 +522,7 @@
           </div>
 
           <!-- Manual input -->
-          <div class="flex items-center gap-2">
+          <div data-ui="dense-btn dense-dlg" class="flex items-center gap-2">
             <input
               v-model="customErrorCodeInput"
               id="bulk-edit-custom-error-code-input"
@@ -1236,7 +1236,7 @@
           :class="!enableOpenAICompactModelMapping && 'pointer-events-none opacity-50'"
         >
           <div v-if="openAICompactModelMappings.length > 0" class="mb-3 space-y-2">
-            <div
+            <div data-ui="dense-dlg"
               v-for="(mapping, index) in openAICompactModelMappings"
               :key="index"
               class="flex items-center gap-2"

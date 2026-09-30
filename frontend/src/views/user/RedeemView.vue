@@ -1,6 +1,6 @@
 <template>
   <AppLayout>
-    <div class="mx-auto max-w-2xl space-y-6">
+    <div data-ui="user-redeem" class="mx-auto max-w-2xl space-y-6">
       <!-- Current Balance Card -->
       <div class="card overflow-hidden">
         <div class="bg-gradient-to-br from-primary-500 to-primary-600 px-6 py-8 text-center">
@@ -335,7 +335,7 @@
               {{ t('redeem.historyWillAppear') }}
             </p>
           </div>
-          <div class="mt-4 flex flex-wrap items-center justify-between gap-3 text-sm">
+          <div data-ui="dense-btn" class="mt-4 flex flex-wrap items-center justify-between gap-3 text-sm">
             <span>{{ t('common.total') }}: {{ historyTotal }} {{ t('pagination.results') }}</span>
             <label>
               {{ t('pagination.perPage') }}

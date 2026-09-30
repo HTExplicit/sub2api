@@ -1,6 +1,6 @@
 <template>
   <AppLayout>
-    <div class="space-y-6">
+    <div data-ui="user-subscriptions" class="space-y-6">
       <!-- Loading State -->
       <div v-if="loading" class="flex justify-center py-12">
         <div
@@ -36,13 +36,13 @@
             class="flex items-center justify-between border-b border-gray-100 p-4 dark:border-dark-700"
           >
             <div class="flex items-center gap-3">
-              <div :class="['h-1.5 w-1.5 shrink-0 rounded-full', platformAccentDotClass(subscription.group?.platform || '')]" />
+              <div data-ui="platform-text" :class="['h-1.5 w-1.5 shrink-0 rounded-full', platformAccentDotClass(subscription.group?.platform || '')]" />
               <div>
                 <div class="flex items-center gap-2">
                   <h3 class="font-semibold text-gray-900 dark:text-white">
                     {{ subscription.group?.name || `Group #${subscription.group_id}` }}
                   </h3>
-                  <span :class="['rounded-md border px-2 py-0.5 text-[11px] font-medium', platformBadgeClass(subscription.group?.platform || '')]">
+                  <span data-ui="platform-chip" :class="['rounded-md border px-2 py-0.5 text-[11px] font-medium', platformBadgeClass(subscription.group?.platform || '')]">
                     {{ platformLabel(subscription.group?.platform || '') }}
                   </span>
                 </div>

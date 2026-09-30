@@ -1,13 +1,13 @@
 <template>
   <AppLayout>
-    <TablePageLayout>
+    <TablePageLayout data-ui="groups-page mgmt-page">
       <template #filters>
         <div
           class="flex flex-col justify-between gap-4 lg:flex-row lg:items-start"
         >
           <!-- Left: fuzzy search + filters (can wrap to multiple lines) -->
           <div class="flex flex-1 flex-wrap items-center gap-3">
-            <div class="relative w-full sm:w-64">
+            <div data-ui="search-box" class="relative w-full sm:w-64">
               <Icon
                 name="search"
                 size="md"
@@ -22,6 +22,7 @@
               />
             </div>
             <Select
+              data-ui="toolbar-select"
               v-model="filters.platform"
               :options="platformFilterOptions"
               :placeholder="t('admin.groups.allPlatforms')"
@@ -29,6 +30,7 @@
               @change="loadGroups"
             />
             <Select
+              data-ui="toolbar-select"
               v-model="filters.status"
               :options="statusOptions"
               :placeholder="t('admin.groups.allStatus')"
@@ -36,6 +38,7 @@
               @change="loadGroups"
             />
             <Select
+              data-ui="toolbar-select"
               v-if="!authStore.isSimpleMode"
               v-model="filters.is_exclusive"
               :options="exclusiveOptions"
@@ -54,6 +57,7 @@
               :disabled="loading"
               class="btn btn-secondary"
               :title="t('common.refresh')"
+              data-ui="toolbar-icon"
             >
               <Icon
                 name="refresh"
@@ -139,6 +143,7 @@
 
           <template #cell-platform="{ value }">
             <span
+              data-ui="platform-chip"
               :class="[
                 'inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-medium',
                 value === 'anthropic'
@@ -171,6 +176,7 @@
             <div class="space-y-1">
               <!-- Type Badge -->
               <span
+                data-ui="category-chip"
                 :class="[
                   'inline-block rounded-full px-2 py-0.5 text-xs font-medium',
                   row.subscription_type === 'subscription'
@@ -269,7 +275,7 @@
           </template>
 
           <template #cell-is_exclusive="{ value }">
-            <span :class="['badge', value ? 'badge-primary' : 'badge-gray']">
+            <span data-ui="category-chip" :class="['badge', value ? 'badge-primary' : 'badge-gray']">
               {{
                 value ? t("admin.groups.exclusive") : t("admin.groups.public")
               }}
@@ -1708,7 +1714,7 @@
                     :key="getCreateMessagesDispatchRowKey(row)"
                     class="group relative rounded-xl border border-gray-200 bg-white p-4 shadow-sm transition-all hover:border-primary-300 hover:shadow-md dark:border-dark-600 dark:bg-dark-700 dark:hover:border-primary-700"
                   >
-                    <div class="flex items-center gap-4">
+                    <div data-ui="dense-dlg" class="flex items-center gap-4">
                       <div
                         class="grid flex-1 gap-4 md:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] md:items-start"
                       >
@@ -3353,7 +3359,7 @@
                     :key="getEditMessagesDispatchRowKey(row)"
                     class="group relative rounded-xl border border-gray-200 bg-white p-4 shadow-sm transition-all hover:border-primary-300 hover:shadow-md dark:border-dark-600 dark:bg-dark-700 dark:hover:border-primary-700"
                   >
-                    <div class="flex items-center gap-4">
+                    <div data-ui="dense-dlg" class="flex items-center gap-4">
                       <div
                         class="grid flex-1 gap-4 md:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] md:items-start"
                       >
@@ -3752,6 +3758,7 @@
           <div
             v-for="group in sortableGroups"
             :key="group.id"
+            data-ui="group-sort-row"
             class="flex cursor-grab items-center gap-3 rounded-lg border border-gray-200 bg-white p-3 transition-shadow hover:shadow-md active:cursor-grabbing dark:border-dark-600 dark:bg-dark-700"
           >
             <div class="text-gray-400">
@@ -3763,6 +3770,7 @@
               </div>
               <div class="text-xs text-gray-500 dark:text-gray-400">
                 <span
+                  data-ui="platform-chip"
                   :class="[
                     'inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium',
                     group.platform === 'anthropic'

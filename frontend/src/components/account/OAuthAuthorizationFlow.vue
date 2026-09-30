@@ -1,6 +1,7 @@
 <template>
   <div
     class="rounded-lg border border-blue-200 bg-blue-50 p-4 dark:border-blue-700 dark:bg-blue-900/30"
+    data-ui="account-oauth-flow"
   >
       <div class="flex items-start gap-4">
       <div class="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-lg bg-blue-500">
@@ -731,7 +732,7 @@
                   {{ loading ? t('admin.accounts.oauth.generating') : oauthGenerateAuthUrl }}
                 </button>
                 <div v-else class="space-y-3">
-                  <div class="flex items-center gap-2">
+                  <div data-ui="dense-btn dense-dlg" class="flex items-center gap-2">
                     <input
                       :value="authUrl"
                       readonly

@@ -4,8 +4,8 @@ const active = ref(false)
 
 // Console theme: a text field with no placeholder is given a blank one (" ") so CSS can tell an empty
 // field (:placeholder-shown) from a filled one. An empty field whose label sits outside the box is
-// identified by its border alone, and the console theme draws that border with the 3:1 control line
-// (style.css, "Text fields with no placeholder"). Nothing is visible: the placeholder is a space.
+// identified by its border alone, and the console theme draws that border with the 3:1 form-control line
+// (styles/console/behaviour.css, B3.2). Nothing is visible: the placeholder is a space.
 // An empty placeholder (placeholder="") is treated like a missing one: browsers disagree on whether it
 // counts as :placeholder-shown. Fields are re-checked when their placeholder or class changes later.
 const BLANK_PLACEHOLDER = ' '
@@ -54,12 +54,13 @@ function watchUnlabelledFields(on: boolean): void {
 }
 
 // MiSans (Chinese text of the console theme) is not shipped with the app: it is loaded from Xiaomi's
-// official font service (one stylesheet with both weights, unicode-range slices, font-display: swap)
-// while the console theme is on, and removed when it is switched off. The CSP allows both hosts
-// (backend config DefaultCSPPolicy). If the service is unreachable, the font stack in flat-theme.css
-// falls back to PingFang SC / Microsoft YaHei and the other system fonts.
+// official font service (one stylesheet with the 400, 500 and 600 weights that match Geist's strokes,
+// unicode-range slices, font-display: swap) while the console theme is on, and removed when it is
+// switched off. The CSP allows both hosts (backend config DefaultCSPPolicy). If the service is
+// unreachable, the font stack in styles/console/tokens.css falls back to PingFang SC / Microsoft YaHei
+// and the other system fonts.
 const MISANS_FONT_ORIGIN = 'https://cdn-file.hyperos.mi.com'
-const MISANS_STYLESHEET = 'https://font.sec.miui.com/font/css?family=MiSans:400,500:Chinese_Simplify,Latin'
+const MISANS_STYLESHEET = 'https://font.sec.miui.com/font/css?family=MiSans:400,500,600:Chinese_Simplify,Latin'
 
 function syncMiSansStylesheet(on: boolean): void {
   if (typeof document === 'undefined' || !document.head) return
@@ -81,7 +82,7 @@ function syncMiSansStylesheet(on: boolean): void {
   document.head.append(preconnect, stylesheet)
 }
 
-// The console theme (styles/flat-theme.css) applies while <html> carries the flat-theme class.
+// The console theme (styles/console/*.css) applies while <html> carries the flat-theme class.
 // It follows the public flat_theme_enabled setting and stays on when the setting is absent.
 export function applyFlatTheme(enabled: boolean | undefined): void {
   active.value = enabled !== false
@@ -90,5 +91,5 @@ export function applyFlatTheme(enabled: boolean | undefined): void {
   syncMiSansStylesheet(active.value)
 }
 
-/** Reactive: true while the console theme is on (identity colours turn neutral). */
+/** Reactive: true while the console theme is on. */
 export const flatThemeActive = readonly(active)

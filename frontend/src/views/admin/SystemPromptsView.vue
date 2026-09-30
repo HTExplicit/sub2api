@@ -1,6 +1,6 @@
 <template>
   <AppLayout>
-    <div class="mx-auto max-w-5xl space-y-5 px-1">
+    <div class="mx-auto max-w-5xl space-y-5 px-1" data-ui="system-prompts">
       <header class="flex flex-wrap items-start justify-between gap-3 border-b border-line pb-4">
         <div class="space-y-1">
           <h1 class="text-xl font-semibold">{{ t('admin.systemPrompts.title') }}</h1>

@@ -1,6 +1,7 @@
 <template>
   <div
     class="relative flex min-h-screen items-center justify-center overflow-hidden bg-gray-50 px-4 dark:bg-dark-950"
+    data-ui="not-found"
   >
     <!-- Background Decoration -->
     <div class="pointer-events-none absolute inset-0 overflow-hidden">

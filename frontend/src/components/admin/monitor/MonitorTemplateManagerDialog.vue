@@ -6,7 +6,7 @@
     @close="$emit('close')"
   >
     <!-- provider tabs -->
-    <div class="mb-4 border-b border-gray-200 dark:border-dark-700">
+    <div class="mb-4 border-b border-gray-200 dark:border-dark-700" data-ui="template-tabs">
       <div role="tablist" class="flex flex-wrap gap-1">
         <button
           v-for="tab in providerTabs"
@@ -30,7 +30,7 @@
     </div>
 
     <!-- active provider list -->
-    <div v-if="!editing" class="space-y-2">
+    <div v-if="!editing" class="space-y-2" data-ui="template-list">
       <div class="flex justify-end">
         <button class="btn btn-primary btn-sm" @click="openCreateForm">
           <Icon name="plus" size="sm" class="mr-1" />
@@ -137,6 +137,7 @@
             type="button"
             class="rounded-lg border-2 px-3 py-2 text-sm font-medium transition-colors"
             :class="providerPickerClass(opt.value, form.provider === opt.value)"
+            data-ui="platform-text"
             @click="form.provider = opt.value"
           >
             {{ opt.label }}

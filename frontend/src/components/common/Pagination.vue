@@ -1,5 +1,6 @@
 <template>
   <div
+    data-ui="pagination"
     class="flex items-center justify-between border-t border-gray-200 bg-white px-4 py-3 dark:border-dark-700 dark:bg-dark-800 sm:px-6"
   >
     <div class="flex flex-1 items-center justify-between sm:hidden">
@@ -50,7 +51,7 @@
           </div>
         </div>
 
-        <div v-if="showJump" class="flex items-center space-x-2">
+        <div data-ui="dense-btn dense-dlg" v-if="showJump" class="flex items-center space-x-2">
           <span class="text-sm text-gray-700 dark:text-gray-300">{{ t('pagination.jumpTo') }}</span>
           <input
             v-model="jumpPage"

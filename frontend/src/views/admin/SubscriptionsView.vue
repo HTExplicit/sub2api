@@ -1,13 +1,13 @@
 <template>
   <AppLayout>
-    <TablePageLayout>
+    <TablePageLayout data-ui="subscriptions-page mgmt-page">
       <template #filters>
         <!-- Top Toolbar: Left (search + filters) / Right (actions) -->
         <div class="flex flex-wrap items-start justify-between gap-4">
           <!-- Left: Fuzzy user search + filters (wrap to multiple lines) -->
           <div class="flex flex-1 flex-wrap items-center gap-3">
             <!-- User Search -->
-            <div
+            <div data-ui="search-box"
               class="relative w-full sm:w-64"
               data-filter-user-search
             >
@@ -67,6 +67,7 @@
             <!-- Filters -->
             <div class="w-full sm:w-40">
               <Select
+                data-ui="toolbar-select"
                 v-model="filters.status"
                 :options="statusOptions"
                 :placeholder="t('admin.subscriptions.allStatus')"
@@ -75,6 +76,7 @@
             </div>
             <div class="w-full sm:w-48">
               <Select
+                data-ui="toolbar-select"
                 v-model="filters.group_id"
                 :options="groupOptions"
                 :placeholder="t('admin.subscriptions.allGroups')"
@@ -83,6 +85,7 @@
             </div>
             <div class="w-full sm:w-40">
               <Select
+                data-ui="toolbar-select"
                 v-model="filters.platform"
                 :options="platformFilterOptions"
                 :placeholder="t('admin.subscriptions.allPlatforms')"
@@ -98,6 +101,7 @@
               :disabled="loading"
               class="btn btn-secondary"
               :title="t('common.refresh')"
+              data-ui="toolbar-icon"
             >
               <Icon name="refresh" size="md" :class="loading ? 'animate-spin' : ''" />
             </button>
@@ -156,6 +160,7 @@
               @click="showGuideModal = true"
               class="btn btn-secondary"
               :title="t('admin.subscriptions.guide.showGuide')"
+              data-ui="toolbar-icon"
             >
               <Icon name="questionCircle" size="md" />
             </button>
@@ -760,14 +765,14 @@
     <!-- Subscription Guide Modal -->
     <teleport to="body">
       <transition name="modal">
-        <div v-if="showGuideModal" class="fixed inset-0 z-50 flex items-center justify-center p-4" @mousedown.self="showGuideModal = false">
+        <div data-ui="h2-dlg h2-dlg-close" v-if="showGuideModal" class="fixed inset-0 z-50 flex items-center justify-center p-4" @mousedown.self="showGuideModal = false">
           <div class="fixed inset-0 bg-black/50" @click="showGuideModal = false"></div>
           <div class="relative max-h-[85vh] w-full max-w-2xl overflow-y-auto rounded-xl bg-white p-6 shadow-2xl dark:bg-dark-800">
             <button type="button" class="absolute right-4 top-4 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200" @click="showGuideModal = false">
               <svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
             </button>
 
-            <h2 class="mb-4 text-lg font-bold text-gray-900 dark:text-white">{{ t('admin.subscriptions.guide.title') }}</h2>
+            <h2 data-ui="subscription-guide-title" class="mb-4 text-lg font-bold text-gray-900 dark:text-white">{{ t('admin.subscriptions.guide.title') }}</h2>
             <p class="mb-5 text-sm text-gray-500 dark:text-gray-400">{{ t('admin.subscriptions.guide.subtitle') }}</p>
 
             <!-- Step 1 -->

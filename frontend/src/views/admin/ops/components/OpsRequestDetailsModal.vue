@@ -164,7 +164,7 @@ const kindBadgeClass = (kind: string) => {
 <template>
   <BaseDialog :show="modelValue" :title="props.preset.title || t('admin.ops.requestDetails.title')" width="full" @close="close">
     <template #default>
-      <div class="flex h-full min-h-0 flex-col">
+      <div class="flex h-full min-h-0 flex-col" data-ui="ops-dialog ops-request-details">
         <div class="mb-4 flex flex-shrink-0 items-center justify-between">
           <div class="text-xs text-gray-500 dark:text-gray-400">
             {{ t('admin.ops.requestDetails.rangeLabel', { range: rangeLabel }) }}

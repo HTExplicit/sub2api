@@ -1,5 +1,5 @@
 <template>
-    <div class="mx-auto w-full max-w-[1500px] space-y-6">
+    <div data-ui="image-studio" class="mx-auto w-full max-w-[1500px] space-y-6">
       <header class="flex flex-wrap items-end justify-between gap-3">
         <div>
           <h1 class="text-2xl font-semibold text-gray-950 dark:text-white">{{ t('imageStudio.title') }}</h1>
@@ -69,7 +69,7 @@
             </p>
           </div>
 
-          <div class="grid grid-cols-2 rounded-lg bg-gray-100 p-1 dark:bg-dark-800" role="group">
+          <div data-ui="seg-box" class="grid grid-cols-2 rounded-lg bg-gray-100 p-1 dark:bg-dark-800" role="group">
             <button
               type="button"
               class="h-9 rounded-md px-3 text-sm font-medium transition-colors"

@@ -1,6 +1,6 @@
 <template>
   <BaseDialog :show="show" :title="t('admin.users.replaceGroupTitle')" width="narrow" @close="$emit('close')">
-    <div v-if="oldGroup" class="space-y-4">
+    <div v-if="oldGroup" data-ui="group-replace" class="space-y-4">
       <!-- 提示信息 -->
       <p class="text-sm text-gray-600 dark:text-gray-400">
         {{ t('admin.users.replaceGroupHint', { old: oldGroup.name }) }}
@@ -24,6 +24,7 @@
         <label
           v-for="group in availableGroups"
           :key="group.id"
+          data-ui="replace-option"
           class="flex cursor-pointer items-center gap-3 rounded-lg border-2 p-3 transition-all"
           :class="selectedGroupId === group.id
             ? 'border-primary-400 bg-primary-50/50 dark:border-primary-500 dark:bg-primary-900/20'
