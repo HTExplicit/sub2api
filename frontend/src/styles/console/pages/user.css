@@ -57,8 +57,9 @@ html.flat-theme [data-testid="profile-shell"] [class~="space-y-6"] > :not([hidde
 
 /* Cards on these pages: the reference's panel inset (16px, REF §6 p-4) instead of upstream's 24; a header bar is
    12 / 16 on the structural line with the title 14 / 600 (the reference's modal and card titles) and its note
-   12.5px muted. The card bodies: the profile's at 0,6,2 (its hero excluded), the redeem page's at 0,5,2 so that the
-   redeem page's own insets (3.1 the note, 3.3 the history, 3.4 the result, all 0,5,2 and later) win (final review V3-10). */
+   12.5px muted. The card bodies: the profile's at 0,6,2 without its overview head (4.1 keeps that one flush, final
+   review V3-04); the redeem page's at 0,5,2, so that the page's own insets further down, of the same weight, win
+   (3.3 the note, 3.4 the recent activity, 3.5 the result panels; final review V3-10). */
 html.flat-theme :is([data-ui="user-redeem"], [data-ui="user-affiliate"], [data-ui="user-purchase"], [data-testid="profile-shell"]) .card:is([class~="p-6"], [class~="p-5"]),
 html.flat-theme [data-testid="profile-shell"] .card:not([data-testid="profile-overview-hero"]) > div:is([class~="p-6"], [class~="px-6"][class~="py-6"]),
 html.flat-theme [data-ui="user-redeem"] .card > div:is([class~="p-6"], [class~="px-6"][class~="py-6"]) {
@@ -1697,10 +1698,14 @@ html.flat-theme [data-ui="user-orders"] > .table-wrapper .table-body > tr > td[c
     white-space: nowrap;
   }
 
-  /* the block after a hidden heading starts the page (Codex 路由设置's intro kept the page rhythm's 12px, 渠道监控's
-     description its 2px); from 1024px the pages clear the same margins */
+  /* the block under such a heading starts the page: Codex 路由设置's intro kept the page rhythm's 12px (shell.css) and
+     渠道监控's description its 2px (ops-channels.css 5.3); with the heading out of the flow the margin collapsed through
+     the page root and moved the whole page down (final review V3-11). 风控中心's description kept its 2px
+     (ops-channels.css 8) under the hidden title. The doubled root attribute outranks the rhythm (0,6,2) and the
+     descriptions' margins (0,4,3 / 0,4,4), as settings-ops-public.css 7.2 does for the intro from 1024px. */
   html.flat-theme [data-ui~="codex-runtime"][data-ui~="codex-runtime"] > h2:first-child:not([hidden]) + p:not([hidden]),
-  html.flat-theme [data-ui~="channel-monitor-page"][data-ui~="channel-monitor-page"] > header.page-header > h1 + p.page-description {
+  html.flat-theme [data-ui~="channel-monitor-page"][data-ui~="channel-monitor-page"] > header.page-header > p.page-description,
+  html.flat-theme [data-ui~="risk-page"][data-ui~="risk-page"] > div:first-child > div:first-child > p {
     margin-top: 0;
   }
 

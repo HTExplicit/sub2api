@@ -2314,7 +2314,6 @@ html.flat-theme [data-ui~="channel-monitor-page"] > header.page-header > h1 > sp
 }
 
 html.flat-theme [data-ui~="channel-monitor-page"] > header.page-header > p.page-description {
-  margin-top: 2px;
   font-size: 13px;
   line-height: 19.5px;
   color: rgb(var(--ui-muted));
