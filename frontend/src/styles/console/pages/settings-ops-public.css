@@ -17,7 +17,7 @@
  *   views/KeyUsageView.vue:2                data-ui="key-usage"
  *   views/auth/LoginView.vue:69             data-ui="auth-link-row" (the forgot-password row; static, performance pass)
  * Everything else is reached through upstream classes ([class~="…"]); the 2FA dialog is the sibling LoginView
- * renders after AuthLayout, the agreement dialog is the body-level z-[140] layer (unique to LoginAgreementPrompt). */
+ * renders after AuthLayout, the agreement dialog is the z-[140] layer in #overlay-root (unique to LoginAgreementPrompt). */
 
 html.flat-theme {
   /* the reference's small mono text: field labels and text buttons 10/15 (Chinese 11/16, as the mono label) */
@@ -770,14 +770,14 @@ html.flat-theme [data-ui="auth-layout"] ~ div[class~="fixed"][class~="z-50"] div
   box-shadow: none;
 }
 
-/* ------------------------------------------------------------------ auth · agreement dialog (body-level layer) */
-html.flat-theme body > div[class~="z-[140]"] {
+/* ------------------------------------------------------------------ auth · agreement dialog (the #overlay-root layer; :where() adds no id specificity) */
+html.flat-theme body > :where(#overlay-root) > div[class~="z-[140]"] {
   background: rgb(var(--ui-scrim));
   -webkit-backdrop-filter: none;
   backdrop-filter: none;
 }
 
-html.flat-theme body > div[class~="z-[140]"] > div {
+html.flat-theme body > :where(#overlay-root) > div[class~="z-[140]"] > div {
   max-width: 560px;
   border: 1px solid rgb(var(--ui-line));
   border-radius: var(--ui-radius-lg);
@@ -785,17 +785,17 @@ html.flat-theme body > div[class~="z-[140]"] > div {
   box-shadow: var(--ui-shadow-overlay);
 }
 
-html.flat-theme body > div[class~="z-[140]"] > div > div:first-child {
+html.flat-theme body > :where(#overlay-root) > div[class~="z-[140]"] > div > div:first-child {
   padding: 18px 20px 16px;
   border-bottom: 1px solid rgb(var(--ui-line));
   background: rgb(var(--ui-surface));
 }
 
-html.flat-theme body > div[class~="z-[140]"] > div > div:first-child > div {
+html.flat-theme body > :where(#overlay-root) > div[class~="z-[140]"] > div > div:first-child > div {
   gap: 14px;
 }
 
-html.flat-theme body > div[class~="z-[140]"] > div > div:first-child span[class~="h-12"] {
+html.flat-theme body > :where(#overlay-root) > div[class~="z-[140]"] > div > div:first-child span[class~="h-12"] {
   width: 36px;
   height: 36px;
   border: 1px solid rgb(var(--ui-line));
@@ -805,18 +805,18 @@ html.flat-theme body > div[class~="z-[140]"] > div > div:first-child span[class~
   box-shadow: none;
 }
 
-html.flat-theme body > div[class~="z-[140]"] > div > div:first-child span[class~="h-12"] svg {
+html.flat-theme body > :where(#overlay-root) > div[class~="z-[140]"] > div > div:first-child span[class~="h-12"] svg {
   width: 17px;
   height: 17px;
 }
 
-html.flat-theme body > div[class~="z-[140]"] h2 {
+html.flat-theme body > :where(#overlay-root) > div[class~="z-[140]"] h2 {
   font: 600 17px/25.5px var(--ui-font);
   letter-spacing: -0.025em;
   color: rgb(var(--ui-ink));
 }
 
-html.flat-theme body > div[class~="z-[140]"] h2 + span {
+html.flat-theme body > :where(#overlay-root) > div[class~="z-[140]"] h2 + span {
   padding: 1px 6px;
   border-radius: var(--ui-radius-sm);
   background: rgb(var(--ui-subtle));
@@ -825,24 +825,24 @@ html.flat-theme body > div[class~="z-[140]"] h2 + span {
   letter-spacing: 0.025em;
 }
 
-html.flat-theme body > div[class~="z-[140]"] > div > div:first-child p {
+html.flat-theme body > :where(#overlay-root) > div[class~="z-[140]"] > div > div:first-child p {
   margin-top: 4px;
   font: 400 13px/19.5px var(--ui-font);
   color: rgb(var(--ui-muted));
 }
 
-html.flat-theme body > div[class~="z-[140]"] > div > div[class~="max-h-[58vh]"] {
+html.flat-theme body > :where(#overlay-root) > div[class~="z-[140]"] > div > div[class~="max-h-[58vh]"] {
   padding: 16px 20px 20px;
 }
 
-html.flat-theme body > div[class~="z-[140]"] > div > div[class~="max-h-[58vh]"] > div:first-child > p {
+html.flat-theme body > :where(#overlay-root) > div[class~="z-[140]"] > div > div[class~="max-h-[58vh]"] > div:first-child > p {
   font: 500 var(--pub-mono-size) / var(--pub-mono-leading) var(--ui-font-mono);
   letter-spacing: var(--pub-track-label);
   text-transform: uppercase;
   color: rgb(var(--ui-label));
 }
 
-html.flat-theme body > div[class~="z-[140]"] a[class~="min-h-[72px]"] {
+html.flat-theme body > :where(#overlay-root) > div[class~="z-[140]"] a[class~="min-h-[72px]"] {
   min-height: 56px;
   gap: 10px;
   padding: 12px 14px;
@@ -854,14 +854,14 @@ html.flat-theme body > div[class~="z-[140]"] a[class~="min-h-[72px]"] {
   transition: border-color var(--ui-duration) var(--ui-ease), background-color var(--ui-duration) var(--ui-ease);
 }
 
-html.flat-theme body > div[class~="z-[140]"] a[class~="min-h-[72px]"]:hover {
+html.flat-theme body > :where(#overlay-root) > div[class~="z-[140]"] a[class~="min-h-[72px]"]:hover {
   border-color: rgb(var(--ui-line-strong));
   background: rgb(var(--ui-subtle) / 0.6);
   box-shadow: none;
   transform: none;
 }
 
-html.flat-theme body > div[class~="z-[140]"] a[class~="min-h-[72px]"] > span:first-child {
+html.flat-theme body > :where(#overlay-root) > div[class~="z-[140]"] a[class~="min-h-[72px]"] > span:first-child {
   width: 28px;
   height: 28px;
   border: 1px solid rgb(var(--ui-line));
@@ -871,40 +871,40 @@ html.flat-theme body > div[class~="z-[140]"] a[class~="min-h-[72px]"] > span:fir
   box-shadow: none;
 }
 
-html.flat-theme body > div[class~="z-[140]"] a[class~="min-h-[72px]"] > span:first-child svg {
+html.flat-theme body > :where(#overlay-root) > div[class~="z-[140]"] a[class~="min-h-[72px]"] > span:first-child svg {
   width: 14px;
   height: 14px;
 }
 
-html.flat-theme body > div[class~="z-[140]"] a[class~="min-h-[72px]"] > span:nth-child(2) > span {
+html.flat-theme body > :where(#overlay-root) > div[class~="z-[140]"] a[class~="min-h-[72px]"] > span:nth-child(2) > span {
   font: 600 13px/19.5px var(--ui-font);
   color: rgb(var(--ui-ink));
 }
 
-html.flat-theme body > div[class~="z-[140]"] a[class~="min-h-[72px]"] > span:last-child {
+html.flat-theme body > :where(#overlay-root) > div[class~="z-[140]"] a[class~="min-h-[72px]"] > span:last-child {
   width: 24px;
   height: 24px;
   color: rgb(var(--ui-muted));
   background: none;
 }
 
-html.flat-theme body > div[class~="z-[140]"] a[class~="min-h-[72px]"]:hover > span:last-child {
+html.flat-theme body > :where(#overlay-root) > div[class~="z-[140]"] a[class~="min-h-[72px]"]:hover > span:last-child {
   color: rgb(var(--ui-ink));
   background: none;
 }
 
-html.flat-theme body > div[class~="z-[140]"] a[class~="min-h-[72px]"] > span:last-child svg {
+html.flat-theme body > :where(#overlay-root) > div[class~="z-[140]"] a[class~="min-h-[72px]"] > span:last-child svg {
   width: 13px;
   height: 13px;
 }
 
-html.flat-theme body > div[class~="z-[140]"] > div > div:last-child {
+html.flat-theme body > :where(#overlay-root) > div[class~="z-[140]"] > div > div:last-child {
   padding: 12px 20px;
   border-top: 1px solid rgb(var(--ui-line));
   background: rgb(var(--ui-surface));
 }
 
-html.flat-theme body > div[class~="z-[140]"] > div > div:last-child button {
+html.flat-theme body > :where(#overlay-root) > div[class~="z-[140]"] > div > div:last-child button {
   height: 38px;
   padding: 0 16px;
   border-radius: var(--ui-radius-md);
@@ -913,28 +913,28 @@ html.flat-theme body > div[class~="z-[140]"] > div > div:last-child button {
   transition: background-color var(--ui-duration) var(--ui-ease), border-color var(--ui-duration) var(--ui-ease);
 }
 
-html.flat-theme body > div[class~="z-[140]"] > div > div:last-child button:first-child {
+html.flat-theme body > :where(#overlay-root) > div[class~="z-[140]"] > div > div:last-child button:first-child {
   border: 1px solid rgb(var(--ui-line-strong));
   background: rgb(var(--ui-surface));
   color: rgb(var(--ui-ink));
 }
 
-html.flat-theme body > div[class~="z-[140]"] > div > div:last-child button:first-child:hover {
+html.flat-theme body > :where(#overlay-root) > div[class~="z-[140]"] > div > div:last-child button:first-child:hover {
   border-color: rgb(var(--ui-ink) / 0.25);
   background: rgb(var(--ui-surface));
 }
 
-html.flat-theme body > div[class~="z-[140]"] > div > div:last-child button:last-child {
+html.flat-theme body > :where(#overlay-root) > div[class~="z-[140]"] > div > div:last-child button:last-child {
   border: 1px solid rgb(var(--ui-ink));
   background: rgb(var(--ui-ink));
   color: rgb(var(--ui-on-ink));
 }
 
-html.flat-theme body > div[class~="z-[140]"] > div > div:last-child button:last-child:hover {
+html.flat-theme body > :where(#overlay-root) > div[class~="z-[140]"] > div > div:last-child button:last-child:hover {
   background: rgb(var(--ui-ink) / 0.85);
 }
 
-html.flat-theme body > div[class~="z-[140]"] :is(a, button):focus-visible {
+html.flat-theme body > :where(#overlay-root) > div[class~="z-[140]"] :is(a, button):focus-visible {
   outline: 2px solid rgb(var(--ui-focus));
   outline-offset: 2px;
 }

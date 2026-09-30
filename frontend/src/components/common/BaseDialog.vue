@@ -1,5 +1,5 @@
 <template>
-  <Teleport to="body">
+  <Teleport to="#overlay-root">
     <Transition name="modal">
       <div
         v-if="show"

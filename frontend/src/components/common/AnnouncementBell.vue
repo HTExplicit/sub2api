@@ -20,7 +20,7 @@
     </button>
 
     <!-- 公告列表 Modal -->
-    <Teleport to="body">
+    <Teleport to="#overlay-root">
       <Transition name="modal-fade">
         <div
           v-if="isModalOpen"
@@ -181,7 +181,7 @@
     </Teleport>
 
     <!-- 公告详情 Modal -->
-    <Teleport to="body">
+    <Teleport to="#overlay-root">
       <Transition name="modal-fade">
         <div
           v-if="detailModalOpen && selectedAnnouncement"

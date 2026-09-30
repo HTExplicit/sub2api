@@ -145,7 +145,7 @@
       </div>
     </div>
 
-    <Teleport to="body">
+    <Teleport to="#overlay-root">
       <div
         v-if="floatingTooltip.visible"
         class="matrix-floating-tooltip"

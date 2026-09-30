@@ -278,7 +278,7 @@
       </template>
     </TablePageLayout>
 
-    <Teleport to="body">
+    <Teleport to="#overlay-root">
       <div
         v-if="openMoreJobId"
         class="fixed z-[9999] w-44 overflow-hidden rounded-xl bg-white py-1 text-sm shadow-lg ring-1 ring-black/5 dark:bg-dark-800 dark:ring-white/10"
@@ -312,7 +312,7 @@
       </div>
     </Teleport>
 
-    <Teleport to="body">
+    <Teleport to="#overlay-root">
       <div
         v-if="promptPopover.visible"
         class="batch-prompt-popover fixed z-[9999] rounded-lg border border-gray-200 bg-white p-3 text-sm text-gray-800 shadow-xl ring-1 ring-black/5 dark:border-dark-700 dark:bg-dark-900 dark:text-gray-100 dark:ring-white/10"

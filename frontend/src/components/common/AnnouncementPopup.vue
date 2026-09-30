@@ -1,5 +1,5 @@
 <template>
-  <Teleport to="body">
+  <Teleport to="#overlay-root">
     <Transition name="popup-fade">
       <div
         v-if="displayedAnnouncement"

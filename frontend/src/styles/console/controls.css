@@ -890,7 +890,7 @@ html.flat-theme :is(a, button)[class*="underline"] {
    checkbox squares and check badges (spans), steppers (divs) and the .btn recipe are not buttons of this kind; the
    public pages keep their own rules. Kept at 0,3,1 (the page files refine; the account forms' 9.6 agrees).
    (wave 2, reported by the accounts agent) */
-html.flat-theme :where(:is(button, a):is(.bg-primary-500, .bg-primary-600, .bg-primary-700).text-white:not(.btn):not(:is([data-ui="home"], [data-ui="key-usage"], [data-ui="legal"], [data-ui="not-found"], [data-ui="auth-layout"], [data-testid="compact-home"], body > div.z-\[140\]) *))[class][class] {
+html.flat-theme :where(:is(button, a):is(.bg-primary-500, .bg-primary-600, .bg-primary-700).text-white:not(.btn):not(:is([data-ui="home"], [data-ui="key-usage"], [data-ui="legal"], [data-ui="not-found"], [data-ui="auth-layout"], [data-testid="compact-home"], #overlay-root > div.z-\[140\]) *))[class][class] {
   --theme-on-fill: var(--ui-on-ink);
   border-color: rgb(var(--ui-ink));
   background-color: rgb(var(--ui-ink));

@@ -681,7 +681,7 @@
     </TablePageLayout>
 
     <!-- Action Menu (Teleported) -->
-    <Teleport to="body">
+    <Teleport to="#overlay-root">
       <div
         v-if="activeMenuId !== null && menuPosition"
         class="action-menu-content fixed z-[9999] w-48 overflow-hidden rounded-xl bg-white shadow-lg ring-1 ring-black/5 dark:bg-dark-800 dark:ring-white/10"

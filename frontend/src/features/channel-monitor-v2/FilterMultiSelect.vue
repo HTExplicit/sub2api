@@ -28,7 +28,7 @@
       </span>
     </button>
 
-    <Teleport to="body">
+    <Teleport to="#overlay-root">
       <Transition name="select-dropdown">
         <div
           v-if="isOpen"

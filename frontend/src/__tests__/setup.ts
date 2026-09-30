@@ -3,7 +3,7 @@
  * 提供全局 mock 和测试工具
  */
 import { config } from '@vue/test-utils'
-import { vi } from 'vitest'
+import { beforeEach, vi } from 'vitest'
 
 function createMemoryStorage(): Storage {
   const values = new Map<string, string>()
@@ -88,6 +88,17 @@ class MockResizeObserver {
 }
 
 globalThis.ResizeObserver = MockResizeObserver as unknown as typeof ResizeObserver
+
+// Overlays teleport into #overlay-root (index.html); many specs reset document.body, so recreate it per test.
+function ensureOverlayRoot() {
+  if (typeof document === 'undefined' || document.getElementById('overlay-root')) return
+  const overlayRoot = document.createElement('div')
+  overlayRoot.id = 'overlay-root'
+  document.body.appendChild(overlayRoot)
+}
+
+ensureOverlayRoot()
+beforeEach(ensureOverlayRoot)
 
 // Vue Test Utils 全局配置
 config.global.stubs = {

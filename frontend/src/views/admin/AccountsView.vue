@@ -90,7 +90,7 @@
                   <span class="hidden md:inline">{{ t('admin.accounts.moreActions') }}</span>
                   <Icon name="chevronDown" size="xs" class="ml-1 hidden md:inline" />
                 </button>
-                <Teleport to="body">
+                <Teleport to="#overlay-root">
                   <div
                     v-if="showAccountToolsDropdown"
                     data-ui="account-tools-panel"

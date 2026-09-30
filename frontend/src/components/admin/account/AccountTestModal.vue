@@ -284,7 +284,7 @@
       </div>
 
       <!-- Image Lightbox -->
-      <Teleport to="body">
+      <Teleport to="#overlay-root">
         <Transition name="fade">
           <div
             v-if="previewImageUrl"

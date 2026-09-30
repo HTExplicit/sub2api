@@ -24,7 +24,7 @@
     </div>
 
     <!-- Popover 显示完整列表 -->
-    <Teleport to="body">
+    <Teleport to="#overlay-root">
       <Transition
         enter-active-class="transition duration-150 ease-out"
         enter-from-class="opacity-0 scale-95"
