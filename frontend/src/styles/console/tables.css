@@ -157,6 +157,15 @@ html.flat-theme .table-wrapper .table-header div[data-ui="th-sub"] > button[data
   display: none;
 }
 
+/* an unsorted part draws no arrow, so its button takes no width (it wrapped onto a line of its own in narrow headers);
+   it keeps its box while it has keyboard focus so the focus ring stays visible */
+html.flat-theme .table-wrapper .table-header div[data-ui="th-sub"]:not([data-sort="ascending"], [data-sort="descending"]) > button[data-ui="th-sub-sort"]:not(:focus-visible) {
+  width: 0;
+  flex-basis: 0;
+  margin-left: -4px;
+  overflow: hidden;
+}
+
 html.flat-theme .table-wrapper .table-header div[data-ui="th-sub"]:is([data-sort="ascending"], [data-sort="descending"]) > button[data-ui="th-sub-sort"]::before {
   content: '';
   width: 11px;

@@ -215,6 +215,12 @@ html.flat-theme .table-wrapper .table-header .sticky-header-cell:last-child {
    to, its .mono-label overrides it) */
 html.flat-theme .table-wrapper .table-header .sticky-header-cell[aria-sort]:hover {
   background-color: rgb(var(--ui-surface));
+}
+
+/* a stacked header (tables.css) darkens only the label under the pointer, so it is clear which column a click sorts:
+   the host's own label here, each part's label in tables.css */
+html.flat-theme .table-wrapper .table-header .sticky-header-cell[aria-sort]:not([data-stack]):hover,
+html.flat-theme .table-wrapper .table-header .sticky-header-cell[aria-sort][data-stack] > div > :not([data-ui="th-subs"]):hover {
   color: rgb(var(--ui-ink-soft));
 }
 
