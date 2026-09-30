@@ -15,6 +15,7 @@
  *   views/public/LegalDocumentView.vue:2    data-ui="legal"
  *   views/NotFoundView.vue:4                data-ui="not-found"
  *   views/KeyUsageView.vue:2                data-ui="key-usage"
+ *   views/auth/LoginView.vue:69             data-ui="auth-link-row" (the forgot-password row; static, performance pass)
  * Everything else is reached through upstream classes ([class~="…"]); the 2FA dialog is the sibling LoginView
  * renders after AuthLayout, the agreement dialog is the body-level z-[140] layer (unique to LoginAgreementPrompt). */
 
@@ -467,8 +468,9 @@ html.flat-theme [data-ui="auth-column"] div[class~="mt-1"][class~="justify-betwe
 }
 
 /* no forgot-password link (password reset off, backend mode): the row keeps a bare <span> and no link, so it takes no
-   room. Child argument: only the row's own link counts (a link inside the span would be the same row's link anyway). */
-html.flat-theme [data-ui="auth-column"] div[class~="mt-1"][class~="justify-between"]:not(:has(> a)) {
+   room. Whether the link shows is a public setting (data): the row (static hook auth-link-row, LoginView.vue:69, the
+   only such row of the auth pages) tests its own child (subject position; the hook weighs nothing). */
+html.flat-theme [data-ui="auth-column"] div[class~="mt-1"][class~="justify-between"]:where([data-ui~="auth-link-row"]):not(:has(> a)) {
   display: none;
 }
 
@@ -2389,6 +2391,14 @@ html.flat-theme [data-ui="key-usage"] .skeleton {
  *   components/admin/codex/CodexRuntimeSettings.vue:2 data-ui="codex-runtime"  (page root, fork component)
  *   views/admin/PluginsView.vue:3                     data-ui="plugins"        (page root)
  *   views/admin/BackupView.vue:291                    data-ui="r2-guide"       (the R2 guide dialog's outer layer)
+ * Static hooks of the performance pass (PERF.md: a style that depends on what an element holds is carried by a hook on
+ * that element, never by a data binding):
+ *   views/admin/SettingsView.vue (84 switch rows)    data-ui="setting-row"    (3.1)
+ *   views/admin/SettingsView.vue (2 matrix rows)     data-ui="quota-row"      (6.x the platform quota matrices)
+ *   views/admin/SettingsView.vue:1863                data-ui="card-title-icon" (2.1 the glyph before a card title)
+ *   views/admin/SettingsView.vue:6413, 8050, 8103    data-ui="settings-dlg-foot" (10 the inline dialogs' button rows)
+ *   views/admin/BackupView.vue:347                   data-ui="r2-table-box"   (the R2 guide's settings table frame)
+ *   views/admin/SettingsView.vue:7851, BackupView.vue:203  data-ui="settings-list-box" (6.3 the two lists that can be empty)
  * Existing hooks used: .settings-tabs-* (SettingsView), #provider-form (PaymentProviderDialog), data-testid
  * "official-model-catalog*", "image-tools-settings", "observability-settings", "backup-schedule", "retired-plugins",
  * data-test="account-system-prompt-binding" (the per-account binding in the accounts dialogs).
@@ -2481,10 +2491,10 @@ html.flat-theme [data-ui~="settings"] .card > div:first-child[class~="border-b"]
 }
 
 /* a glyph beside a card title is a neutral mark, not a hue (decision 2). The glyph sits either inside the title or
-   just before it; both forms are named without a `:has()` on a bare `div` (the two selectors say exactly what the old
-   `:is(h2 svg, div:has(> h2) > svg)` said, because a div holding an h2 does not carry an icon of its own). */
-html.flat-theme [data-ui~="settings"] .card > div:first-child[class~="border-b"] h2 svg,
-html.flat-theme [data-ui~="settings"] .card > div:first-child[class~="border-b"] div > svg:has(~ h2) {
+   just before it (the one such glyph, the panel rate limit card's shield, carries the static hook card-title-icon);
+   both keep the weight of the former `:is(h2 svg, div:has(> h2) > svg)` (0,5,5) through the pads. */
+html.flat-theme [data-ui~="settings"] .card > div:first-child[class~="border-b"] h2 svg:not(uipad),
+html.flat-theme [data-ui~="settings"] .card > div:first-child[class~="border-b"] div > svg:where([data-ui~="card-title-icon"]):not(uipad) {
   width: 0.9375rem;
   height: 0.9375rem;
   color: rgb(var(--ui-ink-soft));
@@ -2511,17 +2521,18 @@ html.flat-theme [data-ui~="settings"] .card > div:is([class~="p-6"], [class~="px
    The row is found by its own hook (data-ui~="setting-row", on the flex wrapper that holds the switch), not by `:has()`
    on a bare `div`: a generic `:has()` anchor merges every descendant into one invalidation set, and the anchor's whole
    subtree is then re-styled whenever any of those descendants may have changed. The hook keeps the same rows (a switch
-   or a peer switch that is the row's direct child) and leaves the selector's specificity untouched. */
-html.flat-theme [data-ui~="settings"] [data-ui~="setting-row"] {
+   or a peer switch that is the row's direct child); the row keeps its classes in the selector and the pad
+   :not(uipad[data-uipad]) stands for the former argument, so every rule keeps its approved weight (0,6,3 for the row). */
+html.flat-theme [data-ui~="settings"] div[class~="flex"][class~="justify-between"][data-ui~="setting-row"]:not(uipad[data-uipad]) {
   gap: 1rem;
 }
 
-html.flat-theme [data-ui~="settings"] [data-ui~="setting-row"] > div:first-child {
+html.flat-theme [data-ui~="settings"] div[class~="flex"][class~="justify-between"][data-ui~="setting-row"]:not(uipad[data-uipad]) > div:first-child {
   min-width: 0;
 }
 
-html.flat-theme [data-ui~="settings"] [data-ui~="setting-row"] > div:first-child > :is(label, span, h3, h4, p):first-child:not([class~="font-mono"]),
-html.flat-theme [data-ui~="settings"] [data-ui~="setting-row"] > :is(label, span, h3, h4):first-child:not([class~="font-mono"]) {
+html.flat-theme [data-ui~="settings"] div[class~="flex"][class~="justify-between"][data-ui~="setting-row"]:not(uipad[data-uipad]) > div:first-child > :is(label, span, h3, h4, p):first-child:not([class~="font-mono"]),
+html.flat-theme [data-ui~="settings"] div[class~="flex"][class~="justify-between"][data-ui~="setting-row"]:not(uipad[data-uipad]) > :is(label, span, h3, h4):first-child:not([class~="font-mono"]) {
   font-family: var(--ui-font);
   font-size: 0.8125rem;
   line-height: 1.21875rem;
@@ -2531,13 +2542,13 @@ html.flat-theme [data-ui~="settings"] [data-ui~="setting-row"] > :is(label, span
   color: rgb(var(--ui-ink));
 }
 
-html.flat-theme [data-ui~="settings"] [data-ui~="setting-row"] > div:first-child > p:not(:first-child) {
+html.flat-theme [data-ui~="settings"] div[class~="flex"][class~="justify-between"][data-ui~="setting-row"]:not(uipad[data-uipad]) > div:first-child > p:not(:first-child) {
   margin-top: 0.125rem;
   font-size: 0.75rem;
   line-height: 1.125rem;
 }
 
-html.flat-theme [data-ui~="settings"] [data-ui~="setting-row"] > div:first-child > p:not(:first-child):is([class~="text-gray-500"], [class~="text-gray-400"], [class~="text-gray-600"]) {
+html.flat-theme [data-ui~="settings"] div[class~="flex"][class~="justify-between"][data-ui~="setting-row"]:not(uipad[data-uipad]) > div:first-child > p:not(:first-child):is([class~="text-gray-500"], [class~="text-gray-400"], [class~="text-gray-600"]) {
   color: rgb(var(--ui-muted));
 }
 
@@ -2775,8 +2786,9 @@ html.flat-theme [data-ui~="settings"] .card table > thead:not([class~="bg-gray-5
 /* the matrix rows set their name beside 32px fields: centred on the field, not on its top edge. The row carries the
    hook (data-ui~="quota-row": the platform quota matrices, the only `align-top` rows in the page that hold inputs), so
    the cells are styled without a `:has()` that would invalidate the anchor's subtree. The backup list's `align-top`
-   rows have no inputs and keep their alignment, exactly as the old filter left them. */
-html.flat-theme [data-ui~="settings"] .card table tr[data-ui~="quota-row"] > td {
+   rows have no inputs and keep their alignment, exactly as the old filter left them. The two pads stand for the former
+   `:has(> td > input)` (0,4,6). */
+html.flat-theme [data-ui~="settings"] .card table tr[data-ui~="quota-row"]:not(uipad):not(uipad) > td {
   vertical-align: middle;
 }
 
@@ -2976,8 +2988,10 @@ html.flat-theme [data-ui~="settings"] .card div[class~="rounded-lg"][class~="bor
    drawing as the ops and risk pages' empty tables): a panel 16px inside the table, the dashed control outline,
    radius 8, 120px, the message 14 / 500 ink-soft in its middle. The list's box is an inline-size container, so a
    table wider than its box (the backup list's 800px on a narrow screen) keeps the panel and the message on the
-   visible width; the cell's right padding (a share of the table's width) takes the overflow. */
-html.flat-theme [data-ui~="settings"] .card div[class~="overflow-x-auto"]:has(> table > tbody > tr:only-child > td[colspan]:only-child) {
+   visible width; the cell's right padding (a share of the table's width) takes the overflow. Whether a list is empty
+   is data: the two list boxes carry the static hook settings-list-box (SettingsView.vue, BackupView.vue) and test
+   their own child chain (subject position; the hook weighs nothing, so the approved weight stays). */
+html.flat-theme [data-ui~="settings"] .card div[class~="overflow-x-auto"]:where([data-ui~="settings-list-box"]):has(> table > tbody > tr:only-child > td[colspan]:only-child) {
   container-type: inline-size;
 }
 
@@ -3557,7 +3571,9 @@ html.flat-theme [data-ui~="settings"] div[class~="fixed"][class~="inset-0"] > di
   color: rgb(var(--ui-ink));
 }
 
-html.flat-theme [data-ui~="settings"] div[class~="fixed"][class~="inset-0"] > div[class~="bg-white"][class~="p-6"]:is([class~="shadow-xl"], [class~="shadow-2xl"]) > div:last-child[class~="flex"]:is([class~="mt-6"], [class~="mt-4"]):has(.btn) {
+/* the button row (static hook settings-dlg-foot on the three inline dialogs' last rows, the ones that hold buttons; the
+   hook weighs what the former `:has(.btn)` did) */
+html.flat-theme [data-ui~="settings"] div[class~="fixed"][class~="inset-0"] > div[class~="bg-white"][class~="p-6"]:is([class~="shadow-xl"], [class~="shadow-2xl"]) > div:last-child[class~="flex"]:is([class~="mt-6"], [class~="mt-4"])[data-ui~="settings-dlg-foot"] {
   margin: var(--ui-dialog-body-y) calc(var(--ui-dialog-x) * -1) calc(var(--ui-dialog-body-y) * -1);
   border-top: 1px solid rgb(var(--ui-line));
   padding: var(--ui-dialog-foot-y) var(--ui-dialog-x);
@@ -3671,7 +3687,8 @@ html.flat-theme [data-ui~="r2-guide"] code[class~="block"] {
   color: rgb(var(--ui-ink));
 }
 
-html.flat-theme [data-ui~="r2-guide"] div[class~="rounded-lg"][class~="border"]:has(> table) {
+/* the settings table's frame (static hook r2-table-box; the pad weighs what the former `:has(> table)` did) */
+html.flat-theme [data-ui~="r2-guide"] div[class~="rounded-lg"][class~="border"]:where([data-ui~="r2-table-box"]):not(uipad) {
   border-color: rgb(var(--ui-line));
   border-radius: var(--ui-radius-lg);
 }

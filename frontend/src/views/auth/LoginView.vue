@@ -66,7 +66,7 @@
               <Icon v-else name="eye" size="md" />
             </button>
           </div>
-          <div class="mt-1 flex items-center justify-between">
+          <div class="mt-1 flex items-center justify-between" data-ui="auth-link-row">
             <span></span>
             <router-link
               v-if="passwordResetEnabled && !backendModeEnabled"

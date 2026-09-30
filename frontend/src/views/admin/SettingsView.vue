@@ -1860,6 +1860,7 @@
                   name="shield"
                   size="md"
                   class="text-primary-500"
+                  data-ui="card-title-icon"
                 />
                 <h2 class="text-lg font-semibold text-gray-900 dark:text-white">
                   {{ t("admin.settings.panelRateLimit.title") }}
@@ -6409,7 +6410,7 @@
                   </p>
                 </div>
               </div>
-              <div class="mt-4 flex justify-end">
+              <div class="mt-4 flex justify-end" data-ui="settings-dlg-foot">
                 <button
                   type="button"
                   class="btn btn-secondary btn-sm"
@@ -7847,7 +7848,7 @@
                   </button>
                 </div>
 
-                <div class="overflow-x-auto rounded-lg border border-gray-200 dark:border-dark-700">
+                <div class="overflow-x-auto rounded-lg border border-gray-200 dark:border-dark-700" data-ui="settings-list-box">
                   <table class="min-w-full divide-y divide-gray-200 dark:divide-dark-700">
                     <thead class="bg-gray-50 dark:bg-dark-800">
                       <tr>
@@ -8046,7 +8047,7 @@
               </div>
             </div>
 
-            <div class="mt-6 flex items-center justify-between gap-3">
+            <div class="mt-6 flex items-center justify-between gap-3" data-ui="settings-dlg-foot">
               <p
                 v-if="!affiliateModalCanSubmit"
                 class="text-xs text-gray-500 dark:text-gray-400"
@@ -8099,7 +8100,7 @@
             <p class="mt-2 text-xs text-gray-400">
               {{ t('admin.settings.features.affiliate.batchModal.clearHint') }}
             </p>
-            <div class="mt-6 flex justify-end gap-2">
+            <div class="mt-6 flex justify-end gap-2" data-ui="settings-dlg-foot">
               <button type="button" class="btn btn-secondary" @click="affiliateBatchModal.open = false">
                 {{ t('common.cancel') }}
               </button>

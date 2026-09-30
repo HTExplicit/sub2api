@@ -63,11 +63,12 @@ html.flat-theme [data-ui~="dist-head"]:has(> div > .rounded-lg:is(.bg-gray-50, .
 /* B1.3 Chart rows holding a distribution card: from 1024 to 1535px each card takes the full width, so the
    ring, every column and the full names fit; from 1536px they sit side by side again. Perf pass (kept :has): the
    distribution table exists only once the chart has data (v-else-if), so the row's layout depends on runtime
-   content below it. The has-test sits in the subject compound of the chart row (class-qualified, scoped under the
-   four hooked page roots that hold such rows, :where() so the scope adds no specificity) with a child-only argument
-   (row > first card > body > box > table); the original 0,8,2 is kept. */
+   content below it. The has-test sits in the subject compound of the hooked chart row ([data-ui="dist-grid"]: the
+   six rows whose first card can hold such a table - DashboardView, admin and user UsageView (two each),
+   UserDashboardCharts) with a child-only argument (row > first card > body > box > table); `.grid` keeps the rule in
+   the class bucket, the repeated [data-ui] keeps the original 0,8,2. */
 @media (min-width: 1024px) and (max-width: 1535.98px) {
-  html.flat-theme :where([data-ui~="admin-dashboard"], [data-ui~="admin-usage"], [data-ui~="user-dashboard"], [data-ui~="user-usage"]) .grid.gap-6.lg\:grid-cols-2:has(> .card:first-child > * > .max-h-48.overflow-auto > table) {
+  html.flat-theme .grid[data-ui~="dist-grid"][data-ui]:has(> .card:first-child > * > .max-h-48.overflow-auto > table) {
     grid-template-columns: minmax(0, 1fr);
   }
 }

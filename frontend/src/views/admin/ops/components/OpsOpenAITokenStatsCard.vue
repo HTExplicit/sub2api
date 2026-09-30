@@ -163,7 +163,7 @@ function onNextPage() {
       <h3 class="text-sm font-bold text-gray-900 dark:text-white">
         {{ t('admin.ops.openaiTokenStats.title') }}
       </h3>
-      <div class="flex flex-wrap items-center gap-2">
+      <div data-ui="dense-btn-if" class="flex flex-wrap items-center gap-2">
         <div class="w-36">
           <Select v-model="timeRange" :options="timeRangeOptions" />
         </div>
