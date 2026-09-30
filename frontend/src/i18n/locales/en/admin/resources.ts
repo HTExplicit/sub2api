@@ -77,7 +77,7 @@ export default {
       copyFormats: 'Choose a copy format',
       copyFormatStandard: 'Standard format',
       copyFormatHostPortUserPass: 'host:port:username:password',
-      copyFormatUserPassHost: 'username:password@host:port',
+      copyFormatUserPassHost: "username:password{'@'}host:port",
       copyFormatHostPort: 'host:port',
       urlCopied: 'Proxy URL copied',
       searchProxies: 'Search proxies...',

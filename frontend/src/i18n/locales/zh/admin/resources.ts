@@ -111,7 +111,7 @@ export default {
       copyFormats: '选择复制格式',
       copyFormatStandard: '标准格式',
       copyFormatHostPortUserPass: '主机:端口:用户名:密码',
-      copyFormatUserPassHost: '用户名:密码@主机:端口',
+      copyFormatUserPassHost: "用户名:密码{'@'}主机:端口",
       copyFormatHostPort: '主机:端口',
       urlCopied: '代理 URL 已复制',
       allProtocols: '全部协议',
