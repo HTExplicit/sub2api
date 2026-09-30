@@ -763,7 +763,7 @@
       @cancel="showResetQuotaConfirm = false"
     />
     <!-- Subscription Guide Modal -->
-    <teleport to="body">
+    <teleport to="#overlay-root">
       <transition name="modal">
         <div data-ui="h2-dlg h2-dlg-close" v-if="showGuideModal" class="fixed inset-0 z-50 flex items-center justify-center p-4" @mousedown.self="showGuideModal = false">
           <div class="fixed inset-0 bg-black/50" @click="showGuideModal = false"></div>
