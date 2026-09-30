@@ -40,7 +40,7 @@ describe('AnnouncementPopup', () => {
 
   afterEach(() => {
     document.body.innerHTML = ''
-    document.body.style.overflow = ''
+    document.body.removeAttribute('data-announcement-open')
   })
 
   it('renders mixed Markdown and HTML inside the shared styled container', async () => {
@@ -106,7 +106,7 @@ describe('AnnouncementPopup', () => {
     expect(dismissPopup).not.toHaveBeenCalled()
 
     await wrapper.setProps({ announcement: null })
-    expect(document.body.style.overflow).toBe('')
+    expect(document.body.hasAttribute('data-announcement-open')).toBe(false)
     wrapper.unmount()
   })
 

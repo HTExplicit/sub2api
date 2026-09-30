@@ -286,7 +286,7 @@
     </div>
 
     <!-- Cloudflare R2 Setup Guide Modal -->
-    <teleport to="body">
+    <teleport to="#overlay-root">
       <transition name="modal">
         <div v-if="showR2Guide" class="fixed inset-0 z-50 flex items-center justify-center p-4" data-ui="r2-guide h2-dlg h2-dlg-close" @mousedown.self="showR2Guide = false">
           <div class="fixed inset-0 bg-black/50" @click="showR2Guide = false"></div>
@@ -369,7 +369,7 @@
       </transition>
     </teleport>
     <!-- 分卷下载链接 -->
-    <teleport to="body">
+    <teleport to="#overlay-root">
       <transition name="modal">
         <div data-ui="h2-dlg h2-dlg-close"
           v-if="downloadPartsModalOpen"

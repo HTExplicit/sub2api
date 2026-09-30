@@ -277,7 +277,7 @@
     />
 
     <!-- Generate Codes Dialog -->
-    <Teleport to="body">
+    <Teleport to="#overlay-root">
       <div data-ui="h2-dlg" v-if="showGenerateDialog" class="fixed inset-0 z-50 flex items-center justify-center">
         <div class="fixed inset-0 bg-black/50" @click="showGenerateDialog = false"></div>
         <div
@@ -414,7 +414,7 @@
     </Teleport>
 
     <!-- Batch Update Dialog -->
-    <Teleport to="body">
+    <Teleport to="#overlay-root">
       <div data-ui="h2-dlg"
         v-if="showBatchUpdateDialog"
         class="fixed inset-0 z-50 flex items-center justify-center p-4"
@@ -528,7 +528,7 @@
     </Teleport>
 
     <!-- Generated Codes Result Dialog -->
-    <Teleport to="body">
+    <Teleport to="#overlay-root">
       <div v-if="showResultDialog" class="fixed inset-0 z-50 flex items-center justify-center p-4">
         <div class="fixed inset-0 bg-black/50" @click="closeResultDialog"></div>
         <div class="relative z-10 w-full max-w-lg rounded-xl bg-white shadow-xl dark:bg-dark-800">

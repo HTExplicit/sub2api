@@ -51,7 +51,7 @@
   </BaseDialog>
 
   <!-- Group Selector Dropdown -->
-  <Teleport to="body">
+  <Teleport to="#overlay-root">
     <div
       v-if="groupSelectorKeyId !== null && dropdownPosition"
       ref="dropdownRef"

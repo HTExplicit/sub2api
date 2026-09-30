@@ -16,7 +16,7 @@
     >
       <slot name="trigger" />
     </button>
-    <Teleport to="body">
+    <Teleport to="#overlay-root">
       <div
         v-if="open"
         :id="panelId"

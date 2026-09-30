@@ -128,7 +128,7 @@ onBeforeUnmount(() => {
     </slot>
 
     <!-- Teleport to body to escape modal overflow clipping -->
-    <Teleport to="body">
+    <Teleport to="#overlay-root">
       <!-- before: 伪元素向下延伸一段透明区域，盖住提示框与触发图标之间的空隙，让指针能连续移入提示框。 -->
       <div
         ref="tooltip"

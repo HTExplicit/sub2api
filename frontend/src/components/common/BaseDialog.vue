@@ -1,5 +1,5 @@
 <template>
-  <Teleport to="body">
+  <Teleport to="#overlay-root">
     <Transition name="modal">
       <div
         v-if="show"
@@ -166,7 +166,7 @@ watch(
     if (isOpen) {
       // 保存当前焦点元素
       previousActiveElement = document.activeElement as HTMLElement
-      // 注册到共享对话框栈:body.modal-open 按引用计数管理,关闭嵌套子级时父级仍保持滚动锁定
+      // 注册到共享对话框栈:body[data-modal-open] 按引用计数管理,关闭嵌套子级时父级仍保持滚动锁定
       registerDialog(dialogId, props.zIndex)
 
       // 等待DOM更新后设置焦点到对话框(仅当自己仍是栈顶,避免抢走更晚打开的对话框的焦点)

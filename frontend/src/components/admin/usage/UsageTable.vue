@@ -312,7 +312,7 @@
   </div>
 
   <!-- Token Tooltip Portal -->
-  <Teleport to="body">
+  <Teleport to="#overlay-root">
     <div
       v-if="tokenTooltipVisible"
       ref="tokenTooltipRef"
@@ -397,7 +397,7 @@
   </Teleport>
 
   <!-- Cost Tooltip Portal -->
-  <Teleport to="body">
+  <Teleport to="#overlay-root">
     <div
       v-if="tooltipVisible"
       ref="tooltipRef"

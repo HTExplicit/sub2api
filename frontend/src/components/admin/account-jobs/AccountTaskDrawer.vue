@@ -26,7 +26,7 @@
       <button class="btn btn-secondary btn-sm" :disabled="store.loadingJobs || store.jobPage.page * store.jobPage.pageSize >= store.jobPage.total" @click="loadHistory(store.jobPage.page + 1)">{{ t('admin.accountTasks.nextPage') }}</button>
     </template>
   </BaseDialog>
-  <Teleport to="body">
+  <Teleport to="#overlay-root">
     <Transition name="operation-dock">
       <aside v-if="dockJob && !store.drawerOpen && !store.embeddedOpen" class="fixed bottom-4 right-4 z-40 w-[calc(100%-2rem)] border border-line bg-canvas shadow-outline sm:w-80" :aria-label="t('admin.accountTasks.inProgress')" data-test="operation-dock">
         <div class="flex items-center gap-3 px-4 py-3">

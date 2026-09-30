@@ -1,5 +1,5 @@
 <template>
-  <Teleport to="body">
+  <Teleport to="#overlay-root">
     <div v-if="show && anchorRect">
       <!-- Backdrop: click anywhere outside to close -->
       <div class="fixed inset-0 z-[9998]" @click="emit('close')"></div>

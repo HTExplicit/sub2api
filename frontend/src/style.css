@@ -429,8 +429,9 @@
     @apply flex-shrink-0;
   }
 
-  /* 防止body滚动的工具类 */
-  body.modal-open {
+  /* 对话框/公告弹窗打开时禁止 body 滚动(dialogStack 与公告组件设置的属性;<body> 的 class 或内联样式变化会让整页重算样式) */
+  body[data-modal-open],
+  body[data-announcement-open] {
     overflow: hidden;
   }
 

@@ -46,7 +46,7 @@
     </button>
 
     <!-- Teleport dropdown to body to escape stacking context -->
-    <Teleport to="body">
+    <Teleport to="#overlay-root">
       <Transition name="select-dropdown">
         <div
           v-if="isOpen"

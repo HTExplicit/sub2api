@@ -5,8 +5,9 @@ import { shallowReactive } from 'vue'
  *
  * - Keyboard handling (Escape, Tab cycling) and auto-focus only act on the top-most dialog,
  *   so a confirm nested inside an editor no longer closes the editor as well.
- * - The `body.modal-open` scroll lock is reference counted: added on the first registration,
- *   removed on the last unregistration, instead of every dialog toggling it on its own.
+ * - The `body[data-modal-open]` scroll lock is reference counted: added on the first registration,
+ *   removed on the last unregistration, instead of every dialog toggling it on its own. It is an
+ *   attribute no other selector uses: a class or inline-style change on <body> restyles the whole page.
  * - `dialogLayer` stacks nested dialogs ten z-index steps above the previous one so a child
  *   always paints above its parent even when both use the default z-index.
  */
@@ -27,7 +28,7 @@ export const DEFAULT_DIALOG_Z_INDEX = 50
 export const GATE_DIALOG_Z_INDEX = 80
 
 const LAYER_STEP = 10
-const BODY_LOCK_CLASS = 'modal-open'
+const BODY_LOCK_ATTRIBUTE = 'data-modal-open'
 
 const dialogs = shallowReactive<DialogEntry[]>([])
 let sequence = 0
@@ -45,7 +46,7 @@ export function registerDialog(id: string, zIndex = DEFAULT_DIALOG_Z_INDEX): voi
   } else {
     dialogs.push({ id, zIndex })
   }
-  document.body.classList.add(BODY_LOCK_CLASS)
+  document.body.setAttribute(BODY_LOCK_ATTRIBUTE, '')
 }
 
 export function unregisterDialog(id: string): void {
@@ -54,7 +55,7 @@ export function unregisterDialog(id: string): void {
     dialogs.splice(index, 1)
   }
   if (dialogs.length === 0) {
-    document.body.classList.remove(BODY_LOCK_CLASS)
+    document.body.removeAttribute(BODY_LOCK_ATTRIBUTE)
   }
 }
 

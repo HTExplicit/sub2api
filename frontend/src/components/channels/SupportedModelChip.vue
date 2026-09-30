@@ -31,7 +31,7 @@
     <!-- Teleport to body so the popover is not clipped by card/overflow-hidden
          ancestors. Fixed-position coords are computed from the trigger's
          bounding rect; re-measured on enter / scroll / resize. -->
-    <Teleport to="body">
+    <Teleport to="#overlay-root">
       <div
         v-show="show"
         ref="popoverEl"

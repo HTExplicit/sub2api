@@ -1,5 +1,5 @@
 <template>
-  <Teleport to="body">
+  <Teleport to="#overlay-root">
     <Transition
       enter-active-class="transition-opacity duration-200"
       enter-from-class="opacity-0"

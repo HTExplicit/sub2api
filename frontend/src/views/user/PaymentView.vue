@@ -232,7 +232,7 @@
       </template>
     </div>
     <!-- Renewal Plan Selection Modal -->
-    <Teleport to="body">
+    <Teleport to="#overlay-root">
       <Transition name="modal">
         <div v-if="showRenewalModal" class="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4" @click.self="closeRenewalModal">
           <div class="relative flex max-h-full w-full max-w-lg flex-col rounded-2xl border border-gray-200 bg-white p-6 shadow-2xl dark:border-dark-700 dark:bg-dark-900">
@@ -249,7 +249,7 @@
       </Transition>
     </Teleport>
     <!-- Image Preview Overlay -->
-    <Teleport to="body">
+    <Teleport to="#overlay-root">
       <Transition name="modal">
         <div data-ui="image-lightbox" v-if="previewImage" class="fixed inset-0 z-[60] flex items-center justify-center bg-black/70 backdrop-blur-sm" @click="previewImage = ''">
           <img :src="previewImage" alt="" class="max-h-[85vh] max-w-[90vw] rounded-xl object-contain shadow-2xl" />

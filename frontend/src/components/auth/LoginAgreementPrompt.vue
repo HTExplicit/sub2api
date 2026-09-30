@@ -57,7 +57,7 @@
     </div>
   </div>
 
-  <Teleport to="body">
+  <Teleport to="#overlay-root">
     <Transition name="agreement-fade">
       <div
         v-if="dialogVisible"

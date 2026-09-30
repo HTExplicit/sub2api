@@ -20,7 +20,7 @@
     </button>
 
     <!-- 公告列表 Modal -->
-    <Teleport to="body">
+    <Teleport to="#overlay-root">
       <Transition name="modal-fade">
         <div
           v-if="isModalOpen"
@@ -181,7 +181,7 @@
     </Teleport>
 
     <!-- 公告详情 Modal -->
-    <Teleport to="body">
+    <Teleport to="#overlay-root">
       <Transition name="modal-fade">
         <div
           v-if="detailModalOpen && selectedAnnouncement"
@@ -413,13 +413,14 @@ onMounted(() => {
 
 onBeforeUnmount(() => {
   document.removeEventListener('keydown', handleEscape)
-  document.body.style.overflow = ''
+  document.body.removeAttribute('data-announcement-open')
 })
 
 watch(
   [isModalOpen, detailModalOpen, () => announcementStore.currentPopup],
   ([modal, detail, popup]) => {
-    document.body.style.overflow = (modal || detail || popup) ? 'hidden' : ''
+    // body scroll lock (style.css); an attribute, not an inline style: that would restyle the whole page
+    document.body.toggleAttribute('data-announcement-open', Boolean(modal || detail || popup))
   }
 )
 </script>
