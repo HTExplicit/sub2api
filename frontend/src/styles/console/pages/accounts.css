@@ -426,14 +426,14 @@ html.flat-theme .table-wrapper[data-table="accounts"] :is(th, td)[data-column="n
   max-width: clamp(12rem, calc(100vw - 1086px), 16rem);
 }
 
-html.flat-theme .table-wrapper[data-table="accounts"] td[data-column="name"] > div {
+html.flat-theme .table-wrapper[data-table="accounts"] td[data-column="name"] > div:where(:not([data-ui="cell-lines"])) {
   flex-direction: row;
   align-items: baseline;
   gap: 8px;
   width: 100%;
 }
 
-html.flat-theme .table-wrapper[data-table="accounts"] td[data-column="name"] > div > :first-child {
+html.flat-theme .table-wrapper[data-table="accounts"] td[data-column="name"] > div:where(:not([data-ui="cell-lines"])) > :first-child {
   flex: 0 1 auto;
   min-width: 0;
   font-weight: 500;
@@ -463,7 +463,7 @@ html.flat-theme .table-wrapper[data-table="accounts"] td[data-column="name"] > d
    after it keep their place): an account whose chips need more (OAuth with plan and privacy, a subscription expiry)
    moves the compact-mode line, then the later chip groups, to a further line. An API-key account (chips 115 +
    compact line 88) stays on one line at either cap. */
-html.flat-theme .table-wrapper[data-table="accounts"] td[data-column="platform_type"] > div {
+html.flat-theme .table-wrapper[data-table="accounts"] td[data-column="platform_type"] > div:where(:not([data-ui="cell-lines"])) {
   flex-direction: row;
   flex-wrap: wrap;
   align-items: center;
@@ -479,7 +479,7 @@ html.flat-theme .table-wrapper[data-table="accounts"] td[data-column="platform_t
   row-gap: 4px;
 }
 
-html.flat-theme .table-wrapper[data-table="accounts"] td[data-column="platform_type"] > div > div:last-child {
+html.flat-theme .table-wrapper[data-table="accounts"] td[data-column="platform_type"] > div:where(:not([data-ui="cell-lines"])) > div:last-child {
   white-space: nowrap;
 }
 
@@ -494,23 +494,23 @@ html.flat-theme .table-wrapper[data-table="accounts"] td[data-column="status"] d
 }
 
 /* Classification / route: the two labelled values on one line; the labels are mono labels. */
-html.flat-theme .table-wrapper[data-table="accounts"] td[data-column="taxonomy_route"] > div {
+html.flat-theme .table-wrapper[data-table="accounts"] td[data-column="taxonomy_route"] > div:where(:not([data-ui="cell-lines"])) {
   display: flex;
   align-items: center;
   gap: 12px;
   max-width: 34rem;
 }
 
-html.flat-theme .table-wrapper[data-table="accounts"] td[data-column="taxonomy_route"] > div > * {
+html.flat-theme .table-wrapper[data-table="accounts"] td[data-column="taxonomy_route"] > div:where(:not([data-ui="cell-lines"])) > * {
   margin-top: 0;
 }
 
-html.flat-theme .table-wrapper[data-table="accounts"] td[data-column="taxonomy_route"] > div > div:first-child {
+html.flat-theme .table-wrapper[data-table="accounts"] td[data-column="taxonomy_route"] > div:where(:not([data-ui="cell-lines"])) > div:first-child {
   flex: none;
   flex-wrap: nowrap;
 }
 
-html.flat-theme .table-wrapper[data-table="accounts"] td[data-column="taxonomy_route"] > div > div:last-child {
+html.flat-theme .table-wrapper[data-table="accounts"] td[data-column="taxonomy_route"] > div:where(:not([data-ui="cell-lines"])) > div:last-child {
   min-width: 0;
   max-width: 18rem;
 }
@@ -523,6 +523,7 @@ html.flat-theme .table-wrapper[data-table="accounts"] td[data-column="taxonomy_r
 }
 
 /* Routing groups: up to four badges and 「+N」 (its popover lists all) on one line. */
+html.flat-theme .table-wrapper[data-table="accounts"] [data-ui="cell-line"][data-line="groups"] > [data-ui="cell-line-value"] > div,
 html.flat-theme .table-wrapper[data-table="accounts"] td[data-column="groups"] > div {
   max-width: none;
 }
@@ -534,18 +535,21 @@ html.flat-theme .table-wrapper[data-table="accounts"] td[data-column="groups"] >
 
 /* Capacity, proxy, today's stats: their stacked parts side by side (the expiry cell keeps its approved stack:
    the two-line date, then the expired / auto-pause badges). */
+html.flat-theme .table-wrapper[data-table="accounts"] [data-ui="cell-line"][data-line="capacity"] > [data-ui="cell-line-value"] > div,
 html.flat-theme .table-wrapper[data-table="accounts"] td:is([data-column="capacity"], [data-column="proxy"]) > div {
   flex-direction: row;
   align-items: center;
   gap: 8px;
 }
 
+html.flat-theme .table-wrapper[data-table="accounts"] [data-ui="cell-line"][data-line="today_stats"] > [data-ui="cell-line-value"] > div > div,
 html.flat-theme .table-wrapper[data-table="accounts"] td[data-column="today_stats"] > div > div {
   display: flex;
   align-items: center;
   gap: 10px;
 }
 
+html.flat-theme .table-wrapper[data-table="accounts"] [data-ui="cell-line"][data-line="today_stats"] > [data-ui="cell-line-value"] > div > div > *,
 html.flat-theme .table-wrapper[data-table="accounts"] td[data-column="today_stats"] > div > div > * {
   margin-top: 0;
 }
