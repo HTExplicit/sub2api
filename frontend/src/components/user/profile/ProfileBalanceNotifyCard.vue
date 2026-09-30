@@ -25,7 +25,7 @@
             {{ t('profile.balanceNotify.threshold') }}
             <span class="text-xs text-gray-400 ml-2">{{ t('profile.balanceNotify.thresholdHint') }}</span>
           </label>
-          <div class="flex items-center gap-2">
+          <div data-ui="dense-btn" class="flex items-center gap-2">
             <span class="text-gray-500">$</span>
             <input
               v-model.number="customThreshold"

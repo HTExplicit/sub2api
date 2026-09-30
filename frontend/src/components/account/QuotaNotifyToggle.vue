@@ -15,7 +15,7 @@ const emit = defineEmits<{
 </script>
 
 <template>
-  <div class="flex items-center gap-1.5">
+  <div data-ui="dense-dlg" class="flex items-center gap-1.5">
     <button
       type="button"
       @click="emit('update:enabled', !enabled)"

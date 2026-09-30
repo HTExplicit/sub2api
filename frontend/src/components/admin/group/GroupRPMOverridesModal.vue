@@ -20,7 +20,7 @@
         <h4 class="mb-2 text-sm font-medium text-gray-700 dark:text-gray-300">
           {{ t('admin.groups.addUserRpm') }}
         </h4>
-        <div class="flex items-end gap-2">
+        <div data-ui="dense-dlg" class="flex items-end gap-2">
           <div class="relative flex-1">
             <input
               v-model="searchQuery"

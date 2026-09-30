@@ -31,7 +31,7 @@
             <tr v-for="row in quotas" :key="row.platform" class="border-b border-gray-100 dark:border-dark-800">
               <td class="px-3 py-2 font-mono text-gray-900 dark:text-white">{{ row.platform }}</td>
               <td class="px-3 py-2">
-                <div class="flex items-center gap-1">
+                <div data-ui="dense-dlg" class="flex items-center gap-1">
                   <input
                     v-model.number="row.daily_limit_usd"
                     type="number"
@@ -50,7 +50,7 @@
                 </div>
               </td>
               <td class="px-3 py-2">
-                <div class="flex items-center gap-1">
+                <div data-ui="dense-dlg" class="flex items-center gap-1">
                   <input
                     v-model.number="row.weekly_limit_usd"
                     type="number"
@@ -69,7 +69,7 @@
                 </div>
               </td>
               <td class="px-3 py-2">
-                <div class="flex items-center gap-1">
+                <div data-ui="dense-dlg" class="flex items-center gap-1">
                   <input
                     v-model.number="row.monthly_limit_usd"
                     type="number"

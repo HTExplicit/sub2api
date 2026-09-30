@@ -19,8 +19,11 @@
  *   data-ui="use-key"                  components/keys/UseKeyModal.vue:8              dialog body
  *   data-ui="user-batch-image"         views/user/BatchImageGuideView.vue:3           TablePageLayout root
  *   data-ui="user-keys"                views/user/KeysView.vue:3                      TablePageLayout root
+ *   data-ui="keys-bulk-bar"            views/user/KeysView.vue:31                     the selection row (bulk edit)
  *   data-ui="key-group-search"         views/user/KeysView.vue:1145                   the group picker's search row
  *   data-ui="plan-card"                components/payment/SubscriptionPlanCard.vue:3  plan card root
+ *   data-ui="active-sub"               views/user/PaymentView.vue:201                 an active subscription's row
+ *   data-ui="balance-tile"             components/user/dashboard/UserDashboardStats.vue:5  the balance KPI tile
  *   data-ui="image-studio"             features/image-studio/ImageStudioPage.vue:2    page root
  * Identity hooks (data.css §6.4 contract, decision 2): data-ui="platform-chip" on KeysView.vue:515 (the create
  * dialog's provider tiles), PaymentView.vue:107 and :207, SubscriptionsView.vue:45, SubscriptionPlanCard.vue:34,
@@ -29,9 +32,13 @@
  * SubscriptionPlanCard.vue:11.
  * Existing hooks used: data-table="keys", #key-form, the profile's data-testid, .custom-page-layout, data-testid
  * on the image studio, data-ui="pagination" / "empty-state" recipes of data.css.
- * Performance (PERF.md, before v0.2.9-codexrip.3): no :has() in a non-subject position (it re-styles the anchor's
- * whole subtree on every change); the few :has() left sit in the subject compound under a hooked root with a child or
- * sibling argument. */
+ * Performance (PERF.md, before v0.2.9-codexrip.3): every data-ui hook here is static (never bound to data). A style that
+ * depends on what an element contains is carried by a static hook on that element, :focus-within or a sibling position
+ * (:not(:last-child)); the one relational pseudo-class (has()) left is the image studio's page root testing whether its
+ * header holds the clear-history button (7.2: the button shows while a history exists, data), in the subject compound
+ * of the hooked root with a child argument, handing its values down as custom properties. Every rewritten selector keeps the weight of the
+ * one it replaced: a hook that has to weigh nothing is wrapped in :where(), missing weight is added by a pad that never
+ * filters anything (:not(uipad) = 0,0,1, :not([data-uipad]) = 0,1,0, :not(#uipad) = 1,0,0). */
 
 /* ================================================================== 1 · page frame */
 
@@ -50,9 +57,11 @@ html.flat-theme [data-testid="profile-shell"] [class~="space-y-6"] > :not([hidde
 
 /* Cards on these pages: the reference's panel inset (16px, REF §6 p-4) instead of upstream's 24; a header bar is
    12 / 16 on the structural line with the title 14 / 600 (the reference's modal and card titles) and its note
-   12.5px muted. */
+   12.5px muted. The card bodies: the profile's at 0,6,2 (its hero excluded), the redeem page's at 0,5,2 so that the
+   redeem page's own insets (3.1 the note, 3.3 the history, 3.4 the result, all 0,5,2 and later) win (final review V3-10). */
 html.flat-theme :is([data-ui="user-redeem"], [data-ui="user-affiliate"], [data-ui="user-purchase"], [data-testid="profile-shell"]) .card:is([class~="p-6"], [class~="p-5"]),
-html.flat-theme :is([data-ui="user-redeem"], [data-testid="profile-shell"]) .card:where(:not([data-testid="profile-overview-hero"])) > div:is([class~="p-6"], [class~="px-6"][class~="py-6"]) {
+html.flat-theme [data-testid="profile-shell"] .card:not([data-testid="profile-overview-hero"]) > div:is([class~="p-6"], [class~="px-6"][class~="py-6"]),
+html.flat-theme [data-ui="user-redeem"] .card > div:is([class~="p-6"], [class~="px-6"][class~="py-6"]) {
   padding: 16px;
 }
 
@@ -82,28 +91,29 @@ html.flat-theme :is([data-ui="user-affiliate"], [data-testid="profile-shell"]) .
 /* 2.0 One toolbar row (REF §7.1 /models: the search and the filters on the left, the actions at the row's right end;
    the management pages do the same). Upstream gives the page two slots, the actions above the filters; from 1024px
    the layout puts them side by side on the first row and the table card under them. Keyboard order stays upstream's
-   (actions, then filters); below 1024px the slots stack as upstream. */
+   (actions, then filters); below 1024px the slots stack as upstream. The page root carries data-ui="user-keys" (the
+   keys page always renders both slots and its table, which the former anchor tested for). */
 @media (min-width: 1024px) {
-  html.flat-theme .table-page-layout[data-ui~="user-keys"] {
+  html.flat-theme .table-page-layout[data-ui~="user-keys"]:not([data-uipad][data-uipad][data-uipad][data-uipad][data-uipad]) {
     display: grid;
     grid-template-columns: minmax(0, 1fr) auto;
     grid-template-rows: auto minmax(0, 1fr) auto;
     column-gap: 12px;
   }
 
-  html.flat-theme .table-page-layout[data-ui~="user-keys"] > .layout-section-fixed:first-child {
+  html.flat-theme .table-page-layout[data-ui~="user-keys"]:not([data-uipad][data-uipad][data-uipad]) > .layout-section-fixed:first-child {
     grid-column: 2;
     grid-row: 1;
     align-self: start;
   }
 
-  html.flat-theme .table-page-layout[data-ui~="user-keys"] > .layout-section-fixed:first-child + .layout-section-fixed {
+  html.flat-theme .table-page-layout[data-ui~="user-keys"]:not([data-uipad][data-uipad]) > .layout-section-fixed:first-child + .layout-section-fixed {
     grid-column: 1;
     grid-row: 1;
     min-width: 0;
   }
 
-  html.flat-theme .table-page-layout[data-ui~="user-keys"] > :is(.layout-section-scrollable, .layout-section-scrollable ~ .layout-section-fixed) {
+  html.flat-theme .table-page-layout[data-ui~="user-keys"]:not([data-uipad][data-uipad]) > :is(.layout-section-scrollable, .layout-section-scrollable ~ .layout-section-fixed) {
     grid-column: 1 / -1;
   }
 }
@@ -136,7 +146,7 @@ html.flat-theme .table-wrapper[data-table="keys"] td[data-column="current_concur
 }
 
 /* 2.2 The selection row above the table (keys chosen for bulk edit): the reference tray's count, 12.5px ink-soft. */
-html.flat-theme .table-page-layout[data-ui~="user-keys"] > .layout-section-fixed div[class~="flex-wrap"][class~="text-sm"] > span:first-child {
+html.flat-theme .table-page-layout[data-ui~="user-keys"] > .layout-section-fixed div[data-ui~="keys-bulk-bar"][class~="flex-wrap"][class~="text-sm"]:not([data-uipad]) > span {
   color: rgb(var(--ui-ink-soft));
   font-size: 12.5px;
 }
@@ -144,14 +154,15 @@ html.flat-theme .table-page-layout[data-ui~="user-keys"] > .layout-section-fixed
 /* 2.25 The group picker (the group cell's popover, teleported to the body; its frame and rows are the console's menus,
    overlays.css): its search row is the ModelPicker's, as Select's (overlays 1.6): 36px on the structural line, the
    glyph 14px faint, the field without a box of its own, 13px ink, the placeholder faint (upstream's placeholder-gray-400
-   reads the grey fill ramp: 2.4:1 light, 3.3:1 dark); a keyboard focus draws the row's line in the accent. */
+   reads the grey fill ramp: 2.4:1 light, 3.3:1 dark); a keyboard focus draws the row's line in the accent (the row's
+   only focusable element is a text field, which is :focus-visible whenever it is focused: :focus-within). */
 html.flat-theme div[class~="fixed"][class~="z-[100000020]"] > div[class~="border-b"]:first-child {
   padding: 0 10px;
   border-bottom-color: rgb(var(--ui-line));
   transition: box-shadow var(--ui-duration) var(--ui-ease);
 }
 
-html.flat-theme [data-ui="key-group-search"]:has(> div > input:focus-visible) {
+html.flat-theme div[class~="fixed"][class~="z-[100000020]"] > div[data-ui="key-group-search"]:first-child:focus-within:not(uipad) {
   box-shadow: inset 0 -2px 0 rgb(var(--ui-focus));
 }
 
@@ -492,11 +503,11 @@ html.flat-theme [data-ui="user-redeem"] #code {
 }
 
 html.flat-theme [data-ui="user-redeem"] #code ~ *,
-html.flat-theme [data-ui="user-redeem"] div[class~="relative"] > div[class~="pointer-events-none"] {
+html.flat-theme [data-ui="user-redeem"] div[class~="relative"]:not(#uipad) > div[class~="pointer-events-none"] {
   padding-left: 12px;
 }
 
-html.flat-theme [data-ui="user-redeem"] div[class~="relative"] > div[class~="pointer-events-none"] svg {
+html.flat-theme [data-ui="user-redeem"] div[class~="relative"]:not(#uipad) > div[class~="pointer-events-none"] svg {
   width: 15px;
   height: 15px;
   color: rgb(var(--ui-faint));
@@ -776,7 +787,7 @@ html.flat-theme [data-testid="profile-overview-hero"] span[class~="rounded-full"
   color: rgb(var(--ui-ink-soft));
 }
 
-html.flat-theme [data-testid="profile-overview-hero"] div[class~="grid"] {
+html.flat-theme [data-testid="profile-overview-hero"] div[class~="grid"]:not([data-uipad]) {
   display: flex;
   flex-wrap: wrap;
   gap: 10px;
@@ -983,7 +994,7 @@ html.flat-theme [data-testid="profile-shell"] > .card form[class~="rounded-lg"][
 /* 5.1 The four figures: the reference's StatTile (§8.13 /logs: 1px line, 6px, surface, 8 / 12, the mono label, the
    value 15 / 600 tabular ink, the note 11px muted, 76px; tiles 10px apart). The rebate rate's glyph and the green
    figures are decoration (decision 2): neutral; a frozen amount keeps its warning colour. */
-html.flat-theme [data-ui="user-affiliate"] > div[class~="grid"] {
+html.flat-theme [data-ui="user-affiliate"] > div[class~="grid"]:not([data-uipad][data-uipad]) {
   gap: 10px;
 }
 
@@ -1195,7 +1206,7 @@ html.flat-theme [data-ui="user-purchase"] > .card span[class~="text-lg"][class~=
 }
 
 /* the active subscriptions under the plans: rows on the surface, the platform mark is identity (platform-text) */
-html.flat-theme [data-ui="user-purchase"] div[class~="rounded-xl"][class~="border"][class~="px-3"][class~="py-2"]:has(> [data-ui~="platform-text"]) {
+html.flat-theme [data-ui="user-purchase"] div[data-ui~="active-sub"][class~="rounded-xl"][class~="border"][class~="px-3"][class~="py-2"] {
   border-color: rgb(var(--ui-line));
   border-radius: var(--ui-radius-lg);
 }
@@ -1208,7 +1219,7 @@ html.flat-theme [data-ui="user-subscriptions"] [data-ui~="platform-text"][class~
 
 /* the plan cards (SubscriptionPlanCard): the reference's card (8px, the structural line, no lift or shadow), the
    platform rule on top 2px in the platform colour, the price a Mono figure, subscribe = the positive CTA (accent) */
-html.flat-theme [data-ui="user-purchase"] [data-ui~="plan-card"] {
+html.flat-theme [data-ui="user-purchase"] div[data-ui~="plan-card"][data-ui~="plan-card"] {
   border-color: rgb(var(--ui-line));
   border-radius: var(--ui-radius-lg);
   box-shadow: none;
@@ -1221,13 +1232,13 @@ html.flat-theme [data-ui="user-purchase"] [data-ui~="platform-text"][class~="h-1
   background-image: none;
 }
 
-html.flat-theme [data-ui="user-purchase"] [data-ui~="plan-card"] span[class~="text-2xl"][class~="font-extrabold"] {
+html.flat-theme [data-ui="user-purchase"] div[data-ui~="plan-card"][data-ui~="plan-card"] span[class~="text-2xl"][class~="font-extrabold"] {
   color: rgb(var(--ui-ink));
   font: 600 22px/28px var(--ui-font-mono);
   letter-spacing: -0.02em;
 }
 
-html.flat-theme [data-ui="user-purchase"] [data-ui~="plan-card"] > div > button[type="button"][class~="w-full"] {
+html.flat-theme [data-ui="user-purchase"] div[data-ui~="plan-card"][data-ui~="plan-card"] > div > button[type="button"][class~="w-full"] {
   min-height: var(--ui-control-h-md, 38px);
   border: 1px solid rgb(var(--ui-primary));
   border-radius: var(--ui-radius-md);
@@ -1239,7 +1250,8 @@ html.flat-theme [data-ui="user-purchase"] [data-ui~="plan-card"] > div > button[
 }
 
 /* 6.2 Orders: the filter row loses its card (the reference's toolbars are rows, MAPPING B2); the table is the
-   reference's table card (8px, 1px line, surface) with the pagination as its footer. */
+   reference's table card (8px, 1px line, surface) with the pagination as its footer (the pagination, v-if total > 0,
+   is the only element that can follow the table: :not(:last-child) is "the pagination follows"). */
 html.flat-theme [data-ui="user-orders"] > .card[class~="p-4"]:first-child {
   padding: 0;
   border: 0;
@@ -1257,7 +1269,7 @@ html.flat-theme [data-ui="user-orders"] > .table-wrapper {
   background-color: rgb(var(--ui-surface));
 }
 
-html.flat-theme [data-ui="user-orders"] > .table-wrapper:has(+ [data-ui="pagination"]) {
+html.flat-theme [data-ui="user-orders"] > .table-wrapper:not(:last-child) {
   border-bottom-width: 0;
   border-bottom-left-radius: 0;
   border-bottom-right-radius: 0;
@@ -1352,7 +1364,7 @@ html.flat-theme [data-testid="image-studio-layout"] > form {
   background-color: rgb(var(--ui-surface));
 }
 
-html.flat-theme [data-ui="image-studio"] > header > div:first-child > h1 {
+html.flat-theme div[data-ui="image-studio"] > header > div:first-child > h1 {
   position: absolute;
   width: 1px;
   height: 1px;
@@ -1362,7 +1374,7 @@ html.flat-theme [data-ui="image-studio"] > header > div:first-child > h1 {
 }
 
 @media (min-width: 1024px) {
-  html.flat-theme [data-ui="image-studio"] > header > div:first-child > p {
+  html.flat-theme div[data-ui="image-studio"] > header > div:first-child > p {
     position: absolute;
     width: 1px;
     height: 1px;
@@ -1371,18 +1383,20 @@ html.flat-theme [data-ui="image-studio"] > header > div:first-child > h1 {
     white-space: nowrap;
   }
 
-  html.flat-theme [data-ui="image-studio"] > header:has(> button) {
-    justify-content: flex-end;
+  /* the header's words are hidden: with the clear-history button the header keeps its row, the button at its end, and
+     the layout keeps the page's 24px step; without it the header has no height and the layout starts the page. The
+     button shows while a history exists (data): the page root tests its own header and hands both values down. */
+  html.flat-theme div[data-ui="image-studio"]:has(> header > button) {
+    --ui-studio-head-justify: flex-end;
+    --ui-studio-layout-gap: 1.5rem;
   }
 
-  /* the header's words are hidden, so the page's 24px step after it moves onto its button (a header without one has no
-     height and the layout starts the page) */
-  html.flat-theme [data-ui="image-studio"] > [data-testid="image-studio-layout"] {
-    margin-top: 0;
+  html.flat-theme div[data-ui="image-studio"] > header:not(uipad):not(uipad) {
+    justify-content: var(--ui-studio-head-justify, space-between);
   }
 
-  html.flat-theme [data-ui="image-studio"] > header > button {
-    margin-bottom: 1.5rem;
+  html.flat-theme div[data-ui="image-studio"] > header:not(uipad) + [data-testid="image-studio-layout"] {
+    margin-top: var(--ui-studio-layout-gap, 0px);
   }
 }
 
@@ -1604,13 +1618,15 @@ html.flat-theme [data-ui="user-orders"] > .table-wrapper .table-body > tr > td[c
   /* 8.1 Management toolbars (users, subscriptions, redeem codes, promo codes, announcements; the management page agent
      leaves phones to this file): upstream's search is a flex-1 item with a zero basis beside fixed-width selects and
      buttons, so on a phone it shrank to a few characters ("邮箱/用", "搜索"). It takes the row, like the reference's
-     phone toolbar (ref-models-390: the search spans the row, the controls wrap under it). */
-  html.flat-theme [data-ui~="mgmt-page"] > .layout-section-fixed:first-child > div:first-child > div[class~="flex-1"]:has(> input.input, > div > input.input) {
+     phone toolbar (ref-models-390: the search spans the row, the controls wrap under it). On these seven toolbars the
+     row's flex-1 children are the search box (or the block that holds it) and, on IP management and the pages with
+     a right-hand group, the actions group (justify-end), which is left alone. */
+  html.flat-theme [data-ui~="mgmt-page"] > .layout-section-fixed:first-child > div:first-child > div[class~="flex-1"]:not([class~="justify-end"]):not(uipad):not(uipad) {
     flex: 1 1 100%;
   }
 
   /* the same squeezed search on 订单管理 (the ops agent's page root, orders-page: the filter card's first row) */
-  html.flat-theme [data-ui~="orders-page"] > .card:first-child > div > div[class~="flex-1"]:has(> input.input) {
+  html.flat-theme [data-ui~="orders-page"] > .card:first-child > div > div[class~="flex-1"]:not([class~="justify-end"]):not(uipad) {
     flex: 1 1 100%;
   }
 
@@ -1621,12 +1637,12 @@ html.flat-theme [data-ui="user-orders"] > .table-wrapper .table-body > tr > td[c
   }
 
   /* 8.2 Affiliate: the four figures two to a row (the reference's phone KPIs, REF §7.4: grid-cols-2) */
-  html.flat-theme [data-ui="user-affiliate"] > div[class~="grid"] {
+  html.flat-theme [data-ui="user-affiliate"] > div[class~="grid"]:not([data-uipad][data-uipad]) {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   /* 8.2b Profile: the stat blocks two to a row (the reference's phone detail page: grid-cols-2) */
-  html.flat-theme [data-testid="profile-overview-hero"] div[class~="grid"] {
+  html.flat-theme [data-testid="profile-overview-hero"] div[class~="grid"]:not([data-uipad]) {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
@@ -1646,7 +1662,7 @@ html.flat-theme [data-ui="user-orders"] > .table-wrapper .table-body > tr > td[c
 
   /* the user dashboard's balance tile likewise takes the row (in a half-width tile the grouped figure broke inside
      its digits: "…212.4 / 3") */
-  html.flat-theme [data-ui="user-dashboard"] [class~="grid"] > .card[class~="p-4"]:has(> div > div > p[class~="text-emerald-600"]) {
+  html.flat-theme [data-ui="user-dashboard"] [class~="grid"] > .card[class~="p-4"][data-ui~="balance-tile"]:not(uipad) {
     grid-column: 1 / -1;
   }
 
@@ -1691,7 +1707,7 @@ html.flat-theme [data-ui="user-orders"] > .table-wrapper .table-body > tr > td[c
   /* 8.0b API keys: the search and the filters above the actions, as on every other toolbar at this width and on the
      reference's /models phone toolbar (the desktop already sets them on one row, 2.0); the keyboard order stays
      upstream's */
-  html.flat-theme .table-page-layout[data-ui~="user-keys"] > .layout-section-fixed:first-child + .layout-section-fixed {
+  html.flat-theme .table-page-layout[data-ui~="user-keys"]:not([data-uipad][data-uipad]) > .layout-section-fixed:first-child + .layout-section-fixed {
     order: -1;
   }
 

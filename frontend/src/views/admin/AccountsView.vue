@@ -275,7 +275,6 @@
           :data="accounts"
           :loading="loading"
           row-key="id"
-          :selected-keys="selIds"
           :server-side-sort="true"
           @sort="handleSort"
           default-sort-key="name"

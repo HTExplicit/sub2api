@@ -702,7 +702,7 @@
                         {{ t("admin.settings.rectifier.apikeyPatternsHint") }}
                       </p>
                     </div>
-                    <div
+                    <div data-ui="dense-btn"
                       v-for="(
                         _, index
                       ) in rectifierForm.apikey_signature_patterns"
@@ -1860,6 +1860,7 @@
                   name="shield"
                   size="md"
                   class="text-primary-500"
+                  data-ui="card-title-icon"
                 />
                 <h2 class="text-lg font-semibold text-gray-900 dark:text-white">
                   {{ t("admin.settings.panelRateLimit.title") }}
@@ -2098,7 +2099,7 @@
                   >
                     {{ t("admin.settings.captcha.provider") }}
                   </label>
-                  <div
+                  <div data-ui="seg-box"
                     class="grid grid-cols-3 gap-2 rounded-lg bg-gray-100 p-1 dark:bg-dark-700"
                   >
                     <button
@@ -2202,7 +2203,7 @@
                     <label class="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">
                       {{ t("admin.settings.tencentCaptcha.region") }}
                     </label>
-                    <div class="grid grid-cols-2 gap-2 rounded-lg bg-gray-100 p-1 dark:bg-dark-700">
+                    <div data-ui="seg-box" class="grid grid-cols-2 gap-2 rounded-lg bg-gray-100 p-1 dark:bg-dark-700">
                       <button
                         type="button"
                         data-testid="tencent-captcha-region-cn"
@@ -2352,7 +2353,7 @@
                       >
                         {{ t("admin.settings.aliyunCaptcha.region") }}
                       </label>
-                      <div
+                      <div data-ui="seg-box"
                         class="grid grid-cols-2 gap-2 rounded-lg bg-gray-100 p-1 dark:bg-dark-700"
                       >
                         <button
@@ -4590,7 +4591,7 @@
                   <p class="mb-2 mt-1 text-xs text-gray-500 dark:text-gray-400">
                     {{ t("admin.settings.gatewayForwarding.codexFingerprintSignalsDesc") }}
                   </p>
-                  <div
+                  <div data-ui="dense-btn"
                     v-for="(row, i) in codexFingerprintRows"
                     :key="`codex-fp-${i}`"
                     class="mb-2 flex items-center gap-2"
@@ -6352,7 +6353,7 @@
               >
                 {{ t("admin.settings.webSearchEmulation.testResultTitle") }}
               </h3>
-              <div class="flex items-center gap-2">
+              <div data-ui="dense-btn" class="flex items-center gap-2">
                 <input
                   v-model="wsTestQuery"
                   type="text"
@@ -6409,7 +6410,7 @@
                   </p>
                 </div>
               </div>
-              <div class="mt-4 flex justify-end">
+              <div class="mt-4 flex justify-end" data-ui="settings-dlg-foot">
                 <button
                   type="button"
                   class="btn btn-secondary btn-sm"
@@ -7060,7 +7061,7 @@
 	                  <label class="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">
 	                    {{ localText("展示形式", "Display mode") }}
 	                  </label>
-	                  <div class="grid grid-cols-2 gap-2 rounded-lg bg-gray-100 p-1 dark:bg-dark-700">
+	                  <div data-ui="seg-box" class="grid grid-cols-2 gap-2 rounded-lg bg-gray-100 p-1 dark:bg-dark-700">
                     <button
                       type="button"
                       class="inline-flex items-center justify-center gap-2 rounded-md px-3 py-2 text-sm font-medium transition"
@@ -7268,7 +7269,7 @@
                 <label class="input-label">
                   {{ t('admin.settings.features.channelMonitor.mode') }}
                 </label>
-                <div class="mt-1.5 inline-flex w-full max-w-md rounded-lg border border-gray-200 bg-gray-50 p-1 dark:border-dark-600 dark:bg-dark-900/40">
+                <div data-ui="seg-box" class="mt-1.5 inline-flex w-full max-w-md rounded-lg border border-gray-200 bg-gray-50 p-1 dark:border-dark-600 dark:bg-dark-900/40">
                   <button
                     type="button"
                     class="inline-flex flex-1 items-center justify-center gap-2 rounded-md px-3 py-2 text-sm font-medium transition"
@@ -7841,7 +7842,7 @@
                   </button>
                 </div>
 
-                <div class="mb-3 flex items-center gap-2">
+                <div data-ui="dense-btn-if" class="mb-3 flex items-center gap-2">
                   <input
                     v-model="affiliateState.search"
                     type="text"
@@ -7859,7 +7860,7 @@
                   </button>
                 </div>
 
-                <div class="overflow-x-auto rounded-lg border border-gray-200 dark:border-dark-700">
+                <div class="overflow-x-auto rounded-lg border border-gray-200 dark:border-dark-700" data-ui="settings-list-box">
                   <table class="min-w-full divide-y divide-gray-200 dark:divide-dark-700">
                     <thead class="bg-gray-50 dark:bg-dark-800">
                       <tr>
@@ -8058,7 +8059,7 @@
               </div>
             </div>
 
-            <div class="mt-6 flex items-center justify-between gap-3">
+            <div class="mt-6 flex items-center justify-between gap-3" data-ui="settings-dlg-foot">
               <p
                 v-if="!affiliateModalCanSubmit"
                 class="text-xs text-gray-500 dark:text-gray-400"
@@ -8111,7 +8112,7 @@
             <p class="mt-2 text-xs text-gray-400">
               {{ t('admin.settings.features.affiliate.batchModal.clearHint') }}
             </p>
-            <div class="mt-6 flex justify-end gap-2">
+            <div class="mt-6 flex justify-end gap-2" data-ui="settings-dlg-foot">
               <button type="button" class="btn btn-secondary" @click="affiliateBatchModal.open = false">
                 {{ t('common.cancel') }}
               </button>
@@ -9052,7 +9053,7 @@
                   >{{ t("admin.settings.quotaNotify.emails") }}</label
                 >
                 <div class="space-y-2">
-                  <div
+                  <div data-ui="dense-btn"
                     v-for="(entry, index) in form.account_quota_notify_emails ||
                     []"
                     :key="index"

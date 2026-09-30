@@ -7,7 +7,7 @@
           : t('admin.dashboard.spendingRankingTitle') }}
       </h3>
       <div class="flex flex-wrap items-center justify-end gap-2">
-        <div
+        <div data-ui="seg-box"
           v-if="showSourceToggle"
           class="inline-flex rounded-lg border border-gray-200 bg-gray-50 p-0.5 dark:border-dark-700 dark:bg-dark-800"
         >
@@ -42,7 +42,7 @@
             {{ t('usage.mapping') }}
           </button>
         </div>
-        <div
+        <div data-ui="seg-box"
           v-if="showMetricToggle"
           class="inline-flex rounded-lg border border-gray-200 bg-gray-50 p-0.5 dark:border-dark-700 dark:bg-dark-800"
         >
@@ -67,7 +67,7 @@
             {{ t('admin.dashboard.metricActualCost') }}
           </button>
         </div>
-        <div v-if="enableRankingView" class="inline-flex rounded-lg bg-gray-100 p-1 dark:bg-dark-800">
+        <div data-ui="seg-box" v-if="enableRankingView" class="inline-flex rounded-lg bg-gray-100 p-1 dark:bg-dark-800">
           <button
             type="button"
             class="rounded-md px-2.5 py-1 text-xs font-medium transition-colors"
@@ -127,6 +127,7 @@
                 @click="enableBreakdown && toggleBreakdown('model', model.model)"
               >
                 <td
+                  data-ui="dist-name"
                   class="py-1.5 font-medium [overflow-wrap:anywhere]"
                   :class="enableBreakdown ? 'text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300' : 'text-gray-900 dark:text-white'"
                   :title="model.model"
@@ -208,7 +209,7 @@
                 : 'cursor-pointer hover:bg-gray-50 dark:hover:bg-dark-700/40'"
               @click="item.isOther ? undefined : emit('ranking-click', item)"
             >
-              <td class="py-1.5">
+              <td data-ui="dist-name" class="py-1.5">
                 <div class="flex min-w-0 items-center gap-2">
                   <span class="shrink-0 text-[11px] font-semibold text-gray-500 dark:text-gray-400">
                     {{ item.isOther ? 'Σ' : `#${index + 1}` }}

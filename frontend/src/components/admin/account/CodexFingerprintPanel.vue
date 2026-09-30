@@ -33,7 +33,7 @@
           <template v-if="view.scope_error"><dt>{{ txt('出口范围错误', 'Scope error') }}</dt><dd class="text-red-600">{{ view.scope_error }}</dd></template>
         </dl>
       </div>
-      <div class="flex flex-wrap items-center gap-2 text-xs">
+      <div data-ui="dense-btn" class="flex flex-wrap items-center gap-2 text-xs">
         <label>{{ txt('选择应用指纹', 'Application profile') }}
           <select v-model="profileChoice" class="input input-sm ml-2">
             <option value="keep_legacy">{{ txt('保留当前配置', 'Keep current profile') }}</option>

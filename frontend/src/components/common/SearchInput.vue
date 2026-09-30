@@ -1,9 +1,10 @@
 <template>
   <div class="relative w-full">
-    <div class="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3">
+    <div data-ui="search-glyph" class="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3">
       <Icon name="search" size="md" class="text-gray-400" />
     </div>
     <input
+      data-ui="search-field"
       v-model="searchValue"
       type="text"
       class="input pl-10"

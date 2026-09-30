@@ -21,7 +21,25 @@
  * by platform with Tailwind hue classes keeps that platform colour, decision 2) and data-ui~="category-chip" (a
  * category label drawn as the reference's neutral chip: request type, billing mode, protocol, role ...).
  * Hooks used from other owners: data-ui~="bulk-bar" (AccountBulkActionsBar, the accounts agent), data-table and
- * data-column (DataTable), aria-sort on sortable headers. */
+ * data-column (DataTable), aria-sort on sortable headers.
+ *
+ * Performance pass (2026-09-30): where a rule found its element by what it holds, the element says so itself with a
+ * STATIC data-ui hook (attribute-only template additions, never bound to state), and every rewritten selector keeps
+ * the exact weight of the pre-pass one (the hook, then repeated [data-ui] / [class] and :is(<tag>) where the replaced
+ * relational argument weighed more), so the cascade is unchanged:
+ *   data-ui="data-table"              DataTable.vue                  its <table>
+ *   data-ui="dist-row" / "dist-name"  Model / Group / Endpoint distribution charts, UserDashboardCharts: a data row / its
+ *                                     name cell when the name is a flex wrapper
+ *   data-ui="platform-hue"            PlatformTypeBadge.vue          the platform | type chip
+ *   data-ui="group-option"            GroupOptionItem.vue            root
+ *   data-ui="kpi-grid" / "kpi-tile" / "kpi-value"                    KPI grids, tiles, the RPM value row
+ *   data-ui="quick-action"            the dashboards' quick action buttons
+ *   data-ui="chart-card"              the cards that hold a chart area (chart components, dashboards, account stats, revenue)
+ *   data-ui="picked-chip"             a picked-value chip with its x button (never a callout, §11)
+ * Runtime state (a selected row, a rendered pagination, a platform hue, a KPI error count) is read only by
+ * subject-position :has() on a narrow anchor with child / sibling arguments, and passed on as custom properties:
+ * the selected row (§1), the TablePageLayout root (§2), the platform chip (§6), the KPI tile (§7). Outside those
+ * :has() arguments, no :nth-child(of), + or ~ in this file is keyed on anything that changes at runtime. */
 
 /* ================================================================== 0 · custom properties */
 
@@ -279,48 +297,92 @@ html.flat-theme .table-wrapper .table-body > tr[data-row-id]:is(:hover, :focus-w
   background-color: rgb(var(--ui-hover));
 }
 
-/* Selected rows (DataTable's own selection, or a checked box in a `select` column): the accent's soft fill, which
-   the reference uses for every selected or active fill; hover keeps it and darkens a step. */
-html.flat-theme .table-wrapper .table-body > tr[data-ui~="row-selected"]:is(tr) {
+/* Selected rows (DataTable's own selection column, which gives the row bg-primary-50/40, or a checked box in a page's
+   own `select` column): the accent's soft fill, which the reference uses for every selected or active fill; hover
+   keeps it and darkens a step. The row tests its own select cell (subject-position :has(), static markup only) and
+   hands its fill to its sticky cells as --ui-row-pick-fill (registered below as a non-inherited property that only
+   .sticky-col inherits explicitly), so no rule needs a relational selector on a row to reach its cells. */
+html.flat-theme .table-wrapper .table-body > tr:where([data-row-id]):is([class~="bg-primary-50/40"], :has(> td[data-column="select"] input[type="checkbox"]:checked)) {
+  --ui-row-pick-fill: rgb(var(--ui-primary-soft));
   background-color: rgb(var(--ui-primary-soft));
 }
 
-html.flat-theme .table-wrapper .table-body > tr[data-ui~="row-selected"]:is(tr):hover {
+html.flat-theme .table-wrapper .table-body > tr:where([data-row-id]):is([class~="bg-primary-50/40"], :has(> td[data-column="select"] input[type="checkbox"]:checked)):hover {
+  --ui-row-pick-fill: color-mix(in srgb, rgb(var(--ui-primary-soft)) 100%, rgb(var(--ui-ink)) 4%);
   background-color: color-mix(in srgb, rgb(var(--ui-primary-soft)) 100%, rgb(var(--ui-ink)) 4%);
 }
 
 /* On the dark selected fill (#333e36) upstream's secondary greys fall short (text-gray-400 / dark:text-dark-500
    #919191 3.54:1, text-gray-500 / dark:text-dark-400 #9c9c9c 4.06:1): in a selected row they take the muted grey
    (#b3b3b3, 5.39:1; 5.1 on the selected hover). Light is unchanged. Every selectable table. (wave 2, reported by
-   the management and user-side agents) */
-html.flat-theme.dark .table-wrapper .table-body > tr[data-ui~="row-selected"]:is(tr) :is([class~="text-gray-400"], [class~="text-gray-500"], [class~="dark:text-dark-400"], [class~="dark:text-dark-500"]) {
+   the management and user-side agents)
+   DataTable's own selection is the row's class; a page's own select column makes the row publish --ui-row-picked
+   (dark theme only, so a light-theme selection never restyles the row's cells), which its cells read through a
+   style query (Chromium 111+, Safari 18+). Firefox has no style queries: it keeps the pre-pass selector in the
+   @supports (-moz-appearance: none) blocks, which Chromium never loads. Same weights (0,8,4) as the pre-pass rules. */
+html.flat-theme.dark .table-wrapper .table-body > tr:where([data-row-id]):has(> td[data-column="select"] input[type="checkbox"]:checked) {
+  --ui-row-picked: 1;
+}
+
+html.flat-theme.dark .table-wrapper .table-body > tr[class~="bg-primary-50/40"][class][class]:is(tr):is(tr) :is([class~="text-gray-400"], [class~="text-gray-500"], [class~="dark:text-dark-400"], [class~="dark:text-dark-500"]) {
   color: rgb(var(--ui-muted));
+}
+
+@container style(--ui-row-picked: 1) {
+  html.flat-theme.dark .table-wrapper .table-body > tr[data-row-id][data-row-id][data-row-id]:is(tr):is(tr) :is([class~="text-gray-400"], [class~="text-gray-500"], [class~="dark:text-dark-400"], [class~="dark:text-dark-500"]) {
+    color: rgb(var(--ui-muted));
+  }
+}
+
+@supports (-moz-appearance: none) {
+  html.flat-theme.dark .table-wrapper .table-body > tr:has(> td[data-column="select"] input[type="checkbox"]:checked) :is([class~="text-gray-400"], [class~="text-gray-500"], [class~="dark:text-dark-400"], [class~="dark:text-dark-500"]) {
+    color: rgb(var(--ui-muted));
+  }
 }
 
 /* and the danger red of a failure note in a selected row (the accounts usage tickets' 「…检查失败」): #f87171 is 4.03:1 on
    the selected fill; the lighter red keeps it a failure and readable (batch 7, reported by the accounts agent).
    Amber (6.68) and the light theme's red (4.79) hold as they are. */
-html.flat-theme.dark .table-wrapper .table-body > tr[data-ui~="row-selected"]:is(tr) :is([class~="text-red-500"], [class~="text-red-600"], [class~="dark:text-red-400"]) {
+html.flat-theme.dark .table-wrapper .table-body > tr[class~="bg-primary-50/40"][class][class]:is(tr):is(tr) :is([class~="text-red-500"], [class~="text-red-600"], [class~="dark:text-red-400"]) {
   color: rgb(var(--ui-selected-danger));
+}
+
+@container style(--ui-row-picked: 1) {
+  html.flat-theme.dark .table-wrapper .table-body > tr[data-row-id][data-row-id][data-row-id]:is(tr):is(tr) :is([class~="text-red-500"], [class~="text-red-600"], [class~="dark:text-red-400"]) {
+    color: rgb(var(--ui-selected-danger));
+  }
+}
+
+@supports (-moz-appearance: none) {
+  html.flat-theme.dark .table-wrapper .table-body > tr:has(> td[data-column="select"] input[type="checkbox"]:checked) :is([class~="text-red-500"], [class~="text-red-600"], [class~="dark:text-red-400"]) {
+    color: rgb(var(--ui-selected-danger));
+  }
 }
 
 /* Sticky columns: upstream paints them white / slate (#111827, #1f2937 on hover) whatever the row shows; here they
    take the row's own fill, and the edge against the scrolled columns is the reference's 1px line instead of a
-   shadow. */
+   shadow. A selected row's fill arrives as --ui-row-pick-fill (set on the row above; unset elsewhere, so the
+   fallback is the cell's own surface / hover fill). */
+@property --ui-row-pick-fill {
+  syntax: '*';
+  inherits: false;
+}
+
 html.flat-theme .table-wrapper .table-body .sticky-col {
-  background-color: rgb(var(--ui-surface));
+  --ui-row-pick-fill: inherit;
+  background-color: var(--ui-row-pick-fill, rgb(var(--ui-surface)));
   transition: background-color var(--ui-duration) var(--ui-ease);
 }
 
 html.flat-theme .table-wrapper .table-body > tr[data-row-id]:is(:hover, :focus-within) > .sticky-col {
-  background-color: rgb(var(--ui-hover));
+  background-color: var(--ui-row-pick-fill, rgb(var(--ui-hover)));
 }
 
-html.flat-theme .table-wrapper .table-body > tr[data-ui~="row-selected"]:is(tr) > .sticky-col {
+html.flat-theme .table-wrapper .table-body > tr[class~="bg-primary-50/40"][class][class]:is(tr):is(tr) > .sticky-col {
   background-color: rgb(var(--ui-primary-soft));
 }
 
-html.flat-theme .table-wrapper .table-body > tr[data-ui~="row-selected"]:is(tr):hover > .sticky-col {
+html.flat-theme .table-wrapper .table-body > tr[class~="bg-primary-50/40"][class][class]:is(tr):is(tr):hover > .sticky-col {
   background-color: color-mix(in srgb, rgb(var(--ui-primary-soft)) 100%, rgb(var(--ui-ink)) 4%);
 }
 
@@ -474,6 +536,10 @@ html.flat-theme .table-wrapper .table-body > tr > td > div[class~="animate-pulse
 
 /* sections 12px apart (REF §6 gap-3; the shell's gap token when it defines one); the height is the shell's */
 html.flat-theme .table-page-layout {
+  --ui-tpl-card-foot-line: initial;
+  --ui-tpl-card-foot-radius: initial;
+  --ui-tpl-foot-pull: initial;
+  --ui-tpl-pagination-radius: initial;
   row-gap: var(--ui-shell-gap, 12px);
 }
 
@@ -508,26 +574,36 @@ html.flat-theme .table-page-layout.mobile-mode .table-scroll-container {
 }
 
 /* Pagination below a framed table is the card's footer (the reference's list ends inside its card on a 1px line,
-   REF §8.7 pagination): the card loses its bottom radius and the pagination section closes the frame. */
-html.flat-theme .table-page-layout > .layout-section-scrollable:has(> .table-scroll-container):has(+ .layout-section-fixed > [data-ui="pagination"]) > .table-scroll-container {
-  border-bottom-width: 0;
-  border-bottom-left-radius: 0;
-  border-bottom-right-radius: 0;
+   REF §8.7 pagination): the card loses its bottom radius and the pagination section closes the frame; below
+   unframed content (the accounts card view) the pagination is a bar of its own (final review V1-07).
+   The layout root states its own case (two subject-position :has() on .table-page-layout, child / sibling
+   arguments only) as custom properties; the card, the pagination section and the pagination read them, with the
+   values they get anyway as fallbacks (the card's 1px line and 8px corners from the rules above, no section
+   margin). The root resets them first, so a nested layout never reads its parent's case. Same weights as the
+   pre-pass rules (0,7,1 / 0,6,1 / 0,6,1). */
+html.flat-theme .table-page-layout:has(> .layout-section-scrollable > .table-scroll-container):has(> .layout-section-scrollable + .layout-section-fixed > [data-ui="pagination"]) {
+  --ui-tpl-card-foot-line: 0px;
+  --ui-tpl-card-foot-radius: 0px;
+  --ui-tpl-foot-pull: calc(-1 * var(--ui-shell-gap, 12px));
 }
 
-html.flat-theme .table-page-layout > .layout-section-scrollable:has(> .table-scroll-container) + .layout-section-fixed:has(> [data-ui="pagination"]) {
-  margin-top: calc(-1 * var(--ui-shell-gap, 12px));
+html.flat-theme .table-page-layout:has(> .layout-section-scrollable > .table-scroll-container-unframed) {
+  --ui-tpl-pagination-radius: var(--ui-radius-lg);
 }
 
-html.flat-theme .table-page-layout > .layout-section-scrollable:has(> .table-scroll-container) + .layout-section-fixed > [data-ui="pagination"] {
+html.flat-theme .table-page-layout > .layout-section-scrollable > .table-scroll-container.table-scroll-container.table-scroll-container.table-scroll-container {
+  border-bottom-width: var(--ui-tpl-card-foot-line, 1px);
+  border-bottom-left-radius: var(--ui-tpl-card-foot-radius, var(--ui-radius-lg));
+  border-bottom-right-radius: var(--ui-tpl-card-foot-radius, var(--ui-radius-lg));
+}
+
+html.flat-theme .table-page-layout > .layout-section-scrollable + .layout-section-fixed.layout-section-fixed.layout-section-fixed {
+  margin-top: var(--ui-tpl-foot-pull, 0px);
+}
+
+html.flat-theme .table-page-layout > .layout-section-scrollable + .layout-section-fixed > [data-ui="pagination"][data-ui] {
   border: 1px solid rgb(var(--ui-line));
-  border-radius: 0 0 var(--ui-radius-lg) var(--ui-radius-lg);
-}
-
-/* below unframed content (the accounts card view) the pagination is a bar of its own (final review V1-07) */
-html.flat-theme .table-page-layout > .layout-section-scrollable:has(> .table-scroll-container-unframed) + .layout-section-fixed > [data-ui="pagination"] {
-  border: 1px solid rgb(var(--ui-line));
-  border-radius: var(--ui-radius-lg);
+  border-radius: var(--ui-tpl-pagination-radius, 0 0 var(--ui-radius-lg) var(--ui-radius-lg));
 }
 
 /* ================================================================== 3 · plain tables */
@@ -652,7 +728,9 @@ html.flat-theme [class~="max-h-48"][class~="overflow-auto"] > table[class~="text
   vertical-align: 0;
 }
 
-html.flat-theme [class~="max-h-48"][class~="overflow-auto"] > table[class~="text-xs"] > tbody > tr > td:first-child:not([colspan]):has(> span[class~="inline-flex"], > div[class~="flex"])::before {
+/* a name drawn as a flex wrapper (the expandable rows' chevron, the ranking's #n) carries the key inside the wrapper;
+   that name cell is marked data-ui="dist-name" */
+html.flat-theme [class~="max-h-48"][class~="overflow-auto"] > table[class~="text-xs"] > tbody > tr > td:first-child:not([colspan])[data-ui~="dist-name"]:is(td)::before {
   display: none;
 }
 
@@ -666,28 +744,24 @@ html.flat-theme [class~="max-h-48"][class~="overflow-auto"] > table[class~="text
   background-color: var(--ui-row-key, transparent);
 }
 
-/* A data row is marked by the component (data-ui="dist-row"), a breakdown / expansion row by data-ui="dist-group":
-   counting only the data rows picks the palette colour of each slice. The `of <selector>` argument keeps the rule's
-   one type in the specificity, exactly as the pre-pass `:nth-child(n of :not(:has(> td[colspan])))` did. */
-html.flat-theme [class~="max-h-48"][class~="overflow-auto"] > table[class~="text-xs"] > tbody > tr:nth-child(1 of tr[data-ui="dist-row"]) { --ui-row-key: var(--theme-chart-series-1); }
-html.flat-theme [class~="max-h-48"][class~="overflow-auto"] > table[class~="text-xs"] > tbody > tr:nth-child(2 of tr[data-ui="dist-row"]) { --ui-row-key: var(--theme-chart-series-2); }
-html.flat-theme [class~="max-h-48"][class~="overflow-auto"] > table[class~="text-xs"] > tbody > tr:nth-child(3 of tr[data-ui="dist-row"]) { --ui-row-key: var(--theme-chart-series-3); }
-html.flat-theme [class~="max-h-48"][class~="overflow-auto"] > table[class~="text-xs"] > tbody > tr:nth-child(4 of tr[data-ui="dist-row"]) { --ui-row-key: var(--theme-chart-series-4); }
-html.flat-theme [class~="max-h-48"][class~="overflow-auto"] > table[class~="text-xs"] > tbody > tr:nth-child(5 of tr[data-ui="dist-row"]) { --ui-row-key: var(--theme-chart-series-5); }
-html.flat-theme [class~="max-h-48"][class~="overflow-auto"] > table[class~="text-xs"] > tbody > tr:nth-child(6 of tr[data-ui="dist-row"]) { --ui-row-key: var(--theme-chart-series-6); }
-html.flat-theme [class~="max-h-48"][class~="overflow-auto"] > table[class~="text-xs"] > tbody > tr:nth-child(7 of tr[data-ui="dist-row"]) { --ui-row-key: var(--theme-chart-series-7); }
-html.flat-theme [class~="max-h-48"][class~="overflow-auto"] > table[class~="text-xs"] > tbody > tr:nth-child(8 of tr[data-ui="dist-row"]) { --ui-row-key: var(--theme-chart-series-8); }
-html.flat-theme [class~="max-h-48"][class~="overflow-auto"] > table[class~="text-xs"] > tbody > tr:nth-child(9 of tr[data-ui="dist-row"]) { --ui-row-key: var(--theme-chart-series-9); }
-html.flat-theme [class~="max-h-48"][class~="overflow-auto"] > table[class~="text-xs"] > tbody > tr:nth-child(10 of tr[data-ui="dist-row"]) { --ui-row-key: var(--theme-chart-series-10); }
-html.flat-theme [class~="max-h-48"][class~="overflow-auto"] > table[class~="text-xs"] > tbody > tr:nth-child(11 of tr[data-ui="dist-row"]) { --ui-row-key: var(--theme-chart-series-11); }
-html.flat-theme [class~="max-h-48"][class~="overflow-auto"] > table[class~="text-xs"] > tbody > tr:nth-child(12 of tr[data-ui="dist-row"]) { --ui-row-key: var(--theme-chart-series-12); }
+/* the slices are counted over the data rows (data-ui="dist-row"; a model's breakdown row, a colspan cell, is not one) */
+html.flat-theme [class~="max-h-48"][class~="overflow-auto"] > table[class~="text-xs"] > tbody > tr:nth-child(1 of tr[data-ui~="dist-row"]) { --ui-row-key: var(--theme-chart-series-1); }
+html.flat-theme [class~="max-h-48"][class~="overflow-auto"] > table[class~="text-xs"] > tbody > tr:nth-child(2 of tr[data-ui~="dist-row"]) { --ui-row-key: var(--theme-chart-series-2); }
+html.flat-theme [class~="max-h-48"][class~="overflow-auto"] > table[class~="text-xs"] > tbody > tr:nth-child(3 of tr[data-ui~="dist-row"]) { --ui-row-key: var(--theme-chart-series-3); }
+html.flat-theme [class~="max-h-48"][class~="overflow-auto"] > table[class~="text-xs"] > tbody > tr:nth-child(4 of tr[data-ui~="dist-row"]) { --ui-row-key: var(--theme-chart-series-4); }
+html.flat-theme [class~="max-h-48"][class~="overflow-auto"] > table[class~="text-xs"] > tbody > tr:nth-child(5 of tr[data-ui~="dist-row"]) { --ui-row-key: var(--theme-chart-series-5); }
+html.flat-theme [class~="max-h-48"][class~="overflow-auto"] > table[class~="text-xs"] > tbody > tr:nth-child(6 of tr[data-ui~="dist-row"]) { --ui-row-key: var(--theme-chart-series-6); }
+html.flat-theme [class~="max-h-48"][class~="overflow-auto"] > table[class~="text-xs"] > tbody > tr:nth-child(7 of tr[data-ui~="dist-row"]) { --ui-row-key: var(--theme-chart-series-7); }
+html.flat-theme [class~="max-h-48"][class~="overflow-auto"] > table[class~="text-xs"] > tbody > tr:nth-child(8 of tr[data-ui~="dist-row"]) { --ui-row-key: var(--theme-chart-series-8); }
+html.flat-theme [class~="max-h-48"][class~="overflow-auto"] > table[class~="text-xs"] > tbody > tr:nth-child(9 of tr[data-ui~="dist-row"]) { --ui-row-key: var(--theme-chart-series-9); }
+html.flat-theme [class~="max-h-48"][class~="overflow-auto"] > table[class~="text-xs"] > tbody > tr:nth-child(10 of tr[data-ui~="dist-row"]) { --ui-row-key: var(--theme-chart-series-10); }
+html.flat-theme [class~="max-h-48"][class~="overflow-auto"] > table[class~="text-xs"] > tbody > tr:nth-child(11 of tr[data-ui~="dist-row"]) { --ui-row-key: var(--theme-chart-series-11); }
+html.flat-theme [class~="max-h-48"][class~="overflow-auto"] > table[class~="text-xs"] > tbody > tr:nth-child(12 of tr[data-ui~="dist-row"]) { --ui-row-key: var(--theme-chart-series-12); }
 
-/* the user dashboard's doughnut takes series 1-6, 11 and 10 for its eight slices (UserDashboardCharts.vue): that card
-   carries data-ui="chart-card". Both rules are the same shape as the list above, so the later one still wins on source
-   order, exactly as it did before. */
-html.flat-theme [data-ui~="chart-card"] [class~="max-h-48"][class~="overflow-auto"] > table[class~="text-xs"] > tbody > tr:nth-child(7 of tr[data-ui="dist-row"]) { --ui-row-key: var(--theme-chart-series-11); }
-html.flat-theme [data-ui~="chart-card"] [class~="max-h-48"][class~="overflow-auto"] > table[class~="text-xs"] > tbody > tr:nth-child(8 of tr[data-ui="dist-row"]) { --ui-row-key: var(--theme-chart-series-10); }
-html.flat-theme [data-ui~="chart-card"] [class~="max-h-48"][class~="overflow-auto"] > table[class~="text-xs"] > tbody > tr:nth-child(n + 9 of tr[data-ui="dist-row"]) { --ui-row-key: transparent; }
+/* the user dashboard's doughnut takes series 1-6, 11 and 10 for its eight slices (UserDashboardCharts.vue) */
+html.flat-theme [class~="card"][class~="relative"][class~="overflow-hidden"] [class~="max-h-48"][class~="overflow-auto"] > table[class~="text-xs"] > tbody > tr:nth-child(7 of tr[data-ui~="dist-row"]) { --ui-row-key: var(--theme-chart-series-11); }
+html.flat-theme [class~="card"][class~="relative"][class~="overflow-hidden"] [class~="max-h-48"][class~="overflow-auto"] > table[class~="text-xs"] > tbody > tr:nth-child(8 of tr[data-ui~="dist-row"]) { --ui-row-key: var(--theme-chart-series-10); }
+html.flat-theme [class~="card"][class~="relative"][class~="overflow-hidden"] [class~="max-h-48"][class~="overflow-auto"] > table[class~="text-xs"] > tbody > tr:nth-child(n + 9 of tr[data-ui~="dist-row"]) { --ui-row-key: transparent; }
 
 /* the spending ranking's remainder row ("others", upstream's grey band) is the grey slice */
 html.flat-theme [class~="max-h-48"][class~="overflow-auto"] > table[class~="text-xs"] > tbody > tr[class~="bg-gray-50/70"] {
@@ -946,15 +1020,16 @@ html.flat-theme [data-ui="status-badge"] > span:last-child {
    plan, a subscription's days left and the peak-rate window keep the status colours.
    Contract for page owners: an element that upstream colours by platform with Tailwind hue classes can opt in with
    data-ui~="platform-chip" (line, fill, text) or data-ui~="platform-text" (text and glyph only).
-   Hooks: data-ui="platform-badge", data-ui="group-badge"; GroupOptionItem's rate pill is reached through the badge's
-   own class (.groupOptionItemBadge), no template change. */
+   Hooks: data-ui="platform-badge", data-ui="group-badge", data-ui="group-option" (GroupOptionItem's root, whose rate
+   pill is the chip) and data-ui="platform-hue" (the platform | type chip, static): the chip takes the hue of its
+   first span (subject-position :has() with a child argument, tested only on that hooked chip). */
 html.flat-theme [data-ui="platform-badge"] > div[class~="inline-flex"] > span:not([title])[class*="-orange-"],
 html.flat-theme [data-ui="group-badge"][class*="-orange-"],
 html.flat-theme [data-ui="group-badge"] > span[class*="-orange-"],
 html.flat-theme [data-ui~="platform-chip"][class*="-orange-"],
 html.flat-theme [data-ui~="platform-text"][class*="-orange-"],
 html.flat-theme div[data-ui~="group-option"]:is(div) > div:last-child > div > span[class~="rounded-full"]:first-child[class*="-orange-"],
-html.flat-theme [data-ui="platform-badge"] > div[class~="inline-flex"]:where([data-ui="platform-hue"]):is(:first-child):has(> span:first-child[class*="-orange-"]) {
+html.flat-theme [data-ui="platform-badge"] > div[class~="inline-flex"]:where([data-ui~="platform-hue"]):is(:first-child):has(> span:first-child[class*="-orange-"]) {
   --pf-text: var(--ui-id-orange);
   --pf-soft: var(--ui-id-orange-soft);
   --pf-line: var(--ui-id-orange-line);
@@ -967,7 +1042,7 @@ html.flat-theme [data-ui="group-badge"] > span[class*="-amber-"],
 html.flat-theme [data-ui~="platform-chip"][class*="-amber-"],
 html.flat-theme [data-ui~="platform-text"][class*="-amber-"],
 html.flat-theme div[data-ui~="group-option"]:is(div) > div:last-child > div > span[class~="rounded-full"]:first-child[class*="-amber-"],
-html.flat-theme [data-ui="platform-badge"] > div[class~="inline-flex"]:where([data-ui="platform-hue"]):is(:first-child):has(> span:first-child[class*="-amber-"]) {
+html.flat-theme [data-ui="platform-badge"] > div[class~="inline-flex"]:where([data-ui~="platform-hue"]):is(:first-child):has(> span:first-child[class*="-amber-"]) {
   --pf-text: var(--ui-id-amber);
   --pf-soft: var(--ui-id-amber-soft);
   --pf-line: var(--ui-id-amber-line);
@@ -980,7 +1055,7 @@ html.flat-theme [data-ui="group-badge"] > span[class*="-emerald-"],
 html.flat-theme [data-ui~="platform-chip"][class*="-emerald-"],
 html.flat-theme [data-ui~="platform-text"][class*="-emerald-"],
 html.flat-theme div[data-ui~="group-option"]:is(div) > div:last-child > div > span[class~="rounded-full"]:first-child[class*="-emerald-"],
-html.flat-theme [data-ui="platform-badge"] > div[class~="inline-flex"]:where([data-ui="platform-hue"]):is(:first-child):has(> span:first-child[class*="-emerald-"]) {
+html.flat-theme [data-ui="platform-badge"] > div[class~="inline-flex"]:where([data-ui~="platform-hue"]):is(:first-child):has(> span:first-child[class*="-emerald-"]) {
   --pf-text: var(--ui-id-emerald);
   --pf-soft: var(--ui-id-emerald-soft);
   --pf-line: var(--ui-id-emerald-line);
@@ -993,7 +1068,7 @@ html.flat-theme [data-ui="group-badge"] > span[class*="-green-"],
 html.flat-theme [data-ui~="platform-chip"][class*="-green-"],
 html.flat-theme [data-ui~="platform-text"][class*="-green-"],
 html.flat-theme div[data-ui~="group-option"]:is(div) > div:last-child > div > span[class~="rounded-full"]:first-child[class*="-green-"],
-html.flat-theme [data-ui="platform-badge"] > div[class~="inline-flex"]:where([data-ui="platform-hue"]):is(:first-child):has(> span:first-child[class*="-green-"]) {
+html.flat-theme [data-ui="platform-badge"] > div[class~="inline-flex"]:where([data-ui~="platform-hue"]):is(:first-child):has(> span:first-child[class*="-green-"]) {
   --pf-text: var(--ui-id-green);
   --pf-soft: var(--ui-id-green-soft);
   --pf-line: var(--ui-id-green-line);
@@ -1006,7 +1081,7 @@ html.flat-theme [data-ui="group-badge"] > span[class*="-teal-"],
 html.flat-theme [data-ui~="platform-chip"][class*="-teal-"],
 html.flat-theme [data-ui~="platform-text"][class*="-teal-"],
 html.flat-theme div[data-ui~="group-option"]:is(div) > div:last-child > div > span[class~="rounded-full"]:first-child[class*="-teal-"],
-html.flat-theme [data-ui="platform-badge"] > div[class~="inline-flex"]:where([data-ui="platform-hue"]):is(:first-child):has(> span:first-child[class*="-teal-"]) {
+html.flat-theme [data-ui="platform-badge"] > div[class~="inline-flex"]:where([data-ui~="platform-hue"]):is(:first-child):has(> span:first-child[class*="-teal-"]) {
   --pf-text: var(--ui-id-teal);
   --pf-soft: var(--ui-id-teal-soft);
   --pf-line: var(--ui-id-teal-line);
@@ -1019,7 +1094,7 @@ html.flat-theme [data-ui="group-badge"] > span[class*="-cyan-"],
 html.flat-theme [data-ui~="platform-chip"][class*="-cyan-"],
 html.flat-theme [data-ui~="platform-text"][class*="-cyan-"],
 html.flat-theme div[data-ui~="group-option"]:is(div) > div:last-child > div > span[class~="rounded-full"]:first-child[class*="-cyan-"],
-html.flat-theme [data-ui="platform-badge"] > div[class~="inline-flex"]:where([data-ui="platform-hue"]):is(:first-child):has(> span:first-child[class*="-cyan-"]) {
+html.flat-theme [data-ui="platform-badge"] > div[class~="inline-flex"]:where([data-ui~="platform-hue"]):is(:first-child):has(> span:first-child[class*="-cyan-"]) {
   --pf-text: var(--ui-id-cyan);
   --pf-soft: var(--ui-id-cyan-soft);
   --pf-line: var(--ui-id-cyan-line);
@@ -1032,7 +1107,7 @@ html.flat-theme [data-ui="group-badge"] > span[class*="-sky-"],
 html.flat-theme [data-ui~="platform-chip"][class*="-sky-"],
 html.flat-theme [data-ui~="platform-text"][class*="-sky-"],
 html.flat-theme div[data-ui~="group-option"]:is(div) > div:last-child > div > span[class~="rounded-full"]:first-child[class*="-sky-"],
-html.flat-theme [data-ui="platform-badge"] > div[class~="inline-flex"]:where([data-ui="platform-hue"]):is(:first-child):has(> span:first-child[class*="-sky-"]) {
+html.flat-theme [data-ui="platform-badge"] > div[class~="inline-flex"]:where([data-ui~="platform-hue"]):is(:first-child):has(> span:first-child[class*="-sky-"]) {
   --pf-text: var(--ui-id-sky);
   --pf-soft: var(--ui-id-sky-soft);
   --pf-line: var(--ui-id-sky-line);
@@ -1045,7 +1120,7 @@ html.flat-theme [data-ui="group-badge"] > span[class*="-blue-"],
 html.flat-theme [data-ui~="platform-chip"][class*="-blue-"],
 html.flat-theme [data-ui~="platform-text"][class*="-blue-"],
 html.flat-theme div[data-ui~="group-option"]:is(div) > div:last-child > div > span[class~="rounded-full"]:first-child[class*="-blue-"],
-html.flat-theme [data-ui="platform-badge"] > div[class~="inline-flex"]:where([data-ui="platform-hue"]):is(:first-child):has(> span:first-child[class*="-blue-"]) {
+html.flat-theme [data-ui="platform-badge"] > div[class~="inline-flex"]:where([data-ui~="platform-hue"]):is(:first-child):has(> span:first-child[class*="-blue-"]) {
   --pf-text: var(--ui-id-blue);
   --pf-soft: var(--ui-id-blue-soft);
   --pf-line: var(--ui-id-blue-line);
@@ -1058,7 +1133,7 @@ html.flat-theme [data-ui="group-badge"] > span[class*="-indigo-"],
 html.flat-theme [data-ui~="platform-chip"][class*="-indigo-"],
 html.flat-theme [data-ui~="platform-text"][class*="-indigo-"],
 html.flat-theme div[data-ui~="group-option"]:is(div) > div:last-child > div > span[class~="rounded-full"]:first-child[class*="-indigo-"],
-html.flat-theme [data-ui="platform-badge"] > div[class~="inline-flex"]:where([data-ui="platform-hue"]):is(:first-child):has(> span:first-child[class*="-indigo-"]) {
+html.flat-theme [data-ui="platform-badge"] > div[class~="inline-flex"]:where([data-ui~="platform-hue"]):is(:first-child):has(> span:first-child[class*="-indigo-"]) {
   --pf-text: var(--ui-id-indigo);
   --pf-soft: var(--ui-id-indigo-soft);
   --pf-line: var(--ui-id-indigo-line);
@@ -1071,7 +1146,7 @@ html.flat-theme [data-ui="group-badge"] > span[class*="-violet-"],
 html.flat-theme [data-ui~="platform-chip"][class*="-violet-"],
 html.flat-theme [data-ui~="platform-text"][class*="-violet-"],
 html.flat-theme div[data-ui~="group-option"]:is(div) > div:last-child > div > span[class~="rounded-full"]:first-child[class*="-violet-"],
-html.flat-theme [data-ui="platform-badge"] > div[class~="inline-flex"]:where([data-ui="platform-hue"]):is(:first-child):has(> span:first-child[class*="-violet-"]) {
+html.flat-theme [data-ui="platform-badge"] > div[class~="inline-flex"]:where([data-ui~="platform-hue"]):is(:first-child):has(> span:first-child[class*="-violet-"]) {
   --pf-text: var(--ui-id-violet);
   --pf-soft: var(--ui-id-violet-soft);
   --pf-line: var(--ui-id-violet-line);
@@ -1084,7 +1159,7 @@ html.flat-theme [data-ui="group-badge"] > span[class*="-purple-"],
 html.flat-theme [data-ui~="platform-chip"][class*="-purple-"],
 html.flat-theme [data-ui~="platform-text"][class*="-purple-"],
 html.flat-theme div[data-ui~="group-option"]:is(div) > div:last-child > div > span[class~="rounded-full"]:first-child[class*="-purple-"],
-html.flat-theme [data-ui="platform-badge"] > div[class~="inline-flex"]:where([data-ui="platform-hue"]):is(:first-child):has(> span:first-child[class*="-purple-"]) {
+html.flat-theme [data-ui="platform-badge"] > div[class~="inline-flex"]:where([data-ui~="platform-hue"]):is(:first-child):has(> span:first-child[class*="-purple-"]) {
   --pf-text: var(--ui-id-purple);
   --pf-soft: var(--ui-id-purple-soft);
   --pf-line: var(--ui-id-purple-line);
@@ -1097,7 +1172,7 @@ html.flat-theme [data-ui="group-badge"] > span[class*="-fuchsia-"],
 html.flat-theme [data-ui~="platform-chip"][class*="-fuchsia-"],
 html.flat-theme [data-ui~="platform-text"][class*="-fuchsia-"],
 html.flat-theme div[data-ui~="group-option"]:is(div) > div:last-child > div > span[class~="rounded-full"]:first-child[class*="-fuchsia-"],
-html.flat-theme [data-ui="platform-badge"] > div[class~="inline-flex"]:where([data-ui="platform-hue"]):is(:first-child):has(> span:first-child[class*="-fuchsia-"]) {
+html.flat-theme [data-ui="platform-badge"] > div[class~="inline-flex"]:where([data-ui~="platform-hue"]):is(:first-child):has(> span:first-child[class*="-fuchsia-"]) {
   --pf-text: var(--ui-id-fuchsia);
   --pf-soft: var(--ui-id-fuchsia-soft);
   --pf-line: var(--ui-id-fuchsia-line);
@@ -1110,7 +1185,7 @@ html.flat-theme [data-ui="group-badge"] > span[class*="-pink-"],
 html.flat-theme [data-ui~="platform-chip"][class*="-pink-"],
 html.flat-theme [data-ui~="platform-text"][class*="-pink-"],
 html.flat-theme div[data-ui~="group-option"]:is(div) > div:last-child > div > span[class~="rounded-full"]:first-child[class*="-pink-"],
-html.flat-theme [data-ui="platform-badge"] > div[class~="inline-flex"]:where([data-ui="platform-hue"]):is(:first-child):has(> span:first-child[class*="-pink-"]) {
+html.flat-theme [data-ui="platform-badge"] > div[class~="inline-flex"]:where([data-ui~="platform-hue"]):is(:first-child):has(> span:first-child[class*="-pink-"]) {
   --pf-text: var(--ui-id-pink);
   --pf-soft: var(--ui-id-pink-soft);
   --pf-line: var(--ui-id-pink-line);
@@ -1123,7 +1198,7 @@ html.flat-theme [data-ui="group-badge"] > span[class*="-rose-"],
 html.flat-theme [data-ui~="platform-chip"][class*="-rose-"],
 html.flat-theme [data-ui~="platform-text"][class*="-rose-"],
 html.flat-theme div[data-ui~="group-option"]:is(div) > div:last-child > div > span[class~="rounded-full"]:first-child[class*="-rose-"],
-html.flat-theme [data-ui="platform-badge"] > div[class~="inline-flex"]:where([data-ui="platform-hue"]):is(:first-child):has(> span:first-child[class*="-rose-"]) {
+html.flat-theme [data-ui="platform-badge"] > div[class~="inline-flex"]:where([data-ui~="platform-hue"]):is(:first-child):has(> span:first-child[class*="-rose-"]) {
   --pf-text: var(--ui-id-rose);
   --pf-soft: var(--ui-id-rose-soft);
   --pf-line: var(--ui-id-rose-line);
@@ -1136,7 +1211,7 @@ html.flat-theme [data-ui="group-badge"] > span[class*="-zinc-"],
 html.flat-theme [data-ui~="platform-chip"][class*="-zinc-"],
 html.flat-theme [data-ui~="platform-text"][class*="-zinc-"],
 html.flat-theme div[data-ui~="group-option"]:is(div) > div:last-child > div > span[class~="rounded-full"]:first-child[class*="-zinc-"],
-html.flat-theme [data-ui="platform-badge"] > div[class~="inline-flex"]:where([data-ui="platform-hue"]):is(:first-child):has(> span:first-child[class*="-zinc-"]) {
+html.flat-theme [data-ui="platform-badge"] > div[class~="inline-flex"]:where([data-ui~="platform-hue"]):is(:first-child):has(> span:first-child[class*="-zinc-"]) {
   --pf-text: var(--ui-id-zinc);
   --pf-soft: var(--ui-id-zinc-soft);
   --pf-line: var(--ui-id-zinc-line);
@@ -1373,17 +1448,19 @@ html.flat-theme .model-icon-fallback {
 /* Upstream's KPI tiles (admin and user dashboards, usage records, orders: a .card.p-4 in a grid whose first content
    is a coloured icon tile) take the reference's StatTile (REF §8.13): 1px structural line, 6px radius, surface,
    8 / 12 inset, the mono label, the value 15/600 tabular ink, the detail 11px muted, 76px; no icon tile; 10px
-   apart. */
-html.flat-theme [class~="grid"]:where([data-ui="kpi-grid"])[data-ui] {
+   apart. The grids and tiles are marked (static data-ui="kpi-grid" / "kpi-tile"; "kpi-value" on the RPM value row);
+   the repeated [data-ui] / [class] and :is(div) keep the weight of the pre-pass selectors, which found them by
+   their icon tile. */
+html.flat-theme [class~="grid"][data-ui~="kpi-grid"][data-ui][data-ui][data-ui][data-ui][data-ui][data-ui]:is(div) {
   gap: 10px;
 }
 
 /* two KPI rows in a row (the admin dashboard) read as one grid: 10px apart, not the page's 24 */
-html.flat-theme [class~="grid"]:where([data-ui="kpi-grid"])[data-ui] + [class~="grid"]:where([data-ui="kpi-grid"])[data-ui] {
+html.flat-theme [class~="grid"][data-ui~="kpi-grid"][data-ui][data-ui][data-ui][data-ui][data-ui][data-ui]:is(div) + [class~="grid"][data-ui~="kpi-grid"][data-ui][data-ui][data-ui][data-ui][data-ui][data-ui]:is(div) {
   margin-top: 10px;
 }
 
-html.flat-theme [data-ui~="kpi-grid"] > [class~="card"][class~="p-4"][data-ui] {
+html.flat-theme [class~="grid"] > [class~="card"][class~="p-4"][data-ui~="kpi-tile"][data-ui][data-ui][data-ui][data-ui]:is(div) {
   --ui-kpi-accent: var(--ui-ink);
   display: flex;
   flex-direction: column;
@@ -1400,11 +1477,11 @@ html.flat-theme [data-ui~="kpi-grid"] > [class~="card"][class~="p-4"][data-ui] {
   box-shadow: none;
 }
 
-html.flat-theme [data-ui~="kpi-grid"] > [class~="card"][class~="p-4"][data-ui~="kpi-tile"] > [class~="flex"]:first-child[class][class] {
+html.flat-theme [class~="grid"] > [class~="card"][class~="p-4"][data-ui~="kpi-tile"] > [class~="flex"]:first-child[class][class]:is(div) {
   display: block;
 }
 
-html.flat-theme [data-ui~="kpi-grid"] > [class~="card"][class~="p-4"][data-ui~="kpi-tile"] div[class~="rounded-lg"][class~="p-2"]:first-child[class][class] {
+html.flat-theme [class~="grid"] > [class~="card"][class~="p-4"][data-ui~="kpi-tile"] div[class~="rounded-lg"][class~="p-2"]:first-child {
   display: none;
 }
 
@@ -1447,7 +1524,7 @@ html.flat-theme [class~="grid"] > [class~="card"][class~="p-4"] div[class~="roun
 
 /* the detail line(s): 11px muted; the cost triples keep their order, weight marks the actual cost (the titles name
    each figure); status words keep their status colour */
-html.flat-theme [data-ui~="kpi-grid"] > [class~="card"][class~="p-4"][data-ui~="kpi-tile"] div[class~="rounded-lg"][class~="p-2"]:first-child + div > :is(p, div):not(:first-child):not([class~="text-xl"])[class] {
+html.flat-theme [class~="grid"] > [class~="card"][class~="p-4"] div[class~="rounded-lg"][class~="p-2"]:first-child + div > :is(p, div):not(:first-child):not(div[data-ui~="kpi-value"]):not([class~="text-xl"]) {
   color: rgb(var(--ui-muted));
   font-size: 11px;
   line-height: 16.5px;
@@ -1496,21 +1573,22 @@ html.flat-theme [class~="grid"] > [class~="card"][class~="p-4"] div[class~="roun
 }
 
 /* Danger variant (REF §8.13, crop kpi-card-danger): a tile whose detail reports errors is the whole-card alert,
-   danger border and soft fill, the value in the danger colour. */
-html.flat-theme [class~="grid"] > [class~="card"][class~="p-4"]:has(div[class~="rounded-lg"][class~="p-2"]:first-child + div > p:not(:first-child) > span[class~="text-red-500"]) {
+   danger border and soft fill, the value in the danger colour, the label muted. The KPI tile tests its own detail
+   line (subject-position :has(), child arguments for the two tile shapes: icon tile + text column directly in the
+   card, or inside its first row) and hands the colours to its own rules: --ui-kpi-accent to the value, --ui-label to
+   the label (the only reader of --ui-label in a tile). Same weight as the pre-pass rule (0,9,5). */
+html.flat-theme [class~="grid"] > [class~="card"][class~="p-4"]:where([data-ui~="kpi-tile"]):has(> * > div[class~="rounded-lg"][class~="p-2"]:first-child + div > p:not(:first-child) > span[class~="text-red-500"], > div[class~="rounded-lg"][class~="p-2"]:first-child + div > p:not(:first-child) > span[class~="text-red-500"]) {
   --ui-kpi-accent: var(--ui-danger);
+  --ui-label: var(--ui-muted);
   border-color: rgb(var(--ui-danger));
   background-color: rgb(var(--ui-danger-soft));
 }
 
-html.flat-theme [class~="grid"] > [class~="card"][class~="p-4"]:has(div[class~="rounded-lg"][class~="p-2"]:first-child + div > p:not(:first-child) > span[class~="text-red-500"]) div[class~="rounded-lg"][class~="p-2"]:first-child + div > p:first-child {
-  color: rgb(var(--ui-muted));
-}
-
 /* Quick actions (admin and user dashboards, D4): upstream tints each tile and its hover by hue; they take the
    reference's option card (REF §8.11 dialog option card: 8px radius, 1px structural line, the subtle fill at 60 %,
-   hover = control outline; a 28px neutral icon square with a 1px line; title 13/600 ink, description 12.5 muted). */
-html.flat-theme button[class~="group"][class~="flex"][class~="items-center"][class~="bg-gray-50"]:is([class~="p-3"], [class~="p-4"]):has(> :first-child[class~="flex-shrink-0"]:is([class~="rounded-lg"], [class~="rounded-xl"])) {
+   hover = control outline; a 28px neutral icon square with a 1px line; title 13/600 ink, description 12.5 muted).
+   The buttons are data-ui="quick-action" (they were found by their icon square). */
+html.flat-theme button[class~="group"][class~="flex"][class~="items-center"][class~="bg-gray-50"]:is([class~="p-3"], [class~="p-4"])[data-ui~="quick-action"][data-ui][data-ui] {
   gap: 12px;
   padding: 12px;
   border: 1px solid rgb(var(--ui-line));
@@ -1519,7 +1597,7 @@ html.flat-theme button[class~="group"][class~="flex"][class~="items-center"][cla
   transition: border-color var(--ui-duration) var(--ui-ease);
 }
 
-html.flat-theme button[class~="group"][class~="flex"][class~="items-center"][class~="bg-gray-50"]:is([class~="p-3"], [class~="p-4"]):has(> :first-child[class~="flex-shrink-0"]:is([class~="rounded-lg"], [class~="rounded-xl"])):hover {
+html.flat-theme button[class~="group"][class~="flex"][class~="items-center"][class~="bg-gray-50"]:is([class~="p-3"], [class~="p-4"])[data-ui~="quick-action"][data-ui][data-ui]:hover {
   border-color: rgb(var(--ui-line-strong));
   background-color: color-mix(in srgb, rgb(var(--ui-subtle)) 60%, rgb(var(--ui-surface)));
 }
@@ -1702,17 +1780,17 @@ html.flat-theme :is(.skeleton, [data-ui="skeleton"], [class~="animate-pulse"][cl
 
 /* ================================================================== 10 · chart cards */
 
-/* Cards holding a chart (REF §8.14 Spend over time: 14px inset, the title as a mono label). A chart card says so
-   itself: the component that owns the canvas or the fixed-height chart area (h-48 / h-64, which it keeps while loading
-   or empty) carries data-ui="chart-card" (the five dist/trend chart components, the two account stats modals, the
-   admin dashboard's trend card and the payment revenue card). The hook is inside :where() so the selector keeps the
-   compound's own weight exactly as the pre-pass :has(canvas, ...) did. */
-html.flat-theme [class~="card"][class~="p-4"]:where([data-ui="chart-card"]) {
+/* Cards holding a chart (REF §8.14 Spend over time: 14px inset, the title as a mono label). A chart card is the
+   card that owns a canvas or the fixed-height chart area it keeps while loading or empty (h-48 / h-64), so the title
+   does not change with the data; the component marks it data-ui="chart-card" (the dist / trend chart components, the
+   two account stats modals, the admin dashboard's usage trend card, the payment revenue card, the user dashboard's
+   model card). :is(div) twice keeps the pre-pass weight. */
+html.flat-theme [class~="card"][class~="p-4"][data-ui~="chart-card"]:is(div):is(div) {
   padding: 14px;
 }
 
-html.flat-theme [class~="card"][class~="p-4"]:where([data-ui="chart-card"]) > h3[class~="text-sm"][class~="font-semibold"],
-html.flat-theme [class~="card"][class~="p-4"]:where([data-ui="chart-card"]) > div:first-child > h3[class~="text-sm"][class~="font-semibold"] {
+html.flat-theme [class~="card"][class~="p-4"][data-ui~="chart-card"]:is(div):is(div) > h3[class~="text-sm"][class~="font-semibold"],
+html.flat-theme [class~="card"][class~="p-4"][data-ui~="chart-card"]:is(div):is(div) > div:first-child > h3[class~="text-sm"][class~="font-semibold"] {
   color: rgb(var(--ui-label));
   font-family: var(--ui-font-mono);
   font-size: var(--ui-label-size);
@@ -1730,7 +1808,8 @@ html.flat-theme [class~="card"][class~="p-4"]:where([data-ui="chart-card"]) > di
    text in ink-soft; the fill the subtle ground here, so a box inside a dialog still reads as a box). Warning (amber),
    error (red) and success (green / emerald) boxes are states and keep their colours. Reach: a div with such a fill
    that is a box (rounded, bordered or a card) with an inset; never a data-ui element, a selected option (a ring, or a
-   -300..-700 border of the hue), a picked-value chip (a direct x button), the public pages, a button or a link.
+   -300..-700 border of the hue), a picked-value chip (its direct x button; the chip is data-ui="picked-chip"), the
+   public pages, a button or a link.
    Static reach 2026-09-29 (_tools/callout_reach.py): 50 boxes; skipped 14 (selected cards, the drag-over drop zone,
    strips without a box, the header balance, the OAuth flow panel, the picked-user chips, the login agreement).
    Specificity is kept at 0,3,1 (the conditions sit in :where()) so the page files, loaded later, can refine. */

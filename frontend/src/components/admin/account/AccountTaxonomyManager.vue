@@ -7,7 +7,7 @@
     @close="emit('close')"
   >
     <div class="space-y-4">
-      <div class="inline-flex rounded-md bg-gray-100 p-1 dark:bg-dark-800">
+      <div data-ui="seg-box" class="inline-flex rounded-md bg-gray-100 p-1 dark:bg-dark-800">
         <button
           v-for="item in tabs"
           :key="item.value"
@@ -44,7 +44,7 @@
           @update:model-value="updateVisibleItems"
           @end="saveOrder"
         >
-        <div v-for="item in visibleItems" :key="item.id" :data-test="`taxonomy-item-${item.id}`" class="flex min-h-12 items-center gap-3 border-b border-gray-100 px-3 py-2 last:border-b-0 dark:border-dark-700">
+        <div data-ui="dense-dlg" v-for="item in visibleItems" :key="item.id" :data-test="`taxonomy-item-${item.id}`" class="flex min-h-12 items-center gap-3 border-b border-gray-100 px-3 py-2 last:border-b-0 dark:border-dark-700">
           <button type="button" class="taxonomy-drag-handle icon-button cursor-grab text-gray-400 active:cursor-grabbing" :title="t('admin.accounts.dragToReorder')">
             <Icon name="arrowsUpDown" size="sm" />
           </button>

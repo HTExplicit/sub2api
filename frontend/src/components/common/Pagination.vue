@@ -51,7 +51,7 @@
           </div>
         </div>
 
-        <div v-if="showJump" class="flex items-center space-x-2">
+        <div data-ui="dense-btn dense-dlg" v-if="showJump" class="flex items-center space-x-2">
           <span class="text-sm text-gray-700 dark:text-gray-300">{{ t('pagination.jumpTo') }}</span>
           <input
             v-model="jumpPage"

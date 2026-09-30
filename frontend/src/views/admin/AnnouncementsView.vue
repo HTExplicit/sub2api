@@ -14,6 +14,7 @@
             />
           </div>
           <Select
+            data-ui="toolbar-select"
             v-model="filters.status"
             :options="statusFilterOptions"
             class="w-40"
@@ -27,6 +28,7 @@
               :disabled="loading"
               class="btn btn-secondary"
               :title="t('common.refresh')"
+              data-ui="toolbar-icon"
             >
               <Icon name="refresh" size="md" :class="loading ? 'animate-spin' : ''" />
             </button>

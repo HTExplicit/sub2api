@@ -65,7 +65,7 @@ html.flat-theme:root {
 /* ================================================================== frame */
 /* The reference draws nothing behind the page: no mesh, no orbs, no gradient washes (REF §10 item 15). */
 html.flat-theme .ui-decor,
-html.flat-theme div[class~="bg-mesh-gradient"][class~="fixed"] {
+html.flat-theme div.bg-mesh-gradient.fixed {
   display: none;
 }
 
@@ -87,7 +87,7 @@ html.flat-theme .app-main {
     margin-left: var(--ui-shell-sidebar-w);
   }
 
-  html.flat-theme .app-main[class~="lg:ml-[72px]"] {
+  html.flat-theme .app-main.lg\:ml-\[72px\] {
     margin-left: var(--ui-shell-rail-w);
   }
 }
@@ -100,7 +100,7 @@ html.flat-theme .app-main > main {
 
 /* Page rhythm: a full-width page's top-level blocks sit 12px apart like the reference's (/logs: header row, toolbar,
    KPI row, cards). Centred narrow pages (mx-auto max-w-*) keep their spacing for their page group. */
-html.flat-theme .app-main > main > :is([class~="space-y-6"], [class~="space-y-5"], [class~="space-y-4"]):not([class~="mx-auto"]) > :not([hidden]) ~ :not([hidden]) {
+html.flat-theme .app-main > main > :is(.space-y-6, .space-y-5, .space-y-4):not(.mx-auto) > :not([hidden]) ~ :not([hidden]) {
   margin-top: var(--ui-shell-gap);
 }
 
@@ -116,15 +116,17 @@ html.flat-theme .custom-page-layout {
    column under the header instead of subtracting a fixed header height. With the one-line header it ends where the
    calc above ends it (900 - 30). */
 @media (min-width: 1024px) {
-  /* Perf pass: the wrapper is hooked ([data-ui="app-shell"], AppLayout.vue) instead of asking `:has(> main > ...)` on
-     .app-main, a body-level anchor whose whole subtree sat in one invalidation set. */
-  html.flat-theme [data-ui~="app-shell"] .app-main {
+  /* Perf pass: whether the routed page is a full-height layout is known only below .app-main (the page component
+     renders it inside the shell's <main>), so these two keep a has-test: in the subject compound, on the one .app-main
+     (scoped under the shell root, [data-ui="app-shell"], AppLayout.vue) and its <main>, with child-only arguments
+     keyed on the two layout classes; nothing is selected after the test. :where() keeps the original 0,3,2 / 0,3,3. */
+  html.flat-theme :where([data-ui~="app-shell"]) > .app-main:has(> main > :is(.table-page-layout, .custom-page-layout)) {
     display: flex;
     flex-direction: column;
     height: 100vh;
   }
 
-  html.flat-theme .app-main > main:has(> :is(.table-page-layout, .custom-page-layout)):not(uipad) {
+  html.flat-theme :where([data-ui~="app-shell"]) > .app-main > main:has(> :is(.table-page-layout, .custom-page-layout)):not(uipad) {
     display: flex;
     flex: 1 1 0;
     flex-direction: column;
@@ -152,7 +154,7 @@ html.flat-theme .sidebar {
   transition-timing-function: var(--ui-ease-out);
 }
 
-html.flat-theme .sidebar[class~="w-[72px]"] {
+html.flat-theme .sidebar.w-\[72px\] {
   width: var(--ui-shell-rail-w);
   padding-left: clamp(0.5rem, 1.5vw, 0.75rem);
   padding-right: clamp(0.5rem, 1.5vw, 0.75rem);
@@ -220,7 +222,7 @@ html.flat-theme .sidebar .sidebar-brand > .relative > button:hover {
   color: rgb(var(--ui-ink));
 }
 
-html.flat-theme .sidebar .sidebar-brand > .relative > button[class~="bg-amber-100"] {
+html.flat-theme .sidebar .sidebar-brand > .relative > button.bg-amber-100 {
   color: rgb(var(--ui-warning));
 }
 
@@ -228,12 +230,12 @@ html.flat-theme .sidebar .sidebar-brand > .relative > button span {
   font-weight: inherit;
 }
 
-html.flat-theme .sidebar .sidebar-brand > .relative > button > span[class~="h-2"] {
+html.flat-theme .sidebar .sidebar-brand > .relative > button > span.h-2 {
   width: 6px;
   height: 6px;
 }
 
-html.flat-theme .sidebar .sidebar-brand > .relative > button > span[class~="h-2"] > span {
+html.flat-theme .sidebar .sidebar-brand > .relative > button > span.h-2 > span {
   width: 6px;
   height: 6px;
 }
@@ -323,13 +325,13 @@ html.flat-theme .sidebar .sidebar-label-flex > svg {
 }
 
 /* A group's children hang from a 1px guide under the parent's icon. */
-html.flat-theme .sidebar .sidebar-section > div[class~="border-l"] {
+html.flat-theme .sidebar .sidebar-section > div.border-l {
   margin: 1px 0 4px 17px;
   padding-left: 8px;
   border-left-color: rgb(var(--ui-line));
 }
 
-html.flat-theme .sidebar .sidebar-section > div[class~="border-l"] > .sidebar-link {
+html.flat-theme .sidebar .sidebar-section > div.border-l > .sidebar-link {
   min-height: 30px;
   padding-top: 5px;
   padding-bottom: 5px;
@@ -354,7 +356,7 @@ html.flat-theme .sidebar .sidebar-link.sidebar-link-collapsed > .sidebar-label-c
 /* Bottom: a 1px rule, 12px, then the theme switch as a row with the collapse control at its end: the reference's
    panel-left glyph, 28 x 28, ink 30 % -> 60 % on hover with no fill (REF §8.1; 46 % here for 3:1). The collapse
    label stays for screen readers. */
-html.flat-theme .sidebar > div[class~="mt-auto"] {
+html.flat-theme .sidebar > div.mt-auto {
   display: flex;
   align-items: center;
   gap: 4px;
@@ -362,13 +364,13 @@ html.flat-theme .sidebar > div[class~="mt-auto"] {
   border-top: 1px solid rgb(var(--ui-line));
 }
 
-html.flat-theme .sidebar > div[class~="mt-auto"] > button.sidebar-link:first-child {
+html.flat-theme .sidebar > div.mt-auto > button.sidebar-link:first-child {
   flex: 1 1 auto;
   width: auto;
   margin: 0;
 }
 
-html.flat-theme .sidebar > div[class~="mt-auto"] > button.sidebar-link:last-child:not(:first-child) {
+html.flat-theme .sidebar > div.mt-auto > button.sidebar-link:last-child:not(:first-child) {
   flex: 0 0 28px;
   justify-content: center;
   width: 28px;
@@ -380,16 +382,16 @@ html.flat-theme .sidebar > div[class~="mt-auto"] > button.sidebar-link:last-chil
   color: rgb(var(--ui-ink) / var(--ui-shell-nav-icon));
 }
 
-html.flat-theme .sidebar > div[class~="mt-auto"] > button.sidebar-link:last-child:not(:first-child):hover {
+html.flat-theme .sidebar > div.mt-auto > button.sidebar-link:last-child:not(:first-child):hover {
   background-color: transparent;
   color: rgb(var(--ui-ink) / 0.6);
 }
 
-html.flat-theme .sidebar > div[class~="mt-auto"] > button.sidebar-link:last-child:not(:first-child) > svg {
+html.flat-theme .sidebar > div.mt-auto > button.sidebar-link:last-child:not(:first-child) > svg {
   color: inherit;
 }
 
-html.flat-theme .sidebar > div[class~="mt-auto"] > button.sidebar-link:last-child:not(:first-child) > .sidebar-label {
+html.flat-theme .sidebar > div.mt-auto > button.sidebar-link:last-child:not(:first-child) > .sidebar-label {
   position: absolute;
   width: 1px;
   height: 1px;
@@ -401,29 +403,29 @@ html.flat-theme .sidebar > div[class~="mt-auto"] > button.sidebar-link:last-chil
   border: 0;
 }
 
-html.flat-theme .sidebar[class~="w-[72px]"] > div[class~="mt-auto"] {
+html.flat-theme .sidebar.w-\[72px\] > div.mt-auto {
   flex-direction: column;
   gap: 4px;
 }
 
-html.flat-theme .sidebar[class~="w-[72px]"] > div[class~="mt-auto"] > button.sidebar-link:first-child {
+html.flat-theme .sidebar.w-\[72px\] > div.mt-auto > button.sidebar-link:first-child {
   flex: 0 0 auto;
   width: 35px;
 }
 
 /* Phones and tablets: the drawer floats over the page on the overlay scrim. The scrim sits above the sticky bar
    (upstream stacks both at z-30, so the bar stayed undimmed beside the open drawer) and under the drawer (z-40). */
-html.flat-theme .sidebar ~ div[class~="bg-black/50"] {
+html.flat-theme .sidebar ~ div.bg-black\/50 {
   z-index: 35;
   background-color: rgb(var(--ui-scrim));
 }
 
 @media (max-width: 1023.98px) {
-  html.flat-theme .sidebar:not([class~="w-[72px]"]) {
+  html.flat-theme .sidebar:not(.w-\[72px\]) {
     width: 15rem;
   }
 
-  html.flat-theme .sidebar:not([class~="-translate-x-full"]) {
+  html.flat-theme .sidebar:not(.-translate-x-full) {
     box-shadow: var(--ui-shadow-overlay);
   }
 }
@@ -451,7 +453,7 @@ html.flat-theme .app-main > header > div > div:last-child {
 }
 
 @media (max-width: 1023.98px) {
-  html.flat-theme .app-main > header > div > div:first-child > button[class~="btn-icon"] {
+  html.flat-theme .app-main > header > div > div:first-child > button.btn-icon {
     display: inline-grid;
     place-items: center;
     width: 35px;
@@ -462,12 +464,12 @@ html.flat-theme .app-main > header > div > div:last-child {
     color: rgb(var(--ui-muted));
   }
 
-  html.flat-theme .app-main > header > div > div:first-child > button[class~="btn-icon"]:hover {
+  html.flat-theme .app-main > header > div > div:first-child > button.btn-icon:hover {
     background-color: rgb(var(--ui-subtle));
     color: rgb(var(--ui-ink));
   }
 
-  html.flat-theme .app-main > header > div > div:first-child > button[class~="btn-icon"] svg {
+  html.flat-theme .app-main > header > div > div:first-child > button.btn-icon svg {
     width: 15px;
     height: 15px;
   }
@@ -484,22 +486,21 @@ html.flat-theme .app-main > header > div > div:last-child {
     flex: 0 0 auto;
   }
 
-  /* Perf pass: the h1 is always there (AppHeader renders the title), so the `:has(> h1)` test on the wrapper was
-     redundant; the wrapper is named by the h1 it holds (`div:has(> h1)` removal — see the desktop rule below) and
-     the once-hidden title now displays. */
-  html.flat-theme .app-main > header > div > div:first-child > div[class~="hidden"][data-ui~="header-title"] {
+  /* Perf pass: the title wrapper is hooked ([data-ui="header-title"], AppHeader.vue; its h1 is unconditional) instead
+     of found by a has-h1 test; :where() + :not(uipad) keep the original 0,4,6. */
+  html.flat-theme .app-main > header > div > div:first-child > div.hidden:where([data-ui~="header-title"]):not(uipad) {
     display: block;
     flex: 1 1 auto;
     min-width: 0;
   }
 
-  html.flat-theme .app-main > header > div > div:first-child > div[class~="hidden"] > h1 {
+  html.flat-theme .app-main > header > div > div:first-child > div.hidden > h1 {
     overflow: hidden;
     font: 600 14px/20px var(--ui-font);
     text-overflow: ellipsis;
   }
 
-  html.flat-theme .app-main > header > div > div:first-child > div[class~="hidden"] > h1 + p {
+  html.flat-theme .app-main > header > div > div:first-child > div.hidden > h1 + p {
     display: none;
   }
 }
@@ -536,8 +537,9 @@ html.flat-theme .app-main > header > div > div:last-child {
   /* Title · description: the page title 20/28 600 (REF §8.2), the description 13px muted on the same baseline
      after a faint dot. A description longer than the row wraps, its lines under its first word (nothing is cut; the
      ellipsis hid the end of 操作日志's and 提示词审计's notes). Perf pass: the wrapper is hooked
-     ([data-ui="header-title"], AppHeader.vue) instead of found by `div:has(> h1)` on a bare div. */
-  html.flat-theme .app-main > header [data-ui~="header-title"] {
+     ([data-ui="header-title"], AppHeader.vue) instead of found by a has-h1 test on a bare div; :where() +
+     :not(uipad) keep the original 0,2,4. */
+  html.flat-theme .app-main > header div:where([data-ui~="header-title"]):not(uipad) {
     display: flex;
     align-items: baseline;
     min-width: 0;
@@ -590,7 +592,7 @@ html.flat-theme .app-main > header :is(button[data-ui="announcement-bell"], [dat
   color: rgb(var(--ui-ink));
 }
 
-html.flat-theme .app-main > header :is(button[data-ui="announcement-bell"], [data-ui="announcement-bell"] > button)[class~="text-blue-600"] {
+html.flat-theme .app-main > header :is(button[data-ui="announcement-bell"], [data-ui="announcement-bell"] > button).text-blue-600 {
   color: rgb(var(--ui-ink));
 }
 
@@ -599,14 +601,14 @@ html.flat-theme .app-main > header :is(button[data-ui="announcement-bell"], [dat
   height: 15px;
 }
 
-html.flat-theme .app-main > header :is(button[data-ui="announcement-bell"], [data-ui="announcement-bell"] > button) > span[class~="absolute"] {
+html.flat-theme .app-main > header :is(button[data-ui="announcement-bell"], [data-ui="announcement-bell"] > button) > span.absolute {
   top: 6px;
   right: 6px;
   width: 6px;
   height: 6px;
 }
 
-html.flat-theme .app-main > header :is(button[data-ui="announcement-bell"], [data-ui="announcement-bell"] > button) > span[class~="absolute"] > span {
+html.flat-theme .app-main > header :is(button[data-ui="announcement-bell"], [data-ui="announcement-bell"] > button) > span.absolute > span {
   width: 6px;
   height: 6px;
 }
@@ -655,7 +657,7 @@ html.flat-theme .app-main > header [data-ui="header-locale"] > button:hover {
   color: rgb(var(--ui-ink));
 }
 
-html.flat-theme .app-main > header [data-ui="header-locale"] > button > span[class~="text-base"] {
+html.flat-theme .app-main > header [data-ui="header-locale"] > button > span.text-base {
   font-size: 13px;
   line-height: 1;
 }
@@ -688,12 +690,12 @@ html.flat-theme .app-main > header [data-ui="header-subscription"] > button > sv
   color: rgb(var(--ui-muted));
 }
 
-html.flat-theme .app-main > header [data-ui="header-subscription"] > button div[class~="h-2"][class~="w-2"] {
+html.flat-theme .app-main > header [data-ui="header-subscription"] > button div.h-2.w-2 {
   width: 6px;
   height: 6px;
 }
 
-html.flat-theme .app-main > header [data-ui="header-subscription"] > button span[class~="text-xs"] {
+html.flat-theme .app-main > header [data-ui="header-subscription"] > button span.text-xs {
   font: 500 11px/16.5px var(--ui-font-mono);
   font-variant-numeric: tabular-nums;
   color: inherit;
@@ -718,13 +720,13 @@ html.flat-theme .app-main > header [data-ui="header-balance"] > svg {
   color: rgb(var(--ui-muted));
 }
 
-html.flat-theme .app-main > header [data-ui="header-balance"] > span[class~="text-sm"] {
+html.flat-theme .app-main > header [data-ui="header-balance"] > span.text-sm {
   font: 500 12.5px/18.75px var(--ui-font-mono);
   font-variant-numeric: tabular-nums;
   color: rgb(var(--ui-ink));
 }
 
-html.flat-theme .app-main > header [data-ui="header-balance"] > span[class~="rounded-full"] {
+html.flat-theme .app-main > header [data-ui="header-balance"] > span.rounded-full {
   padding: 1px 6px;
   border-radius: 9999px;
   background-color: rgb(var(--ui-warning-soft));
@@ -733,7 +735,7 @@ html.flat-theme .app-main > header [data-ui="header-balance"] > span[class~="rou
   color: rgb(var(--ui-warning));
 }
 
-html.flat-theme .app-main > header [data-ui="header-balance"] > div[class~="absolute"] {
+html.flat-theme .app-main > header [data-ui="header-balance"] > div.absolute {
   min-width: 224px;
   margin-top: 6px;
   padding: 8px 12px;
@@ -744,20 +746,20 @@ html.flat-theme .app-main > header [data-ui="header-balance"] > div[class~="abso
   font: 400 12px/18px var(--ui-font);
 }
 
-html.flat-theme .app-main > header [data-ui="header-balance"] > div[class~="absolute"] span {
+html.flat-theme .app-main > header [data-ui="header-balance"] > div.absolute span {
   color: rgb(var(--ui-ink));
 }
 
-html.flat-theme .app-main > header [data-ui="header-balance"] > div[class~="absolute"] span:last-child {
+html.flat-theme .app-main > header [data-ui="header-balance"] > div.absolute span:last-child {
   font-family: var(--ui-font-mono);
   font-variant-numeric: tabular-nums;
 }
 
-html.flat-theme .app-main > header [data-ui="header-balance"] > div[class~="absolute"] span:last-child[class~="text-amber-700"] {
+html.flat-theme .app-main > header [data-ui="header-balance"] > div.absolute span:last-child.text-amber-700 {
   color: rgb(var(--ui-warning));
 }
 
-html.flat-theme .app-main > header [data-ui="header-balance"] > div[class~="absolute"] > div[class~="border-t"] {
+html.flat-theme .app-main > header [data-ui="header-balance"] > div.absolute > div.border-t {
   border-top-color: rgb(var(--ui-line));
 }
 
