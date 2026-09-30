@@ -138,14 +138,14 @@ function handleDismiss() {
   announcementStore.dismissPopup()
 }
 
-// Manage body overflow — only set, never unset (bell component handles restore)
+// Manage the body scroll lock (data-announcement-open, style.css) — only set, never unset (bell component handles restore)
 watch(
   displayedAnnouncement,
   (popup) => {
     if (popup) {
-      document.body.style.overflow = 'hidden'
+      document.body.setAttribute('data-announcement-open', '')
     } else if (props.preview) {
-      document.body.style.overflow = ''
+      document.body.removeAttribute('data-announcement-open')
     }
   },
   { immediate: true },
@@ -153,7 +153,7 @@ watch(
 
 onBeforeUnmount(() => {
   if (props.preview) {
-    document.body.style.overflow = ''
+    document.body.removeAttribute('data-announcement-open')
   }
 })
 </script>

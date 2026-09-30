@@ -8,7 +8,7 @@ function dialog(show = true) {
   return mount(BaseDialog, { props: { show, title: 'Details' }, global: { stubs: { Icon: true } } })
 }
 
-const locked = () => document.body.classList.contains('modal-open')
+const locked = () => document.body.hasAttribute('data-modal-open')
 
 describe('dialog body scroll lock', () => {
   it('keeps the body locked when a hidden sibling mounts or unmounts', () => {

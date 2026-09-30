@@ -10,7 +10,7 @@ vi.mock('vue-i18n', () => ({
 describe('BaseDialog', () => {
   afterEach(() => {
     document.body.innerHTML = ''
-    document.body.classList.remove('modal-open')
+    document.body.removeAttribute('data-modal-open')
   })
 
   it('resets body scroll position when reopened', async () => {
@@ -54,7 +54,7 @@ describe('BaseDialog', () => {
     expect(outer.emitted('close')).toBeUndefined()
 
     await inner.setProps({ show: false })
-    expect(document.body.classList.contains('modal-open')).toBe(true)
+    expect(document.body.hasAttribute('data-modal-open')).toBe(true)
 
     inner.unmount()
     outer.unmount()
