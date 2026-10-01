@@ -296,6 +296,16 @@ html.flat-theme :is([data-ui~="redeem-page"], [data-ui~="promo-page"]) td[data-c
 
 /* ================================================================== 4 · users table */
 
+/* the username is a name: the primary role of the table's text (data.css 12; its class says secondary) */
+html.flat-theme .table-wrapper[data-table="users"] td[data-column="username"] > span[class~="text-gray-700"] {
+  --theme-text-gray-100: var(--ui-data-primary); --theme-text-gray-200: var(--ui-data-primary); --theme-text-gray-300: var(--ui-data-primary);
+  --theme-text-gray-400: var(--ui-data-primary); --theme-text-gray-500: var(--ui-data-primary); --theme-text-gray-600: var(--ui-data-primary);
+  --theme-text-gray-700: var(--ui-data-primary); --theme-text-gray-800: var(--ui-data-primary); --theme-text-gray-900: var(--ui-data-primary);
+  --theme-text-gray-950: var(--ui-data-primary); --theme-text-dark-100: var(--ui-data-primary); --theme-text-dark-200: var(--ui-data-primary);
+  --theme-text-dark-300: var(--ui-data-primary); --theme-text-dark-400: var(--ui-data-primary); --theme-text-dark-500: var(--ui-data-primary);
+  --theme-text-dark-600: var(--ui-data-primary); --ui-ink-soft: var(--ui-data-primary);
+}
+
 /* Balance: the amount is a link to the balance history (the dashed underline in the control line, ink on hover); 「充值」
    under it (B1.8) is the reference's link, the accent text at 12px, underlined on hover (upstream's hover fill goes). */
 html.flat-theme [data-ui~="users-page"] td[data-column="balance"] div[class~="group"] > button {

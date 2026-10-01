@@ -730,18 +730,21 @@ html.flat-theme [class~="max-h-48"][class~="overflow-auto"] > table[class~="text
   color: rgb(var(--ui-label));
 }
 
-/* figures: requests and tokens muted, the actual spend ink, the account cost and the standard price muted (the
-   title attributes still name them) */
+/* figures (text roles, section 12): requests and tokens are the row's secondary figures, the actual spend its primary
+   figure, the account cost and the standard price reference values (the title attributes still name them); all of
+   them Geist Mono, tabular, like the token column (they were Geist next to Mono token counts) */
 html.flat-theme [class~="max-h-48"][class~="overflow-auto"] > table[class~="text-xs"] > tbody > tr > td[class~="text-right"] {
-  color: rgb(var(--ui-muted));
+  color: rgb(var(--ui-data-secondary));
+  font-family: var(--ui-font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+html.flat-theme [class~="max-h-48"][class~="overflow-auto"] > table[class~="text-xs"] > tbody > tr > td[class~="text-right"]:is([class~="text-orange-500"], [class~="text-gray-400"]) {
+  color: rgb(var(--ui-data-reference));
 }
 
 html.flat-theme [class~="max-h-48"][class~="overflow-auto"] > table[class~="text-xs"] > tbody > tr > td[class~="text-right"]:is([class~="text-green-600"]) {
-  color: rgb(var(--ui-ink));
-}
-
-html.flat-theme [class~="max-h-48"][class~="overflow-auto"] > table[class~="text-xs"] > tbody > tr > td[class~="text-right"]:nth-child(3) {
-  font-family: var(--ui-font-mono);
+  color: rgb(var(--ui-data-primary));
 }
 
 /* the colour key: an 8px square with 2px corners (REF §8.14 legend and usage rows) in the slice's colour; slices
@@ -862,7 +865,8 @@ html.flat-theme [data-ui="pagination"] nav[aria-label="Pagination"] > button {
   border: 0;
   border-radius: var(--ui-radius-md);
   background-color: transparent;
-  color: rgb(var(--ui-muted));
+  /* page numbers are figures: the secondary role (section 12; the sentence around the counts is the label) */
+  color: rgb(var(--ui-data-secondary));
   font-family: var(--ui-font-mono);
   font-size: 12px;
   font-weight: 500;
@@ -1893,3 +1897,144 @@ html.flat-theme :where(div:is([class~="bg-primary-50"], [class~="bg-primary-50/5
   color: rgb(var(--ui-muted));
 }
 /* END S callouts */
+
+/* ================================================================== 12 · text roles in the record tables
+
+   Owner decision 2026-10-01, text option A "two tones" (artifacts/tmp/ui-polish/text/PREVIEW.md, where it was reviewed
+   and verified against a role table): in the cells and headers of 使用记录 (管理 and 用户, records and error requests),
+   运维监控's error dialog, 账号管理, API 密钥, 用户管理 and the distribution tables, and in the accounts toolbar, the
+   pagination, the records tabs and the IP-region bar, a value is the ink and everything else one grey (tokens.css, data
+   text roles); before, a row held up to eight greys a step apart. Status, platform / identity, accent and token-glyph
+   colours stay; every other table keeps its colours.
+     primary     names, e-mails, model, key / account names, token figures, the billed cost, balances, amounts,
+                 priority, the error message; toolbar controls (buttons, selects, filter pills, page size)
+     labelled    a value right after its inline label (管理分类 / 请求路由 / 最近 / 创建 / 过期 / 上游声明倍率 values, the
+                 endpoint path after 入站 / 上游)
+     secondary   unlabelled metadata: times, IPs, User-Agent, ids (#1), the model chain (↳), chips' text, status
+                 words, platform, error category, reasoning effort, the masked key, an account's e-mail, page numbers
+     reference   the account's billed cost (A $), the distribution tables' account cost and standard price
+     label       headers, inline labels, 入站 / 上游, 首字 / 总耗时, units, placeholders (-), counts, the pagination
+                 sentence, idle tabs, empty-value prompts, row-action icons
+   Inside those boxes the theme's text tokens and upstream's grey text classes resolve to the roles (custom properties
+   only, declared on each cell so a selected row can lift the tones it holds); an element whose class names another
+   role is named below or in its page file (accounts.css, dashboard-usage.css, user.css,
+   users-groups-proxies-keys.css), and the rules that paint a figure, an e-mail, a time or a page number read the role
+   directly (sections 3 and 4, the page files, ops-channels.css). Static hooks only (data-table, data-column, data-line, data-ui, upstream's static classes); one + joins two
+   static DataTable hooks (a labelled value). An empty-state row (colspan) is left alone. */
+
+/* 12.1 the scope: each cell of the tables above, and the toolbars */
+html.flat-theme :where(:where(:is([data-ui~="usage-records"], [data-ui~="ops-error-list"], [data-ui="user-usage"]) .table-wrapper, .table-wrapper:is([data-table="accounts"], [data-table="keys"], [data-table="users"]), [data-ui="dist-table"]) > table > tbody > tr > td:not([colspan])),
+html.flat-theme :where([data-ui="accounts-toolbar"], [data-ui="pagination"], [data-ui~="usage-records"] > div:first-child, [data-ui="user-usage"] > div[class~="border-b"], [data-ui~="records-card"] > div[class~="justify-end"][class~="border-b"]) {
+  --ui-ink: var(--ui-data-primary);
+  --ui-ink-soft: var(--ui-data-secondary);
+  --ui-muted: var(--ui-data-label);
+  --ui-faint: var(--ui-data-label);
+  --ui-label: var(--ui-data-label);
+  --ui-table-head: var(--ui-data-label);
+  --ui-badge-muted: var(--ui-data-secondary);
+}
+
+/* a cell's own text (TablePageLayout's scoped td colour, text-gray-700 / dark:text-gray-300: the users id, the accounts
+   usage notes) is a secondary value */
+html.flat-theme :where(:where(:is([data-ui~="usage-records"], [data-ui~="ops-error-list"], [data-ui="user-usage"]) .table-wrapper, .table-wrapper:is([data-table="accounts"], [data-table="keys"], [data-table="users"]), [data-ui="dist-table"]) > table > tbody > tr > td:not([colspan])) {
+  --theme-text-gray-700: var(--ui-data-secondary);
+}
+
+html.flat-theme.dark :where(:where(:is([data-ui~="usage-records"], [data-ui~="ops-error-list"], [data-ui="user-usage"]) .table-wrapper, .table-wrapper:is([data-table="accounts"], [data-table="keys"], [data-table="users"]), [data-ui="dist-table"]) > table > tbody > tr > td:not([colspan])) {
+  --theme-text-gray-300: var(--ui-data-secondary);
+}
+
+/* headers: the label; a sortable label under the pointer takes the primary tone (it was the in-between grey) */
+html.flat-theme :where(:where(:is([data-ui~="usage-records"], [data-ui~="ops-error-list"], [data-ui="user-usage"]) .table-wrapper, .table-wrapper:is([data-table="accounts"], [data-table="keys"], [data-table="users"]), [data-ui="dist-table"]) > table > thead > tr > th) {
+  --ui-ink: var(--ui-data-primary);
+  --ui-ink-soft: var(--ui-data-primary);
+  --ui-muted: var(--ui-data-label);
+  --ui-faint: var(--ui-data-label);
+  --ui-label: var(--ui-data-label);
+  --ui-table-head: var(--ui-data-label);
+}
+
+/* 12.2 upstream's grey text classes -> roles: the light class names the template's intent (900 primary, 500-800
+   secondary, 400 label); dark mode reads the same role whatever dark: shade the template pairs with it */
+html.flat-theme :where(:where(:is([data-ui~="usage-records"], [data-ui~="ops-error-list"], [data-ui="user-usage"]) .table-wrapper, .table-wrapper:is([data-table="accounts"], [data-table="keys"], [data-table="users"]), [data-ui="dist-table"]) > table > tbody > tr > td:not([colspan]), [data-ui="accounts-toolbar"], [data-ui="pagination"], [data-ui~="usage-records"] > div:first-child, [data-ui="user-usage"] > div[class~="border-b"], [data-ui~="records-card"] > div[class~="justify-end"][class~="border-b"]) :not(td, th):is([class~="text-gray-900"], [class~="text-gray-950"]) {
+  --theme-text-gray-100: var(--ui-data-primary); --theme-text-gray-200: var(--ui-data-primary); --theme-text-gray-300: var(--ui-data-primary);
+  --theme-text-gray-400: var(--ui-data-primary); --theme-text-gray-500: var(--ui-data-primary); --theme-text-gray-600: var(--ui-data-primary);
+  --theme-text-gray-700: var(--ui-data-primary); --theme-text-gray-800: var(--ui-data-primary); --theme-text-gray-900: var(--ui-data-primary);
+  --theme-text-gray-950: var(--ui-data-primary); --theme-text-dark-100: var(--ui-data-primary); --theme-text-dark-200: var(--ui-data-primary);
+  --theme-text-dark-300: var(--ui-data-primary); --theme-text-dark-400: var(--ui-data-primary); --theme-text-dark-500: var(--ui-data-primary);
+  --theme-text-dark-600: var(--ui-data-primary); --ui-ink-soft: var(--ui-data-primary);
+}
+
+html.flat-theme :where(:where(:is([data-ui~="usage-records"], [data-ui~="ops-error-list"], [data-ui="user-usage"]) .table-wrapper, .table-wrapper:is([data-table="accounts"], [data-table="keys"], [data-table="users"]), [data-ui="dist-table"]) > table > tbody > tr > td:not([colspan]), [data-ui="accounts-toolbar"], [data-ui="pagination"], [data-ui~="usage-records"] > div:first-child, [data-ui="user-usage"] > div[class~="border-b"], [data-ui~="records-card"] > div[class~="justify-end"][class~="border-b"]) :not(td, th):is([class~="text-gray-800"], [class~="text-gray-700"], [class~="text-gray-600"], [class~="text-gray-500"], [class~="text-slate-500"], [class~="text-slate-600"]) {
+  --theme-text-gray-100: var(--ui-data-secondary); --theme-text-gray-200: var(--ui-data-secondary); --theme-text-gray-300: var(--ui-data-secondary);
+  --theme-text-gray-400: var(--ui-data-secondary); --theme-text-gray-500: var(--ui-data-secondary); --theme-text-gray-600: var(--ui-data-secondary);
+  --theme-text-gray-700: var(--ui-data-secondary); --theme-text-gray-800: var(--ui-data-secondary); --theme-text-gray-900: var(--ui-data-secondary);
+  --theme-text-gray-950: var(--ui-data-secondary); --theme-text-dark-100: var(--ui-data-secondary); --theme-text-dark-200: var(--ui-data-secondary);
+  --theme-text-dark-300: var(--ui-data-secondary); --theme-text-dark-400: var(--ui-data-secondary); --theme-text-dark-500: var(--ui-data-secondary);
+  --theme-text-dark-600: var(--ui-data-secondary); --ui-ink-soft: var(--ui-data-secondary);
+}
+
+html.flat-theme :where(:where(:is([data-ui~="usage-records"], [data-ui~="ops-error-list"], [data-ui="user-usage"]) .table-wrapper, .table-wrapper:is([data-table="accounts"], [data-table="keys"], [data-table="users"]), [data-ui="dist-table"]) > table > tbody > tr > td:not([colspan]), [data-ui="accounts-toolbar"], [data-ui="pagination"], [data-ui~="usage-records"] > div:first-child, [data-ui="user-usage"] > div[class~="border-b"], [data-ui~="records-card"] > div[class~="justify-end"][class~="border-b"]) :not(td, th):is([class~="text-gray-400"], [class~="text-slate-400"]) {
+  --theme-text-gray-100: var(--ui-data-label); --theme-text-gray-200: var(--ui-data-label); --theme-text-gray-300: var(--ui-data-label);
+  --theme-text-gray-400: var(--ui-data-label); --theme-text-gray-500: var(--ui-data-label); --theme-text-gray-600: var(--ui-data-label);
+  --theme-text-gray-700: var(--ui-data-label); --theme-text-gray-800: var(--ui-data-label); --theme-text-gray-900: var(--ui-data-label);
+  --theme-text-gray-950: var(--ui-data-label); --theme-text-dark-100: var(--ui-data-label); --theme-text-dark-200: var(--ui-data-label);
+  --theme-text-dark-300: var(--ui-data-label); --theme-text-dark-400: var(--ui-data-label); --theme-text-dark-500: var(--ui-data-label);
+  --theme-text-dark-600: var(--ui-data-label); --ui-ink-soft: var(--ui-data-label);
+}
+
+/* 12.3 elements whose role differs from their class (the tables' own ones are in the page files) */
+/* a value right after its own inline label (DataTable's stacked lines: 最近 / 创建 / 过期, a scheduling group ...) is a
+   labelled value, one step above its label; primary values and placeholders keep their roles (the one sibling
+   combinator, keyed on DataTable's static data-ui hooks) */
+html.flat-theme :where(:is([data-ui~="usage-records"], [data-ui~="ops-error-list"], [data-ui="user-usage"]) .table-wrapper, .table-wrapper:is([data-table="accounts"], [data-table="keys"], [data-table="users"]), [data-ui="dist-table"]) [data-ui="cell-line-label"] + [data-ui="cell-line-value"] :is([class~="text-gray-800"], [class~="text-gray-700"], [class~="text-gray-600"], [class~="text-gray-500"], [class~="text-slate-500"], [class~="text-slate-600"]) {
+  --theme-text-gray-100: var(--ui-data-labelled); --theme-text-gray-200: var(--ui-data-labelled); --theme-text-gray-300: var(--ui-data-labelled);
+  --theme-text-gray-400: var(--ui-data-labelled); --theme-text-gray-500: var(--ui-data-labelled); --theme-text-gray-600: var(--ui-data-labelled);
+  --theme-text-gray-700: var(--ui-data-labelled); --theme-text-gray-800: var(--ui-data-labelled); --theme-text-gray-900: var(--ui-data-labelled);
+  --theme-text-gray-950: var(--ui-data-labelled); --theme-text-dark-100: var(--ui-data-labelled); --theme-text-dark-200: var(--ui-data-labelled);
+  --theme-text-dark-300: var(--ui-data-labelled); --theme-text-dark-400: var(--ui-data-labelled); --theme-text-dark-500: var(--ui-data-labelled);
+  --theme-text-dark-600: var(--ui-data-labelled); --ui-ink-soft: var(--ui-data-labelled);
+}
+
+/* row actions are icon buttons with a caption: they keep the label tone whatever grey class they carry */
+html.flat-theme :where(:is([data-ui~="usage-records"], [data-ui~="ops-error-list"], [data-ui="user-usage"]) .table-wrapper, .table-wrapper:is([data-table="accounts"], [data-table="keys"], [data-table="users"]), [data-ui="dist-table"]) td[data-column="actions"] :is([class~="text-gray-400"], [class~="text-gray-500"], [class~="text-gray-600"], [class~="text-gray-700"]) {
+  --theme-text-gray-100: var(--ui-data-label); --theme-text-gray-200: var(--ui-data-label); --theme-text-gray-300: var(--ui-data-label);
+  --theme-text-gray-400: var(--ui-data-label); --theme-text-gray-500: var(--ui-data-label); --theme-text-gray-600: var(--ui-data-label);
+  --theme-text-gray-700: var(--ui-data-label); --theme-text-gray-800: var(--ui-data-label); --theme-text-gray-900: var(--ui-data-label);
+  --theme-text-gray-950: var(--ui-data-label); --theme-text-dark-100: var(--ui-data-label); --theme-text-dark-200: var(--ui-data-label);
+  --theme-text-dark-300: var(--ui-data-label); --theme-text-dark-400: var(--ui-data-label); --theme-text-dark-500: var(--ui-data-label);
+  --theme-text-dark-600: var(--ui-data-label); --ui-ink-soft: var(--ui-data-label);
+}
+
+/* stacked-cell line labels stay labels in a selected row too (section 1 draws them there with --ui-ink-soft) */
+html.flat-theme :where(:is([data-ui~="usage-records"], [data-ui~="ops-error-list"], [data-ui="user-usage"]) .table-wrapper, .table-wrapper:is([data-table="accounts"], [data-table="keys"], [data-table="users"]), [data-ui="dist-table"]) [data-ui="cell-line-label"] {
+  --ui-ink-soft: var(--ui-data-label);
+}
+
+/* 12.4 a selected row (dark): on the selected fill (#39433f, #404946 under the pointer) the grey #a3a3ac is 4.10:1 /
+   3.71, so the row lifts its secondary, reference and label tones to --ui-data-picked (#b8b8c0, 5.20 / 4.72), as
+   section 1 lifts upstream's greys there. DataTable's own selection is a class on the row; a page's own select column
+   publishes --ui-row-picked (section 1, dark only), read here by a style query on the cells; Firefox (no style
+   queries) keeps the relational form in an @supports (-moz-appearance: none) block, which Chromium never loads, as
+   section 1 does. */
+html.flat-theme.dark :where(:is([data-ui~="usage-records"], [data-ui~="ops-error-list"], [data-ui="user-usage"]) .table-wrapper, .table-wrapper:is([data-table="accounts"], [data-table="keys"], [data-table="users"])) > table > tbody.table-body > tr[class~="bg-primary-50/40"] > td {
+  --ui-data-secondary: var(--ui-data-picked);
+  --ui-data-reference: var(--ui-data-picked);
+  --ui-data-label: var(--ui-data-picked);
+}
+
+@container style(--ui-row-picked: 1) {
+  html.flat-theme.dark :where(:is([data-ui~="usage-records"], [data-ui~="ops-error-list"], [data-ui="user-usage"]) .table-wrapper, .table-wrapper:is([data-table="accounts"], [data-table="keys"], [data-table="users"])) > table > tbody.table-body > tr[data-row-id] > td {
+    --ui-data-secondary: var(--ui-data-picked);
+    --ui-data-reference: var(--ui-data-picked);
+    --ui-data-label: var(--ui-data-picked);
+  }
+}
+
+@supports (-moz-appearance: none) {
+  html.flat-theme.dark :where(:is([data-ui~="usage-records"], [data-ui~="ops-error-list"], [data-ui="user-usage"]) .table-wrapper, .table-wrapper:is([data-table="accounts"], [data-table="keys"], [data-table="users"])) > table > tbody.table-body > tr:has(> td[data-column="select"] input[type="checkbox"]:checked) > td {
+    --ui-data-secondary: var(--ui-data-picked);
+    --ui-data-reference: var(--ui-data-picked);
+    --ui-data-label: var(--ui-data-picked);
+  }
+}

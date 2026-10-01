@@ -416,12 +416,13 @@ html.flat-theme :is(.table-wrapper[data-table="usage"], [data-ui="admin-usage"] 
   color: rgb(var(--ui-ink-soft));
 }
 
-/* Hierarchy by colour and weight instead of more black (palette C): the requested model and the billed cost are the
-   row's ink (500); every token figure (input, output, cache, image) ink-soft; the key, account and reasoning names
-   ink-soft 400; the endpoint's 「入站 / 上游」 labels 400; times and IPs tabular figures. The token glyphs get upstream's
-   hues back as identity-safe text colours (input emerald, output violet, cache read sky, cache write amber, image
-   fuchsia / pink, indigo), so the figures stay neutral and the colour says which figure is which; the account's billed
-   cost stays muted. The key, account, reasoning and endpoint rules also name their lines of a stacked cell
+/* Hierarchy by colour and weight instead of more black (palette C, then the text roles of data.css 12): the requested
+   model and the billed cost are the row's ink (500); every token figure (input, output, cache, image) the ink at 400;
+   the key and account names 400 (the primary role), the reasoning effort the secondary one; the endpoint's
+   「入站 / 上游」 labels 400; times and IPs tabular figures. The token glyphs get upstream's hues back as identity-safe
+   text colours (input emerald, output violet, cache read sky, cache write amber, image fuchsia / pink, indigo), so the
+   figures stay neutral and the colour says which figure is which; the account's billed cost is a reference value (the
+   grey). The key, account, reasoning and endpoint rules also name their lines of a stacked cell
    ([data-ui="cell-line"][data-line], the table-width track's stacked layout), as that track does for the rules it
    carries over. */
 html.flat-theme .table-wrapper[data-table="usage"] td:is([data-column="api_key"], [data-column="account"], [data-column="reasoning_effort"]) span[class~="text-gray-900"],
@@ -430,9 +431,15 @@ html.flat-theme .table-wrapper[data-table="usage"] [data-ui="cell-line"]:is([dat
   font-weight: 400;
 }
 
+/* (text roles, data.css 12: every token figure is a primary figure, in the ink like the billed cost, Geist Mono 13 / 400
+   tabular; the billed cost keeps 500, the one weighted figure of the row. They were ink-soft Mono 13 / 500.) */
 html.flat-theme .table-wrapper[data-table="usage"] td[data-column="tokens"] span[class~="font-medium"][class~="text-gray-900"],
 html.flat-theme .table-wrapper[data-table="usage"] td[data-column="tokens"] :is([class~="text-sky-600"], [class~="text-amber-600"], [class~="text-fuchsia-600"], [class~="text-pink-600"]) {
-  color: rgb(var(--ui-ink-soft));
+  color: rgb(var(--ui-data-primary));
+  font-family: var(--ui-font-mono);
+  font-size: 13px;
+  font-weight: 400;
+  font-variant-numeric: tabular-nums;
 }
 
 html.flat-theme .table-wrapper[data-table="usage"] td[data-column="cost"] span[class~="text-green-600"] {
@@ -476,8 +483,83 @@ html.flat-theme .table-wrapper[data-table="usage"] td[data-column="tokens"] svg[
   color: rgb(var(--ui-id-indigo));
 }
 
+/* the account's billed cost (A $) is a reference value next to the billed cost: the grey, a secondary figure one pixel
+   under the row's 13px figures (it was 11px) */
 html.flat-theme .table-wrapper[data-table="usage"] td[data-column="cost"] div[class~="text-orange-500"] {
-  color: rgb(var(--ui-muted));
+  color: rgb(var(--ui-data-reference));
+  font-size: 12px;
+  line-height: 18px;
+}
+
+/* Text roles (data.css 12) of the records and error lists whose class names another role:
+   - reasoning effort qualifies the model: secondary (its class says primary; dark: its dark:text-white reads
+     --theme-on-fill, the ink inside tables, so that is moved too, on these text leaves only);
+   - 入站 / 上游: the endpoint path is the labelled value, 「入站:」 / 「上游:」 its label (their classes say secondary);
+   - error lists: the message is the row's content (primary); platform and category are secondary.
+   The secondary figures (latency, IP) are Geist Mono 12, a pixel under the primary 13px figures (latency was Geist
+   sans 12 / 500, the IP Mono 13). */
+html.flat-theme .table-wrapper[data-table="usage"] :is(td[data-column="reasoning_effort"], [data-ui="cell-line"][data-line="reasoning_effort"]) :is(span, div)[class~="text-gray-900"] {
+  --theme-text-gray-100: var(--ui-data-secondary); --theme-text-gray-200: var(--ui-data-secondary); --theme-text-gray-300: var(--ui-data-secondary);
+  --theme-text-gray-400: var(--ui-data-secondary); --theme-text-gray-500: var(--ui-data-secondary); --theme-text-gray-600: var(--ui-data-secondary);
+  --theme-text-gray-700: var(--ui-data-secondary); --theme-text-gray-800: var(--ui-data-secondary); --theme-text-gray-900: var(--ui-data-secondary);
+  --theme-text-gray-950: var(--ui-data-secondary); --theme-text-dark-100: var(--ui-data-secondary); --theme-text-dark-200: var(--ui-data-secondary);
+  --theme-text-dark-300: var(--ui-data-secondary); --theme-text-dark-400: var(--ui-data-secondary); --theme-text-dark-500: var(--ui-data-secondary);
+  --theme-text-dark-600: var(--ui-data-secondary); --ui-ink-soft: var(--ui-data-secondary);
+}
+
+html.flat-theme.dark .table-wrapper[data-table="usage"] :is(td[data-column="reasoning_effort"], [data-ui="cell-line"][data-line="reasoning_effort"]) :is(span, div)[class~="text-gray-900"] {
+  --theme-on-fill: var(--ui-data-secondary);
+}
+
+html.flat-theme :is(.table-wrapper[data-table="usage"], :is([data-ui~="usage-records"], [data-ui~="ops-error-list"], [data-ui="user-usage"]) .table-wrapper:not([data-table="usage"])) :is(td[data-column="endpoint"], [data-ui="cell-line"][data-line="endpoint"]) div[class~="break-all"] {
+  --theme-text-gray-100: var(--ui-data-labelled); --theme-text-gray-200: var(--ui-data-labelled); --theme-text-gray-300: var(--ui-data-labelled);
+  --theme-text-gray-400: var(--ui-data-labelled); --theme-text-gray-500: var(--ui-data-labelled); --theme-text-gray-600: var(--ui-data-labelled);
+  --theme-text-gray-700: var(--ui-data-labelled); --theme-text-gray-800: var(--ui-data-labelled); --theme-text-gray-900: var(--ui-data-labelled);
+  --theme-text-gray-950: var(--ui-data-labelled); --theme-text-dark-100: var(--ui-data-labelled); --theme-text-dark-200: var(--ui-data-labelled);
+  --theme-text-dark-300: var(--ui-data-labelled); --theme-text-dark-400: var(--ui-data-labelled); --theme-text-dark-500: var(--ui-data-labelled);
+  --theme-text-dark-600: var(--ui-data-labelled); --ui-ink-soft: var(--ui-data-labelled);
+}
+
+html.flat-theme :is(.table-wrapper[data-table="usage"], :is([data-ui~="usage-records"], [data-ui~="ops-error-list"], [data-ui="user-usage"]) .table-wrapper:not([data-table="usage"])) :is(td[data-column="endpoint"], [data-ui="cell-line"][data-line="endpoint"]) div[class~="break-all"] > span[class~="font-medium"] {
+  --theme-text-gray-100: var(--ui-data-label); --theme-text-gray-200: var(--ui-data-label); --theme-text-gray-300: var(--ui-data-label);
+  --theme-text-gray-400: var(--ui-data-label); --theme-text-gray-500: var(--ui-data-label); --theme-text-gray-600: var(--ui-data-label);
+  --theme-text-gray-700: var(--ui-data-label); --theme-text-gray-800: var(--ui-data-label); --theme-text-gray-900: var(--ui-data-label);
+  --theme-text-gray-950: var(--ui-data-label); --theme-text-dark-100: var(--ui-data-label); --theme-text-dark-200: var(--ui-data-label);
+  --theme-text-dark-300: var(--ui-data-label); --theme-text-dark-400: var(--ui-data-label); --theme-text-dark-500: var(--ui-data-label);
+  --theme-text-dark-600: var(--ui-data-label); --ui-ink-soft: var(--ui-data-label);
+}
+
+html.flat-theme :is([data-ui~="usage-records"], [data-ui~="ops-error-list"], [data-ui="user-usage"]) .table-wrapper:not([data-table="usage"]) td[data-column="message"] > span[class~="text-gray-600"] {
+  --theme-text-gray-100: var(--ui-data-primary); --theme-text-gray-200: var(--ui-data-primary); --theme-text-gray-300: var(--ui-data-primary);
+  --theme-text-gray-400: var(--ui-data-primary); --theme-text-gray-500: var(--ui-data-primary); --theme-text-gray-600: var(--ui-data-primary);
+  --theme-text-gray-700: var(--ui-data-primary); --theme-text-gray-800: var(--ui-data-primary); --theme-text-gray-900: var(--ui-data-primary);
+  --theme-text-gray-950: var(--ui-data-primary); --theme-text-dark-100: var(--ui-data-primary); --theme-text-dark-200: var(--ui-data-primary);
+  --theme-text-dark-300: var(--ui-data-primary); --theme-text-dark-400: var(--ui-data-primary); --theme-text-dark-500: var(--ui-data-primary);
+  --theme-text-dark-600: var(--ui-data-primary); --ui-ink-soft: var(--ui-data-primary);
+}
+
+html.flat-theme :is([data-ui~="usage-records"], [data-ui~="ops-error-list"], [data-ui="user-usage"]) .table-wrapper:not([data-table="usage"]) :is(td[data-column="platform"], td[data-column="category"]) > span[class~="text-gray-900"],
+html.flat-theme :is([data-ui~="usage-records"], [data-ui~="ops-error-list"], [data-ui="user-usage"]) .table-wrapper:not([data-table="usage"]) [data-ui="cell-line"]:is([data-line="platform"], [data-line="category"]) > [data-ui="cell-line-value"] > span[class~="text-gray-900"] {
+  --theme-text-gray-100: var(--ui-data-secondary); --theme-text-gray-200: var(--ui-data-secondary); --theme-text-gray-300: var(--ui-data-secondary);
+  --theme-text-gray-400: var(--ui-data-secondary); --theme-text-gray-500: var(--ui-data-secondary); --theme-text-gray-600: var(--ui-data-secondary);
+  --theme-text-gray-700: var(--ui-data-secondary); --theme-text-gray-800: var(--ui-data-secondary); --theme-text-gray-900: var(--ui-data-secondary);
+  --theme-text-gray-950: var(--ui-data-secondary); --theme-text-dark-100: var(--ui-data-secondary); --theme-text-dark-200: var(--ui-data-secondary);
+  --theme-text-dark-300: var(--ui-data-secondary); --theme-text-dark-400: var(--ui-data-secondary); --theme-text-dark-500: var(--ui-data-secondary);
+  --theme-text-dark-600: var(--ui-data-secondary); --ui-ink-soft: var(--ui-data-secondary);
+}
+
+html.flat-theme.dark :is([data-ui~="usage-records"], [data-ui~="ops-error-list"], [data-ui="user-usage"]) .table-wrapper:not([data-table="usage"]) :is(td[data-column="platform"], td[data-column="category"]) > span[class~="text-gray-900"],
+html.flat-theme.dark :is([data-ui~="usage-records"], [data-ui~="ops-error-list"], [data-ui="user-usage"]) .table-wrapper:not([data-table="usage"]) [data-ui="cell-line"]:is([data-line="platform"], [data-line="category"]) > [data-ui="cell-line-value"] > span[class~="text-gray-900"] {
+  --theme-on-fill: var(--ui-data-secondary);
+}
+
+html.flat-theme .table-wrapper[data-table="usage"] td[data-column="latency"] span[class~="tabular-nums"] {
+  font-family: var(--ui-font-mono);
+  font-size: 12px;
+}
+
+html.flat-theme :is(.table-wrapper[data-table="usage"], :is([data-ui~="usage-records"], [data-ui~="ops-error-list"], [data-ui="user-usage"]) .table-wrapper:not([data-table="usage"])) td:is([data-column="ip_address"], [data-column="client_ip"]) span[class~="font-mono"] {
+  font-size: 12px;
 }
 
 /* The token and cost breakdown cards (UsageTable's two portals; the frame is overlays.css 2.3): the billed amounts and

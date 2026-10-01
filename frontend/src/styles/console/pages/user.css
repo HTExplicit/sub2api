@@ -127,11 +127,30 @@ html.flat-theme .table-wrapper[data-table="keys"] td[data-column="usage"] span[c
   font-variant-numeric: tabular-nums;
 }
 
-/* the labels (今日 / 近30天) in ink-soft, the reference's colour for a row's secondary figures: muted sits at 4.5:1
-   on a hovered row, too close to the floor for a 12px label */
+/* the labels (今日 / 近30天): the label role of the table's text (data.css 12; #66666e is 4.95:1 on a hovered row) */
 html.flat-theme .table-wrapper[data-table="keys"] td[data-column="usage"] span[class~="text-gray-500"] {
-  color: rgb(var(--ui-ink-soft));
+  color: rgb(var(--ui-data-label));
   font-size: 12px;
+}
+
+/* text roles (data.css 12) whose class names another role: 「选择分组」 is an empty-value prompt (a label); 「永久有效」 is
+   a value (secondary, its class says label) */
+html.flat-theme .table-wrapper[data-table="keys"] td[data-column="group"] [class~="text-gray-500"] {
+  --theme-text-gray-100: var(--ui-data-label); --theme-text-gray-200: var(--ui-data-label); --theme-text-gray-300: var(--ui-data-label);
+  --theme-text-gray-400: var(--ui-data-label); --theme-text-gray-500: var(--ui-data-label); --theme-text-gray-600: var(--ui-data-label);
+  --theme-text-gray-700: var(--ui-data-label); --theme-text-gray-800: var(--ui-data-label); --theme-text-gray-900: var(--ui-data-label);
+  --theme-text-gray-950: var(--ui-data-label); --theme-text-dark-100: var(--ui-data-label); --theme-text-dark-200: var(--ui-data-label);
+  --theme-text-dark-300: var(--ui-data-label); --theme-text-dark-400: var(--ui-data-label); --theme-text-dark-500: var(--ui-data-label);
+  --theme-text-dark-600: var(--ui-data-label); --ui-ink-soft: var(--ui-data-label);
+}
+
+html.flat-theme .table-wrapper[data-table="keys"] td[data-column="expires_at"] > span[class~="text-gray-400"] {
+  --theme-text-gray-100: var(--ui-data-secondary); --theme-text-gray-200: var(--ui-data-secondary); --theme-text-gray-300: var(--ui-data-secondary);
+  --theme-text-gray-400: var(--ui-data-secondary); --theme-text-gray-500: var(--ui-data-secondary); --theme-text-gray-600: var(--ui-data-secondary);
+  --theme-text-gray-700: var(--ui-data-secondary); --theme-text-gray-800: var(--ui-data-secondary); --theme-text-gray-900: var(--ui-data-secondary);
+  --theme-text-gray-950: var(--ui-data-secondary); --theme-text-dark-100: var(--ui-data-secondary); --theme-text-dark-200: var(--ui-data-secondary);
+  --theme-text-dark-300: var(--ui-data-secondary); --theme-text-dark-400: var(--ui-data-secondary); --theme-text-dark-500: var(--ui-data-secondary);
+  --theme-text-dark-600: var(--ui-data-secondary); --ui-ink-soft: var(--ui-data-secondary);
 }
 
 /* the live-concurrency count: the reference's cell chip (4px, Mono), a running count keeps its success tint */

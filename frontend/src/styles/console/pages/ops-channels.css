@@ -1698,13 +1698,14 @@ html.flat-theme [data-ui~="ops-error-list"] > div:last-child > div[class~="mb-2"
   color: rgb(var(--ui-label));
 }
 
-/* the list's cells: time Mono; the type and group chips are categories (data.css' category-chip hook, added to
-   OpsErrorLogTable.vue: the reference's neutral chip); the detail action a 28px icon button */
+/* the list's cells: time Mono, a secondary value (data.css 12, as in the other lists); the type and group chips are
+   categories (data.css' category-chip hook, added to OpsErrorLogTable.vue: the reference's neutral chip); the detail
+   action a 28px icon button */
 html.flat-theme [data-ui~="ops-error-list"] .table-wrapper td[data-column="created_at"] > span {
   font-family: var(--ui-font-mono);
   font-size: 12px;
   font-variant-numeric: tabular-nums;
-  color: rgb(var(--ui-muted));
+  color: rgb(var(--ui-data-secondary));
 }
 
 html.flat-theme [data-ui~="ops-error-list"] .table-wrapper td[data-column="actions"] > button {

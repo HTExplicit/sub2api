@@ -217,12 +217,30 @@ html.flat-theme .table-wrapper[data-table="accounts"] > table > tbody.table-body
   margin-top: 1px;
 }
 
-/* ---- 名称 / 邮箱 / #ID (/ 备注): the name (600) over its e-mail, both complete; the template puts <wbr> before the @
-   and inside a long local part (NightingaleGiovanna7598 -> Nightingale · Giovanna · 7598), so an address breaks at a
-   word, never inside one */
+/* ---- 名称 / 邮箱 / #ID (/ 备注): the name (500) over its e-mail, both complete; the template puts <wbr> before the @
+   and at the joins of a word of letters (NightingaleGiovanna7598 -> Nightingale · Giovanna · 7598), never inside a code
+   (the 18 characters of cindy-global-am332d23b406hthnne-…), so an address or a name breaks at a word.
+   The column hugs its names (owner 2026-10-01, 「账号名称空白太多」). AccountsView measures the page's names and e-mails
+   in their own fonts (softWrap.ts nameWidths): --account-name-one, the widest of them on one line; --account-name-two,
+   the narrowest width at which each takes at most two lines, broken at a natural join (an e-mail before its @ only);
+   --account-name-piece, the widest piece that cannot break. Where the table has room for the one-line width beside the
+   other columns at about their own one-line widths (the table less 60rem) and it is at most 30 % of the table (one
+   outlier, a URL with nine 「(Copy)」, does not set a 600px column), the column takes it (1920: the cindy names on one
+   line); else it takes the two-line width (1440), not a width in between, which would wrap the long names and still
+   leave blank beside the short ones. The width is the column's own: the rest of the table goes to the other columns
+   in proportion (the browser's auto layout). Where even the two-line width does not fit (all 21 columns), the browser
+   narrows the column down to its widest piece, at most 10rem (every code and e-mail part is narrower, 148px at most:
+   only a longer piece, a URL without a space, may then break inside, so the table never scrolls sideways), and a long
+   name takes a third line. Unmeasured (no canvas), the column is the browser's, from 9rem. (The clamp is a step: its
+   middle term is far below the two-line width unless the room holds the one-line width, then it is at least that.) */
+html.flat-theme .table-wrapper[data-table="accounts"] {
+  --account-name-col: calc(clamp(var(--account-name-two), (min(100cqw - 60rem, 30cqw) - var(--account-name-one)) * 100000 + var(--account-name-one), var(--account-name-one)) + 2 * var(--ui-table-cell-x));
+  --account-name-floor: calc(min(var(--account-name-piece), 10rem) + 2 * var(--ui-table-cell-x));
+}
+
 html.flat-theme .table-wrapper[data-table="accounts"] :is(th, td)[data-column="name"] {
-  width: auto;
-  min-width: 9rem;
+  width: var(--account-name-col, auto);
+  min-width: var(--account-name-floor, 9rem);
   max-width: none;
 }
 
@@ -241,7 +259,8 @@ html.flat-theme .table-wrapper[data-table="accounts"] td[data-column="name"] > d
   overflow: visible;
   white-space: normal;
   text-overflow: clip;
-  overflow-wrap: break-word;
+  /* (the column's floor keeps every piece up to 10rem whole; only a longer one, a URL, may break inside) */
+  overflow-wrap: anywhere;
 }
 
 /* a name that links to its site keeps its dotted underline on every line it wraps to */
@@ -263,6 +282,8 @@ html.flat-theme .table-wrapper[data-table="accounts"] td[data-column="name"] div
   overflow: visible;
   white-space: normal;
   text-overflow: clip;
+  /* a note's long token (exported=2026-…) does not hold the column wider than its names need */
+  overflow-wrap: anywhere;
 }
 
 /* ---- 平台/类型 / 容量: the identity chips (the joined platform | type chip on one line when it fits), the compact-mode
@@ -414,6 +435,13 @@ html.flat-theme .table-wrapper[data-table="accounts"] td[data-column="usage"] sp
   text-overflow: clip;
 }
 
+/* the cell's hover tips (Gemini quota policy, ineligible warning: 20rem, invisible until hovered) open leftwards from
+   their icon; opening rightwards, the hidden box widened the table's scroll area (1280: 17px of sideways scrolling) */
+html.flat-theme .table-wrapper[data-table="accounts"] td[data-column="usage"] [class~="group"] > span[class~="absolute"][class~="top-full"][class~="w-80"] {
+  left: auto;
+  right: 0;
+}
+
 html.flat-theme .table-wrapper[data-table="accounts"] td[data-column="usage"] div[data-line="today_stats"] {
   flex-direction: column;
   align-items: flex-start;
@@ -501,10 +529,23 @@ html.flat-theme .table-wrapper[data-table="accounts"] td[data-column="actions"] 
   }
 
   html.flat-theme .table-wrapper[data-table="accounts"] th[data-column="platform_type"] { min-width: 6rem; }
-  html.flat-theme .table-wrapper[data-table="accounts"] :is(th, td)[data-column="name"] { min-width: 8rem; }
+  /* the name column's floor is today's 8rem (a 7rem piece and the insets): with all 21 columns at 1280 a page whose other
+     cells cannot narrow (a temporarily unschedulable account, OAuth plan chips) leaves the name less than its widest
+     code, which then breaks inside rather than the table scrolling sideways */
+  html.flat-theme .table-wrapper[data-table="accounts"] {
+    --account-name-floor: calc(min(var(--account-name-piece), 7rem) + 2 * var(--ui-table-cell-x));
+  }
+
+  html.flat-theme .table-wrapper[data-table="accounts"] :is(th, td)[data-column="name"] { min-width: var(--account-name-floor, 8rem); }
   html.flat-theme .table-wrapper[data-table="accounts"] th[data-column="taxonomy_route"] { min-width: 7rem; }
   html.flat-theme .table-wrapper[data-table="accounts"] th[data-column="usage"] { min-width: 9.5rem; }
   html.flat-theme .table-wrapper[data-table="accounts"] th[data-column="last_used_at"] { min-width: 7rem; }
+
+  /* all 21 columns: 调度权值's group / score / limit figures (「commandcode / 3.75 / +∞」) wrap at their 「/」 where the
+     column is short of room (the line pushed the table sideways at 1280) */
+  html.flat-theme .table-wrapper[data-table="accounts"] td[data-column="priority"] div[data-line="scheduler_score"] > div[data-ui="cell-line-value"] > div > div {
+    flex-wrap: wrap;
+  }
 }
 
 /* ================================================================== 3 · lines whose layout differs from their column's

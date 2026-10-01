@@ -266,7 +266,7 @@
           @select-all-results="handleSelectAllResults"
           @toggle-schedulable="handleBulkToggleSchedulable"
         />
-        <div ref="accountTableRef" class="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden" data-test="account-list-scroll">
+        <div ref="accountTableRef" class="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden" data-test="account-list-scroll" :style="accountNameColumnStyle">
         <DataTable
           v-if="viewMode === 'table'"
           ref="dataTableRef"
@@ -723,7 +723,7 @@ import ConfirmDialog from '@/components/common/ConfirmDialog.vue'
 import BaseDialog from '@/components/common/BaseDialog.vue'
 import Toggle from '@/components/common/Toggle.vue'
 import { CreateAccountModal, EditAccountModal, BulkEditAccountModal, SyncFromCrsModal, TempUnschedStatusModal } from '@/components/account'
-import { nameWrapParts } from '@/utils/softWrap'
+import { nameWidths, nameWrapParts, type NameWidths } from '@/utils/softWrap'
 import AccountTableActions from '@/components/admin/account/AccountTableActions.vue'
 import AccountBulkActionsBar from '@/components/admin/account/AccountBulkActionsBar.vue'
 // Console theme (ui-el D6): a two-row toolbar with the classification menu and a bulk menu in it; the bulk bar
@@ -2145,6 +2145,56 @@ function accountDisplayEmail(row: any): string {
 const nameParts = (value: unknown): string[] =>
   flatThemeActive.value ? nameWrapParts(value) : [value == null ? '' : String(value)]
 
+// Console theme: the name column hugs its names (styles/console/tables.css, 名称). The page's account names (13px / 500)
+// and e-mails (12px / 400, accounts.css) are measured in the cells' font on a canvas: the widest of them on one line,
+// the narrowest width at which each takes at most two lines (an e-mail breaks before its @ only, a code such as the 18
+// characters of a cindy name never) and the widest piece that cannot break. tables.css gives the column the one-line
+// width where the table has room for it, else the two-line width. Measured from the page's rows, not the rendered
+// ones, so a virtualised list keeps one width while it scrolls; the web fonts arriving re-measure.
+const nameFontEpoch = ref(0)
+const nameWidthCache = new Map<string, NameWidths>()
+let nameCanvas: CanvasRenderingContext2D | null | undefined
+const remeasureAccountNames = () => {
+  nameWidthCache.clear()
+  nameFontEpoch.value++
+}
+
+const measureAccountName = (ctx: CanvasRenderingContext2D, font: string, text: string): NameWidths => {
+  const key = `${font}\n${text}`
+  let widths = nameWidthCache.get(key)
+  if (!widths) {
+    ctx.font = font
+    widths = nameWidths(text, (part) => ctx.measureText(part).width)
+    nameWidthCache.set(key, widths)
+  }
+  return widths
+}
+
+const accountNameColumnStyle = computed<Record<string, string> | undefined>(() => {
+  void nameFontEpoch.value
+  if (!flatThemeActive.value || viewMode.value !== 'table' || typeof document === 'undefined') return undefined
+  if (nameCanvas === undefined) nameCanvas = document.createElement('canvas').getContext('2d')
+  const family = getComputedStyle(document.documentElement).getPropertyValue('--ui-font').replace(/\s+/g, ' ').trim()
+  if (!nameCanvas || !family) return undefined
+  let one = 0
+  let two = 0
+  let piece = 0
+  for (const row of accounts.value) {
+    const lines: Array<[string, unknown]> = [[`500 13px ${family}`, row.name], [`400 12px ${family}`, accountDisplayEmail(row)]]
+    for (const [font, text] of lines) {
+      if (!text) continue
+      const widths = measureAccountName(nameCanvas, font, String(text))
+      one = Math.max(one, widths.one)
+      two = Math.max(two, widths.two)
+      piece = Math.max(piece, widths.piece)
+    }
+  }
+  if (!one) return undefined
+  // a pixel over the canvas width, so layout rounding never wraps the widest line
+  const px = (width: number) => `${Math.ceil(width) + 1}px`
+  return { '--account-name-one': px(one), '--account-name-two': px(two), '--account-name-piece': px(piece) }
+})
+
 const accountRouteSummary = (account: Account) => {
   const groups = accountGroupsForRow(account).map(group => group.name).filter(Boolean)
   const proxy = account.proxy?.name || t('admin.accounts.directConnection')
@@ -3006,6 +3056,10 @@ const handleClickOutside = (event: MouseEvent) => {
 
 onMounted(async () => {
   if (route.query.operations === 'history') void accountJobsStore.openDrawer()
+  if (typeof document !== 'undefined' && document.fonts) {
+    document.fonts.addEventListener('loadingdone', remeasureAccountNames)
+    void document.fonts.ready.then(remeasureAccountNames)
+  }
   if (typeof window !== 'undefined') {
     desktopViewportMediaQuery = window.matchMedia(desktopViewportQuery)
     isDesktopViewport.value = desktopViewportMediaQuery.matches
@@ -3049,6 +3103,9 @@ onMounted(async () => {
 
 onUnmounted(() => {
   upstreamBillingRateAbortController?.abort()
+  if (typeof document !== 'undefined' && document.fonts) {
+    document.fonts.removeEventListener('loadingdone', remeasureAccountNames)
+  }
   if (usageBatchFlushTimer !== null) {
     clearTimeout(usageBatchFlushTimer)
     usageBatchFlushTimer = null

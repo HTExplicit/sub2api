@@ -92,12 +92,24 @@
   /* Text (zinc). ink #1f1f23 (16.4:1 on white; #0a0a0a read black and heavy in dense rows); ink-soft #52525b
      (values, filter pills, tooltip descriptions, secondary figures); muted and faint (placeholders, captions)
      #66666e: these hold >= 4.5:1 on every neutral fill (surface, canvas, the grouped fill, hover). --ui-label, the
-     mono label's grey, #6e6e76 holds it on the fills labels sit on (surface 5.05, canvas 4.84, grouped 4.60). */
+     mono label's grey, is the muted grey too (owner 2026-10-01, text option A: the KPI, field and section labels
+     and the table headers are one grey; the former #6e6e76 was 4.40:1 on the row hover, #66666e is 4.95). */
   --ui-ink: 31 31 35;
   --ui-ink-soft: 82 82 91;
   --ui-muted: 102 102 110;
   --ui-faint: 102 102 110;
-  --ui-label: 110 110 118;
+  --ui-label: 102 102 110;
+  /* Data text roles (owner 2026-10-01, text option A "two tones": artifacts/tmp/ui-polish/text/PREVIEW.md), read by
+     data.css 12 inside the cells, headers and toolbars of the record tables: a value is the ink, everything else one
+     grey, both existing tones (no grey in between). primary = names, figures, the billed cost, controls; labelled =
+     a value after its inline label; secondary = unlabelled metadata (times, IPs, ids, chips, status words);
+     reference = the account's billed cost, a distribution's account cost and standard price; label = headers,
+     inline labels, units, placeholders, counts. */
+  --ui-data-primary: 31 31 35;
+  --ui-data-labelled: 31 31 35;
+  --ui-data-secondary: 102 102 110;
+  --ui-data-reference: 102 102 110;
+  --ui-data-label: 102 102 110;
   /* Accent (the green #168a49 carries white at 4.41:1). The fill is #168848 (white 4.52:1, REF-CONSOLE §13);
      accent text and links are #147c42, the nearest at >= 4.5:1 on every neutral fill and on the soft fill. */
   --ui-primary: 22 136 72;
@@ -213,6 +225,15 @@
   /* faint and the label hold >= 4.5:1 on the canvas, the surface, the grouped fill and hover */
   --ui-faint: 160 160 169;
   --ui-label: 163 163 172;
+  /* data text roles (see light): the ink and the label grey #a3a3ac, the table headers' grey (6.41:1 on the surface,
+     5.32 on the row hover). On the selected fill (#39433f, 4.10:1) a row lifts its grey to the soft ink #b8b8c0
+     (--ui-data-picked: 5.20:1, 4.72 under the pointer; data.css 12). */
+  --ui-data-primary: 232 232 236;
+  --ui-data-labelled: 232 232 236;
+  --ui-data-secondary: 163 163 172;
+  --ui-data-reference: 163 163 172;
+  --ui-data-label: 163 163 172;
+  --ui-data-picked: 184 184 192;
   /* the mint accent with ink on it; soft = mint at 16 % over the surface */
   --ui-primary: 182 247 200;
   --ui-primary-hover: 166 225 183;

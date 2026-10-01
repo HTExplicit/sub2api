@@ -102,6 +102,17 @@ html.flat-theme [data-ui="accounts-toolbar"] > [data-ui="account-filters"] {
   gap: 6px;
 }
 
+/* The filter pills are controls (text roles, data.css 12: the toolbar's grey is the placeholder's): drawn like the
+   buttons and selects beside them, in the ink; under the pointer a pill takes the focus line, as the labelled field
+   pills of 使用记录 do (an active pill keeps its accent edge: this weighs less). */
+html.flat-theme [data-ui="accounts-toolbar"] [data-ui~="filter-pill"] {
+  --ui-ink-soft: var(--ui-data-primary);
+}
+
+html.flat-theme :where([data-ui="accounts-toolbar"]) [data-ui~="filter-pill"]:hover {
+  border-color: rgb(var(--ui-line-focus));
+}
+
 /* The route-group select stands among 30px pills: the recipe's house select at the pill height. */
 html.flat-theme [data-ui="account-filters"] select.input {
   height: var(--ui-control-h);
@@ -444,7 +455,8 @@ html.flat-theme .table-wrapper[data-table="accounts"] td[data-column="name"] > d
   min-width: 3em;
   font-size: 12px;
   line-height: 18px;
-  color: rgb(var(--ui-muted));
+  /* the e-mail under the name is a secondary value (data.css 12) */
+  color: rgb(var(--ui-data-secondary));
 }
 
 /* Integration review: a name that links to the account's homepage sits in HelpTooltip's root, which keeps its own
@@ -645,6 +657,30 @@ html.flat-theme .table-wrapper[data-table="accounts"] td[data-column="actions"] 
     transform: translateY(-50%);
     pointer-events: none;
   }
+}
+
+/* Text roles (data.css 12) of the accounts table whose template class names another role:
+   - 管理分类 and 请求路由 are inline labels (template spans); the folder and the route summary are their values;
+   - priority, scheduling weight and the account rate are figures (primary); 「未探测」 is the labelled value of
+     上游声明倍率 (its class says label). */
+html.flat-theme .table-wrapper[data-table="accounts"] td[data-column="taxonomy_route"] span[class~="font-medium"][class~="text-gray-700"],
+html.flat-theme .table-wrapper[data-table="accounts"] td[data-column="taxonomy_route"] div[class~="truncate"][class~="text-gray-500"],
+html.flat-theme .table-wrapper[data-table="accounts"] [data-ui="cell-line"][data-line="upstream_billing_rate"] [class~="font-medium"][class~="text-gray-400"] {
+  --theme-text-gray-100: var(--ui-data-labelled); --theme-text-gray-200: var(--ui-data-labelled); --theme-text-gray-300: var(--ui-data-labelled);
+  --theme-text-gray-400: var(--ui-data-labelled); --theme-text-gray-500: var(--ui-data-labelled); --theme-text-gray-600: var(--ui-data-labelled);
+  --theme-text-gray-700: var(--ui-data-labelled); --theme-text-gray-800: var(--ui-data-labelled); --theme-text-gray-900: var(--ui-data-labelled);
+  --theme-text-gray-950: var(--ui-data-labelled); --theme-text-dark-100: var(--ui-data-labelled); --theme-text-dark-200: var(--ui-data-labelled);
+  --theme-text-dark-300: var(--ui-data-labelled); --theme-text-dark-400: var(--ui-data-labelled); --theme-text-dark-500: var(--ui-data-labelled);
+  --theme-text-dark-600: var(--ui-data-labelled); --ui-ink-soft: var(--ui-data-labelled);
+}
+
+html.flat-theme .table-wrapper[data-table="accounts"] [data-ui="cell-line"]:is([data-line="priority"], [data-line="scheduler_score"], [data-line="rate_multiplier"]) > [data-ui="cell-line-value"] [class~="text-gray-700"] {
+  --theme-text-gray-100: var(--ui-data-primary); --theme-text-gray-200: var(--ui-data-primary); --theme-text-gray-300: var(--ui-data-primary);
+  --theme-text-gray-400: var(--ui-data-primary); --theme-text-gray-500: var(--ui-data-primary); --theme-text-gray-600: var(--ui-data-primary);
+  --theme-text-gray-700: var(--ui-data-primary); --theme-text-gray-800: var(--ui-data-primary); --theme-text-gray-900: var(--ui-data-primary);
+  --theme-text-gray-950: var(--ui-data-primary); --theme-text-dark-100: var(--ui-data-primary); --theme-text-dark-200: var(--ui-data-primary);
+  --theme-text-dark-300: var(--ui-data-primary); --theme-text-dark-400: var(--ui-data-primary); --theme-text-dark-500: var(--ui-data-primary);
+  --theme-text-dark-600: var(--ui-data-primary); --ui-ink-soft: var(--ui-data-primary);
 }
 
 /* ================================================================== 6 · card grid and compact list */
