@@ -9,10 +9,12 @@ const isWordChar = (c: string | undefined) => isLetter(c) || isDigit(c)
 const isCJK = (c: string | undefined) => c !== undefined && /[\u3400-\u9fff\uf900-\ufaff]/.test(c)
 
 /**
- * An account name or e-mail breaks at a word, never inside one: before the @, and inside a word of letters (with
- * figures only at its end) where a lower-case letter meets a capital (NightingaleGiovanna -> Nightingale | Giovanna)
- * and before its final run of three or more figures (Giovanna7598 -> Giovanna | 7598). A word with figures inside it is
- * a code and stays whole (the 18 characters of cindy-global-am332d23b406hthnne-…, eucadc5ca109engnmw@outlook.com).
+ * An account name or e-mail breaks at a word, never inside one: before the @, after a slash that a letter follows (a
+ * URL's https:// | api2.aigcbest.top/ | v1; Chromium does not break there by itself), and inside a word of letters
+ * (with figures only at its end) where a lower-case letter meets a capital (NightingaleGiovanna -> Nightingale |
+ * Giovanna) and before its final run of three or more figures (Giovanna7598 -> Giovanna | 7598). A word with figures
+ * inside it is a code and stays whole (the 18 characters of cindy-global-am332d23b406hthnne-…,
+ * eucadc5ca109engnmw@outlook.com), and so does a host name (no break at its dots).
  */
 export function nameWrapParts(value: unknown): string[] {
   const text = value == null ? '' : String(value)
@@ -21,6 +23,7 @@ export function nameWrapParts(value: unknown): string[] {
   for (let start = 0; start < text.length; ) {
     if (!isWordChar(text[start])) {
       if (text[start] === '@' && start > 0) cuts.push(start)
+      if (text[start] === '/' && isLetter(text[start + 1])) cuts.push(start + 1)
       start++
       continue
     }
@@ -86,37 +89,104 @@ export function nameLinePieces(value: unknown): string[] {
   return pieces
 }
 
-export interface NameWidths {
-  /** the value on one line */
-  one: number
-  /** the narrowest width at which it takes at most two lines, broken at a piece join (an e-mail before its @ only) */
-  two: number
-  /** its widest piece: the narrowest width it can take without breaking inside a word */
-  piece: number
+/** A name or e-mail measured for line breaking: its pieces (nameLinePieces) and the width of every run of them. */
+export interface NameRuns {
+  pieces: string[]
+  /** run[a][b]: pieces a .. b-1 on one line (a space at its end hangs outside the line, as in the browser) */
+  run: number[][]
 }
 
-const EMAIL = /^[^\s@]+@[^\s@]+$/
+/** Measures a name or e-mail's pieces and their runs, with `measure` giving a text's width in the cell's font. */
+export function nameRuns(value: unknown, measure: (text: string) => number): NameRuns {
+  const pieces = nameLinePieces(value)
+  const run = pieces.map((_, a) => {
+    const widths = new Array<number>(pieces.length + 1).fill(0)
+    let line = ''
+    for (let b = a + 1; b <= pieces.length; b++) widths[b] = measure((line += pieces[b - 1]).trimEnd())
+    return widths
+  })
+  return { pieces, run }
+}
 
-/** The widths of a name or e-mail laid out in pieces (nameLinePieces), with `measure` giving a text's width. */
-export function nameWidths(value: unknown, measure: (text: string) => number): NameWidths {
-  const text = value == null ? '' : String(value)
-  if (!text) return { one: 0, two: 0, piece: 0 }
-  const one = measure(text)
-  const pieces = nameLinePieces(text)
+/**
+ * The lines a measured name or e-mail takes at a width, as the browser lays it out (each line ends at the last join
+ * that still fits), and the widest of them. A piece wider than the width (the column's floor) counts as filling it.
+ */
+export function nameLines(text: NameRuns, width: number): { lines: number; widest: number } {
+  const count = text.pieces.length
+  let lines = 0
+  let widest = 0
+  for (let a = 0; a < count; ) {
+    let b = a + 1
+    while (b < count && text.run[a][b + 1] <= width) b++
+    lines++
+    widest = Math.max(widest, Math.min(text.run[a][b], width))
+    a = b
+  }
+  return { lines, widest }
+}
+
+/** A row's name cell: its name and e-mail measured, and the width of its lines that do not wrap (the #id). */
+export interface NameCell {
+  texts: NameRuns[]
+  fixed?: number
+}
+
+/** What an extra line of a name costs, in pixels of blank beside the names (see nameColumnWidth). */
+export const NAME_LINE_COST = 40
+
+/**
+ * The account name column's width for a page of rows (owner 2026-10-01, 「名称这里你留这么大的空白干啥」): the width at
+ * which the page's names and e-mails leave the least blank beside them, every extra line a name or e-mail takes
+ * counting as `lineCost` pixels of blank. So the column follows the page's usual names: a page of e-mails takes their
+ * local part's width (Aelmp67526 | @outlook.com), a page of cindy names their two-line width, and one longer name or
+ * e-mail takes a third line at its word joins (Nightingale | Giovanna7598 | @hotmail.com) instead of widening the
+ * column for the whole page. Never narrower than the widest piece (a code, a host name, the #id: nothing breaks inside
+ * a word; a token wider than `pieceCap` breaks inside rather than set the column) and never wider than the narrowest
+ * width at which each name and e-mail takes at most two lines (the column does not widen to put names on one line).
+ * The same at every screen width: the table's spare width goes to the other columns. Returns whole pixels (0 for no
+ * names) and the widest piece.
+ */
+export function nameColumnWidth(
+  cells: NameCell[],
+  { lineCost = NAME_LINE_COST, pieceCap = Infinity }: { lineCost?: number; pieceCap?: number } = {}
+): { width: number; piece: number } {
   let piece = 0
-  for (const p of pieces) piece = Math.max(piece, measure(p.trimEnd()))
-  let two = one
-  if (EMAIL.test(text)) {
-    const at = text.indexOf('@')
-    two = Math.min(one, Math.max(measure(text.slice(0, at)), measure(text.slice(at))))
-  } else {
-    let first = ''
-    for (let i = 0; i < pieces.length - 1; i++) {
-      first += pieces[i]
-      two = Math.min(two, Math.max(measure(first.trimEnd()), measure(pieces.slice(i + 1).join(''))))
+  let fixed = 0
+  let two = 0
+  for (const cell of cells) {
+    fixed = Math.max(fixed, cell.fixed ?? 0)
+    for (const text of cell.texts) {
+      const count = text.pieces.length
+      let textPiece = 0
+      for (let a = 0; a < count; a++) textPiece = Math.max(textPiece, text.run[a][a + 1])
+      let textTwo = count ? text.run[0][count] : 0
+      for (let s = 1; s < count; s++) textTwo = Math.min(textTwo, Math.max(text.run[0][s], text.run[s][count]))
+      piece = Math.max(piece, textPiece)
+      two = Math.max(two, textTwo, textPiece)
     }
   }
-  return { one, two: Math.max(two, piece), piece }
+  const from = Math.ceil(Math.max(Math.min(piece, pieceCap), fixed))
+  const to = Math.max(from, Math.ceil(two))
+  let width = from
+  let least = Infinity
+  for (let w = from; w <= to; w++) {
+    let cost = 0
+    for (const cell of cells) {
+      let ink = cell.fixed ?? 0
+      for (const text of cell.texts) {
+        const laid = nameLines(text, w)
+        ink = Math.max(ink, laid.widest)
+        cost += lineCost * laid.lines
+      }
+      cost += w - ink
+    }
+    if (cost < least) {
+      least = cost
+      width = w
+    }
+  }
+  return { width: two > 0 ? width : 0, piece: Math.ceil(piece) }
 }
 
 /** The longest model-id part drawn whole; a usual id (claude-sonnet-4-5-20250929) is far shorter. */

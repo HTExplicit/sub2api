@@ -347,9 +347,14 @@ html.flat-theme .table-wrapper .table-body > tr:where([data-row-id]):is([class~=
    DataTable's own selection is the row's class; a page's own select column makes the row publish --ui-row-picked
    (dark theme only, so a light-theme selection never restyles the row's cells), which its cells read through a
    style query (Chromium 111+, Safari 18+). Firefox has no style queries: it keeps the pre-pass selector in the
-   @supports (-moz-appearance: none) blocks, which Chromium never loads. Same weights (0,8,4) as the pre-pass rules. */
+   @supports (-moz-appearance: none) blocks, which Chromium never loads. Same weights (0,8,4) as the pre-pass rules.
+   The same row also lifts the data text roles of section 12 (12.4) for its cells, which inherit them: a custom
+   property needs no style query, so this works in every browser without another relational selector. */
 html.flat-theme.dark .table-wrapper .table-body > tr:where([data-row-id]):has(> td[data-column="select"] input[type="checkbox"]:checked) {
   --ui-row-picked: 1;
+  --ui-data-secondary: var(--ui-data-picked);
+  --ui-data-reference: var(--ui-data-picked);
+  --ui-data-label: var(--ui-data-picked);
 }
 
 html.flat-theme.dark .table-wrapper .table-body > tr[class~="bg-primary-50/40"][class][class]:is(tr):is(tr) :is([class~="text-gray-400"], [class~="text-gray-500"], [class~="dark:text-dark-400"], [class~="dark:text-dark-500"], [data-ui="cell-line-label"]) {
@@ -2013,28 +2018,11 @@ html.flat-theme :where(:is([data-ui~="usage-records"], [data-ui~="ops-error-list
 
 /* 12.4 a selected row (dark): on the selected fill (#39433f, #404946 under the pointer) the grey #a3a3ac is 4.10:1 /
    3.71, so the row lifts its secondary, reference and label tones to --ui-data-picked (#b8b8c0, 5.20 / 4.72), as
-   section 1 lifts upstream's greys there. DataTable's own selection is a class on the row; a page's own select column
-   publishes --ui-row-picked (section 1, dark only), read here by a style query on the cells; Firefox (no style
-   queries) keeps the relational form in an @supports (-moz-appearance: none) block, which Chromium never loads, as
-   section 1 does. */
+   section 1 lifts upstream's greys there. DataTable's own selection is a class on the row (below); a page's own
+   select column is the checked box section 1's row rule already tests, and that rule sets the three roles on the row,
+   whose cells inherit them (no style query, no further relational selector, the same in Firefox). */
 html.flat-theme.dark :where(:is([data-ui~="usage-records"], [data-ui~="ops-error-list"], [data-ui="user-usage"]) .table-wrapper, .table-wrapper:is([data-table="accounts"], [data-table="keys"], [data-table="users"])) > table > tbody.table-body > tr[class~="bg-primary-50/40"] > td {
   --ui-data-secondary: var(--ui-data-picked);
   --ui-data-reference: var(--ui-data-picked);
   --ui-data-label: var(--ui-data-picked);
-}
-
-@container style(--ui-row-picked: 1) {
-  html.flat-theme.dark :where(:is([data-ui~="usage-records"], [data-ui~="ops-error-list"], [data-ui="user-usage"]) .table-wrapper, .table-wrapper:is([data-table="accounts"], [data-table="keys"], [data-table="users"])) > table > tbody.table-body > tr[data-row-id] > td {
-    --ui-data-secondary: var(--ui-data-picked);
-    --ui-data-reference: var(--ui-data-picked);
-    --ui-data-label: var(--ui-data-picked);
-  }
-}
-
-@supports (-moz-appearance: none) {
-  html.flat-theme.dark :where(:is([data-ui~="usage-records"], [data-ui~="ops-error-list"], [data-ui="user-usage"]) .table-wrapper, .table-wrapper:is([data-table="accounts"], [data-table="keys"], [data-table="users"])) > table > tbody.table-body > tr:has(> td[data-column="select"] input[type="checkbox"]:checked) > td {
-    --ui-data-secondary: var(--ui-data-picked);
-    --ui-data-reference: var(--ui-data-picked);
-    --ui-data-label: var(--ui-data-picked);
-  }
 }

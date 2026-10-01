@@ -723,7 +723,7 @@ import ConfirmDialog from '@/components/common/ConfirmDialog.vue'
 import BaseDialog from '@/components/common/BaseDialog.vue'
 import Toggle from '@/components/common/Toggle.vue'
 import { CreateAccountModal, EditAccountModal, BulkEditAccountModal, SyncFromCrsModal, TempUnschedStatusModal } from '@/components/account'
-import { nameWidths, nameWrapParts, type NameWidths } from '@/utils/softWrap'
+import { nameColumnWidth, nameRuns, nameWrapParts, type NameCell, type NameRuns } from '@/utils/softWrap'
 import AccountTableActions from '@/components/admin/account/AccountTableActions.vue'
 import AccountBulkActionsBar from '@/components/admin/account/AccountBulkActionsBar.vue'
 // Console theme (ui-el D6): a two-row toolbar with the classification menu and a bulk menu in it; the bulk bar
@@ -2145,54 +2145,60 @@ function accountDisplayEmail(row: any): string {
 const nameParts = (value: unknown): string[] =>
   flatThemeActive.value ? nameWrapParts(value) : [value == null ? '' : String(value)]
 
-// Console theme: the name column hugs its names (styles/console/tables.css, 名称). The page's account names (13px / 500)
-// and e-mails (12px / 400, accounts.css) are measured in the cells' font on a canvas: the widest of them on one line,
-// the narrowest width at which each takes at most two lines (an e-mail breaks before its @ only, a code such as the 18
-// characters of a cindy name never) and the widest piece that cannot break. tables.css gives the column the one-line
-// width where the table has room for it, else the two-line width. Measured from the page's rows, not the rendered
-// ones, so a virtualised list keeps one width while it scrolls; the web fonts arriving re-measure.
+// Console theme: the name column follows the page's names (styles/console/tables.css, 名称; softWrap.ts
+// nameColumnWidth). The page's account names (13px / 500), e-mails (12px / 400, accounts.css) and #ids (Geist Mono 12)
+// are measured in the cells' fonts on a canvas, piece by piece, and the column takes the width at which they leave the
+// least blank, an extra line counting as 40px of it: one long name or e-mail takes a third line at its word joins
+// instead of widening the column for the whole page. Measured from the page's rows, not the rendered ones, so a
+// virtualised list keeps one width while it scrolls; the web fonts arriving re-measure.
 const nameFontEpoch = ref(0)
-const nameWidthCache = new Map<string, NameWidths>()
+const nameRunsCache = new Map<string, NameRuns>()
 let nameCanvas: CanvasRenderingContext2D | null | undefined
 const remeasureAccountNames = () => {
-  nameWidthCache.clear()
+  nameRunsCache.clear()
   nameFontEpoch.value++
 }
 
-const measureAccountName = (ctx: CanvasRenderingContext2D, font: string, text: string): NameWidths => {
+const measureAccountName = (ctx: CanvasRenderingContext2D, font: string, text: string): NameRuns => {
   const key = `${font}\n${text}`
-  let widths = nameWidthCache.get(key)
-  if (!widths) {
+  let runs = nameRunsCache.get(key)
+  if (!runs) {
     ctx.font = font
-    widths = nameWidths(text, (part) => ctx.measureText(part).width)
-    nameWidthCache.set(key, widths)
+    runs = nameRuns(text, (part) => ctx.measureText(part).width)
+    nameRunsCache.set(key, runs)
   }
-  return widths
+  return runs
 }
 
 const accountNameColumnStyle = computed<Record<string, string> | undefined>(() => {
   void nameFontEpoch.value
   if (!flatThemeActive.value || viewMode.value !== 'table' || typeof document === 'undefined') return undefined
   if (nameCanvas === undefined) nameCanvas = document.createElement('canvas').getContext('2d')
-  const family = getComputedStyle(document.documentElement).getPropertyValue('--ui-font').replace(/\s+/g, ' ').trim()
-  if (!nameCanvas || !family) return undefined
-  let one = 0
-  let two = 0
-  let piece = 0
-  for (const row of accounts.value) {
-    const lines: Array<[string, unknown]> = [[`500 13px ${family}`, row.name], [`400 12px ${family}`, accountDisplayEmail(row)]]
-    for (const [font, text] of lines) {
-      if (!text) continue
-      const widths = measureAccountName(nameCanvas, font, String(text))
-      one = Math.max(one, widths.one)
-      two = Math.max(two, widths.two)
-      piece = Math.max(piece, widths.piece)
+  const rootStyle = getComputedStyle(document.documentElement)
+  const fontFamily = (name: string) => rootStyle.getPropertyValue(name).replace(/\s+/g, ' ').trim()
+  const family = fontFamily('--ui-font')
+  const mono = fontFamily('--ui-font-mono')
+  const ctx = nameCanvas
+  if (!ctx || !family) return undefined
+  const showId = !hiddenColumns.has('id') && !!mono
+  const cells: NameCell[] = accounts.value.map((row) => {
+    const texts: NameRuns[] = []
+    if (row.name) texts.push(measureAccountName(ctx, `500 13px ${family}`, String(row.name)))
+    const email = accountDisplayEmail(row)
+    if (email) texts.push(measureAccountName(ctx, `400 12px ${family}`, email))
+    let fixed = 0
+    if (showId) {
+      ctx.font = `400 12px ${mono}`
+      fixed = ctx.measureText(`#${row.id}`).width
     }
-  }
-  if (!one) return undefined
-  // a pixel over the canvas width, so layout rounding never wraps the widest line
-  const px = (width: number) => `${Math.ceil(width) + 1}px`
-  return { '--account-name-one': px(one), '--account-name-two': px(two), '--account-name-piece': px(piece) }
+    return { texts, fixed }
+  })
+  // a token wider than 16rem breaks inside rather than set the column (the widest piece of the 863 names is a 205px
+  // host name, integrations.emergentagent.com/)
+  const { width, piece } = nameColumnWidth(cells, { pieceCap: 256 })
+  if (!width) return undefined
+  // a pixel over the canvas widths, so layout rounding never wraps a line that fits
+  return { '--account-name-w': `${width + 1}px`, '--account-name-piece': `${piece + 1}px` }
 })
 
 const accountRouteSummary = (account: Account) => {
