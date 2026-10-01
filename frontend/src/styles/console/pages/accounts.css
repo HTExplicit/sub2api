@@ -63,12 +63,13 @@ html.flat-theme [data-ui="accounts-toolbar"] > [data-ui="accounts-actions"] {
 }
 
 /* Row 1: the search is the reference's (288 wide from 640px, and it gives way first). Its basis is the smallest
-   width, so row 1 breaks only when even that does not fit (at 1280 the actions leave it about 155px; the reference's
-   minimum is 176), and it grows back to 288 before the free space goes to the gap in front of the actions. */
+   width, so row 1 breaks only when even that does not fit (at 1280 the actions, in the official 14px button type,
+   leave it about 131px, where 「搜索账号...」 still fits; the reference's minimum is 176), and it grows back to 288
+   before the free space goes to the gap in front of the actions. */
 html.flat-theme [data-ui="accounts-toolbar"] > [data-ui="account-search"] {
-  flex: 1 1 150px;
+  flex: 1 1 128px;
   width: auto;
-  min-width: 150px;
+  min-width: 128px;
   max-width: 288px;
 }
 
@@ -114,13 +115,8 @@ html.flat-theme [data-ui="accounts-toolbar"] > [data-ui="account-filters"] {
   gap: 6px;
 }
 
-/* The filter pills are controls (text roles, data.css 12: the toolbar's grey is the placeholder's): drawn like the
-   buttons and selects beside them, in the ink; under the pointer a pill takes the focus line, as the labelled field
-   pills of 使用记录 do (an active pill keeps its accent edge: this weighs less). */
-html.flat-theme [data-ui="accounts-toolbar"] [data-ui~="filter-pill"] {
-  --ui-ink-soft: var(--ui-data-primary);
-}
-
+/* The filter pills are controls.css' recipe, in official's control text (ink-soft); under the pointer a pill takes the
+   focus line, as the labelled field pills of 使用记录 do (an active pill keeps its accent edge: this weighs less). */
 html.flat-theme :where([data-ui="accounts-toolbar"]) [data-ui~="filter-pill"]:hover {
   border-color: rgb(var(--ui-line-focus));
 }
@@ -161,14 +157,14 @@ html.flat-theme [data-ui="account-filters"] [data-test^="account-filter-chip-"] 
   flex-shrink: 0;
 }
 
-/* 「清除」 all filters: the reference's ghost 「✕ Clear」 (30px, 8px in, 12.5px / 600 muted, ink on hover). */
+/* 「清除」 all filters: the reference's ghost 「✕ Clear」 (30px, 8px in, the template's 12px / 500, muted, ink on hover). */
 html.flat-theme [data-ui="account-filters-clear"] {
   min-height: var(--ui-control-h);
   border-radius: var(--ui-radius-md);
   padding: 0 8px;
-  font-size: 12.5px;
-  line-height: 18.75px;
-  font-weight: 600;
+  font-size: 12px;
+  line-height: 16px;
+  font-weight: 500;
   color: rgb(var(--ui-muted));
   transition: color var(--ui-duration) var(--ui-ease), background-color var(--ui-duration) var(--ui-ease);
 }
@@ -178,20 +174,19 @@ html.flat-theme [data-ui="account-filters-clear"]:hover {
   color: rgb(var(--ui-ink));
 }
 
-/* The result count: 「1,081 models」 in Geist Mono 11 at the right end (REF §8.6), the mono label's grey. */
+/* The result count: 「1,081 models」 at 12px at the right end (REF §8.6), the label grey. */
 html.flat-theme [data-ui="accounts-count"] {
   margin-left: auto;
   padding-left: 8px;
-  font-family: var(--ui-font-mono);
-  font-size: 11px;
-  line-height: 16.5px;
+  font-size: 12px;
+  line-height: 16px;
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
   color: rgb(var(--ui-label));
 }
 
 /* Filter menus (AccountConsoleFilters): the panel and the options are overlays.css' menu; here only the option
-   parts: the list scrolls without upstream's inset, 14px native checkboxes (REF §8.4), counts in Mono 11. */
+   parts: the list scrolls without upstream's inset, 14px native checkboxes (REF §8.4), counts at 12px. */
 html.flat-theme [data-ui="account-filters"] [data-ui="menu"] > div:first-child {
   padding: 0;
 }
@@ -211,9 +206,8 @@ html.flat-theme [data-ui="account-filters"] [data-ui="menu-item"] > input[type="
 
 /* (counts sit on the rows' hover fill, where the label grey falls to 4.35:1: they take the muted grey) */
 html.flat-theme :is([data-ui="account-filter-option-count"], [data-ui="account-folder-menu"] [data-ui="menu"] [data-ui="account-folder-count"]) {
-  font-family: var(--ui-font-mono);
-  font-size: 11px;
-  line-height: 16.5px;
+  font-size: 12px;
+  line-height: 16px;
   font-variant-numeric: tabular-nums;
   color: rgb(var(--ui-muted));
 }
@@ -229,8 +223,7 @@ html.flat-theme [data-ui="account-folder-menu"] > [data-ui~="filter-pill"] {
 
 html.flat-theme [data-ui="account-folder-menu"] > [data-ui~="filter-pill"] > [data-ui="account-folder-count"] {
   flex-shrink: 0;
-  font-family: var(--ui-font-mono);
-  font-size: 10.5px;
+  font-size: 12px;
   line-height: 16px;
   font-weight: 400;
   font-variant-numeric: tabular-nums;
@@ -434,15 +427,15 @@ html.flat-theme .table-wrapper[data-table="accounts"] :is(th, td)[data-column="s
   height: 14px;
 }
 
-/* Name: the account name (13 / 600 ink, REF's model name) and its e-mail (12px muted) on one line, each ending in an
-   ellipsis with its title. The columns follow upstream's order (select, name, id, platform / type, capacity, status,
-   scheduling, ...), and status and the scheduling switch must be in view without scrolling: the name column takes
-   what is left of the content width once select 44 + id 79 + platform 312 (18rem cap, below, + its padding) +
+/* Name: the account name (14 / 500 ink, the template's font-medium) and its e-mail (12px meta) on one line, each ending
+   in an ellipsis with its title. The columns follow upstream's order (select, name, id, platform / type, capacity,
+   status, scheduling, ...), and status and the scheduling switch must be in view without scrolling: the name column
+   takes what is left of the content width once select 44 + id 79 + platform 312 (18rem cap, below, + its padding) +
    capacity 87 + status 64 + scheduling 64 + the sticky actions 127 are placed (the content is the viewport less the
-   240px sidebar and 2 x 28 gutters; 12px spare), between 12rem and 16rem: 16rem at 1440, about 12rem at 1280.
-   Below 1440 the platform column gives up to 48px of its cap (15rem at 1280) and a status with a second line stays
-   within 6rem (both below), so a page holding a temporarily unschedulable or rate-limited account still shows the
-   scheduling switch at 1280. */
+   240px sidebar and 2 x 28 gutters; 12px spare), between 12rem and 16rem: 16rem at 1440, about 12rem at 1280. Below
+   1440 the platform column gives up to 48px of its cap (15rem at 1280) and a status with a second line stays within
+   6rem (both below), so a page holding a temporarily unschedulable or rate-limited account still shows the scheduling
+   switch at 1280. */
 html.flat-theme .table-wrapper[data-table="accounts"] :is(th, td)[data-column="name"] {
   width: clamp(12rem, calc(100vw - 1086px), 16rem);
   min-width: clamp(12rem, calc(100vw - 1086px), 16rem);
@@ -459,27 +452,20 @@ html.flat-theme .table-wrapper[data-table="accounts"] td[data-column="name"] > d
 html.flat-theme .table-wrapper[data-table="accounts"] td[data-column="name"] > div:where(:not([data-ui="cell-lines"])) > :first-child {
   flex: 0 1 auto;
   min-width: 0;
-  font-weight: 500;
 }
 
+/* the e-mail under the name: the template's text-xs meta (12 / 16) */
 html.flat-theme .table-wrapper[data-table="accounts"] td[data-column="name"] > div > span + span {
   flex: 1 1 0;
   min-width: 3em;
   font-size: 12px;
-  line-height: 18px;
-  /* the e-mail under the name is a secondary value (data.css 12) */
-  color: rgb(var(--ui-data-secondary));
 }
 
 /* Integration review: a name that links to the account's homepage sits in HelpTooltip's root, which keeps its own
-   ml-1 (the template's -ml-1 loses to it) and whose link carries font-medium: the linked and the plain names start on
-   the same edge at the same 500 weight (palette C: 600 -> 500). The dotted underline (the link's cue) stays. */
+   ml-1 (the template's -ml-1 loses to it): the linked and the plain names start on the same edge, both at the
+   template's font-medium (500). The dotted underline (the link's cue) stays. */
 html.flat-theme .table-wrapper[data-table="accounts"] td[data-column="name"] > div > [data-ui="help-tooltip"]:first-child {
   margin-left: 0;
-}
-
-html.flat-theme .table-wrapper[data-table="accounts"] td[data-column="name"] > div > [data-ui="help-tooltip"]:first-child > a {
-  font-weight: 500;
 }
 
 /* Platform / type: the identity chips (in their platform colours, data.css 6.1; nothing here recolours them) and the
@@ -517,7 +503,7 @@ html.flat-theme .table-wrapper[data-table="accounts"] td[data-column="status"] d
   text-align: center;
 }
 
-/* Classification / route: the two labelled values on one line; the labels are mono labels. */
+/* Classification / route: the two labelled values on one line; the labels are inline labels (below). */
 html.flat-theme .table-wrapper[data-table="accounts"] td[data-column="taxonomy_route"] > div:where(:not([data-ui="cell-lines"])) {
   display: flex;
   align-items: center;
@@ -539,10 +525,12 @@ html.flat-theme .table-wrapper[data-table="accounts"] td[data-column="taxonomy_r
   max-width: 18rem;
 }
 
-/* (in a hovered or selected row the label grey falls to 4.12 / 4.43:1: labels inside rows take the muted grey) */
+/* 管理分类 / 请求路由 (the fork's column; its template draws a 10px uppercase micro label): official's inline label
+   (UsageTable's 「入站:」), 12 / 16 / 500 in the meta grey, sentence case; tables.css gives them their 50px gutter */
 html.flat-theme .table-wrapper[data-table="accounts"] td[data-column="taxonomy_route"] span[class~="uppercase"][class~="text-[10px]"] {
   font: var(--ui-label-font);
   letter-spacing: var(--ui-label-tracking);
+  text-transform: none;
   color: rgb(var(--ui-muted));
 }
 
@@ -635,7 +623,7 @@ html.flat-theme .table-wrapper[data-table="accounts"] td[data-column="actions"] 
 
 html.flat-theme .table-wrapper[data-table="accounts"] td[data-column="actions"] button[class~="flex-col"] > span[class~="text-xs"] {
   font-size: 12px;
-  line-height: 18px;
+  line-height: 16px;
 }
 
 @media (hover: hover) and (pointer: fine) {
@@ -671,28 +659,13 @@ html.flat-theme .table-wrapper[data-table="accounts"] td[data-column="actions"] 
   }
 }
 
-/* Text roles (data.css 12) of the accounts table whose template class names another role:
-   - 管理分类 and 请求路由 are inline labels (template spans); the folder and the route summary are their values;
-   - priority, scheduling weight and the account rate are figures (primary); 「未探测」 is the labelled value of
-     上游声明倍率 (its class says label). */
-html.flat-theme .table-wrapper[data-table="accounts"] td[data-column="taxonomy_route"] span[class~="font-medium"][class~="text-gray-700"],
-html.flat-theme .table-wrapper[data-table="accounts"] td[data-column="taxonomy_route"] div[class~="truncate"][class~="text-gray-500"],
-html.flat-theme .table-wrapper[data-table="accounts"] [data-ui="cell-line"][data-line="upstream_billing_rate"] [class~="font-medium"][class~="text-gray-400"] {
-  --theme-text-gray-100: var(--ui-data-labelled); --theme-text-gray-200: var(--ui-data-labelled); --theme-text-gray-300: var(--ui-data-labelled);
-  --theme-text-gray-400: var(--ui-data-labelled); --theme-text-gray-500: var(--ui-data-labelled); --theme-text-gray-600: var(--ui-data-labelled);
-  --theme-text-gray-700: var(--ui-data-labelled); --theme-text-gray-800: var(--ui-data-labelled); --theme-text-gray-900: var(--ui-data-labelled);
-  --theme-text-gray-950: var(--ui-data-labelled); --theme-text-dark-100: var(--ui-data-labelled); --theme-text-dark-200: var(--ui-data-labelled);
-  --theme-text-dark-300: var(--ui-data-labelled); --theme-text-dark-400: var(--ui-data-labelled); --theme-text-dark-500: var(--ui-data-labelled);
-  --theme-text-dark-600: var(--ui-data-labelled); --ui-ink-soft: var(--ui-data-labelled);
-}
-
-html.flat-theme .table-wrapper[data-table="accounts"] [data-ui="cell-line"]:is([data-line="priority"], [data-line="scheduler_score"], [data-line="rate_multiplier"]) > [data-ui="cell-line-value"] [class~="text-gray-700"] {
-  --theme-text-gray-100: var(--ui-data-primary); --theme-text-gray-200: var(--ui-data-primary); --theme-text-gray-300: var(--ui-data-primary);
-  --theme-text-gray-400: var(--ui-data-primary); --theme-text-gray-500: var(--ui-data-primary); --theme-text-gray-600: var(--ui-data-primary);
-  --theme-text-gray-700: var(--ui-data-primary); --theme-text-gray-800: var(--ui-data-primary); --theme-text-gray-900: var(--ui-data-primary);
-  --theme-text-gray-950: var(--ui-data-primary); --theme-text-dark-100: var(--ui-data-primary); --theme-text-dark-200: var(--ui-data-primary);
-  --theme-text-dark-300: var(--ui-data-primary); --theme-text-dark-400: var(--ui-data-primary); --theme-text-dark-500: var(--ui-data-primary);
-  --theme-text-dark-600: var(--ui-data-primary); --ui-ink-soft: var(--ui-data-primary);
+/* The fork's own sentence lines in the 用量 cell (the codex turn tickets, the stale / fetch-failed notes; upstream has
+   no such lines) read at 12 / 16 like the cell's other text; upstream's micro widgets (the 9-10px bars and chips)
+   keep their template sizes. */
+html.flat-theme .table-wrapper[data-table="accounts"] td[data-column="usage"] [data-usage-variant="list"] [class~="max-w-[15rem]"] > div[class~="text-[10px]"][class~="leading-4"],
+html.flat-theme .table-wrapper[data-table="accounts"] td[data-column="usage"] :is([data-test="usage-stale"], [data-test="usage-fetch-failed"]) {
+  font-size: 12px;
+  line-height: 16px;
 }
 
 /* 优先级: upstream's quick-adjust control (AccountPriorityCell: − value +; the two steppers show under the pointer or
@@ -721,8 +694,8 @@ html.flat-theme .table-wrapper[data-table="accounts"] [data-testid="account-prio
 /* ================================================================== 6 · card grid and compact list */
 
 /* Shared parts of the two other views: the 14px checkbox with its 32px hit area (as in the table), the account id
-   in Geist Mono 11 (the reference's meta text), the mono labels, and the icon buttons (REF §8.3: 28px, radius 6,
-   muted; the subtle fill and ink on hover). */
+   (the template's 10px mono) and the labels (the table's inline labels, 12 / 16 / 500) in the meta grey, and the icon
+   buttons (REF §8.3: 28px, radius 6, muted; the subtle fill and ink on hover). */
 html.flat-theme :is([data-test="account-card-grid"], [data-test="account-compact-list"]) label:has(> input[type="checkbox"]) {
   width: 32px;
   min-width: 32px;
@@ -743,14 +716,13 @@ html.flat-theme :is([data-test="account-card-grid"], [data-test="account-compact
 
 /* (ids and labels sit on hovered and selected fills too: the muted grey keeps 4.5:1 there) */
 html.flat-theme :is([data-test="account-card-grid"], [data-test="account-compact-list"]) span[class~="font-mono"][class~="text-[10px]"] {
-  font-size: 11px;
-  line-height: 16.5px;
   color: rgb(var(--ui-muted));
 }
 
 html.flat-theme :is([data-test="account-card-grid"], [data-test="account-compact-list"]) :is(div, span)[class~="uppercase"][class~="text-[10px]"] {
   font: var(--ui-label-font);
   letter-spacing: var(--ui-label-tracking);
+  text-transform: none;
   color: rgb(var(--ui-muted));
 }
 
@@ -896,16 +868,16 @@ html.flat-theme [data-test="account-details-drawer"] > header + div > section {
   padding: 16px var(--ui-dialog-x, 18px);
 }
 
-/* Section titles: the mono label (REF §5: section and field labels). */
+/* Section titles: the label (12 / 16 / 500, sentence case; REF §5: section and field labels). */
 html.flat-theme [data-test="account-details-drawer"] > header + div > section > h3,
 html.flat-theme [data-test="account-details-drawer"] > header + div > section > div:first-child > h3 {
   font: var(--ui-label-font);
   letter-spacing: var(--ui-label-tracking);
-  text-transform: uppercase;
+  text-transform: none;
   color: rgb(var(--ui-label));
 }
 
-/* Definition lists: the label muted, the value ink; figures stay Geist Mono tabular. */
+/* Definition lists: the label muted, the value ink; the template's mono figures stay tabular. */
 html.flat-theme [data-test="account-details-drawer"] > header + div dl > dt {
   color: rgb(var(--ui-muted));
 }
@@ -930,8 +902,8 @@ html.flat-theme [data-test="account-details-drawer"] > header + div section labe
   border-radius: var(--ui-radius-md);
   background-color: rgb(var(--ui-surface));
   padding: 4px 8px;
-  font-size: 12.5px;
-  line-height: 18.75px;
+  font-size: 14px;
+  line-height: 20px;
   color: rgb(var(--ui-ink-soft));
 }
 
@@ -941,17 +913,17 @@ html.flat-theme [data-test="account-details-drawer"] > header + div section labe
 }
 
 /* The scheduling state beside the status badge (the chip row at the top of the drawer, AccountDetailsDrawer.vue): the
-   status chip it sits next to (data.css 6 .badge: a capsule, Geist Mono at the badge size, 500, .025em, 1 / 7 inset;
-   on = the success pill, off = the grey pill), not a 4px Geist 12 rectangle. Final review V1-13. */
+   status chip it sits next to (data.css 6 .badge: a capsule, 12 / 16 / 500 sans, sentence case, 1 / 7 inset; on = the
+   success pill, off = the grey pill), not a 4px rectangle. Final review V1-13. */
 html.flat-theme [data-test="account-details-drawer"] > header + div > section:first-child > div:first-child > span[class~="rounded"][class~="px-2"][class~="py-0.5"][class~="text-xs"] {
   padding: 1px 7px;
   border-radius: 9999px;
-  font-family: var(--ui-font-mono);
+  font-family: var(--ui-font);
   font-size: var(--ui-badge-size);
   font-weight: 500;
   line-height: var(--ui-badge-leading);
-  letter-spacing: 0.025em;
-  text-transform: uppercase;
+  letter-spacing: normal;
+  text-transform: none;
 }
 
 html.flat-theme [data-test="account-details-drawer"] > header + div > section:first-child > div:first-child > span[class~="rounded"][class~="px-2"][class~="py-0.5"][class~="text-xs"][class~="bg-emerald-50"] {
@@ -1019,8 +991,8 @@ html.flat-theme :is([data-ui="account-test"], [data-ui="account-stats"]) > div:f
 }
 
 /* 9.2 Usage statistics, the four headline figures: the reference's KPI card (REF §8.13, the dashboards' StatTile in
-   data.css 7): surface, 1px structural line, radius 6, 8 / 12 inset, the mono label, the value 15 / 600 tabular ink,
-   the detail 11px muted; no tint and no icon tile. */
+   data.css 7): surface, 1px structural line, radius 6, 8 / 12 inset, the label (12 / 16 / 500), the value at the
+   template's text-2xl font-bold (24 / 32 / 700) tabular ink, the detail 12px muted; no tint and no icon tile. */
 html.flat-theme [data-ui="account-stats"] > div[class~="grid"] > div[class~="card"][class~="bg-gradient-to-br"] {
   min-height: 76px;
   padding: 8px 12px;
@@ -1042,7 +1014,7 @@ html.flat-theme [data-ui="account-stats"] > div[class~="grid"] > div[class~="car
 html.flat-theme [data-ui="account-stats"] > div[class~="grid"] > div[class~="card"][class~="bg-gradient-to-br"] > div:first-child > span {
   font: var(--ui-label-font);
   letter-spacing: var(--ui-label-tracking);
-  text-transform: uppercase;
+  text-transform: none;
   color: rgb(var(--ui-label));
 }
 
@@ -1051,9 +1023,9 @@ html.flat-theme [data-ui="account-stats"] > div[class~="grid"] > div[class~="car
 }
 
 html.flat-theme [data-ui="account-stats"] > div[class~="grid"] > div[class~="card"][class~="bg-gradient-to-br"] > p[class~="text-2xl"] {
-  font-size: 15px;
-  font-weight: 600;
-  line-height: 22.5px;
+  font-size: 24px;
+  font-weight: 700;
+  line-height: 32px;
   font-variant-numeric: tabular-nums;
   color: rgb(var(--ui-ink));
 }
@@ -1061,14 +1033,15 @@ html.flat-theme [data-ui="account-stats"] > div[class~="grid"] > div[class~="car
 html.flat-theme [data-ui="account-stats"] > div[class~="grid"] > div[class~="card"][class~="bg-gradient-to-br"] > p:not([class~="text-2xl"]),
 html.flat-theme [data-ui="account-stats"] > div[class~="grid"] > div[class~="card"][class~="bg-gradient-to-br"] > p:not([class~="text-2xl"]) > span {
   margin-top: 0;
-  font-size: 11px;
-  line-height: 16.5px;
+  font-size: 12px;
+  line-height: 16px;
   color: rgb(var(--ui-muted));
 }
 
 /* 9.3 Usage statistics, the six detail cards (today, highest cost day, highest request day, tokens, performance,
-   recent activity): the title is the mono section label (REF §5) without its tinted tile, the rows are label (12px
-   muted) and value (13 / 600 tabular ink); the two values upstream colours for decoration are ink. */
+   recent activity): the title is the section label (12 / 16 / 500, REF §5) without its tinted tile, the rows are label
+   (12px muted) and value (the template's 14 / 600 tabular ink); the two values upstream colours for decoration are
+   ink. */
 html.flat-theme [data-ui="account-stats"] > div[class~="grid"] > div[class~="card"]:not([class~="bg-gradient-to-br"]) {
   padding: 14px;
 }
@@ -1084,7 +1057,7 @@ html.flat-theme [data-ui="account-stats"] > div[class~="grid"] > div[class~="car
 html.flat-theme [data-ui="account-stats"] > div[class~="grid"] > div[class~="card"]:not([class~="bg-gradient-to-br"]) > div[class~="mb-3"]:first-child > span {
   font: var(--ui-label-font);
   letter-spacing: var(--ui-label-tracking);
-  text-transform: uppercase;
+  text-transform: none;
   color: rgb(var(--ui-label));
 }
 
@@ -1095,8 +1068,8 @@ html.flat-theme [data-ui="account-stats"] > div[class~="grid"] > div[class~="car
 }
 
 html.flat-theme [data-ui="account-stats"] > div[class~="grid"] > div[class~="card"]:not([class~="bg-gradient-to-br"]) > div[class~="space-y-2"] > div > span:last-child {
-  font-size: 13px;
-  line-height: 19.5px;
+  font-size: 14px;
+  line-height: 20px;
   font-variant-numeric: tabular-nums;
   color: rgb(var(--ui-ink));
 }
@@ -1111,8 +1084,8 @@ html.flat-theme [data-ui="account-oauth-flow"] {
   background-color: rgb(var(--ui-subtle));
 }
 
-/* (its mono field labels take the muted grey, which holds 4.5:1 on the subtle ground: the label grey reads 4.35 there
-   in light, as in data.css 11's callouts; dark keeps its label grey) */
+/* (its field labels take the muted grey, which holds 4.5:1 on the subtle ground, as in data.css 11's callouts; the label
+   grey is the same value in the official palette, so this only pins it; dark keeps its label grey) */
 html.flat-theme:not(.dark) [data-ui="account-oauth-flow"] {
   --ui-label: var(--ui-muted);
 }
@@ -1184,8 +1157,8 @@ html.flat-theme [data-ui="account-create-steps"] div[class~="h-0.5"] {
 /* 9.6 Choices inside the account forms (create, edit, bulk edit); upstream's accent and purple tints go.
    - A two-way switch whose choices are labels only (the model whitelist / mapping, the bulk form's RPM strategy) is the
      reference's segmented control (REF §8.5, controls.css 7.1: the grey track, radius 8, the 2px inset; segments
-     14 x 6 at 12.5 / 500, muted, ink on hover, the chosen one the raised pill at 600), like the same switch in the
-     other dialogs (the announcement's 「所有用户 / 按条件」). Final review V1-15.
+     14 x 6 at the template's 14 / 500, muted, ink on hover, the chosen one the raised pill, same weight), like the same
+     switch in the other dialogs (the announcement's 「所有用户 / 按条件」). Final review V1-15.
    - A pair whose choices carry a description line (the create and edit forms' RPM strategy) is an option card like the
      account type cards above it (controls.css 8.1): the grouped fill inside the structural line, the chosen one an
      accent edge 2px wide on the surface.
@@ -1208,8 +1181,8 @@ html.flat-theme :is(#create-account-form, #edit-account-form, #bulk-edit-account
   background-color: transparent;
   box-shadow: none;
   padding: var(--ctl-seg-pad-y) var(--ctl-seg-pad-x);
-  font-size: 0.78125rem;
-  line-height: 1.171875rem;
+  font-size: 0.875rem;
+  line-height: 1.25rem;
   font-weight: 500;
   white-space: nowrap;
   color: rgb(var(--ui-muted));
@@ -1225,7 +1198,7 @@ html.flat-theme :is(#create-account-form, #edit-account-form, #bulk-edit-account
 html.flat-theme :is(#create-account-form, #edit-account-form, #bulk-edit-account-form) button[class~="flex-1"][class~="rounded-lg"]:is([class~="bg-primary-100"], [class~="bg-purple-100"]):not(:has(div[class~="text-[10px]"])) {
   background-color: rgb(var(--ui-thumb));
   color: rgb(var(--ui-ink));
-  font-weight: 600;
+  font-weight: 500;
   box-shadow: var(--ui-thumb-shadow);
 }
 
@@ -1238,9 +1211,9 @@ html.flat-theme :is(#create-account-form, #edit-account-form, #bulk-edit-account
   border-radius: var(--ui-radius-lg);
   background-color: rgb(var(--ui-subtle) / 0.6);
   box-shadow: inset 0 0 0 1px rgb(var(--ui-line));
-  font-size: 0.8125rem;
-  line-height: 1.21875rem;
-  font-weight: 600;
+  font-size: 0.875rem;
+  line-height: 1.25rem;
+  font-weight: 500;
   color: rgb(var(--ui-ink-soft));
   transition-property: color, background-color, box-shadow;
   transition-duration: var(--ui-duration);
@@ -1263,10 +1236,8 @@ html.flat-theme :is(#create-account-form, #edit-account-form, #bulk-edit-account
   outline-offset: 2px;
 }
 
-/* (the strategy's hint line: upstream's 10px at 70 % opacity becomes 11px muted) */
+/* (the strategy's hint line: upstream's 10px, muted at full opacity instead of 70 %) */
 html.flat-theme :is(#create-account-form, #edit-account-form, #bulk-edit-account-form) button[class~="flex-1"][class~="rounded-lg"] div[class~="text-[10px]"][class~="opacity-70"] {
-  font-size: 11px;
-  line-height: 16.5px;
   font-weight: 400;
   opacity: 1;
   color: rgb(var(--ui-muted));
@@ -1276,9 +1247,9 @@ html.flat-theme :is(#create-account-form, #edit-account-form, #bulk-edit-account
   min-height: var(--ui-control-h);
   padding: 0 0.75rem;
   border-radius: var(--ui-radius-md);
-  font-size: 0.8125rem;
-  line-height: 1.21875rem;
-  font-weight: 600;
+  font-size: 0.875rem;
+  line-height: 1.25rem;
+  font-weight: 500;
 }
 
 /* (the chosen mode's ink is controls.css 10.1's, shared by every utility-built choice; the others are drawn here) */

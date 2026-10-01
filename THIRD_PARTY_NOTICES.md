@@ -38,10 +38,6 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
-## Geist and Geist Mono
-
-The frontend includes the Geist and Geist Mono variable fonts (weights 100-900) by Vercel, taken from the npm package [`geist` 1.7.2](https://www.npmjs.com/package/geist) (`dist/fonts/geist-sans/Geist-Variable.woff2` and `dist/fonts/geist-mono/GeistMono-Variable.woff2`) and subset to the Latin range with fontTools (no other glyph changes). The fonts are distributed under the SIL Open Font License 1.1, included at `frontend/src/assets/fonts/geist/OFL.txt`.
-
 ## Lucide
 
 The frontend includes icon shapes from [Lucide](https://lucide.dev) 0.469.0, copied without changes from the file `icon-nodes.json` of the npm package [`lucide-static` 0.469.0](https://www.npmjs.com/package/lucide-static/v/0.469.0) into `frontend/src/components/icons/lucide.ts`; `Icon.vue` draws them while the console theme is on. Lucide is distributed under the ISC License below. The Lucide icons derived from Feather are also covered by Feather's MIT License, reproduced after it.

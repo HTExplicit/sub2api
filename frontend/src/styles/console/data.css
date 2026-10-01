@@ -19,7 +19,8 @@
  *   data-ui="skeleton"        components/common/Skeleton.vue        root
  * Opt-in hooks for page owners (wave 2, §6.4): data-ui~="platform-chip" / "platform-text" (an element upstream colours
  * by platform with Tailwind hue classes keeps that platform colour, decision 2) and data-ui~="category-chip" (a
- * category label drawn as the reference's neutral chip: request type, billing mode, protocol, role ...).
+ * category label: request type, billing mode, protocol, role ...; the reference's chip shape around the tag colours
+ * its template gives it, as official).
  * Hooks used from other owners: data-ui~="bulk-bar" (AccountBulkActionsBar, the accounts agent), data-table and
  * data-column (DataTable), aria-sort on sortable headers.
  *
@@ -50,12 +51,10 @@ html.flat-theme {
   --ui-table-edge-x: 16px;
   /* width of DataTable's own selection column (checkbox + insets); the second sticky column starts after it */
   --ui-table-select-w: 44px;
-  /* badges and status pills: Geist Mono uppercase (the reference's 9.5px pills read 10px here; 11px in the
-     Chinese interface, like the mono label) */
-  --ui-badge-size: 10px;
+  /* badges, status pills and data chips in cells: official .badge and tags are text-xs (12/16), sentence case */
+  --ui-badge-size: 12px;
   --ui-badge-leading: 16px;
-  /* data chips in cells (the reference's tool / prompt chips, Geist Mono 10-10.5px) */
-  --ui-chip-size: 10.5px;
+  --ui-chip-size: 12px;
   /* table scrollbars stay visible (sideways scrolling must be discoverable, as the reference's Windows
      scrollbars are); the thumb is the reference's #8b8b8b grey at >= 3:1 on the surface */
   --ui-scroll-thumb: 142 142 142;
@@ -78,19 +77,22 @@ html.flat-theme {
   --ui-row-pick-hover: color-mix(in srgb, rgb(var(--ui-primary-soft)) 100%, rgb(var(--ui-ink)) 3%);
   /* the bulk bar floats only where its owner places it over content */
   --ui-bulk-bar-shadow: none;
-  /* Table header labels (wave 2, the management agent's decision): the muted grey instead of the label grey, so a
-     header under an open menu's popover shadow (#f6f6f6-#f8f8f8 behind it) still reads 4.5:1 (#737373 fell to
-     4.39); 5.25 on the surface. Dark keeps the label grey (6.3 on the surface). Only table headers; the other mono
-     labels keep --ui-label. */
+  /* Table headers, official's two families (section 1): the usage tables' header, text-gray-500 /
+     dark:text-gray-400 = the meta grey (#616977 / #a4abb6, 5.53 / 6.94:1 on the surface) at 12/16; and
+     TablePageLayout's scoped th, text-gray-600 / dark:text-dark-300 (#4b5563 / #d1d5db) at 14/20. */
   --ui-table-head: var(--ui-muted);
+  --ui-table-head-tpl: 75 85 99;
+  --ui-th-size: 12px;
+  --ui-th-leading: 16px;
   /* Badge text (light): each status text a step deeper than the status token, so a badge under a popover shadow
      (up to 6 % of the shadow colour over its soft fill) keeps 4.5:1 (the ACTIVE success badge fell to 4.45, the
-     danger badge to 4.41). Dark reads the status tokens (>= 6:1). */
+     danger badge to 4.41). Dark reads the status tokens (>= 6:1). The grey badge is official .badge-gray's
+     text-gray-700 (dark: dark-300, the soft ink). */
   --ui-badge-success: 26 122 61;
   --ui-badge-danger: 190 52 52;
   --ui-badge-warning: 172 79 9;
   --ui-badge-link: 19 120 64;
-  --ui-badge-muted: 104 104 104;
+  --ui-badge-muted: 55 65 81;
   /* Time-series chart palette (read by composables/usePresentationColors.ts as `trend`): the reference's usage
      series (REF §8.14 --usage-series-*) in the hue order of upstream's series (blue, emerald, amber, red, violet,
      pink, teal, orange, indigo, lime, cyan, purple), so a chart that picks a series by index keeps its hue. Lines
@@ -110,23 +112,22 @@ html.flat-theme {
   --ui-chart-trend-12: #7850c8;
 }
 
-html.flat-theme:lang(zh) {
-  --ui-badge-size: 11px;
-  --ui-chip-size: 11px;
-}
-
 html.flat-theme.dark {
   --ui-table-head: var(--ui-label);
+  --ui-table-head-tpl: 209 213 219;
   /* danger text on the dark selected fill (#39433f, hover #404946): Tailwind red-300 #fca5a5, 5.40:1 on the
      selected fill and 4.88 on its hover (#f87171 is 3.71 / 3.35; the pre-C #f69898 falls to 4.35 on the hover) */
   --ui-selected-danger: 252 165 165;
+  /* meta text in a dark selected row (section 1, D11): #b4bac4, 5.25:1 on the selected fill and 4.71 on its hover
+     (the meta grey #a4abb6 is 4.43 / 3.97 there), still under the data ink #d1d5db */
+  --ui-selected-meta: 180 186 196;
   /* the dark selected row under the pointer lightens by 4 % of the ink (#404946) */
   --ui-row-pick-hover: color-mix(in srgb, rgb(var(--ui-primary-soft)) 100%, rgb(var(--ui-ink)) 4%);
   --ui-badge-success: var(--ui-success);
   --ui-badge-danger: var(--ui-danger);
   --ui-badge-warning: var(--ui-warning);
   --ui-badge-link: 182 247 200;
-  --ui-badge-muted: var(--ui-muted);
+  --ui-badge-muted: var(--ui-ink-soft);
   --ui-scroll-thumb: 122 122 122;
   --ui-scroll-thumb-hover: 156 156 156;
   /* the reference's dark fills: the colour at 42 % over its surface #1a1a1a (kept as they are on palette C's
@@ -160,17 +161,19 @@ html.flat-theme.dark {
 
 /* ================================================================== 1 · DataTable (desktop and, theme on, phones) */
 
-/* The card around the table is the layout's (section 2); the wrapper scrolls both ways. */
+/* The card around the table is the layout's (section 2); the wrapper scrolls both ways. The body text is official's
+   td text-sm (14/20). */
 html.flat-theme .table-wrapper > table[data-ui~="data-table"]:is(table) {
   border-collapse: collapse;
-  font-size: 13px;
-  line-height: 19.5px;
+  font-size: 14px;
+  line-height: 20px;
 }
 
 /* Dark: upstream writes table text as text-gray-900 dark:text-white; the gray is the ink, but text-white reads
-   --theme-on-fill (255 255 255), so figures, key and account names were pure #ffffff at 500-600 (17.4:1, a glare on
-   the graphite). Inside tables white text is the ink (palette C); a solid fill still sets its own --theme-on-fill
-   (tailwind.config.js onPrimaryFill, the .btn-primary recipe, controls.css 10.1). */
+   --theme-on-fill (255 255 255), so figures, key and account names were pure #ffffff (a glare on the graphite,
+   owner 2026-09-30). Inside tables white text is the ink: #f3f4f6, official's own body ink (dark:text-gray-100,
+   14.58:1 on the surface). A solid fill still sets its own --theme-on-fill (tailwind.config.js onPrimaryFill, the
+   .btn-primary recipe, controls.css 10.1). Owner option: deleting this rule gives official's pure #fff in tables. */
 html.flat-theme.dark .table-wrapper {
   --theme-on-fill: var(--ui-ink);
 }
@@ -183,24 +186,32 @@ html.flat-theme .table-wrapper > table > tbody.table-body {
   background-color: rgb(var(--ui-surface));
 }
 
-/* Header: 40px, the mono label (REF §8.7: Geist Mono 10/15, .12em, uppercase, ink-faint -> --ui-label) at 400
-   (palette C: the labels calm down; the reference's 500), surface fill, 1px structural line underneath. th sits on
-   the 13px / 19.5px strut, as the reference's does. */
+/* Header: official's (the usage tables' text-xs font-medium uppercase tracking-wider in the meta grey; the
+   TablePageLayout tables' 14/20 in #4b5563 / #d1d5db, below), on the surface fill with a 1px structural line
+   underneath; 40px with the 19.5px slot below. */
 html.flat-theme .table-wrapper .table-header .sticky-header-cell {
   padding: var(--ui-table-cell-y) var(--ui-table-cell-x);
   border-bottom-width: 0;
   background-color: rgb(var(--ui-surface));
   box-shadow: inset 0 -1px 0 rgb(var(--ui-line));
   color: rgb(var(--ui-table-head));
-  font-family: var(--ui-font-mono);
-  font-size: var(--ui-label-size);
-  font-weight: 400;
-  line-height: 19.5px;
-  letter-spacing: var(--ui-label-tracking);
+  font-family: var(--ui-font);
+  font-size: var(--ui-th-size);
+  font-weight: 500;
+  line-height: var(--ui-th-leading);
+  letter-spacing: 0.05em;
   text-transform: uppercase;
   white-space: nowrap;
   vertical-align: middle;
   transition: color var(--ui-duration) var(--ui-ease);
+}
+
+/* TablePageLayout tables (accounts, keys, users, groups, proxies, ...): upstream's layout scopes its th to text-sm
+   font-medium text-gray-600 dark:text-dark-300 */
+html.flat-theme .table-page-layout .table-wrapper {
+  --ui-th-size: 14px;
+  --ui-th-leading: 20px;
+  --ui-table-head: var(--ui-table-head-tpl);
 }
 
 html.flat-theme .table-wrapper .table-header .sticky-header-cell:first-child {
@@ -211,8 +222,7 @@ html.flat-theme .table-wrapper .table-header .sticky-header-cell:last-child {
   padding-right: var(--ui-table-edge-x);
 }
 
-/* the reference's header has no hover fill; the label darkens a step on a sortable column (the reference means
-   to, its .mono-label overrides it) */
+/* the reference's header has no hover fill; the label darkens to the soft ink on a sortable column */
 html.flat-theme .table-wrapper .table-header .sticky-header-cell[aria-sort]:hover {
   background-color: rgb(var(--ui-surface));
 }
@@ -224,7 +234,7 @@ html.flat-theme .table-wrapper .table-header .sticky-header-cell[aria-sort][data
   color: rgb(var(--ui-ink-soft));
 }
 
-/* header slot content (labels with a help icon) keeps the label's line */
+/* header slot content (labels with a help icon) keeps a 19.5px line, so the header row stays official's 40px */
 html.flat-theme .table-wrapper .table-header .sticky-header-cell > div {
   min-height: 19.5px;
 }
@@ -281,34 +291,19 @@ html.flat-theme .table-wrapper > table > tbody.table-body > tr + tr {
   border-top-color: rgb(var(--ui-line));
 }
 
-/* numbers: right-aligned columns (column.class text-right) use tabular figures; mono cells already are */
+/* numbers: right-aligned columns (column.class text-right) use tabular figures (YaHei UI digits are tabular
+   already; this aligns them on macOS too) */
 html.flat-theme .table-wrapper > table[data-ui~="data-table"]:is(table) :is(th, td)[class~="text-right"] {
   font-variant-numeric: tabular-nums;
 }
 
-/* Figures in Geist Mono (REF §8.7: numeric cells Mono 12 / 13, tabular): the columns every table names the same way
-   for a count, an amount, a price, a rate, an id or a duration. Text in the same cell (a unit, a 「充值」 button) takes
-   MiSans / Geist through the mono stack's fallbacks. Alignment stays the column's. The same columns drawn as lines of a
-   stacked cell (tables.css) keep it. */
-html.flat-theme .table-wrapper > table > tbody.table-body > tr > td [data-ui="cell-line"]:is([data-line="id"], [data-line="user_id"], [data-line="group_id"], [data-line="requests"], [data-line="tokens"], [data-line="total_tokens"], [data-line="input_tokens"], [data-line="output_tokens"], [data-line="cache_tokens"], [data-line="cost"], [data-line="actual_cost"], [data-line="balance"], [data-line="balance_after"], [data-line="amount"], [data-line="pay_amount"], [data-line="order_amount"], [data-line="price"], [data-line="rebate_amount"], [data-line="total_rebate"], [data-line="bonus_amount"], [data-line="concurrency"], [data-line="current_concurrency"], [data-line="priority"], [data-line="rate_multiplier"], [data-line="sort_order"], [data-line="latency_ms"], [data-line="status_code"], [data-line="account_count"], [data-line="group_count"], [data-line="validity_days"]) > [data-ui="cell-line-value"],
-html.flat-theme .table-wrapper > table > tbody.table-body > tr > td:is([data-column="id"], [data-column="user_id"], [data-column="group_id"], [data-column="requests"], [data-column="tokens"], [data-column="total_tokens"], [data-column="input_tokens"], [data-column="output_tokens"], [data-column="cache_tokens"], [data-column="cost"], [data-column="actual_cost"], [data-column="balance"], [data-column="balance_after"], [data-column="amount"], [data-column="pay_amount"], [data-column="order_amount"], [data-column="price"], [data-column="rebate_amount"], [data-column="total_rebate"], [data-column="bonus_amount"], [data-column="concurrency"], [data-column="current_concurrency"], [data-column="priority"], [data-column="rate_multiplier"], [data-column="sort_order"], [data-column="latency_ms"], [data-column="status_code"], [data-column="account_count"], [data-column="group_count"], [data-column="validity_days"]) {
-  font-family: var(--ui-font-mono);
-  font-size: 12.5px;
-  font-variant-numeric: tabular-nums;
-}
-
 /* Small data chips inside cells (upstream's `inline-flex rounded px-2 py-0.5 text-xs` spans: group, request type,
-   billing mode, tags, cache marks): the reference's tool / prompt chip shape (REF §8.8: 4px radius, 6 / 1 inset,
-   Geist Mono 10.5px); each keeps its colour family (the status families of tokens.css). A chip that carries a
-   data-ui hook (platform-chip, category-chip, a page owner's) is its owner's. */
+   billing mode, tags, cache marks): the reference's tool / prompt chip shape (REF §8.8: 4px radius, 6 / 1 inset); type
+   and colour stay the template's (official; the hues fold into the status families of tokens.css). A chip that
+   carries a data-ui hook (platform-chip, category-chip, a page owner's) is its owner's. */
 html.flat-theme .table-wrapper > table > tbody.table-body > tr > td span:not([data-ui]):is([class~="inline-flex"], [class~="inline-block"])[class~="rounded"]:is([class~="px-1"], [class~="px-1.5"], [class~="px-2"]):is([class~="py-0.5"], [class~="py-px"]):is([class~="text-xs"], [class~="text-[10px]"], [class~="text-[11px]"]) {
   padding: 1px 6px;
   border-radius: var(--ui-radius-sm);
-  font-family: var(--ui-font-mono);
-  font-size: var(--ui-chip-size);
-  font-weight: 500;
-  line-height: 16px;
-  letter-spacing: 0.01em;
 }
 
 /* Rows: hover and keyboard focus inside a data row = --ui-hover (REF §8.7; upstream's gray-50 is the canvas colour
@@ -338,39 +333,33 @@ html.flat-theme .table-wrapper .table-body > tr:where([data-row-id]):is([class~=
   background-color: var(--ui-row-pick-hover);
 }
 
-/* On the dark selected fill (#39433f; #404946 under the pointer) upstream's secondary greys fall short
-   (dark:text-dark-500 #a0a0a9 3.95:1 / 3.57 on the hover, dark:text-dark-400 #a3a3ac 4.10 / 3.70, text-gray-500
-   #b0b0b9 4.76 / 4.31): in a selected row they take the soft ink (#b8b8c0, 5.20:1; 4.70 on the selected hover).
-   Light is unchanged. Every selectable table. (wave 2, reported by the management and user-side agents; palette C:
-   the muted grey the rule used to take fell to 4.31 on the hover.) The labels of stacked cell lines
-   (data-ui="cell-line-label", DataTable; the tables track draws them in the muted grey) are secondary text too.
-   DataTable's own selection is the row's class; a page's own select column makes the row publish --ui-row-picked
-   (dark theme only, so a light-theme selection never restyles the row's cells), which its cells read through a
-   style query (Chromium 111+, Safari 18+). Firefox has no style queries: it keeps the pre-pass selector in the
-   @supports (-moz-appearance: none) blocks, which Chromium never loads. Same weights (0,8,4) as the pre-pass rules.
-   The same row also lifts the data text roles of section 12 (12.4) for its cells, which inherit them: a custom
-   property needs no style query, so this works in every browser without another relational selector. */
+/* On the dark selected fill (#39433f; #404a46 under the pointer) the meta grey #a4abb6 is 4.43 / 3.97:1: a selected
+   row lifts its meta greys to --ui-selected-meta (#b4bac4, 5.25 / 4.71), still under the data ink #d1d5db. Custom
+   properties on the row, inherited by its cells, so no rule needs a relational selector on a cell: a page's own select
+   column is the checked box this row rule already tests (subject-position :has(), static markup only); DataTable's own
+   selection is the row's class (below). --ui-row-picked stays for the danger rules (section 1, below). Light is
+   unchanged (meta #616977 is 5.12 / 4.82 on the light selected fills). */
 html.flat-theme.dark .table-wrapper .table-body > tr:where([data-row-id]):has(> td[data-column="select"] input[type="checkbox"]:checked) {
   --ui-row-picked: 1;
-  --ui-data-secondary: var(--ui-data-picked);
-  --ui-data-reference: var(--ui-data-picked);
-  --ui-data-label: var(--ui-data-picked);
+  --ui-muted: var(--ui-selected-meta);
+  --ui-faint: var(--ui-selected-meta);
+  --ui-label: var(--ui-selected-meta);
+  --theme-text-gray-400: var(--ui-selected-meta);
+  --theme-text-gray-500: var(--ui-selected-meta);
+  --theme-text-gray-600: var(--ui-selected-meta);
+  --theme-text-dark-400: var(--ui-selected-meta);
+  --theme-text-dark-500: var(--ui-selected-meta);
 }
 
-html.flat-theme.dark .table-wrapper .table-body > tr[class~="bg-primary-50/40"][class][class]:is(tr):is(tr) :is([class~="text-gray-400"], [class~="text-gray-500"], [class~="dark:text-dark-400"], [class~="dark:text-dark-500"], [data-ui="cell-line-label"]) {
-  color: rgb(var(--ui-ink-soft));
-}
-
-@container style(--ui-row-picked: 1) {
-  html.flat-theme.dark .table-wrapper .table-body > tr[data-row-id][data-row-id][data-row-id]:is(tr):is(tr) :is([class~="text-gray-400"], [class~="text-gray-500"], [class~="dark:text-dark-400"], [class~="dark:text-dark-500"], [data-ui="cell-line-label"]) {
-    color: rgb(var(--ui-ink-soft));
-  }
-}
-
-@supports (-moz-appearance: none) {
-  html.flat-theme.dark .table-wrapper .table-body > tr:has(> td[data-column="select"] input[type="checkbox"]:checked) :is([class~="text-gray-400"], [class~="text-gray-500"], [class~="dark:text-dark-400"], [class~="dark:text-dark-500"], [data-ui="cell-line-label"]) {
-    color: rgb(var(--ui-ink-soft));
-  }
+html.flat-theme.dark .table-wrapper .table-body > tr[class~="bg-primary-50/40"] {
+  --ui-muted: var(--ui-selected-meta);
+  --ui-faint: var(--ui-selected-meta);
+  --ui-label: var(--ui-selected-meta);
+  --theme-text-gray-400: var(--ui-selected-meta);
+  --theme-text-gray-500: var(--ui-selected-meta);
+  --theme-text-gray-600: var(--ui-selected-meta);
+  --theme-text-dark-400: var(--ui-selected-meta);
+  --theme-text-dark-500: var(--ui-selected-meta);
 }
 
 /* and the danger red of a failure note in a selected row: #f87171 is 3.71:1 on
@@ -643,8 +632,8 @@ html.flat-theme .table-page-layout > .layout-section-scrollable + .layout-sectio
 /* ================================================================== 3 · plain tables */
 
 /* Upstream's hand-built tables with a grey header band (thead.bg-gray-50: ops, rankings, dialogs): the header reads
-   as the console's (mono label on the surface, 1px line underneath), the band and upstream's own insets stay out
-   of it. */
+   as the console's (official text-xs font-medium uppercase tracking-wider on the surface, 1px line underneath), the
+   band and upstream's own insets stay out of it. */
 html.flat-theme table > thead[class~="bg-gray-50"] {
   background-color: transparent;
 }
@@ -664,18 +653,21 @@ html.flat-theme table > thead[class~="bg-gray-50"] > tr > th {
   background-color: rgb(var(--ui-surface));
   box-shadow: inset 0 -1px 0 rgb(var(--ui-line));
   color: rgb(var(--ui-table-head));
-  font-family: var(--ui-font-mono);
-  font-size: var(--ui-label-size);
+  font-family: var(--ui-font);
+  font-size: 12px;
   font-weight: 500;
-  letter-spacing: var(--ui-label-tracking);
+  line-height: 16px;
+  letter-spacing: 0.05em;
   text-transform: uppercase;
   white-space: nowrap;
 }
 
 /* Distribution tables beside the charts (model / group / endpoint distribution, the spending ranking, the user
-   dashboard): the reference's usage table (REF §8.7 "/logs usage table", crop usage-card): 12px, header Geist
-   10/600 uppercase .025em, rows 35px with 1px lines, names ink 500, figures tabular, the spend in ink, the other
-   costs muted. Each row carries the colour key of its slice, as the reference's rows carry their bar colour. */
+   dashboard): the reference's usage table frame (REF §8.7 "/logs usage table", crop usage-card): 12px rows of 35px
+   with 1px lines, figures tabular. The header is official's (text-xs, th bold, the meta grey, normal case); names
+   and figures keep their template colours, as official (names gray-900, blue-600 when they expand; counts gray-600;
+   the actual spend green; the account cost orange; the standard price gray-400). Each row carries the colour key of
+   its slice, as the reference's rows carry their bar colour. */
 html.flat-theme [class~="max-h-48"][class~="overflow-auto"] > table[class~="text-xs"] {
   font-size: 12px;
   line-height: 18px;
@@ -690,11 +682,11 @@ html.flat-theme [class~="max-h-48"][class~="overflow-auto"] > table[class~="text
   background-color: rgb(var(--ui-surface));
   box-shadow: inset 0 -1px 0 rgb(var(--ui-line));
   color: rgb(var(--ui-muted));
-  font-size: 10px;
-  font-weight: 500;
-  line-height: 15px;
-  letter-spacing: 0.025em;
-  text-transform: uppercase;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 16px;
+  letter-spacing: normal;
+  text-transform: none;
   vertical-align: bottom;
 }
 
@@ -723,33 +715,6 @@ html.flat-theme [class~="max-h-48"][class~="overflow-auto"] > table[class~="text
 
 html.flat-theme [class~="max-h-48"][class~="overflow-auto"] > table[class~="text-xs"] > tbody > tr[class~="cursor-pointer"]:hover {
   background-color: rgb(var(--ui-hover));
-}
-
-/* names: ink 500 (upstream draws the expandable ones as blue links; the chevron already says they open) */
-html.flat-theme [class~="max-h-48"][class~="overflow-auto"] > table[class~="text-xs"] > tbody > tr > td:first-child:not([colspan]) {
-  color: rgb(var(--ui-ink));
-  font-weight: 500;
-}
-
-html.flat-theme [class~="max-h-48"][class~="overflow-auto"] > table[class~="text-xs"] > tbody > tr > td:first-child:not([colspan]) svg {
-  color: rgb(var(--ui-label));
-}
-
-/* figures (text roles, section 12): requests and tokens are the row's secondary figures, the actual spend its primary
-   figure, the account cost and the standard price reference values (the title attributes still name them); all of
-   them Geist Mono, tabular, like the token column (they were Geist next to Mono token counts) */
-html.flat-theme [class~="max-h-48"][class~="overflow-auto"] > table[class~="text-xs"] > tbody > tr > td[class~="text-right"] {
-  color: rgb(var(--ui-data-secondary));
-  font-family: var(--ui-font-mono);
-  font-variant-numeric: tabular-nums;
-}
-
-html.flat-theme [class~="max-h-48"][class~="overflow-auto"] > table[class~="text-xs"] > tbody > tr > td[class~="text-right"]:is([class~="text-orange-500"], [class~="text-gray-400"]) {
-  color: rgb(var(--ui-data-reference));
-}
-
-html.flat-theme [class~="max-h-48"][class~="overflow-auto"] > table[class~="text-xs"] > tbody > tr > td[class~="text-right"]:is([class~="text-green-600"]) {
-  color: rgb(var(--ui-data-primary));
 }
 
 /* the colour key: an 8px square with 2px corners (REF §8.14 legend and usage rows) in the slice's colour; slices
@@ -807,7 +772,7 @@ html.flat-theme [class~="max-h-48"][class~="overflow-auto"] > table[class~="text
 }
 
 /* Grouped rows (REF §8.7 group row: the surface-subtle band at 60 %): a model's per-user breakdown opens as a
-   band under its row, indented, rows 29px, figures muted. */
+   band under its row, indented, rows 29px, its 12px text in the template's colours (official). */
 html.flat-theme [class~="max-h-48"][class~="overflow-auto"] > table[class~="text-xs"] > tbody > tr > td[colspan] > div[class~="bg-gray-50/50"] {
   background-color: color-mix(in srgb, rgb(var(--ui-subtle)) 60%, transparent);
 }
@@ -818,22 +783,19 @@ html.flat-theme [class~="max-h-48"][class~="overflow-auto"] > table[class~="text
 
 html.flat-theme [class~="max-h-48"][class~="overflow-auto"] > table[class~="text-xs"] > tbody > tr > td[colspan] > div > table > tbody > tr > td {
   padding: 5px 8px;
-  color: rgb(var(--ui-muted));
-  font-size: 11.5px;
+  font-size: 12px;
 }
 
 html.flat-theme [class~="max-h-48"][class~="overflow-auto"] > table[class~="text-xs"] > tbody > tr > td[colspan] > div > table > tbody > tr > td:first-child {
   padding-left: 24px;
-  color: rgb(var(--ui-ink-soft));
 }
 
 /* ================================================================== 4 · pagination */
 
 /* The reference ends a list with a 1px line and a quiet row (REF §8.7); our pagination keeps its controls in that
-   language: 12px muted counts with mono figures, page buttons 30px ghost with mono numbers, the current page the
-   accent tint with accent figures at 600 and a 1px inset accent ring (palette C: the tint alone is 1.05:1 and the
-   accent figures about as light as the grey ones, so the ring marks the page at >= 3:1), arrows as 28px icon
-   buttons. */
+   language with official's text: the sentence 14/20 in the soft ink with its counts at 500, page buttons 30px ghost
+   at 14/500, the current page the accent tint with accent figures at 500 and a 1px inset accent ring (palette C: the
+   tint alone is 1.05:1, so the ring marks the page at >= 3:1), arrows as 30px icon buttons. */
 html.flat-theme [data-ui="pagination"] {
   gap: 12px;
   min-height: 44px;
@@ -844,14 +806,13 @@ html.flat-theme [data-ui="pagination"] {
 
 html.flat-theme [data-ui="pagination"] p,
 html.flat-theme [data-ui="pagination"] span[class~="text-sm"] {
-  color: rgb(var(--ui-muted));
-  font-size: 12px;
-  line-height: 18px;
+  color: rgb(var(--ui-ink-soft));
+  font-size: 14px;
+  line-height: 20px;
 }
 
 html.flat-theme [data-ui="pagination"] p > span[class~="font-medium"] {
-  color: rgb(var(--ui-ink-soft));
-  font-family: var(--ui-font-mono);
+  color: inherit;
   font-weight: 500;
 }
 
@@ -870,12 +831,9 @@ html.flat-theme [data-ui="pagination"] nav[aria-label="Pagination"] > button {
   border: 0;
   border-radius: var(--ui-radius-md);
   background-color: transparent;
-  /* page numbers are figures: the secondary role (section 12; the sentence around the counts is the label) */
-  color: rgb(var(--ui-data-secondary));
-  font-family: var(--ui-font-mono);
-  font-size: 12px;
+  color: rgb(var(--ui-ink-soft));
+  font-size: 14px;
   font-weight: 500;
-  font-variant-numeric: tabular-nums;
   transition: background-color var(--ui-duration) var(--ui-ease), color var(--ui-duration) var(--ui-ease);
 }
 
@@ -899,7 +857,7 @@ html.flat-theme [data-ui="pagination"] nav[aria-label="Pagination"] > button[ari
 html.flat-theme [data-ui="pagination"] nav[aria-label="Pagination"] > button[aria-current="page"]:hover {
   background-color: rgb(var(--ui-primary-soft));
   color: var(--ui-link);
-  font-weight: 600;
+  font-weight: 500;
   box-shadow: inset 0 0 0 1px var(--ui-choice-edge);
 }
 
@@ -912,7 +870,7 @@ html.flat-theme [data-ui="pagination"] nav[aria-label="Pagination"] > button:dis
   color: rgb(var(--ui-faint));
 }
 
-/* phones: previous / next are the reference's secondary buttons (30px, control outline, surface, 13/600) */
+/* phones: previous / next are the reference's secondary buttons (30px, control outline, surface, official 14/500) */
 html.flat-theme [data-ui="pagination"] > div:first-child > button {
   min-height: 30px;
   padding: 0 12px;
@@ -920,8 +878,8 @@ html.flat-theme [data-ui="pagination"] > div:first-child > button {
   border-radius: var(--ui-radius-md);
   background-color: rgb(var(--ui-surface));
   color: rgb(var(--ui-ink));
-  font-size: 13px;
-  font-weight: 600;
+  font-size: 14px;
+  font-weight: 500;
 }
 
 html.flat-theme [data-ui="pagination"] > div:first-child > button:disabled {
@@ -931,8 +889,8 @@ html.flat-theme [data-ui="pagination"] > div:first-child > button:disabled {
 /* ================================================================== 5 · bulk bar (visual language; placement is the page's) */
 
 /* The reference's selection tray (REF §8.12): surface, 1px structural line, 8px radius, 8 / 16 inset; the count
-   12.5px ink-soft, the selection links 12.5/600 in the accent, dots muted. It floats (popover shadow) only where
-   its owner sets --ui-bulk-bar-shadow. */
+   14/500 ink-soft and the selection links 12/500 in the accent (the template's text-sm / text-xs font-medium), dots
+   muted. It floats (popover shadow) only where its owner sets --ui-bulk-bar-shadow. */
 html.flat-theme [data-ui~="bulk-bar"] {
   border: 1px solid rgb(var(--ui-line));
   border-radius: var(--ui-radius-lg);
@@ -943,14 +901,14 @@ html.flat-theme [data-ui~="bulk-bar"] {
 
 html.flat-theme [data-ui~="bulk-bar"] > div:first-child > span[class~="text-sm"] {
   color: rgb(var(--ui-ink-soft));
-  font-size: 12.5px;
+  font-size: 14px;
   font-weight: 500;
 }
 
 html.flat-theme [data-ui~="bulk-bar"] > div:first-child > button[class~="text-xs"] {
   color: var(--ui-link);
-  font-size: 12.5px;
-  font-weight: 600;
+  font-size: 12px;
+  font-weight: 500;
 }
 
 html.flat-theme [data-ui~="bulk-bar"] > div:first-child > button[class~="text-xs"]:hover:not(:disabled) {
@@ -979,18 +937,18 @@ html.flat-theme [data-ui~="bulk-bar"] .btn:is(.btn-primary, .btn-success, .btn-w
 
 /* ================================================================== 6 · badges, status, identity */
 
-/* .badge*: the reference's pills (REF §8.8: capsule, Geist Mono uppercase, .025em, 6 / 1 inset, soft semantic
-   fills: FREE = accent-soft, ZDR = subtle, DEMO DATA = purple-soft). */
+/* .badge*: the reference's pills (REF §8.8: capsule, 6 / 1 inset, soft semantic fills: FREE = accent-soft, ZDR =
+   subtle, DEMO DATA = purple-soft) in official's .badge type (text-xs font-medium, sentence case). */
 html.flat-theme .badge {
   gap: 4px;
   padding: 1px 7px;
   border-radius: 9999px;
-  font-family: var(--ui-font-mono);
+  font-family: var(--ui-font);
   font-size: var(--ui-badge-size);
   font-weight: 500;
   line-height: var(--ui-badge-leading);
-  letter-spacing: 0.025em;
-  text-transform: uppercase;
+  letter-spacing: normal;
+  text-transform: none;
 }
 
 html.flat-theme .badge-primary {
@@ -1023,7 +981,8 @@ html.flat-theme .badge-purple {
   color: rgb(var(--ui-purple));
 }
 
-/* StatusBadge: the reference's status dot (REF §8.8: 6px dot, 12px ink-soft label, 6px apart) */
+/* StatusBadge: the reference's status dot (REF §8.8: 6px dot, 6px apart) and official's label (text-sm, the soft
+   ink) */
 html.flat-theme [data-ui="status-badge"] {
   gap: 6px;
 }
@@ -1048,18 +1007,18 @@ html.flat-theme [data-ui="status-badge"] > span:first-child[class~="bg-red-500"]
 
 html.flat-theme [data-ui="status-badge"] > span:last-child {
   color: rgb(var(--ui-ink-soft));
-  font-size: 12px;
-  line-height: 18px;
+  font-size: 14px;
+  line-height: 20px;
 }
 
 /* Identity (owner decision 2, wave 2): platforms, groups and plans keep upstream's platform colours, drawn as the
-   reference's chips (REF §8.8 provider chip: 4px radius, 1px line, Geist Mono 10px uppercase .025em, the logo in the
-   chip's colour). A chip's colour is the Tailwind hue upstream gives it (the class names in the component:
-   bg-orange-100, text-emerald-700 ...); that hue's tokens (tokens.css "identity hues": text >= 4.5:1 on the fill, the
-   surface and the row hover; a soft fill; a 1px line) are set on each hue carrier as --pf-text / --pf-soft /
-   --pf-line / --pf-sub, and the chip rules read them with a neutral fallback, so a chip without a known hue (a free
-   plan, an unknown platform) stays the reference's neutral chip. Status stays status: the privacy state, an abnormal
-   plan, a subscription's days left and the peak-rate window keep the status colours.
+   reference's chips (REF §8.8 provider chip: 4px radius, 1px line, the logo in the chip's colour) in official's type
+   (text-xs font-medium, sentence case). A chip's colour is the Tailwind hue upstream gives it (the class names in the
+   component: bg-orange-100, text-emerald-700 ...); that hue's tokens (tokens.css "identity hues": text >= 4.5:1 on
+   the fill, the surface and the row hover; a soft fill; a 1px line) are set on each hue carrier as --pf-text /
+   --pf-soft / --pf-line / --pf-sub, and the chip rules read them with a neutral fallback, so a chip without a known
+   hue (a free plan, an unknown platform) stays the reference's neutral chip. Status stays status: the privacy state,
+   an abnormal plan, a subscription's days left and the peak-rate window keep the status colours.
    Contract for page owners: an element that upstream colours by platform with Tailwind hue classes can opt in with
    data-ui~="platform-chip" (line, fill, text) or data-ui~="platform-text" (text and glyph only).
    Hooks: data-ui="platform-badge", data-ui="group-badge", data-ui="group-option" (GroupOptionItem's root, whose rate
@@ -1261,17 +1220,17 @@ html.flat-theme [data-ui="platform-badge"] > div[class~="inline-flex"]:where([da
 }
 
 /* 6.1 PlatformTypeBadge, on one line (D5): the platform | type chip, then the plan chip and the privacy chip (each its
-   own chip: plan and privacy are different kinds), then the expiry in mono. */
+   own chip: plan and privacy are different kinds), then the expiry (the template's 10px, faint). */
 html.flat-theme [data-ui="platform-badge"] {
   flex-direction: row;
   flex-wrap: nowrap;
   align-items: center;
   gap: 4px;
-  font-family: var(--ui-font-mono);
-  font-size: 10px;
+  font-family: var(--ui-font);
+  font-size: 12px;
   font-weight: 500;
   line-height: 16px;
-  letter-spacing: 0.025em;
+  letter-spacing: normal;
   white-space: nowrap;
 }
 
@@ -1287,7 +1246,7 @@ html.flat-theme [data-ui="platform-badge"] > div[class~="inline-flex"] > span {
   padding: 1px 6px;
   background-color: transparent;
   color: rgb(var(--pf-text, var(--ui-ink-soft)));
-  text-transform: uppercase;
+  text-transform: none;
   white-space: nowrap;
 }
 
@@ -1341,13 +1300,14 @@ html.flat-theme [data-ui="platform-badge"] > div[class~="inline-flex"]:nth-child
 html.flat-theme [data-ui="platform-badge"] > div:last-child:not(:first-child):not([class~="inline-flex"]) {
   padding-left: 1px;
   color: rgb(var(--ui-faint));
-  font-size: 10.5px;
-  letter-spacing: 0;
+  font-size: 10px;
+  letter-spacing: normal;
 }
 
 /* 6.2 GroupBadge (group cells, group pickers): the platform's chip (upstream gives standard and subscription groups
-   their own shade of the platform's hue), 4px radius, 12px name, the logo in the chip's colour; the multiplier a mono
-   sub-chip on a lighter patch; a subscription's days left and the peak window keep their warning / danger fills. */
+   their own shade of the platform's hue), 4px radius, 12/16 name, the logo in the chip's colour; the multiplier a
+   10/600 sub-chip (official text-[10px] font-semibold) on a lighter patch; a subscription's days left and the peak
+   window keep their warning / danger fills. */
 html.flat-theme [data-ui="group-badge"] {
   gap: 5px;
   padding: 1px 3px 1px 6px;
@@ -1357,7 +1317,7 @@ html.flat-theme [data-ui="group-badge"] {
   color: rgb(var(--pf-text, var(--ui-ink-soft)));
   font-size: 12px;
   font-weight: 500;
-  line-height: 18px;
+  line-height: 16px;
 }
 
 html.flat-theme [data-ui="group-badge"] > svg {
@@ -1370,9 +1330,9 @@ html.flat-theme [data-ui="group-badge"] > span:not(:first-of-type) {
   border-radius: 3px;
   background-color: rgb(var(--pf-sub, var(--ui-subtle)) / 0.72);
   color: rgb(var(--pf-text, var(--ui-muted)));
-  font-family: var(--ui-font-mono);
-  font-size: 10.5px;
-  font-weight: 500;
+  font-family: var(--ui-font);
+  font-size: 10px;
+  font-weight: 600;
   line-height: 16px;
 }
 
@@ -1396,15 +1356,14 @@ html.flat-theme [data-ui="group-badge"] > span:not(:first-of-type):is([class~="b
   color: rgb(var(--ui-warning));
 }
 
-/* 6.3 Group pickers: GroupOptionItem's rate pill is the platform's chip in the reference's pill form (Geist Mono, 1px
+/* 6.3 Group pickers: GroupOptionItem's rate pill is the platform's chip in the reference's pill form (12/16, 1px
    line); its peak-window pill stays the warning chip. GroupSelector rows hold GroupBadge (6.2). */
 html.flat-theme div[data-ui~="group-option"]:is(div) > div:last-child > div > span[class~="rounded-full"] {
   padding: 1px 8px;
   border: 1px solid rgb(var(--pf-line, var(--ui-line)));
   background-color: rgb(var(--pf-soft, var(--ui-subtle)));
   color: rgb(var(--pf-text, var(--ui-ink-soft)));
-  font-family: var(--ui-font-mono);
-  font-size: 10.5px;
+  font-size: 12px;
   font-weight: 500;
   line-height: 16px;
 }
@@ -1423,25 +1382,23 @@ html.flat-theme [data-ui~="platform-chip"] {
   border-radius: var(--ui-radius-sm);
   background-color: rgb(var(--pf-soft, var(--ui-surface)));
   color: rgb(var(--pf-text, var(--ui-ink-soft)));
-  font: 500 10px/16px var(--ui-font-mono);
-  letter-spacing: 0.025em;
-  text-transform: uppercase;
+  font: 500 12px/16px var(--ui-font);
+  letter-spacing: normal;
+  text-transform: none;
 }
 
 html.flat-theme [data-ui~="platform-text"] {
   color: rgb(var(--pf-text, var(--ui-ink-soft)));
 }
 
-/* a category (request type, billing mode, protocol, role ...) is not identity and not status (decision 2): the
-   reference's neutral chip, whatever hue upstream gave it */
+/* a category (request type, billing mode, protocol, role ...) keeps the tag colours and type its template gives it,
+   as official (tailwind.config.js folds the hues into AA-safe families), in the reference's chip shape; the
+   transparent 1px edge keeps the box of the line it had */
 html.flat-theme [data-ui~="category-chip"] {
   padding: 1px 6px;
-  border: 1px solid rgb(var(--ui-line));
+  border: 1px solid transparent;
   border-radius: var(--ui-radius-sm);
-  background-color: rgb(var(--ui-subtle));
-  color: rgb(var(--ui-ink-soft));
-  font: 500 var(--ui-chip-size) / 16px var(--ui-font-mono);
-  letter-spacing: 0.01em;
+  letter-spacing: normal;
 }
 
 /* 6.5 Model marks (ModelIcon): the vendors' brand colours (each path's fill attribute), as upstream. A brand colour
@@ -1480,7 +1437,6 @@ html.flat-theme .model-icon-fallback {
   border-radius: var(--ui-radius-sm);
   background: rgb(var(--ui-subtle));
   color: rgb(var(--ui-ink-soft));
-  font-family: var(--ui-font-mono);
   font-weight: 600;
   text-transform: uppercase;
 }
@@ -1489,10 +1445,10 @@ html.flat-theme .model-icon-fallback {
 
 /* Upstream's KPI tiles (admin and user dashboards, usage records, orders: a .card.p-4 in a grid whose first content
    is a coloured icon tile) take the reference's StatTile (REF §8.13): 1px structural line, 6px radius, surface,
-   8 / 12 inset, the mono label, the value 15/500 tabular ink (palette C), the detail 11px muted, 76px; no icon
-   tile; 10px apart. The grids and tiles are marked (static data-ui="kpi-grid" / "kpi-tile"; "kpi-value" on the RPM
-   value row); the repeated [data-ui] / [class] and :is(div) keep the weight of the pre-pass selectors, which found
-   them by their icon tile. */
+   8 / 12 inset, at least 76px, with official's text (the label 12/16/500 meta grey, the value 20/28/700 ink or its
+   template hue, the detail 12/16 in its template colours); no icon tile; 10px apart. The grids and tiles are marked (static
+   data-ui="kpi-grid" / "kpi-tile"; "kpi-value" on the RPM value row); the repeated [data-ui] / [class] and :is(div)
+   keep the weight of the pre-pass selectors, which found them by their icon tile. */
 html.flat-theme [class~="grid"][data-ui~="kpi-grid"][data-ui][data-ui][data-ui][data-ui][data-ui][data-ui]:is(div) {
   gap: 10px;
 }
@@ -1536,81 +1492,45 @@ html.flat-theme [class~="grid"] > [class~="card"][class~="p-4"] div[class~="roun
 }
 
 html.flat-theme [class~="grid"] > [class~="card"][class~="p-4"] div[class~="rounded-lg"][class~="p-2"]:first-child + div > p:first-child {
-  color: rgb(var(--ui-label));
-  font-family: var(--ui-font-mono);
+  color: rgb(var(--ui-muted));
   font-size: var(--ui-label-size);
-  font-weight: 400;
+  font-weight: 500;
   line-height: var(--ui-label-leading);
   letter-spacing: var(--ui-label-tracking);
-  text-transform: uppercase;
+  text-transform: none;
 }
 
 html.flat-theme [class~="grid"] > [class~="card"][class~="p-4"] div[class~="rounded-lg"][class~="p-2"]:first-child + div p[class~="text-xl"] {
+  font-size: 20px;
+  font-weight: 700;
+  line-height: 28px;
+}
+
+/* the value's colour is the tile's accent: the ink (official text-gray-900 / dark:text-white; #f3f4f6 in dark, the
+   console's ink), the danger colour in the danger tile (below). A value upstream draws in a hue keeps its template
+   colour, as on official: the usage cost (text-green-600), the new-users count and the balance (text-emerald-600). */
+html.flat-theme [class~="grid"] > [class~="card"][class~="p-4"][data-ui~="kpi-tile"] p[class~="text-xl"]:not([class~="text-green-600"], [class~="text-emerald-600"]) {
   color: rgb(var(--ui-kpi-accent));
-  font-size: 15px;
-  font-weight: 500;
-  line-height: 22.5px;
-  font-variant-numeric: tabular-nums;
 }
 
-/* a value upstream colours for decoration (the new-users count, the balance, the usage cost) is ink (D4) */
-html.flat-theme [class~="grid"] > [class~="card"][class~="p-4"] div[class~="rounded-lg"][class~="p-2"]:first-child + div p[class~="text-xl"] > span:first-child:not([class~="text-sm"]) {
-  color: inherit;
-}
-
-html.flat-theme [class~="grid"] > [class~="card"][class~="p-4"] div[class~="rounded-lg"][class~="p-2"]:first-child + div p[class~="text-xl"] > span[class~="text-sm"] {
-  color: rgb(var(--ui-muted));
-  font-size: 12px;
-  font-weight: 400;
-}
-
-/* the detail line(s): 11px muted; the cost triples keep their order, weight marks the actual cost (the titles name
-   each figure); status words keep their status colour */
+/* the detail line(s): official 12/16 in their template colours (the meta grey, the green actual cost, the orange
+   account cost, status words) */
 html.flat-theme [class~="grid"] > [class~="card"][class~="p-4"] div[class~="rounded-lg"][class~="p-2"]:first-child + div > :is(p, div):not(:first-child):not(div[data-ui~="kpi-value"]):not([class~="text-xl"]) {
-  color: rgb(var(--ui-muted));
-  font-size: 11px;
-  line-height: 16.5px;
+  font-size: 12px;
+  line-height: 16px;
 }
 
-html.flat-theme [class~="grid"] > [class~="card"][class~="p-4"] div[class~="rounded-lg"][class~="p-2"]:first-child + div > p:not(:first-child):not([class~="text-xl"]) :is([class~="text-green-600"], [class~="text-orange-500"], [class~="text-gray-400"], [class~="text-purple-600"]) {
-  color: rgb(var(--ui-muted));
-}
-
-html.flat-theme [class~="grid"] > [class~="card"][class~="p-4"] div[class~="rounded-lg"][class~="p-2"]:first-child + div > p:not(:first-child):not([class~="text-xl"]) > [class~="text-green-600"][title]:first-child {
-  color: rgb(var(--ui-ink-soft));
-  font-weight: 500;
-}
-
-html.flat-theme [class~="grid"] > [class~="card"][class~="p-4"] div[class~="rounded-lg"][class~="p-2"]:first-child + div > p[class~="text-green-600"]:not(:first-child):not([class~="text-xl"]) {
-  color: rgb(var(--ui-success));
-}
-
-html.flat-theme [class~="grid"] > [class~="card"][class~="p-4"] div[class~="rounded-lg"][class~="p-2"]:first-child + div > p:not(:first-child) > span[class~="text-green-600"]:not([title]) {
-  color: rgb(var(--ui-success));
-}
-
-html.flat-theme [class~="grid"] > [class~="card"][class~="p-4"] div[class~="rounded-lg"][class~="p-2"]:first-child + div > p:not(:first-child) > span[class~="text-red-500"] {
-  color: rgb(var(--ui-danger));
-}
-
-/* the performance tile's RPM / TPM lines: value 15/600 then the unit, TPM as the detail */
+/* the performance tile's RPM / TPM lines: the value, then its unit (the template's classes: text-xs units, TPM
+   text-sm font-semibold in its hue) */
 html.flat-theme [class~="grid"] > [class~="card"][class~="p-4"] div[class~="rounded-lg"][class~="p-2"]:first-child + div > div[class~="items-baseline"] {
   gap: 4px;
 }
 
 html.flat-theme [class~="grid"] > [class~="card"][class~="p-4"] div[class~="rounded-lg"][class~="p-2"]:first-child + div > div[class~="items-baseline"] > span {
-  color: rgb(var(--ui-muted));
-  font-family: var(--ui-font-mono);
-  font-size: 10px;
   line-height: 16px;
-  letter-spacing: 0.025em;
 }
 
 html.flat-theme [class~="grid"] > [class~="card"][class~="p-4"] div[class~="rounded-lg"][class~="p-2"]:first-child + div > div[class~="items-baseline"] > p[class~="text-sm"] {
-  color: rgb(var(--ui-ink-soft));
-  font-size: 11px;
-  font-weight: 500;
-  line-height: 16.5px;
   font-variant-numeric: tabular-nums;
 }
 
@@ -1618,7 +1538,8 @@ html.flat-theme [class~="grid"] > [class~="card"][class~="p-4"] div[class~="roun
    danger border and soft fill, the value in the danger colour, the label muted. The KPI tile tests its own detail
    line (subject-position :has(), child arguments for the two tile shapes: icon tile + text column directly in the
    card, or inside its first row) and hands the colours to its own rules: --ui-kpi-accent to the value, --ui-label to
-   the label (the only reader of --ui-label in a tile). Same weight as the pre-pass rule (0,9,5). */
+   any label in the tile that reads the label grey (the KPI label reads the meta grey, the same value). Same weight
+   as the pre-pass rule (0,9,5). */
 html.flat-theme [class~="grid"] > [class~="card"][class~="p-4"]:where([data-ui~="kpi-tile"]):has(> * > div[class~="rounded-lg"][class~="p-2"]:first-child + div > p:not(:first-child) > span[class~="text-red-500"], > div[class~="rounded-lg"][class~="p-2"]:first-child + div > p:not(:first-child) > span[class~="text-red-500"]) {
   --ui-kpi-accent: var(--ui-danger);
   --ui-label: var(--ui-muted);
@@ -1628,7 +1549,8 @@ html.flat-theme [class~="grid"] > [class~="card"][class~="p-4"]:where([data-ui~=
 
 /* Quick actions (admin and user dashboards, D4): upstream tints each tile and its hover by hue; they take the
    reference's option card (REF §8.11 dialog option card: 8px radius, 1px structural line, the subtle fill at 60 %,
-   hover = control outline; a 28px neutral icon square with a 1px line; title 13/600 ink, description 12.5 muted).
+   hover = control outline; a 28px neutral icon square with a 1px line); official's text: title 14/20/500 ink,
+   description 12/16 muted.
    The buttons are data-ui="quick-action" (they were found by their icon square). */
 html.flat-theme button[class~="group"][class~="flex"][class~="items-center"][class~="bg-gray-50"]:is([class~="p-3"], [class~="p-4"])[data-ui~="quick-action"][data-ui][data-ui] {
   gap: 12px;
@@ -1662,15 +1584,15 @@ html.flat-theme button[class~="group"][class~="flex"][class~="items-center"][cla
 
 html.flat-theme button[class~="group"][class~="flex"][class~="items-center"][class~="bg-gray-50"]:is([class~="p-3"], [class~="p-4"]) > :nth-child(2) > :first-child {
   color: rgb(var(--ui-ink));
-  font-size: 13px;
-  font-weight: 600;
-  line-height: 19.5px;
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 20px;
 }
 
 html.flat-theme button[class~="group"][class~="flex"][class~="items-center"][class~="bg-gray-50"]:is([class~="p-3"], [class~="p-4"]) > :nth-child(2) > :nth-child(2) {
   color: rgb(var(--ui-muted));
-  font-size: 12.5px;
-  line-height: 1.5;
+  font-size: 12px;
+  line-height: 16px;
 }
 
 html.flat-theme button[class~="group"][class~="flex"][class~="items-center"][class~="bg-gray-50"]:is([class~="p-3"], [class~="p-4"]) > svg:last-child {
@@ -1700,25 +1622,25 @@ html.flat-theme .stat-card > .stat-icon {
 }
 
 html.flat-theme .stat-label {
-  color: rgb(var(--ui-label));
-  font-family: var(--ui-font-mono);
-  font-size: var(--ui-label-size);
-  line-height: var(--ui-label-leading);
-  letter-spacing: var(--ui-label-tracking);
-  text-transform: uppercase;
+  color: rgb(var(--ui-muted));
+  font-size: 14px;
+  line-height: 20px;
+  letter-spacing: normal;
+  text-transform: none;
 }
 
 html.flat-theme .stat-value {
   color: rgb(var(--ui-ink));
-  font-size: 15px;
-  font-weight: 600;
-  line-height: 22.5px;
+  font-size: 24px;
+  font-weight: 700;
+  line-height: 32px;
   font-variant-numeric: tabular-nums;
 }
 
 html.flat-theme .stat-trend {
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 500;
+  line-height: 16px;
 }
 
 html.flat-theme .stat-trend-up {
@@ -1745,7 +1667,8 @@ html.flat-theme .progress-bar {
 /* ================================================================== 9 · empty and loading states */
 
 /* EmptyState: the reference's empty panel (REF §8.7: dashed control outline, 8px radius, title 14/500 ink-soft,
-   description 13px muted at 1.625); the icon tile is the reference's 28px neutral square (dialog option cards). */
+   description 14/20 muted, official's text-sm); the icon tile is the reference's 28px neutral square (dialog option
+   cards). */
 html.flat-theme .empty-state {
   gap: 0;
   padding: 32px 16px;
@@ -1779,8 +1702,8 @@ html.flat-theme .empty-state-title {
 
 html.flat-theme .empty-state-description {
   color: rgb(var(--ui-muted));
-  font-size: 13px;
-  line-height: 1.625;
+  font-size: 14px;
+  line-height: 20px;
 }
 
 html.flat-theme .empty-state-description:empty {
@@ -1822,24 +1745,21 @@ html.flat-theme :is(.skeleton, [data-ui="skeleton"], [class~="animate-pulse"][cl
 
 /* ================================================================== 10 · chart cards */
 
-/* Cards holding a chart (REF §8.14 Spend over time: 14px inset, the title as a mono label). A chart card is the
-   card that owns a canvas or the fixed-height chart area it keeps while loading or empty (h-48 / h-64), so the title
-   does not change with the data; the component marks it data-ui="chart-card" (the dist / trend chart components, the
-   two account stats modals, the admin dashboard's usage trend card, the payment revenue card, the user dashboard's
-   model card). :is(div) twice keeps the pre-pass weight. */
+/* Cards holding a chart (REF §8.14 Spend over time: 14px inset; the title official's 14/20/600 ink). A chart card is
+   the card that owns a canvas or the fixed-height chart area it keeps while loading or empty (h-48 / h-64), so the
+   title does not change with the data; the component marks it data-ui="chart-card" (the dist / trend chart
+   components, the two account stats modals, the admin dashboard's usage trend card, the payment revenue card, the
+   user dashboard's model card). :is(div) twice keeps the pre-pass weight. */
 html.flat-theme [class~="card"][class~="p-4"][data-ui~="chart-card"]:is(div):is(div) {
   padding: 14px;
 }
 
 html.flat-theme [class~="card"][class~="p-4"][data-ui~="chart-card"]:is(div):is(div) > h3[class~="text-sm"][class~="font-semibold"],
 html.flat-theme [class~="card"][class~="p-4"][data-ui~="chart-card"]:is(div):is(div) > div:first-child > h3[class~="text-sm"][class~="font-semibold"] {
-  color: rgb(var(--ui-label));
-  font-family: var(--ui-font-mono);
-  font-size: var(--ui-label-size);
-  font-weight: 400;
-  line-height: var(--ui-label-leading);
-  letter-spacing: var(--ui-label-tracking);
-  text-transform: uppercase;
+  color: rgb(var(--ui-ink));
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 20px;
 }
 
 /* BEGIN S callouts */
@@ -1869,8 +1789,8 @@ html.flat-theme :where(div:is([class~="bg-primary-50"], [class~="bg-primary-50/5
   border-radius: var(--ui-radius-md);
 }
 
-/* a form inside a callout (the scheduled test's new plan): the mono field labels take the muted grey, which holds
-   4.5:1 on the subtle ground (the label grey #737373 reads 4.35 there); dark keeps its label grey (5.7) */
+/* a form inside a callout (the scheduled test's new plan): its labels read the meta grey, which holds 4.5:1 on the
+   subtle ground (the label grey is the same value today; this keeps it so if the label grey ever changes) */
 html.flat-theme:not(.dark) :where(div:is([class~="bg-primary-50"], [class~="bg-primary-50/50"], [class~="bg-primary-50/60"], [class~="bg-primary-50/70"], [class~="bg-primary-50/80"], [class~="bg-primary-50/90"], [class~="bg-blue-50"], [class~="bg-blue-50/50"], [class~="bg-blue-50/60"], [class~="bg-blue-50/70"], [class~="bg-blue-50/80"], [class~="bg-blue-50/90"], [class~="bg-sky-50"], [class~="bg-sky-50/50"], [class~="bg-sky-50/60"], [class~="bg-sky-50/70"], [class~="bg-sky-50/80"], [class~="bg-sky-50/90"], [class~="bg-purple-50"], [class~="bg-purple-50/50"], [class~="bg-purple-50/60"], [class~="bg-purple-50/70"], [class~="bg-purple-50/80"], [class~="bg-purple-50/90"], [class~="bg-indigo-50"], [class~="bg-indigo-50/50"], [class~="bg-indigo-50/60"], [class~="bg-indigo-50/70"], [class~="bg-indigo-50/80"], [class~="bg-indigo-50/90"], [class~="bg-teal-50"], [class~="bg-teal-50/50"], [class~="bg-teal-50/60"], [class~="bg-teal-50/70"], [class~="bg-teal-50/80"], [class~="bg-teal-50/90"], [class~="bg-violet-50"], [class~="bg-violet-50/50"], [class~="bg-violet-50/60"], [class~="bg-violet-50/70"], [class~="bg-violet-50/80"], [class~="bg-violet-50/90"], [class~="bg-cyan-50"], [class~="bg-cyan-50/50"], [class~="bg-cyan-50/60"], [class~="bg-cyan-50/70"], [class~="bg-cyan-50/80"], [class~="bg-cyan-50/90"]):is([class*="rounded"]:not([class~="rounded-full"]), [class~="border"], [class~="card"]):is([class~="p-2"], [class~="p-3"], [class~="p-4"], [class~="p-5"], [class~="p-6"], [class~="py-2"], [class~="py-2.5"], [class~="py-3"], [class~="py-4"], [class~="card"]):not([data-ui], [class*="ring-"], [class~="border-primary-300"], [class~="border-primary-400"], [class~="border-primary-500"], [class~="border-primary-600"], [class~="border-primary-700"], [class~="border-blue-300"], [class~="border-blue-400"], [class~="border-blue-500"], [class~="border-blue-600"], [class~="border-blue-700"], [class~="border-sky-300"], [class~="border-sky-400"], [class~="border-sky-500"], [class~="border-sky-600"], [class~="border-sky-700"], [class~="border-purple-300"], [class~="border-purple-400"], [class~="border-purple-500"], [class~="border-purple-600"], [class~="border-purple-700"], [class~="border-indigo-300"], [class~="border-indigo-400"], [class~="border-indigo-500"], [class~="border-indigo-600"], [class~="border-indigo-700"], [class~="border-teal-300"], [class~="border-teal-400"], [class~="border-teal-500"], [class~="border-teal-600"], [class~="border-teal-700"], [class~="border-violet-300"], [class~="border-violet-400"], [class~="border-violet-500"], [class~="border-violet-600"], [class~="border-violet-700"], [class~="border-cyan-300"], [class~="border-cyan-400"], [class~="border-cyan-500"], [class~="border-cyan-600"], [class~="border-cyan-700"]):not(:is([data-ui="home"], [data-ui="key-usage"], [data-ui="legal"], [data-ui="not-found"], [data-ui="auth-layout"], [data-testid="compact-home"], #overlay-root > div[class~="z-[140]"]) *))[class][class] {
   --ui-label: var(--ui-muted);
 }
@@ -1902,127 +1822,3 @@ html.flat-theme :where(div:is([class~="bg-primary-50"], [class~="bg-primary-50/5
   color: rgb(var(--ui-muted));
 }
 /* END S callouts */
-
-/* ================================================================== 12 · text roles in the record tables
-
-   Owner decision 2026-10-01, text option A "two tones" (artifacts/tmp/ui-polish/text/PREVIEW.md, where it was reviewed
-   and verified against a role table): in the cells and headers of 使用记录 (管理 and 用户, records and error requests),
-   运维监控's error dialog, 账号管理, API 密钥, 用户管理 and the distribution tables, and in the accounts toolbar, the
-   pagination, the records tabs and the IP-region bar, a value is the ink and everything else one grey (tokens.css, data
-   text roles); before, a row held up to eight greys a step apart. Status, platform / identity, accent and token-glyph
-   colours stay; every other table keeps its colours.
-     primary     names, e-mails, model, key / account names, token figures, the billed cost, balances, amounts,
-                 priority, the error message; toolbar controls (buttons, selects, filter pills, page size)
-     labelled    a value right after its inline label (管理分类 / 请求路由 / 最近 / 创建 / 过期 / 上游声明倍率 values, the
-                 endpoint path after 入站 / 上游)
-     secondary   unlabelled metadata: times, IPs, User-Agent, ids (#1), the model chain (↳), chips' text, status
-                 words, platform, error category, reasoning effort, the masked key, an account's e-mail, page numbers
-     reference   the account's billed cost (A $), the distribution tables' account cost and standard price
-     label       headers, inline labels, 入站 / 上游, 首字 / 总耗时, units, placeholders (-), counts, the pagination
-                 sentence, idle tabs, empty-value prompts, row-action icons
-   Inside those boxes the theme's text tokens and upstream's grey text classes resolve to the roles (custom properties
-   only, declared on each cell so a selected row can lift the tones it holds); an element whose class names another
-   role is named below or in its page file (accounts.css, dashboard-usage.css, user.css,
-   users-groups-proxies-keys.css), and the rules that paint a figure, an e-mail, a time or a page number read the role
-   directly (sections 3 and 4, the page files, ops-channels.css). Static hooks only (data-table, data-column, data-line, data-ui, upstream's static classes); one + joins two
-   static DataTable hooks (a labelled value). An empty-state row (colspan) is left alone. */
-
-/* 12.1 the scope: each cell of the tables above, and the toolbars */
-html.flat-theme :where(:where(:is([data-ui~="usage-records"], [data-ui~="ops-error-list"], [data-ui="user-usage"]) .table-wrapper, .table-wrapper:is([data-table="accounts"], [data-table="keys"], [data-table="users"]), [data-ui="dist-table"]) > table > tbody > tr > td:not([colspan])),
-html.flat-theme :where([data-ui="accounts-toolbar"], [data-ui="pagination"], [data-ui~="usage-records"] > div:first-child, [data-ui="user-usage"] > div[class~="border-b"], [data-ui~="records-card"] > div[class~="justify-end"][class~="border-b"]) {
-  --ui-ink: var(--ui-data-primary);
-  --ui-ink-soft: var(--ui-data-secondary);
-  --ui-muted: var(--ui-data-label);
-  --ui-faint: var(--ui-data-label);
-  --ui-label: var(--ui-data-label);
-  --ui-table-head: var(--ui-data-label);
-  --ui-badge-muted: var(--ui-data-secondary);
-}
-
-/* a cell's own text (TablePageLayout's scoped td colour, text-gray-700 / dark:text-gray-300: the users id, the accounts
-   usage notes) is a secondary value */
-html.flat-theme :where(:where(:is([data-ui~="usage-records"], [data-ui~="ops-error-list"], [data-ui="user-usage"]) .table-wrapper, .table-wrapper:is([data-table="accounts"], [data-table="keys"], [data-table="users"]), [data-ui="dist-table"]) > table > tbody > tr > td:not([colspan])) {
-  --theme-text-gray-700: var(--ui-data-secondary);
-}
-
-html.flat-theme.dark :where(:where(:is([data-ui~="usage-records"], [data-ui~="ops-error-list"], [data-ui="user-usage"]) .table-wrapper, .table-wrapper:is([data-table="accounts"], [data-table="keys"], [data-table="users"]), [data-ui="dist-table"]) > table > tbody > tr > td:not([colspan])) {
-  --theme-text-gray-300: var(--ui-data-secondary);
-}
-
-/* headers: the label; a sortable label under the pointer takes the primary tone (it was the in-between grey) */
-html.flat-theme :where(:where(:is([data-ui~="usage-records"], [data-ui~="ops-error-list"], [data-ui="user-usage"]) .table-wrapper, .table-wrapper:is([data-table="accounts"], [data-table="keys"], [data-table="users"]), [data-ui="dist-table"]) > table > thead > tr > th) {
-  --ui-ink: var(--ui-data-primary);
-  --ui-ink-soft: var(--ui-data-primary);
-  --ui-muted: var(--ui-data-label);
-  --ui-faint: var(--ui-data-label);
-  --ui-label: var(--ui-data-label);
-  --ui-table-head: var(--ui-data-label);
-}
-
-/* 12.2 upstream's grey text classes -> roles: the light class names the template's intent (900 primary, 500-800
-   secondary, 400 label); dark mode reads the same role whatever dark: shade the template pairs with it */
-html.flat-theme :where(:where(:is([data-ui~="usage-records"], [data-ui~="ops-error-list"], [data-ui="user-usage"]) .table-wrapper, .table-wrapper:is([data-table="accounts"], [data-table="keys"], [data-table="users"]), [data-ui="dist-table"]) > table > tbody > tr > td:not([colspan]), [data-ui="accounts-toolbar"], [data-ui="pagination"], [data-ui~="usage-records"] > div:first-child, [data-ui="user-usage"] > div[class~="border-b"], [data-ui~="records-card"] > div[class~="justify-end"][class~="border-b"]) :not(td, th):is([class~="text-gray-900"], [class~="text-gray-950"]) {
-  --theme-text-gray-100: var(--ui-data-primary); --theme-text-gray-200: var(--ui-data-primary); --theme-text-gray-300: var(--ui-data-primary);
-  --theme-text-gray-400: var(--ui-data-primary); --theme-text-gray-500: var(--ui-data-primary); --theme-text-gray-600: var(--ui-data-primary);
-  --theme-text-gray-700: var(--ui-data-primary); --theme-text-gray-800: var(--ui-data-primary); --theme-text-gray-900: var(--ui-data-primary);
-  --theme-text-gray-950: var(--ui-data-primary); --theme-text-dark-100: var(--ui-data-primary); --theme-text-dark-200: var(--ui-data-primary);
-  --theme-text-dark-300: var(--ui-data-primary); --theme-text-dark-400: var(--ui-data-primary); --theme-text-dark-500: var(--ui-data-primary);
-  --theme-text-dark-600: var(--ui-data-primary); --ui-ink-soft: var(--ui-data-primary);
-}
-
-html.flat-theme :where(:where(:is([data-ui~="usage-records"], [data-ui~="ops-error-list"], [data-ui="user-usage"]) .table-wrapper, .table-wrapper:is([data-table="accounts"], [data-table="keys"], [data-table="users"]), [data-ui="dist-table"]) > table > tbody > tr > td:not([colspan]), [data-ui="accounts-toolbar"], [data-ui="pagination"], [data-ui~="usage-records"] > div:first-child, [data-ui="user-usage"] > div[class~="border-b"], [data-ui~="records-card"] > div[class~="justify-end"][class~="border-b"]) :not(td, th):is([class~="text-gray-800"], [class~="text-gray-700"], [class~="text-gray-600"], [class~="text-gray-500"], [class~="text-slate-500"], [class~="text-slate-600"]) {
-  --theme-text-gray-100: var(--ui-data-secondary); --theme-text-gray-200: var(--ui-data-secondary); --theme-text-gray-300: var(--ui-data-secondary);
-  --theme-text-gray-400: var(--ui-data-secondary); --theme-text-gray-500: var(--ui-data-secondary); --theme-text-gray-600: var(--ui-data-secondary);
-  --theme-text-gray-700: var(--ui-data-secondary); --theme-text-gray-800: var(--ui-data-secondary); --theme-text-gray-900: var(--ui-data-secondary);
-  --theme-text-gray-950: var(--ui-data-secondary); --theme-text-dark-100: var(--ui-data-secondary); --theme-text-dark-200: var(--ui-data-secondary);
-  --theme-text-dark-300: var(--ui-data-secondary); --theme-text-dark-400: var(--ui-data-secondary); --theme-text-dark-500: var(--ui-data-secondary);
-  --theme-text-dark-600: var(--ui-data-secondary); --ui-ink-soft: var(--ui-data-secondary);
-}
-
-html.flat-theme :where(:where(:is([data-ui~="usage-records"], [data-ui~="ops-error-list"], [data-ui="user-usage"]) .table-wrapper, .table-wrapper:is([data-table="accounts"], [data-table="keys"], [data-table="users"]), [data-ui="dist-table"]) > table > tbody > tr > td:not([colspan]), [data-ui="accounts-toolbar"], [data-ui="pagination"], [data-ui~="usage-records"] > div:first-child, [data-ui="user-usage"] > div[class~="border-b"], [data-ui~="records-card"] > div[class~="justify-end"][class~="border-b"]) :not(td, th):is([class~="text-gray-400"], [class~="text-slate-400"]) {
-  --theme-text-gray-100: var(--ui-data-label); --theme-text-gray-200: var(--ui-data-label); --theme-text-gray-300: var(--ui-data-label);
-  --theme-text-gray-400: var(--ui-data-label); --theme-text-gray-500: var(--ui-data-label); --theme-text-gray-600: var(--ui-data-label);
-  --theme-text-gray-700: var(--ui-data-label); --theme-text-gray-800: var(--ui-data-label); --theme-text-gray-900: var(--ui-data-label);
-  --theme-text-gray-950: var(--ui-data-label); --theme-text-dark-100: var(--ui-data-label); --theme-text-dark-200: var(--ui-data-label);
-  --theme-text-dark-300: var(--ui-data-label); --theme-text-dark-400: var(--ui-data-label); --theme-text-dark-500: var(--ui-data-label);
-  --theme-text-dark-600: var(--ui-data-label); --ui-ink-soft: var(--ui-data-label);
-}
-
-/* 12.3 elements whose role differs from their class (the tables' own ones are in the page files) */
-/* a value right after its own inline label (DataTable's stacked lines: 最近 / 创建 / 过期, a scheduling group ...) is a
-   labelled value, one step above its label; primary values and placeholders keep their roles (the one sibling
-   combinator, keyed on DataTable's static data-ui hooks) */
-html.flat-theme :where(:is([data-ui~="usage-records"], [data-ui~="ops-error-list"], [data-ui="user-usage"]) .table-wrapper, .table-wrapper:is([data-table="accounts"], [data-table="keys"], [data-table="users"]), [data-ui="dist-table"]) [data-ui="cell-line-label"] + [data-ui="cell-line-value"] :is([class~="text-gray-800"], [class~="text-gray-700"], [class~="text-gray-600"], [class~="text-gray-500"], [class~="text-slate-500"], [class~="text-slate-600"]) {
-  --theme-text-gray-100: var(--ui-data-labelled); --theme-text-gray-200: var(--ui-data-labelled); --theme-text-gray-300: var(--ui-data-labelled);
-  --theme-text-gray-400: var(--ui-data-labelled); --theme-text-gray-500: var(--ui-data-labelled); --theme-text-gray-600: var(--ui-data-labelled);
-  --theme-text-gray-700: var(--ui-data-labelled); --theme-text-gray-800: var(--ui-data-labelled); --theme-text-gray-900: var(--ui-data-labelled);
-  --theme-text-gray-950: var(--ui-data-labelled); --theme-text-dark-100: var(--ui-data-labelled); --theme-text-dark-200: var(--ui-data-labelled);
-  --theme-text-dark-300: var(--ui-data-labelled); --theme-text-dark-400: var(--ui-data-labelled); --theme-text-dark-500: var(--ui-data-labelled);
-  --theme-text-dark-600: var(--ui-data-labelled); --ui-ink-soft: var(--ui-data-labelled);
-}
-
-/* row actions are icon buttons with a caption: they keep the label tone whatever grey class they carry */
-html.flat-theme :where(:is([data-ui~="usage-records"], [data-ui~="ops-error-list"], [data-ui="user-usage"]) .table-wrapper, .table-wrapper:is([data-table="accounts"], [data-table="keys"], [data-table="users"]), [data-ui="dist-table"]) td[data-column="actions"] :is([class~="text-gray-400"], [class~="text-gray-500"], [class~="text-gray-600"], [class~="text-gray-700"]) {
-  --theme-text-gray-100: var(--ui-data-label); --theme-text-gray-200: var(--ui-data-label); --theme-text-gray-300: var(--ui-data-label);
-  --theme-text-gray-400: var(--ui-data-label); --theme-text-gray-500: var(--ui-data-label); --theme-text-gray-600: var(--ui-data-label);
-  --theme-text-gray-700: var(--ui-data-label); --theme-text-gray-800: var(--ui-data-label); --theme-text-gray-900: var(--ui-data-label);
-  --theme-text-gray-950: var(--ui-data-label); --theme-text-dark-100: var(--ui-data-label); --theme-text-dark-200: var(--ui-data-label);
-  --theme-text-dark-300: var(--ui-data-label); --theme-text-dark-400: var(--ui-data-label); --theme-text-dark-500: var(--ui-data-label);
-  --theme-text-dark-600: var(--ui-data-label); --ui-ink-soft: var(--ui-data-label);
-}
-
-/* stacked-cell line labels stay labels in a selected row too (section 1 draws them there with --ui-ink-soft) */
-html.flat-theme :where(:is([data-ui~="usage-records"], [data-ui~="ops-error-list"], [data-ui="user-usage"]) .table-wrapper, .table-wrapper:is([data-table="accounts"], [data-table="keys"], [data-table="users"]), [data-ui="dist-table"]) [data-ui="cell-line-label"] {
-  --ui-ink-soft: var(--ui-data-label);
-}
-
-/* 12.4 a selected row (dark): on the selected fill (#39433f, #404946 under the pointer) the grey #a3a3ac is 4.10:1 /
-   3.71, so the row lifts its secondary, reference and label tones to --ui-data-picked (#b8b8c0, 5.20 / 4.72), as
-   section 1 lifts upstream's greys there. DataTable's own selection is a class on the row (below); a page's own
-   select column is the checked box section 1's row rule already tests, and that rule sets the three roles on the row,
-   whose cells inherit them (no style query, no further relational selector, the same in Firefox). */
-html.flat-theme.dark :where(:is([data-ui~="usage-records"], [data-ui~="ops-error-list"], [data-ui="user-usage"]) .table-wrapper, .table-wrapper:is([data-table="accounts"], [data-table="keys"], [data-table="users"])) > table > tbody.table-body > tr[class~="bg-primary-50/40"] > td {
-  --ui-data-secondary: var(--ui-data-picked);
-  --ui-data-reference: var(--ui-data-picked);
-  --ui-data-label: var(--ui-data-picked);
-}
