@@ -1,10 +1,12 @@
 package service
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"io"
+	"log/slog"
 	"net/http"
 	"strings"
 	"sync"
@@ -365,4 +367,24 @@ func TestClaudeResetRedeemNeverEchoesGrantIDs(t *testing.T) {
 	require.NotContains(t, string(raw), "launch")
 	require.Empty(t, out.Reason)
 	require.Equal(t, []string{"five_hour", "seven_day_overage_included"}, out.Cleared)
+}
+
+func TestClaudeResetRedeemLogsDroppedUpstreamDetail(t *testing.T) {
+	var logs bytes.Buffer
+	previousLogger := slog.Default()
+	slog.SetDefault(slog.New(slog.NewTextHandler(&logs, nil)))
+	defer slog.SetDefault(previousLogger)
+
+	f := &redeemFake{claim: `{"type":"error","error":{"type":"overloaded_error"}}`, claimHTTP: http.StatusServiceUnavailable}
+	s, _, _ := newRedeemService(t, f)
+	out, err := s.Redeem(context.Background(), 7, "op-1")
+	require.NoError(t, err)
+	// The response contract is unchanged; the dropped detail reaches the log.
+	require.Equal(t, ClaudeResetOutcomeUnknown, out.Outcome)
+	require.Equal(t, "claim_unconfirmed", out.Reason)
+	logged := logs.String()
+	require.Contains(t, logged, "claude_reset_claim_upstream")
+	require.Contains(t, logged, "account_id=7")
+	require.Contains(t, logged, "status=503")
+	require.Contains(t, logged, "overloaded_error")
 }

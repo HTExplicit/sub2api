@@ -148,9 +148,17 @@
       <!--
         One stable instance for every usage state, so a reset-credit query started
         while usage is still loading survives the usage response. The local query
-        button shares its row once usage data exists.
+        button shares its row once usage data exists. The irreversible reset follows
+        canInteract like OpenAIQuotaResetCell: table and card cells keep only the
+        count, so `redeemed` fires only in the details drawer, which loads its own
+        usage instead of the table's batch.
       -->
-      <ClaudeResetCreditsCell :account="account" class="mt-1" @redeemed="loadActiveUsage">
+      <ClaudeResetCreditsCell
+        :account="account"
+        :read-only="!canInteract"
+        class="mt-1"
+        @redeemed="loadActiveUsage"
+      >
         <template v-if="usageInfo" #pre-actions>
           <span
             v-if="usageInfo.source === 'passive'"

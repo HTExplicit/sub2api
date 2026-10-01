@@ -719,6 +719,7 @@ describe('UseKeyModal', () => {
     expect(models['gpt-6.1-sol'].variants).not.toHaveProperty('none')
     expect(models['gpt-6-sol'].variants).toHaveProperty('none')
     expect(models['gpt-6-luna'].limit).toBeUndefined()
+    expect(models['gpt-6.1-sol'].limit).toBeUndefined()
     expect(models['gpt-6']).toEqual({
       name: 'GPT-6 (Astra)',
       options: { store: false },

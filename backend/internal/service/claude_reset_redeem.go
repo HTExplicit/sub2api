@@ -10,6 +10,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"strings"
 	"time"
@@ -204,7 +205,7 @@ func (s *ClaudeResetCreditService) redeemOnce(ctx context.Context, id int64, ope
 	if err = s.persistFence(ctx, fence.ID, marker); err != nil {
 		return nil, err
 	}
-	outcome := s.claim(ctx, token, proxy, org, grant.ID, operation)
+	outcome := s.claim(ctx, id, token, proxy, org, grant.ID, operation)
 	marker.Outcome, marker.Reason = outcome.Outcome, outcome.Reason
 	persistCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 3*time.Second)
 	persistErr := s.persistFence(persistCtx, fence.ID, marker)
@@ -278,8 +279,10 @@ func (s *ClaudeResetCreditService) organization(ctx context.Context, token, prox
 }
 
 // claim sends the single irreversible request. Anything but a well-formed, known
-// result is reported as unknown so the fence blocks a blind retry.
-func (s *ClaudeResetCreditService) claim(ctx context.Context, token, proxy, org, grantID, operation string) *ClaudeResetOutcome {
+// result is reported as unknown so the fence blocks a blind retry. The response
+// carries only known codes; whatever it drops (transport error, HTTP status, raw
+// body, unknown result or reason) is logged for administrators instead.
+func (s *ClaudeResetCreditService) claim(ctx context.Context, accountID int64, token, proxy, org, grantID, operation string) *ClaudeResetOutcome {
 	unknown := &ClaudeResetOutcome{Outcome: ClaudeResetOutcomeUnknown, Reason: "claim_unconfirmed"}
 	// Deterministic per confirmation (64 hex chars, matches ^[A-Za-z0-9_-]{1,64}$).
 	body, err := json.Marshal(map[string]string{"program": "cedar_ember", "grant_id": grantID, "request_id": operation})
@@ -293,13 +296,17 @@ func (s *ClaudeResetCreditService) claim(ctx context.Context, token, proxy, org,
 	s.headers(ctx, req, token)
 	resp, err := s.do(req, proxy)
 	if err != nil {
+		logClaudeResetClaim(accountID, 0, "request_failed", err.Error())
 		return unknown
 	}
 	defer func() { _ = resp.Body.Close() }()
+	raw, readErr := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
 	if resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden {
+		logClaudeResetClaim(accountID, resp.StatusCode, "authorization_rejected", string(raw))
 		return &ClaudeResetOutcome{Outcome: ClaudeResetOutcomeIneligible, Reason: "authorization_rejected"}
 	}
 	if resp.StatusCode != http.StatusOK {
+		logClaudeResetClaim(accountID, resp.StatusCode, "unexpected_status", string(raw))
 		return unknown
 	}
 	var result struct {
@@ -308,7 +315,8 @@ func (s *ClaudeResetCreditService) claim(ctx context.Context, token, proxy, org,
 		Cleared       []string   `json:"cleared"`
 		CooldownUntil *time.Time `json:"cooldown_until"`
 	}
-	if json.NewDecoder(io.LimitReader(resp.Body, 1<<20)).Decode(&result) != nil {
+	if readErr != nil || json.NewDecoder(bytes.NewReader(raw)).Decode(&result) != nil {
+		logClaudeResetClaim(accountID, resp.StatusCode, "invalid_body", string(raw))
 		return unknown
 	}
 	reason := ""
@@ -316,10 +324,14 @@ func (s *ClaudeResetCreditService) claim(ctx context.Context, token, proxy, org,
 		reason = result.Reason
 	}
 	if reason == "stamp_indeterminate" || reason == "reset_unconfirmed" {
+		logClaudeResetClaim(accountID, resp.StatusCode, reason, string(raw))
 		return unknown
 	}
 	switch result.Result {
 	case ClaudeResetOutcomeReset, ClaudeResetOutcomeAlreadyUsed, ClaudeResetOutcomeNotLimited, ClaudeResetOutcomeCooldown, ClaudeResetOutcomeIneligible:
+		if reason == "" && result.Reason != "" {
+			logClaudeResetClaim(accountID, resp.StatusCode, "unrecognized_reason", string(raw))
+		}
 		out := &ClaudeResetOutcome{Outcome: result.Result, Reason: reason, CooldownUntil: result.CooldownUntil}
 		for _, w := range result.Cleared {
 			if claudeResetKnownWindows[w] {
@@ -328,8 +340,17 @@ func (s *ClaudeResetCreditService) claim(ctx context.Context, token, proxy, org,
 		}
 		return out
 	case "unavailable":
+		logClaudeResetClaim(accountID, resp.StatusCode, claudeResetReasonUnavailable, string(raw))
 		return &ClaudeResetOutcome{Outcome: ClaudeResetOutcomeUnknown, Reason: claudeResetReasonUnavailable}
 	default:
+		logClaudeResetClaim(accountID, resp.StatusCode, "unrecognized_result", string(raw))
 		return unknown
 	}
+}
+
+// logClaudeResetClaim keeps the upstream detail of a claim that did not end in a
+// definite known result visible to administrators (server and ops system log).
+// status is 0 when no HTTP response arrived; detail is bounded, not redacted.
+func logClaudeResetClaim(accountID int64, status int, kind, detail string) {
+	slog.Warn("claude_reset_claim_upstream", "account_id", accountID, "status", status, "kind", kind, "detail", truncate(detail, 2048))
 }

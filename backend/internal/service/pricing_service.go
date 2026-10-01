@@ -1553,6 +1553,12 @@ func (s *PricingService) matchOpenAIModel(model string) *LiteLLMModelPricing {
 	if strings.HasPrefix(model, "gpt-6-") && !isOpenAIGPT6AstraModel(model) {
 		return nil
 	}
+	// Likewise for GPT-6 point releases: only the published GPT-6.1 Sol
+	// spellings have a card. Dated snapshots (passed through verbatim) and other
+	// gpt-6.x names stay unpriced instead of borrowing the default model's rate.
+	if strings.HasPrefix(model, "gpt-6.") && !openai.IsGPT61SolModelSpelling(model) {
+		return nil
+	}
 	if strings.HasPrefix(model, "gpt-5.3-codex-spark") {
 		if pricing, ok := s.pricingData["gpt-5.1-codex"]; ok {
 			logger.LegacyPrintf("service.pricing", "[Pricing][SparkBilling] %s -> %s billing", model, "gpt-5.1-codex")

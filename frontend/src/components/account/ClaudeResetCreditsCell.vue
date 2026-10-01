@@ -6,7 +6,8 @@
       row. The reset count only shows for Anthropic OAuth accounts; the slot always
       renders. The count button is read-only; only the orange reset button,
       after a query shows a redeemable credit and the operator confirms,
-      consumes one reset.
+      consumes one reset. Read-only hosts (account table and cards) get the
+      count only; the reset button and its dialog render in the details view.
     -->
     <div class="flex flex-wrap items-center gap-1.5">
       <slot name="pre-actions" />
@@ -38,7 +39,7 @@
       </button>
 
       <button
-        v-if="visible"
+        v-if="visible && !readOnly"
         type="button"
         data-testid="claude-reset-redeem"
         class="inline-flex items-center gap-0.5 rounded px-1.5 py-0.5 text-[10px] font-medium text-orange-600 transition-colors hover:bg-orange-50 disabled:cursor-not-allowed disabled:opacity-50 dark:text-orange-400 dark:hover:bg-orange-900/30"
@@ -103,7 +104,7 @@
     </div>
 
     <ConfirmDialog
-      v-if="visible"
+      v-if="visible && !readOnly"
       :show="showRedeemConfirm"
       :title="t('admin.accounts.claudeResetCredits.confirmTitle')"
       :message="confirmMessage"
@@ -128,7 +129,9 @@ import {
 } from '@/api/admin/claudeResetCredits'
 import ConfirmDialog from '@/components/common/ConfirmDialog.vue'
 
-const props = defineProps<{ account: Account }>()
+// readOnly hides the irreversible reset control (table/card cells); the count
+// query stays available, as before the reset button existed.
+const props = defineProps<{ account: Account; readOnly?: boolean }>()
 // Fired after a redemption attempt so the parent can refresh the usage row.
 const emit = defineEmits<{ redeemed: [outcome: ClaudeResetOutcome] }>()
 const { t } = useI18n()
@@ -244,7 +247,7 @@ function newOperationKey(accountID: number): string {
 }
 
 function openRedeemConfirm() {
-  if (redeeming.value || loading.value || !canRedeem.value) return
+  if (props.readOnly || redeeming.value || loading.value || !canRedeem.value) return
   showRedeemConfirm.value = true
 }
 
@@ -290,7 +293,7 @@ function errorText(e: unknown): string {
 
 async function confirmRedeem() {
   showRedeemConfirm.value = false
-  if (redeeming.value || loading.value || !canRedeem.value) return
+  if (props.readOnly || redeeming.value || loading.value || !canRedeem.value) return
   const accountID = props.account.id
   const current = generation
   pendingKey ??= newOperationKey(accountID)

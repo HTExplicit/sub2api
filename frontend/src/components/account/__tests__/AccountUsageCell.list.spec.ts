@@ -133,6 +133,23 @@ describe('AccountUsageCell list variants', () => {
     expect(wrapper.find('[data-test="quota-action"]').exists()).toBe(true)
   })
 
+  it('keeps the Claude reset count but not the reset control in read-only cells', async () => {
+    getUsage.mockResolvedValue(makeOAuthUsage())
+    const list = mount(AccountUsageCell, {
+      props: { account: makeAccount({ id: 5116, platform: 'anthropic' }), variant: 'list', readOnly: true },
+      global: { stubs }
+    })
+    const details = mount(AccountUsageCell, {
+      props: { account: makeAccount({ id: 5117, platform: 'anthropic' }) },
+      global: { stubs }
+    })
+    await flushPromises()
+
+    expect(list.find('[data-testid="claude-reset-count"]').exists()).toBe(true)
+    expect(list.find('[data-testid="claude-reset-redeem"]').exists()).toBe(false)
+    expect(details.find('[data-testid="claude-reset-redeem"]').exists()).toBe(true)
+  })
+
   it('renders the OAuth percentages as a compact colored summary', async () => {
     getUsage.mockResolvedValue(makeOAuthUsage())
     const wrapper = mount(AccountUsageCell, {
