@@ -503,6 +503,13 @@ html.flat-theme.dark :is(div, span).text-white:is(.bg-gray-900, .bg-gray-800):is
   --theme-text-primary-700: 182 247 200;
 }
 
+/* a grouped box inside such a tip (the 专属分组 tip's example: upstream's gray-800 box on its dark tip) is the grouped
+   fill of the light tip (palette C sweep: on the near-black box its ink-soft text read 1.9:1 and the accent label
+   2.8:1; on the grouped fill 7.0:1 / 4.8:1) */
+html.flat-theme div.text-white.bg-gray-900.p-3 > div[class~="rounded"][class~="bg-gray-800"] {
+  background-color: rgb(var(--ui-subtle));
+}
+
 /* 2.2 Insets: the bubble's 6/10 for one-line tips, the breakdown's 8/12 for paragraphs and cards (p-3 boxes). */
 html.flat-theme :is(div, span).text-white:is(.bg-gray-900, .bg-gray-800):is(.absolute, .fixed):not(button, a) {
   padding: 6px 10px;
@@ -764,9 +771,9 @@ html.flat-theme .modal-footer > div.flex:only-child:is(.pt-2, .pt-3, .pt-4) {
 }
 
 /* 3.6 The confirm dialog: message 13/21 ink-soft; its two utility buttons restated as the .btn recipes (controls'
-   values: 30px, 0 12px, 13/19.5 600, radius 6, 1px edge; cancel = default, confirm = primary ink, a danger confirm
-   = destructive). Perf pass: the message box is hooked ([data-ui="confirm-body"], ConfirmDialog.vue), so no has-test
-   on .modal-content asks whether the dialog holds the confirm button; the `div` keeps the original 0,5,3. */
+   values: 30px, 0 12px, 13/19.5 600, radius 6, 1px edge; cancel = default, confirm = the solid primary, a danger
+   confirm = destructive). Perf pass: the message box is hooked ([data-ui="confirm-body"], ConfirmDialog.vue), so no
+   has-test on .modal-content asks whether the dialog holds the confirm button; the `div` keeps the original 0,5,3. */
 html.flat-theme .modal-content .modal-body > div[data-ui~="confirm-body"] > p:first-child {
   font-size: 13px;
   line-height: 21px;
@@ -800,9 +807,15 @@ html.flat-theme.dark [data-ui="confirm-cancel"]:hover {
 html.flat-theme [data-ui="confirm-ok"],
 html.flat-theme [data-ui="confirm-ok"]:hover,
 html.flat-theme.dark [data-ui="confirm-ok"]:hover {
-  border-color: rgb(var(--ui-ink));
-  background-color: rgb(var(--ui-ink));
-  color: rgb(var(--ui-on-ink));
+  border-color: rgb(var(--ui-solid-edge));
+  background-color: rgb(var(--ui-solid));
+  color: rgb(var(--ui-on-solid));
+}
+
+html.flat-theme [data-ui="confirm-ok"]:hover,
+html.flat-theme.dark [data-ui="confirm-ok"]:hover {
+  border-color: rgb(var(--ui-solid-edge-hover));
+  background-color: rgb(var(--ui-solid-hover));
 }
 
 html.flat-theme [data-ui="confirm-ok"].bg-red-600,
@@ -1405,7 +1418,8 @@ html.flat-theme :is([data-ui="announcement-detail"], [data-ui="announcement-popu
   padding-left: 0;
 }
 
-/* footer: the dialog footer (12/18, structural line, no tint); close = default button, "mark read" = primary ink */
+/* footer: the dialog footer (12/18, structural line, no tint); close = default button, "mark read" = the solid
+   primary */
 html.flat-theme :is([data-ui="announcement-detail"], [data-ui="announcement-popup"]) > div:last-child {
   padding: var(--ui-dialog-foot-y) var(--ui-dialog-x);
   border-top: 1px solid rgb(var(--ui-line));
@@ -1448,9 +1462,9 @@ html.flat-theme.dark :is([data-ui="announcement-detail"], [data-ui="announcement
 
 html.flat-theme :is([data-ui="announcement-detail"], [data-ui="announcement-popup"]) > div:last-child button:is(.bg-gradient-to-r),
 html.flat-theme :is([data-ui="announcement-detail"], [data-ui="announcement-popup"]) > div:last-child button:is(.bg-gradient-to-r):hover {
-  border-color: rgb(var(--ui-ink));
-  background: rgb(var(--ui-ink));
-  color: rgb(var(--ui-on-ink));
+  border-color: rgb(var(--ui-solid-edge));
+  background: rgb(var(--ui-solid));
+  color: rgb(var(--ui-on-solid));
 }
 
 html.flat-theme :is([data-ui="announcement-detail"], [data-ui="announcement-popup"]) > div:last-child button svg {
@@ -1646,8 +1660,8 @@ html.flat-theme .markdown-body img {
 
 /* 7.1 The popover is a panel: surface, 1px line, radius 8, overlay shadow (the sign-in panel's frame, derived); title
    17/600 tight ink; text the docs paragraph (13.5/1.625 muted); footer the dialog footer (12/18, structural line, no
-   tint); progress and key hints in Geist Mono; next = primary ink, back = default, skip = ghost; close = 28px ghost.
-   The page dims with the dialog scrim; the highlighted element carries the reference's accent ring (34%). */
+   tint); progress and key hints in Geist Mono; next = the solid primary, back = default, skip = ghost; close = 28px
+   ghost. The page dims with the dialog scrim; the highlighted element carries the reference's accent ring (34%). */
 html.flat-theme .driver-popover.theme-tour-popover {
   border: 1px solid rgb(var(--ui-line)) !important;
   border-radius: var(--ui-radius-lg) !important;
@@ -1752,9 +1766,9 @@ html.flat-theme .theme-tour-popover .driver-popover-footer :is(.driver-popover-n
 html.flat-theme.dark .theme-tour-popover .driver-popover-footer :is(.driver-popover-next-btn, .driver-popover-done-btn),
 html.flat-theme .theme-tour-popover .driver-popover-footer :is(.driver-popover-next-btn, .driver-popover-done-btn):hover,
 html.flat-theme.dark .theme-tour-popover .driver-popover-footer :is(.driver-popover-next-btn, .driver-popover-done-btn):hover {
-  border-color: rgb(var(--ui-ink)) !important;
-  background-color: rgb(var(--ui-ink)) !important;
-  color: rgb(var(--ui-on-ink)) !important;
+  border-color: rgb(var(--ui-solid-edge)) !important;
+  background-color: rgb(var(--ui-solid)) !important;
+  color: rgb(var(--ui-on-solid)) !important;
 }
 
 html.flat-theme .theme-tour-popover .driver-popover-footer :is(button:not(.driver-popover-next-btn, .driver-popover-done-btn, .driver-popover-prev-btn)),

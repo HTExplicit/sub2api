@@ -12,7 +12,9 @@
  *
  * Formats: colours consumed through rgb(var(--x) / <alpha>) are RGB channels ("r g b"); --ui-link is a colour;
  * shadows, fonts, sizes and motion are full values. The reference draws dark lines, hovers and soft fills as
- * white or colour at an alpha; here they are composited over the dark surface (#1a1a1a), where they are drawn. */
+ * white or colour at an alpha; here they are opaque: palette C's graphite steps for the lines and hovers, the accent
+ * and identity soft fills composited over the surface they sit on (#212125), the status soft fills and the uptime
+ * bars as composited over the reference's surface (#1a1a1a). */
 
 /* ------------------------------------------------------------------ fonts */
 /* Geist 1.800 and Geist Mono 1.700 (npm `geist` 1.7.2, SIL OFL 1.1: assets/fonts/geist/OFL.txt), variable
@@ -65,46 +67,65 @@
 }
 
 /* ------------------------------------------------------------------ roles (light) */
+/* Palette C (owner approval 2026-09-30; artifacts/tmp/ui-tune/palette/PREVIEW.md): the neutrals are shadcn's zinc
+   (a faint cool tint) instead of pure grey, the ink is softened off black, colour carries meaning (the accent does
+   the selecting, the data keeps its hues), and the fills that were ink read the fill roles below. */
 :root.flat-theme {
   /* surfaces: canvas = page and sidebar (--background), surface = cards, tables, controls, menus, dialogs;
      subtle = grouped fills and chips; sunk = wells; raised = popovers (the reference draws them on surface) */
   --ui-canvas: 250 250 250;
   --ui-surface: 255 255 255;
-  --ui-subtle: 245 245 245;
-  --ui-sunk: 247 247 247;
+  --ui-subtle: 244 244 245;
+  --ui-sunk: 247 247 248;
   --ui-raised: 255 255 255;
-  --ui-hover: 239 239 239;
-  --ui-active: 241 241 241;
+  --ui-hover: 239 239 241;
+  --ui-active: 238 238 241;
   /* Two line tiers. --ui-line: every structural line (card edges, row separators, the sidebar edge, toolbar
      rules). --ui-line-strong: the reference's control outline (buttons, filter pills, tooltips), which a label
      identifies anyway. --ui-control-line: the outline of form controls (inputs, selects, date fields,
-     checkboxes); the reference's #e0e0e0 is 1.32:1, #8e8e8e is the nearest grey at >= 3:1 on the surface, the
-     canvas and the grouped fill (REF-CONSOLE §13 gives #949494 for white, #919191 for the canvas).
-     --ui-line-focus: the reference's hover / focus outline of native selects. */
-  --ui-line: 237 237 237;
-  --ui-line-strong: 224 224 224;
-  --ui-line-focus: 189 189 189;
-  --ui-control-line: 142 142 142;
-  /* Text. ink-soft = ink at 66 % (values, filter pills, tooltip descriptions), composited over white.
-     muted (#737373) and muted-2 (#a3a3a3, placeholders and captions: --ui-faint) read 4.35:1 / 2.31:1 on the
-     grouped fill and 4.12:1 / 2.19:1 on hover; #6c6c6c is the nearest grey at >= 4.5:1 on every neutral fill.
-     --ui-label is the mono label's grey (ink-faint #8a8a8a, 3.45:1): #737373 holds 4.5:1 on the surfaces labels
-     sit on (white 4.74, canvas 4.54, the group-row tint #f9f9f9 4.50; REF-CONSOLE §13). */
-  --ui-ink: 10 10 10;
-  --ui-ink-soft: 93 93 93;
-  --ui-on-ink: 255 255 255;
-  --ui-muted: 108 108 108;
-  --ui-faint: 108 108 108;
-  --ui-label: 115 115 115;
+     checkboxes): #8c8c94 holds >= 3:1 on the surface, the canvas and the grouped fill (the reference's #e0e0e0 is
+     1.32:1). --ui-line-focus: the reference's hover / focus outline of native selects. */
+  --ui-line: 232 232 235;
+  --ui-line-strong: 220 220 224;
+  --ui-line-focus: 185 185 192;
+  --ui-control-line: 140 140 148;
+  /* Text (zinc). ink #1f1f23 (16.4:1 on white; #0a0a0a read black and heavy in dense rows); ink-soft #52525b
+     (values, filter pills, tooltip descriptions, secondary figures); muted and faint (placeholders, captions)
+     #66666e: these hold >= 4.5:1 on every neutral fill (surface, canvas, the grouped fill, hover). --ui-label, the
+     mono label's grey, #6e6e76 holds it on the fills labels sit on (surface 5.05, canvas 4.84, grouped 4.60). */
+  --ui-ink: 31 31 35;
+  --ui-ink-soft: 82 82 91;
+  --ui-muted: 102 102 110;
+  --ui-faint: 102 102 110;
+  --ui-label: 110 110 118;
   /* Accent (the green #168a49 carries white at 4.41:1). The fill is #168848 (white 4.52:1, REF-CONSOLE §13);
-     accent text and links are #147c42, the nearest at >= 4.5:1 on every neutral fill and on the soft fill.
-     Primary actions and the segmented thumb are ink with --ui-on-ink, not the accent (REF-CONSOLE §8.3, §8.5). */
+     accent text and links are #147c42, the nearest at >= 4.5:1 on every neutral fill and on the soft fill. */
   --ui-primary: 22 136 72;
   --ui-primary-hover: 20 124 66;
   --ui-primary-soft: 234 250 240;
   --ui-on-primary: 255 255 255;
   --ui-link: #147c42;
   --ui-focus: 22 136 72;
+  /* Fill roles (palette C: none of them is the ink any more).
+     solid: a primary action (.btn-primary and every hand-made primary): the text-safe accent with white text
+       (5.26:1), a deeper step on hover (6.69:1); its edge is the fill (the dark theme lifts it a step and keeps it
+       on hover).
+     track / thumb: a segmented control is a grey track whose current segment is a raised pill (the surface, a soft
+       shadow and a 1px inset ring #83838b: 3.30:1 on the track, 3.76:1 on the pill, so the ring marks the state),
+       its label the ink at 600.
+     choice edge: a chosen option that stands on its own and the current page are the accent tint
+       (--ui-primary-soft) with accent text (--ui-link) and this 1px accent edge / ring (5.26:1 on the surface; the
+       tint alone is 1.05:1). Marks (a chosen card's tile and edge, progress bars, radio and step dots, switches)
+       are the accent (--ui-primary). */
+  --ui-solid: 20 124 66;
+  --ui-solid-hover: 16 106 56;
+  --ui-solid-edge: 20 124 66;
+  --ui-solid-edge-hover: 16 106 56;
+  --ui-on-solid: 255 255 255;
+  --ui-track: 240 240 242;
+  --ui-thumb: 255 255 255;
+  --ui-thumb-shadow: 0 1px 2px rgb(24 24 27 / 0.08), inset 0 0 0 1px #83838b;
+  --ui-choice-edge: rgb(20 124 66);
   /* Status colours (text-safe). success #22a050 (3.38:1), danger #dc3c3c (4.42:1) and warning #b45309 (4.37:1
      on hover) move to the nearest value at >= 4.5:1 on every neutral fill; info and purple already pass.
      The soft fills are the reference's. */
@@ -171,36 +192,47 @@
 }
 
 /* ------------------------------------------------------------------ roles (dark) */
+/* Palette C: layered graphite lifted off black (Linear's ground): canvas #1a1a1d (L* 9.4, was #0f0f0f at 4.3),
+   surface #212125 (L* 12.9, was 9.3), grouped #29292e, hover #2f2f35, a faint cool tint; zinc text greys. */
 :root.flat-theme.dark {
-  --ui-canvas: 15 15 15;
-  --ui-surface: 26 26 26;
-  --ui-subtle: 35 35 35;
-  --ui-sunk: 20 20 20;
-  --ui-raised: 26 26 26;
-  /* white at 7 / 11 % */
-  --ui-hover: 42 42 42;
-  --ui-active: 51 51 51;
-  /* white at 14 / 24 / 42 %; the form-control line is the nearest grey at >= 3:1 on the canvas, the surface and
-     the grouped fill (white 24 % is 2.19:1; REF-CONSOLE §13 gives white 33-34 %) */
-  --ui-line: 58 58 58;
-  --ui-line-strong: 81 81 81;
-  --ui-line-focus: 122 122 122;
-  --ui-control-line: 109 109 109;
-  --ui-ink: 242 242 242;
-  --ui-ink-soft: 169 169 169;
-  --ui-on-ink: 10 10 10;
-  --ui-muted: 179 179 179;
-  /* muted-2 #8c8c8c reads 4.27:1 on hover; #919191 is the nearest at >= 4.5:1 */
-  --ui-faint: 145 145 145;
-  --ui-label: 156 156 156;
-  /* the mint accent with ink on it; soft = mint at 16 % */
+  --ui-canvas: 26 26 29;
+  --ui-surface: 33 33 37;
+  --ui-subtle: 41 41 46;
+  --ui-sunk: 29 29 32;
+  --ui-raised: 37 37 41;
+  --ui-hover: 47 47 53;
+  --ui-active: 54 54 60;
+  /* the form-control line holds >= 3:1 on the canvas, the surface, the grouped fill and hover */
+  --ui-line: 58 58 65;
+  --ui-line-strong: 74 74 82;
+  --ui-line-focus: 110 110 120;
+  --ui-control-line: 128 128 138;
+  --ui-ink: 232 232 236;
+  --ui-ink-soft: 184 184 192;
+  --ui-muted: 176 176 185;
+  /* faint and the label hold >= 4.5:1 on the canvas, the surface, the grouped fill and hover */
+  --ui-faint: 160 160 169;
+  --ui-label: 163 163 172;
+  /* the mint accent with ink on it; soft = mint at 16 % over the surface */
   --ui-primary: 182 247 200;
   --ui-primary-hover: 166 225 183;
-  --ui-primary-soft: 51 62 54;
+  --ui-primary-soft: 57 67 63;
   --ui-on-primary: 10 10 10;
   --ui-link: #b6f7c8;
   --ui-focus: 182 247 200;
-  /* status colours; soft = the colour at 18 % */
+  /* fill roles: the primary action is a deep green (white 4.96:1) with a lighter 1px green edge (Radix-style),
+     the pill a lighter graphite with a 1px inset ring #7f7f88 (3.65:1 on the track), the choice edge / page ring
+     mint at 55 % (3.76:1 on the tint, 4.92:1 on the surface) */
+  --ui-solid: 29 128 73;
+  --ui-solid-hover: 26 115 65;
+  --ui-solid-edge: 47 160 94;
+  --ui-solid-edge-hover: 47 160 94;
+  --ui-on-solid: 255 255 255;
+  --ui-track: 41 41 46;
+  --ui-thumb: 60 60 67;
+  --ui-thumb-shadow: 0 1px 2px rgb(0 0 0 / 0.45), inset 0 0 0 1px #7f7f88;
+  --ui-choice-edge: rgb(182 247 200 / 0.55);
+  /* status colours; soft = the colour at 18 % over the reference's surface #1a1a1a (kept on palette C's #212125) */
   --ui-success: 74 222 128;
   --ui-success-soft: 35 61 44;
   --ui-danger: 248 113 113;
@@ -211,7 +243,8 @@
   --ui-info-soft: 48 57 67;
   --ui-purple: 196 181 253;
   --ui-purple-soft: 57 54 67;
-  --ui-shadow-popover: 0 6px 20px rgb(0 0 0 / 0.55);
+  /* a popover lifts off the graphite by its shadow and a faint white hairline */
+  --ui-shadow-popover: 0 8px 24px rgb(0 0 0 / 0.45), 0 0 0 1px rgb(255 255 255 / 0.04);
   --ui-shadow-overlay: 0 18px 50px rgb(0 0 0 / 0.65);
   --ui-scrim: 0 0 0 / 0.6;
 }
@@ -220,34 +253,34 @@
 /* gray / slate / zinc / neutral / stone / accent share the gray variables (tailwind.config.js); each shade has
    a fill, a line and a text role. The dark-* family is upstream's dark-mode palette. */
 :root.flat-theme {
-  /* the reference's grey ladder at the light end, Tailwind neutral in between, ink at 950 */
+  /* Tailwind zinc (palette C) with the roles' fills and lines at the light end */
   --theme-color-gray-50: 250 250 250;
-  --theme-color-gray-100: 245 245 245;
-  --theme-color-gray-200: 237 237 237;
-  --theme-color-gray-300: 224 224 224;
-  --theme-color-gray-400: 163 163 163;
-  --theme-color-gray-500: 115 115 115;
-  --theme-color-gray-600: 82 82 82;
-  --theme-color-gray-700: 64 64 64;
-  --theme-color-gray-800: 38 38 38;
-  --theme-color-gray-900: 23 23 23;
-  --theme-color-gray-950: 10 10 10;
+  --theme-color-gray-100: 244 244 245;
+  --theme-color-gray-200: 232 232 235;
+  --theme-color-gray-300: 220 220 224;
+  --theme-color-gray-400: 161 161 170;
+  --theme-color-gray-500: 113 113 122;
+  --theme-color-gray-600: 82 82 91;
+  --theme-color-gray-700: 63 63 70;
+  --theme-color-gray-800: 39 39 42;
+  --theme-color-gray-900: 24 24 27;
+  --theme-color-gray-950: 9 9 11;
   /* borders: upstream's card (100) and default (200) borders are the structural line, 300 the control outline,
      400 the focus outline */
-  --theme-line-gray-100: 237 237 237;
-  --theme-line-gray-200: 237 237 237;
-  --theme-line-gray-300: 224 224 224;
-  --theme-line-gray-400: 189 189 189;
+  --theme-line-gray-100: 232 232 235;
+  --theme-line-gray-200: 232 232 235;
+  --theme-line-gray-300: 220 220 224;
+  --theme-line-gray-400: 185 185 192;
   /* text: every shade upstream uses for secondary text meets 4.5:1 on the neutral fills; 300 stays the
-     reference's decorative muted-2 (upstream's own use: dividers, idle sort arrows) */
-  --theme-text-gray-300: 163 163 163;
-  --theme-text-gray-400: 108 108 108;
-  --theme-text-gray-500: 105 105 105; /* >= 4.5:1 on gray-200 fills (4.68) */
-  --theme-text-gray-600: 82 82 82;
-  --theme-text-gray-700: 64 64 64;
-  --theme-text-gray-800: 38 38 38;
-  --theme-text-gray-900: 10 10 10;
-  --theme-text-gray-950: 10 10 10;
+     reference's decorative muted-2 (upstream's own use: dividers, idle sort arrows); 900 / 950 are the ink */
+  --theme-text-gray-300: 161 161 170;
+  --theme-text-gray-400: 102 102 110;
+  --theme-text-gray-500: 99 99 107; /* >= 4.5:1 on gray-200 fills (4.87) */
+  --theme-text-gray-600: 91 91 99;
+  --theme-text-gray-700: 63 63 70;
+  --theme-text-gray-800: 39 39 42;
+  --theme-text-gray-900: 31 31 35;
+  --theme-text-gray-950: 31 31 35;
 
   /* dark-*: 950 canvas, 900 well, 800 surface, 700 grouped fill; the light end is text on dark */
   --theme-color-dark-50: 242 242 242;
@@ -278,23 +311,46 @@
 }
 
 /* Dark mode: upstream pairs the light text shades (100-500) with dark:, and the plain 600-900 shades appear
-   where a template has no dark variant, so every text shade is a readable light grey; lines are the white
-   alphas composited over the surface. */
+   where a template has no dark variant, so every text shade is a readable light grey (zinc: 400 is ink-soft, 500
+   and 600 muted, >= 4.5:1 on the dark-600 fill); lines follow the graphite surfaces. Upstream's dark-* family
+   follows the surfaces too: 950 canvas, 900 well, 800 surface, 700 grouped fill. */
 :root.flat-theme.dark {
-  --theme-text-gray-600: 179 179 179;
-  --theme-text-gray-700: 212 212 212;
-  --theme-text-gray-800: 229 229 229;
-  --theme-text-gray-900: 242 242 242;
-  --theme-text-gray-950: 242 242 242;
-  --theme-line-gray-100: 42 42 42;
-  --theme-line-gray-200: 58 58 58;
-  --theme-line-gray-300: 81 81 81;
-  --theme-line-gray-400: 122 122 122;
+  --theme-text-gray-100: 232 232 236;
+  --theme-text-gray-200: 221 221 226;
+  --theme-text-gray-300: 204 204 210;
+  --theme-text-gray-400: 184 184 192;
+  --theme-text-gray-500: 176 176 185;
+  --theme-text-gray-600: 176 176 185;
+  --theme-text-gray-700: 204 204 210;
+  --theme-text-gray-800: 221 221 226;
+  --theme-text-gray-900: 232 232 236;
+  --theme-text-gray-950: 232 232 236;
+  --theme-line-gray-100: 47 47 53;
+  --theme-line-gray-200: 58 58 65;
+  --theme-line-gray-300: 74 74 82;
+  --theme-line-gray-400: 110 110 120;
+  --theme-color-dark-950: 26 26 29;
+  --theme-color-dark-900: 29 29 32;
+  --theme-color-dark-800: 33 33 37;
+  --theme-color-dark-700: 41 41 46;
+  --theme-color-dark-600: 63 63 70;
+  --theme-line-dark-950: 33 33 37;
+  --theme-line-dark-900: 41 41 46;
+  --theme-line-dark-800: 47 47 53;
+  --theme-line-dark-700: 58 58 65;
+  --theme-line-dark-600: 74 74 82;
+  --theme-line-dark-500: 104 104 114;
+  --theme-line-dark-400: 128 128 138;
+  --theme-text-dark-100: 232 232 236;
+  --theme-text-dark-200: 214 214 219;
+  --theme-text-dark-300: 184 184 192;
+  --theme-text-dark-400: 163 163 172;
+  --theme-text-dark-500: 160 160 169;
+  --theme-text-dark-600: 128 128 138;
 }
 
-/* Secondary text on a dark surface: the whole dark theme and, in the light theme, the boxes that stay dark
-   there too (terminal output, dark tooltips, code panes), which the templates mark `theme-dark-surface`. */
-:root.flat-theme.dark,
+/* Secondary text in the light theme's boxes that stay dark (terminal output, dark tooltips, code panes), which the
+   templates mark `theme-dark-surface`; in the dark theme those boxes keep the same greys. */
 :root.flat-theme .theme-dark-surface {
   --theme-text-gray-100: 242 242 242;
   --theme-text-gray-200: 229 229 229;
@@ -407,13 +463,13 @@
   --theme-text-indigo-600: var(--theme-text-info-600);
 }
 
-/* Dark mode: the accent fills are mint with ink on them (--theme-on-fill), its tints are mint over the surface
-   (8 / 16 / 24 / 32 %); the deep 800-950 shades stay (upstream's dark: tints use them at low opacity). */
+/* Dark mode: the accent fills are mint with ink on them (--theme-on-fill), its tints are mint over the graphite
+   surface (8 / 16 / 24 / 32 %); the deep 800-950 shades stay (upstream's dark: tints use them at low opacity). */
 :root.flat-theme.dark {
-  --theme-color-primary-50: 38 43 40;
-  --theme-color-primary-100: 51 62 54;
-  --theme-color-primary-200: 63 79 68;
-  --theme-color-primary-300: 76 97 82;
+  --theme-color-primary-50: 45 50 50;
+  --theme-color-primary-100: 57 67 63;
+  --theme-color-primary-200: 69 84 76;
+  --theme-color-primary-300: 81 101 89;
   --theme-color-primary-400: 204 249 216;
   --theme-color-primary-500: 182 247 200;
   --theme-color-primary-600: 166 225 183;
@@ -555,47 +611,47 @@
 
 :root.flat-theme.dark {
   --ui-id-orange: 253 186 116;
-  --ui-id-orange-soft: 57 38 25;
-  --ui-id-orange-line: 115 62 24;
+  --ui-id-orange-soft: 63 44 35;
+  --ui-id-orange-line: 119 66 31;
   --ui-id-amber: 252 211 77;
-  --ui-id-amber-soft: 57 44 24;
-  --ui-id-amber-line: 114 79 20;
+  --ui-id-amber-soft: 63 50 33;
+  --ui-id-amber-line: 118 83 27;
   --ui-id-emerald: 110 231 183;
-  --ui-id-emerald-soft: 25 48 40;
-  --ui-id-emerald-line: 22 90 67;
+  --ui-id-emerald-soft: 31 54 50;
+  --ui-id-emerald-line: 26 94 74;
   --ui-id-green: 134 239 172;
-  --ui-id-green-soft: 27 50 36;
-  --ui-id-green-line: 29 94 53;
+  --ui-id-green-soft: 33 56 45;
+  --ui-id-green-line: 33 99 60;
   --ui-id-teal: 94 234 212;
-  --ui-id-teal-soft: 25 48 46;
-  --ui-id-teal-line: 24 89 82;
+  --ui-id-teal-soft: 31 54 55;
+  --ui-id-teal-line: 28 93 89;
   --ui-id-cyan: 103 232 249;
-  --ui-id-cyan-soft: 23 48 52;
-  --ui-id-cyan-line: 18 88 100;
+  --ui-id-cyan-soft: 29 54 62;
+  --ui-id-cyan-line: 22 93 107;
   --ui-id-sky: 125 211 252;
-  --ui-id-sky-soft: 24 45 55;
-  --ui-id-sky-line: 21 82 109;
+  --ui-id-sky-soft: 30 51 64;
+  --ui-id-sky-line: 25 86 115;
   --ui-id-blue: 147 197 253;
-  --ui-id-blue-soft: 31 41 57;
-  --ui-id-blue-line: 39 68 114;
+  --ui-id-blue-soft: 37 47 66;
+  --ui-id-blue-line: 43 72 121;
   --ui-id-indigo: 165 180 252;
-  --ui-id-indigo-soft: 36 37 56;
-  --ui-id-indigo-line: 55 56 112;
+  --ui-id-indigo-soft: 42 43 66;
+  --ui-id-indigo-line: 59 61 119;
   --ui-id-violet: 196 181 253;
-  --ui-id-violet-soft: 42 35 57;
-  --ui-id-violet-line: 71 52 114;
+  --ui-id-violet-soft: 48 41 66;
+  --ui-id-violet-line: 75 57 121;
   --ui-id-purple: 216 180 254;
-  --ui-id-purple-soft: 46 34 57;
-  --ui-id-purple-line: 83 50 114;
+  --ui-id-purple-soft: 52 40 66;
+  --ui-id-purple-line: 87 54 121;
   --ui-id-fuchsia: 240 171 252;
-  --ui-id-fuchsia-soft: 53 32 56;
-  --ui-id-fuchsia-line: 102 44 111;
+  --ui-id-fuchsia-soft: 59 38 65;
+  --ui-id-fuchsia-line: 107 48 118;
   --ui-id-pink: 249 168 212;
-  --ui-id-pink-soft: 55 32 44;
-  --ui-id-pink-line: 110 44 77;
+  --ui-id-pink-soft: 61 38 53;
+  --ui-id-pink-line: 114 49 83;
   --ui-id-rose: 253 164 175;
-  --ui-id-rose-soft: 57 31 36;
-  --ui-id-rose-line: 113 41 53;
+  --ui-id-rose-soft: 63 37 45;
+  --ui-id-rose-line: 117 45 60;
   --ui-id-zinc: 212 212 216;
   --ui-id-zinc-soft: 39 39 42;
   --ui-id-zinc-line: 82 82 91;
@@ -682,25 +738,26 @@
 
 /* ------------------------------------------------------------------ charts and scrollbars */
 /* Read by composables/usePresentationColors.ts (REF-CONSOLE §8.14): grid = the structural line, axis text =
-   muted; categorical series 1-12 (#rrggbb, consumers append a hex alpha) = the usage-by-model bar (ink, accent,
-   indigo, amber, cyan) followed by the usage series; "other" = #9ca3af; status marks for charts drawn with
-   upstream hue literals. The distribution charts list every value in a table beside the chart, so the series
-   are not the only carrier of the data. */
+   muted; categorical series 1-12 (#rrggbb, consumers append a hex alpha) = the reference's usage blue, the accent,
+   amber, indigo, cyan, pink (palette C: series 1 was the ink, and the leading slice of a distribution is usually
+   most of it, so every donut was a black ring; hue neighbours differ), followed by the usage series; "other" =
+   #9ca3af; status marks for charts drawn with upstream hue literals. The distribution charts list every value in
+   a table beside the chart, so the series are not the only carrier of the data. */
 :root.flat-theme {
-  --theme-chart-text: #5d5d5d;
-  --theme-chart-grid: #ededed;
-  --theme-chart-axis: #6c6c6c;
-  --theme-chart-axis-grid: #f5f5f5;
+  --theme-chart-text: #52525b;
+  --theme-chart-grid: #e8e8eb;
+  --theme-chart-axis: #66666e;
+  --theme-chart-axis-grid: #f4f4f5;
   --theme-chart-tooltip: #ffffff;
-  --theme-chart-title: #0a0a0a;
-  --theme-chart-body: #6c6c6c;
+  --theme-chart-title: #1f1f23;
+  --theme-chart-body: #66666e;
   --theme-chart-gray: #9ca3af;
-  --theme-chart-series-1: #0a0a0a;
+  --theme-chart-series-1: #3975d8;
   --theme-chart-series-2: #168848;
-  --theme-chart-series-3: #6366f1;
-  --theme-chart-series-4: #d97706;
+  --theme-chart-series-3: #d97706;
+  --theme-chart-series-4: #6366f1;
   --theme-chart-series-5: #0891b2;
-  --theme-chart-series-6: #3975d8;
+  --theme-chart-series-6: #db2777;
   --theme-chart-series-7: #62cc49;
   --theme-chart-series-8: #c32517;
   --theme-chart-series-9: #e481fb;
@@ -712,21 +769,24 @@
   --theme-chart-warning: #d97706;
   --theme-chart-danger: #dc3c3c;
   --theme-chart-purple: #7850c8;
-  --theme-scrollbar-thumb: #d4d4d4;
-  --theme-scrollbar-hover: #a3a3a3;
+  --theme-scrollbar-thumb: #d4d4d8;
+  --theme-scrollbar-hover: #a1a1aa;
 }
 
 :root.flat-theme.dark {
-  --theme-chart-text: #a9a9a9;
-  --theme-chart-grid: #3a3a3a;
-  --theme-chart-axis: #b3b3b3;
-  --theme-chart-axis-grid: #232323;
-  --theme-chart-tooltip: #1a1a1a;
-  --theme-chart-title: #f2f2f2;
-  --theme-chart-body: #b3b3b3;
-  --theme-chart-series-1: #f2f2f2;
+  --theme-chart-text: #b8b8c0;
+  --theme-chart-grid: #3a3a41;
+  --theme-chart-axis: #b0b0b9;
+  --theme-chart-axis-grid: #29292e;
+  --theme-chart-tooltip: #252529;
+  --theme-chart-title: #e8e8ec;
+  --theme-chart-body: #b0b0b9;
+  --theme-chart-series-1: #6d9eeb;
   --theme-chart-series-2: #b6f7c8;
-  --theme-chart-series-6: #1f5bbc;
+  --theme-chart-series-3: #d98a1c;
+  --theme-chart-series-4: #7c83f2;
+  --theme-chart-series-5: #1aa3c2;
+  --theme-chart-series-6: #e0569a;
   --theme-chart-series-7: #44af27;
   --theme-chart-series-8: #be1e10;
   --theme-chart-series-9: #c664dc;
@@ -737,8 +797,8 @@
   --theme-chart-warning: #fbbf24;
   --theme-chart-danger: #f87171;
   --theme-chart-purple: #c4b5fd;
-  --theme-scrollbar-thumb: #3d3d3d;
-  --theme-scrollbar-hover: #5c5c5c;
+  --theme-scrollbar-thumb: #45454d;
+  --theme-scrollbar-hover: #62626c;
 }
 
 /* ------------------------------------------------------------------ keyframes */

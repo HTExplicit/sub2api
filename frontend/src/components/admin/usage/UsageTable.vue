@@ -60,25 +60,25 @@
                    class="break-all"
                    :class="i === 0 ? 'font-medium text-gray-900 dark:text-white' : 'text-gray-500 dark:text-gray-400'"
                    :style="i > 0 ? `padding-left: ${i * 0.75}rem` : ''">
-                <span v-if="i > 0" class="mr-0.5">↳</span>{{ step }}
+                <span v-if="i > 0" class="mr-0.5">↳</span><template v-for="(part, j) in modelParts(step)" :key="j"><wbr v-if="j" /><span data-ui="model-part">{{ part }}</span></template>
               </div>
             </div>
             <div v-else-if="row.upstream_model && row.upstream_model !== row.model" class="space-y-0.5">
               <div class="break-all font-medium text-gray-900 dark:text-white">
-                {{ row.model }}
+                <template v-for="(part, j) in modelParts(row.model)" :key="j"><wbr v-if="j" /><span data-ui="model-part">{{ part }}</span></template>
               </div>
               <div class="break-all text-gray-500 dark:text-gray-400">
-                <span class="mr-0.5">↳</span>{{ row.upstream_model }}
+                <span class="mr-0.5">↳</span><template v-for="(part, j) in modelParts(row.upstream_model)" :key="j"><wbr v-if="j" /><span data-ui="model-part">{{ part }}</span></template>
               </div>
             </div>
-            <span v-else class="font-medium text-gray-900 dark:text-white">{{ row.model }}</span>
+            <span v-else class="font-medium text-gray-900 dark:text-white"><template v-for="(part, j) in modelParts(row.model)" :key="j"><wbr v-if="j" /><span data-ui="model-part">{{ part }}</span></template></span>
             <div
               v-if="row.upstream_model_mismatch === true && row.upstream_response_model"
               class="break-all pl-3 text-[11px]"
               :class="isLikelyModelVariant(row) ? 'text-amber-600 dark:text-amber-400' : 'text-orange-600 dark:text-orange-400'"
               :title="modelAuditTitle(row)"
             >
-              <span class="mr-1">↳ {{ t('usage.upstreamResponseModel') }}:</span>{{ row.upstream_response_model }}
+              <span class="mr-1">↳ {{ t('usage.upstreamResponseModel') }}:</span><template v-for="(part, j) in modelParts(row.upstream_response_model)" :key="j"><wbr v-if="j" /><span data-ui="model-part">{{ part }}</span></template>{{ ' ' }}
               <span
                 class="ml-1 inline-flex rounded px-1 py-px text-[10px] font-medium ring-1 ring-inset"
                 :class="isLikelyModelVariant(row)
@@ -541,6 +541,8 @@ import { useI18n } from 'vue-i18n'
 import { useAppStore } from '@/stores/app'
 import { formatDateTime, formatReasoningEffort, reasoningEffortValuesEqual } from '@/utils/format'
 import { formatCacheTokens, formatMultiplier } from '@/utils/formatters'
+import { modelWrapParts } from '@/utils/softWrap'
+import { flatThemeActive } from '@/utils/flatTheme'
 import { formatTokenPricePerMillion } from '@/utils/usagePricing'
 import { getUsageServiceTierLabel } from '@/utils/usageServiceTier'
 import { resolveUsageRequestType } from '@/utils/usageRequestType'
@@ -573,6 +575,12 @@ import {
   textInputTokens,
   hasImageInputCost,
 } from '@/utils/imageUsage'
+
+// Console theme: a model id breaks only between the parts of modelWrapParts (after a slash; an outlier part also after
+// its hyphens), each part drawn whole (tables.css, data-ui="model-part"); without the theme it is one plain part, as
+// upstream draws it.
+const modelParts = (value: unknown): string[] =>
+  flatThemeActive.value ? modelWrapParts(value) : [value == null ? '' : String(value)]
 
 /** Compute the account-billed cost for display: (account_stats_cost ?? total_cost) * rate_multiplier */
 function accountBilled(row: { total_cost?: number | null; account_stats_cost?: number | null; account_rate_multiplier?: number | null }): number {

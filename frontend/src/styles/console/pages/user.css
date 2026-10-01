@@ -190,8 +190,8 @@ html.flat-theme div[class~="fixed"][class~="z-[100000020]"] > div[class~="border
 }
 
 /* 2.3 Create / edit dialog (#key-form). Provider choice: the reference's dialog option card (REF §8.11: 8px, the
-   structural line, the grouped fill at 60 %, the control outline on hover); the chosen card gets the console's ink
-   edge (2px, like the segmented thumb and the account dialogs' option cards) and an ink check. The provider tiles are
+   structural line, the grouped fill at 60 %, the control outline on hover); the chosen card gets the accent edge (2px,
+   like the account dialogs' option cards; palette C) and an accent check. The provider tiles are
    platform identity (decision 2, data.css platform-chip): the reference's 24px logo square, 4px, 1px line. */
 html.flat-theme #key-form fieldset[data-tour="key-form-provider"] label > input[type="radio"] + span {
   gap: 8px;
@@ -210,9 +210,9 @@ html.flat-theme #key-form fieldset[data-tour="key-form-provider"] label:hover > 
 }
 
 html.flat-theme #key-form fieldset[data-tour="key-form-provider"] label > input[type="radio"]:checked + span {
-  border-color: rgb(var(--ui-ink));
+  border-color: rgb(var(--ui-primary));
   background-color: rgb(var(--ui-surface));
-  box-shadow: inset 0 0 0 1px rgb(var(--ui-ink));
+  box-shadow: inset 0 0 0 1px rgb(var(--ui-primary));
 }
 
 html.flat-theme #key-form fieldset[data-tour="key-form-provider"] label > input[type="radio"]:focus-visible + span {
@@ -237,8 +237,8 @@ html.flat-theme #key-form fieldset[data-tour="key-form-provider"] [data-ui~="pla
 html.flat-theme #key-form fieldset[data-tour="key-form-provider"] label > span[class~="absolute"][class~="rounded-full"] {
   top: 6px;
   right: 6px;
-  background-color: rgb(var(--ui-ink));
-  color: rgb(var(--ui-on-ink));
+  background-color: rgb(var(--ui-primary));
+  color: rgb(var(--ui-on-primary));
 }
 
 html.flat-theme #key-form fieldset[data-tour="key-form-provider"] > p {
@@ -1451,11 +1451,11 @@ html.flat-theme [data-ui="model-plaza"] > header > div > div:first-child > span[
 html.flat-theme [data-ui="model-plaza"] > header > div > a {
   height: 30px;
   padding: 0 12px;
-  border: 1px solid rgb(var(--ui-ink));
+  border: 1px solid rgb(var(--ui-solid-edge));
   border-radius: var(--ui-radius-md);
-  background-color: rgb(var(--ui-ink));
+  background-color: rgb(var(--ui-solid));
   background-image: none;
-  color: rgb(var(--ui-on-ink));
+  color: rgb(var(--ui-on-solid));
   font-size: 13px;
   font-weight: 600;
   line-height: 19.5px;
@@ -1464,7 +1464,8 @@ html.flat-theme [data-ui="model-plaza"] > header > div > a {
 }
 
 html.flat-theme [data-ui="model-plaza"] > header > div > a:hover {
-  background-color: rgb(var(--ui-ink) / 0.85);
+  border-color: rgb(var(--ui-solid-edge-hover));
+  background-color: rgb(var(--ui-solid-hover));
   box-shadow: none;
 }
 
@@ -1568,7 +1569,8 @@ html.flat-theme [data-ui="user-redeem"] svg[class~="animate-spin"][class~="text-
    a percentage and a bar, gone once covered). It is a state, but the state of a running job, not of a channel: the
    reference's status chip gives "running" the neutral tone (surface-subtle, ink-faint; colour is kept for outcomes:
    passed, failed, rate-limited, complete). So it takes the console's neutral callout ground, the title ink, the note
-   ink-soft, the percentage Mono, and an ink bar on the structural line; the channels' own health keeps its colours.
+   ink-soft, the percentage Mono, and an accent bar on the structural line (palette C marks); the channels' own health
+   keeps its colours.
    (The coordinator asked this file to decide; the page's other rules are the ops and channels agent's.) */
 html.flat-theme [data-ui="monitor-v2"] div[role="status"][class~="bg-blue-50/90"] {
   border-bottom-color: rgb(var(--ui-line));
@@ -1595,7 +1597,7 @@ html.flat-theme [data-ui="monitor-v2"] div[role="status"][class~="bg-blue-50/90"
 }
 
 html.flat-theme [data-ui="monitor-v2"] div[role="status"][class~="bg-blue-50/90"] div[role="progressbar"] > div {
-  background-color: rgb(var(--ui-ink));
+  background-color: rgb(var(--ui-primary));
 }
 
 /* 7.8 My orders keeps its table outside TablePageLayout, so the console's rule for an empty table wider than its card

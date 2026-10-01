@@ -253,6 +253,7 @@ import type {
   UserErrorRequest,
 } from '@/types'
 import type { Column } from '@/components/common/types'
+import { stackColumns, type ColumnStackSpec } from '@/components/common/columnStack'
 import { COMMON_ERROR_STATUS_CODES } from '@/utils/errorBadges'
 
 const { t } = useI18n()
@@ -732,8 +733,15 @@ const allColumns = computed<Column[]>(() => [
 
 const hiddenColumns = reactive<Set<string>>(new Set())
 const toggleableColumns = computed(() => allColumns.value.filter((col) => !ALWAYS_VISIBLE.includes(col.key)))
+// Below 1400px (console theme) related columns share a cell: reasoning effort and endpoint under the model, the request
+// type and billing mode beside the group on one chip line. From 1400px up (and without the theme) DataTable draws them
+// as columns of their own.
+const USAGE_COLUMN_STACKS: Record<string, ColumnStackSpec> = {
+  model: { below: 1400, parts: [{ key: 'reasoning_effort', cellLabel: true }, 'endpoint'] },
+  group: { below: 1400, layout: 'inline', parts: ['stream', 'billing_mode'] },
+}
 const visibleColumns = computed(() =>
-  allColumns.value.filter((col) => ALWAYS_VISIBLE.includes(col.key) || !hiddenColumns.has(col.key))
+  stackColumns(allColumns.value, USAGE_COLUMN_STACKS, (key) => ALWAYS_VISIBLE.includes(key) || !hiddenColumns.has(key))
 )
 const isColumnVisible = (key: string) => !hiddenColumns.has(key)
 const toggleColumn = (key: string) => {

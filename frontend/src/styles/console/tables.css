@@ -1,0 +1,879 @@
+/* Console theme · tables: the table layout that keeps rows readable without sideways scrolling (owner decision
+ * 2026-09-30, option B of the ui-tune table-width round: rows may grow taller, nothing is hidden, no column or value is
+ * cut, the Experiential Labs look of type, radii, colours and headers is unchanged).
+ *
+ * Plain CSS after the page files; every selector starts with html.flat-theme (theme off = upstream, and DataTable only
+ * stacks cells while the theme is on). Layout only: the colours are the other files' (the few colour values here are
+ * roles already used for the same element elsewhere: the platform chip's divider, the header's hover ink).
+ *
+ * Stacked cells (DataTable, Column.stack; components/common/columnStack.ts): related columns become lines of one cell,
+ * each part keeping its own cell slot, header label, sort control and help tip. Hooks (static, from the column
+ * definitions; the whole set is present only while a table is stacked):
+ *   th[data-stack] > div > div[data-ui="th-subs"][data-inline]    the parts' header labels, under the host's label
+ *     div[data-ui="th-sub"][data-line="<key>"][data-sep][data-sort]   one per part; a sortable part (data-sort = its
+ *       button[data-ui="th-sub-sort"]                        order) sorts on a click and has its own 11px sort button
+ *   td[data-stack] > div[data-ui="cell-lines"][data-inline][data-host-line]    the lines, under the host's content
+ *     div[data-ui="cell-line"][data-line="<key>"]
+ *       span[data-ui="cell-line-label"]                       the part's column label (where a line needs one)
+ *       div[data-ui="cell-line-value"]                        the part's own cell slot, unchanged
+ *   span[data-ui="model-part"]   a model id's part (UsageTable, OpsErrorLogTable, UserErrorRequestsTable; split after
+ *                                a slash, an outlier part over 32 characters also after its hyphens; theme only);
+ *                                account names and e-mails carry <wbr> at word joins (AccountsView, theme only)
+ * Where tables stack: 账号管理 and the 运维监控 error dialog (at most 1240px wide) always; 使用记录（管理）and
+ * 错误请求（管理）below 1800px; 使用记录（用户）, 错误请求（用户）and IP管理 below 1400px (stackBelow in each view's column
+ * definitions). Above that width a table is the flat table of section 4. Theme rules keyed on a merged column
+ * (td[data-column="K"]) carry over to its line: where the line looks exactly as the column did, the column's own rule
+ * also names the line (data.css, behaviour.css, accounts.css, dashboard-usage.css, users-groups-proxies-keys.css);
+ * where the line lays out differently, the line's rule is here (section 3). Host-cell rules of the form `> div` skip
+ * the lines container (:where(:not(cell-lines))).
+ *
+ * Performance: no :has(), no sibling combinator, no :nth-child(of); the hooks never change at runtime. */
+
+/* ================================================================== 1 · the stack hooks (every stacked table) */
+
+/* The lines of a stacked cell, under the host's own content. The container holds off what a host cell sets for its
+   own content (data.css draws 优先级 in Geist Mono 12.5), so each line looks as its own column did. */
+html.flat-theme .table-wrapper td[data-stack] > div[data-ui="cell-lines"] {
+  display: flex;
+  flex-direction: column;
+  flex-wrap: nowrap;
+  align-items: stretch;
+  gap: 5px;
+  width: auto;
+  max-width: none;
+  margin-top: 6px;
+  font-family: var(--ui-font);
+  font-size: 13px;
+  font-weight: 400;
+  font-variant-numeric: normal;
+  line-height: 19.5px;
+}
+
+/* nothing above the lines: the host's content is their first (labelled) line, or the host column is hidden */
+html.flat-theme .table-wrapper td[data-stack] > div[data-ui="cell-lines"][data-host-line] {
+  margin-top: 0;
+}
+
+html.flat-theme .table-wrapper td[data-stack] > div[data-ui="cell-lines"] > div[data-ui="cell-line"] {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  column-gap: 6px;
+  row-gap: 1px;
+  min-width: 0;
+  max-width: 100%;
+  margin: 0;
+  padding: 0;
+  font-weight: 400;
+}
+
+/* chips of the same kind share one line (分组 · 类型 · 计费, 位置 · 账号数) */
+html.flat-theme .table-wrapper td[data-stack] > div[data-ui="cell-lines"][data-inline] {
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  margin-top: 4px;
+}
+
+html.flat-theme .table-wrapper div[data-ui="cell-line"] > div[data-ui="cell-line-value"] {
+  min-width: 0;
+  max-width: 100%;
+}
+
+/* the line label: the console's mono label, as 管理分类 / 请求路由 already are in the accounts table */
+html.flat-theme .table-wrapper div[data-ui="cell-line"] > span[data-ui="cell-line-label"] {
+  flex: none;
+  font: var(--ui-label-font);
+  letter-spacing: var(--ui-label-tracking);
+  line-height: 18px;
+  text-transform: uppercase;
+  white-space: nowrap;
+  color: rgb(var(--ui-muted));
+}
+
+/* Header: the host's label, then one line per stacked part in cell order; a sortable part keeps its own sort box and
+   sorts by its own key; the 上游声明倍率 help mark comes with its label. The accounts header may take several lines
+   (the other stacked tables' headers do so in section 4). */
+html.flat-theme .table-wrapper[data-table="accounts"] .table-header .sticky-header-cell {
+  white-space: normal;
+  word-break: keep-all;
+  line-height: 15px;
+  vertical-align: bottom;
+}
+
+html.flat-theme .table-wrapper[data-table="accounts"] .table-header .sticky-header-cell > div {
+  flex-wrap: wrap;
+  row-gap: 2px;
+}
+
+html.flat-theme .table-wrapper .table-header .sticky-header-cell[data-stack] > div > div[data-ui="th-subs"] {
+  display: flex;
+  flex-basis: 100%;
+  flex-direction: column;
+  align-items: flex-start;
+  row-gap: 2px;
+  margin-left: 0;
+  cursor: auto;
+}
+
+html.flat-theme .table-wrapper .table-header .sticky-header-cell[data-stack] > div > div[data-ui="th-subs"][data-inline] {
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+html.flat-theme .table-wrapper .table-header div[data-ui="th-subs"][data-inline] > div[data-ui="th-sub"][data-sep]::before {
+  content: '·';
+  margin: 0 5px 0 4px;
+}
+
+/* (a sortable part reads as the header's label; its sort button is the 11px arrow box beside it) */
+html.flat-theme .table-wrapper .table-header div[data-ui="th-sub"] {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px 4px;
+  text-align: left;
+  text-transform: inherit;
+}
+
+html.flat-theme .table-wrapper .table-header div[data-ui="th-sub"][data-sort] {
+  cursor: pointer;
+}
+
+html.flat-theme .table-wrapper .table-header div[data-ui="th-sub"][data-sort]:hover {
+  color: rgb(var(--ui-ink-soft));
+}
+
+html.flat-theme .table-wrapper .table-header div[data-ui="th-sub"] > button[data-ui="th-sub-sort"] {
+  display: inline-flex;
+  width: 11px;
+  height: 11px;
+  flex: 0 0 11px;
+}
+
+html.flat-theme .table-wrapper .table-header div[data-ui="th-sub"] > button[data-ui="th-sub-sort"] > svg {
+  display: none;
+}
+
+/* an unsorted part draws no arrow, so its button takes no width (it wrapped onto a line of its own in narrow headers);
+   it keeps its box while it has keyboard focus so the focus ring stays visible */
+html.flat-theme .table-wrapper .table-header div[data-ui="th-sub"]:not([data-sort="ascending"], [data-sort="descending"]) > button[data-ui="th-sub-sort"]:not(:focus-visible) {
+  width: 0;
+  flex-basis: 0;
+  margin-left: -4px;
+  overflow: hidden;
+}
+
+html.flat-theme .table-wrapper .table-header div[data-ui="th-sub"]:is([data-sort="ascending"], [data-sort="descending"]) > button[data-ui="th-sub-sort"]::before {
+  content: '';
+  width: 11px;
+  height: 11px;
+  background-color: currentColor;
+  -webkit-mask: var(--ui-sort-arrow) center / 11px 11px no-repeat;
+  mask: var(--ui-sort-arrow) center / 11px 11px no-repeat;
+}
+
+html.flat-theme .table-wrapper .table-header div[data-ui="th-sub"][data-sort="ascending"] {
+  --ui-sort-arrow: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m5 12 7-7 7 7'/%3E%3Cpath d='M12 19V5'/%3E%3C/svg%3E");
+}
+
+html.flat-theme .table-wrapper .table-header div[data-ui="th-sub"][data-sort="descending"] {
+  --ui-sort-arrow: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M12 5v14'/%3E%3Cpath d='m19 12-7 7-7-7'/%3E%3C/svg%3E");
+}
+
+html.flat-theme .table-wrapper .table-header div[data-ui="th-sub"] > [data-ui="help-tooltip"] {
+  margin-left: 0;
+}
+
+/* ================================================================== 2 · 账号管理 (table view): 9 columns
+   名称 + 账号ID (+ 备注) · 平台/类型 + 容量 · 状态 + 调度 · 管理分类/请求路由 + 路由分组 (+ 代理) · 用量 (+ 今日统计) ·
+   优先级 (+ 调度权值 + 账号倍率) + 上游声明倍率 · 最近使用 + 创建时间 + 过期时间 · 操作. The five default-hidden columns,
+   switched on, become lines of the cell named in brackets (none adds a column). */
+
+html.flat-theme .table-wrapper[data-table="accounts"] {
+  --ui-table-cell-x: 8px;
+  --ui-table-edge-x: 14px;
+  --ui-table-select-w: 36px;
+}
+
+html.flat-theme .table-wrapper[data-table="accounts"] > table[data-ui~="data-table"]:is(table) {
+  min-width: 0;
+  width: 100%;
+}
+
+html.flat-theme .table-wrapper[data-table="accounts"] > table > tbody.table-body > tr > td {
+  white-space: normal;
+  overflow-wrap: break-word;
+  vertical-align: top;
+}
+
+html.flat-theme .table-wrapper[data-table="accounts"] > table > tbody.table-body > tr > td :is(.badge, [class~="rounded-md"][class~="px-1.5"], [class~="rounded"][class~="px-1.5"], [data-ui="group-badge"], [data-ui="platform-hue"] > span, [data-ui="platform-badge"] > div > span, [class~="font-mono"]) {
+  white-space: nowrap;
+}
+
+html.flat-theme .table-wrapper[data-table="accounts"] > table > tbody.table-body > tr > td[data-column="select"] > * {
+  margin-top: 1px;
+}
+
+/* ---- 名称 / 邮箱 / #ID (/ 备注): the name (600) over its e-mail, both complete; the template puts <wbr> before the @
+   and inside a long local part (NightingaleGiovanna7598 -> Nightingale · Giovanna · 7598), so an address breaks at a
+   word, never inside one */
+html.flat-theme .table-wrapper[data-table="accounts"] :is(th, td)[data-column="name"] {
+  width: auto;
+  min-width: 9rem;
+  max-width: none;
+}
+
+html.flat-theme .table-wrapper[data-table="accounts"] td[data-column="name"] > div:not([data-ui="cell-lines"]) {
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 1px;
+  width: auto;
+}
+
+html.flat-theme .table-wrapper[data-table="accounts"] td[data-column="name"] > div:not([data-ui="cell-lines"]) > :is(span, [data-ui="help-tooltip"]),
+html.flat-theme .table-wrapper[data-table="accounts"] td[data-column="name"] > div:not([data-ui="cell-lines"]) > [data-ui="help-tooltip"] > a {
+  flex: none;
+  max-width: 100%;
+  min-width: 0;
+  overflow: visible;
+  white-space: normal;
+  text-overflow: clip;
+  overflow-wrap: break-word;
+}
+
+/* a name that links to its site keeps its dotted underline on every line it wraps to */
+html.flat-theme .table-wrapper[data-table="accounts"] td[data-column="name"] > div:not([data-ui="cell-lines"]) > [data-ui="help-tooltip"] {
+  display: block;
+}
+
+html.flat-theme .table-wrapper[data-table="accounts"] td[data-column="name"] > div:not([data-ui="cell-lines"]) > [data-ui="help-tooltip"] > a {
+  display: inline;
+}
+
+html.flat-theme .table-wrapper[data-table="accounts"] td[data-column="name"] > div[data-ui="cell-lines"] {
+  gap: 1px;
+  margin-top: 2px;
+}
+
+html.flat-theme .table-wrapper[data-table="accounts"] td[data-column="name"] div[data-line="notes"] > div[data-ui="cell-line-value"] > span {
+  max-width: none;
+  overflow: visible;
+  white-space: normal;
+  text-overflow: clip;
+}
+
+/* ---- 平台/类型 / 容量: the identity chips (the joined platform | type chip on one line when it fits), the compact-mode
+   line, the capacity chip */
+html.flat-theme .table-wrapper[data-table="accounts"] th[data-column="platform_type"] {
+  min-width: 8.5rem;
+}
+
+html.flat-theme .table-wrapper[data-table="accounts"] td[data-column="platform_type"] > div:not([data-ui="cell-lines"]) {
+  flex-direction: column;
+  flex-wrap: nowrap;
+  align-items: flex-start;
+  gap: 5px;
+  width: auto;
+  max-width: none;
+}
+
+html.flat-theme .table-wrapper[data-table="accounts"] td[data-column="platform_type"] [data-ui="platform-badge"] {
+  flex-wrap: wrap;
+  row-gap: 4px;
+}
+
+html.flat-theme .table-wrapper[data-table="accounts"] td[data-column="platform_type"] > div:not([data-ui="cell-lines"]) > div:last-child {
+  white-space: normal;
+}
+
+/* ---- 状态 / 调度: the badge, its countdown (「自动恢复」 whole), the 429 / model / error marks, then the switch */
+html.flat-theme .table-wrapper[data-table="accounts"] td[data-column="status"] > div:not([data-ui="cell-lines"]),
+html.flat-theme .table-wrapper[data-table="accounts"] td[data-column="status"] > div:not([data-ui="cell-lines"]) > div[class~="flex"][class~="items-center"] {
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+}
+
+html.flat-theme .table-wrapper[data-table="accounts"] td[data-column="status"] div:is([class~="columns-2"], [class~="columns-3"]) {
+  columns: 1;
+}
+
+html.flat-theme .table-wrapper[data-table="accounts"] td[data-column="status"] div[class~="flex-col"][class~="items-center"] {
+  align-items: flex-start;
+}
+
+html.flat-theme .table-wrapper[data-table="accounts"] td[data-column="status"] div[class~="flex-col"][class~="items-center"] > span:not([class~="badge"]) {
+  max-width: 6.5rem;
+  text-align: left;
+  word-break: keep-all;
+}
+
+html.flat-theme .table-wrapper[data-table="accounts"] td[data-column="status"] > div[data-ui="cell-lines"] {
+  margin-top: 8px;
+  line-height: 0;
+}
+
+/* ---- 管理分类 / 请求路由 / 路由分组 (/ 代理): labelled lines, the mono label in a 46px gutter, the value beside it (a value
+   that wraps keeps its indent); the group badges flow and show their whole names */
+html.flat-theme .table-wrapper[data-table="accounts"] th[data-column="taxonomy_route"] {
+  min-width: 10rem;
+}
+
+html.flat-theme .table-wrapper[data-table="accounts"] td[data-column="taxonomy_route"] > div:not([data-ui="cell-lines"]) {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 5px;
+  max-width: none;
+}
+
+html.flat-theme .table-wrapper[data-table="accounts"] td[data-column="taxonomy_route"] > div:not([data-ui="cell-lines"]) > div,
+html.flat-theme .table-wrapper[data-table="accounts"] td[data-column="taxonomy_route"] > div[data-ui="cell-lines"] > div[data-ui="cell-line"] {
+  margin-top: 0;
+  padding-left: 52px;
+}
+
+html.flat-theme .table-wrapper[data-table="accounts"] td[data-column="taxonomy_route"] > div:not([data-ui="cell-lines"]) > div:first-child {
+  flex: none;
+  flex-wrap: wrap;
+  row-gap: 3px;
+}
+
+html.flat-theme .table-wrapper[data-table="accounts"] td[data-column="taxonomy_route"] > div:not([data-ui="cell-lines"]) > div[class~="truncate"],
+html.flat-theme .table-wrapper[data-table="accounts"] td[data-column="taxonomy_route"] > div:not([data-ui="cell-lines"]) > div:first-child > span[class~="truncate"] {
+  max-width: 100%;
+  min-width: 0;
+  overflow: visible;
+  white-space: normal;
+  text-overflow: clip;
+  word-break: keep-all;
+  overflow-wrap: break-word;
+}
+
+html.flat-theme .table-wrapper[data-table="accounts"] td[data-column="taxonomy_route"] > div:not([data-ui="cell-lines"]) > div > span[class~="uppercase"][class~="text-[10px]"],
+html.flat-theme .table-wrapper[data-table="accounts"] td[data-column="taxonomy_route"] > div[data-ui="cell-lines"] > div[data-ui="cell-line"] > span[data-ui="cell-line-label"] {
+  display: inline-block;
+  flex: none;
+  width: 46px;
+  margin-left: -52px;
+  margin-right: 6px;
+  line-height: 18px;
+}
+
+html.flat-theme .table-wrapper[data-table="accounts"] td[data-column="taxonomy_route"] > div:not([data-ui="cell-lines"]) > div > span[class~="uppercase"][class~="text-[10px]"] {
+  white-space: nowrap;
+}
+
+html.flat-theme .table-wrapper[data-table="accounts"] td[data-column="taxonomy_route"] > div[data-ui="cell-lines"] > div[data-ui="cell-line"] {
+  flex-wrap: nowrap;
+  column-gap: 0;
+}
+
+html.flat-theme .table-wrapper[data-table="accounts"] td[data-column="taxonomy_route"] > div[data-ui="cell-lines"] > div[data-ui="cell-line"] > div[data-ui="cell-line-value"] {
+  flex: 1 1 auto;
+}
+
+html.flat-theme .table-wrapper[data-table="accounts"] td[data-column="taxonomy_route"] [data-line="groups"] [data-ui="group-badge"] {
+  max-width: 100%;
+}
+
+html.flat-theme .table-wrapper[data-table="accounts"] td[data-column="taxonomy_route"] [data-line="groups"] [data-ui="group-badge"] > span[class~="truncate"] {
+  overflow: visible;
+  text-overflow: clip;
+}
+
+/* ---- 用量 (/ 今日统计): at least 11rem (upstream reserves 15rem); tickets and notes wrap, the bars are 4rem, a reset time
+   wraps under its bar; today's stats (switched on) under a label, two figures a line */
+html.flat-theme .table-wrapper[data-table="accounts"] th[data-column="usage"] {
+  min-width: 11rem;
+}
+
+html.flat-theme .table-wrapper[data-table="accounts"] td[data-column="usage"] > div:not([data-ui="cell-lines"]) {
+  min-width: 0;
+}
+
+html.flat-theme .table-wrapper[data-table="accounts"] td[data-column="usage"] [data-usage-variant="list"] [class~="max-w-[15rem]"] {
+  max-width: none;
+}
+
+html.flat-theme .table-wrapper[data-table="accounts"] td[data-column="usage"] [data-density="list"] > div:last-child {
+  flex-wrap: wrap;
+  row-gap: 2px;
+}
+
+html.flat-theme .table-wrapper[data-table="accounts"] td[data-column="usage"] [data-density="list"] > div:last-child > div[class~="h-1.5"] {
+  width: 4rem;
+}
+
+html.flat-theme .table-wrapper[data-table="accounts"] td[data-column="usage"] span[class~="truncate"] {
+  overflow: visible;
+  white-space: normal;
+  text-overflow: clip;
+}
+
+html.flat-theme .table-wrapper[data-table="accounts"] td[data-column="usage"] div[data-line="today_stats"] {
+  flex-direction: column;
+  align-items: flex-start;
+}
+
+html.flat-theme .table-wrapper[data-table="accounts"] td[data-column="usage"] div[data-line="today_stats"] > div[data-ui="cell-line-value"] > div > div {
+  flex-wrap: wrap;
+  column-gap: 10px;
+  row-gap: 1px;
+}
+
+html.flat-theme .table-wrapper[data-table="accounts"] td[data-column="usage"] div[data-line="today_stats"] > div[data-ui="cell-line-value"] > div > div > div {
+  white-space: nowrap;
+}
+
+/* ---- 优先级 / 调度权值 / 账号倍率 / 上游声明倍率: labelled lines (the value beside its label, or under it when the column is
+   too narrow for both) */
+html.flat-theme .table-wrapper[data-table="accounts"] td[data-column="priority"] div[data-line="upstream_billing_rate"] > div[data-ui="cell-line-value"] > div[class~="min-w-[7rem]"] {
+  flex-wrap: wrap;
+  height: auto;
+  min-height: 20px;
+  min-width: 0;
+  margin-block: -2px;
+}
+
+html.flat-theme .table-wrapper[data-table="accounts"] td[data-column="priority"] div[data-line="scheduler_score"] > div[data-ui="cell-line-value"] > div {
+  min-width: 0;
+}
+
+html.flat-theme .table-wrapper[data-table="accounts"] td[data-column="priority"] div[data-line="scheduler_score"] > div[data-ui="cell-line-value"] > div > div {
+  white-space: nowrap;
+}
+
+/* ---- 最近 / 创建 / 过期: short line labels under the header's full names; the column keeps a date beside its label */
+html.flat-theme .table-wrapper[data-table="accounts"] th[data-column="last_used_at"] {
+  min-width: 7.75rem;
+}
+
+/* ---- 操作: the three icon buttons stack (28px each; every row is taller than the stack), the column is 50px */
+html.flat-theme .table-wrapper[data-table="accounts"] td[data-column="actions"] > div {
+  flex-direction: column;
+  gap: 2px;
+  margin-top: -3px;
+}
+
+html.flat-theme .table-wrapper[data-table="accounts"] td[data-column="actions"] button[class~="flex-col"] {
+  margin-block: 0;
+}
+
+/* ---- below 1400px (1280 x 800): the joined platform | type chip stacks its parts, the taxonomy labels move over their
+   values, the flexible columns start from smaller floors */
+@media (max-width: 1399.98px) {
+  html.flat-theme .table-wrapper[data-table="accounts"] td[data-column="platform_type"] [data-ui="platform-badge"] > div[data-ui~="platform-hue"] {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  html.flat-theme .table-wrapper[data-table="accounts"] td[data-column="platform_type"] [data-ui="platform-badge"] > div[data-ui~="platform-hue"] > span:last-child {
+    border-left: 0;
+    border-top: 1px solid rgb(var(--pf-line, var(--ui-line)));
+  }
+
+  /* the plan / privacy chips (the chip group without the platform-hue hook) wrap */
+  html.flat-theme .table-wrapper[data-table="accounts"] td[data-column="platform_type"] [data-ui="platform-badge"] > div[class~="inline-flex"]:not([data-ui]) {
+    flex-wrap: wrap;
+    flex-shrink: 1;
+    row-gap: 4px;
+  }
+
+  html.flat-theme .table-wrapper[data-table="accounts"] td[data-column="taxonomy_route"] > div:not([data-ui="cell-lines"]) > div,
+  html.flat-theme .table-wrapper[data-table="accounts"] td[data-column="taxonomy_route"] > div[data-ui="cell-lines"] > div[data-ui="cell-line"] {
+    padding-left: 0;
+  }
+
+  html.flat-theme .table-wrapper[data-table="accounts"] td[data-column="taxonomy_route"] > div[data-ui="cell-lines"] > div[data-ui="cell-line"] {
+    flex-direction: column;
+  }
+
+  html.flat-theme .table-wrapper[data-table="accounts"] td[data-column="taxonomy_route"] > div:not([data-ui="cell-lines"]) > div > span[class~="uppercase"][class~="text-[10px]"],
+  html.flat-theme .table-wrapper[data-table="accounts"] td[data-column="taxonomy_route"] > div[data-ui="cell-lines"] > div[data-ui="cell-line"] > span[data-ui="cell-line-label"] {
+    display: block;
+    width: auto;
+    margin-left: 0;
+    margin-right: 0;
+  }
+
+  html.flat-theme .table-wrapper[data-table="accounts"] th[data-column="platform_type"] { min-width: 6rem; }
+  html.flat-theme .table-wrapper[data-table="accounts"] :is(th, td)[data-column="name"] { min-width: 8rem; }
+  html.flat-theme .table-wrapper[data-table="accounts"] th[data-column="taxonomy_route"] { min-width: 7rem; }
+  html.flat-theme .table-wrapper[data-table="accounts"] th[data-column="usage"] { min-width: 9.5rem; }
+  html.flat-theme .table-wrapper[data-table="accounts"] th[data-column="last_used_at"] { min-width: 7rem; }
+}
+
+/* ================================================================== 3 · lines whose layout differs from their column's
+   (the columns' own rules name the lines where they look the same: data.css figures, behaviour.css B1.5,
+   accounts.css groups / capacity / today's stats, dashboard-usage.css endpoint paths, users-groups-proxies-keys.css
+   the account-count chip and the created time) */
+
+/* behaviour.css B1.4: the created time as date / time, a block here so the line's label sits by the date */
+html.flat-theme .table-wrapper div[data-ui="cell-line"][data-line="created_at"] > div[data-ui="cell-line-value"] > span {
+  display: block;
+  width: min-content;
+  white-space: normal;
+}
+
+/* accounts.css: the routing-group badges wrap inside their line (the column kept them on one line) */
+html.flat-theme .table-wrapper[data-table="accounts"] div[data-ui="cell-line"][data-line="groups"] > div[data-ui="cell-line-value"] > div > div:first-child {
+  flex-wrap: wrap;
+  max-height: none;
+}
+
+/* accounts.css: the proxy's name, expiry and fallback one under another (the column put them side by side) */
+html.flat-theme .table-wrapper[data-table="accounts"] div[data-ui="cell-line"][data-line="proxy"] > div[data-ui="cell-line-value"] > div {
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+}
+
+/* ================================================================== 4 · 使用记录 (管理 + 用户), the error lists (使用记录「错误请求」,
+   运维监控 请求错误 / 上游错误, 用户「错误请求」) and IP管理, as flat tables (the width from which they no longer stack, and
+   their layout in general).
+   The recipe: the table fills its wrapper and may be narrower than its one-line content; cells wrap ONLY where text
+   has a natural break (a space, a CJK sentence, after a / or a hyphen of a long path or name); an e-mail, a model
+   name, a key name, an IP, a figure, a chip is never cut inside (overflow-wrap: break-word only rescues a single
+   word that is wider than its capped box, i.e. an outlier). Insets 5px (10 at the table edges); rows read from the
+   top; the header may take two lines, each sortable column keeps its 11px sort box (data.css: sorting never shifts a
+   column). */
+
+html.flat-theme :is(.table-wrapper[data-table="usage"], .table-wrapper[data-table="proxies"], [data-ui~="usage-records"] .table-wrapper:not([data-table="usage"]), [data-ui~="ops-error-list"] .table-wrapper, [data-ui="user-usage"] .table-wrapper:not([data-table="usage"])) {
+  --ui-table-cell-x: 5px;
+  --ui-table-edge-x: 10px;
+}
+
+html.flat-theme :is(.table-wrapper[data-table="usage"], .table-wrapper[data-table="proxies"], [data-ui~="usage-records"] .table-wrapper:not([data-table="usage"]), [data-ui~="ops-error-list"] .table-wrapper, [data-ui="user-usage"] .table-wrapper:not([data-table="usage"])) > table[data-ui~="data-table"]:is(table) {
+  min-width: 0;
+  width: 100%;
+}
+
+html.flat-theme :is(.table-wrapper[data-table="usage"], .table-wrapper[data-table="proxies"], [data-ui~="usage-records"] .table-wrapper:not([data-table="usage"]), [data-ui~="ops-error-list"] .table-wrapper, [data-ui="user-usage"] .table-wrapper:not([data-table="usage"])) > table > tbody.table-body > tr > td {
+  white-space: normal;
+  overflow-wrap: break-word;
+  vertical-align: top;
+}
+
+/* atoms: chips, badges, figures and IPs stay whole */
+html.flat-theme :is(.table-wrapper[data-table="usage"], .table-wrapper[data-table="proxies"], [data-ui~="usage-records"] .table-wrapper:not([data-table="usage"]), [data-ui~="ops-error-list"] .table-wrapper, [data-ui="user-usage"] .table-wrapper:not([data-table="usage"])) > table > tbody.table-body > tr > td :is(.badge, [data-ui~="category-chip"], [data-ui="group-badge"], [data-ui="platform-chip"], [class~="rounded"]:is([class~="px-1"], [class~="px-1.5"], [class~="px-2"]), [class~="rounded-md"]:is([class~="px-1.5"], [class~="px-2"]), [class~="tabular-nums"]) {
+  white-space: nowrap;
+}
+
+html.flat-theme :is(.table-wrapper[data-table="usage"], .table-wrapper[data-table="proxies"], [data-ui~="usage-records"] .table-wrapper:not([data-table="usage"]), [data-ui~="ops-error-list"] .table-wrapper, [data-ui="user-usage"] .table-wrapper:not([data-table="usage"])) .table-header .sticky-header-cell {
+  white-space: normal;
+  word-break: keep-all;
+  line-height: 15px;
+  vertical-align: bottom;
+}
+
+html.flat-theme :is(.table-wrapper[data-table="usage"], .table-wrapper[data-table="proxies"], [data-ui~="usage-records"] .table-wrapper:not([data-table="usage"]), [data-ui~="ops-error-list"] .table-wrapper, [data-ui="user-usage"] .table-wrapper:not([data-table="usage"])) .table-header .sticky-header-cell > div {
+  flex-wrap: wrap;
+  row-gap: 2px;
+}
+
+/* ---- 4.1 · 使用记录 (管理 and 用户) */
+
+/* the user e-mail over its #id */
+html.flat-theme .table-wrapper[data-table="usage"] td[data-column="user"] > div > span:last-child {
+  display: block;
+  margin-left: 0;
+}
+
+html.flat-theme .table-wrapper[data-table="usage"] td[data-column="user"] > div > button {
+  text-align: left;
+}
+
+/* key and account names wrap at their spaces / hyphens / slashes; an e-mail stays whole (an outlier over 13rem breaks) */
+html.flat-theme .table-wrapper[data-table="usage"] td:is([data-column="api_key"], [data-column="account"]) > span {
+  display: inline-block;
+  max-width: 13rem;
+}
+
+/* the model name reads whole: the column is at least as wide as a usual model id (claude-opus-5-5); the
+   upstream-mismatch note wraps as a sentence */
+html.flat-theme .table-wrapper[data-table="usage"] th[data-column="model"] {
+  min-width: 7.5rem;
+}
+
+/* every model id (the usage records and both error lists draw it in parts, split after a slash: anthropic/ |
+   claude-opus-5.5) is never broken inside a part; only an outlier part over 32 characters, which could push the table
+   sideways, is drawn in pieces that break after its hyphens (softWrap.ts modelWrapParts) */
+html.flat-theme .table-wrapper span[data-ui="model-part"] {
+  white-space: nowrap;
+}
+
+/* 「计费 / 模式」 two by two (the chip under it is two characters) */
+html.flat-theme .table-wrapper[data-table="usage"] .table-header .sticky-header-cell[data-column="billing_mode"] > div > span:first-child {
+  max-width: 2.4em;
+  word-break: normal;
+}
+
+/* upstream marks the model chain break-all (it never wrapped before): here the chain wraps between its parts only;
+   the 「↳ 上游响应:」 label is one piece and the model id may start on the next line */
+html.flat-theme :is(.table-wrapper[data-table="usage"], :is([data-ui~="usage-records"] .table-wrapper:not([data-table="usage"]), [data-ui~="ops-error-list"] .table-wrapper, [data-ui="user-usage"] .table-wrapper:not([data-table="usage"]))) td[data-column="model"] [class~="break-all"] {
+  word-break: normal;
+  overflow-wrap: break-word;
+}
+
+html.flat-theme :is(.table-wrapper[data-table="usage"], :is([data-ui~="usage-records"] .table-wrapper:not([data-table="usage"]), [data-ui~="ops-error-list"] .table-wrapper, [data-ui="user-usage"] .table-wrapper:not([data-table="usage"]))) td[data-column="model"] [class~="break-all"] > span:is([class~="mr-1"], [class~="mr-0.5"]) {
+  display: inline-block;
+  white-space: nowrap;
+}
+
+/* endpoint paths: upstream's break-all cut a path anywhere; a path now wraps after its slashes, and moves whole under
+   its 「入站:」 label when it does not fit beside it */
+html.flat-theme .table-wrapper[data-table="usage"] td[data-column="endpoint"] > div {
+  max-width: none;
+}
+
+html.flat-theme .table-wrapper[data-table="usage"] td[data-column="endpoint"] div[class~="break-all"] {
+  word-break: normal;
+  overflow-wrap: break-word;
+}
+
+html.flat-theme .table-wrapper[data-table="usage"] td[data-column="endpoint"] div[class~="break-all"] > span[class~="ml-1"] {
+  display: inline-block;
+}
+
+/* token in / out and cache figures: two per line, each figure whole */
+html.flat-theme .table-wrapper[data-table="usage"] td[data-column="tokens"] > div,
+html.flat-theme .table-wrapper[data-table="usage"] td[data-column="tokens"] div[class~="space-y-1"] > div[class~="flex"] {
+  flex-wrap: wrap;
+  row-gap: 2px;
+}
+
+html.flat-theme .table-wrapper[data-table="usage"] td[data-column="tokens"] div[class~="inline-flex"],
+html.flat-theme .table-wrapper[data-table="usage"] td[data-column="cost"] :is(span, div[class~="text-orange-500"]) {
+  white-space: nowrap;
+}
+
+html.flat-theme .table-wrapper[data-table="usage"] td[data-column="cost"] > div > div[class~="flex"] {
+  flex-wrap: wrap;
+  row-gap: 2px;
+}
+
+/* latency: where the table is short of room (管理 below 1800px, 用户 below 1400px) each label goes over its figure
+   (首字 / 3.10s / 总耗时 / 4.94s) beside the colour bar */
+@media (max-width: 1799.98px) {
+  html.flat-theme [data-ui="admin-usage"] .table-wrapper[data-table="usage"] td[data-column="latency"] div[class~="grid"] {
+    grid-template-columns: max-content;
+    row-gap: 0;
+  }
+}
+
+@media (max-width: 1399.98px) {
+  html.flat-theme [data-ui="user-usage"] .table-wrapper[data-table="usage"] td[data-column="latency"] div[class~="grid"] {
+    grid-template-columns: max-content;
+    row-gap: 0;
+  }
+}
+
+/* the IP whole, its 「获取地区」 under it */
+html.flat-theme .table-wrapper[data-table="usage"] td[data-column="ip_address"] span[class~="font-mono"] {
+  white-space: nowrap;
+}
+
+/* ---- 4.2 · the error lists (OpsErrorLogTable, UserErrorRequestsTable) */
+
+html.flat-theme :is([data-ui~="usage-records"] .table-wrapper:not([data-table="usage"]), [data-ui~="ops-error-list"] .table-wrapper, [data-ui="user-usage"] .table-wrapper:not([data-table="usage"])) td[data-column="user"] > div > span:last-child {
+  display: block;
+  margin-left: 0;
+}
+
+html.flat-theme :is([data-ui~="usage-records"] .table-wrapper:not([data-table="usage"]), [data-ui~="ops-error-list"] .table-wrapper, [data-ui="user-usage"] .table-wrapper:not([data-table="usage"])) td:is([data-column="api_key"], [data-column="key_name"], [data-column="account"]) :is(span, button, div):not([data-ui~="category-chip"]) {
+  max-width: 13rem;
+}
+
+html.flat-theme :is([data-ui~="usage-records"] .table-wrapper:not([data-table="usage"]), [data-ui~="ops-error-list"] .table-wrapper, [data-ui="user-usage"] .table-wrapper:not([data-table="usage"])) th[data-column="model"] {
+  min-width: 8rem;
+}
+
+html.flat-theme :is([data-ui~="usage-records"] .table-wrapper:not([data-table="usage"]), [data-ui~="ops-error-list"] .table-wrapper, [data-ui="user-usage"] .table-wrapper:not([data-table="usage"])) td[data-column="endpoint"] > div {
+  max-width: none;
+}
+
+html.flat-theme :is([data-ui~="usage-records"] .table-wrapper:not([data-table="usage"]), [data-ui~="ops-error-list"] .table-wrapper, [data-ui="user-usage"] .table-wrapper:not([data-table="usage"])) td[data-column="endpoint"] div[class~="break-all"] {
+  word-break: normal;
+  overflow-wrap: break-word;
+}
+
+html.flat-theme :is([data-ui~="usage-records"] .table-wrapper:not([data-table="usage"]), [data-ui~="ops-error-list"] .table-wrapper, [data-ui="user-usage"] .table-wrapper:not([data-table="usage"])) td[data-column="endpoint"] div[class~="break-all"] > span[class~="ml-1"] {
+  display: inline-block;
+}
+
+/* the message and the User-Agent: no 280px cap, no ellipsis; they wrap as sentences (behaviour.css B1.12 wraps them
+   anywhere; here a word stays whole) */
+html.flat-theme :is([data-ui~="ops-error-list"], [data-ui~="usage-records"], [data-ui="user-usage"])[data-ui]:not(uipad):not(uipad) .table-wrapper:not([data-table="usage"]) td:is([data-column="message"], [data-column="user_agent"]) > span[class][class][class] {
+  max-width: none;
+  overflow: visible;
+  white-space: normal;
+  text-overflow: clip;
+  overflow-wrap: break-word;
+}
+
+html.flat-theme :is([data-ui~="usage-records"] .table-wrapper:not([data-table="usage"]), [data-ui~="ops-error-list"] .table-wrapper, [data-ui="user-usage"] .table-wrapper:not([data-table="usage"])) th[data-column="message"] {
+  min-width: 9rem;
+}
+
+/* an error category is a short phrase (上游错误, 服务暂时不可用): it stays on one line */
+html.flat-theme :is([data-ui~="usage-records"] .table-wrapper:not([data-table="usage"]), [data-ui~="ops-error-list"] .table-wrapper, [data-ui="user-usage"] .table-wrapper:not([data-table="usage"])) td[data-column="category"] > span {
+  word-break: keep-all;
+}
+
+html.flat-theme :is([data-ui~="usage-records"] .table-wrapper:not([data-table="usage"]), [data-ui~="ops-error-list"] .table-wrapper, [data-ui="user-usage"] .table-wrapper:not([data-table="usage"])) td[data-column="status"] > div {
+  flex-wrap: wrap;
+  row-gap: 3px;
+}
+
+html.flat-theme :is([data-ui~="usage-records"] .table-wrapper:not([data-table="usage"]), [data-ui~="ops-error-list"] .table-wrapper, [data-ui="user-usage"] .table-wrapper:not([data-table="usage"])) td[data-column="created_at"] > span {
+  display: inline-block;
+  width: min-content;
+  white-space: normal;
+}
+
+html.flat-theme :is([data-ui~="usage-records"] .table-wrapper:not([data-table="usage"]), [data-ui~="ops-error-list"] .table-wrapper, [data-ui="user-usage"] .table-wrapper:not([data-table="usage"])) td:is([data-column="client_ip"], [data-column="ip_address"]) :is(span, div)[class~="font-mono"] {
+  white-space: nowrap;
+}
+
+/* ---- 4.3 · IP管理: the address whole (its copy button under it), the latency badge over its quality line, the four row
+   actions two by two; the location wraps at its 「·」, a place name stays whole */
+html.flat-theme .table-wrapper[data-table="proxies"] td[data-column="auth"] > div > div > span {
+  white-space: normal;
+  overflow-wrap: break-word;
+}
+
+html.flat-theme .table-wrapper[data-table="proxies"] td[data-column="latency"] div[class~="items-center"] {
+  flex-wrap: wrap;
+  row-gap: 3px;
+}
+
+html.flat-theme .table-wrapper[data-table="proxies"] th[data-column="location"] {
+  min-width: 6.5rem;
+}
+
+html.flat-theme .table-wrapper[data-table="proxies"] td[data-column="actions"] > div {
+  display: grid;
+  grid-template-columns: repeat(2, 28px);
+  gap: 2px;
+}
+
+/* ================================================================== 5 · the tables of section 4 while stacked (the
+   lines only exist below each table's width, stackBelow):
+   使用记录（管理）: 用户 + API 密钥 + 账户 · 模型 (+ 推理强度) + 端点 · 分组 + 类型 + 计费模式
+   使用记录（用户）: 模型 + 推理强度 + 端点 · 分组 + 类型 + 计费模式
+   错误请求（管理 / 运维监控）: 用户 + API 密钥 + 账号 · 平台 + 模型 + 端点 · 分组 + 类型 + 错误分类
+   错误请求（用户）: 模型 + 端点 · 分组 + 类型 + 平台 + 错误分类
+   IP管理: 地理位置 + 账号数 · 有效期 + 创建时间
+   (after section 4: a stacked host's floor outranks the flat column's) */
+
+html.flat-theme .table-wrapper th[data-stack]:is([data-column="user"], [data-column="platform"]) {
+  min-width: 8.5rem;
+}
+
+/* the model cell keeps 「↳ 上游响应:anthropic/」 on one line and the model id whole on the next */
+html.flat-theme [data-ui="admin-usage"] .table-wrapper[data-table="usage"] th[data-stack][data-column="model"] {
+  min-width: 9.25rem;
+}
+
+html.flat-theme [data-ui="user-usage"] .table-wrapper th[data-stack][data-column="model"] {
+  min-width: 8.5rem;
+}
+
+html.flat-theme .table-wrapper th[data-stack][data-column="group"] {
+  min-width: 6rem;
+}
+
+/* a key / account line: the name wraps at its own breaks, an e-mail stays whole */
+html.flat-theme .table-wrapper div[data-ui="cell-line"]:is([data-line="api_key"], [data-line="account"]) > div[data-ui="cell-line-value"] :is(span, button, div) {
+  max-width: 13rem;
+}
+
+html.flat-theme .table-wrapper div[data-ui="cell-line"][data-line="endpoint"] > div[data-ui="cell-line-value"] {
+  flex: 1 1 100%;
+}
+
+html.flat-theme .table-wrapper div[data-ui="cell-line"][data-line="endpoint"] div[class~="break-all"] {
+  word-break: normal;
+  overflow-wrap: break-word;
+}
+
+html.flat-theme .table-wrapper div[data-ui="cell-line"][data-line="endpoint"] div[class~="break-all"] > span[class~="ml-1"] {
+  display: inline-block;
+}
+
+html.flat-theme .table-wrapper div[data-ui="cell-line"][data-line="model"] > div[data-ui="cell-line-value"] :is(span, div) {
+  overflow-wrap: break-word;
+}
+
+html.flat-theme .table-wrapper[data-table="proxies"] div[data-ui="cell-line"][data-line="created_at"] {
+  flex-direction: column;
+  align-items: flex-start;
+}
+
+/* ================================================================== 6 · below 1400px: the tables that fit at 1440 but not at
+   1280 (用户管理, 分组管理, API 密钥, 操作日志, 渠道管理): the same recipe, lighter (8px insets, 12 at the edges; cells may
+   wrap at word boundaries; chips, badges and figures stay whole; the row actions wrap three a row). Mono text is NOT an
+   atom here: behaviour.css B1.12 wraps 操作日志's action and method + path, and that stays so. API 密钥 needs about 1437px
+   on one line, so its recipe reaches up to 1440px. From there up (the others from 1400px) these tables are unchanged. */
+@media (max-width: 1399.98px) {
+  html.flat-theme :is(.table-wrapper:is([data-table="users"], [data-table="groups"]), [data-ui~="audit-page"] .table-wrapper, [data-ui~="channels-page"] .table-wrapper) {
+    --ui-table-cell-x: 8px;
+    --ui-table-edge-x: 12px;
+  }
+
+  html.flat-theme :is(.table-wrapper:is([data-table="users"], [data-table="groups"]), [data-ui~="audit-page"] .table-wrapper, [data-ui~="channels-page"] .table-wrapper) > table[data-ui~="data-table"]:is(table) {
+    min-width: 0;
+    width: 100%;
+  }
+
+  html.flat-theme :is(.table-wrapper:is([data-table="users"], [data-table="groups"]), [data-ui~="audit-page"] .table-wrapper, [data-ui~="channels-page"] .table-wrapper) > table > tbody.table-body > tr > td {
+    white-space: normal;
+    overflow-wrap: break-word;
+  }
+
+  html.flat-theme :is(.table-wrapper:is([data-table="users"], [data-table="groups"]), [data-ui~="audit-page"] .table-wrapper, [data-ui~="channels-page"] .table-wrapper) > table > tbody.table-body > tr > td :is(.badge, [data-ui~="category-chip"], [data-ui="group-badge"], [data-ui="platform-chip"], [class~="rounded"]:is([class~="px-1"], [class~="px-1.5"], [class~="px-2"]), [class~="rounded-md"]:is([class~="px-1.5"], [class~="px-2"]), [class~="rounded-full"][class~="px-2"], [class~="tabular-nums"]) {
+    white-space: nowrap;
+  }
+
+  html.flat-theme :is(.table-wrapper:is([data-table="users"], [data-table="groups"]), [data-ui~="audit-page"] .table-wrapper, [data-ui~="channels-page"] .table-wrapper) td[data-column="actions"] > div {
+    flex-wrap: wrap;
+    max-width: 100px;
+    row-gap: 2px;
+  }
+}
+
+@media (max-width: 1439.98px) {
+  html.flat-theme .table-wrapper[data-table="keys"] {
+    --ui-table-cell-x: 8px;
+    --ui-table-edge-x: 12px;
+  }
+
+  html.flat-theme .table-wrapper[data-table="keys"] > table[data-ui~="data-table"]:is(table) {
+    min-width: 0;
+    width: 100%;
+  }
+
+  html.flat-theme .table-wrapper[data-table="keys"] > table > tbody.table-body > tr > td {
+    white-space: normal;
+    overflow-wrap: break-word;
+  }
+
+  html.flat-theme .table-wrapper[data-table="keys"] > table > tbody.table-body > tr > td :is(.badge, [data-ui~="category-chip"], [data-ui="group-badge"], [data-ui="platform-chip"], [class~="rounded"]:is([class~="px-1"], [class~="px-1.5"], [class~="px-2"]), [class~="rounded-md"]:is([class~="px-1.5"], [class~="px-2"]), [class~="rounded-full"][class~="px-2"], [class~="tabular-nums"]) {
+    white-space: nowrap;
+  }
+
+  html.flat-theme .table-wrapper[data-table="keys"] td[data-column="actions"] > div {
+    flex-wrap: wrap;
+    max-width: 100px;
+    row-gap: 2px;
+  }
+
+  html.flat-theme .table-wrapper[data-table="keys"] td[data-column="usage"] :is(span, div),
+  html.flat-theme .table-wrapper[data-table="keys"] td[data-column="key"] code {
+    white-space: nowrap;
+  }
+}

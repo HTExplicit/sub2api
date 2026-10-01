@@ -399,7 +399,7 @@ html.flat-theme :is(.table-wrapper[data-table="usage"], [data-ui="user-usage"] .
 /* Texture of the cells (REF §8.7 /logs request table: the model 13/500 ink, ids and paths Geist Mono): the requested
    model at the row's 13px (the mapping chain under it stays 12px muted), the user id after the e-mail and the endpoint
    paths in Geist Mono; the 「入站 / 上游」 labels stay sans. Same on the error lists of both pages. */
-html.flat-theme .table-wrapper[data-table="usage"] td[data-column="model"] :is(span, div)[class~="font-medium"][class~="text-gray-900"] {
+html.flat-theme .table-wrapper[data-table="usage"] td[data-column="model"] > :where(:not([data-ui="cell-lines"])) :is(span, div)[class~="font-medium"][class~="text-gray-900"] {
   font-size: 13px;
   line-height: 19.5px;
 }
@@ -409,21 +409,71 @@ html.flat-theme :is(.table-wrapper[data-table="usage"], [data-ui="admin-usage"] 
   font-size: 12px;
 }
 
+html.flat-theme :is(.table-wrapper[data-table="usage"], [data-ui="admin-usage"] .table-wrapper, [data-ui="user-usage"] .table-wrapper) [data-ui="cell-line"][data-line="endpoint"] div > span[class~="ml-1"],
 html.flat-theme :is(.table-wrapper[data-table="usage"], [data-ui="admin-usage"] .table-wrapper, [data-ui="user-usage"] .table-wrapper) td[data-column="endpoint"] div > span[class~="ml-1"] {
   font-family: var(--ui-font-mono);
   font-size: 11.5px;
   color: rgb(var(--ui-ink-soft));
 }
 
-/* Figures: token counts, cache and image tokens, the billed cost are ink (their glyphs say which is which); the glyphs
-   themselves the faint grey; the account's billed cost muted. */
-html.flat-theme .table-wrapper[data-table="usage"] td[data-column="tokens"] :is([class~="text-sky-600"], [class~="text-amber-600"], [class~="text-fuchsia-600"], [class~="text-pink-600"]),
+/* Hierarchy by colour and weight instead of more black (palette C): the requested model and the billed cost are the
+   row's ink (500); every token figure (input, output, cache, image) ink-soft; the key, account and reasoning names
+   ink-soft 400; the endpoint's 「入站 / 上游」 labels 400; times and IPs tabular figures. The token glyphs get upstream's
+   hues back as identity-safe text colours (input emerald, output violet, cache read sky, cache write amber, image
+   fuchsia / pink, indigo), so the figures stay neutral and the colour says which figure is which; the account's billed
+   cost stays muted. The key, account, reasoning and endpoint rules also name their lines of a stacked cell
+   ([data-ui="cell-line"][data-line], the table-width track's stacked layout), as that track does for the rules it
+   carries over. */
+html.flat-theme .table-wrapper[data-table="usage"] td:is([data-column="api_key"], [data-column="account"], [data-column="reasoning_effort"]) span[class~="text-gray-900"],
+html.flat-theme .table-wrapper[data-table="usage"] [data-ui="cell-line"]:is([data-line="api_key"], [data-line="account"], [data-line="reasoning_effort"]) > [data-ui="cell-line-value"] span[class~="text-gray-900"] {
+  color: rgb(var(--ui-ink-soft));
+  font-weight: 400;
+}
+
+html.flat-theme .table-wrapper[data-table="usage"] td[data-column="tokens"] span[class~="font-medium"][class~="text-gray-900"],
+html.flat-theme .table-wrapper[data-table="usage"] td[data-column="tokens"] :is([class~="text-sky-600"], [class~="text-amber-600"], [class~="text-fuchsia-600"], [class~="text-pink-600"]) {
+  color: rgb(var(--ui-ink-soft));
+}
+
 html.flat-theme .table-wrapper[data-table="usage"] td[data-column="cost"] span[class~="text-green-600"] {
   color: rgb(var(--ui-ink));
 }
 
-html.flat-theme .table-wrapper[data-table="usage"] td[data-column="tokens"] svg:is([class~="text-emerald-500"], [class~="text-violet-500"], [class~="text-sky-500"], [class~="text-amber-500"], [class~="text-fuchsia-500"], [class~="text-pink-500"], [class~="text-indigo-500"]) {
-  color: rgb(var(--ui-faint));
+html.flat-theme :is(.table-wrapper[data-table="usage"], [data-ui="admin-usage"] .table-wrapper, [data-ui="user-usage"] .table-wrapper) td[data-column="endpoint"] div > span[class~="font-medium"],
+html.flat-theme :is(.table-wrapper[data-table="usage"], [data-ui="admin-usage"] .table-wrapper, [data-ui="user-usage"] .table-wrapper) [data-ui="cell-line"][data-line="endpoint"] div > span[class~="font-medium"] {
+  font-weight: 400;
+}
+
+html.flat-theme .table-wrapper[data-table="usage"] td:is([data-column="created_at"], [data-column="ip_address"]) span {
+  font-variant-numeric: tabular-nums;
+}
+
+html.flat-theme .table-wrapper[data-table="usage"] td[data-column="tokens"] svg[class~="text-emerald-500"] {
+  color: rgb(var(--ui-id-emerald));
+}
+
+html.flat-theme .table-wrapper[data-table="usage"] td[data-column="tokens"] svg[class~="text-violet-500"] {
+  color: rgb(var(--ui-id-violet));
+}
+
+html.flat-theme .table-wrapper[data-table="usage"] td[data-column="tokens"] svg[class~="text-sky-500"] {
+  color: rgb(var(--ui-id-sky));
+}
+
+html.flat-theme .table-wrapper[data-table="usage"] td[data-column="tokens"] svg[class~="text-amber-500"] {
+  color: rgb(var(--ui-id-amber));
+}
+
+html.flat-theme .table-wrapper[data-table="usage"] td[data-column="tokens"] svg[class~="text-fuchsia-500"] {
+  color: rgb(var(--ui-id-fuchsia));
+}
+
+html.flat-theme .table-wrapper[data-table="usage"] td[data-column="tokens"] svg[class~="text-pink-500"] {
+  color: rgb(var(--ui-id-pink));
+}
+
+html.flat-theme .table-wrapper[data-table="usage"] td[data-column="tokens"] svg[class~="text-indigo-500"] {
+  color: rgb(var(--ui-id-indigo));
 }
 
 html.flat-theme .table-wrapper[data-table="usage"] td[data-column="cost"] div[class~="text-orange-500"] {
@@ -792,6 +842,8 @@ html.flat-theme [data-ui="user-usage"] > div[class~="border-b"]:not(uipad[data-u
   border-bottom-color: rgb(var(--ui-focus));
   background-color: transparent;
   color: rgb(var(--ui-ink));
+  font-weight: 500;
+  box-shadow: none;
 }
 
 /* The pagination under the records card is the card's footer (as data.css joins them on the table pages): the card

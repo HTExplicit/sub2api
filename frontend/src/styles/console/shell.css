@@ -33,16 +33,17 @@ html.flat-theme {
   --ui-shell-header-h: calc(var(--ui-shell-pad-y) + var(--ui-shell-row));
   --ui-shell-pad-top: var(--ui-shell-gap);
   --ui-shell-pad-bottom: var(--ui-shell-pad-y);
-  /* Sidebar text and icons are ink at an alpha (REF §8.1: text 50 %, icons 30 %). On the canvas, the hover fill and
-     the active tint the reference's 3.68:1 / 2.03:1 need 58 % (4.69-4.83:1) and 46 % (3.18-3.24:1); REF §13's 56 % /
-     44 % pass on the canvas only (shell_calc.py). Dark: the reference's 50 % passes, icons need 36 % (3.08:1). */
-  --ui-shell-nav-fg: 0.58;
-  --ui-shell-nav-icon: 0.46;
+  /* Sidebar text and icons are ink at an alpha (REF §8.1: text 50 %, icons 30 %). With palette C's softer ink the
+     alphas rise so the nav keeps its greys: 66 % text (4.98-5.21:1 on the canvas, the hover fill and the active
+     tint) and 50 % icons (3.11-3.19:1). Dark (graphite): 56 % text (4.55:1 on hover, 5.27:1 on the canvas), 40 %
+     icons (3.07-3.34:1). */
+  --ui-shell-nav-fg: 0.66;
+  --ui-shell-nav-icon: 0.5;
 }
 
 html.flat-theme.dark {
-  --ui-shell-nav-fg: 0.5;
-  --ui-shell-nav-icon: 0.36;
+  --ui-shell-nav-fg: 0.56;
+  --ui-shell-nav-icon: 0.4;
 }
 
 /* --ui-header-h (tokens.css) is the sticky header keyboard focus must clear (behaviour.css B3.4): nothing sticks on

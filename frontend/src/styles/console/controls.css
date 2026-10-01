@@ -34,8 +34,9 @@ html.flat-theme {
      surface); an ink track made a column of switches the heaviest thing on a table page */
   --ctl-switch-on: var(--ui-primary);
   --ctl-knob: var(--ui-surface);
-  /* segmented control: frame, inset, segment metrics (REF-CONSOLE §8.5) */
-  --ctl-seg-frame: var(--ui-line);
+  /* segmented control: the frame's 1px edge (palette C: the track colour, so the frame reads as one grey track),
+     inset, segment metrics (REF-CONSOLE §8.5) */
+  --ctl-seg-frame: var(--ui-track);
   --ctl-seg-inset: 2px;
   --ctl-seg-pad-y: 0.375rem;
   --ctl-seg-pad-x: 0.875rem;
@@ -172,7 +173,7 @@ html.flat-theme label.block.font-medium:is(.text-sm, .text-xs):is(.mb-1, .mb-1\.
   font-family: var(--ui-font-mono);
   font-size: var(--ui-label-size);
   line-height: var(--ui-label-leading);
-  font-weight: 600;
+  font-weight: 500;
   letter-spacing: var(--ui-label-tracking);
   text-transform: uppercase;
   color: rgb(var(--ui-label));
@@ -181,9 +182,9 @@ html.flat-theme label.block.font-medium:is(.text-sm, .text-xs):is(.mb-1, .mb-1\.
 /* ================================================================== 4 · select and date-range triggers */
 
 /* 4.1 Select.vue's trigger is the reference's house-select (REF-CONSOLE §8.4): 34px, 10px in (9px before the
-   chevron), 13px / 600 ink, radius 6, the control outline; the focus line on hover and while open; an accent edge on
-   keyboard focus; the 12px chevron. The doubled class outranks the scoped rules and their dark: forms
-   (.dark .select-trigger[data-v]:hover is 0,4,0). */
+   chevron), 13px / 500 ink (palette C: values at 500), radius 6, the control outline; the focus line on hover and
+   while open; an accent edge on keyboard focus; the 12px chevron. The doubled class outranks the scoped rules and
+   their dark: forms (.dark .select-trigger[data-v]:hover is 0,4,0). */
 html.flat-theme .select-trigger.select-trigger {
   gap: 0.375rem;
   border-radius: var(--ui-radius-md);
@@ -192,7 +193,7 @@ html.flat-theme .select-trigger.select-trigger {
   padding: 0.390625rem 0.5625rem 0.390625rem 0.625rem;
   font-size: 0.8125rem;
   line-height: 1.21875rem;
-  font-weight: 600;
+  font-weight: 500;
   color: rgb(var(--ui-ink));
   box-shadow: none;
   transition-property: color, border-color, box-shadow;
@@ -247,7 +248,7 @@ html.flat-theme .select-trigger :is(.select-icon, .select-clear) > svg {
   height: 0.75rem;
 }
 
-/* 4.2 DateRangePicker's trigger: the same field (a 14px calendar glyph, the value at 600, the 12px chevron). */
+/* 4.2 DateRangePicker's trigger: the same field (a 14px calendar glyph, the value at 500, the 12px chevron). */
 html.flat-theme .date-picker-trigger.date-picker-trigger {
   gap: 0.375rem;
   border-radius: var(--ui-radius-md);
@@ -281,7 +282,7 @@ html.flat-theme .date-picker-trigger.date-picker-trigger:focus-visible {
 }
 
 html.flat-theme .date-picker-trigger .date-picker-value {
-  font-weight: 600;
+  font-weight: 500;
 }
 
 html.flat-theme .date-picker-trigger :is(.date-picker-icon, .date-picker-chevron) {
@@ -300,8 +301,8 @@ html.flat-theme .date-picker-trigger .date-picker-chevron > svg {
 }
 
 /* 4.3 Inside the picker (the panel itself is overlays.css'): presets as quiet 30px choices, the current one on the
-   accent tint (the reference's selected filter); mono field labels; 30px date fields; the apply button is the ink
-   primary. */
+   accent tint (the reference's selected filter); mono field labels; 30px date fields; the apply button is the solid
+   primary (tokens.css --ui-solid: the accent fill, a deeper step on hover). */
 html.flat-theme .date-picker-preset.date-picker-preset {
   border-radius: var(--ui-radius-md);
   padding: 0.3125rem 0.625rem;
@@ -330,7 +331,7 @@ html.flat-theme .date-picker-label.date-picker-label {
   font-family: var(--ui-font-mono);
   font-size: var(--ui-label-size);
   line-height: var(--ui-label-leading);
-  font-weight: 600;
+  font-weight: 500;
   letter-spacing: var(--ui-label-tracking);
   text-transform: uppercase;
   color: rgb(var(--ui-label));
@@ -357,14 +358,19 @@ html.flat-theme .date-picker-input.date-picker-input:focus {
 html.flat-theme .date-picker-apply.date-picker-apply,
 html.flat-theme .date-picker-apply.date-picker-apply:hover {
   min-height: var(--ui-control-h);
-  border: 1px solid rgb(var(--ui-ink));
+  border: 1px solid rgb(var(--ui-solid-edge));
   border-radius: var(--ui-radius-md);
-  background-color: rgb(var(--ui-ink));
+  background-color: rgb(var(--ui-solid));
   padding: 0.265625rem 0.75rem;
   font-size: 0.8125rem;
   line-height: 1.21875rem;
   font-weight: 600;
-  color: rgb(var(--ui-on-ink));
+  color: rgb(var(--ui-on-solid));
+}
+
+html.flat-theme .date-picker-apply.date-picker-apply:hover:not(:disabled) {
+  border-color: rgb(var(--ui-solid-edge-hover));
+  background-color: rgb(var(--ui-solid-hover));
 }
 
 /* 4.3b Native date and time fields (date, datetime-local, time, month, week) keep the control heights: Chromium pads
@@ -536,10 +542,12 @@ html.flat-theme input:is([type="checkbox"], [type="radio"]):focus-visible {
 
 /* 7.1 Segmented controls built from utilities (upstream's pattern: a gray-100 / gray-50 box with a 4px or 2px inset
    whose children are all buttons, the current one bg-white with a shadow) become the reference's SlidingTabs
-   (REF-CONSOLE §8.5): a 1px structural frame on the surface, radius 8, a 2px inset, no gaps; segments 14 x 6px,
-   12.5px / 600, muted, ink on hover; the current segment is ink with on-ink text (near-white with ink text in dark),
-   fading in 200ms (upstream has no thumb to slide). The platform hues of the account dialogs' segments go with it
-   (monochrome identity, D3). data-ui="seg" opts a fork component into the same look.
+   (REF-CONSOLE §8.5) in palette C: a grey track (its 1px frame the track colour), radius 8, a 2px inset, no gaps;
+   segments 14 x 6px, 12.5px / 500, muted, ink on hover; the current segment is the raised pill (tokens.css
+   --ui-thumb: the surface, a soft shadow and a 1px inset ring that marks it at >= 3:1 on the track; a lighter
+   graphite in dark), its label ink at 600, fading in 200ms (upstream has no thumb to slide). The platform hues of
+   the account dialogs' segments go with it (monochrome identity, D3). data-ui="seg" opts a fork component into the
+   same look.
    Perf pass: the utility-built boxes (a gray-100 / gray-50 box with a 4px or 2px inset whose children are all buttons,
    no data-ui of their own) are hooked [data-ui~="seg-box"] in their templates (19 boxes) instead of being found by a
    "children are all buttons" test; the repeated [data-ui] and :not(uipad) keep the original 0,4,3 of that compound
@@ -549,7 +557,7 @@ html.flat-theme [data-ui~="seg"] {
   gap: 0;
   border: 1px solid rgb(var(--ctl-seg-frame));
   border-radius: var(--ui-radius-lg);
-  background-color: rgb(var(--ui-surface));
+  background-color: rgb(var(--ui-track));
   padding: var(--ctl-seg-inset);
   box-shadow: none;
 }
@@ -562,7 +570,7 @@ html.flat-theme [data-ui~="seg"] > button {
   padding: var(--ctl-seg-pad-y) var(--ctl-seg-pad-x);
   font-size: 0.78125rem;
   line-height: 1.171875rem;
-  font-weight: 600;
+  font-weight: 500;
   color: rgb(var(--ui-muted));
   box-shadow: none;
   transition-property: color, background-color;
@@ -577,8 +585,10 @@ html.flat-theme [data-ui~="seg"] > button:hover {
 
 html.flat-theme :is(div, nav)[data-ui~="seg-box"][data-ui][data-ui][data-ui]:not(uipad):not(uipad) > button:is(.bg-white, [aria-pressed="true"], [aria-checked="true"], [aria-selected="true"]),
 html.flat-theme [data-ui~="seg"] > button:is([aria-pressed="true"], [aria-checked="true"], [aria-selected="true"], [data-active]:not([data-active="false"])) {
-  background-color: rgb(var(--ui-ink));
-  color: rgb(var(--ui-on-ink));
+  background-color: rgb(var(--ui-thumb));
+  color: rgb(var(--ui-ink));
+  font-weight: 600;
+  box-shadow: var(--ui-thumb-shadow);
 }
 
 html.flat-theme :is(div, nav)[data-ui~="seg-box"][data-ui][data-ui][data-ui]:not(uipad):not(uipad) > button svg,
@@ -607,8 +617,8 @@ html.flat-theme :is(div, nav)[data-ui~="seg-box"][data-ui][data-ui][data-ui]:not
 /* BEGIN S platform segments */
 /* 7.1a The account dialog's platform choice (owner decision 2 and the .11 approval "platform icons keep their brand
    colours"): an unchosen segment draws its platform glyph in the platform's identity colour (tokens.css identity
-   hues: >= 4.5:1 on the surface, so >= 3:1 as a glyph, both themes); the chosen segment stays the ink thumb with an
-   on-ink glyph (7.1). The ten segments are known by their place (CreateAccountModal's two rows, the first one marked
+   hues: >= 4.5:1 on the surface, so >= 3:1 as a glyph, both themes); the chosen segment is the pill with an ink
+   glyph (7.1). The ten segments are known by their place (CreateAccountModal's two rows, the first one marked
    data-tour="account-form-platform"); labels stay muted. (wave 2, reported by the accounts agent) */
 html.flat-theme [data-tour="account-form-platform"] > button:nth-child(1) { --ctl-seg-glyph: var(--ui-id-orange); }
 html.flat-theme [data-tour="account-form-platform"] > button:nth-child(2) { --ctl-seg-glyph: var(--ui-id-green); }
@@ -649,7 +659,7 @@ html.flat-theme .settings-tabs.settings-tabs {
   gap: 0;
   border: 1px solid rgb(var(--ctl-seg-frame));
   border-radius: var(--ui-radius-lg);
-  background-color: rgb(var(--ui-surface));
+  background-color: rgb(var(--ui-track));
   padding: var(--ctl-seg-inset);
 }
 
@@ -665,7 +675,7 @@ html.flat-theme .settings-tab.settings-tab {
   padding: var(--ctl-seg-pad-y) var(--ctl-seg-pad-x);
   font-size: 0.78125rem;
   line-height: 1.171875rem;
-  font-weight: 600;
+  font-weight: 500;
   color: rgb(var(--ui-muted));
   box-shadow: none;
   transition-property: color, background-color;
@@ -683,8 +693,10 @@ html.flat-theme .settings-tab.settings-tab:hover {
 }
 
 html.flat-theme .settings-tab.settings-tab.settings-tab-active {
-  background-color: rgb(var(--ui-ink));
-  color: rgb(var(--ui-on-ink));
+  background-color: rgb(var(--ui-thumb));
+  color: rgb(var(--ui-ink));
+  font-weight: 600;
+  box-shadow: var(--ui-thumb-shadow);
 }
 
 html.flat-theme .settings-tab .settings-tab-icon.settings-tab-icon {
@@ -710,16 +722,22 @@ html.flat-theme .settings-tab .settings-tab-label.settings-tab-label {
   line-height: inherit;
 }
 
+/* the .tabs recipe's current tab (style.css, 0,1,0) keeps its pill under a click's focus: its ring is the boundary
+   that marks it, and section 1 clears a focused tab's shadow (0,3,2) */
+html.flat-theme .tab.tab-active:is(:focus, :focus-visible) {
+  box-shadow: var(--ui-thumb-shadow);
+}
+
 /* 7.3 Underline tabs (使用记录's detail tabs, the channel dialog's tabs) take the reference's CodeTabs underline
    (REF-CONSOLE §8.15): a 2px accent rule under the current tab, its text ink; the others muted, ink on hover, no
-   rule; 8 x 10px like its tabs, 12.5px / 600, 14px glyphs. Platform hues on the channel tabs go (monochrome
+   rule; 8 x 10px like its tabs, 12.5px / 500, 14px glyphs. Platform hues on the channel tabs go (monochrome
    identity, D3). */
 html.flat-theme :is([data-testid="usage-detail-tab"], .channel-tab.channel-tab) {
   gap: 0.375rem;
   padding: 0.5rem 0.625rem;
   font-size: 0.78125rem;
   line-height: 1.171875rem;
-  font-weight: 600;
+  font-weight: 500;
   color: rgb(var(--ui-muted));
   transition-property: color, border-color;
   transition-duration: var(--ui-duration);
@@ -754,8 +772,8 @@ html.flat-theme :is([data-testid="usage-detail-tab"], .channel-tab.channel-tab) 
 /* 8.1 Option cards (the account dialogs' type / method choices: a rounded-lg border-2 p-3 text-left button led by an
    h-8 w-8 glyph tile) take the reference's dialog option card (REF-CONSOLE §8.11): radius 8, the structural line, the
    grouped fill at 60 %, the control outline on hover; a 28px tile with a 1px line and ink at 3 %. The chosen card is
-   drawn like the segmented thumb: an ink edge 2px wide on the surface, its tile ink with on-ink glyph (upstream's
-   per-platform hues go: monochrome identity, D3).
+   marked by the accent (palette C): an accent edge 2px wide on the surface, its tile the accent with an on-accent
+   glyph (upstream's per-platform hues go: monochrome identity, D3).
    Perf pass: the cards are hooked (data-ui="option-card", CreateAccountModal.vue and EditAccountModal.vue: the 23
    buttons of that shape), so no has-test on a bare button decides whether a card is a card. The repeated [data-ui]
    and :not(uipad) keep each rule's original specificity (0,8,3 / 0,10,3 / 0,9,3 / 0,9,4 / 0,10,4 / 0,9,5 / 0,10,5 /
@@ -777,9 +795,9 @@ html.flat-theme button[data-ui~="option-card"].border-gray-200[data-ui][data-ui]
 }
 
 html.flat-theme button[data-ui~="option-card"]:not(.border-gray-200)[data-ui][data-ui][data-ui][data-ui][data-ui][data-ui]:not(uipad) {
-  border-color: rgb(var(--ui-ink));
+  border-color: rgb(var(--ui-primary));
   background-color: rgb(var(--ui-surface));
-  box-shadow: inset 0 0 0 1px rgb(var(--ui-ink));
+  box-shadow: inset 0 0 0 1px rgb(var(--ui-primary));
 }
 
 html.flat-theme button[data-ui~="option-card"][data-ui][data-ui][data-ui][data-ui][data-ui][data-ui]:not(uipad) > div:first-child {
@@ -792,9 +810,9 @@ html.flat-theme button[data-ui~="option-card"][data-ui][data-ui][data-ui][data-u
 }
 
 html.flat-theme button[data-ui~="option-card"]:not(.border-gray-200)[data-ui][data-ui][data-ui][data-ui][data-ui][data-ui]:not(uipad) > div:first-child {
-  border-color: rgb(var(--ui-ink));
-  background-color: rgb(var(--ui-ink));
-  color: rgb(var(--ui-on-ink));
+  border-color: rgb(var(--ui-primary));
+  background-color: rgb(var(--ui-primary));
+  color: rgb(var(--ui-on-primary));
 }
 
 html.flat-theme button[data-ui~="option-card"][data-ui][data-ui][data-ui][data-ui][data-ui][data-ui]:not(uipad) > div:first-child svg {
@@ -816,7 +834,7 @@ html.flat-theme button[data-ui~="option-card"][data-ui][data-ui][data-ui][data-u
 }
 
 /* 8.2 Filter pills (data-ui="filter-pill"; the reference's FilterMenu trigger, REF-CONSOLE §8.6): 30px, 10px in, gap 6,
-   radius 6, the control outline on the surface, 12.5px / 600 ink-soft, ink on hover, a 12px chevron. With a
+   radius 6, the control outline on the surface, 12.5px / 500 ink-soft, ink on hover, a 12px chevron. With a
    data-ui="filter-count" badge inside it is active: the accent at 40 % as its edge, the accent tint, accent text and a
    Geist Mono 10.5px count. (Perf pass, kept has-test: the badge is rendered only while a filter value is selected,
    so the pill's own look depends on runtime content; the test sits in the subject compound of the hooked pill with a
@@ -833,7 +851,7 @@ html.flat-theme [data-ui~="filter-pill"] {
   padding: 0 0.625rem;
   font-size: 0.78125rem;
   line-height: 1.171875rem;
-  font-weight: 600;
+  font-weight: 500;
   color: rgb(var(--ui-ink-soft));
   box-shadow: none;
   transition-property: color, background-color, border-color;
@@ -885,17 +903,17 @@ html.flat-theme :is(a, button)[class*="underline"] {
 /* ================================================================== 10 · utility-built buttons (wave 2) */
 
 /* 10.1 A solid accent button built from utilities (bg-primary-500 / -600 / -700 with white text: the chosen segment
-   of a hand-made choice, a save / add / apply button) is the reference's primary: ink with on-ink text (near-white
-   with ink text in dark), like .btn-primary and the segmented thumb (REF §8.3, §8.5). Switches (no white text),
-   checkbox squares and check badges (spans), steppers (divs) and the .btn recipe are not buttons of this kind; the
-   public pages keep their own rules. Kept at 0,3,1 (the page files refine; the account forms' 9.6 agrees).
+   of a hand-made choice, a save / add / apply button) is the solid primary like .btn-primary (tokens.css --ui-solid:
+   the text-safe accent with white text; the dark theme's lighter edge). Switches (no white text), checkbox squares
+   and check badges (spans), steppers (divs) and the .btn recipe are not buttons of this kind; the public pages keep
+   their own rules. Kept at 0,3,1 (the page files refine; the account forms' 9.6 agrees).
    (wave 2, reported by the accounts agent) */
 html.flat-theme :where(:is(button, a):is(.bg-primary-500, .bg-primary-600, .bg-primary-700).text-white:not(.btn):not(:is([data-ui="home"], [data-ui="key-usage"], [data-ui="legal"], [data-ui="not-found"], [data-ui="auth-layout"], [data-testid="compact-home"], #overlay-root > div.z-\[140\]) *))[class][class] {
-  --theme-on-fill: var(--ui-on-ink);
-  border-color: rgb(var(--ui-ink));
-  background-color: rgb(var(--ui-ink));
+  --theme-on-fill: var(--ui-on-solid);
+  border-color: rgb(var(--ui-solid-edge));
+  background-color: rgb(var(--ui-solid));
   background-image: none;
-  color: rgb(var(--ui-on-ink));
+  color: rgb(var(--ui-on-solid));
   box-shadow: none;
 }
 

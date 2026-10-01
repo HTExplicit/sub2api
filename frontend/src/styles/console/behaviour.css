@@ -90,6 +90,7 @@ html.flat-theme .table-wrapper[data-table="proxies"] td[data-column="expiry"] > 
 
 /* B1.5 账号管理「过期时间」 (「2026-10-25 08:00」): a line may break after a hyphen, so min-content would split the
    date; a width that holds the date keeps it whole and moves the time to line two. */
+html.flat-theme .table-wrapper[data-table="accounts"] [data-ui="cell-line"][data-line="expires_at"] > [data-ui="cell-line-value"] > div > span:first-child,
 html.flat-theme .table-wrapper[data-table="accounts"] td[data-column="expires_at"] > div > span:first-child {
   display: inline-block;
   max-width: 10ch;

@@ -993,6 +993,7 @@ import { useAppStore } from '@/stores/app'
 import { adminAPI } from '@/api/admin'
 import type { Proxy, ProxyAccountSummary, ProxyProtocol, ProxyQualityCheckResult } from '@/types'
 import type { Column } from '@/components/common/types'
+import { stackColumns, type ColumnStackSpec } from '@/components/common/columnStack'
 import AppLayout from '@/components/layout/AppLayout.vue'
 import TablePageLayout from '@/components/layout/TablePageLayout.vue'
 import DataTable from '@/components/common/DataTable.vue'
@@ -1016,7 +1017,14 @@ const { t } = useI18n()
 const appStore = useAppStore()
 const { copyToClipboard } = useClipboard()
 
-const columns = computed<Column[]>(() => [
+// Below 1400px (console theme) the account count sits beside the location and the created time under the expiry, so
+// the table fits at 1280 without sideways scrolling; from 1400px up (and without the theme) they are columns.
+const PROXY_COLUMN_STACKS: Record<string, ColumnStackSpec> = {
+  location: { below: 1400, layout: 'inline', parts: ['account_count'] },
+  expiry: { below: 1400, parts: [{ key: 'created_at', cellLabel: true }] }
+}
+
+const columns = computed<Column[]>(() => stackColumns([
   { key: 'select', label: '', sortable: false },
   { key: 'name', label: t('admin.proxies.columns.name'), sortable: true },
   { key: 'protocol', label: t('admin.proxies.columns.protocol'), sortable: true },
@@ -1029,7 +1037,7 @@ const columns = computed<Column[]>(() => [
   { key: 'created_at', label: t('admin.proxies.columns.createdAt'), sortable: true },
   { key: 'status', label: t('admin.proxies.columns.status'), sortable: true },
   { key: 'actions', label: t('admin.proxies.columns.actions'), sortable: false }
-])
+], PROXY_COLUMN_STACKS))
 
 // Filter options
 const protocolOptions = computed(() => [
