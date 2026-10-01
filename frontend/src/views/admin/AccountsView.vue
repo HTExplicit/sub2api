@@ -266,7 +266,7 @@
           @select-all-results="handleSelectAllResults"
           @toggle-schedulable="handleBulkToggleSchedulable"
         />
-        <div ref="accountTableRef" class="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden" data-test="account-list-scroll">
+        <div ref="accountTableRef" class="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden" data-test="account-list-scroll" :style="accountNameColumnStyle">
         <DataTable
           v-if="viewMode === 'table'"
           ref="dataTableRef"
@@ -723,7 +723,7 @@ import ConfirmDialog from '@/components/common/ConfirmDialog.vue'
 import BaseDialog from '@/components/common/BaseDialog.vue'
 import Toggle from '@/components/common/Toggle.vue'
 import { CreateAccountModal, EditAccountModal, BulkEditAccountModal, SyncFromCrsModal, TempUnschedStatusModal } from '@/components/account'
-import { nameWrapParts } from '@/utils/softWrap'
+import { nameColumnWidth, nameRuns, nameWrapParts, type NameCell, type NameRuns } from '@/utils/softWrap'
 import AccountTableActions from '@/components/admin/account/AccountTableActions.vue'
 import AccountBulkActionsBar from '@/components/admin/account/AccountBulkActionsBar.vue'
 // Console theme (ui-el D6): a two-row toolbar with the classification menu and a bulk menu in it; the bulk bar
@@ -2145,6 +2145,62 @@ function accountDisplayEmail(row: any): string {
 const nameParts = (value: unknown): string[] =>
   flatThemeActive.value ? nameWrapParts(value) : [value == null ? '' : String(value)]
 
+// Console theme: the name column follows the page's names (styles/console/tables.css, 名称; softWrap.ts
+// nameColumnWidth). The page's account names (13px / 500), e-mails (12px / 400, accounts.css) and #ids (Geist Mono 12)
+// are measured in the cells' fonts on a canvas, piece by piece, and the column takes the width at which they leave the
+// least blank, an extra line counting as 40px of it: one long name or e-mail takes a third line at its word joins
+// instead of widening the column for the whole page. Measured from the page's rows, not the rendered ones, so a
+// virtualised list keeps one width while it scrolls; the web fonts arriving re-measure.
+const nameFontEpoch = ref(0)
+const nameRunsCache = new Map<string, NameRuns>()
+let nameCanvas: CanvasRenderingContext2D | null | undefined
+const remeasureAccountNames = () => {
+  nameRunsCache.clear()
+  nameFontEpoch.value++
+}
+
+const measureAccountName = (ctx: CanvasRenderingContext2D, font: string, text: string): NameRuns => {
+  const key = `${font}\n${text}`
+  let runs = nameRunsCache.get(key)
+  if (!runs) {
+    ctx.font = font
+    runs = nameRuns(text, (part) => ctx.measureText(part).width)
+    nameRunsCache.set(key, runs)
+  }
+  return runs
+}
+
+const accountNameColumnStyle = computed<Record<string, string> | undefined>(() => {
+  void nameFontEpoch.value
+  if (!flatThemeActive.value || viewMode.value !== 'table' || typeof document === 'undefined') return undefined
+  if (nameCanvas === undefined) nameCanvas = document.createElement('canvas').getContext('2d')
+  const rootStyle = getComputedStyle(document.documentElement)
+  const fontFamily = (name: string) => rootStyle.getPropertyValue(name).replace(/\s+/g, ' ').trim()
+  const family = fontFamily('--ui-font')
+  const mono = fontFamily('--ui-font-mono')
+  const ctx = nameCanvas
+  if (!ctx || !family) return undefined
+  const showId = !hiddenColumns.has('id') && !!mono
+  const cells: NameCell[] = accounts.value.map((row) => {
+    const texts: NameRuns[] = []
+    if (row.name) texts.push(measureAccountName(ctx, `500 13px ${family}`, String(row.name)))
+    const email = accountDisplayEmail(row)
+    if (email) texts.push(measureAccountName(ctx, `400 12px ${family}`, email))
+    let fixed = 0
+    if (showId) {
+      ctx.font = `400 12px ${mono}`
+      fixed = ctx.measureText(`#${row.id}`).width
+    }
+    return { texts, fixed }
+  })
+  // a token wider than 16rem breaks inside rather than set the column (the widest piece of the 863 names is a 205px
+  // host name, integrations.emergentagent.com/)
+  const { width, piece } = nameColumnWidth(cells, { pieceCap: 256 })
+  if (!width) return undefined
+  // a pixel over the canvas widths, so layout rounding never wraps a line that fits
+  return { '--account-name-w': `${width + 1}px`, '--account-name-piece': `${piece + 1}px` }
+})
+
 const accountRouteSummary = (account: Account) => {
   const groups = accountGroupsForRow(account).map(group => group.name).filter(Boolean)
   const proxy = account.proxy?.name || t('admin.accounts.directConnection')
@@ -3006,6 +3062,10 @@ const handleClickOutside = (event: MouseEvent) => {
 
 onMounted(async () => {
   if (route.query.operations === 'history') void accountJobsStore.openDrawer()
+  if (typeof document !== 'undefined' && document.fonts) {
+    document.fonts.addEventListener('loadingdone', remeasureAccountNames)
+    void document.fonts.ready.then(remeasureAccountNames)
+  }
   if (typeof window !== 'undefined') {
     desktopViewportMediaQuery = window.matchMedia(desktopViewportQuery)
     isDesktopViewport.value = desktopViewportMediaQuery.matches
@@ -3049,6 +3109,9 @@ onMounted(async () => {
 
 onUnmounted(() => {
   upstreamBillingRateAbortController?.abort()
+  if (typeof document !== 'undefined' && document.fonts) {
+    document.fonts.removeEventListener('loadingdone', remeasureAccountNames)
+  }
   if (usageBatchFlushTimer !== null) {
     clearTimeout(usageBatchFlushTimer)
     usageBatchFlushTimer = null
