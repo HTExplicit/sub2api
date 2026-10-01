@@ -33,17 +33,17 @@ html.flat-theme {
   --ui-shell-header-h: calc(var(--ui-shell-pad-y) + var(--ui-shell-row));
   --ui-shell-pad-top: var(--ui-shell-gap);
   --ui-shell-pad-bottom: var(--ui-shell-pad-y);
-  /* Sidebar text and icons are ink at an alpha (REF §8.1: text 50 %, icons 30 %). With palette C's softer ink the
-     alphas rise so the nav keeps its greys: 66 % text (4.98-5.21:1 on the canvas, the hover fill and the active
-     tint) and 50 % icons (3.11-3.19:1). Dark (graphite): 56 % text (4.55:1 on hover, 5.27:1 on the canvas), 40 %
-     icons (3.07-3.34:1). */
-  --ui-shell-nav-fg: 0.66;
-  --ui-shell-nav-icon: 0.5;
+  /* Sidebar text, solid official colours (upstream's .sidebar-link text-gray-600 / dark:text-dark-300 and
+     .sidebar-section-title text-gray-400 / dark:text-dark-500): links #4b5563 (7.24:1 on the canvas, 6.56:1 on the
+     active tint), section titles the AA meta grey #616977 (official #9ca3af is 2.54:1). Icons draw in their link's
+     colour. Dark: links #d1d5db (11.78:1), section titles #a4abb6. */
+  --ui-shell-nav-text: 75 85 99;
+  --ui-shell-nav-section: 97 105 119;
 }
 
 html.flat-theme.dark {
-  --ui-shell-nav-fg: 0.56;
-  --ui-shell-nav-icon: 0.4;
+  --ui-shell-nav-text: 209 213 219;
+  --ui-shell-nav-section: 164 171 182;
 }
 
 /* --ui-header-h (tokens.css) is the sticky header keyboard focus must clear (behaviour.css B3.4): nothing sticks on
@@ -161,8 +161,8 @@ html.flat-theme .sidebar.w-\[72px\] {
   padding-right: clamp(0.5rem, 1.5vw, 0.75rem);
 }
 
-/* Brand: the 20px mark 8px in from the edge (x = 24), then the site name 13/600 and, under it, the version in mono
-   (the reference's row is a mark and a word; ours also carries the version, so the lockup is two lines). */
+/* Brand: the 20px mark 8px in from the edge (x = 24), then the site name 14/600 and, under it, the version (the
+   reference's row is a mark and a word; ours also carries the version, so the lockup is two lines). */
 html.flat-theme .sidebar .sidebar-header {
   height: auto;
   min-height: 30px;
@@ -194,12 +194,13 @@ html.flat-theme .sidebar .sidebar-brand {
 
 html.flat-theme .sidebar .sidebar-brand-title,
 html.flat-theme .sidebar .sidebar-brand-title:hover {
-  font: 600 13px/16px var(--ui-font);
+  font: 600 14px/20px var(--ui-font);
   color: rgb(var(--ui-ink));
 }
 
-/* VersionBadge: the admin button and the plain text for users, as mono meta (REF §5: Mono 10.5 captions). The
-   update notice keeps its dot and turns the text to the warning colour. Its panel is a popover (tokens). */
+/* VersionBadge: the admin button and the plain text for users, as meta (upstream text-xs font-medium: 12/16/500,
+   faint). The update notice keeps its dot and turns the text to the warning colour. Its panel is a popover
+   (tokens). */
 html.flat-theme .sidebar .sidebar-brand > .relative {
   display: flex;
   min-width: 0;
@@ -213,7 +214,7 @@ html.flat-theme .sidebar .sidebar-brand > .relative > :is(button, span) {
   padding: 0;
   border-radius: var(--ui-radius-sm);
   background: transparent;
-  font: 400 10.5px/14px var(--ui-font-mono);
+  font: 500 12px/16px var(--ui-font);
   color: rgb(var(--ui-faint));
   transition: color var(--ui-duration) var(--ui-ease);
 }
@@ -260,15 +261,16 @@ html.flat-theme .sidebar .sidebar-section:last-child {
   margin-bottom: 0;
 }
 
-/* Section titles are the mono label (docs navigation groups: 8px above the first item, flush with the item box). */
+/* Section titles: upstream's text-xs font-semibold uppercase tracking-wider, 12/16/600, 0.05em, in the section grey
+   (8px above the first item, flush with the item box). */
 html.flat-theme .sidebar .sidebar-section-title {
-  min-height: var(--ui-label-leading);
+  min-height: 16px;
   margin: 0 0 8px;
   padding: 0;
-  font: var(--ui-label-font);
-  letter-spacing: var(--ui-label-tracking);
+  font: 600 12px/16px var(--ui-font);
+  letter-spacing: 0.05em;
   text-transform: uppercase;
-  color: rgb(var(--ui-label));
+  color: rgb(var(--ui-shell-nav-section));
 }
 
 html.flat-theme .sidebar .sidebar-section-title::after {
@@ -277,10 +279,11 @@ html.flat-theme .sidebar .sidebar-section-title::after {
   background: rgb(var(--ui-line));
 }
 
-/* Items: min 32px (13px on a 19.5px line + 7px above and below = 33.5), 10px inset, 6px radius, 8px from the 15px
-   icon to the label, 1px apart. Text and icon are ink at the nav alphas; hover lays ink at 2 % and lifts the text to
-   70 %; the current item only gets the accent at 8 % (REF §8.1: its text and icon keep their colour). Focus is the
-   browser's ring, as on the reference. */
+/* Items: min 32px (14px on a 20px line + 7px above and below = 34), 10px inset, 6px radius, 8px from the 15px icon
+   to the label, 1px apart. Text is upstream's text-sm font-medium (14/20/500) in the nav grey, the icon in the
+   text's colour; hover lays ink at 2 % and turns the text ink (upstream hover:text-gray-900); the current item is
+   the accent text (upstream text-primary-600, our --ui-link) on the accent at 8 %. Focus is the browser's ring, as
+   on the reference. */
 html.flat-theme .sidebar .sidebar-link {
   gap: 8px;
   min-height: 32px;
@@ -288,8 +291,8 @@ html.flat-theme .sidebar .sidebar-link {
   padding: 7px 10px;
   border-radius: var(--ui-radius-md);
   background-color: transparent;
-  font: 400 13px/19.5px var(--ui-font);
-  color: rgb(var(--ui-ink) / var(--ui-shell-nav-fg));
+  font: 500 14px/20px var(--ui-font);
+  color: rgb(var(--ui-shell-nav-text));
   transition:
     color var(--ui-duration) var(--ui-ease),
     background-color var(--ui-duration) var(--ui-ease);
@@ -297,20 +300,20 @@ html.flat-theme .sidebar .sidebar-link {
 
 html.flat-theme .sidebar .sidebar-link:hover {
   background-color: rgb(var(--ui-ink) / 0.02);
-  color: rgb(var(--ui-ink) / 0.7);
+  color: rgb(var(--ui-ink));
 }
 
 html.flat-theme .sidebar .sidebar-link.sidebar-link-active,
 html.flat-theme .sidebar .sidebar-link.sidebar-link-active:hover {
   background-color: rgb(var(--ui-primary) / 0.08);
-  color: rgb(var(--ui-ink) / var(--ui-shell-nav-fg));
+  color: var(--ui-link);
 }
 
 html.flat-theme .sidebar .sidebar-link > :is(svg, .sidebar-svg-icon) {
   flex: 0 0 15px;
   width: 15px;
   height: 15px;
-  color: rgb(var(--ui-ink) / var(--ui-shell-nav-icon));
+  color: currentColor;
 }
 
 html.flat-theme .sidebar .sidebar-svg-icon svg {
@@ -318,11 +321,11 @@ html.flat-theme .sidebar .sidebar-svg-icon svg {
   height: 15px;
 }
 
-/* a group's chevron sits at the row's end in the icon colour */
+/* a group's chevron sits at the row's end in the text's colour */
 html.flat-theme .sidebar .sidebar-label-flex > svg {
   width: 13px;
   height: 13px;
-  color: rgb(var(--ui-ink) / var(--ui-shell-nav-icon));
+  color: currentColor;
 }
 
 /* A group's children hang from a 1px guide under the parent's icon. */
@@ -339,7 +342,7 @@ html.flat-theme .sidebar .sidebar-section > div.border-l > .sidebar-link {
 }
 
 /* Collapsed rail (64px): 35 x 32 icon items centred (REF §8.1). The folded label (already aria-hidden) gives up its
-   line box too, so the item is the reference's 32px rather than 33.5. */
+   line box too, so the item is the reference's 32px rather than 34. */
 html.flat-theme .sidebar .sidebar-link.sidebar-link-collapsed {
   justify-content: center;
   gap: 0;
@@ -355,8 +358,8 @@ html.flat-theme .sidebar .sidebar-link.sidebar-link-collapsed > .sidebar-label-c
 }
 
 /* Bottom: a 1px rule, 12px, then the theme switch as a row with the collapse control at its end: the reference's
-   panel-left glyph, 28 x 28, ink 30 % -> 60 % on hover with no fill (REF §8.1; 46 % here for 3:1). The collapse
-   label stays for screen readers. */
+   panel-left glyph, 28 x 28, in the nav grey -> ink on hover with no fill (REF §8.1). The collapse label stays for
+   screen readers. */
 html.flat-theme .sidebar > div.mt-auto {
   display: flex;
   align-items: center;
@@ -380,12 +383,12 @@ html.flat-theme .sidebar > div.mt-auto > button.sidebar-link:last-child:not(:fir
   margin: 0;
   padding: 0;
   gap: 0;
-  color: rgb(var(--ui-ink) / var(--ui-shell-nav-icon));
+  color: rgb(var(--ui-shell-nav-text));
 }
 
 html.flat-theme .sidebar > div.mt-auto > button.sidebar-link:last-child:not(:first-child):hover {
   background-color: transparent;
-  color: rgb(var(--ui-ink) / 0.6);
+  color: rgb(var(--ui-ink));
 }
 
 html.flat-theme .sidebar > div.mt-auto > button.sidebar-link:last-child:not(:first-child) > svg {
@@ -535,8 +538,9 @@ html.flat-theme .app-main > header > div > div:last-child {
     gap: 10px;
   }
 
-  /* Title · description: the page title 20/28 600 (REF §8.2), the description 13px muted on the same baseline
-     after a faint dot. A description longer than the row wraps, its lines under its first word (nothing is cut; the
+  /* Title · description: the page title 18/28 600 (upstream text-lg font-semibold), the description 12/16 muted
+     (upstream text-xs) on the same baseline after a faint dot. A description longer than the row wraps, its lines
+     under its first word (nothing is cut; the
      ellipsis hid the end of 操作日志's and 提示词审计's notes). Perf pass: the wrapper is hooked
      ([data-ui="header-title"], AppHeader.vue) instead of found by a has-h1 test on a bare div; :where() +
      :not(uipad) keep the original 0,2,4. */
@@ -549,7 +553,7 @@ html.flat-theme .app-main > header > div > div:last-child {
 
 html.flat-theme .app-main > header h1 {
   flex: 0 0 auto;
-  font: 600 20px/28px var(--ui-font);
+  font: 600 18px/28px var(--ui-font);
   letter-spacing: 0;
   white-space: nowrap;
   color: rgb(var(--ui-ink));
@@ -559,7 +563,7 @@ html.flat-theme .app-main > header h1 + p {
   display: flex;
   align-items: baseline;
   min-width: 0;
-  font: 400 13px/19.5px var(--ui-font);
+  font: 400 12px/16px var(--ui-font);
   overflow-wrap: anywhere;
   color: rgb(var(--ui-muted));
 }
@@ -614,7 +618,8 @@ html.flat-theme .app-main > header :is(button[data-ui="announcement-bell"], [dat
   height: 6px;
 }
 
-/* Docs and model plaza: ghost text links (the reference's header links: 12.5/500 muted -> ink) with a 13px glyph. */
+/* Docs and model plaza: ghost text links (upstream text-sm font-medium text-gray-600 dark:text-dark-400: 14/20/500,
+   #4b5563 / #a4abb6 -> ink) with a 13px glyph. */
 html.flat-theme .app-main > header > div > div:last-child > a {
   align-items: center;
   gap: 6px;
@@ -622,8 +627,8 @@ html.flat-theme .app-main > header > div > div:last-child > a {
   padding: 0 8px;
   border-radius: var(--ui-radius-md);
   background-color: transparent;
-  font: 500 12.5px/18.75px var(--ui-font);
-  color: rgb(var(--ui-muted));
+  font: 500 14px/20px var(--ui-font);
+  color: rgb(var(--theme-text-gray-600));
   transition:
     color var(--ui-duration) var(--ui-ease),
     background-color var(--ui-duration) var(--ui-ease);
@@ -640,7 +645,8 @@ html.flat-theme .app-main > header > div > div:last-child > a > svg {
 }
 
 /* The language switch is a dropdown trigger: the reference's filter pill (REF §8.6: 30px, 10px inset, 6px gap, 1px
-   control outline, surface fill, 12.5/600 ink-soft -> ink, 12px chevron). Its menu is overlays.css'. */
+   control outline, surface fill, ink-soft -> ink, 12px chevron) with upstream's text-sm font-medium (14/20/500). Its
+   menu is overlays.css'. */
 html.flat-theme .app-main > header [data-ui="header-locale"] > button {
   gap: 6px;
   height: 30px;
@@ -648,7 +654,7 @@ html.flat-theme .app-main > header [data-ui="header-locale"] > button {
   border: 1px solid rgb(var(--ui-line-strong));
   border-radius: var(--ui-radius-md);
   background-color: rgb(var(--ui-surface));
-  font: 600 12.5px/18.75px var(--ui-font);
+  font: 500 14px/20px var(--ui-font);
   color: rgb(var(--ui-ink-soft));
   transition: color var(--ui-duration) var(--ui-ease);
 }
@@ -659,7 +665,7 @@ html.flat-theme .app-main > header [data-ui="header-locale"] > button:hover {
 }
 
 html.flat-theme .app-main > header [data-ui="header-locale"] > button > span.text-base {
-  font-size: 13px;
+  font-size: 14px;
   line-height: 1;
 }
 
@@ -669,7 +675,8 @@ html.flat-theme .app-main > header [data-ui="header-locale"] > button > svg {
   color: inherit;
 }
 
-/* Subscriptions: the same outlined 30px control; the dots keep their state colours, the count is mono. */
+/* Subscriptions: the same outlined 30px control; the dots keep their state colours, the count is upstream's text-xs
+   font-medium (12/16/500) with tabular figures. */
 html.flat-theme .app-main > header [data-ui="header-subscription"] > button {
   gap: 6px;
   height: 30px;
@@ -697,14 +704,15 @@ html.flat-theme .app-main > header [data-ui="header-subscription"] > button div.
 }
 
 html.flat-theme .app-main > header [data-ui="header-subscription"] > button span.text-xs {
-  font: 500 11px/16.5px var(--ui-font-mono);
+  font: 500 12px/16px var(--ui-font);
   font-variant-numeric: tabular-nums;
   color: inherit;
 }
 
-/* Balance: a mono chip (WAVE1 D1, D4: neutral, no tint): wallet glyph, the amount in Geist Mono tabular, the frozen
-   amount as a warning pill; the hover card is the reference's figure breakdown (REF §8.9: 6px radius, control outline,
-   surface, 12 / 8 inset, 12px rows with mono tabular values). */
+/* Balance: an outlined chip (WAVE1 D1: no tint behind it): wallet glyph, the amount in upstream's own classes
+   (text-sm font-semibold text-primary-700 / dark:text-primary-300: 14/20/600 accent, tabular), the frozen amount as a
+   warning pill (upstream text-xs font-medium); the hover card is the reference's figure breakdown (REF §8.9: 6px
+   radius, control outline, surface, 12 / 8 inset, upstream's text-xs rows with tabular values). */
 html.flat-theme .app-main > header [data-ui="header-balance"] {
   align-items: center;
   gap: 6px;
@@ -722,16 +730,14 @@ html.flat-theme .app-main > header [data-ui="header-balance"] > svg {
 }
 
 html.flat-theme .app-main > header [data-ui="header-balance"] > span.text-sm {
-  font: 500 12.5px/18.75px var(--ui-font-mono);
   font-variant-numeric: tabular-nums;
-  color: rgb(var(--ui-ink));
 }
 
 html.flat-theme .app-main > header [data-ui="header-balance"] > span.rounded-full {
   padding: 1px 6px;
   border-radius: 9999px;
   background-color: rgb(var(--ui-warning-soft));
-  font: 500 10.5px/15.75px var(--ui-font-mono);
+  font: 500 12px/16px var(--ui-font);
   font-variant-numeric: tabular-nums;
   color: rgb(var(--ui-warning));
 }
@@ -744,7 +750,7 @@ html.flat-theme .app-main > header [data-ui="header-balance"] > div.absolute {
   border-radius: var(--ui-radius-md);
   background-color: rgb(var(--ui-surface));
   box-shadow: var(--ui-shadow-popover);
-  font: 400 12px/18px var(--ui-font);
+  font: 400 12px/16px var(--ui-font);
 }
 
 html.flat-theme .app-main > header [data-ui="header-balance"] > div.absolute span {
@@ -752,7 +758,6 @@ html.flat-theme .app-main > header [data-ui="header-balance"] > div.absolute spa
 }
 
 html.flat-theme .app-main > header [data-ui="header-balance"] > div.absolute span:last-child {
-  font-family: var(--ui-font-mono);
   font-variant-numeric: tabular-nums;
 }
 
@@ -764,15 +769,16 @@ html.flat-theme .app-main > header [data-ui="header-balance"] > div.absolute > d
   border-top-color: rgb(var(--ui-line));
 }
 
-/* The account menu trigger: the reference's account row (the sidebar "Log in": a 20px ring, 13/500, ink 70 % -> ink,
-   ink 2 % on hover), with the name and role on one line. The menu is overlays.css'. */
+/* The account menu trigger: the reference's account row (the sidebar "Log in": a 20px ring, ink 2 % on hover), with
+   the name and role on one line in upstream's classes: the name text-sm font-medium ink (14/20/500), the role
+   text-xs muted (12/16). The menu is overlays.css'. */
 html.flat-theme .app-main > header [data-ui="header-user"] > button {
   gap: 8px;
   height: 30px;
   padding: 0 8px 0 5px;
   border-radius: var(--ui-radius-md);
   background-color: transparent;
-  color: rgb(var(--ui-ink) / 0.7);
+  color: rgb(var(--ui-ink));
   transition:
     color var(--ui-duration) var(--ui-ease),
     background-color var(--ui-duration) var(--ui-ease);
@@ -790,7 +796,7 @@ html.flat-theme .app-main > header [data-ui="header-user"] > button > div:first-
   border-radius: 9999px;
   background: rgb(var(--ui-surface));
   box-shadow: none;
-  font: 600 9px/1 var(--ui-font-mono);
+  font: 500 12px/1 var(--ui-font);
   color: rgb(var(--ui-ink-soft));
 }
 
@@ -803,12 +809,12 @@ html.flat-theme .app-main > header [data-ui="header-user"] > button > div:first-
 }
 
 html.flat-theme .app-main > header [data-ui="header-user"] > button > div:nth-child(2) > div:first-child {
-  font: 500 13px/19.5px var(--ui-font);
+  font: 500 14px/20px var(--ui-font);
   color: inherit;
 }
 
 html.flat-theme .app-main > header [data-ui="header-user"] > button > div:nth-child(2) > div:last-child {
-  font: 400 12px/18px var(--ui-font);
+  font: 400 12px/16px var(--ui-font);
   color: rgb(var(--ui-muted));
 }
 

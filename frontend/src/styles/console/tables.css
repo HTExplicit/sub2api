@@ -1,10 +1,11 @@
 /* Console theme · tables: the table layout that keeps rows readable without sideways scrolling (owner decision
  * 2026-09-30, option B of the ui-tune table-width round: rows may grow taller, nothing is hidden, no column or value is
- * cut, the Experiential Labs look of type, radii, colours and headers is unchanged).
+ * cut).
  *
  * Plain CSS after the page files; every selector starts with html.flat-theme (theme off = upstream, and DataTable only
- * stacks cells while the theme is on). Layout only: the colours are the other files' (the few colour values here are
- * roles already used for the same element elsewhere: the platform chip's divider, the header's hover ink).
+ * stacks cells while the theme is on). Layout only: the text is official sub2api's (the templates' classes, data.css'
+ * headers); here only the stacked lines' base text and their line label (section 1), and colour roles already used for
+ * the same element elsewhere (the platform chip's divider, the header's hover ink).
  *
  * Stacked cells (DataTable, Column.stack; components/common/columnStack.ts): related columns become lines of one cell,
  * each part keeping its own cell slot, header label, sort control and help tip. Hooks (static, from the column
@@ -23,16 +24,17 @@
  * 错误请求（管理）below 1800px; 使用记录（用户）, 错误请求（用户）and IP管理 below 1400px (stackBelow in each view's column
  * definitions). Above that width a table is the flat table of section 4. Theme rules keyed on a merged column
  * (td[data-column="K"]) carry over to its line: where the line looks exactly as the column did, the column's own rule
- * also names the line (data.css, behaviour.css, accounts.css, dashboard-usage.css, users-groups-proxies-keys.css);
- * where the line lays out differently, the line's rule is here (section 3). Host-cell rules of the form `> div` skip
- * the lines container (:where(:not(cell-lines))).
+ * also names the line (behaviour.css, accounts.css, users-groups-proxies-keys.css; the record tables' text is the
+ * templates' own, so no text rule needs to); where the line lays out differently, the line's rule is here (section 3).
+ * Host-cell rules of the form `> div` skip the lines container (:where(:not(cell-lines))).
  *
  * Performance: no :has(), no sibling combinator, no :nth-child(of); the hooks never change at runtime. */
 
 /* ================================================================== 1 · the stack hooks (every stacked table) */
 
 /* The lines of a stacked cell, under the host's own content. The container holds off what a host cell sets for its
-   own content (data.css draws 优先级 in Geist Mono 12.5), so each line looks as its own column did. */
+   own content (a size, weight or figure style), so each line starts from official's td text (text-sm, 14 / 20, 400)
+   and looks as its own column did. */
 html.flat-theme .table-wrapper td[data-stack] > div[data-ui="cell-lines"] {
   display: flex;
   flex-direction: column;
@@ -43,10 +45,10 @@ html.flat-theme .table-wrapper td[data-stack] > div[data-ui="cell-lines"] {
   max-width: none;
   margin-top: 6px;
   font-family: var(--ui-font);
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 400;
   font-variant-numeric: normal;
-  line-height: 19.5px;
+  line-height: 20px;
 }
 
 /* nothing above the lines: the host's content is their first (labelled) line, or the host column is hidden */
@@ -64,7 +66,6 @@ html.flat-theme .table-wrapper td[data-stack] > div[data-ui="cell-lines"] > div[
   max-width: 100%;
   margin: 0;
   padding: 0;
-  font-weight: 400;
 }
 
 /* chips of the same kind share one line (分组 · 类型 · 计费, 位置 · 账号数) */
@@ -81,13 +82,14 @@ html.flat-theme .table-wrapper div[data-ui="cell-line"] > div[data-ui="cell-line
   max-width: 100%;
 }
 
-/* the line label: the console's mono label, as 管理分类 / 请求路由 already are in the accounts table */
+/* the line label: official's inline label (UsageTable's 「入站:」: 12 / 16 / 500, the meta grey, sentence case), as
+   管理分类 / 请求路由 are in the accounts table */
 html.flat-theme .table-wrapper div[data-ui="cell-line"] > span[data-ui="cell-line-label"] {
   flex: none;
   font: var(--ui-label-font);
   letter-spacing: var(--ui-label-tracking);
-  line-height: 18px;
-  text-transform: uppercase;
+  line-height: 16px;
+  text-transform: none;
   white-space: nowrap;
   color: rgb(var(--ui-muted));
 }
@@ -98,13 +100,19 @@ html.flat-theme .table-wrapper div[data-ui="cell-line"] > span[data-ui="cell-lin
 html.flat-theme .table-wrapper[data-table="accounts"] .table-header .sticky-header-cell {
   white-space: normal;
   word-break: keep-all;
-  line-height: 15px;
+  line-height: var(--ui-th-leading);
   vertical-align: bottom;
 }
 
 html.flat-theme .table-wrapper[data-table="accounts"] .table-header .sticky-header-cell > div {
   flex-wrap: wrap;
   row-gap: 2px;
+}
+
+/* 状态 at the 14px header size (29px) + the 4px gap + the 11px sort box must share one line, or the box wraps alone and
+   状态 floats a line above its neighbours */
+html.flat-theme .table-wrapper[data-table="accounts"] .table-header .sticky-header-cell[data-column="status"] > div {
+  min-width: 44px;
 }
 
 html.flat-theme .table-wrapper .table-header .sticky-header-cell[data-stack] > div > div[data-ui="th-subs"] {
@@ -336,8 +344,9 @@ html.flat-theme .table-wrapper[data-table="accounts"] td[data-column="status"] >
   line-height: 0;
 }
 
-/* ---- 管理分类 / 请求路由 / 路由分组 (/ 代理): labelled lines, the mono label in a 46px gutter, the value beside it (a value
-   that wraps keeps its indent); the group badges flow and show their whole names */
+/* ---- 管理分类 / 请求路由 / 路由分组 (/ 代理): labelled lines, the label (12 / 16 / 500) in a 50px gutter (four 12px CJK
+   glyphs are 48px), the value beside it, 56px in (a value that wraps keeps its indent); the group badges flow and show
+   their whole names. English puts the label over its value at every width (end of this section). */
 html.flat-theme .table-wrapper[data-table="accounts"] th[data-column="taxonomy_route"] {
   min-width: 10rem;
 }
@@ -353,7 +362,7 @@ html.flat-theme .table-wrapper[data-table="accounts"] td[data-column="taxonomy_r
 html.flat-theme .table-wrapper[data-table="accounts"] td[data-column="taxonomy_route"] > div:not([data-ui="cell-lines"]) > div,
 html.flat-theme .table-wrapper[data-table="accounts"] td[data-column="taxonomy_route"] > div[data-ui="cell-lines"] > div[data-ui="cell-line"] {
   margin-top: 0;
-  padding-left: 52px;
+  padding-left: 56px;
 }
 
 html.flat-theme .table-wrapper[data-table="accounts"] td[data-column="taxonomy_route"] > div:not([data-ui="cell-lines"]) > div:first-child {
@@ -377,10 +386,10 @@ html.flat-theme .table-wrapper[data-table="accounts"] td[data-column="taxonomy_r
 html.flat-theme .table-wrapper[data-table="accounts"] td[data-column="taxonomy_route"] > div[data-ui="cell-lines"] > div[data-ui="cell-line"] > span[data-ui="cell-line-label"] {
   display: inline-block;
   flex: none;
-  width: 46px;
-  margin-left: -52px;
+  width: 50px;
+  margin-left: -56px;
   margin-right: 6px;
-  line-height: 18px;
+  line-height: 16px;
 }
 
 html.flat-theme .table-wrapper[data-table="accounts"] td[data-column="taxonomy_route"] > div:not([data-ui="cell-lines"]) > div > span[class~="uppercase"][class~="text-[10px]"] {
@@ -548,10 +557,45 @@ html.flat-theme .table-wrapper[data-table="accounts"] td[data-column="actions"] 
   }
 }
 
+/* ---- English (:lang(en), the app's other locale): the taxonomy labels (Management Classification, Request Routing,
+   Routing Groups: 90-155px at 12 / 500) fit no gutter (the 50px box holds four CJK glyphs; from 1400px they ran over
+   their values), so they sit over their values at every width, as below 1400px. Below 1440px they may also wrap at a
+   space and the column keeps the stacked layout's 7rem floor, so the one-line 155px label no longer sets the column's
+   width (live data: at 1280 the table scrolls 28px instead of 79, at 1400 it fits instead of scrolling 18px); from
+   1440px, where the table fits, a label keeps one line. Chinese is unchanged. */
+html.flat-theme:lang(en) .table-wrapper[data-table="accounts"] td[data-column="taxonomy_route"] > div:not([data-ui="cell-lines"]) > div,
+html.flat-theme:lang(en) .table-wrapper[data-table="accounts"] td[data-column="taxonomy_route"] > div[data-ui="cell-lines"] > div[data-ui="cell-line"] {
+  padding-left: 0;
+}
+
+html.flat-theme:lang(en) .table-wrapper[data-table="accounts"] td[data-column="taxonomy_route"] > div[data-ui="cell-lines"] > div[data-ui="cell-line"] {
+  flex-direction: column;
+}
+
+html.flat-theme:lang(en) .table-wrapper[data-table="accounts"] td[data-column="taxonomy_route"] > div:not([data-ui="cell-lines"]) > div > span[class~="uppercase"][class~="text-[10px]"],
+html.flat-theme:lang(en) .table-wrapper[data-table="accounts"] td[data-column="taxonomy_route"] > div[data-ui="cell-lines"] > div[data-ui="cell-line"] > span[data-ui="cell-line-label"] {
+  display: block;
+  width: auto;
+  margin-left: 0;
+  margin-right: 0;
+}
+
+@media (max-width: 1439.98px) {
+  html.flat-theme:lang(en) .table-wrapper[data-table="accounts"] th[data-column="taxonomy_route"] {
+    min-width: 7rem;
+  }
+
+  html.flat-theme:lang(en) .table-wrapper[data-table="accounts"] td[data-column="taxonomy_route"] > div:not([data-ui="cell-lines"]) > div > span[class~="uppercase"][class~="text-[10px]"],
+  html.flat-theme:lang(en) .table-wrapper[data-table="accounts"] td[data-column="taxonomy_route"] > div[data-ui="cell-lines"] > div[data-ui="cell-line"] > span[data-ui="cell-line-label"] {
+    flex: 0 1 auto;
+    max-width: 100%;
+    white-space: normal;
+  }
+}
+
 /* ================================================================== 3 · lines whose layout differs from their column's
-   (the columns' own rules name the lines where they look the same: data.css figures, behaviour.css B1.5,
-   accounts.css groups / capacity / today's stats, dashboard-usage.css endpoint paths, users-groups-proxies-keys.css
-   the account-count chip and the created time) */
+   (the columns' own rules name the lines where they look the same: behaviour.css B1.5, accounts.css groups / capacity /
+   today's stats, users-groups-proxies-keys.css the account-count chip and the created time) */
 
 /* behaviour.css B1.4: the created time as date / time, a block here so the line's label sits by the date */
 html.flat-theme .table-wrapper div[data-ui="cell-line"][data-line="created_at"] > div[data-ui="cell-line-value"] > span {
@@ -607,7 +651,7 @@ html.flat-theme :is(.table-wrapper[data-table="usage"], .table-wrapper[data-tabl
 html.flat-theme :is(.table-wrapper[data-table="usage"], .table-wrapper[data-table="proxies"], [data-ui~="usage-records"] .table-wrapper:not([data-table="usage"]), [data-ui~="ops-error-list"] .table-wrapper, [data-ui="user-usage"] .table-wrapper:not([data-table="usage"])) .table-header .sticky-header-cell {
   white-space: normal;
   word-break: keep-all;
-  line-height: 15px;
+  line-height: var(--ui-th-leading);
   vertical-align: bottom;
 }
 
@@ -796,6 +840,13 @@ html.flat-theme .table-wrapper[data-table="proxies"] th[data-column="location"] 
   min-width: 6.5rem;
 }
 
+/* English: the account count chip (「12 accounts」, 12px) keeps 3px either side instead of 6, so the flat table fits at
+   1440 (6px wider than its wrapper with the full inset); Chinese keeps the inset */
+html.flat-theme:lang(en) .table-wrapper[data-table="proxies"] :is(td[data-column="account_count"], div[data-ui="cell-line"][data-line="account_count"] > div[data-ui="cell-line-value"]) > :is(button, span)[class~="inline-flex"] {
+  padding-left: 3px;
+  padding-right: 3px;
+}
+
 html.flat-theme .table-wrapper[data-table="proxies"] td[data-column="actions"] > div {
   display: grid;
   grid-template-columns: repeat(2, 28px);
@@ -855,32 +906,56 @@ html.flat-theme .table-wrapper[data-table="proxies"] div[data-ui="cell-line"][da
   align-items: flex-start;
 }
 
-/* ================================================================== 6 · below 1400px: the tables that fit at 1440 but not at
-   1280 (用户管理, 分组管理, API 密钥, 操作日志, 渠道管理): the same recipe, lighter (8px insets, 12 at the edges; cells may
-   wrap at word boundaries; chips, badges and figures stay whole; the row actions wrap three a row). Mono text is NOT an
-   atom here: behaviour.css B1.12 wraps 操作日志's action and method + path, and that stays so. API 密钥 needs about 1437px
-   on one line, so its recipe reaches up to 1440px. From there up (the others from 1400px) these tables are unchanged. */
+/* ================================================================== 6 · the TablePageLayout tables that wrap below a
+   width (用户管理, 分组管理, API 密钥, 操作日志, 渠道管理): one recipe, lighter than section 4's (8px insets, 12 at the
+   edges; cells may wrap at word boundaries; chips, badges and figures stay whole; the row actions wrap three a row).
+   Mono text is NOT an atom here: behaviour.css B1.12 wraps 操作日志's action and method + path, and that stays so.
+   Above its width a table is unchanged, except that 渠道管理 lets its free-text description wrap at every width
+   (below). With official's 14px text and 14px headers (data.css) the recipe applies:
+     Chinese: 分组管理, 操作日志 and 渠道管理 below 1400px (in the recipe's 100px action box 渠道管理's two text buttons
+       would stack, so from 1400px only its description wraps); 用户管理 below 1440px (8px too wide at 1400); API 密钥
+       below 1536px (about 1450px on one line).
+     English (:lang(en): the app's other locale, i18n sets <html lang>): all five below 1680px, and at every width the
+       TablePageLayout headers are 12 / 16 (official DataTable's size) and may wrap at a space, bottom-aligned: English
+       uppercase single words (USERNAME, CONCURRENCY, RATE MULTIPLIER) set the column floors, where official scrolls
+       sideways. Chinese headers keep one line (behaviour.css B1.9's 「最后活跃 / 时间」). Below 1400px English API 密钥
+       lets its usage labels break at a space (end of this section). At 1280 English 用户管理, API 密钥 and 分组管理 still
+       overflow by a few dozen pixels (one-word columns): accepted. */
+
+/* 渠道管理 at every width: the table may shrink to its wrapper and only the free-text description wraps, so a long
+   description does not push the table sideways where the recipe does not apply (a 64-character one made it 15px too
+   wide at 1400px in 14px text); the two text buttons stay side by side */
+html.flat-theme [data-ui~="channels-page"] .table-wrapper > table[data-ui~="data-table"]:is(table) {
+  min-width: 0;
+  width: 100%;
+}
+
+html.flat-theme [data-ui~="channels-page"] .table-wrapper > table > tbody.table-body > tr > td[data-column="description"] {
+  white-space: normal;
+  overflow-wrap: break-word;
+}
+
 @media (max-width: 1399.98px) {
-  html.flat-theme :is(.table-wrapper:is([data-table="users"], [data-table="groups"]), [data-ui~="audit-page"] .table-wrapper, [data-ui~="channels-page"] .table-wrapper) {
+  html.flat-theme :is(.table-wrapper[data-table="groups"], [data-ui~="audit-page"] .table-wrapper, [data-ui~="channels-page"] .table-wrapper) {
     --ui-table-cell-x: 8px;
     --ui-table-edge-x: 12px;
   }
 
-  html.flat-theme :is(.table-wrapper:is([data-table="users"], [data-table="groups"]), [data-ui~="audit-page"] .table-wrapper, [data-ui~="channels-page"] .table-wrapper) > table[data-ui~="data-table"]:is(table) {
+  html.flat-theme :is(.table-wrapper[data-table="groups"], [data-ui~="audit-page"] .table-wrapper, [data-ui~="channels-page"] .table-wrapper) > table[data-ui~="data-table"]:is(table) {
     min-width: 0;
     width: 100%;
   }
 
-  html.flat-theme :is(.table-wrapper:is([data-table="users"], [data-table="groups"]), [data-ui~="audit-page"] .table-wrapper, [data-ui~="channels-page"] .table-wrapper) > table > tbody.table-body > tr > td {
+  html.flat-theme :is(.table-wrapper[data-table="groups"], [data-ui~="audit-page"] .table-wrapper, [data-ui~="channels-page"] .table-wrapper) > table > tbody.table-body > tr > td {
     white-space: normal;
     overflow-wrap: break-word;
   }
 
-  html.flat-theme :is(.table-wrapper:is([data-table="users"], [data-table="groups"]), [data-ui~="audit-page"] .table-wrapper, [data-ui~="channels-page"] .table-wrapper) > table > tbody.table-body > tr > td :is(.badge, [data-ui~="category-chip"], [data-ui="group-badge"], [data-ui="platform-chip"], [class~="rounded"]:is([class~="px-1"], [class~="px-1.5"], [class~="px-2"]), [class~="rounded-md"]:is([class~="px-1.5"], [class~="px-2"]), [class~="rounded-full"][class~="px-2"], [class~="tabular-nums"]) {
+  html.flat-theme :is(.table-wrapper[data-table="groups"], [data-ui~="audit-page"] .table-wrapper, [data-ui~="channels-page"] .table-wrapper) > table > tbody.table-body > tr > td :is(.badge, [data-ui~="category-chip"], [data-ui="group-badge"], [data-ui="platform-chip"], [class~="rounded"]:is([class~="px-1"], [class~="px-1.5"], [class~="px-2"]), [class~="rounded-md"]:is([class~="px-1.5"], [class~="px-2"]), [class~="rounded-full"][class~="px-2"], [class~="tabular-nums"]) {
     white-space: nowrap;
   }
 
-  html.flat-theme :is(.table-wrapper:is([data-table="users"], [data-table="groups"]), [data-ui~="audit-page"] .table-wrapper, [data-ui~="channels-page"] .table-wrapper) td[data-column="actions"] > div {
+  html.flat-theme :is(.table-wrapper[data-table="groups"], [data-ui~="audit-page"] .table-wrapper, [data-ui~="channels-page"] .table-wrapper) td[data-column="actions"] > div {
     flex-wrap: wrap;
     max-width: 100px;
     row-gap: 2px;
@@ -888,6 +963,33 @@ html.flat-theme .table-wrapper[data-table="proxies"] div[data-ui="cell-line"][da
 }
 
 @media (max-width: 1439.98px) {
+  html.flat-theme .table-wrapper[data-table="users"] {
+    --ui-table-cell-x: 8px;
+    --ui-table-edge-x: 12px;
+  }
+
+  html.flat-theme .table-wrapper[data-table="users"] > table[data-ui~="data-table"]:is(table) {
+    min-width: 0;
+    width: 100%;
+  }
+
+  html.flat-theme .table-wrapper[data-table="users"] > table > tbody.table-body > tr > td {
+    white-space: normal;
+    overflow-wrap: break-word;
+  }
+
+  html.flat-theme .table-wrapper[data-table="users"] > table > tbody.table-body > tr > td :is(.badge, [data-ui~="category-chip"], [data-ui="group-badge"], [data-ui="platform-chip"], [class~="rounded"]:is([class~="px-1"], [class~="px-1.5"], [class~="px-2"]), [class~="rounded-md"]:is([class~="px-1.5"], [class~="px-2"]), [class~="rounded-full"][class~="px-2"], [class~="tabular-nums"]) {
+    white-space: nowrap;
+  }
+
+  html.flat-theme .table-wrapper[data-table="users"] td[data-column="actions"] > div {
+    flex-wrap: wrap;
+    max-width: 100px;
+    row-gap: 2px;
+  }
+}
+
+@media (max-width: 1535.98px) {
   html.flat-theme .table-wrapper[data-table="keys"] {
     --ui-table-cell-x: 8px;
     --ui-table-edge-x: 12px;
@@ -916,5 +1018,57 @@ html.flat-theme .table-wrapper[data-table="proxies"] div[data-ui="cell-line"][da
   html.flat-theme .table-wrapper[data-table="keys"] td[data-column="usage"] :is(span, div),
   html.flat-theme .table-wrapper[data-table="keys"] td[data-column="key"] code {
     white-space: nowrap;
+  }
+}
+
+/* English: the TablePageLayout headers at 12 / 16 (after data.css' 14 / 20 for the family) and wrapping at a space */
+html.flat-theme:lang(en) .table-page-layout .table-wrapper {
+  --ui-th-size: 12px;
+  --ui-th-leading: 16px;
+}
+
+html.flat-theme:lang(en) .table-page-layout .table-wrapper .table-header .sticky-header-cell {
+  white-space: normal;
+  vertical-align: bottom;
+}
+
+@media (max-width: 1679.98px) {
+  html.flat-theme:lang(en) :is(.table-wrapper:is([data-table="users"], [data-table="groups"], [data-table="keys"]), [data-ui~="audit-page"] .table-wrapper, [data-ui~="channels-page"] .table-wrapper) {
+    --ui-table-cell-x: 8px;
+    --ui-table-edge-x: 12px;
+  }
+
+  html.flat-theme:lang(en) :is(.table-wrapper:is([data-table="users"], [data-table="groups"], [data-table="keys"]), [data-ui~="audit-page"] .table-wrapper, [data-ui~="channels-page"] .table-wrapper) > table[data-ui~="data-table"]:is(table) {
+    min-width: 0;
+    width: 100%;
+  }
+
+  html.flat-theme:lang(en) :is(.table-wrapper:is([data-table="users"], [data-table="groups"], [data-table="keys"]), [data-ui~="audit-page"] .table-wrapper, [data-ui~="channels-page"] .table-wrapper) > table > tbody.table-body > tr > td {
+    white-space: normal;
+    overflow-wrap: break-word;
+  }
+
+  html.flat-theme:lang(en) :is(.table-wrapper:is([data-table="users"], [data-table="groups"], [data-table="keys"]), [data-ui~="audit-page"] .table-wrapper, [data-ui~="channels-page"] .table-wrapper) > table > tbody.table-body > tr > td :is(.badge, [data-ui~="category-chip"], [data-ui="group-badge"], [data-ui="platform-chip"], [class~="rounded"]:is([class~="px-1"], [class~="px-1.5"], [class~="px-2"]), [class~="rounded-md"]:is([class~="px-1.5"], [class~="px-2"]), [class~="rounded-full"][class~="px-2"], [class~="tabular-nums"]) {
+    white-space: nowrap;
+  }
+
+  html.flat-theme:lang(en) :is(.table-wrapper:is([data-table="users"], [data-table="groups"], [data-table="keys"]), [data-ui~="audit-page"] .table-wrapper, [data-ui~="channels-page"] .table-wrapper) td[data-column="actions"] > div {
+    flex-wrap: wrap;
+    max-width: 100px;
+    row-gap: 2px;
+  }
+
+  html.flat-theme:lang(en) .table-wrapper[data-table="keys"] td[data-column="usage"] :is(span, div),
+  html.flat-theme:lang(en) .table-wrapper[data-table="keys"] td[data-column="key"] code {
+    white-space: nowrap;
+  }
+}
+
+/* English API 密钥 below 1400px: the label of a usage line may break at its space (「Last / 30d:」 beside its figure; the
+   figures stay whole), so the column gives back the width its official 14px lines added (measured: at 1280 the table
+   scrolls 70px instead of 86; at 1366 the row actions fit two a row instead of one) */
+@media (max-width: 1399.98px) {
+  html.flat-theme:lang(en) .table-wrapper[data-table="keys"] td[data-column="usage"] div[class~="flex"] > span:first-child {
+    white-space: normal;
   }
 }
