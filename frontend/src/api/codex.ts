@@ -1,6 +1,7 @@
 export interface CodexModelsManifestResult {
   content: string
   modelCount: number
+  responseBytes: number
 }
 
 function normalizeCodexGatewayRoot(baseUrl: string): string {
@@ -13,6 +14,13 @@ function normalizeCodexGatewayRoot(baseUrl: string): string {
 // filter newer models out of the downloaded catalog.
 export function buildCodexModelsManifestUrl(baseUrl: string): string {
   return `${normalizeCodexGatewayRoot(baseUrl)}/backend-api/codex/models`
+}
+
+// Version-free remote catalog for model_catalog_url (Codex 0.156.0+). Codex
+// appends its own client_version, which selects the same server-side Codex
+// manifest as the download above.
+export function buildCodexModelCatalogUrl(baseUrl: string): string {
+  return `${normalizeCodexGatewayRoot(baseUrl)}/v1/models`
 }
 
 function isCodexModelsManifest(value: unknown): value is { models: unknown[] } {
@@ -38,13 +46,15 @@ export async function fetchCodexModelsManifest(
     throw new Error(`Codex models request failed with status ${response.status}`)
   }
 
-  const payload: unknown = await response.json()
+  const text = await response.text()
+  const payload: unknown = JSON.parse(text)
   if (!isCodexModelsManifest(payload)) {
     throw new Error('Codex models response is not a valid manifest')
   }
 
   return {
     content: JSON.stringify(payload, null, 2),
-    modelCount: payload.models.length
+    modelCount: payload.models.length,
+    responseBytes: new TextEncoder().encode(text).byteLength
   }
 }
