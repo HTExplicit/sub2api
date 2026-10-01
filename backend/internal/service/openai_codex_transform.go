@@ -13,6 +13,7 @@ import (
 )
 
 var codexModelMap = map[string]string{
+	"gpt-6.1-sol":          "gpt-6.1-sol",
 	"gpt-6-astra":          "gpt-6-astra",
 	"gpt-6-sol":            "gpt-6-sol",
 	"gpt-6-luna":           "gpt-6-luna",
@@ -64,7 +65,9 @@ var codexVersionModelPrefixes = []struct {
 	prefix string
 	target string
 }{
-	// GPT-6 Sol/Luna are intentionally absent: undocumented dated snapshots must pass through unchanged (#192).
+	// GPT-6 Sol/Luna and GPT-6.1 Sol are intentionally absent: undocumented dated
+	// snapshots must pass through unchanged (#192). Their finite effort/compact
+	// aliases are recognized by normalizeKnownOpenAICodexModel.
 	{prefix: "gpt-5.6-sol", target: "gpt-5.6-sol"},
 	{prefix: "gpt-5.6-terra", target: "gpt-5.6-terra"},
 	{prefix: "gpt-5.6-luna", target: "gpt-5.6-luna"},
