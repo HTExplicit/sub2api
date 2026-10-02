@@ -169,17 +169,27 @@
         </button>
       </div>
     </div>
+
+    <UpstreamModelPickerDialog
+      v-if="canSyncUpstream"
+      :show="pickerResult !== undefined"
+      :result="pickerResult"
+      :current="modelValue"
+      @confirm="applyUpstreamPicker"
+      @close="closeUpstreamPicker"
+    />
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, computed, watch, onScopeDispose } from 'vue'
+import { ref, shallowRef, computed, watch, onScopeDispose } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useAppStore } from '@/stores/app'
 import { accountsAPI } from '@/api/admin/accounts'
 import type { ModelContextCapacityRow, SyncUpstreamModelsResult, SyncUpstreamPreviewParams } from '@/api/admin/accounts'
 import { useClipboard } from '@/composables/useClipboard'
 import ModelContextCapacityField from '@/components/account/ModelContextCapacityField.vue'
+import UpstreamModelPickerDialog from '@/components/account/UpstreamModelPickerDialog.vue'
 import ModelIcon from '@/components/common/ModelIcon.vue'
 import Icon from '@/components/icons/Icon.vue'
 import { allModels, getModelsByPlatform } from '@/composables/useModelWhitelist'
@@ -223,6 +233,8 @@ const customModel = ref('')
 const isComposing = ref(false)
 const isSyncingUpstream = ref(false)
 const lastSyncResult = ref<SyncUpstreamModelsResult>()
+// A successful sync opens the picker; the whitelist and the synced candidates change only on its confirm.
+const pickerResult = shallowRef<SyncUpstreamModelsResult>()
 const capacityFieldStates = ref<Record<string, { editing?: boolean; valid?: boolean }>>({})
 const capacityFieldsValid = computed(() => Object.values(capacityFieldStates.value)
   .every(state => !state.editing && state.valid !== false))
@@ -250,6 +262,7 @@ watch(
     syncGeneration += 1
     isSyncingUpstream.value = false
     lastSyncResult.value = undefined
+    pickerResult.value = undefined
   }
 )
 onScopeDispose(() => {
@@ -429,43 +442,15 @@ const syncUpstreamModels = async () => {
     }
 
     if (generation !== syncGeneration) return
-    lastSyncResult.value = result
-    emit('upstream-synced', result)
     const upstreamModels = result.models.map(model => model.trim()).filter(Boolean)
     if (upstreamModels.length === 0) {
+      lastSyncResult.value = result
+      emit('upstream-synced', result)
       appStore.showInfo(t('admin.accounts.syncUpstreamModelsEmpty'))
       return
     }
-
-    const newModels = [...props.modelValue]
-    let addedCount = 0
-    for (const model of upstreamModels) {
-      if (!newModels.includes(model)) {
-        newModels.push(model)
-        addedCount += 1
-      }
-    }
-
-    emit('update:modelValue', newModels)
-    const warnings = result.warnings ?? []
-    const hasPartialMetadata = warnings.some(
-      warning => warning.code === 'upstream_model_metadata_partial'
-    )
-    const hasIncompleteMetadata = warnings.some(
-      warning => warning.code === 'upstream_model_metadata_incomplete'
-    )
-    if (hasIncompleteMetadata) {
-      appStore.showWarning(t('admin.accounts.syncUpstreamModelsMetadataIncomplete'))
-      return
-    }
-    if (addedCount > 0) {
-      appStore.showSuccess(t('admin.accounts.syncUpstreamModelsSuccess', { count: addedCount, total: upstreamModels.length }))
-    } else {
-      appStore.showInfo(t('admin.accounts.syncUpstreamModelsNoChanges', { count: upstreamModels.length }))
-    }
-    if (hasPartialMetadata) {
-      appStore.showWarning(t('admin.accounts.syncUpstreamModelsMetadataPartial'))
-    }
+    // The metadata warnings are shown inside the picker.
+    pickerResult.value = result
   } catch (error) {
     if (generation !== syncGeneration) return
     const message = error instanceof Error ? error.message : t('admin.accounts.syncUpstreamModelsFailed')
@@ -473,6 +458,26 @@ const syncUpstreamModels = async () => {
   } finally {
     if (generation === syncGeneration) isSyncingUpstream.value = false
   }
+}
+
+// Cancel keeps the whitelist and drops the result: its models do not stay as candidates.
+const closeUpstreamPicker = () => {
+  pickerResult.value = undefined
+}
+
+// Confirm only fills the form; the account dialog's save button still saves the account.
+const applyUpstreamPicker = (models: string[], changes: { added: number; removed: number }) => {
+  const result = pickerResult.value
+  if (!result) return
+  emit('update:modelValue', models)
+  if (changes.added > 0 || changes.removed > 0) {
+    appStore.showSuccess(t('admin.accounts.syncUpstreamPicker.updated', changes))
+  } else {
+    appStore.showInfo(t('admin.accounts.syncUpstreamPicker.unchanged'))
+  }
+  lastSyncResult.value = result
+  emit('upstream-synced', result)
+  closeUpstreamPicker()
 }
 
 const clearAll = () => {

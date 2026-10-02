@@ -1072,6 +1072,33 @@ export default {accounts: {
         'Model IDs were synced, but no capability metadata could be updated.',
       syncUpstreamModelsMetadataPartial:
         'Some model capabilities were updated; remaining models are still incomplete.',
+      syncUpstreamPicker: {
+        title: 'Choose whitelist models',
+        searchPlaceholder: 'Search model ID or name',
+        selectAll: 'Select all',
+        invert: 'Invert',
+        filterLabel: 'Filter by status',
+        filters: {
+          all: 'All',
+          checked: 'Checked',
+          unchecked: 'Unchecked',
+          new: 'New',
+          missing: 'Not returned by upstream'
+        },
+        tags: {
+          new: 'New',
+          missing: 'Not returned by upstream'
+        },
+        selectedCount: '{selected} of {total} selected',
+        contextWindow: 'Context {value}',
+        maxOutput: 'Max output {value}',
+        summary: 'Will add {added} and remove {removed}',
+        emptySelectionHint: 'Check at least one model; an empty whitelist allows all models',
+        configuredSource:
+          'The upstream cannot list models; these are the models currently configured for this account',
+        updated: 'Whitelist updated: {added} added, {removed} removed',
+        unchanged: 'Whitelist unchanged'
+      },
       clearAllModels: 'Clear all models',
       customModelName: 'Custom model name',
       enterCustomModelName: 'Enter custom model name',

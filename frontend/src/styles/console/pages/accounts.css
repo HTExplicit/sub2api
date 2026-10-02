@@ -30,6 +30,11 @@
  * Wave 2 (dialogs, section 9; one attribute each):
  *   admin/account/AccountStatsModal       account-stats         admin/account/AccountTestModal  account-test
  *   account/OAuthAuthorizationFlow        account-oauth-flow    account/CreateAccountModal      account-create-steps
+ * The upstream model picker (section 9.13; static hooks, a row's state is its data-checked, a filter's aria-checked):
+ *   account/UpstreamModelPickerDialog (new)  upstream-picker-list (the scroll area: the rows or the empty message),
+ *                                            upstream-picker-row, upstream-picker-id, upstream-picker-details,
+ *                                            upstream-picker-copy; its toolbar uses the shared search-box and seg
+ *                                            hooks (controls.css 3.2, 7.1)
  * Card grid, compact list, the drawer's content, the account forms (#create-account-form, #edit-account-form,
  * #bulk-edit-account-form) and the taxonomy manager rows are reached through their existing ids and data-test
  * attributes. The system prompt binding inside the account dialogs is P3's (settings-ops-public.css). */
@@ -1379,6 +1384,74 @@ html.flat-theme #edit-account-form div[class~="bg-sky-50/60"] > div:last-child b
   border-color: rgb(var(--ui-primary));
   background-color: rgb(var(--ui-primary));
   color: rgb(var(--ui-on-primary));
+}
+
+/* 9.13 The upstream model picker (UpstreamModelPickerDialog, stacked on the create and edit dialogs by the model
+   whitelist's 「同步上游支持的模型」). Shared parts draw the rest: the search field and the status filter (controls.css
+   3.2, 7.1: the grey track, the current segment the raised pill), the .btn recipes, the native checkboxes
+   (controls.css 6), the 新增 / 上游未返回 pills (data.css 6) and the two notices (data.css 11 callouts; the metadata
+   warning keeps its status colour). Here the list: a structural box (1px line, radius 8, the surface) that keeps the
+   height it opened with (set inline: the whole list's, at most 50vh), so fewer rows and the empty message sit inside
+   it; past 100 rows it holds only the rows near view between two aria-hidden spacer items. Its rows sit on the line
+   at 7 / 12 with the hover fill; the model ID at 13 / 500 ink, wrapping anywhere (nothing is cut); the capability
+   line 11px muted with tabular figures; the copy button the table's 28px icon button (muted, the subtle fill and ink
+   on hover). No state is drawn: the checkbox carries it. */
+html.flat-theme [data-ui~="upstream-picker-list"] {
+  border-color: rgb(var(--ui-line));
+  border-radius: var(--ui-radius-lg);
+  background-color: rgb(var(--ui-surface));
+}
+
+html.flat-theme [data-ui~="upstream-picker-row"] {
+  gap: 10px;
+  padding: 7px 12px;
+  border-color: rgb(var(--ui-line));
+  transition: background-color var(--ui-duration) var(--ui-ease);
+}
+
+html.flat-theme [data-ui~="upstream-picker-row"]:hover {
+  background-color: rgb(var(--ui-hover));
+}
+
+html.flat-theme [data-ui~="upstream-picker-id"] {
+  font-size: 13px;
+  line-height: 19.5px;
+  font-weight: 500;
+  color: rgb(var(--ui-ink));
+}
+
+html.flat-theme [data-ui~="upstream-picker-details"] {
+  font-size: 11px;
+  line-height: 16.5px;
+  font-variant-numeric: tabular-nums;
+  color: rgb(var(--ui-muted));
+}
+
+html.flat-theme [data-ui~="upstream-picker-copy"] {
+  display: inline-grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border-radius: var(--ui-radius-md);
+  color: rgb(var(--ui-muted));
+  transition: color var(--ui-duration) var(--ui-ease), background-color var(--ui-duration) var(--ui-ease);
+}
+
+html.flat-theme [data-ui~="upstream-picker-copy"]:hover {
+  background-color: rgb(var(--ui-subtle));
+  color: rgb(var(--ui-ink));
+}
+
+html.flat-theme [data-ui~="upstream-picker-copy"]:focus-visible {
+  outline: 2px solid rgb(var(--ui-focus));
+  outline-offset: 2px;
+  box-shadow: none;
+}
+
+html.flat-theme [data-ui~="upstream-picker-copy"] svg {
+  width: 15px;
+  height: 15px;
 }
 
 /* ================================================================== 8 · phones */
