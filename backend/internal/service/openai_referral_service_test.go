@@ -32,8 +32,9 @@ func (s *referralClientStub) SendInvite(_ context.Context, call OpenAIReferralCa
 
 func referralTestService(t *testing.T, plan string, client OpenAIReferralClient) (*OpenAIQuotaService, *stubQuotaAccountRepo) {
 	t.Helper()
+	// The cached synthetic bearer must belong to the persisted test account.
 	a := &Account{ID: 100, Platform: PlatformOpenAI, Type: AccountTypeOAuth, Status: StatusActive,
-		Credentials: map[string]any{"chatgpt_account_id": "workspace-test", "plan_type": plan}}
+		Credentials: map[string]any{"chatgpt_account_id": "workspace-test", "plan_type": plan, "access_token": "test-token"}}
 	repo := &stubQuotaAccountRepo{accounts: map[int64]*Account{100: a}}
 	tokens := &stubQuotaTokenCache{tokens: map[string]string{OpenAITokenCacheKey(a): "test-token"}}
 	factory := func(string) (*req.Client, error) {

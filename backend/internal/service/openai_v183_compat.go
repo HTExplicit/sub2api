@@ -338,6 +338,16 @@ func (s *OpenAIGatewayService) BindOpenAIHTTPResponseOwner(ctx context.Context, 
 	return s.getOpenAIWSStateStore().BindHTTPResponseOwner(ctx, groupID, responseID, userID, apiKeyID, s.openAIWSResponseStickyTTL())
 }
 
+// BindOpenAIWSResponseOwner registers the actual successful upstream response
+// using the same authenticated owner and bounded persistence as HTTP. Never
+// register a client-supplied continuation anchor or payload identity here.
+func (s *OpenAIGatewayService) BindOpenAIWSResponseOwner(ctx context.Context, c *gin.Context, account *Account, result *OpenAIForwardResult) {
+	if result == nil || result.ClientDisconnect || !isOpenAIWSSuccessTerminalEvent(result.UpstreamTerminalEvent) {
+		return
+	}
+	s.bindHTTPResponseAccount(ctx, c, account, result.RequestID)
+}
+
 func (s *OpenAIGatewayService) newOpenAIAccountFailoverError(
 	account *Account,
 	statusCode int,

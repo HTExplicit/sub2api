@@ -1276,6 +1276,8 @@ func TestOpenAIResponsesWebSocket_PreviousResponseIDKindLoggedBeforeAcquireFailu
 		},
 	}
 	h := newOpenAIHandlerForPreviousResponseIDValidation(t, cache)
+	// This case exercises user-slot failure after an authorized continuation.
+	require.NoError(t, h.gatewayService.BindOpenAIHTTPResponseOwner(context.Background(), 2, "resp_prev_123", 1, 101))
 	wsServer := newOpenAIWSHandlerTestServer(t, h, middleware.AuthSubject{UserID: 1, Concurrency: 1})
 	defer wsServer.Close()
 
