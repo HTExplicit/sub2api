@@ -2911,7 +2911,7 @@ func (h *AccountHandler) accountTestCatalog(ctx context.Context, account *servic
 		}
 
 		var models []geminicli.Model
-		for requestedModel := range mapping {
+		for _, requestedModel := range sortedModelMappingKeys(mapping) {
 			var found bool
 			for _, dm := range geminicli.DefaultModels {
 				if dm.ID == requestedModel {
@@ -2963,14 +2963,8 @@ func (h *AccountHandler) accountTestCatalog(ctx context.Context, account *servic
 			defaultByID[model.ID] = model
 		}
 
-		requestedModels := make([]string, 0, len(mapping))
-		for requestedModel := range mapping {
-			requestedModels = append(requestedModels, requestedModel)
-		}
-		sort.Strings(requestedModels)
-
 		var models []xai.Model
-		for _, requestedModel := range requestedModels {
+		for _, requestedModel := range sortedModelMappingKeys(mapping) {
 			if defaultModel, found := defaultByID[requestedModel]; found {
 				models = append(models, defaultModel)
 				continue
@@ -3000,7 +2994,7 @@ func (h *AccountHandler) accountTestCatalog(ctx context.Context, account *servic
 
 	// Return mapped models (keys of the mapping are the available model IDs)
 	var models []claude.Model
-	for requestedModel := range mapping {
+	for _, requestedModel := range sortedModelMappingKeys(mapping) {
 		// Try to find display info from default models
 		var found bool
 		for _, dm := range claude.DefaultModels {
@@ -3022,6 +3016,18 @@ func (h *AccountHandler) accountTestCatalog(ctx context.Context, account *servic
 	}
 
 	return models, nil
+}
+
+// sortedModelMappingKeys lists a mapping's requested model IDs in a stable
+// order, so test model lists and their automatic default do not depend on map
+// iteration.
+func sortedModelMappingKeys(mapping map[string]string) []string {
+	keys := make([]string, 0, len(mapping))
+	for key := range mapping {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	return keys
 }
 
 // openAIAccountTestModels selects request-side model IDs from this account's

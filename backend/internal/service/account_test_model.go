@@ -11,25 +11,31 @@ import (
 )
 
 // PickConnectionTestModel chooses the model of a connection test that does not
-// name one: the platform's upstream default test model when the account serves
-// it, otherwise the first text-chat model of the account's own model list
+// name one: the first of the platform's default test models the account serves,
+// otherwise the first text-chat model of the account's own model list
 // (candidates, in display order) or, without a list, of its model mapping.
 // "" leaves the choice to the platform tester's own default.
 func PickConnectionTestModel(account *Account, candidates ...string) string {
 	if account == nil {
 		return ""
 	}
-	preferred := connectionTestDefaultModel(account)
+	preferred := connectionTestDefaultModels(account)
 	if len(candidates) == 0 {
-		if account.IsModelSupported(preferred) {
-			return preferred
+		for _, model := range preferred {
+			if account.IsModelSupported(model) {
+				return model
+			}
 		}
 		for model := range account.GetModelMapping() {
 			candidates = append(candidates, model)
 		}
 		sort.Strings(candidates)
-	} else if slices.Contains(candidates, preferred) {
-		return preferred
+	} else {
+		for _, model := range preferred {
+			if slices.Contains(candidates, model) {
+				return model
+			}
+		}
 	}
 	for _, model := range candidates {
 		if AccountTestSupportsTextConversation(account, model) {
@@ -39,29 +45,33 @@ func PickConnectionTestModel(account *Account, candidates ...string) string {
 	return ""
 }
 
-// connectionTestDefaultModel mirrors the empty-model default of the platform
-// tester that TestAccountConnection dispatches to.
-func connectionTestDefaultModel(account *Account) string {
+// connectionTestDefaultModels lists, most preferred first, the empty-model
+// defaults of the platform tester that TestAccountConnection dispatches to.
+func connectionTestDefaultModels(account *Account) []string {
 	switch {
 	case account.IsOpenCodeGo():
-		return DefaultOpenCodeGoTestModel
+		return []string{DefaultOpenCodeGoTestModel}
 	case account.IsCNProvider():
 		if account.GetAPIProtocol() == APIProtocolAnthropic {
-			return claude.DefaultTestModel
+			return claudeConnectionTestModels
 		}
-		return openai.DefaultTestModel
+		return []string{openai.DefaultTestModel}
 	case account.IsOpenAI():
-		return openai.DefaultTestModel
+		return []string{openai.DefaultTestModel}
 	case account.IsGemini():
-		return geminicli.DefaultTestModel
+		return []string{geminicli.DefaultTestModel}
 	case account.Platform == PlatformGrok:
-		return grokDefaultResponsesModel
+		return []string{grokDefaultResponsesModel}
 	case account.Platform == PlatformAntigravity:
-		return defaultAntigravityTestModel
+		return []string{defaultAntigravityTestModel}
 	default:
-		return claude.DefaultTestModel
+		return claudeConnectionTestModels
 	}
 }
+
+// claudeConnectionTestModels prefers Anthropic's replacement for the deprecated
+// Sonnet 4.5 test model, then the current Opus.
+var claudeConnectionTestModels = []string{claude.DefaultTestModel, claude.DefaultTestModelFallback}
 
 // AccountTestSupportsTextConversation reports whether a model of the account
 // can answer a text connection test: image, audio, embedding, realtime, speech

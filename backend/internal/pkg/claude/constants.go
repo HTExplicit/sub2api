@@ -231,8 +231,12 @@ func DefaultModelIDs() []string {
 	return ids
 }
 
-// DefaultTestModel 测试时使用的默认模型
-const DefaultTestModel = "claude-sonnet-4-5-20250929"
+// DefaultTestModel 测试时使用的默认模型：Anthropic 为已弃用的
+// claude-sonnet-4-5-20250929（2026-09-30 弃用，2026-11-30 下线）指定的替代。
+const DefaultTestModel = "claude-sonnet-5-5"
+
+// DefaultTestModelFallback 是账号不提供 DefaultTestModel 时的默认测试模型。
+const DefaultTestModelFallback = "claude-opus-5-5"
 
 // ModelIDOverrides Claude OAuth 请求需要的模型 ID 映射
 var ModelIDOverrides = map[string]string{
