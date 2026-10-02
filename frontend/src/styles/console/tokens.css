@@ -16,56 +16,6 @@
  * and identity soft fills composited over the surface they sit on (#212125), the status soft fills and the uptime
  * bars as composited over the reference's surface (#1a1a1a). */
 
-/* ------------------------------------------------------------------ fonts */
-/* Geist 1.800 and Geist Mono 1.700 (npm `geist` 1.7.2, SIL OFL 1.1: assets/fonts/geist/OFL.txt), variable
-   weight 100-900, Latin subset; the reference serves the same outlines (REF-CONSOLE §4). Downloaded only while a
-   rule uses the family, i.e. while the theme is on. Chinese uses MiSans, loaded at runtime from Xiaomi's font
-   service by utils/flatTheme.ts. */
-@font-face {
-  font-family: 'Geist';
-  src: url('../../assets/fonts/geist/Geist-Variable.latin.woff2') format('woff2');
-  font-style: normal;
-  font-weight: 100 900;
-  font-display: swap;
-  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308,
-    U+0329, U+2000-206F, U+20AC, U+2122, U+2190-2193, U+2212, U+2215, U+FEFF, U+FFFD;
-}
-
-@font-face {
-  font-family: 'Geist Mono';
-  src: url('../../assets/fonts/geist/GeistMono-Variable.latin.woff2') format('woff2');
-  font-style: normal;
-  font-weight: 100 900;
-  font-display: swap;
-  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308,
-    U+0329, U+2000-206F, U+20AC, U+2122, U+2190-2193, U+2212, U+2215, U+FEFF, U+FFFD;
-}
-
-/* The reference's metric-matched stand-ins (the local Arial sized to Geist's metrics) cover the Latin text while
-   the files load, so nothing reflows when they arrive and the text never flashes in MiSans' own Latin glyphs.
-   Same range as the fonts: a glyph Geist does not have skips them. */
-@font-face {
-  font-family: 'Geist Fallback';
-  src: local('Arial');
-  ascent-override: 95.94%;
-  descent-override: 28.16%;
-  line-gap-override: 0%;
-  size-adjust: 104.76%;
-  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308,
-    U+0329, U+2000-206F, U+20AC, U+2122, U+2190-2193, U+2212, U+2215, U+FEFF, U+FFFD;
-}
-
-@font-face {
-  font-family: 'Geist Mono Fallback';
-  src: local('Arial');
-  ascent-override: 74.67%;
-  descent-override: 21.92%;
-  line-gap-override: 0%;
-  size-adjust: 134.59%;
-  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308,
-    U+0329, U+2000-206F, U+20AC, U+2122, U+2190-2193, U+2212, U+2215, U+FEFF, U+FFFD;
-}
-
 /* ------------------------------------------------------------------ roles (light) */
 /* Palette C (owner approval 2026-09-30; artifacts/tmp/ui-tune/palette/PREVIEW.md): the neutrals are shadcn's zinc
    (a faint cool tint) instead of pure grey, the ink is softened off black, colour carries meaning (the accent does
@@ -89,27 +39,14 @@
   --ui-line-strong: 220 220 224;
   --ui-line-focus: 185 185 192;
   --ui-control-line: 140 140 148;
-  /* Text (zinc). ink #1f1f23 (16.4:1 on white; #0a0a0a read black and heavy in dense rows); ink-soft #52525b
-     (values, filter pills, tooltip descriptions, secondary figures); muted and faint (placeholders, captions)
-     #66666e: these hold >= 4.5:1 on every neutral fill (surface, canvas, the grouped fill, hover). --ui-label, the
-     mono label's grey, is the muted grey too (owner 2026-10-01, text option A: the KPI, field and section labels
-     and the table headers are one grey; the former #6e6e76 was 4.40:1 on the row hover, #66666e is 4.95). */
-  --ui-ink: 31 31 35;
-  --ui-ink-soft: 82 82 91;
-  --ui-muted: 102 102 110;
-  --ui-faint: 102 102 110;
-  --ui-label: 102 102 110;
-  /* Data text roles (owner 2026-10-01, text option A "two tones": artifacts/tmp/ui-polish/text/PREVIEW.md), read by
-     data.css 12 inside the cells, headers and toolbars of the record tables: a value is the ink, everything else one
-     grey, both existing tones (no grey in between). primary = names, figures, the billed cost, controls; labelled =
-     a value after its inline label; secondary = unlabelled metadata (times, IPs, ids, chips, status words);
-     reference = the account's billed cost, a distribution's account cost and standard price; label = headers,
-     inline labels, units, placeholders, counts. */
-  --ui-data-primary: 31 31 35;
-  --ui-data-labelled: 31 31 35;
-  --ui-data-secondary: 102 102 110;
-  --ui-data-reference: 102 102 110;
-  --ui-data-label: 102 102 110;
+  /* Text: official sub2api text (Tailwind gray); meta and faint are #6b7280 / #9ca3af moved to the nearest value
+     holding 4.5:1 on every neutral fill, gray-200 included (#616977: 4.52:1 on the gray-200 fill, 5.53 on white).
+     ink = gray-900, ink-soft = gray-700 (data and control text); faint and the label are the meta grey. */
+  --ui-ink: 17 24 39;
+  --ui-ink-soft: 55 65 81;
+  --ui-muted: 97 105 119;
+  --ui-faint: 97 105 119;
+  --ui-label: 97 105 119;
   /* Accent (the green #168a49 carries white at 4.41:1). The fill is #168848 (white 4.52:1, REF-CONSOLE §13);
      accent text and links are #147c42, the nearest at >= 4.5:1 on every neutral fill and on the soft fill. */
   --ui-primary: 22 136 72;
@@ -174,38 +111,24 @@
   --ui-duration: 150ms;
   --ui-duration-slide: 200ms;
   --ui-duration-sidebar: 160ms;
-  /* type: Geist for Latin and figures, MiSans for Chinese (400 / 500 / 600 match Geist's stroke weights) */
-  --ui-font: 'Geist', 'Geist Fallback', 'MiSans', 'PingFang SC', 'Microsoft YaHei UI', 'Microsoft YaHei', system-ui,
-    -apple-system, sans-serif;
-  --ui-font-mono: 'Geist Mono', 'Geist Mono Fallback', 'MiSans', ui-monospace, monospace;
-  /* The mono label (.mono-label: table headers, KPI labels, group rows, section titles, field labels):
-     Geist Mono 10/15, 0.12em, uppercase, --ui-label; table headers use weight 500. */
-  --ui-label-size: 10px;
-  --ui-label-leading: 15px;
-  --ui-label-tracking: 0.12em;
-  --ui-label-weight: 400;
-  --ui-label-font: var(--ui-label-weight) var(--ui-label-size) / var(--ui-label-leading) var(--ui-font-mono);
-  /* Tailwind text-sm: the reference's 13px body text on its 19.5px line */
-  --theme-text-sm: 0.8125rem;
-  --theme-text-sm-leading: 1.21875rem;
-  accent-color: rgb(var(--ui-primary));
-  /* a weight MiSans is not loaded in is never smeared into a synthetic bold */
-  font-synthesis-weight: none;
-}
-
-/* Chinese has no capitals and 10px CJK is hard to read: labels in the Chinese interface are 11px
-   (ui-el MAPPING §2.8). i18n keeps <html lang> on the active locale. The reference's 0.12em tracking is a Latin
-   capitals device; on full-width CJK glyphs it reads as spaced-out characters ("管 理 分 类"), so the Chinese interface
-   tracks its labels at 0.04em (picked by eye against 0.02-0.06; the English interface keeps 0.12em). */
-:root.flat-theme:lang(zh) {
-  --ui-label-size: 11px;
+  /* type: official sub2api. --ui-font is styles/theme.css' official stack (the OS UI font, no web fonts: Microsoft
+     YaHei UI for every script on Windows zh-CN, SF + PingFang on macOS). Mono only for identifiers and code: the
+     official stack with PingFang / YaHei before the generic, so Chinese in a mono run never falls to NSimSun. */
+  --ui-font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'PingFang SC', 'Microsoft YaHei', monospace;
+  /* the label (KPI, field, menu, section and stacked-cell labels): official text-xs font-medium, sentence case.
+     Table headers and sidebar section titles add uppercase + 0.05em themselves (data.css, shell.css). */
+  --ui-label-size: 12px;
   --ui-label-leading: 16px;
-  --ui-label-tracking: 0.04em;
+  --ui-label-tracking: normal;
+  --ui-label-weight: 500;
+  --ui-label-font: var(--ui-label-weight) var(--ui-label-size) / var(--ui-label-leading) var(--ui-font);
+  accent-color: rgb(var(--ui-primary));
 }
 
 /* ------------------------------------------------------------------ roles (dark) */
 /* Palette C: layered graphite lifted off black (Linear's ground): canvas #1a1a1d (L* 9.4, was #0f0f0f at 4.3),
-   surface #212125 (L* 12.9, was 9.3), grouped #29292e, hover #2f2f35, a faint cool tint; zinc text greys. */
+   surface #212125 (L* 12.9, was 9.3), grouped #29292e, hover #2f2f35, a faint cool tint; the text greys are
+   official sub2api's (Tailwind gray). */
 :root.flat-theme.dark {
   --ui-canvas: 26 26 29;
   --ui-surface: 33 33 37;
@@ -219,21 +142,13 @@
   --ui-line-strong: 74 74 82;
   --ui-line-focus: 110 110 120;
   --ui-control-line: 128 128 138;
-  --ui-ink: 232 232 236;
-  --ui-ink-soft: 184 184 192;
-  --ui-muted: 176 176 185;
-  /* faint and the label hold >= 4.5:1 on the canvas, the surface, the grouped fill and hover */
-  --ui-faint: 160 160 169;
-  --ui-label: 163 163 172;
-  /* data text roles (see light): the ink and the label grey #a3a3ac, the table headers' grey (6.41:1 on the surface,
-     5.32 on the row hover). On the selected fill (#39433f, 4.10:1) a row lifts its grey to the soft ink #b8b8c0
-     (--ui-data-picked: 5.20:1, 4.72 under the pointer; data.css 12). */
-  --ui-data-primary: 232 232 236;
-  --ui-data-labelled: 232 232 236;
-  --ui-data-secondary: 163 163 172;
-  --ui-data-reference: 163 163 172;
-  --ui-data-label: 163 163 172;
-  --ui-data-picked: 184 184 192;
+  /* official dark text (gray-100 / 300 / 400), meta clamped to 4.5:1 on the dark-600 fill (#a4abb6: 4.52:1 there,
+     6.94 on the surface); faint and the label are the meta grey */
+  --ui-ink: 243 244 246;
+  --ui-ink-soft: 209 213 219;
+  --ui-muted: 164 171 182;
+  --ui-faint: 164 171 182;
+  --ui-label: 164 171 182;
   /* the mint accent with ink on it; soft = mint at 16 % over the surface */
   --ui-primary: 182 247 200;
   --ui-primary-hover: 166 225 183;
@@ -292,16 +207,16 @@
   --theme-line-gray-200: 232 232 235;
   --theme-line-gray-300: 220 220 224;
   --theme-line-gray-400: 185 185 192;
-  /* text: every shade upstream uses for secondary text meets 4.5:1 on the neutral fills; 300 stays the
-     reference's decorative muted-2 (upstream's own use: dividers, idle sort arrows); 900 / 950 are the ink */
+  /* text: official Tailwind gray, 400 / 500 AA-clamped (#616977, >= 4.5:1 on gray-200 fills); 300 stays the
+     reference's decorative #a1a1aa (upstream's own use: dividers, idle sort arrows, the few unit hints) */
   --theme-text-gray-300: 161 161 170;
-  --theme-text-gray-400: 102 102 110;
-  --theme-text-gray-500: 99 99 107; /* >= 4.5:1 on gray-200 fills (4.87) */
-  --theme-text-gray-600: 91 91 99;
-  --theme-text-gray-700: 63 63 70;
-  --theme-text-gray-800: 39 39 42;
-  --theme-text-gray-900: 31 31 35;
-  --theme-text-gray-950: 31 31 35;
+  --theme-text-gray-400: 97 105 119;
+  --theme-text-gray-500: 97 105 119;
+  --theme-text-gray-600: 75 85 99;
+  --theme-text-gray-700: 55 65 81;
+  --theme-text-gray-800: 31 41 55;
+  --theme-text-gray-900: 17 24 39;
+  --theme-text-gray-950: 17 24 39;
 
   /* dark-*: 950 canvas, 900 well, 800 surface, 700 grouped fill; the light end is text on dark */
   --theme-color-dark-50: 242 242 242;
@@ -331,21 +246,23 @@
   --theme-text-dark-600: 122 122 122;
 }
 
-/* Dark mode: upstream pairs the light text shades (100-500) with dark:, and the plain 600-900 shades appear
-   where a template has no dark variant, so every text shade is a readable light grey (zinc: 400 is ink-soft, 500
-   and 600 muted, >= 4.5:1 on the dark-600 fill); lines follow the graphite surfaces. Upstream's dark-* family
-   follows the surfaces too: 950 canvas, 900 well, 800 surface, 700 grouped fill. */
+/* Dark mode: upstream pairs the light text shades (100-500) with dark:, and the plain 600-950 shades appear where
+   a template has no dark variant, so every text shade is a readable official grey: 100-300 are gray-100 / 200 / 300,
+   400 and 500 the meta grey (>= 4.5:1 on the dark-600 fill), 600-950 the readable fallbacks of official's own
+   pairing (600 <-> 400, 700 <-> 300, 800 <-> 200, 900 <-> 100). Lines follow the graphite surfaces. Upstream's dark-*
+   family follows the surfaces too (950 canvas, 900 well, 800 surface, 700 grouped fill); its text shades are the
+   cool-gray equivalents of upstream's slate, so no blue-tinted grey sits next to the neutral ones. */
 :root.flat-theme.dark {
-  --theme-text-gray-100: 232 232 236;
-  --theme-text-gray-200: 221 221 226;
-  --theme-text-gray-300: 204 204 210;
-  --theme-text-gray-400: 184 184 192;
-  --theme-text-gray-500: 176 176 185;
-  --theme-text-gray-600: 176 176 185;
-  --theme-text-gray-700: 204 204 210;
-  --theme-text-gray-800: 221 221 226;
-  --theme-text-gray-900: 232 232 236;
-  --theme-text-gray-950: 232 232 236;
+  --theme-text-gray-100: 243 244 246;
+  --theme-text-gray-200: 229 231 235;
+  --theme-text-gray-300: 209 213 219;
+  --theme-text-gray-400: 164 171 182;
+  --theme-text-gray-500: 164 171 182;
+  --theme-text-gray-600: 164 171 182;
+  --theme-text-gray-700: 209 213 219;
+  --theme-text-gray-800: 229 231 235;
+  --theme-text-gray-900: 243 244 246;
+  --theme-text-gray-950: 243 244 246;
   --theme-line-gray-100: 47 47 53;
   --theme-line-gray-200: 58 58 65;
   --theme-line-gray-300: 74 74 82;
@@ -362,12 +279,19 @@
   --theme-line-dark-600: 74 74 82;
   --theme-line-dark-500: 104 104 114;
   --theme-line-dark-400: 128 128 138;
-  --theme-text-dark-100: 232 232 236;
-  --theme-text-dark-200: 214 214 219;
-  --theme-text-dark-300: 184 184 192;
-  --theme-text-dark-400: 163 163 172;
-  --theme-text-dark-500: 160 160 169;
-  --theme-text-dark-600: 128 128 138;
+  --theme-text-dark-100: 243 244 246;
+  --theme-text-dark-200: 229 231 235;
+  --theme-text-dark-300: 209 213 219;
+  --theme-text-dark-400: 164 171 182;
+  --theme-text-dark-500: 164 171 182;
+  /* dark:text-dark-600: upstream's separators and empty-state glyphs (decorative, as official) */
+  --theme-text-dark-600: 75 85 99;
+}
+
+/* upstream dims separators and empty-state glyphs in dark with dark:text-gray-600 (#4b5563, decorative, as official);
+   the shade itself stays a readable grey for templates that have no dark variant */
+:root.flat-theme.dark [class~="dark:text-gray-600"] {
+  --theme-text-gray-600: 75 85 99;
 }
 
 /* Secondary text in the light theme's boxes that stay dark (terminal output, dark tooltips, code panes), which the
@@ -561,8 +485,9 @@
    surface and on the row hover; the logo glyph inherits it, so >= 3:1), a soft fill and a 1px line, in the reference's
    chip. Upstream's shades: fill = the 50/100 midpoint (zinc 100), line = the 500 at 32 %, text = the 700 (orange a
    touch deeper for the hover row, amber and green the 800); dark: fill = the 500 at 14 % and line at 40 % over the
-   surface, text = the 300. Only the identity rules in data.css §6 read them; every other upstream hue keeps folding
-   into the status families above (decision 2: colour only for identity, status and the accent). */
+   surface, text = the 300. The identity rules in data.css §6 read them (and the usage table's cache-read figure its
+   glyph's sky, dashboard-usage.css); every other upstream hue keeps folding into the status families above
+   (tailwind.config.js HUE_FAMILIES), so figures and category tags show official's colours through the fold. */
 :root.flat-theme {
   --ui-id-orange: 190 64 13;
   --ui-id-orange-soft: 255 242 225;
@@ -765,13 +690,13 @@
    #9ca3af; status marks for charts drawn with upstream hue literals. The distribution charts list every value in
    a table beside the chart, so the series are not the only carrier of the data. */
 :root.flat-theme {
-  --theme-chart-text: #52525b;
+  --theme-chart-text: #374151;
   --theme-chart-grid: #e8e8eb;
-  --theme-chart-axis: #66666e;
+  --theme-chart-axis: #616977;
   --theme-chart-axis-grid: #f4f4f5;
   --theme-chart-tooltip: #ffffff;
-  --theme-chart-title: #1f1f23;
-  --theme-chart-body: #66666e;
+  --theme-chart-title: #111827;
+  --theme-chart-body: #616977;
   --theme-chart-gray: #9ca3af;
   --theme-chart-series-1: #3975d8;
   --theme-chart-series-2: #168848;
@@ -795,13 +720,13 @@
 }
 
 :root.flat-theme.dark {
-  --theme-chart-text: #b8b8c0;
+  --theme-chart-text: #d1d5db;
   --theme-chart-grid: #3a3a41;
-  --theme-chart-axis: #b0b0b9;
+  --theme-chart-axis: #a4abb6;
   --theme-chart-axis-grid: #29292e;
   --theme-chart-tooltip: #252529;
-  --theme-chart-title: #e8e8ec;
-  --theme-chart-body: #b0b0b9;
+  --theme-chart-title: #f3f4f6;
+  --theme-chart-body: #a4abb6;
   --theme-chart-series-1: #6d9eeb;
   --theme-chart-series-2: #b6f7c8;
   --theme-chart-series-3: #d98a1c;

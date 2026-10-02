@@ -811,8 +811,8 @@
 @layer components {
   /* ---------------------------------------------------------------- buttons
    * The reference Button (REF-CONSOLE §8.3): our .btn is its `sm` size (30px,
-   * 12px inset, 13px, radius 6, gap 8) at 500 (palette C: controls and values
-   * at 500). No shadow, no press scale, disabled at .55. Default
+   * 12px inset, radius 6, gap 8) with upstream's type (text-sm font-medium:
+   * 14/20/500). No shadow, no press scale, disabled at .55. Default
    * (.btn-secondary) has no hover state (measured); primary deepens, ghost and
    * destructive fade in 150ms. */
   :where(.flat-theme) .btn {
@@ -821,8 +821,8 @@
     border: 1px solid transparent;
     border-radius: var(--ui-radius-md);
     padding: 0.265625rem 0.75rem;
-    font-size: 0.8125rem;
-    line-height: 1.21875rem;
+    font-size: 0.875rem;
+    line-height: 1.25rem;
     font-weight: 500;
     letter-spacing: normal;
     transition-property: color, background-color, border-color, opacity;
@@ -954,29 +954,30 @@
   }
 
   /* sizes: sm 26px (row and card actions), md 34px (beside a form field),
-     lg 38px (the reference md); icon = a 30px square */
+     lg 38px (the reference md); icon = a 30px square. Type is upstream's:
+     sm text-xs 12/16, md text-sm 14/20, lg text-base 16/24. */
   :where(.flat-theme) .btn-sm {
     min-height: 1.625rem;
     border-radius: var(--ui-radius-md);
     padding: 0.1875rem 0.625rem;
     font-size: 0.75rem;
-    line-height: 1.125rem;
+    line-height: 1rem;
   }
 
   :where(.flat-theme) .btn-md {
     min-height: var(--ui-select-h);
     border-radius: var(--ui-radius-md);
     padding: 0.390625rem 0.875rem;
-    font-size: 0.8125rem;
-    line-height: 1.21875rem;
+    font-size: 0.875rem;
+    line-height: 1.25rem;
   }
 
   :where(.flat-theme) .btn-lg {
     min-height: var(--ui-control-h-md);
     border-radius: var(--ui-radius-md);
     padding: 0.5rem 1rem;
-    font-size: 0.875rem;
-    line-height: 1.25rem;
+    font-size: 1rem;
+    line-height: 1.5rem;
   }
 
   :where(.flat-theme) .btn-icon {
@@ -990,18 +991,18 @@
   }
 
   /* ---------------------------------------------------------------- fields
-   * The reference form field (REF-CONSOLE §8.4): 34px (6.25px + the 19.5px
-   * line + 1px edges), 10px inset, 13px, radius 6, the surface, the control
-   * outline. Its focus (an accent edge) is drawn in controls.css. The empty
-   * field without a placeholder takes the 3:1 form-control line in
-   * behaviour.css (B3.2). */
+   * The reference form field (REF-CONSOLE §8.4): 6.25px + the line + 1px
+   * edges, 10px inset, radius 6, the surface, the control outline, with
+   * upstream's value type (text-sm: 14/20/400, ink). Its focus (an accent
+   * edge) is drawn in controls.css. The empty field without a placeholder
+   * takes the 3:1 form-control line in behaviour.css (B3.2). */
   :where(.flat-theme) .input {
     border-radius: var(--ui-radius-md);
     border-color: rgb(var(--ui-line-strong));
     background-color: rgb(var(--ui-surface));
     padding: 0.390625rem 0.625rem;
-    font-size: 0.8125rem;
-    line-height: 1.21875rem;
+    font-size: 0.875rem;
+    line-height: 1.25rem;
     color: rgb(var(--ui-ink));
     box-shadow: none;
     transition-property: color, background-color, border-color, box-shadow;
@@ -1041,8 +1042,8 @@
     padding-bottom: 0.4375rem;
   }
 
-  /* the native select is the reference's house-select: 13px / 600 values, a
-     12px chevron 9px from the right edge, the focus line on hover */
+  /* the native select is the reference's house-select: the field's value
+     type, a 12px chevron 9px from the right edge, the focus line on hover */
   :where(.flat-theme) select.input:not([multiple]):not([size]) {
     appearance: none;
     cursor: pointer;
@@ -1051,7 +1052,6 @@
     background-position: right 0.5625rem center;
     background-size: 0.75rem 0.75rem;
     padding-right: 1.75rem;
-    font-weight: 600;
   }
 
   :where(.flat-theme) select.input:not([multiple]):not([size]):is(.dark *) {
@@ -1070,28 +1070,28 @@
     border-color: rgb(var(--ui-danger));
   }
 
-  /* the field label is the reference's mono label (the sign-in field label:
-     Geist Mono 10/15, 0.12em, uppercase; 11/16 in the Chinese interface) at
-     500 (palette C: labels calm down; 11px CJK stays readable at 500) */
+  /* the field label is upstream's (text-sm font-medium text-gray-700
+     dark:text-gray-300: 14/20/500 ink-soft, sentence case) */
   :where(.flat-theme) .input-label {
     margin-bottom: 0.5rem;
-    font-family: var(--ui-font-mono);
-    font-size: var(--ui-label-size);
-    line-height: var(--ui-label-leading);
+    font-family: var(--ui-font);
+    font-size: 0.875rem;
+    line-height: 1.25rem;
     font-weight: 500;
-    letter-spacing: var(--ui-label-tracking);
-    text-transform: uppercase;
-    color: rgb(var(--ui-label));
+    letter-spacing: normal;
+    text-transform: none;
+    color: rgb(var(--ui-ink-soft));
   }
 
   :where(.flat-theme) .input-label:is(.dark *) {
-    color: rgb(var(--ui-label));
+    color: rgb(var(--ui-ink-soft));
   }
 
+  /* hint and error lines: upstream's text-xs (12/16) */
   :where(.flat-theme) .input-hint {
     margin-top: 0.375rem;
     font-size: 0.75rem;
-    line-height: 1.125rem;
+    line-height: 1rem;
     color: rgb(var(--ui-muted));
   }
 
@@ -1102,17 +1102,18 @@
   :where(.flat-theme) .input-error-text {
     margin-top: 0.375rem;
     font-size: 0.75rem;
-    line-height: 1.125rem;
+    line-height: 1rem;
     color: rgb(var(--ui-danger));
   }
 
   /* ---------------------------------------------------------------- tabs
    * .tabs / .tab are the reference's segmented control (SlidingTabs, §8.5)
    * in palette C: a grey track (its 1px frame the track colour), radius 8,
-   * 2px inset; segments 14px / 6px, 12.5px / 500, muted, ink on hover; the
-   * current one is the raised pill (--ui-thumb, a soft shadow and a 1px
-   * inset ring) with its label ink at 600, fading in 200ms (upstream has no
-   * thumb to slide). */
+   * 2px inset; segments 14px / 6px with upstream's .tab type (text-sm
+   * font-medium text-gray-600 dark:text-dark-400: 14/20/500, #4b5563 /
+   * #a4abb6), ink on hover; the current one is the raised pill (--ui-thumb,
+   * a soft shadow and a 1px inset ring) with its label ink at the same
+   * weight, fading in 200ms (upstream has no thumb to slide). */
   :where(.flat-theme) .tabs {
     gap: 0;
     border: 1px solid rgb(var(--ui-track));
@@ -1129,17 +1130,17 @@
   :where(.flat-theme) .tab {
     border-radius: var(--ui-radius-md);
     padding: 0.375rem 0.875rem;
-    font-size: 0.78125rem;
-    line-height: 1.171875rem;
+    font-size: 0.875rem;
+    line-height: 1.25rem;
     font-weight: 500;
-    color: rgb(var(--ui-muted));
+    color: rgb(var(--theme-text-gray-600));
     transition-property: color, background-color;
     transition-duration: var(--ui-duration-slide);
     transition-timing-function: var(--ui-ease-out);
   }
 
   :where(.flat-theme) .tab:is(.dark *) {
-    color: rgb(var(--ui-muted));
+    color: rgb(var(--theme-text-gray-600));
   }
 
   :where(.flat-theme) .tab:hover,
@@ -1153,7 +1154,7 @@
   :where(.flat-theme) .tab-active:hover:is(.dark *) {
     background-color: rgb(var(--ui-thumb));
     color: rgb(var(--ui-ink));
-    font-weight: 600;
+    font-weight: 500;
     box-shadow: var(--ui-thumb-shadow);
   }
 
@@ -1207,17 +1208,17 @@
 
   /* ---------------------------------------------------------------- code
    * (integration review) Inline code and values set as code (API keys,
-   * proxy addresses) are the reference's value chip (REF-CONSOLE §8.7 prompt
-   * chip, §8.15): Geist Mono in ink-soft on the subtle fill, radius 4. The
-   * accent is not a code colour (preview decision D2). */
+   * proxy addresses) are upstream's code chip (.code: font-mono, the mono
+   * stack; text-primary-600 dark:text-primary-400): the link colour on the
+   * subtle fill, radius 4. */
   :where(.flat-theme) .code {
     border-radius: var(--ui-radius-sm);
     background-color: rgb(var(--ui-subtle));
-    color: rgb(var(--ui-ink-soft));
+    color: var(--ui-link);
   }
 
   :where(.flat-theme) .code:is(.dark *) {
     background-color: rgb(var(--ui-subtle));
-    color: rgb(var(--ui-ink-soft));
+    color: var(--ui-link);
   }
 }

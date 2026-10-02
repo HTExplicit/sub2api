@@ -77,7 +77,7 @@ html.flat-theme div[data-ui~="ops-dashboard"] > div[class~="rounded-3xl"]:where(
 }
 
 /* The page title is the header row's (AppHeader: 「运维监控 · 运维监控与排障」, shown from 1024px); there the page's own h1
-   stays for screen readers only. Fullscreen has no header row: its title is the page title (REF §5: 20/600). */
+   stays for screen readers only. Fullscreen has no header row: its title is the page title (shell.css: 18/28/600). */
 @media (min-width: 1024px) {
   html.flat-theme div[data-ui~="ops-dashboard"]:not([class~="p-4"]) > div[class~="rounded-3xl"]:where([data-ui~="ops-header"]) > div:first-child > div > h1 {
     position: absolute;
@@ -92,18 +92,18 @@ html.flat-theme div[data-ui~="ops-dashboard"] > div[class~="rounded-3xl"]:where(
   }
 }
 
-/* below 1024px the header row shows no title: the page's own title is the card title (13/600) */
+/* below 1024px the header row shows no title: the page's own title is the card title (14/600) */
 html.flat-theme div[data-ui~="ops-dashboard"]:not([class~="p-4"]) > div[class~="rounded-3xl"]:where([data-ui~="ops-header"]) > div:first-child > div > h1 {
   gap: 0;
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 600;
-  line-height: 19.5px;
+  line-height: 20px;
   color: rgb(var(--ui-ink));
 }
 
 html.flat-theme div[data-ui~="ops-dashboard"][class~="p-4"] > div[class~="rounded-3xl"]:where([data-ui~="ops-header"]) > div:first-child > div > h1 {
   gap: 0;
-  font-size: 20px;
+  font-size: 18px;
   font-weight: 600;
   line-height: 28px;
   color: rgb(var(--ui-ink));
@@ -113,13 +113,12 @@ html.flat-theme div[data-ui~="ops-dashboard"] > div[class~="rounded-3xl"]:where(
   display: none;
 }
 
-/* the status line: the reference's meta (Mono 11, faint), the ready dot a 6px status dot */
+/* the status line: upstream's text-xs meta (12/16, muted), the ready dot a 6px status dot */
 html.flat-theme div[data-ui~="ops-dashboard"] > div[class~="rounded-3xl"]:where([data-ui~="ops-header"]) > div:first-child > div > div[class~="mt-1"] {
   margin-top: 0;
   gap: 8px;
-  font-family: var(--ui-font-mono);
-  font-size: 11px;
-  line-height: 16.5px;
+  font-size: 12px;
+  line-height: 16px;
   font-variant-numeric: tabular-nums;
   color: rgb(var(--ui-muted));
 }
@@ -160,8 +159,8 @@ html.flat-theme div[data-ui~="ops-dashboard"] > div[class~="rounded-3xl"]:where(
   background-color: rgb(var(--ui-line));
 }
 
-/* refresh, alert rules, settings, fullscreen: the reference's default button (surface, control outline, ink 13/600,
-   radius 6), icon-only ones square; no hue */
+/* refresh, alert rules, settings, fullscreen: the console's default button (surface, control outline, ink in the
+   .btn type 14/20/500, radius 6), icon-only ones square; no hue */
 html.flat-theme div[data-ui~="ops-dashboard"] > div[class~="rounded-3xl"]:where([data-ui~="ops-header"]) > div:first-child > div:last-child > button {
   gap: 6px;
   height: var(--ui-control-h);
@@ -171,9 +170,9 @@ html.flat-theme div[data-ui~="ops-dashboard"] > div[class~="rounded-3xl"]:where(
   border-radius: var(--ui-radius-md);
   background-color: rgb(var(--ui-surface));
   color: rgb(var(--ui-ink));
-  font-size: 13px;
-  font-weight: 600;
-  line-height: 19.5px;
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 20px;
   transition: color var(--ui-duration) var(--ui-ease), border-color var(--ui-duration) var(--ui-ease), background-color var(--ui-duration) var(--ui-ease);
 }
 
@@ -245,7 +244,7 @@ html.flat-theme div[data-ui~="ops-dashboard"] > div[class~="rounded-3xl"]:where(
 }
 
 /* health: the gauge keeps its status colour (it is the status); the score is a figure (600, tabular), its caption the
-   mono label; hovering opens the diagnosis */
+   label (12/16/500, sentence case); hovering opens the diagnosis */
 html.flat-theme div[data-ui~="ops-dashboard"] > div[class~="rounded-3xl"]:where([data-ui~="ops-header"]) > div[class~="grid"] > div:first-child > div > div[class~="group"] {
   padding-top: 4px;
   padding-bottom: 4px;
@@ -267,7 +266,6 @@ html.flat-theme div[data-ui~="ops-dashboard"] > div[class~="rounded-3xl"]:where(
   font-size: 24px;
   line-height: 30px;
   font-variant-numeric: tabular-nums;
-  letter-spacing: -0.01em;
 }
 
 html.flat-theme div[data-ui~="ops-dashboard"][class~="p-4"] > div[class~="rounded-3xl"]:where([data-ui~="ops-header"]) > div[class~="grid"] > div:first-child > div > div[class~="group"] > div[class~="relative"] > div[class~="absolute"] > span:first-child {
@@ -277,20 +275,12 @@ html.flat-theme div[data-ui~="ops-dashboard"][class~="p-4"] > div[class~="rounde
 
 html.flat-theme div[data-ui~="ops-dashboard"] > div[class~="rounded-3xl"]:where([data-ui~="ops-header"]) > div[class~="grid"] > div:first-child > div > div[class~="group"] > div[class~="relative"] > div[class~="absolute"] > span:last-child,
 html.flat-theme div[data-ui~="ops-dashboard"] > div[class~="rounded-3xl"]:where([data-ui~="ops-header"]) > div[class~="grid"] > div:first-child > div > div[class~="group"] > div[class~="mt-4"] > div:first-child {
-  font-family: var(--ui-font-mono);
   font-size: var(--ui-label-size);
-  font-weight: 400;
+  font-weight: var(--ui-label-weight);
   line-height: var(--ui-label-leading);
   letter-spacing: var(--ui-label-tracking);
-  text-transform: uppercase;
+  text-transform: none;
   color: rgb(var(--ui-label));
-}
-
-/* hovered (the diagnosis opens) the panel takes the grouped fill; the two captions go muted there in light (the label
-   grey is 4.35:1 on that fill, the muted grey 4.8:1; dark keeps the label grey, 5.7:1) */
-html.flat-theme:not(.dark) div[data-ui~="ops-dashboard"] > div[class~="rounded-3xl"]:where([data-ui~="ops-header"]) > div[class~="grid"] > div:first-child > div > div[class~="group"]:hover > div[class~="relative"] > div[class~="absolute"] > span:last-child,
-html.flat-theme:not(.dark) div[data-ui~="ops-dashboard"] > div[class~="rounded-3xl"]:where([data-ui~="ops-header"]) > div[class~="grid"] > div:first-child > div > div[class~="group"]:hover > div[class~="mt-4"] > div:first-child {
-  color: rgb(var(--ui-muted));
 }
 
 html.flat-theme div[data-ui~="ops-dashboard"] > div[class~="rounded-3xl"]:where([data-ui~="ops-header"]) > div[class~="grid"] > div:first-child > div > div[class~="group"] > div[class~="mt-4"] {
@@ -301,7 +291,7 @@ html.flat-theme div[data-ui~="ops-dashboard"] > div[class~="rounded-3xl"]:where(
   margin-top: 2px;
   font-size: 12px;
   font-weight: 600;
-  line-height: 18px;
+  line-height: 16px;
 }
 
 /* the diagnosis popover: the reference's detail popover (radius 6, control outline, surface, the popover shadow,
@@ -318,9 +308,9 @@ html.flat-theme div[data-ui~="ops-dashboard"] > div[class~="rounded-3xl"]:where(
   margin-bottom: 10px;
   padding-bottom: 8px;
   border-color: rgb(var(--ui-line));
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 600;
-  line-height: 19.5px;
+  line-height: 20px;
   color: rgb(var(--ui-ink));
 }
 
@@ -334,24 +324,22 @@ html.flat-theme div[data-ui~="ops-dashboard"] > div[class~="rounded-3xl"]:where(
 }
 
 html.flat-theme div[data-ui~="ops-dashboard"] > div[class~="rounded-3xl"]:where([data-ui~="ops-header"]) > div[class~="grid"] > div:first-child > div > div[class~="group"] > div[class~="absolute"] > div > div > div > div:last-child > div:nth-child(2) {
-  font-size: 11px;
   color: rgb(var(--ui-muted));
 }
 
 html.flat-theme div[data-ui~="ops-dashboard"] > div[class~="rounded-3xl"]:where([data-ui~="ops-header"]) > div[class~="grid"] > div:first-child > div > div[class~="group"] > div[class~="absolute"] > div > div > div > div:last-child > div[class~="text-blue-600"] {
-  font-size: 11px;
   color: rgb(var(--ui-ink-soft));
 }
 
 html.flat-theme div[data-ui~="ops-dashboard"] > div[class~="rounded-3xl"]:where([data-ui~="ops-header"]) > div[class~="grid"] > div:first-child > div > div[class~="group"] > div[class~="absolute"] > div > div[class~="mt-3"] {
   border-color: rgb(var(--ui-line));
-  font-size: 11px;
   color: rgb(var(--ui-faint));
 }
 
-/* realtime: the title a mono label (the decorative ping and the animated pulse line go: they carry no data), the window
+/* realtime: the title a label (the decorative ping and the animated pulse line go: they carry no data), the window
    choice the reference's time segmented control (REF §8.5, crop segmented-time: controls.css 7.1's frame and segment
-   metrics, on one line), the current QPS / TPS figures 20/600, peak and average 13/600, units Mono 10 */
+   metrics, on one line, at 12px: upstream draws these at 9-10px), the current QPS / TPS figures 20/600, peak and
+   average 14/600, units 12/500 */
 html.flat-theme div[data-ui~="ops-dashboard"] > div[class~="rounded-3xl"]:where([data-ui~="ops-header"]) > div[class~="grid"] > div:first-child > div > div:last-child > div:first-child {
   margin-bottom: 10px;
 }
@@ -367,12 +355,11 @@ html.flat-theme div[data-ui~="ops-dashboard"] > div[class~="rounded-3xl"]:where(
 
 html.flat-theme div[data-ui~="ops-dashboard"] > div[class~="rounded-3xl"]:where([data-ui~="ops-header"]) > div[class~="grid"] > div:first-child > div > div:last-child > div:first-child h3,
 html.flat-theme div[data-ui~="ops-dashboard"] > div[class~="rounded-3xl"]:where([data-ui~="ops-header"]) > div[class~="grid"] > div:first-child > div > div:last-child > div:last-child div[class~="uppercase"][class~="font-bold"] {
-  font-family: var(--ui-font-mono);
   font-size: var(--ui-label-size);
-  font-weight: 400;
+  font-weight: var(--ui-label-weight);
   line-height: var(--ui-label-leading);
   letter-spacing: var(--ui-label-tracking);
-  text-transform: uppercase;
+  text-transform: none;
   color: rgb(var(--ui-label));
 }
 
@@ -389,11 +376,11 @@ html.flat-theme div[data-ui~="ops-dashboard"] > div[class~="rounded-3xl"]:where(
   padding: var(--ctl-seg-pad-y) var(--ctl-seg-pad-x);
   border-radius: var(--ui-radius-md);
   background-color: transparent;
-  color: rgb(var(--ui-muted));
+  color: rgb(var(--theme-text-gray-600));
   font-family: var(--ui-font);
-  font-size: 0.78125rem;
+  font-size: 0.75rem;
   font-weight: 500;
-  line-height: 1.171875rem;
+  line-height: 1rem;
   white-space: nowrap;
   transition: color var(--ui-duration-slide) var(--ui-ease-out), background-color var(--ui-duration-slide) var(--ui-ease-out);
 }
@@ -405,7 +392,7 @@ html.flat-theme div[data-ui~="ops-dashboard"] > div[class~="rounded-3xl"]:where(
 html.flat-theme div[data-ui~="ops-dashboard"] > div[class~="rounded-3xl"]:where([data-ui~="ops-header"]) > div[class~="grid"] > div:first-child > div > div:last-child > div:first-child > div:last-child > button[class~="bg-blue-500"] {
   background-color: rgb(var(--ui-thumb));
   color: rgb(var(--ui-ink));
-  font-weight: 600;
+  font-weight: 500;
   box-shadow: var(--ui-thumb-shadow);
 }
 
@@ -422,23 +409,22 @@ html.flat-theme div[data-ui~="ops-dashboard"]:not([class~="p-4"]) > div[class~="
 
 html.flat-theme div[data-ui~="ops-dashboard"] > div[class~="rounded-3xl"]:where([data-ui~="ops-header"]) > div[class~="grid"] > div:first-child > div > div:last-child > div:last-child > div:first-child span[class~="font-bold"],
 html.flat-theme div[data-ui~="ops-dashboard"] > div[class~="rounded-3xl"]:where([data-ui~="ops-header"]) > div[class~="grid"] > div:first-child > div > div:last-child > div:last-child > div[class~="grid"] span[class~="text-xs"] {
-  font-family: var(--ui-font-mono);
-  font-size: 10px;
+  font-size: 12px;
   font-weight: 500;
-  letter-spacing: 0.025em;
   color: rgb(var(--ui-muted));
 }
 
 html.flat-theme div[data-ui~="ops-dashboard"] > div[class~="rounded-3xl"]:where([data-ui~="ops-header"]) > div[class~="grid"] > div:first-child > div > div:last-child > div:last-child > div[class~="grid"] > div > div:last-child {
   margin-top: 2px;
-  font-size: 13px;
-  line-height: 19.5px;
+  font-size: 14px;
+  line-height: 20px;
 }
 
 /* 2.3 the six metric tiles: the reference's StatTile (REF §8.13: surface, 1px structural line, radius 6, 8 / 12 in; the
-   mono label, the figure 15/600 tabular, the detail rows 12px with Mono figures). A value upstream colours green only
-   because it is inside its threshold is ink (the reference colours a figure only when something is wrong); warning
-   and critical keep their colour, and a critical tile is the reference's alert tile (danger line and soft fill). */
+   label 12/16/500, the figure in upstream's size (text-3xl, 30/36) at the KPI weight 700, tabular, the detail rows
+   upstream's text-xs). A value upstream colours green only because it is inside its threshold is ink (the reference
+   colours a figure only when something is wrong); warning and critical keep their colour, and a critical tile is the
+   reference's alert tile (danger line and soft fill). */
 html.flat-theme div[data-ui~="ops-dashboard"] > div[class~="rounded-3xl"]:where([data-ui~="ops-header"]) > div[class~="grid"] > div:last-child > div[class~="rounded-2xl"] {
   display: flex;
   flex-direction: column;
@@ -454,12 +440,11 @@ html.flat-theme div[data-ui~="ops-dashboard"] > div[class~="rounded-3xl"]:where(
 
 html.flat-theme div[data-ui~="ops-dashboard"] > div[class~="rounded-3xl"]:where([data-ui~="ops-header"]) > div[class~="grid"] > div:last-child > div[class~="rounded-2xl"] > div:first-child > div > span:first-child,
 html.flat-theme div[data-ui~="ops-dashboard"] > div[class~="rounded-3xl"]:where([data-ui~="ops-header"]) > div[class~="border-t"] > div > div > div:first-child div[class~="uppercase"] {
-  font-family: var(--ui-font-mono);
   font-size: var(--ui-label-size);
-  font-weight: 400;
+  font-weight: var(--ui-label-weight);
   line-height: var(--ui-label-leading);
   letter-spacing: var(--ui-label-tracking);
-  text-transform: uppercase;
+  text-transform: none;
   color: rgb(var(--ops-tile-label, var(--ui-label)));
 }
 
@@ -481,9 +466,8 @@ html.flat-theme div[data-ui~="ops-dashboard"] > div[class~="rounded-3xl"]:where(
   background-color: rgb(var(--ui-dot-bad));
 }
 
-/* 「明细」: a link (the accent text, underline on hover), not a blue label */
+/* 「明细」: a link (the accent text, underline on hover) at upstream's text-[10px], not a blue label */
 html.flat-theme div[data-ui~="ops-dashboard"] > div[class~="rounded-3xl"]:where([data-ui~="ops-header"]) button[class~="text-[10px]"][class~="text-blue-500"] {
-  font-size: 11.5px;
   font-weight: 500;
   line-height: 16px;
   color: var(--ui-link);
@@ -491,19 +475,14 @@ html.flat-theme div[data-ui~="ops-dashboard"] > div[class~="rounded-3xl"]:where(
   text-decoration-thickness: 1px;
 }
 
-/* the tile's figure: 15/600 tabular; fullscreen 22 (the wall display) */
+/* the tile's figure: upstream's text-3xl (30/36) at the KPI weight 700, tabular, also fullscreen (as upstream) */
 html.flat-theme div[data-ui~="ops-dashboard"] > div[class~="rounded-3xl"]:where([data-ui~="ops-header"]) > div[class~="grid"] > div:last-child > div[class~="rounded-2xl"] :is(div[class~="text-3xl"]) {
   margin-top: 2px;
-  font-size: 15px;
-  font-weight: 600;
-  line-height: 22.5px;
+  font-size: 30px;
+  font-weight: 700;
+  line-height: 36px;
   font-variant-numeric: tabular-nums;
   letter-spacing: 0;
-}
-
-html.flat-theme div[data-ui~="ops-dashboard"][class~="p-4"] > div[class~="rounded-3xl"]:where([data-ui~="ops-header"]) > div[class~="grid"] > div:last-child > div[class~="rounded-2xl"] :is(div[class~="text-3xl"]) {
-  font-size: 22px;
-  line-height: 30px;
 }
 
 html.flat-theme div[data-ui~="ops-dashboard"] > div[class~="rounded-3xl"]:where([data-ui~="ops-header"]) > div[class~="grid"] > div:last-child > div[class~="rounded-2xl"] > div[class~="items-baseline"] {
@@ -516,17 +495,17 @@ html.flat-theme div[data-ui~="ops-dashboard"] > div[class~="rounded-3xl"]:where(
 }
 
 html.flat-theme div[data-ui~="ops-dashboard"] > div[class~="rounded-3xl"]:where([data-ui~="ops-header"]) > div[class~="grid"] > div:last-child > div[class~="rounded-2xl"] > div[class~="items-baseline"] > span {
-  font-family: var(--ui-font-mono);
-  font-size: 10.5px;
+  font-size: 12px;
   font-weight: 400;
   color: rgb(var(--ui-muted));
 }
 
-/* the detail rows: label 12px muted, figure Mono 12 ink-soft (REF §8.9 breakdown rows), 2px apart */
+/* the detail rows: upstream's text-xs (12/16), label muted, figure 12/500 ink-soft tabular (REF §8.9 breakdown rows),
+   2px apart */
 html.flat-theme div[data-ui~="ops-dashboard"] > div[class~="rounded-3xl"]:where([data-ui~="ops-header"]) > div[class~="grid"] > div:last-child > div[class~="rounded-2xl"] > div:is([class~="space-y-2"], [class~="space-y-1"], [class~="grid"], [class~="mt-3"]):not([class~="h-2"]) {
   margin-top: 6px;
   font-size: 12px;
-  line-height: 18px;
+  line-height: 16px;
 }
 
 html.flat-theme div[data-ui~="ops-dashboard"] > div[class~="rounded-3xl"]:where([data-ui~="ops-header"]) > div[class~="grid"] > div:last-child > div[class~="rounded-2xl"] > div[class~="space-y-2"] > :not([hidden]) ~ :not([hidden]),
@@ -543,7 +522,6 @@ html.flat-theme div[data-ui~="ops-dashboard"] > div[class~="rounded-3xl"]:where(
 }
 
 html.flat-theme div[data-ui~="ops-dashboard"] > div[class~="rounded-3xl"]:where([data-ui~="ops-header"]) > div[class~="grid"] > div:last-child > div[class~="rounded-2xl"] > div > div > span[class~="font-bold"] {
-  font-family: var(--ui-font-mono);
   font-size: 12px;
   font-weight: 500;
   font-variant-numeric: tabular-nums;
@@ -554,8 +532,6 @@ html.flat-theme div[data-ui~="ops-dashboard"] > div[class~="rounded-3xl"]:where(
 }
 
 html.flat-theme div[data-ui~="ops-dashboard"] > div[class~="rounded-3xl"]:where([data-ui~="ops-header"]) > div[class~="grid"] > div:last-child > div[class~="rounded-2xl"] > div > div > span[class~="text-gray-400"] {
-  font-family: var(--ui-font-mono);
-  font-size: 10.5px;
   color: rgb(var(--ui-muted));
 }
 
@@ -608,7 +584,8 @@ html.flat-theme div[data-ui~="ops-dashboard"] > div[class~="rounded-3xl"]:where(
 }
 
 /* 2.4 the system tiles (CPU, memory, database, Redis, goroutines, jobs): a KPI row of their own, 10px apart, each the
-   reference's StatTile (label, figure 15/600, the detail 11px muted with Mono figures) */
+   reference's StatTile (label, the figure in upstream's text-lg 18/28 at the KPI weight 700, the detail upstream's
+   text-[10px] muted with its font-mono figures) */
 html.flat-theme div[data-ui~="ops-dashboard"] > div[class~="rounded-3xl"]:where([data-ui~="ops-header"]) > div[class~="border-t"] {
   margin-top: 0;
   padding-top: 0;
@@ -631,21 +608,15 @@ html.flat-theme div[data-ui~="ops-dashboard"] > div[class~="rounded-3xl"]:where(
 
 html.flat-theme div[data-ui~="ops-dashboard"] > div[class~="rounded-3xl"]:where([data-ui~="ops-header"]) > div[class~="border-t"] > div[class~="grid"] > div > div[class~="text-lg"] {
   margin-top: 2px;
-  font-size: 15px;
-  font-weight: 600;
-  line-height: 22.5px;
-  font-variant-numeric: tabular-nums;
-}
-
-html.flat-theme div[data-ui~="ops-dashboard"][class~="p-4"] > div[class~="rounded-3xl"]:where([data-ui~="ops-header"]) > div[class~="border-t"] > div[class~="grid"] > div > div[class~="text-lg"] {
-  font-size: 20px;
+  font-size: 18px;
+  font-weight: 700;
   line-height: 28px;
+  font-variant-numeric: tabular-nums;
 }
 
 html.flat-theme div[data-ui~="ops-dashboard"] > div[class~="rounded-3xl"]:where([data-ui~="ops-header"]) > div[class~="border-t"] > div[class~="grid"] > div > div[class~="text-[10px]"] {
   margin-top: 2px;
-  font-size: 11px;
-  line-height: 16.5px;
+  line-height: 16px;
   color: rgb(var(--ui-muted));
 }
 
@@ -677,43 +648,40 @@ html.flat-theme [data-ui~="ops-dashboard"] > div > section[class~="card"] > div[
   margin-bottom: 12px;
 }
 
-/* titles: a chart card's title is the mono label (REF §8.14 "SPEND OVER TIME"); a list or table card's title is the
-   reference's card title 13/600 ink with its description 12px muted ("Request history"). The coloured glyph before a
-   title is decoration and goes; the help icon stays. */
+/* titles: every card's title, charts included, is upstream's card title (text-sm, here 14/20/600 ink, as the
+   dashboard's chart cards) with its description upstream's text-xs muted ("Request history"). The coloured glyph
+   before a title is decoration and goes; the help icon stays. */
 html.flat-theme div[data-ui~="ops-dashboard"] div[class~="rounded-3xl"][class~="ring-1"]:where(:not([data-ui~="ops-header"])) h3 > svg:first-child {
   display: none;
 }
 
 html.flat-theme div[data-ui~="ops-dashboard"] div[class~="rounded-3xl"][class~="ring-1"]:where(:not([data-ui~="ops-header"]))[data-ui~="ops-chart"]:not(uipad[data-uipad]):not(uipad) h3 {
   gap: 0;
-  font-family: var(--ui-font-mono);
-  font-size: var(--ui-label-size);
-  font-weight: 400;
-  line-height: var(--ui-label-leading);
-  letter-spacing: var(--ui-label-tracking);
-  text-transform: uppercase;
-  color: rgb(var(--ui-label));
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 20px;
+  color: rgb(var(--ui-ink));
 }
 
 html.flat-theme div[data-ui~="ops-dashboard"] div[class~="rounded-3xl"][class~="ring-1"]:where(:not([data-ui~="ops-header"])):not([data-ui~="ops-chart"]):not(uipad[data-uipad]):not(uipad) h3,
 html.flat-theme [data-ui~="ops-dashboard"] section:is([class~="rounded-2xl"], [class~="card"]) h3 {
   gap: 0;
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 600;
-  line-height: 19.5px;
+  line-height: 20px;
   color: rgb(var(--ui-ink));
 }
 
 html.flat-theme div[data-ui~="ops-dashboard"] :is(div[class~="rounded-3xl"][class~="ring-1"]:where(:not([data-ui~="ops-header"])), section:is([class~="rounded-2xl"], [class~="card"])) > div:first-child > div > p[class~="text-xs"] {
   margin-top: 2px;
   font-size: 12px;
-  line-height: 18px;
+  line-height: 16px;
   color: rgb(var(--ui-muted));
 }
 
 /* the head's small buttons (明细 / 重置 / 下载 / 请求错误 / 上游错误, the concurrency view toggle and refresh, the alert
-   refresh): the reference's default button at the small size (26px, radius 6, control outline, surface, 12/600,
-   ink-soft, ink on hover) */
+   refresh): the console's default button at the small size (26px, radius 6, control outline, surface, the .btn-sm
+   type 12/16/500, ink-soft, ink on hover) */
 html.flat-theme div[data-ui~="ops-dashboard"] div[class~="rounded-3xl"][class~="ring-1"]:where(:not([data-ui~="ops-header"])) > div:first-child button:is([class~="border-gray-200"], [class~="bg-gray-100"], [class~="bg-blue-100"]) {
   gap: 6px;
   min-width: 26px;
@@ -724,8 +692,8 @@ html.flat-theme div[data-ui~="ops-dashboard"] div[class~="rounded-3xl"][class~="
   background-color: rgb(var(--ui-surface));
   color: rgb(var(--ui-ink-soft));
   font-size: 12px;
-  font-weight: 600;
-  line-height: 18px;
+  font-weight: 500;
+  line-height: 16px;
   transition: color var(--ui-duration) var(--ui-ease), border-color var(--ui-duration) var(--ui-ease), background-color var(--ui-duration) var(--ui-ease);
 }
 
@@ -758,11 +726,12 @@ html.flat-theme div[data-ui~="ops-dashboard"] div[class~="rounded-3xl"][class~="
   height: 13px;
 }
 
-/* chart legends in HTML (the throughput head): the reference's legend (REF §8.14: 8px squares with 2px corners, 11px) */
+/* chart legends in HTML (the throughput head): the reference's legend (REF §8.14: 8px squares with 2px corners) in
+   upstream's text-xs */
 html.flat-theme [data-ui~="ops-dashboard"] [data-testid="throughput-chart-toolbar"] {
   gap: 8px;
-  font-size: 11px;
-  line-height: 16.5px;
+  font-size: 12px;
+  line-height: 16px;
   color: rgb(var(--ui-muted));
 }
 
@@ -773,7 +742,7 @@ html.flat-theme [data-ui~="ops-dashboard"] [data-testid="throughput-chart-toolba
 }
 
 /* the throughput drilldown chips (a platform or a group and its request count): the reference's provider chip shape
-   (radius 4, the control outline, Geist Mono 10.5 uppercase ink-soft, the count faint) */
+   (radius 4, the control outline, upstream's text-[11px] at 500 ink-soft, the count faint) */
 html.flat-theme div[data-ui~="ops-dashboard"] div[class~="rounded-3xl"][class~="ring-1"]:where(:not([data-ui~="ops-header"])) > div[class~="mb-3"][class~="flex-wrap"] {
   gap: 6px;
   margin-bottom: 10px;
@@ -786,11 +755,8 @@ html.flat-theme div[data-ui~="ops-dashboard"] div[class~="rounded-3xl"][class~="
   border-radius: var(--ui-radius-sm);
   background-color: rgb(var(--ui-surface));
   color: rgb(var(--ui-ink-soft));
-  font-family: var(--ui-font-mono);
-  font-size: 10.5px;
   font-weight: 500;
   line-height: 16px;
-  letter-spacing: 0.025em;
   transition: color var(--ui-duration) var(--ui-ease), border-color var(--ui-duration) var(--ui-ease);
 }
 
@@ -805,7 +771,7 @@ html.flat-theme div[data-ui~="ops-dashboard"] div[class~="rounded-3xl"][class~="
 }
 
 /* the error distribution's summary under the doughnut: 「最高: 上游」 ink-soft with the slice's own colour kept on the
-   value, the legend as the reference's (8px squares, 11px muted) */
+   value, the legend as the reference's (8px squares) in upstream's text-xs muted */
 html.flat-theme div[data-ui~="ops-dashboard"] div[class~="rounded-3xl"][class~="ring-1"]:where(:not([data-ui~="ops-header"])) div[class~="mt-4"][class~="flex-col"][class~="items-center"] {
   margin-top: 10px;
   gap: 6px;
@@ -823,8 +789,8 @@ html.flat-theme div[data-ui~="ops-dashboard"] div[class~="rounded-3xl"][class~="
 
 html.flat-theme div[data-ui~="ops-dashboard"] div[class~="rounded-3xl"][class~="ring-1"]:where(:not([data-ui~="ops-header"])) div[class~="mt-4"][class~="flex-col"][class~="items-center"] > div[class~="flex-wrap"] > div {
   gap: 6px;
-  font-size: 11px;
-  line-height: 16.5px;
+  font-size: 12px;
+  line-height: 16px;
 }
 
 html.flat-theme div[data-ui~="ops-dashboard"] div[class~="rounded-3xl"][class~="ring-1"]:where(:not([data-ui~="ops-header"])) div[class~="mt-4"][class~="flex-col"][class~="items-center"] > div[class~="flex-wrap"] > div > span:first-child {
@@ -846,12 +812,12 @@ html.flat-theme div[data-ui~="ops-dashboard"] div[class~="rounded-3xl"][class~="
 }
 
 /* 3.2 Concurrency / queue: the list sits flush in the card like the reference's tables (no inner frame; a group band
-   for the dimension and its count, then rows divided by 1px lines); each row: name 12/600, the used / total figure
-   Mono ink-soft, the load share Mono (normal ink-soft; the load colours stay on the bar and from 50 % up), the 6px bar
-   on the grouped fill, the account and queue chips as the reference's small status chips. The band's label and count
-   are muted, not the label grey: on the band's fill the label grey is 4.50:1, the muted grey 5.0:1. The list is the
-   only bordered flex column directly in an ops card (OpsConcurrencyCard's data area, which always starts with the band;
-   the disabled hint is a dashed box without flex-col). */
+   for the dimension and its count, then rows divided by 1px lines); each row: the name at its upstream text-[11px]
+   in 600 ink, the used / total figure (upstream's font-mono, at its text-[10px] / text-[11px]) ink-soft, the load
+   share tabular (normal ink-soft; the load colours stay on the bar and from 50 % up), the 6px bar on the grouped
+   fill, the account and queue chips as the reference's small status chips. The band's label and count are muted.
+   The list is the only bordered flex column directly in an ops card (OpsConcurrencyCard's data area, which always
+   starts with the band; the disabled hint is a dashed box without flex-col). */
 html.flat-theme div[data-ui~="ops-dashboard"] div[class~="rounded-3xl"][class~="ring-1"]:where(:not([data-ui~="ops-header"])) > div[class~="rounded-xl"][class~="border"][class~="flex-col"]:not(uipad) {
   margin: 0 -14px -14px;
   border-width: 1px 0 0;
@@ -866,17 +832,15 @@ html.flat-theme div[data-ui~="ops-dashboard"] div[class~="rounded-3xl"][class~="
 }
 
 html.flat-theme div[data-ui~="ops-dashboard"] div[class~="rounded-3xl"][class~="ring-1"]:where(:not([data-ui~="ops-header"])) > div[class~="rounded-xl"][class~="border"] > div[class~="bg-gray-50"]:first-child > span:first-child {
-  font-family: var(--ui-font-mono);
   font-size: var(--ui-label-size);
-  font-weight: 400;
+  font-weight: var(--ui-label-weight);
   line-height: var(--ui-label-leading);
   letter-spacing: var(--ui-label-tracking);
+  text-transform: none;
   color: rgb(var(--ui-muted));
 }
 
 html.flat-theme div[data-ui~="ops-dashboard"] div[class~="rounded-3xl"][class~="ring-1"]:where(:not([data-ui~="ops-header"])) > div[class~="rounded-xl"][class~="border"] > div[class~="bg-gray-50"]:first-child > span:last-child {
-  font-family: var(--ui-font-mono);
-  font-size: 11px;
   font-variant-numeric: tabular-nums;
   color: rgb(var(--ui-muted));
 }
@@ -901,22 +865,18 @@ html.flat-theme div[data-ui~="ops-dashboard"] div[class~="rounded-3xl"][class~="
 }
 
 html.flat-theme div[data-ui~="ops-dashboard"] div[class~="rounded-3xl"][class~="ring-1"]:where(:not([data-ui~="ops-header"])) > div[class~="rounded-xl"][class~="border"] > div[class~="custom-scrollbar"] :is(span, div)[class~="text-[11px]"][class~="font-bold"]:not([class~="font-mono"]) {
-  font-size: 12px;
   font-weight: 600;
   line-height: 18px;
   color: rgb(var(--ui-ink));
 }
 
 html.flat-theme div[data-ui~="ops-dashboard"] div[class~="rounded-3xl"][class~="ring-1"]:where(:not([data-ui~="ops-header"])) > div[class~="rounded-xl"][class~="border"] > div[class~="custom-scrollbar"] span[class~="font-mono"] {
-  font-size: 11.5px;
   font-weight: 500;
   font-variant-numeric: tabular-nums;
   color: rgb(var(--ui-ink-soft));
 }
 
 html.flat-theme div[data-ui~="ops-dashboard"] div[class~="rounded-3xl"][class~="ring-1"]:where(:not([data-ui~="ops-header"])) > div[class~="rounded-xl"][class~="border"] > div[class~="custom-scrollbar"] > div > div:first-child > div:last-child > span[class~="font-bold"]:not([class~="font-mono"]) {
-  font-family: var(--ui-font-mono);
-  font-size: 11.5px;
   font-weight: 500;
   font-variant-numeric: tabular-nums;
 }
@@ -938,11 +898,11 @@ html.flat-theme div[data-ui~="ops-dashboard"] div[class~="rounded-3xl"][class~="
   background-color: rgb(var(--ui-subtle));
 }
 
-/* the account line under the bar: 11px, the available count ink 600 (a figure, not a status), the share muted */
+/* the account line under the bar: upstream's text-[10px], the available count ink 600 (a figure, not a status), the
+   share muted */
 html.flat-theme div[data-ui~="ops-dashboard"] div[class~="rounded-3xl"][class~="ring-1"]:where(:not([data-ui~="ops-header"])) > div[class~="rounded-xl"][class~="border"] > div[class~="custom-scrollbar"] > div > div[class~="flex-wrap"] {
   gap: 4px 10px;
-  font-size: 11px;
-  line-height: 16.5px;
+  line-height: 16px;
 }
 
 html.flat-theme div[data-ui~="ops-dashboard"] div[class~="rounded-3xl"][class~="ring-1"]:where(:not([data-ui~="ops-header"])) > div[class~="rounded-xl"][class~="border"] > div[class~="custom-scrollbar"] > div > div[class~="flex-wrap"] > div > svg {
@@ -952,7 +912,6 @@ html.flat-theme div[data-ui~="ops-dashboard"] div[class~="rounded-3xl"][class~="
 }
 
 html.flat-theme div[data-ui~="ops-dashboard"] div[class~="rounded-3xl"][class~="ring-1"]:where(:not([data-ui~="ops-header"])) > div[class~="rounded-xl"][class~="border"] > div[class~="custom-scrollbar"] > div > div[class~="flex-wrap"] > div > span {
-  font-family: var(--ui-font-mono);
   font-variant-numeric: tabular-nums;
   color: rgb(var(--ui-muted));
 }
@@ -963,15 +922,13 @@ html.flat-theme div[data-ui~="ops-dashboard"] div[class~="rounded-3xl"][class~="
 }
 
 /* the small status chips in the rows (rate limited = warning, errors = danger, queued = the reference's backlog tone,
-   available / cooling down): the reference's Chip (capsule, Geist Mono, soft status fill) */
+   available / cooling down): the reference's Chip (capsule, soft status fill) in the badge type (12/16/500) */
 html.flat-theme div[data-ui~="ops-dashboard"] div[class~="rounded-3xl"][class~="ring-1"]:where(:not([data-ui~="ops-header"])) > div[class~="rounded-xl"][class~="border"] > div[class~="custom-scrollbar"] span:is([class~="bg-amber-100"], [class~="bg-red-100"], [class~="bg-purple-100"], [class~="bg-green-100"], [class~="bg-gray-100"]) {
   padding: 0 6px;
   border-radius: 9999px;
-  font-family: var(--ui-font-mono);
-  font-size: var(--ui-badge-size, 10px);
+  font-size: var(--ui-badge-size, 12px);
   font-weight: 500;
   line-height: 16px;
-  letter-spacing: 0.01em;
 }
 
 html.flat-theme div[data-ui~="ops-dashboard"] div[class~="rounded-3xl"][class~="ring-1"]:where(:not([data-ui~="ops-header"])) > div[class~="rounded-xl"][class~="border"] > div[class~="custom-scrollbar"] span[class~="bg-amber-100"] {
@@ -1003,12 +960,12 @@ html.flat-theme div[data-ui~="ops-dashboard"] div[class~="rounded-3xl"][class~="
 html.flat-theme div[data-ui~="ops-dashboard"] div[class~="rounded-3xl"][class~="ring-1"]:where(:not([data-ui~="ops-header"])) > div[class~="border-dashed"] {
   border-color: rgb(var(--ui-line-strong));
   border-radius: var(--ui-radius-lg);
-  font-size: 13px;
+  font-size: 14px;
   color: rgb(var(--ui-muted));
 }
 
 html.flat-theme div[data-ui~="ops-dashboard"] div[class~="rounded-3xl"][class~="ring-1"]:where(:not([data-ui~="ops-header"])) > div[class~="rounded-xl"][class~="border"] > div[class~="flex-1"][class~="items-center"] {
-  font-size: 13px;
+  font-size: 14px;
   color: rgb(var(--ui-muted));
 }
 
@@ -1022,21 +979,20 @@ html.flat-theme div[data-ui~="ops-dashboard"] :is(div[class~="rounded-3xl"][clas
 }
 
 /* 3.3 Hand-built tables on the page and in its dialogs (alert events and their history, system logs, OpenAI token
-   stats, request details, alert rules): the reference's table (REF §8.7): the mono label header on the surface with a
-   1px line under it, in DataTable's head colour --ui-table-head (thead.bg-gray-50 is data.css' rule; the white-headed
-   ones are drawn the same here), cells 10 / 12
-   (16 at the edges), 13px text, rows divided by 1px lines, hover = --ui-hover where the row opens something. DataTables
-   (the error lists) keep data.css. */
+   stats, request details, alert rules): the reference's table (REF §8.7): upstream's usage-table header (12/16/500,
+   uppercase, 0.05em) on the surface with a 1px line under it, in DataTable's head colour --ui-table-head
+   (thead.bg-gray-50 is data.css' rule; the white-headed ones are drawn the same here), cells 10 / 12 (16 at the
+   edges), 14/20 text, rows divided by 1px lines, hover = --ui-hover where the row opens something. DataTables (the
+   error lists) keep data.css. */
 html.flat-theme :is([data-ui~="ops-dashboard"], [data-ui~="ops-dialog"], [data-ui~="risk-page"], [data-ui~="risk-settings"], [data-ui~="prompt-audit-page"]) table:not(.table-wrapper > table) > thead > tr > th {
   padding: 10px 12px;
   background-color: rgb(var(--ui-surface));
   box-shadow: inset 0 -1px 0 rgb(var(--ui-line));
   color: rgb(var(--ui-table-head));
-  font-family: var(--ui-font-mono);
-  font-size: var(--ui-label-size);
+  font-size: 12px;
   font-weight: 500;
-  line-height: 19.5px;
-  letter-spacing: var(--ui-label-tracking);
+  line-height: 16px;
+  letter-spacing: 0.05em;
   text-transform: uppercase;
   white-space: nowrap;
 }
@@ -1061,9 +1017,14 @@ html.flat-theme :is([data-ui~="ops-dashboard"], [data-ui~="ops-dialog"], [data-u
 
 html.flat-theme :is([data-ui~="ops-dashboard"], [data-ui~="ops-dialog"], [data-ui~="risk-page"], [data-ui~="risk-settings"], [data-ui~="prompt-audit-page"]) table:not(.table-wrapper > table) > tbody > tr > td {
   padding: 10px 12px;
-  font-size: 13px;
-  line-height: 19.5px;
   vertical-align: middle;
+}
+
+/* the body text is upstream's td default (text-sm, 14/20) on the table, so a cell's own size class (text-xs,
+   text-[11px], text-sm) still applies */
+html.flat-theme :is([data-ui~="ops-dashboard"], [data-ui~="ops-dialog"], [data-ui~="risk-page"], [data-ui~="risk-settings"], [data-ui~="prompt-audit-page"]) table:not(.table-wrapper > table) {
+  font-size: 14px;
+  line-height: 20px;
 }
 
 html.flat-theme :is([data-ui~="ops-dashboard"], [data-ui~="ops-dialog"], [data-ui~="risk-page"], [data-ui~="risk-settings"], [data-ui~="prompt-audit-page"]) table:not(.table-wrapper > table) > :is(thead, tbody) > tr > :first-child {
@@ -1078,33 +1039,11 @@ html.flat-theme :is([data-ui~="ops-dashboard"], [data-ui~="ops-dialog"], [data-u
   background-color: rgb(var(--ui-hover));
 }
 
-/* the cells' own text sizes (text-xs, 11px) read as the reference's: 13px for text, Mono 12 for times, ids and figures,
-   12px muted for the second line */
-html.flat-theme :is([data-ui~="ops-dashboard"], [data-ui~="ops-dialog"], [data-ui~="risk-page"], [data-ui~="risk-settings"], [data-ui~="prompt-audit-page"]) table:not(.table-wrapper > table) > tbody > tr > td[class~="text-xs"] {
-  font-size: 13px;
-}
-
+/* the cells' own sizes, weights and colours are upstream's (text-xs cells 12px, the text-[10px] / text-[11px] second
+   lines, font-bold figures, template font-mono identifiers); times and identifiers keep tabular figures */
 html.flat-theme :is([data-ui~="ops-dashboard"], [data-ui~="ops-dialog"], [data-ui~="risk-page"], [data-ui~="risk-settings"], [data-ui~="prompt-audit-page"]) table:not(.table-wrapper > table) > tbody > tr > td[class~="whitespace-nowrap"][class~="text-xs"]:first-child,
 html.flat-theme :is([data-ui~="ops-dashboard"], [data-ui~="ops-dialog"], [data-ui~="risk-page"], [data-ui~="risk-settings"], [data-ui~="prompt-audit-page"]) table:not(.table-wrapper > table) > tbody > tr > td span[class~="font-mono"] {
-  font-family: var(--ui-font-mono);
-  font-size: 12px;
   font-variant-numeric: tabular-nums;
-}
-
-html.flat-theme :is([data-ui~="ops-dashboard"], [data-ui~="ops-dialog"], [data-ui~="risk-page"], [data-ui~="risk-settings"], [data-ui~="prompt-audit-page"]) table:not(.table-wrapper > table) > tbody > tr > td :is(div, span)[class~="text-[11px]"] {
-  font-size: 12px;
-  line-height: 18px;
-}
-
-html.flat-theme :is([data-ui~="ops-dashboard"], [data-ui~="ops-dialog"], [data-ui~="risk-page"], [data-ui~="risk-settings"], [data-ui~="prompt-audit-page"]) table:not(.table-wrapper > table) > tbody > tr > td :is(div)[class~="text-[10px]"] {
-  font-family: var(--ui-font-mono);
-  font-size: 11px;
-  line-height: 16.5px;
-  color: rgb(var(--ui-faint));
-}
-
-html.flat-theme :is([data-ui~="ops-dashboard"], [data-ui~="ops-dialog"], [data-ui~="risk-page"], [data-ui~="risk-settings"], [data-ui~="prompt-audit-page"]) table:not(.table-wrapper > table) > tbody > tr > td :is(div, span)[class~="font-bold"]:not([class~="rounded-full"]):not([class~="rounded-md"]) {
-  font-weight: 600;
 }
 
 /* 3.3a The message row of an empty hand-built table (prompt audit events, risk control records: one colspan cell) is
@@ -1145,20 +1084,19 @@ html.flat-theme :is([data-ui~="prompt-audit-page"], [data-ui~="risk-page"]) div[
 }
 
 /* 3.4 Status chips of these pages (alert severity P0-P3 and state, log level, request kind, sink counters): the
-   reference's Chip (REF §8.8: a capsule, Geist Mono uppercase, a soft status fill, no ring); tones: critical / error /
-   failed = danger, warning / warn / P1 = warning, info / P2 = info, resolved / success = success, the rest neutral. */
+   reference's Chip (REF §8.8: a capsule, a soft status fill, no ring) in upstream's .badge type (12/16/500, sentence
+   case); tones: critical / error / failed = danger, warning / warn / P1 = warning, info / P2 = info, resolved /
+   success = success, the rest neutral. */
 html.flat-theme :is([data-ui~="ops-dashboard"], [data-ui~="ops-dialog"], [data-ui~="risk-page"], [data-ui~="risk-settings"], [data-ui~="prompt-audit-page"]) span[class~="rounded-full"]:is([class~="text-[10px]"], [class~="text-xs"], [class~="font-semibold"]):is([class*="bg-red-"], [class*="bg-amber-"], [class*="bg-orange-"], [class*="bg-yellow-"], [class*="bg-blue-"], [class*="bg-green-"], [class*="bg-gray-"], [class*="bg-slate-"]):not([class~="h-1.5"], [class~="h-2"]) {
   display: inline-flex;
   align-items: center;
   padding: 1px 7px;
   border-radius: 9999px;
   box-shadow: none;
-  font-family: var(--ui-font-mono);
-  font-size: var(--ui-badge-size, 10px);
+  font-size: var(--ui-badge-size, 12px);
   font-weight: 500;
   line-height: var(--ui-badge-leading, 16px);
-  letter-spacing: 0.025em;
-  text-transform: uppercase;
+  text-transform: none;
 }
 
 html.flat-theme :is([data-ui~="ops-dashboard"], [data-ui~="ops-dialog"], [data-ui~="risk-page"], [data-ui~="risk-settings"], [data-ui~="prompt-audit-page"]) span[class~="rounded-full"]:is([class*="bg-red-"]):not([class~="h-1.5"], [class~="h-2"]) {
@@ -1201,8 +1139,8 @@ html.flat-theme div[data-ui~="ops-dashboard"] > div[class~="rounded-3xl"][class~
 html.flat-theme div[data-ui~="ops-dashboard"] > div[class~="rounded-3xl"][class~="ring-1"]:where(:not([data-ui~="ops-header"])) > div[class~="mb-4"]:first-child > div:last-child > button {
   height: var(--ui-control-h);
   padding: 0 12px;
-  font-size: 13px;
-  line-height: 19.5px;
+  font-size: 14px;
+  line-height: 20px;
 }
 
 html.flat-theme div[data-ui~="ops-dashboard"] div[class~="rounded-3xl"][class~="ring-1"]:where(:not([data-ui~="ops-header"])) > div[class~="overflow-hidden"][class~="rounded-xl"][class~="border"] {
@@ -1212,24 +1150,6 @@ html.flat-theme div[data-ui~="ops-dashboard"] div[class~="rounded-3xl"][class~="
   border-radius: 0 0 var(--ui-radius-lg) var(--ui-radius-lg);
 }
 
-/* the title cell keeps its two lines: the title 13/600 ink, the rule text 12px muted */
-html.flat-theme div[data-ui~="ops-dashboard"] div[class~="rounded-3xl"][class~="ring-1"]:where(:not([data-ui~="ops-header"])) table > tbody > tr > td[class~="min-w-[260px]"] > div:first-child {
-  font-size: 13px;
-  line-height: 19.5px;
-  color: rgb(var(--ui-ink));
-}
-
-html.flat-theme div[data-ui~="ops-dashboard"] div[class~="rounded-3xl"][class~="ring-1"]:where(:not([data-ui~="ops-header"])) table > tbody > tr > td[class~="min-w-[260px]"] > div:last-child:not(:first-child) {
-  color: rgb(var(--ui-muted));
-}
-
-/* the e-mail column: the state glyph keeps success / muted, the word 12px ink-soft */
-html.flat-theme div[data-ui~="ops-dashboard"] div[class~="rounded-3xl"][class~="ring-1"]:where(:not([data-ui~="ops-header"])) table > tbody > tr > td[class~="text-right"] span[class~="text-[11px]"] {
-  font-size: 12px;
-  font-weight: 500;
-  color: rgb(var(--ui-ink-soft));
-}
-
 /* the list's end marker and loading line */
 html.flat-theme div[data-ui~="ops-dashboard"] div[class~="rounded-3xl"][class~="ring-1"]:where(:not([data-ui~="ops-header"])) div[class~="max-h-[600px]"] > div:last-child:is([class~="py-3"]) {
   border-top: 1px solid rgb(var(--ui-line));
@@ -1237,9 +1157,10 @@ html.flat-theme div[data-ui~="ops-dashboard"] div[class~="rounded-3xl"][class~="
   color: rgb(var(--ui-muted));
 }
 
-/* 3.6 System logs: the same card; the sink counters are the reference's small chips (radius 4, Mono 11); the runtime
-   configuration is a grouped panel (1px line, radius 8, the grouped fill); every field label (they wrap their
-   controls) is the mono label above its 34px field; the log table sits flush like the events. */
+/* 3.6 System logs: the same card; the sink counters are the reference's small chips (radius 4, upstream's text-xs at
+   500, tabular); the runtime configuration is a grouped panel (1px line, radius 8, the grouped fill); every field
+   label (they wrap their controls) is the label (12/16/500) above its 34px field; the log table sits flush like the
+   events. */
 html.flat-theme [data-ui~="ops-dashboard"] > section[class~="rounded-2xl"] > div:first-child > div:last-child {
   gap: 6px;
 }
@@ -1247,10 +1168,9 @@ html.flat-theme [data-ui~="ops-dashboard"] > section[class~="rounded-2xl"] > div
 html.flat-theme [data-ui~="ops-dashboard"] > section[class~="rounded-2xl"] > div:first-child > div:last-child > span[class~="rounded-md"] {
   padding: 1px 7px;
   border-radius: var(--ui-radius-sm);
-  font-family: var(--ui-font-mono);
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 500;
-  line-height: 18px;
+  line-height: 16px;
   font-variant-numeric: tabular-nums;
 }
 
@@ -1285,19 +1205,18 @@ html.flat-theme [data-ui~="ops-dashboard"] > section[class~="rounded-2xl"] > div
 }
 
 html.flat-theme [data-ui~="ops-dashboard"] > section[class~="rounded-2xl"] > div[class~="rounded-xl"][class~="bg-gray-50"] > div:first-child > div:first-child {
-  font-family: var(--ui-font-mono);
   font-size: var(--ui-label-size);
-  font-weight: 400;
+  font-weight: var(--ui-label-weight);
   line-height: var(--ui-label-leading);
   letter-spacing: var(--ui-label-tracking);
-  text-transform: uppercase;
+  text-transform: none;
   color: rgb(var(--ui-label));
 }
 
 html.flat-theme [data-ui~="ops-dashboard"] > section[class~="rounded-2xl"] > div[class~="rounded-xl"][class~="bg-gray-50"] > p {
   margin-top: 8px;
   font-size: 12px;
-  line-height: 18px;
+  line-height: 16px;
   color: rgb(var(--ui-muted));
 }
 
@@ -1305,15 +1224,15 @@ html.flat-theme [data-ui~="ops-dashboard"] > section[class~="rounded-2xl"] > div
   color: rgb(var(--ui-danger));
 }
 
-/* the wrapping labels: the text is the mono label; the control and the hint under it keep their own type */
+/* the wrapping labels: the text is the label at upstream's own weight (its text-xs label is 400, which the wrapped
+   control inherits); the control and the hint under it keep their own type */
 html.flat-theme [data-ui~="ops-dashboard"] > section[class~="rounded-2xl"] div[class~="grid"] > label[class~="text-xs"]:not([class~="inline-flex"]) {
   display: block;
-  font-family: var(--ui-font-mono);
   font-size: var(--ui-label-size);
   font-weight: 400;
   line-height: var(--ui-label-leading);
   letter-spacing: var(--ui-label-tracking);
-  text-transform: uppercase;
+  text-transform: none;
   color: rgb(var(--ui-label));
 }
 
@@ -1326,15 +1245,15 @@ html.flat-theme [data-ui~="ops-dashboard"] > section[class~="rounded-2xl"] div[c
 
 html.flat-theme [data-ui~="ops-dashboard"] > section[class~="rounded-2xl"] div[class~="grid"] > label[class~="text-xs"]:not([class~="inline-flex"]) > span[class~="block"] {
   font-size: 12px;
-  line-height: 18px;
+  line-height: 16px;
   color: rgb(var(--ui-muted));
 }
 
-/* the switches of the runtime configuration: 12px ink-soft beside the box */
+/* the switches of the runtime configuration: upstream's text-xs (12/16) ink-soft beside the box */
 html.flat-theme [data-ui~="ops-dashboard"] > section[class~="rounded-2xl"] label[class~="inline-flex"][class~="text-xs"] {
   gap: 6px;
   font-size: 12px;
-  line-height: 18px;
+  line-height: 16px;
   color: rgb(var(--ui-ink-soft));
 }
 
@@ -1348,8 +1267,8 @@ html.flat-theme [data-ui~="ops-dashboard"] > section[class~="rounded-2xl"] > div
   margin-bottom: 14px;
 }
 
-/* the log table: flush in the card; time and host in Mono 12, the detail in Mono 12 ink-soft (log lines are machine
-   text, as the reference's labels and ids are Mono); rows top-aligned (a detail may wrap) */
+/* the log table: flush in the card; the cells keep upstream's text-xs classes (time, host and detail tabular); rows
+   top-aligned (a detail may wrap) */
 html.flat-theme [data-ui~="ops-dashboard"] > section[class~="rounded-2xl"] > div[class~="overflow-hidden"][class~="rounded-xl"][class~="border"] {
   margin: 0 -14px -14px;
   border-width: 1px 0 0;
@@ -1368,15 +1287,10 @@ html.flat-theme [data-ui~="ops-dashboard"] > section[class~="rounded-2xl"] table
 }
 
 html.flat-theme [data-ui~="ops-dashboard"] > section[class~="rounded-2xl"] table > tbody > tr > td:is(:nth-child(1), :nth-child(2), :nth-child(4)) {
-  font-family: var(--ui-font-mono);
-  font-size: 12px;
-  line-height: 19.5px;
   font-variant-numeric: tabular-nums;
-  color: rgb(var(--ui-ink-soft));
 }
 
 html.flat-theme [data-ui~="ops-dashboard"] > section[class~="rounded-2xl"] table > tbody > tr > td:nth-child(1) {
-  color: rgb(var(--ui-muted));
   white-space: nowrap;
 }
 
@@ -1385,11 +1299,11 @@ html.flat-theme [data-ui~="ops-dashboard"] > section[class~="rounded-2xl"] table
 }
 
 html.flat-theme [data-ui~="ops-dashboard"] > section[class~="rounded-2xl"] > div[class~="overflow-hidden"] > div[class~="text-center"] {
-  font-size: 13px;
+  font-size: 14px;
   color: rgb(var(--ui-muted));
 }
 
-/* 3.7 OpenAI token stats (shown when the dashboard setting is on): the same card and flush table; figures Mono */
+/* 3.7 OpenAI token stats (shown when the dashboard setting is on): the same card and flush table; figures tabular */
 html.flat-theme [data-ui~="ops-dashboard"] section[class~="card"] > div[class~="space-y-3"] > div[class~="overflow-hidden"][class~="rounded-xl"] {
   margin: 0 -14px;
   border-width: 1px 0;
@@ -1402,26 +1316,16 @@ html.flat-theme [data-ui~="ops-dashboard"] section[class~="card"] > div[class~="
 }
 
 html.flat-theme [data-ui~="ops-dashboard"] section[class~="card"] > div[class~="space-y-3"] > div[class~="overflow-hidden"] table > tbody > tr > td:not(:first-child) {
-  font-family: var(--ui-font-mono);
-  font-size: 12.5px;
   font-variant-numeric: tabular-nums;
-  color: rgb(var(--ui-ink-soft));
-}
-
-html.flat-theme [data-ui~="ops-dashboard"] section[class~="card"] > div[class~="space-y-3"] > div[class~="overflow-hidden"] table > tbody > tr > td:first-child {
-  font-weight: 500;
-  color: rgb(var(--ui-ink));
 }
 
 html.flat-theme [data-ui~="ops-dashboard"] section[class~="card"] > div[class~="space-y-3"] > div:last-child[class~="text-xs"] {
-  font-family: var(--ui-font-mono);
-  font-size: 11px;
+  font-size: 12px;
   color: rgb(var(--ui-label));
 }
 
 html.flat-theme [data-ui~="ops-dashboard"] section[class~="card"] > div:first-child > div:last-child > span[class~="text-xs"] {
-  font-family: var(--ui-font-mono);
-  font-size: 11px;
+  font-size: 12px;
   color: rgb(var(--ui-label));
 }
 
@@ -1443,10 +1347,11 @@ html.flat-theme [data-ui~="ops-dashboard"] section[class~="card"] > div:first-ch
      data-ui="ops-dialog ops-jobs"              OpsDashboardHeader.vue        background jobs
      data-ui="ops-dialog ops-custom-range"      OpsDashboardHeader.vue        custom time range
    The dialog frame, header and footer are overlays.css'; the rules here draw the bodies in the reference's language
-   (REF §8.11 Modal body; panels = the grouped fill with a 1px line; labels = the mono label; figures Mono). */
+   (REF §8.11 Modal body; panels = the grouped fill with a 1px line; labels = the label, 12/16/500 sentence case;
+   figures tabular). */
 
 /* 4.1 Panels that upstream fills with gray-50 (rounded-xl / rounded-2xl): the reference's grouped panel (1px structural
-   line, radius 8, the grouped fill at 60 %, 12 / 14 in); section titles 13/600 ink, small uppercase captions the mono
+   line, radius 8, the grouped fill at 60 %, 12 / 14 in); section titles 14/600 ink, small uppercase captions the
    label. */
 html.flat-theme [data-ui~="ops-dialog"] :is(div, details)[class~="bg-gray-50"]:is([class~="rounded-xl"], [class~="rounded-2xl"]):not([class~="p-4"][class~="dark:bg-dark-900"]:only-child) {
   border: 1px solid rgb(var(--ui-line));
@@ -1461,26 +1366,26 @@ html.flat-theme [data-ui~="ops-dialog"] div[class~="bg-gray-50"][class~="rounded
 
 html.flat-theme [data-ui~="ops-dialog"] :is(h3, h4)[class~="uppercase"][class~="tracking-wider"],
 html.flat-theme [data-ui~="ops-dialog"] div[class~="text-xs"][class~="font-bold"][class~="uppercase"][class~="tracking-wider"] {
-  font-family: var(--ui-font-mono);
   font-size: var(--ui-label-size);
-  font-weight: 400;
+  font-weight: var(--ui-label-weight);
   line-height: var(--ui-label-leading);
   letter-spacing: var(--ui-label-tracking);
-  text-transform: uppercase;
+  text-transform: none;
   color: rgb(var(--ui-label));
 }
 
 html.flat-theme [data-ui~="ops-dialog"] h4[class~="text-sm"][class~="font-semibold"],
 html.flat-theme [data-ui~="ops-dialog"] summary[class~="text-sm"][class~="font-semibold"] {
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 600;
-  line-height: 19.5px;
+  line-height: 20px;
   color: rgb(var(--ui-ink));
 }
 
 /* the key-value tiles (error detail summary, alert event times): the reference's detail stat block (REF §8.13: surface,
-   1px line, radius 6, 8 / 12 in, the mono label, the value 13px ink, Mono where upstream sets it); their two grids carry
-   data-ui="ops-kv-grid" (OpsErrorDetailModal.vue:16, OpsAlertEventsCard.vue:608) */
+   1px line, radius 6, 8 / 12 in, the label, the value upstream's text-sm font-medium ink, in its font-mono where
+   upstream sets it); their two grids carry data-ui="ops-kv-grid" (OpsErrorDetailModal.vue:16,
+   OpsAlertEventsCard.vue:608) */
 html.flat-theme [data-ui~="ops-dialog"] div[class~="grid"] > div[class~="rounded-xl"][class~="bg-gray-50"][class~="p-4"] {
   padding: 8px 12px 10px;
   border: 1px solid rgb(var(--ui-line));
@@ -1494,35 +1399,30 @@ html.flat-theme [data-ui~="ops-dialog"] div[class~="grid"][data-ui~="ops-kv-grid
 
 html.flat-theme [data-ui~="ops-dialog"] div[class~="grid"] > div[class~="rounded-xl"][class~="bg-gray-50"][class~="p-4"] > div:nth-child(2) {
   margin-top: 4px;
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 500;
-  line-height: 19.5px;
+  line-height: 20px;
   color: rgb(var(--ui-ink));
-}
-
-html.flat-theme [data-ui~="ops-dialog"] div[class~="grid"] > div[class~="rounded-xl"][class~="bg-gray-50"][class~="p-4"] > div:nth-child(2)[class~="font-mono"],
-html.flat-theme [data-ui~="ops-dialog"] div[class~="grid"] > div[class~="rounded-xl"][class~="bg-gray-50"][class~="p-4"] > div:nth-child(2) span[class~="font-mono"] {
-  font-size: 12.5px;
 }
 
 html.flat-theme [data-ui~="ops-dialog"] div[class~="grid"] > div[class~="rounded-xl"][class~="bg-gray-50"][class~="p-4"] > div:nth-child(2) span[class~="text-primary-600"] {
   color: rgb(var(--ui-ink));
 }
 
-/* status codes in the tiles: the reference's chip (capsule, Geist Mono, soft status fill, no ring / shadow) */
+/* status codes in the tiles: the reference's chip (capsule, soft status fill, no ring / shadow) in upstream's
+   text-xs */
 html.flat-theme [data-ui~="ops-dialog"] span[class~="rounded-lg"][class~="font-black"][class~="ring-1"] {
   padding: 1px 8px;
   border-radius: 9999px;
   box-shadow: none;
-  font-family: var(--ui-font-mono);
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 600;
-  line-height: 18px;
+  line-height: 16px;
 }
 
 /* 4.2 the error detail: 16px between blocks; the root cause is the reference's warning notice (REF §8.16: the warning
-   line and soft fill, radius 6); the payloads are code blocks (REF §8.15: radius 8, 1px line, surface, Mono 12 at
-   1.6); the correlated upstream errors are cards on the panel */
+   line and soft fill, radius 6); the payloads are code blocks (REF §8.15: radius 8, 1px line, surface, the mono stack
+   12 at 1.6); the correlated upstream errors are cards on the panel */
 html.flat-theme [data-ui~="ops-error-detail"] {
   padding: 0;
 }
@@ -1538,7 +1438,7 @@ html.flat-theme [data-ui~="ops-error-detail"] > div[class~="bg-amber-50"] {
   background-color: rgb(var(--ui-warning-soft));
 }
 
-/* (both hooks: over 4.1's mono-label rule for uppercase headings, which upstream's h3 here also carries) */
+/* (both hooks: over 4.1's label rule for uppercase headings, which upstream's h3 here also carries) */
 html.flat-theme [data-ui~="ops-dialog"][data-ui~="ops-error-detail"] > div[class~="bg-amber-50"] > h3 {
   font-family: var(--ui-font);
   font-size: 12px;
@@ -1551,7 +1451,7 @@ html.flat-theme [data-ui~="ops-dialog"][data-ui~="ops-error-detail"] > div[class
 
 html.flat-theme [data-ui~="ops-error-detail"] > div[class~="bg-amber-50"] > div {
   margin-top: 6px;
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 400;
   line-height: 1.625;
   color: rgb(var(--ui-ink));
@@ -1575,7 +1475,6 @@ html.flat-theme [data-ui~="ops-error-detail"] > div > div[class~="mt-4"][class~=
 }
 
 html.flat-theme [data-ui~="ops-error-detail"] div[class~="text-xs"][class~="font-black"] {
-  font-family: var(--ui-font-mono);
   font-weight: 600;
   color: rgb(var(--ui-ink));
 }
@@ -1592,7 +1491,6 @@ html.flat-theme [data-ui~="ops-error-detail"] span[class~="rounded-md"][class~="
 html.flat-theme [data-ui~="ops-error-detail"] button[class~="text-primary-700"] {
   border-radius: var(--ui-radius-sm);
   color: var(--ui-link);
-  font-size: 11.5px;
   font-weight: 500;
 }
 
@@ -1600,30 +1498,29 @@ html.flat-theme [data-ui~="ops-error-detail"] button[class~="text-primary-700"]:
   background-color: rgb(var(--ui-subtle));
 }
 
-/* the Codex continuation section: its title a card title (13/600), its records the grouped panel */
+/* the Codex continuation section: its title a card title (14/600), its records the grouped panel */
 html.flat-theme [data-ui~="ops-error-detail"] > section > h2 {
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 600;
-  line-height: 19.5px;
+  line-height: 20px;
   color: rgb(var(--ui-ink));
 }
 
 html.flat-theme [data-ui~="ops-error-detail"] > section > div[data-test="codex-diagnostic-record"] {
   border-radius: var(--ui-radius-lg);
   background-color: color-mix(in srgb, rgb(var(--ui-subtle)) 60%, rgb(var(--ui-surface)));
-  font-size: 13px;
+  font-size: 14px;
 }
 
 html.flat-theme [data-ui~="ops-error-detail"] > section > div[data-test="codex-diagnostic-record"] th {
-  font-family: var(--ui-font-mono);
-  font-size: var(--ui-label-size);
-  letter-spacing: var(--ui-label-tracking);
+  font-size: 12px;
+  letter-spacing: 0.05em;
   text-transform: uppercase;
   color: rgb(var(--ui-table-head));
 }
 
 /* 4.3 the error lists: filters in one 30px row under a 1px line (the search the reference's search field: control
-   outline, surface, 13px, the 13px glyph 10px in; the Selects and reset 30px); the count a mono meta line */
+   outline, surface, 14px, the 13px glyph 10px in; the Selects and reset 30px); the count a 12px meta line */
 html.flat-theme [data-ui~="ops-error-list"] > div:first-child {
   margin-bottom: 12px;
   padding-bottom: 12px;
@@ -1642,9 +1539,9 @@ html.flat-theme [data-ui~="ops-error-list"] > div:first-child input[type="text"]
   background-color: rgb(var(--ui-surface));
   box-shadow: none;
   color: rgb(var(--ui-ink));
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 400;
-  line-height: 19.5px;
+  line-height: 20px;
 }
 
 html.flat-theme [data-ui~="ops-error-list"] > div:first-child input[type="text"]:focus {
@@ -1670,7 +1567,7 @@ html.flat-theme [data-ui~="ops-error-list"] > div:first-child div[class~="absolu
 html.flat-theme [data-ui~="ops-error-list"] > div:first-child .select-trigger.select-trigger {
   padding-top: 0.265625rem;
   padding-bottom: 0.265625rem;
-  font-size: 13px;
+  font-size: 14px;
 }
 
 html.flat-theme [data-ui~="ops-error-list"] > div:first-child button[class~="bg-gray-100"] {
@@ -1680,8 +1577,8 @@ html.flat-theme [data-ui~="ops-error-list"] > div:first-child button[class~="bg-
   border-radius: var(--ui-radius-md);
   background-color: rgb(var(--ui-surface));
   color: rgb(var(--ui-ink));
-  font-size: 13px;
-  font-weight: 600;
+  font-size: 14px;
+  font-weight: 500;
 }
 
 html.flat-theme [data-ui~="ops-error-list"] > div:first-child button[class~="bg-gray-100"]:hover {
@@ -1691,23 +1588,15 @@ html.flat-theme [data-ui~="ops-error-list"] > div:first-child button[class~="bg-
 
 html.flat-theme [data-ui~="ops-error-list"] > div:last-child > div[class~="mb-2"] {
   margin-bottom: 8px;
-  font-family: var(--ui-font-mono);
-  font-size: 11px;
-  line-height: 16.5px;
+  font-size: 12px;
+  line-height: 16px;
   font-variant-numeric: tabular-nums;
   color: rgb(var(--ui-label));
 }
 
-/* the list's cells: time Mono, a secondary value (data.css 12, as in the other lists); the type and group chips are
-   categories (data.css' category-chip hook, added to OpsErrorLogTable.vue: the reference's neutral chip); the detail
-   action a 28px icon button */
-html.flat-theme [data-ui~="ops-error-list"] .table-wrapper td[data-column="created_at"] > span {
-  font-family: var(--ui-font-mono);
-  font-size: 12px;
-  font-variant-numeric: tabular-nums;
-  color: rgb(var(--ui-data-secondary));
-}
-
+/* the list's cells keep upstream's classes (the time text-sm text-gray-600); the type and group chips are categories
+   (data.css' category-chip hook, added to OpsErrorLogTable.vue: the template's tag colours); the detail action a 28px
+   icon button */
 html.flat-theme [data-ui~="ops-error-list"] .table-wrapper td[data-column="actions"] > button {
   width: 28px;
   height: 28px;
@@ -1728,16 +1617,16 @@ html.flat-theme [data-ui~="ops-error-list"] .table-wrapper td[data-column="actio
   height: 15px;
 }
 
-/* 4.4 request details: the range a mono meta line; the table in a 1px frame (radius 8); the id copy the reference's
-   snippet copy button (Mono 10.5, control outline, radius 6); 「查看错误」 the destructive small button (danger text,
-   danger line at 30 %, surface; the soft fill on hover); the empty state the dashed frame */
+/* 4.4 request details: the range a 12px meta line; the table in a 1px frame (radius 8), its cells in upstream's
+   classes (figures tabular); the id copy the reference's snippet copy button (upstream's text-[10px] at 500, control
+   outline, radius 6); 「查看错误」 the destructive small button (danger text, danger line at 30 %, surface; the soft fill
+   on hover); the empty state the dashed frame */
 html.flat-theme [data-ui~="ops-request-details"] > div:first-child {
   margin-bottom: 12px;
 }
 
 html.flat-theme [data-ui~="ops-request-details"] > div:first-child > div[class~="text-xs"] {
-  font-family: var(--ui-font-mono);
-  font-size: 11px;
+  font-size: 12px;
   font-variant-numeric: tabular-nums;
   color: rgb(var(--ui-label));
 }
@@ -1747,26 +1636,8 @@ html.flat-theme [data-ui~="ops-request-details"] div[class~="rounded-xl"][class~
   border-radius: var(--ui-radius-lg);
 }
 
-html.flat-theme [data-ui~="ops-request-details"] table > tbody > tr > td:nth-child(3) {
-  font-family: var(--ui-font-mono);
-  font-size: 11.5px;
-  letter-spacing: 0.025em;
-  color: rgb(var(--ui-ink-soft));
-}
-
-html.flat-theme [data-ui~="ops-request-details"] table > tbody > tr > td:nth-child(4) {
-  color: rgb(var(--ui-ink));
-}
-
 html.flat-theme [data-ui~="ops-request-details"] table > tbody > tr > td:is(:nth-child(5), :nth-child(6)) {
-  font-family: var(--ui-font-mono);
-  font-size: 12.5px;
   font-variant-numeric: tabular-nums;
-}
-
-html.flat-theme [data-ui~="ops-request-details"] :is(td, div) span[class~="font-mono"][class~="text-[11px]"] {
-  font-size: 12px;
-  color: rgb(var(--ui-ink-soft));
 }
 
 html.flat-theme [data-ui~="ops-dialog"] button[class~="bg-gray-100"][class~="text-[10px]"][class~="font-bold"] {
@@ -1775,8 +1646,6 @@ html.flat-theme [data-ui~="ops-dialog"] button[class~="bg-gray-100"][class~="tex
   border-radius: var(--ui-radius-md);
   background-color: rgb(var(--ui-surface));
   color: rgb(var(--ui-ink-soft));
-  font-family: var(--ui-font-mono);
-  font-size: 10.5px;
   font-weight: 500;
   line-height: 16px;
   transition: color var(--ui-duration) var(--ui-ease), border-color var(--ui-duration) var(--ui-ease);
@@ -1796,7 +1665,7 @@ html.flat-theme [data-ui~="ops-dialog"] button[class~="bg-red-50"][class~="text-
   background-color: rgb(var(--ui-surface));
   color: rgb(var(--ui-danger));
   font-size: 12px;
-  font-weight: 600;
+  font-weight: 500;
   transition: background-color var(--ui-duration) var(--ui-ease), border-color var(--ui-duration) var(--ui-ease);
 }
 
@@ -1814,7 +1683,7 @@ html.flat-theme [data-ui~="ops-dialog"] svg[class~="animate-spin"][class~="text-
   color: rgb(var(--ui-ink-soft));
 }
 
-/* 4.5 settings: sections are the grouped panel; the toggle rows' labels 13px (upstream's bare labels were 16px);
+/* 4.5 settings: sections are the grouped panel; the toggle rows' labels 14px (upstream's bare labels were 16px);
    recipients the reference's neutral chip (an address is a value, not a category or a state); the validation notice
    the warning notice */
 html.flat-theme [data-ui~="ops-settings"][class~="space-y-6"] > :not([hidden]) ~ :not([hidden]) {
@@ -1822,29 +1691,28 @@ html.flat-theme [data-ui~="ops-settings"][class~="space-y-6"] > :not([hidden]) ~
 }
 
 html.flat-theme [data-ui~="ops-settings"] label[class~="font-medium"]:not([class~="input-label"]):not([class~="text-sm"]) {
-  font-size: 13px;
-  line-height: 19.5px;
+  font-size: 14px;
+  line-height: 20px;
   color: rgb(var(--ui-ink));
 }
 
 html.flat-theme [data-ui~="ops-settings"] label[class~="text-sm"][class~="font-medium"]:not([class~="block"]) {
-  font-size: 13px;
+  font-size: 14px;
   color: rgb(var(--ui-ink));
 }
 
 html.flat-theme [data-ui~="ops-settings"] h5[class~="text-xs"][class~="font-semibold"] {
-  font-family: var(--ui-font-mono);
   font-size: var(--ui-label-size);
-  font-weight: 400;
+  font-weight: var(--ui-label-weight);
   line-height: var(--ui-label-leading);
   letter-spacing: var(--ui-label-tracking);
-  text-transform: uppercase;
+  text-transform: none;
   color: rgb(var(--ui-label));
 }
 
 html.flat-theme [data-ui~="ops-settings"] p[class~="text-xs"] {
   font-size: 12px;
-  line-height: 18px;
+  line-height: 16px;
   color: rgb(var(--ui-muted));
 }
 
@@ -1879,7 +1747,7 @@ html.flat-theme [data-ui~="ops-dialog"] div[class~="border-amber-200"][class~="b
   border-radius: var(--ui-radius-md);
   background-color: rgb(var(--ui-warning-soft));
   color: rgb(var(--ui-ink));
-  font-size: 12.5px;
+  font-size: 12px;
 }
 
 html.flat-theme [data-ui~="ops-dialog"] div[class~="border-amber-200"][class~="bg-amber-50"] > div:first-child {
@@ -1909,16 +1777,16 @@ html.flat-theme [data-ui~="ops-alert-rules"] > div:first-child {
 }
 
 html.flat-theme [data-ui~="ops-alert-rules"] > div:first-child h3 {
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 600;
-  line-height: 19.5px;
+  line-height: 20px;
   color: rgb(var(--ui-ink));
 }
 
 html.flat-theme [data-ui~="ops-alert-rules"] > div:first-child p {
   margin-top: 2px;
   font-size: 12px;
-  line-height: 18px;
+  line-height: 16px;
   color: rgb(var(--ui-muted));
 }
 
@@ -1934,7 +1802,7 @@ html.flat-theme [data-ui~="ops-alert-rules"] > div:first-child > div:last-child 
   background-color: rgb(var(--ui-surface));
   color: rgb(var(--ui-ink));
   font-size: 12px;
-  font-weight: 600;
+  font-weight: 500;
 }
 
 html.flat-theme [data-ui~="ops-alert-rules"] > div:first-child > div:last-child > button[class~="bg-gray-100"]:hover:not(:disabled) {
@@ -1947,28 +1815,6 @@ html.flat-theme [data-ui~="ops-alert-rules"] > div[class~="rounded-xl"][class~="
   border-radius: var(--ui-radius-lg);
 }
 
-html.flat-theme [data-ui~="ops-alert-rules"] table > tbody > tr > td:first-child > div:first-child {
-  font-size: 13px;
-  font-weight: 600;
-  color: rgb(var(--ui-ink));
-}
-
-html.flat-theme [data-ui~="ops-alert-rules"] table > tbody > tr > td:first-child > div[class~="text-[11px]"] {
-  color: rgb(var(--ui-muted));
-}
-
-html.flat-theme [data-ui~="ops-alert-rules"] table > tbody > tr > td:nth-child(2) {
-  font-family: var(--ui-font-mono);
-  font-size: 12px;
-  color: rgb(var(--ui-ink-soft));
-}
-
-html.flat-theme [data-ui~="ops-alert-rules"] table > tbody > tr > td:nth-child(3) {
-  font-family: var(--ui-font-mono);
-  font-size: 12px;
-  font-weight: 600;
-}
-
 html.flat-theme [data-ui~="ops-alert-rules"] table > tbody > tr > td:last-child {
   white-space: nowrap;
 }
@@ -1979,7 +1825,7 @@ html.flat-theme [data-ui~="ops-alert-rule-editor"] > div[class~="bg-red-50"] {
   border-radius: var(--ui-radius-md);
   background-color: rgb(var(--ui-danger-soft));
   color: rgb(var(--ui-danger));
-  font-size: 12.5px;
+  font-size: 12px;
 }
 
 html.flat-theme [data-ui~="ops-alert-rule-editor"] div[class~="rounded-xl"][class~="bg-gray-50"][class~="px-4"] {
@@ -1990,7 +1836,7 @@ html.flat-theme [data-ui~="ops-alert-rule-editor"] div[class~="rounded-xl"][clas
 }
 
 html.flat-theme [data-ui~="ops-alert-rule-editor"] div[class~="rounded-xl"][class~="bg-gray-50"][class~="px-4"] > span {
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 500;
   color: rgb(var(--ui-ink));
 }
@@ -2002,7 +1848,7 @@ html.flat-theme [data-ui~="ops-alert-event"][class~="space-y-5"] > :not([hidden]
 }
 
 html.flat-theme [data-ui~="ops-alert-event"] > div:first-child > div > div:first-child > div[class~="text-sm"] {
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 600;
   color: rgb(var(--ui-ink));
 }
@@ -2015,9 +1861,8 @@ html.flat-theme [data-ui~="ops-alert-event"] div[class~="ring-1"][class~="bg-whi
 }
 
 html.flat-theme [data-ui~="ops-alert-event"] div[class~="ring-1"][class~="bg-white"][class~="rounded-lg"] > span {
-  font-family: var(--ui-font-mono);
   font-size: var(--ui-label-size);
-  font-weight: 400;
+  font-weight: var(--ui-label-weight);
   letter-spacing: var(--ui-label-tracking);
   color: rgb(var(--ui-label));
 }
@@ -2030,7 +1875,7 @@ html.flat-theme [data-ui~="ops-alert-event"] a[class~="ring-1"][class~="rounded-
   box-shadow: none;
   color: rgb(var(--ui-ink));
   font-size: 12px;
-  font-weight: 600;
+  font-weight: 500;
 }
 
 html.flat-theme [data-ui~="ops-alert-event"] a[class~="ring-1"][class~="rounded-md"]:hover {
@@ -2045,7 +1890,7 @@ html.flat-theme [data-ui~="ops-alert-event"] > div[class~="rounded-xl"][class~="
 }
 
 html.flat-theme [data-ui~="ops-alert-event"] > div[class~="rounded-xl"][class~="border"][class~="bg-white"] > div:first-child > div > div:first-child {
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 600;
 }
 
@@ -2055,11 +1900,11 @@ html.flat-theme [data-ui~="ops-alert-event"] div[class~="rounded-lg"][class~="bo
 }
 
 html.flat-theme [data-ui~="ops-alert-event"] div[class~="rounded-lg"][class~="border"][class~="overflow-hidden"] td {
-  font-family: var(--ui-font-mono);
   font-size: 12px;
 }
 
-/* 4.8 background jobs: each job a card on the dialog (1px line, radius 8, 12 / 14 in); the name 13/600, times Mono */
+/* 4.8 background jobs: each job a card on the dialog (1px line, radius 8, 12 / 14 in); the name upstream's text-sm
+   600, the times its text-xs meta with tabular figures (its font-mono spans keep the mono stack) */
 html.flat-theme [data-ui~="ops-jobs"][class~="space-y-3"] > :not([hidden]) ~ :not([hidden]) {
   margin-top: 8px;
 }
@@ -2071,15 +1916,13 @@ html.flat-theme [data-ui~="ops-jobs"] > div {
 }
 
 html.flat-theme [data-ui~="ops-jobs"] > div > div:first-child > div:first-child {
-  font-family: var(--ui-font-mono);
-  font-size: 12.5px;
+  font-size: 14px;
   font-weight: 600;
   color: rgb(var(--ui-ink));
 }
 
 html.flat-theme [data-ui~="ops-jobs"] > div > div:first-child > div:last-child {
-  font-family: var(--ui-font-mono);
-  font-size: 11px;
+  font-size: 12px;
   font-variant-numeric: tabular-nums;
   color: rgb(var(--ui-muted));
 }
@@ -2108,7 +1951,7 @@ html.flat-theme [data-ui~="ops-custom-range"] input[type="datetime-local"] {
   padding: 6px 10px;
   border-radius: var(--ui-radius-md);
   box-shadow: none;
-  font-size: 13px;
+  font-size: 14px;
 }
 
 html.flat-theme [data-ui~="ops-custom-range"] input[type="datetime-local"]:focus {
@@ -2128,8 +1971,8 @@ html.flat-theme [data-ui~="ops-custom-range"] > div:last-child > button {
   border-radius: var(--ui-radius-md);
   background-color: rgb(var(--ui-surface));
   color: rgb(var(--ui-ink));
-  font-size: 13px;
-  font-weight: 600;
+  font-size: 14px;
+  font-weight: 500;
 }
 
 html.flat-theme [data-ui~="ops-custom-range"] > div:last-child > button[class~="bg-blue-500"] {
@@ -2156,8 +1999,9 @@ html.flat-theme [data-ui~="ops-custom-range"] > div:last-child > button:focus-vi
    (data-ui="platform-chip"); ChannelMonitorView.vue — the provider chip (platform-chip), the check mode (category-chip). */
 
 /* 5.1 Row actions drawn as a glyph over a caption (flex-col, 67px rows): the reference's ghost text button on one line
-   (REF §8.3 ghost: 28px, 8px in, 12.5/600 ink-soft, the grouped fill and ink on hover), so rows keep the reference's 42px;
-   a destructive action takes the danger colour on hover. The caption stays visible (touch and mouse alike). */
+   (REF §8.3 ghost: 28px, 8px in, ink-soft, the grouped fill and ink on hover; the caption keeps upstream's text-xs), so
+   rows keep the reference's 42px; a destructive action takes the danger colour on hover. The caption stays visible
+   (touch and mouse alike). */
 html.flat-theme :is([data-ui~="channels-page"], [data-ui~="channel-monitor-page"]) .table-wrapper td[data-column="actions"] > div {
   gap: 2px;
 }
@@ -2173,9 +2017,6 @@ html.flat-theme :is([data-ui~="channels-page"], [data-ui~="channel-monitor-page"
 }
 
 html.flat-theme :is([data-ui~="channels-page"], [data-ui~="channel-monitor-page"]) .table-wrapper td[data-column="actions"] button[class~="flex-col"] > span {
-  font-size: 12.5px;
-  font-weight: 600;
-  line-height: 18px;
   white-space: nowrap;
 }
 
@@ -2198,16 +2039,9 @@ html.flat-theme :is([data-ui~="channels-page"], [data-ui~="channel-monitor-page"
   opacity: 0.55;
 }
 
-/* 5.2 渠道定价: the channel name 13/600 ink, the description muted; the dialog's platform tabs keep the platform logo's
-   colour (identity, decision 2) while the tab label follows the tab state (controls.css underline tabs) */
-html.flat-theme [data-ui~="channels-page"] .table-wrapper td[data-column="name"] > span {
-  font-weight: 600;
-}
-
-html.flat-theme [data-ui~="channels-page"] .table-wrapper td[data-column="description"] > span {
-  font-size: 13px;
-  color: rgb(var(--ui-muted));
-}
+/* 5.2 渠道定价: the channel name and the description keep upstream's classes; the dialog's platform tabs keep the
+   platform logo's colour (identity, decision 2) while the tab label follows the tab state (controls.css underline
+   tabs) */
 
 /* the dialog's tab strip spans the body edge to edge: upstream's -mx-6 / px-6 assume a 24px body inset, the console's
    dialog body is 18px in (overlays.css --ui-dialog-x), so the strip stood 6px out on each side and the body scrolled
@@ -2243,7 +2077,7 @@ html.flat-theme .modal-content .channel-dialog-body label[class~="inline-flex"][
   background-color: rgb(var(--ui-primary-soft));
 }
 
-/* the group box: a well (1px line, radius 8, the grouped fill); counts Mono faint */
+/* the group box: a well (1px line, radius 8, the grouped fill); counts faint, tabular */
 html.flat-theme .modal-content .channel-dialog-body div[class~="max-h-40"][class~="overflow-auto"][class~="rounded-lg"] {
   border-color: rgb(var(--ui-line));
   border-radius: var(--ui-radius-lg);
@@ -2251,7 +2085,6 @@ html.flat-theme .modal-content .channel-dialog-body div[class~="max-h-40"][class
 }
 
 html.flat-theme .modal-content .channel-dialog-body div[class~="max-h-40"] label > span[class~="text-[10px]"][class~="text-gray-400"] {
-  font-family: var(--ui-font-mono);
   font-variant-numeric: tabular-nums;
   color: rgb(var(--ui-faint));
 }
@@ -2271,9 +2104,10 @@ html.flat-theme .modal-content .channel-dialog-body div[class~="rounded-lg"][cla
   border-radius: var(--ui-radius-lg);
 }
 
-/* 5.3 渠道监控 (admin): the page head as the reference's page title block (no card: title 20/600, the description 13px
-   muted, the V2 / V1 switch the segmented control); the table as the other table pages. The monitor name 13/600; the
-   7-day availability and latency figures Mono. */
+/* 5.3 渠道监控 (admin): the page head as the reference's page title block (no card: title 18/600 as the header row's,
+   the description upstream's .page-description 14px muted, the V2 / V1 switch the segmented control); the table as
+   the other table pages. The monitor name keeps upstream's classes; the 7-day availability and latency figures are
+   tabular. */
 html.flat-theme [data-ui~="channel-monitor-page"][class~="space-y-6"] > :not([hidden]) ~ :not([hidden]) {
   margin-top: var(--ui-shell-gap, 12px);
 }
@@ -2288,7 +2122,7 @@ html.flat-theme [data-ui~="channel-monitor-page"] > header.page-header {
 
 html.flat-theme [data-ui~="channel-monitor-page"] > header.page-header > h1 {
   gap: 0;
-  font-size: 20px;
+  font-size: 18px;
   font-weight: 600;
   line-height: 28px;
   color: rgb(var(--ui-ink));
@@ -2317,8 +2151,8 @@ html.flat-theme [data-ui~="channel-monitor-page"] > header.page-header > h1 > sp
 }
 
 html.flat-theme [data-ui~="channel-monitor-page"] > header.page-header > p.page-description {
-  font-size: 13px;
-  line-height: 19.5px;
+  font-size: 14px;
+  line-height: 20px;
   color: rgb(var(--ui-muted));
 }
 
@@ -2348,21 +2182,14 @@ html.flat-theme [data-ui~="channel-monitor-page"] > header.page-header > div[cla
   }
 }
 
-html.flat-theme [data-ui~="channel-monitor-page"] .table-wrapper td[data-column="name"] span[class~="font-medium"] {
-  font-weight: 600;
-}
-
 html.flat-theme [data-ui~="channel-monitor-page"] .table-wrapper td:is([data-column="availability_7d"], [data-column="latency"]) > span {
-  font-family: var(--ui-font-mono);
-  font-size: 12.5px;
   font-variant-numeric: tabular-nums;
-  color: rgb(var(--ui-ink-soft));
 }
 
 /* 5.3a 渠道监控 · V2 数据监控配置 (MonitorSettingsPanel, the section under the head): flush with the page (upstream's
    4 / 8px inset goes), its blocks 12px apart. The head and every card are the reference's card: the 1px structural line
    (the shared card rule drops upstream's ring and !border-0 keeps the border at 0, so an inset ring draws it), radius 8.
-   The head's title is a card title (13/600; upstream's 20/900 outranked the page title) without the decorative blue
+   The head's title is a card title (14/600; upstream's 20/900 outranked the page title) without the decorative blue
    tile (as the page title's), its description 12px muted, 14 / 16 in; rows and card heads 16px in; the V1-mode note is
    the reference's warning notice (REF §8.16: the warning line, the warning fill, radius 6). */
 html.flat-theme [data-ui~="channel-monitor-page"] > section[class~="max-w-6xl"] {
@@ -2382,9 +2209,9 @@ html.flat-theme [data-ui~="channel-monitor-page"] > section[class~="max-w-6xl"] 
 
 html.flat-theme [data-ui~="channel-monitor-page"] > section[class~="max-w-6xl"] > header.page-header h2.page-title {
   gap: 0;
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 600;
-  line-height: 19.5px;
+  line-height: 20px;
   color: rgb(var(--ui-ink));
 }
 
@@ -2395,7 +2222,7 @@ html.flat-theme [data-ui~="channel-monitor-page"] > section[class~="max-w-6xl"] 
 html.flat-theme [data-ui~="channel-monitor-page"] > section[class~="max-w-6xl"] > header.page-header p.page-description {
   margin-top: 2px;
   font-size: 12px;
-  line-height: 18px;
+  line-height: 16px;
   color: rgb(var(--ui-muted));
 }
 
@@ -2405,7 +2232,7 @@ html.flat-theme [data-ui~="channel-monitor-page"] > section[class~="max-w-6xl"] 
   border-radius: var(--ui-radius-md);
   background-color: rgb(var(--ui-warning-soft));
   color: rgb(var(--ui-ink));
-  font-size: 13px;
+  font-size: 14px;
   line-height: 1.625;
 }
 
@@ -2430,10 +2257,10 @@ html.flat-theme [data-ui~="channel-monitor-page"] > section[class~="max-w-6xl"] 
 }
 
 /* 5.4 操作日志: the filters become the table pages' toolbar (no card): each labelled field is the reference's filter
-   trigger holding its label as the mono label at 400 muted under the 13/600 ink value (the labelled field pills of
-   使用记录, dashboard-usage.css §3: a label inside its control stays light; a field label above a field is 600), 30px,
-   8px apart from the left (upstream's justify-between spread the first line 36px apart once the field group was
-   flattened), the actions at the row's end */
+   trigger holding its label (12/16 at 400, muted, sentence case) before the 14px ink value (the labelled field pills of
+   使用记录, dashboard-usage.css §3: a label inside its control stays light), 30px, 8px apart from the left (upstream's
+   justify-between spread the first line 36px apart once the field group was flattened), the actions at the row's
+   end */
 html.flat-theme [data-ui~="audit-page"] > .layout-section-fixed > .card[class~="p-4"] {
   padding: 0;
   border: 0;
@@ -2469,12 +2296,11 @@ html.flat-theme [data-ui~="audit-page"] > .layout-section-fixed > .card > div > 
 html.flat-theme [data-ui~="audit-page"] > .layout-section-fixed > .card > div > div:first-child > div > label.input-label {
   flex: none;
   margin: 0;
-  font-family: var(--ui-font-mono);
   font-size: var(--ui-label-size);
   font-weight: 400;
   line-height: var(--ui-label-leading);
   letter-spacing: var(--ui-label-tracking);
-  text-transform: uppercase;
+  text-transform: none;
   white-space: nowrap;
   color: rgb(var(--ui-label));
 }
@@ -2497,8 +2323,8 @@ html.flat-theme [data-ui~="audit-page"] > .layout-section-fixed > .card > div > 
   border-radius: 0 var(--ui-radius-md) var(--ui-radius-md) 0;
   background-color: transparent;
   box-shadow: none;
-  font-size: 13px;
-  line-height: 19.5px;
+  font-size: 14px;
+  line-height: 20px;
 }
 
 /* the keyword field's glyph: its label names it, the glyph goes */
@@ -2538,44 +2364,19 @@ html.flat-theme [data-ui~="audit-page"] > .layout-section-fixed > .card > div > 
   gap: 8px;
 }
 
-/* the log table: the time Mono muted; the operator (e-mail 13/500 ink, role and sign-in 12px muted); the action Mono
-   12.5 ink over its method and path Mono 11.5 muted; the result the reference's status chip (capsule, Mono, soft fill,
-   the 6px dot) */
+/* the log table: the cells keep upstream's classes (the time tabular; the operator's e-mail and role, the action
+   over its method and path); the result the reference's status chip (capsule, soft fill, the 6px dot) in upstream's
+   text-xs */
 html.flat-theme [data-ui~="audit-page"] .table-wrapper td[data-column="created_at"] > span {
-  font-family: var(--ui-font-mono);
-  font-size: 12px;
   font-variant-numeric: tabular-nums;
-  color: rgb(var(--ui-muted));
-}
-
-html.flat-theme [data-ui~="audit-page"] .table-wrapper td[data-column="actor"] > div > div:first-child {
-  font-weight: 500;
-  color: rgb(var(--ui-ink));
-}
-
-html.flat-theme [data-ui~="audit-page"] .table-wrapper td[data-column="actor"] > div > div:last-child,
-html.flat-theme [data-ui~="audit-page"] .table-wrapper td[data-column="action"] > div > div:last-child {
-  font-size: 12px;
-  line-height: 18px;
-  color: rgb(var(--ui-muted));
-}
-
-html.flat-theme [data-ui~="audit-page"] .table-wrapper td[data-column="action"] > div > div:first-child {
-  font-size: 12.5px;
-  color: rgb(var(--ui-ink));
-}
-
-html.flat-theme [data-ui~="audit-page"] .table-wrapper td[data-column="action"] > div > div:last-child {
-  font-size: 11.5px;
 }
 
 html.flat-theme :is([data-ui~="audit-page"], [data-ui~="audit-detail"]) span[class~="rounded-full"][class~="gap-1.5"][class~="font-semibold"] {
   gap: 6px;
   padding: 1px 8px;
-  font-family: var(--ui-font-mono);
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 500;
-  line-height: 18px;
+  line-height: 16px;
   font-variant-numeric: tabular-nums;
 }
 
@@ -2613,7 +2414,6 @@ html.flat-theme :is([data-ui~="audit-page"], [data-ui~="audit-detail"]) span[cla
 
 html.flat-theme [data-ui~="audit-page"] .table-wrapper td[data-column="actions"] > button {
   gap: 5px;
-  font-size: 12.5px;
   font-weight: 500;
   color: var(--ui-link);
 }
@@ -2631,9 +2431,10 @@ html.flat-theme [data-ui~="audit-page"] .table-wrapper td[colspan] > div[class~=
   color: rgb(var(--ui-faint));
 }
 
-/* 5.5 the audit detail dialog: the head panel (the grouped panel; the status chip, the action Mono 14/600 ink; the method
-   a Mono chip beside the path in a 1px field; the meta 12px muted with Mono ids), the operator / sign-in / IP tiles, the
-   User-Agent and bodies as code blocks, their captions the mono label */
+/* 5.5 the audit detail dialog: the head panel (the grouped panel; the status chip, the action in its template font-mono
+   14/600 ink; the method a chip beside the path in a 1px field; the meta 12px muted with its font-mono ids), the
+   operator / sign-in / IP tiles, the User-Agent and bodies as code blocks, their captions the label (12/16/500,
+   sentence case) */
 html.flat-theme [data-ui~="audit-detail"][class~="space-y-5"] > :not([hidden]) ~ :not([hidden]) {
   margin-top: 12px;
 }
@@ -2683,19 +2484,18 @@ html.flat-theme [data-ui~="audit-detail"] > div[class~="grid"] > div[class~="rou
 }
 
 html.flat-theme [data-ui~="audit-detail"] :is(div, h4)[class~="text-xs"][class~="font-bold"][class~="uppercase"] {
-  font-family: var(--ui-font-mono);
   font-size: var(--ui-label-size);
-  font-weight: 400;
+  font-weight: var(--ui-label-weight);
   line-height: var(--ui-label-leading);
   letter-spacing: var(--ui-label-tracking);
-  text-transform: uppercase;
+  text-transform: none;
   color: rgb(var(--ui-label));
 }
 
 html.flat-theme [data-ui~="audit-detail"] > div[class~="grid"] > div > div:nth-child(2) {
   margin-top: 4px;
-  font-size: 13px;
-  line-height: 19.5px;
+  font-size: 14px;
+  line-height: 20px;
 }
 
 html.flat-theme [data-ui~="audit-detail"] > section > :is(div, pre)[class~="rounded-xl"][class~="bg-gray-50"] {
@@ -2709,15 +2509,9 @@ html.flat-theme [data-ui~="audit-detail"] > section > :is(div, pre)[class~="roun
 }
 
 /* 5.6 邀请 / 返利 / 提取: a toolbar row (search, two date fields, refresh, the offline withdraw entry at its end); the
-   records use DataTable (data.css). Order numbers and codes Mono. */
+   records use DataTable (data.css), their cells in upstream's classes (order numbers and codes in their font-mono). */
 html.flat-theme [data-ui~="affiliate-page"] > .layout-section-fixed > div {
   gap: 8px;
-}
-
-html.flat-theme [data-ui~="affiliate-page"] .table-wrapper td[data-column="order"] > div > div:last-child {
-  font-family: var(--ui-font-mono);
-  font-size: 11.5px;
-  color: rgb(var(--ui-muted));
 }
 
 /* 5.7 渠道监控's dialogs (MonitorFormDialog: #channel-monitor-form; MonitorTemplateManagerDialog): the choice buttons
@@ -2749,14 +2543,14 @@ html.flat-theme .modal-content div[class~="grid"] > button[data-ui~="platform-te
 }
 
 html.flat-theme #channel-monitor-form button[aria-pressed] > span:first-child {
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 600;
   color: rgb(var(--ui-ink));
 }
 
 html.flat-theme #channel-monitor-form button[aria-pressed] > span:last-child:not(:first-child) {
   font-size: 12px;
-  line-height: 18px;
+  line-height: 16px;
   color: rgb(var(--ui-muted));
 }
 
@@ -2772,10 +2566,10 @@ html.flat-theme :is(#channel-monitor-form, .modal-content) div[class~="rounded-l
 
 /* 5.8 请求模板管理 (MonitorTemplateManagerDialog; hooks: data-ui="template-tabs" on the tab strip, data-ui="template-list"
    on the template list; its provider tablist is the only flex-wrap gap-1 tablist): the provider
-   tabs are the shared underline tabs (controls.css 7.3, the channel dialog's: 8 x 10, 12.5 / 600, muted, ink on
-   hover; the current one ink over the 2px accent rule), their counts the small Mono count; a template's mode and API
-   mode are categories (decision 2): the reference's neutral chip (data.css category-chip), whatever hue upstream gave
-   them (merge amber, replace purple, Responses blue, Chat Completions green). */
+   tabs are the shared underline tabs (controls.css 7.3, the channel dialog's: 8 x 10, upstream's text-sm font-medium,
+   the tab grey, ink on hover; the current one ink over the 2px accent rule), their counts a small neutral count; a template's
+   mode and API mode are the reference's neutral chip (12/16/500), whatever hue upstream gave them (merge amber, replace
+   purple, Responses blue, Chat Completions green). */
 html.flat-theme .modal-content div[class~="mb-4"][class~="border-b"][data-ui~="template-tabs"]:not(uipad[data-uipad][data-uipad]) {
   border-color: rgb(var(--ui-line));
 }
@@ -2783,10 +2577,10 @@ html.flat-theme .modal-content div[class~="mb-4"][class~="border-b"][data-ui~="t
 html.flat-theme .modal-content div[role="tablist"][class~="flex"][class~="flex-wrap"][class~="gap-1"] > button[role="tab"][class~="border-b-2"] {
   gap: 0.375rem;
   padding: 0.5rem 0.625rem;
-  font-size: 0.78125rem;
-  font-weight: 600;
-  line-height: 1.171875rem;
-  color: rgb(var(--ui-muted));
+  font-size: 0.875rem;
+  font-weight: 500;
+  line-height: 1.25rem;
+  color: rgb(var(--theme-text-gray-600));
   transition-property: color, border-color;
   transition-duration: var(--ui-duration);
   transition-timing-function: var(--ui-ease);
@@ -2805,8 +2599,7 @@ html.flat-theme .modal-content div[role="tablist"][class~="flex"][class~="flex-w
   padding: 0 6px;
   background-color: rgb(var(--ui-subtle));
   color: rgb(var(--ui-ink-soft));
-  font-family: var(--ui-font-mono);
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 500;
   line-height: 16px;
 }
@@ -2817,8 +2610,7 @@ html.flat-theme .modal-content [data-ui~="template-list"]:not(uipad[data-uipad][
   border-radius: var(--ui-radius-sm);
   background-color: rgb(var(--ui-subtle));
   color: rgb(var(--ui-ink-soft));
-  font: 500 var(--ui-chip-size) / 16px var(--ui-font-mono);
-  letter-spacing: 0.01em;
+  font: 500 var(--ui-chip-size) / 16px var(--ui-font);
 }
 
 /* ================================================================== 6 · channel status (/monitor, v1 and v2) */
@@ -2828,8 +2620,8 @@ html.flat-theme .modal-content [data-ui~="template-list"]:not(uipad[data-uipad][
    table's wrapper), data-ui="monitor-v2" views/user/ChannelStatusV2View.vue (root), data-ui="monitor-matrix"
    features/channel-monitor-v2/RelayPulseMatrix.vue (its card). Identity: MonitorCard.vue's logo tile
    (data-ui="platform-text") and provider chip (platform-chip); the group chip is a category (category-chip).
-   Reference: the /models uptime column (REF §8.7: a 3px capsule per sample, the Mono figure in the state's ink) and the
-   /logs toolbar and KPI tiles. */
+   Reference: the /models uptime column (REF §8.7: a 3px capsule per sample, the tabular figure in the state's ink) and
+   the /logs toolbar and KPI tiles. */
 
 /* 6.1 the toolbar row: window (segmented, controls.css), the overall state as the reference's status chip, refresh and
    auto-refresh as the default button, 30px */
@@ -2843,11 +2635,11 @@ html.flat-theme [data-ui~="monitor-hero"] > div {
 
 html.flat-theme [data-ui~="monitor-hero"] > div > span[class~="rounded-full"] {
   padding: 1px 8px;
-  font-family: var(--ui-font-mono);
-  font-size: var(--ui-badge-size, 10px);
+  font-size: var(--ui-badge-size, 12px);
   font-weight: 500;
   line-height: 18px;
-  letter-spacing: 0.06em;
+  letter-spacing: normal;
+  text-transform: none;
 }
 
 html.flat-theme [data-ui~="monitor-hero"] > div > span[class~="rounded-full"] > span[class~="w-1.5"] {
@@ -2878,8 +2670,8 @@ html.flat-theme [data-ui~="monitor-hero"] > div > button[class~="h-8"] svg {
 
 /* 6.2 the monitor cards: the reference's card (surface, 1px structural line, radius 8, 14 / 16 in, no blur, no lift) in a
    12px grid; the head = the provider's logo square (REF §8.8: 28px, 1px line, radius 6, the logo in its platform colour),
-   the name 13/600, the provider chip (identity), the model Mono 11.5 muted, the group chip (neutral); the state the
-   reference's status chip */
+   the name 14/600, the provider chip (identity), the model in its template font-mono 12px muted, the group chip; the
+   state the reference's status chip */
 html.flat-theme [data-ui~="monitor-grid"] > div[class~="grid"] {
   gap: var(--ui-shell-gap, 12px);
 }
@@ -2927,9 +2719,9 @@ html.flat-theme [data-ui~="monitor-grid"] > div[class~="grid"] > button > div:fi
 }
 
 html.flat-theme [data-ui~="monitor-grid"] > div[class~="grid"] > button > div:first-child > div > div:first-child {
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 600;
-  line-height: 19.5px;
+  line-height: 20px;
   color: rgb(var(--ui-ink));
 }
 
@@ -2939,23 +2731,22 @@ html.flat-theme [data-ui~="monitor-grid"] > div[class~="grid"] > button > div:fi
 }
 
 html.flat-theme [data-ui~="monitor-grid"] > div[class~="grid"] > button > div:first-child > div > div:last-child > span[class~="font-mono"] {
-  font-size: 11.5px;
+  font-size: 12px;
   color: rgb(var(--ui-muted));
 }
 
 html.flat-theme [data-ui~="monitor-grid"] > div[class~="grid"] > button > div:first-child > span[class~="rounded-full"],
 html.flat-theme [data-ui~="monitor-detail"] td span[class~="rounded-full"] {
   padding: 1px 7px;
-  font-family: var(--ui-font-mono);
-  font-size: var(--ui-badge-size, 10px);
+  font-size: var(--ui-badge-size, 12px);
   font-weight: 500;
   line-height: var(--ui-badge-leading, 16px);
-  letter-spacing: 0.025em;
-  text-transform: uppercase;
+  text-transform: none;
 }
 
 /* the two figures (dialog latency, endpoint ping): the reference's StatTile in small (1px line, radius 6, 8 / 10 in; the
-   mono label with its 12px glyph; the figure Geist Mono 15/600 tabular, the unit Mono 10.5 muted) */
+   label with its 12px glyph; the figure in upstream's text-lg 18/28/700 and its template font-mono, tabular, the unit
+   12px muted) */
 html.flat-theme [data-ui~="monitor-grid"] > div[class~="grid"] > button > div[class~="grid-cols-2"] {
   margin-top: 12px;
   gap: 8px;
@@ -2970,25 +2761,25 @@ html.flat-theme [data-ui~="monitor-grid"] > div[class~="grid"] > button > div[cl
 
 html.flat-theme [data-ui~="monitor-grid"] > div[class~="grid"] > button > div[class~="grid-cols-2"] > div > div:first-child {
   gap: 5px;
-  font-family: var(--ui-font-mono);
   font-size: var(--ui-label-size);
-  font-weight: 400;
+  font-weight: var(--ui-label-weight);
   line-height: var(--ui-label-leading);
   letter-spacing: var(--ui-label-tracking);
+  text-transform: none;
   color: rgb(var(--ui-label));
 }
 
 html.flat-theme [data-ui~="monitor-grid"] > div[class~="grid"] > button > div[class~="grid-cols-2"] > div > div:last-child {
   margin-top: 2px;
-  font-size: 15px;
-  font-weight: 600;
-  line-height: 22.5px;
+  font-size: 18px;
+  font-weight: 700;
+  line-height: 28px;
   color: rgb(var(--ui-ink));
 }
 
 html.flat-theme [data-ui~="monitor-grid"] > div[class~="grid"] > button > div[class~="grid-cols-2"] > div > div:last-child > span {
   margin-left: 2px;
-  font-size: 10.5px;
+  font-size: 12px;
   font-weight: 400;
   color: rgb(var(--ui-muted));
 }
@@ -3002,7 +2793,7 @@ html.flat-theme [data-ui~="monitor-grid"] > div[class~="grid"] > button > div[cl
   margin-top: 12px;
 }
 
-/* availability: the label the mono label; the figure 22/600 tabular, keeping upstream's red-to-green hue for the value
+/* availability: the label the label; the figure 22/600 tabular, keeping upstream's red-to-green hue for the value
    (inline hsl(h 72% 42%), h = 1.2 x percent), darkened in light and lifted to pastel in dark (the reference's uptime
    inks: light and deep on white, pastel on dark), so every hue from 0 % to 100 % reads >= 4.5:1 on the card (worst:
    4.8:1 yellow at 50 % on white, 6.9:1 red at 0 % on the dark surface; upstream's own colour is 3.9:1 / 2.4:1 there).
@@ -3013,10 +2804,10 @@ html.flat-theme [data-ui~="monitor-grid"] > div[class~="grid"] > button > div[cl
 }
 
 html.flat-theme [data-ui~="monitor-grid"] > div[class~="grid"] > button > div[class~="mt-3"][class~="items-end"] > div:first-child {
-  font-family: var(--ui-font-mono);
   font-size: var(--ui-label-size);
   line-height: var(--ui-label-leading);
   letter-spacing: var(--ui-label-tracking);
+  text-transform: none;
   color: rgb(var(--ui-label));
 }
 
@@ -3024,12 +2815,11 @@ html.flat-theme [data-ui~="monitor-grid"] > div[class~="grid"] > button > div[cl
   font-size: 22px;
   font-weight: 600;
   line-height: 28px;
-  letter-spacing: -0.01em;
   filter: brightness(0.64);
 }
 
 html.flat-theme [data-ui~="monitor-grid"] > div[class~="grid"] > button > div[class~="mt-3"][class~="items-end"] > div:last-child > span:last-child {
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 600;
   filter: brightness(0.64);
 }
@@ -3039,14 +2829,13 @@ html.flat-theme.dark [data-ui~="monitor-grid"] > div[class~="grid"] > button > d
 }
 
 html.flat-theme [data-ui~="monitor-grid"] > div[class~="grid"] > button > div[class~="mt-3"][class~="items-end"] + div[class~="text-right"] {
-  font-family: var(--ui-font-mono);
-  font-size: 11px;
   color: rgb(var(--ui-muted));
 }
 
 /* the 60-sample history: the reference's uptime bars (REF §8.7: capsules 3px wide, 2px apart, bottom-aligned); upstream's
    height code stays (full = up, 65 % = degraded, 35 % = failed, 15 % = not tested) and the fills are the status dots'
-   colours (>= 3:1 on the card, the reference's pastel uptime fills are 1.5:1); captions Mono 10, faint */
+   colours (>= 3:1 on the card, the reference's pastel uptime fills are 1.5:1); captions in upstream's micro sizes,
+   faint */
 html.flat-theme [data-ui~="monitor-grid"] > div[class~="grid"] > button > div[class~="mt-4"][class~="pt-3"] {
   margin-top: 12px;
   padding-top: 10px;
@@ -3054,11 +2843,11 @@ html.flat-theme [data-ui~="monitor-grid"] > div[class~="grid"] > button > div[cl
 
 html.flat-theme [data-ui~="monitor-grid"] > div[class~="grid"] > button > div[class~="mt-4"][class~="pt-3"] > div:first-child {
   margin-bottom: 8px;
-  font-family: var(--ui-font-mono);
   font-size: var(--ui-label-size);
-  font-weight: 400;
+  font-weight: var(--ui-label-weight);
   line-height: var(--ui-label-leading);
   letter-spacing: var(--ui-label-tracking);
+  text-transform: none;
   color: rgb(var(--ui-label));
 }
 
@@ -3089,9 +2878,8 @@ html.flat-theme [data-ui~="monitor-grid"] > div[class~="grid"] > button > div[cl
 
 html.flat-theme [data-ui~="monitor-grid"] > div[class~="grid"] > button > div[class~="mt-4"][class~="pt-3"] > div:last-child {
   margin-top: 4px;
-  font-family: var(--ui-font-mono);
-  font-size: 10px;
-  letter-spacing: 0.06em;
+  letter-spacing: normal;
+  text-transform: none;
   color: rgb(var(--ui-label));
 }
 
@@ -3100,7 +2888,6 @@ html.flat-theme [data-ui~="monitor-grid"] > div[class~="grid"] > button > div[cl
   height: 18px;
   border-color: rgb(var(--ui-line-strong));
   border-radius: var(--ui-radius-sm);
-  font-family: var(--ui-font-mono);
   color: rgb(var(--ui-label));
 }
 
@@ -3109,18 +2896,18 @@ html.flat-theme [data-ui~="monitor-grid"] > div[class~="grid"] > div[class~="ani
   animation: none;
 }
 
-/* the model detail table: the reference's table in the dialog (mono header, 13px cells, Mono figures) */
+/* the model detail table: the reference's table in the dialog (upstream's usage-table header 12/16/500, uppercase,
+   0.05em; the cells in upstream's classes on its text-sm table, figures tabular) */
 html.flat-theme [data-ui~="monitor-detail"] table > thead {
   border-color: rgb(var(--ui-line));
 }
 
 html.flat-theme [data-ui~="monitor-detail"] table > thead > tr > th {
   padding: 10px 12px 10px 0;
-  font-family: var(--ui-font-mono);
-  font-size: var(--ui-label-size);
+  font-size: 12px;
   font-weight: 500;
-  line-height: 19.5px;
-  letter-spacing: var(--ui-label-tracking);
+  line-height: 16px;
+  letter-spacing: 0.05em;
   color: rgb(var(--ui-table-head));
   white-space: nowrap;
 }
@@ -3131,15 +2918,10 @@ html.flat-theme [data-ui~="monitor-detail"] table > tbody > tr {
 
 html.flat-theme [data-ui~="monitor-detail"] table > tbody > tr > td {
   padding: 10px 12px 10px 0;
-  font-size: 13px;
-  line-height: 19.5px;
 }
 
 html.flat-theme [data-ui~="monitor-detail"] table > tbody > tr > td:not(:first-child):not(:nth-child(2)) {
-  font-family: var(--ui-font-mono);
-  font-size: 12.5px;
   font-variant-numeric: tabular-nums;
-  color: rgb(var(--ui-ink-soft));
 }
 
 /* 6.3 channel status v2 (the pulse matrix view; production runs v1, frames with sample data are labelled sample).
@@ -3159,8 +2941,8 @@ html.flat-theme [data-ui~="monitor-v2"] :is(section, div)[class~="ring-1"] {
   box-shadow: 0 0 0 1px rgb(var(--ui-line));
 }
 
-/* the sticky head card: title 13/600 (the decorative glyph tile goes), the update line Mono 11, refresh the 30px default
-   button; the toolbar row 10 / 16 in, 8px apart */
+/* the sticky head card: title 14/600 (the decorative glyph tile goes), the update line upstream's text-xs (tabular),
+   refresh the 30px default button; the toolbar row 10 / 16 in, 8px apart */
 html.flat-theme [data-ui~="monitor-v2"] > section:first-child > header.page-header {
   padding: 12px 16px;
   border-color: rgb(var(--ui-line));
@@ -3168,9 +2950,9 @@ html.flat-theme [data-ui~="monitor-v2"] > section:first-child > header.page-head
 
 html.flat-theme [data-ui~="monitor-v2"] > section:first-child > header.page-header h1 {
   gap: 0;
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 600;
-  line-height: 19.5px;
+  line-height: 20px;
   color: rgb(var(--ui-ink));
 }
 
@@ -3181,8 +2963,7 @@ html.flat-theme [data-ui~="monitor-v2"] > section:first-child > header.page-head
 html.flat-theme [data-ui~="monitor-v2"] > section:first-child > header.page-header .page-description {
   margin-top: 2px;
   gap: 8px;
-  font-family: var(--ui-font-mono);
-  font-size: 11px;
+  font-size: 12px;
   font-variant-numeric: tabular-nums;
   color: rgb(var(--ui-muted));
 }
@@ -3217,15 +2998,15 @@ html.flat-theme [data-ui~="monitor-v2"] > section:first-child > .monitor-toolbar
   padding: 10px 16px;
 }
 
-/* its three segmented controls (window, view, metric) take the recipe's segments (controls.css 7.1: 14 x 6, 12.5 /
-   600); upstream compacts them with !px-2 !py-1 text-xs, restated with !important (the only way past them). At that
-   size the controls no longer fit upstream's single scrolling row (1136px at 1440): from 1024 the row wraps like the
-   other toolbars (8px apart, no hidden overflow) and the decorative dividers go (the reference's toolbar separates its
-   controls by the gap alone); below 1024 upstream's scrolling strip stays. */
+/* its three segmented controls (window, view, metric) take the recipe's segment box (controls.css 7.1: 14 x 6) at
+   upstream's own text-xs (12/16); upstream compacts them with !px-2 !py-1, restated with !important (the only way past
+   them). At that size the controls no longer fit upstream's single scrolling row (1136px at 1440): from 1024 the row
+   wraps like the other toolbars (8px apart, no hidden overflow) and the decorative dividers go (the reference's
+   toolbar separates its controls by the gap alone); below 1024 upstream's scrolling strip stays. */
 html.flat-theme [data-ui~="monitor-v2"] > section:first-child > .monitor-toolbar .tabs > .tab {
   padding: var(--ctl-seg-pad-y) var(--ctl-seg-pad-x) !important;
-  font-size: 0.78125rem;
-  line-height: 1.171875rem;
+  font-size: 0.75rem;
+  line-height: 1rem;
 }
 
 @media (min-width: 1024px) {
@@ -3258,21 +3039,21 @@ html.flat-theme [data-ui~="monitor-v2"] > section[class~="grid"] > .stat-card > 
   margin-top: 5px;
 }
 
-/* the tile's label at the KPI tiles' weight (data.css §7, the ops tiles: 400; upstream font-bold) */
+/* the tile's label at the .stat-label recipe's own weight (upstream text-sm, 400; this template adds font-bold) */
 html.flat-theme [data-ui~="monitor-v2"] > section[class~="grid"] > .stat-card .stat-label {
   font-weight: 400;
 }
 
 html.flat-theme [data-ui~="monitor-v2"] > section[class~="grid"] > .stat-card > div > :is(small, div)[class~="text-[11px]"] {
   margin-top: 2px;
-  font-size: 11px;
   color: rgb(var(--ui-muted));
 }
 
-/* 6.4 the pulse matrix (RelayPulseMatrix): the card 14px in; the title 13/600 (glyph goes), the bucket chip and the
-   reset button 26px; the matrix sits on the card (no inner well), its header the mono label, rows divided by 1px lines,
-   summary figures Mono 12; each bucket a capsule like the reference's uptime bars, coloured by health in the reference's
-   uptime palette (good / warn / bad with the steps between; no traffic = the grouped fill) */
+/* 6.4 the pulse matrix (RelayPulseMatrix): the card 14px in; the title 14/600 (glyph goes), the bucket chip and the
+   reset button 26px; the matrix sits on the card (no inner well), its header the usage-table header (12px, 0.05em),
+   rows divided by 1px lines, summary figures 12px tabular; each bucket a capsule like the reference's uptime bars,
+   coloured by health in the reference's uptime palette (good / warn / bad with the steps between; no traffic = the
+   grouped fill) */
 html.flat-theme [data-ui~="monitor-v2"] section[class~="card"][data-ui~="monitor-matrix"] {
   padding: 14px !important;
   border-radius: var(--ui-radius-lg) !important;
@@ -3280,9 +3061,9 @@ html.flat-theme [data-ui~="monitor-v2"] section[class~="card"][data-ui~="monitor
 
 html.flat-theme [data-ui~="monitor-v2"] section[class~="card"][data-ui~="monitor-matrix"] h2 {
   gap: 0;
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 600;
-  line-height: 19.5px;
+  line-height: 20px;
   color: rgb(var(--ui-ink));
 }
 
@@ -3304,7 +3085,7 @@ html.flat-theme [data-ui~="monitor-v2"] section[class~="card"][data-ui~="monitor
   background-color: rgb(var(--ui-surface));
   color: rgb(var(--ui-ink-soft));
   font-size: 12px;
-  font-weight: 600;
+  font-weight: 500;
 }
 
 html.flat-theme [data-ui~="monitor-v2"] .matrix-scroll {
@@ -3317,10 +3098,9 @@ html.flat-theme [data-ui~="monitor-v2"] .matrix-header {
   border-bottom: 1px solid rgb(var(--ui-line));
   background-color: rgb(var(--ui-surface));
   color: rgb(var(--ui-table-head));
-  font-family: var(--ui-font-mono);
-  font-size: var(--ui-label-size);
+  font-size: 12px;
   font-weight: 500;
-  letter-spacing: var(--ui-label-tracking);
+  letter-spacing: 0.05em;
 }
 
 html.flat-theme [data-ui~="monitor-v2"] .matrix-row:not(.matrix-header) {
@@ -3333,13 +3113,12 @@ html.flat-theme [data-ui~="monitor-v2"] .matrix-row .summary-value {
 }
 
 html.flat-theme [data-ui~="monitor-v2"] .matrix-row .dimension-cell > strong {
-  font-size: 12.5px;
+  font-size: 12px;
   font-weight: 600;
   color: rgb(var(--ui-ink));
 }
 
 html.flat-theme [data-ui~="monitor-v2"] .matrix-row .summary-value {
-  font-family: var(--ui-font-mono);
   font-size: 12px;
   font-weight: 400;
   color: rgb(var(--ui-ink-soft));
@@ -3408,7 +3187,6 @@ html.flat-theme [data-ui~="monitor-v2"] section[class~="card"][data-ui~="monitor
 }
 
 html.flat-theme [data-ui~="monitor-v2"] section[class~="card"][data-ui~="monitor-matrix"] .card-body > div:last-child :is(div, span)[class~="text-[11px]"] {
-  font-size: 11px;
   color: rgb(var(--ui-muted));
 }
 
@@ -3432,8 +3210,8 @@ html.flat-theme .matrix-floating-tooltip .matrix-floating-tooltip-title.matrix-f
 }
 
 /* 6.5 the detail tabs card (models / error reasons / users): the ring line, the head 12 / 16 in; the tables the
-   reference's (mono header on the surface, 13px cells, 1px lines, Mono figures); error reasons as rows on the grouped
-   fill with a danger bar (no gradient) */
+   reference's (the usage-table header on the surface, the .table recipe's text-sm cells, 1px lines, tabular figures);
+   error reasons as rows on the grouped fill with a danger bar (no gradient) */
 html.flat-theme [data-ui~="monitor-v2"] > section[class~="card"]:last-child > div:first-child {
   padding: 12px 16px 0;
   border-color: rgb(var(--ui-line));
@@ -3456,11 +3234,10 @@ html.flat-theme [data-ui~="monitor-v2"] .monitor-table > thead > tr > th {
   background-color: rgb(var(--ui-surface));
   box-shadow: inset 0 -1px 0 rgb(var(--ui-line));
   color: rgb(var(--ui-table-head));
-  font-family: var(--ui-font-mono);
-  font-size: var(--ui-label-size);
+  font-size: 12px;
   font-weight: 500;
-  line-height: 19.5px;
-  letter-spacing: var(--ui-label-tracking);
+  line-height: 16px;
+  letter-spacing: 0.05em;
   text-transform: uppercase;
   white-space: nowrap;
 }
@@ -3468,19 +3245,11 @@ html.flat-theme [data-ui~="monitor-v2"] .monitor-table > thead > tr > th {
 html.flat-theme [data-ui~="monitor-v2"] .monitor-table > tbody > tr > td {
   padding: 8px 12px;
   border-color: rgb(var(--ui-line));
-  font-size: 13px;
-  line-height: 19.5px;
   font-variant-numeric: tabular-nums;
 }
 
 html.flat-theme [data-ui~="monitor-v2"] .monitor-table > :is(thead, tbody) > tr > :first-child {
   padding-left: 16px;
-}
-
-html.flat-theme [data-ui~="monitor-v2"] .monitor-table > tbody > tr > td > small,
-html.flat-theme [data-ui~="monitor-v2"] .monitor-table > tbody > tr > td span[class~="text-xs"][class~="block"] {
-  font-size: 11.5px;
-  color: rgb(var(--ui-muted));
 }
 
 html.flat-theme [data-ui~="monitor-v2"] .monitor-table > tbody > tr[class~="cursor-pointer"]:hover {
@@ -3500,8 +3269,7 @@ html.flat-theme [data-ui~="monitor-v2"] > section[class~="card"]:last-child div[
 }
 
 html.flat-theme [data-ui~="monitor-v2"] > section[class~="card"]:last-child div[class~="rounded-2xl"][class~="bg-gray-50"] small {
-  font-family: var(--ui-font-mono);
-  font-size: 11.5px;
+  font-size: 12px;
 }
 
 /* ================================================================== 7 · orders (payment dashboard, orders, plans) */
@@ -3519,8 +3287,9 @@ html.flat-theme [data-ui~="payment-dashboard"] div[class~="grid"][class~="gap-6"
   gap: var(--ui-shell-gap, 12px);
 }
 
-/* the 7 / 30 / 90-day choice: the reference's segmented control (controls.css 7.1's track and segment metrics; the
-   current segment the raised pill); the head row's only bordered box, its buttons a constant list */
+/* the 7 / 30 / 90-day choice: the reference's segmented control (controls.css 7.1's track and segment metrics at
+   upstream's text-xs, the segment grey; the current segment the raised pill); the head row's only bordered box, its
+   buttons a constant list */
 html.flat-theme [data-ui~="payment-dashboard"] > div:first-child div[class~="rounded-lg"][class~="border"]:not(uipad) {
   gap: 0;
   padding: var(--ctl-seg-inset);
@@ -3532,10 +3301,10 @@ html.flat-theme [data-ui~="payment-dashboard"] > div:first-child div[class~="rou
 html.flat-theme [data-ui~="payment-dashboard"] > div:first-child div[class~="rounded-lg"][class~="border"] > button {
   padding: var(--ctl-seg-pad-y) var(--ctl-seg-pad-x);
   border-radius: var(--ui-radius-md);
-  color: rgb(var(--ui-muted));
-  font-size: 0.78125rem;
+  color: rgb(var(--theme-text-gray-600));
+  font-size: 0.75rem;
   font-weight: 500;
-  line-height: 1.171875rem;
+  line-height: 1rem;
   transition: color var(--ui-duration-slide) var(--ui-ease-out), background-color var(--ui-duration-slide) var(--ui-ease-out);
 }
 
@@ -3547,7 +3316,7 @@ html.flat-theme [data-ui~="payment-dashboard"] > div:first-child div[class~="rou
 html.flat-theme [data-ui~="payment-dashboard"] > div:first-child div[class~="rounded-lg"][class~="border"] > button[class~="bg-primary-600"] {
   background-color: rgb(var(--ui-thumb));
   color: rgb(var(--ui-ink));
-  font-weight: 600;
+  font-weight: 500;
   box-shadow: var(--ui-thumb-shadow);
 }
 
@@ -3555,17 +3324,17 @@ html.flat-theme [data-ui~="payment-dashboard"] > div:first-child > div {
   gap: 8px;
 }
 
-/* the distribution and top-users cards: 14px in, the title 13/600; the ranks' medal tints are decoration: a neutral
-   Mono rank square (radius 4, the grouped fill) */
+/* the distribution and top-users cards: 14px in, the title 14/600; the ranks' medal tints are decoration: a neutral
+   rank square (radius 4, the grouped fill, upstream's text-xs) */
 html.flat-theme [data-ui~="payment-dashboard"] div[class~="grid"] > div.card[class~="p-4"] {
   padding: 14px;
 }
 
 html.flat-theme [data-ui~="payment-dashboard"] div[class~="grid"] > div.card[class~="p-4"] > h3 {
   margin-bottom: 12px;
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 600;
-  line-height: 19.5px;
+  line-height: 20px;
 }
 
 html.flat-theme [data-ui~="payment-dashboard"] div[class~="grid"] > .card[class~="p-4"] span[class~="rounded-full"][class~="h-6"][class~="w-6"] {
@@ -3575,8 +3344,7 @@ html.flat-theme [data-ui~="payment-dashboard"] div[class~="grid"] > .card[class~
   border-radius: var(--ui-radius-sm);
   background-color: rgb(var(--ui-subtle));
   color: rgb(var(--ui-ink-soft));
-  font-family: var(--ui-font-mono);
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 600;
 }
 
@@ -3586,7 +3354,6 @@ html.flat-theme [data-ui~="payment-dashboard"] div[class~="grid"] > .card[class~
 
 html.flat-theme [data-ui~="payment-dashboard"] div[class~="grid"] > .card[class~="p-4"] :is(div, span)[class~="text-right"] > span[class~="font-medium"],
 html.flat-theme [data-ui~="payment-dashboard"] div[class~="grid"] > .card[class~="p-4"] div[class~="justify-between"] > span[class~="font-medium"]:last-child {
-  font-family: var(--ui-font-mono);
   font-variant-numeric: tabular-nums;
 }
 
@@ -3627,14 +3394,12 @@ html.flat-theme [data-ui~="orders-page"] > .card[class~="p-4"]:first-child :is(.
   padding-bottom: 0.265625rem;
 }
 
-/* the order rows' actions: the reference's ghost text button (28px, 8px in, 12.5/600); each keeps its colour family
-   (view neutral, cancel warning, refund danger, retry info, approve purple: states of the order) */
+/* the order rows' actions: the reference's ghost text button (28px, 8px in, upstream's text-xs font-medium); each keeps
+   its colour family (view neutral, cancel warning, refund danger, retry info, approve purple: states of the order) */
 html.flat-theme [data-ui~="orders-page"] .table-wrapper td[data-column="actions"] button[class~="rounded-md"][class~="px-2"] {
   height: 28px;
   padding: 0 8px;
   border-radius: var(--ui-radius-md);
-  font-size: 12.5px;
-  font-weight: 600;
 }
 
 html.flat-theme [data-ui~="orders-page"] .table-wrapper td[data-column="actions"] button[class~="rounded-md"][class~="text-gray-600"] {
@@ -3646,7 +3411,8 @@ html.flat-theme [data-ui~="orders-page"] .table-wrapper td[data-column="actions"
   color: rgb(var(--ui-ink));
 }
 
-/* plans: the row actions as the other table pages (one line), the price Mono; the for-sale switch is controls.css' */
+/* plans: the row actions as the other table pages (one line, the caption upstream's text-xs), the price tabular; the
+   for-sale switch is controls.css' */
 html.flat-theme [data-ui~="plans-page"] .table-wrapper td[data-column="actions"] > div {
   gap: 2px;
 }
@@ -3661,8 +3427,6 @@ html.flat-theme [data-ui~="plans-page"] .table-wrapper td[data-column="actions"]
 }
 
 html.flat-theme [data-ui~="plans-page"] .table-wrapper td[data-column="actions"] button[class~="flex-col"] > span {
-  font-size: 12.5px;
-  font-weight: 600;
   white-space: nowrap;
 }
 
@@ -3682,7 +3446,6 @@ html.flat-theme [data-ui~="plans-page"] .table-wrapper td[data-column="actions"]
 }
 
 html.flat-theme [data-ui~="plans-page"] .table-wrapper td[data-column="price"] > div > span:first-child {
-  font-family: var(--ui-font-mono);
   font-variant-numeric: tabular-nums;
 }
 
@@ -3698,16 +3461,17 @@ html.flat-theme [data-ui~="risk-page"] div[class~="grid"]:is([class~="gap-6"], [
   gap: var(--ui-shell-gap, 12px);
 }
 
-/* the page head: the reference's page title block (20/600, the description 13px muted), actions 30px */
+/* the page head: the reference's page title block (18/600 as the header row's title, the description 14px muted),
+   actions 30px */
 html.flat-theme [data-ui~="risk-page"] > div:first-child > div:first-child h1 {
-  font-size: 20px;
+  font-size: 18px;
   font-weight: 600;
   line-height: 28px;
 }
 
 html.flat-theme [data-ui~="risk-page"] > div:first-child > div:first-child p {
   margin-top: 2px;
-  font-size: 13px;
+  font-size: 14px;
   color: rgb(var(--ui-muted));
 }
 
@@ -3725,13 +3489,12 @@ html.flat-theme [data-ui~="risk-page"] > div:first-child > div:first-child p {
 }
 
 html.flat-theme [data-ui~="risk-page"] > p[data-test="active-audit-engine"] {
-  font-family: var(--ui-font-mono);
-  font-size: 11.5px;
   color: rgb(var(--ui-muted));
 }
 
 /* the four overview tiles: the reference's StatTile (1px line, radius 6, 8 / 12 in; the coloured glyph tile goes (D4);
-   the label the mono label, the value 15/600, its note 11px muted, the state chip keeps its status tone) */
+   the label the label, the value upstream's text-xl font-semibold (20/28/600), its note 12px muted, the state chip
+   keeps its status tone) */
 html.flat-theme [data-ui~="risk-page"] > div[class~="grid"] > div[class~="rounded-lg"][class~="border"][class~="shadow-sm"] {
   min-height: 76px;
   padding: 8px 12px;
@@ -3745,27 +3508,26 @@ html.flat-theme [data-ui~="risk-page"] > div[class~="grid"] > div[class~="rounde
 }
 
 html.flat-theme [data-ui~="risk-page"] > div[class~="grid"] > div[class~="rounded-lg"][class~="border"][class~="shadow-sm"] p[class~="text-xs"][class~="font-medium"] {
-  font-family: var(--ui-font-mono);
   font-size: var(--ui-label-size);
-  font-weight: 400;
+  font-weight: var(--ui-label-weight);
   line-height: var(--ui-label-leading);
   letter-spacing: var(--ui-label-tracking);
-  text-transform: uppercase;
+  text-transform: none;
   color: rgb(var(--ui-label));
 }
 
 html.flat-theme [data-ui~="risk-page"] > div[class~="grid"] > div[class~="rounded-lg"][class~="border"][class~="shadow-sm"] p[class~="text-xl"] {
-  font-size: 15px;
+  font-size: 20px;
   font-weight: 600;
-  line-height: 22.5px;
+  line-height: 28px;
 }
 
 html.flat-theme [data-ui~="risk-page"] > div[class~="grid"] > div[class~="rounded-lg"][class~="border"][class~="shadow-sm"] p[class~="text-xl"] + p {
-  font-size: 11px;
+  font-size: 12px;
   color: rgb(var(--ui-muted));
 }
 
-/* the runtime cards: the reference's card (the head 12 / 16 in over a 1px line, the title 13/600 and its description
+/* the runtime cards: the reference's card (the head 12 / 16 in over a 1px line, the title 14/600 and its description
    12px muted, the body 14 / 16 in) */
 html.flat-theme [data-ui~="risk-page"] .card > div[class~="border-b"][class~="px-6"][class~="py-4"] {
   gap: 10px;
@@ -3774,9 +3536,9 @@ html.flat-theme [data-ui~="risk-page"] .card > div[class~="border-b"][class~="px
 }
 
 html.flat-theme [data-ui~="risk-page"] .card > div[class~="border-b"] h2 {
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 600;
-  line-height: 19.5px;
+  line-height: 20px;
 }
 
 html.flat-theme [data-ui~="risk-page"] .card > div[class~="border-b"] h2 + p {
@@ -3794,8 +3556,8 @@ html.flat-theme [data-ui~="risk-page"] .card > div[class~="grid"][class~="p-6"] 
   padding: 14px 16px 16px;
 }
 
-/* the metric tiles (pre-block sync, worker counts): neutral StatTiles (the tints per metric are decoration); values 15/600
-   tabular in ink, labels the mono label */
+/* the metric tiles (pre-block sync, worker counts): neutral StatTiles (the tints per metric are decoration); values in
+   upstream's text-2xl font-semibold (24/32/600) tabular in ink, labels the label */
 html.flat-theme [data-ui~="risk-page"] [data-test="pre-block-metric-grid"] {
   gap: 10px;
 }
@@ -3810,7 +3572,6 @@ html.flat-theme [data-ui~="risk-page"] .card div[class~="grid"][class~="grid-col
 
 html.flat-theme [data-ui~="risk-page"] [data-test="pre-block-metric-grid"] > div > p:first-child,
 html.flat-theme [data-ui~="risk-page"] .card div[class~="grid"][class~="grid-cols-2"][class~="gap-3"] > div[class~="rounded-lg"][class~="p-4"] > p:first-child {
-  font-family: var(--ui-font-mono);
   font-size: var(--ui-label-size);
   line-height: var(--ui-label-leading);
   letter-spacing: var(--ui-label-tracking);
@@ -3820,25 +3581,25 @@ html.flat-theme [data-ui~="risk-page"] .card div[class~="grid"][class~="grid-col
 html.flat-theme [data-ui~="risk-page"] [data-test="pre-block-metric-grid"] > div > p:nth-child(2),
 html.flat-theme [data-ui~="risk-page"] .card div[class~="grid"][class~="grid-cols-2"][class~="gap-3"] > div[class~="rounded-lg"][class~="p-4"] > p:nth-child(2) {
   margin-top: 2px;
-  font-size: 15px;
+  font-size: 24px;
   font-weight: 600;
-  line-height: 22.5px;
+  line-height: 32px;
   font-variant-numeric: tabular-nums;
   color: rgb(var(--ui-ink));
 }
 
 html.flat-theme [data-ui~="risk-page"] [data-test="pre-block-metric-grid"] > div > p:nth-child(3) {
-  font-size: 11px;
+  font-size: 12px;
   color: rgb(var(--ui-muted));
 }
 
-/* the API-key load list and its empty line: rows on the grouped fill (radius 6); key figures Mono; the load bar the
-   capsule on the grouped fill in ink */
+/* the API-key load list and its empty line: rows on the grouped fill (radius 6); key figures in their template
+   font-mono; the load bar the capsule on the grouped fill in ink */
 html.flat-theme [data-ui~="risk-page"] [data-test="pre-block-api-key-load-list"] > div {
   border: 1px solid rgb(var(--ui-line));
   border-radius: var(--ui-radius-md);
   background-color: color-mix(in srgb, rgb(var(--ui-subtle)) 60%, rgb(var(--ui-surface)));
-  font-size: 13px;
+  font-size: 14px;
 }
 
 /* no key load yet: the shared empty state (data.css §9) */
@@ -3868,7 +3629,8 @@ html.flat-theme [data-ui~="risk-page"] .card div[class~="rounded-lg"][class~="bo
   border-radius: var(--ui-radius-lg);
 }
 
-/* the records card: the model-filter line a grouped strip (radius 6), its models Mono chips; filters 30px */
+/* the records card: the model-filter line a grouped strip (radius 6), its models chips in their template font-mono;
+   filters 30px */
 html.flat-theme [data-ui~="risk-page"] .card div[class~="rounded-lg"][class~="border"][class~="bg-gray-50"][class~="px-3"] {
   border-color: rgb(var(--ui-line));
   border-radius: var(--ui-radius-md);
@@ -3879,7 +3641,7 @@ html.flat-theme [data-ui~="risk-page"] .card span[class~="rounded-md"][class~="b
   border: 1px solid rgb(var(--ui-line));
   border-radius: var(--ui-radius-sm);
   box-shadow: none;
-  font-size: 11px;
+  font-size: 12px;
 }
 
 html.flat-theme [data-ui~="risk-page"] .card > div[class~="border-b"] :is(.select-trigger.select-trigger, input.input) {
@@ -3887,15 +3649,11 @@ html.flat-theme [data-ui~="risk-page"] .card > div[class~="border-b"] :is(.selec
   padding-bottom: 0.265625rem;
 }
 
-/* the result chip (block / flag / pass …): the reference's status chip shape, its tone kept */
+/* the result chip (block / flag / pass …): the reference's status chip shape in upstream's text-xs font-medium, its
+   tone kept */
 html.flat-theme [data-ui~="risk-page"] table > tbody > tr > td > span[class~="rounded-md"][class~="px-2"][class~="py-1"] {
   padding: 1px 7px;
   border-radius: 9999px;
-  font-family: var(--ui-font-mono);
-  font-size: var(--ui-badge-size, 10px);
-  font-weight: 500;
-  line-height: 16px;
-  letter-spacing: 0.025em;
 }
 
 /* the settings dialog: its tab strip is the segmented control; panels the grouped panel */
@@ -3912,10 +3670,10 @@ html.flat-theme [data-ui~="risk-settings"] > div:first-child {
 html.flat-theme [data-ui~="risk-settings"] > div:first-child > button {
   padding: 6px 14px;
   border-radius: var(--ui-radius-md);
-  color: rgb(var(--ui-muted));
-  font-size: 12.5px;
+  color: rgb(var(--theme-text-gray-600));
+  font-size: 14px;
   font-weight: 500;
-  line-height: 18.75px;
+  line-height: 20px;
   transition: color var(--ui-duration-slide) var(--ui-ease-out), background-color var(--ui-duration-slide) var(--ui-ease-out);
 }
 
@@ -3927,7 +3685,7 @@ html.flat-theme [data-ui~="risk-settings"] > div:first-child > button:hover {
 html.flat-theme [data-ui~="risk-settings"] > div:first-child > button[class~="bg-primary-50"] {
   background-color: rgb(var(--ui-thumb));
   color: rgb(var(--ui-ink));
-  font-weight: 600;
+  font-weight: 500;
   box-shadow: var(--ui-thumb-shadow);
 }
 
@@ -3948,7 +3706,7 @@ html.flat-theme [data-ui~="risk-settings"] span[class~="h-10"][class~="w-10"][cl
 }
 
 /* no key health yet: the shared empty state (data.css §9: dashed control outline, radius 8, title 14/500 ink-soft,
-   hint 13px muted, the glyph muted) */
+   hint 14px muted, the glyph muted) */
 html.flat-theme [data-ui~="risk-settings"] div[class~="border-dashed"][class~="min-h-32"] {
   padding: 32px 16px;
   border-color: rgb(var(--ui-line-strong));
@@ -3969,13 +3727,14 @@ html.flat-theme [data-ui~="risk-settings"] div[class~="border-dashed"][class~="m
 
 html.flat-theme [data-ui~="risk-settings"] div[class~="border-dashed"][class~="min-h-32"] > p[class~="text-xs"] {
   margin-top: 4px;
-  font-size: 13px;
+  font-size: 14px;
   line-height: 1.625;
   color: rgb(var(--ui-muted));
 }
 
-/* 8.1 风控中心 settings: the API-key write mode is a segmented control (controls.css 7.1's track and segment metrics;
-   「增量添加」 the raised pill, 「覆盖保存」 keeps the warning fill: it replaces the saved keys) */
+/* 8.1 风控中心 settings: the API-key write mode is a segmented control (controls.css 7.1's track and segment metrics at
+   upstream's text-xs, the segment grey; 「增量添加」 the raised pill, 「覆盖保存」 keeps the warning fill: it replaces the
+   saved keys) */
 html.flat-theme [data-ui~="risk-settings"] div[class~="inline-flex"][class~="rounded-lg"][class~="bg-white"][class~="p-1"]:not(uipad) {
   padding: var(--ctl-seg-inset);
   border: 1px solid rgb(var(--ctl-seg-frame));
@@ -3988,20 +3747,20 @@ html.flat-theme [data-ui~="risk-settings"] div[class~="inline-flex"][class~="rou
   padding: var(--ctl-seg-pad-y) var(--ctl-seg-pad-x);
   border-radius: var(--ui-radius-md);
   box-shadow: none;
-  font-size: 0.78125rem;
+  font-size: 0.75rem;
   font-weight: 500;
-  line-height: 1.171875rem;
+  line-height: 1rem;
 }
 
 html.flat-theme [data-ui~="risk-settings"] div[class~="inline-flex"][class~="rounded-lg"][class~="bg-white"][class~="p-1"] > button[class~="bg-primary-500"] {
   background-color: rgb(var(--ui-thumb));
   color: rgb(var(--ui-ink));
-  font-weight: 600;
+  font-weight: 500;
   box-shadow: var(--ui-thumb-shadow);
 }
 
 html.flat-theme [data-ui~="risk-settings"] div[class~="inline-flex"][class~="rounded-lg"][class~="bg-white"][class~="p-1"] > button:not([class~="bg-primary-500"]):not([class~="bg-amber-500"]) {
-  color: rgb(var(--ui-muted));
+  color: rgb(var(--theme-text-gray-600));
 }
 
 html.flat-theme [data-ui~="risk-settings"] div[class~="inline-flex"][class~="rounded-lg"][class~="bg-white"][class~="p-1"] > button:not([class~="bg-primary-500"]):not([class~="bg-amber-500"]):hover {
@@ -4012,33 +3771,33 @@ html.flat-theme [data-ui~="risk-settings"] div[class~="inline-flex"][class~="rou
 /* ================================================================== 9 · 提示词审计 (prompt audit) */
 
 /* Root: data-ui="prompt-audit-page" features/prompt-audit/PromptAuditView.vue (risk control's feature flag, flipped in
-   the browser only). The page head: the eyebrow is the mono label (not the accent), the title 20/600, the description
-   13px muted; the workspace card 16px in; each section's title 13/600 with its description 13px muted; tiles and wells
-   the reference's (1px line, radius 6 / 8); the save bar a surface band on a 1px line, no shadow. */
+   the browser only). The page head: the eyebrow is the label (not the accent), the title 18/600 (its template
+   tracking-tight kept), the description 14px muted; the workspace card 16px in; each section's title 14/600 with its
+   description 14px muted; tiles and wells the reference's (1px line, radius 6 / 8); the save bar a surface band on a 1px
+   line, no shadow. */
 html.flat-theme [data-ui~="prompt-audit-page"] > header {
   margin-bottom: 12px;
 }
 
 html.flat-theme [data-ui~="prompt-audit-page"] > header p[class~="uppercase"] {
-  font-family: var(--ui-font-mono);
   font-size: var(--ui-label-size);
-  font-weight: 400;
+  font-weight: var(--ui-label-weight);
   line-height: var(--ui-label-leading);
   letter-spacing: var(--ui-label-tracking);
+  text-transform: none;
   color: rgb(var(--ui-label));
 }
 
 html.flat-theme [data-ui~="prompt-audit-page"] > header h1 {
   margin-top: 4px;
-  font-size: 20px;
+  font-size: 18px;
   font-weight: 600;
   line-height: 28px;
-  letter-spacing: 0;
 }
 
 html.flat-theme [data-ui~="prompt-audit-page"] > header h1 + p {
   margin-top: 2px;
-  font-size: 13px;
+  font-size: 14px;
 }
 
 /* from 1024px the header row prints the title and the whole description (it wraps there, shell.css): the eyebrow,
@@ -4056,8 +3815,7 @@ html.flat-theme [data-ui~="prompt-audit-page"] > header h1 + p {
 }
 
 html.flat-theme [data-ui~="prompt-audit-page"] > header > div:last-child {
-  font-family: var(--ui-font-mono);
-  font-size: 11px;
+  font-size: 12px;
   font-variant-numeric: tabular-nums;
 }
 
@@ -4073,9 +3831,9 @@ html.flat-theme [data-ui~="prompt-audit-page"] > main.card {
 
 html.flat-theme [data-ui~="prompt-audit-page"] section > div:first-child h2,
 html.flat-theme [data-ui~="prompt-audit-page"] section > div:first-child > div > h2 {
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 600;
-  line-height: 19.5px;
+  line-height: 20px;
 }
 
 html.flat-theme [data-ui~="prompt-audit-page"] section[class~="py-6"] {
@@ -4092,10 +3850,10 @@ html.flat-theme [data-ui~="prompt-audit-page"] dl > div[class~="rounded-xl"][cla
 }
 
 html.flat-theme [data-ui~="prompt-audit-page"] dl > div[class~="rounded-xl"][class~="border"] > dt {
-  font-family: var(--ui-font-mono);
   font-size: var(--ui-label-size);
   line-height: var(--ui-label-leading);
   letter-spacing: var(--ui-label-tracking);
+  text-transform: none;
   color: rgb(var(--ui-label));
 }
 
@@ -4112,25 +3870,21 @@ html.flat-theme [data-ui~="prompt-audit-page"] section div[class~="rounded-lg"][
   background-color: color-mix(in srgb, rgb(var(--ui-subtle)) 60%, rgb(var(--ui-surface)));
 }
 
-html.flat-theme [data-ui~="prompt-audit-page"] section div[class~="rounded-lg"][class~="bg-gray-50"] > p:nth-child(2) {
-  font-family: var(--ui-font-mono);
-}
-
 html.flat-theme [data-ui~="prompt-audit-page"] section div[class~="border-dashed"] {
   border-color: rgb(var(--ui-line-strong));
   border-radius: var(--ui-radius-lg);
   color: rgb(var(--ui-muted));
 }
 
-/* the endpoint list: the header row the mono label; rows hover the reference's fill (no accent edge); the limit chips Mono */
+/* the endpoint list: the header row the usage-table header (12px/500, uppercase, 0.05em); rows hover the reference's
+   fill (no accent edge); the limit chips 12px tabular */
 html.flat-theme [data-ui~="prompt-audit-page"] section div[class~="xl:grid"][class~="uppercase"] {
   border-left-width: 0;
   background-color: rgb(var(--ui-surface));
   color: rgb(var(--ui-table-head));
-  font-family: var(--ui-font-mono);
-  font-size: var(--ui-label-size);
+  font-size: 12px;
   font-weight: 500;
-  letter-spacing: var(--ui-label-tracking);
+  letter-spacing: 0.05em;
 }
 
 html.flat-theme [data-ui~="prompt-audit-page"] section article[class~="group"] {
@@ -4146,28 +3900,26 @@ html.flat-theme [data-ui~="prompt-audit-page"] section span[class~="rounded-md"]
   border-radius: var(--ui-radius-sm);
   background-color: rgb(var(--ui-subtle));
   color: rgb(var(--ui-ink-soft));
-  font-family: var(--ui-font-mono);
-  font-size: 11px;
+  font-size: 12px;
 }
 
-/* the events' filters: wrapping labels with the label text as the field label above the 34px control (.input-label: the
-   mono label at 600); search and reset in the same row are the form's 34px buttons (.btn-md metrics; upstream btn-sm
-   26px sat against 34px fields) */
+/* the events' filters: wrapping labels with the label text as the field label above the 34px control (upstream's
+   text-xs label: the label, 12/16/500, sentence case); search and reset in the same row are the form's 34px buttons
+   (.btn-md metrics; upstream btn-sm 26px sat against 34px fields) */
 html.flat-theme [data-ui~="prompt-audit-page"] form[class~="grid"] > label[class~="text-xs"] > span:first-child {
-  font-family: var(--ui-font-mono);
   font-size: var(--ui-label-size);
-  font-weight: 600;
+  font-weight: var(--ui-label-weight);
   line-height: var(--ui-label-leading);
   letter-spacing: var(--ui-label-tracking);
-  text-transform: uppercase;
+  text-transform: none;
   color: rgb(var(--ui-label));
 }
 
 html.flat-theme [data-ui~="prompt-audit-page"] form[class~="grid"] > div[class~="items-end"] > .btn {
   min-height: var(--ui-select-h);
   padding: 0.390625rem 0.875rem;
-  font-size: 0.8125rem;
-  line-height: 1.21875rem;
+  font-size: 0.875rem;
+  line-height: 1.25rem;
 }
 
 html.flat-theme [data-ui~="prompt-audit-page"] div[class~="overflow-x-auto"][class~="rounded-xl"][class~="border"] {

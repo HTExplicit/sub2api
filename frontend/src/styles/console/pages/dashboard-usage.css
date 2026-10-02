@@ -3,8 +3,10 @@
  * Pages: 管理控制台 (/admin/dashboard), 使用记录 (/admin/usage: 用量明细 / 错误请求 / 用户排行, the filters, the cleanup
  * dialog's filters), 仪表盘 (/dashboard) and 使用记录 (/usage). Reference counterpart: the Experiential Labs console's /logs
  * (REF-CONSOLE §7.1 vertical rhythm, §8.4-§8.7 toolbar controls and tables, §8.12-§8.14 KPI and chart cards; crops
- * logs-toolbar, kpi-row, chart-card, usage-card, history-card / -header / -head / -row). Colour follows the owner's
- * decision 2 (2026-09-29): status and semantic states and the accent (links) keep their colour; category chips and
+ * logs-toolbar, kpi-row, chart-card, usage-card, history-card / -header / -head / -row). Text follows official sub2api
+ * (the OS UI font, the templates' sizes and colours): in the record tables the figures and the category chips take
+ * their template colours (cost green, cache read sky, cache write amber, the group / type / billing tags); elsewhere
+ * the owner's decision 2 (2026-09-29) stands: status, semantic states and the accent (links) keep their colour,
  * decorative figures are neutral.
  *
  * Page roots (data-ui hooks, one attribute each, no other template change):
@@ -66,8 +68,9 @@ html.flat-theme :is([data-ui="admin-dashboard"], [data-ui="admin-usage"], [data-
 /* ================================================================== 3 · labelled field pills */
 
 /* Every filter keeps its label, inside its control: the reference's filter trigger ("Price 1 ⌄", REF §8.6: 30px, radius
-   6, the control outline on the surface) holding the field label as its mono label (REF §5 .mono-label, --ui-label)
-   and then the value, so a filter row is one line of 30px controls instead of labels stacked over 34px fields.
+   6, the control outline on the surface) holding the field label as the console's label (12 / 16 / 500, sentence
+   case, --ui-label) and then the value, so a filter row is one line of 30px controls instead of labels stacked over
+   34px fields.
    The pills: the time range and the granularity, the admin filter strip (UsageFilters), the user usage filters. */
 html.flat-theme :is([data-ui="admin-dashboard"], [data-ui="admin-usage"], [data-ui="user-dashboard"], [data-ui="user-usage"]) .card[class~="p-4"][data-ui~="time-bar"]:not(uipad[data-uipad]):not(uipad) > div > div[class~="items-center"][class~="gap-2"],
 html.flat-theme [data-ui="usage-filters"] > div > div[class~="flex-1"] > div,
@@ -85,18 +88,17 @@ html.flat-theme [data-ui="user-usage"] > .card[class~="p-6"] > div > div[class~=
   transition: border-color var(--ui-duration) var(--ui-ease), box-shadow var(--ui-duration) var(--ui-ease);
 }
 
-/* the label: the mono label at the KPI labels' weight, on one line */
+/* the label: the console's label (the KPI labels' 12 / 16 / 500), on one line */
 html.flat-theme :is([data-ui="admin-dashboard"], [data-ui="admin-usage"], [data-ui="user-dashboard"], [data-ui="user-usage"]) .card[class~="p-4"][data-ui~="time-bar"]:not(uipad[data-uipad]):not(uipad) > div > div[class~="items-center"][class~="gap-2"] > span:first-child,
 html.flat-theme [data-ui="usage-filters"] > div > div[class~="flex-1"] > div > label,
 html.flat-theme [data-ui="user-usage"] > .card[class~="p-6"] > div > div[class~="flex-1"] > div > label {
   flex: none;
   margin: 0;
-  font-family: var(--ui-font-mono);
   font-size: var(--ui-label-size);
   line-height: var(--ui-label-leading);
-  font-weight: 400;
+  font-weight: var(--ui-label-weight);
   letter-spacing: var(--ui-label-tracking);
-  text-transform: uppercase;
+  text-transform: none;
   white-space: nowrap;
   color: rgb(var(--ui-label));
 }
@@ -133,8 +135,8 @@ html.flat-theme [data-ui="usage-filters"] > div > div[class~="flex-1"] > div > i
   border-radius: 0 var(--ui-radius-md) var(--ui-radius-md) 0;
   background-color: transparent;
   box-shadow: none;
-  font-size: 13px;
-  line-height: 19.5px;
+  font-size: 14px;
+  line-height: 20px;
 }
 
 /* states: hover and an open menu take the focus line (the reference's house-select); keyboard focus on a trigger and any
@@ -178,7 +180,7 @@ html.flat-theme [data-ui="usage-filters"] > div > div[class~="flex-1"] > div > b
   width: 20px;
   height: 20px;
   border-radius: var(--ui-radius-sm);
-  font-size: 11px;
+  font-size: 12px;
   line-height: 1;
   color: rgb(var(--ui-muted));
   translate: 0 -50%;
@@ -266,16 +268,15 @@ html.flat-theme [data-ui="usage-filters"] > div > div[class~="flex-1"] > div > d
   margin-top: 0;
 }
 
-/* a result's id: Geist Mono in the faint text, after the name */
+/* a result's id: the template's 12px in the faint text, after the name */
 html.flat-theme [data-ui="usage-filters"] > div > div[class~="flex-1"] > div > div[class~="absolute"] > button > span:last-child:not(:first-child) {
-  font-family: var(--ui-font-mono);
-  font-size: 11px;
+  font-size: 12px;
   color: rgb(var(--ui-faint));
 }
 
 /* ================================================================== 6 · 管理控制台: quick actions */
 
-/* The quick-action card becomes one row (MAPPING §4.5: about 44px): its title as the mono label, then each action as
+/* The quick-action card becomes one row (MAPPING §4.5: about 44px): its title as the label, then each action as
    a one-line option card (the reference's dialog option card, REF §8.11: radius 8, 1px structural line, the subtle fill
    at 60 %, the control outline on hover; a 26px neutral icon square) with its title and description side by side and
    the chevron. Nothing is dropped; the description wraps under the title only where the row is too narrow. */
@@ -293,12 +294,11 @@ html.flat-theme [data-ui="admin-dashboard"] > .card[class~="p-4"]:not(uipad[data
 }
 
 html.flat-theme [data-ui="admin-dashboard"] > .card[class~="p-4"]:not(uipad[data-uipad][data-uipad]) > div:first-child > h2 {
-  font-family: var(--ui-font-mono);
   font-size: var(--ui-label-size);
   line-height: var(--ui-label-leading);
-  font-weight: 400;
+  font-weight: var(--ui-label-weight);
   letter-spacing: var(--ui-label-tracking);
-  text-transform: uppercase;
+  text-transform: none;
   white-space: nowrap;
   color: rgb(var(--ui-label));
 }
@@ -350,7 +350,7 @@ html.flat-theme [data-ui="admin-usage"] > .card[data-ui~="usage-records"]:not(ui
 }
 
 /* The IP-location bar above a table (UsageTable's own, IpGeoBatchToolbar in the error list): 6 / 16, the count 12px
-   muted, the batch action a link-weight accent text button (REF §8.12 tray links: 12.5 / 600, underline on hover). */
+   muted, the batch action an accent text button (the template's 12 / 500, underline on hover). */
 html.flat-theme :is([data-ui="admin-usage"], [data-ui="user-usage"]) div[class~="justify-end"][class~="border-b"]:not(uipad[data-uipad][data-uipad]) {
   gap: 12px;
   padding: 6px 16px;
@@ -367,9 +367,9 @@ html.flat-theme :is([data-ui="admin-usage"], [data-ui="user-usage"]) div[class~=
   padding: 2px 0;
   border-radius: var(--ui-radius-sm);
   background-color: transparent;
-  font-size: 12.5px;
-  line-height: 18.75px;
-  font-weight: 600;
+  font-size: 12px;
+  line-height: 16px;
+  font-weight: 500;
   color: var(--ui-link);
 }
 
@@ -381,80 +381,11 @@ html.flat-theme :is([data-ui="admin-usage"], [data-ui="user-usage"]) div[class~=
 
 /* ================================================================== 9 · the usage records table */
 
-/* Category chips (decision 2): the group, the request type, native compaction, the billing mode and the cache-TTL chips
-   (1h in the cell, 5m / 1h in the token card) carry data.css' data-ui~="category-chip" (the reference's neutral chip).
-   One request type is a state, not a category: a request stopped by the upstream's security policy (「安全策略」,
-   upstream's red chip) keeps the danger chip, on both records tables. The long-context x2, the overridden cache TTL (R),
-   the model audit line and a deleted user keep their status colours (no hook). */
-html.flat-theme :is(.table-wrapper[data-table="usage"], [data-ui="user-usage"] .table-wrapper) [data-ui~="category-chip"][class~="bg-red-100"] {
-  border-color: rgb(var(--ui-danger) / 0.3);
-  background-color: rgb(var(--ui-danger-soft));
-  color: rgb(var(--ui-danger));
-}
-
-html.flat-theme :is(.table-wrapper[data-table="usage"], [data-ui="user-usage"] .table-wrapper, div[class~="fixed"][class~="pointer-events-none"]) [data-ui~="category-chip"] {
-  box-shadow: none;
-}
-
-/* Texture of the cells (REF §8.7 /logs request table: the model 13/500 ink, ids and paths Geist Mono): the requested
-   model at the row's 13px (the mapping chain under it stays 12px muted), the user id after the e-mail and the endpoint
-   paths in Geist Mono; the 「入站 / 上游」 labels stay sans. Same on the error lists of both pages. */
-html.flat-theme .table-wrapper[data-table="usage"] td[data-column="model"] > :where(:not([data-ui="cell-lines"])) :is(span, div)[class~="font-medium"][class~="text-gray-900"] {
-  font-size: 13px;
-  line-height: 19.5px;
-}
-
-html.flat-theme :is(.table-wrapper[data-table="usage"], [data-ui="admin-usage"] .table-wrapper) td[data-column="user"] > div > span:last-child {
-  font-family: var(--ui-font-mono);
-  font-size: 12px;
-}
-
-html.flat-theme :is(.table-wrapper[data-table="usage"], [data-ui="admin-usage"] .table-wrapper, [data-ui="user-usage"] .table-wrapper) [data-ui="cell-line"][data-line="endpoint"] div > span[class~="ml-1"],
-html.flat-theme :is(.table-wrapper[data-table="usage"], [data-ui="admin-usage"] .table-wrapper, [data-ui="user-usage"] .table-wrapper) td[data-column="endpoint"] div > span[class~="ml-1"] {
-  font-family: var(--ui-font-mono);
-  font-size: 11.5px;
-  color: rgb(var(--ui-ink-soft));
-}
-
-/* Hierarchy by colour and weight instead of more black (palette C, then the text roles of data.css 12): the requested
-   model and the billed cost are the row's ink (500); every token figure (input, output, cache, image) the ink at 400;
-   the key and account names 400 (the primary role), the reasoning effort the secondary one; the endpoint's
-   「入站 / 上游」 labels 400; times and IPs tabular figures. The token glyphs get upstream's hues back as identity-safe
-   text colours (input emerald, output violet, cache read sky, cache write amber, image fuchsia / pink, indigo), so the
-   figures stay neutral and the colour says which figure is which; the account's billed cost is a reference value (the
-   grey). The key, account, reasoning and endpoint rules also name their lines of a stacked cell
-   ([data-ui="cell-line"][data-line], the table-width track's stacked layout), as that track does for the rules it
-   carries over. */
-html.flat-theme .table-wrapper[data-table="usage"] td:is([data-column="api_key"], [data-column="account"], [data-column="reasoning_effort"]) span[class~="text-gray-900"],
-html.flat-theme .table-wrapper[data-table="usage"] [data-ui="cell-line"]:is([data-line="api_key"], [data-line="account"], [data-line="reasoning_effort"]) > [data-ui="cell-line-value"] span[class~="text-gray-900"] {
-  color: rgb(var(--ui-ink-soft));
-  font-weight: 400;
-}
-
-/* (text roles, data.css 12: every token figure is a primary figure, in the ink like the billed cost, Geist Mono 13 / 400
-   tabular; the billed cost keeps 500, the one weighted figure of the row. They were ink-soft Mono 13 / 500.) */
-html.flat-theme .table-wrapper[data-table="usage"] td[data-column="tokens"] span[class~="font-medium"][class~="text-gray-900"],
-html.flat-theme .table-wrapper[data-table="usage"] td[data-column="tokens"] :is([class~="text-sky-600"], [class~="text-amber-600"], [class~="text-fuchsia-600"], [class~="text-pink-600"]) {
-  color: rgb(var(--ui-data-primary));
-  font-family: var(--ui-font-mono);
-  font-size: 13px;
-  font-weight: 400;
-  font-variant-numeric: tabular-nums;
-}
-
-html.flat-theme .table-wrapper[data-table="usage"] td[data-column="cost"] span[class~="text-green-600"] {
-  color: rgb(var(--ui-ink));
-}
-
-html.flat-theme :is(.table-wrapper[data-table="usage"], [data-ui="admin-usage"] .table-wrapper, [data-ui="user-usage"] .table-wrapper) td[data-column="endpoint"] div > span[class~="font-medium"],
-html.flat-theme :is(.table-wrapper[data-table="usage"], [data-ui="admin-usage"] .table-wrapper, [data-ui="user-usage"] .table-wrapper) [data-ui="cell-line"][data-line="endpoint"] div > span[class~="font-medium"] {
-  font-weight: 400;
-}
-
-html.flat-theme .table-wrapper[data-table="usage"] td:is([data-column="created_at"], [data-column="ip_address"]) span {
-  font-variant-numeric: tabular-nums;
-}
-
+/* The cells follow official sub2api's classes (data.css: the 14 / 20 cell text; the category chips are the templates'
+   own tags; the figures their template colours: tokens ink 500, cost green, cache write amber, the account's billed
+   cost orange, latency by severity). Here only the token glyphs, upstream's hues as identity-safe text colours (input
+   emerald, output violet, cache read sky, cache write amber, image fuchsia / pink, indigo), and the cache-read figure
+   in its glyph's sky (official's sky-600 / 400 at AA) instead of the hue fold's info blue. */
 html.flat-theme .table-wrapper[data-table="usage"] td[data-column="tokens"] svg[class~="text-emerald-500"] {
   color: rgb(var(--ui-id-emerald));
 }
@@ -464,6 +395,10 @@ html.flat-theme .table-wrapper[data-table="usage"] td[data-column="tokens"] svg[
 }
 
 html.flat-theme .table-wrapper[data-table="usage"] td[data-column="tokens"] svg[class~="text-sky-500"] {
+  color: rgb(var(--ui-id-sky));
+}
+
+html.flat-theme .table-wrapper[data-table="usage"] td[data-column="tokens"] [class~="text-sky-600"] {
   color: rgb(var(--ui-id-sky));
 }
 
@@ -483,117 +418,37 @@ html.flat-theme .table-wrapper[data-table="usage"] td[data-column="tokens"] svg[
   color: rgb(var(--ui-id-indigo));
 }
 
-/* the account's billed cost (A $) is a reference value next to the billed cost: the grey, a secondary figure one pixel
-   under the row's 13px figures (it was 11px) */
-html.flat-theme .table-wrapper[data-table="usage"] td[data-column="cost"] div[class~="text-orange-500"] {
-  color: rgb(var(--ui-data-reference));
-  font-size: 12px;
-  line-height: 18px;
-}
-
-/* Text roles (data.css 12) of the records and error lists whose class names another role:
-   - reasoning effort qualifies the model: secondary (its class says primary; dark: its dark:text-white reads
-     --theme-on-fill, the ink inside tables, so that is moved too, on these text leaves only);
-   - 入站 / 上游: the endpoint path is the labelled value, 「入站:」 / 「上游:」 its label (their classes say secondary);
-   - error lists: the message is the row's content (primary); platform and category are secondary.
-   The secondary figures (latency, IP) are Geist Mono 12, a pixel under the primary 13px figures (latency was Geist
-   sans 12 / 500, the IP Mono 13). */
-html.flat-theme .table-wrapper[data-table="usage"] :is(td[data-column="reasoning_effort"], [data-ui="cell-line"][data-line="reasoning_effort"]) :is(span, div)[class~="text-gray-900"] {
-  --theme-text-gray-100: var(--ui-data-secondary); --theme-text-gray-200: var(--ui-data-secondary); --theme-text-gray-300: var(--ui-data-secondary);
-  --theme-text-gray-400: var(--ui-data-secondary); --theme-text-gray-500: var(--ui-data-secondary); --theme-text-gray-600: var(--ui-data-secondary);
-  --theme-text-gray-700: var(--ui-data-secondary); --theme-text-gray-800: var(--ui-data-secondary); --theme-text-gray-900: var(--ui-data-secondary);
-  --theme-text-gray-950: var(--ui-data-secondary); --theme-text-dark-100: var(--ui-data-secondary); --theme-text-dark-200: var(--ui-data-secondary);
-  --theme-text-dark-300: var(--ui-data-secondary); --theme-text-dark-400: var(--ui-data-secondary); --theme-text-dark-500: var(--ui-data-secondary);
-  --theme-text-dark-600: var(--ui-data-secondary); --ui-ink-soft: var(--ui-data-secondary);
-}
-
-html.flat-theme.dark .table-wrapper[data-table="usage"] :is(td[data-column="reasoning_effort"], [data-ui="cell-line"][data-line="reasoning_effort"]) :is(span, div)[class~="text-gray-900"] {
-  --theme-on-fill: var(--ui-data-secondary);
-}
-
-html.flat-theme :is(.table-wrapper[data-table="usage"], :is([data-ui~="usage-records"], [data-ui~="ops-error-list"], [data-ui="user-usage"]) .table-wrapper:not([data-table="usage"])) :is(td[data-column="endpoint"], [data-ui="cell-line"][data-line="endpoint"]) div[class~="break-all"] {
-  --theme-text-gray-100: var(--ui-data-labelled); --theme-text-gray-200: var(--ui-data-labelled); --theme-text-gray-300: var(--ui-data-labelled);
-  --theme-text-gray-400: var(--ui-data-labelled); --theme-text-gray-500: var(--ui-data-labelled); --theme-text-gray-600: var(--ui-data-labelled);
-  --theme-text-gray-700: var(--ui-data-labelled); --theme-text-gray-800: var(--ui-data-labelled); --theme-text-gray-900: var(--ui-data-labelled);
-  --theme-text-gray-950: var(--ui-data-labelled); --theme-text-dark-100: var(--ui-data-labelled); --theme-text-dark-200: var(--ui-data-labelled);
-  --theme-text-dark-300: var(--ui-data-labelled); --theme-text-dark-400: var(--ui-data-labelled); --theme-text-dark-500: var(--ui-data-labelled);
-  --theme-text-dark-600: var(--ui-data-labelled); --ui-ink-soft: var(--ui-data-labelled);
-}
-
-html.flat-theme :is(.table-wrapper[data-table="usage"], :is([data-ui~="usage-records"], [data-ui~="ops-error-list"], [data-ui="user-usage"]) .table-wrapper:not([data-table="usage"])) :is(td[data-column="endpoint"], [data-ui="cell-line"][data-line="endpoint"]) div[class~="break-all"] > span[class~="font-medium"] {
-  --theme-text-gray-100: var(--ui-data-label); --theme-text-gray-200: var(--ui-data-label); --theme-text-gray-300: var(--ui-data-label);
-  --theme-text-gray-400: var(--ui-data-label); --theme-text-gray-500: var(--ui-data-label); --theme-text-gray-600: var(--ui-data-label);
-  --theme-text-gray-700: var(--ui-data-label); --theme-text-gray-800: var(--ui-data-label); --theme-text-gray-900: var(--ui-data-label);
-  --theme-text-gray-950: var(--ui-data-label); --theme-text-dark-100: var(--ui-data-label); --theme-text-dark-200: var(--ui-data-label);
-  --theme-text-dark-300: var(--ui-data-label); --theme-text-dark-400: var(--ui-data-label); --theme-text-dark-500: var(--ui-data-label);
-  --theme-text-dark-600: var(--ui-data-label); --ui-ink-soft: var(--ui-data-label);
-}
-
-html.flat-theme :is([data-ui~="usage-records"], [data-ui~="ops-error-list"], [data-ui="user-usage"]) .table-wrapper:not([data-table="usage"]) td[data-column="message"] > span[class~="text-gray-600"] {
-  --theme-text-gray-100: var(--ui-data-primary); --theme-text-gray-200: var(--ui-data-primary); --theme-text-gray-300: var(--ui-data-primary);
-  --theme-text-gray-400: var(--ui-data-primary); --theme-text-gray-500: var(--ui-data-primary); --theme-text-gray-600: var(--ui-data-primary);
-  --theme-text-gray-700: var(--ui-data-primary); --theme-text-gray-800: var(--ui-data-primary); --theme-text-gray-900: var(--ui-data-primary);
-  --theme-text-gray-950: var(--ui-data-primary); --theme-text-dark-100: var(--ui-data-primary); --theme-text-dark-200: var(--ui-data-primary);
-  --theme-text-dark-300: var(--ui-data-primary); --theme-text-dark-400: var(--ui-data-primary); --theme-text-dark-500: var(--ui-data-primary);
-  --theme-text-dark-600: var(--ui-data-primary); --ui-ink-soft: var(--ui-data-primary);
-}
-
-html.flat-theme :is([data-ui~="usage-records"], [data-ui~="ops-error-list"], [data-ui="user-usage"]) .table-wrapper:not([data-table="usage"]) :is(td[data-column="platform"], td[data-column="category"]) > span[class~="text-gray-900"],
-html.flat-theme :is([data-ui~="usage-records"], [data-ui~="ops-error-list"], [data-ui="user-usage"]) .table-wrapper:not([data-table="usage"]) [data-ui="cell-line"]:is([data-line="platform"], [data-line="category"]) > [data-ui="cell-line-value"] > span[class~="text-gray-900"] {
-  --theme-text-gray-100: var(--ui-data-secondary); --theme-text-gray-200: var(--ui-data-secondary); --theme-text-gray-300: var(--ui-data-secondary);
-  --theme-text-gray-400: var(--ui-data-secondary); --theme-text-gray-500: var(--ui-data-secondary); --theme-text-gray-600: var(--ui-data-secondary);
-  --theme-text-gray-700: var(--ui-data-secondary); --theme-text-gray-800: var(--ui-data-secondary); --theme-text-gray-900: var(--ui-data-secondary);
-  --theme-text-gray-950: var(--ui-data-secondary); --theme-text-dark-100: var(--ui-data-secondary); --theme-text-dark-200: var(--ui-data-secondary);
-  --theme-text-dark-300: var(--ui-data-secondary); --theme-text-dark-400: var(--ui-data-secondary); --theme-text-dark-500: var(--ui-data-secondary);
-  --theme-text-dark-600: var(--ui-data-secondary); --ui-ink-soft: var(--ui-data-secondary);
-}
-
-html.flat-theme.dark :is([data-ui~="usage-records"], [data-ui~="ops-error-list"], [data-ui="user-usage"]) .table-wrapper:not([data-table="usage"]) :is(td[data-column="platform"], td[data-column="category"]) > span[class~="text-gray-900"],
-html.flat-theme.dark :is([data-ui~="usage-records"], [data-ui~="ops-error-list"], [data-ui="user-usage"]) .table-wrapper:not([data-table="usage"]) [data-ui="cell-line"]:is([data-line="platform"], [data-line="category"]) > [data-ui="cell-line-value"] > span[class~="text-gray-900"] {
-  --theme-on-fill: var(--ui-data-secondary);
-}
-
-html.flat-theme .table-wrapper[data-table="usage"] td[data-column="latency"] span[class~="tabular-nums"] {
-  font-family: var(--ui-font-mono);
-  font-size: 12px;
-}
-
-html.flat-theme :is(.table-wrapper[data-table="usage"], :is([data-ui~="usage-records"], [data-ui~="ops-error-list"], [data-ui="user-usage"]) .table-wrapper:not([data-table="usage"])) td:is([data-column="ip_address"], [data-column="client_ip"]) span[class~="font-mono"] {
-  font-size: 12px;
-}
-
 /* The token and cost breakdown cards (UsageTable's two portals; the frame is overlays.css 2.3): the billed amounts and
-   the total are figures, so ink at 600 instead of green / blue (decision 2), like the billed cost in the row; the
-   overridden-TTL line keeps its status colour. */
+   the total are figures, so ink at 600 instead of green / blue (decision 2); the overridden-TTL line keeps its status
+   colour. */
 html.flat-theme div[class~="fixed"][class~="pointer-events-none"] > .theme-dark-surface [class~="justify-between"] > span:last-child:is([class~="text-green-400"], [class~="text-blue-400"]) {
   color: rgb(var(--ui-ink));
   font-weight: 600;
 }
 
-/* the detail triggers (token and cost breakdowns): the reference's cursor-help info glyph, faint -> ink, no tinted disc */
+/* the detail triggers (token and cost breakdowns): the reference's cursor-help info glyph without the tinted disc; the
+   glyph keeps its template colours (official: grey, the info hue on hover) */
 html.flat-theme .table-wrapper[data-table="usage"] td:is([data-column="tokens"], [data-column="cost"]) div[class~="group"][class~="relative"] > div[class~="rounded-full"] {
   background-color: transparent;
-  color: rgb(var(--ui-faint));
-  transition: color var(--ui-duration) var(--ui-ease);
 }
 
 html.flat-theme .table-wrapper[data-table="usage"] td:is([data-column="tokens"], [data-column="cost"]) div[class~="group"][class~="relative"] > div[class~="rounded-full"] > svg {
   width: 14px;
   height: 14px;
-  color: inherit;
 }
 
 html.flat-theme .table-wrapper[data-table="usage"] td:is([data-column="tokens"], [data-column="cost"]) div[class~="group"][class~="relative"]:hover > div[class~="rounded-full"] {
   background-color: transparent;
-  color: rgb(var(--ui-ink));
 }
 
 /* ================================================================== 10 · 使用记录 (管理): 用户排行 */
 
 /* UserTokenRanking: its bar (6 / 16, the explanation and the count 12px muted, the Top-N select at the toolbar's 30px)
-   and its table in the reference's table language (data.css section 3 gives the mono header): cells 10 / 12 (16 at the
-   edges), 42px rows, hover fill; figures Geist Mono ink-soft, the total and the cost ink (decision 2: the cost is not
-   green); the top three ranks a neutral disc, the sorted column's label a step darker with its arrow (not the accent). */
+   and its table in the reference's table language (data.css section 3 gives the header): cells 10 / 12 (16 at the
+   edges), 42px rows, hover fill; the cells' text is official's (the template's classes: figures 14px tabular grey, the
+   total ink 500, the cost green); the top three ranks a 22px neutral disc (subtle fill, ink; upstream's gold and bronze
+   would fold into one warning colour), its number the template's text-xs font-semibold; the sorted column's label a
+   step darker with its arrow (not the accent). */
 html.flat-theme [data-ui="admin-usage"] div[data-ui~="token-ranking"]:not(uipad[data-uipad]):not(uipad):not(uipad) > div[class~="border-b"] {
   padding: 6px 16px;
   border-bottom-color: rgb(var(--ui-line));
@@ -650,83 +505,44 @@ html.flat-theme [data-ui="admin-usage"] div[data-ui~="token-ranking"] > div[clas
   padding-right: 16px;
 }
 
-html.flat-theme [data-ui="admin-usage"] div[data-ui~="token-ranking"] > div[class~="overflow-x-auto"] > table > tbody > tr > td[class~="text-right"] {
-  font-family: var(--ui-font-mono);
-  font-size: 12.5px;
-  font-variant-numeric: tabular-nums;
-  color: rgb(var(--ui-ink-soft));
-}
-
-html.flat-theme [data-ui="admin-usage"] div[data-ui~="token-ranking"] > div[class~="overflow-x-auto"] > table > tbody > tr > td[class~="text-right"]:is([class~="font-medium"], [class~="text-green-600"]) {
-  font-weight: 500;
-  color: rgb(var(--ui-ink));
-}
-
-html.flat-theme [data-ui="admin-usage"] div[data-ui~="token-ranking"] > div[class~="overflow-x-auto"] > table > tbody > tr > td[class~="font-medium"]:not([class~="text-right"]) {
-  font-size: 13px;
-  color: rgb(var(--ui-ink));
-}
-
-html.flat-theme [data-ui="admin-usage"] div[data-ui~="token-ranking"] > div[class~="overflow-x-auto"] > table > tbody > tr > td[class~="font-medium"]:not([class~="text-right"]) > span {
-  font-family: var(--ui-font-mono);
-  font-size: 12px;
-  color: rgb(var(--ui-muted));
-}
-
-html.flat-theme [data-ui="admin-usage"] div[data-ui~="token-ranking"] > div[class~="overflow-x-auto"] > table > tbody > tr > td:first-child > span {
-  font-family: var(--ui-font-mono);
-  font-size: 12px;
-  font-variant-numeric: tabular-nums;
-  color: rgb(var(--ui-muted));
-}
-
 html.flat-theme [data-ui="admin-usage"] div[data-ui~="token-ranking"] > div[class~="overflow-x-auto"] > table > tbody > tr > td:first-child > span[class~="rounded-full"] {
   width: 22px;
   height: 22px;
   background-color: rgb(var(--ui-subtle));
-  font-size: 11px;
-  font-weight: 600;
   color: rgb(var(--ui-ink));
 }
 
 /* ================================================================== 11 · 使用记录 (管理): 错误请求 */
 
 /* OpsErrorLogTable in the records card: its error type and group chips carry data.css' category chip (hooks added by the
-   ops page group); the status code and the severity keep their status colours. The detail button is an icon button,
-   muted -> ink (not the accent). */
-html.flat-theme [data-ui="admin-usage"] .table-wrapper:not([data-table]) td[data-column="actions"] > button {
-  color: rgb(var(--ui-muted));
-}
-
+   ops page group); the status code and the severity keep their status colours. The detail button is an icon button
+   in its template colours (official: the grey glyph, the accent on hover) over the subtle hover fill. */
 html.flat-theme [data-ui="admin-usage"] .table-wrapper:not([data-table]) td[data-column="actions"] > button:hover {
   background-color: rgb(var(--ui-subtle));
-  color: rgb(var(--ui-ink));
 }
 
 /* ================================================================== 12 · 仪表盘 (用户) */
 
 /* 按平台拆分: the reference's detail stat blocks (REF §8.13: radius 8, 1px structural line, surface, 12 / 14 inset); the
-   section title the mono label with its count in Geist Mono at the right (REF §10.19); a platform's name 13/600, its
-   total spend ink 600 (a value, not a state: decision 2); the rows' figures Geist Mono; the quota title the mono label;
-   the bars keep their status colours (data.css section 8). */
+   section title the label with its count (12px) at the right (REF §10.19); a platform's name 14/600, its total spend
+   ink 600 (a value, not a state: decision 2); the rows' figures the template's mono; the quota title the label; the
+   bars keep their status colours (data.css section 8). */
 html.flat-theme [data-ui="user-dashboard"] .card[class~="p-4"][data-ui~="platform-breakdown"] {
   padding: 14px;
 }
 
 html.flat-theme [data-ui="user-dashboard"] .card[class~="p-4"][data-ui~="platform-breakdown"] > div:first-child > h3 {
-  font-family: var(--ui-font-mono);
   font-size: var(--ui-label-size);
   line-height: var(--ui-label-leading);
-  font-weight: 400;
+  font-weight: var(--ui-label-weight);
   letter-spacing: var(--ui-label-tracking);
-  text-transform: uppercase;
+  text-transform: none;
   color: rgb(var(--ui-label));
 }
 
 html.flat-theme [data-ui="user-dashboard"] .card[class~="p-4"][data-ui~="platform-breakdown"] > div:first-child > span {
-  font-family: var(--ui-font-mono);
-  font-size: 11px;
-  line-height: 16.5px;
+  font-size: 12px;
+  line-height: 16px;
   color: rgb(var(--ui-muted));
 }
 
@@ -747,13 +563,14 @@ html.flat-theme [data-ui="user-dashboard"] [data-testid="platform-card"][class~=
 }
 
 html.flat-theme [data-ui="user-dashboard"] [data-testid="platform-card"] > div:first-child > span:first-child {
-  font-size: 13px;
-  line-height: 19.5px;
+  font-size: 14px;
+  line-height: 20px;
 }
 
-/* the total spend: ink at 600 (the reference's spend figures) instead of upstream's purple; the mono figure stays */
+/* the total spend: ink at 600 (the reference's spend figures) instead of upstream's purple; the template's mono figure
+   stays */
 html.flat-theme [data-ui="user-dashboard"] [data-testid="platform-card"] span[class~="text-purple-600"] {
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 600;
   font-variant-numeric: tabular-nums;
   color: rgb(var(--ui-ink));
@@ -765,10 +582,11 @@ html.flat-theme [data-ui="user-dashboard"] [data-testid="platform-card"] > div:n
 }
 
 html.flat-theme [data-ui="user-dashboard"] [data-testid="platform-card"] p[class~="uppercase"][class~="text-[10px]"] {
-  font-family: var(--ui-font-mono);
   font-size: var(--ui-label-size);
   line-height: var(--ui-label-leading);
+  font-weight: var(--ui-label-weight);
   letter-spacing: var(--ui-label-tracking);
+  text-transform: none;
   color: rgb(var(--ui-label));
 }
 
@@ -776,10 +594,10 @@ html.flat-theme [data-ui="user-dashboard"] [data-testid="platform-card"] > div[c
   border-color: rgb(var(--ui-line));
 }
 
-/* 最近使用 and 快捷操作 (the bottom row): card heads as the reference's card head (REF §5: 13/600 ink, 12 / 16, a 1px line
+/* 最近使用 and 快捷操作 (the bottom row): card heads as the reference's card head (REF §5: 14/600 ink, 12 / 16, a 1px line
    under it). The recent requests are the reference's request rows (REF §8.7 /logs request table: rows divided by 1px
-   lines, hover fill, the model 13/500 ink, the time 12px muted, figures Geist Mono): no grey tiles; the model glyph sits
-   in a 28px neutral square instead of the accent tint; the billed cost ink (decision 2), the standard price muted; the
+   lines, hover fill, the model 14/500 ink, the time 12px muted, figures tabular): no grey tiles; the model glyph sits in
+   a 28px neutral square instead of the accent tint; the billed cost ink (decision 2), the standard price muted; the
    「查看全部」 link keeps the accent (a link). */
 html.flat-theme [data-ui="user-dashboard"] [class~="lg:grid-cols-3"] .card > div[class~="border-b"]:first-child {
   padding: 12px 16px;
@@ -787,8 +605,8 @@ html.flat-theme [data-ui="user-dashboard"] [class~="lg:grid-cols-3"] .card > div
 }
 
 html.flat-theme [data-ui="user-dashboard"] [class~="lg:grid-cols-3"] .card > div[class~="border-b"]:first-child > h2 {
-  font-size: 13px;
-  line-height: 19.5px;
+  font-size: 14px;
+  line-height: 20px;
   font-weight: 600;
 }
 
@@ -838,8 +656,8 @@ html.flat-theme [data-ui="user-dashboard"] [class~="lg:col-span-2"] .card > div[
 }
 
 html.flat-theme [data-ui="user-dashboard"] [class~="lg:col-span-2"] .card > div[class~="p-6"] > div[class~="space-y-3"] > div[class~="rounded-xl"] > div:first-child p:first-child {
-  font-size: 13px;
-  line-height: 19.5px;
+  font-size: 14px;
+  line-height: 20px;
   font-weight: 500;
   color: rgb(var(--ui-ink));
 }
@@ -851,13 +669,12 @@ html.flat-theme [data-ui="user-dashboard"] [class~="lg:col-span-2"] .card > div[
 }
 
 html.flat-theme [data-ui="user-dashboard"] [class~="lg:col-span-2"] .card > div[class~="p-6"] > div[class~="space-y-3"] > div[class~="rounded-xl"] > div:last-child > p {
-  font-family: var(--ui-font-mono);
   font-variant-numeric: tabular-nums;
 }
 
 html.flat-theme [data-ui="user-dashboard"] [class~="lg:col-span-2"] .card > div[class~="p-6"] > div[class~="space-y-3"] > div[class~="rounded-xl"] > div:last-child > p:first-child {
-  font-size: 12.5px;
-  line-height: 18.75px;
+  font-size: 14px;
+  line-height: 20px;
   font-weight: 500;
 }
 
@@ -870,16 +687,16 @@ html.flat-theme [data-ui="user-dashboard"] [class~="lg:col-span-2"] .card > div[
 }
 
 html.flat-theme [data-ui="user-dashboard"] [class~="lg:col-span-2"] .card > div[class~="p-6"] > div[class~="space-y-3"] > div[class~="rounded-xl"] > div:last-child > p:last-child {
-  font-size: 11.5px;
-  line-height: 17px;
+  font-size: 12px;
+  line-height: 16px;
   color: rgb(var(--ui-muted));
 }
 
 html.flat-theme [data-ui="user-dashboard"] [class~="lg:col-span-2"] .card > div[class~="p-6"] > div[class~="space-y-3"] > a {
   padding: 10px 16px;
-  font-size: 12.5px;
-  line-height: 18.75px;
-  font-weight: 600;
+  font-size: 14px;
+  line-height: 20px;
+  font-weight: 500;
   color: var(--ui-link);
 }
 
@@ -900,7 +717,8 @@ html.flat-theme [data-ui="user-dashboard"] [class~="lg:col-span-1"] .card > div[
 /* ================================================================== 13 · 使用记录 (用户): tabs, table card, pagination */
 
 /* 用量明细 / 错误请求: upstream's .tab buttons over a 1px line read as the reference's underline tabs (CodeTabs, REF §8.15:
-   the current tab ink with a 2px accent rule; the others muted, ink on hover), as on the admin records card. */
+   the current tab ink with a 2px accent rule; the others in the .tab grey, upstream's text-gray-600 (#4b5563 /
+   #a4abb6), ink on hover), as on the admin records card (controls.css 7.3). */
 html.flat-theme [data-ui="user-usage"] > div[class~="border-b"]:not(uipad[data-uipad]) {
   gap: 0;
   border-color: rgb(var(--ui-line));
@@ -912,7 +730,7 @@ html.flat-theme [data-ui="user-usage"] > div[class~="border-b"]:not(uipad[data-u
   border-bottom: 2px solid transparent;
   border-radius: 0;
   background-color: transparent;
-  color: rgb(var(--ui-muted));
+  color: rgb(var(--theme-text-gray-600));
 }
 
 html.flat-theme [data-ui="user-usage"] > div[class~="border-b"]:not(uipad[data-uipad]) > button.tab:hover {
