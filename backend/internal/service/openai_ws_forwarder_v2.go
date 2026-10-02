@@ -63,8 +63,8 @@ func (s *OpenAIGatewayService) forwardOpenAIWSV2WithScope(
 		return nil, wrapOpenAIWSFallback("invalid_state", errors.New("service or account is nil"))
 	}
 	if c != nil {
-		if _, staged := c.Get(codexRoutingTurnContextKey); !staged {
-			stageCodexRoutingWSTurn(c, codexWSMetadataBody(reqBody))
+		if _, staged := c.Get(codexLogicalTurnContextKey); !staged {
+			stageCodexLogicalWSTurn(c, codexWSMetadataBody(reqBody))
 		}
 	}
 	refusalRuntime := s.openAIRefusalRecoveryRuntime(ctx)
@@ -399,12 +399,7 @@ func (s *OpenAIGatewayService) forwardOpenAIWSV2WithScope(
 		s.commitOpenAIWSSessionTurnState(c, account, stateStore, groupID, sessionHash, handshakeTurnState)
 	}
 
-	if model, _ := payload["model"].(string); model != "" {
-		if routingErr := s.guardCodexRoutingNativeModel(account, model); routingErr != nil {
-			return nil, routingErr
-		}
-	}
-	s.observeNativeCodexWS(ctx, account, wsHeaders, lease.HandshakeHeaders(), nil, lease.ConnID())
+	s.observeNativeCodexWS(ctx, account, wsHeaders, lease.HandshakeHeaders(), nil)
 	if err := s.performOpenAIWSGeneratePrewarm(
 		ctx,
 		lease,
@@ -430,7 +425,7 @@ func (s *OpenAIGatewayService) forwardOpenAIWSV2WithScope(
 		)
 		return nil, wrapOpenAIWSFallback("write_request", err)
 	}
-	s.observeNativeCodexWS(ctx, account, wsHeaders, lease.HandshakeHeaders(), codexWSMetadataBody(payload), lease.ConnID())
+	s.observeNativeCodexWS(ctx, account, wsHeaders, lease.HandshakeHeaders(), codexWSMetadataBody(payload))
 	if debugEnabled {
 		logOpenAIWSModeDebug(
 			"write_request_sent account_id=%d conn_id=%s stream=%v payload_bytes=%d previous_response_id_present=%v",

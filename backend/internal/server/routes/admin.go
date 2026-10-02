@@ -433,19 +433,11 @@ func registerAccountRoutes(admin *gin.RouterGroup, h *handler.Handlers, stepUpAu
 		accounts.DELETE("/:id", h.Admin.Account.Delete)
 		accounts.POST("/:id/test", h.Admin.Account.Test)
 		accounts.POST("/batch-test", h.Admin.Account.BatchTest)
-		accounts.GET("/codex-tickets/policy", h.Admin.Account.CodexTicketPolicy)
-		accounts.POST("/:id/codex-tickets/harvest", h.Admin.Account.HarvestCodexTicket)
-		accounts.POST("/codex-tickets/batch-harvest", h.Admin.Account.BatchHarvestCodexTickets)
-		accounts.POST("/:id/codex-tickets/stop", h.Admin.Account.StopCodexTicketRenewal)
-		accounts.POST("/:id/codex-tickets/stop-job", h.Admin.Account.StopCodexTicketRenewalJob)
-		accounts.POST("/codex-tickets/batch-stop", h.Admin.Account.BatchStopCodexTicketRenewal)
 		accounts.GET("/:id/codex-fingerprint", h.Admin.Account.CodexFingerprint)
-		accounts.POST("/:id/codex-routing/validate", h.Admin.Account.ValidateCodexRouting)
-		// Host-private, administrator-owned diagnostics. Each operation rechecks
-		// the existing credentials binding through the named routing host broker.
+		// Administrator-owned, account-pinned quality diagnostics. Each operation
+		// rechecks the run binding against the authoritative account row.
 		accounts.POST("/:id/codex-quality-runs", h.Admin.Account.CreateCodexQualityRun)
 		accounts.GET("/:id/codex-quality-runs/:run_id", h.Admin.Account.ReadCodexQualityRun)
-		accounts.POST("/:id/codex-quality-runs/:run_id/renew-route", h.Admin.Account.RenewCodexQualityRoute)
 		accounts.POST("/:id/codex-quality-runs/:run_id/close", h.Admin.Account.CloseCodexQualityRun)
 		accounts.PUT("/:id/codex-fingerprint/profile", h.Admin.Account.SelectCodexProfile)
 		accounts.POST("/:id/recover-state", h.Admin.Account.RecoverState)
@@ -637,8 +629,6 @@ func registerSettingsRoutes(admin *gin.RouterGroup, h *handler.Handlers, stepUpA
 		adminSettings.PUT("/observability", gin.HandlerFunc(stepUpAuth), h.Admin.Setting.UpdateObservabilitySettings)
 		adminSettings.GET("/codex-runtime", h.Admin.Setting.GetNativeCodexConfiguration)
 		adminSettings.PUT("/codex-runtime", gin.HandlerFunc(stepUpAuth), h.Admin.Setting.UpdateNativeCodexConfiguration)
-		adminSettings.POST("/openai-codex-ticket/proxy-parse", h.Admin.Setting.ParseCodexTicketProxy)
-		adminSettings.POST("/openai-codex-ticket/proxy-test", h.Admin.Setting.TestCodexTicketProxy)
 		adminSettings.POST("/test-smtp", h.Admin.Setting.TestSMTPConnection)
 		adminSettings.POST("/send-test-email", h.Admin.Setting.SendTestEmail)
 		adminSettings.GET("/email-templates", h.Admin.Setting.ListEmailTemplates)

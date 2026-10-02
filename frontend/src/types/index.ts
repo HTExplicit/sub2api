@@ -1246,18 +1246,6 @@ export interface Account {
   credentials?: Record<string, unknown>
   credentials_status?: Record<string, boolean>
   ollama_cloud_usage?: OllamaCloudUsageState
-  codex_turn_tickets?: Array<{
-    renewal_state?: string
-    next_attempt_at?: string
-    last_attempt_at?: string
-    last_result?: import('@/api/admin/codexTickets').TicketResult
-    model: string
-    length?: number
-    ready: boolean
-    remaining_seconds: number
-    blocked: boolean
-    expires_at?: string
-  }>
   opencode_go_usage?: OpenCodeGoUsageState
   // Extra fields including Codex usage, OpenAI compact capability, and model-level rate limits.
   extra?: (CodexUsageSnapshot & OpenAICompactState & {
@@ -1479,6 +1467,9 @@ export interface AccountConsoleFilterState {
 // The admin account list may return this compact shape when lite=1. Detail
 // operations still use Account from /admin/accounts/:id.
 export type AccountListItem = Omit<Account, 'groups'>
+
+// The non-secret identity fields an account-scoped control needs (e.g. the account test prompt and reasoning pickers).
+export type AccountSelectionIdentity = Pick<Account, 'id' | 'platform' | 'type' | 'parent_account_id'> & Partial<Pick<Account, 'status'>>
 
 export interface AccountSchedulerGroupScore {
   group_id?: number | null

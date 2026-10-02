@@ -20,10 +20,21 @@ import (
 const (
 	CodexQualityGrantHeader = "X-Sub2API-Quality-Grant"
 	CodexQualityTrialHeader = "X-Sub2API-Quality-Trial"
-	codexQualityModel       = "gpt-6-astra"
-	codexQualityEffort      = "high"
 	codexQualityMaxSends    = 60
+	codexQualityMaxTTL      = 7200
+	// Every attempt is an ordinary business send. Records written by the
+	// retired route-qualified diagnostics also hold "acquire" and "verify".
+	codexQualityStage = "business"
+	// A record written before runs carried their own model and reasoning
+	// effort was always bound to these.
+	codexQualityLegacyModel  = "gpt-6-astra"
+	codexQualityLegacyEffort = "high"
 )
+
+// codexPrivateStateNamespace is the host-private namespace of the native Codex
+// runtime state (plugin key NativeCodexPluginKey). Quality-run ledgers and the
+// observed final Codex request live there; the stored name is historical.
+const codexPrivateStateNamespace = "codex-routing-private"
 
 // Failures wrap these sentinels with the concrete precondition that failed;
 // attempts record upstream error text separately (see CodexQualityAttempt).
@@ -35,94 +46,117 @@ func codexQualityUnavailable(format string, args ...any) error {
 }
 
 type CodexQualityCreateRequest struct {
-	RunID        string `json:"run_id"`
-	APIKeyID     int64  `json:"api_key_id"`
-	PromptSHA256 string `json:"prompt_sha256"`
-	MaxSends     int    `json:"max_sends"`
-	TTLSeconds   int    `json:"ttl_seconds"`
+	RunID           string `json:"run_id"`
+	APIKeyID        int64  `json:"api_key_id"`
+	PromptSHA256    string `json:"prompt_sha256"`
+	Model           string `json:"model"`
+	ReasoningEffort string `json:"reasoning_effort"`
+	MaxSends        int    `json:"max_sends"`
+	TTLSeconds      int    `json:"ttl_seconds"`
 }
 
 type CodexQualityAttempt struct {
-	Stage                    string     `json:"stage"`
-	TrialID                  string     `json:"trial_id,omitempty"`
-	OperationID              string     `json:"operation_id,omitempty"`
-	AccountID                int64      `json:"account_id"`
-	State                    string     `json:"state"`
-	ReservedAt               time.Time  `json:"reserved_at"`
-	FinishedAt               *time.Time `json:"finished_at,omitempty"`
-	RequestModel             string     `json:"request_model"`
-	ReasoningEffort          string     `json:"reasoning_effort"`
-	ResponseModels           []string   `json:"response_models"`
-	CreatedModel             *string    `json:"created_model"`
-	TerminalModel            *string    `json:"terminal_model"`
-	HeaderModel              *string    `json:"header_model"`
-	HeaderModels             []string   `json:"header_models"`
-	Completed                bool       `json:"completed"`
-	HTTPStatus               int        `json:"http_status,omitempty"`
-	ErrorCode                string     `json:"error_code,omitempty"`
-	ErrorMessage             string     `json:"error_message,omitempty"`
-	UpstreamErrorType        string     `json:"upstream_error_type,omitempty"`
-	UpstreamErrorCode        string     `json:"upstream_error_code,omitempty"`
-	UpstreamErrorMessage     string     `json:"upstream_error_message,omitempty"`
-	UpstreamErrorParam       string     `json:"upstream_error_param,omitempty"`
-	UpstreamBody             string     `json:"upstream_body,omitempty"`
-	RequestID                string     `json:"request_id,omitempty"`
-	CFRay                    string     `json:"cf_ray,omitempty"`
-	ReasoningTokens          *int64     `json:"reasoning_tokens"`
-	InputTokens              *int64     `json:"input_tokens"`
-	OutputTokens             *int64     `json:"output_tokens"`
-	ConnectionFingerprint    string     `json:"connection_fingerprint,omitempty"`
-	QualificationFingerprint string     `json:"qualification_fingerprint,omitempty"`
+	Stage                string     `json:"stage"`
+	TrialID              string     `json:"trial_id,omitempty"`
+	OperationID          string     `json:"operation_id,omitempty"`
+	AccountID            int64      `json:"account_id"`
+	State                string     `json:"state"`
+	ReservedAt           time.Time  `json:"reserved_at"`
+	FinishedAt           *time.Time `json:"finished_at,omitempty"`
+	RequestModel         string     `json:"request_model"`
+	ReasoningEffort      string     `json:"reasoning_effort"`
+	ResponseModels       []string   `json:"response_models"`
+	CreatedModel         *string    `json:"created_model"`
+	TerminalModel        *string    `json:"terminal_model"`
+	HeaderModel          *string    `json:"header_model"`
+	HeaderModels         []string   `json:"header_models"`
+	Completed            bool       `json:"completed"`
+	HTTPStatus           int        `json:"http_status,omitempty"`
+	ErrorCode            string     `json:"error_code,omitempty"`
+	ErrorMessage         string     `json:"error_message,omitempty"`
+	UpstreamErrorType    string     `json:"upstream_error_type,omitempty"`
+	UpstreamErrorCode    string     `json:"upstream_error_code,omitempty"`
+	UpstreamErrorMessage string     `json:"upstream_error_message,omitempty"`
+	UpstreamErrorParam   string     `json:"upstream_error_param,omitempty"`
+	UpstreamBody         string     `json:"upstream_body,omitempty"`
+	RequestID            string     `json:"request_id,omitempty"`
+	CFRay                string     `json:"cf_ray,omitempty"`
+	ReasoningTokens      *int64     `json:"reasoning_tokens"`
+	InputTokens          *int64     `json:"input_tokens"`
+	OutputTokens         *int64     `json:"output_tokens"`
+	// Legacy only: attempts of the retired route-qualified diagnostics name
+	// their connection and route. New attempts never set them.
+	ConnectionFingerprint    string `json:"connection_fingerprint,omitempty"`
+	QualificationFingerprint string `json:"qualification_fingerprint,omitempty"`
 }
 
 type CodexQualityRunView struct {
-	RunID                 string                `json:"run_id"`
-	Grant                 string                `json:"grant,omitempty"`
-	ActorID               int64                 `json:"actor_id"`
-	AccountID             int64                 `json:"account_id"`
-	APIKeyID              int64                 `json:"api_key_id"`
-	GroupID               int64                 `json:"group_id"`
-	ProxyID               int64                 `json:"proxy_id"`
-	Model                 string                `json:"model"`
-	ReasoningEffort       string                `json:"reasoning_effort"`
-	PromptSHA256          string                `json:"prompt_sha256"`
-	Status                string                `json:"status"`
-	MaxSends              int                   `json:"max_sends"`
-	UsedSends             int                   `json:"used_sends"`
-	ExpiresAt             time.Time             `json:"expires_at"`
-	RouteReady            bool                  `json:"route_ready"`
-	RouteExpiresAt        *time.Time            `json:"route_expires_at"`
-	RouteGeneration       int64                 `json:"route_generation"`
-	ConnectionFingerprint string                `json:"connection_fingerprint,omitempty"`
-	RouteError            string                `json:"route_error,omitempty"`
-	Attempts              []CodexQualityAttempt `json:"attempts"`
-	// Set only on a renew-route reply whose renewal did not install a route.
-	RenewalError        string                                `json:"renewal_error,omitempty"`
-	RenewalObservations []extensionv1.CodexRoutingObservation `json:"renewal_observations,omitempty"`
+	RunID           string                `json:"run_id"`
+	Grant           string                `json:"grant,omitempty"`
+	ActorID         int64                 `json:"actor_id"`
+	AccountID       int64                 `json:"account_id"`
+	APIKeyID        int64                 `json:"api_key_id"`
+	GroupID         int64                 `json:"group_id"`
+	ProxyID         int64                 `json:"proxy_id"`
+	Model           string                `json:"model"`
+	ReasoningEffort string                `json:"reasoning_effort"`
+	PromptSHA256    string                `json:"prompt_sha256"`
+	Status          string                `json:"status"`
+	MaxSends        int                   `json:"max_sends"`
+	UsedSends       int                   `json:"used_sends"`
+	ExpiresAt       time.Time             `json:"expires_at"`
+	Attempts        []CodexQualityAttempt `json:"attempts"`
+	// Read-only route facts of a record written by the retired
+	// route-qualified diagnostics; absent from every other run.
+	RouteGeneration       *int64     `json:"route_generation,omitempty"`
+	RouteExpiresAt        *time.Time `json:"route_expires_at,omitempty"`
+	ConnectionFingerprint string     `json:"connection_fingerprint,omitempty"`
 }
 
-// Stored only in the existing host-private namespace. No grant, API key,
-// prompt, Cookie or STATE value is stored in this ledger. Attempts keep the
-// upstream error object, transport/stream error text and the bounded failing
-// event or body (which can quote response text) for administrators.
+// Stored only in the host-private namespace. No grant, API key, prompt, Cookie
+// or STATE value is stored in this ledger. Attempts keep the upstream error
+// object, transport/stream error text and the bounded failing event or body
+// (which can quote response text) for administrators.
 type codexQualityRun struct {
-	RunID                  string                                 `json:"run_id"`
-	ActorID                int64                                  `json:"actor_id"`
-	APIKeyID               int64                                  `json:"api_key_id"`
-	AccountID              int64                                  `json:"account_id"`
-	GroupID                int64                                  `json:"group_id"`
-	ProxyID                int64                                  `json:"proxy_id"`
-	Scope                  extensionv1.CodexRoutingScope          `json:"scope"`
-	PromptSHA256           string                                 `json:"prompt_sha256"`
-	GrantDigest            string                                 `json:"grant_digest"`
-	Status                 string                                 `json:"status"`
-	MaxSends               int                                    `json:"max_sends"`
-	UsedSends              int                                    `json:"used_sends"`
-	ExpiresAt              time.Time                              `json:"expires_at"`
-	RouteGeneration        int64                                  `json:"route_generation"`
-	RouteRuntimeGeneration int64                                  `json:"route_runtime_generation"`
-	Qualification          *extensionv1.CodexRoutingQualification `json:"qualification,omitempty"`
-	Attempts               []CodexQualityAttempt                  `json:"attempts"`
+	RunID     string `json:"run_id"`
+	ActorID   int64  `json:"actor_id"`
+	APIKeyID  int64  `json:"api_key_id"`
+	AccountID int64  `json:"account_id"`
+	GroupID   int64  `json:"group_id"`
+	ProxyID   int64  `json:"proxy_id"`
+	// OwnerIdentity is CodexCredentialOwnerIdentity of the account when the
+	// run was created; the credential owner is part of the binding.
+	OwnerIdentity string `json:"owner_identity,omitempty"`
+	// Model and ReasoningEffort are bound when the run is created. A record
+	// without them is legacy (see legacy) and reads as gpt-6-astra/high.
+	Model           string                `json:"model,omitempty"`
+	ReasoningEffort string                `json:"reasoning_effort,omitempty"`
+	PromptSHA256    string                `json:"prompt_sha256"`
+	GrantDigest     string                `json:"grant_digest"`
+	Status          string                `json:"status"`
+	MaxSends        int                   `json:"max_sends"`
+	UsedSends       int                   `json:"used_sends"`
+	ExpiresAt       time.Time             `json:"expires_at"`
+	Attempts        []CodexQualityAttempt `json:"attempts"`
+	// Members only a legacy record holds. They are kept verbatim so a
+	// rewritten record (for example a close) loses none of them, and are
+	// read only for the view.
+	Scope                  json.RawMessage `json:"scope,omitempty"`
+	RouteGeneration        json.RawMessage `json:"route_generation,omitempty"`
+	RouteRuntimeGeneration json.RawMessage `json:"route_runtime_generation,omitempty"`
+	Qualification          json.RawMessage `json:"qualification,omitempty"`
+}
+
+// legacy reports a record written by the retired route-qualified diagnostics.
+// Such a run stays readable and closable but takes no new grant or send.
+func (r codexQualityRun) legacy() bool { return r.RunID != "" && r.Model == "" }
+
+// binding returns the model and reasoning effort every send of the run uses.
+func (r codexQualityRun) binding() (string, string) {
+	if r.legacy() {
+		return codexQualityLegacyModel, codexQualityLegacyEffort
+	}
+	return r.Model, r.ReasoningEffort
 }
 
 func codexQualityKey(id string) string { return "quality-run." + id }
@@ -152,7 +186,7 @@ func readCodexQualityRun(ctx context.Context, store NativeCodexStateStore, id st
 		return run, 0, codexQualityUnavailable("Codex runtime state store is unavailable")
 	}
 	id = canonical
-	record, err := store.ReadExtensionState(ctx, codexRuntimePluginKey, extensionv1.StateRequest{Namespace: codexRoutingPrivateNamespace, Key: codexQualityKey(id)})
+	record, err := store.ReadExtensionState(ctx, NativeCodexPluginKey, extensionv1.StateRequest{Namespace: codexPrivateStateNamespace, Key: codexQualityKey(id)})
 	if err != nil {
 		return run, 0, codexQualityUnavailable("read quality run %s: %v", id, err)
 	}
@@ -186,7 +220,7 @@ func mutateCodexQualityRun(ctx context.Context, store NativeCodexStateStore, id 
 		if err != nil {
 			return run, codexQualityUnavailable("encode quality run %s: %v", id, err)
 		}
-		result, err := store.CompareSwapExtensionState(ctx, codexRuntimePluginKey, extensionv1.StateRequest{Namespace: codexRoutingPrivateNamespace, Key: codexQualityKey(id), ExpectedRevision: revision, Value: raw})
+		result, err := store.CompareSwapExtensionState(ctx, NativeCodexPluginKey, extensionv1.StateRequest{Namespace: codexPrivateStateNamespace, Key: codexQualityKey(id), ExpectedRevision: revision, Value: raw})
 		if err != nil {
 			return run, codexQualityUnavailable("save quality run %s: %v", id, err)
 		}
@@ -211,14 +245,16 @@ func codexQualityGrantMatches(run codexQualityRun, digest string) bool {
 }
 
 func codexQualityActive(run codexQualityRun, now time.Time) bool {
-	return run.RunID != "" && run.Status == "open" && now.Before(run.ExpiresAt)
+	return codexQualityInactiveReason(run, now) == ""
 }
 
-// codexQualityInactiveReason explains why codexQualityActive is false.
+// codexQualityInactiveReason explains why a run takes no send, or returns "".
 func codexQualityInactiveReason(run codexQualityRun, now time.Time) string {
 	switch {
 	case run.RunID == "":
 		return "quality run not found"
+	case run.legacy():
+		return fmt.Sprintf("quality run %s was recorded by the retired route-qualified diagnostics; it is read-only, use a new run id", run.RunID)
 	case run.Status != "open":
 		return fmt.Sprintf("quality run %s is %s", run.RunID, run.Status)
 	case !now.Before(run.ExpiresAt):
@@ -233,13 +269,18 @@ func issueCodexQualityGrant(ctx context.Context, store NativeCodexStateStore, wa
 		return codexQualityRun{}, codexQualityUnavailable("run id %q is not a canonical UUID", wanted.RunID)
 	}
 	wanted.RunID = canonical
+	if wanted.legacy() {
+		return codexQualityRun{}, codexQualityUnavailable("quality run %s names no model", wanted.RunID)
+	}
 	return mutateCodexQualityRun(ctx, store, wanted.RunID, func(run *codexQualityRun) error {
 		if run.RunID == "" {
 			*run = wanted
+		} else if run.legacy() {
+			return codexQualityUnavailable("%s", codexQualityInactiveReason(*run, time.Now()))
 		} else if run.Status == "closed" {
 			return codexQualityUnavailable("quality run %s is closed; use a new run id", run.RunID)
-		} else if run.ActorID != wanted.ActorID || run.APIKeyID != wanted.APIKeyID || run.AccountID != wanted.AccountID || run.GroupID != wanted.GroupID || run.ProxyID != wanted.ProxyID || run.PromptSHA256 != wanted.PromptSHA256 || run.MaxSends != wanted.MaxSends || !run.Scope.SameOwner(wanted.Scope) {
-			return codexQualityUnavailable("quality run %s exists with other parameters (actor %d/%d, api key %d/%d, account %d/%d, group %d/%d, proxy %d/%d, max_sends %d/%d, prompt matches %t, routing owner matches %t; stored/requested)", run.RunID, run.ActorID, wanted.ActorID, run.APIKeyID, wanted.APIKeyID, run.AccountID, wanted.AccountID, run.GroupID, wanted.GroupID, run.ProxyID, wanted.ProxyID, run.MaxSends, wanted.MaxSends, run.PromptSHA256 == wanted.PromptSHA256, run.Scope.SameOwner(wanted.Scope))
+		} else if run.ActorID != wanted.ActorID || run.APIKeyID != wanted.APIKeyID || run.AccountID != wanted.AccountID || run.GroupID != wanted.GroupID || run.ProxyID != wanted.ProxyID || run.Model != wanted.Model || run.ReasoningEffort != wanted.ReasoningEffort || run.PromptSHA256 != wanted.PromptSHA256 || run.MaxSends != wanted.MaxSends || run.OwnerIdentity != wanted.OwnerIdentity {
+			return codexQualityUnavailable("quality run %s exists with other parameters (actor %d/%d, api key %d/%d, account %d/%d, group %d/%d, proxy %d/%d, model %s/%s, reasoning_effort %s/%s, max_sends %d/%d, prompt matches %t, credential owner matches %t; stored/requested)", run.RunID, run.ActorID, wanted.ActorID, run.APIKeyID, wanted.APIKeyID, run.AccountID, wanted.AccountID, run.GroupID, wanted.GroupID, run.ProxyID, wanted.ProxyID, run.Model, wanted.Model, run.ReasoningEffort, wanted.ReasoningEffort, run.MaxSends, wanted.MaxSends, run.PromptSHA256 == wanted.PromptSHA256, run.OwnerIdentity == wanted.OwnerIdentity)
 		}
 		run.GrantDigest, run.ExpiresAt = digest, expiry
 		return nil
@@ -296,41 +337,34 @@ func finishCodexQualityAttempt(ctx context.Context, store NativeCodexStateStore,
 	})
 }
 
-func codexQualityView(run codexQualityRun, generation int64) *CodexQualityRunView {
-	v := &CodexQualityRunView{RunID: run.RunID, ActorID: run.ActorID, AccountID: run.AccountID, APIKeyID: run.APIKeyID, GroupID: run.GroupID, ProxyID: run.ProxyID, Model: codexQualityModel, ReasoningEffort: codexQualityEffort, PromptSHA256: run.PromptSHA256, Status: run.Status, MaxSends: run.MaxSends, UsedSends: run.UsedSends, ExpiresAt: run.ExpiresAt, RouteGeneration: run.RouteGeneration, Attempts: run.Attempts}
+func codexQualityView(run codexQualityRun) *CodexQualityRunView {
+	model, effort := run.binding()
+	v := &CodexQualityRunView{RunID: run.RunID, ActorID: run.ActorID, AccountID: run.AccountID, APIKeyID: run.APIKeyID, GroupID: run.GroupID, ProxyID: run.ProxyID, Model: model, ReasoningEffort: effort, PromptSHA256: run.PromptSHA256, Status: run.Status, MaxSends: run.MaxSends, UsedSends: run.UsedSends, ExpiresAt: run.ExpiresAt, Attempts: run.Attempts}
 	if v.Attempts == nil {
 		v.Attempts = []CodexQualityAttempt{}
 	}
-	if q := run.Qualification; q != nil {
-		v.RouteExpiresAt = &q.ExpiresAt
-		v.RouteReady = codexQualityActive(run, time.Now()) && generation == run.RouteRuntimeGeneration && q.Valid(time.Now(), run.AccountID, run.Scope.Identity, codexQualityModel)
-		v.ConnectionFingerprint = codexQualityHash(q.Scope.ConnectionLeaseID)[:16]
-		if !v.RouteReady {
-			v.RouteError = codexQualityRouteReason(run, generation, time.Now())
+	if !run.legacy() {
+		return v
+	}
+	var generation int64
+	if json.Unmarshal(run.RouteGeneration, &generation) == nil {
+		v.RouteGeneration = &generation
+	}
+	var route struct {
+		ExpiresAt time.Time `json:"expires_at"`
+		Scope     struct {
+			ConnectionLeaseID string `json:"connection_lease_id"`
+		} `json:"scope"`
+	}
+	if len(run.Qualification) > 0 && json.Unmarshal(run.Qualification, &route) == nil {
+		if !route.ExpiresAt.IsZero() {
+			v.RouteExpiresAt = &route.ExpiresAt
+		}
+		if route.Scope.ConnectionLeaseID != "" {
+			v.ConnectionFingerprint = codexQualityHash(route.Scope.ConnectionLeaseID)[:16]
 		}
 	}
 	return v
-}
-
-// codexQualityRouteReason explains why the installed route of a run cannot be
-// used before the bundle and connection checks, or returns "" when it can.
-func codexQualityRouteReason(run codexQualityRun, generation int64, now time.Time) string {
-	q := run.Qualification
-	switch {
-	case !codexQualityActive(run, now):
-		return codexQualityInactiveReason(run, now)
-	case q == nil:
-		return "no route is installed; renew the route first"
-	case run.RouteRuntimeGeneration != generation:
-		return fmt.Sprintf("the route was installed by runtime generation %d, the current generation is %d", run.RouteRuntimeGeneration, generation)
-	case !q.Valid(now, run.AccountID, run.Scope.Identity, codexQualityModel):
-		return fmt.Sprintf("the route qualification is not valid now (model %q, verified %s, expires %s)", q.Model, q.VerifiedAt.UTC().Format(time.RFC3339), q.ExpiresAt.UTC().Format(time.RFC3339))
-	case !q.Scope.SameOwner(run.Scope):
-		return "the route " + codexRoutingScopeChange(run.Scope, q.Scope)
-	case q.Scope.Transport != "http" || q.Scope.ConnectionLeaseID == "":
-		return fmt.Sprintf("the route is bound to transport %q connection %q; an HTTP connection lease is required", q.Scope.Transport, q.Scope.ConnectionLeaseID)
-	}
-	return ""
 }
 
 func validCodexQualityHash(value string) bool {

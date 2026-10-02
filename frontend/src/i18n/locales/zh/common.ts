@@ -190,7 +190,7 @@ export default {
     accounts: '账号管理',
     plugins: '插件管理',
     tasks: '任务',
-    codexRuntime: 'Codex 路由设置',
+    codexRuntime: 'Codex 运行设置',
     proxies: 'IP管理',
     redeemCodes: '兑换码',
     ops: '运维监控',

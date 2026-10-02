@@ -986,10 +986,9 @@ func (s *OpenAIGatewayService) proxyResponsesWebSocketV2PassthroughAttempt(
 	if !ok {
 		return errors.New("openai ws passthrough upstream connection does not support frame relay")
 	}
-	observedConnectionID := "passthrough-" + codexRoutingDigest(capturedSessionModel, headers.Get("session-id"), time.Now().UTC().Format(time.RFC3339Nano))
-	s.observeNativeCodexWS(ctx, account, headers, handshakeHeaders, nil, observedConnectionID)
+	s.observeNativeCodexWS(ctx, account, headers, handshakeHeaders, nil)
 	upstreamFrameConn = &codexObservedNativeFrameConn{FrameConn: upstreamFrameConn, observe: func(frameCtx context.Context, payload []byte) {
-		s.observeNativeCodexWS(frameCtx, account, headers, handshakeHeaders, payload, observedConnectionID)
+		s.observeNativeCodexWS(frameCtx, account, headers, handshakeHeaders, payload)
 	}}
 	relayUpstreamFrameConn := &openAIWSPassthroughFirstOutputFrameConn{
 		inner:             upstreamFrameConn,
@@ -1219,17 +1218,6 @@ func (s *OpenAIGatewayService) proxyResponsesWebSocketV2PassthroughAttempt(
 			//     extractOpenAIServiceTierFromBody 返回 nil；这里有意
 			//     覆盖（Store(nil)），因为 OpenAI 上游对该帧实际不传
 			//     service_tier 时按 default 处理，billing 应如实反映。
-			if policyErr == nil && blocked == nil && (isResponseCreate || eventType == "session.update") {
-				finalModel := model
-				if isResponseCreate {
-					if selected := strings.TrimSpace(gjson.GetBytes(out, "model").String()); selected != "" {
-						finalModel = selected
-					}
-				}
-				if routingErr := s.guardCodexRoutingNativeModel(account, finalModel); routingErr != nil {
-					return out, nil, routingErr
-				}
-			}
 			if policyErr == nil && blocked == nil && isResponseCreate {
 				usageMeta.updateFromResponseCreate(out, model, requestModelForThisFrame)
 				responseCreateAtCopy := responseCreateAt
@@ -1275,9 +1263,6 @@ func (s *OpenAIGatewayService) proxyResponsesWebSocketV2PassthroughAttempt(
 		relayClientConn = &openAIRefusalRecoveryWSFrameConn{inner: policyClientConn, output: refusalOutput}
 	}
 	upstreamFirstMessageSent := false
-	if routingErr := s.guardCodexRoutingNativeModel(account, capturedSessionModel); routingErr != nil {
-		return routingErr
-	}
 	firstWriteCtx, cancelFirstWrite := context.WithTimeout(ctx, s.openAIWSWriteTimeout())
 	firstWriteErr := relayUpstreamFrameConn.WriteFrame(firstWriteCtx, coderws.MessageText, firstClientMessage)
 	cancelFirstWrite()

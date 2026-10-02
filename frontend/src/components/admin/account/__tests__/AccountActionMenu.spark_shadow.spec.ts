@@ -49,11 +49,6 @@ const getBodyText = () => document.body.textContent ?? ''
 const getBodyButtons = () => Array.from(document.body.querySelectorAll('button'))
 
 describe('AccountActionMenu — spark shadow 按钮可见性', () => {
-  it('offers native Codex actions for an eligible single account', () => {
-    const wrapper = mount(AccountActionMenu, { props: { show: true, account: makeAccount({ status: 'error' }), anchorRect }, attachTo: document.body })
-    expect(document.body.querySelector('[data-test="codex-harvest"]')).not.toBeNull()
-    wrapper.unmount()
-  })
   it('普通账号显示「复制账号」按钮', () => {
     const account = makeAccount({ platform: 'anthropic', type: 'apikey', parent_account_id: null })
     const wrapper = mount(AccountActionMenu, {

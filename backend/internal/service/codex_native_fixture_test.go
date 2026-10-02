@@ -2,14 +2,56 @@ package service
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"sync"
 	"testing"
 
-	"github.com/Wei-Shaw/sub2api/internal/codexruntime/tickets"
-	"github.com/Wei-Shaw/sub2api/internal/config"
 	extensionv1 "github.com/Wei-Shaw/sub2api/internal/nativeapi"
 )
+
+// nativeCodexMemoryStore is an in-memory native Codex state store.
+type nativeCodexMemoryStore struct {
+	PluginRepository
+	mu     sync.Mutex
+	values map[string]extensionv1.StateResult
+}
+
+func (store *nativeCodexMemoryStore) ReadExtensionState(_ context.Context, _ string, req extensionv1.StateRequest) (extensionv1.StateResult, error) {
+	store.mu.Lock()
+	defer store.mu.Unlock()
+	return store.values[req.Namespace+":"+req.Key], nil
+}
+
+func (store *nativeCodexMemoryStore) CompareSwapExtensionState(_ context.Context, _ string, req extensionv1.StateRequest) (extensionv1.StateResult, error) {
+	store.mu.Lock()
+	defer store.mu.Unlock()
+	if store.values == nil {
+		store.values = map[string]extensionv1.StateResult{}
+	}
+	key := req.Namespace + ":" + req.Key
+	old := store.values[key]
+	old.Applied = false
+	if old.Revision == req.ExpectedRevision {
+		old = extensionv1.StateResult{Found: true, Applied: true, Revision: old.Revision + 1, Value: append(json.RawMessage(nil), req.Value...)}
+		store.values[key] = old
+	}
+	return old, nil
+}
+
+type codexAccountRepositoryFixture struct {
+	AccountRepository
+	account *Account
+}
+
+func (r *codexAccountRepositoryFixture) GetByID(context.Context, int64) (*Account, error) {
+	return r.account, nil
+}
+
+func codexOAuthTestAccount(id int64) *Account {
+	return &Account{ID: id, Platform: PlatformOpenAI, Type: AccountTypeOAuth, Credentials: map[string]any{"access_token": "tok", "chatgpt_account_id": "acc-1"}}
+}
 
 type nativeCodexTestLease struct {
 	done chan struct{}
@@ -20,67 +62,55 @@ func (l *nativeCodexTestLease) Done() <-chan struct{} { return l.done }
 func (*nativeCodexTestLease) Err() error              { return nil }
 func (l *nativeCodexTestLease) Release()              { l.once.Do(func() { close(l.done) }) }
 
-func (*routingMemoryStore) ReadNativeCodexStoredConfig(context.Context) (string, bool, error) {
+func (*nativeCodexMemoryStore) ReadNativeCodexStoredConfig(context.Context) (string, bool, error) {
 	return "", false, nil
 }
-func (*routingMemoryStore) LoadNativeCodexMetadata(context.Context) (*NativeCodexMetadata, error) {
+func (*nativeCodexMemoryStore) LoadNativeCodexMetadata(context.Context) (*NativeCodexMetadata, error) {
 	return nativeCodexTestMetadata(), nil
 }
-func (*routingMemoryStore) StoreNativeCodexConfig(context.Context, string, string) (*NativeCodexMetadata, error) {
+func (*nativeCodexMemoryStore) StoreNativeCodexConfig(context.Context, string, string) (*NativeCodexMetadata, error) {
 	return nativeCodexTestMetadata(), nil
 }
-func (*routingMemoryStore) SyncNativeCodexConfig(context.Context, string) (*NativeCodexMetadata, error) {
+func (*nativeCodexMemoryStore) SyncNativeCodexConfig(context.Context, string) (*NativeCodexMetadata, error) {
 	return nativeCodexTestMetadata(), nil
 }
-func (*routingMemoryStore) HoldNativeCodexRuntime(ctx context.Context, m *NativeCodexMetadata) (NativeCodexRuntimeLease, error) {
+func (*nativeCodexMemoryStore) HoldNativeCodexRuntime(ctx context.Context, m *NativeCodexMetadata) (NativeCodexRuntimeLease, error) {
 	if !NativeCodexBusinessIORequired(ctx) || m == nil {
 		return nil, ErrNativeCodexRuntimeChanged
 	}
 	return &nativeCodexTestLease{done: make(chan struct{})}, nil
 }
 func nativeCodexTestMetadata() *NativeCodexMetadata {
-	return &NativeCodexMetadata{ID: 1, RuntimeGeneration: 1, ConfigVersion: 1, ConfigSHA256: codexRoutingDigest("fixture-config")}
+	sum := sha256.Sum256([]byte("fixture-config"))
+	return &NativeCodexMetadata{ID: 1, RuntimeGeneration: 1, ConfigVersion: 1, ConfigSHA256: hex.EncodeToString(sum[:])}
 }
 
-type nativeTicketModuleFixture struct {
-	invoke func(extensionv1.Invocation) (extensionv1.Result, error)
+// nativeCodexModuleFixture answers every runtime invocation with an empty
+// result.
+type nativeCodexModuleFixture struct{}
+
+func (nativeCodexModuleFixture) Invoke(context.Context, extensionv1.Invocation) (extensionv1.Result, error) {
+	return extensionv1.Result{}, nil
+}
+func (nativeCodexModuleFixture) ApplyConfig(context.Context, json.RawMessage) error { return nil }
+func (nativeCodexModuleFixture) Start(context.Context) error                        { return nil }
+func (nativeCodexModuleFixture) Stop(context.Context) error                         { return nil }
+
+type nativeCodexTestAccountRepository struct{ AccountRepository }
+
+func (nativeCodexTestAccountRepository) GetByID(_ context.Context, id int64) (*Account, error) {
+	return codexOAuthTestAccount(id), nil
 }
 
-func (m nativeTicketModuleFixture) Invoke(_ context.Context, in extensionv1.Invocation) (extensionv1.Result, error) {
-	return m.invoke(in)
-}
-func (nativeTicketModuleFixture) ApplyConfig(context.Context, json.RawMessage) error { return nil }
-func (nativeTicketModuleFixture) Start(context.Context) error                        { return nil }
-func (nativeTicketModuleFixture) Stop(context.Context) error                         { return nil }
-
-type nativeTicketAccountRepository struct{ AccountRepository }
-
-func (nativeTicketAccountRepository) GetByID(_ context.Context, id int64) (*Account, error) {
-	return ticketTestAccount(id), nil
-}
-
-func nativeTicketTestRuntime(t *testing.T, cfg config.OpenAICodexTicketConfig, invoke func(extensionv1.Invocation) (extensionv1.Result, error)) *NativeCodexRuntime {
+// nativeCodexTestRuntime is a loaded native runtime with in-memory state.
+func nativeCodexTestRuntime(t *testing.T) *NativeCodexRuntime {
 	t.Helper()
-	if len(cfg.Models) == 0 {
-		cfg.Models = []string{"gpt-6-astra", "gpt-5.6-sol"}
-	}
-	if invoke == nil {
-		invoke = func(extensionv1.Invocation) (extensionv1.Result, error) {
-			return extensionv1.Result{Code: "ticket_missing"}, nil
-		}
-	}
-	store := &routingMemoryStore{values: map[string]extensionv1.StateResult{}}
-	r := &NativeCodexRuntime{repo: store, gateway: &OpenAIGatewayService{accountRepo: nativeTicketAccountRepository{}}}
+	store := &nativeCodexMemoryStore{values: map[string]extensionv1.StateResult{}}
+	r := &NativeCodexRuntime{repo: store, gateway: &OpenAIGatewayService{accountRepo: nativeCodexTestAccountRepository{}}}
 	epoch, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
 	metadata := nativeCodexTestMetadata()
-	host := &nativeCodexHost{key: NativeCodexPluginKey, state: store, repo: store, directory: r.gateway, metadata: metadata, epoch: epoch}
-	r.snapshot.Store(&nativeCodexSnapshot{metadata: metadata, config: tickets.Config{Enabled: cfg.Enabled, FailClosed: cfg.FailClosed, Models: cfg.Models, ProxyURL: cfg.HarvestProxyURL}, host: host, module: nativeTicketModuleFixture{invoke: invoke}, ctx: epoch, cancel: cancel})
-	return r
-}
-
-func nativeRoutingFixtureRuntime(host *nativeCodexHost, store *routingMemoryStore) *NativeCodexRuntime {
-	r := &NativeCodexRuntime{repo: store}
-	r.snapshot.Store(&nativeCodexSnapshot{metadata: host.metadata, host: host, ctx: host.epoch})
+	host := &nativeCodexHost{metadata: metadata, repo: store, epoch: epoch}
+	r.snapshot.Store(&nativeCodexSnapshot{metadata: metadata, host: host, module: nativeCodexModuleFixture{}, ctx: epoch, cancel: cancel})
 	return r
 }

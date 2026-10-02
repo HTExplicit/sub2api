@@ -914,10 +914,10 @@ func (c *schedulerCache) mgetChunked(ctx context.Context, keys []string) ([]any,
 }
 
 // buildSchedulerMetadataAccount builds the partial candidate projection used by
-// the scheduler snapshot. It intentionally omits credential-bound material
-// (including Codex turn-state tickets) and the full credential identity. Gates
-// that depend on those fields must run on the authoritative account returned by
-// GetAccount/recheckSelectedOpenAIAccountFromDB, never on this projection.
+// the scheduler snapshot. It intentionally omits credential-bound material and
+// the full credential identity. Gates that depend on those fields must run on
+// the authoritative account returned by GetAccount/recheckSelectedOpenAIAccountFromDB,
+// never on this projection.
 func buildSchedulerMetadataAccount(account service.Account) service.Account {
 	return service.Account{
 		ID:                      account.ID,
@@ -1011,8 +1011,8 @@ func filterSchedulerCredentials(credentials map[string]any) map[string]any {
 		return nil
 	}
 	// Candidate-list admission evaluates projection-safe routing and capability
-	// fields before hydrating the full account. Credential-bound identity and
-	// ticket fields are deliberately excluded; see buildSchedulerMetadataAccount.
+	// fields before hydrating the full account. Credential-bound identity fields
+	// are deliberately excluded; see buildSchedulerMetadataAccount.
 	keys := []string{"model_mapping", "compact_model_mapping", "api_key", "project_id", "oauth_type", "plan_type", "account_scheduling_threshold", "base_url", "openai_capabilities"}
 	filtered := make(map[string]any)
 	for _, key := range keys {
@@ -1108,7 +1108,6 @@ func filterSchedulerExtra(extra map[string]any) map[string]any {
 		"codex_secondary_observed_at",
 		"openai_quota_exhausted",
 		"openai_quota_status",
-		service.NativeCodexAccountProjectionKey,
 		"auto_pause_5h_threshold",
 		"auto_pause_7d_threshold",
 		"auto_pause_5h_disabled",
@@ -1145,9 +1144,6 @@ func filterSchedulerExtra(extra map[string]any) map[string]any {
 				}
 				value = filteredProbe
 			}
-			if key == service.NativeCodexAccountProjectionKey {
-				value = filterSchedulerCodexProjection(value)
-			}
 			if key == "model_rate_limits" {
 				value = filterSchedulerModelRateLimits(value)
 			}
@@ -1156,47 +1152,6 @@ func filterSchedulerExtra(extra map[string]any) map[string]any {
 	}
 	if len(filtered) == 0 {
 		return nil
-	}
-	return filtered
-}
-
-// filterSchedulerCodexProjection copies the Codex account projection without
-// the administrator-only observation text (message, response_model); the
-// scheduler reads only the constraints and the observation state.
-func filterSchedulerCodexProjection(value any) any {
-	plugins, ok := value.(map[string]any)
-	if !ok {
-		return value
-	}
-	filtered := make(map[string]any, len(plugins))
-	for plugin, raw := range plugins {
-		projection, ok := raw.(map[string]any)
-		observations, hasObservations := projection["observations"].(map[string]any)
-		if !ok || !hasObservations {
-			filtered[plugin] = raw
-			continue
-		}
-		copied := make(map[string]any, len(projection))
-		for key, field := range projection {
-			copied[key] = field
-		}
-		kept := make(map[string]any, len(observations))
-		for model, rawObservation := range observations {
-			observation, ok := rawObservation.(map[string]any)
-			if !ok {
-				kept[model] = rawObservation
-				continue
-			}
-			trimmed := make(map[string]any, len(observation))
-			for key, field := range observation {
-				if key != "message" && key != "response_model" {
-					trimmed[key] = field
-				}
-			}
-			kept[model] = trimmed
-		}
-		copied["observations"] = kept
-		filtered[plugin] = copied
 	}
 	return filtered
 }

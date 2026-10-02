@@ -165,13 +165,10 @@ var auditBodyOmittedRoutes = map[string]struct{}{
 
 // auditVerbatimBodyRoutes store the request body exactly as received, up to
 // the capture limit, without key-level redaction: administrators review the
-// full system prompt library and the Codex proxy and runtime settings they
-// submitted, proxy credentials included.
+// full system prompt library and the Codex runtime settings they submitted.
 var auditVerbatimBodyRoutes = map[string]struct{}{
-	"PUT /api/v1/admin/system-prompts":                            {},
-	"POST /api/v1/admin/settings/openai-codex-ticket/proxy-parse": {},
-	"POST /api/v1/admin/settings/openai-codex-ticket/proxy-test":  {},
-	"PUT /api/v1/admin/settings/codex-runtime":                    {},
+	"PUT /api/v1/admin/system-prompts":         {},
+	"PUT /api/v1/admin/settings/codex-runtime": {},
 }
 
 // NewAuditLogMiddleware 创建审计中间件。

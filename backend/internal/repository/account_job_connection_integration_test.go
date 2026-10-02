@@ -93,7 +93,7 @@ func TestAccountJobStoresLongErrorTextAndRetriesSeedKeys(t *testing.T) {
 	})
 	target := int64(7)
 	job, _, err := repo.Create(ctx, service.CreateAccountJobParams{
-		CreatedBy: user.ID, Kind: service.AccountJobKindCodexTicketHarvest, IdempotencyKey: uuid.NewString(),
+		CreatedBy: user.ID, Kind: service.AccountJobKindBatchRefresh, IdempotencyKey: uuid.NewString(),
 		RequestHash: strings.Repeat("c", 64), PayloadCipher: "encrypted-fixture", PayloadExpires: time.Now().Add(time.Hour),
 		Metadata: json.RawMessage(`{"label":"a\u0000b"}`),
 		Items: []service.AccountJobItemSeed{
@@ -115,7 +115,7 @@ func TestAccountJobStoresLongErrorTextAndRetriesSeedKeys(t *testing.T) {
 	want := strings.Repeat("x", 998) + "\uFFFD\uFFFD"
 	metadata := json.RawMessage("{\"account_id\":7,\"model_id\":\"gpt-6\",\"body\":\"a\\u0000b\",\"proxy_errors\":[\"bad \xff byte\"],\"warnings\":[\"w\"]}")
 	require.NoError(t, repo.CompleteItems(ctx, job.ID, []service.AccountJobExecutionResult{{
-		ItemID: items[0].ID, Status: service.AccountJobItemStatusFailed, ErrorCode: "ticket_upstream_error", ErrorMessage: raw, Metadata: metadata,
+		ItemID: items[0].ID, Status: service.AccountJobItemStatusFailed, ErrorCode: "refresh_failed", ErrorMessage: raw, Metadata: metadata,
 	}}))
 	finished, err := repo.Finish(ctx, job.ID, service.AccountJobCodeCancelCheckFailed, raw)
 	require.NoError(t, err)
@@ -125,7 +125,7 @@ func TestAccountJobStoresLongErrorTextAndRetriesSeedKeys(t *testing.T) {
 	stored, err := repo.ListItems(ctx, job.ID, "", 1, 10)
 	require.NoError(t, err)
 	require.Len(t, stored.Items, 2)
-	require.Equal(t, "ticket_upstream_error", stored.Items[0].ErrorCode)
+	require.Equal(t, "refresh_failed", stored.Items[0].ErrorCode)
 	require.Equal(t, want, stored.Items[0].ErrorMessage)
 	var got map[string]any
 	require.NoError(t, json.Unmarshal(stored.Items[0].Metadata, &got))

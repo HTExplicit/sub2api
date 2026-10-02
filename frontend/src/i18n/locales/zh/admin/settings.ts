@@ -632,14 +632,6 @@ export default {
         claudeCodeVersionAutoSyncHint: '每小时从官方发布渠道获取最新版本的 Claude Code 客户端版本号，无需为了跟版本而升级本服务。关闭后停止获取新版本，已同步的版本仍可使用；上方手填版本始终优先。',
         claudeCodeVersionSyncedValue: '当前同步到：{version}',
         codexHardeningTitle: 'Codex 设置',
-        codexTicketEnabled: 'Codex 路由采集与验证',
-        codexTicketEnabledDesc:
-          '开启后可按账号和模型采集路由材料并验证业务出口；已登记的路由按需有限续期。STATE 长度不用于判断套餐或模型质量；本项不包含质量验证。',
-        codexTicketHarvestProxy: 'Codex 路由采集代理',
-        codexTicketHarvestProxyDesc:
-          '仅用于采集路由材料，保存后约5秒生效，无需重启。支持HTTP(S)、SOCKS5(H)和带标签的乱序账密格式。业务请求使用账号代理。清除代理需点击清除并保存。',
-        codexTicketHarvestProxyPlaceholder: "http://user:pass{'@'}proxy.example.com:1080",
-        codexTicketHarvestProxyConfigured: '已配置。管理员可查看和复制完整账密。',
         codexClientRestrictionTitle: 'Codex 客户端限制',
         codexHardeningDesc:
           '仅对已开启「仅允许 Codex 官方客户端」的 OpenAI OAuth 账号生效（全局）。在 User-Agent/Originator 之外，用版本区间、引擎指纹门与黑/白名单巩固判定。',

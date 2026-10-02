@@ -570,8 +570,8 @@ func (s *OpenAIGatewayService) proxyOpenAIWSHTTPBridgeTurn(
 			state := bridgeStates[0]
 			ownerMatches := state.accountID > 0 && state.accountID == account.ID
 			if account.IsOpenAIOAuthLike() {
-				ownerMatches = ownerMatches && state.identity == CodexTicketAccountIdentity(account) &&
-					state.turnID != "" && state.turnID == codexRoutingTurnID(c)
+				ownerMatches = ownerMatches && state.identity == CodexCredentialOwnerIdentity(account) &&
+					state.turnID != "" && state.turnID == codexLogicalTurnID(c)
 			}
 			if ownerMatches && strings.TrimSpace(state.value) != "" {
 				// The general HTTP builder strips unproven client-supplied state.
@@ -594,7 +594,7 @@ func (s *OpenAIGatewayService) proxyOpenAIWSHTTPBridgeTurn(
 		c.Set("openai_passthrough", true)
 		c.Set("openai_ws_http_bridge", true)
 	}
-	upstreamReq = upstreamReq.WithContext(context.WithValue(upstreamReq.Context(), codexRoutingIngressKey{}, "ws"))
+	upstreamReq = upstreamReq.WithContext(context.WithValue(upstreamReq.Context(), codexWireIngressKey{}, "ws"))
 
 	// Bridge turns have no PrepareRequest: compare the frame the bridge received
 	// with the plaintext body just built, before zstd in doOpenAICodexUpstream.

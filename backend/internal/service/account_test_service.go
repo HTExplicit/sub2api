@@ -970,11 +970,7 @@ func (s *AccountTestService) testOpenAIAccountConnection(c *gin.Context, account
 	// 账号级请求头覆写：测试请求与真实转发保持一致的最终头
 	credentialAccount.ApplyHeaderOverrides(req.Header)
 	if isOAuth && !account.IsCredentialShadow() && s.openAIGatewayService != nil {
-		req = withCodexRoutingModel(req, upstreamTestModelID)
-		if err := s.openAIGatewayService.applyOpenAICodexTicket(ctx, credentialAccount, upstreamTestModelID, req.Header); err != nil {
-			return s.sendErrorAndEnd(c, "当前账号/模型没有有效的 Cookie 路由验证，请先执行采集与业务出口复验；此次连接测试未发送上游请求。原始错误："+err.Error())
-		}
-		s.sendEvent(c, TestEvent{Type: "status", Text: "Codex ticket", Data: codexTicketWireSummary(req.Header)})
+		req = withCodexExpectedModel(req, upstreamTestModelID)
 	}
 
 	// Get proxy URL
@@ -987,7 +983,6 @@ func (s *AccountTestService) testOpenAIAccountConnection(c *gin.Context, account
 		base := resolveCodexIdentitySnapshotContext(ctx, account, credentialAccount, codexAccountIdentityOverrideUA(credentialAccount))
 		req = req.WithContext(withCodexWireObserver(req.Context(), func(wire *http.Request) {
 			codexWireObserved = true
-			s.sendEvent(c, TestEvent{Type: "status", Text: "Final Codex ticket", Data: codexTicketWireSummary(wire.Header)})
 			snapshot := base.withWire("http", wire.Header)
 			s.sendEvent(c, TestEvent{Type: "status", Text: snapshot.summary(), Data: snapshot})
 			s.sendEvent(c, TestEvent{Type: "status", Text: "Codex wire headers", Data: accountTestWireHeaders(wire.Header)})
@@ -3203,9 +3198,9 @@ func accountTestImageErrorFrame(body []byte) string {
 }
 
 // accountTestWireHeaders reports the request headers a Codex connection test
-// sent upstream, values verbatim (identity headers, ticket and cookies
-// included). The Authorization header is the account credential itself and
-// stays behind the account credential view.
+// sent upstream, values verbatim (identity headers included). The
+// Authorization header is the account credential itself and stays behind the
+// account credential view.
 func accountTestWireHeaders(header http.Header) map[string]string {
 	out := make(map[string]string, len(header))
 	for name, values := range header {

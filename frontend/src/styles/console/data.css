@@ -373,7 +373,7 @@ html.flat-theme.dark .table-wrapper .table-body > tr[class~="bg-primary-50/40"][
   }
 }
 
-/* and the danger red of a failure note in a selected row (the accounts usage tickets' 「…检查失败」): #f87171 is 3.71:1 on
+/* and the danger red of a failure note in a selected row: #f87171 is 3.71:1 on
    the selected fill; the lighter red (--ui-selected-danger) keeps it a failure and readable (batch 7, reported by the
    accounts agent). Amber (6.14, 5.55 on the hover) holds as it is; the light theme's red is 4.79 on its selected
    fill and 4.53 on its hover (--ui-row-pick-hover). */

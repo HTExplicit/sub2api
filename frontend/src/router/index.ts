@@ -578,7 +578,7 @@ const routes: RouteRecordRaw[] = [
     path: '/admin/codex-runtime',
     name: 'AdminCodexRuntime',
     component: () => import('@/views/admin/CodexRuntimeView.vue'),
-    meta: { requiresAuth: true, requiresAdmin: true, title: 'Codex route settings', titleKey: 'nav.codexRuntime' }
+    meta: { requiresAuth: true, requiresAdmin: true, title: 'Codex runtime settings', titleKey: 'nav.codexRuntime' }
   },
   {
     path: '/admin/announcements',

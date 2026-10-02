@@ -2384,7 +2384,7 @@ html.flat-theme [data-ui="key-usage"] .skeleton {
 /* end public */
 
 /* settings: 系统设置 (every tab, its sub-panels and dialogs), 系统提示词 (the library and the per-account binding
- * views), Codex 路由设置 and 插件管理. Owner: wave 2 P3 (the settings page agent).
+ * views), Codex 运行设置 and 插件管理. Owner: wave 2 P3 (the settings page agent).
  *
  * Source: the reference console's settings language (artifacts/tmp/ui-el/ref/console/REF-CONSOLE.md §5, §8.3-§8.5,
  * §8.11, §8.16 and its public recipes: Modal, ConnectModal, DemoBanner, PromoField, TopUpModal, Toggle, AddChoice)
@@ -3034,7 +3034,7 @@ html.flat-theme [data-ui~="settings"] .card div[class~="overflow-x-auto"] > tabl
 /* ================================================================== 7 · page heads of the fork pages and plugins */
 
 /* 7.1 The page's own heading repeats the header row's title word for word (系统提示词 in Chinese — its route title is
-   not translated —, Codex 路由设置, 插件管理), and the plugins intro repeats the header's description word for word.
+   not translated —, Codex 运行设置, 插件管理), and the plugins intro repeats the header's description word for word.
    From 1024px, where the header row shows both, they are kept for assistive technology only; below that the header
    hides its title and description and the page's own stay. */
 @media (min-width: 1024px) {
@@ -3052,7 +3052,7 @@ html.flat-theme [data-ui~="settings"] .card div[class~="overflow-x-auto"] > tabl
 }
 
 /* 7.2 The intro under the title: the reference's page intro (13px on a relaxed line, muted, 780px at most); a
-   wrapped intro keeps more than one character on its last line (the Codex intro ended on a lone 「证。」). */
+   wrapped intro keeps more than one character on its last line. */
 html.flat-theme [data-ui~="system-prompts"] > header p,
 html.flat-theme [data-ui~="codex-runtime"] > h2:first-child + p,
 html.flat-theme [data-ui~="plugins"] > section:first-child > div:first-child > p {
@@ -3244,12 +3244,10 @@ html.flat-theme [data-test="account-system-prompt-binding"] > h3 {
   color: rgb(var(--ui-ink));
 }
 
-/* ================================================================== 9 · Codex 路由设置 (CodexRuntimeSettings, fork) */
+/* ================================================================== 9 · Codex 运行设置 (CodexRuntimeSettings, fork) */
 
-/* 9.1 The form is one section card (surface, structural line, radius 8, 16 x 18); its fields follow the settings
-   language: the two switches as 13px options beside their 14px boxes, the runtime facts as a two-column definition
-   list on the grouped fill (labels muted, values ink, identifiers in Geist Mono), mono field labels, the proxy in
-   Geist Mono, 12px notes, the actions as one row. */
+/* 9.1 The form is one section card (surface, structural line, radius 8, 16 x 18) holding the request-compression
+   switch (an option beside its 14px box) and the save action. */
 html.flat-theme [data-ui~="codex-runtime"] > :not([hidden]) ~ :not([hidden]) {
   margin-top: var(--ui-shell-gap);
 }
@@ -3266,108 +3264,7 @@ html.flat-theme [data-ui~="codex-runtime"] > fieldset > label[class~="flex"] {
   color: rgb(var(--ui-ink));
 }
 
-html.flat-theme [data-ui~="codex-runtime"] > fieldset > label[class~="flex"] + label[class~="flex"] {
-  margin-top: 0.625rem;
-}
-
-html.flat-theme [data-ui~="codex-runtime"] [data-test="codex-runtime-facts"] {
-  column-gap: 1.25rem;
-  row-gap: 0.25rem;
-  border: 1px solid rgb(var(--ui-line));
-  border-radius: var(--ui-radius-md);
-  background-color: rgb(var(--ui-subtle) / 0.6);
-  padding: 0.625rem 0.875rem;
-  font-size: 0.78125rem;
-  line-height: 1.171875rem;
-}
-
-html.flat-theme [data-ui~="codex-runtime"] [data-test="codex-runtime-facts"] > dt {
-  color: rgb(var(--ui-muted));
-}
-
-html.flat-theme [data-ui~="codex-runtime"] [data-test="codex-runtime-facts"] > dd {
-  color: rgb(var(--ui-ink));
-}
-
-html.flat-theme [data-ui~="codex-runtime"] [data-test="codex-runtime-facts"] > dd[class~="font-mono"] {
-  font-size: 0.75rem;
-}
-
-/* on a phone the long labels left the values a sliver (the model list broke every few letters): each value under
-   its label */
-@media (max-width: 639.98px) {
-  html.flat-theme [data-ui~="codex-runtime"] [data-test="codex-runtime-facts"] {
-    grid-template-columns: minmax(0, 1fr);
-  }
-
-  html.flat-theme [data-ui~="codex-runtime"] [data-test="codex-runtime-facts"] > dd:not(:last-child) {
-    margin-bottom: 0.375rem;
-  }
-}
-
-html.flat-theme [data-ui~="codex-runtime"] fieldset label > span:first-child:not(:only-child) {
-  display: block;
-  margin-bottom: 0.5rem;
-  font-family: var(--ui-font-mono);
-  font-size: var(--ui-label-size);
-  line-height: var(--ui-label-leading);
-  font-weight: 600;
-  letter-spacing: var(--ui-label-tracking);
-  text-transform: uppercase;
-  color: rgb(var(--ui-label));
-}
-
-html.flat-theme [data-ui~="codex-runtime"] fieldset label[class~="space-y-2"] > :not([hidden]) ~ :not([hidden]) {
-  margin-top: 0;
-}
-
-html.flat-theme [data-ui~="codex-runtime"] [data-test="codex-proxy"] {
-  font-family: var(--ui-font-mono);
-  font-size: 0.78125rem;
-  line-height: 1.625;
-}
-
-html.flat-theme [data-ui~="codex-runtime"] > fieldset > div[class~="flex"][class~="items-end"] {
-  gap: 0.5rem;
-}
-
-/* one control height per row (controls.css 4.4): the protocol select sits beside 30px buttons */
-html.flat-theme [data-ui~="codex-runtime"] > fieldset > div[class~="flex"][class~="items-end"] select.input {
-  padding-top: 0.265625rem;
-  padding-bottom: 0.265625rem;
-}
-
-html.flat-theme [data-ui~="codex-runtime"] > fieldset > p[class~="text-sm"] {
-  font-size: 0.75rem;
-  line-height: 1.125rem;
-}
-
-/* the candidates and the issue list: a grouped box (radius 6) with a mono legend; issues in the danger colour */
-html.flat-theme [data-ui~="codex-runtime"] [data-test="codex-proxy-candidates"] {
-  border-color: rgb(var(--ui-line));
-  border-radius: var(--ui-radius-md);
-  padding: 0.625rem 0.875rem 0.75rem;
-}
-
-html.flat-theme [data-ui~="codex-runtime"] [data-test="codex-proxy-candidates"] > legend {
-  padding-inline: 0.25rem;
-  font-family: var(--ui-font-mono);
-  font-size: var(--ui-label-size);
-  line-height: var(--ui-label-leading);
-  font-weight: 600;
-  letter-spacing: var(--ui-label-tracking);
-  text-transform: uppercase;
-  color: rgb(var(--ui-label));
-}
-
-html.flat-theme [data-ui~="codex-runtime"] [data-test="codex-proxy-issues"] {
-  font-size: 0.78125rem;
-  line-height: 1.171875rem;
-  color: rgb(var(--ui-danger));
-}
-
-/* 9.2 The result of a check or save (role=status under the form): a section card of its own, 12 x 14; codes,
-   fingerprints and the stages in Geist Mono; the certificates as definition lists under hairlines. */
+/* 9.2 The result of a save (role=status under the form): a section card of its own, 12 x 14. */
 html.flat-theme [data-ui~="codex-runtime"] > [role="status"] {
   border-color: rgb(var(--ui-line));
   border-radius: var(--ui-radius-lg);
@@ -3380,20 +3277,6 @@ html.flat-theme [data-ui~="codex-runtime"] > [role="status"][class~="text-red-60
   border-color: rgb(var(--ui-danger) / 0.3);
   background-color: rgb(var(--ui-danger-soft));
   color: rgb(var(--ui-danger));
-}
-
-html.flat-theme [data-ui~="codex-runtime"] [data-test="codex-proxy-stages"],
-html.flat-theme [data-ui~="codex-runtime"] [data-test="codex-proxy-certificate"] {
-  font-size: 0.75rem;
-  line-height: 1.125rem;
-}
-
-html.flat-theme [data-ui~="codex-runtime"] [data-test="codex-proxy-certificate"] {
-  border-color: rgb(var(--ui-line));
-}
-
-html.flat-theme [data-ui~="codex-runtime"] [data-test="codex-proxy-certificate"] > dt {
-  color: rgb(var(--ui-muted));
 }
 
 /* ================================================================== 10 · 插件管理 (PluginsView) and retired plugins */

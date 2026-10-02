@@ -12,16 +12,13 @@ import (
 )
 
 type nativeCodexRepository struct {
-	db             *sql.DB
-	refreshAccount func(context.Context, int64)
+	db *sql.DB
 }
 
-func NewNativeCodexRepository(db *sql.DB, accounts service.AccountRepository) service.NativeCodexRepository {
-	r := &nativeCodexRepository{db: db}
-	if concrete, ok := accounts.(*accountRepository); ok {
-		r.refreshAccount = concrete.syncSchedulerAccountSnapshotDetached
-	}
-	return r
+// The account repository only served the retired route-qualification
+// projection writes; the parameter keeps the wire graph unchanged.
+func NewNativeCodexRepository(db *sql.DB, _ service.AccountRepository) service.NativeCodexRepository {
+	return &nativeCodexRepository{db: db}
 }
 
 func nativeCodexRuntimeLockName(id int64) string {
@@ -107,29 +104,6 @@ func readNativeCodexMetadata(ctx context.Context, q nativeCodexMetadataQuerier, 
 
 func (r *nativeCodexRepository) LoadNativeCodexMetadata(ctx context.Context) (*service.NativeCodexMetadata, error) {
 	return readNativeCodexMetadata(ctx, r.db, "")
-}
-
-func (r *nativeCodexRepository) ValidateLegacyCodexJobSource(ctx context.Context, pluginID int64) error {
-	metadata, err := r.LoadNativeCodexMetadata(ctx)
-	if err != nil {
-		return err
-	}
-	if pluginID <= 0 || metadata.ID != pluginID {
-		return service.ErrNativeCodexRuntimeChanged
-	}
-	var raw string
-	if err = r.db.QueryRowContext(ctx, `SELECT value FROM settings WHERE key=$1`, service.NativeCodexRetirementSettingKey).Scan(&raw); err != nil {
-		return err
-	}
-	var snapshot service.NativeRetirementSnapshot
-	if json.Unmarshal([]byte(raw), &snapshot) != nil || snapshot.Version != 1 || !snapshot.Completed {
-		return service.ErrNativeCodexRuntimeChanged
-	}
-	origin, exists := snapshot.Plugins[service.NativeCodexPluginKey]
-	if !exists || origin.ID != pluginID || origin.NativeCreated {
-		return service.ErrNativeCodexRuntimeChanged
-	}
-	return nil
 }
 
 func (r *nativeCodexRepository) SyncNativeCodexConfig(ctx context.Context, hash string) (*service.NativeCodexMetadata, error) {

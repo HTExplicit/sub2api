@@ -262,56 +262,32 @@ type accountJobTestExecutor struct {
 	cleanupCalls     int
 }
 
-type batchTestConcurrencyExecutor struct {
-	mu        sync.Mutex
-	active    int
-	maxActive int
-	processed int
-}
+// Retired kinds (route acquisition, renewal stop, legacy extension operation)
+// keep their rows readable, but nothing can submit or retry them.
+func TestAccountJobRetiredKindsStayReadableButCannotRun(t *testing.T) {
+	for _, kind := range []string{"codex_ticket_harvest", "codex_ticket_stop", "extension_operation"} {
+		t.Run(kind, func(t *testing.T) {
+			repo := newAccountJobTestRepo()
+			jobs := NewAccountJobService(repo, accountJobTestCipher{})
+			_, _, err := jobs.Submit(context.Background(), 9, kind, "new", json.RawMessage(`{}`), nil, []AccountJobItemSeed{{Ordinal: 1}})
+			require.Error(t, err)
+			old, _, err := repo.Create(context.Background(), CreateAccountJobParams{CreatedBy: 9, Kind: kind, IdempotencyKey: "old",
+				PayloadCipher: "cipher:{}", PayloadExpires: time.Now().Add(time.Hour), Items: []AccountJobItemSeed{{Ordinal: 1}}, Attempt: 1})
+			require.NoError(t, err)
+			repo.jobs[old.ID].Status = AccountJobStatusFailed
+			repo.jobs[old.ID].FailedCount = 1
+			repo.items[old.ID][0].Status = AccountJobItemStatusFailed
 
-func (e *batchTestConcurrencyExecutor) ExecuteAccountJob(ctx context.Context, _ *AccountJob, _ json.RawMessage, items []AccountJobItem) ([]AccountJobExecutionResult, error) {
-	if len(items) != 1 {
-		return nil, errors.New("expected one batch test item")
+			stored, err := jobs.Get(context.Background(), old.ID)
+			require.NoError(t, err)
+			require.Equal(t, kind, stored.Kind)
+			require.False(t, stored.RetryEligible)
+			require.Equal(t, "kind_unsupported", stored.RetryUnavailableReason)
+			_, _, err = jobs.RetryFailed(context.Background(), old.ID, 9, "retry")
+			require.ErrorIs(t, err, ErrAccountJobNotRetryable)
+			require.Len(t, repo.jobs, 1)
+		})
 	}
-	e.mu.Lock()
-	e.active++
-	if e.active > e.maxActive {
-		e.maxActive = e.active
-	}
-	e.processed++
-	e.mu.Unlock()
-	defer func() {
-		e.mu.Lock()
-		e.active--
-		e.mu.Unlock()
-	}()
-	select {
-	case <-time.After(5 * time.Millisecond):
-	case <-ctx.Done():
-		return nil, ctx.Err()
-	}
-	return []AccountJobExecutionResult{{ItemID: items[0].ID, Status: AccountJobItemStatusSucceeded, Metadata: json.RawMessage(`{"account_id":1}`)}}, nil
-}
-
-func TestAccountJobConcurrentRuntimeUsesFiveSharedSlots(t *testing.T) {
-	repo := newAccountJobTestRepo()
-	jobs := NewAccountJobService(repo, accountJobTestCipher{})
-	seeds := make([]AccountJobItemSeed, 12)
-	for index := range seeds {
-		seeds[index].Ordinal = index + 1
-	}
-	job, _, err := jobs.Submit(context.Background(), 9, AccountJobKindCodexTicketHarvest, "concurrent-slots",
-		json.RawMessage(`{"model_id":""}`), nil, seeds)
-	require.NoError(t, err)
-	executor := &batchTestConcurrencyExecutor{}
-	runtime := NewAccountJobRuntime(jobs, executor)
-	runtime.ctx = context.Background()
-
-	code, message := runtime.execute(job)
-	require.Empty(t, code)
-	require.Empty(t, message)
-	require.Equal(t, 12, executor.processed)
-	require.LessOrEqual(t, executor.maxActive, 5)
 }
 
 func (e *accountJobTestExecutor) PrepareAccountJob(ctx context.Context, _ *AccountJob, _ json.RawMessage) (context.Context, func(), error) {
@@ -438,8 +414,8 @@ func TestAccountJobRuntimeStoresItemResultsVerbatim(t *testing.T) {
 	runtime := NewAccountJobRuntime(nil, accountJobResultExecutor{
 		results: map[int64]AccountJobExecutionResult{
 			1: {ItemID: 1, Status: AccountJobItemStatusFailed, ErrorCode: "delete_failed", ErrorMessage: "pq: account 7 is still referenced"},
-			2: {ItemID: 2, Status: AccountJobItemStatusSucceeded, Metadata: json.RawMessage(`{"cookie_names":["__cflb"],"proxy_password":"kept"}`)},
-			3: {ItemID: 3, Status: AccountJobItemStatusFailed, ErrorCode: "routing_capacity"},
+			2: {ItemID: 2, Status: AccountJobItemStatusSucceeded, Metadata: json.RawMessage(`{"cookie_names":["sid"],"proxy_password":"kept"}`)},
+			3: {ItemID: 3, Status: AccountJobItemStatusFailed, ErrorCode: "code_not_in_catalog"},
 		},
 		errs: map[int64]error{4: errors.New("executor exploded")},
 	})
@@ -451,11 +427,11 @@ func TestAccountJobRuntimeStoresItemResultsVerbatim(t *testing.T) {
 
 	succeeded := runtime.executeItem(context.Background(), job, nil, AccountJobItem{ID: 2})
 	require.Equal(t, AccountJobItemStatusSucceeded, succeeded.Status)
-	require.JSONEq(t, `{"cookie_names":["__cflb"],"proxy_password":"kept"}`, string(succeeded.Metadata))
+	require.JSONEq(t, `{"cookie_names":["sid"],"proxy_password":"kept"}`, string(succeeded.Metadata))
 
-	routing := runtime.executeItem(context.Background(), job, nil, AccountJobItem{ID: 3})
-	require.Equal(t, "routing_capacity", routing.ErrorCode)
-	require.Equal(t, "上游容量不足或流内限流，未完成路由验证", routing.ErrorMessage)
+	uncatalogued := runtime.executeItem(context.Background(), job, nil, AccountJobItem{ID: 3})
+	require.Equal(t, "code_not_in_catalog", uncatalogued.ErrorCode)
+	require.Equal(t, "account job item failed", uncatalogued.ErrorMessage)
 
 	errored := runtime.executeItem(context.Background(), job, nil, AccountJobItem{ID: 4})
 	require.Equal(t, AccountJobItemStatusFailed, errored.Status)

@@ -2,23 +2,18 @@ package service
 
 import (
 	"context"
-	"encoding/json"
-	extensionv1 "github.com/Wei-Shaw/sub2api/internal/nativeapi"
-	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/status"
 	"sync"
 )
 
+// nativeCodexHost fences runtime invocations to one configuration epoch: bind
+// holds the persistent runtime lease for a call, drain waits for the epoch's
+// calls before a configuration change.
 type nativeCodexHost struct {
 	leaseMu   sync.Mutex
 	leaseWork sync.WaitGroup
 	closing   bool
-	key       string
-	state     NativeCodexStateStore
-	directory NativeCodexAccountDirectory
 	metadata  *NativeCodexMetadata
 	repo      NativeCodexRepository
-	activity  *QuotaActivityService
 	epoch     context.Context
 }
 type nativeCodexLeaseBindingKey struct{}
@@ -115,162 +110,4 @@ func (h *nativeCodexHost) drain(ctx context.Context) error {
 	case <-ctx.Done():
 		return ctx.Err()
 	}
-}
-
-func (h *nativeCodexHost) permitsAccount(platform, accountType string, accountID int64, credentials bool) bool {
-	return accountID > 0 && platform == PlatformOpenAI && (!credentials || accountType == AccountTypeOAuth || accountType == AccountTypeSetupToken)
-}
-
-func (h *nativeCodexHost) Call(ctx context.Context, in extensionv1.HostInvocation) (extensionv1.Result, error) {
-	bound, release, err := h.bind(ctx)
-	if err != nil {
-		return extensionv1.Result{}, err
-	}
-	defer release()
-	ctx = bound
-	if h.state == nil {
-		return extensionv1.Result{}, ErrNativeCodexRuntimeUnavailable
-	}
-	if isCodexRoutingHostOperation(in.Operation) {
-		return h.callCodexRouting(ctx, in)
-	}
-	var value any
-	switch in.Operation {
-	case extensionv1.HostStateDue:
-		var req extensionv1.DueStateRequest
-		if json.Unmarshal(in.Payload, &req) != nil || validatePluginKVNamespace(req.Namespace) != nil || req.Limit < 1 || req.Limit > 100 {
-			return extensionv1.Result{}, status.Error(codes.InvalidArgument, "invalid due-state query")
-		}
-		// Bundles, cookie clocks, first-seen and validation records are host-only:
-		// they hold live cookie values that bundle expiry and quality-run close
-		// clear. What administrators see (raw STATE, upstream response headers,
-		// errors) reaches the runtime in probe results and is kept in its tickets
-		// records, never read back from this namespace.
-		if req.Namespace == codexRoutingPrivateNamespace {
-			return extensionv1.Result{}, status.Error(codes.PermissionDenied, "codex routing bundles and cookie clocks are host-only state")
-		}
-		value, err = h.state.DueExtensionStates(ctx, h.key, req)
-	case extensionv1.HostAccountRead, extensionv1.HostAccountList, extensionv1.HostResolveIdentity, extensionv1.HostFinishObservation:
-		if h.directory == nil {
-			return extensionv1.Result{}, status.Error(codes.Unavailable, "account directory unavailable")
-		}
-		var req extensionv1.AccountQuery
-		if json.Unmarshal(in.Payload, &req) != nil {
-			return extensionv1.Result{}, status.Error(codes.InvalidArgument, "invalid account query")
-		}
-		if in.Operation == extensionv1.HostAccountList {
-			if req.Platform == "" || req.Platform == "*" {
-				return extensionv1.Result{}, status.Error(codes.InvalidArgument, "explicit platform required")
-			}
-			accounts, queryErr := h.directory.ListExtensionAccounts(ctx, req)
-			if queryErr != nil {
-				return extensionv1.Result{}, status.Error(codes.Internal, "account query failed")
-			}
-			allowed := make([]extensionv1.Account, 0, len(accounts))
-			for _, account := range accounts {
-				if h.permitsAccount(account.Platform, account.Type, account.ID, false) {
-					allowed = append(allowed, account)
-				}
-			}
-			value = allowed
-		} else {
-			if req.AccountID <= 0 {
-				return extensionv1.Result{}, status.Error(codes.InvalidArgument, "positive account identifier required")
-			}
-			account, queryErr := h.directory.ReadExtensionAccount(ctx, req.AccountID)
-			if queryErr != nil || account == nil || account.ID != req.AccountID {
-				return extensionv1.Result{}, status.Error(codes.NotFound, "account unavailable")
-			}
-			if !h.permitsAccount(account.Platform, account.Type, account.ID, in.Operation == extensionv1.HostResolveIdentity) {
-				return extensionv1.Result{}, status.Error(codes.PermissionDenied, "account is outside plugin capability")
-			}
-			switch in.Operation {
-			case extensionv1.HostAccountRead:
-				value = account
-			case extensionv1.HostFinishObservation:
-				if h.activity == nil {
-					return extensionv1.Result{}, ErrNativeCodexRuntimeUnavailable
-				}
-				err = h.activity.FinishUnbilled(ctx, req.AccountID, h.key, req.ObservationID)
-				value = map[string]bool{"finished": err == nil}
-			default:
-				identity, resolveErr := h.directory.ResolveExtensionIdentity(ctx, req)
-				err = resolveErr
-				if err == nil && identity != nil && req.PrepareCredentials {
-					if h.activity == nil {
-						return extensionv1.Result{}, ErrNativeCodexRuntimeUnavailable
-					}
-					identity.ObservationID, err = h.activity.BeginUnbilled(ctx, req.AccountID, h.key)
-				}
-				value = identity
-			}
-		}
-	case extensionv1.HostStateRead, extensionv1.HostStateCompareSwap:
-		var req extensionv1.StateRequest
-		if json.Unmarshal(in.Payload, &req) != nil || validatePluginKVNamespace(req.Namespace) != nil || validatePluginKVKey(req.Key) != nil || req.ExpectedRevision < 0 {
-			return extensionv1.Result{}, status.Error(codes.InvalidArgument, "invalid state request")
-		}
-		// Bundles, cookie clocks, first-seen and validation records are host-only:
-		// they hold live cookie values that bundle expiry and quality-run close
-		// clear. What administrators see (raw STATE, upstream response headers,
-		// errors) reaches the runtime in probe results and is kept in its tickets
-		// records, never read back from this namespace.
-		if req.Namespace == codexRoutingPrivateNamespace {
-			return extensionv1.Result{}, status.Error(codes.PermissionDenied, "codex routing bundles and cookie clocks are host-only state")
-		}
-		if in.Operation == extensionv1.HostStateRead {
-			value, err = h.state.ReadExtensionState(ctx, h.key, req)
-		} else {
-			if !json.Valid(req.Value) || len(req.Value) > pluginKVMaxValueBytes {
-				return extensionv1.Result{}, status.Error(codes.InvalidArgument, "invalid state value")
-			}
-			if projection := req.Projection; projection != nil {
-				if h.directory == nil || projection.AccountID <= 0 || projection.Identity == "" || len(projection.Scheduling) > 64 {
-					return extensionv1.Result{}, status.Error(codes.InvalidArgument, "invalid account projection")
-				}
-				account, lookupErr := h.directory.ReadExtensionAccount(ctx, projection.AccountID)
-				if lookupErr != nil || account == nil || account.ID != projection.AccountID || account.Identity != projection.Identity || !h.permitsAccount(account.Platform, account.Type, account.ID, false) {
-					return extensionv1.Result{}, status.Error(codes.PermissionDenied, "account projection outside credential scope")
-				}
-				for _, constraint := range projection.Scheduling {
-					if constraint.Model == "" || len(constraint.Model) > 256 || (constraint.Effect != "allow" && constraint.Effect != "deny") || len(constraint.Reason) > 80 {
-						return extensionv1.Result{}, status.Error(codes.InvalidArgument, "invalid scheduling projection")
-					}
-				}
-				if len(projection.Observations) > 64 {
-					return extensionv1.Result{}, status.Error(codes.InvalidArgument, "too many observations")
-				}
-				for _, observation := range projection.Observations {
-					if observation.Key == "" || len(observation.Key) > 256 || len(observation.Kind) > 64 || len(observation.State) > 64 || len(observation.Code) > 80 ||
-						len(observation.Message) > extensionv1.AccountObservationMessageLimit || len(observation.ResponseModel) > extensionv1.AccountObservationModelLimit {
-						return extensionv1.Result{}, status.Error(codes.InvalidArgument, "invalid account observation")
-					}
-				}
-			}
-			value, err = h.state.CompareSwapExtensionState(ctx, h.key, req)
-		}
-	case extensionv1.HostLeaseAcquire, extensionv1.HostLeaseRelease:
-		var req extensionv1.LeaseRequest
-		if json.Unmarshal(in.Payload, &req) != nil || validatePluginKVNamespace(req.Namespace) != nil || validatePluginKVKey(req.Key) != nil || validatePluginKVKey(req.Owner) != nil {
-			return extensionv1.Result{}, status.Error(codes.InvalidArgument, "invalid lease request")
-		}
-		if in.Operation == extensionv1.HostLeaseAcquire {
-			if req.TTLSeconds < 1 || req.TTLSeconds > 300 {
-				return extensionv1.Result{}, status.Error(codes.InvalidArgument, "invalid lease duration")
-			}
-			value, err = h.state.AcquireExtensionLease(ctx, h.key, req)
-		} else {
-			if req.Generation <= 0 {
-				return extensionv1.Result{}, status.Error(codes.InvalidArgument, "lease generation required")
-			}
-			value, err = h.state.ReleaseExtensionLease(ctx, h.key, req)
-		}
-	default:
-		return extensionv1.Result{}, status.Error(codes.PermissionDenied, "host operation not granted")
-	}
-	if err != nil {
-		return extensionv1.Result{}, status.Error(codes.Internal, "extension storage operation failed")
-	}
-	raw, err := json.Marshal(value)
-	return extensionv1.Result{Payload: raw}, err
 }

@@ -20,12 +20,17 @@ const (
 	nativeCodexRuntimeGenerationHeader = "X-Sub2API-Codex-Runtime-Generation"
 )
 
+// SetCodexGateway attaches the gateway that hosts the native Codex runtime.
+func (h *SettingHandler) SetCodexGateway(gateway *service.OpenAIGatewayService) {
+	h.codexGateway = gateway
+}
+
 func (h *SettingHandler) SetNativeCodexConfigEncryptor(encryptor service.SecretEncryptor) {
 	h.nativeCodexConfigEncryptor = encryptor
 }
 
 func (h *SettingHandler) GetNativeCodexConfiguration(c *gin.Context) {
-	writeNativeCodexConfiguration(c, h.codexTicketGateway.NativeCodexConfiguration)
+	writeNativeCodexConfiguration(c, h.codexGateway.NativeCodexConfiguration)
 }
 
 func writeNativeCodexConfiguration(c *gin.Context, read func(context.Context) (json.RawMessage, service.NativeCodexMetadata, error)) {
@@ -49,26 +54,23 @@ func (h *SettingHandler) UpdateNativeCodexConfiguration(c *gin.Context) {
 	c.Header("Cache-Control", "no-store")
 	var raw json.RawMessage
 	if err := c.ShouldBindJSON(&raw); err != nil {
-		response.BadRequest(c, "Invalid Codex routing configuration: "+err.Error())
+		response.BadRequest(c, "Invalid Codex runtime configuration: "+err.Error())
 		return
 	}
 	if len(raw) > 1<<20 {
-		response.BadRequest(c, fmt.Sprintf("Invalid Codex routing configuration: %d bytes exceed the 1 MiB limit", len(raw)))
+		response.BadRequest(c, fmt.Sprintf("Invalid Codex runtime configuration: %d bytes exceed the 1 MiB limit", len(raw)))
 		return
 	}
 	normalized, err := service.NormalizeNativeCodexConfig(c.Request.Context(), raw)
 	if err != nil {
-		if writeCodexProxySelectionError(c, err) {
-			return
-		}
-		response.BadRequest(c, "Invalid Codex routing configuration: "+err.Error())
+		response.BadRequest(c, "Invalid Codex runtime configuration: "+err.Error())
 		return
 	}
-	if h.codexTicketGateway == nil {
+	if h.codexGateway == nil {
 		response.Error(c, 503, "Codex runtime is unavailable")
 		return
 	}
-	if err := h.codexTicketGateway.UpdateNativeCodexConfiguration(c.Request.Context(), normalized, h.nativeCodexConfigEncryptor); err != nil {
+	if err := h.codexGateway.UpdateNativeCodexConfiguration(c.Request.Context(), normalized, h.nativeCodexConfigEncryptor); err != nil {
 		if errors.Is(err, service.ErrNativeCodexRuntimeChanged) {
 			response.Error(c, 409, "Codex runtime configuration changed; reload and retry: "+err.Error())
 		} else {

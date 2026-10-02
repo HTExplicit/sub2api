@@ -1,21 +1,20 @@
 package service
 
 import (
-	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"testing"
-	"time"
 
+	"github.com/Wei-Shaw/sub2api/internal/config"
 	extensionv1 "github.com/Wei-Shaw/sub2api/internal/nativeapi"
 	"github.com/stretchr/testify/require"
 )
 
 type nativeSameConfigRepository struct {
-	*routingMemoryStore
+	*nativeCodexMemoryStore
 	metadata *NativeCodexMetadata
 	stored   int
 	failure  error
@@ -40,13 +39,76 @@ func (nativeConfigEncryptorFixture) Encrypt(value string) (string, error) {
 }
 func (nativeConfigEncryptorFixture) Decrypt(value string) (string, error) { return value, nil }
 
+// nativeStoredConfigRepository serves one saved configuration and records the
+// hash and cipher the runtime writes back.
+type nativeStoredConfigRepository struct {
+	*nativeCodexMemoryStore
+	stored   string
+	metadata *NativeCodexMetadata
+}
+
+func (r *nativeStoredConfigRepository) ReadNativeCodexStoredConfig(context.Context) (string, bool, error) {
+	return r.stored, true, nil
+}
+func (r *nativeStoredConfigRepository) LoadNativeCodexMetadata(context.Context) (*NativeCodexMetadata, error) {
+	m := *r.metadata
+	return &m, nil
+}
+func (r *nativeStoredConfigRepository) SyncNativeCodexConfig(_ context.Context, hash string) (*NativeCodexMetadata, error) {
+	if hash != r.metadata.ConfigSHA256 {
+		r.metadata = &NativeCodexMetadata{ID: r.metadata.ID, RuntimeGeneration: r.metadata.RuntimeGeneration + 1, ConfigVersion: r.metadata.ConfigVersion + 1, ConfigSHA256: hash}
+	}
+	m := *r.metadata
+	return &m, nil
+}
+func (r *nativeStoredConfigRepository) StoreNativeCodexConfig(ctx context.Context, cipher, hash string) (*NativeCodexMetadata, error) {
+	r.stored = cipher
+	return r.SyncNativeCodexConfig(ctx, hash)
+}
+
+func TestNativeCodexStoredRetiredSettingsStillBoot(t *testing.T) {
+	previous := nativeCodexPolicyRuntime.Load()
+	t.Cleanup(func() { nativeCodexPolicyRuntime.Store(previous) })
+	ctx := context.Background()
+	// A configuration saved before the route-qualification feature was retired
+	// holds every one of its settings next to request_zstd.
+	stored := `{"routing_schema":2,"enabled":true,"fail_closed":true,"proxy_url":"http://user:fixture-secret@proxy.test:8080","proxy_protocol":"https","proxy_selection_id":"selection","models":["gpt-6-astra","gpt-6-sol","gpt-6-luna","gpt-5.6-sol"],"request_zstd":false}`
+	repo := &nativeStoredConfigRepository{nativeCodexMemoryStore: &nativeCodexMemoryStore{values: map[string]extensionv1.StateResult{}}, stored: stored, metadata: nativeCodexTestMetadata()}
+	gateway := &OpenAIGatewayService{}
+	runtime := ProvideNativeCodexRuntime(gateway, repo, nil, nativeConfigEncryptorFixture{}, &config.Config{}, nil, nil)
+	require.NoError(t, runtime.Start(ctx), "the server exits when the runtime cannot start")
+	t.Cleanup(func() { _ = runtime.Stop(context.Background()) })
+	raw, metadata, err := gateway.NativeCodexConfiguration(ctx)
+	require.NoError(t, err)
+	require.Equal(t, `{"request_zstd":false}`, string(raw))
+	sum := sha256.Sum256(raw)
+	require.Equal(t, hex.EncodeToString(sum[:]), metadata.ConfigSHA256)
+	require.Equal(t, stored, repo.stored, "booting never rewrites the saved configuration")
+	plan := func() extensionv1.CodexTransportPlan {
+		result, invokeErr := runtime.Invoke(ctx, PlatformOpenAI, AccountTypeOAuth, extensionv1.Invocation{Capability: extensionv1.CapabilityRequest, Operation: "codex.transport.plan",
+			Payload: json.RawMessage(`{"method":"POST","path":"/backend-api/codex/responses","content_type":"application/json","body_present":true}`)})
+		require.NoError(t, invokeErr)
+		var value extensionv1.CodexTransportPlan
+		require.NoError(t, json.Unmarshal(result.Payload, &value))
+		return value
+	}
+	require.False(t, plan().Compress, "the saved request_zstd stays in effect")
+	// An older admin page may still send the retired settings: they are dropped
+	// and never stored again. Any other unknown setting is still rejected.
+	require.NoError(t, runtime.UpdateConfig(ctx, json.RawMessage(`{"enabled":false,"fail_closed":true,"models":["gpt-6-astra"],"proxy_url":"","request_zstd":true}`), nativeConfigEncryptorFixture{}))
+	require.Equal(t, `fixture-cipher:{"request_zstd":true}`, repo.stored)
+	require.True(t, plan().Compress)
+	_, err = NormalizeNativeCodexConfig(ctx, json.RawMessage(`{"request_zstd":true,"harvest":true}`))
+	require.ErrorContains(t, err, "unknown codex runtime setting: harvest")
+}
+
 func TestNativeCodexSameConfigSaveKeepsActiveEpoch(t *testing.T) {
 	raw, err := NormalizeNativeCodexConfig(context.Background(), json.RawMessage(`{"enabled":false}`))
 	require.NoError(t, err)
 	sum := sha256.Sum256(raw)
 	metadata := nativeCodexTestMetadata()
 	metadata.ConfigSHA256 = hex.EncodeToString(sum[:])
-	repo := &nativeSameConfigRepository{routingMemoryStore: &routingMemoryStore{}, metadata: metadata}
+	repo := &nativeSameConfigRepository{nativeCodexMemoryStore: &nativeCodexMemoryStore{}, metadata: metadata}
 	epoch, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	snapshot := &nativeCodexSnapshot{metadata: metadata, raw: raw, ctx: epoch, cancel: cancel}
@@ -60,46 +122,4 @@ func TestNativeCodexSameConfigSaveKeepsActiveEpoch(t *testing.T) {
 	require.ErrorIs(t, runtime.UpdateConfig(context.Background(), raw, nativeConfigEncryptorFixture{}), repo.failure)
 	require.NoError(t, epoch.Err())
 	require.Same(t, snapshot, runtime.current())
-}
-
-func TestNativeCodexClosedLedgerReadableWithoutRewritingGeneration(t *testing.T) {
-	host, _, store := routingHostFixture()
-	s := &OpenAIGatewayService{nativeCodexRuntime: nativeRoutingFixtureRuntime(host, store), accountRepo: &routingAccountRepositoryFixture{account: ticketTestAccount(7)}}
-	run := codexQualityRun{RunID: "138bf94a-1bea-4aeb-9e7a-378e9c394bc9", ActorID: 9, AccountID: 7, Status: "closed", MaxSends: 60, UsedSends: 40, RouteRuntimeGeneration: 99, Attempts: make([]CodexQualityAttempt, 40)}
-	raw, err := json.Marshal(run)
-	require.NoError(t, err)
-	key := codexRoutingPrivateNamespace + ":" + codexQualityKey(run.RunID)
-	store.values[key] = extensionv1.StateResult{Found: true, Revision: 11, Value: raw}
-	view, err := s.ReadCodexQualityRun(context.Background(), 9, 7, run.RunID)
-	require.NoError(t, err)
-	require.Equal(t, "closed", view.Status)
-	require.Equal(t, 40, view.UsedSends)
-	require.Equal(t, 60, view.MaxSends)
-	require.False(t, view.RouteReady)
-	require.True(t, bytes.Equal(raw, store.values[key].Value), "reading a closed ledger must keep its stored bytes")
-	require.EqualValues(t, 11, store.values[key].Revision)
-	require.Len(t, store.values, 1)
-	run.Status = "open"
-	run.ExpiresAt = time.Now().Add(time.Minute)
-	run.Qualification = &extensionv1.CodexRoutingQualification{}
-	rt, err := s.codexQualityRuntime()
-	require.NoError(t, err)
-	_, err = rt.qualification(context.Background(), run)
-	require.ErrorIs(t, err, ErrCodexQualityUnavailable)
-	require.True(t, bytes.Equal(raw, store.values[key].Value), "an old active generation is rejected without rewriting its stored bytes")
-}
-
-func TestNativeCodexHostKeepsPrivateStateAndCredentialScope(t *testing.T) {
-	host, directory, store := routingHostFixture()
-	raw, _ := json.Marshal(extensionv1.StateRequest{Namespace: codexRoutingPrivateNamespace, Key: "quality-run.private"})
-	_, err := host.Call(context.Background(), extensionv1.HostInvocation{Operation: extensionv1.HostStateRead, Payload: raw})
-	require.Error(t, err)
-	for _, kind := range []string{AccountTypeAPIKey, "other"} {
-		directory.account.Type = kind
-		raw, _ = json.Marshal(extensionv1.CodexRoutingQuery{AccountID: directory.account.ID, Transport: "http"})
-		_, err = host.Call(context.Background(), extensionv1.HostInvocation{Operation: extensionv1.HostCodexRoutingScope, Payload: raw})
-		require.Error(t, err)
-	}
-	require.Zero(t, directory.requests)
-	require.Empty(t, store.values)
 }

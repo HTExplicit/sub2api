@@ -399,9 +399,9 @@ html.flat-theme [data-ui="accounts-bulk-tray"] > [data-ui~="bulk-bar"] > div:las
 /* data.css draws every table (header, rows, lines, hover, sticky cells); here only what the accounts columns put in
    their cells. Short cells hold one line (a row of them is 45px, REF §7.5); the two-line layouts the owner approved
    in rounds 4-5 stay (owner decision 3, 2026-09-29): the created and expiry times on two lines (behaviour.css B1.4,
-   B1.5) and the usage column at 15rem with its route-ticket text wrapping and the capacity chip under it, as the
-   template draws them. Nothing is cut: long single-line values end in an ellipsis with the full text in their title
-   (and in the details drawer), and the table scrolls sideways for the columns after the scheduling switch. */
+   B1.5) and the usage column at 15rem with the capacity chip under it, as the template draws them. Nothing is cut:
+   long single-line values end in an ellipsis with the full text in their title (and in the details drawer), and the
+   table scrolls sideways for the columns after the scheduling switch. */
 
 /* Selection: a 14px checkbox (REF §8.4) whose 32px hit area overhangs the cell padding: it takes 24px in a row
    (24 + 2 x 10 + the line = the reference's 45px row) and 20px in the header (the 40px header). */
@@ -1296,13 +1296,6 @@ html.flat-theme [data-test^="taxonomy-item-"] .icon-button:focus-visible {
 html.flat-theme [data-test^="taxonomy-item-"] .icon-button svg {
   width: 15px;
   height: 15px;
-}
-
-/* 9.9 The row “more” menu: the two Codex route commands (CodexAccountActions, menu variant) have no glyph; their
-   labels line up with the glyphed rows' labels: indented by the 14px glyph and its 8px gap (overlays.css 1.2; an
-   indent, since the menu rows' padding comes from a stronger shared selector). */
-html.flat-theme .action-menu-content button:is([data-test="codex-harvest"], [data-test="codex-stop"]) {
-  text-indent: calc(var(--ui-menu-glyph) + 8px);
 }
 
 /* 9.10 Model mapping presets in the account forms (「+ Sonnet 4.5」, 「+ Claude→Sonnet」 ...): a hue per model family goes

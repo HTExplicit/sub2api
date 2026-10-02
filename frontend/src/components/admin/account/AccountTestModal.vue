@@ -1059,8 +1059,8 @@ const handleEvent = (event: {
       if (event.text) {
         addLine(event.text, 'text-cyan-300')
       }
-      // Status data is what the test actually sent (Codex ticket, identity and
-      // wire headers); it is shown in full.
+      // Status data is what the test actually sent (identity snapshot and wire
+      // headers); it is shown in full.
       if (event.data !== undefined && event.data !== null) {
         addLine(typeof event.data === 'string' ? event.data : JSON.stringify(event.data, null, 2), 'whitespace-pre-wrap break-all text-xs text-cyan-200/80')
       }

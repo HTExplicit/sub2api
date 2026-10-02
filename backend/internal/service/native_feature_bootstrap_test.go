@@ -67,7 +67,7 @@ func TestNativeFeatureBootstrapPreservesEffectiveConfiguration(t *testing.T) {
 			plugin: NativeRetirementPlugin{Key: "codexrip.codex-runtime", State: "updating"}, wantErr: true,
 		},
 		{
-			name:   "disabled whole Codex domain is not a routing-only switch",
+			name:   "disabled whole Codex domain needs an explicit decision",
 			plugin: NativeRetirementPlugin{Key: "codexrip.codex-runtime", State: "disabled"}, wantErr: true,
 		},
 		{

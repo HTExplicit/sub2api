@@ -52,7 +52,7 @@ func firstNonEmpty(values ...string) string {
 
 // SettingHandler 系统设置处理器
 type SettingHandler struct {
-	codexTicketGateway         *service.OpenAIGatewayService
+	codexGateway               *service.OpenAIGatewayService
 	nativeCodexConfigEncryptor service.SecretEncryptor
 	settingService             *service.SettingService
 	emailService               *service.EmailService

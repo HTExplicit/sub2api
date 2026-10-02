@@ -61,12 +61,6 @@ var accountBusinessMessageCatalog = map[string]accountBusinessMessage{
 // AccountBusinessMessage returns the catalog sentence for a code. The sentence
 // only describes a result that has no underlying error text of its own.
 func AccountBusinessMessage(code string) (string, bool) {
-	if strings.HasPrefix(code, "ticket_") {
-		r := CodexTicketFailure(code)
-		if r.Code == code {
-			return r.Message, true
-		}
-	}
 	entry, ok := accountBusinessMessageCatalog[strings.TrimSpace(code)]
 	return entry.message, ok
 }
@@ -84,11 +78,6 @@ func AccountJobFailure(code, message string) (string, string) {
 	if strings.TrimSpace(message) != "" {
 		return code, message
 	}
-	if strings.HasPrefix(code, "ticket_") || strings.HasPrefix(code, "routing_") {
-		if r := CodexTicketFailure(code); r.Code == code {
-			return code, r.Message
-		}
-	}
 	if entry, ok := accountBusinessMessageCatalog[code]; ok && entry.failure {
 		return code, entry.message
 	}
@@ -96,9 +85,8 @@ func AccountJobFailure(code, message string) (string, string) {
 }
 
 // NormalizeAccountBusinessFailure returns the code and sentence of a failure
-// without underlying error text. Every reported code is kept, including
-// routing_* and unknown ticket_* codes; only an empty code becomes
-// execution_failed.
+// without underlying error text. Every reported code is kept, including codes
+// without a catalog sentence; only an empty code becomes execution_failed.
 func NormalizeAccountBusinessFailure(code string) (string, string) {
 	return AccountJobFailure(code, "")
 }

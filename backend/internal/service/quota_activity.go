@@ -4,36 +4,12 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
-	"errors"
-	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/pkg/ctxkey"
 )
-
-func (s *QuotaActivityService) BeginUnbilled(ctx context.Context, accountID int64, owner string) (string, error) {
-	if s == nil || s.store == nil {
-		return "", errors.New("quota observation unavailable")
-	}
-	var nonce [16]byte
-	if _, err := rand.Read(nonce[:]); err != nil {
-		return "", err
-	}
-	id := owner + "." + hex.EncodeToString(nonce[:])
-	if err := s.store.Begin(ctx, accountID, id); err != nil {
-		return "", err
-	}
-	return id, nil
-}
-
-func (s *QuotaActivityService) FinishUnbilled(ctx context.Context, accountID int64, owner, id string) error {
-	if s == nil || s.store == nil || !strings.HasPrefix(id, owner+".") || len(id) != len(owner)+33 {
-		return errors.New("invalid observation ownership")
-	}
-	return s.store.Finish(ctx, accountID, id, false)
-}
 
 type QuotaActivityStamp struct {
 	Epoch    string

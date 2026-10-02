@@ -41,16 +41,14 @@ func (s *OpenAIGatewayService) doOpenAIUpstream(request *http.Request, proxyURL 
 // doOpenAIAccountTestUpstream 让 OpenAI OAuth 账号测试与真实转发使用同一插件路径。
 // API Key 和未命中插件的账号保持各自原有的 HTTPUpstream 行为。未命中插件时，发往
 // /backend-api/codex/responses 的 OAuth POST 与真实转发（doOpenAICodexUpstream）走同一
-// zstd 压缩准备函数、同一门控；TLS 指纹 / 代理 / 凭据来源不变。
+// zstd 压缩准备函数、同一模型声明校验；TLS 指纹 / 代理 / 凭据来源不变。
 func (s *AccountTestService) doOpenAIAccountTestUpstream(
 	request *http.Request,
 	proxyURL string,
 	account *Account,
 	useTLSFallback bool,
 ) (*http.Response, error) {
-	model, _ := request.Context().Value(codexRoutingModelKey{}).(string)
-	qualifiedRoute := s.openAIGatewayService != nil && s.openAIGatewayService.codexRoutingApplies(account, model)
-	if s.pluginManager != nil && !qualifiedRoute {
+	if s.pluginManager != nil {
 		response, handled, err := s.pluginManager.RoundTripOpenAIOAuth(request.Context(), request, proxyURL, account)
 		if handled {
 			return response, err
@@ -61,12 +59,6 @@ func (s *AccountTestService) doOpenAIAccountTestUpstream(
 	wire, err := prepareCodexTransport(request, account)
 	if err != nil {
 		return nil, err
-	}
-	if s.openAIGatewayService != nil && account.IsOpenAIOAuthLike() {
-		// A qualified route reports its final leased wire itself, once.
-		if response, handled, routingErr := s.openAIGatewayService.doQualifiedCodexUpstream(wire, account, proxyURL); handled {
-			return response, routingErr
-		}
 	}
 	if observer := codexWireObserverFromContext(wire.Context()); observer != nil {
 		observer(wire)
@@ -81,8 +73,11 @@ func (s *AccountTestService) doOpenAIAccountTestUpstream(
 		)
 	}
 	response, err := s.httpUpstream.Do(wire, proxyURL, account.ID, account.Concurrency)
-	if err == nil && isOpenAICodexTicketAccount(account) && s.openAIGatewayService != nil {
-		s.openAIGatewayService.observeCodexWire(wire.Context(), account, wire, response, nil)
+	if err == nil && isCodexCredentialOwner(account) && s.openAIGatewayService != nil {
+		s.openAIGatewayService.observeCodexWire(wire.Context(), account, wire, response, "http")
+		// The same model guard as doOpenAICodexUpstream: the reply must declare
+		// the model under test.
+		s.openAIGatewayService.guardCodexResponseModel(wire, account, response)
 	}
 	return response, err
 }

@@ -47,7 +47,7 @@ func openAICodexTurnStateSeed(c *gin.Context, accounts ...*Account) string {
 	if len(accounts) > 0 && openAICodexTurnStateUsesSessionContract(accounts[0]) {
 		return seed
 	}
-	turnID := codexRoutingTurnID(c)
+	turnID := codexLogicalTurnID(c)
 	if turnID == "" {
 		return ""
 	}
@@ -58,10 +58,10 @@ func openAIWSTurnStateScope(c *gin.Context, account *Account, sessionHash string
 	if sessionHash == "" || openAICodexTurnStateUsesSessionContract(account) {
 		return sessionHash
 	}
-	if turn := codexRoutingTurnID(c); turn != "" {
+	if turn := codexLogicalTurnID(c); turn != "" {
 		scope := sessionHash + "\x00" + turn
 		if account != nil && account.IsOpenAIOAuthLike() {
-			scope += "\x00" + CodexTicketAccountIdentity(account)
+			scope += "\x00" + CodexCredentialOwnerIdentity(account)
 		}
 		return scope
 	}
@@ -150,7 +150,7 @@ func (s *OpenAIGatewayService) noteOpenAICodexTurnStateProvenance(c *gin.Context
 	}
 	origin := openAICodexTurnStateOrigin{
 		accountID: account.ID,
-		identity:  CodexTicketAccountIdentity(account),
+		identity:  CodexCredentialOwnerIdentity(account),
 		state:     state,
 		expiresAt: time.Now().Add(s.openAIWSSessionStickyTTL()),
 	}
@@ -181,7 +181,7 @@ func (s *OpenAIGatewayService) firstCommittedCodexTurnState(c *gin.Context, acco
 	}
 	if raw, ok := s.openaiCodexTurnStateOrigins.Load(openAICodexTurnStateSeed(c, account)); ok {
 		if origin, ok := raw.(openAICodexTurnStateOrigin); ok && origin.accountID == account.ID &&
-			origin.identity == CodexTicketAccountIdentity(account) && origin.state != "" && time.Now().Before(origin.expiresAt) {
+			origin.identity == CodexCredentialOwnerIdentity(account) && origin.state != "" && time.Now().Before(origin.expiresAt) {
 			return origin.state
 		}
 	}
@@ -249,8 +249,7 @@ func (s *OpenAIGatewayService) commitOpenAIWSSessionTurnState(
 
 // guardOpenAICodexTurnStateEcho 出站守卫：客户端回带的 turn-state 只有在
 // 能证明由当前账号铸造时才保留。来源未知、过期、缺少会话标识或来自其他
-// 账号的值均剥离。此守卫只处理 STATE 回显；Cookie 路由资格在独立的宿主
-// 传输路径处理，不以 STATE 长度或此来源表授予模型资格。
+// 账号的值均剥离。此守卫只处理 STATE 回显，不以 STATE 长度或此来源表授予模型资格。
 func (s *OpenAIGatewayService) guardOpenAICodexTurnStateEcho(c *gin.Context, account *Account, h http.Header) {
 	if h == nil {
 		return
@@ -287,7 +286,7 @@ func (s *OpenAIGatewayService) guardOpenAICodexTurnStateEcho(c *gin.Context, acc
 		h.Del(openAICodexTurnStateHeader)
 		return
 	}
-	if account.IsOpenAIOAuthLike() && (origin.identity != CodexTicketAccountIdentity(account) ||
+	if account.IsOpenAIOAuthLike() && (origin.identity != CodexCredentialOwnerIdentity(account) ||
 		origin.state == "" || strings.TrimSpace(h.Get(openAICodexTurnStateHeader)) != origin.state) {
 		h.Del(openAICodexTurnStateHeader)
 	}

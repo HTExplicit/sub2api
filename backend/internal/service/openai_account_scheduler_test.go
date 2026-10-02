@@ -4070,3 +4070,56 @@ func TestOpenAIGatewayService_SelectAccountWithScheduler_LegacyAccountModelRoute
 		selection.ReleaseFunc()
 	}
 }
+
+// Without route qualification an OAuth account serves every model, gated
+// GPT-6 models included: a dormant deny projection in its extra, a missing
+// native runtime or one without a loaded snapshot block nothing.
+func TestSelectAccountWithSchedulerServesOAuthAccountsWithoutRouteQualification(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		advanced bool
+		runtime  func(t *testing.T) *NativeCodexRuntime
+	}{
+		{name: "legacy_load_aware_without_runtime", runtime: func(*testing.T) *NativeCodexRuntime { return nil }},
+		{name: "advanced_scheduler_with_runtime", advanced: true, runtime: nativeCodexTestRuntime},
+		{name: "advanced_scheduler_runtime_not_loaded", advanced: true, runtime: func(*testing.T) *NativeCodexRuntime { return &NativeCodexRuntime{} }},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			resetOpenAIAdvancedSchedulerSettingCacheForTest()
+			groupID := int64(92001)
+			full := &Account{
+				ID: 42, Platform: PlatformOpenAI, Type: AccountTypeOAuth, Status: StatusActive, Schedulable: true,
+				Concurrency: 1, GroupIDs: []int64{groupID},
+				Credentials: map[string]any{"access_token": "scheduler-token", "chatgpt_account_id": "scheduler-principal", "model_mapping": map[string]any{"gpt-6-astra": "gpt-6-astra"}},
+				Extra: map[string]any{NativeCodexAccountProjectionKey: map[string]any{NativeCodexPluginKey: map[string]any{
+					"identity": "dormant", "scheduling": map[string]any{"gpt-6-astra": map[string]any{"model": "gpt-6-astra", "effect": "deny"}},
+				}}},
+			}
+			projected := *full
+			projected.Credentials = map[string]any{"model_mapping": map[string]any{"gpt-6-astra": "gpt-6-astra"}}
+			projected.Extra = nil
+			cfg := &config.Config{}
+			cfg.Gateway.Scheduling.LoadBatchEnabled = true
+			svc := &OpenAIGatewayService{
+				accountRepo:        schedulerTestOpenAIAccountRepo{accounts: []Account{*full}},
+				cfg:                cfg,
+				schedulerSnapshot:  &SchedulerSnapshotService{cache: &openAISnapshotCacheStub{snapshotAccounts: []*Account{&projected}, accountsByID: map[int64]*Account{full.ID: full}}},
+				concurrencyService: NewConcurrencyService(schedulerTestConcurrencyCache{}),
+				nativeCodexRuntime: tc.runtime(t),
+			}
+			if tc.advanced {
+				svc.rateLimitService = newOpenAIAdvancedSchedulerRateLimitService("true")
+			}
+
+			selection, _, err := svc.SelectAccountWithScheduler(context.Background(), &groupID, "", "", "gpt-6-astra", nil, OpenAIUpstreamTransportAny, false)
+
+			require.NoError(t, err)
+			require.NotNil(t, selection)
+			require.NotNil(t, selection.Account)
+			require.Equal(t, full.ID, selection.Account.ID)
+			if selection.ReleaseFunc != nil {
+				selection.ReleaseFunc()
+			}
+		})
+	}
+}

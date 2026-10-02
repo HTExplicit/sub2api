@@ -101,7 +101,7 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 			errors.New("invalid json"),
 		)
 	}
-	stageCodexRoutingWSTurn(c, trimmedFirstMessage)
+	stageCodexLogicalWSTurn(c, trimmedFirstMessage)
 
 	// 预取一次 OpenAI Fast Policy settings，绑定到 ctx，让该 WS session
 	// 内所有帧的 evaluateOpenAIFastPolicy 调用复用同一份快照，避免每帧
@@ -125,10 +125,8 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 	refusalRuntime := s.openAIRefusalRecoveryRuntime(ctx)
 
 	wsDecision := s.getOpenAIWSProtocolResolver().Resolve(account)
-	// A routing Cookie qualification belongs to the verified HTTP connection.
-	// A new native WS socket cannot inherit that connection's exit evidence.
-	_, cookieRoutingModel := resolveOpenAIForwardMappedModels(account, gjson.GetBytes(firstClientMessage, "model").String(), false)
-	forceHTTPBridge := account.Platform == PlatformGrok || s.codexRoutingApplies(account, cookieRoutingModel)
+	forceHTTPBridge := account.Platform == PlatformGrok ||
+		(s.pluginManager != nil && s.pluginManager.ShouldRouteOpenAIOAuth(account))
 	modeRouterV2Enabled := s != nil && s.cfg != nil && s.cfg.Gateway.OpenAIWS.ModeRouterV2Enabled
 	if modeRouterV2Enabled && account.Platform != PlatformGrok && account.ResolveOpenAIResponsesWebSocketV2Mode(s.cfg.Gateway.OpenAIWS.IngressModeDefault) == OpenAIWSIngressModeOff {
 		return NewOpenAIWSClientCloseError(coderws.StatusPolicyViolation, "websocket mode is disabled for this account", nil)
@@ -188,9 +186,6 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 	if forceHTTPBridge {
 		wsHost = "xai-http-bridge"
 		wsPath = "/v1/responses"
-		if account.Platform != PlatformGrok {
-			wsHost, wsPath = "qualified-http-bridge", "/backend-api/codex/responses"
-		}
 	} else {
 		var err error
 		wsURL, err = s.buildOpenAIResponsesWSURL(account)
@@ -219,7 +214,6 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 		requestedReasoningEffort *string
 	}
 	ingressSessionOriginalModel := ""
-	nativeRoutingConnection := false
 
 	applyPayloadMutation := func(current []byte, path string, value any) ([]byte, error) {
 		next, err := sjson.SetBytes(current, path, value)
@@ -507,12 +501,7 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 			return openAIWSClientPayload{}, NewOpenAIWSClientCloseError(coderws.StatusPolicyViolation, integrityErr.Error(), integrityErr)
 		}
 		ingressSessionOriginalModel = originalModel
-		stageCodexRoutingWSTurn(c, trimmed)
-		if nativeRoutingConnection {
-			if routingErr := s.guardCodexRoutingNativeModel(account, upstreamModel); routingErr != nil {
-				return openAIWSClientPayload{}, routingErr
-			}
-		}
+		stageCodexLogicalWSTurn(c, trimmed)
 
 		return openAIWSClientPayload{
 			payloadRaw:               normalized,
@@ -602,7 +591,7 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 
 	useHTTPBridge := forceHTTPBridge || s.shouldBridgeOpenAIWSHTTP(account, firstPayload.payloadBytes, firstPayload.previousResponseID)
 	turnState := strings.TrimSpace(c.GetHeader(openAIWSTurnStateHeader))
-	nativeLogicalTurn := codexRoutingTurnID(c)
+	nativeLogicalTurn := codexLogicalTurnID(c)
 	stateStore := s.getOpenAIWSStateStore()
 	groupID := getOpenAIGroupIDFromContext(c)
 	apiKeyID := getAPIKeyIDFromContext(c)
@@ -663,15 +652,15 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 		bridgeReplayInputExists := false
 		bridgeReplayVerified := false
 		bridgeBaselineResponseID := ""
-		bridgeOwnedTurnState := openAIWSHTTPBridgeTurnState{accountID: account.ID, identity: CodexTicketAccountIdentity(account)}
+		bridgeOwnedTurnState := openAIWSHTTPBridgeTurnState{accountID: account.ID, identity: CodexCredentialOwnerIdentity(account)}
 		bridgeLogicalTurn := ""
 		for turn := 1; ; turn++ {
-			stageCodexRoutingWSTurn(c, currentBridgePayload.rawForHash)
-			currentLogicalTurn := codexRoutingTurnID(c)
-			if bridgeOwnedTurnState.accountID != account.ID || (account.IsOpenAIOAuthLike() && bridgeOwnedTurnState.identity != CodexTicketAccountIdentity(account)) || (!openAICodexTurnStateUsesSessionContract(account) && (currentLogicalTurn == "" || currentLogicalTurn != bridgeLogicalTurn)) {
+			stageCodexLogicalWSTurn(c, currentBridgePayload.rawForHash)
+			currentLogicalTurn := codexLogicalTurnID(c)
+			if bridgeOwnedTurnState.accountID != account.ID || (account.IsOpenAIOAuthLike() && bridgeOwnedTurnState.identity != CodexCredentialOwnerIdentity(account)) || (!openAICodexTurnStateUsesSessionContract(account) && (currentLogicalTurn == "" || currentLogicalTurn != bridgeLogicalTurn)) {
 				turnState, bridgeOwnedTurnState.value = "", ""
 				bridgeOwnedTurnState.accountID = account.ID
-				bridgeOwnedTurnState.identity = CodexTicketAccountIdentity(account)
+				bridgeOwnedTurnState.identity = CodexCredentialOwnerIdentity(account)
 			}
 			bridgeOwnedTurnState.turnID = currentLogicalTurn
 			bridgeLogicalTurn = currentLogicalTurn
@@ -843,7 +832,6 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 	// Native ingress can retry the first turn once only while no downstream
 	// output has been emitted. Always hold metadata-only preamble frames so a
 	// failed attempt cannot leak response IDs before that retry decision.
-	nativeRoutingConnection = true
 	nativeMatcher := (*OpenAIRefusalMatcher)(nil)
 	if refusalRuntime.RewriteEnabled() {
 		nativeMatcher = refusalRuntime.Matcher
@@ -1147,9 +1135,6 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 			}
 			return wroteDownstream
 		}
-		if routingErr := s.guardCodexRoutingNativeModel(account, gjson.GetBytes(payload, "model").String()); routingErr != nil {
-			return nil, routingErr
-		}
 		if err := lease.WriteJSONWithContextTimeout(ctx, json.RawMessage(payload), s.openAIWSWriteTimeout()); err != nil {
 			return nil, wrapOpenAIWSIngressTurnError(
 				"write_upstream",
@@ -1157,7 +1142,7 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 				false,
 			)
 		}
-		s.observeNativeCodexWS(ctx, account, wsHeaders, lease.HandshakeHeaders(), payload, lease.ConnID())
+		s.observeNativeCodexWS(ctx, account, wsHeaders, lease.HandshakeHeaders(), payload)
 		if debugEnabled {
 			logOpenAIWSModeDebug(
 				"ingress_ws_turn_request_sent account_id=%d turn=%d conn_id=%s payload_bytes=%d",
@@ -1963,7 +1948,7 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 			return parseErr
 		}
 		if !openAICodexTurnStateUsesSessionContract(account) {
-			nextLogicalTurn := codexRoutingTurnID(c)
+			nextLogicalTurn := codexLogicalTurnID(c)
 			if nextLogicalTurn == "" || nextLogicalTurn != nativeLogicalTurn {
 				turnState = ""
 				baseAcquireReq.Headers.Del(openAIWSTurnStateHeader)

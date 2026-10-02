@@ -6,7 +6,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"time"
 )
 
 const (
@@ -16,8 +15,6 @@ const (
 	CapabilityProvider      = "extensions.provider.v1"
 	CapabilityCatalog       = "extensions.catalog.v1"
 	CapabilityRequest       = "extensions.request.v1"
-	CapabilityScheduling    = "extensions.scheduling.v1"
-	CapabilityJobs          = "extensions.jobs.v1"
 	CapabilityAdmin         = "extensions.admin.v1"
 	CapabilityUI            = "extensions.ui.v1"
 	CapabilityCredentials   = "extensions.credentials.v1"
@@ -27,7 +24,7 @@ const (
 
 var capabilities = map[string]bool{
 	CapabilityProvider: true, CapabilityCatalog: true, CapabilityRequest: true,
-	CapabilityScheduling: true, CapabilityJobs: true, CapabilityAdmin: true, CapabilityUI: true,
+	CapabilityAdmin: true, CapabilityUI: true,
 	CapabilityCredentials:   true,
 	CapabilityObservability: true,
 	CapabilityRecovery:      true,
@@ -102,24 +99,6 @@ type AccountFilter struct {
 	ExcludeShadows bool     `json:"exclude_shadows,omitempty"`
 }
 
-func AccountMatchesFilter(account Account, filter *AccountFilter) bool {
-	if filter == nil {
-		return true
-	}
-	contains := func(choices []string, value string) bool {
-		if len(choices) == 0 {
-			return true
-		}
-		for _, choice := range choices {
-			if choice == value {
-				return true
-			}
-		}
-		return false
-	}
-	return contains(filter.Platforms, account.Platform) && contains(filter.Types, account.Type) && contains(filter.Statuses, account.Status) && (!filter.ExcludeShadows || !account.Shadow)
-}
-
 var slots = map[string]bool{
 	AccountEditSlot:   true,
 	AccountCreateSlot: true,
@@ -132,92 +111,6 @@ var slots = map[string]bool{
 }
 
 func ValidSlot(slot string) bool { return slots[slot] }
-
-type Account struct {
-	ID         int64                      `json:"id"`
-	Platform   string                     `json:"platform"`
-	Type       string                     `json:"type"`
-	Status     string                     `json:"status"`
-	Shadow     bool                       `json:"shadow"`
-	Identity   string                     `json:"identity"`
-	Revision   string                     `json:"revision"`
-	Attributes map[string]json.RawMessage `json:"attributes,omitempty"`
-}
-
-type AccountQuery struct {
-	ObservationID      string `json:"observation_id,omitempty"`
-	AccountID          int64  `json:"account_id,omitempty"`
-	Platform           string `json:"platform,omitempty"`
-	AccountType        string `json:"account_type,omitempty"`
-	IncludeInactive    bool   `json:"include_inactive,omitempty"`
-	PrepareCredentials bool   `json:"prepare_credentials,omitempty"`
-}
-
-type OutboundIdentity struct {
-	ObservationID string              `json:"observation_id,omitempty"`
-	AccountID     int64               `json:"account_id"`
-	Identity      string              `json:"identity"`
-	Token         string              `json:"token"`
-	ProxyURL      string              `json:"proxy_url,omitempty"`
-	Headers       map[string][]string `json:"headers"`
-}
-
-type SchedulingRequest struct {
-	Account Account   `json:"account"`
-	Model   string    `json:"model"`
-	Now     time.Time `json:"now"`
-	Compact bool      `json:"compact"`
-}
-
-type SchedulingDecision struct {
-	Allowed bool       `json:"allowed"`
-	Reason  string     `json:"reason,omitempty"`
-	Scope   string     `json:"scope,omitempty"`
-	Until   *time.Time `json:"until,omitempty"`
-}
-
-type SchedulingRule struct {
-	ExcludeShadows bool     `json:"exclude_shadows,omitempty"`
-	Models         []string `json:"models"`
-	Default        string   `json:"default"`
-	Reason         string   `json:"reason"`
-}
-
-type SchedulingConstraint struct {
-	Model  string     `json:"model"`
-	Effect string     `json:"effect"`
-	Until  *time.Time `json:"until,omitempty"`
-	Reason string     `json:"reason"`
-}
-
-type AccountProjection struct {
-	AccountID    int64                  `json:"account_id"`
-	Identity     string                 `json:"identity"`
-	Scheduling   []SchedulingConstraint `json:"scheduling"`
-	Observations []AccountObservation   `json:"observations,omitempty"`
-}
-
-// AccountObservationMessageLimit bounds Message because the projection is
-// copied into the scheduler snapshot of every account. The complete text stays
-// in the domain state (Codex: fingerprint panel and job results).
-const AccountObservationMessageLimit = 1024
-
-// AccountObservationModelLimit bounds ResponseModel like other model names.
-const AccountObservationModelLimit = 256
-
-type AccountObservation struct {
-	Key           string     `json:"key"`
-	Kind          string     `json:"kind"`
-	State         string     `json:"state"`
-	ExpiresAt     *time.Time `json:"expires_at,omitempty"`
-	NextAt        *time.Time `json:"next_at,omitempty"`
-	CheckedAt     *time.Time `json:"checked_at,omitempty"`
-	Code          string     `json:"code,omitempty"`
-	Count         int        `json:"count,omitempty"`
-	HTTPStatus    int        `json:"http_status,omitempty"`
-	ResponseModel string     `json:"response_model,omitempty"`
-	Message       string     `json:"message,omitempty"`
-}
 
 // Invocation carries one declared capability and a domain operation. The host
 // validates the capability binding before crossing the process boundary.
@@ -244,53 +137,11 @@ type JobTarget struct {
 	Label     string          `json:"label,omitempty"`
 }
 
-type DisplayFact struct {
-	Label     map[string]string `json:"label"`
-	Value     string            `json:"value"`
-	Timestamp bool              `json:"timestamp,omitempty"`
-}
-
-type HostOperation string
-
-const (
-	HostAccountRead       HostOperation = "account.read"
-	HostMetricsQuery      HostOperation = "metrics.account_traffic"
-	HostAccountList       HostOperation = "account.list"
-	HostResolveIdentity   HostOperation = "account.resolve_identity"
-	HostUsageQuery        HostOperation = "usage.query"
-	HostFinishObservation HostOperation = "usage.observation_finish"
-	HostStateRead         HostOperation = "state.read"
-	HostStateDue          HostOperation = "state.due"
-	HostStateCompareSwap  HostOperation = "state.compare_swap"
-	HostLeaseAcquire      HostOperation = "lease.acquire"
-	HostLeaseRelease      HostOperation = "lease.release"
-	HostJobRead           HostOperation = "job.read"
-	HostJobSubmit         HostOperation = "job.submit"
-	HostJobComplete       HostOperation = "job.complete"
-)
-
-type HostInvocation struct {
-	Operation HostOperation   `json:"operation"`
-	Payload   json.RawMessage `json:"payload"`
-}
-
 type StateRequest struct {
-	Namespace        string             `json:"namespace"`
-	Key              string             `json:"key"`
-	ExpectedRevision int64              `json:"expected_revision"`
-	Value            json.RawMessage    `json:"value,omitempty"`
-	NextAt           *time.Time         `json:"next_at,omitempty"`
-	Projection       *AccountProjection `json:"account_projection,omitempty"`
-}
-
-type DueStateRequest struct {
-	Namespace string `json:"namespace"`
-	Limit     int    `json:"limit"`
-}
-type DueState struct {
-	Key      string          `json:"key"`
-	Revision int64           `json:"revision"`
-	Value    json.RawMessage `json:"value"`
+	Namespace        string          `json:"namespace"`
+	Key              string          `json:"key"`
+	ExpectedRevision int64           `json:"expected_revision"`
+	Value            json.RawMessage `json:"value,omitempty"`
 }
 
 type StateResult struct {
@@ -298,20 +149,6 @@ type StateResult struct {
 	Applied  bool            `json:"applied"`
 	Revision int64           `json:"revision"`
 	Value    json.RawMessage `json:"value,omitempty"`
-}
-
-type LeaseRequest struct {
-	Namespace  string `json:"namespace"`
-	Key        string `json:"key"`
-	Owner      string `json:"owner"`
-	TTLSeconds int    `json:"ttl_seconds"`
-	Generation int64  `json:"generation,omitempty"`
-}
-
-type LeaseResult struct {
-	Acquired   bool       `json:"acquired"`
-	Generation int64      `json:"generation"`
-	ExpiresAt  *time.Time `json:"expires_at,omitempty"`
 }
 
 // Handler is implemented by a domain plugin, never by a host forwarding shim.
@@ -325,10 +162,6 @@ type OperationInvoker interface {
 
 type CachedOperationInvoker interface {
 	InvokeCachedOperation(context.Context, string, string, Invocation) (Result, error)
-}
-
-type HostHandler interface {
-	Call(context.Context, HostInvocation) (Result, error)
 }
 
 func Encode(value any) (json.RawMessage, error) { return json.Marshal(value) }

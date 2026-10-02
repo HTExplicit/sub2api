@@ -11,7 +11,6 @@ import (
 	"strings"
 	"time"
 
-	extensionv1 "github.com/Wei-Shaw/sub2api/internal/nativeapi"
 	"github.com/gin-gonic/gin"
 	"github.com/tidwall/gjson"
 )
@@ -20,7 +19,6 @@ type codexQualityRuntime struct {
 	s            *OpenAIGatewayService
 	store        NativeCodexStateStore
 	installation *NativeCodexMetadata
-	host         *nativeCodexHost
 }
 
 type codexQualityExecutionKey struct{}
@@ -30,15 +28,18 @@ type codexQualityHeaders struct {
 	present      bool
 }
 type codexQualityExecution struct {
-	runtime                                         *codexQualityRuntime
-	runID, grantDigest, trialID, operationID, stage string
-	accountID                                       int64
-	requestModel, effort                            string
-	qualification                                   *extensionv1.CodexRoutingQualification
-	keyLookup                                       CodexQualityKeyLookup
+	runtime                     *codexQualityRuntime
+	runID, grantDigest, trialID string
+	accountID                   int64
+	requestModel, effort        string
+	keyLookup                   CodexQualityKeyLookup
 }
 
 type CodexQualityKeyLookup func(context.Context, int64) (*APIKey, error)
+
+// codexQualityFallbackEfforts are the OpenAI reasoning efforts a run accepts
+// when the account test resolver knows no levels for the model.
+var codexQualityFallbackEfforts = []string{"none", "minimal", "low", "medium", "high", "xhigh"}
 
 func codexQualityKeyUsable(key *APIKey, actor, id, group int64) bool {
 	return key != nil && key.ID == id && key.UserID == actor && key.GroupID != nil && *key.GroupID == group && key.IsActive() && !key.IsExpired() && !key.IsQuotaExhausted()
@@ -89,46 +90,19 @@ func StageCodexQualityHeaders(c *gin.Context) {
 }
 
 func (s *OpenAIGatewayService) codexQualityRuntime() (*codexQualityRuntime, error) {
-	if s == nil || s.nativeCodexRuntime == nil || s.accountRepo == nil {
+	if s == nil || s.nativeCodexRuntime == nil || s.nativeCodexRuntime.repo == nil || s.accountRepo == nil {
 		return nil, codexQualityUnavailable("native Codex runtime is not configured")
 	}
-	runtime := s.nativeCodexRuntime
-	metadata, err := runtime.repo.LoadNativeCodexMetadata(context.Background())
+	repo := s.nativeCodexRuntime.repo
+	metadata, err := repo.LoadNativeCodexMetadata(context.Background())
 	if err != nil {
 		return nil, codexQualityUnavailable("load Codex runtime metadata: %v", err)
 	}
-	snapshot := runtime.current()
-	var host *nativeCodexHost
-	if snapshot != nil {
-		host = snapshot.host
-	}
-	return &codexQualityRuntime{s: s, store: runtime.repo, installation: metadata, host: host}, nil
+	return &codexQualityRuntime{s: s, store: repo, installation: metadata}, nil
 }
 
 func (rt *codexQualityRuntime) ctx(ctx context.Context) context.Context {
 	return WithNativeCodexExecution(ctx, rt.installation)
-}
-
-func (rt *codexQualityRuntime) scope(ctx context.Context, id int64) (extensionv1.CodexRoutingScope, error) {
-	if rt.host == nil {
-		return extensionv1.CodexRoutingScope{}, codexQualityUnavailable("Codex runtime host is not loaded")
-	}
-	raw, _ := json.Marshal(extensionv1.CodexRoutingQuery{AccountID: id, Transport: "http"})
-	result, err := rt.host.Call(rt.ctx(ctx), extensionv1.HostInvocation{Operation: extensionv1.HostCodexRoutingScope, Payload: raw})
-	var scope extensionv1.CodexRoutingScope
-	switch {
-	case err != nil:
-		return scope, codexQualityUnavailable("routing scope of account %d: %v", id, err)
-	case result.Code != "":
-		return scope, codexQualityUnavailable("routing scope of account %d returned %s: %s", id, result.Code, result.Message)
-	}
-	if err := json.Unmarshal(result.Payload, &scope); err != nil {
-		return scope, codexQualityUnavailable("decode routing scope of account %d: %v", id, err)
-	}
-	if scope.AccountID != id {
-		return scope, codexQualityUnavailable("routing scope names account %d instead of %d", scope.AccountID, id)
-	}
-	return scope, nil
 }
 
 func qualityProxyID(a *Account) int64 {
@@ -138,10 +112,12 @@ func qualityProxyID(a *Account) int64 {
 	return 0
 }
 
+// account rechecks the authoritative account row against the run binding,
+// including immediately before each send. A diagnostic grant never admits an
+// account enabled for ordinary traffic.
 func (rt *codexQualityRuntime) account(ctx context.Context, run codexQualityRun) (*Account, error) {
 	a, err := rt.s.accountRepo.GetByID(ctx, run.AccountID)
-	// A diagnostic grant never admits an account enabled for ordinary traffic.
-	// Recheck the authoritative row here, including immediately before each send.
+	model, _ := run.binding()
 	switch {
 	case err != nil:
 		return nil, codexQualityUnavailable("read account %d: %v", run.AccountID, err)
@@ -155,49 +131,107 @@ func (rt *codexQualityRuntime) account(ctx context.Context, run codexQualityRun)
 		return nil, codexQualityUnavailable("account %d is not in group %d of the API key (account groups %v)", a.ID, run.GroupID, a.GroupIDs)
 	case qualityProxyID(a) != run.ProxyID:
 		return nil, codexQualityUnavailable("account %d proxy is %d, the run was created with proxy %d", a.ID, qualityProxyID(a), run.ProxyID)
-	case CodexTicketAccountIdentity(a) != run.Scope.Identity:
+	case run.OwnerIdentity == "" || CodexCredentialOwnerIdentity(a) != run.OwnerIdentity:
 		return nil, codexQualityUnavailable("account %d credential owner changed since the run was created", a.ID)
 	}
 	plan := strings.ToLower(strings.TrimSpace(a.GetCredential("plan_type")))
 	if plan != "pro" && plan != "chatgpt_pro" {
 		return nil, codexQualityUnavailable("account %d plan_type is %q; quality diagnosis requires pro", a.ID, plan)
 	}
-	if rt.s.checkChannelPricingRestriction(ctx, &run.GroupID, codexQualityModel) {
-		return nil, codexQualityUnavailable("channel pricing of group %d restricts %s", run.GroupID, codexQualityModel)
-	}
-	if rt.s.needsUpstreamChannelRestrictionCheck(ctx, &run.GroupID) && rt.s.isUpstreamModelRestrictedByChannel(ctx, run.GroupID, a, codexQualityModel, false) {
-		return nil, codexQualityUnavailable("the upstream channel of group %d restricts %s for account %d", run.GroupID, codexQualityModel, a.ID)
-	}
 	// This private stack copy changes only the manual switch for eligibility.
 	// It is never returned, cached, projected, or persisted.
 	check := *a
 	check.Schedulable = true
-	if eligible, reason := openAICompatibleAccountEligibilityBeforeProfit(ctx, &check, PlatformOpenAI, codexQualityModel, false, OpenAIEndpointCapabilityResponses); !eligible {
-		return nil, codexQualityUnavailable("account %d is not eligible for %s: %s", a.ID, codexQualityModel, reason)
+	if problem := rt.s.codexQualityModelProblem(ctx, &check, run.GroupID, model); problem != "" {
+		return nil, codexQualityUnavailable("%s", problem)
 	}
-	if reason := rt.s.codexQualityHealthBlock(ctx, &check); reason != "" {
+	if reason := rt.s.codexQualityHealthBlock(ctx, &check, model); reason != "" {
 		return nil, codexQualityUnavailable("account %d: %s", a.ID, reason)
 	}
 	if rt.s.openAIGroupRequiresPrivacySet(ctx, &run.GroupID) && !a.IsPrivacySet() {
 		return nil, codexQualityUnavailable("group %d requires the privacy setting, which account %d has not set", run.GroupID, a.ID)
 	}
-	scope, err := rt.scope(ctx, a.ID)
-	if err != nil {
-		return nil, err
-	}
-	if !run.Scope.SameOwner(scope) {
-		return nil, codexQualityUnavailable("account %d %s", a.ID, codexRoutingScopeChange(run.Scope, scope))
-	}
 	return a, nil
+}
+
+// codexQualityModelProblem names why the group's channel or the account would
+// not send model to the upstream unchanged, or returns "". It reuses the
+// scheduler eligibility (account model support), the channel restrictions and
+// the channel and account model mappings of ordinary forwarding.
+func (s *OpenAIGatewayService) codexQualityModelProblem(ctx context.Context, account *Account, group int64, model string) string {
+	if s.checkChannelPricingRestriction(ctx, &group, model) {
+		return fmt.Sprintf("channel pricing of group %d restricts %s", group, model)
+	}
+	if mapping, _ := s.ResolveChannelMappingAndRestrict(ctx, &group, model); mapping.Mapped && mapping.MappedModel != model {
+		return fmt.Sprintf("the channel of group %d maps %s to %s; a quality diagnosis sends the bound model unchanged", group, model, mapping.MappedModel)
+	}
+	if s.needsUpstreamChannelRestrictionCheck(ctx, &group) && s.isUpstreamModelRestrictedByChannel(ctx, group, account, model, false) {
+		return fmt.Sprintf("the upstream channel of group %d restricts %s for account %d", group, model, account.ID)
+	}
+	if eligible, reason := openAICompatibleAccountEligibilityBeforeProfit(ctx, account, PlatformOpenAI, model, false, OpenAIEndpointCapabilityResponses); !eligible {
+		return fmt.Sprintf("account %d is not eligible for %s: %s", account.ID, model, reason)
+	}
+	if upstream := resolveOpenAIAccountUpstreamModelForRequest(account, model, false); upstream != model {
+		return fmt.Sprintf("account %d sends %s upstream as %s; a quality diagnosis sends the bound model unchanged", account.ID, model, upstream)
+	}
+	return ""
+}
+
+// codexQualityEffortProblem validates effort with the per-model resolver of the
+// account test; when it knows no levels for the model, the OpenAI efforts apply.
+func codexQualityEffortProblem(account *Account, model, effort string) string {
+	levels, _ := AccountTestReasoningOptions(account, model)
+	if len(levels) == 0 {
+		if metadata, known := account.GetUpstreamModelMetadata(account.GetMappedModel(model)); known && metadata.Reasoning != nil && !*metadata.Reasoning {
+			return fmt.Sprintf("model %s takes no reasoning effort on account %d", model, account.ID)
+		}
+		levels = codexQualityFallbackEfforts
+	}
+	if !slices.Contains(levels, effort) {
+		return fmt.Sprintf("reasoning_effort %q is not supported for model %s on account %d (supported: %s)", effort, model, account.ID, strings.Join(levels, ", "))
+	}
+	return ""
+}
+
+// codexQualityEffortPolicyProblem names how the reasoning-effort policy of the
+// key's group would reject or rewrite the bound effort, or returns "". The
+// OpenAI handler applies that policy to OpenAI and composite groups after a
+// send is admitted, and a send whose final effort differs from the binding is
+// refused, so such a run could never send.
+func codexQualityEffortPolicyProblem(group *Group, model, effort string) string {
+	if group == nil || (group.Platform != PlatformOpenAI && group.Platform != PlatformComposite) {
+		return ""
+	}
+	body, err := json.Marshal(map[string]any{"model": model, "reasoning": map[string]string{"effort": effort}})
+	if err != nil {
+		return fmt.Sprintf("encode the reasoning-effort policy check: %v", err)
+	}
+	governed, _, err := ApplyOpenAIReasoningEffortPolicy(body, group.MaxReasoningEffort, group.ReasoningEffortMappings, group.MaxReasoningEffortOverLimit)
+	if err != nil {
+		return fmt.Sprintf("the reasoning-effort policy of group %d rejects %s: %v", group.ID, effort, err)
+	}
+	if sent := gjson.GetBytes(governed, "reasoning.effort").String(); sent != effort {
+		return fmt.Sprintf("the reasoning-effort policy of group %d sends %s as %s; a quality diagnosis sends the bound effort unchanged", group.ID, effort, sent)
+	}
+	return ""
 }
 
 func (s *OpenAIGatewayService) CreateCodexQualityRun(ctx context.Context, actor, accountID int64, key *APIKey, request CodexQualityCreateRequest) (*CodexQualityRunView, error) {
 	id, validID := canonicalCodexQualityID(request.RunID)
+	request.Model = strings.TrimSpace(request.Model)
+	request.ReasoningEffort = strings.TrimSpace(request.ReasoningEffort)
 	switch {
 	case !validID:
 		return nil, codexQualityUnavailable("run_id %q is not a canonical UUID", request.RunID)
 	case !validCodexQualityHash(request.PromptSHA256):
 		return nil, codexQualityUnavailable("prompt_sha256 must be 64 lowercase hex characters")
+	case request.Model == "":
+		return nil, codexQualityUnavailable("model is required")
+	case len(request.Model) > codexQualityModelNameLimit:
+		// The model guard fails any longer model declaration.
+		return nil, codexQualityUnavailable("model is %d bytes; at most %d are accepted", len(request.Model), codexQualityModelNameLimit)
+	case request.ReasoningEffort == "":
+		return nil, codexQualityUnavailable("reasoning_effort is required")
 	case actor <= 0:
 		return nil, codexQualityUnavailable("no authenticated administrator")
 	case key == nil:
@@ -212,13 +246,13 @@ func (s *OpenAIGatewayService) CreateCodexQualityRun(ctx context.Context, actor,
 		request.MaxSends = codexQualityMaxSends
 	}
 	if request.TTLSeconds == 0 {
-		request.TTLSeconds = 7200
+		request.TTLSeconds = codexQualityMaxTTL
 	}
 	if request.MaxSends < 1 || request.MaxSends > codexQualityMaxSends {
 		return nil, codexQualityUnavailable("max_sends must be 1 to %d, got %d", codexQualityMaxSends, request.MaxSends)
 	}
-	if request.TTLSeconds < 60 || request.TTLSeconds > 7200 {
-		return nil, codexQualityUnavailable("ttl_seconds must be 60 to 7200, got %d", request.TTLSeconds)
+	if request.TTLSeconds < 60 || request.TTLSeconds > codexQualityMaxTTL {
+		return nil, codexQualityUnavailable("ttl_seconds must be 60 to %d, got %d", codexQualityMaxTTL, request.TTLSeconds)
 	}
 	rt, err := s.codexQualityRuntime()
 	if err != nil {
@@ -232,13 +266,16 @@ func (s *OpenAIGatewayService) CreateCodexQualityRun(ctx context.Context, actor,
 	if a == nil {
 		return nil, codexQualityUnavailable("account %d not found", accountID)
 	}
-	scope, err := rt.scope(ctx, accountID)
+	wanted := codexQualityRun{RunID: request.RunID, ActorID: actor, APIKeyID: key.ID, AccountID: accountID, GroupID: *key.GroupID, ProxyID: qualityProxyID(a), OwnerIdentity: CodexCredentialOwnerIdentity(a), Model: request.Model, ReasoningEffort: request.ReasoningEffort, PromptSHA256: request.PromptSHA256, MaxSends: request.MaxSends, Status: "open", Attempts: []CodexQualityAttempt{}}
+	checked, err := rt.account(ctx, wanted)
 	if err != nil {
 		return nil, err
 	}
-	wanted := codexQualityRun{RunID: request.RunID, ActorID: actor, APIKeyID: key.ID, AccountID: accountID, GroupID: *key.GroupID, ProxyID: qualityProxyID(a), Scope: scope, PromptSHA256: request.PromptSHA256, MaxSends: request.MaxSends, Status: "open", Attempts: []CodexQualityAttempt{}}
-	if _, err = rt.account(ctx, wanted); err != nil {
-		return nil, err
+	if problem := codexQualityEffortProblem(checked, wanted.Model, wanted.ReasoningEffort); problem != "" {
+		return nil, codexQualityUnavailable("%s", problem)
+	}
+	if problem := codexQualityEffortPolicyProblem(key.Group, wanted.Model, wanted.ReasoningEffort); problem != "" {
+		return nil, codexQualityUnavailable("%s", problem)
 	}
 	grant, digest, err := newCodexQualityGrant(request.RunID)
 	if err != nil {
@@ -249,7 +286,7 @@ func (s *OpenAIGatewayService) CreateCodexQualityRun(ctx context.Context, actor,
 	if err != nil {
 		return nil, err
 	}
-	view := codexQualityView(run, rt.installation.RuntimeGeneration)
+	view := codexQualityView(run)
 	view.Grant = grant
 	return view, nil
 }
@@ -270,17 +307,10 @@ func (s *OpenAIGatewayService) ReadCodexQualityRun(ctx context.Context, actor, a
 	case run.AccountID != accountID:
 		return nil, codexQualityUnavailable("quality run %s belongs to account %d, not %d", run.RunID, run.AccountID, accountID)
 	}
-	view := codexQualityView(run, rt.installation.RuntimeGeneration)
-	if view.RouteReady {
-		if _, err = rt.account(ctx, run); err != nil {
-			view.RouteReady, view.RouteError = false, err.Error()
-		} else if _, err = rt.qualification(ctx, run); err != nil {
-			view.RouteReady, view.RouteError = false, err.Error()
-		}
-	}
-	return view, nil
+	return codexQualityView(run), nil
 }
 
+// CloseCodexQualityRun revokes the grant and keeps the ledger.
 func (s *OpenAIGatewayService) CloseCodexQualityRun(ctx context.Context, actor, accountID int64, id string) (*CodexQualityRunView, error) {
 	rt, err := s.codexQualityRuntime()
 	if err != nil {
@@ -301,11 +331,7 @@ func (s *OpenAIGatewayService) CloseCodexQualityRun(ctx context.Context, actor, 
 	if err != nil {
 		return nil, err
 	}
-	if run.Qualification != nil {
-		s.closeCodexQualityConnection(run.Qualification)
-	}
-	rt.clearClosedMaterial(ctx, run)
-	return codexQualityView(run, rt.installation.RuntimeGeneration), nil
+	return codexQualityView(run), nil
 }
 
 func (s *OpenAIGatewayService) AdmitCodexQualityRequest(c *gin.Context, key *APIKey, body []byte, lookups ...CodexQualityKeyLookup) error {
@@ -342,9 +368,9 @@ func (s *OpenAIGatewayService) AdmitCodexQualityRequest(c *gin.Context, key *API
 			return codexQualityUnavailable("request field %q is not allowed in a quality diagnosis", name)
 		}
 	}
-	input := gjson.GetBytes(body, "input")
-	if input.Type != gjson.String || gjson.GetBytes(body, "model").String() != codexQualityModel || gjson.GetBytes(body, "reasoning.effort").String() != codexQualityEffort || !gjson.GetBytes(body, "stream").Bool() || gjson.GetBytes(body, "store").Bool() {
-		return codexQualityUnavailable("a quality diagnosis needs a string input, model %s, reasoning.effort %s, stream true and store false", codexQualityModel, codexQualityEffort)
+	input, model, effort := gjson.GetBytes(body, "input"), gjson.GetBytes(body, "model"), gjson.GetBytes(body, "reasoning.effort")
+	if input.Type != gjson.String || model.Type != gjson.String || effort.Type != gjson.String || !gjson.GetBytes(body, "stream").Bool() || gjson.GetBytes(body, "store").Bool() {
+		return codexQualityUnavailable("a quality diagnosis needs a string input, a model, a reasoning.effort, stream true and store false")
 	}
 	rt, err := s.codexQualityRuntime()
 	if err != nil {
@@ -352,6 +378,7 @@ func (s *OpenAIGatewayService) AdmitCodexQualityRequest(c *gin.Context, key *API
 	}
 	run, _, err := readCodexQualityRun(rt.ctx(c.Request.Context()), rt.store, id)
 	digest := codexQualityHash(h.grant)
+	boundModel, boundEffort := run.binding()
 	switch {
 	case err != nil:
 		return err
@@ -363,9 +390,11 @@ func (s *OpenAIGatewayService) AdmitCodexQualityRequest(c *gin.Context, key *API
 		return codexQualityUnavailable("the input does not match the prompt_sha256 of quality run %s", run.RunID)
 	case !codexQualityGrantMatches(run, digest):
 		return codexQualityUnavailable("the grant does not match quality run %s (it was reissued)", run.RunID)
+	case model.String() != boundModel || effort.String() != boundEffort:
+		return codexQualityUnavailable("quality run %s is bound to model %s with reasoning.effort %s; the request asks for model %q with %q", run.RunID, boundModel, boundEffort, qualityRecordedModel(model.String()), qualityRecordedModel(effort.String()))
 	}
 	for _, old := range run.Attempts {
-		if old.Stage == "business" && old.TrialID == h.trial {
+		if old.Stage == codexQualityStage && old.TrialID == h.trial {
 			return fmt.Errorf("%w: trial %s was already sent", ErrCodexQualitySpent, h.trial)
 		}
 	}
@@ -373,11 +402,7 @@ func (s *OpenAIGatewayService) AdmitCodexQualityRequest(c *gin.Context, key *API
 	if _, err = rt.account(ctx, run); err != nil {
 		return err
 	}
-	q, err := rt.qualification(ctx, run)
-	if err != nil {
-		return err
-	}
-	e := &codexQualityExecution{runtime: rt, runID: id, grantDigest: digest, trialID: h.trial, stage: "business", accountID: run.AccountID, qualification: q, keyLookup: lookups[0]}
+	e := &codexQualityExecution{runtime: rt, runID: id, grantDigest: digest, trialID: h.trial, accountID: run.AccountID, keyLookup: lookups[0]}
 	c.Request = c.Request.WithContext(context.WithValue(ctx, codexQualityExecutionKey{}, e))
 	return nil
 }
@@ -435,28 +460,6 @@ func validCodexQualityJSON(body []byte) bool {
 	return err == io.EOF
 }
 
-func (rt *codexQualityRuntime) qualification(ctx context.Context, run codexQualityRun) (*extensionv1.CodexRoutingQualification, error) {
-	q := run.Qualification
-	if reason := codexQualityRouteReason(run, rt.installation.RuntimeGeneration, time.Now()); reason != "" {
-		return nil, codexQualityUnavailable("%s", reason)
-	}
-	bundle, err := readCodexRoutingBundle(rt.ctx(ctx), rt.store, codexRuntimePluginKey, q.Bundle, q.Scope, true)
-	switch {
-	case err != nil:
-		return nil, codexQualityUnavailable("route bundle: %v", err)
-	case bundle.Model != codexQualityModel:
-		return nil, codexQualityUnavailable("route bundle model is %q, not %s", bundle.Model, codexQualityModel)
-	case bundle.Scope.ConnectionLeaseID != q.Scope.ConnectionLeaseID || bundle.Scope.Transport != q.Scope.Transport:
-		return nil, codexQualityUnavailable("route bundle is bound to %s connection %q, the run to %s connection %q", bundle.Scope.Transport, bundle.Scope.ConnectionLeaseID, q.Scope.Transport, q.Scope.ConnectionLeaseID)
-	case q.ExpiresAt.After(bundle.ExpiresAt):
-		return nil, codexQualityUnavailable("route expires at %s, after its bundle (%s)", q.ExpiresAt.UTC().Format(time.RFC3339), bundle.ExpiresAt.UTC().Format(time.RFC3339))
-	}
-	if err := rt.s.CheckCodexRoutingLease(ctx, q.Scope, q.ExpiresAt); err != nil {
-		return nil, codexQualityUnavailable("connection lease %q: %v", q.Scope.ConnectionLeaseID, err)
-	}
-	return q, nil
-}
-
 func (e *codexQualityExecution) current(ctx context.Context) (codexQualityRun, error) {
 	run, _, err := readCodexQualityRun(e.runtime.ctx(ctx), e.runtime.store, e.runID)
 	switch {
@@ -481,6 +484,8 @@ func (e *codexQualityExecution) current(ctx context.Context) (codexQualityRun, e
 	return run, nil
 }
 
+// SelectCodexQualityAccount is the private selection of a diagnostic send:
+// only the run's account, never the ordinary scheduler and never a fallback.
 func (s *OpenAIGatewayService) SelectCodexQualityAccount(ctx context.Context) (*AccountSelectionResult, error) {
 	e := codexQualityExecutionFromContext(ctx)
 	if e == nil {
@@ -494,9 +499,6 @@ func (s *OpenAIGatewayService) SelectCodexQualityAccount(ctx context.Context) (*
 	if err != nil {
 		return nil, err
 	}
-	if _, err = e.runtime.qualification(ctx, run); err != nil {
-		return nil, err
-	}
 	if s.concurrencyService == nil {
 		return nil, codexQualityUnavailable("no concurrency service")
 	}
@@ -508,72 +510,4 @@ func (s *OpenAIGatewayService) SelectCodexQualityAccount(ctx context.Context) (*
 		return nil, codexQualityUnavailable("account %d has no free concurrency slot (limit %d)", a.ID, a.Concurrency)
 	}
 	return attachSelectionProfitGate(ctx, attachSelectionRuntimeBreakerProbe(ctx, &AccountSelectionResult{Account: a, Acquired: true, ReleaseFunc: acquired.ReleaseFunc})), nil
-}
-
-func codexQualityRequestQualification(ctx context.Context, account *Account, model string) (*extensionv1.CodexRoutingQualification, *NativeCodexMetadata, error) {
-	e := codexQualityExecutionFromContext(ctx)
-	switch {
-	case e == nil:
-		return nil, nil, codexQualityUnavailable("not a quality diagnosis request")
-	case account == nil || account.ID != e.accountID:
-		return nil, nil, codexQualityUnavailable("the selected account is not the account of the quality run")
-	case model != codexQualityModel:
-		return nil, nil, codexQualityUnavailable("model %q is not %s", model, codexQualityModel)
-	}
-	run, err := e.current(ctx)
-	if err != nil {
-		return nil, nil, err
-	}
-	if _, err = e.runtime.account(ctx, run); err != nil {
-		return nil, nil, err
-	}
-	q, err := e.runtime.qualification(ctx, run)
-	return q, e.runtime.installation, err
-}
-
-func codexQualityBundleKey(ctx context.Context, kind string) string {
-	if e := codexQualityExecutionFromContext(ctx); e != nil {
-		return "bundle.quality." + codexQualityHash(e.runID)[:32] + "." + kind
-	}
-	return ""
-}
-
-func codexQualityClockKey(ctx context.Context, fallback string) string {
-	if e := codexQualityExecutionFromContext(ctx); e != nil {
-		return "clock.quality." + codexQualityHash(e.runID)[:32]
-	}
-	return fallback
-}
-
-func (s *OpenAIGatewayService) closeCodexQualityConnection(q *extensionv1.CodexRoutingQualification) {
-	if closer, ok := s.httpUpstream.(interface{ CloseCodexQualityConnection(string, int64, string) }); ok && q != nil {
-		closer.CloseCodexQualityConnection(q.Scope.ConnectionLeaseID, q.Scope.AccountID, codexRoutingScopeKey(q.Scope))
-	}
-}
-
-func (rt *codexQualityRuntime) clearClosedMaterial(ctx context.Context, run codexQualityRun) {
-	ctx, cancel := context.WithTimeout(rt.ctx(context.WithoutCancel(ctx)), 3*time.Second)
-	defer cancel()
-	for _, kind := range []string{"candidate", "live"} {
-		key := "bundle.quality." + codexQualityHash(run.RunID)[:32] + "." + kind
-		record, err := rt.store.ReadExtensionState(ctx, codexRuntimePluginKey, extensionv1.StateRequest{Namespace: codexRoutingPrivateNamespace, Key: key})
-		var bundle codexRoutingPrivateBundle
-		if err != nil || !record.Found || json.Unmarshal(record.Value, &bundle) != nil || !bundle.Scope.SameOwner(run.Scope) {
-			continue
-		}
-		for i := range bundle.Cookies {
-			bundle.Cookies[i].Value = ""
-		}
-		bundle.Status = "expired"
-		raw, _ := json.Marshal(bundle)
-		_, _ = rt.store.CompareSwapExtensionState(ctx, codexRuntimePluginKey, extensionv1.StateRequest{Namespace: codexRoutingPrivateNamespace, Key: key, ExpectedRevision: record.Revision, Value: raw})
-	}
-	key := "clock.quality." + codexQualityHash(run.RunID)[:32]
-	record, err := rt.store.ReadExtensionState(ctx, codexRuntimePluginKey, extensionv1.StateRequest{Namespace: codexRoutingPrivateNamespace, Key: key})
-	var clock codexRoutingCookieClock
-	if err == nil && record.Found && json.Unmarshal(record.Value, &clock) == nil && clock.Scope.SameOwner(run.Scope) {
-		clock.Cookies = nil
-		raw, _ := json.Marshal(clock)
-		_, _ = rt.store.CompareSwapExtensionState(ctx, codexRuntimePluginKey, extensionv1.StateRequest{Namespace: codexRoutingPrivateNamespace, Key: key, ExpectedRevision: record.Revision, Value: raw})
-	}
 }

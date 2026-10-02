@@ -1,6 +1,6 @@
-# GPT-6 模型、Codex 路由与提示词
+# GPT-6 模型、Codex 出站与提示词
 
-官方基线见 [upstream-base](upstream-base)。内置提示词能力在宿主内原生运行，随宿主交付；第三方插件框架独立保留。GPT-6 Sol/Luna 的定价与识别沿用官方实现，Codex 专属路由、指令模板、实时容量和日期快照约定见下文。
+官方基线见 [upstream-base](upstream-base)。内置提示词能力在宿主内原生运行，随宿主交付；第三方插件框架独立保留。GPT-6 Sol/Luna 的定价与识别沿用官方实现，Codex 出站指纹与模型守卫、指令模板、实时容量和日期快照约定见下文。
 
 ## 模型同步与容量
 
@@ -24,24 +24,19 @@ API Key 使用完整 Responses。OAuth 目录保留实际 Lite 与上下文字�
 
 两款型号有独立价卡及严格大于 272,000 输入的长请求倍率，保留人工定价。未知 GPT-6 名称不套 Astra 身份或价格。固定来源与指令摘要见 [官方提取记录](../backend/internal/pkg/openai/gpt6_codex_reference.json)。
 
-## Cookie 路由状态与指纹
+## Codex 出站指纹与模型守卫
 
-账号的 Cookie 候选、模型验证结果和原生 turn-state 各自独立。采集取得完整成功响应和允许的 Cookie 后生成候选；业务出口完整完成且原始响应模型匹配，才能取得该模型的限时资格。292/312 仅是观测长度，不代表模型质量。
+Codex 路由采集（打票：采集与复验探针、Cookie 路由资格、连接租约、调度与请求路由门控）已删除。OpenAI OAuth 账号的调度和转发不再需要路由资格，经账号普通代理与传输发送。客户端 WS 入站经 HTTP bridge 的条件恢复为官方 v0.2.11 行为（例如 Grok 账号或插件管理器接管 OAuth 时强制 bridge）；GPT-6 不再因路由资格被强制改走 HTTP bridge。
 
-- 恢复 Cookie 只使用 `__cflb` 和 `__oailb`。基础设施 Cookie 使用官方允许集合，登录 Cookie 不进入共享传输状态。宿主处理 Cookie；普通插件头修改继续禁止 Cookie。
-- 同一 Cookie 值不延长首次采集时间，删除有持久标记；资格绑定主体、profile、路由、Cookie 版本及实际连接。本地上限为 120 秒，更早的上游到期时间优先。
-- 每账号与型号使用固定候选和当前槽；后台清除到期 Cookie 原值，保留摘要、删除标记和诊断账本。同值且未缩短期限的响应不会反复写入新状态。清除任务在采集开关关闭时仍执行，整个插件停用期间不承诺后台清除。
-- 未知轮换出口通过实际连接租约复用，连接丢失后不能自动在新连接上继续发送旧资格。客户端 WS 在只有 HTTP 资格时使用已有 HTTP bridge，页面明确显示 WS 入站、HTTP 出站；原生 WS 验证只证明该次连接。
-- 已登记且有请求需求的账号在到期前 20 秒续获。每周期最多一次采集与一次复验，连续两个失败周期后持久停止；闲置账号不持续探测。`fail_closed` 保留。
-- 旧 292 不转换为 Cookie 验证成功，旧停止状态保留。原先默认的 Astra/5.6-Sol 名单只在旧配置版本迁移时追加 6-Sol/6-Luna；自定义名单保留，之后显式修改不自动补回。
+- 模型声明守卫：OAuth 账号发往 `chatgpt.com/backend-api/codex/responses`（不含 compact）的 HTTP 请求，在普通转发、透传（含 WS 的 HTTP bridge）、Messages 和账号测试路径上，要求 200 响应声明的模型等于请求模型，否则以模型错配失败；首输出前的错配不写入下游。API Key 账号、compact 和原生 WS 帧不经此守卫。
 - 原生 turn-state 在同一轮固定首次值，下一轮或换账号清除。
-- ChatGPT 边缘自 2026-09-23 起不再为 `/backend-api/codex/responses` 的流式响应发送 `Content-Type`。宿主对声明接受 SSE 的 200 响应补回 `text/event-stream`，资格读取对无类型响应按 SSE 帧识别；缺少这一处理时采集、复验和业务观测都只能得到 `routing_incomplete`。
+- ChatGPT 边缘自 2026-09-23 起不再为 `/backend-api/codex/responses` 的流式响应发送 `Content-Type`。宿主对声明接受 SSE 的 200 响应补回 `text/event-stream`，模型守卫对无类型响应按 SSE 帧识别。
 
-账号详情右栏的“Codex 出站指纹”读取配置和已经记录的出站事实，刷新不会发模型请求。页面展示 profile 来源、UA、版本、身份摘要及一致性、传输、Cookie 名称和模型验证结果。新建账号采用官方 Windows CLI 0.156.0 的应用层参照；已有配置保留，可显式选择新版参照，设备种子和手动 UA 覆盖不被重置。
+账号详情右栏的“Codex 出站指纹”读取配置和已经记录的出站事实，刷新不会发模型请求。页面展示配置来源、profile、UA、版本和身份收敛方式，以及最近实际出站的入站与上游传输、请求压缩、TLS/ALPN、账号代理、STATE 和身份字段一致性。新建账号采用官方 Windows CLI 0.156.0 的应用层参照；已有配置保留，可显式选择新版参照，设备种子和手动 UA 覆盖不被重置。
 
-本机官方 CLI 通过隔离合成认证、本地可信证书和受控 HTTP/WS 端点取得参照。生产 Go TLS 的实际值与参照分开展示；未捕获生产 ClientHello 时不宣称 JA3/JA4 相同。原始 Cookie、STATE、Bearer 和代理密码不进入这些页面或通用诊断。
+本机官方 CLI 通过隔离合成认证、本地可信证书和受控 HTTP/WS 端点取得参照。生产 Go TLS 的实际值与参照分开展示；未捕获生产 ClientHello 时不宣称 JA3/JA4 相同。Bearer 和代理密码不进入这些页面或通用诊断。
 
-管理员接口位于 `/api/v1/admin/accounts/:id/codex-fingerprint`，profile 选择使用其 `/profile` 子路径和账号版本 CAS。`/codex-routing/validate` 是独立、不登记自动续期的限额验证操作，固定支持三款 GPT-6，一次 UUID 绑定一个账号和最多七个出站阶段；重复操作不能重新花费相同阶段。
+管理员接口位于 `/api/v1/admin/accounts/:id/codex-fingerprint`，profile 选择使用其 `/profile` 子路径和账号版本 CAS。
 
 ## 系统提示词
 
@@ -64,13 +59,9 @@ Claude OAuth 伪装系统块只由上游设置决定：设置 → 网关的 `ena
 
 迁移 `259_system_prompt_library.sql` 把旧 v2 规则里的纯文本正文导入提示词库（开关关闭、无默认，请求行为不变），启用的旧 Claude 规则只在与设置不同时写回设置，`prompt_skills` 的 off 转为新键，并删除 12 张旧提示词/Skill 表及其保护函数。旧模板、版本、历史、Skill 注册表与 `/skills/security-research/current/` 均已删除；回滚到旧镜像需先恢复这些表的备份。
 
-## 292 采集代理输入
+## Codex 运行设置
 
-在“Codex 路由设置”的采集代理输入框粘贴地址。支持完整代理 URI、主机端口、两种顺序的四段认证格式、引用分列、中英文标签以及多条记录；IPv6 使用方括号。协议选择仅用于输入未写协议的情况，明确的 URI 或标签协议不会被覆盖。
-
-例如 `proxy.example:8080:user:p@ss` 按候选解析后选择对应端点；`node.example:8080:user.example:9090` 可能有两种合法解释，需要从脱敏列表中明确选择。多个格式识别出同一端点及认证信息时去重，不同密码不合并。输入中的 `%40` 在 URI 认证字段中解码一次，在原始四段式或标签值中保持字面量；含分隔符或边界空白的列值使用引号。
-
-`POST /api/v1/admin/settings/openai-codex-ticket/proxy-parse` 只解析候选，不存储输入、不连接网络。保存和测试携带原文、缺省协议及可选 `proxy_selection_id`，服务端重新解析并核对选择，最终仅保存一个规范代理地址。修改输入、缺省协议或管理员会话会失效旧选择和测试结果；格式错误、未选择或选择过期不会发起连接。测试和实际采集使用同一选定端点，保持证书信任及采集连接隔离。
+侧栏“Codex 运行设置”（`/admin/codex-runtime`）只保留“压缩 Codex Responses 请求体”开关和保存（沿用 TOTP 二次验证），对应 `GET/PUT /api/v1/admin/settings/codex-runtime` 的 `{"request_zstd": <bool>}`；接口契约见 [native domains](native-domains.md)。
 
 ## 账号连接测试与批量测试
 

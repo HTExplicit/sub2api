@@ -246,7 +246,6 @@
         <AccountBulkActionsBar
           v-if="!flatThemeActive"
           :selected-ids="selIds"
-          :selected-accounts="selectedAccounts"
           :total-results="pagination.total"
           :selecting-all="selectingAllResults"
           :all-results-selected="allResultsSelected"
@@ -567,7 +566,6 @@
         <div v-if="flatThemeActive" v-show="selIds.length > 0 || selectingAllResults" data-ui="accounts-bulk-tray">
           <AccountBulkActionsBar
             :selected-ids="selIds"
-            :selected-accounts="selectedAccounts"
             :total-results="pagination.total"
             :selecting-all="selectingAllResults"
             :all-results-selected="allResultsSelected"
@@ -754,7 +752,6 @@ import AccountCapacityCell from '@/components/account/AccountCapacityCell.vue'
 import AccountUsageCell from '@/components/account/AccountUsageCell.vue'
 import UpstreamBillingRateCell from '@/components/account/UpstreamBillingRateCell.vue'
 import AccountOperationConfirmDialog from '@/components/admin/account-jobs/AccountOperationConfirmDialog.vue'
-import { useAccountSelectionMetadata } from '@/composables/useAccountSelectionMetadata'
 import AccountIdentityBadges from '@/components/account/AccountIdentityBadges.vue'
 import AccountSelectionCheckbox from '@/components/account/AccountSelectionCheckbox.vue'
 import { getAccountPlanType } from '@/utils/accountPresentation'
@@ -1648,7 +1645,6 @@ const {
   rows: accounts,
   getId: (account) => account.id
 })
-const { selectedAccounts, remember: rememberAccountIdentities } = useAccountSelectionMetadata(selIds, accounts)
 
 watch(selectedSet, () => {
   if (!applyingImportSelection) importSelectionRevision += 1
@@ -2453,9 +2449,7 @@ const handleSelectAllResults = async () => {
     const ids = await fetchAllAccountIds(
       async (page, pageSize, requestFilters) => {
         if (!isCurrentSelectionRequest()) throw new CanceledError('Account view selection changed')
-        const result = await adminAPI.accounts.list(page, pageSize, requestFilters)
-        rememberAccountIdentities(result.items)
-        return result
+        return adminAPI.accounts.list(page, pageSize, requestFilters)
       },
       filters
     )

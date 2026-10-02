@@ -130,22 +130,9 @@ describe('AccountUsageCell', () => {
     })
   })
 
-  it.each(['oauth', 'setup-token'] as const)('renders Codex ticket status for OpenAI %s accounts', async (type) => {
-    getUsage.mockResolvedValue({})
+  it('neither queries usage nor offers a quota reset for OpenAI setup-token accounts', async () => {
     const wrapper = mount(AccountUsageCell, {
-      props: {
-        account: makeAccount({
-          id: type === 'oauth' ? 9701 : 9702,
-          platform: 'openai',
-          type,
-          codex_turn_tickets: [
-            { model: 'gpt-6-astra', ready: true, remaining_seconds: 2520, blocked: false },
-            { model: 'gpt-5.6-sol', ready: false, remaining_seconds: 0, blocked: true },
-            { model: 'custom-model', ready: false, remaining_seconds: 0, blocked: false, last_result: { code: 'routing_upstream', success: false, http_status: 429, response_model: 'gpt-6-luna', message: 'upstream rejected: Rate limit reached' } },
-            { model: 'gpt-6-luna', ready: false, remaining_seconds: 0, blocked: false, last_result: { code: 'routing_transport', success: false, message: 'route connection failed', error: 'dial tcp 192.0.2.1:8080: connect: connection refused' } },
-          ],
-        }),
-      },
+      props: { account: makeAccount({ id: 9702, platform: 'openai', type: 'setup-token' }) },
       global: { stubs: {
         OpenAIQuotaResetCell: { template: '<div data-test="quota-reset" />' },
         UsageProgressBar: true,
@@ -153,20 +140,8 @@ describe('AccountUsageCell', () => {
       } },
     })
     await flushPromises()
-    expect(wrapper.text()).toContain('42m00s')
-    expect(wrapper.text()).toContain('admin.accounts.openai.codexTurnTicketPaused')
-    expect(wrapper.text()).toContain('admin.accounts.openai.codexTurnTicketMissing')
-    expect(wrapper.find('[title="routing_upstream · HTTP 429 · gpt-6-luna · upstream rejected: Rate limit reached"]').exists()).toBe(true)
-    // Without an HTTP status the cell shows only the short sentence; the raw text is in the title.
-    const transport = wrapper.get('[title="routing_transport · route connection failed · dial tcp 192.0.2.1:8080: connect: connection refused"]')
-    expect(transport.text()).toBe('route connection failed')
-    if (type === 'setup-token') {
-      expect(getUsage).not.toHaveBeenCalled()
-      expect(wrapper.find('[data-test="quota-reset"]').exists()).toBe(false)
-    }
-    await wrapper.setProps({ account: { ...wrapper.props('account'), codex_turn_tickets: [] } })
-    expect(wrapper.text()).not.toContain('codexTurnTicket')
-    expect(wrapper.text()).not.toContain('42m00s')
+    expect(getUsage).not.toHaveBeenCalled()
+    expect(wrapper.find('[data-test="quota-reset"]').exists()).toBe(false)
     wrapper.unmount()
   })
 

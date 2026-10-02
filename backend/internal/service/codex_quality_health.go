@@ -12,13 +12,14 @@ type codexQualityBreakerReader interface {
 	CodexQualityRuntimeBlocked(context.Context, int64, []string) (bool, error)
 }
 
-func (s *OpenAIGatewayService) codexQualityHealthBlocked(ctx context.Context, account *Account) bool {
-	return s.codexQualityHealthBlock(ctx, account) != ""
+func (s *OpenAIGatewayService) codexQualityHealthBlocked(ctx context.Context, account *Account, model string) bool {
+	return s.codexQualityHealthBlock(ctx, account, model) != ""
 }
 
 // codexQualityHealthBlock names the ordinary health state that blocks a
-// diagnostic send, or returns "" when none does. It only reads that state.
-func (s *OpenAIGatewayService) codexQualityHealthBlock(ctx context.Context, account *Account) string {
+// diagnostic send of model, or returns "" when none does. It only reads that
+// state.
+func (s *OpenAIGatewayService) codexQualityHealthBlock(ctx context.Context, account *Account, model string) string {
 	now := time.Now()
 	if value, exists := s.openaiAccountRuntimeBlockUntil.Load(account.ID); exists {
 		until, valid := value.(time.Time)
@@ -31,7 +32,7 @@ func (s *OpenAIGatewayService) codexQualityHealthBlock(ctx context.Context, acco
 			return "account runtime block until " + until.UTC().Format(time.RFC3339)
 		}
 	}
-	model := openAIAccountModelTransientModel(codexQualityModel)
+	model = openAIAccountModelTransientModel(model)
 	state := s.getOpenAIAccountModelTransientState()
 	state.mu.Lock()
 	entry := state.entries[openAIAccountModelKey{AccountID: account.ID, Model: model}]
