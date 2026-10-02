@@ -34,12 +34,12 @@ func ResponsesToAnthropicRequest(req *ResponsesRequest) (*AnthropicRequest, erro
 	}
 
 	// max_output_tokens → max_tokens
-	if req.MaxOutputTokens != nil && *req.MaxOutputTokens > 0 {
+	clientMaxTokens := req.MaxOutputTokens != nil && *req.MaxOutputTokens > 0
+	if clientMaxTokens {
 		out.MaxTokens = *req.MaxOutputTokens
-	}
-	if out.MaxTokens == 0 {
+	} else {
 		// Anthropic requires max_tokens; default to a sensible value.
-		out.MaxTokens = 8192
+		out.MaxTokens = defaultMaxTokens
 	}
 
 	// Convert tools
@@ -106,40 +106,134 @@ func ResponsesToAnthropicRequest(req *ResponsesRequest) (*AnthropicRequest, erro
 		return out, nil
 	}
 
-	// reasoning.effort → output_config.effort + thinking
+	// reasoning.effort → thinking + output_config.effort under the effort rules
+	// of the upstream model, resolved into req.Model as for the 5.5 models.
 	if req.Reasoning != nil && req.Reasoning.Effort != "" {
-		effort := mapResponsesEffortToAnthropic(req.Reasoning.Effort)
-		out.OutputConfig = &AnthropicOutputConfig{Effort: effort}
-		// Enable thinking for non-low efforts
-		if effort != "low" {
-			out.Thinking = &AnthropicThinking{
-				Type:         "enabled",
-				BudgetTokens: defaultThinkingBudget(effort),
-			}
-		}
+		applyReasoningEffort(out, req.Reasoning.Effort, clientMaxTokens)
 	}
 
 	return out, nil
 }
 
-// defaultThinkingBudget returns a sensible thinking budget based on effort level.
+// applyReasoningEffort sets out's thinking and output_config.effort for an
+// OpenAI reasoning effort under the effort rules of out.Model
+// (claude.EffortLevelsForModel):
+//
+//   - none and minimal ask for no reasoning: adaptive families think
+//     adaptively at their lowest effort, which Anthropic recommends over
+//     disabling thinking (Opus 5 then may write tool calls or thinking tags
+//     into the answer, Opus 4.8 longer reasoning; Fable and Opus 5.5 cannot
+//     disable it at all); budget families do not think;
+//   - adaptive families think adaptively at the requested level, or at the
+//     nearest level the model lists, deeper first;
+//   - Opus 4.5, Mythos Preview and Claude models without effort levels think
+//     from medium up, on a budget sized by the requested effort even where
+//     output_config.effort is capped; budget thinking takes tool_choice auto
+//     or none only, so a forced tool call runs without it; models without
+//     levels reject output_config.effort and never receive it;
+//   - values that are no effort level pass through as output_config.effort,
+//     so the upstream names the levels it accepts;
+//   - thinking takes temperature only at its default 1 and top_p only from
+//     0.95, so a request that thinks drops other values, as OpenAI reasoning
+//     models do;
+//   - third-party models behind Anthropic-compatible endpoints keep the
+//     generic mapping: the effort passes through (xhigh as max) and every
+//     effort but low thinks on a budget.
+func applyReasoningEffort(out *AnthropicRequest, effort string, clientMaxTokens bool) {
+	if !claude.IsClaudeModel(out.Model) {
+		effort = mapResponsesEffortToAnthropic(effort)
+		out.OutputConfig = &AnthropicOutputConfig{Effort: effort}
+		if effort != "low" {
+			out.Thinking = &AnthropicThinking{Type: "enabled", BudgetTokens: defaultThinkingBudget(effort)}
+		}
+		return
+	}
+
+	noReasoning := effort == "none" || effort == "minimal"
+	if levels := claude.EffortLevelsForModel(out.Model); len(levels) > 0 {
+		level := claude.EffortLevelForModel(out.Model, effort)
+		switch {
+		case noReasoning:
+			level = levels[0]
+		case level == "":
+			level = effort
+		}
+		out.OutputConfig = &AnthropicOutputConfig{Effort: level}
+	}
+	switch {
+	case claude.EffortUsesAdaptiveThinking(out.Model):
+		out.Thinking = &AnthropicThinking{Type: "adaptive"}
+	case forcesToolUse(out.ToolChoice):
+		// Budget thinking rejects tool_choice any and tool.
+	case effort == "medium" || effort == "high" || effort == "xhigh" || effort == "max":
+		enableBudgetThinking(out, defaultThinkingBudget(effort), clientMaxTokens)
+	}
+	if out.Thinking != nil {
+		if out.Temperature != nil && *out.Temperature != 1 {
+			out.Temperature = nil
+		}
+		if out.TopP != nil && *out.TopP < 0.95 {
+			out.TopP = nil
+		}
+	}
+}
+
+// forcesToolUse reports whether a converted tool_choice forces a tool call.
+func forcesToolUse(toolChoice json.RawMessage) bool {
+	var choice struct {
+		Type string `json:"type"`
+	}
+	return json.Unmarshal(toolChoice, &choice) == nil && (choice.Type == "any" || choice.Type == "tool")
+}
+
+const (
+	// defaultMaxTokens is the max_tokens of a request whose client sets no
+	// max_output_tokens.
+	defaultMaxTokens = 8192
+	// budgetThinkingMaxTokens caps a default max_tokens grown for budget
+	// thinking at the smallest output cap among the Claude models that think
+	// on a budget: Opus 4 and Opus 4.1 take 32000 output tokens.
+	budgetThinkingMaxTokens = 32000
+	// minThinkingBudget is the smallest budget_tokens the Messages API accepts.
+	minThinkingBudget = 1024
+)
+
+// enableBudgetThinking turns on budget thinking, which the Messages API takes
+// only with 1024 <= budget_tokens < max_tokens. A client max_tokens (OpenAI's
+// max_output_tokens) already caps reasoning and answer together, so it is kept
+// and the budget shrinks below it; thinking stays off when not even the
+// minimum budget fits. The default max_tokens instead grows by the budget,
+// which keeps the default answer allowance next to the thinking; the budget
+// shrinks where the grown default would pass budgetThinkingMaxTokens.
+func enableBudgetThinking(out *AnthropicRequest, budget int, clientMaxTokens bool) {
+	if clientMaxTokens {
+		budget = min(budget, out.MaxTokens-1)
+		if budget < minThinkingBudget {
+			return
+		}
+	} else {
+		budget = min(budget, budgetThinkingMaxTokens-out.MaxTokens)
+		out.MaxTokens += budget
+	}
+	out.Thinking = &AnthropicThinking{Type: "enabled", BudgetTokens: budget}
+}
+
+// defaultThinkingBudget returns the budget_tokens of enabled thinking at an
+// effort; high also covers the values third-party models pass through.
 func defaultThinkingBudget(effort string) int {
 	switch effort {
-	case "low":
-		return 1024
 	case "medium":
 		return 4096
-	case "high":
-		return 10240
-	case "max":
+	case "xhigh", "max":
 		return 32768
 	default:
 		return 10240
 	}
 }
 
-// mapResponsesEffortToAnthropic converts OpenAI Responses reasoning effort to
-// Anthropic effort levels. Reverse of mapAnthropicEffortToResponses.
+// mapResponsesEffortToAnthropic converts an OpenAI Responses reasoning effort
+// for third-party models behind Anthropic-compatible endpoints, which have no
+// effort catalog. Reverse of mapAnthropicEffortToResponses.
 //
 //	low    → low
 //	medium → medium

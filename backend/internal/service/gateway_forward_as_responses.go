@@ -142,7 +142,7 @@ func (s *GatewayService) ForwardAsResponses(
 		return nil, fmt.Errorf("build upstream request: %w", err)
 	}
 	// Bill the final Anthropic effort after conversion and account normalization.
-	// For example, OpenAI xhigh is forwarded as output_config.effort=max.
+	// For example, OpenAI xhigh is forwarded to Opus 4.6 as output_config.effort=max.
 	reasoningEffort := NormalizeClaudeOutputEffort(gjson.GetBytes(forwardedBody, "output_config.effort").String())
 	reasoningEffort = ApplyThinkingEnabledFallback(reasoningEffort, forwardedBody, mappedModel)
 
