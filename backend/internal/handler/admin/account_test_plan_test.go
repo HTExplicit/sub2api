@@ -181,3 +181,38 @@ func TestAccountTestModelsCarryReasoningOnEveryPlatform(t *testing.T) {
 	require.Equal(t, []openai.Model{{ID: "friendly", Object: "model", Type: "model", DisplayName: "friendly",
 		ReasoningEfforts: levels, DefaultReasoningEffort: defaultLevel}}, openAIRows)
 }
+
+func TestAccountTestPlanAnthropicDefaultFollowsTestModelPreference(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	plan := func(mapping map[string]any) accountTestPlanView {
+		account := &service.Account{ID: 42, Platform: service.PlatformAnthropic, Type: service.AccountTypeAPIKey,
+			Credentials: map[string]any{"model_mapping": mapping}}
+		h := &AccountHandler{adminService: testPlanAdmin{account: account}}
+		router := gin.New()
+		router.GET("/accounts/:id/models", h.GetAvailableModels)
+		out := httptest.NewRecorder()
+		router.ServeHTTP(out, httptest.NewRequest(http.MethodGet, "/accounts/42/models?view=account-test-plan-v1", nil))
+		require.Equal(t, http.StatusOK, out.Code, out.Body.String())
+		var body struct {
+			Data accountTestPlanView `json:"data"`
+		}
+		require.NoError(t, json.Unmarshal(out.Body.Bytes(), &body))
+		return body.Data
+	}
+
+	// Mapping keys are listed in a stable order, so the fallback default does
+	// not depend on map iteration.
+	withoutSonnet55 := plan(map[string]any{
+		"claude-sonnet-4-5-20250929": "claude-sonnet-4-5-20250929", "claude-opus-5-5": "claude-opus-5-5",
+		"claude-fable-5": "claude-fable-5", "claude-haiku-4-5-20251001": "claude-haiku-4-5-20251001",
+	})
+	require.Equal(t, []string{"claude-fable-5", "claude-haiku-4-5-20251001", "claude-opus-5-5", "claude-sonnet-4-5-20250929"},
+		withoutSonnet55.ModeViews["default"].ModelIDs)
+	require.Equal(t, "claude-opus-5-5", withoutSonnet55.ModeViews["default"].DefaultModelID)
+
+	withSonnet55 := plan(map[string]any{"claude-opus-5-5": "claude-opus-5-5", "claude-sonnet-5-5": "claude-sonnet-5-5"})
+	require.Equal(t, "claude-sonnet-5-5", withSonnet55.ModeViews["default"].DefaultModelID)
+
+	neither := plan(map[string]any{"claude-sonnet-4-6": "claude-sonnet-4-6", "claude-fable-5": "claude-fable-5"})
+	require.Equal(t, "claude-fable-5", neither.ModeViews["default"].DefaultModelID)
+}

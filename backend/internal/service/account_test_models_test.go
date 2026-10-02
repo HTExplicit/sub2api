@@ -295,3 +295,14 @@ func TestFetchOpenAIAccountModelsMappingChangesReuseRawCache(t *testing.T) {
 	require.Equal(t, original, after.Body, "projection must not mutate the shared catalog")
 	require.EqualValues(t, 1, calls.Load(), "both mappings must reuse the same discovery cache")
 }
+
+func TestPickConnectionTestModelPrefersClaudeTestModelsInOrder(t *testing.T) {
+	account := &Account{ID: 7, Platform: PlatformAnthropic, Type: AccountTypeAPIKey}
+	require.Equal(t, "claude-sonnet-5-5", PickConnectionTestModel(account, "claude-opus-5-5", "claude-sonnet-5-5"))
+	require.Equal(t, "claude-opus-5-5", PickConnectionTestModel(account, "claude-fable-5", "claude-opus-5-5"))
+	require.Equal(t, "claude-fable-5", PickConnectionTestModel(account, "claude-fable-5", "claude-sonnet-4-6"))
+
+	// Without a displayed list the account's own mapping decides.
+	account.Credentials = map[string]any{"model_mapping": map[string]any{"claude-opus-5-5": "claude-opus-5-5", "claude-fable-5": "claude-fable-5"}}
+	require.Equal(t, "claude-opus-5-5", PickConnectionTestModel(account))
+}
