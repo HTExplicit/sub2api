@@ -25,16 +25,11 @@ func TestAccountBusinessMessageCatalogSeparatesPreviewAndFailureCodes(t *testing
 	code, message = AccountJobFailure("delete_failed", "pq: account 7 is referenced by usage_logs")
 	require.Equal(t, "delete_failed", code)
 	require.Equal(t, "pq: account 7 is referenced by usage_logs", message)
-	// Codex ticket and routing codes use the Codex result sentences; an
-	// unknown one names itself instead of becoming a generic failure.
-	for reported, sentence := range map[string]string{
-		"routing_capacity":      "上游容量不足或流内限流，未完成路由验证",
-		"ticket_not_in_catalog": "未归类的结果代码：ticket_not_in_catalog",
-	} {
-		code, message = NormalizeAccountBusinessFailure(reported)
-		require.Equal(t, reported, code)
-		require.Equal(t, sentence, message)
-	}
+	// A code without a catalog sentence is kept as reported and gets the
+	// generic item sentence.
+	code, message = NormalizeAccountBusinessFailure("code_not_in_catalog")
+	require.Equal(t, "code_not_in_catalog", code)
+	require.Equal(t, "account job item failed", message)
 
 	// Preview success codes never lend their success sentence to a failure.
 	for _, previewCode := range []string{AccountImportCodeCreate, AccountImportCodeUpdate} {

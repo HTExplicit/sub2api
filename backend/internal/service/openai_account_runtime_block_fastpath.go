@@ -1162,44 +1162,13 @@ func (s *OpenAIGatewayService) clearOpenAIAccountRuntimeBlockIfUnchanged(account
 // Empty/inactive fields remove that contribution with generation+deadline CAS;
 // an independent request/credential block keeps its own deadline and owner.
 // Model scopes and OAuth Redis leases remain independent.
-func (s *OpenAIGatewayService) isOpenAIAccountRequestRuntimeBlocked(account *Account, requestedModel string, requireCompact ...bool) bool {
-	return s.isOpenAIAccountRequestRuntimeBlockedContext(ensureOpenAIRuntimeBreakerProbeOwner(context.Background()), account, requestedModel, requireCompact...)
+func (s *OpenAIGatewayService) isOpenAIAccountRequestRuntimeBlocked(account *Account, requestedModel string) bool {
+	return s.isOpenAIAccountRequestRuntimeBlockedContext(ensureOpenAIRuntimeBreakerProbeOwner(context.Background()), account, requestedModel)
 }
 
-func (s *OpenAIGatewayService) isOpenAIAccountRequestRuntimeBlockedContext(ctx context.Context, account *Account, requestedModel string, requireCompact ...bool) bool {
-	return s.isOpenAIAccountRequestRuntimeBlockedContextInternal(ctx, account, requestedModel, true, requireCompact...)
-}
-
-// isOpenAIAccountCandidateRuntimeBlockedContext evaluates only gates that can
-// be proven from the scheduler's partial candidate projection. Credential-bound
-// gates, including Codex turn-state tickets, are intentionally deferred to the
-// authoritative account returned by resolveFreshSchedulableOpenAIAccount or
-// recheckSelectedOpenAIAccountFromDB. Running those gates on a projection whose
-// credentials and Extra were filtered would turn a valid ticket into a
-// fail-closed runtime block.
-func (s *OpenAIGatewayService) isOpenAIAccountCandidateRuntimeBlockedContext(ctx context.Context, account *Account, requestedModel string, requireCompact ...bool) bool {
-	return s.isOpenAIAccountRequestRuntimeBlockedContextInternal(ctx, account, requestedModel, false, requireCompact...)
-}
-
-func (s *OpenAIGatewayService) isOpenAIAccountRequestRuntimeBlockedContextInternal(
-	ctx context.Context,
-	account *Account,
-	requestedModel string,
-	evaluateCodexTicket bool,
-	requireCompact ...bool,
-) bool {
+func (s *OpenAIGatewayService) isOpenAIAccountRequestRuntimeBlockedContext(ctx context.Context, account *Account, requestedModel string) bool {
 	if s == nil || account == nil {
 		return false
-	}
-	// Only OAuth/setup-token accounts can own tickets; API-key paths stay unchanged.
-	// Scheduler candidate projections intentionally omit ticket material and the
-	// identity fields needed to validate its owner, so that check is authoritative-only.
-	if evaluateCodexTicket && isOpenAICodexTicketAccount(account) {
-		compact := len(requireCompact) > 0 && requireCompact[0]
-		outboundModel := s.openAICodexTicketOutboundModel(account, requestedModel, compact)
-		if s.openAICodexTicketBlocksAccount(account, outboundModel) {
-			return true
-		}
 	}
 	snapshot := s.peekOpenAIAccountRuntimeBlock(account)
 	if snapshot.blocked && snapshot.sources.hasPersisted && !accountPersistedSchedulingCooldownActive(account) {

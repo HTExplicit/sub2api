@@ -405,7 +405,7 @@ html.flat-theme .table-wrapper[data-table="accounts"] td[data-column="taxonomy_r
   text-overflow: clip;
 }
 
-/* ---- 用量 (/ 今日统计): at least 11rem (upstream reserves 15rem); tickets and notes wrap, the bars are 4rem, a reset time
+/* ---- 用量 (/ 今日统计): at least 11rem (upstream reserves 15rem); notes wrap, the bars are 4rem, a reset time
    wraps under its bar; today's stats (switched on) under a label, two figures a line */
 html.flat-theme .table-wrapper[data-table="accounts"] th[data-column="usage"] {
   min-width: 11rem;
@@ -413,10 +413,6 @@ html.flat-theme .table-wrapper[data-table="accounts"] th[data-column="usage"] {
 
 html.flat-theme .table-wrapper[data-table="accounts"] td[data-column="usage"] > div:not([data-ui="cell-lines"]) {
   min-width: 0;
-}
-
-html.flat-theme .table-wrapper[data-table="accounts"] td[data-column="usage"] [data-usage-variant="list"] [class~="max-w-[15rem]"] {
-  max-width: none;
 }
 
 html.flat-theme .table-wrapper[data-table="accounts"] td[data-column="usage"] [data-density="list"] > div:last-child {

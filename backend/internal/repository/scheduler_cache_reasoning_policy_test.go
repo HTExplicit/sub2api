@@ -10,14 +10,15 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestSchedulerCacheCodexProjectionDropsAdministratorText(t *testing.T) {
-	observation := map[string]any{"key": "gpt-6-astra", "kind": "codex_routing", "state": "retry", "code": "routing_upstream", "http_status": float64(429), "message": "Rate limit reached", "response_model": "gpt-6-luna"}
-	projection := map[string]any{"identity": "owner", "scheduling": map[string]any{}, "observations": map[string]any{"gpt-6-astra": observation}}
-	source := map[string]any{service.NativeCodexAccountProjectionKey: map[string]any{"codexrip.codex-runtime": projection}}
+// The retired route-qualification projection stays dormant in account extra
+// and never enters a scheduler snapshot.
+func TestSchedulerCacheDropsRetiredCodexProjection(t *testing.T) {
+	projection := map[string]any{"identity": "owner", "scheduling": map[string]any{"gpt-6-astra": map[string]any{"effect": "deny"}}}
+	source := map[string]any{service.NativeCodexAccountProjectionKey: map[string]any{"codexrip.codex-runtime": projection}, "openai_quota_status": "ok"}
 	filtered := filterSchedulerExtra(source)
-	copied := filtered[service.NativeCodexAccountProjectionKey].(map[string]any)["codexrip.codex-runtime"].(map[string]any)["observations"].(map[string]any)["gpt-6-astra"].(map[string]any)
-	require.Equal(t, map[string]any{"key": "gpt-6-astra", "kind": "codex_routing", "state": "retry", "code": "routing_upstream", "http_status": float64(429)}, copied)
-	require.Equal(t, "Rate limit reached", observation["message"], "the persistent account extra is not rewritten")
+	require.NotContains(t, filtered, service.NativeCodexAccountProjectionKey)
+	require.Equal(t, "ok", filtered["openai_quota_status"])
+	require.Contains(t, source, service.NativeCodexAccountProjectionKey, "the persistent account extra is not rewritten")
 }
 
 func TestSchedulerCacheReasoningPolicyProjectionPreservesMissingAndBooleanSemantics(t *testing.T) {

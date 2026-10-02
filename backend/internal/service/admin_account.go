@@ -456,7 +456,7 @@ func normalizeOpenAILongContextBillingUpdateExtra(account *Account, input *Updat
 // Grok media eligibility helpers live in account_grok_media_eligibility.go.
 
 func buildAccountForCreate(input *CreateAccountInput, accountExtra map[string]any) (*Account, error) {
-	accountExtra = MergeOpenAICodexTicketExtra(accountExtra, nil)
+	accountExtra = maps.Clone(accountExtra)
 	// Probe/session state is system-managed. New accounts always start with automatic refresh disabled.
 	delete(accountExtra, UpstreamBillingProbeEnabledExtraKey)
 	delete(accountExtra, UpstreamBillingRateSyncEnabledExtraKey)
@@ -778,7 +778,7 @@ func (s *adminServiceImpl) UpdateAccount(ctx context.Context, id int64, input *U
 				normalizedExtra[key] = v
 			}
 		}
-		normalizedExtra = MergeOpenAICodexTicketExtra(normalizedExtra, account.Extra)
+		normalizedExtra = maps.Clone(normalizedExtra)
 		// System prompt bindings are written only by the binding endpoint.
 		// Ordinary account edits preserve them, including their absence.
 		delete(normalizedExtra, AccountExtraSystemPromptKey)
@@ -1024,7 +1024,7 @@ func (s *adminServiceImpl) UpdateAccountExtra(ctx context.Context, id int64, upd
 	if err := ValidateOpenAIReasoningPolicyExtra(updates); err != nil {
 		return err
 	}
-	updates = MergeOpenAICodexTicketExtra(updates, nil)
+	updates = maps.Clone(updates)
 
 	updates = sanitizedCodexFingerprintExtraUpdates(updates)
 	updates = stripOpenAIAutoResetCreditManagedExtra(updates, true)
@@ -1063,7 +1063,7 @@ func (s *adminServiceImpl) BulkUpdateAccounts(ctx context.Context, input *BulkUp
 		return nil, err
 	}
 	// Managed probe/session state may only enter through dedicated typed endpoints.
-	input.Extra = MergeOpenAICodexTicketExtra(input.Extra, nil)
+	input.Extra = maps.Clone(input.Extra)
 	input.Extra = sanitizedCodexFingerprintExtraUpdates(input.Extra)
 	input.Extra = stripOpenAIAutoResetCreditManagedExtra(input.Extra, true)
 	delete(input.Extra, UpstreamBillingProbeEnabledExtraKey)

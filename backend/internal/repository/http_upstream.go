@@ -32,7 +32,6 @@ import (
 	"github.com/Wei-Shaw/sub2api/internal/pkg/servertiming"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/tlsfingerprint"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/xai"
-	"github.com/Wei-Shaw/sub2api/internal/proxytransport"
 	"github.com/Wei-Shaw/sub2api/internal/service"
 	"github.com/Wei-Shaw/sub2api/internal/util/urlvalidator"
 )
@@ -104,7 +103,6 @@ const (
 	upstreamProtocolModeOpenAIH1         = "openai_h1"
 	upstreamProtocolModeOpenAIH2         = "openai_h2"
 	upstreamProtocolModeOpenAIH1Fallback = "openai_h1_fallback"
-	upstreamProtocolModeOpenAIH1NoReuse  = "openai_h1_noreuse"
 	upstreamProtocolModeGrok             = "grok"
 )
 
@@ -169,8 +167,6 @@ type httpUpstreamService struct {
 	clients map[string]*upstreamClientEntry // 客户端缓存池，key 由隔离策略决定
 	// OpenAI 走 HTTP/HTTPS 代理时的 H2->H1 回退状态（key=标准化 proxyKey）
 	openAIHTTP2Fallbacks sync.Map
-	// Dedicated, expiring connection leases never share a proxy pool across accounts.
-	codexConnectionLeases map[string]*codexConnectionLease
 }
 
 // NewHTTPUpstream 创建通用 HTTP 上游服务
@@ -556,7 +552,7 @@ func (s *httpUpstreamService) acquireClientWithTLS(proxyURL string, accountID in
 // TLS 指纹客户端使用独立的缓存键，与普通客户端隔离
 func (s *httpUpstreamService) getClientEntryWithTLS(proxyURL string, accountID int64, accountConcurrency int, profile *tlsfingerprint.Profile, upstreamProfile service.HTTPUpstreamProfile, markInFlight bool, enforceLimit bool) (*upstreamClientEntry, error) {
 	isolation := s.getIsolationMode()
-	proxyKey, parsedProxy, err := proxyURLForProfile(proxyURL, upstreamProfile)
+	proxyKey, parsedProxy, err := normalizeProxyURL(proxyURL)
 	if err != nil {
 		return nil, err
 	}
@@ -717,7 +713,7 @@ func (s *httpUpstreamService) getClientEntry(proxyURL string, accountID int64, a
 	// 获取隔离模式
 	isolation := s.getIsolationMode()
 	// 标准化代理 URL 并解析
-	proxyKey, parsedProxy, err := proxyURLForProfile(proxyURL, profile)
+	proxyKey, parsedProxy, err := normalizeProxyURL(proxyURL)
 	if err != nil {
 		return nil, err
 	}
@@ -1067,9 +1063,6 @@ func (s *httpUpstreamService) resolveProtocolMode(profile service.HTTPUpstreamPr
 	if profile == service.HTTPUpstreamProfileGrok {
 		return upstreamProtocolModeGrok
 	}
-	if profile == service.HTTPUpstreamProfileOpenAIHarvest {
-		return upstreamProtocolModeOpenAIH1NoReuse
-	}
 	if profile != service.HTTPUpstreamProfileOpenAI {
 		return upstreamProtocolModeDefault
 	}
@@ -1278,18 +1271,6 @@ func (s *openAIHTTP2FallbackState) recordFailure(now time.Time, threshold int, w
 //   - string: 标准化的代理键（空返回 "direct"）
 //   - *url.URL: 解析后的 URL（空返回 nil）
 //   - error: 非空代理 URL 解析失败时返回错误（禁止回退到直连）
-//
-// Acquisition already selected a validated endpoint. Keep that exact protocol
-// and representation, including default ports and host casing used by trust
-// keys; the general account-proxy compatibility normalizer is a different API.
-func proxyURLForProfile(raw string, profile service.HTTPUpstreamProfile) (string, *url.URL, error) {
-	if profile == service.HTTPUpstreamProfileOpenAIHarvest {
-		parsed, err := proxytransport.ParseEndpoint(raw)
-		return raw, parsed, err
-	}
-	return normalizeProxyURL(raw)
-}
-
 func normalizeProxyURL(raw string) (string, *url.URL, error) {
 	_, parsed, err := proxyurl.Parse(raw)
 	if err != nil {
@@ -1419,13 +1400,6 @@ func buildUpstreamTransport(settings poolSettings, proxyURL *url.URL, protocolMo
 		}
 	case upstreamProtocolModeOpenAIH1:
 		transport.ForceAttemptHTTP2 = false
-		transport.TLSNextProto = make(map[string]func(string, *tls.Conn) http.RoundTripper)
-	case upstreamProtocolModeOpenAIH1NoReuse:
-		// Harvest must open a fresh CONNECT each attempt so the harvest proxy can rotate egress IPs.
-		transport.ForceAttemptHTTP2 = false
-		transport.DisableKeepAlives = true
-		transport.MaxIdleConns = 0
-		transport.MaxIdleConnsPerHost = 0
 		transport.TLSNextProto = make(map[string]func(string, *tls.Conn) http.RoundTripper)
 	case upstreamProtocolModeOpenAIH1Fallback:
 		// 显式禁用 HTTP/2，确保代理不兼容场景回退到 HTTP/1.1。
@@ -1566,7 +1540,7 @@ func wrapTrackedBody(body io.ReadCloser, onClose func()) io.ReadCloser {
 }
 
 // restoreCodexEventStreamContentType 为缺少 Content-Type 的 ChatGPT Codex /responses 流补回
-// text/event-stream。ChatGPT 边缘自 2026-09-23 起不再为这类 SSE 响应发送该头，而路由观测、
+// text/event-stream。ChatGPT 边缘自 2026-09-23 起不再为这类 SSE 响应发送该头，而模型声明校验、
 // 工具名映射和图片流等消费方都按它识别流；请求声明接受 SSE 且上游 200 时响应体就是 SSE。
 func restoreCodexEventStreamContentType(resp *http.Response) {
 	if resp == nil || resp.StatusCode != http.StatusOK || resp.Header == nil || resp.Header.Get("Content-Type") != "" {

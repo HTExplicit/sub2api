@@ -62,7 +62,7 @@ func (h *AccountHandler) CreateCodexQualityRun(c *gin.Context) {
 		return
 	}
 	var req service.CodexQualityCreateRequest
-	if h.codexTicketGateway == nil {
+	if h.codexGateway == nil {
 		response.Error(c, 409, "Codex quality run unavailable: Codex runtime unavailable")
 		return
 	}
@@ -81,7 +81,7 @@ func (h *AccountHandler) CreateCodexQualityRun(c *gin.Context) {
 		response.Error(c, 409, "Codex quality run unavailable: "+err.Error())
 		return
 	}
-	result, err := h.codexTicketGateway.CreateCodexQualityRun(c.Request.Context(), actor, id, key, req)
+	result, err := h.codexGateway.CreateCodexQualityRun(c.Request.Context(), actor, id, key, req)
 	writeCodexQualityResult(c, result, err)
 }
 
@@ -90,31 +90,11 @@ func (h *AccountHandler) ReadCodexQualityRun(c *gin.Context) {
 	if !ok {
 		return
 	}
-	if h.codexTicketGateway == nil {
+	if h.codexGateway == nil {
 		response.Error(c, 409, "Codex quality run unavailable: Codex runtime unavailable")
 		return
 	}
-	result, err := h.codexTicketGateway.ReadCodexQualityRun(c.Request.Context(), actor, id, c.Param("run_id"))
-	writeCodexQualityResult(c, result, err)
-}
-
-func (h *AccountHandler) RenewCodexQualityRoute(c *gin.Context) {
-	actor, id, ok := codexQualityAdmin(c)
-	if !ok {
-		return
-	}
-	var req struct {
-		OperationID string `json:"operation_id"`
-	}
-	if h.codexTicketGateway == nil {
-		response.Error(c, 409, "Codex quality run unavailable: Codex runtime unavailable")
-		return
-	}
-	if err := c.ShouldBindJSON(&req); err != nil {
-		response.Error(c, 409, "Codex quality run unavailable: invalid request: "+err.Error())
-		return
-	}
-	result, err := h.codexTicketGateway.RenewCodexQualityRoute(c.Request.Context(), actor, id, c.Param("run_id"), req.OperationID, codexQualityKeyLookup(h, actor))
+	result, err := h.codexGateway.ReadCodexQualityRun(c.Request.Context(), actor, id, c.Param("run_id"))
 	writeCodexQualityResult(c, result, err)
 }
 
@@ -123,10 +103,10 @@ func (h *AccountHandler) CloseCodexQualityRun(c *gin.Context) {
 	if !ok {
 		return
 	}
-	if h.codexTicketGateway == nil {
+	if h.codexGateway == nil {
 		response.Error(c, 409, "Codex quality run unavailable: Codex runtime unavailable")
 		return
 	}
-	result, err := h.codexTicketGateway.CloseCodexQualityRun(c.Request.Context(), actor, id, c.Param("run_id"))
+	result, err := h.codexGateway.CloseCodexQualityRun(c.Request.Context(), actor, id, c.Param("run_id"))
 	writeCodexQualityResult(c, result, err)
 }

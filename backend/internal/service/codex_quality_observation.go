@@ -9,10 +9,8 @@ import (
 	"slices"
 	"strings"
 	"sync"
-	"time"
 	"unicode/utf8"
 
-	extensionv1 "github.com/Wei-Shaw/sub2api/internal/nativeapi"
 	"github.com/klauspost/compress/zstd"
 	"github.com/tidwall/gjson"
 )
@@ -84,28 +82,11 @@ func (codexQualityRejectedWireBody) Read([]byte) (int, error) {
 	return 0, ErrCodexQualityUnavailable
 }
 
-func reserveCodexQualityAcquisition(req *http.Request, accountID int64) error {
-	e := codexQualityExecutionFromContext(req.Context())
-	if e == nil {
-		return nil
-	}
-	if e.accountID != accountID || e.stage != "acquire" {
-		return codexQualityUnavailable("acquisition for account %d does not match the %s stage of account %d", accountID, e.stage, e.accountID)
-	}
-	run, err := e.current(req.Context())
-	if err != nil {
-		return err
-	}
-	account, err := e.runtime.account(req.Context(), run)
-	if err != nil {
-		return err
-	}
-	return reserveCodexQualitySend(req, account, nil)
-}
-
-// Called after local request preparation, immediately before model IO. Every
-// generation path of a quality run (acquire, verify and business) spends here.
-func reserveCodexQualitySend(req *http.Request, account *Account, q *extensionv1.CodexRoutingQualification) error {
+// reserveCodexQualitySend runs on the account's ordinary send path after the
+// final wire request exists and immediately before upstream IO. It rechecks
+// the run and the account, requires the final body to carry the bound model
+// and reasoning effort, and then spends one send of the persistent budget.
+func reserveCodexQualitySend(req *http.Request, account *Account) error {
 	e := codexQualityExecutionFromContext(req.Context())
 	if e == nil {
 		return nil
@@ -124,89 +105,33 @@ func reserveCodexQualitySend(req *http.Request, account *Account, q *extensionv1
 	if err != nil {
 		return err
 	}
-	if model != codexQualityModel || effort != codexQualityEffort {
-		return codexQualityUnavailable("the outbound body asks for model %q effort %q; a quality diagnosis sends %s with %s", model, effort, codexQualityModel, codexQualityEffort)
+	boundModel, boundEffort := run.binding()
+	if model != boundModel || effort != boundEffort {
+		return codexQualityUnavailable("the outbound body asks for model %q effort %q; quality run %s sends %s with %s", qualityRecordedModel(model), qualityRecordedModel(effort), run.RunID, boundModel, boundEffort)
 	}
-	if e.stage == "business" {
-		current, err := e.runtime.qualification(req.Context(), run)
-		switch {
-		case err != nil:
-			return err
-		case q == nil:
-			return codexQualityUnavailable("the business request carries no route qualification")
-		case current.Bundle.Key != q.Bundle.Key || current.Bundle.Revision != q.Bundle.Revision:
-			return codexQualityUnavailable("the route changed to bundle %s revision %d while the request used %s revision %d", current.Bundle.Key, current.Bundle.Revision, q.Bundle.Key, q.Bundle.Revision)
-		}
-	}
-	e.requestModel, e.effort, e.qualification = model, effort, q
+	e.requestModel, e.effort = model, effort
 	return reserveCodexQualityAttempt(e.runtime.ctx(req.Context()), e.runtime.store, e.runID, e.grantDigest, e.attempt())
 }
 
 func (e *codexQualityExecution) attempt() CodexQualityAttempt {
-	a := CodexQualityAttempt{Stage: e.stage, TrialID: e.trialID, OperationID: e.operationID, AccountID: e.accountID, RequestModel: e.requestModel, ReasoningEffort: e.effort, ResponseModels: []string{}, HeaderModels: []string{}}
-	if q := e.qualification; q != nil {
-		if q.Scope.ConnectionLeaseID != "" {
-			a.ConnectionFingerprint = codexQualityHash(q.Scope.ConnectionLeaseID)[:16]
-		}
-		if q.Bundle.Key != "" {
-			a.QualificationFingerprint = codexQualityHash(q.Bundle.Key)[:16]
-		}
-	}
-	return a
+	return CodexQualityAttempt{Stage: codexQualityStage, TrialID: e.trialID, AccountID: e.accountID, RequestModel: e.requestModel, ReasoningEffort: e.effort, ResponseModels: []string{}, HeaderModels: []string{}}
 }
 
-// Read the original response into the diagnostic observer before a protocol
+// Read the original response into the diagnostic observer before the model
 // guard can reject a frame. The guard's outcome never replaces raw evidence.
-func (s *OpenAIGatewayService) observeCodexQualityBusinessResponse(request *http.Request, response *http.Response, err error, q *extensionv1.CodexRoutingQualification) {
-	observeCodexQualityResponse(request.Context(), response, err, q)
-	if err != nil || response == nil || response.Body == nil {
+func (s *OpenAIGatewayService) observeCodexQualityBusinessResponse(request *http.Request, response *http.Response, err error) {
+	observeCodexQualityResponse(request.Context(), response, err)
+	e := codexQualityExecutionFromContext(request.Context())
+	if e == nil || err != nil || response == nil || response.Body == nil {
 		return
 	}
-	guard := s.newCodexRoutingObservedBody(request, response, codexQualityModel)
-	guard.finish = func(completion codexRoutingCompletion) {
-		if completion.observationCode(codexQualityModel, response.StatusCode) == "routing_verified" {
-			return
-		}
-		e := codexQualityExecutionFromContext(request.Context())
-		if e == nil || q == nil {
-			return
-		}
-		ctx, cancel := context.WithTimeout(context.WithoutCancel(request.Context()), 3*time.Second)
-		defer cancel()
-		_, _ = mutateCodexQualityRun(e.runtime.ctx(ctx), e.runtime.store, e.runID, func(run *codexQualityRun) error {
-			// Raw observation can have refreshed the same connection's cookie
-			// revision before Close finishes. A failed guard revokes that lease,
-			// but never a separately renewed connection or ordinary eligibility.
-			if current := run.Qualification; current != nil && current.Bundle.Key == q.Bundle.Key && current.Scope.ConnectionLeaseID == q.Scope.ConnectionLeaseID && current.Scope.SameOwner(q.Scope) {
-				run.Qualification = nil
-			}
-			return nil
-		})
-	}
-	response.Body = guard
+	response.Body = s.newCodexModelGuardBody(request, response, e.requestModel)
 }
 
-func codexQualityModelsMatch(attempt CodexQualityAttempt) bool {
-	if !attempt.Completed || attempt.TerminalModel == nil || *attempt.TerminalModel != codexQualityModel {
-		return false
-	}
-	for _, models := range [][]string{attempt.ResponseModels, attempt.HeaderModels} {
-		for _, model := range models {
-			if model != codexQualityModel {
-				return false
-			}
-		}
-	}
-	return true
-}
-
-func observeCodexQualityResponse(ctx context.Context, response *http.Response, err error, q *extensionv1.CodexRoutingQualification) {
+func observeCodexQualityResponse(ctx context.Context, response *http.Response, err error) {
 	e := codexQualityExecutionFromContext(ctx)
 	if e == nil {
 		return
-	}
-	if q != nil {
-		e.qualification = q
 	}
 	a := e.attempt()
 	if err != nil || response == nil {
@@ -221,11 +146,6 @@ func observeCodexQualityResponse(ctx context.Context, response *http.Response, e
 	}
 	a.HTTPStatus = response.StatusCode
 	a.RequestID, a.CFRay = response.Header.Get("x-request-id"), response.Header.Get("cf-ray")
-	observedAt := time.Now().UTC()
-	deleted := false
-	if e.stage == "business" && q != nil {
-		deleted = e.runtime.s.recordCodexRoutingDeletions(ctx, e.runtime.installation, q, response.Header, observedAt)
-	}
 	for name, values := range response.Header {
 		if strings.EqualFold(name, "openai-model") || strings.EqualFold(name, "x-openai-model") {
 			for _, value := range values {
@@ -233,31 +153,9 @@ func observeCodexQualityResponse(ctx context.Context, response *http.Response, e
 			}
 		}
 	}
-	observer := e.runtime.s.newCodexQualityObservedBody(response, e.stage, a)
+	observer := e.runtime.s.newCodexQualityObservedBody(response, a)
 	observer.finish = func(a CodexQualityAttempt) {
 		finishCodexQualityAttempt(e.runtime.ctx(ctx), e.runtime.store, e.runID, a)
-		if e.stage == "business" {
-			if _, err := e.current(ctx); err != nil {
-				return
-			}
-			matched := codexQualityModelsMatch(a) && !deleted
-			var replacement *extensionv1.CodexRoutingQualification
-			if matched {
-				replacement = e.runtime.s.refreshObservedCodexCookies(ctx, e.runtime.installation, q, response.Header, extensionv1.CodexRoutingObservation{Stage: "business", Code: "routing_verified", RequestedModel: codexQualityModel, ResponseModel: codexQualityModel, Completed: true, ModelMatched: true, ObservedAt: observedAt})
-			}
-			finish, cancel := context.WithTimeout(context.WithoutCancel(ctx), 3*time.Second)
-			defer cancel()
-			_, _ = mutateCodexQualityRun(e.runtime.ctx(finish), e.runtime.store, e.runID, func(run *codexQualityRun) error {
-				if run.Qualification != nil && e.qualification != nil && run.Qualification.Bundle == e.qualification.Bundle {
-					if !matched {
-						run.Qualification = nil
-					} else if replacement != nil {
-						run.Qualification = replacement
-					}
-				}
-				return nil
-			})
-		}
 	}
 	response.Body = observer
 }
@@ -302,31 +200,29 @@ func recordCodexQualityHeaderModel(attempt *CodexQualityAttempt, value string) {
 
 // A bounded single-frame observer; it never buffers the whole response and
 // always forwards the original bytes without editing model fields or content.
-func (s *OpenAIGatewayService) newCodexQualityObservedBody(response *http.Response, stage string, attempt CodexQualityAttempt) *codexQualityObservedBody {
-	limit, jsonLimit, totalLimit := codexRoutingProbeReadLimit, int64(codexRoutingProbeReadLimit), int64(codexRoutingProbeReadLimit)
-	if stage == "business" {
-		limit, jsonLimit, totalLimit = s.codexRoutingBusinessEventLimit(), resolveUpstreamResponseReadLimit(s.cfg), 0
-	}
+// One SSE event is limited by Gateway.MaxLineSize and a JSON body by
+// Gateway.UpstreamResponseReadMaxBytes, the limits of ordinary forwarding.
+func (s *OpenAIGatewayService) newCodexQualityObservedBody(response *http.Response, attempt CodexQualityAttempt) *codexQualityObservedBody {
 	return &codexQualityObservedBody{
 		ReadCloser: response.Body,
 		sse:        strings.Contains(strings.ToLower(response.Header.Get("Content-Type")), "text/event-stream"),
 		sniff:      strings.TrimSpace(response.Header.Get("Content-Type")) == "",
-		attempt:    attempt, maxEventBytes: limit, maxJSONBytes: jsonLimit, maxReadBytes: totalLimit,
+		attempt:    attempt, maxEventBytes: s.codexModelGuardEventLimit(), maxJSONBytes: resolveUpstreamResponseReadLimit(s.cfg),
 	}
 }
 
 type codexQualityObservedBody struct {
 	io.ReadCloser
-	detail                                string
-	sse, sniff, failed, oversized         bool
-	pending                               []byte
-	scanFrom, maxEventBytes               int
-	maxJSONBytes, maxReadBytes, readBytes int64
-	attempt                               CodexQualityAttempt
-	once                                  sync.Once
-	mu                                    sync.Mutex
-	done                                  bool
-	finish                                func(CodexQualityAttempt)
+	detail                        string
+	sse, sniff, failed, oversized bool
+	pending                       []byte
+	scanFrom, maxEventBytes       int
+	maxJSONBytes                  int64
+	attempt                       CodexQualityAttempt
+	once                          sync.Once
+	mu                            sync.Mutex
+	done                          bool
+	finish                        func(CodexQualityAttempt)
 }
 
 func (b *codexQualityObservedBody) Read(p []byte) (int, error) {
@@ -346,14 +242,6 @@ func (b *codexQualityObservedBody) feed(raw []byte) {
 	if b.oversized {
 		return
 	}
-	if b.maxReadBytes > 0 {
-		b.readBytes += int64(len(raw))
-		if b.readBytes > b.maxReadBytes {
-			b.oversized, b.failed, b.pending = true, true, nil
-			b.detail = fmt.Sprintf("the response exceeded the %d-byte observation limit", b.maxReadBytes)
-			return
-		}
-	}
 	b.pending = append(b.pending, raw...)
 	if b.sniff && bodyHasSSEFraming(b.pending) {
 		b.sse, b.sniff = true, false
@@ -363,7 +251,7 @@ func (b *codexQualityObservedBody) feed(raw []byte) {
 		limit = b.maxJSONBytes
 	}
 	if limit <= 0 {
-		limit = codexRoutingProbeReadLimit
+		limit = codexBodyReadLimit
 	}
 	if b.sse {
 		for i := b.scanFrom; i < len(b.pending); i++ {

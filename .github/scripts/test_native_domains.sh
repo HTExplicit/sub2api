@@ -9,9 +9,9 @@ cd "$repo_root"
 go -C backend test -p=1 -tags unit \
   ./internal/accounttools/... \
   ./internal/codexruntime/... \
-  -skip '^TestNativeModuleLifecycleStartsOnceAndDrains$' -count=1
+  -skip '^TestModuleServesTransportPlanFromItsConfiguration$' -count=1
 
 # Preserve configuration/ledger/storage boundaries without starting real IO.
 go -C backend test -p=1 -tags unit ./internal/service ./internal/repository \
-  -run '^(TestNativeCodex(ConfigGenerationIsAtomicAndIdempotent|StoredConfigDistinguishesMissingAndReadError|ClosedLedgerReadableWithoutRewritingGeneration|HostKeepsPrivateStateAndCredentialScope|ErrorDiagnosticsUseStoredAccountsAndRemovePrivateFields)|TestNativeRuntimeLease.*|TestNativePluginBoundaryProtectsRetiredRecordsAndAllowsThirdParties|TestNativeFeatureBootstrapPreservesEffectiveConfiguration|TestNativeSettingLoadFailureNeverReenablesSavedSwitches|TestImageTools.*|TestSwitchingImageStudio(OnStartsTheRuntime|OffStopsDetachedUpstreamIO)|TestTrafficObservation.*|TestAccountTrafficOutcomeRulesKeepCancellationAboveErrorsAndRequireWSTerminals|TestDecodeSwitchSettingsRejectsUnknownAndNonBooleanValues)$' \
+  -run '^(TestNativeCodex(ConfigGenerationIsAtomicAndIdempotent|StoredConfigDistinguishesMissingAndReadError|StoredRetiredSettingsStillBoot|ErrorDiagnosticsUseStoredAccountsAndRemovePrivateFields)|TestNativeRuntimeLease.*|TestNativePluginBoundaryProtectsRetiredRecordsAndAllowsThirdParties|TestNativeFeatureBootstrapPreservesEffectiveConfiguration|TestNativeSettingLoadFailureNeverReenablesSavedSwitches|TestImageTools.*|TestSwitchingImageStudio(OnStartsTheRuntime|OffStopsDetachedUpstreamIO)|TestTrafficObservation.*|TestAccountTrafficOutcomeRulesKeepCancellationAboveErrorsAndRequireWSTerminals|TestDecodeSwitchSettingsRejectsUnknownAndNonBooleanValues)$' \
   -count=1

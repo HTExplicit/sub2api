@@ -193,23 +193,8 @@
       </ClaudeResetCreditsCell>
     </template>
 
-    <!-- OpenAI Codex accounts: ticket status; usage querying remains OAuth-only. -->
-    <template v-else-if="account.platform === 'openai' && (account.type === 'oauth' || account.type === 'setup-token')">
-      <div v-if="codexTurnTickets.length" class="mb-1 max-w-[15rem] space-y-0.5">
-        <div
-          v-for="ticket in codexTurnTickets"
-          :key="ticket.model"
-          class="flex flex-wrap items-center gap-x-1 whitespace-normal break-words text-[10px] leading-4"
-        >
-          <span class="truncate font-medium text-gray-500 dark:text-gray-400" :title="ticket.model">{{ shortCodexTicketModel(ticket.model) }}</span>
-          <span v-if="ticket.ready" class="text-emerald-600 dark:text-emerald-400">{{ formatCodexTicketRemaining(ticket.remaining_seconds) }}</span>
-          <span v-else-if="ticket.blocked" class="text-amber-600 dark:text-amber-400">{{ t('admin.accounts.openai.codexTurnTicketPaused') }}</span>
-          <span v-else class="text-gray-500">{{ t('admin.accounts.openai.codexTurnTicketMissing') }}</span>
-          <span :title="[ticket.last_result?.message, ticket.last_attempt_at, ticket.next_attempt_at].filter(Boolean).join(' · ')">{{ t('admin.accounts.tickets.states.' + (ticket.renewal_state || 'idle')) }}</span>
-          <span v-if="ticket.last_result && !ticket.last_result.success" class="text-red-600" :title="codexTicketResultTitle(ticket.last_result)">{{ ticket.last_result.http_status ? 'HTTP ' + ticket.last_result.http_status : ticket.last_result.message || ticket.last_result.code }} {{ ticket.last_result.observed_length || '' }}</span>
-          <time v-if="ticket.next_attempt_at" :datetime="ticket.next_attempt_at" :title="t('admin.accounts.tickets.next')">{{ new Date(ticket.next_attempt_at).toLocaleTimeString() }}</time>
-        </div>
-      </div>
+    <!-- OpenAI OAuth accounts: single source from /usage API -->
+    <template v-else-if="account.platform === 'openai' && account.type === 'oauth'">
       <div v-if="hasOpenAIUsageFallback" class="space-y-1">
         <UsageProgressBar
           v-for="window in openAIQuotaWindows"
@@ -277,8 +262,7 @@
         <div class="text-xs text-gray-400">{{ emptyUsageText }}</div>
         <!-- Always allow on-demand upstream quota query, even before local data exists. -->
         <OpenAIQuotaResetCell
-          v-if="canInteract && account.type === 'oauth'"
-
+          v-if="canInteract"
           :account="account"
           class="mt-1"
           @account-updated="handleQuotaResetAccountUpdated"
@@ -1043,27 +1027,6 @@ const hasOpenAIUsageFallback = computed(() => {
   if (props.account.platform !== 'openai' || props.account.type !== 'oauth') return false
   return openAIQuotaWindows.value.length > 0
 })
-
-const codexTurnTickets = computed(() => props.account.codex_turn_tickets ?? [])
-
-function shortCodexTicketModel(model: string) {
-  if (model === 'gpt-6-astra') return 'astra'
-  if (model === 'gpt-5.6-sol') return 'sol'
-  return model
-}
-
-function formatCodexTicketRemaining(seconds: number) {
-  const total = Math.max(0, Math.floor(seconds || 0))
-  const m = Math.floor(total / 60)
-  const s = total % 60
-  return `${m}m${String(s).padStart(2, '0')}s`
-}
-
-// Inline shows the code or short sentence; the title carries the full record:
-// code, HTTP status, returned model, catalog sentence and the raw upstream text.
-function codexTicketResultTitle(result: { code: string; message?: string; error?: string; http_status?: number; response_model?: string }) {
-  return [result.code, result.http_status ? `HTTP ${result.http_status}` : '', result.response_model, result.message, result.error].filter(Boolean).join(' · ')
-}
 
 function quotaWindowLabel(minutes: number): string {
   if (minutes <= 0) return t('admin.accounts.usageWindow.unknownPeriod')

@@ -497,12 +497,6 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 		response.BadRequest(c, "Invalid request: "+err.Error())
 		return
 	}
-	for _, key := range []string{"openai_codex_ticket_enabled", "openai_codex_ticket_harvest_proxy_url", "openai_codex_ticket_clear_proxy"} {
-		if _, sent := sentFields[key]; sent {
-			response.Error(c, 409, "票据配置已迁移，请在 Codex 票据设置中修改")
-			return
-		}
-	}
 	var req UpdateSettingsRequest
 	if err := c.ShouldBindBodyWith(&req, binding.JSON); err != nil {
 		response.BadRequest(c, "Invalid request: "+err.Error())

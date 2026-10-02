@@ -1,20 +1,6 @@
 export default {accounts: {
 
   textTestPrompt: { label: '文本测试提示词', hint: '留空使用 hi；仅当前站点和管理员浏览器记忆。', reset: '恢复默认', tooLong: '提示词超过8192字符，请缩短后重试。' },
-  tickets: {
-    stages: { request: '请求', configuration: '配置检查', lifecycle: '任务状态', account_auth: '账号鉴权', proxy_auth: '代理鉴权', proxy_protocol: '代理协议', proxy_dns: '代理DNS', proxy_connect: '代理连接', tls: 'TLS证书', ticket_validation: '历史 STATE 校验', upstream_http: '上游HTTP', upstream_stream: '上游响应流', upstream_policy: '上游策略', persistence: '持久化' },
-    title: 'Codex 路由采集与验证', description: '每个账号和模型每周期最多一次采集和一次业务出口复验；有效资格默认跳过。路由记录最多保留120秒并按需续期，此本地上限不代表上游承诺。材料有效、响应完整、模型声明一致分别记录；本项未验证质量，STATE 长度仅作观测。',
-    disabled: '路由采集与验证未开启。', force: '重新采集并验证（已有有效路由也执行一次）', ineligible: '不适用：仅 OpenAI OAuth/Setup Token 非影子账号。',
-    valid: '路由记录有效，质量未验证', stop: '停止自动续期', start: '采集并验证', limit: '一次最多选择100个账号。', loadFailed: '无法读取账号或路由配置。',
-    submitFailed: '操作失败，请查看状态后重试。', next: '下次续期', last: '最近尝试', length: 'STATE 长度（仅观测）', expires: '路由记录到期时间',
-    states: { idle: '待手动采集', ready: '路由记录有效，待续期', retry: '等待路由重试', stopped: '自动续期已停止', manual_running: '手动采集验证中', pre_running: '路由续期验证中', post_running: '路由重试中', needs_cookie_verification: '待业务出口验证' }
-  },
-  ticketProxy: {
-    address: '路由采集代理完整地址', protocol: '协议', test: '测试连接', clear: '清除代理并关闭开关', hint: '失焦仅解析格式；测试使用草稿，不保存配置，不发送OAuth凭据或模型请求。完整账密仅管理员可见。',
-    trust: '证书验证', copyFailed: '复制失败，请手动复制。', testFailed: '代理测试未完成，请重试。',
-    stages: { parse: '输入解析', dns: '代理DNS', tcp: '代理TCP', connect: 'CONNECT', tls: 'TLS', http: 'ChatGPT响应', protocol: '协议握手', auth: '代理鉴权', pinned_connection: '固定证书后的再次连接' },
-    errors: { too_long: '代理输入过长。', unknown_field: '无法识别字段，请使用主机、端口、用户名、密码标签。', duplicate_field: '存在重复字段，保留原输入，请检查。', incomplete: '主机、端口或账密不完整。', ambiguous: '字段存在歧义，请用带标签的分行格式。', invalid_url: '代理URL无法识别或包含不支持的内容。', invalid_port: '请填写1至65535之间的端口。' }
-  },
   selectImportedResults: '选中本次导入结果',
   retryImportSelection: '重试获取并选中导入结果',
   importResultSelectionFailed: '导入结果获取失败，请重试选择；无需重新导入。',
@@ -1050,11 +1036,6 @@ export default {accounts: {
         codexFingerprintDevice: '仅设备',
         codexFingerprintSession: '设备+会话',
         codexFingerprintFull: '完全收敛',
-        codexTurnTicket: 'Codex 路由采集与验证',
-        codexTurnTicketDesc: '路由材料有效、响应完整和模型声明一致分别表示不同证据。STATE 长度仅作观测，不能证明套餐或模型质量；本项不包含质量验证。仅在开启拦截时，没有有效路由资格的模型才暂停调度。',
-        codexTurnTicketMissing: '暂无有效路由资格，仍允许请求',
-        codexTurnTicketReady: '路由已验证，剩余 {time}；质量未验证',
-        codexTurnTicketPaused: '暂无有效路由资格，该模型已暂停调度',
         codexImageTool: 'Codex 图片桥接策略',
         codexImageToolDesc:
           '统一控制 Codex /responses 文本请求的 hosted image_generation 桥接和客户端图片工具声明。hosted 工具自动注入仅适用于非 Responses Lite 请求；账号级策略优先于渠道和全局配置，不影响独立图片生成接口。',

@@ -768,12 +768,9 @@ describe("admin SettingsView payment visible method controls", () => {
     expect(wrapper.get('[data-testid="official-model-catalog"]').exists()).toBe(true);
     expect(wrapper.get<HTMLInputElement>('[data-testid="image-tools-studio"]').element.checked).toBe(false);
     expect(wrapper.find('[data-test-extension-slot="admin.settings"]').exists()).toBe(false);
-    expect(wrapper.find('#codex-ticket-enabled').exists()).toBe(false);
-    expect(wrapper.find('#codex-ticket-harvest-proxy').exists()).toBe(false);
     await wrapper.find("form").trigger("submit.prevent");
     await flushPromises();
     expect(updateSettings).toHaveBeenCalledOnce();
-    expect(Object.keys(updateSettings.mock.calls[0][0]).some(key => key.startsWith('openai_codex_ticket_'))).toBe(false);
     wrapper.unmount();
   });
 

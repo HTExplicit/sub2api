@@ -24,15 +24,6 @@ func (h *AccountHandler) ExecuteAccountJob(
 		return nil, err
 	}
 	item := items[0]
-	if job.Kind == service.AccountJobKindCodexTicketHarvest {
-		return []service.AccountJobExecutionResult{h.executeCodexTicketHarvest(ctx, job, payload, item)}, nil
-	}
-	if job.Kind == service.AccountJobKindCodexTicketStop {
-		return []service.AccountJobExecutionResult{h.executeCodexTicketStop(ctx, payload, item)}, nil
-	}
-	if job.Kind == service.AccountJobKindExtensionOperation {
-		return []service.AccountJobExecutionResult{h.executeLegacyCodexAccountJob(ctx, job, payload, item)}, nil
-	}
 	result := h.executeAccountJobItem(ctx, job.Kind, payload, item)
 	return []service.AccountJobExecutionResult{result}, nil
 }

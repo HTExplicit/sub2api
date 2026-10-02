@@ -16,12 +16,9 @@ import (
 )
 
 const (
-	AccountJobKindExtensionOperation     = "extension_operation"
 	AccountJobKindImportData             = "account_import"
 	AccountJobKindImportCodex            = "account_import_codex"
 	AccountJobKindBatchCreate            = "account_batch_create"
-	AccountJobKindCodexTicketHarvest     = "codex_ticket_harvest"
-	AccountJobKindCodexTicketStop        = "codex_ticket_stop"
 	AccountJobKindBulkUpdate             = "account_bulk_update"
 	AccountJobKindBulkTaxonomy           = "account_bulk_taxonomy"
 	AccountJobKindBatchDelete            = "account_batch_delete"
@@ -302,6 +299,12 @@ func (s *AccountJobService) decorateRetryEligibility(ctx context.Context, job *A
 	if !AccountJobHasRetryableFailures(job) {
 		return
 	}
+	if !validAccountJobKind(job.Kind) {
+		// A retired kind (route acquisition, renewal stop, legacy extension
+		// operation) still lists, but it has no executor to retry with.
+		job.RetryUnavailableReason = "kind_unsupported"
+		return
+	}
 	cipher, expires, err := s.repo.Payload(ctx, job.ID)
 	if err != nil || cipher == "" || !time.Now().UTC().Before(expires) {
 		job.RetryUnavailableReason = "payload_expired"
@@ -360,7 +363,7 @@ func (s *AccountJobService) RetryFailed(ctx context.Context, jobID, createdBy in
 	if err != nil {
 		return nil, false, err
 	}
-	if old == nil || len(seeds) == 0 {
+	if old == nil || len(seeds) == 0 || !validAccountJobKind(old.Kind) {
 		return nil, false, ErrAccountJobNotRetryable
 	}
 
@@ -413,13 +416,12 @@ func (s *AccountJobService) RetryFailed(ctx context.Context, jobID, createdBy in
 }
 
 type AccountJobRuntime struct {
-	jobs            *AccountJobService
-	executor        AccountJobExecutor
-	ctx             context.Context
-	cancel          context.CancelFunc
-	stopOnce        sync.Once
-	wg              sync.WaitGroup
-	concurrentSlots chan struct{}
+	jobs     *AccountJobService
+	executor AccountJobExecutor
+	ctx      context.Context
+	cancel   context.CancelFunc
+	stopOnce sync.Once
+	wg       sync.WaitGroup
 
 	finishRetryDelay time.Duration
 	unfinishedMu     sync.Mutex
@@ -434,7 +436,7 @@ type accountJobFinishResult struct {
 }
 
 func NewAccountJobRuntime(jobs *AccountJobService, executor AccountJobExecutor) *AccountJobRuntime {
-	return &AccountJobRuntime{jobs: jobs, executor: executor, concurrentSlots: make(chan struct{}, 5), finishRetryDelay: 500 * time.Millisecond}
+	return &AccountJobRuntime{jobs: jobs, executor: executor, finishRetryDelay: 500 * time.Millisecond}
 }
 
 func (r *AccountJobRuntime) Start(parent context.Context) error {
@@ -608,9 +610,6 @@ func (r *AccountJobRuntime) execute(job *AccountJob) (string, string) {
 	}
 	defer cleanup()
 
-	if job.Kind == AccountJobKindCodexTicketHarvest || job.Kind == AccountJobKindCodexTicketStop || job.Kind == AccountJobKindExtensionOperation {
-		return r.executeConcurrently(executionCtx, job, payload)
-	}
 	for {
 		if executionCtx.Err() != nil {
 			return "", ""
@@ -674,99 +673,6 @@ func (r *AccountJobRuntime) cleanup(now time.Time) {
 	defer cancel()
 	_ = r.jobs.repo.ExpirePayloads(ctx, now)
 	_ = r.jobs.repo.Prune(ctx, now.Add(-AccountJobResultTTL))
-}
-
-// Codex ticket and extension-operation jobs share one runtime-wide pool, even
-// when two administrators submit at once. Import workers retain their ordered
-// identity-resolution path.
-func (r *AccountJobRuntime) executeConcurrently(parent context.Context, job *AccountJob, payload json.RawMessage) (string, string) {
-	ctx, cancel := context.WithCancel(parent)
-	defer cancel()
-	type runtimeFailure struct {
-		code string
-		err  error
-	}
-	failures := make(chan runtimeFailure, 1)
-	fail := func(code string, err error) {
-		select {
-		case failures <- runtimeFailure{code: code, err: err}:
-		default:
-		}
-		cancel()
-	}
-	monitorDone := make(chan struct{})
-	go func() {
-		defer close(monitorDone)
-		ticker := time.NewTicker(250 * time.Millisecond)
-		defer ticker.Stop()
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			case <-ticker.C:
-				requested, err := r.jobs.repo.CancelRequested(ctx, job.ID)
-				if err != nil {
-					if ctx.Err() == nil {
-						fail(AccountJobCodeCancelCheckFailed, err)
-					}
-					return
-				}
-				if requested {
-					cancel()
-					return
-				}
-			}
-		}
-	}()
-	defer func() { cancel(); <-monitorDone }()
-	for ctx.Err() == nil {
-		items, err := r.jobs.repo.ReservePendingItems(ctx, job.ID, AccountJobBatchSize)
-		if err != nil {
-			if ctx.Err() == nil {
-				fail(AccountJobCodeReservationFailed, err)
-			}
-			break
-		}
-		if len(items) == 0 {
-			break
-		}
-		queue := make(chan AccountJobItem, len(items))
-		for _, item := range items {
-			queue <- item
-		}
-		close(queue)
-		var wg sync.WaitGroup
-		for range min(5, len(items)) {
-			wg.Add(1)
-			go func() {
-				defer wg.Done()
-				for item := range queue {
-					result := AccountJobExecutionResult{ItemID: item.ID, Status: AccountJobItemStatusCanceled}
-					select {
-					case r.concurrentSlots <- struct{}{}:
-						if ctx.Err() == nil {
-							result = r.executeItem(ctx, job, payload, item)
-						}
-						<-r.concurrentSlots
-					case <-ctx.Done():
-					}
-					if err := r.jobs.repo.CompleteItems(r.ctx, job.ID, []AccountJobExecutionResult{result}); err != nil {
-						fail(AccountJobCodeCompletionFailed, err)
-						return
-					}
-				}
-			}()
-		}
-		wg.Wait()
-	}
-	cancel()
-	<-monitorDone
-	select {
-	case failure := <-failures:
-		return accountJobRuntimeFailure(failure.code, failure.err)
-	default:
-		return "", ""
-	}
 }
 
 // executeItem stores what the executor reported. A failed item keeps its code
@@ -879,8 +785,6 @@ func accountJobRuntimeFailure(code string, err error) (string, string) {
 
 func validAccountJobKind(kind string) bool {
 	switch kind {
-	case AccountJobKindCodexTicketHarvest, AccountJobKindCodexTicketStop, AccountJobKindExtensionOperation:
-		return true
 	case AccountJobKindImportData, AccountJobKindImportCodex, AccountJobKindBatchCreate,
 		AccountJobKindBulkUpdate, AccountJobKindBulkTaxonomy, AccountJobKindBatchDelete,
 		AccountJobKindBatchClearError, AccountJobKindBatchRefresh, AccountJobKindBatchRefreshTier,

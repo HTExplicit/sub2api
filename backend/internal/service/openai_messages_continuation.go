@@ -354,12 +354,12 @@ func openAICompatTurnStateKey(c *gin.Context, account *Account, promptCacheKey s
 	if key == "" || openAICodexTurnStateUsesSessionContract(account) {
 		return key
 	}
-	turn := codexRoutingTurnID(c)
+	turn := codexLogicalTurnID(c)
 	if turn == "" {
 		// A conversation/cache key alone does not prove a logical turn. In
 		// particular, a Messages history followed by another user prompt must
 		// never inherit the preceding turn's opaque OAuth state.
 		return ""
 	}
-	return key + "\x00" + CodexTicketAccountIdentity(account) + "\x00" + turn
+	return key + "\x00" + CodexCredentialOwnerIdentity(account) + "\x00" + turn
 }

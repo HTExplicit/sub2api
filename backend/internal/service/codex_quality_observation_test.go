@@ -2,7 +2,6 @@ package service
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"io"
 	"net/http"
@@ -13,39 +12,46 @@ import (
 	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
-	extensionv1 "github.com/Wei-Shaw/sub2api/internal/nativeapi"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
 )
 
 func TestCodexQualityObservationClassifiesStreamFailures(t *testing.T) {
-	for _, test := range []struct{ name, payload, code string }{
-		{"capacity", `{"type":"response.failed","response":{"error":{"code":"server_is_overloaded","message":"private upstream text"}}}`, "routing_capacity"},
-		{"policy", `{"type":"response.failed","response":{"error":{"code":"cyber_policy","message":"private upstream text"}}}`, "routing_policy"},
-		{"incomplete", `{"type":"response.incomplete","response":{"model":"gpt-6-astra","status":"incomplete"}}`, "routing_incomplete"},
-		{"cancelled", `{"type":"response.cancelled","response":{"status":"cancelled"}}`, "routing_cancelled"},
-		{"mismatch", `{"type":"response.completed","response":{"model":"gpt-6-luna","status":"completed"}}`, "routing_model_mismatch"},
-		{"no_prose_inference", `{"type":"error","error":{"code":"other","message":"server_is_overloaded private upstream text"}}`, "routing_upstream"},
+	svc := &OpenAIGatewayService{cfg: &config.Config{}}
+	read := func(body io.ReadCloser) codexResponseCompletion {
+		response := &http.Response{StatusCode: http.StatusOK, Header: http.Header{"Content-Type": []string{"text/event-stream"}}, Body: body}
+		guard := svc.newCodexModelGuardBody(httptest.NewRequest(http.MethodPost, "/", nil), response, "gpt-6-astra")
+		var completed codexResponseCompletion
+		guard.finish = func(value codexResponseCompletion) { completed = value }
+		_, _ = io.ReadAll(guard)
+		require.NoError(t, guard.Close())
+		return completed
+	}
+	for _, test := range []struct {
+		name, payload, code string
+		mismatch            bool
+	}{
+		{"capacity", `{"type":"response.failed","response":{"error":{"code":"server_is_overloaded","message":"private upstream text"}}}`, "upstream_capacity", false},
+		{"policy", `{"type":"response.failed","response":{"error":{"code":"cyber_policy","message":"private upstream text"}}}`, "upstream_policy", false},
+		{"incomplete", `{"type":"response.incomplete","response":{"model":"gpt-6-astra","status":"incomplete"}}`, "incomplete", false},
+		{"cancelled", `{"type":"response.cancelled","response":{"status":"cancelled"}}`, "cancelled", false},
+		{"mismatch", `{"type":"response.completed","response":{"model":"gpt-6-luna","status":"completed"}}`, "", true},
+		{"no_prose_inference", `{"type":"error","error":{"code":"other","message":"server_is_overloaded private upstream text"}}`, "upstream_error", false},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			var observation extensionv1.CodexRoutingObservation
-			err := readCodexRoutingCompletion(strings.NewReader("data: "+test.payload+"\n\n"), "text/event-stream", "gpt-6-astra", &observation)
-			require.Error(t, err)
-			require.Equal(t, test.code, observation.Code)
-			encoded, err := json.Marshal(observation)
-			require.NoError(t, err)
+			completed := read(io.NopCloser(strings.NewReader("data: " + test.payload + "\n\n")))
+			require.Equal(t, test.code, completed.FailureCode)
+			require.Equal(t, test.mismatch, completed.Mismatch)
 			// Classification uses explicit codes only, but the upstream's own text
 			// and the failing event are kept for administrators.
 			if strings.Contains(test.payload, "private upstream text") {
-				require.Contains(t, observation.UpstreamErrorMessage, "private upstream text")
-				require.JSONEq(t, test.payload, observation.UpstreamBody, "the failure summary keeps the event type and error object")
-				require.Contains(t, string(encoded), "private upstream text")
+				require.Contains(t, completed.UpstreamError.Message, "private upstream text")
+				require.JSONEq(t, test.payload, string(completed.UpstreamEvent), "the failure summary keeps the event type and error object")
 			}
 		})
 	}
-	var cancelled extensionv1.CodexRoutingObservation
-	require.Error(t, readCodexRoutingCompletion(passthroughErrReadCloser{err: context.Canceled}, "text/event-stream", "gpt-6-astra", &cancelled))
-	require.Equal(t, "routing_cancelled", cancelled.Code)
+	cancelled := read(passthroughErrReadCloser{err: context.Canceled})
+	require.Equal(t, "cancelled", cancelled.FailureCode)
 }
 
 func TestCodexQualityBusinessObservationUsesExistingLimits(t *testing.T) {
@@ -55,17 +61,14 @@ func TestCodexQualityBusinessObservationUsesExistingLimits(t *testing.T) {
 		cfg.Gateway.MaxLineSize = limit
 		svc := &OpenAIGatewayService{cfg: cfg}
 		response := &http.Response{StatusCode: http.StatusOK, Header: http.Header{"Content-Type": []string{"text/event-stream"}}, Body: io.NopCloser(strings.NewReader(frame))}
-		body := svc.newCodexRoutingObservedBody(httptest.NewRequest(http.MethodPost, "/", nil), response, "gpt-6-astra")
-		var completed codexRoutingCompletion
-		body.finish = func(value codexRoutingCompletion) { completed = value }
+		body := svc.newCodexModelGuardBody(httptest.NewRequest(http.MethodPost, "/", nil), response, "gpt-6-astra")
+		var completed codexResponseCompletion
+		body.finish = func(value codexResponseCompletion) { completed = value }
 		_, err := io.Copy(io.Discard, body)
 		require.NoError(t, err)
 		require.NoError(t, body.Close())
 		require.Equal(t, limit > len(frame), completed.Completed && !completed.Failed)
 	}
-	var probe extensionv1.CodexRoutingObservation
-	require.Error(t, readCodexRoutingCompletion(strings.NewReader(frame), "text/event-stream", "gpt-6-astra", &probe), "lightweight probes retain their independent total budget")
-	require.Equal(t, "routing_incomplete", probe.Code)
 }
 
 func TestCodexQualityCancellationObservesClientWithoutCancellingDrain(t *testing.T) {
@@ -73,17 +76,17 @@ func TestCodexQualityCancellationObservesClientWithoutCancellingDrain(t *testing
 	c, _ := gin.CreateTestContext(httptest.NewRecorder())
 	c.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", nil).WithContext(client)
 	wire := httptest.NewRequest(http.MethodPost, "/", nil).WithContext(context.WithoutCancel(client))
-	wire = withCodexRoutingDownstreamContext(wire, c)
+	wire = withCodexDownstreamContext(wire, c)
 	response := &http.Response{StatusCode: http.StatusOK, Header: http.Header{"Content-Type": []string{"text/event-stream"}}, Body: io.NopCloser(strings.NewReader("data: {\"type\":\"response.completed\",\"response\":{\"status\":\"completed\",\"model\":\"gpt-6-astra\"}}\n\n"))}
-	body := (&OpenAIGatewayService{cfg: &config.Config{}}).newCodexRoutingObservedBody(wire, response, "gpt-6-astra")
-	var completed codexRoutingCompletion
-	body.finish = func(value codexRoutingCompletion) { completed = value }
+	body := (&OpenAIGatewayService{cfg: &config.Config{}}).newCodexModelGuardBody(wire, response, "gpt-6-astra")
+	var completed codexResponseCompletion
+	body.finish = func(value codexResponseCompletion) { completed = value }
 	cancel()
 	require.NoError(t, wire.Context().Err(), "cancellation evidence must not stop the existing usage drain")
 	_, err := io.Copy(io.Discard, body)
 	require.NoError(t, err)
 	require.NoError(t, body.Close())
-	require.Equal(t, "routing_cancelled", completed.observationCode("gpt-6-astra", http.StatusOK))
+	require.Equal(t, "cancelled", completed.FailureCode)
 }
 
 func TestCodexQualityMismatchStopsBeforeFirstOutput(t *testing.T) {
@@ -96,23 +99,23 @@ func TestCodexQualityMismatchStopsBeforeFirstOutput(t *testing.T) {
 			payload = `{"object":"response","model":"gpt-6-luna","status":"completed"}`
 		}
 		response := &http.Response{StatusCode: http.StatusOK, Header: http.Header{"Content-Type": []string{contentType}}, Body: io.NopCloser(strings.NewReader(payload))}
-		body := svc.newCodexRoutingObservedBody(httptest.NewRequest(http.MethodPost, "/", nil), response, "gpt-6-astra")
-		var completed codexRoutingCompletion
-		body.finish = func(value codexRoutingCompletion) { completed = value }
+		body := svc.newCodexModelGuardBody(httptest.NewRequest(http.MethodPost, "/", nil), response, "gpt-6-astra")
+		var completed codexResponseCompletion
+		body.finish = func(value codexResponseCompletion) { completed = value }
 		data, err := io.ReadAll(body)
-		require.ErrorIs(t, err, ErrCodexRoutingModelMismatch)
+		require.ErrorIs(t, err, ErrCodexModelMismatch)
 		if contentType == "text/event-stream" {
 			require.Empty(t, data)
 		}
-		require.Equal(t, "routing_model_mismatch", completed.observationCode("gpt-6-astra", http.StatusOK))
+		require.True(t, completed.Mismatch)
 		require.NoError(t, body.Close())
 	}
 	// The official header is independently authoritative, even when a later
 	// body would have echoed the requested name. No response bytes escape.
 	response := &http.Response{StatusCode: http.StatusOK, Header: http.Header{"Openai-Model": []string{"gpt-6-luna"}}, Body: io.NopCloser(strings.NewReader("unread"))}
-	body := svc.newCodexRoutingObservedBody(httptest.NewRequest(http.MethodPost, "/", nil), response, "gpt-6-astra")
+	body := svc.newCodexModelGuardBody(httptest.NewRequest(http.MethodPost, "/", nil), response, "gpt-6-astra")
 	data, err := io.ReadAll(body)
-	require.ErrorIs(t, err, ErrCodexRoutingModelMismatch)
+	require.ErrorIs(t, err, ErrCodexModelMismatch)
 	require.Empty(t, data)
 	require.NoError(t, body.Close())
 }
@@ -166,9 +169,9 @@ func TestCodexQualityMismatchAfterOutputDoesNotReplay(t *testing.T) {
 	}
 	svc := &OpenAIGatewayService{cfg: &config.Config{}, toolCorrector: NewCodexToolCorrector()}
 	response := &http.Response{StatusCode: http.StatusOK, Header: http.Header{"Content-Type": []string{"text/event-stream"}}, Body: reader}
-	response.Body = svc.newCodexRoutingObservedBody(c.Request, response, "gpt-6-astra")
+	response.Body = svc.newCodexModelGuardBody(c.Request, response, "gpt-6-astra")
 	_, err := svc.handleStreamingResponse(ctx, response, c, codexQualityAccount(), time.Now(), "gpt-6-astra", "gpt-6-astra")
-	require.ErrorIs(t, err, ErrCodexRoutingModelMismatch)
+	require.ErrorIs(t, err, ErrCodexModelMismatch)
 	var failover *UpstreamFailoverError
 	require.False(t, errors.As(err, &failover))
 	require.Contains(t, recorder.Body.String(), "first-visible")

@@ -138,16 +138,24 @@ func (s *OpenAIGatewayService) doOpenAICodexUpstream(req *http.Request, account 
 	if err != nil {
 		return nil, err
 	}
-	if response, handled, routingErr := s.doQualifiedCodexUpstream(wire, account, proxyURL); handled {
-		return response, routingErr
-	}
-	if IsCodexQualityRequest(wire.Context()) {
-		return nil, ErrCodexQualityUnavailable
+	// A quality diagnosis send takes this same ordinary path. Its persistent
+	// budget is reserved from the final wire request before any upstream IO;
+	// its raw observation then sits inside the model guard.
+	quality := IsCodexQualityRequest(wire.Context())
+	if quality {
+		if err := reserveCodexQualitySend(wire, account); err != nil {
+			return nil, err
+		}
 	}
 	response, err := s.httpUpstream.Do(wire, proxyURL, account.ID, account.Concurrency)
-	if err == nil && isOpenAICodexTicketAccount(account) {
-		s.observeCodexWire(wire.Context(), account, wire, response, nil)
-		s.observeUnqualifiedCodexResponse(wire, account, response)
+	if quality {
+		s.observeCodexQualityBusinessResponse(wire, response, err)
+	}
+	if err == nil && isCodexCredentialOwner(account) {
+		s.observeCodexWire(wire.Context(), account, wire, response, "http")
+		if !quality {
+			s.guardCodexResponseModel(wire, account, response)
+		}
 	}
 	return response, err
 }

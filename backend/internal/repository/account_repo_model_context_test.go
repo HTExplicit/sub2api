@@ -182,6 +182,27 @@ func TestLockAndMergeAccountProbeExtraUsesLockedModelContextValues(t *testing.T)
 	}
 }
 
+// This path serves every account update: a non-object stored extra must not
+// fail the edit, only skip carrying locked values over. A dormant scheduling
+// projection supplied by the editor is still never written.
+func TestLockAndMergeAccountExtraDegradesOnUnparsableExtra(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = db.Close() })
+	client := dbent.NewClient(dbent.Driver(entsql.OpenDB(dialect.Postgres, db)))
+	t.Cleanup(func() { _ = client.Close() })
+	mock.ExpectQuery(`(?s)SELECT.*FOR NO KEY UPDATE`).
+		WithArgs(int64(41), service.PlatformOpenAI, service.AccountTypeOAuth, `{"access_token":"test"}`, nil).
+		WillReturnRows(sqlmock.NewRows([]string{"identity_unchanged", "ollama_group_unchanged", "ollama_proxy_unchanged", "enabled", "rate_sync_enabled", "snapshot", "ollama_session", "ollama_auto", "ollama_snapshot", "model_context_overrides", "upstream_model_metadata", "current_extra", "opencode_group_unchanged", "opencode_auto", "opencode_snapshot"}).
+			AddRow(true, false, true, nil, nil, nil, nil, nil, nil, nil, nil, []byte(`[1,2,3]`), false, nil, nil))
+	account := &service.Account{ID: 41, Platform: service.PlatformOpenAI, Type: service.AccountTypeOAuth, Credentials: map[string]any{"access_token": "test"}, Extra: map[string]any{service.NativeCodexAccountProjectionKey: map[string]any{"forged": true}, "new_admin_setting": true}}
+	extra, err := lockAndMergeAccountProbeExtra(context.Background(), client, account, nil, nil)
+	require.NoError(t, err, "unparsable extra must not fail the account update")
+	require.Equal(t, true, extra["new_admin_setting"])
+	require.NotContains(t, extra, service.NativeCodexAccountProjectionKey)
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
 func TestShouldEnqueueSchedulerOutboxForExtraUpdatesModelContextKeys(t *testing.T) {
 	for _, key := range []string{
 		service.ModelContextOverridesExtraKey,

@@ -37,7 +37,7 @@ func quotaEstimateIdentity(account *Account) string {
 	}
 	// Account-rate changes start a new calibration. The owner identity excludes
 	// access-token refreshes, which do not represent a different subscription.
-	sum := sha256.Sum256([]byte(fmt.Sprintf("%s/%.17g", CodexTicketAccountIdentity(account), account.BillingRateMultiplier())))
+	sum := sha256.Sum256([]byte(fmt.Sprintf("%s/%.17g", CodexCredentialOwnerIdentity(account), account.BillingRateMultiplier())))
 	return hex.EncodeToString(sum[:])
 }
 

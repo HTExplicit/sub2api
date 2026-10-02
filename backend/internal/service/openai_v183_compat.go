@@ -162,6 +162,9 @@ func openAIAlphaSearchSchedulingModel(account *Account, requestedModel string) s
 	return canonicalOpenAIAccountSchedulingModel(account, requestedModel)
 }
 
+// resolveOpenAIForwardMappedModels keeps upstream's name and signature for the
+// upstream mapping test; no request path calls it. Forwarding uses
+// resolveOpenAIForwardMappedModelsContext, which applies the same chain.
 func resolveOpenAIForwardMappedModels(account *Account, requestedModel string, requireCompact bool) (billingModel, upstreamModel string) {
 	requestedModel = strings.TrimSpace(requestedModel)
 	if account != nil && account.IsOpenAIPassthroughEnabled() {

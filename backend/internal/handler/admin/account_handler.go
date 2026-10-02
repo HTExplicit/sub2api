@@ -70,7 +70,7 @@ type AccountHandler struct {
 	ollamaCloudUsage        *service.OllamaCloudUsageService
 	trafficObserver         *service.AccountTrafficObserver
 	accountJobs             *service.AccountJobService
-	codexTicketGateway      *service.OpenAIGatewayService
+	codexGateway            *service.OpenAIGatewayService
 
 	cfg               *config.Config
 	opencodeGoUsage   *service.OpenCodeGoUsageService
@@ -94,6 +94,11 @@ func (h *AccountHandler) SetAccountTrafficObserver(observer *service.AccountTraf
 
 func (h *AccountHandler) SetOpenCodeGoUsageService(usage *service.OpenCodeGoUsageService) {
 	h.opencodeGoUsage = usage
+}
+
+// SetCodexGateway attaches the gateway that serves the Codex account views.
+func (h *AccountHandler) SetCodexGateway(gateway *service.OpenAIGatewayService) {
+	h.codexGateway = gateway
 }
 
 // NewAccountHandler creates a new admin account handler
@@ -384,7 +389,6 @@ const accountListGroupUngroupedQueryValue = "ungrouped"
 
 func (h *AccountHandler) accountResponseFromService(account *service.Account) *dto.Account {
 	out := dto.AccountFromService(account)
-	h.enrichCodexTicketStatus(account, out)
 	if h != nil && h.ollamaCloudUsage != nil && out != nil {
 		h.ollamaCloudUsage.EnrichState(out.OllamaCloudUsage)
 	}
@@ -393,7 +397,6 @@ func (h *AccountHandler) accountResponseFromService(account *service.Account) *d
 
 func (h *AccountHandler) accountListResponseFromService(account *service.Account) *dto.Account {
 	out := dto.AccountFromServiceShallow(account)
-	h.enrichCodexTicketStatus(account, out)
 	if out != nil && account != nil {
 		out.Proxy = dto.ProxyFromService(account.Proxy)
 	}
@@ -401,12 +404,6 @@ func (h *AccountHandler) accountListResponseFromService(account *service.Account
 		h.ollamaCloudUsage.EnrichState(out.OllamaCloudUsage)
 	}
 	return out
-}
-
-func (h *AccountHandler) enrichCodexTicketStatus(account *service.Account, out *dto.Account) {
-	if h != nil && h.codexTicketGateway != nil && out != nil {
-		out.CodexTurnTickets = h.codexTicketGateway.CodexTicketStatuses(account)
-	}
 }
 
 func (h *AccountHandler) isSimpleMode() bool {

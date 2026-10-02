@@ -12,6 +12,10 @@ const NativeCodexPluginKey = "codexrip.codex-runtime"
 const NativeCodexConfigSettingKey = "codex_native_runtime_config"
 const NativeCodexSourceSettingKey = "codex_native_runtime_source"
 const NativeCodexRetirementSettingKey = "deplugin_retired_plugins"
+
+// NativeCodexAccountProjectionKey names the account extra key that held the
+// retired route-qualification scheduling projection. Nothing reads it; account
+// writes only carry an existing value over unchanged until the data is purged.
 const NativeCodexAccountProjectionKey = "plugin_account_projections"
 
 var ErrNativeCodexRuntimeChanged = errors.New("native Codex runtime metadata changed")
@@ -32,17 +36,8 @@ type NativeCodexConfigRecord struct {
 }
 
 type NativeCodexStateStore interface {
-	DueExtensionStates(context.Context, string, extensionv1.DueStateRequest) ([]extensionv1.DueState, error)
 	ReadExtensionState(context.Context, string, extensionv1.StateRequest) (extensionv1.StateResult, error)
 	CompareSwapExtensionState(context.Context, string, extensionv1.StateRequest) (extensionv1.StateResult, error)
-	AcquireExtensionLease(context.Context, string, extensionv1.LeaseRequest) (extensionv1.LeaseResult, error)
-	ReleaseExtensionLease(context.Context, string, extensionv1.LeaseRequest) (extensionv1.LeaseResult, error)
-}
-
-type NativeCodexAccountDirectory interface {
-	ReadExtensionAccount(context.Context, int64) (*extensionv1.Account, error)
-	ListExtensionAccounts(context.Context, extensionv1.AccountQuery) ([]extensionv1.Account, error)
-	ResolveExtensionIdentity(context.Context, extensionv1.AccountQuery) (*extensionv1.OutboundIdentity, error)
 }
 
 type NativeCodexRuntimeLease interface {
@@ -84,22 +79,4 @@ func WithNativeCodexBusinessIO(ctx context.Context) context.Context {
 func NativeCodexBusinessIORequired(ctx context.Context) bool {
 	required, _ := ctx.Value(nativeCodexBusinessIOKey{}).(bool)
 	return required
-}
-
-type NativeCodexAccountProjection struct {
-	Identity     string                                      `json:"identity"`
-	Scheduling   map[string]extensionv1.SchedulingConstraint `json:"scheduling"`
-	Observations map[string]extensionv1.AccountObservation   `json:"observations,omitempty"`
-}
-
-func nativeCodexAccountProjection(account *Account) NativeCodexAccountProjection {
-	var projection NativeCodexAccountProjection
-	if account != nil {
-		if values, ok := account.Extra[NativeCodexAccountProjectionKey].(map[string]any); ok {
-			if raw, err := json.Marshal(values[NativeCodexPluginKey]); err == nil {
-				_ = json.Unmarshal(raw, &projection)
-			}
-		}
-	}
-	return projection
 }

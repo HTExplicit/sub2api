@@ -12,14 +12,25 @@ authentication and the existing step-up policy.
 
 | Interface | Contract |
 | --- | --- |
-| `GET/PUT /admin/settings/codex-runtime` | Original Codex configuration JSON, without an additional response envelope; `Cache-Control: no-store`. The source is encrypted at rest. |
+| `GET/PUT /admin/settings/codex-runtime` | Codex runtime configuration `{"request_zstd": <bool>}` (request body compression), without an additional response envelope; `Cache-Control: no-store`. The source is encrypted at rest. |
 | `GET/PUT /admin/settings/image-tools` | Image Studio switch (`studio_enabled`; a missing key is off). |
 | `GET/PUT /admin/settings/observability` | Telemetry and native theme switches. |
-| `POST /admin/accounts/:id/codex-tickets/stop-job` | Persisted single-account stop operation; the batch endpoint is `/admin/accounts/codex-tickets/batch-stop`. Both return HTTP 202 and retain per-account/model retry. |
 
-The older synchronous ticket-stop endpoint remains compatible. Ordinary account
-bulk editing remains HTTP 202; this change does not replace background tasks with
-synchronous editing. Existing API-key reveal and account-field protections remain.
+A Codex runtime `PUT` without `request_zstd` stores `true`. The keys of the
+retired Codex route acquisition (`enabled`, `fail_closed`, `proxy_url`,
+`proxy_protocol`, `proxy_selection_id`, `models`, `routing_schema`) are dropped
+and not stored again; any other key, or a `request_zstd` that is not a boolean
+(including `null`), returns HTTP 400.
+
+The route acquisition endpoints (`/admin/accounts/codex-tickets/*`,
+`/admin/accounts/:id/codex-tickets/*`, `/admin/accounts/:id/codex-routing/validate`
+and `/admin/settings/openai-codex-ticket/*`) are removed. Jobs of the retired
+kinds `codex_ticket_harvest`, `codex_ticket_stop` and `extension_operation`
+still list and read with `retry_eligible=false` and
+`retry_unavailable_reason=kind_unsupported`; a retry returns HTTP 409, and their
+items still pending fail with `kind_unsupported`. Ordinary account bulk editing
+remains HTTP 202; this change does not replace background tasks with synchronous
+editing. Existing API-key reveal and account-field protections remain.
 
 ### Codex runtime receipt after v0.2.8-codexrip.5
 
@@ -65,20 +76,33 @@ Before loading native settings or starting either runtime, one transaction:
 
 Missing settings may use deployment defaults. Database errors, malformed saved
 settings and unknown/non-equivalent capability scopes stop startup; they never
-silently enable features. A disabled whole Codex installation is not equivalent
-to disabling only route acquisition and therefore requires an explicit migration
-decision rather than automatic activation.
+silently enable features. A disabled whole Codex installation requires an
+explicit migration decision rather than automatic activation.
 
 The original installation rows, encrypted configuration, artifacts, state and
 lease tables remain. The upstream plugin manager cannot list, modify, delete or
 replace the retired first-party keys. Native state access uses the original
-`codexrip.codex-runtime` owner, namespaces, state keys, CAS and lease generations.
+`codexrip.codex-runtime` owner, namespaces, state keys and CAS.
 Closed quality-run records and their budgets are not rewritten.
 
 An unchanged normalized configuration keeps its epoch and generation. A changed
 Codex configuration is validated, the old epoch is drained, and encrypted source,
-configuration hash/version and generation are committed together. Old qualified
-connections cannot be reused after an epoch or connection-lease mismatch.
+configuration hash/version and generation are committed together. A stored
+configuration that still holds the retired route acquisition keys loads with
+those keys dropped. Its normalized hash then differs from the recorded one, so
+the first start advances `runtime_generation` once and records the new
+configuration hash and version; the encrypted source keeps its old bytes until
+the next save.
+
+Data written by the retired route acquisition stays in place and is no longer
+read: the `openai_codex_ticket_*` settings, the `tickets`, `routing-demand` and
+`proxy-trust` state namespaces, the route keys in `codex-routing-private`
+(`bundle.*`, `clock.*`, `seen.*`, `spent.*`, `validation.*`; `quality-run.*` and
+`wire.*` stay in use), `sub2api_plugin_leases` rows, the account `extra` keys
+`codex_turn_ticket:*`, `codex_ticket_runtime:*`, `codex_harvest_proxy_url` and
+`plugin_account_projections`, and job rows of the retired kinds. Migrations 244
+and 245 and their triggers are unchanged. A later release removes this data with
+a forward migration.
 
 Migration `254_plugin_job_action_digest.sql` preserves full 64-character historical
 task action digests. History and retries continue to use saved targets; unsupported

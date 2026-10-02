@@ -128,7 +128,7 @@ class UpstreamAutomationContractTest(unittest.TestCase):
                     names.extend(re.findall(r"(?m)^func (Test\w+)\(", source))
                 selected = [name for name in names if re.search(selector, name) and not re.search(skipped, name)]
                 self.assertTrue(selected, f"{package}: {selector} selected no unit tests")
-        self.assertIn("-run '^TestNativeModuleLifecycleStartsOnceAndDrains$'", verify)
+        self.assertIn("-race ./internal/codexruntime/core -run '^TestModuleServesTransportPlanFromItsConfiguration$'", verify)
 
     def test_bot_chain_is_explicit_and_does_not_overwrite_manual_resolutions(self):
         self.assertIn("upstream_tag:", self.sync)

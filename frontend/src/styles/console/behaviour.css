@@ -464,9 +464,3 @@ html.flat-theme div[data-ui~="ops-dashboard"][data-ui] div[data-ui~="ops-figure-
     grid-column: span 3 / span 3;
   }
 }
-
-/* B6.3 账号行菜单: the two Codex route items have no glyph; their labels line up with the labels of the items
-   that have one (inset = item padding + glyph + gap; the menu recipe may set --ui-menu-text-inset). */
-html.flat-theme .action-menu-content fieldset button:is([data-test="codex-harvest"], [data-test="codex-stop"]) {
-  padding-left: var(--ui-menu-text-inset, 2.5rem);
-}

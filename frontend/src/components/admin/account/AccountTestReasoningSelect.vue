@@ -11,8 +11,7 @@
 <script setup lang="ts">
 import { computed, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import type { AccountAvailableModel } from '@/types'
-import type { AccountSelectionIdentity } from '@/composables/useAccountSelectionMetadata'
+import type { AccountAvailableModel, AccountSelectionIdentity } from '@/types'
 import { isAccountTestReasoningValid } from '@/utils/accountTestModels'
 const props = defineProps<{ modelValue: string; model?: AccountAvailableModel; account?: AccountSelectionIdentity | null; disabled?: boolean }>()
 const emit = defineEmits<{ 'update:modelValue': [value: string]; validity: [valid: boolean] }>()

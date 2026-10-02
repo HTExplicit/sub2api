@@ -1132,7 +1132,7 @@ func TestOpenAIPoolModeTempRule_StopsSameAccountRetryAndIsolatesBlockToModel(t *
 	require.Len(t, repo.modelRateLimitCalls, 1)
 	require.Equal(t, "gpt-5.4", repo.modelRateLimitCalls[0].scope)
 	require.False(t, gateway.isOpenAIAccountRuntimeBlocked(account))
-	require.False(t, gateway.isOpenAIAccountRequestRuntimeBlocked(account, "gpt-5.5", false))
+	require.False(t, gateway.isOpenAIAccountRequestRuntimeBlocked(account, "gpt-5.5"))
 }
 
 func TestOpenAIPoolModeRetryable5xx_DoesNotCreateModelTransientBlock(t *testing.T) {
@@ -1161,7 +1161,7 @@ func TestOpenAIPoolModeRetryable5xx_DoesNotCreateModelTransientBlock(t *testing.
 		require.False(t, shouldDisable)
 	}
 
-	require.False(t, gateway.isOpenAIAccountRequestRuntimeBlocked(account, "gpt-5.4", false))
+	require.False(t, gateway.isOpenAIAccountRequestRuntimeBlocked(account, "gpt-5.4"))
 }
 
 func TestCooldownOpenAIRetryExhausted_AccountAndModelScopes(t *testing.T) {
@@ -1319,7 +1319,7 @@ func TestOpenAIPoolModeNonRetryable5xx_StillCreatesModelTransientBlock(t *testin
 		require.False(t, shouldDisable)
 	}
 
-	require.True(t, gateway.isOpenAIAccountRequestRuntimeBlocked(account, "gpt-5.4", false))
+	require.True(t, gateway.isOpenAIAccountRequestRuntimeBlocked(account, "gpt-5.4"))
 }
 
 func TestOpenAINonPoolAPIKey5xx_StillCreatesModelTransientBlock(t *testing.T) {
@@ -1344,7 +1344,7 @@ func TestOpenAINonPoolAPIKey5xx_StillCreatesModelTransientBlock(t *testing.T) {
 		require.False(t, shouldDisable)
 	}
 
-	require.True(t, gateway.isOpenAIAccountRequestRuntimeBlocked(account, "gpt-5.4", false))
+	require.True(t, gateway.isOpenAIAccountRequestRuntimeBlocked(account, "gpt-5.4"))
 }
 
 func TestOpenAIModelNotFound_DoesNotRuntimeBlockWholeAccount(t *testing.T) {

@@ -190,7 +190,7 @@ export default {
     accounts: 'Accounts',
     plugins: 'Plugins',
     tasks: 'Tasks',
-    codexRuntime: 'Codex route settings',
+    codexRuntime: 'Codex runtime settings',
     proxies: 'Proxies',
     redeemCodes: 'Redeem Codes',
     ops: 'Ops',

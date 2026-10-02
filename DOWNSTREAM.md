@@ -26,12 +26,17 @@ remain supported. Old jobs retain actor, encrypted payload, expiry and frozen
 item targets. An old filter-only job without a saved target fails rather than
 selecting a fresh set of accounts.
 
-Codex routing applies only to OpenAI OAuth/setup-token accounts, excluding shadows.
-Acquisition and stopping renewal use the existing persisted task experience.
-Routing qualification, connection leases and the closed quality-run ledger keep
-their existing contracts; a 292 header or a healthy deployment is not a quality
-result. Proxy settings preserve their saved values and accept the existing input
-formats. Draft proxy tests do not send OAuth credentials or model requests.
+Codex route acquisition has been removed: the route harvest and verification
+probes, Cookie-routing qualification, connection leases, the scheduler and
+request route gates, and their admin endpoints, settings and job kinds. OpenAI
+OAuth accounts are scheduled without route qualification and send through their
+ordinary proxy and transport. An OAuth Codex `/responses` reply over HTTP that
+declares a different model than the request is still rejected. The Codex
+runtime setting keeps only request compression. Old jobs of the retired kinds
+stay readable but cannot be retried; data the feature wrote stays in place,
+unread, until a later release purges it. Quality diagnostics bind an explicit
+model and reasoning effort and send through the account's ordinary path; see
+[quality diagnostics](.downstream/codex-quality-diagnostics.md).
 
 ## Official behavior and downstream contracts
 

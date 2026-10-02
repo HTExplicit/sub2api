@@ -33,7 +33,7 @@ func (s *OpenAIGatewayService) ForwardAsAnthropic(
 	promptCacheKey string,
 	defaultMappedModel string,
 ) (*OpenAIForwardResult, error) {
-	stageCodexRoutingTurn(c, body)
+	stageCodexLogicalTurn(c, body)
 	c.Set(openAICompatTurnStateCommittedContextKey, false)
 	// 工具 Schema 清洗必须先于所有分流：下游每条路径（原生 Anthropic 直通、
 	// Chat Completions 转换、Responses 转换）都会把 tools 原样带给上游，而
@@ -413,10 +413,7 @@ func (s *OpenAIGatewayService) ForwardAsAnthropic(
 	if compatTurnState != "" && upstreamReq.Header.Get("x-codex-turn-state") == "" {
 		upstreamReq.Header.Set("x-codex-turn-state", compatTurnState)
 	}
-	upstreamReq = withCodexRoutingModel(upstreamReq, upstreamModel)
-	if err := s.applyOpenAICodexTicket(ctx, account, upstreamModel, upstreamReq.Header); err != nil {
-		return nil, err
-	}
+	upstreamReq = withCodexExpectedModel(upstreamReq, upstreamModel)
 
 	// 7. Send request
 	proxyURL := ""

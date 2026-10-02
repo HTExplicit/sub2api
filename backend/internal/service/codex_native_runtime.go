@@ -8,9 +8,8 @@ import (
 	"errors"
 	"sync"
 	"sync/atomic"
-	"time"
 
-	"github.com/Wei-Shaw/sub2api/internal/codexruntime/tickets"
+	"github.com/Wei-Shaw/sub2api/internal/codexruntime/core"
 	extensionv1 "github.com/Wei-Shaw/sub2api/internal/nativeapi"
 )
 
@@ -26,7 +25,6 @@ type nativeCodexModule interface {
 type nativeCodexSnapshot struct {
 	metadata *NativeCodexMetadata
 	raw      json.RawMessage
-	config   tickets.Config
 	module   nativeCodexModule
 	host     *nativeCodexHost
 	ctx      context.Context
@@ -34,16 +32,13 @@ type nativeCodexSnapshot struct {
 }
 
 type NativeCodexRuntime struct {
-	mu            sync.Mutex
-	root          context.Context
-	started       bool
-	gateway       *OpenAIGatewayService
-	repo          NativeCodexRepository
-	factory       NativeCodexConfigFactory
-	activity      *QuotaActivityService
-	snapshot      atomic.Pointer[nativeCodexSnapshot]
-	codexDemandMu sync.Mutex
-	codexDemandAt map[string]time.Time
+	mu       sync.Mutex
+	root     context.Context
+	started  bool
+	gateway  *OpenAIGatewayService
+	repo     NativeCodexRepository
+	factory  NativeCodexConfigFactory
+	snapshot atomic.Pointer[nativeCodexSnapshot]
 }
 
 var nativeCodexPolicyRuntime atomic.Pointer[NativeCodexRuntime]
@@ -61,25 +56,11 @@ func (s *OpenAIGatewayService) SetNativeCodexRuntime(runtime *NativeCodexRuntime
 	s.nativeCodexRuntime = runtime
 }
 
-// Historical extension jobs must name the actual retired Codex installation,
-// never an arbitrary third-party plugin exposing a same-named operation.
-func (s *OpenAIGatewayService) ValidateLegacyCodexJobSource(ctx context.Context, pluginID int64) error {
-	if s == nil || s.nativeCodexRuntime == nil || pluginID <= 0 {
-		return ErrNativeCodexRuntimeUnavailable
-	}
-	reader, ok := s.nativeCodexRuntime.repo.(interface {
-		ValidateLegacyCodexJobSource(context.Context, int64) error
-	})
-	if !ok {
-		return ErrNativeCodexRuntimeUnavailable
-	}
-	return reader.ValidateLegacyCodexJobSource(ctx, pluginID)
-}
-
-func (r *NativeCodexRuntime) SetQuotaActivity(activity *QuotaActivityService) { r.activity = activity }
-
+// NormalizeNativeCodexConfig returns the normalized runtime configuration.
+// Settings of the retired route-qualification feature are dropped, so a stored
+// configuration written before its removal still loads.
 func NormalizeNativeCodexConfig(ctx context.Context, raw json.RawMessage) (json.RawMessage, error) {
-	return tickets.NewModule().ValidateConfig(ctx, raw)
+	return core.NewModule().ValidateConfig(ctx, raw)
 }
 
 func (r *NativeCodexRuntime) Start(ctx context.Context) error {
@@ -206,19 +187,14 @@ func (r *NativeCodexRuntime) reloadLocked(ctx context.Context) error {
 }
 
 func (r *NativeCodexRuntime) publishLocked(ctx context.Context, raw json.RawMessage, metadata *NativeCodexMetadata) error {
-	var cfg tickets.Config
-	if err := json.Unmarshal(raw, &cfg); err != nil {
-		return err
-	}
 	epoch, cancel := context.WithCancel(r.root)
-	module := tickets.NewModule()
-	host := &nativeCodexHost{key: NativeCodexPluginKey, state: r.repo, directory: r.gateway, metadata: metadata, repo: r.repo, activity: r.activity, epoch: epoch}
-	module.SetHost(host)
+	module := core.NewModule()
+	host := &nativeCodexHost{metadata: metadata, repo: r.repo, epoch: epoch}
 	if err := module.ApplyConfig(ctx, raw); err != nil {
 		cancel()
 		return err
 	}
-	snapshot := &nativeCodexSnapshot{metadata: metadata, raw: append(json.RawMessage(nil), raw...), config: cfg, module: module, host: host, ctx: epoch, cancel: cancel}
+	snapshot := &nativeCodexSnapshot{metadata: metadata, raw: append(json.RawMessage(nil), raw...), module: module, host: host, ctx: epoch, cancel: cancel}
 	r.snapshot.Store(snapshot)
 	if err := module.Start(epoch); err != nil {
 		cancel()

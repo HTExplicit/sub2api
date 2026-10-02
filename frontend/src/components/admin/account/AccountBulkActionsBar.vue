@@ -45,7 +45,6 @@
     <div class="flex flex-wrap gap-2">
       <template v-if="selectedIds.length > 0">
         <button @click="$emit('delete')" class="btn btn-danger btn-sm">{{ t('admin.accounts.bulkActions.delete') }}</button>
-        <CodexAccountActions :account-ids="selectedIds" :accounts="selectedAccounts" @open="openCodexOperation" />
         <button v-if="promptBindingAvailable" type="button" data-test="account-prompt-binding-bulk" class="btn btn-secondary btn-sm" @click="promptBindingOpen = true">
           {{ t('admin.systemPrompts.accountPrompts') }}
         </button>
@@ -76,7 +75,6 @@
       </button>
     </div>
   </div>
-  <CodexTicketOperationModal v-if="codexTarget" :show="true" :operation="codexTarget.operation" :account-ids="codexTarget.accountIds" @close="codexTarget = null" />
   <BaseDialog :show="promptBindingOpen" :title="t('admin.systemPrompts.accountPrompts')" width="normal" @close="promptBindingOpen = false">
     <AccountSystemPromptBinding v-if="promptBindingOpen" :account-ids="selectedIds" @changed="promptBindingOpen = false" />
   </BaseDialog>
@@ -87,16 +85,12 @@ import { computed, defineAsyncComponent, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import BaseDialog from '@/components/common/BaseDialog.vue'
 import { systemPromptBindingLimit } from '@/utils/systemPromptBinding'
-import type { AccountSelectionIdentity } from '@/composables/useAccountSelectionMetadata'
-import CodexAccountActions from '@/components/admin/codex/CodexAccountActions.vue'
-import type { CodexTicketOperation } from '@/utils/codexTickets'
 
 const props = defineProps<{
   selectedIds: number[]
   totalResults: number
   selectingAll: boolean
   allResultsSelected: boolean
-  selectedAccounts?: AccountSelectionIdentity[]
 }>()
 
 defineEmits([
@@ -119,11 +113,6 @@ defineEmits([
 
 const { t } = useI18n()
 const AccountSystemPromptBinding = defineAsyncComponent(() => import('./AccountSystemPromptBinding.vue'))
-const CodexTicketOperationModal = defineAsyncComponent(() => import('@/components/admin/codex/CodexTicketOperationModal.vue'))
-const codexTarget = ref<{ operation: CodexTicketOperation; accountIds: number[] } | null>(null)
-function openCodexOperation(operation: CodexTicketOperation, accountIds: number[]) {
-  codexTarget.value = { operation, accountIds: [...accountIds] }
-}
 const promptBindingOpen = ref(false)
 const promptBindingAvailable = computed(() => props.selectedIds.length > 0 && props.selectedIds.length <= systemPromptBindingLimit)
 </script>

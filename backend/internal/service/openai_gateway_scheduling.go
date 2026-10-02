@@ -983,7 +983,7 @@ func (s *OpenAIGatewayService) tryStickySessionHit(ctx context.Context, groupID 
 		_ = s.deleteStickySessionAccountIDIfMatches(ctx, groupID, sessionHash, accountID)
 		return nil
 	}
-	if s.isOpenAIAccountRequestRuntimeBlockedContext(ctx, account, requestedModel, requireCompact) {
+	if s.isOpenAIAccountRequestRuntimeBlockedContext(ctx, account, requestedModel) {
 		// Runtime blocks and half-open probe ownership are temporary. Preserve the
 		// sticky binding until replacement or permanent invalidation.
 		return nil
@@ -1213,7 +1213,7 @@ func (s *OpenAIGatewayService) selectAccountWithLoadAwareness(ctx context.Contex
 						_ = s.deleteStickySessionAccountIDIfMatches(ctx, groupID, sessionHash, accountID)
 					} else if !s.openAIAccountMatchesSchedulingGroup(account, groupID) {
 						_ = s.deleteStickySessionAccountIDIfMatches(ctx, groupID, sessionHash, accountID)
-					} else if s.isOpenAIAccountRequestRuntimeBlockedContext(ctx, account, requestedModel, requireCompact) {
+					} else if s.isOpenAIAccountRequestRuntimeBlockedContext(ctx, account, requestedModel) {
 						// Keep temporary runtime-blocked sticky bindings.
 					} else if needsUpstreamCheck && s.isUpstreamModelRestrictedByChannel(ctx, *groupID, account, requestedModel, requireCompact) {
 						_ = s.deleteStickySessionAccountIDIfMatches(ctx, groupID, sessionHash, accountID)
@@ -1282,10 +1282,7 @@ func (s *OpenAIGatewayService) selectAccountWithLoadAwareness(ctx context.Contex
 			filterStats.exclude("shadow_parent_unhealthy")
 			continue
 		}
-		// This candidate list is the partial scheduler projection. Credential-bound
-		// gates run after resolveFreshSchedulableOpenAIAccount/recheck reads the
-		// authoritative account; doing so here would misclassify valid tickets.
-		if s.isOpenAIAccountCandidateRuntimeBlockedContext(ctx, acc, requestedModel, requireCompact) {
+		if s.isOpenAIAccountRequestRuntimeBlockedContext(ctx, acc, requestedModel) {
 			filterStats.exclude("runtime_blocked")
 			filterStats.observeRuntimeCooldown(s, acc.ID)
 			continue
@@ -1570,7 +1567,7 @@ func (s *OpenAIGatewayService) resolveFreshSchedulableOpenAIAccountBeforeProfit(
 	if !parentHealthyForShadow(fresh, s.parentAccountLookup(ctx)) {
 		return nil
 	}
-	if s.isOpenAIAccountRequestRuntimeBlockedContext(ctx, fresh, requestedModel, requireCompact) {
+	if s.isOpenAIAccountRequestRuntimeBlockedContext(ctx, fresh, requestedModel) {
 		return nil
 	}
 	if s.isOpenAIAccountBlockedBySchedulingThreshold(ctx, fresh) {
@@ -1649,7 +1646,7 @@ func (s *OpenAIGatewayService) recheckSelectedOpenAIAccountFromDBBeforeProfit(ct
 	if !parentHealthyForShadow(latest, s.parentAccountLookup(ctx)) {
 		return nil
 	}
-	if s.isOpenAIAccountRequestRuntimeBlockedContext(ctx, latest, requestedModel, requireCompact) {
+	if s.isOpenAIAccountRequestRuntimeBlockedContext(ctx, latest, requestedModel) {
 		return nil
 	}
 	if s.isOpenAIAccountBlockedBySchedulingThreshold(ctx, latest) {

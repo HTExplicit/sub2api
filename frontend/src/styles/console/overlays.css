@@ -46,8 +46,6 @@ html.flat-theme {
   --ui-menu-text: 12.5px;
   --ui-menu-leading: 18.75px;
   --ui-menu-glyph: 14px;
-  /* B6.3 (behaviour.css): a label without a glyph lines up with the labels that have one: 12 + 14 + 8 */
-  --ui-menu-text-inset: 34px;
   /* dialogs (Modal, measured): 18px sides, 14px header, 16px body; the footer's 12px is derived */
   --ui-dialog-x: 18px;
   --ui-dialog-head-y: 14px;

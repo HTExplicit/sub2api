@@ -13,7 +13,7 @@
 <script setup lang="ts">
 import { computed, useId, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import type { AccountSelectionIdentity } from '@/composables/useAccountSelectionMetadata'
+import type { AccountSelectionIdentity } from '@/types'
 import { ACCOUNT_TEST_PROMPT_LIMIT } from '@/composables/useAccountTestPrompt'
 const props = defineProps<{ modelValue: string; account?: AccountSelectionIdentity | null; disabled?: boolean }>()
 const emit = defineEmits<{ 'update:modelValue': [value: string]; validity: [valid: boolean] }>()

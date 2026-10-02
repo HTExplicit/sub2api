@@ -1703,7 +1703,7 @@ html.flat-theme [data-ui="user-orders"] > .table-wrapper .table-body > tr > td[c
 @media (max-width: 1023.98px) {
   /* 8.0 Below 1024px the 47px bar prints the page title (shell.css), so a page's own heading that repeats it word for
      word is kept for assistive technology only, as the pages already do from 1024px: 系统提示词 (its route title is
-     Chinese), Codex 路由设置, 插件管理, 风控中心, 提示词审计, 渠道监控 (the image studio: 7.2). The intros under them
+     Chinese), Codex 运行设置, 插件管理, 风控中心, 提示词审计, 渠道监控 (the image studio: 7.2). The intros under them
      stay. */
   html.flat-theme:lang(zh) [data-ui~="system-prompts"] > header h1,
   html.flat-theme [data-ui~="codex-runtime"] > h2:first-child,
@@ -1719,7 +1719,7 @@ html.flat-theme [data-ui="user-orders"] > .table-wrapper .table-body > tr > td[c
     white-space: nowrap;
   }
 
-  /* the block under such a heading starts the page: Codex 路由设置's intro kept the page rhythm's 12px (shell.css) and
+  /* the block under such a heading starts the page: Codex 运行设置's intro kept the page rhythm's 12px (shell.css) and
      渠道监控's description its 2px (ops-channels.css 5.3); with the heading out of the flow the margin collapsed through
      the page root and moved the whole page down (final review V3-11). 风控中心's description kept its 2px
      (ops-channels.css 8) under the hidden title. The doubled root attribute outranks the rhythm (0,6,2) and the

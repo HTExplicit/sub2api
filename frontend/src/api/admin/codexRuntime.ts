@@ -1,21 +1,20 @@
 import { apiClient } from '../client'
 
+// Native Codex runtime settings. The server defines only request_zstd; other keys it may
+// return are tolerated when read and never sent back.
 export interface CodexRuntimeConfig extends Record<string, unknown> {
-  enabled?: boolean
-  fail_closed?: boolean
-  models?: string[]
-  routing_schema?: number
   request_zstd?: boolean
-  proxy_url?: string
-  proxy_protocol?: string
-  proxy_selection_id?: string
+}
+
+export interface CodexRuntimeSettingsUpdate {
+  request_zstd: boolean
 }
 
 export const codexRuntimeAPI = {
   async getConfig(): Promise<CodexRuntimeConfig> {
     return (await apiClient.get<CodexRuntimeConfig>('/admin/settings/codex-runtime', { rawPluginConfig: true })).data
   },
-  async saveConfig(config: CodexRuntimeConfig): Promise<CodexRuntimeConfig> {
+  async saveConfig(config: CodexRuntimeSettingsUpdate): Promise<CodexRuntimeConfig> {
     return (await apiClient.put<CodexRuntimeConfig>('/admin/settings/codex-runtime', config, { rawPluginConfig: true })).data
   },
   async diagnostics(errorId: number, signal?: AbortSignal): Promise<unknown> {

@@ -10,29 +10,6 @@ vi.mock('vue-i18n', () => ({
 }))
 
 describe('AccountBulkActionsBar', () => {
-  it('offers Codex actions only when every selected identity is known and eligible', async () => {
-    const wrapper = mount(AccountBulkActionsBar, {
-      props: {
-        selectedIds: [1, 2],
-        selectedAccounts: [{ id: 1, platform: 'openai', type: 'oauth', parent_account_id: null }],
-        totalResults: 2,
-        selectingAll: false,
-        allResultsSelected: false
-      }
-    })
-    expect(wrapper.find('[data-test="codex-harvest"]').exists()).toBe(false)
-    await wrapper.setProps({ selectedAccounts: [
-      { id: 1, platform: 'openai', type: 'oauth', parent_account_id: null },
-      { id: 2, platform: 'openai', type: 'setup-token', parent_account_id: null }
-    ] })
-    expect(wrapper.find('[data-test="codex-harvest"]').exists()).toBe(true)
-    await wrapper.setProps({ selectedAccounts: [
-      { id: 1, platform: 'openai', type: 'oauth', parent_account_id: null },
-      { id: 2, platform: 'openai', type: 'setup-token', parent_account_id: 1 }
-    ] })
-    expect(wrapper.find('[data-test="codex-stop"]').exists()).toBe(false)
-    wrapper.unmount()
-  })
   it('allows selecting all results before any row is selected', async () => {
     const wrapper = mount(AccountBulkActionsBar, {
       props: {

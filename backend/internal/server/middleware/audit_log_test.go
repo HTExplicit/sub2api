@@ -208,13 +208,11 @@ func TestPasskeyLoginAuditUsesCanonicalLoginActionAndOmitsCredentialBody(t *test
 	require.Contains(t, auditBodyOmittedRoutes, route)
 }
 
-// The Codex proxy draft and runtime saves are audited as submitted, proxy
-// credentials included, so administrators can see which proxy was entered.
-func TestCodexProxyDraftRoutesStoreAuditBodiesVerbatim(t *testing.T) {
+// Codex runtime saves are audited as submitted, including retired settings a
+// stale client may still send (the save itself drops them).
+func TestCodexRuntimeSettingsRouteStoresAuditBodyVerbatim(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	for _, route := range []struct{ method, path string }{
-		{http.MethodPost, "/api/v1/admin/settings/openai-codex-ticket/proxy-parse"},
-		{http.MethodPost, "/api/v1/admin/settings/openai-codex-ticket/proxy-test"},
 		{http.MethodPut, "/api/v1/admin/settings/codex-runtime"},
 	} {
 		t.Run(route.method+" "+route.path, func(t *testing.T) {

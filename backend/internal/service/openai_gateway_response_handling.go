@@ -558,8 +558,8 @@ func (s *OpenAIGatewayService) handleStreamingResponseWithReasoning(ctx context.
 		if scanErr == nil {
 			return nil, nil, false
 		}
-		if errors.Is(scanErr, ErrCodexRoutingModelMismatch) {
-			// The route observer already revoked the mismatched qualification.
+		if errors.Is(scanErr, ErrCodexModelMismatch) {
+			// The model guard stopped a reply that declared another model.
 			// Never turn this into an automatic replay, especially after output.
 			if account != nil && account.IsOpenAIOAuthLike() {
 				s.clearOpenAICodexTurnStateProvenance(c, account)
@@ -567,7 +567,7 @@ func (s *OpenAIGatewayService) handleStreamingResponseWithReasoning(ctx context.
 			if openAIStreamClientOutputStarted(c, clientOutputStarted) {
 				sendErrorEvent("upstream_model_mismatch", "upstream_model_mismatch")
 			}
-			return resultWithUsage(), ErrCodexRoutingModelMismatch, true
+			return resultWithUsage(), ErrCodexModelMismatch, true
 		}
 		if errors.Is(scanErr, errOpenAIFirstOutputScannerLimit) && !firstOutputProgressObserved {
 			logger.LegacyPrintf("service.openai_gateway", "SSE token exceeded guarded first-output limit: account=%d limit=%d error=%v", account.ID, openAIFirstOutputStageMaxBytes+openAIFirstOutputScannerFramingAllowance, scanErr)
