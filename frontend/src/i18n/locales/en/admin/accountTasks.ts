@@ -14,6 +14,7 @@ export default {
     awaitingResults: "Waiting for results",
     skipped: "Skipped",
     retryExpired: "The original operation data has expired. Close this window and configure the operation again.",
+    retryRetired: "This operation has been retired and cannot be retried.",
     inProgress: "Account operation progress",
     previousOperation: "Previous operation",
     nextOperation: "Next operation",

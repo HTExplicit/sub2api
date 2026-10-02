@@ -78,6 +78,7 @@
         <button v-if="!terminal" class="btn btn-secondary btn-sm" :disabled="busy || !!job.cancel_requested_at" @click="stop">{{ t(job.cancel_requested_at ? 'admin.accountTasks.stopping' : 'admin.accountTasks.cancel') }}</button>
         <button v-if="job.retry_eligible && !retryExpired" class="btn btn-secondary btn-sm" :disabled="busy" @click="retry">{{ t('admin.accountTasks.retryFailed') }}</button>
         <span v-if="job.retry_unavailable_reason === 'payload_expired'" class="text-xs text-muted">{{ t('admin.accountTasks.retryExpired') }}</span>
+        <span v-else-if="job.retry_unavailable_reason === 'kind_unsupported'" class="text-xs text-muted">{{ t('admin.accountTasks.retryRetired') }}</span>
         <button class="btn btn-primary btn-sm" @click="emit('close')">{{ t(terminal ? 'common.close' : 'admin.accountTasks.minimize') }}</button>
       </div>
     </div>

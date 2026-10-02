@@ -1,7 +1,7 @@
 <template>
   <section class="space-y-4" aria-live="polite" data-ui="codex-runtime">
     <h2 class="text-xl font-semibold text-ink">{{ text('Codex 运行设置', 'Codex runtime settings') }}</h2>
-    <p class="text-sm text-muted">{{ text('开启后，OAuth 账号发往 ChatGPT Codex 后端的流式 /responses 请求体按官方 Codex 客户端的方式以 zstd 压缩发送（Content-Encoding: zstd）；compact、models 等其他请求保持明文。关闭后全部以明文发送。', 'When enabled, streaming /responses request bodies that OAuth accounts send to the ChatGPT Codex backend are zstd-compressed (Content-Encoding: zstd), as the official Codex client does; compact, models and other requests stay uncompressed. When disabled, every request is sent uncompressed.') }}</p>
+    <p class="text-sm text-muted">{{ text('开启后，OAuth 账号发往 ChatGPT Codex 后端的流式 /responses 请求体按官方 Codex 客户端的方式以 zstd 压缩发送（', 'When enabled, streaming /responses request bodies that OAuth accounts send to the ChatGPT Codex backend are zstd-compressed (') }}<span class="whitespace-nowrap">Content-Encoding: zstd</span>{{ text('）；compact、models 等其他请求保持明文。关闭后全部以明文发送。', '), as the official Codex client does; compact, models and other requests stay uncompressed. When disabled, every request is sent uncompressed.') }}</p>
     <p v-if="loading" class="text-sm text-muted">{{ t('common.loading') }}</p>
     <fieldset v-else :disabled="!config" class="space-y-4 disabled:opacity-60">
       <label class="flex items-center gap-2">

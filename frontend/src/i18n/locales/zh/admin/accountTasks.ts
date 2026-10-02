@@ -14,6 +14,7 @@ export default {
     awaitingResults: "等待执行结果",
     skipped: "已跳过",
     retryExpired: "原操作资料已过期，请关闭此窗口并重新配置操作。",
+    retryRetired: "该操作已退役，不可重试。",
     inProgress: "账号操作进度",
     previousOperation: "上一个操作",
     nextOperation: "下一个操作",
