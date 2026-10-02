@@ -25,6 +25,7 @@
         <div data-ui="search-box" class="relative min-w-[12rem] flex-1">
           <Icon name="search" size="md" class="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
           <input
+            ref="searchRef"
             v-model="searchQuery"
             type="text"
             data-testid="upstream-picker-search"
@@ -77,74 +78,96 @@
         </span>
       </div>
 
-      <ul
-        v-if="visibleRows.length > 0"
+      <!-- The list area keeps the height it opened with (listHeight), so the search and the status filter never
+           resize the dialog; a long list renders only the rows in and near view between two spacers. -->
+      <div
+        ref="listRef"
         data-testid="upstream-picker-list"
         data-ui="upstream-picker-list"
-        class="max-h-[50vh] overflow-y-auto overscroll-contain rounded-lg border border-gray-200 dark:border-dark-600"
+        class="max-h-[50vh] min-h-[4.5rem] overflow-y-auto overscroll-contain rounded-lg border border-gray-200 dark:border-dark-600"
+        :style="listHeight ? { height: listHeight } : undefined"
       >
-        <li
-          v-for="row in visibleRows"
-          :key="row.id"
-          data-testid="upstream-picker-row"
-          data-ui="upstream-picker-row"
-          :data-model-id="row.id"
-          :data-checked="checked.has(row.id)"
-          class="flex cursor-pointer items-start gap-2.5 border-t border-gray-100 px-3 py-2 first:border-t-0 hover:bg-gray-50 dark:border-dark-700 dark:hover:bg-dark-700/60"
-          @click="toggle(row.id)"
-        >
-          <input
-            type="checkbox"
-            data-testid="upstream-picker-checkbox"
-            class="mt-0.5 h-4 w-4 shrink-0 cursor-pointer rounded border-gray-300 text-primary-600 focus:ring-primary-500 dark:border-dark-500"
-            :checked="checked.has(row.id)"
-            :aria-label="row.id"
-            @click.stop="toggle(row.id)"
-          />
-          <ModelIcon :model="row.id" size="18px" class="mt-px shrink-0" />
-          <div class="min-w-0 flex-1">
-            <div class="flex flex-wrap items-center gap-x-2 gap-y-1">
-              <span
-                data-testid="upstream-picker-model-id"
-                data-ui="upstream-picker-id"
-                class="min-w-0 break-all text-sm font-medium text-gray-900 dark:text-white"
-              >{{ row.id }}</span>
-              <span v-if="row.status === 'new'" data-testid="upstream-picker-tag-new" class="badge badge-primary">
-                {{ labels.newTag }}
-              </span>
-              <span v-else-if="row.status === 'missing'" data-testid="upstream-picker-tag-missing" class="badge badge-warning">
-                {{ labels.missingTag }}
-              </span>
-            </div>
-            <p
-              v-if="row.details"
-              data-testid="upstream-picker-details"
-              data-ui="upstream-picker-details"
-              class="mt-0.5 break-words text-xs text-gray-500 dark:text-gray-400"
-            >
-              {{ row.details }}
-            </p>
-          </div>
-          <button
-            type="button"
-            data-testid="upstream-picker-copy"
-            data-ui="upstream-picker-copy"
-            class="-my-1 shrink-0 rounded p-1.5 text-gray-400 transition-colors hover:bg-gray-200 hover:text-primary-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500 dark:text-gray-500 dark:hover:bg-dark-600 dark:hover:text-primary-400"
-            :title="`${labels.copy} ${row.id}`"
-            :aria-label="`${labels.copy} ${row.id}`"
-            @click.stop="copyModelId(row.id)"
+        <ul v-if="visibleRows.length > 0">
+          <li v-if="paddingTop > 0" aria-hidden="true" :style="{ height: `${paddingTop}px` }"></li>
+          <li
+            v-for="{ row, index } in renderedRows"
+            :key="row.id"
+            v-memo="[row, index, checked.has(row.id), labels]"
+            :ref="measureRow"
+            data-testid="upstream-picker-row"
+            data-ui="upstream-picker-row"
+            :data-index="index"
+            :data-model-id="row.id"
+            :data-checked="checked.has(row.id)"
+            class="flex cursor-pointer items-start gap-2.5 border-t border-gray-100 px-3 py-2 first:border-t-0 hover:bg-gray-50 dark:border-dark-700 dark:hover:bg-dark-700/60"
+            @click="toggle(row, index, $event)"
           >
-            <Icon name="copy" size="sm" />
-          </button>
-        </li>
-      </ul>
-      <p
-        v-else
-        data-testid="upstream-picker-empty"
-        class="rounded-lg border border-dashed border-gray-200 px-3 py-6 text-center text-sm text-gray-500 dark:border-dark-600 dark:text-gray-400"
-      >
-        {{ t('admin.accounts.noMatchingModels') }}
-      </p>
+            <input
+              type="checkbox"
+              data-testid="upstream-picker-checkbox"
+              class="mt-0.5 h-4 w-4 shrink-0 cursor-pointer rounded border-gray-300 text-primary-600 focus:ring-primary-500 dark:border-dark-500"
+              :checked="checked.has(row.id)"
+              :aria-label="row.id"
+              :aria-describedby="describedBy(row)"
+              @click.stop="toggle(row, index, $event)"
+            />
+            <ModelIcon :model="row.id" size="18px" class="mt-px shrink-0" />
+            <div class="min-w-0 flex-1">
+              <div class="flex flex-wrap items-center gap-x-2 gap-y-1">
+                <span
+                  data-testid="upstream-picker-model-id"
+                  data-ui="upstream-picker-id"
+                  class="min-w-0 break-all text-sm font-medium text-gray-900 dark:text-white"
+                >{{ row.id }}</span>
+                <span
+                  v-if="row.status === 'new'"
+                  :id="partId(row, 'tag')"
+                  data-testid="upstream-picker-tag-new"
+                  class="badge badge-primary"
+                >
+                  {{ labels.newTag }}
+                </span>
+                <span
+                  v-else-if="row.status === 'missing'"
+                  :id="partId(row, 'tag')"
+                  data-testid="upstream-picker-tag-missing"
+                  class="badge badge-warning"
+                >
+                  {{ labels.missingTag }}
+                </span>
+              </div>
+              <p
+                v-if="row.hasDetails"
+                :id="partId(row, 'details')"
+                data-testid="upstream-picker-details"
+                data-ui="upstream-picker-details"
+                class="mt-0.5 break-words text-xs text-gray-500 dark:text-gray-400"
+              >
+                {{ detailsOf(row) }}
+              </p>
+            </div>
+            <button
+              type="button"
+              data-testid="upstream-picker-copy"
+              data-ui="upstream-picker-copy"
+              class="-my-1 shrink-0 rounded p-1.5 text-gray-400 transition-colors hover:bg-gray-200 hover:text-primary-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500 dark:text-gray-500 dark:hover:bg-dark-600 dark:hover:text-primary-400"
+              :title="`${labels.copy} ${row.id}`"
+              :aria-label="`${labels.copy} ${row.id}`"
+              @click.stop="copyModelId(row.id)"
+            >
+              <Icon name="copy" size="sm" />
+            </button>
+          </li>
+          <li v-if="paddingBottom > 0" aria-hidden="true" :style="{ height: `${paddingBottom}px` }"></li>
+        </ul>
+        <p
+          v-else
+          data-testid="upstream-picker-empty"
+          class="px-3 py-6 text-center text-sm text-gray-500 dark:text-gray-400"
+        >
+          {{ t('admin.accounts.noMatchingModels') }}
+        </p>
+      </div>
     </div>
 
     <template #footer>
@@ -177,7 +200,10 @@
 </template>
 
 <script setup lang="ts">
-import { computed, nextTick, ref, shallowRef, watch } from 'vue'
+import { computed, nextTick, ref, shallowRef, useId, watch } from 'vue'
+import type { ComponentPublicInstance } from 'vue'
+import { observeElementRect, useVirtualizer } from '@tanstack/vue-virtual'
+import type { Rect, Virtualizer } from '@tanstack/vue-virtual'
 import { useI18n } from 'vue-i18n'
 import type { SyncUpstreamModelsResult, UpstreamModelMetadata } from '@/api/admin/accounts'
 import BaseDialog from '@/components/common/BaseDialog.vue'
@@ -191,9 +217,13 @@ type StatusFilter = 'all' | 'checked' | 'unchecked' | 'new' | 'missing'
 
 interface PickerRow {
   id: string
+  // the row's place in the sorted snapshot: stable while the dialog is open, so element ids derive from it
+  position: number
   // kept: returned and whitelisted; new: returned only; missing: whitelisted but not returned
   status: RowStatus
-  details: string
+  metadata?: UpstreamModelMetadata
+  // whether the capability line has anything to show (its text is built when the row first renders)
+  hasDetails: boolean
   idKey: string
   nameKey: string
 }
@@ -216,6 +246,15 @@ const collator = new Intl.Collator(undefined, { numeric: true, sensitivity: 'bas
 const compareModelIds = (a: string, b: string) => collator.compare(a, b) || (a < b ? -1 : a > b ? 1 : 0)
 const FILTER_STEPS: Record<string, number> = { ArrowRight: 1, ArrowDown: 1, ArrowLeft: -1, ArrowUp: -1 }
 
+// A list longer than this renders only the rows in and near view (DataTable's threshold); a shorter one renders whole.
+const VIRTUALIZE_THRESHOLD = 100
+// Row heights before a row is measured: the ID line alone, and the ID line over the capability line.
+const ROW_HEIGHT = 36
+const ROW_WITH_DETAILS_HEIGHT = 54
+const ROW_OVERSCAN = 6
+// The list area's cap (its max-h-[50vh] class).
+const LIST_MAX_HEIGHT = '50vh'
+
 // Rows and the whitelist are a snapshot taken when the dialog opens; per-row lookups stay O(1). The snapshot
 // outlives a close, so the closing transition still shows it; the next open replaces it.
 const snapshot = shallowRef<SyncUpstreamModelsResult>()
@@ -224,19 +263,48 @@ const currentModels = shallowRef<string[]>([])
 const checked = shallowRef(new Set<string>())
 const searchQuery = ref('')
 const statusFilter = ref<StatusFilter>('all')
+const searchRef = ref<HTMLInputElement | null>(null)
+const listRef = ref<HTMLElement | null>(null)
+// The list area's CSS height, fixed after each open: '' while it takes its natural height at open.
+const listHeight = ref('')
 
-const tokenCount = (value?: number) =>
-  value && Number.isSafeInteger(value) && value > 0 ? formatContextCapacity(value) : ''
+const idPrefix = `upstream-picker-${useId()}`
 
-const describeModel = (id: string, metadata?: UpstreamModelMetadata) => {
-  const parts: string[] = []
+const isTokenCount = (value?: number): value is number => !!value && Number.isSafeInteger(value) && value > 0
+
+const displayName = (id: string, metadata?: UpstreamModelMetadata) => {
   const name = metadata?.display_name?.trim()
-  if (name && name !== id) parts.push(name)
-  const context = tokenCount(metadata?.context_window)
-  if (context) parts.push(t('admin.accounts.syncUpstreamPicker.contextWindow', { value: context }))
-  const output = tokenCount(metadata?.max_output_tokens)
-  if (output) parts.push(t('admin.accounts.syncUpstreamPicker.maxOutput', { value: output }))
-  return parts.join(' · ')
+  return name && name !== id ? name : ''
+}
+
+// The capability line costs two translations, so it is built when its row first renders (a long list renders few
+// of its rows) and kept per row; a new locale builds the lines again.
+let detailsCache = new WeakMap<PickerRow, string>()
+const detailsOf = (row: PickerRow) => {
+  let details = detailsCache.get(row)
+  if (details === undefined) {
+    const context = row.metadata?.context_window
+    const output = row.metadata?.max_output_tokens
+    const parts = [displayName(row.id, row.metadata)]
+    if (isTokenCount(context)) {
+      parts.push(t('admin.accounts.syncUpstreamPicker.contextWindow', { value: formatContextCapacity(context) }))
+    }
+    if (isTokenCount(output)) {
+      parts.push(t('admin.accounts.syncUpstreamPicker.maxOutput', { value: formatContextCapacity(output) }))
+    }
+    details = parts.filter(Boolean).join(' · ')
+    detailsCache.set(row, details)
+  }
+  return details
+}
+
+// The list area keeps the height it has for the whole list at open: a list that overflows keeps the cap (which
+// follows the window), a shorter one its own height. Fewer rows later leave space inside the area instead of
+// shrinking the dialog. Nothing is fixed while the list is not laid out (jsdom, a detached list).
+const fixListHeight = () => {
+  const list = listRef.value
+  if (!list?.isConnected || list.offsetHeight === 0) return
+  listHeight.value = list.scrollHeight > list.clientHeight ? LIST_MAX_HEIGHT : `${list.offsetHeight}px`
 }
 
 const open = (result: SyncUpstreamModelsResult, current: string[]) => {
@@ -244,13 +312,16 @@ const open = (result: SyncUpstreamModelsResult, current: string[]) => {
   const whitelist = [...new Set(current.filter(model => model.trim()))]
   const whitelisted = new Set(whitelist)
   const ids = [...upstream, ...whitelist.filter(model => !upstream.has(model))].sort(compareModelIds)
-  rows.value = ids.map(id => {
+  rows.value = ids.map((id, position) => {
     const metadata = result.metadata?.[id]
     const status: RowStatus = !upstream.has(id) ? 'missing' : whitelisted.has(id) ? 'kept' : 'new'
     return {
       id,
+      position,
       status,
-      details: describeModel(id, metadata),
+      metadata,
+      hasDetails:
+        !!displayName(id, metadata) || isTokenCount(metadata?.context_window) || isTokenCount(metadata?.max_output_tokens),
       idKey: id.toLowerCase(),
       nameKey: metadata?.display_name?.toLowerCase() ?? ''
     }
@@ -261,6 +332,8 @@ const open = (result: SyncUpstreamModelsResult, current: string[]) => {
   searchQuery.value = ''
   statusFilter.value = 'all'
   snapshot.value = result
+  listHeight.value = ''
+  void nextTick(fixListHeight)
 }
 
 watch(
@@ -283,6 +356,19 @@ const labels = computed(() => ({
   missingTag: t('admin.accounts.syncUpstreamPicker.tags.missing'),
   copy: t('common.copy')
 }))
+// labels is in each row's v-memo, so the rows render again in the new locale
+watch(labels, () => {
+  detailsCache = new WeakMap()
+})
+
+// A row's checkbox is described by its tag and its capability line, not only named by the ID.
+const partId = (row: PickerRow, part: 'tag' | 'details') => `${idPrefix}-${part}-${row.position}`
+const describedBy = (row: PickerRow) => {
+  const ids: string[] = []
+  if (row.status !== 'kept') ids.push(partId(row, 'tag'))
+  if (row.hasDetails) ids.push(partId(row, 'details'))
+  return ids.length > 0 ? ids.join(' ') : undefined
+}
 
 const checkedCount = computed(() => checked.value.size)
 
@@ -317,6 +403,100 @@ const visibleRows = computed(() => {
   })
 })
 
+// --- Windowed rendering (the DataTable precedent) ---
+const shouldVirtualize = computed(() => visibleRows.value.length > VIRTUALIZE_THRESHOLD)
+
+// As in DataTable: a zero-height reading (the list not laid out yet) must not pin the viewport to no rows.
+const observeListRect = (instance: Virtualizer<HTMLElement, HTMLLIElement>, cb: (rect: Rect) => void) =>
+  observeElementRect(instance, rect => {
+    if (rect.height > 0) cb(rect)
+  })
+
+const rowVirtualizer = useVirtualizer<HTMLElement, HTMLLIElement>(computed(() => {
+  const list = visibleRows.value
+  return {
+    count: shouldVirtualize.value ? list.length : 0,
+    getScrollElement: () => listRef.value,
+    // Sizes are cached per model ID: a row keeps its measured height wherever the list moves it.
+    getItemKey: (index: number) => list[index]?.id ?? index,
+    estimateSize: (index: number) => (list[index]?.hasDetails ? ROW_WITH_DETAILS_HEIGHT : ROW_HEIGHT),
+    overscan: ROW_OVERSCAN,
+    // Rows for the capped area before its first real reading arrives.
+    initialRect: { width: 0, height: Math.round(window.innerHeight / 2) },
+    observeElementRect: observeListRect,
+    useAnimationFrameWithResizeObserver: true
+  }
+}))
+
+const virtualItems = computed(() => rowVirtualizer.value.getVirtualItems())
+
+const renderedRows = computed(() => {
+  const list = visibleRows.value
+  if (!shouldVirtualize.value) return list.map((row, index) => ({ row, index }))
+  const items: { row: PickerRow; index: number }[] = []
+  for (const { index } of virtualItems.value) {
+    const row = list[index]
+    if (row) items.push({ row, index })
+  }
+  return items
+})
+
+const paddingTop = computed(() => (shouldVirtualize.value ? virtualItems.value[0]?.start ?? 0 : 0))
+const paddingBottom = computed(() => {
+  if (!shouldVirtualize.value) return 0
+  const items = virtualItems.value
+  const last = items[items.length - 1]
+  return last ? rowVirtualizer.value.getTotalSize() - last.end : 0
+})
+
+// Only laid-out rows are measured: a row reads 0 while the opening dialog mounts it detached (and always in jsdom),
+// and a 0 would collapse its slot. Unchanged rows keep their size (v-memo skips them; the virtualizer's
+// ResizeObserver still follows a row whose height changes).
+const measureRows = (elements: Iterable<HTMLLIElement>) => {
+  const virtualizer = rowVirtualizer.value
+  for (const element of elements) {
+    if (element.isConnected && element.offsetHeight > 0) virtualizer.measureElement(element)
+  }
+}
+
+// Rows (re)rendered by a patch are measured together after it: one layout instead of one per row.
+let rowsToMeasure: HTMLLIElement[] = []
+const measureQueuedRows = () => {
+  const elements = rowsToMeasure
+  rowsToMeasure = []
+  if (shouldVirtualize.value) measureRows(elements)
+}
+const measureRow = (element: Element | ComponentPublicInstance | null) => {
+  if (!(element instanceof HTMLLIElement) || !shouldVirtualize.value) return
+  if (rowsToMeasure.push(element) === 1) void nextTick(measureQueuedRows)
+}
+
+// Set by a toggle under 已勾选 / 未勾选, where the toggled row leaves the list and the rows around it stay put.
+let rowLeftList = false
+const sameRows = (next: PickerRow[], previous: PickerRow[] | undefined) =>
+  next.length === previous?.length && next.every((row, index) => row === previous[index])
+
+watch(
+  visibleRows,
+  (next, previous) => {
+    const virtualizer = rowVirtualizer.value
+    // Release the rows that left the DOM.
+    virtualizer.measureElement(null)
+    const keepPlace = rowLeftList || sameRows(next, previous)
+    rowLeftList = false
+    if (keepPlace) return
+    // A different list (open, search, filter, a bulk change under 已勾选 / 未勾选): start at its top with fresh
+    // measurements. Rows that kept their place were skipped by v-memo, so every rendered row is measured again.
+    const list = listRef.value
+    if (list) list.scrollTop = 0
+    // the scroll event would report the top only next frame; the next render already starts there
+    virtualizer.scrollOffset = 0
+    virtualizer.measure()
+    if (list && shouldVirtualize.value) measureRows(list.querySelectorAll<HTMLLIElement>('li[data-index]'))
+  },
+  { flush: 'post' }
+)
+
 // Relative to the whitelist at open: checked models it lacks, and its entries left unchecked.
 const changes = computed(() => {
   const picked = checked.value
@@ -328,10 +508,41 @@ const changes = computed(() => {
   return { added, removed }
 })
 
-const toggle = (id: string) => {
+const rowCheckbox = (index: number) =>
+  listRef.value?.querySelector<HTMLInputElement>(`li[data-index="${index}"] input[type="checkbox"]`) ?? null
+
+// After the focused row left the list, the focus goes to the row now in its place (the previous one when it was
+// the last), or to the search when no row is left. A windowed list scrolls that row into its window first.
+const focusRowAt = async (index: number) => {
+  await nextTick()
+  const count = visibleRows.value.length
+  if (count === 0) {
+    searchRef.value?.focus()
+    return
+  }
+  const target = Math.min(index, count - 1)
+  let checkbox = rowCheckbox(target)
+  if (!checkbox && shouldVirtualize.value) {
+    rowVirtualizer.value.scrollToIndex(target)
+    // the scroll event moves the window before the next frame
+    await new Promise(resolve => requestAnimationFrame(resolve))
+    await nextTick()
+    checkbox = rowCheckbox(target)
+  }
+  checkbox?.focus()
+}
+
+const toggle = (row: PickerRow, index: number, event: Event) => {
+  const filter = statusFilter.value
+  const leavesList = filter === 'checked' || filter === 'unchecked'
+  const rowElement = (event.currentTarget as HTMLElement | null)?.closest('li')
+  const heldFocus = leavesList && !!rowElement?.contains(document.activeElement)
   const next = new Set(checked.value)
-  if (!next.delete(id)) next.add(id)
+  if (!next.delete(row.id)) next.add(row.id)
+  if (leavesList) rowLeftList = true
   checked.value = next
+  // after the state change, so its nextTick waits for the patch that removes the row
+  if (heldFocus) void focusRowAt(index)
 }
 
 const selectAll = () => {

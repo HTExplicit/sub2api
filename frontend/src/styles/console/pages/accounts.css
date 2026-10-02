@@ -31,9 +31,10 @@
  *   admin/account/AccountStatsModal       account-stats         admin/account/AccountTestModal  account-test
  *   account/OAuthAuthorizationFlow        account-oauth-flow    account/CreateAccountModal      account-create-steps
  * The upstream model picker (section 9.13; static hooks, a row's state is its data-checked, a filter's aria-checked):
- *   account/UpstreamModelPickerDialog (new)  upstream-picker-list, upstream-picker-row, upstream-picker-id,
- *                                            upstream-picker-details, upstream-picker-copy; its toolbar uses the
- *                                            shared search-box and seg hooks (controls.css 3.2, 7.1)
+ *   account/UpstreamModelPickerDialog (new)  upstream-picker-list (the scroll area: the rows or the empty message),
+ *                                            upstream-picker-row, upstream-picker-id, upstream-picker-details,
+ *                                            upstream-picker-copy; its toolbar uses the shared search-box and seg
+ *                                            hooks (controls.css 3.2, 7.1)
  * Card grid, compact list, the drawer's content, the account forms (#create-account-form, #edit-account-form,
  * #bulk-edit-account-form) and the taxonomy manager rows are reached through their existing ids and data-test
  * attributes. The system prompt binding inside the account dialogs is P3's (settings-ops-public.css). */
@@ -1389,10 +1390,12 @@ html.flat-theme #edit-account-form div[class~="bg-sky-50/60"] > div:last-child b
    whitelist's 「同步上游支持的模型」). Shared parts draw the rest: the search field and the status filter (controls.css
    3.2, 7.1: the grey track, the current segment the raised pill), the .btn recipes, the native checkboxes
    (controls.css 6), the 新增 / 上游未返回 pills (data.css 6) and the two notices (data.css 11 callouts; the metadata
-   warning keeps its status colour). Here the list: a structural box (1px line, radius 8, the surface) whose rows sit
-   on the line at 7 / 12 with the hover fill; the model ID at 13 / 500 ink, wrapping anywhere (nothing is cut); the
-   capability line 11px muted with tabular figures; the copy button the table's 28px icon button (muted, the subtle
-   fill and ink on hover). No state is drawn: the checkbox carries it. */
+   warning keeps its status colour). Here the list: a structural box (1px line, radius 8, the surface) that keeps the
+   height it opened with (set inline: the whole list's, at most 50vh), so fewer rows and the empty message sit inside
+   it; past 100 rows it holds only the rows near view between two aria-hidden spacer items. Its rows sit on the line
+   at 7 / 12 with the hover fill; the model ID at 13 / 500 ink, wrapping anywhere (nothing is cut); the capability
+   line 11px muted with tabular figures; the copy button the table's 28px icon button (muted, the subtle fill and ink
+   on hover). No state is drawn: the checkbox carries it. */
 html.flat-theme [data-ui~="upstream-picker-list"] {
   border-color: rgb(var(--ui-line));
   border-radius: var(--ui-radius-lg);

@@ -123,9 +123,16 @@ function pickerRowIds(wrapper: SelectorWrapper) {
   return pickerRows(wrapper).map(row => row.attributes('data-model-id'))
 }
 
+// A row's state is its checkbox's checked property; the row's data-checked has to agree with it.
+function isPickerRowChecked(row: ReturnType<typeof pickerRows>[number]) {
+  const checked = (row.get('[data-testid="upstream-picker-checkbox"]').element as HTMLInputElement).checked
+  expect(row.attributes('data-checked')).toBe(String(checked))
+  return checked
+}
+
 function checkedPickerRowIds(wrapper: SelectorWrapper) {
   return pickerRows(wrapper)
-    .filter(row => row.attributes('data-checked') === 'true')
+    .filter(isPickerRowChecked)
     .map(row => row.attributes('data-model-id'))
 }
 
@@ -297,6 +304,10 @@ describe('ModelWhitelistSelector', () => {
     expect(pickerRowIds(wrapper)).toEqual(['manual-model', 'New.Exact-ID', 'user-only-model'])
     expect(wrapper.emitted('upstream-synced')).toBeUndefined()
     expect(wrapper.emitted('update:modelValue')).toBeUndefined()
+    // The search ignores case on the ID itself: this mixed-case ID has no display name.
+    await wrapper.get('[data-testid="upstream-picker-search"]').setValue('new.exact-id')
+    expect(pickerRowIds(wrapper)).toEqual(['New.Exact-ID'])
+    await wrapper.get('[data-testid="upstream-picker-search"]').setValue('')
 
     await findPickerRow(wrapper, 'user-only-model').trigger('click')
     await confirmPicker(wrapper)
@@ -486,6 +497,20 @@ describe('ModelWhitelistSelector', () => {
     wrapper.unmount()
   })
 
+  it('reports an upstream list of blank IDs without opening the picker or touching the whitelist', async () => {
+    const result: SyncUpstreamModelsResult = { models: ['', '  '] }
+    syncUpstreamModels.mockResolvedValue(result)
+    const wrapper = mountSelector({ modelValue: ['kept-model'], accountId: 7 })
+    await wrapper.get('[data-testid="sync-upstream-models"]').trigger('click')
+    await flushPromises()
+
+    expect(findPicker(wrapper).exists()).toBe(false)
+    expect(showInfo).toHaveBeenCalledWith('admin.accounts.syncUpstreamModelsEmpty')
+    expect(wrapper.emitted('upstream-synced')).toEqual([[result]])
+    expect(wrapper.emitted('update:modelValue')).toBeUndefined()
+    wrapper.unmount()
+  })
+
   it('reports a successful preview so account creation can persist metadata', async () => {
     syncUpstreamModelsPreview.mockResolvedValue({
       models: ['x-preview-f-free'],
@@ -658,6 +683,16 @@ describe('ModelWhitelistSelector', () => {
       'admin.accounts.syncUpstreamPicker.contextWindow {"value":"1.05M"}'
     )
     expect(findPickerRow(wrapper, 'zz-legacy').find('[data-testid="upstream-picker-details"]').exists()).toBe(false)
+    // Each checkbox is named by the ID and described by its row's tag and capability line.
+    const description = (modelId: string) => (findPickerRow(wrapper, modelId)
+      .get('[data-testid="upstream-picker-checkbox"]').attributes('aria-describedby') ?? '')
+      .split(' ').filter(Boolean).map(id => wrapper.get(`[id="${id}"]`).text())
+    expect(description('model-2')).toEqual([
+      'admin.accounts.syncUpstreamPicker.tags.new',
+      'Model Two · admin.accounts.syncUpstreamPicker.contextWindow {"value":"200K"} · admin.accounts.syncUpstreamPicker.maxOutput {"value":"64K"}'
+    ])
+    expect(description('kept-model')).toEqual(['admin.accounts.syncUpstreamPicker.contextWindow {"value":"1.05M"}'])
+    expect(description('zz-legacy')).toEqual(['admin.accounts.syncUpstreamPicker.tags.missing'])
     expect(pickerText(wrapper, 'upstream-picker-counter')).toBe('admin.accounts.syncUpstreamPicker.selectedCount {"selected":3,"total":4}')
     expect(pickerText(wrapper, 'upstream-picker-summary')).toBe('admin.accounts.syncUpstreamPicker.summary {"added":2,"removed":1}')
     expect(wrapper.find('[data-testid="upstream-picker-configured-notice"]').exists()).toBe(false)
@@ -702,6 +737,31 @@ describe('ModelWhitelistSelector', () => {
     wrapper.unmount()
   })
 
+  it('renders a long list in a window while the counter, 全选, 反选 and confirm cover every row', async () => {
+    const models = Array.from({ length: 300 }, (_, index) => `bulk-model-${String(index).padStart(3, '0')}`)
+    syncUpstreamModels.mockResolvedValue({ models })
+    const wrapper = mountSelector({ accountId: 7 })
+    await openPicker(wrapper)
+
+    // Only the first rows of the sorted list are in the DOM.
+    const rendered = pickerRowIds(wrapper)
+    expect(rendered.length).toBeGreaterThan(0)
+    expect(rendered.length).toBeLessThan(models.length)
+    expect(rendered).toEqual(models.slice(0, rendered.length))
+    expect(pickerText(wrapper, 'upstream-picker-counter')).toBe('admin.accounts.syncUpstreamPicker.selectedCount {"selected":300,"total":300}')
+
+    await wrapper.get('[data-testid="upstream-picker-invert"]').trigger('click')
+    expect(pickerText(wrapper, 'upstream-picker-counter')).toBe('admin.accounts.syncUpstreamPicker.selectedCount {"selected":0,"total":300}')
+    expect(checkedPickerRowIds(wrapper)).toEqual([])
+    expect(wrapper.get('[data-testid="upstream-picker-confirm"]').attributes('disabled')).toBeDefined()
+
+    await wrapper.get('[data-testid="upstream-picker-select-all"]').trigger('click')
+    expect(pickerText(wrapper, 'upstream-picker-counter')).toBe('admin.accounts.syncUpstreamPicker.selectedCount {"selected":300,"total":300}')
+    await confirmPicker(wrapper)
+    expect(wrapper.emitted('update:modelValue')).toEqual([[models]])
+    wrapper.unmount()
+  })
+
   it('combines the status filter with a case-insensitive search on the ID and the display name', async () => {
     syncUpstreamModels.mockResolvedValue(pickerFixture())
     const wrapper = mountSelector({ modelValue: pickerWhitelist, accountId: 7 })
@@ -738,7 +798,37 @@ describe('ModelWhitelistSelector', () => {
     // Copying an ID does not toggle its row.
     await findPickerRow(wrapper, 'kept-model').get('[data-testid="upstream-picker-copy"]').trigger('click')
     expect(copyToClipboard).toHaveBeenCalledWith('kept-model')
-    expect(findPickerRow(wrapper, 'kept-model').attributes('data-checked')).toBe('true')
+    expect(isPickerRowChecked(findPickerRow(wrapper, 'kept-model'))).toBe(true)
+    wrapper.unmount()
+  })
+
+  it('moves the focus to the row taking the place of a toggled row that leaves the filtered list', async () => {
+    syncUpstreamModels.mockResolvedValue(pickerFixture())
+    const wrapper = mount(ModelWhitelistSelector, {
+      props: { modelValue: pickerWhitelist, platform: 'openai', accountId: 7 },
+      attachTo: document.body,
+      global: { stubs: { ModelIcon: true, Teleport: true, Transition: true } }
+    })
+    await openPicker(wrapper)
+    await setPickerFilter(wrapper, 'checked')
+    const checkbox = (modelId: string) => findPickerRow(wrapper, modelId).get('[data-testid="upstream-picker-checkbox"]')
+    const toggleFocused = async (modelId: string) => {
+      const box = checkbox(modelId)
+      ;(box.element as HTMLInputElement).focus()
+      await box.trigger('click')
+      await flushPromises()
+    }
+
+    await toggleFocused('model-2')
+    expect(pickerRowIds(wrapper)).toEqual(['kept-model', 'model-10'])
+    expect(document.activeElement).toBe(checkbox('model-10').element)
+    // The last row hands the focus back to the row before it.
+    await toggleFocused('model-10')
+    expect(document.activeElement).toBe(checkbox('kept-model').element)
+    // With no row left, the search takes it.
+    await toggleFocused('kept-model')
+    expect(pickerRowIds(wrapper)).toEqual([])
+    expect(document.activeElement).toBe(wrapper.get('[data-testid="upstream-picker-search"]').element)
     wrapper.unmount()
   })
 
@@ -752,7 +842,7 @@ describe('ModelWhitelistSelector', () => {
     await findPickerRow(wrapper, 'alpha-kept').trigger('click')
     const betaCheckbox = findPickerRow(wrapper, 'beta-new').get('[data-testid="upstream-picker-checkbox"]')
     await betaCheckbox.trigger('click')
-    expect(findPickerRow(wrapper, 'beta-new').attributes('data-checked')).toBe('false')
+    expect(isPickerRowChecked(findPickerRow(wrapper, 'beta-new'))).toBe(false)
     await betaCheckbox.trigger('click')
     expect(pickerText(wrapper, 'upstream-picker-summary')).toBe('admin.accounts.syncUpstreamPicker.summary {"added":2,"removed":2}')
     expect(wrapper.emitted('update:modelValue')).toBeUndefined()
