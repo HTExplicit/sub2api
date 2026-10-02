@@ -1,6 +1,7 @@
 package claude
 
 import (
+	"slices"
 	"strings"
 	"unicode"
 )
@@ -54,11 +55,35 @@ func EffortLevelsForModel(model string) []string {
 	return nil
 }
 
+// EffortLevelForModel returns the output_config.effort level a Claude model
+// accepts for effort: effort itself when the model lists it, otherwise the
+// nearest deeper level, otherwise the model's deepest level. It returns ""
+// when the model has no effort levels or effort is not an effort level.
+func EffortLevelForModel(model, effort string) string {
+	entry := findEffortFamily(model)
+	rank := slices.Index(effortLowMediumHighXHighMax, effort)
+	if entry == nil || rank < 0 {
+		return ""
+	}
+	for _, level := range entry.levels {
+		if slices.Index(effortLowMediumHighXHighMax, level) >= rank {
+			return level
+		}
+	}
+	return entry.levels[len(entry.levels)-1]
+}
+
 // EffortUsesAdaptiveThinking reports whether a Claude model pairs
 // output_config.effort with thinking {type: "adaptive"}.
 func EffortUsesAdaptiveThinking(model string) bool {
 	entry := findEffortFamily(model)
 	return entry != nil && entry.adaptive
+}
+
+// IsClaudeModel reports whether model is a Claude model ID after
+// provider/local suffix normalization, including models without effort levels.
+func IsClaudeModel(model string) bool {
+	return strings.HasPrefix(normalizeEffortModelID(model), "claude-")
 }
 
 // DefaultEffortForModel returns the effort a Claude model applies when
@@ -97,13 +122,17 @@ func normalizeEffortModelID(model string) string {
 	}
 	id = strings.TrimPrefix(id, "anthropic.")
 	id = strings.TrimSuffix(id, "-thinking")
-	// OpenRouter uses dotted minor versions for some models. Normalize them
-	// before effort, thinking, and billing family lookups.
-	if id == "claude-opus-5.5" {
-		id = "claude-opus-5-5"
-	}
-	if id == "claude-sonnet-5.5" {
-		id = "claude-sonnet-5-5"
+	// OpenRouter spells minor versions with a dot (claude-opus-4.7) where
+	// Anthropic IDs use a hyphen. Normalize them before effort, thinking, and
+	// billing family lookups.
+	if strings.Contains(id, ".") {
+		b := []byte(id)
+		for i := 1; i+1 < len(b); i++ {
+			if b[i] == '.' && '0' <= b[i-1] && b[i-1] <= '9' && '0' <= b[i+1] && b[i+1] <= '9' {
+				b[i] = '-'
+			}
+		}
+		id = string(b)
 	}
 	if mapped, ok := ModelIDReverseOverrides[id]; ok {
 		id = mapped

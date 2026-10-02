@@ -1858,8 +1858,8 @@ func TestOpus55ResponsesAdaptiveThinkingAndToolChoice(t *testing.T) {
 	require.ErrorContains(t, err, "reasoning effort")
 	old, err := ResponsesToAnthropicRequest(&ResponsesRequest{Model: "claude-opus-5", Input: json.RawMessage(`"hello"`), Reasoning: &ResponsesReasoning{Effort: "xhigh"}})
 	require.NoError(t, err)
-	require.Equal(t, "max", old.OutputConfig.Effort)
-	require.Equal(t, "enabled", old.Thinking.Type)
+	require.Equal(t, "xhigh", old.OutputConfig.Effort)
+	require.Equal(t, &AnthropicThinking{Type: "adaptive"}, old.Thinking)
 }
 
 func TestOpus55SignedThinkingResponsesRoundTrip(t *testing.T) {
@@ -1942,6 +1942,71 @@ func TestSonnet55SignedThinkingResponsesRoundTrip(t *testing.T) {
 	require.Equal(t, block, blocks[0])
 	require.Equal(t, "text", blocks[1].Type)
 	require.Equal(t, "tool_use", blocks[2].Type)
+}
+
+func TestResponsesToAnthropicReasoningEffortByModelFamily(t *testing.T) {
+	for _, tc := range []struct {
+		model, effort   string
+		maxOutputTokens int // 0: the client sets no limit
+		thinking        *AnthropicThinking
+		outputEffort    string // "": no output_config
+		maxTokens       int
+	}{
+		{"claude-opus-4-7", "xhigh", 0, &AnthropicThinking{Type: "adaptive"}, "xhigh", 8192},
+		{"anthropic/claude-opus-4.7", "xhigh", 0, &AnthropicThinking{Type: "adaptive"}, "xhigh", 8192},
+		{"claude-opus-4-6", "xhigh", 0, &AnthropicThinking{Type: "adaptive"}, "max", 8192},
+		{"claude-opus-4-8", "none", 0, &AnthropicThinking{Type: "adaptive"}, "low", 8192},
+		{"claude-opus-5", "none", 0, &AnthropicThinking{Type: "adaptive"}, "low", 8192},
+		{"claude-fable-5-1", "none", 0, &AnthropicThinking{Type: "adaptive"}, "low", 8192},
+		{"claude-opus-4-5-20251101", "max", 0, &AnthropicThinking{Type: "enabled", BudgetTokens: 23808}, "high", 32000},
+		{"claude-opus-4-5", "high", 1024, nil, "high", 1024},
+		{"claude-haiku-4-5", "high", 0, &AnthropicThinking{Type: "enabled", BudgetTokens: 10240}, "", 18432},
+		{"claude-opus-4-0", "xhigh", 0, &AnthropicThinking{Type: "enabled", BudgetTokens: 23808}, "", 32000},
+		{"glm-5.3", "xhigh", 0, &AnthropicThinking{Type: "enabled", BudgetTokens: 32768}, "max", 8192},
+	} {
+		t.Run(tc.model+"/"+tc.effort, func(t *testing.T) {
+			req := &ResponsesRequest{Model: tc.model, Input: json.RawMessage(`"hello"`), Reasoning: &ResponsesReasoning{Effort: tc.effort}}
+			if tc.maxOutputTokens > 0 {
+				req.MaxOutputTokens = &tc.maxOutputTokens
+			}
+			out, err := ResponsesToAnthropicRequest(req)
+			require.NoError(t, err)
+			require.Equal(t, tc.thinking, out.Thinking)
+			if tc.outputEffort == "" {
+				require.Nil(t, out.OutputConfig)
+			} else {
+				require.Equal(t, tc.outputEffort, out.OutputConfig.Effort)
+			}
+			require.Equal(t, tc.maxTokens, out.MaxTokens)
+		})
+	}
+
+	// Chat Completions reaches the same conversion; its max_tokens caps
+	// reasoning and answer together, so the budget shrinks below it.
+	maxTokens := 4096
+	chatReq, err := ChatCompletionsToResponses(&ChatCompletionsRequest{Model: "claude-haiku-4-5", ReasoningEffort: "high", MaxTokens: &maxTokens, Messages: []ChatMessage{{Role: "user", Content: json.RawMessage(`"hello"`)}}})
+	require.NoError(t, err)
+	out, err := ResponsesToAnthropicRequest(chatReq)
+	require.NoError(t, err)
+	require.Equal(t, &AnthropicThinking{Type: "enabled", BudgetTokens: 4095}, out.Thinking)
+	require.Nil(t, out.OutputConfig)
+	require.Equal(t, 4096, out.MaxTokens)
+
+	// Thinking takes temperature only at 1, and chat clients send their own.
+	temperature := 0.7
+	chatReq, err = ChatCompletionsToResponses(&ChatCompletionsRequest{Model: "claude-sonnet-4-6", ReasoningEffort: "low", Temperature: &temperature, Messages: []ChatMessage{{Role: "user", Content: json.RawMessage(`"hello"`)}}})
+	require.NoError(t, err)
+	out, err = ResponsesToAnthropicRequest(chatReq)
+	require.NoError(t, err)
+	require.Equal(t, &AnthropicThinking{Type: "adaptive"}, out.Thinking)
+	require.Equal(t, "low", out.OutputConfig.Effort)
+	require.Nil(t, out.Temperature)
+
+	// Budget thinking rejects forced tool use; the effort level still applies.
+	out, err = ResponsesToAnthropicRequest(&ResponsesRequest{Model: "claude-opus-4-5", Input: json.RawMessage(`"hello"`), Tools: []ResponsesTool{{Type: "function", Name: "lookup"}}, ToolChoice: json.RawMessage(`"required"`), Reasoning: &ResponsesReasoning{Effort: "medium"}})
+	require.NoError(t, err)
+	require.Nil(t, out.Thinking)
+	require.Equal(t, "medium", out.OutputConfig.Effort)
 }
 
 func TestGPT6ChatSamplingAndCacheFields(t *testing.T) {
