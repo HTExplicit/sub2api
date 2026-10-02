@@ -84,7 +84,7 @@
         ref="listRef"
         data-testid="upstream-picker-list"
         data-ui="upstream-picker-list"
-        class="max-h-[50vh] min-h-[4.5rem] overflow-y-auto overscroll-contain rounded-lg border border-gray-200 dark:border-dark-600"
+        class="max-h-[50vh] min-h-[4.5rem] overflow-y-auto overscroll-contain rounded-lg border border-gray-200 [overflow-anchor:none] dark:border-dark-600"
         :style="listHeight ? { height: listHeight } : undefined"
       >
         <ul v-if="visibleRows.length > 0">
@@ -404,7 +404,10 @@ const visibleRows = computed(() => {
 })
 
 // --- Windowed rendering (the DataTable precedent) ---
-const shouldVirtualize = computed(() => visibleRows.value.length > VIRTUALIZE_THRESHOLD)
+// A toggle that takes a windowed list down to the threshold keeps it windowed until the next new list: switching to
+// full rendering there would swap estimated heights above the view for real ones and move the rows around the gap.
+const keepWindowed = ref(false)
+const shouldVirtualize = computed(() => keepWindowed.value || visibleRows.value.length > VIRTUALIZE_THRESHOLD)
 
 // As in DataTable: a zero-height reading (the list not laid out yet) must not pin the viewport to no rows.
 const observeListRect = (instance: Virtualizer<HTMLElement, HTMLLIElement>, cb: (rect: Rect) => void) =>
@@ -485,6 +488,7 @@ watch(
     const keepPlace = rowLeftList || sameRows(next, previous)
     rowLeftList = false
     if (keepPlace) return
+    keepWindowed.value = false
     // A different list (open, search, filter, a bulk change under 已勾选 / 未勾选): start at its top with fresh
     // measurements. Rows that kept their place were skipped by v-memo, so every rendered row is measured again.
     const list = listRef.value
@@ -539,7 +543,10 @@ const toggle = (row: PickerRow, index: number, event: Event) => {
   const heldFocus = leavesList && !!rowElement?.contains(document.activeElement)
   const next = new Set(checked.value)
   if (!next.delete(row.id)) next.add(row.id)
-  if (leavesList) rowLeftList = true
+  if (leavesList) {
+    rowLeftList = true
+    keepWindowed.value = shouldVirtualize.value
+  }
   checked.value = next
   // after the state change, so its nextTick waits for the patch that removes the row
   if (heldFocus) void focusRowAt(index)

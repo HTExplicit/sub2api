@@ -762,6 +762,27 @@ describe('ModelWhitelistSelector', () => {
     wrapper.unmount()
   })
 
+  it('keeps a windowed list windowed when a toggle takes it to the threshold, until the next new list', async () => {
+    const models = Array.from({ length: 101 }, (_, index) => `edge-model-${String(index).padStart(3, '0')}`)
+    syncUpstreamModels.mockResolvedValue({ models })
+    const wrapper = mountSelector({ accountId: 7 })
+    await openPicker(wrapper)
+    await setPickerFilter(wrapper, 'checked')
+    expect(pickerRowIds(wrapper).length).toBeLessThan(100)
+
+    // 101 -> 100 rows: the rows around the gap keep their windowed layout.
+    await findPickerRow(wrapper, 'edge-model-000').trigger('click')
+    await flushPromises()
+    expect(pickerRowIds(wrapper)).not.toContain('edge-model-000')
+    expect(pickerRowIds(wrapper).length).toBeLessThan(100)
+
+    // A new list of 100 rows renders in full.
+    await setPickerFilter(wrapper, 'unchecked')
+    await setPickerFilter(wrapper, 'checked')
+    expect(pickerRowIds(wrapper)).toEqual(models.slice(1))
+    wrapper.unmount()
+  })
+
   it('combines the status filter with a case-insensitive search on the ID and the display name', async () => {
     syncUpstreamModels.mockResolvedValue(pickerFixture())
     const wrapper = mountSelector({ modelValue: pickerWhitelist, accountId: 7 })
