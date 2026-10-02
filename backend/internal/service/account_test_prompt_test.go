@@ -110,7 +110,7 @@ func TestAccountTestPromptOAuthMappedModelReportsFinalWire(t *testing.T) {
 	a.Credentials["model_mapping"] = map[string]any{"alias": "gpt-5.6-sol"}
 	a.Credentials["header_override_enabled"] = true
 	a.Credentials["header_overrides"] = map[string]any{openAICodexTurnStateHeader: "header-override-state"}
-	a.Extra = map[string]any{"codex_turn_ticket:gpt-5.6-sol": map[string]any{"state": "dormant-state"}, NativeCodexAccountProjectionKey: map[string]any{NativeCodexPluginKey: map[string]any{"scheduling": map[string]any{"gpt-5.6-sol": map[string]any{"effect": "deny"}}}}}
+	a.Extra = map[string]any{"codex_turn_ticket:gpt-5.6-sol": map[string]any{"state": "dormant-state"}, "plugin_account_projections": map[string]any{NativeCodexPluginKey: map[string]any{"scheduling": map[string]any{"gpt-5.6-sol": map[string]any{"effect": "deny"}}}}}
 	upstream := &queuedHTTPUpstream{responses: []*http.Response{newJSONResponse(200, "data: {\"type\":\"response.output_text.delta\",\"delta\":\"OK\"}\n\ndata: {\"type\":\"response.completed\",\"response\":{\"status\":\"completed\",\"model\":\"gpt-5.6-sol\"}}\n\n")}}
 	gateway := &OpenAIGatewayService{cfg: cfg, httpUpstream: upstream, accountRepo: &codexAccountRepositoryFixture{account: a}, nativeCodexRuntime: nativeCodexTestRuntime(t)}
 	svc := &AccountTestService{cfg: cfg, httpUpstream: upstream, openAIGatewayService: gateway}

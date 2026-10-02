@@ -24,11 +24,12 @@ and not stored again; any other key, or a `request_zstd` that is not a boolean
 
 The route acquisition endpoints (`/admin/accounts/codex-tickets/*`,
 `/admin/accounts/:id/codex-tickets/*`, `/admin/accounts/:id/codex-routing/validate`
-and `/admin/settings/openai-codex-ticket/*`) are removed. Jobs of the retired
-kinds `codex_ticket_harvest`, `codex_ticket_stop` and `extension_operation`
-still list and read with `retry_eligible=false` and
-`retry_unavailable_reason=kind_unsupported`; a retry returns HTTP 409, and their
-items still pending fail with `kind_unsupported`. Ordinary account bulk editing
+and `/admin/settings/openai-codex-ticket/*`) are removed. Migration 263 deletes
+the job rows of the retired kinds `codex_ticket_harvest`, `codex_ticket_stop`
+and `extension_operation`; their display names are gone. A job whose kind this
+version has no executor for still lists and reads with `retry_eligible=false`
+and `retry_unavailable_reason=kind_unsupported`; a retry returns HTTP 409, and
+its items still pending fail with `kind_unsupported`. Ordinary account bulk editing
 remains HTTP 202; this change does not replace background tasks with synchronous
 editing. Existing API-key reveal and account-field protections remain.
 
@@ -94,15 +95,23 @@ the first start advances `runtime_generation` once and records the new
 configuration hash and version; the encrypted source keeps its old bytes until
 the next save.
 
-Data written by the retired route acquisition stays in place and is no longer
-read: the `openai_codex_ticket_*` settings, the `tickets`, `routing-demand` and
-`proxy-trust` state namespaces, the route keys in `codex-routing-private`
-(`bundle.*`, `clock.*`, `seen.*`, `spent.*`, `validation.*`; `quality-run.*` and
-`wire.*` stay in use), `sub2api_plugin_leases` rows, the account `extra` keys
-`codex_turn_ticket:*`, `codex_ticket_runtime:*`, `codex_harvest_proxy_url` and
-`plugin_account_projections`, and job rows of the retired kinds. Migrations 244
-and 245 and their triggers are unchanged. A later release removes this data with
-a forward migration.
+Migration `263_purge_retired_codex_ticket_data.sql` deletes the data written by
+the retired route acquisition: the triggers, trigger functions and tables of
+migrations 244 and 245; the settings `openai_codex_ticket_enabled` and
+`openai_codex_ticket_harvest_proxy_url`; the `codexrip.codex-runtime` state
+namespaces `tickets`, `routing-demand` and `proxy-trust` and its
+`routing-account` and `tickets` leases; the route and Cookie material in
+`codex-routing-private` (`bundle.*`, `clock.*`, `seen.*`, `validation-result.*`);
+the account `extra` keys `codex_turn_ticket:*`, `codex_ticket_runtime:*` and
+`codex_harvest_proxy_url` and the `codexrip.codex-runtime` entry of
+`plugin_account_projections` (the map goes once it is empty); and job rows of
+the retired kinds. `codex-routing-private` keeps the ledgers `quality-run.*`,
+`validation.*` and `spent.*`, and the `wire.*` observations without the raw
+Cookie values (`cookies`) they stored. Accounts without these keys are not
+rewritten. Account create, update and bulk edit drop these `extra` keys and that
+projection entry, so importing an account export taken before this release does
+not bring them back. The encrypted Codex runtime source keeps its bytes until
+the next save, as described above.
 
 Migration `254_plugin_job_action_digest.sql` preserves full 64-character historical
 task action digests. History and retries continue to use saved targets; unsupported
@@ -124,6 +133,12 @@ receipt and artifacts supply the original data; **never restore the receipt's ol
 runtime generation or delete its native anchor**. A plain image change does not
 perform this reverse conversion. Such a legacy-host rollback has not been run as
 part of the native migration and is not an automatic failure path.
+
+Migration 263 has no down path; the data it deletes (listed above) comes back
+only from a database dump taken before it. An image that still has the route
+acquisition starts without its tickets and routes. Images from
+`v0.2.8-codexrip.5` (source `9f7b08dfc`) on never read the 244/245 tables; older
+images still query them, so returning to one of those needs that dump.
 
 ## Verification
 

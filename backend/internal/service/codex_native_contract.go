@@ -13,11 +13,6 @@ const NativeCodexConfigSettingKey = "codex_native_runtime_config"
 const NativeCodexSourceSettingKey = "codex_native_runtime_source"
 const NativeCodexRetirementSettingKey = "deplugin_retired_plugins"
 
-// NativeCodexAccountProjectionKey names the account extra key that held the
-// retired route-qualification scheduling projection. Nothing reads it; account
-// writes only carry an existing value over unchanged until the data is purged.
-const NativeCodexAccountProjectionKey = "plugin_account_projections"
-
 var ErrNativeCodexRuntimeChanged = errors.New("native Codex runtime metadata changed")
 var ErrNativeCodexRuntimeUnavailable = errors.New("native Codex runtime unavailable")
 

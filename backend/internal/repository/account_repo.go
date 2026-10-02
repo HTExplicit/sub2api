@@ -108,6 +108,48 @@ func stripCodexFingerprintSeedFromExtraUpdate(extra map[string]any) map[string]a
 	return stripped
 }
 
+// isRetiredCodexTicketExtraKey matches the account extra keys of the retired
+// Codex route acquisition that migration 263 purged.
+func isRetiredCodexTicketExtraKey(key string) bool {
+	return strings.HasPrefix(key, "codex_turn_ticket:") ||
+		strings.HasPrefix(key, "codex_ticket_runtime:") ||
+		key == "codex_harvest_proxy_url"
+}
+
+// withoutRetiredCodexTicketExtra keeps account writes from storing the data
+// migration 263 purged, so importing an account export taken before it cannot
+// bring that data back. Like 263 it also drops the codexrip.codex-runtime entry
+// of plugin_account_projections, and the map only once no other entry is left.
+// extra is returned as is when it holds none of this.
+func withoutRetiredCodexTicketExtra(extra map[string]any) map[string]any {
+	projections, _ := extra["plugin_account_projections"].(map[string]any)
+	_, projected := projections["codexrip.codex-runtime"]
+	stripped := make(map[string]any, len(extra))
+	for key, value := range extra {
+		if !isRetiredCodexTicketExtraKey(key) {
+			stripped[key] = value
+		}
+	}
+	if !projected {
+		if len(stripped) == len(extra) {
+			return extra
+		}
+		return stripped
+	}
+	rest := make(map[string]any, len(projections))
+	for key, value := range projections {
+		if key != "codexrip.codex-runtime" {
+			rest[key] = value
+		}
+	}
+	if len(rest) == 0 {
+		delete(stripped, "plugin_account_projections")
+	} else {
+		stripped["plugin_account_projections"] = rest
+	}
+	return stripped
+}
+
 // NewAccountRepository 创建账户仓储实例。
 // 这是对外暴露的构造函数，返回接口类型以便于依赖注入。
 func NewAccountRepository(client *dbent.Client, sqlDB *sql.DB, schedulerCache service.SchedulerCache) service.AccountRepository {
@@ -156,7 +198,7 @@ func createAccountRecord(ctx context.Context, client *dbent.Client, account *ser
 		SetPlatform(account.Platform).
 		SetType(account.Type).
 		SetCredentials(normalizeJSONMap(account.Credentials)).
-		SetExtra(normalizeJSONMap(withoutPluginAccountProjection(account.Extra))).
+		SetExtra(normalizeJSONMap(withoutRetiredCodexTicketExtra(account.Extra))).
 		SetConcurrency(account.Concurrency).
 		SetPriority(account.Priority).
 		SetStatus(account.Status).
@@ -740,7 +782,7 @@ func lockAndMergeAccountProbeExtra(
 			currentExtra = nil
 		}
 	}
-	extra = preservePluginAccountProjection(extra, currentExtra)
+	extra = withoutRetiredCodexTicketExtra(extra)
 	// Preserve the system prompt binding read under the row lock. A stale
 	// general account editor cannot overwrite the dedicated binding endpoint.
 	delete(extra, service.AccountExtraSystemPromptKey)
@@ -2878,7 +2920,7 @@ func (r *accountRepository) AutoPauseExpiredAccounts(ctx context.Context, now ti
 }
 
 func (r *accountRepository) UpdateExtra(ctx context.Context, id int64, updates map[string]any) error {
-	updates = withoutPluginAccountProjection(updates)
+	updates = withoutRetiredCodexTicketExtra(updates)
 	updates = stripCodexFingerprintSeedFromExtraUpdate(updates)
 	if len(updates) == 0 {
 		return nil
@@ -3234,7 +3276,7 @@ func (r *accountRepository) BulkUpdate(ctx context.Context, ids []int64, updates
 		return 0, nil
 	}
 	updates.Extra = stripCodexFingerprintSeedFromExtraUpdate(updates.Extra)
-	updates.Extra = withoutPluginAccountProjection(updates.Extra)
+	updates.Extra = withoutRetiredCodexTicketExtra(updates.Extra)
 
 	setClauses := make([]string, 0, 8)
 	args := make([]any, 0, 8)

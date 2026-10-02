@@ -10,17 +10,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// The retired route-qualification projection stays dormant in account extra
-// and never enters a scheduler snapshot.
-func TestSchedulerCacheDropsRetiredCodexProjection(t *testing.T) {
-	projection := map[string]any{"identity": "owner", "scheduling": map[string]any{"gpt-6-astra": map[string]any{"effect": "deny"}}}
-	source := map[string]any{service.NativeCodexAccountProjectionKey: map[string]any{"codexrip.codex-runtime": projection}, "openai_quota_status": "ok"}
-	filtered := filterSchedulerExtra(source)
-	require.NotContains(t, filtered, service.NativeCodexAccountProjectionKey)
-	require.Equal(t, "ok", filtered["openai_quota_status"])
-	require.Contains(t, source, service.NativeCodexAccountProjectionKey, "the persistent account extra is not rewritten")
-}
-
 func TestSchedulerCacheReasoningPolicyProjectionPreservesMissingAndBooleanSemantics(t *testing.T) {
 	keys := []string{service.OpenAIChatReasoningReplayEnabledExtraKey, service.OpenAIReasoningSignatureRecoveryEnabledExtraKey}
 	for _, source := range []map[string]any{nil, {}, {"unrelated": true}, {"quota_limit": nil}} {

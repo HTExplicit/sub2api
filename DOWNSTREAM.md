@@ -32,11 +32,12 @@ request route gates, and their admin endpoints, settings and job kinds. OpenAI
 OAuth accounts are scheduled without route qualification and send through their
 ordinary proxy and transport. An OAuth Codex `/responses` reply over HTTP that
 declares a different model than the request is still rejected. The Codex
-runtime setting keeps only request compression. Old jobs of the retired kinds
-stay readable but cannot be retried; data the feature wrote stays in place,
-unread, until a later release purges it. Quality diagnostics bind an explicit
-model and reasoning effort and send through the account's ordinary path; see
-[quality diagnostics](.downstream/codex-quality-diagnostics.md).
+runtime setting keeps only request compression. Migration 263 deletes the data
+the feature wrote, old jobs of the retired kinds included; quality ledgers and
+the observed outbound requests stay, without stored Cookie values (see
+[native domains](.downstream/native-domains.md)). Quality diagnostics bind an
+explicit model and reasoning effort and send through the account's ordinary
+path; see [quality diagnostics](.downstream/codex-quality-diagnostics.md).
 
 ## Official behavior and downstream contracts
 

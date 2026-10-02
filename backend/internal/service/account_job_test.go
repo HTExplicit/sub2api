@@ -262,10 +262,10 @@ type accountJobTestExecutor struct {
 	cleanupCalls     int
 }
 
-// Retired kinds (route acquisition, renewal stop, legacy extension operation)
-// keep their rows readable, but nothing can submit or retry them.
+// A row of a kind this version has no executor for (written by another
+// version) stays readable, but nothing can submit or retry that kind.
 func TestAccountJobRetiredKindsStayReadableButCannotRun(t *testing.T) {
-	for _, kind := range []string{"codex_ticket_harvest", "codex_ticket_stop", "extension_operation"} {
+	for _, kind := range []string{"kind_from_another_version"} {
 		t.Run(kind, func(t *testing.T) {
 			repo := newAccountJobTestRepo()
 			jobs := NewAccountJobService(repo, accountJobTestCipher{})
