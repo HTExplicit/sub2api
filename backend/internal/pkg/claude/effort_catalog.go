@@ -11,34 +11,69 @@ var (
 	effortLowMediumHighXHighMax = []string{"low", "medium", "high", "xhigh", "max"}
 )
 
-var effortFamilies = []struct {
+type effortFamily struct {
 	family string
 	levels []string
-}{
+	// adaptive pairs output_config.effort with thinking {type: "adaptive"}.
+	// Opus 4.5 thinks only through enabled+budget_tokens; Mythos Preview's
+	// thinking mode is unverified.
+	adaptive bool
+}
+
+var effortFamilies = []effortFamily{
 	{family: "claude-mythos-preview", levels: effortLowMediumHighMax},
-	{family: "claude-mythos-5", levels: effortLowMediumHighXHighMax},
-	{family: "claude-fable-5", levels: effortLowMediumHighXHighMax},
-	{family: "claude-sonnet-4-6", levels: effortLowMediumHighMax},
-	{family: "claude-sonnet-5-5", levels: effortLowMediumHighXHighMax},
-	{family: "claude-sonnet-5", levels: effortLowMediumHighXHighMax},
-	{family: "claude-opus-4-8", levels: effortLowMediumHighXHighMax},
-	{family: "claude-opus-4-7", levels: effortLowMediumHighXHighMax},
-	{family: "claude-opus-4-6", levels: effortLowMediumHighMax},
+	{family: "claude-mythos-5", levels: effortLowMediumHighXHighMax, adaptive: true},
+	{family: "claude-fable-5", levels: effortLowMediumHighXHighMax, adaptive: true},
+	{family: "claude-sonnet-4-6", levels: effortLowMediumHighMax, adaptive: true},
+	{family: "claude-sonnet-5-5", levels: effortLowMediumHighXHighMax, adaptive: true},
+	{family: "claude-sonnet-5", levels: effortLowMediumHighXHighMax, adaptive: true},
+	{family: "claude-opus-4-8", levels: effortLowMediumHighXHighMax, adaptive: true},
+	{family: "claude-opus-4-7", levels: effortLowMediumHighXHighMax, adaptive: true},
+	{family: "claude-opus-4-6", levels: effortLowMediumHighMax, adaptive: true},
 	{family: "claude-opus-4-5", levels: effortLowMediumHigh},
-	{family: "claude-opus-5-5", levels: effortLowMediumHighXHighMax},
-	{family: "claude-opus-5", levels: effortLowMediumHighXHighMax},
+	{family: "claude-opus-5-5", levels: effortLowMediumHighXHighMax, adaptive: true},
+	{family: "claude-opus-5", levels: effortLowMediumHighXHighMax, adaptive: true},
+}
+
+func findEffortFamily(model string) *effortFamily {
+	id := normalizeEffortModelID(model)
+	for i := range effortFamilies {
+		if entry := &effortFamilies[i]; id == entry.family || strings.HasPrefix(id, entry.family+"-") {
+			return entry
+		}
+	}
+	return nil
 }
 
 // EffortLevelsForModel returns the output_config.effort values accepted by a
 // Claude model, ordered from the lightest to the deepest reasoning level.
 func EffortLevelsForModel(model string) []string {
-	id := normalizeEffortModelID(model)
-	for _, entry := range effortFamilies {
-		if id == entry.family || strings.HasPrefix(id, entry.family+"-") {
-			return append([]string(nil), entry.levels...)
-		}
+	if entry := findEffortFamily(model); entry != nil {
+		return append([]string(nil), entry.levels...)
 	}
 	return nil
+}
+
+// EffortUsesAdaptiveThinking reports whether a Claude model pairs
+// output_config.effort with thinking {type: "adaptive"}.
+func EffortUsesAdaptiveThinking(model string) bool {
+	entry := findEffortFamily(model)
+	return entry != nil && entry.adaptive
+}
+
+// DefaultEffortForModel returns the effort a Claude model applies when
+// output_config.effort is omitted, or "" when the model has no effort levels.
+func DefaultEffortForModel(model string) string {
+	entry := findEffortFamily(model)
+	switch {
+	case entry == nil:
+		return ""
+	case entry.family == "claude-opus-5-5":
+		// Opus 5.5 defaults one level below every other effort family.
+		return "medium"
+	default:
+		return "high"
+	}
 }
 
 // IsOpus55 identifies the fixed Opus 5.5 ID after provider/local suffix normalization.
@@ -73,9 +108,10 @@ func normalizeEffortModelID(model string) string {
 	if mapped, ok := ModelIDReverseOverrides[id]; ok {
 		id = mapped
 	}
+	// Dated snapshots: "-YYYYMMDD" (Anthropic API) and "@YYYYMMDD" (Vertex AI).
 	if len(id) >= 9 {
 		suffix := id[len(id)-9:]
-		if suffix[0] == '-' {
+		if suffix[0] == '-' || suffix[0] == '@' {
 			digits := true
 			for _, r := range suffix[1:] {
 				if !unicode.IsDigit(r) {

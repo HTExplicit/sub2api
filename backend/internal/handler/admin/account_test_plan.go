@@ -51,7 +51,8 @@ func (h *AccountHandler) accountTestPlan(ctx context.Context, account *service.A
 	return ordinaryAccountTestPlan(account, raw)
 }
 
-func accountTestPlanModels(raw any) ([]map[string]any, error) {
+// accountTestModelRows decodes a typed model catalog into its JSON rows.
+func accountTestModelRows(raw any) ([]map[string]any, error) {
 	encoded, err := json.Marshal(raw)
 	if err != nil {
 		return nil, err
@@ -59,6 +60,38 @@ func accountTestPlanModels(raw any) ([]map[string]any, error) {
 	var models []map[string]any
 	if json.Unmarshal(encoded, &models) != nil {
 		return nil, errors.New("invalid account test model catalog")
+	}
+	return models, nil
+}
+
+// accountTestReasoningRows decodes any platform's catalog into rows and gives
+// each row the reasoning efforts the account test transmits for that model,
+// under openai.Model's JSON keys. Rows without efforts carry neither key.
+func accountTestReasoningRows(account *service.Account, raw any) ([]map[string]any, error) {
+	models, err := accountTestModelRows(raw)
+	if err != nil {
+		return nil, err
+	}
+	for _, model := range models {
+		delete(model, "reasoning_efforts")
+		delete(model, "default_reasoning_effort")
+		id, _ := model["id"].(string)
+		levels, defaultLevel := service.AccountTestReasoningOptions(account, id)
+		if len(levels) == 0 {
+			continue
+		}
+		model["reasoning_efforts"] = levels
+		if defaultLevel != "" {
+			model["default_reasoning_effort"] = defaultLevel
+		}
+	}
+	return models, nil
+}
+
+func accountTestPlanModels(raw any) ([]map[string]any, error) {
+	models, err := accountTestModelRows(raw)
+	if err != nil {
+		return nil, err
 	}
 	if models == nil {
 		models = []map[string]any{}

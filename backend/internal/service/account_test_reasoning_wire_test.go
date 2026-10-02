@@ -67,3 +67,50 @@ func TestAccountTestReasoningOpenCodeGoSerializesNativeProtocol(t *testing.T) {
 		})
 	}
 }
+
+func TestAccountTestReasoningBedrockSonnet55EffortSurvivesRequestPreparation(t *testing.T) {
+	account := &Account{ID: 45, Platform: PlatformAnthropic, Type: AccountTypeBedrock, Status: StatusActive,
+		Credentials: map[string]any{"auth_mode": "apikey", "api_key": "test-key", "aws_region": "us-east-1"}}
+	upstream := &queuedHTTPUpstream{responses: []*http.Response{newJSONResponse(200, `{"content":[{"type":"text","text":"OK"}],"stop_reason":"end_turn"}`)}}
+	svc := &AccountTestService{accountRepo: &reasoningTestRepo{account: account}, httpUpstream: upstream}
+	c, recorded := newTestContext()
+	require.NoError(t, svc.TestAccountConnection(c, account.ID, "claude-sonnet-5-5", "", AccountTestModeDefault, AccountTestOptions{ReasoningEffort: "high"}))
+	require.Len(t, upstream.requests, 1)
+	require.Contains(t, upstream.requests[0].URL.Path, "global.anthropic.claude-sonnet-5-5")
+	body, err := io.ReadAll(upstream.requests[0].Body)
+	require.NoError(t, err)
+	require.Equal(t, "high", gjson.GetBytes(body, "output_config.effort").String())
+	require.Equal(t, "adaptive", gjson.GetBytes(body, "thinking.type").String())
+	require.Equal(t, int64(64000), gjson.GetBytes(body, "max_tokens").Int())
+	require.False(t, gjson.GetBytes(body, "temperature").Exists())
+	require.Contains(t, recorded.Body.String(), `"effective_reasoning_effort":"high"`)
+}
+
+func TestAccountTestReasoningGrokSendsForwardedEffort(t *testing.T) {
+	account := &Account{ID: 46, Platform: PlatformGrok, Type: AccountTypeAPIKey, Status: StatusActive, Credentials: map[string]any{"api_key": "test-key"}}
+	supported := true
+	account.SetUpstreamModelMetadataSnapshot(UpstreamModelMetadataSnapshot{Models: map[string]UpstreamModelMetadata{"grok-4.3": {Reasoning: &supported, SupportedReasoningLevels: []string{"low", "high", "xhigh"}}}})
+	upstream := &queuedHTTPUpstream{responses: []*http.Response{newJSONResponse(200, "data: {\"type\":\"response.output_text.delta\",\"delta\":\"OK\"}\n\ndata: {\"type\":\"response.completed\"}\n\n")}}
+	svc := &AccountTestService{accountRepo: &reasoningTestRepo{account: account}, httpUpstream: upstream}
+	c, recorded := newTestContext()
+	require.NoError(t, svc.TestAccountConnection(c, account.ID, "grok-4.3", "", AccountTestModeDefault, AccountTestOptions{ReasoningEffort: "xhigh"}))
+	require.Len(t, upstream.requests, 1)
+	body, err := io.ReadAll(upstream.requests[0].Body)
+	require.NoError(t, err)
+	require.Equal(t, "high", gjson.GetBytes(body, "reasoning.effort").String(), "Responses forwarding sends high for this model")
+	require.Contains(t, recorded.Body.String(), `"effective_reasoning_effort":"high"`)
+}
+
+func TestAccountTestReasoningChatSendsForwardedGLMEffort(t *testing.T) {
+	account := adaptiveCNAccountTestAccount(47, PlatformZhipu)
+	account.Credentials["api_protocol"] = APIProtocolChatCompletions
+	account.Credentials["base_url"] = "http://chat.example/v1"
+	supported := true
+	account.SetUpstreamModelMetadataSnapshot(UpstreamModelMetadataSnapshot{Models: map[string]UpstreamModelMetadata{"glm-5": {Reasoning: &supported, SupportedReasoningLevels: []string{"low", "medium", "high"}}}})
+	svc, upstream := adaptiveCNAccountTestService(account, adaptiveCNChatTestResponse())
+	c, recorded := newTestContext()
+	require.NoError(t, svc.TestAccountConnection(c, account.ID, "glm-5", "test", AccountTestModeDefault, AccountTestOptions{ReasoningEffort: "low"}))
+	require.Len(t, upstream.requests, 1)
+	require.Equal(t, "high", gjson.GetBytes(upstream.lastBody, "reasoning_effort").String(), "chat forwarding moves GLM efforts onto high/max")
+	require.Contains(t, recorded.Body.String(), `"effective_reasoning_effort":"high"`)
+}

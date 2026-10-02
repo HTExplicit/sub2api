@@ -493,6 +493,26 @@ func (s *AccountTestService) testCNProviderChatCompletionsConnection(c *gin.Cont
 	return s.testOpenAIChatCompletionsConnection(c, account, testModelID, prompt, normalizedBaseURL, authToken)
 }
 
+// accountTestClaudeUpstreamModel resolves the model ID that the Claude account
+// test sends upstream on the account's credential path; ok is false when the
+// test cannot send the model. Test reasoning options are read from this ID.
+func accountTestClaudeUpstreamModel(account *Account, model string) (string, bool) {
+	switch {
+	case account.IsBedrock():
+		return ResolveBedrockModelID(account, model)
+	case account.Type == AccountTypeServiceAccount:
+		if mappedModel, matched := account.ResolveMappedModel(model); matched {
+			return mappedModel, true
+		}
+		return normalizeVertexAnthropicModelID(claude.NormalizeModelID(model)), true
+	case account.Type == AccountTypeAPIKey:
+		// API Key 账号测试连接时也需要应用通配符模型映射。
+		return account.GetMappedModel(model), true
+	default:
+		return model, account.IsOAuth()
+	}
+}
+
 // testClaudeAccountConnection tests an Anthropic Claude account's connection
 func (s *AccountTestService) testClaudeAccountConnection(c *gin.Context, account *Account, modelID string) error {
 	ctx := c.Request.Context()
@@ -502,19 +522,19 @@ func (s *AccountTestService) testClaudeAccountConnection(c *gin.Context, account
 	if testModelID == "" {
 		testModelID = claude.DefaultTestModel
 	}
-
-	// API Key 账号测试连接时也需要应用通配符模型映射。
-	if account.Type == "apikey" {
-		testModelID = account.GetMappedModel(testModelID)
-	}
+	upstreamModelID, supported := accountTestClaudeUpstreamModel(account, testModelID)
 
 	// Bedrock accounts use a separate test path
 	if account.IsBedrock() {
-		return s.testBedrockAccountConnection(c, ctx, account, testModelID)
+		if !supported {
+			return s.sendErrorAndEnd(c, fmt.Sprintf("Unsupported Bedrock model: %s", testModelID))
+		}
+		return s.testBedrockAccountConnection(c, ctx, account, upstreamModelID)
 	}
 	if account.Type == AccountTypeServiceAccount {
-		return s.testClaudeVertexServiceAccountConnection(c, ctx, account, testModelID)
+		return s.testClaudeVertexServiceAccountConnection(c, ctx, account, upstreamModelID)
 	}
+	testModelID = upstreamModelID
 
 	// Determine authentication method and API URL
 	var authToken string
@@ -557,7 +577,11 @@ func (s *AccountTestService) testClaudeAccountConnection(c *gin.Context, account
 	if err != nil {
 		return s.sendErrorAndEnd(c, "Failed to create test payload")
 	}
-	payloadBytes, _ := json.Marshal(payload)
+	payloadBytes, err := accountTestClaudeBody(c, payload, testModelID)
+	if err != nil {
+		return s.sendErrorAndEnd(c, err.Error())
+	}
+	markAccountTestEffectiveReasoning(c, payloadBytes, "output_config.effort")
 
 	// Send test_start event
 	s.sendEvent(c, TestEvent{Type: "test_start", Model: testModelID})
@@ -619,12 +643,6 @@ func (s *AccountTestService) testClaudeAccountConnection(c *gin.Context, account
 }
 
 func (s *AccountTestService) testClaudeVertexServiceAccountConnection(c *gin.Context, ctx context.Context, account *Account, testModelID string) error {
-	if mappedModel, matched := account.ResolveMappedModel(testModelID); matched {
-		testModelID = mappedModel
-	} else {
-		testModelID = normalizeVertexAnthropicModelID(claude.NormalizeModelID(testModelID))
-	}
-
 	c.Writer.Header().Set("Content-Type", "text/event-stream")
 	c.Writer.Header().Set("Cache-Control", "no-cache")
 	c.Writer.Header().Set("Connection", "keep-alive")
@@ -635,11 +653,15 @@ func (s *AccountTestService) testClaudeVertexServiceAccountConnection(c *gin.Con
 	if err != nil {
 		return s.sendErrorAndEnd(c, "Failed to create test payload")
 	}
-	payloadBytes, _ := json.Marshal(payload)
+	payloadBytes, err := accountTestClaudeBody(c, payload, testModelID)
+	if err != nil {
+		return s.sendErrorAndEnd(c, err.Error())
+	}
 	vertexBody, err := buildVertexAnthropicRequestBody(payloadBytes)
 	if err != nil {
 		return s.sendErrorAndEnd(c, fmt.Sprintf("Failed to create Vertex request body: %s", err.Error()))
 	}
+	markAccountTestEffectiveReasoning(c, vertexBody, "output_config.effort")
 
 	if s.claudeTokenProvider == nil {
 		return s.sendErrorAndEnd(c, "Claude token provider not configured")
@@ -689,11 +711,6 @@ func (s *AccountTestService) testClaudeVertexServiceAccountConnection(c *gin.Con
 // testBedrockAccountConnection tests a Bedrock (SigV4 or API Key) account using non-streaming invoke
 func (s *AccountTestService) testBedrockAccountConnection(c *gin.Context, ctx context.Context, account *Account, testModelID string) error {
 	region := bedrockRuntimeRegion(account)
-	resolvedModelID, ok := ResolveBedrockModelID(account, testModelID)
-	if !ok {
-		return s.sendErrorAndEnd(c, fmt.Sprintf("Unsupported Bedrock model: %s", testModelID))
-	}
-	testModelID = resolvedModelID
 
 	// Set SSE headers (test UI expects SSE)
 	c.Writer.Header().Set("Content-Type", "text/event-stream")
@@ -719,7 +736,18 @@ func (s *AccountTestService) testBedrockAccountConnection(c *gin.Context, ctx co
 		"max_tokens":  256,
 		"temperature": 1,
 	}
-	bedrockBody, _ := json.Marshal(bedrockPayload)
+	bedrockBody, err := accountTestClaudeBody(c, bedrockPayload, testModelID)
+	if err != nil {
+		return s.sendErrorAndEnd(c, err.Error())
+	}
+	if c.GetString(accountTestReasoningContextKey) != "" {
+		// Send the effort exactly as production forwarding prepares it for InvokeModel.
+		bedrockBody, err = PrepareBedrockRequestBody(bedrockBody, testModelID, "")
+		if err != nil {
+			return s.sendErrorAndEnd(c, fmt.Sprintf("Failed to prepare Bedrock request body: %s", err.Error()))
+		}
+	}
+	markAccountTestEffectiveReasoning(c, bedrockBody, "output_config.effort")
 
 	// Use non-streaming endpoint (response is standard Claude JSON)
 	apiURL := BuildBedrockURL(region, testModelID, false)
@@ -1291,7 +1319,12 @@ func (s *AccountTestService) testGrokResponsesConnection(c *gin.Context, ctx con
 		if err != nil {
 			return s.sendErrorAndEnd(c, "Failed to set test reasoning effort")
 		}
-		c.Set("account_test_effective_reasoning_effort", effort)
+		// Send the effort as Responses forwarding keeps, rewrites or removes it.
+		payloadBytes, err = normalizeGrokResponsesReasoningEffort(payloadBytes, accountTestGrokUpstreamModel(testModelID))
+		if err != nil {
+			return s.sendErrorAndEnd(c, "Failed to set test reasoning effort")
+		}
+		markAccountTestEffectiveReasoning(c, payloadBytes, "reasoning.effort")
 	}
 	if custom := c.GetString(accountTestPromptContextKey); strings.TrimSpace(custom) != "" {
 		payloadBytes, err = sjson.SetBytes(payloadBytes, "input", custom)
@@ -2159,8 +2192,7 @@ func (s *AccountTestService) testOpenAIChatCompletionsConnection(
 	c.Writer.Flush()
 
 	payload := createOpenAIChatCompletionsTestPayload(testModelID, prompt)
-	applyAccountTestReasoning(c, payload, true)
-	payloadBytes, _ := json.Marshal(payload)
+	payloadBytes := accountTestChatBody(c, payload, testModelID)
 
 	s.sendEvent(c, TestEvent{Type: "test_start", Model: testModelID})
 	s.sendEvent(c, TestEvent{Type: "status", Text: "正在通过 /v1/chat/completions 测试连接"})
